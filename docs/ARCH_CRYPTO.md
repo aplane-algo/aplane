@@ -18,8 +18,8 @@ These share storage and runtime plumbing, but not the signing behavior:
 
 - native Ed25519 signs directly into `SignedTxn.Sig`
 - native Falcon signs directly into top-level `SignedTxn.PQsig` with scheme
-  `f1`; it requires consensus v42 or an explicitly recognized compatible
-  protocol and carries a two-base-fee PQ contribution
+  `f1`; this release requires consensus v42 and carries a two-base-fee PQ
+  contribution
 - DSA-backed LogicSig providers derive LogicSig bytecode and place a
   cryptographic signature in `LogicSig.Args`
 - generic LogicSig templates authorize by TEAL only and use runtime args
@@ -64,8 +64,9 @@ This split is a hard dependency boundary, not only a startup preference:
   the client registration for native Ed25519 and Falcon. It must not populate
   signer-side signing, keygen, mnemonic, or key-processor registries or link
   `github.com/algorand/falcon`.
-- `cmd/apsigner`, `cmd/apadmin`, and `cmd/apstore` call
-  `lsig/signerreg.RegisterSigner()` plus Ed25519 and native Falcon signer registration.
+- `cmd/apsigner`, `cmd/apadmin`, `cmd/apstore`, and local `cmd/apconsole`
+  composition call `lsig/signerreg.RegisterSigner()` plus Ed25519 and native
+  Falcon signer registration.
 - `internal/logicsigdsa.LogicSigDSA` is metadata and derivation only; it does
   not expose `GenerateKeypair` or `Sign`.
 - `internal/lsigprovider.SigningProvider` and `MnemonicProvider` expose
@@ -271,19 +272,19 @@ Compiled provider registration is distinct from default visibility. The
 `internal/keytypecatalog` package records whether a compiled key type is
 default-enabled, library-visible, or disabled. Registered but non-default
 providers remain binary capabilities, but are filtered out of generation
-surfaces until an identity activation layer enables them. Terminology is
+surfaces until the product-store activation layer enables them. Terminology is
 intentional: **registered** means provider code exists in a process-global
 registry; **default-enabled** and **library-visible** are catalog availability
-states; **activated** means an identity has opted into a library-visible
-compiled provider; **installed** means an identity has an encrypted YAML
-template; **enabled** means the key type appears in identity discovery,
+states; **activated** means the product store has opted into a library-visible
+compiled provider; **installed** means the product store has an encrypted YAML
+template; **enabled** means the key type appears in product discovery,
 generation, and import surfaces. See [DEV_KEYTYPES.md](DEV_KEYTYPES.md) for
 the full glossary.
 
 Visibility states recorded by `internal/keytypecatalog`:
 
-- `default_enabled`: visible to every identity
-- `library`: compiled capability exists but needs identity activation
+- `default_enabled`: visible to the product runtime, subject to node-role gates
+- `library`: compiled capability exists but needs product-store enablement
 - `disabled`: compiled in source, not exposed by the owning runtime path
 
 Product-store key type enable/disable metadata is owned by
@@ -291,7 +292,7 @@ Product-store key type enable/disable metadata is owned by
 the selected generation's `keytypes/<key_type>.json` via
 `internal/storepaths.GenPaths.KeyTypeRecord()`. They make compiled
 library-visible providers such as `aplane.falcon1024-cosigner1024.v1` and
-`aplane.ed25519.v1` available to that identity for key type discovery and
+`aplane.ed25519.v1` available to the product runtime for key type discovery and
 generation when `source:"compiled"` and `state:"enabled"`. Mnemonic import is
 gated separately by the provider's explicit mnemonic-import capability.
 Installed YAML templates use the same record with `source:"yaml_generic"` or
@@ -302,13 +303,14 @@ The operator-facing CLI and TUI expose these transitions as `Enable` and
 `Disable`. The stable admin protocol wire messages remain `activate_key_type`
 and `deactivate_key_type`: for compiled providers, enable writes or refreshes
 the compiled state record and disable removes it after verifying that no
-identity key uses that `key_type`; for installed YAML templates, enable sets
+product-store key uses that `key_type`; for installed YAML templates, enable sets
 the record state to enabled and disable verifies the same unused-key guard, then
 sets the record state to disabled without removing the encrypted template.
 Removing
 a YAML template remains destructive and is also blocked while any stored
-identity key depends on that `key_type`. Restoring a key for a library-visible
-compiled provider also creates the same product-store state record idempotently.
+product-store key depends on that `key_type`. Restore preserves credential
+signing authority without creating provider activation records; destination
+generation/discovery enablement remains local configuration.
 
 Deletion archives are product-store. Key deletion moves encrypted key files to
 the selected generation's `deleted/keys/`; template removal moves encrypted
@@ -359,7 +361,7 @@ The key-type source model is:
 | Source | Meaning |
 |---|---|
 | Go-defined compiled provider | Built into the binary and registered at startup |
-| User-loaded YAML | Installed into the identity keystore and registered on reload/unlock if enabled |
+| User-loaded YAML | Installed into the product keystore and registered on reload/unlock if enabled |
 
 "Registered" and "visible for generation" are different concepts.
 For terminology and lifecycle rules, defer to
@@ -526,9 +528,9 @@ That lifecycle is compatibility-sensitive. A template-backed `key_type` cannot
 be redefined in place. Disabling an installed YAML template is a reversible
 state-only hide from future discovery and generation, and removing the encrypted
 installed template archives the template file and deletes its state record. Both
-operations are blocked while identity keys still depend on that `key_type`;
+operations are blocked while product-store keys still depend on that `key_type`;
 compiled-provider disable uses the same unused-key guard because it removes
-the identity's compiled-provider opt-in.
+the product store's compiled-provider opt-in.
 
 ## Security Notes
 

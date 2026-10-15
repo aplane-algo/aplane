@@ -502,9 +502,10 @@ transactions:
   and `destinations`.
 
 Together, `pay`, `pay_close`, `axfer`, `axfer_optin`, `asset_close`, and
-`clawback` are the supported cosigner transfer-movement surface in MVP; a
-target transaction must extract at least one of these movements to be eligible
-for cosigner-role component signing.
+`clawback` are the supported cosigner transfer-movement surface. A target with
+non-zero `RekeyTo` is decided by the separate `reject_rekey`/`rekey_policy`
+path instead of routing; every other target transaction must extract at least
+one of these movements to be eligible for cosigner-role component signing.
 
 For client signing, other transaction types produce no routing movement and
 continue through the remaining policy phases once `transaction_types` allows
@@ -1247,9 +1248,9 @@ and `policy_set_sha256`, a digest over the whole document set.
 a selector). `check_policy` validates candidate documents and removals
 without writing and returns errors and warnings. `apply_policy` requires
 `expected_policy_set_sha256` for optimistic concurrency, validates the
-resulting document set, and commits it as one new generation (operation
-`policy-apply`); the runtime publishes the new policy immediately. An apply
-adds or replaces each listed document (each names its key), deletes the keys
+resulting document set, and, when the resulting set differs from the active
+one, commits it as one new generation (operation `policy-apply`); the runtime
+publishes the new policy immediately. An apply adds or replaces each listed document (each names its key), deletes the keys
 in `remove`, and keeps every other document; `default` can be replaced but
 not removed. Every digest covers exact document bytes. Message payloads are
 in [ARCH_ADMIN.md](ARCH_ADMIN.md#policy-messages); generation behavior is

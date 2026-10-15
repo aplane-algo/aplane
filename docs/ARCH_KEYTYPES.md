@@ -146,7 +146,7 @@ from the presence of a witness key alone.
 | Key type | Account authorization | Contract/profile | Base primitive | Auxiliary authority | Advertised flow and choreography |
 |---|---|---|---|---|---|
 | `ed25519` | Native | none | Ed25519, self-owned | none | empty flow; `/sign` |
-| `falcon1024` | Native PQ | none | protocol Falcon-1024 scheme `f1`, self-owned | none | empty flow; `/sign`; consensus v42+; top-level `PQsig` |
+| `falcon1024` | Native PQ | none | protocol Falcon-1024 scheme `f1`, self-owned | none | empty flow; `/sign`; supported consensus v42; top-level `PQsig` |
 | `aplane.falcon1024.v1` | DSA LogicSig | plain DSA | Falcon-1024, self-owned | none | empty flow; `/sign` |
 | `aplane.falcon1024-allowlist.v1` | DSA LogicSig | bounded `bounded1`; fixed recipient allowlist | `aplane.falcon1024.v1` | none | `bounded1`; spend/rekey through `/sign` as permitted by the profile |
 | `aplane.falcon1024-allowlist-alock.v1` | DSA LogicSig | bounded `bounded1`; fixed recipient/asset/amount allowlist | `aplane.falcon1024.v1` | external Falcon contract admin for rekey | `bounded1`; spend through `/sign`, admin rekey through `/sign/bounded-admin` plus `aprekey` |
@@ -253,7 +253,7 @@ collapsed into one flat key-type hierarchy.
 
 | Type | Account authority | Signer representation |
 |---|---|---|
-| **Native** | A protocol-native account signature: Algorand Ed25519 (`ed25519`) or native Falcon-1024 (`falcon1024`, consensus v42+). | Encrypted signer `.key` with native private material. |
+| **Native** | A protocol-native account signature: Algorand Ed25519 (`ed25519`) or native Falcon-1024 (`falcon1024`, supported consensus v42). | Encrypted signer `.key` with native private material. |
 | **DSA LogicSig** | A LogicSig verifies one or more digital signatures and may enforce additional transaction policy. | Encrypted signer `.key` with DSA private material, compiled bytecode, and signing metadata. |
 | **Generic LogicSig** | TEAL predicates alone authorize the account; there is no DSA private key. | Encrypted signer `.key` containing final bytecode, parameters, derivation metadata, and signing metadata but no private signing material. |
 
@@ -328,7 +328,7 @@ Examples of the composed ontology:
 | Key Type | Key-type family | Category | Description |
 |----------|--------|----------|-------------|
 | `ed25519` | n/a | `ed25519` | Native Algorand Ed25519 account; not a LogicSig |
-| `falcon1024` | n/a | `native_pq` | Native protocol Falcon-1024 account (scheme `f1`, consensus v42+); not a LogicSig |
+| `falcon1024` | n/a | `native_pq` | Native protocol Falcon-1024 account (scheme `f1`, supported consensus v42); not a LogicSig |
 | `aplane.falcon1024.v1` | `aplane.falcon1024` | `dsa_lsig` | Default-enabled pure Falcon signature |
 | `aplane.falcon1024-cosigner1024.v1` | `aplane.falcon1024-cosigner1024` | `dsa_lsig` | Library-visible guarded account: Falcon-1024 user + Falcon-1024 cosigner component signatures |
 | `aplane.falcon1024-allowlist-alock.v1` | `falcon1024-allowlist-alock` | `dsa_lsig` | Optional bounded1 composed template: Falcon spending, fixed recipient/asset/amount allowlist, external Falcon contract-admin rekey |
@@ -570,9 +570,9 @@ composed DSA templates and schema v2 for bounded templates; each version rejects
 the other's shape.
 
 **Restore invariant:** credential backups do not carry template YAML. Restored
-keys retain their durable signing metadata, while any required provider or
-installed product template must already be available on the destination under the
-normal registry and template precedence rules.
+keys retain their durable signing metadata, while any required base signing
+provider must already be available on the destination. Credential restore does
+not require installing or enabling the creation template.
 The key file remains the signing authority: generic v1 signing-metadata keys can
 sign from stored bytecode/runtime args, and DSA v1 signing-metadata keys require
 the stored `base_key_type` signer-side provider rather than the composed
@@ -921,7 +921,9 @@ salt style is not exposed through public wire DTOs.
 
 Schema-v2 composed templates add a composer-owned transaction envelope ahead
 of the author suffix. Authentication remains first; fee/type/effect dispatch
-is second; author Layer 3 is reachable only from the pure-spend branch. The
+is second; author Layer 3 runs on admitted spends and on spending-key rekeys
+only when the profile selects `policy_gate: layer3`; external-admin rekeys skip
+Layer 3. The
 composer owns all `__aplane_bounded1_` labels and the `bounded_` parameter
 namespace.
 

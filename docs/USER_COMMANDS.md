@@ -797,7 +797,7 @@ endpoints add
 endpoints add [<cosigner-url>] [--alias <alias>] [--replace] [--dry-run]
 ```
 
-The URL is `ssh://host:port`, `https://...`, or loopback `http://...`. Without
+The URL must be `ssh://host[:port]`. Without
 one, an interactive shell prompts for it. For an `ssh://` cosigner the port is
 the SSH port; the cosigner's REST port is never given to the client, because
 the cosigner's SSH server forwards every channel to its own listener. `--endpoint <url>` is accepted as an
@@ -875,7 +875,8 @@ are never offered for removal.
 `--dry-run` validates the input and reports the proposed route without writing
 files, changing host trust, requesting enrollment, or contacting the cosigner.
 Script use requires the URL, `--alias` for a new connection, and an already
-trusted SSH host; it may wait for normal cosigner-side enrollment approval.
+trusted SSH host. If enrollment is pending, the command returns so the operator
+can approve later; rerun setup afterwards.
 First-use trust and conflicting replacements require an interactive shell.
 `endpoints add` is not available through MCP; the other `endpoints`
 subcommands are.
@@ -1093,8 +1094,9 @@ endpoints add ssh://cosigner.example:1127
 Approve any **Client Access Request** in apadmin on the cosigner node. Compare the complete client
 SSH key fingerprint shown by apshell with the fingerprint in that request.
 This identifies the client key, not a unique request; concurrent requests using
-the same key have the same fingerprint. The command verifies the
-expected witness before it succeeds. `endpoints discover-cosigners` remains
+the same key have the same fingerprint. The command verifies the node role
+and reports which accounts the advertised witnesses route; trust in a witness
+comes from the public key imported on the signer. `endpoints discover-cosigners` remains
 available as a read-only diagnostic across every configured cosigner route.
 apadmin does not configure or verify client routes.
 
@@ -1153,6 +1155,7 @@ generate <key_type> [param=value ...]
 **Examples:**
 ```
 generate ed25519
+generate falcon1024
 generate aplane.falcon1024.v1
 generate aplane.ed25519.v1                                      # after activating from the KeyType Library
 generate aplane.htlc.v1 hash=SHA256_HEX recipient=ADDR1 refund_address=ADDR2 timeout_round=50000000
@@ -1339,7 +1342,7 @@ js -help
 js
   const recipients = ["bob", "charlie"];
   for (const r of recipients) {
-    send("alice", r, 1.0);
+    send("alice", r, algo(1));
   }
 
 ```
@@ -1359,7 +1362,7 @@ jssave [-f] <filename|/absolute/path.js> -last
 
 **Examples:**
 ```
-jssave rebalance.js let keys = keys(); print(keys)
+jssave rebalance.js const addresses = keys(); print(addresses)
 jssave -f workflow.js -last
 jssave /abs/path/to/exports/workflow.js -last
 ```

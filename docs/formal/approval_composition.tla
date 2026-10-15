@@ -27,7 +27,7 @@ New seam invariants:
     -- the refinement that makes policy_precedence's coarser four-valued
     oracle sound.
   - FailAllProducesNoSignedOutput : a fail-all outcome (disconnect,
-    displacement, lock, or shutdown in production) yields no signed output
+    displacement, or lock in production) yields no signed output
     end to end.
   - HardDenyDominatesCoordinator : an AlwaysDeny match yields no output,
     regardless of the coordinator outcome (I9 with the coordinator in the
@@ -127,7 +127,7 @@ ConsultedOutcomes == {"Approved", "Rejected", "TimedOut", "Canceled", "Failed"}
 
 \* Map a coordinator terminal outcome to the policy approval value. Every
 \* non-approve outcome -- operator reject, timeout, /sign/cancel, and fail-all
-\* (disconnect, displacement, lock, or shutdown) -- maps to a
+\* (disconnect, displacement, or lock) -- maps to a
 \* not-approved value; only Approved maps to "approve". This mapping is the
 \* refinement that makes policy_precedence's four-valued oracle sound.
 CoordToApproval(co) ==

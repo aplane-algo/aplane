@@ -96,8 +96,8 @@ APLANE_INSTALL_ROOT=/path/to/my/aplane ./install.sh
 │   ├── bin/               # apsigner, apadmin, apapprover, apstore, appass, approbe, and other signer-side tools
 │   ├── config.yaml        # Signer config (ports, SSH, algod)
 │   ├── library/           # KeyType Library install sources
-│   │   └── templates/     # Template YAML files for defaults and apstore imports
-│   ├── .ssh/              # SSH host key and process-global authorized_keys
+│   │   └── templates/     # Template YAML install sources for defaults and apadmin
+│   ├── .ssh/              # SSH host key
 │   └── identities/default/ # Keystore (created during install)
 │       ├── store-root.enc
 │       ├── .keystore
@@ -194,7 +194,7 @@ transport interfaces. Unlock the signer pane, then run `request-enrollment` in
 the shell pane. Local `apconsole` probes the live loopback SSH endpoint before
 pinning the local signer's SSH host key into the client `known_hosts` file.
 Approve the request in the signer pane; that enrolls the client's SSH key at
-the signer and the shell immediately attempts to connect.
+the signer. Then run `connect` in the shell pane.
 
 For local cosigner nodes, `apconsole` shows the cosigner admin pane and daemon pane
 only. Unlock the cosigner in that console, then follow
@@ -253,8 +253,9 @@ the cosigner's address. Complete them in this order:
 3. In `apshell`, run `endpoints add <cosigner-url>`. Accept or edit the
    suggested connection name. Compare the full client SSH key fingerprint shown
    by apshell with the **Client Access Request** in cosigner-side apadmin, then
-   approve the request. Apshell confirms the node is a cosigner and reports
-   the keys it advertises and the account's route.
+   approve the request. If enrollment was pending, rerun `endpoints add` after
+   approval. Apshell then confirms the node is a cosigner and reports the keys
+   it advertises and the account's route.
 
 Run `cosigner status` at any time to inspect routes before funding or rekeying.
 It is a point-in-time connection check, not confirmation of transaction policy
@@ -312,8 +313,8 @@ When pointed at an existing path, the installer:
 - If local signer/client ports disagree, the installer warns. Client signer
   routing is edited in `apclient/endpoints.yaml`.
 - A canonical template is written to `config.yaml.aplane-installer.new` for review
-- If an initialized signer keystore already exists, the installer stops and
-  asks you to use a fresh install root
+- An initialized signer keystore is preserved when upgrade checks pass;
+  unsupported installs require a fresh install root
 
 To inspect an environment without changing it, run:
 
@@ -479,8 +480,7 @@ The `request-enrollment` flow enrolls the client's SSH key, which is its only
 credential. It does not enroll a cosigner witness as a guarded-account
 co-authority. For guarded accounts, follow
 [Configure a cosigner for guarded accounts](#configure-a-cosigner-for-guarded-accounts).
-After approval, interactive `apshell` immediately attempts to connect to the
-signer.
+After approval, run `connect` in interactive `apshell`.
 
 **Constraints:** `--client` cannot be combined with `--systemd` or `--bindir`. It must not be run as root.
 
@@ -928,12 +928,14 @@ sudo systemctl enable apsigner
 sudo systemctl start apsigner
 ```
 
-If you skipped Step 5, initialize the keystore before unlocking:
+If you skipped Step 5, stop the service and initialize before unlocking:
 
 ```bash
+sudo systemctl stop apsigner
 sudo apstore -d /var/lib/apsigner initialize
 # For a dedicated cosigner node:
 sudo apstore -d /var/lib/apsigner initialize --role cosigner
+sudo systemctl start apsigner
 apadmin
 ```
 
@@ -1047,7 +1049,8 @@ default rejects foreign rekeys and reviews warning-level findings; the
 cosigner default rejects everything, so a cosigner key signs nothing until it
 is given a file of its own under `policies/` with `apadmin policy apply`.
 `<key>` is a signing address on a signer node and a Witness Key ID on a
-cosigner node. Every policy apply commits a new generation.
+cosigner node. Every policy apply that changes the policy set commits a new
+generation.
 `config.yaml` and `unlock.yaml` are created on first edit through `apadmin` or
 `appass`. `identities/default/.ssh/authorized_keys` is the daemon-owned
 registry of enrolled client SSH keys, and `pending_enrollments.json` beside it
@@ -1140,9 +1143,10 @@ Every service start:
 **Key security properties:**
 
 - The passphrase is encrypted at rest on disk (bound to this machine's TPM2/host key)
-- systemd decrypts it into a tmpfs that only the service process can read
+- systemd decrypts it into a tmpfs that the service process and root can read
 - apsigner runs as an unprivileged user — never needs root
-- The `passphrase.cred` file is useless on any other machine
+- TPM2-bound credentials require the original TPM; host-key-only credentials
+  can be decrypted wherever the matching host key is copied
 
 ---
 
@@ -1174,7 +1178,7 @@ sudo systemctl restart apsigner
 
 ## Migrating to a New Machine
 
-The TPM2-encrypted `passphrase.cred` is bound to the original machine and cannot be decrypted elsewhere. To migrate:
+A `passphrase.cred` encrypted by `systemd-creds` is bound to the original machine (its TPM2 and/or host key) and cannot be decrypted elsewhere, so the passphrase helper must be set up again on the new machine. To migrate:
 
 1. **On the old machine** — create a backup:
    ```bash
@@ -1182,7 +1186,8 @@ The TPM2-encrypted `passphrase.cred` is bound to the original machine and cannot
    apadmin backup export aplane-backup-YYYYMMDD-HHMMSS.tar.gz /mnt/usb
    ```
 
-2. **On the new machine** — install apsigner (Steps 1–4 above), then restore:
+2. **On the new machine** — install apsigner, initialize a fresh destination
+   store, start apsigner, then restore:
    ```bash
    apadmin backup import /mnt/usb/aplane-backup.tar.gz
    apadmin restore preview aplane-backup.tar.gz
@@ -1190,13 +1195,16 @@ The TPM2-encrypted `passphrase.cred` is bound to the original machine and cannot
    ```
 
    `restore apply` authenticates and validates the complete credential set,
-   then commits it in one generation transaction. Credentials immediately use
-   the new machine's current policy and configuration. If the signer enters
+   then commits it in one generation transaction. A restored key brings its own
+   per-key policy if it has one; otherwise the new machine's default policy and
+   configuration govern it. If the signer enters
    recovery mode, use `restore reconcile`, `restore rollback`, or a direct
    repair restore with `--replace-existing` as appropriate.
 
-3. **On the new machine** — if using auto-unlock, create a new machine-bound credential:
+3. **On the new machine** — if using auto-unlock, stop the service and create a
+   new machine-bound credential:
    ```bash
+   sudo systemctl stop apsigner
    sudo appass -d /var/lib/apsigner
    ```
 
@@ -1238,9 +1246,10 @@ every retained path with a one-line label. Security-relevant entries:
   policy authority, and retained history. Treat as sensitive at
   rest; back up before disposing of the host.
 - **`identities/default/passphrase.cred`** -- the keystore passphrase encrypted
-  to this host's TPM2 and/or host key by `systemd-creds`. **Bound to this
-  physical machine.** It is unreadable on a different host, and unreadable on
-  this host if the TPM is reset, the disk is moved, or the host key changes.
+  using TPM2 and/or the host key by `systemd-creds`. TPM2 binding requires the
+  original TPM and its configured state; host-key-only encryption depends on
+  the host key, which can be copied along with the credential. Losing the
+  required TPM state or host key makes the credential unreadable.
   See "Migrating to a New Machine" for the safe relocation path.
 - **`identities/default/store-root.enc`** -- the store's cryptographic root and
   active-generation selector; without it no generation has current authority.

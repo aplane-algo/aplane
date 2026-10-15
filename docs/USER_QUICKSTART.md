@@ -9,7 +9,7 @@ This performs a local APlane install, including both client and signer, at `~/ap
 ```bash
 curl -fsSL https://raw.githubusercontent.com/aplane-algo/aplane/main/bootstrap-install.sh | bash
 ```
-If you are on Linux, you will be asked if you want a local or systemd install. Select "local".
+The bootstrap defaults to a local install; pass `--systemd` only for a managed service install.
 
 The installer will:
 - Download the latest release for your platform
@@ -33,8 +33,10 @@ There is a standalone unified console, apconsole, that gives you a unified view 
 - **`apshell`** — a transaction shell where you build and submit
   transactions
 
-All three of these components can run on completely different machines while working together, but with APlane's `apconsole` we will run all three together on the local machine. It is a convenience wrapper around these three
-that gives you a unified view.
+`apshell` can run on a different machine from the signer. `apadmin` uses local
+IPC on the signer host; remote operators log in to that host. With APlane's
+`apconsole` we will run all three together on the local machine. It is a
+convenience wrapper around these three that gives you a unified view.
 
 ```bash
 ~/aplane/start.sh
@@ -180,8 +182,9 @@ In apshell, run `endpoints add <cosigner-url>`, for example
 `endpoints add ssh://cosigner.example:1127`. Accept the suggested connection
 name, then compare the full client SSH key fingerprint displayed in apshell
 and the **Client Access Request** in cosigner-side apadmin before approving.
-The command configures the client route, obtains access, confirms the node is
-a cosigner, and reports the keys it advertises. With apshell connected to the primary signer, run
+The command configures the client route and requests access; if enrollment is
+pending, approve it and rerun the command. It then confirms the node is a
+cosigner and reports the keys it advertises. With apshell connected to the primary signer, run
 `cosigner status` to inspect the guarded account's current cosigner route before
 funding or rekeying. Route availability does not establish transaction-policy
 or on-chain validity.

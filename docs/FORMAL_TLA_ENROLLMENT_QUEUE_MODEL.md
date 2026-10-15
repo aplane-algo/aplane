@@ -102,7 +102,8 @@ cannot silently stop being load-bearing.
   by `internal/sshtunnel` tests, the caps by
   `internal/sshtunnel/enrollment_bounds_test.go`.
 - The model is safety-only. Operator answers are choices and carry no
-  fairness; a request's only guaranteed exit is `Lapse`.
+  fairness. `Lapse` represents TTL pruning; the safety-only model does not
+  prove eventual exit, and a repeated request refreshes the runtime TTL.
 
 ## How to check
 

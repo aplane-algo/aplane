@@ -186,7 +186,8 @@ Fingerprint authoring rules:
 
 Credential backups do not bundle template YAML. Restored keys retain durable
 signing metadata, and the destination must provide any required signer-side
-provider or installed product template through its normal installation flow.
+base provider through its normal installation flow. The creation template
+is not required for restoring or signing a key with complete durable metadata.
 
 Shipped YAML template sources live under the top-level `library/templates/`
 directory and are installed into the product namespace before use. Source-tree
@@ -352,10 +353,11 @@ Choose exactly one primary category.
 
 Examples:
 - `ed25519`
+- `falcon1024` (native PQ)
 
 Characteristics:
-- native Algorand signature
-- signature goes in `SignedTxn.Sig`
+- native Algorand authorization
+- Ed25519 signature goes in `SignedTxn.Sig`; native Falcon uses `SignedTxn.PQsig`
 - not a LogicSig
 
 Typical code areas:
@@ -511,8 +513,8 @@ Files in the top-level `library/templates/` directory are install sources, not
 active key types by presence alone. Installing one of these YAML entries through
 new signer-store initialization, `apadmin template import`, or the
 authenticated KeyType Library flow writes an encrypted `.template` file and
-adjacent enabled state record under the target identity's `keytypes/`
-directory. Enabled installed templates are registered on that identity's
+adjacent enabled state record under the product store's `keytypes/`
+directory. Enabled installed templates are registered on the product store's
 reload/unlock path.
 
 Disabling an installed YAML template is different from removing it. Disable
@@ -524,12 +526,12 @@ re-enabled later. Remove deletes the state record and moves the encrypted
 Disabling or removing an installed YAML key type must be treated as
 compatibility-sensitive. Disable is a reversible, state-only hide from discovery
 and future generation, while remove archives the encrypted `.template` source
-and deletes the state record. Both operations scan identity keys with the master
+and deletes the state record. Both operations scan product-store keys with the master
 key and reject the operation when the key type is still in use; existing keys
 remain signable from their own stored LogicSig bytecode, off-curve salt
 counter, and signing metadata.
 
-Compiled-provider disable follows the same in-use rule: deleting an identity
+Compiled-provider disable follows the same in-use rule: deleting a key type
 state record is rejected while any key still uses that compiled library-visible
 `key_type`. Default-enabled compiled providers do not have a disable transition.
 
@@ -700,12 +702,12 @@ runtime_args:               # optional
     byte_length: <n>        # 0 = variable length
 
 teal: |
-  #pragma version 10
+  #pragma version 13
   // strict mode: $variable constant references
 ```
 
 Strict variable constants by type. These constant blocks are emitted by the
-APlane renderer alongside any APlane-generated salt anchor; template authors
+APlane renderer before compiler-owned auto-salting; template authors
 should still avoid hand-written constant blocks in TEAL source.
 
 | Type | Input | TEAL Output |
@@ -771,7 +773,7 @@ if len(publicKey) != family.PublicKeySize {
 
 // Require algod client before derivation
 if a.algodClient == nil {
-    return nil, "", fmt.Errorf("algod client not set: configure algod.testnet.server")
+    return nil, "", fmt.Errorf("algod client not set: configure networks.<network>.algod.server and teal_compile_network")
 }
 ```
 
@@ -905,7 +907,7 @@ runtime_args:
     byte_length: 0
 
 teal: |
-  #pragma version 10
+  #pragma version 13
   // Escrow: claim with approval code, or refund after timeout
 
   // Security: Prevent RekeyTo
@@ -1115,7 +1117,7 @@ Examples:
 
 ### TUI / Discovery
 
-- [ ] `go test ./cmd/apadmin/...`
+- [ ] `go test ./cmd/apadmin/... ./internal/signerapp/signertui/...`
 - [ ] ensure default-enabled key types are discoverable without product-store enablement
 - [ ] ensure library-visible compiled providers appear in the KeyType Library and become discoverable after product-store enablement
 - [ ] ensure user-loaded templates appear after installation and runtime reload/unlock, disappear when disabled, and reappear when enabled again

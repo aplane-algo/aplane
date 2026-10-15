@@ -182,11 +182,12 @@ The system enforces a strict security boundary between APlane Shell (client) and
 ```
 
 Remote shell clients connect through an SSH tunnel to the signer HTTP API.
-Local clients may use loopback REST directly or through local console
-composition. In all cases, signer operations use the signer's HTTP/JSON API or
-authenticated admin protocol.
+Local API clients also use an enrolled SSH connection; direct loopback REST
+serves only `/health`. Local console administration uses IPC. In all cases,
+signer operations use the signer's HTTP/JSON API or authenticated admin protocol.
 
-**Key principle**: Signer-managed private keys never leave the signing device.
+**Key principle**: ordinary signing does not return private keys. Explicit
+authenticated backup/export workflows can release encrypted credential artifacts.
 
 ### Layer Responsibilities
 

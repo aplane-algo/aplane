@@ -673,7 +673,7 @@ selects the flow:
 | `presign-plan` | plugin-owned slots **and** APlane-managed slots | canonicalize the group, call the plugin back to sign its slots, sign the managed slots, submit |
 
 A plugin runs as an external process that holds its own keys; it can already build, sign,
-and — unless it is network-sandboxed (`--unshare-net`) — submit its own groups. These
+and submit its own groups (the sandbox always shares the host network). These
 flows therefore add two things, and it is worth being precise about which is which.
 
 **1. A governed submission path (`pregrouped-signed`) — not a new capability.** The plugin
@@ -682,8 +682,7 @@ checks the group is internally consistent and submits it without modification �
 never involved. The plugin could have signed and broadcast these exact bytes itself; what
 APlane adds is governance, not signing power: a **mandatory client-side review** is the
 human-acceptance gate, it **fails closed** when run non-interactively (it will not
-broadcast a group the operator never saw), and for a network-sandboxed plugin APlane is
-also the only path to algod.
+broadcast a group the operator never saw).
 
 **2. Co-signing with managed accounts (`presign-plan`) — the one genuinely new capability.**
 Only apsigner can produce a signature for an apsigner-held account, so atomically combining
@@ -766,8 +765,8 @@ A plugin could always compose groups with keys held anywhere — its own LogicSi
 key, an MPC quorum, a counterparty's signature — and submit them itself. What these flows
 add is narrower and more precise: the ability to **atomically include apsigner's
 managed-key signatures in such a group, under apsigner's policy and approval**, plus a
-**uniform operator conduit** — honest review, approval, audit, and (when the plugin is
-network-sandboxed) the only egress — over plugin-built groups, including ones APlane never
+**uniform operator conduit** — honest review, approval, and audit — over plugin-built
+groups, including ones APlane never
 signs. That is a general extension point, not a one-off; it is the substrate for whole
 classes of plugin:
 

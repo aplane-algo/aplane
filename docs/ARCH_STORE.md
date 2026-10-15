@@ -74,9 +74,9 @@ routing, client enrollment, or approval prompts.
 
 The generation boundary includes all mutable state whose confidentiality or
 integrity depends on a keyring term. Process and product configuration,
-unlock helpers, SSH state including the enrolled-client registry, cosigner
-references, backups, the plaintext template library, and the root node-role
-document are not generational.
+unlock helpers, SSH state including the enrolled-client registry and pending
+enrollment queue, cosigner references, backups, the plaintext template
+library, and the root node-role document are not generational.
 
 `quarantine/` is non-authoritative. Normal resolution, signing, historical
 reads, successor construction, and rollback never search it.
@@ -523,10 +523,11 @@ they are immutable except for explicit generation pruning.
 ### Ordinary generation commit
 
 Credential restore, restore rollback reconstruction, initialization, rebuild,
-passphrase change, and policy apply mint generations. Every policy apply or
-removal, online or rescue, mints one generation with operation `policy-apply`
-(`internal/signerapp/policyapply`), so each committed apply leaves a retained
-generation until explicit generation pruning. Ordinary key mutations do not
+passphrase change, and policy apply mint generations. A policy apply or
+removal that changes the policy set, online or rescue, mints one generation
+with operation `policy-apply` (`internal/signerapp/policyapply`), so each
+committed apply leaves a retained generation until explicit generation
+pruning; an unchanged policy set mints nothing. Ordinary key mutations do not
 mint.
 
 The commit order is:
@@ -734,7 +735,7 @@ generation prune as an invariant violation.
 
 This document describes durable key and key type states that affect:
 
-- whether an identity can discover or generate a key type,
+- whether the product store can discover or generate a key type,
 - whether an existing key can sign,
 - what restore preview/apply/rollback/reconcile may write,
 - how disabled or conflicting key type records behave,
@@ -782,7 +783,7 @@ This separation is deliberate:
 | Deleted template archive | selected generation `deleted/keytypes/` | Removed template files; outside active scans. |
 | Signer library template | `library/templates/<key_type>.yaml` | Install source only; not active by itself. New signer-role stores install the bundled Falcon allowlist v1 source during initialization; other entries require product-store import/enablement. |
 | Compiled provider | Go provider registry and key type catalog | Binary capability; product-store visibility may be default-enabled or opt-in. |
-| Backup payload | `.apb` inside managed backup archive | Encrypted credential unit containing key material and durable signing metadata; template YAML is not included. |
+| Backup payload | `.apb` inside managed backup archive | Encrypted credential unit containing key material and durable signing metadata; an archive also carries each key's own per-key policy document as a separate `.apb`. Template YAML is not included. |
 
 Witness public sidecars are derived public metadata, not independent signing
 authority. They exist so `apadmin cosigner export` can work without
@@ -1168,7 +1169,7 @@ key is rejected during reload rather than published as a signable key.
 | Backup create | Active key files are selected. | Write encrypted `.apb` payloads in managed backup archive and include source node role metadata in the archive manifest. | Source key files remain unchanged. |
 | Restore preview | Managed archive and passphrase are valid. | Authenticate and inspect complete credential payloads without mutation. | Reports addresses, key types, destination presence, errors, and role mismatches. |
 | Restore apply | Every selected credential validates and replacement conflicts are explicitly accepted. | Mint one generation containing credential changes and restored keys' archived per-key policies only, replace `store-root.enc` once, then reload. | All selected credentials become active together; a definite pre-rename failure leaves the parent active. Visible-but-unconfirmed publication or reload failure enters recovery mode without fabricating rollback authority. |
-| Restore rollback | Current generation is exactly a clean, rollback-eligible `credential-restore`. | Reconstruct the sealed parent into a fresh current-term rollback generation. | Restores the pre-restore credential state without repointing at historical ciphertext; rollback generations are not rollback-eligible. |
+| Restore rollback | Current generation is exactly a clean, rollback-eligible `credential-restore`. | Reconstruct the sealed parent into a fresh current-term rollback generation. | Restores the pre-restore credentials, key-type state, and per-key policies while keeping the outgoing `default.json`, without repointing at historical ciphertext; rollback generations are not rollback-eligible. |
 | Unlock/reload | The store root is open and its selected generation is bound. | Verify node role integrity, register enabled templates, scan key files, validate the scanned inventory against role, publish runtime indexes. | Valid active keys become signable; rejected files and content defects fail reload into recovery; role conflicts also fail closed. |
 | Repair template provenance | Template/provider state is reinstalled or re-enabled. | No key-file rewrite required unless explicitly restoring missing provenance. | Inventory warnings may clear; signing behavior is unchanged. |
 
@@ -1492,8 +1493,9 @@ rebuilds the signer's memory of released transactions at unlock (see the
 ### Backup and restore matrix
 
 This matrix describes restoring a template-backed or library-visible key.
-Credential backups do not carry template YAML; native default-enabled keys
-follow the direct key restore path.
+Credential backups carry each key's own per-key policy when present, but no
+`default.json` or template YAML; native default-enabled keys follow the direct
+key restore path.
 
 Backup manifests carry the source node role going forward. Restore validates
 payload key classes against the destination node's role; it does not change the
@@ -1501,13 +1503,13 @@ destination role. Rebuild uses the authenticated manifest role as the default:
 `apstore rebuild --role signer|cosigner` overrides it, while omitted `--role`
 uses the authenticated manifest source role, which every valid archive carries.
 
-| Destination key type state | Key restore | Template/provider restore | Generation after restore |
+| Destination key type state | Key restore | Template/provider restore | New-key generation after restore |
 |---|---|---|---|
 | Destination node role forbids key class | Fails or is rejected before publishing active inventory. | No template/provider state should be installed for the forbidden class. | No on this node. |
 | Key type unsupported by binary | Fails if the key needs that provider or base provider. | Cannot install a runtime provider not supported by the binary. | No. |
 | Key type missing locally | Succeeds when the credential has complete current-format signing metadata, any needed base provider is supported, and node role allows it. | Restore does not install templates or create key-type state. | No. |
 | Key type imported/installed but disabled | Credential restore does not require enabling the template to sign. | Destination template state remains disabled. | No. |
-| Key type enabled and fingerprint consistent | Normal path. | Destination template/provider state remains unchanged. | No. |
+| Key type enabled and fingerprint consistent | Normal path. | Destination template/provider state remains unchanged. | Yes. |
 | Key type enabled but fingerprint inconsistent | Credential may still restore and sign from stored metadata. | Restore does not reconcile or overwrite destination template state. | No. |
 | Backup has no template | Current-format key restore succeeds from stored key metadata when any required base provider is compiled in. | No template is part of a credential backup. | Destination state is unchanged. |
 | Key already exists and is canonically identical | Idempotent no-op. | No template/provider effect. | Existing destination state remains authoritative. |
@@ -1525,8 +1527,8 @@ Until the table reaches the live stage, signing refuses with
 Unlock/reload publishes a new runtime snapshot only after validation succeeds.
 The relevant order is:
 
-1. open or reuse the identity keyring,
-2. load root `node.yaml` and verify the identity's `node.yaml.hmac`,
+1. open or reuse the product store keyring,
+2. load root `node.yaml` and verify the product store's `node.yaml.hmac`,
 3. load and validate product runtime config and the policy documents for the
    node role (`default.json` and every `policies/<selector>.json`),
 4. apply node role to key type discovery and service dispatch,

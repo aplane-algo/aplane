@@ -330,8 +330,10 @@ applies the change against the `policy_set_sha256` it read at the start, so the
 signer rejects the change if the active policy changed in the meantime. On
 success the signer writes the exact submitted bytes plus fresh sidecars as a
 new store generation and activates the resulting runtime policy immediately;
-`apply` prints the new generation ID and `policy_set_sha256`. Each apply leaves
-a retained generation until explicit generation pruning; see
+`apply` prints the new generation ID and `policy_set_sha256`. An apply that
+would leave the policy set unchanged prints `policy unchanged` and writes no
+generation. Each apply that changes the set leaves a retained generation until
+explicit generation pruning; see
 [USER_STORE_MGMT.md](USER_STORE_MGMT.md).
 
 "Immediately" means for requests that arrive after the apply. A request is
@@ -984,7 +986,7 @@ Before relying on a policy:
 
 | Symptom | Likely cause |
 |---------|--------------|
-| Edited policy has no effect | The file was checked but not applied, or a hand-placed document was signed while the signer was running and it has not restarted since. |
+| Edited policy has no effect | The file was checked but not applied, or a document repaired in a stopped store has not been loaded by a successful signer start, reload, or unlock. |
 | A change to the default has no effect on one key | The key has a policy of its own; `apadmin policy status` shows it as `own policy`. Edit that file, or `remove` it so the key follows the default. |
 | Signer refuses to load policy | A sidecar is missing or does not match its document, a document does not decode, or the generation has no `default.json`. |
 | `apply` fails with `policy_snapshot_changed` | The active policy changed after `apply` read it; check the current state with `apadmin policy status` and apply again. |

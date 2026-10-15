@@ -48,7 +48,8 @@ Envelope(P) = PureSpend(P) union enabled AdminOperation(P, kind)
 
 Accepted(P) =
   {tx in PureSpend(P) where SpendingPolicy(tx)}
-  union enabled AdminOperation(P, kind)
+  union {tx in enabled AdminOperation(P, kind)
+         where operation authentication and its declared policy gate pass}
 ```
 
 The guaranteed containment property is `Accepted(P) subset-of Envelope(P)`.
@@ -80,8 +81,8 @@ is a complete value-spending policy.
 | Admin endpoint | `POST /sign/bounded-admin` |
 | Bundled composed templates | five schema-v2 profiles listed below |
 
-`bounded1` is an administrative custody operation, not a send-flow variant.
-It is intentionally packaged through the separate `aprekey` binary and the
+Contract-admin rekey is an administrative custody operation. It is
+intentionally packaged through the separate `aprekey` binary and the
 typed `/sign/bounded-admin` partial-signing endpoint. Apshell's ordinary send
 path does not select or complete contract-admin operations.
 

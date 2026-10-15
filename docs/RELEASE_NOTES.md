@@ -1,5 +1,10 @@
 # Release Notes
 
+Entries are newest first and include pre-release development history. Older
+token, setup-file, and protocol-v5 entries describe behavior superseded by the
+enrolled-key model and current admin protocol v6.0; they are not current setup
+instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
+
 ## Per-key signer policy
 
 Policy is now one document per key with a node default behind it, laid out

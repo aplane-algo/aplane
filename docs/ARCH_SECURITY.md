@@ -778,6 +778,7 @@ The one product store owns signer state:
 - keystore metadata
 - product runtime config
 - enrolled client registry (`.ssh/authorized_keys`)
+- pending enrollment queue (`.ssh/pending_enrollments.json`)
 - approval coordinator
 - runtime lock/unlock state
 - watcher and reload ownership
@@ -825,7 +826,8 @@ mode: product_single
 admin principal: system:product-admin
 client principals: client:<fingerprint>, role client
 authorization source: closed action allowlists (product admin, client role)
-identity/principal/group/grant management UI: enrolled-client list and revocation only
+identity/principal/group/grant management: no mutable management graph
+client enrollment UI: pending/enrolled lists, approve, reject, import, revoke
 ```
 
 The authorization path is:
@@ -835,7 +837,7 @@ credential
   -> authenticated product session or tunneled API connection
   -> system:product-admin, or client:<fingerprint> with role client
   -> explicit ProductAllowedActions or ClientAllowedActions membership
-  -> concrete resource type and optional resource ID
+     (resource type and ID are recorded for attribution only)
 ```
 
 Important implications:
@@ -902,8 +904,9 @@ not by a signer-side activity grant.
 #### No Remote Admin Transport
 
 The admin protocol is carried only over the local IPC socket. SSH carries
-port forwarding to the HTTP API and `request-enrollment` bootstrap; it refuses
-session channels, so no admin subsystem is reachable over SSH. Remote
+API port forwarding and `request-enrollment` bootstrap. API-authenticated
+connections refuse session channels; enrollment connections accept only the
+enrollment exec flow, so no admin subsystem is reachable over SSH. Remote
 administration means logging in to the signer host and running `apadmin`
 there.
 
@@ -968,8 +971,11 @@ these conditions hold:
   whose role is `client`;
 - the action is in the closed known-action vocabulary;
 - the action is independently present in the allowlist for that principal
-  kind; and
-- the callsite supplies a concrete resource type and, where applicable, ID.
+  kind.
+
+Callsites supply a concrete resource type and, where applicable, ID for target
+attribution and audit. The current product authorizer decides on principal,
+role, and action membership; it does not match resource-specific grants.
 
 Adding a known action does not add it to the product allowlist. This preserves
 a deliberate review point for new sensitive operations. There is no runtime
@@ -997,8 +1003,9 @@ Enforced callsites:
   template list/install/remove, policy view/update, settings view/update,
   signer-managed backup creation/list, credential restore preview/apply,
   restore rollback/reconciliation,
-  passphrase rotation, signing approval response, client enrollment response,
-  enrolled-key listing, key revocation, cosigner-reference view/manage,
+  passphrase rotation, signing approval response, queued-enrollment
+  approve/reject, public client-key import, pending/enrolled-key listing,
+  key revocation, cosigner-reference view/manage,
   generation inspection, quarantine prune, abandoned-generation discard, and
   deleted-archive prune through `s.authorize`. `lock_identity` is gated with
   `authorizeIdentity` for `identity.lock`.
@@ -1120,7 +1127,7 @@ type Resource struct {
 ```
 
 **Implementation:**
-- `internal/authz.ProductAuthorizer` - exact principal, action-allowlist, and product-resource checks with no mutable principal/group/grant graph
+- `internal/authz.ProductAuthorizer` - exact principal/role and action-allowlist checks with no mutable principal/group/grant graph; resource fields are call-site attribution, not a resource-grant condition
 - `authz.NewProductSingleAuthorizer()` - maps product credentials to the reserved `system:product-admin` principal and a copied explicit action allowlist
 
 See [Action Vocabulary](#action-vocabulary), [Principal](#principal),
@@ -1464,7 +1471,8 @@ barrier uses): the passphrase unwraps a stored key rather than becoming one.
 
 **Benefits:**
 - Single Argon2id derivation at unlock time instead of per-file
-- O(1) unlock regardless of number of keys
+- One KDF operation to open the keyring; full unlock also validates and scans
+  the selected generation, so its cost grows with store contents
 - Term keys held in signer memory during session and covered by process memory
   locking when that protection is enabled successfully
 - The KEK never outlives the unwrap, so a memory disclosure yields term keys but
@@ -1533,7 +1541,9 @@ require root, `CAP_IPC_LOCK`, or a raised `RLIMIT_MEMLOCK`.
 
 Set `require_memory_protection: true` in production environments where key security is critical. The server will refuse to start without full memory protection.
 
-**Note:** apshell does not require memory protection because it never handles private keys directly—it only constructs transactions and sends them to apsigner for signing.
+**Note:** apshell keeps account signing authority on apsigner, but it does handle
+its client SSH authentication key. External plugins may also hold their own
+private signing material in their own plugin processes.
 
 ### Term Key Lifecycle and Concurrency
 

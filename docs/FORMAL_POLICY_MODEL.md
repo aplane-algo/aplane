@@ -236,7 +236,9 @@ otherwise auto-approve. Current review sources include:
   `transaction_type:<type>`), evaluated first,
 - `always_review_warnings`,
 - network- and asset-scoped `limits` `review_above` thresholds,
-- transfer routing `on_no_route: review` and `review_above` thresholds.
+- transfer routing `on_no_route: review` and `review_above` thresholds,
+- bounded administrative operations, which always require review (rule id
+  `bounded_admin_operation_requires_review`).
 
 Warnings are displayed even when they do not force review.
 

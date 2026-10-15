@@ -994,11 +994,14 @@ requests := []signerapi.SignRequest{
 // Send to server
 resp, err := signerClient.RequestGroupSign(requests)
 
-// Decode and submit
+// After checking the response, decode every nonempty slot and submit the group once.
+var groupBytes []byte
 for _, hexStr := range resp.Signed {
-    signedBytes, _ := hex.DecodeString(hexStr)
-    algodClient.SendRawTransaction(signedBytes)
+    signedBytes, err := hex.DecodeString(hexStr)
+    if err != nil || len(signedBytes) == 0 { /* abort incomplete/invalid group */ }
+    groupBytes = append(groupBytes, signedBytes...)
 }
+_, err = algodClient.SendRawTransaction(groupBytes).Do(ctx)
 ```
 
 ---
@@ -1014,7 +1017,8 @@ The server looks up the key type for `auth_address` and derives the message to s
 | `aplane.falcon1024.v1` (or other DSA) | 32-byte transaction ID | LogicSig DSA schemes sign the transaction ID |
 | `aplane.htlc.v1` (or other generic) | N/A (no signing) | Generic LogicSigs don't need signatures |
 
-This design achieves **true client key-type agnosticism**: clients never need to know what type of key they're using or how to format messages for signing.
+This design achieves **true client key-type agnosticism**: clients send transaction bytes rather than cryptographic signing preimages.
+They still route on advertised signing flows and resource metadata.
 
 ---
 
@@ -1022,13 +1026,15 @@ This design achieves **true client key-type agnosticism**: clients never need to
 
 For inventory rows with `signing_flow: bounded-cosigner1`, the client must:
 
-1. call `POST /sign/component` with `kind:"bounded-base"` on the user signer, which validates the
+1. call `POST /plan` to freeze canonical bytes, dummies, fees, and group ID;
+2. call `POST /sign/component` with `kind:"bounded-base"` on the user signer, which validates the
    group and applies signer policy/operator approval before returning base args
    and the assembly receipt;
-2. request the cosigner-role signature over those exact finalized bytes with
+3. finish any ordinary signer slots through `/sign`, then request the
+   cosigner-role signature over those exact finalized bytes with
    `POST /sign/component`;
-3. call `POST /sign/assemble` on the user signer with both components;
-4. submit or simulate the exact returned signed group.
+4. call `POST /sign/assemble` on the user signer with both components;
+5. submit or simulate the exact returned signed group.
 
 Ordinary `/sign` rejects these spends. Contract-admin rekey remains a separate
 flow and never contacts the cosigner.
@@ -1065,7 +1071,7 @@ ceremony path splits them across `prepare-rekey`/`prepare-unrekey`, offline
 |--------|---------|--------------------|--------------|------------------|
 | **What server signs** | Full txn bytes | Full txn bytes | 32-byte transaction ID | N/A |
 | **Signature size** | 64 bytes | variable, at most 1,538 bytes | variable, at most 1,423 bytes (Falcon) | N/A |
-| **Needs dummies** | No | No (adds native-PQ fee units) | Yes (if sig > 1000 bytes) | No |
+| **Needs dummies** | No | No (adds native-PQ fee units) | According to pooled argument/opcode resources | According to pooled argument/opcode resources |
 | **Runtime args** | No | No | Optional for composed DSA | Optional |
 | **Authorization** | Signature verification | Protocol verifies `PQsig` | TEAL verifies sig | TEAL logic only |
 
@@ -1632,7 +1638,7 @@ stored provenance was available. These fields do not change `/sign` behavior.
 - `protocol_version`: signer HTTP API protocol version `{major, minor}`; this
   is diagnostic surfacing, not capability negotiation
 - `build_version`: apsigner build string for skew diagnosis
-- `state`: lock state (`locked`, `unlocked`, `recovery`, or `unknown`)
+- `state`: runtime state (`locked`, `unlocked`, `recovery`, or `unknown`)
 - `signer_locked`
 - `ready_for_signing`
 - `key_count`: number of loaded keys
@@ -1675,9 +1681,9 @@ has populated signer-side signing, keygen, mnemonic, or key-processor registries
 Client/signer provider-boundary refactors must preserve this schema and field
 meaning. The `family` field carries the middle segment of the canonical
 `publisher.family.vN` identifier and is intended for display and grouping;
-the canonical `key_type` is what clients send back on subsequent requests and
-what they should consult to decide which signing provider a composed template
-uses.
+the canonical `key_type` is what clients send back on subsequent requests.
+Clients route signing by the advertised `signing_flow`; server registries and
+stored metadata resolve the provider and any composed template's base primitive.
 For a bounded profile with `authorization: admin_key`, creation metadata includes
 the framework-injected scalar `bounded_admin_public_key` (`type:"bytes"`). It
 accepts the 1,793-byte Falcon-1024 public key from an external

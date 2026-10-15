@@ -36,7 +36,7 @@ enforcement, store serialization, and audit emission.
 
 > Compatibility-bearing wire shapes for the apsigner admin RPC carried over local IPC.
 > For overall compatibility scope, see [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md).
-> For the principal/grant authorization model that gates these messages, see [ARCH_SECURITY.md](ARCH_SECURITY.md#authorization).
+> For the principal/action authorization model that gates these messages, see [ARCH_SECURITY.md](ARCH_SECURITY.md#authorization).
 
 This contract is consumed by `apadmin` (TUI, batch commands, and test mode), `apapprover`, and any other process that drives signer administration over the admin transport. It documents the envelope, transport handshake, message catalog, payload shapes, writable settings, lock semantics, error codes, and per-client capabilities.
 
@@ -66,7 +66,7 @@ without a passphrase-authenticated session, only over local IPC, and then ends
 the bootstrap exchange. `initialize_store` is not part of the authenticated
 dispatch table: after auth it is rejected as `unknown_message_type`.
 
-Admin sessions bind directly to the one product runtime. The v5 auth shape has
+Admin sessions bind directly to the one product runtime. The auth shape has
 no runtime selector. Strict known-field decoding rejects unknown fields before
 passphrase verification or runtime work.
 
@@ -356,7 +356,8 @@ notifications, fail pending approvals, or trigger disconnect cleanup. The server
 `get_admin_settings`, cosigner-reference list/get/public-export, generation
 inventory, and enrolled-client inventory (`list_enrolled_keys`,
 `list_pending_enrollments`) requests; those requests still pass through their
-ordinary grant checks and locked/unlocked/recovery-state interlocks.
+ordinary principal/action authorization checks and locked/unlocked/recovery-state
+interlocks.
 
 #### Key Management
 
@@ -384,7 +385,7 @@ ordinary grant checks and locked/unlocked/recovery-state interlocks.
 #### Key Type Templates
 
 - `list_library_templates` -> `library_templates`: `templates[]`, optional `code`, `error`; each template has optional `key_type`, `template_type`, `display_name`, `description`, `source_path`, `file_name`, `parameters[]`, `runtime_args[]`, plus `installed`, optional `enabled`, optional `conflict`, optional `invalid`. In this catalog response, `runtime_args[]` is live template metadata for keys created in the future; key-file and `/keys` `signing_args[]` is the durable signing-argument schema captured when an existing key was created.
-- `show_library_template`: `key_type`, `template_type` -> `show_library_template_result`: `success`, optional `key_type`, `template_type`, `source_path`, `source_sha256`, `source_mtime`, `template_yaml`, `code`, `error`; available to any authenticated controlling (non-`auth_only`) session with an unlocked runtime and the `templates.view` grant; it needs no stronger grant because it returns plaintext reference library YAML, not decrypted installed-template source. `source_sha256` is the exact-byte SHA-256 of `template_yaml`; `source_mtime` is the source file's Unix modification time and is informational rather than tamper-proof.
+- `show_library_template`: `key_type`, `template_type` -> `show_library_template_result`: `success`, optional `key_type`, `template_type`, `source_path`, `source_sha256`, `source_mtime`, `template_yaml`, `code`, `error`; available to any authenticated controlling (non-`auth_only`) session with an unlocked runtime and the `templates.view` action; it needs no stronger action because it returns plaintext reference library YAML, not decrypted installed-template source. `source_sha256` is the exact-byte SHA-256 of `template_yaml`; `source_mtime` is the source file's Unix modification time and is informational rather than tamper-proof.
 - `install_library_template`: `key_type`, `template_type` -> `install_library_template_result`: `success`, optional `key_type`, `template_type`, `already_exists`, `code`, `error`
 - `list_installed_templates` -> `installed_templates`: `templates[]`, optional `code`, `error`; each template has `key_type`, `template_type`, optional `size`, and `enabled`
 - `show_installed_template`: `key_type` -> `show_installed_template_result`: `success`, optional `key_type`, `template_type`, sensitive `template_yaml`, `code`, `error`; available through authenticated IPC admin sessions
@@ -400,7 +401,7 @@ ordinary grant checks and locked/unlocked/recovery-state interlocks.
 - `sign_request_canceled`: optional `reason`; server-originated notification that a delivered `sign_request` is no longer actionable. Reasons are `client_canceled` and `timeout`. Admin clients must remove a matching active or queued signing prompt and must not send a later `sign_response` for that request.
 - `sign_response`: `approved`, optional `reason`; server-side handling attaches the admin session's approver principal for audit attribution
 - `client_enrollment_request`: `ssh_fingerprint`, optional `label`, `remote_addr`, `timestamp`; a client asked over SSH (`request-enrollment` username, `enroll [<label>]` command) to have its key enrolled, and the request now waits in the signer's queue. Its ID is `enroll-<fingerprint>`. It is sent when a new request is queued and, for every request still waiting, when an admin session authenticates, so a client may see the same request announced more than once. The label is the client's requested display text, bounded and printable, and carries no authority. The admin client answers with `approve_enrollment` or `reject_enrollment` by fingerprint; there is no response to this notification itself, and the SSH client is not waiting on it.
-- `enrollment_changed`: `reason`, optional `fingerprint`; server-originated notification that what `list_pending_enrollments` or `list_enrolled_keys` would return has changed, whatever made the change: a request arriving over SSH, an answer or import from this admin session or from another admin client, or an enrolled key's client connection opening or closing (the `connected` flag). `reason` is one of `requested`, `approved`, `rejected`, `imported`, `revoked`, `revoked_all`, `connected`, `disconnected`; `fingerprint` names the key concerned and is absent for `revoked_all`. It is sent once the change has taken effect in the live state, before the result of the request that made it, and is sent even when the write behind the change is not yet durable (the result reports that). A refused change, or one that changed nothing (a repeat request, an import of an enrolled key), is not announced, and neither is an enrollment-request connection, whose request is announced instead. It carries no list: an admin client showing the queue or the registry re-fetches it with `list_pending_enrollments` and `list_enrolled_keys`. There is no response to this notification.
+- `enrollment_changed`: `reason`, optional `fingerprint`; server-originated notification that what `list_pending_enrollments` or `list_enrolled_keys` would return has changed, whatever made the change: a request arriving over SSH, an answer or import from this admin session or from another admin client, or an enrolled key's client connection opening or closing (the `connected` flag). `reason` is one of `requested`, `approved`, `rejected`, `imported`, `revoked`, `revoked_all`, `connected`, `disconnected`; `fingerprint` names the key concerned and is absent for `revoked_all`. It is sent once the change has taken effect in the live state, before the result of the request that made it, and is sent even when the write behind the change is not yet durable (the result reports that). A repeat request refreshes the waiting entry's label, address, and time, and an approval or import that only clears the request of a key already enrolled (the retry after a failed queue write) changes the queue, so both are announced. A refused operation, or one that changed nothing (an import of an enrolled key with no request waiting), is not announced, and neither is an enrollment-request connection, whose request is announced instead. It carries no list: an admin client showing the queue or the registry re-fetches it with `list_pending_enrollments` and `list_enrolled_keys`. There is no response to this notification.
 - `list_pending_enrollments` -> `pending_enrollments_list`: `requests[]`, oldest first, each with `fingerprint`, optional `label`, `key_type`, optional `remote_addr`, and `requested_at` (Unix seconds)
 - `approve_enrollment`: `fingerprint`, optional `label` -> `approve_enrollment_result`: `success`, optional `code`, `error`, `fingerprint`, `label`; enrolls the waiting request's key in `identities/default/.ssh/authorized_keys` with the request's label (or `label`, which replaces it), removes the request, and audits `CLIENT_ENROLLED` with the admin session's attribution. No credential is issued, because the client's key is its credential. A fingerprint with no waiting request, or a `label` that is not printable single-line text of at most 64 bytes, fails with `code:"invalid_request"`. A registry write that took effect but is not yet durable still clears the request and audits the enrollment; the result then carries the durability failure.
 - `reject_enrollment`: `fingerprint` -> `reject_enrollment_result`: `success`, optional `code`, `error`, `fingerprint`; removes the waiting request without enrolling its key and audits `CLIENT_ENROLLMENT_REJECTED`. A fingerprint with no waiting request fails with `code:"invalid_request"`, as does a request whose key is already enrolled (an approval that enrolled the key but could not clear its request): approving again clears it, or the key is revoked.
@@ -597,8 +598,10 @@ audit before mutation.
 Deleted-archive inspection requires `generations.view`. Live archive pruning
 requires `identity.archive.prune`, an unlocked or recovery-admin runtime,
 explicit confirmation, and a durable audit intent written before any removal.
-Only selected-generation `deleted/keys/` and `deleted/keytypes/` canonical paths
-are accepted; arbitrary filesystem paths are not an admin-protocol surface.
+Only selected-generation `deleted/keys/`, `deleted/keytypes/`, and
+`deleted/policies/` canonical paths are accepted. An archived policy document
+and its `.hmac` sidecar must be selected together; arbitrary filesystem paths
+are not an admin-protocol surface.
 
 ### Writable Settings
 
@@ -777,12 +780,14 @@ overflows. Views with an existing purpose-built list, editor, or approval
 viewport retain that viewport so nested scroll handlers do not compete.
 
 Signing and client-enrollment approval popups stay in front of every other
-screen until the operator answers them or apsigner withdraws the request.
+screen until the operator answers, apsigner withdraws the request, or the
+operator defers an enrollment popup with Esc.
 Results that arrive meanwhile update the screen underneath, and answering or a
 withdrawal returns to that screen; a second pending approval shows next.
-apsigner rejects every pending approval when the admin session ends or the
-signer locks, so disconnect, reconnect, reauthentication, displacement, and lock
-drop them from the TUI as well.
+apsigner rejects pending signing approvals when the admin session ends or the
+signer locks. Disconnect, reconnect, reauthentication, displacement, and lock
+clear local popups too; persisted enrollment requests remain queued and are
+announced again on a later login.
 
 Each in-progress generate, import, delete, key-type install, or backup records
 its request ID. An untyped failure (an authorization denial, a send error, or a
@@ -825,8 +830,9 @@ identifies the current screen. The enum has families for:
   login is shown once. `Esc` on the popup defers the request rather than
   rejecting it: nothing is sent, the request stays in the signer's queue and
   on the Enrolled Clients screen, the next waiting request takes the popup,
-  and a later announcement (the next login, or the client asking again)
-  shows it again. `Esc` on the signing popup still rejects, since a signing
+  and a later announcement at the next login shows it again. A repeated client
+  request refreshes the queued entry (announced as `enrollment_changed`, which
+  updates the Enrolled Clients lists) but does not raise the popup again. `Esc` on the signing popup still rejects, since a signing
   client is waiting on the answer
 - Generate / import flows (form, params, loading, display)
 - Signer-side public cosigner-reference management (`ViewCosignerReferences`,

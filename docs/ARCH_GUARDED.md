@@ -323,7 +323,10 @@ chosen endpoint:
    or a failed read stops setup. Sweeps and signing do not check the role;
    setup does because an endpoint-only handoff carries nothing else that
    distinguishes a cosigner from a signer.
-2. **Routes.** It runs the signing resolver's bounded sweep and reports the
+2. **Inventory.** It validates the `/keys` witness metadata and reports the
+   advertised key count. Guided setup takes a URL, not a witness document, so
+   there is no input key to compare.
+3. **Routes.** It runs the signing resolver's bounded sweep and reports the
    result in the resolver's own classifications. An endpoint that was tried and
    failed is ignored by routing, so routes through answering endpoints stand
    but are qualified. A sweep that stopped early (an SSH host-key mismatch, or
@@ -331,7 +334,8 @@ chosen endpoint:
    is reported as a mismatch and the remaining ones as never contacted.
 
 Setup fails only for the connection being added: no access, a node that is not
-a cosigner, or a witness that this endpoint and another both advertise. The state of other endpoints, and of
+a cosigner, invalid endpoint inventory, or a witness that this endpoint and
+another both advertise. The state of other endpoints, and of
 accounts that need other cosigners, is reported without failing it.
 
 Reference aliases are security-bearing generation inputs: resolving
@@ -764,8 +768,9 @@ Cosigner failures are fail-closed:
 - there is no client-declared simulate mode on any signer endpoint; simulation
   follows the ordinary approval path,
 - locked or unreachable cosigner endpoints cannot produce component signatures,
-- endpoint authentication or host-trust failures block routing,
-- malformed or duplicate live cosigner inventory fails the operation,
+- failed endpoint authentication, trust, or inventory validation contributes
+  no route from that endpoint,
+- duplicate usable live routes for a required witness fail the operation,
 - deleted cosigner keys stop being advertised by `/keys` and guarded signing
   fails before cosigner signing,
 - missing cosigner signatures fail assembly,
@@ -774,10 +779,13 @@ Cosigner failures are fail-closed:
   without the embedded cosigner private key,
 - unsupported cosigner policy outcomes fail closed.
 
-Unavailable or locked endpoints may be skipped only when the remaining live
-results resolve every required key. Authentication failures, malformed
-records, duplicate public keys, configuration errors, and SSH host-key
-mismatches fail closed.
+An endpoint that failed its probe may be skipped only when the completed
+sweep's remaining usable inventory uniquely resolves every required key;
+the failure is reported. This includes unavailable/locked endpoints and
+endpoint-specific authentication, configuration, or metadata failures.
+An SSH host-key mismatch aborts the whole sweep. Caller cancellation,
+incomplete sweeps, duplicate usable routes, and unresolved required keys also
+fail the operation. Skipping an endpoint grants no authority from its response.
 
 Runtime routing performs a bounded probe of every configured cosigner endpoint
 before selecting an operation-scoped route. It cannot stop at the first match,
@@ -890,8 +898,9 @@ Generation resolves three distinct Falcon keypairs:
 
 Visible collisions reject. The generated `.key` stores the resolved public
 parameters, bytecode, and complete signing-metadata version 2
-`bounded_authorization` object. Existing keys therefore remain signable if the
-installed product template is later disabled or removed.
+`bounded_authorization` object. Signing uses that stored authority rather than
+the installed template. Supported disable/remove operations refuse while a
+stored key still uses the template's key type.
 
 The repository YAML is an install source only. Fresh signer identities do not
 enable Corridor by default; operators import and enable it through the normal
@@ -959,8 +968,10 @@ transaction authorized by Corridor itself.
 ### Compiler And Resource Budget
 
 Corridor stores one resource profile over its final compiler-auto-salted
-bytecode. The spend, spending-key rekey, and contract-admin rekey paths each
-publish their own maximum argument bytes and reviewed opcode ceiling. Under
+bytecode. Inventory materializes maximum argument bytes and reviewed opcode
+ceilings for all three bounded path cells (spend, spending-key rekey, and
+contract-admin rekey); a resource cell does not authorize a path. Corridor
+admits spend and contract-admin rekey, not spending-key-only rekey. Under
 v42, argument/opcode capacity determines the minimum group size; bytecode above
 the final group's free program pool contributes to the aggregate fee instead
 of manufacturing extra dummies.
@@ -997,8 +1008,9 @@ Primary packages and files:
 - `internal/signerapp/daemon`: HTTP runtime (`http_runtime.go`) that registers
   these routes on the signer mux and dispatches them to the `rest` service
   methods.
-- `internal/engine`: guarded and bounded-cosigner transaction orchestration and
-  cosigner endpoint resolution.
+- `internal/engine/guarded`: guarded and bounded-cosigner transaction
+  orchestration and cosigner endpoint resolution; `internal/engine` composes
+  that owner into the client runtime.
 - `internal/config`: endpoint registry parsing (`schema_version` 2 only; retired
   `signer_port`/`local_port`/`token_file` fields are dropped on load).
 - `internal/apshellapp`: endpoint commands and read-only cosigner discovery.
