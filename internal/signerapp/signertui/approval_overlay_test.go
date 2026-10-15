@@ -345,3 +345,27 @@ func TestSigningPopupArmsWhenItBecomesVisible(t *testing.T) {
 		t.Fatal("approval after the arming delay was not accepted")
 	}
 }
+
+// Background messages while a signing prompt is showing must not restart its
+// arming delay: Update briefly moves them to the screen under the popup, and
+// they arrive far more often than once a second.
+func TestSigningPopupStaysArmedThroughBackgroundMessages(t *testing.T) {
+	clock := time.Unix(1_000, 0)
+	saved := signingNow
+	signingNow = func() time.Time { return clock }
+	t.Cleanup(func() { signingNow = saved })
+
+	m := approvalTestModel(ViewGenerating)
+	m = updateModel(t, m, SignRequestReceivedMsg{Request: PendingSignRequest{ID: "sign-1"}})
+	for range 5 {
+		clock = clock.Add(400 * time.Millisecond)
+		m = updateModel(t, m, clearWarningMsg{})
+		if m.viewState != ViewSigningPopup {
+			t.Fatalf("background message hid the signing popup: view %v", m.viewState)
+		}
+	}
+	m = updateModel(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	if m.signing.request != nil {
+		t.Fatal("approval refused: background messages restarted the arming delay")
+	}
+}

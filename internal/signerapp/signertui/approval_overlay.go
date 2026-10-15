@@ -60,9 +60,12 @@ func (m Model) keepApprovalOnTop(preferred ViewState) Model {
 	if !isApprovalView(m.viewState) {
 		m.approval = approvalOverlay{returnView: m.viewState, hasReturn: true}
 	}
-	if popup == ViewSigningPopup && m.viewState != ViewSigningPopup {
+	if popup == ViewSigningPopup && preferred != ViewSigningPopup {
 		// The arming delay runs from when the prompt can be seen, not from
-		// when it arrived behind another popup.
+		// when it arrived behind another popup. preferred is the screen
+		// that was showing: Update moves a background message to the screen
+		// under the popup, so the current view says nothing about whether
+		// the popup was already visible.
 		m.signing.shownAt = signingNow()
 	}
 	m.viewState = popup
