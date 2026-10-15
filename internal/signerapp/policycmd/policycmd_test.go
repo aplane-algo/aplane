@@ -695,7 +695,7 @@ func TestOnlineApplyKeepsChangesTheDiffCannotSee(t *testing.T) {
 	if err := (OnlineRunner{Session: session}).Run(context.Background(), Command{Verb: VerbApply, Args: []string{writePolicyFile(t, "r.json", route(b+","+a))}, Yes: true}, Streams{Stdout: &stdout}); err != nil {
 		t.Fatal(err)
 	}
-	if len(session.applies) != 1 || !strings.Contains(stdout.String(), "differs only in order") {
+	if len(session.applies) != 1 || !strings.Contains(stdout.String(), "effective permissions are unchanged") {
 		t.Fatalf("reorder: applies %d, output:\n%s", len(session.applies), stdout.String())
 	}
 }

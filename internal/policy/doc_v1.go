@@ -49,7 +49,8 @@ const (
 )
 
 // TransactionTypeWildcard is the transaction_types entry for every type the
-// map does not name. It is required whenever the map is present.
+// map does not name. A signer document requires it; a cosigner document may
+// omit it, and a missing entry rejects.
 const TransactionTypeWildcard = "*"
 
 // TransactionTypeNames lists every Algorand transaction type a policy can

@@ -1295,8 +1295,10 @@ loosened lines against the default, never as a bare "policy removed".
 `apply` and `remove` ask for confirmation on the controlling terminal, never
 stdin; `--yes` skips it. Output names the committed generation or reports
 `policy unchanged`. `apply` skips the commit only when every submitted
-document decodes identical to the active one; a document that differs only
-in term order is still applied.
+document decodes identical to the active one; a document that differs but
+leaves effective permissions unchanged (term order, or a cosigner `*` entry
+written out or omitted) is still applied, and `diff` reports it as "the
+document differs, but effective permissions are unchanged".
 
 Online verbs authenticate through admin IPC and unlock a locked identity with
 the authenticated passphrase before policy access; this applies to read-only
@@ -1424,7 +1426,7 @@ compatibility-bearing audit details live in
 | Cosigner `on_no_route` / `close_on_no_route` / `clawback_on_no_route` (must be `reject`) | Removed; always reject |
 | Absent fields resolved through product defaults | Every verdict-bearing field required; nothing implied |
 | One document per node with `key_overrides` by address or Witness Key ID | One node default plus zero or one complete document per key; no inheritance |
-| Implicit transaction-type behavior | `transaction_types` with a required `*` entry |
+| Implicit transaction-type behavior | `transaction_types` with a `*` entry, required in a signer document; a cosigner document may omit it, since it can only be `reject` |
 | Sidecar `policy_mtime_ns` | Removed (already gone) |
 
 ## Source Files
