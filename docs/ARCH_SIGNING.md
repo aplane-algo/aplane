@@ -1364,7 +1364,10 @@ foreign, or unrelated signable entries. The signer may append budget dummies.
   and empty strings in every other slot
 - `authorization` with Contract Admin Key ID, public and spending public keys,
   program binding, finalized transaction ID, diagnostic message, base argument
-  count, spend effects, and maximum fee
+  count, the `admin_signature_arg_index` where the external admin signature
+  goes, spend effects, and maximum fee; for a `bounded-cosigner1` key, also
+  `cosigner` metadata so the external verifier can prove the framework-owned
+  cosigner region the rekey bypasses
 - optional `mutations`
 
 The response is not submission-ready. `message_hex` and every other derived
@@ -1585,7 +1588,8 @@ depend on them, on the table, or on the audit log.
   `bounded-cosigner1`.
   It contains `contract`, `base_signature_arg_layout`,
   `spend_effects`, `max_fee`, `admin_operations` (including each operation's
-  `policy_gate`), `runtime_args`, `derived_args`, the path-specific
+  `policy_gate`), `cosigner` (for `bounded-cosigner1`), `runtime_args`,
+  `derived_args`, the path-specific
   `argument_layout`, and `layer3_policy`. `/keys` also includes instance-only
   `admin_key_id` and `program_binding` when
   applicable. This is routing and assembly metadata, not permission; signer

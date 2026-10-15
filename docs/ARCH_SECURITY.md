@@ -1496,7 +1496,7 @@ barrier uses): the passphrase unwraps a stored key rather than becoming one.
   },
   "current_generation_id": "gen-1700000000-0123abcd",
   "selection_term": 4,
-  "selection_mac": "<base64 current-term HMAC>"
+  "selection_mac": "<64 lowercase hex: current-term HMAC-SHA256>"
 }
 ```
 

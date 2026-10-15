@@ -137,12 +137,12 @@ const (
 	// PQSchemeFalcon1024 is the v42 native Falcon-1024 authorization scheme.
 	PQSchemeFalcon1024 = "f1"
 
-	// SignCancelStateCanceled means the request is canceled or a pre-pending
-	// cancellation was recorded for that request ID.
+	// SignCancelStateCanceled means the request was live and is now canceled,
+	// including a repeat cancel while the canceled request is still unwinding.
 	SignCancelStateCanceled SignCancelState = "canceled"
 
-	// SignCancelStateNotFound means no pending request exists for the ID and no
-	// pre-pending cancellation was recorded.
+	// SignCancelStateNotFound means no live request has the ID. A cancel that
+	// arrives before its request exists is not recorded.
 	SignCancelStateNotFound SignCancelState = "not_found"
 )
 
