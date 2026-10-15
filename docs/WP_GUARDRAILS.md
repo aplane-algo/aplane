@@ -21,6 +21,12 @@ authority for pure rekey; and `aplane.corridor.v1` additionally requires a
 Falcon cosigner for spends. Their closed effect sets reject close, clawback,
 hybrid rekey-and-spend, and unsupported transaction forms.
 
+Allowlist v1 and v2 let the spending key alone authorize a pure rekey, so they
+do not provide the separation of rekey authority that section 6 calls for.
+Where a stolen spending key must not be able to replace the guardrail, use
+`aplane.falcon1024-allowlist-alock.v1` or `aplane.corridor.v1`, which require a
+distinct contract-admin key for rekey.
+
 Choose a concrete key type from `keytypes` and review its documented effect and
 admin contracts. The sections below explain the broader graph idea; they do not
 grant close or admin behavior absent from that key type.
@@ -139,7 +145,8 @@ that names a different exit account, address unchanged.
 - **Reconfiguration is the apex authority.** Whoever can rekey an account can
   replace its constraints entirely. This authority must be *separated from the
   spend key* and hardened; rekey authority must not be satisfiable by the spend
-  key alone. The LogicSig program can enforce this additional constraint.
+  key alone. The LogicSig program can enforce this additional constraint, as
+  the `alock` and corridor templates do; allowlist v1 and v2 do not.
 
 ## 7. Conclusion
 

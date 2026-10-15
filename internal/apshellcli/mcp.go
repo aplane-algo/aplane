@@ -150,7 +150,7 @@ Use the js_reference tool to fetch the JavaScript API reference.`),
 
 	// Register the "doc" tool for on-demand bundled reference docs.
 	mcpServer.AddTool(mcp.NewTool("doc",
-		mcp.WithDescription("List or fetch the bundled APlane reference docs that mcp_manual points to. Call with no arguments to list available docs (name + one-line summary); pass name to return that doc's full Markdown (e.g. name=\"WP_CORRIDORS\")."),
+		mcp.WithDescription("List or fetch the bundled APlane reference docs that mcp_manual points to. Call with no arguments to list available docs (name + one-line summary); pass name to return that doc's full Markdown (e.g. name=\"ARCH_GUARDED\")."),
 		mcp.WithString("name", mcp.Description("Doc name to fetch, with or without the .md suffix (e.g. \"ARCH_SIGNING\"). Omit to list all available docs.")),
 	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		name, _ := request.Params.Arguments["name"].(string)
@@ -370,7 +370,7 @@ func mcpJSExecutionResult(ctx context.Context, state *REPLState, code string) *m
 const mcpBaseDescription = `Execute an apshell command on the Algorand blockchain.
 
 New here? Call mcp_manual first for the operating model (architecture, key model, signing flow, policy, and workflows).
-Use the doc tool to list or fetch the full reference docs mcp_manual points to (e.g. doc name=WP_CORRIDORS).
+Use the doc tool to list or fetch the full reference docs mcp_manual points to (e.g. doc name=ARCH_GUARDED).
 Run "help <command>" for detailed syntax on a specific command.
 Use mcp_reference to see all available shell commands.
 Use the js tool to execute JavaScript code.
