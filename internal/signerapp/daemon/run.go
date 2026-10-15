@@ -177,9 +177,17 @@ func Run(dataDir string) int {
 	logInfof("Policy settings:")
 	logInfof("  user_auto_approve: %v", config.UserAutoApprove)
 
-	// Warn about unusual configs in interactive mode (not headless)
-	if len(config.PassphraseCommandArgv) == 0 {
+	// Warn about unusual configs in interactive mode (not headless). A
+	// passphrase helper may come from config.yaml or from the product's
+	// unlock.yaml (appass); the unlock plan already resolved which.
+	headless := unlockPlan.Source == signerstartup.UnlockSourcePassphraseCommand
+	if !headless {
 		printInteractiveModeWarnings(&config)
+	} else if len(config.PassphraseCommandArgv) == 0 {
+		// Startup validation checked a config.yaml helper; an unlock.yaml
+		// helper gets the same headless notes here. The runtime turns off
+		// lock-on-disconnect and the idle timeout for it, so say so.
+		printUnlockConfigHeadlessWarnings(&config)
 	}
 
 	authorizer := authz.NewProductSingleAuthorizer()
@@ -275,14 +283,16 @@ func Run(dataDir string) int {
 		}
 	}
 
-	lockOnDisconnect := config.ShouldLockOnDisconnect()
 	if err := startIPCServer(server, config.IPCPath); err != nil {
 		logErrorf("failed to start IPC server: %v", err)
 		return 1
 	}
 
-	// Print consolidated security audit
-	printSecurityAudit(passphraseTimeout, &config, config.IPCPath, runtime.CoreDumpsDisabled, runtime.MemoryLocked, lockOnDisconnect, passphraseSource)
+	// Print consolidated security audit with the runtime's effective
+	// settings: a passphrase helper turns off lock-on-disconnect and the idle
+	// timeout whatever config.yaml says.
+	effective := ir.Config()
+	printSecurityAudit(effective.SessionTimeout(), effective.UserAutoApprove(), config.IPCPath, runtime.CoreDumpsDisabled, runtime.MemoryLocked, effective.LockOnDisconnect(), passphraseSource)
 
 	// Log server start
 	keysSnapshot, _ := ir.KeySnapshot()
@@ -396,7 +406,7 @@ func ensureProviders() error {
 }
 
 // printSecurityAudit prints a consolidated security configuration summary
-func printSecurityAudit(passphraseTimeout time.Duration, config *serverconfig.ServerConfig, ipcPath string, coreDumpsDisabled bool, memoryLocked bool, lockOnDisconnect bool, passphraseSource string) {
+func printSecurityAudit(passphraseTimeout time.Duration, userAutoApprove bool, ipcPath string, coreDumpsDisabled bool, memoryLocked bool, lockOnDisconnect bool, passphraseSource string) {
 	logInfof("Security configuration:")
 
 	// Passphrase source status
@@ -424,7 +434,7 @@ func printSecurityAudit(passphraseTimeout time.Duration, config *serverconfig.Se
 	}
 
 	// User auto-approve status - operator-default approval fallback
-	if !config.UserAutoApprove {
+	if !userAutoApprove {
 		logInfof("  user_auto_approve: disabled")
 	} else {
 		logWarnf("  user_auto_approve: enabled")
@@ -451,6 +461,22 @@ func printSecurityAudit(passphraseTimeout time.Duration, config *serverconfig.Se
 
 // printInteractiveModeWarnings prints warnings for unusual configs in interactive mode.
 // These are not errors, just alerts that the user may have misconfigured something.
+// printUnlockConfigHeadlessWarnings reports headless mode for a passphrase
+// helper configured in unlock.yaml, and settings in config.yaml it overrides.
+func printUnlockConfigHeadlessWarnings(config *serverconfig.ServerConfig) {
+	warnings := serverconfig.ValidateHeadlessPolicy(config)
+	if config.LockOnDisconnect != nil && *config.LockOnDisconnect {
+		warnings = append(warnings, "lock_on_disconnect:true is ignored while a passphrase helper is configured")
+	}
+	if config.PassphraseTimeout != "" && config.PassphraseTimeout != "0" {
+		warnings = append(warnings, "passphrase_timeout:"+config.PassphraseTimeout+" is ignored while a passphrase helper is configured")
+	}
+	logWarnf("headless mode warnings:")
+	for _, w := range warnings {
+		logWarnf("  - %s", w)
+	}
+}
+
 func printInteractiveModeWarnings(config *serverconfig.ServerConfig) {
 	var warnings []string
 
