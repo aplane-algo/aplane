@@ -60,6 +60,9 @@ type PlanResult struct {
 	BoundedItems []*boundedPlanItem
 	// Rotating describes a rotating account's spend; nil on every other path.
 	Rotating *rotatingPlanItem
+
+	// approval is set by the approval gate and checked before signing.
+	approval approvalBinding
 }
 
 // SnapshotFunc retrieves the identity snapshot needed for planning.

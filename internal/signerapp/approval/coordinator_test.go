@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -37,8 +38,9 @@ func TestCoordinatorSerializesSigningRequests(t *testing.T) {
 		results <- ok
 	}()
 
-	if got := <-sent; got != "sign-1" {
-		t.Fatalf("first delivered request = %q, want sign-1", got)
+	prompt1 := <-sent
+	if !isPromptID(prompt1) {
+		t.Fatalf("first delivered request = %q, want a generated prompt ID", prompt1)
 	}
 
 	go func() {
@@ -57,13 +59,14 @@ func TestCoordinatorSerializesSigningRequests(t *testing.T) {
 	case <-time.After(50 * time.Millisecond):
 	}
 
-	c.HandleSignResponse(&SignResponse{ID: "sign-1", Approved: true})
+	c.HandleSignResponse(&SignResponse{ID: prompt1, Approved: true})
 
-	if got := <-sent; got != "sign-2" {
-		t.Fatalf("second delivered request = %q, want sign-2", got)
+	prompt2 := <-sent
+	if !isPromptID(prompt2) {
+		t.Fatalf("second delivered request = %q, want a generated prompt ID", prompt2)
 	}
 
-	c.HandleSignResponse(&SignResponse{ID: "sign-2", Approved: true})
+	c.HandleSignResponse(&SignResponse{ID: prompt2, Approved: true})
 
 	wg.Wait()
 	close(results)
@@ -95,8 +98,9 @@ func TestCoordinatorCancelSignRequestDismissesPendingApproval(t *testing.T) {
 		result <- err
 	}()
 
-	if got := <-sent; got != "sign-1" {
-		t.Fatalf("delivered request = %q, want sign-1", got)
+	prompt1 := <-sent
+	if !isPromptID(prompt1) {
+		t.Fatalf("delivered request = %q, want a generated prompt ID", prompt1)
 	}
 	if got := c.CancelSignRequest("sign-1", SignRequestCancelReasonClientCanceled); got.State != SignRequestCancelStateCanceled {
 		t.Fatalf("CancelSignRequest() state = %q, want canceled", got.State)
@@ -104,7 +108,7 @@ func TestCoordinatorCancelSignRequestDismissesPendingApproval(t *testing.T) {
 
 	select {
 	case got := <-canceled:
-		if got.ID != "sign-1" || got.Reason != SignRequestCancelReasonClientCanceled {
+		if got.ID != prompt1 || got.Reason != SignRequestCancelReasonClientCanceled {
 			t.Fatalf("canceled message = %#v, want sign-1 client_canceled", got)
 		}
 	case <-time.After(time.Second):
@@ -272,14 +276,15 @@ func TestCoordinatorLateResponseAfterTimeoutIsIgnored(t *testing.T) {
 		done <- err
 	}()
 
-	if got := <-sent; got != "sign-timeout" {
-		t.Fatalf("delivered request = %q, want sign-timeout", got)
+	promptTimeout := <-sent
+	if !isPromptID(promptTimeout) {
+		t.Fatalf("delivered request = %q, want a generated prompt ID", promptTimeout)
 	}
 	if err := <-done; err == nil {
 		t.Fatal("RequestSigningApproval() error = nil, want timeout")
 	}
 
-	c.HandleSignResponse(&SignResponse{ID: "sign-timeout", Approved: true})
+	c.HandleSignResponse(&SignResponse{ID: promptTimeout, Approved: true})
 
 	if got := c.PendingSignCount(); got != 0 {
 		t.Fatalf("PendingSignCount() = %d, want 0", got)
@@ -308,8 +313,9 @@ func TestCoordinatorRequestSigningApprovalContextCancelCleansPendingRequest(t *t
 		done <- err
 	}()
 
-	if got := <-sent; got != "sign-cancel" {
-		t.Fatalf("delivered request = %q, want sign-cancel", got)
+	promptCancel := <-sent
+	if !isPromptID(promptCancel) {
+		t.Fatalf("delivered request = %q, want a generated prompt ID", promptCancel)
 	}
 	cancel()
 
@@ -321,7 +327,7 @@ func TestCoordinatorRequestSigningApprovalContextCancelCleansPendingRequest(t *t
 		t.Fatalf("PendingSignCount() = %d, want 0", got)
 	}
 	gotCancel := <-canceled
-	if gotCancel.ID != "sign-cancel" || gotCancel.Reason != SignRequestCancelReasonClientCanceled {
+	if gotCancel.ID != promptCancel || gotCancel.Reason != SignRequestCancelReasonClientCanceled {
 		t.Fatalf("canceled message = %#v, want client cancel for sign-cancel", gotCancel)
 	}
 }
@@ -343,8 +349,9 @@ func TestCoordinatorQueuedSigningApprovalContextCancelReturnsBeforeDeliveryTurn(
 		firstDone <- err
 	}()
 
-	if got := <-sent; got != "sign-1" {
-		t.Fatalf("first delivered request = %q, want sign-1", got)
+	prompt1 := <-sent
+	if !isPromptID(prompt1) {
+		t.Fatalf("first delivered request = %q, want a generated prompt ID", prompt1)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -366,7 +373,7 @@ func TestCoordinatorQueuedSigningApprovalContextCancelReturnsBeforeDeliveryTurn(
 		t.Fatal("queued RequestSigningApprovalContext() did not return after context cancellation")
 	}
 
-	c.HandleSignResponse(&SignResponse{ID: "sign-1", Approved: true})
+	c.HandleSignResponse(&SignResponse{ID: prompt1, Approved: true})
 	if err := <-firstDone; err != nil {
 		t.Fatalf("first RequestSigningApproval() error = %v, want nil", err)
 	}
@@ -404,8 +411,9 @@ func TestCoordinatorMismatchedResponseIDDoesNotSatisfyActiveRequest(t *testing.T
 		}{approved: approved, err: err}
 	}()
 
-	if got := <-sent; got != "sign-1" {
-		t.Fatalf("delivered request = %q, want sign-1", got)
+	prompt1 := <-sent
+	if !isPromptID(prompt1) {
+		t.Fatalf("delivered request = %q, want a generated prompt ID", prompt1)
 	}
 
 	c.HandleSignResponse(&SignResponse{ID: "other-request", Approved: false})
@@ -420,7 +428,7 @@ func TestCoordinatorMismatchedResponseIDDoesNotSatisfyActiveRequest(t *testing.T
 		t.Fatalf("PendingSignCount() = %d, want 1 after mismatched response", got)
 	}
 
-	c.HandleSignResponse(&SignResponse{ID: "sign-1", Approved: true})
+	c.HandleSignResponse(&SignResponse{ID: prompt1, Approved: true})
 
 	result := <-resultCh
 	if result.err != nil {
@@ -457,11 +465,12 @@ func TestCoordinatorRequestSigningApprovalResponseReturnsApproverPrincipal(t *te
 		}{response: response, err: err}
 	}()
 
-	if got := <-sent; got != "sign-1" {
-		t.Fatalf("delivered request = %q, want sign-1", got)
+	prompt1 := <-sent
+	if !isPromptID(prompt1) {
+		t.Fatalf("delivered request = %q, want a generated prompt ID", prompt1)
 	}
 
-	c.HandleSignResponse(&SignResponse{ID: "sign-1", Approved: true, ApproverPrincipal: "alice-admin"})
+	c.HandleSignResponse(&SignResponse{ID: prompt1, Approved: true, ApproverPrincipal: "alice-admin"})
 
 	result := <-resultCh
 	if result.err != nil {
@@ -498,8 +507,9 @@ func TestCoordinatorFailAllUnblocksPendingRequest(t *testing.T) {
 		}{approved: approved, err: err}
 	}()
 
-	if got := <-sent; got != "sign-fail" {
-		t.Fatalf("delivered request = %q, want sign-fail", got)
+	promptFail := <-sent
+	if !isPromptID(promptFail) {
+		t.Fatalf("delivered request = %q, want a generated prompt ID", promptFail)
 	}
 
 	c.FailAllPendingRequests("disconnected")
@@ -529,4 +539,10 @@ func waitForDeliveryQueueLength(t *testing.T, c *Coordinator, want int) {
 	got := len(c.deliveryQueue)
 	c.deliveryMu.Unlock()
 	t.Fatalf("delivery queue length = %d, want %d", got, want)
+}
+
+// isPromptID reports whether id has the shape of a coordinator-generated
+// prompt ID, which never echoes the client's request ID.
+func isPromptID(id string) bool {
+	return strings.HasPrefix(id, "apv-") && len(id) == len("apv-")+32
 }

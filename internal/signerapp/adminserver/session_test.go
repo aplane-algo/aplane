@@ -979,11 +979,11 @@ func TestHandleSignResponseCarriesApproverPrincipal(t *testing.T) {
 	conn := &queueConn{}
 	ir := productruntime.New(productruntime.Config{})
 	got := make(chan signerapproval.SignResponse, 1)
-	sent := make(chan struct{}, 1)
+	sent := make(chan string, 1)
 	ir.SetApprovalCoordinator(signerapproval.New(
 		func() bool { return true },
 		func(req *signerapproval.SignRequest) bool {
-			sent <- struct{}{}
+			sent <- req.ID
 			return true
 		},
 		nil,
@@ -996,19 +996,19 @@ func TestHandleSignResponseCarriesApproverPrincipal(t *testing.T) {
 		}
 		got <- response
 	}()
-	<-sent
+	promptID := <-sent
 
 	session := NewSession(conn, SessionDeps{})
 	session.SetTransportInfo(TransportSSH, "10.0.0.1:2222")
 	session.Bind(&auth.Identity{ID: "alice-admin", Type: "service", Method: "ssh-passphrase"}, ir)
 	session.HandleSignResponse(&protocol.SignResponseMessage{
-		BaseMessage: protocol.BaseMessage{ID: "req-1"},
+		BaseMessage: protocol.BaseMessage{ID: promptID},
 		Approved:    true,
 	})
 
 	response := <-got
-	if response.ID != "req-1" {
-		t.Fatalf("response ID = %q, want req-1 (reason %q)", response.ID, response.Reason)
+	if response.ID != promptID {
+		t.Fatalf("response ID = %q, want the prompt's ID %q (reason %q)", response.ID, promptID, response.Reason)
 	}
 	if !response.Approved {
 		t.Fatal("response approved = false, want true")

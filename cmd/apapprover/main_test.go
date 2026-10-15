@@ -118,21 +118,24 @@ func TestParseApprovalInput(t *testing.T) {
 	tests := []struct {
 		input        string
 		wantApproved bool
+		wantCode     string
 		wantReason   string
 		wantOK       bool
 	}{
 		{input: "y", wantApproved: true, wantOK: true},
-		{input: "yes", wantApproved: true, wantOK: true},
+		{input: "y 0427", wantApproved: true, wantCode: "0427", wantOK: true},
+		{input: "YES 0427", wantApproved: true, wantCode: "0427", wantOK: true},
+		{input: "y 0427 extra", wantOK: false},
 		{input: "n", wantApproved: false, wantReason: "rejected by user", wantOK: true},
 		{input: "no suspicious destination", wantApproved: false, wantReason: "suspicious destination", wantOK: true},
 		{input: "n policy violation", wantApproved: false, wantReason: "policy violation", wantOK: true},
 		{input: "maybe", wantOK: false},
 	}
 	for _, tt := range tests {
-		gotApproved, gotReason, gotOK := parseApprovalInput(tt.input)
-		if gotApproved != tt.wantApproved || gotReason != tt.wantReason || gotOK != tt.wantOK {
-			t.Fatalf("parseApprovalInput(%q) = (%v, %q, %v), want (%v, %q, %v)",
-				tt.input, gotApproved, gotReason, gotOK, tt.wantApproved, tt.wantReason, tt.wantOK)
+		gotApproved, gotCode, gotReason, gotOK := parseApprovalInput(tt.input)
+		if gotApproved != tt.wantApproved || gotCode != tt.wantCode || gotReason != tt.wantReason || gotOK != tt.wantOK {
+			t.Fatalf("parseApprovalInput(%q) = (%v, %q, %q, %v), want (%v, %q, %q, %v)",
+				tt.input, gotApproved, gotCode, gotReason, gotOK, tt.wantApproved, tt.wantCode, tt.wantReason, tt.wantOK)
 		}
 	}
 }
@@ -364,13 +367,13 @@ func TestApproverAnswersHeadOfQueue(t *testing.T) {
 	}
 
 	sendErr = os.ErrClosed
-	a.handleInput("y")
+	a.handleInput("y " + a.headCode)
 	if len(a.queue) != 2 {
 		t.Fatalf("queue after failed send = %d, want the request kept", len(a.queue))
 	}
 
 	sendErr = nil
-	a.handleInput("y")
+	a.handleInput("y " + a.headCode)
 	if len(sent) != 1 || len(a.queue) != 1 || a.queue[0].id() != "token-1" {
 		t.Fatalf("after approval: sent %d, queue %+v; want sign-1 answered and token-1 next", len(sent), a.queue)
 	}
@@ -407,7 +410,7 @@ func TestApproverWithdrawnRequestLeavesQueue(t *testing.T) {
 	if len(a.queue) != 1 || a.queue[0].id() != "enroll-1" {
 		t.Fatalf("queue after withdrawal = %+v, want only enroll-1", a.queue)
 	}
-	a.handleInput("y")
+	a.handleInput("y " + a.headCode)
 	if len(sent) != 1 || len(a.queue) != 0 {
 		t.Fatalf("after answering: sent %d, queue %d", len(sent), len(a.queue))
 	}
@@ -426,13 +429,13 @@ func TestApproverEnrollmentAnswerFollowsTheSignersVerdict(t *testing.T) {
 	a := &approver{send: func(v any) error { t.Fatal("signing send used for an enrollment answer"); return nil }}
 	a.answer = func(any) ([]byte, error) { return nil, os.ErrClosed }
 	a.enqueue(enrollmentApproval("enroll-1"))
-	a.handleInput("y")
+	a.handleInput("y " + a.headCode)
 	if len(a.queue) != 1 {
 		t.Fatalf("queue after a failed delivery = %d, want the request kept", len(a.queue))
 	}
 
 	a.answer = enrollmentReply(t, &sent, "no enrollment request is waiting for key SHA256:one")
-	a.handleInput("y")
+	a.handleInput("y " + a.headCode)
 	if len(sent) != 1 || len(a.queue) != 0 {
 		t.Fatalf("after a refused approval: sent %d, queue %d; want the answer delivered and the request settled", len(sent), len(a.queue))
 	}
@@ -471,4 +474,52 @@ func mustMarshal(t *testing.T, msg any) []byte {
 		t.Fatal(err)
 	}
 	return raw
+}
+
+// An approval must carry the code of the request on screen. A "y" typed for a
+// request the requester withdrew, and sent once its replacement is shown,
+// cannot approve the replacement. Rejection needs no code.
+func TestApproverApprovalNamesTheRequestShown(t *testing.T) {
+	var sent []any
+	codes := []string{"1111", "1111", "2222", "3333"}
+	a := &approver{
+		send: func(v any) error { sent = append(sent, v); return nil },
+		newCode: func() string {
+			c := codes[0]
+			codes = codes[1:]
+			return c
+		},
+	}
+	a.enqueue(signApproval("prompt-a"))
+	codeA := a.headCode
+
+	// The operator types the approval for A; before Enter, the requester
+	// withdraws A and sends B.
+	a.handleCanceled(approvalKindSign, "Signing request", "prompt-a", "client_canceled")
+	a.enqueue(signApproval("prompt-b"))
+	if a.headCode == codeA {
+		t.Fatalf("replacement reused code %s", codeA)
+	}
+	a.handleInput("y " + codeA)
+	if len(sent) != 0 || len(a.queue) != 1 {
+		t.Fatalf("approval with the withdrawn request's code: sent %d, queue %d; want nothing sent", len(sent), len(a.queue))
+	}
+	a.handleInput("y")
+	if len(sent) != 0 {
+		t.Fatal("approval without a code was accepted")
+	}
+
+	a.handleInput("y " + a.headCode)
+	if len(sent) != 1 || len(a.queue) != 0 {
+		t.Fatalf("approval with the shown code: sent %d, queue %d", len(sent), len(a.queue))
+	}
+	if resp := sent[0].(protocol.SignResponseMessage); resp.ID != "prompt-b" || !resp.Approved {
+		t.Fatalf("response = %#v, want approval of prompt-b", resp)
+	}
+
+	a.enqueue(signApproval("prompt-c"))
+	a.handleInput("n")
+	if len(sent) != 2 || sent[1].(protocol.SignResponseMessage).Approved {
+		t.Fatalf("rejection needed a code or became an approval: %#v", sent)
+	}
 }

@@ -5,11 +5,13 @@ package main
 
 import (
 	"bufio"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"math/big"
 	"os"
 	"os/signal"
 	"strings"
@@ -78,7 +80,12 @@ func (o enrollmentOutcome) String() string {
 	}
 }
 
-const approvalPrompt = "Approve current request? [y/n or n <reason>]: "
+// approvalPrompt asks for an answer to the request at the head of the queue.
+// Approving means typing that request's code, so an answer typed for one
+// request cannot approve another.
+func approvalPrompt(code string) string {
+	return fmt.Sprintf("Approve current request? [y %s / n / n <reason>]: ", code)
+}
 
 // enrollmentAnswerTimeout bounds the wait for the signer's reply to an
 // enrollment answer; the signer answers from its own registry at once.
@@ -202,6 +209,44 @@ type approver struct {
 	// dropped (it may have been answered elsewhere, or lapsed).
 	answer func(any) ([]byte, error)
 	queue  []approvalRequest
+
+	// headCode is the code the operator types to approve the request at the
+	// head of the queue. A requester can withdraw a request and send another
+	// in its place, and the terminal buffers a line until Enter: a "y" typed
+	// for the first request must not approve the second. Each shown request
+	// gets a fresh code, so an approval names the request it was meant for.
+	headCode string
+	// newCode makes approval codes; tests replace it.
+	newCode func() string
+}
+
+// showHead displays the request at the head of the queue with a fresh
+// approval code.
+func (a *approver) showHead() {
+	gen := a.newCode
+	if gen == nil {
+		gen = newApprovalCode
+	}
+	code := gen()
+	for code == a.headCode {
+		code = gen()
+	}
+	a.headCode = code
+	displayRequest(a.queue[0], len(a.queue))
+	a.prompt()
+}
+
+func (a *approver) prompt() {
+	fmt.Print(approvalPrompt(a.headCode))
+}
+
+// newApprovalCode returns a random four-digit approval code.
+func newApprovalCode() string {
+	n, err := rand.Int(rand.Reader, big.NewInt(10000))
+	if err != nil {
+		panic(fmt.Sprintf("crypto/rand failed: %v", err))
+	}
+	return fmt.Sprintf("%04d", n.Int64())
 }
 
 // handleInput applies the operator's answer to the request at the head of the
@@ -210,21 +255,31 @@ func (a *approver) handleInput(input string) {
 	if len(a.queue) == 0 {
 		return
 	}
-	approved, reason, ok := parseApprovalInput(input)
+	approved, code, reason, ok := parseApprovalInput(input)
 	if !ok {
-		fmt.Print("Please enter y/yes or n/no or n <reason>: ")
+		fmt.Printf("Please enter y %s, or n / n <reason>: ", a.headCode)
+		return
+	}
+	if approved && code != a.headCode {
+		// Rejecting needs no code; approving must name the request shown.
+		if code == "" {
+			fmt.Printf("To approve, type y followed by this request's code: y %s\n", a.headCode)
+		} else {
+			fmt.Println("\n⚠ That code is not this request's; the request you meant may have been replaced. Review this one, then answer again.")
+		}
+		a.prompt()
 		return
 	}
 
 	respMsg, err := buildApprovalResponse(a.queue[0], approved, reason)
 	if err != nil {
 		logErrorf("error building response: %v", err)
-		fmt.Print(approvalPrompt)
+		a.prompt()
 		return
 	}
 	if a.queue[0].kind == approvalKindClientEnrollment {
 		if !a.answerEnrollment(a.queue[0], respMsg, approved) {
-			fmt.Print(approvalPrompt)
+			a.prompt()
 			return
 		}
 	} else {
@@ -236,7 +291,7 @@ func (a *approver) handleInput(input string) {
 		if err := a.send(respMsg); err != nil {
 			logErrorf("error sending response: %v", err)
 			logWarnf("request remains pending; retry your response")
-			fmt.Print(approvalPrompt)
+			a.prompt()
 			return
 		}
 	}
@@ -337,7 +392,7 @@ func (a *approver) handleCanceled(kind approvalKind, label, id, reason string) {
 	if active {
 		a.showHeadOrWait()
 	} else if len(a.queue) > 0 {
-		fmt.Print(approvalPrompt)
+		a.prompt()
 	}
 }
 
@@ -351,16 +406,16 @@ func (a *approver) enqueue(req approvalRequest) {
 	}
 	a.queue = append(a.queue, req)
 	if len(a.queue) == 1 {
-		displayRequest(a.queue[0], 1)
+		a.showHead()
 		return
 	}
 	fmt.Printf("\n⏳ New request queued (%d total pending). Current prompt still applies to the active request.\n", len(a.queue))
-	fmt.Print(approvalPrompt)
+	a.prompt()
 }
 
 func (a *approver) showHeadOrWait() {
 	if len(a.queue) > 0 {
-		displayRequest(a.queue[0], len(a.queue))
+		a.showHead()
 	} else {
 		logInfof("waiting for approval requests")
 	}
@@ -440,23 +495,32 @@ func readStdin(ch chan<- string) {
 	}
 }
 
-func parseApprovalInput(input string) (approved bool, reason string, ok bool) {
+// parseApprovalInput reads "y <code>", "n" or "n <reason>". An approval
+// without a code parses, with an empty code, so the caller can ask for it.
+func parseApprovalInput(input string) (approved bool, code, reason string, ok bool) {
 	input = strings.TrimSpace(input)
 	if input == "" {
-		return false, "", false
+		return false, "", "", false
 	}
 	lower := strings.ToLower(input)
+	fields := strings.Fields(lower)
 	switch {
-	case lower == "y" || lower == "yes":
-		return true, "", true
+	case fields[0] == "y" || fields[0] == "yes":
+		switch len(fields) {
+		case 1:
+			return true, "", "", true
+		case 2:
+			return true, fields[1], "", true
+		}
+		return false, "", "", false
 	case lower == "n" || lower == "no":
-		return false, "rejected by user", true
+		return false, "", "rejected by user", true
 	case strings.HasPrefix(lower, "n "):
-		return false, strings.TrimSpace(input[2:]), true
+		return false, "", strings.TrimSpace(input[2:]), true
 	case strings.HasPrefix(lower, "no "):
-		return false, strings.TrimSpace(input[3:]), true
+		return false, "", strings.TrimSpace(input[3:]), true
 	default:
-		return false, "", false
+		return false, "", "", false
 	}
 }
 
@@ -549,7 +613,6 @@ func displaySignRequest(req *protocol.SignRequestMessage, queueLen int) {
 	}
 
 	fmt.Println(strings.Repeat("=", 60))
-	fmt.Print(approvalPrompt)
 }
 
 // displayClientEnrollmentRequest shows a client enrollment request to the user.
@@ -569,5 +632,4 @@ func displayClientEnrollmentRequest(req *protocol.ClientEnrollmentRequestMessage
 	fmt.Printf("Requested:   %s\n", time.Unix(req.Timestamp, 0).Format(time.RFC3339))
 	fmt.Println("Approving enrolls this key as a client; the client then connects on its own.")
 	fmt.Println(strings.Repeat("=", 60))
-	fmt.Print(approvalPrompt)
 }

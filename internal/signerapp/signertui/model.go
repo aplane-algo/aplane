@@ -178,6 +178,9 @@ type signingState struct {
 	request  *PendingSignRequest
 	focus    int            // 0 = approve, 1 = reject
 	viewport viewport.Model // scrollable transaction description
+	// shownAt is when request became visible; approval waits
+	// approvalArmDelay after it (see handleSigningPopupKeys).
+	shownAt time.Time
 }
 
 // enrollmentApprovalState is the client enrollment approval popup.

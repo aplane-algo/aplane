@@ -908,7 +908,7 @@ expect {
 set timeout -1
 while {1} {
     expect {
-        -re {Approve current request\?.*} { send "y\r" }
+        -re {Approve current request\? \[y ([0-9]+) } { send "y \$expect_out(1,string)\r" }
         eof { exit 0 }
     }
 }

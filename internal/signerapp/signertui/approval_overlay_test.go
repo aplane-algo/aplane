@@ -7,6 +7,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -275,5 +276,72 @@ func TestEscDefersEnrollmentRequest(t *testing.T) {
 	m = updateModel(t, m, tea.KeyMsg{Type: tea.KeyEsc})
 	if m.viewState != ViewKeyList || m.signing.request != nil {
 		t.Fatalf("esc on the signing popup: view %v request %+v", m.viewState, m.signing.request)
+	}
+}
+
+// A signing prompt that just appeared refuses approval, so a key pressed for a
+// request the requester withdrew cannot approve the one that replaced it.
+// Rejection is never delayed.
+func TestSigningPopupRefusesApprovalUntilArmed(t *testing.T) {
+	clock := time.Unix(1_000, 0)
+	saved := signingNow
+	signingNow = func() time.Time { return clock }
+	t.Cleanup(func() { signingNow = saved })
+
+	m := approvalTestModel(ViewGenerating)
+	m = updateModel(t, m, SignRequestReceivedMsg{Request: PendingSignRequest{ID: "prompt-b"}})
+	clock = clock.Add(200 * time.Millisecond)
+	m = updateModel(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	if m.signing.request == nil || m.viewState != ViewSigningPopup {
+		t.Fatalf("approval within the arming delay was accepted: view %v", m.viewState)
+	}
+	m.signing.focus = 0
+	m = updateModel(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+	if m.signing.request == nil {
+		t.Fatal("enter on Approve within the arming delay was accepted")
+	}
+
+	clock = clock.Add(time.Second)
+	m = updateModel(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	if m.signing.request != nil {
+		t.Fatal("approval after the arming delay was not accepted")
+	}
+
+	m = updateModel(t, m, SignRequestReceivedMsg{Request: PendingSignRequest{ID: "prompt-c"}})
+	m = updateModel(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	if m.signing.request != nil {
+		t.Fatal("rejection was delayed")
+	}
+}
+
+// A signing prompt that waited behind an enrollment popup starts its arming
+// delay when it comes into view, not when it arrived.
+func TestSigningPopupArmsWhenItBecomesVisible(t *testing.T) {
+	clock := time.Unix(1_000, 0)
+	saved := signingNow
+	signingNow = func() time.Time { return clock }
+	t.Cleanup(func() { signingNow = saved })
+
+	m := approvalTestModel(ViewGenerating)
+	m = updateModel(t, m, ClientEnrollmentRequestReceivedMsg{Request: PendingEnrollmentRequest{ID: "enroll-1", SSHFingerprint: "SHA256:one"}})
+	m = updateModel(t, m, SignRequestReceivedMsg{Request: PendingSignRequest{ID: "sign-1"}})
+	if m.viewState != ViewClientEnrollmentPopup {
+		t.Fatalf("view = %v, want the enrollment popup in front", m.viewState)
+	}
+
+	clock = clock.Add(5 * time.Second)
+	m = updateModel(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	if m.viewState != ViewSigningPopup {
+		t.Fatalf("view after answering enrollment = %v, want the signing popup", m.viewState)
+	}
+	clock = clock.Add(200 * time.Millisecond)
+	m = updateModel(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	if m.signing.request == nil {
+		t.Fatal("signing prompt accepted approval on its first moment in view")
+	}
+	clock = clock.Add(time.Second)
+	m = updateModel(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	if m.signing.request != nil {
+		t.Fatal("approval after the arming delay was not accepted")
 	}
 }
