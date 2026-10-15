@@ -71,6 +71,14 @@ func routeForSigningFlow(flow string) flowRoute {
 	}
 }
 
+// CanAuthorizeOtherAccounts reports whether an account on flow may be another
+// account's auth address: the client can route signing for an account
+// rekeyed to it. It fails closed, so a flow this client does not know,
+// rotating1 included, is never an acceptable rekey target.
+func CanAuthorizeOtherAccounts(flow string) bool {
+	return routeForSigningFlow(flow) != flowRouteUnknown
+}
+
 // frozenGroup is the signer-planned group that every component, signature,
 // and assembly commits to. Positions from OriginalCount on are budget dummies.
 type frozenGroup struct {

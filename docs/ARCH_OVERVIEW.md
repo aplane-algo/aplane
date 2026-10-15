@@ -1715,7 +1715,9 @@ Primary implementation ownership:
   `ConnectionState*` / `AccountRoute*` names of the states it reports,
   read-only `InspectCosignerEndpoint` with `EndpointInspection` and
   `NodeRoleCosigner` (one endpoint's node role and key inventory for guided
-  setup, on its own connection), and the
+  setup, on its own connection), `CanAuthorizeOtherAccounts` (whether an
+  account's `signing_flow` can authorize another account, the routing table's
+  fail-closed answer for rekey targets), and the
   `ErrCosignerDiscovery*` sentinels); the choreography internals are unexported
   and tested in-package. Import isolation is pinned by
   `test/arch/client_layering_test.go`.

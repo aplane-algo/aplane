@@ -1349,7 +1349,8 @@ See [Mode Selection](#mode-selection) for the foreign/passthrough/sign distincti
   would be pinned to that one-time stage, outside the rotation. This is a
   signer invariant, not a policy setting; the rotating flow's own rekeys go
   to stage addresses and are unaffected. apshell's `rekey` refuses the same
-  target before building the transaction.
+  target before building the transaction, and fails closed on any target
+  whose `signing_flow` it cannot route an authorizer through.
 
 `/plan` response (`signerapi.GroupPlanResponse`):
 
