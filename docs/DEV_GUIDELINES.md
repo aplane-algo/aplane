@@ -8,7 +8,7 @@
 - `golangci-lint` for `make lint` and `make integrity-check`
 
 Before architectural, protocol, storage, or refactor-sensitive work, read
-[ARCH_SPEC.md](ARCH_SPEC.md) and
+[ARCH_OVERVIEW.md](ARCH_OVERVIEW.md) and
 [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md). Before key type or
 LogicSig template work, also read [DEV_KEYTYPES.md](DEV_KEYTYPES.md) and the
 `docs/AGENTS_KEYTYPES.md` checklist, plus

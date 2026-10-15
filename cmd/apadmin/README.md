@@ -82,7 +82,7 @@ namespace accesses a stopped signer's store directly and never falls back from
 a failed online connection. Run `apadmin policy --help` for verbs and stream behavior.
 
 Policy documents use the v1 JSON format in
-[docs/ARCH_POLICY_FORMAT.md](../../docs/ARCH_POLICY_FORMAT.md). A signer node
+[docs/ARCH_POLICY.md](../../docs/ARCH_POLICY.md). A signer node
 takes one `policy.json` document. A cosigner node takes one document per
 cosigner key, each naming its Witness Key ID in its `"key"` field; `apply`
 adds or replaces the listed documents, leaves other keys' documents unchanged,

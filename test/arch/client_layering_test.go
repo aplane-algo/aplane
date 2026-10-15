@@ -13,7 +13,7 @@ import (
 )
 
 // uiLayerPackages are UI/presentation-layer packages that the client engine
-// core must not depend on. Pinning this makes ARCH_SPEC Invariant 3 ("Engine
+// core must not depend on. Pinning this makes ARCH_OVERVIEW Invariant 3 ("Engine
 // code is independent of UI parsing/formatting") a checked property rather than
 // an asserted one. The list is the parsing/formatting/rendering layer:
 // command syntax (cmdspec, shellrepl), the REPL/MCP surface (apshellcli), the

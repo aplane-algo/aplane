@@ -73,6 +73,20 @@ Each plugin must reside in its own subdirectory containing:
 Symlinked plugin directories are ignored. If multiple enabled catalog
 directories declare the same manifest `name`, the first enabled entry wins.
 
+Missing or integrity-failing enabled plugin directories are skipped with a
+warning. Invalid `plugins.yaml` syntax or unsafe plugin names fail discovery.
+If `plugins.yaml` is missing, no plugins are loaded.
+
+Activation file format:
+
+```yaml
+enabled_plugins: []
+```
+
+On first install, installers create an empty activation list. `algokit-localnet`
+is staged under `plugins.available/` but never enabled by default; `aplocalnet`
+is the supported utility that explicitly activates it for LocalNet setups.
+
 ### The Manifest (`manifest.json`)
 
 This file is the entry point for any external plugin.
@@ -121,10 +135,10 @@ This file is the entry point for any external plugin.
 | `homepage` | No | - | Plugin homepage URL |
 | `executable` | Yes | - | Path to executable (relative to plugin dir, or system command) |
 | `args` | No | `[]` | Command-line arguments to pass to the executable |
-| `commands` | Yes | - | Array of commands the plugin provides (for CLI and tab completion) |
+| `commands` | Yes | - | Array of commands the plugin provides (for CLI and tab completion); at least one is required |
 | `networks` | No | all | Networks the plugin supports (empty = all networks) |
 | `timeout` | No | 30 | Execution timeout in seconds |
-| `manifest_format` | No | "2.0" | Plugin manifest schema format |
+| `manifest_format` | No | "2.0" | Plugin manifest schema format; only `2.0` is accepted |
 
 `manifest_format` describes the manifest file schema. It is separate from the
 JSON-RPC envelope version, which is always the `jsonrpc: "2.0"` field in
@@ -134,6 +148,9 @@ version exchanged in the `initialize` method.
 Manifest schema `2.0` removed the unused `functions` metadata field. Plugins
 upgrading from `1.0` delete that field and set `manifest_format` to `2.0`;
 their command declarations and executable JSON-RPC protocol do not change.
+The retired `functions` and `protocol_version` fields are rejected; other
+unknown manifest fields are ignored. Commands are the sole executable and
+discoverable manifest surface.
 
 **Note:** The `executable` field can reference:
 - A local file: `"./plugin-binary"` or `"./dist/plugin.js"`
@@ -247,10 +264,13 @@ Called once after the plugin starts.
     "network": "testnet",
     "algodUrl": "https://testnet-api.4160.nodely.dev",
     "algodToken": "",
-    "indexerUrl": "https://testnet-idx.4160.nodely.dev"
+    "indexerUrl": ""
   }
 }
 ```
+
+`indexerUrl` is reserved and currently always empty; apshell does not supply
+an indexer URL. A plugin that needs an indexer uses its own.
 
 **Response:**
 ```json
@@ -350,16 +370,34 @@ Called to run a specific command.
 }
 ```
 
+**Execute result fields:**
+
+- `success`
+- optional `message`
+- optional `transactions`: transaction intents, unsigned `raw` msgpack by
+  default and `signed` only under `groupMode: "pregrouped-signed"` (see
+  [Transaction Intents](#transaction-intents))
+- optional `data`
+- optional `presentation`
+- optional `requiresApproval`
+- optional `continuation`
+- optional `groupMode` with `pregrouped-signed` or `presign-plan` for
+  plugin-owned signing material
+- optional `pluginSigners`, required for every plugin-owned slot under
+  `presign-plan`
+
 **Presentation Notes:**
 
 - `data` is the canonical machine-readable result payload.
 - `presentation` is optional human-oriented display metadata for apshell text mode.
 - `message` should be a concise summary or fallback, not a second full copy of `data`.
 - If `presentation` is absent, apshell falls back to `message` and transaction status output.
+- Raw `data` is not part of the default human CLI rendering contract.
 
 #### getInfo
 
-Returns metadata about the plugin.
+Returns metadata about the plugin. This method is reserved: apshell does not
+currently call it, but plugins should still answer it.
 
 **Request:**
 ```json
@@ -483,7 +521,7 @@ The core JSON-RPC surface every plugin handles (host→plugin) is:
 
 - `initialize`
 - `execute`
-- `getInfo`
+- `getInfo` (reserved; not currently called by apshell)
 - `shutdown`
 
 Plugins that use the `presign-plan` group flow also handle one additional host→plugin
@@ -500,6 +538,11 @@ method above; plugins that need fully self-signed groups use
 future plugin→host signing mechanism must be designed around mandatory decoded
 review and fail-closed non-interactive behavior before it is added to the wire
 protocol.
+
+Plugin-initiated requests back into apshell are reserved but not installed in
+production. The JSON-RPC client keeps typed request plumbing for future
+reviewed callbacks such as account/balance/app metadata lookup, but absent a
+production handler inbound plugin requests fail closed with `method not found`.
 
 ### Execution Context
 
@@ -584,7 +627,7 @@ For complex protocols that require multiple transaction submissions with confirm
 | `command` | string | The plugin command to execute next |
 | `args` | []string | Arguments for the next step |
 | `context` | map | State to pass to the next step via `params.context.continuation` |
-| `message` | string | Optional message to display before executing the next step |
+| `message` | string | Reserved; decoded but currently ignored (apshell does not display it) |
 
 **Execution Flow:**
 1. Plugin returns Step 1 transactions + continuation
@@ -810,6 +853,7 @@ import (
     "bufio"
     "encoding/json"
     "os"
+    "strings"
 )
 
 type Request struct {
@@ -897,9 +941,9 @@ Plugins receive these environment variables when started:
 | `APSHELL_NETWORK` | Current network context token |
 | `APSHELL_ALGOD_URL` | Algod node URL from `config.yaml` (empty if not configured) |
 | `APSHELL_ALGOD_TOKEN` | Algod API token from `config.yaml` (empty for public nodes) |
-| `APSHELL_INDEXER_URL` | Indexer URL |
+| `APSHELL_INDEXER_URL` | Reserved; currently always empty |
 | `APSHELL_PLUGIN` | Set to "1" to indicate plugin context |
-| `APSHELL_PLUGIN_STATE_DIR` | Private persistent state directory for this plugin, under `$APCLIENT_DATA/plugin-state/<name>` |
+| `APSHELL_PLUGIN_STATE_DIR` | Private persistent state directory for this plugin, under `$APCLIENT_DATA/plugin-state/<name>`, where `<name>` is the manifest `name` |
 
 Algod settings are read from the `networks.<network>.algod` section of `config.yaml`. If algod is not configured for the current network, plugins receive empty strings and must handle this gracefully.
 
@@ -937,7 +981,7 @@ using the plugin and delete `$APCLIENT_DATA/plugin-state/<name>` manually.
 1. Use `type: "raw"` with base64-encoded msgpack transactions
 2. Set `requiresApproval: true` for transactions requiring user confirmation
 3. Include metadata in `data` field for user information
-4. Ensure transactions use the correct network genesis hash from context
+4. Ensure transactions use the genesis hash of `context.network`, obtained from algod
 
 ### Plugin Directory Layout
 
@@ -955,27 +999,29 @@ plugins.available/my-plugin/
 
 Example plugins are available in `examples/external_plugins/`:
 
-| Plugin | Language | Description | Typed Metadata |
-|--------|----------|-------------|----------------|
-| **echo-plugin** | Go | Development-only protocol illustration; not bundled or installed | `echoMessage()` |
-| **reti** | TypeScript / Node.js, built with Node SEA | Réti staking-protocol example; source-only, not bundled into production release archives | `retiList()`, `retiDeposit()`, `retiWithdraw()`, `retiBalance()`, `retiClaim()` |
+| Plugin | Language | Description |
+|--------|----------|-------------|
+| **echo-plugin** | Go | Development-only protocol illustration; not bundled into release archives |
+| **reti** | TypeScript / Node.js, built with Node SEA | Réti staking-protocol example; source-only, not bundled into production release archives |
 
-These in-repo example plugins include typed metadata for documentation and
-automation surfaces; executable runtime behavior is command-first.
+The examples expose commands only.
 
 For a dev environment, install every example plugin in one step:
 ```bash
 make example-plugins
 ```
-This builds every example, copies each one with a complete payload into
-`$APCLIENT_DATA/plugins.available/`, and writes `plugins.yaml` enabling them.
+This builds the TypeScript examples (those with a `tsconfig.json`), copies every
+example whose payload is complete (`manifest.json`, `checksums.sha256`, and a
+binary named after its directory) into `$APCLIENT_DATA/plugins.available/`, and
+writes `plugins.yaml` enabling them.
 The target is destructive on those two paths and is intended for dev client
 data directories only. To build the examples without modifying `$APCLIENT_DATA`,
 use `make build-example-plugins` instead and copy/enable manually.
 
 Use `echo-plugin` only as a source-level illustration of the plugin protocol.
-It is not bundled into release archives and install helpers do not copy it into
-the plugin catalog.
+It is not bundled into release archives and is not built by
+`make example-plugins`; the install helper copies and enables it only if it was
+built manually (binary and `checksums.sha256` present).
 
 ### Bundled Plugins
 
@@ -986,11 +1032,22 @@ Use `algokit-localnet` when you want the supported LocalNet operations plugin
 that talks to a running AlgoKit LocalNet through localhost algod/KMD APIs. It
 does not shell out to `algokit`, `ak`, or `goal`. Release/install payloads stage
 it under `plugins.available/algokit-localnet`; it becomes active when
-`algokit-localnet` is listed in `$APCLIENT_DATA/plugins.yaml`. It reads LocalNet
-endpoint and wallet overrides from `APLANE_LOCALNET_ALGOD_URL`,
-`APLANE_LOCALNET_KMD_URL`, `APLANE_LOCALNET_TOKEN`,
-`APLANE_LOCALNET_WALLET`, and `APLANE_LOCALNET_WALLET_PASSWORD`; `aplocalnet`
+`algokit-localnet` is listed in `$APCLIENT_DATA/plugins.yaml`; `aplocalnet`
 can activate the plugin and persist a KMD URL override into `apenv.sh`.
+
+The bundled `algokit-localnet` plugin is scoped to the `localnet` execution
+network and implements `localnet status`, `localnet genesis`, `localnet
+accounts`, and `localnet fund`. It uses algod and the Algorand Key Management
+Daemon (KMD), not indexer. During initialization it accepts the generic
+`network`, `algodUrl`, and `algodToken` fields, but the following environment
+variables take precedence for LocalNet operation:
+
+- `APLANE_LOCALNET_ALGOD_URL` (default `http://localhost:4001`)
+- `APLANE_LOCALNET_KMD_URL` (default `http://localhost:4002`)
+- `APLANE_LOCALNET_TOKEN` (default AlgoKit LocalNet token)
+- `APLANE_LOCALNET_WALLET` (default `unencrypted-default-wallet`)
+- `APLANE_LOCALNET_WALLET_PASSWORD` (default empty)
+
 Use `reti` when you want a concrete example that:
 
 - tracks network changes at execute time
@@ -1026,13 +1083,25 @@ External plugins run in OS-level sandboxes that restrict filesystem access. This
 
 **Sandboxing is mandatory.** If the sandbox is unavailable (e.g., bubblewrap not installed on Linux), plugins will not run.
 
-**What plugins CAN access:**
-- `/usr`, `/lib`, `/lib64`, `/bin`, `/sbin` (read-only) - system binaries and libraries
-- `/etc/ssl`, `/etc/ca-certificates` (read-only) - TLS certificates
-- `/etc/resolv.conf`, `/etc/hosts`, `/etc/nsswitch.conf` (read-only) - DNS resolution
+**What plugins CAN access (Linux, bubblewrap):**
+- `/usr`, `/lib`, `/bin` (read-only), plus `/lib64` and `/sbin` when present - system binaries and libraries
+- `/etc/ssl`, `/etc/ca-certificates` (read-only, when present) - TLS certificates
+- `/etc/resolv.conf`, `/etc/hosts`, `/etc/nsswitch.conf` (read-only, when present) - DNS resolution
 - Plugin directory (read-only) - the plugin's own files
 - Plugin state directory (read-write), when `APSHELL_PLUGIN_STATE_DIR` is set
-- `/tmp` and platform temporary directories (read-write) - temporary files
+- `/tmp` (read-write) - a private tmpfs, not the host `/tmp`
+- `/proc` and `/dev` - fresh mounts for the sandbox
+- Network - enabled for all external plugins for algod, KMD, or indexer API calls
+
+**What plugins CAN access (macOS, Seatbelt):**
+- `/` (the root directory entry itself only), `/usr/lib`, `/usr/share`,
+  `/System/Library`, `/Library/Frameworks`, and the dyld shared cache (read-only)
+- `/etc/ssl` (read-only) - TLS certificates
+- `/etc/resolv.conf`, `/etc/hosts` (read-only) - DNS resolution
+- Plugin directory (read-only) - the plugin's own files
+- Plugin state directory (read-write), when `APSHELL_PLUGIN_STATE_DIR` is set
+- `/tmp`, `/private/tmp`, and `/var/folders` (read-write) - temporary files
+- File metadata (stat) on any path; file contents stay behind the allowlist
 - Network - enabled for all external plugins for algod, KMD, or indexer API calls
 
 **What plugins CANNOT access:**
@@ -1043,10 +1112,23 @@ External plugins run in OS-level sandboxes that restrict filesystem access. This
 - User home directory (except plugin dir if located there)
 - Any path not explicitly mounted
 
-**Sensitive environment variables filtered:**
+**Environment filtering:**
+
+Plugins start from the host environment (`os.Environ()`) plus the `APSHELL_*`
+variables above. The sandbox then removes:
 - `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`
 - `GITHUB_TOKEN`, `GH_TOKEN`, `NPM_TOKEN`
 - `SSH_AUTH_SOCK`, `SSH_AGENT_PID`, `GPG_AGENT_INFO`
+- any variable whose name ends in `_TOKEN`, `_SECRET`, `_API_KEY`, or
+  `_PASSWORD`
+
+Variables whose names start with `APSHELL_` are exempt (so
+`APSHELL_ALGOD_TOKEN` survives). The two LocalNet overrides
+`APLANE_LOCALNET_TOKEN` and `APLANE_LOCALNET_WALLET_PASSWORD` are exempt only
+for the plugin whose manifest name is `algokit-localnet`; every other plugin
+has them stripped, since all plugins run with network access. `PATH` is
+rewritten to keep only entries under `/usr/`, `/bin/`, `/lib/`, `/lib64/`, and
+`/sbin/`. All other host environment variables are inherited unchanged.
 
 **Linux Sandbox Details (bubblewrap):**
 
@@ -1094,8 +1176,12 @@ or
   secret keys.
 
 **User Approval:**
-- Transactions with `requiresApproval: true` require user confirmation
-- User sees decoded transaction details before approval
+- In the default flow, apshell lists the proposed intents (count and type) and,
+  for `requiresApproval: true`, asks for confirmation; AutoConfirm skips this
+  client prompt
+- The decoded review of default-flow transactions is the signer's operator
+  approval; `pregrouped-signed` and `presign-plan` get a decoded client-side
+  review in apshell
 
 **Resource Limits:**
 - Timeout enforcement (default 30s)
@@ -1104,10 +1190,14 @@ or
 **Integrity Verification:**
 - All plugins must include `checksums.sha256` with SHA256 hashes
 - Executable must be listed in checksums
-- Entries use sha256sum-style `<64-hex-sha256><spaces><relative-file>` lines
+- Entries use sha256sum-style `<64-hex-sha256><one-or-two-spaces><relative-file>` lines
 - Paths listed in `checksums.sha256` must stay inside the plugin directory
 - If `executable` names a system command, the first manifest arg is treated as
   the plugin-owned executable/script for checksum verification
+- `manifest.json` must be listed and is hash-verified before any manifest
+  field is read
+- Every listed file is hashed; blank lines and `#` comment lines are ignored
+- A checksums file with no entries is rejected
 - Checksums verified at discovery time
 
 ---
@@ -1118,15 +1208,15 @@ This section outlines best practices for developing robust external plugins.
 
 ### Handle Network Changes
 
-**Important:** Users can switch network context tokens at any time during a session. Plugins must handle this correctly.
+Users can switch network context tokens at any time during a session.
 
 The network is provided in two places:
 1. **Initialization** (`initialize` method): `params.network` - the network when the plugin started
 2. **Execution** (`execute` method): `context.network` - the current network for this command
 
-**Problem:** If a plugin only uses the initialization network, it will use the wrong network after the user switches. For example, resolving mainnet USDC (31566704) on testnet will fail with a 404 error.
+**Behavior:** A network switch stops every running plugin; the next command re-initializes it with the new network, so `initialize.network` and `context.network` agree. Checking `context.network` in execute is defensive and costs little.
 
-**Solution:** Always check `context.network` in your execute handler and update if changed:
+**Recommended:** Check `context.network` in your execute handler and update if changed:
 
 ```javascript
 // JavaScript example

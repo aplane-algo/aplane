@@ -1,13 +1,47 @@
-# Cosigner Architecture
+# Guarded Signing
+
+> Guarded signing: the cosigner subsystem that makes a guarded account need
+> both a user signer and a cosigner signer, and Corridor v1, the bundled bounded
+> profile built on it.
 
 This document describes APlane's cosigner subsystem: node roles, cosigner keys,
 guarded accounts, endpoint discovery, guarded transaction orchestration, and
-the trust boundaries between a user signer and a cosigner signer.
+the trust boundaries between a user signer and a cosigner signer. It also
+describes [Corridor v1](#corridor-v1), the first bundled profile that composes
+cosigner authorization into `bounded1`.
 
-For exact wire shapes, on-disk schemas, endpoint file contracts, and SDK
-fixtures, see [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) and
-[ARCH_HTTP_API.md](ARCH_HTTP_API.md). For cosigner policy verdict semantics, see
-[ARCH_POLICY.md](ARCH_POLICY.md).
+The component message, the cosigner key file, and the public cosigner
+reference library are specified in this document. For exact HTTP wire shapes
+and SDK fixtures, see [ARCH_SIGNING.md](ARCH_SIGNING.md#http-api-contract); for the endpoint
+registry file, see [ARCH_DATA_MODEL.md](ARCH_DATA_MODEL.md#endpoint-registry).
+For cosigner policy verdict semantics, see [ARCH_POLICY.md](ARCH_POLICY.md).
+The `bounded1` authorization contract and external contract-admin signing are
+in [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md), key type axes are in
+[ARCH_KEYTYPES.md](ARCH_KEYTYPES.md), and the machine-checked
+bounded-cosigner choreography is in
+[FORMAL_TLA_BOUNDED_COSIGNER_MODEL.md](FORMAL_TLA_BOUNDED_COSIGNER_MODEL.md).
+
+## Contents
+
+- [Status](#status)
+- [Roles And Boundaries](#roles-and-boundaries)
+- [Key Model](#key-model)
+- [Component-Flow Unification Invariants](#component-flow-unification-invariants)
+- [Signer-Domain Gating Of User Components](#signer-domain-gating-of-user-components)
+- [Component Message](#component-message)
+- [Public Cosigner References](#public-cosigner-references)
+- [Endpoint Routing](#endpoint-routing)
+- [Guarded Transaction Flow](#guarded-transaction-flow)
+- [Bounded-Cosigner Transaction Flow](#bounded-cosigner-transaction-flow)
+- [Guarded Simulation](#guarded-simulation)
+- [Assembly Invariants](#assembly-invariants)
+- [Cosigner Policy](#cosigner-policy)
+- [Guarded Authorizers](#guarded-authorizers)
+- [Mixed Groups](#mixed-groups)
+- [Failure Model](#failure-model)
+- [Audit](#audit)
+- [Corridor v1](#corridor-v1)
+- [Implementation Map](#implementation-map)
 
 ## Status
 
@@ -107,7 +141,7 @@ optional schema-v2 composed template whose durable metadata combines the
 `bounded1` authorization contract, the `cosigner1` spend gate, a framework Merkle
 recipient policy, and an external-admin pure rekey. It therefore advertises
 `signing_flow: bounded-cosigner1`, not `cosigner1`, and is discovered from metadata
-rather than a key-type switch. See [ARCH_CORRIDOR.md](ARCH_CORRIDOR.md).
+rather than a key-type switch. See [Corridor v1](#corridor-v1).
 
 Guarded account identity is the guarded account `key_type`, not the base
 signing primitive. The stored `base_key_type` names the private signing
@@ -140,17 +174,19 @@ component/assembly surface handles partial, multi-party authorization.
 The component-flow migration unifies transport and orchestration, not the
 underlying authorization models. `/plan` is the only endpoint that
 canonicalizes a group. Component and assembly endpoints accept frozen group
-bytes and validate them without mutation; they never add resource dummies,
-pool fees, regroup, or otherwise repair the request.
+bytes and validate or reject them without mutation; they never plan, add
+resource dummies, pool fees, regroup, or otherwise repair the request.
 
 The signer intentionally does not prove that frozen bytes came from `/plan`.
 It independently reconstructs signer-owned facts and may accept any canonical,
-envelope-valid group. For a component call, the bytes evaluated by policy, the
+envelope-valid group that satisfies the same policy, resource, fee, and
+signer-owned authorization checks. For a component call, the bytes evaluated by policy, the
 bytes rendered for operator approval, and the bytes used to derive component
 messages are one and the same. Bounded-cosigner component signing therefore
 moves from approving a plan constructed inside the signing call to approving
-the supplied frozen group after the signer re-derives and validates its bounded
-authorization envelope.
+the supplied frozen group after the signer re-derives its bounded authorization
+envelope from durable metadata and validates client-supplied runtime arguments;
+the client cannot supply or weaken that envelope.
 
 For every component kind, the declared dummy suffix is checked against the
 canonical signer-added dummy form before policy evaluation or key access. The
@@ -220,16 +256,19 @@ SHA512_256("APLANE_COSIGNER_V1" || role_byte || txid)
 ```
 
 `role_byte` is `0x01` for the user role and `0x02` for the cosigner role.
-`txid` is the canonical transaction ID for the frozen group entry.
+`txid` is the canonical 32-byte transaction ID for the frozen group entry.
 
 The message deliberately does not contain a separate sender or authorizer
 field. Sender and `AuthAddr` consistency are verified from the canonical
-transaction bytes during assembly. The cosigner policy decision is scoped to the
+transaction bytes during assembly, which requires the guarded LogicSig address,
+and `AuthAddr` when needed, to equal the requested guarded account. The cosigner policy decision is scoped to the
 transaction facts, not to which guarded key acted as authorizer.
 
 Owned primitives:
 
-- `internal/cosigner/message`: message construction.
+- `internal/cosigner/message`: message construction. Clients and signers must
+  use that shared primitive, or an SDK equivalent with matching vectors, rather
+  than reconstructing the message independently.
 - `internal/cosigner/verify`: component signature verification (signer-side
   only; clients treat component signatures as opaque).
 - SDKs must match the same vectors rather than reconstructing a variant.
@@ -276,7 +315,7 @@ disturb the primary signer tunnel. Cosigner HTTP requests use restricted direct 
 that authenticated SSH connection instead of a transient local forwarding
 listener.
 
-Setup then makes three separate observations on its own connection to the
+Setup then makes two separate observations on its own connection to the
 chosen endpoint:
 
 1. **Node role.** It reads `node_role` from authenticated `/status` and
@@ -284,11 +323,7 @@ chosen endpoint:
    or a failed read stops setup. Sweeps and signing do not check the role;
    setup does because an endpoint-only handoff carries nothing else that
    distinguishes a cosigner from a signer.
-2. **Key from the document.** When the input carries a witness, the validated,
-   deduplicated `/keys` inventory must contain the exact key type, public key,
-   and derived Witness Key ID. Endpoint-only input has no key to compare and
-   reports only the inventory count.
-3. **Routes.** It runs the signing resolver's bounded sweep and reports the
+2. **Routes.** It runs the signing resolver's bounded sweep and reports the
    result in the resolver's own classifications. An endpoint that was tried and
    failed is ignored by routing, so routes through answering endpoints stand
    but are qualified. A sweep that stopped early (an SSH host-key mismatch, or
@@ -296,8 +331,7 @@ chosen endpoint:
    is reported as a mismatch and the remaining ones as never contacted.
 
 Setup fails only for the connection being added: no access, a node that is not
-a cosigner, a document key that is not advertised, or a witness that this
-endpoint and another both advertise. The state of other endpoints, and of
+a cosigner, or a witness that this endpoint and another both advertise. The state of other endpoints, and of
 accounts that need other cosigners, is reported without failing it.
 
 Reference aliases are security-bearing generation inputs: resolving
@@ -317,6 +351,131 @@ They contain public metadata only: Witness Key ID, key type, cosigner public key
 hex, and import time. They are not endpoint ownership proofs and do not
 authorize a future transaction. The guarded account's embedded public key is
 the trust input that matters after generation.
+
+### Cosigner Key File
+
+`apadmin cosigner export <witness-key-id> [output-json]` and the apadmin TUI's
+**Export Cosigner Key** emit the canonical `aplane.witness-key-public.v1`
+document and nothing else. The command reads the
+`keys/<witness-key-id>.wit.json` sidecar, verifies that `<witness-key-id>`
+equals the canonical Witness Key ID derived from the public key, and never reads
+or decrypts private key material. If the sidecar is missing or malformed,
+export fails closed; the operator must regenerate the cosigner key, or restore
+it from a backup, which rewrites the sidecar, before exporting.
+
+The envelope schema is shown below. The Falcon public key hex is abbreviated in
+this prose example; persisted envelopes contain all 3,586 hex characters.
+
+```json
+{
+  "schema": "aplane.witness-key-public.v1",
+  "key_type": "aplane.witness-falcon1024.v1",
+  "witness_key_id": "ROGAFDACF7ASC3EMZRWNKVM73NXHO4P6O4EB7ZXWER37SM63BMFQ",
+  "public_key_hex": "0000...0000"
+}
+```
+
+`witness_key_id` is the 52-character uppercase base32 selector derived as
+`base32_no_padding(SHA512_256(field("APLANE_WITNESS_KEY_ID_V1") ||
+field(key_type) || field(canonical_public_key_bytes)))`. It resembles an
+Algorand transaction ID and is not a valid Algorand address. Role-specific
+wire and cosigner-reference records retain the field name `component_key`.
+`public_key_hex` is the raw component
+public key encoded in hex; it is the value embedded into guarded-account
+LogicSig bytecode and supplied as `cosigner_public_key` during guarded account
+generation. The envelope makes no endpoint, policy, ownership, freshness, or
+trust claim.
+
+The daemon returns the document over the admin protocol already in canonical
+form (the field order above, two-space indentation, one trailing newline). The
+apadmin TUI validates it, re-serializes it canonically
+(`witness.MarshalPublicReference`), and writes it locally with owner-private
+permissions. Batch `apadmin cosigner export` writes the daemon's bytes as
+received: to the output path with owner-private permissions, or to stdout when
+the output path is omitted. The file carries no
+endpoint, reference alias, endpoint alias or role, client credential, SSH identity,
+`known_hosts` entry, cached live inventory, private witness material, policy,
+or proof of endpoint ownership. The cosigner's address is not a file contract
+at all: the operator reads it from the export result screen (the configured
+`endpoint.advertise_url`, or a placeholder) or from the deployment, and gives
+it to each client for `endpoints add <url>`. The earlier
+`aplane.cosigner-enrollment.v1` composition envelope, which could carry an
+endpoint block, and the `apadmin cosigner enrollment export|import` commands
+are gone; the system is unreleased, so no reader for them remains.
+
+### Cosigner Public Key Reference Library
+
+`apadmin cosigner import <public-json|-> <name>` imports an
+`aplane.witness-key-public.v1` document into the product store's public
+cosigner reference library. The operator-side adapter validates the document,
+refusing any field beyond the public reference, and sends its canonical form
+through IPC:
+
+```text
+identities/default/cosigners/<name>.json
+```
+
+Reference names are normalized to lowercase and may contain lowercase letters,
+digits, `.`, `-`, and `_`. A name must start with a letter or digit and must
+not contain `..`. The persisted record schema is:
+
+```json
+{
+  "schema": "aplane.cosigner-public-key-ref.v2",
+  "name": "lab-cosigner",
+  "component_key": "ROGAFDACF7ASC3EMZRWNKVM73NXHO4P6O4EB7ZXWER37SM63BMFQ",
+  "key_type": "aplane.witness-falcon1024.v1",
+  "public_key_encoding": "hex",
+  "public_key_hex": "0000...0000",
+  "public_key_size": 1793,
+  "public_key_sha256": "d3a3deeec37ef5e50a463a2b1f8c9c6fc934a5c824a0c1cfd027d035a03b923a",
+  "imported_at": "2026-06-04T00:00:00Z"
+}
+```
+
+The catalog is populated only by explicit operator import. Only the version 2
+record schema is read; records in any other schema, or carrying fields outside
+it, are rejected.
+When the source is `-`, stdin is reserved for the bounded public JSON document.
+Local operation obtains the store passphrase from `APSIGNER_PASSPHRASE` or a
+controlling terminal. Unsupported
+headless combinations fail before authentication instead of sharing stdin
+between the envelope and passphrase.
+
+Human list output leads with the operator-assigned reference name and a compact
+10-leading/10-trailing Witness Key ID. Detailed JSON (`apadmin cosigner show`)
+retains the complete ID.
+
+The library is a generation convenience and trust-input inventory for the user
+signer. When generating a dedicated guarded account or a cosigner-enabled bounded
+template, callers may provide
+`cosigner=<witness-key-id>` instead of `cosigner_public_key=<hex>`.
+`cosigner=<name>` is also accepted as a compatibility input. The signer resolves the
+Witness Key ID or name to `public_key_hex`, verifies that the reference key type
+matches the definition's required cosigner key type,
+rejects requests that provide both forms, and persists the resolved
+`cosigner_public_key` plus the template's other creation parameters in the key
+file. `aplane.corridor.v1`, for example, persists its public recipient list and
+complete bounded metadata; later signing does not require the YAML source to
+remain installed.
+
+Product `/keytypes` metadata may expose imported references as a
+creation parameter named `cosigner` with `type:"select"` and `options[]`
+containing Witness Key IDs whose cosigner key type matches the guarded
+account key type. This is UI metadata for generation clients such as `apadmin`;
+the durable key file still stores the resolved `cosigner_public_key`; other
+provider-specific creation parameters remain exposed normally.
+
+The `apadmin` TUI also receives the optional `cosigner_component_key_type` in
+its internal admin key-type projection and joins it with
+`list_cosigner_references`. Guarded generation displays aliases but submits the
+canonical Witness Key ID. A sole compatible authority may be preselected;
+multiple authorities require an explicit picker choice. When none exists, the
+TUI opens an in-flow public-envelope enrollment review instead of exposing a
+raw `cosigner_public_key` editor. The review locally validates the envelope and
+shows the complete grouped Witness Key ID before the authorized import RPC.
+The public `/keytypes` DTO and external SDK contract are unchanged by this TUI
+projection.
 
 ## Endpoint Routing
 
@@ -396,15 +555,16 @@ The submit flow is:
 
 1. Resolve effective signers.
 2. Classify guarded and non-guarded target positions.
-3. Build one canonical group: dummy transactions, fees, and group ID are fixed
-   before any signature is requested.
+3. Send the draft group to the user signer's `/plan`, which fixes dummy
+   transactions, fees, and group ID before any signature is requested.
 4. Request user-role component signatures from the primary signer for guarded
    targets. This runs the signer-domain gates and may block on operator
    approval.
-5. Request cosigner-role component signatures from the routed cosigner endpoint for
-   guarded targets.
-6. If the group contains non-guarded signer positions, request ordinary
-   signatures over the same canonical bytes.
+5. If the group contains non-guarded signer positions, request ordinary `/sign`
+   signatures over the same canonical bytes; a rejection stops the flow before
+   the cosigner sees the group.
+6. Request cosigner-role component signatures from the routed cosigner endpoint
+   for guarded targets.
 7. Call `/sign/assemble` on the user signer to verify components, pack LogicSig
    arguments, verify passthrough bytes, and return signed transaction bytes.
 8. Route the exact assembled group to algod submission or client-side
@@ -423,11 +583,13 @@ choreography:
    validates grouping, resources, fees, policy, and operator approval without
    changing the bytes. It returns base signature args, runtime args, and an
    assembly receipt bound to those bytes.
-3. Route those exact frozen transactions to the cosigner endpoint and request a
+3. Sign any non-guarded context positions through ordinary `/sign`; the
+   cosigner is asked only after the user side is complete.
+4. Route those exact frozen transactions to the cosigner endpoint and request a
    cosigner-role `/sign/component` signature.
-4. Return the base component, receipt, cosigner signature, and exact group to the
+5. Return the base component, receipt, cosigner signature, and exact group to the
    user signer through `/sign/assemble` with `kind:"bounded-cosigner"`.
-5. The signer verifies all sources, derives declared Merkle proofs, constructs
+6. The signer verifies all sources, derives declared Merkle proofs, constructs
    the metadata-declared argument layout, and returns the executable group.
 
 The first-party client does not ask the cosigner first. It still rejects a group
@@ -493,7 +655,7 @@ slot through ordinary LogicSig arguments.
 
 A cosigner node stores policy exactly as a signer node does, in the
 `aplane.policy.v1` format specified in
-[ARCH_POLICY_FORMAT.md](ARCH_POLICY_FORMAT.md): one node default,
+[ARCH_POLICY.md](ARCH_POLICY.md#the-boundary): one node default,
 `default.json`, and zero or one document per cosigner key,
 `policies/<WitnessKeyID>.json`, in the selected generation. A `/sign/component`
 request's `component_key` selects the policy: a key the node does not hold
@@ -502,8 +664,10 @@ that document alone, and a held key without one is governed by the default.
 The shipped cosigner default is deny-all (`transaction_types` `{"*":
 "reject"}`, no routes, `reject_rekey: true`), so a new key rejects every
 request with `transaction_type:<type>` until it is given a document of its
-own or the operator loosens the default. Policy is evaluated before the
-cosigner key is loaded. Decode refuses review-producing fields and refuses
+own or the operator loosens the default. Before any rule, a target whose
+genesis hash maps to no known network is rejected as `unknown_genesis_hash`
+(see [ARCH_POLICY.md](ARCH_POLICY.md#known-network-gate)). Policy is
+evaluated before the cosigner key is loaded. Decode refuses review-producing fields and refuses
 to `allow` any transaction type but `pay` and `axfer` on a cosigner node, so
 the only cosigner-specific rule ID is `cosigner_policy:reject_rekey`; every
 other verdict uses the common rule IDs in
@@ -642,6 +806,173 @@ signer side cannot provoke enough rejections to rotate the record of what the
 cosigner signed out of the audit log. Signatures are always logged
 individually.
 
+## Corridor v1
+
+`aplane.corridor.v1` is the first bundled profile that composes optional cosigner
+authorization into `bounded1`. It is an optional schema-v2 template source at
+`library/templates/aplane.corridor.v1.yaml`; it is not a compiled provider,
+authorization-contract identifier, key category, or special transaction
+classifier.
+
+The dimensions are independent:
+
+| Dimension | Corridor v1 value |
+|---|---|
+| Full key type | `aplane.corridor.v1` |
+| Account form | DSA LogicSig |
+| Base signing primitive | `aplane.falcon1024.v1` |
+| Authorization contract | `bounded1` |
+| Layer-3 policy | framework-owned `merkle_allowlist` |
+| Spend auxiliary authority | `cosigner1`, Falcon witness, required on spend |
+| Rekey auxiliary authority | distinct offline Falcon contract-admin witness |
+| Advertised signing flow | `bounded-cosigner1` |
+
+Changing one dimension does not reinterpret the others. In particular,
+`bounded1` is the on-chain envelope and durable metadata vocabulary, while
+`bounded-cosigner1` is the client/server choreography used to obtain a complete
+spend signature.
+
+### V1 Compatibility Ratification
+
+This schema-v2 bounded template is the first supported
+`aplane.corridor.v1`. Earlier development catalog entries used a compiled
+guarded provider with different TEAL, address derivation, and choreography;
+they were pre-release artifacts and do not define a durable Corridor
+compatibility contract. No account generated from that provider is supported
+as a production Corridor account. Developer or LocalNet instances must be
+discarded or decommissioned and recreated from this template. The key type,
+canonical program, metadata, and `bounded-cosigner1` flow documented here become
+the Corridor v1 compatibility baseline.
+
+The complete cosigner-bearing profile encoding, behavior parameters, Merkle
+root/proof, argument masks, program binding, and admin transcript are frozen
+together in
+[bounded1 Golden vector 2](ARCH_BOUNDED_DSA.md#golden-vector-2-corridor).
+
+### Accepted Transactions
+
+Every accepted path requires the Falcon spending signature and
+`Fee <= 10,000` microAlgos. Spend paths admit only:
+
+- pure payments;
+- pure asset transfers; and
+- asset opt-ins.
+
+A non-self `Receiver` or `AssetReceiver` must have a valid 512-byte proof
+against the fixed-depth Merkle root compiled from the durable `recipients`
+parameter. Self receivers bypass proof verification. Every spend also requires
+the enrolled cosigner's Falcon signature over the `APLANE_COSIGNER_V1` cosigner-role
+TxID message.
+
+Root construction, recipient canonicalization, duplicate rejection, padding,
+node hashing, and proof order are frozen by the
+[bounded1 Merkle allowlist compatibility contract](ARCH_BOUNDED_DSA.md#merkle-allowlist-compatibility-contract).
+
+Corridor rejects close remainder, asset close, clawback, hybrid rekey+spend,
+unsupported transaction types, missing or malformed proofs, missing cosigner
+authorization, and arguments supplied from the wrong source.
+
+The only administrative operation is the bounded pure-rekey normal form. It
+requires the spending signature plus the distinct external contract-admin
+signature. It does not require or permit a cosigner signature or Merkle proof.
+The admin witness is therefore a rekey co-authorizer, not an independent
+spending-key recovery key.
+
+### Custody And Generation
+
+Generation resolves three distinct Falcon keypairs:
+
+1. the signer-held spending key;
+2. the cosigner-node `.cos` witness selected by `cosigner` or supplied as
+   `cosigner_public_key`; and
+3. the offline `.wit` contract-admin witness represented by
+   `bounded_admin_public_key`.
+
+Visible collisions reject. The generated `.key` stores the resolved public
+parameters, bytecode, and complete signing-metadata version 2
+`bounded_authorization` object. Existing keys therefore remain signable if the
+installed product template is later disabled or removed.
+
+The repository YAML is an install source only. Fresh signer identities do not
+enable Corridor by default; operators import and enable it through the normal
+KeyType Library workflow before generation.
+
+The custody consequences are asymmetric:
+
+- a stolen spending key cannot rekey the account without the admin witness;
+- the spending key plus the admin witness can rekey away from an unavailable
+  or compromised cosigner or replace the current Corridor program;
+- the admin witness cannot recover an account after the spending key is lost.
+
+Operators must therefore back up the spending key and admin witness as distinct
+required authorities rather than treating the admin witness as a substitute
+for spending-key recovery.
+
+### Spend Choreography
+
+The frozen online flow is:
+
+```text
+client -> user signer  POST /plan
+client -> user signer  POST /sign/component (kind=bounded-base)
+client -> cosigner node  POST /sign/component (kind=cosigner)
+client -> user signer  POST /sign/assemble (kind=bounded-cosigner)
+client -> algod         submit or simulate exact signed group
+```
+
+`/plan` finalizes group bytes and fees. The bounded-base component call
+validates those frozen bytes without changing them, applies user-signer policy
+and operator approval, and releases the base signature args plus a
+spending-key assembly receipt. First-party clients contact the cosigner only after that
+release. The cosigner endpoint does not verify a prior base component, so this
+order is client choreography for audit quality, efficiency, and predictable
+operator UX rather than a cosigner-enforced security property. Final assembly
+verifies the base signature, receipt, cosigner signature, durable metadata,
+source/path masks, derived Merkle proof, frozen TxID, LogicSig address, and
+authorizer binding.
+
+Ordinary `/sign` rejects Corridor spends.
+
+The cosigner component is transaction-scoped: it binds the cosigner role and TxID,
+not the Corridor account, authorizer, or program binding. Final assembly and
+the LogicSig perform those account/program checks. Reusing one cosigner key
+across Corridor accounts therefore creates a shared transaction-policy domain;
+per-authorizer cosigner policy would require a new component-message and LogicSig
+version. See [Component Message](#component-message).
+
+### Close And Decommission
+
+Corridor v1 has no direct close path. Decommissioning is deliberately a
+two-step governance action:
+
+1. use the bounded contract-admin ceremony to pure-rekey the account to a
+   successor authorizer; then
+2. use that successor authorizer to close the ALGO account or asset positions.
+
+Step 1 requires both the existing spending key and the contract-admin witness.
+It can escape a failed cosigner or current policy, but it cannot recover a lost
+spending key.
+
+`CloseRemainderTo`, `AssetCloseTo`, and `AssetSender` remain zero on every
+transaction authorized by Corridor itself.
+
+### Compiler And Resource Budget
+
+Corridor stores one resource profile over its final compiler-auto-salted
+bytecode. The spend, spending-key rekey, and contract-admin rekey paths each
+publish their own maximum argument bytes and reviewed opcode ceiling. Under
+v42, argument/opcode capacity determines the minimum group size; bytecode above
+the final group's free program pool contributes to the aggregate fee instead
+of manufacturing extra dummies.
+
+The pinned one-recipient compiler cell is approximately 5.9 KB of final
+bytecode. Its worst-case spend and admin argument layouts remain distinct and
+are derived from durable bounded metadata. The planner evaluates the selected
+path, adds only required resource dummies, applies the v42 program surcharge,
+and rejects the finalized transaction if its fee exceeds the compiled 10,000
+microAlgo ceiling. Compiler golden values are toolchain-pinned; the stored
+final bytecode is authoritative.
+
 ## Implementation Map
 
 Primary packages and files:
@@ -668,7 +999,8 @@ Primary packages and files:
   methods.
 - `internal/engine`: guarded and bounded-cosigner transaction orchestration and
   cosigner endpoint resolution.
-- `internal/config`: endpoint registry parsing and bounded v1 read migration.
+- `internal/config`: endpoint registry parsing (`schema_version` 2 only; retired
+  `signer_port`/`local_port`/`token_file` fields are dropped on load).
 - `internal/apshellapp`: endpoint commands and read-only cosigner discovery.
 - `lsig/falcon1024_guarded`: guarded LogicSig provider and template behavior.
 - `lsig/composeddsa`: optional bounded cosigner composition and framework-owned

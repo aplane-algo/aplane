@@ -56,7 +56,7 @@ silently loading something else. Deleting a key archives its file under
 `deleted/policies/`; a key's file travels with the key in backups.
 
 The document format, field types, and acceptance rules are specified in
-[ARCH_POLICY_FORMAT.md](ARCH_POLICY_FORMAT.md); the machine-readable schema is
+[ARCH_POLICY.md](ARCH_POLICY.md#the-boundary); the machine-readable schema is
 [`pkg/policyschema/policy.v1.schema.json`](../pkg/policyschema/policy.v1.schema.json).
 
 ### The shipped signer default

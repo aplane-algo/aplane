@@ -3,7 +3,7 @@
 
 // Package policyschema publishes the JSON Schema for APlane policy documents.
 // The schema is the producer-facing contract; the node's semantic validation
-// is authoritative and stricter (see docs/ARCH_POLICY_FORMAT.md).
+// is authoritative and stricter (see docs/ARCH_POLICY.md).
 package policyschema
 
 import _ "embed"

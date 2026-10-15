@@ -21,7 +21,7 @@ import (
 // Everything else in the package is choreography internals that must stay
 // unexported so callers cannot compose mid-flow steps out of sequence and skip
 // SignAndSubmitGroup's frozen-bytes verification. Adding an entry here must be
-// a conscious API decision, mirrored in ARCH_SPEC's guarded ownership entry.
+// a conscious API decision, mirrored in ARCH_OVERVIEW's guarded ownership entry.
 var guardedSanctionedExports = map[string]bool{
 	"RouteStatus":                          true,
 	"ConnectionObservation":                true,
@@ -62,7 +62,7 @@ var guardedSanctionedExports = map[string]bool{
 // TestGuardedExportSurfaceStaysSanctioned pins the guarded package's exported
 // identifier set in both directions: an unlisted export fails (a choreography
 // internal leaked back out), and a listed-but-missing export fails (the list
-// rotted). This makes ARCH_SPEC's "exported surface is only the sanctioned
+// rotted). This makes ARCH_OVERVIEW's "exported surface is only the sanctioned
 // entry points" a checked property.
 func TestGuardedExportSurfaceStaysSanctioned(t *testing.T) {
 	const dir = "../../internal/engine/guarded"
@@ -137,10 +137,10 @@ func TestGuardedExportSurfaceStaysSanctioned(t *testing.T) {
 	sort.Strings(unsanctioned)
 	sort.Strings(missing)
 	for _, name := range unsanctioned {
-		t.Errorf("internal/engine/guarded exports %s, which is not on the sanctioned API list; keep choreography internals unexported, or add it here and to ARCH_SPEC deliberately", name)
+		t.Errorf("internal/engine/guarded exports %s, which is not on the sanctioned API list; keep choreography internals unexported, or add it here and to ARCH_OVERVIEW deliberately", name)
 	}
 	for _, name := range missing {
-		t.Errorf("sanctioned export %s no longer exists in internal/engine/guarded; remove it from guardedSanctionedExports and ARCH_SPEC", name)
+		t.Errorf("sanctioned export %s no longer exists in internal/engine/guarded; remove it from guardedSanctionedExports and ARCH_OVERVIEW", name)
 	}
 }
 

@@ -344,9 +344,10 @@ func scanKeysDirectoryInternalReport(active storepaths.ActivePaths, excludedSele
 	// references (.wit.json) are the sole expected non-credential residents
 	// and are validated without decryption; external witness artifact
 	// bundles (.wit) are aprekey-owned and never signer store residents
-	// (docs/ARCH_CONTRACTS.md). Everything unrecognized is reported so store
-	// validation fails closed on unexpected content. Nothing outside the
-	// managed credential classes ever reaches decryptFunc.
+	// (docs/ARCH_BOUNDED_DSA.md, External Contract Admin Artifact Contract).
+	// Everything unrecognized is reported so store validation fails closed on
+	// unexpected content. Nothing outside the managed credential classes ever
+	// reaches decryptFunc.
 	for _, entry := range entries {
 		filenameSelector, _, ok := ParseManagedCredentialFilename(entry.Name())
 		if ok && !entry.IsDir() && excludedSelectors[filenameSelector] {

@@ -220,7 +220,7 @@ func (m Model) handleRestoreDisplayKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// The daemon is still in recovery — even after a successful
 			// restore, if the server-side recovery-exit rescan failed
 			// no unlocked push is coming, and ordinary administration must
-			// stay unavailable (ARCH_TUI). The blocking recovery screen is
+			// stay unavailable (ARCH_ADMIN). The blocking recovery screen is
 			// the only valid destination.
 			return m.openStoreRecovery()
 		}

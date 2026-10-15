@@ -9,7 +9,7 @@ Each signer or cosigner data root contains one product store at
 APIs accept no identity locator, and live mutation and inspection use one
 process-wide product-store lock. Compatibility-bearing on-disk formats are in
 [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md); the closed product-principal and action
-model is in [ARCH_AUTHORIZATION.md](ARCH_AUTHORIZATION.md).
+model is in [ARCH_SECURITY.md](ARCH_SECURITY.md#authorization).
 
 This document does not define transaction planning, policy verdicts, endpoint
 routing, client enrollment, or approval prompts.
@@ -205,6 +205,7 @@ moved behind an existing owner.
 | `internal/cosigner/cosignerrefs` when invoked by the daemon | Public cosigner-reference inventory |
 | `internal/signerapp/clientregistry` when invoked by the daemon | Enrolled client key registry (`identities/default/.ssh/authorized_keys`) |
 | `internal/signerapp/enrollqueue` when invoked by the daemon | Pending enrollment queue (`identities/default/.ssh/pending_enrollments.json`) |
+| `internal/signerapp/storeadmin`, plus `internal/storeinit` when invoked by it | Live store initialization and passphrase change, including writing the new passphrase through the configured passphrase-command helper |
 
 Normal operators reach these owners through authenticated HTTP or the admin protocol over local IPC;
 they do not call the storage packages directly.
@@ -236,7 +237,7 @@ Root-run `apadmin policy rescue apply` and `remove` hold one exclusive lock
 across the policy generation commit and managed-store ownership normalization,
 so a daemon cannot start between publication and repair. They commit through
 the same `internal/signerapp/policyapply` rules as the daemon. Rescue reads
-(`status`, `export`, `check`) hold the shared store lock.
+(`status`, `export`, `check`, `diff`, `template`) hold the shared store lock.
 
 #### External-file-only operations
 
@@ -286,11 +287,12 @@ File-set publication stages and syncs every member before the first rename, so
 preparation failure exposes none of the new members. Because multiple paths
 cannot be renamed atomically, interruption between publication renames remains
 a documented fail-closed mixed-generation state.
-Symlink and non-regular destinations are rejected. The legacy profile remains
-internal to pre-migration validation; normal writers use private profiles.
+Symlink and non-regular destinations are rejected. `fsutil` offers only the
+private-store and root-credential profiles.
 
 `internal/storeperm` owns read-only audit, stopped-service migration, and the
-startup permission contract. It inventories without following symlinks and
+startup permission contract. It keeps a private legacy group-shared profile
+used only to validate and migrate pre-migration trees. It inventories without following symlinks and
 reports unsafe ancestors, ownership, modes, hardlinks, and unexpected file
 types. Its public policies are opaque operation-specific values: production
 audit rejects every in-store socket, same-UID audit recognizes one exact live
@@ -543,7 +545,9 @@ The commit order is:
 Step 5 includes the caller's complete semantic validation of the candidate
 (`storevalidate.Candidate`: deleted archive, node role, policy, templates, and
 every credential). Every commit runs it, including initialization and
-`apstore rebuild`; `genstore.Mint` refuses a request without it. Rebuild
+`apstore rebuild`; `genstore.Mint` refuses a request without it (a test-only
+`SkipCandidateValidation` escape exists, and `test/arch` keeps it out of
+production). Rebuild
 matters most: once any generation exists a second rebuild is refused, so an
 invalid first generation could otherwise only be repaired by hand.
 
@@ -641,6 +645,12 @@ but does not imply it is decryptable with the restored root or passphrase. The
 newer overwritten root must also be recovered from a coherent snapshot.
 
 ### Deleted archive capacity
+
+Product-store deletion archives live inside the selected generation under
+`deleted/`. Key deletion moves the encrypted key file from `keys/` to
+`deleted/keys/`. Template removal deletes the state record and moves the
+encrypted `.template` file from `keytypes/` to `deleted/keytypes/`. Archived
+files are outside active signing scans but remain part of the generation seal.
 
 The selected generation's deleted archive is bounded by release-contract
 constants:
@@ -870,8 +880,14 @@ subject to the node role gate above.
 | Signer library YAML only | Plaintext YAML exists under `library/templates/`; no identity install exists. | No. | No effect on existing keys. | Install/import template into identity. |
 | YAML installed and enabled | Encrypted `.template` exists and state record has `source:"yaml_generic"` or `source:"yaml_composed"` plus `state:"enabled"`. | Yes after successful reload, when allowed by node role. | Existing keys sign from stored key metadata, not the template, when allowed by node role. | Disable or remove, if no stored key uses it. |
 | YAML installed and disabled | Encrypted `.template` exists and state record has `state:"disabled"`. | No. | Existing keys sign from stored key metadata, not the template, when allowed by node role. | Enable, remove, or explicit template restore may re-enable. |
-| YAML integrity or fingerprint mismatch | Encrypted `.template` does not match the state record fingerprint, cannot decrypt, or parses to incompatible metadata. | No; reload rejects that template. | Existing keys may still sign from stored key metadata if otherwise valid and allowed by node role. | Reinstall through supported template import/install path. |
+| YAML integrity or fingerprint mismatch | Encrypted `.template` does not match the state record fingerprint, cannot decrypt, or parses to incompatible metadata. | No. | No for any key; reload fails the selected generation into recovery mode (signing blocked for all keys) until the operator repairs or reinstalls the template. | Reinstall through supported template import/install path. |
 | YAML removed | State record is deleted and encrypted `.template` is moved to `deleted/keytypes/`. | No. | Existing keys may still sign from stored key metadata if otherwise valid and allowed by node role. | Reinstall/import template. |
+
+Registration-semantics outcomes are not content defects and do not block other
+keys: a compiled, generic, or composed conflict with an already-registered
+process-global provider, idempotent re-registration, and disabled records. A
+fingerprint pair from different fingerprint versions is not comparable and is
+not treated as an external edit.
 
 #### Key type transitions
 
@@ -928,10 +944,19 @@ that it occurred. The lifecycle must not be described as fully transactional.
 
 #### Key type records
 
-Key type state records are plaintext because they contain no key material. Record writes use the
-shared atomic write helper (temporary file plus rename). They do not fsync the
-parent directory, so the durability contract is the same as other small signer
-metadata files in this store.
+Product-store key type records under `keytypes/` are plaintext metadata. One
+`<key_type>.json` record stores `key_type`, `source`, `state`, optional compatibility
+`fingerprint`, and activation time (`activated_at`) for an opt-in key type. A
+`source:"compiled", state:"enabled"` record makes a compiled library-visible
+provider available to the product runtime for discovery and generation. YAML template
+records use `source:"yaml_generic"` or `source:"yaml_composed"` and pair with an
+encrypted adjacent `<key_type>.template` file. A disabled YAML record keeps the
+encrypted template installed but hides that key type from discovery, reload, and
+generation. These records do not gate signing for keys that already exist.
+
+Key type state records are plaintext because they contain no key material. Record writes and
+deletes are durable publications (temporary file, file fsync, rename, parent
+directory fsync).
 
 The record fingerprint is the behavior-only compatibility digest, stored as
 `<n>:<sha256hex>` and described under [Key type transitions](#key-type-transitions). It is provenance
@@ -1117,7 +1142,7 @@ key is rejected during reload rather than published as a signable key.
 | Store recovery-blocked | `store-root.enc` or its selected generation failed reconciliation or validation at unlock, or root durability could not be confirmed. | No; the identity is held in recovery mode with signing blocked. | The operator can reconcile, roll back an eligible restore, or directly restore a validated credential archive when destination authority remains valid. |
 | Present but signer locked | Encrypted `.key` or `.cos` exists but identity has no active key session. | No until unlock. | Backup can include active encrypted managed credentials; restore requires authenticated/unlocked flow. |
 | Present, decrypts, canonical filename matches derived selector and category | Account `.key` matches its Algorand address, or witness `.cos` matches its Witness Key ID. | Candidate for its category-specific signing path after validation. | Backup and restore use canonical filenames. |
-| Misnamed or wrong-class managed credential | Basename selector mismatches the payload, witness payload uses `.key`, or account payload uses `.cos`. | No; scanner rejects/skips it. | Restore derives the canonical filename from validated payload category. |
+| Misnamed or wrong-class managed credential | Basename selector mismatches the payload, witness payload uses `.key`, or account payload uses `.cos`. | No; its presence fails reload into recovery. | Restore derives the canonical filename from validated payload category. |
 | Role-forbidden key file | Key type is valid, but the node role does not allow that key class. | No; reload rejects the inventory conflict. | Restore/generation should refuse unless the destination node role allows that key class. |
 | Unknown key type | Payload names a key type unsupported by the current binary. | No. | Restore fails for that key unless support exists. |
 | Native key valid | Native key payload has valid key material and canonical key type. | Yes on signer nodes. | Restores directly onto signer nodes. |
@@ -1142,9 +1167,9 @@ key is rejected during reload rather than published as a signable key.
 | Delete key | Authenticated admin request selects an active credential. | Preserve its basename while moving `.key` or `.cos` to `deleted/keys/`. | Credential leaves active scans. |
 | Backup create | Active key files are selected. | Write encrypted `.apb` payloads in managed backup archive and include source node role metadata in the archive manifest. | Source key files remain unchanged. |
 | Restore preview | Managed archive and passphrase are valid. | Authenticate and inspect complete credential payloads without mutation. | Reports addresses, key types, destination presence, errors, and role mismatches. |
-| Restore apply | Every selected credential validates and replacement conflicts are explicitly accepted. | Mint one generation containing credential changes only, replace `store-root.enc` once, then reload. | All selected credentials become active together; a definite pre-rename failure leaves the parent active. Visible-but-unconfirmed publication or reload failure enters recovery mode without fabricating rollback authority. |
+| Restore apply | Every selected credential validates and replacement conflicts are explicitly accepted. | Mint one generation containing credential changes and restored keys' archived per-key policies only, replace `store-root.enc` once, then reload. | All selected credentials become active together; a definite pre-rename failure leaves the parent active. Visible-but-unconfirmed publication or reload failure enters recovery mode without fabricating rollback authority. |
 | Restore rollback | Current generation is exactly a clean, rollback-eligible `credential-restore`. | Reconstruct the sealed parent into a fresh current-term rollback generation. | Restores the pre-restore credential state without repointing at historical ciphertext; rollback generations are not rollback-eligible. |
-| Unlock/reload | The store root is open and its selected generation is bound. | Verify node role integrity, register enabled templates, scan key files, validate the scanned inventory against role, publish runtime indexes. | Valid active keys become signable; rejected files are diagnostics except role conflicts, which fail closed for the node. |
+| Unlock/reload | The store root is open and its selected generation is bound. | Verify node role integrity, register enabled templates, scan key files, validate the scanned inventory against role, publish runtime indexes. | Valid active keys become signable; rejected files and content defects fail reload into recovery; role conflicts also fail closed. |
 | Repair template provenance | Template/provider state is reinstalled or re-enabled. | No key-file rewrite required unless explicitly restoring missing provenance. | Inventory warnings may clear; signing behavior is unchanged. |
 
 ### Managed credential files
@@ -1198,8 +1223,8 @@ Decrypted key payloads use one canonical v1 JSON schema owned by
 unknown fields, duplicate JSON object members, non-canonical timestamps, and
 noncanonical payload aliases. Creation parameters are stored only in `parameters`;
 LogicSig bytecode is stored only in `lsig_bytecode`. The durable payload does
-not store a separately trusted address, template name, entropy, derivation
-record, or runtime-argument metadata under `runtime_args`.
+not store a separately trusted address, template name, entropy, or
+runtime-argument metadata under `runtime_args`.
 
 Rotating LogicSig accounts use `category: "rotating_lsig"`. The key types are
 `aplane.rotating-hybrid.v1` (Falcon-1024 + Ed25519 stages) and
@@ -1207,7 +1232,7 @@ Rotating LogicSig accounts use `category: "rotating_lsig"`. The key types are
 own derivation and stage program template, and `internal/rotatingkey`
 classifies both and carries their frozen sizes in a per-type profile. The
 profile also marks the WOTS hybrid's stage signature as one-time, which
-changes only what the signer reports (`ARCH_HTTP_API.md`, rotating alerts),
+changes only what the signer reports (`ARCH_SIGNING.md`, rotating alerts),
 never what it signs.
 
 - `private_key` is the 64-byte BIP-39 seed. Mnemonic entropy is not stored.
@@ -1224,8 +1249,8 @@ never what it signs.
   the stored public key. Validation re-derives stage 0 from the seed and
   genesis hash and rejects a mismatch.
 - The family registers both checks with `keys.RegisterRotatingCodec`. A
-  binary without that registration rejects the file, and scanning skips it
-  with a warning.
+  binary without that registration rejects the file; scanning reports it and
+  reload fails into recovery.
 - Scanning and inventory never expose the stage public keys. The resource
   profile is the same for every stage of a key type: 1873 program bytes,
   1487 argument bytes and an opcode ceiling of 3628 for the Falcon hybrid
@@ -1340,8 +1365,8 @@ canonical name. A witness payload in `<id>.key`, an account payload in
 `<address>.cos`, or any selector mismatch is skipped and reported; `.wit` and
 `.wit.json` are never private-credential candidates. Writers and restore derive
 the same canonical destination. Restore rejects a contradictory managed class
-for the same selector even with `overwrite:true`; an exact canonical destination
-is replaced only when overwrite is explicit.
+for the same selector even with `replace_existing`; an exact canonical destination
+is replaced only when `replace_existing` is set.
 
 Every persisted LogicSig key file must derive an off-curve LogicSig address.
 Signer load, key scanning, backup verify, and restore reject an on-curve
@@ -1462,7 +1487,7 @@ account's live stage, and without limit for an account whose live stage it
 has not yet found. The seed is held only inside the derivation itself, and
 locking the signer cancels the pass. The audit log, not the table, is what
 rebuilds the signer's memory of released transactions at unlock (see the
-`ROTATING_RELEASE` entry in `ARCH_HTTP_API.md`).
+`ROTATING_RELEASE` entry in `ARCH_SIGNING.md`).
 
 ### Backup and restore matrix
 
@@ -1472,10 +1497,9 @@ follow the direct key restore path.
 
 Backup manifests carry the source node role going forward. Restore validates
 payload key classes against the destination node's role; it does not change the
-destination role. Rebuild treats source role metadata as a default and
-diagnostic, not authority: `apstore rebuild --role signer|cosigner` sets the
-destination role explicitly, while omitted `--role` uses manifest metadata when
-present and otherwise defaults to `signer`.
+destination role. Rebuild uses the authenticated manifest role as the default:
+`apstore rebuild --role signer|cosigner` overrides it, while omitted `--role`
+uses the authenticated manifest source role, which every valid archive carries.
 
 | Destination key type state | Key restore | Template/provider restore | Generation after restore |
 |---|---|---|---|
@@ -1517,9 +1541,11 @@ The relevant order is:
 `startup.WireReloadFunc`, which is `templates.ReloadService.Reload`.
 
 Reload failures fail closed. For policy/config failures, the previous in-memory
-snapshot remains active when one exists. Ordinary malformed, misnamed, or
-unsupported key/template artifacts may be excluded from new runtime indexes and
-surfaced as diagnostics rather than treated as signable authority.
+snapshot remains active when one exists. Any malformed, misnamed, wrong-class,
+undecryptable, unsupported, or unexpected entry in `keys/`, and any
+template/key-type content defect, fails reload with a generation-validation
+error: the runtime publishes an empty snapshot and enters recovery with signing
+blocked. Entries are not dropped from an otherwise published snapshot.
 
 Role-conflicting key inventory is not ordinary per-item invalidity. It is a
 node-level contradiction: reload must fail closed without publishing a new
@@ -1591,6 +1617,12 @@ Product key-type filtering:
 - `ComposedOrphanedKeyTypes`
 - `CompiledIdempotentKeyTypes`
 - `CompiledConflictingKeyTypes`
+- `GenericErr`
+- `ComposedErr`
+- `NamespaceDefects`
+
+The invalid, invalid-state-record, compiled-invalid, external-edit, orphaned,
+and `NamespaceDefects` buckets are content defects that fail reload.
 
 Admin library template install verifies activation from the product-store
 `ReloadReport`: the installed key type must appear in the activated or
@@ -1647,10 +1679,10 @@ Lifecycle:
 | Backup create | Records source node role metadata in the managed archive manifest. | Reads selected active key files into encrypted backup payloads. | Source store unchanged. |
 | Backup import | None in active identity. | None in active identity. | Validates archive before publishing to managed backup locker. |
 | Restore preview | None. | None. | Decrypts and reports only, including node-role mismatch diagnostics. |
-| Restore apply | None. | Validates every selected complete credential, classifies canonical-plaintext identity/conflict, then commits all pending entries as one generation behind one `store-root.enc` replacement. | Destination policy/configuration remain authoritative; reload publishes all entries, and uncertain durability enters recovery mode. |
+| Restore apply | None. | Validates every selected complete credential, classifies canonical-plaintext identity/conflict, then commits all pending entries as one generation behind one `store-root.enc` replacement. | Destination default policy/configuration remain authoritative; reload publishes all entries, and uncertain durability enters recovery mode. |
 | Restore rollback | None. | Reconstructs the sealed parent of the latest clean rollback-eligible credential restore into a fresh generation. | A rollback generation is not itself eligible for another rollback. |
 | Restore reconcile | None. | Validates the visible generation after interrupted or uncertain completion. | Exits recovery mode only after clean validation and reload. |
-| Rebuild absent store | Writes root `node.yaml` from explicit `--role`, manifest source role metadata, or `signer` fallback. | Restores selected keys into a new product store. | Manifest role is diagnostic/default only; destination key-class gates remain authoritative. |
+| Rebuild absent store | Writes root `node.yaml` from explicit `--role` or the authenticated manifest source role. | Restores selected keys into a new product store. | Manifest role is the default; `--role` overrides it; destination key-class gates remain authoritative. |
 | Store passphrase change | Mints a fresh term and generation, re-encrypts every term-encrypted generation member, renews integrity sidecars, and atomically replaces `store-root.enc`. | Re-encrypts keys. | Logical authority and state are unchanged; the old passphrase and term no longer authorize the current generation. |
 | Binary upgrade | May change compiled provider availability/fingerprints. | Existing keys unchanged. | Bad activations require explicit refresh. |
 | Sign request | None. | Reads already-loaded key metadata. | Key type discovery state is not a sign-time authorization gate. |
@@ -1680,8 +1712,11 @@ Lifecycle:
 13. Guarded account keys use the guarded orchestration flow; normal `/sign`
     rejects them.
 14. Live backup restore validates the full selected credential set before one
-    generation commit. It must not change policy, templates, or key-type state,
-    replace a conflicting credential without explicit authorization, or enter
+    generation commit. It must not change the node default policy, templates, key-type state,
+    or configuration; it writes only credentials and each restored key's own
+    archived policy document (with a current-term sidecar), and a differing
+    destination per-key policy is a conflict requiring `replace_existing`. It
+    must not replace a conflicting credential without explicit authorization, or enter
     the signing index before commit and reload complete.
 15. Template/provider fingerprint conflicts are generation/provenance
     problems, not automatic invalidation of otherwise valid key files.
@@ -1808,8 +1843,9 @@ The current admin protocol exposes a direct credential restore:
 - `restore_backup`: archive path, optional selectors, export passphrase, and
   optional `replace_existing`
 - `restore_backup_result`: operation ID, archive SHA-256, resulting
-  generation, restored/identical/conflicting credentials, key count, stable
-  code, and error
+  generation, restored/identical/conflicting credentials, the keys whose
+  archived policy was installed (`policies_restored`), key count, stable code,
+  and error
 - `rollback_restore`: rolls back only the latest clean, rollback-eligible
   credential restore
 - `reconcile_store`: validates/reconciles the visible generation and exits
@@ -1855,8 +1891,9 @@ repairs are not rollback-eligible because their damaged parent must never be
 promoted back into service. A rollback mint uses
 `credential-restore-rollback`, so a second rollback is refused.
 
-Reload failure after a committed restore reconstructs the authenticated
-parent into a new generation and commits it through the store root. Uncertain
+Reload failure after a committed restore enters recovery mode and blocks
+signing. The committed generation stays selected; the operator reconciles or
+explicitly rolls back. Uncertain
 commit durability, failed rollback after mutation, or failed reconciliation
 enters recovery mode and blocks signing. A crash after a complete root replacement loads the committed
 generation on restart; uncommitted staging is discarded.
@@ -1881,11 +1918,13 @@ policy under which restored authority runs.
 
 ### Offline rebuild
 
-`apstore rebuild <archive-path> [--role signer|cosigner]` remains the rescue
+`apstore rebuild <archive-path> [--role signer|cosigner] [--address ADDRESS ...]` remains the rescue
 path for an absent product store. It applies the same credential validation
-and credential-only semantics into a newly staged first generation. The sealed
-manifest source role supplies the default role; an explicit incompatible role
-or role-conflicting credential is rejected.
+and credential-only semantics into a newly staged first generation. `--address` limits the rebuild to the
+selected credentials; without it every `.apb` payload is restored. The sealed
+manifest source role supplies the default role. An explicit `--role` overrides
+the manifest role, with a warning when the two differ. Credentials whose key
+class the chosen role forbids are rejected.
 
 ## Source of truth
 
@@ -1912,7 +1951,7 @@ Related documents:
 
 - [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md): compatibility-bearing file and
   restore contracts
-- [ARCH_AUTHORIZATION.md](ARCH_AUTHORIZATION.md): product principals and actions
+- [ARCH_SECURITY.md](ARCH_SECURITY.md#authorization): product principals and actions
 - [ARCH_DATA_MODEL.md](ARCH_DATA_MODEL.md): durable/runtime/wire data model
 - [DEV_KEYTYPES.md](DEV_KEYTYPES.md): developer guide for adding key types
 - [USER_KEYTYPES.md](USER_KEYTYPES.md): operator key type management

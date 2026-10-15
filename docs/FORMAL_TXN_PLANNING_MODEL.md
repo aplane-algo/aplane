@@ -10,12 +10,13 @@
 
 Normative inputs:
 
-- [ARCH_TXNFLOW.md](ARCH_TXNFLOW.md): request modes, group canonicalization,
+- [ARCH_SIGNING.md](ARCH_SIGNING.md): request modes, group canonicalization,
   pre-grouped immutability, dummies, fee adjustment, and response alignment.
-- [ARCH_HTTP_API.md](ARCH_HTTP_API.md): `/plan` and `/sign`
+- [ARCH_SIGNING.md](ARCH_SIGNING.md#http-api-contract): `/plan` and `/sign`
   contract surface.
-- [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md): approval/policy compatibility,
-  lifecycle, and signing-authority contracts.
+- [ARCH_POLICY.md](ARCH_POLICY.md#verdict-model) and
+  [ARCH_STORE.md](ARCH_STORE.md): approval/policy compatibility, lifecycle,
+  and signing-authority contracts.
 - [ARCH_POLICY.md](ARCH_POLICY.md): policy verdict precedence and snapshot
   semantics.
 - [ARCH_NETWORKS.md](ARCH_NETWORKS.md): transaction `GenesisHash` resolution for

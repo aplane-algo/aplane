@@ -8,7 +8,7 @@ The policy document calls these entries `routes`.
 This is the transfer-routing deep dive. For the broader signer policy model,
 editing workflow, top-level fields, and when to give a key a policy of its
 own, start with [USER_POLICY.md](USER_POLICY.md). The document format itself
-is specified in [ARCH_POLICY_FORMAT.md](ARCH_POLICY_FORMAT.md).
+is specified in [ARCH_POLICY.md](ARCH_POLICY.md#the-boundary).
 
 Routing is part of every v1 JSON policy document. A node holds one default
 document, which governs every key without a policy of its own, and a file per

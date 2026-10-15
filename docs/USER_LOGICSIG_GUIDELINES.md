@@ -831,7 +831,7 @@ requires a cosigner signature only on bounded spend paths, applies a
 framework-owned Merkle recipient policy, and reserves pure rekey for a distinct
 offline contract-admin witness. Its flow is `bounded-cosigner1`. See
 [KEYTYPE_CAPABILITIES.md](KEYTYPE_CAPABILITIES.md) for the per-operation matrix
-and [ARCH_CORRIDOR.md](ARCH_CORRIDOR.md) for its complete contract.
+and [ARCH_GUARDED.md](ARCH_GUARDED.md#corridor-v1) for its complete contract.
 
 ### Template Library
 
@@ -993,7 +993,7 @@ For public generic LogicSigs, APlane resolves this in favor of safety:
   schema, and tests
 - [AGENTS_KEYTYPES.md](AGENTS_KEYTYPES.md) — agent checklist for safe key type
   and LogicSig template work
-- [ARCH_LSIG_PROVIDER.md](ARCH_LSIG_PROVIDER.md) — LogicSig provider
+- [ARCH_KEYTYPES.md](ARCH_KEYTYPES.md#logicsig-providers) — LogicSig provider
   architecture
 - [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) — compatibility-bearing contracts,
   including LogicSig-facing surfaces

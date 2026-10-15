@@ -137,17 +137,18 @@ Algorand mappings with configured custom mappings. Config load fails closed on:
 - duplicate hashes mapped to different tokens,
 - duplicate custom tokens mapped to different hashes.
 
-Managed backups project only the validated custom genesis-hash-to-network
-bindings into the archive's sealed manifest. Built-in mappings are not
-duplicated, and algod URLs, tokens, endpoints, and the rest of the network
-connection configuration are excluded. Recovery treats this projection as
-operator context only; it never imports the mappings or changes the
-destination resolver.
+Backups carry no network mappings or connection configuration; a restored
+key resolves networks with the destination's resolver.
 
 ## Transaction Planning
 
-The signer planner validates every transaction against the genesis-hash
-resolver before planning or signing.
+Every signing path validates every transaction against the genesis-hash
+resolver before any policy runs: the signer planner for `/sign` and
+`/sign/bounded-admin`, the bounded-cosigner and guarded user-component paths,
+and the cosigner's policy check, which refuses an unknown network as
+`unknown_genesis_hash`. The gate exists so that asset references, whose IDs
+differ per network, are never evaluated without a known network; it applies to
+every transaction so that no path has to prove it carries no asset reference.
 
 Rules:
 
@@ -213,8 +214,9 @@ At enforcement time:
 txn.GenesisHash -> resolver -> network token -> limits[token][asset]
 ```
 
-Unknown genesis hashes fail closed before a transaction can use the wrong policy
-bucket.
+Unknown genesis hashes are refused by the known-network gate (see
+[Transaction Planning](#transaction-planning)) before a transaction can use the
+wrong policy bucket.
 
 ## Admin Protocol
 
@@ -224,7 +226,7 @@ opaque JSON object keys; the admin surfaces must not hard-code `mainnet`,
 `testnet`, or `betanet`.
 
 The exact message contracts are documented in
-[ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
+[ARCH_ADMIN.md](ARCH_ADMIN.md#admin-protocol-contract).
 
 ## Plugins And SDKs
 
@@ -248,7 +250,7 @@ Primary files:
 - `internal/signerapp/signing/planner.go` - signer transaction network validation,
 - `internal/policy/lint.go` - policy lookup by transaction genesis hash,
 - `internal/signerapp/asametadata` - signer-wide ASA metadata cache and display formatting,
-- `internal/signerapp/admin/service.go` - target-aware admin policy service and policy snapshot/validation/replacement,
+- `internal/signerapp/admin/policy.go` - admin policy read/check/apply service,
 - `internal/protocol/messages.go` - whole-policy admin IPC wire fields,
 - external `aplane-algo/aplanesdk/go/config.go` - Go SDK config token validation.
 

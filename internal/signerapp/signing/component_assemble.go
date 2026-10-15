@@ -28,7 +28,7 @@ import (
 )
 
 // ComponentPacker is a BEHAVE-axis capability hook
-// (see docs/ARCH_KEYTYPE_AXES.md): assembly resolves the provider for a key type,
+// (see docs/ARCH_KEYTYPES.md): assembly resolves the provider for a key type,
 // then type-asserts it to ask it to behave — no switch on key type.
 type ComponentPacker interface {
 	PackComponentSignatures(userSignature, cosignerSignature []byte) ([]byte, error)

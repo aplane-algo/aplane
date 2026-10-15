@@ -10,13 +10,13 @@
 
 Normative inputs:
 
-- [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md): key-file, v1 signing-metadata,
+- [ARCH_STORE.md](ARCH_STORE.md): key-file, v1 signing-metadata,
   off-curve, template reload, backup/restore, and signing-authority contracts.
 - [ARCH_DATA_MODEL.md](ARCH_DATA_MODEL.md): durable authority map for key files,
   templates, policy, and runtime indexes.
-- [ARCH_SPEC.md](ARCH_SPEC.md): signer startup, key scan, runtime index, and
+- [ARCH_OVERVIEW.md](ARCH_OVERVIEW.md): signer startup, key scan, runtime index, and
   architectural invariants.
-- [ARCH_LSIG_PROVIDER.md](ARCH_LSIG_PROVIDER.md): LogicSig provider and
+- [ARCH_KEYTYPES.md](ARCH_KEYTYPES.md#logicsig-providers): LogicSig provider and
   off-curve salting architecture.
 - [FORMAL_TXN_PLANNING_MODEL.md](FORMAL_TXN_PLANNING_MODEL.md): sign-mode slots
   that must resolve to signer-managed signing authority.

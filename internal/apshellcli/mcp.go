@@ -151,7 +151,7 @@ Use the js_reference tool to fetch the JavaScript API reference.`),
 	// Register the "doc" tool for on-demand bundled reference docs.
 	mcpServer.AddTool(mcp.NewTool("doc",
 		mcp.WithDescription("List or fetch the bundled APlane reference docs that mcp_manual points to. Call with no arguments to list available docs (name + one-line summary); pass name to return that doc's full Markdown (e.g. name=\"WP_CORRIDORS\")."),
-		mcp.WithString("name", mcp.Description("Doc name to fetch, with or without the .md suffix (e.g. \"ARCH_TXNFLOW\"). Omit to list all available docs.")),
+		mcp.WithString("name", mcp.Description("Doc name to fetch, with or without the .md suffix (e.g. \"ARCH_SIGNING\"). Omit to list all available docs.")),
 	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		name, _ := request.Params.Arguments["name"].(string)
 		return mcpDocResult(dataDir, name), nil

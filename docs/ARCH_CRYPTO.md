@@ -33,9 +33,9 @@ The cryptographic subsystem is split across these packages:
 |---|---|
 | Native signing | `internal/signing`, `internal/signing/ed25519`, `internal/signing/falcon1024` |
 | LogicSig provider interfaces, registry, and salting | `internal/lsigprovider`, `internal/logicsigdsa`, `internal/genericlsig`, `internal/lsigsalt` |
-| Built-in LogicSig families | `lsig/`, especially `lsig/falcon1024`, `lsig/ed25519lsig`, `lsig/falcon1024_guarded`, `lsig/composeddsa`, `lsig/generictemplate` |
+| Built-in LogicSig families | `lsig/`, especially `lsig/falcon1024`, `lsig/ed25519lsig`, `lsig/falcon1024_guarded`, `lsig/composeddsa`, `lsig/generictemplate`, `lsig/rotatinghybrid`, `lsig/rotatingwots` |
 | Algorithm metadata, keygen, mnemonics | `internal/algorithm`, `internal/keygen`, `internal/mnemonic` |
-| Key-type visibility and state | `internal/keytypecatalog`, `internal/keytypestate` |
+| Key-type visibility and state | `internal/keytypecatalog`, `internal/keytypestate`, `internal/defaultkeytypes` (new-store default key-type installation) |
 | Encrypted key/template persistence | `internal/crypto`, `internal/keys`, `internal/keystore`, `internal/templatestore`, `internal/templatelibrary` |
 | Signer reload and template registration | `internal/signerapp/templates` |
 
@@ -65,7 +65,7 @@ This split is a hard dependency boundary, not only a startup preference:
   signer-side signing, keygen, mnemonic, or key-processor registries or link
   `github.com/algorand/falcon`.
 - `cmd/apsigner`, `cmd/apadmin`, and `cmd/apstore` call
-  `lsig/signerreg.RegisterSigner()` plus Ed25519 signer registration.
+  `lsig/signerreg.RegisterSigner()` plus Ed25519 and native Falcon signer registration.
 - `internal/logicsigdsa.LogicSigDSA` is metadata and derivation only; it does
   not expose `GenerateKeypair` or `Sign`.
 - `internal/lsigprovider.SigningProvider` and `MnemonicProvider` expose
@@ -105,8 +105,10 @@ compiled-provider key types use `publisher.family.vN`, such as
 provider registration, migration code, and SDK-facing fields use the full
 canonical identifier.
 
-In this document `family` always refers to the middle segment of
-`publisher.family.vN`. Composed templates point at their signing provider via
+For key-type naming, `family` is the middle segment of
+`publisher.family.vN`; compiled providers register a publisher-qualified
+`Family` (`publisher.family`), and provider `RoutingFamily()` is a separate
+routing key (see [ARCH_KEYTYPES.md](ARCH_KEYTYPES.md#the-three-axes)). Composed templates point at their signing provider via
 `base_key_type` (e.g. `base_key_type: aplane.falcon1024.v1` signs with
 Falcon-1024); their own identity is still named by the `family` segment of
 their canonical `key_type`.
@@ -124,6 +126,8 @@ Built-in and bundled key types include:
   `aplane.falcon1024-allowlist.v2`, `aplane.falcon1024-timelock.v1`, and
   `aplane.falcon1024-allowlist-alock.v1`, plus the bounded-cosigner
   `aplane.corridor.v1`
+- the rotating accounts `aplane.rotating-hybrid.v1` and
+  `aplane.rotating-wots-hybrid.v1` (library-visible, signer-only)
 
 Creation parameters are part of the provider boundary. `internal/lsigprovider`
 owns shared parameter metadata and normalization helpers used by UI adapters,
@@ -159,15 +163,21 @@ LogicSig key type `aplane.falcon1024.v1`.
 
 Built-in LogicSig DSA providers live under `lsig/`. The compiled providers are:
 
-| Key type | Key-type family | Availability |
+| Key type | Registered family | Availability |
 |---|---|---|
-| `aplane.falcon1024.v1` | `falcon1024` | default-enabled |
-| `aplane.falcon1024-cosigner1024.v1` | `falcon1024-cosigner1024` | library-visible |
+| `aplane.falcon1024.v1` | `aplane.falcon1024` | default-enabled |
+| `aplane.falcon1024-cosigner1024.v1` | `aplane.falcon1024-cosigner1024` | library-visible |
 | `aplane.ed25519.v1` | `aplane.ed25519` | library-visible |
 
 These providers implement the unified `internal/lsigprovider.SigningProvider`
 surface. `internal/logicsigdsa` is the DSA-oriented filtered view over
 that unified registry.
+
+`aplane.rotating-hybrid.v1` and `aplane.rotating-wots-hybrid.v1` are also
+compiled, library-visible catalog entries, but they have no client-side
+LogicSig provider and do not register in `internal/lsigprovider`; signer
+binaries register their storage, stage cryptography, and generator through
+`lsig/signerreg`.
 
 ### Generic LogicSig templates
 
@@ -223,7 +233,7 @@ every stage sign once in normal operation, and the Ed25519 half keeps a
 twice-signed stage (after an expired release and its repair, or a client
 re-signing a rebuilt transaction) at classical strength until the next
 release lands. Nothing prevents the second signature; the signer reports it
-(`ARCH_HTTP_API.md`, rotating alerts).
+(`ARCH_SIGNING.md`, rotating alerts).
 
 ## Unified Registry
 
@@ -253,7 +263,9 @@ Compiled LogicSig providers are registered through `lsig.RegisterClient()` for
 client-safe metadata/derivation and `lsig/signerreg.RegisterSigner()` for
 signer-side signing, keygen, and mnemonic handlers. Ed25519 follows the same split through
 `internal/signing/ed25519.RegisterClient()` and
-`internal/signing/ed25519.RegisterSigner()`.
+`internal/signing/ed25519/signerreg.RegisterSigner()`; native Falcon uses
+`internal/signing/falcon1024.RegisterClient()` and
+`internal/signing/falcon1024/signerreg.RegisterSigner()`.
 
 Compiled provider registration is distinct from default visibility. The
 `internal/keytypecatalog` package records whether a compiled key type is
@@ -277,7 +289,7 @@ Visibility states recorded by `internal/keytypecatalog`:
 Product-store key type enable/disable metadata is owned by
 `internal/keytypestate`. State records live under
 the selected generation's `keytypes/<key_type>.json` via
-`internal/storepaths.Paths.KeyTypeRecord()`. They make compiled
+`internal/storepaths.GenPaths.KeyTypeRecord()`. They make compiled
 library-visible providers such as `aplane.falcon1024-cosigner1024.v1` and
 `aplane.ed25519.v1` available to that identity for key type discovery and
 generation when `source:"compiled"` and `state:"enabled"`. Mnemonic import is
@@ -423,7 +435,10 @@ than treating the library YAML as active state.
   `envelope_version: 2`
 
 Standalone version 2 accepts exactly Argon2id time 2, memory 65,536 KiB, and
-parallelism 4. The complete encoded envelope is limited to 1 MiB. Missing or
+parallelism 4. A single-credential envelope is limited to 1 MiB
+(`MaxStandaloneEnvelopeBytes`); larger envelopes, such as the sealed backup
+manifest and archived policy documents, pass an explicit bound to
+`DecryptStandaloneLimited`. Missing or
 different KDF values require a new envelope version and are rejected before
 Argon2id runs.
 
@@ -547,5 +562,5 @@ Start here when changing the subsystem:
 - `internal/keystore/session.go`
 - `internal/signerapp/templates/reload.go`
 - `docs/DEV_KEYTYPES.md`
-- `docs/ARCH_SPEC.md`
+- `docs/ARCH_OVERVIEW.md`
 - `docs/ARCH_CONTRACTS.md`

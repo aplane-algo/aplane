@@ -89,7 +89,7 @@ func RoutingFamily(keyType string) string {
 }
 
 // ResolveByKeyType is the shared lookup for the RESOLVE axis of key-type
-// resolution (see docs/ARCH_KEYTYPE_AXES.md): it resolves a value for keyType
+// resolution (see docs/ARCH_KEYTYPES.md): it resolves a value for keyType
 // from a registry keyed by routing family, using the standard two-step lookup the
 // family-keyed registries share: an exact key-type match first (native and
 // per-key-type registrations), then the key type's RoutingFamily. get reads the

@@ -6,16 +6,21 @@ Guidelines for AI agents and contributors working on the APlane codebase.
 
 Before making architectural, protocol, storage, or refactor-sensitive changes, read:
 
-- `docs/ARCH_SPEC.md`: repo orientation, subsystem ownership, runtime model, architectural seams, and source-of-truth files
-- `docs/ARCH_CONTRACTS.md`: compatibility-bearing HTTP/IPC behavior, on-disk formats, config contracts, SDK/plugin/MCP contracts
-- `docs/ARCH_AUTHORIZATION.md`: principal/group/grant authorization model, stable actions, bootstrap product authorization, and enforcement points
-- `docs/ARCH_POLICY.md`: current signer policy verdict model, phase ordering, and rule inventory
-- `docs/ARCH_POLICY_FORMAT.md`: `aplane.policy.v1` JSON policy document format (`role` and `key`), storage (`default.json` plus `policies/<selector>.json` on both node roles), and acceptance rules
-- `docs/ARCH_NETWORKS.md`: network context tokens, genesis-hash mapping, and network-scoped policy behavior
-- `docs/ARCH_COSIGNER.md`: guarded signing and cosigner node architecture, cosigner keys, endpoint routing, and assembly invariants
+- `docs/ARCH_OVERVIEW.md`: system overview, components, ownership map, runtime model, architectural seams, and source-of-truth files
+- `docs/ARCH_CONTRACTS.md`: index of compatibility-bearing contracts and where each lives, plus the compatibility scope and configuration contracts
+- `docs/ARCH_DATA_MODEL.md`: system-wide durable, runtime, wire, and cache data model, with its catalog
+- `docs/ARCH_STORE.md`: signer store layout, ownership, generational commit and recovery, key and key type lifecycle, and backup and restore
+- `docs/ARCH_POLICY.md`: policy verdict model and rule inventory, the `aplane.policy.v1` document format, and storage and acceptance
+- `docs/ARCH_SIGNING.md`: transaction signing flow and the HTTP API contract (wire shapes, status codes, `/sign/cancel`, error model, SDK contracts)
+- `docs/ARCH_ADMIN.md`: admin protocol contract (message catalog, payloads, writable settings) and the apadmin TUI
+- `docs/ARCH_SECURITY.md`: authentication, SSH transport, client enrollment, audit log, and the product authorization model
+- `docs/ARCH_CRYPTO.md`: cryptographic design
+- `docs/ARCH_KEYTYPES.md`: key type dimensions and resolution axes, key type identifiers, and LogicSig providers
+- `docs/ARCH_GUARDED.md`: guarded signing and cosigner nodes, and the Corridor v1 profile
 - `docs/ARCH_BOUNDED_DSA.md`: bounded DSA contracts, effect inventory, canonical encodings, external contract-admin signing, and cold custody
-- `docs/ARCH_CORRIDOR.md`: Corridor v1 composition, custody roles, bounded-cosigner choreography, close behavior, and compiler budgets
-- `docs/ARCH_STORE.md`: signer store layout, ownership and offline maintenance, generational commit and recovery, and key and key type lifecycle
+- `docs/ARCH_NETWORKS.md`: network context tokens, genesis-hash mapping, and network-scoped policy behavior
+- `docs/ARCH_SHELL.md`: client side: engine, REPL and parsing contracts, app interaction, and the MCP surface
+- `docs/ARCH_PLUGINS.md`: plugin system architecture
 
 Before generating or modifying key types or LogicSig templates, also read:
 
@@ -67,7 +72,7 @@ Apshell is the other major component; it provides a shell-like interface to gene
 - `internal/sshtunnel/`: SSH tunnel server/client
 - `internal/config/`: Client and server configuration loading/validation
 
-For a current ownership map and source-of-truth files, prefer `docs/ARCH_SPEC.md` over this summary.
+For a current ownership map and source-of-truth files, prefer `docs/ARCH_OVERVIEW.md` over this summary.
 
 ### Cryptographic Modules (`lsig/`)
 - `lsig/falcon1024/`: Falcon-1024 post-quantum signature implementation
@@ -154,13 +159,13 @@ make applugin-checksums         # Generate checksums.sha256 for all example plug
 - Commands: `connect`, `network`, `balance`, `send`, `keyreg`, `sign`, `run`, `help`
 - JavaScript scripting via `js script.js`
 - Tab completion for addresses, commands, assets
-- For the broader command and MCP surface, prefer `docs/ARCH_SPEC.md` and `docs/ARCH_CONTRACTS.md`
+- For the broader command and MCP surface, prefer `docs/ARCH_OVERVIEW.md` and `docs/ARCH_SHELL.md`
 
 ### apsigner
 - Starts signing server with HTTP REST API and IPC interface
 - Requires data directory: `-d <path>` or `APSIGNER_DATA` env var
 - Config file: `<data_dir>/config.yaml`
-- Endpoints: see `docs/ARCH_HTTP_API.md` for the current HTTP surface
+- Endpoints: see `docs/ARCH_SIGNING.md` for the current HTTP surface
 - Authentication: the client's enrolled SSH key; API channels arrive through the SSH server with that identity, the loopback port answers only `/health`
 
 ### apadmin
@@ -245,7 +250,7 @@ make applugin-checksums         # Generate checksums.sha256 for all example plug
 ### Authentication
 - HTTP: connection identity from the enrolled SSH key that opened the tunnel (no header credential)
 - IPC: Passphrase verified against Argon2id-derived master key
-- See `docs/ARCH_SECURITY.md` for authentication/security architecture and `docs/ARCH_AUTHORIZATION.md` for authorization architecture
+- See `docs/ARCH_SECURITY.md` for the authentication, security, and authorization architecture
 
 ### Cryptography
 - Use `crypto/rand` for random bytes (never `math/rand`)
@@ -301,7 +306,7 @@ gofmt -s -w .         # Format code
 - `identities/default/unlock.yaml`: Product passphrase-helper configuration
 - `identities/default/generations/<gen-id>/default.json` (node default) and `policies/<selector>.json` (per-key, on both node roles): `aplane.policy.v1` JSON policy documents, each with a `.hmac` sidecar
 
-See `docs/ARCH_CONTRACTS.md` for the full on-disk layout and compatibility details.
+See `docs/ARCH_STORE.md` for the full on-disk layout and `docs/ARCH_CONTRACTS.md` for where each compatibility contract lives.
 
 ### Environment Variables
 - `APCLIENT_DATA`: Data directory for apshell (config, plugins)
@@ -313,30 +318,22 @@ See `docs/ARCH_CONTRACTS.md` for the full on-disk layout and compatibility detai
 
 ## Documentation
 
-### Engineering Docs
-- `ARCH_SPEC.md`: Cross-cutting implementation map, ownership model, runtime model, architectural seams, source-of-truth files
-- `ARCH_CONTRACTS.md`: Compatibility-bearing on-disk/config/SDK/plugin/MCP contracts and TOC pointing at extracted contract docs
-- `ARCH_HTTP_API.md`: HTTP request/response wire shapes, status codes, fixed runtime binding, and `/sign/cancel` lifecycle
-- `ARCH_ADMIN_PROTOCOL.md`: apsigner admin RPC message catalog, payload shapes, and writable-settings rules
-
 ### Architecture Docs (`docs/`)
-- `ARCH_OVERVIEW.md`: System architecture overview
-- `ARCH_SECURITY.md`: Authentication and security architecture
-- `ARCH_AUTHORIZATION.md`: Principal/group/grant authorization architecture
-- `ARCH_POLICY.md`: Current signer policy verdict model and rule inventory
-- `ARCH_POLICY_FORMAT.md`: v1 JSON policy document format and acceptance rules
-- `ARCH_NETWORKS.md`: Network context token and genesis-hash mapping architecture
-- `ARCH_COSIGNER.md`: Guarded signing and cosigner node architecture
-- `ARCH_CORRIDOR.md`: Corridor v1 bounded-cosigner profile architecture
-- `ARCH_APP_INTERACTION.md`: App interaction, app-local vs signer-managed action boundaries, and token/caller model
-- `ARCH_LSIG_PROVIDER.md`: LogicSig provider, template, salting, and registration architecture
-- `ARCH_PLUGINS.md`: Plugin system architecture
+- `ARCH_OVERVIEW.md`: System overview, components, ownership map, runtime model, architectural seams, and source-of-truth files
+- `ARCH_CONTRACTS.md`: Index of compatibility-bearing contracts and where each lives, plus the compatibility scope and configuration contracts
+- `ARCH_DATA_MODEL.md`: System-wide durable, runtime, wire, and cache data model, with its catalog
+- `ARCH_STORE.md`: Signer store layout, ownership, generational commit and recovery, key and key type lifecycle, and backup and restore
+- `ARCH_POLICY.md`: Policy verdict model and rule inventory, the `aplane.policy.v1` document format, and storage and acceptance
+- `ARCH_SIGNING.md`: Transaction signing flow and the HTTP API contract (wire shapes, status codes, `/sign/cancel`, error model, SDK contracts)
+- `ARCH_ADMIN.md`: Admin protocol contract (message catalog, payloads, writable settings) and the apadmin TUI
+- `ARCH_SECURITY.md`: Authentication, SSH transport, client enrollment, audit log, and the product authorization model
 - `ARCH_CRYPTO.md`: Cryptographic design
-- `ARCH_ENGINE.md`: Engine and business logic
-- `ARCH_REPL.md`: apshell REPL architecture (parsing, dispatch, rendering)
-- `ARCH_MCP.md`: apshell MCP server and tool surface
-- `ARCH_TUI.md`: signer admin TUI (apadmin) architecture
-- `ARCH_TXNFLOW.md`: Transaction signing flow details
+- `ARCH_KEYTYPES.md`: Key type dimensions and resolution axes, key type identifiers, and LogicSig providers
+- `ARCH_GUARDED.md`: Guarded signing and cosigner nodes, and the Corridor v1 profile
+- `ARCH_BOUNDED_DSA.md`: Bounded DSA contracts, effect inventory, canonical encodings, external contract-admin signing, and cold custody
+- `ARCH_NETWORKS.md`: Network context tokens, genesis-hash mapping, and network-scoped policy behavior
+- `ARCH_SHELL.md`: Client side: engine, REPL and parsing contracts, app interaction, and the MCP surface
+- `ARCH_PLUGINS.md`: Plugin system architecture
 
 ### User Docs
 - `USER_INSTALL.md`: Installation and upgrade guide

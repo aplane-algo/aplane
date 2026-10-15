@@ -196,30 +196,23 @@ real networked transaction-building plugins.
 All documentation is in the [`docs/`](docs/) directory.
 
 ### Architecture
-- [ARCH_OVERVIEW.md](docs/ARCH_OVERVIEW.md) - System architecture and layering
-- [ARCH_AUTHORIZATION.md](docs/ARCH_AUTHORIZATION.md) - Product principal, action allowlist, and enforcement points
-- [ARCH_NETWORKS.md](docs/ARCH_NETWORKS.md) - Network context and genesis-hash contracts
-- [ARCH_DATA_MODEL.md](docs/ARCH_DATA_MODEL.md) - System-wide durable, runtime, wire, and cache data model
-- [ARCH_SECURITY.md](docs/ARCH_SECURITY.md) - Authentication and security model
-- [ARCH_CRYPTO.md](docs/ARCH_CRYPTO.md) - Signing providers and key types
-- [ARCH_ENGINE.md](docs/ARCH_ENGINE.md) - Business logic layer
-- [ARCH_REPL.md](docs/ARCH_REPL.md) - apshell REPL architecture
-- [ARCH_MCP.md](docs/ARCH_MCP.md) - apshell MCP server and tool surface
-- [ARCH_TUI.md](docs/ARCH_TUI.md) - signer admin TUI (apadmin)
-- [ARCH_PLUGINS.md](docs/ARCH_PLUGINS.md) - External plugin system
-- [ARCH_APP_INTERACTION.md](docs/ARCH_APP_INTERACTION.md) - Application interaction (read state, call contracts, deploy)
-- [ARCH_COSIGNER.md](docs/ARCH_COSIGNER.md) - Guarded signing and cosigner node architecture
-- [ARCH_BOUNDED_DSA.md](docs/ARCH_BOUNDED_DSA.md) - Bounded DSA contracts, effect model, and external contract-admin ceremonies
-- [ARCH_CORRIDOR.md](docs/ARCH_CORRIDOR.md) - Corridor v1 composition, custody, and choreography
-- [ARCH_STORE.md](docs/ARCH_STORE.md) - Signer store layout, ownership, generational commits and recovery, and key and key type lifecycle
-- [ARCH_TXNFLOW.md](docs/ARCH_TXNFLOW.md) - Transaction signing flow details
+- [ARCH_OVERVIEW.md](docs/ARCH_OVERVIEW.md) - System overview, components, ownership map, runtime model, architectural seams, and source-of-truth files
+- [ARCH_CONTRACTS.md](docs/ARCH_CONTRACTS.md) - Index of compatibility-bearing contracts and where each lives, plus the compatibility scope and configuration contracts
+- [ARCH_DATA_MODEL.md](docs/ARCH_DATA_MODEL.md) - System-wide durable, runtime, wire, and cache data model, with its catalog
+- [ARCH_STORE.md](docs/ARCH_STORE.md) - Signer store layout, ownership, generational commit and recovery, key and key type lifecycle, and backup and restore
+- [ARCH_POLICY.md](docs/ARCH_POLICY.md) - Policy verdict model and rule inventory, the `aplane.policy.v1` document format, and storage and acceptance
+- [ARCH_SIGNING.md](docs/ARCH_SIGNING.md) - Transaction signing flow and the HTTP API contract (wire shapes, status codes, `/sign/cancel`, error model, SDK contracts)
+- [ARCH_ADMIN.md](docs/ARCH_ADMIN.md) - Admin protocol contract (message catalog, payloads, writable settings) and the apadmin TUI
+- [ARCH_SECURITY.md](docs/ARCH_SECURITY.md) - Authentication, SSH transport, client enrollment, audit log, and the product authorization model
+- [ARCH_CRYPTO.md](docs/ARCH_CRYPTO.md) - Cryptographic design
+- [ARCH_KEYTYPES.md](docs/ARCH_KEYTYPES.md) - Key type dimensions and resolution axes, key type identifiers, and LogicSig providers
+- [ARCH_GUARDED.md](docs/ARCH_GUARDED.md) - Guarded signing and cosigner nodes, and the Corridor v1 profile
+- [ARCH_BOUNDED_DSA.md](docs/ARCH_BOUNDED_DSA.md) - Bounded DSA contracts, effect inventory, canonical encodings, external contract-admin signing, and cold custody
+- [ARCH_NETWORKS.md](docs/ARCH_NETWORKS.md) - Network context tokens, genesis-hash mapping, and network-scoped policy behavior
+- [ARCH_SHELL.md](docs/ARCH_SHELL.md) - Client side: engine, REPL and parsing contracts, app interaction, and the MCP surface
+- [ARCH_PLUGINS.md](docs/ARCH_PLUGINS.md) - Plugin system architecture
 
 ### Specification
-- [ARCH_SPEC.md](docs/ARCH_SPEC.md) - Cross-cutting implementation map and subsystem ownership
-- [ARCH_CONTRACTS.md](docs/ARCH_CONTRACTS.md) - Compatibility contracts (on-disk, config, SDK, plugin, MCP) with TOC into extracted docs
-- [ARCH_HTTP_API.md](docs/ARCH_HTTP_API.md) - HTTP wire shapes, status codes, product-runtime binding, and sign cancellation
-- [ARCH_ADMIN_PROTOCOL.md](docs/ARCH_ADMIN_PROTOCOL.md) - apsigner admin RPC catalog, payload shapes, writable-settings rules
-- [ARCH_POLICY_FORMAT.md](docs/ARCH_POLICY_FORMAT.md) - v1 JSON policy document format, storage, and acceptance rules
 - [FORMALIZATION_ROADMAP.md](docs/FORMALIZATION_ROADMAP.md) - Formal-assurance roadmap and scope
 - [FORMAL_TXN_PLANNING_MODEL.md](docs/FORMAL_TXN_PLANNING_MODEL.md) - Precise transaction-planning model and invariants
 - [FORMAL_POLICY_MODEL.md](docs/FORMAL_POLICY_MODEL.md) - Precise policy precedence model and invariants

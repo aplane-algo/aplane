@@ -425,7 +425,7 @@ func TestBoundedCosignerSimulateUsesUserFirstChoreography(t *testing.T) {
 }
 
 // TestMixedGroupsFinishUserSideBeforeCosigner pins the user-first
-// choreography in ARCH_COSIGNER.md for mixed groups: the user signer signs the
+// choreography in ARCH_GUARDED.md for mixed groups: the user signer signs the
 // non-guarded positions before the cosigner sees the group, so a /sign
 // rejection never reaches the cosigner.
 func TestMixedGroupsFinishUserSideBeforeCosigner(t *testing.T) {
