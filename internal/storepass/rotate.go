@@ -165,7 +165,7 @@ func Rotate(
 			}
 			result.KeysMigrated = counts.keys
 			result.TemplatesMigrated = counts.templates
-			result.PolicySidecarsMigrated = 1
+			result.PolicySidecarsMigrated = counts.policies
 			result.NodeRoleSidecarsMigrated = 1
 			return nil
 		},
@@ -241,6 +241,7 @@ func collectHistoricalAnchors(
 type migrationCounts struct {
 	keys      int
 	templates int
+	policies  int
 }
 
 func reencryptSealedGeneration(
@@ -319,6 +320,7 @@ func reencryptSealedGeneration(
 		if err := resignPolicyMember(staged, nodeDoc.Role, relative, data, members, oldKeyring, successorKeyring, now); err != nil {
 			return counts, err
 		}
+		counts.policies++
 	}
 
 	nodeSidecar, err := noderole.ParseSidecar(members["node.yaml.hmac"])
