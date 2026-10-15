@@ -36,7 +36,7 @@ func TestFilterEnv(t *testing.T) {
 		"APSHELL_ALGOD_TOKEN=intentional_plugin_token",
 	}
 
-	result := filterEnv(input)
+	result := filterEnv("test-plugin", input)
 
 	// Build lookup
 	envMap := make(map[string]string)
@@ -79,7 +79,7 @@ func TestFilterEnvPathSanitization(t *testing.T) {
 		"PATH=/usr/bin:/usr/local/bin:/home/user/.nvm/bin:/sbin:/lib/custom:/opt/custom",
 	}
 
-	result := filterEnv(input)
+	result := filterEnv("test-plugin", input)
 
 	var pathValue string
 	for _, e := range result {
@@ -119,12 +119,12 @@ func TestFilterEnvPathSanitization(t *testing.T) {
 }
 
 func TestFilterEnvEmpty(t *testing.T) {
-	result := filterEnv(nil)
+	result := filterEnv("test-plugin", nil)
 	if len(result) != 0 {
 		t.Errorf("filterEnv(nil) should return empty, got %d", len(result))
 	}
 
-	result = filterEnv([]string{})
+	result = filterEnv("test-plugin", []string{})
 	if len(result) != 0 {
 		t.Errorf("filterEnv([]) should return empty, got %d", len(result))
 	}
@@ -337,6 +337,47 @@ func TestGetSandboxInfo(t *testing.T) {
 	default:
 		if !strings.Contains(info, "unsupported") {
 			t.Errorf("GetSandboxInfo() = %q, want containing 'unsupported'", info)
+		}
+	}
+}
+
+// The suffix rule strips secret-shaped names, but the bundled LocalNet
+// plugin reads its token and wallet password from APLANE_LOCALNET_*, so those
+// two names pass through to that plugin alone; other *_TOKEN and *_PASSWORD
+// names do not, and no other plugin receives the LocalNet credentials.
+func TestFilterEnvPassesLocalNetConfigOnlyToItsPlugin(t *testing.T) {
+	input := []string{
+		"APLANE_LOCALNET_TOKEN=tok",
+		"APLANE_LOCALNET_WALLET_PASSWORD=pw",
+		"OTHER_TOKEN=x",
+		"DB_PASSWORD=y",
+	}
+	filtered := func(pluginName string) map[string]bool {
+		got := map[string]bool{}
+		for _, e := range filterEnv(pluginName, input) {
+			got[e] = true
+		}
+		return got
+	}
+
+	got := filtered("algokit-localnet")
+	for _, want := range []string{"APLANE_LOCALNET_TOKEN=tok", "APLANE_LOCALNET_WALLET_PASSWORD=pw"} {
+		if !got[want] {
+			t.Errorf("filterEnv dropped %s for algokit-localnet", want)
+		}
+	}
+	for _, drop := range []string{"OTHER_TOKEN=x", "DB_PASSWORD=y"} {
+		if got[drop] {
+			t.Errorf("filterEnv kept %s for algokit-localnet", drop)
+		}
+	}
+
+	for _, other := range []string{"echo-plugin", ""} {
+		got := filtered(other)
+		for _, drop := range input {
+			if got[drop] {
+				t.Errorf("filterEnv passed %s to plugin %q", drop, other)
+			}
 		}
 	}
 }

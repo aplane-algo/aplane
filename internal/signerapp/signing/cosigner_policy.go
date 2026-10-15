@@ -6,6 +6,7 @@ package signing
 import (
 	"fmt"
 
+	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/witness"
 
@@ -32,9 +33,26 @@ func (s *Service) evaluateCosignerComponentPolicy(plan *ComponentSignPlan) *Serv
 		return internal("policy is not loaded")
 	}
 
+	// Known-network gate: every signing path refuses a transaction whose
+	// genesis hash names no network this node knows, before any policy rule.
+	// Asset references are only meaningful on a known network; the gate
+	// applies to every transaction, including ones that name no asset (a
+	// cosigner rekey is a 0 ALGO self-payment), so no path has to prove it
+	// cannot carry one. A cosigner has no operator, so the refusal is an
+	// audited policy rejection rather than a bare bad request.
+	resolver := s.genesisHashResolver()
 	var violations []policy.LintViolation
 	for _, target := range plan.Targets {
 		txn := plan.Group.Entries[target.TargetIndex].Txn
+		if _, ok := resolver.NetworkForGenesisHashBytes(txn.GenesisHash[:]); !ok {
+			violations = append(violations, policy.LintViolation{
+				RuleID:   policy.UnknownGenesisHashRuleID,
+				Scope:    "txn",
+				TxnIndex: target.TargetIndex,
+				Message:  fmt.Sprintf("cannot evaluate cosigner policy for unknown genesis hash %x", txn.GenesisHash[:]),
+			})
+			continue
+		}
 		violations = append(violations, cosignerTargetPolicyLints(txn, target.TargetIndex, cfg)...)
 	}
 	if len(violations) > 0 {
@@ -174,4 +192,25 @@ func (s *Service) logCosignerComponentApproved(plan *ComponentSignPlan, result *
 			fmt.Sprintf("cosigner component signature target %d signed", target.TargetIndex),
 		)
 	}
+}
+
+// genesisHashResolver is the node's network map, shared with /sign planning.
+// A zero resolver resolves the built-in networks only.
+func (s *Service) genesisHashResolver() apconfig.GenesisHashNetworkResolver {
+	if s == nil || s.Planner == nil {
+		return apconfig.GenesisHashNetworkResolver{}
+	}
+	return s.Planner.GenesisHashResolver
+}
+
+// componentPlanTxns returns every transaction in a component plan's group.
+func componentPlanTxns(plan *ComponentSignPlan) []types.Transaction {
+	if plan == nil || plan.Group == nil {
+		return nil
+	}
+	txns := make([]types.Transaction, len(plan.Group.Entries))
+	for i, entry := range plan.Group.Entries {
+		txns[i] = entry.Txn
+	}
+	return txns
 }

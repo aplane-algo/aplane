@@ -401,6 +401,7 @@ func (m *Manager) startPluginInstance(plugin *discovery.Plugin, cfg runtimeConfi
 
 	// Build sandboxed command
 	sandboxCfg := sandbox.Config{
+		PluginName:   plugin.Manifest.Name,
 		PluginDir:    plugin.Dir,
 		StateDir:     stateDir,
 		ExecPath:     execPath,

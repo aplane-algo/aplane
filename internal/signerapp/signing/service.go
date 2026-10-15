@@ -181,6 +181,10 @@ func (s *Service) signComponentWithSession(ctx context.Context, req componentPla
 		if err := s.preflightGuardedAccountKeyMetadata(plan.ComponentKey); err != nil {
 			return nil, err
 		}
+		// The same known-network gate as /sign planning, before any policy.
+		if err := validateKnownNetwork(componentPlanTxns(plan), s.genesisHashResolver()); err != nil {
+			return nil, err
+		}
 		reviewRuleID, gateErr := s.gateUserComponentSigning(ctx, plan)
 		if gateErr != nil {
 			return nil, gateErr

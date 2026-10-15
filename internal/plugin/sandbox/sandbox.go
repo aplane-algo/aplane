@@ -19,6 +19,10 @@ import (
 
 // Config holds sandbox configuration
 type Config struct {
+	// PluginName is the plugin's manifest name. It selects which plugin-specific
+	// configuration variables survive the environment filter.
+	PluginName string
+
 	// PluginDir is the plugin's directory (read-only access granted)
 	PluginDir string
 
@@ -144,7 +148,7 @@ func buildLinuxCommand(cfg Config) (*exec.Cmd, error) {
 
 	cmd := exec.Command(bwrapPath, args...)
 	cmd.Dir = cfg.PluginDir
-	cmd.Env = filterEnv(cfg.Env)
+	cmd.Env = filterEnv(cfg.PluginName, cfg.Env)
 
 	return cmd, nil
 }
@@ -166,7 +170,7 @@ func buildDarwinCommand(cfg Config) (*exec.Cmd, error) {
 
 	cmd := exec.Command(sandboxExecPath, args...)
 	cmd.Dir = cfg.PluginDir
-	cmd.Env = filterEnv(cfg.Env)
+	cmd.Env = filterEnv(cfg.PluginName, cfg.Env)
 
 	return cmd, nil
 }
@@ -272,8 +276,9 @@ func seatbeltStringLiteral(path string) string {
 }
 
 // filterEnv filters environment variables for sandboxed execution
-// Removes potentially sensitive variables
-func filterEnv(env []string) []string {
+// Removes potentially sensitive variables, except the configuration variables
+// that pluginName itself owns.
+func filterEnv(pluginName string, env []string) []string {
 	// Directories accessible inside the sandbox (bind-mounted read-only)
 	sandboxPrefixes := []string{"/usr/", "/bin/", "/lib/", "/lib64/", "/sbin/"}
 
@@ -281,7 +286,7 @@ func filterEnv(env []string) []string {
 	for _, e := range env {
 		parts := strings.SplitN(e, "=", 2)
 		key := parts[0]
-		if sensitiveEnvKey(key) {
+		if sensitiveEnvKey(pluginName, key) {
 			continue
 		}
 		// Sanitize PATH to only include directories visible inside the sandbox.
@@ -305,8 +310,19 @@ func filterEnv(env []string) []string {
 	return filtered
 }
 
-func sensitiveEnvKey(key string) bool {
-	if strings.HasPrefix(key, "APSHELL_") {
+// pluginConfigEnvKeys are secret-shaped names that a bundled plugin reads as
+// its own configuration, so the suffix rule below must not strip them for that
+// plugin. They are keyed by manifest name so no other plugin receives them: the
+// operator sets them for one plugin, and every plugin runs with network access.
+var pluginConfigEnvKeys = map[string]map[string]bool{
+	"algokit-localnet": {
+		"APLANE_LOCALNET_TOKEN":           true, // algod/KMD token
+		"APLANE_LOCALNET_WALLET_PASSWORD": true, // KMD wallet password
+	},
+}
+
+func sensitiveEnvKey(pluginName, key string) bool {
+	if strings.HasPrefix(key, "APSHELL_") || pluginConfigEnvKeys[pluginName][key] {
 		return false
 	}
 	exact := map[string]bool{
