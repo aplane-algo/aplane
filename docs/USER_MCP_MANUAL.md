@@ -80,7 +80,7 @@ The MCP server exposes these tools:
 | `mcp_reference` | Fetch the full shell command grammar (live `help`). |
 | `js_reference` | Fetch the JavaScript API reference. |
 | `mcp_manual` | Fetch this manual. |
-| `doc` | List the bundled deep-reference docs, or fetch one by name (e.g. `doc WP_CORRIDORS`). |
+| `doc` | List the bundled deep-reference docs, or fetch one by name (e.g. `doc ARCH_GUARDED`). |
 | `jssave` | Persist a JS snippet to `scripts/` (or an absolute path). |
 | `jslist` | List saved scripts as `[{name, size, mtime}]`. |
 
@@ -251,7 +251,8 @@ ordinary account so the Corridor program becomes its effective signer (then run
 limited to its accepted transfer forms and recipient set; close, clawback, and
 hybrid rekey-and-spend forms are rejected.
 
-> Full detail: [WP_CORRIDORS.md](WP_CORRIDORS.md).
+> Full detail: [ARCH_GUARDED.md](ARCH_GUARDED.md#corridor-v1) (the Corridor v1
+> contract) and [USER_KEYTYPES.md](USER_KEYTYPES.md) (generating and using it).
 
 ### Lifecycle
 
@@ -624,6 +625,5 @@ each MCP server instance uses its own:
 - [ARCH_POLICY.md](ARCH_POLICY.md) / [USER_POLICY.md](USER_POLICY.md) — policy and approval
 - [ARCH_GUARDED.md](ARCH_GUARDED.md) — guarded signing
 - [USER_KEYTYPES.md](USER_KEYTYPES.md) / [KEYTYPE_CAPABILITIES.md](KEYTYPE_CAPABILITIES.md) — key types
-- [WP_CORRIDORS.md](WP_CORRIDORS.md) — corridors (constrained-transfer graphs)
 - [ARCH_PLUGINS.md](ARCH_PLUGINS.md) — plugins
 - [USER_QUICKSTART_LOCALNET.md](USER_QUICKSTART_LOCALNET.md) / [USER_QUICKSTART.md](USER_QUICKSTART.md) — getting started

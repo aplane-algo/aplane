@@ -459,23 +459,23 @@ func TestBundledDocsListAndFetch(t *testing.T) {
 	}
 	found := false
 	for _, e := range entries {
-		if e.Name == "WP_CORRIDORS" {
+		if e.Name == "ARCH_GUARDED" {
 			found = true
 			if e.Description == "" {
-				t.Fatal("WP_CORRIDORS missing description in listing")
+				t.Fatal("ARCH_GUARDED missing description in listing")
 			}
 		}
 	}
 	if !found {
-		t.Fatal("WP_CORRIDORS not present in curated doc listing")
+		t.Fatal("ARCH_GUARDED not present in curated doc listing")
 	}
 
-	for _, name := range []string{"WP_CORRIDORS", "WP_CORRIDORS.md"} {
+	for _, name := range []string{"ARCH_GUARDED", "ARCH_GUARDED.md"} {
 		content, err := readDoc("", name)
 		if err != nil {
 			t.Fatalf("readDoc(%q) error = %v", name, err)
 		}
-		if !strings.Contains(content, "CORRIDOR") {
+		if !strings.Contains(content, "Corridor v1") {
 			t.Fatalf("readDoc(%q) returned unexpected content", name)
 		}
 	}

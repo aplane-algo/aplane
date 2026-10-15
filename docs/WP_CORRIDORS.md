@@ -2,8 +2,6 @@
 
 **Technical Whitepaper**
 
-*Version 0.4 — Draft*
-
 > Status: This whitepaper preserves exploratory design framing, including
 > variants that are not shipped. Normative words below apply to that proposed
 > model, not to the current product contract.
@@ -29,7 +27,12 @@ profile matrix explored below:
 - close, clawback, hybrid rekey-and-spend, and unsupported transaction forms
   are rejected; decommissioning is rekey first, then close under the successor;
 - the optional amount/window bounds, optional or Ed25519 guard, direct close,
-  and escape-hatch variants discussed below are not Corridor v1 features.
+  and escape-hatch variants discussed below are not Corridor v1 features;
+- rekey authority is one offline Falcon contract-admin key co-signing with the
+  spending key; the M-of-N governance arrangement recommended below is not
+  supported;
+- the cosigner decides from its policy document and the transaction group
+  alone; it does not consult off-chain state or external services.
 
 The frozen wire, program, metadata, custody, and choreography contract is in
 [ARCH_GUARDED.md](ARCH_GUARDED.md#corridor-v1) and
@@ -83,10 +86,10 @@ Policy is divided into two layers with different volatility profiles:
   through a required cosigner signature. Gate rules change by an authenticated policy
   edit, with no on-chain transaction.
 
-Optionally, a "cosigner" signer may also be used to provide a second signature for
-additional transaction approval. This approval process runs off-chain, so while
-it can be based on transaction / group details, it can also be based on off-chain
-state as well - eg., anything a process can look up via HTTP. 
+Because the cosigner's approval runs off-chain, the model leaves room for it to
+depend on off-chain state as well as on transaction and group details. The
+shipped cosigner does not do this: it evaluates only its policy document
+against the transaction group.
 
 Like the destination address of a corridor, the use of a specific pre-determined cosigner key
 is cryptographically enforced, similar to the concept of multisig.
