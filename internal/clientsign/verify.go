@@ -108,7 +108,7 @@ func validateSignedGroupMutations(
 	for i := range signed {
 		finalTxns[i] = signed[i].Txn
 	}
-	groupID, err := validateCanonicalReturnedGroup(finalTxns)
+	groupID, err := ValidateCanonicalGroupID(finalTxns)
 	if err != nil {
 		return err
 	}
@@ -118,7 +118,10 @@ func validateSignedGroupMutations(
 	return validateCanonicalReturnedDummies(original[0], groupID, signed[len(original):], signedBytes[len(original):])
 }
 
-func validateCanonicalReturnedGroup(txns []types.Transaction) (types.Digest, error) {
+// ValidateCanonicalGroupID checks that every transaction of a multi-transaction
+// group carries the group ID computed over the group itself, and returns it. A
+// single transaction needs no group ID; the zero digest is returned.
+func ValidateCanonicalGroupID(txns []types.Transaction) (types.Digest, error) {
 	if len(txns) < 2 {
 		return types.Digest{}, nil
 	}
@@ -144,23 +147,15 @@ func validateCanonicalReturnedDummies(
 	returned []types.SignedTxn,
 	returnedBytes [][]byte,
 ) error {
-	params := types.SuggestedParams{
-		Fee:             firstOriginal.Fee,
-		FirstRoundValid: firstOriginal.FirstValid,
-		LastRoundValid:  firstOriginal.LastValid,
-		GenesisID:       firstOriginal.GenesisID,
-		GenesisHash:     firstOriginal.GenesisHash[:],
-		FlatFee:         true,
+	returnedTxns := make([]types.Transaction, len(returned))
+	for i := range returned {
+		returnedTxns[i] = returned[i].Txn
 	}
-	wantTxns, err := signing.CreateDummyTransactions(len(returned), params)
+	wantTxns, err := ValidateCanonicalDummyTxns(firstOriginal, groupID, returnedTxns)
 	if err != nil {
-		return fmt.Errorf("recreate canonical resource dummies: %w", err)
+		return err
 	}
 	for i := range wantTxns {
-		wantTxns[i].Group = groupID
-		if !bytes.Equal(txnutil.EncodeWithPrefix(wantTxns[i]), txnutil.EncodeWithPrefix(returned[i].Txn)) {
-			return fmt.Errorf("appended transaction %d is not the canonical resource dummy", i+1)
-		}
 		wantSigned, signErr := signing.SignDummyTransaction(wantTxns[i])
 		if signErr != nil {
 			return fmt.Errorf("recreate canonical resource dummy signature %d: %w", i+1, signErr)
@@ -170,4 +165,35 @@ func validateCanonicalReturnedDummies(
 		}
 	}
 	return nil
+}
+
+// ValidateCanonicalDummyTxns checks that appended transactions are exactly the
+// canonical resource dummies the signer's planner builds for this group: zero
+// fee self-payments from the dummy address with notes 0..n-1, the first
+// original transaction's validity window and genesis, and the group's ID. It
+// returns the recreated dummies.
+func ValidateCanonicalDummyTxns(
+	firstOriginal types.Transaction,
+	groupID types.Digest,
+	appended []types.Transaction,
+) ([]types.Transaction, error) {
+	params := types.SuggestedParams{
+		Fee:             firstOriginal.Fee,
+		FirstRoundValid: firstOriginal.FirstValid,
+		LastRoundValid:  firstOriginal.LastValid,
+		GenesisID:       firstOriginal.GenesisID,
+		GenesisHash:     firstOriginal.GenesisHash[:],
+		FlatFee:         true,
+	}
+	wantTxns, err := signing.CreateDummyTransactions(len(appended), params)
+	if err != nil {
+		return nil, fmt.Errorf("recreate canonical resource dummies: %w", err)
+	}
+	for i := range wantTxns {
+		wantTxns[i].Group = groupID
+		if !bytes.Equal(txnutil.EncodeWithPrefix(wantTxns[i]), txnutil.EncodeWithPrefix(appended[i])) {
+			return nil, fmt.Errorf("appended transaction %d is not the canonical resource dummy", i+1)
+		}
+	}
+	return wantTxns, nil
 }

@@ -759,6 +759,13 @@ apsigner's keys. APlane validates the live client algod as v42-compatible before
 invoking a `presign-plan` callback. It performs the same check before broadcasting
 or simulating a `pregrouped-signed` group verbatim.
 
+APlane also checks apsigner's work in `presign-plan`, as it does for ordinary and
+guarded signing. The `/plan` result may only assign the group ID over the final
+group, raise the fees the mutation report lists, and append the planner's canonical
+budget dummies; any other change to a slot is rejected before the plugin is called.
+The `/sign` result must sign exactly the planned transactions and return every
+plugin-signed and dummy slot byte-for-byte as sent, or nothing is broadcast.
+
 #### What these flows enable
 
 A plugin could always compose groups with keys held anywhere — its own LogicSig, an HSM

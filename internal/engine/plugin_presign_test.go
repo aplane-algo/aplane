@@ -47,15 +47,70 @@ func presignTestTxn(t *testing.T, sender, note string) types.Transaction {
 	return txn
 }
 
-func TestAssertSlotArtifactFieldsPreserved(t *testing.T) {
-	acct := crypto.GenerateAccount()
-	draft := presignTestTxn(t, acct.Address.String(), "deposit")
+// presignPlan builds a planned group from drafts the way the planner does: the
+// first slot's fee raised by delta, appended canonical dummies, and the group id
+// over the final group. It returns the planned group and its mutation report.
+func presignPlan(t *testing.T, drafts []types.Transaction, delta uint64, dummies int) ([]types.Transaction, *signerapi.MutationReport) {
+	t.Helper()
+	planned := append([]types.Transaction(nil), drafts...)
+	planned[0].Fee += types.MicroAlgos(delta)
+	if dummies > 0 {
+		first := drafts[0]
+		extra, err := signing.CreateDummyTransactions(dummies, types.SuggestedParams{
+			Fee: first.Fee, FirstRoundValid: first.FirstValid, LastRoundValid: first.LastValid,
+			GenesisID: first.GenesisID, GenesisHash: first.GenesisHash[:], FlatFee: true,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		planned = append(planned, extra...)
+	}
+	gid, err := crypto.ComputeGroupID(planned)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range planned {
+		planned[i].Group = gid
+	}
+	report := &signerapi.MutationReport{
+		DummiesAdded: dummies, GroupIDChanged: true, TotalFeesDelta: int(delta),
+		OriginalCount: len(drafts), FinalCount: len(planned), ForeignCount: 1,
+	}
+	if delta > 0 {
+		report.FeesModified = []int{0}
+	}
+	return planned, report
+}
 
-	t.Run("only group and fee changed -> ok", func(t *testing.T) {
-		canonical := draft
-		canonical.Group = types.Digest{1, 2, 3}
-		canonical.Fee = 5000
-		if err := assertSlotArtifactFieldsPreserved(draft, canonical); err != nil {
+// regroupPlan re-stamps the group id over planned after a test edit, so the
+// check under test is the edit itself rather than a stale group id.
+func regroupPlan(t *testing.T, planned []types.Transaction) {
+	t.Helper()
+	ungrouped := append([]types.Transaction(nil), planned...)
+	for i := range ungrouped {
+		ungrouped[i].Group = types.Digest{}
+	}
+	gid, err := crypto.ComputeGroupID(ungrouped)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range planned {
+		planned[i].Group = gid
+	}
+}
+
+func TestValidatePluginPlan(t *testing.T) {
+	plugin := crypto.GenerateAccount()
+	managed := crypto.GenerateAccount()
+	drafts := []types.Transaction{
+		presignTestTxn(t, managed.Address.String(), "funder"),
+		presignTestTxn(t, plugin.Address.String(), "deposit"),
+	}
+	refs := map[string]string{plugin.Address.String(): "ref"}
+
+	t.Run("group id, reported fee increase, canonical dummies -> ok", func(t *testing.T) {
+		planned, report := presignPlan(t, drafts, 2000, 2)
+		if err := validatePluginPlan(drafts, planned, report, refs); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 	})
@@ -70,16 +125,88 @@ func TestAssertSlotArtifactFieldsPreserved(t *testing.T) {
 		{"amount", func(tx *types.Transaction) { tx.Amount++ }},
 		{"lease", func(tx *types.Transaction) { tx.Lease = [32]byte{9} }},
 		{"genesisHash", func(tx *types.Transaction) { tx.GenesisHash = types.Digest{7} }},
+		{"unreported fee", func(tx *types.Transaction) { tx.Fee += 1000 }},
 	} {
-		t.Run(tc.name+" changed -> error", func(t *testing.T) {
-			canonical := draft
-			canonical.Group = types.Digest{1}
-			canonical.Fee = 5000
-			tc.mutate(&canonical)
-			if err := assertSlotArtifactFieldsPreserved(draft, canonical); err == nil {
-				t.Fatalf("expected error when %s changed", tc.name)
+		t.Run("plugin slot "+tc.name+" changed -> error", func(t *testing.T) {
+			planned, report := presignPlan(t, drafts, 0, 0)
+			tc.mutate(&planned[1])
+			regroupPlan(t, planned)
+			err := validatePluginPlan(drafts, planned, report, refs)
+			if err == nil || !strings.Contains(err.Error(), "plugin slot 1") {
+				t.Fatalf("expected plugin slot rejection when %s changed, got %v", tc.name, err)
 			}
 		})
+	}
+
+	reject := func(name, want string, edit func([]types.Transaction, *signerapi.MutationReport) ([]types.Transaction, *signerapi.MutationReport)) {
+		t.Run(name, func(t *testing.T) {
+			planned, report := presignPlan(t, drafts, 2000, 1)
+			planned, report = edit(planned, report)
+			err := validatePluginPlan(drafts, planned, report, refs)
+			if err == nil || !strings.Contains(err.Error(), want) {
+				t.Fatalf("got %v, want an error containing %q", err, want)
+			}
+		})
+	}
+	reject("fee decrease", "decreased the fee", func(p []types.Transaction, r *signerapi.MutationReport) ([]types.Transaction, *signerapi.MutationReport) {
+		p[0].Fee = drafts[0].Fee - 1
+		r.TotalFeesDelta = 0
+		regroupPlan(t, p)
+		return p, r
+	})
+	reject("wrong total fee delta", "total_fees_delta", func(p []types.Transaction, r *signerapi.MutationReport) ([]types.Transaction, *signerapi.MutationReport) {
+		r.TotalFeesDelta = 1
+		return p, r
+	})
+	reject("dummies without a report", "without a mutation report", func(p []types.Transaction, r *signerapi.MutationReport) ([]types.Transaction, *signerapi.MutationReport) {
+		return p, nil
+	})
+	reject("dummy count mismatch", "dummies_added", func(p []types.Transaction, r *signerapi.MutationReport) ([]types.Transaction, *signerapi.MutationReport) {
+		r.DummiesAdded = 2
+		return p, r
+	})
+	reject("non-canonical group id", "canonical group ID", func(p []types.Transaction, r *signerapi.MutationReport) ([]types.Transaction, *signerapi.MutationReport) {
+		for i := range p {
+			p[i].Group = types.Digest{1}
+		}
+		return p, r
+	})
+	reject("non-canonical dummy", "canonical resource dummy", func(p []types.Transaction, r *signerapi.MutationReport) ([]types.Transaction, *signerapi.MutationReport) {
+		p[2].Fee = 1000
+		regroupPlan(t, p)
+		return p, r
+	})
+}
+
+func TestVerifySignedAgainstPlan(t *testing.T) {
+	acct := crypto.GenerateAccount()
+	canonical := []types.Transaction{
+		presignTestTxn(t, acct.Address.String(), "managed"),
+		presignTestTxn(t, acct.Address.String(), "plugin"),
+	}
+	sign := func(txn types.Transaction) []byte {
+		_, raw, err := crypto.SignTransaction(acct.PrivateKey, txn)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return raw
+	}
+	pluginSigned := sign(canonical[1])
+	passthrough := map[int]string{1: hex.EncodeToString(pluginSigned)}
+
+	if err := verifySignedAgainstPlan(canonical, passthrough, [][]byte{sign(canonical[0]), pluginSigned}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	other := canonical[0]
+	other.Amount++
+	if err := verifySignedAgainstPlan(canonical, passthrough, [][]byte{sign(other), pluginSigned}); err == nil || !strings.Contains(err.Error(), "different transaction at slot 0") {
+		t.Fatalf("substituted managed slot: got %v", err)
+	}
+	if err := verifySignedAgainstPlan(canonical, passthrough, [][]byte{sign(canonical[0]), sign(canonical[0])}); err == nil || !strings.Contains(err.Error(), "altered passthrough slot 1") {
+		t.Fatalf("altered passthrough slot: got %v", err)
+	}
+	if err := verifySignedAgainstPlan(canonical, passthrough, [][]byte{sign(canonical[0])}); err == nil {
+		t.Fatal("short response accepted")
 	}
 }
 
@@ -252,7 +379,13 @@ func TestSignAndSubmitWithPluginSignersSimulatesSignedGroupClientSide(t *testing
 		for i, txn := range planned {
 			encoded[i] = txnutil.EncodeWithPrefixHex(txn)
 		}
-		_ = json.NewEncoder(w).Encode(signerapi.GroupPlanResponse{Transactions: encoded})
+		_ = json.NewEncoder(w).Encode(signerapi.GroupPlanResponse{
+			Transactions: encoded,
+			Mutations: &signerapi.MutationReport{
+				GroupIDChanged: true, OriginalCount: len(planned), FinalCount: len(planned),
+				ForeignCount: 1, Reason: "foreign",
+			},
+		})
 	})
 	signerMux.HandleFunc("/sign", func(w http.ResponseWriter, r *http.Request) {
 		signCalls.Add(1)
