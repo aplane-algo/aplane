@@ -342,7 +342,7 @@ populate_known_hosts() {
 
 start_apapprover() {
     # apapprover authenticates via IPC (which also unlocks the signer), then
-    # auto-answers "y" to every approval prompt — both client enrollment and
+    # auto-answers "y <code>" to every approval prompt — both client enrollment and
     # signing use the same prompt. We write the expect script on the host and
     # copy it in; `docker exec` doesn't forward stdin unless -i is set, so
     # piping a heredoc into a bare `docker exec` produces an empty file.
@@ -363,7 +363,7 @@ expect {
 set timeout -1
 while {1} {
     expect {
-        -re {Approve current request\?.*} { send "y\r" }
+        -re {Approve current request\? \[y ([0-9]+) } { send "y \$expect_out(1,string)\r" }
         eof { exit 0 }
     }
 }
