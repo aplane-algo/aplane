@@ -8,24 +8,24 @@
 APlane is a flexible command-line signing system for Algorand. It supports
 native Ed25519 and protocol-native Falcon-1024 accounts.
 
-It also supports generic LogicSig templates and composed
-signature-plus-LogicSig authorization policies such as bounded allowlists,
-timelocks, HTLCs, cosigner-gated accounts, and custom templates.
+It also supports rotating hybrid accounts, whose authorizing keys change on
+every spend behind a stable address, plus generic LogicSig templates and
+composed signature-plus-LogicSig authorization policies such as bounded
+allowlists, timelocks, HTLCs, cosigner-gated accounts, and custom templates.
 
 It is designed for security-focused operations where private keys can be isolated on dedicated signing machines with restricted network exposure.
 
 ## EXPERIMENTAL Status
 
-APlane is pre-1.0 and should be considered experimental. This is the first
-supported release line; it does not support migration from earlier internal
-tags. The Algorand Foundation's
+APlane is pre-1.0 and should be considered experimental. The Algorand Foundation's
 <a href="https://algorand.co/blog/algorand-post-quantum-cryptography-roadmap">2026 post-quantum roadmap</a>
 introduces protocol-native post-quantum accounts and future cryptographic
 agility. APlane currently supports the native Falcon-1024 consensus-v42
 contract and will continue to track the published protocol standards.
 
 - Pre-1.0 releases may make intentional compatibility changes; each release's
-  notes state its storage, archive, config, protocol, and migration contract.
+  notes in [RELEASE_NOTES.md](docs/RELEASE_NOTES.md) state its storage,
+  archive, config, protocol, and migration contract.
 - Breaking changes may still occur across CLI, SDK, config, and plugin surfaces.
 - The project is security-conscious, but it has not undergone a full external security audit.
 
@@ -33,6 +33,10 @@ contract and will continue to track the published protocol standards.
 
 - **Post-Quantum Ready**: Supports protocol-native Falcon-1024 accounts and
   top-level `PQsig` authorization on consensus v42+
+- **Rotating Hybrid Accounts**: A stable address whose authorizing stage
+  program changes on every spend, so each stage's public keys stay hidden until
+  it signs. Stages pair Ed25519 with Falcon-1024, hash-based WOTS, or both; no
+  smart contract and no on-chain state, and the account recovers from its seed
 - **General LogicSig Capability**: Supports built-in bounded allowlists,
   timelocks, HTLCs, cosigner-gated policies, and user-defined custom LogicSigs
 - **Enables key isolation**: Signing operations (and private keys) can be kept on dedicated purpose-built machines with restrictive firewalls and single-port exposure
@@ -74,25 +78,25 @@ npm install aplanesdk
 │                                                             │
 │  apsigner: signer daemon                                    │
 │  ┌───────────────────────────────────────────────────────┐  │
-│  │ HTTP signing API    • Admin protocol                  │  │
+│  │ HTTP signing API    • Admin protocol (local IPC only) │  │
 │  │ SSH tunnel server   • Client enrollment               │  │
 │  │ Product runtime     • Approval + audit                │  │
 │  │ Encrypted keys      • Locked memory • Key zeroing     │  │
 │  └───────────────────────────────────────────────────────┘  │
 │                                                             │
-│  Local signer-host tools: apstore, appass, apapprover,       │
-│  optional apadmin over IPC                                  │
-└───────────────┬──────────────────────────────┬──────────────┘
-                │ SSH tunnel + HTTP            │ SSH admin     
-                │ transaction planning/sign    │ or local IPC  
-                │                              │               
-┌───────────────▼──────────────────────────────▼──────────────┐
+│  Local admin tools over IPC: apadmin (approval + key mgmt), │
+│  apapprover (approval only), apstore, appass                │
+└──────────────────────────────┬──────────────────────────────┘
+                               │ SSH tunnel, enrolled client key
+                               │ HTTP signing API only
+                               │
+┌──────────────────────────────▼──────────────────────────────┐
 │                   Client / Operator Zone                    │
 │                                                             │
-│   apshell                         apadmin                   │
+│   apshell                         SDKs (Go, TS, Python)     │
 │  ┌──────────────────────┐         ┌──────────────────────┐  │
-│  │ REPL, JS, MCP,       │         │ Remote admin client  │  │
-│  │ plugins, network ops │         │ approval + key mgmt  │  │
+│  │ REPL, JS, MCP,       │         │ Apps and agents that │  │
+│  │ plugins, network ops │         │ prepare and submit   │  │
 │  └──────────────────────┘         └──────────────────────┘  │
 │                                                             │
 │  Plugins run as separate processes. No signer-managed keys. │
@@ -116,7 +120,9 @@ npm install aplanesdk
 | Keys encrypted at rest | AES-256-GCM with master key (Argon2id, memory-hard) |
 | Memory protection | Successful `mlockall()` prevents swap; core dumps are disabled; production can require both controls at startup |
 | Key material zeroing | Private keys wiped immediately after signing |
-| Transaction policy | Policy can reject or force review for rekey, close, clawback, transfer routes, amount/fee thresholds, and warnings |
+| Client authentication | Clients authenticate with an enrolled SSH key; enrollment is queued until the operator accepts it |
+| Admin isolation | The admin protocol is reachable only over the local IPC socket; remote admin means logging in to the signer host |
+| Transaction policy | A node default policy, optionally replaced per key, can reject or force review for rekey, close, clawback, transfer routes, amount/fee thresholds, and warnings |
 | Manual approval | Signer-node transaction requests require explicit approval by default |
 
 ### Approval Workflow
@@ -129,9 +135,10 @@ patterns. See [ARCH_SECURITY.md](docs/ARCH_SECURITY.md) for details.
 
 ### SSH Tunnel
 
-apshell and apadmin can connect to apsigner over an SSH tunnel, allowing the
-signer host to expose only a single SSH port. The tunnel carries both the HTTP
-signing API and the admin transport. Client signer and cosigner connection
+apshell and the SDKs connect to apsigner over an SSH tunnel, allowing the
+signer host to expose only a single SSH port. The tunnel carries the HTTP
+signing API and client enrollment, authenticated by the client's enrolled SSH
+key; it never carries the admin protocol. Client signer and cosigner connection
 profiles are configured in `$APCLIENT_DATA/endpoints.yaml`; network and other
 client settings remain in `config.yaml`. See
 [USER_CONFIG.md](docs/USER_CONFIG.md) for setup details.
@@ -148,6 +155,10 @@ client settings remain in `config.yaml`. See
 ### Key Types
 - **ed25519**: Native Algorand keys
 - **falcon1024**: Protocol-native post-quantum signatures on consensus v42+
+- **rotating hybrids**: `aplane.rotating-hybrid.v1` (Falcon-1024 + Ed25519),
+  `aplane.rotating-wots-hybrid.v1` (WOTS + Ed25519), and
+  `aplane.rotating-triple-hybrid.v1` (Falcon-1024 + WOTS + Ed25519), each a
+  stable address whose stage program changes on every spend
 - **generic LogicSigs**: HTLCs and user-loaded custom TEAL
 - **bounded/composed LogicSigs**: allowlists, timelocks, cosigner-gated Corridor,
   amount/asset bounds, and external contract-admin rekey controls
@@ -226,6 +237,14 @@ All documentation is in the [`docs/`](docs/) directory.
 - [FORMAL_TLA_SESSION_OWNERSHIP_MODEL.md](docs/FORMAL_TLA_SESSION_OWNERSHIP_MODEL.md) - Machine-checked single-admin ownership and displacement model
 - [FORMAL_TLA_BOUNDED_COSIGNER_MODEL.md](docs/FORMAL_TLA_BOUNDED_COSIGNER_MODEL.md) - Machine-checked bounded-cosigner choreography model
 - [FORMAL_TLA_PLUGIN_SIGNING_MODEL.md](docs/FORMAL_TLA_PLUGIN_SIGNING_MODEL.md) - Machine-checked plugin signing model
+- [FORMAL_GUARDED_SIGNING_MODEL.md](docs/FORMAL_GUARDED_SIGNING_MODEL.md) - Precise guarded signing model
+- [FORMAL_PLUGIN_SIGNING_MODEL.md](docs/FORMAL_PLUGIN_SIGNING_MODEL.md) - Precise plugin signing model
+- [FORMAL_TLA_APPROVAL_COORDINATOR_MODEL.md](docs/FORMAL_TLA_APPROVAL_COORDINATOR_MODEL.md) - Machine-checked approval coordinator model
+- [FORMAL_TLA_APPROVAL_COMPOSITION_MODEL.md](docs/FORMAL_TLA_APPROVAL_COMPOSITION_MODEL.md) - Machine-checked approval-aware composition model
+- [FORMAL_TLA_GUARDED_ASSEMBLY_MODEL.md](docs/FORMAL_TLA_GUARDED_ASSEMBLY_MODEL.md) - Machine-checked guarded assembly verification model
+- [FORMAL_TLA_ENROLLMENT_QUEUE_MODEL.md](docs/FORMAL_TLA_ENROLLMENT_QUEUE_MODEL.md) - Machine-checked client enrollment queue model
+- [FORMAL_TLA_STORE_ROOT_COMMIT_MODEL.md](docs/FORMAL_TLA_STORE_ROOT_COMMIT_MODEL.md) - Machine-checked atomic store-root commit model
+- [FORMAL_TLA_RECOVERY_BINDING_MODEL.md](docs/FORMAL_TLA_RECOVERY_BINDING_MODEL.md) - Machine-checked recovery binding model
 
 ### User Guides
 - [USER_INSTALL.md](docs/USER_INSTALL.md) - Installation guide
@@ -237,13 +256,21 @@ All documentation is in the [`docs/`](docs/) directory.
 - [USER_JSAPI.md](docs/USER_JSAPI.md) - JavaScript API reference for `apshell`
 - [USER_STORE_MGMT.md](docs/USER_STORE_MGMT.md) - Keystore management, backup, and recovery
 - [USER_KEYTYPES.md](docs/USER_KEYTYPES.md) - Key type and template management
+- [KEYTYPE_CAPABILITIES.md](docs/KEYTYPE_CAPABILITIES.md) - Which account operations each key type can authorize
+- [USER_LOGICSIG_GUIDELINES.md](docs/USER_LOGICSIG_GUIDELINES.md) - LogicSig security and design guide, review checklist, and bundled-template inventory
 - [USER_LOGGING.md](docs/USER_LOGGING.md) - Logging configuration
 - [USER_MCP_MANUAL.md](docs/USER_MCP_MANUAL.md) - MCP operating model and workflows
+- [RELEASE_NOTES.md](docs/RELEASE_NOTES.md) - Per-release changes and compatibility contracts
 
 ### Developer Guides
 - [DEV_BUILD.md](docs/DEV_BUILD.md) - Build instructions
 - [DEV_TESTING.md](docs/DEV_TESTING.md) - Testing guide
 - [DEV_KEYTYPES.md](docs/DEV_KEYTYPES.md) - Adding new key types and LogicSig templates
+- [DEV_GUIDELINES.md](docs/DEV_GUIDELINES.md) - General development guidelines
+
+### Whitepapers
+- [WP_GUARDRAILS.md](docs/WP_GUARDRAILS.md) - Bounded allowlist guardrails for Algorand accounts
+- [WP_CORRIDORS.md](docs/WP_CORRIDORS.md) - Cosigner corridors and the Corridor v1 profile
 
 ### Transaction Details
 - [TXN_MIXED_GROUPS.md](docs/TXN_MIXED_GROUPS.md) - Mixed signature atomic groups
