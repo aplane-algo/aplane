@@ -300,8 +300,9 @@ operator prompt before failing unavailable. Options: call
 document key-bound genesis plus the chain read as the rotating network
 authority and scope I10.
 Both resolved in code on branch `fix/drift-rb4-i10`: `commitAndReload` now
-reloads after an uncertain commit, as restore does
-(`TestPolicyApplyUncertainCommitReloadsAndEntersRecovery`), and both rotating
+enters recovery and then reloads after an uncertain commit, as restore does
+(`TestPolicyApplyUncertainCommitReloadsAndEntersRecovery`,
+`TestUncertainPolicyCommitBlocksExecutionBeforeReload`), and both rotating
 paths call `validateKnownNetwork` before any gate or chain read
 (`TestRotatingRefusesANetworkThisNodeIsNotConfiguredFor`). The
 `ErrStoreRootCommitStateUnknown` edge remains open.
