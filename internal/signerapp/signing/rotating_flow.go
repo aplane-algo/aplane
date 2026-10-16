@@ -274,6 +274,11 @@ func (s *Service) PrepareRotatingWithContext(ctx context.Context, req signerapi.
 	if err := validateRotatingSpend(txn, account, genesis); err != nil {
 		return nil, err
 	}
+	// The key's bound genesis is not enough: the network must also be one
+	// this node is configured for, checked before any gate runs.
+	if err := validateKnownNetwork([]types.Transaction{txn}, s.genesisHashResolver()); err != nil {
+		return nil, err
+	}
 	table, tableErr := deps.Tables.Table(account, genesis, s.keyPresent(req.Account))
 	if table == nil {
 		return nil, internal(fmt.Sprintf("stage table: %v", tableErr))
@@ -350,6 +355,11 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 		return nil, svcErr
 	}
 	if err := validateRotatingSpend(spend, account, genesis); err != nil {
+		return nil, err
+	}
+	// The key's bound genesis is not enough: the network must also be one
+	// this node is configured for, checked before any gate runs.
+	if err := validateKnownNetwork([]types.Transaction{spend}, s.genesisHashResolver()); err != nil {
 		return nil, err
 	}
 	table, tableErr := deps.Tables.Table(account, genesis, s.keyPresent(req.Account))

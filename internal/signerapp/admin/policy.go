@@ -80,6 +80,14 @@ func (s Service) commitAndReload(ir *productruntime.Runtime, req adminproto.Appl
 		*outcome, err = policyapply.Commit(s.policyEnv(kr), req)
 		return err
 	}); err != nil {
+		// An uncertain commit may already be the visible root. Rebind the
+		// runtime to it, as restore does, so the keystore never trails the
+		// store; recovery mode (set by the caller) still blocks signing.
+		// Reload runs outside WithKeyring so the keystore cache lock cannot
+		// self-deadlock.
+		if outcome.Uncertain {
+			_, _ = ir.Reload()
+		}
 		return err
 	}
 	if outcome.GenerationID == "" {

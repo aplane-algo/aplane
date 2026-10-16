@@ -145,7 +145,8 @@ key resolves networks with the destination's resolver.
 Every signing path validates every transaction against the genesis-hash
 resolver before any policy runs: the signer planner for `/sign` and
 `/sign/bounded-admin`, the bounded-cosigner and guarded user-component paths,
-and the cosigner's policy check, which refuses an unknown network as
+both rotating paths (`/sign/rotating/prepare` and `/sign/rotating/sign`, in
+addition to matching the key's bound network), and the cosigner's policy check, which refuses an unknown network as
 `unknown_genesis_hash`. The gate exists so that asset references, whose IDs
 differ per network, are never evaluated without a known network; it applies to
 every transaction so that no path has to prove it carries no asset reference.

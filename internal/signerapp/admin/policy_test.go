@@ -4,6 +4,7 @@
 package admin
 
 import (
+	"errors"
 	"fmt"
 	"github.com/aplane-algo/aplane/internal/signerapp/storevalidate"
 	"strings"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/noderole"
@@ -311,5 +313,41 @@ func TestPolicyApplyEntersRecoveryBeforeReleasingTheLock(t *testing.T) {
 	}
 	if after := currentGeneration(t, svc, ir); after != stuck {
 		t.Fatalf("apply in recovery moved the generation %s -> %s", stuck, after)
+	}
+}
+
+// A policy commit whose durability is unknown may already be the visible
+// root. The runtime must rebind to it before the lock is released, as restore
+// does, so the keystore never trails the store while recovery blocks signing.
+func TestPolicyApplyUncertainCommitReloadsAndEntersRecovery(t *testing.T) {
+	svc, ir := setupPolicyAdmin(t, noderole.RoleSigner)
+	view := svc.GetPolicy()
+	before := currentGeneration(t, svc, ir)
+
+	identityDir := svc.Deps.KeyPaths().ProductDir()
+	fsutil.TestHook = func(op fsutil.HookOp, path string) error {
+		if op == fsutil.OpDirSync && path == identityDir {
+			return errors.New("simulated identity-directory sync failure")
+		}
+		return nil
+	}
+	defer func() { fsutil.TestHook = nil }()
+	result := svc.ApplyPolicy(adminproto.ApplyPolicyRequest{
+		Documents:               []adminproto.PolicyDocument{{Key: policy.DefaultKey, Document: signerPolicyDoc("2000")}},
+		ExpectedPolicySetSHA256: view.PolicySetSHA256,
+	})
+	fsutil.TestHook = nil
+
+	if result.Success || !result.CommitUncertain || result.Code != "policy_commit_uncertain" {
+		t.Fatalf("ApplyPolicy(durability unknown) = %+v", result)
+	}
+	if !ir.IsRecovery() {
+		t.Fatal("runtime is not in recovery after an uncertain policy commit")
+	}
+	if after := currentGeneration(t, svc, ir); after == before {
+		t.Fatalf("uncertain commit did not publish a new root (still %s)", before)
+	}
+	if got := svc.GetPolicyDocument(policy.DefaultKey).Document; got != signerPolicyDoc("2000") {
+		t.Fatalf("runtime policy after uncertain commit = %q, want the committed document", got)
 	}
 }
