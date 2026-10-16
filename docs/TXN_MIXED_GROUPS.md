@@ -7,9 +7,11 @@ LogicSig-signed transactions with Ed25519 or externally signed transactions.
 
 LogicSig authorization consumes program bytes, argument bytes, and opcode
 capacity. Depending on the active consensus profile, a group may require
-resource dummies or a program-byte fee surcharge. When a group mixes LogicSig
-and native or externally signed participants, the signer planner decides the
-final group shape and aggregate fee before any signature is produced.
+resource dummies or a program-byte fee surcharge. Native Falcon authorization
+(a top-level `PQsig`) never needs dummies but adds 2x the base fee factor to
+its transaction. When a group mixes LogicSig, native Falcon, Ed25519, or
+externally signed participants, the signer planner decides the final group
+shape and aggregate fee before any signature is produced.
 
 ## Mixed Guarded/Non-Guarded Groups
 
@@ -29,6 +31,12 @@ entries, guarded targets are `foreign` entries with accurate selected-path
 resulting signed ordinary originals and dummies are then passed through to
 assembly.
 
+A bounded-cosigner target (`bounded-cosigner1` signing flow) follows its own
+choreography over the same frozen group: the user signer issues the bounded
+base components first, then the cosigner signs. One group can hold cosigner1
+targets or bounded-cosigner1 targets, not both; apshell rejects a group that
+mixes them.
+
 Ordinary `/sign` still rejects guarded account key types. A guarded authorizer
 therefore never becomes a one-party `AuthAddress` request: it goes through
 component signing and assembly, and assembly verifies `AuthAddr` is the guarded
@@ -38,6 +46,15 @@ The remaining limitation is policy scope. Component messages bind role and
 target transaction ID; cosigner policy is transaction-fact based and does not
 receive a separate authorizer field. Per-authorizer allowlists would require a
 versioned component message and LogicSig change.
+
+## Rotating Accounts
+
+Rotating accounts (`rotating1` signing flow) cannot join a mixed group. A
+rotating account's transaction must be sent alone and ungrouped: the signer's
+`/sign/rotating/prepare` builds its group, including resource dummies, fees,
+and the rekey to the next stage. Ordinary `/sign` rejects rotating key types
+with `rotating_signing_required`. See [ARCH_SIGNING.md](ARCH_SIGNING.md) for
+the rotating flow.
 
 ## The Three Cases
 
@@ -205,7 +222,9 @@ if plan.DummyCount != 0 {
     dummyTxns := CreateDummyTransactions(int(plan.DummyCount), sp)
     allTxns := append(txns, dummyTxns...)
 }
-applyGroupFees(allTxns, resourcePlan)
+// Fees: per-slot authorization budgets (LogicSig and native Falcon), the
+// resource plan, the dummy count, and whether the group is immutable.
+applyGroupFees(allTxns, budgets, resourcePlan, dummyCount, preferredTargets, immutable)
 gid := crypto.ComputeGroupID(allTxns)
 // Sign signer-owned transactions and dummies; preserve passthrough slots and
 // leave foreign slots unsigned.
@@ -308,6 +327,7 @@ preserved when they already have enough LogicSig resources for this reason.
 | Finalized (large) | Yes | Sufficient | Sign as-is, preserve group ID |
 | Finalized (small) | Yes | Insufficient | Error: cannot modify |
 | Pure Ed25519 | Yes/No | N/A | No dummies; ungrouped multi-transaction groups may still receive a computed group ID |
+| Native Falcon | Yes/No | N/A | No dummies; each native Falcon signature adds 2x the base fee factor to the group fee |
 
 ## Multi-Party Signing
 
@@ -331,10 +351,13 @@ For scenarios where one party already has signed transactions, use passthrough m
    Request:
    [
      {auth_address: "A_ADDR", txn_bytes_hex: "..."},  // Sign mode
-     {signed_txn_hex: "...B's signed txn..."},        // Passthrough
-     {signed_txn_hex: "...dummy1 signed..."},         // Passthrough
-     {signed_txn_hex: "...dummy2 signed..."},         // Passthrough
-     {signed_txn_hex: "...dummy3 signed..."}          // Passthrough
+     {signed_txn_hex: "...B's signed txn...",         // Passthrough LogicSig
+      lsig_resources: {program_bytes: 1800, argument_bytes: 1423,
+                       max_opcode_cost: 20000}},
+     {signed_txn_hex: "...dummy1 signed...",          // Passthrough dummy
+      lsig_resources: {program_bytes: <dummy program length>,
+                       argument_bytes: 0, max_opcode_cost: 1}},
+     ... dummy2 and dummy3 declared the same way
    ]
 
 4. Server signs A's transaction, passes through the rest
@@ -343,6 +366,10 @@ For scenarios where one party already has signed transactions, use passthrough m
 
 **Key constraints:**
 - Group must be pre-formed with group ID set
+- Every passthrough LogicSig, including signed dummies, must declare
+  `lsig_resources`; the signer checks the declared program and argument bytes
+  against the signed envelope and rejects a mismatch or a missing declaration.
+  A passthrough native Falcon or Ed25519 transaction must not declare it
 - No server modifications; server resource calculation validates the immutable
   shape and rejects a group that would need dummies
 - Passthrough transactions are decoded for group consistency, approval context,
@@ -390,6 +417,9 @@ sufficient LogicSig resources and no additional dummies are needed.
   a complete signed group is required
 - `lsig_resources` is advisory; incorrect hints may cause insufficient
   resources or fees at submission
+- An unsigned foreign native Falcon slot declares `pq_scheme: "f1"` instead,
+  so the planner counts its fee contribution; `pq_scheme` and
+  `lsig_resources` are mutually exclusive
 - Foreign transactions are included in planning, approval context,
   warning analysis, and audit visibility, but transaction-level hard policy is
   applied only to signer-controlled slots
