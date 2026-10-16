@@ -1259,9 +1259,9 @@ never what it signs.
 - Scanning and inventory never expose the stage public keys. The resource
   profile is the same for every stage of a key type: 1873 program bytes,
   1487 argument bytes and an opcode ceiling of 3628 for the Falcon hybrid
-  (one resource dummy); 295 program bytes, 2208 argument bytes and an opcode
-  ceiling of 58063 for the WOTS hybrid (two resource dummies); 2096 program
-  bytes, 3631 argument bytes and an opcode ceiling of 59767 for the triple
+  (one resource dummy); 302 program bytes, 2208 argument bytes and an opcode
+  ceiling of 58068 for the WOTS hybrid (two resource dummies); 2103 program
+  bytes, 3631 argument bytes and an opcode ceiling of 59772 for the triple
   hybrid (three resource dummies).
 - The key file is the whole credential. The signer keeps no durable state
   for the account: which stage is live is read from the chain at every

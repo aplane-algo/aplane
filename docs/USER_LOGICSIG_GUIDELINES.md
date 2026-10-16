@@ -773,11 +773,11 @@ approval and local signer policy. See
 - dedicated compiled stage program, library-visible and signer-gated; the
   same rotation as above with a hash-based stage
 - each stage requires an Ed25519 signature over the TxID and a WOTS-w16
-  signature over the TxID (67 SHA-256 chains, verified with `sha256`,
+  signature of exactly 2,144 bytes over the TxID (67 SHA-256 chains, verified with `sha256`,
   `itob` and `concat`), a non-zero rekey that is not the sender, no
   close-out, and a validity window of at most 100 rounds
-- worst-case opcode cost 58,063 and 2,208 argument bytes, so a spend needs
-  two resource dummies; the cost for a given TxID is 5,592 plus 53 per chain
+- worst-case opcode cost 58,068 and 2,208 argument bytes, so a spend needs
+  two resource dummies; the cost for a given TxID is 5,597 plus 53 per chain
   step, pinned against the node's budget report in the LocalNet test
 - the signer, not TEAL, guarantees that every rekey targets the account's
   next never-revealed stage. Nothing enforces that a stage signs once: the
@@ -796,10 +796,10 @@ approval and local signer policy. See
 - each stage requires, in order, a non-zero rekey that is not the sender, no
   close-out, a validity window of at most 100 rounds, an Ed25519 signature
   over the TxID (argument 1), a Falcon-1024 signature over the TxID
-  (argument 2) and a WOTS-w16 signature over the TxID (argument 0), the WOTS
+  (argument 2) and a WOTS-w16 signature of exactly 2,144 bytes over the TxID (argument 0), the WOTS
   check being the hash hybrid's program unchanged
-- worst-case opcode cost 59,767 and 3,631 argument bytes, so a spend needs
-  three resource dummies; the cost for a given TxID is 7,296 plus 53 per
+- worst-case opcode cost 59,772 and 3,631 argument bytes, so a spend needs
+  three resource dummies; the cost for a given TxID is 7,301 plus 53 per
   chain step, pinned against the node's budget report in the LocalNet test
 - the signer, not TEAL, guarantees that every rekey targets the account's
   next never-revealed stage. As with the hash hybrid nothing enforces that a

@@ -58,7 +58,7 @@ func TestGoldenVectors(t *testing.T) {
 		"tweak0":  "85db68cee7b1867718020119adf15f78ae8994de34e3e73a0ac809ce459e6f56",
 		"wotspk0": "a8e1c71c1f7348624bef377450a8ae12115193feaf3600fee2c11f50f0585652",
 		"edpk0":   "2664aaa9e14020cee4a03fd6db5b697a669311c5290e41dea2d902ee91e604ba",
-		"address": "IKB7RD72J6E23S4ISIEN7OMSI5D2LUYA2I75OX4SMDM3AO3RWA6VZGVFC4",
+		"address": "6T6RC25T7BTMXU2VMMN5E7FJFBJDSVUYFMJ3PVATEB6EEIKJCN2F4SKCAQ",
 	}
 	for k, v := range want {
 		if got[k] != v {

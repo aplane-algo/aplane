@@ -47,7 +47,7 @@ func keysWithSalt(t *testing.T, salted bool) (PublicKeys, Program) {
 }
 
 func TestProgramSizesAndCost(t *testing.T) {
-	if UnsaltedProgramSize != 292 || SaltedProgramSize != 295 {
+	if UnsaltedProgramSize != 299 || SaltedProgramSize != 302 {
 		t.Fatalf("program sizes %d/%d", UnsaltedProgramSize, SaltedProgramSize)
 	}
 	if MaxArgumentBytes != 2208 {

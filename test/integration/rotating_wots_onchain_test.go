@@ -48,6 +48,7 @@ type wotsSpend struct {
 	edFrom     *wotsStage // sign argument 1 with another stage's key
 	swapArgs   bool
 	damageWots int // flip one bit of the WOTS signature at this byte, when > 0
+	wotsLength int // resize the valid WOTS signature to this many bytes, when > 0
 }
 
 type wotsAccount struct {
@@ -144,6 +145,14 @@ func TestRotatingWotsOnChain(t *testing.T) {
 		},
 		"damaged last chain element": func(s wotsSpend) wotsSpend {
 			s.damageWots = wots.SignatureSize - 1
+			return s
+		},
+		"WOTS signature one byte long": func(s wotsSpend) wotsSpend {
+			s.wotsLength = wots.SignatureSize + 1
+			return s
+		},
+		"WOTS signature one byte short": func(s wotsSpend) wotsSpend {
+			s.wotsLength = wots.SignatureSize - 1
 			return s
 		},
 	}
@@ -348,6 +357,11 @@ func (a *wotsAccount) build(spend wotsSpend) ([]byte, []types.SignedTxn) {
 	}
 	if spend.damageWots > 0 {
 		wotsSig[spend.damageWots] ^= 0x01
+	}
+	if spend.wotsLength > len(wotsSig) {
+		wotsSig = append(wotsSig, make([]byte, spend.wotsLength-len(wotsSig))...)
+	} else if spend.wotsLength > 0 {
+		wotsSig = wotsSig[:spend.wotsLength]
 	}
 	args := [][]byte{wotsSig, edSig}
 	if spend.swapArgs {

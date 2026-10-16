@@ -50,7 +50,7 @@ func TestRegisterIsIdempotent(t *testing.T) {
 func TestKeyPayloadRoundTripsToStageZeroAddress(t *testing.T) {
 	payload, address := fixedPayload(t)
 	// The golden stage 0 address of lsig/rotatingtriple/signerops.
-	if address != "BQTOZU7F3OJTVSEPL4OLHSIR5V37BB364ZFZZO6MC2QNVINSAKQRQ5WW2M" {
+	if address != "YX62PQ4VBCVBAA5577SHXSYDYCC6DMYOUTUVPVN4QTSIZQ6KVPFVCC64XA" {
 		t.Fatalf("account address %s", address)
 	}
 	if len(payload.PublicKey) != rotatingkey.RotatingTripleStagePublicKeySize {

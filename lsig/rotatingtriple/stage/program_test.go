@@ -50,7 +50,7 @@ func keysWithSalt(t *testing.T, salted bool) (*PublicKeys, Program) {
 // three pooled LogicSig size units, while its opcode cost and program fit
 // within that group.
 func TestProgramSizesAndCost(t *testing.T) {
-	if UnsaltedProgramSize != 2093 || SaltedProgramSize != 2096 {
+	if UnsaltedProgramSize != 2100 || SaltedProgramSize != 2103 {
 		t.Fatalf("program sizes %d/%d", UnsaltedProgramSize, SaltedProgramSize)
 	}
 	if MaxArgumentBytes != 3631 {
@@ -59,7 +59,7 @@ func TestProgramSizesAndCost(t *testing.T) {
 	if MaxArgumentBytes <= 3000 || MaxArgumentBytes > 4000 {
 		t.Fatalf("argument bytes %d no longer need exactly four pooled transactions", MaxArgumentBytes)
 	}
-	if MaxOpcodeCost != 59_767 || MaxOpcodeCost >= 60_000 {
+	if MaxOpcodeCost != 59_772 || MaxOpcodeCost >= 60_000 {
 		t.Fatalf("worst case %d", MaxOpcodeCost)
 	}
 	if got := OpcodeCost(wots.MaxVerifySteps) + 1; got != MaxOpcodeCost {

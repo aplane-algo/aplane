@@ -73,12 +73,12 @@ func TestGoldenVectors(t *testing.T) {
 		"wotspk0":          "4fb6ef82f315cc5491130b11292ee66df64bcbec8a3c2c0afbe10137b88cfdcf",
 		"edpk0":            "5eda254ea0cab100fea3e393a46fea68e6bb88eff7ca0a5544774ff84ca9e9f5",
 		"falconpk0_sha256": "1eaee1fa0ea59c32fb8a7327c10a8e7ca73b6c919c4a94f5eb0cd81104f47662",
-		"address0":         "BQTOZU7F3OJTVSEPL4OLHSIR5V37BB364ZFZZO6MC2QNVINSAKQRQ5WW2M",
+		"address0":         "YX62PQ4VBCVBAA5577SHXSYDYCC6DMYOUTUVPVN4QTSIZQ6KVPFVCC64XA",
 		"tweak1":           "86a5febc6bab3e4222c3a641b9a8b9498827689d6e9cd65a76d7bd80a3792cf6",
 		"wotspk1":          "9e1a0ef3ce930d65a7097f8b0eebd416e8d763073656c33342864913fb1c1b32",
 		"edpk1":            "1da58ca741e2cdb556d13929fc60d633c00dc0a67bcc4f2eaca4af589fea8f2e",
 		"falconpk1_sha256": "576982f151d59906bcca32bc14ae8f5d87a8ae630b89afd873c4d477c0e2d209",
-		"address1":         "VYFN2TDFKCPZJH5GZAMKZIXZNCYPZPILSHT5GBSMZGDRWCRUOET4STHAH4",
+		"address1":         "B7FOCZLDRRC5I7TRGT3LDKJQBF7P5GW4F4KWNMOGJIKUISTOKQVYWZ5FTI",
 	}
 	if len(got) != len(want) {
 		t.Fatalf("got %d values, want %d", len(got), len(want))
