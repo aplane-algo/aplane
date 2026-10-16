@@ -6,12 +6,8 @@
 # APlane - A Signing System for Algorand 
 
 APlane is a flexible command-line signing system for Algorand. It supports
-native Ed25519 and protocol-native Falcon-1024 accounts.
-
-It also supports rotating hybrid accounts, whose authorizing keys change on
-every spend behind a stable address, plus generic LogicSig templates and
-composed signature-plus-LogicSig authorization policies such as bounded
-allowlists, timelocks, HTLCs, cosigner-gated accounts, and custom templates.
+native Ed25519 and protocol-native Falcon-1024 accounts and provides a framework for 
+developing new types of keys using Algorand Logic Signatures.
 
 It is designed for security-focused operations where private keys can be isolated on dedicated signing machines with restricted network exposure.
 
@@ -33,12 +29,8 @@ contract and will continue to track the published protocol standards.
 
 - **Post-Quantum Ready**: Supports protocol-native Falcon-1024 accounts and
   top-level `PQsig` authorization on consensus v42+
-- **Rotating Hybrid Accounts**: A stable address whose authorizing stage
-  program changes on every spend, so each stage's public keys stay hidden until
-  it signs. Stages pair Ed25519 with Falcon-1024, hash-based WOTS, or both; no
-  smart contract and no on-chain state, and the account recovers from its seed
-- **General LogicSig Capability**: Supports built-in bounded allowlists,
-  timelocks, HTLCs, cosigner-gated policies, and user-defined custom LogicSigs
+- **General LogicSig Capability**: Supports a variety of designs, including built-in bounded allowlists,
+  timelocks, HTLCs, cosigner-gated policies, rotating keys, and user-defined custom LogicSigs
 - **Enables key isolation**: Signing operations (and private keys) can be kept on dedicated purpose-built machines with restrictive firewalls and single-port exposure
 - **Supports App Interaction Primitives**: Read Algorand app state, call contracts via raw or ARC-4/ABI methods, 
 deploy apps from TEAL source or compiled AVM bytecode, execute grouped flows such as companion-payment app calls
@@ -284,9 +276,7 @@ All documentation is in the [`docs/`](docs/) directory.
 - CGO enabled for binaries with cryptographic providers
 - Linux or macOS
 
-## Project Governance
-
-APlane is an open-source project stewarded by the APlane Project.
+## Disclaimer
 
 See [DISCLAIMER.md](DISCLAIMER.md) for important information regarding risk, liability, and usage.
 
