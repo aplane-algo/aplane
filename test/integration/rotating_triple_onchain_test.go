@@ -50,6 +50,7 @@ type tripleSpend struct {
 	swapArgs     bool
 	dropFalcon   bool
 	damageWots   int // flip one bit of the WOTS signature at this byte, when > 0
+	wotsLength   int // resize the valid WOTS signature to this many bytes, when > 0
 	damageFalcon int // flip one bit of the Falcon signature at this byte, when > 0
 }
 
@@ -155,6 +156,14 @@ func TestRotatingTripleOnChain(t *testing.T) {
 		},
 		"damaged last chain element": func(s tripleSpend) tripleSpend {
 			s.damageWots = wots.SignatureSize - 1
+			return s
+		},
+		"WOTS signature one byte long": func(s tripleSpend) tripleSpend {
+			s.wotsLength = wots.SignatureSize + 1
+			return s
+		},
+		"WOTS signature one byte short": func(s tripleSpend) tripleSpend {
+			s.wotsLength = wots.SignatureSize - 1
 			return s
 		},
 	}
@@ -367,6 +376,11 @@ func (a *tripleAccount) build(spend tripleSpend) ([]byte, []types.SignedTxn) {
 	}
 	if spend.damageWots > 0 {
 		wotsSig[spend.damageWots] ^= 0x01
+	}
+	if spend.wotsLength > len(wotsSig) {
+		wotsSig = append(wotsSig, make([]byte, spend.wotsLength-len(wotsSig))...)
+	} else if spend.wotsLength > 0 {
+		wotsSig = wotsSig[:spend.wotsLength]
 	}
 	if spend.damageFalcon > 0 {
 		falconSig[spend.damageFalcon] ^= 0x01

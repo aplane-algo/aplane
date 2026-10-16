@@ -62,7 +62,7 @@ const (
 	RotatingWotsStagePublicKeySize = 32 + 32 + 32
 
 	// RotatingWotsMaxProgramBytes is the salted WOTS stage program.
-	RotatingWotsMaxProgramBytes = 295
+	RotatingWotsMaxProgramBytes = 302
 
 	// RotatingWotsMaxArgumentBytes is a 2,144-byte WOTS signature and a
 	// 64-byte Ed25519 signature.
@@ -70,7 +70,7 @@ const (
 
 	// RotatingWotsMaxOpcodeCost is the worst accepting run of a salted WOTS
 	// stage program: 5,592 plus 53 per chain step over at most 990 steps.
-	RotatingWotsMaxOpcodeCost = 5592 + 53*990 + 1
+	RotatingWotsMaxOpcodeCost = 5597 + 53*990 + 1
 
 	// RotatingTripleStagePublicKeySize is the triple hybrid's stage 0 record:
 	// the stage 0 tweak (which carries the public account tag), the
@@ -78,7 +78,7 @@ const (
 	RotatingTripleStagePublicKeySize = 32 + 1793 + 32 + 32
 
 	// RotatingTripleMaxProgramBytes is the salted triple stage program.
-	RotatingTripleMaxProgramBytes = 2096
+	RotatingTripleMaxProgramBytes = 2103
 
 	// RotatingTripleMaxArgumentBytes is a 2,144-byte WOTS signature, a
 	// 64-byte Ed25519 signature and a compressed Falcon-1024 signature of at
@@ -88,7 +88,7 @@ const (
 	// RotatingTripleMaxOpcodeCost is the worst accepting run of a salted
 	// triple stage program: 7,296 plus 53 per chain step over at most 990
 	// steps.
-	RotatingTripleMaxOpcodeCost = 7296 + 53*990 + 1
+	RotatingTripleMaxOpcodeCost = 7301 + 53*990 + 1
 
 	// RotatingMaxValidityWindow is the longest LastValid-FirstValid span a
 	// stage program accepts.
