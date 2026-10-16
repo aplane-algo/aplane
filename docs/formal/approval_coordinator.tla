@@ -28,7 +28,8 @@ Liveness (checked by approval_coordinator_liveness.cfg under LiveSpec):
     fires). Operator decisions carry no fairness: they are choices, not
     guarantees.
 
-AP1 (single terminal resolution) and AP3 (response-to-request ID binding)
+AP1 (single terminal resolution) and AP3 (response-to-prompt binding: each
+prompt carries a server-generated ID)
 are modeled by construction: terminal states are absorbing (no action
 takes a terminal state as its source), and each operator action targets
 one request by identity. AP2 (only an operator approve yields Approved)

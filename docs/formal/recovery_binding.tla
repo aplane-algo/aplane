@@ -88,7 +88,7 @@ Init ==
 ----------------------------------------------------------------------------
 (* Mutations: commit then reload, under the store mutation lock *)
 
-\* CommitRoot is a root-changing operation (policy apply, restore, changepass)
+\* CommitRoot is a root-changing operation (policy apply, restore, rollback)
 \* taking the lock and committing the new generation as the root selection.
 \* The commit itself is store_root_commit.tla; here it is one step.
 CommitRoot ==

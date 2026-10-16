@@ -249,3 +249,63 @@ shipped but operator-replaceable. Not refreshed here: the P10 and S12 rows in
 after the redesign; the rows should point at
 `policyruntime.NodePolicy.PolicyFor`, `signing.Service.PolicyFor`, and the
 per-key tests in `test/integration/policy_per_key_test.go`.
+
+Drift review (2026-10-16, HEAD `9fbbb5a6`): range `09e24050..9fbbb5a6` (110
+commits; the 2026-10-14 review was scoped to per-key policy, so this one
+covers the whole range since the last full review). `make formal-test` (16
+runs) and `make formal-test-deep` (8 runs) match their recorded outcomes and
+metrics; metrics, the roadmap table, and every model header agree. The
+approval coordinator, session ownership, store-root commit, enrollment queue,
+guarded assembly, bounded cosigner, sign boundary, policy precedence, and
+composition transcriptions hold. Notable range commits checked: shutdown now
+cancels every HTTP request context (`41fdf774`), so parked approvals end
+through `Cancel`, not a new fail-all caller; prompts carry server-generated IDs
+(`fd176e8f`, AP3 wording updated); the signer refuses to sign anything other
+than the approved plan (`ea4a9ec3`, a fail-closed conjunct inside the approval
+and base gates); import clears a waiting request on an applied-not-durable
+registry write (`9a46af3f`, modeled in the same commit); per-key policy
+documents sit in existing generation leaf namespaces and are re-signed inside
+the passphrase-change mint; rotating stage tables are a derivable cache
+outside the generation; `rejectRekeyToRotating` is an unconfigurable Always
+Deny member ahead of the policy document. Fixed here: two stale
+`FORMAL_TRACEABILITY.md` test anchors (P2, A4 and its selection note), the
+P10/S12 rows flagged on 2026-10-14 (already corrected), PS4 plan-preservation
+wording (`validatePluginPlan`: canonical group ID, reported fee increases
+only, canonical dummies) in `plugin_signing.tla` comments,
+`FORMAL_PLUGIN_SIGNING_MODEL.md`, and `ARCH_PLUGINS.md`, AP3 and shutdown
+notes, the enrollment notification scope note, the deny-source list in
+`FORMAL_POLICY_MODEL.md`, rotating-key scope in
+`FORMAL_SIGNING_AUTHORITY_MODEL.md`, planning anchors, the bounded base-gate
+binding note, and the `CommitRoot` operation list (policy apply refused in
+recovery; changepass leaves the runtime locked, not in recovery).
+
+Open divergences (reported, not fixed; both predate or sit outside the
+modeled guards and no signature is produced):
+(1) RB4 on policy apply's uncertain commit: `policyapply.Commit` returning
+`policy_commit_uncertain` makes `ApplyPolicy` enter recovery, but
+`commitAndReload` returns before `ir.Reload()`, so the keystore stays bound to
+the old generation while the root may select the new one; restore reloads in
+the same case (`direct_restore.go`). RB1-RB3 hold. Options: reload whenever a
+generation ID was minted (code), or model an uncertain commit that enters
+recovery without binding and weaken RB4 to `~recovery => bound = root`.
+Related edge: `ErrStoreRootCommitStateUnknown` is classified as a pre-commit
+failure on apply and restore, so a root that did land would not enter
+recovery.
+(2) I10 on the rotating flow: `/sign/rotating/*` never calls
+`validateKnownNetwork`; genesis must equal the key's bound network, and the
+configured-network check happens only at the chain read, which on sign runs
+after the approval gates, so an unconfigured network reaches policy and the
+operator prompt before failing unavailable. Options: call
+`validateKnownNetwork` before the gates in both rotating paths (code), or
+document key-bound genesis plus the chain read as the rotating network
+authority and scope I10.
+
+Model-extension candidates: the rotating flow (`/sign/rotating/prepare` and
+`/sign/rotating/sign`: same slot classes and gates, but a prepare-time
+`rekey_to` mutation and post-approval stage-proof, timing, and open-test
+refusals that no model represents); plugin presign-plan's post-sign
+`verifySignedAgainstPlan` check (no conjunct or dummy slot class in
+`plugin_signing.tla`); the approval-binding refusal after Approve in
+`approval_composition.tla` (currently a sound over-approximation); and the
+coordinator's Queued-to-failed path when the post-turn client recheck or the
+send fails (folded into Cancel/Failed today).

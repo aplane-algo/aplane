@@ -99,13 +99,20 @@ before anything is shown. Anchors: `internal/apshellcli/external_plugins.go`
 
 ### PS4: Plan Preservation
 
-In presign-plan mode, `/plan` may change **only** the group ID and the fee.
-For every slot — plugin and managed alike — the draft and the canonical
-transaction, each with `Group` and `Fee` zeroed, must be msgpack-byte-equal;
-any other change (sender, validity window, lease, note, amount, receiver,
-app id, args, rekey, positional reorder) rejects with "plan modified ...
-slot". Anchor: `internal/engine/plugin_presign.go`
-(draft-vs-canonical comparison, applied to both slot classes).
+In presign-plan mode, `/plan` may only set a canonical group ID over the final
+group, raise the fees its mutation report lists (upward only, summing to
+`total_fees_delta`), and append canonical budget dummies; the report's counts
+must match the group. For every original slot — plugin and managed alike — any
+other change (sender, validity window, lease, note, amount, receiver, app id,
+args, rekey, positional reorder) rejects with "plan modified ... slot".
+Anchor: `internal/engine/plugin_presign.go::validatePluginPlan` (applied to
+both slot classes).
+
+After `/sign` and before broadcast, `verifySignedAgainstPlan` also requires
+every managed slot to sign exactly its canonical transaction and every
+passthrough slot (plugin-signed or dummy) to come back byte-for-byte as sent.
+The TLA model has no conjunct or dummy slot class for this post-sign check;
+it is a candidate model extension (2026-10-16 drift review).
 
 ### PS5: Signed-Slot Byte Match and Index Discipline
 
@@ -146,7 +153,7 @@ rejected at `apshellapp/submission.go`), so there is no third path.
   signatures (sig/msig/lsig contents), on either the client or the signer;
   the chain validates at submit. A plugin substituting *signature* bytes
   (not transaction bytes) produces a group that fails at algod, not before.
-- **Fees are exempt from PS4** by design: `/plan` exists to set fees. Managed
+- **Reported fee increases are allowed by PS4** by design: `/plan` exists to set fees. Managed
   slot fees are bounded by apsigner policy and shown at approval;
   plugin-slot fees are re-signed by the plugin against the canonical bytes,
   so the plugin sees what it pays.

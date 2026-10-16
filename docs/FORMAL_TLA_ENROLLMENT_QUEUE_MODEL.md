@@ -98,7 +98,8 @@ cannot silently stop being load-bearing.
   bytes are rewritten at the next publish.
 - Revocation closing the key's live tunnels, the SSH-side caps on
   `request-enrollment` connections and channels, and the apadmin
-  notification of a new request are outside the model; the first is covered
+  notifications (a new request, and the `enrollment_changed` announcements of
+  queue, registry, and connection changes) are outside the model; the first is covered
   by `internal/sshtunnel` tests, the caps by
   `internal/sshtunnel/enrollment_bounds_test.go`.
 - The model is safety-only. Operator answers are choices and carry no

@@ -82,6 +82,12 @@ requires exactly that `RB1_MaintenanceFollowsRoot` violation.
 - Validation and scan failures are one nondeterministic outcome. Which
   generation content is invalid, and the exact error, are
   `internal/genstore` and `internal/keystore` concerns.
+- `CommitRoot` stands for policy apply, restore, and rollback. Policy apply is
+  refused while the runtime is in recovery (`admin/policy.go::commitAndReload`),
+  so only restore and rollback commit from recovery. A passphrase change
+  withdraws signing up front (`BeginStoreMaintenance`) and a failure leaves
+  the runtime locked rather than in recovery; locked refuses signing as
+  recovery does, so RB2 and RB3 hold for it in substance.
 - Recovery exit (`PromoteRecoveryToUnlocked`, the lock fence) is modeled as
   the successful reload lifting recovery; the race with a concurrent lock is
   a Go-level contract pinned by `internal/signerapp/runtime` tests.

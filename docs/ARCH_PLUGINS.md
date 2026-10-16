@@ -695,7 +695,8 @@ either structured `lsigResources` for the LogicSig path it will attach or a
 canonicalizes the group: it adds resource dummies from the declared argument
 and opcode ceilings, prices program bytes, fixes the aggregate fee, and
 recomputes the group ID, while a guard asserts every original slot's
-transaction fields are preserved (only the group ID and fee may change). APlane then
+transaction fields are preserved (only a canonical group ID and the fee increases the
+mutation report lists may change; see below). APlane then
 calls the plugin's `signTransactions` method to sign its owned slots over the *canonical*
 bytes. APlane verifies that each returned signed envelope preserves the planned
 transaction and matches its declared authorization class. For LogicSig slots,

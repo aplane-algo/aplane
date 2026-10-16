@@ -516,6 +516,12 @@ Implementation areas that should remain aligned with this model:
 - `internal/signerapp/signing/execution.go`
 - `internal/signerapp/signing/approval.go`
 - `internal/signerapp/signing/always_review.go`
+- `internal/signerapp/signing/approval_binding.go` (`approvalDigest`,
+  `checkApprovalBinding`: the signer refuses to sign anything other than the
+  plan the approval covered, an I6 strengthening)
+- `internal/signerapp/signing/rotating_flow.go` (rotating spends: prepare also
+  sets `rekey_to` to the next stage, a mutation outside the canonicalization
+  set above that the response reports separately; not modeled)
 - `internal/clientsign/submit.go`
 - `internal/engine/guarded/submit.go`
 - `internal/signing/simulate.go`

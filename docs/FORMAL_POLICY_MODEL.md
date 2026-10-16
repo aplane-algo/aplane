@@ -216,8 +216,12 @@ verdict.
 
 Always Deny rules are hard safety guards. Current deny sources include:
 
+- the signer invariant that refuses a rekey of another account to a held
+  rotating account (`signing/rotating_gate.go::rejectRekeyToRotating`, run
+  first in `gate.go::runApprovalGates`); it is not a policy setting and has no
+  rule id, and it is evaluated before every policy document rule,
 - `transaction_types` entries with verdict `reject` (rule id
-  `transaction_type:<type>`), evaluated first,
+  `transaction_type:<type>`), the first policy document rule evaluated,
 - `reject_foreign_rekey`,
 - `reject_close_remainder`,
 - `reject_asset_close`,
@@ -272,7 +276,7 @@ TypeVerdict(policy, txn) = policy.transaction_types[txn.type]
                            if defined, else policy.transaction_types["*"]
 
 TypeVerdict = reject => Reject(transaction_type:<type>)
-                        (Always Deny, before every other deny rule;
+                        (Always Deny, before every other policy deny rule;
                          no other deny rule is evaluated for the slot)
 TypeVerdict = review => Review(transaction_type:<type>)
                         (Always Review, before every other review rule;

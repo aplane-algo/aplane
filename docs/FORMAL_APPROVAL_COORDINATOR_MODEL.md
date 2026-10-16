@@ -25,7 +25,7 @@ string is not a separate model state.
 |---|---|---|
 | AP1 | A request has one terminal resolution. | terminal states are absorbing |
 | AP2 | Only an operator approval yields `Approved`. | `Approve` |
-| AP3 | A decision is bound to its request ID. | request-indexed actions |
+| AP3 | A decision is bound to the prompt it answers: each delivered prompt carries a server-generated ID (`approval/coordinator.go::newPromptID`), and the client request ID maps to the live prompt only for cancel. | request-indexed actions |
 | AP4 | At most one request is delivered. | `AP4_SingleDelivery` |
 | AP5 | Every non-terminal request can be canceled. | `AP5_CancelAlwaysEnabled` |
 | AP6 | Every modeled fail-all leaves no delivered request. | `AP6_FailAllLeavesNoPending` |

@@ -31,6 +31,13 @@ their request path is not ordinary `/sign`: direct signing rejects those key
 types and the component-signing plus assembly workflow is modeled separately in
 [FORMAL_GUARDED_SIGNING_MODEL.md](FORMAL_GUARDED_SIGNING_MODEL.md).
 
+Rotating account keys are refused on ordinary `/sign`, `/plan`, and the
+component paths as well (`signing/rotating_gate.go::rejectRotatingKeyType`) and
+sign only through `/sign/rotating/prepare` and `/sign/rotating/sign`
+(`signing/rotating_flow.go::PrepareRotatingWithContext`,
+`SignRotatingWithContext`). That flow reuses the ordinary approval gates; no
+formal model covers it yet (2026-10-16 drift review).
+
 It does not model:
 
 - the cryptographic correctness of Ed25519, Falcon, ECDSA, or TEAL opcodes,

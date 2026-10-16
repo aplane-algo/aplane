@@ -59,6 +59,12 @@ cosigner transition is not reachable before a successful base release and that
 the admin branch never enters it. It does not model arbitrary direct calls to
 the cosigner endpoint.
 
+The base gate also includes the approval-binding check
+(`signing/approval_binding.go::checkApprovalBinding`): after approval and before
+any component or partial is produced, the signer refuses a plan that differs
+from the one the approval covered. It is one more fail-closed conjunct inside
+`BaseGate` and needs no separate state.
+
 Validation outcomes are intentionally abstract booleans. The model checks that
 the implementation consumes each outcome at the correct gate; it does not
 prove Falcon cryptography, msgpack canonicalization, Merkle proof construction,

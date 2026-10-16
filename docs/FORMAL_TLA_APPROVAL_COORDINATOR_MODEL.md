@@ -33,7 +33,10 @@ session-ownership and queue-visibility failure.
 `LiveSpec` adds weak fairness for `Deliver` and `Timeout`; `Progress` requires
 every queued or delivered request eventually to become terminal. The
 single-product runtime has no identity-decommission drain, so the model has no
-corresponding state or fairness assumption.
+corresponding state or fairness assumption. Daemon shutdown is not a fail-all
+either: it cancels every HTTP request context (`daemon/http_runtime.go::stopHTTPServer`,
+`TestStopHTTPServerCancelsParkedRequests`), so each parked request ends through
+the model's `Cancel` action.
 
 Run both inventories with:
 
