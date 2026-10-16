@@ -158,7 +158,7 @@ func runRotatingSignerFlowOnChain(t *testing.T, kind localnetRotatingType) {
 	tables := stagetable.NewStore(storepaths.NewPaths(t.TempDir()))
 	releases := &signersigning.ReleaseMemory{}
 	svc := &signersigning.Service{
-		Planner: &signersigning.Planner{Snapshot: func() signersigning.PlannerRuntimeSnapshot {
+		Planner: &signersigning.Planner{GenesisHashResolver: resolver, Snapshot: func() signersigning.PlannerRuntimeSnapshot {
 			return signersigning.PlannerRuntimeSnapshot{
 				KeyFiles:    map[string]string{address: "keys/" + address + ".key"},
 				KeyTypes:    map[string]string{address: kind.keyType},
