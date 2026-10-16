@@ -4,8 +4,10 @@
 package signing
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"os"
@@ -13,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/rotatingkey"
@@ -193,6 +196,44 @@ func TestRotatingPrepareRejectsMalformedSpends(t *testing.T) {
 	}
 	if f.table(t).Len() > 2 {
 		t.Fatalf("rejected prepares extended the table to %d", f.table(t).Len())
+	}
+}
+
+// A rotating key's bound genesis is not enough: the network must also be one
+// this node is configured for. Both rotating paths refuse an unconfigured
+// network before any gate or chain read runs.
+func TestRotatingRefusesANetworkThisNodeIsNotConfiguredFor(t *testing.T) {
+	custom := bytes.Repeat([]byte{0x5a}, 32)
+	saved := rotatingTestGenesis
+	rotatingTestGenesis = custom
+	t.Cleanup(func() { rotatingTestGenesis = saved })
+
+	f, audit := newSigningFixture(t)
+	configured, err := apconfig.NewGenesisHashNetworkResolver(map[string]string{
+		base64.StdEncoding.EncodeToString(custom): "customnet",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.svc.Planner.GenesisHashResolver = configured
+	prep := mustPrepare(t, f, f.spend(1000, 1100))
+
+	// The node drops the network from its configuration.
+	f.svc.Planner.GenesisHashResolver = apconfig.GenesisHashNetworkResolver{}
+	reads := f.chain.reads
+	if _, err := f.prepare(t, f.spend(1000, 1100)); err == nil || err.Kind != ErrorBadRequest ||
+		!strings.Contains(err.Message, "unrecognized genesis hash") {
+		t.Fatalf("prepare on an unconfigured network: err = %v, want unrecognized genesis hash", err)
+	}
+	if _, err := f.sign(t, prep.Transactions); err == nil || err.Kind != ErrorBadRequest ||
+		!strings.Contains(err.Message, "unrecognized genesis hash") {
+		t.Fatalf("sign on an unconfigured network: err = %v, want unrecognized genesis hash", err)
+	}
+	if f.chain.reads != reads {
+		t.Fatalf("refused requests read the chain %d times", f.chain.reads-reads)
+	}
+	if len(audit.releases) != 0 {
+		t.Fatal("a refused sign recorded a release")
 	}
 }
 
