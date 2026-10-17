@@ -1,6 +1,7 @@
 # System Architecture
 
-> Orientation map for engineers working on the APlane repository: what the
+> Start with [Understanding APlane](#understanding-aplane) for a self-contained
+> introduction. The rest is an orientation map for engineers: what the
 > system is, its components, which package owns what, the runtime model, the
 > architectural seams, and the source-of-truth files. Each subject has its own
 > `ARCH_*` document; [How To Use These Docs](#how-to-use-these-docs) says when
@@ -9,6 +10,7 @@
 
 ## Contents
 
+- [Understanding APlane](#understanding-aplane)
 - [Purpose](#purpose)
 - [How To Use These Docs](#how-to-use-these-docs)
 - [System](#system)
@@ -39,6 +41,301 @@
 - [Adding New Features](#adding-new-features)
 - [Related Documentation](#related-documentation)
 
+## Understanding APlane
+
+This introduction covers the main actors, what each can authorize, how a
+transaction becomes executable, and what survives a restart. The sections that
+follow are an implementation reference. The subject documents linked here own
+the detailed contracts; check the affected code before changing behavior.
+
+### The product and its deployment
+
+APlane is an Algorand operations toolkit. Its client, `apshell`, turns human
+commands, scripts, and machine requests into transactions. Its signing service,
+`apsigner`, holds credentials and decides whether to release the authorization
+those transactions need. The client submits the resulting signed bytes to the
+network. The ledger ultimately decides whether a transaction is valid and
+whether it changes chain state.
+
+This separation lets a client prepare useful work without receiving the
+signer's private keys. It also lets the signer evaluate the actual transaction
+bytes independently of the client's description. A friendly command label,
+cached account name, or application description is not proof that the bytes do
+what the operator intended.
+
+Each `apsigner` process owns one product store, one runtime, and one active
+admin session. The fixed directory `identities/default/` does not imply a
+choice of identities or tenants. That one store can hold many account keys.
+Multiple clients may connect, but they all reach the same signing-state
+aggregate. Additional signer or cosigner nodes require separate processes and
+data roots.
+
+API clients connect through the signer's SSH server using an enrolled client
+key. The HTTP API receives the identity of that authenticated connection;
+there is no bearer token or caller-selected identity header. Even local API
+clients use SSH. Direct loopback HTTP serves only health checks. General live
+administration uses `apadmin` over local, passphrase-authenticated IPC. Remote
+operators log in to the signer machine and run `apadmin` there.
+
+`apconsole` composes local operator panes around these same interfaces.
+JavaScript and MCP are client surfaces over the shell's application behavior.
+Plugins run as separate client-side processes and cannot read signer-managed
+credentials. A plugin may supply its own signing capability, but that does not
+grant access to keys held by `apsigner`.
+
+The signer is a separate custody boundary, not necessarily an offline machine.
+It can use configured algod endpoints for functions such as TEAL compilation,
+and rotating signing requires its own fresh chain reads. Network access and
+which host owns key material are separate deployment decisions.
+
+### Following an ordinary transaction
+
+Consider a payment from an account whose signing authority is held by the
+signer. The client resolves the requested recipient and amount, obtains network
+parameters, and constructs unsigned transaction bytes. It identifies the
+effective authorizer: after an Algorand rekey, the sender account and the key
+authorized to sign for it can be different. Signer inventory tells the client
+which signing flow that key requires.
+
+For an ordinary request, the client sends transaction bytes and signing context
+to `/sign`, optionally using `/plan` first. The signer decodes the bytes and
+checks request structure and network consistency. It plans the final group,
+including fees, resource dummy transactions when needed, and the group ID.
+Those changes matter: a signature must bind the finalized transaction, not a
+draft that is later altered to make the group executable.
+
+Each group position has an explicit role. A sign position asks this signer to
+authorize it. A passthrough position supplies already-signed bytes. A foreign
+position supplies context for another participant without asking this signer
+to sign it. The group can contain all three. Policy for a signer-controlled
+position is selected by its signing key; foreign context is not an implicit
+request to sign with someone else's authority.
+
+The signer evaluates policy and, when required, presents the transaction for
+operator approval. The approval covers the transaction the signer will
+authorize. The execution path checks the approved request's binding before
+using the key. It decrypts key material as needed, signs or assembles the
+applicable positions, and returns finalized signed transaction bytes. Private
+credential material is not returned.
+
+The client now holds executable authorization. It can submit the bytes, send
+them to algod simulation, or retain them until they expire. Simulation after
+signing is therefore subject to the same policy and approval as submission.
+The signer cannot promise that a client will only simulate a signed group.
+Likewise, a successful signing response records signature release, not ledger
+confirmation. Submission, confirmation, and subsequent chain state belong to
+the client/network side of the workflow.
+
+The exact planning, approval, cancellation, and HTTP contracts are in
+[ARCH_SIGNING.md](ARCH_SIGNING.md).
+
+### The distinct authorization decisions
+
+Several checks compose to authorize a transaction. Keeping them separate is
+essential to understanding both the implementation and its limits.
+
+Authentication establishes who is connected. Authorization checks whether
+that principal may invoke an action. An enrolled API client has a closed set
+of allowed actions; it does not become the passphrase-authenticated product
+administrator. Being permitted to request signing still does not bypass key
+availability, policy, operator review, or the checks of the selected signing
+flow. [ARCH_SECURITY.md](ARCH_SECURITY.md) owns these principal and action
+boundaries.
+
+Signer policy decides what a held key may authorize. Every node has a complete
+default policy, and a key may have a complete policy of its own. A key's own
+document replaces the default wholesale: there is no inheritance or field
+merge. For ordinary signing, selection follows the signing authority rather
+than necessarily the transaction sender. This matters when multiple sender
+accounts have rekeyed to one held key.
+
+Each request uses a captured policy snapshot, so reloading policy does not
+silently change the rulebook halfway through that request.
+
+On signer nodes the precedence is deny, then require review, then approve,
+then operator default. A deny cannot be overridden by an operator approval.
+A review rule cannot be bypassed by `user_auto_approve`. That setting only
+decides the fallback for transactions unmatched by a stronger verdict.
+Cosigner policy has no manual-review fallback: a request must be permitted
+by its policy or it is rejected. Its shipped default permits nothing.
+[ARCH_POLICY.md](ARCH_POLICY.md) defines selection and evaluation.
+
+Finally, cryptographic authorization and on-chain program rules determine
+what the ledger can accept. Local signer policy controls what this signer
+releases; it does not rewrite an existing on-chain program. A TEAL constraint
+can continue to restrict a transaction even if a local policy would approve
+it. Conversely, a program that only checks signatures should not be described
+as enforcing every spending restriction configured on the signer.
+
+### Why there are different signing flows
+
+The inventory field `signing_flow` tells clients which choreography an account
+requires. Clients must reject an unfamiliar flow instead of trying ordinary
+signing. These flows describe authorization mechanics, not merely a choice of
+signature algorithm.
+
+| Flow | What must happen |
+|---|---|
+| Ordinary, empty label | `/sign` produces native signatures or assembles the held LogicSig's bytecode and arguments. Native keys, DSA-backed LogicSigs, and generic LogicSigs have different cryptographic behavior within this path. |
+| `cosigner1` | A guarded account requires both the user signer's component and a cosigner's component over the planned transaction. Assembly verifies and combines them. |
+| `bounded1` | The account's program enforces a compiled transaction envelope. Ordinary spending and contract administration follow different authorization paths. |
+| `bounded-cosigner1` | A bounded program additionally requires a cosigner for spending. External contract administration remains a separate path. |
+| `rotating1` | Each accepted spend also hands authorization to the next deterministically derived stage. Preparation and signing use dedicated rotating endpoints. |
+
+For guarded signing, the client first obtains a canonical group from `/plan`.
+Component signing and assembly consume frozen bytes; they do not repair fees
+or change the group. The user signer and cosigner independently apply their
+respective checks. The cosigner verification key embedded in the guarded
+account's program is the trust anchor. An endpoint alias or a `/keys` discovery
+result helps find a route to that key, but cannot substitute another key.
+
+A signer-role store holds account authority; a cosigner-role store holds
+witness credentials used for component signing. There is no mixed node role.
+Running these nodes as separate processes on one machine separates their
+storage and interfaces, but does not by itself create independent trust.
+Independence depends on who controls the machines and credentials. See
+[ARCH_GUARDED.md](ARCH_GUARDED.md).
+
+Bounded programs restrict the admitted transaction effects, fee ceiling, and
+administrative operations before applying their spending policy. A template's
+additional policy can narrow the admitted spend set. External contract-admin
+authority is held separately in an encrypted `.wit` artifact used by
+`aprekey`, rather than in the signer's managed credential store. An authorized
+contract-admin rekey still requires the base spending signature: the admin
+key alone cannot recover a lost spending key. A cosigner spend gate and a
+contract-admin rekey solve different problems and use separate custody and
+signature domains. [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md) defines the
+envelope and ceremonies.
+
+A rotating account retains its account address while changing its authorizing
+LogicSig program. Its seed, bound genesis hash, stage number, and key type
+determine the stage keys and program. The blockchain says which stage is
+currently authorized. Preparation derives the next stage and builds the
+rekeying spend; signing rechecks the current authorizer after approval and
+locally tests that the next stage's keys can sign against its program's public
+keys before releasing the current stage's signature.
+
+That signing self-test uses a fixed test message locally, then wipes the test
+signatures and temporary private keys. It does not submit a transaction or
+execute the target program on a node. The program address is independently
+derived and checked against the spend's rekey target.
+
+The stage address tables under `stages/` cache addresses only. They may
+contain future stages long before they are used; a cache entry is neither an
+activation record nor proof that the signing self-test has run. Signing
+confirms the target by deriving it again. More than one transaction can be
+released from a still-live stage; the signer does not promise one release per
+stage. For WOTS-based stages, reuse affects the one-time-signature security
+assumption, and the signer reports reuse alerts. The ledger's authorizer
+transition and the local signing self-test are distinct safeguards. The
+rotating contract and alert semantics are in
+[ARCH_SIGNING.md](ARCH_SIGNING.md#rotating-accounts-rotating1).
+
+### Where authority lives
+
+The product store is file-backed. Its authenticated `store-root.enc` selects
+one active generation and protects the term keys used for encrypted store
+objects. Merely finding a generation directory on disk does not make it
+current. The `.keystore` file is a format marker, not a competing selection
+record. Active credentials, policy documents and their integrity sidecars,
+and installed key-type state are resolved through that authenticated selection.
+
+The current generation is not an immutable snapshot of every operation.
+Ordinary key mutations can update it in place through the owning services.
+Operations such as policy apply, credential restore, and passphrase change
+mint a successor generation, validate it, seal the outgoing generation, and
+publish the new selection through one store-root replacement. This avoids
+having independent commit records disagree about which authority is active.
+
+A managed credential is the source of truth for signing an existing key.
+For DSA-backed and generic LogicSig keys, that includes stored program
+bytecode and versioned signing metadata. Templates support generation and
+provenance; editing an installed template cannot redefine an existing key's
+signing program. Rotating keys are an explicit exception to the stored-program
+shape: they retain seed and network-bound derivation material, and derive
+their stage programs through their versioned key-type implementation.
+
+Runtime indexes, sessions, and policy snapshots are in-memory projections of
+validated authority. They determine what the running service can currently
+use, but cannot independently choose an unauthenticated generation. Client
+inventory caches, chain-authorizer caches, and rotating stage tables speed up
+lookup; they are not credentials or policy. Local aliases and endpoint
+configuration express operator choices, but likewise cannot authorize a
+signature. This distinction matters when deciding whether missing data can
+be rebuilt or requires recovery of actual credential material.
+
+Network names need the same distinction. A token such as `localnet` is a local
+configuration and cache namespace. Transaction `GenesisHash` identifies the
+chain for signer validation and policy resolution; `GenesisID` is not the
+security identity. Client and signer configuration select their respective
+node endpoints. A backup of a key does not carry those endpoint choices.
+
+[ARCH_STORE.md](ARCH_STORE.md) owns storage and credential lifecycle,
+[ARCH_DATA_MODEL.md](ARCH_DATA_MODEL.md) maps authorities to their projections,
+and [ARCH_NETWORKS.md](ARCH_NETWORKS.md) owns network resolution.
+
+### Lock, restart, uncertain commit, and restore
+
+Unlocking authenticates the store root, binds the selected generation,
+validates role and policy, loads templates and credential metadata, and
+publishes a usable signing session. Ordinary signing decrypts individual keys
+on demand rather than keeping all private keys in an unlocked inventory.
+Locking destroys or invalidates signing sessions and zeros the retained term
+keys. Pending approval and runtime lifecycle handling prevent a disconnected
+approval workflow from becoming durable permission to sign later.
+
+A restart reconstructs runtime state from the authenticated store. Live sign
+requests are not a persistent work queue. Client enrollment requests are
+different: the pending enrollment queue is durable so an operator can approve
+them later. Audit records describe releases and operational events; rotating
+release records also rebuild advisory alerts. They do not replace chain state
+or credential authority.
+
+For a generation commit, failure before root replacement leaves the previous
+selection authoritative. A replacement whose durability cannot be confirmed
+requires recovery handling: the signer must not treat an error as proof that
+the old selection remains current, blindly retry, or continue signing from
+stale runtime state. Reconciliation authenticates the selected state and
+classifies residue. A complete but ambiguous unselected generation is
+quarantined rather than adopted merely because it looks newer. Maintenance
+fences also prevent a concurrent unlock from republishing authority during a
+store transition.
+
+Managed backups contain encrypted complete credentials and their own per-key
+policy documents when present. They do not contain the node default policy,
+endpoint configuration, installed templates, or rotating stage cache. Live
+restore validates the selected credential set before committing it into a
+generation. A restored key without its own policy follows the destination's
+default; operators must not assume a credential backup reproduces the whole
+source deployment. Offline `apstore rebuild` is a separate absent-store rescue
+path. The detailed failure and restore rules belong to
+[ARCH_STORE.md](ARCH_STORE.md#generations).
+
+### Finding the right implementation boundary
+
+The client has three useful levels: adapters parse and render, `apshellapp`
+owns shell workflows, and `engine` owns reusable client mechanics. MCP and
+text output project the same application results. A command change should
+not create a second signing implementation in its UI adapter.
+
+The signer has its own application layer. `signerapp/daemon` composes the
+runtime and adapts transports; `signerapp/signing` plans, approves, and
+executes; storage and provider packages own credential persistence and
+cryptographic operations. The signer does not call the client engine to
+decide what it may sign. Public HTTP DTOs live in `pkg/signerapi`; admin IPC
+has its own protocol. External SDKs consume the HTTP contract from a separate
+repository, so API changes can require coordinated work beyond this tree.
+
+When investigating a change, first identify the authority it affects and the
+flow that consumes it. Then use the ownership map below and
+[ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) to find the subject contract, source,
+and relevant tests. Keep these boundaries explicit: an approved transaction
+must match the released authorization; a cache cannot choose signing
+authority; a template cannot rewrite an existing stored-program key; and a
+local signature release is not a confirmed network transaction. Qualify each
+rule by key category and flow rather than assuming every account follows the
+ordinary path.
+
 ## Purpose
 
 This document is the implementation-derived orientation and architecture specification for the APlane codebase. It describes:
@@ -53,6 +350,14 @@ This document is the implementation-derived orientation and architecture specifi
 This document is derived from the codebase and documentation. Where documentation and code differ, the code is authoritative.
 
 ## How To Use These Docs
+
+For initial orientation, read [Understanding APlane](#understanding-aplane).
+Then use this file's ownership and entry-point sections as needed. Read
+`ARCH_CONTRACTS.md` to locate the applicable compatibility contract, and the
+conceptual sections of `ARCH_DATA_MODEL.md` to understand authority and state.
+Its catalog is a lookup reference; reading every row is not a prerequisite
+for understanding the system. Follow the subject documents for the task at
+hand, and resolve apparent contradictions against their owning code.
 
 Read this file as the system map:
 
@@ -178,7 +483,7 @@ The system enforces a strict security boundary between APlane Shell (client) and
 │    to Algorand       │          │                      │
 │                      │          │                      │
 └──────────────────────┘          └──────────────────────┘
-     Internet-connected              Network-isolated
+     Client network access           Separate key custody
 ```
 
 Remote shell clients connect through an SSH tunnel to the signer HTTP API.
@@ -453,7 +758,9 @@ or simulating immutable signed groups. The guarded flow enters through the same
 checked submit boundary. `NewInitializedEngine` may leave `AlgodClient` nil when
 algod is not configured or client creation fails; consensus-gated operations
 then fail with `ErrNoAlgodClient` before contacting a signer, plugin, or network.
-Apsigner remains network-independent and applies its compiled v42 contract.
+Apsigner applies its compiled v42 consensus contract rather than refreshing
+that contract from a node. This does not make the signer network-independent:
+rotating signing reads chain state, and TEAL compilation uses configured algod.
 
 Engine code must not depend on UI parsing or formatting packages; this is
 enforced by `test/arch/client_layering_test.go` (see Architectural Invariants).
@@ -908,9 +1215,10 @@ The system has two main auth channels:
 Authorization is a separate concern through `auth.Authorizer`. Runtime code uses
 the explicit product action allowlist documented in
 [ARCH_SECURITY.md](ARCH_SECURITY.md). In product mode,
-credentials map to the reserved `system:product-admin` principal
-and the fixed `default` resource boundary; authentication does not bypass
-authorization.
+admin credentials map to the reserved `system:product-admin` principal;
+enrolled API clients map to `client:<fingerprint>` with role `client`.
+Each has an explicit action allowlist and reaches the one fixed product store;
+authentication does not bypass authorization.
 
 ### Secret Handling
 
@@ -1062,8 +1370,11 @@ key operations when deciding whether an optional key type can be discovered,
 generated, or imported.
 
 Template scan precedes key scan so generation/discovery state is current.
-LogicSig key files carry their own bytecode and signing arg contract, so
-signing an existing key does not depend on the installed template definition.
+DSA-backed and generic LogicSig key files carry their own bytecode and signing
+argument contract, so signing an existing key does not depend on the installed
+template definition.
+Rotating LogicSig keys instead derive stage programs from their stored seed,
+genesis hash, and versioned key-type implementation.
 The complete key file and key type state machines are documented in
 [ARCH_STORE.md](ARCH_STORE.md#keys-and-key-types).
 LogicSig key files whose stored bytecode derives an on-curve address are
@@ -2006,8 +2317,15 @@ is in [ARCH_STORE.md](ARCH_STORE.md#keys-and-key-types).
     `internal/signing/falcon1024/signerreg.RegisterSigner()`.
     `cmd/apshell/deps_test.go` pins the client/signer registration boundary,
     including native Falcon signer registration and operations.
-15. LogicSig key files are the signing authority: every signable LogicSig key file has versioned signing metadata (version 1 for non-bounded, version 2 for bounded). Signing and restore reject files without `signing_metadata_version` or with a metadata version/shape mismatch; templates and live providers are not consulted to reconstruct missing signing metadata.
-16. Every persisted LogicSig key file has an off-curve address. Stored bytecode
+15. Key files are the signing authority. DSA-backed and generic LogicSig keys
+    require versioned signing metadata (version 1 for non-bounded, version 2
+    for bounded); signing and restore reject missing or inconsistent metadata
+    rather than reconstructing it from templates. Rotating LogicSig keys
+    instead persist seed and network-bound derivation material, reject stored
+    bytecode and signing metadata, and derive stage programs through their
+    versioned key-type implementation.
+16. Every persisted LogicSig key file has an off-curve address. For DSA-backed
+    and generic LogicSig keys, stored bytecode
     that derives an on-curve LogicSig address is rejected on load. Legacy
     empty/`manual_counter` derivations require `salt_counter`;
     `algod_v13_auto_salt` derivations must omit it and carry final TEAL v13+
