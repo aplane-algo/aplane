@@ -1297,7 +1297,7 @@ and [ARCH_ADMIN.md](ARCH_ADMIN.md#admin-protocol-contract).
 
 | Element | Kind | Authority | Projection | Owner | Checks |
 |---|---|---|---|---|---|
-| Compiled provider registry | process authority | Go registrations in `lsig/all.go` and provider packages | provider lookup by `key_type` | `internal/lsigprovider`, `internal/keygen`, `internal/signing` | Canonical `key_type` strings are identifiers; display labels are not. |
+| Compiled provider registry | process authority | Go registrations in `lsig/clientreg` and provider packages | provider lookup by `key_type` | `internal/lsigprovider`, `internal/keygen`, `internal/signing` | Canonical `key_type` strings are identifiers; display labels are not. |
 | Key type visibility catalog | process metadata | `internal/keytypecatalog` registrations | default-enabled/library-visible/disabled state | `internal/keytypecatalog` | Library-visible providers require a product-store state record before generation. |
 | Plaintext template library | install source | repo or signer-data `library/templates/*.yaml` | KeyType Library candidates | `internal/templatelibrary`, `internal/defaultkeytypes` | Not active by presence alone; new signer-role stores install the bundled Falcon allowlist v1 default; other entries require product-store import/enablement, and invalid entries are reported but not enabled. |
 | YAML template spec | generation contract | template YAML `schema_version`, `template_mode`, `template_type` | parsed `BaseTemplateSpec` (`template_type` is optional) | `internal/templatestore` (`BaseTemplateSpec`), `internal/templatelibrary`, `lsig/generictemplate`, `lsig/composeddsa` (per-type specs) | Unknown/missing required fields reject import/install. |

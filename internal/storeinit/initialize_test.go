@@ -19,11 +19,11 @@ import (
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/templatestore"
-	"github.com/aplane-algo/aplane/lsig"
+	"github.com/aplane-algo/aplane/lsig/clientreg"
 )
 
 func TestInitializeCreatesStoreMetadataKeysAndPolicy(t *testing.T) {
-	lsig.RegisterClient()
+	clientreg.RegisterClient()
 
 	dataDir := t.TempDir()
 	paths := storepaths.NewPaths(dataDir)

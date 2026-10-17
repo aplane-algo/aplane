@@ -1000,7 +1000,7 @@ The exact registries depend on the category.
 
 - [ ] Go-defined templates implement or produce a provider visible through `internal/genericlsig`
 - [ ] Go-defined templates register with the unified `internal/lsigprovider` registry
-- [ ] Go-defined templates are reachable from an owning startup path such as `lsig.RegisterClient()` or `lsig/signerreg.RegisterSigner()`
+- [ ] Go-defined templates are reachable from an owning startup path such as `lsig/clientreg.RegisterClient()` or `lsig/signerreg.RegisterSigner()`
 - [ ] User-loaded YAML parses from `library/templates/*.yaml` or another supplied path
 - [ ] User-loaded YAML installs into the product encrypted template store with a key type state record, can be disabled by setting that record to `disabled`, and is not registered directly from startup registration
 
@@ -1009,7 +1009,7 @@ Common paths:
 - `library/templates/*.yaml`
 - `internal/templatelibrary/library.go`
 - `internal/templatestore/store.go`
-- `lsig/all.go`
+- `lsig/clientreg/register.go`
 
 ### DSA LogicSig Provider
 
@@ -1020,8 +1020,8 @@ Common paths:
 - [ ] Uses versioned ops entries for any version with distinct keygen/signing semantics
 - [ ] Uses the shared-ops fallback only when multiple key types share private-key operations and differ only in LogicSig derivation/TEAL
 - [ ] Registers key/address processing for the key type
-- [ ] Registers product visibility in `internal/keytypecatalog` through `lsig/all.go`
-- [ ] Client-safe metadata/derivation is reachable from `lsig.RegisterClient()`
+- [ ] Registers product visibility in `internal/keytypecatalog` through `lsig/clientreg/register.go`
+- [ ] Client-safe metadata/derivation is reachable from `lsig/clientreg.RegisterClient()`
 - [ ] Signer-side signing/keygen/mnemonic handlers are reachable from `lsig/signerreg.RegisterSigner()`
 - [ ] If library-visible, has enablement/discovery tests before generation is allowed
 
@@ -1029,7 +1029,7 @@ Common paths:
 - `lsig/<family>/register.go`
 - `lsig/<family>/keys/register.go`
 - `lsig/<family>/signerreg/register.go`
-- `lsig/all.go`
+- `lsig/clientreg/register.go`
 
 ### Composed DSA Template
 
@@ -1038,7 +1038,7 @@ Common paths:
 - [ ] Keeps `composeddsa.DSAOps` client-safe: metadata, TEAL generation, and signature-argument packing only
 - [ ] Supplies private-key operations through signer-side `signerops` packages when needed
 - [ ] Go-defined templates are reachable from `lsig/composeddsa` or equivalent composed template registration code
-- [ ] Go-defined templates are reachable from an owning startup path such as `lsig.RegisterClient()` or `lsig/signerreg.RegisterSigner()`
+- [ ] Go-defined templates are reachable from an owning startup path such as `lsig/clientreg.RegisterClient()` or `lsig/signerreg.RegisterSigner()`
 - [ ] User-loaded YAML installs into the product encrypted template store with a key type state record, can be disabled by setting that record to `disabled`, and is not registered directly from startup registration
 
 ## Parameter Checklist

@@ -84,6 +84,13 @@ var familyImportExceptions = map[string]string{
 	modulePrefix + "/internal/signerapp/signing": "guarded component flow is falcon-only pending neutral component ops",
 }
 
+// isLsigImport reports whether imp is any package in the lsig tree,
+// including the root package, so the rule cannot be bypassed by importing a
+// parent package that happens not to carry the trailing slash.
+func isLsigImport(imp string) bool {
+	return imp == modulePrefix+"/lsig" || strings.HasPrefix(imp, modulePrefix+"/lsig/")
+}
+
 // TestSharedPackagesDoNotImportDSAFamilies pins the algorithm-family boundary:
 // core code under internal/ and pkg/ must stay family-agnostic. Concrete
 // family packages under lsig hook into core through
@@ -103,7 +110,7 @@ func TestSharedPackagesDoNotImportDSAFamilies(t *testing.T) {
 			continue
 		}
 		for _, imp := range imps {
-			if strings.HasPrefix(imp, modulePrefix+"/lsig/") && !templateInfraPackages[imp] {
+			if isLsigImport(imp) && !templateInfraPackages[imp] {
 				t.Errorf("%s imports %s: core packages must stay algorithm-family-agnostic; register family behavior through the core registries instead", pkg, imp)
 			}
 		}
@@ -121,7 +128,7 @@ func TestFamilyImportExceptionsStayCurrent(t *testing.T) {
 			continue
 		}
 		for _, imp := range imps {
-			if strings.HasPrefix(imp, modulePrefix+"/lsig/") && !templateInfraPackages[imp] {
+			if isLsigImport(imp) && !templateInfraPackages[imp] {
 				stillImports[pkg] = true
 			}
 		}

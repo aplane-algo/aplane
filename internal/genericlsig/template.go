@@ -9,7 +9,7 @@
 // 1. Create a new package in lsig/<template>/
 // 2. Implement the Template interface
 // 3. Add registration in the provider package that calls genericlsig.Register()
-// 4. Add the appropriate RegisterClient/RegisterSigner call to lsig/all.go
+// 4. Add the appropriate RegisterClient call to lsig/clientreg and the RegisterSigner call to lsig/signerreg
 package genericlsig
 
 import (

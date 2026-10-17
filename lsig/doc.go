@@ -11,7 +11,7 @@
 // There are two, one per binary role, and they are separate Go packages
 // because the package is Go's unit of linkage:
 //
-//   - RegisterClient (this package): client-safe metadata only — key type
+//   - lsig/clientreg.RegisterClient: client-safe metadata only — key type
 //     catalog rows, display metadata, sizes, address derivation. apshell links
 //     this and nothing more; cmd/apshell/deps_test.go
 //     (TestClientDoesNotLinkSignerRegistration) pins it.
@@ -23,7 +23,7 @@
 //
 // Every top-level directory is one of:
 //
-//   - an entry point: this package, signerreg;
+//   - an entry point: clientreg, signerreg;
 //   - template infrastructure: composeddsa (runtime TEAL composer and the
 //     composed YAML template parser, including the bounded1 renderer),
 //     generictemplate (generic YAML templates), dsafamily (the registration

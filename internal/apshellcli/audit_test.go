@@ -13,10 +13,12 @@ import (
 	"github.com/aplane-algo/aplane/internal/mnemonic"
 	"github.com/aplane-algo/aplane/internal/signing"
 	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
+	"github.com/aplane-algo/aplane/lsig/clientreg"
 )
 
 func init() {
-	// Register providers for tests
+	// Register providers for tests, as the apshell binary does.
+	clientreg.RegisterClient()
 	RegisterProviders()
 }
 

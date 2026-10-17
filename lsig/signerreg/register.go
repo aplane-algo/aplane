@@ -8,7 +8,7 @@ import (
 	"sync"
 
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
-	"github.com/aplane-algo/aplane/lsig"
+	"github.com/aplane-algo/aplane/lsig/clientreg"
 	"github.com/aplane-algo/aplane/lsig/ed25519lsig"
 	ed25519lsigsignerreg "github.com/aplane-algo/aplane/lsig/ed25519lsig/signerreg"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
@@ -26,7 +26,7 @@ var registerSignerOnce sync.Once
 // This is idempotent and safe to call multiple times.
 func RegisterSigner() {
 	registerSignerOnce.Do(func() {
-		lsig.RegisterClient()
+		clientreg.RegisterClient()
 		registerCompiledSigner(keytypecatalog.Entry{
 			KeyType:      "aplane.falcon1024.v1",
 			Family:       family.Name,

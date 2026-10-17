@@ -1,7 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-package lsig
+// Package clientreg is the client-side registration entry point for the lsig
+// tree: catalog rows, display metadata, sizes and address derivation, and
+// nothing that needs a private key. Binaries call RegisterClient at startup;
+// signer binaries reach it through lsig/signerreg.RegisterSigner, which
+// registers the same metadata before the signer-only providers.
+package clientreg
 
 import (
 	"sync"

@@ -15,7 +15,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	"github.com/aplane-algo/aplane/internal/signerapp/unlockconfig"
 	"github.com/aplane-algo/aplane/internal/storepaths"
-	"github.com/aplane-algo/aplane/lsig"
+	"github.com/aplane-algo/aplane/lsig/clientreg"
 )
 
 type auditEvent struct {
@@ -86,7 +86,7 @@ func (d *initializeTestDeps) WithStoreMutation(fn func() error) error {
 }
 
 func TestInitializeStoreReleasesMutationLockBeforeUnlock(t *testing.T) {
-	lsig.RegisterClient()
+	clientreg.RegisterClient()
 	dataDir := t.TempDir()
 	deps := &initializeTestDeps{
 		dataDir: dataDir,

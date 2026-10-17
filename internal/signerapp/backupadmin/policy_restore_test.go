@@ -24,7 +24,7 @@ import (
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 	"github.com/aplane-algo/aplane/internal/storeinit"
 	"github.com/aplane-algo/aplane/internal/storepaths"
-	"github.com/aplane-algo/aplane/lsig"
+	"github.com/aplane-algo/aplane/lsig/clientreg"
 )
 
 func cosignerPolicyForRestoreTest(key, description string) []byte {
@@ -35,7 +35,7 @@ func cosignerPolicyForRestoreTest(key, description string) []byte {
 // unlocked runtime.
 func unlockedCosignerRuntime(t *testing.T, paths storepaths.Paths) *productruntime.Runtime {
 	t.Helper()
-	lsig.RegisterClient()
+	clientreg.RegisterClient()
 	if _, err := storeinit.Initialize(backupAdminTestPassphrase, storeinit.Options{ValidateCandidate: storevalidate.FirstGeneration, DataDir: paths.Root(), Paths: paths, Role: noderole.RoleCosigner}); err != nil {
 		t.Fatal(err)
 	}

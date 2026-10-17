@@ -15,11 +15,11 @@ import (
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/templatestore"
 	librarytemplates "github.com/aplane-algo/aplane/library/templates"
-	"github.com/aplane-algo/aplane/lsig"
+	"github.com/aplane-algo/aplane/lsig/clientreg"
 )
 
 func TestInstallForNewStoreInstallsDefaultAllowlistTemplatesForSigner(t *testing.T) {
-	lsig.RegisterClient()
+	clientreg.RegisterClient()
 
 	paths := storepaths.NewPaths(t.TempDir())
 	paths = genstoretest.MintFirst(t, paths)
@@ -82,7 +82,7 @@ func TestInstallForNewStoreSkipsCosignerRole(t *testing.T) {
 }
 
 func TestInstallForNewStoreIsIdempotent(t *testing.T) {
-	lsig.RegisterClient()
+	clientreg.RegisterClient()
 
 	paths := storepaths.NewPaths(t.TempDir())
 	paths = genstoretest.MintFirst(t, paths)
