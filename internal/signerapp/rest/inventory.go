@@ -24,7 +24,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
 	"github.com/aplane-algo/aplane/internal/witness"
-	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
@@ -151,8 +150,8 @@ var boundedInventoryParameterNames = []string{
 	"max_payment_amount",
 	"max_asset_amount",
 	"unlock_round",
-	composeddsa.BoundedCosignerPublicKeyParameter,
-	composeddsa.BoundedAdminPublicKeyParameter,
+	boundedmeta.CosignerPublicKeyParameter,
+	boundedmeta.AdminPublicKeyParameter,
 }
 
 func boundedAccountParameters(parameters map[string]string) map[string]string {
