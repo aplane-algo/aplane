@@ -1538,3 +1538,95 @@ func (m quitOnKeyTeaModel) View() string {
 	}
 	return "signer"
 }
+
+// promptAndAnswer delivers a fresh line prompt to m and returns the response
+// the pane sent for it immediately, if any.
+func promptAndAnswer(t *testing.T, m shellModel) (shellModel, string, bool) {
+	t.Helper()
+	resp := make(chan string, 1)
+	m, _ = m.Update(shellLinePromptMsg{response: resp})
+	select {
+	case line := <-resp:
+		return m, line, true
+	default:
+		return m, "", false
+	}
+}
+
+func TestPendingLinePromptPasteSubmitsEachLine(t *testing.T) {
+	first := make(chan string, 1)
+	m := newShellModel(nil, nil)
+	m.running = true
+	m.pendingLinePrompt = &shellLinePromptMsg{response: first}
+
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Paste: true,
+		Runes: []rune("Parent address:\tABC\r\nVoting key: XYZ\rKey dilution: 10\r\r\rleft\x1b")})
+
+	if got := <-first; got != "Parent address: ABC" {
+		t.Fatalf("first response = %q, want tab replaced and CRLF split", got)
+	}
+	want := []string{"Voting key: XYZ", "Key dilution: 10", "", ""}
+	for _, w := range want {
+		var got string
+		var ok bool
+		m, got, ok = promptAndAnswer(t, m)
+		if !ok || got != w {
+			t.Fatalf("queued response = %q (sent %v), want %q", got, ok, w)
+		}
+	}
+	m, _, ok := promptAndAnswer(t, m)
+	if ok {
+		t.Fatal("prompt answered after the paste was used up, want it left for editing")
+	}
+	if m.pendingLinePrompt == nil || m.pendingLinePrompt.input != "left" {
+		t.Fatalf("pending prompt = %#v, want the unterminated tail without control chars", m.pendingLinePrompt)
+	}
+	for _, line := range m.lines {
+		if strings.ContainsAny(line, "\r\n\t\x1b") {
+			t.Fatalf("transcript line %q contains a control character", line)
+		}
+	}
+}
+
+func TestPendingLinePromptSingleLinePasteStaysEditable(t *testing.T) {
+	resp := make(chan string, 1)
+	m := newShellModel(nil, nil)
+	m.pendingLinePrompt = &shellLinePromptMsg{response: resp, input: "ab", cursor: 1}
+
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Paste: true, Runes: []rune("X\tY")})
+
+	if got := m.pendingLinePrompt.input; got != "aX Yb" {
+		t.Fatalf("prompt input = %q, want paste inserted at cursor", got)
+	}
+	select {
+	case got := <-resp:
+		t.Fatalf("unexpected response %q for a paste without a line break", got)
+	default:
+	}
+}
+
+func TestLeftoverPasteDroppedWhenCommandFinishes(t *testing.T) {
+	resp := make(chan string, 1)
+	m := newShellModel(nil, nil)
+	m.running = true
+	m.pendingLinePrompt = &shellLinePromptMsg{response: resp}
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Paste: true, Runes: []rune("a\rsend x\rtail")})
+	<-resp
+
+	m, _ = m.Update(shellExecMsg{})
+	if len(m.pastedLines) != 0 || m.pastedTail != "" {
+		t.Fatalf("leftover paste = %q/%q, want dropped", m.pastedLines, m.pastedTail)
+	}
+	if m.input != "" {
+		t.Fatalf("command prompt input = %q, want empty", m.input)
+	}
+}
+
+func TestCommandPromptPasteJoinsLines(t *testing.T) {
+	m := newShellModel(nil, nil)
+	m.startupRunning = false
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Paste: true, Runes: []rune("balance\r\nsend")})
+	if m.input != "balance send" {
+		t.Fatalf("command input = %q, want the paste joined into one line", m.input)
+	}
+}

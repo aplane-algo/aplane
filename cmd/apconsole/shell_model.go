@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -53,6 +54,14 @@ type shellModel struct {
 	// pending line prompt (non-nil while a running shell command needs one
 	// line of user input, such as plugin transaction approval).
 	pendingLinePrompt *shellLinePromptMsg
+
+	// pastedLines holds the complete lines of a multi-line paste that are
+	// still waiting to answer the running command's next line prompts, and
+	// pastedTail the unterminated remainder that seeds the prompt after them.
+	// Both are dropped when the command finishes or is cancelled, so leftover
+	// paste never runs as shell commands.
+	pastedLines []string
+	pastedTail  string
 }
 
 type shellExecMsg struct {
@@ -159,6 +168,18 @@ func (m shellModel) Update(msg tea.Msg) (shellModel, tea.Cmd) {
 		return m, nil
 	case shellLinePromptMsg:
 		m.clearCompletions()
+		if len(m.pastedLines) > 0 {
+			line := m.pastedLines[0]
+			m.pastedLines = m.pastedLines[1:]
+			m.appendLines(msg.prompt + line)
+			msg.response <- line
+			return m, nil
+		}
+		if m.pastedTail != "" {
+			msg.input = m.pastedTail
+			msg.cursor = len(msg.input)
+			m.pastedTail = ""
+		}
 		m.pendingLinePrompt = &msg
 		return m, nil
 	case shellPromptCanceledMsg:
@@ -257,7 +278,13 @@ func (m shellModel) updateKey(msg tea.KeyMsg) (shellModel, tea.Cmd) {
 	case tea.KeyRunes:
 		if !m.running {
 			m.clearCompletions()
-			m.input, m.inputCursor = insertAtCursor(m.input, m.inputCursor, string(msg.Runes))
+			text := string(msg.Runes)
+			if msg.Paste {
+				// A paste at the command prompt becomes one command line; it is
+				// never split into several commands that would each run.
+				text = strings.Join(splitPastedLines(text), " ")
+			}
+			m.input, m.inputCursor = insertAtCursor(m.input, m.inputCursor, text)
 		}
 	case tea.KeySpace:
 		if !m.running {
@@ -328,6 +355,9 @@ func (m shellModel) updateKey(msg tea.KeyMsg) (shellModel, tea.Cmd) {
 
 func (m shellModel) updateLinePromptKey(msg tea.KeyMsg) (shellModel, tea.Cmd) {
 	pending := m.pendingLinePrompt
+	if msg.Type == tea.KeyRunes && msg.Paste {
+		return m.pasteIntoLinePrompt(string(msg.Runes)), nil
+	}
 	switch msg.Type {
 	case tea.KeyEnter:
 		line := pending.input
@@ -337,6 +367,7 @@ func (m shellModel) updateLinePromptKey(msg tea.KeyMsg) (shellModel, tea.Cmd) {
 	case tea.KeyCtrlC:
 		m.appendLines(pending.prompt)
 		m.pendingLinePrompt = nil
+		m.pastedLines, m.pastedTail = nil, ""
 		if m.executor != nil && m.executor.Cancel() {
 			m.cancelRequested = true
 			m.appendLines("cancel requested")
@@ -368,6 +399,51 @@ func (m shellModel) updateLinePromptKey(msg tea.KeyMsg) (shellModel, tea.Cmd) {
 		pending.input, pending.cursor = insertAtCursor(pending.input, pending.cursor, string(msg.Runes))
 	}
 	return m, nil
+}
+
+// pasteIntoLinePrompt feeds a paste to the running command the way a
+// terminal would: each line break submits the line so far, and the text after
+// the last break stays in the prompt for further editing. Bracketed paste
+// delivers the whole block as one key event, so without this the line breaks
+// would land in the prompt buffer and corrupt the pane rendering.
+func (m shellModel) pasteIntoLinePrompt(text string) shellModel {
+	pending := m.pendingLinePrompt
+	lines := splitPastedLines(text)
+	if len(lines) == 1 {
+		pending.input, pending.cursor = insertAtCursor(pending.input, pending.cursor, lines[0])
+		return m
+	}
+	cursor := clampCursor(pending.input, pending.cursor)
+	first := pending.input[:cursor] + lines[0]
+	last := len(lines) - 1
+	m.pastedLines = append([]string(nil), lines[1:last]...)
+	m.pastedTail = lines[last] + pending.input[cursor:]
+	m.appendLines(pending.prompt + first)
+	pending.response <- first
+	m.pendingLinePrompt = nil
+	return m
+}
+
+// splitPastedLines splits pasted text at its line breaks (CRLF, CR or LF;
+// terminals usually send CR inside a bracketed paste) and replaces tabs and
+// drops other control characters, none of which the pane can render.
+func splitPastedLines(text string) []string {
+	text = strings.ReplaceAll(text, "\r\n", "\n")
+	text = strings.ReplaceAll(text, "\r", "\n")
+	lines := strings.Split(text, "\n")
+	for i, line := range lines {
+		lines[i] = strings.Map(func(r rune) rune {
+			switch {
+			case r == '\t':
+				return ' '
+			case unicode.IsControl(r):
+				return -1
+			default:
+				return r
+			}
+		}, line)
+	}
+	return lines
 }
 
 func (m shellModel) busy() bool {
@@ -583,6 +659,7 @@ func executeShellLine(executor shellExecutor, line string) tea.Cmd {
 
 func (m shellModel) updateExec(msg shellExecMsg) shellModel {
 	m.running = false
+	m.pastedLines, m.pastedTail = nil, ""
 	m.clearCompletions()
 	wasCancelRequested := m.cancelRequested
 	m.cancelRequested = false
