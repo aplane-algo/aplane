@@ -6,6 +6,11 @@ developer reference and `docs/USER_LOGICSIG_GUIDELINES.md` as the LogicSig
 policy/security review reference; this file is the operational safety
 checklist.
 
+For new combinations of capabilities, first use
+[the key type design model](KEYTYPE_DESIGN_MODEL.md) and complete its design record.
+Do not infer that independently supported capabilities can be composed without
+defining their shared authority, transition, and signing-flow contracts.
+
 ## Signing Authority
 
 See [DEV_KEYTYPES.md](DEV_KEYTYPES.md) (Signing Authority) for the canonical

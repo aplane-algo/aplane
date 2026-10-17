@@ -1,5 +1,10 @@
 # Key Types
 
+For a conceptual design guide, the sixteen-cell capability map, and an
+operation-by-operation authority model, start with
+[the key type design model](KEYTYPE_DESIGN_MODEL.md). This document specifies the
+architecture and resolution mechanisms behind that model.
+
 > Key types and LogicSig providers: the dimensions that describe one signing
 > authority, the canonical key type identifier, the authorization ontology, the
 > three resolution axes, and the LogicSig provider registry, templates, and
