@@ -27,7 +27,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/storeinit"
 	"github.com/aplane-algo/aplane/internal/storelock"
 	"github.com/aplane-algo/aplane/internal/storepaths"
-	"github.com/aplane-algo/aplane/lsig"
+	"github.com/aplane-algo/aplane/lsig/clientreg"
 )
 
 const (
@@ -584,7 +584,7 @@ func TestRescueApplyRefusesBusyStoreBeforeReadingReplacement(t *testing.T) {
 
 func initializedPolicyStore(t *testing.T, role noderole.Role) (string, string) {
 	t.Helper()
-	lsig.RegisterClient()
+	clientreg.RegisterClient()
 	root := t.TempDir()
 	passphrase := "policycmd-test-passphrase"
 	_, err := storeinit.Initialize([]byte(passphrase), storeinit.Options{ValidateCandidate: storevalidate.FirstGeneration,

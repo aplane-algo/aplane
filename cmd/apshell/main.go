@@ -35,7 +35,7 @@ func main() {
 	}
 
 	// Register all providers (must be called before manifest or any registry queries)
-	apshellcli.RegisterProviders()
+	RegisterProviders()
 	if err := apshellcli.EnsureProviders(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)

@@ -588,7 +588,7 @@ derivation helpers. `internal/lsigresource` owns consensus resource profiles
 and the pure group-size solver. Shared resource-dummy construction lives in
 `internal/signing/`; final group and fee planning lives in
 `internal/signerapp/signing/`.
-Client registration enters through `lsig/all.go` (`lsig.RegisterClient`). Signer
+Client registration enters through `lsig/clientreg` (`clientreg.RegisterClient`). Signer
 registration enters through `lsig/signerreg.RegisterSigner`.
 
 ### Package summary
@@ -633,7 +633,7 @@ signing helpers that the diagram omits) and gives a one-line role for each.
 | `internal/signerapp/templates` | Read-only keystore template reload coordinator and state/fingerprint policy |
 | `lsig/generictemplate` | Parser/provider builder for generic YAML templates |
 | `library/templates/` | Optional importable template library |
-| `lsig/all.go` | Registration entry point |
+| `lsig/clientreg` | Client registration entry point |
 
 ### Two categories of LogicSigs
 
@@ -742,7 +742,7 @@ func Get(keyType string) LogicSigDSA {
 ### Registration flow
 
 ```
-lsig.RegisterClient()
+lsig/clientreg.RegisterClient()
     │
     ├── keytypecatalog.Register(aplane.falcon1024.v1, default_enabled)
     │   └── falcon.RegisterClient()
@@ -760,7 +760,7 @@ lsig.RegisterClient()
         └── (no client provider)
 
 lsig/signerreg.RegisterSigner()
-    ├── lsig.RegisterClient()
+    ├── lsig/clientreg.RegisterClient()
     ├── family signerreg RegisterSigner() calls add signing, keygen, and mnemonic handlers
     └── rotating signerreg Register() calls add the rotating key file codec,
         stage cryptography, and generator (outside lsigprovider)

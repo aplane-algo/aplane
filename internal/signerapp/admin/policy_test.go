@@ -25,7 +25,7 @@ import (
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 	"github.com/aplane-algo/aplane/internal/storeinit"
 	"github.com/aplane-algo/aplane/internal/storepaths"
-	"github.com/aplane-algo/aplane/lsig"
+	"github.com/aplane-algo/aplane/lsig/clientreg"
 )
 
 const (
@@ -38,7 +38,7 @@ const (
 // store whose runtime reload reloads policy from the selected generation.
 func setupPolicyAdmin(t *testing.T, role noderole.Role) (Service, *productruntime.Runtime) {
 	t.Helper()
-	lsig.RegisterClient()
+	clientreg.RegisterClient()
 	root := t.TempDir()
 	paths := storepaths.NewPaths(root)
 	if _, err := storeinit.Initialize([]byte(adminPolicyPassphrase), storeinit.Options{ValidateCandidate: storevalidate.FirstGeneration, DataDir: root, Paths: paths, Role: role}); err != nil {

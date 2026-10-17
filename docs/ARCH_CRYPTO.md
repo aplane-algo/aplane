@@ -44,7 +44,7 @@ The cryptographic subsystem is split across these packages:
 Provider registration is explicit and idempotent:
 
 - binary entrypoints call `RegisterProviders()`,
-- `lsig.RegisterClient()` aggregates client-safe LogicSig metadata and derivation,
+- `lsig/clientreg.RegisterClient()` aggregates client-safe LogicSig metadata and derivation,
 - `lsig/signerreg.RegisterSigner()` adds signer-side LogicSig signing/keygen/mnemonic handlers,
 - native Ed25519, native Falcon, and the Ed25519 LogicSig provider are
   registered separately,
@@ -60,7 +60,7 @@ private-key behavior: `internal/signing`, `internal/keygen`,
 
 This split is a hard dependency boundary, not only a startup preference:
 
-- `cmd/apshell` calls `lsig.RegisterClient()` and
+- `cmd/apshell` calls `lsig/clientreg.RegisterClient()` and
   the client registration for native Ed25519 and Falcon. It must not populate
   signer-side signing, keygen, mnemonic, or key-processor registries or link
   `github.com/algorand/falcon`.
@@ -268,7 +268,7 @@ The runtime model:
 
 ## Registration And Visibility
 
-Compiled LogicSig providers are registered through `lsig.RegisterClient()` for
+Compiled LogicSig providers are registered through `lsig/clientreg.RegisterClient()` for
 client-safe metadata/derivation and `lsig/signerreg.RegisterSigner()` for
 signer-side signing, keygen, and mnemonic handlers. Ed25519 follows the same split through
 `internal/signing/ed25519.RegisterClient()` and
@@ -559,7 +559,7 @@ Start here when changing the subsystem:
 - `internal/lsigprovider/registry.go`
 - `internal/logicsigdsa/dsa.go`
 - `internal/genericlsig/registry.go`
-- `lsig/all.go`
+- `lsig/clientreg/register.go`
 - `internal/keytypecatalog/catalog.go`
 - `internal/keytypestate/state.go`
 - `internal/crypto/keyring.go`

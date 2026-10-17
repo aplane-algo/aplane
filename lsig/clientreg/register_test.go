@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-package lsig
+package clientreg
 
 import (
 	"os"
@@ -52,7 +52,7 @@ func TestCanonicalCompiledLogicSigInventory(t *testing.T) {
 }
 
 func TestCanonicalBundledTemplateInventory(t *testing.T) {
-	entries, err := os.ReadDir(filepath.Join("..", "library", "templates"))
+	entries, err := os.ReadDir(filepath.Join("..", "..", "library", "templates"))
 	if err != nil {
 		t.Fatalf("ReadDir(library/templates) error = %v", err)
 	}
@@ -169,7 +169,7 @@ func TestBundledComposedTemplatesBindTxIDBeforeSuffix(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.file, func(t *testing.T) {
-			data, err := os.ReadFile(filepath.Join("..", "library", "templates", c.file))
+			data, err := os.ReadFile(filepath.Join("..", "..", "library", "templates", c.file))
 			if err != nil {
 				t.Fatalf("ReadFile: %v", err)
 			}

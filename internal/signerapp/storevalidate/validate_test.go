@@ -14,11 +14,11 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/storevalidate"
 	"github.com/aplane-algo/aplane/internal/storeinit"
 	"github.com/aplane-algo/aplane/internal/storepaths"
-	"github.com/aplane-algo/aplane/lsig"
+	"github.com/aplane-algo/aplane/lsig/clientreg"
 )
 
 func TestRecoveryDestinationRefusesDamageOutsideSelectedCredential(t *testing.T) {
-	lsig.RegisterClient()
+	clientreg.RegisterClient()
 	tests := map[string]func(t *testing.T, active storepaths.GenPaths){
 		"policy sidecar": func(t *testing.T, active storepaths.GenPaths) {
 			writeDamage(t, active.DefaultPolicyIntegritySidecar())

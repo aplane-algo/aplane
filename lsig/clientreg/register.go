@@ -1,24 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-// Package lsig provides centralized registration for built-in LogicSig providers.
-//
-// There are two types of LogicSig providers:
-//
-// DSA-BASED PROVIDERS (e.g., Falcon-1024):
-// - Require cryptographic key generation and signing
-// - Register with: logicsigdsa, signing/scheme, algorithm, keygen, mnemonic registries
-//
-// TEMPLATE LIBRARY PROVIDERS:
-// - YAML templates in library/templates/ are optional and enabled per product store
-// - Register from the keystore after apadmin template import
-//
-// TO ADD A NEW PROVIDER:
-// 1. Create your provider package in lsig/<provider>/
-// 2. Add RegisterClient calls below
-// 3. Add signer-side registration in lsig/signerreg
-// 4. No other file changes required!
-package lsig
+// Package clientreg is the client-side registration entry point for the lsig
+// tree: catalog rows, display metadata, sizes and address derivation, and
+// nothing that needs a private key. Binaries call RegisterClient at startup;
+// signer binaries reach it through lsig/signerreg.RegisterSigner, which
+// registers the same metadata before the signer-only providers.
+package clientreg
 
 import (
 	"sync"
