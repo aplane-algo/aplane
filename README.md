@@ -147,10 +147,9 @@ client settings remain in `config.yaml`. See
 ### Key Types
 - **ed25519**: Native Algorand keys
 - **falcon1024**: Protocol-native post-quantum signatures on consensus v42+
-- **rotating hybrids**: `aplane.rotating-hybrid.v1` (Falcon-1024 + Ed25519),
-  `aplane.rotating-wots-hybrid.v1` (WOTS + Ed25519), and
-  `aplane.rotating-triple-hybrid.v1` (Falcon-1024 + WOTS + Ed25519), each a
-  stable address whose stage program changes on every spend
+- **rotating triple hybrid**: `aplane.rotating-triple-hybrid.v1` (Falcon-1024
+  + WOTS + Ed25519), a stable address whose stage program changes on every
+  spend
 - **generic LogicSigs**: HTLCs and user-loaded custom TEAL
 - **bounded/composed LogicSigs**: allowlists, timelocks, cosigner-gated Corridor,
   amount/asset bounds, and external contract-admin rekey controls
