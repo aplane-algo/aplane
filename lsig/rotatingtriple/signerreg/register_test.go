@@ -6,6 +6,7 @@ package signerreg
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
 	"crypto/rand"
 	"errors"
 	"strings"
@@ -95,10 +96,10 @@ func TestKeyPayloadRejectsTampering(t *testing.T) {
 		{"wots public key", func(p *keys.Payload) { p.PublicKey[32+1793+3] ^= 1 }},
 		{"ed25519 public key", func(p *keys.Payload) { p.PublicKey[len(p.PublicKey)-1] ^= 1 }},
 		{"short seed", func(p *keys.Payload) { p.PrivateKey = p.PrivateKey[:32] }},
-		{"hybrid-sized public key", func(p *keys.Payload) { p.PublicKey = make([]byte, rotatingkey.RotatingStagePublicKeySize) }},
-		{"wots-sized public key", func(p *keys.Payload) { p.PublicKey = make([]byte, rotatingkey.RotatingWotsStagePublicKeySize) }},
+		{"short public key", func(p *keys.Payload) { p.PublicKey = make([]byte, rotatingkey.RotatingTripleStagePublicKeySize-1) }},
+		{"long public key", func(p *keys.Payload) { p.PublicKey = make([]byte, rotatingkey.RotatingTripleStagePublicKeySize+1) }},
 		{"missing genesis hash", func(p *keys.Payload) { p.GenesisHash = nil }},
-		{"other rotating type", func(p *keys.Payload) { p.KeyType = rotatingkey.RotatingWotsHybridV1 }},
+		{"retired rotating type", func(p *keys.Payload) { p.KeyType = "aplane.rotating-hybrid.v1" }},
 		{"stored bytecode", func(p *keys.Payload) { p.LogicSigBytecode = []byte{0x0d} }},
 	}
 	for _, tt := range tests {
@@ -200,7 +201,20 @@ func TestGeneratorCreatesAccountBoundToNetwork(t *testing.T) {
 	if program.Address.String() == result.Address {
 		t.Fatal("account address does not depend on the network")
 	}
-	if _, err := gen.GenerateRandom(context.Background(), paths, kr, rotatingkey.RotatingHybridV1, map[string]string{"network": "testnet"}); err == nil {
-		t.Fatal("triple generator accepted the Falcon hybrid key type")
+	if _, err := gen.GenerateRandom(context.Background(), paths, kr, "aplane.rotating-hybrid.v1", map[string]string{"network": "testnet"}); err == nil {
+		t.Fatal("generator accepted a retired rotating key type")
+	}
+}
+
+func TestGenesisHashIsRotatingOnly(t *testing.T) {
+	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := keys.NewEd25519Payload(publicKey, privateKey)
+	defer payload.ZeroSecrets()
+	payload.GenesisHash = make([]byte, 32)
+	if _, err := keys.MarshalPayload(payload); err == nil || !strings.Contains(err.Error(), "genesis_hash") {
+		t.Fatalf("ed25519 payload with genesis_hash: err = %v", err)
 	}
 }

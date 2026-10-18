@@ -39,7 +39,7 @@ func TestVerifySignableKeysRefusesRotatingAccount(t *testing.T) {
 	}
 	snapshot := PlannerRuntimeSnapshot{
 		KeyFiles: map[string]string{plain: "a.key", rotating: "b.key"},
-		KeyTypes: map[string]string{plain: "ed25519", rotating: rotatingkey.RotatingHybridV1},
+		KeyTypes: map[string]string{plain: "ed25519", rotating: rotatingkey.RotatingTripleHybridV1},
 	}
 	count, err := verifySignableKeys(nil, snapshot, requests, map[int]bool{}, map[int]bool{})
 	if count != 0 {
@@ -53,7 +53,7 @@ func TestExecutorRefusesRotatingSlotBeforeSessionLoad(t *testing.T) {
 		AllTxns:            []types.Transaction{{}},
 		PassthroughIndices: map[int]bool{},
 		ForeignIndices:     map[int]bool{},
-		AuthKeyTypes:       []string{rotatingkey.RotatingHybridV1},
+		AuthKeyTypes:       []string{rotatingkey.RotatingTripleHybridV1},
 	}
 	req := signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{AuthAddress: "AUTHADDR", TxnBytesHex: "deadbeef"}}}
 	// A nil session would panic if the executor tried to load the key.
@@ -64,7 +64,7 @@ func TestExecutorRefusesRotatingSlotBeforeSessionLoad(t *testing.T) {
 func TestComponentRequestRefusesRotatingAccount(t *testing.T) {
 	rotating := types.Address{2}.String()
 	svc := &Service{Planner: &Planner{Snapshot: func() PlannerRuntimeSnapshot {
-		return PlannerRuntimeSnapshot{KeyTypes: map[string]string{rotating: rotatingkey.RotatingHybridV1}}
+		return PlannerRuntimeSnapshot{KeyTypes: map[string]string{rotating: rotatingkey.RotatingTripleHybridV1}}
 	}}}
 	req := signerapi.ComponentRequest{
 		GroupBytesHex: []string{"deadbeef"},
@@ -109,7 +109,7 @@ func TestApprovalGatesRefuseRekeyToRotatingBeforePolicy(t *testing.T) {
 	sender := types.Address{1}
 	rotating := types.Address{2}
 	svc := &Service{Planner: &Planner{Snapshot: func() PlannerRuntimeSnapshot {
-		return PlannerRuntimeSnapshot{KeyTypes: map[string]string{rotating.String(): rotatingkey.RotatingHybridV1}}
+		return PlannerRuntimeSnapshot{KeyTypes: map[string]string{rotating.String(): rotatingkey.RotatingTripleHybridV1}}
 	}}}
 	var logged string
 	// No policy is loaded, so reaching the policy gate would fail as internal.

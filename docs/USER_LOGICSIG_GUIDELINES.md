@@ -753,59 +753,34 @@ off-curve LogicSig account whose program performs Ed25519 verification.
 Transaction policy is expected to live primarily in signer approval and local
 signer policy.
 
-#### `aplane.rotating-hybrid.v1`
-
-- dedicated compiled stage program, library-visible and signer-gated
-- each stage requires both a Falcon-1024 and an Ed25519 signature over the
-  TxID, a non-zero rekey that is not the sender, no close-out, and a validity
-  window of at most 100 rounds
-- the signer, not TEAL, guarantees that every rekey targets the account's
-  next never-revealed stage; the program accepts any other rekey target
-
-Stage programs are assembled locally rather than through algod, using the
-TEAL v13 assembler's salt rule, and are cross-checked against the stock
-assembler in tests. Transaction policy beyond those checks lives in signer
-approval and local signer policy. See
-[USER_KEYTYPES.md](USER_KEYTYPES.md#rotating-hybrid-accounts).
-
-#### `aplane.rotating-wots-hybrid.v1`
-
-- dedicated compiled stage program, library-visible and signer-gated; the
-  same rotation as above with a hash-based stage
-- each stage requires an Ed25519 signature over the TxID and a WOTS-w16
-  signature of exactly 2,144 bytes over the TxID (67 SHA-256 chains, verified with `sha256`,
-  `itob` and `concat`), a non-zero rekey that is not the sender, no
-  close-out, and a validity window of at most 100 rounds
-- worst-case opcode cost 58,068 and 2,208 argument bytes, so a spend needs
-  two resource dummies; the cost for a given TxID is 5,597 plus 53 per chain
-  step, pinned against the node's budget report in the LocalNet test
-- the signer, not TEAL, guarantees that every rekey targets the account's
-  next never-revealed stage. Nothing enforces that a stage signs once: the
-  stateless flow signs again from the live stage when a release expired or a
-  client re-signs a rebuilt transaction, and the signer reports the reuse as
-  a warning until the account moves. While a stage has signed one message
-  its quantum resistance rests on SHA-256; after two it is Ed25519-only
-  until a spend lands; see
-  [USER_KEYTYPES.md](USER_KEYTYPES.md#rotating-hash-hybrid-accounts)
-
 #### `aplane.rotating-triple-hybrid.v1`
 
-- dedicated compiled stage program, library-visible and signer-gated; the
-  same rotation with a Falcon-1024, a WOTS-w16 and an Ed25519 signature all
+- dedicated compiled stage program, library-visible and signer-gated: the
+  account's address is fixed while each spend rekeys it to the next stage's
+  program, with a Falcon-1024, a WOTS-w16 and an Ed25519 signature all
   required
 - each stage requires, in order, a non-zero rekey that is not the sender, no
   close-out, a validity window of at most 100 rounds, an Ed25519 signature
   over the TxID (argument 1), a Falcon-1024 signature over the TxID
-  (argument 2) and a WOTS-w16 signature of exactly 2,144 bytes over the TxID (argument 0), the WOTS
-  check being the hash hybrid's program unchanged
+  (argument 2) and a WOTS-w16 signature of exactly 2,144 bytes over the TxID
+  (argument 0: 67 SHA-256 chains, verified with `sha256`, `itob` and
+  `concat`)
 - worst-case opcode cost 59,772 and 3,631 argument bytes, so a spend needs
   three resource dummies; the cost for a given TxID is 7,301 plus 53 per
   chain step, pinned against the node's budget report in the LocalNet test
 - the signer, not TEAL, guarantees that every rekey targets the account's
-  next never-revealed stage. As with the hash hybrid nothing enforces that a
-  stage signs once; a reused stage loses its WOTS protection and rests on
+  next never-revealed stage; the program accepts any other non-sender rekey
+  target. Nothing enforces that a stage signs once: the stateless flow signs
+  again from the live stage when a release expired or a client re-signs a
+  rebuilt transaction, and the signer reports the reuse as a warning until
+  the account moves; a reused stage loses its WOTS protection and rests on
   Falcon-1024 and Ed25519 until a spend lands; see
-  [USER_KEYTYPES.md](USER_KEYTYPES.md#rotating-triple-hybrid-accounts)
+  [USER_KEYTYPES.md](USER_KEYTYPES.md#rotating-accounts)
+
+Stage programs are assembled locally rather than through algod, using the
+TEAL v13 assembler's salt rule, and are cross-checked against the stock
+assembler in tests. Transaction policy beyond those checks lives in signer
+approval and local signer policy.
 
 #### Bounded Authorization Allowlist
 

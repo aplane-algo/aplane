@@ -15,9 +15,7 @@ import (
 	falconsignerreg "github.com/aplane-algo/aplane/lsig/falcon1024/signerreg"
 	falcon1024guarded "github.com/aplane-algo/aplane/lsig/falcon1024_guarded"
 	guardedsignerreg "github.com/aplane-algo/aplane/lsig/falcon1024_guarded/signerreg"
-	rotatingsignerreg "github.com/aplane-algo/aplane/lsig/rotatinghybrid/signerreg"
 	rotatingtriplesignerreg "github.com/aplane-algo/aplane/lsig/rotatingtriple/signerreg"
-	rotatingwotssignerreg "github.com/aplane-algo/aplane/lsig/rotatingwots/signerreg"
 )
 
 var registerSignerOnce sync.Once
@@ -45,8 +43,6 @@ func RegisterSigner() {
 		// Rotating key files are readable in every signer-side binary so
 		// scans, backups and offline tools agree on them. Signing for them is
 		// only available through the rotating flow.
-		rotatingsignerreg.Register()
-		rotatingwotssignerreg.Register()
 		rotatingtriplesignerreg.Register()
 	})
 }

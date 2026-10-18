@@ -12,9 +12,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/crypto/rotatinghybrid"
 	"github.com/aplane-algo/aplane/internal/signing"
-	hybridops "github.com/aplane-algo/aplane/lsig/rotatinghybrid/signerops"
 	"github.com/aplane-algo/aplane/lsig/rotatingtriple/stage"
-	wotsops "github.com/aplane-algo/aplane/lsig/rotatingwots/signerops"
 )
 
 func fixedSeed() (rotatinghybrid.Seed, [rotatinghybrid.GenesisHashSize]byte) {
@@ -87,50 +85,6 @@ func TestGoldenVectors(t *testing.T) {
 		if got[k] != v {
 			t.Errorf("%s = %s, want %s", k, got[k], v)
 		}
-	}
-}
-
-// The triple type's own label keeps every stage key apart from the other
-// rotating key types derived from the same seed.
-func TestDerivationIsSeparateFromOtherRotatingTypes(t *testing.T) {
-	seed, genesis := fixedSeed()
-	d := fixedDeriver(t)
-	defer d.Zero()
-	keys, _, err := DeriveStage(d, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer keys.Zero()
-	pub := keys.PublicKeys()
-
-	wd, err := wotsops.NewDeriver(&seed, genesis)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer wd.Zero()
-	wk, _, err := wotsops.DeriveStage(wd, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer wk.Zero()
-	wpub := wk.PublicKeys()
-	if pub.Tweak == wpub.Tweak || pub.Wots == wpub.Wots || pub.Ed25519 == wpub.Ed25519 {
-		t.Fatal("triple stage 0 shares a key with the WOTS hybrid's stage 0")
-	}
-
-	hd, err := rotatinghybrid.NewDeriver(&seed, genesis)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer hd.Zero()
-	hk, _, err := hybridops.DeriveStage(hd, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer hk.Zero()
-	hpub := hk.PublicKeys()
-	if pub.Falcon == hpub.Falcon || pub.Ed25519 == hpub.Ed25519 {
-		t.Fatal("triple stage 0 shares a key with the Falcon hybrid's stage 0")
 	}
 }
 

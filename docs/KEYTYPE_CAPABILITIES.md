@@ -40,8 +40,6 @@ included as normal user-account operations.
 | `aplane.falcon1024-cosigner1024.v1` | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
 | `aplane.corridor.v1` | C | N | C | Y | N | N | N | N | N | N | C |
 | `aplane.htlc.v1` | C | C | C | C | C | N | N | N | N | N | N |
-| `aplane.rotating-hybrid.v1` | C | N | C | C | C | C | C | C | C | C | C |
-| `aplane.rotating-wots-hybrid.v1` | C | N | C | C | C | C | C | C | C | C | C |
 | `aplane.rotating-triple-hybrid.v1` | C | N | C | C | C | C | C | C | C | C | C |
 
 ## Capability Columns
@@ -84,9 +82,7 @@ included as normal user-account operations.
   narrow that set. It rejects close, clawback, and every other transaction
   type. Rekey is restricted to the pure payment normal form and additionally
   requires the external Falcon contract-admin signature.
-- `aplane.rotating-hybrid.v1`, `aplane.rotating-wots-hybrid.v1` and
-  `aplane.rotating-triple-hybrid.v1` admit any
-  transaction type, but every transaction must rekey to an address other
+- `aplane.rotating-triple-hybrid.v1` admits any transaction type, but every transaction must rekey to an address other
   than the sender, must not close out ALGO, and must have a validity window
   of at most 100 rounds; that is the condition behind every `C`. The signer
   sets the rekey itself, always to the account's next stage, and signs only

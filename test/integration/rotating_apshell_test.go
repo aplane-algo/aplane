@@ -14,24 +14,12 @@ import (
 	"github.com/aplane-algo/aplane/test/integration/harness"
 )
 
-// TestRotatingHybridApshellEndToEnd runs a rotating account through the
+// TestRotatingTripleApshellEndToEnd runs a rotating account through the
 // shipped binaries: apadmin enables the key type and generates the account,
 // and two ordinary apshell sends route through prepare, unsigned simulation,
 // sign and submit. Each confirmed send must move the account's authorizer to
 // a new stage address. The rotate-only command and rotate status complete
 // the client surface; there is no exit.
-func TestRotatingHybridApshellEndToEnd(t *testing.T) {
-	runRotatingApshellEndToEnd(t, rotatingkey.RotatingHybridV1)
-}
-
-// TestRotatingWotsApshellEndToEnd is the same client surface over the WOTS
-// hybrid key type.
-func TestRotatingWotsApshellEndToEnd(t *testing.T) {
-	runRotatingApshellEndToEnd(t, rotatingkey.RotatingWotsHybridV1)
-}
-
-// TestRotatingTripleApshellEndToEnd is the same client surface over the
-// triple hybrid key type.
 func TestRotatingTripleApshellEndToEnd(t *testing.T) {
 	runRotatingApshellEndToEnd(t, rotatingkey.RotatingTripleHybridV1)
 }

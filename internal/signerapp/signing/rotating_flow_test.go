@@ -48,7 +48,7 @@ func (a *recordingReleaseAudit) LogRotatingRelease(account, txid string, stage, 
 // chain.
 func newSigningFixture(t *testing.T) (*rotatingFixture, *recordingReleaseAudit) {
 	t.Helper()
-	return newSigningFixtureFor(t, hybridTestType)
+	return newSigningFixtureFor(t, tripleTestType)
 }
 
 func newSigningFixtureFor(t *testing.T, kind rotatingTestType) (*rotatingFixture, *recordingReleaseAudit) {
@@ -121,9 +121,8 @@ func (f *rotatingFixture) land(t *testing.T, resp *signerapi.RotatingSignRespons
 }
 
 // TestRotatingHappyPathThreeRotations runs three rotations through prepare
-// and sign for every rotating key type. The WOTS hybrid needs two resource
-// dummies where the Falcon hybrid needs one; everything else is the same
-// protocol.
+// and sign for every rotating key type; the number of resource dummies is
+// the only per-type difference in the protocol.
 func TestRotatingHappyPathThreeRotations(t *testing.T) {
 	for _, kind := range rotatingTestTypes {
 		t.Run(kind.keyType, func(t *testing.T) {
@@ -469,8 +468,8 @@ func TestReleaseMemoryMarksStageReuse(t *testing.T) {
 
 // TestRotatingStatusReportsStageReuse signs two different transactions from
 // one stage without either landing. A stage with a one-time WOTS key then
-// rests on its other schemes until the account moves, which is a warning; the Falcon
-// stage can sign again safely, so the reuse is only mentioned in the note.
+// rests on its other schemes until the account moves, which is a warning; a
+// type without a one-time scheme would only mention the reuse in the note.
 // Either way the mark survives until a chain read shows the account moved.
 func TestRotatingStatusReportsStageReuse(t *testing.T) {
 	for _, kind := range rotatingTestTypes {
@@ -634,9 +633,9 @@ func TestForgedSuccessorInTableNeverReachesTheChain(t *testing.T) {
 
 func mustProfile(t *testing.T) *lsigresource.Profile {
 	t.Helper()
-	argumentBytes := uint64(rotatingkey.RotatingMaxArgumentBytes)
-	profile, err := lsigresource.Materialize(rotatingkey.RotatingMaxProgramBytes, &argumentBytes, nil,
-		lsigresource.DefaultOpcodeProfile(rotatingkey.RotatingMaxOpcodeCost))
+	argumentBytes := uint64(rotatingkey.RotatingTripleMaxArgumentBytes)
+	profile, err := lsigresource.Materialize(rotatingkey.RotatingTripleMaxProgramBytes, &argumentBytes, nil,
+		lsigresource.DefaultOpcodeProfile(rotatingkey.RotatingTripleMaxOpcodeCost))
 	if err != nil {
 		t.Fatal(err)
 	}
