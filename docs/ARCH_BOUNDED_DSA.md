@@ -86,6 +86,23 @@ intentionally packaged through the separate `aprekey` binary and the
 typed `/sign/bounded-admin` partial-signing endpoint. Apshell's ordinary send
 path does not select or complete contract-admin operations.
 
+An admin-key rekey may only move the account to a signing credential the
+signer itself holds: a native Ed25519 or Falcon-1024 key, or a plain DSA
+LogicSig account. Bounded, guarded, generic, witness and rotating credentials
+do not qualify, and neither does any address the signer does not hold. The
+signer enforces this twice, from its key inventory before policy and
+approval, and from the loaded credential at release, where the credential
+must sign and verify a domain-separated challenge
+(`APLANE_BOUNDED_ADMIN_TARGET_SELFTEST_V1`); the challenge signature is never
+released. A rekey to the sender itself returns the account to its own program
+and passes. The rule is a signer invariant, not a policy setting, and
+neither TEAL nor the offline `aprekey` helper can check it: the admin
+signature binds the exact target the helper presents, and the program
+accepts any non-zero target under that signature. Moving an account out of
+APlane custody is therefore two steps: an admin rekey to a local credential,
+then an ordinary rekey from that credential under the signer's normal
+policy. Wire code: `bounded_admin_target_rejected`.
+
 `bounded1` is the only bounded-authorization contract and has no protocol
 aliases. `bounded1` has no admin-key algorithm selector. `authorization: admin_key`
 always means the profile's single Falcon-1024 contract admin key. Supporting
@@ -207,6 +224,10 @@ A pure rekey:
   `ZeroAddress`;
 - has `Fee <= max_fee`; and
 - satisfies the configured `spending_key` or `admin_key` authorization.
+
+For `admin_key` authorization the signer additionally requires `RekeyTo` to
+be a nonrotating signing credential it holds (above); that is a signer rule
+the program does not and cannot check.
 
 Rekey detection runs before spend-type routing. Rekey-plus-transfer,
 rekey-plus-close, and every other hybrid reject. A group may contain separate

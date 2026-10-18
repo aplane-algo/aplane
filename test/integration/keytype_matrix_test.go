@@ -10,6 +10,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -39,6 +40,7 @@ import (
 	sdkalgod "github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
 	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
+	"github.com/algorand/go-algorand-sdk/v2/mnemonic"
 	"github.com/algorand/go-algorand-sdk/v2/transaction"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
@@ -103,6 +105,24 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 	timelockRound := baseRound
 	htlcAssetID := corridorTestAssetID(t, testnet, funder)
 	cleanupAuthority := algocrypto.GenerateAccount()
+	// An admin-key rekey may only target a credential the signer holds, so the
+	// test-owned cleanup authority is also imported into the signer. The test
+	// keeps its private key to close rekeyed accounts locally.
+	cleanupMnemonic, err := mnemonic.FromPrivateKey(cleanupAuthority.PrivateKey)
+	if err != nil {
+		t.Fatalf("derive cleanup authority mnemonic: %v", err)
+	}
+	importedCleanup, err := apadmin.ImportKeyWithType("ed25519", cleanupMnemonic)
+	if err != nil {
+		t.Fatalf("import cleanup authority into the signer: %v", err)
+	}
+	if importedCleanup != cleanupAuthority.Address.String() {
+		t.Fatalf("imported cleanup authority %s does not match %s", importedCleanup, cleanupAuthority.Address)
+	}
+	t.Cleanup(func() { _ = apadmin.DeleteKey(importedCleanup) })
+	if !waitForKey(t, signerd.GetURL(), importedCleanup, 10*time.Second) {
+		t.Fatalf("signer did not reload imported cleanup authority %s", importedCleanup)
+	}
 	alockAdminPublicKey, alockAdminPrivateKey, err := signerops.New(nil).GenerateKeypair(randomFalconSeed(t))
 	if err != nil {
 		t.Fatalf("generate matrix ALock cleanup admin key: %v", err)
@@ -429,6 +449,27 @@ func prepareMatrixAdminRekeyCleanup(
 		t, sp, account.address, account.address, "keytype-matrix-admin-rekey", "", account.positiveFirstValid,
 	)
 	txn.RekeyTo = cleanupAuthority.Address
+
+	// Signer invariant: an admin rekey may only move the account to a
+	// credential the signer holds. An unheld target is refused before policy
+	// and approval, so no approval prompt appears.
+	foreignTxn := txn
+	foreignTxn.RekeyTo = algocrypto.GenerateAccount().Address
+	if _, err := signerClient.RequestBoundedAdmin(
+		signerapi.BoundedAdminOperationRekey,
+		[]signerapi.SignRequest{{
+			AuthAddress: account.address,
+			TxnSender:   account.address,
+			TxnBytesHex: txnHexForMatrix(foreignTxn),
+		}},
+	); err == nil {
+		t.Fatalf("%s admin rekey to an unheld target was accepted", account.keyType)
+	} else {
+		var httpErr *signerclient.HTTPStatusError
+		if !errors.As(err, &httpErr) || httpErr.Code != signerapi.ErrCodeBoundedAdminTargetRejected {
+			t.Fatalf("%s admin rekey to an unheld target: err = %v, want code %s", account.keyType, err, signerapi.ErrCodeBoundedAdminTargetRejected)
+		}
+	}
 
 	var partial *signerapi.BoundedAdminPartialResponse
 	var requestErr error

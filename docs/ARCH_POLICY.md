@@ -240,7 +240,10 @@ every non-transfer type a cosigner is asked to attest is rejected here.
 held by the current signer, which is meaningful only when the signer owns the
 sender. A held rotating account is never an acceptable target: the signer
 refuses that rekey before policy runs, whatever the policy says (see
-[ARCH_SIGNING.md](ARCH_SIGNING.md)). `reject_rekey` is the cosigner coarse-deny analog and ignores key
+[ARCH_SIGNING.md](ARCH_SIGNING.md)). An admin-key bounded rekey
+(`/sign/bounded-admin`) is held to a stricter rule that no policy setting
+relaxes: its target must be a nonrotating signing credential the signer holds
+(see [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md)). `reject_rekey` is the cosigner coarse-deny analog and ignores key
 ownership: when true, any non-zero `RekeyTo` rejects. When it is false, the
 cosigner still fails closed unless `rekey_policy.allowed` authorizes the exact
 sender-to-target edge and the target transaction is a pure 0 ALGO

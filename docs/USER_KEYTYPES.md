@@ -274,6 +274,11 @@ aprekey rekey --client-data "$APCLIENT_DATA" \
   <account> to <new-authorizer>
 ```
 
+`<new-authorizer>` must be a key the same signer holds (a native Ed25519 or
+Falcon key, or a plain Falcon or Ed25519 LogicSig account); the signer refuses
+any other target before asking for approval. Leaving APlane custody is two
+steps: an admin rekey to a local key, then an ordinary `rekey` from that key.
+
 For an air-gapped ceremony, use `prepare-rekey`, move the resulting
 `.apbounded-admin-request` to the ceremony machine, run `aprekey sign`,
 and return only the `.apbounded-admin-signature` file to `complete`. Loss of

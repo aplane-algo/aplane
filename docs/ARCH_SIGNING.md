@@ -1172,6 +1172,7 @@ The stable wire-contract `code` values that SDK clients branch on are defined in
 | `internal` | unexpected server-side failure | `500` |
 | `bounded_admin_required` | admin-key bounded operation sent to ordinary `/sign` | `400` |
 | `bounded_cosigner_required` | cosigner-gated bounded spend sent to ordinary `/sign` | `400` |
+| `bounded_admin_target_rejected` | admin-key bounded rekey whose target is not a nonrotating signing credential this signer holds; refused before policy and re-verified at release | `400` |
 | `rotating_signing_required` | rotating account sent to `/plan`, `/sign`, `/sign/bounded-admin` or `/sign/component` | `400` |
 | `rotating_stage_unproven` | the signer has not yet found the rotating account's live stage; its background scan continues and a retry usually succeeds | `409` |
 | `rotating_stage_changed` | the account's authorizer moved between prepare and sign; nothing was signed, rebuild and prepare again | `409` |
@@ -1287,8 +1288,9 @@ See [Mode Selection](#mode-selection) for the foreign/passthrough/sign distincti
 - `/sign/bounded-admin` performs the same planning, policy, forced review, group
   finalization, and spending-key signing for one admin-key-authorized pure
   rekey, then returns a typed partial for external contract-admin completion.
-  It never loads a contract-admin private key and never returns the partial
-  through `signed[]`.
+  The rekey target must be a nonrotating signing credential this signer holds
+  (`bounded_admin_target_rejected` otherwise). It never loads a contract-admin
+  private key and never returns the partial through `signed[]`.
 - Apsigner has no simulation endpoint or simulation request mode. Full
   simulation obtains an executable group through ordinary `/sign`; guarded
   and bounded-cosigner groups both use `/plan`, `/sign/component`, and
@@ -1375,6 +1377,16 @@ See [Mode Selection](#mode-selection) for the foreign/passthrough/sign distincti
 `request_id`, `operation:"rekey"`, and shared `requests[]`. V1 requires exactly
 one sign-mode pure rekey, no caller LogicSig arguments, and no passthrough,
 foreign, or unrelated signable entries. The signer may append budget dummies.
+The rekey target must be a nonrotating signing credential this signer holds:
+a native Ed25519 or Falcon-1024 key, or a plain DSA LogicSig account. A
+target that is unheld, or that is a bounded, guarded, generic, witness or
+rotating credential, is refused with `bounded_admin_target_rejected` before
+policy and approval; the same credential is loaded again at release and
+proves it can sign a domain-separated challenge, so a credential removed or
+replaced after approval fails there. A rekey to the sender itself (the
+account's own program) names no other credential and passes. This is a
+signer invariant, independent of `reject_foreign_rekey`; leaving APlane
+custody is a separate ordinary rekey from the local credential.
 
 `/sign/bounded-admin` response (`signerapi.BoundedAdminPartialResponse`) contains:
 

@@ -493,6 +493,14 @@ aprekey rekey --key <key.wit> [--client-data <dir>] [--network <name>] [--fee <m
 aprekey unrekey --key <key.wit> [--client-data <dir>] [--network <name>] [--fee <microalgos>] [--nowait] <account>
 ```
 
+`<new-authorizer>` must be a key the same signer holds: a native Ed25519 or
+Falcon key it generated or imported, or a plain Falcon or Ed25519 LogicSig
+account. The signer refuses any other target (`bounded_admin_target_rejected`)
+before asking for approval, so an admin rekey never hands the account to an
+address outside the signer's store. To move an account out of APlane custody,
+rekey it to a local key first, then rekey from that key with the ordinary
+`rekey` command under normal policy.
+
 `APCLIENT_DATA` is used when `--client-data` is omitted. The command connects
 to the configured default signer, obtains its approved spending partial, then
 opens a separate confirmation and artifact-passphrase prompt. It submits only
