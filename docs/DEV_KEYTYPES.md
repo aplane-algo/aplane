@@ -26,8 +26,12 @@ and disabled/fingerprint-conflict behavior, see
 ## Signing Authority
 
 **Signing authority lives in the key file, not in the template.** Every
-LogicSig key file stores its final compiled bytecode, derivation record, and
-signing metadata at creation time. Current compiler-auto-salted keys record
+provider-backed LogicSig key file stores its final compiled bytecode,
+derivation record, and signing metadata at creation time. (The rotating
+account is the exception: its key file stores a seed, a genesis hash and
+stage 0's public record, and every stage program is assembled locally from a
+frozen template at signing time; see category E.) Current
+compiler-auto-salted keys record
 `lsig_derivation: algod_v13_auto_salt` and omit `salt_counter`; compatible
 manual-counter records retain the counter. Sign-time code uses that stored metadata;
 DSA-backed keys still use the appropriate base signing provider to produce and
@@ -619,10 +623,15 @@ registrations pass explicit operation handles:
 
 - `internal/signing.NewLogicSigProvider(...)` receives
   `map[keyType]LogicSigSignerOps`.
-- `lsig/falcon1024/keygen.NewFalconGenerator(...)` receives
+- `lsig/dsafamily/signerreg.NewLogicSigGenerator(family, ...)` receives
   `map[keyType]LogicSigKeygenOps`.
 - provider-specific `signerops` packages own key generation, signing, and
   mnemonic conversion.
+- the rotating account registers none of the above: its `signerreg` installs
+  a key-file codec (`keys.RegisterRotatingCodec`), stage operations
+  (`signing.RegisterRotatingStageOps`) and a generator (`keygen.Register`),
+  and it has no `lsigprovider` entry because it signs only through the
+  `rotating1` flow.
 
 The versioned key type should be registered explicitly whenever the key type has
 unique key generation or signing behavior. A **shared-ops fallback** is allowed

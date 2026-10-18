@@ -129,10 +129,13 @@ cannot be imported as the other. Native Falcon transactions also consume a
 higher protocol fee; APlane presents and applies the required fee adjustment
 before approval.
 
-All bundled APlane LogicSig types use TEAL v13 compiler auto-salting. This was
-an in-place pre-release derivation change: delete and regenerate any earlier
-development LogicSig keys rather than expecting their old addresses to remain
-stable.
+All bundled APlane LogicSig types are kept off the Ed25519 curve by the TEAL
+v13 assembler's salt rule. Provider-backed types compile through algod and
+store the compiler's auto-salted bytecode; the rotating account assembles and
+salts each stage program locally with the same rule, storing no bytecode
+(see [Rotating Accounts](#rotating-accounts)). This was an in-place
+pre-release derivation change: delete and regenerate any earlier development
+LogicSig keys rather than expecting their old addresses to remain stable.
 
 ## Compiled Providers
 
@@ -414,8 +417,10 @@ Fresh signer stores already include `aplane.falcon1024-allowlist.v1`;
 `template import` remains the path for stores that do not have it
 and for the other bundled templates such as `aplane.falcon1024-allowlist.v2`.
 
-Generated LogicSig keys store the final compiler-auto-salted off-curve bytecode
-and its derivation marker in the `.key` file; current auto-salted records omit
+Generated provider-backed LogicSig keys store the final compiler-auto-salted
+off-curve bytecode and its derivation marker in the `.key` file (rotating
+accounts store none; see [Rotating Accounts](#rotating-accounts)); current
+auto-salted records omit
 `salt_counter`. Compatible manual-counter records retain the counter. Keys also
 store the signing-argument schema
 as `signing_args`. That schema is captured from the template/provider

@@ -132,7 +132,8 @@ For bounded1 work, read
   the installed YAML;
 - `/keys` and `/keytypes` advertise `signing_flow: bounded1` or
   `bounded-cosigner1` from durable metadata; every client must dispatch empty,
-  `cosigner1`, `bounded1`, and `bounded-cosigner1` explicitly and reject unknown flows;
+  `cosigner1`, `bounded1`, `bounded-cosigner1`, and `rotating1` explicitly
+  and reject unknown flows;
 - the implementation manifest and independent protocol inventory remain
   separate completeness controls; and
 - schema v1 rejects `bounded`, while schema v2 rejects unknown and duplicate
