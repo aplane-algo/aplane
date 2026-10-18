@@ -87,15 +87,22 @@ typed `/sign/bounded-admin` partial-signing endpoint. Apshell's ordinary send
 path does not select or complete contract-admin operations.
 
 An admin-key rekey may only move the account to a signing credential the
-signer itself holds: a native Ed25519 or Falcon-1024 key, or a plain DSA
-LogicSig account. Bounded, guarded, generic, witness and rotating credentials
-do not qualify, and neither does any address the signer does not hold. The
-signer enforces this twice, from its key inventory before policy and
-approval, and from the loaded credential at release, where the credential
-must sign and verify a domain-separated challenge
+signer itself holds: a native Ed25519 or Falcon-1024 key, or a plain
+`aplane.falcon1024.v1` or `aplane.ed25519.v1` LogicSig account. Eligibility
+is an explicit allowlist: those programs are pure signature gates, whereas a
+bounded, guarded or author-composed template may restrict what the account
+can do once it is the authority, so bounded, guarded, composed, generic,
+witness and rotating credentials do not qualify, and neither does any address
+the signer does not hold. The signer enforces this twice, from its key
+inventory before policy and approval, and from the loaded credential at
+release, where the stored public key or program must derive the target
+address and the credential must sign and verify a domain-separated challenge
 (`APLANE_BOUNDED_ADMIN_TARGET_SELFTEST_V1`); the challenge signature is never
-released. A rekey to the sender itself returns the account to its own program
-and passes. The rule is a signer invariant, not a policy setting, and
+released. A rekey of the bounded account to itself names no other credential
+and passes. When the bounded program is the standing authority for a
+different account, a rekey of that account to itself hands it back to its
+own key, so that key is checked like any other target: it must be a held,
+eligible credential. The rule is a signer invariant, not a policy setting, and
 neither TEAL nor the offline `aprekey` helper can check it: the admin
 signature binds the exact target the helper presents, and the program
 accepts any non-zero target under that signature. Moving an account out of

@@ -80,7 +80,7 @@ func (e *Executor) ExecuteBoundedAdminPartial(ctx context.Context, plan *PlanRes
 	// Release-time half of the target rule: the destination credential is
 	// loaded from the session after approval and proven able to sign, so a
 	// credential removed or replaced since the pre-policy check fails here.
-	if targetErr := verifyBoundedAdminRekeyTarget(ctx, session, txn); targetErr != nil {
+	if targetErr := verifyBoundedAdminRekeyTarget(ctx, session, txn, req.Requests[targetIndex].AuthAddress); targetErr != nil {
 		return nil, targetErr
 	}
 	provider := coresigning.GetProviderForKey(keyMaterial.Type, keyMaterial.BaseKeyType)

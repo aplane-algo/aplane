@@ -122,7 +122,7 @@ func (s *Service) PrepareBoundedAdminWithContext(ctx context.Context, request si
 	// Signer invariant, ahead of policy and approval: the rekey target must be
 	// a held, eligible credential (bounded_admin_target.go). Checked again at
 	// release from the loaded credential.
-	if targetErr := s.checkBoundedAdminRekeyTarget(plan.AllTxns[targetIndex]); targetErr != nil {
+	if targetErr := s.checkBoundedAdminRekeyTarget(plan.AllTxns[targetIndex], req.Requests[targetIndex].AuthAddress); targetErr != nil {
 		return nil, targetErr
 	}
 	policyRuleID, release, gateErr := s.approveGroupWithPlanContext(ctx, req, plan)

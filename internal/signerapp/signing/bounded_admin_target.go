@@ -10,6 +10,7 @@ import (
 	"crypto/rand"
 	"fmt"
 
+	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
@@ -46,11 +47,25 @@ import (
 // as authorization for anything.
 const adminRekeyTargetChallengeDomain = "APLANE_BOUNDED_ADMIN_TARGET_SELFTEST_V1"
 
+// The only LogicSig families eligible as admin rekey targets. Both programs
+// are pure signature gates: they verify one signature over the transaction
+// and impose no spending, fee, close-out or rekey restriction of their own.
+// Every other DSA LogicSig (bounded, guarded, or an author-composed template
+// whose TEAL suffix the signer cannot inspect) may restrict what the account
+// can do once it is the authority, up to forbidding the rekey that would
+// undo the move, so eligibility is an explicit allowlist rather than a
+// category minus known exclusions.
+const (
+	plainFalcon1024LsigKeyType = "aplane.falcon1024.v1"
+	plainEd25519LsigKeyType    = "aplane.ed25519.v1"
+)
+
 // adminRekeyTargetIneligible reports why a held credential cannot receive an
 // admin-key bounded rekey, or "" when it can. Only nonrotating account
-// credentials whose complete authorization path is one local signature
-// qualify: native Ed25519, native Falcon-1024, and plain DSA LogicSigs. A
-// bounded or guarded LogicSig needs more than its spending key, a generic
+// credentials whose complete authorization path is one unrestricted local
+// signature qualify: native Ed25519, native Falcon-1024, and the two plain
+// DSA LogicSig families. A bounded or guarded LogicSig needs more than its
+// spending key, a composed template may restrict spending, a generic
 // LogicSig has no signing credential, a witness is not an account, and a
 // rotating account's address is a one-time stage.
 func adminRekeyTargetIneligible(category, keyType string, bounded bool) string {
@@ -58,13 +73,15 @@ func adminRekeyTargetIneligible(category, keyType string, bounded bool) string {
 	case keys.CategoryEd25519, keys.CategoryNativePQ:
 		return ""
 	case keys.CategoryDSALsig:
-		if bounded {
+		switch {
+		case bounded:
 			return "a bounded account"
-		}
-		if keytypes.IsGuardedAccountKeyType(keyType) {
+		case keytypes.IsGuardedAccountKeyType(keyType):
 			return "a guarded account"
+		case keyType == plainFalcon1024LsigKeyType, keyType == plainEd25519LsigKeyType:
+			return ""
 		}
-		return ""
+		return fmt.Sprintf("a %s LogicSig, not one of the plain %s or %s families", keyType, plainFalcon1024LsigKeyType, plainEd25519LsigKeyType)
 	case keys.CategoryGenericLsig:
 		return "a generic LogicSig with no signing credential"
 	case keys.CategoryWitness:
@@ -75,12 +92,25 @@ func adminRekeyTargetIneligible(category, keyType string, bounded bool) string {
 	return fmt.Sprintf("an unsupported credential category %q", category)
 }
 
+// adminRekeyReturnsToOwnProgram reports whether the transaction is a rekey of
+// the bounded account to itself: the sender is the bounded program that
+// authorizes the request and the target is that same address. That names no
+// other credential and leaves the account on a program this signer holds, so
+// it is the one self-rekey that needs no destination check. A rekey-to-self
+// from any other sender is a different matter: the bounded program is then
+// the standing authority for some other account, and clearing that
+// authority hands the account back to its own key, which must be checked
+// like any other destination.
+func adminRekeyReturnsToOwnProgram(txn types.Transaction, boundedAccount string) bool {
+	return txn.RekeyTo == txn.Sender && txn.Sender.String() == boundedAccount
+}
+
 // checkBoundedAdminRekeyTarget is the pre-policy check: the rekey target of
-// an admin-key bounded rekey must be a held, eligible credential. A rekey to
-// the sender itself returns the account to its own program and names no
-// other credential, so it passes.
-func (s *Service) checkBoundedAdminRekeyTarget(txn types.Transaction) *ServiceError {
-	if txn.RekeyTo == txn.Sender {
+// an admin-key bounded rekey must be a held, eligible credential.
+// boundedAccount is the address of the bounded program authorizing the
+// request (the sign request's auth address).
+func (s *Service) checkBoundedAdminRekeyTarget(txn types.Transaction, boundedAccount string) *ServiceError {
+	if adminRekeyReturnsToOwnProgram(txn, boundedAccount) {
 		return nil
 	}
 	if s.Planner == nil || s.Planner.Snapshot == nil {
@@ -110,10 +140,10 @@ type adminTargetKeyGetter interface {
 // again from its own material, and proven able to sign. The session lookup
 // is by address, and the key file's address binding is validated at scan,
 // so a successful load already ties the credential to the target; the
-// self-test adds that the private material works and, where the address is
-// a function of the public key alone, that the two still agree.
-func verifyBoundedAdminRekeyTarget(ctx context.Context, session adminTargetKeyGetter, txn types.Transaction) *ServiceError {
-	if txn.RekeyTo == txn.Sender {
+// self-test adds that the private material works and that the stored
+// public key or program still derives the target address.
+func verifyBoundedAdminRekeyTarget(ctx context.Context, session adminTargetKeyGetter, txn types.Transaction, boundedAccount string) *ServiceError {
+	if adminRekeyReturnsToOwnProgram(txn, boundedAccount) {
 		return nil
 	}
 	if session == nil {
@@ -179,6 +209,15 @@ func selfTestAdminRekeyTarget(km *coresigning.KeyMaterial, target types.Address)
 			return err
 		}
 	case keys.CategoryDSALsig:
+		// The account address is the hash of the LogicSig program, so the
+		// stored bytecode must derive the target: the credential's program,
+		// not just its key type label, is what the account would run.
+		if len(km.Bytecode) == 0 {
+			return fmt.Errorf("stored LogicSig credential has no program")
+		}
+		if algocrypto.AddressFromProgram(km.Bytecode) != target {
+			return fmt.Errorf("stored LogicSig program does not derive the target address")
+		}
 		// A plain DSA LogicSig signs with its base primitive, and the stored
 		// public key's size says which one: the two sizes are frozen and
 		// distinct, so no registry lookup is needed to pick the verifier.

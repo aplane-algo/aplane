@@ -1378,15 +1378,18 @@ See [Mode Selection](#mode-selection) for the foreign/passthrough/sign distincti
 one sign-mode pure rekey, no caller LogicSig arguments, and no passthrough,
 foreign, or unrelated signable entries. The signer may append budget dummies.
 The rekey target must be a nonrotating signing credential this signer holds:
-a native Ed25519 or Falcon-1024 key, or a plain DSA LogicSig account. A
-target that is unheld, or that is a bounded, guarded, generic, witness or
-rotating credential, is refused with `bounded_admin_target_rejected` before
-policy and approval; the same credential is loaded again at release and
-proves it can sign a domain-separated challenge, so a credential removed or
-replaced after approval fails there. A rekey to the sender itself (the
-account's own program) names no other credential and passes. This is a
-signer invariant, independent of `reject_foreign_rekey`; leaving APlane
-custody is a separate ordinary rekey from the local credential.
+a native Ed25519 or Falcon-1024 key, or a plain `aplane.falcon1024.v1` or
+`aplane.ed25519.v1` LogicSig account. A target that is unheld, or that is a
+bounded, guarded, composed, generic, witness or rotating credential, is
+refused with `bounded_admin_target_rejected` before policy and approval; the
+same credential is loaded again at release, its stored public key or program
+must derive the target address, and it proves it can sign a domain-separated
+challenge, so a credential removed or replaced after approval fails there. A
+rekey of the bounded account to itself names no other credential and passes;
+a rekey-to-self from any other sender under the bounded program's authority
+returns that account to its own key, which is checked like any other target.
+This is a signer invariant, independent of `reject_foreign_rekey`; leaving
+APlane custody is a separate ordinary rekey from the local credential.
 
 `/sign/bounded-admin` response (`signerapi.BoundedAdminPartialResponse`) contains:
 

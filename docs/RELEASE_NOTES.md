@@ -9,11 +9,14 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 
 An admin-key bounded rekey (`/sign/bounded-admin`, `aprekey rekey`) may now
 only move the account to a nonrotating signing credential the same signer
-holds: a native Ed25519 or Falcon-1024 key, or a plain DSA LogicSig account.
-Unheld addresses and bounded, guarded, generic, witness or rotating
-credentials are refused with the new wire code `bounded_admin_target_rejected`
-before policy and approval, and the credential is loaded and self-tested
-again at release. A rekey to the account itself still passes. The rule is a
+holds: a native Ed25519 or Falcon-1024 key, or a plain `aplane.falcon1024.v1`
+or `aplane.ed25519.v1` LogicSig account. Unheld addresses and bounded,
+guarded, composed, generic, witness or rotating credentials are refused with
+the new wire code `bounded_admin_target_rejected` before policy and approval,
+and the credential is loaded, bound to the target address and self-tested
+again at release. A rekey of the bounded account to itself still passes; a
+rekey-to-self of another account under the bounded program's authority is
+checked like any other target. The rule is a
 signer invariant independent of `reject_foreign_rekey`; moving an account out
 of APlane custody is an admin rekey to a local key followed by an ordinary
 rekey from that key. The error code is added to the signer API contract
