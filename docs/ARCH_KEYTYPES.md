@@ -1,10 +1,5 @@
 # Key Types
 
-For a conceptual design guide, the sixteen-cell capability map, and an
-operation-by-operation authority model, start with
-[the key type design model](KEYTYPE_DESIGN_MODEL.md). This document specifies the
-architecture and resolution mechanisms behind that model.
-
 > Key types and LogicSig providers: the dimensions that describe one signing
 > authority, the canonical key type identifier, the authorization ontology, the
 > three resolution axes, and the LogicSig provider registry, templates, and
@@ -23,6 +18,7 @@ reference for one of the three axes (Resolve).
 ## Contents
 
 - [Protocol dimensions and terminology](#protocol-dimensions-and-terminology)
+- [Designing a new combination](#designing-a-new-combination)
 - [Key type identifier contract](#key-type-identifier-contract)
 - [Authorization object ontology](#authorization-object-ontology)
 - [Key types summary](#key-types-summary)
@@ -40,12 +36,13 @@ another merely because two dimensions currently use the same string.
 |---|---|---|---|
 | **Key type** | What durable kind of account or witness key is this? | `ed25519`, `aplane.falcon1024.v1`, `aplane.corridor.v1` | Stored `key_type`; provider/template definition |
 | **Account authorization type** | What protocol-level mechanism authorizes the account? | native signature, DSA LogicSig, generic LogicSig | Key category and stored key material |
+| **Authority lifecycle** | How does the account's authorizer evolve over time? | no mandatory rotation; mandatory per-spend rotation to the next stage (`rotating_lsig`) | Key category; for rotating types the `internal/rotatingkey` profile |
 | **Authorization contract** | Which reusable, versioned on-chain envelope and metadata vocabulary constrain this LogicSig? | `bounded1` | Template `bounded.contract` and durable `bounded_authorization.contract` |
 | **Policy/profile** | What concrete behavior narrows the account contract? | fixed allowlist, Merkle recipient proof, timelock, Corridor composition | Full key-type provider/template plus behavior parameters |
 | **Base key type** | Which private signing primitive produces the account's DSA signature arguments? | `aplane.falcon1024.v1`, `aplane.ed25519.v1` | Stored `base_key_type` and composed provider definition |
 | **Auxiliary authority enrollment** | Which additional authority participates, for which role or operation, and under whose custody? | cosigner witness, external contract-admin witness | Embedded public key, durable metadata, and custody-specific message contract |
-| **Signing flow** | Which versioned client/server protocol obtains a usable signature for this key? | empty ordinary flow, `bounded1`, `cosigner1`, `bounded-cosigner1` | Signer-advertised `signing_flow` |
-| **Endpoint choreography** | Which ordered calls implement the selected flow for this transaction path? | `/sign`; `/sign/component` then `/sign/assemble`; `/sign/bounded-admin` then `aprekey` | Flow contract, transaction classification, and HTTP DTOs |
+| **Signing flow** | Which versioned client/server protocol obtains a usable signature for this key? | empty ordinary flow, `bounded1`, `cosigner1`, `bounded-cosigner1`, `rotating1` | Signer-advertised `signing_flow` |
+| **Endpoint choreography** | Which ordered calls implement the selected flow for this transaction path? | `/sign`; `/sign/component` then `/sign/assemble`; `/sign/bounded-admin` then `aprekey`; `/sign/rotating/prepare` then `/sign/rotating/sign` | Flow contract, transaction classification, and HTTP DTOs |
 | **Provider and routing family** | Which registered implementation performs keygen, derivation, signing, or assembly? | composed provider routed through `aplane.falcon1024`; dedicated guarded provider | Provider registry and `RoutingFamily()` |
 | **Principal authorization** | May the authenticated caller invoke this operation on the target identity/resource? | `sign.request`, `sign.component`, `sign.assemble` | Reserved product principal, closed action allowlist, and HTTP/admin enforcement point |
 | **Signer policy domain** | Which off-chain rules gate release of a signature that the key and on-chain program could produce? | client-signing policy, cosigner policy | Node role, the node's policy documents, and the selected policy key |
@@ -75,6 +72,25 @@ The terms are related, but none is a synonym for another:
   routing does not by itself change a key type, authorization contract, or
   signing flow, although behavior-visible changes may require versioning those
   contracts.
+
+Four adjectives recur when combinations are discussed. Each has a narrow
+meaning:
+
+- **Nonrotating** means no mandatory per-spend rotation. It does not mean the
+  account can never rekey. Rotating accounts keep a fixed address while each
+  accepted spend transfers authority to the predetermined next stage.
+- **Non-bounded** means outside the `bounded1` contract. It does not mean
+  unrestricted: dedicated and custom programs constrain transactions too, and
+  the rotating stage programs impose rotation, validity, and transaction-shape
+  restrictions without being `bounded1` profiles.
+- **Cosigned** means another authority participates in spending under a
+  separate custody and authorization role. Falcon plus Ed25519 signatures
+  derived from one signer-held seed are a multi-algorithm construction, not a
+  cosigner.
+- **Admin-keyed** means a distinct external key participates in a named
+  administrative operation. In current `bounded1` it co-authorizes pure rekey
+  with the spending key; it cannot spend or recover a lost spending key. The
+  `apadmin` management client is not this cryptographic authority.
 
 The word **contract** has three related but distinct uses in APlane:
 
@@ -157,6 +173,7 @@ from the presence of a witness key alone.
 | `aplane.falcon1024-allowlist-alock.v1` | DSA LogicSig | bounded `bounded1`; fixed recipient/asset/amount allowlist | `aplane.falcon1024.v1` | external Falcon contract admin for rekey | `bounded1`; spend through `/sign`, admin rekey through `/sign/bounded-admin` plus `aprekey` |
 | `aplane.falcon1024-cosigner1024.v1` | DSA LogicSig | dedicated guarded verifier | `aplane.falcon1024.v1` | signer-custodied Falcon cosigner witness | `cosigner1`; user `/sign/component`, cosigner `/sign/component`, then `/sign/assemble` |
 | `aplane.corridor.v1` | DSA LogicSig | bounded `bounded1`; framework Merkle recipient allowlist | `aplane.falcon1024.v1` | signer-custodied Falcon cosigner on spend; distinct external Falcon admin on rekey | `bounded-cosigner1`; `/plan`, kind-tagged `/sign/component`, then `/sign/assemble` |
+| `aplane.rotating-hybrid.v1` (likewise the WOTS and triple hybrids) | DSA LogicSig (`rotating_lsig`) | dedicated compiled stage program; a new program per spend | Falcon-1024 and Ed25519 stage keys derived from one seed (WOTS-w16 replaces or joins Falcon in the other two) | none | `rotating1`; `/sign/rotating/prepare` then `/sign/rotating/sign`; the signer reads the live stage from the chain |
 | `aplane.htlc.v1` | Generic LogicSig | generic TEAL HTLC policy | none | none | empty flow; ordinary LogicSig assembly through `/sign` |
 
 The examples describe the currently implemented architecture. A future change
@@ -180,6 +197,131 @@ Version the dimension whose compatibility contract changes:
 These versions may advance independently. A key type version must still pin the
 complete behavior it relies on, and compatibility-bearing changes commonly
 require advancing more than one dimension together.
+
+## Designing a new combination
+
+The dimensions above describe what exists. This section is the map for
+deciding what kind of key type to build when a request combines capabilities,
+and the record to complete before writing code. It is a conceptual map, not a
+declaration that every combination is implemented or safe to compose.
+
+### Capability map
+
+For DSA LogicSig accounts, four booleans give a useful overview:
+`rotating × bounded × cosigned × external-admin-keyed`. Native accounts and
+generic TEAL-only LogicSigs are outside the map. "Bounded" means the
+implemented `bounded1` contract; a rotating bounded contract would need its
+own explicit definition.
+
+| Rotating | Bounded | Cosigned | No external admin key | External admin key |
+|---|---|---|---|---|
+| No | No | No | **Implemented:** plain Falcon and Ed25519 LogicSigs | **Design required:** no current combined contract |
+| No | No | Yes | **Implemented:** dedicated Falcon/Falcon guarded account | **Design required:** no current combined contract |
+| No | Yes | No | **Implemented:** bounded allowlist and timelock profiles | **Implemented:** `aplane.falcon1024-allowlist-alock.v1` |
+| No | Yes | Yes | **Supported profile shape:** bounded cosigner spend gate with no admin operations | **Implemented:** `aplane.corridor.v1` |
+| Yes | No | No | **Implemented:** the three rotating hybrid types | **Design required:** current rotating contracts have no external-admin path |
+| Yes | No | Yes | **Design required:** rotating plus external cosigner | **Design required:** rotating plus cosigner plus external admin |
+| Yes | Yes | No | **Design required:** rotating plus bounded policy | **Design required:** rotating bounded policy plus external admin |
+| Yes | Yes | Yes | **Design required:** rotating bounded policy plus cosigner | **Design required:** all four capabilities |
+
+"Implemented" names an existing type, not arbitrary combinations of
+algorithms and policies. "Supported profile shape" is an option the existing
+contract admits, not a shipped template; a concrete profile still needs
+validation and tests. "Design required" makes no claim that the combination is
+compatible merely because each capability exists separately.
+
+The no-admin column does not say whether rekey is allowed. The bundled Falcon
+allowlist and timelock profiles permit spending-key-authorized rekey, whereas a
+cosigner-enabled `bounded1` profile cannot: `boundedmeta` rejects a
+`spending_key` rekey operation when a cosigner is present, so such a profile
+either omits rekey or uses the external-admin path.
+
+### Authority belongs to operations
+
+A boolean says that an authority exists. The contract must say what that
+authority can do on each operation and which other signatures stay required.
+
+| Operation | Required design decision |
+|---|---|
+| Ordinary spending | Spending signature construction, additional cosigner, policy and effect restrictions |
+| Mandatory stage transition | Which next authorizer is permitted and how its usability is established |
+| Administrative rekey or exit | Whether permitted; which authorities approve; permitted target and transaction form |
+| Policy or cosigner replacement | Whether a defined transition allows it; whether it requires a new authorizing program |
+| Recovery | What survives loss of each key, unavailable cosigners, cache loss, and restore |
+
+For Corridor, ordinary spending requires the spending key and the cosigner
+under the bounded spending policy. Pure administrative rekey instead requires
+the spending key and the external contract admin under the frozen admin normal
+form; the spend cosigner and the Layer 3 policy do not gate that path
+(`boundedmeta` forces `policy_gate: none` on admin-key operations). This is
+separation of authority by operation, not a general admin override.
+
+Current `bounded1` exposes only rekey as an admin operation. It has no
+policy-editing or witness-replacement API; rekey can install a new authorizing
+program, which is different from mutating an existing program's policy.
+
+Current rotating contracts permit only the predetermined next-stage
+transition. They have no arbitrary exit and no external-admin recovery path.
+Combining rotation with administrative rekey must reconcile those restrictions
+explicitly; it cannot inherit both contracts unchanged.
+
+### Naming a combination
+
+Use **rotating-bounded** for rotation plus a bounded spending envelope and
+**rotating-cosigned** for rotation plus an additional spending authority. In
+APlane "guarded" usually means cosigner participation, so "rotating-guarded"
+does not name a distinct policy dimension without further definition.
+
+Matching words across layers (capability, authorization contract, key type,
+signing flow, implementation) do not make them interchangeable. A `bounded1`
+contract with a cosigner advertises `bounded-cosigner1`; adding rotation to a
+cosigned account needs an explicitly defined choreography, which clients never
+infer from a key type's name or by combining two flow labels.
+
+### Signature construction and custody are separate choices
+
+Multiple required algorithms strengthen one authority without creating
+several. The rotating triple hybrid requires Falcon, WOTS, and Ed25519
+signatures, all under stage keys derived from one signer-held seed; an external
+cosigner adds a different custody and approval boundary. A rotating-cosigned
+design must state whether the witness is fixed or rotates, whether its schedule
+follows the spending stages, and who can replace it. An admin-keyed design must
+state the admin's lifecycle and permitted operations. None of this follows from
+"rotating: yes".
+
+### Design record
+
+Before writing code, complete this record and identify the authoritative
+contract for every answer:
+
+1. **Identity and scope:** new key type and version; authorization mechanism;
+   existing contracts reused and contracts that must be introduced or changed.
+2. **Operation authority:** permitted effects and transitions, required
+   signatures per path, policy gates, forbidden operations, and recovery limits.
+3. **Cryptography and custody:** algorithms, signature combination, key
+   derivation domains, authority separation, witness enrollment and lifecycle.
+4. **Bindings:** account, network, stage, transaction/group, next authorizer,
+   and relevant policy commitments authenticated by each signature.
+5. **Durable authority:** credential schema and validation; what is persisted
+   versus derived; which files are reconstructible caches. Ordinary provider
+   LogicSigs persist bytecode; current rotating keys derive stage programs.
+6. **Choreography:** inventory flow, endpoints, preparation, approval,
+   component verification, assembly, and submission. Define retry, expiry,
+   partial-signing, concurrent-transition, and restore behavior.
+7. **Resources and compatibility:** argument slots and bounds, program size,
+   opcode ceilings, fees, canonical encodings, and version boundaries.
+8. **Evidence:** positive and negative vectors, cross-account/network/stage
+   replay rejection, forbidden-transition tests, next-stage opening tests,
+   recovery cases, and maximum-resource checks as applicable.
+
+Classify the result as an existing supported profile, a new implementation of
+an established contract, or a new protocol design. Name unresolved contract
+decisions explicitly rather than borrowing semantics from two implementations
+that were never specified to compose. The rotating operations interface
+returns a complete locally signed stage authorization, while the cosigner flow
+separately collects and verifies external components; reusing their primitives
+is useful, but their combination needs a defined integration boundary before
+it becomes a routine new-type task.
 
 ## Key type identifier contract
 

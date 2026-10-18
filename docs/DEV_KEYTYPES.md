@@ -4,9 +4,10 @@ Unified developer guide for adding a new signable key type or LogicSig template 
 APlane.
 
 Before designing a new combination of rotation, bounded policy, cosigning, or
-external administration, read [the key type design model](KEYTYPE_DESIGN_MODEL.md).
-Its capability map distinguishes existing implementations from combinations
-that require a new protocol contract.
+external administration, read
+[Designing a new combination](ARCH_KEYTYPES.md#designing-a-new-combination)
+in `docs/ARCH_KEYTYPES.md`. Its capability map distinguishes existing
+implementations from combinations that require a new protocol contract.
 
 This document is the single canonical DEV guide for:
 

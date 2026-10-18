@@ -7,7 +7,8 @@ policy/security review reference; this file is the operational safety
 checklist.
 
 For new combinations of capabilities, first use
-[the key type design model](KEYTYPE_DESIGN_MODEL.md) and complete its design record.
+[Designing a new combination](ARCH_KEYTYPES.md#designing-a-new-combination)
+in `docs/ARCH_KEYTYPES.md` and complete its design record.
 Do not infer that independently supported capabilities can be composed without
 defining their shared authority, transition, and signing-flow contracts.
 
