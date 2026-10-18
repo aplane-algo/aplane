@@ -362,7 +362,7 @@ the shipped default does not reject or force to review.
 
 `rotating.stage_horizon` (default 4096) sets how many stages past a rotating
 account's live stage the signer derives ahead into its stage address cache
-(see [USER_KEYTYPES.md](USER_KEYTYPES.md#rotating-hybrid-accounts)). The
+(see [USER_KEYTYPES.md](USER_KEYTYPES.md#rotating-accounts)). The
 signer reads a rotating account's live stage from the network's
 `networks.<network>.algod` node, which must therefore be configured for that
 network.

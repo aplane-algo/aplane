@@ -5,6 +5,19 @@ token, setup-file, and protocol-v5 entries describe behavior superseded by the
 enrolled-key model and current admin protocol v6.0; they are not current setup
 instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 
+## One rotating key type
+
+The Falcon hybrid (`aplane.rotating-hybrid.v1`) and hash hybrid
+(`aplane.rotating-wots-hybrid.v1`) rotating key types are removed, before
+any external use. `aplane.rotating-triple-hybrid.v1` is the only rotating
+account: it dominates both on security, since a forgery needs Falcon, SHA-256
+and Ed25519 broken together, and the fee difference is a few thousandths of
+an ALGO per spend. The `rotating1` flow, commands, stage address cache,
+alerts, restore behavior, endpoints and DTOs are unchanged; the signer API
+contract fixture `keys_response_rotating.json` now describes the triple and
+`keys_response_rotating_wots.json` is gone. Key files of the removed types
+are rejected at scan as unregistered rotating key types.
+
 ## Rotating triple hybrid accounts
 
 New library-visible key type `aplane.rotating-triple-hybrid.v1`: the rotating

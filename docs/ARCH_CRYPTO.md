@@ -33,7 +33,7 @@ The cryptographic subsystem is split across these packages:
 |---|---|
 | Native signing | `internal/signing`, `internal/signing/ed25519`, `internal/signing/falcon1024` |
 | LogicSig provider interfaces, registry, and salting | `internal/lsigprovider`, `internal/logicsigdsa`, `internal/genericlsig`, `internal/lsigsalt` |
-| Built-in LogicSig families | `lsig/`, especially `lsig/falcon1024`, `lsig/ed25519lsig`, `lsig/falcon1024_guarded`, `lsig/composeddsa`, `lsig/generictemplate`, `lsig/rotatinghybrid`, `lsig/rotatingwots`, `lsig/rotatingtriple` |
+| Built-in LogicSig families | `lsig/`, especially `lsig/falcon1024`, `lsig/ed25519lsig`, `lsig/falcon1024_guarded`, `lsig/composeddsa`, `lsig/generictemplate`, `lsig/rotatingtriple` |
 | Algorithm metadata, keygen, mnemonics | `internal/algorithm`, `internal/keygen`, `internal/mnemonic` |
 | Key-type visibility and state | `internal/keytypecatalog`, `internal/keytypestate`, `internal/defaultkeytypes` (new-store default key-type installation) |
 | Encrypted key/template persistence | `internal/crypto`, `internal/keys`, `internal/keystore`, `internal/templatestore`, `internal/templatelibrary` |
@@ -127,9 +127,8 @@ Built-in and bundled key types include:
   `aplane.falcon1024-allowlist.v2`, `aplane.falcon1024-timelock.v1`, and
   `aplane.falcon1024-allowlist-alock.v1`, plus the bounded-cosigner
   `aplane.corridor.v1`
-- the rotating accounts `aplane.rotating-hybrid.v1`,
-  `aplane.rotating-wots-hybrid.v1` and `aplane.rotating-triple-hybrid.v1`
-  (library-visible, signer-only)
+- the rotating account `aplane.rotating-triple-hybrid.v1` (library-visible,
+  signer-only)
 
 Creation parameters are part of the provider boundary. `internal/lsigprovider`
 owns shared parameter metadata and normalization helpers used by UI adapters,
@@ -175,11 +174,10 @@ These providers implement the unified `internal/lsigprovider.SigningProvider`
 surface. `internal/logicsigdsa` is the DSA-oriented filtered view over
 that unified registry.
 
-`aplane.rotating-hybrid.v1`, `aplane.rotating-wots-hybrid.v1` and
-`aplane.rotating-triple-hybrid.v1` are also compiled, library-visible catalog entries, but they have no client-side
-LogicSig provider and do not register in `internal/lsigprovider`; signer
-binaries register their storage, stage cryptography, and generator through
-`lsig/signerreg`.
+`aplane.rotating-triple-hybrid.v1` is also a compiled, library-visible
+catalog entry, but it has no client-side LogicSig provider and does not
+register in `internal/lsigprovider`; signer binaries register its storage,
+stage cryptography, and generator through `lsig/signerreg`.
 
 ### Generic LogicSig templates
 
@@ -212,37 +210,34 @@ and must not author a salt marker, salt preamble, or salt-style selector.
 Signing always uses the stored final bytecode and never recomputes salting from
 a live template.
 
-Rotating accounts (`aplane.rotating-hybrid.v1`, `aplane.rotating-wots-hybrid.v1`,
-`aplane.rotating-triple-hybrid.v1`) are the one exception to both rules. They store no bytecode: each stage's
+The rotating account (`aplane.rotating-triple-hybrid.v1`) is the one
+exception to both rules. It stores no bytecode: each stage's
 program is assembled locally from a frozen template and the stage's public
 constants, and when the unsalted address is on-curve, the stage package
 appends `intcblock 1 <salt>` with the lowest salt in `[0, 128)` that gives an
 off-curve address, exactly as the TEAL v13 assembler does. Stage derivation
 owns this rule because stages must be derived offline, at every request and
-in bulk in the background, without trusting a node for addresses. A test per
-key type compares the local bytes with algod's assembler output for salted
-and unsalted stages.
+in bulk in the background, without trusting a node for addresses. A test
+compares the local bytes with algod's assembler output for salted and
+unsalted stages.
 
-The WOTS hybrid's stage signature is a Winternitz one-time signature
-(`internal/crypto/wots`): n = 32, w = 16, 64 message digits and 3 checksum
-digits over the TxID, 67 SHA-256 chains of 15 steps, with the SPHINCS+
-"simple" tweakable hash `F(T, c, j, x) = SHA-256(T || u64be(c*256 + j) || x)`
-and a per-stage tweak `T = SHA-256("APLANE_WOTS_V1" || G || tag || u64be(i))`,
-where the public account tag is HKDF output of the seed alone. The stage
-program verifies it with `sha256`, `itob` and `concat` only, paired with an
-`ed25519verify_bare`. A WOTS key must sign one message; the rotation makes
-every stage sign once in normal operation, and the Ed25519 half keeps a
-twice-signed stage (after an expired release and its repair, or a client
-re-signing a rebuilt transaction) at classical strength until the next
-release lands. Nothing prevents the second signature; the signer reports it
+A stage requires three signatures, each over the TxID: a Falcon-1024
+signature, an Ed25519 signature (`ed25519verify_bare`) and a Winternitz
+one-time signature (`internal/crypto/wots`): n = 32, w = 16, 64 message
+digits and 3 checksum digits, 67 SHA-256 chains of 15 steps, with the
+SPHINCS+ "simple" tweakable hash
+`F(T, c, j, x) = SHA-256(T || u64be(c*256 + j) || x)` and a per-stage tweak
+`T = SHA-256("APLANE_WOTS_V1" || G || tag || u64be(i))`, where the public
+account tag is HKDF output of the seed alone. The stage program verifies the
+WOTS signature with `sha256`, `itob` and `concat` only. A forgery needs a
+break of SHA-256, of the Falcon lattice assumption and of Ed25519 at once.
+
+A WOTS key must sign one message; the rotation makes every stage sign once
+in normal operation. A twice-signed stage (after an expired release and its
+repair, or a client re-signing a rebuilt transaction) loses only the WOTS
+half and still rests on Falcon-1024 and Ed25519 until the next release
+lands. Nothing prevents the second signature; the signer reports it
 (`ARCH_SIGNING.md`, rotating alerts).
-
-The triple hybrid's stage requires all three: the same WOTS signature (under
-its own derivation label and tweak), a Falcon-1024 signature and an Ed25519
-signature, each over the TxID. A forgery needs a break of SHA-256, of the
-Falcon lattice assumption and of Ed25519 at once. A twice-signed triple stage
-loses only the WOTS half and still rests on Falcon-1024 and Ed25519, which is
-the Falcon hybrid's strength.
 
 ## Unified Registry
 

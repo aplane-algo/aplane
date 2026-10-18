@@ -25,9 +25,7 @@ import (
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/stagetable"
 	"github.com/aplane-algo/aplane/internal/storepaths"
-	rotatingsignerreg "github.com/aplane-algo/aplane/lsig/rotatinghybrid/signerreg"
 	rotatingtriplesignerreg "github.com/aplane-algo/aplane/lsig/rotatingtriple/signerreg"
-	rotatingwotssignerreg "github.com/aplane-algo/aplane/lsig/rotatingwots/signerreg"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
@@ -71,19 +69,13 @@ type rotatingTestType struct {
 }
 
 var (
-	hybridTestType = rotatingTestType{
-		keyType: rotatingkey.RotatingHybridV1, register: rotatingsignerreg.Register,
-		newKeyPayload: rotatingsignerreg.NewKeyPayload, dummies: 1,
-	}
-	wotsTestType = rotatingTestType{
-		keyType: rotatingkey.RotatingWotsHybridV1, register: rotatingwotssignerreg.Register,
-		newKeyPayload: rotatingwotssignerreg.NewKeyPayload, dummies: 2,
-	}
 	tripleTestType = rotatingTestType{
 		keyType: rotatingkey.RotatingTripleHybridV1, register: rotatingtriplesignerreg.Register,
 		newKeyPayload: rotatingtriplesignerreg.NewKeyPayload, dummies: 3,
 	}
-	rotatingTestTypes = []rotatingTestType{hybridTestType, wotsTestType, tripleTestType}
+	// rotatingTestTypes is every rotating key type; the per-type tests loop
+	// over it so a second type (the rotating-bounded contract) slots in.
+	rotatingTestTypes = []rotatingTestType{tripleTestType}
 )
 
 type rotatingKeyStore struct {
@@ -120,7 +112,7 @@ type rotatingFixture struct {
 
 func newRotatingFixture(t *testing.T) *rotatingFixture {
 	t.Helper()
-	return newRotatingFixtureFor(t, hybridTestType)
+	return newRotatingFixtureFor(t, tripleTestType)
 }
 
 func newRotatingFixtureFor(t *testing.T, kind rotatingTestType) *rotatingFixture {

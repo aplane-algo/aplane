@@ -26,9 +26,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/stagetable"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/txnutil"
-	rotatingsignerreg "github.com/aplane-algo/aplane/lsig/rotatinghybrid/signerreg"
 	rotatingtriplesignerreg "github.com/aplane-algo/aplane/lsig/rotatingtriple/signerreg"
-	rotatingwotssignerreg "github.com/aplane-algo/aplane/lsig/rotatingwots/signerreg"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 	"github.com/aplane-algo/aplane/test/integration/harness"
 
@@ -58,33 +56,17 @@ type localnetRotatingType struct {
 }
 
 var (
-	localnetHybrid = localnetRotatingType{
-		keyType: rotatingkey.RotatingHybridV1, register: rotatingsignerreg.Register, newKeyPayload: rotatingsignerreg.NewKeyPayload,
-	}
-	localnetWots = localnetRotatingType{
-		keyType: rotatingkey.RotatingWotsHybridV1, register: rotatingwotssignerreg.Register, newKeyPayload: rotatingwotssignerreg.NewKeyPayload,
-	}
 	localnetTriple = localnetRotatingType{
 		keyType: rotatingkey.RotatingTripleHybridV1, register: rotatingtriplesignerreg.Register, newKeyPayload: rotatingtriplesignerreg.NewKeyPayload,
 	}
 )
 
-// TestRotatingHybridSignerFlowOnChain drives the signer's stateless rotating
+// TestRotatingTripleSignerFlowOnChain drives the signer's stateless rotating
 // prepare and sign service against a live network: real chain reads through
 // chainread, the stage address table as the only file, the default policy,
 // and submission of the exact signed groups. It then deletes the table and
 // keeps signing (the restore case), and shows that two releases from one
 // stage are both signed but only one can land. Approval is user_auto_approve.
-func TestRotatingHybridSignerFlowOnChain(t *testing.T) {
-	runRotatingSignerFlowOnChain(t, localnetHybrid)
-}
-
-// TestRotatingWotsSignerFlowOnChain is the same flow over the WOTS hybrid.
-func TestRotatingWotsSignerFlowOnChain(t *testing.T) {
-	runRotatingSignerFlowOnChain(t, localnetWots)
-}
-
-// TestRotatingTripleSignerFlowOnChain is the same flow over the triple hybrid.
 func TestRotatingTripleSignerFlowOnChain(t *testing.T) {
 	runRotatingSignerFlowOnChain(t, localnetTriple)
 }

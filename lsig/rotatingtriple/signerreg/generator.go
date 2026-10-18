@@ -5,20 +5,29 @@ package signerreg
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
+	"sort"
 	"strings"
 
+	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/crypto/rotatinghybrid"
 	"github.com/aplane-algo/aplane/internal/keygen"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/rotatingkey"
 	"github.com/aplane-algo/aplane/internal/storepaths"
-	hybridsignerreg "github.com/aplane-algo/aplane/lsig/rotatinghybrid/signerreg"
 )
 
-// generator creates triple hybrid rotating accounts. It takes the same single
-// network parameter as the other rotating generators.
+// NetworkParameter names the network a rotating account is bound to: a
+// built-in network name (mainnet, testnet, betanet) or the network's base64
+// genesis hash, as LocalNet and other custom networks require.
+const NetworkParameter = rotatingkey.RotatingNetworkParameter
+
+// generator creates rotating accounts from a fresh mnemonic and the single
+// network parameter. The signer keeps no durable state for them; the stage
+// address table is built in the background. Mnemonic import is not supported
+// in this phase.
 type generator struct{}
 
 func (generator) RoutingFamily() string { return rotatingkey.RotatingTripleHybridFamily }
@@ -27,7 +36,7 @@ func (generator) GenerateRandom(_ context.Context, paths storepaths.Paths, kr *c
 	if keyType != rotatingkey.RotatingTripleHybridV1 {
 		return nil, fmt.Errorf("unsupported rotating key type %q", keyType)
 	}
-	genesisHash, err := hybridsignerreg.GenesisHashParameter(params)
+	genesisHash, err := GenesisHashParameter(params)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", keygen.ErrInvalidParams, err)
 	}
@@ -59,4 +68,40 @@ func (generator) GenerateFromSeed(context.Context, storepaths.Paths, []byte, *cr
 
 func (generator) GenerateFromMnemonic(context.Context, storepaths.Paths, string, *crypto.Keyring, string, map[string]string) (*keygen.GenerationResult, error) {
 	return nil, fmt.Errorf("rotating accounts cannot yet be generated from a mnemonic")
+}
+
+// GenesisHashParameter reads the network parameter. It accepts exactly that
+// one parameter.
+func GenesisHashParameter(params map[string]string) ([rotatinghybrid.GenesisHashSize]byte, error) {
+	var genesis [rotatinghybrid.GenesisHashSize]byte
+	for name := range params {
+		if name != NetworkParameter {
+			return genesis, fmt.Errorf("unknown parameter %q", name)
+		}
+	}
+	value := strings.TrimSpace(params[NetworkParameter])
+	if value == "" {
+		return genesis, fmt.Errorf("%s is required: a network configured on the signer (built in: %s) or a base64 genesis hash", NetworkParameter, strings.Join(builtinNetworks(), ", "))
+	}
+	for hash, token := range apconfig.BuiltinGenesisHashNetworks() {
+		if token == value {
+			value = hash
+			break
+		}
+	}
+	decoded, err := base64.StdEncoding.DecodeString(value)
+	if err != nil || len(decoded) != len(genesis) {
+		return genesis, fmt.Errorf("%s %q is not a network configured on the signer or a 32-byte base64 genesis hash", NetworkParameter, params[NetworkParameter])
+	}
+	copy(genesis[:], decoded)
+	return genesis, nil
+}
+
+func builtinNetworks() []string {
+	var names []string
+	for _, token := range apconfig.BuiltinGenesisHashNetworks() {
+		names = append(names, token)
+	}
+	sort.Strings(names)
+	return names
 }

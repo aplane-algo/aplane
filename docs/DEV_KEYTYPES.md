@@ -423,9 +423,7 @@ in `lsig/falcon1024/register.go`.
 
 ### E. Rotating Account
 
-Examples:
-- `aplane.rotating-hybrid.v1` (Falcon-1024 + Ed25519 stages)
-- `aplane.rotating-wots-hybrid.v1` (hash-based WOTS + Ed25519 stages)
+Example:
 - `aplane.rotating-triple-hybrid.v1` (Falcon-1024 + WOTS + Ed25519 stages)
 
 Characteristics:
@@ -448,12 +446,10 @@ Typical code areas:
 - `internal/signerapp/signing` (prepare, sign, release memory, status)
 - `internal/signerapp/daemon` (stage table worker, status publication)
 - `internal/clientsign` and `internal/engine` (client routing and checks)
-- `lsig/rotatinghybrid/` (Falcon hybrid stage program, stage ops, generator)
-- `internal/crypto/rotatinghybrid` (the HKDF stage deriver both types use
-  under their own labels), `internal/crypto/wots` and `lsig/rotatingwots/`
-  (the WOTS hybrid's primitives, stage program, stage ops, generator)
-- `lsig/rotatingtriple/` (the triple hybrid's stage program, stage ops,
-  generator; it reuses `internal/crypto/wots` and the Falcon signer)
+- `internal/crypto/rotatinghybrid` (the HKDF stage deriver, labelled per key
+  type) and `internal/crypto/wots` (the WOTS-w16 primitive)
+- `lsig/rotatingtriple/` (the stage program, stage ops, codec and generator;
+  it reuses the two crypto packages above and the Falcon signer)
 
 These are protocol-level key types, not templates. A new rotating stage
 scheme is a new key type on the same flow: a `rotatingkey` profile, a stage

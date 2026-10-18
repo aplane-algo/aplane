@@ -422,7 +422,7 @@ fmt-check:
 # Run go vet across the module.
 vet: compile-docassets
 	@echo "Running go vet..."
-	@go vet ./...
+	@go vet $$(go list ./... | grep -v '/node_modules/' | grep -v '^github.com/aplane-algo/aplane/temp/')
 	@echo "✓ go vet clean"
 
 # Compile-check code behind the testmode build tag (e.g. cmd/apadmin/batch.go).
@@ -431,7 +431,7 @@ vet: compile-docassets
 # This produces no artifacts - it only type-checks the tagged sources.
 testmode-check:
 	@echo "Compile-checking testmode-tagged sources..."
-	@go build -tags testmode ./...
+	@go build -tags testmode $$(go list -tags testmode -f '{{if or .GoFiles .CgoFiles}}{{.ImportPath}}{{end}}' ./... | grep -v '^github.com/aplane-algo/aplane/temp/')
 	@go vet -tags testmode ./cmd/apadmin/
 	@echo "✓ testmode sources compile"
 
@@ -469,7 +469,7 @@ deadcode-check: compile-docassets
 			echo "✗ failed to install deadcode tool"; rm -rf $$tmpbin; exit 1; \
 		}; \
 	fi; \
-	out=$$($$bindir/deadcode -test -tags=testmode ./... 2>&1); \
+	out=$$($$bindir/deadcode -test -tags=testmode $$(go list ./... | grep -v '/node_modules/' | grep -v '^github.com/aplane-algo/aplane/temp/') 2>&1); \
 	rc=$$?; \
 	rm -rf $$tmpbin; \
 	if [ $$rc -ne 0 ]; then \
@@ -603,7 +603,7 @@ lint: compile-docassets
 		exit 1; \
 	fi
 	@echo "Running golangci-lint..."
-	golangci-lint run
+	golangci-lint run $$(go list -f '{{.ImportPath}}' ./... | grep -v '/node_modules/' | grep -v '^github.com/aplane-algo/aplane/temp/' | sed 's#^github.com/aplane-algo/aplane#.#')
 
 # Run staticcheck across the module (single definition shared by the
 # pre-commit hook and CI; installation is environment-specific).
@@ -613,7 +613,7 @@ staticcheck:
 		exit 1; \
 	fi
 	@echo "Running staticcheck..."
-	@staticcheck ./...
+	@staticcheck $$(go list ./... | grep -v '/node_modules/' | grep -v '^github.com/aplane-algo/aplane/temp/')
 	@echo "✓ staticcheck clean"
 
 # CI race + coverage run; excludes integration packages from the coverage set.
@@ -623,7 +623,7 @@ race-cover-test: compile-docassets
 # Compile every package without producing artifacts.
 build-check:
 	@echo "Building all packages..."
-	@go build ./...
+	@go build $$(go list -f '{{if or .GoFiles .CgoFiles}}{{.ImportPath}}{{end}}' ./... | grep -v '^github.com/aplane-algo/aplane/temp/')
 	@echo "Cross-compiling apshell for windows/amd64..."
 	@GOOS=windows GOARCH=amd64 go build -o /dev/null ./cmd/apshell
 	@echo "✓ build clean"

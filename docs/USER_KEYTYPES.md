@@ -290,30 +290,23 @@ capacity, while any excess program bytes are paid through the group fee. The
 signer rejects a finalized path whose fee would exceed the compiled 10,000
 microAlgo ceiling.
 
-## Rotating Hybrid Accounts
+## Rotating Accounts
 
-`aplane.rotating-hybrid.v1` is a library-visible compiled key type for an
-account whose address never changes while the program that authorizes it
-changes on every spend. Each program (a *stage*) checks a Falcon-1024 and an
-Ed25519 signature, both derived from one seed held only by the signer. A
-stage's public keys are revealed only when it signs, and the same spend
-rekeys the account to the next, never-revealed stage. An attacker who can
-break a signature scheme therefore has, at most, the time between a signature
-and the confirmation of that spend.
-
-`aplane.rotating-wots-hybrid.v1` is the same account with a hash-based
-stage: each stage checks a Winternitz one-time signature built from SHA-256
-alone and an Ed25519 signature. `aplane.rotating-triple-hybrid.v1` requires
-all three: Falcon-1024, WOTS and Ed25519. Everything below applies to every
-rotating type; see
-[Rotating hash hybrid accounts](#rotating-hash-hybrid-accounts) and
-[Rotating triple hybrid accounts](#rotating-triple-hybrid-accounts) for what
-those stages change.
+`aplane.rotating-triple-hybrid.v1` is a library-visible compiled key type for
+an account whose address never changes while the program that authorizes it
+changes on every spend. Each program (a *stage*) checks three signatures
+over the transaction ID, a Falcon-1024, a WOTS-w16 (SHA-256) and an Ed25519
+signature, all derived from one seed held only by the signer. A stage's
+public keys are revealed only when it signs, and the same spend rekeys the
+account to the next, never-revealed stage. Forging a spend from a live stage
+needs a break of the Falcon lattice assumption, of SHA-256 and of Ed25519 at
+once, within the time between that stage's signature and the confirmation
+of its spend.
 
 Enable the key type, then generate an account bound to one network:
 
 ```bash
-apadmin -d $APSIGNER_DATA keytype enable aplane.rotating-hybrid.v1
+apadmin -d $APSIGNER_DATA keytype enable aplane.rotating-triple-hybrid.v1
 ```
 
 In apadmin, **Generate account** asks for one parameter, `network`, and offers
@@ -330,11 +323,12 @@ address. Fund it like any other account.
 Spending works through apshell as usual. `send` and other single-transaction
 commands route through the `rotating1` flow automatically: the signer reads
 which stage currently controls the account from its own node, prepares the
-transaction (setting the rekey to the next stage, adding a resource dummy
-and the fees), apshell checks and simulates the exact group before anything
-is signed, and the signer signs after approval and a fresh read of the
-chain. The signer adds the fees for the extra resource transaction and the
-stage program, so a spend costs more than an ordinary payment's minimum fee.
+transaction (setting the rekey to the next stage, adding three resource
+dummies and the fees), apshell checks and simulates the exact group before
+anything is signed, and the signer signs after approval and a fresh read of
+the chain. The three signatures total up to 3,631 bytes, so every spend
+carries three resource dummies and pays four minimum fees; a stage program is
+about 2,100 bytes.
 
 Restrictions:
 
@@ -370,6 +364,21 @@ stage. The first to confirm wins; the ledger rejects the second because the
 account has already moved. If a send fails to submit and you resend it after
 another spend went through, expect that rejection; prepare it again.
 
+A WOTS key must never sign two different messages, and the rotation makes
+every stage sign once in normal operation. A stage signs twice only when a
+release did not move the account and another was signed from the same
+stage: a signed transaction expired without confirming and a repair spend
+(`rotate`) followed, or a client whose submission failed rebuilt the
+transaction with a fresh validity window and asked again. Until one of
+those transactions lands, the stage has lost only its WOTS protection and
+rests on Falcon-1024 and Ed25519. The signer reports this as a warning
+("stage N has signed more than one transaction") for as long as the stage
+still controls the account, alongside the expired-release alert; both clear
+once a chain read shows the account has moved. The warning rests on the
+signer's release memory, which the audit log rebuilds at unlock: a release
+the log has rotated past is unknown, so a reuse older than the retained log
+is not reported.
+
 ### Backups and restore
 
 The key file is the whole credential. The signer stores nothing else it
@@ -383,79 +392,6 @@ which the signer does in the background; until then a spend is refused with
 come. Deleting the `stages/` directory while the signer is stopped is
 always safe. `rotating.stage_horizon` in the signer's `config.yaml` (default
 4096) sets how many stages past the live one the signer derives ahead.
-
-### Rotating hash hybrid accounts
-
-`aplane.rotating-wots-hybrid.v1` replaces the Falcon-1024 half of each stage
-with a Winternitz one-time signature (WOTS, w = 16) verified by the stage
-program with SHA-256 alone, and keeps the Ed25519 half. Enable and generate
-it exactly like the Falcon hybrid:
-
-```bash
-apadmin -d $APSIGNER_DATA keytype enable aplane.rotating-wots-hybrid.v1
-```
-
-What it changes:
-
-- **Security claim.** A stage is secure against a classical attacker as long
-  as Ed25519 is, and against a quantum attacker as long as SHA-256 is and the
-  stage signed exactly one message. A WOTS key must never sign two different
-  messages, and the rotation makes every stage sign once in normal
-  operation. A stage signs twice only when a release did not move the
-  account and another was signed from the same stage: a signed transaction
-  expired without confirming and a repair spend (`rotate`) followed, or a
-  client whose submission failed rebuilt the transaction with a fresh
-  validity window and asked again. Until one of those transactions lands,
-  the stage is Ed25519-only against a quantum attacker. The signer reports
-  this as a warning ("stage N has signed more than one transaction") for as
-  long as the stage still controls the account, alongside the
-  expired-release alert; both clear once a chain read shows the account has
-  moved. The warning rests on the signer's release memory, which the audit
-  log rebuilds at unlock: a release the log has rotated past is unknown, so
-  a reuse older than the retained log is not reported.
-- **Cost per spend.** The signature is larger (2,144 bytes plus 64 for
-  Ed25519) and verification costs more opcode budget, so every spend carries
-  two resource dummies instead of one and pays three minimum fees instead of
-  two.
-- **Speed.** Deriving a stage takes microseconds rather than tens of
-  milliseconds, so the signer's background stage scan and a restore from
-  backup finish almost at once.
-- **Smaller program.** A stage program is about 300 bytes instead of about
-  1,900.
-
-Everything else is identical: the same `rotating1` flow, `rotate` and
-`rotate status`, the stage address cache, alerts, backups and restore, and
-no exit.
-
-### Rotating triple hybrid accounts
-
-`aplane.rotating-triple-hybrid.v1` is the strongest rotating type: every
-stage requires a Falcon-1024, a WOTS-w16 (SHA-256) and an Ed25519 signature
-over the transaction ID. The Falcon and WOTS hybrids remain supported as
-cheaper options. Enable and generate it like the others:
-
-```bash
-apadmin -d $APSIGNER_DATA keytype enable aplane.rotating-triple-hybrid.v1
-```
-
-What it changes:
-
-- **Security claim.** Forging a spend from a live stage needs a break of the
-  Falcon lattice assumption, of SHA-256 and of Ed25519 at once, within the
-  time between that stage's signature and the confirmation of its spend. A
-  stage that signs twice (the same two cases as the hash hybrid: an expired
-  release and its repair, or a client re-signing a rebuilt transaction)
-  loses only its WOTS protection: until one of its transactions lands it
-  rests on Falcon-1024 and Ed25519, the Falcon hybrid's strength. The signer
-  reports the reuse as a warning until the account moves. The triple type is
-  never weaker than the Falcon hybrid.
-- **Cost per spend.** The three signatures total up to 3,631 bytes, so every
-  spend carries three resource dummies and pays four minimum fees (two for
-  the Falcon hybrid, three for the hash hybrid).
-- **Speed.** Each stage costs a Falcon key generation, like the Falcon
-  hybrid, so the background stage scan and a restore from backup take as
-  long as they do for that type.
-- **Program size.** A stage program is about 2,100 bytes.
 
 ## YAML Templates
 
