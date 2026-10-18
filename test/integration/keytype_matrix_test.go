@@ -10,6 +10,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -39,6 +40,7 @@ import (
 	sdkalgod "github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
 	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
+	"github.com/algorand/go-algorand-sdk/v2/mnemonic"
 	"github.com/algorand/go-algorand-sdk/v2/transaction"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
@@ -103,6 +105,28 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 	timelockRound := baseRound
 	htlcAssetID := corridorTestAssetID(t, testnet, funder)
 	cleanupAuthority := algocrypto.GenerateAccount()
+	// An admin-key rekey may only target a credential the signer holds, so the
+	// test-owned cleanup authority is also imported into the signer. The test
+	// keeps its private key to close rekeyed accounts locally.
+	cleanupMnemonic, err := mnemonic.FromPrivateKey(cleanupAuthority.PrivateKey)
+	if err != nil {
+		t.Fatalf("derive cleanup authority mnemonic: %v", err)
+	}
+	importedCleanup, err := apadmin.ImportKeyWithType("ed25519", cleanupMnemonic)
+	if err != nil {
+		t.Fatalf("import cleanup authority into the signer: %v", err)
+	}
+	if importedCleanup != cleanupAuthority.Address.String() {
+		t.Fatalf("imported cleanup authority %s does not match %s", importedCleanup, cleanupAuthority.Address)
+	}
+	t.Cleanup(func() { _ = apadmin.DeleteKey(importedCleanup) })
+	if !waitForKey(t, signerd.GetURL(), importedCleanup, 10*time.Second) {
+		t.Fatalf("signer did not reload imported cleanup authority %s", importedCleanup)
+	}
+	// A plain Falcon LogicSig the signer generated: the admin-rekey target
+	// rule re-derives such a program through the configured compiler at
+	// release, so a held LogicSig target exercises that path end to end.
+	heldLsigTarget := mustAdminGenerateKey(t, signerClient, signerd, "aplane.falcon1024.v1", nil)
 	alockAdminPublicKey, alockAdminPrivateKey, err := signerops.New(nil).GenerateKeypair(randomFalconSeed(t))
 	if err != nil {
 		t.Fatalf("generate matrix ALock cleanup admin key: %v", err)
@@ -210,7 +234,7 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 			// this test-owned Ed25519 authority and are then closed normally.
 			cleanupPlans := prepareMatrixRekeyCleanups(
 				t, testnet, signerClient, signerd.GetURL(), fundingAddress,
-				batch, sp, approvalClient, cleanupAuthority,
+				batch, sp, approvalClient, cleanupAuthority, heldLsigTarget,
 			)
 			cleanupReserves := matrixCleanupReserves(cleanupPlans)
 
@@ -341,6 +365,7 @@ func prepareMatrixRekeyCleanups(
 	sp types.SuggestedParams,
 	approvalClient *transport.IPCClient,
 	cleanupAuthority algocrypto.Account,
+	heldLsigTarget string,
 ) []matrixRekeyCleanupPlan {
 	t.Helper()
 	plans := make([]matrixRekeyCleanupPlan, 0)
@@ -352,7 +377,7 @@ func prepareMatrixRekeyCleanups(
 			))
 		case account.keyType == "aplane.falcon1024-allowlist-alock.v1":
 			plans = append(plans, prepareMatrixAdminRekeyCleanup(
-				t, testnet, signerClient, account, sp, approvalClient, cleanupAuthority,
+				t, testnet, signerClient, account, sp, approvalClient, cleanupAuthority, heldLsigTarget,
 			))
 		}
 	}
@@ -420,6 +445,7 @@ func prepareMatrixAdminRekeyCleanup(
 	sp types.SuggestedParams,
 	approvalClient *transport.IPCClient,
 	cleanupAuthority algocrypto.Account,
+	heldLsigTarget string,
 ) matrixRekeyCleanupPlan {
 	t.Helper()
 	if len(account.adminPrivateKey) == 0 {
@@ -430,30 +456,70 @@ func prepareMatrixAdminRekeyCleanup(
 	)
 	txn.RekeyTo = cleanupAuthority.Address
 
-	var partial *signerapi.BoundedAdminPartialResponse
-	var requestErr error
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		partial, requestErr = signerClient.RequestBoundedAdmin(
-			signerapi.BoundedAdminOperationRekey,
-			[]signerapi.SignRequest{{
-				AuthAddress: account.address,
-				TxnSender:   account.address,
-				TxnBytesHex: txnHexForMatrix(txn),
-			}},
-		)
-	}()
-	approval := mustReadIPCSignRequest(t, approvalClient, 10*time.Second)
-	mustApproveIPCSignRequest(t, approvalClient, approval.ID)
-	select {
-	case <-done:
-	case <-time.After(10 * time.Second):
-		t.Fatal("timed out waiting for approved contract-admin rekey signing")
+	// Signer invariant: an admin rekey may only move the account to a
+	// credential the signer holds. An unheld target is refused before policy
+	// and approval, so no approval prompt appears.
+	foreignTxn := txn
+	foreignTxn.RekeyTo = algocrypto.GenerateAccount().Address
+	if _, err := signerClient.RequestBoundedAdmin(
+		signerapi.BoundedAdminOperationRekey,
+		[]signerapi.SignRequest{{
+			AuthAddress: account.address,
+			TxnSender:   account.address,
+			TxnBytesHex: txnHexForMatrix(foreignTxn),
+		}},
+	); err == nil {
+		t.Fatalf("%s admin rekey to an unheld target was accepted", account.keyType)
+	} else {
+		var httpErr *signerclient.HTTPStatusError
+		if !errors.As(err, &httpErr) || httpErr.Code != signerapi.ErrCodeBoundedAdminTargetRejected {
+			t.Fatalf("%s admin rekey to an unheld target: err = %v, want code %s", account.keyType, err, signerapi.ErrCodeBoundedAdminTargetRejected)
+		}
 	}
-	if requestErr != nil {
-		t.Fatalf("prepare contract-admin rekey cleanup: %v", requestErr)
+
+	requestApprovedAdminRekey := func(target types.Address, what string) *signerapi.BoundedAdminPartialResponse {
+		adminTxn := txn
+		adminTxn.RekeyTo = target
+		var partial *signerapi.BoundedAdminPartialResponse
+		var requestErr error
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			partial, requestErr = signerClient.RequestBoundedAdmin(
+				signerapi.BoundedAdminOperationRekey,
+				[]signerapi.SignRequest{{
+					AuthAddress: account.address,
+					TxnSender:   account.address,
+					TxnBytesHex: txnHexForMatrix(adminTxn),
+				}},
+			)
+		}()
+		approval := mustReadIPCSignRequest(t, approvalClient, 10*time.Second)
+		mustApproveIPCSignRequest(t, approvalClient, approval.ID)
+		select {
+		case <-done:
+		case <-time.After(10 * time.Second):
+			t.Fatalf("timed out waiting for approved contract-admin rekey signing (%s)", what)
+		}
+		if requestErr != nil {
+			t.Fatalf("prepare contract-admin rekey (%s): %v", what, requestErr)
+		}
+		if partial == nil {
+			t.Fatalf("contract-admin rekey (%s) returned no partial", what)
+		}
+		return partial
 	}
+
+	// A held plain LogicSig target passes the same rule, including the
+	// release-time re-derivation of its program through the signer's
+	// compiler. The partial is deliberately never completed or submitted.
+	heldLsig, err := types.DecodeAddress(heldLsigTarget)
+	if err != nil {
+		t.Fatalf("decode held LogicSig target: %v", err)
+	}
+	requestApprovedAdminRekey(heldLsig, "held LogicSig target")
+
+	partial := requestApprovedAdminRekey(cleanupAuthority.Address, "cleanup authority")
 
 	request, err := boundedprotocol.NewRequest(boundedprotocol.RequestPayload{
 		Partial:            *partial,

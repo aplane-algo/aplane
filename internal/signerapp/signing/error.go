@@ -13,16 +13,17 @@ type (
 )
 
 const (
-	ErrorBadRequest              = svcerr.KindBadRequest
-	ErrorForbidden               = svcerr.KindForbidden
-	ErrorLocked                  = svcerr.KindLocked
-	ErrorUnavailable             = svcerr.KindUnavailable
-	ErrorInternal                = svcerr.KindInternal
-	ErrorBoundedAdminRequired    = svcerr.KindBoundedAdminRequired
-	ErrorBoundedCosignerRequired = svcerr.KindBoundedCosignerRequired
-	ErrorRotatingSigningRequired = svcerr.KindRotatingSigningRequired
-	ErrorRotatingStageUnproven   = svcerr.KindRotatingStageUnproven
-	ErrorRotatingStageChanged    = svcerr.KindRotatingStageChanged
+	ErrorBadRequest                 = svcerr.KindBadRequest
+	ErrorForbidden                  = svcerr.KindForbidden
+	ErrorLocked                     = svcerr.KindLocked
+	ErrorUnavailable                = svcerr.KindUnavailable
+	ErrorInternal                   = svcerr.KindInternal
+	ErrorBoundedAdminRequired       = svcerr.KindBoundedAdminRequired
+	ErrorBoundedCosignerRequired    = svcerr.KindBoundedCosignerRequired
+	ErrorBoundedAdminTargetRejected = svcerr.KindBoundedAdminTargetRejected
+	ErrorRotatingSigningRequired    = svcerr.KindRotatingSigningRequired
+	ErrorRotatingStageUnproven      = svcerr.KindRotatingStageUnproven
+	ErrorRotatingStageChanged       = svcerr.KindRotatingStageChanged
 )
 
 func badRequest(msg string) *ServiceError { return &ServiceError{Kind: ErrorBadRequest, Message: msg} }
@@ -37,6 +38,13 @@ func internal(msg string) *ServiceError { return &ServiceError{Kind: ErrorIntern
 // the operation to POST /sign/bounded-admin.
 func boundedAdminRequired() *ServiceError {
 	return &ServiceError{Kind: ErrorBoundedAdminRequired, Message: "Falcon-admin bounded operation requires POST /sign/bounded-admin"}
+}
+
+// boundedAdminTargetRejected refuses an admin-key bounded rekey whose target
+// is not a nonrotating signing credential this signer holds. The rule and its
+// two checks are described in bounded_admin_target.go.
+func boundedAdminTargetRejected(msg string) *ServiceError {
+	return &ServiceError{Kind: ErrorBoundedAdminTargetRejected, Message: msg}
 }
 
 // boundedCosignerRequired rejects a cosigner-gated bounded spend submitted on the

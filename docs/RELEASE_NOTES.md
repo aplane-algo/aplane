@@ -5,6 +5,25 @@ token, setup-file, and protocol-v5 entries describe behavior superseded by the
 enrolled-key model and current admin protocol v6.0; they are not current setup
 instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 
+## Admin rekeys stay in the signer's custody
+
+An admin-key bounded rekey (`/sign/bounded-admin`, `aprekey rekey`) may now
+only move the account to a nonrotating signing credential the same signer
+holds: a native Ed25519 or Falcon-1024 key, or a plain `aplane.falcon1024.v1`
+or `aplane.ed25519.v1` LogicSig account. Unheld addresses and bounded,
+guarded, composed, generic, witness or rotating credentials are refused with
+the new wire code `bounded_admin_target_rejected` before policy and approval,
+and the credential is loaded, bound to the target address (a LogicSig
+target's program is re-derived through its family provider and must match
+the stored bytecode) and self-tested again at release. A rekey of the
+bounded account to itself still passes; a
+rekey-to-self of another account under the bounded program's authority is
+checked like any other target. The rule is a
+signer invariant independent of `reject_foreign_rekey`; moving an account out
+of APlane custody is an admin rekey to a local key followed by an ordinary
+rekey from that key. The error code is added to the signer API contract
+fixtures and the SDK code tables; no other wire change.
+
 ## One rotating key type
 
 The Falcon hybrid (`aplane.rotating-hybrid.v1`) and hash hybrid

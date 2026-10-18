@@ -77,6 +77,12 @@ func (e *Executor) ExecuteBoundedAdminPartial(ctx context.Context, plan *PlanRes
 	if item.Path != boundedPathAdminKeyRekey {
 		return nil, badRequest("loaded key does not authorize this bounded-admin operation")
 	}
+	// Release-time half of the target rule: the destination credential is
+	// loaded from the session after approval and proven able to sign, so a
+	// credential removed or replaced since the pre-policy check fails here.
+	if targetErr := verifyBoundedAdminRekeyTarget(ctx, session, txn, req.Requests[targetIndex].AuthAddress); targetErr != nil {
+		return nil, targetErr
+	}
 	provider := coresigning.GetProviderForKey(keyMaterial.Type, keyMaterial.BaseKeyType)
 	if provider == nil {
 		return nil, internal(fmt.Sprintf("unsupported bounded spending key type %s", keyMaterial.Type))

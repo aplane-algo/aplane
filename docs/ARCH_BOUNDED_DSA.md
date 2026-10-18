@@ -86,6 +86,34 @@ intentionally packaged through the separate `aprekey` binary and the
 typed `/sign/bounded-admin` partial-signing endpoint. Apshell's ordinary send
 path does not select or complete contract-admin operations.
 
+An admin-key rekey may only move the account to a signing credential the
+signer itself holds: a native Ed25519 or Falcon-1024 key, or a plain
+`aplane.falcon1024.v1` or `aplane.ed25519.v1` LogicSig account. Eligibility
+is an explicit allowlist: those programs are pure signature gates, whereas a
+bounded, guarded or author-composed template may restrict what the account
+can do once it is the authority, so bounded, guarded, composed, generic,
+witness and rotating credentials do not qualify, and neither does any address
+the signer does not hold. The signer enforces this twice, from its key
+inventory before policy and approval, and from the loaded credential at
+release. At release a native target's stored public key must derive the
+target address; a LogicSig target's program is re-derived through the
+family's registered provider for the stored public key, exactly as key
+generation produced it, and must match the stored bytecode and derive the
+target address (this is the one step that uses the signer's configured
+compiler). The credential must then sign and verify a domain-separated
+challenge (`APLANE_BOUNDED_ADMIN_TARGET_SELFTEST_V1`); the challenge
+signature is never released. A rekey of the bounded account to itself names no other credential
+and passes. When the bounded program is the standing authority for a
+different account, a rekey of that account to itself hands it back to its
+own key, so that key is checked like any other target: it must be a held,
+eligible credential. The rule is a signer invariant, not a policy setting, and
+neither TEAL nor the offline `aprekey` helper can check it: the admin
+signature binds the exact target the helper presents, and the program
+accepts any non-zero target under that signature. Moving an account out of
+APlane custody is therefore two steps: an admin rekey to a local credential,
+then an ordinary rekey from that credential under the signer's normal
+policy. Wire code: `bounded_admin_target_rejected`.
+
 `bounded1` is the only bounded-authorization contract and has no protocol
 aliases. `bounded1` has no admin-key algorithm selector. `authorization: admin_key`
 always means the profile's single Falcon-1024 contract admin key. Supporting
@@ -207,6 +235,10 @@ A pure rekey:
   `ZeroAddress`;
 - has `Fee <= max_fee`; and
 - satisfies the configured `spending_key` or `admin_key` authorization.
+
+For `admin_key` authorization the signer additionally requires `RekeyTo` to
+be a nonrotating signing credential it holds (above); that is a signer rule
+the program does not and cannot check.
 
 Rekey detection runs before spend-type routing. Rekey-plus-transfer,
 rekey-plus-close, and every other hybrid reject. A group may contain separate
