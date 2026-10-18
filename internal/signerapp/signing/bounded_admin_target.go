@@ -10,7 +10,6 @@ import (
 	"crypto/rand"
 	"fmt"
 
-	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
@@ -18,6 +17,7 @@ import (
 	securecrypto "github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/falconparams"
 	"github.com/aplane-algo/aplane/internal/keys"
+	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
 	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
 )
@@ -158,8 +158,44 @@ func verifyBoundedAdminRekeyTarget(ctx context.Context, session adminTargetKeyGe
 	if why := adminRekeyTargetIneligible(km.Category, km.Type, km.BoundedAuthorization != nil); why != "" {
 		return boundedAdminTargetRejected(fmt.Sprintf("rekey target %s is %s and cannot receive an admin rekey", target, why))
 	}
+	if km.Category == keys.CategoryDSALsig {
+		if err := verifyPlainLogicSigConstruction(ctx, km, txn.RekeyTo); err != nil {
+			return boundedAdminTargetRejected(fmt.Sprintf("rekey target %s failed its program check: %v", target, err))
+		}
+	}
 	if err := selfTestAdminRekeyTarget(km, txn.RekeyTo); err != nil {
 		return boundedAdminTargetRejected(fmt.Sprintf("rekey target %s failed its signing self-test: %v", target, err))
+	}
+	return nil
+}
+
+// verifyPlainLogicSigConstruction proves that a plain LogicSig credential's
+// stored program is the canonical compilation of its family for its stored
+// public key, and that this program derives the target address. The family
+// provider re-derives the program exactly as key generation did (the TEAL
+// compiler owns the layout and the off-curve salt, so nothing is
+// reconstructed by hand) and the bytes must match. Without this, a program
+// that hashes to the target and a key that signs correctly could still be
+// unrelated, and the account would move to a program that rejects the key.
+// This is the one step of the target rule that needs the signer's configured
+// compiler; native targets never reach it.
+func verifyPlainLogicSigConstruction(ctx context.Context, km *coresigning.KeyMaterial, target types.Address) error {
+	if len(km.Bytecode) == 0 {
+		return fmt.Errorf("stored LogicSig credential has no program")
+	}
+	provider, ok := lsigprovider.Get(km.Type).(lsigprovider.SigningProvider)
+	if !ok {
+		return fmt.Errorf("no LogicSig provider registered for %s", km.Type)
+	}
+	bytecode, address, err := provider.DeriveLsig(ctx, km.PublicKey, km.Parameters)
+	if err != nil {
+		return fmt.Errorf("derive the canonical %s program: %w", km.Type, err)
+	}
+	if !bytes.Equal(bytecode, km.Bytecode) {
+		return fmt.Errorf("stored program is not the canonical %s program for the stored public key", km.Type)
+	}
+	if address != target.String() {
+		return fmt.Errorf("canonical program does not derive the target address")
 	}
 	return nil
 }
@@ -209,18 +245,10 @@ func selfTestAdminRekeyTarget(km *coresigning.KeyMaterial, target types.Address)
 			return err
 		}
 	case keys.CategoryDSALsig:
-		// The account address is the hash of the LogicSig program, so the
-		// stored bytecode must derive the target: the credential's program,
-		// not just its key type label, is what the account would run.
-		if len(km.Bytecode) == 0 {
-			return fmt.Errorf("stored LogicSig credential has no program")
-		}
-		if algocrypto.AddressFromProgram(km.Bytecode) != target {
-			return fmt.Errorf("stored LogicSig program does not derive the target address")
-		}
-		// A plain DSA LogicSig signs with its base primitive, and the stored
-		// public key's size says which one: the two sizes are frozen and
-		// distinct, so no registry lookup is needed to pick the verifier.
+		// verifyPlainLogicSigConstruction already tied the program to the
+		// public key and the target. A plain DSA LogicSig signs with its base
+		// primitive, and the stored public key's size says which one: the two
+		// sizes are frozen and distinct, so no registry lookup is needed.
 		switch len(km.PublicKey) {
 		case falconparams.PublicKeySize:
 			if err := verify.VerifyFalcon1024(km.PublicKey, message, signature); err != nil {

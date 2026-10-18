@@ -13,8 +13,10 @@ holds: a native Ed25519 or Falcon-1024 key, or a plain `aplane.falcon1024.v1`
 or `aplane.ed25519.v1` LogicSig account. Unheld addresses and bounded,
 guarded, composed, generic, witness or rotating credentials are refused with
 the new wire code `bounded_admin_target_rejected` before policy and approval,
-and the credential is loaded, bound to the target address and self-tested
-again at release. A rekey of the bounded account to itself still passes; a
+and the credential is loaded, bound to the target address (a LogicSig
+target's program is re-derived through its family provider and must match
+the stored bytecode) and self-tested again at release. A rekey of the
+bounded account to itself still passes; a
 rekey-to-self of another account under the bounded program's authority is
 checked like any other target. The rule is a
 signer invariant independent of `reject_foreign_rekey`; moving an account out

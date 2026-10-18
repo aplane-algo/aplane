@@ -123,6 +123,10 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 	if !waitForKey(t, signerd.GetURL(), importedCleanup, 10*time.Second) {
 		t.Fatalf("signer did not reload imported cleanup authority %s", importedCleanup)
 	}
+	// A plain Falcon LogicSig the signer generated: the admin-rekey target
+	// rule re-derives such a program through the configured compiler at
+	// release, so a held LogicSig target exercises that path end to end.
+	heldLsigTarget := mustAdminGenerateKey(t, signerClient, signerd, "aplane.falcon1024.v1", nil)
 	alockAdminPublicKey, alockAdminPrivateKey, err := signerops.New(nil).GenerateKeypair(randomFalconSeed(t))
 	if err != nil {
 		t.Fatalf("generate matrix ALock cleanup admin key: %v", err)
@@ -230,7 +234,7 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 			// this test-owned Ed25519 authority and are then closed normally.
 			cleanupPlans := prepareMatrixRekeyCleanups(
 				t, testnet, signerClient, signerd.GetURL(), fundingAddress,
-				batch, sp, approvalClient, cleanupAuthority,
+				batch, sp, approvalClient, cleanupAuthority, heldLsigTarget,
 			)
 			cleanupReserves := matrixCleanupReserves(cleanupPlans)
 
@@ -361,6 +365,7 @@ func prepareMatrixRekeyCleanups(
 	sp types.SuggestedParams,
 	approvalClient *transport.IPCClient,
 	cleanupAuthority algocrypto.Account,
+	heldLsigTarget string,
 ) []matrixRekeyCleanupPlan {
 	t.Helper()
 	plans := make([]matrixRekeyCleanupPlan, 0)
@@ -372,7 +377,7 @@ func prepareMatrixRekeyCleanups(
 			))
 		case account.keyType == "aplane.falcon1024-allowlist-alock.v1":
 			plans = append(plans, prepareMatrixAdminRekeyCleanup(
-				t, testnet, signerClient, account, sp, approvalClient, cleanupAuthority,
+				t, testnet, signerClient, account, sp, approvalClient, cleanupAuthority, heldLsigTarget,
 			))
 		}
 	}
@@ -440,6 +445,7 @@ func prepareMatrixAdminRekeyCleanup(
 	sp types.SuggestedParams,
 	approvalClient *transport.IPCClient,
 	cleanupAuthority algocrypto.Account,
+	heldLsigTarget string,
 ) matrixRekeyCleanupPlan {
 	t.Helper()
 	if len(account.adminPrivateKey) == 0 {
@@ -471,30 +477,49 @@ func prepareMatrixAdminRekeyCleanup(
 		}
 	}
 
-	var partial *signerapi.BoundedAdminPartialResponse
-	var requestErr error
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		partial, requestErr = signerClient.RequestBoundedAdmin(
-			signerapi.BoundedAdminOperationRekey,
-			[]signerapi.SignRequest{{
-				AuthAddress: account.address,
-				TxnSender:   account.address,
-				TxnBytesHex: txnHexForMatrix(txn),
-			}},
-		)
-	}()
-	approval := mustReadIPCSignRequest(t, approvalClient, 10*time.Second)
-	mustApproveIPCSignRequest(t, approvalClient, approval.ID)
-	select {
-	case <-done:
-	case <-time.After(10 * time.Second):
-		t.Fatal("timed out waiting for approved contract-admin rekey signing")
+	requestApprovedAdminRekey := func(target types.Address, what string) *signerapi.BoundedAdminPartialResponse {
+		adminTxn := txn
+		adminTxn.RekeyTo = target
+		var partial *signerapi.BoundedAdminPartialResponse
+		var requestErr error
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			partial, requestErr = signerClient.RequestBoundedAdmin(
+				signerapi.BoundedAdminOperationRekey,
+				[]signerapi.SignRequest{{
+					AuthAddress: account.address,
+					TxnSender:   account.address,
+					TxnBytesHex: txnHexForMatrix(adminTxn),
+				}},
+			)
+		}()
+		approval := mustReadIPCSignRequest(t, approvalClient, 10*time.Second)
+		mustApproveIPCSignRequest(t, approvalClient, approval.ID)
+		select {
+		case <-done:
+		case <-time.After(10 * time.Second):
+			t.Fatalf("timed out waiting for approved contract-admin rekey signing (%s)", what)
+		}
+		if requestErr != nil {
+			t.Fatalf("prepare contract-admin rekey (%s): %v", what, requestErr)
+		}
+		if partial == nil {
+			t.Fatalf("contract-admin rekey (%s) returned no partial", what)
+		}
+		return partial
 	}
-	if requestErr != nil {
-		t.Fatalf("prepare contract-admin rekey cleanup: %v", requestErr)
+
+	// A held plain LogicSig target passes the same rule, including the
+	// release-time re-derivation of its program through the signer's
+	// compiler. The partial is deliberately never completed or submitted.
+	heldLsig, err := types.DecodeAddress(heldLsigTarget)
+	if err != nil {
+		t.Fatalf("decode held LogicSig target: %v", err)
 	}
+	requestApprovedAdminRekey(heldLsig, "held LogicSig target")
+
+	partial := requestApprovedAdminRekey(cleanupAuthority.Address, "cleanup authority")
 
 	request, err := boundedprotocol.NewRequest(boundedprotocol.RequestPayload{
 		Partial:            *partial,

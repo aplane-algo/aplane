@@ -19,6 +19,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	securecrypto "github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keys"
+	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
 	falconsignerops "github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
 )
@@ -156,6 +157,27 @@ func (p adminTargetFakeProvider) ZeroKey(km *coresigning.KeyMaterial) {
 	km.Value = nil
 }
 
+// adminTargetFakeLsigProvider stands in for a plain LogicSig family in the
+// client-visible provider registry. Its "canonical program" is a fixed
+// prefix followed by the public key, which is enough to show that the
+// release-time check compares the stored program with the family's
+// derivation for the stored key.
+type adminTargetFakeLsigProvider struct {
+	testBaseSignatureProvider
+}
+
+const adminTargetFakeProgramPrefix = "test-plain-program:"
+
+func adminTargetFakeProgram(publicKey []byte) []byte {
+	return append([]byte(adminTargetFakeProgramPrefix), publicKey...)
+}
+
+func (p *adminTargetFakeLsigProvider) CryptoSignatureSize() int { return 64 }
+func (p *adminTargetFakeLsigProvider) DeriveLsig(_ context.Context, publicKey []byte, _ map[string]string) ([]byte, string, error) {
+	program := adminTargetFakeProgram(publicKey)
+	return program, algocrypto.AddressFromProgram(program).String(), nil
+}
+
 var adminTargetProvidersOnce sync.Once
 
 func registerAdminTargetTestProviders() {
@@ -172,6 +194,11 @@ func registerAdminTargetTestProviders() {
 				return falconsignerops.New(nil).Sign(privateKey, message)
 			},
 		})
+		for _, keyType := range []string{plainFalcon1024LsigKeyType, plainEd25519LsigKeyType} {
+			lsigprovider.RegisterIfAbsent(&adminTargetFakeLsigProvider{
+				testBaseSignatureProvider{keyType: keyType, family: keyType},
+			})
+		}
 	})
 }
 
@@ -210,17 +237,8 @@ func ed25519TargetMaterial(t *testing.T) (types.Address, *coresigning.KeyMateria
 	}
 }
 
-// randomProgram returns distinct bytes standing in for compiled LogicSig
-// bytecode; only its address derivation matters here.
-func randomProgram(t *testing.T) []byte {
-	t.Helper()
-	program := make([]byte, 40)
-	if _, err := rand.Read(program); err != nil {
-		t.Fatal(err)
-	}
-	return program
-}
-
+// falconLsigTargetMaterial builds a LogicSig credential of the given key
+// type whose program is the fake family's canonical program for its key.
 func falconLsigTargetMaterial(t *testing.T, keyType string) (types.Address, *coresigning.KeyMaterial) {
 	t.Helper()
 	seed := make([]byte, 64)
@@ -231,7 +249,7 @@ func falconLsigTargetMaterial(t *testing.T, keyType string) (types.Address, *cor
 	if err != nil {
 		t.Fatal(err)
 	}
-	program := randomProgram(t)
+	program := adminTargetFakeProgram(pub)
 	return algocrypto.AddressFromProgram(program), &coresigning.KeyMaterial{
 		Type:        keyType,
 		BaseKeyType: adminTargetTestTypeFalcon,
@@ -248,7 +266,7 @@ func ed25519LsigTargetMaterial(t *testing.T) (types.Address, *coresigning.KeyMat
 	km.Type = plainEd25519LsigKeyType
 	km.BaseKeyType = adminTargetTestTypeEd25519
 	km.Category = keys.CategoryDSALsig
-	km.Bytecode = randomProgram(t)
+	km.Bytecode = adminTargetFakeProgram(km.PublicKey)
 	return algocrypto.AddressFromProgram(km.Bytecode), km
 }
 
@@ -262,9 +280,23 @@ func TestVerifyBoundedAdminRekeyTargetSelfTests(t *testing.T) {
 	witnessAddr := randomAddress(t)
 	tamperedAddr, tamperedKey := ed25519TargetMaterial(t)
 	tamperedKey.PublicKey[0] ^= 1
-	// A LogicSig credential whose stored program hashes to some other address.
-	driftedAddr, driftedKey := falconLsigTargetMaterial(t, plainFalcon1024LsigKeyType)
-	driftedKey.Bytecode = randomProgram(t)
+	// A LogicSig credential whose stored program is not the family's
+	// canonical program for its key, although it is found under the
+	// address that program hashes to.
+	strayProgram := make([]byte, 40)
+	if _, err := rand.Read(strayProgram); err != nil {
+		t.Fatal(err)
+	}
+	_, strayKey := falconLsigTargetMaterial(t, plainFalcon1024LsigKeyType)
+	strayKey.Bytecode = strayProgram
+	strayAddr := algocrypto.AddressFromProgram(strayProgram)
+	// A LogicSig credential whose program is canonical for a different key:
+	// the key signs correctly, the program hashes to the address, and the
+	// program would still reject every signature this key makes.
+	_, otherKey := falconLsigTargetMaterial(t, plainFalcon1024LsigKeyType)
+	_, mismatchedKey := falconLsigTargetMaterial(t, plainFalcon1024LsigKeyType)
+	mismatchedKey.Bytecode = adminTargetFakeProgram(otherKey.PublicKey)
+	mismatchedAddr := algocrypto.AddressFromProgram(mismatchedKey.Bytecode)
 
 	session := adminTargetFakeSession{keys: map[string]*coresigning.KeyMaterial{
 		edAddr.String():         edKey,
@@ -273,7 +305,8 @@ func TestVerifyBoundedAdminRekeyTargetSelfTests(t *testing.T) {
 		composedAddr.String():   composedKey,
 		witnessAddr.String():    {Type: "aplane.witness-falcon1024.v1", Category: keys.CategoryWitness},
 		tamperedAddr.String():   tamperedKey,
-		driftedAddr.String():    driftedKey,
+		strayAddr.String():      strayKey,
+		mismatchedAddr.String(): mismatchedKey,
 	}}
 	txn := func(sender, target types.Address) types.Transaction {
 		return types.Transaction{Header: types.Header{Sender: sender, RekeyTo: target}}
@@ -292,12 +325,13 @@ func TestVerifyBoundedAdminRekeyTargetSelfTests(t *testing.T) {
 	}
 	unheld := randomAddress(t)
 	for name, tx := range map[string]types.Transaction{
-		"not held":                     txn(bounded, unheld),
-		"witness":                      txn(bounded, witnessAddr),
-		"composed template":            txn(bounded, composedAddr),
-		"tampered public key":          txn(bounded, tamperedAddr),
-		"program does not derive":      txn(bounded, driftedAddr),
-		"unheld sender back to itself": txn(unheld, unheld),
+		"not held":                       txn(bounded, unheld),
+		"witness":                        txn(bounded, witnessAddr),
+		"composed template":              txn(bounded, composedAddr),
+		"tampered public key":            txn(bounded, tamperedAddr),
+		"program is not canonical":       txn(bounded, strayAddr),
+		"program embeds a different key": txn(bounded, mismatchedAddr),
+		"unheld sender back to itself":   txn(unheld, unheld),
 	} {
 		err := verifyBoundedAdminRekeyTarget(context.Background(), session, tx, bounded.String())
 		if err == nil || err.Kind != ErrorBoundedAdminTargetRejected {
@@ -309,6 +343,12 @@ func TestVerifyBoundedAdminRekeyTargetSelfTests(t *testing.T) {
 	session.keys[tamperedAddr.String()] = edKey
 	if err := verifyBoundedAdminRekeyTarget(context.Background(), session, txn(bounded, tamperedAddr), bounded.String()); err == nil || err.Kind != ErrorBoundedAdminTargetRejected {
 		t.Fatalf("address mismatch: err = %v", err)
+	}
+	// Likewise a canonical LogicSig credential looked up under another
+	// address: the derivation's address must be the target.
+	session.keys[unheld.String()] = falconLsigKey
+	if err := verifyBoundedAdminRekeyTarget(context.Background(), session, txn(bounded, unheld), bounded.String()); err == nil || err.Kind != ErrorBoundedAdminTargetRejected {
+		t.Fatalf("LogicSig address mismatch: err = %v", err)
 	}
 	// The loaded credential is zeroed after the self-test. The copying
 	// session hides that, so observe it through a session that returns the

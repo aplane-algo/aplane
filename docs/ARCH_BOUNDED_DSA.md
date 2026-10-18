@@ -95,10 +95,14 @@ can do once it is the authority, so bounded, guarded, composed, generic,
 witness and rotating credentials do not qualify, and neither does any address
 the signer does not hold. The signer enforces this twice, from its key
 inventory before policy and approval, and from the loaded credential at
-release, where the stored public key or program must derive the target
-address and the credential must sign and verify a domain-separated challenge
-(`APLANE_BOUNDED_ADMIN_TARGET_SELFTEST_V1`); the challenge signature is never
-released. A rekey of the bounded account to itself names no other credential
+release. At release a native target's stored public key must derive the
+target address; a LogicSig target's program is re-derived through the
+family's registered provider for the stored public key, exactly as key
+generation produced it, and must match the stored bytecode and derive the
+target address (this is the one step that uses the signer's configured
+compiler). The credential must then sign and verify a domain-separated
+challenge (`APLANE_BOUNDED_ADMIN_TARGET_SELFTEST_V1`); the challenge
+signature is never released. A rekey of the bounded account to itself names no other credential
 and passes. When the bounded program is the standing authority for a
 different account, a rekey of that account to itself hands it back to its
 own key, so that key is checked like any other target: it must be a held,

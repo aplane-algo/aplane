@@ -1382,9 +1382,11 @@ a native Ed25519 or Falcon-1024 key, or a plain `aplane.falcon1024.v1` or
 `aplane.ed25519.v1` LogicSig account. A target that is unheld, or that is a
 bounded, guarded, composed, generic, witness or rotating credential, is
 refused with `bounded_admin_target_rejected` before policy and approval; the
-same credential is loaded again at release, its stored public key or program
-must derive the target address, and it proves it can sign a domain-separated
-challenge, so a credential removed or replaced after approval fails there. A
+same credential is loaded again at release, its stored public key must derive
+the target address (for a LogicSig, its program is re-derived through the
+family provider for the stored key and must match byte for byte), and it
+proves it can sign a domain-separated challenge, so a credential removed or
+replaced after approval fails there. A
 rekey of the bounded account to itself names no other credential and passes;
 a rekey-to-self from any other sender under the bounded program's authority
 returns that account to its own key, which is checked like any other target.
