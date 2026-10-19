@@ -3,10 +3,6 @@
 
 package apshellcli
 
-import (
-	"fmt"
-)
-
 // checkIncentiveEligibility checks if an account is already incentive eligible and determines
 // whether to charge the 2 ALGO fee. Returns true if fee should be charged, false otherwise.
 // userWantsEligible: for manual mode (true if user passed eligible=true parameter)
@@ -14,10 +10,11 @@ import (
 func checkIncentiveEligibility(r *REPLState, address string, userWantsEligible bool, promptUser bool) (bool, error) {
 	wantsEligible := userWantsEligible
 	if promptUser {
-		r.print("Enable consensus incentive eligibility? (2 ALGO fee) [y/N]: ")
-		var incentiveResponse string
-		_, _ = fmt.Scanln(&incentiveResponse)
-		wantsEligible = incentiveResponse == "y" || incentiveResponse == "Y" || incentiveResponse == "yes" || incentiveResponse == "Yes"
+		incentiveResponse, err := r.readPromptResponse("Enable consensus incentive eligibility? (2 ALGO fee) [y/N]: ")
+		if err != nil {
+			return false, err
+		}
+		wantsEligible = incentiveResponse == "y" || incentiveResponse == "yes"
 	}
 
 	result, err := r.app().ResolveIncentiveEligibility(r.commandContext(), address, wantsEligible)
