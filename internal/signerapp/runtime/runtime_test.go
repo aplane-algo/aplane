@@ -268,3 +268,35 @@ func TestTryRecoveryBlocksSigningAndLockRunsCleanup(t *testing.T) {
 		t.Fatalf("Lock() state=%v cleanup calls=%d", r.GetState(), lockCalls.Load())
 	}
 }
+
+// TestLockGenerationAdvancesOnEveryLockTransition pins the property
+// per-unlock state is keyed by: every Lock and BeginMaintenance advances
+// the generation, an unlock leaves it unchanged, so two unlocked sessions
+// never share one and a late observer of an earlier lock cannot mistake
+// it for the current session.
+func TestLockGenerationAdvancesOnEveryLockTransition(t *testing.T) {
+	r := New()
+	g0 := r.LockGeneration()
+	if ok, _, _ := r.TryUnlock(func() (int, error) { return 1, nil }, nil); !ok {
+		t.Fatal("unlock failed")
+	}
+	if r.LockGeneration() != g0 {
+		t.Fatal("unlock changed the lock generation")
+	}
+	r.Lock()
+	g1 := r.LockGeneration()
+	if g1 != g0+1 {
+		t.Fatalf("generation after lock = %d, want %d", g1, g0+1)
+	}
+	if ok, _, _ := r.TryUnlock(func() (int, error) { return 1, nil }, nil); !ok {
+		t.Fatal("second unlock failed")
+	}
+	token := r.BeginMaintenance()
+	if r.LockGeneration() != g1+1 {
+		t.Fatalf("generation after maintenance = %d, want %d", r.LockGeneration(), g1+1)
+	}
+	r.FinishMaintenance(token, true)
+	if r.LockGeneration() != g1+1 {
+		t.Fatal("finishing maintenance changed the generation")
+	}
+}

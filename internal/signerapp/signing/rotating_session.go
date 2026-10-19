@@ -36,6 +36,14 @@ type RotatingDeps struct {
 	// Releases remembers the last release per account for status; nil
 	// disables release memory.
 	Releases *ReleaseMemory
+	// Recovery holds the per-unlock recovery allowance and grants; nil
+	// disables recovery, leaving an unknown authorizer unresolved.
+	// LockGeneration reads the runtime's live lock generation, which
+	// identifies the unlocked session; Recovery validates every entry
+	// against it, so an allowance never outlives the unlock it was granted
+	// in. nil means one unending session.
+	Recovery       *RotatingRecovery
+	LockGeneration func() uint64
 	// DiscoveryTimeout bounds a request's scan for an unknown live stage.
 	// Zero means DefaultDiscoveryTimeout.
 	DiscoveryTimeout time.Duration
@@ -103,6 +111,24 @@ func (s *Service) rotatingDeps() (*RotatingDeps, *ServiceError) {
 		return nil, internal("rotating signing is not configured")
 	}
 	return s.Rotating, nil
+}
+
+// recoverySession returns the session an operation acts in: the one it
+// captured with its context when it has one, otherwise the live one now.
+// The memory itself validates it on every entry (see "Session ownership"
+// in rotating_recovery.go); ok reports whether it is still admitted.
+func (d *RotatingDeps) recoverySession(captured *uint64) (uint64, bool) {
+	if d == nil || d.Recovery == nil {
+		return 0, true
+	}
+	if d.LockGeneration != nil {
+		d.Recovery.SetGenerationSource(d.LockGeneration)
+	}
+	if captured != nil {
+		return *captured, d.Recovery.Admit(*captured)
+	}
+	gen := d.Recovery.Session()
+	return gen, true
 }
 
 // rotatingAccounts lists the rotating accounts the planner knows, sorted.

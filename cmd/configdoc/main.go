@@ -11,6 +11,7 @@ import (
 	"os"
 	"reflect"
 	"strings"
+	"time"
 
 	"github.com/aplane-algo/aplane/internal/config"
 )
@@ -169,6 +170,9 @@ func printClientEndpointReference() {
 }
 
 func formatType(t reflect.Type) string {
+	if t == reflect.TypeOf(time.Duration(0)) {
+		return "duration"
+	}
 	switch t.Kind() {
 	case reflect.String:
 		return "string"

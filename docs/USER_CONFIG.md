@@ -362,10 +362,15 @@ the shipped default does not reject or force to review.
 
 `rotating.stage_horizon` (default 4096) sets how many stages past a rotating
 account's live stage the signer derives ahead into its stage address cache
-(see [USER_KEYTYPES.md](USER_KEYTYPES.md#rotating-accounts)). The
-signer reads a rotating account's live stage from the network's
-`networks.<network>.algod` node, which must therefore be configured for that
-network.
+(see [USER_KEYTYPES.md](USER_KEYTYPES.md#rotating-accounts)).
+`rotating.recovery_max_stages` (default 1024) is how far past that cache the
+signer searches on its own, per account per unlock, when it sees an
+authorizer it cannot place; 0 turns the automatic search off, leaving
+`rotate recover` and the search a spend request runs for itself.
+`rotating.recovery_timeout` (default 5m) caps one automatic search's
+derivation time. The signer reads a rotating account's live stage from the
+network's `networks.<network>.algod` node, which must therefore be
+configured for that network.
 
 `passphrase_command_argv` and `passphrase_command_env` are accepted in the
 top-level `config.yaml`. `appass` writes its configuration to

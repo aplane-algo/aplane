@@ -429,10 +429,25 @@ func TestRotatingStatusFromReportsAndMemory(t *testing.T) {
 	if _, ok := f.svc.Rotating.Releases.Get(acct); ok {
 		t.Fatal("memory not cleared after the release landed")
 	}
-	// Unresolved account: a note with the count, never "foreign".
-	_, notes = f.svc.RotatingStatus([]StageTableReport{{Account: acct, Observed: true, Scanned: 42}})
-	if len(notes) != 1 || !strings.Contains(notes[0], "not yet found, 42 stages scanned") || strings.Contains(notes[0], "foreign") {
+	// Unresolved account with no search running: a note with the cached
+	// count and the two remedies, never "foreign" or "exited".
+	_, notes = f.svc.RotatingStatus([]StageTableReport{{Account: acct, Observed: true, Class: ClassUnknown, Scanned: 42}})
+	if len(notes) != 1 || !strings.Contains(notes[0], "42 stages this signer has cached") || !strings.Contains(notes[0], "rotate recover") ||
+		strings.Contains(notes[0], "foreign") || strings.Contains(notes[0], "exited;") {
 		t.Fatalf("unresolved note = %v", notes)
+	}
+	// With a grant running: the progress, not the remedies.
+	hint := uint64(7)
+	_, notes = f.svc.RotatingStatus([]StageTableReport{{Account: acct, Observed: true, Class: ClassUnknown, Scanned: 42,
+		Recovery: RecoveryState{Grant: &RecoveryGrant{Kind: GrantOperator, Charged: 3, MaxStages: 10, Hint: &hint}}}})
+	if len(notes) != 1 || !strings.Contains(notes[0], "operator recovery running, 3 of 10") || !strings.Contains(notes[0], "probing around stage 7") || strings.Contains(notes[0], "rotate recover") {
+		t.Fatalf("recovering note = %v", notes)
+	}
+	// Rekeyed to a key this signer holds: a note naming it, no remedy.
+	held := types.Address{1, 2, 3}
+	_, notes = f.svc.RotatingStatus([]StageTableReport{{Account: acct, Observed: true, Class: ClassHeldKey, Authorizer: held}})
+	if len(notes) != 1 || !strings.Contains(notes[0], "rekeyed to "+held.String()) || strings.Contains(notes[0], "rotate recover") {
+		t.Fatalf("held-key note = %v", notes)
 	}
 }
 

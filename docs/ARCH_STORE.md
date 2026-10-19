@@ -1481,9 +1481,13 @@ Placement and lifecycle:
 
 Fill: while unlocked, the signer extends each account's table in the
 background to `rotating.stage_horizon` stages (default 4,096) past the
-account's live stage, and without limit for an account whose live stage it
-has not yet found. The seed is held only inside the derivation itself, and
-locking the signer cancels the pass. The audit log, not the table, is what
+account's live stage. An account whose authorizer is not in its table and
+is not a key the signer holds is searched for under a bounded recovery
+grant: automatically up to `rotating.recovery_max_stages` (default 1,024)
+past the table's edge per unlock, or at an operator's request with the
+operator's own budget (see `ARCH_SIGNING.md`, "Stage table worker"). The
+seed is held only inside the derivation itself, and locking the signer
+cancels the pass. The audit log, not the table, is what
 rebuilds the signer's memory of released transactions at unlock (see the
 `ROTATING_RELEASE` entry in `ARCH_SIGNING.md`).
 

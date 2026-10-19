@@ -69,6 +69,14 @@ func TestHandlerMethodCompatibilitySurface(t *testing.T) {
 			wantBody:   "Method not allowed",
 		},
 		{
+			name: "rotating recover requires POST",
+			call: func(w *httptest.ResponseRecorder) {
+				server.handleRotatingRecover(w, requestWithIdentity(http.MethodGet, "/admin/rotating/recover", nil))
+			},
+			wantStatus: http.StatusMethodNotAllowed,
+			wantBody:   "Method not allowed",
+		},
+		{
 			name: "status requires GET",
 			call: func(w *httptest.ResponseRecorder) {
 				server.handleStatus(w, requestWithIdentity(http.MethodPost, "/status", nil))

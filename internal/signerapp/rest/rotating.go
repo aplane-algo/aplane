@@ -19,6 +19,40 @@ type RotatingSigningService interface {
 	SignRotatingWithContext(ctx context.Context, req signerapi.RotatingSignRequest, session *keystore.KeySession) (*signerapi.RotatingSignResponse, *signersigning.ServiceError)
 }
 
+// RotatingRecoveryService starts and cancels operator stage recovery.
+type RotatingRecoveryService interface {
+	RecoverRotatingWithContext(ctx context.Context, req signerapi.RotatingRecoverRequest) (*signerapi.RotatingRecoverResponse, *signersigning.ServiceError)
+}
+
+// RecoverRotating starts or cancels an operator recovery grant. Starting
+// one needs the signer unlocked, since the grant derives from the seed;
+// cancelling does not, and finds nothing to cancel once a lock has ended
+// every grant.
+func (s Service) RecoverRotating(ctx context.Context, ir *productruntime.Runtime, req signerapi.RotatingRecoverRequest) (*signerapi.RotatingRecoverResponse, *signersigning.ServiceError) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if ir == nil {
+		return nil, &signersigning.ServiceError{Kind: signersigning.ErrorInternal, Message: "product runtime is nil"}
+	}
+	if req.Action != signerapi.RotatingRecoverActionCancel {
+		if preErr := ensureRuntimeUnlocked(ir); preErr != nil {
+			return nil, preErr
+		}
+	}
+	if roleErr := requireAccountSigningRole(ir, "rotating account recovery"); roleErr != nil {
+		return nil, roleErr
+	}
+	if s.Deps.NewSigningService == nil {
+		return nil, notConfigured("signing service")
+	}
+	svc, ok := s.Deps.NewSigningService(ir).(RotatingRecoveryService)
+	if !ok {
+		return nil, notConfigured("rotating recovery service")
+	}
+	return svc.RecoverRotatingWithContext(ctx, req)
+}
+
 func (s Service) rotatingService(ir *productruntime.Runtime) (RotatingSigningService, *signersigning.ServiceError) {
 	if s.Deps.NewSigningService == nil {
 		return nil, notConfigured("signing service")

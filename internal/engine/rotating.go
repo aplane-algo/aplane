@@ -43,6 +43,29 @@ func (e *Engine) SignerStatusLines(ctx context.Context) (warnings, notes []strin
 	return status.Warnings, status.Notes, nil
 }
 
+// SignerRotatingStatus returns the signer's per-account rotating status
+// from its last background pass, alongside the status warnings and notes.
+func (e *Engine) SignerRotatingStatus(ctx context.Context) (accounts []signerapi.RotatingAccountStatus, warnings, notes []string, err error) {
+	if !e.IsConnected() {
+		return nil, nil, nil, ErrNotConnected
+	}
+	status, err := e.Connection.GetSignerStatusWithContext(ctx)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return status.Rotating, status.Warnings, status.Notes, nil
+}
+
+// RotatingRecover asks the signer to start or cancel a bounded search for a
+// rotating account's live stage. No transaction is involved: the signer
+// derives stage addresses into its own cache.
+func (e *Engine) RotatingRecover(ctx context.Context, req signerapi.RotatingRecoverRequest) (*signerapi.RotatingRecoverResponse, error) {
+	if !e.IsConnected() {
+		return nil, ErrNotConnected
+	}
+	return e.Connection.RotatingRecoverWithContext(ctx, req)
+}
+
 // rotatingSender reports whether txns is a rotating account's spend. A
 // rotating account signs alone: its spend is the only transaction the client
 // may send, because the signer forms the group around it.

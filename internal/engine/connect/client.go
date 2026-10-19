@@ -88,6 +88,16 @@ func (s *ConnectionState) AdminDeleteKeyWithContext(ctx context.Context, address
 	return client.AdminDeleteKeyWithContext(ctx, address)
 }
 
+// RotatingRecoverWithContext starts or cancels a rotating account's stage
+// recovery on Signer.
+func (s *ConnectionState) RotatingRecoverWithContext(ctx context.Context, req signerapi.RotatingRecoverRequest) (*signerapi.RotatingRecoverResponse, error) {
+	client, err := s.signerClient()
+	if err != nil {
+		return nil, err
+	}
+	return client.RotatingRecoverWithContext(ctx, req)
+}
+
 // RequestGroupPlan sends group planning requests to Signer.
 func (s *ConnectionState) RequestGroupPlan(requests []signerapi.SignRequest) (*signerapi.GroupPlanResponse, error) {
 	return s.RequestGroupPlanWithContext(context.Background(), requests)

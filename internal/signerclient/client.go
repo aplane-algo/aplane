@@ -704,6 +704,16 @@ func (c *Client) AdminDeleteKeyWithContext(ctx context.Context, address string) 
 	return delResp, nil
 }
 
+// RotatingRecoverWithContext starts or cancels an operator stage recovery
+// for a rotating account (POST /admin/rotating/recover). The signer derives
+// nothing before answering; its background worker runs the grant.
+func (c *Client) RotatingRecoverWithContext(ctx context.Context, req signerapi.RotatingRecoverRequest) (*signerapi.RotatingRecoverResponse, error) {
+	if err := req.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid rotating recover request: %w", err)
+	}
+	return doJSON[signerapi.RotatingRecoverResponse](c, ctx, "POST", "/admin/rotating/recover", req, mutationTimeout, "failed to request rotating recovery")
+}
+
 // GetKeyTypes fetches available key types from Signer.
 func (c *Client) GetKeyTypes() (*signerapi.KeyTypesResponse, error) {
 	return c.GetKeyTypesWithContext(context.Background())

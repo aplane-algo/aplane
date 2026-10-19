@@ -89,6 +89,15 @@ func TestConnectionStateClientWrappersCallSignerEndpoints(t *testing.T) {
 			}, req), nil
 		case req.Method == http.MethodDelete && req.URL.Path == "/admin/keys":
 			return connectJSONResponse(t, http.StatusOK, signerapi.AdminDeleteResponse{Success: true}, req), nil
+		case req.Method == http.MethodPost && req.URL.Path == "/admin/rotating/recover":
+			var recoverReq signerapi.RotatingRecoverRequest
+			if err := json.NewDecoder(req.Body).Decode(&recoverReq); err != nil {
+				t.Fatal(err)
+			}
+			return connectJSONResponse(t, http.StatusOK, signerapi.RotatingRecoverResponse{
+				Account: recoverReq.Account, Action: recoverReq.Action, GrantID: 7,
+				Recovery: signerapi.RotatingRecoveryStatus{Active: true, Kind: "operator", GrantID: 7, MaxStages: recoverReq.MaxStages},
+			}, req), nil
 		case req.Method == http.MethodPost && req.URL.Path == "/sign/component":
 			var componentReq signerapi.ComponentRequest
 			if err := json.NewDecoder(req.Body).Decode(&componentReq); err != nil {
@@ -139,6 +148,10 @@ func TestConnectionStateClientWrappersCallSignerEndpoints(t *testing.T) {
 	del, err := state.AdminDeleteKey("ADDR2")
 	if err != nil || !del.Success {
 		t.Fatalf("AdminDeleteKey() = (%+v, %v), want success nil", del, err)
+	}
+	recovered, err := state.RotatingRecoverWithContext(t.Context(), signerapi.RotatingRecoverRequest{Account: "ADDR3", Action: "start", MaxStages: 9})
+	if err != nil || recovered.GrantID != 7 || recovered.Account != "ADDR3" || recovered.Recovery.MaxStages != 9 {
+		t.Fatalf("RotatingRecoverWithContext() = (%+v, %v)", recovered, err)
 	}
 	component, err := state.RequestComponentsWithContext(t.Context(), signerapi.ComponentRequest{
 		GroupBytesHex: []string{"5458aa"},

@@ -10,6 +10,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/rotatingkey"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
@@ -212,8 +213,15 @@ func (s *Service) releaseAddresses(ctx context.Context, account string, stage ui
 //   - authorizer anywhere else: the release landed or the account moved on;
 //     the memory is cleared and nothing is said. A record made after the
 //     pass's chain read is newer than the observation and is left alone;
-//   - the stage is not yet found in the table: a note with the scan count,
-//     never a claim that the authorizer is foreign.
+//   - the authorizer is a credential this signer holds: a note that the
+//     account was rekeyed to it; the rotating stages no longer control it;
+//   - the authorizer is unknown and a recovery grant is searching: a note
+//     with the scan count and the grant's progress;
+//   - the authorizer is unknown and no grant is searching: a note that it
+//     is not a stage within what was searched, with what stopped the
+//     search and the two operator remedies. Like a non-rotating account
+//     rekeyed to an address the signer does not hold, this is information,
+//     not an alert, and never a claim that the account was exited.
 func (s *Service) RotatingStatus(reports []StageTableReport) (warnings, notes []string) {
 	deps, depErr := s.rotatingDeps()
 	if depErr != nil {
@@ -225,7 +233,7 @@ func (s *Service) RotatingStatus(reports []StageTableReport) (warnings, notes []
 			continue
 		}
 		if !r.Resolved && r.Err == nil {
-			notes = append(notes, fmt.Sprintf("rotating account %s: stage not yet found, %d stages scanned", r.Account, r.Scanned))
+			notes = append(notes, unresolvedNote(r))
 		}
 		rec, ok := deps.Releases.Get(r.Account)
 		if !ok {
@@ -258,4 +266,58 @@ func (s *Service) RotatingStatus(reports []StageTableReport) (warnings, notes []
 		notes = append(notes, fmt.Sprintf("rotating account %s: release from stage %d in flight (transaction %s, valid through round %d)%s", r.Account, rec.Stage, rec.TxID, rec.LastValid, reuse))
 	}
 	return warnings, notes
+}
+
+// unresolvedNote words an unresolved account's status line.
+func unresolvedNote(r StageTableReport) string {
+	switch r.Class {
+	case ClassHeldKey:
+		return fmt.Sprintf("rotating account %s: rekeyed to %s, a key this signer holds; its rotating stages no longer control it", r.Account, r.Authorizer)
+	}
+	if g := r.Recovery.Grant; g != nil {
+		progress := fmt.Sprintf("%s recovery running, %d of %d stages used", g.Kind, g.Charged, g.MaxStages)
+		if g.Found != nil {
+			progress += fmt.Sprintf(", stage %d found, filling the cache to it", *g.Found)
+		} else if g.Hint != nil {
+			progress += fmt.Sprintf(", probing around stage %d", *g.Hint)
+		}
+		return fmt.Sprintf("rotating account %s: stage not yet found, %d stages cached; %s", r.Account, r.Scanned, progress)
+	}
+	stopped := "automatic recovery is disabled"
+	if r.Recovery.AllowanceMax > 0 {
+		stopped = "automatic recovery for this authorizer is exhausted for this unlock"
+	}
+	if l := r.Recovery.Last; l != nil {
+		stopped = fmt.Sprintf("the last %s search stopped: %s after %d stages", l.Kind, l.Reason, l.Charged)
+	}
+	return fmt.Sprintf("rotating account %s: authorizer %s is not a stage within the %d stages this signer has cached; %s; run `rotate recover` if the account was advanced elsewhere, or delete the key if it was exited", r.Account, r.Authorizer, r.Scanned, stopped)
+}
+
+// RotatingAccountStatuses projects a pass's reports into the structured
+// per-account status the /status endpoint and `rotate status` show.
+func (s *Service) RotatingAccountStatuses(reports []StageTableReport) []signerapi.RotatingAccountStatus {
+	out := make([]signerapi.RotatingAccountStatus, 0, len(reports))
+	for _, r := range reports {
+		st := signerapi.RotatingAccountStatus{
+			Account:        r.Account,
+			Classification: signerapi.RotatingClassUnobserved,
+			CachedStages:   r.Scanned,
+			Recovery:       recoveryStatus(r.Recovery),
+		}
+		if r.Observed {
+			st.Authorizer, st.Round = r.Authorizer.String(), r.Round
+			switch {
+			case r.Resolved:
+				st.Classification = signerapi.RotatingClassStage
+				stage := r.Stage
+				st.Stage = &stage
+			case r.Class == ClassHeldKey:
+				st.Classification = signerapi.RotatingClassHeldKey
+			case r.Class == ClassUnknown:
+				st.Classification = signerapi.RotatingClassUnknown
+			}
+		}
+		out = append(out, st)
+	}
+	return out
 }

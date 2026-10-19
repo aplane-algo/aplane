@@ -10,6 +10,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/cmdspec"
 	"github.com/aplane-algo/aplane/internal/engine"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 // RotateRequest asks for a rotate-only spend: a 0-ALGO payment from a
@@ -32,17 +33,67 @@ type RotateCommandResult struct {
 
 // RotatingAccountStatus is one rotating account's chain and signer view.
 // Alerts need action; Notes are information, such as a release still in
-// flight or a stage the signer is still looking for.
+// flight or a stage the signer is still looking for. Signer is the
+// signer's own structured view of the account from its last background
+// pass, nil when the signer reported none.
 type RotatingAccountStatus struct {
 	Account    string
 	Authorizer string
 	Alerts     []string
 	Notes      []string
+	Signer     *signerapi.RotatingAccountStatus
 }
 
 // RotateStatusResult reports rotating accounts.
 type RotateStatusResult struct {
 	Accounts []RotatingAccountStatus
+}
+
+// RotateRecoverRequest starts or cancels a search for a rotating account's
+// live stage on the signer. Stage is an optional hint; Window its probe
+// radius; MaxStages the search's derivation budget; TimeoutSeconds its
+// derivation-time cap. Zero values take the signer's defaults.
+type RotateRecoverRequest struct {
+	Account        string
+	Cancel         bool
+	Stage          *uint64
+	Window         uint64
+	MaxStages      uint64
+	TimeoutSeconds int64
+}
+
+// RotateRecoverResult reports the grant started or cancelled.
+type RotateRecoverResult struct {
+	Account  string
+	Action   string
+	GrantID  uint64
+	Recovery signerapi.RotatingRecoveryStatus
+}
+
+// RotateRecover asks the signer to search for a rotating account's live
+// stage, or to stop searching. It issues no transaction: the signer
+// derives stage addresses into its own cache, and the next transaction
+// from the account is prepared without discovery once the stage is cached.
+func (a *App) RotateRecover(ctx context.Context, req RotateRecoverRequest) (*RotateRecoverResult, error) {
+	address, err := cmdspec.ResolveSingleAddress(req.Account, a.eng.NewAddressResolver())
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve account %q: %w", req.Account, err)
+	}
+	if !a.eng.IsRotatingAccount(address) {
+		return nil, fmt.Errorf("%s is not a rotating account", address)
+	}
+	wire := signerapi.RotatingRecoverRequest{
+		Account: address, Action: signerapi.RotatingRecoverActionStart,
+		Stage: req.Stage, Window: req.Window, MaxStages: req.MaxStages, TimeoutSeconds: req.TimeoutSeconds,
+	}
+	if req.Cancel {
+		wire = signerapi.RotatingRecoverRequest{Account: address, Action: signerapi.RotatingRecoverActionCancel}
+	}
+	resp, err := a.eng.RotatingRecover(ctx, wire)
+	if err != nil {
+		return nil, fmt.Errorf("rotate recover failed: %w", err)
+	}
+	return &RotateRecoverResult{Account: resp.Account, Action: resp.Action, GrantID: resp.GrantID, Recovery: resp.Recovery}, nil
 }
 
 // Rotate sends a rotate-only spend. It is the remedy for a stage whose keys
@@ -102,9 +153,13 @@ func (a *App) RotateStatus(ctx context.Context, account string) (*RotateStatusRe
 		}
 		accounts = []string{address}
 	}
-	warnings, notes, err := a.eng.SignerStatusLines(ctx)
+	signerView, warnings, notes, err := a.eng.SignerRotatingStatus(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("read signer status: %w", err)
+	}
+	byAccount := make(map[string]signerapi.RotatingAccountStatus, len(signerView))
+	for _, s := range signerView {
+		byAccount[s.Account] = s
 	}
 	result := &RotateStatusResult{}
 	for _, address := range accounts {
@@ -113,6 +168,9 @@ func (a *App) RotateStatus(ctx context.Context, account string) (*RotateStatusRe
 			return nil, fmt.Errorf("read authorizer of %s: %w", address, err)
 		}
 		status := RotatingAccountStatus{Account: address, Authorizer: authorizerOrSelf(authorizer, address)}
+		if s, ok := byAccount[address]; ok {
+			status.Signer = &s
+		}
 		for _, warning := range warnings {
 			if strings.Contains(warning, address) {
 				status.Alerts = append(status.Alerts, warning)

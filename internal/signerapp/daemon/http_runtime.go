@@ -50,6 +50,7 @@ func buildHTTPServer(server *Signer, port int) *http.Server {
 	mux.HandleFunc("/keytypes", server.requireAuth(auth.ActionKeyTypesView, auth.Resource{Type: "keytypes"}, server.handleKeyTypes))
 	mux.HandleFunc("/admin/generate", server.requireAuth(auth.ActionKeysGenerate, auth.Resource{Type: "key"}, server.handleAdminGenerate))
 	mux.HandleFunc("/admin/keys", server.requireAuth(auth.ActionKeysDelete, auth.Resource{Type: "key"}, server.handleAdminDelete))
+	mux.HandleFunc("/admin/rotating/recover", server.requireAuth(auth.ActionKeysRecover, auth.Resource{Type: "key"}, server.handleRotatingRecover))
 	mux.HandleFunc("/health", server.handleHealth)
 
 	return &http.Server{
@@ -175,6 +176,7 @@ func logHTTPStartup(keyCount int, keysSnapshot map[string]string, port int) {
 	logInfof("  GET    /keytypes                - List available key types and creation parameters")
 	logInfof("  POST   /admin/generate          - Generate a new key")
 	logInfof("  DELETE /admin/keys?address=...  - Delete a key (soft delete)")
+	logInfof("  POST   /admin/rotating/recover  - Start or cancel a rotating account's stage recovery")
 	logInfof("  GET    /health                  - Health check")
 	logInfof("Key Management:")
 	logInfof("  Use 'apadmin' tool or /admin/* REST endpoints for key operations")

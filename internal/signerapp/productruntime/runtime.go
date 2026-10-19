@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 	"maps"
 	"path/filepath"
 	"slices"
@@ -94,6 +95,7 @@ type Runtime struct {
 	rotatingStatusMu sync.Mutex
 	rotatingAlerts   []string
 	rotatingNotes    []string
+	rotatingAccounts []signerapi.RotatingAccountStatus
 
 	keySession     *keystore.KeySession
 	passphraseLock sync.RWMutex
@@ -1003,17 +1005,28 @@ func (ir *Runtime) StageTables() *stagetable.Store {
 	return ir.stageTables
 }
 
-// SetRotatingStatus replaces the published rotating account warnings and
-// notes and reports whether either changed.
-func (ir *Runtime) SetRotatingStatus(warnings, notes []string) bool {
+// SetRotatingStatus replaces the published rotating account warnings, notes
+// and per-account status and reports whether the warnings or notes changed.
+// The per-account status is always replaced: its counters move on every
+// pass, and they are not what apadmin is notified about.
+func (ir *Runtime) SetRotatingStatus(warnings, notes []string, accounts []signerapi.RotatingAccountStatus) bool {
 	ir.rotatingStatusMu.Lock()
 	defer ir.rotatingStatusMu.Unlock()
+	ir.rotatingAccounts = slices.Clone(accounts)
 	if slices.Equal(ir.rotatingAlerts, warnings) && slices.Equal(ir.rotatingNotes, notes) {
 		return false
 	}
 	ir.rotatingAlerts = slices.Clone(warnings)
 	ir.rotatingNotes = slices.Clone(notes)
 	return true
+}
+
+// RotatingAccountStatuses returns the per-account rotating status from the
+// last pass.
+func (ir *Runtime) RotatingAccountStatuses() []signerapi.RotatingAccountStatus {
+	ir.rotatingStatusMu.Lock()
+	defer ir.rotatingStatusMu.Unlock()
+	return slices.Clone(ir.rotatingAccounts)
 }
 
 // RotatingAlerts returns the rotating account warnings from the last pass.
@@ -1356,6 +1369,12 @@ func (ir *Runtime) notifyLocked() {
 	if ir.onLocked != nil {
 		ir.onLocked()
 	}
+}
+
+// LockGeneration returns the lock runtime's generation counter, advanced by
+// every lock and maintenance transition. Per-unlock state is keyed by it.
+func (ir *Runtime) LockGeneration() uint64 {
+	return ir.lockRuntime.LockGeneration()
 }
 
 func (ir *Runtime) performUnlock(passphrase []byte) func() (int, error) {

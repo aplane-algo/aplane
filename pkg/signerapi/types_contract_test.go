@@ -176,6 +176,9 @@ func TestSignerAPIContractFixturesRoundTrip(t *testing.T) {
 		{"component_response.json", assertContractRoundTrip[ComponentResponse]},
 		{"health_response_ready.json", assertContractRoundTrip[HealthResponse]},
 		{"status_response_ready.json", assertContractRoundTrip[StatusResponse]},
+		{"status_response_rotating.json", assertContractRoundTrip[StatusResponse]},
+		{"rotating_recover_request.json", assertContractRoundTrip[RotatingRecoverRequest]},
+		{"rotating_recover_response.json", assertContractRoundTrip[RotatingRecoverResponse]},
 	}
 
 	for _, tt := range tests {
@@ -195,6 +198,11 @@ func TestSignerAPIRotatingRequestFixturesValidate(t *testing.T) {
 	readContractMetadata(t, "rotating_sign_request.json", &sign)
 	if err := sign.Validate(); err != nil {
 		t.Fatalf("rotating_sign_request.json: Validate() = %v", err)
+	}
+	var recover RotatingRecoverRequest
+	readContractMetadata(t, "rotating_recover_request.json", &recover)
+	if err := recover.Validate(); err != nil {
+		t.Fatalf("rotating_recover_request.json: Validate() = %v", err)
 	}
 	for name, r := range map[string]RotatingPrepareRequest{
 		"no account": {TxnBytesHex: "00"},

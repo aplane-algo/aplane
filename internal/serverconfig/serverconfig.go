@@ -66,21 +66,40 @@ type ServerConfig struct {
 	Rotating RotatingConfig `yaml:"rotating" description:"Rotating account settings" default:"default rotating settings"`
 }
 
-// RotatingConfig holds settings for rotating accounts (aplane.rotating-hybrid).
+// RotatingConfig holds settings for rotating accounts.
 type RotatingConfig struct {
 	// StageHorizon is the lookahead of the stage address table: how many
 	// stages past an account's live stage the signer derives in the
-	// background so upcoming rotations never wait on derivation. An account
-	// whose live stage is not yet in its table is scanned on without limit.
-	StageHorizon uint64 `yaml:"stage_horizon" description:"How many stages past a rotating account's live stage are derived ahead into its stage address table; an account whose live stage is not yet known is scanned without limit" default:"4096"`
+	// background so upcoming rotations never wait on derivation.
+	StageHorizon uint64 `yaml:"stage_horizon" description:"How many stages past a rotating account's live stage are derived ahead into its stage address table" default:"4096"`
+	// RecoveryMaxStages is the automatic search allowance per rotating
+	// account per unlock: how many stages past its table's edge the signer
+	// derives on its own looking for an authorizer it cannot place. It is
+	// never replenished within an unlock. Zero disables automatic recovery;
+	// request-time discovery and operator recovery still work.
+	RecoveryMaxStages uint64 `yaml:"recovery_max_stages" description:"How many stages past a rotating account's cached table the signer searches automatically, per account per unlock, for an authorizer it cannot place; 0 disables automatic search (operator recovery and request-time discovery still work)" default:"1024"`
+	// RecoveryTimeout caps the derivation time one automatic search may
+	// spend; pacing and other accounts' work do not count.
+	RecoveryTimeout time.Duration `yaml:"recovery_timeout" description:"Cap on the derivation time one automatic rotating stage search may spend" default:"5m"`
 }
 
-// DefaultStageHorizon is the default rotating stage table lookahead.
-const DefaultStageHorizon = 4096
+// Defaults for rotating account settings.
+const (
+	// DefaultStageHorizon is the default rotating stage table lookahead.
+	DefaultStageHorizon uint64 = 4096
+	// DefaultRecoveryMaxStages is the default automatic search allowance.
+	// It is deliberately below the horizon: automatic recovery exists for
+	// the rare gap beyond lookahead, and it bounds what a signer spends per
+	// unlock on an account that was exited elsewhere.
+	DefaultRecoveryMaxStages uint64 = 1024
+	// DefaultRecoveryTimeout is the default active-time cap on one
+	// automatic search.
+	DefaultRecoveryTimeout = 5 * time.Minute
+)
 
 // DefaultRotatingConfig returns default rotating account settings.
 func DefaultRotatingConfig() RotatingConfig {
-	return RotatingConfig{StageHorizon: DefaultStageHorizon}
+	return RotatingConfig{StageHorizon: DefaultStageHorizon, RecoveryMaxStages: DefaultRecoveryMaxStages, RecoveryTimeout: DefaultRecoveryTimeout}
 }
 
 // Clone returns an independent copy of the server config.

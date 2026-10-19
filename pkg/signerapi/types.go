@@ -413,6 +413,10 @@ type StatusResponse struct {
 	// Notes are informational status lines that need no action, such as a
 	// rotating account's release that is still in flight.
 	Notes []string `json:"notes,omitempty"`
+	// Rotating is each rotating account's view from the signer's last
+	// background pass: observed authorizer, classification, cached stages
+	// and recovery state. Absent while locked or without rotating accounts.
+	Rotating []RotatingAccountStatus `json:"rotating,omitempty"`
 }
 
 // SigningFlowCosigner1 names the cosigner co-signed component signing

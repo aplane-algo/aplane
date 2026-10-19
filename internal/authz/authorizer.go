@@ -54,6 +54,7 @@ func ClientAllowedActions() []auth.Action {
 		auth.ActionKeysView,
 		auth.ActionKeysGenerate,
 		auth.ActionKeysDelete,
+		auth.ActionKeysRecover,
 		auth.ActionKeyTypesView,
 	}
 }
@@ -78,6 +79,7 @@ func ProductAllowedActions() []auth.Action {
 		auth.ActionKeysImport,
 		auth.ActionKeysExport,
 		auth.ActionKeysDelete,
+		auth.ActionKeysRecover,
 		auth.ActionCosignersView,
 		auth.ActionCosignersManage,
 		auth.ActionGenerationsView,

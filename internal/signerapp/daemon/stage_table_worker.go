@@ -35,11 +35,16 @@ const (
 // runStageTableWorker keeps every rotating account's stage address table
 // filled and its status current: right after each unlock, then periodically
 // while unlocked. An account whose authorizer is already in its table is
-// extended to the configured horizon; an account whose authorizer is not yet
-// known is scanned on, one batch per pass, without a ceiling. Each pass also
-// compares every account's authorizer with the release memory and publishes
-// the resulting warnings and notes. At unlock the release memory is rebuilt
-// from the audit log; at lock it is forgotten with everything else.
+// extended to the configured horizon. An account whose authorizer is not in
+// its table is classified first (a credential this signer holds means the
+// account was rekeyed away, and nothing is derived); an authorizer that is
+// unknown is searched for under a recovery grant, one batch per pass, bounded
+// by the per-unlock allowance or by the operator's budget, never without a
+// ceiling. Each pass also compares every account's authorizer with the
+// release memory and publishes the resulting warnings, notes and per-account
+// status. At unlock the release memory is rebuilt from the audit log and
+// at lock it is forgotten with everything else; the recovery allowances
+// are keyed by the lock generation and begin afresh with each unlock.
 func (fs *Signer) runStageTableWorker(ctx context.Context) {
 	ticker := time.NewTicker(stageTableTick)
 	defer ticker.Stop()
@@ -56,7 +61,7 @@ func (fs *Signer) runStageTableWorker(ctx context.Context) {
 		if ir == nil || !ir.IsUnlocked() {
 			if wasUnlocked {
 				fs.rotatingReleases.Reset()
-				if ir != nil && ir.SetRotatingStatus(nil, nil) {
+				if ir != nil && ir.SetRotatingStatus(nil, nil, nil) {
 					fs.notifyRotatingStatus(ir, nil)
 				}
 			}
@@ -106,12 +111,12 @@ func (fs *Signer) rebuildReleaseMemory(ctx context.Context, ir *productruntime.R
 	}
 }
 
-// publishRotatingStatus records a pass's warnings and notes on the runtime,
-// logs what changed, and tells a connected apadmin.
+// publishRotatingStatus records a pass's warnings, notes and per-account
+// status on the runtime, logs what changed, and tells a connected apadmin.
 func (fs *Signer) publishRotatingStatus(ir *productruntime.Runtime, svc *signersigning.Service, reports []signersigning.StageTableReport) {
 	warnings, notes := svc.RotatingStatus(reports)
 	previous := ir.RotatingAlerts()
-	if !ir.SetRotatingStatus(warnings, notes) {
+	if !ir.SetRotatingStatus(warnings, notes, svc.RotatingAccountStatuses(reports)) {
 		return
 	}
 	for _, w := range warnings {
@@ -141,19 +146,25 @@ func (fs *Signer) notifyRotatingStatus(ir *productruntime.Runtime, warnings []st
 // session is cleared; the chain read, the table write and the pacing sleep
 // happen with no key material in memory.
 func (fs *Signer) fillStageTables(ctx context.Context, ir *productruntime.Runtime) time.Duration {
-	ctx, cancel := ir.LockCancelContext(ctx)
+	session, ctx, cancel, ok := passSession(ctx, ir.LockGeneration, ir.LockCancelContext)
 	defer cancel()
+	if !ok {
+		return stageTableIdleInterval
+	}
+	cfg := fs.ConfigSnapshot().Rotating
+	fs.rotatingRecovery.Configure(cfg.RecoveryMaxStages, cfg.RecoveryTimeout)
 	svc := &signersigning.Service{
 		Planner:  fs.newPlannerWithAudit(nil),
 		Console:  signerConsole{},
 		Rotating: fs.rotatingDeps(ir),
 	}
 	opts := signersigning.StageFillOptions{
-		Horizon:        fs.ConfigSnapshot().Rotating.StageHorizon,
+		Horizon:        cfg.StageHorizon,
 		Batch:          fs.stageFillBatch,
 		MaxDerivations: fs.stageFillMaxDeriv,
 		Parallel:       1,
 		KeyUse:         ir.KeyUseContext,
+		Session:        &session,
 		Pace: func(d time.Duration) {
 			select {
 			case <-ctx.Done():
@@ -181,6 +192,22 @@ func (fs *Signer) fillStageTables(ctx context.Context, ir *productruntime.Runtim
 	}
 	fs.publishRotatingStatus(ir, svc, reports)
 	return wait
+}
+
+// passSession captures a pass's session together with the context a lock
+// cancels. The session is read first; a lock between that read and the
+// context's creation leaves the context born cancelled, and a lock and
+// unlock between them leave a session the recovery memory refuses on
+// entry, since it validates every caller against the runtime's live
+// generation. Either way the pass never acts in a session other than the
+// one that owns its cancellation.
+func passSession(parent context.Context, generation func() uint64, cancelContext func(context.Context) (context.Context, context.CancelFunc)) (uint64, context.Context, context.CancelFunc, bool) {
+	session := generation()
+	ctx, cancel := cancelContext(parent)
+	if ctx.Err() != nil {
+		return 0, ctx, cancel, false
+	}
+	return session, ctx, cancel, true
 }
 
 // stageTableWorkerService runs the worker for the life of the daemon.

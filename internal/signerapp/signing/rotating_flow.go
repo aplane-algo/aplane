@@ -176,8 +176,12 @@ func (s *Service) requestDeriver(account string, session *keystore.KeySession) s
 // rotating_stage_unproven and the progress stays in the table for the next
 // attempt or the background worker.
 func (s *Service) liveStage(ctx context.Context, deps *RotatingDeps, table *stagetable.Table, derive stageDeriver, account, authorizer types.Address) (uint64, *ServiceError) {
-	if stage, ok := resolveStage(table, account, authorizer); ok {
+	stage, class := classifyAuthorizer(table, account, authorizer, knownAddressesFromSnapshot(s.Planner.Snapshot()))
+	switch class {
+	case ClassStage:
 		return stage, nil
+	case ClassHeldKey:
+		return 0, badRequest(fmt.Sprintf("the account is rekeyed to %s, a key this signer holds; its rotating stages no longer control it, sign through that key instead", authorizer))
 	}
 	timeout := deps.DiscoveryTimeout
 	if timeout <= 0 {

@@ -134,12 +134,13 @@ Clients should:
 - `GET /keytypes` - List available key types and creation parameters
 - `POST /admin/generate` - Generate new keys
 - `DELETE /admin/keys` - Delete keys
+- `POST /admin/rotating/recover` - Start or cancel a rotating account's stage recovery
 
 **Request Size Limits:**
 - JSON POST endpoints (`/sign`, `/sign/bounded-admin`, `/sign/component`,
   `/sign/assemble`, `/sign/cancel`, `/sign/rotating/prepare`,
-  `/sign/rotating/sign`, `/plan`, and `/admin/generate`) enforce a
-  5 MB request body limit
+  `/sign/rotating/sign`, `/plan`, `/admin/generate`, and
+  `/admin/rotating/recover`) enforce a 5 MB request body limit
 - Oversized requests receive HTTP 413 (Payload Too Large)
 - All authentication error responses use JSON format (not text/plain)
 
@@ -849,8 +850,11 @@ Important implications:
   authenticated HTTP routes expose: `identity.view`, `sign.request` (which
   also covers `/sign/rotating/prepare` and `/sign/rotating/sign`),
   `sign.component`, `sign.assemble`, `keys.view`, `keys.generate`,
-  `keys.delete`, and `keytypes.view`. Clients never receive administrative
-  actions.
+  `keys.delete`, `keys.recover`, and `keytypes.view`. Clients never receive
+  administrative actions. `keys.recover` is its own action rather than a
+  use of `identity.view`: viewing status works while locked, but starting a
+  recovery grant schedules seed-derived background computation, so it is
+  gated like signing.
 - A known action is not automatically allowed. It must also appear in the
   explicit allowlist for that principal kind.
 
@@ -937,6 +941,7 @@ makes action typos such as `keys.veiw` fail before allowlist matching.
 | `keys.import` | Import a key | `key` | Yes |
 | `keys.export` | Export a key mnemonic (disabled) | `key` | Yes |
 | `keys.delete` | Delete a key | `key` | Yes |
+| `keys.recover` | Start or cancel a rotating account's stage recovery: a bounded search that derives stage addresses into the signer's own cache and never signs | `key` | Yes to start; a cancel answers while locked |
 | `cosigners.view` | List/show public cosigner references and export public witness metadata | `cosigner_references`, `cosigner_reference`, `cosigner_public` | No |
 | `cosigners.manage` | Import or remove signer-owned public cosigner references | `cosigner_reference` | Yes |
 | `generations.view` | Inspect current/retained generations, quarantine, and selected deleted-archive usage | `generations`, `deleted_archive` | No; runtime must be unlocked or authenticated recovery |
