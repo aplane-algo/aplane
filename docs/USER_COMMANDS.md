@@ -122,11 +122,14 @@ close temp-account to treasury nowait
 ### rotate
 
 Rotate a rotating account (`aplane.rotating-triple-hybrid.v1`) to its next
-stage, or show rotating accounts.
+stage, show rotating accounts, or ask the signer to search for an account's
+live stage.
 
 ```
 rotate <account> [nowait]
 rotate status [<account>]
+rotate recover <account> [--stage N] [--window W] [--max-stages M] [--timeout SECONDS]
+rotate recover <account> cancel
 ```
 
 `rotate <account>` sends a 0-ALGO payment from the account to itself. Like
@@ -137,12 +140,28 @@ transaction expired without confirming. It needs the usual minimum fee plus
 the LogicSig fees for the stage program.
 
 `rotate status` shows each rotating account's current on-chain authorizer,
-any signer alerts that name it, and notes such as a release still in flight
-or a stage the signer is still scanning for. With no account it lists every
-signable rotating account. The signer refreshes its alerts about every 30
-seconds while unlocked (longer when chain reads or stage derivation for
-other accounts are slow), so an alert can briefly outlive the rotation that
+the signer's own view of it (its live stage and how many stages it has
+cached, or that it could not place the authorizer, and any search running
+or why the last one stopped), any signer alerts that name it, and notes such
+as a release still in flight. With no account it lists every signable
+rotating account. The signer refreshes its view about every 30 seconds
+while unlocked (longer when chain reads or stage derivation for other
+accounts are slow), so an alert can briefly outlive the rotation that
 resolved it.
+
+`rotate recover` asks the signer to search for the account's live stage. It
+is for the note "authorizer … is not a stage within the N stages this
+signer has cached": the signer searched on its own as far as its automatic
+allowance goes and stopped. Without options it searches on from the edge of
+its cache, up to `--max-stages` (default 4096) more stages. With `--stage N`
+it derives stage N directly, probes `--window` (default 64) stages either
+side of it, and once one matches fills its cache up to that stage; a wrong
+hint costs time, never a wrong stage. `--timeout` caps the search's
+derivation time in seconds (default 300). The command returns at once; the
+signer searches in the background, `rotate status` shows the progress, and
+`cancel` stops it. No transaction is sent and nothing on chain changes. If
+the account was not advanced but handed to another key, the search cannot
+succeed; delete the key after confirming that independently.
 
 Ordinary single-transaction commands from a rotating account, such as `send`,
 also rotate it. The account must be the only transaction sent, and its

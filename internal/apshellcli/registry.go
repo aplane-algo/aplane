@@ -154,7 +154,7 @@ func (r *REPLState) initCommandRegistry() *command.Registry {
 	mustRegister(registry, &command.Command{
 		Name:        "rotate",
 		Usage:       rotateUsage,
-		Description: "Rotate a rotating account to its next stage with a 0-ALGO payment to itself, or show rotating accounts' authorizers and the signer's alerts and notes",
+		Description: "Rotate a rotating account to its next stage with a 0-ALGO payment to itself, show rotating accounts' authorizers and the signer's status, or ask the signer to search for an account's live stage",
 		Category:    command.CategoryTransaction,
 		Handler:     command.NewInternalHandler(r.cmdRotate),
 	})

@@ -1133,12 +1133,14 @@ request state and principals without a runtime ID.
 | `POST` | `/plan` | yes | yes |
 | `POST` | `/admin/generate` | yes | yes |
 | `DELETE` | `/admin/keys` | yes | yes |
+| `POST` | `/admin/rotating/recover` | yes | to start; a cancel answers while locked |
 
 Method enforcement:
 
 - `/sign`, `/sign/bounded-admin`, `/sign/component`, `/sign/assemble`,
   `/sign/rotating/prepare`, `/sign/rotating/sign`, `/sign/cancel`, `/plan`,
-  `/status`, `/admin/generate`, and `/admin/keys` enforce their HTTP method.
+  `/status`, `/admin/generate`, `/admin/keys`, and `/admin/rotating/recover`
+  enforce their HTTP method.
 - `/keys`, `/keytypes`, and `/health` are operationally `GET` endpoints and accept wrong methods for compatibility.
 
 Transport behavior:
@@ -1564,13 +1566,87 @@ Creating and using rotating accounts:
   and the client rebuilds and prepares again a bounded number of times.
   Simulate-only requests stop before signing, so they reveal no keys.
 
+Stage table worker: while unlocked, a background worker reads every rotating
+account's authorizer from the signer's own node right after unlock and then
+about every 30 seconds, keeps each account's stage address table
+([ARCH_STORE.md](ARCH_STORE.md#stage-address-tables)) extended to
+`rotating.stage_horizon` stages past the live stage, and publishes status.
+An authorizer that is not in the table is classified before anything is
+derived, in this order:
+
+1. stage 0: no auth address, or the account's own address;
+2. a stage in the table;
+3. a credential this signer holds (`held_key`): the account was rekeyed
+   away from its rotating stages, nothing is searched for, and a prepare
+   refuses with `bad_request` naming that key;
+4. `unknown`: not a stage this signer has derived and not a key it holds.
+
+Only an unknown authorizer is searched for, under a *recovery grant*: one
+bounded derivation run from the table's edge that stops when the authorizer
+appears. The worker grants automatically from a per-account, per-unlock
+allowance (`rotating.recovery_max_stages`, default 1,024, counted from the
+table's edge, never replenished within the unlock, capped in derivation time
+by `rotating.recovery_timeout`); once the allowance is spent or the timeout
+reached, that authorizer is suppressed for the rest of the unlock and the
+account is left unresolved with a `/status` note, exactly as a non-rotating
+account rekeyed to an address the signer does not hold is left alone. A
+lock followed by an unlock begins a new epoch with a fresh allowance.
+Session ownership is one rule, enforced in one place: the session is the
+lock runtime's generation, which every lock and maintenance transition
+advances under the runtime's own mutex and an unlock leaves unchanged; an
+operation captures it once when it starts (the worker pass together with
+the context a lock cancels, an operator request at entry) and carries it
+into every call; and the recovery memory, which holds a live reader of the
+generation, on every entry under its own mutex rebinds to the live
+generation if it moved, discarding the ended session's grants and
+allowances, and admits the caller only if its session is the live one. An
+operation is therefore invalid from the moment the generation differs from
+the one it captured, whether or not anything else has observed the new
+session, and no path depends on who notices a lock first. A lock that lands
+right after an operation was admitted ends the session it was admitted to,
+which the next entry discards. The
+allowance is kept on the runtime, not on the grant: a grant that ends,
+whatever the reason, never gives it back (work that completes after a grant
+was superseded or cancelled still counts), and a credential removed and
+imported again within the unlock does not get a new one. An observation
+that resolves an account on its own, as a cached stage or a held key, ends
+any grant still active for it. No search is ever
+read as proof that the account was exited; the note names the two
+remedies, `rotate recover` and deleting the key, and recommends neither.
+
+`POST /admin/rotating/recover` (action `keys.recover`, resource `key`;
+request `signerapi.RotatingRecoverRequest`, response
+`signerapi.RotatingRecoverResponse`) lets an operator grant a search with
+their own budget: `account`, `action` (`start` or `cancel`), and for a
+start the optional `stage` hint, `window` (probe radius, default 64, at most
+4,096), `max_stages` (default 4,096) and `timeout_seconds` (default 300).
+A start needs the signer unlocked and answers `locked` (403) otherwise; a
+cancel answers while locked, as a success that cancelled nothing. An
+operator grant replaces a running automatic grant, whose charge stands,
+and is refused (`bad_request`, "cancel it first") while another operator
+grant runs. Both actions are audited as `ROTATING_RECOVERY` with the
+requesting principal. The handler writes the grant and returns; the worker
+executes it on its next pass, one batch per tick, charging the grant per
+derivation so a budget of 100 derives at most 100 and a cancel lands
+between two derivations. Stage derivation is random access, so a hinted
+grant derives the hinted stage directly and compares it to the authorizer,
+then probes outward (hint+1, hint−1, …) within the window, one derivation
+per probe; a stage is accepted only when its derived address equals the
+chain's authorizer, so a wrong hint costs time, never a wrong stage. The
+table has no gaps, so once a probe matches the grant fills the table from
+its edge up to the found stage as its remaining work; lookahead resumes
+from there. Prepares are not grants: a prepare whose live stage is not
+cached still runs its own discovery under `DefaultDiscoveryTimeout` and
+charges nothing.
+
 Restore: a rotating key restored from a backup, rebuilt or re-imported has
 everything it needs. The signer reads the live stage from the chain and
-rebuilds the stage address table
-([ARCH_STORE.md](ARCH_STORE.md#stage-address-tables)) in the background; until the table reaches the live stage,
-requests are refused with `rotating_stage_unproven` and `/status` carries a
-note ("stage not yet found, N stages scanned"). No operator recovery step
-exists or is needed.
+rebuilds the stage address table in the background through the same worker;
+until the table reaches the live stage, requests are refused with
+`rotating_stage_unproven` and `/status` carries a note. A backup far behind
+the chain can exhaust the automatic allowance; `rotate recover`, with a
+stage hint when the operator knows roughly how many spends the account has
+made, finishes the job.
 
 Alerts: the signer remembers the newest release per account (stage, TxID,
 `last_valid`) in process memory, rebuilt at unlock from the newest
@@ -1697,8 +1773,21 @@ stored provenance was available. These fields do not change `/sign` behavior.
   They include rotating account alerts (see Rotating accounts); those name
   accounts and never appear on `/health`.
 - `notes`: optional informational lines that need no action, such as a
-  rotating account's release still in flight or a live stage the signer is
-  still scanning for. Clients must tolerate this field being omitted.
+  rotating account's release still in flight, a live stage the signer is
+  still scanning for, or an authorizer it could not place. Clients must
+  tolerate this field being omitted.
+- `rotating[]`: optional, one `signerapi.RotatingAccountStatus` per rotating
+  account from the worker's last pass: `account`, the observed `authorizer`
+  and `round` (absent when the last read failed), `classification`
+  (`stage`, `held_key`, `unknown`, `unobserved`), `stage` when classified as
+  a stage, `cached_stages` (the table's length), and optional `recovery`
+  (`signerapi.RotatingRecoveryStatus`: the active grant's `kind`,
+  `grant_id`, `stages_charged`, `max_stages`, `active_seconds`, `hint` and
+  `found_stage`; why the last grant `stopped`, with `stopped_kind`,
+  `stopped_grant_id` and `stopped_stage`; and the automatic
+  `allowance_spent`, `allowance_max` and `suppressed_authorizer`). Absent
+  while locked or without rotating accounts. Clients must tolerate the
+  field being omitted.
 
 `/keytypes` response:
 

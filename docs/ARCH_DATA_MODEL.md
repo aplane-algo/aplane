@@ -534,7 +534,8 @@ transport, and principal, not by a durable session record.
 The audit log is append-only JSONL at `audit.log`. It records process events,
 product-runtime events, signing outcomes, authorization denials, session
 connect/disconnect, key management, backup/restore, client enrollment and
-revocation, policy-related signing decisions, rotating releases, store
+revocation, policy-related signing decisions, rotating releases and
+recovery requests, store
 initialization, passphrase changes, cosigner-reference changes, generation
 quarantine, abandoned-generation discard, and deleted-archive prune, and
 suppression summaries for repeated authentication failures and cosigner
@@ -857,7 +858,8 @@ Primary projections:
 - `GroupPlanResponse`,
 - `GroupSignResponse`,
 - `RotatingPrepareRequest`, `RotatingPrepareResponse`, `RotatingSignRequest`,
-  `RotatingSignResponse`,
+  `RotatingSignResponse`, `RotatingRecoverRequest`, `RotatingRecoverResponse`,
+  `RotatingAccountStatus`, `RotatingRecoveryStatus`,
 - `MutationReport`,
 - `KeysResponse` / `KeyInfo` (including `signing_flow`,
   `cosigner_component_key_type`, optional `bounded_authorization`),
@@ -1266,6 +1268,8 @@ and [ARCH_ADMIN.md](ARCH_ADMIN.md#admin-protocol-contract).
 | Installed template | authoritative generation source | selected generation `keytypes/<key_type>.template` | registered template provider after unlock/reload | `internal/templatestore`, `internal/signerapp/templates` | Sealed under the product store's current term key and bound to its key type; disabled state skips registration. |
 | Public cosigner reference | public product catalog | `identities/default/cosigners/<name>.json` | `/keytypes` `cosigner` select options | `internal/cosigner/cosignerrefs`, `internal/signerapp/rest`, `internal/apadminapp` | Non-generational, explicitly imported public metadata only; not endpoint ownership proof. |
 | Stage address table | derivable cache | `identities/default/stages/<address>.stages` (non-generational) | rotating stage lookup | `internal/storepaths`, `internal/stagetable`, `internal/signerapp/productruntime` | Derived from the key seed; never copied by mint, restore, or rollback; a missing table does not refuse signing. |
+| Rotating release memory | runtime-only | newest `ROTATING_RELEASE` audit entry per account, rebuilt at unlock | expired-release and stage-reuse alerts | `internal/signerapp/signing` (`ReleaseMemory`), `internal/signerapp/daemon` | Observational; forgotten at lock; never changes what is signed. |
+| Rotating recovery memory | runtime-only | per-unlock allowance, active grant and last stop per rotating account | bounded search for an unplaced authorizer; `/status` `rotating[].recovery` | `internal/signerapp/signing` (`RotatingRecovery`), `internal/signerapp/daemon` | Keyed by the lock runtime's generation, validated against the live generation on every entry under the memory's mutex, so a lock begins a new epoch however late it is observed and an operation of an ended session is refused; a grant from an earlier epoch cannot charge or report; a replaced credential invalidates a grant's results but not its charge; never changes what is signed. |
 
 ### Key Material And Key Metadata
 
@@ -1394,6 +1398,8 @@ and [ARCH_ADMIN.md](ARCH_ADMIN.md#admin-protocol-contract).
 | Assembly response | wire projection | assembled signed group bytes | `signerapi.AssemblyResponse` | `internal/signerapp/rest`, `internal/signerapp/signing` | Assembly revalidates each target against signer-owned metadata and does not trust endpoint-advertised public keys. |
 | Rotating prepare request/response | wire request/projection | rotating account transaction intent | `signerapi.RotatingPrepareRequest`, `RotatingPrepareResponse` | `pkg/signerapi`, `internal/signerapp/daemon`, `internal/signerapp/rest`, `internal/signerapp/signing` | `POST /sign/rotating/prepare`; contract fixtures `rotating_prepare_{request,response}.json`. |
 | Rotating sign request/response | wire request/projection | prepared rotating group | `signerapi.RotatingSignRequest`, `RotatingSignResponse` | `pkg/signerapi`, `internal/signerapp/daemon`, `internal/signerapp/rest`, `internal/signerapp/signing` | `POST /sign/rotating/sign`; live request IDs are cancel handles; contract fixtures `rotating_sign_{request,response}.json`. |
+| Rotating recover request/response | wire request/projection | operator recovery grant | `signerapi.RotatingRecoverRequest`, `RotatingRecoverResponse` | `pkg/signerapi`, `internal/signerapp/daemon`, `internal/signerapp/rest`, `internal/signerapp/signing` | `POST /admin/rotating/recover`, action `keys.recover`; start needs unlock, cancel does not; contract fixtures `rotating_recover_{request,response}.json`. |
+| Rotating account status | wire projection | worker's last pass per rotating account | `signerapi.RotatingAccountStatus`, `RotatingRecoveryStatus` on `/status` `rotating[]` | `pkg/signerapi`, `internal/signerapp/rest`, `internal/signerapp/signing` | Observed authorizer, classification (`stage`, `held_key`, `unknown`, `unobserved`), cached stages, recovery state; fixture `status_response_rotating.json`. |
 
 ### Admin IPC Wire Models
 

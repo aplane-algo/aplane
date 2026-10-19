@@ -2063,11 +2063,17 @@ signing flow. Ownership:
   timing bounds; `internal/stagetable`: the stage address cache;
   `internal/signerapp/chainread`: the signer's own authorizer read for the
   `rotating1` flow.
+- `internal/signerapp/signing/rotating_tables.go` and
+  `rotating_recovery.go`: the stage table fill, the authorizer
+  classification ladder, and the recovery memory (per-unlock allowance,
+  grants, hinted search); `internal/signerapp/daemon/stage_table_worker.go`
+  runs them and publishes status.
 - `internal/signerapp/rest/rotating.go`: REST service methods
-  `Service.PrepareRotating` and `Service.SignRotating`;
-  `internal/signerapp/daemon` owns the `/sign/rotating/*` routes.
+  `Service.PrepareRotating`, `Service.SignRotating` and
+  `Service.RecoverRotating`; `internal/signerapp/daemon` owns the
+  `/sign/rotating/*` and `/admin/rotating/recover` routes.
 - `internal/apshellapp/rotate.go`: the shell `rotate` workflow (rotate-only
-  spend and rotating account status).
+  spend, rotating account status, and operator recovery).
 
 ## Provider and Algorithm Model
 

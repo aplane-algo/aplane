@@ -356,8 +356,12 @@ Restrictions:
 Related commands:
 
 - `rotate <account>` sends a 0-ALGO payment to itself, which only rotates.
-- `rotate status [<account>]` shows the on-chain authorizer, signer alerts
-  and notes.
+- `rotate status [<account>]` shows the on-chain authorizer, the signer's
+  view of the account (live stage, cached stages, any search running or
+  stopped), alerts and notes.
+- `rotate recover <account> [--stage N]` asks the signer to search for the
+  account's live stage when it could not place the authorizer on its own
+  (see Backups and restore). It issues no transaction.
 
 Alerts: the signer remembers the latest transaction it signed from each
 account until it sees the account move past the stage that signed it. While
@@ -402,6 +406,40 @@ which the signer does in the background; until then a spend is refused with
 come. Deleting the `stages/` directory while the signer is stopped is
 always safe. `rotating.stage_horizon` in the signer's `config.yaml` (default
 4096) sets how many stages past the live one the signer derives ahead.
+
+The background catch-up is bounded. When the signer sees an authorizer it
+cannot place, neither a stage it has already derived nor another key it
+holds, it searches on its own for at most `rotating.recovery_max_stages`
+stages (default 1024) past its cache, once per account per unlock, within
+`rotating.recovery_timeout` of derivation time. Within the horizon, and
+for a gap not much larger than it, that is enough and nothing is visible.
+Beyond it the signer stops and `rotate status` shows a note: the authorizer
+is not a stage within what the signer has cached, and the last search
+stopped with its reason. This is the same situation as any other account
+that was rekeyed to an address this signer does not hold, and the signer
+treats it the same way: it is information, not an alert, and signing from
+the account is refused with an explanation until it is resolved. There are
+two ways to resolve it, and the signer recommends neither, because it
+cannot tell them apart:
+
+- The account was advanced elsewhere, for example by another signer holding
+  the same seed while this one was down, or the restored backup is far
+  behind. Run `rotate recover <account>` to search further with a budget of
+  your choosing (`--max-stages`, default 4096), or, if you know roughly how
+  many spends the account has made, `rotate recover <account> --stage N`:
+  stage derivation is random access, so the signer derives stage N directly
+  and compares it to the chain, probes a few stages either side
+  (`--window`, default 64), and once it matches fills the cache up to that
+  stage. A wrong hint costs time, never a wrong stage: a stage is accepted
+  only when its derived address equals the chain's authorizer. The search
+  runs in the background; `rotate status` shows its progress, and
+  `rotate recover <account> cancel` stops it.
+- The account no longer belongs to this key. Confirm that independently,
+  then delete the key. A failed search is never that confirmation.
+
+Locking and unlocking the signer grants a fresh automatic allowance. Set
+`rotating.recovery_max_stages: 0` to turn the automatic search off; operator
+recovery and the search a spend request runs for itself keep working.
 
 ## YAML Templates
 

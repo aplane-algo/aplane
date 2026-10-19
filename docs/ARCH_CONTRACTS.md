@@ -240,6 +240,12 @@ Validation:
 - `rotating.stage_horizon` is how many stages past a rotating account's live
   stage the signer derives ahead into its stage address table. It defaults to
   `4096`.
+- `rotating.recovery_max_stages` (default `1024`) is the automatic search
+  allowance per rotating account per unlock for an authorizer the signer
+  cannot place, counted from the table's edge; `0` disables automatic
+  search. `rotating.recovery_timeout` (default `5m`) caps one automatic
+  search's derivation time. Operator recovery (`/admin/rotating/recover`)
+  and request-time discovery are independent of both.
 - `approval_wait` must parse as a positive Go duration between 30 seconds and
   30 minutes. The default is `60s`. The product runtime configuration may
   override the process default.

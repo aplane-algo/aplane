@@ -71,6 +71,17 @@ func (r *Runtime) SetOnLock(fn func()) {
 	r.onLock = fn
 }
 
+// LockGeneration returns the lock generation: a counter every Lock and
+// BeginMaintenance transition advances under the state mutex, and that an
+// unlock must find unchanged to succeed. Two unlocked sessions never share
+// a generation, so per-unlock state can be keyed by it and a transition
+// that was observed late cannot be mistaken for the current one.
+func (r *Runtime) LockGeneration() uint64 {
+	r.stateMu.RLock()
+	defer r.stateMu.RUnlock()
+	return r.lockGen
+}
+
 // GetState returns the current signer state.
 func (r *Runtime) GetState() SignerState {
 	r.stateMu.RLock()

@@ -44,6 +44,7 @@ const (
 	AuditSignRejected                     AuditEventType = "SIGN_REJECTED"
 	AuditSignFailed                       AuditEventType = "SIGN_FAILED"
 	AuditRotatingRelease                  AuditEventType = "ROTATING_RELEASE"
+	AuditRotatingRecovery                 AuditEventType = "ROTATING_RECOVERY"
 	AuditAuthFailed                       AuditEventType = "AUTH_FAILED"
 	AuditAuthFailuresSuppressed           AuditEventType = "AUTH_FAILURES_SUPPRESSED"
 	AuditCosignerRejectionsSuppressed     AuditEventType = "COSIGNER_REJECTIONS_SUPPRESSED"
@@ -541,6 +542,22 @@ func (a *AuditLogger) LogRotatingReleaseAttributed(attr Attribution, account, tx
 	entry.RotatingStage = &stage
 	entry.RotatingLastValid = lastValid
 	return a.logDurable(entry)
+}
+
+// LogRotatingRecoveryAttributed records an operator's request to start or
+// cancel a stage recovery grant for a rotating account. Recovery derives
+// stage addresses into the signer's cache and never signs, so the entry is
+// informational: Outcome is the action, Reason describes the grant.
+func (a *AuditLogger) LogRotatingRecoveryAttributed(attr Attribution, account, action string, grantID uint64, detail string) {
+	entry := attr.entry(false)
+	entry.Event = AuditRotatingRecovery
+	entry.Outcome = action
+	entry.TxnAuth = account
+	entry.Reason = detail
+	if grantID != 0 {
+		entry.Reason = fmt.Sprintf("grant %d: %s", grantID, detail)
+	}
+	a.Log(entry)
 }
 
 func (a *AuditLogger) LogSignFailed(address, txnSender, reason string) {

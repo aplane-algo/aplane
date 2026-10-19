@@ -35,9 +35,10 @@ type StageFillOptions struct {
 	// DefaultStageBatch.
 	Batch int
 	// MaxDerivations bounds the derivations spent on one account in this
-	// pass, whether it is scanning for its live stage or extending its
-	// lookahead. Zero means one batch. Progress is kept in the table, so the
-	// next pass continues where this one stopped; there is no ceiling.
+	// pass, whether it is searching for its live stage under a recovery
+	// grant or extending its lookahead. Zero means one batch. Progress is
+	// kept in the table, so the next pass continues where this one stopped;
+	// the ceiling on a search is the grant's, not the pass's.
 	MaxDerivations int
 	// Parallel is the number of concurrent derivations. Zero means one.
 	Parallel int
@@ -54,6 +55,11 @@ type StageFillOptions struct {
 	// every release. Nothing that can block on I/O or the network happens
 	// inside a window.
 	KeyUse func(ctx context.Context) (context.Context, func())
+	// Session, if set, is the lock generation the caller read when it
+	// created the pass's context, so the recovery session the pass acts in
+	// is the one that owns its cancellation. Unset, the pass reads the
+	// generation itself.
+	Session *uint64
 }
 
 func (o StageFillOptions) batch() int {
@@ -98,12 +104,19 @@ type StageTableReport struct {
 	// the table. Stage is that stage when it does.
 	Resolved bool
 	Stage    uint64
+	// Class is the worker's reading of the observed authorizer (empty when
+	// the read failed). ClassHeldKey and ClassUnknown are both unresolved;
+	// only ClassUnknown is ever searched for.
+	Class AuthorizerClass
 	// Scanned is the table's length after the pass: the number of stages
 	// whose addresses are known.
 	Scanned uint64
 	// Pending reports that this pass stopped at its derivation budget with
-	// work left: the account is unresolved, or its lookahead is short.
+	// work left: a recovery grant is still searching, or the lookahead is
+	// short. An unknown authorizer with no grant is not pending.
 	Pending bool
+	// Recovery is the account's recovery state after the pass.
+	Recovery RecoveryState
 	// Observed reports that the chain read succeeded; Authorizer and Round
 	// are then what the node reported, and ObservedSeq is the release
 	// memory's sequence just before the read. RotatingStatus uses these even
@@ -122,12 +135,15 @@ type StageTableReport struct {
 // FillStageTables extends every rotating account's stage address table. For
 // an account whose authorizer is in the table (or is the account itself,
 // stage 0) it derives ahead to Horizon past that stage. For an account whose
-// authorizer is not yet in the table it derives further, stopping early when
-// the authorizer appears. Either way a pass spends at most MaxDerivations on
-// one account and reports Pending when work remains, so no account is held
-// for long and the caller schedules the next pass. It never classifies an
-// unresolved authorizer as foreign: the caller decides what a long run of
-// unresolved passes means.
+// authorizer is not in the table it classifies the authorizer first: a
+// credential this signer holds means the account was rekeyed away and
+// nothing is derived; anything else is unknown and is searched for under a
+// recovery grant (automatic from the per-unlock allowance, or an operator's)
+// that stops early when the authorizer appears. A pass spends at most
+// MaxDerivations on one account and reports Pending when work remains, so
+// no account is held for long and the caller schedules the next pass. A
+// search that ends without finding the stage leaves the account unresolved
+// with its stop recorded; it is never called foreign.
 //
 // The seed is loaded only for the duration of one chunk of derivations and
 // zeroed before anything that can block: the chain read, the table write
@@ -148,12 +164,31 @@ func (s *Service) FillStageTables(ctx context.Context, session *keystore.KeySess
 	if depErr != nil {
 		return nil
 	}
+	if ctx.Err() != nil {
+		// A cancelled pass resuming after a lock must not bind, prune or
+		// derive: the inventory it would read is the locked signer's empty
+		// one, and the session it would bind may already be a later
+		// unlock's.
+		return nil
+	}
+	gen, ok := deps.recoverySession(opts.Session)
+	if !ok {
+		// This pass belongs to a session a lock has ended; a later unlock
+		// is already live. Its context is cancelled or about to be.
+		return nil
+	}
+	accounts := s.rotatingAccounts()
+	live := make(map[string]bool, len(accounts))
+	for _, a := range accounts {
+		live[a] = true
+	}
+	deps.Recovery.Prune(gen, func(account string) bool { return live[account] })
 	var reports []StageTableReport
-	for _, account := range s.rotatingAccounts() {
+	for _, account := range accounts {
 		if ctx.Err() != nil {
 			break
 		}
-		reports = append(reports, s.fillStageTable(ctx, deps, account, session, opts))
+		reports = append(reports, s.fillStageTable(ctx, deps, gen, account, session, opts))
 	}
 	return reports
 }
@@ -162,7 +197,13 @@ func (s *Service) FillStageTables(ctx context.Context, session *keystore.KeySess
 // account. Each call opens the seed, derives, and zeroes the seed again.
 type stageDeriver func(ctx context.Context, from, to uint64) ([]types.Address, error)
 
-func (s *Service) fillStageTable(ctx context.Context, deps *RotatingDeps, account string, session *keystore.KeySession, opts StageFillOptions) StageTableReport {
+func (s *Service) fillStageTable(ctx context.Context, deps *RotatingDeps, gen uint64, account string, session *keystore.KeySession, opts StageFillOptions) StageTableReport {
+	report := s.fillStageTableOnce(ctx, deps, gen, account, session, opts)
+	report.Recovery = deps.Recovery.State(account)
+	return report
+}
+
+func (s *Service) fillStageTableOnce(ctx context.Context, deps *RotatingDeps, gen uint64, account string, session *keystore.KeySession, opts StageFillOptions) StageTableReport {
 	report := StageTableReport{Account: account}
 
 	// Identity and network come from the key file; the seed is opened and
@@ -198,23 +239,47 @@ func (s *Service) fillStageTable(ctx context.Context, deps *RotatingDeps, accoun
 
 	derive := s.stageDeriver(account, session, opts)
 	budget := opts.maxDerivations()
-	proven, resolved := resolveStage(table, acct, view.Authorizer)
-	if !resolved {
+	held := knownAddressesFromSnapshot(s.Planner.Snapshot())
+	proven, class := classifyAuthorizer(table, acct, view.Authorizer, held)
+	report.Class = class
+	switch class {
+	case ClassStage:
+		// A grant started for a stage the signer already has, or one a
+		// prepare found first, is over.
+		stage := proven
+		deps.Recovery.reconcile(gen, account, StopResolved, &stage)
+	case ClassHeldKey:
+		// Rekeyed to a credential this signer holds: resolved without a
+		// stage, nothing to derive, and no search to continue.
+		deps.Recovery.reconcile(gen, account, StopHeldKey, nil)
+		return report
+	case ClassUnknown:
+		grant := deps.Recovery.grantFor(gen, account, view.Authorizer, table)
+		if grant == nil {
+			// Automatic recovery is disabled, exhausted or suppressed for
+			// this authorizer: unresolved and idle until an operator
+			// grants a search or the chain moves.
+			return report
+		}
 		before := table.Len()
-		found, extendErr := extendUntil(ctx, table, derive, view.Authorizer, budget, opts)
+		found, pending, grantErr := s.runRecoveryGrant(ctx, deps.Recovery, grant, table, account, session, view.Authorizer, budget, opts)
 		report.Scanned = table.Len()
 		budget -= int(table.Len() - before)
-		if extendErr != nil {
-			report.Err = extendErr
+		if grantErr != nil {
+			report.Err = grantErr
 			return report
 		}
 		if !found {
-			report.Pending = ctx.Err() == nil
+			report.Pending = pending && ctx.Err() == nil
 			return report
 		}
-		proven, resolved = resolveStage(table, acct, view.Authorizer)
+		proven, class = classifyAuthorizer(table, acct, view.Authorizer, held)
+		report.Class = class
+		if class != ClassStage {
+			return report
+		}
 	}
-	report.Resolved, report.Stage = resolved, proven
+	report.Resolved, report.Stage = true, proven
 
 	// Lookahead: cover stages through proven + Horizon, within what is left
 	// of this pass's budget.
@@ -283,6 +348,113 @@ func (s *Service) stageDeriver(account string, session *keystore.KeySession, opt
 		}
 		return addrs, err
 	}
+}
+
+// runRecoveryGrant does one pass's worth of work for a recovery grant: at
+// most budget derivations, each one checked against the grant's remaining
+// stages, active time and cancellation before it runs. A hinted grant
+// probes outward from the hint first, one derivation per probe, and once a
+// probe matches fills the table up to that stage; an unhinted grant extends
+// the table from its edge until the authorizer appears. The grant's
+// counters are charged per derivation, so a grant of 100 derives at most
+// 100 and a cancel lands between two derivations, not after a batch. It
+// returns whether the authorizer is now in the table, whether the grant is
+// still active with work left, and any derivation or write error.
+func (s *Service) runRecoveryGrant(ctx context.Context, rec *RotatingRecovery, g *RecoveryGrant, table *stagetable.Table, account string, session *keystore.KeySession, authorizer types.Address, budget int, opts StageFillOptions) (found, pending bool, err error) {
+	unpaced := opts
+	unpaced.Pace = nil
+	base := s.stageDeriver(account, session, unpaced)
+	// derive caps every call at what the grant may still spend, charges the
+	// grant for what came back, and paces afterwards with the seed released.
+	// A zero result is a cut: extendUntil and extendTo write the prefix
+	// they have and stop.
+	derive := func(ctx context.Context, from, to uint64) ([]types.Address, error) {
+		allow := rec.allow(g)
+		if allow == 0 || ctx.Err() != nil {
+			return nil, nil
+		}
+		if to-from > allow {
+			to = from + allow
+		}
+		started := time.Now()
+		addrs, err := base(ctx, from, to)
+		elapsed := time.Since(started)
+		rec.charge(g, uint64(len(addrs)), elapsed)
+		if err == nil && len(addrs) > 0 && opts.Pace != nil {
+			opts.Pace(elapsed)
+		}
+		return addrs, err
+	}
+
+	if g.Hint != nil && g.Found == nil {
+		for budget > 0 && ctx.Err() == nil {
+			probes := rec.nextProbes(g, 1)
+			if len(probes) == 0 {
+				rec.finish(g, StopHintNotFound, nil)
+				return false, false, nil
+			}
+			stage := probes[0]
+			addrs, err := derive(ctx, stage, stage+1)
+			if err != nil {
+				return false, false, err
+			}
+			if len(addrs) == 0 {
+				break
+			}
+			budget--
+			if addrs[0] == authorizer {
+				rec.setFound(g, stage)
+				s := stage
+				g.Found = &s
+				break
+			}
+		}
+	}
+	switch {
+	case g.Hint != nil && g.Found == nil:
+		// Still probing, or cut short.
+	case g.Found != nil:
+		target := *g.Found + 1
+		if table.Len() < target && budget > 0 {
+			limit := table.Len() + uint64(budget)
+			if limit > target {
+				limit = target
+			}
+			if err := extendTo(ctx, table, derive, limit, opts); err != nil {
+				return false, false, err
+			}
+		}
+		_, found = table.Lookup(authorizer)
+	default:
+		if budget > 0 {
+			found, err = extendUntil(ctx, table, derive, authorizer, budget, opts)
+			if err != nil {
+				return false, false, err
+			}
+		}
+	}
+	if found {
+		stage, _ := table.Lookup(authorizer)
+		rec.finish(g, StopFound, &stage)
+		return true, false, nil
+	}
+	if !rec.progress(g) {
+		// Cancelled, superseded or invalidated while this pass ran.
+		return false, false, nil
+	}
+	switch {
+	case g.Charged >= g.MaxStages:
+		if g.Kind == GrantAutomatic {
+			rec.finish(g, StopAllowanceExhausted, nil)
+		} else {
+			rec.finish(g, StopBudgetExhausted, nil)
+		}
+		return false, false, nil
+	case g.Active >= g.Timeout:
+		rec.finish(g, StopTimedOut, nil)
+		return false, false, nil
+	}
+	return false, true, nil
 }
 
 // resolveStage maps the authorizer to a stage: the account itself is stage

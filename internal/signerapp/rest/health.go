@@ -69,7 +69,16 @@ func (s Service) Status(ir *productruntime.Runtime) *signerapi.StatusResponse {
 		ApprovalWaitSeconds: approvalWaitSeconds,
 		Warnings:            statusWarnings(ir),
 		Notes:               statusNotes(ir),
+		Rotating:            rotatingStatuses(ir),
 	}
+}
+
+// rotatingStatuses is the per-account rotating status from the last pass.
+func rotatingStatuses(ir *productruntime.Runtime) []signerapi.RotatingAccountStatus {
+	if ir == nil {
+		return nil
+	}
+	return ir.RotatingAccountStatuses()
 }
 
 // statusWarnings are the authenticated status warnings: store health plus

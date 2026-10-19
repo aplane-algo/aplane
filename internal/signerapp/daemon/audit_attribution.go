@@ -4,6 +4,7 @@
 package daemon
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/aplane-algo/aplane/internal/auth"
@@ -21,6 +22,7 @@ type signingAuditLogger struct {
 var _ signingAudit = (*signingAuditLogger)(nil)
 var _ signersigning.AuditCosignerRejectLogger = (*signingAuditLogger)(nil)
 var _ signersigning.AuditRotatingReleaseLogger = (*signingAuditLogger)(nil)
+var _ signersigning.AuditRotatingRecoveryLogger = (*signingAuditLogger)(nil)
 
 func signingAuditAttributionFromRequest(r *http.Request) auditAttribution {
 	attr := auditAttribution{
@@ -101,6 +103,14 @@ func (l *signingAuditLogger) LogRotatingRelease(account, txid string, stage, las
 		return nil
 	}
 	return l.log.LogRotatingReleaseAttributed(l.attribution, account, txid, stage, lastValid)
+}
+
+// LogRotatingRecovery records an operator's recovery request.
+func (l *signingAuditLogger) LogRotatingRecovery(_ context.Context, account, action string, grantID uint64, detail string) {
+	if l == nil || l.log == nil {
+		return
+	}
+	l.log.LogRotatingRecoveryAttributed(l.attribution, account, action, grantID, detail)
 }
 
 func (l *signingAuditLogger) RecordApprovalResponse(response signerapproval.SignResponse) {

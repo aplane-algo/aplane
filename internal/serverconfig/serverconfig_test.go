@@ -764,4 +764,19 @@ func TestServerConfigRotatingStageHorizonDefaultsAndOverrides(t *testing.T) {
 	if cfg.Clone().Rotating.StageHorizon != 512 {
 		t.Fatal("Clone dropped the rotating settings")
 	}
+	// Recovery settings default alongside the horizon and load from the
+	// same block; zero disables automatic recovery and is kept as given.
+	if cfg.Rotating.RecoveryMaxStages != DefaultRecoveryMaxStages || cfg.Rotating.RecoveryTimeout != DefaultRecoveryTimeout {
+		t.Fatalf("recovery defaults = %d, %v", cfg.Rotating.RecoveryMaxStages, cfg.Rotating.RecoveryTimeout)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("rotating:\n  recovery_max_stages: 0\n  recovery_timeout: 90s\n"), 0o640); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	cfg, err = LoadServerConfig(dir)
+	if err != nil {
+		t.Fatalf("LoadServerConfig: %v", err)
+	}
+	if cfg.Rotating.RecoveryMaxStages != 0 || cfg.Rotating.RecoveryTimeout != 90*time.Second || cfg.Rotating.StageHorizon != DefaultStageHorizon {
+		t.Fatalf("recovery overrides = %+v", cfg.Rotating)
+	}
 }

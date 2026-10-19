@@ -97,8 +97,14 @@ func (s *rotatingKeyStore) Get(context.Context, string) (*coresigning.KeyMateria
 }
 
 type rotatingFixture struct {
-	kind    rotatingTestType
-	svc     *Service
+	kind rotatingTestType
+	svc  *Service
+	// held lists extra, non-rotating addresses the planner snapshot
+	// reports as credentials this signer holds.
+	held []string
+	// lockGen is the lock generation the fixture reports; a test bumps it
+	// to simulate a lock and unlock.
+	lockGen uint64
 	chain   *fakeRotatingChain
 	store   *rotatingKeyStore
 	present bool
@@ -158,7 +164,7 @@ func newRotatingFixtureFor(t *testing.T, kind rotatingTestType) *rotatingFixture
 			if !f.present {
 				return PlannerRuntimeSnapshot{}
 			}
-			return PlannerRuntimeSnapshot{
+			snap := PlannerRuntimeSnapshot{
 				KeyFiles: map[string]string{address: "keys/" + address + ".key"},
 				KeyTypes: map[string]string{address: kind.keyType},
 				KeyMetadata: map[string]PlannerKeyMetadata{address: {
@@ -166,11 +172,21 @@ func newRotatingFixtureFor(t *testing.T, kind rotatingTestType) *rotatingFixture
 					LogicSigResources: &profile,
 				}},
 			}
+			for _, h := range f.held {
+				snap.KeyFiles[h] = "keys/" + h + ".key"
+				snap.KeyTypes[h] = "ed25519"
+				snap.KeyMetadata[h] = PlannerKeyMetadata{Category: keys.CategoryEd25519}
+			}
+			return snap
 		}},
 		IsUnlocked: func() bool { return true },
-		Rotating:   &RotatingDeps{Chain: chain, Tables: tables, Locks: &RotatingLocks{}},
+		// A generous automatic allowance: the fill tests exercise lookahead
+		// and search mechanics; the recovery tests set their own bounds.
+		Rotating: &RotatingDeps{Chain: chain, Tables: tables, Locks: &RotatingLocks{}, Recovery: &RotatingRecovery{MaxStages: 1 << 20, Timeout: time.Hour},
+			LockGeneration: func() uint64 { return f.lockGen }},
 	}
 	f.svc = svc
+	svc.Rotating.Recovery.SetGenerationSource(func() uint64 { return f.lockGen })
 	f.secret = &coresigning.RotatingKeyMaterial{Seed: bytes.Clone(seed[:]), GenesisHash: rotatingTestGenesis}
 	t.Cleanup(f.secret.Zero)
 	return f
@@ -235,7 +251,8 @@ func TestFillStageTablesUnresolvedAccountKeepsScanningPastHorizon(t *testing.T) 
 	opts := StageFillOptions{Horizon: 2, Batch: 2}
 
 	// Passes 1 and 2 derive two stages each without finding the authorizer;
-	// the horizon (2) does not stop them.
+	// the horizon (2) does not stop them, because the search runs under an
+	// automatic recovery grant whose allowance is what bounds it.
 	for pass, wantScanned := range []uint64{2, 4} {
 		r := f.fill(t, opts)
 		if r.Err != nil || r.Resolved || !r.Pending || r.Scanned != wantScanned {
@@ -264,7 +281,7 @@ func TestFillStageTablesNeverMatchingAuthorizerIsNeverForeign(t *testing.T) {
 	var last StageTableReport
 	for pass := 0; pass < 3; pass++ {
 		last = f.fill(t, opts)
-		if last.Err != nil || last.Resolved || !last.Pending {
+		if last.Err != nil || last.Resolved || !last.Pending || last.Class != ClassUnknown {
 			t.Fatalf("pass %d: %+v", pass, last)
 		}
 		if last.Scanned != uint64(3*(pass+1)) {

@@ -96,6 +96,7 @@ func TestProductAllowedActionsCoverAuthenticatedHandlerActions(t *testing.T) {
 		auth.ActionKeyTypesDeactivate,
 		auth.ActionKeyTypesView,
 		auth.ActionKeysDelete,
+		auth.ActionKeysRecover,
 		auth.ActionKeysExport,
 		auth.ActionKeysGenerate,
 		auth.ActionKeysImport,

@@ -20,6 +20,12 @@ func (fs *Signer) rotatingDeps(ir *productruntime.Runtime) *signersigning.Rotati
 		Tables:   ir.StageTables(),
 		Locks:    &fs.rotatingLocks,
 		Releases: &fs.rotatingReleases,
+		Recovery: &fs.rotatingRecovery,
+		// The recovery allowance is per unlock: the lock generation
+		// identifies the unlocked session, so a lock and unlock between two
+		// worker ticks, or a lock notification delivered late, can neither
+		// keep an old allowance alive nor erase a new one.
+		LockGeneration: ir.LockGeneration,
 	}
 }
 

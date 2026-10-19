@@ -5,6 +5,35 @@ token, setup-file, and protocol-v5 entries describe behavior superseded by the
 enrolled-key model and current admin protocol v6.0; they are not current setup
 instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 
+## Bounded rotating stage recovery
+
+The stage table worker no longer scans without a ceiling for a rotating
+account whose authorizer it cannot place. Before, such an account was
+derived one batch per tick, the seed opened each time, until the key was
+deleted. Now the worker classifies the authorizer first (stage 0, a cached
+stage, a key this signer holds, or unknown) and searches only for an
+unknown one, under a recovery grant bounded by a per-account, per-unlock
+allowance (`rotating.recovery_max_stages`, default 1,024 past the cache,
+never replenished within the unlock; `rotating.recovery_timeout`, default
+5m, caps its derivation time). An exhausted search leaves the account
+unresolved with a `/status` note and a stopped reason, the way a
+non-rotating account rekeyed to an unknown address is left alone; it is not
+an alert, and it never claims the account was exited. Lookahead to
+`rotating.stage_horizon` is unchanged; `stage_horizon` is not deprecated.
+Operators get `rotate recover <account>` (new signer route
+`POST /admin/rotating/recover`, new client action `keys.recover`, audited as
+`ROTATING_RECOVERY`): a search with the operator's own budget, optionally
+with a stage hint that is derived directly and probed around, then the
+cache is filled up to the found stage; `cancel` stops it. `/status` gains
+`rotating[]` with each account's observed authorizer, classification,
+cached stages and recovery state, and `rotate status` shows it. Prepares
+are unchanged: a request whose stage is not cached still runs its own
+bounded discovery. Unchanged and stated plainly: the worker still derives
+to the horizon on a timer and opens the seed to do so; this bounds the
+pathological case and does not narrow idle secret handling. Contract
+fixtures `rotating_recover_{request,response}.json` and
+`status_response_rotating.json` are added.
+
 ## Admin rekeys stay in the signer's custody
 
 An admin-key bounded rekey (`/sign/bounded-admin`, `aprekey rekey`) may now
