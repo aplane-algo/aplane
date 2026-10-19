@@ -28,11 +28,11 @@ expect_failure() {
     fi
 }
 
-fake_binary apsigner v0.41.1-15-gabc12345-dirty
-fake_binary apshell v0.41.1-15-gabc12345-dirty
+fake_binary apsigner v0.43.0-15-gabc12345-dirty
+fake_binary apshell v0.43.0-15-gabc12345-dirty
 prepare_release_metadata
 install_release_metadata "$test_root/installed/install"
-test "$(release_metadata_version "$test_root/installed/install/release.json")" = v0.41.1-15-gabc12345-dirty
+test "$(release_metadata_version "$test_root/installed/install/release.json")" = v0.43.0-15-gabc12345-dirty
 # The second run passes the ordinary upgrade gate and preserves unrelated state.
 printf 'existing state\n' > "$test_root/installed/state"
 require_supported_upgrade "$test_root/installed/install/release.json" 'local install' "$test_root/installed"
@@ -47,6 +47,11 @@ prepare_release_metadata
 install_release_metadata "$test_root/legacy/install"
 FORCE_UPGRADE=0
 require_supported_upgrade "$test_root/legacy/install/release.json" 'local install' "$test_root/legacy"
+
+printf '{\n  "version": "v0.42.0"\n}\n' > "$test_root/old-release.json"
+expect_failure require_supported_upgrade "$test_root/old-release.json" 'local install' "$test_root/old"
+printf '{\n  "version": "v0.43.0"\n}\n' > "$test_root/current-release.json"
+require_supported_upgrade "$test_root/current-release.json" 'local install' "$test_root/current"
 
 fake_binary apshell v0.41.0
 expect_failure prepare_release_metadata
