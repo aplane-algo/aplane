@@ -160,9 +160,9 @@ Rules:
 
 This prevents a display string from becoming the trust anchor for policy.
 
-This APlane release implements one compiled authorization contract: consensus
-v42. Client transaction construction validates algod's reported consensus
-identifier before using suggested parameters. First-party planning and executable
+This APlane release accepts exactly consensus v42 and v43, which share one
+compiled authorization/resource contract. Client transaction construction validates
+algod's reported consensus identifier before using suggested parameters. First-party planning and executable
 workflows refresh that validation before asking apsigner to plan, requesting
 signatures, or submitting/simulating pre-signed bytes, so prebuilt and
 plugin-produced groups cannot bypass it. A successful SuggestedParams check is
@@ -170,8 +170,14 @@ reused for at most 30 seconds by the same algod client, avoiding a redundant
 round trip inside one interactive workflow; changing the active network or
 algod client invalidates it. Other identifiers fail closed. The signer itself
 remains network-independent: during `/plan` or `/sign` it validates the
-transaction genesis hash for policy context, then applies the compiled v42
+transaction genesis hash for policy context, then applies the shared v42/v43
 LogicSig and native-PQ rules.
+
+V43 adds the requirement that an account's minimum balance must equal the base
+minimum before closing. Algod 5.0.4 also enforces this at admission and simulation
+on v42. Client single-payment close-out preparation checks algod's aggregate
+`min-balance`, including application size sponsorship. The ledger remains
+authoritative for resource changes within atomic groups and after preflight.
 
 Rotating accounts (`signing_flow: rotating1`) are the one exception. Their
 prepare and sign endpoints, and the background stage table fill, read the

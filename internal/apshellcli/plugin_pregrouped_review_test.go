@@ -14,6 +14,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/plugin/jsonrpc"
+	"github.com/aplane-algo/aplane/internal/signing"
 )
 
 // pregroupedSignedResult builds a valid fully signed two-transaction group,
@@ -45,7 +46,7 @@ func pregroupedSignedResult(t *testing.T) *jsonrpc.ExecuteResult {
 	intents := make([]jsonrpc.TransactionIntent, len(txns))
 	for i := range txns {
 		txns[i].Group = gid
-		_, raw, err := crypto.SignTransaction(acct.PrivateKey, txns[i])
+		_, raw, err := signing.SignTransactionWithKey(acct.PrivateKey, txns[i])
 		if err != nil {
 			t.Fatalf("sign txn %d: %v", i, err)
 		}

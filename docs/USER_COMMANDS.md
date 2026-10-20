@@ -102,7 +102,10 @@ Close an account and send all ALGO to a destination.
 close <account> to <destination> [options]
 ```
 
-**Restrictions:** Fails if account is online for consensus or holds any ASAs.
+**Restrictions:** Fails if the account is online for consensus, holds any ASAs,
+or its minimum balance requirement differs from the base 100,000 microAlgos.
+Release outstanding application resources and application size sponsorship
+before closing, even if the account has no created or opted-in applications.
 
 **Options:**
 | Option | Description |

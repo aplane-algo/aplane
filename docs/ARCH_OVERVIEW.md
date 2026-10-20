@@ -750,14 +750,14 @@ interleaved with domain logic on a single flat facade.
 
 The live consensus boundary is client-owned in `internal/engine/consensus.go`.
 Transaction construction validates algod SuggestedParams, and first-party
-planning and executable workflows refresh the v42 check before asking
+planning and executable workflows refresh the v42/v43 check before asking
 apsigner to plan, releasing signatures, invoking plugin signers, or submitting
 or simulating immutable signed groups. The guarded flow enters through the same
 checked submit boundary. `NewInitializedEngine` may leave `AlgodClient` nil when
 algod is not configured or client creation fails; consensus-gated operations
 then fail with `ErrNoAlgodClient` before contacting a signer, plugin, or network.
-Apsigner applies its compiled v42 consensus contract rather than refreshing
-that contract from a node. This does not make the signer network-independent:
+Apsigner applies the compiled authorization contract shared by v42 and v43
+rather than refreshing that contract from a node. This does not make the signer network-independent:
 rotating signing reads chain state, and TEAL compilation uses configured algod.
 
 Engine code must not depend on UI parsing or formatting packages; this is

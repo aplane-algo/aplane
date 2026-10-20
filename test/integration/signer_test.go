@@ -22,6 +22,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerclient"
+	"github.com/aplane-algo/aplane/internal/signing"
 	utilkeys "github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/transport"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
@@ -2355,7 +2356,7 @@ func closeAccountWithSigningKey(
 	}
 	txn.CloseRemainderTo = closeAddr
 
-	txid, signedBytes, err := crypto.SignTransaction(signingKey, txn)
+	txid, signedBytes, err := signing.SignTransactionWithKey(signingKey, txn)
 	if err != nil {
 		t.Fatalf("failed to sign cleanup close transaction for %s: %v", account, err)
 	}

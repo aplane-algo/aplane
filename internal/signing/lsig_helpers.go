@@ -4,10 +4,12 @@
 package signing
 
 import (
+	"crypto/ed25519"
 	"fmt"
 
 	"github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
+	"github.com/algorand/go-algorand-sdk/v2/transaction"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
@@ -66,7 +68,7 @@ func SignWithRawKey(txn types.Transaction, privateKey []byte, expectedAddress st
 	}
 
 	// Sign the transaction
-	_, signedBytes, err := crypto.SignTransaction(account.PrivateKey, txn)
+	_, signedBytes, err := SignTransactionWithKey(account.PrivateKey, txn)
 	if err != nil {
 		return types.SignedTxn{}, fmt.Errorf("failed to sign transaction: %w", err)
 	}
@@ -77,4 +79,18 @@ func SignWithRawKey(txn types.Transaction, privateKey []byte, expectedAddress st
 	}
 
 	return stxn, nil
+}
+
+// SignTransactionWithKey signs txn with an Ed25519 private key held in memory
+// and returns the transaction ID and the encoded signed transaction. When the
+// key's address differs from the sender's, that address becomes the AuthAddr,
+// exactly as the Algorand SDK's deprecated crypto.SignTransaction did. It goes
+// through the SDK's current signer API, so callers that already hold the key
+// (the raw-key path and tests) avoid the deprecated entry point.
+func SignTransactionWithKey(privateKey ed25519.PrivateKey, txn types.Transaction) (string, []byte, error) {
+	signer, err := crypto.SKToInMemorySigner(privateKey)
+	if err != nil {
+		return "", nil, err
+	}
+	return transaction.SignTransaction(transaction.Ed25519AccountTransactionSigner{Signer: signer}, txn)
 }

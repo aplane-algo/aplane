@@ -46,8 +46,9 @@ small LogicSig program and opcode cost. It never adds a dummy merely to reduce
 the program surcharge: another transaction costs a full base fee but buys at
 most 1,000 free program bytes.
 
-This release has no legacy sizing mode. APlane must be upgraded deliberately
-before supporting a consensus contract other than v42.
+This release accepts v42 and v43, whose fee and resource rules are identical;
+the v42 formulas and examples here apply to both. APlane must be upgraded
+deliberately before supporting any other consensus contract.
 
 ## Unified Required Fee
 

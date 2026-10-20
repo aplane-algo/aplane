@@ -63,12 +63,16 @@ func countingConsensusTestAlgod(t *testing.T, version string) (*algod.Client, *h
 	return client, server, &calls
 }
 
-func TestValidateAlgodConsensusAcceptsV42WithNilContext(t *testing.T) {
-	client, server := consensusTestAlgod(t, string(protocol.ConsensusV42), nil)
-	defer server.Close()
-	var ctx context.Context
-	if err := ValidateAlgodConsensus(ctx, client); err != nil {
-		t.Fatalf("ValidateAlgodConsensus() error = %v", err)
+func TestValidateAlgodConsensusAcceptsSupportedVersionsWithNilContext(t *testing.T) {
+	for _, version := range []protocol.ConsensusVersion{protocol.ConsensusV42, protocol.ConsensusV43} {
+		t.Run(string(version), func(t *testing.T) {
+			client, server := consensusTestAlgod(t, string(version), nil)
+			defer server.Close()
+			var ctx context.Context
+			if err := ValidateAlgodConsensus(ctx, client); err != nil {
+				t.Fatalf("ValidateAlgodConsensus() error = %v", err)
+			}
+		})
 	}
 }
 
@@ -109,6 +113,23 @@ func TestConsensusValidationRefreshesExpiredEntry(t *testing.T) {
 	}
 	if got := calls.Load(); got != 2 {
 		t.Fatalf("SuggestedParams calls = %d, want 2", got)
+	}
+}
+
+func TestConsensusValidationAcrossProtocolUpgrades(t *testing.T) {
+	transport := newAccountMockTransport(t)
+	eng := setupEngineWithMockAlgod(t, transport)
+	for _, version := range []protocol.ConsensusVersion{protocol.ConsensusV42, protocol.ConsensusV43, protocol.ConsensusFuture} {
+		transport.txParams.ConsensusVersion = string(version)
+		eng.consensusValidation.validatedAt = time.Now().Add(-consensusValidationReuseWindow - time.Second)
+		err := eng.validateAlgodConsensus(context.Background())
+		if version == protocol.ConsensusFuture {
+			if err == nil || !strings.Contains(err.Error(), "supported contracts: v42 and v43") {
+				t.Fatalf("unknown upgrade error = %v, want unsupported consensus", err)
+			}
+		} else if err != nil {
+			t.Fatalf("supported upgrade %s: %v", version, err)
+		}
 	}
 }
 
@@ -194,30 +215,34 @@ func TestGroupPlanningValidatesConsensusBeforeSigner(t *testing.T) {
 }
 
 func TestGroupPlanningForwardsAfterConsensusValidation(t *testing.T) {
-	client, algodServer := consensusTestAlgod(t, string(protocol.ConsensusV42), nil)
-	defer algodServer.Close()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/plan" {
-			http.NotFound(w, r)
-			return
-		}
-		_ = json.NewEncoder(w).Encode(signerapi.GroupPlanResponse{Transactions: []string{"545801"}})
-	}))
-	defer server.Close()
+	for _, version := range []protocol.ConsensusVersion{protocol.ConsensusV42, protocol.ConsensusV43} {
+		t.Run(string(version), func(t *testing.T) {
+			client, algodServer := consensusTestAlgod(t, string(version), nil)
+			defer algodServer.Close()
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/plan" {
+					http.NotFound(w, r)
+					return
+				}
+				_ = json.NewEncoder(w).Encode(signerapi.GroupPlanResponse{Transactions: []string{"545801"}})
+			}))
+			defer server.Close()
 
-	eng, err := NewEngine("test", WithAlgodClient(client))
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
-	eng.Connection.SignerClient = signerclient.NewSignerClient(server.URL)
-	response, err := eng.RequestGroupPlanWithContext(context.Background(), []signerapi.SignRequest{{
-		AuthAddress: "ADDR",
-		TxnBytesHex: "545801",
-	}})
-	if err != nil {
-		t.Fatalf("RequestGroupPlanWithContext() error = %v", err)
-	}
-	if len(response.Transactions) != 1 {
-		t.Fatalf("planned transactions = %v, want one", response.Transactions)
+			eng, err := NewEngine("test", WithAlgodClient(client))
+			if err != nil {
+				t.Fatalf("NewEngine() error = %v", err)
+			}
+			eng.Connection.SignerClient = signerclient.NewSignerClient(server.URL)
+			response, err := eng.RequestGroupPlanWithContext(context.Background(), []signerapi.SignRequest{{
+				AuthAddress: "ADDR",
+				TxnBytesHex: "545801",
+			}})
+			if err != nil {
+				t.Fatalf("RequestGroupPlanWithContext() error = %v", err)
+			}
+			if len(response.Transactions) != 1 {
+				t.Fatalf("planned transactions = %v, want one", response.Transactions)
+			}
+		})
 	}
 }

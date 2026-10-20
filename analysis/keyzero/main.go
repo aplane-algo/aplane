@@ -60,6 +60,7 @@ var exemptFunctions = map[string]string{
 	"GenerateKey":            "returns keys to caller - caller responsible for zeroing",
 	"LoadKeyMaterial":        "returns keys to caller - caller responsible for zeroing via ZeroKey()",
 	"SignWithRawKey":         "key passed as parameter - caller owns lifecycle",
+	"SignTransactionWithKey": "key passed as parameter - caller owns lifecycle; the in-memory signer only aliases it",
 	"PrivateKeySize":         "returns size constant, not actual key material",
 	"Sign":                   "wrapper delegates to implementation with proper zeroing",
 	"splitPrivateKey":        "returns slices of caller-owned buffer, no new allocation to zero",
