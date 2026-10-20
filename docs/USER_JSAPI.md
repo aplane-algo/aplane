@@ -407,7 +407,7 @@ Online `keyreg` options:
 | `plan(signRequests)` | `{ transactions, mutations? }` |
 
 `sign()` reads an external transaction file, verifies the live algod is
-v42-compatible, signs, submits, and optionally waits.
+running supported consensus v42 or v43, signs, submits, and optionally waits.
 
 `plan()` sends transaction sign requests to the signer group planner without
 signing or triggering approval. Request fields:
@@ -444,7 +444,7 @@ currently accepts `"f1"` (Falcon-1024). It is mutually exclusive with
 whose `signedTxnHex` carries a LogicSig must also include `lsigResources`; the
 signer checks the program and argument byte counts against the signed envelope
 and uses the declared reviewed opcode ceiling. `plan()` validates that the live
-client algod is v42-compatible before contacting apsigner.
+client algod is running supported consensus v42 or v43 before contacting apsigner.
 
 ## Application Interaction
 

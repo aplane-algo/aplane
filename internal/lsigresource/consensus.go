@@ -13,9 +13,10 @@ import (
 
 var ErrUnknownConsensus = errors.New("unsupported consensus contract")
 
-// CurrentConsensusVersion is the sole consensus contract implemented by this
-// APlane release. Supporting another protocol requires updating and reviewing
-// this package; versions are never ordered or inferred at runtime.
+// CurrentConsensusVersion is the compiled authorization contract used by the
+// signer. V43 retains v42's authorization and resource rules; its close-out
+// change is enforced by algod and client preflight. Supporting another protocol
+// requires review here; versions are never ordered or inferred at runtime.
 const CurrentConsensusVersion = protocol.ConsensusV42
 
 // ConsensusProfile is the closed subset of consensus parameters required by
@@ -31,25 +32,30 @@ type ConsensusProfile struct {
 	MaximumLogicSigVersion uint64
 }
 
-// ResolveConsensus verifies that an algod-reported identifier represents the
-// one consensus contract supported by this release, then returns the compiled
-// v42 profile.
+// ResolveConsensus accepts only the reviewed v42 and v43 identifiers and returns
+// the corresponding compiled planning profile, preserving the reported version.
 func ResolveConsensus(version string) (ConsensusProfile, error) {
 	consensusVersion := protocol.ConsensusVersion(version)
-	if consensusVersion != CurrentConsensusVersion {
+	switch consensusVersion {
+	case protocol.ConsensusV42, protocol.ConsensusV43:
+		return consensusProfile(consensusVersion)
+	default:
 		return ConsensusProfile{}, fmt.Errorf("%w: %q", ErrUnknownConsensus, version)
 	}
-	return CurrentConsensus()
 }
 
-// CurrentConsensus returns the compiled and validated v42 planning contract.
+// CurrentConsensus returns the compiled planning contract shared by v42 and v43.
 func CurrentConsensus() (ConsensusProfile, error) {
-	params, ok := sdkconfig.Consensus[CurrentConsensusVersion]
+	return consensusProfile(CurrentConsensusVersion)
+}
+
+func consensusProfile(version protocol.ConsensusVersion) (ConsensusProfile, error) {
+	params, ok := sdkconfig.Consensus[version]
 	if !ok {
-		return ConsensusProfile{}, fmt.Errorf("%w: SDK has no parameters for %q", ErrUnknownConsensus, CurrentConsensusVersion)
+		return ConsensusProfile{}, fmt.Errorf("%w: SDK has no parameters for %q", ErrUnknownConsensus, version)
 	}
 	profile := ConsensusProfile{
-		Version:                CurrentConsensusVersion,
+		Version:                version,
 		MaxGroupSize:           uint64(params.MaxTxGroupSize),
 		MinTxnFee:              params.MinTxnFee,
 		SizeUnit:               params.LogicSigMaxSize,
@@ -59,7 +65,7 @@ func CurrentConsensus() (ConsensusProfile, error) {
 		MaximumLogicSigVersion: params.LogicSigVersion,
 	}
 	if err := profile.validate(); err != nil {
-		return ConsensusProfile{}, fmt.Errorf("consensus profile %q: %w", CurrentConsensusVersion, err)
+		return ConsensusProfile{}, fmt.Errorf("consensus profile %q: %w", version, err)
 	}
 	return profile, nil
 }

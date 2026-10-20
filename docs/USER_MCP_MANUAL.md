@@ -328,7 +328,8 @@ passthrough.
 
 - LogicSig program bytes, arguments, and opcode cost are separate resources.
   On v42, dummies buy argument/opcode capacity; excess program bytes add a
-  group fee surcharge instead. This release supports only the v42 contract.
+  group fee surcharge instead. This release supports exactly v42 and v43,
+  with identical resource rules.
 - The signer computes one aggregate consensus fee over the final group,
   credits existing pooled fees, and assigns any deficit only to mutable
   signer-controlled slots. Foreign and passthrough slots are never rewritten.

@@ -121,8 +121,8 @@ The names intentionally describe different account types:
 
 | Key type | Authorization | Recovery | Network requirement |
 |---|---|---|---|
-| `falcon1024` | Protocol-native top-level `PQsig` | 25-word Algorand mnemonic | this release supports exactly consensus v42 |
-| `aplane.falcon1024.v1` | TEAL v13 LogicSig containing a Falcon signature | 24-word BIP-39 mnemonic | recognized network using the supported consensus v42 |
+| `falcon1024` | Protocol-native top-level `PQsig` | 25-word Algorand mnemonic | this release supports exactly consensus v42 and v43 |
+| `aplane.falcon1024.v1` | TEAL v13 LogicSig containing a Falcon signature | 24-word BIP-39 mnemonic | recognized network using supported consensus v42 or v43 |
 
 There is no conversion between them. A mnemonic or backup entry for one type
 cannot be imported as the other. Native Falcon transactions also consume a

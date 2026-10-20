@@ -22,14 +22,22 @@ func mustProfile(t *testing.T, version protocol.ConsensusVersion) ConsensusProfi
 	return profile
 }
 
-func TestResolveConsensusUsesSingleV42Contract(t *testing.T) {
+func TestResolveConsensusAcceptsOnlyV42AndV43(t *testing.T) {
 	t.Parallel()
 
 	v42 := mustProfile(t, protocol.ConsensusV42)
 	if v42.Version != CurrentConsensusVersion || v42.PerByteTxnSurcharge != 100 {
 		t.Fatalf("v42 profile = %#v", v42)
 	}
-	for _, unsupported := range []protocol.ConsensusVersion{protocol.ConsensusV41, protocol.ConsensusFuture, "future-unreviewed"} {
+	v43 := mustProfile(t, protocol.ConsensusV43)
+	if v43.Version != protocol.ConsensusV43 {
+		t.Fatalf("v43 profile version = %s", v43.Version)
+	}
+	v43.Version = v42.Version
+	if v43 != v42 {
+		t.Fatalf("v43 resource profile = %#v, want v42 rules %#v", v43, v42)
+	}
+	for _, unsupported := range []protocol.ConsensusVersion{protocol.ConsensusV41, protocol.ConsensusFuture, "future-unreviewed", "", "v42", "v43", "v44"} {
 		if _, err := ResolveConsensus(string(unsupported)); !errors.Is(err, ErrUnknownConsensus) {
 			t.Fatalf("ResolveConsensus(%q) error = %v, want unsupported", unsupported, err)
 		}

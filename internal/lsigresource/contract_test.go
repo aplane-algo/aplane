@@ -4,6 +4,7 @@
 package lsigresource
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/algorand/go-algorand-sdk/v2/protocol"
@@ -18,6 +19,7 @@ func TestPinnedLogicSigConsensusContracts(t *testing.T) {
 		version protocol.ConsensusVersion
 	}{
 		{name: "v42", version: protocol.ConsensusV42},
+		{name: "v43", version: protocol.ConsensusV43},
 	}
 
 	for _, test := range tests {
@@ -26,12 +28,12 @@ func TestPinnedLogicSigConsensusContracts(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if profile.Version != CurrentConsensusVersion {
-				t.Fatalf("profile version = %s, want %s", profile.Version, CurrentConsensusVersion)
+			if profile.Version != test.version {
+				t.Fatalf("profile version = %s, want %s", profile.Version, test.version)
 			}
-			params, ok := sdkconfig.Consensus[CurrentConsensusVersion]
+			params, ok := sdkconfig.Consensus[test.version]
 			if !ok {
-				t.Fatalf("SDK consensus table has no entry for %s", CurrentConsensusVersion)
+				t.Fatalf("SDK consensus table has no entry for %s", test.version)
 			}
 			if params.LogicSigVersion != 13 {
 				t.Fatalf("LogicSigVersion = %d, want 13", params.LogicSigVersion)
@@ -55,6 +57,25 @@ func TestPinnedLogicSigConsensusContracts(t *testing.T) {
 				t.Fatalf("PerByteTxnSurcharge = %d, want 100", got)
 			}
 		})
+	}
+}
+
+// Pin the reason a network-independent signer can share one authorization
+// contract across both protocols. Any other SDK parameter change needs review.
+func TestV43DiffersOnlyInCloseOutAndUpgradeSchedule(t *testing.T) {
+	v42 := sdkconfig.Consensus[protocol.ConsensusV42]
+	v43 := sdkconfig.Consensus[protocol.ConsensusV43]
+	if v42.CloseRequiresBaseMinBalance || !v43.CloseRequiresBaseMinBalance {
+		t.Fatal("expected only v43 to require base minimum balance at consensus validation")
+	}
+	if v42.MinBalance != 100_000 || !v42.EnablePQSchemeFalcon1024 {
+		t.Fatal("unexpected base minimum balance or native Falcon support")
+	}
+	v42.ApprovedUpgrades = nil
+	v43.ApprovedUpgrades = nil
+	v43.CloseRequiresBaseMinBalance = false
+	if !reflect.DeepEqual(v42, v43) {
+		t.Fatal("v43 differs from v42 beyond the reviewed close-out rule and upgrade schedule")
 	}
 }
 

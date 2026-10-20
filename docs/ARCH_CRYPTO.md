@@ -18,7 +18,7 @@ These share storage and runtime plumbing, but not the signing behavior:
 
 - native Ed25519 signs directly into `SignedTxn.Sig`
 - native Falcon signs directly into top-level `SignedTxn.PQsig` with scheme
-  `f1`; this release requires consensus v42 and carries a two-base-fee PQ
+  `f1`; this release supports consensus v42 and v43 and carries a two-base-fee PQ
   contribution
 - DSA-backed LogicSig providers derive LogicSig bytecode and place a
   cryptographic signature in `LogicSig.Args`

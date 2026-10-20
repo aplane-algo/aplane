@@ -29,16 +29,16 @@ func resolveSupportedConsensus(version string) (lsigresource.ConsensusProfile, e
 	profile, err := lsigresource.ResolveConsensus(version)
 	if err != nil {
 		return lsigresource.ConsensusProfile{}, fmt.Errorf(
-			"network consensus %q is unsupported by this APlane release; required contract: v42 (%s): %w",
-			version, lsigresource.CurrentConsensusVersion, err,
+			"network consensus %q is unsupported by this APlane release; supported contracts: v42 and v43: %w",
+			version, err,
 		)
 	}
 	return profile, nil
 }
 
-// ValidateAlgodConsensus verifies that algod is running the sole consensus
-// contract supported by this APlane release. Clients perform this live check;
-// apsigner uses the corresponding compiled contract and does not query algod.
+// ValidateAlgodConsensus verifies that algod is running a reviewed consensus
+// contract (v42 or v43). Clients perform this live check; apsigner uses their
+// shared compiled authorization contract and does not query algod.
 func ValidateAlgodConsensus(ctx context.Context, client *algod.Client) error {
 	_, err := querySupportedAlgodConsensus(ctx, client)
 	return err

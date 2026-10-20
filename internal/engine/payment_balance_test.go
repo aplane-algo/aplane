@@ -6,9 +6,11 @@ package engine
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/common/models"
+	"github.com/algorand/go-algorand-sdk/v2/protocol"
 )
 
 func TestPreparePayment_NoAlgodClientError(t *testing.T) {
@@ -296,5 +298,54 @@ func TestPrepareClose_Success(t *testing.T) {
 	}
 	if txn.Amount != 0 {
 		t.Errorf("txn.Amount = %d, want 0 for close", txn.Amount)
+	}
+}
+
+func TestCloseMinimumBalanceOnSupportedConsensus(t *testing.T) {
+	for _, version := range []protocol.ConsensusVersion{protocol.ConsensusV42, protocol.ConsensusV43} {
+		t.Run(string(version), func(t *testing.T) {
+			for _, test := range []struct {
+				name       string
+				minBalance uint64
+				wantError  bool
+			}{
+				{name: "base balance can close", minBalance: 100_000},
+				{name: "size sponsor without holdings cannot close", minBalance: 285_500, wantError: true},
+				{name: "missing minimum balance fails closed", wantError: true},
+			} {
+				t.Run(test.name, func(t *testing.T) {
+					sender, receiver := testAddr(1), testAddr(2)
+					transport := newAccountMockTransport(t)
+					transport.txParams.ConsensusVersion = string(version)
+					// No assets, created apps, or local app state: aggregate MBR
+					// must catch size sponsorship that those inventories miss.
+					transport.addAccountFull(models.Account{
+						Address: sender, Amount: 5_000_000, Status: "Offline", MinBalance: test.minBalance,
+					})
+					transport.addAccount(receiver, 1_000_000)
+					eng := setupEngineWithMockAlgod(t, transport)
+					for _, payment := range []bool{false, true} {
+						var result *TransactionPrepResult
+						var err error
+						if payment {
+							result, _, err = eng.PreparePayment(context.Background(), SendPaymentParams{From: sender, To: receiver, Close: true})
+						} else {
+							result, _, err = eng.PrepareClose(context.Background(), CloseAccountParams{From: sender, CloseTo: receiver})
+						}
+						if test.wantError {
+							if err == nil || !strings.Contains(err.Error(), "minimum balance requirement") || result != nil {
+								t.Fatalf("payment=%t: result=%v, error=%v; want minimum balance rejection", payment, result, err)
+							}
+						} else if err != nil || result == nil || result.Transaction.CloseRemainderTo.String() != receiver {
+							t.Fatalf("payment=%t: result=%v, error=%v; want close transaction", payment, result, err)
+						}
+					}
+					// Ordinary payments remain available for an account carrying MBR.
+					if _, _, err := eng.PreparePayment(context.Background(), SendPaymentParams{From: sender, To: receiver, Amount: 1000}); err != nil {
+						t.Fatalf("ordinary payment: %v", err)
+					}
+				})
+			}
+		})
 	}
 }

@@ -7,6 +7,12 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 
 ## Unreleased
 
+- Support exactly consensus v42 and v43 with Algorand Go SDK v2.14.0, replacing
+  the temporary SDK commit pin. Clients accept either protocol while rejecting
+  unknown versions; the signer uses their shared LogicSig and native-PQ rules.
+  Account close-out preparation now checks aggregate minimum balance, including
+  application size sponsorship, for both `close` and payments with close-out.
+  Algod 5.0.4 enforces this check on v42 before the v43 consensus activation.
 - The rotating key types are renamed for the hash-based scheme they carry:
   `aplane.rotating-triple-hybrid.v1` (shipped in v0.43.0) is now
   `aplane.rotating-triple-wots.v1`, and the new XMSS type is

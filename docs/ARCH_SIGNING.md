@@ -803,8 +803,8 @@ The server returns 2 signed transactions: the main transaction + 1 dummy.
 Native Falcon authorization occupies top-level `SignedTxn.PQsig`, never
 `SignedTxn.Sig` or `SignedTxn.Lsig`, and contributes `2e6` fixed-point fee
 units in addition to the transaction's ordinary `1e6` base factor. This
-APlane release implements the v42 authorization contract; clients reject an
-algod that reports another contract before constructing transactions and
+APlane release supports exactly v42 and v43; clients reject an
+algod that reports any other contract before constructing transactions and
 refresh the check before executable signing or submission workflows.
 The signer derives this authorization budget from local key metadata or a
 passthrough `PQsig`. An unsigned foreign native-PQ slot in `/plan` or `/sign`
@@ -813,7 +813,8 @@ declares `pq_scheme: "f1"`, and a passthrough LogicSig declares
 both hints and how the signer checks them.
 
 LogicSig program sizing and native-PQ contributions are consensus-defined.
-This release compiles exactly one reviewed contract, v42, into the signer.
+This release compiles the authorization/resource contract shared by v42 and v43
+into the signer. V43 changes account close-out eligibility, not these rules.
 `internal/lsigresource` owns that closed consensus profile and the pure
 fixed-point group/resource solver. `internal/signerapp/signing` selects and
 validates per-slot authorization usages, invokes the solver, and applies its
@@ -821,7 +822,7 @@ resource result to canonical group and fee planning.
 
 `/plan` and `/sign` never query a per-network algod. The client owns ordinary
 transaction fee selection through its algod SuggestedParams response and
-validates that response as v42-compatible.
+validates that response against the explicit v42/v43 allowlist.
 First-party planning and executable workflows refresh this check before asking
 apsigner to plan, releasing signatures, or submitting, including JavaScript
 `plan()`, prebuilt transaction signing, plugin pre-sign callbacks, guarded

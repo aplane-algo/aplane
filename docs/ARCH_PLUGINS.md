@@ -756,7 +756,7 @@ accounts pay.
 **Trust boundary.** In `presign-plan`, apsigner still owns its slots — it applies its
 full policy and approval to the managed transactions, exactly as for a direct `/sign`.
 A plugin can *add* signers to a group; it cannot bypass apsigner's authority over
-apsigner's keys. APlane validates the live client algod as v42-compatible before
+apsigner's keys. APlane validates the live client algod against the v42/v43 allowlist before
 invoking a `presign-plan` callback. It performs the same check before broadcasting
 or simulating a `pregrouped-signed` group verbatim.
 

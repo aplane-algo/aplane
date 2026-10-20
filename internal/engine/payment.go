@@ -9,7 +9,9 @@ import (
 	"context"
 	"fmt"
 
+	sdkconfig "github.com/algorand/go-algorand-sdk/v2/protocol/config"
 	"github.com/algorand/go-algorand-sdk/v2/transaction"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 )
 
 // SendPaymentParams contains parameters for sending ALGO.
@@ -42,6 +44,12 @@ func (e *Engine) PreparePayment(ctx context.Context, params SendPaymentParams) (
 	balanceCheck, err := e.checkPaymentBalances(ctx, params.From, params.To, params.Amount, params.Fee, params.UseFlatFee)
 	if err != nil {
 		return nil, nil, err
+	}
+
+	if params.Close {
+		if err := validateCloseMinBalance(balanceCheck.MinBalance); err != nil {
+			return nil, balanceCheck, err
+		}
 	}
 
 	// Get suggested params with fee settings
@@ -176,6 +184,10 @@ func (e *Engine) PrepareClose(ctx context.Context, params CloseAccountParams) (*
 		return nil, checkResult, fmt.Errorf("cannot close account: account holds %d ASA(s). Opt out or transfer them first", len(acctInfo.Assets))
 	}
 
+	if err := validateCloseMinBalance(acctInfo.MinBalance); err != nil {
+		return nil, checkResult, err
+	}
+
 	// Validate close-to address exists (don't close to a non-existent account)
 	closeToAcct, err := e.AlgodClient.AccountInformation(params.CloseTo).Do(ctx)
 	if err != nil {
@@ -213,4 +225,17 @@ func (e *Engine) PrepareClose(ctx context.Context, params CloseAccountParams) (*
 		SigningContext: signingCtx,
 		LsigArgs:       params.LsigArgs,
 	}, checkResult, nil
+}
+
+// validateCloseMinBalance uses algod's aggregate MBR, which includes application
+// size sponsorship even when the account neither created nor opted into the app.
+// Algod 5.0.4 enforces this during admission/simulation on v42 as well as v43.
+// This is single-transaction preflight; algod remains authoritative for groups
+// that release resources before closing and for state changes after this read.
+func validateCloseMinBalance(minBalance uint64) error {
+	base := sdkconfig.Consensus[lsigresource.CurrentConsensusVersion].MinBalance
+	if minBalance != base {
+		return fmt.Errorf("cannot close account: minimum balance requirement is %d microAlgos, must equal base %d; release outstanding assets, application resources, or size sponsorship first", minBalance, base)
+	}
+	return nil
 }
