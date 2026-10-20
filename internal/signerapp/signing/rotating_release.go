@@ -28,17 +28,74 @@ type ReleaseRecord struct {
 	NextAddr  types.Address
 	TxID      string
 	LastValid uint64
-	// Reused reports that the stage has released signatures over more than
-	// one distinct transaction while it stayed live: an expired release and
-	// its repair, or a client that re-signed a rebuilt transaction. It is
-	// carried forward by Record until the account moves past the stage. For a
-	// one-time stage scheme (rotatingkey.Profile.OneTimeStage) this is the
-	// condition the status reports; for the others it is informational.
+	// Leaves lists every distinct transaction the stage has released while
+	// it stayed live, oldest first, with the one-time leaf each signed with.
+	// The last entry is the latest release (TxID and LastValid above). A
+	// family with one key per stage lists every release on leaf 0.
+	Leaves []LeafRelease
+	// Reused reports that two of the stage's releases signed with the same
+	// one-time leaf: an expired release and its repair, or a client that
+	// re-signed a rebuilt transaction, on a family with one key per stage;
+	// or a stage that ran out of leaves. It is carried forward by Record
+	// until the account moves past the stage. For a one-time stage scheme
+	// (rotatingkey.Profile.OneTimeStage) this is the condition the status
+	// reports; for the others it is informational.
 	Reused bool
 	// Seq orders records against chain observations: a record with a Seq
 	// above the Seq captured before a chain read was made after that read,
 	// so the read says nothing about it.
 	Seq uint64
+}
+
+// LeafRelease is one release of a stage: the one-time leaf (its tree and
+// index) and the transaction it signed.
+type LeafRelease struct {
+	Tree      uint64
+	Index     uint32
+	TxID      string
+	LastValid uint64
+}
+
+// latestLeaf is the record's own release as a leaf entry: its last listed
+// leaf, or leaf 0 of tree 0 for a record that lists none.
+func (r ReleaseRecord) latestLeaf() LeafRelease {
+	if len(r.Leaves) > 0 {
+		return r.Leaves[len(r.Leaves)-1]
+	}
+	return LeafRelease{TxID: r.TxID, LastValid: r.LastValid}
+}
+
+// LeafUsed reports whether the stage has released on the given leaf for a
+// transaction other than txID.
+func (r ReleaseRecord) LeafUsed(tree uint64, index uint32, txID string) bool {
+	for _, l := range r.Leaves {
+		if l.Tree == tree && l.Index == index && l.TxID != txID {
+			return true
+		}
+	}
+	return false
+}
+
+// LeafFor returns the leaf the stage already released txID on, if any.
+func (r ReleaseRecord) LeafFor(txID string) (LeafRelease, bool) {
+	for _, l := range r.Leaves {
+		if l.TxID == txID {
+			return l, true
+		}
+	}
+	return LeafRelease{}, false
+}
+
+func leavesReused(leaves []LeafRelease) bool {
+	seen := make(map[[2]uint64]bool, len(leaves))
+	for _, l := range leaves {
+		k := [2]uint64{l.Tree, uint64(l.Index)}
+		if seen[k] {
+			return true
+		}
+		seen[k] = true
+	}
+	return false
 }
 
 // ReleaseMemory holds one ReleaseRecord per rotating account. It is
@@ -50,9 +107,10 @@ type ReleaseMemory struct {
 }
 
 // Record replaces the account's entry with r and stamps it with the next
-// sequence number. When the entry it replaces is from the same stage and
-// names a different transaction, r is marked Reused; a retry that re-records
-// the same transaction is not reuse.
+// sequence number. When the entry it replaces is from the same stage, r
+// inherits its list of released leaves and adds its own unless the same
+// transaction is already listed (a retry is one release); r is marked
+// Reused when two listed releases share a leaf.
 func (m *ReleaseMemory) Record(r ReleaseRecord) {
 	if m == nil {
 		return
@@ -62,9 +120,19 @@ func (m *ReleaseMemory) Record(r ReleaseRecord) {
 	if m.byAccount == nil {
 		m.byAccount = make(map[string]ReleaseRecord)
 	}
+	own := r.latestLeaf()
+	var leaves []LeafRelease
 	if prev, ok := m.byAccount[r.Account]; ok && prev.Stage == r.Stage {
-		r.Reused = r.Reused || prev.Reused || prev.TxID != r.TxID
+		leaves = append(leaves, prev.Leaves...)
+		r.Reused = r.Reused || prev.Reused
+	} else if len(r.Leaves) > 1 {
+		leaves = append(leaves, r.Leaves[:len(r.Leaves)-1]...)
 	}
+	if _, listed := (ReleaseRecord{Leaves: leaves}).LeafFor(own.TxID); !listed {
+		leaves = append(leaves, own)
+	}
+	r.Leaves = leaves
+	r.Reused = r.Reused || leavesReused(leaves)
 	m.seq++
 	r.Seq = m.seq
 	m.byAccount[r.Account] = r
@@ -129,7 +197,7 @@ func (m *ReleaseMemory) Reset() {
 // AuditRotatingReleaseLogger is implemented by audit loggers that can record
 // a rotating release durably, before the signature is returned.
 type AuditRotatingReleaseLogger interface {
-	LogRotatingRelease(account, txid string, stage, lastValid uint64) error
+	LogRotatingRelease(account, txid string, stage, lastValid, tree uint64, index uint32) error
 }
 
 // AuditedRelease is a release read back from the audit log: enough to
@@ -140,9 +208,11 @@ type AuditedRelease struct {
 	TxID      string
 	LastValid uint64
 	// Reused reports that the log holds an earlier release from the same
-	// stage over a different transaction. Entries the log rotated past are
-	// unknown, so false means "none seen", not "none made".
+	// stage on the same leaf. Entries the log rotated past are unknown, so
+	// false means "none seen", not "none made".
 	Reused bool
+	// Leaves lists the stage's releases the log holds, oldest first.
+	Leaves []LeafRelease
 }
 
 // RebuildReleaseMemory fills the release memory from audit entries, deriving
@@ -174,7 +244,7 @@ func (s *Service) RebuildReleaseMemory(ctx context.Context, session *keystore.Ke
 		}
 		deps.Releases.Record(ReleaseRecord{
 			Account: e.Account, Stage: e.Stage, StageAddr: stageAddr, NextAddr: nextAddr,
-			TxID: e.TxID, LastValid: e.LastValid, Reused: e.Reused,
+			TxID: e.TxID, LastValid: e.LastValid, Reused: e.Reused, Leaves: e.Leaves,
 		})
 		rebuilt++
 	}
@@ -250,15 +320,17 @@ func (s *Service) RotatingStatus(reports []StageTableReport) (warnings, notes []
 		}
 		// The messages omit the current round so they stay identical across
 		// passes and are logged once, not on every pass.
+		profile, _ := rotatingkey.Lookup(snapshot.KeyTypes[r.Account])
 		reuse := ""
 		if rec.Reused {
 			reuse = " (the stage has signed more than one transaction)"
+		} else if profile.LeavesPerStage > 1 && len(rec.Leaves) > 1 {
+			reuse = fmt.Sprintf(" (attempt %d of %d from this stage)", len(rec.Leaves), profile.LeavesPerStage)
 		}
 		if r.Round > rec.LastValid {
 			warnings = append(warnings, fmt.Sprintf("rotating account %s: stage %d revealed its keys in transaction %s, which expired at round %d without confirming; the revealed keys still control the account%s; send a rotate-only spend now", r.Account, rec.Stage, rec.TxID, rec.LastValid, reuse))
 			continue
 		}
-		profile, _ := rotatingkey.Lookup(snapshot.KeyTypes[r.Account])
 		if rec.Reused && profile.OneTimeStage {
 			warnings = append(warnings, fmt.Sprintf("rotating account %s: stage %d has signed more than one transaction; its one-time hash-based key is spent and the stage rests on %s until the account moves; latest release %s is in flight (valid through round %d), wait for it to land or send a rotate-only spend", r.Account, rec.Stage, profile.ReusedStageRestsOn, rec.TxID, rec.LastValid))
 			continue

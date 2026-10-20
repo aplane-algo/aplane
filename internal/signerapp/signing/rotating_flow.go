@@ -483,7 +483,15 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 	if !bytes.Equal(txnutil.EncodeWithPrefix(spend), txnutil.EncodeWithPrefix(plan.AllTxns[0])) || !bytes.Equal(txID[:], algocrypto.TransactionID(plan.AllTxns[0])) {
 		return nil, internal("refusing to sign: the rotating spend differs from the approved group")
 	}
-	stageSig, signErr := rs.ops.SignStage(rs.secret, stage, 0, txID[:])
+	// The one-time leaf: the one this transaction already used if it was
+	// signed before, else the first unused one from the TxID's pick, else
+	// (every leaf spent) the TxID's pick again, reported as reuse. State
+	// chooses the leaf, never whether to sign.
+	txIDText := base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(txID[:])
+	leafProfile, _ := rotatingkey.Lookup(rs.keyType)
+	prior, _ := deps.Releases.Get(req.Account)
+	leaf, leafReused := chooseLeaf(leafProfile, stage, txID[:], txIDText, prior)
+	stageSig, signErr := rs.ops.SignStage(rs.secret, stage, leaf.Index, txID[:])
 	if signErr != nil {
 		return nil, internal(fmt.Sprintf("sign with stage %d: %v", stage, signErr))
 	}
@@ -514,19 +522,19 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 		signed = append(signed, hex.EncodeToString(d))
 	}
 
-	txIDText := base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(txID[:])
 	groupIDText := base64.StdEncoding.EncodeToString(group.GroupID[:])
 
 	// The release is audited durably and remembered before the signature
 	// leaves. Both are observational: a failure is reported, not fatal.
 	if logger, ok := s.AuditLog.(AuditRotatingReleaseLogger); ok && logger != nil {
-		if err := logger.LogRotatingRelease(req.Account, txIDText, stage, uint64(spend.LastValid)); err != nil {
+		if err := logger.LogRotatingRelease(req.Account, txIDText, stage, uint64(spend.LastValid), leaf.Tree, leaf.Index); err != nil {
 			consoleOf(s.Console).Printf("[ROTATING] WARNING: release of stage %d for %s was not recorded in the audit log: %v\n", stage, req.Account, err)
 		}
 	}
+	leaf.TxID, leaf.LastValid = txIDText, uint64(spend.LastValid)
 	deps.Releases.Record(ReleaseRecord{
 		Account: req.Account, Stage: stage, StageAddr: stageAddr, NextAddr: spend.RekeyTo,
-		TxID: txIDText, LastValid: uint64(spend.LastValid),
+		TxID: txIDText, LastValid: uint64(spend.LastValid), Reused: leafReused, Leaves: []LeafRelease{leaf},
 	})
 	consoleOf(s.Console).Printf("[ROTATING] Released stage %d for %s (%s); the account moves to stage %d when it lands\n", stage, req.Account, txIDText, targetStage)
 	s.logSuccessfulSignatures(signReq, plan, allTxns, policyRuleID)
@@ -557,4 +565,42 @@ func (s *Service) keyPresent(account string) func() bool {
 		_, ok := s.Planner.Snapshot().KeyFiles[account]
 		return ok
 	}
+}
+
+// chooseLeaf picks the one-time leaf stage signs txID with, for a family
+// whose stage holds several (rotatingkey.Profile.LeavesPerStage). A
+// transaction the stage already released keeps its leaf, so an identical
+// retry reproduces the identical signature. Otherwise the TxID's first byte
+// picks a leaf inside the stage's range, and the first unused leaf upward
+// from it, wrapping, is taken; two signers that share a seed and no memory
+// therefore collide with probability one in LeavesPerStage rather than
+// always. When every leaf is used the TxID's pick is reused and reported:
+// state chooses the leaf, never whether to sign. A family with one key per
+// stage always gets leaf 0.
+func chooseLeaf(profile rotatingkey.Profile, stage uint64, txID []byte, txIDText string, prior ReleaseRecord) (LeafRelease, bool) {
+	lo, hi := profile.LeafRange(stage)
+	tree := profile.TreeOf(stage)
+	leaf := LeafRelease{Tree: tree, Index: uint32(lo)}
+	if hi-lo <= 1 {
+		return leaf, false
+	}
+	if prior.Stage == stage {
+		if used, ok := prior.LeafFor(txIDText); ok {
+			return used, false
+		}
+	}
+	n := hi - lo
+	pick := lo
+	if len(txID) > 0 {
+		pick = lo + uint64(txID[0])%n
+	}
+	for i := uint64(0); i < n; i++ {
+		candidate := lo + (pick-lo+i)%n
+		if prior.Stage != stage || !prior.LeafUsed(tree, uint32(candidate), txIDText) {
+			leaf.Index = uint32(candidate)
+			return leaf, false
+		}
+	}
+	leaf.Index = uint32(pick)
+	return leaf, true
 }

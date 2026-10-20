@@ -97,7 +97,11 @@ func (fs *Signer) rebuildReleaseMemory(ctx context.Context, ir *productruntime.R
 	}
 	audited := make([]signersigning.AuditedRelease, 0, len(entries))
 	for _, e := range entries {
-		audited = append(audited, signersigning.AuditedRelease{Account: e.Account, Stage: e.Stage, TxID: e.TxID, LastValid: e.LastValid, Reused: e.Reused})
+		leaves := make([]signersigning.LeafRelease, 0, len(e.Leaves))
+		for _, l := range e.Leaves {
+			leaves = append(leaves, signersigning.LeafRelease{Tree: l.Tree, Index: l.Index, TxID: l.TxID, LastValid: l.LastValid})
+		}
+		audited = append(audited, signersigning.AuditedRelease{Account: e.Account, Stage: e.Stage, TxID: e.TxID, LastValid: e.LastValid, Reused: e.Reused, Leaves: leaves})
 	}
 	ctx, cancel := ir.LockCancelContext(ctx)
 	defer cancel()

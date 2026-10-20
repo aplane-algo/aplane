@@ -268,3 +268,17 @@ func (o *StageOps) CachedTree(d *rotatinghybrid.Deriver, n uint64) (*PublicTree,
 	t, ok := o.trees[treeKey{tag: tag, genesis: d.GenesisHash(), tree: n}]
 	return t, ok
 }
+
+// TreeReady reports whether the tree serving stage i is cached.
+func (o *StageOps) TreeReady(key *signing.RotatingKeyMaterial, i uint64) bool {
+	d, _, err := deriverFor(key)
+	if err != nil {
+		return false
+	}
+	defer d.Zero()
+	treeNo, _, _ := stage.RangeFor(i)
+	_, ok := o.CachedTree(d, treeNo)
+	return ok
+}
+
+var _ signing.RotatingTreeOps = (*StageOps)(nil)

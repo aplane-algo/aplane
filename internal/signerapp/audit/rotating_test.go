@@ -19,13 +19,13 @@ func TestRotatingReleaseRoundTripsThroughTheLog(t *testing.T) {
 	}
 	defer func() { _ = a.Close() }()
 	attr := Attribution{RequesterPrincipal: "client-1", Transport: "http"}
-	if err := a.LogRotatingReleaseAttributed(attr, "ACCT1", "TX1", 0, 100); err != nil {
+	if err := a.LogRotatingReleaseAttributed(attr, "ACCT1", "TX1", 0, 100, 0, 0); err != nil {
 		t.Fatal(err)
 	}
-	if err := a.LogRotatingReleaseAttributed(attr, "ACCT1", "TX2", 1, 220); err != nil {
+	if err := a.LogRotatingReleaseAttributed(attr, "ACCT1", "TX2", 1, 220, 0, 0); err != nil {
 		t.Fatal(err)
 	}
-	if err := a.LogRotatingReleaseAttributed(attr, "ACCT2", "TX3", 7, 300); err != nil {
+	if err := a.LogRotatingReleaseAttributed(attr, "ACCT2", "TX3", 7, 300, 0, 0); err != nil {
 		t.Fatal(err)
 	}
 	// ACCT3 released twice from stage 2 (a retry of TX4, then a different
@@ -34,7 +34,7 @@ func TestRotatingReleaseRoundTripsThroughTheLog(t *testing.T) {
 		acct, txid string
 		stage      uint64
 	}{{"ACCT3", "TX4", 2}, {"ACCT3", "TX4", 2}, {"ACCT3", "TX5", 2}, {"ACCT4", "TX6", 9}, {"ACCT4", "TX6", 9}} {
-		if err := a.LogRotatingReleaseAttributed(attr, e.acct, e.txid, e.stage, 400); err != nil {
+		if err := a.LogRotatingReleaseAttributed(attr, e.acct, e.txid, e.stage, 400, 0, 0); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -116,4 +116,51 @@ func itoa(v uint64) string {
 		v /= 10
 	}
 	return string(b)
+}
+
+// A family whose stage holds several leaves is reused only when two
+// releases name the same leaf; distinct leaves are listed, not flagged.
+func TestReadRotatingReleasesTracksLeaves(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "audit.log")
+	a, err := NewAuditLogger(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = a.Close() }()
+	attr := Attribution{RequesterPrincipal: "client-1", Transport: "http"}
+	for _, e := range []struct {
+		txid  string
+		index uint32
+	}{{"TX7", 5}, {"TX8", 6}, {"TX8", 6}} {
+		if err := a.LogRotatingReleaseAttributed(attr, "ACCT5", e.txid, 4, 500, 2, e.index); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := ReadRotatingReleases(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := got["ACCT5"]
+	if r.Reused || r.Tree != 2 || r.Index != 6 || r.TxID != "TX8" || len(r.Leaves) != 2 || r.Leaves[0].Index != 5 || r.Leaves[1].Index != 6 {
+		t.Fatalf("leaf releases = %+v", r)
+	}
+	if err := a.LogRotatingReleaseAttributed(attr, "ACCT5", "TX9", 4, 500, 2, 5); err != nil {
+		t.Fatal(err)
+	}
+	got, err = ReadRotatingReleases(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := got["ACCT5"]; !r.Reused || len(r.Leaves) != 3 {
+		t.Fatalf("same leaf twice not reported as reuse: %+v", r)
+	}
+	// A new stage starts a fresh list.
+	if err := a.LogRotatingReleaseAttributed(attr, "ACCT5", "TX10", 5, 600, 2, 64); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = ReadRotatingReleases(path)
+	if r := got["ACCT5"]; r.Reused || len(r.Leaves) != 1 || r.Stage != 5 {
+		t.Fatalf("new stage = %+v", r)
+	}
 }

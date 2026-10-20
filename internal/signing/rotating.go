@@ -85,3 +85,14 @@ func GetRotatingStageOps(keyType string) (RotatingStageOps, error) {
 	}
 	return ops, nil
 }
+
+// RotatingTreeOps is implemented by stage cryptography whose stages share
+// trees that take seconds to build. The signing flow uses it to build the
+// next tree in the background before the stages that need it are reached,
+// and to stop its address lookahead at the last tree that is ready.
+type RotatingTreeOps interface {
+	// Prepare builds and caches the tree serving stage i.
+	Prepare(key *RotatingKeyMaterial, stage uint64) error
+	// TreeReady reports whether the tree serving stage i is cached.
+	TreeReady(key *RotatingKeyMaterial, stage uint64) bool
+}

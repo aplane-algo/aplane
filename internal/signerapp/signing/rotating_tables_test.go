@@ -26,6 +26,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/stagetable"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	rotatingtriplesignerreg "github.com/aplane-algo/aplane/lsig/rotatingtriple/signerreg"
+	rotatingxmsssignerreg "github.com/aplane-algo/aplane/lsig/rotatingxmsstriple/signerreg"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
@@ -75,7 +76,11 @@ var (
 	}
 	// rotatingTestTypes is every rotating key type; the per-type tests loop
 	// over it so a second type (the rotating-bounded contract) slots in.
-	rotatingTestTypes = []rotatingTestType{tripleTestType}
+	xmssTestType = rotatingTestType{
+		keyType: rotatingkey.RotatingXmssTripleV1, register: rotatingxmsssignerreg.Register,
+		newKeyPayload: rotatingxmsssignerreg.NewKeyPayload, dummies: 8,
+	}
+	rotatingTestTypes = []rotatingTestType{tripleTestType, xmssTestType}
 )
 
 type rotatingKeyStore struct {
