@@ -62,7 +62,7 @@ File: `config.yaml` in apsigner data directory (`-d` or `APSIGNER_DATA`, require
 | `networks.<network>.genesis_hash` | string | `(none)` | Custom signer policy genesis hash for this network context token |
 | `teal_compile_network` | string | `testnet` | Network context token whose algod is used for TEAL compilation |
 | `require_memory_protection` | bool | `false` | Fail startup if memory protection unavailable |
-| `user_auto_approve` | bool | `false` | User default to sign non-rejected requests without operator approval unless policy forces review |
+| `user_auto_approve` | bool | `false` | Sign non-rejected requests without operator approval, including policy review requirements |
 | `theme` | string | `auto` | Signer-admin UI theme: auto, dark, or light (auto detects terminal) |
 | `rotating` | object | default rotating settings | Rotating account settings |
 | `rotating.stage_horizon` | uint64 | `4096` | How many stages past a rotating account's live stage are derived ahead into its stage address table |

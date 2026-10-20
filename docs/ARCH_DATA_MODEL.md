@@ -508,8 +508,9 @@ Deleting a key archives its policy pair under `deleted/policies/` on both
 roles. Key backups carry a key's own file as `policies/<selector>.apb`;
 `default.json` is node configuration and never travels in a backup.
 
-`user_auto_approve` is not policy. It is the user/operator-default fallback in
-product runtime config.
+`user_auto_approve` is not policy. It is the approval switch in product runtime config: when on,
+it satisfies review requirements without a prompt and approves unmatched
+requests; it does not override hard rejections.
 
 ### Client Keys, SSH, And Admin Sessions
 

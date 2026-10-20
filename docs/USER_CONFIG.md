@@ -354,11 +354,11 @@ Node role is stored separately in the signer data root `node.yaml`. Standard
 installations initialize as signer nodes; product config does not carry a role
 or mode field.
 
-In `apadmin`, the operator-default shortcut is shown as `User Auto-Approve`:
+In `apadmin`, the signer approval switch is shown as `User Auto-Approve`:
 `ON` means `user_auto_approve: true`; `OFF` means `user_auto_approve: false`.
-It replaces the operator prompt only when no policy rule produced a verdict,
-so with the switch on, a key with no policy file of its own signs whatever
-the shipped default does not reject or force to review.
+When on, it satisfies all signer review requirements without a prompt and
+approves unmatched requests. A key with no policy file of its own signs
+whatever the node default does not reject.
 
 `rotating.stage_horizon` (default 4096) sets how many stages past a rotating
 account's live stage the signer derives ahead into its stage address cache
@@ -632,8 +632,9 @@ apply` are offline store mutations, so run them while `apsigner` is stopped.
 Hand edits are active only after the next successful signer start, reload, or
 unlock.
 
-Policy verdicts override the operator default. Among policy verdicts, the most
-restrictive matching verdict wins:
+Hard rejections always win. User Auto-Approve satisfies review requirements
+without a prompt. Among policy verdicts, the most restrictive matching verdict
+wins:
 
 ```text
 Always Deny > Always Review > Always Approve > Operator Default
@@ -660,7 +661,7 @@ unknown field is rejected. Amounts are decimal strings in base units.
 | `reject_close_remainder` | both | bool | Reject payment txns with non-zero `CloseRemainderTo` |
 | `reject_asset_close` | both | bool | Reject ASA transfer txns with non-zero `AssetCloseTo` |
 | `reject_clawback` | both | bool | Reject ASA clawback txns using `AssetSender` |
-| `always_review_warnings` | signer | bool | Require operator review for txns with warning-level findings, even when `user_auto_approve:true` |
+| `always_review_warnings` | signer | bool | Require operator review for warning-level findings unless User Auto-Approve is on |
 | `auto_approve_self_noop_transfer` | signer | bool | Auto-approve a single 0 ALGO payment to self or 0-unit ASA transfer to self with no caller-provided group, no passthrough/foreign slots, no rekey, no close remainder, no asset close, no clawback sender, no note, no lease, and normalized fee at most 1000 microAlgos. Signer-generated LogicSig-budget dummies are allowed when they exactly match APlane's dummy transaction shape. |
 | `max_fee_microalgos` | both | amount | Reject txns whose fee exceeds this raw microAlgo ceiling; `"0"` means no limit |
 | `transaction_types` | both | map | Transaction type (`pay`, `axfer`, `acfg`, `afrz`, `appl`, `keyreg`, `stpf`, `hb`) or `*` to `allow`, `review`, or `reject`; `*` is required in a signer document. A cosigner document may `allow` only `pay` and `axfer`, may not use `review`, and may omit `*`, which can only be `reject` there |
@@ -1017,15 +1018,15 @@ followed. A node holds at most 8,192 key files.
 Policy and approval are separate:
 
 - safety policy rejects matching requests before approval
-- transfer review guards force operator review for matching requests that were not rejected
-- `always_review_warnings:true` forces operator review for warning-level findings before auto-approval or operator default can sign
+- transfer review guards require approval for matching requests that were not rejected; User Auto-Approve satisfies it without a prompt
+- `always_review_warnings:true` requires review for warning-level findings; User Auto-Approve satisfies it without a prompt
 - warnings still appear for dangerous fields even when not configured to force review
-- `User Auto-Approve` ON (`user_auto_approve: true`) skips human approval only for requests that are not rejected, not forced to review, and not explicitly auto-approved
+- `User Auto-Approve` ON (`user_auto_approve: true`) skips human approval for all non-rejected requests, including policy review requirements
 
 In short:
 
 ```text
-Policy first, operator default last.
+Hard rejections first; User Auto-Approve satisfies review requirements.
 ```
 
 ### Example (User Auto-Approve On - Testing Only)
@@ -1313,12 +1314,12 @@ lock_on_disconnect: false
 #### 3. User Auto-Approve
 
 This is the same setting shown in `apadmin` as `User Auto-Approve`. Set it to
-`true` to sign non-rejected default-fallback requests without an operator
-approval prompt. Policy still comes first: with the switch on, a key with no
-policy file of its own signs whatever the shipped default does not reject or
-force to review, which is every transaction type and every transfer that
-carries no warning-level field. Tighten `default.json` or give keys files of
-their own before relying on it.
+`true` to sign non-rejected requests without an operator approval prompt,
+including requests matching warning, transaction-type, routing, or bounded
+admin-operation review rules. No connected apadmin is required for signing.
+Hard policy rejections, authentication, key unlock, and signing validation
+still apply. Use rejection rules in `default.json` or per-key policies to
+set limits for unattended agents.
 
 ```yaml
 # User Auto-Approve: ON (use with caution)

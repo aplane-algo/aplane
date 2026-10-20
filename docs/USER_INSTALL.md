@@ -909,11 +909,11 @@ apadmin
 For auto-unlock, stop the daemon after initialization and run `sudo appass -d /var/lib/apsigner`.
 
 See [USER_CONFIG.md](USER_CONFIG.md#headless-operation) for additional configuration options (`user_auto_approve:true`, network settings, etc.).
-Turning `user_auto_approve` on replaces the operator prompt only where no
-policy rule decides. Without per-key policy files, a key with no file signs
-whatever the shipped default does not reject or force to review: every
-transaction type, and every transfer that carries no warning-level field.
-Tighten the node default or give keys files of their own first; see
+Turning `user_auto_approve` on satisfies all signer review requirements without
+a prompt. Hard rejection rules still apply.
+
+Use hard rejection rules in the node default or per-key policies to set
+limits for unattended signing; see
 [USER_POLICY.md](USER_POLICY.md).
 
 ---

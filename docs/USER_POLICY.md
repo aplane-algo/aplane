@@ -187,8 +187,8 @@ signer controls. It is separate from:
 
 - authentication and authorization, which decide who may ask for signing,
 - key unlock state, which decides whether signing keys are usable,
-- `user_auto_approve`, the operator default used only when policy has no
-  stronger verdict,
+- `user_auto_approve`, which satisfies review requirements without a prompt
+  and approves unmatched requests, but cannot override a rejection,
 - app-call inner transaction behavior, which is not inspected by transfer
   routing.
 
@@ -199,8 +199,12 @@ Always Deny > Always Review > Always Approve > Operator Default
 ```
 
 This means a reject rule cannot be approved through an operator prompt, and a
-review rule blocks both `user_auto_approve:true` and any matching auto-approval
-rule. Within Always Deny and Always Review, the `transaction_types` verdict is
+review rule blocks matching policy auto-approval rules. With
+`user_auto_approve:true`, review requirements are satisfied automatically,
+so no connected apadmin is needed. Hard rejection rules still apply. Nothing
+is displayed on that path, so transaction types the approval screen cannot
+show (state proof, heartbeat) sign as well; reject them by type for a key an
+agent drives if it must never issue them. Within Always Deny and Always Review, the `transaction_types` verdict is
 evaluated first: a rejected type never reaches the other rules, and the
 rejection names the type.
 
@@ -470,7 +474,7 @@ in base units, and ASA IDs are written `asa:<id>`.
 | `reject_close_remainder` | both | yes | Reject payment txns with non-zero `CloseRemainderTo`. |
 | `reject_asset_close` | both | yes | Reject ASA transfer txns with non-zero `AssetCloseTo`. |
 | `reject_clawback` | both | yes | Reject ASA clawback txns using `AssetSender`. |
-| `always_review_warnings` | signer | yes | Require operator review for warning-level findings, even with `user_auto_approve: true`. |
+| `always_review_warnings` | signer | yes | Require operator review for warning-level findings unless User Auto-Approve is on. |
 | `auto_approve_self_noop_transfer` | signer | yes | Auto-approve exact low-risk 0-amount self-transfer shapes. |
 | `max_fee_microalgos` | both | yes | Reject txns whose fee exceeds this microAlgo ceiling; `"0"` means no cap. |
 | `transaction_types` | both | yes | Map from transaction type (`pay`, `axfer`, `acfg`, `afrz`, `appl`, `keyreg`, `stpf`, `hb`) or `*` to `allow`, `review`, or `reject`; `*` covers every type not named and is required in a signer document. A cosigner document may `allow` only `pay` and `axfer` and may not use `review`; its `*` can only be `reject`, so it may be left out. |
@@ -568,10 +572,12 @@ Edit the scalar settings at the top level, next to `key`:
   before any prompt and cannot be approved by an operator. Here ALGO
   close-outs and clawbacks are rejected for this key, and a rekey to an
   address this node does not hold stays rejected.
-- `always_review_warnings` forces an operator prompt, even with
-  `user_auto_approve: true`, when warning analysis finds a rekey, an ALGO or
+- `always_review_warnings` requires an operator prompt when User Auto-Approve
+  is off and warning analysis finds a rekey, an ALGO or
   ASA close-out, a clawback, an application delete, clear-state, or update, an
-  asset reconfigure, destroy, freeze, or unfreeze, or a fee above 1 ALGO.
+  asset reconfigure, destroy, freeze, or unfreeze, or a fee above 1 ALGO. A
+  rotating account's own rotation, the rekey to the next stage the signer
+  derives itself, is not a finding.
 - `max_fee_microalgos` rejects a transaction whose fee, as finally signed,
   exceeds the cap. That fee includes anything the signer adds for LogicSig
   budget or post-quantum keys, so set the cap above what those keys need.
@@ -592,7 +598,7 @@ The treasury key moves funds and, with an operator watching, registers
 participation keys. Every other type (`acfg`, `afrz`, `appl`, `stpf`, `hb`) is
 rejected by `*` before any other rule runs; the rejection is reported as
 `transaction_type:appl` and the like. `review` is Always Review: a `keyreg`
-prompts even with `user_auto_approve: true`. Keep `*` in the map; it is
+prompts when User Auto-Approve is off; with it on, review is satisfied automatically. Keep `*` in the map; it is
 required.
 
 ### 4. Add document-level limits

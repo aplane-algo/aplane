@@ -1,7 +1,7 @@
 # Approval-Aware Composition Machine-Checkable Model
 
 > Status: TLC checked with `MaxRequestEntries = 3` and `MaxDummies = 2`; the
-> recorded run generated 47,304 distinct states, reached depth 1, and found no
+> recorded run generated 36,792 distinct states, reached depth 1, and found no
 > counterexamples for `Safety`.
 
 This is the sixth machine-checkable artifact under the M4 milestone in
@@ -80,7 +80,7 @@ java -jar tla2tools.jar -config docs/formal/approval_composition.cfg \
     docs/formal/approval_composition.tla
 ```
 
-Expected: `Model checking completed. No error has been found.`, 47,304 distinct
+Expected: `Model checking completed. No error has been found.`, 36,792 distinct
 states, depth 1.
 
 ## What this proves vs. doesn't

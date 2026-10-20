@@ -14,6 +14,7 @@ import (
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/policy/policytest"
+	"github.com/aplane-algo/aplane/internal/signerapp/approvalpolicy"
 )
 
 func TestEvaluateAlwaysReviewRulesResolvesPolicyPerKey(t *testing.T) {
@@ -295,7 +296,7 @@ func TestEvaluateAlwaysReviewRulesReviewsAssetReconfigureWarning(t *testing.T) {
 }
 
 // A type verdict of review sits in the Always Review tier: it prompts even
-// when the operator-default tier would have auto-approved.
+// when a policy auto-approval rule would otherwise approve.
 func TestRunApprovalGatesTypeReviewBeatsAutoApprove(t *testing.T) {
 	cfg := routingPolicyConfigForSigningTest(t, `{"transaction_types": {"*": "allow", "keyreg": "review"}}`)
 	keyreg := types.Transaction{Type: types.KeyRegistrationTx, Header: types.Header{Sender: types.Address{1}}}
@@ -328,5 +329,39 @@ func TestTypeRejectBeatsReviewAcrossSlots(t *testing.T) {
 	}, nil)
 	if err == nil || err.Kind != ErrorForbidden || !strings.Contains(err.Message, "txn 2: ["+policy.TransactionTypeRuleID("appl")+"]") || prompted != 0 {
 		t.Fatalf("runApprovalGates() error = %#v prompts %d, want slot 2 rejected before any review", err, prompted)
+	}
+}
+
+// A rotation's own rekey is not a warning-level finding: with
+// always_review_warnings on, a rotating spend that rekeys to the stage the
+// signer derived itself passes the review tier, while the same transaction
+// without the protocol exemption, or rekeying anywhere else, is reviewed.
+func TestEvaluateAlwaysReviewRulesExemptsProtocolRekey(t *testing.T) {
+	cfg := routingPolicyConfigForSigningTest(t, `{"always_review_warnings": true}`)
+	nextStage := types.Address{7}
+	rotation := types.Transaction{
+		Type:   types.PaymentTx,
+		Header: types.Header{Sender: types.Address{1}, RekeyTo: nextStage},
+	}
+	txns := []types.Transaction{rotation}
+	known := map[string]bool{nextStage.String(): true}
+	none, one := map[int]bool{}, 1
+
+	withProtocol := approvalpolicy.Context{KnownAddresses: known, ProtocolRekeyTargets: known}
+	if ruleID, review := evaluateAlwaysReviewRules(txns, one, none, none, fixedPolicy(cfg), nil, withProtocol, nil); review {
+		t.Fatalf("a protocol rekey was reviewed under %q", ruleID)
+	}
+	heldOnly := approvalpolicy.Context{KnownAddresses: known}
+	if ruleID, review := evaluateAlwaysReviewRules(txns, one, none, none, fixedPolicy(cfg), nil, heldOnly, nil); !review || ruleID != policy.AlwaysReviewWarningsRuleID {
+		t.Fatalf("a held-address rekey without the protocol exemption = %q, %v; want always_review_warnings review", ruleID, review)
+	}
+	elsewhere := rotation
+	elsewhere.RekeyTo = types.Address{8}
+	if ruleID, review := evaluateAlwaysReviewRules([]types.Transaction{elsewhere}, one, none, none, fixedPolicy(cfg), nil, withProtocol, nil); !review || ruleID != policy.AlwaysReviewWarningsRuleID {
+		t.Fatalf("a rekey to a non-protocol address = %q, %v; want always_review_warnings review", ruleID, review)
+	}
+	// The exported form has no exemption.
+	if _, review := EvaluateAlwaysReviewRules(txns, one, none, none, fixedPolicy(cfg), nil, known, nil); !review {
+		t.Fatal("EvaluateAlwaysReviewRules exempted a rekey")
 	}
 }

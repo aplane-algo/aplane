@@ -138,7 +138,10 @@ func buildComponentApprovalDescription(plan *ComponentSignPlan, allTxns []types.
 
 func (s *ApprovalService) requestComponentApprovalWithContext(ctx context.Context, plan *ComponentSignPlan, allTxns []types.Transaction, groupDesc string, firstValid, lastValid uint64, forceReviewRuleID string) *ServiceError {
 	console := consoleOf(s.Console)
-	if s.userAutoApprove() && forceReviewRuleID == "" {
+	if s.userAutoApprove() {
+		if forceReviewRuleID != "" {
+			console.Printf("[USER AUTO-APPROVE] Satisfying review requirement (%s) without operator prompt\n", forceReviewRuleID)
+		}
 		console.Println("[USER AUTO-APPROVE] Guarded component request approved without operator prompt")
 		console.Sync()
 		return nil

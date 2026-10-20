@@ -6,6 +6,8 @@ package signing
 import (
 	"context"
 
+	"github.com/aplane-algo/aplane/internal/signerapp/approvalpolicy"
+
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
@@ -28,8 +30,12 @@ type gateInput struct {
 	AuthKeys             []string
 	KnownAddresses       map[string]bool
 	RoutingExemptIndices map[int]bool
+	// ProtocolRekeyTargets are rekeys the signer issued itself (a rotation's
+	// next stage); warning review does not count them.
+	ProtocolRekeyTargets map[string]bool
 	// ForcedReviewRuleID is a signer-owned unconditional review gate evaluated
-	// before every autoapproval path. It does not depend on policy settings.
+	// before policy autoapproval. User Auto-Approve satisfies it without a prompt.
+	// It does not depend on policy settings.
 	ForcedReviewRuleID string
 	// AutoApprove evaluates surface-specific auto-approval rules after review
 	// rules pass. Nil means the surface has no auto-approval path.
@@ -67,7 +73,7 @@ func (s *Service) runApprovalGates(ctx context.Context, in gateInput, console Co
 		limit = len(in.AllTxns)
 	}
 	txns := in.AllTxns[:limit]
-	alwaysReviewRuleID, alwaysReview := EvaluateAlwaysReviewRules(txns, in.EvalCount, in.PassthroughIndices, in.ForeignIndices, s.policyFor, in.AuthKeys, in.KnownAddresses, in.RoutingExemptIndices)
+	alwaysReviewRuleID, alwaysReview := evaluateAlwaysReviewRules(txns, in.EvalCount, in.PassthroughIndices, in.ForeignIndices, s.policyFor, in.AuthKeys, approvalpolicy.Context{KnownAddresses: in.KnownAddresses, ProtocolRekeyTargets: in.ProtocolRekeyTargets}, in.RoutingExemptIndices)
 	if in.ForcedReviewRuleID != "" {
 		alwaysReviewRuleID = in.ForcedReviewRuleID
 		alwaysReview = true

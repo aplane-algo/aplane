@@ -19,9 +19,11 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/rotatingkey"
+	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 	"github.com/aplane-algo/aplane/internal/stagetable"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/txnutil"
+
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
@@ -32,9 +34,16 @@ import (
 type recordingReleaseAudit struct {
 	releases []ReleaseRecord
 	fail     error
+	// approved counts approvals audited without a matched review rule;
+	// rules holds the rule IDs of approvals that matched one.
+	approved int
+	rules    []string
 }
 
-func (a *recordingReleaseAudit) LogSignApproved(string, string, string) {}
+func (a *recordingReleaseAudit) LogSignApproved(string, string, string) { a.approved++ }
+func (a *recordingReleaseAudit) LogSignApprovedWithPolicyRule(_, _, _ string, policyRuleID string) {
+	a.rules = append(a.rules, policyRuleID)
+}
 func (a *recordingReleaseAudit) LogRotatingRelease(account, txid string, stage, lastValid uint64) error {
 	if a.fail != nil {
 		return a.fail
@@ -731,5 +740,47 @@ func TestPrepareDiscoveryIsBoundedServerSide(t *testing.T) {
 	}
 	if f.table(t).Len() == 0 {
 		t.Fatal("progress was not kept")
+	}
+}
+
+// A rotating spend's rekey is the protocol working, not a dangerous field.
+// Under the shipped default policy (always_review_warnings on) a rotation
+// matches no review rule, and the operator prompt, when auto-approve is off,
+// shows no finding for it.
+func TestRotatingRotationRekeyIsNotAWarning(t *testing.T) {
+	cfg := *policy.DefaultConfig()
+	cfg.AlwaysReviewWarnings = true
+	reviewWarnings := fixedPolicy(&cfg)
+	f, audit := newSigningFixture(t)
+	f.svc.PolicyFor = reviewWarnings
+	prep := mustPrepare(t, f, f.spend(f.chain.round, f.chain.round+100))
+	mustSign(t, f, prep.Transactions)
+	if len(audit.rules) != 0 || audit.approved != 1 {
+		t.Fatalf("rotation audited with review rules %v (plain approvals %d); want none", audit.rules, audit.approved)
+	}
+
+	// Auto-approve off: the ordinary operator fallback prompts, and the
+	// prompt carries no warning for the rekey.
+	f2, _ := newSigningFixture(t)
+	f2.svc.PolicyFor = reviewWarnings
+	off := false
+	calls := 0
+	var seen []signerapproval.Violation
+	f2.svc.Approval = &ApprovalService{
+		UserAutoApprove: &off,
+		HasClient:       func() bool { return true },
+		RequestSigningApproval: func(_, _, _, _ string, _, _ uint64, violations []signerapproval.Violation, _ time.Duration) (bool, error) {
+			calls++
+			seen = violations
+			return true, nil
+		},
+	}
+	prep2 := mustPrepare(t, f2, f2.spend(f2.chain.round, f2.chain.round+100))
+	mustSign(t, f2, prep2.Transactions)
+	if calls != 1 {
+		t.Fatalf("operator prompts = %d, want 1", calls)
+	}
+	if len(seen) != 0 {
+		t.Fatalf("prompt carried findings %+v for a rotation; want none", seen)
 	}
 }

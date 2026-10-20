@@ -608,7 +608,7 @@ are not an admin-protocol surface.
 
 Writable admin settings:
 
-- `user_auto_approve` (`User Auto-Approve`; operator-default fallback approval switch). It replaces the operator prompt only when no policy rule produced a verdict; Always Review still prompts. With the switch on, a key with no policy document of its own signs whatever the shipped signer default does not reject or force to review.
+- `user_auto_approve` (`User Auto-Approve`; approval switch). When on, it satisfies all signer review requirements without an operator prompt, including Always Review, and approves unmatched requests. Hard policy rejections and signer validation still apply. No connected approval client is required.
 - `lock_on_disconnect`
 - `passphrase_timeout`
 - `theme`

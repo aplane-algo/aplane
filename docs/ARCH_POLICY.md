@@ -93,18 +93,19 @@ target transaction in `/sign/component`. Policy is separate from:
 
 - authentication and authorization, which decide who may ask for signing,
 - key ownership and unlock state, which decide whether signing keys are usable,
-- the operator default, which decides whether unmatched client-signing requests
-  need manual review. Cosigner has no operator default.
+- User Auto-Approve, which satisfies client-signing review requirements
+  without a human prompt; when off, unmatched requests need manual review. Cosigner has no operator default.
 
 ## Verdict Model
 
-Policy verdicts override the operator default. Among policy verdicts, the most
-restrictive matching verdict wins.
+Hard policy rejections always win. Among policy verdicts, the most
+restrictive matching verdict wins. User Auto-Approve satisfies any review
+requirement without a human prompt, but cannot override a rejection.
 
 | Tier | Decision owner | Effect |
 |------|----------------|--------|
 | Always Deny | Policy | Reject the request before approval |
-| Always Review | Policy | Require operator approval |
+| Always Review | Policy | Require operator approval unless User Auto-Approve is on |
 | Always Approve | Policy | Sign without operator approval |
 | Operator Default | Admin setting | Review or approve according to `user_auto_approve` |
 
@@ -120,7 +121,8 @@ Operational flow:
    transaction-type verdict runs first and alone, so a rejected or reviewed
    type names the type rather than a later rule.
 2. If any Always Deny rule matches, reject.
-3. Else if any Always Review rule matches, require approval.
+3. Else if any Always Review rule matches, record the rule and require approval;
+   `user_auto_approve:true` satisfies that requirement without a prompt.
 4. Else if any Always Approve rule matches, sign.
 5. Else use Operator Default:
    - `user_auto_approve:false` requires approval.
@@ -132,8 +134,9 @@ The engine is ordered and short-circuiting. In `internal/signerapp/signing`,
 `EvaluateAutoApprovalRules` the Always Approve rules; any Always Deny
 violation rejects the request and no later phase can approve it.
 
-For client signing, Always Review blocks both `user_auto_approve:true` and any
-matching Always Approve rule. Cosigner rejects review-producing policy
+For client signing, Always Review blocks matching policy Always Approve rules.
+`user_auto_approve:true` satisfies Always Review without consulting apadmin,
+including foreign/passthrough warnings and bounded admin-operation review. Cosigner rejects review-producing policy
 instead of treating it as a promptable phase.
 
 ### Verdict Mapping By Role
@@ -146,7 +149,7 @@ order is still used, but review is not a valid cosigner outcome:
 | Phase | Client signing | Cosigner |
 |-------|----------------|-------------|
 | Always Deny | Reject | Reject |
-| Always Review | Require operator approval | Invalid outcome; treated as a policy rejection |
+| Always Review | Operator approval or User Auto-Approve | Invalid outcome; treated as a policy rejection |
 | Always Approve | Sign without approval | Sign |
 | Operator Default | Per `user_auto_approve` | Not applicable; unmatched cosigner requests reject |
 
@@ -295,8 +298,9 @@ authorization surface. See [Transfer Routing](#transfer-routing).
 
 ## Always Review
 
-Always Review rules force a human approval prompt even when the operator default
-is configured to skip review. The whole tier is client-signing-only: the
+Always Review rules require a human approval prompt when User Auto-Approve
+is off. With it on, the matched rule remains visible in console and audit
+output, but no approval client is needed. The whole tier is client-signing-only: the
 cosigner domain has no operator above the signer, so decode refuses every
 review-producing field and value in a cosigner document. If a
 review verdict is reachable while evaluating a cosigner
@@ -317,8 +321,8 @@ Policy fields by domain:
 
 The transaction-type rule emits the same `transaction_type:<type>` ID as its
 deny counterpart; the phase that emits it says which. A type `review` is
-Always Review, so it defeats `auto_approve_self_noop_transfer` and
-`user_auto_approve:true` like every other rule in this tier.
+Always Review, so it defeats `auto_approve_self_noop_transfer`, while
+`user_auto_approve:true` satisfies the review requirement.
 
 Document-level `review_above` thresholds are the review side of transfer
 guards. They are evaluated after Always Deny. For example, an ASA transfer above
@@ -357,7 +361,8 @@ Warning analysis (`internal/signerapp/approvalpolicy/warnings.go`) covers:
 
 `always_review_warnings` governs only the signer's own legs. A warning on a
 passthrough or foreign leg of a group this signer co-signs always forces
-review, even with the setting off and even under `user_auto_approve:true`.
+review even with `always_review_warnings` off. User Auto-Approve satisfies
+that review without a prompt.
 Warnings on the signer's own legs are still displayed when
 `always_review_warnings:false`; they simply do not force review in that mode.
 
@@ -411,6 +416,8 @@ requests that did not match Always Deny, Always Review, or Always Approve. It
 does not apply to cosigner: an unmatched cosigner component request is
 Always Deny per [Verdict Mapping By Role](#verdict-mapping-by-role).
 
+The same setting also satisfies every Always Review requirement when enabled.
+It never overrides Always Deny or the signer's validation and authorization gates.
 The setting is:
 
 ```yaml
@@ -426,12 +433,12 @@ identities/default/config.yaml
 Behavior:
 
 - `user_auto_approve:false`: unmatched client-signing requests require operator review.
-- `user_auto_approve:true`: unmatched client-signing requests sign without operator review.
+- `user_auto_approve:true`: all non-rejected client-signing requests sign without operator review, including those matching review rules.
 - cosigner component requests: ignored; the verdict is reject.
 
 Under the shipped signer default, route misses and non-transfer types produce
 no verdict, so with the switch on a key with no document of its own signs
-whatever the default does not reject or force to review, and with it off a
+whatever the default does not reject, and with it off a
 human approves. Turning the switch on without per-key documents is that
 choice.
 
@@ -672,11 +679,16 @@ rejection, cancellation, or operator denial. See
 A rotating account (`signing_flow: rotating1`) rekeys on every spend. The
 rotation target is the signer's own next stage, derived from the account's
 seed but never stored as a key file. For that request only, the signer adds
-the target to the held-address set, so `reject_foreign_rekey` and the rekey
-warning treat it as the signer's own address. Every other rule applies
-unchanged, including `always_review_warnings`, which still flags each
-rotation because a rekey is always a warning. The approval description
-names the signing stage, the target stage and the target address.
+the target to the held-address set, so `reject_foreign_rekey` treats it as
+the signer's own address, and marks it as a protocol rekey: the signer set
+the `RekeyTo` itself and proved it derives from the seed before approval
+ran, so warning analysis reports no finding for it and
+`always_review_warnings` does not match on it. A rotating spend therefore
+reaches the operator only through the same rules as any other spend from
+that key. Every other rule applies unchanged, and any other dangerous field
+on the spend (an asset close, a clawback) is still a warning. The approval
+description names the signing stage, the target stage and the target
+address.
 
 There is no exit from the scheme: a rotating account leaves it by moving
 its funds out, never by rekeying to an outside address, so no rule needs to
@@ -1036,9 +1048,9 @@ The shipped signer default rejects a foreign rekey, sends warning-level
 findings to review, routes self-transfers and opt-ins, and leaves every other
 transfer and every non-transfer type to the operator default, so a fresh
 signer key behaves like most signers: it signs under `user_auto_approve: true`
-and prompts under `false`, except that a foreign rekey is always rejected and
-a rekey, close-out, clawback, app update or delete, asset reconfigure, asset
-freeze, or high fee always prompts.
+and prompts under `false`. A foreign rekey is always rejected. Review rules
+for rekey, close-out, clawback, app update or delete, asset reconfigure, asset
+freeze, or high fee are satisfied automatically when User Auto-Approve is on.
 
 ```json
 {
@@ -1134,8 +1146,8 @@ identities/default/config.yaml
 ```
 
 `user_auto_approve` is shown in `apadmin` as `User Auto-Approve`. It is not a
-policy rule; it is the user/operator default used only when policy has no
-matching verdict.
+policy rule; it satisfies all signer review requirements without a prompt
+and approves unmatched requests. Hard rejections still apply.
 
 ### Sidecars
 
@@ -1416,7 +1428,8 @@ for some outcomes:
   is set on cosigner policy rejections and on records for review-forced
   prompts.
 - Always Review matches produce `SIGN_APPROVED` or `SIGN_REJECTED` records with
-  the forcing rule, depending on the operator's decision.
+  the matched rule, depending on the operator's decision or User Auto-Approve.
+  A rule ID alone does not imply a human approved the request.
 - Always Approve outcomes are logged as `SIGN_APPROVED` with no
   `policy_rule_id`; the rule ID appears only on the console line.
 - Operator Default outcomes produce records with no `policy_rule_id`.
@@ -1429,7 +1442,8 @@ policy decision:
 - `[POLICY] Group/Txn requires manual review (<rule_id>)` when an Always Review
   rule forces a prompt, or `[POLICY] Guarded component request requires manual
   review (<rule_id>)` for a guarded user-component request.
-- `[USER AUTO-APPROVE] ...` when Operator Default approves without prompting.
+- `[USER AUTO-APPROVE] ...` when User Auto-Approve approves without prompting;
+  a satisfied review requirement is also printed with its rule ID.
 
 Cosigner component signing uses the same policy rule identifiers for decoded
 transaction facts. Cosigner component approvals and policy rejections are

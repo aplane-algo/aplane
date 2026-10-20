@@ -99,7 +99,7 @@ Outcome       == {"signed", "rejected"}
 
 Decide(matches, auto_approve) ==
     IF matches.deny THEN "Reject"
-    ELSE IF matches.review THEN "Review"
+    ELSE IF matches.review THEN (IF auto_approve THEN "DefaultApprove" ELSE "Review")
     ELSE IF matches.approve THEN "Approve"
     ELSE IF auto_approve THEN "DefaultApprove"
     ELSE "DefaultReview"

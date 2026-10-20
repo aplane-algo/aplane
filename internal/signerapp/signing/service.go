@@ -338,6 +338,7 @@ func (s *Service) approveGroupWithPlanContext(ctx context.Context, req signerapi
 		AuthKeys:             authPolicyKeysFromRequest(req, plan),
 		KnownAddresses:       s.knownAddresses(plan),
 		RoutingExemptIndices: routingExemptIndicesForPlan(plan, allTxns),
+		ProtocolRekeyTargets: protocolRekeyTargetsForPlan(plan),
 		ForcedReviewRuleID: func() string {
 			if planHasBoundedAdminOperation(plan) {
 				return policy.BoundedAdminOperationRequiresReviewRuleID
@@ -382,6 +383,15 @@ func (s *Service) policyFor(selector string) *policy.Config {
 		return nil
 	}
 	return s.PolicyFor(selector)
+}
+
+// protocolRekeyTargetsForPlan returns the rekeys the signer issued itself for
+// plan, or nil.
+func protocolRekeyTargetsForPlan(plan *PlanResult) map[string]bool {
+	if plan == nil {
+		return nil
+	}
+	return plan.ProtocolRekeyTargets
 }
 
 func (s *Service) knownAddresses(plan *PlanResult) map[string]bool {

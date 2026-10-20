@@ -81,8 +81,8 @@ func TestGateUserComponentSigningExcludesFrozenDummySuffix(t *testing.T) {
 	approval := prompt.approvalService(audit)
 	approval.UserAutoApprove = userAutoApproveDefault(true)
 	svc := newComponentGateService(audit, approval, &policy.Config{TransactionTypes: policytest.AllowAllTypes()}, sender)
-	if _, gateErr := svc.gateUserComponentSigning(t.Context(), plan); gateErr != nil {
-		t.Fatalf("gateUserComponentSigning() error = %v", gateErr)
+	if rule, gateErr := svc.gateUserComponentSigning(t.Context(), plan); gateErr != nil || rule != "" {
+		t.Fatalf("gateUserComponentSigning() = %q, %v; want no review rule for dummy suffix", rule, gateErr)
 	}
 	if prompt.calls != 0 {
 		t.Fatalf("operator prompts = %d, want 0: frozen dummy suffix entered the policy gate", prompt.calls)
@@ -338,43 +338,57 @@ func TestSignComponentUserRoleUserAutoApproveSkipsPrompt(t *testing.T) {
 	}
 }
 
-func TestSignComponentUserRoleForeignRekeyLegForcesReview(t *testing.T) {
-	provider := &componentUserTestProvider{family: uniqueSigningTestFamily("test.component-gate-foreign-review.v1")}
-	coresigning.Register(provider)
+func TestSignComponentUserRoleForeignRekeyReviewWithUserAutoApprove(t *testing.T) {
+	for _, auto := range []bool{false, true} {
+		name := "manual"
+		if auto {
+			name = "auto"
+		}
+		t.Run(name, func(t *testing.T) {
+			provider := &componentUserTestProvider{family: uniqueSigningTestFamily("test.component-gate-foreign-review.v1")}
+			coresigning.Register(provider)
 
-	sender := types.Address{29}.String()
-	receiver := types.Address{30}.String()
-	txns := []types.Transaction{
-		testnetPaymentTransaction(t, sender, receiver, 1),
-		testnetPaymentTransaction(t, receiver, receiver, 0),
-	}
-	txns[1].RekeyTo = types.Address{31}
-	groupID, err := algocrypto.ComputeGroupID(txns)
-	if err != nil {
-		t.Fatalf("ComputeGroupID() error = %v", err)
-	}
-	txns[0].Group = groupID
-	txns[1].Group = groupID
+			sender := types.Address{29}.String()
+			receiver := types.Address{30}.String()
+			txns := []types.Transaction{
+				testnetPaymentTransaction(t, sender, receiver, 1),
+				testnetPaymentTransaction(t, receiver, receiver, 0),
+			}
+			txns[1].RekeyTo = types.Address{31}
+			groupID, err := algocrypto.ComputeGroupID(txns)
+			if err != nil {
+				t.Fatalf("ComputeGroupID() error = %v", err)
+			}
+			txns[0].Group = groupID
+			txns[1].Group = groupID
 
-	audit := &testAuditLogger{}
-	prompt := &componentGatePrompt{approve: true}
-	approval := prompt.approvalService(audit)
-	approval.UserAutoApprove = userAutoApproveDefault(true)
-	svc := newComponentGateService(audit, approval, &policy.Config{TransactionTypes: policytest.AllowAllTypes()}, sender)
-	session := &cloningComponentSession{address: sender, fresh: guardedGateKeyMaterial(provider.family)}
+			audit := &testAuditLogger{}
+			prompt := &componentGatePrompt{approve: true}
+			approval := prompt.approvalService(audit)
+			approval.UserAutoApprove = userAutoApproveDefault(auto)
+			approval.HasClient = func() bool { return !auto }
+			svc := newComponentGateService(audit, approval, &policy.Config{TransactionTypes: policytest.AllowAllTypes()}, sender)
+			session := &cloningComponentSession{address: sender, fresh: guardedGateKeyMaterial(provider.family)}
 
-	result, svcErr := svc.signComponentWithSession(componentGateContext(), userComponentGateRequest(t, sender, txns, []int{0}), session)
-	if svcErr != nil {
-		t.Fatalf("SignComponent error = %v", svcErr)
-	}
-	if len(result.Signatures) != 1 {
-		t.Fatalf("Signatures len = %d, want 1", len(result.Signatures))
-	}
-	if prompt.calls != 1 {
-		t.Fatalf("prompt calls = %d, want forced review despite user auto-approve", prompt.calls)
-	}
-	if len(audit.approved) != 1 || audit.approved[0].policyRule != policy.AlwaysReviewWarningsRuleID {
-		t.Fatalf("approved audit entries = %#v, want always-review rule ID", audit.approved)
+			result, svcErr := svc.signComponentWithSession(componentGateContext(), userComponentGateRequest(t, sender, txns, []int{0}), session)
+			if svcErr != nil {
+				t.Fatalf("SignComponent error = %v", svcErr)
+			}
+			if len(result.Signatures) != 1 {
+				t.Fatalf("Signatures len = %d, want 1", len(result.Signatures))
+			}
+			wantPrompts := 1
+			if auto {
+				wantPrompts = 0
+			}
+			if prompt.calls != wantPrompts {
+				t.Fatalf("prompt calls = %d, want %d", prompt.calls, wantPrompts)
+			}
+			if len(audit.approved) != 1 || audit.approved[0].policyRule != policy.AlwaysReviewWarningsRuleID {
+				t.Fatalf("approved audit entries = %#v, want always-review rule ID", audit.approved)
+			}
+
+		})
 	}
 }
 

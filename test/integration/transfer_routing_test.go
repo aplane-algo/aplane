@@ -15,7 +15,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/policy/policytest"
-	"github.com/aplane-algo/aplane/internal/transport"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 	"github.com/aplane-algo/aplane/test/integration/harness"
 
@@ -174,12 +173,15 @@ func TestTransferRoutingIntegrationExercisesRoutes(t *testing.T) {
 		mustNotReceiveIPCSignRequest(t, ipcClient, 500*time.Millisecond)
 	})
 
-	t.Run("review_threshold_forces_operator_approval", func(t *testing.T) {
+	// The review threshold matches a review rule; User Auto-Approve (on in
+	// this env) satisfies it, so the request signs with no operator prompt.
+	t.Run("review_threshold_satisfied_by_user_auto_approve", func(t *testing.T) {
 		req := transferRoutingSignRequest(
 			addresses.source,
 			mustUnsignedPaymentTxnHex(t, sp, addresses.source, addresses.review, 11, "routing-review-threshold"),
 		)
-		expectTransferRoutingManualApproval(t, signerd.GetURL(), req, ipcClient, addresses.source)
+		expectTransferRoutingSignOK(t, signerd.GetURL(), req)
+		mustNotReceiveIPCSignRequest(t, ipcClient, 500*time.Millisecond)
 	})
 
 	t.Run("allowed_close_route_signs", func(t *testing.T) {
@@ -398,51 +400,6 @@ func expectTransferRoutingBadRequest(t *testing.T, signerURL string, req signera
 	}
 	if len(resp.Signed) != 0 {
 		t.Fatalf("signed transaction count = %d, want 0", len(resp.Signed))
-	}
-	return resp
-}
-
-func expectTransferRoutingManualApproval(
-	t *testing.T,
-	signerURL string,
-	req signerapi.GroupSignRequest,
-	ipcClient *transport.IPCClient,
-	wantAddress string,
-) signerapi.GroupSignResponse {
-	t.Helper()
-
-	done := make(chan struct{})
-	var status int
-	var body []byte
-	go func() {
-		defer close(done)
-		status, body = postSignRequest(t, signerURL, req)
-	}()
-
-	signReq := mustReadIPCSignRequest(t, ipcClient, 10*time.Second)
-	if signReq.Address != wantAddress {
-		t.Fatalf("manual approval address = %s, want %s", signReq.Address, wantAddress)
-	}
-	if !strings.Contains(signReq.Description, "[TXN APPROVAL]") {
-		t.Fatalf("manual approval description missing txn marker:\n%s", signReq.Description)
-	}
-	mustApproveIPCSignRequest(t, ipcClient, signReq.ID)
-
-	select {
-	case <-done:
-	case <-time.After(10 * time.Second):
-		t.Fatal("timed out waiting for manually approved sign request")
-	}
-
-	resp := decodeTransferRoutingSignResponse(t, body)
-	if status != http.StatusOK {
-		t.Fatalf("expected 200 OK after manual approval, got %d: %s", status, string(body))
-	}
-	if resp.Error != "" {
-		t.Fatalf("signer returned unexpected error after manual approval: %s", resp.Error)
-	}
-	if got := len(resp.Signed); got != 1 {
-		t.Fatalf("signed transaction count after manual approval = %d, want 1", got)
 	}
 	return resp
 }

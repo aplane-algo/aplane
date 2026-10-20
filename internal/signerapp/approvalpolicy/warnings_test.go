@@ -216,3 +216,55 @@ func TestAssetReconfigureWarningNamesRoles(t *testing.T) {
 		t.Fatalf("unfreeze violations = %+v", unfreeze)
 	}
 }
+
+// A rekey the signer issued itself as part of a signing protocol (a rotating
+// account's next stage) is the protocol working, not a dangerous field: it
+// produces no finding at all, while every other field and every other rekey
+// target is reported as before.
+func TestProtocolRekeyTargetIsNotAFinding(t *testing.T) {
+	nextStage := types.Address{0xAB}
+	other := types.Address{0xAC}
+	ctx := Context{
+		KnownAddresses:       map[string]bool{nextStage.String(): true},
+		ProtocolRekeyTargets: map[string]bool{nextStage.String(): true},
+	}
+
+	t.Run("protocol rekey produces no finding", func(t *testing.T) {
+		txn := types.Transaction{Header: types.Header{RekeyTo: nextStage}}
+		if v := CheckDecodedTxnWarningsIn(txn, ctx); len(v) != 0 {
+			t.Fatalf("expected no findings, got %+v", v)
+		}
+		if v := CheckGroupWarningsIn([]types.Transaction{txn}, ctx); len(v) != 0 {
+			t.Fatalf("expected no group findings, got %+v", v)
+		}
+	})
+
+	t.Run("other fields on the same transaction still warn", func(t *testing.T) {
+		txn := types.Transaction{
+			Type:   types.AssetTransferTx,
+			Header: types.Header{RekeyTo: nextStage},
+			AssetTransferTxnFields: types.AssetTransferTxnFields{
+				AssetCloseTo: types.Address{0xAD},
+			},
+		}
+		v := CheckDecodedTxnWarningsIn(txn, ctx)
+		if len(v) != 1 || v[0].Field != "AssetCloseTo" {
+			t.Fatalf("expected only the asset close finding, got %+v", v)
+		}
+	})
+
+	t.Run("a rekey to any other address still warns", func(t *testing.T) {
+		txn := types.Transaction{Header: types.Header{RekeyTo: other}}
+		v := CheckDecodedTxnWarningsIn(txn, ctx)
+		if len(v) != 1 || v[0].Field != "RekeyTo" || !strings.Contains(v[0].Message, "LOSE CONTROL") {
+			t.Fatalf("expected the lose-control rekey finding, got %+v", v)
+		}
+	})
+
+	t.Run("the two-argument form never exempts a rekey", func(t *testing.T) {
+		txn := types.Transaction{Header: types.Header{RekeyTo: nextStage}}
+		if v := CheckDecodedTxnWarnings(txn, ctx.KnownAddresses); len(v) != 1 {
+			t.Fatalf("expected the held-address rekey finding, got %+v", v)
+		}
+	})
+}

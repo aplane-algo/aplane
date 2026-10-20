@@ -27,7 +27,7 @@ closed product authorizer requires exact membership in its explicit action
 allowlist. See
 [Authorization](#authorization) for the detailed model.
 
-**Policy enforcement:** Operator approval and warning surfacing are active. A narrow signer safety policy layer is implemented for product-scoped policy stored as a node default (`default.json`) plus optional per-key documents (`policies/<selector>.json`) on both node roles, with guards such as a per-type allow/review/reject gate, rekey rejection, close-out rejection, clawback rejection, amount/fee ceilings, transfer review thresholds, forced review for warning-level findings (including application update, asset reconfigure/destroy, and asset freeze), and a narrow auto-approval rule for single 0-value ALGO/ASA self-transfer requests. A key with no document of its own follows the default; the shipped cosigner default is deny-all.
+**Policy enforcement:** Operator approval and warning surfacing are active. A narrow signer safety policy layer is implemented for product-scoped policy stored as a node default (`default.json`) plus optional per-key documents (`policies/<selector>.json`) on both node roles, with guards such as a per-type allow/review/reject gate, rekey rejection, close-out rejection, clawback rejection, amount/fee ceilings, transfer review thresholds, forced review for warning-level findings (including application update, asset reconfigure/destroy, and asset freeze), and a narrow auto-approval rule for single 0-value ALGO/ASA self-transfer requests. User Auto-Approve satisfies signer review requirements without a human prompt; hard rejection rules still apply. A key with no document of its own follows the default; the shipped cosigner default is deny-all.
 
 **Deployment scope:** the fixed product store and runtime are described in [ARCH_OVERVIEW.md](ARCH_OVERVIEW.md#fixed-product-store-and-runtime).
 
@@ -1200,7 +1200,7 @@ Audit entries carry attribution fields:
 - `txn_auth`, `txn_sender`, `txn_type`, `txn_details`, `txid`: transaction/key attribution for signing and key events
 - `remote_addr`: remote address when available
 - `reason`: rejection, failure, or denial detail when available
-- `policy_rule_id`: policy rule that forced manual signing review, when present
+- `policy_rule_id`: matched review rule (satisfied by a human or User Auto-Approve), when present
 - `key_count`: key count for startup and reload events
 - `witness_key_id`: public witness authority affected by a cosigner-reference mutation
 - `client_label`: display label of the key in enrollment and revocation events
@@ -1308,7 +1308,7 @@ Signing-audit semantics:
   release memory from these entries at unlock (see
   [ARCH_SIGNING.md](ARCH_SIGNING.md#rotating-accounts-rotating1))
 - approval audit enriches approved/rejected records with the admin session approver principal when an admin response supplies it
-- approved/rejected signing records include `policy_rule_id` when a policy rule forced manual review before the operator decision
+- approved/rejected signing records include `policy_rule_id` when a review rule matched, including when User Auto-Approve satisfied it without a human decision
 - admin authorization-denial audit records event `AUTHORIZATION_DENIED`, outcome `denied`, admin session ID, transport, principal attribution, action/resource details in `reason`, and remote address when available
 - IPC admin session connected/disconnected audit records the admin session ID, transport, principal, and remote address; SSH connect/disconnect entries record the remote address, `reason:"ssh"`, and outcome, attributed to `system:product-admin`
 - key-management audit events are emitted for both REST and authenticated IPC admin operations and name the requester: REST `KEY_GENERATED`/`KEY_DELETED` entries carry the enrolled client's `client:<fingerprint>` principal with `transport: http` and its remote address, and IPC entries (including `KEY_IMPORTED` and `PASSPHRASE_CHANGED`) carry the admin session's principal, session ID, and transport
@@ -1833,7 +1833,7 @@ and over-ceiling fees before either signing path.
 
 The contract-admin private key is a Falcon-1024 witness in standalone custody,
 never a signer or `apstore` key. Apsigner
-runs normal policy and forced operator review, loads only the spending key, and
+runs normal policy and review (satisfied by User Auto-Approve when enabled), loads only the spending key, and
 returns a typed partial through `/sign/bounded-admin`. `aprekey`
 independently validates the finalized group, stored bounded metadata, supplied
 program, and pure-rekey shape before producing the final LogicSig argument.

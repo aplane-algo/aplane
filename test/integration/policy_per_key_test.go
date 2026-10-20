@@ -127,13 +127,13 @@ func TestPerKeyPolicyDefaultAndOwnDocument(t *testing.T) {
 
 	// On the shipped default: a foreign rekey is rejected, an outbound
 	// payment reaches the operator default and user_auto_approve signs it,
-	// and a close-out is a warning the default always reviews.
+	// and User Auto-Approve satisfies the close-out warning review.
 	if line := n.statusLine(t); !strings.HasSuffix(line, "  default") {
 		t.Fatalf("status before an own document = %q, want the key on the default", line)
 	}
 	n.expectRejected(t, mustUnsignedPaymentTxnHexWithRekey(t, n.sp, n.address, n.address, 0, "per-key-default-rekey", foreign), policy.RejectForeignRekeyRuleID)
 	n.expectSigned(t, "outbound payment on the default", mustUnsignedPaymentTxnHex(t, n.sp, n.address, integrationBurnAddress, 0, "per-key-default-outbound"))
-	n.expectPrompt(t, "close-out on the default", mustUnsignedPaymentTxnHexWithClose(t, n.sp, n.address, integrationBurnAddress, 0, "per-key-default-close", closeTo))
+	n.expectSigned(t, "close-out on the default with user auto-approve", mustUnsignedPaymentTxnHexWithClose(t, n.sp, n.address, integrationBurnAddress, 0, "per-key-default-close", closeTo))
 
 	// The key's own document: one route, every miss rejected.
 	own := policytest.Signer(t, n.address, fmt.Sprintf(`{

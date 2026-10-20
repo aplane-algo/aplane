@@ -22,6 +22,19 @@ const (
 	DefaultMaxFeeMicroAlgos = 1_000_000 // 1 ALGO
 )
 
+// Context is what a warning check knows about the signer's own position.
+type Context struct {
+	// KnownAddresses is the set of addresses the signer holds. A rekey to one
+	// of them is still a finding, but it says the signer keeps control instead
+	// of warning that control is lost.
+	KnownAddresses map[string]bool
+	// ProtocolRekeyTargets are rekey targets the signer itself set as part of
+	// a signing protocol and proved before approval ran: a rotating account's
+	// next stage. A rekey to one of them is the protocol working, not a
+	// dangerous field, and produces no finding.
+	ProtocolRekeyTargets map[string]bool
+}
+
 // CheckTxnWarnings analyzes a transaction for dangerous fields that should be
 // shown to the operator. These are warnings only: the operator can still
 // approve. knownAddresses is the set of addresses we have signing authority
@@ -43,9 +56,14 @@ func CheckTxnWarnings(txnBytesHex string, knownAddresses map[string]bool) []sign
 // CheckGroupWarnings analyzes each transaction in a group for dangerous
 // fields. Returns aggregated warnings prefixed with the transaction index.
 func CheckGroupWarnings(txns []types.Transaction, knownAddresses map[string]bool) []signerapproval.Violation {
+	return CheckGroupWarningsIn(txns, Context{KnownAddresses: knownAddresses})
+}
+
+// CheckGroupWarningsIn is CheckGroupWarnings with a full Context.
+func CheckGroupWarningsIn(txns []types.Transaction, ctx Context) []signerapproval.Violation {
 	var all []signerapproval.Violation
 	for i, txn := range txns {
-		for _, v := range CheckDecodedTxnWarnings(txn, knownAddresses) {
+		for _, v := range CheckDecodedTxnWarningsIn(txn, ctx) {
 			v.Field = fmt.Sprintf("Tx %d/%d: %s", i+1, len(txns), v.Field)
 			all = append(all, v)
 		}
@@ -57,13 +75,18 @@ func CheckGroupWarnings(txns []types.Transaction, knownAddresses map[string]bool
 // issues. It is the shared warning evaluator used by both request parsing and
 // same-package tests.
 func CheckDecodedTxnWarnings(txn types.Transaction, knownAddresses map[string]bool) []signerapproval.Violation {
+	return CheckDecodedTxnWarningsIn(txn, Context{KnownAddresses: knownAddresses})
+}
+
+// CheckDecodedTxnWarningsIn is CheckDecodedTxnWarnings with a full Context.
+func CheckDecodedTxnWarningsIn(txn types.Transaction, ctx Context) []signerapproval.Violation {
 	var violations []signerapproval.Violation
 	facts := txeffects.Inspect(txn)
 
-	if facts.Has(txeffects.EffectRekey) {
+	if facts.Has(txeffects.EffectRekey) && !ctx.ProtocolRekeyTargets[txn.RekeyTo.String()] {
 		rekeyTarget := txn.RekeyTo.String()
 		msg := "This transaction will transfer signing authority to another address."
-		if knownAddresses[rekeyTarget] {
+		if ctx.KnownAddresses[rekeyTarget] {
 			msg += "\n   You possess the keys for the new address."
 		} else {
 			msg += "\n   >>> YOU WILL LOSE CONTROL OF THIS ACCOUNT <<<"
