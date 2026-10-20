@@ -164,7 +164,7 @@ func TestStageOpsThroughKeyMaterial(t *testing.T) {
 		t.Fatal(err)
 	}
 	msg := make([]byte, 32)
-	sig, err := ops.SignStage(key, 1, msg)
+	sig, err := ops.SignStage(key, 1, 0, msg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,7 +181,7 @@ func TestStageOpsThroughKeyMaterial(t *testing.T) {
 	if err := Verify(keys, msg, sig.Args[0], sig.Args[1], sig.Args[2]); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ops.SignStage(&signing.RotatingKeyMaterial{Seed: seed[:5]}, 0, msg); err == nil {
+	if _, err := ops.SignStage(&signing.RotatingKeyMaterial{Seed: seed[:5]}, 0, 0, msg); err == nil {
 		t.Fatal("short seed accepted")
 	}
 }

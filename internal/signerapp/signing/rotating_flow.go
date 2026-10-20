@@ -483,7 +483,7 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 	if !bytes.Equal(txnutil.EncodeWithPrefix(spend), txnutil.EncodeWithPrefix(plan.AllTxns[0])) || !bytes.Equal(txID[:], algocrypto.TransactionID(plan.AllTxns[0])) {
 		return nil, internal("refusing to sign: the rotating spend differs from the approved group")
 	}
-	stageSig, signErr := rs.ops.SignStage(rs.secret, stage, txID[:])
+	stageSig, signErr := rs.ops.SignStage(rs.secret, stage, 0, txID[:])
 	if signErr != nil {
 		return nil, internal(fmt.Sprintf("sign with stage %d: %v", stage, signErr))
 	}

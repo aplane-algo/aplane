@@ -49,9 +49,11 @@ type RotatingStageOps interface {
 	// a rotation target can authorize the account once it is live.
 	CheckStageOpens(key *RotatingKeyMaterial, stage uint64) error
 
-	// SignStage signs message with stage i, verifies both signatures against
-	// the stage program's keys, and returns the program and arguments.
-	SignStage(key *RotatingKeyMaterial, stage uint64, message []byte) (RotatingStageSignature, error)
+	// SignStage signs message with stage i, verifies every signature against
+	// the stage program's keys, and returns the program and arguments. index
+	// selects the one-time leaf for families whose stage holds several (the
+	// signing flow chooses it); a family with one key per stage ignores it.
+	SignStage(key *RotatingKeyMaterial, stage uint64, index uint32, message []byte) (RotatingStageSignature, error)
 }
 
 var rotatingStageOps = struct {
