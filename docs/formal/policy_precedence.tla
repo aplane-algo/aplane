@@ -59,8 +59,8 @@ EXTENDS Naturals, FiniteSets, TLC
 RuleMatches == [deny: BOOLEAN, review: BOOLEAN, approve: BOOLEAN]
 
 \* The five possible verdicts from the decision procedure. The first
-\* three are policy verdicts; the last two are the operator-default
-\* fallback used when no policy verdict applies.
+\* three are policy verdicts. DefaultApprove also represents User Auto-Approve
+\* satisfying a review requirement; DefaultReview is the unmatched fallback.
 Verdict == {"Reject", "Review", "Approve", "DefaultReview", "DefaultApprove"}
 
 \* The operator approval channel as seen by the signer.
@@ -83,7 +83,7 @@ Outcome == {"signed", "rejected"}
 \* Decide implements the short-circuit decision procedure from
 \* FORMAL_POLICY_MODEL.md "Decision Procedure":
 \*   1. Always Deny  -> Reject
-\*   2. Always Review -> Review
+\*   2. Always Review -> DefaultApprove if auto_approve, otherwise Review
 \*   3. Always Approve -> Approve
 \*   4. Operator Default (user_auto_approve)
 \*
@@ -91,7 +91,7 @@ Outcome == {"signed", "rejected"}
 \* Operator Default is encoded by the IF/ELSE IF ordering.
 Decide(matches, auto_approve) ==
     IF matches.deny THEN "Reject"
-    ELSE IF matches.review THEN "Review"
+    ELSE IF matches.review THEN (IF auto_approve THEN "DefaultApprove" ELSE "Review")
     ELSE IF matches.approve THEN "Approve"
     ELSE IF auto_approve THEN "DefaultApprove"
     ELSE "DefaultReview"
@@ -163,11 +163,12 @@ P4_DenyDominance ==
 
 \* P5: Review Dominance Over Approval.
 \* If no AlwaysDeny matches and at least one AlwaysReview matches,
-\* manual review is required. AlwaysApprove cannot skip the prompt.
+\* manual review is required when User Auto-Approve is off.
+\* Policy AlwaysApprove cannot skip the prompt.
 \* Note: this asserts verdict = "Review", not outcome — review can be
 \* operator-approved into a signed outcome.
 P5_ReviewDominance ==
-    ~matches.deny /\ matches.review => verdict = "Review"
+    ~matches.deny /\ matches.review /\ ~user_auto_approve => verdict = "Review"
 
 \* P6: Explicit Approval Only After Deny/Review Pass.
 \* AlwaysApprove signs without manual review only when no AlwaysDeny or
@@ -208,6 +209,10 @@ ApprovalResolution ==
     /\ verdict \in {"Review", "DefaultReview"}   =>
             (outcome = "signed" <=> approval = "approve")
 
+\* All non-rejected requests can run unattended with User Auto-Approve.
+UserAutoApproveSatisfiesReview ==
+    ~matches.deny /\ user_auto_approve => outcome = "signed"
+
 Safety ==
     /\ TypeOK
     /\ P4_DenyDominance
@@ -216,5 +221,6 @@ Safety ==
     /\ P7_OperatorDefaultLast
     /\ I9_HardDenyDominance
     /\ ApprovalResolution
+    /\ UserAutoApproveSatisfiesReview
 
 ============================================================================

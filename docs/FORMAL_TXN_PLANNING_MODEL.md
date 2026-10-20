@@ -276,11 +276,12 @@ Always Deny > Always Review > Always Approve > Operator Default
 Therefore:
 
 1. Any Always Deny match rejects before approval.
-2. Any Always Review match requires operator approval and blocks Always Approve
-   and `user_auto_approve:true`.
+2. Any Always Review match blocks policy Always Approve and requires operator
+   approval unless `user_auto_approve:true` satisfies it without a prompt.
 3. Always Approve can sign without operator approval only when no Always Deny
    or Always Review rule matched.
-4. `user_auto_approve` is only the fallback after policy verdicts.
+4. `user_auto_approve` satisfies review requirements and approves unmatched
+   requests, but cannot override a rejection.
 
 ## Signing Output Rules
 

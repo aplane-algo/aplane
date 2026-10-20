@@ -411,19 +411,23 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 		known[addr] = true
 	}
 	// The rotation target is this signer's own next stage, never a foreign
-	// authority: approval warnings and reject_foreign_rekey see it as held.
+	// authority: reject_foreign_rekey sees it as held, and because the signer
+	// set the rekey itself and proved it derives from the seed, approval
+	// warnings do not report it at all.
 	known[spend.RekeyTo.String()] = true
+	protocolRekeys := map[string]bool{spend.RekeyTo.String(): true}
 	plan := &PlanResult{
-		AllTxns:            allTxns,
-		DummyTxns:          allTxns[1:],
-		PassthroughIndices: map[int]bool{},
-		ForeignIndices:     map[int]bool{},
-		LsigIndices:        []int{0},
-		DummiesNeeded:      len(allTxns) - 1,
-		NeedsRegroup:       len(allTxns) > 1,
-		AuthKeyTypes:       []string{s.Planner.Snapshot().KeyTypes[req.Account]},
-		KnownAddresses:     known,
-		Rotating:           item,
+		AllTxns:              allTxns,
+		DummyTxns:            allTxns[1:],
+		PassthroughIndices:   map[int]bool{},
+		ForeignIndices:       map[int]bool{},
+		LsigIndices:          []int{0},
+		DummiesNeeded:        len(allTxns) - 1,
+		NeedsRegroup:         len(allTxns) > 1,
+		AuthKeyTypes:         []string{s.Planner.Snapshot().KeyTypes[req.Account]},
+		KnownAddresses:       known,
+		ProtocolRekeyTargets: protocolRekeys,
+		Rotating:             item,
 	}
 	signReq := signerapi.GroupSignRequest{
 		RequestID: req.RequestID,

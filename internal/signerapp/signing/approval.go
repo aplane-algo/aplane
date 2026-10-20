@@ -477,7 +477,10 @@ func (s *ApprovalService) RequestGroupApprovalWithContext(ctx context.Context, r
 
 func (s *ApprovalService) requestGroupApprovalWithContext(ctx context.Context, req signerapi.GroupSignRequest, plan *PlanResult, groupDesc string, firstValid, lastValid uint64, txns []types.Transaction, forceReviewRuleID string) *ServiceError {
 	console := consoleOf(s.Console)
-	if s.userAutoApprove() && forceReviewRuleID == "" {
+	if s.userAutoApprove() {
+		if forceReviewRuleID != "" {
+			console.Printf("[USER AUTO-APPROVE] Satisfying review requirement (%s) without operator prompt\n", forceReviewRuleID)
+		}
 		console.Println("[USER AUTO-APPROVE] Group approved without operator prompt")
 		console.Sync()
 		return nil
@@ -513,7 +516,7 @@ func (s *ApprovalService) requestGroupApprovalWithContext(ctx context.Context, r
 	displaySender := fmt.Sprintf("GROUP(%d txns)", len(txns))
 	groupAuthAddr := groupApprovalAddress(req)
 
-	violations := approvalpolicy.CheckGroupWarnings(txns, s.groupKnownAddresses(plan))
+	violations := approvalpolicy.CheckGroupWarningsIn(txns, approvalpolicy.Context{KnownAddresses: s.groupKnownAddresses(plan), ProtocolRekeyTargets: protocolRekeyTargetsForPlan(plan)})
 	approved, err := s.requestSigningApproval(
 		ctx,
 
@@ -566,7 +569,10 @@ func (s *ApprovalService) requestSingleTxnApprovalWithContext(ctx context.Contex
 	approvalReason := ""
 	decodedSender := txns[0].Sender.String()
 
-	if s.userAutoApprove() && forceReviewRuleID == "" {
+	if s.userAutoApprove() {
+		if forceReviewRuleID != "" {
+			console.Printf("[USER AUTO-APPROVE] Satisfying review requirement (%s) without operator prompt\n", forceReviewRuleID)
+		}
 		txnApproved = true
 		approvalReason = "user_auto_approve: true"
 	}

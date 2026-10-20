@@ -154,8 +154,8 @@ silently change the rulebook halfway through that request.
 
 On signer nodes the precedence is deny, then require review, then approve,
 then operator default. A deny cannot be overridden by an operator approval.
-A review rule cannot be bypassed by `user_auto_approve`. That setting only
-decides the fallback for transactions unmatched by a stronger verdict.
+`user_auto_approve:true` satisfies all review requirements without a human
+prompt and approves unmatched requests. Hard rejections still apply.
 Cosigner policy has no manual-review fallback: a request must be permitted
 by its policy or it is rejected. Its shipped default permits nothing.
 [ARCH_POLICY.md](ARCH_POLICY.md) defines selection and evaluation.

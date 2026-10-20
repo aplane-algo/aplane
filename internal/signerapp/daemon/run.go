@@ -433,7 +433,8 @@ func printSecurityAudit(passphraseTimeout time.Duration, userAutoApprove bool, i
 		logWarnf("  lock_on_disconnect: no")
 	}
 
-	// User auto-approve status - operator-default approval fallback
+	// User auto-approve status: when on, every non-rejected request signs
+	// without a prompt, review matches included.
 	if !userAutoApprove {
 		logInfof("  user_auto_approve: disabled")
 	} else {
@@ -480,9 +481,10 @@ func printUnlockConfigHeadlessWarnings(config *serverconfig.ServerConfig) {
 func printInteractiveModeWarnings(config *serverconfig.ServerConfig) {
 	var warnings []string
 
-	// Warn if user auto-approve is enabled - all non-rejected default-fallback transactions sign without confirmation.
+	// Warn if user auto-approve is enabled: every non-rejected transaction,
+	// including one that matches a review rule, signs without confirmation.
 	if config.UserAutoApprove {
-		warnings = append(warnings, "user_auto_approve:true - non-rejected default-fallback transactions will be signed without confirmation")
+		warnings = append(warnings, "user_auto_approve:true - all non-rejected transactions, including review-rule matches, will be signed without confirmation")
 	}
 
 	if len(config.PassphraseCommandArgv) > 0 {

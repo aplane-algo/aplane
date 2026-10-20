@@ -21,8 +21,8 @@ submission unless they passed exactly one of the two authorization gates:
 - **presign-plan**: apsigner's policy and approval pipeline over the canonical
   group, which includes every slot (including plugin passthrough slots) in
   policy/review context. The ordinary product operator default still applies:
-  `user_auto_approve:true` can authorize a group unless an Always Review rule
-  forces a prompt.
+  `user_auto_approve:true` satisfies any review requirement for a non-rejected
+  group without a prompt. Hard rejection rules still apply.
 
 The legacy third path (`localSigners`, plugin-supplied keys signing locally
 with a plugin-controlled, content-free prompt) violated this claim and was

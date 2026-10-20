@@ -70,14 +70,16 @@ func NewRuntimeConfig(userAutoApprove, lockOnDisconnect bool, sessionTimeout, ap
 	}
 }
 
-// UserAutoApprove returns whether unmatched signing requests skip operator approval.
+// UserAutoApprove returns whether non-rejected signing requests, review-rule
+// matches included, skip operator approval.
 func (c *RuntimeConfig) UserAutoApprove() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.userAutoApprove
 }
 
-// SetUserAutoApprove updates whether unmatched signing requests skip operator approval.
+// SetUserAutoApprove updates whether non-rejected signing requests, review-rule
+// matches included, skip operator approval.
 func (c *RuntimeConfig) SetUserAutoApprove(v bool) {
 	c.mu.Lock()
 	c.userAutoApprove = v

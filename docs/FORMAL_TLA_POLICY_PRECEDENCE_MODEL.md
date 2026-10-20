@@ -24,6 +24,7 @@ The spec lives at [formal/policy_precedence.tla](formal/policy_precedence.tla).
 | P7: Operator Default Is Last | FORMAL_POLICY_MODEL.md | `P7_OperatorDefaultLast` |
 | I9: Hard Deny Dominance | FORMAL_TXN_PLANNING_MODEL.md | `I9_HardDenyDominance` |
 | Approval resolution table | (this module) | `ApprovalResolution` |
+| User Auto-Approve satisfies review without bypassing rejection | (this module) | `UserAutoApproveSatisfiesReview` |
 
 The I9 check is the centerpiece. The sign-boundary module's
 `DenyOutputSuppression` predicate is true by construction of `Init`
@@ -93,6 +94,16 @@ predicates are properties of a single signing decision, not of
 sequences of decisions. If a future invariant requires reasoning across
 multiple decisions (e.g. an operator changing `user_auto_approve`
 between requests), the spec will need real next-state transitions.
+
+### User Auto-Approve
+
+After deny checks, a review match yields `DefaultApprove` when User
+Auto-Approve is on and `Review` otherwise. The abstract label
+`DefaultApprove` includes review satisfaction as well as unmatched approval.
+P5 requires manual review only when the switch is off;
+`UserAutoApproveSatisfiesReview` checks that the switch signs every
+non-rejected request regardless of the human approval input. Rule IDs remain
+outside this model and are retained by the implementation for audit.
 
 ### Approval as coarse input
 

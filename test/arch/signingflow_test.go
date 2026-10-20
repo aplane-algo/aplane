@@ -92,7 +92,7 @@ func TestSigningFlowCharacterizationInventory(t *testing.T) {
 			"TestSignComponentUserRoleRejectedBySignerPolicy",
 			"TestSignComponentUserRoleOperatorApproves",
 			"TestSignComponentUserRoleUserAutoApproveSkipsPrompt",
-			"TestSignComponentUserRoleForeignRekeyLegForcesReview",
+			"TestSignComponentUserRoleForeignRekeyReviewWithUserAutoApprove",
 		},
 		"../../internal/signerapp/signing/bounded_cosigner_test.go": {
 			"TestValidateBoundedComponentPlanRequiresCosignerSpend",

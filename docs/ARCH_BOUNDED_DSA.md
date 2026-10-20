@@ -809,8 +809,10 @@ this is a client orchestration limit, not a signer-side whole-group flow
 invariant. Signer-side classification remains authoritative for each target it
 signs or assembles. Unknown flow labels fail closed.
 Every bounded admin operation triggers the stable unconditional
-`bounded_admin_operation_requires_review` rule before blanket or self-no-op
-autoapproval, regardless of warning configuration. A client intent to simulate
+`bounded_admin_operation_requires_review` rule before policy self-no-op
+autoapproval, regardless of warning configuration. User Auto-Approve
+satisfies this review requirement without a prompt; the external witness
+and local-target constraints still apply. A client intent to simulate
 does not alter this requirement; apsigner sees an ordinary executable signing
 request.
 

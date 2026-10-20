@@ -107,7 +107,7 @@ type AuditEntry struct {
 	TxID                 string         `json:"txid,omitempty"`                // Transaction ID (after signing)
 	RemoteAddr           string         `json:"remote_addr,omitempty"`         // Client IP (for auth failures)
 	Reason               string         `json:"reason,omitempty"`              // Rejection/failure reason
-	PolicyRuleID         string         `json:"policy_rule_id,omitempty"`      // Policy rule that forced manual review
+	PolicyRuleID         string         `json:"policy_rule_id,omitempty"`      // Matched review rule, satisfied manually or by User Auto-Approve
 	WitnessKeyID         string         `json:"witness_key_id,omitempty"`      // Public witness authority affected by a cosigner-reference mutation
 	KeyCount             int            `json:"key_count,omitempty"`           // For key reload events
 	ArchiveSHA256        string         `json:"archive_sha256,omitempty"`

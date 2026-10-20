@@ -130,7 +130,7 @@ request slots only. Passthrough and foreign slots are not governed by those
 rules because this signer is not signing them. They still participate in group
 context, approval rendering, audit visibility, and a load-bearing cross-party
 Always Review check: warning-bearing rekey, close, clawback, and related danger
-fields force operator review even when `user_auto_approve:true`. Dummies are
+fields require review, which `user_auto_approve:true` satisfies without a prompt. Dummies are
 signer-generated minimum-effect transactions and are not independent
 user-facing policy subjects.
 
@@ -141,7 +141,8 @@ Rules in the current inventory fall into two structural shapes:
 - **Per-position transaction-level rules.** Always Deny and configured
   signer-policy review rules evaluate signer-controlled slots. The separate
   cross-party warning-review guard evaluates passthrough and foreign slots so
-  dangerous context cannot ride through the operator default.
+  dangerous context is classified for review even when own-leg warnings are off.
+  User Auto-Approve can satisfy that review without a prompt.
 - **Plan-shape predicates.** Always Approve is currently a single rule:
   `auto_approve_self_noop_transfer`, and it is not per-position. It matches
   on the overall planned request: single caller request, no passthrough or
@@ -172,8 +173,9 @@ DefaultReview
 DefaultApprove
 ```
 
-`rule_id` is present for policy verdicts and absent for operator-default
-outcomes.
+`rule_id` identifies matching policy rules. Unmatched operator-default
+outcomes have none; a review satisfied by User Auto-Approve retains its
+matched rule for audit even though the abstract outcome is `DefaultApprove`.
 
 ## Decision Procedure
 
@@ -188,7 +190,10 @@ The procedure is ordered and short-circuiting:
 1. Evaluate Always Deny rules.
 2. If any Always Deny rule matches, return `Reject(rule_id)`.
 3. Evaluate Always Review rules.
-4. If any Always Review rule matches, return `Review(rule_id)`.
+4. If any Always Review rule matches, retain its rule ID for audit. Return
+   `DefaultApprove` when `user_auto_approve:true`, otherwise `Review(rule_id)`.
+   The abstract `DefaultApprove` label covers both unattended review satisfaction
+   and unmatched approval; it does not imply that no review rule matched.
 5. Evaluate Always Approve rules.
 6. If any Always Approve rule matches, return `Approve(rule_id)`.
 7. Use Operator Default:
@@ -202,8 +207,8 @@ Always Deny > Always Review > Always Approve > Operator Default
 ```
 
 Among policy verdicts, the most restrictive matching verdict wins. Therefore an
-Always Review match blocks both Always Approve and `user_auto_approve:true`, and
-an Always Deny match blocks every later phase.
+Always Review match blocks policy Always Approve; User Auto-Approve satisfies
+that review without a prompt. In all cases an Always Deny match blocks every later phase.
 
 Inside Always Deny and Always Review, the transaction-type rule is evaluated
 first and alone (see Transaction Type Rule below). The order of the remaining
@@ -233,8 +238,8 @@ Always Deny rules are hard safety guards. Current deny sources include:
 
 ### Always Review
 
-Always Review rules force operator approval even when the operator default would
-otherwise auto-approve. Current review sources include:
+Always Review rules require operator approval when User Auto-Approve is off.
+With it on, the review requirement is satisfied without a prompt. Current review sources include:
 
 - `transaction_types` entries with verdict `review` (rule id
   `transaction_type:<type>`), evaluated first,
@@ -261,7 +266,8 @@ allows the movement to continue through later phases.
 
 The operator default is not policy. It is reached only when no policy verdict
 matched. It is controlled by `user_auto_approve` in
-`identities/default/config.yaml`.
+`identities/default/config.yaml`. The same setting also satisfies review
+requirements without a prompt; it cannot override rejection.
 
 ### Transaction Type Rule
 
@@ -403,12 +409,13 @@ ExistsAlwaysDeny(policy, planned) => Decide(policy, planned) = Reject(rule_id)
 ### P5: Review Dominance Over Approval
 
 If no Always Deny rule matches and at least one Always Review rule matches,
-manual review is required. Always Approve and `user_auto_approve:true` cannot
-skip that prompt.
+manual review is required only when User Auto-Approve is off. Policy Always
+Approve cannot skip that prompt. With User Auto-Approve on, review is
+satisfied automatically and the matching rule remains available for audit.
 
 ```text
 not ExistsAlwaysDeny(policy, planned) and
-ExistsAlwaysReview(policy, planned) =>
+ExistsAlwaysReview(policy, planned) and not user_auto_approve =>
   Decide(policy, planned) = Review(rule_id)
 ```
 
@@ -527,7 +534,7 @@ High-value test anchors:
 - reload failure keeps the previous policy snapshot,
 - one request uses one captured snapshot through approval and signing,
 - Always Deny wins over manual approval and auto-approval,
-- Always Review blocks `user_auto_approve:true`,
+- User Auto-Approve satisfies Always Review without a prompt, but cannot bypass deny,
 - Always Approve is evaluated only after deny and review pass,
 - Operator Default is reached only when no policy verdict matched,
 - passthrough and foreign slots are skipped by signer-owned policy but warning-bearing danger fields force review,

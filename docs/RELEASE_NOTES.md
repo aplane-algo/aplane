@@ -5,6 +5,21 @@ token, setup-file, and protocol-v5 entries describe behavior superseded by the
 enrolled-key model and current admin protocol v6.0; they are not current setup
 instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 
+## Unreleased
+
+- A rotating account's own rekey, the rotation to the next stage the signer
+  derives and proves itself, is no longer a warning-level finding. Warning
+  analysis reports nothing for it, so `always_review_warnings` no longer
+  forces review of every rotating spend and the approval prompt no longer
+  shows a rekey warning for it. Any other dangerous field on the spend still
+  warns, and a rekey to any other address still warns.
+- User Auto-Approve now satisfies all signer review requirements without an
+  operator prompt, including warning, transaction-type, routing, foreign-leg,
+  and bounded admin-operation review. Unattended agents no longer need a
+  connected apadmin for those requests. Hard policy rejections, authentication,
+  key unlock, and signing validation still apply. Matched review rules remain
+  in audit records and console output.
+
 ## Bounded rotating stage recovery
 
 The stage table worker no longer scans without a ceiling for a rotating

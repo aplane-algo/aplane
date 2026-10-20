@@ -375,7 +375,7 @@ Always Deny  >  Always Review  >  Always Approve  >  Operator Default
 | Verdict | Client-visible effect |
 |---------|------------------------|
 | **Always Deny** | Rejected before approval. An operator prompt cannot rescue it. |
-| **Always Review** | Forces a human approval prompt even if auto-approve is on; the call **waits** for the operator's decision (approve → signed; reject → rejected). Cancel with `/sign/cancel`. |
+| **Always Review** | With User Auto-Approve on, signs without a prompt. Otherwise the call **waits** for the operator's decision (approve → signed; reject → rejected). Cancel with `/sign/cancel`. |
 | **Always Approve** | Signed without a prompt. |
 | **Operator Default** | Falls to `user_auto_approve`: `true` signs, `false` requires review. |
 

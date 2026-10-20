@@ -182,8 +182,8 @@ document of its own, and one `policies/<selector>.json` per key that has one
 (selector: the account address on a signer node, the Witness Key ID on a
 cosigner node). A key's own document replaces the default wholesale; nothing
 is inherited. Each document has a sibling `.hmac` sidecar that authenticates
-its exact bytes with a key derived from the product store key. The default
-approval fallback is `user_auto_approve`, lives in
+its exact bytes with a key derived from the product store key. The signer approval
+switch `user_auto_approve` satisfies review requirements without a prompt, lives in
 `identities/default/config.yaml`, and is not a policy document field. Policy
 documents are verified and loaded on unlock/reload before the key scan; any
 document failing HMAC verification or decode, or a generation without

@@ -59,7 +59,7 @@ type ServerConfig struct {
 	// Security settings
 	RequireMemoryProtection bool `yaml:"require_memory_protection" description:"Fail startup if memory protection unavailable" default:"false"`
 	// Operator-default approval setting. Policy rules live in the store policy documents.
-	UserAutoApprove bool `yaml:"user_auto_approve" description:"User default to sign non-rejected requests without operator approval unless policy forces review" default:"false"`
+	UserAutoApprove bool `yaml:"user_auto_approve" description:"Sign non-rejected requests without operator approval, including policy review requirements" default:"false"`
 	// Display settings
 	Theme string `yaml:"theme" description:"Signer-admin UI theme: auto, dark, or light (auto detects terminal)" default:"auto"`
 	// Rotating account settings.

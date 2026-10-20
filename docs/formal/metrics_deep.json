@@ -20,7 +20,7 @@
   {
     "spec": "approval_composition",
     "cfg": "approval_composition_deep",
-    "distinct_states": 412992,
+    "distinct_states": 321216,
     "depth": 1
   },
   {

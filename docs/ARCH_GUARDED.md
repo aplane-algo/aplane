@@ -210,7 +210,8 @@ Guarded signing has two independent authorization gates, one per party:
   default), and every
   non-target position in the canonical group is evaluated as a foreign leg, so
   dangerous fields on co-signed legs (rekey, close, clawback) force operator
-  review exactly as they do on `/sign`.
+  review exactly as they do on `/sign`. User Auto-Approve satisfies these
+  review requirements without a prompt, while hard policy rejection still applies.
 - the **cosigner signer** gates cosigner-role component signing with the
   deterministic cosigner policy domain: allow signs, everything else rejects,
   and there is no operator prompt.

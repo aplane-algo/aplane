@@ -774,13 +774,13 @@ func TestSignGroupWithPlanAutoApproveSelfNoOpTransferSkipsManualReview(t *testin
 	}
 }
 
-func TestSignGroupWithPlanAlwaysReviewWarningsOverridesUserAutoApprove(t *testing.T) {
+func TestSignGroupWithPlanAlwaysReviewWarningsPromptsWithoutUserAutoApprove(t *testing.T) {
 	approvalCalled := false
 	beforeExecuteCalled := false
 	var gotViolations []signerapproval.Violation
 	service := &Service{
 		Approval: &ApprovalService{
-			UserAutoApprove:               userAutoApproveDefault(true),
+			UserAutoApprove:               userAutoApproveDefault(false),
 			GenerateTxnDescriptionFromTxn: func(txn types.Transaction) string { return "txn" },
 			HasClient:                     func() bool { return true },
 			KnownAddresses: func() map[string]bool {
@@ -907,7 +907,7 @@ func TestSignGroupWithPlanDoesNotReevaluatePolicyAfterApproval(t *testing.T) {
 	}
 }
 
-func TestSignGroupWithPlanTransferRoutingReviewOverridesUserAutoApprove(t *testing.T) {
+func TestSignGroupWithPlanTransferRoutingReviewPromptsWithoutUserAutoApprove(t *testing.T) {
 	approvalCalled := false
 	beforeExecuteCalled := false
 	var gotViolations []signerapproval.Violation
@@ -930,7 +930,7 @@ func TestSignGroupWithPlanTransferRoutingReviewOverridesUserAutoApprove(t *testi
 }`)
 	service := &Service{
 		Approval: &ApprovalService{
-			UserAutoApprove:               userAutoApproveDefault(true),
+			UserAutoApprove:               userAutoApproveDefault(false),
 			GenerateTxnDescriptionFromTxn: func(txn types.Transaction) string { return "txn" },
 			HasClient:                     func() bool { return true },
 			KnownAddresses:                func() map[string]bool { return nil },

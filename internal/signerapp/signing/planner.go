@@ -55,6 +55,10 @@ type PlanResult struct {
 	// KnownAddresses is the signer-local address set materialized from the same
 	// key snapshot used for planning.
 	KnownAddresses map[string]bool
+	// ProtocolRekeyTargets are rekey targets the signer set itself and proved
+	// before approval (a rotating account's next stage). A rekey to one of
+	// them is not a warning-level finding. Nil for every other plan.
+	ProtocolRekeyTargets map[string]bool
 	// BoundedItems[i] records the signer-classified path for a bounded key after
 	// all group and fee mutations. Other entries are nil.
 	BoundedItems []*boundedPlanItem

@@ -113,6 +113,8 @@ cannot rescue a blocked recipient.
 A matching route means "this movement may continue through the normal policy
 pipeline." It is not an approval. Routing can reject a movement or force review,
 but it never auto-approves signing.
+User Auto-Approve satisfies routing review requirements without a prompt;
+routing rejections still block signing.
 
 ## Getting Started
 

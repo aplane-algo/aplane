@@ -22,6 +22,7 @@ import (
 	boundedprotocol "github.com/aplane-algo/aplane/internal/boundedadmin/protocol"
 	securecrypto "github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
+	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	txsigning "github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/transport"
@@ -407,18 +408,7 @@ func prepareMatrixSpendingRekeyCleanup(
 		defer close(done)
 		status, body = postSignRequest(t, signerURL, req)
 	}()
-	approval := mustReadIPCSignRequest(t, approvalClient, 10*time.Second)
-	const wantApprovalAddress = "2 auth addresses (see details)"
-	gotApprovalAddress := approval.Address
-	mustApproveIPCSignRequest(t, approvalClient, approval.ID)
-	select {
-	case <-done:
-	case <-time.After(10 * time.Second):
-		t.Fatal("timed out waiting for approved spending-rekey signing")
-	}
-	if gotApprovalAddress != wantApprovalAddress {
-		t.Fatalf("spending-rekey approval address = %s, want %s", gotApprovalAddress, wantApprovalAddress)
-	}
+	awaitMatrixSigning(t, done, approvalClient, "spending-key rekey")
 	if status != http.StatusOK {
 		t.Fatalf("expected spending-key rekey signing to succeed, got %d: %s", status, string(body))
 	}
@@ -434,6 +424,35 @@ func prepareMatrixSpendingRekeyCleanup(
 	return matrixRekeyCleanupPlan{
 		account: account, signedHexes: signResp.Signed, targetFee: uint64(target.Txn.Fee),
 		path: lsigresource.PathSpendingRekey, cleanupPrivateKey: cleanupAuthority.PrivateKey,
+	}
+}
+
+// awaitMatrixSigning waits for a sign request posted in the background. The
+// shared test env runs with User Auto-Approve, which satisfies the rekey
+// warning review and the bounded admin-operation review without a prompt, so
+// normally no IPC sign request appears. If one does (auto-approve off), it is
+// approved so the helper works either way.
+func awaitMatrixSigning(t *testing.T, done <-chan struct{}, approvalClient *transport.IPCClient, what string) {
+	t.Helper()
+	timer := time.NewTimer(10 * time.Second)
+	defer timer.Stop()
+	notifications := approvalClient.Notifications()
+	for {
+		select {
+		case <-done:
+			return
+		case notification := <-notifications:
+			if notification.Base.Type != protocol.MsgTypeSignRequest {
+				continue
+			}
+			var signReq protocol.SignRequestMessage
+			if err := json.Unmarshal(notification.Raw, &signReq); err != nil {
+				t.Fatalf("parse sign request message: %v", err)
+			}
+			mustApproveIPCSignRequest(t, approvalClient, signReq.ID)
+		case <-timer.C:
+			t.Fatalf("timed out waiting for %s signing", what)
+		}
 	}
 }
 
@@ -494,13 +513,7 @@ func prepareMatrixAdminRekeyCleanup(
 				}},
 			)
 		}()
-		approval := mustReadIPCSignRequest(t, approvalClient, 10*time.Second)
-		mustApproveIPCSignRequest(t, approvalClient, approval.ID)
-		select {
-		case <-done:
-		case <-time.After(10 * time.Second):
-			t.Fatalf("timed out waiting for approved contract-admin rekey signing (%s)", what)
-		}
+		awaitMatrixSigning(t, done, approvalClient, "contract-admin rekey ("+what+")")
 		if requestErr != nil {
 			t.Fatalf("prepare contract-admin rekey (%s): %v", what, requestErr)
 		}

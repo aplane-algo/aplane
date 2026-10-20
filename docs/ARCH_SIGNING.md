@@ -587,7 +587,7 @@ needed for an immutable passthrough/pre-grouped group, it rejects. Otherwise
 the planner creates them, adjusts fees, and recomputes the group ID. The finalized group passes through
 hard policy linting, forced-review policy, explicit auto-approval, and then
 either group-mode or single-transaction operator approval (or the
-`user_auto_approve:true` operator-default shortcut).
+`user_auto_approve:true` approval shortcut).
 Signing dispatches by key type — generic LogicSig, DSA LogicSig (signing the
 32-byte transaction ID), native Falcon-1024 (structured authorization into
 `SignedTxn.PQsig`), or Ed25519 (signing the `TX`-prefixed msgpack) — then
@@ -890,13 +890,13 @@ in the embedded signer default a fresh store starts from.
 
 | Setting | Source | Shipped default | Description |
 |---------|--------|-----------------|-------------|
-| `user_auto_approve` | `identities/default/config.yaml` | `false` | Sign requests that are not auto-rejected, forced to review, or explicitly auto-approved without TUI confirmation. |
+| `user_auto_approve` | `identities/default/config.yaml` | `false` | Sign non-rejected requests without TUI confirmation, including policy review requirements. |
 | `transaction_types` | policy document (default or the key's own file) | `{"*": "allow"}` | Per-type verdict evaluated before every other rule: `reject` is a hard rejection, `review` forces operator review, `allow` continues to the rules below; `*` covers every type not named. |
 | `reject_foreign_rekey` | policy document (default or the key's own file) | `true` | Reject txns whose non-zero `RekeyTo` target is not held by the current signer before approval. |
 | `reject_close_remainder` | policy document (default or the key's own file) | `false` | Reject txns with non-zero `CloseRemainderTo` before approval. |
 | `reject_asset_close` | policy document (default or the key's own file) | `false` | Reject txns with non-zero `AssetCloseTo` before approval. |
 | `reject_clawback` | policy document (default or the key's own file) | `false` | Reject ASA clawback txns using `AssetSender` before approval. |
-| `always_review_warnings` | policy document (default or the key's own file) | `true` | Force operator review for warning-level findings before auto-approval or `user_auto_approve:true` can sign. |
+| `always_review_warnings` | policy document (default or the key's own file) | `true` | Require review for warning-level findings; User Auto-Approve satisfies it without a prompt. |
 | `auto_approve_self_noop_transfer` | policy document (default or the key's own file) | `false` | Auto-approve a single 0 ALGO payment to self or 0-unit ASA transfer to self only when it has no caller-provided group, no passthrough/foreign slots, no rekey, no close remainder, no asset close, no clawback sender, no note, no lease, and normalized fee is at most 1000 microAlgos. Signer-generated LogicSig-budget dummies are allowed only when they exactly match APlane's dummy transaction shape and fee adjustment. |
 | `max_fee_microalgos` | policy document (default or the key's own file) | `"0"` (no cap) | Reject txns whose fee exceeds the raw microAlgo ceiling. |
 | `limits` | policy document (default or the key's own file) | none | Optional per-network, per-asset `review_above` (force review) and `reject_above` (reject) thresholds for ALGO payments (microAlgos) and ASA transfers (base units), as decimal strings keyed by `algo` or `asa:<id>`. |
@@ -925,8 +925,10 @@ is built, then uses:
   asset close, clawback, application delete, clear-state, or update, asset
   reconfigure or destroy, asset freeze or unfreeze, and unusually high fees;
   under `always_review_warnings` these force review on the signer's own legs,
-  and a warning on a passthrough or foreign leg forces review regardless,
-- human approval or `user_auto_approve:true` for requests that are not auto-rejected, forced to review, or explicitly auto-approved.
+  and a warning on a passthrough or foreign leg forces review regardless; a
+  rotating account's rekey to the next stage the signer derived itself is a
+  protocol rekey and is not a finding,
+- human approval or `user_auto_approve:true` for requests that are not auto-rejected or explicitly policy-approved, including matched review rules.
 
 | Request Type | Warning / Review Surface | Human Approval |
 |--------------|--------------------------|----------------|
@@ -937,7 +939,7 @@ is built, then uses:
 - "Group" means 2+ transactions in client request (server-added dummies don't change this)
 - Groups never undergo per-transaction human approval
 - hard-reject safety policy can block a request before approval
-- forced-review policy can require human approval even when `user_auto_approve:true`
+- `user_auto_approve:true` satisfies all signer review requirements without human approval; hard rejections still apply
 - explicit auto-approval policy never bypasses hard-reject safety policy
 - warning analysis informs approval, but remains separate from the hard-reject layer
 
