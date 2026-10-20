@@ -1664,10 +1664,13 @@ stage hint when the operator knows roughly how many spends the account has
 made, finishes the job.
 
 Alerts: the signer remembers the newest release per account (stage, TxID,
-`last_valid`) in process memory, rebuilt at unlock from the newest
-`ROTATING_RELEASE` audit entry per account (read from the audit log and its
-two rotated predecessors; entries the log has rotated past are simply
-absent), and checks every rotating account's authorizer on its own node right
+`last_valid`, and for a leaf family every leaf the stage has released) in
+process memory, rebuilt at unlock from the newest `ROTATING_RELEASE` audit
+entry per account (read from the audit log and its two rotated predecessors;
+entries the log has rotated past are simply absent). The rebuild merges with
+what the stage released while the log was being read, so a leaf used in
+that window stays listed, and an audited release from a stage the account
+has already moved past is ignored. The signer checks every rotating account's authorizer on its own node right
 after unlock and then about every 30 seconds while unlocked (a nominal
 interval: chain reads and paced derivation can stretch it). A release whose
 `last_valid` has passed while its stage is still the authorizer raises a

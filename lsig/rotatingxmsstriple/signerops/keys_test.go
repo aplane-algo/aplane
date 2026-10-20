@@ -243,7 +243,7 @@ func TestStageOpsThroughKeyMaterial(t *testing.T) {
 	}
 	d.Zero()
 	for n := range uint64(2) {
-		ops.trees[treeKey{tag: tag, genesis: genesis, tree: n}] = fixedTree(t, n)
+		ops.insert(treeKey{tag: tag, genesis: genesis, tree: n}, fixedTree(t, n))
 	}
 	a0, err := ops.StageAddress(key, 0)
 	if err != nil {
@@ -337,5 +337,72 @@ func TestTreeGenerationIsShared(t *testing.T) {
 	}
 	if got := ops.CachedTrees(); got != 1 {
 		t.Fatalf("Prepare of a cached tree changed the cache to %d", got)
+	}
+}
+
+// The cache keeps at most TreesPerAccount trees of one account and
+// MaxCachedTrees overall, dropping the least recently used.
+func TestTreeCacheEvictsLeastRecentlyUsed(t *testing.T) {
+	ops := NewStageOps()
+	built := 0
+	ops.generate = func(_ *rotatinghybrid.Deriver, n uint64) (*PublicTree, error) {
+		built++
+		return &PublicTree{Number: n}, nil
+	}
+	genesis := bytes.Repeat([]byte{7}, 32)
+	keyFor := func(b byte) *signing.RotatingKeyMaterial {
+		return &signing.RotatingKeyMaterial{Seed: bytes.Repeat([]byte{b}, rotatinghybrid.SeedSize), GenesisHash: genesis}
+	}
+	first := func(tree uint64) uint64 { return tree * stage.StagesPerTree }
+	a := keyFor(1)
+	for tree := range uint64(3) {
+		if err := ops.Prepare(a, first(tree)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := ops.CachedTrees(); got != 3 || built != 3 {
+		t.Fatalf("cached %d, built %d", got, built)
+	}
+	// A fourth tree evicts the least recently used, tree 0.
+	if err := ops.Prepare(a, first(3)); err != nil {
+		t.Fatal(err)
+	}
+	if got := ops.CachedTrees(); got != TreesPerAccount || ops.TreeReady(a, first(0)) || !ops.TreeReady(a, first(1)) || !ops.TreeReady(a, first(3)) {
+		t.Fatalf("after tree 3: cached %d, ready 0/1/3 = %v/%v/%v", got, ops.TreeReady(a, first(0)), ops.TreeReady(a, first(1)), ops.TreeReady(a, first(3)))
+	}
+	// Using tree 1 again makes tree 2 the next victim.
+	if err := ops.Prepare(a, first(1)); err != nil {
+		t.Fatal(err)
+	}
+	if err := ops.Prepare(a, first(4)); err != nil {
+		t.Fatal(err)
+	}
+	if ops.TreeReady(a, first(2)) || !ops.TreeReady(a, first(1)) || !ops.TreeReady(a, first(3)) || !ops.TreeReady(a, first(4)) {
+		t.Fatal("eviction did not follow last use")
+	}
+	if built != 5 {
+		t.Fatalf("built %d trees, want 5", built)
+	}
+	// The global bound spans accounts: six accounts with three trees each
+	// keep MaxCachedTrees in all, the least recently used dropped first.
+	for b := byte(2); b <= 7; b++ {
+		for tree := range uint64(3) {
+			if err := ops.Prepare(keyFor(b), first(tree)); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if got := ops.CachedTrees(); got != MaxCachedTrees {
+		t.Fatalf("cached %d, want %d", got, MaxCachedTrees)
+	}
+	if ops.TreeReady(a, first(1)) || ops.TreeReady(a, first(3)) || !ops.TreeReady(keyFor(7), first(0)) {
+		t.Fatal("global eviction did not drop the oldest account's trees first")
+	}
+	// Forget drops an account's trees whatever their age.
+	if err := ops.Forget(keyFor(7)); err != nil {
+		t.Fatal(err)
+	}
+	if got := ops.CachedTrees(); got != MaxCachedTrees-3 {
+		t.Fatalf("after Forget: cached %d", got)
 	}
 }

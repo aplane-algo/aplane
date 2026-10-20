@@ -857,3 +857,49 @@ func TestRotatingRotationRekeyIsNotAWarning(t *testing.T) {
 		t.Fatalf("prompt carried findings %+v for a rotation; want none", seen)
 	}
 }
+
+// A release restored from the audit log merges with what the stage released
+// while the log was being read, so no used leaf is forgotten.
+func TestReleaseMemoryMergesAuditedHistory(t *testing.T) {
+	leaf := func(index uint32, txid string) LeafRelease {
+		return LeafRelease{Tree: 0, Index: index, TxID: txid}
+	}
+	m := &ReleaseMemory{}
+	// Signed while the worker was reading a log that holds A and B.
+	m.Record(ReleaseRecord{Account: "A", Stage: 2, TxID: "C", Leaves: []LeafRelease{leaf(3, "C")}})
+	m.RecordAudited(ReleaseRecord{Account: "A", Stage: 2, TxID: "B", Leaves: []LeafRelease{leaf(1, "A"), leaf(2, "B")}})
+	rec, _ := m.Get("A")
+	if len(rec.Leaves) != 3 || !rec.LeafUsed(0, 1, "x") || !rec.LeafUsed(0, 2, "x") || !rec.LeafUsed(0, 3, "x") {
+		t.Fatalf("merged leaves = %+v", rec.Leaves)
+	}
+	if rec.TxID != "C" || rec.Leaves[len(rec.Leaves)-1].TxID != "C" {
+		t.Fatalf("memory's newer release was not kept as latest: %+v", rec)
+	}
+	if rec.Reused {
+		t.Fatal("distinct leaves marked as reuse")
+	}
+	// The log is the newer side when it lists everything memory holds.
+	m.RecordAudited(ReleaseRecord{Account: "A", Stage: 2, TxID: "D", Leaves: []LeafRelease{leaf(1, "A"), leaf(2, "B"), leaf(3, "C"), leaf(4, "D")}})
+	if rec, _ = m.Get("A"); rec.TxID != "D" || len(rec.Leaves) != 4 || rec.Leaves[3].TxID != "D" {
+		t.Fatalf("newer audited release not applied: %+v", rec)
+	}
+	// An audited release from a stage memory has moved past is stale.
+	m.Record(ReleaseRecord{Account: "A", Stage: 3, TxID: "E", Leaves: []LeafRelease{leaf(64, "E")}})
+	m.RecordAudited(ReleaseRecord{Account: "A", Stage: 2, TxID: "D", Leaves: []LeafRelease{leaf(4, "D")}})
+	if rec, _ = m.Get("A"); rec.Stage != 3 || rec.TxID != "E" {
+		t.Fatalf("stale audited release replaced the live stage: %+v", rec)
+	}
+	// A live record merges onto an audited one as before, and a leaf the
+	// log already lists is reported as reuse.
+	m.RecordAudited(ReleaseRecord{Account: "B", Stage: 5, TxID: "P", Leaves: []LeafRelease{leaf(320, "P")}})
+	m.Record(ReleaseRecord{Account: "B", Stage: 5, TxID: "Q", Leaves: []LeafRelease{leaf(320, "Q")}})
+	if rec, _ = m.Get("B"); !rec.Reused || len(rec.Leaves) != 2 || rec.TxID != "Q" {
+		t.Fatalf("live release after audited = %+v", rec)
+	}
+	// Records without leaves (one key per stage) still dedupe by TxID.
+	m.RecordAudited(ReleaseRecord{Account: "C", Stage: 1, TxID: "T1"})
+	m.Record(ReleaseRecord{Account: "C", Stage: 1, TxID: "T1"})
+	if rec, _ = m.Get("C"); rec.Reused || len(rec.Leaves) != 1 {
+		t.Fatalf("retry of an audited release = %+v", rec)
+	}
+}

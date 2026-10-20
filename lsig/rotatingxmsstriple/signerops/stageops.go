@@ -41,15 +41,41 @@ type treeKey struct {
 // tree is serialized so concurrent callers share the result.
 type StageOps struct {
 	mu       sync.Mutex
-	trees    map[treeKey]*PublicTree
+	trees    map[treeKey]*cachedTree
 	building map[treeKey]*sync.Mutex
+	// clock counts tree uses; a cached tree remembers the count at its
+	// last use so eviction can find the least recently used.
+	clock uint64
+	// generate builds a tree; tests replace it.
+	generate func(d *rotatinghybrid.Deriver, n uint64) (*PublicTree, error)
 }
+
+// cachedTree is one cache entry: the public tree and when it was last used.
+type cachedTree struct {
+	t   *PublicTree
+	use uint64
+}
+
+const (
+	// TreesPerAccount bounds the cached trees of one account: the live
+	// tree, the next one built ahead of it, and one more for a stage behind
+	// the live tree (a release restored from the audit log, a recovery
+	// search). Beyond that the account's least recently used tree is
+	// dropped.
+	TreesPerAccount = 3
+
+	// MaxCachedTrees bounds the cache across accounts, at about 4 MiB a
+	// tree, so trees of accounts the signer no longer holds age out as live
+	// accounts build new ones. Beyond it the least recently used tree of
+	// any account is dropped.
+	MaxCachedTrees = 16
+)
 
 var _ signing.RotatingStageOps = (*StageOps)(nil)
 
 // NewStageOps returns stage cryptography with an empty tree cache.
 func NewStageOps() *StageOps {
-	return &StageOps{trees: make(map[treeKey]*PublicTree), building: make(map[treeKey]*sync.Mutex)}
+	return &StageOps{trees: make(map[treeKey]*cachedTree), building: make(map[treeKey]*sync.Mutex), generate: GenerateTree}
 }
 
 // StageAddress derives stage i and returns its program address.
@@ -162,7 +188,7 @@ func (o *StageOps) Forget(key *signing.RotatingKeyMaterial) error {
 func (o *StageOps) tree(d *rotatinghybrid.Deriver, tag [AccountTagSize]byte, n uint64) (*PublicTree, error) {
 	k := treeKey{tag: tag, genesis: d.GenesisHash(), tree: n}
 	o.mu.Lock()
-	if t, ok := o.trees[k]; ok {
+	if t, ok := o.lookup(k); ok {
 		o.mu.Unlock()
 		return t, nil
 	}
@@ -176,20 +202,70 @@ func (o *StageOps) tree(d *rotatinghybrid.Deriver, tag [AccountTagSize]byte, n u
 	gate.Lock()
 	defer gate.Unlock()
 	o.mu.Lock()
-	if t, ok := o.trees[k]; ok {
+	if t, ok := o.lookup(k); ok {
 		o.mu.Unlock()
 		return t, nil
 	}
 	o.mu.Unlock()
-	t, err := GenerateTree(d, n)
+	t, err := o.generate(d, n)
 	if err != nil {
 		return nil, fmt.Errorf("generate tree %d: %w", n, err)
 	}
 	o.mu.Lock()
-	o.trees[k] = t
+	o.insert(k, t)
 	delete(o.building, k)
 	o.mu.Unlock()
 	return t, nil
+}
+
+// lookup returns the cached tree k and marks it used. The caller holds mu.
+func (o *StageOps) lookup(k treeKey) (*PublicTree, bool) {
+	c, ok := o.trees[k]
+	if !ok {
+		return nil, false
+	}
+	o.clock++
+	c.use = o.clock
+	return c.t, true
+}
+
+// insert caches t as k, the most recently used, then evicts the least
+// recently used trees beyond TreesPerAccount for k's account and beyond
+// MaxCachedTrees overall. The caller holds mu.
+func (o *StageOps) insert(k treeKey, t *PublicTree) {
+	o.clock++
+	o.trees[k] = &cachedTree{t: t, use: o.clock}
+	same := func(c treeKey) bool { return c.tag == k.tag && c.genesis == k.genesis }
+	for o.count(same) > TreesPerAccount {
+		o.evict(same)
+	}
+	for len(o.trees) > MaxCachedTrees {
+		o.evict(func(treeKey) bool { return true })
+	}
+}
+
+func (o *StageOps) count(among func(treeKey) bool) int {
+	n := 0
+	for k := range o.trees {
+		if among(k) {
+			n++
+		}
+	}
+	return n
+}
+
+// evict drops the least recently used tree among those selected.
+func (o *StageOps) evict(among func(treeKey) bool) {
+	var victim treeKey
+	found := false
+	for k, c := range o.trees {
+		if among(k) && (!found || c.use < o.trees[victim].use) {
+			victim, found = k, true
+		}
+	}
+	if found {
+		delete(o.trees, victim)
+	}
 }
 
 func (o *StageOps) deriveFromMaterial(key *signing.RotatingKeyMaterial, i uint64) (*StageKeys, stage.Program, error) {
@@ -265,8 +341,7 @@ func (o *StageOps) CachedTree(d *rotatinghybrid.Deriver, n uint64) (*PublicTree,
 	}
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	t, ok := o.trees[treeKey{tag: tag, genesis: d.GenesisHash(), tree: n}]
-	return t, ok
+	return o.lookup(treeKey{tag: tag, genesis: d.GenesisHash(), tree: n})
 }
 
 // TreeReady reports whether the tree serving stage i is cached.

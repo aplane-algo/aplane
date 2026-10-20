@@ -1267,8 +1267,10 @@ alerts) and which leaf it signs with, never whether it signs.
   for the account: which stage is live is read from the chain at every
   request, and the stage address table under `stages/` (below) is a cache
   rebuilt from the seed. The XMSS triple additionally keeps the public
-  nodes of its current and next tree in memory, rebuilt from the seed when
-  missing; no secret is cached. Only accounts created at stage 0 are
+  nodes of its trees in memory, rebuilt from the seed when missing: at most
+  three per account (the live tree, the next one built ahead of it, and one
+  behind) and sixteen across accounts, the least recently used dropped
+  beyond that; no secret is cached. Only accounts created at stage 0 are
   supported.
 
 Native Falcon-1024 uses `category: "native_pq"`, `key_type: "falcon1024"`,

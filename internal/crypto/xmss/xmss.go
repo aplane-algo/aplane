@@ -134,6 +134,29 @@ func newMidstate(prefix []byte) *midstate {
 	return &midstate{state: state, h: h}
 }
 
+// freshState is the serialized state of an empty SHA-256, written over a
+// midstate's hash object when the midstate is erased.
+var freshState = func() []byte {
+	state, err := sha256.New().(encoding.BinaryMarshaler).MarshalBinary()
+	if err != nil {
+		panic(err)
+	}
+	return state
+}()
+
+// zero erases the serialized state and resets the hash object to an empty
+// SHA-256, so neither carries the absorbed prefix or a digest computed from
+// it. The midstate must not be used afterwards.
+func (m *midstate) zero() {
+	if m == nil {
+		return
+	}
+	crypto.ZeroBytes(m.state)
+	if err := m.h.(encoding.BinaryUnmarshaler).UnmarshalBinary(freshState); err != nil {
+		panic(err)
+	}
+}
+
 // sum hashes prefix || tail.
 func (m *midstate) sum(tail []byte) (out [N]byte) {
 	if err := m.h.(encoding.BinaryUnmarshaler).UnmarshalBinary(m.state); err != nil {
@@ -158,6 +181,10 @@ func newPublicHashes(pubSeed *[N]byte) *hashes {
 	return &hashes{pub: newMidstate(p[:])}
 }
 
+// newHashes builds the public and the keyed midstates. The keyed one,
+// toByte(4) || SK_SEED absorbed, derives every WOTS+ secret key of the
+// tree, so it is as secret as SK_SEED itself: the caller zeroes the value
+// when done, on every path.
 func newHashes(seeds *Seeds) *hashes {
 	hs := newPublicHashes(&seeds.PubSeed)
 	var k [2 * N]byte
@@ -168,6 +195,15 @@ func newHashes(seeds *Seeds) *hashes {
 	return hs
 }
 
+// zero erases both midstates, the keyed one being secret-equivalent.
+func (hs *hashes) zero() {
+	if hs == nil {
+		return
+	}
+	hs.keygen.zero()
+	hs.pub.zero()
+}
+
 // prfRaw is PRF(key, m) = SHA-256(toByte(3, 32) || key || m) without a
 // midstate, for the one-off message randomizer.
 func prfRaw(key *[N]byte, m [32]byte) [N]byte {
@@ -175,6 +211,7 @@ func prfRaw(key *[N]byte, m [32]byte) [N]byte {
 	buf[N-1] = paddingPRF
 	copy(buf[N:], key[:])
 	copy(buf[2*N:], m[:])
+	defer crypto.ZeroBytes(buf[:])
 	return sha256.Sum256(buf[:])
 }
 
@@ -368,7 +405,9 @@ func Leaf(seeds *Seeds, index uint32) ([N]byte, error) {
 	if index >= Leaves {
 		return [N]byte{}, fmt.Errorf("xmss leaf index %d out of range", index)
 	}
-	return leaf(newHashes(seeds), seeds, index), nil
+	hs := newHashes(seeds)
+	defer hs.zero()
+	return leaf(hs, seeds, index), nil
 }
 
 // Tree is the public hash tree: every node of every level, so an
@@ -403,6 +442,7 @@ func generateTree(seeds *Seeds, height int) *Tree {
 		go func() {
 			defer wg.Done()
 			hs := newHashes(seeds)
+			defer hs.zero()
 			for {
 				mu.Lock()
 				start := next
@@ -474,7 +514,9 @@ func sign(seeds *Seeds, tree *Tree, index uint32, msg []byte) ([]byte, error) {
 	var ots address
 	ots.setType(addrTypeOTS)
 	ots.setOTS(index)
-	ws := wotsSign(newHashes(seeds), seeds, &ots, &mhash)
+	hs := newHashes(seeds)
+	ws := wotsSign(hs, seeds, &ots, &mhash)
+	hs.zero()
 	sig := make([]byte, 0, IndexSize+N+WotsSignatureSize+tree.height*N)
 	sig = append(sig, idx32[28:]...)
 	sig = append(sig, r[:]...)

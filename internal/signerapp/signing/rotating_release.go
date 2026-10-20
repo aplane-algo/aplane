@@ -106,12 +106,27 @@ type ReleaseMemory struct {
 	byAccount map[string]ReleaseRecord
 }
 
-// Record replaces the account's entry with r and stamps it with the next
-// sequence number. When the entry it replaces is from the same stage, r
-// inherits its list of released leaves and adds its own unless the same
-// transaction is already listed (a retry is one release); r is marked
-// Reused when two listed releases share a leaf.
+// Record adds a live release to the account's entry and stamps the entry
+// with the next sequence number. When the entry it replaces is from the
+// same stage, r inherits that entry's released leaves and adds its own
+// unless the same transaction is already listed (a retry is one release);
+// r is marked Reused when two listed releases share a leaf.
 func (m *ReleaseMemory) Record(r ReleaseRecord) {
+	m.record(r, false)
+}
+
+// RecordAudited merges a release restored from the audit log, whose Leaves
+// list every release the log holds for the stage, into the account's
+// entry. The entry keeps every leaf either side knows, so a release signed
+// while the log was being read is not forgotten and its leaf is not chosen
+// again. When the entry lists a release the log does not, the entry is the
+// newer of the two and keeps its latest release; when the entry is from a
+// later stage, the audited release is stale and ignored.
+func (m *ReleaseMemory) RecordAudited(r ReleaseRecord) {
+	m.record(r, true)
+}
+
+func (m *ReleaseMemory) record(r ReleaseRecord, audited bool) {
 	if m == nil {
 		return
 	}
@@ -120,22 +135,73 @@ func (m *ReleaseMemory) Record(r ReleaseRecord) {
 	if m.byAccount == nil {
 		m.byAccount = make(map[string]ReleaseRecord)
 	}
-	own := r.latestLeaf()
-	var leaves []LeafRelease
-	if prev, ok := m.byAccount[r.Account]; ok && prev.Stage == r.Stage {
-		leaves = append(leaves, prev.Leaves...)
-		r.Reused = r.Reused || prev.Reused
-	} else if len(r.Leaves) > 1 {
-		leaves = append(leaves, r.Leaves[:len(r.Leaves)-1]...)
+	incoming := r.Leaves
+	if len(incoming) == 0 {
+		incoming = []LeafRelease{r.latestLeaf()}
 	}
-	if _, listed := (ReleaseRecord{Leaves: leaves}).LeafFor(own.TxID); !listed {
-		leaves = append(leaves, own)
+	var leaves []LeafRelease
+	if prev, ok := m.byAccount[r.Account]; ok {
+		if audited && prev.Stage > r.Stage {
+			return
+		}
+		if prev.Stage == r.Stage {
+			r.Reused = r.Reused || prev.Reused
+			if audited && !listsAll(incoming, prev.Leaves) {
+				// Memory holds a release the log was read before: it is
+				// the newer side, and its latest release stays latest.
+				r.TxID, r.LastValid = prev.TxID, prev.LastValid
+				leaves = mergeLeaves(incoming, prev.Leaves)
+			} else {
+				leaves = mergeLeaves(prev.Leaves, incoming)
+			}
+		}
+	}
+	if leaves == nil {
+		leaves = mergeLeaves(nil, incoming)
 	}
 	r.Leaves = leaves
 	r.Reused = r.Reused || leavesReused(leaves)
 	m.seq++
 	r.Seq = m.seq
 	m.byAccount[r.Account] = r
+}
+
+// mergeLeaves returns base followed by every leaf of extra whose
+// transaction base does not list, so the latest release of the newer side
+// ends the list.
+func mergeLeaves(base, extra []LeafRelease) []LeafRelease {
+	out := make([]LeafRelease, 0, len(base)+len(extra))
+	for _, l := range base {
+		if !listsTxID(out, l.TxID) {
+			out = append(out, l)
+		}
+	}
+	for _, l := range extra {
+		if !listsTxID(out, l.TxID) {
+			out = append(out, l)
+		}
+	}
+	return out
+}
+
+// listsAll reports whether leaves lists the transaction of every leaf in
+// want.
+func listsAll(leaves, want []LeafRelease) bool {
+	for _, l := range want {
+		if !listsTxID(leaves, l.TxID) {
+			return false
+		}
+	}
+	return true
+}
+
+func listsTxID(leaves []LeafRelease, txID string) bool {
+	for _, l := range leaves {
+		if l.TxID == txID {
+			return true
+		}
+	}
+	return false
 }
 
 // Seq returns the sequence number of the most recent Record. A caller
@@ -242,7 +308,7 @@ func (s *Service) RebuildReleaseMemory(ctx context.Context, session *keystore.Ke
 			}
 			continue
 		}
-		deps.Releases.Record(ReleaseRecord{
+		deps.Releases.RecordAudited(ReleaseRecord{
 			Account: e.Account, Stage: e.Stage, StageAddr: stageAddr, NextAddr: nextAddr,
 			TxID: e.TxID, LastValid: e.LastValid, Reused: e.Reused, Leaves: e.Leaves,
 		})

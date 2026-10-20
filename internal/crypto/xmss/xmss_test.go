@@ -6,6 +6,7 @@ package xmss
 import (
 	"bytes"
 	"crypto/rand"
+	"encoding"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
@@ -348,5 +349,39 @@ func TestVerifySteps(t *testing.T) {
 	}
 	if _, err := VerifySteps(pk, nil, []byte{1}); err == nil {
 		t.Fatal("short signature accepted")
+	}
+}
+
+// Erasing the hashes leaves no trace of the keyed midstate, which is as
+// secret as SK_SEED, in either the serialized state or the hash object.
+func TestHashesZeroErasesSecretState(t *testing.T) {
+	var s Seeds
+	if _, err := rand.Read(s.SKSeed[:]); err != nil {
+		t.Fatal(err)
+	}
+	hs := newHashes(&s)
+	keyed := append([]byte(nil), hs.keygen.state...)
+	if bytes.Equal(keyed, freshState) {
+		t.Fatal("keyed midstate equals the empty state")
+	}
+	var a address
+	hs.prfKeygen(&s.PubSeed, &a) // leave a digest in the hash object
+	hs.zero()
+	for _, m := range []*midstate{hs.keygen, hs.pub} {
+		for _, b := range m.state {
+			if b != 0 {
+				t.Fatal("serialized midstate not erased")
+			}
+		}
+		got, err := m.h.(encoding.BinaryMarshaler).MarshalBinary()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(got, freshState) {
+			t.Fatal("hash object still carries state")
+		}
+	}
+	if bytes.Equal(keyed, hs.keygen.state) {
+		t.Fatal("state unchanged")
 	}
 }
