@@ -1227,37 +1227,49 @@ LogicSig bytecode is stored only in `lsig_bytecode`. The durable payload does
 not store a separately trusted address, template name, entropy, or
 runtime-argument metadata under `runtime_args`.
 
-Rotating LogicSig accounts use `category: "rotating_lsig"`. The key type is
-`aplane.rotating-triple-hybrid.v1` (Falcon-1024 + WOTS-w16 + Ed25519 stages);
-it fixes its own derivation and stage program template, and
-`internal/rotatingkey` classifies it and carries its frozen sizes in a
-per-type profile. The profile also marks the stage as one-time, because it
-includes a WOTS signature, and names what a reused stage still rests on;
+Rotating LogicSig accounts use `category: "rotating_lsig"`. The key types
+are `aplane.rotating-triple-hybrid.v1` (Falcon-1024 + WOTS-w16 + Ed25519
+stages) and `aplane.rotating-xmss-triple.v1` (Falcon-1024 + RFC 8391 XMSS +
+Ed25519 stages); each fixes its own derivation and stage program template,
+and `internal/rotatingkey` classifies them and carries their frozen sizes
+in a per-type profile. The profile also marks the stage as one-time,
+because it includes a one-time hash-based signature, names what a reused
+stage still rests on, and for the XMSS triple how many leaves a stage holds;
 that changes only what the signer reports (`ARCH_SIGNING.md`, rotating
-alerts), never what it signs.
+alerts) and which leaf it signs with, never whether it signs.
 
 - `private_key` is the 64-byte BIP-39 seed. Mnemonic entropy is not stored.
 - `genesis_hash` (32 bytes, hex) binds stage derivation to one network. No
   other category may carry it.
-- `public_key` is stage 0's public record: the stage tweak (32 bytes), the
-  Falcon-1024 public key (1793), the WOTS public key (32) and the Ed25519
-  public key (32), 1889 in all.
+- `public_key` is stage 0's public record. Triple: the stage tweak (32
+  bytes), the Falcon-1024 public key (1793), the WOTS public key (32) and
+  the Ed25519 public key (32), 1889 in all. XMSS triple: the public account
+  tag (32), the Falcon-1024 public key (1793), tree 0's root (32) and
+  public seed (32), and the Ed25519 public key (32), 1921 in all.
 - No program is stored: `lsig_bytecode`, `lsig_derivation`, `salt_counter`,
   `lsig_opcode_profile`, `teal_source`, signing metadata, `base_key_type`,
   `parameters` and `signing_args` are all rejected.
 - The selector and account address is stage 0's program address, built from
   the stored public key. Validation re-derives stage 0 from the seed and
-  genesis hash and rejects a mismatch.
+  genesis hash and rejects a mismatch. For the XMSS triple, whose tree 0
+  root takes seconds to recompute, validation checks the tag, the public
+  seed and the Ed25519 and Falcon keys on every parse and the root whenever
+  tree 0 is cached; a wrong root cannot sign anyway, because the derived
+  stage program would not match the account's on-chain authorizer.
 - The family registers both checks with `keys.RegisterRotatingCodec`. A
   binary without that registration rejects the file; scanning reports it and
   reload fails into recovery.
 - Scanning and inventory never expose the stage public keys. The resource
-  profile is the same for every stage: 2103 program bytes, 3631 argument
-  bytes and an opcode ceiling of 59772 (three resource dummies).
+  profile is the same for every stage: triple 2103 program bytes, 3631
+  argument bytes and an opcode ceiling of 59772 (three resource dummies);
+  XMSS triple 2683, 4179 and 175562 (eight resource dummies).
 - The key file is the whole credential. The signer keeps no durable state
   for the account: which stage is live is read from the chain at every
   request, and the stage address table under `stages/` (below) is a cache
-  rebuilt from the seed. Only accounts created at stage 0 are supported.
+  rebuilt from the seed. The XMSS triple additionally keeps the public
+  nodes of its current and next tree in memory, rebuilt from the seed when
+  missing; no secret is cached. Only accounts created at stage 0 are
+  supported.
 
 Native Falcon-1024 uses `category: "native_pq"`, `key_type: "falcon1024"`,
 `pq_scheme: "f1"`, and a required numeric `pq_address_salt` in `0..255`.

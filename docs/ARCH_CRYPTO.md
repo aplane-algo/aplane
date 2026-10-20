@@ -210,8 +210,9 @@ and must not author a salt marker, salt preamble, or salt-style selector.
 Signing always uses the stored final bytecode and never recomputes salting from
 a live template.
 
-The rotating account (`aplane.rotating-triple-hybrid.v1`) is the one
-exception to both rules. It stores no bytecode: each stage's
+The rotating accounts (`aplane.rotating-triple-hybrid.v1` and
+`aplane.rotating-xmss-triple.v1`) are the one exception to both rules. They
+store no bytecode: each stage's
 program is assembled locally from a frozen template and the stage's public
 constants, and when the unsalted address is on-curve, the stage package
 appends `intcblock 1 <salt>` with the lowest salt in `[0, 128)` that gives an
@@ -238,6 +239,40 @@ repair, or a client re-signing a rebuilt transaction) loses only the WOTS
 half and still rests on Falcon-1024 and Ed25519 until the next release
 lands. Nothing prevents the second signature; the signer reports it
 (`ARCH_SIGNING.md`, rotating alerts).
+
+`aplane.rotating-xmss-triple.v1` replaces the per-stage WOTS key with RFC
+8391 XMSS (`internal/crypto/xmss`, parameter set `XMSS-SHA2_16_256`: SHA-256,
+n = 32, w = 16, h = 16). One tree of 65,536 one-time leaves serves 1,024
+consecutive stages, and each stage owns 64 of its leaves: stage `n` uses
+tree `n div 1024` and indices `64 (n mod 1024)` onward, a range its stage
+program enforces on the index the signature carries. The construction is
+the RFC's: a 32-byte hash address per call, `PRF`, `PRF_keygen` as the
+reference implementation and SP 800-208 define it, masked WOTS+ chains, an
+L-tree over the 67 chain ends, and a 16-level authentication path, with
+`H_msg(r || root || idx, TxID)` as the signed message. Public keys and
+signatures are byte-compatible with the XMSS reference implementation: the
+package's vectors come from an independent implementation checked against
+it, and the reference's own SHA-256 vector is reproduced in the tests. The
+stage program verifies all of it with `sha256`, `concat`, `extract3`,
+`replace3`, `b^` and two subroutines, at 27,062 plus 150 per chain step.
+
+Per tree the signer derives the XMSS secret seed, PRF key and public seed
+(HKDF label `APLANE_ROTATING_XMSS_V1`, tags `0x20` to `0x22`, counter = tree
+number, genesis hash in every expansion); per stage the Falcon-1024 and
+Ed25519 seeds as the triple does. The tree's public nodes (about 4 MiB) are
+a cache the signer rebuilds from the seed; no secret is cached.
+
+The claim differs from the triple's in one respect. A leaf must sign one
+message, and a stage normally uses one leaf per transaction, so a stage can
+release up to 64 distinct transactions before any leaf repeats; the signer
+chooses leaves (`ARCH_SIGNING.md`, rotating accounts) and reports a repeat.
+A repeated leaf weakens that leaf's one-time property for the rest of the
+stage, and the stage rests on Falcon-1024 and Ed25519 until the next
+rotation lands, exactly as a twice-signed triple stage does; the successor's
+program rejects the retired range, so the exposure ends there. The
+signature format, verifier and parameter set are RFC 8391; index
+management is best effort, so the signer is not a conformant stateful
+XMSS signer in the sense of RFC 8391 or SP 800-208, and makes no such claim.
 
 ## Unified Registry
 

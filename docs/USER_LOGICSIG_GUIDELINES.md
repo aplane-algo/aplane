@@ -777,10 +777,32 @@ signer policy.
   Falcon-1024 and Ed25519 until a spend lands; see
   [USER_KEYTYPES.md](USER_KEYTYPES.md#rotating-accounts)
 
-Stage programs are assembled locally rather than through algod, using the
-TEAL v13 assembler's salt rule, and are cross-checked against the stock
-assembler in tests. Transaction policy beyond those checks lives in signer
-approval and local signer policy.
+#### `aplane.rotating-xmss-triple.v1`
+
+- the triple's sibling with RFC 8391 `XMSS-SHA2_16_256` in place of the
+  per-stage WOTS key: one tree of 65,536 leaves serves 1,024 stages, each
+  stage owning 64 leaves, and the program embeds the tree's root and public
+  seed and the stage's leaf range
+- each stage requires, in order, the same rekey, close-out and validity
+  checks, an XMSS signature of exactly 2,692 bytes whose index lies in the
+  stage's range (argument 0), an Ed25519 signature (argument 1) and a
+  Falcon-1024 signature (argument 2), then verifies the XMSS signature as
+  the RFC specifies: `H_msg`, 67 masked WOTS+ chains, the L-tree and the
+  16-level authentication path, with `sha256`, `concat`, `extract3`,
+  `replace3`, `b^` and two subroutines
+- worst-case opcode cost 175,562 and 4,179 argument bytes, so a spend needs
+  eight resource dummies; the cost is 27,062 plus 150 per chain step for
+  both program shapes, pinned against the node's budget report in the
+  LocalNet test
+- the signer chooses the leaf and reports a repeat; a repeated leaf leaves
+  the stage on Falcon-1024 and Ed25519 until the account moves, and the
+  successor's program rejects the retired range; see
+  [USER_KEYTYPES.md](USER_KEYTYPES.md#rotating-xmss-triple-accounts)
+
+Stage programs of both rotating types are assembled locally rather than
+through algod, using the TEAL v13 assembler's salt rule, and are cross-checked
+against the stock assembler in tests. Transaction policy beyond those checks
+lives in signer approval and local signer policy.
 
 #### Bounded Authorization Allowlist
 

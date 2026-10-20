@@ -1459,8 +1459,10 @@ cancelable through `/sign/cancel`.
 
 A rotating account keeps one address while its authorizing stage program
 changes on every spend. Stage `n` is a program over the Falcon-1024 and
-Ed25519 keys derived for `n` from the account's seed; stage 0's program
-address is the account. Both endpoints use the `sign_request` action,
+Ed25519 keys derived for `n` from the account's seed and the stage's
+hash-based key (a WOTS key for the triple; for the XMSS triple, the root of
+the tree serving `n` and the stage's 64-leaf index range); stage 0's
+program address is the account. Both endpoints use the `sign_request` action,
 resolve the key by the account address, refuse any account that is not
 rotating, and read the account's authorizer and the round from the signer's
 own node (see `ARCH_NETWORKS.md`). The signer keeps no durable state for the
@@ -1525,10 +1527,21 @@ account's lock, it reads the chain again and refuses unless the authorizer
 is still stage `n` (`rotating_stage_changed` otherwise: nothing was signed),
 `first_valid` is at most 2 rounds ahead of the round read, and at least 10
 rounds remain before `last_valid`. It proves stage `n + 1` can sign, signs
-the TxID with stage `n`'s keys (Falcon-1024 and Ed25519; WOTS and Ed25519;
-or Falcon-1024, WOTS and Ed25519), verifies every signature,
-writes a `ROTATING_RELEASE` audit entry (account, TxID, stage, `last_valid`)
-with a durable sync, records the release in memory, and responds. An audit
+the TxID with stage `n`'s keys (Falcon-1024, WOTS and Ed25519; or
+Falcon-1024, an XMSS leaf and Ed25519), verifies every signature, writes a
+`ROTATING_RELEASE` audit entry (account, TxID, stage, `last_valid`, and for
+a leaf family the tree and leaf index) with a durable sync, records the
+release in memory, and responds.
+
+For a family whose stage holds several one-time leaves
+(`rotatingkey.Profile.LeavesPerStage`), the signer chooses the leaf under
+the account lock, from its release memory: a transaction the stage already
+released keeps its leaf, so an identical retry reproduces the identical
+signature; otherwise the TxID's first byte picks a leaf inside the stage's
+range and the first unused leaf upward from it, wrapping, is taken, so two
+signers sharing a seed and no memory collide one time in `LeavesPerStage`
+rather than always; when every leaf is used the pick is reused and reported.
+State chooses the leaf, never whether to sign. An audit
 write failure is logged as a warning and does not withhold the signature:
 the entry only feeds the alerts below, so a release missing from the log is
 one whose alert cannot be restored after a restart, never a safety gap.

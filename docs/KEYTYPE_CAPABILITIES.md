@@ -41,6 +41,7 @@ included as normal user-account operations.
 | `aplane.corridor.v1` | C | N | C | Y | N | N | N | N | N | N | C |
 | `aplane.htlc.v1` | C | C | C | C | C | N | N | N | N | N | N |
 | `aplane.rotating-triple-hybrid.v1` | C | N | C | C | C | C | C | C | C | C | C |
+| `aplane.rotating-xmss-triple.v1` | C | N | C | C | C | C | C | C | C | C | C |
 
 ## Capability Columns
 
@@ -87,6 +88,10 @@ included as normal user-account operations.
   of at most 100 rounds; that is the condition behind every `C`. The signer
   sets the rekey itself, always to the account's next stage, and signs only
   through the `rotating1` flow, one transaction at a time.
+- `aplane.rotating-xmss-triple.v1` admits the same transactions under the
+  same conditions. Its program additionally requires the XMSS signature's
+  leaf index to lie in the stage's 64-leaf range of the shared tree, which
+  the signer satisfies by choosing the leaf.
 - `aplane.falcon1024-cosigner1024.v1` requires guarded signing assembly.
   Once both the user and cosigner component signatures verify, the on-chain
   guarded-account LogicSig does not restrict transaction type or special

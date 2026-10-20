@@ -304,7 +304,10 @@ microAlgo ceiling.
 
 `aplane.rotating-triple-hybrid.v1` is a library-visible compiled key type for
 an account whose address never changes while the program that authorizes it
-changes on every spend. Each program (a *stage*) checks three signatures
+changes on every spend. `aplane.rotating-xmss-triple.v1` is its sibling
+with RFC 8391 XMSS in place of the per-stage WOTS key; everything in this
+section applies to both, and the differences are listed under
+[Rotating XMSS triple accounts](#rotating-xmss-triple-accounts). Each program (a *stage*) checks three signatures
 over the transaction ID, a Falcon-1024, a WOTS-w16 (SHA-256) and an Ed25519
 signature, all derived from one seed held only by the signer. A stage's
 public keys are revealed only when it signs, and the same spend rekeys the
@@ -392,6 +395,44 @@ once a chain read shows the account has moved. The warning rests on the
 signer's release memory, which the audit log rebuilds at unlock: a release
 the log has rotated past is unknown, so a reuse older than the retained log
 is not reported.
+
+### Rotating XMSS triple accounts
+
+`aplane.rotating-xmss-triple.v1` keeps the Falcon-1024 and Ed25519 keys per
+stage and replaces the WOTS key with RFC 8391 XMSS (`XMSS-SHA2_16_256`). One
+XMSS tree of 65,536 one-time leaves serves 1,024 consecutive stages, and
+each stage signs with its own 64 leaves; the stage program refuses a
+signature from any other leaf. What that changes for you:
+
+- **Creating the account takes seconds**, not an instant: the signer builds
+  the first tree (about 20 seconds on four cores) before it can show the
+  address. The next tree is built in the background once the account passes
+  the middle of the current one, so rotations never wait for it in normal
+  operation.
+- **Fees are higher.** The three signatures total up to 4,179 bytes and the
+  verification needs more opcode budget, so every spend carries eight
+  resource dummies and pays nine minimum fees; a stage program is about
+  2,700 bytes.
+- **Retries do not spend the stage's hedge.** A stage can release up to 64
+  distinct transactions, each on its own leaf, before any leaf repeats. An
+  expired release and its repair, or a rebuilt and re-signed transaction,
+  therefore keep all three signature schemes intact; `rotate status` notes
+  the attempt count ("attempt 2 of 64"). Only when a leaf does repeat, after
+  64 distinct attempts from one stage, or after the signer lost its release
+  memory and its audit log, does the stage rest on Falcon-1024 and Ed25519
+  until the account moves, and the signer reports that exactly as it does
+  for a twice-signed triple stage.
+- **Standards.** The signature format, verifier and parameter set are RFC
+  8391 XMSS. The signer manages leaf indices on a best-effort basis through
+  its release memory and audit log, as described above, so it does not meet
+  the RFC's requirement that an index never be reused and is not a
+  conformant stateful XMSS signer in the sense of RFC 8391 or NIST SP
+  800-208. Treat the XMSS half as one of three independent hedges, which is
+  what it is.
+
+Everything else is the same: one network per account, the same restrictions,
+`rotate`, `rotate status` and `rotate recover`, the alerts, and the backup
+and restore rules below.
 
 ### Backups and restore
 

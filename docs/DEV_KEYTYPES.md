@@ -427,8 +427,10 @@ in `lsig/falcon1024/register.go`.
 
 ### E. Rotating Account
 
-Example:
+Examples:
 - `aplane.rotating-triple-hybrid.v1` (Falcon-1024 + WOTS + Ed25519 stages)
+- `aplane.rotating-xmss-triple.v1` (Falcon-1024 + RFC 8391 XMSS + Ed25519
+  stages; one XMSS tree per 1,024 stages, 64 leaves per stage)
 
 Characteristics:
 - the account address is fixed while its authorizing program changes on every
@@ -454,6 +456,10 @@ Typical code areas:
   type) and `internal/crypto/wots` (the WOTS-w16 primitive)
 - `lsig/rotatingtriple/` (the stage program, stage ops, codec and generator;
   it reuses the two crypto packages above and the Falcon signer)
+- `internal/crypto/xmss` (RFC 8391 XMSS-SHA2_16_256) and
+  `lsig/rotatingxmsstriple/` (its stage program, stage ops with the public
+  tree cache, codec and generator); `tools/xmssoracle` regenerates the
+  package's vectors from an independent implementation
 
 These are protocol-level key types, not templates. A new rotating stage
 scheme is a new key type on the same flow: a `rotatingkey` profile, a stage
