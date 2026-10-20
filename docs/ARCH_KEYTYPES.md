@@ -173,8 +173,8 @@ from the presence of a witness key alone.
 | `aplane.falcon1024-allowlist-alock.v1` | DSA LogicSig | bounded `bounded1`; fixed recipient/asset/amount allowlist | `aplane.falcon1024.v1` | external Falcon contract admin for rekey | `bounded1`; spend through `/sign`, admin rekey through `/sign/bounded-admin` plus `aprekey` |
 | `aplane.falcon1024-cosigner1024.v1` | DSA LogicSig | dedicated guarded verifier | `aplane.falcon1024.v1` | signer-custodied Falcon cosigner witness | `cosigner1`; user `/sign/component`, cosigner `/sign/component`, then `/sign/assemble` |
 | `aplane.corridor.v1` | DSA LogicSig | bounded `bounded1`; framework Merkle recipient allowlist | `aplane.falcon1024.v1` | signer-custodied Falcon cosigner on spend; distinct external Falcon admin on rekey | `bounded-cosigner1`; `/plan`, kind-tagged `/sign/component`, then `/sign/assemble` |
-| `aplane.rotating-triple-hybrid.v1` | DSA LogicSig (`rotating_lsig`) | dedicated compiled stage program; a new program per spend | Falcon-1024, WOTS-w16 and Ed25519 stage keys derived from one seed | none | `rotating1`; `/sign/rotating/prepare` then `/sign/rotating/sign`; the signer reads the live stage from the chain |
-| `aplane.rotating-xmss-triple.v1` | DSA LogicSig (`rotating_lsig`) | dedicated compiled stage program; a new program per spend | Falcon-1024 and Ed25519 stage keys and an RFC 8391 XMSS tree shared by 1,024 stages, derived from one seed | none | `rotating1`, as the triple; the signer also chooses the stage's one-time leaf |
+| `aplane.rotating-triple-wots.v1` | DSA LogicSig (`rotating_lsig`) | dedicated compiled stage program; a new program per spend | Falcon-1024, WOTS-w16 and Ed25519 stage keys derived from one seed | none | `rotating1`; `/sign/rotating/prepare` then `/sign/rotating/sign`; the signer reads the live stage from the chain |
+| `aplane.rotating-triple-xmss.v1` | DSA LogicSig (`rotating_lsig`) | dedicated compiled stage program; a new program per spend | Falcon-1024 and Ed25519 stage keys and an RFC 8391 XMSS tree shared by 1,024 stages, derived from one seed | none | `rotating1`, as the triple; the signer also chooses the stage's one-time leaf |
 | `aplane.htlc.v1` | Generic LogicSig | generic TEAL HTLC policy | none | none | empty flow; ordinary LogicSig assembly through `/sign` |
 
 The examples describe the currently implemented architecture. A future change
@@ -220,7 +220,7 @@ own explicit definition.
 | No | No | Yes | **Implemented:** dedicated Falcon/Falcon guarded account | **Design required:** no current combined contract |
 | No | Yes | No | **Implemented:** bounded allowlist and timelock profiles | **Implemented:** `aplane.falcon1024-allowlist-alock.v1` |
 | No | Yes | Yes | **Supported profile shape:** bounded cosigner spend gate with no admin operations | **Implemented:** `aplane.corridor.v1` |
-| Yes | No | No | **Implemented:** `aplane.rotating-triple-hybrid.v1`, `aplane.rotating-xmss-triple.v1` | **Design required:** current rotating contracts have no external-admin path |
+| Yes | No | No | **Implemented:** `aplane.rotating-triple-wots.v1`, `aplane.rotating-triple-xmss.v1` | **Design required:** current rotating contracts have no external-admin path |
 | Yes | No | Yes | **Design required:** rotating plus external cosigner | **Design required:** rotating plus cosigner plus external admin |
 | Yes | Yes | No | **Design required:** rotating plus bounded policy | **Design required:** rotating bounded policy plus external admin |
 | Yes | Yes | Yes | **Design required:** rotating bounded policy plus cosigner | **Design required:** all four capabilities |
@@ -282,7 +282,7 @@ infer from a key type's name or by combining two flow labels.
 ### Signature construction and custody are separate choices
 
 Multiple required algorithms strengthen one authority without creating
-several. The rotating triple hybrid requires Falcon, WOTS, and Ed25519
+several. The rotating WOTS triple requires Falcon, WOTS, and Ed25519
 signatures, all under stage keys derived from one signer-held seed; an external
 cosigner adds a different custody and approval boundary. A rotating-cosigned
 design must state whether the witness is fixed or rotates, whether its schedule
@@ -315,7 +315,7 @@ contract for every answer:
    replay rejection, forbidden-transition tests, next-stage opening tests,
    recovery cases, and maximum-resource checks as applicable.
 
-The record of `aplane.rotating-xmss-triple.v1`, a new implementation of the
+The record of `aplane.rotating-triple-xmss.v1`, a new implementation of the
 established `rotating1` contract: (1) same flow, codec shape and endpoints
 as the triple, new family and HKDF label; (2) same operation authority and
 policy gates; (3) Falcon-1024, RFC 8391 XMSS-SHA2_16_256 and Ed25519 all
@@ -483,8 +483,8 @@ Examples of the composed ontology:
 | `aplane.falcon1024-cosigner1024.v1` | DSA LogicSig | dedicated compiled guarded verifier | signer-custodied Falcon witness enrolled as cosigner |
 | `aplane.corridor.v1` | DSA LogicSig | Bounded DSA (`bounded1`) with framework Merkle policy | signer-custodied Falcon cosigner on spend plus external Falcon contract admin on rekey |
 | `aplane.htlc.v1` | Generic LogicSig | generic TEAL policy | none |
-| `aplane.rotating-triple-hybrid.v1` | DSA LogicSig (`rotating_lsig`) | dedicated compiled stage program (Falcon-1024, hash-based WOTS-w16 and Ed25519, all required), a new program per spend | none; the signer reads the chain for the live stage (`rotating1` flow) |
-| `aplane.rotating-xmss-triple.v1` | DSA LogicSig (`rotating_lsig`) | dedicated compiled stage program (Falcon-1024, RFC 8391 XMSS-SHA2_16_256 and Ed25519, all required), a new program per spend; one XMSS tree per 1,024 stages, 64 leaves per stage | none; as the triple |
+| `aplane.rotating-triple-wots.v1` | DSA LogicSig (`rotating_lsig`) | dedicated compiled stage program (Falcon-1024, hash-based WOTS-w16 and Ed25519, all required), a new program per spend | none; the signer reads the chain for the live stage (`rotating1` flow) |
+| `aplane.rotating-triple-xmss.v1` | DSA LogicSig (`rotating_lsig`) | dedicated compiled stage program (Falcon-1024, RFC 8391 XMSS-SHA2_16_256 and Ed25519, all required), a new program per spend; one XMSS tree per 1,024 stages, 64 leaves per stage | none; as the triple |
 
 ## Key types summary
 
@@ -501,8 +501,8 @@ Examples of the composed ontology:
 | `aplane.falcon1024-allowlist.v1` | `falcon1024-allowlist` | `dsa_lsig` | Bundled bounded1 composed template: installed/enabled in new signer-role stores; Falcon + fixed receiver allowlist |
 | `aplane.falcon1024-allowlist.v2` | `falcon1024-allowlist` | `dsa_lsig` | Optional bounded1 composed template: Falcon + signer-derived Merkle receiver proof |
 | `aplane.falcon1024-timelock.v1` | `falcon1024-timelock` | `dsa_lsig` | Optional bounded1 composed template: Falcon + validity-round gate on spend and rekey |
-| `aplane.rotating-triple-hybrid.v1` | `aplane.rotating-triple-hybrid` | `rotating_lsig` | Library-visible rotating account: Falcon-1024 + WOTS-w16 + Ed25519 stage program, `rotating1` flow; signer-side only (no client provider) |
-| `aplane.rotating-xmss-triple.v1` | `aplane.rotating-xmss-triple` | `rotating_lsig` | Library-visible rotating account: Falcon-1024 + RFC 8391 XMSS + Ed25519 stage program, `rotating1` flow; signer-side only (no client provider) |
+| `aplane.rotating-triple-wots.v1` | `aplane.rotating-triple-wots` | `rotating_lsig` | Library-visible rotating account: Falcon-1024 + WOTS-w16 + Ed25519 stage program, `rotating1` flow; signer-side only (no client provider) |
+| `aplane.rotating-triple-xmss.v1` | `aplane.rotating-triple-xmss` | `rotating_lsig` | Library-visible rotating account: Falcon-1024 + RFC 8391 XMSS + Ed25519 stage program, `rotating1` flow; signer-side only (no client provider) |
 
 ## The three axes
 
@@ -802,7 +802,7 @@ signing helpers that the diagram omits) and gives a one-line role for each.
 |----------|-------------------|----------|---------|
 | `generic_lsig` | `aplane.htlc.v1` after template import | No | TEAL-only authorization |
 | `dsa_lsig` | `aplane.falcon1024.v1`, `aplane.ed25519.v1`, bounded `aplane.falcon1024-allowlist-alock.v1`, guarded `aplane.falcon1024-cosigner1024.v1`, `aplane.corridor.v1`; bundled Falcon templates after install | Yes | Cryptographic signature |
-| `rotating_lsig` | `aplane.rotating-triple-hybrid.v1`, `aplane.rotating-xmss-triple.v1` | Yes | Per-stage hybrid signatures through the `rotating1` flow; signer-side codec, not an `lsigprovider` provider |
+| `rotating_lsig` | `aplane.rotating-triple-wots.v1`, `aplane.rotating-triple-xmss.v1` | Yes | Per-stage hybrid signatures through the `rotating1` flow; signer-side codec, not an `lsigprovider` provider |
 
 ### Interface hierarchy
 
@@ -913,9 +913,9 @@ lsig/clientreg.RegisterClient()
     │   └── falcon1024guarded.RegisterClient()
     ├── keytypecatalog.Register(aplane.ed25519.v1, library)
     │   └── ed25519lsig.RegisterClient()
-    ├── keytypecatalog.Register(aplane.rotating-triple-hybrid.v1, library)
+    ├── keytypecatalog.Register(aplane.rotating-triple-wots.v1, library)
     │   └── (no client provider)
-    └── keytypecatalog.Register(aplane.rotating-xmss-triple.v1, library)
+    └── keytypecatalog.Register(aplane.rotating-triple-xmss.v1, library)
         └── (no client provider)
 
 lsig/signerreg.RegisterSigner()

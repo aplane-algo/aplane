@@ -21,13 +21,13 @@ import (
 // a new stage address. The rotate-only command and rotate status complete
 // the client surface; there is no exit.
 func TestRotatingTripleApshellEndToEnd(t *testing.T) {
-	runRotatingApshellEndToEnd(t, rotatingkey.RotatingTripleHybridV1)
+	runRotatingApshellEndToEnd(t, rotatingkey.RotatingTripleWotsV1)
 }
 
 // TestRotatingXmssApshellEndToEnd runs the same client surface for the XMSS
 // triple; its spends need a nine-transaction group.
 func TestRotatingXmssApshellEndToEnd(t *testing.T) {
-	runRotatingApshellEndToEnd(t, rotatingkey.RotatingXmssTripleV1)
+	runRotatingApshellEndToEnd(t, rotatingkey.RotatingTripleXmssV1)
 }
 
 func runRotatingApshellEndToEnd(t *testing.T, keyType string) {

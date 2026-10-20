@@ -511,11 +511,11 @@ func TestReleaseMemoryMarksStageReuse(t *testing.T) {
 }
 
 func TestChooseLeaf(t *testing.T) {
-	triple, _ := rotatingkey.Lookup(rotatingkey.RotatingTripleHybridV1)
+	triple, _ := rotatingkey.Lookup(rotatingkey.RotatingTripleWotsV1)
 	if l, reused := chooseLeaf(triple, 9, []byte{200}, "T", ReleaseRecord{}); l.Index != 0 || l.Tree != 0 || reused {
 		t.Fatalf("triple leaf = %+v, %v", l, reused)
 	}
-	x, _ := rotatingkey.Lookup(rotatingkey.RotatingXmssTripleV1)
+	x, _ := rotatingkey.Lookup(rotatingkey.RotatingTripleXmssV1)
 	const stage = 1025 // tree 1, leaves 64..127
 	txID := []byte{70} // 70 mod 64 = 6: leaf 70
 	l, reused := chooseLeaf(x, stage, txID, "T1", ReleaseRecord{})

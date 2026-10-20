@@ -2,7 +2,7 @@
 // Copyright (C) 2026 APlane Project LLC
 
 // Package signerops holds the signer-side private-key operations of the
-// aplane.rotating-xmss-triple.v1 key type: tree and stage key derivation and
+// aplane.rotating-triple-xmss.v1 key type: tree and stage key derivation and
 // the XMSS, Ed25519 and Falcon-1024 signatures over a transaction ID.
 //
 // Every key derives from the account seed under the key type's own HKDF

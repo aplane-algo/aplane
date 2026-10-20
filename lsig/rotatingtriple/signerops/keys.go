@@ -2,7 +2,7 @@
 // Copyright (C) 2026 APlane Project LLC
 
 // Package signerops holds the signer-side private-key operations of the
-// aplane.rotating-triple-hybrid.v1 key type: stage key derivation and the
+// aplane.rotating-triple-wots.v1 key type: stage key derivation and the
 // WOTS, Ed25519 and Falcon-1024 signatures over a transaction ID.
 //
 // Every stage derives from the account seed under the key type's own HKDF

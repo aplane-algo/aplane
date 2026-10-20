@@ -121,8 +121,8 @@ close temp-account to treasury nowait
 
 ### rotate
 
-Rotate a rotating account (`aplane.rotating-triple-hybrid.v1` or
-`aplane.rotating-xmss-triple.v1`) to its next stage, show rotating accounts,
+Rotate a rotating account (`aplane.rotating-triple-wots.v1` or
+`aplane.rotating-triple-xmss.v1`) to its next stage, show rotating accounts,
 or ask the signer to search for an account's live stage.
 
 ```

@@ -34,7 +34,7 @@ type treeKey struct {
 }
 
 // StageOps implements signing.RotatingStageOps for
-// aplane.rotating-xmss-triple.v1. Unlike the triple's, it has state: a cache
+// aplane.rotating-triple-xmss.v1. Unlike the triple's, it has state: a cache
 // of public trees, because a tree takes seconds to build and serves 1,024
 // stages. The cache holds public nodes only; every secret is derived from
 // the key material per call and zeroed before returning. Generation of one

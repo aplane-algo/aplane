@@ -67,7 +67,7 @@ func TestKeyPayloadRoundTripsToStageZeroAddress(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer parsed.ZeroSecrets()
-	if parsed.Category != keys.CategoryRotatingLsig || parsed.KeyType != rotatingkey.RotatingTripleHybridV1 {
+	if parsed.Category != keys.CategoryRotatingLsig || parsed.KeyType != rotatingkey.RotatingTripleWotsV1 {
 		t.Fatalf("parsed category %q key type %q", parsed.Category, parsed.KeyType)
 	}
 	selector, err := parsed.Selector()
@@ -132,7 +132,7 @@ func TestScanHidesStageKeysAndReportsConstantProfile(t *testing.T) {
 	if !ok {
 		t.Fatalf("scan did not report %s; got %v", address, scanned)
 	}
-	if info.Category != keys.CategoryRotatingLsig || info.KeyType != rotatingkey.RotatingTripleHybridV1 {
+	if info.Category != keys.CategoryRotatingLsig || info.KeyType != rotatingkey.RotatingTripleWotsV1 {
 		t.Fatalf("scan category %q key type %q", info.Category, info.KeyType)
 	}
 	if info.PublicKeyHex != "" {
@@ -157,21 +157,21 @@ func TestGeneratorCreatesAccountBoundToNetwork(t *testing.T) {
 		t.Fatal(err)
 	}
 	kr := cryptotest.Keyring(t, masterKey)
-	gen, err := keygen.GetGenerator(rotatingkey.RotatingTripleHybridV1)
+	gen, err := keygen.GetGenerator(rotatingkey.RotatingTripleWotsV1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if gen.RoutingFamily() != rotatingkey.RotatingTripleHybridFamily {
+	if gen.RoutingFamily() != rotatingkey.RotatingTripleWotsFamily {
 		t.Fatalf("routing family %q", gen.RoutingFamily())
 	}
-	if _, err := gen.GenerateRandom(context.Background(), paths, kr, rotatingkey.RotatingTripleHybridV1, map[string]string{}); !errors.Is(err, keygen.ErrInvalidParams) {
+	if _, err := gen.GenerateRandom(context.Background(), paths, kr, rotatingkey.RotatingTripleWotsV1, map[string]string{}); !errors.Is(err, keygen.ErrInvalidParams) {
 		t.Fatalf("missing network: err = %v", err)
 	}
-	result, err := gen.GenerateRandom(context.Background(), paths, kr, rotatingkey.RotatingTripleHybridV1, map[string]string{"network": "testnet"})
+	result, err := gen.GenerateRandom(context.Background(), paths, kr, rotatingkey.RotatingTripleWotsV1, map[string]string{"network": "testnet"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.KeyType != rotatingkey.RotatingTripleHybridV1 || len(strings.Fields(result.Mnemonic)) != 24 {
+	if result.KeyType != rotatingkey.RotatingTripleWotsV1 || len(strings.Fields(result.Mnemonic)) != 24 {
 		t.Fatalf("result = %+v", result)
 	}
 	scanned, err := keys.ScanKeysDirectoryWithKeyring(paths, kr)

@@ -25,10 +25,10 @@ const NetworkParameter = rotatingkey.RotatingNetworkParameter
 // single network parameter. Generation builds tree 0, which takes seconds.
 type generator struct{}
 
-func (generator) RoutingFamily() string { return rotatingkey.RotatingXmssTripleFamily }
+func (generator) RoutingFamily() string { return rotatingkey.RotatingTripleXmssFamily }
 
 func (generator) GenerateRandom(_ context.Context, paths storepaths.Paths, kr *crypto.Keyring, keyType string, params map[string]string) (*keygen.GenerationResult, error) {
-	if keyType != rotatingkey.RotatingXmssTripleV1 {
+	if keyType != rotatingkey.RotatingTripleXmssV1 {
 		return nil, fmt.Errorf("unsupported rotating key type %q", keyType)
 	}
 	genesisHash, err := triplesignerreg.GenesisHashParameter(params)

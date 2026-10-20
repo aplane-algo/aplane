@@ -26,7 +26,7 @@ var openTestMessage = func() []byte {
 }()
 
 // StageOps implements signing.RotatingStageOps for
-// aplane.rotating-triple-hybrid.v1.
+// aplane.rotating-triple-wots.v1.
 type StageOps struct{}
 
 var _ signing.RotatingStageOps = StageOps{}

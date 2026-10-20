@@ -45,7 +45,7 @@ func TestAdminRekeyTargetIneligible(t *testing.T) {
 		{"composed template", keys.CategoryDSALsig, composedTestKeyType, false, "not one of the plain"},
 		{"generic lsig", keys.CategoryGenericLsig, "aplane.htlc.v1", false, "generic"},
 		{"witness", keys.CategoryWitness, "aplane.witness-falcon1024.v1", false, "witness"},
-		{"rotating", keys.CategoryRotatingLsig, "aplane.rotating-triple-hybrid.v1", false, "rotating"},
+		{"rotating", keys.CategoryRotatingLsig, "aplane.rotating-triple-wots.v1", false, "rotating"},
 		{"unknown", "something", "x", false, "unsupported"},
 	}
 	for _, tc := range cases {

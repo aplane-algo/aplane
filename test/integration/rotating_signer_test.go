@@ -58,10 +58,10 @@ type localnetRotatingType struct {
 
 var (
 	localnetTriple = localnetRotatingType{
-		keyType: rotatingkey.RotatingTripleHybridV1, register: rotatingtriplesignerreg.Register, newKeyPayload: rotatingtriplesignerreg.NewKeyPayload,
+		keyType: rotatingkey.RotatingTripleWotsV1, register: rotatingtriplesignerreg.Register, newKeyPayload: rotatingtriplesignerreg.NewKeyPayload,
 	}
 	localnetXmss = localnetRotatingType{
-		keyType: rotatingkey.RotatingXmssTripleV1, register: rotatingxmsssignerreg.Register, newKeyPayload: rotatingxmsssignerreg.NewKeyPayload,
+		keyType: rotatingkey.RotatingTripleXmssV1, register: rotatingxmsssignerreg.Register, newKeyPayload: rotatingxmsssignerreg.NewKeyPayload,
 	}
 )
 

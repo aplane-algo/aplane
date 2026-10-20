@@ -1560,7 +1560,7 @@ store would change that outcome.
 
 Creating and using rotating accounts:
 
-- `aplane.rotating-triple-hybrid.v1` (Falcon-1024 + WOTS + Ed25519 stages)
+- `aplane.rotating-triple-wots.v1` (Falcon-1024 + WOTS + Ed25519 stages)
   is a `Library` key type: an operator enables it, then generates with the
   single creation parameter `network`: any network the signer knows
   (built-in or configured, which `/keytypes` lists as the parameter's

@@ -7,7 +7,20 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 
 ## Unreleased
 
-- New rotating key type `aplane.rotating-xmss-triple.v1`: Falcon-1024,
+- The rotating key types are renamed for the hash-based scheme they carry:
+  `aplane.rotating-triple-hybrid.v1` (shipped in v0.43.0) is now
+  `aplane.rotating-triple-wots.v1`, and the new XMSS type is
+  `aplane.rotating-triple-xmss.v1`. Derivation, stage programs and account
+  addresses are unchanged. The old identifier is not accepted, and reload
+  fails closed on it: a v0.43.0 store whose selected generation holds a key
+  file of the old type, or an activation record for it, fails generation
+  validation at unlock and enters recovery mode with signing blocked for
+  every key. Before upgrading such a store, delete its rotating triple keys
+  and deactivate the old key type with apadmin; after upgrading, activate
+  `aplane.rotating-triple-wots.v1` and import each account's mnemonic under
+  it on the same network, which derives the same address. A store upgraded
+  first is re-created with `apstore initialize` and its keys re-imported.
+- New rotating key type `aplane.rotating-triple-xmss.v1`: Falcon-1024,
   RFC 8391 XMSS (`XMSS-SHA2_16_256`) and Ed25519 per stage, with one XMSS
   tree serving 1,024 stages and 64 leaves per stage. A stage can release up
   to 64 distinct transactions before any one-time leaf repeats, so retries

@@ -30,10 +30,10 @@ const NetworkParameter = rotatingkey.RotatingNetworkParameter
 // in this phase.
 type generator struct{}
 
-func (generator) RoutingFamily() string { return rotatingkey.RotatingTripleHybridFamily }
+func (generator) RoutingFamily() string { return rotatingkey.RotatingTripleWotsFamily }
 
 func (generator) GenerateRandom(_ context.Context, paths storepaths.Paths, kr *crypto.Keyring, keyType string, params map[string]string) (*keygen.GenerationResult, error) {
-	if keyType != rotatingkey.RotatingTripleHybridV1 {
+	if keyType != rotatingkey.RotatingTripleWotsV1 {
 		return nil, fmt.Errorf("unsupported rotating key type %q", keyType)
 	}
 	genesisHash, err := GenesisHashParameter(params)

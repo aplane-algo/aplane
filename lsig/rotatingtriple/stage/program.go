@@ -2,7 +2,7 @@
 // Copyright (C) 2026 APlane Project LLC
 
 // Package stage builds and parses the per-stage LogicSig program of the
-// aplane.rotating-triple-hybrid.v1 key type.
+// aplane.rotating-triple-wots.v1 key type.
 //
 // Every stage runs the same TEAL v13 program; only four embedded constants
 // differ: the Ed25519 public key, the Falcon-1024 public key, the stage tweak

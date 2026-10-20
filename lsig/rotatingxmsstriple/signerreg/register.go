@@ -39,11 +39,11 @@ func StageOps() *signerops.StageOps { return stageOps }
 // generator. It is safe to call more than once.
 func Register() {
 	registerOnce.Do(func() {
-		keys.RegisterRotatingCodec(rotatingkey.RotatingXmssTripleV1, keys.RotatingCodec{
+		keys.RegisterRotatingCodec(rotatingkey.RotatingTripleXmssV1, keys.RotatingCodec{
 			AccountAddress: accountAddress,
 			ValidateSeed:   validateSeed,
 		})
-		signing.RegisterRotatingStageOps(rotatingkey.RotatingXmssTripleV1, stageOps)
+		signing.RegisterRotatingStageOps(rotatingkey.RotatingTripleXmssV1, stageOps)
 		keygen.Register(generator{})
 	})
 }
@@ -66,7 +66,7 @@ func NewKeyPayload(seed *rotatinghybrid.Seed, genesisHash [rotatinghybrid.Genesi
 		return nil, "", err
 	}
 	defer stageKeys.Zero()
-	payload := keys.NewRotatingLSigPayload(rotatingkey.RotatingXmssTripleV1, seed[:], genesisHash[:], packPublicKeys(tag, stageKeys.PublicKeys()))
+	payload := keys.NewRotatingLSigPayload(rotatingkey.RotatingTripleXmssV1, seed[:], genesisHash[:], packPublicKeys(tag, stageKeys.PublicKeys()))
 	return payload, program.Address.String(), nil
 }
 

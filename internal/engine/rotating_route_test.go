@@ -22,7 +22,7 @@ func TestRotatingSenderRoutesOnSendersOwnFlow(t *testing.T) {
 	rotating := testAddress(1)
 	plain := testAddress(2)
 	signerCache := cache.NewSignerCache()
-	signerCache.AddAddress(rotating.String(), rotatingkey.RotatingTripleHybridV1)
+	signerCache.AddAddress(rotating.String(), rotatingkey.RotatingTripleWotsV1)
 	signerCache.SetSigningFlowForAddress(rotating.String(), signerapi.SigningFlowRotating1)
 	signerCache.AddAddress(plain.String(), "ed25519")
 	eng := newConnectedEngineForKeyMgmtTestWithSignerCache(t, signerCache, func(req *http.Request) (*http.Response, error) {
@@ -55,7 +55,7 @@ func TestRotatingSenderRoutesOnSendersOwnFlow(t *testing.T) {
 func TestBuildSigningContextSignsRotatingAccountAtAnyStage(t *testing.T) {
 	rotating := testAddress(1)
 	signerCache := cache.NewSignerCache()
-	signerCache.AddAddress(rotating.String(), rotatingkey.RotatingTripleHybridV1)
+	signerCache.AddAddress(rotating.String(), rotatingkey.RotatingTripleWotsV1)
 	signerCache.SetSigningFlowForAddress(rotating.String(), signerapi.SigningFlowRotating1)
 	eng := newConnectedEngineForKeyMgmtTestWithSignerCache(t, signerCache, func(req *http.Request) (*http.Response, error) {
 		t.Fatalf("unexpected request: %s %s", req.Method, req.URL.Path)
@@ -82,7 +82,7 @@ func TestBuildSigningContextSignsRotatingAccountAtAnyStage(t *testing.T) {
 func TestRotatingAccountIsSignableAtAnyStage(t *testing.T) {
 	rotating := testAddress(1)
 	signerCache := cache.NewSignerCache()
-	signerCache.AddAddress(rotating.String(), rotatingkey.RotatingTripleHybridV1)
+	signerCache.AddAddress(rotating.String(), rotatingkey.RotatingTripleWotsV1)
 	signerCache.SetSigningFlowForAddress(rotating.String(), signerapi.SigningFlowRotating1)
 	eng := newConnectedEngineForKeyMgmtTestWithSignerCache(t, signerCache, func(req *http.Request) (*http.Response, error) {
 		t.Fatalf("unexpected request: %s %s", req.Method, req.URL.Path)

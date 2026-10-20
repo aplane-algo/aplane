@@ -127,7 +127,7 @@ Built-in and bundled key types include:
   `aplane.falcon1024-allowlist.v2`, `aplane.falcon1024-timelock.v1`, and
   `aplane.falcon1024-allowlist-alock.v1`, plus the bounded-cosigner
   `aplane.corridor.v1`
-- the rotating account `aplane.rotating-triple-hybrid.v1` (library-visible,
+- the rotating account `aplane.rotating-triple-wots.v1` (library-visible,
   signer-only)
 
 Creation parameters are part of the provider boundary. `internal/lsigprovider`
@@ -174,7 +174,7 @@ These providers implement the unified `internal/lsigprovider.SigningProvider`
 surface. `internal/logicsigdsa` is the DSA-oriented filtered view over
 that unified registry.
 
-`aplane.rotating-triple-hybrid.v1` is also a compiled, library-visible
+`aplane.rotating-triple-wots.v1` is also a compiled, library-visible
 catalog entry, but it has no client-side LogicSig provider and does not
 register in `internal/lsigprovider`; signer binaries register its storage,
 stage cryptography, and generator through `lsig/signerreg`.
@@ -210,8 +210,8 @@ and must not author a salt marker, salt preamble, or salt-style selector.
 Signing always uses the stored final bytecode and never recomputes salting from
 a live template.
 
-The rotating accounts (`aplane.rotating-triple-hybrid.v1` and
-`aplane.rotating-xmss-triple.v1`) are the one exception to both rules. They
+The rotating accounts (`aplane.rotating-triple-wots.v1` and
+`aplane.rotating-triple-xmss.v1`) are the one exception to both rules. They
 store no bytecode: each stage's
 program is assembled locally from a frozen template and the stage's public
 constants, and when the unsalted address is on-curve, the stage package
@@ -240,7 +240,7 @@ half and still rests on Falcon-1024 and Ed25519 until the next release
 lands. Nothing prevents the second signature; the signer reports it
 (`ARCH_SIGNING.md`, rotating alerts).
 
-`aplane.rotating-xmss-triple.v1` replaces the per-stage WOTS key with RFC
+`aplane.rotating-triple-xmss.v1` replaces the per-stage WOTS key with RFC
 8391 XMSS (`internal/crypto/xmss`, parameter set `XMSS-SHA2_16_256`: SHA-256,
 n = 32, w = 16, h = 16). One tree of 65,536 one-time leaves serves 1,024
 consecutive stages, and each stage owns 64 of its leaves: stage `n` uses

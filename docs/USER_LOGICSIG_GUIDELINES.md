@@ -753,7 +753,7 @@ off-curve LogicSig account whose program performs Ed25519 verification.
 Transaction policy is expected to live primarily in signer approval and local
 signer policy.
 
-#### `aplane.rotating-triple-hybrid.v1`
+#### `aplane.rotating-triple-wots.v1`
 
 - dedicated compiled stage program, library-visible and signer-gated: the
   account's address is fixed while each spend rekeys it to the next stage's
@@ -777,7 +777,7 @@ signer policy.
   Falcon-1024 and Ed25519 until a spend lands; see
   [USER_KEYTYPES.md](USER_KEYTYPES.md#rotating-accounts)
 
-#### `aplane.rotating-xmss-triple.v1`
+#### `aplane.rotating-triple-xmss.v1`
 
 - the triple's sibling with RFC 8391 `XMSS-SHA2_16_256` in place of the
   per-stage WOTS key: one tree of 65,536 leaves serves 1,024 stages, each
@@ -797,7 +797,7 @@ signer policy.
 - the signer chooses the leaf and reports a repeat; a repeated leaf leaves
   the stage on Falcon-1024 and Ed25519 until the account moves, and the
   successor's program rejects the retired range; see
-  [USER_KEYTYPES.md](USER_KEYTYPES.md#rotating-xmss-triple-accounts)
+  [USER_KEYTYPES.md](USER_KEYTYPES.md#rotating-triple-xmss-accounts)
 
 Stage programs of both rotating types are assembled locally rather than
 through algod, using the TEAL v13 assembler's salt rule, and are cross-checked

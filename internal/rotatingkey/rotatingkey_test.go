@@ -14,17 +14,18 @@ import (
 )
 
 func TestClassifiers(t *testing.T) {
-	if !IsRotatingKeyType(RotatingTripleHybridV1) {
+	if !IsRotatingKeyType(RotatingTripleWotsV1) {
 		t.Fatal("the rotating key type was not classified as rotating")
 	}
-	if !IsRotatingKeyType(RotatingXmssTripleV1) {
+	if !IsRotatingKeyType(RotatingTripleXmssV1) {
 		t.Fatal("the XMSS rotating key type was not classified as rotating")
 	}
-	if got := KeyTypes(); len(got) != 2 || got[0] != RotatingTripleHybridV1 || got[1] != RotatingXmssTripleV1 {
+	if got := KeyTypes(); len(got) != 2 || got[0] != RotatingTripleWotsV1 || got[1] != RotatingTripleXmssV1 {
 		t.Fatalf("KeyTypes() = %v", got)
 	}
-	// The retired Falcon and WOTS hybrids are ordinary unknown key types.
-	for _, keyType := range []string{"", "ed25519", "falcon1024", "aplane.falcon1024.v1", "aplane.rotating-triple-hybrid.v2", " aplane.rotating-triple-hybrid.v1", "aplane.rotating-hybrid.v1", "aplane.rotating-wots-hybrid.v1"} {
+	// The retired Falcon and WOTS hybrids, and the pre-rename identifiers of
+	// both triples, are ordinary unknown key types.
+	for _, keyType := range []string{"", "ed25519", "falcon1024", "aplane.falcon1024.v1", "aplane.rotating-triple-wots.v2", " aplane.rotating-triple-wots.v1", "aplane.rotating-triple-hybrid.v1", "aplane.rotating-xmss-triple.v1", "aplane.rotating-hybrid.v1", "aplane.rotating-wots-hybrid.v1"} {
 		if IsRotatingKeyType(keyType) {
 			t.Fatalf("%q classified as rotating", keyType)
 		}
@@ -32,8 +33,8 @@ func TestClassifiers(t *testing.T) {
 }
 
 func TestRoutingFamily(t *testing.T) {
-	if family, ok := RoutingFamily(RotatingTripleHybridV1); !ok || family != RotatingTripleHybridFamily {
-		t.Fatalf("RoutingFamily(%q) = %q, %v", RotatingTripleHybridV1, family, ok)
+	if family, ok := RoutingFamily(RotatingTripleWotsV1); !ok || family != RotatingTripleWotsFamily {
+		t.Fatalf("RoutingFamily(%q) = %q, %v", RotatingTripleWotsV1, family, ok)
 	}
 	for _, keyType := range KeyTypes() {
 		p, ok := Lookup(keyType)
@@ -78,14 +79,14 @@ func TestFrozenSizesMatchImplementation(t *testing.T) {
 }
 
 func TestLeafRange(t *testing.T) {
-	triple, _ := Lookup(RotatingTripleHybridV1)
+	triple, _ := Lookup(RotatingTripleWotsV1)
 	if lo, hi := triple.LeafRange(5); lo != 0 || hi != 1 {
 		t.Fatalf("triple LeafRange = [%d, %d)", lo, hi)
 	}
 	if triple.TreeOf(5) != 0 {
 		t.Fatal("triple TreeOf != 0")
 	}
-	x, _ := Lookup(RotatingXmssTripleV1)
+	x, _ := Lookup(RotatingTripleXmssV1)
 	for _, tc := range []struct{ stage, tree, lo, hi uint64 }{
 		{0, 0, 0, 64}, {1, 0, 64, 128}, {1023, 0, 65472, 65536}, {1024, 1, 0, 64}, {2048, 2, 0, 64},
 	} {

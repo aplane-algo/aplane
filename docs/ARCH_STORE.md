@@ -1228,8 +1228,8 @@ not store a separately trusted address, template name, entropy, or
 runtime-argument metadata under `runtime_args`.
 
 Rotating LogicSig accounts use `category: "rotating_lsig"`. The key types
-are `aplane.rotating-triple-hybrid.v1` (Falcon-1024 + WOTS-w16 + Ed25519
-stages) and `aplane.rotating-xmss-triple.v1` (Falcon-1024 + RFC 8391 XMSS +
+are `aplane.rotating-triple-wots.v1` (Falcon-1024 + WOTS-w16 + Ed25519
+stages) and `aplane.rotating-triple-xmss.v1` (Falcon-1024 + RFC 8391 XMSS +
 Ed25519 stages); each fixes its own derivation and stage program template,
 and `internal/rotatingkey` classifies them and carries their frozen sizes
 in a per-type profile. The profile also marks the stage as one-time,

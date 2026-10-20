@@ -302,12 +302,12 @@ microAlgo ceiling.
 
 ## Rotating Accounts
 
-`aplane.rotating-triple-hybrid.v1` is a library-visible compiled key type for
+`aplane.rotating-triple-wots.v1` is a library-visible compiled key type for
 an account whose address never changes while the program that authorizes it
-changes on every spend. `aplane.rotating-xmss-triple.v1` is its sibling
+changes on every spend. `aplane.rotating-triple-xmss.v1` is its sibling
 with RFC 8391 XMSS in place of the per-stage WOTS key; everything in this
 section applies to both, and the differences are listed under
-[Rotating XMSS triple accounts](#rotating-xmss-triple-accounts). Each program (a *stage*) checks three signatures
+[Rotating triple XMSS accounts](#rotating-triple-xmss-accounts). Each program (a *stage*) checks three signatures
 over the transaction ID, a Falcon-1024, a WOTS-w16 (SHA-256) and an Ed25519
 signature, all derived from one seed held only by the signer. A stage's
 public keys are revealed only when it signs, and the same spend rekeys the
@@ -319,7 +319,7 @@ of its spend.
 Enable the key type, then generate an account bound to one network:
 
 ```bash
-apadmin -d $APSIGNER_DATA keytype enable aplane.rotating-triple-hybrid.v1
+apadmin -d $APSIGNER_DATA keytype enable aplane.rotating-triple-wots.v1
 ```
 
 In apadmin, **Generate account** asks for one parameter, `network`, and offers
@@ -396,9 +396,9 @@ signer's release memory, which the audit log rebuilds at unlock: a release
 the log has rotated past is unknown, so a reuse older than the retained log
 is not reported.
 
-### Rotating XMSS triple accounts
+### Rotating triple XMSS accounts
 
-`aplane.rotating-xmss-triple.v1` keeps the Falcon-1024 and Ed25519 keys per
+`aplane.rotating-triple-xmss.v1` keeps the Falcon-1024 and Ed25519 keys per
 stage and replaces the WOTS key with RFC 8391 XMSS (`XMSS-SHA2_16_256`). One
 XMSS tree of 65,536 one-time leaves serves 1,024 consecutive stages, and
 each stage signs with its own 64 leaves; the stage program refuses a

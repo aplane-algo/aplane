@@ -71,13 +71,13 @@ type rotatingTestType struct {
 
 var (
 	tripleTestType = rotatingTestType{
-		keyType: rotatingkey.RotatingTripleHybridV1, register: rotatingtriplesignerreg.Register,
+		keyType: rotatingkey.RotatingTripleWotsV1, register: rotatingtriplesignerreg.Register,
 		newKeyPayload: rotatingtriplesignerreg.NewKeyPayload, dummies: 3,
 	}
 	// rotatingTestTypes is every rotating key type; the per-type tests loop
 	// over it so a second type (the rotating-bounded contract) slots in.
 	xmssTestType = rotatingTestType{
-		keyType: rotatingkey.RotatingXmssTripleV1, register: rotatingxmsssignerreg.Register,
+		keyType: rotatingkey.RotatingTripleXmssV1, register: rotatingxmsssignerreg.Register,
 		newKeyPayload: rotatingxmsssignerreg.NewKeyPayload, dummies: 8,
 	}
 	rotatingTestTypes = []rotatingTestType{tripleTestType, xmssTestType}

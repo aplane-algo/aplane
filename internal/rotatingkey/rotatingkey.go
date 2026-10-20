@@ -11,24 +11,24 @@
 package rotatingkey
 
 const (
-	// RotatingTripleHybridV1 is the rotating account key type: a fixed
+	// RotatingTripleWotsV1 is the rotating account key type: a fixed
 	// account whose authorizing stage program changes on every spend, and
 	// whose every stage requires a Falcon-1024, a WOTS-w16 (SHA-256) and an
 	// Ed25519 signature.
-	RotatingTripleHybridV1 = "aplane.rotating-triple-hybrid.v1"
+	RotatingTripleWotsV1 = "aplane.rotating-triple-wots.v1"
 
-	// RotatingXmssTripleV1 is the rotating account key type whose hash-based
+	// RotatingTripleXmssV1 is the rotating account key type whose hash-based
 	// signature is RFC 8391 XMSS: one XMSS tree serves 1,024 consecutive
 	// stages and each stage signs with its own 64 leaves, beside a
 	// Falcon-1024 and an Ed25519 key per stage.
-	RotatingXmssTripleV1 = "aplane.rotating-xmss-triple.v1"
+	RotatingTripleXmssV1 = "aplane.rotating-triple-xmss.v1"
 
-	// RotatingXmssTripleFamily is its versionless family.
-	RotatingXmssTripleFamily = "aplane.rotating-xmss-triple"
+	// RotatingTripleXmssFamily is the versionless family of the XMSS triple.
+	RotatingTripleXmssFamily = "aplane.rotating-triple-xmss"
 
-	// RotatingTripleHybridFamily is its versionless family, matching the
-	// naming of every other family.
-	RotatingTripleHybridFamily = "aplane.rotating-triple-hybrid"
+	// RotatingTripleWotsFamily is the versionless family of the WOTS triple,
+	// matching the naming of every other family.
+	RotatingTripleWotsFamily = "aplane.rotating-triple-wots"
 
 	// RotatingSeedSize is the stored BIP-39 seed, the only private material.
 	RotatingSeedSize = 64
@@ -95,11 +95,11 @@ const (
 // the key type has no LogicSig provider to describe it, and every listing
 // (key types, the key type library, generation) must agree.
 const (
-	RotatingTripleDisplayName = "Rotating triple hybrid (Falcon-1024 + WOTS + Ed25519)"
+	RotatingTripleDisplayName = "Rotating triple WOTS (Falcon-1024 + WOTS + Ed25519)"
 	RotatingTripleDescription = "Fixed account address whose authorizing Falcon-1024, hash-based WOTS and Ed25519 stage program changes on every spend. Signs only through the rotating1 flow."
 
-	RotatingXmssTripleDisplayName = "Rotating XMSS triple (Falcon-1024 + XMSS + Ed25519)"
-	RotatingXmssTripleDescription = "Fixed account address whose authorizing Falcon-1024, RFC 8391 XMSS and Ed25519 stage program changes on every spend. One XMSS tree serves 1,024 stages, each signing with its own 64 leaves. Signs only through the rotating1 flow."
+	RotatingTripleXmssDisplayName = "Rotating triple XMSS (Falcon-1024 + XMSS + Ed25519)"
+	RotatingTripleXmssDescription = "Fixed account address whose authorizing Falcon-1024, RFC 8391 XMSS and Ed25519 stage program changes on every spend. One XMSS tree serves 1,024 stages, each signing with its own 64 leaves. Signs only through the rotating1 flow."
 
 	// RotatingNetworkParameter is the single creation parameter.
 	RotatingNetworkParameter            = "network"
@@ -165,9 +165,9 @@ func (p Profile) TreeOf(stage uint64) uint64 {
 }
 
 var profiles = map[string]Profile{
-	RotatingTripleHybridV1: {
-		KeyType:            RotatingTripleHybridV1,
-		Family:             RotatingTripleHybridFamily,
+	RotatingTripleWotsV1: {
+		KeyType:            RotatingTripleWotsV1,
+		Family:             RotatingTripleWotsFamily,
 		DisplayName:        RotatingTripleDisplayName,
 		Description:        RotatingTripleDescription,
 		StagePublicKeySize: RotatingTripleStagePublicKeySize,
@@ -178,11 +178,11 @@ var profiles = map[string]Profile{
 		ReusedStageRestsOn: "Falcon-1024 and Ed25519",
 		LeavesPerStage:     1,
 	},
-	RotatingXmssTripleV1: {
-		KeyType:            RotatingXmssTripleV1,
-		Family:             RotatingXmssTripleFamily,
-		DisplayName:        RotatingXmssTripleDisplayName,
-		Description:        RotatingXmssTripleDescription,
+	RotatingTripleXmssV1: {
+		KeyType:            RotatingTripleXmssV1,
+		Family:             RotatingTripleXmssFamily,
+		DisplayName:        RotatingTripleXmssDisplayName,
+		Description:        RotatingTripleXmssDescription,
 		StagePublicKeySize: RotatingXmssStagePublicKeySize,
 		MaxProgramBytes:    RotatingXmssMaxProgramBytes,
 		MaxArgumentBytes:   RotatingXmssMaxArgumentBytes,
@@ -208,7 +208,7 @@ func Lookup(keyType string) (Profile, bool) {
 
 // KeyTypes lists the rotating key types in a fixed order.
 func KeyTypes() []string {
-	return []string{RotatingTripleHybridV1, RotatingXmssTripleV1}
+	return []string{RotatingTripleWotsV1, RotatingTripleXmssV1}
 }
 
 // RoutingFamily returns the family of a rotating key type. Rotating key
