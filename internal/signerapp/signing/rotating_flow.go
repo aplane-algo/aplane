@@ -439,6 +439,17 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 	}
 	defer release()
 
+	// A leaf family picks its one-time leaf from the stage's history, so a
+	// spend arriving before that history has been restored from the audit
+	// log after an unlock waits for it, bounded by the request. A restore
+	// that fails opens the wait: state chooses the leaf, never whether to
+	// sign.
+	if p, ok := rotatingkey.Lookup(s.Planner.Snapshot().KeyTypes[req.Account]); ok && p.LeavesPerStage > 1 {
+		if err := deps.Releases.AwaitRestored(ctx, req.Account); err != nil {
+			return nil, unavailable("release memory is still being restored from the audit log: " + err.Error())
+		}
+	}
+
 	// Under the account lock: a fresh read, rule 1, rule 3, then the seed is
 	// opened only to run the open test and sign.
 	unlock := deps.Locks.Lock(req.Account)

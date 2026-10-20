@@ -104,6 +104,13 @@ type ReleaseMemory struct {
 	mu        sync.Mutex
 	seq       uint64
 	byAccount map[string]ReleaseRecord
+	// armed holds every account until the audit log has been read after
+	// an unlock; pending then names the accounts whose audited release is
+	// still being restored. changed is closed and replaced when either
+	// moves, waking AwaitRestored.
+	armed   bool
+	pending map[string]bool
+	changed chan struct{}
 }
 
 // Record adds a live release to the account's entry and stamps the entry
@@ -146,13 +153,19 @@ func (m *ReleaseMemory) record(r ReleaseRecord, audited bool) {
 		}
 		if prev.Stage == r.Stage {
 			r.Reused = r.Reused || prev.Reused
-			if audited && !listsAll(incoming, prev.Leaves) {
-				// Memory holds a release the log was read before: it is
-				// the newer side, and its latest release stays latest.
-				r.TxID, r.LastValid = prev.TxID, prev.LastValid
-				leaves = mergeLeaves(incoming, prev.Leaves)
-			} else {
+			if audited {
 				leaves = mergeLeaves(prev.Leaves, incoming)
+				if leaves[len(leaves)-1].TxID != r.TxID {
+					// Memory holds a release the log was read before:
+					// it is the newer side and its latest stays latest.
+					r.TxID, r.LastValid = prev.TxID, prev.LastValid
+				}
+			} else {
+				// A live release: one scan of the history, no copy.
+				leaves = prev.Leaves
+				if !listsTxID(leaves, incoming[0].TxID) {
+					leaves = append(leaves, incoming[0])
+				}
 			}
 		}
 	}
@@ -166,33 +179,21 @@ func (m *ReleaseMemory) record(r ReleaseRecord, audited bool) {
 	m.byAccount[r.Account] = r
 }
 
-// mergeLeaves returns base followed by every leaf of extra whose
-// transaction base does not list, so the latest release of the newer side
-// ends the list.
-func mergeLeaves(base, extra []LeafRelease) []LeafRelease {
-	out := make([]LeafRelease, 0, len(base)+len(extra))
-	for _, l := range base {
-		if !listsTxID(out, l.TxID) {
-			out = append(out, l)
-		}
-	}
-	for _, l := range extra {
-		if !listsTxID(out, l.TxID) {
-			out = append(out, l)
+// mergeLeaves merges the remembered leaves with the audited list in linear
+// time, so the newer side's latest release ends the list: the audited
+// order first, then any remembered release the log lacks.
+func mergeLeaves(remembered, audited []LeafRelease) []LeafRelease {
+	listed := make(map[string]bool, len(remembered)+len(audited))
+	out := make([]LeafRelease, 0, len(remembered)+len(audited))
+	for _, group := range [][]LeafRelease{audited, remembered} {
+		for _, l := range group {
+			if !listed[l.TxID] {
+				listed[l.TxID] = true
+				out = append(out, l)
+			}
 		}
 	}
 	return out
-}
-
-// listsAll reports whether leaves lists the transaction of every leaf in
-// want.
-func listsAll(leaves, want []LeafRelease) bool {
-	for _, l := range want {
-		if !listsTxID(leaves, l.TxID) {
-			return false
-		}
-	}
-	return true
 }
 
 func listsTxID(leaves []LeafRelease, txID string) bool {
@@ -251,6 +252,8 @@ func (m *ReleaseMemory) Clear(account string) {
 }
 
 // Reset forgets every entry, as at lock.
+// Reset forgets every record and holds every account until the next
+// restore from the audit log begins (Restoring).
 func (m *ReleaseMemory) Reset() {
 	if m == nil {
 		return
@@ -258,6 +261,85 @@ func (m *ReleaseMemory) Reset() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.byAccount = nil
+	m.armed = true
+	m.pending = nil
+	m.signal()
+}
+
+// Restoring records that the audit log has been read and names the
+// accounts whose audited release is still to be restored; every other
+// account is released from the wait.
+func (m *ReleaseMemory) Restoring(accounts []string) {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.armed = false
+	m.pending = make(map[string]bool, len(accounts))
+	for _, a := range accounts {
+		m.pending[a] = true
+	}
+	m.signal()
+}
+
+// Restored releases the account from the wait: its audited release was
+// recorded, skipped or failed.
+func (m *ReleaseMemory) Restored(account string) {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.pending, account)
+	m.signal()
+}
+
+// RestoredAll releases every account from the wait, whatever the restore
+// achieved.
+func (m *ReleaseMemory) RestoredAll() {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.armed = false
+	m.pending = nil
+	m.signal()
+}
+
+// AwaitRestored returns once the account's audited release has been
+// restored after an unlock, or there is nothing to restore, or with ctx's
+// error. A memory that was never Reset holds nobody.
+func (m *ReleaseMemory) AwaitRestored(ctx context.Context, account string) error {
+	if m == nil {
+		return nil
+	}
+	for {
+		m.mu.Lock()
+		if !m.armed && !m.pending[account] {
+			m.mu.Unlock()
+			return nil
+		}
+		if m.changed == nil {
+			m.changed = make(chan struct{})
+		}
+		ch := m.changed
+		m.mu.Unlock()
+		select {
+		case <-ch:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+}
+
+// signal wakes every AwaitRestored. The caller holds mu.
+func (m *ReleaseMemory) signal() {
+	if m.changed != nil {
+		close(m.changed)
+		m.changed = nil
+	}
 }
 
 // AuditRotatingReleaseLogger is implemented by audit loggers that can record
@@ -294,11 +376,17 @@ func (s *Service) RebuildReleaseMemory(ctx context.Context, session *keystore.Ke
 	snapshot := s.Planner.Snapshot()
 	var firstErr error
 	rebuilt := 0
+	accounts := make([]string, 0, len(entries))
+	for _, e := range entries {
+		accounts = append(accounts, e.Account)
+	}
+	deps.Releases.Restoring(accounts)
 	for _, e := range entries {
 		if ctx.Err() != nil {
 			break
 		}
 		if _, held := snapshot.KeyFiles[e.Account]; !held {
+			deps.Releases.Restored(e.Account)
 			continue
 		}
 		stageAddr, nextAddr, err := s.releaseAddresses(ctx, e.Account, e.Stage, session, opts)
@@ -306,12 +394,14 @@ func (s *Service) RebuildReleaseMemory(ctx context.Context, session *keystore.Ke
 			if firstErr == nil {
 				firstErr = fmt.Errorf("rotating account %s: %w", e.Account, err)
 			}
+			deps.Releases.Restored(e.Account)
 			continue
 		}
 		deps.Releases.RecordAudited(ReleaseRecord{
 			Account: e.Account, Stage: e.Stage, StageAddr: stageAddr, NextAddr: nextAddr,
 			TxID: e.TxID, LastValid: e.LastValid, Reused: e.Reused, Leaves: e.Leaves,
 		})
+		deps.Releases.Restored(e.Account)
 		rebuilt++
 	}
 	return rebuilt, firstErr

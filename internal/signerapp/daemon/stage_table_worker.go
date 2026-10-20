@@ -48,6 +48,9 @@ const (
 func (fs *Signer) runStageTableWorker(ctx context.Context) {
 	ticker := time.NewTicker(stageTableTick)
 	defer ticker.Stop()
+	// Hold leaf-family spends until the first restore from the audit log
+	// has run; Reset re-arms the hold at every lock.
+	fs.rotatingReleases.Reset()
 	var lastRun time.Time
 	wait := time.Duration(0)
 	wasUnlocked := false
@@ -84,6 +87,8 @@ func (fs *Signer) runStageTableWorker(ctx context.Context) {
 // an unlock, deriving each remembered stage's addresses inside key-use
 // windows. Entries the log no longer holds are simply absent.
 func (fs *Signer) rebuildReleaseMemory(ctx context.Context, ir *productruntime.Runtime) {
+	// Whatever the restore achieves, no spend waits for it afterwards.
+	defer fs.rotatingReleases.RestoredAll()
 	if fs.auditLog == nil {
 		return
 	}

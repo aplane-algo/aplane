@@ -1670,7 +1670,11 @@ entry per account (read from the audit log and its two rotated predecessors;
 entries the log has rotated past are simply absent). The rebuild merges with
 what the stage released while the log was being read, so a leaf used in
 that window stays listed, and an audited release from a stage the account
-has already moved past is ignored. The signer checks every rotating account's authorizer on its own node right
+has already moved past is ignored. A spend from a leaf family that arrives
+before its account's audited release has been restored waits for it,
+bounded by the request's own context; a restore that fails or finds nothing
+opens the wait, so state still never decides whether to sign. The signer
+checks every rotating account's authorizer on its own node right
 after unlock and then about every 30 seconds while unlocked (a nominal
 interval: chain reads and paced derivation can stretch it). A release whose
 `last_valid` has passed while its stage is still the authorizer raises a
