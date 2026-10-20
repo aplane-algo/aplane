@@ -24,6 +24,12 @@ func TestRotatingTripleApshellEndToEnd(t *testing.T) {
 	runRotatingApshellEndToEnd(t, rotatingkey.RotatingTripleHybridV1)
 }
 
+// TestRotatingXmssApshellEndToEnd runs the same client surface for the XMSS
+// triple; its spends need a nine-transaction group.
+func TestRotatingXmssApshellEndToEnd(t *testing.T) {
+	runRotatingApshellEndToEnd(t, rotatingkey.RotatingXmssTripleV1)
+}
+
 func runRotatingApshellEndToEnd(t *testing.T, keyType string) {
 	t.Helper()
 	if os.Getenv("TEST_FUNDING_MNEMONIC") == "" {
