@@ -5,8 +5,13 @@ token, setup-file, and protocol-v5 entries describe behavior superseded by the
 enrolled-key model and current admin protocol v6.0; they are not current setup
 instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 
-## Unreleased
+## Rotating XMSS triple accounts and consensus v43
 
+- In-place upgrade now requires an existing install of v0.44.0 or newer: the
+  installer's minimum supported upgrade version is v0.44.0. A v0.43.0 install,
+  or a development build between v0.43.0 and v0.44.0, needs a fresh install
+  root; stores written by v0.43.0 are not read, because the rotating key types
+  were renamed.
 - Support exactly consensus v42 and v43 with Algorand Go SDK v2.14.0, replacing
   the temporary SDK commit pin. Clients accept either protocol while rejecting
   unknown versions; the signer uses their shared LogicSig and native-PQ rules.
@@ -26,14 +31,17 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
   and repairs keep all three hedges; a repeat is reported as it is for a
   twice-signed triple stage. Creating an account builds the first tree
   (seconds); spends pay five minimum fees, one more than the WOTS triple.
+  After the signer starts or unlocks, the first spend from each XMSS account
+  can wait about 16 seconds (on four cores) while that account's current tree
+  is rebuilt in memory; the next tree is built ahead in the background, so
+  later spends and tree boundaries do not wait.
   The signature format and verifier are RFC 8391, with the stage
   additionally requiring a message checksum of at most 511, which bounds
   its verification cost and which the signer meets by choosing the
   randomizer deterministically among PRF outputs; leaf management is best
   effort and the signer claims no RFC or SP 800-208 conformance for its
-  signing procedure. `ROTATING_RELEASE` audit entries
-  gain `rotating_tree` and `rotating_index` for this type. The triple is
-  unchanged.
+  signing procedure. `ROTATING_RELEASE` audit entries gain `rotating_tree`
+  and `rotating_index` for this type. The WOTS triple is unchanged.
 - A rotating account's own rekey, the rotation to the next stage the signer
   derives and proves itself, is no longer a warning-level finding. Warning
   analysis reports nothing for it, so `always_review_warnings` no longer
