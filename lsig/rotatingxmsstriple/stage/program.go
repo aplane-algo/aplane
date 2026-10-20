@@ -223,13 +223,17 @@ func Address(bytecode []byte) (types.Address, error) {
 // template was assembled.
 //
 // Scratch slots: 0 hashed message, 1 chain index, 2 running checksum,
-// 3 chain ends then L-tree nodes, 4 current chain element, 5 step, 6 digit,
-// 7 chain address prefix, 8 leaf index, 9 PRF prefix (toByte(3) || SEED),
-// 10 toByte(0) (also the source of every zero run), 11 toByte(1), 12 root,
-// 13 OTS address prefix, 14 L-tree or hash-tree address prefix, 15 L-tree
-// length, 16 L-tree height or path level, 17 key, 18 masked left node,
-// 19 current node, 20 L-tree pair index or path offset, 22 chain step
-// address, 23 node address, 24 left input, 25 right input.
+// 3 chain ends then L-tree nodes, 5 chain step packed as step << 32 (so
+// itob yields the hash and key-and-mask address words), 6 digit, 7 the
+// 88-byte chain PRF prefix (toByte(3) || SEED || ADRS[0:24]), 8 leaf index,
+// 9 PRF prefix (toByte(3) || SEED), 10 toByte(0) (also the source of every
+// zero run), 11 toByte(1), 12 root, 13 OTS address prefix behind the PRF
+// prefix (84 bytes), 14 L-tree or hash-tree address prefix behind the PRF
+// prefix (84 bytes), 15 L-tree length, 16 L-tree height or path level,
+// 19 current node, 20 L-tree pair index or path offset, 23 node PRF prefix
+// (92 bytes), 24 left input, 25 right input. The current chain element
+// lives on the stack across the chain loop, and the node function keeps
+// its key and masked inputs on the stack.
 func TEALSource(keys *PublicKeys) string {
 	var lo, hi [RangeBoundSize]byte
 	binary.BigEndian.PutUint64(lo[:], keys.Lo)
@@ -325,11 +329,13 @@ txn TxID
 concat
 sha256
 store 0
+load 9
 load 10
 extract 0 16
 load 8
 itob
 extract 4 4
+concat
 concat
 store 13
 pushint 0
@@ -392,8 +398,9 @@ pushint 36
 +
 pushint 32
 extract3
-store 4
 load 6
+pushint 32
+shl
 store 5
 load 13
 load 1
@@ -403,41 +410,35 @@ concat
 store 7
 step_loop:
 load 5
-pushint 15
+pushint 64424509440
 <
 bz step_done
+load 10
 load 7
 load 5
 itob
-extract 4 4
-concat
-store 22
-load 22
-pushbytes 0x00000000
-concat
-callsub prf
-store 17
-load 22
-pushbytes 0x00000001
-concat
-callsub prf
-load 4
-b^
-load 10
-load 17
-concat
-swap
 concat
 sha256
-store 4
+concat
+swap
+load 7
 load 5
 pushint 1
++
+itob
+concat
+sha256
+b^
+concat
+sha256
+load 5
+pushint 4294967296
 +
 store 5
 b step_loop
 step_done:
 load 3
-load 4
+swap
 concat
 store 3
 load 1
@@ -446,6 +447,7 @@ pushint 1
 store 1
 b chain_loop
 chains_done:
+load 9
 load 10
 extract 0 12
 pushbytes 0x00000001
@@ -453,6 +455,7 @@ concat
 load 8
 itob
 extract 4 4
+concat
 concat
 store 14
 pushint 67
@@ -555,11 +558,13 @@ ltree_done:
 load 3
 extract 0 32
 store 19
+load 9
 load 10
 extract 0 20
 pushint 15
 pushbytes 0x02
 replace3
+concat
 store 14
 load 8
 store 20
@@ -627,37 +632,26 @@ load 19
 load 12
 ==
 return
-prf:
-load 9
-swap
-concat
-sha256
-retsub
 hnode:
+load 11
 load 23
 pushbytes 0x00000000
 concat
-callsub prf
-store 17
+sha256
+concat
 load 23
 pushbytes 0x00000001
 concat
-callsub prf
+sha256
 load 24
 b^
-store 18
+concat
 load 23
 pushbytes 0x00000002
 concat
-callsub prf
+sha256
 load 25
 b^
-load 11
-load 17
-concat
-load 18
-concat
-swap
 concat
 sha256
 store 19
@@ -669,14 +663,15 @@ const (
 	// the guards, ed25519verify_bare (1,900), falcon_verify (1,700), the
 	// message hash, the loop bookkeeping of all 67 chains, the L-tree and
 	// the 16-level authentication path. StepOpcodeCost is the cost of one
-	// chain step: two PRF calls and the masked F, three sha256 at 35 each,
-	// plus the subroutine and bookkeeping opcodes. The LocalNet test confirms
+	// chain step: three sha256 at 35 each (the two PRFs and the masked F),
+	// one b^ at 6 and 23 single-cost opcodes, the chain's PRF prefix being
+	// hoisted and the element kept on the stack. The LocalNet test confirms
 	// both against the node's budget report.
 	// Both branches of the path loop cost the same, so the only input the
 	// cost depends on is the step count. The salt tail follows the final
 	// return and never executes, so a salted program costs the same.
-	BaseOpcodeCost = 27_062
-	StepOpcodeCost = 150
+	BaseOpcodeCost = 25_495
+	StepOpcodeCost = 134
 
 	// MaxOpcodeCost is the cost of the most expensive accepting run.
 	MaxOpcodeCost = BaseOpcodeCost + StepOpcodeCost*xmss.MaxVerifySteps

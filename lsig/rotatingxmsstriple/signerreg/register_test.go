@@ -26,7 +26,7 @@ import (
 
 // The golden stage 0 address of lsig/rotatingxmsstriple/signerops for the
 // fixed seed 0..63 on genesis 0xA0...
-const goldenAddress = "UIZ55YVZTGO2QU4MFWH5CZJHGKZSL3BDYJLHAIPYTQ77YHAYPHDR6IPFR4"
+const goldenAddress = "AIFEYG2DODZCEXH5X6HPH3LC23U7IMXCFHISTYGF6L66RMTBANU67NGG6I"
 
 func fixedPayload(t *testing.T) (*keys.Payload, string) {
 	t.Helper()

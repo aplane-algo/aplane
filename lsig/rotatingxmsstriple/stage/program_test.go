@@ -51,24 +51,24 @@ func keysWithSalt(t *testing.T, salted bool) (*PublicKeys, Program) {
 	return nil, Program{}
 }
 
-// The XMSS stage needs a nine-transaction group: its worst accepting path
-// costs more than eight pooled opcode units, while its program and
+// The XMSS stage needs an eight-transaction group: its worst accepting path
+// costs more than seven pooled opcode units, while its program and
 // arguments fit in seven size units.
 func TestProgramSizesAndCost(t *testing.T) {
-	if UnsaltedProgramSize != 2680 || SaltedProgramSize != 2683 {
+	if UnsaltedProgramSize != 2654 || SaltedProgramSize != 2657 {
 		t.Fatalf("program sizes %d/%d", UnsaltedProgramSize, SaltedProgramSize)
 	}
 	if MaxArgumentBytes != 4179 {
 		t.Fatalf("argument bytes %d", MaxArgumentBytes)
 	}
-	if MaxOpcodeCost <= 160_000 || MaxOpcodeCost > 180_000 {
-		t.Fatalf("worst case %d no longer needs exactly nine pooled transactions", MaxOpcodeCost)
+	if MaxOpcodeCost <= 140_000 || MaxOpcodeCost > 160_000 {
+		t.Fatalf("worst case %d no longer needs exactly eight pooled transactions", MaxOpcodeCost)
 	}
 	if got := OpcodeCost(xmss.MaxVerifySteps); got != MaxOpcodeCost {
 		t.Fatalf("MaxOpcodeCost %d != %d", MaxOpcodeCost, got)
 	}
-	if uint64(SaltedProgramSize)+MaxArgumentBytes > 9000 {
-		t.Fatalf("program and arguments %d exceed the free bytes of a nine-transaction group", SaltedProgramSize+MaxArgumentBytes)
+	if uint64(SaltedProgramSize)+MaxArgumentBytes > 8000 {
+		t.Fatalf("program and arguments %d exceed the free bytes of an eight-transaction group", SaltedProgramSize+MaxArgumentBytes)
 	}
 	// The constant slots hold the placeholders the template was assembled
 	// with, each preceded by its pushbytes length (the seed sits inside the

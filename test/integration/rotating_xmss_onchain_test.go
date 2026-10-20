@@ -26,8 +26,8 @@ import (
 )
 
 // xmssDummies is the number of resource dummies an XMSS stage spend needs:
-// its worst-case opcode cost needs nine pooled transactions.
-const xmssDummies = 8
+// its worst-case opcode cost needs eight pooled transactions.
+const xmssDummies = 7
 
 type xmssTree struct {
 	seeds xmss.Seeds
@@ -100,7 +100,7 @@ func TestRotatingXmssOnChain(t *testing.T) {
 	}
 	acct.requireAuthorizer(types.ZeroAddress)
 
-	t.Run("fee below nine minimum fees is refused", func(t *testing.T) {
+	t.Run("fee below eight minimum fees is refused", func(t *testing.T) {
 		raw, _ := acct.build(xmssSpend{
 			signer: s0, receiver: funderAddr, amount: 1000, rekeyTo: s1.program.Address, totalFee: 1000*(xmssDummies+1) - 1,
 		})
