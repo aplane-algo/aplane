@@ -193,38 +193,61 @@ func TestRotatingXmssOnChain(t *testing.T) {
 	}
 	acct.requireAuthorizer(s3.program.Address)
 
-	// A valid RFC 8391 signature whose hashed message has a checksum above
-	// the cap is rejected by the stage, which is what bounds its cost; the
-	// bounded signer picks another randomizer for the same transaction.
+	// A valid RFC 8391 signature whose hashed message has a checksum just
+	// above the cap is rejected by the stage's checksum assertion, and by
+	// nothing else: a checksum of 512 to 527 runs 555 chain steps, which
+	// the five-transaction budget still covers, so only the assertion can
+	// reject it. The bounded signer, signing the very same transaction,
+	// finds a randomizer within the cap.
 	t.Run("reject: valid signature with checksum above the cap", func(t *testing.T) {
 		leaf := uint32(s3.keys.Lo) + 40
 		for amount := uint64(1000); ; amount++ {
-			spend := xmssSpend{
+			raw, group := acct.build(xmssSpend{
 				signer: s3, authorizer: s3.program.Address, receiver: funderAddr, amount: amount,
 				rekeyTo: other.program.Address, leaf: &leaf, unbounded: true,
-			}
-			raw, group := acct.build(spend)
+			})
 			txID := algocrypto.TransactionID(group[0].Txn)
-			sum, err := xmss.MessageChecksum(&s3.tree.pk, txID, group[0].Lsig.Args[0])
+			rfcSig := group[0].Lsig.Args[0]
+			sum, err := xmss.MessageChecksum(&s3.tree.pk, txID, rfcSig)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if sum <= stage.MaxChecksum {
+			if sum <= stage.MaxChecksum || sum > stage.MaxChecksum+16 {
 				continue
 			}
-			if _, err := testnet.Client.SendRawTransaction(raw).Do(context.Background()); err == nil {
-				t.Fatalf("checksum %d above the cap was accepted", sum)
-			}
-			spend.unbounded = false
-			_, bounded := acct.build(spend)
-			boundedSum, err := xmss.MessageChecksum(&s3.tree.pk, txID, bounded[0].Lsig.Args[0])
+			steps, err := xmss.VerifySteps(&s3.tree.pk, txID, rfcSig)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if boundedSum > stage.MaxChecksum || bytes.Equal(bounded[0].Lsig.Args[0][:xmss.IndexSize+xmss.N], group[0].Lsig.Args[0][:xmss.IndexSize+xmss.N]) {
+			if steps != 555 || stage.OpcodeCost(steps) > uint64(xmssDummies+1)*lsigresource.SingleTransactionOpcodeCeiling {
+				t.Fatalf("checksum %d runs %d steps costing %d: not within the group's budget, so the test could not isolate the assertion", sum, steps, stage.OpcodeCost(steps))
+			}
+			if err := xmss.Verify(&s3.tree.pk, txID, rfcSig); err != nil {
+				t.Fatalf("the RFC signature is not valid off-chain: %v", err)
+			}
+			_, err = testnet.Client.SendRawTransaction(raw).Do(context.Background())
+			if err == nil {
+				t.Fatalf("checksum %d above the cap was accepted", sum)
+			}
+			lower := strings.ToLower(err.Error())
+			if !strings.Contains(lower, "assert failed") || strings.Contains(lower, "budget") {
+				t.Fatalf("checksum %d rejected for another reason than the assertion: %v", sum, err)
+			}
+			boundedSig, err := xmss.SignBounded(&s3.tree.seeds, s3.tree.tree, leaf, txID, stage.MaxChecksum)
+			if err != nil {
+				t.Fatal(err)
+			}
+			boundedSum, err := xmss.MessageChecksum(&s3.tree.pk, txID, boundedSig)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if boundedSum > stage.MaxChecksum || bytes.Equal(boundedSig[xmss.IndexSize:xmss.IndexSize+xmss.N], rfcSig[xmss.IndexSize:xmss.IndexSize+xmss.N]) {
 				t.Fatalf("bounded signer gave checksum %d with the RFC randomizer", boundedSum)
 			}
-			t.Logf("RFC checksum %d rejected; bounded signer found checksum %d", sum, boundedSum)
+			if err := xmss.Verify(&s3.tree.pk, txID, boundedSig); err != nil {
+				t.Fatal(err)
+			}
+			t.Logf("RFC checksum %d (%d steps) rejected by the assertion; bounded signer found checksum %d for the same transaction", sum, steps, boundedSum)
 			break
 		}
 		acct.requireAuthorizer(s3.program.Address)
