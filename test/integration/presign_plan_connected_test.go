@@ -16,6 +16,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/engine"
 	"github.com/aplane-algo/aplane/internal/signerclient"
+	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/test/integration/harness"
 )
 
@@ -124,7 +125,7 @@ func TestPresignPlanConnectedEngineSubmit(t *testing.T) {
 			if derr := msgpack.Decode(raw, &txn); derr != nil {
 				return nil, derr
 			}
-			_, stx, serr := crypto.SignTransaction(plugin.PrivateKey, txn)
+			_, stx, serr := signing.SignTransactionWithKey(plugin.PrivateKey, txn)
 			if serr != nil {
 				return nil, serr
 			}

@@ -416,10 +416,7 @@ func validatePluginSignedAuthorization(stxn types.SignedTxn, authorization Plugi
 		if len(stxn.Lsig.Logic) == 0 {
 			return fmt.Errorf("declared LogicSig slot returned no LogicSig program")
 		}
-		_, _, _, nestedCount := stxn.Lsig.SignatureCount()
-		if !stxn.Lsig.PQsig.Blank() {
-			nestedCount++
-		}
+		_, _, _, _, nestedCount := stxn.Lsig.SignatureCount()
 		if nestedCount > 1 {
 			return fmt.Errorf("declared LogicSig slot carries multiple delegated authorization mechanisms")
 		}

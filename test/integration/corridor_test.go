@@ -789,7 +789,7 @@ func submitFundingTxnExpectSuccess(t *testing.T, testnet *harness.TestnetConfig,
 
 func submitEd25519TxnExpectSuccess(t *testing.T, testnet *harness.TestnetConfig, privateKey stded25519.PrivateKey, txn types.Transaction) string {
 	t.Helper()
-	txid, signedBytes, err := algocrypto.SignTransaction(privateKey, txn)
+	txid, signedBytes, err := signing.SignTransactionWithKey(privateKey, txn)
 	if err != nil {
 		t.Fatalf("failed to sign corridor setup transaction: %v", err)
 	}
@@ -879,7 +879,7 @@ func bestEffortCloseRekeyedAccount(t *testing.T, testnet *harness.TestnetConfig,
 	sp := mustSuggestedParams(t, testnet)
 	txn := corridorPaymentTxn(t, sp, account, destination, 0, "corridor-cleanup-rekeyed")
 	mustSetAddress(t, &txn.CloseRemainderTo, destination)
-	_, signedBytes, err := algocrypto.SignTransaction(authPrivateKey, txn)
+	_, signedBytes, err := signing.SignTransactionWithKey(authPrivateKey, txn)
 	if err != nil {
 		t.Logf("cleanup: failed to sign rekeyed corridor close: %v", err)
 		return

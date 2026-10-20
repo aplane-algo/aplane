@@ -1175,7 +1175,7 @@ func closeMatrixRekeyedAccount(
 	if err != nil {
 		return fmt.Errorf("build close transaction: %w", err)
 	}
-	txid, signedBytes, err := algocrypto.SignTransaction(authPrivateKey, txn)
+	txid, signedBytes, err := txsigning.SignTransactionWithKey(authPrivateKey, txn)
 	if err != nil {
 		return fmt.Errorf("sign close transaction: %w", err)
 	}

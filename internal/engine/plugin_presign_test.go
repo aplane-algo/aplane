@@ -185,7 +185,7 @@ func TestVerifySignedAgainstPlan(t *testing.T) {
 		presignTestTxn(t, acct.Address.String(), "plugin"),
 	}
 	sign := func(txn types.Transaction) []byte {
-		_, raw, err := crypto.SignTransaction(acct.PrivateKey, txn)
+		_, raw, err := signing.SignTransactionWithKey(acct.PrivateKey, txn)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -243,7 +243,7 @@ func TestValidatePluginSignedSlot(t *testing.T) {
 	canonical.Group = types.Digest{4, 2}
 
 	sign := func(txn types.Transaction) string {
-		_, raw, err := crypto.SignTransaction(acct.PrivateKey, txn)
+		_, raw, err := signing.SignTransactionWithKey(acct.PrivateKey, txn)
 		if err != nil {
 			t.Fatalf("sign: %v", err)
 		}
@@ -290,6 +290,22 @@ func TestValidatePluginSignedSlot(t *testing.T) {
 		resources := &signerapi.LogicSigResourceUsage{ProgramBytes: 3, ArgumentBytes: 2, MaxOpcodeCost: 20_000}
 		if _, err := validatePluginSignedSlot(canonical, logicSigned([]byte{1, 2, 3}, [][]byte{{4, 5}}), PluginSlotAuthorization{LsigResources: resources}); err != nil {
 			t.Fatalf("validatePluginSignedSlot() error = %v", err)
+		}
+	})
+	t.Run("delegated PQ is counted once and mixed delegation rejects", func(t *testing.T) {
+		stxn := types.SignedTxn{Txn: canonical, Lsig: types.LogicSig{
+			Logic: []byte{1, 2, 3},
+			PQsig: types.PQSig{Scheme: types.PQScheme{'f', '1'}, Signature: []byte{1}},
+		}}
+		authorization := PluginSlotAuthorization{LsigResources: &signerapi.LogicSigResourceUsage{ProgramBytes: 3, MaxOpcodeCost: 20_000}}
+		encoded := base64.StdEncoding.EncodeToString(msgpack.Encode(stxn))
+		if _, err := validatePluginSignedSlot(canonical, encoded, authorization); err != nil {
+			t.Fatalf("single delegated PQ authorization: %v", err)
+		}
+		stxn.Lsig.Sig[0] = 1
+		encoded = base64.StdEncoding.EncodeToString(msgpack.Encode(stxn))
+		if _, err := validatePluginSignedSlot(canonical, encoded, authorization); err == nil || !strings.Contains(err.Error(), "multiple delegated") {
+			t.Fatalf("mixed delegated authorization error = %v", err)
 		}
 	})
 	t.Run("undeclared LogicSig authorization rejects", func(t *testing.T) {
@@ -409,7 +425,7 @@ func TestSignAndSubmitWithPluginSignersSimulatesSignedGroupClientSide(t *testing
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}
-			_, raw, err := crypto.SignTransaction(managedAccount.PrivateKey, txn)
+			_, raw, err := signing.SignTransactionWithKey(managedAccount.PrivateKey, txn)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return

@@ -14,6 +14,8 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/protocol"
 	"github.com/algorand/go-algorand-sdk/v2/transaction"
 	"github.com/algorand/go-algorand-sdk/v2/types"
+
+	"github.com/aplane-algo/aplane/internal/signing"
 )
 
 // signedGroup builds an offline signed group: one self-payment per note, grouped
@@ -48,7 +50,7 @@ func signedGroup(t *testing.T, notes ...string) ([]string, []types.SignedTxn) {
 	encoded := make([]string, len(txns))
 	stxns := make([]types.SignedTxn, len(txns))
 	for i, txn := range txns {
-		_, raw, err := crypto.SignTransaction(acct.PrivateKey, txn)
+		_, raw, err := signing.SignTransactionWithKey(acct.PrivateKey, txn)
 		if err != nil {
 			t.Fatalf("sign txn %d: %v", i, err)
 		}

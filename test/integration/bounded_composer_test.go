@@ -575,7 +575,7 @@ func bestEffortCloseBoundedAsset(t *testing.T, network *harness.TestnetConfig, a
 	t.Helper()
 	txn := corridorAssetTransferTxn(t, mustSuggestedParams(t, network), account, account, 0, assetID, "bounded-cleanup-asset")
 	txn.AssetCloseTo = mustAddress(t, destination)
-	_, signed, err := algocrypto.SignTransaction(authPrivateKey, txn)
+	_, signed, err := signing.SignTransactionWithKey(authPrivateKey, txn)
 	if err != nil {
 		t.Logf("cleanup: failed to sign bounded asset close: %v", err)
 		return

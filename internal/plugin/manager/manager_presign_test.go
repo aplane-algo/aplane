@@ -18,6 +18,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/plugin/discovery"
 	"github.com/aplane-algo/aplane/internal/plugin/jsonrpc"
 	"github.com/aplane-algo/aplane/internal/plugin/manifest"
+	"github.com/aplane-algo/aplane/internal/signing"
 )
 
 // TestPresignSignTransactionsRoundTrip validates the pre-sign planning round trip
@@ -127,7 +128,7 @@ func newPresignPluginInstance(t *testing.T, acct crypto.Account, canonicalB64 st
 					raw, _ := base64.StdEncoding.DecodeString(r.Encoded)
 					var txn types.Transaction
 					_ = msgpack.Decode(raw, &txn)
-					_, stx, _ := crypto.SignTransaction(acct.PrivateKey, txn)
+					_, stx, _ := signing.SignTransactionWithKey(acct.PrivateKey, txn)
 					out.Signed = append(out.Signed, jsonrpc.SignedTxnEntry{
 						Index: r.Index, Encoded: base64.StdEncoding.EncodeToString(stx),
 					})
