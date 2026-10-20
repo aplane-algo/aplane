@@ -1459,8 +1459,10 @@ cancelable through `/sign/cancel`.
 
 A rotating account keeps one address while its authorizing stage program
 changes on every spend. Stage `n` is a program over the Falcon-1024 and
-Ed25519 keys derived for `n` from the account's seed; stage 0's program
-address is the account. Both endpoints use the `sign_request` action,
+Ed25519 keys derived for `n` from the account's seed and the stage's
+hash-based key (a WOTS key for the triple; for the XMSS triple, the root of
+the tree serving `n` and the stage's 64-leaf index range); stage 0's
+program address is the account. Both endpoints use the `sign_request` action,
 resolve the key by the account address, refuse any account that is not
 rotating, and read the account's authorizer and the round from the signer's
 own node (see `ARCH_NETWORKS.md`). The signer keeps no durable state for the
@@ -1525,10 +1527,21 @@ account's lock, it reads the chain again and refuses unless the authorizer
 is still stage `n` (`rotating_stage_changed` otherwise: nothing was signed),
 `first_valid` is at most 2 rounds ahead of the round read, and at least 10
 rounds remain before `last_valid`. It proves stage `n + 1` can sign, signs
-the TxID with stage `n`'s keys (Falcon-1024 and Ed25519; WOTS and Ed25519;
-or Falcon-1024, WOTS and Ed25519), verifies every signature,
-writes a `ROTATING_RELEASE` audit entry (account, TxID, stage, `last_valid`)
-with a durable sync, records the release in memory, and responds. An audit
+the TxID with stage `n`'s keys (Falcon-1024, WOTS and Ed25519; or
+Falcon-1024, an XMSS leaf and Ed25519), verifies every signature, writes a
+`ROTATING_RELEASE` audit entry (account, TxID, stage, `last_valid`, and for
+a leaf family the tree and leaf index) with a durable sync, records the
+release in memory, and responds.
+
+For a family whose stage holds several one-time leaves
+(`rotatingkey.Profile.LeavesPerStage`), the signer chooses the leaf under
+the account lock, from its release memory: a transaction the stage already
+released keeps its leaf, so an identical retry reproduces the identical
+signature; otherwise the TxID's first byte picks a leaf inside the stage's
+range and the first unused leaf upward from it, wrapping, is taken, so two
+signers sharing a seed and no memory collide one time in `LeavesPerStage`
+rather than always; when every leaf is used the pick is reused and reported.
+State chooses the leaf, never whether to sign. An audit
 write failure is logged as a warning and does not withhold the signature:
 the entry only feeds the alerts below, so a release missing from the log is
 one whose alert cannot be restored after a restart, never a safety gap.
@@ -1547,7 +1560,7 @@ store would change that outcome.
 
 Creating and using rotating accounts:
 
-- `aplane.rotating-triple-hybrid.v1` (Falcon-1024 + WOTS + Ed25519 stages)
+- `aplane.rotating-triple-wots.v1` (Falcon-1024 + WOTS + Ed25519 stages)
   is a `Library` key type: an operator enables it, then generates with the
   single creation parameter `network`: any network the signer knows
   (built-in or configured, which `/keytypes` lists as the parameter's
@@ -1651,10 +1664,17 @@ stage hint when the operator knows roughly how many spends the account has
 made, finishes the job.
 
 Alerts: the signer remembers the newest release per account (stage, TxID,
-`last_valid`) in process memory, rebuilt at unlock from the newest
-`ROTATING_RELEASE` audit entry per account (read from the audit log and its
-two rotated predecessors; entries the log has rotated past are simply
-absent), and checks every rotating account's authorizer on its own node right
+`last_valid`, and for a leaf family every leaf the stage has released) in
+process memory, rebuilt at unlock from the newest `ROTATING_RELEASE` audit
+entry per account (read from the audit log and its two rotated predecessors;
+entries the log has rotated past are simply absent). The rebuild merges with
+what the stage released while the log was being read, so a leaf used in
+that window stays listed, and an audited release from a stage the account
+has already moved past is ignored. A spend from a leaf family that arrives
+before its account's audited release has been restored waits for it,
+bounded by the request's own context; a restore that fails or finds nothing
+opens the wait, so state still never decides whether to sign. The signer
+checks every rotating account's authorizer on its own node right
 after unlock and then about every 30 seconds while unlocked (a nominal
 interval: chain reads and paced derivation can stretch it). A release whose
 `last_valid` has passed while its stage is still the authorizer raises a

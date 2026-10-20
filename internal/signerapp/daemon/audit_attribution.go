@@ -98,11 +98,11 @@ func (l *signingAuditLogger) LogSignFailed(authAddress, txnSender, reason string
 
 // LogRotatingRelease records a rotating release durably before the
 // signature leaves the signer.
-func (l *signingAuditLogger) LogRotatingRelease(account, txid string, stage, lastValid uint64) error {
+func (l *signingAuditLogger) LogRotatingRelease(account, txid string, stage, lastValid, tree uint64, index uint32) error {
 	if l == nil || l.log == nil {
 		return nil
 	}
-	return l.log.LogRotatingReleaseAttributed(l.attribution, account, txid, stage, lastValid)
+	return l.log.LogRotatingReleaseAttributed(l.attribution, account, txid, stage, lastValid, tree, index)
 }
 
 // LogRotatingRecovery records an operator's recovery request.

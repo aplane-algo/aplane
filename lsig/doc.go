@@ -31,9 +31,9 @@
 //   - a DSA family: falcon1024, ed25519lsig, falcon1024_guarded. Each
 //     registers an lsigprovider that assembles a LogicSig from stored
 //     bytecode and signature arguments for ordinary /sign;
-//   - a rotating type: rotatingtriple. It has no lsigprovider; it derives a
-//     fresh stage program per spend and signs only through the rotating1
-//     flow.
+//   - a rotating type: rotatingtriple and rotatingxmsstriple. Neither has an
+//     lsigprovider; each derives a fresh stage program per spend and signs
+//     only through the rotating1 flow.
 //
 // # Inside a family or type
 //

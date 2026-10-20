@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/keystore"
+	"github.com/aplane-algo/aplane/internal/rotatingkey"
+	coresigning "github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/stagetable"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
@@ -282,8 +284,13 @@ func (s *Service) fillStageTableOnce(ctx context.Context, deps *RotatingDeps, ge
 	report.Resolved, report.Stage = true, proven
 
 	// Lookahead: cover stages through proven + Horizon, within what is left
-	// of this pass's budget.
+	// of this pass's budget. A family whose stages share trees stops at the
+	// last tree that is built, building the next one from the midpoint of
+	// the live one.
 	target := proven + opts.Horizon + 1
+	if limit, capped := s.treeFrontier(ctx, account, session, opts, proven); capped && target > limit {
+		target = limit
+	}
 	if table.Len() < target {
 		limit := table.Len() + uint64(max(budget, 0))
 		if limit > target {
@@ -600,3 +607,48 @@ func deriveRange(ctx context.Context, rs *rotatingSession, from, to uint64, opts
 }
 
 func sortStrings(s []string) { sort.Strings(s) }
+
+// treeFrontier returns the lookahead limit of an account whose stages share
+// trees (rotatingkey.Profile.StagesPerTree): one past the last stage of the
+// last tree that is ready, at most one tree beyond the live stage's. From
+// the midpoint of the live tree it builds the next tree first, inside a
+// key-use window, so the frontier normally moves long before the live stage
+// reaches it; a late build is handled by the signing path's own readiness
+// check, not assumed away. It reports false for a family without shared
+// trees.
+func (s *Service) treeFrontier(ctx context.Context, account string, session *keystore.KeySession, opts StageFillOptions, live uint64) (uint64, bool) {
+	profile, ok := rotatingkey.Lookup(s.Planner.Snapshot().KeyTypes[account])
+	if !ok || profile.StagesPerTree <= 0 {
+		return 0, false
+	}
+	per := uint64(profile.StagesPerTree)
+	tree := live / per
+	next := (tree + 1) * per
+	ready := false
+	func() {
+		ctx, release := opts.keyUse(ctx)
+		defer release()
+		if ctx.Err() != nil {
+			return
+		}
+		rs, svcErr := s.openRotatingSession(ctx, account, session)
+		if svcErr != nil {
+			return
+		}
+		defer rs.close()
+		treeOps, ok := rs.ops.(coresigning.RotatingTreeOps)
+		if !ok {
+			return
+		}
+		ready = treeOps.TreeReady(rs.secret, next)
+		if !ready && live%per >= per/2 {
+			if err := treeOps.Prepare(rs.secret, next); err == nil {
+				ready = true
+			}
+		}
+	}()
+	if ready {
+		return next + per, true
+	}
+	return next, true
+}

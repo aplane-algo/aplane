@@ -9,6 +9,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
+	"github.com/aplane-algo/aplane/internal/racetest"
 	"os"
 	"strings"
 	"sync"
@@ -26,6 +27,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/stagetable"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	rotatingtriplesignerreg "github.com/aplane-algo/aplane/lsig/rotatingtriple/signerreg"
+	rotatingxmsssignerreg "github.com/aplane-algo/aplane/lsig/rotatingxmsstriple/signerreg"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
@@ -66,16 +68,25 @@ type rotatingTestType struct {
 	newKeyPayload func(*rotatinghybrid.Seed, [32]byte) (*keys.Payload, string, error)
 	// dummies is the number of resource dummies one spend needs.
 	dummies int
+	// sharedSeed gives every fixture of the type the same seed, so a type
+	// whose stages share trees that take seconds to build pays for one
+	// tree per test binary through its process-wide cache. Fixtures never
+	// share a store, so the shared address is harmless.
+	sharedSeed bool
 }
 
 var (
 	tripleTestType = rotatingTestType{
-		keyType: rotatingkey.RotatingTripleHybridV1, register: rotatingtriplesignerreg.Register,
+		keyType: rotatingkey.RotatingTripleWotsV1, register: rotatingtriplesignerreg.Register,
 		newKeyPayload: rotatingtriplesignerreg.NewKeyPayload, dummies: 3,
 	}
 	// rotatingTestTypes is every rotating key type; the per-type tests loop
 	// over it so a second type (the rotating-bounded contract) slots in.
-	rotatingTestTypes = []rotatingTestType{tripleTestType}
+	xmssTestType = rotatingTestType{
+		keyType: rotatingkey.RotatingTripleXmssV1, register: rotatingxmsssignerreg.Register,
+		newKeyPayload: rotatingxmsssignerreg.NewKeyPayload, dummies: 8, sharedSeed: true,
+	}
+	rotatingTestTypes = []rotatingTestType{tripleTestType, xmssTestType}
 )
 
 type rotatingKeyStore struct {
@@ -123,11 +134,19 @@ func newRotatingFixture(t *testing.T) *rotatingFixture {
 
 func newRotatingFixtureFor(t *testing.T, kind rotatingTestType) *rotatingFixture {
 	t.Helper()
+	if kind.sharedSeed {
+		racetest.SkipFullTree(t)
+	}
 	kind.register()
 	// A fresh random seed per fixture: the tests compare the table against
-	// derivations from the same seed, so no known vector is needed.
+	// derivations from the same seed, so no known vector is needed. A type
+	// with shared trees uses one fixed seed instead (sharedSeed).
 	var seed rotatinghybrid.Seed
-	if _, err := rand.Read(seed[:]); err != nil {
+	if kind.sharedSeed {
+		for i := range seed {
+			seed[i] = byte(0x5A ^ i)
+		}
+	} else if _, err := rand.Read(seed[:]); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(seed.Zero)

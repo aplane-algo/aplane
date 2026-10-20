@@ -17,7 +17,7 @@ import (
 // path.
 func TestRotatingPayloadRequiresRegisteredCodec(t *testing.T) {
 	payload := NewRotatingLSigPayload(
-		rotatingkey.RotatingTripleHybridV1,
+		rotatingkey.RotatingTripleWotsV1,
 		make([]byte, rotatingkey.RotatingSeedSize),
 		make([]byte, rotatingkey.RotatingGenesisHashSize),
 		make([]byte, rotatingkey.RotatingTripleStagePublicKeySize),

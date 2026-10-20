@@ -52,8 +52,13 @@ func RegisterClient() {
 		// makes the key type opt-in. Signer binaries register its storage,
 		// stage cryptography and generator through lsig/signerreg.
 		registerCompiledProvider(keytypecatalog.Entry{
-			KeyType:      rotatingkey.RotatingTripleHybridV1,
-			Family:       rotatingkey.RotatingTripleHybridFamily,
+			KeyType:      rotatingkey.RotatingTripleWotsV1,
+			Family:       rotatingkey.RotatingTripleWotsFamily,
+			Availability: keytypecatalog.AvailabilityLibrary,
+		}, func() {})
+		registerCompiledProvider(keytypecatalog.Entry{
+			KeyType:      rotatingkey.RotatingTripleXmssV1,
+			Family:       rotatingkey.RotatingTripleXmssFamily,
 			Availability: keytypecatalog.AvailabilityLibrary,
 		}, func() {})
 	})

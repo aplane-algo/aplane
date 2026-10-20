@@ -48,6 +48,9 @@ const (
 func (fs *Signer) runStageTableWorker(ctx context.Context) {
 	ticker := time.NewTicker(stageTableTick)
 	defer ticker.Stop()
+	// Hold leaf-family spends until the first restore from the audit log
+	// has run; Reset re-arms the hold at every lock.
+	fs.rotatingReleases.Reset()
 	var lastRun time.Time
 	wait := time.Duration(0)
 	wasUnlocked := false
@@ -84,6 +87,8 @@ func (fs *Signer) runStageTableWorker(ctx context.Context) {
 // an unlock, deriving each remembered stage's addresses inside key-use
 // windows. Entries the log no longer holds are simply absent.
 func (fs *Signer) rebuildReleaseMemory(ctx context.Context, ir *productruntime.Runtime) {
+	// Whatever the restore achieves, no spend waits for it afterwards.
+	defer fs.rotatingReleases.RestoredAll()
 	if fs.auditLog == nil {
 		return
 	}
@@ -97,7 +102,11 @@ func (fs *Signer) rebuildReleaseMemory(ctx context.Context, ir *productruntime.R
 	}
 	audited := make([]signersigning.AuditedRelease, 0, len(entries))
 	for _, e := range entries {
-		audited = append(audited, signersigning.AuditedRelease{Account: e.Account, Stage: e.Stage, TxID: e.TxID, LastValid: e.LastValid, Reused: e.Reused})
+		leaves := make([]signersigning.LeafRelease, 0, len(e.Leaves))
+		for _, l := range e.Leaves {
+			leaves = append(leaves, signersigning.LeafRelease{Tree: l.Tree, Index: l.Index, TxID: l.TxID, LastValid: l.LastValid})
+		}
+		audited = append(audited, signersigning.AuditedRelease{Account: e.Account, Stage: e.Stage, TxID: e.TxID, LastValid: e.LastValid, Reused: e.Reused, Leaves: leaves})
 	}
 	ctx, cancel := ir.LockCancelContext(ctx)
 	defer cancel()

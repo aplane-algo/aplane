@@ -7,6 +7,23 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 
 ## Unreleased
 
+- The rotating key types are renamed for the hash-based scheme they carry:
+  `aplane.rotating-triple-hybrid.v1` (shipped in v0.43.0) is now
+  `aplane.rotating-triple-wots.v1`, and the new XMSS type is
+  `aplane.rotating-triple-xmss.v1`. Derivation, stage programs and account
+  addresses are unchanged. The old identifier is not accepted; a store
+  written by v0.43.0 is not upgraded.
+- New rotating key type `aplane.rotating-triple-xmss.v1`: Falcon-1024,
+  RFC 8391 XMSS (`XMSS-SHA2_16_256`) and Ed25519 per stage, with one XMSS
+  tree serving 1,024 stages and 64 leaves per stage. A stage can release up
+  to 64 distinct transactions before any one-time leaf repeats, so retries
+  and repairs keep all three hedges; a repeat is reported as it is for a
+  twice-signed triple stage. Creating an account builds the first tree
+  (seconds); spends pay nine minimum fees. The signature format and
+  verifier are RFC 8391; leaf management is best effort and the signer
+  claims no RFC or SP 800-208 conformance. `ROTATING_RELEASE` audit entries
+  gain `rotating_tree` and `rotating_index` for this type. The triple is
+  unchanged.
 - A rotating account's own rekey, the rotation to the next stage the signer
   derives and proves itself, is no longer a warning-level finding. Warning
   analysis reports nothing for it, so `always_review_warnings` no longer

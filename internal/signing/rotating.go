@@ -49,9 +49,11 @@ type RotatingStageOps interface {
 	// a rotation target can authorize the account once it is live.
 	CheckStageOpens(key *RotatingKeyMaterial, stage uint64) error
 
-	// SignStage signs message with stage i, verifies both signatures against
-	// the stage program's keys, and returns the program and arguments.
-	SignStage(key *RotatingKeyMaterial, stage uint64, message []byte) (RotatingStageSignature, error)
+	// SignStage signs message with stage i, verifies every signature against
+	// the stage program's keys, and returns the program and arguments. index
+	// selects the one-time leaf for families whose stage holds several (the
+	// signing flow chooses it); a family with one key per stage ignores it.
+	SignStage(key *RotatingKeyMaterial, stage uint64, index uint32, message []byte) (RotatingStageSignature, error)
 }
 
 var rotatingStageOps = struct {
@@ -82,4 +84,15 @@ func GetRotatingStageOps(keyType string) (RotatingStageOps, error) {
 		return nil, fmt.Errorf("rotating key type %q has no registered stage operations", keyType)
 	}
 	return ops, nil
+}
+
+// RotatingTreeOps is implemented by stage cryptography whose stages share
+// trees that take seconds to build. The signing flow uses it to build the
+// next tree in the background before the stages that need it are reached,
+// and to stop its address lookahead at the last tree that is ready.
+type RotatingTreeOps interface {
+	// Prepare builds and caches the tree serving stage i.
+	Prepare(key *RotatingKeyMaterial, stage uint64) error
+	// TreeReady reports whether the tree serving stage i is cached.
+	TreeReady(key *RotatingKeyMaterial, stage uint64) bool
 }

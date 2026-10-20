@@ -10,6 +10,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -44,11 +45,11 @@ func (a *recordingReleaseAudit) LogSignApproved(string, string, string) { a.appr
 func (a *recordingReleaseAudit) LogSignApprovedWithPolicyRule(_, _, _ string, policyRuleID string) {
 	a.rules = append(a.rules, policyRuleID)
 }
-func (a *recordingReleaseAudit) LogRotatingRelease(account, txid string, stage, lastValid uint64) error {
+func (a *recordingReleaseAudit) LogRotatingRelease(account, txid string, stage, lastValid, tree uint64, index uint32) error {
 	if a.fail != nil {
 		return a.fail
 	}
-	a.releases = append(a.releases, ReleaseRecord{Account: account, Stage: stage, TxID: txid, LastValid: lastValid})
+	a.releases = append(a.releases, ReleaseRecord{Account: account, Stage: stage, TxID: txid, LastValid: lastValid, Leaves: []LeafRelease{{Tree: tree, Index: index, TxID: txid, LastValid: lastValid}}})
 	return nil
 }
 
@@ -488,6 +489,66 @@ func TestReleaseMemoryMarksStageReuse(t *testing.T) {
 	if rec, _ := m.Get("B"); rec.Reused {
 		t.Fatal("reuse mark leaked across accounts")
 	}
+	// A stage with several leaves: distinct leaves are listed, the same
+	// leaf twice is reuse, and a retry keeps its leaf.
+	leaf := func(index uint32, txid string) ReleaseRecord {
+		return ReleaseRecord{Account: "C", Stage: 7, TxID: txid, Leaves: []LeafRelease{{Tree: 1, Index: index, TxID: txid}}}
+	}
+	m.Record(leaf(448, "X1"))
+	m.Record(leaf(449, "X2"))
+	m.Record(leaf(449, "X2"))
+	rec, _ := m.Get("C")
+	if rec.Reused || len(rec.Leaves) != 2 || rec.TxID != "X2" || !rec.LeafUsed(1, 448, "other") || rec.LeafUsed(1, 448, "X1") {
+		t.Fatalf("leaf list = %+v", rec)
+	}
+	if l, ok := rec.LeafFor("X1"); !ok || l.Index != 448 {
+		t.Fatalf("LeafFor(X1) = %+v, %v", l, ok)
+	}
+	m.Record(leaf(448, "X3"))
+	if rec, _ := m.Get("C"); !rec.Reused || len(rec.Leaves) != 3 {
+		t.Fatalf("same leaf twice = %+v", rec)
+	}
+}
+
+func TestChooseLeaf(t *testing.T) {
+	triple, _ := rotatingkey.Lookup(rotatingkey.RotatingTripleWotsV1)
+	if l, reused := chooseLeaf(triple, 9, []byte{200}, "T", ReleaseRecord{}); l.Index != 0 || l.Tree != 0 || reused {
+		t.Fatalf("triple leaf = %+v, %v", l, reused)
+	}
+	x, _ := rotatingkey.Lookup(rotatingkey.RotatingTripleXmssV1)
+	const stage = 1025 // tree 1, leaves 64..127
+	txID := []byte{70} // 70 mod 64 = 6: leaf 70
+	l, reused := chooseLeaf(x, stage, txID, "T1", ReleaseRecord{})
+	if l.Tree != 1 || l.Index != 70 || reused {
+		t.Fatalf("fresh pick = %+v, %v", l, reused)
+	}
+	// The TxID's leaf is taken by another transaction: the next free one.
+	prior := ReleaseRecord{Stage: stage, Leaves: []LeafRelease{{Tree: 1, Index: 70, TxID: "T0"}, {Tree: 1, Index: 71, TxID: "T2"}}}
+	if l, reused := chooseLeaf(x, stage, txID, "T1", prior); l.Index != 72 || reused {
+		t.Fatalf("next free = %+v, %v", l, reused)
+	}
+	// The same transaction again keeps its leaf.
+	if l, _ := chooseLeaf(x, stage, txID, "T2", prior); l.Index != 71 {
+		t.Fatalf("retry leaf = %+v", l)
+	}
+	// Wrap: a pick at the top of the range continues from the bottom.
+	prior = ReleaseRecord{Stage: stage, Leaves: []LeafRelease{{Tree: 1, Index: 127, TxID: "T0"}}}
+	if l, _ := chooseLeaf(x, stage, []byte{127}, "T1", prior); l.Index != 64 {
+		t.Fatalf("wrapped leaf = %+v", l)
+	}
+	// A record from another stage does not constrain this one.
+	prior.Stage = stage - 1
+	if l, _ := chooseLeaf(x, stage, []byte{127}, "T1", prior); l.Index != 127 {
+		t.Fatalf("other stage constrained the pick: %+v", l)
+	}
+	// Every leaf used: the pick is reused and reported.
+	full := ReleaseRecord{Stage: stage}
+	for i := uint32(64); i < 128; i++ {
+		full.Leaves = append(full.Leaves, LeafRelease{Tree: 1, Index: i, TxID: fmt.Sprintf("U%d", i)})
+	}
+	if l, reused := chooseLeaf(x, stage, txID, "T1", full); l.Index != 70 || !reused {
+		t.Fatalf("exhausted = %+v, %v", l, reused)
+	}
 }
 
 // TestRotatingStatusReportsStageReuse signs two different transactions from
@@ -509,11 +570,23 @@ func TestRotatingStatusReportsStageReuse(t *testing.T) {
 				t.Fatalf("fixture did not sign two transactions from one stage: %+v %+v", first, second)
 			}
 			rec, _ := f.svc.Rotating.Releases.Get(acct)
+			profile, _ := rotatingkey.Lookup(kind.keyType)
+			if profile.LeavesPerStage > 1 {
+				// Two transactions take two leaves: no reuse, an attempt
+				// count in the note, and distinct leaves in the signatures.
+				if rec.Reused || len(rec.Leaves) != 2 || rec.Leaves[0].Index == rec.Leaves[1].Index || rec.TxID != second.TxID {
+					t.Fatalf("leaf family after two releases = %+v", rec)
+				}
+				_, notes := f.svc.RotatingStatus(report(f.account, 1050))
+				if len(notes) != 1 || !strings.Contains(notes[0], "attempt 2 of") {
+					t.Fatalf("leaf family note = %v", notes)
+				}
+				return
+			}
 			if !rec.Reused || rec.TxID != second.TxID {
 				t.Fatalf("release memory after two releases = %+v", rec)
 			}
 
-			profile, _ := rotatingkey.Lookup(kind.keyType)
 			warnings, notes := f.svc.RotatingStatus(report(f.account, 1050))
 			switch {
 			case profile.OneTimeStage:
@@ -782,5 +855,51 @@ func TestRotatingRotationRekeyIsNotAWarning(t *testing.T) {
 	}
 	if len(seen) != 0 {
 		t.Fatalf("prompt carried findings %+v for a rotation; want none", seen)
+	}
+}
+
+// A release restored from the audit log merges with what the stage released
+// while the log was being read, so no used leaf is forgotten.
+func TestReleaseMemoryMergesAuditedHistory(t *testing.T) {
+	leaf := func(index uint32, txid string) LeafRelease {
+		return LeafRelease{Tree: 0, Index: index, TxID: txid}
+	}
+	m := &ReleaseMemory{}
+	// Signed while the worker was reading a log that holds A and B.
+	m.Record(ReleaseRecord{Account: "A", Stage: 2, TxID: "C", Leaves: []LeafRelease{leaf(3, "C")}})
+	m.RecordAudited(ReleaseRecord{Account: "A", Stage: 2, TxID: "B", Leaves: []LeafRelease{leaf(1, "A"), leaf(2, "B")}})
+	rec, _ := m.Get("A")
+	if len(rec.Leaves) != 3 || !rec.LeafUsed(0, 1, "x") || !rec.LeafUsed(0, 2, "x") || !rec.LeafUsed(0, 3, "x") {
+		t.Fatalf("merged leaves = %+v", rec.Leaves)
+	}
+	if rec.TxID != "C" || rec.Leaves[len(rec.Leaves)-1].TxID != "C" {
+		t.Fatalf("memory's newer release was not kept as latest: %+v", rec)
+	}
+	if rec.Reused {
+		t.Fatal("distinct leaves marked as reuse")
+	}
+	// The log is the newer side when it lists everything memory holds.
+	m.RecordAudited(ReleaseRecord{Account: "A", Stage: 2, TxID: "D", Leaves: []LeafRelease{leaf(1, "A"), leaf(2, "B"), leaf(3, "C"), leaf(4, "D")}})
+	if rec, _ = m.Get("A"); rec.TxID != "D" || len(rec.Leaves) != 4 || rec.Leaves[3].TxID != "D" {
+		t.Fatalf("newer audited release not applied: %+v", rec)
+	}
+	// An audited release from a stage memory has moved past is stale.
+	m.Record(ReleaseRecord{Account: "A", Stage: 3, TxID: "E", Leaves: []LeafRelease{leaf(64, "E")}})
+	m.RecordAudited(ReleaseRecord{Account: "A", Stage: 2, TxID: "D", Leaves: []LeafRelease{leaf(4, "D")}})
+	if rec, _ = m.Get("A"); rec.Stage != 3 || rec.TxID != "E" {
+		t.Fatalf("stale audited release replaced the live stage: %+v", rec)
+	}
+	// A live record merges onto an audited one as before, and a leaf the
+	// log already lists is reported as reuse.
+	m.RecordAudited(ReleaseRecord{Account: "B", Stage: 5, TxID: "P", Leaves: []LeafRelease{leaf(320, "P")}})
+	m.Record(ReleaseRecord{Account: "B", Stage: 5, TxID: "Q", Leaves: []LeafRelease{leaf(320, "Q")}})
+	if rec, _ = m.Get("B"); !rec.Reused || len(rec.Leaves) != 2 || rec.TxID != "Q" {
+		t.Fatalf("live release after audited = %+v", rec)
+	}
+	// Records without leaves (one key per stage) still dedupe by TxID.
+	m.RecordAudited(ReleaseRecord{Account: "C", Stage: 1, TxID: "T1"})
+	m.Record(ReleaseRecord{Account: "C", Stage: 1, TxID: "T1"})
+	if rec, _ = m.Get("C"); rec.Reused || len(rec.Leaves) != 1 {
+		t.Fatalf("retry of an audited release = %+v", rec)
 	}
 }

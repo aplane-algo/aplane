@@ -361,7 +361,7 @@ interlocks.
 
 #### Key Management
 
-- `generate_key`: `key_type`, optional `name`, optional `parameters`; accepted over IPC, but generated recovery material is not returned over the admin protocol. the rotating key type (`aplane.rotating-triple-hybrid.v1`) requires the parameter `network` (a network the signer knows, or a base64 genesis hash)
+- `generate_key`: `key_type`, optional `name`, optional `parameters`; accepted over IPC, but generated recovery material is not returned over the admin protocol. the rotating key type (`aplane.rotating-triple-wots.v1`) requires the parameter `network` (a network the signer knows, or a base64 genesis hash)
 - `generate_result`: `success`, optional `address`, `key_type`, `parameters`, `code`, `error`; `mnemonic` and `word_count` fields remain in the schema but are omitted by signer responses
 - `delete_key`: `address` -> `delete_result`: `success`, optional `code`, `error`
 - `export_key`: `address`, `passphrase` -> `error code:"authorization_denied"`; mnemonic export is disabled, use encrypted backups for recovery

@@ -25,7 +25,11 @@ import (
 // reference, and online and offline key registration. Each must confirm and
 // move the account's authorizer to a fresh stage address.
 func TestRotatingTripleTransactionTypes(t *testing.T) {
-	runRotatingTransactionTypes(t, rotatingkey.RotatingTripleHybridV1)
+	runRotatingTransactionTypes(t, rotatingkey.RotatingTripleWotsV1)
+}
+
+func TestRotatingXmssTransactionTypes(t *testing.T) {
+	runRotatingTransactionTypes(t, rotatingkey.RotatingTripleXmssV1)
 }
 
 func runRotatingTransactionTypes(t *testing.T, keyType string) {

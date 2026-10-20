@@ -26,7 +26,7 @@ var openTestMessage = func() []byte {
 }()
 
 // StageOps implements signing.RotatingStageOps for
-// aplane.rotating-triple-hybrid.v1.
+// aplane.rotating-triple-wots.v1.
 type StageOps struct{}
 
 var _ signing.RotatingStageOps = StageOps{}
@@ -53,8 +53,9 @@ func (StageOps) CheckStageOpens(key *signing.RotatingKeyMaterial, i uint64) erro
 }
 
 // SignStage signs message with stage i and returns the program with
-// [wots_sig, ed25519_sig, falcon_sig] as its arguments.
-func (StageOps) SignStage(key *signing.RotatingKeyMaterial, i uint64, message []byte) (signing.RotatingStageSignature, error) {
+// [wots_sig, ed25519_sig, falcon_sig] as its arguments. A triple stage has
+// one WOTS key, so the leaf index is ignored.
+func (StageOps) SignStage(key *signing.RotatingKeyMaterial, i uint64, _ uint32, message []byte) (signing.RotatingStageSignature, error) {
 	return signAndVerify(key, i, message)
 }
 

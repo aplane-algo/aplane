@@ -27,6 +27,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/txnutil"
 	rotatingtriplesignerreg "github.com/aplane-algo/aplane/lsig/rotatingtriple/signerreg"
+	rotatingxmsssignerreg "github.com/aplane-algo/aplane/lsig/rotatingxmsstriple/signerreg"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 	"github.com/aplane-algo/aplane/test/integration/harness"
 
@@ -57,7 +58,10 @@ type localnetRotatingType struct {
 
 var (
 	localnetTriple = localnetRotatingType{
-		keyType: rotatingkey.RotatingTripleHybridV1, register: rotatingtriplesignerreg.Register, newKeyPayload: rotatingtriplesignerreg.NewKeyPayload,
+		keyType: rotatingkey.RotatingTripleWotsV1, register: rotatingtriplesignerreg.Register, newKeyPayload: rotatingtriplesignerreg.NewKeyPayload,
+	}
+	localnetXmss = localnetRotatingType{
+		keyType: rotatingkey.RotatingTripleXmssV1, register: rotatingxmsssignerreg.Register, newKeyPayload: rotatingxmsssignerreg.NewKeyPayload,
 	}
 )
 
@@ -69,6 +73,12 @@ var (
 // stage are both signed but only one can land. Approval is user_auto_approve.
 func TestRotatingTripleSignerFlowOnChain(t *testing.T) {
 	runRotatingSignerFlowOnChain(t, localnetTriple)
+}
+
+// TestRotatingXmssSignerFlowOnChain runs the same flow for the XMSS triple,
+// whose stages sign with leaves of a shared tree built at key creation.
+func TestRotatingXmssSignerFlowOnChain(t *testing.T) {
+	runRotatingSignerFlowOnChain(t, localnetXmss)
 }
 
 func runRotatingSignerFlowOnChain(t *testing.T, kind localnetRotatingType) {

@@ -2,7 +2,7 @@
 // Copyright (C) 2026 APlane Project LLC
 
 // Package wots implements the Winternitz one-time signature used by the
-// aplane.rotating-triple-hybrid.v1 stage program: n = 32, w = 16, 64 message
+// aplane.rotating-triple-wots.v1 stage program: n = 32, w = 16, 64 message
 // digits plus 3 checksum digits over a 32-byte message, 67 hash chains of 15
 // steps, SHA-256 only. The chain hash is the SPHINCS+ "simple" tweakable
 // hash: F(T, c, j, x) = SHA-256(T || u64be(c*256 + j) || x), so an AVM

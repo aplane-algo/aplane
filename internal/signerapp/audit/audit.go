@@ -133,6 +133,11 @@ type AuditEntry struct {
 	// signer rebuilds its release memory from these entries at unlock.
 	RotatingStage     *uint64 `json:"rotating_stage,omitempty"`
 	RotatingLastValid uint64  `json:"rotating_last_valid,omitempty"`
+	// RotatingTree and RotatingIndex name the one-time leaf the stage signed
+	// with, for families whose stage holds several; both are 0 (and
+	// omitted) for a family with one key per stage.
+	RotatingTree  uint64 `json:"rotating_tree,omitempty"`
+	RotatingIndex uint32 `json:"rotating_index,omitempty"`
 }
 
 // AuditLogger handles append-only audit logging
@@ -532,7 +537,7 @@ func (a *AuditLogger) Path() string { return a.path }
 // LogRotatingReleaseAttributed records that a rotating account's stage signed
 // a transaction, durably, before the signature leaves the signer. It is the
 // source the release memory is rebuilt from.
-func (a *AuditLogger) LogRotatingReleaseAttributed(attr Attribution, account, txid string, stage, lastValid uint64) error {
+func (a *AuditLogger) LogRotatingReleaseAttributed(attr Attribution, account, txid string, stage, lastValid, tree uint64, index uint32) error {
 	entry := attr.entry(true)
 	entry.Event = AuditRotatingRelease
 	entry.Outcome = "released"
@@ -541,6 +546,8 @@ func (a *AuditLogger) LogRotatingReleaseAttributed(attr Attribution, account, tx
 	entry.TxID = txid
 	entry.RotatingStage = &stage
 	entry.RotatingLastValid = lastValid
+	entry.RotatingTree = tree
+	entry.RotatingIndex = index
 	return a.logDurable(entry)
 }
 

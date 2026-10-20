@@ -2,7 +2,7 @@
 // Copyright (C) 2026 APlane Project LLC
 
 // Package rotatinghybrid derives the per-stage key seeds of the rotating
-// account key type aplane.rotating-triple-hybrid.v1 (and, under their own
+// account key type aplane.rotating-triple-wots.v1 (and, under their own
 // labels, any rotating key type added later).
 //
 // One BIP-39 seed controls one account on one network. Every stage's key
