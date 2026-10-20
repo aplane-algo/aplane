@@ -10,6 +10,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"github.com/aplane-algo/aplane/internal/racetest"
 	"os"
 	"sync"
 	"testing"
@@ -75,6 +76,7 @@ var (
 // vectorTree builds the vector key's full tree once per test binary.
 func vectorTree(t *testing.T, seeds *Seeds) *Tree {
 	t.Helper()
+	racetest.SkipFullTree(t)
 	fullTreeOnce.Do(func() { fullTree = GenerateTree(seeds) })
 	return fullTree
 }

@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/rand"
 	"errors"
+	"github.com/aplane-algo/aplane/internal/racetest"
 	"strings"
 	"testing"
 
@@ -29,6 +30,7 @@ const goldenAddress = "UIZ55YVZTGO2QU4MFWH5CZJHGKZSL3BDYJLHAIPYTQ77YHAYPHDR6IPFR
 
 func fixedPayload(t *testing.T) (*keys.Payload, string) {
 	t.Helper()
+	racetest.SkipFullTree(t)
 	Register()
 	var seed rotatinghybrid.Seed
 	for i := range seed {
@@ -164,6 +166,7 @@ func TestScanHidesStageKeysAndReportsConstantProfile(t *testing.T) {
 }
 
 func TestGeneratorCreatesAccountBoundToNetwork(t *testing.T) {
+	racetest.SkipFullTree(t) // generating an account builds tree 0
 	Register()
 	paths := genstoretest.MintFirst(t, storepaths.NewPaths(t.TempDir()))
 	masterKey := make([]byte, 32)

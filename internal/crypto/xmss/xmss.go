@@ -119,6 +119,11 @@ func padding(x byte) (out [N]byte) {
 type midstate struct {
 	state []byte
 	h     hash.Hash
+	// in and out are scratch space for one hash, owned by the midstate so
+	// no per-call buffer escapes to the heap through the hash interface:
+	// a tree build hashes some 200 million times.
+	in  [2 * N]byte
+	out [N]byte
 }
 
 func newMidstate(prefix []byte) *midstate {
@@ -152,19 +157,23 @@ func (m *midstate) zero() {
 		return
 	}
 	crypto.ZeroBytes(m.state)
+	crypto.ZeroBytes(m.in[:])
+	crypto.ZeroBytes(m.out[:])
 	if err := m.h.(encoding.BinaryUnmarshaler).UnmarshalBinary(freshState); err != nil {
 		panic(err)
 	}
 }
 
-// sum hashes prefix || tail.
-func (m *midstate) sum(tail []byte) (out [N]byte) {
+// sum hashes prefix || tail. tail is copied into the midstate's scratch
+// before it reaches the hash, so a caller's stack array stays on the stack.
+func (m *midstate) sum(tail []byte) [N]byte {
 	if err := m.h.(encoding.BinaryUnmarshaler).UnmarshalBinary(m.state); err != nil {
 		panic(err)
 	}
-	m.h.Write(tail)
-	m.h.Sum(out[:0])
-	return out
+	n := copy(m.in[:], tail)
+	m.h.Write(m.in[:n])
+	m.h.Sum(m.out[:0])
+	return m.out
 }
 
 // hashes carries the per-key midstates. A value is not safe for concurrent

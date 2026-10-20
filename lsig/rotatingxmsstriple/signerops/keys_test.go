@@ -8,8 +8,11 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"github.com/aplane-algo/aplane/internal/racetest"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/aplane-algo/aplane/internal/crypto/rotatinghybrid"
 	"github.com/aplane-algo/aplane/internal/crypto/xmss"
@@ -47,6 +50,7 @@ var (
 // fixedTree builds trees 0 and 1 of the fixed seed once per test binary.
 func fixedTree(t *testing.T, n uint64) *PublicTree {
 	t.Helper()
+	racetest.SkipFullTree(t)
 	fixedTreesOnce.Do(func() {
 		d := fixedDeriver(t)
 		defer d.Zero()
@@ -300,7 +304,9 @@ func TestStageOpsThroughKeyMaterial(t *testing.T) {
 	}
 }
 
-// A tree requested by several goroutines at once is generated once.
+// A tree requested by several goroutines at once is generated once: the
+// generator is a stub that counts calls and takes long enough for every
+// caller to be waiting on it.
 func TestTreeGenerationIsShared(t *testing.T) {
 	var seed rotatinghybrid.Seed
 	if _, err := rand.Read(seed[:]); err != nil {
@@ -309,25 +315,25 @@ func TestTreeGenerationIsShared(t *testing.T) {
 	genesis := bytes.Repeat([]byte{9}, 32)
 	key := &signing.RotatingKeyMaterial{Seed: seed[:], GenesisHash: genesis}
 	ops := NewStageOps()
+	var builds atomic.Int32
+	ops.generate = func(_ *rotatinghybrid.Deriver, n uint64) (*PublicTree, error) {
+		builds.Add(1)
+		time.Sleep(50 * time.Millisecond)
+		return &PublicTree{Number: n}, nil
+	}
 	var wg sync.WaitGroup
-	addrs := make([]string, 4)
-	for i := range addrs {
+	for range 4 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			a, err := ops.StageAddress(key, 0)
-			if err != nil {
+			if err := ops.Prepare(key, 0); err != nil {
 				t.Error(err)
-				return
 			}
-			addrs[i] = a.String()
 		}()
 	}
 	wg.Wait()
-	for _, a := range addrs[1:] {
-		if a != addrs[0] {
-			t.Fatal("concurrent derivations disagree")
-		}
+	if got := builds.Load(); got != 1 {
+		t.Fatalf("tree generated %d times", got)
 	}
 	if got := ops.CachedTrees(); got != 1 {
 		t.Fatalf("cached trees = %d, want 1", got)
@@ -335,8 +341,8 @@ func TestTreeGenerationIsShared(t *testing.T) {
 	if err := ops.Prepare(key, 0); err != nil {
 		t.Fatal(err)
 	}
-	if got := ops.CachedTrees(); got != 1 {
-		t.Fatalf("Prepare of a cached tree changed the cache to %d", got)
+	if got := ops.CachedTrees(); got != 1 || builds.Load() != 1 {
+		t.Fatalf("Prepare of a cached tree changed the cache to %d (builds %d)", got, builds.Load())
 	}
 }
 
