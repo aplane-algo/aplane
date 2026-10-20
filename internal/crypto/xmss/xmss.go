@@ -17,6 +17,7 @@ import (
 	"crypto/subtle"
 	"encoding"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"hash"
 	"runtime"
@@ -511,6 +512,66 @@ func treeHeight(t *Tree) int {
 	return t.height
 }
 
+// RandomizerSearchLimit bounds SignBounded's search: counters 0 through
+// RandomizerSearchLimit-1 are tried. With a cap of MaxBoundedChecksum a
+// candidate qualifies with probability about 0.8, so exhausting the search
+// has probability about 2^-150.
+const RandomizerSearchLimit = 64
+
+// MaxBoundedChecksum is the checksum cap SignBounded is meant to be used
+// with: at most 511, every accepting verification runs at most
+// MaxBoundedVerifySteps chain steps, since the steps of a signature whose
+// checksum has hexadecimal digits a, b, d are exactly 45 + 255a + 15b.
+const MaxBoundedChecksum = 511
+
+// MaxBoundedVerifySteps is the largest VerifySteps of a signature whose
+// checksum is at most MaxBoundedChecksum.
+const MaxBoundedVerifySteps = 45 + 255 + 15*15
+
+// ErrRandomizerSearchExhausted reports that no counter below
+// RandomizerSearchLimit produced a digest within the checksum cap.
+var ErrRandomizerSearchExhausted = errors.New("xmss: no randomizer within the checksum cap")
+
+// SignBounded signs like Sign but chooses the randomizer r among
+// PRF(SK_PRF, toByte(counter, 28) || toByte(index, 4)) for counter = 0, 1,
+// ... until the hashed message's WOTS+ checksum is at most maxChecksum,
+// then signs once with that digest. Counter 0 is RFC 8391's own input, so
+// a signature that needs no search is byte-identical to Sign's; every
+// signature verifies under Verify and any RFC 8391 verifier, which read r
+// from the signature. The search is deterministic, so the same inputs
+// yield the same signature. It fails with ErrRandomizerSearchExhausted
+// after RandomizerSearchLimit counters rather than sign past the cap.
+func SignBounded(seeds *Seeds, tree *Tree, index uint32, msg []byte, maxChecksum int) ([]byte, error) {
+	if tree == nil || tree.height != Height {
+		return nil, fmt.Errorf("xmss tree has height %d, want %d", treeHeight(tree), Height)
+	}
+	return signBounded(seeds, tree, index, msg, maxChecksum)
+}
+
+// Checksum returns the WOTS+ checksum of a hashed message: the sum over
+// the 64 message digits of 15 minus the digit, which is also the number of
+// chain steps a verifier runs for those chains.
+func Checksum(mhash *[N]byte) int {
+	sum := 0
+	for _, b := range mhash {
+		sum += (Steps - int(b>>4)) + (Steps - int(b&15))
+	}
+	return sum
+}
+
+// MessageChecksum returns the WOTS+ checksum of the message a signature
+// commits to, as a verifier computes it.
+func MessageChecksum(pk *PublicKey, msg, sig []byte) (int, error) {
+	if len(sig) < IndexSize+N {
+		return 0, fmt.Errorf("xmss signature is %d bytes", len(sig))
+	}
+	index := binary.BigEndian.Uint32(sig[:IndexSize])
+	var r [N]byte
+	copy(r[:], sig[IndexSize:IndexSize+N])
+	mhash := HashMessage(&r, &pk.Root, index, msg)
+	return Checksum(&mhash), nil
+}
+
 func sign(seeds *Seeds, tree *Tree, index uint32, msg []byte) ([]byte, error) {
 	if index >= uint32(1)<<tree.height {
 		return nil, fmt.Errorf("xmss index %d out of range", index)
@@ -520,11 +581,36 @@ func sign(seeds *Seeds, tree *Tree, index uint32, msg []byte) ([]byte, error) {
 	r := prfRaw(&seeds.SKPRF, idx32)
 	root := tree.Root()
 	mhash := HashMessage(&r, &root, index, msg)
+	return signDigest(seeds, tree, index, &r, &mhash)
+}
+
+func signBounded(seeds *Seeds, tree *Tree, index uint32, msg []byte, maxChecksum int) ([]byte, error) {
+	if index >= uint32(1)<<tree.height {
+		return nil, fmt.Errorf("xmss index %d out of range", index)
+	}
+	root := tree.Root()
+	var in [32]byte
+	binary.BigEndian.PutUint32(in[28:], index)
+	for counter := uint32(0); counter < RandomizerSearchLimit; counter++ {
+		binary.BigEndian.PutUint32(in[24:28], counter)
+		r := prfRaw(&seeds.SKPRF, in)
+		mhash := HashMessage(&r, &root, index, msg)
+		if Checksum(&mhash) <= maxChecksum {
+			return signDigest(seeds, tree, index, &r, &mhash)
+		}
+	}
+	return nil, ErrRandomizerSearchExhausted
+}
+
+// signDigest produces the signature of an already hashed message.
+func signDigest(seeds *Seeds, tree *Tree, index uint32, r, mhash *[N]byte) ([]byte, error) {
+	var idx32 [32]byte
+	binary.BigEndian.PutUint32(idx32[28:], index)
 	var ots address
 	ots.setType(addrTypeOTS)
 	ots.setOTS(index)
 	hs := newHashes(seeds)
-	ws := wotsSign(hs, seeds, &ots, &mhash)
+	ws := wotsSign(hs, seeds, &ots, mhash)
 	hs.zero()
 	sig := make([]byte, 0, IndexSize+N+WotsSignatureSize+tree.height*N)
 	sig = append(sig, idx32[28:]...)

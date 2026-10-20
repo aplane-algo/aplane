@@ -25,7 +25,7 @@ func TestRotatingTripleApshellEndToEnd(t *testing.T) {
 }
 
 // TestRotatingXmssApshellEndToEnd runs the same client surface for the XMSS
-// triple; its spends need a nine-transaction group.
+// triple; its spends need a five-transaction group.
 func TestRotatingXmssApshellEndToEnd(t *testing.T) {
 	runRotatingApshellEndToEnd(t, rotatingkey.RotatingTripleXmssV1)
 }

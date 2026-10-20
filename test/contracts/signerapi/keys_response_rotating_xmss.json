@@ -9,9 +9,9 @@
       "signing_flow": "rotating1",
       "logic_sig_resources": {
         "default": {
-          "program_bytes": 2657,
+          "program_bytes": 2664,
           "argument_bytes": 4179,
-          "max_opcode_cost": 158155
+          "max_opcode_cost": 95857
         }
       }
     }

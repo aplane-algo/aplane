@@ -63,6 +63,8 @@ func TestFrozenSizesMatchImplementation(t *testing.T) {
 		{"triple opcode cost", RotatingTripleMaxOpcodeCost, triplestage.MaxOpcodeCost},
 		{"triple validity window", RotatingMaxValidityWindow, triplestage.MaxValidityWindow},
 		{"xmss max steps", 990, xmss.MaxVerifySteps},
+		{"xmss accepted steps", 525, xmssstage.MaxAcceptedSteps},
+		{"xmss checksum cap", 511, xmssstage.MaxChecksum},
 		{"xmss stage public key", RotatingXmssStagePublicKeySize, 32 + xmssstage.FalconPublicKeySize + 3*xmssstage.ConstantSize},
 		{"xmss program bytes", RotatingXmssMaxProgramBytes, xmssstage.SaltedProgramSize},
 		{"xmss argument bytes", RotatingXmssMaxArgumentBytes, xmssstage.MaxArgumentBytes},

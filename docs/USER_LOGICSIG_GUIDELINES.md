@@ -789,11 +789,17 @@ signer policy.
   Falcon-1024 signature (argument 2), then verifies the XMSS signature as
   the RFC specifies: `H_msg`, 67 masked WOTS+ chains, the L-tree and the
   16-level authentication path, with `sha256`, `concat`, `extract3`,
-  `replace3`, `b^` and two subroutines
-- worst-case opcode cost 175,562 and 4,179 argument bytes, so a spend needs
-  eight resource dummies; the cost is 27,062 plus 150 per chain step for
-  both program shapes, pinned against the node's budget report in the
-  LocalNet test
+  `replace3`, `b^` and one subroutine
+- accepts only a signature whose hashed message has a WOTS+ checksum of at
+  most 511, which caps an accepting run at 525 chain steps; the signer
+  meets the cap by choosing the randomizer `r` among the PRF outputs of
+  counters 0, 1, ... (counter 0 being the RFC's own input), so every
+  signature stays a valid RFC 8391 signature while the stage refuses some
+  valid RFC signatures (`ARCH_CRYPTO.md`)
+- worst-case opcode cost 95,857 and 4,179 argument bytes, so a spend needs
+  four resource dummies; the cost is 25,507 plus 134 per chain step for
+  both program shapes, pinned against the node's budget report at the step
+  ceiling in the LocalNet test
 - the signer chooses the leaf and reports a repeat; a repeated leaf leaves
   the stage on Falcon-1024 and Ed25519 until the account moves, and the
   successor's program rejects the retired range; see

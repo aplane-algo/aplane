@@ -19,9 +19,13 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
   to 64 distinct transactions before any one-time leaf repeats, so retries
   and repairs keep all three hedges; a repeat is reported as it is for a
   twice-signed triple stage. Creating an account builds the first tree
-  (seconds); spends pay nine minimum fees. The signature format and
-  verifier are RFC 8391; leaf management is best effort and the signer
-  claims no RFC or SP 800-208 conformance. `ROTATING_RELEASE` audit entries
+  (seconds); spends pay five minimum fees, one more than the WOTS triple.
+  The signature format and verifier are RFC 8391, with the stage
+  additionally requiring a message checksum of at most 511, which bounds
+  its verification cost and which the signer meets by choosing the
+  randomizer deterministically among PRF outputs; leaf management is best
+  effort and the signer claims no RFC or SP 800-208 conformance for its
+  signing procedure. `ROTATING_RELEASE` audit entries
   gain `rotating_tree` and `rotating_index` for this type. The triple is
   unchanged.
 - A rotating account's own rekey, the rotation to the next stage the signer

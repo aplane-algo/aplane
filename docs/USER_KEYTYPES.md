@@ -409,10 +409,13 @@ signature from any other leaf. What that changes for you:
   address. The next tree is built in the background once the account passes
   the middle of the current one, so rotations never wait for it in normal
   operation.
-- **Fees are higher.** The three signatures total up to 4,179 bytes and the
-  verification needs more opcode budget, so every spend carries eight
-  resource dummies and pays nine minimum fees; a stage program is about
-  2,700 bytes.
+- **Fees are slightly higher.** The three signatures total up to 4,179
+  bytes, so every spend carries four resource dummies and pays five minimum
+  fees, one more than the WOTS triple; a stage program is about 2,700
+  bytes. The verifier's opcode budget fits the same five transactions
+  because the stage accepts only signatures whose hashed message meets a
+  checksum cap, which the signer satisfies by choosing the randomizer, a
+  step invisible to you and to any RFC 8391 verifier.
 - **Retries do not spend the stage's hedge.** A stage can release up to 64
   distinct transactions, each on its own leaf, before any leaf repeats. An
   expired release and its repair, or a rebuilt and re-signed transaction,

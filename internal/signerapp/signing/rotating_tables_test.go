@@ -84,7 +84,7 @@ var (
 	// over it so a second type (the rotating-bounded contract) slots in.
 	xmssTestType = rotatingTestType{
 		keyType: rotatingkey.RotatingTripleXmssV1, register: rotatingxmsssignerreg.Register,
-		newKeyPayload: rotatingxmsssignerreg.NewKeyPayload, dummies: 7, sharedSeed: true,
+		newKeyPayload: rotatingxmsssignerreg.NewKeyPayload, dummies: 4, sharedSeed: true,
 	}
 	rotatingTestTypes = []rotatingTestType{tripleTestType, xmssTestType}
 )

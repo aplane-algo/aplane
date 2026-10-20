@@ -53,6 +53,15 @@ const (
 	// arguments.
 	MaxArgumentBytes = XmssSignatureSize + Ed25519SignatureSize + FalconSignatureMaxSize
 
+	// MaxChecksum is the largest WOTS+ message checksum the program accepts:
+	// the signer chooses the randomizer so the hashed transaction ID meets
+	// it (xmss.SignBounded), and the program asserts it before the checksum
+	// chains, so an accepting run performs at most MaxAcceptedSteps chain
+	// steps. It is the stage's own constraint on top of RFC 8391: a valid
+	// RFC signature with a larger checksum is rejected.
+	MaxChecksum      = xmss.MaxBoundedChecksum
+	MaxAcceptedSteps = xmss.MaxBoundedVerifySteps
+
 	// IndicesPerStage is the size of a stage's leaf index range; a tree
 	// serves StagesPerTree consecutive stages.
 	IndicesPerStage = 64
@@ -112,7 +121,8 @@ type Program struct {
 }
 
 // OpcodeCost is the cost of an accepting run that performs steps chain
-// steps (xmss.VerifySteps of the signature), salted or not.
+// steps (xmss.VerifySteps of the signature, at most MaxAcceptedSteps),
+// salted or not.
 func OpcodeCost(steps int) uint64 {
 	return uint64(BaseOpcodeCost + StepOpcodeCost*steps)
 }
@@ -379,6 +389,10 @@ load 2
 store 2
 b have_digit
 checksum_digit:
+load 2
+pushint 511
+<=
+assert
 load 2
 pushint 66
 load 1
@@ -670,9 +684,11 @@ const (
 	// Both branches of the path loop cost the same, so the only input the
 	// cost depends on is the step count. The salt tail follows the final
 	// return and never executes, so a salted program costs the same.
-	BaseOpcodeCost = 25_495
+	BaseOpcodeCost = 25_507
 	StepOpcodeCost = 134
 
-	// MaxOpcodeCost is the cost of the most expensive accepting run.
-	MaxOpcodeCost = BaseOpcodeCost + StepOpcodeCost*xmss.MaxVerifySteps
+	// MaxOpcodeCost is the cost of the most expensive accepting run: the
+	// checksum cap bounds it at MaxAcceptedSteps chain steps, not the
+	// RFC's 990.
+	MaxOpcodeCost = BaseOpcodeCost + StepOpcodeCost*MaxAcceptedSteps
 )

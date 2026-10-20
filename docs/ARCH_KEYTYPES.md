@@ -321,14 +321,16 @@ as the triple, new family and HKDF label; (2) same operation authority and
 policy gates; (3) Falcon-1024, RFC 8391 XMSS-SHA2_16_256 and Ed25519 all
 required, tree seeds per tree and stage seeds per stage, no new custody
 boundary; (4) each signature binds the TxID, and the program binds the
-stage's leaf range; (5) the key file is unchanged in shape with a 1,921-byte
+stage's leaf range and caps the message checksum at 511, which the signer
+meets by choosing the randomizer; (5) the key file is unchanged in shape with a 1,921-byte
 stage 0 record, and the tree's public nodes are an in-memory cache rebuilt
 from the seed; (6) `rotating1` unchanged, with the signer choosing the leaf
 and the stage table worker building the next tree from the midpoint of the
-live one; (7) 2,683-byte program, 4,179 argument bytes, 175,562 opcode
-ceiling, a nine-transaction group; (8) oracle and reference vectors, every
-tampered field, both range violations, tree rollover and the cost model on
-LocalNet (`ARCH_CRYPTO.md`).
+live one; (7) 2,664-byte program, 4,179 argument bytes, 95,857 opcode
+ceiling, a five-transaction group; (8) oracle and reference vectors, every
+tampered field, both range violations, a valid signature above the checksum
+cap, tree rollover and the cost model at the step ceiling on LocalNet
+(`ARCH_CRYPTO.md`).
 
 Classify the result as an existing supported profile, a new implementation of
 an established contract, or a new protocol design. Name unresolved contract
