@@ -271,7 +271,10 @@ toByte(idx, 4))` for the first counter c = 0, 1, ... (at most 64,
 `xmss.SignBounded`) whose message hash qualifies. Counter 0 is RFC 8391's
 own input, so about four signatures in five are byte-identical to the RFC
 signer's, and every signature verifies under any RFC 8391 verifier, which
-reads `r` from the signature. The result is the RFC 8391 XMSS-SHA2_16_256
+reads `r` from the signature: the package's vector file carries 32 bounded
+signatures, 10 of them with a searched randomizer, that the independent
+oracle verified when it generated the file and that the signer must
+reproduce byte for byte. The result is the RFC 8391 XMSS-SHA2_16_256
 signature format and verification equations with deterministic
 checksum-bounded randomizer selection and a stage-level checksum
 constraint; the stage refuses some valid RFC signatures, and the signer

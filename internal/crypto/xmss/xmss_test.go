@@ -26,6 +26,13 @@ type vectorCase struct {
 	Signature string `json:"signature"`
 }
 
+type boundedCase struct {
+	Index     uint32 `json:"index"`
+	Message   string `json:"message"`
+	Signature string `json:"signature"`
+	Searched  bool   `json:"searched"`
+}
+
 type vectorFile struct {
 	ParamSet string       `json:"param_set"`
 	Oracle   string       `json:"oracle"`
@@ -34,6 +41,9 @@ type vectorFile struct {
 	PubSeed  string       `json:"pub_seed"`
 	Root     string       `json:"root"`
 	Cases    []vectorCase `json:"cases"`
+	// BoundedCases are SignBounded's signatures that the independent
+	// oracle verified; the tool refuses to write them otherwise.
+	BoundedCases []boundedCase `json:"bounded_cases"`
 }
 
 func loadVectors(t *testing.T) vectorFile {
@@ -493,5 +503,50 @@ func TestSignBoundedMeetsTheCap(t *testing.T) {
 	t.Logf("%d of %d signatures needed a search", searched, 1<<height)
 	if _, err := signBounded(&seeds, tree, 0, []byte("x"), -1); !errors.Is(err, ErrRandomizerSearchExhausted) {
 		t.Fatalf("impossible cap: %v", err)
+	}
+}
+
+// The bounded signer emits nothing outside RFC 8391: every bounded vector
+// was verified by the independent oracle when the file was generated, and
+// this test pins that our signer still reproduces those exact bytes,
+// including the ones whose randomizer needed a search.
+func TestBoundedVectorsVerifiedByOracle(t *testing.T) {
+	v := loadVectors(t)
+	if len(v.BoundedCases) == 0 {
+		t.Fatal("no bounded vectors")
+	}
+	seeds := vectorSeeds(t, v)
+	pk := vectorPublicKey(t, v)
+	tree := vectorTree(t, seeds)
+	searched := 0
+	for _, c := range v.BoundedCases {
+		msg := mustHex(t, c.Message)
+		want := mustHex(t, c.Signature)
+		got, err := SignBounded(seeds, tree, c.Index, msg, MaxBoundedChecksum)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(got, want) {
+			t.Fatalf("index %d: bounded signature differs from the oracle-verified vector", c.Index)
+		}
+		if err := Verify(pk, msg, got); err != nil {
+			t.Fatalf("index %d: %v", c.Index, err)
+		}
+		if sum, _ := MessageChecksum(pk, msg, got); sum > MaxBoundedChecksum {
+			t.Fatalf("index %d: checksum %d above the cap", c.Index, sum)
+		}
+		plain, err := Sign(seeds, tree, c.Index, msg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if c.Searched != !bytes.Equal(plain, got) {
+			t.Fatalf("index %d: searched flag %v disagrees with Sign", c.Index, c.Searched)
+		}
+		if c.Searched {
+			searched++
+		}
+	}
+	if searched == 0 {
+		t.Fatal("no bounded vector needed a search")
 	}
 }
