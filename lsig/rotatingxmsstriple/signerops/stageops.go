@@ -239,3 +239,32 @@ func zeroArgs(args [][]byte) {
 		crypto.ZeroBytes(a)
 	}
 }
+
+// Derive derives stage i with the cached tree of its run, generating the
+// tree on first use. It is StageOps' counterpart of DeriveStage for callers
+// that already hold a deriver, such as key generation and validation.
+func (o *StageOps) Derive(d *rotatinghybrid.Deriver, i uint64) (*StageKeys, stage.Program, error) {
+	tag, err := AccountTag(d)
+	if err != nil {
+		return nil, stage.Program{}, err
+	}
+	treeNo, _, _ := stage.RangeFor(i)
+	t, err := o.tree(d, tag, treeNo)
+	if err != nil {
+		return nil, stage.Program{}, err
+	}
+	return DeriveStage(d, i, t)
+}
+
+// CachedTree returns tree n of the deriver's account if the cache holds
+// it, without generating it.
+func (o *StageOps) CachedTree(d *rotatinghybrid.Deriver, n uint64) (*PublicTree, bool) {
+	tag, err := AccountTag(d)
+	if err != nil {
+		return nil, false
+	}
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	t, ok := o.trees[treeKey{tag: tag, genesis: d.GenesisHash(), tree: n}]
+	return t, ok
+}

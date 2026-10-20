@@ -17,6 +17,15 @@ const (
 	// Ed25519 signature.
 	RotatingTripleHybridV1 = "aplane.rotating-triple-hybrid.v1"
 
+	// RotatingXmssTripleV1 is the rotating account key type whose hash-based
+	// signature is RFC 8391 XMSS: one XMSS tree serves 1,024 consecutive
+	// stages and each stage signs with its own 64 leaves, beside a
+	// Falcon-1024 and an Ed25519 key per stage.
+	RotatingXmssTripleV1 = "aplane.rotating-xmss-triple.v1"
+
+	// RotatingXmssTripleFamily is its versionless family.
+	RotatingXmssTripleFamily = "aplane.rotating-xmss-triple"
+
 	// RotatingTripleHybridFamily is its versionless family, matching the
 	// naming of every other family.
 	RotatingTripleHybridFamily = "aplane.rotating-triple-hybrid"
@@ -45,6 +54,28 @@ const (
 	// steps.
 	RotatingTripleMaxOpcodeCost = 7301 + 53*990 + 1
 
+	// RotatingXmssStagePublicKeySize is the XMSS triple's stage 0 record: the
+	// public account tag, the Falcon-1024 public key, tree 0's root and public
+	// seed, and the Ed25519 public key.
+	RotatingXmssStagePublicKeySize = 32 + 1793 + 32 + 32 + 32
+
+	// RotatingXmssMaxProgramBytes is the salted XMSS stage program.
+	RotatingXmssMaxProgramBytes = 2683
+
+	// RotatingXmssMaxArgumentBytes is a 2,692-byte XMSS signature, a 64-byte
+	// Ed25519 signature and a Falcon-1024 signature of at most 1,423 bytes.
+	RotatingXmssMaxArgumentBytes = 2692 + 64 + 1423
+
+	// RotatingXmssMaxOpcodeCost is the worst accepting run of an XMSS stage
+	// program: 27,062 plus 150 per chain step over at most 990 steps.
+	RotatingXmssMaxOpcodeCost = 27062 + 150*990
+
+	// RotatingXmssLeavesPerStage and RotatingXmssStagesPerTree describe the
+	// XMSS triple's leaf allocation: a tree of 65,536 leaves split into
+	// 1,024 stages of 64.
+	RotatingXmssLeavesPerStage = 64
+	RotatingXmssStagesPerTree  = 65536 / RotatingXmssLeavesPerStage
+
 	// RotatingMaxValidityWindow is the longest LastValid-FirstValid span a
 	// stage program accepts.
 	RotatingMaxValidityWindow = 100
@@ -66,6 +97,9 @@ const (
 const (
 	RotatingTripleDisplayName = "Rotating triple hybrid (Falcon-1024 + WOTS + Ed25519)"
 	RotatingTripleDescription = "Fixed account address whose authorizing Falcon-1024, hash-based WOTS and Ed25519 stage program changes on every spend. Signs only through the rotating1 flow."
+
+	RotatingXmssTripleDisplayName = "Rotating XMSS triple (Falcon-1024 + XMSS + Ed25519)"
+	RotatingXmssTripleDescription = "Fixed account address whose authorizing Falcon-1024, RFC 8391 XMSS and Ed25519 stage program changes on every spend. One XMSS tree serves 1,024 stages, each signing with its own 64 leaves. Signs only through the rotating1 flow."
 
 	// RotatingNetworkParameter is the single creation parameter.
 	RotatingNetworkParameter            = "network"
@@ -102,6 +136,32 @@ type Profile struct {
 	// ReusedStageRestsOn names what a reused one-time stage still rests on,
 	// for the reuse warning.
 	ReusedStageRestsOn string
+
+	// LeavesPerStage is how many one-time leaves a stage holds, 1 for a
+	// family with one key per stage. StagesPerTree is how many consecutive
+	// stages share one tree, 0 when every stage is its own tree. Together
+	// they place a stage's leaf range: stage n's leaves are
+	// (n mod StagesPerTree) * LeavesPerStage onward.
+	LeavesPerStage int
+	StagesPerTree  int
+}
+
+// LeafRange returns the leaf indices stage n may sign with, lo <= leaf < hi.
+func (p Profile) LeafRange(stage uint64) (lo, hi uint64) {
+	if p.LeavesPerStage <= 1 || p.StagesPerTree <= 0 {
+		return 0, 1
+	}
+	lo = (stage % uint64(p.StagesPerTree)) * uint64(p.LeavesPerStage)
+	return lo, lo + uint64(p.LeavesPerStage)
+}
+
+// TreeOf returns the tree a stage belongs to, 0 for a family without
+// shared trees.
+func (p Profile) TreeOf(stage uint64) uint64 {
+	if p.StagesPerTree <= 0 {
+		return 0
+	}
+	return stage / uint64(p.StagesPerTree)
 }
 
 var profiles = map[string]Profile{
@@ -116,6 +176,21 @@ var profiles = map[string]Profile{
 		MaxOpcodeCost:      RotatingTripleMaxOpcodeCost,
 		OneTimeStage:       true,
 		ReusedStageRestsOn: "Falcon-1024 and Ed25519",
+		LeavesPerStage:     1,
+	},
+	RotatingXmssTripleV1: {
+		KeyType:            RotatingXmssTripleV1,
+		Family:             RotatingXmssTripleFamily,
+		DisplayName:        RotatingXmssTripleDisplayName,
+		Description:        RotatingXmssTripleDescription,
+		StagePublicKeySize: RotatingXmssStagePublicKeySize,
+		MaxProgramBytes:    RotatingXmssMaxProgramBytes,
+		MaxArgumentBytes:   RotatingXmssMaxArgumentBytes,
+		MaxOpcodeCost:      RotatingXmssMaxOpcodeCost,
+		OneTimeStage:       true,
+		ReusedStageRestsOn: "Falcon-1024 and Ed25519",
+		LeavesPerStage:     RotatingXmssLeavesPerStage,
+		StagesPerTree:      RotatingXmssStagesPerTree,
 	},
 }
 
@@ -133,7 +208,7 @@ func Lookup(keyType string) (Profile, bool) {
 
 // KeyTypes lists the rotating key types in a fixed order.
 func KeyTypes() []string {
-	return []string{RotatingTripleHybridV1}
+	return []string{RotatingTripleHybridV1, RotatingXmssTripleV1}
 }
 
 // RoutingFamily returns the family of a rotating key type. Rotating key
