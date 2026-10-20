@@ -4,10 +4,14 @@
 package audit
 
 import (
+	"bufio"
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestRotatingReleaseRoundTripsThroughTheLog(t *testing.T) {
@@ -162,5 +166,46 @@ func TestReadRotatingReleasesTracksLeaves(t *testing.T) {
 	got, _ = ReadRotatingReleases(path)
 	if r := got["ACCT5"]; r.Reused || len(r.Leaves) != 1 || r.Stage != 5 {
 		t.Fatalf("new stage = %+v", r)
+	}
+}
+
+// Reading a long history is linear: the release memory restore, which
+// spends wait on after an unlock, must not grow quadratically with the
+// releases a stage accumulated.
+func TestReadRotatingReleasesIsLinear(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "audit.log")
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const n = 20000
+	stage := uint64(3)
+	w := bufio.NewWriter(f)
+	for i := range n {
+		e := AuditEntry{Event: AuditRotatingRelease, TxnAuth: "ACCT9", TxID: fmt.Sprintf("TX%d", i), RotatingStage: &stage, RotatingLastValid: 900, RotatingTree: 0, RotatingIndex: uint32(192 + i%64)}
+		line, err := json.Marshal(e)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := w.Write(append(line, '\n')); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := w.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	_ = f.Close()
+	start := time.Now()
+	got, err := ReadRotatingReleases(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d := time.Since(start); d > 2*time.Second {
+		t.Fatalf("reading %d releases took %v", n, d)
+	}
+	r := got["ACCT9"]
+	if len(r.Leaves) != n || !r.Reused || r.TxID != fmt.Sprintf("TX%d", n-1) || r.Index != uint32(192+(n-1)%64) {
+		t.Fatalf("read %d leaves, reused %v, latest %s index %d", len(r.Leaves), r.Reused, r.TxID, r.Index)
 	}
 }

@@ -44,16 +44,45 @@ type RotatingLeaf struct {
 // release memory this feeds is observational and degrades to silence, never
 // to a wrong signature. Malformed lines are skipped.
 func ReadRotatingReleases(path string) (map[string]RotatingRelease, error) {
-	out := make(map[string]RotatingRelease)
+	acc := make(map[string]*releaseAccumulator)
 	for _, file := range []string{path + ".2", path + ".1", path} {
-		if err := readRotatingReleasesFrom(file, out); err != nil {
+		if err := readRotatingReleasesFrom(file, acc); err != nil {
 			return nil, err
 		}
+	}
+	out := make(map[string]RotatingRelease, len(acc))
+	for account, a := range acc {
+		out[account] = a.r
 	}
 	return out, nil
 }
 
-func readRotatingReleasesFrom(file string, out map[string]RotatingRelease) error {
+// releaseAccumulator gathers one account's releases of its newest stage as
+// the log is read: the release itself, the transactions already listed and
+// the leaves already used, so each entry costs one map lookup and an
+// amortized append rather than a scan and a copy of the history.
+type releaseAccumulator struct {
+	r     RotatingRelease
+	txids map[string]bool
+	used  map[[2]uint64]bool
+}
+
+func (a *releaseAccumulator) add(leaf RotatingLeaf) {
+	a.r.TxID, a.r.LastValid, a.r.Tree, a.r.Index = leaf.TxID, leaf.LastValid, leaf.Tree, leaf.Index
+	if a.txids[leaf.TxID] {
+		// A retry of one transaction is one release.
+		return
+	}
+	a.txids[leaf.TxID] = true
+	k := [2]uint64{leaf.Tree, uint64(leaf.Index)}
+	if a.used[k] {
+		a.r.Reused = true
+	}
+	a.used[k] = true
+	a.r.Leaves = append(a.r.Leaves, leaf)
+}
+
+func readRotatingReleasesFrom(file string, acc map[string]*releaseAccumulator) error {
 	f, err := os.Open(file)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
@@ -73,44 +102,17 @@ func readRotatingReleasesFrom(file string, out map[string]RotatingRelease) error
 			continue
 		}
 		leaf := RotatingLeaf{Tree: entry.RotatingTree, Index: entry.RotatingIndex, TxID: entry.TxID, LastValid: entry.RotatingLastValid}
-		r := RotatingRelease{
-			Account:   entry.TxnAuth,
-			Stage:     *entry.RotatingStage,
-			TxID:      entry.TxID,
-			LastValid: entry.RotatingLastValid,
-			Tree:      leaf.Tree,
-			Index:     leaf.Index,
-			Leaves:    []RotatingLeaf{leaf},
+		a, ok := acc[entry.TxnAuth]
+		if !ok || a.r.Stage != *entry.RotatingStage {
+			// A new stage starts a fresh list; reuse is per stage.
+			a = &releaseAccumulator{
+				r:     RotatingRelease{Account: entry.TxnAuth, Stage: *entry.RotatingStage},
+				txids: make(map[string]bool),
+				used:  make(map[[2]uint64]bool),
+			}
+			acc[entry.TxnAuth] = a
 		}
-		if prev, ok := out[r.Account]; ok && prev.Stage == r.Stage {
-			r.Leaves = appendLeaf(prev.Leaves, leaf)
-			r.Reused = prev.Reused || leavesReused(r.Leaves)
-		}
-		out[r.Account] = r
+		a.add(leaf)
 	}
 	return scanner.Err()
-}
-
-// appendLeaf adds leaf to leaves unless the same transaction is already
-// listed: a retry of one transaction is one release.
-func appendLeaf(leaves []RotatingLeaf, leaf RotatingLeaf) []RotatingLeaf {
-	for _, l := range leaves {
-		if l.TxID == leaf.TxID {
-			return leaves
-		}
-	}
-	return append(append([]RotatingLeaf(nil), leaves...), leaf)
-}
-
-// leavesReused reports whether two listed releases share a leaf.
-func leavesReused(leaves []RotatingLeaf) bool {
-	seen := make(map[[2]uint64]bool, len(leaves))
-	for _, l := range leaves {
-		k := [2]uint64{l.Tree, uint64(l.Index)}
-		if seen[k] {
-			return true
-		}
-		seen[k] = true
-	}
-	return false
 }
