@@ -260,7 +260,7 @@ All documentation is in the [`docs/`](docs/) directory.
 - [DEV_GUIDELINES.md](docs/DEV_GUIDELINES.md) - General development guidelines
 
 ### Whitepapers
-- [WP_GUARDRAILS.md](docs/WP_GUARDRAILS.md) - Bounded allowlist guardrails for Algorand accounts
+- [WP_BOUNDED_ACCOUNTS.md](docs/WP_BOUNDED_ACCOUNTS.md) - Bounded accounts and how they form transfer networks
 - [WP_CORRIDORS.md](docs/WP_CORRIDORS.md) - Cosigner corridors and the Corridor v1 profile
 
 ### Transaction Details
