@@ -254,7 +254,41 @@ signatures are byte-compatible with the XMSS reference implementation: the
 package's vectors come from an independent implementation checked against
 it, and the reference's own SHA-256 vector is reproduced in the tests. The
 stage program verifies all of it with `sha256`, `concat`, `extract3`,
-`replace3`, `b^` and two subroutines, at 27,062 plus 150 per chain step.
+`replace3`, `b^` and one subroutine, at 25,507 plus 134 per chain step: the
+`toByte(3) || SEED` prefix of every `PRF` call is hoisted into the per-phase
+address prefixes, a chain step is kept as `step << 32` so one `itob` yields
+both trailing address words, and the chain element and node inputs stay on
+the stack.
+
+The stage accepts a signature only when the hashed message's WOTS+ checksum
+is at most 511 (`stage.MaxChecksum`). With a, b, d the hexadecimal digits of
+the checksum, a verifier runs exactly 45 + 255a + 15b chain steps, so the
+cap bounds an accepting run at 525 steps (a checksum of 512 already needs
+555) and the program's cost at 25,507 + 134 × 525 = 95,857, which with the
+4,179 argument bytes makes a five-transaction group. The signer meets the
+cap by choosing the randomizer `r = PRF(SK_PRF, toByte(c, 28) ||
+toByte(idx, 4))` for the first counter c = 0, 1, ... (at most 64,
+`xmss.SignBounded`) whose message hash qualifies. Counter 0 is RFC 8391's
+own input, so about four signatures in five are byte-identical to the RFC
+signer's, and every signature verifies under any RFC 8391 verifier, which
+reads `r` from the signature: the package's vector file carries 32 bounded
+signatures, 10 of them with a searched randomizer, that the independent
+oracle verified when it generated the file and that the signer must
+reproduce byte for byte. The result is the RFC 8391 XMSS-SHA2_16_256
+signature format and verification equations with deterministic
+checksum-bounded randomizer selection and a stage-level checksum
+constraint; the stage refuses some valid RFC signatures, and the signer
+claims no RFC or SP 800-208 conformance for its signing procedure. The cap
+does not weaken the one-time signature: a forgery must dominate the
+released digits on all 67 chains, dominating the 64 message chains forces
+the forger's checksum to be at most the released one, and dominating the
+three checksum chains forces it to be at least that, so every digit must be
+equal. That argument uses only the monotone checksum encoding, never the
+distribution of the released digest, and the cap only removes signatures
+the stage would otherwise accept. (The same grinding in a stronger form,
+fixing the checksum and dropping its chains, is WOTS+C in the SPHINCS+C
+proposal.) A leaf signed twice over different messages is broken with or
+without the cap, as the leaf rule documents.
 
 Per tree the signer derives the XMSS secret seed, PRF key and public seed
 (HKDF label `APLANE_ROTATING_XMSS_V1`, tags `0x20` to `0x22`, counter = tree

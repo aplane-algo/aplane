@@ -1262,7 +1262,7 @@ alerts) and which leaf it signs with, never whether it signs.
 - Scanning and inventory never expose the stage public keys. The resource
   profile is the same for every stage: triple 2103 program bytes, 3631
   argument bytes and an opcode ceiling of 59772 (three resource dummies);
-  XMSS triple 2683, 4179 and 175562 (eight resource dummies).
+  XMSS triple 2664, 4179 and 95857 (four resource dummies).
 - The key file is the whole credential. The signer keeps no durable state
   for the account: which stage is live is read from the chain at every
   request, and the stage address table under `stages/` (below) is a cache

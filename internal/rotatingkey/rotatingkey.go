@@ -60,15 +60,16 @@ const (
 	RotatingXmssStagePublicKeySize = 32 + 1793 + 32 + 32 + 32
 
 	// RotatingXmssMaxProgramBytes is the salted XMSS stage program.
-	RotatingXmssMaxProgramBytes = 2683
+	RotatingXmssMaxProgramBytes = 2664
 
 	// RotatingXmssMaxArgumentBytes is a 2,692-byte XMSS signature, a 64-byte
 	// Ed25519 signature and a Falcon-1024 signature of at most 1,423 bytes.
 	RotatingXmssMaxArgumentBytes = 2692 + 64 + 1423
 
 	// RotatingXmssMaxOpcodeCost is the worst accepting run of an XMSS stage
-	// program: 27,062 plus 150 per chain step over at most 990 steps.
-	RotatingXmssMaxOpcodeCost = 27062 + 150*990
+	// program: 25,507 plus 134 per chain step over at most 525 steps, the
+	// most a signature within the stage's checksum cap of 511 can need.
+	RotatingXmssMaxOpcodeCost = 25507 + 134*525
 
 	// RotatingXmssLeavesPerStage and RotatingXmssStagesPerTree describe the
 	// XMSS triple's leaf allocation: a tree of 65,536 leaves split into

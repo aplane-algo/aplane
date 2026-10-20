@@ -5,18 +5,24 @@
 // from an independent RFC 8391 implementation (github.com/bwesterb/go-xmssmt,
 // itself checked against the XMSS reference implementation's test vectors).
 // It is a separate module so the oracle never becomes a dependency of the
-// product.
+// product; it imports the product's xmss package (replace directive) only
+// to run the checksum-bounded signer and have the oracle verify its
+// output, so the file also records that every bounded signature, searched
+// randomizer or not, is an RFC 8391 signature to an independent verifier.
 //
 //	cd tools/xmssoracle && go run . ../../internal/crypto/xmss/testdata/vectors.json
 package main
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/aplane-algo/aplane/internal/crypto/xmss"
 
 	xmssmt "github.com/bwesterb/go-xmssmt"
 )
@@ -29,6 +35,17 @@ type vectorCase struct {
 	Signature string `json:"signature"`
 }
 
+// boundedCase is a signature the product's checksum-bounded signer
+// (xmss.SignBounded) produced and the oracle verified as an ordinary RFC
+// 8391 signature. Searched reports that the RFC randomizer did not meet the
+// cap and a later counter was used, so the signature differs from Sign's.
+type boundedCase struct {
+	Index     uint32 `json:"index"`
+	Message   string `json:"message"`
+	Signature string `json:"signature"`
+	Searched  bool   `json:"searched"`
+}
+
 type vectorFile struct {
 	ParamSet string       `json:"param_set"`
 	Oracle   string       `json:"oracle"`
@@ -37,6 +54,10 @@ type vectorFile struct {
 	PubSeed  string       `json:"pub_seed"`
 	Root     string       `json:"root"`
 	Cases    []vectorCase `json:"cases"`
+	// BoundedCases were produced by the product's bounded signer and every
+	// one verified under the oracle: the bounded signer emits nothing
+	// outside RFC 8391.
+	BoundedCases []boundedCase `json:"bounded_cases"`
 }
 
 func main() {
@@ -94,6 +115,9 @@ func main() {
 	// The oracle's key container only hands out ascending indices, so the
 	// cases are listed in ascending order.
 	wants := []want{}
+	// The oracle's own parameter encoding, which precedes its signatures
+	// in place of the RFC OID; reused to hand it the product's signatures.
+	var paramPrefix []byte
 	for _, idx := range []uint32{0, 1, 63, 64, 127} {
 		m := sha256.Sum256([]byte(fmt.Sprintf("aplane xmss vector %d", idx)))
 		wants = append(wants, want{idx, m[:]})
@@ -113,6 +137,7 @@ func main() {
 		if err != nil {
 			fail(err)
 		}
+		paramPrefix = append(paramPrefix[:0], sigBytes[:4]...)
 		ok, verr := pk.Verify(sig, w.msg)
 		if verr != nil || !ok {
 			fail(fmt.Errorf("oracle rejected its own signature at %d: %v", w.index, verr))
@@ -123,6 +148,48 @@ func main() {
 			Signature: hex.EncodeToString(sigBytes[4:]), // strip the OID
 		})
 	}
+	// The product's bounded signer: every signature it emits must verify
+	// under the oracle, including those that needed a randomizer search.
+	var seeds xmss.Seeds
+	copy(seeds.SKSeed[:], skSeed)
+	copy(seeds.SKPRF[:], skPrf)
+	copy(seeds.PubSeed[:], pubSeed)
+	tree := xmss.GenerateTree(&seeds)
+	if root := tree.Root(); hex.EncodeToString(root[:]) != out.Root {
+		fail(fmt.Errorf("product tree root differs from the oracle's"))
+	}
+	oid := append([]byte(nil), paramPrefix...)
+	searched := 0
+	for i := range uint32(32) {
+		index := i*2048 + 5 // spread over the tree, inside stage ranges
+		m := sha256.Sum256([]byte(fmt.Sprintf("aplane xmss bounded %d", index)))
+		bounded, err := xmss.SignBounded(&seeds, tree, index, m[:], xmss.MaxBoundedChecksum)
+		if err != nil {
+			fail(err)
+		}
+		plain, err := xmss.Sign(&seeds, tree, index, m[:])
+		if err != nil {
+			fail(err)
+		}
+		var parsed xmssmt.Signature
+		if err := parsed.UnmarshalBinary(append(append([]byte(nil), oid...), bounded...)); err != nil {
+			fail(fmt.Errorf("oracle could not parse bounded signature at %d: %v", index, err))
+		}
+		ok, verr := pk.Verify(&parsed, m[:])
+		if verr != nil || !ok {
+			fail(fmt.Errorf("oracle rejected the bounded signature at %d: %v", index, verr))
+		}
+		c := boundedCase{Index: index, Message: hex.EncodeToString(m[:]), Signature: hex.EncodeToString(bounded), Searched: !bytes.Equal(bounded, plain)}
+		if c.Searched {
+			searched++
+		}
+		out.BoundedCases = append(out.BoundedCases, c)
+	}
+	if searched == 0 {
+		fail(fmt.Errorf("no bounded case needed a randomizer search; add cases"))
+	}
+	fmt.Printf("bounded: %d signatures verified by the oracle, %d of them searched\n", len(out.BoundedCases), searched)
+
 	data, err := json.MarshalIndent(out, "", "  ")
 	if err != nil {
 		fail(err)

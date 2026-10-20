@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/algo"
-	"github.com/aplane-algo/aplane/internal/crypto/xmss"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
@@ -51,24 +50,28 @@ func keysWithSalt(t *testing.T, salted bool) (*PublicKeys, Program) {
 	return nil, Program{}
 }
 
-// The XMSS stage needs a nine-transaction group: its worst accepting path
-// costs more than eight pooled opcode units, while its program and
-// arguments fit in seven size units.
+// The XMSS stage needs a five-transaction group: its worst accepting path,
+// bounded by the checksum cap, costs more than four pooled opcode units and
+// its arguments need five size units, while the program fits in the free
+// program bytes of five.
 func TestProgramSizesAndCost(t *testing.T) {
-	if UnsaltedProgramSize != 2680 || SaltedProgramSize != 2683 {
+	if UnsaltedProgramSize != 2661 || SaltedProgramSize != 2664 {
 		t.Fatalf("program sizes %d/%d", UnsaltedProgramSize, SaltedProgramSize)
 	}
 	if MaxArgumentBytes != 4179 {
 		t.Fatalf("argument bytes %d", MaxArgumentBytes)
 	}
-	if MaxOpcodeCost <= 160_000 || MaxOpcodeCost > 180_000 {
-		t.Fatalf("worst case %d no longer needs exactly nine pooled transactions", MaxOpcodeCost)
+	if MaxOpcodeCost <= 80_000 || MaxOpcodeCost > 100_000 {
+		t.Fatalf("worst case %d no longer needs exactly five pooled transactions", MaxOpcodeCost)
 	}
-	if got := OpcodeCost(xmss.MaxVerifySteps); got != MaxOpcodeCost {
-		t.Fatalf("MaxOpcodeCost %d != %d", MaxOpcodeCost, got)
+	if got := OpcodeCost(MaxAcceptedSteps); got != MaxOpcodeCost || MaxAcceptedSteps != 525 || MaxChecksum != 511 {
+		t.Fatalf("MaxOpcodeCost %d != %d (steps %d, checksum cap %d)", MaxOpcodeCost, got, MaxAcceptedSteps, MaxChecksum)
 	}
-	if uint64(SaltedProgramSize)+MaxArgumentBytes > 9000 {
-		t.Fatalf("program and arguments %d exceed the free bytes of a nine-transaction group", SaltedProgramSize+MaxArgumentBytes)
+	if MaxArgumentBytes > 5000 || MaxArgumentBytes <= 4000 {
+		t.Fatalf("arguments %d no longer need exactly five pooled size units", MaxArgumentBytes)
+	}
+	if SaltedProgramSize > 5000 {
+		t.Fatalf("program %d exceeds the free program bytes of a five-transaction group", SaltedProgramSize)
 	}
 	// The constant slots hold the placeholders the template was assembled
 	// with, each preceded by its pushbytes length (the seed sits inside the

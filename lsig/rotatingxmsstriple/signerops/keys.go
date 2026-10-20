@@ -183,7 +183,9 @@ func (k *StageKeys) Sign(message []byte, index uint32) (xmssSig, ed25519Sig, fal
 	if uint64(index) < k.lo || uint64(index) >= k.hi {
 		return nil, nil, nil, fmt.Errorf("leaf %d is outside stage %d's range [%d, %d)", index, k.stage, k.lo, k.hi)
 	}
-	xmssSig, err = xmss.Sign(k.seeds, k.tree.Tree, index, message)
+	// The stage program accepts a checksum of at most stage.MaxChecksum, so
+	// the randomizer is chosen to meet it (xmss.SignBounded).
+	xmssSig, err = xmss.SignBounded(k.seeds, k.tree.Tree, index, message, stage.MaxChecksum)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("sign with stage XMSS leaf: %w", err)
 	}
@@ -232,6 +234,11 @@ func Verify(keys *stage.PublicKeys, message, xmssSig, ed25519Sig, falconSig []by
 	pk := xmss.PublicKey{Root: keys.Root, Seed: keys.Seed}
 	if err := xmss.Verify(&pk, message, xmssSig); err != nil {
 		return fmt.Errorf("stage XMSS signature: %w", err)
+	}
+	if sum, err := xmss.MessageChecksum(&pk, message, xmssSig); err != nil {
+		return fmt.Errorf("stage XMSS signature: %w", err)
+	} else if sum > stage.MaxChecksum {
+		return fmt.Errorf("stage XMSS signature has checksum %d, the stage accepts at most %d", sum, stage.MaxChecksum)
 	}
 	return nil
 }

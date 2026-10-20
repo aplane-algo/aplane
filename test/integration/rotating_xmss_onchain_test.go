@@ -26,8 +26,9 @@ import (
 )
 
 // xmssDummies is the number of resource dummies an XMSS stage spend needs:
-// its worst-case opcode cost needs nine pooled transactions.
-const xmssDummies = 8
+// its worst-case opcode cost and its arguments each need five pooled
+// transactions.
+const xmssDummies = 4
 
 type xmssTree struct {
 	seeds xmss.Seeds
@@ -55,6 +56,7 @@ type xmssSpend struct {
 	window       uint64
 	totalFee     uint64
 	leaf         *uint32    // sign with this leaf instead of the stage's next one
+	unbounded    bool       // sign with RFC 8391's randomizer, ignoring the checksum cap
 	edFrom       *xmssStage // sign argument 1 with another stage's key
 	falconFrom   *xmssStage // sign argument 2 with another stage's key
 	swapArgs     bool
@@ -100,7 +102,7 @@ func TestRotatingXmssOnChain(t *testing.T) {
 	}
 	acct.requireAuthorizer(types.ZeroAddress)
 
-	t.Run("fee below nine minimum fees is refused", func(t *testing.T) {
+	t.Run("fee below five minimum fees is refused", func(t *testing.T) {
 		raw, _ := acct.build(xmssSpend{
 			signer: s0, receiver: funderAddr, amount: 1000, rekeyTo: s1.program.Address, totalFee: 1000*(xmssDummies+1) - 1,
 		})
@@ -191,6 +193,66 @@ func TestRotatingXmssOnChain(t *testing.T) {
 	}
 	acct.requireAuthorizer(s3.program.Address)
 
+	// A valid RFC 8391 signature whose hashed message has a checksum just
+	// above the cap is rejected by the stage's checksum assertion, and by
+	// nothing else: a checksum of 512 to 527 runs 555 chain steps, which
+	// the five-transaction budget still covers, so only the assertion can
+	// reject it. The bounded signer, signing the very same transaction,
+	// finds a randomizer within the cap.
+	t.Run("reject: valid signature with checksum above the cap", func(t *testing.T) {
+		leaf := uint32(s3.keys.Lo) + 40
+		for amount := uint64(1000); ; amount++ {
+			raw, group := acct.build(xmssSpend{
+				signer: s3, authorizer: s3.program.Address, receiver: funderAddr, amount: amount,
+				rekeyTo: other.program.Address, leaf: &leaf, unbounded: true,
+			})
+			txID := algocrypto.TransactionID(group[0].Txn)
+			rfcSig := group[0].Lsig.Args[0]
+			sum, err := xmss.MessageChecksum(&s3.tree.pk, txID, rfcSig)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if sum <= stage.MaxChecksum || sum > stage.MaxChecksum+16 {
+				continue
+			}
+			steps, err := xmss.VerifySteps(&s3.tree.pk, txID, rfcSig)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if steps != 555 || stage.OpcodeCost(steps) > uint64(xmssDummies+1)*lsigresource.SingleTransactionOpcodeCeiling {
+				t.Fatalf("checksum %d runs %d steps costing %d: not within the group's budget, so the test could not isolate the assertion", sum, steps, stage.OpcodeCost(steps))
+			}
+			if err := xmss.Verify(&s3.tree.pk, txID, rfcSig); err != nil {
+				t.Fatalf("the RFC signature is not valid off-chain: %v", err)
+			}
+			_, err = testnet.Client.SendRawTransaction(raw).Do(context.Background())
+			if err == nil {
+				t.Fatalf("checksum %d above the cap was accepted", sum)
+			}
+			lower := strings.ToLower(err.Error())
+			if !strings.Contains(lower, "assert failed") || strings.Contains(lower, "budget") {
+				t.Fatalf("checksum %d rejected for another reason than the assertion: %v", sum, err)
+			}
+			boundedSig, err := xmss.SignBounded(&s3.tree.seeds, s3.tree.tree, leaf, txID, stage.MaxChecksum)
+			if err != nil {
+				t.Fatal(err)
+			}
+			boundedSum, err := xmss.MessageChecksum(&s3.tree.pk, txID, boundedSig)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if boundedSum > stage.MaxChecksum || bytes.Equal(boundedSig[xmss.IndexSize:xmss.IndexSize+xmss.N], rfcSig[xmss.IndexSize:xmss.IndexSize+xmss.N]) {
+				t.Fatalf("bounded signer gave checksum %d with the RFC randomizer", boundedSum)
+			}
+			if err := xmss.Verify(&s3.tree.pk, txID, boundedSig); err != nil {
+				t.Fatal(err)
+			}
+			t.Logf("RFC checksum %d (%d steps) rejected by the assertion; bounded signer found checksum %d for the same transaction", sum, steps, boundedSum)
+			break
+		}
+		acct.requireAuthorizer(s3.program.Address)
+	})
+
 	t.Run("accept: last stage of tree 0 rotates into tree 1", func(t *testing.T) {
 		last, first := acct.stage(stage.StagesPerTree-1), acct.stage(stage.StagesPerTree)
 		if last.tree == first.tree || first.keys.Lo != 0 || last.keys.Hi != xmss.Leaves {
@@ -219,14 +281,26 @@ func TestRotatingXmssOnChain(t *testing.T) {
 			}
 			first := m.stage(0)
 			// Leaf 7 for the salted shape: the path walk must cost the same
-			// whichever side each level's sibling is on.
+			// whichever side each level's sibling is on. The amount is
+			// searched until the signature runs the most chain steps the
+			// cap admits, so the ceiling itself is what gets measured.
 			leaf := uint32(0)
 			if salted {
 				leaf = 7
 			}
-			_, group := m.build(xmssSpend{
-				signer: first, receiver: funderAddr, amount: 1000, rekeyTo: m.stage(1).program.Address, leaf: &leaf,
-			})
+			var group []types.SignedTxn
+			for amount := uint64(1000); ; amount++ {
+				_, group = m.build(xmssSpend{
+					signer: first, receiver: funderAddr, amount: amount, rekeyTo: m.stage(1).program.Address, leaf: &leaf,
+				})
+				steps, err := xmss.VerifySteps(&first.tree.pk, algocrypto.TransactionID(group[0].Txn), group[0].Lsig.Args[0])
+				if err != nil {
+					t.Fatal(err)
+				}
+				if steps == stage.MaxAcceptedSteps {
+					break
+				}
+			}
 			wantSize := stage.UnsaltedProgramSize
 			if salted {
 				wantSize = stage.SaltedProgramSize
@@ -258,8 +332,8 @@ func TestRotatingXmssOnChain(t *testing.T) {
 			if observed != want {
 				t.Fatalf("observed opcode cost %d, cost model %d for %d chain steps", observed, want, steps)
 			}
-			if observed > stage.MaxOpcodeCost {
-				t.Fatalf("observed %d exceeds the declared ceiling %d", observed, stage.MaxOpcodeCost)
+			if observed != stage.MaxOpcodeCost {
+				t.Fatalf("observed %d at the step ceiling is not the declared ceiling %d", observed, stage.MaxOpcodeCost)
 			}
 
 			consensus, err := lsigresource.CurrentConsensus()
@@ -424,7 +498,12 @@ func (a *xmssAccount) build(spend xmssSpend) ([]byte, []types.SignedTxn) {
 	} else {
 		signer.next++
 	}
-	xmssSig, err := xmss.Sign(&signer.tree.seeds, signer.tree.tree, leaf, txID)
+	var xmssSig []byte
+	if spend.unbounded {
+		xmssSig, err = xmss.Sign(&signer.tree.seeds, signer.tree.tree, leaf, txID)
+	} else {
+		xmssSig, err = xmss.SignBounded(&signer.tree.seeds, signer.tree.tree, leaf, txID, stage.MaxChecksum)
+	}
 	if err != nil {
 		a.t.Fatal(err)
 	}

@@ -10,11 +10,13 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
-	"github.com/aplane-algo/aplane/internal/racetest"
+	"errors"
+	"fmt"
 	"os"
 	"sync"
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/racetest"
 	"golang.org/x/crypto/sha3"
 )
 
@@ -22,6 +24,13 @@ type vectorCase struct {
 	Index     uint32 `json:"index"`
 	Message   string `json:"message"`
 	Signature string `json:"signature"`
+}
+
+type boundedCase struct {
+	Index     uint32 `json:"index"`
+	Message   string `json:"message"`
+	Signature string `json:"signature"`
+	Searched  bool   `json:"searched"`
 }
 
 type vectorFile struct {
@@ -32,6 +41,9 @@ type vectorFile struct {
 	PubSeed  string       `json:"pub_seed"`
 	Root     string       `json:"root"`
 	Cases    []vectorCase `json:"cases"`
+	// BoundedCases are SignBounded's signatures that the independent
+	// oracle verified; the tool refuses to write them otherwise.
+	BoundedCases []boundedCase `json:"bounded_cases"`
 }
 
 func loadVectors(t *testing.T) vectorFile {
@@ -385,5 +397,156 @@ func TestHashesZeroErasesSecretState(t *testing.T) {
 	}
 	if bytes.Equal(keyed, hs.keygen.state) {
 		t.Fatal("state unchanged")
+	}
+}
+
+// VerifySteps of a signature is 45 + 255a + 15b for the hexadecimal digits
+// a, b of its checksum, so a checksum of at most 511 means at most 525
+// steps and 512 already means 555. Checked over every reachable checksum.
+func TestChecksumStepBound(t *testing.T) {
+	stepsFor := func(sum int) int {
+		// A digest whose message digits sum to the checksum: the first
+		// sum/15 digits are 0, one digit is the remainder, the rest 15.
+		var m [N]byte
+		d := make([]uint8, Len1)
+		for i := range d {
+			d[i] = 15
+		}
+		rem := sum
+		for i := 0; i < Len1 && rem > 0; i++ {
+			take := min(rem, 15)
+			d[i] = uint8(15 - take)
+			rem -= take
+		}
+		for i := 0; i < N; i++ {
+			m[i] = d[2*i]<<4 | d[2*i+1]
+		}
+		if Checksum(&m) != sum {
+			t.Fatalf("constructed digest has checksum %d, want %d", Checksum(&m), sum)
+		}
+		steps := 0
+		for _, v := range digits(&m) {
+			steps += Steps - int(v)
+		}
+		return steps
+	}
+	maxBelow, maxAt := 0, 0
+	for sum := 0; sum <= Len1*Steps; sum++ {
+		a, b := sum>>8, (sum>>4)&15
+		if got := stepsFor(sum); got != 45+255*a+15*b {
+			t.Fatalf("checksum %d: steps %d, formula %d", sum, got, 45+255*a+15*b)
+		}
+		if sum <= MaxBoundedChecksum {
+			maxBelow = max(maxBelow, stepsFor(sum))
+		}
+		if sum == MaxBoundedChecksum+1 {
+			maxAt = stepsFor(sum)
+		}
+	}
+	if maxBelow != MaxBoundedVerifySteps || maxAt != 555 {
+		t.Fatalf("max steps within the cap %d (want %d), at 512: %d (want 555)", maxBelow, MaxBoundedVerifySteps, maxAt)
+	}
+}
+
+// SignBounded meets the cap, verifies as an ordinary RFC signature, is
+// deterministic, equals Sign when counter 0 already qualifies, and
+// otherwise differs only in the randomizer it chose.
+func TestSignBoundedMeetsTheCap(t *testing.T) {
+	var seeds Seeds
+	for i := range seeds.SKSeed {
+		seeds.SKSeed[i], seeds.SKPRF[i], seeds.PubSeed[i] = byte(i), byte(i+1), byte(i+2)
+	}
+	const height = 8
+	tree := generateTree(&seeds, height)
+	pk := &PublicKey{Root: tree.Root(), Seed: seeds.PubSeed}
+	searched, plain := 0, 0
+	for index := uint32(0); index < 1<<height; index++ {
+		msg := []byte(fmt.Sprintf("message %d", index))
+		rfc, err := sign(&seeds, tree, index, msg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		bounded, err := signBounded(&seeds, tree, index, msg, MaxBoundedChecksum)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := verify(pk, msg, bounded, height); err != nil {
+			t.Fatalf("index %d: bounded signature rejected: %v", index, err)
+		}
+		sum, err := MessageChecksum(pk, msg, bounded)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if sum > MaxBoundedChecksum {
+			t.Fatalf("index %d: checksum %d above the cap", index, sum)
+		}
+		again, err := signBounded(&seeds, tree, index, msg, MaxBoundedChecksum)
+		if err != nil || !bytes.Equal(again, bounded) {
+			t.Fatalf("index %d: bounded signing is not deterministic", index)
+		}
+		rfcSum, _ := MessageChecksum(pk, msg, rfc)
+		if rfcSum <= MaxBoundedChecksum {
+			plain++
+			if !bytes.Equal(rfc, bounded) {
+				t.Fatalf("index %d: counter 0 qualified but the signature differs from Sign's", index)
+			}
+		} else {
+			searched++
+			if bytes.Equal(rfc[IndexSize:IndexSize+N], bounded[IndexSize:IndexSize+N]) {
+				t.Fatalf("index %d: searched signature kept the RFC randomizer", index)
+			}
+		}
+	}
+	if searched == 0 || plain == 0 {
+		t.Fatalf("searched %d, plain %d: the sample did not exercise both paths", searched, plain)
+	}
+	t.Logf("%d of %d signatures needed a search", searched, 1<<height)
+	if _, err := signBounded(&seeds, tree, 0, []byte("x"), -1); !errors.Is(err, ErrRandomizerSearchExhausted) {
+		t.Fatalf("impossible cap: %v", err)
+	}
+}
+
+// The bounded signer emits nothing outside RFC 8391: every bounded vector
+// was verified by the independent oracle when the file was generated, and
+// this test pins that our signer still reproduces those exact bytes,
+// including the ones whose randomizer needed a search.
+func TestBoundedVectorsVerifiedByOracle(t *testing.T) {
+	v := loadVectors(t)
+	if len(v.BoundedCases) == 0 {
+		t.Fatal("no bounded vectors")
+	}
+	seeds := vectorSeeds(t, v)
+	pk := vectorPublicKey(t, v)
+	tree := vectorTree(t, seeds)
+	searched := 0
+	for _, c := range v.BoundedCases {
+		msg := mustHex(t, c.Message)
+		want := mustHex(t, c.Signature)
+		got, err := SignBounded(seeds, tree, c.Index, msg, MaxBoundedChecksum)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(got, want) {
+			t.Fatalf("index %d: bounded signature differs from the oracle-verified vector", c.Index)
+		}
+		if err := Verify(pk, msg, got); err != nil {
+			t.Fatalf("index %d: %v", c.Index, err)
+		}
+		if sum, _ := MessageChecksum(pk, msg, got); sum > MaxBoundedChecksum {
+			t.Fatalf("index %d: checksum %d above the cap", c.Index, sum)
+		}
+		plain, err := Sign(seeds, tree, c.Index, msg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if c.Searched != !bytes.Equal(plain, got) {
+			t.Fatalf("index %d: searched flag %v disagrees with Sign", c.Index, c.Searched)
+		}
+		if c.Searched {
+			searched++
+		}
+	}
+	if searched == 0 {
+		t.Fatal("no bounded vector needed a search")
 	}
 }
