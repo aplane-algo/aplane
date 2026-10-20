@@ -542,3 +542,27 @@ func verify(pk *PublicKey, msg, sig []byte, height int) error {
 	}
 	return nil
 }
+
+// MaxVerifySteps is the most chain steps a verification performs: every
+// message digit 0 (64 x 15 steps) gives checksum 960 = 0x3c0, whose digits
+// 3, 12 and 0 cost 12 + 3 + 15 more.
+const MaxVerifySteps = Len1*Steps + 12 + 3 + 15
+
+// VerifySteps returns the number of chain steps Verify performs for sig
+// over msg under pk: the sum over the 67 chains of (15 - digit) of the
+// hashed message. It does not verify the signature.
+func VerifySteps(pk *PublicKey, msg, sig []byte) (int, error) {
+	if len(sig) < IndexSize+N {
+		return 0, fmt.Errorf("xmss signature is %d bytes", len(sig))
+	}
+	index := binary.BigEndian.Uint32(sig[:IndexSize])
+	var r [N]byte
+	copy(r[:], sig[IndexSize:IndexSize+N])
+	mhash := HashMessage(&r, &pk.Root, index, msg)
+	d := digits(&mhash)
+	steps := 0
+	for _, v := range d {
+		steps += Steps - int(v)
+	}
+	return steps, nil
+}

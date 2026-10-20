@@ -321,3 +321,32 @@ func TestSeedsZeroClearsSecrets(t *testing.T) {
 		t.Fatal("Zero cleared the public seed")
 	}
 }
+
+func TestVerifySteps(t *testing.T) {
+	if MaxVerifySteps != 990 {
+		t.Fatalf("MaxVerifySteps = %d", MaxVerifySteps)
+	}
+	v := loadVectors(t)
+	pk := vectorPublicKey(t, v)
+	for _, c := range v.Cases {
+		sig := mustHex(t, c.Signature)
+		steps, err := VerifySteps(pk, mustHex(t, c.Message), sig)
+		if err != nil || steps < 0 || steps > MaxVerifySteps {
+			t.Fatalf("case %d: steps %d, %v", c.Index, steps, err)
+		}
+		// Recompute from the digits directly.
+		var r [N]byte
+		copy(r[:], sig[IndexSize:IndexSize+N])
+		mhash := HashMessage(&r, &pk.Root, c.Index, mustHex(t, c.Message))
+		want := 0
+		for _, d := range digits(&mhash) {
+			want += Steps - int(d)
+		}
+		if steps != want {
+			t.Fatalf("case %d: steps %d, want %d", c.Index, steps, want)
+		}
+	}
+	if _, err := VerifySteps(pk, nil, []byte{1}); err == nil {
+		t.Fatal("short signature accepted")
+	}
+}
