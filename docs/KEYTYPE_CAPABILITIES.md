@@ -92,8 +92,8 @@ included as normal user-account operations.
   same conditions. Its program additionally requires the XMSS signature's
   leaf index to lie in the stage's 64-leaf range of the shared tree, which
   the signer satisfies by choosing the leaf. See
-  [KEYTYPE_ROTATING_TRIPLE_XMSS.md](KEYTYPE_ROTATING_TRIPLE_XMSS.md) for the
-  full specification.
+  [KEYTYPE_ROTATING_TRIPLE_HYBRID.md](KEYTYPE_ROTATING_TRIPLE_HYBRID.md) for the
+  full specification of both rotating key types.
 - `aplane.falcon1024-cosigner1024.v1` requires guarded signing assembly.
   Once both the user and cosigner component signatures verify, the on-chain
   guarded-account LogicSig does not restrict transaction type or special
