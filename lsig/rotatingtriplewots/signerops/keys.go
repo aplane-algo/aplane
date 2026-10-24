@@ -20,7 +20,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/crypto/rotatinghybrid"
 	"github.com/aplane-algo/aplane/internal/crypto/wots"
-	"github.com/aplane-algo/aplane/lsig/rotatingtriple/stage"
+	"github.com/aplane-algo/aplane/lsig/rotatingtriplewots/stage"
 
 	"github.com/algorand/falcon"
 	"github.com/algorandfoundation/falcon-signatures/falcongo"

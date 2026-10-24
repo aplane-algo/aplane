@@ -13,7 +13,7 @@ import (
 
 // TestRotatingPayloadRequiresRegisteredCodec pins the fail-closed default:
 // a binary that does not register the rotating family can neither write nor
-// read its key files. lsig/rotatingtriple/signerreg covers the registered
+// read its key files. lsig/rotatingtriplewots/signerreg covers the registered
 // path.
 func TestRotatingPayloadRequiresRegisteredCodec(t *testing.T) {
 	payload := NewRotatingLSigPayload(

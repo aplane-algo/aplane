@@ -12,7 +12,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/crypto/rotatinghybrid"
 	"github.com/aplane-algo/aplane/internal/signing"
-	"github.com/aplane-algo/aplane/lsig/rotatingxmsstriple/stage"
+	"github.com/aplane-algo/aplane/lsig/rotatingtriplexmss/stage"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )

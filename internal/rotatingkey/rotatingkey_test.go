@@ -9,8 +9,8 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto/rotatinghybrid"
 	"github.com/aplane-algo/aplane/internal/crypto/wots"
 	"github.com/aplane-algo/aplane/internal/crypto/xmss"
-	triplestage "github.com/aplane-algo/aplane/lsig/rotatingtriple/stage"
-	xmssstage "github.com/aplane-algo/aplane/lsig/rotatingxmsstriple/stage"
+	triplestage "github.com/aplane-algo/aplane/lsig/rotatingtriplewots/stage"
+	xmssstage "github.com/aplane-algo/aplane/lsig/rotatingtriplexmss/stage"
 )
 
 func TestClassifiers(t *testing.T) {

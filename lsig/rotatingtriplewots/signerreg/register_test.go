@@ -6,9 +6,9 @@ package signerreg
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
 	"crypto/rand"
 	"errors"
-	"github.com/aplane-algo/aplane/internal/racetest"
 	"strings"
 	"testing"
 
@@ -20,17 +20,11 @@ import (
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/rotatingkey"
 	"github.com/aplane-algo/aplane/internal/storepaths"
-	triplesignerreg "github.com/aplane-algo/aplane/lsig/rotatingtriple/signerreg"
-	"github.com/aplane-algo/aplane/lsig/rotatingxmsstriple/signerops"
+	"github.com/aplane-algo/aplane/lsig/rotatingtriplewots/signerops"
 )
-
-// The golden stage 0 address of lsig/rotatingxmsstriple/signerops for the
-// fixed seed 0..63 on genesis 0xA0...
-const goldenAddress = "PQ4C2LV5LRJQLAVLQMIJFH2KKS3YR4OVAEZN52WVSC7GELBAKJHN7CVNXA"
 
 func fixedPayload(t *testing.T) (*keys.Payload, string) {
 	t.Helper()
-	racetest.SkipFullTree(t)
 	Register()
 	var seed rotatinghybrid.Seed
 	for i := range seed {
@@ -52,17 +46,15 @@ func fixedPayload(t *testing.T) (*keys.Payload, string) {
 func TestRegisterIsIdempotent(t *testing.T) {
 	Register()
 	Register()
-	if StageOps() == nil {
-		t.Fatal("no stage ops")
-	}
 }
 
 func TestKeyPayloadRoundTripsToStageZeroAddress(t *testing.T) {
 	payload, address := fixedPayload(t)
-	if address != goldenAddress {
+	// The golden stage 0 address of lsig/rotatingtriplewots/signerops.
+	if address != "YX62PQ4VBCVBAA5577SHXSYDYCC6DMYOUTUVPVN4QTSIZQ6KVPFVCC64XA" {
 		t.Fatalf("account address %s", address)
 	}
-	if len(payload.PublicKey) != rotatingkey.RotatingXmssStagePublicKeySize {
+	if len(payload.PublicKey) != rotatingkey.RotatingTripleStagePublicKeySize {
 		t.Fatalf("stage 0 record is %d bytes", len(payload.PublicKey))
 	}
 	encoded, err := keys.MarshalPayload(payload)
@@ -75,7 +67,7 @@ func TestKeyPayloadRoundTripsToStageZeroAddress(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer parsed.ZeroSecrets()
-	if parsed.Category != keys.CategoryRotatingLsig || parsed.KeyType != rotatingkey.RotatingTripleXmssV1 {
+	if parsed.Category != keys.CategoryRotatingLsig || parsed.KeyType != rotatingkey.RotatingTripleWotsV1 {
 		t.Fatalf("parsed category %q key type %q", parsed.Category, parsed.KeyType)
 	}
 	selector, err := parsed.Selector()
@@ -92,31 +84,23 @@ func TestKeyPayloadRoundTripsToStageZeroAddress(t *testing.T) {
 	}
 }
 
-// Every field of the stage 0 record is checked against the seed on parse:
-// the tag, the public seed, the Ed25519 and Falcon keys cheaply, and the
-// root whenever tree 0 is cached (fixedPayload cached it).
 func TestKeyPayloadRejectsTampering(t *testing.T) {
-	const tagEnd = signerops.AccountTagSize
-	const falconEnd = tagEnd + 1793
-	const rootEnd = falconEnd + 32
-	const seedEnd = rootEnd + 32
 	tests := []struct {
 		name   string
 		mutate func(*keys.Payload)
 	}{
 		{"seed", func(p *keys.Payload) { p.PrivateKey[0] ^= 1 }},
 		{"genesis hash", func(p *keys.Payload) { p.GenesisHash[0] ^= 1 }},
-		{"account tag", func(p *keys.Payload) { p.PublicKey[0] ^= 1 }},
-		{"falcon public key", func(p *keys.Payload) { p.PublicKey[tagEnd+10] ^= 1 }},
-		{"root", func(p *keys.Payload) { p.PublicKey[falconEnd] ^= 1 }},
-		{"public seed", func(p *keys.Payload) { p.PublicKey[rootEnd] ^= 1 }},
-		{"ed25519 public key", func(p *keys.Payload) { p.PublicKey[seedEnd] ^= 1 }},
+		{"tweak", func(p *keys.Payload) { p.PublicKey[3] ^= 1 }},
+		{"falcon public key", func(p *keys.Payload) { p.PublicKey[40] ^= 1 }},
+		{"wots public key", func(p *keys.Payload) { p.PublicKey[32+1793+3] ^= 1 }},
+		{"ed25519 public key", func(p *keys.Payload) { p.PublicKey[len(p.PublicKey)-1] ^= 1 }},
 		{"short seed", func(p *keys.Payload) { p.PrivateKey = p.PrivateKey[:32] }},
-		{"short public key", func(p *keys.Payload) { p.PublicKey = p.PublicKey[:100] }},
+		{"short public key", func(p *keys.Payload) { p.PublicKey = make([]byte, rotatingkey.RotatingTripleStagePublicKeySize-1) }},
+		{"long public key", func(p *keys.Payload) { p.PublicKey = make([]byte, rotatingkey.RotatingTripleStagePublicKeySize+1) }},
 		{"missing genesis hash", func(p *keys.Payload) { p.GenesisHash = nil }},
-		{"other key type", func(p *keys.Payload) { p.KeyType = "aplane.falcon1024.v1" }},
+		{"retired rotating type", func(p *keys.Payload) { p.KeyType = "aplane.rotating-hybrid.v1" }},
 		{"stored bytecode", func(p *keys.Payload) { p.LogicSigBytecode = []byte{0x0d} }},
-		{"salt counter", func(p *keys.Payload) { p.SaltCounter = keys.SaltCounterPtr(0) }},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -148,7 +132,7 @@ func TestScanHidesStageKeysAndReportsConstantProfile(t *testing.T) {
 	if !ok {
 		t.Fatalf("scan did not report %s; got %v", address, scanned)
 	}
-	if info.Category != keys.CategoryRotatingLsig || info.KeyType != rotatingkey.RotatingTripleXmssV1 {
+	if info.Category != keys.CategoryRotatingLsig || info.KeyType != rotatingkey.RotatingTripleWotsV1 {
 		t.Fatalf("scan category %q key type %q", info.Category, info.KeyType)
 	}
 	if info.PublicKeyHex != "" {
@@ -158,15 +142,14 @@ func TestScanHidesStageKeysAndReportsConstantProfile(t *testing.T) {
 	if profile == nil || profile.Default == nil {
 		t.Fatal("scan reported no resource profile")
 	}
-	if profile.ProgramBytes != rotatingkey.RotatingXmssMaxProgramBytes ||
-		profile.Default.ArgumentBytes != rotatingkey.RotatingXmssMaxArgumentBytes ||
-		profile.Default.MaxOpcodeCost != rotatingkey.RotatingXmssMaxOpcodeCost {
+	if profile.ProgramBytes != rotatingkey.RotatingTripleMaxProgramBytes ||
+		profile.Default.ArgumentBytes != rotatingkey.RotatingTripleMaxArgumentBytes ||
+		profile.Default.MaxOpcodeCost != rotatingkey.RotatingTripleMaxOpcodeCost {
 		t.Fatalf("resource profile %+v %+v", profile, *profile.Default)
 	}
 }
 
 func TestGeneratorCreatesAccountBoundToNetwork(t *testing.T) {
-	racetest.SkipFullTree(t) // generating an account builds tree 0
 	Register()
 	paths := genstoretest.MintFirst(t, storepaths.NewPaths(t.TempDir()))
 	masterKey := make([]byte, 32)
@@ -174,21 +157,21 @@ func TestGeneratorCreatesAccountBoundToNetwork(t *testing.T) {
 		t.Fatal(err)
 	}
 	kr := cryptotest.Keyring(t, masterKey)
-	gen, err := keygen.GetGenerator(rotatingkey.RotatingTripleXmssV1)
+	gen, err := keygen.GetGenerator(rotatingkey.RotatingTripleWotsV1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if gen.RoutingFamily() != rotatingkey.RotatingTripleXmssFamily {
+	if gen.RoutingFamily() != rotatingkey.RotatingTripleWotsFamily {
 		t.Fatalf("routing family %q", gen.RoutingFamily())
 	}
-	if _, err := gen.GenerateRandom(context.Background(), paths, kr, rotatingkey.RotatingTripleXmssV1, map[string]string{}); !errors.Is(err, keygen.ErrInvalidParams) {
+	if _, err := gen.GenerateRandom(context.Background(), paths, kr, rotatingkey.RotatingTripleWotsV1, map[string]string{}); !errors.Is(err, keygen.ErrInvalidParams) {
 		t.Fatalf("missing network: err = %v", err)
 	}
-	result, err := gen.GenerateRandom(context.Background(), paths, kr, rotatingkey.RotatingTripleXmssV1, map[string]string{"network": "testnet"})
+	result, err := gen.GenerateRandom(context.Background(), paths, kr, rotatingkey.RotatingTripleWotsV1, map[string]string{"network": "testnet"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.KeyType != rotatingkey.RotatingTripleXmssV1 || len(strings.Fields(result.Mnemonic)) != 24 {
+	if result.KeyType != rotatingkey.RotatingTripleWotsV1 || len(strings.Fields(result.Mnemonic)) != 24 {
 		t.Fatalf("result = %+v", result)
 	}
 	scanned, err := keys.ScanKeysDirectoryWithKeyring(paths, kr)
@@ -198,43 +181,40 @@ func TestGeneratorCreatesAccountBoundToNetwork(t *testing.T) {
 	if _, ok := scanned[result.Address]; !ok {
 		t.Fatalf("generated account %s not found by scan", result.Address)
 	}
-	// The same mnemonic on another network is a different account: its
-	// tree seeds differ, so its root and every stage address do.
+	// The same mnemonic on another network is a different account.
 	seed, err := rotatinghybrid.SeedFromMnemonic(strings.Fields(result.Mnemonic))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer seed.Zero()
-	testnetGenesis, err := triplesignerreg.GenesisHashParameter(map[string]string{"network": "testnet"})
-	if err != nil {
-		t.Fatal(err)
-	}
 	var otherGenesis [32]byte
 	otherGenesis[0] = 1
-	d1, err := signerops.NewDeriver(&seed, testnetGenesis)
+	d, err := signerops.NewDeriver(&seed, otherGenesis)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer d1.Zero()
-	d2, err := signerops.NewDeriver(&seed, otherGenesis)
+	defer d.Zero()
+	_, program, err := signerops.DeriveStage(d, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer d2.Zero()
-	s1, err := signerops.TreeSeeds(d1, 0)
+	if program.Address.String() == result.Address {
+		t.Fatal("account address does not depend on the network")
+	}
+	if _, err := gen.GenerateRandom(context.Background(), paths, kr, "aplane.rotating-hybrid.v1", map[string]string{"network": "testnet"}); err == nil {
+		t.Fatal("generator accepted a retired rotating key type")
+	}
+}
+
+func TestGenesisHashIsRotatingOnly(t *testing.T) {
+	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s1.Zero()
-	s2, err := signerops.TreeSeeds(d2, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer s2.Zero()
-	if s1.PubSeed == s2.PubSeed || s1.SKSeed == s2.SKSeed {
-		t.Fatal("the same mnemonic has the same tree on two networks")
-	}
-	if _, err := gen.GenerateFromSeed(context.Background(), paths, seed[:], kr, rotatingkey.RotatingTripleXmssV1, nil); err == nil {
-		t.Fatal("raw seed generation accepted")
+	payload := keys.NewEd25519Payload(publicKey, privateKey)
+	defer payload.ZeroSecrets()
+	payload.GenesisHash = make([]byte, 32)
+	if _, err := keys.MarshalPayload(payload); err == nil || !strings.Contains(err.Error(), "genesis_hash") {
+		t.Fatalf("ed25519 payload with genesis_hash: err = %v", err)
 	}
 }

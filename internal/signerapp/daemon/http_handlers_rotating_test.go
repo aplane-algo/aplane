@@ -13,7 +13,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/config"
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
-	"github.com/aplane-algo/aplane/lsig/rotatingtriple/signerops"
+	"github.com/aplane-algo/aplane/lsig/rotatingtriplewots/signerops"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
