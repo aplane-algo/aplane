@@ -644,7 +644,8 @@ aplane/
 │   ├── composeddsa/               # Generic ComposedDSA composer
 │   ├── dsafamily/                 # Client-safe DSA family registration descriptors
 │   ├── signerreg/                 # Built-in signer-side LogicSig provider registration
-│   ├── rotatingtriple/            # Rotating Falcon + WOTS + Ed25519 triple hybrid stage (signerops/, signerreg/, stage/)
+│   ├── rotatingtriplewots/        # Rotating Falcon + WOTS + Ed25519 triple hybrid stage (signerops/, signerreg/, stage/)
+│   ├── rotatingtriplexmss/        # Rotating Falcon + XMSS + Ed25519 triple hybrid stage (signerops/, signerreg/, stage/)
 │   └── generictemplate/           # YAML-backed generic template provider
 │
 ├── library/templates/             # Optional plaintext KeyType Library YAML sources
