@@ -10,11 +10,13 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/algorand/go-algorand-sdk/v2/transaction"
+	"github.com/algorand/go-algorand-sdk/v2/types"
 	"github.com/aplane-algo/aplane/internal/rotatingkey"
 	"github.com/aplane-algo/aplane/test/integration/harness"
 )
@@ -164,6 +166,47 @@ func runRotatingTransactionTypes(t *testing.T, keyType string) {
 		}
 	})
 
+	t.Run("AppRejectsRekey", func(t *testing.T) {
+		// Every rotating spend carries a rekey to the next stage, including
+		// app calls. A contract hardened to refuse rekeying calls therefore
+		// refuses every call from a rotating account. The client simulates
+		// the prepared group before signing, so the refusal costs nothing:
+		// no stage signs and the authorizer does not move.
+		app, err := harness.DeployTEALApp(t, testnet.Client, funder,
+			[]byte(rekeyRejectingApproval), []byte(rekeyRejectingClear), types.StateSchema{}, types.StateSchema{})
+		if err != nil {
+			t.Fatalf("deploy: %v", err)
+		}
+		defer func() {
+			if err := app.DestroyTestApp(funder); err != nil {
+				t.Logf("warning: destroy rekey-rejecting app: %v", err)
+			}
+		}()
+
+		// Control: the same call from an ordinary account, which rekeys
+		// nothing, is approved.
+		if err := app.CallMethod(nil, funder, nil); err != nil {
+			t.Fatalf("control call from the funder: %v", err)
+		}
+
+		before := authorizer(t, testnet, account)
+		scriptPath := filepath.Join(t.TempDir(), "rekey_rejecting.ap")
+		command := fmt.Sprintf("app call raw %d from %s", app.AppID, account)
+		if err := os.WriteFile(scriptPath, []byte(command+"\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		out, err := apshell.Run("-script", scriptPath)
+		if err == nil {
+			t.Fatalf("%s: unexpectedly succeeded against a rekey-rejecting contract:\n%s", command, out)
+		}
+		if !strings.Contains(out, "failed simulation") || !strings.Contains(out, "nothing was signed") {
+			t.Fatalf("%s: want a pre-signing simulation refusal, got:\n%s", command, out)
+		}
+		if after := authorizer(t, testnet, account); after != before {
+			t.Fatalf("%s: authorizer moved from %q to %q although nothing should have been signed", command, before, after)
+		}
+	})
+
 	t.Run("KeyReg", func(t *testing.T) {
 		// Random participation keys: the account goes online without a
 		// participation node, which is harmless for a test account.
@@ -261,3 +304,32 @@ func destroyRotatingTestAsset(t *testing.T, testnet *harness.TestnetConfig, fund
 	}
 	submitFundingTxnExpectSuccess(t, testnet, funder, txn)
 }
+
+// rekeyRejectingApproval is the hardening pattern many audited contracts
+// use: refuse any call whose transaction rekeys the sender. Creation and
+// deletion by the creator are allowed so the fixture can be cleaned up.
+const rekeyRejectingApproval = `#pragma version 10
+txn ApplicationID
+bz approve
+txn OnCompletion
+int DeleteApplication
+==
+bnz delete
+txn RekeyTo
+global ZeroAddress
+==
+assert
+approve:
+int 1
+return
+delete:
+txn Sender
+global CreatorAddress
+==
+return
+`
+
+const rekeyRejectingClear = `#pragma version 10
+int 1
+return
+`

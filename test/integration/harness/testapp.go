@@ -60,6 +60,23 @@ func DeployTestApp(t *testing.T, client *algod.Client, creator TransactionAuthor
 		return nil, fmt.Errorf("failed to read clear.teal: %w", err)
 	}
 
+	app, err := DeployTEALApp(t, client, creator, approvalSrc, clearSrc,
+		types.StateSchema{NumUint: 2, NumByteSlice: 2}, // global: counter(uint) + admin(bytes) + headroom
+		types.StateSchema{NumUint: 2})                  // local: balance(uint) + headroom
+	if err != nil {
+		return nil, err
+	}
+	app.ABIPath = abiPath
+	return app, nil
+}
+
+// DeployTEALApp compiles approval and clear TEAL source through algod and
+// creates the application with the given schemas, signing directly with the
+// creator. The handle has no ABI path; DestroyTestApp still works provided
+// the approval program lets its creator delete it.
+func DeployTEALApp(t *testing.T, client *algod.Client, creator TransactionAuthorizer, approvalSrc, clearSrc []byte, globalSchema, localSchema types.StateSchema) (*TestApp, error) {
+	t.Helper()
+
 	ctx := context.Background()
 
 	// Compile TEAL via algod
@@ -108,8 +125,8 @@ func DeployTestApp(t *testing.T, client *algod.Client, creator TransactionAuthor
 		types.NoOpOC,
 		approvalBytes,
 		clearBytes,
-		types.StateSchema{NumUint: 2, NumByteSlice: 2}, // global: counter(uint) + admin(bytes) + headroom
-		types.StateSchema{NumUint: 2},                  // local: balance(uint) + headroom
+		globalSchema,
+		localSchema,
 		sp,
 		sender,
 		nil,             // note
@@ -149,7 +166,6 @@ func DeployTestApp(t *testing.T, client *algod.Client, creator TransactionAuthor
 	return &TestApp{
 		AppID:      appID,
 		AppAddress: appAddr.String(),
-		ABIPath:    abiPath,
 		Creator:    creatorAddr,
 		client:     client,
 		t:          t,

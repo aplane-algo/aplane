@@ -488,6 +488,7 @@ different account to a held rotating account. See
 | XMSS on-chain acceptance, cost model at the step ceiling, tree rollover, five-transaction group | `test/integration/rotating_xmss_onchain_test.go` |
 | WOTS on-chain acceptance, resource costs, four-transaction group | `test/integration/rotating_triple_onchain_test.go` |
 | Shared signing flow, release gates and recovery | `internal/signerapp/signing/rotating_*_test.go`, `test/integration/rotating_signer_test.go` |
+| Every non-payment transaction type through apshell and the signer (asset opt-in, transfer and close-out; app opt-in, call and box reference; online and offline key registration), both schemes; refusal by a contract that rejects rekeying calls, with nothing signed | `test/integration/rotating_txntypes_test.go` |
 
 Full XMSS tree builds are skipped under the race detector (`internal/racetest`).
 
