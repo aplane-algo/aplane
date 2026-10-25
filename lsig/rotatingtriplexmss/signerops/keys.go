@@ -22,7 +22,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/crypto/rotatinghybrid"
 	"github.com/aplane-algo/aplane/internal/crypto/xmss"
-	"github.com/aplane-algo/aplane/lsig/rotatingxmsstriple/stage"
+	"github.com/aplane-algo/aplane/lsig/rotatingtriplexmss/stage"
 
 	"github.com/algorand/falcon"
 	"github.com/algorandfoundation/falcon-signatures/falcongo"

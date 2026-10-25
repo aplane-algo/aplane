@@ -22,8 +22,8 @@ import (
 // TestDumpTemplate regenerates template_bytes.go from algod's assembler when
 // XMSS_TEMPLATE_OUT names the file to write, after a change to tealTemplate:
 //
-//	XMSS_TEMPLATE_OUT=lsig/rotatingxmsstriple/stage/template_bytes.go \\
-//	  go test ./lsig/rotatingxmsstriple/stage/ -run TestDumpTemplate
+//	XMSS_TEMPLATE_OUT=lsig/rotatingtriplexmss/stage/template_bytes.go \\
+//	  go test ./lsig/rotatingtriplexmss/stage/ -run TestDumpTemplate
 //
 // It needs an algod (ALGOD_URL or TEAL_COMPILE_ALGOD_URL).
 func TestDumpTemplate(t *testing.T) {

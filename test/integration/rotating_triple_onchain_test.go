@@ -15,8 +15,8 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto/wots"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/signing"
-	"github.com/aplane-algo/aplane/lsig/rotatingtriple/signerops"
-	"github.com/aplane-algo/aplane/lsig/rotatingtriple/stage"
+	"github.com/aplane-algo/aplane/lsig/rotatingtriplewots/signerops"
+	"github.com/aplane-algo/aplane/lsig/rotatingtriplewots/stage"
 	"github.com/aplane-algo/aplane/test/integration/harness"
 
 	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"

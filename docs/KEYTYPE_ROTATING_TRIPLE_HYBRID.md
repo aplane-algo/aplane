@@ -6,9 +6,9 @@ v1 is frozen by its first release (v0.44.0). This document specifies both for
 implementers and reviewers: their shared design and the two hash-based
 schemes. It restates, and does not replace, the authoritative sources:
 
-- `lsig/rotatingxmsstriple/`: XMSS stage template, derivation, signing, tree
+- `lsig/rotatingtriplexmss/`: XMSS stage template, derivation, signing, tree
   cache, key file codec, generator and registration
-- `lsig/rotatingtriple/`: WOTS stage template, derivation, signing, key file
+- `lsig/rotatingtriplewots/`: WOTS stage template, derivation, signing, key file
   codec, generator and registration
 - `internal/crypto/xmss/` and `internal/crypto/wots/`: hash-based primitives
 - `internal/crypto/rotatinghybrid/`: shared seed derivation
@@ -476,13 +476,13 @@ different account to a held rotating account. See
 
 | Area | Where |
 |---|---|
-| XMSS stage build, parse, salt, offsets and cost | `lsig/rotatingxmsstriple/stage/program_test.go`, `template_dump_test.go` |
-| WOTS stage build, parse, salt, offsets and cost | `lsig/rotatingtriple/stage/program_test.go` |
+| XMSS stage build, parse, salt, offsets and cost | `lsig/rotatingtriplexmss/stage/program_test.go`, `template_dump_test.go` |
+| WOTS stage build, parse, salt, offsets and cost | `lsig/rotatingtriplewots/stage/program_test.go` |
 | Algod assembler agreement for salted and unsalted stages, both schemes | the two `stage` packages' tests (LocalNet) |
-| Derivation, signing, verification and tampered fields; XMSS range violations and checksum above cap | `lsig/rotatingxmsstriple/signerops/keys_test.go`, `lsig/rotatingtriple/signerops/keys_test.go` |
-| Codec, generator, seed validation and registration | `lsig/rotatingxmsstriple/signerreg/register_test.go`, `lsig/rotatingtriple/signerreg/register_test.go` |
+| Derivation, signing, verification and tampered fields; XMSS range violations and checksum above cap | `lsig/rotatingtriplexmss/signerops/keys_test.go`, `lsig/rotatingtriplewots/signerops/keys_test.go` |
+| Codec, generator, seed validation and registration | `lsig/rotatingtriplexmss/signerreg/register_test.go`, `lsig/rotatingtriplewots/signerreg/register_test.go` |
 | XMSS vectors from an independent oracle (`tools/xmssoracle`), RFC reference vector, 32 bounded signatures (10 with searched randomizer) | `internal/crypto/xmss/` |
-| XMSS checksum boundaries (511/525, 512/555) and exhaustive step counts | `internal/crypto/xmss/`, `lsig/rotatingxmsstriple/stage/` tests |
+| XMSS checksum boundaries (511/525, 512/555) and exhaustive step counts | `internal/crypto/xmss/`, `lsig/rotatingtriplexmss/stage/` tests |
 | WOTS digits, chains, signatures and step counts | `internal/crypto/wots/wots_test.go` |
 | Shared HKDF derivation | `internal/crypto/rotatinghybrid/derive_test.go` |
 | XMSS on-chain acceptance, cost model at the step ceiling, tree rollover, five-transaction group | `test/integration/rotating_xmss_onchain_test.go` |

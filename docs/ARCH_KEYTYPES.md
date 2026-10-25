@@ -787,8 +787,8 @@ signing helpers that the diagram omits) and gives a one-line role for each.
 | `internal/boundedmeta` | Durable, non-secret bounded-authorization metadata stored with a LogicSig key |
 | `internal/merkleallowlist` | Merkle recipient allowlist construction and proofs used by bounded templates |
 | `internal/rotatingkey` | Classify-axis leaf for rotating account key types and their frozen sizes |
-| `lsig/rotatingtriple` | Rotating Falcon-1024 + WOTS-w16 + Ed25519 key type: stage program, signer-side operations, and signer registration |
-| `lsig/rotatingxmsstriple` | Rotating Falcon-1024 + RFC 8391 XMSS + Ed25519 key type: stage program, signer-side operations with the public tree cache, and signer registration |
+| `lsig/rotatingtriplewots` | Rotating Falcon-1024 + WOTS-w16 + Ed25519 key type: stage program, signer-side operations, and signer registration |
+| `lsig/rotatingtriplexmss` | Rotating Falcon-1024 + RFC 8391 XMSS + Ed25519 key type: stage program, signer-side operations with the public tree cache, and signer registration |
 | `internal/crypto/xmss` | RFC 8391 XMSS-SHA2_16_256: tree generation, signing at a caller-chosen leaf, verification; stateless by design |
 | `library/templates/aplane.corridor.v1.yaml` | Optional schema-v2 bounded-cosigner Corridor profile; compiled by `lsig/composeddsa` after product-store install |
 | `lsig/dsafamily` | Client-safe registration descriptor shared by DSA families (signer-side descriptor in `lsig/dsafamily/signerreg`) |

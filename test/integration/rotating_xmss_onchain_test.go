@@ -15,7 +15,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto/xmss"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/signing"
-	"github.com/aplane-algo/aplane/lsig/rotatingxmsstriple/stage"
+	"github.com/aplane-algo/aplane/lsig/rotatingtriplexmss/stage"
 	"github.com/aplane-algo/aplane/test/integration/harness"
 
 	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"

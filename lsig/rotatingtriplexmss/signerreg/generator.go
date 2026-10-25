@@ -14,7 +14,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/rotatingkey"
 	"github.com/aplane-algo/aplane/internal/storepaths"
-	triplesignerreg "github.com/aplane-algo/aplane/lsig/rotatingtriple/signerreg"
+	triplesignerreg "github.com/aplane-algo/aplane/lsig/rotatingtriplewots/signerreg"
 )
 
 // NetworkParameter names the network a rotating account is bound to, as

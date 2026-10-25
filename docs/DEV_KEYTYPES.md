@@ -454,10 +454,10 @@ Typical code areas:
 - `internal/clientsign` and `internal/engine` (client routing and checks)
 - `internal/crypto/rotatinghybrid` (the HKDF stage deriver, labelled per key
   type) and `internal/crypto/wots` (the WOTS-w16 primitive)
-- `lsig/rotatingtriple/` (the stage program, stage ops, codec and generator;
+- `lsig/rotatingtriplewots/` (the stage program, stage ops, codec and generator;
   it reuses the two crypto packages above and the Falcon signer)
 - `internal/crypto/xmss` (RFC 8391 XMSS-SHA2_16_256) and
-  `lsig/rotatingxmsstriple/` (its stage program, stage ops with the public
+  `lsig/rotatingtriplexmss/` (its stage program, stage ops with the public
   tree cache, codec and generator); `tools/xmssoracle` regenerates the
   package's vectors from an independent implementation
 

@@ -12,7 +12,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/crypto/rotatinghybrid"
 	"github.com/aplane-algo/aplane/internal/signing"
-	"github.com/aplane-algo/aplane/lsig/rotatingtriple/stage"
+	"github.com/aplane-algo/aplane/lsig/rotatingtriplewots/stage"
 )
 
 func fixedSeed() (rotatinghybrid.Seed, [rotatinghybrid.GenesisHashSize]byte) {

@@ -15,8 +15,8 @@ import (
 	falconsignerreg "github.com/aplane-algo/aplane/lsig/falcon1024/signerreg"
 	falcon1024guarded "github.com/aplane-algo/aplane/lsig/falcon1024_guarded"
 	guardedsignerreg "github.com/aplane-algo/aplane/lsig/falcon1024_guarded/signerreg"
-	rotatingtriplesignerreg "github.com/aplane-algo/aplane/lsig/rotatingtriple/signerreg"
-	rotatingxmsssignerreg "github.com/aplane-algo/aplane/lsig/rotatingxmsstriple/signerreg"
+	rotatingtriplesignerreg "github.com/aplane-algo/aplane/lsig/rotatingtriplewots/signerreg"
+	rotatingxmsssignerreg "github.com/aplane-algo/aplane/lsig/rotatingtriplexmss/signerreg"
 )
 
 var registerSignerOnce sync.Once

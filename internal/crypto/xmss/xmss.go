@@ -9,7 +9,7 @@
 // test vector is pinned in the tests).
 //
 // The package is stateless: Sign takes the index it is told to use. Index
-// management is the caller's responsibility; see lsig/rotatingxmsstriple.
+// management is the caller's responsibility; see lsig/rotatingtriplexmss.
 package xmss
 
 import (

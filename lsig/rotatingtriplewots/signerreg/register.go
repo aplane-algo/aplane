@@ -16,8 +16,8 @@ import (
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/rotatingkey"
 	"github.com/aplane-algo/aplane/internal/signing"
-	"github.com/aplane-algo/aplane/lsig/rotatingtriple/signerops"
-	"github.com/aplane-algo/aplane/lsig/rotatingtriple/stage"
+	"github.com/aplane-algo/aplane/lsig/rotatingtriplewots/signerops"
+	"github.com/aplane-algo/aplane/lsig/rotatingtriplewots/stage"
 )
 
 var registerOnce sync.Once

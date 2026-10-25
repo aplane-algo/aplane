@@ -18,8 +18,8 @@ import (
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/rotatingkey"
 	"github.com/aplane-algo/aplane/internal/signing"
-	"github.com/aplane-algo/aplane/lsig/rotatingxmsstriple/signerops"
-	"github.com/aplane-algo/aplane/lsig/rotatingxmsstriple/stage"
+	"github.com/aplane-algo/aplane/lsig/rotatingtriplexmss/signerops"
+	"github.com/aplane-algo/aplane/lsig/rotatingtriplexmss/stage"
 
 	"github.com/algorandfoundation/falcon-signatures/falcongo"
 )

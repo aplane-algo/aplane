@@ -23,8 +23,8 @@ import (
 	"github.com/aplane-algo/aplane/internal/keys"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/txnutil"
-	"github.com/aplane-algo/aplane/lsig/rotatingtriple/signerops"
-	rotatingsignerreg "github.com/aplane-algo/aplane/lsig/rotatingtriple/signerreg"
+	"github.com/aplane-algo/aplane/lsig/rotatingtriplewots/signerops"
+	rotatingsignerreg "github.com/aplane-algo/aplane/lsig/rotatingtriplewots/signerreg"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"

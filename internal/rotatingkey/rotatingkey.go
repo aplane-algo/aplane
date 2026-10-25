@@ -7,7 +7,7 @@
 // can apply the same rules in any binary.
 //
 // The sizes below are frozen by the key type. Tests check them against
-// lsig/rotatingtriple, the implementation that owns them.
+// lsig/rotatingtriplewots, the implementation that owns them.
 package rotatingkey
 
 const (
