@@ -490,6 +490,10 @@ accept a rekeying sender. Workflows that put more than one user transaction
 in an atomic group, whether a second one from the same account or one from
 another party, run from an ordinary account instead. The resource dummies
 around a spend are signer-manufactured and are not user transactions.
+"Single-transaction" describes group composition, not frequency: the account
+may act any number of times in sequence, each action one transaction and one
+rotation; what is excluded is one atomic outcome needing two user
+transactions.
 
 **Deferred, in order of cost.**
 
