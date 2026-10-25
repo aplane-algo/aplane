@@ -348,10 +348,12 @@ Restrictions:
 - A rotating account's transaction is always sent alone; it cannot be part
   of a larger group. Any single transaction type works: payments, asset
   opt-in, transfer and opt-out, application calls, and key registration.
-  Treat the account as a vault rather than a wallet: it receives funds and
-  moves them by single transactions, and anything that needs a transaction
-  group, such as a swap with a counterparty or a payment paired with an
-  application call, is done from an ordinary account it funds.
+  Rotating accounts are designed for single-transaction use, including
+  payments, asset operations, and compatible application calls. Workflows
+  that put more than one user transaction in an atomic group, whether a
+  second one from the same account or one from another party, run from an
+  ordinary account instead. The resource dummies the signer adds around a
+  spend are not user transactions.
 - Every spend rekeys the account to its next stage, so a contract that
   refuses calls carrying a rekey rejects every call from a rotating account.
   apshell simulates before anything is signed, so such a call fails without

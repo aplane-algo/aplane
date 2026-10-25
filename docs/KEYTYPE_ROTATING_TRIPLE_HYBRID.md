@@ -484,9 +484,12 @@ signature on a different message (section 9). The design tolerates that as a
 rare, self-inflicted case with alerts; it does not let a counterparty
 trigger it on demand.
 
-**Positioning.** A rotating account is a vault, not a wallet. It receives
-funds and moves them by single transactions. Composition with counterparties
-and contracts happens from an ordinary account it funds.
+**Positioning.** Rotating accounts are designed for single-transaction use:
+payments, asset operations, key registration, and application calls that
+accept a rekeying sender. Workflows that put more than one user transaction
+in an atomic group, whether a second one from the same account or one from
+another party, run from an ordinary account instead. The resource dummies
+around a spend are signer-manufactured and are not user transactions.
 
 **Deferred, in order of cost.**
 
