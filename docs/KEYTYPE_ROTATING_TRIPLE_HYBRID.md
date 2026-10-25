@@ -455,6 +455,59 @@ different account to a held rotating account. See
 [ARCH_POLICY.md](ARCH_POLICY.md#rotating-account-interaction) and
 [KEYTYPE_CAPABILITIES.md](KEYTYPE_CAPABILITIES.md).
 
+### 10.1 Group boundary
+
+A rotating spend is the only transaction from its account in a group, and
+the only other members are the scheme's resource dummies. This subsection
+records why, and what would change it.
+
+**Inherent restrictions.** No group rule changes these. The account's
+address is stage 0's program, so nothing can be rekeyed to it and it cannot
+act as a cosigner or witness. Every spend carries a rekey, so a contract that
+asserts a zero `RekeyTo` on incoming calls rejects every call from the
+account. The validity window is at most 100 rounds. A second transaction from
+the account in the same group would have to be authorized by stage `n + 1`
+and itself rekey to `n + 2`, because the ledger checks each transaction's
+authorizer against the group's in-progress state. Several own transactions
+per group is therefore a multi-stage release protocol, not a group rule.
+
+**Chosen restriction.** The stage program does not read the group, and the
+signature binds the group ID through the TxID, so the chain would accept a
+rotating spend grouped with other senders' transactions. The signer refuses
+it. With only dummies around the spend, a released signature can fail to
+land only through the window expiring or the operator's own concurrent spend
+from the same stage. With another sender in the group, that sender decides
+whether the rotation lands: it can withhold its signature, or invalidate its
+own transaction inside the window after the stage signature is public. The
+remedy is a second spend from the same stage, which for WOTS is a second
+signature on a different message (section 9). The design tolerates that as a
+rare, self-inflicted case with alerts; it does not let a counterparty
+trigger it on demand.
+
+**Positioning.** A rotating account is a vault, not a wallet. It receives
+funds and moves them by single transactions. Composition with counterparties
+and contracts happens from an ordinary account it funds.
+
+**Deferred, in order of cost.**
+
+1. *Group grammar.* Rotating prepare and sign could accept the ordinary
+   sign, passthrough and foreign slots, with the rule that exactly one slot
+   is a rotating spend, dummies counted net of the other members' pooled
+   budget, and the compare step preserving other slots verbatim. Policy,
+   approval and resource planning already handle mixed groups. This admits
+   one own transaction plus other senders' transactions. Passthrough-only
+   members and signer-side simulation before release bound the race above
+   to the submission window; they do not remove it.
+2. *Multi-stage release.* Several rotating slots in one group, each signed
+   by the next stage in the chain. This needs its own design for budget (a
+   WOTS spend costs up to 59,772 and an XMSS spend up to 95,857 of a pool
+   that grows by 20,000 per member up to 16 members), release memory, audit
+   and one-time key accounting.
+
+Reopen this when a product requirement needs the account itself in a
+multi-party or multi-transaction group. Neither step touches the stage
+program, so the templates stay unpinned on group size at no cost.
+
 ## 11. Compatibility and versioning
 
 - Each v1 key type separately freezes its stage template, embedded constants,
@@ -496,5 +549,7 @@ Full XMSS tree builds are skipped under the race detector (`internal/racetest`).
 
 - Per-key-type exit and external-admin paths remain design-only.
 - Hinted stage scans and an in-flight release limit remain proposed.
+- Grouping with other senders and multi-stage release are deferred by design
+  (section 10.1).
 - A security proof for XMSS's checksum-bounded randomizer selection beyond the
   monotone-checksum argument has not been written.

@@ -54,7 +54,9 @@ rotating account's transaction must be sent alone and ungrouped: the signer's
 `/sign/rotating/prepare` builds its group, including resource dummies, fees,
 and the rekey to the next stage. Ordinary `/sign` rejects rotating key types
 with `rotating_signing_required`. See [ARCH_SIGNING.md](ARCH_SIGNING.md) for
-the rotating flow.
+the rotating flow, and
+[KEYTYPE_ROTATING_TRIPLE_HYBRID.md](KEYTYPE_ROTATING_TRIPLE_HYBRID.md#101-group-boundary)
+for why the boundary is drawn there and the alternatives that were deferred.
 
 ## The Three Cases
 
