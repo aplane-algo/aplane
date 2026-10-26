@@ -239,7 +239,11 @@ Validation:
   service-owned protected runtime directory outside signer data.
 - `rotating.stage_horizon` is how many stages past a rotating account's live
   stage the signer derives ahead into its stage address table. It defaults to
-  `4096`.
+  `4096`, subject to family preparation ceilings: SLH-DSA uses at most two
+  stages of lookahead, four address derivations per account per fill pass,
+  and one derivation at a time within a chunk. Its request-time discovery
+  also stops after four address derivations. Smaller caller limits apply.
+  These are local work limits, not authority, wire or lifetime-signature limits.
 - `rotating.recovery_max_stages` (default `1024`) is the automatic search
   allowance per rotating account per unlock for an authorizer the signer
   cannot place, counted from the table's edge; `0` disables automatic

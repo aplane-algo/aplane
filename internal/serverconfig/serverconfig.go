@@ -71,7 +71,7 @@ type RotatingConfig struct {
 	// StageHorizon is the lookahead of the stage address table: how many
 	// stages past an account's live stage the signer derives in the
 	// background so upcoming rotations never wait on derivation.
-	StageHorizon uint64 `yaml:"stage_horizon" description:"How many stages past a rotating account's live stage are derived ahead into its stage address table" default:"4096"`
+	StageHorizon uint64 `yaml:"stage_horizon" description:"Requested stage address lookahead past the live stage; subject to family limits (SLH-DSA: at most 2)" default:"4096"`
 	// RecoveryMaxStages is the automatic search allowance per rotating
 	// account per unlock: how many stages past its table's edge the signer
 	// derives on its own looking for an authorizer it cannot place. It is

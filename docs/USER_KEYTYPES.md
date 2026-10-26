@@ -460,6 +460,10 @@ and restore rules below.
 
 ### Rotating triple SLH-DSA accounts
 
+**Experimental:** independent security review and production qualification
+remain pending. See [the evaluation record](SLHDSA_EVALUATION.md) for measured
+lifecycle costs, lifetime-use assumptions and outstanding qualification work.
+
 `aplane.rotating-triple-slhdsa.v1` uses SLH-DSA-SHA2-128s alongside
 Falcon-1024 and Ed25519, with fresh keys per stage. Its transaction-type,
 rekey, close-out and validity restrictions are the same as XMSS. It uses
@@ -471,6 +475,22 @@ exhaust a leaf range. The signer still reports an expired release while its
 stage controls the account, and the usual rotation and recovery commands apply.
 Stage derivation computes a fresh SLH root, so rebuilding a long address cache
 also requires that work for every stage.
+Lookahead is capped at two stages, with at most four address derivations per
+account per background pass and per request-time discovery. A large restore
+therefore progresses across passes; a stage hint still requires rebuilding
+the earlier cache entries. Increasing `rotating.stage_horizon` cannot override
+this family's ceiling. Smaller configured horizons are honored.
+Budget for that when restoring: on the hardware measured in the evaluation
+record the signer rebuilds roughly two to three stages per second, so an
+account restored at stage 1,000 needs several minutes before its live stage
+is proven, and every spend attempted in the meantime is refused with
+`rotating_stage_unproven`. Watch `rotate status` for the scan to reach the
+live stage rather than retrying the spend.
+
+Stateless signing does not mean unlimited use of one key. The documented
+lifetime envelope aggregates signing across restored copies, retries, failed
+or discarded attempts and successor self-tests; there is no persistent
+signature counter. Ordinary rotation gives each stage a fresh key.
 
 Enable it through apadmin's KeyType Library, or:
 
@@ -494,7 +514,8 @@ which the signer does in the background; until then a spend is refused with
 `rotating_stage_unproven`, and `rotate status` shows how far the scan has
 come. Deleting the `stages/` directory while the signer is stopped is
 always safe. `rotating.stage_horizon` in the signer's `config.yaml` (default
-4096) sets how many stages past the live one the signer derives ahead.
+4096) requests how many stages past the live one the signer derives ahead,
+subject to family limits (SLH-DSA: at most two).
 
 The background catch-up is bounded. When the signer sees an authorizer it
 cannot place, neither a stage it has already derived nor another key it

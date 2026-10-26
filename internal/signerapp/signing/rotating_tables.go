@@ -99,6 +99,24 @@ func (o StageFillOptions) keyUse(ctx context.Context) (context.Context, func()) 
 	return o.KeyUse(ctx)
 }
 
+// stageFillOptions intersects caller budgets with the family's operational
+// ceilings. A caller may always request less work, including no lookahead.
+func (s *Service) stageFillOptions(account string, opts StageFillOptions) StageFillOptions {
+	p, _ := rotatingkey.Lookup(s.Planner.Snapshot().KeyTypes[account])
+	limits := p.Preparation
+	if limits.MaxLookahead > 0 {
+		opts.Horizon = min(opts.Horizon, limits.MaxLookahead)
+	}
+	if limits.MaxDerivations > 0 {
+		opts.MaxDerivations = min(opts.maxDerivations(), limits.MaxDerivations)
+		opts.Batch = min(opts.batch(), limits.MaxDerivations)
+	}
+	if limits.MaxParallel > 0 {
+		opts.Parallel = min(opts.parallel(), limits.MaxParallel)
+	}
+	return opts
+}
+
 // StageTableReport is one account's outcome of a FillStageTables pass.
 type StageTableReport struct {
 	Account string
@@ -200,6 +218,7 @@ func (s *Service) FillStageTables(ctx context.Context, session *keystore.KeySess
 type stageDeriver func(ctx context.Context, from, to uint64) ([]types.Address, error)
 
 func (s *Service) fillStageTable(ctx context.Context, deps *RotatingDeps, gen uint64, account string, session *keystore.KeySession, opts StageFillOptions) StageTableReport {
+	opts = s.stageFillOptions(account, opts)
 	report := s.fillStageTableOnce(ctx, deps, gen, account, session, opts)
 	report.Recovery = deps.Recovery.State(account)
 	return report
@@ -263,10 +282,10 @@ func (s *Service) fillStageTableOnce(ctx context.Context, deps *RotatingDeps, ge
 			// grants a search or the chain moves.
 			return report
 		}
-		before := table.Len()
-		found, pending, grantErr := s.runRecoveryGrant(ctx, deps.Recovery, grant, table, account, session, view.Authorizer, budget, opts)
+		found, pending, spent, grantErr := s.runRecoveryGrant(ctx, deps.Recovery, grant, table, account, session, view.Authorizer, budget, opts)
 		report.Scanned = table.Len()
-		budget -= int(table.Len() - before)
+		// Hinted probes consume work even when they do not extend the prefix.
+		budget -= spent
 		if grantErr != nil {
 			report.Err = grantErr
 			return report
@@ -366,8 +385,9 @@ func (s *Service) stageDeriver(account string, session *keystore.KeySession, opt
 // counters are charged per derivation, so a grant of 100 derives at most
 // 100 and a cancel lands between two derivations, not after a batch. It
 // returns whether the authorizer is now in the table, whether the grant is
-// still active with work left, and any derivation or write error.
-func (s *Service) runRecoveryGrant(ctx context.Context, rec *RotatingRecovery, g *RecoveryGrant, table *stagetable.Table, account string, session *keystore.KeySession, authorizer types.Address, budget int, opts StageFillOptions) (found, pending bool, err error) {
+// still active with work left, the derivations spent (including probes), and
+// any derivation or write error.
+func (s *Service) runRecoveryGrant(ctx context.Context, rec *RotatingRecovery, g *RecoveryGrant, table *stagetable.Table, account string, session *keystore.KeySession, authorizer types.Address, budget int, opts StageFillOptions) (found, pending bool, spent int, err error) {
 	unpaced := opts
 	unpaced.Pace = nil
 	base := s.stageDeriver(account, session, unpaced)
@@ -386,6 +406,7 @@ func (s *Service) runRecoveryGrant(ctx context.Context, rec *RotatingRecovery, g
 		started := time.Now()
 		addrs, err := base(ctx, from, to)
 		elapsed := time.Since(started)
+		spent += len(addrs)
 		rec.charge(g, uint64(len(addrs)), elapsed)
 		if err == nil && len(addrs) > 0 && opts.Pace != nil {
 			opts.Pace(elapsed)
@@ -398,12 +419,12 @@ func (s *Service) runRecoveryGrant(ctx context.Context, rec *RotatingRecovery, g
 			probes := rec.nextProbes(g, 1)
 			if len(probes) == 0 {
 				rec.finish(g, StopHintNotFound, nil)
-				return false, false, nil
+				return false, false, spent, nil
 			}
 			stage := probes[0]
 			addrs, err := derive(ctx, stage, stage+1)
 			if err != nil {
-				return false, false, err
+				return false, false, spent, err
 			}
 			if len(addrs) == 0 {
 				break
@@ -428,7 +449,7 @@ func (s *Service) runRecoveryGrant(ctx context.Context, rec *RotatingRecovery, g
 				limit = target
 			}
 			if err := extendTo(ctx, table, derive, limit, opts); err != nil {
-				return false, false, err
+				return false, false, spent, err
 			}
 		}
 		_, found = table.Lookup(authorizer)
@@ -436,18 +457,18 @@ func (s *Service) runRecoveryGrant(ctx context.Context, rec *RotatingRecovery, g
 		if budget > 0 {
 			found, err = extendUntil(ctx, table, derive, authorizer, budget, opts)
 			if err != nil {
-				return false, false, err
+				return false, false, spent, err
 			}
 		}
 	}
 	if found {
 		stage, _ := table.Lookup(authorizer)
 		rec.finish(g, StopFound, &stage)
-		return true, false, nil
+		return true, false, spent, nil
 	}
 	if !rec.progress(g) {
 		// Cancelled, superseded or invalidated while this pass ran.
-		return false, false, nil
+		return false, false, spent, nil
 	}
 	switch {
 	case g.Charged >= g.MaxStages:
@@ -456,12 +477,12 @@ func (s *Service) runRecoveryGrant(ctx context.Context, rec *RotatingRecovery, g
 		} else {
 			rec.finish(g, StopBudgetExhausted, nil)
 		}
-		return false, false, nil
+		return false, false, spent, nil
 	case g.Active >= g.Timeout:
 		rec.finish(g, StopTimedOut, nil)
-		return false, false, nil
+		return false, false, spent, nil
 	}
-	return false, true, nil
+	return false, true, spent, nil
 }
 
 // resolveStage maps the authorizer to a stage: the account itself is stage

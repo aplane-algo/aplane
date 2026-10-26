@@ -137,7 +137,7 @@ func newRotatingFixture(t *testing.T) *rotatingFixture {
 	return newRotatingFixtureFor(t, tripleTestType)
 }
 
-func newRotatingFixtureFor(t *testing.T, kind rotatingTestType) *rotatingFixture {
+func newRotatingFixtureFor(t testing.TB, kind rotatingTestType) *rotatingFixture {
 	t.Helper()
 	if kind.sharedSeed {
 		racetest.SkipFullTree(t)
@@ -175,6 +175,7 @@ func newRotatingFixtureFor(t *testing.T, kind rotatingTestType) *rotatingFixture
 	tables := stagetable.NewStore(storepaths.NewPaths(root))
 	chain := &fakeRotatingChain{round: 1000}
 	store := &rotatingKeyStore{keyType: kind.keyType, seed: bytes.Clone(seed[:])}
+	t.Cleanup(func() { clear(store.seed) })
 	session := keystore.NewKeySession(store)
 	session.InitializeSession()
 	ops, err := coresigning.GetRotatingStageOps(kind.keyType)
@@ -216,7 +217,7 @@ func newRotatingFixtureFor(t *testing.T, kind rotatingTestType) *rotatingFixture
 	return f
 }
 
-func (f *rotatingFixture) stageAddress(t *testing.T, stage uint64) types.Address {
+func (f *rotatingFixture) stageAddress(t testing.TB, stage uint64) types.Address {
 	t.Helper()
 	a, err := f.ops.StageAddress(f.secret, stage)
 	if err != nil {
@@ -225,7 +226,7 @@ func (f *rotatingFixture) stageAddress(t *testing.T, stage uint64) types.Address
 	return a
 }
 
-func (f *rotatingFixture) table(t *testing.T) *stagetable.Table {
+func (f *rotatingFixture) table(t testing.TB) *stagetable.Table {
 	t.Helper()
 	tb, err := f.tables.Table(f.account, rotatingTestGenesis, nil)
 	if err != nil {
@@ -234,7 +235,7 @@ func (f *rotatingFixture) table(t *testing.T) *stagetable.Table {
 	return tb
 }
 
-func (f *rotatingFixture) fill(t *testing.T, opts StageFillOptions) StageTableReport {
+func (f *rotatingFixture) fill(t testing.TB, opts StageFillOptions) StageTableReport {
 	t.Helper()
 	reports := f.svc.FillStageTables(context.Background(), f.session, opts)
 	if len(reports) != 1 || reports[0].Account != f.account.String() {

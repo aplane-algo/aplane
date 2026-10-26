@@ -61,7 +61,7 @@ func newSigningFixture(t *testing.T) (*rotatingFixture, *recordingReleaseAudit) 
 	return newSigningFixtureFor(t, tripleTestType)
 }
 
-func newSigningFixtureFor(t *testing.T, kind rotatingTestType) (*rotatingFixture, *recordingReleaseAudit) {
+func newSigningFixtureFor(t testing.TB, kind rotatingTestType) (*rotatingFixture, *recordingReleaseAudit) {
 	t.Helper()
 	f := newRotatingFixtureFor(t, kind)
 	audit := &recordingReleaseAudit{}

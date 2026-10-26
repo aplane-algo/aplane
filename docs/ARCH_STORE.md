@@ -1499,7 +1499,12 @@ Placement and lifecycle:
 
 Fill: while unlocked, the signer extends each account's table in the
 background to `rotating.stage_horizon` stages (default 4,096) past the
-account's live stage. An account whose authorizer is not in its table and
+account's live stage, subject to the family's preparation ceiling. SLH-DSA
+caps lookahead at two and spends at most four address derivations per account
+per fill pass, including hinted probes; it derives serially within each chunk.
+The cache remains prefix-complete: a successful hint does not skip derivation
+of earlier entries. These limits do not alter credential validation or cache
+trust. An account whose authorizer is not in its table and
 is not a key the signer holds is searched for under a bounded recovery
 grant: automatically up to `rotating.recovery_max_stages` (default 1,024)
 past the table's edge per unlock, or at an operator's request with the

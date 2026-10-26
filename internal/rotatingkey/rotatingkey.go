@@ -18,8 +18,8 @@ const (
 	RotatingSlhdsaMaxProgramBytes    = 2646
 	RotatingSlhdsaMaxArgumentBytes   = 7856 + 64 + 1423
 	RotatingSlhdsaMaxOpcodeCost      = 42113 + 53*3570
-	RotatingTripleSlhdsaDisplayName  = "Rotating triple SLH-DSA (Falcon-1024 + SLH-DSA + Ed25519)"
-	RotatingTripleSlhdsaDescription  = "Fixed account address whose Falcon-1024, SLH-DSA-SHA2-128s and Ed25519 stage authorizer changes on every spend. Stateless hash signatures need no one-time leaf tracking. Signs only through rotating1."
+	RotatingTripleSlhdsaDisplayName  = "Experimental rotating triple SLH-DSA (Falcon-1024 + SLH-DSA + Ed25519)"
+	RotatingTripleSlhdsaDescription  = "Experimental: independent security review and production qualification remain pending. Fixed account address with fresh Falcon-1024, SLH-DSA-SHA2-128s and Ed25519 authority per spend. No one-time leaf tracking. Signs only through rotating1."
 
 	// RotatingTripleWotsV1 is the rotating account key type: a fixed
 	// account whose authorizing stage program changes on every spend, and
@@ -146,6 +146,11 @@ type Profile struct {
 	// leaf allocation or reuse history. Rotation/exposure monitoring still applies.
 	StatelessHash bool
 
+	// Preparation bounds local work, not signing authority or wire resources.
+	// Zero limits preserve the caller's settings. These operational limits may
+	// be tuned without changing stage addresses or the cryptographic contract.
+	Preparation PreparationLimits
+
 	// ReusedStageRestsOn names what a reused one-time stage still rests on,
 	// for the reuse warning.
 	ReusedStageRestsOn string
@@ -157,6 +162,14 @@ type Profile struct {
 	// (n mod StagesPerTree) * LeavesPerStage onward.
 	LeavesPerStage int
 	StagesPerTree  int
+}
+
+// PreparationLimits prevents costly per-stage key generation from inheriting
+// a shared-tree family's lookahead or request-time parallelism.
+type PreparationLimits struct {
+	MaxLookahead   uint64
+	MaxDerivations int // per account per fill pass, or per request discovery
+	MaxParallel    int
 }
 
 // LeafRange returns the leaf indices stage n may sign with, lo <= leaf < hi.
@@ -184,6 +197,7 @@ var profiles = map[string]Profile{
 		StagePublicKeySize: RotatingSlhdsaStagePublicKeySize,
 		MaxProgramBytes:    RotatingSlhdsaMaxProgramBytes, MaxArgumentBytes: RotatingSlhdsaMaxArgumentBytes,
 		MaxOpcodeCost: RotatingSlhdsaMaxOpcodeCost, StatelessHash: true,
+		Preparation: PreparationLimits{MaxLookahead: 2, MaxDerivations: 4, MaxParallel: 1},
 	},
 	RotatingTripleWotsV1: {
 		KeyType:            RotatingTripleWotsV1,

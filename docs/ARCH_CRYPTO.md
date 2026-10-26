@@ -641,12 +641,17 @@ Start here when changing the subsystem:
 
 ## Rotating SLH-DSA triple
 
-`aplane.rotating-triple-slhdsa.v1` is an opt-in compiled implementation of
+`aplane.rotating-triple-slhdsa.v1` is an **experimental**, opt-in compiled implementation of
 `rotating1`. Its stage requires Falcon-1024, Ed25519 and FIPS 205
 SLH-DSA-SHA2-128s signatures. `internal/crypto/slhdsa` owns the primitive;
 `lsig/rotatingtripleslhdsa` owns the frozen stage, private operations and codec.
 The primitive's pinned NIST ACVP vectors cover key generation, deterministic
 and randomized signing, and positive/negative verification.
+Independent security review and production qualification are still pending;
+passing vectors and pinning compatibility bytes do not establish either.
+The [evaluation record](SLHDSA_EVALUATION.md) specifies the lifetime signing
+envelope, preparation policy, reproducible lifecycle benchmarks and remaining
+qualification gates.
 
 The design record for this new implementation of an established contract:
 
