@@ -22,12 +22,14 @@ import (
 // the stage table, so alerts never depend on a file the design does not
 // trust.
 type ReleaseRecord struct {
-	Account   string
-	Stage     uint64
-	StageAddr types.Address
-	NextAddr  types.Address
-	TxID      string
-	LastValid uint64
+	// StatelessHash keeps release/window observations without one-time leaf history.
+	StatelessHash bool
+	Account       string
+	Stage         uint64
+	StageAddr     types.Address
+	NextAddr      types.Address
+	TxID          string
+	LastValid     uint64
 	// Leaves lists every distinct transaction the stage has released while
 	// it stayed live, oldest first, with the one-time leaf each signed with.
 	// The last entry is the latest release (TxID and LastValid above). A
@@ -141,6 +143,17 @@ func (m *ReleaseMemory) record(r ReleaseRecord, audited bool) {
 	defer m.mu.Unlock()
 	if m.byAccount == nil {
 		m.byAccount = make(map[string]ReleaseRecord)
+	}
+	if r.StatelessHash {
+		// A live observation made while restore was running takes precedence.
+		if prev, ok := m.byAccount[r.Account]; audited && ok && prev.Stage >= r.Stage {
+			return
+		}
+		r.Leaves, r.Reused = nil, false
+		m.seq++
+		r.Seq = m.seq
+		m.byAccount[r.Account] = r
+		return
 	}
 	incoming := r.Leaves
 	if len(incoming) == 0 {
@@ -397,8 +410,10 @@ func (s *Service) RebuildReleaseMemory(ctx context.Context, session *keystore.Ke
 			deps.Releases.Restored(e.Account)
 			continue
 		}
+		profile, _ := rotatingkey.Lookup(snapshot.KeyTypes[e.Account])
 		deps.Releases.RecordAudited(ReleaseRecord{
-			Account: e.Account, Stage: e.Stage, StageAddr: stageAddr, NextAddr: nextAddr,
+			StatelessHash: profile.StatelessHash,
+			Account:       e.Account, Stage: e.Stage, StageAddr: stageAddr, NextAddr: nextAddr,
 			TxID: e.TxID, LastValid: e.LastValid, Reused: e.Reused, Leaves: e.Leaves,
 		})
 		deps.Releases.Restored(e.Account)

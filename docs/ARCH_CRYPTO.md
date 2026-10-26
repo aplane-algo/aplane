@@ -210,8 +210,8 @@ and must not author a salt marker, salt preamble, or salt-style selector.
 Signing always uses the stored final bytecode and never recomputes salting from
 a live template.
 
-The rotating accounts (`aplane.rotating-triple-wots.v1` and
-`aplane.rotating-triple-xmss.v1`) are the one exception to both rules. They
+The rotating accounts (`aplane.rotating-triple-wots.v1`,
+`aplane.rotating-triple-xmss.v1` and `aplane.rotating-triple-slhdsa.v1`) are the one exception to both rules. They
 store no bytecode: each stage's
 program is assembled locally from a frozen template and the stage's public
 constants, and when the unsalted address is on-curve, the stage package
@@ -222,7 +222,7 @@ in bulk in the background, without trusting a node for addresses. A test
 compares the local bytes with algod's assembler output for salted and
 unsalted stages.
 
-A stage requires three signatures, each over the TxID: a Falcon-1024
+A WOTS triple stage requires three signatures, each over the TxID: a Falcon-1024
 signature, an Ed25519 signature (`ed25519verify_bare`) and a Winternitz
 one-time signature (`internal/crypto/wots`): n = 32, w = 16, 64 message
 digits and 3 checksum digits, 67 SHA-256 chains of 15 steps, with the
@@ -638,3 +638,62 @@ Start here when changing the subsystem:
 - `docs/DEV_KEYTYPES.md`
 - `docs/ARCH_OVERVIEW.md`
 - `docs/ARCH_CONTRACTS.md`
+
+## Rotating SLH-DSA triple
+
+`aplane.rotating-triple-slhdsa.v1` is an opt-in compiled implementation of
+`rotating1`. Its stage requires Falcon-1024, Ed25519 and FIPS 205
+SLH-DSA-SHA2-128s signatures. `internal/crypto/slhdsa` owns the primitive;
+`lsig/rotatingtripleslhdsa` owns the frozen stage, private operations and codec.
+The primitive's pinned NIST ACVP vectors cover key generation, deterministic
+and randomized signing, and positive/negative verification.
+
+The design record for this new implementation of an established contract:
+
+1. **Identity and authority:** fixed account, fresh stage per spend; reuse
+   existing rotating1 prepare/sign endpoints, canonical grouping, signer policy
+   and approval. Same transaction types and guards as WOTS/XMSS: rekey away from
+   sender, no ALGO close, validity span <=100. Signer derives the next stage and
+   proves it opens. No cosigner or external-admin path is introduced.
+2. **Cryptography and bindings:** all three signatures bind the raw 32-byte
+   TxID, hence sender, genesis, group, next authority and validity window.
+   SLH uses the pure external interface with empty context (`0000 || TxID`)
+   and deterministic opt_rand = PK.seed. Parameters are n=16, h=63, d=7,
+   h'=9, a=12, k=14, w=16; there is no checksum cap or signature grinding.
+3. **Derivation and custody:** existing network-bound HKDF with the distinct
+   label `APLANE_ROTATING_TRIPLE_SLHDSA_V1`; per-stage tags 1 (Falcon), 2
+   (Ed25519), 3 (SLH SK.seed), 4 (SLH SK.prf), 5 (SLH PK.seed). The stored
+   64-byte BIP-39 seed is the sole secret. No new custody boundary or shared
+   tree cache. Derived secret material is erased after use.
+4. **Durable authority:** unchanged rotating credential shape; the stage-zero
+   public record is seed16 || root16 || Falcon1793 || Ed25519 32 = 1857 bytes.
+   Parsing rederives the entire stage-zero record; program bytes are derived,
+   never persisted. Stage address tables remain reconstructible caches.
+5. **Choreography and retries:** existing group-planning, fees, approval,
+   dummy signing and recovery helpers. An explicit `StatelessHash` profile
+   skips leaf selection/history and one-time reuse warnings. Release/expiry
+   observations remain, including audit restoration; legacy audit leaf fields
+   are zero placeholders and are discarded on restore for this profile.
+   After expensive signing, the signer rereads authorizer and round and checks
+   cancellation, unlocked generation and key presence before returning bytes.
+   An aged window or changed stage requires fresh preparation. No signature is
+   released or recorded on those failures.
+6. **Resources and compatibility:** frozen TEAL v13 template, 2643 bytes
+   unsalted / 2646 salted, canonical first off-curve salt as other rotating
+   stages. Args 0..4 are R+FORS (2928), first four HT layers (2816), last three
+   HT layers (2112), Ed25519 (64), Falcon (<=1423): 9343 bytes total. Each
+   stays below the AVM byte-value limit. The exact cost is 42113 + 53 times
+   WOTS chain steps. A layer's checksum c lies in 0..480 and requires
+   c + 45 - digitSum16(c) steps, at most 510; seven layers give a conservative
+   ceiling of 231323. Planning therefore uses 12 transactions (11 dummies),
+   with no program surcharge and 12000 microAlgos at minimum fees. Existing
+   key-type IDs, derivations and templates are unchanged.
+7. **Evidence:** strict parser and salted/unsalted stock-assembler equality;
+   pinned stage identities, network separation, per-component signature
+   rejection, repeated stateless signing and secret erasure; library
+   enablement/generation/storage tests; service rotation, restore, expiry and
+   post-sign refusal tests. `TestRotatingSLHTripleOnChain` exercises actual
+   transitions, obsolete authorizers, guards, damaged R/FORS/HT components,
+   exact lengths and the declared opcode ceiling on both program shapes.
+   Node measurements match the affine formula; this does not claim that a
+   random signature attains the conservative all-layers maximum.

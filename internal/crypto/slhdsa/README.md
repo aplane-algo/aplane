@@ -2,8 +2,8 @@
 
 This package restores the October 21, 2026 stateless rotating-stage experiment:
 a Go reference for SLH-DSA-SHA2-128s, ACVP vectors, verification hash counts, and
-key generation, signing, and verification benchmarks. It is an experimental
-package with no registered APlane key type or production signing integration.
+key generation, signing, and verification benchmarks. It supplies the primitive for the opt-in
+`aplane.rotating-triple-slhdsa.v1` key type on this branch.
 
 The source and tests were recovered from the original session's file writes,
 including its `Len1` correction and `SigningKey` renaming. The restored tests
@@ -40,10 +40,11 @@ three cases from each pure/internal signing group (12 total), and all 28
 pure/internal verification cases. Signing cases cover deterministic and
 randomized operation; verification cases include rejection vectors.
 
-## Remaining experiment
+## Rotating integration
 
-The prior work stopped before implementing a TEAL verifier or measuring its
-cost on LocalNet. `VerifyStats` counts hash calls in the Go reference; it is
-not a measured AVM opcode cost. The next feasibility step is a TEAL verifier
-and an exact group-size, fee, and execution-cost measurement with Falcon and
-Ed25519 alongside SLH-DSA. No smaller draft parameter set is implemented here.
+`lsig/rotatingtripleslhdsa` contains the frozen TEAL verifier and signer hooks.
+The declared ceiling is 231323 AVM opcodes; the rotating group has twelve
+transactions. See `docs/ARCH_CRYPTO.md` for the design record and cost proof.
+`VerifyStats` counts hash calls and WOTS verification steps; LocalNet tests
+compare those steps to the verifier's exact cost model. No smaller draft
+parameter set is implemented.

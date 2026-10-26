@@ -26,6 +26,7 @@ import (
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/stagetable"
 	"github.com/aplane-algo/aplane/internal/storepaths"
+	rotatingslhsignerreg "github.com/aplane-algo/aplane/lsig/rotatingtripleslhdsa/signerreg"
 	rotatingtriplesignerreg "github.com/aplane-algo/aplane/lsig/rotatingtriplewots/signerreg"
 	rotatingxmsssignerreg "github.com/aplane-algo/aplane/lsig/rotatingtriplexmss/signerreg"
 
@@ -86,7 +87,11 @@ var (
 		keyType: rotatingkey.RotatingTripleXmssV1, register: rotatingxmsssignerreg.Register,
 		newKeyPayload: rotatingxmsssignerreg.NewKeyPayload, dummies: 4, sharedSeed: true,
 	}
-	rotatingTestTypes = []rotatingTestType{tripleTestType, xmssTestType}
+	slhTestType = rotatingTestType{
+		keyType: rotatingkey.RotatingTripleSlhdsaV1, register: rotatingslhsignerreg.Register,
+		newKeyPayload: rotatingslhsignerreg.NewKeyPayload, dummies: 11,
+	}
+	rotatingTestTypes = []rotatingTestType{tripleTestType, xmssTestType, slhTestType}
 )
 
 type rotatingKeyStore struct {

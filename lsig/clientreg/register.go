@@ -61,6 +61,11 @@ func RegisterClient() {
 			Family:       rotatingkey.RotatingTripleXmssFamily,
 			Availability: keytypecatalog.AvailabilityLibrary,
 		}, func() {})
+		registerCompiledProvider(keytypecatalog.Entry{
+			KeyType:      rotatingkey.RotatingTripleSlhdsaV1,
+			Family:       rotatingkey.RotatingTripleSlhdsaFamily,
+			Availability: keytypecatalog.AvailabilityLibrary,
+		}, func() {})
 	})
 }
 

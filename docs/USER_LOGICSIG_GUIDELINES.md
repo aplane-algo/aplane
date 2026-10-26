@@ -1022,3 +1022,13 @@ For public generic LogicSigs, APlane resolves this in favor of safety:
   [Algorand Not So Smart Contracts](https://github.com/crytic/building-secure-contracts/tree/master/not-so-smart-contracts/algorand)
   — external examples covering rekeying, fee drain, close-out, group size,
   replay, asset ID, ASA liveness, and app-call completion pitfalls
+
+#### `aplane.rotating-triple-slhdsa.v1`
+
+Compiled opt-in rotating account, requiring Falcon-1024, Ed25519 and
+SLH-DSA-SHA2-128s over the TxID. Same transaction permissions and rotation
+guards as XMSS; no leaf index or checksum cap. Signature arguments total at
+most 9343 bytes and the 231323-opcode ceiling needs a twelve-transaction
+group. Transaction policy belongs to signer approval; the program requires
+rekey away from sender, forbids ALGO close and caps the validity span at 100.
+See [USER_KEYTYPES.md](USER_KEYTYPES.md#rotating-triple-slh-dsa-accounts).

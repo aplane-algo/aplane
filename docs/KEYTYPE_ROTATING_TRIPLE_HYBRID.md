@@ -18,6 +18,14 @@ schemes. It restates, and does not replace, the authoritative sources:
   and [ARCH_KEYTYPES.md](ARCH_KEYTYPES.md): cryptographic design, signing flow
   and key type contracts
 
+A third implementation, `aplane.rotating-triple-slhdsa.v1`, now reuses the
+shared `rotating1` account and signing contracts. The WOTS/XMSS comparison
+below retains those variants' exact layouts; SLH-DSA's distinct derivation,
+five-argument layout, resource profile and stateless retry semantics are
+specified in [ARCH_CRYPTO.md](ARCH_CRYPTO.md#rotating-slh-dsa-triple).
+Its implementation is `lsig/rotatingtripleslhdsa/`, with the primitive in
+`internal/crypto/slhdsa/`. It is not part of the original v0.44.0 release.
+
 Where this document and the code disagree, the code and its frozen golden
 tests win; report the discrepancy.
 

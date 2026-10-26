@@ -333,3 +333,7 @@ const rekeyRejectingClear = `#pragma version 10
 int 1
 return
 `
+
+func TestRotatingSlhdsaTransactionTypes(t *testing.T) {
+	runRotatingTransactionTypes(t, rotatingkey.RotatingTripleSlhdsaV1)
+}

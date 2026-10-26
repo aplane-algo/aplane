@@ -458,6 +458,30 @@ Everything else is the same: one network per account, the same restrictions,
 `rotate`, `rotate status` and `rotate recover`, the alerts, and the backup
 and restore rules below.
 
+### Rotating triple SLH-DSA accounts
+
+`aplane.rotating-triple-slhdsa.v1` uses SLH-DSA-SHA2-128s alongside
+Falcon-1024 and Ed25519, with fresh keys per stage. Its transaction-type,
+rekey, close-out and validity restrictions are the same as XMSS. It uses
+12 transactions per spend (11 resource dummies), with a minimum group fee
+of 0.012 ALGO. The SLH signature is 7856 bytes, split over three arguments.
+
+SLH-DSA needs no one-time leaf tracking: retries and restored copies do not
+exhaust a leaf range. The signer still reports an expired release while its
+stage controls the account, and the usual rotation and recovery commands apply.
+Stage derivation computes a fresh SLH root, so rebuilding a long address cache
+also requires that work for every stage.
+
+Enable it through apadmin's KeyType Library, or:
+
+```sh
+apadmin -d "$APSIGNER_DATA" keytype enable aplane.rotating-triple-slhdsa.v1
+```
+
+Then select it when generating a key and choose the bound network, as for
+the other rotating accounts. Restart apsigner with the new binary before
+looking for the new library entry.
+
 ### Backups and restore
 
 The key file is the whole credential. The signer stores nothing else it

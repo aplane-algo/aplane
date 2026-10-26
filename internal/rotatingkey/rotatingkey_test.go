@@ -20,7 +20,7 @@ func TestClassifiers(t *testing.T) {
 	if !IsRotatingKeyType(RotatingTripleXmssV1) {
 		t.Fatal("the XMSS rotating key type was not classified as rotating")
 	}
-	if got := KeyTypes(); len(got) != 2 || got[0] != RotatingTripleWotsV1 || got[1] != RotatingTripleXmssV1 {
+	if got := KeyTypes(); len(got) != 3 || got[0] != RotatingTripleWotsV1 || got[1] != RotatingTripleXmssV1 || got[2] != RotatingTripleSlhdsaV1 {
 		t.Fatalf("KeyTypes() = %v", got)
 	}
 	// The retired Falcon and WOTS hybrids, and the pre-rename identifiers of

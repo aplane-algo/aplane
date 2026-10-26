@@ -438,6 +438,10 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 		return nil, gateErr
 	}
 	defer release()
+	var lockGeneration uint64
+	if deps.LockGeneration != nil {
+		lockGeneration = deps.LockGeneration()
+	}
 
 	// A leaf family picks its one-time leaf from the stage's history, so a
 	// spend arriving before that history has been restored from the audit
@@ -501,7 +505,11 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 	txIDText := base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(txID[:])
 	leafProfile, _ := rotatingkey.Lookup(rs.keyType)
 	prior, _ := deps.Releases.Get(req.Account)
-	leaf, leafReused := chooseLeaf(leafProfile, stage, txID[:], txIDText, prior)
+	var leaf LeafRelease
+	var leafReused bool
+	if !leafProfile.StatelessHash {
+		leaf, leafReused = chooseLeaf(leafProfile, stage, txID[:], txIDText, prior)
+	}
 	stageSig, signErr := rs.ops.SignStage(rs.secret, stage, leaf.Index, txID[:])
 	if signErr != nil {
 		return nil, internal(fmt.Sprintf("sign with stage %d: %v", stage, signErr))
@@ -522,6 +530,34 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 	}
 	if cached, ok := table.Address(stage); ok && cached != stageAddr {
 		return nil, internal("stage table disagrees with the signing derivation; it will be rebuilt")
+	}
+	// Stateless signing performs a complete hypertree signature. Re-read the
+	// chain after that work and before releasing bytes. The existing execution
+	// lease remains held; do not acquire a second lease here.
+	if leafProfile.StatelessHash {
+		readCtx, cancelRead := context.WithTimeout(ctx, DefaultChainReadTimeout)
+		fresh, readErr := deps.Chain.ReadAccount(readCtx, genesis, account)
+		cancelRead()
+		if readErr != nil {
+			return nil, unavailable(readErr.Error())
+		}
+		if fresh.Authorizer != stageAddr {
+			return nil, rotatingStageChanged(fresh.Authorizer)
+		}
+		if uint64(spend.FirstValid) > fresh.Round+rotatingkey.RotatingMaxLead ||
+			uint64(spend.LastValid) < fresh.Round+rotatingkey.RotatingMinRemaining {
+			return nil, badRequest("validity window aged during signing; prepare the spend again")
+		}
+		if ctx.Err() != nil {
+			return nil, unavailable(ctx.Err().Error())
+		}
+		if (s.IsUnlocked != nil && !s.IsUnlocked()) ||
+			(deps.LockGeneration != nil && deps.LockGeneration() != lockGeneration) {
+			return nil, lockedError()
+		}
+		if !s.keyPresent(req.Account)() {
+			return nil, unavailable("rotating key was removed during signing")
+		}
 	}
 	signed := make([]string, 0, len(allTxns))
 	signed = append(signed, hex.EncodeToString(msgpack.Encode(stxn)))
@@ -545,7 +581,7 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 	leaf.TxID, leaf.LastValid = txIDText, uint64(spend.LastValid)
 	deps.Releases.Record(ReleaseRecord{
 		Account: req.Account, Stage: stage, StageAddr: stageAddr, NextAddr: spend.RekeyTo,
-		TxID: txIDText, LastValid: uint64(spend.LastValid), Reused: leafReused, Leaves: []LeafRelease{leaf},
+		TxID: txIDText, LastValid: uint64(spend.LastValid), Reused: leafReused, Leaves: []LeafRelease{leaf}, StatelessHash: leafProfile.StatelessHash,
 	})
 	consoleOf(s.Console).Printf("[ROTATING] Released stage %d for %s (%s); the account moves to stage %d when it lands\n", stage, req.Account, txIDText, targetStage)
 	s.logSuccessfulSignatures(signReq, plan, allTxns, policyRuleID)

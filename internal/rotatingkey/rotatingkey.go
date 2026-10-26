@@ -11,6 +11,16 @@
 package rotatingkey
 
 const (
+	// RotatingTripleSlhdsaV1 uses stateless FIPS 205 SLH-DSA-SHA2-128s per stage.
+	RotatingTripleSlhdsaV1           = "aplane.rotating-triple-slhdsa.v1"
+	RotatingTripleSlhdsaFamily       = "aplane.rotating-triple-slhdsa"
+	RotatingSlhdsaStagePublicKeySize = 16 + 16 + 1793 + 32
+	RotatingSlhdsaMaxProgramBytes    = 2646
+	RotatingSlhdsaMaxArgumentBytes   = 7856 + 64 + 1423
+	RotatingSlhdsaMaxOpcodeCost      = 42113 + 53*3570
+	RotatingTripleSlhdsaDisplayName  = "Rotating triple SLH-DSA (Falcon-1024 + SLH-DSA + Ed25519)"
+	RotatingTripleSlhdsaDescription  = "Fixed account address whose Falcon-1024, SLH-DSA-SHA2-128s and Ed25519 stage authorizer changes on every spend. Stateless hash signatures need no one-time leaf tracking. Signs only through rotating1."
+
 	// RotatingTripleWotsV1 is the rotating account key type: a fixed
 	// account whose authorizing stage program changes on every spend, and
 	// whose every stage requires a Falcon-1024, a WOTS-w16 (SHA-256) and an
@@ -110,9 +120,7 @@ const (
 )
 
 // Profile is what storage, inventory and the signing flow need to know
-// about a rotating key type without linking its implementation. One entry
-// today; the map stays because the classification is by key type, not by
-// "is rotating", and the rotating-bounded contract will add entries.
+// about a rotating key type without linking its implementation.
 type Profile struct {
 	KeyType     string
 	Family      string
@@ -133,6 +141,10 @@ type Profile struct {
 	// protection until the account moves past it. The signer still signs
 	// (the flow is stateless by design) but reports the reuse.
 	OneTimeStage bool
+
+	// StatelessHash reports a hash signature scheme that needs no one-time
+	// leaf allocation or reuse history. Rotation/exposure monitoring still applies.
+	StatelessHash bool
 
 	// ReusedStageRestsOn names what a reused one-time stage still rests on,
 	// for the reuse warning.
@@ -166,6 +178,13 @@ func (p Profile) TreeOf(stage uint64) uint64 {
 }
 
 var profiles = map[string]Profile{
+	RotatingTripleSlhdsaV1: {
+		KeyType: RotatingTripleSlhdsaV1, Family: RotatingTripleSlhdsaFamily,
+		DisplayName: RotatingTripleSlhdsaDisplayName, Description: RotatingTripleSlhdsaDescription,
+		StagePublicKeySize: RotatingSlhdsaStagePublicKeySize,
+		MaxProgramBytes:    RotatingSlhdsaMaxProgramBytes, MaxArgumentBytes: RotatingSlhdsaMaxArgumentBytes,
+		MaxOpcodeCost: RotatingSlhdsaMaxOpcodeCost, StatelessHash: true,
+	},
 	RotatingTripleWotsV1: {
 		KeyType:            RotatingTripleWotsV1,
 		Family:             RotatingTripleWotsFamily,
@@ -209,7 +228,7 @@ func Lookup(keyType string) (Profile, bool) {
 
 // KeyTypes lists the rotating key types in a fixed order.
 func KeyTypes() []string {
-	return []string{RotatingTripleWotsV1, RotatingTripleXmssV1}
+	return []string{RotatingTripleWotsV1, RotatingTripleXmssV1, RotatingTripleSlhdsaV1}
 }
 
 // RoutingFamily returns the family of a rotating key type. Rotating key

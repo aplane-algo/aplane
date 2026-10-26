@@ -7,8 +7,8 @@
 // Keys and signatures are byte-compatible with FIPS 205 (the NIST ACVP
 // vectors in testdata are pinned by the tests).
 //
-// This is an evaluation reference for the rotating stateless-hash key type
-// spike. It is written to be read next to a TEAL verifier: the verification
+// This implementation is used by the rotating SLH-DSA triple key type.
+// It is written to be read next to its TEAL verifier: the verification
 // path is deliberately plain, and VerifyStats reports the exact hash call
 // profile a transcript of it would charge on the AVM.
 //

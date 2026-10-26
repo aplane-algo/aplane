@@ -26,6 +26,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/stagetable"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/txnutil"
+	rotatingslhsignerreg "github.com/aplane-algo/aplane/lsig/rotatingtripleslhdsa/signerreg"
 	rotatingtriplesignerreg "github.com/aplane-algo/aplane/lsig/rotatingtriplewots/signerreg"
 	rotatingxmsssignerreg "github.com/aplane-algo/aplane/lsig/rotatingtriplexmss/signerreg"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
@@ -79,6 +80,12 @@ func TestRotatingTripleSignerFlowOnChain(t *testing.T) {
 // whose stages sign with leaves of a shared tree built at key creation.
 func TestRotatingXmssSignerFlowOnChain(t *testing.T) {
 	runRotatingSignerFlowOnChain(t, localnetXmss)
+}
+
+func TestRotatingSlhdsaSignerFlowOnChain(t *testing.T) {
+	runRotatingSignerFlowOnChain(t, localnetRotatingType{
+		keyType: rotatingkey.RotatingTripleSlhdsaV1, register: rotatingslhsignerreg.Register, newKeyPayload: rotatingslhsignerreg.NewKeyPayload,
+	})
 }
 
 func runRotatingSignerFlowOnChain(t *testing.T, kind localnetRotatingType) {
