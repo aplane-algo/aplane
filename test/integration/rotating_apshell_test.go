@@ -131,3 +131,7 @@ func runRotatingApshellEndToEnd(t *testing.T, keyType string) {
 		t.Fatalf("unexpected status output:\n%s", out)
 	}
 }
+
+func TestRotatingSlhdsaApshellEndToEnd(t *testing.T) {
+	runRotatingApshellEndToEnd(t, rotatingkey.RotatingTripleSlhdsaV1)
+}

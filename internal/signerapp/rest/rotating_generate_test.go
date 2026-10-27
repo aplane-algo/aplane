@@ -15,6 +15,12 @@ import (
 )
 
 func TestRotatingKeyGenerationIsOptIn(t *testing.T) {
+	for _, keyType := range []string{rotatingkey.RotatingTripleWotsV1, rotatingkey.RotatingTripleSlhdsaV1} {
+		t.Run(keyType, func(t *testing.T) { testRotatingKeyGenerationIsOptIn(t, keyType) })
+	}
+}
+
+func testRotatingKeyGenerationIsOptIn(t *testing.T, keyType string) {
 	ir := setupProductRuntime(t, true)
 	// A configured custom network, as LocalNet is in a signer's config.
 	const localnetGenesis = "mtfrXt6VMnEhUImpbE0uarG19rcO7L4Vx7TIPd8q8Ok="
@@ -26,14 +32,14 @@ func TestRotatingKeyGenerationIsOptIn(t *testing.T) {
 		NetworkGenesisHashes: networks,
 	}}
 	ctx := context.Background()
-	req := signerapi.AdminGenerateRequest{KeyType: rotatingkey.RotatingTripleWotsV1, Parameters: map[string]string{"network": "testnet"}}
+	req := signerapi.AdminGenerateRequest{KeyType: keyType, Parameters: map[string]string{"network": "testnet"}}
 
 	// Library key types are hidden and refused until enabled.
 	if _, err := svc.AdminGenerate(ctx, ir, req); err == nil {
 		t.Fatal("rotating key generated before the key type was enabled")
 	}
 	if err := keytypestate.Put(ir.KeyPaths(), keytypestate.Record{
-		KeyType: rotatingkey.RotatingTripleWotsV1,
+		KeyType: keyType,
 		Source:  keytypestate.SourceCompiled,
 		State:   keytypestate.StateEnabled,
 	}); err != nil {
@@ -46,7 +52,7 @@ func TestRotatingKeyGenerationIsOptIn(t *testing.T) {
 	}
 	var info *signerapi.KeyTypeInfo
 	for i := range types.KeyTypes {
-		if types.KeyTypes[i].KeyType == rotatingkey.RotatingTripleWotsV1 {
+		if types.KeyTypes[i].KeyType == keyType {
 			info = &types.KeyTypes[i]
 		}
 	}

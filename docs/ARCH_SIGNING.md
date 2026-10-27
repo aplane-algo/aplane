@@ -1586,7 +1586,16 @@ Stage table worker: while unlocked, a background worker reads every rotating
 account's authorizer from the signer's own node right after unlock and then
 about every 30 seconds, keeps each account's stage address table
 ([ARCH_STORE.md](ARCH_STORE.md#stage-address-tables)) extended to
-`rotating.stage_horizon` stages past the live stage, and publishes status.
+`rotating.stage_horizon` stages past the live stage, subject to family
+preparation ceilings, and publishes status. For SLH-DSA the effective horizon
+is `min(configured, 2)`, with at most four address derivations per account per
+pass (hint probes and prefix growth share that budget) and one derivation at
+a time within each chunk. Request-time discovery also stops after four new
+addresses and returns `rotating_stage_unproven` if still unresolved; subsequent
+requests and recovery continue from the saved prefix. Required target
+rederivation and successor signing verification remain part of every spend,
+outside that discovery budget. The limits are per operation, not a global
+CPU quota; the worker retains its pacing and recovery grant limits.
 An authorizer that is not in the table is classified before anything is
 derived, in this order:
 

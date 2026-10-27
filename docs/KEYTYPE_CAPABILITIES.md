@@ -42,6 +42,7 @@ included as normal user-account operations.
 | `aplane.htlc.v1` | C | C | C | C | C | N | N | N | N | N | N |
 | `aplane.rotating-triple-wots.v1` | C | N | C | C | C | C | C | C | C | C | C |
 | `aplane.rotating-triple-xmss.v1` | C | N | C | C | C | C | C | C | C | C | C |
+| `aplane.rotating-triple-slhdsa.v1` | C | N | C | C | C | C | C | C | C | C | C |
 
 ## Capability Columns
 
@@ -114,3 +115,6 @@ included as normal user-account operations.
   timeout with the configured preimage, refund paths to the configured refund
   address after timeout, and approved ASA opt-in for configured
   `allowed_optin_assets`.
+
+The SLH-DSA rotating triple admits the same transactions and rotation guards as
+XMSS. Its stateless hash scheme has no leaf range or leaf-reuse restriction.

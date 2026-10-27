@@ -11,6 +11,49 @@
 package rotatingkey
 
 const (
+	// RotatingSlhdsaHeight is the SLH-DSA hypertree height the rotating
+	// SLH-DSA key type is built with: the one build-time choice of that type.
+	// lsig/rotatingtripleslhdsa/stage carries a frozen verifier, template,
+	// argument layout and cost model for each supported value and the
+	// literals below follow it; changing the constant and rebuilding selects
+	// them all. Every stage address, and so every account address, follows
+	// from it: a key generated under one height is a different account
+	// under the other. Supported values:
+	//
+	//   - 22: two layers of height 11, a 4,400-byte signature and a
+	//     six-transaction group. Not a FIPS 205 parameter set.
+	//   - 63: seven layers of height 9, SLH-DSA-SHA2-128s of FIPS 205, a
+	//     7,856-byte signature and a ten-transaction group.
+	RotatingSlhdsaHeight = 22
+
+	// RotatingTripleSlhdsaV1 uses a stateless SLH-DSA key per stage under the
+	// SLH-DSA-SHA2-128s construction at RotatingSlhdsaHeight.
+	// lsig/rotatingtripleslhdsa owns the implementation.
+	RotatingTripleSlhdsaV1           = "aplane.rotating-triple-slhdsa.v1"
+	RotatingTripleSlhdsaFamily       = "aplane.rotating-triple-slhdsa"
+	RotatingSlhdsaStagePublicKeySize = 16 + 16 + 1793 + 32
+	RotatingTripleSlhdsaDisplayName  = "Experimental rotating triple SLH-DSA (Falcon-1024 + SLH-DSA + Ed25519)"
+)
+
+// The SLH-DSA literals the selected hypertree height fixes: the salted
+// stage program, the largest LogicSig arguments and the worst accepting
+// opcode cost. Tests pin them to lsig/rotatingtripleslhdsa/stage.
+var (
+	RotatingSlhdsaMaxProgramBytes   = slhdsaShape.programBytes
+	RotatingSlhdsaMaxArgumentBytes  = slhdsaShape.argumentBytes
+	RotatingSlhdsaMaxOpcodeCost     = slhdsaShape.opcodeCost
+	RotatingTripleSlhdsaDescription = "Experimental: independent security review and production qualification remain pending. Fixed account address with fresh Falcon-1024, " + slhdsaShape.scheme + " and Ed25519 authority per spend. No one-time leaf tracking. Signs only through rotating1."
+)
+
+var slhdsaShape = map[int]struct {
+	programBytes, argumentBytes, opcodeCost int
+	scheme                                  string
+}{
+	22: {2837, 4400 + 64 + 1423, 26825 + 41*1020, "two-layer SLH-DSA-SHA2-128 (not a FIPS 205 parameter set)"},
+	63: {2866, 7856 + 64 + 1423, 40888 + 41*3570, "SLH-DSA-SHA2-128s"},
+}[RotatingSlhdsaHeight]
+
+const (
 	// RotatingTripleWotsV1 is the rotating account key type: a fixed
 	// account whose authorizing stage program changes on every spend, and
 	// whose every stage requires a Falcon-1024, a WOTS-w16 (SHA-256) and an
@@ -110,9 +153,7 @@ const (
 )
 
 // Profile is what storage, inventory and the signing flow need to know
-// about a rotating key type without linking its implementation. One entry
-// today; the map stays because the classification is by key type, not by
-// "is rotating", and the rotating-bounded contract will add entries.
+// about a rotating key type without linking its implementation.
 type Profile struct {
 	KeyType     string
 	Family      string
@@ -134,6 +175,15 @@ type Profile struct {
 	// (the flow is stateless by design) but reports the reuse.
 	OneTimeStage bool
 
+	// StatelessHash reports a hash signature scheme that needs no one-time
+	// leaf allocation or reuse history. Rotation/exposure monitoring still applies.
+	StatelessHash bool
+
+	// Preparation bounds local work, not signing authority or wire resources.
+	// Zero limits preserve the caller's settings. These operational limits may
+	// be tuned without changing stage addresses or the cryptographic contract.
+	Preparation PreparationLimits
+
 	// ReusedStageRestsOn names what a reused one-time stage still rests on,
 	// for the reuse warning.
 	ReusedStageRestsOn string
@@ -145,6 +195,14 @@ type Profile struct {
 	// (n mod StagesPerTree) * LeavesPerStage onward.
 	LeavesPerStage int
 	StagesPerTree  int
+}
+
+// PreparationLimits prevents costly per-stage key generation from inheriting
+// a shared-tree family's lookahead or request-time parallelism.
+type PreparationLimits struct {
+	MaxLookahead   uint64
+	MaxDerivations int // per account per fill pass, or per request discovery
+	MaxParallel    int
 }
 
 // LeafRange returns the leaf indices stage n may sign with, lo <= leaf < hi.
@@ -166,6 +224,14 @@ func (p Profile) TreeOf(stage uint64) uint64 {
 }
 
 var profiles = map[string]Profile{
+	RotatingTripleSlhdsaV1: {
+		KeyType: RotatingTripleSlhdsaV1, Family: RotatingTripleSlhdsaFamily,
+		DisplayName: RotatingTripleSlhdsaDisplayName, Description: RotatingTripleSlhdsaDescription,
+		StagePublicKeySize: RotatingSlhdsaStagePublicKeySize,
+		MaxProgramBytes:    RotatingSlhdsaMaxProgramBytes, MaxArgumentBytes: RotatingSlhdsaMaxArgumentBytes,
+		MaxOpcodeCost: RotatingSlhdsaMaxOpcodeCost, StatelessHash: true,
+		Preparation: PreparationLimits{MaxLookahead: 2, MaxDerivations: 4, MaxParallel: 1},
+	},
 	RotatingTripleWotsV1: {
 		KeyType:            RotatingTripleWotsV1,
 		Family:             RotatingTripleWotsFamily,
@@ -209,7 +275,7 @@ func Lookup(keyType string) (Profile, bool) {
 
 // KeyTypes lists the rotating key types in a fixed order.
 func KeyTypes() []string {
-	return []string{RotatingTripleWotsV1, RotatingTripleXmssV1}
+	return []string{RotatingTripleWotsV1, RotatingTripleXmssV1, RotatingTripleSlhdsaV1}
 }
 
 // RoutingFamily returns the family of a rotating key type. Rotating key

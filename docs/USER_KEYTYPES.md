@@ -458,6 +458,55 @@ Everything else is the same: one network per account, the same restrictions,
 `rotate`, `rotate status` and `rotate recover`, the alerts, and the backup
 and restore rules below.
 
+### Rotating triple SLH-DSA accounts
+
+**Experimental:** independent security review and production qualification
+remain pending. See [the evaluation record](SLHDSA_EVALUATION.md) for measured
+lifecycle costs, lifetime-use assumptions and outstanding qualification work.
+
+`aplane.rotating-triple-slhdsa.v1` uses SLH-DSA alongside Falcon-1024 and
+Ed25519, with fresh keys per stage. Its SLH-DSA parameter set is the
+SLH-DSA-SHA2-128s construction with a two-layer hypertree, sized for keys
+that each sign a few messages; it is not a FIPS 205 parameter set. Its
+transaction-type, rekey, close-out and validity restrictions are the same as
+XMSS. It uses 6 transactions per spend (5 resource dummies), with a minimum
+group fee of 0.006 ALGO. The SLH signature is 4400 bytes, split over two
+arguments. The hypertree height is fixed when the signer is built; a build
+with the standard SLH-DSA-SHA2-128s height, which exists for evaluation,
+derives different accounts from the same seed and needs 10 transactions.
+
+SLH-DSA needs no one-time leaf tracking: retries and restored copies do not
+exhaust a leaf range. The signer still reports an expired release while its
+stage controls the account, and the usual rotation and recovery commands apply.
+Stage derivation computes a fresh SLH root, so rebuilding a long address cache
+also requires that work for every stage.
+Lookahead is capped at two stages, with at most four address derivations per
+account per background pass and per request-time discovery. A large restore
+therefore progresses across passes; a stage hint still requires rebuilding
+the earlier cache entries. Increasing `rotating.stage_horizon` cannot override
+this family's ceiling. Smaller configured horizons are honored.
+Budget for that when restoring: on the hardware measured in the evaluation
+record the signer rebuilds roughly two to three stages per second, so an
+account restored at stage 1,000 needs several minutes before its live stage
+is proven, and every spend attempted in the meantime is refused with
+`rotating_stage_unproven`. Watch `rotate status` for the scan to reach the
+live stage rather than retrying the spend.
+
+Stateless signing does not mean unlimited use of one key. The documented
+lifetime envelope aggregates signing across restored copies, retries, failed
+or discarded attempts and successor self-tests; there is no persistent
+signature counter. Ordinary rotation gives each stage a fresh key.
+
+Enable it through apadmin's KeyType Library, or:
+
+```sh
+apadmin -d "$APSIGNER_DATA" keytype enable aplane.rotating-triple-slhdsa.v1
+```
+
+Then select it when generating a key and choose the bound network, as for
+the other rotating accounts. Restart apsigner with the new binary before
+looking for the new library entry.
+
 ### Backups and restore
 
 The key file is the whole credential. The signer stores nothing else it
@@ -470,7 +519,8 @@ which the signer does in the background; until then a spend is refused with
 `rotating_stage_unproven`, and `rotate status` shows how far the scan has
 come. Deleting the `stages/` directory while the signer is stopped is
 always safe. `rotating.stage_horizon` in the signer's `config.yaml` (default
-4096) sets how many stages past the live one the signer derives ahead.
+4096) requests how many stages past the live one the signer derives ahead,
+subject to family limits (SLH-DSA: at most two).
 
 The background catch-up is bounded. When the signer sees an authorizer it
 cannot place, neither a stage it has already derived nor another key it

@@ -1,0 +1,546 @@
+#pragma version 13
+// SLH-DSA-SHA2-128 construction with a two-layer hypertree (h = 22,
+// d = 2, h' = 11; FORS and WOTS+ as SLH-DSA-SHA2-128s), pure interface,
+// empty context, over the raw TxID.
+// Scratch: 0 seed, 1 root, 2 seed||zero48, 3 digest, 4 tree, 5 leaf,
+// 6 FORS message, 7 current node, 8 compressed address, 9 FORS tree,
+// 10 node index, 11 path height, 12 FORS offset, 13 FORS roots,
+// 14 sibling, 16 HT layer, 17 layer signature, 18 WOTS message,
+// 19 chain, 20 checksum, 22 digit, 23 parity, 24 chain prefix,
+// 25 WOTS endpoints. Every loop has a fixed bound. A WOTS chain is
+// unrolled: switch enters the 15 hash steps at the digit, and the
+// running value stays on the stack.
+txn RekeyTo
+global ZeroAddress
+!=
+assert
+txn RekeyTo
+txn Sender
+!=
+assert
+txn CloseRemainderTo
+global ZeroAddress
+==
+assert
+txn LastValid
+txn FirstValid
+-
+pushint 100
+<=
+assert
+arg 0
+len
+pushint 2928
+==
+assert
+arg 1
+len
+pushint 1472
+==
+assert
+txn TxID
+arg 2
+pushbytes 0x@ED25519@
+ed25519verify_bare
+assert
+txn TxID
+arg 3
+pushbytes 0x@FALCON@
+falcon_verify
+assert
+pushbytes 0x@SEED@
+store 0
+pushbytes 0x@ROOT@
+store 1
+load 0
+pushint 48
+bzero
+concat
+store 2
+// H_msg: MGF1-SHA256(R || seed || SHA256(R || seed || root || M')).
+arg 0
+extract 0 16
+load 0
+concat
+load 1
+concat
+pushbytes 0x0000
+concat
+txn TxID
+concat
+sha256
+store 3
+arg 0
+extract 0 16
+load 0
+concat
+load 3
+concat
+pushbytes 0x00000000
+concat
+sha256
+extract 0 25
+store 3
+load 3
+extract 0 21
+store 6
+load 3
+extract 21 2
+btoi
+pushint 2047
+&
+store 4
+load 3
+extract 23 2
+btoi
+pushint 2047
+&
+store 5
+// Compressed address: layer1, tree8, type1, keypair4, height4, index4.
+pushint 22
+bzero
+load 4
+itob
+replace2 1
+pushbytes 0x03
+replace2 9
+load 5
+itob
+extract 4 4
+replace2 10
+store 8
+pushint 0
+store 9
+pushbytes 0x
+store 13
+fors_loop:
+load 9
+pushint 14
+<
+bz fors_done
+load 6
+load 9
+pushint 12
+*
+pushint 8
+/
+pushint 2
+extract3
+btoi
+pushint 1
+load 9
+pushint 1
+&
+-
+pushint 4
+*
+shr
+pushint 4095
+&
+load 9
+pushint 12
+shl
++
+store 10
+load 9
+pushint 208
+*
+pushint 16
++
+store 12
+load 8
+pushbytes 0x00000000
+replace2 14
+load 10
+itob
+extract 4 4
+replace2 18
+store 8
+load 2
+load 8
+concat
+arg 0
+load 12
+pushint 16
+extract3
+concat
+sha256
+extract 0 16
+store 7
+pushint 0
+store 11
+fors_auth:
+load 11
+pushint 12
+<
+bz fors_auth_done
+arg 0
+load 12
+pushint 16
++
+load 11
+pushint 16
+*
++
+pushint 16
+extract3
+store 14
+callsub hash_node
+load 11
+pushint 1
++
+store 11
+b fors_auth
+fors_auth_done:
+load 13
+load 7
+concat
+store 13
+load 9
+pushint 1
++
+store 9
+b fors_loop
+fors_done:
+load 8
+pushbytes 0x04
+replace2 9
+pushbytes 0x0000000000000000
+replace2 14
+store 8
+load 2
+load 8
+concat
+load 13
+concat
+sha256
+extract 0 16
+store 18
+pushint 0
+store 16
+ht_loop:
+load 16
+pushint 2
+<
+bz ht_done
+arg 1
+load 16
+pushint 736
+*
+pushint 736
+extract3
+store 17
+pushint 22
+bzero
+pushint 0
+load 16
+setbyte
+load 4
+itob
+replace2 1
+load 5
+itob
+extract 4 4
+replace2 10
+store 8
+pushbytes 0x
+store 25
+pushint 0
+store 20
+pushint 0
+store 19
+wots_loop:
+load 19
+pushint 35
+<
+bz wots_done
+load 19
+pushint 32
+<
+bz checksum_digit
+load 18
+load 19
+pushint 2
+/
+getbyte
+pushint 1
+load 19
+pushint 1
+&
+-
+pushint 4
+*
+shr
+pushint 15
+&
+store 22
+load 20
+pushint 15
+load 22
+-
++
+store 20
+b have_digit
+checksum_digit:
+load 20
+pushint 34
+load 19
+-
+pushint 4
+*
+shr
+pushint 15
+&
+store 22
+have_digit:
+load 2
+load 8
+extract 0 14
+concat
+load 19
+itob
+extract 4 4
+concat
+store 24
+load 17
+load 19
+pushint 16
+*
+pushint 16
+extract3
+load 22
+switch st0 st1 st2 st3 st4 st5 st6 st7 st8 st9 st10 st11 st12 st13 st14 st15
+st0:
+load 24
+pushbytes 0x00000000
+concat
+swap
+concat
+sha256
+extract 0 16
+st1:
+load 24
+pushbytes 0x00000001
+concat
+swap
+concat
+sha256
+extract 0 16
+st2:
+load 24
+pushbytes 0x00000002
+concat
+swap
+concat
+sha256
+extract 0 16
+st3:
+load 24
+pushbytes 0x00000003
+concat
+swap
+concat
+sha256
+extract 0 16
+st4:
+load 24
+pushbytes 0x00000004
+concat
+swap
+concat
+sha256
+extract 0 16
+st5:
+load 24
+pushbytes 0x00000005
+concat
+swap
+concat
+sha256
+extract 0 16
+st6:
+load 24
+pushbytes 0x00000006
+concat
+swap
+concat
+sha256
+extract 0 16
+st7:
+load 24
+pushbytes 0x00000007
+concat
+swap
+concat
+sha256
+extract 0 16
+st8:
+load 24
+pushbytes 0x00000008
+concat
+swap
+concat
+sha256
+extract 0 16
+st9:
+load 24
+pushbytes 0x00000009
+concat
+swap
+concat
+sha256
+extract 0 16
+st10:
+load 24
+pushbytes 0x0000000a
+concat
+swap
+concat
+sha256
+extract 0 16
+st11:
+load 24
+pushbytes 0x0000000b
+concat
+swap
+concat
+sha256
+extract 0 16
+st12:
+load 24
+pushbytes 0x0000000c
+concat
+swap
+concat
+sha256
+extract 0 16
+st13:
+load 24
+pushbytes 0x0000000d
+concat
+swap
+concat
+sha256
+extract 0 16
+st14:
+load 24
+pushbytes 0x0000000e
+concat
+swap
+concat
+sha256
+extract 0 16
+st15:
+load 25
+swap
+concat
+store 25
+load 19
+pushint 1
++
+store 19
+b wots_loop
+wots_done:
+load 8
+pushbytes 0x01
+replace2 9
+store 8
+load 2
+load 8
+concat
+load 25
+concat
+sha256
+extract 0 16
+store 7
+load 8
+pushbytes 0x02
+replace2 9
+pushint 12
+bzero
+replace2 10
+store 8
+load 5
+store 10
+pushint 0
+store 11
+ht_auth:
+load 11
+pushint 11
+<
+bz ht_auth_done
+load 17
+load 11
+pushint 16
+*
+pushint 560
++
+pushint 16
+extract3
+store 14
+callsub hash_node
+load 11
+pushint 1
++
+store 11
+b ht_auth
+ht_auth_done:
+load 7
+store 18
+load 4
+pushint 2047
+&
+store 5
+load 4
+pushint 11
+shr
+store 4
+load 16
+pushint 1
++
+store 16
+b ht_loop
+ht_done:
+load 7
+load 1
+==
+return
+// Fold an authentication path sibling using the parent node's address.
+hash_node:
+load 10
+pushint 1
+&
+store 23
+load 10
+pushint 1
+shr
+store 10
+load 8
+load 11
+pushint 1
++
+itob
+extract 4 4
+replace2 14
+load 10
+itob
+extract 4 4
+replace2 18
+store 8
+load 2
+load 8
+concat
+load 7
+load 14
+load 23
+select
+concat
+load 14
+load 7
+load 23
+select
+concat
+sha256
+extract 0 16
+store 7
+retsub

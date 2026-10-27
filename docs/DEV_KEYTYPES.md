@@ -428,6 +428,8 @@ in `lsig/falcon1024/register.go`.
 ### E. Rotating Account
 
 Examples:
+- `aplane.rotating-triple-slhdsa.v1` (Falcon-1024 + two-layer
+  SLH-DSA-SHA2-128 + Ed25519; stateless hash signing, no leaf allocation)
 - `aplane.rotating-triple-wots.v1` (Falcon-1024 + WOTS + Ed25519 stages)
 - `aplane.rotating-triple-xmss.v1` (Falcon-1024 + RFC 8391 XMSS + Ed25519
   stages; one XMSS tree per 1,024 stages, 64 leaves per stage)

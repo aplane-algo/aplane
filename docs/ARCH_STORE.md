@@ -1230,9 +1230,11 @@ runtime-argument metadata under `runtime_args`.
 Rotating LogicSig accounts use `category: "rotating_lsig"`. The key types
 are `aplane.rotating-triple-wots.v1` (Falcon-1024 + WOTS-w16 + Ed25519
 stages) and `aplane.rotating-triple-xmss.v1` (Falcon-1024 + RFC 8391 XMSS +
-Ed25519 stages); each fixes its own derivation and stage program template,
+Ed25519 stages), and `aplane.rotating-triple-slhdsa.v1` (Falcon-1024 +
+two-layer SLH-DSA-SHA2-128 + Ed25519); each fixes its own derivation and stage program template,
 and `internal/rotatingkey` classifies them and carries their frozen sizes
-in a per-type profile. The profile also marks the stage as one-time,
+in a per-type profile. SLH-DSA marks `StatelessHash` and keeps no one-time
+leaf history. The WOTS/XMSS profiles also mark the stage as one-time,
 because it includes a one-time hash-based signature, names what a reused
 stage still rests on, and for the XMSS triple how many leaves a stage holds;
 that changes only what the signer reports (`ARCH_SIGNING.md`, rotating
@@ -1245,7 +1247,9 @@ alerts) and which leaf it signs with, never whether it signs.
   bytes), the Falcon-1024 public key (1793), the WOTS public key (32) and
   the Ed25519 public key (32), 1889 in all. XMSS triple: the public account
   tag (32), the Falcon-1024 public key (1793), tree 0's root (32) and
-  public seed (32), and the Ed25519 public key (32), 1921 in all.
+  public seed (32), and the Ed25519 public key (32), 1921 in all. SLH-DSA
+  triple: public seed (16), root (16), Falcon public key (1793), Ed25519
+  public key (32), 1857 in all, in that order.
 - No program is stored: `lsig_bytecode`, `lsig_derivation`, `salt_counter`,
   `lsig_opcode_profile`, `teal_source`, signing metadata, `base_key_type`,
   `parameters` and `signing_args` are all rejected.
@@ -1495,7 +1499,12 @@ Placement and lifecycle:
 
 Fill: while unlocked, the signer extends each account's table in the
 background to `rotating.stage_horizon` stages (default 4,096) past the
-account's live stage. An account whose authorizer is not in its table and
+account's live stage, subject to the family's preparation ceiling. SLH-DSA
+caps lookahead at two and spends at most four address derivations per account
+per fill pass, including hinted probes; it derives serially within each chunk.
+The cache remains prefix-complete: a successful hint does not skip derivation
+of earlier entries. These limits do not alter credential validation or cache
+trust. An account whose authorizer is not in its table and
 is not a key the signer holds is searched for under a bounded recovery
 grant: automatically up to `rotating.recovery_max_stages` (default 1,024)
 past the table's edge per unlock, or at an operator's request with the

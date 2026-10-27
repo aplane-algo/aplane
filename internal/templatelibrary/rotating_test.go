@@ -8,6 +8,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 	"github.com/aplane-algo/aplane/internal/rotatingkey"
+	rotatingslhsignerreg "github.com/aplane-algo/aplane/lsig/rotatingtripleslhdsa/signerreg"
 	rotatingtriplesignerreg "github.com/aplane-algo/aplane/lsig/rotatingtriplewots/signerreg"
 	rotatingxmsssignerreg "github.com/aplane-algo/aplane/lsig/rotatingtriplexmss/signerreg"
 )
@@ -23,6 +24,7 @@ func TestLibraryListsRegisteredRotatingKeyTypes(t *testing.T) {
 	}
 	rotatingtriplesignerreg.Register()
 	rotatingxmsssignerreg.Register()
+	rotatingslhsignerreg.Register()
 
 	paths := newLibraryTestPaths(t)
 	items, err := List(paths)

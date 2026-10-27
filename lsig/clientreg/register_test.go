@@ -35,6 +35,7 @@ func TestCanonicalCompiledLogicSigInventory(t *testing.T) {
 	wantLibraryVisible := []string{
 		"aplane.ed25519.v1",
 		"aplane.falcon1024-cosigner1024.v1",
+		"aplane.rotating-triple-slhdsa.v1",
 		"aplane.rotating-triple-wots.v1",
 		"aplane.rotating-triple-xmss.v1",
 	}

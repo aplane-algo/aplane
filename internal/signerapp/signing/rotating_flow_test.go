@@ -61,7 +61,7 @@ func newSigningFixture(t *testing.T) (*rotatingFixture, *recordingReleaseAudit) 
 	return newSigningFixtureFor(t, tripleTestType)
 }
 
-func newSigningFixtureFor(t *testing.T, kind rotatingTestType) (*rotatingFixture, *recordingReleaseAudit) {
+func newSigningFixtureFor(t testing.TB, kind rotatingTestType) (*rotatingFixture, *recordingReleaseAudit) {
 	t.Helper()
 	f := newRotatingFixtureFor(t, kind)
 	audit := &recordingReleaseAudit{}
@@ -571,6 +571,20 @@ func TestRotatingStatusReportsStageReuse(t *testing.T) {
 			}
 			rec, _ := f.svc.Rotating.Releases.Get(acct)
 			profile, _ := rotatingkey.Lookup(kind.keyType)
+			if profile.StatelessHash {
+				if rec.Reused || len(rec.Leaves) != 0 || rec.TxID != second.TxID {
+					t.Fatalf("stateless release = %+v", rec)
+				}
+				warnings, notes := f.svc.RotatingStatus(report(f.account, 1050))
+				if len(warnings) != 0 || len(notes) != 1 || strings.Contains(notes[0], "more than one") {
+					t.Fatalf("stateless status: %v %v", warnings, notes)
+				}
+				warnings, _ = f.svc.RotatingStatus(report(f.account, 1200))
+				if len(warnings) != 1 || !strings.Contains(warnings[0], "expired") {
+					t.Fatalf("expired release lost: %v", warnings)
+				}
+				return
+			}
 			if profile.LeavesPerStage > 1 {
 				// Two transactions take two leaves: no reuse, an attempt
 				// count in the note, and distinct leaves in the signatures.
