@@ -691,15 +691,20 @@ one and occasionally a few when a window ages or a client rebuilds the
 transaction. The signer does not count signatures per stage and the
 protocol does not bound them: a stage stays live until a spend lands, the
 signer keeps no limit on releases per stage by design, and copies sharing a
-seed sign independently. The bound is a margin statement. With q distinct
-messages under one stage key, leaf repeats number about q(q - 1) / 2^21,
-and each repeat costs about 14 bits at that one leaf, from 2^-168 to
-2^-154 per forgery attempt; even tens of thousands of messages leave the
-worst leaf past the 128-bit target. The evaluation record tabulates this.
-No release cap, rate limit or used-leaf tracking is added: a cap could
-strand an account whose every released spend expired, and tracking leaves
-to redraw the randomizer would reintroduce the state this variant exists
-to avoid in order to remove a once-in-a-million, 14-bit event.
+seed sign independently. The bound is a margin statement, priced by the
+SPHINCS+ few-time bound that FIPS 205 inherits: with q distinct messages
+under one stage key, a forger's work on the hash leg is about 186 bits at
+q = 3, 159 bits at 2^16, 134 bits at 2^21 (the standard set's own margin
+at its 2^64 design limit) and 126 bits at 2^22. The evaluation record
+tabulates this and adopts an operating assumption of at most 2^16 distinct
+messages per stage key across copies and retries, which is two hours of
+continuous unsubmitted signing from one host with expired-release warnings
+firing throughout. No release cap, rate limit or used-leaf tracking is
+added: a cap could strand an account whose every released spend expired,
+and tracking leaves to redraw the randomizer would reintroduce the state
+this variant exists to avoid. A deployment outside the assumption adds a
+per-stage release rate limit, which delays rather than refuses, or a
+taller tree.
 
 Release memory (§8.2) keeps only the latest release for this variant:
 `StatelessHash` records carry no leaf history, restore nothing from the

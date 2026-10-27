@@ -60,30 +60,69 @@ The signer does not count signatures per stage, and the protocol does not
 bound them: a stage stays live until a spend lands, the signer deliberately
 keeps no limit on releases per stage, and copies sharing a seed sign
 independently. The bound is therefore a margin statement, not a rule the
-signer holds, and the assessment is the cost of exceeding it. Leaves are
-chosen pseudo-randomly from the message and randomizer; with q distinct
-messages under one stage key the expected number of leaf repeats is about
-q(q - 1) / 2^21, and a FORS instance used γ times admits a forgery with
-probability about (γ · 2^-12)^14 per attempt:
+signer holds, and the assessment is the cost of exceeding it, together with
+an explicit operating assumption about how far a deployment can exceed it.
 
-| Distinct messages per stage key | Expected leaf repeats | Worst leaf's forgery odds per attempt |
-|---:|---:|---|
-| 3 (honest use) | 0.000003 | 2^-168, no repeat |
-| 100 | 0.005 | 2^-154 if one occurs |
-| 1,000 | 0.5 | 2^-154 |
-| 10,000 | 48 | 2^-154, occasionally 2^-146 |
-| 65,536 | about 1,000 | 2^-146, rarely 2^-140 |
+**The cost.** It follows the few-time analysis of the SPHINCS+ framework
+(Bernstein et al., "The SPHINCS+ signature framework", 2019, section 9),
+which FIPS 205 inherits. A forger chooses a message and randomizer; their
+digest lands on one of the 2^h leaves pseudo-randomly. With q distinct
+messages signed under the key, the number γ already signed on that leaf is
+binomial(q, 2^-h), and the forgery succeeds when the digest's k FORS
+indices all fall on values those γ signatures revealed, probability
+(1 - (1 - 2^-a)^γ)^k. Summing over γ gives the success probability of one
+digest query; its reciprocal is the forger's work in hash queries. With
+a = 12, k = 14 and h = 20:
 
-Every row stays past the 128-bit target. A stage key would have to sign
-tens of thousands of distinct messages before the worst leaf lost more than
-about 20 bits, and the hybrid still requires Falcon-1024 and Ed25519. The
-2^20 figure above is where erosion begins, not where anything fails. For
-that reason no release cap, rate limit or leaf-tracking mechanism is added:
-a hard cap could leave an account unable to rotate from its live stage if
-every released spend expired, and tracking used leaves to redraw the
-randomizer would reintroduce the memory this variant exists to avoid, to
-remove a once-in-a-million event that costs 14 bits at one leaf. Review
-should check the table, not look for a counter.
+| Distinct messages per stage key | Forgery work, bits |
+|---:|---:|
+| 3 (honest use) | 186 |
+| 100 | 180 |
+| 1,000 | 175 |
+| 10,000 | 167 |
+| 65,536 (2^16) | 159 |
+| 2^18 | 151 |
+| 2^20 | 140 |
+| 2^21 | 134 |
+| 2^22 | 126 |
+| 2^24 | 106 |
+
+For comparison, SLH-DSA-SHA2-128s (h = 63) under the same bound gives 156
+bits at 2^60 messages and 134 bits at its design limit of 2^64. So the
+rescaled set exceeds the standard set's design-limit margin up to about
+2^21 messages per stage, holds the 128-bit category target to about 2^22,
+and erodes below it beyond that. This is a bound on the hash leg alone;
+the hybrid still requires Falcon-1024 and Ed25519 on the same transaction.
+
+**The operating assumption.** This record assumes **at most 2^16 distinct
+messages per stage key**, across every copy, retry and self-test, leaving
+159 bits, 25 more than the standard set claims at its own limit. What that
+figure means in practice:
+
+- A stage signs one distinct message per release. Reaching 2^16 requires
+  65,536 distinct transactions signed from one stage with none landing,
+  since the first to land retires the stage. At this host's rate of about
+  ten signatures per second that is two hours of continuous requests from
+  one signer, or proportionally less across copies sharing the seed, every
+  one an approved request through policy and the approval gate.
+- Throughout, every status pass reports the stage's expired release as a
+  warning (`ARCH_SIGNING.md`, rotating alerts), and a rotate-only spend
+  ends the stage.
+- A forger who benefits must also forge Falcon-1024 and Ed25519 on the
+  same transaction and land it before the legitimate spend rotates the
+  stage away.
+
+A deployment where a client could issue signing requests at that rate for
+hours without an operator noticing, or where more than a handful of copies
+share a seed, falls outside the assumption. The remedies are a per-stage
+release rate limit, which delays rather than refuses and so cannot strand
+an account, or a taller tree: each extra level of height doubles the
+message count at which every row of the table is reached, at twice the
+signing and derivation cost. Neither
+is added here, because the assumption holds for the intended deployments
+by three orders of magnitude and a counter or cap would reintroduce the
+state this variant exists to avoid. Review should check the bound and the
+assumption, not look for a counter.
 
 The earlier envelope for the standard set, 1,000 signing invocations per
 second per copy over 100 years, is far beyond this table and no longer
