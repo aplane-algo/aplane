@@ -147,7 +147,7 @@ func TestSizesMatchPrimitive(t *testing.T) {
 var frozen = map[int]struct {
 	unsalted, salted, args, cost, group int
 }{
-	20: {2834, 2837, 5855, 68465, 6},
+	22: {2834, 2837, 5887, 68645, 6},
 	63: {2863, 2866, 9343, 187258, 10},
 }
 

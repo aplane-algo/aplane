@@ -28,7 +28,7 @@ import (
 
 // slhTripleDummies supplies the pooled units the selected hypertree height
 // needs: the argument bytes decide the group for both shapes.
-var slhTripleDummies = map[int]int{20: 5, 63: 9}[rotatingkey.RotatingSlhdsaHeight]
+var slhTripleDummies = map[int]int{22: 5, 63: 9}[rotatingkey.RotatingSlhdsaHeight]
 
 type slhTripleStage struct {
 	keys    *signerops.StageKeys

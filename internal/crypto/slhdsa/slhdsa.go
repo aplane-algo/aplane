@@ -10,7 +10,7 @@
 //     byte-compatible with FIPS 205; the NIST ACVP vectors in testdata are
 //     pinned by the tests.
 //   - Rescaled128 keeps every function of SHA2128s and shortens the
-//     hypertree to d = 2 layers of height h' = 10 (h = 20). It is not a
+//     hypertree to d = 2 layers of height h' = 11 (h = 22). It is not a
 //     FIPS 205 parameter set. It is sized for the rotating triple key type,
 //     whose stage keys each sign a handful of messages, so that the
 //     signature fits a smaller atomic group.
@@ -144,11 +144,11 @@ var (
 	// SHA2128s is SLH-DSA-SHA2-128s of FIPS 205: h = 63 in seven layers.
 	SHA2128s = mustParams("SLH-DSA-SHA2-128s", 63, 7)
 
-	// Rescaled128 is the same construction with h = 20 in two layers of
-	// height 10, a 4,368-byte signature. It is not a FIPS 205 parameter
+	// Rescaled128 is the same construction with h = 22 in two layers of
+	// height 11, a 4,400-byte signature. It is not a FIPS 205 parameter
 	// set; its few-time security rests on a bound on signatures per key
 	// that the rotating key type's design supplies.
-	Rescaled128 = mustParams("SLH-DSA-SHA2-128 h=20 d=2", 20, 2)
+	Rescaled128 = mustParams("SLH-DSA-SHA2-128 h=22 d=2", 22, 2)
 )
 
 // String reports the parameter set.

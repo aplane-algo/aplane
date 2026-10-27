@@ -74,11 +74,11 @@ func TestGoldenVectors(t *testing.T) {
 	// The root and the address follow from the hypertree height the binary
 	// is built with (rotatingkey.RotatingSlhdsaHeight); the seeds and the other keys do not.
 	perHeight := map[int]map[string]string{
-		20: {
-			"address0": "3YMTOW23YEOWGYBBCEF4SOWTT5MBIFC2RDQJM5Y4HYBXDST4JKWDJMZFSM",
-			"address1": "HLPOUYLKU53JJLMB4KIJHF22FMKG47VCCEEMUKZCSKLRWUXCQOPWL2MDAU",
-			"root0":    "271b068ce5393cf51996e7601b721026",
-			"root1":    "79c76d489c07e255c39eab56d04516ef",
+		22: {
+			"address0": "UVL3MPUS3YTDF3YSVHNWN3UIQJGJ4OID6AIAEBN3MJLYAQFDD5ENE3FYHY",
+			"address1": "4XAAICKAIZGVIBICGTS6W5G6EFITXXQSNMT4RUCSSH43PTFYIAN53SXK7I",
+			"root0":    "f40694d057c49e160c9c90f9bdde6efa",
+			"root1":    "56c1a8427638ca8bbca6417adf664669",
 		},
 		63: {
 			"address0": "PGDSQUZ7TMOZ5DHTC64M4INDEF4I7QENPBZP7VB64YVEERMLGNE4IAYOVI",

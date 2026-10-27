@@ -3,7 +3,7 @@
 Status: **experimental; independent security review and production qualification
 are pending**. This record covers `aplane.rotating-triple-slhdsa.v1`, which
 signs under the SLH-DSA-SHA2-128s construction of FIPS 205 with its hypertree
-rescaled to two layers of height 10 (h = 20). That is **not a FIPS 205
+rescaled to two layers of height 11 (h = 22). That is **not a FIPS 205
 parameter set**, and this record is not a FIPS validation claim. The library
 display name and description expose both facts to operators.
 
@@ -16,7 +16,7 @@ SLH-DSA-SHA2-128s shape runs through the same code under the NIST ACVP
 vectors, which is the evidence that the construction is implemented
 correctly, and the rescaled shape is pinned by golden vectors of its own.
 The height is a build-time constant (`internal/rotatingkey.RotatingSlhdsaHeight`)
-with frozen artifacts for 20 and 63, so a build of the standard shape
+with frozen artifacts for 22 and 63, so a build of the standard shape
 remains available for review and measurement; it is a different account
 for the same seed, not a setting.
 
@@ -31,16 +31,17 @@ one and occasionally a few when a window ages or a client rebuilds the
 transaction. Five of the seven layers paid for capacity no stage uses.
 
 The rescaled set keeps n, w, FORS and every hash function of the standard
-set and shortens only the hypertree. Its signature is 4,368 bytes and the
-spend group is six transactions instead of ten. Signing is faster, since two
-1,024-leaf layers are fewer WOTS+ key generations than seven 512-leaf layers.
-Key generation, and with it every stage address derivation, is slower: the
-root is the top of a 1,024-leaf tree instead of a 512-leaf one, about 50 ms
-against 22 ms on the hardware below. Stage discovery, lookahead and restore
-pay that per stage; signing and the successor self-test gain more than they
-lose. A two-layer tree of height 9 (h = 18) would keep derivation at the
-old cost and halve the assessed bound below; height 10 was chosen for the
-larger margin on a bound the signer does not enforce.
+set and shortens only the hypertree. Its signature is 4,400 bytes and the
+spend group is six transactions instead of ten. Signing costs about what the
+standard set's does: two 2,048-leaf layers are about as many WOTS+ key
+generations as seven 512-leaf layers. Key generation, and with it every
+stage address derivation, is slower: the root is the top of a 2,048-leaf
+tree instead of a 512-leaf one, about 100 ms against 22 ms on the hardware
+below. Stage discovery, lookahead and restore pay that per stage. A
+two-layer tree of height 10 (h = 20) would halve signing and derivation
+cost and move the bound's 128-bit crossing from about 2^24 to about 2^22
+messages per stage; height 11 was chosen so that the margin rests on the
+tree rather than on the operating assumption below.
 
 ## Per-stage signing bound
 
@@ -48,8 +49,8 @@ The security of a FORS-based few-time scheme degrades with the number of
 signatures made under one key, through reuse of FORS leaves. It degrades
 gradually: each additional signature on an already-used leaf costs margin,
 and nothing fails at a threshold. The standard set places up to 2^64
-signatures on 2^63 leaves. The rescaled set has 2^20 leaves, so a stage key
-that signs about 2^20 distinct messages is in the standard set's reuse
+signatures on 2^63 leaves. The rescaled set has 2^22 leaves, so a stage key
+that signs about 2^22 distinct messages is in the standard set's reuse
 regime. That figure is a reference point, not a limit the design relies
 on: the table below prices every usage level from honest use up to 2^16
 messages per stage, and the assessment is that table. Deterministic signing
@@ -72,37 +73,39 @@ binomial(q, 2^-h), and the forgery succeeds when the digest's k FORS
 indices all fall on values those γ signatures revealed, probability
 (1 - (1 - 2^-a)^γ)^k. Summing over γ gives the success probability of one
 digest query; its reciprocal is the forger's work in hash queries. With
-a = 12, k = 14 and h = 20:
+a = 12, k = 14 and h = 22:
 
 | Distinct messages per stage key | Forgery work, bits |
 |---:|---:|
-| 3 (honest use) | 186 |
-| 100 | 180 |
-| 1,000 | 175 |
-| 10,000 | 167 |
-| 65,536 (2^16) | 159 |
-| 2^18 | 151 |
-| 2^20 | 140 |
-| 2^21 | 134 |
-| 2^22 | 126 |
-| 2^24 | 106 |
+| 3 (honest use) | 188 |
+| 100 | 183 |
+| 1,000 | 178 |
+| 10,000 | 172 |
+| 65,536 (2^16) | 165 |
+| 2^18 | 159 |
+| 2^20 | 151 |
+| 2^22 | 140 |
+| 2^23 | 134 |
+| 2^24 | 126 |
+| 2^26 | 106 |
 
 For comparison, SLH-DSA-SHA2-128s (h = 63) under the same bound gives 156
 bits at 2^60 messages and 134 bits at its design limit of 2^64. So the
 rescaled set exceeds the standard set's design-limit margin up to about
-2^21 messages per stage, holds the 128-bit category target to about 2^22,
+2^23 messages per stage, holds the 128-bit category target to about 2^24,
 and erodes below it beyond that. This is a bound on the hash leg alone;
 the hybrid still requires Falcon-1024 and Ed25519 on the same transaction.
 
 **The operating assumption.** This record assumes **at most 2^16 distinct
 messages per stage key**, across every copy, retry and self-test, leaving
-159 bits, 25 more than the standard set claims at its own limit. What that
+165 bits, 31 more than the standard set claims at its own limit. What that
 figure means in practice:
 
 - A stage signs one distinct message per release. Reaching 2^16 requires
   65,536 distinct transactions signed from one stage with none landing,
   since the first to land retires the stage. At this host's rate of about
-  ten signatures per second that is two hours of continuous requests from
+  two releases per second, each a successor self-test and a signature,
+  that is about nine hours of continuous requests from
   one signer, or proportionally less across copies sharing the seed, every
   one an approved request through policy and the approval gate.
 - Throughout, every status pass reports the stage's expired release as a
@@ -207,23 +210,27 @@ fixtures; setup is outside the timer.
 
 | Operation | Median seconds | Observed range, seconds | Fill passes |
 |---|---:|---:|---:|
-| Encrypted credential read and full validation | 0.073 | 0.063–0.100 | — |
-| Successor derivation, signing and verification | 0.180 | 0.174–0.186 | — |
-| Prepare, cold stage cache | 0.422 | 0.329–0.422 | — |
-| Prepare, warm stage cache | 0.218 | 0.201–0.233 | — |
-| Prepare and sign, cold stage cache | 1.037 | 0.986–1.042 | — |
-| Prepare and sign, warm stage cache | 0.844 | 0.841–1.005 | — |
-| Rebuild cache at stage 0 | 0.496 | 0.494–0.513 | 1 |
-| Rebuild cache at stage 8, no hint | 1.729 | 1.696–1.829 | 3 |
-| Rebuild cache at stage 8, exact hint | 1.923 | 1.727–2.160 | 3 |
-| Rebuild cache at stage 64, no hint | 11.126 | 10.238–12.211 | 17 |
-| Rebuild cache at stage 64, exact hint | 12.155 | 10.956–13.109 | 17 |
+| Encrypted credential read and full validation | 0.131 | 0.112–0.134 | — |
+| Successor derivation, signing and verification | 0.309 | 0.305–0.314 | — |
+| Prepare, cold stage cache | 0.582 | 0.553–0.634 | — |
+| Prepare, warm stage cache | 0.393 | 0.374–0.522 | — |
+| Prepare and sign, cold stage cache | 1.822 | 1.775–1.841 | — |
+| Prepare and sign, warm stage cache | 1.784 | 1.524–2.352 | — |
+| Rebuild cache at stage 0 | 0.971 | 0.958–1.708 | 1 |
+| Rebuild cache at stage 8, no hint | 3.052 | 2.910–3.432 | 3 |
+| Rebuild cache at stage 8, exact hint | 3.682 | 3.487–3.785 | 3 |
+| Rebuild cache at stage 64, no hint | 19.409 | 17.671–22.080 | 17 |
+| Rebuild cache at stage 64, exact hint | 18.241 | 17.938–18.278 | 17 |
 
-Against the standard set measured on 2026-10-26 on the same host, the
-successor self-test is about 15% faster, prepare and sign end to end is
-within noise, and every path that derives stage addresses is slower by
-about 30 ms per stage, as the key generation cost above predicts: a
-64-stage rebuild went from about 9.8 to about 11 seconds.
+Against the standard set measured on 2026-10-26 on the same host, every
+operation is slower, by the key generation cost above: the root of each
+stage is the top of a 2,048-leaf tree instead of a 512-leaf one, so each
+stage derivation costs about 100 ms more, prepare and sign end to end about
+doubled to under two seconds, and a 64-stage rebuild went from about 10 to
+about 19 seconds. These are the price of the two extra levels of height
+over h = 20, which on the same host signed in about a second end to end and
+rebuilt 64 stages in about 11 seconds. The preparation ceilings above were
+set for the standard set and remain within budget here.
 
 The variation does not establish a hint speedup: both paths rebuild the same
 prefix, and the hinted path adds a probe. Warm preparation saves address-cache

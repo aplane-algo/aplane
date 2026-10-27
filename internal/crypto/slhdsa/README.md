@@ -7,7 +7,7 @@ parametric in the hypertree shape. Two shapes are defined:
 | Value | Hypertree | Signature | Standing |
 | --- | --- | ---: | --- |
 | `SHA2128s` | 7 layers of height 9 (h = 63) | 7,856 bytes | SLH-DSA-SHA2-128s of FIPS 205; pinned to the NIST ACVP vectors |
-| `Rescaled128` | 2 layers of height 10 (h = 20) | 4,368 bytes | not a FIPS 205 parameter set; sized for rotating stage keys that each sign a few messages |
+| `Rescaled128` | 2 layers of height 11 (h = 22) | 4,400 bytes | not a FIPS 205 parameter set; sized for rotating stage keys that each sign a few messages |
 
 Both shapes run the same code. The ACVP vectors therefore exercise the
 construction the rescaled shape uses; the rescaled shape is pinned by golden
@@ -51,9 +51,9 @@ randomized operation; verification cases include rejection vectors.
 ## Rotating integration
 
 `lsig/rotatingtripleslhdsa` contains frozen TEAL verifiers and signer hooks
-for both shapes, selected at build time by `rotatingkey.RotatingSlhdsaHeight` (default 20). At
-height 20 the declared ceiling is 68465 AVM opcodes, which fits four
-transactions, and the 5,855 bytes of LogicSig arguments decide the group,
+for both shapes, selected at build time by `rotatingkey.RotatingSlhdsaHeight` (default 22). At
+height 22 the declared ceiling is 68645 AVM opcodes, which fits four
+transactions, and the 5,887 bytes of LogicSig arguments decide the group,
 six transactions; at height 63 the ceiling is 187258 and the 9,343 argument
 bytes need ten. See `docs/ARCH_CRYPTO.md` for the design record and cost
 proof. `VerifyStats` counts hash calls and WOTS verification steps; LocalNet

@@ -30,19 +30,19 @@ type hypertree struct {
 }
 
 var (
-	//go:embed verifier_h20.teal
-	tealH20 string
+	//go:embed verifier_h22.teal
+	tealH22 string
 	//go:embed verifier_h63.teal
 	tealH63 string
 )
 
 var hypertrees = map[int]hypertree{
-	20: {
+	22: {
 		params:   &slhdsa.Rescaled128,
-		chunks:   []int{ForsChunkSize, 2 * (slhdsa.WotsSignatureSize + 10*slhdsa.N)},
-		teal:     tealH20,
-		template: templateH20,
-		base:     26645,
+		chunks:   []int{ForsChunkSize, 2 * (slhdsa.WotsSignatureSize + 11*slhdsa.N)},
+		teal:     tealH22,
+		template: templateH22,
+		base:     26825,
 		step:     41,
 	},
 	63: {

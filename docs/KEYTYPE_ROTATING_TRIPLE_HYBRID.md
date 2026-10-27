@@ -564,7 +564,7 @@ of state over one group slot.
 |---|---|
 | Construction | SLH-DSA-SHA2-128s of FIPS 205 (`internal/crypto/slhdsa`), hypertree rescaled |
 | Hash and security parameter | SHA-256 throughout, n = 16 |
-| Hypertree | h = 20 in d = 2 layers of height h' = 10 (standard set: h = 63, d = 7, h' = 9) |
+| Hypertree | h = 22 in d = 2 layers of height h' = 11 (standard set: h = 63, d = 7, h' = 9) |
 | FORS | k = 14 trees of height a = 12, as the standard set |
 | WOTS+ | w = 16, 35 chains (32 message digits + 3 checksum digits), as the standard set |
 | Message digest | 25 bytes: 21 for FORS, 2 for the tree index, 2 for the leaf index (standard set: 30) |
@@ -573,10 +573,10 @@ of state over one group slot.
 | TEAL version | 13 |
 | Stage program bytes, unsalted / salted | 2,834 / 2,837 |
 | Stage 0 public record bytes | 1,857 |
-| SLH-DSA signature bytes | 4,368 (standard set: 7,856) |
+| SLH-DSA signature bytes | 4,400 (standard set: 7,856) |
 | Ed25519, Falcon-1024 signature bytes | 64; at most 1,423 |
-| Maximum total argument bytes | 5,855 |
-| Maximum opcode cost | 68,465 |
+| Maximum total argument bytes | 5,887 |
+| Maximum opcode cost | 68,645 |
 | Group size | 6: one spend + five resource dummies |
 | Go value | `slhdsa.Rescaled128`; `slhdsa.SHA2128s` is the standard set |
 
@@ -590,7 +590,7 @@ are rarely reused. A rotating stage key signs a handful of messages (§11.5),
 so five of the seven layers paid 3,520 bytes per spend for capacity no stage
 uses. Shortening the hypertree to two layers keeps n, w, FORS and every hash
 function of the standard set and changes only the number of layers and the
-digest split; the signature drops to 4,368 bytes and the group to six
+digest split; the signature drops to 4,400 bytes and the group to six
 transactions, which is also the floor for any FORS of the standard size.
 
 **What it is not.** FIPS 205 approves only its listed parameter sets. The
@@ -605,7 +605,7 @@ way, with its own written argument.
 
 **Build-time selection.** The height is a constant,
 `internal/rotatingkey.RotatingSlhdsaHeight`, with frozen artifacts for both
-20 and 63: a verifier source, a template assembled from it, an argument
+22 and 63: a verifier source, a template assembled from it, an argument
 layout, a measured cost model and golden stage identities each, plus the
 matching resource literals in `internal/rotatingkey`. Changing the
 constant and rebuilding gives the standard SLH-DSA-SHA2-128s shape at ten
@@ -624,10 +624,11 @@ key type's lifetime.
   application pinned in the stage template, a custom SLH-DSA signed message
   because the signature can no longer bind the group ID it is part of, and
   a new key type. Shelved.
-- *Two layers of height 9 (h = 18).* Same signature within 32 bytes, stage
-  derivation at the standard set's cost, and a bound in §11.5 four times
-  smaller. Height 10 was chosen for margin on a bound the signer does not
-  enforce.
+- *Two layers of height 10 (h = 20).* Same group, 32 fewer signature
+  bytes, half the signing and derivation cost, and the bound of §11.5
+  crossing 128 bits at about 2^22 messages per stage instead of 2^24.
+  Height 11 was chosen so that the margin rests on the tree rather than on
+  the operating assumption.
 - *A smaller FORS.* Reaching five transactions needs about 2,000 fewer
   signature bytes, which only FORS can give, at the direct expense of the
   128-bit single-use margin. Rejected.
@@ -639,8 +640,8 @@ Derivation uses the shared HKDF scheme of §4 under the label
 seed), 2 (Ed25519 seed), 3 (`SK.seed`), 4 (`SK.prf`) and 5 (`PK.seed`),
 each expansion including the genesis hash. Stage `n`'s SLH-DSA key is
 `KeyGenFromSeeds(SK.seed_n, SK.prf_n, PK.seed_n)` under the rescaled set;
-its root is the top of a 1,024-leaf tree, so derivation costs about twice
-the standard set's. The stage program embeds, in this order, `PK.seed` (16),
+its root is the top of a 2,048-leaf tree, so derivation costs about four
+times the standard set's. The stage program embeds, in this order, `PK.seed` (16),
 `PK.root` (16), the Falcon-1024 public key (1,793) and the Ed25519 public
 key (32), and the stage 0 public record is the same 1,857 bytes. Program
 bytes are derived, never stored, as for the other variants.
@@ -650,23 +651,23 @@ bytes are derived, never stored, as for the other variants.
 All three components sign the raw 32-byte transaction ID (§5.1). SLH-DSA
 signs the pure-interface message `M' = 0x00 || 0x00 || TxID` with
 `opt_rand = PK.seed`, so the same stage and transaction always reproduce the
-same signature. The signature is `R (16) || FORS (2,912) || layer 0 (720)
-|| layer 1 (720)`, and it is split for transport so that every argument
+same signature. The signature is `R (16) || FORS (2,912) || layer 0 (736)
+|| layer 1 (736)`, and it is split for transport so that every argument
 stays under the AVM's 4,096-byte value limit:
 
 | Argument | Content | Bytes |
 |---|---|---:|
 | `arg 0` | `R` and the FORS signature | 2,928 |
-| `arg 1` | both hypertree layers | 1,440 |
+| `arg 1` | both hypertree layers | 1,472 |
 | `arg 2` | Ed25519 signature | 64 |
 | `arg 3` | Falcon-1024 signature, compressed | at most 1,423 |
 
 The verifier recomputes `H_msg` as one SHA-256 and one MGF1 block, splits
-the 25-byte digest into the FORS message, a 10-bit tree index and a 10-bit
+the 25-byte digest into the FORS message, an 11-bit tree index and an 11-bit
 leaf index, recovers the 14 FORS roots along their authentication paths,
 compresses them, and then walks the two WOTS+ layers: each chain is
 unrolled, a `switch` on the digit enters the remaining hash steps, the 35
-chain ends are compressed, and a 10-level authentication path yields the
+chain ends are compressed, and an 11-level authentication path yields the
 layer's root, which is the next layer's message. The final root must equal
 the embedded `PK.root`. There is no randomizer search, leaf range, checksum
 cap or signature grinding; every valid signature under the key is accepted.
@@ -680,8 +681,8 @@ the flow passes is ignored.
 The one-time rule of §9 does not apply. In its place the variant assumes a
 bound on how many **distinct** messages one stage key signs. FORS security
 degrades gradually as leaves are reused; the standard set places up to 2^64
-signatures on 2^63 leaves, and the rescaled set with 2^20 leaves is in that
-same regime at about **2^20 distinct messages per stage key**. Repeating a
+signatures on 2^63 leaves, and the rescaled set with 2^22 leaves is in that
+same regime at about **2^22 distinct messages per stage key**. Repeating a
 message reproduces the same signature and the same leaf and reveals nothing
 new, so retries of one transaction do not count.
 
@@ -703,34 +704,35 @@ on that leaf is binomial(q, 2^-h). The forgery succeeds when the digest's
 k FORS indices all fall on values those γ signatures revealed, which
 happens with probability (1 - (1 - 2^-a)^γ)^k. Summing over γ gives the
 success probability of one digest query, and its reciprocal is the
-forger's work in hash queries. For a = 12, k = 14 and h = 20:
+forger's work in hash queries. For a = 12, k = 14 and h = 22:
 
 | Distinct messages per stage key | Forgery work on the hash leg, bits |
 |---:|---:|
-| 3 (honest use) | 186 |
-| 100 | 180 |
-| 1,000 | 175 |
-| 10,000 | 167 |
-| 65,536 (2^16) | 159 |
-| 2^18 | 151 |
-| 2^20 | 140 |
-| 2^21 | 134 |
-| 2^22 | 126 |
-| 2^24 | 106 |
+| 3 (honest use) | 188 |
+| 100 | 183 |
+| 1,000 | 178 |
+| 10,000 | 172 |
+| 65,536 (2^16) | 165 |
+| 2^18 | 159 |
+| 2^20 | 151 |
+| 2^22 | 140 |
+| 2^23 | 134 |
+| 2^24 | 126 |
+| 2^26 | 106 |
 
 Under the same bound SLH-DSA-SHA2-128s (h = 63) gives 156 bits at 2^60
 messages and 134 bits at its design limit of 2^64. The rescaled set
-therefore exceeds the standard set's design-limit margin up to about 2^21
-messages per stage, holds the 128-bit category target to about 2^22, and
+therefore exceeds the standard set's design-limit margin up to about 2^23
+messages per stage, holds the 128-bit category target to about 2^24, and
 erodes below it beyond that. This prices the hash leg alone; the hybrid
 still requires Falcon-1024 and Ed25519 on the same transaction, and the
 stage is retired when a spend lands.
 
 **The operating assumption** is the evaluation record's: at most 2^16
-distinct messages per stage key across copies and retries, leaving 159
-bits, 25 more than the standard set claims at its own limit. That is two
-hours of continuous approved, unsubmitted signing from one host at ten
-signatures per second, with the expired-release warning of §8.2 firing on
+distinct messages per stage key across copies and retries, leaving 165
+bits, 31 more than the standard set claims at its own limit. That is about
+nine hours of continuous approved, unsubmitted signing from one host at two
+releases per second, with the expired-release warning of §8.2 firing on
 every status pass. The record states what falls outside the assumption and
 the two remedies: a per-stage release rate limit, which delays rather than
 refuses and so cannot strand an account, or a taller tree, each level of
@@ -752,12 +754,12 @@ in-flight release alerts work as for the other variants.
 
 | Property | SLH-DSA variant |
 |---|---|
-| Verifier cost | `26,645 + 41 * steps`, salted or not; the salt tail follows `return` |
+| Verifier cost | `26,825 + 41 * steps`, salted or not; the salt tail follows `return` |
 | Steps per layer | `c + 45 - digitSum16(c)` for checksum `c` in 0..480, at most 510 |
 | Maximum chain steps | 1,020 |
-| Worst accepting run | 68,465 |
-| Typical run | about 48,500 at the mean of 534 steps; LocalNet traces of 480 and 570 steps matched the model exactly |
-| Maximum argument bytes | 5,855 |
+| Worst accepting run | 68,645 |
+| Typical run | about 48,700 at the mean of 534 steps; LocalNet traces of 450 and 480 steps matched the model exactly |
+| Maximum argument bytes | 5,887 |
 | Group pool | 120,000 cost / 6,000 argument bytes |
 | Resource dummies | 5 |
 | Fee at minimum | 6,000 microAlgos, no program surcharge |
@@ -787,14 +789,14 @@ The 41 units per chain step are 6 unit-cost instructions and one SHA-256.
 | Item | XMSS | WOTS | SLH-DSA |
 |---|---|---|---|
 | Hash-based key per stage | 64 one-time leaves of a shared tree | one one-time key | one few-time key |
-| Rule on the hash-based key | each leaf signs one message | the key signs one message | at most about 2^20 distinct messages |
+| Rule on the hash-based key | each leaf signs one message | the key signs one message | at most about 2^22 distinct messages |
 | State the rule needs | leaf history, audit restore, tree cache | release memory for reporting only | none |
 | Loss of state | leaf reuse, caught and reported | reuse reported | none |
 | Group size | 5 | 4 | 6 |
-| Hash-based signature bytes | 2,692 | 2,144 | 4,368 |
-| Worst opcode cost | 95,857 | 59,772 | 68,465 |
-| Signing, this host | tree cache amortized | microseconds | about 0.10 s |
-| Stage derivation, this host | tree cache amortized | microseconds | about 50 ms |
+| Hash-based signature bytes | 2,692 | 2,144 | 4,400 |
+| Worst opcode cost | 95,857 | 59,772 | 68,645 |
+| Signing, this host | tree cache amortized | microseconds | about 0.2 s |
+| Stage derivation, this host | tree cache amortized | microseconds | about 100 ms |
 | Standing | RFC 8391 format and set, non-conformant signer | APlane construction | FIPS 205 construction, private parameter set |
 | Status | released v1 | released v1 | experimental |
 

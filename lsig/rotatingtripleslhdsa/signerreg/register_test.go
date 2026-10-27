@@ -51,7 +51,7 @@ func TestRegisterIsIdempotent(t *testing.T) {
 func TestKeyPayloadRoundTripsToStageZeroAddress(t *testing.T) {
 	payload, address := fixedPayload(t)
 	wantAddress := map[int]string{
-		20: "3YMTOW23YEOWGYBBCEF4SOWTT5MBIFC2RDQJM5Y4HYBXDST4JKWDJMZFSM",
+		22: "UVL3MPUS3YTDF3YSVHNWN3UIQJGJ4OID6AIAEBN3MJLYAQFDD5ENE3FYHY",
 		63: "PGDSQUZ7TMOZ5DHTC64M4INDEF4I7QENPBZP7VB64YVEERMLGNE4IAYOVI",
 	}[rotatingkey.RotatingSlhdsaHeight]
 	if address != wantAddress {

@@ -89,7 +89,7 @@ var (
 	}
 	slhTestType = rotatingTestType{
 		keyType: rotatingkey.RotatingTripleSlhdsaV1, register: rotatingslhsignerreg.Register,
-		newKeyPayload: rotatingslhsignerreg.NewKeyPayload, dummies: map[int]int{20: 5, 63: 9}[rotatingkey.RotatingSlhdsaHeight],
+		newKeyPayload: rotatingslhsignerreg.NewKeyPayload, dummies: map[int]int{22: 5, 63: 9}[rotatingkey.RotatingSlhdsaHeight],
 	}
 	rotatingTestTypes = []rotatingTestType{tripleTestType, xmssTestType, slhTestType}
 )

@@ -109,7 +109,7 @@ func TestSizes(t *testing.T) {
 		m, idxTree, idxLeaf, xmss, size int
 	}{
 		{&SHA2128s, 9, 30, 7, 2, 704, 7856},
-		{&Rescaled128, 10, 25, 2, 2, 720, 4368},
+		{&Rescaled128, 11, 25, 2, 2, 736, 4400},
 	} {
 		t.Log(tc.p.String())
 		p := tc.p
@@ -235,9 +235,9 @@ func TestRescaledGoldenVectors(t *testing.T) {
 		"sig_sha256": hex.EncodeToString(sum[:]),
 	}
 	want := map[string]string{
-		"root":       "42f292b921cad88f21ae7f7cde804632",
+		"root":       "317939f1c00b159d4279590b1085c20f",
 		"r":          "50b8fa4334373d1c4e1d7ca8b4889e83",
-		"sig_sha256": "39ec8b9f28c30375c78215cabb72023679ee3ddaf51e008aae14e7b77c83be50",
+		"sig_sha256": "93bfdf379381be25884dda3f31b91796b51dc411376a4c85410f4b5e5c087422",
 	}
 	for k, v := range want {
 		if got[k] != v {
@@ -378,7 +378,7 @@ func TestRandomRoundTrip(t *testing.T) {
 }
 
 // TestRescaledLeafIndices checks that the digest split of the rescaled set
-// spreads signatures over the whole 2^20-leaf hypertree: both the tree and
+// spreads signatures over the whole 2^22-leaf hypertree: both the tree and
 // the leaf index take every bit of their fields over many messages.
 func TestRescaledLeafIndices(t *testing.T) {
 	p := &Rescaled128

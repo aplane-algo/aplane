@@ -645,7 +645,7 @@ Start here when changing the subsystem:
 `rotating1`. Its stage requires Falcon-1024, Ed25519 and SLH-DSA signatures,
 the last under a rescaled parameter set: the SLH-DSA-SHA2-128s construction
 of FIPS 205 with its hypertree shortened from seven layers of height 9 to
-two layers of height 10 (`slhdsa.Rescaled128`). That set is not a FIPS 205
+two layers of height 11 (`slhdsa.Rescaled128`). That set is not a FIPS 205
 parameter set. `internal/crypto/slhdsa` owns the primitive, which is
 parametric in the hypertree shape; `lsig/rotatingtripleslhdsa` owns the
 frozen stage, private operations and codec. The primitive's pinned NIST ACVP
@@ -669,8 +669,8 @@ The design record for this new implementation of an established contract:
 2. **Cryptography and bindings:** all three signatures bind the raw 32-byte
    TxID, hence sender, genesis, group, next authority and validity window.
    SLH uses the pure external interface with empty context (`0000 || TxID`)
-   and deterministic opt_rand = PK.seed. Parameters are n=16, h=20, d=2,
-   h'=10, a=12, k=14, w=16: FORS, WOTS+ and every hash function are those
+   and deterministic opt_rand = PK.seed. Parameters are n=16, h=22, d=2,
+   h'=11, a=12, k=14, w=16: FORS, WOTS+ and every hash function are those
    of SLH-DSA-SHA2-128s; only the hypertree is shorter. The standard set's
    63-level hypertree exists so one key can sign 2^64 messages; a rotating
    stage key signs a handful, and the two-layer tree supports the per-stage
@@ -696,11 +696,11 @@ The design record for this new implementation of an established contract:
    released or recorded on those failures.
 6. **Resources and compatibility:** frozen TEAL v13 template, 2834 bytes
    unsalted / 2837 salted, canonical first off-curve salt as other rotating
-   stages. Args 0..3 are R+FORS (2928), both HT layers (1440), Ed25519 (64),
-   Falcon (<=1423): 5855 bytes total. Each stays below the AVM byte-value
-   limit. The exact cost is 26645 + 41 times WOTS chain steps. A layer's
+   stages. Args 0..3 are R+FORS (2928), both HT layers (1472), Ed25519 (64),
+   Falcon (<=1423): 5887 bytes total. Each stays below the AVM byte-value
+   limit. The exact cost is 26825 + 41 times WOTS chain steps. A layer's
    checksum c lies in 0..480 and requires c + 45 - digitSum16(c) steps, at
-   most 510; two layers give a ceiling of 68465, inside four transactions.
+   most 510; two layers give a ceiling of 68645, inside four transactions.
    The argument bytes decide the group: planning uses 6 transactions (5
    dummies), with no program surcharge and 6000 microAlgos at minimum fees.
    The key-type ID, derivation labels and tags are unchanged; the stage
@@ -709,7 +709,7 @@ The design record for this new implementation of an established contract:
    compatible update. The height is a build-time constant
    (`internal/rotatingkey.RotatingSlhdsaHeight`): the stage package carries a
    frozen verifier, template, argument layout and measured cost model for
-   both 20 and 63, and `internal/rotatingkey` the matching literals, so
+   both 22 and 63, and `internal/rotatingkey` the matching literals, so
    changing the constant and rebuilding selects the standard
    SLH-DSA-SHA2-128s shape instead (2863 / 2866 bytes, args R+FORS, four
    HT layers, three HT layers, Ed25519, Falcon, 9343 bytes, cost

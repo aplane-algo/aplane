@@ -20,11 +20,11 @@ const (
 	// from it: a key generated under one height is a different account
 	// under the other. Supported values:
 	//
-	//   - 20: two layers of height 10, a 4,368-byte signature and a
+	//   - 22: two layers of height 11, a 4,400-byte signature and a
 	//     six-transaction group. Not a FIPS 205 parameter set.
 	//   - 63: seven layers of height 9, SLH-DSA-SHA2-128s of FIPS 205, a
 	//     7,856-byte signature and a ten-transaction group.
-	RotatingSlhdsaHeight = 20
+	RotatingSlhdsaHeight = 22
 
 	// RotatingTripleSlhdsaV1 uses a stateless SLH-DSA key per stage under the
 	// SLH-DSA-SHA2-128s construction at RotatingSlhdsaHeight.
@@ -49,7 +49,7 @@ var slhdsaShape = map[int]struct {
 	programBytes, argumentBytes, opcodeCost int
 	scheme                                  string
 }{
-	20: {2837, 4368 + 64 + 1423, 26645 + 41*1020, "two-layer SLH-DSA-SHA2-128 (not a FIPS 205 parameter set)"},
+	22: {2837, 4400 + 64 + 1423, 26825 + 41*1020, "two-layer SLH-DSA-SHA2-128 (not a FIPS 205 parameter set)"},
 	63: {2866, 7856 + 64 + 1423, 40888 + 41*3570, "SLH-DSA-SHA2-128s"},
 }[RotatingSlhdsaHeight]
 

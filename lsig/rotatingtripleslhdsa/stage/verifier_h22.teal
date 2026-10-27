@@ -1,6 +1,6 @@
 #pragma version 13
-// SLH-DSA-SHA2-128 construction with a two-layer hypertree (h = 20,
-// d = 2, h' = 10; FORS and WOTS+ as SLH-DSA-SHA2-128s), pure interface,
+// SLH-DSA-SHA2-128 construction with a two-layer hypertree (h = 22,
+// d = 2, h' = 11; FORS and WOTS+ as SLH-DSA-SHA2-128s), pure interface,
 // empty context, over the raw TxID.
 // Scratch: 0 seed, 1 root, 2 seed||zero48, 3 digest, 4 tree, 5 leaf,
 // 6 FORS message, 7 current node, 8 compressed address, 9 FORS tree,
@@ -35,7 +35,7 @@ pushint 2928
 assert
 arg 1
 len
-pushint 1440
+pushint 1472
 ==
 assert
 txn TxID
@@ -87,13 +87,13 @@ store 6
 load 3
 extract 21 2
 btoi
-pushint 1023
+pushint 2047
 &
 store 4
 load 3
 extract 23 2
 btoi
-pushint 1023
+pushint 2047
 &
 store 5
 // Compressed address: layer1, tree8, type1, keypair4, height4, index4.
@@ -225,9 +225,9 @@ pushint 2
 bz ht_done
 arg 1
 load 16
-pushint 720
+pushint 736
 *
-pushint 720
+pushint 736
 extract3
 store 17
 pushint 22
@@ -466,7 +466,7 @@ pushint 0
 store 11
 ht_auth:
 load 11
-pushint 10
+pushint 11
 <
 bz ht_auth_done
 load 17
@@ -488,11 +488,11 @@ ht_auth_done:
 load 7
 store 18
 load 4
-pushint 1023
+pushint 2047
 &
 store 5
 load 4
-pushint 10
+pushint 11
 shr
 store 4
 load 16
