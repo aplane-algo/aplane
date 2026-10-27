@@ -703,10 +703,10 @@ distinct messages signed under the stage key, the number γ already signed
 on that leaf is binomial(q, 2^-h). The forgery succeeds when the digest's
 k FORS indices all fall on values those γ signatures revealed, which
 happens with probability (1 - (1 - 2^-a)^γ)^k. Summing over γ gives the
-success probability of one digest query, and its reciprocal is the
-forger's work in hash queries. For a = 12, k = 14 and h = 22:
+success probability of one digest query, and its reciprocal is the work
+this term demands, in hash queries. For a = 12, k = 14 and h = 22:
 
-| Distinct messages per stage key | Forgery work on the hash leg, bits |
+| Distinct messages per stage key | FORS few-time (ITSR) term, bits |
 |---:|---:|
 | 3 (honest use) | 188 |
 | 100 | 183 |
@@ -720,24 +720,38 @@ forger's work in hash queries. For a = 12, k = 14 and h = 22:
 | 2^24 | 126 |
 | 2^26 | 106 |
 
-Under the same bound SLH-DSA-SHA2-128s (h = 63) gives 156 bits at 2^60
-messages and 134 bits at its design limit of 2^64. The rescaled set
-therefore exceeds the standard set's design-limit margin up to about 2^23
-messages per stage, holds the 128-bit category target to about 2^24, and
-erodes below it beyond that. This prices the hash leg alone; the hybrid
+This is one term of the SPHINCS+ bound, not the signature's security. The
+bound also carries generic hash terms, for second-preimage, PRF and
+multi-target resistance, that scale with n = 16: about 128 bits
+classically and the category 1 quantum figure, identical for the rescaled
+and the standard set since the hash functions are the same. The hash leg's
+security is the smaller of the few-time term and those generic terms, so
+it is category 1 for either set while the few-time term stays above them;
+the table shows how many distinct messages a stage may sign before the
+few-time term becomes the binding one. Under the same bound
+SLH-DSA-SHA2-128s (h = 63) has a few-time term of 156 bits at 2^60
+messages and 134 bits at its design limit of 2^64. The rescaled set's term
+stays above the standard set's design-limit figure to about 2^23 messages
+per stage and above the 128-bit generic terms to about 2^24; beyond that
+the leg falls below category 1. This prices the hash leg alone; the hybrid
 still requires Falcon-1024 and Ed25519 on the same transaction, and the
 stage is retired when a spend lands.
 
 **The operating assumption** is the evaluation record's: at most 2^16
-distinct messages per stage key across copies and retries, leaving 165
-bits, 31 more than the standard set claims at its own limit. That is about
-nine hours of continuous approved, unsubmitted signing from one host at two
-releases per second, with the expired-release warning of §8.2 firing on
-every status pass. The record states what falls outside the assumption and
-the two remedies: a per-stage release rate limit, which delays rather than
-refuses and so cannot strand an account, or a taller tree, each level of
-which doubles every message count in the table at twice the signing and
-derivation cost.
+distinct messages per stage key across copies and retries. At that count
+the few-time term is 165 bits, 37 above the generic terms and 31 above the
+standard set's term at its own limit, so the leg's security is the
+category 1 figure. That is about nine hours of continuous approved,
+unsubmitted signing from one host at two releases per second. The signer's
+alerts do not surface that condition: release memory (§8.2) keeps only a
+stage's latest release for this variant, so a single expired release warns
+but a stream of fresh releases reads as "in flight" indefinitely. A
+per-stage count of distinct releases, reported and never enforced, is the
+observational remedy and an open item (§14). The record states what else
+falls outside the assumption and the two remedies: a per-stage release rate
+limit, which delays rather than refuses and so cannot strand an account, or
+a taller tree, each level of which doubles every message count in the
+table at twice the signing and derivation cost.
 
 No release cap, counter or used-leaf tracking is added: a cap could strand
 an account whose every released spend expired, and tracking leaves to
@@ -853,6 +867,10 @@ Full XMSS tree builds are skipped under the race detector (`internal/racetest`).
 - Independent review of the SLH-DSA rescaled parameter set and of the
   per-stage signing margin argument (§11.5) is a listed gate in
   [SLHDSA_EVALUATION.md](SLHDSA_EVALUATION.md).
+- Status and alerts report only the latest release of an SLH-DSA stage, so
+  prolonged unsubmitted signing from one stage is not visible (§11.5). A
+  per-stage count of distinct releases, reported and never enforced, is
+  the remedy.
 - Per-key-type exit and external-admin paths remain design-only.
 - Hinted stage scans and an in-flight release limit remain proposed.
 - Grouping with other senders and multi-stage release are deferred by design

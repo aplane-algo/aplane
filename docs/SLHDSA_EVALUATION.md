@@ -72,10 +72,10 @@ messages signed under the key, the number γ already signed on that leaf is
 binomial(q, 2^-h), and the forgery succeeds when the digest's k FORS
 indices all fall on values those γ signatures revealed, probability
 (1 - (1 - 2^-a)^γ)^k. Summing over γ gives the success probability of one
-digest query; its reciprocal is the forger's work in hash queries. With
-a = 12, k = 14 and h = 22:
+digest query; its reciprocal is the work this term demands, in hash
+queries. With a = 12, k = 14 and h = 22:
 
-| Distinct messages per stage key | Forgery work, bits |
+| Distinct messages per stage key | FORS few-time (ITSR) term, bits |
 |---:|---:|
 | 3 (honest use) | 188 |
 | 100 | 183 |
@@ -89,17 +89,31 @@ a = 12, k = 14 and h = 22:
 | 2^24 | 126 |
 | 2^26 | 106 |
 
-For comparison, SLH-DSA-SHA2-128s (h = 63) under the same bound gives 156
-bits at 2^60 messages and 134 bits at its design limit of 2^64. So the
-rescaled set exceeds the standard set's design-limit margin up to about
-2^23 messages per stage, holds the 128-bit category target to about 2^24,
-and erodes below it beyond that. This is a bound on the hash leg alone;
-the hybrid still requires Falcon-1024 and Ed25519 on the same transaction.
+This table is one term of the SPHINCS+ bound, not the security of the
+signature. The bound also carries generic hash terms, for second-preimage,
+PRF and multi-target resistance, that scale with the hash size n = 16:
+about 128 bits classically and the category 1 quantum figure, identical
+for the rescaled and the standard set because the hash functions are
+identical. The hash leg's overall security is the smaller of the few-time
+term and those generic terms, so it is category 1 for either set while the
+few-time term stays above them. The table's role is therefore to show how
+many distinct messages a stage may sign before the few-time term, rather
+than the hash size, becomes the binding one.
+
+For comparison, SLH-DSA-SHA2-128s (h = 63) has a few-time term of 156 bits
+at 2^60 messages and 134 bits at its design limit of 2^64. The rescaled
+set's few-time term stays above the standard set's design-limit figure up
+to about 2^23 messages per stage, and above the 128-bit generic terms to
+about 2^24; beyond that the few-time term, not the hash size, bounds the
+leg, and the leg falls below category 1. This is the hash leg alone; the
+hybrid still requires Falcon-1024 and Ed25519 on the same transaction.
 
 **The operating assumption.** This record assumes **at most 2^16 distinct
-messages per stage key**, across every copy, retry and self-test, leaving
-165 bits, 31 more than the standard set claims at its own limit. What that
-figure means in practice:
+messages per stage key**, across every copy, retry and self-test. At that
+count the few-time term is 165 bits, 37 above the generic terms that cap
+the leg and 31 above the standard set's few-time term at its own limit, so
+the leg's security is the category 1 figure with the few-time term not in
+play. What that count means in practice:
 
 - A stage signs one distinct message per release. Reaching 2^16 requires
   65,536 distinct transactions signed from one stage with none landing,
@@ -108,20 +122,27 @@ figure means in practice:
   that is about nine hours of continuous requests from
   one signer, or proportionally less across copies sharing the seed, every
   one an approved request through policy and the approval gate.
-- Throughout, every status pass reports the stage's expired release as a
-  warning (`ARCH_SIGNING.md`, rotating alerts), and a rotate-only spend
-  ends the stage.
+- The signer's alerts do not surface this condition. Release memory keeps
+  only a stage's latest release for this profile, so a stage whose single
+  release expired shows the expired-release warning (`ARCH_SIGNING.md`,
+  rotating alerts), but a client that keeps releasing fresh transactions
+  keeps the status at "in flight" indefinitely. Detecting prolonged
+  unsubmitted signing needs a per-stage count of distinct releases in the
+  release memory, reported and never enforced, the observational
+  counterpart of the XMSS variant's attempt count. It is a listed gate
+  below. A rotate-only spend ends the stage at any time.
 - A forger who benefits must also forge Falcon-1024 and Ed25519 on the
   same transaction and land it before the legitimate spend rotates the
   stage away.
 
 A deployment where a client could issue signing requests at that rate for
-hours without an operator noticing, or where more than a handful of copies
-share a seed, falls outside the assumption. The remedies are a per-stage
-release rate limit, which delays rather than refuses and so cannot strand
-an account, or a taller tree: each extra level of height doubles the
-message count at which every row of the table is reached, at twice the
-signing and derivation cost. Neither
+hours, or where more than a handful of copies share a seed, falls outside
+the assumption, and until the release count above exists an operator has
+no signal from the signer that it is happening. The remedies beyond that
+count are a per-stage release rate limit, which delays rather than refuses
+and so cannot strand an account, or a taller tree: each extra level of
+height doubles the message count at which every row of the table is
+reached, at twice the signing and derivation cost. Neither
 is added here, because the assumption holds for the intended deployments
 by three orders of magnitude and a counter or cap would reintroduce the
 state this variant exists to avoid. Review should check the bound and the
@@ -248,8 +269,13 @@ complete unlock/restore measurements remain explicit production gates below.
   reference: review must cover the few-time bound argument above, that the
   two-layer shape is the standard construction with no other change, and the
   rescaled golden vectors.
-- Review the per-stage signing margin table above: the repeat rate, the
-  per-leaf cost of a repeat, and the decision to add no counter or cap.
+- Review the per-stage signing margin above: the few-time term's table, its
+  relation to the generic hash terms that cap the leg at category 1, the
+  2^16 operating assumption, and the decision to add no counter or cap.
+- Report the number of distinct releases from each live stage for this
+  profile, in status and alerts, so prolonged unsubmitted signing is
+  visible. Today release memory keeps only the latest release and a stream
+  of fresh releases reads as "in flight". Reporting only; never a refusal.
 - Reproduce cold/warm signing and full successor checks on each intended deployment
   class, including slow hardware, competing accounts, concurrent requests and
   cancellation/lock responsiveness. Measure distributions and memory pressure.
