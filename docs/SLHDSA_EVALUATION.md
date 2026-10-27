@@ -48,12 +48,13 @@ The security of a FORS-based few-time scheme degrades with the number of
 signatures made under one key, through reuse of FORS leaves. It degrades
 gradually: each additional signature on an already-used leaf costs margin,
 and nothing fails at a threshold. The standard set places up to 2^64
-signatures on 2^63 leaves. The rescaled set has 2^20 leaves, so it is in the
-standard set's reuse regime when a stage key makes at most about
-**2^20 signatures over distinct messages**, and that is the bound this
-assessment uses. Deterministic signing of the same message reproduces the
-same signature and the same leaf, which reveals nothing new; the bound
-counts distinct messages.
+signatures on 2^63 leaves. The rescaled set has 2^20 leaves, so a stage key
+that signs about 2^20 distinct messages is in the standard set's reuse
+regime. That figure is a reference point, not a limit the design relies
+on: the table below prices every usage level from honest use up to 2^16
+messages per stage, and the assessment is that table. Deterministic signing
+of the same message reproduces the same signature and the same leaf, which
+reveals nothing new; only distinct messages count.
 
 The signer does not count signatures per stage, and the protocol does not
 bound them: a stage stays live until a spend lands, the signer deliberately
