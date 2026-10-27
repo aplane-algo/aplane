@@ -691,20 +691,57 @@ one and occasionally a few when a window ages or a client rebuilds the
 transaction. The signer does not count signatures per stage and the
 protocol does not bound them: a stage stays live until a spend lands, the
 signer keeps no limit on releases per stage by design, and copies sharing a
-seed sign independently. The bound is a margin statement, priced by the
-SPHINCS+ few-time bound that FIPS 205 inherits: with q distinct messages
-under one stage key, a forger's work on the hash leg is about 186 bits at
-q = 3, 159 bits at 2^16, 134 bits at 2^21 (the standard set's own margin
-at its 2^64 design limit) and 126 bits at 2^22. The evaluation record
-tabulates this and adopts an operating assumption of at most 2^16 distinct
-messages per stage key across copies and retries, which is two hours of
-continuous unsubmitted signing from one host with expired-release warnings
-firing throughout. No release cap, rate limit or used-leaf tracking is
-added: a cap could strand an account whose every released spend expired,
-and tracking leaves to redraw the randomizer would reintroduce the state
-this variant exists to avoid. A deployment outside the assumption adds a
-per-stage release rate limit, which delays rather than refuses, or a
-taller tree.
+seed sign independently. The bound is a margin statement, and this section
+prices it.
+
+**The bound.** It is the few-time analysis of the SPHINCS+ framework
+(Bernstein et al., "The SPHINCS+ signature framework", 2019, section 9),
+which FIPS 205 inherits. A forger chooses a message and randomizer, and
+their digest lands on one of the 2^h leaves pseudo-randomly. With q
+distinct messages signed under the stage key, the number γ already signed
+on that leaf is binomial(q, 2^-h). The forgery succeeds when the digest's
+k FORS indices all fall on values those γ signatures revealed, which
+happens with probability (1 - (1 - 2^-a)^γ)^k. Summing over γ gives the
+success probability of one digest query, and its reciprocal is the
+forger's work in hash queries. For a = 12, k = 14 and h = 20:
+
+| Distinct messages per stage key | Forgery work on the hash leg, bits |
+|---:|---:|
+| 3 (honest use) | 186 |
+| 100 | 180 |
+| 1,000 | 175 |
+| 10,000 | 167 |
+| 65,536 (2^16) | 159 |
+| 2^18 | 151 |
+| 2^20 | 140 |
+| 2^21 | 134 |
+| 2^22 | 126 |
+| 2^24 | 106 |
+
+Under the same bound SLH-DSA-SHA2-128s (h = 63) gives 156 bits at 2^60
+messages and 134 bits at its design limit of 2^64. The rescaled set
+therefore exceeds the standard set's design-limit margin up to about 2^21
+messages per stage, holds the 128-bit category target to about 2^22, and
+erodes below it beyond that. This prices the hash leg alone; the hybrid
+still requires Falcon-1024 and Ed25519 on the same transaction, and the
+stage is retired when a spend lands.
+
+**The operating assumption** is the evaluation record's: at most 2^16
+distinct messages per stage key across copies and retries, leaving 159
+bits, 25 more than the standard set claims at its own limit. That is two
+hours of continuous approved, unsubmitted signing from one host at ten
+signatures per second, with the expired-release warning of §8.2 firing on
+every status pass. The record states what falls outside the assumption and
+the two remedies: a per-stage release rate limit, which delays rather than
+refuses and so cannot strand an account, or a taller tree, each level of
+which doubles every message count in the table at twice the signing and
+derivation cost.
+
+No release cap, counter or used-leaf tracking is added: a cap could strand
+an account whose every released spend expired, and tracking leaves to
+redraw the randomizer would reintroduce the state this variant exists to
+avoid. Independent verification of the bound and of the assumption for the
+intended deployments is the review gate (§14).
 
 Release memory (§8.2) keeps only the latest release for this variant:
 `StatelessHash` records carry no leaf history, restore nothing from the
