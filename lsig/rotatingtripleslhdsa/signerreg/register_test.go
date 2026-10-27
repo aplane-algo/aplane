@@ -50,8 +50,12 @@ func TestRegisterIsIdempotent(t *testing.T) {
 
 func TestKeyPayloadRoundTripsToStageZeroAddress(t *testing.T) {
 	payload, address := fixedPayload(t)
-	if address != "T3DTKVRZHFKYNIRHXN5RWY6SCXXCI7GG3TPJPB7FIFVXG2HPARBVYQM5UM" {
-		t.Fatalf("stage zero address %s", address)
+	wantAddress := map[int]string{
+		20: "3YMTOW23YEOWGYBBCEF4SOWTT5MBIFC2RDQJM5Y4HYBXDST4JKWDJMZFSM",
+		63: "PGDSQUZ7TMOZ5DHTC64M4INDEF4I7QENPBZP7VB64YVEERMLGNE4IAYOVI",
+	}[rotatingkey.RotatingSlhdsaHeight]
+	if address != wantAddress {
+		t.Fatalf("stage zero address %s, want %s for hypertree height %d", address, wantAddress, rotatingkey.RotatingSlhdsaHeight)
 	}
 	if len(payload.PublicKey) != rotatingkey.RotatingSlhdsaStagePublicKeySize {
 		t.Fatalf("stage 0 record is %d bytes", len(payload.PublicKey))
@@ -141,9 +145,9 @@ func TestScanHidesStageKeysAndReportsConstantProfile(t *testing.T) {
 	if profile == nil || profile.Default == nil {
 		t.Fatal("scan reported no resource profile")
 	}
-	if profile.ProgramBytes != rotatingkey.RotatingSlhdsaMaxProgramBytes ||
-		profile.Default.ArgumentBytes != rotatingkey.RotatingSlhdsaMaxArgumentBytes ||
-		profile.Default.MaxOpcodeCost != rotatingkey.RotatingSlhdsaMaxOpcodeCost {
+	if profile.ProgramBytes != uint64(rotatingkey.RotatingSlhdsaMaxProgramBytes) ||
+		profile.Default.ArgumentBytes != uint64(rotatingkey.RotatingSlhdsaMaxArgumentBytes) ||
+		profile.Default.MaxOpcodeCost != uint64(rotatingkey.RotatingSlhdsaMaxOpcodeCost) {
 		t.Fatalf("resource profile %+v %+v", profile, *profile.Default)
 	}
 }

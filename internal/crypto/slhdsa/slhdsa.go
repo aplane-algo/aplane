@@ -1,13 +1,23 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-// Package slhdsa implements the SLH-DSA-SHA2-128s parameter set of FIPS 205:
-// SHA-256 throughout, n = 16, a hypertree of d = 7 layers of height h' = 9
-// (h = 63), FORS with k = 14 trees of height a = 12, and WOTS+ with w = 16.
-// Keys and signatures are byte-compatible with FIPS 205 (the NIST ACVP
-// vectors in testdata are pinned by the tests).
+// Package slhdsa implements the SLH-DSA construction of FIPS 205 with
+// SHA-256 throughout, n = 16, WOTS+ with w = 16 and FORS with k = 14 trees
+// of height a = 12, for a choice of hypertree shape:
 //
-// This implementation is used by the rotating SLH-DSA triple key type.
+//   - SHA2128s is the standard SLH-DSA-SHA2-128s set, a hypertree of d = 7
+//     layers of height h' = 9 (h = 63). Keys and signatures are
+//     byte-compatible with FIPS 205; the NIST ACVP vectors in testdata are
+//     pinned by the tests.
+//   - Rescaled128 keeps every function of SHA2128s and shortens the
+//     hypertree to d = 2 layers of height h' = 10 (h = 20). It is not a
+//     FIPS 205 parameter set. It is sized for the rotating triple key type,
+//     whose stage keys each sign a handful of messages, so that the
+//     signature fits a smaller atomic group.
+//
+// The parameter set is a value of Params; the two sets share all code, so
+// the ACVP vectors exercise the construction the rescaled set uses.
+//
 // It is written to be read next to its TEAL verifier: the verification
 // path is deliberately plain, and VerifyStats reports the exact hash call
 // profile a transcript of it would charge on the AVM.
@@ -32,11 +42,6 @@ import (
 const (
 	// N is the security parameter and hash output size in bytes.
 	N = 16
-	// H is the hypertree height, D its number of layers and HPrime the
-	// height of one XMSS tree.
-	H      = 63
-	D      = 7
-	HPrime = H / D
 	// A is the height of one FORS tree and K the number of FORS trees.
 	A = 12
 	K = 14
@@ -47,23 +52,18 @@ const (
 	Len1 = N * 8 / LgW
 	Len2 = 3
 	Len  = Len1 + Len2
-	// M is the message digest length: ceil(K*A/8) + ceil((H-H/D)/8) + ceil(H/(8*D)).
-	mdSize      = (K*A + 7) / 8
-	idxTreeSize = (H - H/D + 7) / 8
-	idxLeafSize = (H + 8*D - 1) / (8 * D)
-	M           = mdSize + idxTreeSize + idxLeafSize
+	// mdSize is the FORS part of the message digest, ceil(K*A/8).
+	mdSize = (K*A + 7) / 8
 
 	// PublicKeySize is seed || root; SigningKeySize is
 	// SK.seed || SK.prf || PK.seed || PK.root.
 	PublicKeySize  = 2 * N
 	SigningKeySize = 4 * N
 
-	// Signature layout: R || FORS signature || hypertree signature.
+	// Signature layout: R || FORS signature || hypertree signature. The
+	// hypertree part depends on the parameter set.
 	ForsSignatureSize = K * (1 + A) * N
 	WotsSignatureSize = Len * N
-	XmssSignatureSize = WotsSignatureSize + HPrime*N
-	HtSignatureSize   = D * XmssSignatureSize
-	SignatureSize     = N + ForsSignatureSize + HtSignatureSize
 
 	// MaxContextSize bounds the context string of the external interface.
 	MaxContextSize = 255
@@ -87,7 +87,75 @@ var (
 	ErrVerify        = errors.New("slhdsa: signature does not verify")
 	ErrContextSize   = errors.New("slhdsa: context longer than 255 bytes")
 	ErrKeySize       = errors.New("slhdsa: wrong key size")
+	ErrParams        = errors.New("slhdsa: invalid parameter set")
 )
+
+// Params is a hypertree shape for the construction: H is the hypertree
+// height and D its number of layers. Everything else is fixed by the
+// package constants. The derived fields are filled by NewParams.
+type Params struct {
+	Name string
+	H, D uint32
+
+	// HPrime is the height of one XMSS tree, H / D.
+	HPrime uint32
+	// idxTreeSize and idxLeafSize are the byte widths of the tree and leaf
+	// indices in the message digest; M is the digest length.
+	idxTreeSize, idxLeafSize int
+	M                        int
+	// XmssSignatureSize is one hypertree layer, HtSignatureSize all D
+	// layers and SignatureSize the whole signature.
+	XmssSignatureSize, HtSignatureSize, SignatureSize int
+}
+
+// NewParams derives a parameter set from a hypertree height and layer
+// count. The height must split evenly into layers of at most 31 levels,
+// the tree index must fit 63 bits and the digest must fit one MGF1 block.
+func NewParams(name string, h, d uint32) (Params, error) {
+	if d == 0 || h == 0 || h%d != 0 {
+		return Params{}, fmt.Errorf("%w: height %d does not split into %d layers", ErrParams, h, d)
+	}
+	hPrime := h / d
+	if hPrime > 31 || h-hPrime > 63 {
+		return Params{}, fmt.Errorf("%w: height %d in %d layers is too tall", ErrParams, h, d)
+	}
+	p := Params{Name: name, H: h, D: d, HPrime: hPrime}
+	p.idxTreeSize = int(h-hPrime+7) / 8
+	p.idxLeafSize = int(hPrime+7) / 8
+	p.M = mdSize + p.idxTreeSize + p.idxLeafSize
+	if p.M > sha256.Size {
+		return Params{}, fmt.Errorf("%w: digest of %d bytes needs more than one MGF1 block", ErrParams, p.M)
+	}
+	p.XmssSignatureSize = WotsSignatureSize + int(hPrime)*N
+	p.HtSignatureSize = int(d) * p.XmssSignatureSize
+	p.SignatureSize = N + ForsSignatureSize + p.HtSignatureSize
+	return p, nil
+}
+
+func mustParams(name string, h, d uint32) Params {
+	p, err := NewParams(name, h, d)
+	if err != nil {
+		panic(err)
+	}
+	return p
+}
+
+var (
+	// SHA2128s is SLH-DSA-SHA2-128s of FIPS 205: h = 63 in seven layers.
+	SHA2128s = mustParams("SLH-DSA-SHA2-128s", 63, 7)
+
+	// Rescaled128 is the same construction with h = 20 in two layers of
+	// height 10, a 4,368-byte signature. It is not a FIPS 205 parameter
+	// set; its few-time security rests on a bound on signatures per key
+	// that the rotating key type's design supplies.
+	Rescaled128 = mustParams("SLH-DSA-SHA2-128 h=20 d=2", 20, 2)
+)
+
+// String reports the parameter set.
+func (p *Params) String() string {
+	return fmt.Sprintf("%s (n=%d h=%d d=%d a=%d k=%d w=%d, sig %d bytes)",
+		p.Name, N, p.H, p.D, A, K, W, p.SignatureSize)
+}
 
 // PublicKey is PK.seed || PK.root.
 type PublicKey struct {
@@ -175,9 +243,10 @@ type Stats struct {
 func (s Stats) Hashes() int { return s.F + s.H + s.PRF + s.TLen + s.HMsg }
 
 // hasher carries a key's SHA-256 midstate over PK.seed || toByte(0, 48),
-// the one-block prefix shared by F, H, T_l and PRF for n = 16. A value is
-// not safe for concurrent use.
+// the one-block prefix shared by F, H, T_l and PRF for n = 16, and the
+// parameter set of the key. A value is not safe for concurrent use.
 type hasher struct {
+	p     *Params
 	state []byte
 	h     hash.Hash
 	in    [adrsSize + Len*N]byte
@@ -194,7 +263,7 @@ var freshState = func() []byte {
 	return state
 }()
 
-func newHasher(pkSeed *[N]byte, stats *Stats) *hasher {
+func newHasher(p *Params, pkSeed *[N]byte, stats *Stats) *hasher {
 	var block [sha256.BlockSize]byte
 	copy(block[:], pkSeed[:])
 	h := sha256.New()
@@ -203,7 +272,7 @@ func newHasher(pkSeed *[N]byte, stats *Stats) *hasher {
 	if err != nil {
 		panic(err)
 	}
-	return &hasher{state: state, h: h, stats: stats}
+	return &hasher{p: p, state: state, h: h, stats: stats}
 }
 
 func (hs *hasher) zero() {
@@ -272,8 +341,8 @@ func prfMsg(skPrf, optRand *[N]byte, msg []byte) (out [N]byte) {
 
 // hashMsg is H_msg(R, PK.seed, PK.root, M) =
 // MGF1-SHA-256(R || PK.seed || SHA-256(R || PK.seed || PK.root || M), m).
-// For m = 30 one MGF1 block suffices; the counter is 0.
-func hashMsg(r *[N]byte, pk *PublicKey, msg []byte, stats *Stats) (digest [M]byte) {
+// NewParams requires m <= 32, so one MGF1 block suffices; the counter is 0.
+func hashMsg(p *Params, r *[N]byte, pk *PublicKey, msg []byte, stats *Stats) []byte {
 	inner := sha256.New()
 	inner.Write(r[:])
 	inner.Write(pk.Seed[:])
@@ -285,11 +354,10 @@ func hashMsg(r *[N]byte, pk *PublicKey, msg []byte, stats *Stats) (digest [M]byt
 	inner.Sum(seed[2*N : 2*N])
 	// seed[2N+32:] is the big-endian MGF1 counter, 0.
 	out := sha256.Sum256(seed[:])
-	copy(digest[:], out[:M])
 	if stats != nil {
 		stats.HMsg += 2
 	}
-	return digest
+	return out[:p.M]
 }
 
 // base2b splits in into outLen base-2^b digits, FIPS 205 algorithm 4.
@@ -415,7 +483,7 @@ func (hs *hasher) xmssNode(skSeed *[N]byte, i, z uint32, adrs *address) [N]byte 
 // algorithm 10.
 func (hs *hasher) xmssSign(sig []byte, msg *[N]byte, skSeed *[N]byte, idx uint32, adrs *address) {
 	auth := sig[WotsSignatureSize:]
-	for j := uint32(0); j < HPrime; j++ {
+	for j := uint32(0); j < hs.p.HPrime; j++ {
 		k := (idx >> j) ^ 1
 		node := hs.xmssNode(skSeed, k, j, adrs)
 		copy(auth[j*N:], node[:])
@@ -435,7 +503,7 @@ func (hs *hasher) xmssPKFromSig(idx uint32, sig []byte, msg *[N]byte, adrs *addr
 	adrs.setType(addrTree)
 	adrs.setTreeIndex(idx)
 	treeIndex := idx
-	for k := uint32(0); k < HPrime; k++ {
+	for k := uint32(0); k < hs.p.HPrime; k++ {
 		adrs.setTreeHeight(k + 1)
 		var sib [N]byte
 		copy(sib[:], auth[k*N:(k+1)*N])
@@ -454,19 +522,21 @@ func (hs *hasher) xmssPKFromSig(idx uint32, sig []byte, msg *[N]byte, adrs *addr
 
 // htSign writes the hypertree signature of msg, FIPS 205 algorithm 12.
 func (hs *hasher) htSign(sig []byte, msg *[N]byte, skSeed *[N]byte, idxTree uint64, idxLeaf uint32) {
+	p := hs.p
+	layerSize := p.XmssSignatureSize
 	var adrs address
 	adrs.setLayer(0)
 	adrs.setTree(idxTree)
-	hs.xmssSign(sig[:XmssSignatureSize], msg, skSeed, idxLeaf, &adrs)
-	root := hs.xmssPKFromSig(idxLeaf, sig[:XmssSignatureSize], msg, &adrs)
-	for j := uint32(1); j < D; j++ {
-		idxLeaf = uint32(idxTree & (1<<HPrime - 1))
-		idxTree >>= HPrime
+	hs.xmssSign(sig[:layerSize], msg, skSeed, idxLeaf, &adrs)
+	root := hs.xmssPKFromSig(idxLeaf, sig[:layerSize], msg, &adrs)
+	for j := uint32(1); j < p.D; j++ {
+		idxLeaf = uint32(idxTree & (1<<p.HPrime - 1))
+		idxTree >>= p.HPrime
 		adrs.setLayer(j)
 		adrs.setTree(idxTree)
-		layer := sig[j*XmssSignatureSize : (j+1)*XmssSignatureSize]
+		layer := sig[int(j)*layerSize : int(j+1)*layerSize]
 		hs.xmssSign(layer, &root, skSeed, idxLeaf, &adrs)
-		if j < D-1 {
+		if j < p.D-1 {
 			root = hs.xmssPKFromSig(idxLeaf, layer, &root, &adrs)
 		}
 	}
@@ -474,16 +544,18 @@ func (hs *hasher) htSign(sig []byte, msg *[N]byte, skSeed *[N]byte, idxTree uint
 
 // htVerify checks a hypertree signature against root, FIPS 205 algorithm 13.
 func (hs *hasher) htVerify(msg *[N]byte, sig []byte, pkRoot *[N]byte, idxTree uint64, idxLeaf uint32) bool {
+	p := hs.p
+	layerSize := p.XmssSignatureSize
 	var adrs address
 	adrs.setLayer(0)
 	adrs.setTree(idxTree)
-	node := hs.xmssPKFromSig(idxLeaf, sig[:XmssSignatureSize], msg, &adrs)
-	for j := uint32(1); j < D; j++ {
-		idxLeaf = uint32(idxTree & (1<<HPrime - 1))
-		idxTree >>= HPrime
+	node := hs.xmssPKFromSig(idxLeaf, sig[:layerSize], msg, &adrs)
+	for j := uint32(1); j < p.D; j++ {
+		idxLeaf = uint32(idxTree & (1<<p.HPrime - 1))
+		idxTree >>= p.HPrime
 		adrs.setLayer(j)
 		adrs.setTree(idxTree)
-		layer := sig[j*XmssSignatureSize : (j+1)*XmssSignatureSize]
+		layer := sig[int(j)*layerSize : int(j+1)*layerSize]
 		node = hs.xmssPKFromSig(idxLeaf, layer, &node, &adrs)
 	}
 	return subtle.ConstantTimeCompare(node[:], pkRoot[:]) == 1
@@ -571,40 +643,40 @@ func (hs *hasher) forsPKFromSig(sig []byte, md []byte, adrs *address) [N]byte {
 
 // splitDigest parses H_msg output into md, idx_tree and idx_leaf, FIPS 205
 // algorithm 19 steps 7 to 12.
-func splitDigest(digest *[M]byte) (md []byte, idxTree uint64, idxLeaf uint32) {
+func (p *Params) splitDigest(digest []byte) (md []byte, idxTree uint64, idxLeaf uint32) {
 	md = digest[:mdSize]
 	var tb [8]byte
-	copy(tb[8-idxTreeSize:], digest[mdSize:mdSize+idxTreeSize])
-	idxTree = binary.BigEndian.Uint64(tb[:]) & (1<<(H-H/D) - 1)
+	copy(tb[8-p.idxTreeSize:], digest[mdSize:mdSize+p.idxTreeSize])
+	idxTree = binary.BigEndian.Uint64(tb[:]) & (1<<(p.H-p.HPrime) - 1)
 	var lb [4]byte
-	copy(lb[4-idxLeafSize:], digest[mdSize+idxTreeSize:])
-	idxLeaf = binary.BigEndian.Uint32(lb[:]) & (1<<(H/D) - 1)
+	copy(lb[4-p.idxLeafSize:], digest[mdSize+p.idxTreeSize:])
+	idxLeaf = binary.BigEndian.Uint32(lb[:]) & (1<<p.HPrime - 1)
 	return md, idxTree, idxLeaf
 }
 
 // KeyGenFromSeeds derives a key pair from the three seeds, FIPS 205
 // algorithm 18.
-func KeyGenFromSeeds(skSeed, skPrf, pkSeed *[N]byte) *SigningKey {
+func (p *Params) KeyGenFromSeeds(skSeed, skPrf, pkSeed *[N]byte) *SigningKey {
 	sk := &SigningKey{SKSeed: *skSeed, SKPrf: *skPrf}
 	sk.Public.Seed = *pkSeed
-	hs := newHasher(pkSeed, nil)
+	hs := newHasher(p, pkSeed, nil)
 	defer hs.zero()
 	var adrs address
-	adrs.setLayer(D - 1)
-	sk.Public.Root = hs.xmssNode(&sk.SKSeed, 0, HPrime, &adrs)
+	adrs.setLayer(p.D - 1)
+	sk.Public.Root = hs.xmssNode(&sk.SKSeed, 0, p.HPrime, &adrs)
 	return sk
 }
 
 // SignInternal is slh_sign_internal, FIPS 205 algorithm 19. optRand is the
 // additional randomness; the deterministic variant passes PK.seed.
-func SignInternal(sk *SigningKey, msg []byte, optRand *[N]byte) []byte {
-	sig := make([]byte, SignatureSize)
+func (p *Params) SignInternal(sk *SigningKey, msg []byte, optRand *[N]byte) []byte {
+	sig := make([]byte, p.SignatureSize)
 	r := prfMsg(&sk.SKPrf, optRand, msg)
 	copy(sig[:N], r[:])
-	digest := hashMsg(&r, &sk.Public, msg, nil)
-	md, idxTree, idxLeaf := splitDigest(&digest)
+	digest := hashMsg(p, &r, &sk.Public, msg, nil)
+	md, idxTree, idxLeaf := p.splitDigest(digest)
 
-	hs := newHasher(&sk.Public.Seed, nil)
+	hs := newHasher(p, &sk.Public.Seed, nil)
 	defer hs.zero()
 	var adrs address
 	adrs.setTree(idxTree)
@@ -618,33 +690,33 @@ func SignInternal(sk *SigningKey, msg []byte, optRand *[N]byte) []byte {
 }
 
 // VerifyInternal is slh_verify_internal, FIPS 205 algorithm 20.
-func VerifyInternal(pk *PublicKey, msg, sig []byte) error {
-	_, err := verifyInternal(pk, msg, sig, false)
+func (p *Params) VerifyInternal(pk *PublicKey, msg, sig []byte) error {
+	_, err := p.verifyInternal(pk, msg, sig, false)
 	return err
 }
 
 // VerifyStats verifies like VerifyInternal and also reports the hash call
 // profile of the run. On a failing signature the stats cover the work done
 // before the mismatch was found.
-func VerifyStats(pk *PublicKey, msg, sig []byte) (Stats, error) {
-	return verifyInternal(pk, msg, sig, true)
+func (p *Params) VerifyStats(pk *PublicKey, msg, sig []byte) (Stats, error) {
+	return p.verifyInternal(pk, msg, sig, true)
 }
 
-func verifyInternal(pk *PublicKey, msg, sig []byte, count bool) (Stats, error) {
+func (p *Params) verifyInternal(pk *PublicKey, msg, sig []byte, count bool) (Stats, error) {
 	var stats Stats
 	var sp *Stats
 	if count {
 		sp = &stats
 	}
-	if len(sig) != SignatureSize {
+	if len(sig) != p.SignatureSize {
 		return stats, ErrSignatureSize
 	}
 	var r [N]byte
 	copy(r[:], sig[:N])
-	digest := hashMsg(&r, pk, msg, sp)
-	md, idxTree, idxLeaf := splitDigest(&digest)
+	digest := hashMsg(p, &r, pk, msg, sp)
+	md, idxTree, idxLeaf := p.splitDigest(digest)
 
-	hs := newHasher(&pk.Seed, sp)
+	hs := newHasher(p, &pk.Seed, sp)
 	var adrs address
 	adrs.setTree(idxTree)
 	adrs.setType(addrForsTree)
@@ -671,7 +743,7 @@ func messagePrime(ctx, msg []byte) ([]byte, error) {
 // Sign is the pure external interface slh_sign, FIPS 205 algorithm 22,
 // with optRand as the additional randomness (nil selects the deterministic
 // variant, which uses PK.seed).
-func Sign(sk *SigningKey, msg, ctx []byte, optRand *[N]byte) ([]byte, error) {
+func (p *Params) Sign(sk *SigningKey, msg, ctx []byte, optRand *[N]byte) ([]byte, error) {
 	mp, err := messagePrime(ctx, msg)
 	if err != nil {
 		return nil, err
@@ -679,20 +751,14 @@ func Sign(sk *SigningKey, msg, ctx []byte, optRand *[N]byte) ([]byte, error) {
 	if optRand == nil {
 		optRand = &sk.Public.Seed
 	}
-	return SignInternal(sk, mp, optRand), nil
+	return p.SignInternal(sk, mp, optRand), nil
 }
 
 // Verify is the pure external interface slh_verify, FIPS 205 algorithm 24.
-func Verify(pk *PublicKey, msg, sig, ctx []byte) error {
+func (p *Params) Verify(pk *PublicKey, msg, sig, ctx []byte) error {
 	mp, err := messagePrime(ctx, msg)
 	if err != nil {
 		return err
 	}
-	return VerifyInternal(pk, mp, sig)
-}
-
-// String reports the parameter set.
-func String() string {
-	return fmt.Sprintf("SLH-DSA-SHA2-128s (n=%d h=%d d=%d a=%d k=%d w=%d, sig %d bytes)",
-		N, H, D, A, K, W, SignatureSize)
+	return p.VerifyInternal(pk, mp, sig)
 }

@@ -1,16 +1,24 @@
-# SLH-DSA evaluation reference
+# SLH-DSA reference
 
-This package restores the October 21, 2026 stateless rotating-stage experiment:
-a Go reference for SLH-DSA-SHA2-128s, ACVP vectors, verification hash counts, and
-key generation, signing, and verification benchmarks. It supplies the primitive for the opt-in
-`aplane.rotating-triple-slhdsa.v1` key type on this branch.
+This package is a Go implementation of the SLH-DSA construction of FIPS 205
+with SHA-256, n = 16, WOTS+ with w = 16 and the FORS of SLH-DSA-SHA2-128s,
+parametric in the hypertree shape. Two shapes are defined:
 
-The source and tests were recovered from the original session's file writes,
-including its `Len1` correction and `SigningKey` renaming. The restored tests
-also report the parameter description and erase generated key seeds, making
-those existing helpers reachable by the repository's dead-code check.
-Unchecked randomness reads in the original tests and benchmarks now check
-errors to satisfy the repository linter.
+| Value | Hypertree | Signature | Standing |
+| --- | --- | ---: | --- |
+| `SHA2128s` | 7 layers of height 9 (h = 63) | 7,856 bytes | SLH-DSA-SHA2-128s of FIPS 205; pinned to the NIST ACVP vectors |
+| `Rescaled128` | 2 layers of height 10 (h = 20) | 4,368 bytes | not a FIPS 205 parameter set; sized for rotating stage keys that each sign a few messages |
+
+Both shapes run the same code. The ACVP vectors therefore exercise the
+construction the rescaled shape uses; the rescaled shape is pinned by golden
+vectors generated from fixed seeds. It supplies the primitive for the opt-in
+`aplane.rotating-triple-slhdsa.v1` key type; see `docs/SLHDSA_EVALUATION.md`
+for the per-stage signing bound that justifies the shorter hypertree.
+
+The package began as the October 21, 2026 stateless rotating-stage
+experiment: a reference for SLH-DSA-SHA2-128s, ACVP vectors, verification
+hash counts, and key generation, signing and verification benchmarks. The
+hypertree shape became a parameter on October 27, 2026.
 
 Run the reference tests and benchmarks with:
 
@@ -42,9 +50,11 @@ randomized operation; verification cases include rejection vectors.
 
 ## Rotating integration
 
-`lsig/rotatingtripleslhdsa` contains the frozen TEAL verifier and signer hooks.
-The declared ceiling is 231323 AVM opcodes; the rotating group has twelve
-transactions. See `docs/ARCH_CRYPTO.md` for the design record and cost proof.
-`VerifyStats` counts hash calls and WOTS verification steps; LocalNet tests
-compare those steps to the verifier's exact cost model. No smaller draft
-parameter set is implemented.
+`lsig/rotatingtripleslhdsa` contains frozen TEAL verifiers and signer hooks
+for both shapes, selected at build time by `rotatingkey.RotatingSlhdsaHeight` (default 20). At
+height 20 the declared ceiling is 68465 AVM opcodes, which fits four
+transactions, and the 5,855 bytes of LogicSig arguments decide the group,
+six transactions; at height 63 the ceiling is 187258 and the 9,343 argument
+bytes need ten. See `docs/ARCH_CRYPTO.md` for the design record and cost
+proof. `VerifyStats` counts hash calls and WOTS verification steps; LocalNet
+tests compare those steps to the verifier's exact cost model.

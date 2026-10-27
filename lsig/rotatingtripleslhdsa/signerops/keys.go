@@ -57,7 +57,7 @@ func DeriveStage(d *rotatinghybrid.Deriver, i uint64) (*StageKeys, stage.Program
 	if err := d.ExpandStage(SLHPublicSeedInfoTag, i, publicSeed[:]); err != nil {
 		return nil, stage.Program{}, err
 	}
-	keys.slh = slhdsa.KeyGenFromSeeds(&secretSeed, &prfSeed, &publicSeed)
+	keys.slh = stage.Params.KeyGenFromSeeds(&secretSeed, &prfSeed, &publicSeed)
 	var err error
 	var edSeed [rotatinghybrid.Ed25519SeedSize]byte
 	if err := d.ExpandStage(Ed25519InfoTag, i, edSeed[:]); err != nil {
@@ -94,12 +94,13 @@ func (k *StageKeys) PublicKeys() *stage.PublicKeys {
 }
 
 // Sign signs the raw 32-byte transaction ID. SLH uses the FIPS 205 pure
-// interface with an empty context and deterministic opt_rand = PK.seed.
+// interface with an empty context and deterministic opt_rand = PK.seed,
+// under stage.Params.
 func (k *StageKeys) Sign(message []byte) (slhSig, edSig, falconSig []byte, err error) {
 	if len(message) != 32 {
 		return nil, nil, nil, errors.New("stage message must be a 32-byte TxID")
 	}
-	slhSig, err = slhdsa.Sign(k.slh, message, nil, nil)
+	slhSig, err = stage.Params.Sign(k.slh, message, nil, nil)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -141,7 +142,7 @@ func Verify(keys *stage.PublicKeys, message, slhSig, ed25519Sig, falconSig []byt
 	if err := falcongo.Verify(message, falcon.CompressedSignature(falconSig), falcon.PublicKey(keys.Falcon)); err != nil {
 		return fmt.Errorf("stage Falcon signature: %w", err)
 	}
-	if err := slhdsa.Verify(&slhdsa.PublicKey{Seed: keys.Seed, Root: keys.Root}, message, slhSig, nil); err != nil {
+	if err := stage.Params.Verify(&slhdsa.PublicKey{Seed: keys.Seed, Root: keys.Root}, message, slhSig, nil); err != nil {
 		return fmt.Errorf("stage SLH-DSA signature: %w", err)
 	}
 	return nil

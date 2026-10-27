@@ -14,6 +14,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/algo"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
+	"github.com/aplane-algo/aplane/internal/rotatingkey"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
 )
@@ -118,9 +119,45 @@ func TestBuildMatchesStockAssembler(t *testing.T) {
 	}
 }
 
+// TestSizesMatchPrimitive pins the argument layout to the parameter set the
+// stage signs under, and the frozen sizes and cost ceiling to the selected
+// hypertree height.
+func TestSizesMatchPrimitive(t *testing.T) {
+	if int(Params.H) != rotatingkey.RotatingSlhdsaHeight {
+		t.Fatalf("parameter set %s does not match rotatingkey.RotatingSlhdsaHeight %d", Params, rotatingkey.RotatingSlhdsaHeight)
+	}
+	total := 0
+	for i, c := range ChunkSizes {
+		if c > 4096 {
+			t.Fatalf("argument %d is %d bytes, above the AVM value limit", i, c)
+		}
+		total += c
+	}
+	if ChunkSizes[0] != ForsChunkSize || total != Params.SignatureSize || SLHSignatureSize != Params.SignatureSize {
+		t.Fatalf("chunks %v, signature %d", ChunkSizes, Params.SignatureSize)
+	}
+	if MaxAcceptedSteps != int(Params.D)*MaxStepsPerLayer {
+		t.Fatalf("accepted steps %d for %d layers", MaxAcceptedSteps, Params.D)
+	}
+}
+
+// frozen pins the per-height literals that other packages and documents
+// restate: program sizes, argument bytes, the opcode ceiling and the group
+// it needs.
+var frozen = map[int]struct {
+	unsalted, salted, args, cost, group int
+}{
+	20: {2834, 2837, 5855, 68465, 6},
+	63: {2863, 2866, 9343, 187258, 10},
+}
+
 func TestResourceCeiling(t *testing.T) {
-	if UnsaltedProgramSize != 2643 || SaltedProgramSize != 2646 || MaxArgumentBytes != 9343 {
-		t.Fatal("frozen sizes changed")
+	want, ok := frozen[rotatingkey.RotatingSlhdsaHeight]
+	if !ok {
+		t.Fatalf("no frozen expectations for height %d", rotatingkey.RotatingSlhdsaHeight)
+	}
+	if UnsaltedProgramSize != want.unsalted || SaltedProgramSize != want.salted || MaxArgumentBytes != want.args {
+		t.Fatalf("frozen sizes changed: program %d/%d, arguments %d", UnsaltedProgramSize, SaltedProgramSize, MaxArgumentBytes)
 	}
 	maximum := 0
 	for c := 0; c <= 32*15; c++ {
@@ -129,11 +166,16 @@ func TestResourceCeiling(t *testing.T) {
 			maximum = steps
 		}
 	}
-	if maximum != MaxStepsPerLayer || MaxAcceptedSteps != 7*maximum {
+	if maximum != MaxStepsPerLayer {
 		t.Fatalf("chain bound %d", maximum)
 	}
-	if MaxOpcodeCost != 231323 || MaxOpcodeCost > 12*20000 || MaxOpcodeCost <= 11*20000 {
-		t.Fatal("opcode ceiling changed")
+	if MaxOpcodeCost != want.cost {
+		t.Fatalf("opcode ceiling %d, want %d", MaxOpcodeCost, want.cost)
+	}
+	byCost := (MaxOpcodeCost + 19999) / 20000
+	byArgs := (MaxArgumentBytes + 999) / 1000
+	if max(byCost, byArgs) != want.group {
+		t.Fatalf("group of %d by cost, %d by arguments, want %d", byCost, byArgs, want.group)
 	}
 	if _, err := Build(nil); !errors.Is(err, ErrInvalidProgram) {
 		t.Fatal("nil keys accepted")

@@ -464,11 +464,16 @@ and restore rules below.
 remain pending. See [the evaluation record](SLHDSA_EVALUATION.md) for measured
 lifecycle costs, lifetime-use assumptions and outstanding qualification work.
 
-`aplane.rotating-triple-slhdsa.v1` uses SLH-DSA-SHA2-128s alongside
-Falcon-1024 and Ed25519, with fresh keys per stage. Its transaction-type,
-rekey, close-out and validity restrictions are the same as XMSS. It uses
-12 transactions per spend (11 resource dummies), with a minimum group fee
-of 0.012 ALGO. The SLH signature is 7856 bytes, split over three arguments.
+`aplane.rotating-triple-slhdsa.v1` uses SLH-DSA alongside Falcon-1024 and
+Ed25519, with fresh keys per stage. Its SLH-DSA parameter set is the
+SLH-DSA-SHA2-128s construction with a two-layer hypertree, sized for keys
+that each sign a few messages; it is not a FIPS 205 parameter set. Its
+transaction-type, rekey, close-out and validity restrictions are the same as
+XMSS. It uses 6 transactions per spend (5 resource dummies), with a minimum
+group fee of 0.006 ALGO. The SLH signature is 4368 bytes, split over two
+arguments. The hypertree height is fixed when the signer is built; a build
+with the standard SLH-DSA-SHA2-128s height, which exists for evaluation,
+derives different accounts from the same seed and needs 10 transactions.
 
 SLH-DSA needs no one-time leaf tracking: retries and restored copies do not
 exhaust a leaf range. The signer still reports an expired release while its

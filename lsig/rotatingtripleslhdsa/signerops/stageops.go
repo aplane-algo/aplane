@@ -48,9 +48,10 @@ func (StageOps) CheckStageOpens(key *signing.RotatingKeyMaterial, i uint64) erro
 	return err
 }
 
-// SignStage signs message with stage i and returns the program with
-// [R+FORS, HT layers 0..3, HT layers 4..6, Ed25519, Falcon] as its arguments.
-// SLH-DSA is stateless, so the leaf index is ignored.
+// SignStage signs message with stage i and returns the program with the
+// SLH-DSA signature split as stage.ChunkSizes lists, then the Ed25519 and
+// Falcon signatures, as its arguments. SLH-DSA is stateless, so the leaf
+// index is ignored.
 func (StageOps) SignStage(key *signing.RotatingKeyMaterial, i uint64, _ uint32, message []byte) (signing.RotatingStageSignature, error) {
 	return signAndVerify(key, i, message)
 }
@@ -65,12 +66,13 @@ func signAndVerify(key *signing.RotatingKeyMaterial, i uint64, message []byte) (
 	if err != nil {
 		return signing.RotatingStageSignature{}, fmt.Errorf("sign with stage %d: %w", i, err)
 	}
-	args := [][]byte{
-		slhSig[:stage.ForsChunkSize],
-		slhSig[stage.ForsChunkSize : stage.ForsChunkSize+stage.FirstHTChunkSize],
-		slhSig[stage.ForsChunkSize+stage.FirstHTChunkSize:],
-		ed25519Sig, falconSig,
+	args := make([][]byte, 0, len(stage.ChunkSizes)+2)
+	off := 0
+	for _, n := range stage.ChunkSizes {
+		args = append(args, slhSig[off:off+n])
+		off += n
 	}
+	args = append(args, ed25519Sig, falconSig)
 	// On every error path the signatures are never handed to the caller, so
 	// they are wiped here.
 	embedded, _, err := stage.Parse(program.Bytecode)

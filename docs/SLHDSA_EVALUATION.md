@@ -1,64 +1,105 @@
 # Rotating SLH-DSA evaluation record
 
 Status: **experimental; independent security review and production qualification
-are pending**. This record covers `aplane.rotating-triple-slhdsa.v1`, using the
-standard SLH-DSA-SHA2-128s parameter set. It is not a FIPS validation claim.
-The library display name and description expose this status to operators.
+are pending**. This record covers `aplane.rotating-triple-slhdsa.v1`, which
+signs under the SLH-DSA-SHA2-128s construction of FIPS 205 with its hypertree
+rescaled to two layers of height 10 (h = 20). That is **not a FIPS 205
+parameter set**, and this record is not a FIPS validation claim. The library
+display name and description expose both facts to operators.
 
 The cryptographic and wire contract remains in
-[ARCH_CRYPTO.md](ARCH_CRYPTO.md#rotating-slh-dsa-triple). This follow-up changes
-preparation policy and qualification evidence, not stage identities, derivation,
-key files, TEAL, signing arguments, transaction restrictions or fees.
+[ARCH_CRYPTO.md](ARCH_CRYPTO.md#rotating-slh-dsa-triple). The rescaling
+changed the stage template, stage identities, signing arguments, resource
+profile and fees; the derivation, key file format and transaction
+restrictions are unchanged. The primitive stays parametric: the standard
+SLH-DSA-SHA2-128s shape runs through the same code under the NIST ACVP
+vectors, which is the evidence that the construction is implemented
+correctly, and the rescaled shape is pinned by golden vectors of its own.
+The height is a build-time constant (`internal/rotatingkey.RotatingSlhdsaHeight`)
+with frozen artifacts for 20 and 63, so a build of the standard shape
+remains available for review and measurement; it is a different account
+for the same seed, not a setting.
 
-## Lifetime signing envelope
+## Why the hypertree was rescaled
 
-[FIPS 205, section 11](https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.205.pdf)
-designs its parameter sets to meet their specified security categories for
-up to 2^64 signed messages per key pair. That is a finite bound, not a claim
-that arbitrary use of a stateless key is harmless.
+SLH-DSA-SHA2-128s carries a 63-level hypertree so that one key can sign
+2^64 messages while FORS leaves are rarely reused. Its 7,856-byte signature
+needs ten transactions of pooled LogicSig argument space on Algorand. A
+rotating stage key signs a handful of messages: the open-test message, which
+is never released, and the spends released while the stage is live, normally
+one and occasionally a few when a window ages or a client rebuilds the
+transaction. Five of the seven layers paid for capacity no stage uses.
 
-For this experimental implementation, assess deployments against this deliberately
-conservative envelope **per derived stage key**, across its entire lifetime:
+The rescaled set keeps n, w, FORS and every hash function of the standard
+set and shortens only the hypertree. Its signature is 4,368 bytes and the
+spend group is six transactions instead of ten. Signing is faster, since two
+1,024-leaf layers are fewer WOTS+ key generations than seven 512-leaf layers.
+Key generation, and with it every stage address derivation, is slower: the
+root is the top of a 1,024-leaf tree instead of a 512-leaf one, about 50 ms
+against 22 ms on the hardware below. Stage discovery, lookahead and restore
+pay that per stage; signing and the successor self-test gain more than they
+lose. A two-layer tree of height 9 (h = 18) would keep derivation at the
+old cost and halve the assessed bound below; height 10 was chosen for the
+larger margin on a bound the signer does not enforce.
 
-| Assumption | Upper bound used in the assessment |
-|---|---:|
-| Independent copies sharing the account seed, across all restores and deployments | 1,024 |
-| SLH signing invocations per second per copy, across all workers | 1,000 |
-| Lifetime of each stage key | 100 years, conservatively 366 days/year |
-| Aggregate invocations | 3,238,133,760,000,000, less than 2^52 |
+## Per-stage signing bound
 
-These are assessment assumptions, **not implemented rate limits, measured hardware
-ceilings or a guarantee enforced by the signer**. Their product is less than
-1/4,096 of 2^64. Before production use, validate that deployment topology,
-replication, throughput and lifetime fit the envelope; deployments outside it
-need a revised cryptographic assessment. A single key's measured signing speed
-does not constrain future implementations, accelerators or additional copies.
+The security of a FORS-based few-time scheme degrades with the number of
+signatures made under one key, through reuse of FORS leaves. It degrades
+gradually: each additional signature on an already-used leaf costs margin,
+and nothing fails at a threshold. The standard set places up to 2^64
+signatures on 2^63 leaves. The rescaled set has 2^20 leaves, so it is in the
+standard set's reuse regime when a stage key makes at most about
+**2^20 signatures over distinct messages**, and that is the bound this
+assessment uses. Deterministic signing of the same message reproduces the
+same signature and the same leaf, which reveals nothing new; the bound
+counts distinct messages.
 
-Count every invocation conservatively, including retries, cancelled, failed or
-discarded signing attempts, and internal successor signing self-tests. Copies
-activated from old backups derive the same stage keys and share the aggregate
-budget. Signing the same message repeatedly is counted again; rebroadcasting
-already-signed bytes does not invoke signing. Address derivation, credential
-validation and signature verification alone do not invoke SLH signing.
+The signer does not count signatures per stage, and the protocol does not
+bound them: a stage stays live until a spend lands, the signer deliberately
+keeps no limit on releases per stage, and copies sharing a seed sign
+independently. The bound is therefore a margin statement, not a rule the
+signer holds, and the assessment is the cost of exceeding it. Leaves are
+chosen pseudo-randomly from the message and randomizer; with q distinct
+messages under one stage key the expected number of leaf repeats is about
+q(q - 1) / 2^21, and a FORS instance used γ times admits a forgery with
+probability about (γ · 2^-12)^14 per attempt:
+
+| Distinct messages per stage key | Expected leaf repeats | Worst leaf's forgery odds per attempt |
+|---:|---:|---|
+| 3 (honest use) | 0.000003 | 2^-168, no repeat |
+| 100 | 0.005 | 2^-154 if one occurs |
+| 1,000 | 0.5 | 2^-154 |
+| 10,000 | 48 | 2^-154, occasionally 2^-146 |
+| 65,536 | about 1,000 | 2^-146, rarely 2^-140 |
+
+Every row stays past the 128-bit target. A stage key would have to sign
+tens of thousands of distinct messages before the worst leaf lost more than
+about 20 bits, and the hybrid still requires Falcon-1024 and Ed25519. The
+2^20 figure above is where erosion begins, not where anything fails. For
+that reason no release cap, rate limit or leaf-tracking mechanism is added:
+a hard cap could leave an account unable to rotate from its live stage if
+every released spend expired, and tracking used leaves to redraw the
+randomizer would reintroduce the memory this variant exists to avoid, to
+remove a once-in-a-million event that costs 14 bits at one leaf. Review
+should check the table, not look for a counter.
+
+The earlier envelope for the standard set, 1,000 signing invocations per
+second per copy over 100 years, is far beyond this table and no longer
+applies; the rescaled set is explicitly not suited to a key that signs at
+that rate.
 
 A successful spend performs a full signing/verification self-test with the
-successor key and signs the transaction with the current key. Thus it normally
-invokes SLH signing twice, on different stage keys. A stage key's aggregate
-includes self-tests performed before it became live and all later attempts to
-spend from it. Normal rotation supplies a fresh independent key per stage.
+successor key and signs the transaction with the current key. The self-test
+signs a fixed domain-specific test digest, erases its signatures and never
+releases them; it is one distinct message per stage key. Retain it: it
+exercises signing and verification against the embedded public keys, beyond
+checking derivation equality.
 
-Retain the full successor self-test: it exercises signing and verification
-against the embedded public keys, beyond merely checking derivation equality.
-It signs a fixed domain-specific test digest, erases its signatures and never
-releases them. Deterministic repetition still counts in this conservative
-assessment.
-
-No new durable counter or leaf allocator is introduced. Release auditing remains
-observational: it cannot count discarded computations or activity in other copies
-and is not evidence of complete lifetime usage. The absence of a counter is
-justified only within explicit finite deployment assumptions; it is not an
-unlimited-use promise. The full stage-zero public record is still rederived on
-credential validation.
+No new durable counter or leaf allocator is introduced. Release auditing
+remains observational: it cannot count discarded computations or activity
+in other copies and is not evidence of complete usage. The full stage-zero
+public record is still rederived on credential validation.
 
 ## Preparation and recovery policy
 
@@ -117,25 +158,32 @@ and time between passes. They are service-work measurements, not end-to-end
 restore latency or production throughput guarantees. Record hardware and ranges;
 three iterations are a smoke measurement, not a tail-latency study.
 
-Measured 2026-10-26 on Linux/amd64, AMD Ryzen AI 5 330 (4 cores/8 threads),
-14 GiB RAM, Go 1.25.7, default GOMAXPROCS=8, with the command above. This was
-the development workstation under ordinary system load, not an isolated or
-production-qualified host. Each range is three single-operation samples with
-fresh randomly generated fixtures; setup is outside the timer.
+Measured 2026-10-27 on Linux/amd64, AMD Ryzen AI 5 330 (4 cores/8 threads),
+14 GiB RAM, Go 1.25.7, default GOMAXPROCS=8, with the command above, under
+the rescaled parameter set. This was the development workstation under
+ordinary system load, not an isolated or production-qualified host. Each
+range is three single-operation samples with fresh randomly generated
+fixtures; setup is outside the timer.
 
 | Operation | Median seconds | Observed range, seconds | Fill passes |
 |---|---:|---:|---:|
-| Encrypted credential read and full validation | 0.042 | 0.041–0.062 | — |
-| Successor derivation, signing and verification | 0.213 | 0.211–0.225 | — |
-| Prepare, cold stage cache | 0.253 | 0.227–0.406 | — |
-| Prepare, warm stage cache | 0.163 | 0.127–0.189 | — |
-| Prepare and sign, cold stage cache | 0.938 | 0.806–1.005 | — |
-| Prepare and sign, warm stage cache | 0.871 | 0.771–1.003 | — |
-| Rebuild cache at stage 0 | 0.412 | 0.390–0.549 | 1 |
-| Rebuild cache at stage 8, no hint | 1.277 | 1.247–1.294 | 3 |
-| Rebuild cache at stage 8, exact hint | 1.406 | 1.236–2.172 | 3 |
-| Rebuild cache at stage 64, no hint | 9.837 | 9.023–11.449 | 17 |
-| Rebuild cache at stage 64, exact hint | 7.497 | 7.055–7.654 | 17 |
+| Encrypted credential read and full validation | 0.073 | 0.063–0.100 | — |
+| Successor derivation, signing and verification | 0.180 | 0.174–0.186 | — |
+| Prepare, cold stage cache | 0.422 | 0.329–0.422 | — |
+| Prepare, warm stage cache | 0.218 | 0.201–0.233 | — |
+| Prepare and sign, cold stage cache | 1.037 | 0.986–1.042 | — |
+| Prepare and sign, warm stage cache | 0.844 | 0.841–1.005 | — |
+| Rebuild cache at stage 0 | 0.496 | 0.494–0.513 | 1 |
+| Rebuild cache at stage 8, no hint | 1.729 | 1.696–1.829 | 3 |
+| Rebuild cache at stage 8, exact hint | 1.923 | 1.727–2.160 | 3 |
+| Rebuild cache at stage 64, no hint | 11.126 | 10.238–12.211 | 17 |
+| Rebuild cache at stage 64, exact hint | 12.155 | 10.956–13.109 | 17 |
+
+Against the standard set measured on 2026-10-26 on the same host, the
+successor self-test is about 15% faster, prepare and sign end to end is
+within noise, and every path that derives stage addresses is slower by
+about 30 ms per stage, as the key generation cost above predicts: a
+64-stage rebuild went from about 9.8 to about 11 seconds.
 
 The variation does not establish a hint speedup: both paths rebuild the same
 prefix, and the hinted path adds a probe. Warm preparation saves address-cache
@@ -149,14 +197,19 @@ complete unlock/restore measurements remain explicit production gates below.
 - Independent review of the primitive, TEAL verifier, hybrid composition,
   derivation/domain separation, transaction binding, parsing, resource bounds
   and secret handling. NIST vectors and on-chain tests are supporting evidence,
-  not a substitute for review.
+  not a substitute for review. The rescaled parameter set has no standard
+  reference: review must cover the few-time bound argument above, that the
+  two-layer shape is the standard construction with no other change, and the
+  rescaled golden vectors.
+- Review the per-stage signing margin table above: the repeat rate, the
+  per-leaf cost of a repeat, and the decision to add no counter or cap.
 - Reproduce cold/warm signing and full successor checks on each intended deployment
   class, including slow hardware, competing accounts, concurrent requests and
   cancellation/lock responsiveness. Measure distributions and memory pressure.
 - Measure complete daemon unlock, backup restore and long recovery with and without
   hints, including worker pacing, RPC latency and audit restoration. The small
   cache policy trades bounded foreground interference for slower large restores.
-- Validate the finite lifetime envelope across actual backup/replica practices.
+- Validate the per-stage envelope across actual backup/replica practices.
   Review any optimization that adds shared state, skips validation or changes
   self-tests before adopting it.
 - Decide between deterministic and hedged SLH signing. The signer currently

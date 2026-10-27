@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/rotatingkey"
 	"strings"
 	"testing"
 
@@ -25,8 +26,9 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
-// slhTripleDummies supplies the twelve pooled opcode units required by the ceiling.
-const slhTripleDummies = 11
+// slhTripleDummies supplies the pooled units the selected hypertree height
+// needs: the argument bytes decide the group for both shapes.
+var slhTripleDummies = map[int]int{20: 5, 63: 9}[rotatingkey.RotatingSlhdsaHeight]
 
 type slhTripleStage struct {
 	keys    *signerops.StageKeys
@@ -42,9 +44,9 @@ type slhTripleSpend struct {
 	closeTo      types.Address
 	window       uint64
 	totalFee     uint64
-	slhFrom      *slhTripleStage // sign argument 0 with another stage's key
-	edFrom       *slhTripleStage // sign argument 1 with another stage's key
-	falconFrom   *slhTripleStage // sign argument 2 with another stage's key
+	slhFrom      *slhTripleStage // sign the SLH-DSA arguments with another stage's key
+	edFrom       *slhTripleStage // sign the Ed25519 argument with another stage's key
+	falconFrom   *slhTripleStage // sign the Falcon argument with another stage's key
 	swapArgs     bool
 	dropFalcon   bool
 	damageSLH    int // flip one bit of the SLH-DSA signature at this byte, when > 0
@@ -86,13 +88,14 @@ func TestRotatingSLHTripleOnChain(t *testing.T) {
 	}
 	acct.requireAuthorizer(types.ZeroAddress)
 
-	t.Run("fee below twelve minimum fees is refused", func(t *testing.T) {
+	t.Run("fee below the group minimum is refused", func(t *testing.T) {
+		underpaid := uint64(1000*(slhTripleDummies+1) - 1)
 		raw, _ := acct.build(slhTripleSpend{
-			signer: s0, receiver: funderAddr, amount: 1000, rekeyTo: s1.program.Address, totalFee: 11999,
+			signer: s0, receiver: funderAddr, amount: 1000, rekeyTo: s1.program.Address, totalFee: underpaid,
 		})
 		_, err := testnet.Client.SendRawTransaction(raw).Do(context.Background())
 		if err == nil || !strings.Contains(strings.ToLower(err.Error()), "fee") {
-			t.Fatalf("fee 11999 error = %v, want a fee rejection", err)
+			t.Fatalf("fee %d error = %v, want a fee rejection", underpaid, err)
 		}
 	})
 
@@ -153,19 +156,21 @@ func TestRotatingSLHTripleOnChain(t *testing.T) {
 			return s
 		},
 		"damaged last HT authentication node": func(s slhTripleSpend) slhTripleSpend {
-			s.damageSLH = slhdsa.SignatureSize - 1
+			s.damageSLH = stage.SLHSignatureSize - 1
 			return s
 		},
 		"SLH-DSA signature one byte long": func(s slhTripleSpend) slhTripleSpend {
-			s.slhLength = slhdsa.SignatureSize + 1
+			s.slhLength = stage.SLHSignatureSize + 1
 			return s
 		},
 		"SLH-DSA signature one byte short": func(s slhTripleSpend) slhTripleSpend {
-			s.slhLength = slhdsa.SignatureSize - 1
+			s.slhLength = stage.SLHSignatureSize - 1
 			return s
 		},
 	}
-	for _, offset := range []int{1, 16, 32, stage.ForsChunkSize - 1, stage.ForsChunkSize, stage.ForsChunkSize + 560, stage.ForsChunkSize + 704, stage.ForsChunkSize + 6*704} {
+	layer := stage.Params.XmssSignatureSize
+	lastLayer := stage.ForsChunkSize + (int(stage.Params.D)-1)*layer
+	for _, offset := range []int{1, 16, 32, stage.ForsChunkSize - 1, stage.ForsChunkSize, stage.ForsChunkSize + 560, stage.ForsChunkSize + layer, lastLayer, lastLayer + 560} {
 		rejects[fmt.Sprintf("damaged SLH byte %d", offset)] = func(s slhTripleSpend) slhTripleSpend { s.damageSLH = offset; return s }
 	}
 
@@ -205,9 +210,12 @@ func TestRotatingSLHTripleOnChain(t *testing.T) {
 				t.Fatalf("program is %d bytes, want %d", len(first.program.Bytecode), wantSize)
 			}
 			txID := algocrypto.TransactionID(group[0].Txn)
-			sig := append(append(append([]byte{}, group[0].Lsig.Args[0]...), group[0].Lsig.Args[1]...), group[0].Lsig.Args[2]...)
+			var sig []byte
+			for _, a := range group[0].Lsig.Args[:len(stage.ChunkSizes)] {
+				sig = append(sig, a...)
+			}
 			pk := first.keys.PublicKeys()
-			stats, err := slhdsa.VerifyStats(&slhdsa.PublicKey{Seed: pk.Seed, Root: pk.Root}, append([]byte{0, 0}, txID...), sig)
+			stats, err := stage.Params.VerifyStats(&slhdsa.PublicKey{Seed: pk.Seed, Root: pk.Root}, append([]byte{0, 0}, txID...), sig)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -216,7 +224,7 @@ func TestRotatingSLHTripleOnChain(t *testing.T) {
 			report, err := harness.ValidateDeclaredOpcodeCeiling(context.Background(), testnet.Client, harness.OpcodeCeilingValidation{
 				Name:          "rotating slhTriple stage",
 				FinalProgram:  first.program.Bytecode,
-				Profile:       lsigresource.DefaultOpcodeProfile(stage.MaxOpcodeCost),
+				Profile:       lsigresource.DefaultOpcodeProfile(uint64(stage.MaxOpcodeCost)),
 				RequiredPaths: []lsigresource.AuthorizationPath{lsigresource.PathDefault},
 				Vectors: []harness.OpcodeCeilingVector{{
 					Name: "rotating spend", Path: lsigresource.PathDefault, SignedTxns: group, LSigIndex: 0,
@@ -229,7 +237,7 @@ func TestRotatingSLHTripleOnChain(t *testing.T) {
 			if observed != want {
 				t.Fatalf("observed opcode cost %d, cost model %d for %d chain steps", observed, want, steps)
 			}
-			if observed > stage.MaxOpcodeCost {
+			if observed > uint64(stage.MaxOpcodeCost) {
 				t.Fatalf("observed %d exceeds the declared ceiling %d", observed, stage.MaxOpcodeCost)
 			}
 
@@ -240,14 +248,14 @@ func TestRotatingSLHTripleOnChain(t *testing.T) {
 			plan, err := lsigresource.Solve(consensus, lsigresource.PlanInput{
 				TransactionCount: 1,
 				LogicSigs: []lsigresource.Usage{{
-					ProgramBytes: uint64(wantSize), ArgumentBytes: stage.MaxArgumentBytes, MaxOpcodeCost: stage.MaxOpcodeCost,
+					ProgramBytes: uint64(wantSize), ArgumentBytes: uint64(stage.MaxArgumentBytes), MaxOpcodeCost: uint64(stage.MaxOpcodeCost),
 				}},
 				Dummy: lsigresource.Usage{ProgramBytes: uint64(len(group[1].Lsig.Logic)), MaxOpcodeCost: 1},
 			})
 			if err != nil {
 				t.Fatalf("solve: %v", err)
 			}
-			if plan.GroupSize != slhTripleDummies+1 || plan.ChargedProgramBytes != 0 {
+			if plan.GroupSize != uint64(slhTripleDummies+1) || plan.ChargedProgramBytes != 0 {
 				t.Fatalf("plan = %+v, want group of %d with no program surcharge", plan, slhTripleDummies+1)
 			}
 			t.Logf("measured: program %d bytes, opcode cost %d (%d steps; ceiling %d), group %d",
@@ -387,12 +395,24 @@ func (a *slhTripleAccount) build(spend slhTripleSpend) ([]byte, []types.SignedTx
 	if spend.damageFalcon > 0 {
 		falconSig[spend.damageFalcon] ^= 0x01
 	}
-	args := [][]byte{slhSig[:stage.ForsChunkSize], slhSig[stage.ForsChunkSize : stage.ForsChunkSize+stage.FirstHTChunkSize], slhSig[stage.ForsChunkSize+stage.FirstHTChunkSize:], edSig, falconSig}
+	var args [][]byte
+	off := 0
+	for _, n := range stage.ChunkSizes {
+		end := min(off+n, len(slhSig))
+		args = append(args, slhSig[off:end])
+		off = end
+	}
+	if off < len(slhSig) {
+		// A resized signature keeps its extra bytes in the last chunk.
+		args[len(args)-1] = append(args[len(args)-1], slhSig[off:]...)
+	}
+	edIndex := len(args)
+	args = append(args, edSig, falconSig)
 	if spend.swapArgs {
-		args[0], args[3] = args[3], args[0]
+		args[0], args[edIndex] = args[edIndex], args[0]
 	}
 	if spend.dropFalcon {
-		args = args[:4]
+		args = args[:len(args)-1]
 	}
 
 	signed := types.SignedTxn{

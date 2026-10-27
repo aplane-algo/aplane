@@ -11,16 +11,49 @@
 package rotatingkey
 
 const (
-	// RotatingTripleSlhdsaV1 uses stateless FIPS 205 SLH-DSA-SHA2-128s per stage.
+	// RotatingSlhdsaHeight is the SLH-DSA hypertree height the rotating
+	// SLH-DSA key type is built with: the one build-time choice of that type.
+	// lsig/rotatingtripleslhdsa/stage carries a frozen verifier, template,
+	// argument layout and cost model for each supported value and the
+	// literals below follow it; changing the constant and rebuilding selects
+	// them all. Every stage address, and so every account address, follows
+	// from it: a key generated under one height is a different account
+	// under the other. Supported values:
+	//
+	//   - 20: two layers of height 10, a 4,368-byte signature and a
+	//     six-transaction group. Not a FIPS 205 parameter set.
+	//   - 63: seven layers of height 9, SLH-DSA-SHA2-128s of FIPS 205, a
+	//     7,856-byte signature and a ten-transaction group.
+	RotatingSlhdsaHeight = 20
+
+	// RotatingTripleSlhdsaV1 uses a stateless SLH-DSA key per stage under the
+	// SLH-DSA-SHA2-128s construction at RotatingSlhdsaHeight.
+	// lsig/rotatingtripleslhdsa owns the implementation.
 	RotatingTripleSlhdsaV1           = "aplane.rotating-triple-slhdsa.v1"
 	RotatingTripleSlhdsaFamily       = "aplane.rotating-triple-slhdsa"
 	RotatingSlhdsaStagePublicKeySize = 16 + 16 + 1793 + 32
-	RotatingSlhdsaMaxProgramBytes    = 2646
-	RotatingSlhdsaMaxArgumentBytes   = 7856 + 64 + 1423
-	RotatingSlhdsaMaxOpcodeCost      = 42113 + 53*3570
 	RotatingTripleSlhdsaDisplayName  = "Experimental rotating triple SLH-DSA (Falcon-1024 + SLH-DSA + Ed25519)"
-	RotatingTripleSlhdsaDescription  = "Experimental: independent security review and production qualification remain pending. Fixed account address with fresh Falcon-1024, SLH-DSA-SHA2-128s and Ed25519 authority per spend. No one-time leaf tracking. Signs only through rotating1."
+)
 
+// The SLH-DSA literals the selected hypertree height fixes: the salted
+// stage program, the largest LogicSig arguments and the worst accepting
+// opcode cost. Tests pin them to lsig/rotatingtripleslhdsa/stage.
+var (
+	RotatingSlhdsaMaxProgramBytes   = slhdsaShape.programBytes
+	RotatingSlhdsaMaxArgumentBytes  = slhdsaShape.argumentBytes
+	RotatingSlhdsaMaxOpcodeCost     = slhdsaShape.opcodeCost
+	RotatingTripleSlhdsaDescription = "Experimental: independent security review and production qualification remain pending. Fixed account address with fresh Falcon-1024, " + slhdsaShape.scheme + " and Ed25519 authority per spend. No one-time leaf tracking. Signs only through rotating1."
+)
+
+var slhdsaShape = map[int]struct {
+	programBytes, argumentBytes, opcodeCost int
+	scheme                                  string
+}{
+	20: {2837, 4368 + 64 + 1423, 26645 + 41*1020, "two-layer SLH-DSA-SHA2-128 (not a FIPS 205 parameter set)"},
+	63: {2866, 7856 + 64 + 1423, 40888 + 41*3570, "SLH-DSA-SHA2-128s"},
+}[RotatingSlhdsaHeight]
+
+const (
 	// RotatingTripleWotsV1 is the rotating account key type: a fixed
 	// account whose authorizing stage program changes on every spend, and
 	// whose every stage requires a Falcon-1024, a WOTS-w16 (SHA-256) and an

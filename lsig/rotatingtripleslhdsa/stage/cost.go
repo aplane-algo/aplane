@@ -3,20 +3,23 @@
 
 package stage
 
-const (
-	// Each WOTS+ layer performs c + 45 - digitSum16(c) verification steps,
-	// where c is the checksum of 32 nibbles (0..480). The maximum is 510.
-	MaxStepsPerLayer = 510
-	MaxAcceptedSteps = 7 * MaxStepsPerLayer
-	// The fixed work includes 14 FORS leaves and 168 FORS path hashes,
-	// one FORS compression, seven WOTS compressions, 63 HT path hashes,
-	// two H_msg hashes, and the Falcon/Ed25519 checks. All branches except
-	// the chain loop have input-independent cost. Each chain iteration has
-	// 18 unit-cost instructions plus sha256 (35), including its loop check.
-	// Terminal checks for all 245 chains are included in BaseOpcodeCost.
-	BaseOpcodeCost = 42113
-	StepOpcodeCost = 53
-	MaxOpcodeCost  = BaseOpcodeCost + StepOpcodeCost*MaxAcceptedSteps
+// Each WOTS+ layer performs c + 45 - digitSum16(c) verification steps,
+// where c is the checksum of 32 nibbles (0..480). The maximum is 510.
+const MaxStepsPerLayer = 510
+
+// The verifier's cost is affine in the WOTS+ chain steps. The fixed work
+// includes 14 FORS leaves and 168 FORS path hashes, one FORS compression,
+// one WOTS compression and h' path hashes per layer, two H_msg hashes, and
+// the Falcon/Ed25519 checks. All branches except the unrolled chain steps
+// have input-independent cost. Each chain step has 6 unit-cost
+// instructions plus sha256 (35); switch entry and endpoint collection for
+// every chain are included in BaseOpcodeCost. Both constants are checked
+// against node traces by the LocalNet test, for the selected shape.
+var (
+	BaseOpcodeCost   = selected.base
+	StepOpcodeCost   = selected.step
+	MaxAcceptedSteps = int(Params.D) * MaxStepsPerLayer
+	MaxOpcodeCost    = BaseOpcodeCost + StepOpcodeCost*MaxAcceptedSteps
 )
 
 // OpcodeCost is the exact accepting execution cost. The salt tail follows

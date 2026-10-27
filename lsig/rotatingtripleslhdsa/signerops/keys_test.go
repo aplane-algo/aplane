@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/crypto/rotatinghybrid"
+	"github.com/aplane-algo/aplane/internal/rotatingkey"
 	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/lsig/rotatingtripleslhdsa/stage"
 )
@@ -63,16 +64,31 @@ func TestGoldenVectors(t *testing.T) {
 		}
 	}
 	want := map[string]string{
-		"address0":         "T3DTKVRZHFKYNIRHXN5RWY6SCXXCI7GG3TPJPB7FIFVXG2HPARBVYQM5UM",
-		"address1":         "SYYE6APY3XCQPLP3K5LF7JVPR66C2JBABXIBZ4OVAAEFX2I7PZTBD6TEJ4",
 		"edpk0":            "a8ea95fbe0637982c4ed92a1dcaa9666415883ac0a5b544f111898f3740838cc",
 		"edpk1":            "26cd52e32a0aa31eb965fd930319d90a3d7c7abbd2099eab007ad8251a7eefe1",
 		"falconpk0_sha256": "cd8b90d6a94325c70ead9ecbf9c30c4ee2f969a0cd151f98b2503eddc999c4a6",
 		"falconpk1_sha256": "7323d913dfe7d16ad212f95dc2693bc0e43ad4c776e07f9c1872c79a44e4a692",
-		"root0":            "51bac26d0f1882e7dae410f99da1416d",
-		"root1":            "d072fbc3c66c462f50aabc86ff38215f",
 		"seed0":            "be00c386124f884ac7377a9f998b0b57",
 		"seed1":            "3cf58bc2a2c080d535ed14b320b918be",
+	}
+	// The root and the address follow from the hypertree height the binary
+	// is built with (rotatingkey.RotatingSlhdsaHeight); the seeds and the other keys do not.
+	perHeight := map[int]map[string]string{
+		20: {
+			"address0": "3YMTOW23YEOWGYBBCEF4SOWTT5MBIFC2RDQJM5Y4HYBXDST4JKWDJMZFSM",
+			"address1": "HLPOUYLKU53JJLMB4KIJHF22FMKG47VCCEEMUKZCSKLRWUXCQOPWL2MDAU",
+			"root0":    "271b068ce5393cf51996e7601b721026",
+			"root1":    "79c76d489c07e255c39eab56d04516ef",
+		},
+		63: {
+			"address0": "PGDSQUZ7TMOZ5DHTC64M4INDEF4I7QENPBZP7VB64YVEERMLGNE4IAYOVI",
+			"address1": "QYEHV4I3BKJWSRYN2XMFOC6MF3U2VKTIZV4RHKKB7GOG4ZFOBQECXAWKNM",
+			"root0":    "51bac26d0f1882e7dae410f99da1416d",
+			"root1":    "d072fbc3c66c462f50aabc86ff38215f",
+		},
+	}
+	for k, v := range perHeight[rotatingkey.RotatingSlhdsaHeight] {
+		want[k] = v
 	}
 	for k, v := range want {
 		if got[k] != v {
@@ -167,13 +183,27 @@ func TestStageOpsThroughKeyMaterial(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if program.Address != a1 || len(sig.Args) != 5 {
+	chunks := len(stage.ChunkSizes)
+	if program.Address != a1 || len(sig.Args) != chunks+2 {
 		t.Fatal("signature program is not stage 1 or has the wrong argument count")
 	}
-	if len(sig.Args[0])+len(sig.Args[1])+len(sig.Args[2])+len(sig.Args[3])+len(sig.Args[4]) > stage.MaxArgumentBytes {
+	total := 0
+	var slhSig []byte
+	for i, n := range stage.ChunkSizes {
+		if len(sig.Args[i]) != n {
+			t.Fatalf("argument %d is %d bytes, want %d", i, len(sig.Args[i]), n)
+		}
+		slhSig = append(slhSig, sig.Args[i]...)
+		total += n
+	}
+	edSig, falconSig := sig.Args[chunks], sig.Args[chunks+1]
+	if len(edSig) != stage.Ed25519SignatureSize || len(falconSig) > stage.FalconSignatureMaxSize {
+		t.Fatalf("Ed25519 %d bytes, Falcon %d bytes", len(edSig), len(falconSig))
+	}
+	if total+len(edSig)+len(falconSig) > stage.MaxArgumentBytes {
 		t.Fatal("arguments exceed the declared maximum")
 	}
-	if err := Verify(keys, msg, append(append(append([]byte{}, sig.Args[0]...), sig.Args[1]...), sig.Args[2]...), sig.Args[3], sig.Args[4]); err != nil {
+	if err := Verify(keys, msg, slhSig, edSig, falconSig); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := ops.SignStage(&signing.RotatingKeyMaterial{Seed: seed[:5]}, 0, 0, msg); err == nil {

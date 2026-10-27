@@ -175,7 +175,7 @@ from the presence of a witness key alone.
 | `aplane.corridor.v1` | DSA LogicSig | bounded `bounded1`; framework Merkle recipient allowlist | `aplane.falcon1024.v1` | signer-custodied Falcon cosigner on spend; distinct external Falcon admin on rekey | `bounded-cosigner1`; `/plan`, kind-tagged `/sign/component`, then `/sign/assemble` |
 | `aplane.rotating-triple-wots.v1` | DSA LogicSig (`rotating_lsig`) | dedicated compiled stage program; a new program per spend | Falcon-1024, WOTS-w16 and Ed25519 stage keys derived from one seed | none | `rotating1`; `/sign/rotating/prepare` then `/sign/rotating/sign`; the signer reads the live stage from the chain |
 | `aplane.rotating-triple-xmss.v1` | DSA LogicSig (`rotating_lsig`) | dedicated compiled stage program; a new program per spend | Falcon-1024 and Ed25519 stage keys and an RFC 8391 XMSS tree shared by 1,024 stages, derived from one seed | none | `rotating1`, as the triple; the signer also chooses the stage's one-time leaf |
-| `aplane.rotating-triple-slhdsa.v1` | DSA LogicSig (`rotating_lsig`) | dedicated compiled stage program; a new program per spend | Falcon-1024, SLH-DSA-SHA2-128s and Ed25519 per-stage keys derived from one seed | none | `rotating1`; stateless hash signing, no leaf allocation |
+| `aplane.rotating-triple-slhdsa.v1` | DSA LogicSig (`rotating_lsig`) | dedicated compiled stage program; a new program per spend | Falcon-1024, two-layer SLH-DSA-SHA2-128 and Ed25519 per-stage keys derived from one seed | none | `rotating1`; stateless hash signing, no leaf allocation |
 | `aplane.htlc.v1` | Generic LogicSig | generic TEAL HTLC policy | none | none | empty flow; ordinary LogicSig assembly through `/sign` |
 
 The examples describe the currently implemented architecture. A future change
@@ -494,7 +494,7 @@ Examples of the composed ontology:
 | `aplane.htlc.v1` | Generic LogicSig | generic TEAL policy | none |
 | `aplane.rotating-triple-wots.v1` | DSA LogicSig (`rotating_lsig`) | dedicated compiled stage program (Falcon-1024, hash-based WOTS-w16 and Ed25519, all required), a new program per spend | none; the signer reads the chain for the live stage (`rotating1` flow) |
 | `aplane.rotating-triple-xmss.v1` | DSA LogicSig (`rotating_lsig`) | dedicated compiled stage program (Falcon-1024, RFC 8391 XMSS-SHA2_16_256 and Ed25519, all required), a new program per spend; one XMSS tree per 1,024 stages, 64 leaves per stage | none; as the triple |
-| `aplane.rotating-triple-slhdsa.v1` | DSA LogicSig (`rotating_lsig`) | dedicated compiled stage program (Falcon-1024, SLH-DSA-SHA2-128s and Ed25519, all required), a new program per spend | none; `rotating1`, no one-time leaf state |
+| `aplane.rotating-triple-slhdsa.v1` | DSA LogicSig (`rotating_lsig`) | dedicated compiled stage program (Falcon-1024, two-layer SLH-DSA-SHA2-128 and Ed25519, all required), a new program per spend | none; `rotating1`, no one-time leaf state |
 
 ## Key types summary
 
@@ -513,7 +513,7 @@ Examples of the composed ontology:
 | `aplane.falcon1024-timelock.v1` | `falcon1024-timelock` | `dsa_lsig` | Optional bounded1 composed template: Falcon + validity-round gate on spend and rekey |
 | `aplane.rotating-triple-wots.v1` | `aplane.rotating-triple-wots` | `rotating_lsig` | Library-visible rotating account: Falcon-1024 + WOTS-w16 + Ed25519 stage program, `rotating1` flow; signer-side only (no client provider) |
 | `aplane.rotating-triple-xmss.v1` | `aplane.rotating-triple-xmss` | `rotating_lsig` | Library-visible rotating account: Falcon-1024 + RFC 8391 XMSS + Ed25519 stage program, `rotating1` flow; signer-side only (no client provider) |
-| `aplane.rotating-triple-slhdsa.v1` | `aplane.rotating-triple-slhdsa` | `rotating_lsig` | Library-visible rotating account: Falcon-1024 + SLH-DSA-SHA2-128s + Ed25519; `rotating1`, signer-side codec and cryptography |
+| `aplane.rotating-triple-slhdsa.v1` | `aplane.rotating-triple-slhdsa` | `rotating_lsig` | Library-visible rotating account: Falcon-1024 + two-layer SLH-DSA-SHA2-128 + Ed25519; `rotating1`, signer-side codec and cryptography |
 
 ## The three axes
 

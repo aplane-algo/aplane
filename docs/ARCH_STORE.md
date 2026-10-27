@@ -1231,7 +1231,7 @@ Rotating LogicSig accounts use `category: "rotating_lsig"`. The key types
 are `aplane.rotating-triple-wots.v1` (Falcon-1024 + WOTS-w16 + Ed25519
 stages) and `aplane.rotating-triple-xmss.v1` (Falcon-1024 + RFC 8391 XMSS +
 Ed25519 stages), and `aplane.rotating-triple-slhdsa.v1` (Falcon-1024 +
-SLH-DSA-SHA2-128s + Ed25519); each fixes its own derivation and stage program template,
+two-layer SLH-DSA-SHA2-128 + Ed25519); each fixes its own derivation and stage program template,
 and `internal/rotatingkey` classifies them and carries their frozen sizes
 in a per-type profile. SLH-DSA marks `StatelessHash` and keeps no one-time
 leaf history. The WOTS/XMSS profiles also mark the stage as one-time,

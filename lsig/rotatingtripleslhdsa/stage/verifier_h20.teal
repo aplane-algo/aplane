@@ -1,12 +1,15 @@
 #pragma version 13
-// SLH-DSA-SHA2-128s, pure interface, empty context, over the raw TxID.
+// SLH-DSA-SHA2-128 construction with a two-layer hypertree (h = 20,
+// d = 2, h' = 10; FORS and WOTS+ as SLH-DSA-SHA2-128s), pure interface,
+// empty context, over the raw TxID.
 // Scratch: 0 seed, 1 root, 2 seed||zero48, 3 digest, 4 tree, 5 leaf,
 // 6 FORS message, 7 current node, 8 compressed address, 9 FORS tree,
 // 10 node index, 11 path height, 12 FORS offset, 13 FORS roots,
 // 14 sibling, 16 HT layer, 17 layer signature, 18 WOTS message,
-// 19 chain, 20 checksum, 21 chain step, 22 digit, 23 parity,
-// 24 chain prefix, 25 WOTS endpoints. Each loop has a fixed bound
-// except chain_loop, which runs at most 15 times per chain.
+// 19 chain, 20 checksum, 22 digit, 23 parity, 24 chain prefix,
+// 25 WOTS endpoints. Every loop has a fixed bound. A WOTS chain is
+// unrolled: switch enters the 15 hash steps at the digit, and the
+// running value stays on the stack.
 txn RekeyTo
 global ZeroAddress
 !=
@@ -32,21 +35,16 @@ pushint 2928
 assert
 arg 1
 len
-pushint 2816
-==
-assert
-arg 2
-len
-pushint 2112
+pushint 1440
 ==
 assert
 txn TxID
-arg 3
+arg 2
 pushbytes 0x@ED25519@
 ed25519verify_bare
 assert
 txn TxID
-arg 4
+arg 3
 pushbytes 0x@FALCON@
 falcon_verify
 assert
@@ -81,21 +79,21 @@ concat
 pushbytes 0x00000000
 concat
 sha256
-extract 0 30
+extract 0 25
 store 3
 load 3
 extract 0 21
 store 6
 load 3
-extract 21 7
+extract 21 2
 btoi
-pushint 18014398509481983
+pushint 1023
 &
 store 4
 load 3
-extract 28 2
+extract 23 2
 btoi
-pushint 511
+pushint 1023
 &
 store 5
 // Compressed address: layer1, tree8, type1, keypair4, height4, index4.
@@ -222,25 +220,14 @@ pushint 0
 store 16
 ht_loop:
 load 16
-pushint 7
+pushint 2
 <
 bz ht_done
-load 16
-pushint 4
-<
-bz second_chunk
 arg 1
 load 16
-b have_chunk
-second_chunk:
-arg 2
-load 16
-pushint 4
--
-have_chunk:
-pushint 704
+pushint 720
 *
-pushint 704
+pushint 720
 extract3
 store 17
 pushint 22
@@ -321,32 +308,131 @@ pushint 16
 *
 pushint 16
 extract3
-store 7
 load 22
-store 21
-chain_loop:
-load 21
-pushint 15
-<
-bz chain_done
+switch st0 st1 st2 st3 st4 st5 st6 st7 st8 st9 st10 st11 st12 st13 st14 st15
+st0:
 load 24
-load 21
-itob
-extract 4 4
+pushbytes 0x00000000
 concat
-load 7
+swap
 concat
 sha256
 extract 0 16
-store 7
-load 21
-pushint 1
-+
-store 21
-b chain_loop
-chain_done:
+st1:
+load 24
+pushbytes 0x00000001
+concat
+swap
+concat
+sha256
+extract 0 16
+st2:
+load 24
+pushbytes 0x00000002
+concat
+swap
+concat
+sha256
+extract 0 16
+st3:
+load 24
+pushbytes 0x00000003
+concat
+swap
+concat
+sha256
+extract 0 16
+st4:
+load 24
+pushbytes 0x00000004
+concat
+swap
+concat
+sha256
+extract 0 16
+st5:
+load 24
+pushbytes 0x00000005
+concat
+swap
+concat
+sha256
+extract 0 16
+st6:
+load 24
+pushbytes 0x00000006
+concat
+swap
+concat
+sha256
+extract 0 16
+st7:
+load 24
+pushbytes 0x00000007
+concat
+swap
+concat
+sha256
+extract 0 16
+st8:
+load 24
+pushbytes 0x00000008
+concat
+swap
+concat
+sha256
+extract 0 16
+st9:
+load 24
+pushbytes 0x00000009
+concat
+swap
+concat
+sha256
+extract 0 16
+st10:
+load 24
+pushbytes 0x0000000a
+concat
+swap
+concat
+sha256
+extract 0 16
+st11:
+load 24
+pushbytes 0x0000000b
+concat
+swap
+concat
+sha256
+extract 0 16
+st12:
+load 24
+pushbytes 0x0000000c
+concat
+swap
+concat
+sha256
+extract 0 16
+st13:
+load 24
+pushbytes 0x0000000d
+concat
+swap
+concat
+sha256
+extract 0 16
+st14:
+load 24
+pushbytes 0x0000000e
+concat
+swap
+concat
+sha256
+extract 0 16
+st15:
 load 25
-load 7
+swap
 concat
 store 25
 load 19
@@ -380,7 +466,7 @@ pushint 0
 store 11
 ht_auth:
 load 11
-pushint 9
+pushint 10
 <
 bz ht_auth_done
 load 17
@@ -402,11 +488,11 @@ ht_auth_done:
 load 7
 store 18
 load 4
-pushint 511
+pushint 1023
 &
 store 5
 load 4
-pushint 9
+pushint 10
 shr
 store 4
 load 16

@@ -1,9 +1,10 @@
 # Key Type Specification: Rotating Triple Hybrid
 
-Status: implemented as two separate key types,
-`aplane.rotating-triple-xmss.v1` and `aplane.rotating-triple-wots.v1`; each
-v1 is frozen by its first release (v0.44.0). This document specifies both for
-implementers and reviewers: their shared design and the two hash-based
+Status: implemented as three separate key types. `aplane.rotating-triple-xmss.v1`
+and `aplane.rotating-triple-wots.v1` are each frozen by their first release
+(v0.44.0). `aplane.rotating-triple-slhdsa.v1` is experimental and unreleased;
+its design is in section 11. This document specifies all three for
+implementers and reviewers: their shared design and the hash-based
 schemes. It restates, and does not replace, the authoritative sources:
 
 - `lsig/rotatingtriplexmss/`: XMSS stage template, derivation, signing, tree
@@ -18,11 +19,12 @@ schemes. It restates, and does not replace, the authoritative sources:
   and [ARCH_KEYTYPES.md](ARCH_KEYTYPES.md): cryptographic design, signing flow
   and key type contracts
 
-A third implementation, `aplane.rotating-triple-slhdsa.v1`, now reuses the
-shared `rotating1` account and signing contracts. The WOTS/XMSS comparison
-below retains those variants' exact layouts; SLH-DSA's distinct derivation,
-five-argument layout, resource profile and stateless retry semantics are
-specified in [ARCH_CRYPTO.md](ARCH_CRYPTO.md#rotating-slh-dsa-triple).
+The third implementation, `aplane.rotating-triple-slhdsa.v1`, reuses the
+shared `rotating1` account and signing contracts with a stateless hash-based
+scheme. Sections 2 through 9 compare the two released variants and keep
+their exact layouts; section 11 specifies where SLH-DSA differs, with the
+frozen contract in [ARCH_CRYPTO.md](ARCH_CRYPTO.md#rotating-slh-dsa-triple)
+and the qualification record in [SLHDSA_EVALUATION.md](SLHDSA_EVALUATION.md).
 Its implementation is `lsig/rotatingtripleslhdsa/`, with the primitive in
 `internal/crypto/slhdsa/`. It is not part of the original v0.44.0 release.
 
@@ -44,7 +46,7 @@ must verify:
 |---|---|---|
 | Falcon-1024 | lattice, post-quantum | per-stage key |
 | Ed25519 | classical (`ed25519verify_bare`) | per-stage key |
-| Hash-based signature | XMSS or WOTS, SHA-256 | one-time leaf or per-stage one-time key |
+| Hash-based signature | XMSS, WOTS or SLH-DSA, SHA-256 | one-time leaf, per-stage one-time key, or per-stage few-time key (section 11) |
 
 The hash-based scheme is selected by the key type when the account is created.
 Each type has its own frozen stage template, derivation label and addresses;
@@ -523,30 +525,272 @@ Reopen this when a product requirement needs the account itself in a
 multi-party or multi-transaction group. Neither step touches the stage
 program, so the templates stay unpinned on group size at no cost.
 
-## 11. Compatibility and versioning
+## 11. SLH-DSA variant
+
+`aplane.rotating-triple-slhdsa.v1` replaces the one-time hash-based key of
+the two released variants with a **stateless few-time** key per stage: an
+SLH-DSA key under the SLH-DSA-SHA2-128s construction of FIPS 205, with the
+hypertree rescaled to two layers. Everything the earlier sections say about
+the account model (§3), the stage program guards (§3.1), the address
+derivation (§3.2), the signing choreography (§8) and the policy boundary
+(§10) applies unchanged. This section covers what differs: why a stateless
+scheme, the parameter set and why it is not the standard one, the signing
+and argument layout, the resource profile, the per-stage signing bound that
+replaces the one-time rule, and the resulting claims.
+
+### 11.1 Why a stateless scheme
+
+The WOTS and XMSS variants rest on a one-time rule: a key or leaf that signs
+two different messages forfeits its hash-based protection for the rest of
+the stage. Holding that rule costs machinery. The XMSS variant keeps a leaf
+history in release memory, restores it from the audit log at unlock, waits
+for that restore before signing, chooses leaves from it, reports reuse, and
+caches about 4 MiB of tree nodes per 1,024 stages. Two XMSS signers that
+share a seed without sharing memory collide on a leaf with probability 1 in
+64 per stage; a restore without the audit log loses the history.
+
+SLH-DSA has no leaf to choose. Each signature picks a hypertree leaf
+pseudo-randomly from the message, and the FORS layer tolerates a leaf being
+hit more than once. So a stage key can sign, be retried, be restored from an
+old backup or be run from several copies without any coordination, and
+exceeding the design's usage assumptions costs security margin gradually
+rather than at a threshold. The price is a larger signature and a slower
+verifier than XMSS. The variant exists for operators who value the absence
+of state over one group slot.
+
+### 11.2 Parameter set
+
+| Parameter | SLH-DSA variant |
+|---|---|
+| Construction | SLH-DSA-SHA2-128s of FIPS 205 (`internal/crypto/slhdsa`), hypertree rescaled |
+| Hash and security parameter | SHA-256 throughout, n = 16 |
+| Hypertree | h = 20 in d = 2 layers of height h' = 10 (standard set: h = 63, d = 7, h' = 9) |
+| FORS | k = 14 trees of height a = 12, as the standard set |
+| WOTS+ | w = 16, 35 chains (32 message digits + 3 checksum digits), as the standard set |
+| Message digest | 25 bytes: 21 for FORS, 2 for the tree index, 2 for the leaf index (standard set: 30) |
+| Signing variant | pure interface, empty context, deterministic `opt_rand = PK.seed` |
+| Validity window cap | 100 rounds, as the other variants |
+| TEAL version | 13 |
+| Stage program bytes, unsalted / salted | 2,834 / 2,837 |
+| Stage 0 public record bytes | 1,857 |
+| SLH-DSA signature bytes | 4,368 (standard set: 7,856) |
+| Ed25519, Falcon-1024 signature bytes | 64; at most 1,423 |
+| Maximum total argument bytes | 5,855 |
+| Maximum opcode cost | 68,465 |
+| Group size | 6: one spend + five resource dummies |
+| Go value | `slhdsa.Rescaled128`; `slhdsa.SHA2128s` is the standard set |
+
+**Why the hypertree was rescaled.** Argument bytes, not opcode cost, set a
+rotating group's size: each group member contributes 1,000 bytes of pooled
+LogicSig argument allowance, and the signature travels as LogicSig arguments.
+Under the standard set the three signatures total 9,343 bytes, which needs
+ten transactions however cheap the verifier is. The standard set's 63-level
+hypertree exists so that one key can sign 2^64 messages while FORS leaves
+are rarely reused. A rotating stage key signs a handful of messages (§11.5),
+so five of the seven layers paid 3,520 bytes per spend for capacity no stage
+uses. Shortening the hypertree to two layers keeps n, w, FORS and every hash
+function of the standard set and changes only the number of layers and the
+digest split; the signature drops to 4,368 bytes and the group to six
+transactions, which is also the floor for any FORS of the standard size.
+
+**What it is not.** FIPS 205 approves only its listed parameter sets. The
+rescaled set is the standard construction with a private hypertree shape;
+it is not SLH-DSA-SHA2-128s and the key type makes no FIPS 205 conformance
+claim. The primitive is parametric so that the standard shape runs through
+the same code under the NIST ACVP vectors, which is the evidence that the
+construction is implemented correctly; the rescaled shape is pinned by
+golden vectors of its own. This places the variant in the same category as
+the XMSS variant (§5.2): a standard construction used in a non-conformant
+way, with its own written argument.
+
+**Build-time selection.** The height is a constant,
+`internal/rotatingkey.RotatingSlhdsaHeight`, with frozen artifacts for both
+20 and 63: a verifier source, a template assembled from it, an argument
+layout, a measured cost model and golden stage identities each, plus the
+matching resource literals in `internal/rotatingkey`. Changing the
+constant and rebuilding gives the standard SLH-DSA-SHA2-128s shape at ten
+transactions, with every stage address changed, since the shape is
+embedded in the stage program. It exists so the standard set stays
+reachable for review and measurement while the type is experimental; it is
+not an operator setting, and a released build fixes one height for the
+key type's lifetime.
+
+**Alternatives considered.**
+
+- *Carry the signature in a companion application call's arguments.* That
+  removes the byte floor but leaves the worst-case opcode floor of the
+  standard set at ten transactions, so it only pays together with
+  per-signature group sizing, and it needs a per-network carrier
+  application pinned in the stage template, a custom SLH-DSA signed message
+  because the signature can no longer bind the group ID it is part of, and
+  a new key type. Shelved.
+- *Two layers of height 9 (h = 18).* Same signature within 32 bytes, stage
+  derivation at the standard set's cost, and a bound in §11.5 four times
+  smaller. Height 10 was chosen for margin on a bound the signer does not
+  enforce.
+- *A smaller FORS.* Reaching five transactions needs about 2,000 fewer
+  signature bytes, which only FORS can give, at the direct expense of the
+  128-bit single-use margin. Rejected.
+
+### 11.3 Derivation and stage record
+
+Derivation uses the shared HKDF scheme of §4 under the label
+`APLANE_ROTATING_TRIPLE_SLHDSA_V1`, with per-stage tags 1 (Falcon-1024
+seed), 2 (Ed25519 seed), 3 (`SK.seed`), 4 (`SK.prf`) and 5 (`PK.seed`),
+each expansion including the genesis hash. Stage `n`'s SLH-DSA key is
+`KeyGenFromSeeds(SK.seed_n, SK.prf_n, PK.seed_n)` under the rescaled set;
+its root is the top of a 1,024-leaf tree, so derivation costs about twice
+the standard set's. The stage program embeds, in this order, `PK.seed` (16),
+`PK.root` (16), the Falcon-1024 public key (1,793) and the Ed25519 public
+key (32), and the stage 0 public record is the same 1,857 bytes. Program
+bytes are derived, never stored, as for the other variants.
+
+### 11.4 Signing and arguments
+
+All three components sign the raw 32-byte transaction ID (§5.1). SLH-DSA
+signs the pure-interface message `M' = 0x00 || 0x00 || TxID` with
+`opt_rand = PK.seed`, so the same stage and transaction always reproduce the
+same signature. The signature is `R (16) || FORS (2,912) || layer 0 (720)
+|| layer 1 (720)`, and it is split for transport so that every argument
+stays under the AVM's 4,096-byte value limit:
+
+| Argument | Content | Bytes |
+|---|---|---:|
+| `arg 0` | `R` and the FORS signature | 2,928 |
+| `arg 1` | both hypertree layers | 1,440 |
+| `arg 2` | Ed25519 signature | 64 |
+| `arg 3` | Falcon-1024 signature, compressed | at most 1,423 |
+
+The verifier recomputes `H_msg` as one SHA-256 and one MGF1 block, splits
+the 25-byte digest into the FORS message, a 10-bit tree index and a 10-bit
+leaf index, recovers the 14 FORS roots along their authentication paths,
+compresses them, and then walks the two WOTS+ layers: each chain is
+unrolled, a `switch` on the digit enters the remaining hash steps, the 35
+chain ends are compressed, and a 10-level authentication path yields the
+layer's root, which is the next layer's message. The final root must equal
+the embedded `PK.root`. There is no randomizer search, leaf range, checksum
+cap or signature grinding; every valid signature under the key is accepted.
+
+`StageOps.SignStage` re-parses the derived program and verifies all three
+signatures locally before releasing them, as §5.5 describes; the leaf index
+the flow passes is ignored.
+
+### 11.5 Per-stage signing bound
+
+The one-time rule of §9 does not apply. In its place the variant assumes a
+bound on how many **distinct** messages one stage key signs. FORS security
+degrades gradually as leaves are reused; the standard set places up to 2^64
+signatures on 2^63 leaves, and the rescaled set with 2^20 leaves is in that
+same regime at about **2^20 distinct messages per stage key**. Repeating a
+message reproduces the same signature and the same leaf and reveals nothing
+new, so retries of one transaction do not count.
+
+Honest use is far inside the bound: the open-test message of §8, which is
+never released, and the spends released while the stage is live, normally
+one and occasionally a few when a window ages or a client rebuilds the
+transaction. The signer does not count signatures per stage and the
+protocol does not bound them: a stage stays live until a spend lands, the
+signer keeps no limit on releases per stage by design, and copies sharing a
+seed sign independently. The bound is a margin statement. With q distinct
+messages under one stage key, leaf repeats number about q(q - 1) / 2^21,
+and each repeat costs about 14 bits at that one leaf, from 2^-168 to
+2^-154 per forgery attempt; even tens of thousands of messages leave the
+worst leaf past the 128-bit target. The evaluation record tabulates this.
+No release cap, rate limit or used-leaf tracking is added: a cap could
+strand an account whose every released spend expired, and tracking leaves
+to redraw the randomizer would reintroduce the state this variant exists
+to avoid in order to remove a once-in-a-million, 14-bit event.
+
+Release memory (§8.2) keeps only the latest release for this variant:
+`StatelessHash` records carry no leaf history, restore nothing from the
+audit log beyond the latest release, and never mark reuse. Expired and
+in-flight release alerts work as for the other variants.
+
+### 11.6 Resource profile and cost
+
+| Property | SLH-DSA variant |
+|---|---|
+| Verifier cost | `26,645 + 41 * steps`, salted or not; the salt tail follows `return` |
+| Steps per layer | `c + 45 - digitSum16(c)` for checksum `c` in 0..480, at most 510 |
+| Maximum chain steps | 1,020 |
+| Worst accepting run | 68,465 |
+| Typical run | about 48,500 at the mean of 534 steps; LocalNet traces of 480 and 570 steps matched the model exactly |
+| Maximum argument bytes | 5,855 |
+| Group pool | 120,000 cost / 6,000 argument bytes |
+| Resource dummies | 5 |
+| Fee at minimum | 6,000 microAlgos, no program surcharge |
+
+Opcode cost fits four transactions; the argument bytes decide the group.
+The 41 units per chain step are 6 unit-cost instructions and one SHA-256.
+
+### 11.7 Claims
+
+- **All three signatures required.** As §9, with the hash-based leg a
+  few-time rather than one-time key: a forgery needs Falcon-1024, Ed25519
+  and SHA-256 broken at once while the stage key has signed well under the
+  bound of §11.5.
+- **Graceful degradation.** Signing past the bound costs FORS margin per
+  additional leaf reuse; nothing fails at a threshold, and the stage still
+  requires Falcon-1024 and Ed25519 until rotation confirms.
+- **No usage state.** Correctness of signing does not depend on release
+  memory, the audit log, backups or replica coordination.
+- **Not FIPS 205.** The parameter set is not a listed set; the ACVP
+  vectors validate the construction on the standard shape only. Seed
+  generation is the shared HKDF derivation, not the standard's key
+  generation procedure, as for every rotating variant.
+- **Network binding.** Every derivation includes the genesis hash.
+
+### 11.8 Comparison
+
+| Item | XMSS | WOTS | SLH-DSA |
+|---|---|---|---|
+| Hash-based key per stage | 64 one-time leaves of a shared tree | one one-time key | one few-time key |
+| Rule on the hash-based key | each leaf signs one message | the key signs one message | at most about 2^20 distinct messages |
+| State the rule needs | leaf history, audit restore, tree cache | release memory for reporting only | none |
+| Loss of state | leaf reuse, caught and reported | reuse reported | none |
+| Group size | 5 | 4 | 6 |
+| Hash-based signature bytes | 2,692 | 2,144 | 4,368 |
+| Worst opcode cost | 95,857 | 59,772 | 68,465 |
+| Signing, this host | tree cache amortized | microseconds | about 0.10 s |
+| Stage derivation, this host | tree cache amortized | microseconds | about 50 ms |
+| Standing | RFC 8391 format and set, non-conformant signer | APlane construction | FIPS 205 construction, private parameter set |
+| Status | released v1 | released v1 | experimental |
+
+## 12. Compatibility and versioning
 
 - Each v1 key type separately freezes its stage template, embedded constants,
   derivation label and tags, signing procedure, public record and resource
   profile. XMSS also freezes its checksum cap and leaf allocation. Any change
   to the TEAL changes every stage address. Changing these contracts mints a
   new key type version; it does not edit v1.
-- The two schemes have separate identifiers and derivation labels
-  (`APLANE_ROTATING_TRIPLE_V1` versus `APLANE_ROTATING_XMSS_V1`), so their
-  addresses never collide by construction. This document groups them under a shared design name; it introduces no additional
-  key type, scheme negotiation or conversion of existing accounts.
+- The three schemes have separate identifiers and derivation labels
+  (`APLANE_ROTATING_TRIPLE_V1`, `APLANE_ROTATING_XMSS_V1` and
+  `APLANE_ROTATING_TRIPLE_SLHDSA_V1`), so their addresses never collide by
+  construction. This document groups them under a shared design name; it
+  introduces no additional key type, scheme negotiation or conversion of
+  existing accounts.
+- The SLH-DSA variant is unreleased. Its hypertree rescaling on 2026-10-27
+  changed its stage template, stage identities and resource profile under
+  the same key type identifier, a pre-release freeze decision; once it
+  ships, the same change would mint a new version.
 - Pre-release development templates may derive different addresses and must
   be identified rather than reinterpreted as released v1 templates.
 - The shared signing-flow identifier remains `rotating1`. Clients route on
   `signing_flow`, not key type strings.
 - The installer floor for upgrades is v0.44.0.
 
-## 12. Evidence (tests)
+## 13. Evidence (tests)
 
 | Area | Where |
 |---|---|
+| SLH-DSA construction against the NIST ACVP vectors on the standard shape; rescaled golden vectors; digest split and leaf-index coverage; tampering and cross-shape rejection | `internal/crypto/slhdsa/slhdsa_test.go` |
+| SLH-DSA stage build, parse, salt, offsets, argument literals pinned to the parameter set, and cost ceiling | `lsig/rotatingtripleslhdsa/stage/program_test.go`, `template_dump_test.go` |
+| SLH-DSA derivation golden vectors, signing, verification and argument layout | `lsig/rotatingtripleslhdsa/signerops/keys_test.go`, `signerreg/register_test.go` |
+| SLH-DSA on-chain acceptance and rejection, cost model against node traces on both program shapes, six-transaction group | `test/integration/rotating_slhdsa_onchain_test.go` |
+| SLH-DSA preparation ceilings, bounded discovery, post-sign chain recheck, restored releases without leaf history; lifecycle benchmark | `internal/signerapp/signing/rotating_slhdsa_test.go`, `rotating_slhdsa_bench_test.go` |
 | XMSS stage build, parse, salt, offsets and cost | `lsig/rotatingtriplexmss/stage/program_test.go`, `template_dump_test.go` |
 | WOTS stage build, parse, salt, offsets and cost | `lsig/rotatingtriplewots/stage/program_test.go` |
-| Algod assembler agreement for salted and unsalted stages, both schemes | the two `stage` packages' tests (LocalNet) |
+| Algod assembler agreement for salted and unsalted stages, all three schemes | the three `stage` packages' tests (LocalNet) |
 | Derivation, signing, verification and tampered fields; XMSS range violations and checksum above cap | `lsig/rotatingtriplexmss/signerops/keys_test.go`, `lsig/rotatingtriplewots/signerops/keys_test.go` |
 | Codec, generator, seed validation and registration | `lsig/rotatingtriplexmss/signerreg/register_test.go`, `lsig/rotatingtriplewots/signerreg/register_test.go` |
 | XMSS vectors from an independent oracle (`tools/xmssoracle`), RFC reference vector, 32 bounded signatures (10 with searched randomizer) | `internal/crypto/xmss/` |
@@ -556,12 +800,15 @@ program, so the templates stay unpinned on group size at no cost.
 | XMSS on-chain acceptance, cost model at the step ceiling, tree rollover, five-transaction group | `test/integration/rotating_xmss_onchain_test.go` |
 | WOTS on-chain acceptance, resource costs, four-transaction group | `test/integration/rotating_triple_onchain_test.go` |
 | Shared signing flow, release gates and recovery | `internal/signerapp/signing/rotating_*_test.go`, `test/integration/rotating_signer_test.go` |
-| Every non-payment transaction type through apshell and the signer (asset opt-in, transfer and close-out; app opt-in, call and box reference; online and offline key registration), both schemes; refusal by a contract that rejects rekeying calls, with nothing signed | `test/integration/rotating_txntypes_test.go` |
+| Every non-payment transaction type through apshell and the signer (asset opt-in, transfer and close-out; app opt-in, call and box reference; online and offline key registration), all three schemes; refusal by a contract that rejects rekeying calls, with nothing signed | `test/integration/rotating_txntypes_test.go` |
 
 Full XMSS tree builds are skipped under the race detector (`internal/racetest`).
 
-## 13. Open items
+## 14. Open items
 
+- Independent review of the SLH-DSA rescaled parameter set and of the
+  per-stage signing margin argument (§11.5) is a listed gate in
+  [SLHDSA_EVALUATION.md](SLHDSA_EVALUATION.md).
 - Per-key-type exit and external-admin paths remain design-only.
 - Hinted stage scans and an in-flight release limit remain proposed.
 - Grouping with other senders and multi-stage release are deferred by design

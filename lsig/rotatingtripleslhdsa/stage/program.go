@@ -2,12 +2,13 @@
 // Copyright (C) 2026 APlane Project LLC
 
 // Package stage builds canonical rotating SLH-DSA triple authorizers.
-// Every spend requires SLH-DSA-SHA2-128s, Ed25519 and Falcon-1024 over its TxID.
+// Every spend requires an SLH-DSA signature under the parameter set the
+// binary is built with (rotatingkey.RotatingSlhdsaHeight, see shape.go), Ed25519 and
+// Falcon-1024 over its TxID.
 package stage
 
 import (
 	"bytes"
-	_ "embed"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -33,25 +34,20 @@ const (
 	// FalconPublicKeySize is the embedded Falcon-1024 public key size.
 	FalconPublicKeySize = 1793
 
-	// HashSize is the SLH-DSA-SHA2-128s node/seed size.
+	// HashSize is the SLH-DSA node/seed size.
 	HashSize               = slhdsa.N
-	SLHSignatureSize       = slhdsa.SignatureSize
 	Ed25519SignatureSize   = 64
 	FalconSignatureMaxSize = 1423
-	// Chunk boundaries keep each argument below the AVM's 4096-byte value limit.
-	ForsChunkSize    = 16 + slhdsa.ForsSignatureSize
-	FirstHTChunkSize = 4 * slhdsa.XmssSignatureSize
-	LastHTChunkSize  = 3 * slhdsa.XmssSignatureSize
-	MaxArgumentBytes = SLHSignatureSize + Ed25519SignatureSize + FalconSignatureMaxSize
+	// ForsChunkSize is the first SLH-DSA argument, R with the FORS
+	// signature, the same for every shape; the hypertree layers follow in
+	// the arguments ChunkSizes lists.
+	ForsChunkSize = 16 + slhdsa.ForsSignatureSize
 
 	// SaltSearchLimit is the number of salt values the v13 assembler tries.
 	SaltSearchLimit = 128
 
 	opIntcblock  = 0x20
 	saltTailSize = 3
-
-	// SaltedProgramSize is the unsalted program plus the salt tail.
-	SaltedProgramSize = UnsaltedProgramSize + saltTailSize
 
 	// Placeholder fill bytes the template was assembled with.
 	fillEd25519 = 0x33
@@ -94,9 +90,14 @@ var (
 )
 
 func init() {
+	if len(template) == 0 {
+		// Bootstrap only: TestDumpTemplate regenerates the frozen templates
+		// from the verifier sources; until then Build refuses every key.
+		return
+	}
 	find := func(fill byte, size int) int {
 		run := bytes.Repeat([]byte{fill}, size)
-		off := bytes.Index(template[:], run)
+		off := bytes.Index(template, run)
 		if off < 0 || bytes.Contains(template[off+1:], run) {
 			panic(fmt.Sprintf("rotating slhdsa stage template: placeholder %#x x%d is not unique", fill, size))
 		}
@@ -115,8 +116,11 @@ func Build(keys *PublicKeys) (Program, error) {
 	if keys == nil {
 		return Program{}, fmt.Errorf("%w: nil public keys", ErrInvalidProgram)
 	}
+	if len(template) == 0 {
+		return Program{}, fmt.Errorf("%w: no frozen template for hypertree height %d", ErrInvalidProgram, Params.H)
+	}
 	base := make([]byte, UnsaltedProgramSize, SaltedProgramSize)
-	copy(base, template[:])
+	copy(base, template)
 	copy(base[ed25519KeyOffset:], keys.Ed25519[:])
 	copy(base[falconKeyOffset:], keys.Falcon[:])
 	copy(base[seedOffset:], keys.Seed[:])
@@ -179,12 +183,14 @@ func Address(bytecode []byte) (types.Address, error) {
 	return addr, nil
 }
 
-// TEALSource returns the source used to assemble the frozen template.
+// TEALSource returns the source used to assemble the selected shape's
+// frozen template.
 func TEALSource(keys *PublicKeys) string {
-	return strings.NewReplacer("@ED25519@", hex.EncodeToString(keys.Ed25519[:]),
-		"@FALCON@", hex.EncodeToString(keys.Falcon[:]), "@SEED@", hex.EncodeToString(keys.Seed[:]),
-		"@ROOT@", hex.EncodeToString(keys.Root[:])).Replace(tealTemplate)
+	return substitute(selected.teal, keys)
 }
 
-//go:embed verifier.teal
-var tealTemplate string
+func substitute(teal string, keys *PublicKeys) string {
+	return strings.NewReplacer("@ED25519@", hex.EncodeToString(keys.Ed25519[:]),
+		"@FALCON@", hex.EncodeToString(keys.Falcon[:]), "@SEED@", hex.EncodeToString(keys.Seed[:]),
+		"@ROOT@", hex.EncodeToString(keys.Root[:])).Replace(teal)
+}
