@@ -16,7 +16,14 @@ import (
 )
 
 const (
-	DerivationLabel           = "APLANE_ROTATING_TRIPLE_SLHDSA_V1"
+	// DerivationLabel is the HKDF salt of this key type.
+	DerivationLabel = "APLANE_ROTATING_TRIPLE_SLHDSA_V1"
+
+	// FalconInfoTag selects a stage's Falcon-1024 seed and Ed25519InfoTag
+	// its Ed25519 seed; the values match the other rotating key types and
+	// the label keeps the keys apart. SLHSeedInfoTag, SLHPrfInfoTag and
+	// SLHPublicSeedInfoTag select a stage's SLH-DSA secret seed, PRF key and
+	// public seed.
 	FalconInfoTag        byte = 1
 	Ed25519InfoTag       byte = 2
 	SLHSeedInfoTag       byte = 3
@@ -44,7 +51,7 @@ type StageKeys struct {
 // DeriveStage derives stage i's keys and program.
 func DeriveStage(d *rotatinghybrid.Deriver, i uint64) (*StageKeys, stage.Program, error) {
 	if d == nil {
-		return nil, stage.Program{}, errors.New("rotating triple deriver is nil")
+		return nil, stage.Program{}, errors.New("rotating slhdsa deriver is nil")
 	}
 	keys := &StageKeys{}
 	var secretSeed, prfSeed, publicSeed [slhdsa.N]byte

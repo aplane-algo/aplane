@@ -456,18 +456,33 @@ Typical code areas:
 - `internal/clientsign` and `internal/engine` (client routing and checks)
 - `internal/crypto/rotatinghybrid` (the HKDF stage deriver, labelled per key
   type) and `internal/crypto/wots` (the WOTS-w16 primitive)
-- `lsig/rotatingtriplewots/` (the stage program, stage ops, codec and generator;
-  it reuses the two crypto packages above and the Falcon signer)
+- `lsig/rotatingtriplewots/` (the stage program, the WOTS half of the stage
+  ops, and the stage 0 record layout; it reuses the two crypto packages above)
 - `internal/crypto/xmss` (RFC 8391 XMSS-SHA2_16_256) and
-  `lsig/rotatingtriplexmss/` (its stage program, stage ops with the public
-  tree cache, codec and generator); `tools/xmssoracle` regenerates the
-  package's vectors from an independent implementation
+  `lsig/rotatingtriplexmss/` (its stage program, the XMSS half of the stage
+  ops with the public tree cache, and its record layout); `tools/xmssoracle`
+  regenerates the package's vectors from an independent implementation
+- `internal/crypto/slhdsa` (the SLH-DSA primitive, parametric in the
+  hypertree shape) and `lsig/rotatingtripleslhdsa/` (its stage program for the
+  built-in hypertree height, the SLH-DSA half of the stage ops, and its record
+  layout)
+- `lsig/rotatingfamily/` (what the three share: `signerreg` registers a key
+  type from its descriptor and provides the generator, `stagesign` the
+  stage's Ed25519 and Falcon-1024 half, `stageprog` the stage program's salt
+  search and strict parse, and `rotatingtest` the contract suite)
 
 These are protocol-level key types, not templates. A new rotating stage
-scheme is a new key type on the same flow: a `rotatingkey` profile, a stage
-package with a frozen template and an assembler cross-check, stage ops
-registered under the key type, a codec and a generator. Do not model it as
-a provider.
+scheme is a new key type on the same flow:
+- a `rotatingkey` profile;
+- a stage package with a frozen template and an assembler cross-check, built
+  on `stageprog`;
+- the hash-based half of its stage on `stagesign`, with stage ops registered
+  under the key type;
+- a stage 0 record layout and a `rotatingfamilyreg.Descriptor`;
+- a stored-payload fixture and golden vectors;
+- a `rotatingtest.Run` call.
+
+Do not model it as a provider.
 
 ## Step 2: Choose the Implementation Style
 

@@ -644,8 +644,10 @@ aplane/
 │   ├── composeddsa/               # Generic ComposedDSA composer
 │   ├── dsafamily/                 # Client-safe DSA family registration descriptors
 │   ├── signerreg/                 # Built-in signer-side LogicSig provider registration
+│   ├── rotatingfamily/            # What the rotating stages share (signerreg/, stagesign/, stageprog/, rotatingtest/)
 │   ├── rotatingtriplewots/        # Rotating Falcon + WOTS + Ed25519 triple hybrid stage (signerops/, signerreg/, stage/)
 │   ├── rotatingtriplexmss/        # Rotating Falcon + XMSS + Ed25519 triple hybrid stage (signerops/, signerreg/, stage/)
+│   ├── rotatingtripleslhdsa/      # Rotating Falcon + SLH-DSA + Ed25519 triple hybrid stage (signerops/, signerreg/, stage/)
 │   └── generictemplate/           # YAML-backed generic template provider
 │
 ├── library/templates/             # Optional plaintext KeyType Library YAML sources
@@ -679,7 +681,7 @@ behavior should live in `internal/apshellapp`, not in `cmd/apshell`.
 | UI | `cmd/apshell`, `cmd/apconsole`, `internal/apshellcli`, `internal/shellrepl`, `internal/signerapp/signertui`, `cmd/apadmin`, `cmd/appass`, `cmd/aplocalnet`, `internal/aplocalnet`, `cmd/apapprover`, `internal/command`, `internal/cmdspec`, `internal/cmdlog`, `internal/theme`, `internal/addressdisplay`, `internal/keytypeux` |
 | Engine | `internal/apshellapp`, `internal/apadminapp`, `internal/apboundedadminapp`, `internal/engine`, `internal/clientstate`, `internal/cache`, `internal/config`, `internal/engine/connect`, `internal/engine/guarded`, `internal/clientsign`, `internal/appresult`, `internal/appinput`, `internal/appspec`, `internal/asa`, `internal/addressbook`, `internal/refname`, `internal/keymgmt`, `internal/partkeyparse`, `internal/txnutil`, `internal/algo` |
 | Signer App | `internal/bootstrap/signer`, `internal/signerapp/daemon`, `internal/signerapp/startup`, `internal/signerapp/runtime`, `internal/signerapp/productruntime`, `internal/signerapp/unlockconfig`, `internal/signerapp/signing`, `internal/signerapp/chainread`, `internal/signerapp/approval`, `internal/signerapp/templates`, `internal/signerapp/templateadmin`, `internal/signerapp/keyadmin`, `internal/signerapp/storeadmin`, `internal/signerapp/backupadmin`, `internal/signerapp/rest`, `internal/signerapp/admin`, `internal/signerapp/adminserver`, `internal/signerapp/svcerr`, `internal/signerapp/enrollment`, `internal/signerapp/enrollqueue`, `internal/signerapp/clientregistry`, `internal/signerapp/asametadata`, `internal/signerapp/audit`, `internal/signerapp/filewatcher`, `internal/signerapp/ipcbind`, `internal/signerapp/txdesc`, `internal/signerapp/policycmd`, `internal/signerapp/policyreview`, `internal/signerapp/policyapply`, `internal/signerapp/policyruntime`, `internal/noderole`, `internal/policy`, `internal/integritysidecar`, `internal/signerapp/approvalpolicy`, `internal/signerapp/storevalidate` |
-| Provider | `internal/signing`, `internal/signing/falcon1024`, `internal/falconparams`, `internal/lsigresource`, `lsig/`, `lsig/rotatingtriplewots`, `internal/cosigner`, `internal/boundedadmin`, `internal/boundedmeta`, `internal/txeffects`, `internal/keyclass`, `internal/lsigprovider`, `internal/signingargs`, `internal/logicsigdsa`, `internal/genericlsig`, `internal/lsigsalt`, `internal/tealtemplate`, `internal/addressderive`, `internal/keytypecatalog`, `internal/keytypestate`, `internal/algorithm`, `internal/keygen`, `internal/mnemonic` |
+| Provider | `internal/signing`, `internal/signing/falcon1024`, `internal/falconparams`, `internal/lsigresource`, `lsig/`, `lsig/rotatingfamily`, `lsig/rotatingtriplewots`, `lsig/rotatingtriplexmss`, `lsig/rotatingtripleslhdsa`, `internal/cosigner`, `internal/boundedadmin`, `internal/boundedmeta`, `internal/txeffects`, `internal/keyclass`, `internal/lsigprovider`, `internal/signingargs`, `internal/logicsigdsa`, `internal/genericlsig`, `internal/lsigsalt`, `internal/tealtemplate`, `internal/addressderive`, `internal/keytypecatalog`, `internal/keytypestate`, `internal/algorithm`, `internal/keygen`, `internal/mnemonic` |
 | Storage/Crypto | `internal/crypto`, `internal/witness`, `internal/witness/artifact`, `internal/merkleallowlist`, `internal/keys`, `internal/keystore`, `internal/storepaths`, `internal/stagetable`, `internal/rotatingkey`, `internal/crypto/wots`, `internal/crypto/rotatinghybrid`, `internal/genstore`, `internal/storelock`, `internal/signerapp/storemut`, `internal/storeinit`, `internal/storepass`, `internal/serverconfig`, `internal/defaultkeytypes`, `internal/clientdata`, `internal/templatestore`, `internal/templatelibrary`, `internal/templatepolicy`, `internal/backup`, `internal/security`, `internal/fsutil` |
 | Integration | `internal/bootstrap/shell`, `internal/auth`, `internal/authz`, `internal/protocol`, `internal/adminproto`, `internal/transport`, `internal/sshtunnel`, `internal/clientenroll`, `internal/endpointrefs`, `internal/plugin`, `internal/scripting`, `internal/jsapi`, `pkg/signerapi`, `internal/signerclient`, `internal/checksum`, `internal/manifest`, `internal/productmode` |
 | Tooling | `analysis/`, `test/arch`, `test/contracts`, `test/fixtures`, `test/integration`, `test/storeintegration`, `test/registry`, `test/soak`, `internal/testcheckpoint`, `internal/docassets`, `internal/xregistry`, `internal/signerprobe`, `internal/version` |
@@ -2056,10 +2058,18 @@ indexes them.
 Rotating accounts are not guarded accounts; they use their own `rotating1`
 signing flow. Ownership:
 
-- `lsig/rotatingtriplewots`: the Falcon-1024 + WOTS-w16 + Ed25519 rotating
-  stage (program template, signer-side key operations, codec, generator and
-  registration) over `internal/crypto/rotatinghybrid`, which derives the
-  per-stage key seeds, and `internal/crypto/wots`.
+- `lsig/rotatingtriplewots`, `lsig/rotatingtriplexmss` and
+  `lsig/rotatingtripleslhdsa`: the Falcon-1024 + Ed25519 rotating stages
+  with WOTS-w16, RFC 8391 XMSS (with the public tree cache) and the rescaled
+  SLH-DSA. Each owns its program template, its stage 0 record layout and the
+  hash-based half of its stage, over `internal/crypto/rotatinghybrid`, which
+  derives the per-stage key seeds, and its primitive in `internal/crypto/wots`,
+  `internal/crypto/xmss` or `internal/crypto/slhdsa`.
+- `lsig/rotatingfamily`: what the three share. `signerreg` holds the
+  registration descriptor and the generator, `stagesign` the stage's Ed25519
+  and Falcon-1024 half and its buffer wiping, `stageprog` the salt search and
+  strict parse of a stage program, and `rotatingtest` the contract suite each
+  key type runs.
 - `internal/rotatingkey`: rotating key-type identifiers, frozen sizes and
   timing bounds; `internal/stagetable`: the stage address cache;
   `internal/signerapp/chainread`: the signer's own authorizer read for the

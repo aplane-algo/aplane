@@ -4,8 +4,9 @@ One shared skeleton for the three rotating key types, so that each scheme
 package holds only what is particular to it: its stage template, its key
 layouts and the hash-based half of its stage.
 
-Status: approved for implementation, 2026-10-29, after two design reviews
-the same day (section 9). A refactor in five pull requests. It changes no stage
+Status: implemented, 2026-10-29. Steps 1 to 4 landed as PRs #139 to #142, and
+step 5 with this revision; section 9 records the two design reviews and where
+the implementation departed from the plan. The refactor changed no stage
 address, key file, wire shape or signing flow. Its only behaviour changes
 refuse inputs no caller sends (section 4, steps 2 and 3).
 
@@ -264,7 +265,10 @@ existing tests unchanged.
    close-out, validity window of at most 100 rounds) are identical in all
    three programs today.
 5. **Names and docs**, as a separate final cleanup.
-   - Rename the WOTS constants in `rotatingkey` to `RotatingWots*`.
+   - Rename the WOTS constants in `rotatingkey`: the sizes to
+     `RotatingWots*`, and the display name and description to
+     `RotatingTripleWots*`, beside `RotatingTripleXmss*` and
+     `RotatingTripleSlhdsa*`.
    - Fix the copied SLH-DSA strings and package comments.
    - Update the package lists and the new-scheme recipe in:
      - `lsig/doc.go`;
@@ -359,3 +363,23 @@ clarifications:
    wipes the hash-based signature, and step 2 tests it (3, 4).
 7. Shared registration keeps no bookkeeping of its own. Each scheme's
    `sync.Once` stays, as with `dsafamilyreg` (3).
+
+Implementation (2026-10-29):
+
+8. Step 2's partial-initialization tests cover the shared derivation in
+   `stagesign`. Each scheme's `DeriveStage` zeroes through one `Zero` on
+   its later error paths, because injecting failures inside each scheme
+   would need a test hook around every allocation (4).
+9. The contract suite works through the signer's interfaces, so it cannot
+   see a buffer a failed signing wipes. Step 2's per-scheme tests check
+   that through each scheme's hash-signer test hook. The suite instead
+   checks that every signature argument is verified (3).
+10. Step 3 also made XMSS `Build` refuse nil keys, added a direct test of
+    the salt rule, and removed the three per-scheme `stage.Address`
+    wrappers, which had no callers left (4).
+11. Step 4's suite builds its store keyring with `crypto.NewKeyring()`,
+    since `test/arch` forbids non-test files from importing the
+    `cryptotest` fixture (3).
+12. Step 5 renamed the WOTS display name and description to
+    `RotatingTripleWots*`, matching their XMSS and SLH-DSA siblings, rather
+    than `RotatingWots*` (4).

@@ -31,9 +31,10 @@
 //   - a DSA family: falcon1024, ed25519lsig, falcon1024_guarded. Each
 //     registers an lsigprovider that assembles a LogicSig from stored
 //     bytecode and signature arguments for ordinary /sign;
-//   - a rotating type: rotatingtriplewots and rotatingtriplexmss. Neither has an
-//     lsigprovider; each derives a fresh stage program per spend and signs
-//     only through the rotating1 flow.
+//   - a rotating type: rotatingtriplewots, rotatingtriplexmss and
+//     rotatingtripleslhdsa. None has an lsigprovider; each derives a fresh
+//     stage program per spend and signs only through the rotating1 flow.
+//     rotatingfamily holds what they share.
 //
 // # Inside a family or type
 //
@@ -42,8 +43,11 @@
 // (falcon1024/family, falcon1024/keys) and private-key operations in
 // packages only the signer links (falcon1024/family/ops, falcon1024/signerops).
 // A rotating type keeps the frozen stage program in stage/ (client-safe) and
-// derivation and signing in signerops/. In both, X/signerreg is the
-// signer-side registration of X; lsig/signerreg fans out to each of them.
+// derivation and signing in signerops/, built on rotatingfamily: stageprog
+// finishes and parses the program, stagesign holds the stage's Ed25519 and
+// Falcon-1024 half, and signerreg registers the type from its descriptor. In
+// both, X/signerreg is the signer-side registration of X; lsig/signerreg fans
+// out to each of them.
 //
 // # Where the bounded contract lives
 //

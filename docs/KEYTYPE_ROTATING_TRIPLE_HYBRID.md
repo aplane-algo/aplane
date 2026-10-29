@@ -13,6 +13,9 @@ schemes. It restates, and does not replace, the authoritative sources:
   codec, generator and registration
 - `internal/crypto/xmss/` and `internal/crypto/wots/`: hash-based primitives
 - `internal/crypto/rotatinghybrid/`: shared seed derivation
+- `lsig/rotatingfamily/`: what all three rotating key types share:
+  registration and the generator, the stage's Ed25519 and Falcon-1024 half,
+  stage program salt search and strict parse, and the contract suite
 - `internal/rotatingkey/rotatingkey.go`: key type identifiers, frozen sizes
   and resource profiles
 - [ARCH_CRYPTO.md](ARCH_CRYPTO.md), [ARCH_SIGNING.md](ARCH_SIGNING.md#rotating-accounts-rotating1)

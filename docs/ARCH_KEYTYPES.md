@@ -798,6 +798,8 @@ signing helpers that the diagram omits) and gives a one-line role for each.
 | `internal/rotatingkey` | Classify-axis leaf for rotating account key types and their frozen sizes |
 | `lsig/rotatingtriplewots` | Rotating Falcon-1024 + WOTS-w16 + Ed25519 key type: stage program, signer-side operations, and signer registration |
 | `lsig/rotatingtriplexmss` | Rotating Falcon-1024 + RFC 8391 XMSS + Ed25519 key type: stage program, signer-side operations with the public tree cache, and signer registration |
+| `lsig/rotatingtripleslhdsa` | Rotating Falcon-1024 + rescaled SLH-DSA-SHA2-128 + Ed25519 key type: stage program for the built-in hypertree height, signer-side operations, and signer registration |
+| `lsig/rotatingfamily` | What the rotating key types share: registration descriptor and generator (`signerreg`), the stage's Ed25519 and Falcon-1024 half (`stagesign`), stage program salt search and strict parse (`stageprog`), and the contract suite each key type runs (`rotatingtest`) |
 | `internal/crypto/xmss` | RFC 8391 XMSS-SHA2_16_256: tree generation, signing at a caller-chosen leaf, verification; stateless by design |
 | `library/templates/aplane.corridor.v1.yaml` | Optional schema-v2 bounded-cosigner Corridor profile; compiled by `lsig/composeddsa` after product-store install |
 | `lsig/dsafamily` | Client-safe registration descriptor shared by DSA families (signer-side descriptor in `lsig/dsafamily/signerreg`) |
