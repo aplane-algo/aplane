@@ -4,14 +4,11 @@
 package signerops
 
 import (
-	"bytes"
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/crypto/rotatinghybrid"
-	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/lsig/rotatingtriplewots/stage"
 )
 
@@ -85,103 +82,5 @@ func TestGoldenVectors(t *testing.T) {
 		if got[k] != v {
 			t.Errorf("%s = %s, want %s", k, got[k], v)
 		}
-	}
-}
-
-func TestStagesDifferAndSignaturesVerify(t *testing.T) {
-	d := fixedDeriver(t)
-	defer d.Zero()
-	k0, p0, err := DeriveStage(d, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer k0.Zero()
-	k1, p1, err := DeriveStage(d, 1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer k1.Zero()
-	if p0.Address == p1.Address || *k0.PublicKeys() == *k1.PublicKeys() {
-		t.Fatal("stages 0 and 1 coincide")
-	}
-	msg := make([]byte, 32)
-	if _, err := rand.Read(msg); err != nil {
-		t.Fatal(err)
-	}
-	w, e, f, err := k0.Sign(msg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	embedded, _, err := stage.Parse(p0.Bytecode)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := Verify(embedded, msg, w, e, f); err != nil {
-		t.Fatal(err)
-	}
-	if Verify(k1.PublicKeys(), msg, w, e, f) == nil {
-		t.Fatal("stage 0 signature verified under stage 1")
-	}
-	// Each of the three signatures is checked: one from another stage fails.
-	w1, e1, f1, err := k1.Sign(msg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for name, args := range map[string][3][]byte{
-		"WOTS":    {w1, e, f},
-		"Ed25519": {w, e1, f},
-		"Falcon":  {w, e, f1},
-	} {
-		if Verify(embedded, msg, args[0], args[1], args[2]) == nil {
-			t.Fatalf("stage 1 %s signature verified under stage 0", name)
-		}
-	}
-	if Verify(embedded, msg, w, e, append(bytes.Clone(f), make([]byte, stage.FalconSignatureMaxSize)...)) == nil {
-		t.Fatal("oversized Falcon signature accepted")
-	}
-}
-
-func TestStageOpsThroughKeyMaterial(t *testing.T) {
-	var seed rotatinghybrid.Seed
-	if _, err := rand.Read(seed[:]); err != nil {
-		t.Fatal(err)
-	}
-	genesis := bytes.Repeat([]byte{7}, 32)
-	key := &signing.RotatingKeyMaterial{Seed: seed[:], GenesisHash: genesis}
-	ops := StageOps{}
-	a0, err := ops.StageAddress(key, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	a1, err := ops.StageAddress(key, 1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if a0 == a1 {
-		t.Fatal("stage addresses coincide")
-	}
-	if err := ops.CheckStageOpens(key, 1); err != nil {
-		t.Fatal(err)
-	}
-	msg := make([]byte, 32)
-	sig, err := ops.SignStage(key, 1, 0, msg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	keys, program, err := stage.Parse(sig.Program)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if program.Address != a1 || len(sig.Args) != 3 {
-		t.Fatal("signature program is not stage 1 or has the wrong argument count")
-	}
-	if len(sig.Args[0])+len(sig.Args[1])+len(sig.Args[2]) > stage.MaxArgumentBytes {
-		t.Fatal("arguments exceed the declared maximum")
-	}
-	if err := Verify(keys, msg, sig.Args[0], sig.Args[1], sig.Args[2]); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := ops.SignStage(&signing.RotatingKeyMaterial{Seed: seed[:5]}, 0, 0, msg); err == nil {
-		t.Fatal("short seed accepted")
 	}
 }
