@@ -7,20 +7,16 @@
 package signerreg
 
 import (
-	"bytes"
-	"crypto/ed25519"
 	"fmt"
 	"sync"
 
-	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/crypto/rotatinghybrid"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/rotatingkey"
 	rotatingfamilyreg "github.com/aplane-algo/aplane/lsig/rotatingfamily/signerreg"
+	"github.com/aplane-algo/aplane/lsig/rotatingfamily/stagesign"
 	"github.com/aplane-algo/aplane/lsig/rotatingtriplexmss/signerops"
 	"github.com/aplane-algo/aplane/lsig/rotatingtriplexmss/stage"
-
-	"github.com/algorandfoundation/falcon-signatures/falcongo"
 )
 
 var registerOnce sync.Once
@@ -147,29 +143,16 @@ func validateSeed(seed, genesisHash, stageZeroPublicKey []byte) error {
 	if treeSeeds.PubSeed != want.Seed {
 		return fmt.Errorf("tree 0 public seed mismatch")
 	}
-	var edSeed [rotatinghybrid.Ed25519SeedSize]byte
-	if err := d.ExpandStage(signerops.Ed25519InfoTag, 0, edSeed[:]); err != nil {
+	classical, err := stagesign.DeriveClassicalKeys(d, 0, signerops.Ed25519InfoTag, signerops.FalconInfoTag)
+	if err != nil {
 		return err
 	}
-	edKey := ed25519.NewKeyFromSeed(edSeed[:])
-	crypto.ZeroBytes(edSeed[:])
-	edMatch := bytes.Equal(edKey.Public().(ed25519.PublicKey), want.Ed25519[:])
-	crypto.ZeroBytes(edKey)
-	if !edMatch {
+	edKey, falconKey := classical.PublicKeys()
+	classical.Zero()
+	if edKey != want.Ed25519 {
 		return fmt.Errorf("stage 0 Ed25519 public key mismatch")
 	}
-	var falconSeed [rotatinghybrid.FalconSeedSize]byte
-	if err := d.ExpandStage(signerops.FalconInfoTag, 0, falconSeed[:]); err != nil {
-		return err
-	}
-	kp, err := falcongo.GenerateKeyPair(falconSeed[:])
-	crypto.ZeroBytes(falconSeed[:])
-	if err != nil {
-		return fmt.Errorf("generate stage 0 Falcon key: %w", err)
-	}
-	falconMatch := bytes.Equal(kp.PublicKey[:], want.Falcon[:])
-	crypto.ZeroBytes(kp.PrivateKey[:])
-	if !falconMatch {
+	if falconKey != want.Falcon {
 		return fmt.Errorf("stage 0 Falcon public key mismatch")
 	}
 	if tree, ok := stageOps.CachedTree(d, 0); ok && tree.PK.Root != want.Root {

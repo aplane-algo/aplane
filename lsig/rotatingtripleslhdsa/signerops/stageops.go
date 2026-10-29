@@ -4,25 +4,20 @@
 package signerops
 
 import (
-	"crypto/sha256"
 	"fmt"
 
-	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/crypto/rotatinghybrid"
 	"github.com/aplane-algo/aplane/internal/signing"
+	"github.com/aplane-algo/aplane/lsig/rotatingfamily/stagesign"
 	"github.com/aplane-algo/aplane/lsig/rotatingtripleslhdsa/stage"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
-// openTestMessage is the fixed 32-byte message CheckStageOpens signs: the
-// hash of a label, not a transaction ID, so a signature over it cannot
-// authorize anything. The open test runs only on a rotation target before
-// it is live, and its signatures are never released.
-var openTestMessage = func() []byte {
-	sum := sha256.Sum256([]byte("APLANE_ROTATING_TRIPLE_SLHDSA_V1 stage open test"))
-	return sum[:]
-}()
+// openTestMessage is the fixed 32-byte message CheckStageOpens signs
+// (stagesign.OpenTestMessage). The open test runs only on a rotation target
+// before it is live, and its signatures are never released.
+var openTestMessage = stagesign.OpenTestMessage(DerivationLabel)
 
 // StageOps implements signing.RotatingStageOps for
 // aplane.rotating-triple-slhdsa.v1.
@@ -44,15 +39,19 @@ func (StageOps) StageAddress(key *signing.RotatingKeyMaterial, i uint64) (types.
 // in its program. Test signatures are wiped before returning and never released.
 func (StageOps) CheckStageOpens(key *signing.RotatingKeyMaterial, i uint64) error {
 	sig, err := signAndVerify(key, i, openTestMessage)
-	zeroArgs(sig.Args)
+	stagesign.ZeroArgs(sig.Args)
 	return err
 }
 
 // SignStage signs message with stage i and returns the program with the
 // SLH-DSA signature split as stage.ChunkSizes lists, then the Ed25519 and
 // Falcon signatures, as its arguments. SLH-DSA is stateless, so the leaf
-// index is ignored.
+// index is ignored. A message that is not a 32-byte transaction ID is refused
+// before any key is derived.
 func (StageOps) SignStage(key *signing.RotatingKeyMaterial, i uint64, _ uint32, message []byte) (signing.RotatingStageSignature, error) {
+	if err := stagesign.CheckMessage(message); err != nil {
+		return signing.RotatingStageSignature{}, err
+	}
 	return signAndVerify(key, i, message)
 }
 
@@ -77,21 +76,14 @@ func signAndVerify(key *signing.RotatingKeyMaterial, i uint64, message []byte) (
 	// they are wiped here.
 	embedded, _, err := stage.Parse(program.Bytecode)
 	if err != nil {
-		zeroArgs(args)
+		stagesign.ZeroArgs(args)
 		return signing.RotatingStageSignature{}, fmt.Errorf("parse stage %d program: %w", i, err)
 	}
 	if err := Verify(embedded, message, slhSig, ed25519Sig, falconSig); err != nil {
-		zeroArgs(args)
+		stagesign.ZeroArgs(args)
 		return signing.RotatingStageSignature{}, fmt.Errorf("stage %d signature does not verify: %w", i, err)
 	}
 	return signing.RotatingStageSignature{Program: program.Bytecode, Args: args}, nil
-}
-
-// zeroArgs overwrites every argument buffer.
-func zeroArgs(args [][]byte) {
-	for _, a := range args {
-		crypto.ZeroBytes(a)
-	}
 }
 
 func deriveFromMaterial(key *signing.RotatingKeyMaterial, i uint64) (*StageKeys, stage.Program, error) {

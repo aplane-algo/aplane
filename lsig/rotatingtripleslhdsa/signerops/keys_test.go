@@ -233,9 +233,14 @@ func TestSameStageSignsDifferentMessagesAndZeroesSecrets(t *testing.T) {
 		}
 	}
 	k.Zero()
-	for _, secret := range [][]byte{k.slh.SKSeed[:], k.slh.SKPrf[:], k.ed25519, k.falcon.PrivateKey[:]} {
+	for _, secret := range [][]byte{k.slh.SKSeed[:], k.slh.SKPrf[:]} {
 		if !bytes.Equal(secret, make([]byte, len(secret))) {
 			t.Fatal("secret not erased")
 		}
+	}
+	// The Ed25519 and Falcon-1024 keys are stagesign's; a zeroed Falcon key
+	// cannot sign, and stagesign's own test checks every byte.
+	if _, _, err := k.classical.Sign(bytes.Repeat([]byte{3}, 32)); err == nil {
+		t.Fatal("the stage's Ed25519 and Falcon keys survived Zero")
 	}
 }

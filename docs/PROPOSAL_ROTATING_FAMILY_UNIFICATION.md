@@ -229,8 +229,12 @@ existing tests unchanged.
    refuses a message that is not 32 bytes, before deriving anything; every
    caller already sends the raw transaction ID. The step carries its own
    safety tests:
-   - **Partial initialization.** Inject a failure at each derivation step
-     and check that everything derived before it is zeroed.
+   - **Partial initialization.** In `stagesign`, fail Falcon key
+     generation after the Ed25519 key was derived, and fail a seed
+     expansion, and check that nothing derived before the failure
+     survives. Each scheme's `DeriveStage` zeroes its keys through one
+     `Zero` on every later error path. Injecting failures inside each
+     scheme would need a test hook around every allocation.
    - **Failure during signing.** For each scheme, make Falcon signing fail
      after the hash-based signature succeeded, and check that the
      hash-based signature is wiped.

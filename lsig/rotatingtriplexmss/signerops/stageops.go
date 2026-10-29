@@ -4,7 +4,6 @@
 package signerops
 
 import (
-	"crypto/sha256"
 	"errors"
 	"fmt"
 	"sync"
@@ -12,19 +11,16 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/crypto/rotatinghybrid"
 	"github.com/aplane-algo/aplane/internal/signing"
+	"github.com/aplane-algo/aplane/lsig/rotatingfamily/stagesign"
 	"github.com/aplane-algo/aplane/lsig/rotatingtriplexmss/stage"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
 // openTestMessage is the fixed 32-byte message CheckStageOpens signs with a
-// target stage's Ed25519 and Falcon keys: the hash of a label, not a
-// transaction ID, so a signature over it cannot authorize anything. The XMSS
+// target stage's Ed25519 and Falcon keys (stagesign.OpenTestMessage). The XMSS
 // half of the check is a constant comparison; no leaf is signed with.
-var openTestMessage = func() []byte {
-	sum := sha256.Sum256([]byte("APLANE_ROTATING_XMSS_V1 stage open test"))
-	return sum[:]
-}()
+var openTestMessage = stagesign.OpenTestMessage(DerivationLabel)
 
 // treeKey names one tree of one account on one network.
 type treeKey struct {
@@ -106,12 +102,12 @@ func (o *StageOps) CheckStageOpens(key *signing.RotatingKeyMaterial, i uint64) e
 	if embedded.Root != keys.tree.PK.Root || embedded.Seed != keys.tree.PK.Seed || embedded.Lo != keys.lo || embedded.Hi != keys.hi {
 		return fmt.Errorf("stage %d program does not embed its tree", i)
 	}
-	edSig, falconSig, err := keys.signOpenTest()
+	edSig, falconSig, err := keys.classical.Sign(openTestMessage)
 	if err != nil {
-		return err
+		return fmt.Errorf("stage %d open test: %w", i, err)
 	}
 	defer crypto.ZeroBytes(falconSig)
-	if err := verifyOpenTest(embedded, edSig, falconSig); err != nil {
+	if err := stagesign.VerifyClassical(&embedded.Ed25519, &embedded.Falcon, openTestMessage, edSig, falconSig); err != nil {
 		return fmt.Errorf("stage %d open test: %w", i, err)
 	}
 	return nil
@@ -119,8 +115,12 @@ func (o *StageOps) CheckStageOpens(key *signing.RotatingKeyMaterial, i uint64) e
 
 // SignStage signs message with stage i's leaf index and returns the program
 // with [xmss_sig, ed25519_sig, falcon_sig] as its arguments. The caller
-// chooses the leaf inside the stage's range and records its use.
+// chooses the leaf inside the stage's range and records its use. A message
+// that is not a 32-byte transaction ID is refused before any key is derived.
 func (o *StageOps) SignStage(key *signing.RotatingKeyMaterial, i uint64, index uint32, message []byte) (signing.RotatingStageSignature, error) {
+	if err := stagesign.CheckMessage(message); err != nil {
+		return signing.RotatingStageSignature{}, err
+	}
 	keys, program, err := o.deriveFromMaterial(key, i)
 	if err != nil {
 		return signing.RotatingStageSignature{}, err
@@ -133,11 +133,11 @@ func (o *StageOps) SignStage(key *signing.RotatingKeyMaterial, i uint64, index u
 	args := [][]byte{xmssSig, edSig, falconSig}
 	embedded, _, err := stage.Parse(program.Bytecode)
 	if err != nil {
-		zeroArgs(args)
+		stagesign.ZeroArgs(args)
 		return signing.RotatingStageSignature{}, fmt.Errorf("parse stage %d program: %w", i, err)
 	}
 	if err := Verify(embedded, message, xmssSig, edSig, falconSig); err != nil {
-		zeroArgs(args)
+		stagesign.ZeroArgs(args)
 		return signing.RotatingStageSignature{}, fmt.Errorf("stage %d signature does not verify: %w", i, err)
 	}
 	return signing.RotatingStageSignature{Program: program.Bytecode, Args: args}, nil
@@ -299,13 +299,6 @@ func deriverFor(key *signing.RotatingKeyMaterial) (*rotatinghybrid.Deriver, [Acc
 		return nil, tag, err
 	}
 	return d, tag, nil
-}
-
-// zeroArgs overwrites every argument buffer.
-func zeroArgs(args [][]byte) {
-	for _, a := range args {
-		crypto.ZeroBytes(a)
-	}
 }
 
 // Derive derives stage i with the cached tree of its run, generating the
