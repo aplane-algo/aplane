@@ -85,7 +85,7 @@ func DecodeGroupHex(groupBytesHex []string) (*Group, error) {
 		if err != nil {
 			return nil, fmt.Errorf("transaction %d: invalid hex: %w", i, err)
 		}
-		txn, err := decodeCanonicalTXPrefixed(raw)
+		txn, err := DecodeTXPrefixed(raw)
 		if err != nil {
 			return nil, fmt.Errorf("transaction %d: %w", i, err)
 		}
@@ -115,7 +115,11 @@ func DecodeGroupHex(groupBytesHex []string) (*Group, error) {
 	}, nil
 }
 
-func decodeCanonicalTXPrefixed(raw []byte) (types.Transaction, error) {
+// DecodeTXPrefixed decodes one TX-prefixed transaction and rejects any
+// encoding that does not re-encode to exactly the same bytes: trailing data,
+// non-canonical key order or explicit zero values. It checks nothing about
+// the transaction's group; DecodeGroupHex does that for a complete group.
+func DecodeTXPrefixed(raw []byte) (types.Transaction, error) {
 	var txn types.Transaction
 	if len(raw) < 2 || raw[0] != 'T' || raw[1] != 'X' {
 		return txn, fmt.Errorf("missing TX prefix")

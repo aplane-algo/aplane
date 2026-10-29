@@ -106,60 +106,37 @@ func validateRotatingSpend(txn types.Transaction, account types.Address, genesis
 }
 
 // buildRotatingGroup adds the resource dummies, sets fees and computes the
-// group ID for one rotating spend, reusing the ordinary planner's solver and
-// fee rules. It is deterministic in the spend: running it again on a spend
-// it already adjusted reproduces the same group, which is what lets sign
-// check a presented group by rebuilding it.
-func buildRotatingGroup(console Console, txn types.Transaction, profile *lsigresource.Profile) (*PlanResult, *ServiceError) {
+// group ID for one rotating spend with the shared group builder that /sign
+// and /plan use, so the spend gets the same resource solver, fee allocator
+// and group construction as every other group. The builder sees only the
+// account's resource profile, so the result is a pure function of the spend
+// and the profile: running it again on a spend it already adjusted
+// reproduces the same group, which is what lets sign check a presented
+// group by rebuilding it.
+func (p *Planner) buildRotatingGroup(account string, txn types.Transaction, profile *lsigresource.Profile) (*PlanResult, *ServiceError) {
 	txn.Group = types.Digest{}
-	consensus, err := lsigresource.CurrentConsensus()
-	if err != nil {
-		return nil, internal(err.Error())
-	}
-	usage, err := profile.UsageForPath(lsigresource.PathDefault)
-	if err != nil {
-		return nil, internal(err.Error())
-	}
-	resourcePlan, err := lsigresource.Solve(consensus, lsigresource.PlanInput{
-		TransactionCount: 1,
-		LogicSigs:        []lsigresource.Usage{usage},
-		Dummy:            lsigresource.Usage{ProgramBytes: uint64(len(coresigning.EmbeddedDummyTealTok)), MaxOpcodeCost: 1},
+	final, err := p.finalizeGroup(groupFinalization{
+		Snapshot: PlannerRuntimeSnapshot{
+			KeyMetadata: map[string]PlannerKeyMetadata{account: {LogicSigResources: profile}},
+		},
+		Requests:           []signerapi.SignRequest{{AuthAddress: account}},
+		Txns:               []types.Transaction{txn},
+		PassthroughIndices: map[int]bool{},
+		ForeignIndices:     map[int]bool{},
 	})
 	if err != nil {
-		return nil, badRequest(fmt.Sprintf("rotating spend does not fit the consensus resource limits: %v", err))
-	}
-	dummies := int(resourcePlan.DummyCount)
-	allTxns, dummyTxns, _, _, buildErr := buildFinalGroupWithoutFees(console, []types.Transaction{txn}, dummies, false)
-	if buildErr != nil {
-		return nil, buildErr
-	}
-	lsigIndices := []int{0}
-	feeInfo, feeErr := applyGroupFees(allTxns, []authorizationBudget{{mutable: true}}, resourcePlan, dummies, lsigIndices, false)
-	if feeErr != nil {
-		return nil, feeErr
-	}
-	if len(allTxns) > 1 {
-		for i := range allTxns {
-			allTxns[i].Group = types.Digest{}
-		}
-		gid, gidErr := algocrypto.ComputeGroupID(allTxns)
-		if gidErr != nil {
-			return nil, internal(fmt.Sprintf("failed to compute group ID: %v", gidErr))
-		}
-		for i := range allTxns {
-			allTxns[i].Group = gid
-		}
+		return nil, err
 	}
 	return &PlanResult{
-		AllTxns:              allTxns,
-		DummyTxns:            dummyTxns,
+		AllTxns:              final.AllTxns,
+		DummyTxns:            final.DummyTxns,
 		PassthroughIndices:   map[int]bool{},
 		ForeignIndices:       map[int]bool{},
-		LsigIndices:          lsigIndices,
-		DummiesNeeded:        dummies,
-		LogicSigResourcePlan: resourcePlan,
-		FeeInfo:              feeInfo,
-		NeedsRegroup:         len(allTxns) > 1,
+		LsigIndices:          final.LsigIndices,
+		DummiesNeeded:        final.DummiesNeeded,
+		LogicSigResourcePlan: final.ResourcePlan,
+		FeeInfo:              final.FeeInfo,
+		NeedsRegroup:         final.NeedsRegroup,
 	}, nil
 }
 
@@ -264,7 +241,14 @@ func (s *Service) PrepareRotatingWithContext(ctx context.Context, req signerapi.
 	if depErr != nil {
 		return nil, depErr
 	}
-	txn, decodeErr := txnutil.DecodePrefixedHex(req.TxnBytesHex)
+	// The spend is decoded strictly, as sign decodes the prepared group: an
+	// encoding that does not re-encode to the same bytes is refused rather
+	// than silently normalized into the group the signer returns.
+	raw, hexErr := hex.DecodeString(req.TxnBytesHex)
+	if hexErr != nil {
+		return nil, badRequest("invalid transaction hex")
+	}
+	txn, decodeErr := canonical.DecodeTXPrefixed(raw)
 	if decodeErr != nil {
 		return nil, badRequest(decodeErr.Error())
 	}
@@ -310,7 +294,7 @@ func (s *Service) PrepareRotatingWithContext(ctx context.Context, req signerapi.
 	}
 	txn.RekeyTo = targetAddr
 
-	plan, err := buildRotatingGroup(s.Console, txn, profile)
+	plan, err := s.Planner.buildRotatingGroup(account.String(), txn, profile)
 	if err != nil {
 		return nil, err
 	}
@@ -397,7 +381,7 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 
 	// Rule 5: rebuilding the group from the presented spend must reproduce
 	// the presented bytes exactly.
-	rebuilt, groupErr := buildRotatingGroup(s.Console, spend, profile)
+	rebuilt, groupErr := s.Planner.buildRotatingGroup(account.String(), spend, profile)
 	if groupErr != nil {
 		return nil, groupErr
 	}
@@ -435,7 +419,7 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 	}
 	signReq := signerapi.GroupSignRequest{
 		RequestID: req.RequestID,
-		Requests:  []signerapi.SignRequest{{AuthAddress: req.Account, TxnBytesHex: hex.EncodeToString(raws[0])}},
+		Requests:  []signerapi.SignRequest{{AuthAddress: req.Account, TxnBytesHex: hex.EncodeToString(raws[0]), AppCallInfo: req.AppCallInfo}},
 	}
 	policyRuleID, release, gateErr := s.approveGroupWithPlanContext(ctx, signReq, plan)
 	if gateErr != nil {

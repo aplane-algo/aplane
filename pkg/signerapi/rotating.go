@@ -35,10 +35,15 @@ type RotatingPrepareResponse struct {
 // RotatingSignRequest asks the signer to sign a prepared rotating group
 // (POST /sign/rotating/sign). The group's RekeyTo names the stage after the
 // one that signs, so the request carries no stage of its own.
+//
+// AppCallInfo is optional app-call metadata for the approval prompt, as on
+// /sign. It describes the spend and is checked against its bytes when
+// rendered; it is not signed.
 type RotatingSignRequest struct {
-	RequestID    string   `json:"request_id,omitempty"`
-	Account      string   `json:"account"`
-	Transactions []string `json:"transactions"`
+	RequestID    string       `json:"request_id,omitempty"`
+	Account      string       `json:"account"`
+	Transactions []string     `json:"transactions"`
+	AppCallInfo  *AppCallInfo `json:"app_call_info,omitempty"`
 }
 
 // RotatingSignResponse carries the signed group. Stage is the stage whose

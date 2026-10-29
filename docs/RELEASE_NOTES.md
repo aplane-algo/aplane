@@ -5,6 +5,21 @@ token, setup-file, and protocol-v5 entries describe behavior superseded by the
 enrolled-key model and current admin protocol v6.0; they are not current setup
 instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 
+## Rotating signing hardening
+
+- Rotating prepare builds the group with the same resource solver, fee
+  allocator and group construction as `/sign` and `/plan`, replacing a
+  private copy. Single spends produce the same groups as before.
+- `/sign/rotating/prepare` now requires a canonically encoded transaction,
+  as `/sign/rotating/sign` already did; encodings that do not re-encode to
+  the same bytes, such as trailing data, are refused.
+- The approval binding, which refuses to sign anything other than what was
+  approved, now also covers each request's LogicSig arguments and a rotating
+  spend's stages and target address, on every signing path.
+- `/sign/rotating/sign` accepts optional `app_call_info`, and apshell sends
+  it, so the approval prompt for a rotating application call names its ABI
+  method as `/sign` does.
+
 ## Rotating XMSS triple accounts and consensus v43
 
 - In-place upgrade now requires an existing install of v0.44.0 or newer: the

@@ -140,10 +140,7 @@ func signAndSubmitRotatingOnce(
 		return simIDs, prepared, nil
 	}
 
-	signed, err := signerClient.SignRotatingWithContext(opts.Ctx, signerapi.RotatingSignRequest{
-		Account:      account,
-		Transactions: prep.Transactions,
-	})
+	signed, err := signerClient.SignRotatingWithContext(opts.Ctx, rotatingSignRequest(account, prep, opts.SubmitOptions))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -246,6 +243,17 @@ func rotatingRefusalSummary(err error) string {
 func isAuthorizerMovedRejection(err error) bool {
 	msg := strings.ToLower(err.Error())
 	return strings.Contains(msg, "should have been authorized by")
+}
+
+// rotatingSignRequest is the sign request for a prepared spend: the prepared
+// group exactly as returned, and the spend's app-call metadata, which the
+// signer uses only to render the approval prompt.
+func rotatingSignRequest(account string, prep *signerapi.RotatingPrepareResponse, opts SubmitOptions) signerapi.RotatingSignRequest {
+	req := signerapi.RotatingSignRequest{Account: account, Transactions: prep.Transactions}
+	if len(opts.AppCallInfo) > 0 {
+		req.AppCallInfo = opts.AppCallInfo[0]
+	}
+	return req
 }
 
 // ValidatePreparedRotatingGroup checks a prepared group against the
