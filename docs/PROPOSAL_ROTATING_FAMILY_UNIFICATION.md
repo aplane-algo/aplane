@@ -189,8 +189,8 @@ it.
 - A stage's address matches its signing program.
 - The open test passes.
 - Stages differ, and network binding changes the address.
-- Signatures verify against the embedded keys.
-- A failed check wipes the signatures.
+- Signatures verify against the embedded keys, and every argument is
+  checked: one taken from another stage's signature fails.
 - The key payload round-trips to the stage 0 address.
 - A tampered stage 0 record is refused. XMSS's tree 0 root is the one
   exception: it is refused only while tree 0 is cached. The suite tests
@@ -200,6 +200,10 @@ it.
   scheme's own value. For XMSS that means the instance `StageOps()`
   returns, still implementing `RotatingTreeOps`.
 - The generator binds the network.
+
+The suite works through the interfaces the signer uses, so it cannot see a
+buffer a failed signing wipes. Step 2's per-scheme tests check that wiping
+through each scheme's hash-signer test hook.
 
 ## 4. Steps
 

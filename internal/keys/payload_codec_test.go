@@ -388,6 +388,18 @@ func TestPayloadCategoryValidation(t *testing.T) {
 	}
 }
 
+// TestGenesisHashIsRotatingOnly checks that only a rotating account may carry
+// a genesis hash.
+func TestGenesisHashIsRotatingOnly(t *testing.T) {
+	publicKey, privateKey := canonicalEd25519Pair(t, 0x13)
+	payload := NewEd25519Payload(publicKey, privateKey)
+	defer payload.ZeroSecrets()
+	payload.GenesisHash = make([]byte, 32)
+	if _, err := MarshalPayload(payload); err == nil || !strings.Contains(err.Error(), "genesis_hash") {
+		t.Fatalf("ed25519 payload with genesis_hash: err = %v", err)
+	}
+}
+
 func TestAutoSaltedLogicSigPayloadContract(t *testing.T) {
 	bytecode := canonicalOffCurveBytecodeForVersion(t, 13)
 	payload := NewAutoSaltedGenericLSigPayload(

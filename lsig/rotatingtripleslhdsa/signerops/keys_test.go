@@ -5,7 +5,6 @@ package signerops
 
 import (
 	"bytes"
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"testing"
@@ -98,116 +97,38 @@ func TestGoldenVectors(t *testing.T) {
 
 }
 
-func TestStagesDifferAndSignaturesVerify(t *testing.T) {
-	d := fixedDeriver(t)
-	defer d.Zero()
-	k0, p0, err := DeriveStage(d, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer k0.Zero()
-	k1, p1, err := DeriveStage(d, 1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer k1.Zero()
-	if p0.Address == p1.Address || *k0.PublicKeys() == *k1.PublicKeys() {
-		t.Fatal("stages 0 and 1 coincide")
-	}
+// TestSignStageSplitsTheSignature checks the argument layout the program
+// expects: the SLH-DSA signature in stage.ChunkSizes pieces, then the Ed25519
+// and Falcon-1024 signatures. The rotating contract suite checks the rest.
+func TestSignStageSplitsTheSignature(t *testing.T) {
+	seed, genesis := fixedSeed()
+	key := &signing.RotatingKeyMaterial{Seed: seed[:], GenesisHash: genesis[:]}
 	msg := make([]byte, 32)
-	if _, err := rand.Read(msg); err != nil {
-		t.Fatal(err)
-	}
-	w, e, f, err := k0.Sign(msg)
+	sig, err := StageOps{}.SignStage(key, 1, 0, msg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	embedded, _, err := stage.Parse(p0.Bytecode)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := Verify(embedded, msg, w, e, f); err != nil {
-		t.Fatal(err)
-	}
-	if Verify(k1.PublicKeys(), msg, w, e, f) == nil {
-		t.Fatal("stage 0 signature verified under stage 1")
-	}
-	// Each of the three signatures is checked: one from another stage fails.
-	w1, e1, f1, err := k1.Sign(msg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for name, args := range map[string][3][]byte{
-		"SLH-DSA": {w1, e, f},
-		"Ed25519": {w, e1, f},
-		"Falcon":  {w, e, f1},
-	} {
-		if Verify(embedded, msg, args[0], args[1], args[2]) == nil {
-			t.Fatalf("stage 1 %s signature verified under stage 0", name)
-		}
-	}
-	if Verify(embedded, msg, w, e, append(bytes.Clone(f), make([]byte, stage.FalconSignatureMaxSize)...)) == nil {
-		t.Fatal("oversized Falcon signature accepted")
-	}
-}
-
-func TestStageOpsThroughKeyMaterial(t *testing.T) {
-	var seed rotatinghybrid.Seed
-	defer seed.Zero()
-	if _, err := rand.Read(seed[:]); err != nil {
-		t.Fatal(err)
-	}
-	genesis := bytes.Repeat([]byte{7}, 32)
-	key := &signing.RotatingKeyMaterial{Seed: seed[:], GenesisHash: genesis}
-	ops := StageOps{}
-	a0, err := ops.StageAddress(key, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	a1, err := ops.StageAddress(key, 1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if a0 == a1 {
-		t.Fatal("stage addresses coincide")
-	}
-	if err := ops.CheckStageOpens(key, 1); err != nil {
-		t.Fatal(err)
-	}
-	msg := make([]byte, 32)
-	sig, err := ops.SignStage(key, 1, 0, msg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	keys, program, err := stage.Parse(sig.Program)
+	keys, _, err := stage.Parse(sig.Program)
 	if err != nil {
 		t.Fatal(err)
 	}
 	chunks := len(stage.ChunkSizes)
-	if program.Address != a1 || len(sig.Args) != chunks+2 {
-		t.Fatal("signature program is not stage 1 or has the wrong argument count")
+	if len(sig.Args) != chunks+2 {
+		t.Fatalf("%d arguments, want %d", len(sig.Args), chunks+2)
 	}
-	total := 0
 	var slhSig []byte
 	for i, n := range stage.ChunkSizes {
 		if len(sig.Args[i]) != n {
 			t.Fatalf("argument %d is %d bytes, want %d", i, len(sig.Args[i]), n)
 		}
 		slhSig = append(slhSig, sig.Args[i]...)
-		total += n
 	}
 	edSig, falconSig := sig.Args[chunks], sig.Args[chunks+1]
-	if len(edSig) != stage.Ed25519SignatureSize || len(falconSig) > stage.FalconSignatureMaxSize {
-		t.Fatalf("Ed25519 %d bytes, Falcon %d bytes", len(edSig), len(falconSig))
-	}
-	if total+len(edSig)+len(falconSig) > stage.MaxArgumentBytes {
-		t.Fatal("arguments exceed the declared maximum")
+	if len(slhSig) != stage.SLHSignatureSize || len(edSig) != stage.Ed25519SignatureSize || len(falconSig) > stage.FalconSignatureMaxSize {
+		t.Fatalf("SLH-DSA %d bytes, Ed25519 %d bytes, Falcon %d bytes", len(slhSig), len(edSig), len(falconSig))
 	}
 	if err := Verify(keys, msg, slhSig, edSig, falconSig); err != nil {
 		t.Fatal(err)
-	}
-	if _, err := ops.SignStage(&signing.RotatingKeyMaterial{Seed: seed[:5]}, 0, 0, msg); err == nil {
-		t.Fatal("short seed accepted")
 	}
 }
 

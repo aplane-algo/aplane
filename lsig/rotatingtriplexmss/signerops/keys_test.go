@@ -166,7 +166,11 @@ func TestNetworkBindsTreeSeeds(t *testing.T) {
 	}
 }
 
-func TestStagesDifferAndSignaturesVerify(t *testing.T) {
+// TestLeavesStayInTheirStage checks what is particular to XMSS stages: each
+// stage owns a range of 64 leaves, a leaf outside it is refused when signing
+// and when verifying, and a stage past the tree's last cannot be derived from
+// it. The rotating contract suite checks the rest.
+func TestLeavesStayInTheirStage(t *testing.T) {
 	d := fixedDeriver(t)
 	defer d.Zero()
 	tr := fixedTree(t, 0)
@@ -175,14 +179,11 @@ func TestStagesDifferAndSignaturesVerify(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer k0.Zero()
-	k1, p1, err := DeriveStage(d, 1, tr)
+	k1, _, err := DeriveStage(d, 1, tr)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer k1.Zero()
-	if p0.Address == p1.Address || *k0.PublicKeys() == *k1.PublicKeys() {
-		t.Fatal("stages 0 and 1 coincide")
-	}
 	if lo, hi := k1.Range(); lo != stage.IndicesPerStage || hi != 2*stage.IndicesPerStage {
 		t.Fatalf("stage 1 range [%d, %d)", lo, hi)
 	}
@@ -201,31 +202,15 @@ func TestStagesDifferAndSignaturesVerify(t *testing.T) {
 	if err := Verify(embedded, msg, x, e, f); err != nil {
 		t.Fatal(err)
 	}
-	if Verify(k1.PublicKeys(), msg, x, e, f) == nil {
-		t.Fatal("stage 0 signature verified under stage 1")
-	}
-	// A leaf outside the stage's range is refused at signing and, if it
-	// were signed with, at verification.
 	if _, _, _, err := k0.Sign(msg, stage.IndicesPerStage); err == nil {
 		t.Fatal("stage 0 signed with stage 1's leaf")
 	}
-	x1, e1, f1, err := k1.Sign(msg, stage.IndicesPerStage)
+	x1, _, _, err := k1.Sign(msg, stage.IndicesPerStage)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if Verify(embedded, msg, x1, e, f) == nil {
 		t.Fatal("stage 1's leaf verified under stage 0's program")
-	}
-	for name, args := range map[string][3][]byte{
-		"Ed25519": {x, e1, f},
-		"Falcon":  {x, e, f1},
-	} {
-		if Verify(embedded, msg, args[0], args[1], args[2]) == nil {
-			t.Fatalf("stage 1 %s signature verified under stage 0", name)
-		}
-	}
-	if Verify(embedded, msg, x, e, append(bytes.Clone(f), make([]byte, stage.FalconSignatureMaxSize)...)) == nil {
-		t.Fatal("oversized Falcon signature accepted")
 	}
 	if Verify(embedded, msg, x[:10], e, f) == nil {
 		t.Fatal("truncated XMSS signature accepted")
@@ -235,7 +220,12 @@ func TestStagesDifferAndSignaturesVerify(t *testing.T) {
 	}
 }
 
-func TestStageOpsThroughKeyMaterial(t *testing.T) {
+// TestStageOpsUseTheTreeCache checks what is particular to XMSS stage ops:
+// they derive stages from cached trees, open a stage in the next tree,
+// sign with the leaf they are given and refuse one outside the stage, and
+// Forget drops an account's trees. The rotating contract suite checks the
+// rest.
+func TestStageOpsUseTheTreeCache(t *testing.T) {
 	seed, genesis := fixedSeed()
 	key := &signing.RotatingKeyMaterial{Seed: seed[:], GenesisHash: genesis[:]}
 	ops := NewStageOps()
@@ -249,20 +239,6 @@ func TestStageOpsThroughKeyMaterial(t *testing.T) {
 	for n := range uint64(2) {
 		ops.insert(treeKey{tag: tag, genesis: genesis, tree: n}, fixedTree(t, n))
 	}
-	a0, err := ops.StageAddress(key, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	a1, err := ops.StageAddress(key, 1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if a0 == a1 {
-		t.Fatal("stages 0 and 1 share an address")
-	}
-	if err := ops.CheckStageOpens(key, 1); err != nil {
-		t.Fatal(err)
-	}
 	if err := ops.CheckStageOpens(key, stage.StagesPerTree); err != nil {
 		t.Fatalf("stage 1024 (tree 1): %v", err)
 	}
@@ -272,16 +248,6 @@ func TestStageOpsThroughKeyMaterial(t *testing.T) {
 	}
 	sig, err := ops.SignStage(key, 1, stage.IndicesPerStage+5, msg)
 	if err != nil {
-		t.Fatal(err)
-	}
-	embedded, program, err := stage.Parse(sig.Program)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if program.Address != a1 || len(sig.Args) != 3 {
-		t.Fatalf("signature program %s, %d args", program.Address, len(sig.Args))
-	}
-	if err := Verify(embedded, msg, sig.Args[0], sig.Args[1], sig.Args[2]); err != nil {
 		t.Fatal(err)
 	}
 	if idx, _ := xmss.Index(sig.Args[0]); idx != stage.IndicesPerStage+5 {
@@ -298,9 +264,6 @@ func TestStageOpsThroughKeyMaterial(t *testing.T) {
 	}
 	if got := ops.CachedTrees(); got != 0 {
 		t.Fatalf("cached trees after Forget = %d", got)
-	}
-	if _, err := ops.SignStage(&signing.RotatingKeyMaterial{Seed: seed[:5]}, 0, 0, msg); err == nil {
-		t.Fatal("short seed accepted")
 	}
 }
 
