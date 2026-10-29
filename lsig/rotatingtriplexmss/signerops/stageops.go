@@ -289,15 +289,7 @@ func deriverFor(key *signing.RotatingKeyMaterial) (*rotatinghybrid.Deriver, [Acc
 	if key == nil {
 		return nil, tag, errors.New("rotating key material is nil")
 	}
-	var seed rotatinghybrid.Seed
-	var genesisHash [rotatinghybrid.GenesisHashSize]byte
-	if len(key.Seed) != len(seed) || len(key.GenesisHash) != len(genesisHash) {
-		return nil, tag, errors.New("rotating key material has the wrong size")
-	}
-	copy(seed[:], key.Seed)
-	defer seed.Zero()
-	copy(genesisHash[:], key.GenesisHash)
-	d, err := NewDeriver(&seed, genesisHash)
+	d, err := rotatinghybrid.OpenDeriver(key.Seed, key.GenesisHash, DerivationLabel)
 	if err != nil {
 		return nil, tag, err
 	}

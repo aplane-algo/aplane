@@ -19,8 +19,9 @@ import (
 	"github.com/aplane-algo/aplane/internal/keygen"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/rotatingkey"
+	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/storepaths"
-	triplesignerreg "github.com/aplane-algo/aplane/lsig/rotatingtriplewots/signerreg"
+	rotatingfamilyreg "github.com/aplane-algo/aplane/lsig/rotatingfamily/signerreg"
 	"github.com/aplane-algo/aplane/lsig/rotatingtriplexmss/signerops"
 )
 
@@ -54,6 +55,24 @@ func TestRegisterIsIdempotent(t *testing.T) {
 	Register()
 	if StageOps() == nil {
 		t.Fatal("no stage ops")
+	}
+}
+
+// TestRegisteredStageOpsIsTheSharedInstance checks that registration hands
+// the signing flow this package's one StageOps, not a copy or a wrapper: key
+// generation, validation and signing share its tree cache, and the flow finds
+// tree preparation through signing.RotatingTreeOps.
+func TestRegisteredStageOpsIsTheSharedInstance(t *testing.T) {
+	Register()
+	ops, err := signing.GetRotatingStageOps(rotatingkey.RotatingTripleXmssV1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := ops.(*signerops.StageOps); !ok || got != StageOps() {
+		t.Fatalf("registered stage ops is %T, not the package's StageOps instance", ops)
+	}
+	if _, ok := ops.(signing.RotatingTreeOps); !ok {
+		t.Fatal("registered stage ops does not implement signing.RotatingTreeOps")
 	}
 }
 
@@ -205,7 +224,7 @@ func TestGeneratorCreatesAccountBoundToNetwork(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer seed.Zero()
-	testnetGenesis, err := triplesignerreg.GenesisHashParameter(map[string]string{"network": "testnet"})
+	testnetGenesis, err := rotatingfamilyreg.GenesisHashParameter(map[string]string{"network": "testnet"})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -167,6 +167,22 @@ func NewDeriverWithLabel(seed *Seed, genesisHash [GenesisHashSize]byte, label st
 	return &Deriver{prk: prk, genesisHash: genesisHash}, nil
 }
 
+// OpenDeriver binds a stored seed and genesis hash, as a key file holds
+// them, under label. It checks both lengths and zeroes its copy of the seed
+// before returning; the caller keeps ownership of seed and must Zero the
+// deriver.
+func OpenDeriver(seed, genesisHash []byte, label string) (*Deriver, error) {
+	var s Seed
+	var g [GenesisHashSize]byte
+	if len(seed) != len(s) || len(genesisHash) != len(g) {
+		return nil, fmt.Errorf("rotating seed or genesis hash has the wrong length (%d and %d bytes, want %d and %d)", len(seed), len(genesisHash), len(s), len(g))
+	}
+	copy(s[:], seed)
+	defer s.Zero()
+	copy(g[:], genesisHash)
+	return NewDeriverWithLabel(&s, g, label)
+}
+
 // Stage returns the Falcon and Ed25519 seeds of stage i:
 //
 //	falcon_seed_i  = HKDF-Expand(PRK, 0x01 || G || u64be(i), 48)

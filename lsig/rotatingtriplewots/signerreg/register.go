@@ -12,10 +12,9 @@ import (
 	"sync"
 
 	"github.com/aplane-algo/aplane/internal/crypto/rotatinghybrid"
-	"github.com/aplane-algo/aplane/internal/keygen"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/rotatingkey"
-	"github.com/aplane-algo/aplane/internal/signing"
+	rotatingfamilyreg "github.com/aplane-algo/aplane/lsig/rotatingfamily/signerreg"
 	"github.com/aplane-algo/aplane/lsig/rotatingtriplewots/signerops"
 	"github.com/aplane-algo/aplane/lsig/rotatingtriplewots/stage"
 )
@@ -26,12 +25,14 @@ var registerOnce sync.Once
 // generator. It is safe to call more than once.
 func Register() {
 	registerOnce.Do(func() {
-		keys.RegisterRotatingCodec(rotatingkey.RotatingTripleWotsV1, keys.RotatingCodec{
+		rotatingfamilyreg.Register(rotatingfamilyreg.Descriptor{
+			KeyType:        rotatingkey.RotatingTripleWotsV1,
+			Family:         rotatingkey.RotatingTripleWotsFamily,
+			NewKeyPayload:  NewKeyPayload,
 			AccountAddress: accountAddress,
 			ValidateSeed:   validateSeed,
+			StageOps:       signerops.StageOps{},
 		})
-		signing.RegisterRotatingStageOps(rotatingkey.RotatingTripleWotsV1, signerops.StageOps{})
-		keygen.Register(generator{})
 	})
 }
 
@@ -91,16 +92,8 @@ func accountAddress(stageZeroPublicKey []byte) (string, error) {
 	return program.Address.String(), nil
 }
 
-func validateSeed(seedBytes, genesisHashBytes, stageZeroPublicKey []byte) error {
-	var seed rotatinghybrid.Seed
-	var genesisHash [rotatinghybrid.GenesisHashSize]byte
-	if len(seedBytes) != len(seed) || len(genesisHashBytes) != len(genesisHash) {
-		return fmt.Errorf("seed or genesis hash has the wrong length")
-	}
-	copy(seed[:], seedBytes)
-	defer seed.Zero()
-	copy(genesisHash[:], genesisHashBytes)
-	d, err := signerops.NewDeriver(&seed, genesisHash)
+func validateSeed(seed, genesisHash, stageZeroPublicKey []byte) error {
+	d, err := rotatinghybrid.OpenDeriver(seed, genesisHash, signerops.DerivationLabel)
 	if err != nil {
 		return err
 	}

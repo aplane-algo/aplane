@@ -95,15 +95,7 @@ func deriveFromMaterial(key *signing.RotatingKeyMaterial, i uint64) (*StageKeys,
 	if key == nil {
 		return nil, stage.Program{}, fmt.Errorf("rotating key material is nil")
 	}
-	var seed rotatinghybrid.Seed
-	var genesisHash [rotatinghybrid.GenesisHashSize]byte
-	if len(key.Seed) != len(seed) || len(key.GenesisHash) != len(genesisHash) {
-		return nil, stage.Program{}, fmt.Errorf("rotating key material has the wrong size")
-	}
-	copy(seed[:], key.Seed)
-	defer seed.Zero()
-	copy(genesisHash[:], key.GenesisHash)
-	d, err := NewDeriver(&seed, genesisHash)
+	d, err := rotatinghybrid.OpenDeriver(key.Seed, key.GenesisHash, DerivationLabel)
 	if err != nil {
 		return nil, stage.Program{}, err
 	}

@@ -19,21 +19,20 @@ import (
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
-// NetworkParameter names the network a rotating account is bound to: a
-// built-in network name (mainnet, testnet, betanet) or the network's base64
-// genesis hash, as LocalNet and other custom networks require.
-const NetworkParameter = rotatingkey.RotatingNetworkParameter
+// generator creates accounts of one rotating key type from a fresh mnemonic
+// and the single network parameter. The signer keeps no durable state for
+// them; the stage address table is built in the background. Mnemonic import
+// is not supported in this phase.
+type generator struct {
+	keyType       string
+	family        string
+	newKeyPayload func(*rotatinghybrid.Seed, [rotatinghybrid.GenesisHashSize]byte) (*keys.Payload, string, error)
+}
 
-// generator creates rotating accounts from a fresh mnemonic and the single
-// network parameter. The signer keeps no durable state for them; the stage
-// address table is built in the background. Mnemonic import is not supported
-// in this phase.
-type generator struct{}
+func (g generator) RoutingFamily() string { return g.family }
 
-func (generator) RoutingFamily() string { return rotatingkey.RotatingTripleWotsFamily }
-
-func (generator) GenerateRandom(_ context.Context, paths storepaths.Paths, kr *crypto.Keyring, keyType string, params map[string]string) (*keygen.GenerationResult, error) {
-	if keyType != rotatingkey.RotatingTripleWotsV1 {
+func (g generator) GenerateRandom(_ context.Context, paths storepaths.Paths, kr *crypto.Keyring, keyType string, params map[string]string) (*keygen.GenerationResult, error) {
+	if keyType != g.keyType {
 		return nil, fmt.Errorf("unsupported rotating key type %q", keyType)
 	}
 	genesisHash, err := GenesisHashParameter(params)
@@ -45,7 +44,7 @@ func (generator) GenerateRandom(_ context.Context, paths storepaths.Paths, kr *c
 		return nil, err
 	}
 	defer seed.Zero()
-	payload, address, err := NewKeyPayload(&seed, genesisHash)
+	payload, address, err := g.newKeyPayload(&seed, genesisHash)
 	if err != nil {
 		return nil, err
 	}
@@ -70,18 +69,20 @@ func (generator) GenerateFromMnemonic(context.Context, storepaths.Paths, string,
 	return nil, fmt.Errorf("rotating accounts cannot yet be generated from a mnemonic")
 }
 
-// GenesisHashParameter reads the network parameter. It accepts exactly that
-// one parameter.
+// GenesisHashParameter reads the network parameter
+// (rotatingkey.RotatingNetworkParameter): a built-in network name (mainnet,
+// testnet, betanet) or the network's base64 genesis hash, as LocalNet and
+// other custom networks require. It accepts exactly that one parameter.
 func GenesisHashParameter(params map[string]string) ([rotatinghybrid.GenesisHashSize]byte, error) {
 	var genesis [rotatinghybrid.GenesisHashSize]byte
 	for name := range params {
-		if name != NetworkParameter {
+		if name != rotatingkey.RotatingNetworkParameter {
 			return genesis, fmt.Errorf("unknown parameter %q", name)
 		}
 	}
-	value := strings.TrimSpace(params[NetworkParameter])
+	value := strings.TrimSpace(params[rotatingkey.RotatingNetworkParameter])
 	if value == "" {
-		return genesis, fmt.Errorf("%s is required: a network configured on the signer (built in: %s) or a base64 genesis hash", NetworkParameter, strings.Join(builtinNetworks(), ", "))
+		return genesis, fmt.Errorf("%s is required: a network configured on the signer (built in: %s) or a base64 genesis hash", rotatingkey.RotatingNetworkParameter, strings.Join(builtinNetworks(), ", "))
 	}
 	for hash, token := range apconfig.BuiltinGenesisHashNetworks() {
 		if token == value {
@@ -91,7 +92,7 @@ func GenesisHashParameter(params map[string]string) ([rotatinghybrid.GenesisHash
 	}
 	decoded, err := base64.StdEncoding.DecodeString(value)
 	if err != nil || len(decoded) != len(genesis) {
-		return genesis, fmt.Errorf("%s %q is not a network configured on the signer or a 32-byte base64 genesis hash", NetworkParameter, params[NetworkParameter])
+		return genesis, fmt.Errorf("%s %q is not a network configured on the signer or a 32-byte base64 genesis hash", rotatingkey.RotatingNetworkParameter, params[rotatingkey.RotatingNetworkParameter])
 	}
 	copy(genesis[:], decoded)
 	return genesis, nil
