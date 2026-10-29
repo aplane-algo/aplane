@@ -105,6 +105,12 @@ func TestBuildParseRoundTrip(t *testing.T) {
 	}
 }
 
+func TestBuildRejectsNilKeys(t *testing.T) {
+	if _, err := Build(nil); !errors.Is(err, ErrInvalidProgram) {
+		t.Fatalf("nil keys: got %v, want ErrInvalidProgram", err)
+	}
+}
+
 func TestParseRejectsNonCanonicalPrograms(t *testing.T) {
 	_, unsalted := keysWithSalt(t, false)
 	_, salted := keysWithSalt(t, true)

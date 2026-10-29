@@ -121,6 +121,12 @@ func TestBuildRejectsBadRange(t *testing.T) {
 	}
 }
 
+func TestBuildRejectsNilKeys(t *testing.T) {
+	if _, err := Build(nil); !errors.Is(err, ErrInvalidProgram) {
+		t.Fatalf("nil keys: got %v, want ErrInvalidProgram", err)
+	}
+}
+
 func TestBuildParseRoundTrip(t *testing.T) {
 	for _, salted := range []bool{false, true} {
 		keys, program := keysWithSalt(t, salted)

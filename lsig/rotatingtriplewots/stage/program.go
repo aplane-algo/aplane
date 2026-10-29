@@ -28,14 +28,11 @@ package stage
 import (
 	"bytes"
 	"encoding/hex"
-	"errors"
 	"fmt"
 
 	"github.com/aplane-algo/aplane/internal/crypto/wots"
-	"github.com/aplane-algo/aplane/internal/lsigsalt"
-
-	"github.com/algorand/go-algorand-sdk/v2/crypto"
-	"github.com/algorand/go-algorand-sdk/v2/types"
+	"github.com/aplane-algo/aplane/internal/falconparams"
+	"github.com/aplane-algo/aplane/lsig/rotatingfamily/stageprog"
 )
 
 const (
@@ -49,13 +46,13 @@ const (
 	ConstantSize = 32
 
 	// FalconPublicKeySize is the embedded Falcon-1024 public key size.
-	FalconPublicKeySize = 1793
+	FalconPublicKeySize = falconparams.PublicKeySize
 
 	// WotsSignatureSize, Ed25519SignatureSize and FalconSignatureMaxSize
 	// bound arguments 0, 1 and 2.
 	WotsSignatureSize      = wots.SignatureSize
 	Ed25519SignatureSize   = 64
-	FalconSignatureMaxSize = 1423
+	FalconSignatureMaxSize = falconparams.CompressedSignatureMaxSize
 
 	// MaxArgumentBytes is the worst-case total of the three signature
 	// arguments.
@@ -78,10 +75,10 @@ const (
 	MaxOpcodeCost = BaseOpcodeCost + StepOpcodeCost*wots.MaxVerifySteps + 1
 
 	// SaltSearchLimit is the number of salt values the v13 assembler tries.
-	SaltSearchLimit = 128
+	SaltSearchLimit = stageprog.SaltSearchLimit
 
 	opIntcblock  = 0x20
-	saltTailSize = 3
+	saltTailSize = stageprog.SaltTailSize
 
 	// Offsets of the four constants inside the template.
 	ed25519KeyOffset = 33
@@ -136,10 +133,10 @@ var templateTail = [...]byte{
 var (
 	// ErrNoOffCurveSalt reports that every salt candidate hashed on-curve
 	// (probability about 2^-128). The stage is unusable and must be skipped.
-	ErrNoOffCurveSalt = errors.New("no off-curve salt for rotating triple stage")
+	ErrNoOffCurveSalt = stageprog.ErrNoOffCurveSalt
 
 	// ErrInvalidProgram reports bytes that are not a canonical stage program.
-	ErrInvalidProgram = errors.New("invalid rotating triple stage program")
+	ErrInvalidProgram = stageprog.ErrInvalidProgram
 )
 
 // PublicKeys are the four constants embedded in a stage program.
@@ -151,12 +148,7 @@ type PublicKeys struct {
 }
 
 // Program is a final, off-curve stage program and its address.
-type Program struct {
-	Bytecode []byte
-	Address  types.Address
-	Salted   bool
-	Salt     byte
-}
+type Program = stageprog.Program
 
 // OpcodeCost is the cost of an accepting run that performs steps chain
 // steps (wots.VerifySteps of the TxID), for an unsalted program.
@@ -168,6 +160,9 @@ func OpcodeCost(steps int) uint64 {
 // address is on-curve, it appends intcblock 1 <salt> with the first salt in
 // [0, 128) that yields an off-curve address, exactly as the v13 assembler does.
 func Build(keys *PublicKeys) (Program, error) {
+	if keys == nil {
+		return Program{}, fmt.Errorf("%w: nil public keys", ErrInvalidProgram)
+	}
 	base := make([]byte, UnsaltedProgramSize, SaltedProgramSize)
 	copy(base, template[:])
 	copy(base[ed25519KeyOffset:], keys.Ed25519[:])
@@ -175,26 +170,7 @@ func Build(keys *PublicKeys) (Program, error) {
 	copy(base[tweakOffset:], keys.Tweak[:])
 	copy(base[wotsKeyOffset:], keys.Wots[:])
 
-	addr, err := Address(base)
-	if err != nil {
-		return Program{}, err
-	}
-	if !lsigsalt.IsOnCurve(addr) {
-		return Program{Bytecode: base, Address: addr}, nil
-	}
-
-	candidate := append(base, opIntcblock, 0x01, 0x00)
-	for salt := range SaltSearchLimit {
-		candidate[UnsaltedProgramSize+2] = byte(salt)
-		addr, err := Address(candidate)
-		if err != nil {
-			return Program{}, err
-		}
-		if !lsigsalt.IsOnCurve(addr) {
-			return Program{Bytecode: candidate, Address: addr, Salted: true, Salt: byte(salt)}, nil
-		}
-	}
-	return Program{}, ErrNoOffCurveSalt
+	return stageprog.Finish(base)
 }
 
 // Parse is the strict inverse of Build. It accepts only bytes Build would
@@ -202,34 +178,18 @@ func Build(keys *PublicKeys) (Program, error) {
 // present exactly when the unsalted address is on-curve and holding the
 // first off-curve salt.
 func Parse(bytecode []byte) (*PublicKeys, Program, error) {
-	if len(bytecode) != UnsaltedProgramSize && len(bytecode) != SaltedProgramSize {
-		return nil, Program{}, fmt.Errorf("%w: length %d", ErrInvalidProgram, len(bytecode))
-	}
 	keys := &PublicKeys{}
-	copy(keys.Ed25519[:], bytecode[ed25519KeyOffset:ed25519KeyOffset+ConstantSize])
-	copy(keys.Falcon[:], bytecode[falconKeyOffset:falconKeyOffset+FalconPublicKeySize])
-	copy(keys.Tweak[:], bytecode[tweakOffset:tweakOffset+ConstantSize])
-	copy(keys.Wots[:], bytecode[wotsKeyOffset:wotsKeyOffset+ConstantSize])
-
-	want, err := Build(keys)
+	program, err := stageprog.ParseStrict(bytecode, UnsaltedProgramSize, func(code []byte) (Program, error) {
+		copy(keys.Ed25519[:], code[ed25519KeyOffset:ed25519KeyOffset+ConstantSize])
+		copy(keys.Falcon[:], code[falconKeyOffset:falconKeyOffset+FalconPublicKeySize])
+		copy(keys.Tweak[:], code[tweakOffset:tweakOffset+ConstantSize])
+		copy(keys.Wots[:], code[wotsKeyOffset:wotsKeyOffset+ConstantSize])
+		return Build(keys)
+	})
 	if err != nil {
 		return nil, Program{}, err
 	}
-	if !bytes.Equal(bytecode, want.Bytecode) {
-		return nil, Program{}, fmt.Errorf("%w: template or salt mismatch", ErrInvalidProgram)
-	}
-	return keys, want, nil
-}
-
-// Address returns the LogicSig address of bytecode:
-// SHA-512/256("Program" || bytecode).
-func Address(bytecode []byte) (types.Address, error) {
-	lsig := crypto.LogicSigAccount{Lsig: types.LogicSig{Logic: bytecode}}
-	addr, err := lsig.Address()
-	if err != nil {
-		return types.Address{}, fmt.Errorf("derive stage address: %w", err)
-	}
-	return addr, nil
+	return keys, program, nil
 }
 
 // TEALSource is the program's source for keys, exactly as the frozen
