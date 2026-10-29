@@ -15,17 +15,14 @@
 package signerops
 
 import (
-	"crypto/ed25519"
 	"errors"
 	"fmt"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/crypto/rotatinghybrid"
 	"github.com/aplane-algo/aplane/internal/crypto/xmss"
+	"github.com/aplane-algo/aplane/lsig/rotatingfamily/stagesign"
 	"github.com/aplane-algo/aplane/lsig/rotatingtriplexmss/stage"
-
-	"github.com/algorand/falcon"
-	"github.com/algorandfoundation/falcon-signatures/falcongo"
 )
 
 const (
@@ -106,16 +103,19 @@ func GenerateTree(d *rotatinghybrid.Deriver, tree uint64) (*PublicTree, error) {
 	return &PublicTree{Number: tree, Tree: t, PK: xmss.PublicKey{Root: t.Root(), Seed: seeds.PubSeed}}, nil
 }
 
+// signXmss is xmss.SignBounded; tests replace it to observe the signature
+// buffer.
+var signXmss = xmss.SignBounded
+
 // StageKeys are the private keys of one stage: its own Ed25519 and
 // Falcon-1024 keys and the seeds of the tree whose leaves it signs with.
 // Callers must Zero them.
 type StageKeys struct {
-	stage   uint64
-	tree    *PublicTree
-	seeds   *xmss.Seeds
-	ed25519 ed25519.PrivateKey
-	falcon  falcongo.KeyPair
-	lo, hi  uint64
+	stage     uint64
+	tree      *PublicTree
+	seeds     *xmss.Seeds
+	classical *stagesign.ClassicalKeys
+	lo, hi    uint64
 }
 
 // DeriveStage derives stage i's keys and program. tree must be the public
@@ -138,23 +138,10 @@ func DeriveStage(d *rotatinghybrid.Deriver, i uint64, tree *PublicTree) (*StageK
 		keys.Zero()
 		return nil, stage.Program{}, fmt.Errorf("tree %d does not derive from this seed", treeNo)
 	}
-	var edSeed [rotatinghybrid.Ed25519SeedSize]byte
-	if err := d.ExpandStage(Ed25519InfoTag, i, edSeed[:]); err != nil {
-		keys.Zero()
-		return nil, stage.Program{}, err
-	}
-	keys.ed25519 = ed25519.NewKeyFromSeed(edSeed[:])
-	crypto.ZeroBytes(edSeed[:])
-	var falconSeed [rotatinghybrid.FalconSeedSize]byte
-	if err := d.ExpandStage(FalconInfoTag, i, falconSeed[:]); err != nil {
-		keys.Zero()
-		return nil, stage.Program{}, err
-	}
-	keys.falcon, err = falcongo.GenerateKeyPair(falconSeed[:])
-	crypto.ZeroBytes(falconSeed[:])
+	keys.classical, err = stagesign.DeriveClassicalKeys(d, i, Ed25519InfoTag, FalconInfoTag)
 	if err != nil {
 		keys.Zero()
-		return nil, stage.Program{}, fmt.Errorf("generate stage %d Falcon key: %w", i, err)
+		return nil, stage.Program{}, err
 	}
 	program, err := stage.Build(keys.PublicKeys())
 	if err != nil {
@@ -167,8 +154,7 @@ func DeriveStage(d *rotatinghybrid.Deriver, i uint64, tree *PublicTree) (*StageK
 // PublicKeys returns the constants a stage program embeds.
 func (k *StageKeys) PublicKeys() *stage.PublicKeys {
 	pub := &stage.PublicKeys{Root: k.tree.PK.Root, Seed: k.tree.PK.Seed, Lo: k.lo, Hi: k.hi}
-	copy(pub.Ed25519[:], k.ed25519.Public().(ed25519.PublicKey))
-	copy(pub.Falcon[:], k.falcon.PublicKey[:])
+	pub.Ed25519, pub.Falcon = k.classical.PublicKeys()
 	return pub
 }
 
@@ -178,23 +164,25 @@ func (k *StageKeys) Range() (lo, hi uint64) { return k.lo, k.hi }
 // Sign returns the stage's argument 0 (XMSS, with leaf index), argument 1
 // (Ed25519) and argument 2 (Falcon-1024) signatures over message, which for
 // a spend is the raw 32-byte transaction ID. The leaf must lie in the
-// stage's range; the caller chooses it and tracks its use.
+// stage's range; the caller chooses it and tracks its use. If the Ed25519 or
+// Falcon-1024 signing fails, the XMSS signature is wiped before the error
+// returns.
 func (k *StageKeys) Sign(message []byte, index uint32) (xmssSig, ed25519Sig, falconSig []byte, err error) {
 	if uint64(index) < k.lo || uint64(index) >= k.hi {
 		return nil, nil, nil, fmt.Errorf("leaf %d is outside stage %d's range [%d, %d)", index, k.stage, k.lo, k.hi)
 	}
 	// The stage program accepts a checksum of at most stage.MaxChecksum, so
 	// the randomizer is chosen to meet it (xmss.SignBounded).
-	xmssSig, err = xmss.SignBounded(k.seeds, k.tree.Tree, index, message, stage.MaxChecksum)
+	xmssSig, err = signXmss(k.seeds, k.tree.Tree, index, message, stage.MaxChecksum)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("sign with stage XMSS leaf: %w", err)
 	}
-	falconSig, err = k.falcon.Sign(message)
+	ed25519Sig, falconSig, err = k.classical.Sign(message)
 	if err != nil {
 		crypto.ZeroBytes(xmssSig)
-		return nil, nil, nil, fmt.Errorf("sign with stage Falcon key: %w", err)
+		return nil, nil, nil, err
 	}
-	return xmssSig, ed25519.Sign(k.ed25519, message), falconSig, nil
+	return xmssSig, ed25519Sig, falconSig, nil
 }
 
 // Zero overwrites every private key.
@@ -205,8 +193,7 @@ func (k *StageKeys) Zero() {
 	if k.seeds != nil {
 		k.seeds.Zero()
 	}
-	crypto.ZeroBytes(k.ed25519)
-	crypto.ZeroBytes(k.falcon.PrivateKey[:])
+	k.classical.Zero()
 }
 
 // Verify checks the three signatures against the constants embedded in a
@@ -215,14 +202,8 @@ func Verify(keys *stage.PublicKeys, message, xmssSig, ed25519Sig, falconSig []by
 	if keys == nil {
 		return errors.New("stage public keys are nil")
 	}
-	if !ed25519.Verify(keys.Ed25519[:], message, ed25519Sig) {
-		return errors.New("stage Ed25519 signature is invalid")
-	}
-	if len(falconSig) > stage.FalconSignatureMaxSize {
-		return fmt.Errorf("stage Falcon signature is %d bytes, maximum is %d", len(falconSig), stage.FalconSignatureMaxSize)
-	}
-	if err := falcongo.Verify(message, falcon.CompressedSignature(falconSig), falcon.PublicKey(keys.Falcon)); err != nil {
-		return fmt.Errorf("stage Falcon signature: %w", err)
+	if err := stagesign.VerifyClassical(&keys.Ed25519, &keys.Falcon, message, ed25519Sig, falconSig); err != nil {
+		return err
 	}
 	index, err := xmss.Index(xmssSig)
 	if err != nil {
@@ -239,27 +220,6 @@ func Verify(keys *stage.PublicKeys, message, xmssSig, ed25519Sig, falconSig []by
 		return fmt.Errorf("stage XMSS signature: %w", err)
 	} else if sum > stage.MaxChecksum {
 		return fmt.Errorf("stage XMSS signature has checksum %d, the stage accepts at most %d", sum, stage.MaxChecksum)
-	}
-	return nil
-}
-
-// signOpenTest signs the open-test message with the stage's Ed25519 and
-// Falcon keys only.
-func (k *StageKeys) signOpenTest() (ed25519Sig, falconSig []byte, err error) {
-	falconSig, err = k.falcon.Sign(openTestMessage)
-	if err != nil {
-		return nil, nil, fmt.Errorf("sign open test with stage Falcon key: %w", err)
-	}
-	return ed25519.Sign(k.ed25519, openTestMessage), falconSig, nil
-}
-
-// verifyOpenTest checks the open-test signatures against a program's keys.
-func verifyOpenTest(keys *stage.PublicKeys, ed25519Sig, falconSig []byte) error {
-	if !ed25519.Verify(keys.Ed25519[:], openTestMessage, ed25519Sig) {
-		return errors.New("stage Ed25519 signature is invalid")
-	}
-	if err := falcongo.Verify(openTestMessage, falcon.CompressedSignature(falconSig), falcon.PublicKey(keys.Falcon)); err != nil {
-		return fmt.Errorf("stage Falcon signature: %w", err)
 	}
 	return nil
 }

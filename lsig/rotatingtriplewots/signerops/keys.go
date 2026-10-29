@@ -13,17 +13,14 @@
 package signerops
 
 import (
-	"crypto/ed25519"
 	"errors"
 	"fmt"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/crypto/rotatinghybrid"
 	"github.com/aplane-algo/aplane/internal/crypto/wots"
+	"github.com/aplane-algo/aplane/lsig/rotatingfamily/stagesign"
 	"github.com/aplane-algo/aplane/lsig/rotatingtriplewots/stage"
-
-	"github.com/algorand/falcon"
-	"github.com/algorandfoundation/falcon-signatures/falcongo"
 )
 
 const (
@@ -57,13 +54,15 @@ func AccountTag(d *rotatinghybrid.Deriver) ([AccountTagSize]byte, error) {
 	return tag, nil
 }
 
+// signWots is wots.Sign; tests replace it to observe the signature buffer.
+var signWots = wots.Sign
+
 // StageKeys are the private keys of one stage. Callers must Zero them.
 type StageKeys struct {
-	tweak   wots.Tweak
-	wots    []byte
-	wotsPub wots.PublicKey
-	ed25519 ed25519.PrivateKey
-	falcon  falcongo.KeyPair
+	tweak     wots.Tweak
+	wots      []byte
+	wotsPub   wots.PublicKey
+	classical *stagesign.ClassicalKeys
 }
 
 // DeriveStage derives stage i's keys and program.
@@ -83,23 +82,10 @@ func DeriveStage(d *rotatinghybrid.Deriver, i uint64) (*StageKeys, stage.Program
 		keys.Zero()
 		return nil, stage.Program{}, err
 	}
-	var edSeed [rotatinghybrid.Ed25519SeedSize]byte
-	if err := d.ExpandStage(Ed25519InfoTag, i, edSeed[:]); err != nil {
-		keys.Zero()
-		return nil, stage.Program{}, err
-	}
-	keys.ed25519 = ed25519.NewKeyFromSeed(edSeed[:])
-	crypto.ZeroBytes(edSeed[:])
-	var falconSeed [rotatinghybrid.FalconSeedSize]byte
-	if err := d.ExpandStage(FalconInfoTag, i, falconSeed[:]); err != nil {
-		keys.Zero()
-		return nil, stage.Program{}, err
-	}
-	keys.falcon, err = falcongo.GenerateKeyPair(falconSeed[:])
-	crypto.ZeroBytes(falconSeed[:])
+	keys.classical, err = stagesign.DeriveClassicalKeys(d, i, Ed25519InfoTag, FalconInfoTag)
 	if err != nil {
 		keys.Zero()
-		return nil, stage.Program{}, fmt.Errorf("generate stage %d Falcon key: %w", i, err)
+		return nil, stage.Program{}, err
 	}
 	keys.wotsPub, err = wots.PublicKeyOf(&keys.tweak, keys.wots)
 	if err != nil {
@@ -117,26 +103,26 @@ func DeriveStage(d *rotatinghybrid.Deriver, i uint64) (*StageKeys, stage.Program
 // PublicKeys returns the constants a stage program embeds.
 func (k *StageKeys) PublicKeys() *stage.PublicKeys {
 	pub := &stage.PublicKeys{Tweak: k.tweak, Wots: k.wotsPub}
-	copy(pub.Ed25519[:], k.ed25519.Public().(ed25519.PublicKey))
-	copy(pub.Falcon[:], k.falcon.PublicKey[:])
+	pub.Ed25519, pub.Falcon = k.classical.PublicKeys()
 	return pub
 }
 
 // Sign returns the stage's argument 0 (WOTS), argument 1 (Ed25519) and
 // argument 2 (Falcon-1024) signatures over message, which for a spend is the
 // raw 32-byte transaction ID. A stage must sign one message only: a second
-// spends its WOTS key.
+// spends its WOTS key. If the Ed25519 or Falcon-1024 signing fails, the WOTS
+// signature, which carries chain secrets, is wiped before the error returns.
 func (k *StageKeys) Sign(message []byte) (wotsSig, ed25519Sig, falconSig []byte, err error) {
-	wotsSig, err = wots.Sign(&k.tweak, k.wots, message)
+	wotsSig, err = signWots(&k.tweak, k.wots, message)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("sign with stage WOTS key: %w", err)
 	}
-	falconSig, err = k.falcon.Sign(message)
+	ed25519Sig, falconSig, err = k.classical.Sign(message)
 	if err != nil {
 		crypto.ZeroBytes(wotsSig)
-		return nil, nil, nil, fmt.Errorf("sign with stage Falcon key: %w", err)
+		return nil, nil, nil, err
 	}
-	return wotsSig, ed25519.Sign(k.ed25519, message), falconSig, nil
+	return wotsSig, ed25519Sig, falconSig, nil
 }
 
 // Zero overwrites every private key.
@@ -145,8 +131,7 @@ func (k *StageKeys) Zero() {
 		return
 	}
 	crypto.ZeroBytes(k.wots)
-	crypto.ZeroBytes(k.ed25519)
-	crypto.ZeroBytes(k.falcon.PrivateKey[:])
+	k.classical.Zero()
 }
 
 // Verify checks the three signatures against the constants embedded in a
@@ -155,14 +140,8 @@ func Verify(keys *stage.PublicKeys, message, wotsSig, ed25519Sig, falconSig []by
 	if keys == nil {
 		return errors.New("stage public keys are nil")
 	}
-	if !ed25519.Verify(keys.Ed25519[:], message, ed25519Sig) {
-		return errors.New("stage Ed25519 signature is invalid")
-	}
-	if len(falconSig) > stage.FalconSignatureMaxSize {
-		return fmt.Errorf("stage Falcon signature is %d bytes, maximum is %d", len(falconSig), stage.FalconSignatureMaxSize)
-	}
-	if err := falcongo.Verify(message, falcon.CompressedSignature(falconSig), falcon.PublicKey(keys.Falcon)); err != nil {
-		return fmt.Errorf("stage Falcon signature: %w", err)
+	if err := stagesign.VerifyClassical(&keys.Ed25519, &keys.Falcon, message, ed25519Sig, falconSig); err != nil {
+		return err
 	}
 	if err := wots.Verify(&keys.Tweak, keys.Wots, message, wotsSig); err != nil {
 		return fmt.Errorf("stage WOTS signature: %w", err)
