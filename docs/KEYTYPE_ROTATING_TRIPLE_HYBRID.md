@@ -515,7 +515,10 @@ transactions.
    approval and resource planning already handle mixed groups. This admits
    one own transaction plus other senders' transactions. Passthrough-only
    members and signer-side simulation before release bound the race above
-   to the submission window; they do not remove it.
+   to the submission window; they do not remove it. The narrower step of
+   admitting only the user's own ordinary transactions has a complete,
+   deferred design in
+   [PROPOSAL_ROTATING_INTEGRATION.md](PROPOSAL_ROTATING_INTEGRATION.md).
 2. *Multi-stage release.* Several rotating slots in one group, each signed
    by the next stage in the chain. This needs its own design for budget (a
    WOTS spend costs up to 59,772 and an XMSS spend up to 95,857 of a pool

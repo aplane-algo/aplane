@@ -5,12 +5,31 @@ machinery: one normalized request path, shared planning, fee allocation,
 approval and execution, with a rotating coordinator that keeps the release
 protocol its own.
 
-Status: proposal, not scheduled. Written 2026-10-25 as "rotating spends
+Status: deferred, 2026-10-29. Written 2026-10-25 as "rotating spends
 grouped with the signer's own transactions", after the group-boundary design
 note landed in [KEYTYPE_ROTATING_TRIPLE_HYBRID.md](KEYTYPE_ROTATING_TRIPLE_HYBRID.md)
 section 10.1. Revised 2026-10-28 through three design reviews; section 12
 lists what each changed and why. Where an earlier revision and this text
 disagree, this text is authoritative.
+
+The design was implemented and passed review and the full integration suite
+(PR #137), then closed unmerged; the branch `work/rotating-integration`
+keeps that implementation. Rotating accounts stay single-transaction for v1,
+for three reasons:
+
+- The cases it opens are conveniences that two ordinary steps already cover,
+  not capabilities.
+- Every owned transaction adds a way for a group to fail after the stage
+  signature is public, in the signing path whose purpose is assurance.
+- The group form would be a permanent v1 wire commitment, mirrored in three
+  SDKs. Adding it later is additive; shipping it and removing it is not.
+
+Four parts that help the single-transaction path landed separately in
+PR #138: the shared group builder, strict canonical decoding on prepare, the
+approval binding of LogicSig arguments and the rotation, and optional
+`app_call_info` on rotating sign. Reopen this proposal when a product
+requirement needs a rotating spend and an owned transaction to land
+atomically.
 
 ## 1. Problem
 
