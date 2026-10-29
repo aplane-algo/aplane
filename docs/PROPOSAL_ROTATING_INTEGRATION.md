@@ -27,9 +27,10 @@ for three reasons:
 Four parts that help the single-transaction path landed separately in
 PR #138: the shared group builder, strict canonical decoding on prepare, the
 approval binding of LogicSig arguments and the rotation, and optional
-`app_call_info` on rotating sign. Reopen this proposal when a product
-requirement needs a rotating spend and an owned transaction to land
-atomically.
+`app_call_info` on rotating sign. Section 13 records the parked
+implementation's choices and how main has changed since. Reopen this
+proposal when a product requirement needs a rotating spend and an owned
+transaction to land atomically.
 
 ## 1. Problem
 
@@ -166,6 +167,12 @@ account:   the rotating account
 requests:  []SignRequest, the prepared user slots in group order
 ```
 
+Each slot may also carry `app_call_info` for the approval prompt, as on
+`/sign`, the rotating slot included. The top-level `app_call_info` that the
+single-transaction form gained on main (section 13) belongs to the
+`transactions` form only; a request that sets it together with `requests`
+is refused.
+
 The dummies are not resent. The group ID in each presented slot commits to
 the ordered complete group including the dummies the signer will rebuild,
 under the existing hash assumptions, so omitting them loses nothing. The
@@ -187,9 +194,10 @@ The signer's validation sequence on the new form:
    non-canonical data, keeping its presented bytes and group ID.
    `canonical.DecodeGroupHex` expects a complete group and cannot be called
    on the user-slot prefix, whose group IDs commit to omitted dummies; its
-   per-transaction canonical decoding is extracted and reused, and
-   completeness is validated after reconstruction. Ordinary full-group
-   validation is not weakened to accept prefixes.
+   per-transaction decoder, `canonical.DecodeTXPrefixed`, is already
+   exported (section 13) and is reused, and completeness is validated after
+   reconstruction. Ordinary full-group validation is not weakened to accept
+   prefixes.
 2. Admit the slots and their authorization context (4.1). Validate the
    presented rotating target against the derived next stage; a wrong target
    is refused, not replaced.
@@ -276,11 +284,13 @@ A slot that fails admission is refused with `bad_request` naming the slot.
 
 1. Normalize and admit (4.1).
 2. Find the live stage and set `rekey_to` on the rotating slot, as today.
-3. Replace `buildRotatingGroup`'s fixed `TransactionCount: 1` with the real
-   slot count and the full list of LogicSig usages, the rotating profile's
-   usage being one entry. The ordinary planner's solver (`lsigresource.Solve`)
-   already computes dummies for mixed groups, so dummies become net of the
-   owned slots' pooled budget and gross of their own LogicSig demands.
+3. Build the group with the shared builder, `Planner.finalizeGroup`, over
+   every user slot. `buildRotatingGroup` already calls it for one slot
+   (section 13); the group form passes the real slot count and every slot's
+   LogicSig usage, the rotating profile's usage being one entry. The solver
+   (`lsigresource.Solve`) already computes dummies for mixed groups, so
+   dummies become net of the owned slots' pooled budget and gross of their
+   own LogicSig demands.
 4. Fees. There is no fee independence between slots: an owned LogicSig slot
    adds argument bytes and opcode cost, which can raise the dummy count, and
    native Falcon authorization and LogicSig program bytes carry their own
@@ -337,7 +347,9 @@ Then, in this order, under one execution lease:
 2. The approval binding check (`checkApprovalBinding`) for the whole group,
    before any key is used. Today it runs immediately before rotating
    signing; with an earlier ordinary-signing phase it must run before that
-   phase, and the late check before rotating signing stays as well.
+   phase, and the late check before rotating signing stays as well. The
+   digest must also cover the rotating slot's index, which main's
+   single-transaction digest omits (section 13).
 3. Owned signatures, in memory, through the ordinary signing path's
    per-slot execution. A key that fails to load or sign ends the request
    here. The ordinary executor's failure audit entry for that slot is kept
@@ -396,7 +408,10 @@ Shared internals, distinct release protocol. The ordinary workflow in
 refactor exposes the steps beneath that entrypoint, slot admission,
 resource solving, fees, canonical group construction, approval binding and
 ordinary-slot execution, so the rotating coordinator can call them on a
-plan that contains one rotating slot. Rotation keeps what is its own: stage
+plan that contains one rotating slot. Resource solving, fees and canonical
+group construction are already one function on main (section 13); admission
+and ordinary-slot execution remain to be exposed. Rotation keeps what is its
+own: stage
 derivation, the next-stage rekey, the account lock, the fresh chain checks,
 timing, the open test, leaf selection and release accounting. Ordinary
 `/sign` stays unable to reach a rotating key, and rotation does not become
@@ -434,9 +449,10 @@ with two implementations.
 - apshell: the "must be sent alone" error disappears. Plugin intents whose
   group has one rotating sender and otherwise held authorities route
   through the rotating path without the plugin knowing.
-- SDK: the Go, TypeScript and Python SDKs mirror the client checks and the
-  `rotations` list. Contract fixtures gain a group-form prepare request and
-  both responses.
+- SDK: the Go, TypeScript and Python SDKs carry only the wire shapes for
+  these endpoints, so they mirror the new fields: `requests`, `rotations`,
+  `owned_indexes` and per-slot `app_call_info`. Contract fixtures gain a
+  group-form prepare request and both responses.
 
 ## 6. Safety analysis
 
@@ -611,6 +627,11 @@ syntax stays accepted throughout, which is a separate matter from the
 response contract. The change is client-visible; it is not observable only
 through tests.
 
+Since deferral, the shared builder extraction, strict per-transaction
+decoding and most of the approval-binding change are on main (section 13),
+so the remaining work is smaller than this estimate. The parked branch
+holds a complete implementation of the rest.
+
 ## 11. Decisions taken and questions open
 
 Taken:
@@ -643,6 +664,8 @@ Still open:
 - Should a bounded credential be admitted later through its own planning,
   rather than refused? Out of scope here; the refusal is explicit so the
   question is visible.
+- The `app_call_info` rule of 3.3, which main's single-transaction field
+  made necessary. Default as written.
 
 ## 12. Revision notes
 
@@ -700,3 +723,54 @@ Third review (2026-10-28):
     have refused every valid sign request, since sign receives the
     prepared rotating target. Prepare refuses a supplied target; sign
     requires and verifies it; owned slots never carry one (4.1, 8).
+
+Deferral (2026-10-29):
+
+19. Status set to deferred, with the reasons (header).
+20. Section 13 records the parked implementation's choices and what PR #138
+    changed on main; sections 3.3, 4.2, 4.3, 4.5 and 10 point to it.
+21. The group form's `app_call_info` rule is added (3.3, 11).
+22. The SDK line says the SDKs carry wire shapes only (5).
+
+## 13. Implementation record and changes since deferral
+
+The parked implementation (PR #137, branch `work/rotating-integration`)
+follows this text. Where the text left a choice open, it chose:
+
+- **Response migration.** Section 10's second option: both responses carry
+  `rotations` and the scalar fields, which repeat its single entry, until
+  every consumer reads the list.
+- **Shared steps.** The group builder is `Planner.finalizeGroup`. Owned
+  slots are signed by `Executor.SignOwnedSlots`, which shares
+  `signPlannedSlot` with `ExecuteGroupSigning`. Admission is
+  `normalizeRotatingSlots`.
+- **Stage-changed message.** `rotating_stage_changed` says no signature was
+  released, because owned slots may already have been signed in memory and
+  discarded.
+
+PR #138 then landed four parts on main for the single-transaction path.
+Three differ from the parked versions, and a revival must reconcile them:
+
+- **Group builder.** `Planner.finalizeGroup` is on main, and
+  `buildRotatingGroup` already calls it with one slot and a snapshot that
+  holds only the rotating account's resource profile, which keeps a rebuild
+  a pure function of the spend. The group form must pass the runtime
+  snapshot, with that profile set for the rotating account, because the
+  owned keys' types and profiles enter the dummy and fee computation. A
+  rebuild then also depends on the owned keys' metadata at sign time; if it
+  changed after prepare, the rebuild differs and sign refuses, which fails
+  closed.
+- **Approval binding.** Main's digest covers each request's LogicSig
+  arguments and the rotation's stage, target and target address. It omits
+  the rotating slot's index, since a single spend is always first. The
+  group form adds the index (4.3).
+- **App-call metadata.** Main's `RotatingSignRequest`, mirrored in the
+  SDKs, has a top-level `app_call_info` for the single-transaction form.
+  The group form carries it per slot instead (3.3).
+- **Canonical decoding.** `canonical.DecodeTXPrefixed` is exported, and
+  prepare already decodes its single transaction strictly. This matches the
+  parked version.
+
+To revive the design, port the parked implementation onto a fresh branch
+from main rather than merging it. A trial merge on 2026-10-29 conflicted in
+twelve files, most of them the four parts above.
