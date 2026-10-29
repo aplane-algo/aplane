@@ -344,8 +344,9 @@ wire contract lives in [ARCH_SIGNING.md](ARCH_SIGNING.md#rotating-accounts-rotat
    with no `rekey_to`, no close-out, the account's genesis hash and a validity
    window at most 100 rounds. The signer reads the live authorizer from its
    own node, finds stage `n` and confirms it by derivation, sets `rekey_to` to
-   stage `n + 1`, adds the profile's resource dummies, sets fees and group ID,
-   and returns the exact unsigned group. It stores nothing and needs no approval.
+   stage `n + 1`, adds the profile's resource dummies, sets fees and group ID
+   with the ordinary group builder, and returns the exact unsigned group. The
+   spend must be canonically encoded. It stores nothing and needs no approval.
 2. **Sign.** The group's `rekey_to` fixes `n`. The signer re-derives stage
    `n + 1`, checks the target and canonical group by byte equality, and runs
    ordinary policy gates and operator approval. Under the account lock it

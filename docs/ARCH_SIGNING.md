@@ -865,7 +865,9 @@ This ensures operators approve exactly what will be signed, and policy rules eva
 
 The signer also enforces it. Before the approval gates run, it hashes what they
 judge: every transaction of the final group, the bytes of each passthrough
-slot, which slots are foreign, and the key that signs each request (for
+slot, which slots are foreign, the key that signs each request and the
+LogicSig arguments it signs with, and for a rotating spend the stage that
+signs, the stage it hands the account to and that stage's address (for
 `/sign/component`, the frozen group bytes, the component key, and each
 target's transaction ID and message). Immediately before signing, each signing
 path recomputes the hash and refuses with an internal error on any difference,
@@ -1481,14 +1483,16 @@ transaction, or a later rotation, confirms.
 - `account`: the rotating account address
 - `txn_bytes_hex`: one unsigned, ungrouped, TX-prefixed transaction from the
   account, with no `rekey_to`, no close-out, the account's genesis hash, and a
-  validity window of at most 100 rounds
+  validity window of at most 100 rounds. It must be canonically encoded:
+  bytes that do not re-encode to themselves are refused, as on sign.
 - optional `request_id`
 
 The signer reads the authorizer, finds its stage `n` (through the stage
 address table, confirmed by derivation), sets `rekey_to` to stage `n + 1`'s
 address derived from the seed, adds the resource dummies the key type's
 profile needs (three for the triple hybrid), sets fees
-and the group ID, and returns the exact unsigned group. It stores nothing.
+and the group ID with the same group builder `/sign` and `/plan` use, and
+returns the exact unsigned group. It stores nothing.
 Preparation needs no approval and reveals nothing secret. An account whose
 live stage the signer has not found yet is refused with
 `rotating_stage_unproven` after a bounded foreground search (30 s); the
@@ -1508,6 +1512,9 @@ Clients simulate exactly these bytes and send them back unchanged.
 - `account`
 - `transactions`: the prepared group
 - optional `request_id`, cancelable through `/sign/cancel` while live
+- optional `app_call_info`: app-call metadata for the approval prompt, as on
+  `/sign`; it is checked against the spend's bytes when rendered and is not
+  signed
 
 The group's `rekey_to` names stage `n + 1`, which fixes `n`; the request
 carries no stage of its own and nothing is carried over from prepare. The
@@ -1577,7 +1584,8 @@ Creating and using rotating accounts:
   at 100 rounds and rebuilds it when it has aged, prepares, verifies that the
   prepared group changed only `rekey_to`, the spend's fee, the group ID and
   canonical dummies and that `target` is `stage + 1`, simulates the unsigned
-  group, and only then signs and submits exactly the returned bytes. A
+  group, and only then signs and submits exactly the returned bytes,
+  forwarding the spend's app-call metadata for the approval prompt. A
   `rotating_stage_changed` or window-timing refusal means nothing was signed,
   and the client rebuilds and prepares again a bounded number of times.
   Simulate-only requests stop before signing, so they reveal no keys.

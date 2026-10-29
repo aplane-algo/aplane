@@ -330,3 +330,21 @@ func TestFreshenRotatingValidityKeepsCurrentWindows(t *testing.T) {
 		t.Fatalf("window too far ahead: aged=%v err=%v", aged, err)
 	}
 }
+
+// TestRotatingSignRequestCarriesAppCallInfo checks that the sign request
+// sends the prepared group unchanged and forwards the spend's app-call
+// metadata, which the signer renders in the approval prompt.
+func TestRotatingSignRequestCarriesAppCallInfo(t *testing.T) {
+	prep := &signerapi.RotatingPrepareResponse{Transactions: []string{"5458aa", "5458bb"}}
+	info := &signerapi.AppCallInfo{Mode: "abi", Method: "withdraw(uint64)void"}
+	req := rotatingSignRequest("ACCOUNT", prep, SubmitOptions{AppCallInfo: []*signerapi.AppCallInfo{info}})
+	if req.Account != "ACCOUNT" || len(req.Transactions) != 2 || req.Transactions[0] != "5458aa" || req.Transactions[1] != "5458bb" {
+		t.Fatalf("sign request does not carry the prepared group unchanged: %+v", req)
+	}
+	if req.AppCallInfo != info {
+		t.Fatalf("app-call info = %+v, want the spend's", req.AppCallInfo)
+	}
+	if got := rotatingSignRequest("ACCOUNT", prep, SubmitOptions{}).AppCallInfo; got != nil {
+		t.Fatalf("app-call info without options = %+v, want none", got)
+	}
+}

@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/appspec"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/policy"
@@ -363,6 +364,76 @@ func TestRotatingAuditFailureStillSigns(t *testing.T) {
 	}
 	if rec, ok := f.svc.Rotating.Releases.Get(f.account.String()); !ok || rec.TxID != resp.TxID {
 		t.Fatal("memory not updated when the audit write failed")
+	}
+}
+
+// TestRotatingPrepareRequiresCanonicalEncoding checks that prepare decodes
+// the spend as strictly as sign decodes the prepared group: bytes that do not
+// re-encode to themselves are refused, not normalized into the returned
+// group, even where the lenient decoder would accept them.
+func TestRotatingPrepareRequiresCanonicalEncoding(t *testing.T) {
+	f, _ := newSigningFixture(t)
+	good := txnutil.EncodeWithPrefixHex(f.spend(1000, 1100))
+	trailing := good + "c0"
+	if _, err := txnutil.DecodePrefixedHex(trailing); err != nil {
+		t.Fatalf("the lenient decoder no longer accepts trailing data (%v); pick another non-canonical case", err)
+	}
+	for name, tc := range map[string]struct{ txnHex, want string }{
+		"trailing data": {trailing, "not canonical"},
+		"no TX prefix":  {good[4:], "missing TX prefix"},
+		"not hex":       {"zz" + good, "invalid transaction hex"},
+	} {
+		_, err := f.svc.PrepareRotatingWithContext(context.Background(), signerapi.RotatingPrepareRequest{
+			Account: f.account.String(), TxnBytesHex: tc.txnHex,
+		}, f.session)
+		if err == nil || err.Kind != ErrorBadRequest || !strings.Contains(err.Message, tc.want) {
+			t.Errorf("%s: err = %v, want a bad request naming %q", name, err, tc.want)
+		}
+	}
+	if _, err := f.svc.PrepareRotatingWithContext(context.Background(), signerapi.RotatingPrepareRequest{
+		Account: f.account.String(), TxnBytesHex: good,
+	}, f.session); err != nil {
+		t.Fatalf("canonical spend refused: %v", err)
+	}
+}
+
+// TestRotatingSignShowsTheSpendsAppCallInfo checks that app-call metadata on
+// the sign request reaches the operator prompt for the spend, as it does on
+// /sign, and that the prompt names no method without it.
+func TestRotatingSignShowsTheSpendsAppCallInfo(t *testing.T) {
+	const method = "withdraw(uint64)void"
+	selector, err := appspec.SignatureSelector(method)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, withInfo := range []bool{true, false} {
+		f, _ := newSigningFixture(t)
+		off := false
+		var description string
+		f.svc.Approval = &ApprovalService{
+			UserAutoApprove: &off,
+			HasClient:       func() bool { return true },
+			RequestSigningApproval: func(_, _, _, desc string, _, _ uint64, _ []signerapproval.Violation, _ time.Duration) (bool, error) {
+				description = desc
+				return true, nil
+			},
+		}
+		call := f.spend(f.chain.round, f.chain.round+100)
+		call.Type = types.ApplicationCallTx
+		call.PaymentTxnFields = types.PaymentTxnFields{}
+		call.ApplicationID = 77
+		call.ApplicationArgs = [][]byte{selector}
+		prep := mustPrepare(t, f, call)
+		req := signerapi.RotatingSignRequest{Account: f.account.String(), Transactions: prep.Transactions}
+		if withInfo {
+			req.AppCallInfo = &signerapi.AppCallInfo{Mode: "abi", Method: method}
+		}
+		if _, err := f.svc.SignRotatingWithContext(context.Background(), req, f.session); err != nil {
+			t.Fatalf("sign (app-call info %v): %v", withInfo, err)
+		}
+		if named := strings.Contains(description, "Method: "+method); named != withInfo {
+			t.Fatalf("app-call info %v: prompt names the method = %v\n%s", withInfo, named, description)
+		}
 	}
 }
 
@@ -722,7 +793,7 @@ func TestForgedSuccessorInTableNeverReachesTheChain(t *testing.T) {
 	f.forgeSuccessor(t, 1, foreign)
 	spend, _ := txnutil.DecodePrefixedHex(prep.Transactions[0])
 	spend.RekeyTo = foreign
-	plan, svcErr := buildRotatingGroup(nil, spend, mustProfile(t))
+	plan, svcErr := (&Planner{}).buildRotatingGroup(f.account.String(), spend, mustProfile(t))
 	if svcErr != nil {
 		t.Fatal(svcErr)
 	}

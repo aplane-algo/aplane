@@ -23,7 +23,9 @@ type approvalBinding struct {
 
 // approvalDigest hashes everything an approval decision covers: each
 // transaction of the final group, the bytes of every passthrough slot, which
-// slots are foreign, and the key that signs each request.
+// slots are foreign, the key that signs each request and the LogicSig
+// arguments it signs with, and, for a rotating spend, the stages it hands
+// the account between and the target stage's address.
 func approvalDigest(req signerapi.GroupSignRequest, plan *PlanResult) [32]byte {
 	h := sha256.New()
 	writeField := func(b []byte) {
@@ -52,8 +54,37 @@ func approvalDigest(req signerapi.GroupSignRequest, plan *PlanResult) [32]byte {
 		requests[i] = i
 	}
 	writeIndexed("auth", requests, func(i int) []byte { return []byte(req.Requests[i].AuthAddress) })
+	writeIndexed("lsig_args", requests, func(i int) []byte { return encodeLsigArgs(req.Requests[i].LsigArgs) })
+	writeField([]byte("rotating"))
+	if r := plan.Rotating; r != nil {
+		writeField([]byte{1})
+		writeField(binary.BigEndian.AppendUint64(nil, r.Stage))
+		writeField(binary.BigEndian.AppendUint64(nil, r.Target))
+		writeField(r.TargetAddress[:])
+	} else {
+		writeField([]byte{0})
+	}
 	var out [32]byte
 	copy(out[:], h.Sum(nil))
+	return out
+}
+
+// encodeLsigArgs encodes a request's LogicSig arguments canonically: sorted
+// by name, each name and value length-prefixed, so the digest does not
+// depend on map iteration order. No arguments and an empty map are the same.
+func encodeLsigArgs(args map[string]string) []byte {
+	names := make([]string, 0, len(args))
+	for name := range args {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	out := binary.BigEndian.AppendUint64(nil, uint64(len(names)))
+	for _, name := range names {
+		out = binary.BigEndian.AppendUint64(out, uint64(len(name)))
+		out = append(out, name...)
+		out = binary.BigEndian.AppendUint64(out, uint64(len(args[name])))
+		out = append(out, args[name]...)
+	}
 	return out
 }
 
