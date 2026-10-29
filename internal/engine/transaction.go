@@ -96,10 +96,10 @@ func (e *Engine) signAndSubmitGroup(txns []types.Transaction, opts clientsign.Su
 	}
 	// Rotating accounts route on the sender's own signing flow: their
 	// effective signer is a stage address the signer never lists.
-	if rotating, err := e.rotatingSender(txns, opts); err != nil {
+	if rotating, err := e.rotatingSlot(txns, opts); err != nil {
 		return nil, nil, err
-	} else if rotating {
-		return e.Connection.SignAndSubmitRotating(txns[0], e.AlgodClient, clientsign.RotatingOptions{SubmitOptions: opts})
+	} else if rotating >= 0 {
+		return e.Connection.SignAndSubmitRotating(txns, rotating, &e.AuthCache, e.AlgodClient, clientsign.RotatingOptions{SubmitOptions: opts})
 	}
 	if gs := e.guardedSigner(); gs.HasGuardedEffectiveSigner(txns) {
 		return gs.SignAndSubmitGroup(txns, opts)

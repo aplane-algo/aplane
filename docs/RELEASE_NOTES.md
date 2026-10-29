@@ -5,6 +5,38 @@ token, setup-file, and protocol-v5 entries describe behavior superseded by the
 enrolled-key model and current admin protocol v6.0; they are not current setup
 instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 
+## Rotating accounts in own-account groups
+
+- A rotating account's transaction can share an atomic group with
+  transactions the same signer signs with ordinary keys, such as a hot
+  account paying a fee leg or a funding payment. The group holds one
+  rotating transaction; other members' signing keys must be held, ordinary,
+  non-bounded keys. Other parties' transactions remain excluded. apshell
+  routes such groups automatically, including `atomicSend`.
+- `/sign/rotating/prepare` and `/sign/rotating/sign` accept a group form,
+  `requests`, in the ordinary slot grammar. On these endpoints an omitted
+  `auth_address` means the sender's own key. The single-transaction forms
+  remain accepted and take the same path.
+- Both responses add `rotations` (index, stage, target, and `rekey_to` or
+  `txid`) and the prepare response adds `owned_indexes`; the scalar `stage`,
+  `target`, `rekey_to` and `txid` fields repeat the single rotation for
+  clients that predate the list.
+- Rotating groups are built by the same planner as `/sign`: resource
+  dummies count every member's pooled budget, and the ordinary fee allocator
+  may raise any member's fee, with every change reported in
+  `mutations.fees_modified`. Every member shares the rotating transaction's
+  validity window.
+- The signer signs owned transactions before the stage signature, so an
+  owned key failure, a policy refusal or a cancellation releases nothing.
+  `rotating_stage_changed` now says no signature was released, since owned
+  transactions may already have been signed in memory and discarded.
+- Both rotating endpoints now require canonical transaction encodings.
+- The approval binding, which refuses to sign anything other than what was
+  approved, now also covers each request's LogicSig arguments and a rotating
+  group's rotation, on every signing path.
+- apshell forwards app-call metadata for the rotating transaction too, so
+  the approval prompt can name its ABI method.
+
 ## Rotating XMSS triple accounts and consensus v43
 
 - In-place upgrade now requires an existing install of v0.44.0 or newer: the

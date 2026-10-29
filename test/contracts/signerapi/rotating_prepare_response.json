@@ -17,5 +17,13 @@
     "original_count": 1,
     "final_count": 2,
     "reason": "lsig_budget"
-  }
+  },
+  "rotations": [
+    {
+      "index": 0,
+      "stage": 0,
+      "target": 1,
+      "rekey_to": "STAGEADDR000000000000000000000000000000000000000000000000"
+    }
+  ]
 }

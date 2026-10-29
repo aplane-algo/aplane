@@ -308,9 +308,10 @@ paths call `validateKnownNetwork` before any gate or chain read
 `ErrStoreRootCommitStateUnknown` edge remains open.
 
 Model-extension candidates: the rotating flow (`/sign/rotating/prepare` and
-`/sign/rotating/sign`: same slot classes and gates, but a prepare-time
-`rekey_to` mutation and post-approval stage-proof, timing, and open-test
-refusals that no model represents); plugin presign-plan's post-sign
+`/sign/rotating/sign`: same gates and the sign slot class, but a prepare-time
+`rekey_to` mutation, owned sign slots signed before the stage signature, and
+post-approval stage-proof, timing, and open-test refusals that no model
+represents); plugin presign-plan's post-sign
 `verifySignedAgainstPlan` check (no conjunct or dummy slot class in
 `plugin_signing.tla`); the approval-binding refusal after Approve in
 `approval_composition.tla` (currently a sound over-approximation); and the

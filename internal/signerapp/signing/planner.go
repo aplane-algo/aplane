@@ -150,35 +150,125 @@ func (p *Planner) PlanGroup(req signerapi.GroupSignRequest) (*PlanResult, *Servi
 		console.Printf("[GROUP] %d foreign transaction(s) will not be signed\n", len(foreignIndices))
 	}
 
-	// Classify bounded requests before budgeting: the admin-key rekey slot must
-	// reserve the contract-admin signature bytes that ordinary spends never
-	// carry. This pass sees pre-pooling fees, so it is sizing input only — the
-	// authoritative classification runs on the finalized group below.
-	sizingBoundedItems, err := resolveBoundedPlanItems(snapshot, req.Requests, txns, passthroughIndices, foreignIndices)
+	final, err := p.finalizeGroup(groupFinalization{
+		Snapshot:              snapshot,
+		Requests:              req.Requests,
+		Txns:                  txns,
+		PassthroughIndices:    passthroughIndices,
+		ForeignIndices:        foreignIndices,
+		PassthroughSignedTxns: passthroughSignedTxns,
+		IsPreGrouped:          isPreGrouped,
+		HasPassthrough:        hasPassthrough,
+	})
 	if err != nil {
 		return nil, err
 	}
 
-	resourcePlan, lsigIndices, err := p.CalculateDummies(snapshot, req.Requests, txns, sizingBoundedItems, passthroughIndices, foreignIndices, passthroughSignedTxns, hasPassthrough, isPreGrouped)
+	authKeyTypes := make([]string, len(req.Requests))
+	for i, txReq := range req.Requests {
+		if passthroughIndices[i] || foreignIndices[i] {
+			continue
+		}
+		authKeyTypes[i] = snapshot.KeyTypes[txReq.AuthAddress]
+	}
+	knownAddresses := knownAddressesFromSnapshot(snapshot)
+
+	return &PlanResult{
+		AllTxns:               final.AllTxns,
+		DummyTxns:             final.DummyTxns,
+		PassthroughIndices:    passthroughIndices,
+		PassthroughSignedTxns: passthroughSignedTxns,
+		ForeignIndices:        foreignIndices,
+		HasForeign:            hasForeign,
+		LsigIndices:           final.LsigIndices,
+		DummiesNeeded:         final.DummiesNeeded,
+		LogicSigResourcePlan:  final.ResourcePlan,
+		FeeInfo:               final.FeeInfo,
+		NeedsRegroup:          final.NeedsRegroup,
+		IsPreGrouped:          isPreGrouped,
+		HasPassthrough:        hasPassthrough,
+		AuthKeyTypes:          authKeyTypes,
+		KnownAddresses:        knownAddresses,
+		BoundedItems:          final.BoundedItems,
+	}, nil
+}
+
+// groupFinalization is the input every path that builds a canonical group
+// from decoded user slots shares: ordinary /sign and /plan, and the rotating
+// flow. Requests are the user slots; Txns are their decoded transactions,
+// which finalizeGroup copies and never mutates.
+type groupFinalization struct {
+	Snapshot              PlannerRuntimeSnapshot
+	Requests              []signerapi.SignRequest
+	Txns                  []types.Transaction
+	PassthroughIndices    map[int]bool
+	ForeignIndices        map[int]bool
+	PassthroughSignedTxns map[int][]byte
+	IsPreGrouped          bool
+	HasPassthrough        bool
+}
+
+// finalizedGroup is the canonical group: the user slots in request order
+// with fees allocated, followed by the resource dummies, all carrying the
+// final group ID.
+type finalizedGroup struct {
+	AllTxns       []types.Transaction
+	DummyTxns     []types.Transaction
+	ResourcePlan  lsigresource.Plan
+	LsigIndices   []int
+	DummiesNeeded int
+	FeeInfo       DummyFeeInfo
+	NeedsRegroup  bool
+	BoundedItems  []*boundedPlanItem
+}
+
+// finalizeGroup solves resource dummies, appends them, allocates the
+// group's fee requirement and assigns the group ID, with one set of rules
+// for every caller. It is a pure function of its input: given the same user
+// slots it produces the same group byte for byte, which is what lets the
+// rotating flow check a presented group by rebuilding it.
+func (p *Planner) finalizeGroup(in groupFinalization) (*finalizedGroup, *ServiceError) {
+	calculate := p.CalculateDummies
+	if calculate == nil {
+		calculate = func(snapshot PlannerRuntimeSnapshot, requests []signerapi.SignRequest, txns []types.Transaction, boundedItems []*boundedPlanItem, passthroughIndices, foreignIndices map[int]bool, passthroughSignedTxns map[int][]byte, hasPassthrough, isPreGrouped bool) (lsigresource.Plan, []int, *ServiceError) {
+			return calculateLogicSigResources(p.Console, snapshot, requests, txns, boundedItems, passthroughIndices, foreignIndices, passthroughSignedTxns, hasPassthrough, isPreGrouped)
+		}
+	}
+	build := p.BuildFinalGroup
+	if build == nil {
+		build = func(txns []types.Transaction, dummiesNeeded int, _ []int, isPreGrouped bool) ([]types.Transaction, []types.Transaction, DummyFeeInfo, bool, *ServiceError) {
+			return buildFinalGroupWithoutFees(p.Console, txns, dummiesNeeded, isPreGrouped)
+		}
+	}
+
+	// Classify bounded requests before budgeting: the admin-key rekey slot must
+	// reserve the contract-admin signature bytes that ordinary spends never
+	// carry. This pass sees pre-pooling fees, so it is sizing input only — the
+	// authoritative classification runs on the finalized group below.
+	sizingBoundedItems, err := resolveBoundedPlanItems(in.Snapshot, in.Requests, in.Txns, in.PassthroughIndices, in.ForeignIndices)
+	if err != nil {
+		return nil, err
+	}
+
+	resourcePlan, lsigIndices, err := calculate(in.Snapshot, in.Requests, in.Txns, sizingBoundedItems, in.PassthroughIndices, in.ForeignIndices, in.PassthroughSignedTxns, in.HasPassthrough, in.IsPreGrouped)
 	if err != nil {
 		return nil, err
 	}
 	dummiesNeeded := int(resourcePlan.DummyCount)
 
-	allTxns, dummyTxns, feeInfo, needsRegroup, err := p.BuildFinalGroup(txns, dummiesNeeded, lsigIndices, isPreGrouped)
+	allTxns, dummyTxns, _, needsRegroup, err := build(in.Txns, dummiesNeeded, lsigIndices, in.IsPreGrouped)
 	if err != nil {
 		return nil, err
 	}
 
-	budgets, budgetErr := authorizationBudgets(req.Requests, snapshot, sizingBoundedItems, passthroughIndices, foreignIndices, passthroughSignedTxns)
+	budgets, budgetErr := authorizationBudgets(in.Requests, in.Snapshot, sizingBoundedItems, in.PassthroughIndices, in.ForeignIndices, in.PassthroughSignedTxns)
 	if budgetErr != nil {
 		return nil, budgetErr
 	}
-	plannedFees, feeErr := applyGroupFees(allTxns, budgets, resourcePlan, dummiesNeeded, lsigIndices, isPreGrouped || hasPassthrough)
+	feeInfo, feeErr := applyGroupFees(allTxns, budgets, resourcePlan, dummiesNeeded, lsigIndices, in.IsPreGrouped || in.HasPassthrough)
 	if feeErr != nil {
 		return nil, feeErr
 	}
-	feeInfo = plannedFees
 	needsRegroup = needsRegroup || feeInfo.TotalFees > 0
 	if needsRegroup && len(allTxns) > 1 {
 		for i := range allTxns {
@@ -198,37 +288,19 @@ func (p *Planner) PlanGroup(req signerapi.GroupSignRequest) (*PlanResult, *Servi
 	// fees actually signed. Fee pooling cannot change a transaction's shape, so
 	// the sizing pass and this pass always agree on the path. Dummies are
 	// appended after the originals, so request indices are unchanged.
-	boundedItems, err := resolveBoundedPlanItems(snapshot, req.Requests, allTxns, passthroughIndices, foreignIndices)
+	boundedItems, err := resolveBoundedPlanItems(in.Snapshot, in.Requests, allTxns, in.PassthroughIndices, in.ForeignIndices)
 	if err != nil {
 		return nil, err
 	}
-
-	authKeyTypes := make([]string, len(req.Requests))
-	for i, txReq := range req.Requests {
-		if passthroughIndices[i] || foreignIndices[i] {
-			continue
-		}
-		authKeyTypes[i] = snapshot.KeyTypes[txReq.AuthAddress]
-	}
-	knownAddresses := knownAddressesFromSnapshot(snapshot)
-
-	return &PlanResult{
-		AllTxns:               allTxns,
-		DummyTxns:             dummyTxns,
-		PassthroughIndices:    passthroughIndices,
-		PassthroughSignedTxns: passthroughSignedTxns,
-		ForeignIndices:        foreignIndices,
-		HasForeign:            hasForeign,
-		LsigIndices:           lsigIndices,
-		DummiesNeeded:         dummiesNeeded,
-		LogicSigResourcePlan:  resourcePlan,
-		FeeInfo:               feeInfo,
-		NeedsRegroup:          needsRegroup,
-		IsPreGrouped:          isPreGrouped,
-		HasPassthrough:        hasPassthrough,
-		AuthKeyTypes:          authKeyTypes,
-		KnownAddresses:        knownAddresses,
-		BoundedItems:          boundedItems,
+	return &finalizedGroup{
+		AllTxns:       allTxns,
+		DummyTxns:     dummyTxns,
+		ResourcePlan:  resourcePlan,
+		LsigIndices:   lsigIndices,
+		DummiesNeeded: dummiesNeeded,
+		FeeInfo:       feeInfo,
+		NeedsRegroup:  needsRegroup,
+		BoundedItems:  boundedItems,
 	}, nil
 }
 

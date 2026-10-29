@@ -260,7 +260,7 @@ func BuildApprovalDescription(req signerapi.GroupSignRequest, plan *PlanResult, 
 			b.WriteString("\n  Authorization: " + boundedAuthorizationLabel(item))
 			b.WriteString(fmt.Sprintf("\n  Profile maximum fee: %d microAlgos", item.Metadata.MaxFee))
 		}
-		if i == 0 && plan.Rotating != nil {
+		if plan.Rotating != nil && i == plan.Rotating.Index {
 			b.WriteString(plan.Rotating.describe())
 		}
 		b.WriteString("\n")

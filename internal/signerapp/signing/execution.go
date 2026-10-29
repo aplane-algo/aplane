@@ -86,29 +86,11 @@ func (e *Executor) ExecuteGroupSigning(ctx context.Context, plan *PlanResult, re
 			continue
 		}
 
-		txnSender := txns[i].Sender.String()
-		if i < len(plan.AuthKeyTypes) {
-			if msg, ok := cosignerSignRejectMessage(plan.AuthKeyTypes[i]); ok {
-				return nil, badRequest(fmt.Sprintf("transaction %d: %s", i+1, msg))
-			}
-			if err := rejectRotatingKeyType(i, plan.AuthKeyTypes[i]); err != nil {
-				return nil, err
-			}
-		}
-		signedBytes, keyType, signErr := e.signSingleTransaction(
-			allTxns[i], req.Requests[i].AuthAddress, txnSender,
-			req.Requests[i].LsigArgs, planBoundedItem(plan, i), session, ctx,
-		)
+		signedHex, signErr := e.signPlannedSlot(ctx, plan, req, session, i)
 		if signErr != nil {
-			// Forbidden and locked describe the whole request, not one slot,
-			// so they keep their message without a per-transaction prefix.
-			if signErr.Kind == ErrorForbidden || signErr.Kind == ErrorLocked {
-				return nil, signErr
-			}
-			return nil, &ServiceError{Kind: signErr.Kind, Message: fmt.Sprintf("transaction %d: %s", i+1, signErr.Message)}
+			return nil, signErr
 		}
-		signedTxns[i] = hex.EncodeToString(signedBytes)
-		console.Printf("  [%d] signed (%s)\n", i+1, keyType)
+		signedTxns[i] = signedHex
 	}
 
 	if len(plan.DummyTxns) > 0 {
@@ -126,6 +108,61 @@ func (e *Executor) ExecuteGroupSigning(ctx context.Context, plan *PlanResult, re
 	}
 
 	return &ExecuteResult{SignedTxns: signedTxns}, nil
+}
+
+// SignOwnedSlots signs the given sign slots of an approved plan through the
+// ordinary per-slot path and returns their hex-encoded signed transactions,
+// keyed by slot. It is the ordinary half of a rotating group: the caller
+// signs the rotating slot itself, under its own release protocol. Nothing is
+// audited as signed here; a key that fails to load is audited as a failure,
+// exactly as on /sign.
+func (e *Executor) SignOwnedSlots(ctx context.Context, plan *PlanResult, req signerapi.GroupSignRequest, session *keystore.KeySession, indices []int) (map[int]string, *ServiceError) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	signed := make(map[int]string, len(indices))
+	for _, i := range indices {
+		if i < 0 || i >= len(req.Requests) || plan.PassthroughIndices[i] || plan.ForeignIndices[i] {
+			return nil, internal(fmt.Sprintf("transaction %d is not a sign slot", i+1))
+		}
+		if err := ctx.Err(); err != nil {
+			return nil, canceledSignRequest(err)
+		}
+		signedHex, err := e.signPlannedSlot(ctx, plan, req, session, i)
+		if err != nil {
+			return nil, err
+		}
+		signed[i] = signedHex
+	}
+	return signed, nil
+}
+
+// signPlannedSlot signs request slot i of an approved plan with its
+// requested key, refusing key types the ordinary executor never signs.
+func (e *Executor) signPlannedSlot(ctx context.Context, plan *PlanResult, req signerapi.GroupSignRequest, session *keystore.KeySession, i int) (string, *ServiceError) {
+	txn := plan.AllTxns[i]
+	if i < len(plan.AuthKeyTypes) {
+		if msg, ok := cosignerSignRejectMessage(plan.AuthKeyTypes[i]); ok {
+			return "", badRequest(fmt.Sprintf("transaction %d: %s", i+1, msg))
+		}
+		if err := rejectRotatingKeyType(i, plan.AuthKeyTypes[i]); err != nil {
+			return "", err
+		}
+	}
+	signedBytes, keyType, signErr := e.signSingleTransaction(
+		txn, req.Requests[i].AuthAddress, txn.Sender.String(),
+		req.Requests[i].LsigArgs, planBoundedItem(plan, i), session, ctx,
+	)
+	if signErr != nil {
+		// Forbidden and locked describe the whole request, not one slot,
+		// so they keep their message without a per-transaction prefix.
+		if signErr.Kind == ErrorForbidden || signErr.Kind == ErrorLocked {
+			return "", signErr
+		}
+		return "", &ServiceError{Kind: signErr.Kind, Message: fmt.Sprintf("transaction %d: %s", i+1, signErr.Message)}
+	}
+	consoleOf(e.Console).Printf("  [%d] signed (%s)\n", i+1, keyType)
+	return hex.EncodeToString(signedBytes), nil
 }
 
 func (e *Executor) signSingleTransaction(txn types.Transaction, authAddr, txnSender string, lsigArgs map[string]string, boundedItem *boundedPlanItem, session *keystore.KeySession, ctx context.Context) (signedBytes []byte, keyType string, err *ServiceError) {

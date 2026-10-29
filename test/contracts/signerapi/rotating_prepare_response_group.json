@@ -1,0 +1,34 @@
+{
+  "account": "ROTATINGADDR000000000000000000000000000000000000000000000",
+  "stage": 4,
+  "target": 5,
+  "rekey_to": "STAGEADDR000000000000000000000000000000000000000000000000",
+  "transactions": [
+    "545801",
+    "545802",
+    "545803",
+    "545804"
+  ],
+  "mutations": {
+    "dummies_added": 2,
+    "group_id_changed": true,
+    "fees_modified": [
+      1
+    ],
+    "total_fees_delta": 3000,
+    "original_count": 2,
+    "final_count": 4,
+    "reason": "lsig_budget"
+  },
+  "rotations": [
+    {
+      "index": 1,
+      "stage": 4,
+      "target": 5,
+      "rekey_to": "STAGEADDR000000000000000000000000000000000000000000000000"
+    }
+  ],
+  "owned_indexes": [
+    0
+  ]
+}

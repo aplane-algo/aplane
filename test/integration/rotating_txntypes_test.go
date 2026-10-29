@@ -207,6 +207,39 @@ func runRotatingTransactionTypes(t *testing.T, keyType string) {
 		}
 	})
 
+	// A rotating spend grouped with a transaction the same signer signs with
+	// an ordinary key, sent from apshell's atomic-group API: the engine
+	// routes the group to the rotating flow, the client sends the group
+	// form, and the signer signs both.
+	t.Run("OwnedGroup", func(t *testing.T) {
+		hot, err := apadmin.GenerateKeyWithType("ed25519")
+		if err != nil {
+			t.Fatalf("generate the hot account: %v", err)
+		}
+		if !waitForKey(t, signerd.GetURL(), hot, 10*time.Second) {
+			t.Fatalf("signer did not list %s", hot)
+		}
+		if err := funder.FundMicroAlgosAndWait(hot, 500_000); err != nil {
+			t.Fatalf("fund the hot account: %v", err)
+		}
+		before := authorizer(t, testnet, account)
+		hotBefore := accountBalance(t, testnet, hot)
+		out := runApshellScript(t, apshell, fmt.Sprintf(
+			"js const r = atomicSend([{from: '%s', to: '%s', amount: 2000}, {from: '%s', to: '%s', amount: 1000}], {wait: true}); print('group-confirmed=' + r.confirmed + ' txids=' + r.txids.length);",
+			hot, funder.GetAddress(), account, funder.GetAddress()))
+		if !strings.Contains(out, "group-confirmed=true") {
+			t.Fatalf("owned group not confirmed:\n%s", out)
+		}
+		after := authorizer(t, testnet, account)
+		if after == "" || after == before || seen[after] {
+			t.Fatalf("authorizer %q is not a fresh stage address (was %q)\n%s", after, before, out)
+		}
+		seen[after] = true
+		if spent := hotBefore - accountBalance(t, testnet, hot); spent < 2000 {
+			t.Fatalf("hot account spent %d, want at least its 2000 payment", spent)
+		}
+	})
+
 	t.Run("KeyReg", func(t *testing.T) {
 		// Random participation keys: the account goes online without a
 		// participation node, which is harmless for a test account.
@@ -336,4 +369,13 @@ return
 
 func TestRotatingSlhdsaTransactionTypes(t *testing.T) {
 	runRotatingTransactionTypes(t, rotatingkey.RotatingTripleSlhdsaV1)
+}
+
+func accountBalance(t *testing.T, testnet *harness.TestnetConfig, account string) uint64 {
+	t.Helper()
+	info, err := testnet.Client.AccountInformation(account).Do(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return info.Amount
 }

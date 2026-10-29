@@ -49,12 +49,23 @@ versioned component message and LogicSig change.
 
 ## Rotating Accounts
 
-Rotating accounts (`rotating1` signing flow) cannot join a mixed group. A
-rotating account's transaction must be sent alone and ungrouped: the signer's
-`/sign/rotating/prepare` builds its group, including resource dummies, fees,
-and the rekey to the next stage. Ordinary `/sign` rejects rotating key types
-with `rotating_signing_required`. See [ARCH_SIGNING.md](ARCH_SIGNING.md) for
-the rotating flow, and
+Rotating accounts (`rotating1` signing flow) can join a group whose other
+members this signer signs with ordinary keys, and only such a group. The
+group holds exactly one transaction from the rotating account; every other
+member's effective signing key, its `auth_address` or else its sender, must
+be a key this signer holds that is not rotating, witness, guarded or
+bounded. Passthrough and foreign members are not accepted, so a rotating
+account cannot join a multi-party group. Such a group goes through
+`/sign/rotating/prepare` and `/sign/rotating/sign`, not `/sign`: the signer
+sets the rekey to the next stage and builds the group with the same planner
+`/sign` uses, so resource dummies count every member's pooled budget and fees
+follow the ordinary allocation. That allocation may raise any member's fee,
+the rotating spend's or an owned member's, to cover the group's dummies and
+surcharges; policy judges each account's final fee and the client checks
+every change before anything is signed. Every member shares the rotating
+transaction's validity window, which is at most 100 rounds. Ordinary `/sign`
+still rejects rotating key types with `rotating_signing_required`. See
+[ARCH_SIGNING.md](ARCH_SIGNING.md) for the rotating flow, and
 [KEYTYPE_ROTATING_TRIPLE_HYBRID.md](KEYTYPE_ROTATING_TRIPLE_HYBRID.md#101-group-boundary)
 for why the boundary is drawn there and the alternatives that were deferred.
 

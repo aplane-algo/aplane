@@ -6,6 +6,7 @@ package signing
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
@@ -98,10 +99,26 @@ type rotatingKeyStore struct {
 	keyType string
 	seed    []byte
 	loads   int
+	// ordinary holds the private keys of the fixture's held, non-rotating
+	// accounts; fail makes loading the named address fail.
+	ordinary map[string]ed25519.PrivateKey
+	generic  map[string]*coresigning.KeyMaterial
+	fail     map[string]error
 }
 
-func (s *rotatingKeyStore) Get(context.Context, string) (*coresigning.KeyMaterial, error) {
+func (s *rotatingKeyStore) Get(_ context.Context, address string) (*coresigning.KeyMaterial, error) {
 	s.loads++
+	if err := s.fail[address]; err != nil {
+		return nil, err
+	}
+	if km, ok := s.generic[address]; ok {
+		clone := *km
+		clone.Bytecode = bytes.Clone(km.Bytecode)
+		return &clone, nil
+	}
+	if priv, ok := s.ordinary[address]; ok {
+		return &coresigning.KeyMaterial{Type: heldKeyFamily, Category: keys.CategoryEd25519, Value: []byte(bytes.Clone(priv))}, nil
+	}
 	return &coresigning.KeyMaterial{
 		Type:     s.keyType,
 		Category: keys.CategoryRotatingLsig,

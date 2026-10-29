@@ -1,0 +1,22 @@
+{
+  "request_id": "rotating-prepare-group-1",
+  "account": "ROTATINGADDR000000000000000000000000000000000000000000000",
+  "requests": [
+    {
+      "auth_address": "HOTAUTHADDR00000000000000000000000000000000000000000000",
+      "txn_sender": "HOTADDR0000000000000000000000000000000000000000000000000",
+      "txn_bytes_hex": "545801",
+      "lsig_args": {
+        "preimage": "736563726574"
+      },
+      "app_call_info": {
+        "mode": "abi",
+        "method": "deposit(pay)void"
+      }
+    },
+    {
+      "txn_sender": "ROTATINGADDR000000000000000000000000000000000000000000000",
+      "txn_bytes_hex": "545802"
+    }
+  ]
+}

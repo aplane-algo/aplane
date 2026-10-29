@@ -1849,9 +1849,10 @@ ordinary signing policy, approval, and audit behavior.
 - Bounded administration: `POST /sign/bounded-admin` prepares external
   contract-admin partials outside the ordinary send path.
 - Rotating (`rotating1` flow): `POST /sign/rotating/prepare` builds the exact
-  stage-rotation group and `POST /sign/rotating/sign` signs only that prepared
-  group; ordinary signing endpoints refuse rotating accounts with
-  `rotating_signing_required`.
+  stage-rotation group, optionally with transactions the signer signs with
+  ordinary keys, through the same planner as `/sign`, and
+  `POST /sign/rotating/sign` signs only that prepared group; ordinary signing
+  endpoints refuse rotating accounts with `rotating_signing_required`.
 
 See [ARCH_SIGNING.md](ARCH_SIGNING.md) for the full REST inventory and wire
 contracts, [ARCH_GUARDED.md](ARCH_GUARDED.md) for guarded choreography, and

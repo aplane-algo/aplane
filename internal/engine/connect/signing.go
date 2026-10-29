@@ -25,10 +25,14 @@ func (s *ConnectionState) SignAndSubmitGroup(
 	return clientsign.SignAndSubmitViaGroup(txns, authCache, client, algodClient, opts)
 }
 
-// SignAndSubmitRotating runs the rotating1 flow for one transaction from a
-// rotating account using the active signer connection.
+// SignAndSubmitRotating runs the rotating1 flow for a group holding one
+// transaction from a rotating account, txns[rotating], using the active
+// signer connection. The other transactions are signed by the effective
+// signers authCache resolves.
 func (s *ConnectionState) SignAndSubmitRotating(
-	txn types.Transaction,
+	txns []types.Transaction,
+	rotating int,
+	authCache *cache.AuthAddressCache,
 	algodClient *algod.Client,
 	opts clientsign.RotatingOptions,
 ) ([]string, []types.Transaction, error) {
@@ -36,5 +40,5 @@ func (s *ConnectionState) SignAndSubmitRotating(
 	if err != nil {
 		return nil, nil, err
 	}
-	return clientsign.SignAndSubmitRotating(txn, client, algodClient, opts)
+	return clientsign.SignAndSubmitRotating(txns, rotating, authCache, client, algodClient, opts)
 }

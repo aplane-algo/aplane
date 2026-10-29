@@ -35,8 +35,11 @@ Rotating account keys are refused on ordinary `/sign`, `/plan`, and the
 component paths as well (`signing/rotating_gate.go::rejectRotatingKeyType`) and
 sign only through `/sign/rotating/prepare` and `/sign/rotating/sign`
 (`signing/rotating_flow.go::PrepareRotatingWithContext`,
-`SignRotatingWithContext`). That flow reuses the ordinary approval gates; no
-formal model covers it yet (2026-10-16 drift review).
+`SignRotatingWithContext`). That flow reuses the ordinary approval gates, and
+since 2026-10-28 the ordinary group builder (`Planner.finalizeGroup`) and the
+ordinary per-slot executor (`Executor.SignOwnedSlots`) for transactions it
+signs with ordinary keys alongside the rotation; no formal model covers it
+yet (2026-10-16 drift review).
 
 It does not model:
 

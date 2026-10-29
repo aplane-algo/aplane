@@ -164,6 +164,10 @@ func TestSignerAPIContractFixturesRoundTrip(t *testing.T) {
 		{"rotating_prepare_response.json", assertContractRoundTrip[RotatingPrepareResponse]},
 		{"rotating_sign_request.json", assertContractRoundTrip[RotatingSignRequest]},
 		{"rotating_sign_response.json", assertContractRoundTrip[RotatingSignResponse]},
+		{"rotating_prepare_request_group.json", assertContractRoundTrip[RotatingPrepareRequest]},
+		{"rotating_prepare_response_group.json", assertContractRoundTrip[RotatingPrepareResponse]},
+		{"rotating_sign_request_group.json", assertContractRoundTrip[RotatingSignRequest]},
+		{"rotating_sign_response_group.json", assertContractRoundTrip[RotatingSignResponse]},
 		{"keytypes_response_full.json", assertContractRoundTrip[KeyTypesResponse]},
 		{"keytypes_response_bounded.json", assertContractRoundTrip[KeyTypesResponse]},
 		{"admin_generate_request_generic.json", assertContractRoundTrip[AdminGenerateRequest]},
@@ -200,17 +204,39 @@ func TestSignerAPIRotatingRequestFixturesValidate(t *testing.T) {
 	if err := sign.Validate(); err != nil {
 		t.Fatalf("rotating_sign_request.json: Validate() = %v", err)
 	}
+	var prepareGroup RotatingPrepareRequest
+	readContractMetadata(t, "rotating_prepare_request_group.json", &prepareGroup)
+	if err := prepareGroup.Validate(); err != nil {
+		t.Fatalf("rotating_prepare_request_group.json: Validate() = %v", err)
+	}
+	var signGroup RotatingSignRequest
+	readContractMetadata(t, "rotating_sign_request_group.json", &signGroup)
+	if err := signGroup.Validate(); err != nil {
+		t.Fatalf("rotating_sign_request_group.json: Validate() = %v", err)
+	}
 	var recover RotatingRecoverRequest
 	readContractMetadata(t, "rotating_recover_request.json", &recover)
 	if err := recover.Validate(); err != nil {
 		t.Fatalf("rotating_recover_request.json: Validate() = %v", err)
 	}
 	for name, r := range map[string]RotatingPrepareRequest{
-		"no account": {TxnBytesHex: "00"},
-		"no txn":     {Account: "A"},
+		"no account":     {TxnBytesHex: "00"},
+		"no txn":         {Account: "A"},
+		"both forms":     {Account: "A", TxnBytesHex: "00", Requests: []SignRequest{{TxnBytesHex: "00"}}},
+		"empty requests": {Account: "A", Requests: []SignRequest{}},
+		"too many slots": {Account: "A", Requests: make([]SignRequest, MaxRotatingUserSlots+1)},
 	} {
 		if r.Validate() == nil {
 			t.Errorf("%s: accepted", name)
+		}
+	}
+	for name, r := range map[string]RotatingSignRequest{
+		"no account": {Transactions: []string{"00"}},
+		"no group":   {Account: "A"},
+		"both forms": {Account: "A", Transactions: []string{"00"}, Requests: []SignRequest{{TxnBytesHex: "00"}}},
+	} {
+		if r.Validate() == nil {
+			t.Errorf("sign %s: accepted", name)
 		}
 	}
 	if (RotatingSignRequest{Account: "A"}).Validate() == nil {

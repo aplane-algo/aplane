@@ -865,7 +865,9 @@ This ensures operators approve exactly what will be signed, and policy rules eva
 
 The signer also enforces it. Before the approval gates run, it hashes what they
 judge: every transaction of the final group, the bytes of each passthrough
-slot, which slots are foreign, and the key that signs each request (for
+slot, which slots are foreign, the key that signs each request and the
+LogicSig arguments it signs with, and for a rotating group the rotating
+slot's position and the stages it hands the account between (for
 `/sign/component`, the frozen group bytes, the component key, and each
 target's transaction ID and message). Immediately before signing, each signing
 path recomputes the hash and refuses with an internal error on any difference,
@@ -1180,7 +1182,7 @@ The stable wire-contract `code` values that SDK clients branch on are defined in
 | `bounded_admin_target_rejected` | admin-key bounded rekey whose target is not a nonrotating signing credential this signer holds; refused before policy and re-verified at release | `400` |
 | `rotating_signing_required` | rotating account sent to `/plan`, `/sign`, `/sign/bounded-admin` or `/sign/component` | `400` |
 | `rotating_stage_unproven` | the signer has not yet found the rotating account's live stage; its background scan continues and a retry usually succeeds | `409` |
-| `rotating_stage_changed` | the account's authorizer moved between prepare and sign; nothing was signed, rebuild and prepare again | `409` |
+| `rotating_stage_changed` | the account's authorizer moved between prepare and sign; no signature was released, rebuild and prepare again | `409` |
 
 An empty `code` means the server predates code support or the failure had no
 specific classification. New codes may be added; existing values must not change
@@ -1476,63 +1478,128 @@ stage `n + 1`. So every landed rotation installs a stage that has never
 signed, and the keys a signature reveals control the account only until that
 transaction, or a later rotation, confirms.
 
-`/sign/rotating/prepare` request (`signerapi.RotatingPrepareRequest`):
+`/sign/rotating/prepare` request (`signerapi.RotatingPrepareRequest`), in
+one of two forms:
 
 - `account`: the rotating account address
-- `txn_bytes_hex`: one unsigned, ungrouped, TX-prefixed transaction from the
-  account, with no `rekey_to`, no close-out, the account's genesis hash, and a
-  validity window of at most 100 rounds
+- `txn_bytes_hex`, the single-transaction form: one unsigned, ungrouped,
+  TX-prefixed transaction from the account, with no `rekey_to`, no close-out,
+  the account's genesis hash, and a validity window of at most 100 rounds
+- `requests`, the group form: up to 16 slots in the ordinary `/sign` grammar
+  (`txn_bytes_hex`, optional `auth_address`, `lsig_args`, `app_call_info`).
+  Exactly one slot's sender is the rotating account; it carries no
+  `auth_address` and no `lsig_args` and meets the single-transaction rules.
+  Every other slot is an owned slot: a transaction this signer signs with an
+  ordinary key. Its effective signing key, the `auth_address` or, when that
+  is omitted, the sender (unlike `/sign`, where an omitted `auth_address`
+  makes a slot foreign), must be held and must not be a rotating, witness,
+  guarded or bounded-authorization key. No slot is passthrough or foreign:
+  `signed_txn_hex`, `lsig_resources` and `pq_scheme` are refused. Every slot
+  is ungrouped, sets no `rekey_to`, targets the account's network and has
+  exactly the rotating slot's validity rounds; the signer never rewrites a
+  window.
 - optional `request_id`
 
-The signer reads the authorizer, finds its stage `n` (through the stage
-address table, confirmed by derivation), sets `rekey_to` to stage `n + 1`'s
-address derived from the seed, adds the resource dummies the key type's
-profile needs (three for the triple hybrid), sets fees
-and the group ID, and returns the exact unsigned group. It stores nothing.
-Preparation needs no approval and reveals nothing secret. An account whose
-live stage the signer has not found yet is refused with
-`rotating_stage_unproven` after a bounded foreground search (30 s); the
-background scan continues and a retry succeeds once it has caught up.
+Exactly one of the two forms is set; the single-transaction form is the
+group form with one slot and takes the same path. The signer reads the
+authorizer, finds its stage `n` (through the stage address table, confirmed
+by derivation), sets the rotating slot's `rekey_to` to stage `n + 1`'s
+address derived from the seed, and builds the canonical group with the
+planner `/sign` uses: the resource solver counts every slot's pooled budget
+and every LogicSig slot's demand, so an owned slot can lower the dummy
+count, and the ordinary fee allocator assigns the group's requirement with
+every LogicSig slot, the rotating one included, as a target in its usual
+priority order. Fees can therefore be cross-subsidized in either direction;
+policy judges each account's final fee. The user slots come first, in
+request order, followed by the dummies. It stores nothing. Preparation
+needs no approval and reveals nothing secret. An account whose live stage
+the signer has not found yet is refused with `rotating_stage_unproven` after
+a bounded foreground search (30 s); the background scan continues and a
+retry succeeds once it has caught up.
 
 `/sign/rotating/prepare` response (`signerapi.RotatingPrepareResponse`):
 
-- `account`, `rekey_to`
-- `stage`: the live stage, which will sign; `target`: always `stage + 1`
+- `account`
+- `rotations`: one entry per rotating slot, one today: `index`, its position
+  in the group; `stage`, the live stage, which will sign; `target`, always
+  `stage + 1`; `rekey_to`, the target stage's address
+- `owned_indexes`: the positions the signer signs with ordinary keys,
+  ascending; every other position below the user slot count is a rotation,
+  every position at or above it a dummy
 - `transactions`: the final unsigned group, TX-prefixed hex
-- `mutations`: the ordinary mutation report (dummies, fees, group ID)
+- `mutations`: the ordinary mutation report (dummies, fee changes, group ID)
+- `stage`, `target`, `rekey_to`: the single rotation's fields, repeated for
+  clients that predate the list; they will be removed once every first-party
+  consumer reads `rotations`
 
-Clients simulate exactly these bytes and send them back unchanged.
+Clients validate and simulate exactly these bytes and send the user slots
+back unchanged.
 
-`/sign/rotating/sign` request (`signerapi.RotatingSignRequest`):
+`/sign/rotating/sign` request (`signerapi.RotatingSignRequest`), in one of
+two forms:
 
 - `account`
-- `transactions`: the prepared group
+- `transactions`, the single-transaction form: the complete prepared group,
+  dummies included. It is validated as a complete canonical group, exactly
+  as before the group form existed, before it is normalized to one slot.
+- `requests`, the group form: the prepared user slots in group order, each
+  `txn_bytes_hex` the prepared bytes, with the same `auth_address` and
+  `lsig_args` sent to prepare. The dummies are not resent: the group ID every
+  user slot carries commits to the complete group, and the signer rebuilds
+  the dummies. The authorization context has to travel with the sign request
+  because the group ID binds transactions, not keys or LogicSig arguments.
 - optional `request_id`, cancelable through `/sign/cancel` while live
 
-The group's `rekey_to` names stage `n + 1`, which fixes `n`; the request
-carries no stage of its own and nothing is carried over from prepare. The
-signer finds `n + 1` in the table, re-derives stage `n + 1` from the seed
-and refuses unless it matches `rekey_to`, and rebuilds the group from the
-presented spend: the result must be byte-identical to what was presented,
-so the group can only be that spend plus the rotation's own `rekey_to`,
-fee, group ID and canonical dummies. The signer keeps nothing from prepare,
-so it does not and cannot check that the presented spend is the one the
-client prepared: a client may change the spend between the two calls, and
-what the signer binds is the presented transaction, which is what policy
+The rotating slot's `rekey_to` names stage `n + 1`, which fixes `n`; the
+request carries no stage of its own and nothing is carried over from
+prepare. The signer finds `n + 1` in the table, re-derives stage `n + 1`
+from the seed and refuses unless it matches `rekey_to`; a wrong target is
+refused, never replaced. It then rebuilds the complete group from the
+presented user slots with the shared builder: every user slot must come out
+byte-identical, and the presented group ID must be the complete rebuilt
+group's, dummies included; the single-transaction form's dummies are
+compared byte for byte too. So the group can only be the presented slots
+plus the rotation's own `rekey_to`, the planner's fees and group ID and the
+canonical dummies. The signer keeps nothing from prepare, so it does not and
+cannot check that the presented slots are the ones the client prepared: a
+client may change the spend or an owned slot between the two calls, and
+what the signer binds is the presented group, which is what policy
 evaluates and the operator sees. Preserving the user's intent across
 prepare and sign is the client's job (first-party clients verify the
-prepared group against the transaction they sent, below). It then runs the
-ordinary policy gates and operator approval; the rotation target counts as
-the signer's own address, so `reject_foreign_rekey` does not apply to it. After approval, under the
-account's lock, it reads the chain again and refuses unless the authorizer
-is still stage `n` (`rotating_stage_changed` otherwise: nothing was signed),
-`first_valid` is at most 2 rounds ahead of the round read, and at least 10
-rounds remain before `last_valid`. It proves stage `n + 1` can sign, signs
-the TxID with stage `n`'s keys (Falcon-1024, WOTS and Ed25519; or
-Falcon-1024, an XMSS leaf and Ed25519), verifies every signature, writes a
-`ROTATING_RELEASE` audit entry (account, TxID, stage, `last_valid`, and for
-a leaf family the tree and leaf index) with a durable sync, records the
-release in memory, and responds.
+prepared group against the transactions they sent, below).
+
+It then runs the ordinary policy gates and operator approval once for the
+whole group, with per-key policy on every owned slot; the rotation target
+counts as the signer's own address, so `reject_foreign_rekey` does not apply
+to it, and the approval prompt describes the rotation on its own slot. The
+order after approval is what keeps a failure from recording a release that
+never left:
+
+1. The approval binding is checked for the whole group before any key is
+   used. One execution lease, taken by the approval gate, spans both
+   signing phases.
+2. The owned slots are signed in memory through the ordinary per-slot path
+   (`Executor.SignOwnedSlots`). A key that fails to load or sign ends the
+   request; the ordinary `SIGN_FAILED` audit entry is kept as a diagnostic,
+   and no rotating signature has been made and nothing has been released.
+3. Under the account's lock, the signer reads the chain again and refuses
+   unless the authorizer is still stage `n` (`rotating_stage_changed`
+   otherwise), `first_valid` is at most 2 rounds ahead of the round read, and
+   at least 10 rounds remain before `last_valid`. It proves stage `n + 1` can
+   sign, checks the approval binding again, signs the TxID with stage `n`'s
+   keys (Falcon-1024 with WOTS, an XMSS leaf or SLH-DSA, and Ed25519),
+   verifies every signature, and for a stateless family re-reads the chain
+   after signing. A refusal here wipes the stage signature and records
+   nothing.
+4. It writes a `ROTATING_RELEASE` audit entry (account, TxID, stage,
+   `last_valid`, and for a leaf family the tree and leaf index) with a
+   durable sync, records the release in memory, writes the ordinary approval
+   audit entries for every slot, and responds.
+
+A failure or cancellation before step 3 signs no rotating key and consumes
+no leaf, so a retry has nothing to reconcile. Once step 4 has started, a
+transport failure can still keep the response from the client; the release
+history is kept, conservatively, as it always was.
 
 For a family whose stage holds several one-time leaves
 (`rotatingkey.Profile.LeavesPerStage`), the signer chooses the leaf under
@@ -1554,10 +1621,15 @@ store would change that outcome.
 
 `/sign/rotating/sign` response (`signerapi.RotatingSignResponse`):
 
-- `signed`: the signed group, hex msgpack; the spend carries the stage program
-  as its LogicSig and an `auth_address` for stages above 0
-- `stage`: the stage whose keys the signature revealed; `target`: `stage + 1`
-- `txid`, `group_id`: the identifiers clients use to track the outcome
+- `signed`: the signed group, hex msgpack, aligned with the prepared group
+  and with every position filled; the rotating slot carries the stage
+  program as its LogicSig and an `auth_address` for stages above 0, owned
+  slots carry their ordinary signatures
+- `rotations`: per rotating slot, `index`, `stage` (whose keys the signature
+  revealed), `target` (`stage + 1`) and `txid`
+- `group_id`: the group's identifier
+- `stage`, `target`, `txid`: the single rotation's fields, repeated for
+  clients that predate the list
 
 Creating and using rotating accounts:
 
@@ -1573,14 +1645,23 @@ Creating and using rotating accounts:
   Mnemonic import is refused.
 - First-party clients route on the sender's own `signing_flow: rotating1`,
   not on its on-chain authorizer, which is a stage address the signer never
-  lists. A rotating spend is sent alone; the client caps its validity window
-  at 100 rounds and rebuilds it when it has aged, prepares, verifies that the
-  prepared group changed only `rekey_to`, the spend's fee, the group ID and
-  canonical dummies and that `target` is `stage + 1`, simulates the unsigned
-  group, and only then signs and submits exactly the returned bytes. A
-  `rotating_stage_changed` or window-timing refusal means nothing was signed,
-  and the client rebuilds and prepares again a bounded number of times.
-  Simulate-only requests stop before signing, so they reveal no keys.
+  lists. A group with exactly one rotating sender goes to the rotating flow;
+  every other member is judged on its effective signing authority, the key
+  the auth cache resolves, which must be held and not rotating, witness,
+  guarded or bounded. The client caps the rotating transaction's validity
+  window at 100 rounds, aligns every other member to it, and rebuilds every
+  window together when it has aged. It always sends the group form, then
+  verifies the prepared group: the user slots lead in the order sent; the
+  rotating slot changed only in `rekey_to`, fee and group ID, and each owned
+  slot only in fee and group ID; every fee change is listed in the mutation
+  report; the remaining positions are canonical dummies; `rotations` names
+  the rotating slot, `target` is `stage + 1`, and `owned_indexes` names every
+  other slot. It simulates the unsigned group, and only then signs and
+  submits exactly the returned bytes, checking that the signed group matches
+  the simulated one, dummies included. A `rotating_stage_changed` or
+  window-timing refusal means no signature was released, and the client
+  rebuilds and prepares again a bounded number of times. Simulate-only
+  requests stop before signing, so they reveal no keys.
 
 Stage table worker: while unlocked, a background worker reads every rotating
 account's authorizer from the signer's own node right after unlock and then

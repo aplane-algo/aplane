@@ -136,12 +136,25 @@ carry the selected path's structured hint:
 The coordinator must sign and submit the canonical transactions returned by
 `/plan`, not its original drafts.
 
+## Rotating Groups
+
+A rotating account's group (`/sign/rotating/prepare`, see
+[ARCH_SIGNING.md](ARCH_SIGNING.md)) follows these rules unchanged: it is an
+unsigned, mutable group whose members are all signer-controlled, so resource
+dummies and the fee deficit are planned exactly as above. The rotating spend
+is one of the LogicSig participants, in the usual order, not a special
+payer: a native-PQ member of the group is preferred over it, and any member's
+fee may rise to cover the group's dummies and surcharges. The prepare
+response reports every fee change in `mutations.fees_modified`, and the
+client refuses a prepared group whose fee changes it does not report.
+
 ## Implementation Ownership
 
 - `internal/lsigresource` owns closed consensus profiles and the pure resource
   fixed-point solver.
 - `internal/signerapp/signing/planner_runtime.go` resolves authorization paths
-  and constructs the final group shape.
+  and constructs the final group shape; `Planner.finalizeGroup` in
+  `planner.go` is the one builder `/sign`, `/plan` and the rotating flow call.
 - `internal/signerapp/signing/native_pq_fee.go` computes and applies the unified
   group fee.
 - `internal/signing/dummy_transactions.go` owns deterministic resource-dummy

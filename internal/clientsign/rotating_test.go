@@ -46,21 +46,33 @@ func rotatingOriginal() types.Transaction {
 	}
 }
 
-// preparedFor builds the response an honest signer returns, after mutate
-// changes the group.
+// preparedFor builds the response an honest signer returns for one
+// rotating transaction, after mutate changes the group.
 func preparedFor(t *testing.T, original types.Transaction, rekeyTo types.Address, mutate func([]types.Transaction)) *signerapi.RotatingPrepareResponse {
 	t.Helper()
-	spend := original
-	spend.RekeyTo = rekeyTo
-	spend.Fee = 4000
+	return preparedGroupFor(t, []types.Transaction{original}, 0, rekeyTo, mutate)
+}
+
+// preparedGroupFor builds the response an honest signer returns for a
+// group whose rotating transaction is original[rotating]: the rekey set, the
+// rotating transaction's fee raised and reported, one canonical dummy and
+// the group ID; then mutate changes the group before it is grouped.
+func preparedGroupFor(t *testing.T, original []types.Transaction, rotating int, rekeyTo types.Address, mutate func([]types.Transaction)) *signerapi.RotatingPrepareResponse {
+	t.Helper()
+	txns := append([]types.Transaction(nil), original...)
+	txns[rotating].RekeyTo = rekeyTo
+	raised := types.MicroAlgos(4000)
+	delta := int(raised - txns[rotating].Fee)
+	txns[rotating].Fee = raised
+	first := original[0]
 	dummies, err := signing.CreateDummyTransactions(1, types.SuggestedParams{
-		Fee: original.Fee, FirstRoundValid: original.FirstValid, LastRoundValid: original.LastValid,
-		GenesisID: original.GenesisID, GenesisHash: original.GenesisHash[:], FlatFee: true,
+		Fee: first.Fee, FirstRoundValid: first.FirstValid, LastRoundValid: first.LastValid,
+		GenesisID: first.GenesisID, GenesisHash: first.GenesisHash[:], FlatFee: true,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	txns := append([]types.Transaction{spend}, dummies...)
+	txns = append(txns, dummies...)
 	if mutate != nil {
 		mutate(txns)
 	}
@@ -73,14 +85,26 @@ func preparedFor(t *testing.T, original types.Transaction, rekeyTo types.Address
 		txns[i].Group = gid
 		encoded[i] = hex.EncodeToString(txnutil.EncodeWithPrefix(txns[i]))
 	}
+	owned := []int{}
+	for i := range original {
+		if i != rotating {
+			owned = append(owned, i)
+		}
+	}
 	return &signerapi.RotatingPrepareResponse{
-		Account: original.Sender.String(), Stage: 3, Target: 4, RekeyTo: rekeyTo.String(), Transactions: encoded,
+		Account: original[rotating].Sender.String(), Stage: 3, Target: 4, RekeyTo: rekeyTo.String(), Transactions: encoded,
+		Rotations:    []signerapi.RotationSlot{{Index: rotating, Stage: 3, Target: 4, RekeyTo: rekeyTo.String()}},
+		OwnedIndexes: owned,
+		Mutations: &signerapi.MutationReport{
+			DummiesAdded: 1, GroupIDChanged: true, FeesModified: []int{rotating}, TotalFeesDelta: delta,
+			OriginalCount: len(original), FinalCount: len(original) + 1, Reason: "lsig_budget",
+		},
 	}
 }
 
 func TestValidatePreparedRotatingGroupAcceptsHonestPreparation(t *testing.T) {
 	original := rotatingOriginal()
-	txns, err := ValidatePreparedRotatingGroup(original, preparedFor(t, original, rotatingTarget, nil))
+	txns, err := ValidatePreparedRotatingGroup([]types.Transaction{original}, 0, preparedFor(t, original, rotatingTarget, nil))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,8 +138,29 @@ func TestValidatePreparedRotatingGroupRejectsTampering(t *testing.T) {
 		{name: "reported rekey differs", resp: func() *signerapi.RotatingPrepareResponse {
 			r := preparedFor(t, original, rotatingTarget, nil)
 			r.RekeyTo = types.Address{3}.String()
+			r.Rotations[0].RekeyTo = r.RekeyTo
 			return r
 		}, want: "other than"},
+		{name: "scalar fields disagree with the rotation", resp: func() *signerapi.RotatingPrepareResponse {
+			r := preparedFor(t, original, rotatingTarget, nil)
+			r.RekeyTo = types.Address{3}.String()
+			return r
+		}, want: "do not match"},
+		{name: "fee raise not reported", resp: func() *signerapi.RotatingPrepareResponse {
+			r := preparedFor(t, original, rotatingTarget, nil)
+			r.Mutations.FeesModified = nil
+			return r
+		}, want: "without reporting"},
+		{name: "fee delta misreported", resp: func() *signerapi.RotatingPrepareResponse {
+			r := preparedFor(t, original, rotatingTarget, nil)
+			r.Mutations.TotalFeesDelta++
+			return r
+		}, want: "total_fees_delta"},
+		{name: "no rotation reported", resp: func() *signerapi.RotatingPrepareResponse {
+			r := preparedFor(t, original, rotatingTarget, nil)
+			r.Rotations = nil
+			return r
+		}, want: "reports 0 rotations"},
 		{name: "wrong account", resp: func() *signerapi.RotatingPrepareResponse {
 			r := preparedFor(t, original, rotatingTarget, nil)
 			r.Account = types.Address{4}.String()
@@ -124,12 +169,13 @@ func TestValidatePreparedRotatingGroupRejectsTampering(t *testing.T) {
 		{name: "target not the next stage", resp: func() *signerapi.RotatingPrepareResponse {
 			r := preparedFor(t, original, rotatingTarget, nil)
 			r.Target = r.Stage + 2
+			r.Rotations[0].Target = r.Target
 			return r
 		}, want: "not the stage after"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := ValidatePreparedRotatingGroup(original, tt.resp())
+			_, err := ValidatePreparedRotatingGroup([]types.Transaction{original}, 0, tt.resp())
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("err = %v, want %q", err, tt.want)
 			}
@@ -139,10 +185,11 @@ func TestValidatePreparedRotatingGroupRejectsTampering(t *testing.T) {
 
 func TestValidateSignedRotatingGroupRequiresPreparedBytes(t *testing.T) {
 	original := rotatingOriginal()
-	prepared, err := ValidatePreparedRotatingGroup(original, preparedFor(t, original, rotatingTarget, nil))
+	prepared, err := ValidatePreparedRotatingGroup([]types.Transaction{original}, 0, preparedFor(t, original, rotatingTarget, nil))
 	if err != nil {
 		t.Fatal(err)
 	}
+	oneRotation := []signerapi.RotationSlot{{Index: 0}}
 	signedHex := func(txns []types.Transaction) []string {
 		out := make([]string, len(txns))
 		for i, txn := range txns {
@@ -150,15 +197,15 @@ func TestValidateSignedRotatingGroupRequiresPreparedBytes(t *testing.T) {
 		}
 		return out
 	}
-	if _, err := validateSignedRotatingGroup(prepared, &signerapi.RotatingSignResponse{Signed: signedHex(prepared)}); err != nil {
+	if _, err := validateSignedRotatingGroup(prepared, 0, &signerapi.RotatingSignResponse{Rotations: oneRotation, Signed: signedHex(prepared)}); err != nil {
 		t.Fatal(err)
 	}
 	changed := append([]types.Transaction(nil), prepared...)
 	changed[0].Amount = 99
-	if _, err := validateSignedRotatingGroup(prepared, &signerapi.RotatingSignResponse{Signed: signedHex(changed)}); err == nil {
+	if _, err := validateSignedRotatingGroup(prepared, 0, &signerapi.RotatingSignResponse{Rotations: oneRotation, Signed: signedHex(changed)}); err == nil {
 		t.Fatal("signed bytes that differ from the preparation were accepted")
 	}
-	if _, err := validateSignedRotatingGroup(prepared, &signerapi.RotatingSignResponse{Signed: signedHex(prepared[:1])}); err == nil {
+	if _, err := validateSignedRotatingGroup(prepared, 0, &signerapi.RotatingSignResponse{Rotations: oneRotation, Signed: signedHex(prepared[:1])}); err == nil {
 		t.Fatal("short signed group accepted")
 	}
 	// A response element carrying a second transaction after the prepared
@@ -167,11 +214,17 @@ func TestValidateSignedRotatingGroupRequiresPreparedBytes(t *testing.T) {
 	extra := types.Transaction{Type: types.PaymentTx, Header: types.Header{Sender: rotatingAccount, Fee: 1000, FirstValid: 1000, LastValid: 1100, GenesisHash: types.Digest{9}}, PaymentTxnFields: types.PaymentTxnFields{Receiver: types.Address{8}, Amount: 1_000_000}}
 	trailing := append([]string(nil), honest...)
 	trailing[0] = honest[0] + hex.EncodeToString(msgpack.Encode(types.SignedTxn{Txn: extra}))
-	if _, err := validateSignedRotatingGroup(prepared, &signerapi.RotatingSignResponse{Signed: trailing}); err == nil || !strings.Contains(err.Error(), "canonically encoded") {
+	if _, err := validateSignedRotatingGroup(prepared, 0, &signerapi.RotatingSignResponse{Rotations: oneRotation, Signed: trailing}); err == nil || !strings.Contains(err.Error(), "canonically encoded") {
 		t.Fatalf("trailing transaction accepted: %v", err)
 	}
-	if _, err := validateSignedRotatingGroup(prepared, nil); err == nil {
+	if _, err := validateSignedRotatingGroup(prepared, 0, nil); err == nil {
 		t.Fatal("nil response accepted")
+	}
+	if _, err := validateSignedRotatingGroup(prepared, 0, &signerapi.RotatingSignResponse{Signed: honest, Rotations: []signerapi.RotationSlot{{Index: 1}}}); err == nil {
+		t.Fatal("a rotation reported at the wrong position was accepted")
+	}
+	if _, err := validateSignedRotatingGroup(prepared, 0, &signerapi.RotatingSignResponse{Signed: honest, Rotations: oneRotation, Stage: 7}); err == nil {
+		t.Fatal("scalar fields disagreeing with the rotation were accepted")
 	}
 }
 
@@ -280,7 +333,11 @@ func TestSignAndSubmitRotatingRefreshesAgedWindowAndDefaultsContext(t *testing.T
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			t.Errorf("decode prepare request: %v", err)
 		}
-		group, err := canonical.DecodeGroupHex([]string{req.TxnBytesHex})
+		if req.TxnBytesHex != "" || len(req.Requests) != 1 {
+			t.Errorf("client sent the single-transaction form or %d slots; want the group form with one slot", len(req.Requests))
+			return jsonResponse(r, http.StatusBadRequest, map[string]string{"error": "form"})
+		}
+		group, err := canonical.DecodeGroupHex([]string{req.Requests[0].TxnBytesHex})
 		if err != nil {
 			t.Errorf("decode prepare transaction: %v", err)
 			return jsonResponse(r, http.StatusBadRequest, map[string]string{"error": err.Error()})
@@ -292,7 +349,7 @@ func TestSignAndSubmitRotatingRefreshesAgedWindowAndDefaultsContext(t *testing.T
 	algodClient := fakeAlgod(t, round, &simulated)
 
 	txn := rotatingOriginal() // valid 1000-1100: long expired at round 5000
-	txIDs, prepared, err := SignAndSubmitRotating(txn, signerClient, algodClient, RotatingOptions{SubmitOptions: SubmitOptions{Simulate: true}})
+	txIDs, prepared, err := SignAndSubmitRotating([]types.Transaction{txn}, 0, nil, signerClient, algodClient, RotatingOptions{SubmitOptions: SubmitOptions{Simulate: true}})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -8,6 +8,8 @@ import (
 	"fmt"
 
 	"github.com/aplane-algo/aplane/internal/clientsign"
+	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
+	"github.com/aplane-algo/aplane/internal/rotatingkey"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
@@ -66,24 +68,51 @@ func (e *Engine) RotatingRecover(ctx context.Context, req signerapi.RotatingReco
 	return e.Connection.RotatingRecoverWithContext(ctx, req)
 }
 
-// rotatingSender reports whether txns is a rotating account's spend. A
-// rotating account signs alone: its spend is the only transaction the client
-// may send, because the signer forms the group around it.
-func (e *Engine) rotatingSender(txns []types.Transaction, opts clientsign.SubmitOptions) (bool, error) {
-	found := false
-	for _, txn := range txns {
-		if e.IsRotatingAccount(txn.Sender.String()) {
-			found = true
+// rotatingSlot returns the position of the rotating account's transaction
+// in txns, or -1 when no sender is a rotating account. A rotating spend may
+// be grouped with transactions the signer signs with ordinary keys: every
+// other transaction is judged on its effective signing authority, the key
+// the auth cache resolves for its sender, so a sender rekeyed to a held key
+// needs no credential of its own. That authority must be held, and must not
+// be a rotating, witness, guarded or bounded key, which the rotating flow
+// cannot sign alongside a rotation. The rotating account itself is found by
+// sender: its authorizer is a stage address the signer never lists.
+func (e *Engine) rotatingSlot(txns []types.Transaction, opts clientsign.SubmitOptions) (int, error) {
+	index := -1
+	for i, txn := range txns {
+		if !e.IsRotatingAccount(txn.Sender.String()) {
+			continue
+		}
+		if index >= 0 {
+			return -1, fmt.Errorf("transactions %d and %d are both from rotating accounts; a group holds one rotating spend, multi-stage groups are not supported", index+1, i+1)
+		}
+		index = i
+	}
+	if index < 0 {
+		return -1, nil
+	}
+	if index < len(opts.LsigArgsMap) && len(opts.LsigArgsMap[index]) > 0 {
+		return -1, fmt.Errorf("rotating accounts take no LogicSig arguments")
+	}
+	for i, txn := range txns {
+		if i == index {
+			continue
+		}
+		authority := e.AuthCache.ResolveEffectiveSigner(txn.Sender.String())
+		if !e.signerCacheHasAddress(authority) {
+			return -1, fmt.Errorf("transaction %d: its signing key %s is not held by the signer; a rotating spend can be grouped only with transactions the same signer signs", i+1, authority)
+		}
+		keyType := e.signerCacheKeyType(authority)
+		flow := e.signerCacheSigningFlow(authority)
+		if flow == signerapi.SigningFlowRotating1 || rotatingkey.IsRotatingKeyType(keyType) {
+			return -1, fmt.Errorf("transaction %d: is signed by another rotating account; a group holds one rotating spend", i+1)
+		}
+		if keytypes.IsCosignerKeyType(keyType) || flow == signerapi.SigningFlowCosigner1 {
+			return -1, fmt.Errorf("transaction %d: guarded and witness keys cannot sign alongside a rotating spend", i+1)
+		}
+		if _, bounded := e.signerCacheBoundedMaxFee(authority); bounded {
+			return -1, fmt.Errorf("transaction %d: bounded authorization keys cannot sign alongside a rotating spend", i+1)
 		}
 	}
-	if !found {
-		return false, nil
-	}
-	if len(txns) != 1 {
-		return false, fmt.Errorf("a rotating account's transaction must be sent alone; it cannot be grouped with other transactions")
-	}
-	if len(opts.LsigArgsMap) > 0 && len(opts.LsigArgsMap[0]) > 0 {
-		return false, fmt.Errorf("rotating accounts take no LogicSig arguments")
-	}
-	return true, nil
+	return index, nil
 }

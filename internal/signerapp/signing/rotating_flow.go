@@ -6,6 +6,7 @@ package signing
 import (
 	"bytes"
 	"context"
+	"crypto/sha512"
 	"encoding/base32"
 	"encoding/base64"
 	"encoding/hex"
@@ -13,7 +14,6 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/aplane-algo/aplane/internal/cosigner/canonical"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/rotatingkey"
@@ -37,9 +37,15 @@ import (
 //     >= round + rotatingkey.RotatingMinRemaining, window <= the template's
 //     maximum.
 //  4. Target can sign later: the open test on stage n + 1.
-//  5. Group exact: rebuilding the group from the presented spend reproduces
-//     the presented bytes (dummies, fees, group ID), and the spend's sender,
-//     network and close-out are as required.
+//  5. Group exact: rebuilding the complete group from the presented user
+//     slots, with the shared planner's dummies, fees and group ID,
+//     reproduces their bytes and their group ID; the single-transaction
+//     form's complete presented group is compared in full. The spend's
+//     sender, network and close-out are as required, and every other slot
+//     is a transaction this signer signs with an ordinary key
+//     (normalizeRotatingSlots). The rebuild proves the group is one the
+//     signer would build from these slots, not that the slots are the ones
+//     prepare saw: policy and approval judge what is presented.
 //
 // There is deliberately no limit on releases per stage.
 const (
@@ -53,6 +59,8 @@ const (
 
 // rotatingPlanItem describes a rotating spend for policy and approval.
 type rotatingPlanItem struct {
+	// Index is the rotating slot's position in the group.
+	Index         int
 	Stage         uint64
 	Target        uint64
 	TargetAddress types.Address
@@ -85,7 +93,7 @@ func rotatingStageUnproven(scanned uint64) *ServiceError {
 func rotatingStageChanged(authorizer types.Address) *ServiceError {
 	return &ServiceError{
 		Kind:    ErrorRotatingStageChanged,
-		Message: fmt.Sprintf("the account's authorizer changed to %s before signing; nothing was signed, rebuild the transaction and prepare again", authorizer),
+		Message: fmt.Sprintf("the account's authorizer changed to %s before the rotating signature; no signature was released, rebuild the transaction and prepare again", authorizer),
 	}
 }
 
@@ -103,64 +111,6 @@ func validateRotatingSpend(txn types.Transaction, account types.Address, genesis
 		return badRequest(fmt.Sprintf("validity window must be at most %d rounds", rotatingkey.RotatingMaxValidityWindow))
 	}
 	return nil
-}
-
-// buildRotatingGroup adds the resource dummies, sets fees and computes the
-// group ID for one rotating spend, reusing the ordinary planner's solver and
-// fee rules. It is deterministic in the spend: running it again on a spend
-// it already adjusted reproduces the same group, which is what lets sign
-// check a presented group by rebuilding it.
-func buildRotatingGroup(console Console, txn types.Transaction, profile *lsigresource.Profile) (*PlanResult, *ServiceError) {
-	txn.Group = types.Digest{}
-	consensus, err := lsigresource.CurrentConsensus()
-	if err != nil {
-		return nil, internal(err.Error())
-	}
-	usage, err := profile.UsageForPath(lsigresource.PathDefault)
-	if err != nil {
-		return nil, internal(err.Error())
-	}
-	resourcePlan, err := lsigresource.Solve(consensus, lsigresource.PlanInput{
-		TransactionCount: 1,
-		LogicSigs:        []lsigresource.Usage{usage},
-		Dummy:            lsigresource.Usage{ProgramBytes: uint64(len(coresigning.EmbeddedDummyTealTok)), MaxOpcodeCost: 1},
-	})
-	if err != nil {
-		return nil, badRequest(fmt.Sprintf("rotating spend does not fit the consensus resource limits: %v", err))
-	}
-	dummies := int(resourcePlan.DummyCount)
-	allTxns, dummyTxns, _, _, buildErr := buildFinalGroupWithoutFees(console, []types.Transaction{txn}, dummies, false)
-	if buildErr != nil {
-		return nil, buildErr
-	}
-	lsigIndices := []int{0}
-	feeInfo, feeErr := applyGroupFees(allTxns, []authorizationBudget{{mutable: true}}, resourcePlan, dummies, lsigIndices, false)
-	if feeErr != nil {
-		return nil, feeErr
-	}
-	if len(allTxns) > 1 {
-		for i := range allTxns {
-			allTxns[i].Group = types.Digest{}
-		}
-		gid, gidErr := algocrypto.ComputeGroupID(allTxns)
-		if gidErr != nil {
-			return nil, internal(fmt.Sprintf("failed to compute group ID: %v", gidErr))
-		}
-		for i := range allTxns {
-			allTxns[i].Group = gid
-		}
-	}
-	return &PlanResult{
-		AllTxns:              allTxns,
-		DummyTxns:            dummyTxns,
-		PassthroughIndices:   map[int]bool{},
-		ForeignIndices:       map[int]bool{},
-		LsigIndices:          lsigIndices,
-		DummiesNeeded:        dummies,
-		LogicSigResourcePlan: resourcePlan,
-		FeeInfo:              feeInfo,
-		NeedsRegroup:         len(allTxns) > 1,
-	}, nil
 }
 
 // requestDeriver derives stages without background pacing, honoring the
@@ -252,10 +202,12 @@ func derivedStageAddress(ctx context.Context, deps *RotatingDeps, table *stageta
 	return derived, nil
 }
 
-// PrepareRotatingWithContext prepares one spend from a rotating account: it
-// finds the live stage n on chain, sets RekeyTo to A_{n+1}, adds the resource
-// dummies, sets fees and the group ID, and returns the exact unsigned group.
-// It stores nothing and takes no account lock.
+// PrepareRotatingWithContext prepares a spend from a rotating account, alone
+// or grouped with transactions this signer signs with ordinary keys: it
+// finds the live stage n on chain, sets the rotating slot's RekeyTo to
+// A_{n+1}, and builds the canonical group with the ordinary planner's rules,
+// resource dummies, fee allocation and group ID, returning the exact
+// unsigned group. It stores nothing and takes no account lock.
 func (s *Service) PrepareRotatingWithContext(ctx context.Context, req signerapi.RotatingPrepareRequest, session *keystore.KeySession) (*signerapi.RotatingPrepareResponse, *ServiceError) {
 	if err := req.Validate(); err != nil {
 		return nil, badRequest(err.Error())
@@ -264,27 +216,18 @@ func (s *Service) PrepareRotatingWithContext(ctx context.Context, req signerapi.
 	if depErr != nil {
 		return nil, depErr
 	}
-	txn, decodeErr := txnutil.DecodePrefixedHex(req.TxnBytesHex)
-	if decodeErr != nil {
-		return nil, badRequest(decodeErr.Error())
-	}
-	if txn.Group != (types.Digest{}) {
-		return nil, badRequest("transaction must be ungrouped; the signer forms the group")
-	}
-	if !txn.RekeyTo.IsZero() {
-		return nil, badRequest("transaction must not set rekey_to; the signer sets it")
-	}
-
-	account, genesis, profile, svcErr := s.rotatingAccount(ctx, req.Account, session)
+	account, genesis, _, svcErr := s.rotatingAccount(ctx, req.Account, session)
 	if svcErr != nil {
 		return nil, svcErr
 	}
-	if err := validateRotatingSpend(txn, account, genesis); err != nil {
+	snapshot := s.Planner.Snapshot()
+	slots, err := normalizeRotatingSlots(snapshot, account, genesis, rotatingPrepareRequests(req), rotatingPrepare)
+	if err != nil {
 		return nil, err
 	}
 	// The key's bound genesis is not enough: the network must also be one
 	// this node is configured for, checked before any gate runs.
-	if err := validateKnownNetwork([]types.Transaction{txn}, s.genesisHashResolver()); err != nil {
+	if err := validateKnownNetwork(slots.Txns, s.genesisHashResolver()); err != nil {
 		return nil, err
 	}
 	table, tableErr := deps.Tables.Table(account, genesis, s.keyPresent(req.Account))
@@ -308,9 +251,9 @@ func (s *Service) PrepareRotatingWithContext(ctx context.Context, req signerapi.
 	if err != nil {
 		return nil, err
 	}
-	txn.RekeyTo = targetAddr
+	slots.Txns[slots.Rotating].RekeyTo = targetAddr
 
-	plan, err := buildRotatingGroup(s.Console, txn, profile)
+	plan, err := s.buildRotatingPlan(snapshot, slots)
 	if err != nil {
 		return nil, err
 	}
@@ -318,20 +261,37 @@ func (s *Service) PrepareRotatingWithContext(ctx context.Context, req signerapi.
 	for i, t := range plan.AllTxns {
 		encoded[i] = hex.EncodeToString(txnutil.EncodeWithPrefix(t))
 	}
-	consoleOf(s.Console).Printf("[ROTATING] Prepared spend for %s: stage %d rotates to %d\n", req.Account, stage, target)
+	if len(slots.Owned) > 0 {
+		consoleOf(s.Console).Printf("[ROTATING] Prepared spend for %s with %d other transaction(s): stage %d rotates to %d\n", req.Account, len(slots.Owned), stage, target)
+	} else {
+		consoleOf(s.Console).Printf("[ROTATING] Prepared spend for %s: stage %d rotates to %d\n", req.Account, stage, target)
+	}
+	rotation := rotationSlot(slots.Rotating, stage, targetAddr)
 	return &signerapi.RotatingPrepareResponse{
 		Account:      req.Account,
-		Stage:        stage,
-		Target:       target,
-		RekeyTo:      targetAddr.String(),
+		Stage:        rotation.Stage,
+		Target:       rotation.Target,
+		RekeyTo:      rotation.RekeyTo,
 		Transactions: encoded,
-		Mutations:    BuildMutationReport(plan, 1),
+		Mutations:    BuildMutationReport(plan, len(slots.Txns)),
+		Rotations:    []signerapi.RotationSlot{rotation},
+		OwnedIndexes: slots.Owned,
 	}, nil
 }
 
 // SignRotatingWithContext signs a prepared rotating group. It is the
 // complete validation boundary: everything is re-established from the
 // presented bytes and a fresh chain read; nothing from prepare is remembered.
+//
+// The order is what keeps a failure from recording a release that never
+// left: approval once for the whole group; the approval binding, checked
+// before any key is used; the owned slots' signatures, made in memory
+// through the ordinary per-slot path; then the rotating path under the
+// account lock, unchanged; and only then release accounting and the
+// response. A failure before the rotating signature leaves no rotating
+// signature and no release record. A failure after it, at the post-sign
+// recheck, wipes the signature and records nothing. One execution lease,
+// taken by the approval gate, spans both signing phases.
 func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.RotatingSignRequest, session *keystore.KeySession) (*signerapi.RotatingSignResponse, *ServiceError) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -346,40 +306,40 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 	if s.Approval == nil {
 		return nil, internal("signing service not fully configured")
 	}
-	group, decodeErr := canonical.DecodeGroupHex(req.Transactions)
-	if decodeErr != nil {
-		return nil, badRequest(decodeErr.Error())
+	presented, full, formErr := rotatingSignRequests(req)
+	if formErr != nil {
+		return nil, formErr
 	}
-	raws := make([][]byte, len(group.Entries))
-	allTxns := make([]types.Transaction, len(group.Entries))
-	for i, e := range group.Entries {
-		raws[i] = e.Raw
-		allTxns[i] = e.Txn
-	}
-	spend := allTxns[0]
 
-	account, genesis, profile, svcErr := s.rotatingAccount(ctx, req.Account, session)
+	account, genesis, _, svcErr := s.rotatingAccount(ctx, req.Account, session)
 	if svcErr != nil {
 		return nil, svcErr
 	}
-	if err := validateRotatingSpend(spend, account, genesis); err != nil {
+	snapshot := s.Planner.Snapshot()
+	slots, err := normalizeRotatingSlots(snapshot, account, genesis, presented, rotatingSign)
+	if err != nil {
 		return nil, err
 	}
+	rot := slots.Rotating
+	spend := slots.Txns[rot]
 	// The key's bound genesis is not enough: the network must also be one
 	// this node is configured for, checked before any gate runs.
-	if err := validateKnownNetwork([]types.Transaction{spend}, s.genesisHashResolver()); err != nil {
+	if err := validateKnownNetwork(slots.Txns, s.genesisHashResolver()); err != nil {
 		return nil, err
+	}
+	if len(slots.Owned) > 0 && s.Executor == nil {
+		return nil, internal("signing service not fully configured")
 	}
 	table, tableErr := deps.Tables.Table(account, genesis, s.keyPresent(req.Account))
 	if table == nil {
 		return nil, internal(fmt.Sprintf("stage table: %v", tableErr))
 	}
 
-	// Rule 2: the group's RekeyTo is A_{n+1} for some n, which fixes the
+	// Rule 2: the spend's RekeyTo is A_{n+1} for some n, which fixes the
 	// signing stage from the bytes alone. The table only proposes the
 	// number; the derivation that follows is what proves the address,
 	// because a rekey target decides who controls the account and the table
-	// is a plaintext cache.
+	// is a plaintext cache. A wrong target is refused, never replaced.
 	targetStage, ok := table.Lookup(spend.RekeyTo)
 	if !ok || targetStage == 0 {
 		return nil, badRequest("rekey target is not a stage of this account; prepare the spend again")
@@ -395,23 +355,19 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 		return nil, badRequest("rekey target does not derive from this account's seed; the stage table has been discarded, prepare the spend again")
 	}
 
-	// Rule 5: rebuilding the group from the presented spend must reproduce
-	// the presented bytes exactly.
-	rebuilt, groupErr := buildRotatingGroup(s.Console, spend, profile)
+	// Rule 5: rebuilding the complete group from the presented user slots
+	// must reproduce their bytes and their group ID.
+	plan, groupErr := s.buildRotatingPlan(snapshot, slots)
 	if groupErr != nil {
 		return nil, groupErr
 	}
-	if len(rebuilt.AllTxns) != len(allTxns) {
-		return nil, badRequest(fmt.Sprintf("group has %d transactions; the spend needs %d", len(allTxns), len(rebuilt.AllTxns)))
+	if cmpErr := compareRebuiltRotatingGroup(slots, plan, full); cmpErr != nil {
+		return nil, cmpErr
 	}
-	for i := range allTxns {
-		if !bytes.Equal(txnutil.EncodeWithPrefix(rebuilt.AllTxns[i]), raws[i]) {
-			return nil, badRequest(fmt.Sprintf("transaction %d differs from the group the signer would build (dummies, fees and group ID must be exactly the prepared ones)", i+1))
-		}
-	}
-	item := &rotatingPlanItem{Stage: stage, Target: targetStage, TargetAddress: spend.RekeyTo}
-	known := make(map[string]bool, len(s.Planner.Snapshot().KeyFiles)+1)
-	for addr := range knownAddressesFromSnapshot(s.Planner.Snapshot()) {
+	allTxns := plan.AllTxns
+	users := len(slots.Txns)
+	known := make(map[string]bool, len(snapshot.KeyFiles)+1)
+	for addr := range knownAddressesFromSnapshot(snapshot) {
 		known[addr] = true
 	}
 	// The rotation target is this signer's own next stage, never a foreign
@@ -419,29 +375,27 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 	// set the rekey itself and proved it derives from the seed, approval
 	// warnings do not report it at all.
 	known[spend.RekeyTo.String()] = true
-	protocolRekeys := map[string]bool{spend.RekeyTo.String(): true}
-	plan := &PlanResult{
-		AllTxns:              allTxns,
-		DummyTxns:            allTxns[1:],
-		PassthroughIndices:   map[int]bool{},
-		ForeignIndices:       map[int]bool{},
-		LsigIndices:          []int{0},
-		DummiesNeeded:        len(allTxns) - 1,
-		NeedsRegroup:         len(allTxns) > 1,
-		AuthKeyTypes:         []string{s.Planner.Snapshot().KeyTypes[req.Account]},
-		KnownAddresses:       known,
-		ProtocolRekeyTargets: protocolRekeys,
-		Rotating:             item,
-	}
-	signReq := signerapi.GroupSignRequest{
-		RequestID: req.RequestID,
-		Requests:  []signerapi.SignRequest{{AuthAddress: req.Account, TxnBytesHex: hex.EncodeToString(raws[0])}},
-	}
+	plan.KnownAddresses = known
+	plan.ProtocolRekeyTargets = map[string]bool{spend.RekeyTo.String(): true}
+	plan.Rotating = &rotatingPlanItem{Index: rot, Stage: stage, Target: targetStage, TargetAddress: spend.RekeyTo}
+	signReq := signerapi.GroupSignRequest{RequestID: req.RequestID, Requests: slots.Requests}
 	policyRuleID, release, gateErr := s.approveGroupWithPlanContext(ctx, signReq, plan)
 	if gateErr != nil {
 		return nil, gateErr
 	}
 	defer release()
+	// The approval covers the whole group: check it before any key is used,
+	// and again below before the rotating signature.
+	if bindErr := checkApprovalBinding(signReq, plan); bindErr != nil {
+		return nil, bindErr
+	}
+	var owned map[int]string
+	if len(slots.Owned) > 0 {
+		owned, err = s.Executor.SignOwnedSlots(ctx, plan, signReq, session, slots.Owned)
+		if err != nil {
+			return nil, err
+		}
+	}
 	var lockGeneration uint64
 	if deps.LockGeneration != nil {
 		lockGeneration = deps.LockGeneration()
@@ -452,7 +406,7 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 	// log after an unlock waits for it, bounded by the request. A restore
 	// that fails opens the wait: state chooses the leaf, never whether to
 	// sign.
-	if p, ok := rotatingkey.Lookup(s.Planner.Snapshot().KeyTypes[req.Account]); ok && p.LeavesPerStage > 1 {
+	if p, ok := rotatingkey.Lookup(snapshot.KeyTypes[req.Account]); ok && p.LeavesPerStage > 1 {
 		if err := deps.Releases.AwaitRestored(ctx, req.Account); err != nil {
 			return nil, unavailable("release memory is still being restored from the audit log: " + err.Error())
 		}
@@ -498,8 +452,8 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 	if bindErr := checkApprovalBinding(signReq, plan); bindErr != nil {
 		return nil, bindErr
 	}
-	txID := group.Entries[0].TxID
-	if !bytes.Equal(txnutil.EncodeWithPrefix(spend), txnutil.EncodeWithPrefix(plan.AllTxns[0])) || !bytes.Equal(txID[:], algocrypto.TransactionID(plan.AllTxns[0])) {
+	txID := sha512.Sum512_256(slots.Raw[rot])
+	if !bytes.Equal(txnutil.EncodeWithPrefix(spend), txnutil.EncodeWithPrefix(allTxns[rot])) || !bytes.Equal(txID[:], algocrypto.TransactionID(allTxns[rot])) {
 		return nil, internal("refusing to sign: the rotating spend differs from the approved group")
 	}
 	// The one-time leaf: the one this transaction already used if it was
@@ -563,17 +517,28 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 			return nil, unavailable("rotating key was removed during signing")
 		}
 	}
-	signed := make([]string, 0, len(allTxns))
-	signed = append(signed, hex.EncodeToString(msgpack.Encode(stxn)))
-	dummies, dummyErr := coresigning.SignDummyTransactions(allTxns[1:])
+	signed := make([]string, len(allTxns))
+	signed[rot] = hex.EncodeToString(msgpack.Encode(stxn))
+	for i, signedHex := range owned {
+		signed[i] = signedHex
+	}
+	dummies, dummyErr := coresigning.SignDummyTransactions(allTxns[users:])
 	if dummyErr != nil {
 		return nil, internal(fmt.Sprintf("sign dummy transactions: %v", dummyErr))
 	}
-	for _, d := range dummies {
-		signed = append(signed, hex.EncodeToString(d))
+	for i, d := range dummies {
+		signed[users+i] = hex.EncodeToString(d)
 	}
-
-	groupIDText := base64.StdEncoding.EncodeToString(group.GroupID[:])
+	for i, entry := range signed {
+		if entry == "" {
+			return nil, internal(fmt.Sprintf("refusing to release an incomplete group: transaction %d is unsigned", i+1))
+		}
+	}
+	var groupID types.Digest
+	if len(allTxns) > 1 {
+		groupID = allTxns[0].Group
+	}
+	groupIDText := base64.StdEncoding.EncodeToString(groupID[:])
 
 	// The release is audited durably and remembered before the signature
 	// leaves. Both are observational: a failure is reported, not fatal.
@@ -590,11 +555,12 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 	consoleOf(s.Console).Printf("[ROTATING] Released stage %d for %s (%s); the account moves to stage %d when it lands\n", stage, req.Account, txIDText, targetStage)
 	s.logSuccessfulSignatures(signReq, plan, allTxns, policyRuleID)
 	return &signerapi.RotatingSignResponse{
-		Signed:  signed,
-		Stage:   stage,
-		Target:  targetStage,
-		TxID:    txIDText,
-		GroupID: groupIDText,
+		Signed:    signed,
+		Stage:     stage,
+		Target:    targetStage,
+		TxID:      txIDText,
+		GroupID:   groupIDText,
+		Rotations: []signerapi.RotationSlot{{Index: rot, Stage: stage, Target: targetStage, TxID: txIDText}},
 	}, nil
 }
 

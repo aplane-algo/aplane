@@ -345,26 +345,33 @@ about 2,100 bytes.
 
 Restrictions:
 
-- A rotating account's transaction is always sent alone; it cannot be part
-  of a larger group. Any single transaction type works: payments, asset
-  opt-in, transfer and opt-out, application calls, and key registration.
-  Rotating accounts are designed for single-transaction use, including
-  payments, asset operations, and compatible application calls. Workflows
-  that put more than one user transaction in an atomic group, whether a
-  second one from the same account or one from another party, run from an
-  ordinary account instead. The resource dummies the signer adds around a
-  spend are not user transactions.
+- A group holds one transaction from a rotating account. Any transaction
+  type works: payments, asset opt-in, transfer and opt-out, application
+  calls, and key registration. It can stand alone, or share an atomic group
+  with transactions from your other accounts held by the same signer, for
+  example a hot account paying a fee or bond leg while the rotating account
+  makes the call, or a funding payment and a spend that must happen together.
+  Those accounts' signing keys must be ordinary keys on this signer, not
+  another rotating account, a guarded or bounded account, or a key another
+  party holds. Workflows that need another party's transaction in the group,
+  such as a swap or an escrow, or two transactions from the rotating account
+  itself, run from an ordinary account instead. The resource dummies the
+  signer adds around a spend are not user transactions.
 
-  "Single-transaction use" is about how each action is composed, not how
-  often the account acts. Every action is one transaction from the account,
-  standing alone as the only user transaction in its group, and the account
-  can take as many such actions as you like, one after another: opt in to an
-  asset today, receive it, send some of it tomorrow, each as its own
-  transaction and its own rotation. What it rules out is a single atomic
-  outcome that needs two user transactions, such as a payment paired with
-  the application call that consumes it, extra application calls added for
-  opcode budget, or the account's transaction grouped with another party's
-  in a swap or an escrow.
+  The account can act as often as you like, one group after another: opt in
+  to an asset today, receive it, send some of it tomorrow, each action its
+  own rotation. Within one group, every transaction uses the rotating
+  transaction's validity window, and apshell aligns them for you. The signer
+  may raise the fee of any transaction in the group to cover the group's
+  resource dummies; apshell shows and checks every fee change before
+  anything is signed.
+
+  If something outside your control makes another transaction in the group
+  fail after it was signed, for example an application rejecting the call
+  because its state changed, the whole group fails and the rotating
+  account's keys for that stage have been revealed without the rotation
+  landing. This is the same situation as a transaction that expired unsent:
+  the signer reports the expired release and a rotate-only spend fixes it.
 - Every spend rekeys the account to its next stage, so a contract that
   refuses calls carrying a rekey rejects every call from a rotating account.
   apshell simulates before anything is signed, so such a call fails without

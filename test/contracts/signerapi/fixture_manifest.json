@@ -30,11 +30,15 @@
     "keytypes_response_bounded.json",
     "keytypes_response_full.json",
     "rotating_prepare_request.json",
+    "rotating_prepare_request_group.json",
     "rotating_prepare_response.json",
+    "rotating_prepare_response_group.json",
     "rotating_recover_request.json",
     "rotating_recover_response.json",
     "rotating_sign_request.json",
+    "rotating_sign_request_group.json",
     "rotating_sign_response.json",
+    "rotating_sign_response_group.json",
     "status_response_ready.json",
     "status_response_rotating.json"
   ]

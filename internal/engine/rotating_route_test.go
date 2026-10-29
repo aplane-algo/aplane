@@ -14,11 +14,12 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/cache"
 	"github.com/aplane-algo/aplane/internal/clientsign"
+	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
 	"github.com/aplane-algo/aplane/internal/rotatingkey"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
-func TestRotatingSenderRoutesOnSendersOwnFlow(t *testing.T) {
+func TestRotatingSlotRoutesOnSendersOwnFlow(t *testing.T) {
 	rotating := testAddress(1)
 	plain := testAddress(2)
 	signerCache := cache.NewSignerCache()
@@ -37,18 +38,69 @@ func TestRotatingSenderRoutesOnSendersOwnFlow(t *testing.T) {
 	spend := types.Transaction{Type: types.PaymentTx, Header: types.Header{Sender: rotating}}
 	other := types.Transaction{Type: types.PaymentTx, Header: types.Header{Sender: plain}}
 
-	if ok, err := eng.rotatingSender([]types.Transaction{spend}, clientsign.SubmitOptions{}); err != nil || !ok {
-		t.Fatalf("rotating spend: ok=%v err=%v", ok, err)
+	if index, err := eng.rotatingSlot([]types.Transaction{spend}, clientsign.SubmitOptions{}); err != nil || index != 0 {
+		t.Fatalf("rotating spend: index=%d err=%v", index, err)
 	}
-	if ok, err := eng.rotatingSender([]types.Transaction{other}, clientsign.SubmitOptions{}); err != nil || ok {
-		t.Fatalf("plain spend routed as rotating: ok=%v err=%v", ok, err)
+	if index, err := eng.rotatingSlot([]types.Transaction{other}, clientsign.SubmitOptions{}); err != nil || index != -1 {
+		t.Fatalf("plain spend routed as rotating: index=%d err=%v", index, err)
 	}
-	if _, err := eng.rotatingSender([]types.Transaction{other, spend}, clientsign.SubmitOptions{}); err == nil || !strings.Contains(err.Error(), "alone") {
-		t.Fatalf("grouped rotating spend: err=%v", err)
+	if index, err := eng.rotatingSlot([]types.Transaction{other, spend}, clientsign.SubmitOptions{}); err != nil || index != 1 {
+		t.Fatalf("rotating spend grouped with a held account: index=%d err=%v", index, err)
 	}
 	args := clientsign.SubmitOptions{LsigArgsMap: []map[string][]byte{{"x": {1}}}}
-	if _, err := eng.rotatingSender([]types.Transaction{spend}, args); err == nil {
+	if _, err := eng.rotatingSlot([]types.Transaction{spend}, args); err == nil {
 		t.Fatal("LogicSig arguments accepted for a rotating account")
+	}
+}
+
+func TestRotatingSlotJudgesOwnedSlotsOnEffectiveAuthority(t *testing.T) {
+	rotating := testAddress(1)
+	held := testAddress(2)
+	rekeyedSender := testAddress(3)
+	unheld := testAddress(4)
+	otherRotating := testAddress(5)
+	bounded := testAddress(6)
+	guarded := testAddress(7)
+	signerCache := cache.NewSignerCache()
+	signerCache.AddAddress(rotating.String(), rotatingkey.RotatingTripleWotsV1)
+	signerCache.SetSigningFlowForAddress(rotating.String(), signerapi.SigningFlowRotating1)
+	signerCache.AddAddress(otherRotating.String(), rotatingkey.RotatingTripleXmssV1)
+	signerCache.SetSigningFlowForAddress(otherRotating.String(), signerapi.SigningFlowRotating1)
+	signerCache.AddAddress(held.String(), "ed25519")
+	signerCache.AddAddress(bounded.String(), "ed25519")
+	signerCache.SetBoundedMaxFeeForAddress(bounded.String(), 5000)
+	signerCache.AddAddress(guarded.String(), keytypes.GuardedFalcon1024Cosigner1024V1)
+	signerCache.SetSigningFlowForAddress(guarded.String(), signerapi.SigningFlowCosigner1)
+	eng := newConnectedEngineForKeyMgmtTestWithSignerCache(t, signerCache, func(req *http.Request) (*http.Response, error) {
+		t.Fatalf("unexpected request: %s %s", req.Method, req.URL.Path)
+		return nil, nil
+	})
+	eng.AuthCache = cache.NewAuthAddressCacheForStore(eng.CacheStore)
+	eng.AuthCache.AuthAddresses[rotating.String()] = testAddress(9).String()
+	// rekeyedSender has no credential of its own; its authorizer is held.
+	eng.AuthCache.AuthAddresses[rekeyedSender.String()] = held.String()
+
+	from := func(a types.Address) types.Transaction {
+		return types.Transaction{Type: types.PaymentTx, Header: types.Header{Sender: a}}
+	}
+	spend := from(rotating)
+	if index, err := eng.rotatingSlot([]types.Transaction{from(rekeyedSender), spend}, clientsign.SubmitOptions{}); err != nil || index != 1 {
+		t.Fatalf("sender rekeyed to a held key: index=%d err=%v", index, err)
+	}
+	for name, tc := range map[string]struct {
+		txns []types.Transaction
+		want string
+	}{
+		"unheld authority":       {[]types.Transaction{from(unheld), spend}, "not held"},
+		"second rotating sender": {[]types.Transaction{spend, from(otherRotating)}, "both from rotating"},
+		"bounded authority":      {[]types.Transaction{from(bounded), spend}, "bounded"},
+		"guarded authority":      {[]types.Transaction{spend, from(guarded)}, "guarded"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := eng.rotatingSlot(tc.txns, clientsign.SubmitOptions{}); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("err = %v, want %q", err, tc.want)
+			}
+		})
 	}
 }
 

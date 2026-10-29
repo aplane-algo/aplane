@@ -5,9 +5,11 @@ machinery: one normalized request path, shared planning, fee allocation,
 approval and execution, with a rotating coordinator that keeps the release
 protocol its own.
 
-Status: proposal, not scheduled. Written 2026-10-25 as "rotating spends
-grouped with the signer's own transactions", after the group-boundary design
-note landed in [KEYTYPE_ROTATING_TRIPLE_HYBRID.md](KEYTYPE_ROTATING_TRIPLE_HYBRID.md)
+Status: implemented 2026-10-28 on branch `work/rotating-integration`; see
+section 13 for where the implementation departs from this text. Written
+2026-10-25 as "rotating spends grouped with the signer's own transactions",
+after the group-boundary design note landed in
+[KEYTYPE_ROTATING_TRIPLE_HYBRID.md](KEYTYPE_ROTATING_TRIPLE_HYBRID.md)
 section 10.1. Revised 2026-10-28 through three design reviews; section 12
 lists what each changed and why. Where an earlier revision and this text
 disagree, this text is authoritative.
@@ -681,3 +683,39 @@ Third review (2026-10-28):
     have refused every valid sign request, since sign receives the
     prepared rotating target. Prepare refuses a supplied target; sign
     requires and verifies it; owned slots never carry one (4.1, 8).
+
+## 13. Implementation notes, 2026-10-28
+
+The implementation follows this text, with these choices made where the text
+left one open or the code required one:
+
+- **Response migration.** Section 10's second option is taken: both
+  responses carry the `rotations` list and the scalar `stage`, `target`,
+  `rekey_to` and `txid` fields, which repeat its single entry. The SDKs live
+  in a separate repository and cannot change in the same review, so the
+  scalars stay until they read the list; the first-party client already
+  requires the list and checks the scalars agree with it. Contract fixtures
+  gain the list and four group-form fixtures.
+- **Shared steps.** The group builder is `Planner.finalizeGroup`, extracted
+  from `PlanGroup`, which `/sign`, `/plan` and both rotating endpoints call.
+  Owned slots are signed by `Executor.SignOwnedSlots`, which shares
+  `signPlannedSlot` with `ExecuteGroupSigning`. Approval and the approval
+  binding were already shared. Admission is the rotating coordinator's own
+  (`normalizeRotatingSlots` in `rotating_group.go`), because ordinary
+  classification would read an omitted `auth_address` as a foreign slot and
+  the ordinary key check refuses the rotating slot; it reuses the ordinary
+  key-type rejections for owned slots.
+- **Approval binding.** The approval digest now also covers every slot's
+  LogicSig arguments and, for a rotating group, the rotating slot's index,
+  stage, target stage and target address. The arguments are signing inputs
+  an owned generic LogicSig consumes, and the rotation is what the prompt
+  describes, so both are bound like the bytes. The change applies to every
+  flow that uses the binding, not only rotating groups.
+- **Canonical decoding.** `canonical.DecodeTXPrefixed` is the exported
+  per-transaction decoder; both rotating endpoints decode every slot
+  strictly, including the single-transaction prepare form, which previously
+  accepted any decodable encoding.
+- **Not in this repository.** The Go, TypeScript and Python SDK mirrors
+  (section 5) belong to `aplane-algo/aplanesdk` and are not part of this
+  change; the contract fixtures they consume are.
+

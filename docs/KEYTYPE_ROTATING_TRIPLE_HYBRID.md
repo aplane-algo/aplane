@@ -342,19 +342,25 @@ wire contract lives in [ARCH_SIGNING.md](ARCH_SIGNING.md#rotating-accounts-rotat
 
 1. **Prepare.** The client sends one unsigned, ungrouped spend from the account,
    with no `rekey_to`, no close-out, the account's genesis hash and a validity
-   window at most 100 rounds. The signer reads the live authorizer from its
-   own node, finds stage `n` and confirms it by derivation, sets `rekey_to` to
-   stage `n + 1`, adds the profile's resource dummies, sets fees and group ID,
-   and returns the exact unsigned group. It stores nothing and needs no approval.
-2. **Sign.** The group's `rekey_to` fixes `n`. The signer re-derives stage
-   `n + 1`, checks the target and canonical group by byte equality, and runs
-   ordinary policy gates and operator approval. Under the account lock it
+   window at most 100 rounds, optionally grouped with transactions this
+   signer signs with ordinary keys (section 10.1). The signer reads the live
+   authorizer from its own node, finds stage `n` and confirms it by
+   derivation, sets the spend's `rekey_to` to stage `n + 1`, builds the
+   canonical group with the ordinary planner's resource dummies, fees and
+   group ID, and returns the exact unsigned group. It stores nothing and
+   needs no approval.
+2. **Sign.** The spend's `rekey_to` fixes `n`. The signer re-derives stage
+   `n + 1`, checks the target and rebuilds the canonical group from the
+   presented transactions, which must reproduce them byte for byte, and runs
+   ordinary policy gates and operator approval once for the group. It signs
+   any owned transactions in memory first. Under the account lock it
    re-reads the chain and refuses unless stage `n` is still the authorizer
    (`rotating_stage_changed`), `first_valid` is at most 2 rounds ahead of the
    current round, and at least 10 rounds remain before `last_valid`. It proves
    the successor opens (`CheckStageOpens`), signs, verifies, writes a
    `ROTATING_RELEASE` audit entry (account, TxID, stage, `last_valid`, tree and
-   leaf index), records the release in memory and responds.
+   leaf index), records the release in memory and responds. A failure before
+   the stage signature releases nothing.
 3. **Open test.** `CheckStageOpens` test-signs the target stage locally before
    any spend signature is released. Both variants sign the SHA-256 hash of
    their derivation label followed by ` stage open test`: a fixed label, not a
@@ -364,9 +370,10 @@ wire contract lives in [ARCH_SIGNING.md](ARCH_SIGNING.md#rotating-accounts-rotat
    it never signs with a target-stage XMSS leaf.
 
 Clients route on `signing_flow`, verify the prepared group preserves the
-intended spend except for the rotation, fee, group ID and canonical dummies,
-simulate that group, then sign and submit the exact bytes. The signer retains
-no prepare session; policy evaluates the spend presented to sign.
+intended transactions except for the rotation, reported fee changes, the
+group ID and canonical dummies, simulate that group, then sign and submit the
+exact bytes. The signer retains no prepare session; policy evaluates the
+group presented to sign.
 
 ### 8.1 One-time key and leaf selection
 
@@ -455,7 +462,7 @@ on the backed-up credential.
 | Admitted transaction types | any, subject to the stage guards |
 | Required | non-zero `RekeyTo` different from sender; zero `CloseRemainderTo`; validity window at most 100 rounds |
 | Signer-set rotation | always to this account's next stage |
-| Group shape | one spend plus the scheme's canonical resource dummies |
+| Group shape | one spend, any number of this signer's ordinary, non-bounded transactions, plus the canonical resource dummies |
 | Foreign rekey policy | the next stage counts as the signer's own address |
 | Approval | ordinary policy gates; description names signing and target stages |
 
@@ -467,9 +474,13 @@ different account to a held rotating account. See
 
 ### 10.1 Group boundary
 
-A rotating spend is the only transaction from its account in a group, and
-the only other members are the scheme's resource dummies. This subsection
-records why, and what would change it.
+A group holds exactly one transaction from the rotating account. Its other
+members are the resource dummies and, optionally, transactions this signer
+signs with ordinary keys, called owned transactions below. Other parties'
+transactions are excluded. This subsection records why, and what would
+change it. The own-account case was excluded until 2026-10-28 and is now
+admitted; [PROPOSAL_ROTATING_INTEGRATION.md](PROPOSAL_ROTATING_INTEGRATION.md)
+is its design record.
 
 **Inherent restrictions.** No group rule changes these. The account's
 address is stage 0's program, so nothing can be rekeyed to it and it cannot
@@ -481,45 +492,52 @@ and itself rekey to `n + 2`, because the ledger checks each transaction's
 authorizer against the group's in-progress state. Several own transactions
 per group is therefore a multi-stage release protocol, not a group rule.
 
-**Chosen restriction.** The stage program does not read the group, and the
-signature binds the group ID through the TxID, so the chain would accept a
-rotating spend grouped with other senders' transactions. The signer refuses
-it. With only dummies around the spend, a released signature can fail to
-land only through the window expiring or the operator's own concurrent spend
-from the same stage. With another sender in the group, that sender decides
-whether the rotation lands: it can withhold its signature, or invalidate its
-own transaction inside the window after the stage signature is public. The
-remedy is a second spend from the same stage, which for WOTS is a second
-signature on a different message (section 9). The design tolerates that as a
-rare, self-inflicted case with alerts; it does not let a counterparty
-trigger it on demand.
+**Owned transactions.** The stage program does not read the group, and the
+signature binds the group ID through the TxID, so the chain accepts a
+rotating spend grouped with anything. The signer admits a transaction only
+if its effective signing key, the `auth_address` or else the sender, is a
+key it holds that is not rotating, witness, guarded or bounded. Every
+signature in the group is then this signer's, so no one outside it can
+withhold a signature the group needs. That is the whole guarantee: an owned
+application call can still fail on state another party changed, and an
+owned asset transfer on a freeze, after simulation and after the stage
+signature is public. The outcome is the same as a window expiry, with the
+same expired-release alert and the same remedy, a rotate-only spend from the
+same stage; a standalone rotating application call carries the same
+execution exposure. The signer signs the owned transactions in memory before
+the stage signature, so an owned key that fails leaves no release behind.
+Every owned transaction shares the spend's validity window, and fees follow
+the ordinary allocator across the whole group.
 
-**Positioning.** Rotating accounts are designed for single-transaction use:
-payments, asset operations, key registration, and application calls that
-accept a rekeying sender. Workflows that put more than one user transaction
-in an atomic group, whether a second one from the same account or one from
-another party, run from an ordinary account instead. The resource dummies
-around a spend are signer-manufactured and are not user transactions.
-"Single-transaction" describes group composition, not frequency: the account
-may act any number of times in sequence, each action one transaction and one
-rotation; what is excluded is one atomic outcome needing two user
-transactions.
+**Chosen restriction.** Other parties' transactions stay excluded. With
+another sender in the group, that sender decides whether the rotation lands:
+it can withhold its signature, or invalidate its own transaction inside the
+window after the stage signature is public. The remedy is a second spend
+from the same stage, which for WOTS is a second signature on a different
+message (section 9). The design tolerates that as a rare, self-inflicted
+case with alerts; it does not let a counterparty trigger it on demand.
+
+**Positioning.** A rotating account acts once per atomic group: payments,
+asset operations, key registration, and application calls that accept a
+rekeying sender, alone or together with the user's own ordinary accounts
+held by the same signer, such as a hot account paying a fee leg or a funding
+payment. Workflows that need another party's transaction in the same group,
+or two transactions from the rotating account, run from an ordinary account
+instead. The resource dummies around a spend are signer-manufactured and are
+not user transactions.
 
 **Deferred, in order of cost.**
 
-1. *Group grammar.* Rotating prepare and sign could accept the ordinary
-   sign, passthrough and foreign slots, with the rule that exactly one slot
-   is a rotating spend, dummies counted net of the other members' pooled
-   budget, and the compare step preserving other slots verbatim. Policy,
-   approval and resource planning already handle mixed groups. This admits
-   one own transaction plus other senders' transactions. Passthrough-only
-   members and signer-side simulation before release bound the race above
-   to the submission window; they do not remove it.
+1. *Other parties' slots.* Rotating prepare and sign could also accept the
+   ordinary passthrough and foreign slots. Passthrough-only members and
+   signer-side simulation before release would bound the counterparty race
+   above to the submission window; they would not remove it.
 2. *Multi-stage release.* Several rotating slots in one group, each signed
    by the next stage in the chain. This needs its own design for budget (a
    WOTS spend costs up to 59,772 and an XMSS spend up to 95,857 of a pool
    that grows by 20,000 per member up to 16 members), release memory, audit
-   and one-time key accounting.
+   and one-time key accounting. The wire contract already reports rotations
+   as a list.
 
 Reopen this when a product requirement needs the account itself in a
 multi-party or multi-transaction group. Neither step touches the stage
@@ -859,6 +877,9 @@ The 41 units per chain step are 6 unit-cost instructions and one SHA-256.
 | WOTS on-chain acceptance, resource costs, four-transaction group | `test/integration/rotating_triple_onchain_test.go` |
 | Shared signing flow, release gates and recovery | `internal/signerapp/signing/rotating_*_test.go`, `test/integration/rotating_signer_test.go` |
 | Every non-payment transaction type through apshell and the signer (asset opt-in, transfer and close-out; app opt-in, call and box reference; online and offline key registration), all three schemes; refusal by a contract that rejects rekeying calls, with nothing signed | `test/integration/rotating_txntypes_test.go` |
+| Owned-transaction groups: admission and its refusals by name, phase-specific `rekey_to` rules, effective-authority signing for a rekeyed sender, the single-transaction form equal to the one-slot group form, builder determinism, fee allocation by the ordinary allocator (a native-Falcon slot pays the deficit), rebuild refusals for changed, missing, reordered, extra and regrouped slots, fresh policy on a changed owned slot, and no release after an owned-key failure, a policy refusal or cancellation | `internal/signerapp/signing/rotating_group_test.go` |
+| Client checks on prepared groups: owned-slot tampering, unreported fee changes, reordering, index reporting, authorization context per slot, window alignment; routing on effective authority | `internal/clientsign/rotating_group_test.go`, `internal/engine/rotating_route_test.go` |
+| Owned groups on chain for all three schemes, including a sender rekeyed to a held key; a released group whose owned app call is invalidated before submission is rejected whole, the stage stays live with its release remembered, the expired release is reported, and a same-stage rotate-only spend recovers | `test/integration/rotating_group_onchain_test.go`; the apshell `atomicSend` case in `test/integration/rotating_txntypes_test.go` |
 
 Full XMSS tree builds are skipped under the race detector (`internal/racetest`).
 

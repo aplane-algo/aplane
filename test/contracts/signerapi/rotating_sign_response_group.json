@@ -1,0 +1,20 @@
+{
+  "signed": [
+    "82a3736967",
+    "82a46c736967",
+    "82a46c736967",
+    "82a46c736967"
+  ],
+  "stage": 4,
+  "target": 5,
+  "txid": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+  "group_id": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+  "rotations": [
+    {
+      "index": 1,
+      "stage": 4,
+      "target": 5,
+      "txid": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    }
+  ]
+}

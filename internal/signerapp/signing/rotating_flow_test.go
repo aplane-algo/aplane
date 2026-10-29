@@ -17,7 +17,6 @@ import (
 	"time"
 
 	apconfig "github.com/aplane-algo/aplane/internal/config"
-	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/rotatingkey"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
@@ -722,14 +721,7 @@ func TestForgedSuccessorInTableNeverReachesTheChain(t *testing.T) {
 	f.forgeSuccessor(t, 1, foreign)
 	spend, _ := txnutil.DecodePrefixedHex(prep.Transactions[0])
 	spend.RekeyTo = foreign
-	plan, svcErr := buildRotatingGroup(nil, spend, mustProfile(t))
-	if svcErr != nil {
-		t.Fatal(svcErr)
-	}
-	group := make([]string, len(plan.AllTxns))
-	for i, x := range plan.AllTxns {
-		group[i] = txnutil.EncodeWithPrefixHex(x)
-	}
+	group := f.rebuildGroup(t, spend)
 	_, err = f.sign(t, group)
 	if err == nil || (!strings.Contains(err.Message, "does not match the seed") && !strings.Contains(err.Message, "does not derive")) {
 		t.Fatalf("sign with forged successor: %v, want a refusal naming the seed mismatch", err)
@@ -742,15 +734,28 @@ func TestForgedSuccessorInTableNeverReachesTheChain(t *testing.T) {
 	}
 }
 
-func mustProfile(t *testing.T) *lsigresource.Profile {
+// rebuildGroup builds, through the path prepare and sign share, the
+// canonical group the signer would build around spend, and returns it in the
+// single-transaction sign form.
+func (f *rotatingFixture) rebuildGroup(t *testing.T, spend types.Transaction) []string {
 	t.Helper()
-	argumentBytes := uint64(rotatingkey.RotatingTripleMaxArgumentBytes)
-	profile, err := lsigresource.Materialize(rotatingkey.RotatingTripleMaxProgramBytes, &argumentBytes, nil,
-		lsigresource.DefaultOpcodeProfile(rotatingkey.RotatingTripleMaxOpcodeCost))
-	if err != nil {
-		t.Fatal(err)
+	spend.Group = types.Digest{}
+	raw := txnutil.EncodeWithPrefix(spend)
+	slots := &rotatingSlots{
+		Requests: []signerapi.SignRequest{{AuthAddress: f.account.String(), TxnBytesHex: hex.EncodeToString(raw)}},
+		Txns:     []types.Transaction{spend},
+		Raw:      [][]byte{raw},
+		Owned:    []int{},
 	}
-	return &profile
+	plan, svcErr := f.svc.buildRotatingPlan(f.svc.Planner.Snapshot(), slots)
+	if svcErr != nil {
+		t.Fatal(svcErr)
+	}
+	group := make([]string, len(plan.AllTxns))
+	for i, x := range plan.AllTxns {
+		group[i] = txnutil.EncodeWithPrefixHex(x)
+	}
+	return group
 }
 
 func TestStatusIgnoresObservationsOlderThanTheRelease(t *testing.T) {

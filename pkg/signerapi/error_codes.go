@@ -50,7 +50,7 @@ const (
 	// retry usually succeeds.
 	ErrCodeRotatingStageUnproven = "rotating_stage_unproven"
 	// ErrCodeRotatingStageChanged reports that the account's authorizer moved
-	// between preparing and signing; nothing was signed and the client should
-	// rebuild the transaction and prepare again.
+	// between preparing and signing; no signature was released and the client
+	// should rebuild the transaction and prepare again.
 	ErrCodeRotatingStageChanged = "rotating_stage_changed"
 )
