@@ -30,7 +30,7 @@ approval binding of LogicSig arguments and the rotation, and optional
 `app_call_info` on rotating sign. Section 13 records the parked
 implementation's choices and how main has changed since. Reopen this
 proposal when a product requirement needs a rotating spend and an owned
-transaction to land atomically.
+transaction to land atomically; section 14 lists what would meet that test.
 
 ## 1. Problem
 
@@ -731,6 +731,8 @@ Deferral (2026-10-29):
     changed on main; sections 3.3, 4.2, 4.3, 4.5 and 10 point to it.
 21. The group form's `app_call_info` rule is added (3.3, 11).
 22. The SDK line says the SDKs carry wire shapes only (5).
+23. Section 14 lists the triggers for reopening and what does not count as
+    one (header).
 
 ## 13. Implementation record and changes since deferral
 
@@ -774,3 +776,46 @@ Three differ from the parked versions, and a revival must reconcile them:
 To revive the design, port the parked implementation onto a fresh branch
 from main rather than merging it. A trial merge on 2026-10-29 conflicted in
 twelve files, most of them the four parts above.
+
+## 14. When to reopen
+
+The header's test is a product requirement that needs a rotating spend and
+an owned transaction to land atomically. These would meet it:
+
+1. **A contract the vault must use cannot be called in one transaction.**
+   The method needs more opcode budget than one application call gets, so
+   another account supplies padding calls; or more resource references than
+   one transaction carries; or a companion transaction from another sender
+   in the same group. Two steps cannot do this, so it is a capability the
+   single-transaction rule withholds, not a convenience. The Reti
+   `withdraw` and `claim` case of section 1 qualifies once a plugin
+   composes it that way and vault users need it.
+2. **Evidence that two steps are failing users.** Observed cases where the
+   first step landed, the second failed, and the manual unwinding cost more
+   than the post-release exposure this design adds (section 6). The
+   evidence comes from use, not from anticipation.
+3. **Multi-stage release becomes a requirement.** It builds on this wire
+   shape (section 7), so the two are better designed together than shipped
+   one after the other.
+4. **A failed group gets cheaper.** A group that fails after release is
+   remedied by a same-stage re-release, a second message on the stage key.
+   For WOTS that forfeits the stage's one-time claim; for XMSS it spends
+   another of the stage's 64 leaves; for SLH-DSA it is one more message far
+   inside the per-stage bound. If WOTS is retired, or owned groups are
+   limited to the XMSS and SLH-DSA types, the second deferral reason mostly
+   falls away.
+
+Not sufficient on their own:
+
+- Fewer steps, where two ordinary steps already work.
+- The parked branch being ready. It lowers the cost, not the bar.
+- A request to group with another party's transactions. That stays
+  excluded under the key type document's section 10.1 whatever happens
+  here; this proposal never lifts it (section 1).
+- The v1 wire freeze. The group form is additive, so the freeze does not
+  force the decision.
+
+When a trigger fires, revive the design as section 13 describes: port it
+onto a fresh branch from main, settle the builder snapshot, the slot index
+in the binding and the `app_call_info` rule, then run the full LocalNet
+integration suite and the SDK integration tests.
