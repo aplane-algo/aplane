@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-// Package signerreg registers the triple hybrid rotating key type's
+// Package signerreg registers the SLH-DSA triple rotating key type's
 // signer-side hooks: the key file codec, the stage cryptography and the
 // generator.
 package signerreg

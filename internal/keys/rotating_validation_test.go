@@ -20,7 +20,7 @@ func TestRotatingPayloadRequiresRegisteredCodec(t *testing.T) {
 		rotatingkey.RotatingTripleWotsV1,
 		make([]byte, rotatingkey.RotatingSeedSize),
 		make([]byte, rotatingkey.RotatingGenesisHashSize),
-		make([]byte, rotatingkey.RotatingTripleStagePublicKeySize),
+		make([]byte, rotatingkey.RotatingWotsStagePublicKeySize),
 	)
 	defer payload.ZeroSecrets()
 	_, err := MarshalPayload(payload)

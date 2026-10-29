@@ -815,9 +815,9 @@ func TestForgedSuccessorInTableNeverReachesTheChain(t *testing.T) {
 
 func mustProfile(t *testing.T) *lsigresource.Profile {
 	t.Helper()
-	argumentBytes := uint64(rotatingkey.RotatingTripleMaxArgumentBytes)
-	profile, err := lsigresource.Materialize(rotatingkey.RotatingTripleMaxProgramBytes, &argumentBytes, nil,
-		lsigresource.DefaultOpcodeProfile(rotatingkey.RotatingTripleMaxOpcodeCost))
+	argumentBytes := uint64(rotatingkey.RotatingWotsMaxArgumentBytes)
+	profile, err := lsigresource.Materialize(rotatingkey.RotatingWotsMaxProgramBytes, &argumentBytes, nil,
+		lsigresource.DefaultOpcodeProfile(rotatingkey.RotatingWotsMaxOpcodeCost))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -79,23 +79,23 @@ const (
 	// RotatingGenesisHashSize is the network binding mixed into derivation.
 	RotatingGenesisHashSize = 32
 
-	// RotatingTripleStagePublicKeySize is the triple hybrid's stage 0 record:
+	// RotatingWotsStagePublicKeySize is the WOTS triple's stage 0 record:
 	// the stage 0 tweak (which carries the public account tag), the
 	// Falcon-1024 public key, the WOTS public key and the Ed25519 public key.
-	RotatingTripleStagePublicKeySize = 32 + 1793 + 32 + 32
+	RotatingWotsStagePublicKeySize = 32 + 1793 + 32 + 32
 
-	// RotatingTripleMaxProgramBytes is the salted triple stage program.
-	RotatingTripleMaxProgramBytes = 2103
+	// RotatingWotsMaxProgramBytes is the salted WOTS stage program.
+	RotatingWotsMaxProgramBytes = 2103
 
-	// RotatingTripleMaxArgumentBytes is a 2,144-byte WOTS signature, a
+	// RotatingWotsMaxArgumentBytes is a 2,144-byte WOTS signature, a
 	// 64-byte Ed25519 signature and a compressed Falcon-1024 signature of at
 	// most 1,423 bytes.
-	RotatingTripleMaxArgumentBytes = 2144 + 64 + 1423
+	RotatingWotsMaxArgumentBytes = 2144 + 64 + 1423
 
-	// RotatingTripleMaxOpcodeCost is the worst accepting run of a salted
-	// triple stage program: 7,296 plus 53 per chain step over at most 990
+	// RotatingWotsMaxOpcodeCost is the worst accepting run of a salted
+	// WOTS stage program: 7,296 plus 53 per chain step over at most 990
 	// steps.
-	RotatingTripleMaxOpcodeCost = 7301 + 53*990 + 1
+	RotatingWotsMaxOpcodeCost = 7301 + 53*990 + 1
 
 	// RotatingXmssStagePublicKeySize is the XMSS triple's stage 0 record: the
 	// public account tag, the Falcon-1024 public key, tree 0's root and public
@@ -139,8 +139,8 @@ const (
 // the key type has no LogicSig provider to describe it, and every listing
 // (key types, the key type library, generation) must agree.
 const (
-	RotatingTripleDisplayName = "Rotating triple WOTS (Falcon-1024 + WOTS + Ed25519)"
-	RotatingTripleDescription = "Fixed account address whose authorizing Falcon-1024, hash-based WOTS and Ed25519 stage program changes on every spend. Signs only through the rotating1 flow."
+	RotatingTripleWotsDisplayName = "Rotating triple WOTS (Falcon-1024 + WOTS + Ed25519)"
+	RotatingTripleWotsDescription = "Fixed account address whose authorizing Falcon-1024, hash-based WOTS and Ed25519 stage program changes on every spend. Signs only through the rotating1 flow."
 
 	RotatingTripleXmssDisplayName = "Rotating triple XMSS (Falcon-1024 + XMSS + Ed25519)"
 	RotatingTripleXmssDescription = "Fixed account address whose authorizing Falcon-1024, RFC 8391 XMSS and Ed25519 stage program changes on every spend. One XMSS tree serves 1,024 stages, each signing with its own 64 leaves. Signs only through the rotating1 flow."
@@ -235,12 +235,12 @@ var profiles = map[string]Profile{
 	RotatingTripleWotsV1: {
 		KeyType:            RotatingTripleWotsV1,
 		Family:             RotatingTripleWotsFamily,
-		DisplayName:        RotatingTripleDisplayName,
-		Description:        RotatingTripleDescription,
-		StagePublicKeySize: RotatingTripleStagePublicKeySize,
-		MaxProgramBytes:    RotatingTripleMaxProgramBytes,
-		MaxArgumentBytes:   RotatingTripleMaxArgumentBytes,
-		MaxOpcodeCost:      RotatingTripleMaxOpcodeCost,
+		DisplayName:        RotatingTripleWotsDisplayName,
+		Description:        RotatingTripleWotsDescription,
+		StagePublicKeySize: RotatingWotsStagePublicKeySize,
+		MaxProgramBytes:    RotatingWotsMaxProgramBytes,
+		MaxArgumentBytes:   RotatingWotsMaxArgumentBytes,
+		MaxOpcodeCost:      RotatingWotsMaxOpcodeCost,
 		OneTimeStage:       true,
 		ReusedStageRestsOn: "Falcon-1024 and Ed25519",
 		LeavesPerStage:     1,
