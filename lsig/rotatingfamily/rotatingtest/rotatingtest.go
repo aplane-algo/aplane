@@ -207,9 +207,14 @@ func testTampering(t *testing.T, s Scheme) {
 	}
 	profile, _ := rotatingkey.Lookup(s.KeyType)
 	for name, mutate := range map[string]func(*keys.Payload){
-		"seed":                  func(p *keys.Payload) { p.PrivateKey[0] ^= 1 },
-		"genesis hash":          func(p *keys.Payload) { p.GenesisHash[0] ^= 1 },
-		"short seed":            func(p *keys.Payload) { p.PrivateKey = p.PrivateKey[:32] },
+		"seed":         func(p *keys.Payload) { p.PrivateKey[0] ^= 1 },
+		"genesis hash": func(p *keys.Payload) { p.GenesisHash[0] ^= 1 },
+		"short seed": func(p *keys.Payload) {
+			// Wipe the dropped half: the payload's cleanup zeroes only what
+			// PrivateKey still covers.
+			crypto.ZeroBytes(p.PrivateKey[32:])
+			p.PrivateKey = p.PrivateKey[:32]
+		},
 		"short public key":      func(p *keys.Payload) { p.PublicKey = make([]byte, profile.StagePublicKeySize-1) },
 		"long public key":       func(p *keys.Payload) { p.PublicKey = make([]byte, profile.StagePublicKeySize+1) },
 		"missing genesis hash":  func(p *keys.Payload) { p.GenesisHash = nil },
