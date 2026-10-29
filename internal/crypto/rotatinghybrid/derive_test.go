@@ -135,6 +135,60 @@ func TestStageSeedsAreIndependent(t *testing.T) {
 	}
 }
 
+func TestOpenDeriverMatchesNewDeriverWithLabel(t *testing.T) {
+	seed, err := SeedFromMnemonic(testWords())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer seed.Zero()
+	genesis := testGenesis(1)
+	const label = "APLANE_TEST_LABEL"
+	want, err := NewDeriverWithLabel(&seed, genesis, label)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer want.Zero()
+	stored := bytes.Clone(seed[:])
+	got, err := OpenDeriver(stored, genesis[:], label)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer got.Zero()
+	if !bytes.Equal(stored, seed[:]) {
+		t.Fatal("OpenDeriver changed the caller's seed")
+	}
+	if got.GenesisHash() != genesis {
+		t.Fatal("OpenDeriver bound another network")
+	}
+	var a, b [32]byte
+	if err := want.ExpandStage(0x02, 7, a[:]); err != nil {
+		t.Fatal(err)
+	}
+	if err := got.ExpandStage(0x02, 7, b[:]); err != nil {
+		t.Fatal(err)
+	}
+	if a != b {
+		t.Fatal("OpenDeriver derives other stage material than NewDeriverWithLabel")
+	}
+
+	for _, tt := range []struct {
+		name          string
+		seed, genesis []byte
+	}{
+		{"short seed", stored[:SeedSize-1], genesis[:]},
+		{"long seed", append(bytes.Clone(stored), 0), genesis[:]},
+		{"short genesis hash", stored, genesis[:GenesisHashSize-1]},
+		{"missing genesis hash", stored, nil},
+	} {
+		if _, err := OpenDeriver(tt.seed, tt.genesis, label); err == nil {
+			t.Errorf("%s: OpenDeriver succeeded", tt.name)
+		}
+	}
+	if _, err := OpenDeriver(stored, genesis[:], ""); err == nil {
+		t.Error("OpenDeriver accepted an empty label")
+	}
+}
+
 func TestDeriverZero(t *testing.T) {
 	seed, err := SeedFromMnemonic(testWords())
 	if err != nil {

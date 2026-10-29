@@ -14,10 +14,9 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/crypto/rotatinghybrid"
-	"github.com/aplane-algo/aplane/internal/keygen"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/rotatingkey"
-	"github.com/aplane-algo/aplane/internal/signing"
+	rotatingfamilyreg "github.com/aplane-algo/aplane/lsig/rotatingfamily/signerreg"
 	"github.com/aplane-algo/aplane/lsig/rotatingtriplexmss/signerops"
 	"github.com/aplane-algo/aplane/lsig/rotatingtriplexmss/stage"
 
@@ -36,15 +35,19 @@ var stageOps = signerops.NewStageOps()
 func StageOps() *signerops.StageOps { return stageOps }
 
 // Register installs the key file codec, the stage cryptography and the
-// generator. It is safe to call more than once.
+// generator. It is safe to call more than once. The registered stage
+// cryptography is stageOps itself, so its tree cache and its
+// signing.RotatingTreeOps methods reach the signing flow.
 func Register() {
 	registerOnce.Do(func() {
-		keys.RegisterRotatingCodec(rotatingkey.RotatingTripleXmssV1, keys.RotatingCodec{
+		rotatingfamilyreg.Register(rotatingfamilyreg.Descriptor{
+			KeyType:        rotatingkey.RotatingTripleXmssV1,
+			Family:         rotatingkey.RotatingTripleXmssFamily,
+			NewKeyPayload:  NewKeyPayload,
 			AccountAddress: accountAddress,
 			ValidateSeed:   validateSeed,
+			StageOps:       stageOps,
 		})
-		signing.RegisterRotatingStageOps(rotatingkey.RotatingTripleXmssV1, stageOps)
-		keygen.Register(generator{})
 	})
 }
 
@@ -119,20 +122,12 @@ func accountAddress(stageZeroPublicKey []byte) (string, error) {
 // tree is already cached. A wrong root is still caught before any signing,
 // because the stage program the signer derives would not match the
 // account's on-chain authorizer.
-func validateSeed(seedBytes, genesisHashBytes, stageZeroPublicKey []byte) error {
+func validateSeed(seed, genesisHash, stageZeroPublicKey []byte) error {
 	tag, want, err := unpackPublicKeys(stageZeroPublicKey)
 	if err != nil {
 		return err
 	}
-	var seed rotatinghybrid.Seed
-	var genesisHash [rotatinghybrid.GenesisHashSize]byte
-	if len(seedBytes) != len(seed) || len(genesisHashBytes) != len(genesisHash) {
-		return fmt.Errorf("seed or genesis hash has the wrong length")
-	}
-	copy(seed[:], seedBytes)
-	defer seed.Zero()
-	copy(genesisHash[:], genesisHashBytes)
-	d, err := signerops.NewDeriver(&seed, genesisHash)
+	d, err := rotatinghybrid.OpenDeriver(seed, genesisHash, signerops.DerivationLabel)
 	if err != nil {
 		return err
 	}
