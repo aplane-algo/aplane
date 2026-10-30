@@ -460,10 +460,6 @@ and restore rules below.
 
 ### Rotating triple SLH-DSA accounts
 
-**Experimental:** independent security review and production qualification
-remain pending. See [the evaluation record](SLHDSA_EVALUATION.md) for measured
-lifecycle costs, lifetime-use assumptions and outstanding qualification work.
-
 `aplane.rotating-triple-slhdsa.v1` uses SLH-DSA alongside Falcon-1024 and
 Ed25519, with fresh keys per stage. Its SLH-DSA parameter set is the
 SLH-DSA-SHA2-128s construction with a two-layer hypertree, sized for keys
@@ -474,6 +470,9 @@ group fee of 0.006 ALGO. The SLH signature is 4400 bytes, split over two
 arguments. The hypertree height is fixed when the signer is built; a build
 with the standard SLH-DSA-SHA2-128s height, which exists for evaluation,
 derives different accounts from the same seed and needs 10 transactions.
+[The evaluation record](SLHDSA_EVALUATION.md) has the measured lifecycle
+costs, the lifetime-use assumptions and the review and qualification work
+that remains.
 
 SLH-DSA needs no one-time leaf tracking: retries and restored copies do not
 exhaust a leaf range. The signer still reports an expired release while its

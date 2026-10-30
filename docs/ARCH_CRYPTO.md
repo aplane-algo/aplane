@@ -641,8 +641,8 @@ Start here when changing the subsystem:
 
 ## Rotating SLH-DSA triple
 
-`aplane.rotating-triple-slhdsa.v1` is an **experimental**, opt-in compiled implementation of
-`rotating1`. Its stage requires Falcon-1024, Ed25519 and SLH-DSA signatures,
+`aplane.rotating-triple-slhdsa.v1` is an opt-in compiled implementation of
+`rotating1`, frozen by its first release (v0.45.0). Its stage requires Falcon-1024, Ed25519 and SLH-DSA signatures,
 the last under a rescaled parameter set: the SLH-DSA-SHA2-128s construction
 of FIPS 205 with its hypertree shortened from seven layers of height 9 to
 two layers of height 11 (`slhdsa.Rescaled128`). That set is not a FIPS 205
@@ -714,8 +714,8 @@ The design record for this new implementation of an established contract:
    SLH-DSA-SHA2-128s shape instead (2863 / 2866 bytes, args R+FORS, four
    HT layers, three HT layers, Ed25519, Falcon, 9343 bytes, cost
    40888 + 41 times steps, ceiling 187258, ten transactions). The two
-   heights are different accounts for the same seed; the constant is for
-   evaluation while the type is experimental, not an operator setting.
+   heights are different accounts for the same seed. Released builds use
+   22; the constant is for evaluation, not an operator setting.
 7. **Evidence:** strict parser and salted/unsalted stock-assembler equality;
    pinned stage identities, network separation, per-component signature
    rejection, repeated stateless signing and secret erasure; library

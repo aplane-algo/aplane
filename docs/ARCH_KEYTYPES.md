@@ -333,9 +333,10 @@ tampered field, both range violations, a valid signature above the checksum
 cap, tree rollover and the cost model at the step ceiling on LocalNet
 (`ARCH_CRYPTO.md`).
 
-The experimental SLH-DSA profile is another implementation of `rotating1`.
-Its library metadata explicitly identifies its pending independent review
-and production qualification. Its design
+The SLH-DSA profile is another implementation of `rotating1`. Its library
+description states that its parameter set is not a FIPS 205 parameter set;
+its pending independent review and production qualification are recorded in
+[SLHDSA_EVALUATION.md](SLHDSA_EVALUATION.md). Its design
 record and frozen cryptographic/resource contracts are in
 [ARCH_CRYPTO.md](ARCH_CRYPTO.md#rotating-slh-dsa-triple).
 

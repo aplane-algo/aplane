@@ -2,8 +2,8 @@
 
 Status: implemented as three separate key types. `aplane.rotating-triple-xmss.v1`
 and `aplane.rotating-triple-wots.v1` are each frozen by their first release
-(v0.44.0). `aplane.rotating-triple-slhdsa.v1` is experimental and unreleased;
-its design is in section 11. This document specifies all three for
+(v0.44.0), and `aplane.rotating-triple-slhdsa.v1` by its first release
+(v0.45.0); its design is in section 11. This document specifies all three for
 implementers and reviewers: their shared design and the hash-based
 schemes. It restates, and does not replace, the authoritative sources:
 
@@ -29,7 +29,7 @@ their exact layouts; section 11 specifies where SLH-DSA differs, with the
 frozen contract in [ARCH_CRYPTO.md](ARCH_CRYPTO.md#rotating-slh-dsa-triple)
 and the qualification record in [SLHDSA_EVALUATION.md](SLHDSA_EVALUATION.md).
 Its implementation is `lsig/rotatingtripleslhdsa/`, with the primitive in
-`internal/crypto/slhdsa/`. It is not part of the original v0.44.0 release.
+`internal/crypto/slhdsa/`. It was first released in v0.45.0.
 
 Where this document and the code disagree, the code and its frozen golden
 tests win; report the discrepancy.
@@ -618,9 +618,9 @@ matching resource literals in `internal/rotatingkey`. Changing the
 constant and rebuilding gives the standard SLH-DSA-SHA2-128s shape at ten
 transactions, with every stage address changed, since the shape is
 embedded in the stage program. It exists so the standard set stays
-reachable for review and measurement while the type is experimental; it is
-not an operator setting, and a released build fixes one height for the
-key type's lifetime.
+reachable for review and measurement; it is not an operator setting.
+Released builds use height 22, fixed for the key type's lifetime, and a
+height 63 build derives different accounts from the same seed.
 
 **Alternatives considered.**
 
@@ -819,7 +819,7 @@ The 41 units per chain step are 6 unit-cost instructions and one SHA-256.
 | Signing, this host | tree cache amortized | microseconds | about 0.2 s |
 | Stage derivation, this host | tree cache amortized | microseconds | about 100 ms |
 | Standing | RFC 8391 format and set, non-conformant signer | APlane construction | FIPS 205 construction, private parameter set |
-| Status | released v1 | released v1 | experimental |
+| Status | released v1 | released v1 | released v1 |
 
 ## 12. Compatibility and versioning
 
@@ -834,10 +834,10 @@ The 41 units per chain step are 6 unit-cost instructions and one SHA-256.
   construction. This document groups them under a shared design name; it
   introduces no additional key type, scheme negotiation or conversion of
   existing accounts.
-- The SLH-DSA variant is unreleased. Its hypertree rescaling on 2026-10-27
-  changed its stage template, stage identities and resource profile under
-  the same key type identifier, a pre-release freeze decision; once it
-  ships, the same change would mint a new version.
+- The SLH-DSA variant is frozen by its first release, v0.45.0. Before that,
+  its hypertree rescaling on 2026-10-27 changed its stage template, stage
+  identities and resource profile under the same key type identifier, a
+  pre-release freeze decision; the same change would now mint a new version.
 - Pre-release development templates may derive different addresses and must
   be identified rather than reinterpreted as released v1 templates.
 - The shared signing-flow identifier remains `rotating1`. Clients route on

@@ -5,8 +5,25 @@ token, setup-file, and protocol-v5 entries describe behavior superseded by the
 enrolled-key model and current admin protocol v6.0; they are not current setup
 instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 
-## Rotating signing hardening
+## Rotating SLH-DSA triple accounts and signing hardening
 
+- New rotating key type `aplane.rotating-triple-slhdsa.v1`: Falcon-1024,
+  SLH-DSA and Ed25519 per stage, with a fresh SLH-DSA key for every stage.
+  The SLH-DSA leg is the SLH-DSA-SHA2-128s construction of FIPS 205 with its
+  hypertree shortened to two layers of height 11 (h = 22), which is not a
+  FIPS 205 parameter set: a stage key normally signs one spend, so the
+  shorter tree is enough, and it cuts the signature to 4,400 bytes and a
+  spend to six transactions (six minimum fees). Like the other rotating
+  types it is opt-in through the key type library. Independent security
+  review and production qualification are pending; see
+  [SLHDSA_EVALUATION.md](SLHDSA_EVALUATION.md).
+- SLH-DSA is stateless, so this type tracks no leaves: retries and restored
+  copies exhaust nothing, and signing the same transaction again gives the
+  same signature. Its security margin is stated for at most 2^16 distinct
+  messages per stage key, which the signer does not count or enforce.
+  Deriving a stage takes about 100 ms, so lookahead is capped at two stages
+  and a restore rebuilds its address cache at roughly two to three stages
+  per second.
 - Rotating prepare builds the group with the same resource solver, fee
   allocator and group construction as `/sign` and `/plan`, replacing a
   private copy. Single spends produce the same groups as before.

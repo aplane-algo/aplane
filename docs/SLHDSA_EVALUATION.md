@@ -1,11 +1,11 @@
 # Rotating SLH-DSA evaluation record
 
-Status: **experimental; independent security review and production qualification
-are pending**. This record covers `aplane.rotating-triple-slhdsa.v1`, which
+Status: **released in v0.45.0; independent security review and production
+qualification are pending**. This record covers `aplane.rotating-triple-slhdsa.v1`, which
 signs under the SLH-DSA-SHA2-128s construction of FIPS 205 with its hypertree
 rescaled to two layers of height 11 (h = 22). That is **not a FIPS 205
 parameter set**, and this record is not a FIPS validation claim. The library
-display name and description expose both facts to operators.
+description states that the set is not a FIPS 205 parameter set.
 
 The cryptographic and wire contract remains in
 [ARCH_CRYPTO.md](ARCH_CRYPTO.md#rotating-slh-dsa-triple). The rescaling
