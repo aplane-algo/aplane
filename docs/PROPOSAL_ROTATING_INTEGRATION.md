@@ -13,9 +13,9 @@ lists what each changed and why. Where an earlier revision and this text
 disagree, this text is authoritative.
 
 The design was implemented and passed review and the full integration suite
-(PR #137), then closed unmerged; the branch `work/rotating-integration`
-keeps that implementation. Rotating accounts stay single-transaction for v1,
-for three reasons:
+(PR #137), then closed unmerged. This document, not that code, is the primary
+record of the design; section 13 says where the parked code lives and how to
+use it. Rotating accounts stay single-transaction for v1, for three reasons:
 
 - The cases it opens are conveniences that two ordinary steps already cover,
   not capabilities.
@@ -629,8 +629,9 @@ through tests.
 
 Since deferral, the shared builder extraction, strict per-transaction
 decoding and most of the approval-binding change are on main (section 13),
-so the remaining work is smaller than this estimate. The parked branch
-holds a complete implementation of the rest.
+so the remaining work is smaller than this estimate. The parked
+implementation (PR #137) holds a complete version of the rest, written
+against an older main.
 
 ## 11. Decisions taken and questions open
 
@@ -733,11 +734,16 @@ Deferral (2026-10-29):
 22. The SDK line says the SDKs carry wire shapes only (5).
 23. Section 14 lists the triggers for reopening and what does not count as
     one (header).
+24. This document is the primary record; the parked code is cited by PR and
+    commit, since its branch was deleted (header, 10, 13).
 
 ## 13. Implementation record and changes since deferral
 
-The parked implementation (PR #137, branch `work/rotating-integration`)
-follows this text. Where the text left a choice open, it chose:
+The parked implementation is PR #137 at commit `89f378f8`. Its branch,
+`work/rotating-integration`, was deleted on 2026-10-29; GitHub keeps the
+commits at `refs/pull/137/head`, and
+`git fetch origin pull/137/head:rotating-integration-parked` restores them
+locally. It follows this text. Where the text left a choice open, it chose:
 
 - **Response migration.** Section 10's second option: both responses carry
   `rotations` and the scalar fields, which repeat its single entry, until
@@ -775,7 +781,12 @@ Three differ from the parked versions, and a revival must reconcile them:
 
 To revive the design, port the parked implementation onto a fresh branch
 from main rather than merging it. A trial merge on 2026-10-29 conflicted in
-twelve files, most of them the four parts above.
+twelve files, most of them the four parts above. Use the parked code for the
+choices above and for its tests, the failure-after-release integration test
+among them; where it and this document differ, this document is
+authoritative. The rotating family refactor that followed
+([PROPOSAL_ROTATING_FAMILY_UNIFICATION.md](PROPOSAL_ROTATING_FAMILY_UNIFICATION.md),
+PRs #139 to #143) changed none of the files the parked code touches.
 
 ## 14. When to reopen
 
@@ -808,7 +819,7 @@ an owned transaction to land atomically. These would meet it:
 Not sufficient on their own:
 
 - Fewer steps, where two ordinary steps already work.
-- The parked branch being ready. It lowers the cost, not the bar.
+- The parked implementation being ready. It lowers the cost, not the bar.
 - A request to group with another party's transactions. That stays
   excluded under the key type document's section 10.1 whatever happens
   here; this proposal never lifts it (section 1).
