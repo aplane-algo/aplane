@@ -260,11 +260,11 @@ func (m Model) renderParameterModalForKeyType(keyType, buttonVerb, errorMsg stri
 	sb.WriteString(scrollMoreBelowLine(len(params) - endIdx))
 	sb.WriteString("\n")
 
-	// Action button
+	// Action button; the title already names the key type.
 	if m.forms.generateFocus == len(params) {
-		sb.WriteString(buttonActiveStyle.Render(fmt.Sprintf("> [ %s %s ] <", buttonVerb, strings.ToUpper(spec.DisplayName))))
+		sb.WriteString(buttonActiveStyle.Render(fmt.Sprintf("> [ %s ] <", buttonVerb)))
 	} else {
-		sb.WriteString(buttonInactiveStyle.Render(fmt.Sprintf("  [ %s %s ]  ", buttonVerb, strings.ToUpper(spec.DisplayName))))
+		sb.WriteString(buttonInactiveStyle.Render(fmt.Sprintf("  [ %s ]  ", buttonVerb)))
 	}
 	sb.WriteString("\n\n")
 

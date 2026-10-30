@@ -291,6 +291,38 @@ func TestParameterModalMarksOnlyOptionalParameters(t *testing.T) {
 	}
 }
 
+func TestParameterModalButtonOmitsKeyType(t *testing.T) {
+	defer setServerKeyTypes(nil)
+	setServerKeyTypes([]protocol.KeyTypeInfo{{
+		KeyType:        "test.generic-policy.v1",
+		DisplayName:    "Allowlist",
+		CreationParams: []protocol.TemplateParamInfo{{Name: "recipients", Label: "Recipients", Type: "address[]"}},
+	}})
+
+	m := Model{
+		width:  100,
+		height: 40,
+		forms: formsState{
+			genericLSigParams:      map[string]string{"recipients": ""},
+			genericLSigParamModes:  map[string]int{},
+			genericLSigParamScroll: map[string]int{"recipients": 0},
+		},
+	}
+
+	for _, focus := range []int{0, 1} {
+		m.forms.generateFocus = focus
+		for _, verb := range []string{"GENERATE", "IMPORT"} {
+			rendered := stripANSI(m.renderParameterModalForKeyType("test.generic-policy.v1", verb, ""))
+			if !strings.Contains(rendered, "[ "+verb+" ]") {
+				t.Fatalf("focus %d: button is not [ %s ]:\n%s", focus, verb, rendered)
+			}
+			if strings.Contains(rendered, "ALLOWLIST") {
+				t.Fatalf("focus %d: button names the key type:\n%s", focus, rendered)
+			}
+		}
+	}
+}
+
 func TestBytesParameterFieldUsesDeclaredHexLength(t *testing.T) {
 	if got := getFieldWidthForType("bytes", 64); got != 66 {
 		t.Fatalf("bytes field width = %d, want 66", got)
