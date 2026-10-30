@@ -32,7 +32,7 @@ const (
 	RotatingTripleSlhdsaV1           = "aplane.rotating-triple-slhdsa.v1"
 	RotatingTripleSlhdsaFamily       = "aplane.rotating-triple-slhdsa"
 	RotatingSlhdsaStagePublicKeySize = 16 + 16 + 1793 + 32
-	RotatingTripleSlhdsaDisplayName  = "Experimental rotating triple SLH-DSA (Falcon-1024 + SLH-DSA + Ed25519)"
+	RotatingTripleSlhdsaDisplayName  = "Rotating triple SLH-DSA (Falcon-1024 + SLH-DSA + Ed25519)"
 )
 
 // The SLH-DSA literals the selected hypertree height fixes: the salted
@@ -42,7 +42,7 @@ var (
 	RotatingSlhdsaMaxProgramBytes   = slhdsaShape.programBytes
 	RotatingSlhdsaMaxArgumentBytes  = slhdsaShape.argumentBytes
 	RotatingSlhdsaMaxOpcodeCost     = slhdsaShape.opcodeCost
-	RotatingTripleSlhdsaDescription = "Experimental: independent security review and production qualification remain pending. Fixed account address with fresh Falcon-1024, " + slhdsaShape.scheme + " and Ed25519 authority per spend. No one-time leaf tracking. Signs only through rotating1."
+	RotatingTripleSlhdsaDescription = "Fixed account address with fresh Falcon-1024, " + slhdsaShape.scheme + " and Ed25519 authority per spend. No one-time leaf tracking. Signs only through rotating1."
 )
 
 var slhdsaShape = map[int]struct {
