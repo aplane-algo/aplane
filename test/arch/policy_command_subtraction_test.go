@@ -206,6 +206,14 @@ func TestPolicyWorkflowImportsStayInOwningBoundaries(t *testing.T) {
 			filepath.Join("internal", "signerapp", "policycmd"): true,
 			filepath.Join("internal", "signerapp", "signertui"): true,
 		},
+		// policytext holds the text-level helpers for policy documents
+		// (comments, templates, presets). It has no store or admin
+		// dependencies, so policy authoring can use it without policyreview.
+		"github.com/aplane-algo/aplane/internal/signerapp/policytext": {
+			filepath.Join("internal", "signerapp", "policyreview"): true,
+			filepath.Join("internal", "signerapp", "policycmd"):    true,
+			filepath.Join("internal", "signerapp", "signertui"):    true,
+		},
 		// policyapply owns the rules for committing policy; the daemon admin
 		// service, the rescue workflow, and apstore's checks are its only users.
 		"github.com/aplane-algo/aplane/internal/signerapp/policyapply": {

@@ -14,7 +14,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/signerapp/policycmd"
-	"github.com/aplane-algo/aplane/internal/signerapp/policyreview"
+	"github.com/aplane-algo/aplane/internal/signerapp/policytext"
 )
 
 func TestParsePolicyCommandGrammar(t *testing.T) {
@@ -148,7 +148,7 @@ func TestPolicyTemplateEmbeddedNeedsNoStore(t *testing.T) {
 	t.Setenv("APPOLICY_PASSPHRASE", "")
 	t.Setenv("APSIGNER_PASSPHRASE", "")
 	missing := filepath.Join(t.TempDir(), "no-such-store")
-	want, err := policyreview.EmbeddedTemplate(noderole.RoleSigner, policy.DefaultKey)
+	want, err := policytext.EmbeddedTemplate(noderole.RoleSigner, policy.DefaultKey)
 	if err != nil {
 		t.Fatal(err)
 	}

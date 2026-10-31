@@ -15,6 +15,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyreview"
+	"github.com/aplane-algo/aplane/internal/signerapp/policytext"
 )
 
 // ErrPolicyInvalid reports that check found errors; they have been printed.
@@ -38,13 +39,13 @@ func WriteOfflineTemplate(command Command, streams Streams) error {
 	switch {
 	case command.ListPresets:
 		var b strings.Builder
-		for _, preset := range policyreview.Presets(noderole.RoleCosigner) {
+		for _, preset := range policytext.Presets(noderole.RoleCosigner) {
 			fmt.Fprintf(&b, "%-20s %s\n", preset.Name, preset.Summary)
 		}
 		text = b.String()
 	case command.Preset != "":
 		var err error
-		if text, err = policyreview.PresetTemplate(noderole.RoleCosigner, command.Preset, command.documentKey()); err != nil {
+		if text, err = policytext.PresetTemplate(noderole.RoleCosigner, command.Preset, command.documentKey()); err != nil {
 			return err
 		}
 	default:
@@ -52,7 +53,7 @@ func WriteOfflineTemplate(command Command, streams Streams) error {
 		if err != nil {
 			return err
 		}
-		if text, err = policyreview.EmbeddedTemplate(role, command.documentKey()); err != nil {
+		if text, err = policytext.EmbeddedTemplate(role, command.documentKey()); err != nil {
 			return err
 		}
 	}
@@ -96,7 +97,7 @@ func run(ctx context.Context, command Command, streams Streams, backend Backend)
 		if !def.Success {
 			return resultError(def.Code, def.Error)
 		}
-		text, err := policyreview.Template(role, command.documentKey(), []byte(def.Document))
+		text, err := policytext.Template(role, command.documentKey(), []byte(def.Document))
 		if err != nil {
 			return err
 		}

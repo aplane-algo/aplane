@@ -168,3 +168,55 @@ func TestDocumentFromTextAppliesTheFileRules(t *testing.T) {
 		}
 	}
 }
+
+func TestReadDocumentsStripsCommentsBeforeTheNode(t *testing.T) {
+	// A complete document with comments added: a whole line, and one inside a
+	// line. Stripped, it is the document without them.
+	clean := policytest.Signer(t, policy.DefaultKey, `{"max_fee_microalgos":"2000"}`)
+	commented := strings.Replace(clean, "{\n", "{\n  // the document type\n", 1)
+	commented = strings.Replace(commented, "\"max_fee_microalgos\": \"2000\",", "\"max_fee_microalgos\": \"2000\", /* fee */", 1)
+	if commented == clean {
+		t.Fatal("test did not add comments")
+	}
+	file := writePolicyFile(t, "default.json", commented)
+	docs, _, err := ReadDocuments([]string{file}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if docs[0].Document != clean {
+		t.Fatalf("document sent = %q, want %q", docs[0].Document, clean)
+	}
+	if _, err := policy.DecodePolicyV1([]byte(docs[0].Document), policy.DefaultKey, noderole.RoleSigner); err != nil {
+		t.Fatalf("stripped document does not decode: %v", err)
+	}
+	docs, _, err = ReadRegularDocuments([]string{file})
+	if err != nil || docs[0].Document != clean {
+		t.Fatalf("ReadRegularDocuments = %q, %v", docs[0].Document, err)
+	}
+	doc, err := DocumentFromText("default.json", commented)
+	if err != nil || doc.Document != clean {
+		t.Fatalf("DocumentFromText = %q, %v", doc.Document, err)
+	}
+	// The key is read from the stripped text.
+	cosigner := strings.Replace(testCosignerDoc(testKeyA), "\"key\":", "// which key\n  \"key\":", 1)
+	doc, err = DocumentFromText("k.json", cosigner)
+	if err != nil || doc.Key != testKeyA || strings.Contains(doc.Document, "//") {
+		t.Fatalf("cosigner commented text: doc %+v err %v", doc, err)
+	}
+
+	for name, text := range map[string]string{
+		"only comments": "// nothing here\n/* at all */\n",
+		"unterminated":  "{\"key\": \"default\"} /* open",
+	} {
+		if _, err := DocumentFromText("default.json", text); err == nil {
+			t.Fatalf("%s: text accepted", name)
+		}
+	}
+	// A comment inside a token does not assemble one: the stripped text is
+	// not a JSON object, so no key can be read from it and it is refused
+	// exactly as the blanked text the TUI checks would be.
+	split := "{\"key\": \"default\", \"reject_foreign_rekey\": fa/* note */lse}"
+	if doc, err := DocumentFromText("default.json", split); err == nil || !strings.Contains(err.Error(), `"key" field`) {
+		t.Fatalf("a token split by a comment was accepted: doc %+v err %v", doc, err)
+	}
+}

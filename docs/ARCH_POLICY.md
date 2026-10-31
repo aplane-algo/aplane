@@ -715,7 +715,7 @@ Consequences:
   `diff` before `apply`, which shows the same diff and asks for confirmation.
 - Comments are a producer convenience, not part of the format. The apadmin
   policy commands and the apadmin TUI accept `//` and `/* */` comments
-  outside strings and remove them (`policyreview.StripComments`) before the
+  outside strings and remove them (`policytext.StripComments`) before the
   document is sent, so the node never sees or stores them. `apstore policy
   check|sign` act on documents already in the store, which must be strict
   JSON.
@@ -1338,11 +1338,11 @@ store, or passphrase (`policycmd.Command.NeedsNoNode`). The online and rescue
 forms fail rather than fall back to the shipped default, so a customized node
 default is never silently replaced by the shipped one. Each template carries
 a header comment; stripped of it, a template decodes equal to the document it
-stands for (`policyreview.Template`, `policyreview.EmbeddedTemplate`).
+stands for (`policytext.Template`, `policytext.EmbeddedTemplate`).
 
-Presets (`policyreview.Presets`, `policyreview.PresetTemplate`) are named
+Presets (`policytext.Presets`, `policytext.PresetTemplate`) are named
 starting documents for the cosigner role, embedded from
-`internal/signerapp/policyreview/presets/cosigner/*.jsonc`. They exist
+`internal/signerapp/policytext/presets/cosigner/*.jsonc`. They exist
 because the shipped cosigner default cosigns nothing, so every new cosigner
 key needs routes before it is usable. A preset is starting text only: it adds
 no policy semantics and reaches the node through the same check, diff, and
@@ -1506,8 +1506,10 @@ Implementation source of truth:
   `PolicyFor`.
 - `internal/signerapp/policyapply`: shared check and generation-commit rules for
   online apply, rescue, and `apstore`.
-- `internal/signerapp/policyreview`: templates, comment stripping, and the
+- `internal/signerapp/policyreview`: reading policy files for review, and the
   effective per-key diff.
+- `internal/signerapp/policytext`: comment stripping, templates, and cosigner
+  presets.
 - `internal/signerapp/approvalpolicy/warnings.go`: warning analysis.
 - `cmd/apadmin/policy.go`: policy command adapter and local IPC transport selection.
 - `internal/signerapp/policycmd`: online and offline-rescue policy workflows.

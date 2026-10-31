@@ -11,7 +11,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/protocol"
-	"github.com/aplane-algo/aplane/internal/signerapp/policyreview"
+	"github.com/aplane-algo/aplane/internal/signerapp/policytext"
 )
 
 // On a cosigner node, e on a key that follows the default offers the
@@ -26,7 +26,7 @@ func TestPolicyPresetPickOpensPresetForKeyOnTheDefault(t *testing.T) {
 		t.Fatalf("e on a cosigner key on the default: view %v cmd %v, want the picker", m.viewState, cmd)
 	}
 	rendered := stripANSI(m.renderPolicyPresetPick())
-	presets := policyreview.Presets(noderole.RoleCosigner)
+	presets := policytext.Presets(noderole.RoleCosigner)
 	for _, want := range append([]string{"Start from the node default", "key " + policyViewKeyA}, presets[0].Name, presets[len(presets)-1].Name) {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("picker missing %q:\n%s", want, rendered)
@@ -49,7 +49,7 @@ func TestPolicyPresetPickOpensPresetForKeyOnTheDefault(t *testing.T) {
 	if m.viewState != ViewPolicyEdit || edit.loading || cmd != nil || edit.key != policyViewKeyA || !edit.isNew {
 		t.Fatalf("enter on self-only: view %v edit key %q loading %v isNew %v cmd %v", m.viewState, edit.key, edit.loading, edit.isNew, cmd)
 	}
-	want, err := policyreview.PresetTemplate(noderole.RoleCosigner, "self-only", policyViewKeyA)
+	want, err := policytext.PresetTemplate(noderole.RoleCosigner, "self-only", policyViewKeyA)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -13,6 +13,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyreview"
+	"github.com/aplane-algo/aplane/internal/signerapp/policytext"
 	"github.com/charmbracelet/bubbles/cursor"
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
@@ -98,7 +99,7 @@ func policyTextEquivalent(document, held string) bool {
 // only need to see the JSON. Text whose comments cannot be blanked is
 // returned as is, for the tool to reject.
 func policyJSONBytes(text string) []byte {
-	blanked, err := policyreview.BlankComments([]byte(text))
+	blanked, err := policytext.BlankComments([]byte(text))
 	if err != nil {
 		return []byte(text)
 	}
@@ -183,7 +184,7 @@ func (m Model) handlePolicyEditDocumentLoaded(msg PolicyDocumentLoadedMsg) (tea.
 		role, err := noderole.ParseRole(m.policies.policy.NodeRole)
 		var template string
 		if err == nil {
-			template, err = policyreview.Template(role, edit.templateFor, []byte(msg.Document.Document))
+			template, err = policytext.Template(role, edit.templateFor, []byte(msg.Document.Document))
 		}
 		if err != nil {
 			m = m.closePolicyApply()
@@ -303,7 +304,7 @@ func (m Model) submitPolicyEdit() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	text := strings.TrimRight(edit.input.Value(), "\n") + "\n"
-	if _, err := policyreview.BlankComments([]byte(text)); err != nil {
+	if _, err := policytext.BlankComments([]byte(text)); err != nil {
 		apply.err = "Invalid JSON: " + err.Error()
 		return m, nil
 	}

@@ -22,7 +22,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/policy/policytest"
 	"github.com/aplane-algo/aplane/internal/protocol"
-	"github.com/aplane-algo/aplane/internal/signerapp/policyreview"
+	"github.com/aplane-algo/aplane/internal/signerapp/policytext"
 	"github.com/aplane-algo/aplane/internal/signerapp/storevalidate"
 	"github.com/aplane-algo/aplane/internal/storeinit"
 	"github.com/aplane-algo/aplane/internal/storelock"
@@ -384,7 +384,7 @@ func TestTemplateEmbeddedNeedsNoNodeAndOnlinePrintsTheNodeDefault(t *testing.T) 
 	if err := (OnlineRunner{}).Run(context.Background(), Command{Verb: VerbTemplate, Embedded: "signer"}, Streams{Stdout: &stdout}); err != nil {
 		t.Fatal(err)
 	}
-	want, err := policyreview.EmbeddedTemplate(noderole.RoleSigner, policy.DefaultKey)
+	want, err := policytext.EmbeddedTemplate(noderole.RoleSigner, policy.DefaultKey)
 	if err != nil || stdout.String() != want {
 		t.Fatalf("embedded signer template = %q, %v", stdout.String(), err)
 	}
@@ -392,7 +392,7 @@ func TestTemplateEmbeddedNeedsNoNodeAndOnlinePrintsTheNodeDefault(t *testing.T) 
 	if err := (RescueRunner{}).Run(context.Background(), Command{Verb: VerbTemplate, Embedded: "cosigner", Key: testKeyA}, Streams{Stdout: &stdout}); err != nil {
 		t.Fatal(err)
 	}
-	if want, err = policyreview.EmbeddedTemplate(noderole.RoleCosigner, testKeyA); err != nil || stdout.String() != want {
+	if want, err = policytext.EmbeddedTemplate(noderole.RoleCosigner, testKeyA); err != nil || stdout.String() != want {
 		t.Fatalf("embedded cosigner template = %q, %v", stdout.String(), err)
 	}
 	if err := (OnlineRunner{}).Run(context.Background(), Command{Verb: VerbTemplate}, Streams{}); err == nil {
@@ -405,7 +405,7 @@ func TestTemplateEmbeddedNeedsNoNodeAndOnlinePrintsTheNodeDefault(t *testing.T) 
 	if err := (OnlineRunner{Session: session}).Run(context.Background(), Command{Verb: VerbTemplate, Key: testAddress}, Streams{Stdout: &stdout}); err != nil {
 		t.Fatal(err)
 	}
-	if want, err = policyreview.Template(noderole.RoleSigner, testAddress, []byte(testSignerDoc)); err != nil || stdout.String() != want {
+	if want, err = policytext.Template(noderole.RoleSigner, testAddress, []byte(testSignerDoc)); err != nil || stdout.String() != want {
 		t.Fatalf("online template = %q, %v, want the node's default under the key", stdout.String(), err)
 	}
 	if !strings.Contains(stdout.String(), `"max_fee_microalgos": "2000"`) || !strings.Contains(stdout.String(), fmt.Sprintf(`"key": %q`, testAddress)) {
@@ -434,7 +434,7 @@ func TestTemplatePresetNeedsNoNode(t *testing.T) {
 	if err := (OnlineRunner{}).Run(context.Background(), Command{Verb: VerbTemplate, Preset: "self-only", Key: testKeyA}, Streams{Stdout: &stdout}); err != nil {
 		t.Fatal(err)
 	}
-	want, err := policyreview.PresetTemplate(noderole.RoleCosigner, "self-only", testKeyA)
+	want, err := policytext.PresetTemplate(noderole.RoleCosigner, "self-only", testKeyA)
 	if err != nil || stdout.String() != want {
 		t.Fatalf("preset template = %q, %v", stdout.String(), err)
 	}
@@ -442,7 +442,7 @@ func TestTemplatePresetNeedsNoNode(t *testing.T) {
 	if err := (RescueRunner{}).Run(context.Background(), Command{Verb: VerbTemplate, ListPresets: true}, Streams{Stdout: &stdout}); err != nil {
 		t.Fatal(err)
 	}
-	for _, preset := range policyreview.Presets(noderole.RoleCosigner) {
+	for _, preset := range policytext.Presets(noderole.RoleCosigner) {
 		if !strings.Contains(stdout.String(), preset.Name) {
 			t.Fatalf("preset list misses %s:\n%s", preset.Name, stdout.String())
 		}
@@ -555,7 +555,7 @@ func TestRescueCosignerApplyAndRemovePerKey(t *testing.T) {
 		Streams{Stdout: &stdout, Stderr: io.Discard}); err != nil {
 		t.Fatal(err)
 	}
-	want, err := policyreview.Template(noderole.RoleCosigner, testKeyB, []byte(embeddedDefault("cosigner")))
+	want, err := policytext.Template(noderole.RoleCosigner, testKeyB, []byte(embeddedDefault("cosigner")))
 	if err != nil || stdout.String() != want {
 		t.Fatalf("rescue template = %q, %v", stdout.String(), err)
 	}
