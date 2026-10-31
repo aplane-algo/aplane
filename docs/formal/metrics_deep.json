@@ -46,5 +46,11 @@
     "cfg": "enrollment_queue_deep",
     "distinct_states": 12168,
     "depth": 15
+  },
+  {
+    "spec": "rotating_leaf_release",
+    "cfg": "rotating_leaf_release_deep",
+    "distinct_states": 8553448,
+    "depth": 30
   }
 ]

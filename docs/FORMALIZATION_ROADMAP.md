@@ -19,6 +19,7 @@ contracts; these models cover narrower security-critical transitions.
 | `store_root_commit.tla` | atomic generation/key-authority commit, exact-input promotion, crash classification, and quarantine |
 | `enrollment_queue.tla` | client enrollment registry and queue under the applied-vs-durable publication rule |
 | `recovery_binding.tla` | which generation the runtime binds, serves, and maintains after a failed post-commit reload |
+| `rotating_leaf_release.tla` | one-time leaf choice for a rotating leaf-family stage: release memory, audit restore after unlock, and the status-pass clear |
 
 The single-product runtime has no decommission state or operation lease, so the
 formal inventory contains no lifecycle model for those concepts. Runtime
@@ -340,6 +341,21 @@ the already listed rotating model-extension candidate; the release-memory
 rebuild from the audit log at unlock and the recovery allowance reset on
 lock-generation change are the durable and runtime transitions a rotating
 model would need first.
+
+Follow-up (2026-10-31): `rotating_leaf_release.tla` models the rotating
+leaf-family release memory, the first rotating-flow model (it narrows the
+rotating model-extension candidate below to the leaf choice; the prepare-time
+`rekey_to` mutation, stage-proof, timing, and open-test refusals, and the
+stage-table recovery grants remain unmodeled). LF1-LF3 hold over 1,408,640
+states (depth 28; deep 8,553,448 at depth 30) with the stated loss sources
+(failed audit write, rotated log, failed restore) tagged and excluded from the
+claim. Two negative controls each violate LF1: `WaitForRestore = FALSE`
+(sign before the post-unlock restore) in 259 states at depth 6, and
+`SeqGuard = FALSE` (a stale status observation erases a newer release) in
+1,918 states at depth 9. Prose companion
+`FORMAL_TLA_ROTATING_LEAF_RELEASE_MODEL.md`; traceability section added. One
+gap recorded there: no Go test drives `SignRotatingWithContext` through the
+restore wait; it is pinned at the `ReleaseMemory` level only.
 
 Model-extension candidates: the rotating flow (`/sign/rotating/prepare` and
 `/sign/rotating/sign`: same slot classes and gates, but a prepare-time
