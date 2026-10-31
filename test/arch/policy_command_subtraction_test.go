@@ -210,6 +210,7 @@ func TestPolicyWorkflowImportsStayInOwningBoundaries(t *testing.T) {
 		// (comments, templates, presets). It has no store or admin
 		// dependencies, so policy authoring can use it without policyreview.
 		"github.com/aplane-algo/aplane/internal/signerapp/policytext": {
+			filepath.Join("internal", "signerapp", "policyauthor"): true,
 			filepath.Join("internal", "signerapp", "policyreview"): true,
 			filepath.Join("internal", "signerapp", "policycmd"):    true,
 			filepath.Join("internal", "signerapp", "signertui"):    true,

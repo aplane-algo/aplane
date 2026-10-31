@@ -30,6 +30,20 @@ func ParseDraft(data []byte) (*Draft, error) {
 	return &Draft{root: root}, nil
 }
 
+// TopLevelString returns the document's top-level member name when it is
+// present and a string. It reads a draft that may not decode, such as one
+// whose "key" or "role" is the only thing an editor can identify it by.
+func (d *Draft) TopLevelString(name string) (string, bool) {
+	if d.root.kind != nodeObject {
+		return "", false
+	}
+	member := d.root.members[name]
+	if member == nil || member.kind != nodeString {
+		return "", false
+	}
+	return member.text, true
+}
+
 // Canonical returns the draft in canonical form: two-space indentation, one
 // value per line, and the fields of each policy object in the order the
 // decoder reads them, with any unknown fields kept after them in their
