@@ -52,10 +52,22 @@ func (o *FalconOps) TEALVersion() int {
 
 // BuildSignatureArgs packs Falcon signature into one LogicSig arg.
 func (o *FalconOps) BuildSignatureArgs(signature []byte) ([][]byte, error) {
-	if len(signature) == 0 {
-		return nil, fmt.Errorf("signature is required for DSA LogicSig")
+	if err := checkSignatureSize(signature); err != nil {
+		return nil, err
 	}
 	return [][]byte{signature}, nil
+}
+
+// checkSignatureSize rejects a signature that is empty or longer than the
+// compressed Falcon-1024 maximum that the layout and fee estimate assume.
+func checkSignatureSize(signature []byte) error {
+	if len(signature) == 0 {
+		return fmt.Errorf("signature is required for DSA LogicSig")
+	}
+	if len(signature) > family.MaxSignatureSize {
+		return fmt.Errorf("signature is %d bytes, over the %d-byte Falcon-1024 maximum", len(signature), family.MaxSignatureSize)
+	}
+	return nil
 }
 
 // SignatureArgLayout declares Falcon's single variable-length signature arg.

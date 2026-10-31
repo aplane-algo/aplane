@@ -177,8 +177,8 @@ func (f *Falcon1024V1) SupportsMnemonicImport() bool {
 // BuildArgs assembles the LogicSig Args array.
 // For pure Falcon-1024, args are: [signature].
 func (f *Falcon1024V1) BuildArgs(signature []byte, runtimeArgs map[string][]byte) ([][]byte, error) {
-	if signature == nil {
-		return nil, fmt.Errorf("signature is required for DSA LogicSig")
+	if err := checkSignatureSize(signature); err != nil {
+		return nil, err
 	}
 	return [][]byte{signature}, nil
 }

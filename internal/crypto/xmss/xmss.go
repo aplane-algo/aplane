@@ -498,6 +498,11 @@ func (t *Tree) AuthPath(index uint32) []byte {
 // Sign signs msg with leaf index of the tree. The caller chooses the index
 // and must not reuse one; this package does not track it. The signature is
 // idx || r || WOTS+ signature || authentication path.
+//
+// Sign does not bound the WOTS+ checksum, which can reach 960. The rotating
+// stage program accepts only checksum <= 511, so a spend must use SignBounded;
+// a signature from Sign can be valid XMSS and still be rejected on chain. Sign
+// is for the RFC 8391 vector oracle and for tests of that rejection.
 func Sign(seeds *Seeds, tree *Tree, index uint32, msg []byte) ([]byte, error) {
 	if tree == nil || tree.height != Height {
 		return nil, fmt.Errorf("xmss tree has height %d, want %d", treeHeight(tree), Height)

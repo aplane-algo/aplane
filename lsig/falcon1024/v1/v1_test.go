@@ -391,3 +391,27 @@ func TestZeroSuffixMatchesStandardFalcon(t *testing.T) {
 			len(standardBytecode), len(composedBytecode))
 	}
 }
+
+func TestFalcon1024V1PlainSignatureBound(t *testing.T) {
+	ok := make([]byte, family.MaxSignatureSize)
+	tooLong := make([]byte, family.MaxSignatureSize+1)
+
+	for name, build := range map[string]func([]byte) ([][]byte, error){
+		"BuildArgs":          func(sig []byte) ([][]byte, error) { return (&Falcon1024V1{}).BuildArgs(sig, nil) },
+		"BuildSignatureArgs": (&FalconOps{}).BuildSignatureArgs,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if args, err := build(ok); err != nil || len(args) != 1 || len(args[0]) != len(ok) {
+				t.Fatalf("maximum-size signature: args=%d err=%v", len(args), err)
+			}
+			if _, err := build(tooLong); err == nil || !strings.Contains(err.Error(), "maximum") {
+				t.Fatalf("oversized signature: err = %v, want a size rejection", err)
+			}
+			for _, empty := range [][]byte{nil, {}} {
+				if _, err := build(empty); err == nil {
+					t.Fatalf("empty signature %#v accepted", empty)
+				}
+			}
+		})
+	}
+}
