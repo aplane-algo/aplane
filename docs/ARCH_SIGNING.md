@@ -1718,8 +1718,12 @@ Warnings appear in the daemon log once when they
 appear and once when they clear, in authenticated `/status` `warnings`, in
 apadmin's status bar, and in apshell's `rotate status`; notes appear in
 `/status` `notes`. The remedy for an expired release is a rotate-only spend
-through the endpoints above. Alerts are observational: safety does not
-depend on them, on the table, or on the audit log.
+through the endpoints above. An SLH-DSA stage also counts the distinct
+transactions it has released and warns once the count passes the profile's
+`StageMessageBudget` (2^16), even while the latest release is within its
+window; the count is bounded, restored from the audit log, and never refuses
+a signature. Alerts are observational: safety does not depend on them, on
+the table, or on the audit log.
 
 `/keys` response:
 
