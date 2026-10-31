@@ -212,16 +212,27 @@ func TestLockingTheSignerStopsAndDrainsTheStageTableWorker(t *testing.T) {
 		defer close(done)
 		server.fillStageTables(context.Background(), ir)
 	}()
-	// Let a few derivations happen, then lock. Lock drains every window in
-	// which the seed is held, so when it returns no copy of the seed exists;
-	// the pass may still write the prefix it had already derived and finish
-	// its pacing sleep, holding nothing sensitive.
-	time.Sleep(400 * time.Millisecond)
-	ir.Lock()
 	table, err := ir.StageTables().Table(account, gh, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Wait until the pass has derived something, then lock, so the lock lands
+	// mid-pass however fast the machine is. Lock drains every window in which
+	// the seed is held, so when it returns no copy of the seed exists; the
+	// pass may still write the prefix it had already derived and finish its
+	// pacing sleep, holding nothing sensitive.
+	for deadline := time.Now().Add(10 * time.Second); table.Len() == 0; {
+		if time.Now().After(deadline) {
+			ir.Lock()
+			select {
+			case <-done:
+			case <-time.After(2 * time.Second):
+			}
+			t.Fatal("stage table pass derived nothing before the deadline")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	ir.Lock()
 	atLock := table.Len()
 	select {
 	case <-done:
