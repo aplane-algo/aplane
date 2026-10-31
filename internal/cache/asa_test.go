@@ -4,6 +4,8 @@
 package cache
 
 import (
+	"bytes"
+	"os"
 	"strings"
 	"testing"
 )
@@ -112,5 +114,34 @@ func TestResolveBuiltinASAReferenceAndInfo(t *testing.T) {
 	}
 	if info, ok := BuiltinASAInfo("testnet", 10458941); !ok || info.Name != "USDC" {
 		t.Fatalf("BuiltinASAInfo() = (%+v, %v), want USDC", info, ok)
+	}
+}
+
+func TestLoadASACacheReportsBuiltinDisagreementOnceAndKeepsCachedValue(t *testing.T) {
+	var out bytes.Buffer
+	SetLoggerOutput(&out)
+	t.Cleanup(func() { SetLoggerOutput(os.Stdout) })
+
+	store := NewStore(t.TempDir())
+	asaCache := LoadASACacheFromStore(store, "testnet")
+	builtin := asaCache.Assets[10458941]
+	asaCache.Assets[10458941] = ASAInfo{Name: builtin.Name, UnitName: builtin.UnitName, Decimals: builtin.Decimals + 3}
+	asaCache.Assets[999998] = ASAInfo{Name: "Other", UnitName: "OTH", Decimals: 2}
+	if err := asaCache.SaveCache("testnet"); err != nil {
+		t.Fatalf("SaveCache() error = %v", err)
+	}
+	out.Reset()
+
+	for range 3 {
+		reloaded := LoadASACacheFromStore(store, "testnet")
+		if got := reloaded.Assets[10458941].Decimals; got != builtin.Decimals+3 {
+			t.Fatalf("decimals = %d, want the cached %d", got, builtin.Decimals+3)
+		}
+	}
+	if got := strings.Count(out.String(), "differs from the built-in"); got != 1 {
+		t.Fatalf("disagreement reported %d times, want 1:\n%s", got, out.String())
+	}
+	if !strings.Contains(out.String(), "ASA 10458941 on testnet") || strings.Contains(out.String(), "999998") {
+		t.Fatalf("report names the wrong assets:\n%s", out.String())
 	}
 }

@@ -9,8 +9,10 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
+	"github.com/algorand/go-algorand-sdk/v2/client/v2/common/models"
 
 	asaregistry "github.com/aplane-algo/aplane/internal/asa/registry"
 )
@@ -43,11 +45,49 @@ func LoadASACacheFromStore(store *Store, network string) ASACache {
 	}
 
 	for id, info := range filecache.Assets {
+		if builtin, ok := cache.Assets[id]; ok && builtin != info {
+			reportBuiltinDisagreement(network, id, builtin, info)
+		}
 		cache.Assets[id] = info
 	}
 
 	Debug("loaded ASA cache", "network", network, "entries", len(cache.Assets))
 	return cache
+}
+
+// reportedDisagreements remembers which cache-versus-built-in disagreements
+// have been reported, so a cache reloaded many times reports each once.
+var reportedDisagreements sync.Map
+
+// reportBuiltinDisagreement warns that a cached entry differs from the
+// built-in metadata for the same asset. An asset's name, unit name and
+// decimals are fixed on chain, so one of the two copies is wrong. The cached
+// value is still the one used.
+func reportBuiltinDisagreement(network string, assetID uint64, builtin, cached ASAInfo) {
+	key := fmt.Sprintf("%s/%d/%+v", network, assetID, cached)
+	if _, seen := reportedDisagreements.LoadOrStore(key, struct{}{}); seen {
+		return
+	}
+	warnf("ASA %d on %s: cached metadata (%q, %q, %d decimals) differs from the built-in (%q, %q, %d decimals); using the cached value",
+		assetID, network, cached.Name, cached.UnitName, cached.Decimals, builtin.Name, builtin.UnitName, builtin.Decimals)
+}
+
+// FetchASAParams reads an asset's on-chain parameters from algod.
+func FetchASAParams(ctx context.Context, client *algod.Client, assetID uint64) (models.AssetParams, error) {
+	asset, err := client.GetAssetByID(assetID).Do(ctx)
+	if err != nil {
+		return models.AssetParams{}, err
+	}
+	return asset.Params, nil
+}
+
+// ASAInfoFromParams keeps the parameters an ASA cache stores.
+func ASAInfoFromParams(params models.AssetParams) ASAInfo {
+	return ASAInfo{
+		Decimals: params.Decimals,
+		Name:     params.Name,
+		UnitName: params.UnitName,
+	}
 }
 
 // SaveCache saves the ASA cache to disk
@@ -75,16 +115,11 @@ func (cache *ASACache) GetASAInfoWithContext(ctx context.Context, algodClient *a
 	}
 
 	Debug("looking up ASA", "asset_id", assetID, "network", network)
-	assetInfo, err := algodClient.GetAssetByID(assetID).Do(ctx)
+	params, err := FetchASAParams(ctx, algodClient, assetID)
 	if err != nil {
 		return ASAInfo{}, fmt.Errorf("failed to get asset info for ASA %d on %s: %w", assetID, network, err)
 	}
-
-	info := ASAInfo{
-		Decimals: assetInfo.Params.Decimals,
-		Name:     assetInfo.Params.Name,
-		UnitName: assetInfo.Params.UnitName,
-	}
+	info := ASAInfoFromParams(params)
 
 	cache.Assets[assetID] = info
 	if err := cache.SaveCache(network); err != nil {

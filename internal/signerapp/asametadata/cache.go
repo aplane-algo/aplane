@@ -81,15 +81,11 @@ func (s Store) cachedMetadataByID(network string, assetID uint64) (asa.Metadata,
 }
 
 func (s Store) fetchAndCacheMetadata(ctx context.Context, network string, assetID uint64, client *algod.Client) (asa.Metadata, error) {
-	assetInfo, err := client.GetAssetByID(assetID).Do(ctx)
+	params, err := cache.FetchASAParams(ctx, client, assetID)
 	if err != nil {
 		return asa.Metadata{}, fmt.Errorf("failed to get asset info for ASA %d on %s: %w", assetID, network, err)
 	}
-	info := cache.ASAInfo{
-		Name:     assetInfo.Params.Name,
-		UnitName: assetInfo.Params.UnitName,
-		Decimals: assetInfo.Params.Decimals,
-	}
+	info := cache.ASAInfoFromParams(params)
 
 	cacheMu.Lock()
 	asaCache := s.load(network)
