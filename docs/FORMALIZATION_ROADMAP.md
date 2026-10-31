@@ -307,6 +307,40 @@ paths call `validateKnownNetwork` before any gate or chain read
 (`TestRotatingRefusesANetworkThisNodeIsNotConfiguredFor`). The
 `ErrStoreRootCommitStateUnknown` edge remains open.
 
+Drift review (2026-10-31, HEAD `343fdd36`): range `9fbbb5a6..343fdd36` (100
+commits). `make formal-test` (16 runs) and `make formal-test-deep` (8 runs)
+match their recorded outcomes and metrics; both negative controls still fail
+on their named properties. The traceability anchor sweep found every cited
+file and named test present. The range did not touch the approval coordinator,
+session ownership, store-root commit, enrollment queue, recovery binding, or
+guarded assembly code (`approval/`, `adminserver/`, `genstore/`, `storepass/`,
+`enrollqueue/`, `enrollment/`, `templates/`, `backupadmin/`, `keystore/file.go`
+are unchanged); `productruntime/runtime.go` and `daemon/server.go` gained only
+rotating status and recovery state, not queue or registry publication. The
+`d2bd5ea5` uncertain-commit recovery order was resolved in the previous
+review. Checked in modeled signing areas: `04291e8c` makes `user_auto_approve`
+satisfy every forced review requirement (`requestGroupApprovalWithContext`,
+single-transaction and component gates) while hard rejections still run first,
+which `policy_precedence.tla` and `composition.tla` already express
+(`Decide`: deny, then review satisfied by auto-approve) and the spec comment
+was updated in that commit; protocol rekeys to a signer-proved rotation stage
+are excluded from warning analysis, which only removes a review trigger inside
+the review family. `655349ae`/`30fc4766`/`edfa993d` add a bounded-admin rekey
+target refusal before policy and again at release; it is an extra fail-closed
+conjunct on the admin path and does not change the base-gate order or the
+sentry-bypass property in `bounded_cosigner.tla`. `76769767` hardens the
+rotating single-transaction planner and approval binding; rotating remains
+outside the models. No divergence found; nothing to fix.
+
+New-surface candidates (no spec covers them): the rotating flow has grown
+since the last review (`rotate recover` with per-unlock recovery grants keyed
+by the lock generation, one-time leaf choice and release memory with
+leaf-family spend holds during restore, SLH-DSA stateless stages), adding to
+the already listed rotating model-extension candidate; the release-memory
+rebuild from the audit log at unlock and the recovery allowance reset on
+lock-generation change are the durable and runtime transitions a rotating
+model would need first.
+
 Model-extension candidates: the rotating flow (`/sign/rotating/prepare` and
 `/sign/rotating/sign`: same slot classes and gates, but a prepare-time
 `rekey_to` mutation and post-approval stage-proof, timing, and open-test
