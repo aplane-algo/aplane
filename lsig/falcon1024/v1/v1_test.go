@@ -9,9 +9,11 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/aplane-algo/aplane/internal/algo"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
@@ -85,6 +87,20 @@ func liveCompilerEndpoints() []liveCompilerEndpoint {
 	}
 }
 
+// probeEndpoint reports whether a TCP connection to the endpoint's host opens
+// within a second.
+func probeEndpoint(rawURL string) error {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return err
+	}
+	conn, err := net.DialTimeout("tcp", u.Host, time.Second)
+	if err != nil {
+		return err
+	}
+	return conn.Close()
+}
+
 // TestFalcon1024V1CompilerAutoSaltGolden asks a live algod to compile the
 // test key's program, trying a local LocalNet first and the public node only
 // if that is absent or cannot compile it. It skips when no node is reachable,
@@ -99,6 +115,14 @@ func TestFalcon1024V1CompilerAutoSaltGolden(t *testing.T) {
 	pubKey := falconTestPublicKey(t)
 	var unreachable []string
 	for _, ep := range liveCompilerEndpoints() {
+		if ep.lenient {
+			// The SDK client's dial timeout is 30 s; a dropped-packet LocalNet
+			// address should not cost that.
+			if err := probeEndpoint(ep.url); err != nil {
+				t.Logf("%s not reachable, trying the next node: %v", ep.name, err)
+				continue
+			}
+		}
 		client, err := algod.MakeClient(ep.url, ep.token)
 		if err != nil {
 			t.Skipf("Could not create algod client for %s: %v", ep.name, err)
