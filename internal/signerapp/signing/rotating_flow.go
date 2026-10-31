@@ -570,7 +570,6 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 	deps.Releases.Record(ReleaseRecord{
 		Account: req.Account, Stage: stage, StageAddr: stageAddr, NextAddr: spend.RekeyTo,
 		TxID: txIDText, LastValid: uint64(spend.LastValid), Reused: leafReused, Leaves: []LeafRelease{leaf}, StatelessHash: leafProfile.StatelessHash,
-		MessageBudget: leafProfile.StageMessageBudget,
 	})
 	consoleOf(s.Console).Printf("[ROTATING] Released stage %d for %s (%s); the account moves to stage %d when it lands\n", stage, req.Account, txIDText, targetStage)
 	s.logSuccessfulSignatures(signReq, plan, allTxns, policyRuleID)

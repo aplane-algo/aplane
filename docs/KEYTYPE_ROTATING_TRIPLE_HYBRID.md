@@ -402,12 +402,6 @@ restoration, bounded by the request context.
   `OneTimeStage` flag). For WOTS this means
   any second distinct transaction; for XMSS it means reusing a leaf. Multiple
   XMSS releases on distinct leaves show an attempt count without a reuse warning.
-- An SLH-DSA stage counts the distinct transactions it has released while it
-  stays the authorizer. Past the profile's `StageMessageBudget` (2^16, the
-  operating assumption of §11.5) it raises a warning, even while the latest
-  release is within its window. The count is bounded, restored from the
-  audit log at unlock, reset when the account moves, and never refuses a
-  signature.
 
 ### 8.3 Stage table worker and recovery
 
@@ -702,11 +696,10 @@ new, so retries of one transaction do not count.
 Honest use is far inside the bound: the open-test message of §8, which is
 never released, and the spends released while the stage is live, normally
 one and occasionally a few when a window ages or a client rebuilds the
-transaction. The signer does not bound signatures per stage and the protocol
-does not either: a stage stays live until a spend lands, the signer keeps no
-limit on releases per stage by design, and copies sharing a seed sign
-independently. The signer does count a stage's distinct releases and warns
-past the budget below (§8.2); the count is observational. The bound is a margin statement, and this section
+transaction. The signer does not count signatures per stage and the
+protocol does not bound them: a stage stays live until a spend lands, the
+signer keeps no limit on releases per stage by design, and copies sharing a
+seed sign independently. The bound is a margin statement, and this section
 prices it.
 
 **The bound.** It is the few-time analysis of the SPHINCS+ framework
@@ -757,30 +750,29 @@ the few-time term is 165 bits, 37 above the generic terms and 31 above the
 standard set's term at its own limit, so the leg's security is the
 category 1 figure. That is about nine hours of continuous approved,
 unsubmitted signing from one host at two releases per second. The signer's
-alerts surface that condition: release memory (§8.2) counts the distinct
-transactions a stage has released, from the live signer and the audit log,
-and warns once the count passes 2^16
-(`rotatingkey.Profile.StageMessageBudget`). The count is reported and never
-enforced. The record states what else falls outside the assumption and the
-two remedies: a per-stage release rate
+alerts do not surface that condition: release memory (§8.2) keeps only a
+stage's latest release for this variant, so a single expired release warns
+but a stream of fresh releases reads as "in flight" indefinitely. A
+per-stage count of distinct releases, reported and never enforced, was
+considered and not added: reaching the budget takes hours of continuous
+approved requests, the assumption holds for the intended deployments by
+orders of magnitude, and the hash leg is one of three a forger must break.
+The record states what else falls outside the assumption and the two
+remedies: a per-stage release rate
 limit, which delays rather than refuses and so cannot strand an account, or
 a taller tree, each level of which doubles every message count in the
 table at twice the signing and derivation cost.
 
-No release cap or used-leaf tracking is added: a cap could strand an
-account whose every released spend expired, and tracking leaves to redraw
-the randomizer would reintroduce the state this variant exists to avoid. The
-release count is not that state: it is observational memory rebuilt from the
-audit log, never consulted when choosing what to sign. Independent verification of the bound and of the assumption for the
+No release cap, counter or used-leaf tracking is added: a cap could strand
+an account whose every released spend expired, and tracking leaves to
+redraw the randomizer would reintroduce the state this variant exists to
+avoid. Independent verification of the bound and of the assumption for the
 intended deployments is the review gate (§14).
 
 Release memory (§8.2) keeps only the latest release for this variant:
-`StatelessHash` records carry no leaf history and never mark reuse. They do
-carry the stage's distinct-release count, bounded by one past the budget
-(a set of at most 65,537 TxIDs per account, held only for the live stage and
-dropped when the account moves), restored from the audit log's entries for
-the stage. Expired and in-flight release alerts work as for the other
-variants.
+`StatelessHash` records carry no leaf history, restore nothing from the
+audit log beyond the latest release, and never mark reuse. Expired and
+in-flight release alerts work as for the other variants.
 
 ### 11.6 Resource profile and cost
 
@@ -864,7 +856,7 @@ The 41 units per chain step are 6 unit-cost instructions and one SHA-256.
 | SLH-DSA derivation golden vectors, signing, verification and argument layout | `lsig/rotatingtripleslhdsa/signerops/keys_test.go`, `signerreg/register_test.go` |
 | SLH-DSA TEAL verifier run offline in a test interpreter against `slhdsa.Verify` on both program shapes: valid signatures for several messages, a bit flipped at every node boundary, other message, other key, wrong lengths, exchanged layers, and the full-width final root comparison | `lsig/rotatingtripleslhdsa/stage/verifier_equiv_test.go`, `avmsim_test.go` |
 | SLH-DSA on-chain acceptance and rejection, cost model against node traces on both program shapes, six-transaction group | `test/integration/rotating_slhdsa_onchain_test.go` |
-| SLH-DSA preparation ceilings, bounded discovery, post-sign chain recheck, restored releases without leaf history; per-stage distinct-release count and budget warning; lifecycle benchmark | `internal/signerapp/signing/rotating_slhdsa_test.go`, `rotating_slhdsa_bench_test.go` |
+| SLH-DSA preparation ceilings, bounded discovery, post-sign chain recheck, restored releases without leaf history; lifecycle benchmark | `internal/signerapp/signing/rotating_slhdsa_test.go`, `rotating_slhdsa_bench_test.go` |
 | XMSS stage build, parse, salt, offsets and cost | `lsig/rotatingtriplexmss/stage/program_test.go`, `template_dump_test.go` |
 | WOTS stage build, parse, salt, offsets and cost | `lsig/rotatingtriplewots/stage/program_test.go` |
 | Algod assembler agreement for salted and unsalted stages, all three schemes | the three `stage` packages' tests (LocalNet) |

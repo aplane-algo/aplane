@@ -6,13 +6,10 @@ package signing
 import (
 	"context"
 	"errors"
-	"fmt"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
-	"github.com/aplane-algo/aplane/internal/rotatingkey"
 	"github.com/aplane-algo/aplane/internal/signerapp/chainread"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
@@ -168,140 +165,5 @@ func TestSLHRestoredReleaseHasNoLeafHistory(t *testing.T) {
 	rec, _ = f.svc.Rotating.Releases.Get(f.account.String())
 	if rec.TxID != "C" || rec.LastValid != 1110 {
 		t.Fatal("audit restore overwrote newer release")
-	}
-}
-
-func TestStatelessStageCountsDistinctReleases(t *testing.T) {
-	const budget = 3
-	rel := func(account string, stage uint64, txid string) ReleaseRecord {
-		return ReleaseRecord{Account: account, Stage: stage, TxID: txid, StatelessHash: true, MessageBudget: budget}
-	}
-	distinct := func(m *ReleaseMemory, account string) int {
-		rec, ok := m.Get(account)
-		if !ok {
-			t.Fatalf("no record for %s", account)
-		}
-		return rec.Distinct
-	}
-	m := &ReleaseMemory{}
-	m.Record(rel("A", 0, "T1"))
-	m.Record(rel("A", 0, "T1")) // a retry is one release
-	m.Record(rel("A", 0, "T2"))
-	if got := distinct(m, "A"); got != 2 {
-		t.Fatalf("distinct after a retry and a second transaction = %d, want 2", got)
-	}
-	// The count saturates one past the budget, so it stays bounded.
-	for _, id := range []string{"T3", "T4", "T5", "T6"} {
-		m.Record(rel("A", 0, id))
-	}
-	if got := distinct(m, "A"); got != budget+1 {
-		t.Fatalf("saturated count = %d, want %d", got, budget+1)
-	}
-	// A later stage starts a fresh count; so does an account the memory forgot.
-	m.Record(rel("A", 1, "T1"))
-	if got := distinct(m, "A"); got != 1 {
-		t.Fatalf("count at the next stage = %d, want 1", got)
-	}
-	m.Clear("A")
-	m.Record(rel("A", 1, "T9"))
-	if got := distinct(m, "A"); got != 1 {
-		t.Fatalf("count after the account was forgotten = %d, want 1", got)
-	}
-	// A family without a budget keeps no per-release state.
-	m.Record(ReleaseRecord{Account: "B", Stage: 0, TxID: "X", StatelessHash: true})
-	if got := distinct(m, "B"); got != 0 || m.messages["B"] != nil {
-		t.Fatalf("budgetless stateless family tracked releases: distinct %d", got)
-	}
-
-	// The audit log's history counts toward the stage, the live release
-	// stays the newest, and a log from an earlier stage is ignored.
-	m = &ReleaseMemory{}
-	m.Record(rel("C", 2, "L1"))
-	m.RecordAudited(ReleaseRecord{Account: "C", Stage: 2, TxID: "A2", StatelessHash: true, MessageBudget: budget,
-		Leaves: []LeafRelease{{TxID: "A1"}, {TxID: "A2"}}})
-	rec, _ := m.Get("C")
-	if rec.Distinct != 3 || rec.TxID != "L1" {
-		t.Fatalf("audited history merged into a live stage: %+v", rec)
-	}
-	m.RecordAudited(ReleaseRecord{Account: "C", Stage: 1, TxID: "OLD", StatelessHash: true, MessageBudget: budget})
-	if rec, _ = m.Get("C"); rec.Distinct != 3 || rec.Stage != 2 {
-		t.Fatalf("a log from an earlier stage changed the record: %+v", rec)
-	}
-	m.Reset()
-	m.Record(rel("C", 2, "L2"))
-	if got := distinct(m, "C"); got != 1 {
-		t.Fatalf("count after a reset = %d, want 1", got)
-	}
-}
-
-func TestSLHStatusWarnsPastTheMessageBudget(t *testing.T) {
-	f, _ := newSigningFixtureFor(t, slhTestType)
-	profile, _ := rotatingkey.Lookup(slhTestType.keyType)
-	budget := profile.StageMessageBudget
-	if budget == 0 {
-		t.Fatal("the SLH-DSA profile has no stage message budget")
-	}
-	acct := f.account.String()
-	stage0, stage1 := f.stageAddress(t, 0), f.stageAddress(t, 1)
-	release := func(id int) {
-		f.svc.Rotating.Releases.Record(ReleaseRecord{
-			Account: acct, Stage: 0, StageAddr: stage0, NextAddr: stage1,
-			TxID: fmt.Sprintf("T%d", id), LastValid: 1100, StatelessHash: true, MessageBudget: budget,
-		})
-	}
-	status := func(authorizer types.Address) ([]string, []string) {
-		return f.svc.RotatingStatus([]StageTableReport{{
-			Account: acct, Observed: true, Resolved: true, Authorizer: authorizer, Round: 1050,
-			ObservedSeq: f.svc.Rotating.Releases.Seq(),
-		}})
-	}
-	for i := 0; i < budget; i++ {
-		release(i)
-	}
-	release(0) // a retry does not count
-	if warnings, notes := status(stage0); len(warnings) != 0 || len(notes) != 1 {
-		t.Fatalf("at the budget: warnings %v, notes %v", warnings, notes)
-	}
-	release(budget)
-	warnings, notes := status(stage0)
-	if len(warnings) != 1 || len(notes) != 0 || !strings.Contains(warnings[0], fmt.Sprintf("more than %d distinct", budget)) || !strings.Contains(warnings[0], fmt.Sprintf("T%d", budget)) {
-		t.Fatalf("past the budget: warnings %v, notes %v", warnings, notes)
-	}
-	// More releases do not change the text, so it is logged once.
-	release(budget + 1)
-	if again, _ := status(stage0); len(again) != 1 || !strings.Contains(again[0], "more than") {
-		t.Fatalf("warning after more releases: %v", again)
-	}
-	// Signing is never refused: the warning is the whole response.
-	// Landed: the stage is retired and the count goes with it.
-	if warnings, notes := status(stage1); len(warnings) != 0 || len(notes) != 0 {
-		t.Fatalf("landed: warnings %v, notes %v", warnings, notes)
-	}
-	release(0)
-	if rec, _ := f.svc.Rotating.Releases.Get(acct); rec.Distinct != 1 {
-		t.Fatalf("count did not restart after the account moved: %+v", rec)
-	}
-}
-
-func TestSLHRestoredHistoryCountsTowardTheMessageBudget(t *testing.T) {
-	f, _ := newSigningFixtureFor(t, slhTestType)
-	profile, _ := rotatingkey.Lookup(slhTestType.keyType)
-	budget := profile.StageMessageBudget
-	leaves := make([]LeafRelease, 0, budget+1)
-	for i := 0; i <= budget; i++ {
-		leaves = append(leaves, LeafRelease{TxID: fmt.Sprintf("T%d", i)})
-	}
-	n, err := f.svc.RebuildReleaseMemory(context.Background(), f.session, []AuditedRelease{{
-		Account: f.account.String(), Stage: 0, TxID: leaves[budget].TxID, LastValid: 1100, Leaves: leaves,
-	}}, StageFillOptions{})
-	if err != nil || n != 1 {
-		t.Fatalf("restore %d: %v", n, err)
-	}
-	warnings, _ := f.svc.RotatingStatus([]StageTableReport{{
-		Account: f.account.String(), Observed: true, Resolved: true, Authorizer: f.stageAddress(t, 0),
-		Round: 1050, ObservedSeq: f.svc.Rotating.Releases.Seq(),
-	}})
-	if len(warnings) != 1 || !strings.Contains(warnings[0], "distinct transactions") {
-		t.Fatalf("restored history past the budget: %v", warnings)
 	}
 }

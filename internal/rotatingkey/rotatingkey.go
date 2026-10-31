@@ -33,13 +33,6 @@ const (
 	RotatingTripleSlhdsaFamily       = "aplane.rotating-triple-slhdsa"
 	RotatingSlhdsaStagePublicKeySize = 16 + 16 + 1793 + 32
 	RotatingTripleSlhdsaDisplayName  = "Rotating triple SLH-DSA (Falcon-1024 + SLH-DSA + Ed25519)"
-
-	// RotatingSlhdsaStageMessageBudget is the number of distinct messages one
-	// SLH-DSA stage key may sign before the few-time term of its security
-	// margin stops being the one the evaluation assumed (SLHDSA_EVALUATION.md,
-	// the operating assumption: at most 2^16 distinct messages per stage key).
-	// It is reported, never enforced.
-	RotatingSlhdsaStageMessageBudget = 1 << 16
 )
 
 // The SLH-DSA literals the selected hypertree height fixes: the salted
@@ -186,12 +179,6 @@ type Profile struct {
 	// leaf allocation or reuse history. Rotation/exposure monitoring still applies.
 	StatelessHash bool
 
-	// StageMessageBudget is how many distinct messages a stateless stage key
-	// may sign before its security margin leaves the assumed range, 0 for a
-	// family with a one-time rule instead. The signer counts distinct
-	// releases per stage and warns past the budget; it never refuses to sign.
-	StageMessageBudget int
-
 	// Preparation bounds local work, not signing authority or wire resources.
 	// Zero limits preserve the caller's settings. These operational limits may
 	// be tuned without changing stage addresses or the cryptographic contract.
@@ -243,8 +230,7 @@ var profiles = map[string]Profile{
 		StagePublicKeySize: RotatingSlhdsaStagePublicKeySize,
 		MaxProgramBytes:    RotatingSlhdsaMaxProgramBytes, MaxArgumentBytes: RotatingSlhdsaMaxArgumentBytes,
 		MaxOpcodeCost: RotatingSlhdsaMaxOpcodeCost, StatelessHash: true,
-		StageMessageBudget: RotatingSlhdsaStageMessageBudget,
-		Preparation:        PreparationLimits{MaxLookahead: 2, MaxDerivations: 4, MaxParallel: 1},
+		Preparation: PreparationLimits{MaxLookahead: 2, MaxDerivations: 4, MaxParallel: 1},
 	},
 	RotatingTripleWotsV1: {
 		KeyType:            RotatingTripleWotsV1,

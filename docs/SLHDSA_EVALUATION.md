@@ -57,14 +57,12 @@ messages per stage, and the assessment is that table. Deterministic signing
 of the same message reproduces the same signature and the same leaf, which
 reveals nothing new; only distinct messages count.
 
-The signer does not bound signatures per stage, and the protocol does not
-either: a stage stays live until a spend lands, the signer deliberately
+The signer does not count signatures per stage, and the protocol does not
+bound them: a stage stays live until a spend lands, the signer deliberately
 keeps no limit on releases per stage, and copies sharing a seed sign
-independently. The signer counts a stage's distinct releases and warns past
-the budget below, but only as an alert. The bound is therefore a margin
-statement, not a rule the signer holds, and the assessment is the cost of
-exceeding it, together with an explicit operating assumption about how far a
-deployment can exceed it.
+independently. The bound is therefore a margin statement, not a rule the
+signer holds, and the assessment is the cost of exceeding it, together with
+an explicit operating assumption about how far a deployment can exceed it.
 
 **The cost.** It follows the few-time analysis of the SPHINCS+ framework
 (Bernstein et al., "The SPHINCS+ signature framework", 2019, section 9),
@@ -124,33 +122,33 @@ play. What that count means in practice:
   that is about nine hours of continuous requests from
   one signer, or proportionally less across copies sharing the seed, every
   one an approved request through policy and the approval gate.
-- The signer's alerts surface this condition. Release memory counts the
-  distinct transactions a stage has released (the live signer plus the
-  audit log's entries for the stage, bounded at one past the budget) and
-  raises a warning once the count passes 2^16 (`ARCH_SIGNING.md`, rotating
-  alerts), the observational counterpart of the XMSS variant's attempt count.
-  Before this count existed a client that kept releasing fresh transactions
-  kept the status at "in flight" indefinitely. A rotate-only spend ends the
-  stage at any time.
+- The signer's alerts do not surface this condition. Release memory keeps
+  only a stage's latest release for this profile, so a stage whose single
+  release expired shows the expired-release warning (`ARCH_SIGNING.md`,
+  rotating alerts), but a client that keeps releasing fresh transactions
+  keeps the status at "in flight" indefinitely. Detecting prolonged
+  unsubmitted signing would need a per-stage count of distinct releases in
+  the release memory, reported and never enforced, the observational
+  counterpart of the XMSS variant's attempt count. It was considered and
+  not added: the condition takes hours of continuous approved requests, and
+  the count would be extra state in the release memory for a case the
+  assumption already covers by orders of magnitude. A rotate-only spend ends
+  the stage at any time.
 - A forger who benefits must also forge Falcon-1024 and Ed25519 on the
   same transaction and land it before the legitimate spend rotates the
   stage away.
 
 A deployment where a client could issue signing requests at that rate for
 hours, or where more than a handful of copies share a seed, falls outside
-the assumption. Copies sharing a seed sign independently and do not see each
-other's releases, so the count covers the releases one signer made and the
-audit log it reads, not the sum across copies. The remedies beyond that
-count are a per-stage release rate limit, which delays rather than refuses
+the assumption, and an operator has no signal from the signer that it is
+happening. The remedies are a per-stage release rate limit, which delays rather than refuses
 and so cannot strand an account, or a taller tree: each extra level of
 height doubles the message count at which every row of the table is
 reached, at twice the signing and derivation cost. Neither
 is added here, because the assumption holds for the intended deployments
-by three orders of magnitude and a cap would reintroduce the state this
-variant exists to avoid. The release count is not that state: it is
-observational memory, rebuilt from the audit log, and never consulted when
-choosing what to sign. Review should check the bound and the assumption, and
-that the count stays a report.
+by three orders of magnitude and a counter or cap would reintroduce the
+state this variant exists to avoid. Review should check the bound and the
+assumption, not look for a counter.
 
 The earlier envelope for the standard set, 1,000 signing invocations per
 second per copy over 100 years, is far beyond this table and no longer
@@ -275,9 +273,7 @@ complete unlock/restore measurements remain explicit production gates below.
   rescaled golden vectors.
 - Review the per-stage signing margin above: the few-time term's table, its
   relation to the generic hash terms that cap the leg at category 1, the
-  2^16 operating assumption, and the decision to add no cap. (The release
-  count of distinct releases per live stage is implemented as a report only;
-  review should confirm it never influences signing.)
+  2^16 operating assumption, and the decision to add no counter or cap.
 - Reproduce cold/warm signing and full successor checks on each intended deployment
   class, including slow hardware, competing accounts, concurrent requests and
   cancellation/lock responsiveness. Measure distributions and memory pressure.

@@ -43,13 +43,6 @@ type ReleaseRecord struct {
 	// (rotatingkey.Profile.OneTimeStage) this is the condition the status
 	// reports; for the others it is informational.
 	Reused bool
-	// MessageBudget is the profile's StageMessageBudget (0 for a family
-	// that has none). Distinct counts the different transactions a
-	// stateless stage has released while it stayed live, from the live
-	// signer and the audit log, saturating at MessageBudget+1: a retry of
-	// one transaction is one release. It is reported, never enforced.
-	MessageBudget int
-	Distinct      int
 	// Seq orders records against chain observations: a record with a Seq
 	// above the Seq captured before a chain read was made after that read,
 	// so the read says nothing about it.
@@ -120,41 +113,6 @@ type ReleaseMemory struct {
 	armed   bool
 	pending map[string]bool
 	changed chan struct{}
-	// messages holds, per account with a stateless stage budget, the
-	// distinct transactions its newest stage released; it is the only
-	// per-release state kept for such a stage and is bounded by the budget.
-	messages map[string]*stageMessages
-}
-
-// stageMessages is the distinct transactions one stateless stage released,
-// capped at limit entries (one past the budget, which is all the count is
-// compared against).
-type stageMessages struct {
-	stage uint64
-	limit int
-	ids   map[string]struct{}
-}
-
-func (m *ReleaseMemory) messagesFor(account string, stage uint64, budget int) *stageMessages {
-	if m.messages == nil {
-		m.messages = make(map[string]*stageMessages)
-	}
-	set := m.messages[account]
-	if set == nil || set.stage != stage {
-		set = &stageMessages{stage: stage, ids: make(map[string]struct{})}
-		m.messages[account] = set
-	}
-	set.limit = budget + 1
-	return set
-}
-
-func (s *stageMessages) add(ids ...string) {
-	for _, id := range ids {
-		if id == "" || len(s.ids) >= s.limit {
-			continue
-		}
-		s.ids[id] = struct{}{}
-	}
 }
 
 // Record adds a live release to the account's entry and stamps the entry
@@ -187,24 +145,8 @@ func (m *ReleaseMemory) record(r ReleaseRecord, audited bool) {
 		m.byAccount = make(map[string]ReleaseRecord)
 	}
 	if r.StatelessHash {
-		prev, held := m.byAccount[r.Account]
-		if audited && held && prev.Stage > r.Stage {
-			return
-		}
-		if r.MessageBudget > 0 {
-			ids := []string{r.TxID}
-			for _, l := range r.Leaves {
-				ids = append(ids, l.TxID)
-			}
-			set := m.messagesFor(r.Account, r.Stage, r.MessageBudget)
-			set.add(ids...)
-			r.Distinct = len(set.ids)
-		}
-		// A live observation made while restore was running takes
-		// precedence; the audited history still counts toward the stage.
-		if audited && held && prev.Stage >= r.Stage {
-			prev.MessageBudget, prev.Distinct = r.MessageBudget, r.Distinct
-			m.byAccount[r.Account] = prev
+		// A live observation made while restore was running takes precedence.
+		if prev, ok := m.byAccount[r.Account]; audited && ok && prev.Stage >= r.Stage {
 			return
 		}
 		r.Leaves, r.Reused = nil, false
@@ -298,7 +240,6 @@ func (m *ReleaseMemory) clearIfUnchanged(account string, seq uint64) {
 	defer m.mu.Unlock()
 	if r, ok := m.byAccount[account]; ok && r.Seq == seq {
 		delete(m.byAccount, account)
-		delete(m.messages, account)
 	}
 }
 
@@ -321,7 +262,6 @@ func (m *ReleaseMemory) Clear(account string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	delete(m.byAccount, account)
-	delete(m.messages, account)
 }
 
 // Reset forgets every entry, as at lock.
@@ -334,7 +274,6 @@ func (m *ReleaseMemory) Reset() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.byAccount = nil
-	m.messages = nil
 	m.armed = true
 	m.pending = nil
 	m.signal()
@@ -473,8 +412,8 @@ func (s *Service) RebuildReleaseMemory(ctx context.Context, session *keystore.Ke
 		}
 		profile, _ := rotatingkey.Lookup(snapshot.KeyTypes[e.Account])
 		deps.Releases.RecordAudited(ReleaseRecord{
-			StatelessHash: profile.StatelessHash, MessageBudget: profile.StageMessageBudget,
-			Account: e.Account, Stage: e.Stage, StageAddr: stageAddr, NextAddr: nextAddr,
+			StatelessHash: profile.StatelessHash,
+			Account:       e.Account, Stage: e.Stage, StageAddr: stageAddr, NextAddr: nextAddr,
 			TxID: e.TxID, LastValid: e.LastValid, Reused: e.Reused, Leaves: e.Leaves,
 		})
 		deps.Releases.Restored(e.Account)
@@ -558,10 +497,6 @@ func (s *Service) RotatingStatus(reports []StageTableReport) (warnings, notes []
 			reuse = " (the stage has signed more than one transaction)"
 		} else if profile.LeavesPerStage > 1 && len(rec.Leaves) > 1 {
 			reuse = fmt.Sprintf(" (attempt %d of %d from this stage)", len(rec.Leaves), profile.LeavesPerStage)
-		}
-		if profile.StageMessageBudget > 0 && rec.Distinct > profile.StageMessageBudget {
-			warnings = append(warnings, fmt.Sprintf("rotating account %s: stage %d has released more than %d distinct transactions without the account moving, past the signing budget its key's security margin assumes; the latest release is %s (valid through round %d); land a spend or send a rotate-only spend now, and find the client that keeps requesting signatures", r.Account, rec.Stage, profile.StageMessageBudget, rec.TxID, rec.LastValid))
-			continue
 		}
 		if r.Round > rec.LastValid {
 			warnings = append(warnings, fmt.Sprintf("rotating account %s: stage %d revealed its keys in transaction %s, which expired at round %d without confirming; the revealed keys still control the account%s; send a rotate-only spend now", r.Account, rec.Stage, rec.TxID, rec.LastValid, reuse))
