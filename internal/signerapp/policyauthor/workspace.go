@@ -14,16 +14,17 @@ import (
 	"github.com/aplane-algo/aplane/internal/policy"
 )
 
-// Workspace is the set of policy files an editing session works on: one file,
-// or every *.json file directly inside a directory. Documents are identified
+// Workspace is the set of policy files an editing or check session works on:
+// the files it was opened with, and every *.json file directly inside each
+// directory it was opened with. All of them are one bundle, so the rules
+// across files hold however the files were named. Documents are identified
 // by their "key" field, never by file name, so files keep the names people
 // gave them.
 type Workspace struct {
-	// Path is the file or directory opened.
-	Path  string
-	IsDir bool
+	// Paths are the files and directories opened.
+	Paths []string
 	// Role is the role the workspace's documents are for: the first valid
-	// role a file names, in file-name order.
+	// role a file names, in load order.
 	Role  noderole.Role
 	Files []*File
 	// Problems are the rules across files: at most one default, no key in two
@@ -32,31 +33,56 @@ type Workspace struct {
 	Problems []Problem
 }
 
-// Open loads a workspace. It fails only when path cannot be opened at all;
-// a file that cannot be read or decoded is loaded with its problems.
-func Open(path string) (*Workspace, error) {
-	info, err := os.Stat(path)
-	if err != nil {
-		return nil, err
+// Open loads the files and directories in paths as one workspace. A
+// directory contributes the *.json files directly inside it, in name order;
+// a file named twice, directly or through its directory, is loaded once. Open
+// fails only when a path cannot be opened at all; a file that cannot be read
+// or decoded is loaded with its problems.
+func Open(paths ...string) (*Workspace, error) {
+	w := &Workspace{Paths: paths}
+	var files []string
+	seen := map[string]bool{}
+	add := func(file string) error {
+		abs, err := filepath.Abs(file)
+		if err != nil {
+			return err
+		}
+		if !seen[abs] {
+			seen[abs] = true
+			files = append(files, file)
+		}
+		return nil
 	}
-	w := &Workspace{Path: path, IsDir: info.IsDir()}
-	var paths []string
-	if w.IsDir {
+	for _, path := range paths {
+		info, err := os.Stat(path)
+		if err != nil {
+			return nil, err
+		}
+		if !info.IsDir() {
+			if err := add(path); err != nil {
+				return nil, err
+			}
+			continue
+		}
 		entries, err := os.ReadDir(path)
 		if err != nil {
 			return nil, err
 		}
+		var names []string
 		for _, e := range entries {
 			if strings.HasSuffix(e.Name(), ".json") && !e.IsDir() {
-				paths = append(paths, filepath.Join(path, e.Name()))
+				names = append(names, e.Name())
 			}
 		}
-		sort.Strings(paths)
-	} else {
-		paths = []string{path}
+		sort.Strings(names)
+		for _, name := range names {
+			if err := add(filepath.Join(path, name)); err != nil {
+				return nil, err
+			}
+		}
 	}
 
-	for _, p := range paths {
+	for _, p := range files {
 		f := LoadFile(p)
 		if w.Role == "" {
 			w.Role = f.Role

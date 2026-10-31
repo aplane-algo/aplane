@@ -310,3 +310,27 @@ func TestCanonicalNeedsADraft(t *testing.T) {
 		t.Fatal("an unparsable file has a canonical form")
 	}
 }
+
+// TestOpenTreatsNamedFilesAsOneBundle: the rules across files hold however
+// the files are named, and a file named twice is loaded once.
+func TestOpenTreatsNamedFilesAsOneBundle(t *testing.T) {
+	dir := t.TempDir()
+	a := writeFile(t, dir, "a.json", fixture(t, "signer_default.json"))
+	b := writeFile(t, dir, "b.json", fixture(t, "signer_default.json"))
+
+	w, err := Open(a, b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(w.Problems) != 2 || !strings.Contains(w.Problems[0].Message, "at most one default") {
+		t.Fatalf("two defaults named as files: problems %+v", w.Problems)
+	}
+
+	w, err = Open(a, dir, a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(w.Files) != 2 {
+		t.Fatalf("loaded %d files, want each file once", len(w.Files))
+	}
+}

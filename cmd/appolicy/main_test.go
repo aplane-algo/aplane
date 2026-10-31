@@ -182,3 +182,21 @@ func TestRetiredAndUnknownInvocations(t *testing.T) {
 		t.Fatalf("help: exit %d", code)
 	}
 }
+
+// TestCheckValidatesNamedFilesTogether: "appolicy check policy/*.json" applies
+// the same rules across files as "appolicy check policy/".
+func TestCheckValidatesNamedFilesTogether(t *testing.T) {
+	dir := t.TempDir()
+	a := put(t, dir, "a.json", fixture(t, "signer_default.json"))
+	b := put(t, dir, "b.json", fixture(t, "signer_default.json"))
+	for _, args := range [][]string{{"check", dir}, {"check", a, b}} {
+		code, out, _ := appolicy(args...)
+		if code != exitProblems || strings.Count(out, "at most one default") != 2 {
+			t.Fatalf("%v: exit %d\n%s", args, code, out)
+		}
+	}
+	c := put(t, t.TempDir(), "c.json", fixture(t, "cosigner_key_minimal.json"))
+	if code, out, _ := appolicy("check", a, c); code != exitProblems || !strings.Contains(out, "for a cosigner node") {
+		t.Fatalf("mixed roles named as files: exit %d\n%s", code, out)
+	}
+}

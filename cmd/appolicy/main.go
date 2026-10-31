@@ -115,17 +115,15 @@ func newFlags(name string, stderr io.Writer) *flag.FlagSet {
 	return fs
 }
 
-func openAll(paths []string, stderr io.Writer) ([]*policyauthor.Workspace, bool) {
-	var out []*policyauthor.Workspace
-	for _, path := range paths {
-		w, err := policyauthor.Open(path)
-		if err != nil {
-			writef(stderr, "appolicy: %v\n", err)
-			return nil, false
-		}
-		out = append(out, w)
+// openWorkspace opens every path as one workspace, so the rules across
+// files hold whether files are named one by one or through a directory.
+func openWorkspace(paths []string, stderr io.Writer) (*policyauthor.Workspace, bool) {
+	w, err := policyauthor.Open(paths...)
+	if err != nil {
+		writef(stderr, "appolicy: %v\n", err)
+		return nil, false
 	}
-	return out, true
+	return w, true
 }
 
 type checkFile struct {
@@ -153,22 +151,20 @@ func runCheck(args []string, stdout, stderr io.Writer) int {
 		writeln(stderr, "appolicy check: name at least one file or directory")
 		return exitUsage
 	}
-	workspaces, ok := openAll(fs.Args(), stderr)
+	w, ok := openWorkspace(fs.Args(), stderr)
 	if !ok {
 		return exitUsage
 	}
 	report := checkReport{Files: []checkFile{}, Problems: []policyauthor.Problem{}}
-	for _, w := range workspaces {
-		for _, f := range w.Files {
-			report.Files = append(report.Files, checkFile{Path: f.Path, State: f.State.String(), Key: f.Key, Role: string(f.Role), HadComments: f.HadComments})
-		}
-		for _, p := range w.AllProblems() {
-			report.Problems = append(report.Problems, p)
-			if p.Severity == policyauthor.SeverityError {
-				report.Errors++
-			} else {
-				report.Warnings++
-			}
+	for _, f := range w.Files {
+		report.Files = append(report.Files, checkFile{Path: f.Path, State: f.State.String(), Key: f.Key, Role: string(f.Role), HadComments: f.HadComments})
+	}
+	for _, p := range w.AllProblems() {
+		report.Problems = append(report.Problems, p)
+		if p.Severity == policyauthor.SeverityError {
+			report.Errors++
+		} else {
+			report.Warnings++
 		}
 	}
 	if *asJSON {
@@ -205,7 +201,7 @@ func runFmt(args []string, stdout, stderr io.Writer) int {
 		writeln(stderr, "appolicy fmt: name at least one file or directory")
 		return exitUsage
 	}
-	workspaces, ok := openAll(fs.Args(), stderr)
+	w, ok := openWorkspace(fs.Args(), stderr)
 	if !ok {
 		return exitUsage
 	}
@@ -214,39 +210,37 @@ func runFmt(args []string, stdout, stderr io.Writer) int {
 		writef(stderr, "%s: %s\n", path, fmt.Sprintf(format, a...))
 		status = exitProblems
 	}
-	for _, w := range workspaces {
-		for _, f := range w.Files {
-			if f.Draft == nil {
-				msg := f.State.String()
-				if len(f.Problems) > 0 {
-					msg += ": " + f.Problems[0].Message
-				}
-				fail(f.Path, "not formatted, left untouched (%s)", msg)
-				continue
+	for _, f := range w.Files {
+		if f.Draft == nil {
+			msg := f.State.String()
+			if len(f.Problems) > 0 {
+				msg += ": " + f.Problems[0].Message
 			}
-			if f.HadComments && !*stripComments {
-				fail(f.Path, "not formatted: it has comments, which fmt would drop; move notes into description fields, or rerun with --strip-comments")
-				continue
-			}
-			canonical, err := f.Canonical()
-			if err != nil {
-				fail(f.Path, "not formatted: %v", err)
-				continue
-			}
-			if string(canonical) == string(f.Loaded) {
-				continue
-			}
-			if *checkOnly {
-				writef(stdout, "%s: not canonical\n", f.Path)
-				status = exitProblems
-				continue
-			}
-			if err := f.Write(canonical, false); err != nil {
-				fail(f.Path, "not formatted: %v", err)
-				continue
-			}
-			writef(stdout, "%s: formatted\n", f.Path)
+			fail(f.Path, "not formatted, left untouched (%s)", msg)
+			continue
 		}
+		if f.HadComments && !*stripComments {
+			fail(f.Path, "not formatted: it has comments, which fmt would drop; move notes into description fields, or rerun with --strip-comments")
+			continue
+		}
+		canonical, err := f.Canonical()
+		if err != nil {
+			fail(f.Path, "not formatted: %v", err)
+			continue
+		}
+		if string(canonical) == string(f.Loaded) {
+			continue
+		}
+		if *checkOnly {
+			writef(stdout, "%s: not canonical\n", f.Path)
+			status = exitProblems
+			continue
+		}
+		if err := f.Write(canonical, false); err != nil {
+			fail(f.Path, "not formatted: %v", err)
+			continue
+		}
+		writef(stdout, "%s: formatted\n", f.Path)
 	}
 	return status
 }

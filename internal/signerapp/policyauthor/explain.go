@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/algorand/go-algorand-sdk/v2/types"
+
 	"github.com/aplane-algo/aplane/internal/asa"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
@@ -129,7 +131,27 @@ func (e *explainer) guards() {
 		e.line("Warnings found by analysis are sent to review")
 	}
 	if d.AutoApproveSelfNoOpTransfer {
-		e.line("A constrained self no-op transfer is approved without review")
+		e.selfNoOp()
+	}
+}
+
+// selfNoOp describes auto_approve_self_noop_transfer as what it is: an
+// Always Approve rule, reached only when no Always Deny or Always Review rule
+// matched, for one narrow transaction shape.
+func (e *explainer) selfNoOp() {
+	var reachable []string
+	for _, txType := range []string{"pay", "axfer"} {
+		if e.doc.TransactionTypes.Verdict(txType) == policy.TransactionTypeAllow {
+			reachable = append(reachable, txType)
+		}
+	}
+	e.line("Self no-op auto-approval: a lone 0-amount payment or ASA transfer from an account to itself,")
+	e.line("  with a fee of at most 0.001 ALGO and no note, lease, rekey, close or clawback, may be")
+	e.line("  approved without review, but only when no deny or review rule matched it first")
+	if len(reachable) == 0 {
+		e.line("  (it never applies here: transaction_types does not allow pay or axfer)")
+	} else if len(reachable) == 1 {
+		e.line("  (only for %s here: transaction_types does not allow the other)", reachable[0])
 	}
 }
 
@@ -200,25 +222,35 @@ func (e *explainer) sets() {
 	for _, name := range sortedKeys(d.AddressSets) {
 		set := d.AddressSets[name]
 		if len(set.ByNetwork) == 0 {
-			e.line("Address set @%s: %d address(es) on every network", name, len(set.Flat))
+			e.line("Address set @%s (every network):", name)
+			e.addresses("  ", set.Flat)
 			continue
 		}
-		var parts []string
+		e.line("Address set @%s:", name)
 		for _, network := range sortedKeys(set.ByNetwork) {
-			parts = append(parts, fmt.Sprintf("%d on %s", len(set.ByNetwork[network]), network))
+			e.line("  %s:", network)
+			e.addresses("    ", set.ByNetwork[network])
 		}
-		e.line("Address set @%s: %s", name, strings.Join(parts, ", "))
 	}
 	for _, name := range sortedKeys(d.AssetSets) {
-		var parts []string
+		e.line("Asset set @%s:", name)
 		for _, network := range sortedKeys(d.AssetSets[name]) {
 			var refs []string
 			for _, ref := range d.AssetSets[name][network] {
 				refs = append(refs, e.assetName(network, ref))
 			}
-			parts = append(parts, network+": "+strings.Join(refs, ", "))
+			e.line("  %s: %s", network, strings.Join(refs, ", "))
 		}
-		e.line("Asset set @%s: %s", name, strings.Join(parts, "; "))
+	}
+}
+
+// addresses writes one address per line, so a reviewer sees every member.
+func (e *explainer) addresses(indent string, list []types.Address) {
+	if len(list) == 0 {
+		e.line("%s(none)", indent)
+	}
+	for _, a := range list {
+		e.line("%s%s", indent, a.String())
 	}
 }
 

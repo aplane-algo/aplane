@@ -410,9 +410,10 @@ appolicy explain treasury.json      # one document in plain language
 - **check** decodes each file with the node's own decoder, so it reports the
   same errors at the same JSON Pointers, and the same warnings, as
   `apadmin policy check`. It exits 0 when no file has an error and 1 when one
-  does; warnings never fail it. For a directory, each document is identified by
-  its `"key"` field, not its file name, and check also reports a second
-  `default` document, a key in two files, or documents for different roles.
+  does; warnings never fail it. Every file named, directly or through a
+  directory, is checked as one set: each document is identified by its
+  `"key"` field, not its file name, and check also reports a second `default`
+  document, a key in two files, or documents for different roles.
 - **What it cannot know.** It does not see the node: which keys the node
   holds, which policy it runs now, or which networks it maps. Run
   `apadmin policy diff` and `apply` to review and install a file.
