@@ -15,46 +15,61 @@ import (
 	"testing"
 )
 
-var retiredAppolicyName = regexp.MustCompile(`(?i)(^|[^a-z0-9])appolicy([^a-z0-9]|$)`)
-
-func TestRetiredAppolicyIsRemovedDuringUpgradeAndUninstall(t *testing.T) {
+// TestAppolicyShipsWithTheSignerBinaries pins where appolicy is built,
+// packaged, installed and removed. It is a signer-side tool: built for every
+// platform the signer ships on, installed into the signer bindir by the
+// install copy loop (no exclusion), never left in the client bindir, and
+// removed with the signer binaries on uninstall.
+func TestAppolicyShipsWithTheSignerBinaries(t *testing.T) {
 	root := filepath.Join("..", "..")
-	installer, err := os.ReadFile(filepath.Join(root, "install.sh"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, path := range []string{`"$CLIENT_BINDIR/appolicy"`, `"$SIGNER_BINDIR/appolicy"`} {
-		if !strings.Contains(string(installer), path) {
-			t.Errorf("install.sh does not remove retired upgrade artifact %s", path)
+	read := func(name string) string {
+		t.Helper()
+		data, err := os.ReadFile(filepath.Join(root, name))
+		if err != nil {
+			t.Fatal(err)
 		}
-	}
-	if got := strings.Count(string(installer), `"$BINDIR/appolicy"`); got < 2 {
-		t.Errorf("install.sh removes appolicy from only %d client/systemd bindirs, want at least 2", got)
-	}
-	if got := strings.Count(string(installer), `[ "$name" = "appolicy" ]`); got != 2 {
-		t.Errorf("install.sh has %d retired-binary glob exclusions, want 2", got)
+		return string(data)
 	}
 
-	uninstaller, err := os.ReadFile(filepath.Join(root, "uninstall.sh"))
-	if err != nil {
-		t.Fatal(err)
+	installer := read("install.sh")
+	if strings.Contains(installer, `[ "$name" = "appolicy" ]`) {
+		t.Error("install.sh still skips appolicy in a binary copy loop")
 	}
-	retiredRemoval := regexp.MustCompile(`(?m)^\s*for binary in [^\n]*\bappolicy\b[^\n]*; do\s*$`)
-	if got := len(retiredRemoval.FindAll(uninstaller, -1)); got != 2 {
+	if strings.Contains(installer, `"$SIGNER_BINDIR/appolicy"`) {
+		t.Error("install.sh removes appolicy from the signer bindir")
+	}
+	if !strings.Contains(installer, `rm -f "$CLIENT_BINDIR/appolicy"`) {
+		t.Error("install.sh does not remove a client-side appolicy left by an earlier release")
+	}
+
+	removal := regexp.MustCompile(`(?m)^\s*for binary in [^\n]*\bappolicy\b[^\n]*; do\s*$`)
+	if got := len(removal.FindAllString(read("uninstall.sh"), -1)); got != 2 {
 		t.Errorf("uninstall.sh includes appolicy in %d signer-binary removal lists, want 2", got)
 	}
 
-	makefile, err := os.ReadFile(filepath.Join(root, "Makefile"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := len(retiredAppolicyName.FindAll(makefile, -1)); got != 2 {
-		t.Errorf("Makefile contains %d appolicy references, want only the two clean-up artifacts", got)
-	}
-	for _, artifact := range []string{"appolicy", "appolicy-arm64"} {
-		if !strings.Contains(string(makefile), " "+artifact+" ") {
-			t.Errorf("Makefile clean does not remove retired artifact %s", artifact)
+	makefile := read("Makefile")
+	for _, want := range []string{
+		"-o bin/appolicy ./cmd/appolicy",
+		"-o appolicy-arm64 ./cmd/appolicy",
+		"@mv appolicy-arm64 bin/arm64/appolicy",
+		"-o bin/amd64/appolicy ./cmd/appolicy",
+		"-o bin/darwin-arm64/appolicy ./cmd/appolicy",
+		"-o bin/darwin-amd64/appolicy ./cmd/appolicy",
+		"bin/$${arch}/appolicy",
+		"$${darwindir}appolicy",
+	} {
+		if !strings.Contains(makefile, want) {
+			t.Errorf("Makefile lacks %q", want)
 		}
+	}
+	release := read(filepath.Join(".github", "workflows", "release.yml"))
+	for _, want := range []string{"bin/${arch}/appolicy", "bin/darwin-${arch}/appolicy"} {
+		if !strings.Contains(release, want) {
+			t.Errorf("release.yml does not package %q", want)
+		}
+	}
+	if !regexp.MustCompile(`(?m)^\s+appolicy$`).MatchString(read(filepath.Join("scripts", "package-bootstrap-release.sh"))) {
+		t.Error("package-bootstrap-release.sh does not require appolicy")
 	}
 }
 

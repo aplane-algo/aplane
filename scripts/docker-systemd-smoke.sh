@@ -230,6 +230,7 @@ verify_install_layout() {
     docker_exec_bash "test -x /usr/local/bin/apsigner"
     docker_exec_bash "test -x /usr/local/bin/appass"
     docker_exec_bash "test -x /usr/local/bin/approbe"
+    docker_exec_bash "test -x /usr/local/bin/appolicy"
     docker_exec_bash "test -x /var/lib/apsigner/install/uninstall.sh"
     docker_exec_bash "grep -qx '$OPERATOR_ROOT' /var/lib/apsigner/install/operator-root"
     local service_uid service_gid
@@ -566,6 +567,7 @@ sha256sum -c /tmp/aplane-preflight-unit.before"
 verify_uninstall() {
     docker_exec_bash "test ! -e /usr/local/bin/apsigner"
     docker_exec_bash "test ! -e /usr/local/bin/approbe"
+    docker_exec_bash "test ! -e /usr/local/bin/appolicy"
     docker_exec_bash "test ! -e /etc/systemd/system/apsigner.service"
     docker_exec_bash "test ! -e /lib/systemd/system/apsigner.service"
     docker_exec_bash "test ! -e /etc/sudoers.d/99-apsigner-systemctl"

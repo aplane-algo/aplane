@@ -545,6 +545,7 @@ All under `cmd/`:
 | `appass-file` | Dev passphrase helper |  |
 | `appass-systemd-creds` | Production passphrase helper |  |
 | `approbe` | Installer/helper liveness probe and canonical signer IPC-path resolver | Installer helper + admin protocol probe |
+| `appolicy` | Offline policy file check, format, and explain; files only | Policy decoder + `policyauthor` core |
 | `applugin-checksum` | Plugin integrity helper |  |
 
 Documentation notes:
@@ -575,6 +576,7 @@ aplane/
 │   ├── appass-file/               # Dev passphrase helper
 │   ├── appass-systemd-creds/      # systemd-creds passphrase helper
 │   ├── approbe/                   # Installer liveness probe for signer IPC
+│   ├── appolicy/                  # Offline policy file check, format, explain
 │   └── applugin-checksum/         # Plugin checksum generator
 │
 ├── internal/                      # Shared packages

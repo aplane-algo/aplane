@@ -93,7 +93,7 @@ APLANE_INSTALL_ROOT=/path/to/my/aplane ./install.sh
 ```
 <install-path>/
 ├── apsigner/             # Signer data directory ($APSIGNER_DATA)
-│   ├── bin/               # apsigner, apadmin, apapprover, apstore, appass, approbe, and other signer-side tools
+│   ├── bin/               # apsigner, apadmin, apapprover, apstore, appass, approbe, appolicy, and other signer-side tools
 │   ├── config.yaml        # Signer config (ports, SSH, algod)
 │   ├── library/           # KeyType Library install sources
 │   │   └── templates/     # Template YAML install sources for defaults and apadmin
@@ -665,7 +665,7 @@ make all
 
 # Install binaries
 sudo cp bin/apsigner bin/apadmin bin/apconsole bin/apapprover bin/apstore bin/appass bin/aplocalnet \
-        bin/appass-file bin/appass-systemd-creds bin/approbe bin/applugin-checksum /usr/local/bin/
+        bin/appass-file bin/appass-systemd-creds bin/approbe bin/appolicy bin/applugin-checksum /usr/local/bin/
 sudo chmod 755 /usr/local/bin/appass-systemd-creds
 
 # Create service user
@@ -755,6 +755,7 @@ This produces statically linked binaries in `bin/`:
 | `aplocalnet` | LocalNet setup TUI/CLI for apshell default network, signer config, plugin activation, and KMD override persistence |
 | `appass-file` | Development-only plaintext passphrase helper |
 | `approbe` | Installer/helper liveness probe and canonical signer IPC-path resolver |
+| `appolicy` | Offline policy file check, format, and explain |
 | `apshell` | Transaction shell (client) |
 
 `applugin-checksum` is built by `make all` through the bundled-plugin build
@@ -769,7 +770,7 @@ Copy the server-side binaries to a system path:
 
 ```bash
 sudo cp bin/apsigner bin/apadmin bin/apconsole bin/apapprover bin/apstore bin/appass bin/aplocalnet \
-        bin/appass-file bin/appass-systemd-creds bin/approbe bin/applugin-checksum /usr/local/bin/
+        bin/appass-file bin/appass-systemd-creds bin/approbe bin/appolicy bin/applugin-checksum /usr/local/bin/
 sudo chmod 755 /usr/local/bin/appass-systemd-creds
 ```
 

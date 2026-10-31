@@ -713,6 +713,10 @@ Consequences:
   `format` version.
 - There is no policy editor in the node. Review happens through `check` and
   `diff` before `apply`, which shows the same diff and asks for confirmation.
+- `appolicy` (`cmd/appolicy`, core in `internal/signerapp/policyauthor`) is a
+  producer: it checks, formats, and explains policy files offline with the
+  node's own decoder and advisories, and never talks to a node or writes a
+  store.
 - Comments are a producer convenience, not part of the format. The apadmin
   policy commands and the apadmin TUI accept `//` and `/* */` comments
   outside strings and remove them (`policytext.StripComments`) before the

@@ -237,6 +237,8 @@ verify_install() {
     docker_exec_as_tester "test -x $root/apsigner/bin/apadmin"
     docker_exec_as_tester "test -x $root/apsigner/bin/appass"
     docker_exec_as_tester "test -x $root/apsigner/bin/approbe"
+    docker_exec_as_tester "test -x $root/apsigner/bin/appolicy"
+    docker_exec_as_tester "test ! -e $root/apclient/bin/appolicy"
     docker_exec_as_tester "test -x $root/apclient/bin/apshell"
     # Configs and keystore
     docker_exec_as_tester "test -f $root/apsigner/config.yaml"
