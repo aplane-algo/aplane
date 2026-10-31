@@ -6,6 +6,9 @@ package v1
 import (
 	"bytes"
 	"context"
+	"errors"
+	"net"
+	"os"
 	"strings"
 	"testing"
 
@@ -55,7 +58,15 @@ func TestFalcon1024V1GenerateTEALUsesV13AutoSalt(t *testing.T) {
 	}
 }
 
+// TestFalcon1024V1CompilerAutoSaltGolden asks a live algod to compile the
+// test key's program. It skips when the node cannot be reached, or when
+// APLANE_SKIP_LIVE_COMPILER=1; APLANE_REQUIRE_LIVE_COMPILER=1 turns an
+// unreachable node back into a failure. A node that answers with a different
+// program or address always fails.
 func TestFalcon1024V1CompilerAutoSaltGolden(t *testing.T) {
+	if os.Getenv("APLANE_SKIP_LIVE_COMPILER") == "1" {
+		t.Skip("APLANE_SKIP_LIVE_COMPILER=1")
+	}
 	client, err := algod.MakeClient(algo.ResolveTEALCompileAlgodURL(), "")
 	if err != nil {
 		t.Skipf("Could not create algod client: %v", err)
@@ -66,6 +77,10 @@ func TestFalcon1024V1CompilerAutoSaltGolden(t *testing.T) {
 	f.SetAlgodClient(client)
 	derived, err := f.DeriveLsigWithSalt(context.Background(), pubKey, nil)
 	if err != nil {
+		var netErr net.Error
+		if errors.As(err, &netErr) && os.Getenv("APLANE_REQUIRE_LIVE_COMPILER") != "1" {
+			t.Skipf("algod unreachable: %v", err)
+		}
 		t.Fatalf("DeriveLsigWithSalt() error = %v", err)
 	}
 	if !derived.CompilerAutoSalted || lsigsalt.IsOnCurve(derived.Address) {
