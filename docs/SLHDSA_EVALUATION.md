@@ -127,19 +127,21 @@ play. What that count means in practice:
   release expired shows the expired-release warning (`ARCH_SIGNING.md`,
   rotating alerts), but a client that keeps releasing fresh transactions
   keeps the status at "in flight" indefinitely. Detecting prolonged
-  unsubmitted signing needs a per-stage count of distinct releases in the
-  release memory, reported and never enforced, the observational
-  counterpart of the XMSS variant's attempt count. It is a listed gate
-  below. A rotate-only spend ends the stage at any time.
+  unsubmitted signing would need a per-stage count of distinct releases in
+  the release memory, reported and never enforced, the observational
+  counterpart of the XMSS variant's attempt count. It was considered and
+  not added: the condition takes hours of continuous approved requests, and
+  the count would be extra state in the release memory for a case the
+  assumption already covers by orders of magnitude. A rotate-only spend ends
+  the stage at any time.
 - A forger who benefits must also forge Falcon-1024 and Ed25519 on the
   same transaction and land it before the legitimate spend rotates the
   stage away.
 
 A deployment where a client could issue signing requests at that rate for
 hours, or where more than a handful of copies share a seed, falls outside
-the assumption, and until the release count above exists an operator has
-no signal from the signer that it is happening. The remedies beyond that
-count are a per-stage release rate limit, which delays rather than refuses
+the assumption, and an operator has no signal from the signer that it is
+happening. The remedies are a per-stage release rate limit, which delays rather than refuses
 and so cannot strand an account, or a taller tree: each extra level of
 height doubles the message count at which every row of the table is
 reached, at twice the signing and derivation cost. Neither
@@ -272,10 +274,6 @@ complete unlock/restore measurements remain explicit production gates below.
 - Review the per-stage signing margin above: the few-time term's table, its
   relation to the generic hash terms that cap the leg at category 1, the
   2^16 operating assumption, and the decision to add no counter or cap.
-- Report the number of distinct releases from each live stage for this
-  profile, in status and alerts, so prolonged unsubmitted signing is
-  visible. Today release memory keeps only the latest release and a stream
-  of fresh releases reads as "in flight". Reporting only; never a refusal.
 - Reproduce cold/warm signing and full successor checks on each intended deployment
   class, including slow hardware, competing accounts, concurrent requests and
   cancellation/lock responsiveness. Measure distributions and memory pressure.

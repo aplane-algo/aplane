@@ -753,9 +753,12 @@ unsubmitted signing from one host at two releases per second. The signer's
 alerts do not surface that condition: release memory (§8.2) keeps only a
 stage's latest release for this variant, so a single expired release warns
 but a stream of fresh releases reads as "in flight" indefinitely. A
-per-stage count of distinct releases, reported and never enforced, is the
-observational remedy and an open item (§14). The record states what else
-falls outside the assumption and the two remedies: a per-stage release rate
+per-stage count of distinct releases, reported and never enforced, was
+considered and not added: reaching the budget takes hours of continuous
+approved requests, the assumption holds for the intended deployments by
+orders of magnitude, and the hash leg is one of three a forger must break.
+The record states what else falls outside the assumption and the two
+remedies: a per-stage release rate
 limit, which delays rather than refuses and so cannot strand an account, or
 a taller tree, each level of which doubles every message count in the
 table at twice the signing and derivation cost.
@@ -851,6 +854,7 @@ The 41 units per chain step are 6 unit-cost instructions and one SHA-256.
 | SLH-DSA construction against the NIST ACVP vectors on the standard shape; rescaled golden vectors; digest split and leaf-index coverage; tampering and cross-shape rejection | `internal/crypto/slhdsa/slhdsa_test.go` |
 | SLH-DSA stage build, parse, salt, offsets, argument literals pinned to the parameter set, and cost ceiling | `lsig/rotatingtripleslhdsa/stage/program_test.go`, `template_dump_test.go` |
 | SLH-DSA derivation golden vectors, signing, verification and argument layout | `lsig/rotatingtripleslhdsa/signerops/keys_test.go`, `signerreg/register_test.go` |
+| SLH-DSA TEAL verifier run offline in a test interpreter against `slhdsa.Verify` on both program shapes: valid signatures (eight messages on the rescaled shape, one on the full-height shape), a bit flipped at the start of every 16-byte node of the first signature on both shapes, other message, other key, wrong lengths, exchanged layers, and the full-width final root comparison | `lsig/rotatingtripleslhdsa/stage/verifier_equiv_test.go`, `avmsim_test.go` |
 | SLH-DSA on-chain acceptance and rejection, cost model against node traces on both program shapes, six-transaction group | `test/integration/rotating_slhdsa_onchain_test.go` |
 | SLH-DSA preparation ceilings, bounded discovery, post-sign chain recheck, restored releases without leaf history; lifecycle benchmark | `internal/signerapp/signing/rotating_slhdsa_test.go`, `rotating_slhdsa_bench_test.go` |
 | XMSS stage build, parse, salt, offsets and cost | `lsig/rotatingtriplexmss/stage/program_test.go`, `template_dump_test.go` |
@@ -874,10 +878,6 @@ Full XMSS tree builds are skipped under the race detector (`internal/racetest`).
 - Independent review of the SLH-DSA rescaled parameter set and of the
   per-stage signing margin argument (§11.5) is a listed gate in
   [SLHDSA_EVALUATION.md](SLHDSA_EVALUATION.md).
-- Status and alerts report only the latest release of an SLH-DSA stage, so
-  prolonged unsubmitted signing from one stage is not visible (§11.5). A
-  per-stage count of distinct releases, reported and never enforced, is
-  the remedy.
 - Per-key-type exit and external-admin paths remain design-only.
 - Hinted stage scans and an in-flight release limit remain proposed.
 - Grouping with other senders and multi-stage release are deferred by design

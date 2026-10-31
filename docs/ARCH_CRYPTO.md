@@ -720,7 +720,11 @@ The design record for this new implementation of an established contract:
    pinned stage identities, network separation, per-component signature
    rejection, repeated stateless signing and secret erasure; library
    enablement/generation/storage tests; service rotation, restore, expiry and
-   post-sign refusal tests. `TestRotatingSLHTripleOnChain` exercises actual
+   post-sign refusal tests. `TestVerifierMatchesPrimitive` runs the TEAL
+   verifier source of both shapes in a test interpreter (the AVM subset it
+   uses; costs and the Ed25519 and Falcon opcodes are out of scope) and
+   requires it to accept exactly what `slhdsa.Verify` accepts, offline.
+   `TestRotatingSLHTripleOnChain` exercises actual
    transitions, obsolete authorizers, guards, damaged R/FORS/HT components,
    exact lengths and the declared opcode ceiling on both program shapes.
    Node measurements match the affine formula; this does not claim that a
