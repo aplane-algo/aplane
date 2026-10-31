@@ -29,8 +29,10 @@ import (
 	utilkeys "github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
-	v1 "github.com/aplane-algo/aplane/lsig/falcon1024/v1/reference"
 
+	"filippo.io/edwards25519"
+	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
+	"github.com/algorand/go-algorand-sdk/v2/types"
 	"github.com/algorandfoundation/falcon-signatures/falcongo"
 )
 
@@ -98,7 +100,7 @@ func (f *testFalcon1024V1) DeriveLsig(_ context.Context, publicKey []byte, param
 	copy(pub[:], publicKey)
 
 	// Use v1 derivation
-	lsigAcct, err := v1.DerivePQLogicSig(pub)
+	lsigAcct, err := fakeDeriveLogicSig(pub)
 	if err != nil {
 		return nil, "", err
 	}
@@ -120,7 +122,7 @@ func (f *testFalcon1024V1) DeriveLsigWithSalt(ctx context.Context, publicKey []b
 	}
 	var pub falcongo.PublicKey
 	copy(pub[:], publicKey)
-	lsigAcct, err := v1.DerivePQLogicSig(pub)
+	lsigAcct, err := fakeDeriveLogicSig(pub)
 	if err != nil {
 		return lsigsalt.FindResult{}, err
 	}
@@ -771,4 +773,23 @@ func TestGenerateFromSeedFailsWhenTEALGenerationFails(t *testing.T) {
 	if entries, _ := os.ReadDir(active.KeysDir()); len(entries) != 0 {
 		t.Fatalf("failed generation saved %d key file(s)", len(entries))
 	}
+}
+
+// fakeDeriveLogicSig is a deterministic, offline stand-in for Falcon address
+// derivation: a manual-salt program that only has to be stable and off-curve.
+// It is not the production derivation (see lsig/falcon1024/v1 for that).
+func fakeDeriveLogicSig(publicKey falcongo.PublicKey) (algocrypto.LogicSigAccount, error) {
+	for counter := range 256 {
+		logic := append([]byte{0x0c, 0x26, 0x01, 0x01, byte(counter), 0x31, 0x17, 0x2d, 0x80, 0x81, 0x0e}, publicKey[:]...)
+		logic = append(logic, 0x85)
+		lsig := algocrypto.LogicSigAccount{Lsig: types.LogicSig{Logic: logic}}
+		addr, err := lsig.Address()
+		if err != nil {
+			return algocrypto.LogicSigAccount{}, err
+		}
+		if _, err := new(edwards25519.Point).SetBytes(addr[:]); err != nil {
+			return lsig, nil
+		}
+	}
+	return algocrypto.LogicSigAccount{}, fmt.Errorf("no off-curve counter found")
 }

@@ -77,7 +77,7 @@ For a current ownership map and source-of-truth files, prefer `docs/ARCH_OVERVIE
 ### Cryptographic Modules (`lsig/`)
 - `lsig/falcon1024/`: Falcon-1024 post-quantum signature implementation
   - `family/`: Family registration and metadata (with `family/ops/` for family operations)
-  - `v1/`: Versioned standard implementation (with `v1/reference/`)
+  - `v1/`: Versioned standard implementation
   - `keys/`: Key derivation and processing
   - `keygen/`: Key generation
   - `derivation/`: Version-specific derivation logic
