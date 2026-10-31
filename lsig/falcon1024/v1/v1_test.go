@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"os"
 	"strings"
@@ -58,37 +59,81 @@ func TestFalcon1024V1GenerateTEALUsesV13AutoSalt(t *testing.T) {
 	}
 }
 
+// liveCompilerEndpoint is an algod the live golden may compile against.
+type liveCompilerEndpoint struct {
+	name, url, token string
+	// lenient lets a non-transport error (for example an older LocalNet that
+	// rejects TEAL v13) fall through to the next endpoint.
+	lenient bool
+}
+
+// liveCompilerEndpoints returns where the live golden compiles: only the
+// endpoint named by TEAL_COMPILE_ALGOD_URL when set, otherwise a local LocalNet
+// first and the repo's public node second.
+func liveCompilerEndpoints() []liveCompilerEndpoint {
+	token := os.Getenv(algo.TEALCompileAlgodTokenEnv)
+	if token == "" {
+		token = os.Getenv("ALGOD_TOKEN")
+	}
+	if u := os.Getenv(algo.TEALCompileAlgodURLEnv); u != "" {
+		return []liveCompilerEndpoint{{name: "TEAL_COMPILE_ALGOD_URL", url: u, token: token}}
+	}
+	return []liveCompilerEndpoint{
+		// algokit LocalNet defaults.
+		{name: "LocalNet", url: "http://localhost:4001", token: strings.Repeat("a", 64), lenient: true},
+		{name: "public algod", url: algo.ResolveTEALCompileAlgodURL(), token: token},
+	}
+}
+
 // TestFalcon1024V1CompilerAutoSaltGolden asks a live algod to compile the
-// test key's program. It skips when the node cannot be reached, or when
-// APLANE_SKIP_LIVE_COMPILER=1; APLANE_REQUIRE_LIVE_COMPILER=1 turns an
-// unreachable node back into a failure. A node that answers with a different
-// program or address always fails.
+// test key's program, trying a local LocalNet first and the public node only
+// if that is absent or cannot compile it. It skips when no node is reachable,
+// or when APLANE_SKIP_LIVE_COMPILER=1; APLANE_REQUIRE_LIVE_COMPILER=1 turns
+// "no node reachable" into a failure. A node that compiles the program to a
+// different address always fails.
 func TestFalcon1024V1CompilerAutoSaltGolden(t *testing.T) {
 	if os.Getenv("APLANE_SKIP_LIVE_COMPILER") == "1" {
 		t.Skip("APLANE_SKIP_LIVE_COMPILER=1")
 	}
-	client, err := algod.MakeClient(algo.ResolveTEALCompileAlgodURL(), "")
-	if err != nil {
-		t.Skipf("Could not create algod client: %v", err)
-	}
 
-	f := &Falcon1024V1{}
 	pubKey := falconTestPublicKey(t)
-	f.SetAlgodClient(client)
-	derived, err := f.DeriveLsigWithSalt(context.Background(), pubKey, nil)
-	if err != nil {
-		var netErr net.Error
-		if errors.As(err, &netErr) && os.Getenv("APLANE_REQUIRE_LIVE_COMPILER") != "1" {
-			t.Skipf("algod unreachable: %v", err)
+	var unreachable []string
+	for _, ep := range liveCompilerEndpoints() {
+		client, err := algod.MakeClient(ep.url, ep.token)
+		if err != nil {
+			t.Skipf("Could not create algod client for %s: %v", ep.name, err)
 		}
-		t.Fatalf("DeriveLsigWithSalt() error = %v", err)
+		f := &Falcon1024V1{}
+		f.SetAlgodClient(client)
+		derived, err := f.DeriveLsigWithSalt(context.Background(), pubKey, nil)
+		if err != nil {
+			var netErr net.Error
+			if errors.As(err, &netErr) {
+				unreachable = append(unreachable, fmt.Sprintf("%s: %v", ep.name, err))
+				continue
+			}
+			if ep.lenient {
+				t.Logf("%s could not compile the program, trying the next node: %v", ep.name, err)
+				continue
+			}
+			t.Fatalf("%s: DeriveLsigWithSalt() error = %v", ep.name, err)
+		}
+		if v, err := client.Versions().Do(context.Background()); err == nil {
+			t.Logf("compiled by %s (%s), algod %d.%d.%d", ep.name, ep.url, v.Build.Major, v.Build.Minor, v.Build.BuildNumber)
+		}
+		if !derived.CompilerAutoSalted || lsigsalt.IsOnCurve(derived.Address) {
+			t.Fatalf("%s: derived result = %+v, want compiler-auto-salted off-curve bytecode", ep.name, derived)
+		}
+		if len(derived.Bytecode) != 1801 || derived.Address.String() != goldenAddress {
+			t.Fatalf("%s: compiler golden = %d bytes / %s", ep.name, len(derived.Bytecode), derived.Address.String())
+		}
+		return
 	}
-	if !derived.CompilerAutoSalted || lsigsalt.IsOnCurve(derived.Address) {
-		t.Fatalf("derived result = %+v, want compiler-auto-salted off-curve bytecode", derived)
+	msg := "no algod could compile the program: " + strings.Join(unreachable, "; ")
+	if os.Getenv("APLANE_REQUIRE_LIVE_COMPILER") == "1" {
+		t.Fatal(msg)
 	}
-	if len(derived.Bytecode) != 1801 || derived.Address.String() != "MS4DNTRYOOLQZ4UXK5APVE4XEWMU4CDTUYGOO5UQCWLONDRUP56DZDOBVA" {
-		t.Fatalf("compiler golden = %d bytes / %s", len(derived.Bytecode), derived.Address.String())
-	}
+	t.Skip(msg)
 }
 
 func TestFalcon1024V1_DeriveLsig_RequiresAlgod(t *testing.T) {
