@@ -103,3 +103,45 @@ func TestResolverMetadataByIDUsesCache(t *testing.T) {
 		t.Fatalf("UnitName = %q, want TOK", meta.UnitName)
 	}
 }
+
+// TestDisplayAmountThroughLoadedCache converts amounts the way a client does:
+// load the cache from disk, resolve the reference, and parse the amount. A
+// built-in entry with wrong decimals would convert by the wrong power of ten
+// whatever the cache holds, because built-in entries win.
+func TestDisplayAmountThroughLoadedCache(t *testing.T) {
+	for _, tt := range []struct {
+		name, ref, amount string
+		cached            *cache.ASAInfo
+		want              uint64
+	}{
+		{name: "AKTA from the table", ref: "akita", amount: "5", want: 5_000_000},
+		{name: "EURS from the table", ref: "EURS", amount: "1.25", want: 1_250_000},
+		{name: "AKTA with a correct cached entry", ref: "523683256", amount: "5",
+			cached: &cache.ASAInfo{Name: "AKITA INU", UnitName: "AKTA", Decimals: 6}, want: 5_000_000},
+		{name: "AKTA with a wrong cached entry", ref: "523683256", amount: "5",
+			cached: &cache.ASAInfo{Name: "AKITA INU", UnitName: "AKTA", Decimals: 0}, want: 5_000_000},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			store := cache.NewStore(t.TempDir())
+			if tt.cached != nil {
+				seed := cache.LoadASACacheFromStore(store, "mainnet")
+				seed.Assets[523683256] = *tt.cached
+				if err := seed.SaveCache("mainnet"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			loaded := cache.LoadASACacheFromStore(store, "mainnet")
+			meta, err := NewResolver("mainnet", &loaded, nil).ResolveMetadata(tt.ref)
+			if err != nil {
+				t.Fatal(err)
+			}
+			raw, err := ParseDisplayAmount(tt.amount, meta)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if raw != tt.want {
+				t.Fatalf("%s %s = %d base units, want %d", tt.amount, tt.ref, raw, tt.want)
+			}
+		})
+	}
+}

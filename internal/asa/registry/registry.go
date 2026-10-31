@@ -26,7 +26,7 @@ var builtinMetadata = map[string]map[uint64]Info{
 		760037151: {Name: "xUSD", UnitName: "xUSD", Decimals: 6},
 		465865291: {Name: "STBL", UnitName: "STBL", Decimals: 6},
 		841126810: {Name: "STBL2", UnitName: "STBL2", Decimals: 6},
-		227855942: {Name: "STASIS EURO", UnitName: "EURS", Decimals: 2},
+		227855942: {Name: "STASIS EURO", UnitName: "EURS", Decimals: 6},
 
 		// Wrapped assets
 		386192725:  {Name: "goBTC", UnitName: "goBTC", Decimals: 8},
@@ -66,7 +66,7 @@ var builtinMetadata = map[string]map[uint64]Info{
 
 		// Popular community tokens
 		2726252423: {Name: "Alpha Arcade", UnitName: "ALPHA", Decimals: 6},
-		523683256:  {Name: "AKITA INU", UnitName: "AKTA", Decimals: 0},
+		523683256:  {Name: "AKITA INU", UnitName: "AKTA", Decimals: 6},
 	},
 	"testnet": {
 		10458941: {Name: "USDC", UnitName: "USDC", Decimals: 6},

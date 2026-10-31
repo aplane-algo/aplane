@@ -20,23 +20,23 @@ func (e *Engine) GetASAInfoWithContext(ctx context.Context, assetID uint64, forc
 
 	refresh := len(forceRefresh) > 0 && forceRefresh[0]
 	if refresh {
-		assetInfo, err := e.AlgodClient.GetAssetByID(assetID).Do(ctx)
+		params, err := cache.FetchASAParams(ctx, e.AlgodClient, assetID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get asset %d: %w", assetID, err)
 		}
 		result := &ASAInfo{
 			AssetID:       assetID,
-			UnitName:      assetInfo.Params.UnitName,
-			Name:          assetInfo.Params.Name,
-			Decimals:      assetInfo.Params.Decimals,
-			Total:         assetInfo.Params.Total,
-			Creator:       assetInfo.Params.Creator,
-			Manager:       assetInfo.Params.Manager,
-			Reserve:       assetInfo.Params.Reserve,
-			Freeze:        assetInfo.Params.Freeze,
-			Clawback:      assetInfo.Params.Clawback,
-			DefaultFrozen: assetInfo.Params.DefaultFrozen,
-			URL:           assetInfo.Params.Url,
+			UnitName:      params.UnitName,
+			Name:          params.Name,
+			Decimals:      params.Decimals,
+			Total:         params.Total,
+			Creator:       params.Creator,
+			Manager:       params.Manager,
+			Reserve:       params.Reserve,
+			Freeze:        params.Freeze,
+			Clawback:      params.Clawback,
+			DefaultFrozen: params.DefaultFrozen,
+			URL:           params.Url,
 		}
 		e.cacheASA(result)
 		return result, nil
@@ -103,11 +103,11 @@ func (e *Engine) cacheASA(info *ASAInfo) {
 	if e.AsaCache.Assets == nil {
 		e.AsaCache.Assets = make(map[uint64]cache.ASAInfo)
 	}
-	e.AsaCache.Assets[info.AssetID] = cache.ASAInfo{
+	e.AsaCache.Assets[info.AssetID] = cache.PreferBuiltin(e.Network, info.AssetID, cache.ASAInfo{
 		UnitName: info.UnitName,
 		Name:     info.Name,
 		Decimals: info.Decimals,
-	}
+	})
 }
 
 // RemoveASAFromCache removes an asset from the cache and persists the change.
