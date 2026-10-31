@@ -171,18 +171,36 @@ func (p *avmProgram) run(txn avmTxn, args [][]byte, hooks avmHooks) (bool, error
 		in := p.code[pc]
 		var err error
 		switch in.op {
+		case "txn", "global", "callsub", "b", "bz":
+			if len(in.args) != 1 {
+				return fail(unsupportedf("%s with %d immediates", in.op, len(in.args)))
+			}
+		}
+		switch in.op {
 		case "pushint":
-			var u uint64
-			u, err = strconv.ParseUint(in.args[0], 0, 64)
-			if err == nil {
-				err = push(avmUint(u))
+			if len(in.args) != 1 {
+				err = unsupportedf("pushint with %d immediates", len(in.args))
+				break
 			}
+			// Only decimal and 0x-prefixed literals are understood; named
+			// constants (NoOp, Pay, ...) and other formats are not.
+			u, perr := strconv.ParseUint(in.args[0], 0, 64)
+			if perr != nil {
+				err = unsupportedf("pushint literal %q", in.args[0])
+				break
+			}
+			err = push(avmUint(u))
 		case "pushbytes":
-			var b []byte
-			b, err = hex.DecodeString(strings.TrimPrefix(in.args[0], "0x"))
-			if err == nil {
-				err = push(avmBytes(b))
+			if len(in.args) != 1 || !strings.HasPrefix(in.args[0], "0x") {
+				err = unsupportedf("pushbytes literal %q (only 0x hexadecimal is understood)", strings.Join(in.args, " "))
+				break
 			}
+			b, perr := hex.DecodeString(strings.TrimPrefix(in.args[0], "0x"))
+			if perr != nil {
+				err = unsupportedf("pushbytes literal %q: %v", in.args[0], perr)
+				break
+			}
+			err = push(avmBytes(b))
 		case "load":
 			var n int
 			if n, err = imm(0); err == nil {

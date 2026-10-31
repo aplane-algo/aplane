@@ -261,7 +261,22 @@ func TestAVMSimOpcodes(t *testing.T) {
 	if !errors.As(err, &unsupported) {
 		t.Errorf("unknown opcode error = %v, want an unsupported-by-the-interpreter error", err)
 	}
-	for _, src := range []string{"pushint 1\nb nowhere", "global Round\nreturn"} {
+	// Literal formats the interpreter does not understand are likewise
+	// unsupported, not faults: base64 and string byte literals, named and
+	// malformed integer constants, and instructions missing an immediate.
+	for _, src := range []string{
+		"pushint 1\nb nowhere",
+		"global Round\nreturn",
+		"pushbytes base64(AQ==)\nbtoi\nreturn",
+		`pushbytes "a"` + "\nbtoi\nreturn",
+		"pushbytes 0xZZ\nreturn",
+		"pushbytes 0x0\nreturn",
+		"pushint NoOp\nreturn",
+		"pushint 18446744073709551616\nreturn",
+		"pushint\nreturn",
+		"pushbytes\nreturn",
+		"callsub\nreturn",
+	} {
 		if _, err := run(src); !errors.As(err, &unsupported) {
 			t.Errorf("%q: error = %v, want unsupported", src, err)
 		}
