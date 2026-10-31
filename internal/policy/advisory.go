@@ -27,9 +27,11 @@ const (
 
 // ConfigAdvisory is a non-fatal policy-model warning. It reports confusing or
 // redundant stored policy shapes without changing load/evaluation behavior.
+// Pointer is the JSON Pointer of the field an author would change to resolve
+// it; "" means the document as a whole.
 type ConfigAdvisory struct {
 	RuleID   string
-	Scope    string
+	Pointer  string
 	Severity string
 	Message  string
 }
@@ -43,8 +45,8 @@ func (d *PolicyV1) Advisories() []ConfigAdvisory {
 		return nil
 	}
 	var out []ConfigAdvisory
-	add := func(ruleID, message string) {
-		out = append(out, ConfigAdvisory{RuleID: ruleID, Scope: "policy", Severity: ConfigAdvisorySeverityWarning, Message: message})
+	add := func(ruleID, pointer, message string) {
+		out = append(out, ConfigAdvisory{RuleID: ruleID, Pointer: pointer, Severity: ConfigAdvisorySeverityWarning, Message: message})
 	}
 	allowsClose, allowsClawback := false, false
 	for _, route := range d.Routes {
@@ -52,13 +54,13 @@ func (d *PolicyV1) Advisories() []ConfigAdvisory {
 		allowsClawback = allowsClawback || route.AllowClawback
 	}
 	if d.RejectCloseRemainder && allowsClose {
-		add(ConfigAdvisoryRejectCloseRemainderRouteOverlap, "reject_close_remainder still rejects ALGO close-out even when a route sets allow_close")
+		add(ConfigAdvisoryRejectCloseRemainderRouteOverlap, "/reject_close_remainder", "reject_close_remainder still rejects ALGO close-out even when a route sets allow_close")
 	}
 	if d.RejectAssetClose && allowsClose {
-		add(ConfigAdvisoryRejectAssetCloseRouteOverlap, "reject_asset_close still rejects ASA close-out even when a route sets allow_close")
+		add(ConfigAdvisoryRejectAssetCloseRouteOverlap, "/reject_asset_close", "reject_asset_close still rejects ASA close-out even when a route sets allow_close")
 	}
 	if d.RejectClawback && allowsClawback {
-		add(ConfigAdvisoryRejectClawbackRouteOverlap, "reject_clawback still rejects clawback even when a route sets allow_clawback")
+		add(ConfigAdvisoryRejectClawbackRouteOverlap, "/reject_clawback", "reject_clawback still rejects clawback even when a route sets allow_clawback")
 	}
 	if len(d.Routes) > 0 {
 		var rejected []string
@@ -68,10 +70,10 @@ func (d *PolicyV1) Advisories() []ConfigAdvisory {
 			}
 		}
 		if len(rejected) > 0 {
-			add(ConfigAdvisoryRejectedTypeRouted, fmt.Sprintf("transaction_types rejects %s, so no route can match that type", strings.Join(rejected, " and ")))
+			add(ConfigAdvisoryRejectedTypeRouted, "/transaction_types", fmt.Sprintf("transaction_types rejects %s, so no route can match that type", strings.Join(rejected, " and ")))
 		}
 		if d.Role == noderole.RoleCosigner && d.MaxFeeMicroAlgos == 0 {
-			add(ConfigAdvisoryCosignerNoFeeCap, "routes permit movements but max_fee_microalgos is 0 (no cap); a cosigner has no warning review, so a permitted self-payment can carry any fee")
+			add(ConfigAdvisoryCosignerNoFeeCap, "/max_fee_microalgos", "routes permit movements but max_fee_microalgos is 0 (no cap); a cosigner has no warning review, so a permitted self-payment can carry any fee")
 		}
 	}
 	return out

@@ -1026,7 +1026,10 @@ Errors report the JSON Pointer of the failing value, for example
 
 A valid document can still have a shape that surprises, because one policy
 layer cannot weaken another. `check` and `apply` report these as warnings
-(`internal/policy/advisory.go`); they never block an apply:
+(`internal/policy/advisory.go`); they never block an apply. Each warning
+carries the JSON Pointer of the first field its condition names, for example
+`/reject_asset_close` or `/max_fee_microalgos`, which is the field an author
+would change to resolve it:
 
 | Rule ID | Condition |
 |---------|-----------|

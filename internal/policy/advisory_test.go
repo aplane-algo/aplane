@@ -5,7 +5,11 @@ package policy
 
 import (
 	"fmt"
+	"maps"
+	"strings"
 	"testing"
+
+	"github.com/aplane-algo/aplane/internal/noderole"
 )
 
 func advisorySignerDoc(t *testing.T, settings, route string) *PolicyV1 {
@@ -28,7 +32,7 @@ func TestSignerAdvisoriesReportClawbackOverlap(t *testing.T) {
 		fmt.Sprintf(`, "allow_clawback": true, "asset_sources": [%q]`, v1Holder.String()))
 	got := doc.Advisories()
 	assertAdvisoryRuleIDs(t, got, []string{ConfigAdvisoryRejectClawbackRouteOverlap})
-	if got[0].Severity != ConfigAdvisorySeverityWarning || got[0].Scope != "policy" {
+	if got[0].Severity != ConfigAdvisorySeverityWarning || got[0].Pointer != "/reject_clawback" {
 		t.Fatalf("advisory = %+v", got[0])
 	}
 }
@@ -96,5 +100,71 @@ func assertAdvisoryRuleIDs(t *testing.T, got []ConfigAdvisory, want []string) {
 		if got[i].RuleID != wantRuleID {
 			t.Fatalf("advisories = %+v, want %v", got, want)
 		}
+	}
+}
+
+// resolvePointer returns the node a JSON Pointer names, or nil.
+func resolvePointer(root *jsonNode, pointer string) *jsonNode {
+	node := root
+	if pointer == "" {
+		return node
+	}
+	for _, token := range strings.Split(strings.TrimPrefix(pointer, "/"), "/") {
+		token = strings.ReplaceAll(strings.ReplaceAll(token, "~1", "/"), "~0", "~")
+		if node == nil || node.kind != nodeObject {
+			return nil
+		}
+		node = node.members[token]
+	}
+	return node
+}
+
+// TestAdvisoryPointersNameFieldsInTheDocument triggers every advisory and
+// checks that each one's pointer names a field present in the document, so an
+// editor or apadmin can show it on that field.
+func TestAdvisoryPointersNameFieldsInTheDocument(t *testing.T) {
+	signer := signerJSON(t, DefaultKey, fmt.Sprintf(`{"reject_close_remainder": true, "reject_asset_close": true, "reject_clawback": true,
+  "transaction_types": {"*": "allow", "pay": "reject"},
+  "transfer_policy": {"routes": [
+    {"id": "r", "networks": ["testnet"], "sources": ["*"], "assets": ["*"], "destinations": [%q],
+     "allow_close": true, "allow_clawback": true, "asset_sources": [%q]}
+  ]}}`, v1Vendor.String(), v1Holder.String()))
+	cosigner := cosignerJSON(t, testWitnessKeyIDV1, fmt.Sprintf(`{"transfer_policy": {"routes": [
+    {"id": "r", "networks": ["testnet"], "sources": ["*"], "assets": ["algo"], "destinations": [%q]}
+  ]}}`, v1Vendor.String()))
+
+	seen := map[string]string{}
+	for _, tt := range []struct {
+		data []byte
+		key  string
+		role noderole.Role
+	}{
+		{signer, DefaultKey, noderole.RoleSigner},
+		{cosigner, testWitnessKeyIDV1, noderole.RoleCosigner},
+	} {
+		doc, err := DecodePolicyV1(tt.data, tt.key, tt.role)
+		if err != nil {
+			t.Fatal(err)
+		}
+		root, err := parseJSONTree(tt.data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, a := range doc.Advisories() {
+			if a.Pointer == "" || resolvePointer(root, a.Pointer) == nil {
+				t.Errorf("%s: pointer %q names no field in the document", a.RuleID, a.Pointer)
+			}
+			seen[a.RuleID] = a.Pointer
+		}
+	}
+	want := map[string]string{
+		ConfigAdvisoryRejectCloseRemainderRouteOverlap: "/reject_close_remainder",
+		ConfigAdvisoryRejectAssetCloseRouteOverlap:     "/reject_asset_close",
+		ConfigAdvisoryRejectClawbackRouteOverlap:       "/reject_clawback",
+		ConfigAdvisoryRejectedTypeRouted:               "/transaction_types",
+		ConfigAdvisoryCosignerNoFeeCap:                 "/max_fee_microalgos",
+	}
+	if !maps.Equal(seen, want) {
+		t.Fatalf("advisory pointers = %v, want %v", seen, want)
 	}
 }
