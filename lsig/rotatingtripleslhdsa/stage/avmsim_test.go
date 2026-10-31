@@ -88,6 +88,19 @@ func avmAssemble(src string) (*avmProgram, error) {
 
 var errAVMReject = errors.New("program rejected")
 
+// avmUnsupportedError reports something the interpreter cannot model: an
+// unknown opcode, an unsupported field, a missing hook, a bad label or
+// immediate, or a step limit. It is distinct from a modeled AVM fault
+// (overflow, out-of-range slice, type error), which rejects the transaction
+// on chain too. A harness must fail on it, never read it as a rejection.
+type avmUnsupportedError struct{ msg string }
+
+func (e *avmUnsupportedError) Error() string { return "unsupported by the interpreter: " + e.msg }
+
+func unsupportedf(format string, a ...any) error {
+	return &avmUnsupportedError{msg: fmt.Sprintf(format, a...)}
+}
+
 // run executes the program and reports whether it approves. A runtime fault
 // (type error, overflow, out-of-range slice, oversized value) is an error,
 // as it is on the AVM, and means the transaction is rejected too.
@@ -99,8 +112,8 @@ func (p *avmProgram) run(txn avmTxn, args [][]byte, hooks avmHooks) (bool, error
 		pc      int
 		steps   int
 	)
-	fail := func(format string, a ...any) (bool, error) {
-		return false, fmt.Errorf("pc %d %s: %s", pc, p.code[pc].op, fmt.Sprintf(format, a...))
+	fail := func(err error) (bool, error) {
+		return false, fmt.Errorf("pc %d %s: %w", pc, p.code[pc].op, err)
 	}
 	pop := func() (avmValue, error) {
 		if len(stack) == 0 {
@@ -134,7 +147,7 @@ func (p *avmProgram) run(txn avmTxn, args [][]byte, hooks avmHooks) (bool, error
 	jump := func(label string) error {
 		target, ok := p.labels[label]
 		if !ok {
-			return fmt.Errorf("unknown label %s", label)
+			return unsupportedf("unknown label %s", label)
 		}
 		pc = target - 1 // the loop increments
 		return nil
@@ -142,18 +155,18 @@ func (p *avmProgram) run(txn avmTxn, args [][]byte, hooks avmHooks) (bool, error
 	imm := func(i int) (int, error) {
 		in := p.code[pc]
 		if i >= len(in.args) {
-			return 0, errors.New("missing immediate")
+			return 0, unsupportedf("missing immediate")
 		}
 		n, err := strconv.Atoi(in.args[i])
 		if err != nil || n < 0 {
-			return 0, fmt.Errorf("bad immediate %q", in.args[i])
+			return 0, unsupportedf("bad immediate %q", in.args[i])
 		}
 		return n, nil
 	}
 
 	for pc = 0; pc < len(p.code); pc++ {
 		if steps++; steps > avmMaxSteps {
-			return fail("step limit")
+			return fail(unsupportedf("step limit"))
 		}
 		in := p.code[pc]
 		var err error
@@ -191,7 +204,7 @@ func (p *avmProgram) run(txn avmTxn, args [][]byte, hooks avmHooks) (bool, error
 			err = push(txnField(txn, in.args[0]))
 		case "global":
 			if in.args[0] != "ZeroAddress" {
-				err = fmt.Errorf("unsupported global %s", in.args[0])
+				err = unsupportedf("global %s", in.args[0])
 			} else {
 				err = push(avmBytes(make([]byte, 32)))
 			}
@@ -411,7 +424,7 @@ func (p *avmProgram) run(txn avmTxn, args [][]byte, hooks avmHooks) (bool, error
 							verify = hooks.Falcon
 						}
 						if verify == nil {
-							err = fmt.Errorf("no hook for %s", in.op)
+							err = unsupportedf("no hook for %s", in.op)
 						} else {
 							err = push(avmUint(boolUint(verify(data, sig, key))))
 						}
@@ -419,10 +432,10 @@ func (p *avmProgram) run(txn avmTxn, args [][]byte, hooks avmHooks) (bool, error
 				}
 			}
 		default:
-			err = fmt.Errorf("unsupported opcode %q", in.op)
+			err = unsupportedf("opcode %q", in.op)
 		}
 		if err != nil {
-			return fail("%v", err)
+			return fail(err)
 		}
 	}
 	// Falling off the end approves only with exactly one nonzero value left.
@@ -490,7 +503,7 @@ func uintOp(op string, a, b uint64) (uint64, error) {
 		}
 		return a >> b, nil
 	}
-	return 0, fmt.Errorf("unsupported operator %s", op)
+	return 0, unsupportedf("operator %s", op)
 }
 
 func txnField(txn avmTxn, field string) avmValue {

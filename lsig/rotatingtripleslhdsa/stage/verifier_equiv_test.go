@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/binary"
+	"errors"
 	"slices"
 	"testing"
 
@@ -82,8 +83,14 @@ func (r *verifierRig) tealArgs(txid []byte, slhArgs [][]byte) bool {
 		Falcon:  func(_, _, _ []byte) bool { r.hooked++; return true },
 		Equal:   func(a, b avmValue) { r.lastEqual = [2]avmValue{a, b} },
 	})
+	var unsupported *avmUnsupportedError
+	if errors.As(err, &unsupported) {
+		// An interpreter limit is not a rejection: reading it as one would let
+		// every negative case pass on a path the interpreter cannot run.
+		r.t.Fatalf("the verifier reached something the interpreter cannot run: %v", err)
+	}
 	if err != nil && !isRejection(err) {
-		// A fault is a rejection on chain; keep the reason for the log.
+		// A modeled AVM fault is a rejection on chain; keep the reason.
 		r.t.Logf("verifier faulted: %v", err)
 	}
 	return ok
@@ -112,18 +119,22 @@ func testTxID(n int) []byte {
 
 // TestVerifierMatchesPrimitive runs each shape's real TEAL verifier source in
 // the interpreter and requires it to accept exactly what slhdsa.Verify
-// accepts: valid signatures for several messages (distinct FORS indices,
-// hypertree paths and WOTS+ digits), and signatures with one bit flipped at
-// every node boundary, which must be rejected by both.
+// accepts: valid signatures (eight messages on the rescaled shape, one on the
+// full-height shape, for distinct FORS indices, hypertree paths and WOTS+
+// digits), and for the first message a signature with one bit flipped at the
+// start of every 16-byte node, which both must reject.
 func TestVerifierMatchesPrimitive(t *testing.T) {
 	for height, shape := range hypertrees {
 		t.Run(shape.params.Name, func(t *testing.T) {
 			if height != 22 && testing.Short() {
 				t.Skip("the full-height set signs slowly")
 			}
-			messages, stride := 8, 16
+			// The full-height set signs slowly, so it gets one message; both
+			// shapes get a flipped bit at every 16-byte node boundary.
+			const stride = 16
+			messages := 8
 			if height != 22 {
-				messages, stride = 1, 512
+				messages = 1
 			}
 			r := newVerifierRig(t, shape, byte(height))
 			var first []byte
@@ -241,6 +252,18 @@ func TestAVMSimOpcodes(t *testing.T) {
 	for _, tc := range faults {
 		if ok, err := run(tc.src); ok || err == nil {
 			t.Errorf("%s: ok %v, err %v, want a fault", tc.name, ok, err)
+		}
+	}
+	// An opcode the interpreter does not know is not an AVM fault: it must
+	// surface as unsupported so a harness can refuse to read it as a rejection.
+	_, err := run("bitlen\nreturn")
+	var unsupported *avmUnsupportedError
+	if !errors.As(err, &unsupported) {
+		t.Errorf("unknown opcode error = %v, want an unsupported-by-the-interpreter error", err)
+	}
+	for _, src := range []string{"pushint 1\nb nowhere", "global Round\nreturn"} {
+		if _, err := run(src); !errors.As(err, &unsupported) {
+			t.Errorf("%q: error = %v, want unsupported", src, err)
 		}
 	}
 }
