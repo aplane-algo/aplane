@@ -693,9 +693,15 @@ How to read this:
 - A route is an allowance for direct ALGO and ASA transfers from `sources`
   of `assets` to `destinations` on `networks`. Treasury may pay ops in ALGO
   on mainnet and anyone in USD on either network; every other direct
-  transfer from this key is a route miss and is rejected. Routes whose
-  `sources` do not include this key never match it; in a key file, name the
-  key or `*`.
+  transfer from this key is a route miss and is rejected.
+- A route matches by the transaction's **sender**, but the document is
+  chosen by the **key that signs**. A key that signs for its own address
+  needs routes naming that address, a set holding it, or `*`. After a
+  rekey the two differ: if account A is rekeyed to this key, this file
+  governs A's transactions, and its routes must name A, not the key. On a
+  cosigner node the document belongs to a Witness Key ID and its `sources`
+  are guarded account addresses; see
+  [Cosigner Documents](USER_TRANSFER_ROUTING.md#cosigner-documents).
 - A route match lets the transfer continue through the other rules; it is
   not an approval. The document limits from step 4 and the warning review
   from step 2 still apply.
@@ -1042,7 +1048,7 @@ Before relying on a policy:
 | A request is rejected with `transaction_type:<type>` | The governing document's `transaction_types` rejects that type, directly or through `*`. |
 | A transfer is rejected unexpectedly | `"on_no_route": "reject"`, a blocked destination, close/clawback denial, or a stricter matching route threshold. |
 | A route does not match an ASA | ASA IDs are network-local; check the transaction network and any `asset_sets` mapping. |
-| A route in a key file never matches | Its `sources` do not include the key; a key file's routes match only transfers that key signs. |
+| A route in a key file never matches | Its `sources` do not name the transaction's sender. The file governs what its key signs, but routes match the sender: the key's own address when it signs for itself, the original account's address when that account is rekeyed to the key, or a guarded account address on a cosigner node. |
 
 For implementation-level details, see [ARCH_POLICY.md](ARCH_POLICY.md). For
 network token rules, see [ARCH_NETWORKS.md](ARCH_NETWORKS.md).

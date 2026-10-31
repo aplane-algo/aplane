@@ -942,8 +942,10 @@ There are two ways to give one account its own routes, and they compose:
 - **A file of its own.** `policies/<key>.json` replaces the default for that
   key, routes and all. Use it when the key's rules differ in kind from the
   rest: an allowlist key on an operator-default node, or a key that must
-  never be touched by a change to the default. Its routes should name the key
-  (or `*`) in `sources`, since no other key is evaluated against them.
+  never be touched by a change to the default. Its `sources` should name the
+  accounts this key signs for (its own address, or an account rekeyed to it)
+  or `*`: routes match the transaction's sender, while the file is chosen by
+  the key that signs.
 - **Route `sources` in the default.** Keys on the default are all evaluated
   against the same route list, and each route matches only the senders its
   `sources` name. Use this when one rulebook covers the keys and you want one
