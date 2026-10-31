@@ -27,7 +27,8 @@ func LoadASACacheFromStore(store *Store, network string) ASACache {
 	cache := ASACache{SchemaVersion: cachePayloadSchemaVersion, Assets: make(map[uint64]ASAInfo)}
 	cache.bindStore(store)
 
-	// Merge builtin ASAs first (can be overridden by cached values)
+	// Merge builtin ASAs first. A cached entry adds assets the table does not
+	// know; it never replaces a built-in entry (see PreferBuiltin).
 	for id, info := range asaregistry.AllBuiltinMetadata(network) {
 		cache.Assets[id] = ASAInfo{
 			Name:     info.Name,
@@ -36,7 +37,7 @@ func LoadASACacheFromStore(store *Store, network string) ASACache {
 		}
 	}
 
-	// Load cached ASAs and merge (cached values override builtins)
+	// Load cached ASAs and merge them under the built-in entries
 	filecache := ASACache{SchemaVersion: cachePayloadSchemaVersion, Assets: make(map[uint64]ASAInfo)}
 	filecache.bindStore(store)
 	if err := loadSignedCacheWithKey(store, GetASACacheFilenameForStore(store, network), &filecache); err != nil {
@@ -45,10 +46,7 @@ func LoadASACacheFromStore(store *Store, network string) ASACache {
 	}
 
 	for id, info := range filecache.Assets {
-		if builtin, ok := cache.Assets[id]; ok && builtin != info {
-			reportBuiltinDisagreement(network, id, builtin, info)
-		}
-		cache.Assets[id] = info
+		cache.Assets[id] = PreferBuiltin(network, id, info)
 	}
 
 	Debug("loaded ASA cache", "network", network, "entries", len(cache.Assets))
@@ -59,17 +57,26 @@ func LoadASACacheFromStore(store *Store, network string) ASACache {
 // have been reported, so a cache reloaded many times reports each once.
 var reportedDisagreements sync.Map
 
-// reportBuiltinDisagreement warns that a cached entry differs from the
-// built-in metadata for the same asset. An asset's name, unit name and
-// decimals are fixed on chain, so one of the two copies is wrong. The cached
-// value is still the one used.
-func reportBuiltinDisagreement(network string, assetID uint64, builtin, cached ASAInfo) {
-	key := fmt.Sprintf("%s/%d/%+v", network, assetID, cached)
-	if _, seen := reportedDisagreements.LoadOrStore(key, struct{}{}); seen {
-		return
+// PreferBuiltin returns the built-in metadata for an asset when the table has
+// it, and info otherwise. An asset's name, unit name and decimals are fixed on
+// chain, so a fetched or cached entry that differs from the reviewed built-in
+// entry is wrong, and its decimals would convert display amounts into the
+// wrong base units. The disagreement is reported once per process.
+func PreferBuiltin(network string, assetID uint64, info ASAInfo) ASAInfo {
+	b, ok := asaregistry.BuiltinMetadata(network, assetID)
+	if !ok {
+		return info
 	}
-	warnf("ASA %d on %s: cached metadata (%q, %q, %d decimals) differs from the built-in (%q, %q, %d decimals); using the cached value",
-		assetID, network, cached.Name, cached.UnitName, cached.Decimals, builtin.Name, builtin.UnitName, builtin.Decimals)
+	builtin := ASAInfo{Name: b.Name, UnitName: b.UnitName, Decimals: b.Decimals}
+	if info == builtin {
+		return builtin
+	}
+	key := fmt.Sprintf("%s/%d/%+v", network, assetID, info)
+	if _, seen := reportedDisagreements.LoadOrStore(key, struct{}{}); !seen {
+		warnf("ASA %d on %s: metadata (%q, %q, %d decimals) differs from the built-in (%q, %q, %d decimals); using the built-in",
+			assetID, network, info.Name, info.UnitName, info.Decimals, builtin.Name, builtin.UnitName, builtin.Decimals)
+	}
+	return builtin
 }
 
 // FetchASAParams reads an asset's on-chain parameters from algod.
@@ -142,18 +149,22 @@ func (cache *ASACache) ResolveASAReference(asaRef string, network string) (uint6
 			matches[asaID] = struct{}{}
 		}
 	}
+	// A built-in alias joins the candidates rather than standing behind the
+	// cache: anyone can create an ASA with any name, so a cached asset that
+	// shares a built-in alias makes the reference ambiguous instead of
+	// taking it over.
+	if id, ok, err := asaregistry.ResolveReference(network, asaRef); err != nil {
+		return 0, err
+	} else if ok {
+		matches[id] = struct{}{}
+	}
+
 	ids := sortedAssetIDs(matches)
 	if len(ids) == 1 {
 		return ids[0], nil
 	}
 	if len(ids) > 1 {
-		return 0, fmt.Errorf("ASA reference '%s' is ambiguous in %s cache; matches asset IDs %s. Use the ASA ID explicitly", asaRef, network, formatAssetIDList(ids))
-	}
-
-	if id, ok, err := asaregistry.ResolveReference(network, asaRef); err != nil {
-		return 0, err
-	} else if ok {
-		return id, nil
+		return 0, fmt.Errorf("ASA reference '%s' is ambiguous on %s; matches asset IDs %s. Use the ASA ID explicitly", asaRef, network, formatAssetIDList(ids))
 	}
 
 	return 0, fmt.Errorf("ASA reference '%s' not found in %s cache or built-ins. Use ASA ID or ensure the asset is cached by using 'info <asa_id>' first", asaRef, network)

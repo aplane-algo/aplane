@@ -14,11 +14,12 @@ func init() {
 	InitLogger()
 }
 
-func TestLoadASACacheFromStoreMergesBuiltinsAndOverridesWithCachedValues(t *testing.T) {
+func TestLoadASACacheFromStoreKeepsBuiltinsAndAddsCachedAssets(t *testing.T) {
 	store := NewStore(t.TempDir())
 
 	cache := LoadASACacheFromStore(store, "testnet")
-	if _, ok := cache.Assets[10458941]; !ok {
+	builtin, ok := cache.Assets[10458941]
+	if !ok {
 		t.Fatal("expected testnet builtin ASA 10458941 to be present")
 	}
 	cache.Assets[10458941] = ASAInfo{Name: "Custom USDC", UnitName: "USDC", Decimals: 9}
@@ -28,8 +29,8 @@ func TestLoadASACacheFromStoreMergesBuiltinsAndOverridesWithCachedValues(t *test
 	}
 
 	reloaded := LoadASACacheFromStore(store, "testnet")
-	if got := reloaded.Assets[10458941]; got.Name != "Custom USDC" || got.Decimals != 9 {
-		t.Fatalf("builtin override = %+v, want Custom USDC/9", got)
+	if got := reloaded.Assets[10458941]; got != builtin {
+		t.Fatalf("built-in entry = %+v, want the built-in %+v", got, builtin)
 	}
 	if got := reloaded.Assets[999999]; got.Name != "Custom Token" || got.UnitName != "CTKN" {
 		t.Fatalf("custom cached token = %+v, want Custom Token/CTKN", got)
@@ -39,7 +40,7 @@ func TestLoadASACacheFromStoreMergesBuiltinsAndOverridesWithCachedValues(t *test
 func TestResolveASAReferenceMatchesIDsAndUnitNamesCaseInsensitively(t *testing.T) {
 	cache := ASACache{
 		Assets: map[uint64]ASAInfo{
-			77: {Name: "Sample Token", UnitName: "UsDc", Decimals: 6},
+			77: {Name: "Sample Token", UnitName: "SmPl", Decimals: 6},
 		},
 	}
 
@@ -47,9 +48,9 @@ func TestResolveASAReferenceMatchesIDsAndUnitNamesCaseInsensitively(t *testing.T
 	if err != nil || id != 77 {
 		t.Fatalf("ResolveASAReference(77) = (%d, %v), want (77, nil)", id, err)
 	}
-	id, err = cache.ResolveASAReference("usdc", "testnet")
+	id, err = cache.ResolveASAReference("smpl", "testnet")
 	if err != nil || id != 77 {
-		t.Fatalf("ResolveASAReference(usdc) = (%d, %v), want (77, nil)", id, err)
+		t.Fatalf("ResolveASAReference(smpl) = (%d, %v), want (77, nil)", id, err)
 	}
 	id, err = cache.ResolveASAReference("sample token", "testnet")
 	if err != nil || id != 77 {
@@ -83,16 +84,16 @@ func TestResolveASAReferenceFallsBackToCanonicalAlias(t *testing.T) {
 	}
 }
 
-func TestResolveASAReferencePrefersLocalCacheBeforeBuiltinAlias(t *testing.T) {
+func TestResolveASAReferenceRefusesCachedAssetSharingBuiltinAlias(t *testing.T) {
 	cache := ASACache{
 		Assets: map[uint64]ASAInfo{
 			999999: {Name: "Local Akita", UnitName: "akita", Decimals: 6},
 		},
 	}
 
-	id, err := cache.ResolveASAReference("akita", "mainnet")
-	if err != nil || id != 999999 {
-		t.Fatalf("ResolveASAReference(akita) = (%d, %v), want local cache asset 999999", id, err)
+	_, err := cache.ResolveASAReference("akita", "mainnet")
+	if err == nil || !strings.Contains(err.Error(), "ambiguous") || !strings.Contains(err.Error(), "999999") || !strings.Contains(err.Error(), "523683256") {
+		t.Fatalf("ResolveASAReference(akita) error = %v, want ambiguity naming 999999 and the built-in 523683256", err)
 	}
 }
 
@@ -117,7 +118,7 @@ func TestResolveBuiltinASAReferenceAndInfo(t *testing.T) {
 	}
 }
 
-func TestLoadASACacheReportsBuiltinDisagreementOnceAndKeepsCachedValue(t *testing.T) {
+func TestLoadASACacheReportsBuiltinDisagreementOnceAndKeepsBuiltin(t *testing.T) {
 	var out bytes.Buffer
 	SetLoggerOutput(&out)
 	reportedDisagreements.Clear()
@@ -138,8 +139,8 @@ func TestLoadASACacheReportsBuiltinDisagreementOnceAndKeepsCachedValue(t *testin
 
 	for range 3 {
 		reloaded := LoadASACacheFromStore(store, "testnet")
-		if got := reloaded.Assets[10458941].Decimals; got != builtin.Decimals+3 {
-			t.Fatalf("decimals = %d, want the cached %d", got, builtin.Decimals+3)
+		if got := reloaded.Assets[10458941]; got != builtin {
+			t.Fatalf("entry = %+v, want the built-in %+v", got, builtin)
 		}
 	}
 	if got := strings.Count(out.String(), "differs from the built-in"); got != 1 {

@@ -85,7 +85,7 @@ func (s Store) fetchAndCacheMetadata(ctx context.Context, network string, assetI
 	if err != nil {
 		return asa.Metadata{}, fmt.Errorf("failed to get asset info for ASA %d on %s: %w", assetID, network, err)
 	}
-	info := cache.ASAInfoFromParams(params)
+	info := cache.PreferBuiltin(network, assetID, cache.ASAInfoFromParams(params))
 
 	cacheMu.Lock()
 	asaCache := s.load(network)
@@ -143,11 +143,11 @@ func (s Store) SaveLocalMetadata(network string, meta asa.Metadata) error {
 	defer cacheMu.Unlock()
 
 	asaCache := s.load(network)
-	asaCache.Assets[meta.AssetID] = cache.ASAInfo{
+	asaCache.Assets[meta.AssetID] = cache.PreferBuiltin(network, meta.AssetID, cache.ASAInfo{
 		Name:     meta.Name,
 		UnitName: meta.UnitName,
 		Decimals: meta.Decimals,
-	}
+	})
 	return asaCache.SaveCache(network)
 }
 

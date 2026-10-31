@@ -103,11 +103,11 @@ func (e *Engine) cacheASA(info *ASAInfo) {
 	if e.AsaCache.Assets == nil {
 		e.AsaCache.Assets = make(map[uint64]cache.ASAInfo)
 	}
-	e.AsaCache.Assets[info.AssetID] = cache.ASAInfo{
+	e.AsaCache.Assets[info.AssetID] = cache.PreferBuiltin(e.Network, info.AssetID, cache.ASAInfo{
 		UnitName: info.UnitName,
 		Name:     info.Name,
 		Decimals: info.Decimals,
-	}
+	})
 }
 
 // RemoveASAFromCache removes an asset from the cache and persists the change.
