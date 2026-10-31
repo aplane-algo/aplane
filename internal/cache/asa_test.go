@@ -120,7 +120,11 @@ func TestResolveBuiltinASAReferenceAndInfo(t *testing.T) {
 func TestLoadASACacheReportsBuiltinDisagreementOnceAndKeepsCachedValue(t *testing.T) {
 	var out bytes.Buffer
 	SetLoggerOutput(&out)
-	t.Cleanup(func() { SetLoggerOutput(os.Stdout) })
+	reportedDisagreements.Clear()
+	t.Cleanup(func() {
+		SetLoggerOutput(os.Stdout)
+		reportedDisagreements.Clear()
+	})
 
 	store := NewStore(t.TempDir())
 	asaCache := LoadASACacheFromStore(store, "testnet")

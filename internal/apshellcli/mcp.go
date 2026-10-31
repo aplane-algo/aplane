@@ -15,6 +15,7 @@ import (
 	"sync"
 
 	"github.com/aplane-algo/aplane/internal/apshellapp"
+	"github.com/aplane-algo/aplane/internal/cache"
 	"github.com/aplane-algo/aplane/internal/clientenroll"
 	"github.com/aplane-algo/aplane/internal/command"
 	"github.com/aplane-algo/aplane/internal/config"
@@ -31,6 +32,11 @@ import (
 // jssave (save JS to file), jslist (list saved scripts), mcp_manual
 // (condensed operating manual), and doc (bundled reference docs).
 func runMCPMode(network string, cfg config.Config, dataDir string) {
+	// The cache logger keeps the writer it was built with, so it would still
+	// write to the real stdout after os.Stdout is redirected below. Point it
+	// at stderr before any state (and its caches) is loaded.
+	cache.SetLoggerOutput(os.Stderr)
+
 	if _, err := clientenroll.LoadEnrolledClient(dataDir, clientenroll.Options{
 		Product:              "apshell --mcp",
 		MissingSSHHint:       "MCP cannot perform first-time enrollment; run interactive apshell request-enrollment first",
