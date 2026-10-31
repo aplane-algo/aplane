@@ -28,6 +28,7 @@ import (
 
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 
+	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
@@ -986,5 +987,60 @@ func TestReleaseMemoryMergesAuditedHistory(t *testing.T) {
 	m.Record(ReleaseRecord{Account: "C", Stage: 1, TxID: "T1"})
 	if rec, _ = m.Get("C"); rec.Reused || len(rec.Leaves) != 1 {
 		t.Fatalf("retry of an audited release = %+v", rec)
+	}
+}
+
+// TestRotatingLeafSignWaitsForTheReleaseRestore pins the sign path's wait on
+// the post-unlock audit restore. A leaf family picks its one-time leaf from
+// the stage's release history, so a spend arriving between unlock and the
+// restore must not sign from an empty memory: it waits, bounded by the
+// request, and once the log is restored the audited leaf is not chosen
+// again. The audited leaf is set to exactly the leaf the new spend's TxID
+// would pick, so a sign that skipped the wait would reuse it.
+func TestRotatingLeafSignWaitsForTheReleaseRestore(t *testing.T) {
+	f, audit := newSigningFixtureFor(t, xmssTestType)
+	profile, ok := rotatingkey.Lookup(f.kind.keyType)
+	if !ok || profile.LeavesPerStage <= 1 {
+		t.Fatalf("%s is not a leaf family", f.kind.keyType)
+	}
+	prep := mustPrepare(t, f, f.spend(1000, 1100))
+	txn, err := txnutil.DecodePrefixedHex(prep.Transactions[0])
+	if err != nil {
+		t.Fatalf("decode prepared spend: %v", err)
+	}
+	txID := algocrypto.TransactionID(txn)
+	lo, _ := profile.LeafRange(0)
+	picked := uint32(lo + uint64(txID[0])%uint64(profile.LeavesPerStage))
+
+	// Unlock: the memory is armed and holds every account until the log is read.
+	f.svc.Rotating.Releases.Reset()
+	short, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	_, svcErr := f.svc.SignRotatingWithContext(short, signerapi.RotatingSignRequest{
+		Account: f.account.String(), Transactions: prep.Transactions,
+	}, f.session)
+	if svcErr == nil || svcErr.Kind != ErrorUnavailable {
+		t.Fatalf("sign before the restore = %v, want unavailable", svcErr)
+	}
+	if len(audit.releases) != 0 {
+		t.Fatalf("a signature was released before the restore: %+v", audit.releases)
+	}
+	if _, held := f.svc.Rotating.Releases.Get(f.account.String()); held {
+		t.Fatal("the refused sign left a release in memory")
+	}
+
+	// The log holds an earlier release of this stage on the leaf this spend picks.
+	if n, err := f.svc.RebuildReleaseMemory(context.Background(), f.session, []AuditedRelease{{
+		Account: f.account.String(), Stage: 0, TxID: "EARLIER", LastValid: 900,
+		Leaves: []LeafRelease{{Tree: profile.TreeOf(0), Index: picked, TxID: "EARLIER", LastValid: 900}},
+	}}, StageFillOptions{}); err != nil || n != 1 {
+		t.Fatalf("restore: rebuilt %d, err %v", n, err)
+	}
+	resp := mustSign(t, f, prep.Transactions)
+	if resp.Stage != 0 || len(audit.releases) != 1 {
+		t.Fatalf("release = %+v, audit = %+v", resp, audit.releases)
+	}
+	if got := audit.releases[0].Leaves[0].Index; got == picked {
+		t.Fatalf("signed on leaf %d, which the restored log shows already released", got)
 	}
 }

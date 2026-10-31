@@ -353,9 +353,11 @@ claim. Two negative controls each violate LF1: `WaitForRestore = FALSE`
 (sign before the post-unlock restore) in 259 states at depth 6, and
 `SeqGuard = FALSE` (a stale status observation erases a newer release) in
 1,918 states at depth 9. Prose companion
-`FORMAL_TLA_ROTATING_LEAF_RELEASE_MODEL.md`; traceability section added. One
-gap recorded there: no Go test drives `SignRotatingWithContext` through the
-restore wait; it is pinned at the `ReleaseMemory` level only.
+`FORMAL_TLA_ROTATING_LEAF_RELEASE_MODEL.md`; traceability section added. The
+gap found while writing it, that no Go test drove `SignRotatingWithContext`
+through the restore wait, is closed by
+`TestRotatingLeafSignWaitsForTheReleaseRestore` (verified to fail with the
+`AwaitRestored` call removed).
 
 Model-extension candidates: the rotating flow (`/sign/rotating/prepare` and
 `/sign/rotating/sign`: same slot classes and gates, but a prepare-time
