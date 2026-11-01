@@ -12,6 +12,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/asa"
+	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/policy"
 )
 
@@ -364,4 +365,88 @@ func limitAdd(label, base string, cosigner bool) AddAction {
 		}
 		return ensure(d, base+"/"+escapeToken(parts[0])+"/"+escapeToken(parts[1]), value)
 	}}
+}
+
+// Suggestions lists terms that fit the field, for an editor to offer: the
+// wildcards and keywords the field accepts, the names of the sets of the
+// right kind the document defines, the well-known networks, and the
+// addresses, assets and networks the document already uses. Only terms the
+// field accepts are offered.
+func (e EditSpec) Suggestions(d *policy.Draft) []string {
+	var out []string
+	seen := map[string]bool{}
+	add := func(terms ...string) {
+		for _, t := range terms {
+			if t != "" && !seen[t] && checkTerm(e.Term, t) == nil {
+				seen[t] = true
+				out = append(out, t)
+			}
+		}
+	}
+	sets := func(pointer string, flatOnly bool) {
+		node := d.At(pointer)
+		for _, name := range node.Keys() {
+			if !flatOnly || node.Member(name).Kind() == "array" {
+				add("@" + name)
+			}
+		}
+	}
+	switch e.Term {
+	case TermSource:
+		add("*")
+		sets("/address_sets", false)
+	case TermDestination:
+		add("*", "self")
+		sets("/address_sets", false)
+	case TermRekeyTarget:
+		sets("/address_sets", true)
+	case TermAsset:
+		add("algo", "*")
+		sets("/asset_sets", false)
+	case TermAssetRef:
+		add("algo")
+	case TermNetwork:
+		add("*", apconfig.NetworkMainnet, apconfig.NetworkTestnet, apconfig.NetworkBetanet)
+	}
+	// Terms the document already uses, in document order. Set references
+	// are left out: sets are offered above only when they are of the kind
+	// the field takes.
+	var walk func(n policy.DraftNode)
+	walk = func(n policy.DraftNode) {
+		switch n.Kind() {
+		case "string":
+			if !strings.HasPrefix(n.Text(), "@") {
+				add(n.Text())
+			}
+		case "object":
+			for _, k := range n.Keys() {
+				if e.Term == TermAssetRef || e.Term == TermAsset {
+					add(k) // limit keys name assets
+				}
+				walk(n.Member(k))
+			}
+		case "array":
+			for _, item := range n.Items() {
+				walk(item)
+			}
+		}
+	}
+	if e.Term != TermNetwork {
+		walk(d.Root())
+		return out
+	}
+	// Networks are keys of limits and of per-network sets, and route items.
+	add(d.At("/limits").Keys()...)
+	for _, base := range []string{"/address_sets", "/asset_sets"} {
+		node := d.At(base)
+		for _, name := range node.Keys() {
+			add(node.Member(name).Keys()...)
+		}
+	}
+	for _, r := range d.At("/transfer_policy/routes").Items() {
+		for _, n := range r.Member("networks").Items() {
+			add(n.Text())
+		}
+	}
+	return out
 }

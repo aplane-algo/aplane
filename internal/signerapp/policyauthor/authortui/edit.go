@@ -38,6 +38,12 @@ type prompt struct {
 	pick    int
 	picking bool
 
+	// suggestions are offered on tab for a term field; suggestion is the one
+	// inserted last (-1 for none) and suggestBase the text before it.
+	suggestions []string
+	suggestion  int
+	suggestBase string
+
 	removal policyauthor.Removal
 }
 
@@ -136,6 +142,13 @@ func (m Model) editField() Model {
 		p.decimals, _, p.known = f.Edit.Decimals(m.lookup)
 		p.input = m.newInput(f.Edit.Input(cur, p.decimals, p.known))
 		p.hint = editHint(*f.Edit, p.decimals, p.known, m.lookup)
+		p.suggestion = -1
+		if f.Edit.Kind == policyauthor.EditTerms || f.Edit.Kind == policyauthor.EditTerm {
+			p.suggestions = f.Edit.Suggestions(m.session().Current().Draft)
+			if len(p.suggestions) > 0 {
+				p.hint = "tab: " + strings.Join(p.suggestions, ", ") + " · " + p.hint
+			}
+		}
 	}
 	m.prompt = p
 	return m
@@ -257,9 +270,16 @@ func (m Model) promptKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m.applyAdd(p.adds[p.pick], p.input.Value()), nil
 		}
 	case promptEdit:
-		if msg.String() == "enter" {
+		switch msg.String() {
+		case "enter":
 			return m.commitEdit(p.input.Value()), nil
+		case "tab":
+			if len(p.suggestions) > 0 {
+				m.prompt = p.suggest(p.field.Edit.Kind == policyauthor.EditTerms)
+				return m, nil
+			}
 		}
+		p.suggestion = -1
 	}
 	var cmd tea.Cmd
 	p.input, cmd = p.input.Update(msg)
@@ -270,6 +290,29 @@ func (m Model) promptKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, cmd
+}
+
+// suggest inserts the next suggestion: after the typed terms for a list, in
+// place of the value for one term. A repeated tab replaces the suggestion it
+// inserted with the next one.
+func (p prompt) suggest(list bool) prompt {
+	if p.suggestion < 0 {
+		p.suggestBase = strings.TrimRight(strings.TrimSpace(p.input.Value()), ",")
+		p.suggestion = 0
+	} else {
+		p.suggestion = (p.suggestion + 1) % len(p.suggestions)
+	}
+	value := p.suggestions[p.suggestion]
+	if list && p.suggestBase != "" {
+		value = p.suggestBase + ", " + value
+	}
+	p.input.SetValue(value)
+	p.input.CursorEnd()
+	p.err = ""
+	if _, err := p.field.Edit.Value(value, p.decimals, p.known); err != nil {
+		p.err = err.Error()
+	}
+	return p
 }
 
 // commitEdit writes input to the field. An amount's decimals must still be

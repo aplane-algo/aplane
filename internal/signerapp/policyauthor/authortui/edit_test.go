@@ -219,3 +219,46 @@ func TestCopyInTheTUI(t *testing.T) {
 		t.Fatal("C on a field with nothing to copy did not say so")
 	}
 }
+
+func TestTabCyclesSuggestions(t *testing.T) {
+	m, _ := editModel(t, "signer_key_full.json")
+	m = selectField(t, m, "/transfer_policy/routes/1/destinations")
+	m, _ = press(t, m, "enter")
+	if !strings.Contains(view(m), "tab: *, self") {
+		t.Fatalf("the edit bar does not offer suggestions:\n%s", view(m))
+	}
+	start := m.prompt.input.Value()
+	m, _ = press(t, m, "tab")
+	if got := m.prompt.input.Value(); got != start+", *" {
+		t.Fatalf("first tab: %q, want %q", got, start+", *")
+	}
+	m, _ = press(t, m, "tab")
+	if got := m.prompt.input.Value(); got != start+", self" {
+		t.Fatalf("second tab replaces the suggestion: %q", got)
+	}
+	m = typeText(t, m, "x")
+	m, _ = press(t, m, "tab")
+	if got := m.prompt.input.Value(); !strings.HasPrefix(got, start+", selfx, ") {
+		t.Fatalf("typing ended the cycle, so tab appends: %q", got)
+	}
+	m = typeText(t, clearInput(t, m), "@ops")
+	m, _ = press(t, m, "tab", "tab", "enter")
+	if got := compact(m, "/transfer_policy/routes/1/destinations"); got != `["@ops", "self"]` {
+		t.Fatalf("destinations = %s", got)
+	}
+
+	m = selectField(t, m, "/transfer_policy/blocked_destinations/0")
+	m, _ = press(t, m, "enter", "tab")
+	if got := m.prompt.input.Value(); strings.Contains(got, ",") {
+		t.Fatalf("a single-term field got a list: %q", got)
+	}
+}
+
+func compact(m Model, pointer string) string {
+	n := m.session().Current().Draft.At(pointer)
+	var parts []string
+	for _, item := range n.Items() {
+		parts = append(parts, `"`+item.Text()+`"`)
+	}
+	return "[" + strings.Join(parts, ", ") + "]"
+}

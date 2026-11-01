@@ -432,9 +432,13 @@ appolicy explain treasury.json      # one document in plain language
     one. Choices offer only what the node role allows; amounts are typed in
     display units when the asset's decimals are known (the editor shows them
     and where they came from) and stored in base units; address lists are
-    checked as you type. `a` adds to a section (a route, a set, a member, a
-    limit, a transaction type, a rekey edge), `d` removes the selected field
-    or route, and `u` and ctrl+r undo and redo. Every edit is checked at once,
+    checked as you type, and tab inserts a suggestion the field accepts
+    (`*`, `self`, a set of the right kind, a network, or an address or asset
+    the document already uses). `a` adds to a section (a route, a set, a
+    member, a limit, a transaction type, a rekey edge, or a starting value
+    for a missing or broken part), `C` copies the selected route, address or
+    rekey edge (sets are copied with `a`), `d` removes the selected field or
+    route, and `u` and ctrl+r undo and redo. Every edit is checked at once,
     the same way check does.
   - **Saving:** `s` shows the changes against the file as loaded, with
     tightened and loosened labels, and writes only after `y`, in canonical

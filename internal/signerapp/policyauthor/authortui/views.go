@@ -393,6 +393,7 @@ func (m Model) openHelp() Model {
 		"  left/right outline / form; enter opens a section's form",
 		"  enter      in the form: edit the selected field",
 		"  space      toggle a yes/no field",
+		"  tab        while editing a list: insert a suggestion (*, self, @sets, networks...)",
 		"  v          show the selected field in full",
 		"  a          add to the selected section (a route, a set, a limit...)",
 		"  d          remove the selected field, or a route from the outline",

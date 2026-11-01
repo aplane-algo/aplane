@@ -373,3 +373,49 @@ func TestCopyActions(t *testing.T) {
 		}
 	}
 }
+
+func TestSuggestionsOfferOnlyAcceptedTerms(t *testing.T) {
+	f := LoadFile(writeFile(t, t.TempDir(), "a.json", fixture(t, "signer_key_full.json")))
+	has := func(list []string, want ...string) bool {
+		for _, w := range want {
+			found := false
+			for _, s := range list {
+				found = found || s == w
+			}
+			if !found {
+				return false
+			}
+		}
+		return true
+	}
+	for _, tt := range []struct {
+		term      TermKind
+		want, not []string
+	}{
+		{TermSource, []string{"*", "@treasury", "@ops", testAddress}, []string{"self", "algo"}},
+		{TermDestination, []string{"*", "self", "@ops"}, []string{"algo"}},
+		{TermNetwork, []string{"*", "mainnet", "testnet", "betanet"}, []string{"ops", "treasury", "usd"}},
+		{TermAsset, []string{"algo", "*", "@usd", "asa:31566704"}, []string{"@ops", "self"}},
+		{TermAssetRef, []string{"algo", "asa:31566704"}, []string{"*", "@usd"}},
+		{TermAddress, []string{testAddress}, []string{"*", "@ops", "self"}},
+	} {
+		got := EditSpec{Term: tt.term}.Suggestions(f.Draft)
+		if !has(got, tt.want...) {
+			t.Errorf("%s: %v lacks %v", tt.term, got, tt.want)
+		}
+		for _, n := range tt.not {
+			if has(got, n) {
+				t.Errorf("%s: %v offers %q", tt.term, got, n)
+			}
+		}
+		for _, s := range got {
+			if err := checkTerm(tt.term, s); err != nil {
+				t.Errorf("%s: offered %q, which it refuses", tt.term, s)
+			}
+		}
+	}
+	c := LoadFile(writeFile(t, t.TempDir(), "c.json", fixture(t, "cosigner_key_full.json")))
+	if got := (EditSpec{Term: TermRekeyTarget}).Suggestions(c.Draft); !has(got, "@treasury", "@new_auth") || has(got, "@exchange") {
+		t.Fatalf("rekey targets %v: want flat sets only", got)
+	}
+}
