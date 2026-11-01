@@ -4,7 +4,9 @@
 package asaset
 
 import (
+	"fmt"
 	"sort"
+	"unicode/utf8"
 
 	asaregistry "github.com/aplane-algo/aplane/internal/asa/registry"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
@@ -86,6 +88,31 @@ func newTable(assets []Asset) *Table {
 		t.byID[a.Identity] = i
 	}
 	return t
+}
+
+// NewTable is a table of exactly assets, such as one an export carries. It
+// refuses a duplicate identity, an unknown origin, and values outside
+// Algorand's limits.
+func NewTable(assets []Asset) (*Table, error) {
+	seen := make(map[Identity]bool, len(assets))
+	for _, a := range assets {
+		switch {
+		case seen[a.Identity]:
+			return nil, fmt.Errorf("%s appears twice", a.Identity)
+		case a.Genesis == (GenesisHash{}) || a.AssetID == 0:
+			return nil, fmt.Errorf("%s: an asset needs a chain and a positive ID", a.Identity)
+		case a.Origin != OriginBuiltin && a.Origin != OriginOperator:
+			return nil, fmt.Errorf("%s: unknown origin %q", a.Identity, a.Origin)
+		case a.Decimals > MaxDecimals:
+			return nil, fmt.Errorf("%s: decimals %d exceed %d", a.Identity, a.Decimals, MaxDecimals)
+		case !utf8.ValidString(a.Name) || len(a.Name) > MaxNameBytes:
+			return nil, fmt.Errorf("%s: name must be valid UTF-8 of at most %d bytes", a.Identity, MaxNameBytes)
+		case !utf8.ValidString(a.UnitName) || len(a.UnitName) > MaxUnitNameBytes:
+			return nil, fmt.Errorf("%s: unit name must be valid UTF-8 of at most %d bytes", a.Identity, MaxUnitNameBytes)
+		}
+		seen[a.Identity] = true
+	}
+	return newTable(append([]Asset(nil), assets...)), nil
 }
 
 // Assets returns every asset of the table, sorted by chain and ID.
