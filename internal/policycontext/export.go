@@ -22,8 +22,10 @@ import (
 // policy documents it exported.
 const ExportFormat = "aplane.policy-node-context.v1"
 
-// MaxExportBytes bounds a context file. The context arrives in one admin
-// frame of at most 1 MiB; the rest is the baseline manifest.
+// MaxExportBytes bounds a context file. Its asset table is bounded by the
+// ASA set file (1 MiB of confirmations) and its manifest by the node's
+// document cap (8,192 keys and the default), so even at both limits a file
+// is well under this.
 const MaxExportBytes = 4 << 20
 
 // Export is a node's policy context as exported with its documents: when it

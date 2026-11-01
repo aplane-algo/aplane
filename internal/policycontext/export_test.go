@@ -12,6 +12,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/algorand/go-algorand-sdk/v2/types"
+
+	"github.com/aplane-algo/aplane/internal/asaset"
+	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 )
 
@@ -175,5 +179,45 @@ func TestParseExportRefusesTwoTokensForOneChain(t *testing.T) {
 	out, _ := json.Marshal(f)
 	if _, err := ParseExport(out); err == nil || !strings.Contains(err.Error(), "same chain") {
 		t.Fatalf("ParseExport() error = %v, want the shared chain refused", err)
+	}
+}
+
+// A node at its limits exports a context file well inside MaxExportBytes:
+// more assets than a 1 MiB set file holds, every name at its longest, and
+// a document for every key the cap allows.
+func TestExportAtTheLimitsFitsTheBound(t *testing.T) {
+	var assets []asaset.Asset
+	for i := uint64(1); i <= 5000; i++ {
+		assets = append(assets, asaset.Asset{
+			Identity: asaset.Identity{Genesis: asaset.GenesisHash{0xff, byte(i >> 8), byte(i)}, AssetID: i<<40 | i},
+			Name:     strings.Repeat("n", asaset.MaxNameBytes), UnitName: strings.Repeat("u", asaset.MaxUnitNameBytes),
+			Decimals: asaset.MaxDecimals, Origin: asaset.OriginOperator,
+		})
+	}
+	table, err := asaset.NewTable(assets)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, err := FromParts(noderole.RoleSigner, map[string]asaset.GenesisHash{"mainnet": {1}}, table, AdmissionRulesVersion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	docs := []policy.DocumentDigest{{Key: policy.DefaultKey, SHA256: strings.Repeat("a", 64)}}
+	for i := 0; i < 8192; i++ {
+		docs = append(docs, policy.DocumentDigest{Key: types.Address{byte(i >> 8), byte(i), 1}.String(), SHA256: strings.Repeat("b", 64)})
+	}
+	e, err := NewExport(ctx, docs, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := e.Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(data) > MaxExportBytes*3/4 {
+		t.Fatalf("a context file at the limits is %d bytes, too near the %d bound", len(data), MaxExportBytes)
+	}
+	if _, err := ParseExport(data); err != nil {
+		t.Fatal(err)
 	}
 }
