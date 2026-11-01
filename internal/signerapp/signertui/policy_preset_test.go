@@ -94,17 +94,53 @@ func TestPolicyPresetPickForTheDefaultAndEsc(t *testing.T) {
 	}
 }
 
-// A key with a policy of its own, and every row on a signer node, open the
-// editor directly: there are no presets to offer.
-func TestPolicyPresetPickSkippedForOwnPolicyAndSigner(t *testing.T) {
+// A key with a policy of its own opens the editor directly: its document is
+// what to edit, not a preset.
+func TestPolicyPresetPickSkippedForOwnPolicy(t *testing.T) {
 	m := cosignerPoliciesModel("own", protocol.PolicyDocumentInfoWire{Key: policyViewKeyA, SHA256: "abc", Size: 10})
 	m = selectKeyA(t, m)
 	if m, _ = pressPolicyKey(t, m, "e"); m.viewState != ViewPolicyEdit {
 		t.Fatalf("e on a key with its own policy: view %v, want the editor", m.viewState)
 	}
+}
+
+// A signer node offers its own presets on the default, after the choice to
+// edit the current policy, with the note on what they leave unchanged, and
+// esc changes nothing.
+func TestPolicyPresetPickOffersSignerPresets(t *testing.T) {
 	signer := loadedPoliciesModel(protocol.PolicyMessage{Success: true, NodeRole: "signer",
 		Documents: []protocol.PolicyDocumentInfoWire{defaultDocInfo}, PolicySetSHA256: "set-digest"})
-	if signer, _ = pressPolicyKey(t, signer, "e"); signer.viewState != ViewPolicyEdit {
-		t.Fatalf("e on a signer default: view %v, want the editor", signer.viewState)
+	signer, _ = pressPolicyKey(t, signer, "e")
+	if signer.viewState != ViewPolicyPresetPick {
+		t.Fatalf("e on a signer default: view %v, want the preset picker", signer.viewState)
+	}
+	signer.width = 100
+	rendered := stripANSI(signer.renderPolicyPresetPick())
+	flat := strings.Join(strings.Fields(rendered), " ")
+	if !strings.Contains(flat, "Presets: "+policytext.SignerPresetNote) {
+		t.Fatalf("signer picker lacks the note:\n%s", rendered)
+	}
+	// The note is wrapped to the terminal, not one long line.
+	inNote := false
+	for _, line := range strings.Split(rendered, "\n") {
+		inNote = inNote || strings.HasPrefix(strings.TrimSpace(line), "Presets:")
+		if inNote && strings.TrimSpace(line) == "" {
+			break
+		}
+		if inNote && len([]rune(strings.TrimRight(line, " "))) > signer.width {
+			t.Fatalf("a note line is wider than the terminal: %q", line)
+		}
+	}
+	for _, want := range []string{"> Edit the current policy", "Preset transfers-only", "(fill in placeholders)"} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("signer picker lacks %q:\n%s", want, rendered)
+		}
+	}
+	if strings.Contains(rendered, "capped-any") {
+		t.Fatalf("a signer picker offers a cosigner preset:\n%s", rendered)
+	}
+	signer, _ = pressPolicyKey(t, signer, "esc")
+	if signer.viewState != ViewPolicies || signer.policies.apply.edit.active {
+		t.Fatalf("esc: view %v edit %+v", signer.viewState, signer.policies.apply.edit)
 	}
 }

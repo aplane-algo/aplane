@@ -27,6 +27,7 @@ func TestParsePolicyCommandGrammar(t *testing.T) {
 		wantKey      string
 		wantEmbedded string
 		wantPreset   string
+		wantRole     string
 		wantList     bool
 		wantRescue   bool
 		wantErr      string
@@ -63,6 +64,12 @@ func TestParsePolicyCommandGrammar(t *testing.T) {
 		{name: "preset only for template", args: []string{"status", "--preset", "self-only"}, wantErr: "apply only to policy template"},
 		{name: "preset or embedded", args: []string{"template", "--preset", "self-only", "--embedded", "cosigner"}, wantErr: "alternatives"},
 		{name: "list presets alone", args: []string{"template", "--list-presets", "--key", keyID}, wantErr: "takes no other template flag"},
+		{name: "signer presets", args: []string{"template", "--role", "signer", "--list-presets"}, wantVerb: policycmd.VerbTemplate, wantList: true, wantRole: "signer"},
+		{name: "signer preset", args: []string{"template", "--role", "signer", "--preset", "self-only", "--key", keyID}, wantVerb: policycmd.VerbTemplate, wantKey: keyID, wantPreset: "self-only", wantRole: "signer"},
+		{name: "role needs a preset form", args: []string{"template", "--role", "signer"}, wantErr: "--role applies only to policy template --preset or --list-presets"},
+		{name: "role only for template", args: []string{"status", "--role", "signer"}, wantErr: "--role applies only"},
+		{name: "role is not embedded", args: []string{"template", "--role", "signer", "--embedded", "signer"}, wantErr: "--role applies only"},
+		{name: "role names a node role", args: []string{"template", "--role", "operator", "--list-presets"}, wantErr: "signer or cosigner"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -76,7 +83,7 @@ func TestParsePolicyCommandGrammar(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if command.Verb != tt.wantVerb || command.Key != tt.wantKey || command.Embedded != tt.wantEmbedded || command.Preset != tt.wantPreset || command.ListPresets != tt.wantList || rescue != tt.wantRescue ||
+			if command.Verb != tt.wantVerb || command.Key != tt.wantKey || command.Embedded != tt.wantEmbedded || command.Preset != tt.wantPreset || command.ListPresets != tt.wantList || command.PresetRole != tt.wantRole || rescue != tt.wantRescue ||
 				strings.Join(command.Args, ",") != strings.Join(tt.wantArgs, ",") {
 				t.Fatalf("command = %#v rescue=%t", command, rescue)
 			}

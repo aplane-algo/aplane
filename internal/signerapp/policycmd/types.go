@@ -56,8 +56,9 @@ func ParseVerb(raw string) (Verb, error) {
 // document for export ("default" when empty) or the key a template is for.
 // Embedded, for template only, names a node role whose shipped default is
 // printed instead of a node's own. Preset, for template only, names a
-// cosigner preset to print instead, and ListPresets lists the presets. These
-// three are the template forms that need no node. Yes applies without asking
+// preset to print instead, and ListPresets lists the presets; PresetRole
+// selects the role whose presets those are (cosigner when empty, as before
+// signer presets existed). These are the template forms that need no node. Yes applies without asking
 // for confirmation. ExportDir, for export only, writes every document and the
 // node's context into a directory instead of printing one document.
 // NodeContext names the export context for check, diff and apply to compare
@@ -70,11 +71,23 @@ type Command struct {
 	Embedded      string
 	Preset        string
 	ListPresets   bool
+	PresetRole    string
 	Yes           bool
 	ExportDir     string
 	NodeContext   string
 	NoNodeContext bool
 	DataDir       string
+}
+
+// presetRole is the role whose presets --preset and --list-presets name:
+// the one --role gives, else cosigner, the only role with presets before
+// signer presets existed.
+func (c Command) presetRole() noderole.Role {
+	if c.PresetRole == "" {
+		return noderole.RoleCosigner
+	}
+	role, _ := noderole.ParseRole(c.PresetRole)
+	return role
 }
 
 // NeedsNoNode reports a template form that prints text apadmin carries
@@ -126,7 +139,18 @@ func (c Command) Validate() error {
 		return fmt.Errorf("--preset and --embedded are alternatives; give one")
 	}
 	if c.ListPresets && (c.Preset != "" || c.Embedded != "" || c.Key != "") {
-		return fmt.Errorf("--list-presets takes no other template flag")
+		return fmt.Errorf("--list-presets takes no other template flag but --role")
+	}
+	if c.PresetRole != "" {
+		if c.Verb != VerbTemplate || (c.Preset == "" && !c.ListPresets) {
+			return fmt.Errorf("--role applies only to policy template --preset or --list-presets")
+		}
+		if c.Embedded != "" {
+			return fmt.Errorf("--role selects a preset catalog; --embedded names its role itself")
+		}
+		if _, err := noderole.ParseRole(c.PresetRole); err != nil {
+			return fmt.Errorf("--role takes a node role: signer or cosigner")
+		}
 	}
 	if c.Key != "" && c.Verb != VerbExport && c.Verb != VerbTemplate {
 		return fmt.Errorf("--key applies only to policy export and template")

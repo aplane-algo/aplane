@@ -1115,13 +1115,15 @@ confirmed apply.
   document of its own that does what the default did, so a key's policy always
   starts from exactly what it was already doing; on a cosigner node that is
   the deny-all default. A key the node does not hold cannot be edited.
-- **Cosigner presets.** On a cosigner node, `e` on the default row or on a key
-  on `default` first opens a starting-text picker (`ViewPolicyPresetPick`,
-  `policy_preset.go`). Its first choice is the path above; each other choice
-  opens the editor on `policytext.PresetTemplate` for that row's key,
-  without a daemon request. A key with `own policy`, and every row on a
-  signer node, open the editor directly. See
-  [ARCH_POLICY.md](ARCH_POLICY.md#admin-surface).
+- **Presets.** On either role, `e` on the default row or on a held key on
+  `default` first opens a starting-text picker (`ViewPolicyPresetPick`,
+  `policy_preset.go`) listing the role's presets, with
+  `policytext.PresetNote` for the role (a signer's says permitted
+  transactions follow User Auto-Approve, a held-key rekey can still be
+  allowed, and only the fee is capped). Its first choice is the path above;
+  each other choice opens the editor on `policytext.PresetTemplate` for that
+  row's key, without a daemon request. A key with `own policy` opens the
+  editor directly. See [ARCH_POLICY.md](ARCH_POLICY.md#admin-surface).
 - **Comments.** The text may carry `//` and `/* */` comments outside strings.
   `policyreview.DocumentFromText` removes them before the check, so the
   daemon receives and stores strict JSON; the review's "stores the edited

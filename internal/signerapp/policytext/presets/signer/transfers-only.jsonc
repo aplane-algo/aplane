@@ -1,0 +1,31 @@
+{
+  "format": "aplane.policy.v1",
+  "role": "signer",
+  "key": "default",
+  "description": "Transfers only: payments and asset transfers to any address; every other transaction type is rejected. Amounts are not capped.",
+  "reject_foreign_rekey": true,
+  "reject_close_remainder": true,
+  "reject_asset_close": true,
+  "reject_clawback": true,
+  "always_review_warnings": true,
+  "auto_approve_self_noop_transfer": false,
+  // The fee goes to the network whatever the destination, so this cap is
+  // what keeps a client from burning the balance in fees. 0.05 ALGO covers
+  // the largest fee a valid group of 16 can need at the minimum fee.
+  "max_fee_microalgos": "50000",
+  "transaction_types": { "*": "reject", "pay": "allow", "axfer": "allow" },
+  "transfer_policy": {
+    "on_no_route": "reject",
+    "close_on_no_route": "reject",
+    "clawback_on_no_route": "reject",
+    "routes": [
+      {
+        "id": "transfers",
+        "networks": ["*"],
+        "sources": ["*"],
+        "assets": ["*"],
+        "destinations": ["*"]
+      }
+    ]
+  }
+}

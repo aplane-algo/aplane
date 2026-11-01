@@ -128,6 +128,9 @@ func (m Model) newKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) newView() string {
 	n := m.newDoc
 	var lines []string
+	// focus is the line the window keeps in view: the selected starting
+	// point, else the last line (the input or the error).
+	focus := -1
 	lines = append(lines, m.styles.title.Render("New policy document"), "")
 	switch n.step {
 	case newRole:
@@ -148,10 +151,17 @@ func (m Model) newView() string {
 		}
 		lines = append(lines, fmt.Sprintf("Which document? \"default\" for the node default, or %s for one key's own:", what), n.input.View())
 	case newStart:
+		if note := policyauthor.StartingPointsNote(n.role); note != "" {
+			for _, l := range wrap("Presets: "+note, max(20, m.width-2)) {
+				lines = append(lines, m.styles.subtle.Render(l))
+			}
+			lines = append(lines, "")
+		}
 		lines = append(lines, "Start from:")
 		for i, p := range n.points {
 			line := fmt.Sprintf("%s  — %s", p.Label, p.Summary)
 			if i == n.choice {
+				focus = len(lines)
 				line = m.styles.selected.Render("> " + line)
 			} else {
 				line = "  " + line
@@ -167,5 +177,8 @@ func (m Model) newView() string {
 	for i, l := range lines {
 		lines[i] = ansi.Truncate(l, m.width, "…")
 	}
-	return strings.Join(window(lines, len(lines)-1, max(3, m.height-2)), "\n")
+	if focus < 0 || n.err != "" {
+		focus = len(lines) - 1
+	}
+	return strings.Join(window(lines, focus, max(3, m.height-2)), "\n")
 }

@@ -140,11 +140,12 @@ Verbs:
                     document for key K (or annotated as the default itself)
   template --embedded signer|cosigner [--key K]
                     write the shipped default for that role instead
-  template --preset NAME [--key K]
-                    write a cosigner preset: a starting policy for one
-                    common intent (see --list-presets)
-  template --list-presets
-                    list the cosigner presets
+  template [--role signer|cosigner] --preset NAME [--key K]
+                    write a preset: a starting policy for one common
+                    intent (see --list-presets). --role picks the role's
+                    presets; without it, the cosigner presets
+  template [--role signer|cosigner] --list-presets
+                    list the presets for the role (cosigner by default)
                     The --embedded, --preset, and --list-presets forms need
                     no node and no passphrase.
 
@@ -174,8 +175,9 @@ apply and remove, and reject --ipc-path.
 	}
 	key := fs.String("key", "", "key whose own document to export, or to name in a template (default: the node default)")
 	embedded := fs.String("embedded", "", "template only: write the shipped default for this node role (signer or cosigner) instead of the node's own")
-	preset := fs.String("preset", "", "template only: write this cosigner preset instead of the node's default (see --list-presets)")
-	listPresets := fs.Bool("list-presets", false, "template only: list the cosigner presets")
+	preset := fs.String("preset", "", "template only: write this preset instead of the node's default (see --list-presets)")
+	listPresets := fs.Bool("list-presets", false, "template only: list the presets for --role")
+	presetRole := fs.String("role", "", "template --preset and --list-presets only: the role whose presets to use, signer or cosigner (default cosigner)")
 	yes := fs.Bool("yes", false, "apply or remove without asking for confirmation")
 	all := fs.String("all", "", "export only: write every document and the node's context into this new or empty directory")
 	nodeContext := fs.String("node-context", "", "check, diff and apply: compare the node with this export context instead of the one beside the files")
@@ -190,6 +192,7 @@ apply and remove, and reject --ipc-path.
 	command.Embedded = *embedded
 	command.Preset = *preset
 	command.ListPresets = *listPresets
+	command.PresetRole = *presetRole
 	command.Yes = *yes
 	command.ExportDir = *all
 	command.NodeContext = *nodeContext

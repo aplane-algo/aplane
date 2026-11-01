@@ -13,9 +13,10 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// On a cosigner node, editing the node default or a key that has no policy
-// of its own first offers a choice of starting text: what the editor would
-// open on anyway, or one of the cosigner presets (policytext.Presets). A
+// Editing the node default or a key that has no policy of its own first
+// offers a choice of starting text: what the editor would open on anyway, or
+// one of the role's presets (policytext.Presets), with the role's note on
+// what they leave unchanged. A
 // preset is only starting text; it reaches the node through the same check,
 // diff review, and confirmed apply as any other edit. Editing a key's own
 // policy opens the editor directly, since that edit starts from the key's
@@ -117,7 +118,14 @@ func (m Model) renderPolicyPresetPick() string {
 		target = "key " + pick.row.key
 	}
 	sb.WriteString(subtitleStyle.Render(fmt.Sprintf("Choose the starting text for %s. Nothing changes until you review and apply the edit.", target)))
-	sb.WriteString("\n\n")
+	sb.WriteString("\n")
+	if role, err := noderole.ParseRole(m.policies.policy.NodeRole); err == nil {
+		if note := policytext.PresetNote(role); note != "" {
+			sb.WriteString(subtitleStyle.Render(wrapText("Presets: "+note, max(20, m.width-4))))
+			sb.WriteString("\n")
+		}
+	}
+	sb.WriteString("\n")
 	line := func(i int, text string) {
 		cursor := "  "
 		if i == pick.selected {
