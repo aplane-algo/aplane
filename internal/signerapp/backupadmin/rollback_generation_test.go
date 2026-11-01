@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/asasetstore"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/genstore"
@@ -134,5 +135,74 @@ func TestRollbackMemberContextAcceptsTheASASet(t *testing.T) {
 		if _, _, err := rollbackMemberContext(genstore.InventoryEntry{Path: path, Term: 1}); err == nil {
 			t.Fatalf("rollbackMemberContext(%s) accepted a term", path)
 		}
+	}
+}
+
+// Rollback keeps the outgoing generation's ASA set, not the source's, even
+// when both are non-empty and differ.
+func TestRollbackKeepsTheOutgoingASASet(t *testing.T) {
+	const (
+		genA = "gen-1785300000-cafef00d"
+		genB = "gen-1785300001-deadbeef"
+		genC = "gen-1785300002-feedface"
+	)
+	paths := storepaths.NewPaths(t.TempDir())
+	kr, err := crypto.NewKeyring()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer kr.Zero()
+	sourceSet := asaSetForRestoreTest(t, 7, "SOURCE")
+	outgoingSet := asaSetForRestoreTest(t, 8, "OUTGO")
+	first, err := genstore.Mint(paths, genstore.MintRequest{
+		SkipCandidateValidation: true,
+		GenerationID:            genA, FirstGeneration: true,
+		InitialPassphrase: []byte("rollback-asa-passphrase"), Integrity: kr, Operation: "test-init",
+		OperationID: "init-a", CreatedAt: time.Unix(1_785_300_000, 0),
+		Apply: func(staged storepaths.GenPaths) error {
+			if err := genstoretest.ApplyAuthorityPlaceholders(staged); err != nil {
+				return err
+			}
+			return asasetstore.Write(staged, sourceSet, kr, time.Unix(1_785_300_000, 0))
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := genstore.Mint(paths, genstore.MintRequest{
+		SkipCandidateValidation: true,
+		GenerationID:            genB, Parent: first.GenerationID(),
+		Operation: genstore.OperationCredentialRestore, OperationID: "restore-b",
+		CreatedAt: time.Unix(1_785_300_001, 0), Integrity: kr,
+		Apply: func(staged storepaths.GenPaths) error {
+			return asasetstore.Write(staged, outgoingSet, kr, time.Unix(1_785_300_001, 0))
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := loadRollbackGenerationSource(first, kr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	third, err := genstore.Mint(paths, genstore.MintRequest{
+		SkipCandidateValidation: true,
+		GenerationID:            genC, Parent: second.GenerationID(),
+		Operation: genstore.OperationCredentialRestoreRollback, OperationID: "rollback-c",
+		RollbackSourceGenerationID: first.GenerationID(),
+		CreatedAt:                  time.Unix(1_785_300_002, 0), Integrity: kr,
+		Apply: func(staged storepaths.GenPaths) error {
+			return populateRollbackGeneration(source, noderole.RoleSigner, staged, kr)
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := asasetstore.Load(third, kr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e := got.Entries(); len(e) != 1 || e[0].UnitName != "OUTGO" {
+		t.Fatalf("rolled-back set = %+v, want the outgoing generation's", e)
 	}
 }

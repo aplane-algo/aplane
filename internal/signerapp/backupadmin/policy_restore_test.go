@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
+	"github.com/aplane-algo/aplane/internal/asaset"
+	"github.com/aplane-algo/aplane/internal/asasetstore"
 	"github.com/aplane-algo/aplane/internal/backup"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore"
@@ -182,5 +184,70 @@ func TestRestorePolicyConflictNeedsReplaceExisting(t *testing.T) {
 	}
 	if got, ok := activePolicyForRestoreTest(t, paths, key); !ok || !bytes.Equal(got, local) {
 		t.Fatalf("rollback policy = %q, want the replaced local policy", got)
+	}
+}
+
+// asaSetForRestoreTest is a one-entry ASA set confirming asset id.
+func asaSetForRestoreTest(t *testing.T, id uint64, unit string) *asaset.Set {
+	t.Helper()
+	set, err := asaset.New([]asaset.Entry{{
+		Identity:              asaset.Identity{Genesis: asaset.GenesisHash{1}, AssetID: id},
+		UnitName:              unit,
+		Decimals:              2,
+		Creator:               "CEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI7JH2AYM",
+		ConfirmedAt:           time.Unix(1_700_000_000, 0),
+		NetworkAtConfirmation: "private-dev",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return set
+}
+
+func activeASASetForRestoreTest(t *testing.T, paths storepaths.Paths) []asaset.Entry {
+	t.Helper()
+	active, kr, err := genstore.ResolveStoreRoot(paths, backupAdminTestPassphrase)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer kr.Zero()
+	set, err := asasetstore.Load(active, kr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return set.Entries()
+}
+
+// Backups do not carry the ASA set: restore and rollback keep the
+// destination's own set.
+func TestRestoreAndRollbackKeepTheDestinationASASet(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	ir := unlockedCosignerRuntime(t, paths)
+	active, kr, err := genstore.ResolveStoreRoot(paths, backupAdminTestPassphrase)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := asasetstore.Write(active, asaSetForRestoreTest(t, 7, "DEST"), kr, time.Unix(1_700_000_000, 0)); err != nil {
+		t.Fatal(err)
+	}
+	kr.Zero()
+	service := directRestoreTestService(paths, ir)
+	archivePath, _, _ := writeCosignerArchiveWithPolicy(t, paths, "asa-restore", func(key string) []byte {
+		return cosignerPolicyForRestoreTest(key, "archived")
+	})
+	restored := service.RestoreBackup(adminproto.RestoreBackupRequest{
+		OperationID: "restore", ArchivePath: archivePath, ExportPassphrase: []byte("export-passphrase"),
+	})
+	if !restored.Success {
+		t.Fatalf("RestoreBackup() = %+v", restored)
+	}
+	if got := activeASASetForRestoreTest(t, paths); len(got) != 1 || got[0].UnitName != "DEST" {
+		t.Fatalf("set after restore = %+v, want the destination's", got)
+	}
+	if rolled := service.RollbackRestore(adminproto.RollbackRestoreRequest{OperationID: "rollback"}); !rolled.Success {
+		t.Fatalf("RollbackRestore() = %+v", rolled)
+	}
+	if got := activeASASetForRestoreTest(t, paths); len(got) != 1 || got[0].UnitName != "DEST" {
+		t.Fatalf("set after rollback = %+v, want the destination's", got)
 	}
 }
