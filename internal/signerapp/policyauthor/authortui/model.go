@@ -26,6 +26,7 @@ const (
 	screenHelp
 	screenField
 	screenSave
+	screenBaselinePick
 	screenConflict
 	screenOverwrite
 	screenNew
@@ -248,6 +249,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.tryKeys(msg)
 		case screenSave:
 			return m.saveKeys(msg)
+		case screenBaselinePick:
+			return m.baselinePickKeys(msg)
 		case screenConflict:
 			return m.conflictKeys(msg)
 		case screenOverwrite:

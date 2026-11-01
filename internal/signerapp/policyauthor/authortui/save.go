@@ -10,16 +10,23 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyauthor"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // Saving. s shows what the save would change against the file as loaded and
-// writes only on y. The write checks the disk first; if the file changed,
-// was deleted, or appeared since it was loaded, the conflict screen offers to
-// reload it (discarding the edits), save the edits under another name, or
-// overwrite it after seeing the disk version against the edits.
+// writes only on y. A new file has nothing loaded to compare with, so it is
+// compared with a comparison reference: the workspace default to start with,
+// or any workspace file, or none, chosen with b. The reference is a local
+// file, not the node's policy, and never changes what is written or what the
+// conflict check compares the disk with. The write checks the disk first; if
+// the file changed, was deleted, or appeared since it was loaded, the
+// conflict screen offers to reload it (discarding the edits), save the edits
+// under another name, or overwrite it after seeing the disk version against
+// the edits.
 
 // saveState is the save flow in progress.
 type saveState struct {
@@ -30,6 +37,10 @@ type saveState struct {
 	saveAs    bool
 	input     textinput.Model
 	err       string
+	// baseline is a new file's comparison reference, by path; "" is none.
+	// pick is the reference picker's row.
+	baseline string
+	pick     int
 }
 
 func (m Model) startSave() Model {
@@ -43,31 +54,163 @@ func (m Model) startSave() Model {
 		return m
 	}
 	m.save = saveState{}
-	c := s.Review()
-	var lines []string
+	if !s.Loaded.Exists {
+		m.save.baseline = m.defaultBaseline()
+	}
+	return m.saveReview()
+}
+
+// defaultBaseline is the comparison reference a new key document starts
+// with: the workspace's one default, when it is for the same role.
+func (m Model) defaultBaseline() string {
+	cur := m.session().Current()
+	def := m.currentWS().Default()
+	if def == nil || def.Path == m.session().Loaded.Path || cur.Key == policy.DefaultKey || def.Role != cur.Role {
+		return ""
+	}
+	return def.Path
+}
+
+// saveReview shows the save review: an existing file against the file as
+// loaded, a new one against its comparison reference.
+func (m Model) saveReview() Model {
+	s := m.session()
 	cur := s.Current()
-	if cur.Errors() {
-		lines = append(lines, m.styles.err.Render("The edited document does not pass check; it can be saved as a draft, but apadmin will refuse it."), "")
+	var lines []string
+	if m.failsCheck() {
+		lines = append(lines, m.styles.err.Render("The edited document does not pass check in this workspace; it can be saved as a draft. Review the listed problems before applying it."), "")
 	}
 	if s.Loaded.HadComments {
 		lines = append(lines, m.styles.warn.Render("This file has comments, which will not be kept; move notes into description fields."), "")
 	}
+	title := "Save " + filepath.Base(s.Loaded.Path) + "?"
 	if s.Loaded.Exists {
-		lines = append(lines, m.changeLines(c, "the file as loaded")...)
-		return m.openPage(screenSave, "Save "+filepath.Base(s.Loaded.Path)+"?", lines)
+		lines = append(lines, m.changeLines(s.Review(), "the file as loaded")...)
+		return m.openPage(screenSave, title, lines)
 	}
-	// A new file: compare a key's document with the workspace default it
-	// would replace. Offline nothing tells which policy the node runs, so with
-	// no workspace default there is nothing to compare it with.
 	lines = append(lines, "A new file.", "")
-	if def := m.currentWS().Default(); def != nil && def.Path != s.Loaded.Path && cur.Key != "default" {
-		lines = append(lines, m.changeLines(policyauthor.Compare(def, cur), "the workspace default ("+filepath.Base(def.Path)+")")...)
-	} else {
-		for _, line := range wrap("New document; the policy the node runs for this key now is unknown, so there is nothing to compare it with. Read it with explain (x) before saving.", max(20, m.width-2)) {
-			lines = append(lines, m.styles.warn.Render(line))
+	width := max(20, m.width-2)
+	if m.save.baseline != "" {
+		if j := m.fileIndex(m.save.baseline); j < 0 {
+			for _, line := range wrap("The comparison reference "+filepath.Base(m.save.baseline)+" is no longer in the workspace; press b to choose another.", width) {
+				lines = append(lines, m.styles.warn.Render(line))
+			}
+			lines = append(lines, "")
+			m.save.baseline = ""
+		} else {
+			lines = append(lines, m.changeLines(policyauthor.Compare(m.shownFile(j), cur), "the comparison reference "+m.baselineLabel(j))...)
+			lines = append(lines, "")
+			for _, line := range wrap("The comparison reference is a file in this workspace, not the node's policy: the policy the node runs for this key now is unknown. Press b to choose another reference.", width) {
+				lines = append(lines, m.styles.subtle.Render(line))
+			}
+			return m.openPage(screenSave, title, lines)
 		}
 	}
-	return m.openPage(screenSave, "Save "+filepath.Base(s.Loaded.Path)+"?", lines)
+	for _, line := range wrap("New document; the policy the node runs for this key now is unknown and no comparison reference is selected, so there is nothing to compare it with. Read it with explain (x) before saving, or press b to compare it with a workspace file.", width) {
+		lines = append(lines, m.styles.warn.Render(line))
+	}
+	return m.openPage(screenSave, title, lines)
+}
+
+// fileIndex is the index of the workspace file at path, or -1.
+func (m Model) fileIndex(path string) int {
+	for i, f := range m.ws.Files {
+		if f.Path == path {
+			return i
+		}
+	}
+	return -1
+}
+
+// baselineLabel names workspace file i as a comparison reference.
+func (m Model) baselineLabel(i int) string {
+	label := filepath.Base(m.ws.Files[i].Path)
+	if def := m.currentWS().Default(); def != nil && def.Path == m.ws.Files[i].Path {
+		label = "the workspace default (" + label + ")"
+	}
+	if s, ok := m.sessions[m.ws.Files[i].Path]; ok && s.Modified() {
+		label += ", as edited and not saved"
+	}
+	return label
+}
+
+// baselineRows are the reference picker's choices: every other workspace
+// file, by index, then -1 for no comparison.
+func (m Model) baselineRows() []int {
+	var rows []int
+	for i := range m.ws.Files {
+		if i != m.current {
+			rows = append(rows, i)
+		}
+	}
+	return append(rows, -1)
+}
+
+func (m Model) openBaselinePick() Model {
+	if m.session().Loaded.Exists {
+		m.status = "An existing file is always compared with the file as loaded"
+		return m
+	}
+	rows := m.baselineRows()
+	m.save.pick = len(rows) - 1
+	for r, i := range rows {
+		if i >= 0 && m.ws.Files[i].Path == m.save.baseline {
+			m.save.pick = r
+		}
+	}
+	m.screen = screenBaselinePick
+	return m
+}
+
+func (m Model) baselinePickKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	rows := m.baselineRows()
+	switch msg.String() {
+	case "esc":
+		return m.saveReview(), nil
+	case "up", "k":
+		m.save.pick = max(0, m.save.pick-1)
+	case "down", "j":
+		m.save.pick = min(len(rows)-1, m.save.pick+1)
+	case "enter":
+		m.save.baseline = ""
+		if i := rows[m.save.pick]; i >= 0 {
+			m.save.baseline = m.ws.Files[i].Path
+		}
+		return m.saveReview(), nil
+	}
+	return m, nil
+}
+
+func (m Model) baselinePickView() string {
+	var b strings.Builder
+	b.WriteString(m.styles.title.Render("Compare the new "+filepath.Base(m.session().Loaded.Path)+" with") + "\n\n")
+	var lines []string
+	for r, i := range m.baselineRows() {
+		line := "(no comparison)"
+		if i >= 0 {
+			f := m.shownFile(i)
+			key, role := f.Key, string(f.Role)
+			if key == "" {
+				key = "(no key)"
+			}
+			if role == "" {
+				role = "(no role)"
+			}
+			line = fmt.Sprintf("%-28s %-9s %-10s %s", filepath.Base(f.Path), role, f.State, key)
+			if s, ok := m.sessions[f.Path]; ok && s.Modified() {
+				line += "  (edited, not saved)"
+			}
+		}
+		line = ansi.Truncate(line, m.width-2, "…")
+		if r == m.save.pick {
+			line = m.styles.selected.Render("> " + line)
+		} else {
+			line = "  " + line
+		}
+		lines = append(lines, line)
+	}
+	b.WriteString(strings.Join(window(lines, m.save.pick, m.listHeight()), "\n"))
+	return b.String()
 }
 
 // changeLines lays out a comparison.
@@ -113,6 +256,8 @@ func (m Model) saveKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "n", "esc":
 		m.screen = screenDocument
 		return m, nil
+	case "b":
+		return m.openBaselinePick(), nil
 	}
 	return m.pageKeys(msg)
 }
