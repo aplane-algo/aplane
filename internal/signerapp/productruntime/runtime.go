@@ -17,6 +17,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/asaset"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keystore"
@@ -117,6 +118,9 @@ type Runtime struct {
 	nodeRole   noderole.Role
 	policyMu   sync.RWMutex
 	nodePolicy *policyruntime.NodePolicy
+	// asaSet is the node's verified ASA set, published with nodePolicy so the
+	// two are always read as one view.
+	asaSet *asaset.Set
 
 	// Enrolled client keys for this identity: the validated view of the
 	// authorized_keys registry. The daemon is its only writer; see
@@ -251,6 +255,23 @@ func (ir *Runtime) SetNodePolicy(p *policyruntime.NodePolicy) {
 	ir.policyMu.Lock()
 	defer ir.policyMu.Unlock()
 	ir.nodePolicy = p
+}
+
+// ASASet returns the node's verified ASA set (its operator's confirmations;
+// the built-ins are always known), or nil before it loads. The returned value
+// is immutable.
+func (ir *Runtime) ASASet() *asaset.Set {
+	ir.policyMu.RLock()
+	defer ir.policyMu.RUnlock()
+	return ir.asaSet
+}
+
+// SetVerifiedPolicyState installs the node's verified policy and ASA set as
+// one atomic runtime update, so no reader sees one without the other.
+func (ir *Runtime) SetVerifiedPolicyState(p *policyruntime.NodePolicy, set *asaset.Set) {
+	ir.policyMu.Lock()
+	defer ir.policyMu.Unlock()
+	ir.nodePolicy, ir.asaSet = p, set
 }
 
 // SetPolicy installs a compiled policy as the node default without stored

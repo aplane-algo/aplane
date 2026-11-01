@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/asasetstore"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keyclass"
@@ -162,7 +163,13 @@ func NewReloadService(ir *productruntime.Runtime, opts ProductBuildOptions, hook
 			if err != nil {
 				return fmt.Errorf("policy verification failed for product store: %w", err)
 			}
-			ir.SetNodePolicy(nodePolicy)
+			// A present ASA set must authenticate: a damaged one is an
+			// integrity failure, never the built-ins only.
+			set, err := asasetstore.Load(active, kr)
+			if err != nil {
+				return fmt.Errorf("asa set verification failed for product store: %w", err)
+			}
+			ir.SetVerifiedPolicyState(nodePolicy, set)
 			return nil
 		},
 		BeforePublish: func(_ map[string]string, keyTypes map[string]string) error {
