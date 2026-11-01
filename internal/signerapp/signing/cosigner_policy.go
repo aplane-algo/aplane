@@ -8,6 +8,7 @@ import (
 
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/signerapp/policyeval"
 	"github.com/aplane-algo/aplane/internal/witness"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
@@ -33,109 +34,24 @@ func (s *Service) evaluateCosignerComponentPolicy(plan *ComponentSignPlan) *Serv
 		return internal("policy is not loaded")
 	}
 
-	// Known-network gate: every signing path refuses a transaction whose
-	// genesis hash names no network this node knows, before any policy rule.
-	// Asset references are only meaningful on a known network; the gate
-	// applies to every transaction, including ones that name no asset (a
-	// cosigner rekey is a 0 ALGO self-payment), so no path has to prove it
-	// cannot carry one. A cosigner has no operator, so the refusal is an
-	// audited policy rejection rather than a bare bad request.
-	resolver := s.genesisHashResolver()
-	var violations []policy.LintViolation
-	for _, target := range plan.Targets {
-		txn := plan.Group.Entries[target.TargetIndex].Txn
-		if _, ok := resolver.NetworkForGenesisHashBytes(txn.GenesisHash[:]); !ok {
-			violations = append(violations, policy.LintViolation{
-				RuleID:   policy.UnknownGenesisHashRuleID,
-				Scope:    "txn",
-				TxnIndex: target.TargetIndex,
-				Message:  fmt.Sprintf("cannot evaluate cosigner policy for unknown genesis hash %x", txn.GenesisHash[:]),
-			})
-			continue
-		}
-		violations = append(violations, cosignerTargetPolicyLints(txn, target.TargetIndex, cfg)...)
+	slots := make([]policyeval.Slot, len(plan.Targets))
+	for i, target := range plan.Targets {
+		slots[i] = policyeval.Slot{Index: target.TargetIndex, Policy: cfg}
 	}
+	verdict, evalErr := policyeval.Evaluate(policyeval.Input{
+		Role:     policyeval.RoleCosigner,
+		Group:    componentPlanTxns(plan),
+		Slots:    slots,
+		Networks: s.genesisHashResolver(),
+	})
+	if evalErr != nil {
+		return internal(evalErr.Error())
+	}
+	violations := verdict.Violations
 	if len(violations) > 0 {
 		return s.rejectCosignerComponentPolicy(plan, violations)
 	}
 	return nil
-}
-
-func cosignerTargetPolicyLints(txn types.Transaction, targetIndex int, cfg *policy.Config) []policy.LintViolation {
-	violations := withTargetIndex(policy.CheckTxnPolicyLints(txn, cfg, nil), targetIndex)
-	if len(violations) > 0 {
-		return violations
-	}
-	if !txn.RekeyTo.IsZero() {
-		if cfg.RejectRekey {
-			return []policy.LintViolation{cosignerRekeyViolation(targetIndex, "rekey transactions are rejected by cosigner policy")}
-		}
-		return cosignerRekeyPolicyLints(txn, targetIndex, cfg)
-	}
-	if cfg.TransferPolicy == nil {
-		// A compiled document always carries a transfer policy. A config
-		// without one has no allow-list, so nothing it covers can be signed.
-		return []policy.LintViolation{{
-			RuleID:   policy.TransferRoutingRouteMissRuleID,
-			Scope:    "txn",
-			TxnIndex: targetIndex,
-			Message:  "cosigner policy has no transfer policy; no route can authorize the target",
-		}}
-	}
-	violations = append(violations, withTargetIndex(
-		policy.CheckTxnTransferRoutingPolicyLints(txn, cfg),
-		targetIndex,
-	)...)
-	// Defense in depth: decode refuses review-producing fields on a cosigner
-	// node, so these never fire for a stored document, but a review verdict
-	// must never be waited on here.
-	violations = append(violations, withTargetIndex(
-		policy.CheckTxnReviewPolicyLints(txn, cfg),
-		targetIndex,
-	)...)
-	violations = append(violations, withTargetIndex(
-		policy.CheckTxnTransferRoutingReviewPolicyLints(txn, cfg),
-		targetIndex,
-	)...)
-	return violations
-}
-
-func cosignerRekeyPolicyLints(txn types.Transaction, targetIndex int, cfg *policy.Config) []policy.LintViolation {
-	if txn.Type != types.PaymentTx {
-		return []policy.LintViolation{cosignerRekeyViolation(targetIndex, "rekey transactions must be payment transactions")}
-	}
-	if txn.Amount != 0 {
-		return []policy.LintViolation{cosignerRekeyViolation(targetIndex, "rekey transactions must transfer 0 microalgos")}
-	}
-	if txn.Receiver != txn.Sender {
-		return []policy.LintViolation{cosignerRekeyViolation(targetIndex, "rekey transactions must be self-payments")}
-	}
-	if !txn.CloseRemainderTo.IsZero() {
-		return []policy.LintViolation{cosignerRekeyViolation(targetIndex, "rekey transactions must not close remainder")}
-	}
-	if cfg == nil || cfg.RekeyPolicy == nil || !cfg.RekeyPolicy.Allows(txn.Sender, txn.RekeyTo) {
-		return []policy.LintViolation{cosignerRekeyViolation(
-			targetIndex,
-			fmt.Sprintf("rekey from %s to %s is not allowed by cosigner rekey_policy", txn.Sender, txn.RekeyTo),
-		)}
-	}
-	return nil
-}
-
-func cosignerRekeyViolation(targetIndex int, message string) policy.LintViolation {
-	return policy.LintViolation{
-		RuleID:   policy.CosignerRekeyRuleID,
-		Scope:    "txn",
-		TxnIndex: targetIndex,
-		Message:  message,
-	}
-}
-
-func withTargetIndex(violations []policy.LintViolation, targetIndex int) []policy.LintViolation {
-	for i := range violations {
-		violations[i].TxnIndex = targetIndex
-	}
-	return violations
 }
 
 func (s *Service) rejectCosignerComponentPolicy(plan *ComponentSignPlan, violations []policy.LintViolation) *ServiceError {
