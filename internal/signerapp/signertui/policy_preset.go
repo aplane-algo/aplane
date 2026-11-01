@@ -9,13 +9,13 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
-	"github.com/aplane-algo/aplane/internal/signerapp/policyreview"
+	"github.com/aplane-algo/aplane/internal/signerapp/policytext"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
 // On a cosigner node, editing the node default or a key that has no policy
 // of its own first offers a choice of starting text: what the editor would
-// open on anyway, or one of the cosigner presets (policyreview.Presets). A
+// open on anyway, or one of the cosigner presets (policytext.Presets). A
 // preset is only starting text; it reaches the node through the same check,
 // diff review, and confirmed apply as any other edit. Editing a key's own
 // policy opens the editor directly, since that edit starts from the key's
@@ -24,14 +24,14 @@ import (
 // policyPresetPickState is the starting-text picker.
 type policyPresetPickState struct {
 	row      policyRow
-	presets  []policyreview.Preset
+	presets  []policytext.Preset
 	selected int
 }
 
 // policyPresetsOffered reports whether editing row starts with the picker.
 func (m Model) policyPresetsOffered(row policyRow) bool {
 	role, err := noderole.ParseRole(m.policies.policy.NodeRole)
-	if err != nil || len(policyreview.Presets(role)) == 0 {
+	if err != nil || len(policytext.Presets(role)) == 0 {
 		return false
 	}
 	return row.key == policy.DefaultKey || row.doc == nil
@@ -50,7 +50,7 @@ func (m Model) openPolicyPresetPick(row policyRow) (tea.Model, tea.Cmd) {
 		return m.openPolicyEditForRow(row)
 	}
 	role, _ := noderole.ParseRole(m.policies.policy.NodeRole)
-	m.policies.presetPick = policyPresetPickState{row: row, presets: policyreview.Presets(role)}
+	m.policies.presetPick = policyPresetPickState{row: row, presets: policytext.Presets(role)}
 	m.policies.status = ""
 	m.viewState = ViewPolicyPresetPick
 	return m, nil
@@ -91,7 +91,7 @@ func (m Model) handlePolicyPresetPickKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		role, err := noderole.ParseRole(m.policies.policy.NodeRole)
 		var text string
 		if err == nil {
-			text, err = policyreview.PresetTemplate(role, presets[selected-1].Name, row.key)
+			text, err = policytext.PresetTemplate(role, presets[selected-1].Name, row.key)
 		}
 		if err != nil {
 			m.viewState = ViewPolicies

@@ -167,3 +167,15 @@ func TestDocumentReturnsExactBytesOrNotFound(t *testing.T) {
 		t.Fatalf("Document(no policy) = %+v", got)
 	}
 }
+
+// TestAdvisoryWarningsCarryTheAdvisoryPointer checks that check and apply
+// report an advisory at the field it concerns, not at the whole document.
+func TestAdvisoryWarningsCarryTheAdvisoryPointer(t *testing.T) {
+	key := manyWitnessKeyIDs(1)[0]
+	doc := policytest.MustDocument(noderole.RoleCosigner, key, `{"transaction_types": {"*": "reject", "pay": "allow", "axfer": "allow"},
+  "transfer_policy": {"routes": [{"id": "r", "networks": ["testnet"], "sources": ["*"], "assets": ["algo"], "destinations": ["self"]}]}}`)
+	got := advisoryWarnings(noderole.RoleCosigner, adminproto.PolicyDocument{Key: key, Document: doc})
+	if len(got) != 1 || got[0].Key != key || got[0].Pointer != "/max_fee_microalgos" || !strings.Contains(got[0].Message, "max_fee_microalgos is 0") {
+		t.Fatalf("warnings = %+v, want one at /max_fee_microalgos", got)
+	}
+}

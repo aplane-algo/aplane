@@ -14,9 +14,10 @@ This project builds several first-party commands and developer helpers:
 10. **appass-file** - dev-only plaintext passphrase helper
 11. **appass-systemd-creds** - Linux/systemd production passphrase helper using systemd credentials
 12. **approbe** - installer-facing signer liveness probe
-13. **applugin-checksum** - plugin checksum generator
-14. **compile_teal** - TEAL-to-Go bytecode generator used by development workflows
-15. **configdoc** - configuration reference generator
+13. **appolicy** - offline policy file check, format, and explain
+14. **applugin-checksum** - plugin checksum generator
+15. **compile_teal** - TEAL-to-Go bytecode generator used by development workflows
+16. **configdoc** - configuration reference generator
 
 ## Project Structure
 
@@ -35,6 +36,7 @@ aplane/
 │   ├── appass-file/            # Dev passphrase helper
 │   ├── appass-systemd-creds/   # Linux systemd-creds passphrase helper
 │   ├── approbe/                # Installer liveness probe
+│   ├── appolicy/               # Offline policy file check, format, explain
 │   ├── applugin-checksum/      # Plugin integrity helper
 │   ├── compile_teal/         # TEAL-to-Go bytecode generator
 │   └── configdoc/            # Config reference generator
@@ -135,6 +137,7 @@ make aplocalnet
 make appass-file
 make appass-systemd-creds
 make approbe
+make appolicy
 make applugin-checksum
 
 # Generate development artifacts
@@ -222,6 +225,7 @@ CGO_ENABLED=0 go build -o bin/aplocalnet ./cmd/aplocalnet
 CGO_ENABLED=0 go build -o bin/appass-file ./cmd/appass-file
 CGO_ENABLED=0 go build -o bin/appass-systemd-creds ./cmd/appass-systemd-creds
 CGO_ENABLED=0 go build -o bin/approbe ./cmd/approbe
+CGO_ENABLED=0 go build -o bin/appolicy ./cmd/appolicy
 CGO_ENABLED=0 go build -o bin/applugin-checksum ./cmd/applugin-checksum
 CGO_ENABLED=0 go build -o bin/compile_teal ./cmd/compile_teal
 CGO_ENABLED=0 go build -o bin/configdoc ./cmd/configdoc
@@ -474,8 +478,9 @@ sudo setcap cap_ipc_lock+ep bin/apsigner
 
 Set `require_memory_protection: true` in signer `config.yaml` when startup
 should fail if memory locking is unavailable. `apadmin`, `apconsole`,
-`apstore`, `appass`, `aplocalnet`, and `approbe` perform admin, setup, rescue,
-policy-editing, or liveness-probe workflows and do not need this capability.
+`apstore`, `appass`, `aplocalnet`, `approbe`, and `appolicy` perform admin,
+setup, rescue, policy-file, or liveness-probe workflows and do not need this
+capability.
 
 ## Notes
 
@@ -493,6 +498,7 @@ policy-editing, or liveness-probe workflows and do not need this capability.
 - **aplocalnet** configures a running AlgoKit LocalNet as apshell's default network, updates apsigner genesis mapping, enables the LocalNet plugin, and can persist a KMD URL override for plugin processes
 - **appass-systemd-creds** is built for Linux/systemd releases; Darwin release archives omit it
 - **approbe** checks local signer IPC liveness for installer live-daemon gating
+- **appolicy** checks, formats, and explains policy files offline; it never contacts a node or writes a store
 - Signature operations require admin approval unless policy explicitly approves them or the product runtime has `user_auto_approve:true`
 - Plugin system uses external processes communicating via JSON-RPC
 - Cross-compilation targets Linux ARM64/AMD64 and Darwin ARM64/AMD64

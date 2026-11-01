@@ -116,6 +116,7 @@ copy_required_binaries() {
         appass-file
         appass-systemd-creds
         approbe
+        appolicy
         applugin-checksum
     )
 

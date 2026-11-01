@@ -457,6 +457,8 @@ func (m Model) renderViewContent() string {
 		content = m.renderPolicyEdit()
 	case ViewPolicyPresetPick:
 		content = m.renderPolicyPresetPick()
+	case ViewPolicyExportForm:
+		content = m.renderPolicyExportForm()
 	case ViewTemplateLibrary:
 		content = m.renderTemplateLibrary()
 	case ViewTemplateInstallConfirm:

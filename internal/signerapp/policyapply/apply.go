@@ -162,11 +162,7 @@ func advisoryWarnings(role noderole.Role, doc adminproto.PolicyDocument) []admin
 	advisories := decoded.Advisories()
 	out := make([]adminproto.PolicyProblem, 0, len(advisories))
 	for _, a := range advisories {
-		pointer := ""
-		if a.Scope != "policy" {
-			pointer = "/" + a.Scope
-		}
-		out = append(out, adminproto.PolicyProblem{Key: doc.Key, Pointer: pointer, Message: a.Message})
+		out = append(out, adminproto.PolicyProblem{Key: doc.Key, Pointer: a.Pointer, Message: a.Message})
 	}
 	return out
 }

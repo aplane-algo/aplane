@@ -22,13 +22,11 @@ func GetASACacheFilenameForStore(store *Store, network string) string {
 	return storePath(store, fmt.Sprintf("%s_asa_cache.json", network))
 }
 
-// LoadASACacheFromStore loads the ASA cache from the provided store and merges builtin ASAs.
-func LoadASACacheFromStore(store *Store, network string) ASACache {
+// builtinASACache returns a cache holding only the built-in entries for
+// network. A cached entry merged into it adds assets the table does not know;
+// it never replaces a built-in entry (see PreferBuiltin).
+func builtinASACache(network string) ASACache {
 	cache := ASACache{SchemaVersion: cachePayloadSchemaVersion, Assets: make(map[uint64]ASAInfo)}
-	cache.bindStore(store)
-
-	// Merge builtin ASAs first. A cached entry adds assets the table does not
-	// know; it never replaces a built-in entry (see PreferBuiltin).
 	for id, info := range asaregistry.AllBuiltinMetadata(network) {
 		cache.Assets[id] = ASAInfo{
 			Name:     info.Name,
@@ -36,6 +34,13 @@ func LoadASACacheFromStore(store *Store, network string) ASACache {
 			Decimals: info.Decimals,
 		}
 	}
+	return cache
+}
+
+// LoadASACacheFromStore loads the ASA cache from the provided store and merges builtin ASAs.
+func LoadASACacheFromStore(store *Store, network string) ASACache {
+	cache := builtinASACache(network)
+	cache.bindStore(store)
 
 	// Load cached ASAs and merge them under the built-in entries
 	filecache := ASACache{SchemaVersion: cachePayloadSchemaVersion, Assets: make(map[uint64]ASAInfo)}

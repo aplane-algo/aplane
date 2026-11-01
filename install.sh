@@ -2177,14 +2177,16 @@ if [ "$LOCAL_MODE" = "1" ]; then
     mkdir -p "$SIGNER_BINDIR" "$CLIENT_BINDIR"
     chmod 700 "$INSTALL_ROOT"
     rm -f "$CLIENT_BINDIR/apbounded-admin" "$SIGNER_BINDIR/apbounded-admin"
-    rm -f "$CLIENT_BINDIR/appolicy" "$SIGNER_BINDIR/appolicy"
+    # appolicy ships with the signer binaries; remove a client-side copy left
+    # by a release that installed the retired binary there.
+    rm -f "$CLIENT_BINDIR/appolicy"
 
     # Copy binaries (apshell/aplocalnet → apclient/bin, everything else → apsigner/bin)
     echo "Installing binaries..."
     for bin in "$BIN_SRC"/*; do
         [ -f "$bin" ] || continue
         name="$(basename "$bin")"
-        if [ "$name" = "appolicy" ] || [ "$name" = "apkey-migrate" ] || [ "$name" = "migrate-config-v1" ]; then
+        if [ "$name" = "apkey-migrate" ] || [ "$name" = "migrate-config-v1" ]; then
             echo "  skipping obsolete $name"
             continue
         fi
@@ -2524,11 +2526,10 @@ fi
 
 # Step 2: Copy binaries outside the signer store
 echo "Installing binaries to $BINDIR..."
-rm -f "$BINDIR/appolicy"
 for bin in "$BIN_SRC"/*; do
     [ -f "$bin" ] || continue
     name="$(basename "$bin")"
-    if [ "$name" = "appolicy" ] || [ "$name" = "apkey-migrate" ] || [ "$name" = "migrate-config-v1" ]; then
+    if [ "$name" = "apkey-migrate" ] || [ "$name" = "migrate-config-v1" ]; then
         echo "  skipping obsolete $name"
         continue
     fi

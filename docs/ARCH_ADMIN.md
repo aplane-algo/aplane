@@ -966,6 +966,16 @@ A policy document changes only through one check, review, and apply workflow
 (`internal/signerapp/signertui/policy_apply.go`), which follows the same steps
 as `apadmin policy apply FILE`. It has two sources for the candidate document:
 `a` loads one policy file, and `e` opens the in-place editor described below.
+`x` exports the active policy instead
+(`internal/signerapp/signertui/policy_export.go`): it fetches every document
+the summary lists with `get_policy_document`, one at a time, and writes them
+in a command outside the event loop through
+`apadminapp.ExportPolicyDocuments`. That writer creates a new directory, or
+uses an empty one, and writes each document's exact bytes as `default.json`
+or `<key>.json` (the key checked as a policy selector), mode 0600. It writes
+nothing unless every fetched document matches the digest the summary listed
+and together they are the summary's `policy_set_sha256`, so an apply that
+lands during the export is refused rather than written as a mix.
 For a loaded file:
 
 1. A path prompt reads the file with the shared reader in
@@ -1018,7 +1028,7 @@ confirmed apply.
   indented for editing; whitespace does not change what a policy allows, so an
   unedited reformat still reports `Policy unchanged`. A key on `default` opens
   on the node's current default, fetched the same way and rendered by
-  `policyreview.Template` with the key filled in under a header comment; the
+  `policytext.Template` with the key filled in under a header comment; the
   editor marks it `No policy of its own yet`. Applying it unedited gives the key a
   document of its own that does what the default did, so a key's policy always
   starts from exactly what it was already doing; on a cosigner node that is
@@ -1026,7 +1036,7 @@ confirmed apply.
 - **Cosigner presets.** On a cosigner node, `e` on the default row or on a key
   on `default` first opens a starting-text picker (`ViewPolicyPresetPick`,
   `policy_preset.go`). Its first choice is the path above; each other choice
-  opens the editor on `policyreview.PresetTemplate` for that row's key,
+  opens the editor on `policytext.PresetTemplate` for that row's key,
   without a daemon request. A key with `own policy`, and every row on a
   signer node, open the editor directly. See
   [ARCH_POLICY.md](ARCH_POLICY.md#admin-surface).

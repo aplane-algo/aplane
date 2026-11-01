@@ -22,6 +22,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/signerapp/policytext"
 )
 
 // maxPolicyFileBytes bounds what a policy file read accepts; the node
@@ -130,7 +131,7 @@ func validPolicyBytes(file string, data []byte) ([]byte, error) {
 	if !utf8.Valid(data) {
 		return nil, fmt.Errorf("%s is not valid UTF-8", file)
 	}
-	stripped, err := StripComments(data)
+	stripped, err := policytext.StripComments(data)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", file, err)
 	}

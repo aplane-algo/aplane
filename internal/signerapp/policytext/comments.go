@@ -1,7 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-package policyreview
+// Package policytext holds the text-level helpers for policy documents that
+// producers share: removing // and /* */ comments, writing a template for a
+// key from a default, and the cosigner presets. It depends only on the policy
+// format, not on the store or the admin protocol, so a tool that writes policy
+// files can use it without the review and apply packages.
+package policytext
 
 import (
 	"bytes"

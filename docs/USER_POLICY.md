@@ -267,6 +267,15 @@ node does not hold; generate or import the key first. The path must name a
 regular file, not a symlink. The TUI does not remove documents or take several
 files at once; `apadmin policy` covers those.
 
+To take a copy of the node's current policy, open Policies (`p`) and press
+`x`. The TUI writes every active document, exactly as stored, into a new or
+empty directory (the prompt suggests `~/policy-export-<time>`): the node
+default as `default.json` and each key's own document as `<key>.json`, mode
+0600. It refuses a directory that already holds files, and it writes nothing
+if the policy changed while the documents were being read; refresh and export
+again. The files can be checked, explained, and edited offline with
+`appolicy`, and installed again with `apadmin policy apply`.
+
 ### Editing a policy in apadmin
 
 To change a policy without a file, open Policies (`p`), select the document,
@@ -394,10 +403,48 @@ read-only `status`, `export`, and `check` commands unlock it before reading
 policy state and are therefore not guaranteed to preserve the daemon's lock
 state.
 
-### Migration from the retired policy binary
+### Checking policy files offline with appolicy
 
-The former `appolicy` binary is no longer installed. Replace its command shapes
-as follows:
+`appolicy` checks, formats, and explains policy files without a node, a store,
+or a passphrase. It is installed with the signer binaries.
+
+```bash
+appolicy check treasury.json        # errors and warnings, by JSON Pointer
+appolicy check policy/              # every *.json file in a directory
+appolicy check --json policy/       # the same report as JSON, for CI
+appolicy fmt policy/                # rewrite files in canonical form
+appolicy explain treasury.json      # one document in plain language
+```
+
+- **check** decodes each file with the node's own decoder, so it reports the
+  same errors at the same JSON Pointers, and the same warnings, as
+  `apadmin policy check`. It exits 0 when no file has an error and 1 when one
+  does; warnings never fail it. Every file named, directly or through a
+  directory, is checked as one set: each document is identified by its
+  `"key"` field, not its file name, and check also reports a second `default`
+  document, a key in two files, or documents for different roles.
+- **What it cannot know.** It does not see the node: which keys the node
+  holds, which policy it runs now, or which networks it maps. Run
+  `apadmin policy diff` and `apply` to review and install a file.
+- **fmt** rewrites a file with two-space indentation and fields in a fixed
+  order, so repeated edits give stable diffs. It leaves a file that is not
+  valid JSON untouched, refuses a file with comments unless you pass
+  `--strip-comments` (move notes into `description` fields), and refuses to
+  overwrite a file that changed on disk after it was read. `--check` only
+  lists the files it would change.
+- **explain** describes a valid document. Amounts are shown in base units and,
+  where the asset's decimals are known, in display units, from the built-in
+  asset table and the signer's ASA cache (`--signer-data`, or
+  `$APSIGNER_DATA`). It only reads that cache.
+
+This `appolicy` is not the retired binary of the same name, and its flags
+(`-online`, `-check`, `-yaml`, `-sha256`, `-save`) are refused with a pointer
+to `apadmin policy`.
+
+#### Commands of the retired policy binary
+
+The earlier `appolicy` edited a node's policy. Its command shapes map to
+`apadmin` as follows:
 
 | Former command | Current command |
 |---|---|
@@ -1018,8 +1065,10 @@ allow-list is what you add.
 
 Before relying on a policy:
 
-1. Run `apadmin policy check FILE` (or `apadmin policy rescue check FILE`
-   while the daemon is stopped) and read its warnings.
+1. While writing, run `appolicy check FILE` and `appolicy explain FILE`; they
+   need no node. Then run `apadmin policy check FILE` (or `apadmin policy
+   rescue check FILE` while the daemon is stopped), which also checks the
+   file against the node's keys, and read its warnings.
 2. Confirm the route miss behavior is intentional, especially
    `"on_no_route": "reject"`, `"close_on_no_route": "reject"`, and
    `"clawback_on_no_route": "reject"`, and that `transaction_types` rejects

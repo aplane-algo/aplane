@@ -15,72 +15,61 @@ import (
 	"testing"
 )
 
-var retiredAppolicyName = regexp.MustCompile(`(?i)(^|[^a-z0-9])appolicy([^a-z0-9]|$)`)
-
-func TestRetiredAppolicyArtifactDoesNotReturn(t *testing.T) {
+// TestAppolicyShipsWithTheSignerBinaries pins where appolicy is built,
+// packaged, installed and removed. It is a signer-side tool: built for every
+// platform the signer ships on, installed into the signer bindir by the
+// install copy loop (no exclusion), never left in the client bindir, and
+// removed with the signer binaries on uninstall.
+func TestAppolicyShipsWithTheSignerBinaries(t *testing.T) {
 	root := filepath.Join("..", "..")
-	if _, err := os.Stat(filepath.Join(root, "cmd", "appolicy")); !os.IsNotExist(err) {
-		t.Fatalf("retired cmd/appolicy exists: %v", err)
-	}
-
-	for _, relative := range []string{
-		"README.md",
-		"AGENTS.md",
-		filepath.Join("cmd", "apadmin", "README.md"),
-		"bootstrap-install.sh",
-	} {
-		assertFileExcludesRetiredAppolicy(t, root, relative)
-	}
-	for _, relative := range []string{
-		filepath.Join(".github", "workflows"),
-		"installer",
-		"scripts",
-	} {
-		assertTreeExcludesRetiredAppolicy(t, root, relative)
-	}
-
-	assertDocumentationExcludesRetiredAppolicy(t, root)
-	assertProductionSourceExcludesRetiredAppolicy(t, root)
-}
-
-func TestRetiredAppolicyIsRemovedDuringUpgradeAndUninstall(t *testing.T) {
-	root := filepath.Join("..", "..")
-	installer, err := os.ReadFile(filepath.Join(root, "install.sh"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, path := range []string{`"$CLIENT_BINDIR/appolicy"`, `"$SIGNER_BINDIR/appolicy"`} {
-		if !strings.Contains(string(installer), path) {
-			t.Errorf("install.sh does not remove retired upgrade artifact %s", path)
+	read := func(name string) string {
+		t.Helper()
+		data, err := os.ReadFile(filepath.Join(root, name))
+		if err != nil {
+			t.Fatal(err)
 		}
-	}
-	if got := strings.Count(string(installer), `"$BINDIR/appolicy"`); got < 2 {
-		t.Errorf("install.sh removes appolicy from only %d client/systemd bindirs, want at least 2", got)
-	}
-	if got := strings.Count(string(installer), `[ "$name" = "appolicy" ]`); got != 2 {
-		t.Errorf("install.sh has %d retired-binary glob exclusions, want 2", got)
+		return string(data)
 	}
 
-	uninstaller, err := os.ReadFile(filepath.Join(root, "uninstall.sh"))
-	if err != nil {
-		t.Fatal(err)
+	installer := read("install.sh")
+	if strings.Contains(installer, `[ "$name" = "appolicy" ]`) {
+		t.Error("install.sh still skips appolicy in a binary copy loop")
 	}
-	retiredRemoval := regexp.MustCompile(`(?m)^\s*for binary in [^\n]*\bappolicy\b[^\n]*; do\s*$`)
-	if got := len(retiredRemoval.FindAll(uninstaller, -1)); got != 2 {
+	if strings.Contains(installer, `"$SIGNER_BINDIR/appolicy"`) {
+		t.Error("install.sh removes appolicy from the signer bindir")
+	}
+	if !strings.Contains(installer, `rm -f "$CLIENT_BINDIR/appolicy"`) {
+		t.Error("install.sh does not remove a client-side appolicy left by an earlier release")
+	}
+
+	removal := regexp.MustCompile(`(?m)^\s*for binary in [^\n]*\bappolicy\b[^\n]*; do\s*$`)
+	if got := len(removal.FindAllString(read("uninstall.sh"), -1)); got != 2 {
 		t.Errorf("uninstall.sh includes appolicy in %d signer-binary removal lists, want 2", got)
 	}
 
-	makefile, err := os.ReadFile(filepath.Join(root, "Makefile"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := len(retiredAppolicyName.FindAll(makefile, -1)); got != 2 {
-		t.Errorf("Makefile contains %d appolicy references, want only the two clean-up artifacts", got)
-	}
-	for _, artifact := range []string{"appolicy", "appolicy-arm64"} {
-		if !strings.Contains(string(makefile), " "+artifact+" ") {
-			t.Errorf("Makefile clean does not remove retired artifact %s", artifact)
+	makefile := read("Makefile")
+	for _, want := range []string{
+		"-o bin/appolicy ./cmd/appolicy",
+		"-o appolicy-arm64 ./cmd/appolicy",
+		"@mv appolicy-arm64 bin/arm64/appolicy",
+		"-o bin/amd64/appolicy ./cmd/appolicy",
+		"-o bin/darwin-arm64/appolicy ./cmd/appolicy",
+		"-o bin/darwin-amd64/appolicy ./cmd/appolicy",
+		"bin/$${arch}/appolicy",
+		"$${darwindir}appolicy",
+	} {
+		if !strings.Contains(makefile, want) {
+			t.Errorf("Makefile lacks %q", want)
 		}
+	}
+	release := read(filepath.Join(".github", "workflows", "release.yml"))
+	for _, want := range []string{"bin/${arch}/appolicy", "bin/darwin-${arch}/appolicy"} {
+		if !strings.Contains(release, want) {
+			t.Errorf("release.yml does not package %q", want)
+		}
+	}
+	if !regexp.MustCompile(`(?m)^\s+appolicy$`).MatchString(read(filepath.Join("scripts", "package-bootstrap-release.sh"))) {
+		t.Error("package-bootstrap-release.sh does not require appolicy")
 	}
 }
 
@@ -206,6 +195,15 @@ func TestPolicyWorkflowImportsStayInOwningBoundaries(t *testing.T) {
 			filepath.Join("internal", "signerapp", "policycmd"): true,
 			filepath.Join("internal", "signerapp", "signertui"): true,
 		},
+		// policytext holds the text-level helpers for policy documents
+		// (comments, templates, presets). It has no store or admin
+		// dependencies, so policy authoring can use it without policyreview.
+		"github.com/aplane-algo/aplane/internal/signerapp/policytext": {
+			filepath.Join("internal", "signerapp", "policyauthor"): true,
+			filepath.Join("internal", "signerapp", "policyreview"): true,
+			filepath.Join("internal", "signerapp", "policycmd"):    true,
+			filepath.Join("internal", "signerapp", "signertui"):    true,
+		},
 		// policyapply owns the rules for committing policy; the daemon admin
 		// service, the rescue workflow, and apstore's checks are its only users.
 		"github.com/aplane-algo/aplane/internal/signerapp/policyapply": {
@@ -240,116 +238,6 @@ func TestPolicyWorkflowImportsStayInOwningBoundaries(t *testing.T) {
 				if guarded && !allowed[dir] {
 					t.Errorf("%s imports %s outside the policy workflow ownership allowlist", relative, importPath)
 				}
-			}
-			return nil
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-}
-
-func assertFileExcludesRetiredAppolicy(t *testing.T, root, relative string) {
-	t.Helper()
-	data, err := os.ReadFile(filepath.Join(root, relative))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if retiredAppolicyName.Match(data) {
-		t.Errorf("%s still contains the retired appolicy binary or artifact", relative)
-	}
-}
-
-func assertTreeExcludesRetiredAppolicy(t *testing.T, root, relative string) {
-	t.Helper()
-	err := filepath.WalkDir(filepath.Join(root, relative), func(path string, entry os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if entry.IsDir() {
-			return nil
-		}
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		if retiredAppolicyName.Match(data) {
-			relativePath, _ := filepath.Rel(root, path)
-			t.Errorf("%s still contains the retired appolicy binary or artifact", relativePath)
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-}
-
-func assertDocumentationExcludesRetiredAppolicy(t *testing.T, root string) {
-	t.Helper()
-	userPolicy := filepath.Join(root, "docs", "USER_POLICY.md")
-	err := filepath.WalkDir(filepath.Join(root, "docs"), func(path string, entry os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if entry.IsDir() || filepath.Ext(path) != ".md" || path == userPolicy {
-			return nil
-		}
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		if retiredAppolicyName.Match(data) {
-			relativePath, _ := filepath.Rel(root, path)
-			t.Errorf("%s still documents the retired policy binary", relativePath)
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	data, err := os.ReadFile(userPolicy)
-	if err != nil {
-		t.Fatal(err)
-	}
-	const migrationStart = "### Migration from the retired policy binary"
-	const migrationEnd = "## Fields"
-	text := string(data)
-	start := strings.Index(text, migrationStart)
-	end := strings.Index(text, migrationEnd)
-	if start < 0 || end <= start {
-		t.Fatal("USER_POLICY migration section markers are missing or out of order")
-	}
-	withoutMigration := text[:start] + text[end:]
-	if retiredAppolicyName.MatchString(withoutMigration) {
-		t.Error("USER_POLICY documents the retired binary outside its migration section")
-	}
-}
-
-func assertProductionSourceExcludesRetiredAppolicy(t *testing.T, root string) {
-	t.Helper()
-	allowedRetirementPath := filepath.Join("internal", "signerapp", "policycmd", "passphrase.go")
-	for _, sourceRoot := range []string{"cmd", "internal"} {
-		err := filepath.WalkDir(filepath.Join(root, sourceRoot), func(path string, entry os.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-			if entry.IsDir() || filepath.Ext(path) != ".go" || strings.HasSuffix(path, "_test.go") {
-				return nil
-			}
-			relative, err := filepath.Rel(root, path)
-			if err != nil {
-				return err
-			}
-			if relative == allowedRetirementPath {
-				return nil
-			}
-			data, err := os.ReadFile(path)
-			if err != nil {
-				return err
-			}
-			if retiredAppolicyName.Match(data) {
-				t.Errorf("%s reintroduces the retired appolicy command or workflow", relative)
 			}
 			return nil
 		})

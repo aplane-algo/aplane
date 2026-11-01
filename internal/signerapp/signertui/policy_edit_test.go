@@ -15,7 +15,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/policy/policytest"
 	"github.com/aplane-algo/aplane/internal/protocol"
-	"github.com/aplane-algo/aplane/internal/signerapp/policyreview"
+	"github.com/aplane-algo/aplane/internal/signerapp/policytext"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -126,7 +126,7 @@ func TestPolicyEditStartsKeyOnTheDefaultFromTheDefault(t *testing.T) {
 	m := cosignerPoliciesModel("default")
 	m.width, m.height = 120, 40
 	m = openEditorForKeyOnDefault(t, m)
-	template, err := policyreview.Template(noderole.RoleCosigner, policyViewKeyA, []byte(cosignerDefaultDoc()))
+	template, err := policytext.Template(noderole.RoleCosigner, policyViewKeyA, []byte(cosignerDefaultDoc()))
 	if err != nil {
 		t.Fatal(err)
 	}
