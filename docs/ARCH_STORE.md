@@ -604,6 +604,12 @@ kept from the outgoing generation. Backup archives carry neither the node
 default nor the ASA set: a fresh node restored from a backup has the built-in
 assets only until its operator confirms assets again.
 
+**Upgrade boundary.** A generation that carries `asa_set.json` is refused by
+binaries older than the ASA set (their structure validation reports an
+unsupported entry). Such a generation is minted only after an operator
+confirms an asset, so a store without confirmations stays readable by the
+previous release; one with them cannot be downgraded across this boundary.
+
 ### Reconciliation and quarantine
 
 Reconciliation first authenticates the root and validates its selected
