@@ -262,3 +262,39 @@ func compact(m Model, pointer string) string {
 	}
 	return "[" + strings.Join(parts, ", ") + "]"
 }
+
+// Typing an asset ID shows what it is on the field's network before it is
+// set, and stores it as asa:<id>.
+func TestAssetEntryPreviewsAndNormalizes(t *testing.T) {
+	m, _ := editModel(t, "signer_key_full.json")
+	m = selectField(t, m, "/asset_sets/usd/testnet")
+	m, _ = press(t, m, "enter")
+	m = typeText(t, clearInput(t, m), "10458941")
+	if v := view(m); !strings.Contains(v, "asa:10458941 on testnet: USDC") || !strings.Contains(v, "unverified without its export") {
+		t.Fatalf("no preview for a built-in asset:\n%s", v)
+	}
+	m = typeText(t, clearInput(t, m), "10458941, 77, 88")
+	if v := view(m); !strings.Contains(v, "asa:88 on testnet: unknown asset") || !strings.Contains(v, "3 asset(s), 2 with a problem; first: asa:77") {
+		t.Fatalf("no summary for a list:\n%s", v)
+	}
+	m = typeText(t, clearInput(t, m), "010458941")
+	m, _ = press(t, m, "enter")
+	if got := m.session().Current().Draft.At("/asset_sets/usd/testnet/0").Text(); got != "asa:10458941" {
+		t.Fatalf("stored %q, want asa:10458941", got)
+	}
+	m, _ = press(t, m, "u", "ctrl+r")
+	if got := m.session().Current().Draft.At("/asset_sets/usd/testnet/0").Text(); got != "asa:10458941" {
+		t.Fatalf("after undo and redo: %q, want asa:10458941", got)
+	}
+
+	m = selectField(t, m, "/transfer_policy/routes/2/assets")
+	m, _ = press(t, m, "enter")
+	m = typeText(t, clearInput(t, m), "@usd, 31566704")
+	if v := view(m); !strings.Contains(v, "asa:31566704: a direct asset needs a route with exactly one network") {
+		t.Fatalf("a direct asset in a two-network route was not flagged:\n%s", v)
+	}
+	m, _ = press(t, m, "esc")
+	if m.session().Current().Draft.At("/transfer_policy/routes/2/assets/1").Exists() {
+		t.Fatal("esc kept the edit")
+	}
+}

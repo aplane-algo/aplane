@@ -134,20 +134,22 @@ func (e EditSpec) Value(input string, decimals uint64, known bool) ([]byte, erro
 	case EditText:
 		return json.Marshal(input)
 	case EditTerm:
-		if err := checkTerm(e.Term, input); err != nil {
+		term, err := normalizeTerm(e.Term, input)
+		if err != nil {
 			return nil, err
 		}
-		return json.Marshal(input)
+		return json.Marshal(term)
 	case EditTerms:
 		var terms []string
 		for _, part := range strings.Split(input, ",") {
 			if part = strings.TrimSpace(part); part == "" {
 				continue
 			}
-			if err := checkTerm(e.Term, part); err != nil {
+			term, err := normalizeTerm(e.Term, part)
+			if err != nil {
 				return nil, err
 			}
-			terms = append(terms, part)
+			terms = append(terms, term)
 		}
 		if terms == nil {
 			terms = []string{}
@@ -213,7 +215,7 @@ func checkTerm(kind TermKind, term string) error {
 		if _, ok := parseAssetRef(term); ok {
 			return nil
 		}
-		return fmt.Errorf(`%q is not an asset: use "algo" or "asa:<id>"`, term)
+		return fmt.Errorf(`%q is not an asset: use "algo", an asset ID or asa:<id>`, term)
 	case TermNetwork:
 		if term == "*" || validNetworkToken(term) {
 			return nil
@@ -245,6 +247,9 @@ type AddAction struct {
 	Label  string
 	Prompt string
 	apply  func(d *policy.Draft, input string) (*policy.Draft, error)
+	// previewAsset, for an action that takes an asset, reads the network
+	// and the stored asset term from input.
+	previewAsset func(input string) (network, term string, ok bool)
 }
 
 // Apply adds to d from input.
@@ -335,7 +340,8 @@ func ensure(d *policy.Draft, pointer string, value string) (*policy.Draft, error
 
 func addItem(label, prompt, list string, term TermKind) AddAction {
 	return AddAction{Label: label, Prompt: prompt, apply: func(d *policy.Draft, input string) (*policy.Draft, error) {
-		if err := checkTerm(term, input); err != nil {
+		input, err := normalizeTerm(term, input)
+		if err != nil {
 			return nil, err
 		}
 		v, _ := json.Marshal(input)
@@ -348,23 +354,36 @@ func addItem(label, prompt, list string, term TermKind) AddAction {
 
 // limitAdd adds a threshold for "network asset" under limits at base.
 func limitAdd(label, base string, cosigner bool) AddAction {
-	return AddAction{Label: label, Prompt: "network and asset, e.g. mainnet algo or mainnet asa:31566704", apply: func(d *policy.Draft, input string) (*policy.Draft, error) {
-		parts := strings.Fields(input)
-		if len(parts) != 2 {
-			return nil, fmt.Errorf("enter a network and an asset")
-		}
-		if err := checkTerm(TermNetwork, parts[0]); err != nil || parts[0] == "*" {
-			return nil, fmt.Errorf("%q is not a network token", parts[0])
-		}
-		if err := checkTerm(TermAssetRef, parts[1]); err != nil {
+	return AddAction{Label: label, Prompt: "network and asset, e.g. mainnet algo or mainnet 31566704", apply: func(d *policy.Draft, input string) (*policy.Draft, error) {
+		network, asset, err := limitTarget(input)
+		if err != nil {
 			return nil, err
 		}
 		value := `{"reject_above": "0"}`
 		if !cosigner {
 			value = `{"review_above": "0"}`
 		}
-		return ensure(d, base+"/"+escapeToken(parts[0])+"/"+escapeToken(parts[1]), value)
+		return ensure(d, base+"/"+escapeToken(network)+"/"+escapeToken(asset), value)
+	}, previewAsset: func(input string) (string, string, bool) {
+		network, asset, err := limitTarget(input)
+		return network, asset, err == nil
 	}}
+}
+
+// limitTarget reads "network asset", the asset normalized to its stored form.
+func limitTarget(input string) (network, asset string, err error) {
+	parts := strings.Fields(input)
+	if len(parts) != 2 {
+		return "", "", fmt.Errorf("enter a network and an asset")
+	}
+	if err := checkTerm(TermNetwork, parts[0]); err != nil || parts[0] == "*" {
+		return "", "", fmt.Errorf("%q is not a network token", parts[0])
+	}
+	asset, err = normalizeTerm(TermAssetRef, parts[1])
+	if err != nil {
+		return "", "", err
+	}
+	return parts[0], asset, nil
 }
 
 // Suggestions lists terms that fit the field, for an editor to offer: the

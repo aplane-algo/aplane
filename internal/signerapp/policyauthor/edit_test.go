@@ -32,6 +32,9 @@ func TestEditSpecValues(t *testing.T) {
 		{"terms", EditSpec{Kind: EditTerms, Term: TermDestination}, "@ops, self, *, " + testAddress, 0, false, `["@ops","self","*","` + testAddress + `"]`},
 		{"empty terms", EditSpec{Kind: EditTerms, Term: TermNetwork}, " , ", 0, false, `[]`},
 		{"asset terms", EditSpec{Kind: EditTerms, Term: TermAsset}, "algo, asa:31566704, @usd", 0, false, `["algo","asa:31566704","@usd"]`},
+		{"bare asset ID", EditSpec{Kind: EditTerms, Term: TermAssetRef}, "31566704", 0, false, `["asa:31566704"]`},
+		{"asset IDs with leading zeros", EditSpec{Kind: EditTerms, Term: TermAsset}, "007, asa:0031566704, *", 0, false, `["asa:7","asa:31566704","*"]`},
+		{"largest asset ID", EditSpec{Kind: EditTerm, Term: TermAssetRef}, "18446744073709551615", 0, false, `"asa:18446744073709551615"`},
 		{"one term", EditSpec{Kind: EditTerm, Term: TermAddress}, testAddress, 0, false, `"` + testAddress + `"`},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -56,7 +59,14 @@ func TestEditSpecValues(t *testing.T) {
 		{"bad checksum", EditSpec{Kind: EditTerm, Term: TermAddress}, testAddress[:57] + "B", false, "checksum"},
 		{"self as a source", EditSpec{Kind: EditTerms, Term: TermSource}, "self", false, "not a valid address"},
 		{"asa zero", EditSpec{Kind: EditTerms, Term: TermAsset}, "asa:0", false, "not an asset"},
-		{"bare asa id", EditSpec{Kind: EditTerms, Term: TermAssetRef}, "31566704", false, "not an asset"},
+		{"asset ID 0", EditSpec{Kind: EditTerms, Term: TermAssetRef}, "0", false, "IDs start at 1"},
+		{"asset ID 0 with leading zeros", EditSpec{Kind: EditTerms, Term: TermAssetRef}, "asa:000", false, "IDs start at 1"},
+		{"asset ID too large", EditSpec{Kind: EditTerms, Term: TermAsset}, "18446744073709551616", false, "too large"},
+		{"signed asset ID", EditSpec{Kind: EditTerms, Term: TermAsset}, "+5", false, "not an asset"},
+		{"negative asset ID", EditSpec{Kind: EditTerms, Term: TermAsset}, "-5", false, "not an asset"},
+		{"fractional asset ID", EditSpec{Kind: EditTerms, Term: TermAsset}, "1.5", false, "not an asset"},
+		{"exponent asset ID", EditSpec{Kind: EditTerms, Term: TermAsset}, "1e5", false, "not an asset"},
+		{"prefixed non-number", EditSpec{Kind: EditTerms, Term: TermAsset}, "asa:usdc", false, "not an asset"},
 		{"network", EditSpec{Kind: EditTerms, Term: TermNetwork}, "MainNet", false, "network token"},
 		{"set in a blocked list", EditSpec{Kind: EditTerm, Term: TermAddress}, "@ops", false, "not a valid address"},
 	} {
