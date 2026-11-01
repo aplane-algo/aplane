@@ -28,6 +28,7 @@ const (
 	screenSave
 	screenConflict
 	screenOverwrite
+	screenNew
 )
 
 type pane int
@@ -73,6 +74,7 @@ type Model struct {
 	// that are not saved.
 	save        saveState
 	quitConfirm bool
+	newDoc      newDoc
 
 	status string
 }
@@ -218,6 +220,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.conflictKeys(msg)
 		case screenOverwrite:
 			return m.overwriteKeys(msg)
+		case screenNew:
+			return m.newKeys(msg)
 		}
 	}
 	return m, nil
@@ -238,6 +242,8 @@ func (m Model) filesKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "r":
 		return m.reload(), nil
+	case "n":
+		return m.startNew(), nil
 	}
 	m.fileCursor = max(0, min(len(m.ws.Files)-1, m.fileCursor))
 	return m, nil
@@ -286,6 +292,8 @@ func (m Model) documentKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.startRemove(), nil
 	case "s":
 		return m.startSave(), nil
+	case "n":
+		return m.startNew(), nil
 	case "u":
 		return m.undo(), nil
 	case "ctrl+r":

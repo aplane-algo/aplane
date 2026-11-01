@@ -46,6 +46,8 @@ func (m Model) View() string {
 		body = m.pageView()
 	case screenConflict:
 		body = m.conflictView()
+	case screenNew:
+		body = m.newView()
 	default:
 		body = m.documentView()
 	}
@@ -82,7 +84,12 @@ func (m Model) footer() string {
 		}
 		return "r: Reload | a: Save as | o: Overwrite | esc: Back"
 	case screenFiles:
-		return "up/down: Select | enter: Open | r: Reload | q: Quit"
+		return "up/down: Select | enter: Open | n: New document | r: Reload | q: Quit"
+	case screenNew:
+		if m.newDoc.step == newStart || m.newDoc.step == newRole {
+			return "up/down: Choose | enter: Next | esc: Cancel"
+		}
+		return "enter: Next | esc: Cancel"
 	case screenProblems:
 		return "up/down: Select | enter: Go to | esc: Back | q: Quit"
 	case screenComparePick:

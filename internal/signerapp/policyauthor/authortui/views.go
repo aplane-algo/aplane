@@ -398,6 +398,7 @@ func (m Model) openHelp() Model {
 		"  d          remove the selected field, or a route from the outline",
 		"  u ctrl+r   undo / redo",
 		"  s          save: review the changes, then y to write",
+		"  n          new document (also on the files screen)",
 		"  ] [        next / previous problem",
 		"  p          list every problem; enter jumps to it",
 		"  x          explain the document in plain language",
