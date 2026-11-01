@@ -1337,7 +1337,13 @@ is marked `tightened`, `loosened`, or `changed`: raising or removing a
 threshold, clearing a `reject_*` flag, moving a type toward `allow`, adding
 a route, route term, or member of a set a route uses, relaxing a route-miss
 action, or removing a blocked destination loosens; the reverse tightens. A
-fee cap of `"0"` is compared as no cap, matching enforcement. Address sets
+fee cap of `"0"` is compared as no cap, matching enforcement. ASA
+thresholds are rendered in the node's context at the reviewed snapshot
+(`policy.DiffPolicyV1Labelled`, `policyreview.ContextLabel`): an asset its
+ASA set knows shows in display units with its base units, decimals, ID and
+network beside them, and an unknown asset in base units only, with no
+decimal count guessed. The apply names that snapshot, so the amounts
+reviewed are the ones committed. Address sets
 are compared on the members they cover on each network, so moving between
 flat and per-network forms is described by what changes where. Removing a
 restrictive per-key document can loosen (on a signer node it can enable

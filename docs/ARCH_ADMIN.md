@@ -1057,13 +1057,19 @@ For a loaded file:
    rather than opened. The file's `"key"` field selects the document:
    `default` or one key. The TUI refuses a file for a key the node does not
    hold, which the batch command only warns about; pre-staging a policy for a
-   key that is not yet held stays a batch operation.
+   key that is not yet held stays a batch operation. The file's export is
+   selected as the batch command selects it (`policyexport.Discover`): an
+   unfinished or damaged export is refused here, and once the check returns,
+   a file from an export the node has moved on from is refused before review
+   (`policyexport.Selected.Compare` against the paired context).
 2. `check_policy` validates the exact bytes. Errors are shown on the prompt
    and stop the load; warnings carry into the review.
 3. `get_policy_document`, against the snapshot, fetches the document that governs the key now: the
    key's own, or the node default it follows, and `policyreview.DiffCandidate`
    produces the same effective tightened/loosened/changed diff the batch
-   command prints, so a first document for a key is shown as a change from
+   command prints, rendered in the context of the reviewed snapshot (checked
+   against its digests) so ASA thresholds show display units beside base
+   units, so a first document for a key is shown as a change from
    the default. A file that decodes equal to the governing document reports
    `Policy unchanged` and cannot be applied.
 4. Only `y` confirms. `apply_policy` carries, as its concurrency base, the

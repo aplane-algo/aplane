@@ -252,6 +252,11 @@ again. An export that fails part way leaves a marker in `.appolicy`, and
 `appolicy` and `apadmin` refuse its files until you export again into a new
 directory.
 
+Reviews show each ASA threshold in the node's terms: an asset in the
+node's ASA set as display units with its base units, decimals, asset ID and
+network, for example `2.5 USDC (2500000 base units; 6 decimals, asset
+31566704 on mainnet)`, and any other asset in base units only.
+
 When `check`, `diff` or `apply` is given files from an export, it first
 compares the node with the export. If the node's policy, ASA set or network
 map changed since, it stops before showing any review:
@@ -299,7 +304,9 @@ and enter the file path. The TUI checks the file, shows the same diff as
 `apadmin policy diff`, and applies it only after you press `y`. The file's
 `"key"` field names the document, and the TUI refuses a file for a key the
 node does not hold; generate or import the key first. The path must name a
-regular file, not a symlink. The TUI does not remove documents or take several
+regular file, not a symlink. A file from an export is compared with the node
+as `apadmin policy apply` does: the TUI refuses an unfinished export, and a
+stale one before the review. The TUI does not remove documents or take several
 files at once; `apadmin policy` covers those.
 
 To take a copy of the node's current policy, open Policies (`p`) and press
