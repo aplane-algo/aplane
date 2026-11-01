@@ -229,19 +229,25 @@ func TestRemoveASARefusesWhileReferenced(t *testing.T) {
 	for name, tc := range map[string]struct {
 		sparse  string
 		pointer string
+		legacy  bool
 	}{
-		"a limit": {`{"limits": {"private-dev": {"asa:9": {"reject_above": "5"}}}}`, "/limits/private-dev/asa:9"},
-		// A direct term under "*" fails admission today, but it still names
-		// asset 9 on private-dev, so it still blocks removal.
-		"a direct term under every network": {`{"transfer_policy": {"routes": [{"id": "r", "networks": ["*"], "sources": ["*"], "assets": ["asa:9"], "destinations": ["*"]}]}}`,
-			"/transfer_policy/routes/0/assets/0"},
+		"a limit": {`{"limits": {"private-dev": {"asa:9": {"reject_above": "5"}}}}`, "/limits/private-dev/asa:9", false},
+		// A direct term under "*" is refused when submitted, but one stored
+		// before admission was enforced still names asset 9 on private-dev,
+		// so it still blocks removal.
+		"a stored direct term under every network": {`{"transfer_policy": {"routes": [{"id": "r", "networks": ["*"], "sources": ["*"], "assets": ["asa:9"], "destinations": ["*"]}]}}`,
+			"/transfer_policy/routes/0/assets/0", true},
 	} {
 		t.Run(name, func(t *testing.T) {
 			svc, ir, _ := setupASAAdmin(t)
 			if added := confirmASA9(t, svc); !added.Success {
 				t.Fatal(added)
 			}
-			applyDefault(t, svc, tc.sparse)
+			if tc.legacy {
+				storeLegacy(t, svc, ir, policy.DefaultKey, tc.sparse)
+			} else {
+				applyDefault(t, svc, tc.sparse)
+			}
 			before := currentGeneration(t, svc, ir)
 			got := svc.RemoveASA(adminproto.RemoveASARequest{Network: "private-dev", AssetID: 9})
 			if got.Success || got.Code != "asa_referenced" || len(got.Blocking) != 1 ||
@@ -297,16 +303,16 @@ func TestASASetRequiresLoadedState(t *testing.T) {
 
 // policy check warns about what a submitted document names that the node does
 // not know, and stops once the asset is confirmed. Nothing is refused yet.
-func TestPolicyCheckWarnsAboutAdmission(t *testing.T) {
+func TestPolicyCheckRefusesWhatTheNodeCannotAdmit(t *testing.T) {
 	svc, _, _ := setupASAAdmin(t)
 	doc := policytest.MustDocument(noderole.RoleSigner, policy.DefaultKey, `{"limits": {"private-dev": {"asa:9": {"reject_above": "5"}}, "mainet": {"algo": {"reject_above": "5"}}}}`)
 	check := func() []adminproto.PolicyProblem {
 		t.Helper()
 		result := svc.CheckPolicy(adminproto.CheckPolicyRequest{Documents: []adminproto.PolicyDocument{{Key: policy.DefaultKey, Document: doc}}})
-		if !result.Success || !result.Valid {
-			t.Fatalf("CheckPolicy() = %+v, want valid", result)
+		if !result.Success || result.Valid {
+			t.Fatalf("CheckPolicy() = %+v, want it invalid", result)
 		}
-		return result.Warnings
+		return result.Errors
 	}
 	pointers := func(problems []adminproto.PolicyProblem) string {
 		var out []string
@@ -318,13 +324,81 @@ func TestPolicyCheckWarnsAboutAdmission(t *testing.T) {
 		return strings.Join(out, " ")
 	}
 	if got := pointers(check()); got != "/limits/mainet /limits/private-dev/asa:9" {
-		t.Fatalf("warnings before confirming = %q", got)
+		t.Fatalf("errors before confirming = %q", got)
 	}
 	if added := confirmASA9(t, svc); !added.Success {
 		t.Fatal(added)
 	}
 	if got := pointers(check()); got != "/limits/mainet" {
-		t.Fatalf("warnings after confirming = %q", got)
+		t.Fatalf("errors after confirming = %q", got)
+	}
+	fixed := policytest.MustDocument(noderole.RoleSigner, policy.DefaultKey, `{"limits": {"private-dev": {"asa:9": {"reject_above": "5"}}, "mainnet": {"algo": {"reject_above": "5"}}}}`)
+	if result := svc.CheckPolicy(adminproto.CheckPolicyRequest{Documents: []adminproto.PolicyDocument{{Key: policy.DefaultKey, Document: fixed}}}); !result.Valid {
+		t.Fatalf("CheckPolicy(fixed) = %+v", result)
+	}
+	// Apply refuses what check refuses, before anything is written.
+	before := svc.GetPolicy().PolicySetSHA256
+	got := svc.ApplyPolicy(adminproto.ApplyPolicyRequest{
+		Documents:               []adminproto.PolicyDocument{{Key: policy.DefaultKey, Document: doc}},
+		ExpectedPolicySetSHA256: before,
+		ExpectedSnapshotSHA256:  svc.GetPolicyContext().SnapshotSHA256,
+	})
+	if got.Success || got.Code != "policy_validation_failed" || len(got.Errors) == 0 || svc.GetPolicy().PolicySetSHA256 != before {
+		t.Fatalf("ApplyPolicy(unadmissible) = %+v", got)
+	}
+}
+
+// storeLegacy stores a document for key straight into the active
+// generation, as one written before admission was enforced would be, and
+// reloads the runtime.
+func storeLegacy(t *testing.T, svc Service, ir *productruntime.Runtime, key, sparse string) string {
+	t.Helper()
+	doc := policytest.MustDocument(noderole.RoleSigner, key, sparse)
+	if err := ir.WithKeyring(func(kr *crypto.Keyring) error {
+		active, err := genstore.ResolveStoreRootWithKeyring(svc.Deps.KeyPaths(), kr)
+		if err != nil {
+			return err
+		}
+		if key == policy.DefaultKey {
+			return policy.WriteDefault(active, noderole.RoleSigner, []byte(doc), kr, time.Unix(1_700_000_000, 0))
+		}
+		return policy.WriteKeyPolicy(active, noderole.RoleSigner, key, []byte(doc), kr, time.Unix(1_700_000_000, 0))
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ir.Reload(); err != nil {
+		t.Fatalf("a node with a legacy document did not reload: %v", err)
+	}
+	return doc
+}
+
+// A stored document that would not be admitted today keeps its meaning: the
+// node loads it, and changes that leave it alone go ahead. Only submitting
+// it again, even unchanged, requires fixing it; removing it needs no repair.
+func TestLegacyDocumentsDoNotBlockOtherChanges(t *testing.T) {
+	svc, ir, _ := setupASAAdmin(t)
+	legacyDefault := storeLegacy(t, svc, ir, policy.DefaultKey, `{"limits": {"mainet": {"algo": {"reject_above": "5"}}}}`)
+	const key = "CEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI7JH2AYM"
+	storeLegacy(t, svc, ir, key, `{"transfer_policy": {"routes": [{"id": "r", "networks": ["mainnet", "testnet"], "sources": ["*"], "assets": ["asa:31566704"], "destinations": ["*"]}]}}`)
+
+	apply := func(req adminproto.ApplyPolicyRequest) adminproto.ApplyPolicyResult {
+		t.Helper()
+		req.ExpectedPolicySetSHA256 = svc.GetPolicy().PolicySetSHA256
+		req.ExpectedSnapshotSHA256 = svc.GetPolicyContext().SnapshotSHA256
+		return svc.ApplyPolicy(req)
+	}
+	other := "EIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRDOHSEZI"
+	if got := apply(adminproto.ApplyPolicyRequest{Documents: []adminproto.PolicyDocument{{Key: other, Document: policytest.MustDocument(noderole.RoleSigner, other, "")}}}); !got.Success {
+		t.Fatalf("an unrelated apply beside legacy documents = %+v", got)
+	}
+	if added := confirmASA9(t, svc); !added.Success {
+		t.Fatalf("an ASA set change beside legacy documents = %+v", added)
+	}
+	if got := apply(adminproto.ApplyPolicyRequest{Documents: []adminproto.PolicyDocument{{Key: policy.DefaultKey, Document: legacyDefault}}}); got.Success || got.Code != "policy_validation_failed" {
+		t.Fatalf("resubmitting the legacy default unchanged = %+v, want it refused", got)
+	}
+	if got := apply(adminproto.ApplyPolicyRequest{Remove: []string{key}}); !got.Success {
+		t.Fatalf("removing a legacy key document = %+v", got)
 	}
 }
 
@@ -403,8 +477,8 @@ func TestPolicyCheckBoundsItsDiagnostics(t *testing.T) {
 		"asset_sets": {"many": {"private-dev": [`+strings.Join(members, ",")+`]}},
 		"transfer_policy": {"routes": [{"id": "two-nets", "networks": ["mainnet", "testnet"], "sources": ["*"], "assets": ["asa:5"], "destinations": ["*"]}]}}`)
 	result := svc.CheckPolicy(adminproto.CheckPolicyRequest{Documents: []adminproto.PolicyDocument{{Key: policy.DefaultKey, Document: doc}}})
-	if !result.Success || !result.Valid {
-		t.Fatalf("CheckPolicy() = code %q error %q errors %.300v", result.Code, result.Error, result.Errors)
+	if !result.Success || result.Valid {
+		t.Fatalf("CheckPolicy() = code %q error %q valid %v", result.Code, result.Error, result.Valid)
 	}
 	if n := len(result.Errors) + len(result.Warnings); n > policyapply.MaxResponseProblems+1 {
 		t.Fatalf("response carries %d problems", n)
@@ -413,7 +487,7 @@ func TestPolicyCheckBoundsItsDiagnostics(t *testing.T) {
 	if !strings.Contains(last, "more problem(s) omitted") {
 		t.Fatalf("the response does not say findings were omitted: %q", last)
 	}
-	for _, w := range result.Warnings {
+	for _, w := range append(result.Errors, result.Warnings...) {
 		if len(w.Message) > policyapply.MaxProblemTextBytes || len(w.Pointer) > policyapply.MaxProblemTextBytes {
 			t.Fatalf("a problem exceeds %d bytes: %d / %d", policyapply.MaxProblemTextBytes, len(w.Message), len(w.Pointer))
 		}

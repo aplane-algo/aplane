@@ -141,6 +141,20 @@ func Candidate(env Env, current *policyruntime.NodePolicy, docs []adminproto.Pol
 	if len(problems) > 0 {
 		return nil, problems, nil
 	}
+	// Admission applies to what is submitted, and only to that: a stored
+	// document the change leaves alone keeps its meaning and never blocks the
+	// change, while a document submitted again, even unchanged, must pass.
+	// Removals need no repair first.
+	ctx, err := NodeContext(env)
+	if err != nil {
+		return nil, nil, Error{"policy_context_unavailable", fmt.Sprintf("the node's policy context is unavailable: %v", err)}
+	}
+	for _, doc := range docs {
+		problems = append(problems, admissionProblems(ctx, env.Role, doc)...)
+	}
+	if len(problems) > 0 {
+		return nil, problems, nil
+	}
 	candidate, err := policyruntime.Compile(env.Role, env.DataDir, env.Config, resulting)
 	if err != nil {
 		return nil, []adminproto.PolicyProblem{{Message: err.Error()}}, nil
@@ -160,7 +174,6 @@ func Check(env Env, current *policyruntime.NodePolicy, req adminproto.CheckPolic
 	if candidate != nil {
 		for _, doc := range req.Documents {
 			result.Warnings = append(result.Warnings, advisoryWarnings(env.Role, doc)...)
-			result.Warnings = append(result.Warnings, AdmissionProblems(env, doc)...)
 		}
 		result.Warnings = append(result.Warnings, CoverageWarnings(KeyStatus(env.HeldKeys, candidate))...)
 	}
@@ -221,22 +234,15 @@ func TruncateText(s string, limit int) string {
 	return s[:cut] + "…"
 }
 
-// AdmissionProblems reports what a submitted document names that this node
-// does not know: a network outside its mapping, an asset outside its ASA set,
-// a direct asa:<id> route term over several networks, and a route with no
-// asset on one of its networks. They are warnings for now; submitted
-// documents will be refused for them once the rules are enforced.
-func AdmissionProblems(env Env, doc adminproto.PolicyDocument) []adminproto.PolicyProblem {
-	if env.ASASet == nil {
-		return nil
-	}
-	decoded, err := policy.DecodePolicyV1([]byte(doc.Document), doc.Key, env.Role)
+// admissionProblems reports what a submitted document names that the node
+// ctx describes does not know: a network outside its mapping, an asset
+// outside its ASA set, a direct asa:<id> route term over several networks,
+// and a route with no asset on one of its networks. A submitted document is
+// refused for any of them.
+func admissionProblems(ctx *policycontext.Context, role noderole.Role, doc adminproto.PolicyDocument) []adminproto.PolicyProblem {
+	decoded, err := policy.DecodePolicyV1([]byte(doc.Document), doc.Key, role)
 	if err != nil {
 		return nil
-	}
-	ctx, err := NodeContext(env)
-	if err != nil {
-		return []adminproto.PolicyProblem{{Key: doc.Key, Message: "the node's policy context is unavailable: " + err.Error()}}
 	}
 	found := policyadmission.Check(decoded, ctx)
 	out := make([]adminproto.PolicyProblem, 0, len(found))
@@ -370,7 +376,8 @@ func Commit(env Env, req adminproto.ApplyPolicyRequest) (Outcome, error) {
 	} else if !strings.EqualFold(req.ExpectedSnapshotSHA256, snapshot) {
 		return Outcome{}, Error{"policy_snapshot_changed", "the node's ASA set or network mapping changed since this change was reviewed; review it again"}
 	}
-	candidate, problems, err := Candidate(env, current, req.Documents, req.Remove)
+	// Admission is checked against the same verified set the snapshot was.
+	candidate, problems, err := Candidate(reviewEnv, current, req.Documents, req.Remove)
 	if err != nil {
 		return Outcome{}, err
 	}
