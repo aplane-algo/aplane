@@ -181,9 +181,9 @@ func termHint(t policyauthor.TermKind) string {
 	case policyauthor.TermDestination:
 		return `addresses, "*", "self" or @sets`
 	case policyauthor.TermAsset:
-		return `"algo", asa:<id>, "*" or @sets`
+		return `"algo", asset IDs (stored as asa:<id>), "*" or @sets`
 	case policyauthor.TermAssetRef:
-		return `"algo" or asa:<id>`
+		return `"algo" or asset IDs (stored as asa:<id>)`
 	case policyauthor.TermNetwork:
 		return `network tokens, or "*" for every network`
 	case policyauthor.TermRekeyTarget:
@@ -467,9 +467,51 @@ func (m Model) promptLines() []string {
 	case promptEdit:
 		lines = append(lines, ansi.Truncate(p.input.View(), m.width, "…"))
 	}
+	lines = append(lines, m.assetPreviewLines()...)
 	if p.err != "" {
 		lines = append(lines, m.styles.err.Render(ansi.Truncate(p.err, m.width, "…")))
 	}
 	lines = append(lines, m.styles.subtle.Render(ansi.Truncate(p.hint, m.width, "…")))
+	return lines
+}
+
+// assetPreviewLines says what the assets typed into the edit bar are on the
+// field's network, from the loaded export or the built-in tables: the term
+// the cursor is in, and for a list a count of the problems among all terms.
+func (m Model) assetPreviewLines() []string {
+	p := m.prompt
+	var previews []policyauthor.AssetPreview
+	current := 0
+	switch {
+	case p.kind == promptEdit && p.field.Edit != nil:
+		previews = p.field.Edit.AssetPreviews(m.session().Current().Draft, m.ws.Node, p.input.Value())
+		current = policyauthor.TermIndexAt(p.input.Value(), p.input.Position())
+	case p.kind == promptAdd && !p.picking && p.pick < len(p.adds):
+		previews = p.adds[p.pick].AssetPreviews(m.ws.Node, p.input.Value())
+	}
+	if len(previews) == 0 {
+		return nil
+	}
+	render := func(text string, problem bool) string {
+		text = ansi.Truncate(text, m.width, "…")
+		if problem {
+			return m.styles.warn.Render(text)
+		}
+		return m.styles.subtle.Render(text)
+	}
+	var lines []string
+	for _, pv := range previews {
+		if pv.Index == current {
+			lines = append(lines, render(pv.String(), pv.Status.Problem()))
+		}
+	}
+	if len(previews) > 1 || len(lines) == 0 {
+		summary := policyauthor.SummarizeAssets(previews)
+		problem := false
+		for _, pv := range previews {
+			problem = problem || pv.Status.Problem()
+		}
+		lines = append(lines, render(summary, problem))
+	}
 	return lines
 }

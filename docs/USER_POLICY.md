@@ -591,7 +591,18 @@ appolicy test policy/               # re-run the saved cases in policy/.appolicy
     and where they came from) and stored in base units; address lists are
     checked as you type, and tab inserts a suggestion the field accepts
     (`*`, `self`, a set of the right kind, a network, or an address or asset
-    the document already uses). `a` adds to a section (a route, a set, a
+    the document already uses). An asset is typed by its ID, bare
+    (`31566704`) or as `asa:31566704`, and stored as `asa:<id>`; files
+    themselves must use `asa:<id>`, which check and fmt never repair.
+    Before you press enter, the editor shows what the ID is on the field's
+    network: an asset-set member's network, a route's one network, or the
+    network you name in a new limit. With an export it says whether the
+    node's ASA set has it, as the export recorded it; without one it says
+    whether the built-in table has it, or that its decimals are unknown and
+    amounts are in base units. A direct ID in a route over several networks
+    or `*` gets no identity: name the asset per network in an asset set. For
+    a list, the asset being typed is shown, with a count of problems among
+    all of them. `a` adds to a section (a route, a set, a
     member, a limit, a transaction type, a rekey edge, or a starting value
     for a missing or broken part), `C` copies the selected route, address or
     rekey edge (sets are copied with `a`), `d` removes the selected field or
