@@ -5,7 +5,6 @@ package tui
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -125,13 +124,10 @@ func (m Model) submitPolicyApplyFile() (tea.Model, tea.Cmd) {
 		apply.err = "The interactive TUI requires a file path; use batch apadmin policy apply - for stdin"
 		return m, nil
 	}
-	if path == "~" || strings.HasPrefix(path, "~/") {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			apply.err = fmt.Sprintf("resolve home directory: %v", err)
-			return m, nil
-		}
-		path = filepath.Join(home, strings.TrimPrefix(path, "~/"))
+	path, err := expandHomePath(path)
+	if err != nil {
+		apply.err = err.Error()
+		return m, nil
 	}
 	// Regular files only: this runs inside the event loop, where opening a
 	// FIFO or device would block every key, timer, and daemon message.

@@ -119,6 +119,11 @@ func (m Model) viewFooterText() string {
 		return m.policyEditFooterText()
 	case ViewPolicyPresetPick:
 		return "up/down: Select | enter: Open in editor | esc/q: Back"
+	case ViewPolicyExportForm:
+		if m.policies.export.busy != "" {
+			return "esc: Cancel"
+		}
+		return "enter: Export | esc: Cancel"
 	case ViewTemplateLibrary:
 		return "up/down: Select | enter: Toggle availability | t: Template | r: Refresh | esc: Back"
 	case ViewTemplateInstallConfirm:

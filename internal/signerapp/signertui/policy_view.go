@@ -37,6 +37,7 @@ type policiesState struct {
 	// status reports the last apply on the list.
 	status string
 	apply  policyApplyState
+	export policyExportState
 	// presetPick is the starting-text picker shown before the editor.
 	presetPick policyPresetPickState
 }
@@ -131,6 +132,8 @@ func (m Model) handlePoliciesKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.requestPolicy()
 	case "a":
 		return m.openPolicyApply()
+	case "x":
+		return m.openPolicyExport()
 	case "e":
 		if m.policies.selected < len(rows) {
 			return m.openPolicyPresetPick(rows[m.policies.selected])
@@ -158,6 +161,9 @@ func (m Model) handlePoliciesKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handlePolicyDocumentLoaded(msg PolicyDocumentLoadedMsg) (tea.Model, tea.Cmd) {
+	if msg.Document.ID != "" && msg.Document.ID == m.policies.export.pendingID {
+		return m.handlePolicyExportDocumentLoaded(msg)
+	}
 	if msg.Document.ID != "" && msg.Document.ID == m.policies.apply.pendingDocumentID {
 		return m.handlePolicyApplyDocumentLoaded(msg)
 	}
@@ -230,7 +236,7 @@ func (m Model) renderPolicies() string {
 		return sb.String()
 	}
 	p := m.policies.policy
-	sb.WriteString(subtitleStyle.Render(fmt.Sprintf("%s node  ·  e edits the selected policy; a loads a policy file; apadmin policy covers remove and rescue", p.NodeRole)))
+	sb.WriteString(subtitleStyle.Render(fmt.Sprintf("%s node  ·  e edits the selected policy; a loads a policy file; x exports the policy; apadmin policy covers remove and rescue", p.NodeRole)))
 	sb.WriteString("\n\n")
 	rows := m.policyRows()
 	if len(rows) == 0 {
@@ -336,7 +342,7 @@ func (m Model) policiesFooterText() string {
 		}
 		return footer
 	}
-	return "up/down: Select | enter: View | e: Edit | a: Load file | r: Refresh | esc/q: Back"
+	return "up/down: Select | enter: View | e: Edit | a: Load file | x: Export | r: Refresh | esc/q: Back"
 }
 
 // SendGetPolicy requests the node's policy summary under request id.

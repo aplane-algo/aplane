@@ -267,6 +267,15 @@ node does not hold; generate or import the key first. The path must name a
 regular file, not a symlink. The TUI does not remove documents or take several
 files at once; `apadmin policy` covers those.
 
+To take a copy of the node's current policy, open Policies (`p`) and press
+`x`. The TUI writes every active document, exactly as stored, into a new or
+empty directory (the prompt suggests `~/policy-export-<time>`): the node
+default as `default.json` and each key's own document as `<key>.json`, mode
+0600. It refuses a directory that already holds files, and it writes nothing
+if the policy changed while the documents were being read; refresh and export
+again. The files can be checked, explained, and edited offline with
+`appolicy`, and installed again with `apadmin policy apply`.
+
 ### Editing a policy in apadmin
 
 To change a policy without a file, open Policies (`p`), select the document,

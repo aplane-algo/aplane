@@ -557,8 +557,16 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case policyRequestFailedMsg:
 		// A local send failure, not a daemon message: nothing was consumed
 		// from the listener, so do not start another wait.
+		if next, ok := m.failPendingPolicyExport(msg.id, msg.err); ok {
+			return next, nil
+		}
 		next, _ := m.failPendingPolicyApply(msg.id, msg.err)
 		return next, nil
+
+	case PolicyExportWrittenMsg:
+		// A local write, not a daemon message: the listener wait started with
+		// the write is still outstanding.
+		return m.handlePolicyExportWritten(msg)
 
 	case adminRefreshTickMsg:
 		// Periodic admin panel refresh — only poll while admin panel is active
@@ -937,6 +945,8 @@ func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handlePolicyEditKeys(msg)
 	case ViewPolicyPresetPick:
 		return m.handlePolicyPresetPickKeys(msg)
+	case ViewPolicyExportForm:
+		return m.handlePolicyExportFormKeys(msg)
 	case ViewTemplateLibrary:
 		return m.handleTemplateLibraryKeys(msg)
 	case ViewTemplateInstallConfirm:
@@ -989,6 +999,7 @@ func (m Model) usesSharedPopupViewport() bool {
 		ViewLockConfirm,
 		ViewDisplaceConfirm,
 		ViewPolicyApplyForm,
+		ViewPolicyExportForm,
 		ViewTemplateInstallConfirm,
 		ViewTemplateInstalling,
 		ViewError:
