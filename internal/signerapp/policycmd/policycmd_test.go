@@ -17,10 +17,13 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
+	"github.com/aplane-algo/aplane/internal/asaset"
+	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/policy/policytest"
+	"github.com/aplane-algo/aplane/internal/policycontext"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/policytext"
 	"github.com/aplane-algo/aplane/internal/signerapp/storevalidate"
@@ -69,6 +72,44 @@ type fakeOnlineSession struct {
 	// policy set digest the context reports instead of the summary's.
 	snapshot   string
 	contextSet string
+	// context, when set, is the full context served instead of digests alone.
+	context *protocol.PolicyContextMessage
+}
+
+// makeReal gives the session true digests and a node's whole context: the
+// built-in networks and assets, plus each of extraNetworks (token to
+// genesis hash), so an export of it can be written and read back.
+func (f *fakeOnlineSession) makeReal(t *testing.T, extraNetworks map[string]string) {
+	t.Helper()
+	var stored []policy.StoredDocument
+	for _, info := range f.policy.Documents {
+		stored = append(stored, policy.StoredDocument{Key: info.Key, Bytes: []byte(f.bodies[info.Key])})
+	}
+	f.policy.PolicySetSHA256 = policy.PolicySetSHA256(stored)
+	byHash := map[string]string{}
+	for token, hash := range extraNetworks {
+		byHash[hash] = token
+	}
+	networks, err := apconfig.NewGenesisHashNetworkResolver(byHash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, err := policycontext.New(noderole.Role(f.policy.NodeRole), networks, asaset.Empty())
+	if err != nil {
+		t.Fatal(err)
+	}
+	msg := &protocol.PolicyContextMessage{
+		Success: true, NodeRole: f.policy.NodeRole, RulesVersion: ctx.RulesVersion(), ContextSHA256: ctx.SHA256(),
+		PolicySetSHA256: f.policy.PolicySetSHA256, SnapshotSHA256: policycontext.SnapshotSHA256(ctx.SHA256(), f.policy.PolicySetSHA256),
+	}
+	for token, genesis := range ctx.Networks() {
+		msg.Networks = append(msg.Networks, protocol.PolicyNetwork{Network: token, GenesisHash: genesis.String()})
+	}
+	for _, a := range ctx.Assets().Assets() {
+		msg.Assets = append(msg.Assets, protocol.ASAInfo{GenesisHash: a.Genesis.String(), AssetID: a.AssetID,
+			Name: a.Name, UnitName: a.UnitName, Decimals: a.Decimals, Origin: string(a.Origin)})
+	}
+	f.context, f.snapshot = msg, msg.SnapshotSHA256
 }
 
 // newFakeSession returns a session for a node of role holding docs. A node
@@ -118,6 +159,9 @@ func (f *fakeOnlineSession) SendAndReceive(message interface{}, _ time.Duration)
 			set = f.contextSet
 		}
 		reply := protocol.PolicyContextMessage{Success: true, NodeRole: f.policy.NodeRole, PolicySetSHA256: set, SnapshotSHA256: f.snapshot}
+		if f.context != nil {
+			reply = *f.context
+		}
 		reply.BaseMessage = protocol.BaseMessage{Type: protocol.MsgTypePolicyContext, ID: request.ID}
 		return protocol.MarshalAdminMessage(reply)
 	case protocol.GetPolicyDocumentMessage:

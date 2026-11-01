@@ -12,10 +12,55 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/asaset"
+	apconfig "github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/policycontext"
+	"github.com/aplane-algo/aplane/internal/policyexport"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	tea "github.com/charmbracelet/bubbletea"
 )
+
+// exportPoliciesModel is the policies view of a cosigner node holding docs,
+// with the context such a node sends: the built-in networks and assets.
+func exportPoliciesModel(t *testing.T, docs map[string]string, order ...string) Model {
+	t.Helper()
+	summary := exportSummary(docs, order...)
+	m := Model{viewState: ViewKeyList}
+	next, _ := m.openPolicies()
+	m = next.(Model)
+	summary.ID = m.policies.pendingPolicyID
+	next, _ = m.handlePolicyLoaded(PolicyLoadedMsg{Policy: summary})
+	m = next.(Model)
+
+	networks, err := apconfig.NewGenesisHashNetworkResolver(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, err := policycontext.New(noderole.RoleCosigner, networks, asaset.Empty())
+	if err != nil {
+		t.Fatal(err)
+	}
+	msg := protocol.PolicyContextMessage{
+		BaseMessage: BaseMessage{ID: m.policies.pendingContextID}, Success: true,
+		NodeRole: string(ctx.Role()), RulesVersion: ctx.RulesVersion(), ContextSHA256: ctx.SHA256(),
+		PolicySetSHA256: summary.PolicySetSHA256, SnapshotSHA256: policycontext.SnapshotSHA256(ctx.SHA256(), summary.PolicySetSHA256),
+	}
+	for token, genesis := range ctx.Networks() {
+		msg.Networks = append(msg.Networks, protocol.PolicyNetwork{Network: token, GenesisHash: genesis.String()})
+	}
+	for _, a := range ctx.Assets().Assets() {
+		msg.Assets = append(msg.Assets, protocol.ASAInfo{GenesisHash: a.Genesis.String(), AssetID: a.AssetID,
+			Name: a.Name, UnitName: a.UnitName, Decimals: a.Decimals, Origin: string(a.Origin)})
+	}
+	next, _ = m.handlePolicyContextLoaded(PolicyContextLoadedMsg{Context: msg})
+	m = next.(Model)
+	if m.policies.snapshot == "" {
+		t.Fatal("the context did not settle a snapshot")
+	}
+	return m
+}
 
 func exportInfo(key, text string) protocol.PolicyDocumentInfoWire {
 	sum := sha256.Sum256([]byte(text))
@@ -53,6 +98,9 @@ func runExport(t *testing.T, m Model, dir string, docs map[string]string) (Model
 		// The key requested is the one not yet fetched, in summary order.
 		fetched := len(m.policies.export.docs)
 		want := m.policies.policy.Documents[fetched].Key
+		if got := m.policies.export.snapshot; got != m.policies.snapshot {
+			t.Fatalf("export fetches against %q, want the summary's snapshot", got)
+		}
 		next, cmd = m.handlePolicyDocumentLoaded(PolicyDocumentLoadedMsg{Document: protocol.PolicyDocumentMessage{
 			BaseMessage: protocol.BaseMessage{ID: m.policies.export.pendingID}, Success: true, Key: want, Document: docs[want],
 		}})
@@ -63,14 +111,14 @@ func runExport(t *testing.T, m Model, dir string, docs map[string]string) (Model
 
 func TestPolicyExportWritesEveryDocument(t *testing.T) {
 	docs := map[string]string{policy.DefaultKey: "{\"key\": \"default\"}\n", policyViewKeyA: "{\"key\": \"" + policyViewKeyA + "\"}\n"}
-	m := loadedPoliciesModel(exportSummary(docs, policy.DefaultKey, policyViewKeyA))
+	m := exportPoliciesModel(t, docs, policy.DefaultKey, policyViewKeyA)
 	dir := filepath.Join(t.TempDir(), "export")
 	m, _ = runExport(t, m, dir, docs)
 	if m.policies.export.busy != "Writing policy files..." || len(m.policies.export.docs) != 2 {
 		t.Fatalf("after fetching: busy %q, %d docs", m.policies.export.busy, len(m.policies.export.docs))
 	}
 
-	written := writePolicyExportCmd(m.policies.export.path, m.policies.export.docs, m.policies.export.setSHA256)().(PolicyExportWrittenMsg)
+	written := writePolicyExportCmd(m.policies.export.path, m.policies.export.docs, m.policies.export.context)().(PolicyExportWrittenMsg)
 	next, _ := m.handlePolicyExportWritten(written)
 	m = next.(Model)
 	if m.viewState != ViewPolicies || !strings.Contains(m.policies.status, "Exported 2 policy document(s) to "+dir) || !strings.Contains(m.policies.status, "appolicy check") {
@@ -82,15 +130,32 @@ func TestPolicyExportWritesEveryDocument(t *testing.T) {
 			t.Fatalf("%s.json = %q, %v", key, data, err)
 		}
 	}
+	selected, err := policyexport.Discover([]string{filepath.Join(dir, policy.DefaultKey+".json")}, "")
+	if err != nil || selected == nil || selected.Export.Baseline.SnapshotSHA256 != m.policies.snapshot {
+		t.Fatalf("the export's context = %+v, %v; want the snapshot it was read at", selected, err)
+	}
+}
+
+func TestPolicyExportWaitsForTheContext(t *testing.T) {
+	docs := map[string]string{policy.DefaultKey: "{}\n"}
+	m := exportPoliciesModel(t, docs, policy.DefaultKey)
+	m.policies.snapshot = ""
+	next, _ := m.handlePoliciesKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	m = next.(Model)
+	m.policies.export.path = filepath.Join(t.TempDir(), "export")
+	next, _ = m.handlePolicyExportFormKeys(tea.KeyMsg{Type: tea.KeyEnter})
+	if got := next.(Model); got.policies.export.pendingID != "" || !strings.Contains(got.policies.export.err, "still loading") {
+		t.Fatalf("export state %+v, want it to wait for the context", got.policies.export)
+	}
 }
 
 func TestPolicyExportRefusesAPolicyThatChanged(t *testing.T) {
 	docs := map[string]string{policy.DefaultKey: "{}\n", policyViewKeyA: "{\"a\": 1}\n"}
-	m := loadedPoliciesModel(exportSummary(docs, policy.DefaultKey, policyViewKeyA))
+	m := exportPoliciesModel(t, docs, policy.DefaultKey, policyViewKeyA)
 	dir := filepath.Join(t.TempDir(), "export")
 	changed := map[string]string{policy.DefaultKey: docs[policy.DefaultKey], policyViewKeyA: "{\"a\": 2}\n"}
 	m, _ = runExport(t, m, dir, changed)
-	written := writePolicyExportCmd(m.policies.export.path, m.policies.export.docs, m.policies.export.setSHA256)().(PolicyExportWrittenMsg)
+	written := writePolicyExportCmd(m.policies.export.path, m.policies.export.docs, m.policies.export.context)().(PolicyExportWrittenMsg)
 	next, _ := m.handlePolicyExportWritten(written)
 	m = next.(Model)
 	if m.viewState != ViewPolicyExportForm || !strings.Contains(m.policies.export.err, "changed while it was being exported") {
@@ -139,7 +204,7 @@ func TestPolicyExportIsAdvertised(t *testing.T) {
 // other request leaves it waiting.
 func TestPolicyExportEndsOnADaemonError(t *testing.T) {
 	docs := map[string]string{policy.DefaultKey: "{}\n", policyViewKeyA: "{}\n"}
-	m := loadedPoliciesModel(exportSummary(docs, policy.DefaultKey, policyViewKeyA))
+	m := exportPoliciesModel(t, docs, policy.DefaultKey, policyViewKeyA)
 	next, _ := m.handlePoliciesKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
 	next, _ = next.(Model).handlePolicyExportFormKeys(tea.KeyMsg{Type: tea.KeyEnter})
 	m = next.(Model)

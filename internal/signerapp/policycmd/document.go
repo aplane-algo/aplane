@@ -14,6 +14,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/policyexport"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyreview"
 	"github.com/aplane-algo/aplane/internal/signerapp/policytext"
 )
@@ -72,6 +73,9 @@ func run(ctx context.Context, command Command, streams Streams, backend Backend)
 		printStatus(streams.Stdout, view)
 		return nil
 	case VerbExport:
+		if command.ExportDir != "" {
+			return exportAll(ctx, backend, streams, command.ExportDir)
+		}
 		doc, err := backend.Document(ctx, command.documentKey(), "")
 		if err != nil {
 			return err
@@ -104,16 +108,37 @@ func run(ctx context.Context, command Command, streams Streams, backend Backend)
 		_, err = io.WriteString(streams.Stdout, text)
 		return err
 	case VerbCheck:
+		selected, err := selectExport(command, streams)
+		if err != nil {
+			return err
+		}
+		if selected != nil {
+			_, pctx, err := getReviewState(ctx, backend)
+			if err != nil {
+				return err
+			}
+			if err := compareExport(selected, pctx); err != nil {
+				return err
+			}
+		}
 		docs, names, err := policyreview.ReadDocuments(command.Args, streams.Stdin)
 		if err != nil {
 			return err
 		}
 		return checkDocuments(ctx, backend, streams, adminproto.CheckPolicyRequest{Documents: docs}, names)
 	case VerbDiff:
-		view, snapshot, err := getReviewState(ctx, backend)
+		selected, err := selectExport(command, streams)
 		if err != nil {
 			return err
 		}
+		view, pctx, err := getReviewState(ctx, backend)
+		if err != nil {
+			return err
+		}
+		if err := compareExport(selected, pctx); err != nil {
+			return err
+		}
+		snapshot := pctx.SnapshotSHA256
 		docs, names, err := policyreview.ReadDocuments(command.Args, streams.Stdin)
 		if err != nil {
 			return err
@@ -125,10 +150,21 @@ func run(ctx context.Context, command Command, streams Streams, backend Backend)
 		policyreview.PrintDiffs(streams.Stdout, diffs)
 		return nil
 	case VerbApply, VerbRemove:
-		view, snapshot, err := getReviewState(ctx, backend)
+		var selected *policyexport.Selected
+		if command.Verb == VerbApply {
+			var err error
+			if selected, err = selectExport(command, streams); err != nil {
+				return err
+			}
+		}
+		view, pctx, err := getReviewState(ctx, backend)
 		if err != nil {
 			return err
 		}
+		if err := compareExport(selected, pctx); err != nil {
+			return err
+		}
+		snapshot := pctx.SnapshotSHA256
 		var req adminproto.ApplyPolicyRequest
 		names := map[string]string{}
 		if command.Verb == VerbApply {
@@ -187,22 +223,98 @@ func run(ctx context.Context, command Command, streams Streams, backend Backend)
 // returns the summary with the composite snapshot a review is made against.
 // The two reads must describe one state; if the policy moved between them,
 // the review is refused rather than mixing two states.
-func getReviewState(ctx context.Context, backend Backend) (adminproto.PolicyView, string, error) {
+func getReviewState(ctx context.Context, backend Backend) (adminproto.PolicyView, adminproto.PolicyContextView, error) {
 	view, err := getPolicy(ctx, backend)
 	if err != nil {
-		return view, "", err
+		return view, adminproto.PolicyContextView{}, err
 	}
 	pctx, err := backend.Context(ctx)
 	if err != nil {
-		return view, "", err
+		return view, pctx, err
 	}
 	if !pctx.Success {
-		return view, "", resultError(pctx.Code, pctx.Error)
+		return view, pctx, resultError(pctx.Code, pctx.Error)
 	}
-	if pctx.PolicySetSHA256 != view.PolicySetSHA256 {
-		return view, "", resultError("policy_snapshot_changed", "the node's policy changed while it was being read; run the command again")
+	if pctx.PolicySetSHA256 != view.PolicySetSHA256 || pctx.SnapshotSHA256 == "" {
+		return view, pctx, resultError("policy_snapshot_changed", "the node's policy changed while it was being read; run the command again")
 	}
-	return view, pctx.SnapshotSHA256, nil
+	return view, pctx, nil
+}
+
+// exportAll writes every document the node holds, and its context, into dir.
+// Each document is fetched against the snapshot the summary and context were
+// read at, so the node refuses a fetch once either moved; the writer checks
+// every document against the summary before anything is written.
+func exportAll(ctx context.Context, backend Backend, streams Streams, dir string) error {
+	view, pctx, err := getReviewState(ctx, backend)
+	if err != nil {
+		return err
+	}
+	docs := make([]policyexport.Document, 0, len(view.Documents))
+	for _, info := range view.Documents {
+		doc, err := backend.Document(ctx, info.Key, pctx.SnapshotSHA256)
+		if err != nil {
+			return err
+		}
+		if !doc.Success {
+			return resultError(doc.Code, doc.Error)
+		}
+		docs = append(docs, policyexport.Document{Key: info.Key, Document: doc.Document, SHA256: info.SHA256})
+	}
+	paths, err := policyexport.Write(dir, docs, pctx, time.Now())
+	if err != nil {
+		if len(paths) > 0 {
+			return fmt.Errorf("%w; the unfinished export is left in %s", err, dir)
+		}
+		return err
+	}
+	_, _ = fmt.Fprintf(streams.Stdout, "exported %d policy document(s) and the node context to %s\n", len(paths), dir)
+	return nil
+}
+
+// selectExport finds the export context the files come from, unless the
+// command compares none. Files not from an export have none; that is said,
+// since their review then has no export baseline to compare.
+func selectExport(command Command, streams Streams) (*policyexport.Selected, error) {
+	if command.NoNodeContext {
+		_, _ = fmt.Fprintln(streams.Stderr, "note: --no-node-context: the files are compared with the node as it is now, with no export baseline")
+		return nil, nil
+	}
+	selected, err := policyexport.Discover(command.Args, command.NodeContext)
+	if err != nil {
+		return nil, err
+	}
+	if selected == nil {
+		_, _ = fmt.Fprintln(streams.Stderr, "note: the files are not from an export; they are compared with the node as it is now, with no export baseline")
+	}
+	return selected, nil
+}
+
+// compareExport refuses files from an export the node has moved on from:
+// its policy, or its context, is no longer what was exported. The edits must
+// be carried over to a new export rather than applied over changes the
+// export never saw.
+func compareExport(selected *policyexport.Selected, pctx adminproto.PolicyContextView) error {
+	if selected == nil {
+		return nil
+	}
+	baseline := selected.Export.Baseline
+	if baseline.SnapshotSHA256 == pctx.SnapshotSHA256 {
+		return nil
+	}
+	var moved []string
+	if baseline.PolicySetSHA256 != pctx.PolicySetSHA256 {
+		moved = append(moved, "policy")
+	}
+	if selected.Export.Context.SHA256() != pctx.ContextSHA256 {
+		moved = append(moved, "ASA set, network map or role")
+	}
+	if len(moved) == 0 {
+		moved = append(moved, "policy context")
+	}
+	return resultError("policy_export_stale", fmt.Sprintf(
+		"the export %s (taken %s) is stale: the node's %s changed since; export again and carry your edits over",
+		selected.Path, selected.Export.ExportedAt.Format(time.RFC3339), strings.Join(moved, " and ")))
 }
 
 func getPolicy(ctx context.Context, backend Backend) (adminproto.PolicyView, error) {

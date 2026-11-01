@@ -13,6 +13,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/policyexport"
 	"github.com/aplane-algo/aplane/internal/protocol"
 )
 
@@ -77,26 +78,7 @@ func (b onlineBackend) Context(context.Context) (adminproto.PolicyContextView, e
 	err := b.roundTrip(protocol.GetPolicyContextMessage{
 		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeGetPolicyContext, ID: onlineRequestID("policy-context")},
 	}, protocol.MsgTypePolicyContext, &msg)
-	return ContextFromWire(msg), err
-}
-
-// ContextFromWire is the inverse of the server's context projection.
-func ContextFromWire(msg protocol.PolicyContextMessage) adminproto.PolicyContextView {
-	view := adminproto.PolicyContextView{
-		Success: msg.Success, NodeRole: msg.NodeRole, RulesVersion: msg.RulesVersion,
-		ContextSHA256: msg.ContextSHA256, PolicySetSHA256: msg.PolicySetSHA256, SnapshotSHA256: msg.SnapshotSHA256,
-		Code: msg.Code, Error: msg.Error,
-	}
-	for _, n := range msg.Networks {
-		view.Networks = append(view.Networks, adminproto.PolicyNetwork{Network: n.Network, GenesisHash: n.GenesisHash})
-	}
-	for _, a := range msg.Assets {
-		view.Assets = append(view.Assets, adminproto.ASAInfo{
-			Network: a.Network, GenesisHash: a.GenesisHash, AssetID: a.AssetID, Name: a.Name,
-			UnitName: a.UnitName, Decimals: a.Decimals, Origin: a.Origin,
-		})
-	}
-	return view
+	return policyexport.ViewFromMessage(msg), err
 }
 
 func (b onlineBackend) Document(_ context.Context, key, expectedSnapshot string) (adminproto.PolicyDocumentResult, error) {
