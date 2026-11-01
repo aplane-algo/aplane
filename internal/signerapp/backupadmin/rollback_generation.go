@@ -74,8 +74,8 @@ func loadRollbackGenerationSource(
 // populateRollbackGeneration replaces active keys/, keytypes/, and the
 // per-key policies/ in a staging copy of the outgoing generation: restore
 // installs key policies with their keys, so undoing a restore undoes those
-// too. Deleted archives, the node default policy, and node role authority
-// remain monotonic and therefore come from the outgoing state.
+// too. Deleted archives, the node default policy, the ASA set, and node role
+// authority remain monotonic and therefore come from the outgoing state.
 // Source members are consumed only from exact seal-verified buffers.
 func populateRollbackGeneration(
 	source *rollbackGenerationSource,
@@ -199,7 +199,8 @@ func rollbackMemberContext(
 	entry genstore.InventoryEntry,
 ) (crypto.ObjectContext, bool, error) {
 	switch entry.Path {
-	case storepaths.DefaultPolicyFileName, storepaths.DefaultPolicyFileName + ".hmac", "node.yaml.hmac":
+	case storepaths.DefaultPolicyFileName, storepaths.DefaultPolicyFileName + ".hmac", "node.yaml.hmac",
+		storepaths.ASASetFileName, storepaths.ASASetFileName + ".hmac":
 		if entry.Term != 0 {
 			return crypto.ObjectContext{}, false, fmt.Errorf(
 				"rollback plaintext authority member %s carries term %d",

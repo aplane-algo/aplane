@@ -67,12 +67,17 @@ var generationAuthorityFiles = []string{
 }
 
 // generationOptionalAuthorityFiles are authority files that genstore itself
-// does not require: the node default policy document and its sidecar.
-// Role-aware candidate validation (policyruntime.Load) requires them on both
-// roles; when present they are pinned exactly like required members.
+// does not require, pinned exactly like required members when present:
+//   - the node default policy document and its sidecar, which role-aware
+//     candidate validation (policyruntime.Load) requires on both roles;
+//   - the ASA set and its sidecar, whose absence means the built-in assets
+//     only, and which candidate validation authenticates when present
+//     (asasetstore.Load).
 var generationOptionalAuthorityFiles = []string{
 	"default.json",
 	"default.json.hmac",
+	"asa_set.json",
+	"asa_set.json.hmac",
 }
 
 // presentAuthorityFiles returns the required authority files plus each

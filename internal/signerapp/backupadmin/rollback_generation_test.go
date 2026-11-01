@@ -123,3 +123,16 @@ func TestRollbackMintReconstructsOnlyActiveAuthorityAndPreservesMonotonicState(t
 		t.Fatalf("rollback manifest = %+v", manifest)
 	}
 }
+
+// The ASA set is plaintext authority taken from the outgoing generation:
+// rollback classifies its members instead of refusing them.
+func TestRollbackMemberContextAcceptsTheASASet(t *testing.T) {
+	for _, path := range []string{storepaths.ASASetFileName, storepaths.ASASetFileName + ".hmac"} {
+		if _, sealed, err := rollbackMemberContext(genstore.InventoryEntry{Path: path}); err != nil || sealed {
+			t.Fatalf("rollbackMemberContext(%s) = sealed %v, %v; want plaintext authority", path, sealed, err)
+		}
+		if _, _, err := rollbackMemberContext(genstore.InventoryEntry{Path: path, Term: 1}); err == nil {
+			t.Fatalf("rollbackMemberContext(%s) accepted a term", path)
+		}
+	}
+}

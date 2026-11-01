@@ -558,9 +558,11 @@ func validateStructureAt(dir, generationID string, requireManifest bool) error {
 			}
 		case "keys", "keytypes", "policies", "deleted":
 			// Validated unconditionally above.
-		case "default.json", "default.json.hmac", "node.yaml.hmac":
-			// Validated unconditionally above.
 		default:
+			if isAuthorityFileName(name) {
+				// Validated unconditionally above.
+				continue
+			}
 			return fmt.Errorf("generation %s contains unsupported entry %q", generationID, name)
 		}
 	}

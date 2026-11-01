@@ -58,6 +58,7 @@ routing, client enrollment, or approval prompts.
       deleted/policies/<selector>.json[.hmac]  # policy archived with its deleted key
       node.yaml.hmac
       default.json          # node default policy (aplane.policy.v1), both roles
+      asa_set.json[.hmac]   # optional ASA set (aplane.asa-set.v1); absent means built-ins only
       default.json.hmac
       policies/<selector>.json       # one key's own policy; address or Witness Key ID
       policies/<selector>.json.hmac
@@ -202,6 +203,7 @@ moved behind an existing owner.
 | `internal/genstore`, `internal/storepass` | Atomic store-root publication, reconciliation/quarantine, archive bounds, and fresh-term passphrase rotation |
 | `internal/stagetable` when invoked by the daemon | Rotating accounts' stage address tables (`identities/default/stages/`): plaintext caches, removed on key delete, rebuilt from the seed when missing or damaged |
 | `internal/policy`, `internal/signerapp/policyapply`, `internal/noderole` when invoked by the daemon | Authenticated policy documents, policy-apply generation commits, and node-role state |
+| `internal/asasetstore` when invoked by the daemon, candidate validation or passphrase rotation | The authenticated ASA set (`asa_set.json` and its sidecar, under the `asa-set` integrity domain) |
 | `internal/cosigner/cosignerrefs` when invoked by the daemon | Public cosigner-reference inventory |
 | `internal/signerapp/clientregistry` when invoked by the daemon | Enrolled client key registry (`identities/default/.ssh/authorized_keys`) |
 | `internal/signerapp/enrollqueue` when invoked by the daemon | Pending enrollment queue (`identities/default/.ssh/pending_enrollments.json`) |
@@ -510,6 +512,7 @@ inventory:
 - deleted credentials and templates;
 - policy documents and integrity sidecars (`default.json` when present,
   `policies/` and `deleted/policies/`), on both node roles;
+- the ASA set and its integrity sidecar, when present;
 - node-role integrity sidecar;
 - term numbers, sizes, and exact digests.
 
@@ -596,8 +599,10 @@ Rollback restores `keys/`, `keytypes/`, and the per-key `policies/`, because
 restore installs a key's archived policy with the key on both node roles. Each
 restored policy document is checked against the source seal and written with a
 sidecar signed under the current term. The node default `default.json`, the
-deleted archives, and node role authority are kept from the outgoing
-generation.
+ASA set (`asa_set.json`), the deleted archives, and node role authority are
+kept from the outgoing generation. Backup archives carry neither the node
+default nor the ASA set: a fresh node restored from a backup has the built-in
+assets only until its operator confirms assets again.
 
 ### Reconciliation and quarantine
 

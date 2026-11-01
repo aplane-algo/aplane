@@ -199,3 +199,45 @@ func TestMintRequiresCandidateValidation(t *testing.T) {
 		t.Fatalf("refused mint created generation state: %v", statErr)
 	}
 }
+
+// The ASA set pair is optional authority: a generation carrying it is valid
+// and pins it, and a successor carries it forward byte for byte.
+func TestMintCarriesTheASASetForward(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	first := mintFirst(t, paths, map[string]string{
+		storepaths.ASASetFileName:           "set\n",
+		storepaths.ASASetFileName + ".hmac": "sidecar\n",
+	})
+	if err := ValidateCurrent(first); err != nil {
+		t.Fatalf("ValidateCurrent(with an asa set) error = %v", err)
+	}
+	inventory, err := BuildInventory(first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pinned := map[string]bool{}
+	for _, entry := range inventory {
+		pinned[entry.Path] = true
+	}
+	if !pinned[storepaths.ASASetFileName] || !pinned[storepaths.ASASetFileName+".hmac"] {
+		t.Fatalf("inventory does not pin the asa set: %+v", inventory)
+	}
+
+	second, err := Mint(paths, MintRequest{
+		SkipCandidateValidation: true,
+		GenerationID:            testGenB, Parent: first.GenerationID(), Integrity: testKeyring(t),
+		Operation: "test-activation", OperationID: "op-2", CreatedAt: time.Unix(1_753_500_100, 0),
+		Apply: func(storepaths.GenPaths) error { return nil },
+	})
+	if err != nil {
+		t.Fatalf("Mint(second) error = %v", err)
+	}
+	for path, want := range map[string]string{second.ASASetPath(): "set\n", second.ASASetIntegritySidecar(): "sidecar\n"} {
+		if data, err := os.ReadFile(path); err != nil || string(data) != want {
+			t.Fatalf("successor %s = %q, %v", filepath.Base(path), data, err)
+		}
+	}
+	if err := ValidateSealed(first, testKeyring(t)); err != nil {
+		t.Fatalf("parent with an asa set not sealed: %v", err)
+	}
+}
