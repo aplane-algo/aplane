@@ -164,6 +164,124 @@ func TestExplain(t *testing.T) {
 	}
 }
 
+const (
+	treasuryAddr = "CEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI7JH2AYM"
+	opsMainnet   = "EIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRDOHSEZI"
+)
+
+func TestTry(t *testing.T) {
+	path := put(t, t.TempDir(), "treasury.json", fixture(t, "signer_key_full.json"))
+	signerData := t.TempDir()
+	before := tree(t, signerData)
+	tests := []struct {
+		name    string
+		args    []string
+		outcome string
+		ruleID  string
+	}{
+		{name: "within the route and the limits", args: []string{"--amount", "100000000"}, outcome: "default"},
+		// The document's own limit asks first, before the route's 500 ALGO.
+		{name: "above the document's review limit", args: []string{"--amount", "100000001"}, outcome: "review", ruleID: "review_algo_payment_exceeded"},
+		{name: "above the document's reject limit", args: []string{"--amount", "1000000001"}, outcome: "reject"},
+		{name: "no route on testnet", args: []string{"--amount", "1", "--network", "testnet"}, outcome: "reject"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// Flags may follow the file.
+			args := append([]string{"try", path, "--json", "--signer-data", signerData, "--from", treasuryAddr, "--to", opsMainnet, "--network", "mainnet"}, tc.args...)
+			code, out, errOut := appolicy(args...)
+			if code != exitOK {
+				t.Fatalf("try: exit %d: %s", code, errOut)
+			}
+			var report tryReport
+			if err := json.Unmarshal([]byte(out), &report); err != nil {
+				t.Fatalf("try --json output: %v\n%s", err, out)
+			}
+			if report.Outcome != tc.outcome || report.RuleID != tc.ruleID || report.Role != "signer" {
+				t.Fatalf("report = %+v, want outcome %q rule %q", report, tc.outcome, tc.ruleID)
+			}
+			if tc.outcome == "reject" && len(report.Violations) == 0 {
+				t.Fatal("a rejection lists no violations")
+			}
+			if !strings.Contains(strings.Join(report.Assumes, "\n"), "no config.yaml in "+signerData) {
+				t.Fatalf("assumptions = %q, want the network source", report.Assumes)
+			}
+		})
+	}
+	if after := tree(t, signerData); after != before {
+		t.Fatalf("try wrote to the signer data directory:\nbefore %s\nafter  %s", before, after)
+	}
+
+	code, out, _ := appolicy("try", "--signer-data", "", "--from", treasuryAddr, "--to", "self", path)
+	if code != exitOK || !strings.Contains(out, "treasury.json (signer document") || !strings.Contains(out, "assumed:\n  - built-in networks only") {
+		t.Fatalf("try text output: exit %d\n%s", code, out)
+	}
+}
+
+func TestTryRefusesBadInput(t *testing.T) {
+	path := put(t, t.TempDir(), "treasury.json", fixture(t, "signer_key_full.json"))
+	bad := put(t, t.TempDir(), "bad.json", []byte("{"))
+	for name, args := range map[string][]string{
+		"no file":              {"try", "--from", treasuryAddr, "--to", "self"},
+		"two files":            {"try", path, path, "--from", treasuryAddr, "--to", "self"},
+		"invalid document":     {"try", bad, "--from", treasuryAddr, "--to", "self"},
+		"no sender":            {"try", path, "--to", opsMainnet},
+		"held without a rekey": {"try", path, "--from", treasuryAddr, "--to", "self", "--rekey-held"},
+		"unknown network":      {"try", path, "--from", treasuryAddr, "--to", "self", "--network", "nowhere"},
+		"unknown flag":         {"try", path, "--bogus"},
+	} {
+		if code, _, _ := appolicy(append(args, "--signer-data", "")...); code != exitUsage {
+			t.Errorf("%s: exit %d, want %d", name, code, exitUsage)
+		}
+	}
+}
+
+func TestTestRunsSavedCases(t *testing.T) {
+	dir := t.TempDir()
+	put(t, dir, "treasury.json", fixture(t, "signer_key_full.json"))
+	if code, _, errOut := appolicy("test", "--signer-data", "", dir); code != exitUsage || !strings.Contains(errOut, "no saved cases") {
+		t.Fatalf("test with no cases: exit %d: %s", code, errOut)
+	}
+	writeCases := func(cases string) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Join(dir, ".appolicy"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		put(t, filepath.Join(dir, ".appolicy"), "cases.json", []byte(`{"format": "aplane.policy-cases.v1", "cases": [`+cases+`]}`))
+	}
+	review := `{"name": "large top-up needs review", "document": "treasury.json",
+		"txn": {"network": "mainnet", "sender": "` + treasuryAddr + `", "receiver": "` + opsMainnet + `", "amount": 150000000},
+		"expect": {"outcome": "review", "rule_id": "review_algo_payment_exceeded"}}`
+	writeCases(review)
+	before := tree(t, dir)
+	code, out, errOut := appolicy("test", dir, "--signer-data", "")
+	if code != exitOK || !strings.Contains(out, "ok    large top-up needs review") || !strings.Contains(out, "1 case(s), 0 failed, 0 could not run (built-in networks only)") {
+		t.Fatalf("test: exit %d\n%s\n%s", code, out, errOut)
+	}
+	if after := tree(t, dir); after != before {
+		t.Fatalf("test wrote to the workspace:\nbefore %s\nafter  %s", before, after)
+	}
+
+	wrong := `{"name": "wrong", "document": "treasury.json",
+		"txn": {"network": "mainnet", "sender": "` + treasuryAddr + `", "receiver": "` + opsMainnet + `", "amount": 150000000},
+		"expect": {"outcome": "default"}}`
+	writeCases(review + "," + wrong)
+	if code, out, _ := appolicy("test", "--signer-data", "", dir); code != exitProblems || !strings.Contains(out, "FAIL  wrong: got review (rule review_algo_payment_exceeded), want default") {
+		t.Fatalf("test with a failing case: exit %d\n%s", code, out)
+	}
+
+	missing := `{"name": "missing", "document": "gone.json", "txn": {"sender": "` + treasuryAddr + `", "receiver": "` + opsMainnet + `"}, "expect": {"outcome": "default"}}`
+	writeCases(wrong + "," + missing)
+	if code, out, _ := appolicy("test", "--signer-data", "", dir); code != exitUsage || !strings.Contains(out, "ERROR missing") {
+		t.Fatalf("test with a missing document: exit %d\n%s", code, out)
+	}
+
+	writeCases(`{"name": "bad", "document": "treasury.json", "txn": {}, "expect": {"outcome": "sign"}}`)
+	if code, _, errOut := appolicy("test", "--signer-data", "", dir); code != exitUsage || !strings.Contains(errOut, "cases.json") {
+		t.Fatalf("test with a bad cases file: exit %d: %s", code, errOut)
+	}
+}
+
 func TestRetiredAndUnknownInvocations(t *testing.T) {
 	for _, args := range [][]string{{"-online"}, {"--check", "x.json"}, {"-yaml"}, {"-save"}, {"-to-sentry"}} {
 		code, _, errOut := appolicy(args...)

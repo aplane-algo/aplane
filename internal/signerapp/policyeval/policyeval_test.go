@@ -117,3 +117,14 @@ func TestEvaluateIsPure(t *testing.T) {
 		t.Fatalf("Evaluate changed its input: %+v", group[0])
 	}
 }
+
+func TestOutcomeWords(t *testing.T) {
+	for _, o := range []Outcome{Default, Reject, Review, Approve} {
+		if got, ok := ParseOutcome(o.String()); !ok || got != o {
+			t.Fatalf("ParseOutcome(%q) = %d, %v", o.String(), got, ok)
+		}
+	}
+	if _, ok := ParseOutcome("sign"); ok {
+		t.Fatal(`ParseOutcome("sign") succeeded`)
+	}
+}

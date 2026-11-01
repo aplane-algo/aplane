@@ -42,8 +42,10 @@ func (m Model) View() string {
 		body = m.problemsView()
 	case screenComparePick:
 		body = m.comparePickView()
-	case screenExplain, screenCompare, screenHelp, screenField, screenSave, screenOverwrite:
+	case screenExplain, screenCompare, screenHelp, screenField, screenSave, screenOverwrite, screenCases:
 		body = m.pageView()
+	case screenTry:
+		body = m.tryView()
 	case screenConflict:
 		body = m.conflictView()
 	case screenNew:
@@ -96,8 +98,13 @@ func (m Model) footer() string {
 		return "up/down: Select | enter: Compare | esc: Back | q: Quit"
 	case screenCompare:
 		return "up/down/pgup/pgdown: Scroll | o: Other file | esc: Back | q: Quit"
-	case screenExplain, screenHelp, screenField:
+	case screenExplain, screenHelp, screenField, screenCases:
 		return "up/down/pgup/pgdown: Scroll | esc: Back | q: Quit"
+	case screenTry:
+		if m.try.naming {
+			return "enter: Save the case | esc: Cancel"
+		}
+		return "enter: Try | ctrl+s: Save as case | up/down/tab: Field | space: Toggle | pgup/pgdown: Scroll the answer | esc: Back"
 	}
 	back := "esc: Files"
 	if len(m.ws.Files) == 1 {
@@ -106,7 +113,7 @@ func (m Model) footer() string {
 	if m.prompt.kind != promptNone {
 		return ""
 	}
-	return "up/down: Move | tab: Pane | enter: Edit | space: Toggle | a: Add | d: Remove | s: Save | u: Undo | ]/[: Problem | p: Problems | x: Explain | c: Compare | ?: Help | " + back + " | q: Quit"
+	return "up/down: Move | tab: Pane | enter: Edit | space: Toggle | a: Add | d: Remove | s: Save | u: Undo | ]/[: Problem | p: Problems | x: Explain | c: Compare | t: Try | T: Cases | ?: Help | " + back + " | q: Quit"
 }
 
 func countLabel(errors, warnings int) string {
@@ -192,6 +199,11 @@ func (m Model) documentView() string {
 		header += m.styles.warn.Render("read-only") + "  "
 	case s.Modified():
 		header += m.styles.warn.Render("modified") + "  "
+	}
+	// Failing saved cases come before the long key, so a narrow terminal
+	// still shows them.
+	if label := m.casesLabel(); label != "" {
+		header += label + "  "
 	}
 	header += m.styles.subtle.Render(fmt.Sprintf("%s  %s  %s  ", role, key, f.State))
 	if e > 0 {

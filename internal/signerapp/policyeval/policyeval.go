@@ -121,6 +121,30 @@ const (
 	Approve
 )
 
+// String is the outcome's word: "default", "reject", "review" or "approve".
+func (o Outcome) String() string {
+	switch o {
+	case Reject:
+		return "reject"
+	case Review:
+		return "review"
+	case Approve:
+		return "approve"
+	default:
+		return "default"
+	}
+}
+
+// ParseOutcome is the outcome a word names.
+func ParseOutcome(word string) (Outcome, bool) {
+	for _, o := range []Outcome{Default, Reject, Review, Approve} {
+		if o.String() == word {
+			return o, true
+		}
+	}
+	return Default, false
+}
+
 // Verdict is the evaluator's answer. A cosigner verdict is Approve or Reject. Reject carries every violation in the
 // order the daemon reports them, each with its group index. Review carries
 // the deciding rule ID, empty when review is required without one; Approve

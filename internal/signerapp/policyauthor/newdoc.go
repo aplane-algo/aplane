@@ -95,24 +95,28 @@ func (w *Workspace) CheckNewKey(role noderole.Role, key string) error {
 	return nil
 }
 
-// NewFilePath is where a new document is created: in the workspace's
-// directory (the first directory it was opened with, or the directory of its
-// first file), under name. A name that is taken is refused.
-func (w *Workspace) NewFilePath(name string) (string, error) {
-	if name == "" || filepath.Base(name) != name || filepath.Ext(name) != ".json" {
-		return "", fmt.Errorf("enter a file name ending in .json, with no directory")
-	}
+// Dir is the workspace's directory: the first directory it was opened with,
+// or the directory of its first file. New documents and saved cases go there.
+func (w *Workspace) Dir() string {
 	dir := "."
 	for i, p := range w.Paths {
 		if info, err := os.Stat(p); err == nil && info.IsDir() {
-			dir = p
-			break
+			return p
 		}
 		if i == 0 {
 			dir = filepath.Dir(p)
 		}
 	}
-	path := filepath.Join(dir, name)
+	return dir
+}
+
+// NewFilePath is where a new document is created: in the workspace's
+// directory, under name. A name that is taken is refused.
+func (w *Workspace) NewFilePath(name string) (string, error) {
+	if name == "" || filepath.Base(name) != name || filepath.Ext(name) != ".json" {
+		return "", fmt.Errorf("enter a file name ending in .json, with no directory")
+	}
+	path := filepath.Join(w.Dir(), name)
 	if _, err := os.Lstat(path); err == nil {
 		return "", fmt.Errorf("%s already exists", path)
 	}
