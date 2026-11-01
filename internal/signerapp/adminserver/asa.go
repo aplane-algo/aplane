@@ -59,6 +59,7 @@ func (s *Session) HandleRemoveASA(msg *protocol.RemoveASAMessage) {
 		Success:         result.Success,
 		GenerationID:    result.GenerationID,
 		CommitUncertain: result.CommitUncertain,
+		BlockingOmitted: result.BlockingOmitted,
 		Code:            result.Code,
 		Error:           result.Error,
 	}

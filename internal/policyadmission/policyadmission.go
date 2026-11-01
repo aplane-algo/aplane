@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/aplane-algo/aplane/internal/asaset"
 	"github.com/aplane-algo/aplane/internal/policy"
@@ -151,7 +152,14 @@ func StoredAlerts(docs []policy.StoredDocument, ctx *policycontext.Context) []st
 		return nil
 	}
 	var out []string
+	more := 0
 	for _, stored := range docs {
+		if len(out) == MaxStoredAlerts {
+			if doc, err := policy.DecodePolicyV1(stored.Bytes, stored.Key, ctx.Role()); err == nil && len(Check(doc, ctx)) > 0 {
+				more++
+			}
+			continue
+		}
 		doc, err := policy.DecodePolicyV1(stored.Bytes, stored.Key, ctx.Role())
 		if err != nil {
 			continue // a stored document that does not decode fails its load first
@@ -161,10 +169,31 @@ func StoredAlerts(docs []policy.StoredDocument, ctx *policycontext.Context) []st
 			continue
 		}
 		line := fmt.Sprintf("policy %s: %s (at %s)", stored.Key, problems[0].Message, problems[0].Pointer)
-		if more := len(problems) - 1; more > 0 {
-			line += fmt.Sprintf("; %d more; run apadmin policy check on it", more)
+		if extra := len(problems) - 1; extra > 0 {
+			line += fmt.Sprintf("; %d more; run apadmin policy check on it", extra)
 		}
-		out = append(out, line)
+		out = append(out, truncate(line, MaxAlertBytes))
+	}
+	if more > 0 {
+		out = append(out, fmt.Sprintf("%d more policy document(s) have admission problems; run apadmin policy check on them", more))
 	}
 	return out
+}
+
+// Status alerts are bounded so a status report stays small however many
+// documents have problems.
+const (
+	MaxStoredAlerts = 32
+	MaxAlertBytes   = 512
+)
+
+func truncate(s string, limit int) string {
+	if len(s) <= limit {
+		return s
+	}
+	cut := limit - len("…")
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut] + "…"
 }

@@ -140,3 +140,21 @@ func TestWildcardRouteNamesTheUncoveredNetworks(t *testing.T) {
 		t.Fatalf("a covered network was reported:\n%s", joined)
 	}
 }
+
+func TestStoredAlertsAreBounded(t *testing.T) {
+	ctx := nodeContext(t)
+	var docs []policy.StoredDocument
+	for i := 0; i < 100; i++ {
+		data := []byte(policytest.Signer(t, policy.DefaultKey, `{"limits": {"mainet": {"algo": {"reject_above": "1"}}}}`))
+		docs = append(docs, policy.StoredDocument{Key: policy.DefaultKey, Bytes: data})
+	}
+	alerts := StoredAlerts(docs, ctx)
+	if len(alerts) != MaxStoredAlerts+1 || !strings.Contains(alerts[MaxStoredAlerts], "68 more policy document(s)") {
+		t.Fatalf("alerts = %d lines, last %q", len(alerts), alerts[len(alerts)-1])
+	}
+	for _, a := range alerts {
+		if len(a) > MaxAlertBytes {
+			t.Fatalf("an alert is %d bytes", len(a))
+		}
+	}
+}

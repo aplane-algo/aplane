@@ -20,6 +20,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/protocol"
+	"github.com/aplane-algo/aplane/internal/signerapp/policyapply"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
 	"github.com/aplane-algo/aplane/internal/signerapp/storevalidate"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -35,6 +36,10 @@ import (
 
 // ASAOperation is the operation an ASA set mint records.
 const ASAOperation = "asa-set-update"
+
+// maxBlockingReferences caps the references a refused removal reports, so
+// the response fits one admin frame.
+const maxBlockingReferences = 256
 
 // asaLookupTimeout bounds one algod read.
 const asaLookupTimeout = 15 * time.Second
@@ -169,6 +174,7 @@ func (s Service) RemoveASA(req adminproto.RemoveASARequest) adminproto.RemoveASA
 	var generationID string
 	var uncertain bool
 	var blocking []adminproto.ASAReference
+	var blockingOmitted int
 	err = s.mutateASASet(&generationID, &uncertain, func(kr *crypto.Keyring, active storepaths.GenPaths, set *asaset.Set) (*asaset.Set, error) {
 		next, found := set.Without(id)
 		if !found {
@@ -176,6 +182,13 @@ func (s Service) RemoveASA(req adminproto.RemoveASARequest) adminproto.RemoveASA
 				return nil, asaError{"asa_builtin", fmt.Sprintf("%s is built in and cannot be removed", id)}
 			}
 			return nil, asaError{"not_found", fmt.Sprintf("%s is not in this node's ASA set", id)}
+		}
+		// A confirmation a later release made built-in is shadowed: the
+		// built-in entry is the one used, so removing the confirmation
+		// leaves the effective table unchanged, and references to the
+		// asset stay valid.
+		if builtinIdentity(id) {
+			return next, nil
 		}
 		current, err := policyruntime.Load(s.Runtime.NodeRole(), s.Deps.DataDir(), s.Deps.Config(), active, kr)
 		if err != nil {
@@ -186,12 +199,20 @@ func (s Service) RemoveASA(req adminproto.RemoveASARequest) adminproto.RemoveASA
 			return nil, err
 		}
 		if len(blocking) > 0 {
-			return nil, asaError{"asa_referenced", fmt.Sprintf("%s is named by %d policy reference(s); change those documents first", id, len(blocking))}
+			total := len(blocking)
+			if total > maxBlockingReferences {
+				blockingOmitted = total - maxBlockingReferences
+				blocking = blocking[:maxBlockingReferences]
+			}
+			for i := range blocking {
+				blocking[i].Pointer = policyapply.TruncateText(blocking[i].Pointer, policyapply.MaxProblemTextBytes)
+			}
+			return nil, asaError{"asa_referenced", fmt.Sprintf("%s is named by %d policy reference(s); change those documents first", id, total)}
 		}
 		return next, nil
 	})
 	if err != nil {
-		return adminproto.RemoveASAResult{Code: asaCode(err, "asa_remove_failed"), Error: err.Error(), Blocking: blocking, CommitUncertain: uncertain, GenerationID: generationID}
+		return adminproto.RemoveASAResult{Code: asaCode(err, "asa_remove_failed"), Error: err.Error(), Blocking: blocking, BlockingOmitted: blockingOmitted, CommitUncertain: uncertain, GenerationID: generationID}
 	}
 	return adminproto.RemoveASAResult{Success: true, GenerationID: generationID}
 }

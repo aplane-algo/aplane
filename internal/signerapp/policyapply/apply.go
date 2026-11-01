@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/asaset"
@@ -157,7 +158,61 @@ func Check(env Env, current *policyruntime.NodePolicy, req adminproto.CheckPolic
 		}
 		result.Warnings = append(result.Warnings, CoverageWarnings(KeyStatus(env.HeldKeys, candidate))...)
 	}
+	result.Errors, result.Warnings = BoundProblems(result.Errors, result.Warnings)
 	return result
+}
+
+// Diagnostics are bounded so a response always fits one admin frame: a
+// valid document can produce tens of thousands of findings.
+const (
+	// MaxResponseProblems caps the errors and warnings one response carries.
+	MaxResponseProblems = 256
+	// MaxProblemTextBytes caps one problem's message and pointer.
+	MaxProblemTextBytes = 512
+)
+
+// BoundProblems keeps at most MaxResponseProblems errors and warnings,
+// errors first, truncates long messages and pointers, and ends the warnings
+// with a note of how many were left out.
+func BoundProblems(errs, warnings []adminproto.PolicyProblem) ([]adminproto.PolicyProblem, []adminproto.PolicyProblem) {
+	total := len(errs) + len(warnings)
+	keptErrs := boundList(errs, MaxResponseProblems)
+	keptWarnings := boundList(warnings, MaxResponseProblems-len(keptErrs))
+	if omitted := total - len(keptErrs) - len(keptWarnings); omitted > 0 {
+		keptWarnings = append(keptWarnings, adminproto.PolicyProblem{
+			Message: fmt.Sprintf("%d more problem(s) omitted from this response; fix those shown and check again", omitted),
+		})
+	}
+	return keptErrs, keptWarnings
+}
+
+func boundList(problems []adminproto.PolicyProblem, limit int) []adminproto.PolicyProblem {
+	if limit < 0 {
+		limit = 0
+	}
+	if len(problems) > limit {
+		problems = problems[:limit]
+	}
+	out := make([]adminproto.PolicyProblem, len(problems))
+	for i, p := range problems {
+		p.Message = TruncateText(p.Message, MaxProblemTextBytes)
+		p.Pointer = TruncateText(p.Pointer, MaxProblemTextBytes)
+		out[i] = p
+	}
+	return out
+}
+
+// TruncateText cuts s to at most limit bytes at a character boundary,
+// marking the cut.
+func TruncateText(s string, limit int) string {
+	if len(s) <= limit {
+		return s
+	}
+	cut := limit - len("…")
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut] + "…"
 }
 
 // AdmissionProblems reports what a submitted document names that this node
@@ -247,7 +302,10 @@ func Commit(env Env, req adminproto.ApplyPolicyRequest) (Outcome, error) {
 		return Outcome{}, err
 	}
 	if len(problems) > 0 {
-		return Outcome{Problems: problems}, Error{"policy_validation_failed", "policy documents are invalid"}
+		// An apply result carries errors only, so the omission note goes
+		// with them.
+		bounded, note := BoundProblems(problems, nil)
+		return Outcome{Problems: append(bounded, note...)}, Error{"policy_validation_failed", "policy documents are invalid"}
 	}
 	if candidate.SetSHA256() == current.SetSHA256() {
 		return Outcome{}, nil

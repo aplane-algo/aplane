@@ -5,7 +5,9 @@ package admin
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -23,7 +25,10 @@ import (
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/policy/policytest"
+	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
+	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
+	"github.com/aplane-algo/aplane/internal/signerapp/policyapply"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	"github.com/aplane-algo/aplane/internal/signerapp/storevalidate"
@@ -318,5 +323,119 @@ func TestPolicyCheckWarnsAboutAdmission(t *testing.T) {
 	}
 	if got := pointers(check()); got != "/limits/mainet" {
 		t.Fatalf("warnings after confirming = %q", got)
+	}
+}
+
+// A confirmation a later release made built-in can be removed even while a
+// document names the asset: the built-in entry stays in effect.
+func TestRemoveASARemovesAShadowedConfirmationDespiteReferences(t *testing.T) {
+	svc, ir, _ := setupASAAdmin(t)
+	mainnet, err := asaset.ParseGenesisHash(apconfig.AlgorandMainnetGenesisHash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stale, err := asaset.New([]asaset.Entry{{
+		Identity: asaset.Identity{Genesis: mainnet, AssetID: 31566704},
+		UnitName: "OLDUSDC", Decimals: 6, Creator: asaTestCreator,
+		ConfirmedAt: time.Unix(1_700_000_000, 0), NetworkAtConfirmation: "mainnet",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ir.WithKeyring(func(kr *crypto.Keyring) error {
+		active, err := genstore.ResolveStoreRootWithKeyring(svc.Deps.KeyPaths(), kr)
+		if err != nil {
+			return err
+		}
+		return asasetstore.Write(active, stale, kr, time.Unix(1_700_000_000, 0))
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ir.Reload(); err != nil {
+		t.Fatal(err)
+	}
+	applyDefault(t, svc, `{"limits": {"mainnet": {"asa:31566704": {"reject_above": "5"}}}}`)
+
+	shadowed := false
+	for _, a := range svc.ListASASet().Assets {
+		shadowed = shadowed || (a.Origin == "operator" && a.AssetID == 31566704 && a.Shadowed)
+	}
+	if !shadowed {
+		t.Fatal("the stale confirmation is not listed as shadowed")
+	}
+	got := svc.RemoveASA(adminproto.RemoveASARequest{Network: "mainnet", AssetID: 31566704})
+	if !got.Success || len(got.Blocking) != 0 {
+		t.Fatalf("RemoveASA(shadowed confirmation) = %+v", got)
+	}
+	if _, set := ir.PolicyState(); len(set.Entries()) != 0 {
+		t.Fatalf("set after removing the shadowed confirmation = %+v", set.Entries())
+	}
+	builtin := false
+	for _, a := range svc.ListASASet().Assets {
+		builtin = builtin || (a.Origin == "builtin" && a.AssetID == 31566704 && a.Network == "mainnet")
+	}
+	if !builtin {
+		t.Fatal("the built-in USDC is gone")
+	}
+}
+
+// encodedSize is a response's size on the wire.
+func encodedSize(t *testing.T, msg any) int {
+	t.Helper()
+	data, err := json.Marshal(msg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return len(data)
+}
+
+// A valid document can produce tens of thousands of findings; the check
+// response must still fit one admin frame and say what it left out.
+func TestPolicyCheckBoundsItsDiagnostics(t *testing.T) {
+	svc, _, _ := setupASAAdmin(t)
+	members := make([]string, 30000)
+	for i := range members {
+		members[i] = fmt.Sprintf(`"asa:%d"`, i+100)
+	}
+	doc := policytest.MustDocument(noderole.RoleSigner, policy.DefaultKey, `{
+		"asset_sets": {"many": {"private-dev": [`+strings.Join(members, ",")+`]}},
+		"transfer_policy": {"routes": [{"id": "two-nets", "networks": ["mainnet", "testnet"], "sources": ["*"], "assets": ["asa:5"], "destinations": ["*"]}]}}`)
+	result := svc.CheckPolicy(adminproto.CheckPolicyRequest{Documents: []adminproto.PolicyDocument{{Key: policy.DefaultKey, Document: doc}}})
+	if !result.Success || !result.Valid {
+		t.Fatalf("CheckPolicy() = code %q error %q errors %.300v", result.Code, result.Error, result.Errors)
+	}
+	if n := len(result.Errors) + len(result.Warnings); n > policyapply.MaxResponseProblems+1 {
+		t.Fatalf("response carries %d problems", n)
+	}
+	last := result.Warnings[len(result.Warnings)-1].Message
+	if !strings.Contains(last, "more problem(s) omitted") {
+		t.Fatalf("the response does not say findings were omitted: %q", last)
+	}
+	for _, w := range result.Warnings {
+		if len(w.Message) > policyapply.MaxProblemTextBytes || len(w.Pointer) > policyapply.MaxProblemTextBytes {
+			t.Fatalf("a problem exceeds %d bytes: %d / %d", policyapply.MaxProblemTextBytes, len(w.Message), len(w.Pointer))
+		}
+	}
+	if size := encodedSize(t, adminserver.ProtocolCheckPolicyResultMessage("check-1", result)); size > protocol.MaxAdminMessageBytes/4 {
+		t.Fatalf("check response is %d bytes", size)
+	}
+}
+
+func TestRemoveASABoundsBlockingReferences(t *testing.T) {
+	svc, _, _ := setupASAAdmin(t)
+	if added := confirmASA9(t, svc); !added.Success {
+		t.Fatal(added)
+	}
+	sets := make([]string, 1000)
+	for i := range sets {
+		sets[i] = fmt.Sprintf(`"s%d": {"private-dev": ["asa:9"]}`, i)
+	}
+	applyDefault(t, svc, `{"asset_sets": {`+strings.Join(sets, ",")+`}}`)
+	got := svc.RemoveASA(adminproto.RemoveASARequest{Network: "private-dev", AssetID: 9})
+	if got.Code != "asa_referenced" || len(got.Blocking) != 256 || got.BlockingOmitted != 744 {
+		t.Fatalf("RemoveASA() = code %q, %d blocking, %d omitted", got.Code, len(got.Blocking), got.BlockingOmitted)
+	}
+	if !strings.Contains(got.Error, "1000 policy reference(s)") {
+		t.Fatalf("error = %q, want the full count", got.Error)
 	}
 }

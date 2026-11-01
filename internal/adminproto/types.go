@@ -884,8 +884,10 @@ type RemoveASAResult struct {
 	Success         bool
 	GenerationID    string
 	CommitUncertain bool
-	// Blocking lists the references that keep the entry from being removed.
-	Blocking []ASAReference
-	Code     string
-	Error    string
+	// Blocking lists the references that keep the entry from being removed,
+	// and BlockingOmitted how many more there are beyond the reported ones.
+	Blocking        []ASAReference
+	BlockingOmitted int
+	Code            string
+	Error           string
 }

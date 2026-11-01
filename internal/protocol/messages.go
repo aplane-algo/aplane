@@ -1531,6 +1531,7 @@ type RemoveASAResultMessage struct {
 	GenerationID    string         `json:"generation_id,omitempty"`
 	CommitUncertain bool           `json:"commit_uncertain,omitempty"`
 	Blocking        []ASAReference `json:"blocking,omitempty"`
+	BlockingOmitted int            `json:"blocking_omitted,omitempty"`
 	Code            string         `json:"code,omitempty"`
 	Error           string         `json:"error,omitempty"`
 }

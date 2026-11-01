@@ -186,6 +186,9 @@ func (c Catalog) removeASA(cmd asaCommand) error {
 		for _, ref := range result.Blocking {
 			_, _ = fmt.Fprintf(c.Streams.Stderr, "  referenced by %s at %s\n", ref.Document, ref.Pointer)
 		}
+		if result.BlockingOmitted > 0 {
+			_, _ = fmt.Fprintf(c.Streams.Stderr, "  and %d more reference(s)\n", result.BlockingOmitted)
+		}
 		return resultError("asa remove failed", result.Code, result.Error)
 	}
 	c.info("asset %d removed from the ASA set (generation %s)", cmd.assetID, result.GenerationID)
