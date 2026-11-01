@@ -27,11 +27,13 @@ func (s Service) GetPolicyDocument(key string) adminproto.PolicyDocumentResult {
 // CheckPolicy validates candidate documents against the node's role and
 // reports the key coverage the change would leave, without writing.
 func (s Service) CheckPolicy(req adminproto.CheckPolicyRequest) adminproto.CheckPolicyResult {
-	current := s.Runtime.NodePolicy()
+	current, set := s.Runtime.PolicyState()
 	if current == nil {
 		return adminproto.CheckPolicyResult{Code: "policy_unavailable", Error: "policy is not loaded; unlock the signer"}
 	}
-	return policyapply.Check(s.policyEnv(nil), current, req)
+	env := s.policyEnv(nil)
+	env.ASASet = set
+	return policyapply.Check(env, current, req)
 }
 
 // ApplyPolicy replaces policy documents in one generation commit and reloads

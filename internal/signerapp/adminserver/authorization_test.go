@@ -288,3 +288,30 @@ func TestHandleApplyPolicyAuthorizesPolicyUpdate(t *testing.T) {
 		t.Fatalf("responses = %+v", msgs)
 	}
 }
+
+// Changing the ASA set is a policy update; reading it is a policy view.
+func TestASASetMessagesAuthorizeAsPolicy(t *testing.T) {
+	svc := &stubServices{}
+	session, authorizer, _ := boundPolicySession(svc)
+	session.HandleAddASA(&protocol.AddASAMessage{BaseMessage: protocol.BaseMessage{ID: "add-1", Type: protocol.MsgTypeAddASA}})
+	if svc.addASACalls != 1 || authorizer.got.action != auth.ActionPolicyUpdate || authorizer.got.resource.Type != "asa_set" {
+		t.Fatalf("add: calls = %d, authorization = %+v", svc.addASACalls, authorizer.got)
+	}
+	session.HandleRemoveASA(&protocol.RemoveASAMessage{BaseMessage: protocol.BaseMessage{ID: "rm-1", Type: protocol.MsgTypeRemoveASA}})
+	if authorizer.got.action != auth.ActionPolicyUpdate {
+		t.Fatalf("remove: authorization = %+v", authorizer.got)
+	}
+	for _, read := range []func(){
+		func() {
+			session.HandleListASASet(&protocol.ListASASetMessage{BaseMessage: protocol.BaseMessage{ID: "l", Type: protocol.MsgTypeListASASet}})
+		},
+		func() {
+			session.HandleLookupASA(&protocol.LookupASAMessage{BaseMessage: protocol.BaseMessage{ID: "k", Type: protocol.MsgTypeLookupASA}})
+		},
+	} {
+		read()
+		if authorizer.got.action != auth.ActionPolicyView || authorizer.got.resource.Type != "asa_set" {
+			t.Fatalf("read: authorization = %+v", authorizer.got)
+		}
+	}
+}

@@ -11,6 +11,7 @@ const (
 	templateSubcommand    = "template"
 	keyTypeSubcommand     = "keytype"
 	cosignerSubcommand    = "cosigner"
+	asaSubcommand         = "asa"
 	clientsSubcommand     = "clients"
 	endpointSubcommand    = "endpoint"
 	generationsSubcommand = "generations"
@@ -40,6 +41,7 @@ var productionSubcommands = map[string]productionCommandKind{
 	templateSubcommand:    productionCatalog,
 	keyTypeSubcommand:     productionCatalog,
 	cosignerSubcommand:    productionCatalog,
+	asaSubcommand:         productionCatalog,
 	clientsSubcommand:     productionCatalog,
 	endpointSubcommand:    productionCatalog,
 	generationsSubcommand: productionCatalog,

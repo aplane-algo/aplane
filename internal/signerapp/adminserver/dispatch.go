@@ -61,6 +61,10 @@ var dispatchTable = map[string]dispatchFunc{
 	protocol.MsgTypeGetPolicyDocument: typed("get policy document", (*Session).HandleGetPolicyDocument),
 	protocol.MsgTypeCheckPolicy:       typed("check policy", (*Session).HandleCheckPolicy),
 	protocol.MsgTypeApplyPolicy:       typed("apply policy", (*Session).HandleApplyPolicy),
+	protocol.MsgTypeListASASet:        typed("list asa set", (*Session).HandleListASASet),
+	protocol.MsgTypeLookupASA:         typed("lookup asa", (*Session).HandleLookupASA),
+	protocol.MsgTypeAddASA:            typed("add asa", (*Session).HandleAddASA),
+	protocol.MsgTypeRemoveASA:         typed("remove asa", (*Session).HandleRemoveASA),
 
 	protocol.MsgTypeListCosignerReferences: typed("list cosigner references", func(s *Session, m *protocol.ListCosignerReferencesMessage) {
 		s.HandleListCosignerReferences(m.ID)

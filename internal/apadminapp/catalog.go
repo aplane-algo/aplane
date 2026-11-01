@@ -143,6 +143,8 @@ func CatalogAuthMode(command string, args []string) (AuthMode, error) {
 		}
 	case "clients":
 		return clientsCommandAuth(args)
+	case "asa":
+		return asaCommandAuth(args)
 	case "endpoint":
 		if len(args) > 0 && args[0] == "export" {
 			fs := flag.NewFlagSet("apadmin endpoint export", flag.ContinueOnError)
@@ -203,6 +205,8 @@ func (c Catalog) Run(command string, args []string) error {
 		return c.runKeyType(args)
 	case "cosigner":
 		return c.runCosigner(args)
+	case "asa":
+		return c.runASA(args)
 	case "clients":
 		return c.runClients(args)
 	case "endpoint":

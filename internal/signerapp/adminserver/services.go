@@ -48,6 +48,10 @@ type SettingsServices interface {
 	GetPolicyDocument(key string) adminproto.PolicyDocumentResult
 	CheckPolicy(req adminproto.CheckPolicyRequest) adminproto.CheckPolicyResult
 	ApplyPolicy(req adminproto.ApplyPolicyRequest) adminproto.ApplyPolicyResult
+	ListASASet() adminproto.ListASASetResult
+	LookupASA(req adminproto.LookupASARequest) adminproto.LookupASAResult
+	AddASA(req adminproto.AddASARequest) adminproto.AddASAResult
+	RemoveASA(req adminproto.RemoveASARequest) adminproto.RemoveASAResult
 }
 
 type KeyServices interface {

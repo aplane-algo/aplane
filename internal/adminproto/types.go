@@ -790,3 +790,104 @@ type ListKeyTypesResult struct {
 	Code     string
 	Error    string
 }
+
+// ASAInfo is one asset of a node's effective ASA set.
+type ASAInfo struct {
+	// Network is the token that names the asset's chain on this node now,
+	// empty when no token does (the entry is inactive).
+	Network     string
+	GenesisHash string
+	AssetID     uint64
+	Name        string
+	UnitName    string
+	Decimals    uint64
+	// Origin is "builtin" or "operator".
+	Origin string
+	// Shadowed marks an operator entry a later release made built-in; the
+	// built-in entry is the one used.
+	Shadowed bool
+	// Operator entries only.
+	Creator               string
+	ConfirmedAt           string
+	NetworkAtConfirmation string
+}
+
+type ListASASetResult struct {
+	Assets []ASAInfo
+	Code   string
+	Error  string
+}
+
+// ASAObservation is what the node's own algod reports for an asset, shown to
+// the operator for confirmation. The manager, reserve, freeze and clawback
+// addresses can change after confirmation and are not stored.
+type ASAObservation struct {
+	Network       string
+	GenesisHash   string
+	AssetID       uint64
+	Name          string
+	UnitName      string
+	Decimals      uint64
+	Total         uint64
+	DefaultFrozen bool
+	URL           string
+	Creator       string
+	Manager       string
+	Reserve       string
+	Freeze        string
+	Clawback      string
+}
+
+type LookupASARequest struct {
+	Network string
+	AssetID uint64
+}
+
+type LookupASAResult struct {
+	Success bool
+	Asset   ASAObservation
+	Code    string
+	Error   string
+}
+
+// AddASARequest carries the observation the operator confirmed. The node
+// looks the asset up again and adds it only if every value still matches.
+type AddASARequest struct {
+	Confirmed ASAObservation
+}
+
+type AddASAResult struct {
+	Success         bool
+	Asset           ASAInfo
+	GenerationID    string
+	CommitUncertain bool
+	Code            string
+	Error           string
+}
+
+// RemoveASARequest names an operator entry by network token and ID, or, for
+// an inactive entry whose token now names another chain, by genesis hash and
+// ID.
+type RemoveASARequest struct {
+	Network     string
+	GenesisHash string
+	AssetID     uint64
+}
+
+// ASAReference is a stored document's explicit reference to an asset.
+type ASAReference struct {
+	Document string
+	Pointer  string
+}
+
+type RemoveASAResult struct {
+	Success         bool
+	GenerationID    string
+	CommitUncertain bool
+	// Blocking lists the references that keep the entry from being removed,
+	// and BlockingOmitted how many more there are beyond the reported ones.
+	Blocking        []ASAReference
+	BlockingOmitted int
+	Code            string
+	Error           string
+}

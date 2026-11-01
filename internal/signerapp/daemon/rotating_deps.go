@@ -16,7 +16,7 @@ import (
 // set of open tables.
 func (fs *Signer) rotatingDeps(ir *productruntime.Runtime) *signersigning.RotatingDeps {
 	return &signersigning.RotatingDeps{
-		Chain:    fs.rotatingChainReader(),
+		Chain:    fs.chainReader(),
 		Tables:   ir.StageTables(),
 		Locks:    &fs.rotatingLocks,
 		Releases: &fs.rotatingReleases,
@@ -29,10 +29,10 @@ func (fs *Signer) rotatingDeps(ir *productruntime.Runtime) *signersigning.Rotati
 	}
 }
 
-// rotatingChainReader reads rotating accounts' authorizers from the node
-// configured for each account's network. It is the one place the signer
-// reads the chain.
-func (fs *Signer) rotatingChainReader() chainread.Reader {
+// chainReader reads chain state from the node configured for each network:
+// rotating accounts' authorizers, and assets an operator confirms into the
+// ASA set. It is the one place the signer reads the chain.
+func (fs *Signer) chainReader() chainread.Reader {
 	makeClient := fs.makeAlgod
 	if makeClient == nil {
 		makeClient = signutil.CreateAlgodClient

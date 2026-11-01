@@ -14,13 +14,18 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
+	"github.com/aplane-algo/aplane/internal/asaset"
+	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/policyadmission"
+	"github.com/aplane-algo/aplane/internal/policycontext"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
 	"github.com/aplane-algo/aplane/internal/signerapp/storevalidate"
@@ -44,6 +49,8 @@ type Env struct {
 	HeldKeys map[string]bool // key selectors the node holds
 	Now      func() time.Time
 	Keyring  *crypto.Keyring
+	// ASASet is the node's ASA set, for the admission checks; nil skips them.
+	ASASet *asaset.Set
 }
 
 // Error is a policy request failure with a stable result code.
@@ -147,10 +154,104 @@ func Check(env Env, current *policyruntime.NodePolicy, req adminproto.CheckPolic
 	if candidate != nil {
 		for _, doc := range req.Documents {
 			result.Warnings = append(result.Warnings, advisoryWarnings(env.Role, doc)...)
+			result.Warnings = append(result.Warnings, AdmissionProblems(env, doc)...)
 		}
 		result.Warnings = append(result.Warnings, CoverageWarnings(KeyStatus(env.HeldKeys, candidate))...)
 	}
+	result.Errors, result.Warnings = BoundProblems(result.Errors, result.Warnings)
 	return result
+}
+
+// Diagnostics are bounded so a response always fits one admin frame: a
+// valid document can produce tens of thousands of findings.
+const (
+	// MaxResponseProblems caps the errors and warnings one response carries.
+	MaxResponseProblems = 256
+	// MaxProblemTextBytes caps one problem's message and pointer.
+	MaxProblemTextBytes = 512
+)
+
+// BoundProblems keeps at most MaxResponseProblems errors and warnings,
+// errors first, truncates long messages and pointers, and ends the warnings
+// with a note of how many were left out.
+func BoundProblems(errs, warnings []adminproto.PolicyProblem) ([]adminproto.PolicyProblem, []adminproto.PolicyProblem) {
+	total := len(errs) + len(warnings)
+	keptErrs := boundList(errs, MaxResponseProblems)
+	keptWarnings := boundList(warnings, MaxResponseProblems-len(keptErrs))
+	if omitted := total - len(keptErrs) - len(keptWarnings); omitted > 0 {
+		keptWarnings = append(keptWarnings, adminproto.PolicyProblem{
+			Message: fmt.Sprintf("%d more problem(s) omitted from this response; fix those shown and check again", omitted),
+		})
+	}
+	return keptErrs, keptWarnings
+}
+
+func boundList(problems []adminproto.PolicyProblem, limit int) []adminproto.PolicyProblem {
+	if limit < 0 {
+		limit = 0
+	}
+	if len(problems) > limit {
+		problems = problems[:limit]
+	}
+	out := make([]adminproto.PolicyProblem, len(problems))
+	for i, p := range problems {
+		p.Message = TruncateText(p.Message, MaxProblemTextBytes)
+		p.Pointer = TruncateText(p.Pointer, MaxProblemTextBytes)
+		out[i] = p
+	}
+	return out
+}
+
+// TruncateText cuts s to at most limit bytes at a character boundary,
+// marking the cut.
+func TruncateText(s string, limit int) string {
+	if len(s) <= limit {
+		return s
+	}
+	cut := limit - len("…")
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut] + "…"
+}
+
+// AdmissionProblems reports what a submitted document names that this node
+// does not know: a network outside its mapping, an asset outside its ASA set,
+// a direct asa:<id> route term over several networks, and a route with no
+// asset on one of its networks. They are warnings for now; submitted
+// documents will be refused for them once the rules are enforced.
+func AdmissionProblems(env Env, doc adminproto.PolicyDocument) []adminproto.PolicyProblem {
+	if env.ASASet == nil {
+		return nil
+	}
+	decoded, err := policy.DecodePolicyV1([]byte(doc.Document), doc.Key, env.Role)
+	if err != nil {
+		return nil
+	}
+	ctx, err := NodeContext(env)
+	if err != nil {
+		return []adminproto.PolicyProblem{{Key: doc.Key, Message: "the node's policy context is unavailable: " + err.Error()}}
+	}
+	found := policyadmission.Check(decoded, ctx)
+	out := make([]adminproto.PolicyProblem, 0, len(found))
+	for _, p := range found {
+		out = append(out, adminproto.PolicyProblem{Key: doc.Key, Pointer: p.Pointer, Message: p.Message})
+	}
+	return out
+}
+
+// NodeContext is the node's policy context: its role, its network mapping
+// (the built-in networks plus the configured custom ones), and its ASA set.
+func NodeContext(env Env) (*policycontext.Context, error) {
+	var custom map[string]string
+	if env.Config != nil {
+		custom = env.Config.GenesisHashNetworks
+	}
+	networks, err := apconfig.NewGenesisHashNetworkResolver(custom)
+	if err != nil {
+		return nil, err
+	}
+	return policycontext.New(env.Role, networks, env.ASASet)
 }
 
 // advisoryWarnings reports a valid document's surprising shapes.
@@ -201,7 +302,10 @@ func Commit(env Env, req adminproto.ApplyPolicyRequest) (Outcome, error) {
 		return Outcome{}, err
 	}
 	if len(problems) > 0 {
-		return Outcome{Problems: problems}, Error{"policy_validation_failed", "policy documents are invalid"}
+		// An apply result carries errors only, so the omission note goes
+		// with them.
+		bounded, note := BoundProblems(problems, nil)
+		return Outcome{Problems: append(bounded, note...)}, Error{"policy_validation_failed", "policy documents are invalid"}
 	}
 	if candidate.SetSHA256() == current.SetSHA256() {
 		return Outcome{}, nil

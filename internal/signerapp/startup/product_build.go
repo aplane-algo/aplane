@@ -9,12 +9,16 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/asaset"
 	"github.com/aplane-algo/aplane/internal/asasetstore"
+	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keyclass"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/noderole"
+	"github.com/aplane-algo/aplane/internal/policyadmission"
+	"github.com/aplane-algo/aplane/internal/policycontext"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/approval"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
@@ -169,7 +173,7 @@ func NewReloadService(ir *productruntime.Runtime, opts ProductBuildOptions, hook
 			if err != nil {
 				return fmt.Errorf("asa set verification failed for product store: %w", err)
 			}
-			ir.SetVerifiedPolicyState(nodePolicy, set)
+			ir.SetVerifiedPolicyState(nodePolicy, set, storedAdmissionAlerts(ir.NodeRole(), opts.Config, set, nodePolicy))
 			return nil
 		},
 		BeforePublish: func(_ map[string]string, keyTypes map[string]string) error {
@@ -210,4 +214,23 @@ func WireReloadFunc(ir *productruntime.Runtime, opts ProductBuildOptions, hooks 
 
 func newTemplateManager(keyPaths storepaths.Paths) *signertemplates.Manager {
 	return signertemplates.NewManager(keyPaths)
+}
+
+// storedAdmissionAlerts are the admission problems of the stored documents,
+// checked against the node's networks and ASA set. They become status
+// alerts; they never block loading.
+func storedAdmissionAlerts(role noderole.Role, cfg *serverconfig.ServerConfig, set *asaset.Set, np *policyruntime.NodePolicy) []string {
+	var custom map[string]string
+	if cfg != nil {
+		custom = cfg.GenesisHashNetworks
+	}
+	networks, err := apconfig.NewGenesisHashNetworkResolver(custom)
+	if err != nil {
+		return []string{"policy admission checks are unavailable: " + err.Error()}
+	}
+	ctx, err := policycontext.New(role, networks, set)
+	if err != nil {
+		return []string{"policy admission checks are unavailable: " + err.Error()}
+	}
+	return policyadmission.StoredAlerts(np.Documents, ctx)
 }
