@@ -10,13 +10,12 @@ import (
 )
 
 // TestDaemonDoesNotLinkClientStack pins the client/server layering boundary:
-// the signer daemon must not transitively compile the signer HTTP client or
-// client-side address book. Client submit orchestration lives in
-// internal/clientsign; internal/signing stays a shared leaf.
-//
-// internal/cache is intentionally not asserted here: the daemon still reaches
-// it through internal/signerapp/asametadata (signer-wide ASA metadata reuses
-// the client cache schema), which is a separate, known coupling.
+// the signer daemon must not transitively compile the signer HTTP client,
+// client-side address book, or client caches. Client submit orchestration
+// lives in internal/clientsign; internal/signing stays a shared leaf. The
+// daemon's asset metadata is its ASA set (internal/asaset), never the
+// client's ASA cache, so it does not link internal/cache or internal/asa,
+// whose resolver reads that cache.
 func TestDaemonDoesNotLinkClientStack(t *testing.T) {
 	out, err := exec.Command("go", "list", "-deps", ".").Output()
 	if err != nil {
@@ -27,6 +26,8 @@ func TestDaemonDoesNotLinkClientStack(t *testing.T) {
 		"github.com/aplane-algo/aplane/internal/signerclient",
 		"github.com/aplane-algo/aplane/internal/addressbook",
 		"github.com/aplane-algo/aplane/internal/clientsign",
+		"github.com/aplane-algo/aplane/internal/cache",
+		"github.com/aplane-algo/aplane/internal/asa",
 	}
 	deps := string(out)
 	for _, pkg := range forbidden {

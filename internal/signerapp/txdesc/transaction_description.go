@@ -13,7 +13,6 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
-	"github.com/aplane-algo/aplane/internal/asa"
 	"github.com/aplane-algo/aplane/internal/asaset"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/policycontext"
@@ -50,7 +49,7 @@ func (v chainView) assetRef(genesis types.Digest, id uint64) string {
 
 func describePaymentTx(txn types.Transaction, chain chainView) string {
 	var desc strings.Builder
-	desc.WriteString(fmt.Sprintf("Payment: %s ALGO", asa.FormatAmountWithDecimals(uint64(txn.Amount), 6)))
+	desc.WriteString(fmt.Sprintf("Payment: %s ALGO", asaset.FormatFixed(uint64(txn.Amount), 6)))
 	desc.WriteString(fmt.Sprintf("\n  From: %s", txn.Sender.String()))
 	desc.WriteString(fmt.Sprintf("\n  To:   %s", txn.Receiver.String()))
 
@@ -266,7 +265,7 @@ func describeUnknownTx(txn types.Transaction, chain chainView) string {
 
 // appendCommonFields adds fee, network identity, note, close remainder, rekey, group, and round info.
 func appendCommonFields(desc *strings.Builder, txn types.Transaction, chain chainView) {
-	fmt.Fprintf(desc, "\n  Fee: %s ALGO", asa.FormatAmountWithDecimals(uint64(txn.Fee), 6))
+	fmt.Fprintf(desc, "\n  Fee: %s ALGO", asaset.FormatFixed(uint64(txn.Fee), 6))
 
 	if chain.network != "" {
 		fmt.Fprintf(desc, "\n  Network: %s", chain.network)

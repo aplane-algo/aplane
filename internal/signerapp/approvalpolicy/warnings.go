@@ -12,7 +12,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
-	"github.com/aplane-algo/aplane/internal/asa"
+	"github.com/aplane-algo/aplane/internal/asaset"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 	"github.com/aplane-algo/aplane/internal/txeffects"
 )
@@ -190,7 +190,7 @@ func CheckDecodedTxnWarningsIn(txn types.Transaction, ctx Context) []signerappro
 	}
 
 	if uint64(txn.Fee) > DefaultMaxFeeMicroAlgos {
-		algoFee := asa.FormatAmountWithDecimals(uint64(txn.Fee), 6)
+		algoFee := asaset.FormatFixed(uint64(txn.Fee), 6)
 		violations = append(violations, signerapproval.Violation{
 			Field:    "Fee",
 			Value:    algoFee + " ALGO",

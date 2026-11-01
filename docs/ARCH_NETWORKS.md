@@ -256,7 +256,7 @@ Primary files:
 - `internal/apshellapp/network.go` - shell-facing network switching workflow,
 - `internal/signerapp/signing/planner.go` - signer transaction network validation,
 - `internal/policy/lint.go` - policy lookup by transaction genesis hash,
-- `internal/signerapp/asametadata` - signer-wide ASA metadata cache and display formatting,
+- `internal/policycontext`, `internal/asaset` - the node's network map and ASA set, and the asset display formatting signer reviews, limit messages and approval prompts share,
 - `internal/signerapp/admin/policy.go` - admin policy read/check/apply service,
 - `internal/protocol/messages.go` - whole-policy admin IPC wire fields,
 - external `aplane-algo/aplanesdk/go/config.go` - Go SDK config token validation.

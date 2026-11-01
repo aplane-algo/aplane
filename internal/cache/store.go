@@ -27,12 +27,6 @@ func (s *Store) persistent() bool {
 	return s != nil && s.baseDir != ""
 }
 
-// NewStoreForCacheDir creates a cache store rooted at an explicit cache
-// directory. It does not bind the store to APCLIENT_DATA locking.
-func NewStoreForCacheDir(cacheDir string) *Store {
-	return &Store{baseDir: cacheDir}
-}
-
 func (s *Store) path(filename string) string {
 	if !s.persistent() {
 		return ""

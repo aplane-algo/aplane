@@ -15,9 +15,9 @@ import (
 // decimals are unknown is shown in base units only, with no decimal count
 // guessed.
 
-// FormatUnits formats a base-unit amount with decimals places, without
-// trailing zeros: 1500000 with 6 decimals is "1.5".
-func FormatUnits(amount, decimals uint64) string {
+// FormatFixed formats a base-unit amount with exactly decimals places:
+// 1500000 with 6 decimals is "1.500000".
+func FormatFixed(amount, decimals uint64) string {
 	digits := fmt.Sprintf("%d", amount)
 	places := int(decimals)
 	if places == 0 {
@@ -26,12 +26,17 @@ func FormatUnits(amount, decimals uint64) string {
 	if len(digits) <= places {
 		digits = strings.Repeat("0", places-len(digits)+1) + digits
 	}
-	intPart := digits[:len(digits)-places]
-	fracPart := strings.TrimRight(digits[len(digits)-places:], "0")
-	if fracPart == "" {
-		return intPart
+	return digits[:len(digits)-places] + "." + digits[len(digits)-places:]
+}
+
+// FormatUnits formats a base-unit amount with decimals places, without
+// trailing zeros: 1500000 with 6 decimals is "1.5".
+func FormatUnits(amount, decimals uint64) string {
+	fixed := FormatFixed(amount, decimals)
+	if !strings.Contains(fixed, ".") {
+		return fixed
 	}
-	return intPart + "." + fracPart
+	return strings.TrimSuffix(strings.TrimRight(fixed, "0"), ".")
 }
 
 // Printable is an issuer-chosen name with control characters replaced, so

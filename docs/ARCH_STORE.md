@@ -31,9 +31,6 @@ routing, client enrollment, or approval prompts.
   node.yaml
   audit.log
   .apstore.lock
-  cache/
-    .cache_key
-    <network>_asa_cache.json
   library/
     templates/*.yaml        # plaintext KeyType Library YAML sources
   backups/default/
@@ -130,10 +127,7 @@ Layout notes:
   the daemon in bounded admin-protocol chunks, and atomically published under
   `<data_dir>/backups/default/`; exports stream bounded chunks in the other
   direction, so operators never need filesystem access to the private locker
-- signer `cache/<network>_asa_cache.json` is signer-wide public ASA metadata for policy amount rendering; it is outside the private product store and is not authoritative for policy enforcement
-- signer cache files use the same signed JSON/HMAC envelope as client cache files, with `cache/.cache_key` scoped to the signer cache root
-- signer ASA cache access is serialized inside `apsigner` by `internal/signerapp/asametadata.Store`; external/manual cache edits are unsupported and tampering is rejected by HMAC validation
-- signer ASA metadata is loaded per operation from disk with `internal/asa/registry` built-in metadata as seed data; there is no separate long-lived in-memory signer ASA metadata cache to reconcile
+- the signer keeps no ASA cache: its asset metadata is the generation's ASA set (`asa_set.json`) plus the built-in table, published with the policy it was loaded with. A `cache/` directory (`.cache_key`, `<network>_asa_cache.json`) left by an earlier release is neither read nor written and can be deleted
 - built-in ASA metadata and convenience aliases live in `internal/asa/registry`; cache-backed current-network metadata is preferred for symbolic resolution, and registry aliases are the fallback used by shell and JavaScript helpers
 - the enrolled-client registry is always `identities/default/.ssh/authorized_keys`; there is no server config field for it. The daemon is its only writer. The parser is strict: an option-free public-key line is an enrolled client whose trailing comment is its display label, comment and blank lines are allowed, every option-bearing line is rejected (options under the reserved `aplane-` prefix included), and a malformed line or a duplicate key fails the whole file with its line number. The daemon validates a complete candidate registry, writes it atomically and durably (temp file, fsync, rename, directory fsync, every failure reported), and installs it under one lock, so SSH authentication never observes a partial registry. If the write fails after the rename, the daemon re-reads the file and serves whatever it holds (refusing every key if it cannot be read) rather than keep authority the file no longer grants. A change that took effect this way is treated as made (it is audited as an enrollment or revocation and a revoked key's connections are closed) and the command that caused the write reports the durability failure on top of that, so the audit trail records the authority change separately from its durability outcome. The registry is then remembered as not yet durable, and the next registry operation re-publishes it before doing anything else, so a retried command succeeds only once a sync has succeeded; it is never acknowledged on the strength of the unsynced file
 - `passphrase` and `passphrase.cred` are sensitive product-store helper files referenced by `unlock.yaml`
