@@ -4,10 +4,19 @@
 package daemon
 
 import (
+	"strings"
 	"testing"
+	"time"
 
+	"github.com/algorand/go-algorand-sdk/v2/types"
+
+	"github.com/aplane-algo/aplane/internal/asaset"
+	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/policy/policytest"
+	"github.com/aplane-algo/aplane/internal/policycontext"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
+	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 )
 
@@ -47,5 +56,59 @@ func TestNewSigningServiceForRuntimeCapturesPolicyAndUserAutoApproveSnapshot(t *
 	}
 	if *svc.Approval.UserAutoApprove {
 		t.Fatal("captured user_auto_approve observed later runtime mutation")
+	}
+}
+
+// contextWithAsset9 is a signer's context mapping private-dev, with asset 9
+// confirmed under unit and decimals.
+func contextWithAsset9(t *testing.T, unit string, decimals uint64) (*policycontext.Context, types.Digest) {
+	t.Helper()
+	const hash = "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="
+	genesis, err := asaset.ParseGenesisHash(hash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	set, err := asaset.New([]asaset.Entry{{
+		Identity: asaset.Identity{Genesis: genesis, AssetID: 9}, UnitName: unit, Decimals: decimals,
+		Creator: types.Address{1}.String(), ConfirmedAt: time.Unix(1_700_000_000, 0), NetworkAtConfirmation: "private-dev",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, err := policyruntime.NewContext(noderole.RoleSigner, &serverconfig.ServerConfig{GenesisHashNetworks: map[string]string{hash: "private-dev"}}, set)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return ctx, types.Digest(genesis)
+}
+
+// A request shows amounts from the context it captured: an approval queued
+// before the ASA set changes keeps the prompt and the limit messages it was
+// built with.
+func TestSigningServiceShowsAmountsFromTheCapturedContext(t *testing.T) {
+	cfg := &serverconfig.ServerConfig{GenesisHashNetworks: map[string]string{"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=": "private-dev"}}
+	doc := policytest.MustDocument(noderole.RoleSigner, policy.DefaultKey, `{"limits": {"private-dev": {"asa:9": {"reject_above": "100"}}}}`)
+	install := func(ir *productruntime.Runtime, unit string, decimals uint64) types.Digest {
+		ctx, genesis := contextWithAsset9(t, unit, decimals)
+		np, err := policyruntime.Compile(noderole.RoleSigner, cfg, []policy.StoredDocument{{Key: policy.DefaultKey, Bytes: []byte(doc)}}, ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ir.SetNodePolicy(np)
+		return genesis
+	}
+	ir := productruntime.New(productruntime.Config{NodeRole: noderole.RoleSigner})
+	genesis := install(ir, "XYZ", 2)
+	svc := (&Signer{config: cfg}).newSigningServiceWithAudit(ir, nil)
+	install(ir, "NEW", 6)
+
+	txn := types.Transaction{Type: types.AssetTransferTx, Header: types.Header{GenesisHash: genesis},
+		AssetTransferTxnFields: types.AssetTransferTxnFields{XferAsset: 9, AssetAmount: 150}}
+	if got := svc.GenerateTxnDescriptionFromTxn(txn); !strings.Contains(got, "ASA Transfer: 1.5 XYZ (150 base units), asset #9, private-dev") {
+		t.Fatalf("the prompt after an ASA set change:\n%s", got)
+	}
+	violations := policy.CheckTxnPolicyLints(txn, svc.PolicyFor("ANY"), nil)
+	if msg := policy.JoinLintViolations(violations); !strings.Contains(msg, "1.5 XYZ (150 base units) exceeds") || !strings.Contains(msg, "1 XYZ (100 base units)") {
+		t.Fatalf("the limit message after an ASA set change: %s", msg)
 	}
 }

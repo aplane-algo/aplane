@@ -98,7 +98,7 @@ func setupTestSigner(t *testing.T) (*Signer, func()) {
 	if err != nil {
 		t.Fatalf("Failed to initialize atomic store: %v", err)
 	}
-	initialPolicy, err := policyruntime.Load(noderole.RoleSigner, tmpDir, serverConfigForTest(), active, masterKeyRing)
+	initialPolicy, err := policyruntime.Load(noderole.RoleSigner, serverConfigForTest(), active, masterKeyRing)
 	if err != nil {
 		t.Fatalf("Failed to verify policy baseline: %v", err)
 	}

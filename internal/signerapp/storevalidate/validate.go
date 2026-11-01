@@ -111,7 +111,7 @@ func validateDestinationAuthority(opts Options) error {
 		return fmt.Errorf("node role %q does not match runtime role %q", role.Role, opts.ExpectedRole)
 	}
 	if _, err := policyruntime.Load(
-		opts.ExpectedRole, opts.DataDir, opts.Config, opts.Candidate, opts.Keyring,
+		opts.ExpectedRole, opts.Config, opts.Candidate, opts.Keyring,
 	); err != nil {
 		return fmt.Errorf("policy: %w", err)
 	}

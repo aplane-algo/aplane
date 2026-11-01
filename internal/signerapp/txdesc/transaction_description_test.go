@@ -13,7 +13,11 @@ import (
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
+	"github.com/aplane-algo/aplane/internal/asaset"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/noderole"
+	"github.com/aplane-algo/aplane/internal/policycontext"
+	"time"
 )
 
 func TestDescribeApplicationCallTx(t *testing.T) {
@@ -51,7 +55,7 @@ func TestDescribeApplicationCallTx(t *testing.T) {
 		},
 	}
 
-	desc := describeApplicationCallTx(txn)
+	desc := describeApplicationCallTx(txn, chainView{})
 
 	for _, want := range []string{
 		"App Call: #123 (NoOp)",
@@ -106,7 +110,7 @@ func TestDescribeApplicationCallTx_OnCompletionVariants(t *testing.T) {
 				},
 			}
 
-			desc := describeApplicationCallTx(txn)
+			desc := describeApplicationCallTx(txn, chainView{})
 			if !strings.Contains(desc, tt.want) {
 				t.Fatalf("description missing %q:\n%s", tt.want, desc)
 			}
@@ -154,7 +158,7 @@ func TestDescribeApplicationCallTx_ShowsAllArgsAndReferences(t *testing.T) {
 		},
 	}
 
-	desc := describeApplicationCallTx(txn)
+	desc := describeApplicationCallTx(txn, chainView{})
 	for _, want := range []string{
 		`[2]: 0xdeadbeef`,
 		`[4]: "fifth-arg-visible"`,
@@ -199,7 +203,7 @@ func TestDescribeApplicationCallTx_ShowsProgramHashesAndSchema(t *testing.T) {
 		},
 	}
 
-	desc := describeApplicationCallTx(txn)
+	desc := describeApplicationCallTx(txn, chainView{})
 	for _, want := range []string{
 		"App Create (NoOp)",
 		"Approval Program: 5 bytes, sha256=" + hex.EncodeToString(approvalHash[:]),
@@ -252,7 +256,7 @@ func TestDescribeAssetConfigTx_ShowsAuthorities(t *testing.T) {
 		},
 	}
 
-	createDesc := describeAssetConfigTx(createTxn)
+	createDesc := describeAssetConfigTx(createTxn, chainView{})
 	for _, want := range []string{
 		"Asset Creation",
 		"From: " + sender.String(),
@@ -282,7 +286,7 @@ func TestDescribeAssetConfigTx_ShowsAuthorities(t *testing.T) {
 		},
 	}
 
-	reconfigDesc := describeAssetConfigTx(reconfigTxn)
+	reconfigDesc := describeAssetConfigTx(reconfigTxn, chainView{})
 	for _, want := range []string{
 		"Asset Reconfiguration: asset #42",
 		"From: " + sender.String(),
@@ -306,7 +310,7 @@ func TestDescribeAssetConfigTx_ShowsAuthorities(t *testing.T) {
 		},
 	}
 
-	destroyDesc := describeAssetConfigTx(destroyTxn)
+	destroyDesc := describeAssetConfigTx(destroyTxn, chainView{})
 	if !strings.Contains(destroyDesc, "Asset Destroy: asset #42") {
 		t.Fatalf("asset destroy description missing destroy label:\n%s", destroyDesc)
 	}
@@ -335,7 +339,7 @@ func TestDescribeAssetFreezeTx_ShowsSender(t *testing.T) {
 		},
 	}
 
-	desc := describeAssetFreezeTx(txn)
+	desc := describeAssetFreezeTx(txn, chainView{})
 	for _, want := range []string{
 		"Asset Freeze: asset #99",
 		"From: " + sender.String(),
@@ -373,7 +377,7 @@ func TestDescribeKeyRegistrationTx_ShowsParticipationDetails(t *testing.T) {
 		},
 	}
 
-	onlineDesc := describeKeyRegistrationTx(onlineTxn)
+	onlineDesc := describeKeyRegistrationTx(onlineTxn, chainView{})
 	for _, want := range []string{
 		"Key Registration: Go ONLINE",
 		"From: " + sender.String(),
@@ -397,7 +401,7 @@ func TestDescribeKeyRegistrationTx_ShowsParticipationDetails(t *testing.T) {
 		},
 	}
 
-	nonpartDesc := describeKeyRegistrationTx(nonpartTxn)
+	nonpartDesc := describeKeyRegistrationTx(nonpartTxn, chainView{})
 	if !strings.Contains(nonpartDesc, "Key Registration: Go NONPARTICIPATING") {
 		t.Fatalf("nonparticipation keyreg description missing nonparticipation state:\n%s", nonpartDesc)
 	}
@@ -431,7 +435,7 @@ func TestDescribeApplicationCallTx_LongOpaqueArgShowsDigest(t *testing.T) {
 		},
 	}
 
-	desc := describeApplicationCallTx(txn)
+	desc := describeApplicationCallTx(txn, chainView{})
 	want := "(80 bytes, sha256=" + hex.EncodeToString(sum[:]) + ")"
 	if !strings.Contains(desc, want) {
 		t.Fatalf("description missing opaque arg digest:\n%s", desc)
@@ -505,5 +509,63 @@ func TestGenerateTransactionDescriptionFromTxn_ShowsResolvedNetwork(t *testing.T
 		if !strings.Contains(desc, want) {
 			t.Fatalf("description missing %q:\n%s", want, desc)
 		}
+	}
+}
+
+// describeContext is a signer that maps private-dev and has confirmed asset
+// 9 on it with 2 decimals.
+func describeContext(t *testing.T) (*policycontext.Context, types.Digest) {
+	t.Helper()
+	const hash = "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="
+	networks, err := apconfig.NewGenesisHashNetworkResolver(map[string]string{hash: "private-dev"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	genesis, err := asaset.ParseGenesisHash(hash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	set, err := asaset.New([]asaset.Entry{{
+		Identity: asaset.Identity{Genesis: genesis, AssetID: 9}, UnitName: "XYZ", Decimals: 2,
+		Creator: types.Address{1}.String(), ConfirmedAt: time.Unix(1_700_000_000, 0), NetworkAtConfirmation: "private-dev",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, err := policycontext.New(noderole.RoleSigner, networks, set)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return ctx, types.Digest(genesis)
+}
+
+func TestDescribeInContextLabelsKnownAssets(t *testing.T) {
+	ctx, genesis := describeContext(t)
+	transfer := func(id uint64) types.Transaction {
+		return types.Transaction{Type: types.AssetTransferTx, Header: types.Header{GenesisHash: genesis},
+			AssetTransferTxnFields: types.AssetTransferTxnFields{XferAsset: types.AssetIndex(id), AssetAmount: 150}}
+	}
+	known := DescribeTxnInContext(transfer(9), ctx)
+	if !strings.Contains(known, "ASA Transfer: 1.5 XYZ (150 base units), asset #9, private-dev") || strings.Contains(known, "Not in this node's ASA set") {
+		t.Fatalf("known asset:\n%s", known)
+	}
+	unknown := DescribeTxnInContext(transfer(10), ctx)
+	if !strings.Contains(unknown, "ASA Transfer: 150 base units, asset #10, private-dev\n  Not in this node's ASA set") {
+		t.Fatalf("unknown asset:\n%s", unknown)
+	}
+	// The same ID on another chain is another asset.
+	elsewhere := transfer(9)
+	elsewhere.GenesisHash = types.Digest{7}
+	if other := DescribeTxnInContext(elsewhere, ctx); !strings.Contains(other, "ASA Transfer: 150 base units, asset #9\n  Not in this node's ASA set") {
+		t.Fatalf("asset 9 on another chain:\n%s", other)
+	}
+	freeze := types.Transaction{Type: types.AssetFreezeTx, Header: types.Header{GenesisHash: genesis},
+		AssetFreezeTxnFields: types.AssetFreezeTxnFields{FreezeAsset: 9}}
+	if got := DescribeTxnInContext(freeze, ctx); !strings.Contains(got, "Asset Freeze: asset #9 (XYZ)") {
+		t.Fatalf("freeze:\n%s", got)
+	}
+	// Without a context, the description says only what the bytes say.
+	if plain := DescribeTxnWithResolver(transfer(9), apconfig.DefaultGenesisHashNetworkResolver()); !strings.Contains(plain, "ASA Transfer: 150 base units, asset #9") || strings.Contains(plain, "ASA set") {
+		t.Fatalf("without a context:\n%s", plain)
 	}
 }

@@ -62,7 +62,7 @@ func setupPolicyAdmin(t *testing.T, role noderole.Role) (Service, *productruntim
 			if err != nil {
 				return err
 			}
-			np, err := policyruntime.Load(role, root, &cfg, active, kr)
+			np, err := policyruntime.Load(role, &cfg, active, kr)
 			if err != nil {
 				return err
 			}

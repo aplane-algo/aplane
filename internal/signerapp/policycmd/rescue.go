@@ -114,7 +114,7 @@ func (b *offlineBackend) reload() error {
 	if err != nil {
 		return err
 	}
-	if b.current, err = policyruntime.Load(b.env.Role, b.env.DataDir, b.env.Config, active, b.env.Keyring); err != nil {
+	if b.current, err = policyruntime.Load(b.env.Role, b.env.Config, active, b.env.Keyring); err != nil {
 		return fmt.Errorf("verify active policy: %w", err)
 	}
 	if b.env.ASASet, err = asasetstore.Load(active, b.env.Keyring); err != nil {

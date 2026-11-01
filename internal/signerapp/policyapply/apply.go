@@ -155,7 +155,7 @@ func Candidate(env Env, current *policyruntime.NodePolicy, docs []adminproto.Pol
 	if len(problems) > 0 {
 		return nil, problems, nil
 	}
-	candidate, err := policyruntime.Compile(env.Role, env.DataDir, env.Config, resulting)
+	candidate, err := policyruntime.Compile(env.Role, env.Config, resulting, ctx)
 	if err != nil {
 		return nil, []adminproto.PolicyProblem{{Message: err.Error()}}, nil
 	}
@@ -353,7 +353,7 @@ func Commit(env Env, req adminproto.ApplyPolicyRequest) (Outcome, error) {
 	if err != nil {
 		return Outcome{}, Error{"policy_verify_failed", fmt.Sprintf("resolve active generation: %v", err)}
 	}
-	current, err := policyruntime.Load(env.Role, env.DataDir, env.Config, active, env.Keyring)
+	current, err := policyruntime.Load(env.Role, env.Config, active, env.Keyring)
 	if err != nil {
 		return Outcome{}, Error{"policy_verify_failed", fmt.Sprintf("verify active policy: %v", err)}
 	}

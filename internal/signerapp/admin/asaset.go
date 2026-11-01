@@ -190,7 +190,7 @@ func (s Service) RemoveASA(req adminproto.RemoveASARequest) adminproto.RemoveASA
 		if builtinIdentity(id) {
 			return next, nil
 		}
-		current, err := policyruntime.Load(s.Runtime.NodeRole(), s.Deps.DataDir(), s.Deps.Config(), active, kr)
+		current, err := policyruntime.Load(s.Runtime.NodeRole(), s.Deps.Config(), active, kr)
 		if err != nil {
 			return nil, fmt.Errorf("verify active policy: %w", err)
 		}

@@ -228,8 +228,8 @@ func installBackupAdminPolicy(t *testing.T, ir *productruntime.Runtime, paths st
 	if err != nil {
 		t.Fatal(err)
 	}
-	nodePolicy, err := policyruntime.Compile(noderole.RoleSigner, "", nil,
-		[]policy.StoredDocument{{Key: policy.DefaultKey, Bytes: embedded}})
+	nodePolicy, err := policyruntime.Compile(noderole.RoleSigner, nil,
+		[]policy.StoredDocument{{Key: policy.DefaultKey, Bytes: embedded}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

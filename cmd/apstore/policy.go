@@ -52,7 +52,7 @@ func cmdPolicyCheck() error {
 	if err != nil {
 		return err
 	}
-	np, err := policyruntime.Compile(role, dataDirectory, &config, docs)
+	np, err := policyruntime.Compile(role, &config, docs, nil)
 	if err != nil {
 		return fmt.Errorf("policy invalid: %w", err)
 	}
@@ -91,7 +91,7 @@ func cmdPolicyVerify() error {
 	if err != nil {
 		return err
 	}
-	np, err := policyruntime.Load(role, dataDirectory, &config, active, kr)
+	np, err := policyruntime.Load(role, &config, active, kr)
 	if err != nil {
 		return codedError{code: policyIntegrityFailedCode, message: fmt.Sprintf("policy verification failed: %v", err)}
 	}
@@ -120,7 +120,7 @@ func cmdPolicySign() error {
 	if err := policy.ResignKeyPolicies(active, role, kr, now); err != nil {
 		return fmt.Errorf("sign policy sidecars: %w", err)
 	}
-	np, err := policyruntime.Load(role, dataDirectory, &config, active, kr)
+	np, err := policyruntime.Load(role, &config, active, kr)
 	if err != nil {
 		return codedError{code: policyIntegrityFailedCode, message: fmt.Sprintf("sidecars written but verification failed: %v", err)}
 	}

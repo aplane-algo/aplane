@@ -102,7 +102,7 @@ func setupASAAdmin(t *testing.T) (Service, *productruntime.Runtime, *fakeASAChai
 			if err != nil {
 				return err
 			}
-			np, err := policyruntime.Load(noderole.RoleSigner, root, &cfg, active, kr)
+			np, err := policyruntime.Load(noderole.RoleSigner, &cfg, active, kr)
 			if err != nil {
 				return err
 			}

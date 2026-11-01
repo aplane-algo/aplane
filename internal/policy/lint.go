@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/aplane-algo/aplane/internal/asaset"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/txeffects"
 
@@ -123,26 +124,7 @@ func formatASALimitAmount(cfg *Config, network string, assetID uint64, raw uint6
 }
 
 func formatAlgoAmount(microAlgos uint64) string {
-	return formatUnits(microAlgos, 6) + " ALGO"
-}
-
-// formatUnits formats a base-unit amount with decimals places, without
-// trailing zeros: 1500000 with 6 decimals is "1.5".
-func formatUnits(amount, decimals uint64) string {
-	digits := fmt.Sprintf("%d", amount)
-	places := int(decimals)
-	if places == 0 {
-		return digits
-	}
-	if len(digits) <= places {
-		digits = strings.Repeat("0", places-len(digits)+1) + digits
-	}
-	intPart := digits[:len(digits)-places]
-	fracPart := strings.TrimRight(digits[len(digits)-places:], "0")
-	if fracPart == "" {
-		return intPart
-	}
-	return intPart + "." + fracPart
+	return asaset.FormatUnits(microAlgos, 6) + " ALGO"
 }
 
 func networkFromGenesisHash(genesisHash types.Digest, resolver apconfig.GenesisHashNetworkResolver) string {

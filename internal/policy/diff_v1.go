@@ -7,9 +7,10 @@ import (
 	"fmt"
 	"slices"
 	"strings"
-	"unicode"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
+
+	"github.com/aplane-algo/aplane/internal/asaset"
 )
 
 // This file compares two decoded policy documents and describes each
@@ -152,25 +153,14 @@ func (d *policyDiff) amount(network string, asset TransferAssetRef, amount uint6
 	}
 	if d.label != nil {
 		if unit, decimals, ok := d.label(network, asset.ASAID); ok {
-			display := formatUnits(amount, decimals)
-			if unit = printableUnit(unit); unit != "" {
+			display := asaset.FormatUnits(amount, decimals)
+			if unit = asaset.Printable(unit); unit != "" {
 				display += " " + unit
 			}
 			return fmt.Sprintf("%s (%d base units; %d decimals, asset %d on %s)", display, amount, decimals, asset.ASAID, network)
 		}
 	}
 	return fmt.Sprintf("%d base units", amount)
-}
-
-// printableUnit is an issuer-chosen unit name with control characters
-// replaced, so it cannot drive the terminal a review is printed to.
-func printableUnit(unit string) string {
-	return strings.Map(func(r rune) rune {
-		if unicode.IsControl(r) {
-			return '?'
-		}
-		return r
-	}, unit)
 }
 
 // verdictStrictness ranks transaction type verdicts from loosest.
