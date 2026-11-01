@@ -99,13 +99,7 @@ func (m Model) Init() tea.Cmd { return nil }
 // document, when it has one) and the workspace rules it breaks with every
 // other file's edits applied too.
 func (m Model) problemsFor(i int, f *policyauthor.File) []policyauthor.Problem {
-	ws := m.ws
-	for j, other := range m.ws.Files {
-		if s, ok := m.sessions[other.Path]; ok {
-			ws = ws.With(j, s.Current())
-		}
-	}
-	ws = ws.With(i, f)
+	ws := m.currentWS().With(i, f)
 	out := append([]policyauthor.Problem(nil), f.Problems...)
 	for _, p := range ws.Problems {
 		if p.Path == f.Path {
@@ -113,6 +107,19 @@ func (m Model) problemsFor(i int, f *policyauthor.File) []policyauthor.Problem {
 		}
 	}
 	return out
+}
+
+// currentWS is the workspace as the screen shows it: every file with its
+// edits applied, so its role, its keys and the rules across files reflect
+// what the operator sees, saved or not.
+func (m Model) currentWS() *policyauthor.Workspace {
+	ws := m.ws
+	for j, f := range m.ws.Files {
+		if s, ok := m.sessions[f.Path]; ok {
+			ws = ws.With(j, s.Current())
+		}
+	}
+	return ws
 }
 
 // shownFile is file i as the screen shows it: edited, when it has edits.

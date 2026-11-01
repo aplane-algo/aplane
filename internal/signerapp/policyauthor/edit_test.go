@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/asa"
+	"github.com/aplane-algo/aplane/internal/policy"
 )
 
 const testAddress = "CEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI7JH2AYM"
@@ -230,4 +231,73 @@ func TestCosignerChoicesAndThresholds(t *testing.T) {
 			}
 		}
 	}
+}
+
+// TestBrokenContainersCanBeRepaired: for each required container, missing or
+// of the wrong type, some action on the outline makes it the right type
+// again, so no parsable draft is stuck.
+func TestBrokenContainersCanBeRepaired(t *testing.T) {
+	base := string(fixture(t, "signer_key_minimal.json"))
+	draftOf := func(t *testing.T, doc string) *File {
+		t.Helper()
+		return LoadFile(writeFile(t, t.TempDir(), "d.json", []byte(doc)))
+	}
+	for _, tt := range []struct {
+		name, pointer, kind string
+		doc                 string
+	}{
+		{"transfer_policy wrong type", "/transfer_policy", "object", replaceMember(t, base, "transfer_policy", "42")},
+		{"transfer_policy missing", "/transfer_policy", "object", removeMember(t, base, "transfer_policy")},
+		{"transaction_types wrong type", "/transaction_types", "object", replaceMember(t, base, "transaction_types", `"all"`)},
+		{"transaction_types missing", "/transaction_types", "object", removeMember(t, base, "transaction_types")},
+		{"routes wrong type", "/transfer_policy/routes", "array", strings.Replace(base, `"routes": []`, `"routes": 5`, 1)},
+		{"document not an object", "", "object", `[1, 2]`},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			f := draftOf(t, tt.doc)
+			if f.Draft == nil {
+				t.Fatalf("test document does not parse:\n%s", tt.doc)
+			}
+			repaired := false
+			for _, s := range Outline(f, f.Problems, nil) {
+				for _, a := range s.Adds {
+					next, err := a.Apply(f.Draft, "")
+					if err == nil && next.At(tt.pointer).Kind() == tt.kind {
+						repaired = true
+					}
+				}
+			}
+			if !repaired {
+				t.Fatalf("no action makes %q a%s %s", tt.pointer, map[bool]string{true: "n", false: ""}[tt.kind == "object" || tt.kind == "array"], tt.kind)
+			}
+		})
+	}
+}
+
+func replaceMember(t *testing.T, doc, name, value string) string {
+	t.Helper()
+	d, err := policy.ParseDraft([]byte(doc))
+	if err != nil {
+		t.Fatal(err)
+	}
+	next, err := d.Set("/"+name, []byte(value))
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, _ := next.Canonical()
+	return string(out)
+}
+
+func removeMember(t *testing.T, doc, name string) string {
+	t.Helper()
+	d, err := policy.ParseDraft([]byte(doc))
+	if err != nil {
+		t.Fatal(err)
+	}
+	next, err := d.Remove("/" + name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, _ := next.Canonical()
+	return string(out)
 }

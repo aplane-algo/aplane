@@ -83,19 +83,22 @@ func Open(paths ...string) (*Workspace, error) {
 	}
 
 	for _, p := range files {
-		f := LoadFile(p)
-		if w.Role == "" {
-			w.Role = f.Role
-		}
-		w.Files = append(w.Files, f)
+		w.Files = append(w.Files, LoadFile(p))
 	}
 	w.Check()
 	return w, nil
 }
 
-// Check recomputes the rules across files.
+// Check recomputes the workspace's role and the rules across files.
 func (w *Workspace) Check() {
 	w.Problems = nil
+	w.Role = ""
+	for _, f := range w.Files {
+		if f.Role != "" {
+			w.Role = f.Role
+			break
+		}
+	}
 	byKey := map[string][]*File{}
 	for _, f := range w.Files {
 		if f.Key != "" {

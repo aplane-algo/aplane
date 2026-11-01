@@ -52,10 +52,21 @@ func (m Model) startSave() Model {
 	if s.Loaded.HadComments {
 		lines = append(lines, m.styles.warn.Render("This file has comments, which will not be kept; move notes into description fields."), "")
 	}
-	if !s.Loaded.Exists {
-		lines = append(lines, "A new file.", "")
+	if s.Loaded.Exists {
+		lines = append(lines, m.changeLines(c, "the file as loaded")...)
+		return m.openPage(screenSave, "Save "+filepath.Base(s.Loaded.Path)+"?", lines)
 	}
-	lines = append(lines, m.changeLines(c, "the file as loaded")...)
+	// A new file: compare a key's document with the workspace default it
+	// would replace. Offline nothing tells which policy the node runs, so with
+	// no workspace default there is nothing to compare it with.
+	lines = append(lines, "A new file.", "")
+	if def := m.currentWS().Default(); def != nil && def.Path != s.Loaded.Path && cur.Key != "default" {
+		lines = append(lines, m.changeLines(policyauthor.Compare(def, cur), "the workspace default ("+filepath.Base(def.Path)+")")...)
+	} else {
+		for _, line := range wrap("New document; the policy the node runs for this key now is unknown, so there is nothing to compare it with. Read it with explain (x) before saving.", max(20, m.width-2)) {
+			lines = append(lines, m.styles.warn.Render(line))
+		}
+	}
 	return m.openPage(screenSave, "Save "+filepath.Base(s.Loaded.Path)+"?", lines)
 }
 
@@ -162,9 +173,12 @@ func (m Model) conflictKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// suggestCopy names a copy beside path. Save as reads a relative name
+// against the file's directory, so the suggestion is the bare name.
 func suggestCopy(path string) string {
-	ext := filepath.Ext(path)
-	return strings.TrimSuffix(path, ext) + ".mine" + ext
+	base := filepath.Base(path)
+	ext := filepath.Ext(base)
+	return strings.TrimSuffix(base, ext) + ".mine" + ext
 }
 
 // reviewOverwrite shows the file on disk now against the edits, so the
@@ -292,7 +306,7 @@ func (m Model) conflictView() string {
 	b.WriteString("  o  overwrite it, after seeing what the overwrite replaces\n")
 	b.WriteString("  esc  back to editing\n")
 	if m.save.saveAs {
-		b.WriteString("\nSave as:\n" + m.save.input.View() + "\n")
+		b.WriteString("\nSave as (a name in the file's directory, or a full path):\n" + m.save.input.View() + "\n")
 		if m.save.err != "" {
 			b.WriteString(m.styles.err.Render(m.save.err) + "\n")
 		}

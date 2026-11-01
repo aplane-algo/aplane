@@ -244,6 +244,9 @@ func (m Model) promptKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			case "down", "j":
 				p.pick = min(len(p.adds)-1, p.pick+1)
 			case "enter":
+				if !p.adds[p.pick].NeedsInput() {
+					return m.applyAdd(p.adds[p.pick], ""), nil
+				}
 				p.picking = false
 				p.title, p.hint = p.adds[p.pick].Label, p.adds[p.pick].Prompt+" · enter: add · esc: cancel"
 				p.input = m.newInput("")
@@ -251,14 +254,7 @@ func (m Model) promptKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if msg.String() == "enter" {
-			a := p.adds[p.pick]
-			if err := m.session().Apply(func(d *policy.Draft) (*policy.Draft, error) { return a.Apply(d, p.input.Value()) }); err != nil {
-				p.err = err.Error()
-				return m, nil
-			}
-			m.prompt = prompt{}
-			m.status = a.Label
-			return m.relayout(), nil
+			return m.applyAdd(p.adds[p.pick], p.input.Value()), nil
 		}
 	case promptEdit:
 		if msg.String() == "enter" {
@@ -310,12 +306,29 @@ func (m Model) startAdd() Model {
 	}
 	p := prompt{kind: promptAdd, adds: adds, title: "Add to " + m.sections[m.sectionCursor].Title, hint: "up/down: choose · enter: select · esc: cancel", picking: true}
 	if len(adds) == 1 {
+		if !adds[0].NeedsInput() {
+			return m.applyAdd(adds[0], "")
+		}
 		p.picking = false
 		p.title, p.hint = adds[0].Label, adds[0].Prompt+" · enter: add · esc: cancel"
 		p.input = m.newInput("")
 	}
 	m.prompt = p
 	return m
+}
+
+// applyAdd runs an add action and lays the result out again.
+func (m Model) applyAdd(a policyauthor.AddAction, input string) Model {
+	if err := m.session().Apply(func(d *policy.Draft) (*policy.Draft, error) { return a.Apply(d, input) }); err != nil {
+		m.prompt.err = err.Error()
+		if m.prompt.kind == promptNone {
+			m.status = a.Label + " failed: " + err.Error()
+		}
+		return m
+	}
+	m.prompt = prompt{}
+	m.status = a.Label
+	return m.relayout()
 }
 
 // startRemove asks to confirm removing the selected field, or the selected

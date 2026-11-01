@@ -181,7 +181,18 @@ var (
 func (o *outliner) build() {
 	root := o.draft.Root()
 	if root.Kind() != "object" {
-		o.add(Section{ID: "document", Title: "Document", Fields: []Field{{Label: "document", Pointer: "", Value: render(root), Note: "a policy document must be a JSON object"}}})
+		var adds []AddAction
+		for _, role := range []noderole.Role{noderole.RoleSigner, noderole.RoleCosigner} {
+			role := role
+			adds = append(adds, AddAction{Label: "Replace the document with the shipped " + string(role) + " default", apply: func(*policy.Draft, string) (*policy.Draft, error) {
+				data, err := policy.EmbeddedDefault(role)
+				if err != nil {
+					return nil, err
+				}
+				return policy.ParseDraft(data)
+			}})
+		}
+		o.add(Section{ID: "document", Title: "Document", Adds: adds, Fields: []Field{{Label: "document", Pointer: "", Value: render(root), Note: "a policy document must be a JSON object"}}})
 		return
 	}
 	cosigner := o.role == noderole.RoleCosigner
@@ -224,9 +235,15 @@ func (o *outliner) build() {
 	}))})
 
 	known["transaction_types"] = true
+	typeAdds := []AddAction{o.typeAdd(cosigner)}
+	if types := root.Member("transaction_types"); types.Exists() && types.Kind() != "object" {
+		typeAdds = nil
+	}
+	if types := root.Member("transaction_types"); types.Kind() != "object" {
+		typeAdds = append(typeAdds, replaceWith("Set transaction types to reject every type (\"*\": \"reject\")", "/transaction_types", `{"*": "reject"}`))
+	}
 	o.add(Section{ID: "types", Title: "Transaction types", Pointer: "/transaction_types",
-		Fields: o.transactionTypes(root.Member("transaction_types"), cosigner),
-		Adds:   []AddAction{o.typeAdd(cosigner)}})
+		Fields: o.transactionTypes(root.Member("transaction_types"), cosigner), Adds: typeAdds})
 
 	known["limits"] = true
 	o.add(Section{ID: "limits", Title: "Limits", Pointer: "/limits", Fields: o.limits(root.Member("limits"), "/limits", cosigner),
@@ -598,12 +615,21 @@ func listFields(label string, list policy.DraftNode, term TermKind, empty *Remov
 
 func (o *outliner) transfers(tp policy.DraftNode, cosigner bool) {
 	head := o.add(Section{ID: "transfers", Title: "Transfers", Pointer: "/transfer_policy"})
-	if !tp.Exists() {
-		o.sections[head].Fields = []Field{{Label: "transfer_policy", Pointer: "/transfer_policy", Value: "(missing)", Missing: true}}
-		return
-	}
 	if tp.Kind() != "object" {
-		o.sections[head].Fields = []Field{{Label: "transfer_policy", Pointer: tp.Pointer(), Value: render(tp)}}
+		// Missing or not an object: offer an explicit starting value, stated
+		// in full, rather than leaving the draft stuck.
+		empty := `{"routes": []}`
+		label := "Set transfer_policy to an allowlist with no routes (every transfer rejected)"
+		if !cosigner {
+			empty = `{"on_no_route": "reject", "close_on_no_route": "reject", "clawback_on_no_route": "reject", "routes": []}`
+			label = "Set transfer_policy to an allowlist with no routes (every transfer, close-out and clawback rejected)"
+		}
+		o.sections[head].Adds = []AddAction{replaceWith(label, "/transfer_policy", empty)}
+		if !tp.Exists() {
+			o.sections[head].Fields = []Field{{Label: "transfer_policy", Pointer: "/transfer_policy", Value: "(missing)", Missing: true}}
+		} else {
+			o.sections[head].Fields = []Field{{Label: "transfer_policy", Pointer: tp.Pointer(), Value: render(tp), Note: "transfer_policy must be an object"}}
+		}
 		return
 	}
 	known := map[string]bool{"blocked_destinations": true, "routes": true}
@@ -634,7 +660,8 @@ func (o *outliner) transfers(tp policy.DraftNode, cosigner bool) {
 		o.add(Section{ID: "routes", Title: "Routes", Depth: 1, Fields: []Field{{Label: "routes", Pointer: "/transfer_policy/routes", Value: "(missing)", Missing: true}},
 			Adds: []AddAction{routeAdd()}})
 	case routes.Kind() != "array":
-		o.add(Section{ID: "routes", Title: "Routes", Depth: 1, Pointer: routes.Pointer(), Fields: []Field{{Label: "routes", Pointer: routes.Pointer(), Value: render(routes)}}})
+		o.add(Section{ID: "routes", Title: "Routes", Depth: 1, Pointer: routes.Pointer(), Fields: []Field{{Label: "routes", Pointer: routes.Pointer(), Value: render(routes), Note: "routes must be a list"}},
+			Adds: []AddAction{replaceWith("Set routes to an empty list", "/transfer_policy/routes", "[]")}})
 	default:
 		s := Section{ID: "routes", Title: fmt.Sprintf("Routes (%d)", len(routes.Items())), Depth: 1, Pointer: routes.Pointer(), Adds: []AddAction{routeAdd()}}
 		if len(routes.Items()) == 0 {

@@ -9,6 +9,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/aplane-algo/aplane/internal/signerapp/policyauthor"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func editedFee(t *testing.T) (Model, string) {
@@ -169,5 +172,40 @@ func TestQuitAsksAboutUnsavedEdits(t *testing.T) {
 	m, _ = press(t, m, "n", "u")
 	if _, cmd = press(t, m, "q"); !quits(cmd) {
 		t.Fatal("q with nothing unsaved did not quit at once")
+	}
+}
+
+// TestSaveAsSuggestionWorksForARelativeWorkspace: accepting the suggested
+// name saves beside the file, however the workspace was named.
+func TestSaveAsSuggestionWorksForARelativeWorkspace(t *testing.T) {
+	root := t.TempDir()
+	doc := fixture(t, "signer_key_full.json")
+	if err := os.Mkdir(filepath.Join(root, "policy"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "policy", "ops.json"), doc, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	wd, _ := os.Getwd()
+	if err := os.Chdir(root); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(wd) })
+	ws, err := policyauthor.Open("policy/ops.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	next, _ := New(ws, nil, nil).Update(tea.WindowSizeMsg{Width: 140, Height: 40})
+	m := next.(Model)
+	m = selectField(t, m, "/reject_clawback")
+	m, _ = press(t, m, " ")
+	_ = os.WriteFile(filepath.Join(root, "policy", "ops.json"), append(doc, ' '), 0o600)
+	m, _ = press(t, m, "s", "y", "a")
+	if m.save.input.Value() != "ops.mine.json" {
+		t.Fatalf("suggestion %q", m.save.input.Value())
+	}
+	m, _ = press(t, m, "enter")
+	if _, err := os.Stat(filepath.Join(root, "policy", "ops.mine.json")); err != nil || m.save.err != "" {
+		t.Fatalf("save as with the suggestion: %v / %q", err, m.save.err)
 	}
 }

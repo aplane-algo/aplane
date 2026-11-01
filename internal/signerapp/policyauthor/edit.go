@@ -261,6 +261,17 @@ type Removal struct {
 // Apply removes it from d.
 func (r Removal) Apply(d *policy.Draft) (*policy.Draft, error) { return d.Remove(r.Pointer) }
 
+// replaceWith sets pointer to value, whatever it holds now, without input.
+// It repairs a missing or wrong-typed container; label states the value.
+func replaceWith(label, pointer, value string) AddAction {
+	return AddAction{Label: label, apply: func(d *policy.Draft, _ string) (*policy.Draft, error) {
+		return d.Set(pointer, []byte(value))
+	}}
+}
+
+// NeedsInput reports whether the action takes input, or applies as it is.
+func (a AddAction) NeedsInput() bool { return a.Prompt != "" }
+
 // ensure sets value at pointer, first creating any missing parent objects.
 func ensure(d *policy.Draft, pointer string, value string) (*policy.Draft, error) {
 	tokens := strings.Split(pointer[1:], "/")

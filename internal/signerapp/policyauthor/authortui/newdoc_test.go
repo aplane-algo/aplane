@@ -108,3 +108,64 @@ func TestNewDocumentInAnEmptyWorkspaceAsksTheRole(t *testing.T) {
 		t.Fatalf("%d lines in a 10-line window", lines)
 	}
 }
+
+// TestNewDocumentReviewIdentityAndCopies covers a new key document's save
+// review against the workspace default, an unsaved new default counting as
+// the workspace's default and role, and a copy taking a document's unsaved
+// edits.
+func TestNewDocumentReviewIdentityAndCopies(t *testing.T) {
+	strict := strings.Replace(string(fixture(t, "signer_default.json")), `"max_fee_microalgos": "0"`, `"max_fee_microalgos": "5000"`, 1)
+	ws, _ := workspace(t, map[string][]byte{"default.json": []byte(strict)})
+	next, _ := New(ws, nil, nil).Update(tea.WindowSizeMsg{Width: 140, Height: 40})
+	m := next.(Model)
+
+	// A key document from the shipped default loosens the workspace default's
+	// fee cap; the save review says so.
+	m, _ = press(t, m, "n")
+	m = typeText(t, m, newKeyAddress)
+	m, _ = press(t, m, "enter", "enter", "enter")
+	m, _ = press(t, m, "s")
+	if out := strings.Join(strings.Fields(strings.Join(m.page.lines, " ")), " "); !strings.Contains(out, "the workspace default (default.json)") || !strings.Contains(out, "loosened /max_fee_microalgos") {
+		t.Fatalf("new key document review:\n%s", out)
+	}
+
+	// In an empty workspace: the first new document sets the role, and an
+	// unsaved default counts.
+	empty, _ := workspace(t, map[string][]byte{})
+	next, _ = New(empty, nil, nil).Update(tea.WindowSizeMsg{Width: 140, Height: 40})
+	e := next.(Model)
+	e, _ = press(t, e, "n", "enter")
+	e = typeText(t, e, "default")
+	e, _ = press(t, e, "enter", "enter", "enter")
+	e, _ = press(t, e, "s")
+	if out := strings.Join(m.page.lines, " ") + strings.Join(e.page.lines, " "); !strings.Contains(out, "nothing to compare it with") {
+		t.Fatalf("new default review:\n%s", strings.Join(e.page.lines, "\n"))
+	}
+	e, _ = press(t, e, "esc", "n")
+	if e.newDoc.step != newKey || e.newDoc.role != "signer" {
+		t.Fatalf("second new document: step %v role %q (the workspace role was not kept)", e.newDoc.step, e.newDoc.role)
+	}
+	e = typeText(t, e, "default")
+	e, _ = press(t, e, "enter")
+	if !strings.Contains(e.newDoc.err, "already holds") {
+		t.Fatalf("a second unsaved default was accepted: %q", e.newDoc.err)
+	}
+
+	// A copy takes the source document's unsaved edits.
+	ws2, _ := workspace(t, map[string][]byte{"ops.json": fixture(t, "signer_key_full.json")})
+	next, _ = New(ws2, nil, nil).Update(tea.WindowSizeMsg{Width: 140, Height: 40})
+	c := next.(Model)
+	c = selectField(t, c, "/max_fee_microalgos")
+	c, _ = press(t, c, "enter")
+	c = typeText(t, clearInput(t, c), "0.5")
+	c, _ = press(t, c, "enter", "n")
+	c = typeText(t, c, newKeyAddress)
+	c, _ = press(t, c, "enter")
+	for !strings.Contains(view(c), "> A copy of ops.json") {
+		c, _ = press(t, c, "down")
+	}
+	c, _ = press(t, c, "enter", "enter")
+	if fee := c.shown().Document.MaxFeeMicroAlgos; fee != 500000 {
+		t.Fatalf("copy fee = %d, want the unsaved 500000", fee)
+	}
+}

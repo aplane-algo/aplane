@@ -136,12 +136,13 @@ func (m Model) counts(i int) (errors, warnings int) {
 
 func (m Model) filesView() string {
 	var b strings.Builder
-	b.WriteString(m.styles.title.Render("appolicy") + "  " + m.styles.subtle.Render(fmt.Sprintf("%d file(s), %s documents", len(m.ws.Files), roleOrUnknown(m.ws))) + "\n\n")
+	b.WriteString(m.styles.title.Render("appolicy") + "  " + m.styles.subtle.Render(fmt.Sprintf("%d file(s), %s documents", len(m.ws.Files), roleOrUnknown(m.currentWS()))) + "\n\n")
 	if len(m.ws.Files) == 0 {
 		b.WriteString("No policy files.\n")
 	}
 	var lines []string
-	for i, f := range m.ws.Files {
+	for i := range m.ws.Files {
+		f := m.shownFile(i)
 		key := f.Key
 		if key == "" {
 			key = "(no key)"

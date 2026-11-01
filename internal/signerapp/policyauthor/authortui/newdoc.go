@@ -42,7 +42,7 @@ type newDoc struct {
 var newRoles = []noderole.Role{noderole.RoleSigner, noderole.RoleCosigner}
 
 func (m Model) startNew() Model {
-	n := newDoc{back: m.screen, role: m.ws.Role}
+	n := newDoc{back: m.screen, role: m.currentWS().Role}
 	if n.role == "" {
 		n.step = newRole
 	} else {
@@ -91,11 +91,14 @@ func (m Model) newKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		value := strings.TrimSpace(n.input.Value())
 		switch n.step {
 		case newKey:
-			if err := m.ws.CheckNewKey(n.role, value); err != nil {
+			// Keys and starting points come from the documents as edited, so a
+			// copy matches what is on screen and an unsaved default counts.
+			ws := m.currentWS()
+			if err := ws.CheckNewKey(n.role, value); err != nil {
 				n.err = err.Error()
 				return m, nil
 			}
-			n.key, n.points, n.choice, n.step, n.err = value, m.ws.StartingPoints(n.role), 0, newStart, ""
+			n.key, n.points, n.choice, n.step, n.err = value, ws.StartingPoints(n.role), 0, newStart, ""
 		case newName:
 			path, err := m.ws.NewFilePath(value)
 			if err != nil {
