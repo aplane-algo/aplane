@@ -27,6 +27,7 @@ const (
 	policyIntegrityHKDFInfo         = "aplane policy integrity v1"
 	nodeRoleIntegrityHKDFInfo       = "aplane node role integrity v1"
 	generationSealIntegrityHKDFInfo = "aplane generation seal integrity v1"
+	asaSetIntegrityHKDFInfo         = "aplane asa set integrity v1"
 )
 
 // IntegrityDomain selects one independently derived per-term HMAC key.
@@ -37,6 +38,7 @@ const (
 	IntegrityDomainPolicy         IntegrityDomain = "policy"
 	IntegrityDomainNodeRole       IntegrityDomain = "node-role"
 	IntegrityDomainGenerationSeal IntegrityDomain = "generation-seal"
+	IntegrityDomainASASet         IntegrityDomain = "asa-set"
 )
 
 // SignIntegrity authenticates payload under the current term's key for
@@ -123,6 +125,8 @@ func (kr *Keyring) integrityKeyForTerm(domain IntegrityDomain, term int64) ([]by
 		info = nodeRoleIntegrityHKDFInfo
 	case IntegrityDomainGenerationSeal:
 		info = generationSealIntegrityHKDFInfo
+	case IntegrityDomainASASet:
+		info = asaSetIntegrityHKDFInfo
 	default:
 		return nil, fmt.Errorf("unknown integrity domain %q", domain)
 	}

@@ -30,6 +30,7 @@ var storeOwningPackages = []string{
 	"internal/defaultkeytypes",
 	"internal/backup",
 	"internal/storepass",
+	"internal/asasetstore",
 	"internal/signerapp/backupadmin",
 	"internal/signerapp/productruntime",
 	"internal/signerapp/daemon",
