@@ -135,13 +135,13 @@ func TestOutlineMarksMissingAndUnknownFields(t *testing.T) {
 func TestOutlineDisplaysValues(t *testing.T) {
 	sections := outlineOf(t, string(fixture(t, "signer_key_full.json")))
 	for pointer, want := range map[string]string{
-		"/reject_clawback":                        "yes",
-		"/max_fee_microalgos":                     "0.01 ALGO (10000 microAlgos)",
-		"/transfer_policy/close_on_no_route":      "review",
-		"/limits/mainnet/asa:31566704":            "reject above 5000 USDC (5000000000 base units; 6 decimals, builtin)",
-		"/transfer_policy/routes/1/sources":       "@treasury",
-		"/address_sets/ops/mainnet/0":             "EIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRDOHSEZI",
-		"/transfer_policy/blocked_destinations/0": "KVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVDNKFTE",
+		"/reject_clawback":                          "yes",
+		"/max_fee_microalgos":                       "0.01 ALGO (10000 microAlgos)",
+		"/transfer_policy/close_on_no_route":        "review",
+		"/limits/mainnet/asa:31566704/reject_above": "5000 USDC (5000000000 base units; 6 decimals, builtin)",
+		"/transfer_policy/routes/1/sources":         "@treasury",
+		"/address_sets/ops/mainnet/0":               "EIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRDOHSEZI",
+		"/transfer_policy/blocked_destinations/0":   "KVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVDNKFTE",
 	} {
 		_, f, ok := findField(sections, pointer)
 		if !ok || f.Value != want {
