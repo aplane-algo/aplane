@@ -42,6 +42,8 @@ func (m Model) View() string {
 		body = m.problemsView()
 	case screenComparePick:
 		body = m.comparePickView()
+	case screenBaselinePick:
+		body = m.baselinePickView()
 	case screenExplain, screenCompare, screenHelp, screenField, screenSave, screenOverwrite, screenCases:
 		body = m.pageView()
 	case screenTry:
@@ -61,14 +63,34 @@ func (m Model) View() string {
 	return body + "\n" + status + footer
 }
 
+// statusText is the status line: the last message, else the first
+// diagnostic. On a document that does not pass check it starts with that, so
+// a draft's state stays in view alongside messages such as Saved.
 func (m Model) statusText() string {
-	if m.status != "" {
-		return m.status
+	text := m.status
+	if text == "" && len(*m.diagnostics) > 0 {
+		text = m.styles.warn.Render((*m.diagnostics)[0])
 	}
-	if len(*m.diagnostics) > 0 {
-		return m.styles.warn.Render((*m.diagnostics)[0])
+	if m.screen != screenDocument || !m.failsCheck() {
+		return text
 	}
-	return ""
+	badge := m.styles.err.Render("✗ does not pass check")
+	if text == "" {
+		return badge
+	}
+	return badge + " · " + text
+}
+
+// failsCheck reports whether the open document, as edited, has an error
+// among the problems the screen shows: its own, a workspace rule it breaks,
+// or what the node context would refuse. Warnings alone do not count.
+func (m Model) failsCheck() bool {
+	for _, l := range m.problemLocations() {
+		if l.problem.Severity == policyauthor.SeverityError {
+			return true
+		}
+	}
+	return false
 }
 
 func (m Model) footer() string {
@@ -77,7 +99,12 @@ func (m Model) footer() string {
 	}
 	switch m.screen {
 	case screenSave:
+		if s := m.session(); s != nil && !s.Loaded.Exists {
+			return "y: Write the file | b: Comparison reference | n/esc: Back | up/down: Scroll"
+		}
 		return "y: Write the file | n/esc: Back | up/down: Scroll"
+	case screenBaselinePick:
+		return "up/down: Select | enter: Compare with it | esc: Back to the review"
 	case screenOverwrite:
 		return "y: Overwrite | n/esc: Back | up/down: Scroll"
 	case screenConflict:

@@ -610,8 +610,16 @@ appolicy test policy/               # re-run the saved cases in policy/.appolicy
     the same way check does.
   - **Saving:** `s` shows the changes against the file as loaded, with
     tightened and loosened labels, and writes only after `y`, in canonical
-    form. A save that would not pass check is allowed as a draft and says so,
-    and a file's comments are not kept. If the file changed on disk, was
+    form. A new file has nothing loaded to compare with: it is compared with
+    the workspace default when there is one for its role, and `b` picks
+    another workspace file (as edited, unsaved edits included) or none. That
+    comparison reference is a local file, not the policy the node runs, and
+    it never changes what is written or which file the save checks for
+    conflicts. A save that would not pass check is allowed as a draft and
+    says so, and a file's comments are not kept. While the open document
+    has an error (its own, a workspace rule such as two files for one key,
+    or what the node's export would refuse), the status line starts with
+    "does not pass check"; warnings alone do not set it. If the file changed on disk, was
     deleted, or appeared since it was loaded, nothing is written: you choose
     to reload it (discarding your edits), save your edits to a new file, or
     overwrite it after seeing what the overwrite replaces. The check is
