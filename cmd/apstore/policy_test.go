@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 	"github.com/aplane-algo/aplane/internal/genstore"
@@ -120,6 +121,62 @@ func TestCmdPolicyCheckRejectsInvalidCosignerReviewPolicy(t *testing.T) {
 		err = cmdPolicy([]string{"check"})
 		if err == nil || !strings.Contains(err.Error(), "cannot produce review verdicts") {
 			t.Fatalf("cmdPolicy(check) error = %v, want cosigner review rejection", err)
+		}
+	})
+}
+
+// A hand-placed document is a submitted one: check and sign refuse what the
+// node cannot admit, an unknown network or an asset outside its ASA set.
+func TestCmdPolicyCheckAndSignRefuseHandPlacedDocumentsTheNodeCannotAdmit(t *testing.T) {
+	withPolicyCommandStore(t, func(root string, passphrase []byte) {
+		policyPath := activePolicyPathForTest(t, root, passphrase)
+		raw := []byte(policytest.Signer(t, policy.DefaultKey, `{"limits": {
+  "mainet": {"algo": {"reject_above": "5"}},
+  "testnet": {"asa:999999": {"reject_above": "5"}}
+}}`))
+		if err := os.WriteFile(policyPath, raw, 0o600); err != nil {
+			t.Fatalf("WriteFile(policy) error = %v", err)
+		}
+		sidecarBefore, err := os.ReadFile(policy.PolicyIntegritySidecarPath(policyPath))
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = cmdPolicy([]string{"check"})
+		if err == nil || !strings.Contains(err.Error(), "2 admission problem(s)") {
+			t.Fatalf("cmdPolicy(check) error = %v, want the unknown network and the unconfirmed asset refused", err)
+		}
+		err = withTestStdin(string(passphrase)+"\n", func() error {
+			return cmdPolicy([]string{"sign"})
+		})
+		if err == nil || !strings.Contains(err.Error(), "admission problem") {
+			t.Fatalf("cmdPolicy(sign) error = %v, want the document refused", err)
+		}
+		sidecarAfter, err := os.ReadFile(policy.PolicyIntegritySidecarPath(policyPath))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(sidecarAfter) != string(sidecarBefore) {
+			t.Fatal("a refused sign rewrote the sidecar")
+		}
+	})
+}
+
+// A document the node accepted before keeps its meaning: its sidecar
+// verifies, so check only warns about it.
+func TestCmdPolicyCheckOnlyWarnsAboutAcceptedDocuments(t *testing.T) {
+	withPolicyCommandStore(t, func(root string, passphrase []byte) {
+		active, kr, err := genstore.ResolveStoreRoot(storepaths.NewPaths(root), passphrase)
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw := []byte(policytest.Signer(t, policy.DefaultKey, `{"limits": {"mainet": {"algo": {"reject_above": "5"}}}}`))
+		err = policy.WriteDefault(active, noderole.RoleSigner, raw, kr, time.Unix(1_700_000_000, 0))
+		kr.Zero()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := cmdPolicy([]string{"check"}); err != nil {
+			t.Fatalf("cmdPolicy(check) error = %v, want an accepted document only warned about", err)
 		}
 	})
 }

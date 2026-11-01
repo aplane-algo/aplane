@@ -9,10 +9,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/asasetstore"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/policyadmission"
+	"github.com/aplane-algo/aplane/internal/policycontext"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyapply"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
@@ -35,9 +38,10 @@ func cmdPolicy(args []string) error {
 	}
 }
 
-// cmdPolicyCheck validates every stored policy document without verifying
-// sidecars, so hand-placed documents can be reviewed before signing, and
-// reports documents for keys the node does not hold.
+// cmdPolicyCheck validates every stored policy document without requiring
+// sidecars, so hand-placed documents can be reviewed before signing, refuses
+// hand-placed documents the node cannot admit, and reports documents for
+// keys the node does not hold.
 func cmdPolicyCheck() error {
 	active, kr, err := readStore()
 	if err != nil {
@@ -52,9 +56,16 @@ func cmdPolicyCheck() error {
 	if err != nil {
 		return err
 	}
-	np, err := policyruntime.Compile(role, &config, docs, nil)
+	ctx, err := storePolicyContext(role, active, kr)
+	if err != nil {
+		return err
+	}
+	np, err := policyruntime.Compile(role, &config, docs, ctx)
 	if err != nil {
 		return fmt.Errorf("policy invalid: %w", err)
+	}
+	if err := admitStoredPolicies(role, active, kr, ctx, docs); err != nil {
+		return err
 	}
 	for _, doc := range docs {
 		path := policyDocumentPath(active, doc.Key)
@@ -113,6 +124,22 @@ func cmdPolicySign() error {
 	if err != nil {
 		return err
 	}
+	docs, err := storedPolicyDocuments(active)
+	if err != nil {
+		return err
+	}
+	ctx, err := storePolicyContext(role, active, kr)
+	if err != nil {
+		return err
+	}
+	// Signing is what accepts a hand-placed document, so it admits the same
+	// documents check does.
+	if _, err := policyruntime.Compile(role, &config, docs, ctx); err != nil {
+		return fmt.Errorf("policy invalid: %w", err)
+	}
+	if err := admitStoredPolicies(role, active, kr, ctx, docs); err != nil {
+		return err
+	}
 	now := time.Now()
 	if err := policy.ResignDefault(active, role, kr, now); err != nil {
 		return fmt.Errorf("sign policy sidecars: %w", err)
@@ -126,6 +153,55 @@ func cmdPolicySign() error {
 	}
 	for _, doc := range np.Documents {
 		logInfof("policy sidecar signed: %s", policy.PolicyIntegritySidecarPath(policyDocumentPath(active, doc.Key)))
+	}
+	return nil
+}
+
+// storePolicyContext is the policy context of the selected generation: the
+// node's role, its configured networks and its verified ASA set.
+func storePolicyContext(role noderole.Role, active storepaths.GenPaths, kr *crypto.Keyring) (*policycontext.Context, error) {
+	set, err := asasetstore.Load(active, kr)
+	if err != nil {
+		return nil, fmt.Errorf("load ASA set: %w", err)
+	}
+	ctx, err := policyruntime.NewContext(role, &config, set)
+	if err != nil {
+		return nil, fmt.Errorf("build policy context: %w", err)
+	}
+	return ctx, nil
+}
+
+// admitStoredPolicies applies the admission rules to the documents placed by
+// hand: those whose sidecar is missing or does not verify. A document with a
+// verifying sidecar was accepted before; it keeps its meaning and is only
+// warned about, as at load.
+func admitStoredPolicies(role noderole.Role, active storepaths.GenPaths, kr *crypto.Keyring, ctx *policycontext.Context, docs []policy.StoredDocument) error {
+	refused := 0
+	for _, doc := range docs {
+		decoded, err := policy.DecodePolicyV1(doc.Bytes, doc.Key, role)
+		if err != nil {
+			return fmt.Errorf("policy invalid: %w", err)
+		}
+		problems := policyadmission.Check(decoded, ctx)
+		if len(problems) == 0 {
+			continue
+		}
+		path := policyDocumentPath(active, doc.Key)
+		accepted := false
+		if sidecar, err := policy.LoadPolicyIntegritySidecar(policy.PolicyIntegritySidecarPath(path)); err == nil {
+			accepted = policy.VerifyPolicyIntegrity(doc.Bytes, sidecar, kr) == nil
+		}
+		for _, p := range problems {
+			if accepted {
+				logWarnf("%s: %s (at %s); the node keeps it, but it must be fixed before it is submitted again", path, p.Message, p.Pointer)
+				continue
+			}
+			logErrorf("%s: %s (at %s)", path, p.Message, p.Pointer)
+			refused++
+		}
+	}
+	if refused > 0 {
+		return fmt.Errorf("policy refused: %d admission problem(s) in hand-placed documents", refused)
 	}
 	return nil
 }
