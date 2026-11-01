@@ -1357,8 +1357,9 @@ leaves effective permissions unchanged (term order, or a cosigner `*` entry
 written out or omitted) is still applied, and `diff` reports it as "the
 document differs, but effective permissions are unchanged".
 
-Admission (`internal/policyadmission`, run by `policyapply.Candidate`)
-refuses a submitted document that names a network the node does not map, an
+Admission (`internal/policyadmission`, run by `policyapply.Candidate` and by
+`apstore policy check`/`sign` for each document whose sidecar is missing or
+does not verify) refuses a submitted document that names a network the node does not map, an
 asset outside its ASA set, a direct `asa:<id>` route term over several
 networks or `*`, or a route with no asset alternative on one of its networks
 (a union over the route's sets, `algo` and `*`). It is not part of decoding or
@@ -1434,9 +1435,11 @@ passphrase must come from `APSIGNER_PASSPHRASE` or the controlling terminal.
 
 For deliberately hand-placed documents in a stopped store, `apstore policy
 check` validates every stored document (the default and each per-key file)
-without verifying sidecars, warns about missing sidecars, and warns about
-documents for keys not held; `apstore policy sign` validates and re-signs every sidecar in the selected
-generation;
+without requiring sidecars, refuses a document whose sidecar is missing or
+does not verify when admission would refuse it (one that still verifies is
+only warned about), warns about missing sidecars, and warns about documents
+for keys not held; `apstore policy sign` applies the same checks, then
+re-signs every sidecar in the selected generation;
 `apstore policy verify` verifies the sidecars with the store passphrase and
 compiles the documents. `apstore policy sign` is an offline store mutation
 and requires the store mutation lock. Hand-placed documents take effect only

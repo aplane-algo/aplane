@@ -533,7 +533,10 @@ checking what the lookup shows.
 Amounts in approval prompts and limit messages come from the same ASA set:
 a known asset in its display units with its base units beside them, for
 example `ASA Transfer: 1.5 XYZ (150 base units), asset #9, private-dev`, and
-any other in base units with "Not in this node's ASA set". A prompt keeps the
+any other in base units with "Not in this node's ASA set". Limit messages,
+from document limits and route limits alike, name the asset and network, for
+example `transfer routing amount 1.5 XYZ (150 base units) of asset #9 exceeds
+reject threshold 1 XYZ (100 base units) on private-dev`. A prompt keeps the
 values it was created with even if the ASA set changes while it waits.
 
 ### Checking policy files offline with appolicy
@@ -746,9 +749,13 @@ apstore -d "$APSIGNER_DATA" policy verify
 ```
 
 `apstore policy check` validates every stored document (the default and each
-key file) without verifying sidecars, reports a document that has no sidecar
-yet, and warns about files for keys the node does not hold. `apstore policy
-sign` writes fresh sidecars for every stored document. `apstore policy verify`
+key file) without requiring sidecars, reports a document that has no sidecar
+yet, and warns about files for keys the node does not hold. A document whose
+sidecar is missing or no longer matches was placed by hand, so it is checked
+like a submitted one: an unknown network or an asset outside the ASA set
+fails the check. A document whose sidecar still verifies was accepted before
+and is only warned about. `apstore policy sign` refuses the same documents,
+then writes fresh sidecars for every stored document. `apstore policy verify`
 verifies every sidecar and compiles the policy. These are offline maintenance
 operations; stop `apsigner` and use `sudo` for a systemd store. Hand edits take
 effect only after the next successful signer start, reload, or unlock. Normal
