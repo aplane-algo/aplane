@@ -274,8 +274,23 @@ func TestAssetEntryPreviewsAndNormalizes(t *testing.T) {
 		t.Fatalf("no preview for a built-in asset:\n%s", v)
 	}
 	m = typeText(t, clearInput(t, m), "10458941, 77, 88")
-	if v := view(m); !strings.Contains(v, "asa:88 on testnet: unknown asset") || !strings.Contains(v, "3 asset(s), 2 with a problem; first: asa:77") {
+	if v := view(m); !strings.Contains(v, "asa:88 on testnet: unknown asset") || !strings.Contains(v, "3 asset term(s), 2 with a problem; first: asa:77") {
 		t.Fatalf("no summary for a list:\n%s", v)
+	}
+	// The preview follows the cursor, not the end of the list.
+	m = typeText(t, clearInput(t, m), "77, 10458941")
+	if v := view(m); !strings.Contains(v, "asa:10458941 on testnet: USDC") {
+		t.Fatalf("the cursor's term is not previewed:\n%s", v)
+	}
+	m, _ = press(t, m, "home")
+	if v := view(m); !strings.Contains(v, "> 77, 10458941") || !strings.Contains(v, "\nasa:77 on testnet: unknown asset") {
+		t.Fatalf("moving into the first term did not preview it:\n%s", v)
+	}
+	// An invalid term is counted, not dropped.
+	m, _ = press(t, m, "end")
+	m = typeText(t, clearInput(t, m), "10458941, 0, nope")
+	if v := view(m); !strings.Contains(v, "3 asset term(s), 2 with a problem") {
+		t.Fatalf("invalid terms are missing from the count:\n%s", v)
 	}
 	m = typeText(t, clearInput(t, m), "010458941")
 	m, _ = press(t, m, "enter")

@@ -249,7 +249,7 @@ type AddAction struct {
 	apply  func(d *policy.Draft, input string) (*policy.Draft, error)
 	// previewAsset, for an action that takes an asset, reads the network
 	// and the stored asset term from input.
-	previewAsset func(input string) (network, term string, ok bool)
+	previewAsset func(input string) (network, term string, err error)
 }
 
 // Apply adds to d from input.
@@ -364,10 +364,7 @@ func limitAdd(label, base string, cosigner bool) AddAction {
 			value = `{"review_above": "0"}`
 		}
 		return ensure(d, base+"/"+escapeToken(network)+"/"+escapeToken(asset), value)
-	}, previewAsset: func(input string) (string, string, bool) {
-		network, asset, err := limitTarget(input)
-		return network, asset, err == nil
-	}}
+	}, previewAsset: limitTarget}
 }
 
 // limitTarget reads "network asset", the asset normalized to its stored form.

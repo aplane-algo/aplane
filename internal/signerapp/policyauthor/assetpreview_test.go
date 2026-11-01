@@ -163,6 +163,12 @@ func TestLimitAddNormalizesAndPreviewsItsAsset(t *testing.T) {
 	if len(got) != 1 || got[0].Status != AssetBuiltin || got[0].UnitName != "USDC" {
 		t.Fatalf("limit preview: %+v", got)
 	}
+	if got := add.AssetPreviews(nil, "mainnet 0"); len(got) != 1 || got[0].Status != AssetInvalid {
+		t.Fatalf("an invalid limit asset was not shown: %+v", got)
+	}
+	if got := add.AssetPreviews(nil, "mainnet"); got != nil {
+		t.Fatalf("a half-typed limit was previewed: %+v", got)
+	}
 	if got := add.AssetPreviews(nil, "mainnet algo"); got != nil {
 		t.Fatalf("ALGO previewed as an asset: %+v", got)
 	}
@@ -180,10 +186,48 @@ func TestSummarizeAssetsCountsEveryProblem(t *testing.T) {
 	}
 	previews := spec.AssetPreviews(d, node, "9, 10, 11, 9")
 	got := SummarizeAssets(previews)
-	if !strings.Contains(got, "4 asset(s), 2 with a problem") || !strings.Contains(got, "first: asa:10 on private-dev") {
+	if !strings.Contains(got, "4 asset term(s), 2 with a problem") || !strings.Contains(got, "first: asa:10 on private-dev") {
 		t.Fatalf("summary %q", got)
 	}
-	if got := SummarizeAssets(previews[:1]); got != "1 asset(s), no problems" {
+	if got := SummarizeAssets(previews[:1]); got != "1 asset term(s), no problems" {
 		t.Fatalf("summary %q", got)
+	}
+
+	// Terms the field does not accept count too, and keep their place.
+	previews = spec.AssetPreviews(d, node, "9, 0, 18446744073709551616, nope, 9")
+	got = SummarizeAssets(previews)
+	if !strings.Contains(got, "5 asset term(s), 3 with a problem") || !strings.Contains(got, `first: "0": asset ID 0`) {
+		t.Fatalf("summary of invalid terms %q", got)
+	}
+	for i, p := range previews {
+		if p.Index != i {
+			t.Fatalf("preview %d has index %d", i, p.Index)
+		}
+		if (i >= 1 && i <= 3) != (p.Status == AssetInvalid) {
+			t.Fatalf("preview %d: %+v", i, p)
+		}
+	}
+	routeAssets := EditSpec{Kind: EditTerms, Term: TermAsset, Pointer: "/asset_sets/usd/private-dev"}
+	if got := routeAssets.AssetPreviews(d, node, "algo, , @usd, *"); got != nil {
+		t.Fatalf("terms naming no specific asset were previewed: %+v", got)
+	}
+}
+
+func TestTermIndexAt(t *testing.T) {
+	for _, tt := range []struct {
+		input string
+		pos   int
+		want  int
+	}{
+		{"77, 10458941", 0, 0},
+		{"77, 10458941", 2, 0},
+		{"77, 10458941", 3, 1},
+		{"77, 10458941", 12, 1},
+		{"", 0, 0},
+		{"a,b,c", 5, 2},
+	} {
+		if got := TermIndexAt(tt.input, tt.pos); got != tt.want {
+			t.Errorf("TermIndexAt(%q, %d) = %d, want %d", tt.input, tt.pos, got, tt.want)
+		}
 	}
 }

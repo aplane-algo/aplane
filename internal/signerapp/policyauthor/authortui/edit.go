@@ -476,14 +476,16 @@ func (m Model) promptLines() []string {
 }
 
 // assetPreviewLines says what the assets typed into the edit bar are on the
-// field's network, from the loaded export or the built-in tables: the one
-// being entered, and for a list a count of the problems among all of them.
+// field's network, from the loaded export or the built-in tables: the term
+// the cursor is in, and for a list a count of the problems among all terms.
 func (m Model) assetPreviewLines() []string {
 	p := m.prompt
 	var previews []policyauthor.AssetPreview
+	current := 0
 	switch {
 	case p.kind == promptEdit && p.field.Edit != nil:
 		previews = p.field.Edit.AssetPreviews(m.session().Current().Draft, m.ws.Node, p.input.Value())
+		current = policyauthor.TermIndexAt(p.input.Value(), p.input.Position())
 	case p.kind == promptAdd && !p.picking && p.pick < len(p.adds):
 		previews = p.adds[p.pick].AssetPreviews(m.ws.Node, p.input.Value())
 	}
@@ -497,9 +499,13 @@ func (m Model) assetPreviewLines() []string {
 		}
 		return m.styles.subtle.Render(text)
 	}
-	last := previews[len(previews)-1]
-	lines := []string{render(last.String(), last.Status.Problem())}
-	if len(previews) > 1 {
+	var lines []string
+	for _, pv := range previews {
+		if pv.Index == current {
+			lines = append(lines, render(pv.String(), pv.Status.Problem()))
+		}
+	}
+	if len(previews) > 1 || len(lines) == 0 {
 		summary := policyauthor.SummarizeAssets(previews)
 		problem := false
 		for _, pv := range previews {

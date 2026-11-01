@@ -71,16 +71,21 @@ const (
 	// AssetUnresolved: the network is unknown or the field's network is
 	// ambiguous, so no identity can be established.
 	AssetUnresolved
+	// AssetInvalid: the term is not one the field accepts, so the value
+	// cannot be set.
+	AssetInvalid
 )
 
 // Problem reports whether the status is one a document should not keep.
 func (s AssetStatus) Problem() bool {
-	return s == AssetNotInNodeSet || s == AssetUnknown || s == AssetUnresolved
+	return s != AssetInNodeSet && s != AssetBuiltin
 }
 
 // AssetPreview is what one asset term means where it is being entered.
 type AssetPreview struct {
-	// Term is the term as it will be stored.
+	// Index is the term's position in the typed list, from 0.
+	Index int
+	// Term is the term as it will be stored, or as typed when invalid.
 	Term    string
 	Network string
 	// Genesis is the network's genesis hash, when the network is known.
@@ -93,7 +98,7 @@ type AssetPreview struct {
 	// Source is where known metadata comes from: built-in, or confirmed on
 	// the node.
 	Source string
-	// Reason says why the identity is unresolved.
+	// Reason says why the identity is unresolved, or the term invalid.
 	Reason string
 }
 
@@ -102,6 +107,8 @@ type AssetPreview struct {
 func (p AssetPreview) String() string {
 	p.Network = asaset.Printable(p.Network)
 	switch p.Status {
+	case AssetInvalid:
+		return fmt.Sprintf("%q: %s", p.Term, p.Reason)
 	case AssetUnresolved:
 		return fmt.Sprintf("%s: %s", p.Term, p.Reason)
 	case AssetUnknown:
@@ -193,30 +200,53 @@ func (e EditSpec) AssetNetwork(d *policy.Draft) (string, string, bool) {
 	return "", "this field gives no network", false
 }
 
-// AssetPreviews describes each specific asset in input, a value typed into
-// the field, on the field's network. Other terms are left out.
+// AssetPreviews describes each term of input, a value typed into the field,
+// that names a specific asset on the field's network or is not a term the
+// field accepts. "algo", "*", sets and empty terms are left out. Each
+// preview's Index is its term's position in the list.
 func (e EditSpec) AssetPreviews(d *policy.Draft, node *NodeContext, input string) []AssetPreview {
 	if e.Term != TermAsset && e.Term != TermAssetRef {
 		return nil
 	}
 	network, reason, ok := e.AssetNetwork(d)
 	var out []AssetPreview
-	for _, part := range strings.Split(input, ",") {
-		term, err := normalizeTerm(e.Term, strings.TrimSpace(part))
+	for i, part := range strings.Split(input, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		term, err := normalizeTerm(e.Term, part)
 		if err != nil {
+			out = append(out, AssetPreview{Index: i, Term: part, Status: AssetInvalid, Reason: err.Error()})
 			continue
 		}
 		if !ok {
 			if ref, isRef := parseAssetRef(term); isRef && !ref.Algo {
-				out = append(out, AssetPreview{Term: term, Status: AssetUnresolved, Reason: reason})
+				out = append(out, AssetPreview{Index: i, Term: term, Status: AssetUnresolved, Reason: reason})
 			}
 			continue
 		}
 		if p, isAsset := PreviewAsset(node, network, term); isAsset {
+			p.Index = i
 			out = append(out, p)
 		}
 	}
 	return out
+}
+
+// TermIndexAt is the position, from 0, of the comma-separated term of input
+// that the cursor at pos (a rune offset) is in.
+func TermIndexAt(input string, pos int) int {
+	index := 0
+	for i, r := range []rune(input) {
+		if i >= pos {
+			break
+		}
+		if r == ',' {
+			index++
+		}
+	}
+	return index
 }
 
 // AssetPreviews describes the asset in input, for an add action that takes
@@ -225,8 +255,12 @@ func (a AddAction) AssetPreviews(node *NodeContext, input string) []AssetPreview
 	if a.previewAsset == nil {
 		return nil
 	}
-	network, term, ok := a.previewAsset(strings.TrimSpace(input))
-	if !ok {
+	network, term, err := a.previewAsset(strings.TrimSpace(input))
+	if err != nil {
+		// Once both parts are typed, a bad asset is shown, not dropped.
+		if parts := strings.Fields(input); len(parts) == 2 && checkTerm(TermNetwork, parts[0]) == nil {
+			return []AssetPreview{{Term: parts[1], Status: AssetInvalid, Reason: err.Error()}}
+		}
 		return nil
 	}
 	if p, isAsset := PreviewAsset(node, network, term); isAsset {
@@ -235,8 +269,9 @@ func (a AddAction) AssetPreviews(node *NodeContext, input string) []AssetPreview
 	return nil
 }
 
-// SummarizeAssets says how many of previews have a problem, for a list too
-// long to show one per line; the first problem is named.
+// SummarizeAssets says how many of previews have a problem, invalid terms
+// included, for a list too long to show one per line; the first problem is
+// named.
 func SummarizeAssets(previews []AssetPreview) string {
 	problems := 0
 	first := ""
@@ -249,9 +284,9 @@ func SummarizeAssets(previews []AssetPreview) string {
 		}
 	}
 	if problems == 0 {
-		return fmt.Sprintf("%d asset(s), no problems", len(previews))
+		return fmt.Sprintf("%d asset term(s), no problems", len(previews))
 	}
-	return fmt.Sprintf("%d asset(s), %d with a problem; first: %s", len(previews), problems, first)
+	return fmt.Sprintf("%d asset term(s), %d with a problem; first: %s", len(previews), problems, first)
 }
 
 // pointerTokens splits a JSON Pointer into its unescaped tokens.
