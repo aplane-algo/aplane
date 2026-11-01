@@ -4,6 +4,9 @@
 package audit
 
 import (
+	"fmt"
+	"unicode/utf8"
+
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 )
@@ -17,17 +20,45 @@ import (
 // committed. The request ID correlates the two within a session.
 //
 // Entries name documents by selector and assets by chain and ID; they never
-// carry document contents. Selector lists are bounded, with the number left
-// out.
+// carry document contents. Intents are written before the request is
+// validated, so every string from a request, and every error text that may
+// echo one, is bounded: an entry stays small whatever was sent. Selector
+// lists are bounded too, with the number left out.
 
-// maxAuditSelectors bounds the selectors one entry lists.
-const maxAuditSelectors = 64
+const (
+	// maxAuditSelectors bounds the selectors one entry lists.
+	maxAuditSelectors = 64
+	// maxAuditField bounds one selector, digest, network, genesis hash or
+	// code; real ones are far shorter.
+	maxAuditField = 128
+	// maxAuditReason bounds an entry's error text.
+	maxAuditReason = 1024
+)
+
+// boundText cuts s to at most limit bytes at a character boundary, saying
+// how long it was.
+func boundText(s string, limit int) string {
+	if len(s) <= limit {
+		return s
+	}
+	note := fmt.Sprintf("…(%d bytes)", len(s))
+	cut := max(0, limit-len(note))
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut] + note
+}
 
 func boundSelectors(keys []string) ([]string, int) {
-	if len(keys) <= maxAuditSelectors {
-		return append([]string(nil), keys...), 0
+	omitted := 0
+	if len(keys) > maxAuditSelectors {
+		keys, omitted = keys[:maxAuditSelectors], len(keys)-maxAuditSelectors
 	}
-	return append([]string(nil), keys[:maxAuditSelectors]...), len(keys) - maxAuditSelectors
+	out := make([]string, len(keys))
+	for i, k := range keys {
+		out[i] = boundText(k, maxAuditField)
+	}
+	return out, omitted
 }
 
 // LogPolicyApplyIntentDurableContext records an apply_policy request before
@@ -44,8 +75,8 @@ func (a *AuditLogger) LogPolicyApplyIntentDurableContext(ctx adminserver.Session
 	}
 	entry.PolicyUpdates, entry.PolicyUpdatesOmitted = boundSelectors(keys)
 	entry.PolicyRemovals, entry.PolicyRemovalsOmitted = boundSelectors(req.Remove)
-	entry.ExpectedPolicySetSHA256 = req.ExpectedPolicySetSHA256
-	entry.ExpectedSnapshotSHA256 = req.ExpectedSnapshotSHA256
+	entry.ExpectedPolicySetSHA256 = boundText(req.ExpectedPolicySetSHA256, maxAuditField)
+	entry.ExpectedSnapshotSHA256 = boundText(req.ExpectedSnapshotSHA256, maxAuditField)
 	return a.logDurable(entry)
 }
 
@@ -66,7 +97,7 @@ func (a *AuditLogger) LogPolicyApplyResultContext(ctx adminserver.SessionContext
 		entry.Event, entry.Outcome = AuditPolicyApplyFailed, "failed"
 	}
 	if !result.Success {
-		entry.ResultCode, entry.Reason = result.Code, result.Error
+		entry.ResultCode, entry.Reason = boundText(result.Code, maxAuditField), boundText(result.Error, maxAuditReason)
 	}
 	a.Log(entry)
 }
@@ -80,7 +111,7 @@ func (a *AuditLogger) LogASASetUpdateIntentDurableContext(ctx adminserver.Sessio
 	entry.Outcome = "requested"
 	entry.OperationID = operationID
 	entry.ASAAction = action
-	entry.Network, entry.GenesisHash, entry.AssetID = network, genesisHash, assetID
+	entry.Network, entry.GenesisHash, entry.AssetID = boundText(network, maxAuditField), boundText(genesisHash, maxAuditField), assetID
 	return a.logDurable(entry)
 }
 
@@ -107,7 +138,7 @@ func (a *AuditLogger) logASAResult(ctx adminserver.SessionContext, operationID, 
 	entry := sessionAuditFields(ctx)
 	entry.OperationID = operationID
 	entry.ASAAction = action
-	entry.Network, entry.GenesisHash, entry.AssetID = network, genesis, assetID
+	entry.Network, entry.GenesisHash, entry.AssetID = boundText(network, maxAuditField), boundText(genesis, maxAuditField), assetID
 	entry.GenerationID = generationID
 	switch {
 	case success:
@@ -119,7 +150,7 @@ func (a *AuditLogger) logASAResult(ctx adminserver.SessionContext, operationID, 
 		entry.Event, entry.Outcome = AuditASASetUpdateFailed, "failed"
 	}
 	if !success {
-		entry.ResultCode, entry.Reason = code, reason
+		entry.ResultCode, entry.Reason = boundText(code, maxAuditField), boundText(reason, maxAuditReason)
 	}
 	a.Log(entry)
 }

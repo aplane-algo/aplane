@@ -17,6 +17,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/policy/policytest"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
+	signeraudit "github.com/aplane-algo/aplane/internal/signerapp/audit"
 )
 
 // auditEntries reads the audit log's entries of the given events.
@@ -159,4 +160,56 @@ func TestMutationIntentForwardersFailClosedWithoutALogger(t *testing.T) {
 	svc.LogPolicyApplyResultContext(adminserver.SessionContext{}, "apply-1", adminproto.ApplyPolicyResult{})
 	svc.LogASASetAddResultContext(adminserver.SessionContext{}, "add-1", adminproto.AddASARequest{}, adminproto.AddASAResult{})
 	svc.LogASASetRemoveResultContext(adminserver.SessionContext{}, "rm-1", adminproto.RemoveASARequest{}, adminproto.RemoveASAResult{})
+}
+
+// Rejected requests of any size leave the audit log small and readable: its
+// entries stay bounded, and the release history still loads at unlock.
+func TestOversizedMutationRequestsLeaveTheAuditLogReadable(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	ir := server.productRuntime()
+	ipcServer := &IPCServer{signer: server}
+	huge := strings.Repeat("A", 256*1024)
+	for _, msg := range []any{
+		protocol.ApplyPolicyMessage{
+			BaseMessage:             protocol.BaseMessage{Type: protocol.MsgTypeApplyPolicy, ID: "apply-huge"},
+			Documents:               []protocol.PolicyDocumentWire{{Key: huge, Document: "{}"}},
+			Remove:                  []string{huge},
+			ExpectedPolicySetSHA256: huge,
+			ExpectedSnapshotSHA256:  huge,
+		},
+		protocol.AddASAMessage{
+			BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeAddASA, ID: "add-huge"},
+			Confirmed:   protocol.ASAObservation{Network: huge, GenesisHash: huge, AssetID: 1},
+		},
+		protocol.RemoveASAMessage{
+			BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeRemoveASA, ID: "rm-huge"},
+			Network:     huge, GenesisHash: huge, AssetID: 1,
+		},
+	} {
+		recorder := &ipcJSONRecorderConn{}
+		dispatchIPCMessage(t, newBoundTestSession(ipcServer, recorder, ir), msg)
+		if msgs := recorder.messages(t); len(msgs) != 1 || msgs[0]["success"] == true {
+			t.Fatalf("an oversized request was not refused: %#v", msgs)
+		}
+	}
+	path := filepath.Join(server.dataDir, "audit.log")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(data) > 64*1024 {
+		t.Fatalf("three refused requests wrote %d bytes of audit log", len(data))
+	}
+	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+		if len(line) > 8*1024 {
+			t.Fatalf("an audit entry is %d bytes: %.200s…", len(line), line)
+		}
+	}
+	if got := len(auditEntries(t, path, "POLICY_APPLY_INTENT", "POLICY_APPLY_FAILED", "ASA_SET_UPDATE_INTENT", "ASA_SET_UPDATE_FAILED")); got != 6 {
+		t.Fatalf("%d intent and outcome entries, want 6", got)
+	}
+	if _, err := signeraudit.ReadRotatingReleases(path); err != nil {
+		t.Fatalf("the release history no longer loads: %v", err)
+	}
 }

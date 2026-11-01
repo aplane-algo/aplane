@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
@@ -127,5 +128,107 @@ func TestMutationIntentFailsWhenTheLogIsUnwritable(t *testing.T) {
 	}
 	if err := logger.LogASASetUpdateIntentDurableContext(adminserver.SessionContext{}, "add-1", "add", "mainnet", "", 1); err == nil {
 		t.Fatal("an ASA intent on a closed log reported success")
+	}
+}
+
+// Request strings are logged before validation, so each is bounded: an
+// oversized request leaves small entries, and the log stays readable.
+func TestMutationEntriesBoundRequestStrings(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "audit.log")
+	logger, err := NewAuditLogger(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = logger.Close() }()
+	huge := strings.Repeat("é", 128*1024) // 256 KiB, multibyte
+	ctx := adminserver.SessionContext{}
+	if err := logger.LogPolicyApplyIntentDurableContext(ctx, "apply-1", adminproto.ApplyPolicyRequest{
+		Documents: []adminproto.PolicyDocument{{Key: huge}}, Remove: []string{huge},
+		ExpectedPolicySetSHA256: huge, ExpectedSnapshotSHA256: huge,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	logger.LogPolicyApplyResultContext(ctx, "apply-1", adminproto.ApplyPolicyResult{Code: huge, Error: "invalid selector " + huge})
+	if err := logger.LogASASetUpdateIntentDurableContext(ctx, "add-1", "add", huge, huge, 1); err != nil {
+		t.Fatal(err)
+	}
+	logger.LogASASetAddResultContext(ctx, "add-1", adminproto.AddASARequest{Confirmed: adminproto.ASAObservation{Network: huge, GenesisHash: huge}},
+		adminproto.AddASAResult{Code: huge, Error: huge})
+	logger.LogASASetRemoveResultContext(ctx, "rm-1", adminproto.RemoveASARequest{Network: huge, GenesisHash: huge},
+		adminproto.RemoveASAResult{Code: huge, Error: huge})
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+		if len(line) > 4096 {
+			t.Fatalf("entry %d is %d bytes", i, len(line))
+		}
+		var entry map[string]any
+		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+			t.Fatalf("entry %d is not valid JSON after bounding: %v", i, err)
+		}
+	}
+	if !strings.Contains(string(data), "(262144 bytes)") {
+		t.Fatal("a bounded field does not say how long it was")
+	}
+}
+
+func TestBoundTextCutsAtACharacterBoundary(t *testing.T) {
+	for _, tt := range []struct {
+		in    string
+		limit int
+	}{
+		{"short", 128},
+		{strings.Repeat("a", 500), 128},
+		{strings.Repeat("é", 500), 128},
+		{strings.Repeat("😀", 500), 33},
+	} {
+		got := boundText(tt.in, tt.limit)
+		if len(got) > tt.limit && len(tt.in) > tt.limit {
+			t.Fatalf("boundText(%d bytes, %d) = %d bytes", len(tt.in), tt.limit, len(got))
+		}
+		if !utf8.ValidString(got) {
+			t.Fatalf("boundText cut inside a character: %q", got)
+		}
+		if len(tt.in) <= tt.limit && got != tt.in {
+			t.Fatalf("a short string changed: %q", got)
+		}
+	}
+}
+
+// One oversized line, from any event, must not hide the release history.
+func TestReadRotatingReleasesSkipsAnOversizedLine(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "audit.log")
+	logger, err := NewAuditLogger(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attr := Attribution{RequesterPrincipal: "client-1", Transport: "http"}
+	if err := logger.LogRotatingReleaseAttributed(attr, "ACCT1", "TX1", 3, 100, 0, 0); err != nil {
+		t.Fatal(err)
+	}
+	logger.Log(AuditEntry{Event: "SOMETHING_LARGE", Reason: strings.Repeat("x", 3<<20)})
+	if err := logger.LogRotatingReleaseAttributed(attr, "ACCT2", "TX2", 5, 200, 0, 0); err != nil {
+		t.Fatal(err)
+	}
+	_ = logger.Close()
+	// A last line with no newline is read too.
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString(`{"event":"ROTATING_RELEASE","txn_auth":"ACCT3","txid":"TX3","rotating_stage":1,"rotating_last_valid":9}`); err != nil {
+		t.Fatal(err)
+	}
+	_ = f.Close()
+
+	got, err := ReadRotatingReleases(path)
+	if err != nil {
+		t.Fatalf("ReadRotatingReleases after an oversized line: %v", err)
+	}
+	if got["ACCT1"].Stage != 3 || got["ACCT2"].Stage != 5 || got["ACCT3"].TxID != "TX3" {
+		t.Fatalf("releases = %+v", got)
 	}
 }

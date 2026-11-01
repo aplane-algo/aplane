@@ -1388,7 +1388,13 @@ Store-management audit semantics:
   failure; generation records are the evidence. The actor is the session's
   principal, never a request field. Intents record what the request names
   and expects, labelled as expectations; no entry carries document
-  contents, and selector lists are capped at 64 with the omitted count.
+  contents. Intents are written before validation, so every string from a
+  request or echoed in an error is bounded (128 bytes per selector,
+  digest, network, genesis hash or code, 1024 bytes of error text, with
+  the original length noted), and selector lists are capped at 64 with the
+  omitted count: an entry stays small whatever was sent. The release
+  history reader skips any audit line over 1 MiB rather than failing, so
+  one oversized entry cannot hide rotating releases at unlock.
   Offline rescue and `apstore policy sign` are not audited.
 - `CLIENT_ENROLLMENT_REQUESTED` is emitted when a new `request-enrollment` request is queued (a repeat that refreshes an existing entry is not audited again); its principal and requester are `client:<fingerprint>`, and it carries the remote address and `client_label`
 - `CLIENT_ENROLLED` is emitted when an admin session enrolls a key, by approving its queued request or by importing the public key; it carries the key fingerprint, the `client_label` recorded, the request's remote address (empty for an import), and the admin session attribution
