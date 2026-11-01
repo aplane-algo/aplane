@@ -42,8 +42,10 @@ func (m Model) View() string {
 		body = m.problemsView()
 	case screenComparePick:
 		body = m.comparePickView()
-	case screenExplain, screenCompare, screenHelp, screenField:
+	case screenExplain, screenCompare, screenHelp, screenField, screenSave, screenOverwrite:
 		body = m.pageView()
+	case screenConflict:
+		body = m.conflictView()
 	default:
 		body = m.documentView()
 	}
@@ -66,7 +68,19 @@ func (m Model) statusText() string {
 }
 
 func (m Model) footer() string {
+	if m.quitConfirm {
+		return fmt.Sprintf("%d file(s) have unsaved edits. Quit and discard them? y: quit · any other key: stay", m.unsavedCount())
+	}
 	switch m.screen {
+	case screenSave:
+		return "y: Write the file | n/esc: Back | up/down: Scroll"
+	case screenOverwrite:
+		return "y: Overwrite | n/esc: Back | up/down: Scroll"
+	case screenConflict:
+		if m.save.saveAs {
+			return "enter: Save as | esc: Back"
+		}
+		return "r: Reload | a: Save as | o: Overwrite | esc: Back"
 	case screenFiles:
 		return "up/down: Select | enter: Open | r: Reload | q: Quit"
 	case screenProblems:
@@ -85,7 +99,7 @@ func (m Model) footer() string {
 	if m.prompt.kind != promptNone {
 		return ""
 	}
-	return "up/down: Move | tab: Pane | enter: Edit | space: Toggle | a: Add | d: Remove | u: Undo | ]/[: Problem | p: Problems | x: Explain | c: Compare | ?: Help | " + back + " | q: Quit"
+	return "up/down: Move | tab: Pane | enter: Edit | space: Toggle | a: Add | d: Remove | s: Save | u: Undo | ]/[: Problem | p: Problems | x: Explain | c: Compare | ?: Help | " + back + " | q: Quit"
 }
 
 func countLabel(errors, warnings int) string {

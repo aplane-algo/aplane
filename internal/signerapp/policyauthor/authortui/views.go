@@ -106,7 +106,7 @@ func (m Model) pageKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.screen = screenDocument
 		return m, nil
 	case "q":
-		return m, tea.Quit
+		return m.quit()
 	case "up", "k":
 		m.page.offset--
 	case "down", "j":
@@ -157,7 +157,7 @@ func (m Model) problemsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.screen = screenDocument
 		return m, nil
 	case "q":
-		return m, tea.Quit
+		return m.quit()
 	}
 	if len(locs) == 0 {
 		return m, nil
@@ -255,7 +255,7 @@ func (m Model) comparePickKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "esc":
 		m.screen = screenDocument
 	case "q":
-		return m, tea.Quit
+		return m.quit()
 	case "up", "k":
 		for i := m.pickCursor - 1; i >= 0; i-- {
 			if i != m.current {
@@ -397,6 +397,7 @@ func (m Model) openHelp() Model {
 		"  a          add to the selected section (a route, a set, a limit...)",
 		"  d          remove the selected field, or a route from the outline",
 		"  u ctrl+r   undo / redo",
+		"  s          save: review the changes, then y to write",
 		"  ] [        next / previous problem",
 		"  p          list every problem; enter jumps to it",
 		"  x          explain the document in plain language",

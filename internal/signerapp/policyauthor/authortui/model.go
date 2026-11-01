@@ -25,6 +25,9 @@ const (
 	screenComparePick
 	screenHelp
 	screenField
+	screenSave
+	screenConflict
+	screenOverwrite
 )
 
 type pane int
@@ -66,6 +69,10 @@ type Model struct {
 	// them; prompt is the edit bar when one is open.
 	sessions map[string]*policyauthor.Session
 	prompt   prompt
+	// save is the save flow; quitConfirm asks before quitting with edits
+	// that are not saved.
+	save        saveState
+	quitConfirm bool
 
 	status string
 }
@@ -179,8 +186,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width, m.height = msg.Width, msg.Height
 		return m, nil
 	case tea.KeyMsg:
+		if m.quitConfirm {
+			if msg.String() == "ctrl+c" {
+				return m, tea.Quit
+			}
+			return m.quitKeys(msg)
+		}
 		if msg.String() == "ctrl+c" {
-			return m, tea.Quit
+			return m.quit()
 		}
 		if m.screen != screenFiles {
 			m.status = ""
@@ -199,6 +212,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.comparePickKeys(msg)
 		case screenExplain, screenCompare, screenHelp, screenField:
 			return m.pageKeys(msg)
+		case screenSave:
+			return m.saveKeys(msg)
+		case screenConflict:
+			return m.conflictKeys(msg)
+		case screenOverwrite:
+			return m.overwriteKeys(msg)
 		}
 	}
 	return m, nil
@@ -207,7 +226,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) filesKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "q", "esc":
-		return m, tea.Quit
+		return m.quit()
 	case "up", "k":
 		m.fileCursor--
 	case "down", "j":
@@ -227,14 +246,14 @@ func (m Model) filesKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) documentKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "q":
-		return m, tea.Quit
+		return m.quit()
 	case "esc":
 		if m.focus == paneForm {
 			m.focus = paneOutline
 			return m, nil
 		}
 		if len(m.ws.Files) == 1 {
-			return m, tea.Quit
+			return m.quit()
 		}
 		m.screen = screenFiles
 		m.fileCursor = m.current
@@ -265,6 +284,8 @@ func (m Model) documentKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.startAdd(), nil
 	case "d":
 		return m.startRemove(), nil
+	case "s":
+		return m.startSave(), nil
 	case "u":
 		return m.undo(), nil
 	case "ctrl+r":

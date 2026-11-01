@@ -109,6 +109,15 @@ func LoadFile(path string) *File {
 	return f
 }
 
+// ParseBytes analyzes data as the contents of path without reading the disk,
+// for showing a version of a file that was read separately.
+func ParseBytes(path string, data []byte) *File {
+	f := &File{Path: path}
+	f.setLoaded(data)
+	f.analyze(data)
+	return f
+}
+
 func (f *File) setLoaded(data []byte) {
 	sum := sha256.Sum256(data)
 	f.Exists = true
