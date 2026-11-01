@@ -16,8 +16,8 @@ const (
 )
 
 const (
-	AdminProtocolVersionMajor = 6
-	AdminProtocolVersionMinor = 1
+	AdminProtocolVersionMajor = 7
+	AdminProtocolVersionMinor = 0
 )
 
 // ProtocolVersion is the admin IPC protocol version shape surfaced during
@@ -153,6 +153,8 @@ const (
 	MsgTypeCheckPolicyResult        = "check_policy_result"         // Server → client: validation problems
 	MsgTypeApplyPolicy              = "apply_policy"                // Client → server: replace policy documents in one generation commit
 	MsgTypeApplyPolicyResult        = "apply_policy_result"         // Server → client: apply result and new policy
+	MsgTypeGetPolicyContext         = "get_policy_context"          // Client → server: request the node's policy context and digests
+	MsgTypePolicyContext            = "policy_context"              // Server → client: the node's policy context and digests
 
 	// ASA set message types: the assets the operator confirmed, beside the
 	// built-in table.
@@ -1197,6 +1199,35 @@ type PolicyMessage struct {
 type GetPolicyDocumentMessage struct {
 	BaseMessage
 	Key string `json:"key,omitempty"`
+	// ExpectedSnapshotSHA256, when set, refuses the read if the node's
+	// policy or context changed since that snapshot.
+	ExpectedSnapshotSHA256 string `json:"expected_snapshot_sha256,omitempty"`
+}
+
+// GetPolicyContextMessage requests the node's policy context and digests.
+type GetPolicyContextMessage struct{ BaseMessage }
+
+// PolicyNetwork is one network token and the chain it names.
+type PolicyNetwork struct {
+	Network     string `json:"network"`
+	GenesisHash string `json:"genesis_hash"`
+}
+
+// PolicyContextMessage is the node's policy context: its role, network
+// mapping, effective ASA table (built-ins included) and admission rules
+// version, with the context, policy set and composite snapshot digests.
+type PolicyContextMessage struct {
+	BaseMessage
+	Success         bool            `json:"success"`
+	NodeRole        string          `json:"node_role,omitempty"`
+	RulesVersion    int             `json:"rules_version,omitempty"`
+	Networks        []PolicyNetwork `json:"networks,omitempty"`
+	Assets          []ASAInfo       `json:"assets,omitempty"`
+	ContextSHA256   string          `json:"context_sha256,omitempty"`
+	PolicySetSHA256 string          `json:"policy_set_sha256,omitempty"`
+	SnapshotSHA256  string          `json:"snapshot_sha256,omitempty"`
+	Code            string          `json:"code,omitempty"`
+	Error           string          `json:"error,omitempty"`
 }
 
 // PolicyDocumentMessage returns one active policy document's exact bytes.
@@ -1242,6 +1273,9 @@ type ApplyPolicyMessage struct {
 	Documents               []PolicyDocumentWire `json:"documents,omitempty"`
 	Remove                  []string             `json:"remove,omitempty"`
 	ExpectedPolicySetSHA256 string               `json:"expected_policy_set_sha256"`
+	// ExpectedSnapshotSHA256 is the composite snapshot the change was
+	// reviewed against. Required since admin protocol 7.
+	ExpectedSnapshotSHA256 string `json:"expected_snapshot_sha256"`
 }
 
 // ApplyPolicyResultMessage reports an apply. On success Policy is the new

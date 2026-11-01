@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
+	"github.com/aplane-algo/aplane/internal/apadminapp"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/protocol"
 )
@@ -72,11 +73,20 @@ func (b onlineBackend) Get(context.Context) (adminproto.PolicyView, error) {
 	return viewFromWire(msg), err
 }
 
-func (b onlineBackend) Document(_ context.Context, key string) (adminproto.PolicyDocumentResult, error) {
+func (b onlineBackend) Context(context.Context) (adminproto.PolicyContextView, error) {
+	var msg protocol.PolicyContextMessage
+	err := b.roundTrip(protocol.GetPolicyContextMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeGetPolicyContext, ID: onlineRequestID("policy-context")},
+	}, protocol.MsgTypePolicyContext, &msg)
+	return apadminapp.PolicyContextViewFromMessage(msg), err
+}
+
+func (b onlineBackend) Document(_ context.Context, key, expectedSnapshot string) (adminproto.PolicyDocumentResult, error) {
 	var msg protocol.PolicyDocumentMessage
 	err := b.roundTrip(protocol.GetPolicyDocumentMessage{
-		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeGetPolicyDocument, ID: onlineRequestID("policy-document")},
-		Key:         key,
+		BaseMessage:            protocol.BaseMessage{Type: protocol.MsgTypeGetPolicyDocument, ID: onlineRequestID("policy-document")},
+		Key:                    key,
+		ExpectedSnapshotSHA256: expectedSnapshot,
 	}, protocol.MsgTypePolicyDocument, &msg)
 	return adminproto.PolicyDocumentResult{
 		Success: msg.Success, Key: msg.Key, Document: msg.Document, SHA256: msg.SHA256,
@@ -105,6 +115,7 @@ func (b onlineBackend) Apply(_ context.Context, req adminproto.ApplyPolicyReques
 		Documents:               documentsToWire(req.Documents),
 		Remove:                  req.Remove,
 		ExpectedPolicySetSHA256: req.ExpectedPolicySetSHA256,
+		ExpectedSnapshotSHA256:  req.ExpectedSnapshotSHA256,
 	}, protocol.MsgTypeApplyPolicyResult, &msg)
 	result := adminproto.ApplyPolicyResult{
 		Success: msg.Success, Errors: problemsFromWire(msg.Errors),

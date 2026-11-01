@@ -23,13 +23,18 @@ import (
 type Workspace struct {
 	// Paths are the files and directories opened.
 	Paths []string
-	// Role is the role the workspace's documents are for: the first valid
-	// role a file names, in load order.
+	// Role is the role the workspace's documents are for: the node's, with a
+	// node context, else the first valid role a file names, in load order.
 	Role  noderole.Role
 	Files []*File
-	// Problems are the rules across files: at most one default, no key in two
-	// files, and one role throughout. They are reported per file, so a file
-	// stays open and repairable while it breaks one.
+	// Node, when set, is the node the documents are for, from an export:
+	// they are checked against its networks and ASA set. Without it they
+	// are checked against the built-in ones only.
+	Node *NodeContext
+	// Problems are the rules across files (at most one default, no key in two
+	// files, and one role throughout) and what the node would refuse to
+	// admit. They are reported per file, so a file stays open and repairable
+	// while it breaks one.
 	Problems []Problem
 }
 
@@ -89,14 +94,28 @@ func Open(paths ...string) (*Workspace, error) {
 	return w, nil
 }
 
-// Check recomputes the workspace's role and the rules across files.
+// WithNode returns a copy of the workspace checked against node.
+func (w *Workspace) WithNode(node *NodeContext) *Workspace {
+	c := *w
+	c.Node = node
+	c.Check()
+	return &c
+}
+
+// Check recomputes the workspace's role, the rules across files, and the
+// admission problems.
 func (w *Workspace) Check() {
 	w.Problems = nil
 	w.Role = ""
+	if w.Node != nil {
+		w.Role = w.Node.Context.Role()
+	}
 	for _, f := range w.Files {
+		if w.Role != "" {
+			break
+		}
 		if f.Role != "" {
 			w.Role = f.Role
-			break
 		}
 	}
 	byKey := map[string][]*File{}
@@ -104,9 +123,14 @@ func (w *Workspace) Check() {
 		if f.Key != "" {
 			byKey[f.Key] = append(byKey[f.Key], f)
 		}
-		if f.Role != "" && w.Role != "" && f.Role != w.Role {
+		switch {
+		case f.Role == "" || f.Role == w.Role:
+		case w.Node != nil:
+			w.add(f, "/role", fmt.Sprintf("the document is for a %s node, but the export is of a %s node", f.Role, w.Role))
+		default:
 			w.add(f, "/role", fmt.Sprintf("the document is for a %s node, but the workspace holds %s documents", f.Role, w.Role))
 		}
+		w.checkAdmission(f)
 	}
 	for key, files := range byKey {
 		if len(files) < 2 {

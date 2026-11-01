@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/asaset"
 	"github.com/aplane-algo/aplane/internal/productmode"
 	"io"
 	"net/http"
@@ -134,7 +135,7 @@ func setupTestSigner(t *testing.T) (*Signer, func()) {
 	server.httpAuth = newProductAuthenticator(server.nodeFailState, ir)
 	signerstartup.WireReloadFunc(ir, testProductBuildOptions(server), server.productBuildHooks())
 	signerstartup.WireApprovalCoordinator(ir, server.productBuildHooks())
-	ir.SetNodePolicy(initialPolicy)
+	ir.SetVerifiedPolicyState(initialPolicy, asaset.Empty(), nil)
 	ir.SetUnlocked()
 
 	cleanup := func() {}

@@ -126,6 +126,9 @@ Verbs:
   status            list the node's default policy and each held key's coverage
   export [--key K]  write one policy document exactly as stored: the node
                     default, or key K's own policy
+  export --all DIR  write every policy document exactly as stored into the
+                    new or empty directory DIR, with the node's policy
+                    context in DIR/.appolicy/node.json, for appolicy
   check FILE...     validate policy files against the node
   diff FILE...|-    describe how policy files differ from the policy that
                     governs each key now
@@ -146,6 +149,12 @@ Verbs:
                     no node and no passphrase.
 
 apply and remove ask for confirmation on the terminal; --yes skips it.
+
+Files from an export carry its context: check, diff and apply first compare
+the node with it and refuse when the node's policy, ASA set or network map
+changed since the export. Export again and carry the edits over.
+--node-context FILE names the context to compare instead; --no-node-context
+compares none.
 
 Each file is one document and names it in its "key" field: "default" for the
 node default, or the key it governs (an address on a signer node, a Witness
@@ -168,6 +177,9 @@ apply and remove, and reject --ipc-path.
 	preset := fs.String("preset", "", "template only: write this cosigner preset instead of the node's default (see --list-presets)")
 	listPresets := fs.Bool("list-presets", false, "template only: list the cosigner presets")
 	yes := fs.Bool("yes", false, "apply or remove without asking for confirmation")
+	all := fs.String("all", "", "export only: write every document and the node's context into this new or empty directory")
+	nodeContext := fs.String("node-context", "", "check, diff and apply: compare the node with this export context instead of the one beside the files")
+	noNodeContext := fs.Bool("no-node-context", false, "check, diff and apply: compare the node with no export context, even for files from an export")
 	if err := fs.Parse(args); err != nil {
 		return command, rescue, err
 	}
@@ -179,6 +191,9 @@ apply and remove, and reject --ipc-path.
 	command.Preset = *preset
 	command.ListPresets = *listPresets
 	command.Yes = *yes
+	command.ExportDir = *all
+	command.NodeContext = *nodeContext
+	command.NoNodeContext = *noNodeContext
 	command.Args = fs.Args()
 	if err := command.Validate(); err != nil {
 		return command, rescue, err

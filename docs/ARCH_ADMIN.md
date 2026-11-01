@@ -86,8 +86,11 @@ Transport notes:
   same-UID local mode may use `<data_dir>/aplane.sock`, and custom private
   managed stores require an explicit IPC path so an unreadable selected root
   cannot silently retarget a client to the singleton system signer,
-- the current admin protocol version is 6.1 (6.1 added the ASA set
-  messages); `auth_required` carries it as
+- the current admin protocol version is 7.0 (7.0 adds `get_policy_context`
+  and makes `apply_policy` name the composite snapshot it was reviewed
+  against, so a 6.x client is refused at authentication rather than applying
+  without that check; 6.1 added the ASA set messages); `auth_required`
+  carries it as
   `protocol_version:{major,minor}`; clients must send their version in
   `auth.protocol_version`; major-version mismatches
   are rejected during authentication, and minor-version mismatches are logged
@@ -270,6 +273,7 @@ Client to Server:
 - `update_admin_setting`
 - `get_policy`
 - `get_policy_document`
+- `get_policy_context`
 - `check_policy`
 - `apply_policy`
 - `list_asa_set`
@@ -283,6 +287,7 @@ Server to Client:
 - `update_admin_setting_result`
 - `policy`
 - `policy_document`
+- `policy_context`
 - `check_policy_result`
 - `apply_policy_result`
 - `asa_set`
@@ -523,14 +528,16 @@ Shared shapes:
 Messages:
 
 - `get_policy` -> `policy`: `success`, `node_role`, `documents[]` (document summaries without bytes: the default first, then per-key documents sorted by key), `keys[]` (one entry per held key and per stored document for a key not held, sorted by key; the default is not a key and is not listed), `policy_set_sha256`, optional `generation_id`, optional `code`, optional `error`. `policy_set_sha256` is the lowercase hex SHA-256 over the sorted lines `<key> <document sha256>\n`, one per document, where `<key>` is `default` or the selector. Returns `policy_unavailable` when no policy is loaded.
-- `get_policy_document`: `key` (`default` or a selector) -> `policy_document`: `success`, `key`, `document` (exact bytes), `sha256`, optional `signed_at_unix`, optional `code`, optional `error`. Returns `policy_document_not_found` when `key` is empty or names a key with no document of its own (it follows the node default).
+- `get_policy_document`: `key` (`default` or a selector), optional `expected_snapshot_sha256` -> `policy_document`: `success`, `key`, `document` (exact bytes), `sha256`, optional `signed_at_unix`, optional `code`, optional `error`. Returns `policy_document_not_found` when `key` is empty or names a key with no document of its own (it follows the node default). With `expected_snapshot_sha256`, the read is refused with `policy_snapshot_changed` unless the node's composite snapshot (below) still equals it, so documents fetched one at a time for a review or an export all come from the state the review or export started from.
+- `get_policy_context` -> `policy_context`: `success`, `node_role`, `rules_version`, `networks[]` (`network`, `genesis_hash`: every token the node resolves, built-in and custom), `assets[]` (the effective ASA set: asset info as for `asa_set`, without shadowed confirmations), `context_sha256`, `policy_set_sha256`, `snapshot_sha256`, optional `code`, optional `error`. The policy and the ASA set are read under one lock, so the three digests describe one state. `context_sha256` digests the role, the admission rules version, every network with its chain, and every asset with its origin, decimals, unit name and name; `snapshot_sha256` digests it with `policy_set_sha256`. Both encodings are pinned by `test/contracts/policycontext/v1/`. A client pairs this reply with a `get_policy` summary and uses the snapshot only when the two name the same `policy_set_sha256`. Returns `policy_unavailable` when no policy is loaded. With the ASA set file at its 1 MiB bound the reply stays far inside one admin frame.
 - `check_policy`: `documents[]`, optional `remove[]` (keys whose own documents the candidate change would delete) -> `check_policy_result`: `success`, `valid`, optional `errors[]`, optional `warnings[]`, optional `code`, optional `error`. Validates the candidate change for the node role without writing. `valid` is true when `errors` is empty. Warnings never block an apply; they report document advisories (such as a `reject_*` setting that overrides a route's `allow_close` or `allow_clawback`, a route for a transaction type the document rejects, or a cosigner document with routes but no fee cap), documents in the resulting state for keys the node does not hold (`key_not_held`), and admission problems of each submitted document against the node's networks and ASA set: a network the node does not know, an asset outside the set, a direct `asa:<id>` route term over several networks or `*`, and a route with no asset on one of its networks. A response carries at most 256 errors and warnings together, errors first, with a final warning counting the ones left out, and each message and pointer is cut at 512 bytes, so it always fits one admin frame. Admission problems are warnings in this release; they will be refused for submitted documents once the rules are enforced. A key on the default is covered, not a gap.
-- `apply_policy`: `documents[]`, optional `remove[]`, `expected_policy_set_sha256` -> `apply_policy_result`: `success`, optional `errors[]`, optional `policy` (the new `policy` view, including the committed `generation_id`), optional `commit_uncertain`, optional `code`, optional `error`.
+- `apply_policy`: `documents[]`, optional `remove[]`, `expected_policy_set_sha256`, `expected_snapshot_sha256` -> `apply_policy_result`: `success`, optional `errors[]`, optional `policy` (the new `policy` view, including the committed `generation_id`), optional `commit_uncertain`, optional `code`, optional `error`.
 
 Apply rules, the same on both node roles:
 
 - The change adds or replaces each listed document and deletes each key in `remove`; unlisted documents are kept. Each document's `key` must equal its signed `key` field, and its signed `role` must equal the node role. A key may appear only once across `documents` and `remove`; removing a key with no document of its own is rejected; removing `default` is rejected (apply a new one instead). The resulting set must hold a default.
 - `expected_policy_set_sha256` is required and must equal the active `policy_set_sha256`.
+- `expected_snapshot_sha256` is required and must equal the node's composite snapshot at commit, recomputed under the mutation lock from the active generation's policy and ASA set and the network mapping the runtime uses. It is the snapshot the operator's review was built against, so a change to the policy, the ASA set or the network mapping between review and commit refuses the apply with `policy_snapshot_changed`. Clients take it from the `get_policy_context` paired with the summary the review used, never from a later read.
 - A node holds at most 8,192 per-key policy documents (`policyapply.MaxPolicies`), on either role; a change past the cap is rejected with `policy_set_too_large` before anything is written. The default does not count. Key generation, import, and restore refuse an 8,193rd cosigner credential (`keys.MaxCosignerCredentials`).
 - Response sizes are bounded: `policy` and `apply_policy_result` carry document summaries, never bytes, so with both caps full and every field at its longest they encode to about 3 MB, inside the 4 MiB admin frame. `policy_document` carries one document of at most 1 MiB; admin messages are encoded without HTML escaping, so a document string at most doubles (only quotes, backslashes, JSON whitespace, and U+2028/U+2029 are escaped) and the response stays near 2 MiB.
 - The server verifies the active policy, checks the concurrency base, validates the change, and mints one new generation (operation `policy-apply`) carrying the documents and fresh sidecars, then reloads the bound product runtime without a restart. A change that leaves the policy set unchanged commits nothing.
@@ -539,12 +546,12 @@ Apply rules, the same on both node roles:
 - `commit_uncertain` means the generation may be visible but its durability or the runtime reload is unconfirmed; signing is blocked pending reconciliation or recovery.
 
 Result codes include `expected_policy_set_sha256_required`,
-`policy_snapshot_changed`, `policy_validation_failed` (with `errors[]`),
+`expected_snapshot_sha256_required`, `policy_snapshot_changed`, `policy_validation_failed` (with `errors[]`),
 `invalid_policy_request`, `policy_set_too_large`, `policy_unavailable`, `policy_document_not_found`, `policy_verify_failed`,
 `identity_locked`, `recovery_blocked`, `policy_commit_uncertain`,
 `policy_reload_failed`, and `policy_save_failed`.
 
-`get_policy`, `get_policy_document`, and `check_policy` require `policy.view`; `apply_policy` requires
+`get_policy`, `get_policy_document`, `get_policy_context`, and `check_policy` require `policy.view`; `apply_policy` requires
 `policy.update`. Policy messages are not exposed through apshell or MCP.
 
 ASA set messages. The ASA set is the built-in asset table plus the assets the
@@ -1021,16 +1028,27 @@ A policy document changes only through one check, review, and apply workflow
 (`internal/signerapp/signertui/policy_apply.go`), which follows the same steps
 as `apadmin policy apply FILE`. It has two sources for the candidate document:
 `a` loads one policy file, and `e` opens the in-place editor described below.
+The policies view reads the summary and `get_policy_context` together, and
+holds the composite snapshot only once the context names the summary's
+`policy_set_sha256` (otherwise it reads both again); export and review wait
+until it has one.
 `x` exports the active policy instead
 (`internal/signerapp/signertui/policy_export.go`): it fetches every document
-the summary lists with `get_policy_document`, one at a time, and writes them
-in a command outside the event loop through
-`apadminapp.ExportPolicyDocuments`. That writer creates a new directory, or
-uses an empty one, and writes each document's exact bytes as `default.json`
-or `<key>.json` (the key checked as a policy selector), mode 0600. It writes
-nothing unless every fetched document matches the digest the summary listed
-and together they are the summary's `policy_set_sha256`, so an apply that
-lands during the export is refused rather than written as a mix.
+the summary lists with `get_policy_document` against that snapshot, one at a
+time, and writes them in a command outside the event loop through
+`apadminapp.WritePolicyExport`, the writer `apadmin policy export --all`
+uses. That writer checks the context against its own digests, then
+(`policyexport.Write`) creates a new directory, or uses an empty one, and
+writes each document's exact bytes as `default.json` or `<key>.json` (the key
+checked as a policy selector) and the node's context as
+`.appolicy/node.json` (`aplane.policy-node-context.v1`), files mode 0600 and
+directories 0700. It writes nothing unless every fetched document matches the
+digest the summary listed, together they are the summary's
+`policy_set_sha256`, and with the context they make the snapshot, so an
+apply that lands during the export is refused rather than written as a mix.
+An in-progress marker in `.appolicy` is written first and removed only after
+the documents and then the context are durable, so an export that stops part
+way is refused by every reader.
 For a loaded file:
 
 1. A path prompt reads the file with the shared reader in
@@ -1039,21 +1057,28 @@ For a loaded file:
    rather than opened. The file's `"key"` field selects the document:
    `default` or one key. The TUI refuses a file for a key the node does not
    hold, which the batch command only warns about; pre-staging a policy for a
-   key that is not yet held stays a batch operation.
+   key that is not yet held stays a batch operation. The file's export is
+   selected as the batch command selects it (`policyexport.Discover`): an
+   unfinished or damaged export is refused here, and once the check returns,
+   a file from an export the node has moved on from is refused before review
+   (`policyexport.Selected.Compare` against the paired context).
 2. `check_policy` validates the exact bytes. Errors are shown on the prompt
    and stop the load; warnings carry into the review.
-3. `get_policy_document` fetches the document that governs the key now: the
+3. `get_policy_document`, against the snapshot, fetches the document that governs the key now: the
    key's own, or the node default it follows, and `policyreview.DiffCandidate`
    produces the same effective tightened/loosened/changed diff the batch
-   command prints, so a first document for a key is shown as a change from
+   command prints, rendered in the context of the reviewed snapshot (checked
+   against its digests) so ASA thresholds show display units beside base
+   units, so a first document for a key is shown as a change from
    the default. A file that decodes equal to the governing document reports
    `Policy unchanged` and cannot be applied.
 4. Only `y` confirms. `apply_policy` carries, as its concurrency base, the
-   `policy_set_sha256` of the summary the review was built from: the one that
-   decided in step 3 whether the key has a document of its own. It is captured
-   when the check returns and is never replaced by a later summary, so the
-   daemon rejects the apply if the active policy changed after the review was
-   built. On success the list reloads and
+   `policy_set_sha256` of the summary the review was built from (the one that
+   decided in step 3 whether the key has a document of its own) and the
+   composite snapshot paired with it. Both are captured when the check
+   returns and are never replaced by a later summary, so the daemon rejects
+   the apply if the active policy, ASA set or network mapping changed after
+   the review was built. On success the list reloads and
    shows the new generation ID; on failure the review shows the daemon's error
    and must be left and restarted. A `commit_uncertain` result means the
    daemon has entered recovery without sending a status message, so the TUI
@@ -1067,8 +1092,8 @@ be sent fails its own step the same way. `diff` without applying, `remove`, mult
 remain `apadmin policy` verbs; `apadmin policy rescue` covers a stopped daemon.
 The `apadmin policy` verbs (`status`, `export`, `check`, `diff`, `apply`,
 `remove`, `template`) cover the full surface. The editor adds no RPC: the TUI
-uses the same `get_policy`, `get_policy_document`, `check_policy`, and
-`apply_policy` messages as the verbs.
+uses the same `get_policy`, `get_policy_context`, `get_policy_document`,
+`check_policy`, and `apply_policy` messages as the verbs.
 
 #### Policy Editor
 

@@ -189,8 +189,11 @@ func (s *stubServices) GetPolicy() adminproto.PolicyView {
 	s.getPolicyCalls++
 	return s.getPolicyResult
 }
-func (s *stubServices) GetPolicyDocument(key string) adminproto.PolicyDocumentResult {
-	return adminproto.PolicyDocumentResult{Success: true, Key: key, Document: "{}"}
+func (s *stubServices) GetPolicyDocumentAt(req adminproto.GetPolicyDocumentRequest) adminproto.PolicyDocumentResult {
+	return adminproto.PolicyDocumentResult{Success: true, Key: req.Key, Document: "{}"}
+}
+func (s *stubServices) GetPolicyContext() adminproto.PolicyContextView {
+	return adminproto.PolicyContextView{Success: true}
 }
 func (s *stubServices) CheckPolicy(req adminproto.CheckPolicyRequest) adminproto.CheckPolicyResult {
 	s.checkPolicyCalls++
@@ -721,7 +724,7 @@ func TestSessionAuthenticateBindsProductRuntime(t *testing.T) {
 func TestSessionAuthenticateRejectsUnknownFieldBeforePassphrase(t *testing.T) {
 	ir := productruntime.New(productruntime.Config{})
 
-	authMsg := []byte(`{"kind":"request","type":"auth","passphrase":"secret","unexpected_selector":"bob","protocol_version":{"major":6,"minor":0}}`)
+	authMsg := []byte(`{"kind":"request","type":"auth","passphrase":"secret","unexpected_selector":"bob","protocol_version":{"major":7,"minor":0}}`)
 
 	conn := &queueConn{reads: [][]byte{authMsg}}
 	svc := &stubServices{
@@ -782,7 +785,7 @@ func TestSessionAuthenticateRejectsOldVersionBeforeUnknownField(t *testing.T) {
 	if err := json.Unmarshal(conn.writes[1], &result); err != nil {
 		t.Fatal(err)
 	}
-	if result.Success || result.Code != protocol.ErrCodeInvalidAuthMessage || result.Error != "admin protocol major version mismatch: client=4 server=6" {
+	if result.Success || result.Code != protocol.ErrCodeInvalidAuthMessage || result.Error != "admin protocol major version mismatch: client=4 server=7" {
 		t.Fatalf("auth result = %+v, want version-first rejection", result)
 	}
 }

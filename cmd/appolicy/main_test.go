@@ -147,15 +147,22 @@ func TestFmt(t *testing.T) {
 }
 
 func TestExplain(t *testing.T) {
-	path := put(t, t.TempDir(), "ops.json", fixture(t, "signer_key_full.json"))
-	signerData := t.TempDir()
-	before := tree(t, signerData)
-	code, out, errOut := appolicy("explain", "--signer-data", signerData, path)
+	dir := t.TempDir()
+	path := put(t, dir, "ops.json", fixture(t, "signer_key_full.json"))
+	code, out, errOut := appolicy("explain", path)
 	if code != exitOK || !strings.Contains(out, "Signer key document for") || !strings.Contains(out, "1000 USDC") {
 		t.Fatalf("explain: exit %d\n%s\n%s", code, out, errOut)
 	}
-	if after := tree(t, signerData); after != before {
-		t.Fatalf("explain wrote to the signer data directory:\nbefore %s\nafter  %s", before, after)
+	// From an export, amounts use the node's table; it has no USDC here, so
+	// the amount stays in base units.
+	writeNodeContext(t, dir, false)
+	before := tree(t, dir)
+	code, out, errOut = appolicy("explain", path)
+	if code != exitOK || strings.Contains(out, "1000 USDC") {
+		t.Fatalf("explain from an export without USDC: exit %d\n%s\n%s", code, out, errOut)
+	}
+	if after := tree(t, dir); after != before {
+		t.Fatalf("explain wrote to the export:\nbefore %s\nafter  %s", before, after)
 	}
 
 	bad := put(t, t.TempDir(), "bad.json", []byte("{"))
@@ -170,9 +177,10 @@ const (
 )
 
 func TestTry(t *testing.T) {
-	path := put(t, t.TempDir(), "treasury.json", fixture(t, "signer_key_full.json"))
-	signerData := t.TempDir()
-	before := tree(t, signerData)
+	dir := t.TempDir()
+	path := put(t, dir, "treasury.json", fixture(t, "signer_key_full.json"))
+	context := writeNodeContext(t, t.TempDir(), true)
+	before := tree(t, dir)
 	tests := []struct {
 		name    string
 		args    []string
@@ -188,7 +196,7 @@ func TestTry(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			// Flags may follow the file.
-			args := append([]string{"try", path, "--json", "--signer-data", signerData, "--from", treasuryAddr, "--to", opsMainnet, "--network", "mainnet"}, tc.args...)
+			args := append([]string{"try", path, "--json", "--node-context", context, "--from", treasuryAddr, "--to", opsMainnet, "--network", "mainnet"}, tc.args...)
 			code, out, errOut := appolicy(args...)
 			if code != exitOK {
 				t.Fatalf("try: exit %d: %s", code, errOut)
@@ -203,16 +211,16 @@ func TestTry(t *testing.T) {
 			if tc.outcome == "reject" && len(report.Violations) == 0 {
 				t.Fatal("a rejection lists no violations")
 			}
-			if !strings.Contains(strings.Join(report.Assumes, "\n"), "no config.yaml in "+signerData) {
+			if !strings.Contains(strings.Join(report.Assumes, "\n"), "networks of the signer node exported to "+context) {
 				t.Fatalf("assumptions = %q, want the network source", report.Assumes)
 			}
 		})
 	}
-	if after := tree(t, signerData); after != before {
-		t.Fatalf("try wrote to the signer data directory:\nbefore %s\nafter  %s", before, after)
+	if after := tree(t, dir); after != before {
+		t.Fatalf("try wrote to the workspace:\nbefore %s\nafter  %s", before, after)
 	}
 
-	code, out, _ := appolicy("try", "--signer-data", "", "--from", treasuryAddr, "--to", "self", path)
+	code, out, _ := appolicy("try", "--from", treasuryAddr, "--to", "self", path)
 	if code != exitOK || !strings.Contains(out, "treasury.json (signer document") || !strings.Contains(out, "assumed:\n  - built-in networks only") {
 		t.Fatalf("try text output: exit %d\n%s", code, out)
 	}
@@ -230,7 +238,7 @@ func TestTryRefusesBadInput(t *testing.T) {
 		"unknown network":      {"try", path, "--from", treasuryAddr, "--to", "self", "--network", "nowhere"},
 		"unknown flag":         {"try", path, "--bogus"},
 	} {
-		if code, _, _ := appolicy(append(args, "--signer-data", "")...); code != exitUsage {
+		if code, _, _ := appolicy(args...); code != exitUsage {
 			t.Errorf("%s: exit %d, want %d", name, code, exitUsage)
 		}
 	}
@@ -239,7 +247,7 @@ func TestTryRefusesBadInput(t *testing.T) {
 func TestTestRunsSavedCases(t *testing.T) {
 	dir := t.TempDir()
 	put(t, dir, "treasury.json", fixture(t, "signer_key_full.json"))
-	if code, _, errOut := appolicy("test", "--signer-data", "", dir); code != exitUsage || !strings.Contains(errOut, "no saved cases") {
+	if code, _, errOut := appolicy("test", dir); code != exitUsage || !strings.Contains(errOut, "no saved cases") {
 		t.Fatalf("test with no cases: exit %d: %s", code, errOut)
 	}
 	writeCases := func(cases string) {
@@ -254,7 +262,7 @@ func TestTestRunsSavedCases(t *testing.T) {
 		"expect": {"outcome": "review", "rule_id": "review_algo_payment_exceeded"}}`
 	writeCases(review)
 	before := tree(t, dir)
-	code, out, errOut := appolicy("test", dir, "--signer-data", "")
+	code, out, errOut := appolicy("test", dir)
 	if code != exitOK || !strings.Contains(out, "ok    large top-up needs review") || !strings.Contains(out, "1 case(s), 0 failed, 0 could not run (built-in networks only)") {
 		t.Fatalf("test: exit %d\n%s\n%s", code, out, errOut)
 	}
@@ -266,18 +274,18 @@ func TestTestRunsSavedCases(t *testing.T) {
 		"txn": {"network": "mainnet", "sender": "` + treasuryAddr + `", "receiver": "` + opsMainnet + `", "amount": 150000000},
 		"expect": {"outcome": "default"}}`
 	writeCases(review + "," + wrong)
-	if code, out, _ := appolicy("test", "--signer-data", "", dir); code != exitProblems || !strings.Contains(out, "FAIL  wrong: got review (rule review_algo_payment_exceeded), want default") {
+	if code, out, _ := appolicy("test", dir); code != exitProblems || !strings.Contains(out, "FAIL  wrong: got review (rule review_algo_payment_exceeded), want default") {
 		t.Fatalf("test with a failing case: exit %d\n%s", code, out)
 	}
 
 	missing := `{"name": "missing", "document": "gone.json", "txn": {"sender": "` + treasuryAddr + `", "receiver": "` + opsMainnet + `"}, "expect": {"outcome": "default"}}`
 	writeCases(wrong + "," + missing)
-	if code, out, _ := appolicy("test", "--signer-data", "", dir); code != exitUsage || !strings.Contains(out, "ERROR missing") {
+	if code, out, _ := appolicy("test", dir); code != exitUsage || !strings.Contains(out, "ERROR missing") {
 		t.Fatalf("test with a missing document: exit %d\n%s", code, out)
 	}
 
 	writeCases(`{"name": "bad", "document": "treasury.json", "txn": {}, "expect": {"outcome": "sign"}}`)
-	if code, _, errOut := appolicy("test", "--signer-data", "", dir); code != exitUsage || !strings.Contains(errOut, "cases.json") {
+	if code, _, errOut := appolicy("test", dir); code != exitUsage || !strings.Contains(errOut, "cases.json") {
 		t.Fatalf("test with a bad cases file: exit %d: %s", code, errOut)
 	}
 }
@@ -332,7 +340,7 @@ func TestOpenRunsTheTUIOnTheWorkspace(t *testing.T) {
 	runProgram = func(m tea.Model) error { ran = append(ran, m); return nil }
 	t.Cleanup(func() { runProgram = saved })
 
-	for _, args := range [][]string{{"open", a, b}, {dir}, {"open", "--signer-data", t.TempDir(), dir}} {
+	for _, args := range [][]string{{"open", a, b}, {dir}, {"open", "--node-context", writeNodeContext(t, t.TempDir(), false), dir}} {
 		if code, _, errOut := appolicy(args...); code != exitOK {
 			t.Fatalf("%v: exit %d: %s", args, code, errOut)
 		}

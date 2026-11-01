@@ -10,15 +10,19 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/apadminapp"
+	"github.com/aplane-algo/aplane/internal/policyexport"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
 // The policies view exports the node's active policy: every document, exactly
-// as stored, into a new or empty directory, so the files can be checked,
-// explained and edited offline with appolicy and installed again with
-// apadmin policy apply. The documents are fetched one at a time and written
-// only if together they are still the policy set the summary listed.
+// as stored, and the node's policy context, into a new or empty directory, so
+// the files can be checked, explained and edited offline with appolicy and
+// installed again with apadmin policy apply. The documents are fetched one at
+// a time against the snapshot the summary and context were read at, so the
+// node refuses a fetch once either moved, and they are written only if
+// together they are still the policy set the summary listed.
 
 // policyExportState is the export directory prompt and the fetch in progress.
 type policyExportState struct {
@@ -29,10 +33,13 @@ type policyExportState struct {
 	err  string
 
 	// queue holds the keys still to fetch, docs the documents fetched so far.
-	queue     []string
-	docs      []apadminapp.ExportedPolicyDocument
-	expected  map[string]string
-	setSHA256 string
+	queue    []string
+	docs     []policyexport.Document
+	expected map[string]string
+	// context is the node's context the export writes, and snapshot the
+	// composite snapshot every document is fetched against.
+	context  adminproto.PolicyContextView
+	snapshot string
 	// pendingID names the document request the export is waiting for;
 	// responses to any other request are not the export's.
 	pendingID string
@@ -123,7 +130,12 @@ func (m Model) startPolicyExport() (tea.Model, tea.Cmd) {
 		export.queue = append(export.queue, doc.Key)
 		export.expected[doc.Key] = doc.SHA256
 	}
-	export.setSHA256 = summary.PolicySetSHA256
+	if m.policies.snapshot == "" || m.policies.loadedContext == nil {
+		export.err = "The node's policy context is still loading; try again"
+		return m, nil
+	}
+	export.context = apadminapp.PolicyContextViewFromMessage(*m.policies.loadedContext)
+	export.snapshot = m.policies.snapshot
 	if len(export.queue) == 0 {
 		export.err = "The node lists no policy documents to export"
 		return m, nil
@@ -138,9 +150,9 @@ func (m Model) fetchNextPolicyExportDocument() (tea.Model, tea.Cmd) {
 	total := len(export.expected)
 	export.busy = fmt.Sprintf("Reading policy documents (%d of %d)...", total-len(export.queue), total)
 	export.pendingID = newRequestID("policy-export-doc")
-	id := export.pendingID
+	id, snapshot := export.pendingID, export.snapshot
 	return m, tea.Batch(
-		policyRequestCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendGetPolicyDocument(key, id) }),
+		policyRequestCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendGetPolicyDocumentAt(key, snapshot, id) }),
 		m.waitForMessageCmd(),
 	)
 }
@@ -156,17 +168,17 @@ func (m Model) handlePolicyExportDocumentLoaded(msg PolicyDocumentLoadedMsg) (te
 		export.err = policyResultError(doc.Code, doc.Error, "a policy document is unavailable")
 		return m, m.waitForMessageCmd()
 	}
-	export.docs = append(export.docs, apadminapp.ExportedPolicyDocument{Key: doc.Key, Document: doc.Document, SHA256: export.expected[doc.Key]})
+	export.docs = append(export.docs, policyexport.Document{Key: doc.Key, Document: doc.Document, SHA256: export.expected[doc.Key]})
 	if len(export.queue) > 0 {
 		return m.fetchNextPolicyExportDocument()
 	}
 	export.busy = "Writing policy files..."
-	return m, tea.Batch(writePolicyExportCmd(export.path, export.docs, export.setSHA256), m.waitForMessageCmd())
+	return m, tea.Batch(writePolicyExportCmd(export.path, export.docs, export.context), m.waitForMessageCmd())
 }
 
-func writePolicyExportCmd(dir string, docs []apadminapp.ExportedPolicyDocument, setSHA256 string) tea.Cmd {
+func writePolicyExportCmd(dir string, docs []policyexport.Document, context adminproto.PolicyContextView) tea.Cmd {
 	return func() tea.Msg {
-		paths, err := apadminapp.ExportPolicyDocuments(dir, docs, setSHA256)
+		paths, err := apadminapp.WritePolicyExport(dir, docs, context, time.Now())
 		return PolicyExportWrittenMsg{Dir: dir, Paths: paths, Err: err}
 	}
 }
@@ -204,7 +216,7 @@ func (m Model) renderPolicyExportForm() string {
 	var body strings.Builder
 	body.WriteString(titleStyle.Render("Export Policy"))
 	body.WriteString("\n\n")
-	body.WriteString(subtitleStyle.Render("Writes every active policy document, exactly as stored, as default.json and <key>.json."))
+	body.WriteString(subtitleStyle.Render("Writes every active policy document, exactly as stored, as default.json and <key>.json, with the node's context in .appolicy/node.json."))
 	body.WriteString("\n\n")
 	body.WriteString("Export directory (new or empty):\n")
 	body.WriteString(inputActiveStyle.Width(m.constrainParameterFieldWidth(60)).Render(export.path))

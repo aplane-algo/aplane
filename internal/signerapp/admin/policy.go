@@ -21,7 +21,35 @@ func (s Service) GetPolicy() adminproto.PolicyView {
 
 // GetPolicyDocument returns one active policy document's exact bytes.
 func (s Service) GetPolicyDocument(key string) adminproto.PolicyDocumentResult {
-	return policyapply.Document(s.Runtime.NodePolicy(), key)
+	return s.GetPolicyDocumentAt(adminproto.GetPolicyDocumentRequest{Key: key})
+}
+
+// GetPolicyDocumentAt returns one active policy document's exact bytes,
+// refusing when ExpectedSnapshotSHA256 is set and the node's policy or
+// context moved since that snapshot.
+func (s Service) GetPolicyDocumentAt(req adminproto.GetPolicyDocumentRequest) adminproto.PolicyDocumentResult {
+	np, set := s.Runtime.PolicyState()
+	if req.ExpectedSnapshotSHA256 != "" && np != nil {
+		env := s.policyEnv(nil)
+		env.ASASet = set
+		_, snapshot, err := policyapply.Snapshot(env, np)
+		if err != nil {
+			return adminproto.PolicyDocumentResult{Key: req.Key, Code: "policy_context_unavailable", Error: err.Error()}
+		}
+		if snapshot != req.ExpectedSnapshotSHA256 {
+			return adminproto.PolicyDocumentResult{Key: req.Key, Code: "policy_snapshot_changed", Error: "the node's policy or its context changed since the snapshot; read it again"}
+		}
+	}
+	return policyapply.Document(np, req.Key)
+}
+
+// GetPolicyContext returns the node's policy context with its digests,
+// read with the policy under one lock.
+func (s Service) GetPolicyContext() adminproto.PolicyContextView {
+	np, set := s.Runtime.PolicyState()
+	env := s.policyEnv(nil)
+	env.ASASet = set
+	return policyapply.ContextView(env, np)
 }
 
 // CheckPolicy validates candidate documents against the node's role and
@@ -112,6 +140,7 @@ func (s Service) policyEnv(kr *crypto.Keyring) policyapply.Env {
 		KeyPaths: s.Deps.KeyPaths(),
 		HeldKeys: s.heldPolicyKeys(),
 		Keyring:  kr,
+		Networks: s.networks(),
 	}
 }
 

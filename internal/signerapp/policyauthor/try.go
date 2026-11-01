@@ -7,7 +7,6 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -17,7 +16,6 @@ import (
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
-	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyeval"
 )
 
@@ -38,27 +36,6 @@ type Networks struct {
 // BuiltinNetworks is the mapping of the built-in Algorand networks.
 func BuiltinNetworks() Networks {
 	return Networks{Resolver: apconfig.DefaultGenesisHashNetworkResolver(), Source: "built-in networks only"}
-}
-
-// SignerNetworks reads the custom network mapping from a signer data
-// directory's config.yaml, read-only. A directory with no config.yaml has
-// only the built-in networks.
-func SignerNetworks(dataDir string) (Networks, error) {
-	path := filepath.Join(dataDir, "config.yaml")
-	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
-		n := BuiltinNetworks()
-		n.Source = "built-in networks only (no config.yaml in " + dataDir + ")"
-		return n, nil
-	}
-	cfg, err := serverconfig.LoadServerConfigStrict(dataDir)
-	if err != nil {
-		return Networks{}, err
-	}
-	resolver, err := apconfig.NewGenesisHashNetworkResolver(cfg.GenesisHashNetworks)
-	if err != nil {
-		return Networks{}, fmt.Errorf("%s: %w", path, err)
-	}
-	return Networks{Resolver: resolver, Source: "networks from " + path}, nil
 }
 
 // genesisHash is the genesis hash a network token maps to.

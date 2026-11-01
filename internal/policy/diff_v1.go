@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"unicode"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
@@ -38,11 +39,24 @@ type PolicyChange struct {
 	Summary string
 }
 
+// AssetLabel says what a node knows of an asset a document names on a
+// network: its unit name and decimals, as its ASA set records them. ok is
+// false for an asset the node does not know.
+type AssetLabel func(network string, assetID uint64) (unitName string, decimals uint64, ok bool)
+
 // DiffPolicyV1 describes how next differs from current. Both documents must
 // decode for the same role; the key may differ, as when a key's new policy
-// is compared with the default it followed.
+// is compared with the default it followed. ASA amounts are in base units.
 func DiffPolicyV1(current, next *PolicyV1) []PolicyChange {
-	var d policyDiff
+	return DiffPolicyV1Labelled(current, next, nil)
+}
+
+// DiffPolicyV1Labelled is DiffPolicyV1 with ASA amounts also shown in the
+// display units label gives them, beside the base units, decimals, ID and
+// network they were computed from. An asset label does not know stays in
+// base units only: no decimal count is guessed.
+func DiffPolicyV1Labelled(current, next *PolicyV1, label AssetLabel) []PolicyChange {
+	d := policyDiff{label: label}
 	d.text("/description", current.Description, next.Description)
 	for _, f := range []struct {
 		name           string
@@ -74,6 +88,7 @@ func DiffPolicyV1(current, next *PolicyV1) []PolicyChange {
 
 type policyDiff struct {
 	changes []PolicyChange
+	label   AssetLabel
 }
 
 func (d *policyDiff) add(path string, effect PolicyChangeEffect, format string, args ...any) {
@@ -113,26 +128,49 @@ func (d *policyDiff) feeCap(path string, current, next uint64) {
 	case next == 0:
 		d.add(path, PolicyChangeLoosened, "%s → no cap", formatAlgoAmount(current))
 	default:
-		d.amountChange(path, algoAssetRef, current, next)
+		d.amountChange(path, "", algoAssetRef, current, next)
 	}
 }
 
-func (d *policyDiff) amountChange(path string, asset TransferAssetRef, current, next uint64) {
+func (d *policyDiff) amountChange(path, network string, asset TransferAssetRef, current, next uint64) {
 	effect := PolicyChangeTightened
 	if next > current {
 		effect = PolicyChangeLoosened
 	}
-	d.add(path, effect, "%s → %s", formatAssetAmount(asset, current), formatAssetAmount(asset, next))
+	d.add(path, effect, "%s → %s", d.amount(network, asset, current), d.amount(network, asset, next))
 }
 
 // algoAssetRef is the ALGO asset reference.
 var algoAssetRef = TransferAssetRef{Algo: true}
 
-func formatAssetAmount(asset TransferAssetRef, amount uint64) string {
+// amount formats an amount of asset on network: ALGO in ALGO, an ASA the
+// label knows in its display units with the base units, decimals, ID and
+// network beside them, any other ASA in base units.
+func (d *policyDiff) amount(network string, asset TransferAssetRef, amount uint64) string {
 	if asset.Algo {
 		return formatAlgoAmount(amount)
 	}
+	if d.label != nil {
+		if unit, decimals, ok := d.label(network, asset.ASAID); ok {
+			display := formatUnits(amount, decimals)
+			if unit = printableUnit(unit); unit != "" {
+				display += " " + unit
+			}
+			return fmt.Sprintf("%s (%d base units; %d decimals, asset %d on %s)", display, amount, decimals, asset.ASAID, network)
+		}
+	}
 	return fmt.Sprintf("%d base units", amount)
+}
+
+// printableUnit is an issuer-chosen unit name with control characters
+// replaced, so it cannot drive the terminal a review is printed to.
+func printableUnit(unit string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return '?'
+		}
+		return r
+	}, unit)
 }
 
 // verdictStrictness ranks transaction type verdicts from loosest.
@@ -210,11 +248,11 @@ func (d *policyDiff) limits(prefix string, current, next LimitsV1) {
 		n, hasN := nxt[k]
 		switch {
 		case hadC && !hasN:
-			d.add(path, PolicyChangeLoosened, "%s → none", formatAssetAmount(k.asset, c))
+			d.add(path, PolicyChangeLoosened, "%s → none", d.amount(k.network, k.asset, c))
 		case !hadC && hasN:
-			d.add(path, PolicyChangeTightened, "none → %s", formatAssetAmount(k.asset, n))
+			d.add(path, PolicyChangeTightened, "none → %s", d.amount(k.network, k.asset, n))
 		case c != n:
-			d.amountChange(path, k.asset, c, n)
+			d.amountChange(path, k.network, k.asset, c, n)
 		}
 	}
 }

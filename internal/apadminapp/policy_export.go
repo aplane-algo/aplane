@@ -4,111 +4,91 @@
 package apadminapp
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
+	"time"
 
-	"github.com/aplane-algo/aplane/internal/fsutil"
-	"github.com/aplane-algo/aplane/internal/policy"
-	"github.com/aplane-algo/aplane/internal/storepaths"
+	"github.com/aplane-algo/aplane/internal/adminproto"
+	"github.com/aplane-algo/aplane/internal/asaset"
+	"github.com/aplane-algo/aplane/internal/noderole"
+	"github.com/aplane-algo/aplane/internal/policycontext"
+	"github.com/aplane-algo/aplane/internal/policyexport"
+	"github.com/aplane-algo/aplane/internal/protocol"
 )
 
-// ExportedPolicyDocument is one active policy document as the daemon returned
-// it, with the digest its policy summary listed for it.
-type ExportedPolicyDocument struct {
-	Key      string
-	Document string
-	SHA256   string
-}
-
-// ErrPolicyChangedDuringExport reports that the documents fetched for an
-// export are not the policy set the summary described: an apply landed while
-// they were being read.
-var ErrPolicyChangedDuringExport = errors.New("the policy changed while it was being exported; refresh and export again")
-
-// ExportPolicyFileName is the file a document is exported as: default.json
-// for the node default, <key>.json for a key's own document.
-func ExportPolicyFileName(key string) (string, error) {
-	if key != policy.DefaultKey {
-		if err := storepaths.ValidatePolicySelector(key); err != nil {
-			return "", fmt.Errorf("policy document key %q cannot be a file name: %w", key, err)
-		}
-	}
-	return key + ".json", nil
-}
-
-// ExportPolicyDocuments writes a node's active policy documents into dir, one
-// file per document, exactly as stored, with mode 0600. dir must not exist
-// (its parent must) or must be an empty directory; it is never merged into,
-// so an export never mixes with older files. Before anything is written,
-// every document must match the digest its summary listed and together they
-// must be the summary's policy set (setSHA256), so a policy that changed
-// during the export is refused rather than written as a mix. It returns the
-// paths written, in document order.
-func ExportPolicyDocuments(dir string, docs []ExportedPolicyDocument, setSHA256 string) ([]string, error) {
-	if dir == "" {
-		return nil, fmt.Errorf("an export directory is required")
-	}
-	stored := make([]policy.StoredDocument, 0, len(docs))
-	names := make([]string, 0, len(docs))
-	seen := make(map[string]bool, len(docs))
-	for _, doc := range docs {
-		name, err := ExportPolicyFileName(doc.Key)
-		if err != nil {
-			return nil, err
-		}
-		if seen[doc.Key] {
-			return nil, fmt.Errorf("policy document %q is listed twice", doc.Key)
-		}
-		seen[doc.Key] = true
-		sum := sha256.Sum256([]byte(doc.Document))
-		if hex.EncodeToString(sum[:]) != doc.SHA256 {
-			return nil, ErrPolicyChangedDuringExport
-		}
-		stored = append(stored, policy.StoredDocument{Key: doc.Key, Bytes: []byte(doc.Document)})
-		names = append(names, name)
-	}
-	if policy.PolicySetSHA256(stored) != setSHA256 {
-		return nil, ErrPolicyChangedDuringExport
-	}
-	if err := prepareExportDir(dir); err != nil {
+// WritePolicyExport writes an export of the documents a node returned, in
+// the context view it sent with them (policyexport.Write).
+func WritePolicyExport(dir string, docs []policyexport.Document, view adminproto.PolicyContextView, at time.Time) ([]string, error) {
+	ctx, err := PolicyContextFromView(view)
+	if err != nil {
 		return nil, err
 	}
-	paths := make([]string, 0, len(docs))
-	for i, doc := range stored {
-		path := filepath.Join(dir, names[i])
-		if err := fsutil.WriteFileDurableWithProfile(path, doc.Bytes, fsutil.PrivateStoreFileProfile); err != nil {
-			return paths, fmt.Errorf("write %s: %w", path, err)
-		}
-		paths = append(paths, path)
-	}
-	return paths, nil
+	return policyexport.Write(dir, docs, ctx, view.PolicySetSHA256, view.SnapshotSHA256, at)
 }
 
-// prepareExportDir creates dir with mode 0700, or accepts it when it is an
-// existing empty directory (not a symlink to one).
-func prepareExportDir(dir string) error {
-	info, err := os.Lstat(dir)
-	switch {
-	case errors.Is(err, os.ErrNotExist):
-		if err := os.Mkdir(dir, 0o700); err != nil {
-			return fmt.Errorf("create export directory: %w", err)
+// PolicyContextFromView is the context a node described, checked against the
+// digests it sent with it: a context whose contents do not produce its own
+// digest, or a snapshot that is not the context's with its policy set, is
+// refused rather than exported.
+func PolicyContextFromView(view adminproto.PolicyContextView) (*policycontext.Context, error) {
+	if !view.Success {
+		return nil, fmt.Errorf("the node's policy context is unavailable: %s", view.Error)
+	}
+	networks := make(map[string]asaset.GenesisHash, len(view.Networks))
+	for _, n := range view.Networks {
+		genesis, err := asaset.ParseGenesisHash(n.GenesisHash)
+		if err != nil {
+			return nil, fmt.Errorf("network %q: %w", n.Network, err)
 		}
-		return nil
-	case err != nil:
-		return err
-	case info.Mode()&os.ModeSymlink != 0 || !info.IsDir():
-		return fmt.Errorf("%s exists and is not a directory", dir)
+		if _, dup := networks[n.Network]; dup {
+			return nil, fmt.Errorf("network %q is listed twice", n.Network)
+		}
+		networks[n.Network] = genesis
 	}
-	entries, err := os.ReadDir(dir)
+	assets := make([]asaset.Asset, 0, len(view.Assets))
+	for _, a := range view.Assets {
+		genesis, err := asaset.ParseGenesisHash(a.GenesisHash)
+		if err != nil {
+			return nil, fmt.Errorf("asset %d: %w", a.AssetID, err)
+		}
+		assets = append(assets, asaset.Asset{
+			Identity: asaset.Identity{Genesis: genesis, AssetID: a.AssetID},
+			Name:     a.Name, UnitName: a.UnitName, Decimals: a.Decimals, Origin: asaset.Origin(a.Origin),
+		})
+	}
+	table, err := asaset.NewTable(assets)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if len(entries) > 0 {
-		return fmt.Errorf("%s is not empty; export into a new or empty directory", dir)
+	ctx, err := policycontext.FromParts(noderole.Role(view.NodeRole), networks, table, view.RulesVersion)
+	if err != nil {
+		return nil, err
 	}
-	return nil
+	if ctx.SHA256() != view.ContextSHA256 {
+		return nil, errors.New("the node's policy context does not match its context_sha256")
+	}
+	if policycontext.SnapshotSHA256(view.ContextSHA256, view.PolicySetSHA256) != view.SnapshotSHA256 {
+		return nil, errors.New("the node's snapshot_sha256 is not its context's with its policy set")
+	}
+	return ctx, nil
+}
+
+// PolicyContextViewFromMessage is the policy context a get_policy_context reply carries,
+// the inverse of the server's projection onto the wire.
+func PolicyContextViewFromMessage(msg protocol.PolicyContextMessage) adminproto.PolicyContextView {
+	view := adminproto.PolicyContextView{
+		Success: msg.Success, NodeRole: msg.NodeRole, RulesVersion: msg.RulesVersion,
+		ContextSHA256: msg.ContextSHA256, PolicySetSHA256: msg.PolicySetSHA256, SnapshotSHA256: msg.SnapshotSHA256,
+		Code: msg.Code, Error: msg.Error,
+	}
+	for _, n := range msg.Networks {
+		view.Networks = append(view.Networks, adminproto.PolicyNetwork{Network: n.Network, GenesisHash: n.GenesisHash})
+	}
+	for _, a := range msg.Assets {
+		view.Assets = append(view.Assets, adminproto.ASAInfo{
+			Network: a.Network, GenesisHash: a.GenesisHash, AssetID: a.AssetID, Name: a.Name,
+			UnitName: a.UnitName, Decimals: a.Decimals, Origin: a.Origin,
+		})
+	}
+	return view
 }

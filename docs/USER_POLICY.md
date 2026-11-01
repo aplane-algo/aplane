@@ -227,6 +227,7 @@ filesystem access to the private signer store.
 apadmin policy status
 apadmin policy export > default.json
 apadmin policy export --key <key> > key.json
+apadmin policy export --all ~/policy-export   # every document, with the node's context
 apadmin policy check default.json key.json
 apadmin policy apply default.json key.json
 apadmin policy apply - < default.json
@@ -235,6 +236,45 @@ apadmin policy apply - < default.json
 Each file is one document and names what it is in its `key` field:
 `"default"` for the node default, or the key it governs. `apply` replaces the
 listed documents and leaves every other key's document unchanged.
+
+### Exporting the whole policy
+
+`apadmin policy export --all DIR` writes every active document, exactly as
+stored, into the new or empty directory `DIR`: the default as `default.json`
+and each key's own document as `<key>.json`, mode 0600. It also writes the
+node's policy context to `DIR/.appolicy/node.json`: its role, the networks it
+maps, its ASA set, and the digests of the documents it held. `appolicy` uses
+that file to check the documents against this node rather than against the
+built-in tables (see [Checking policy files offline](#checking-policy-files-offline-with-appolicy)).
+The export reads every document from one state of the node and writes
+nothing if the policy or its context changes while it is being read; run it
+again. An export that fails part way leaves a marker in `.appolicy`, and
+`appolicy` and `apadmin` refuse its files until you export again into a new
+directory.
+
+Reviews show each ASA threshold in the node's terms: an asset in the
+node's ASA set as display units with its base units, decimals, asset ID and
+network, for example `2.5 USDC (2500000 base units; 6 decimals, asset
+31566704 on mainnet)`, and any other asset in base units only.
+
+When `check`, `diff` or `apply` is given files from an export, it first
+compares the node with the export. If the node's policy, ASA set or network
+map changed since, it stops before showing any review:
+
+```text
+apadmin: the export DIR/.appolicy/node.json (taken 2026-11-01T12:00:00Z) is stale: the node's policy changed since; export again and carry your edits over (policy_export_stale)
+```
+
+Export again into a new directory and carry your edits over; the old export
+does not track what changed. After any successful apply, an export taken
+before it is stale. Applying several files from one export in one command
+keeps them together. Files from two exports, or from an export and elsewhere,
+are refused in one command. `--node-context FILE` names the context to
+compare instead of the one beside the files, and `--no-node-context`
+compares none. Files not from an export (and stdin) are applied as before,
+and apadmin notes that there is no export baseline to compare. Either way,
+the node still checks the review against its state at commit: an apply is
+refused if anything the review saw changed before it is committed.
 
 To start a file for a key, write out the node's current default with the key
 filled in and edit it:
@@ -264,17 +304,20 @@ and enter the file path. The TUI checks the file, shows the same diff as
 `apadmin policy diff`, and applies it only after you press `y`. The file's
 `"key"` field names the document, and the TUI refuses a file for a key the
 node does not hold; generate or import the key first. The path must name a
-regular file, not a symlink. The TUI does not remove documents or take several
+regular file, not a symlink. A file from an export is compared with the node
+as `apadmin policy apply` does: the TUI refuses an unfinished export, and a
+stale one before the review. The TUI does not remove documents or take several
 files at once; `apadmin policy` covers those.
 
 To take a copy of the node's current policy, open Policies (`p`) and press
-`x`. The TUI writes every active document, exactly as stored, into a new or
-empty directory (the prompt suggests `~/policy-export-<time>`): the node
-default as `default.json` and each key's own document as `<key>.json`, mode
-0600. It refuses a directory that already holds files, and it writes nothing
-if the policy changed while the documents were being read; refresh and export
-again. The files can be checked, explained, and edited offline with
-`appolicy`, and installed again with `apadmin policy apply`.
+`x`. The TUI writes the same export as `apadmin policy export --all`, into a
+new or empty directory (the prompt suggests `~/policy-export-<time>`): the
+node default as `default.json`, each key's own document as `<key>.json`, and
+the node's context as `.appolicy/node.json`. It refuses a directory that
+already holds files, and it writes nothing if the policy or its context
+changed while the documents were being read; refresh and export again. The
+files can be checked, explained, and edited offline with `appolicy`, and
+installed again with `apadmin policy apply`.
 
 ### Editing a policy in apadmin
 
@@ -449,7 +492,9 @@ not know:
 
 These are warnings in this release; a later release refuses them for
 documents you submit. Stored documents keep working either way: the same
-problems appear as alerts in the node's status.
+problems appear as alerts in the node's status. `appolicy` reports the same
+problems offline: as errors for files from an export, which carries the
+node's networks and ASA set, and as warnings otherwise.
 
 ### Checking policy files offline with appolicy
 
@@ -457,6 +502,7 @@ problems appear as alerts in the node's status.
 a store, or a passphrase. It is installed with the signer binaries.
 
 ```bash
+apadmin policy export --all policy/ # on the node: the documents and the node context
 appolicy policy/                    # browse and edit the files in a terminal UI
 appolicy check treasury.json        # errors and warnings, by JSON Pointer
 appolicy check policy/              # every *.json file in a directory
@@ -467,6 +513,23 @@ appolicy try treasury.json --from ADDR --to ADDR --amount 600000000 --network ma
                                     # what the document decides for one transaction
 appolicy test policy/               # re-run the saved cases in policy/.appolicy/cases.json
 ```
+
+- **The node context.** Files from an export
+  (`apadmin policy export --all DIR`) are checked against the node the export
+  was taken from, using `DIR/.appolicy/node.json`: its networks, its ASA set
+  (the assets it knows, with their decimals and names) and its role. A
+  network the node does not map, an asset outside its set, an ambiguous
+  `asa:<id>` route term, or a route with no asset on one of its networks is
+  an error, since the node would refuse to admit it; the role of the node
+  seeds new documents, and a document for the other role is an error. Other
+  files are checked against the built-in networks and assets only, and those
+  problems are warnings. `--node-context FILE` uses a context from elsewhere.
+  `check` says which it used and how old the export is: the context is an
+  offline snapshot, and `apadmin policy apply` refuses files from an export
+  the node has since moved on from. An unfinished export, a damaged context
+  file, or files from two exports is an error, never a quiet fallback to the
+  built-in tables. appolicy never reads a signer's data directory; the
+  removed `--signer-data` flag is refused with a pointer to the export.
 
 - **The editor.** `appolicy PATH...` (or `appolicy open PATH...`) opens a
   terminal UI on the named files. A directory lists its files; a single file
@@ -507,8 +570,8 @@ appolicy test policy/               # re-run the saved cases in policy/.appolicy
     as a saved case under a name. The saved cases run again after every key
     against the documents as edited: the header shows how many pass or fail,
     and `T` lists them with what each got and expected, so an edit that
-    changes a decision shows before you save it. Networks come from
-    `--signer-data` as for try.
+    changes a decision shows before you save it. Networks come from the
+    node context as for try.
   - **New documents:** `n` asks which document (the default or a key), what
     it starts from (the shipped default for the role, a copy of a workspace
     document, or a cosigner preset), and its file name, and opens it unsaved.
@@ -522,7 +585,8 @@ appolicy test policy/               # re-run the saved cases in policy/.appolicy
   `"key"` field, not its file name, and check also reports a second `default`
   document, a key in two files, or documents for different roles.
 - **What it cannot know.** It does not see the node: which keys the node
-  holds, which policy it runs now, or which networks it maps. Run
+  holds or which policy it runs now. From an export it knows the node's
+  networks and ASA set as they were when the export was taken. Run
   `apadmin policy diff` and `apply` to review and install a file.
 - **fmt** rewrites a file with two-space indentation and fields in a fixed
   order, so repeated edits give stable diffs. It leaves a file that is not
@@ -547,9 +611,9 @@ appolicy test policy/               # re-run the saved cases in policy/.appolicy
   LogicSig or post-quantum keys, an unknown key type, and no refusals the
   signer makes before policy. For a cosigner document it also assumes the
   cosigner holds the witness key and applies this document. Networks come
-  from the signer's `config.yaml` in `--signer-data` (or `$APSIGNER_DATA`),
-  read-only, else the built-in networks only; the same mapping compiles the
-  document, so a custom network's routes resolve.
+  from the node context, exactly as exported, else the built-in networks
+  only; the same mapping compiles the document, so a custom network's routes
+  resolve.
 - **test** re-runs the workspace's saved cases: tries kept with the answer
   expected, so an edit that changes a decision you already made is caught
   before the document is installed. They live in `.appolicy/cases.json` in the
@@ -580,9 +644,8 @@ appolicy test policy/               # re-run the saved cases in policy/.appolicy
   passes, 1 when one fails, and 2 when the file is bad or a case cannot run
   (its document is missing or invalid). It writes nothing.
 - **explain** describes a valid document. Amounts are shown in base units and,
-  where the asset's decimals are known, in display units, from the built-in
-  asset table and the signer's ASA cache (`--signer-data`, or
-  `$APSIGNER_DATA`). It only reads that cache.
+  where the asset's decimals are known, in display units: from the node's
+  ASA set in the export, else from the built-in asset table.
 
 This `appolicy` is not the retired binary of the same name, and its flags
 (`-online`, `-check`, `-yaml`, `-sha256`, `-save`) are refused with a pointer
@@ -1238,10 +1301,12 @@ Before relying on a policy:
 | Edited policy has no effect | The file was checked but not applied, or a document repaired in a stopped store has not been loaded by a successful signer start, reload, or unlock. |
 | A change to the default has no effect on one key | The key has a policy of its own; `apadmin policy status` shows it as `own policy`. Edit that file, or `remove` it so the key follows the default. |
 | Signer refuses to load policy | A sidecar is missing or does not match its document, a document does not decode, or the generation has no `default.json`. |
-| `apply` fails with `policy_snapshot_changed` | The active policy changed after `apply` read it; check the current state with `apadmin policy status` and apply again. |
+| `apply` fails with `policy_snapshot_changed` | Something the review saw changed before the apply committed: another apply, an ASA set change, or a network mapping change. Check the current state with `apadmin policy status` and apply again to review the node as it is now. |
 | `check` rejects a file with "missing required field" | Key files and defaults are complete documents; start from `apadmin policy template --key K` rather than a fragment. |
 | `check` rejects a file with "is not accepted in a cosigner document" | The file carries a signer-only field (`reject_foreign_rekey`, `always_review_warnings`, `auto_approve_self_noop_transfer`, the `*_on_no_route` family, `review_above`, or a `review` type verdict). |
 | `export --key K` fails with `policy_document_not_found` | The key has no policy of its own; it follows the default, which `export` without `--key` returns. |
+| `check`, `diff` or `apply` fails with `policy_export_stale` | The files come from an export the node has moved on from: its policy, ASA set or network map changed since. Export again with `export --all` into a new directory and carry your edits over. |
+| `appolicy` refuses `--signer-data` | appolicy no longer reads a signer's data directory. Export with `apadmin policy export --all DIR` and open the files in `DIR`. |
 | A cosigner key rejects every request | It has no file and follows the deny-all default; give it one with `apadmin policy template --key <WitnessKeyID>`, edited and applied. |
 | A request is rejected with `transaction_type:<type>` | The governing document's `transaction_types` rejects that type, directly or through `*`. |
 | A transfer is rejected unexpectedly | `"on_no_route": "reject"`, a blocked destination, close/clawback denial, or a stricter matching route threshold. |

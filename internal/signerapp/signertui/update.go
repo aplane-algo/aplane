@@ -548,6 +548,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case PolicyLoadedMsg:
 		return m.handlePolicyLoaded(msg)
 
+	case PolicyContextLoadedMsg:
+		return m.handlePolicyContextLoaded(msg)
+
 	case PolicyDocumentLoadedMsg:
 		return m.handlePolicyDocumentLoaded(msg)
 

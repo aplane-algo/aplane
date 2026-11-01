@@ -25,6 +25,7 @@
 | Client data directory layout, endpoint registry, client caches | [ARCH_DATA_MODEL.md](ARCH_DATA_MODEL.md#client-data-model) |
 | Policy document format and storage | [ARCH_POLICY.md](ARCH_POLICY.md#the-boundary) |
 | Approval and policy verdicts | [ARCH_POLICY.md](ARCH_POLICY.md#verdict-model) |
+| Policy context and snapshot digests, the node context file (`aplane.policy-node-context.v1`) | [ARCH_POLICY.md](ARCH_POLICY.md#storage-and-acceptance), [`test/contracts/policycontext/v1/`](../test/contracts/policycontext/v1/README.md) |
 | Approval waits and cancellation | [ARCH_SIGNING.md](ARCH_SIGNING.md#approval-waits-and-cancellation) |
 | Native Falcon authorization and consensus resources | [ARCH_SIGNING.md](ARCH_SIGNING.md) |
 | Authentication, SSH, client enrollment, revocation | [ARCH_SECURITY.md](ARCH_SECURITY.md#ssh-tunnel-transport-layer) |

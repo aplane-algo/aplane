@@ -47,6 +47,7 @@ func TestUncertainPolicyCommitBlocksExecutionBeforeReload(t *testing.T) {
 	result := app.ApplyPolicy(adminproto.ApplyPolicyRequest{
 		Documents:               []adminproto.PolicyDocument{{Key: policy.DefaultKey, Document: policytest.Signer(t, policy.DefaultKey, `{"max_fee_microalgos":"4321"}`)}},
 		ExpectedPolicySetSHA256: view.PolicySetSHA256,
+		ExpectedSnapshotSHA256:  app.GetPolicyContext().SnapshotSHA256,
 	})
 	if !result.CommitUncertain || !reloaded {
 		t.Fatalf("missing uncertain reload: %+v, reload=%v", result, reloaded)

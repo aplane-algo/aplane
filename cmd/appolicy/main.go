@@ -3,23 +3,19 @@
 
 // Command appolicy checks, formats, explains and tries policy files without a
 // node. It reads and writes only the files it is given, plus, read-only, the
-// signer's ASA metadata cache and network mapping. Installing policy stays with apadmin policy
-// check and apply.
+// node context an export left beside them (apadmin policy export --all).
+// Installing policy stays with apadmin policy check and apply.
 package main
 
 import (
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
 	"strings"
-	"sync"
+	"time"
 
-	"github.com/aplane-algo/aplane/internal/asa"
-	"github.com/aplane-algo/aplane/internal/cache"
-	"github.com/aplane-algo/aplane/internal/signerapp/asametadata"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyauthor"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyauthor/authortui"
 	"github.com/aplane-algo/aplane/internal/version"
@@ -39,6 +35,10 @@ func main() {
 func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		usage(stderr)
+		return exitUsage
+	}
+	if removed := removedFlag(args); removed != "" {
+		writef(stderr, "appolicy: %s\n", removed)
 		return exitUsage
 	}
 	switch args[0] {
@@ -86,18 +86,26 @@ func writes(w io.Writer, s string) { _, _ = fmt.Fprint(w, s) }
 
 func usage(w io.Writer) {
 	writes(w, `Usage:
-  appolicy [open] [--signer-data DIR] PATH...
-  appolicy check [--json] PATH...
+  appolicy [open] [--node-context FILE] PATH...
+  appolicy check [--node-context FILE] [--json] PATH...
   appolicy fmt [--check] [--strip-comments] PATH...
-  appolicy explain [--signer-data DIR] FILE
+  appolicy explain [--node-context FILE] FILE
   appolicy try FILE --from ADDR --to ADDR|self [--amount N] [--asset ID]
                [--network NAME] [--fee N] [--close-to ADDR]
                [--clawback-from ADDR] [--rekey-to ADDR [--rekey-held]]
-               [--signer-data DIR] [--json]
-  appolicy test [--signer-data DIR] [DIR]
+               [--node-context FILE] [--json]
+  appolicy test [--node-context FILE] [DIR]
 
 PATH is a policy file, or a directory whose *.json files are policy files.
 Each document is identified by its "key" field, not its file name.
+
+Files from an export (apadmin policy export --all DIR) are checked against
+the node it was taken from: its networks and ASA set, from
+DIR/.appolicy/node.json, an offline snapshot. What the node would refuse
+to admit is an error. Other files are checked against the built-in
+networks and assets only, and such problems are warnings.
+--node-context FILE names the context to use instead. An unfinished or
+damaged export, or files from two exports, is an error.
 
   open     browse and edit the files in a terminal UI: each document's
            outline, its fields and their problems; edits are saved only after
@@ -108,15 +116,14 @@ Each document is identified by its "key" field, not its file name.
            untouched; a file with comments is refused unless --strip-comments.
            --check only reports which files would change.
   explain  describe a valid document in plain language. ASA amounts use the
-           built-in asset table and, read-only, the signer's ASA cache in
-           --signer-data (default $APSIGNER_DATA).
+           node's ASA set, or the built-in asset table.
   try      ask what one valid document decides for one transaction, through
            the signer's own policy evaluator: rejects, requires review,
            approves, or leaves it to the operator default. A cosigner
            document permits or rejects. It answers for the document only and
-           lists what it assumed; the network mapping comes from
-           --signer-data's config.yaml, else the built-in networks. Exit 0
-           whatever the verdict, 2 for bad input.
+           lists what it assumed; the network mapping is the node's, else
+           the built-in networks. Exit 0 whatever the verdict, 2 for bad
+           input.
   test     run the saved cases in DIR/.appolicy/cases.json (DIR defaults to
            the current directory): each is a try with the answer expected.
            Exit 0 when every case passes, 1 when one fails, 2 when the cases
@@ -170,11 +177,14 @@ type checkReport struct {
 	Problems []policyauthor.Problem `json:"problems"`
 	Errors   int                    `json:"errors"`
 	Warnings int                    `json:"warnings"`
+	// Context says what the documents were checked against.
+	Context string `json:"context"`
 }
 
 func runCheck(args []string, stdout, stderr io.Writer) int {
 	fs := newFlags("check", stderr)
 	asJSON := fs.Bool("json", false, "print the report as JSON")
+	contextFile := fs.String("node-context", "", "check against this export context instead of the one beside the files")
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
 	}
@@ -186,7 +196,13 @@ func runCheck(args []string, stdout, stderr io.Writer) int {
 	if !ok {
 		return exitUsage
 	}
-	report := checkReport{Files: []checkFile{}, Problems: []policyauthor.Problem{}}
+	node, err := nodeContextFor(workspacePaths(w), *contextFile)
+	if err != nil {
+		writef(stderr, "appolicy check: %v\n", err)
+		return exitUsage
+	}
+	w = w.WithNode(node)
+	report := checkReport{Files: []checkFile{}, Problems: []policyauthor.Problem{}, Context: node.Describe(time.Now())}
 	for _, f := range w.Files {
 		report.Files = append(report.Files, checkFile{Path: f.Path, State: f.State.String(), Key: f.Key, Role: string(f.Role), HadComments: f.HadComments})
 	}
@@ -213,7 +229,7 @@ func runCheck(args []string, stdout, stderr io.Writer) int {
 			}
 			writef(stdout, "%s: %s: %s\n", where, p.Severity, p.Message)
 		}
-		writef(stdout, "%d file(s), %d error(s), %d warning(s)\n", len(report.Files), report.Errors, report.Warnings)
+		writef(stdout, "%d file(s), %d error(s), %d warning(s); checked against %s\n", len(report.Files), report.Errors, report.Warnings, report.Context)
 	}
 	if report.Errors > 0 {
 		return exitProblems
@@ -278,7 +294,7 @@ func runFmt(args []string, stdout, stderr io.Writer) int {
 
 func runExplain(args []string, stdout, stderr io.Writer) int {
 	fs := newFlags("explain", stderr)
-	signerData := fs.String("signer-data", os.Getenv("APSIGNER_DATA"), "signer data directory whose ASA cache is read, read-only")
+	contextFile := fs.String("node-context", "", "use this export context instead of the one beside the file")
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
 	}
@@ -291,33 +307,13 @@ func runExplain(args []string, stdout, stderr io.Writer) int {
 		writef(stderr, "%s is %s; run appolicy check %s\n", f.Path, f.State, f.Path)
 		return exitProblems
 	}
-	writes(stdout, policyauthor.Explain(f.Document, assetLookup(*signerData, func(msg string) { writef(stderr, "appolicy: %s\n", msg) })))
-	return exitOK
-}
-
-// assetLookup returns the lookup explain and the TUI use: the built-in table,
-// and the signer's cache read-only when a signer data directory is named. A
-// cache that cannot be read or verified is reported once, through report; the
-// built-in entries still answer.
-func assetLookup(signerData string, report func(string)) policyauthor.AssetLookup {
-	if signerData == "" {
-		return asa.BuiltinMetadata
-	}
-	store, err := asametadata.NewReadOnlyStore(signerData)
+	node, err := nodeContextFor([]string{f.Path}, *contextFile)
 	if err != nil {
-		report(fmt.Sprintf("%v; using built-in asset metadata only", err))
-		return asa.BuiltinMetadata
+		writef(stderr, "appolicy explain: %v\n", err)
+		return exitUsage
 	}
-	var reported sync.Once
-	return func(network string, assetID uint64) (asa.Metadata, bool) {
-		meta, ok, err := store.MetadataByID(network, assetID)
-		if err != nil && !errors.Is(err, os.ErrNotExist) {
-			reported.Do(func() {
-				report(fmt.Sprintf("warning: the signer's ASA cache is unusable (%v); amounts use built-in metadata only", err))
-			})
-		}
-		return meta, ok
-	}
+	writes(stdout, policyauthor.Explain(f.Document, node.Lookup()))
+	return exitOK
 }
 
 // runProgram runs the TUI; tests replace it.
@@ -328,7 +324,7 @@ var runProgram = func(m tea.Model) error {
 
 func runOpen(args []string, stderr io.Writer) int {
 	fs := newFlags("open", stderr)
-	signerData := fs.String("signer-data", os.Getenv("APSIGNER_DATA"), "signer data directory whose ASA cache and network mapping are read, read-only")
+	contextFile := fs.String("node-context", "", "use this export context instead of the one beside the files")
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
 	}
@@ -340,16 +336,19 @@ func runOpen(args []string, stderr io.Writer) int {
 	if !ok {
 		return exitUsage
 	}
-	// The cache package logs to stdout, which the TUI owns.
-	cache.SetLoggerOutput(io.Discard)
-	var diagnostics []string
-	lookup := assetLookup(*signerData, func(msg string) { diagnostics = append(diagnostics, msg) })
-	networks, err := signerNetworks(*signerData)
+	node, err := nodeContextFor(workspacePaths(w), *contextFile)
 	if err != nil {
 		writef(stderr, "appolicy: %v\n", err)
 		return exitUsage
 	}
-	if err := runProgram(authortui.New(w, lookup, &diagnostics).WithNetworks(networks)); err != nil {
+	w = w.WithNode(node)
+	networks, err := node.Networks(time.Now())
+	if err != nil {
+		writef(stderr, "appolicy: %v\n", err)
+		return exitUsage
+	}
+	diagnostics := []string{"Checked against " + node.Describe(time.Now())}
+	if err := runProgram(authortui.New(w, node.Lookup(), &diagnostics).WithNetworks(networks)); err != nil {
 		writef(stderr, "appolicy: %v\n", err)
 		return exitUsage
 	}

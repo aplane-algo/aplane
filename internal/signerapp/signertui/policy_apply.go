@@ -9,8 +9,11 @@ import (
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
+	"github.com/aplane-algo/aplane/internal/apadminapp"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/policycontext"
+	"github.com/aplane-algo/aplane/internal/policyexport"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyreview"
 	tea "github.com/charmbracelet/bubbletea"
@@ -47,9 +50,18 @@ type policyApplyState struct {
 	// changed after the review was built is rejected by the node instead of
 	// replaced unseen.
 	reviewedSetSHA256 string
+	// reviewedSnapshot is the composite snapshot taken with it: the ASA set
+	// and network mapping the review was checked against.
+	reviewedSnapshot string
 	// ownCurrent reports that the document the candidate is diffed against
 	// is the key's own, not the node default it follows.
 	ownCurrent bool
+	// export is the export a loaded file comes from, if it does: the review
+	// is refused when the node has moved on from it.
+	export *policyexport.Selected
+	// reviewContext is the node's context at the reviewed snapshot, checked
+	// against its digests; the review's ASA amounts are rendered in it.
+	reviewContext *policycontext.Context
 
 	applying     bool
 	applyErr     string
@@ -141,6 +153,15 @@ func (m Model) submitPolicyApplyFile() (tea.Model, tea.Cmd) {
 		apply.err = fmt.Sprintf("this node does not hold key %s; generate or import the key before loading its policy", doc.Key)
 		return m, nil
 	}
+	// A file from an export is reviewed only while the node is still what was
+	// exported, as apadmin policy apply does. An unfinished or damaged export
+	// is refused here, never loaded as a file without one.
+	export, err := policyexport.Discover([]string{path}, "")
+	if err != nil {
+		apply.err = err.Error()
+		return m, nil
+	}
+	apply.export = export
 	apply.doc = doc
 	apply.file = filepath.Base(path)
 	apply.err = ""
@@ -218,7 +239,25 @@ func (m Model) handlePolicyCheckResult(msg PolicyCheckResultMsg) (tea.Model, tea
 		return m, m.waitForMessageCmd()
 	}
 	apply.warnings = warnings
+	if m.policies.snapshot == "" || m.policies.loadedContext == nil {
+		apply.err = "The node's policy context is still loading; try again"
+		return m, m.waitForMessageCmd()
+	}
+	if apply.export != nil {
+		live := m.policies.loadedContext
+		if err := apply.export.Compare(live.ContextSHA256, live.PolicySetSHA256, live.SnapshotSHA256); err != nil {
+			apply.err = err.Error()
+			return m, m.waitForMessageCmd()
+		}
+	}
+	reviewContext, err := apadminapp.PolicyContextFromView(apadminapp.PolicyContextViewFromMessage(*m.policies.loadedContext))
+	if err != nil {
+		apply.err = err.Error()
+		return m, m.waitForMessageCmd()
+	}
+	apply.reviewContext = reviewContext
 	apply.reviewedSetSHA256 = m.policies.policy.PolicySetSHA256
+	apply.reviewedSnapshot = m.policies.snapshot
 	// The candidate is diffed against the document that governs the key now:
 	// its own, or the node default it follows.
 	key := apply.doc.Key
@@ -230,7 +269,9 @@ func (m Model) handlePolicyCheckResult(msg PolicyCheckResultMsg) (tea.Model, tea
 	apply.pendingDocumentID = newRequestID("policy-apply-doc")
 	id := apply.pendingDocumentID
 	return m, tea.Batch(
-		policyRequestCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendGetPolicyDocument(key, id) }),
+		policyRequestCmd(m.adminClient, id, func(c *IPCClient) error {
+			return c.SendGetPolicyDocumentAt(key, apply.reviewedSnapshot, id)
+		}),
 		m.waitForMessageCmd(),
 	)
 }
@@ -257,7 +298,7 @@ func (m Model) reviewPolicyApply(current string) (tea.Model, tea.Cmd) {
 		apply.err = err.Error()
 		return m, m.waitForMessageCmd()
 	}
-	changes, identical, err := policyreview.DiffCandidate(role, apply.doc.Key, current, apply.doc.Document, apply.ownCurrent)
+	changes, identical, err := policyreview.DiffCandidate(role, apply.doc.Key, current, apply.doc.Document, apply.ownCurrent, policyreview.ContextLabel(apply.reviewContext))
 	if err != nil {
 		apply.err = err.Error()
 		return m, m.waitForMessageCmd()
@@ -304,7 +345,7 @@ func (m Model) handlePolicyApplyReviewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 		apply.applying = true
 		apply.pendingApplyID = newRequestID("policy-apply")
 		return m, tea.Batch(
-			m.sendApplyPolicyCmd(apply.doc, apply.reviewedSetSHA256, apply.pendingApplyID),
+			m.sendApplyPolicyCmd(apply.doc, apply.reviewedSetSHA256, apply.reviewedSnapshot, apply.pendingApplyID),
 			m.waitForMessageCmd(),
 		)
 	case "up", "k":
@@ -599,14 +640,17 @@ func (m Model) sendCheckPolicyCmd(doc adminproto.PolicyDocument, id string) tea.
 
 // SendApplyPolicy asks the daemon to install one document against the policy
 // set the operator reviewed.
-func (c *IPCClient) SendApplyPolicy(doc adminproto.PolicyDocument, expectedPolicySetSHA256, id string) error {
+func (c *IPCClient) SendApplyPolicy(doc adminproto.PolicyDocument, expectedPolicySetSHA256, expectedSnapshot, id string) error {
 	return c.sendMessage(protocol.ApplyPolicyMessage{
 		BaseMessage:             BaseMessage{Type: protocol.MsgTypeApplyPolicy, ID: id},
 		Documents:               []protocol.PolicyDocumentWire{{Key: doc.Key, Document: doc.Document}},
 		ExpectedPolicySetSHA256: expectedPolicySetSHA256,
+		ExpectedSnapshotSHA256:  expectedSnapshot,
 	})
 }
 
-func (m Model) sendApplyPolicyCmd(doc adminproto.PolicyDocument, expectedPolicySetSHA256, id string) tea.Cmd {
-	return policyRequestCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendApplyPolicy(doc, expectedPolicySetSHA256, id) })
+func (m Model) sendApplyPolicyCmd(doc adminproto.PolicyDocument, expectedPolicySetSHA256, expectedSnapshot, id string) tea.Cmd {
+	return policyRequestCmd(m.adminClient, id, func(c *IPCClient) error {
+		return c.SendApplyPolicy(doc, expectedPolicySetSHA256, expectedSnapshot, id)
+	})
 }

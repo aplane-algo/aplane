@@ -43,9 +43,26 @@ func (d StoredDocument) SHA256() string { return PolicySHA256(d.Bytes) }
 // changes whenever any document is added, removed, or changed, so it serves as
 // the optimistic-concurrency base for replacing a node's policy.
 func PolicySetSHA256(docs []StoredDocument) string {
+	digests := make([]DocumentDigest, 0, len(docs))
+	for _, doc := range docs {
+		digests = append(digests, DocumentDigest{Key: doc.Key, SHA256: doc.SHA256()})
+	}
+	return PolicySetSHA256OfDigests(digests)
+}
+
+// DocumentDigest names a policy document by its key and the hex SHA-256 of
+// its exact bytes, as a manifest lists it.
+type DocumentDigest struct {
+	Key    string
+	SHA256 string
+}
+
+// PolicySetSHA256OfDigests is PolicySetSHA256 of documents with these
+// digests, for a manifest that lists documents without their bytes.
+func PolicySetSHA256OfDigests(docs []DocumentDigest) string {
 	lines := make([]string, 0, len(docs))
 	for _, doc := range docs {
-		lines = append(lines, doc.Key+" "+doc.SHA256()+"\n")
+		lines = append(lines, doc.Key+" "+doc.SHA256+"\n")
 	}
 	slices.Sort(lines)
 	sum := sha256.Sum256([]byte(strings.Join(lines, "")))

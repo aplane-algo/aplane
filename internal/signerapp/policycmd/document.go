@@ -12,8 +12,10 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
+	"github.com/aplane-algo/aplane/internal/apadminapp"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/policyexport"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyreview"
 	"github.com/aplane-algo/aplane/internal/signerapp/policytext"
 )
@@ -72,7 +74,10 @@ func run(ctx context.Context, command Command, streams Streams, backend Backend)
 		printStatus(streams.Stdout, view)
 		return nil
 	case VerbExport:
-		doc, err := backend.Document(ctx, command.documentKey())
+		if command.ExportDir != "" {
+			return exportAll(ctx, backend, streams, command.ExportDir)
+		}
+		doc, err := backend.Document(ctx, command.documentKey(), "")
 		if err != nil {
 			return err
 		}
@@ -90,7 +95,7 @@ func run(ctx context.Context, command Command, streams Streams, backend Backend)
 		if err != nil {
 			return err
 		}
-		def, err := backend.Document(ctx, policy.DefaultKey)
+		def, err := backend.Document(ctx, policy.DefaultKey, "")
 		if err != nil {
 			return err
 		}
@@ -104,31 +109,62 @@ func run(ctx context.Context, command Command, streams Streams, backend Backend)
 		_, err = io.WriteString(streams.Stdout, text)
 		return err
 	case VerbCheck:
+		selected, err := selectExport(command, streams)
+		if err != nil {
+			return err
+		}
+		if selected != nil {
+			_, pctx, err := getReviewState(ctx, backend)
+			if err != nil {
+				return err
+			}
+			if err := compareExport(selected, pctx); err != nil {
+				return err
+			}
+		}
 		docs, names, err := policyreview.ReadDocuments(command.Args, streams.Stdin)
 		if err != nil {
 			return err
 		}
 		return checkDocuments(ctx, backend, streams, adminproto.CheckPolicyRequest{Documents: docs}, names)
 	case VerbDiff:
-		view, err := getPolicy(ctx, backend)
+		selected, err := selectExport(command, streams)
 		if err != nil {
+			return err
+		}
+		view, pctx, err := getReviewState(ctx, backend)
+		if err != nil {
+			return err
+		}
+		if err := compareExport(selected, pctx); err != nil {
 			return err
 		}
 		docs, names, err := policyreview.ReadDocuments(command.Args, streams.Stdin)
 		if err != nil {
 			return err
 		}
-		diffs, err := diffChange(ctx, backend, view, docs, nil, names)
+		diffs, err := diffChange(ctx, backend, view, pctx, docs, nil, names)
 		if err != nil {
 			return err
 		}
 		policyreview.PrintDiffs(streams.Stdout, diffs)
 		return nil
 	case VerbApply, VerbRemove:
-		view, err := getPolicy(ctx, backend)
+		var selected *policyexport.Selected
+		if command.Verb == VerbApply {
+			var err error
+			if selected, err = selectExport(command, streams); err != nil {
+				return err
+			}
+		}
+		view, pctx, err := getReviewState(ctx, backend)
 		if err != nil {
 			return err
 		}
+		if err := compareExport(selected, pctx); err != nil {
+			return err
+		}
+		snapshot := pctx.SnapshotSHA256
 		var req adminproto.ApplyPolicyRequest
 		names := map[string]string{}
 		if command.Verb == VerbApply {
@@ -141,7 +177,7 @@ func run(ctx context.Context, command Command, streams Streams, backend Backend)
 		if err := checkDocuments(ctx, backend, streams, adminproto.CheckPolicyRequest{Documents: req.Documents, Remove: req.Remove}, names); err != nil {
 			return err
 		}
-		diffs, err := diffChange(ctx, backend, view, req.Documents, req.Remove, names)
+		diffs, err := diffChange(ctx, backend, view, pctx, req.Documents, req.Remove, names)
 		if err != nil {
 			return err
 		}
@@ -159,7 +195,10 @@ func run(ctx context.Context, command Command, streams Streams, backend Backend)
 				return ErrApplyNotConfirmed
 			}
 		}
+		// The commit is refused if anything the review saw moved: the
+		// documents, the ASA set or the network mapping.
 		req.ExpectedPolicySetSHA256 = view.PolicySetSHA256
+		req.ExpectedSnapshotSHA256 = snapshot
 		result, err := backend.Apply(ctx, req)
 		if err != nil {
 			return err
@@ -178,6 +217,89 @@ func run(ctx context.Context, command Command, streams Streams, backend Backend)
 	default:
 		return fmt.Errorf("unsupported policy command %q", command.Verb)
 	}
+}
+
+// getReviewState reads the policy summary and the node's context, and
+// returns the summary with the composite snapshot a review is made against.
+// The two reads must describe one state; if the policy moved between them,
+// the review is refused rather than mixing two states.
+func getReviewState(ctx context.Context, backend Backend) (adminproto.PolicyView, adminproto.PolicyContextView, error) {
+	view, err := getPolicy(ctx, backend)
+	if err != nil {
+		return view, adminproto.PolicyContextView{}, err
+	}
+	pctx, err := backend.Context(ctx)
+	if err != nil {
+		return view, pctx, err
+	}
+	if !pctx.Success {
+		return view, pctx, resultError(pctx.Code, pctx.Error)
+	}
+	if pctx.PolicySetSHA256 != view.PolicySetSHA256 || pctx.SnapshotSHA256 == "" {
+		return view, pctx, resultError("policy_snapshot_changed", "the node's policy changed while it was being read; run the command again")
+	}
+	return view, pctx, nil
+}
+
+// exportAll writes every document the node holds, and its context, into dir.
+// Each document is fetched against the snapshot the summary and context were
+// read at, so the node refuses a fetch once either moved; the writer checks
+// every document against the summary before anything is written.
+func exportAll(ctx context.Context, backend Backend, streams Streams, dir string) error {
+	view, pctx, err := getReviewState(ctx, backend)
+	if err != nil {
+		return err
+	}
+	docs := make([]policyexport.Document, 0, len(view.Documents))
+	for _, info := range view.Documents {
+		doc, err := backend.Document(ctx, info.Key, pctx.SnapshotSHA256)
+		if err != nil {
+			return err
+		}
+		if !doc.Success {
+			return resultError(doc.Code, doc.Error)
+		}
+		docs = append(docs, policyexport.Document{Key: info.Key, Document: doc.Document, SHA256: info.SHA256})
+	}
+	paths, err := apadminapp.WritePolicyExport(dir, docs, pctx, time.Now())
+	if err != nil {
+		if len(paths) > 0 {
+			return fmt.Errorf("%w; the unfinished export is left in %s", err, dir)
+		}
+		return err
+	}
+	_, _ = fmt.Fprintf(streams.Stdout, "exported %d policy document(s) and the node context to %s\n", len(paths), dir)
+	return nil
+}
+
+// selectExport finds the export context the files come from, unless the
+// command compares none. Files not from an export have none; that is said,
+// since their review then has no export baseline to compare.
+func selectExport(command Command, streams Streams) (*policyexport.Selected, error) {
+	if command.NoNodeContext {
+		_, _ = fmt.Fprintln(streams.Stderr, "note: --no-node-context: the files are compared with the node as it is now, with no export baseline")
+		return nil, nil
+	}
+	selected, err := policyexport.Discover(command.Args, command.NodeContext)
+	if err != nil {
+		return nil, err
+	}
+	if selected == nil {
+		_, _ = fmt.Fprintln(streams.Stderr, "note: the files are not from an export; they are compared with the node as it is now, with no export baseline")
+	}
+	return selected, nil
+}
+
+// compareExport refuses files from an export the node has moved on from
+// (policyexport.Selected.Compare).
+func compareExport(selected *policyexport.Selected, pctx adminproto.PolicyContextView) error {
+	if selected == nil {
+		return nil
+	}
+	if err := selected.Compare(pctx.ContextSHA256, pctx.PolicySetSHA256, pctx.SnapshotSHA256); err != nil {
+		return resultError("policy_export_stale", err.Error())
+	}
+	return nil
 }
 
 func getPolicy(ctx context.Context, backend Backend) (adminproto.PolicyView, error) {
@@ -258,17 +380,30 @@ func resultError(code, msg string) error {
 // compared with the node default; a removal is compared with the default in
 // force after the change, which is the submitted one when the same change
 // replaces it. A change to the default also lists the held keys it governs.
-func diffChange(ctx context.Context, backend Backend, view adminproto.PolicyView, docs []adminproto.PolicyDocument, remove []string, names map[string]string) ([]policyreview.DocumentDiff, error) {
+func diffChange(ctx context.Context, backend Backend, view adminproto.PolicyView, pctx adminproto.PolicyContextView, docs []adminproto.PolicyDocument, remove []string, names map[string]string) ([]policyreview.DocumentDiff, error) {
 	role, err := noderole.ParseRole(view.NodeRole)
 	if err != nil {
 		return nil, err
 	}
+	// The diff is rendered in the context of the reviewed snapshot, checked
+	// against its own digests: ASA amounts appear in the display units of
+	// the node's ASA set, beside their base units, and the apply names the
+	// same snapshot.
+	nodeContext, err := apadminapp.PolicyContextFromView(pctx)
+	if err != nil {
+		return nil, err
+	}
+	label := policyreview.ContextLabel(nodeContext)
+	snapshot := pctx.SnapshotSHA256
 	own := map[string]bool{}
 	for _, doc := range view.Documents {
 		own[doc.Key] = true
 	}
 	fetch := func(key string) (string, error) {
-		current, err := backend.Document(ctx, key)
+		// Read against the reviewed snapshot: a document that moved since is
+		// refused, so the diff shows the state the apply will be checked
+		// against.
+		current, err := backend.Document(ctx, key, snapshot)
 		if err != nil {
 			return "", err
 		}
@@ -284,9 +419,9 @@ func diffChange(ctx context.Context, backend Backend, view adminproto.PolicyView
 	nextDefault := activeDefault
 	var out []policyreview.DocumentDiff
 	for _, doc := range docs {
-		label := names[doc.Key]
-		if label == "" {
-			label = doc.Key
+		name := names[doc.Key]
+		if name == "" {
+			name = doc.Key
 		}
 		current, ownCurrent := activeDefault, false
 		if own[doc.Key] {
@@ -295,22 +430,22 @@ func diffChange(ctx context.Context, backend Backend, view adminproto.PolicyView
 			}
 			ownCurrent = true
 		}
-		changes, identical, err := policyreview.DiffCandidate(role, doc.Key, current, doc.Document, ownCurrent)
+		changes, identical, err := policyreview.DiffCandidate(role, doc.Key, current, doc.Document, ownCurrent, label)
 		if err != nil {
-			return nil, fmt.Errorf("%s: %w", label, err)
+			return nil, fmt.Errorf("%s: %w", name, err)
 		}
 		if doc.Key == policy.DefaultKey {
 			nextDefault = doc.Document
-			label += governedKeysNote(view, docs, remove)
+			name += governedKeysNote(view, docs, remove)
 		}
-		out = append(out, policyreview.DocumentDiff{Label: label, Changes: changes, Identical: identical})
+		out = append(out, policyreview.DocumentDiff{Label: name, Changes: changes, Identical: identical})
 	}
 	for _, key := range remove {
 		current, err := fetch(key)
 		if err != nil {
 			return nil, err
 		}
-		changes, err := policyreview.DiffRemoval(role, key, current, nextDefault)
+		changes, err := policyreview.DiffRemoval(role, key, current, nextDefault, label)
 		if err != nil {
 			return nil, err
 		}

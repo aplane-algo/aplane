@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"flag"
 	"io"
-	"os"
+	"time"
 
 	"github.com/aplane-algo/aplane/internal/signerapp/policyauthor"
 )
@@ -26,15 +26,6 @@ func parseInterleaved(fs *flag.FlagSet, args []string) ([]string, error) {
 		positional = append(positional, fs.Arg(0))
 		args = fs.Args()[1:]
 	}
-}
-
-// signerNetworks is the network mapping a try or test uses: the signer's
-// config.yaml in signerData, or the built-in networks.
-func signerNetworks(signerData string) (policyauthor.Networks, error) {
-	if signerData == "" {
-		return policyauthor.BuiltinNetworks(), nil
-	}
-	return policyauthor.SignerNetworks(signerData)
 }
 
 type tryViolation struct {
@@ -66,7 +57,7 @@ func runTry(args []string, stdout, stderr io.Writer) int {
 	fs.StringVar(&txn.ClawbackFrom, "clawback-from", "", "make an asset transfer a clawback from this holder")
 	fs.StringVar(&txn.RekeyTo, "rekey-to", "", "rekey the sender to this address")
 	fs.BoolVar(&txn.RekeyTargetHeld, "rekey-held", false, "the node holds the rekey target's key (default: it does not)")
-	signerData := fs.String("signer-data", os.Getenv("APSIGNER_DATA"), "signer data directory whose config.yaml network mapping is read, read-only")
+	contextFile := fs.String("node-context", "", "use this export context instead of the one beside the file")
 	asJSON := fs.Bool("json", false, "print the result as JSON")
 	files, err := parseInterleaved(fs, args)
 	if err != nil {
@@ -88,7 +79,12 @@ func runTry(args []string, stdout, stderr io.Writer) int {
 		writef(stderr, "%s is %s; run appolicy check %s\n", f.Path, f.State, f.Path)
 		return exitUsage
 	}
-	networks, err := signerNetworks(*signerData)
+	node, err := nodeContextFor([]string{f.Path}, *contextFile)
+	if err != nil {
+		writef(stderr, "appolicy try: %v\n", err)
+		return exitUsage
+	}
+	networks, err := node.Networks(time.Now())
 	if err != nil {
 		writef(stderr, "appolicy try: %v\n", err)
 		return exitUsage

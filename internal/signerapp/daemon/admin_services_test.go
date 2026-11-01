@@ -443,6 +443,7 @@ func TestApplyPolicy_PersistsUploadedBytesAndReloads(t *testing.T) {
 	result := svc.adminApp().ApplyPolicy(adminproto.ApplyPolicyRequest{
 		Documents:               []adminproto.PolicyDocument{{Key: policy.DefaultKey, Document: uploaded}},
 		ExpectedPolicySetSHA256: current.PolicySetSHA256,
+		ExpectedSnapshotSHA256:  svc.adminApp().GetPolicyContext().SnapshotSHA256,
 	})
 	if !result.Success || result.Policy == nil || result.Policy.GenerationID == "" {
 		t.Fatalf("ApplyPolicy() = %+v", result)
@@ -478,6 +479,7 @@ func applySignerPolicyDoc(t *testing.T, server *Signer, doc string) adminproto.A
 	return server.adminServices().adminApp().ApplyPolicy(adminproto.ApplyPolicyRequest{
 		Documents:               []adminproto.PolicyDocument{{Key: policy.DefaultKey, Document: doc}},
 		ExpectedPolicySetSHA256: current.PolicySetSHA256,
+		ExpectedSnapshotSHA256:  server.adminServices().adminApp().GetPolicyContext().SnapshotSHA256,
 	})
 }
 

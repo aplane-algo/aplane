@@ -723,7 +723,14 @@ Consequences:
   terminal UI in `policyauthor/authortui`) is a producer: it edits, checks,
   formats, and explains policy files offline with the
   node's own decoder and advisories, and never talks to a node or writes a
-  store.
+  store. For files from an export (`apadmin policy export --all`) it reads
+  the node context the export wrote, `.appolicy/node.json`
+  (`aplane.policy-node-context.v1`, selected by `internal/policyexport`), and
+  checks admission against it, as errors; otherwise against the built-in
+  networks and assets, as warnings. It uses the exported networks and ASA
+  table exactly, never merging newer built-ins into them, and never reads a
+  signer data directory (`test/arch/appolicy_boundary_test.go` keeps it off
+  the store and the admin protocol).
 - Comments are a producer convenience, not part of the format. The apadmin
   policy commands and the apadmin TUI accept `//` and `/* */` comments
   outside strings and remove them (`policytext.StripComments`) before the
@@ -1268,17 +1275,26 @@ documents are written outside the node, reviewed with
 FILE...` (or `apadmin policy rescue check|apply` while the daemon is stopped).
 There is no policy editor in the node and no scalar policy-settings IPC.
 
-The admin protocol and `internal/signerapp/admin` expose four policy messages:
-`get_policy`, `get_policy_document`, `check_policy`, and `apply_policy`. The
+The admin protocol and `internal/signerapp/admin` expose five policy messages:
+`get_policy`, `get_policy_document`, `get_policy_context`, `check_policy`, and
+`apply_policy`. The
 node role decides which documents a request may carry; there is no target
 selector. `get_policy` returns a summary: each document's key, SHA-256, size,
 and applied time (the default first), each held key's coverage (`own`,
 `default`, or `key_not_held` for a stored document whose key is not held),
 and `policy_set_sha256`, a digest over the whole document set.
 `get_policy_document` returns one document's exact bytes by key (`default` or
-a selector). `check_policy` validates candidate documents and removals
-without writing and returns errors and warnings. `apply_policy` requires
-`expected_policy_set_sha256` for optimistic concurrency, validates the
+a selector), optionally only while the node is still at a given composite
+snapshot. `get_policy_context` returns the node's policy context (role,
+admission rules version, network map, effective ASA set) with
+`context_sha256` and `snapshot_sha256`, the composite digest of the context
+and `policy_set_sha256` (`internal/policycontext`; encodings pinned in
+`test/contracts/policycontext/v1/`). `check_policy` validates candidate
+documents and removals without writing and returns errors and warnings.
+`apply_policy` requires `expected_policy_set_sha256` for optimistic
+concurrency and `expected_snapshot_sha256`, the snapshot the review was built
+against, so a change to the ASA set or network map between review and commit
+refuses it as a policy change does; it validates the
 resulting document set, and, when the resulting set differs from the active
 one, commits it as one new generation (operation `policy-apply`); the runtime
 publishes the new policy immediately. An apply adds or replaces each listed document (each names its key), deletes the keys
@@ -1294,9 +1310,10 @@ in [ARCH_STORE.md](ARCH_STORE.md#generations).
 |------|----------|
 | `status` | Print `<role> policy`, the default's digest, size, and applied time, then `keys (<n>)` with each held key as `own policy` (with its document summary) or `default`, each stored document for a key not held as `key not held`, and `policy_set_sha256` |
 | `export [--key K]` | Write one stored document exactly as stored: the default, or key `K`'s own document |
+| `export --all DIR` | Write every stored document exactly as stored into the new or empty `DIR`, with the node's context in `DIR/.appolicy/node.json`, fetched against one snapshot; the writer is shared with the signer TUI's `x` (`apadminapp.WritePolicyExport`, `internal/policyexport`) |
 | `check FILE...\|-` | Validate documents against the node; print errors and warnings |
 | `diff FILE...\|-` | Describe how the files differ from the policy that governs each key now, without writing |
-| `apply [--yes] FILE...\|-` | Run `check`, stop on errors, print the diff, confirm, then apply against the current `policy_set_sha256` |
+| `apply [--yes] FILE...\|-` | Run `check`, stop on errors, print the diff, confirm, then apply against the `policy_set_sha256` and composite snapshot the review read |
 | `remove [--yes] K...` | Run `check`, stop on errors, print the diff, confirm, then delete keys' own documents; the keys follow the default. `default` is refused |
 | `template [--key K]` | Write the node's current default as the starting document for key `K`, or annotated as the default itself |
 | `template --embedded signer\|cosigner [--key K]` | Write the shipped default for that role instead; needs no node and no passphrase |
@@ -1320,7 +1337,13 @@ is marked `tightened`, `loosened`, or `changed`: raising or removing a
 threshold, clearing a `reject_*` flag, moving a type toward `allow`, adding
 a route, route term, or member of a set a route uses, relaxing a route-miss
 action, or removing a blocked destination loosens; the reverse tightens. A
-fee cap of `"0"` is compared as no cap, matching enforcement. Address sets
+fee cap of `"0"` is compared as no cap, matching enforcement. ASA
+thresholds are rendered in the node's context at the reviewed snapshot
+(`policy.DiffPolicyV1Labelled`, `policyreview.ContextLabel`): an asset its
+ASA set knows shows in display units with its base units, decimals, ID and
+network beside them, and an unknown asset in base units only, with no
+decimal count guessed. The apply names that snapshot, so the amounts
+reviewed are the ones committed. Address sets
 are compared on the members they cover on each network, so moving between
 flat and per-network forms is described by what changes where. Removing a
 restrictive per-key document can loosen (on a signer node it can enable
@@ -1333,6 +1356,17 @@ document decodes identical to the active one; a document that differs but
 leaves effective permissions unchanged (term order, or a cosigner `*` entry
 written out or omitted) is still applied, and `diff` reports it as "the
 document differs, but effective permissions are unchanged".
+
+`check`, `diff` and `apply` select the context of the export their files
+come from (`policyexport.Discover`; `--node-context FILE` overrides it,
+`--no-node-context` selects none) and, before any review, refuse with
+`policy_export_stale` when the node's live snapshot is not the export's
+baseline snapshot, which the reader recomputed from the file's own
+contents. That is the export-to-review check; the snapshot an apply sends is
+the review-to-commit check. An unfinished or damaged export, files from two
+exports, or a mix of exported and other files is an error rather than a
+fallback to no context. Files not from an export are reviewed against the
+node as it is, and the command says there is no export baseline.
 
 Online verbs authenticate through admin IPC and unlock a locked identity with
 the authenticated passphrase before policy access; this applies to read-only

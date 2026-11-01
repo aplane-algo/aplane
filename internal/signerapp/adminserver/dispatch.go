@@ -59,6 +59,7 @@ var dispatchTable = map[string]dispatchFunc{
 
 	protocol.MsgTypeGetPolicy:         typed("get policy", (*Session).HandleGetPolicy),
 	protocol.MsgTypeGetPolicyDocument: typed("get policy document", (*Session).HandleGetPolicyDocument),
+	protocol.MsgTypeGetPolicyContext:  typed("get policy context", (*Session).HandleGetPolicyContext),
 	protocol.MsgTypeCheckPolicy:       typed("check policy", (*Session).HandleCheckPolicy),
 	protocol.MsgTypeApplyPolicy:       typed("apply policy", (*Session).HandleApplyPolicy),
 	protocol.MsgTypeListASASet:        typed("list asa set", (*Session).HandleListASASet),

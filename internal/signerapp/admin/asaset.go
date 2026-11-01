@@ -331,13 +331,20 @@ func (s Service) chainFor(network string) (asaset.GenesisHash, error) {
 
 var errASAUnavailable = errors.New("the ASA set cannot be changed on this node")
 
-// networks is the node's genesis-hash mapping, or the built-in networks when
-// the service has no chain view.
+// networks is the node's genesis-hash mapping: the chain view's, or, without
+// one, the mapping built from the node's config.
 func (s Service) networks() apconfig.GenesisHashNetworkResolver {
-	if s.ASAChain == nil {
-		return apconfig.DefaultGenesisHashNetworkResolver()
+	if s.ASAChain != nil {
+		return s.ASAChain.Networks()
 	}
-	return s.ASAChain.Networks()
+	var custom map[string]string
+	if s.Deps != nil && s.Deps.Config() != nil {
+		custom = s.Deps.Config().GenesisHashNetworks
+	}
+	if r, err := apconfig.NewGenesisHashNetworkResolver(custom); err == nil {
+		return r
+	}
+	return apconfig.DefaultGenesisHashNetworkResolver()
 }
 
 func (s Service) now() time.Time {

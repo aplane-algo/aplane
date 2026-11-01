@@ -45,7 +45,8 @@ type SettingsServices interface {
 	BuildAdminSettings() adminproto.AdminSettings
 	UpdateAdminSetting(req adminproto.UpdateAdminSettingRequest) error
 	GetPolicy() adminproto.PolicyView
-	GetPolicyDocument(key string) adminproto.PolicyDocumentResult
+	GetPolicyDocumentAt(req adminproto.GetPolicyDocumentRequest) adminproto.PolicyDocumentResult
+	GetPolicyContext() adminproto.PolicyContextView
 	CheckPolicy(req adminproto.CheckPolicyRequest) adminproto.CheckPolicyResult
 	ApplyPolicy(req adminproto.ApplyPolicyRequest) adminproto.ApplyPolicyResult
 	ListASASet() adminproto.ListASASetResult

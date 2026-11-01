@@ -2596,12 +2596,29 @@ func mustReplaceIPCPolicySetting(t *testing.T, ipcClient *transport.IPCClient, k
 		t.Fatalf("get policy failed: %+v", current)
 	}
 
+	// The apply names the composite snapshot the change was made against: the
+	// context read paired with the summary above.
+	contextBytes, err := ipcClient.SendAndReceive(protocol.GetPolicyContextMessage{
+		BaseMessage: protocol.BaseMessage{
+			Type: protocol.MsgTypeGetPolicyContext,
+			ID:   fmt.Sprintf("policy-context-%d", time.Now().UnixNano()),
+		},
+	}, 10*time.Second)
+	if err != nil {
+		t.Fatalf("failed to get policy context: %v", err)
+	}
+	var policyContext protocol.PolicyContextMessage
+	if err := json.Unmarshal(contextBytes, &policyContext); err != nil || !policyContext.Success || policyContext.PolicySetSHA256 != current.PolicySetSHA256 {
+		t.Fatalf("get policy context failed or describes another policy set: %+v, %v", policyContext, err)
+	}
+
 	docBytes, err := ipcClient.SendAndReceive(protocol.GetPolicyDocumentMessage{
 		BaseMessage: protocol.BaseMessage{
 			Type: protocol.MsgTypeGetPolicyDocument,
 			ID:   fmt.Sprintf("policy-document-%d", time.Now().UnixNano()),
 		},
-		Key: policy.DefaultKey,
+		Key:                    policy.DefaultKey,
+		ExpectedSnapshotSHA256: policyContext.SnapshotSHA256,
 	}, 10*time.Second)
 	if err != nil {
 		t.Fatalf("failed to get policy document: %v", err)
@@ -2627,6 +2644,7 @@ func mustReplaceIPCPolicySetting(t *testing.T, ipcClient *transport.IPCClient, k
 		},
 		Documents:               []protocol.PolicyDocumentWire{{Key: policy.DefaultKey, Document: string(updated)}},
 		ExpectedPolicySetSHA256: current.PolicySetSHA256,
+		ExpectedSnapshotSHA256:  policyContext.SnapshotSHA256,
 	}, 10*time.Second)
 	if err != nil {
 		t.Fatalf("failed to apply policy for %s: %v", key, err)

@@ -58,16 +58,23 @@ func ParseVerb(raw string) (Verb, error) {
 // printed instead of a node's own. Preset, for template only, names a
 // cosigner preset to print instead, and ListPresets lists the presets. These
 // three are the template forms that need no node. Yes applies without asking
-// for confirmation.
+// for confirmation. ExportDir, for export only, writes every document and the
+// node's context into a directory instead of printing one document.
+// NodeContext names the export context for check, diff and apply to compare
+// the node with, overriding the one beside the files; NoNodeContext compares
+// none, even when the files are from an export.
 type Command struct {
-	Verb        Verb
-	Args        []string
-	Key         string
-	Embedded    string
-	Preset      string
-	ListPresets bool
-	Yes         bool
-	DataDir     string
+	Verb          Verb
+	Args          []string
+	Key           string
+	Embedded      string
+	Preset        string
+	ListPresets   bool
+	Yes           bool
+	ExportDir     string
+	NodeContext   string
+	NoNodeContext bool
+	DataDir       string
 }
 
 // NeedsNoNode reports a template form that prints text apadmin carries
@@ -127,7 +134,27 @@ func (c Command) Validate() error {
 	if c.Yes && !c.mutates() {
 		return fmt.Errorf("--yes applies only to policy apply and remove")
 	}
+	if c.ExportDir != "" {
+		if c.Verb != VerbExport {
+			return fmt.Errorf("--all applies only to policy export")
+		}
+		if c.Key != "" {
+			return fmt.Errorf("--all exports every document; it takes no --key")
+		}
+	}
+	if c.NodeContext != "" || c.NoNodeContext {
+		if !c.readsFiles() {
+			return fmt.Errorf("--node-context and --no-node-context apply only to policy check, diff and apply")
+		}
+		if c.NodeContext != "" && c.NoNodeContext {
+			return fmt.Errorf("--node-context and --no-node-context are alternatives; give one")
+		}
+	}
 	return nil
+}
+
+func (c Command) readsFiles() bool {
+	return c.Verb == VerbCheck || c.Verb == VerbDiff || c.Verb == VerbApply
 }
 
 func (c Command) readsStdin() bool {
@@ -170,7 +197,11 @@ func (s Streams) normalized() Streams {
 // through the store.
 type Backend interface {
 	Get(context.Context) (adminproto.PolicyView, error)
-	Document(ctx context.Context, key string) (adminproto.PolicyDocumentResult, error)
+	// Context is the node's policy context with its digests.
+	Context(context.Context) (adminproto.PolicyContextView, error)
+	// Document reads one document; a non-empty expectedSnapshot refuses the
+	// read if the policy or context moved since that snapshot.
+	Document(ctx context.Context, key, expectedSnapshot string) (adminproto.PolicyDocumentResult, error)
 	Check(context.Context, adminproto.CheckPolicyRequest) (adminproto.CheckPolicyResult, error)
 	Apply(context.Context, adminproto.ApplyPolicyRequest) (adminproto.ApplyPolicyResult, error)
 }

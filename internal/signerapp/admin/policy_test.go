@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
+	"github.com/aplane-algo/aplane/internal/asasetstore"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/genstore"
@@ -65,7 +66,11 @@ func setupPolicyAdmin(t *testing.T, role noderole.Role) (Service, *productruntim
 			if err != nil {
 				return err
 			}
-			ir.SetNodePolicy(np)
+			set, err := asasetstore.Load(active, kr)
+			if err != nil {
+				return err
+			}
+			ir.SetVerifiedPolicyState(np, set, nil)
 			return nil
 		})
 	}
@@ -116,6 +121,7 @@ func TestSignerPolicyApplyMintsGenerationAndReloads(t *testing.T) {
 	result := svc.ApplyPolicy(adminproto.ApplyPolicyRequest{
 		Documents:               []adminproto.PolicyDocument{{Key: policy.DefaultKey, Document: signerPolicyDoc("2000")}},
 		ExpectedPolicySetSHA256: view.PolicySetSHA256,
+		ExpectedSnapshotSHA256:  svc.GetPolicyContext().SnapshotSHA256,
 	})
 	if !result.Success || result.Policy == nil || result.Policy.GenerationID == "" {
 		t.Fatalf("ApplyPolicy() = %+v", result)
@@ -133,6 +139,7 @@ func TestSignerPolicyApplyMintsGenerationAndReloads(t *testing.T) {
 	unchanged := svc.ApplyPolicy(adminproto.ApplyPolicyRequest{
 		Documents:               []adminproto.PolicyDocument{{Key: policy.DefaultKey, Document: signerPolicyDoc("2000")}},
 		ExpectedPolicySetSHA256: result.Policy.PolicySetSHA256,
+		ExpectedSnapshotSHA256:  svc.GetPolicyContext().SnapshotSHA256,
 	})
 	if !unchanged.Success || unchanged.Policy.GenerationID != "" || currentGeneration(t, svc, ir) != result.Policy.GenerationID {
 		t.Fatalf("identical apply = %+v, want no new generation", unchanged)
@@ -142,6 +149,7 @@ func TestSignerPolicyApplyMintsGenerationAndReloads(t *testing.T) {
 func TestPolicyApplyRejectsStaleInvalidAndMalformedRequests(t *testing.T) {
 	svc, ir := setupPolicyAdmin(t, noderole.RoleSigner)
 	view := svc.GetPolicy()
+	snapshot := svc.GetPolicyContext().SnapshotSHA256
 	before := currentGeneration(t, svc, ir)
 	for _, tc := range []struct {
 		name string
@@ -149,12 +157,14 @@ func TestPolicyApplyRejectsStaleInvalidAndMalformedRequests(t *testing.T) {
 		code string
 	}{
 		{"no concurrency base", adminproto.ApplyPolicyRequest{Documents: []adminproto.PolicyDocument{{Key: policy.DefaultKey, Document: signerPolicyDoc("1")}}}, "expected_policy_set_sha256_required"},
-		{"stale base", adminproto.ApplyPolicyRequest{Documents: []adminproto.PolicyDocument{{Key: policy.DefaultKey, Document: signerPolicyDoc("1")}}, ExpectedPolicySetSHA256: strings.Repeat("0", 64)}, "policy_snapshot_changed"},
-		{"invalid document", adminproto.ApplyPolicyRequest{Documents: []adminproto.PolicyDocument{{Key: policy.DefaultKey, Document: policytest.Signer(t, policy.DefaultKey, `{"max_fee_microalgos":1}`)}}, ExpectedPolicySetSHA256: view.PolicySetSHA256}, "policy_validation_failed"},
-		{"witness key on a signer node", adminproto.ApplyPolicyRequest{Documents: []adminproto.PolicyDocument{{Key: adminPolicyKeyA, Document: policytest.Signer(t, adminPolicyKeyA, "")}}, ExpectedPolicySetSHA256: view.PolicySetSHA256}, "policy_validation_failed"},
-		{"unkeyed document", adminproto.ApplyPolicyRequest{Documents: []adminproto.PolicyDocument{{Document: signerPolicyDoc("1")}}, ExpectedPolicySetSHA256: view.PolicySetSHA256}, "invalid_policy_request"},
-		{"default removal", adminproto.ApplyPolicyRequest{Remove: []string{policy.DefaultKey}, ExpectedPolicySetSHA256: view.PolicySetSHA256}, "invalid_policy_request"},
-		{"removal of a key on the default", adminproto.ApplyPolicyRequest{Remove: []string{adminPolicyKeyA}, ExpectedPolicySetSHA256: view.PolicySetSHA256}, "invalid_policy_request"},
+		{"stale base", adminproto.ApplyPolicyRequest{Documents: []adminproto.PolicyDocument{{Key: policy.DefaultKey, Document: signerPolicyDoc("1")}}, ExpectedPolicySetSHA256: strings.Repeat("0", 64), ExpectedSnapshotSHA256: snapshot}, "policy_snapshot_changed"},
+		{"no reviewed snapshot", adminproto.ApplyPolicyRequest{Documents: []adminproto.PolicyDocument{{Key: policy.DefaultKey, Document: signerPolicyDoc("1")}}, ExpectedPolicySetSHA256: view.PolicySetSHA256}, "expected_snapshot_sha256_required"},
+		{"stale snapshot", adminproto.ApplyPolicyRequest{Documents: []adminproto.PolicyDocument{{Key: policy.DefaultKey, Document: signerPolicyDoc("1")}}, ExpectedPolicySetSHA256: view.PolicySetSHA256, ExpectedSnapshotSHA256: strings.Repeat("0", 64)}, "policy_snapshot_changed"},
+		{"invalid document", adminproto.ApplyPolicyRequest{Documents: []adminproto.PolicyDocument{{Key: policy.DefaultKey, Document: policytest.Signer(t, policy.DefaultKey, `{"max_fee_microalgos":1}`)}}, ExpectedPolicySetSHA256: view.PolicySetSHA256, ExpectedSnapshotSHA256: snapshot}, "policy_validation_failed"},
+		{"witness key on a signer node", adminproto.ApplyPolicyRequest{Documents: []adminproto.PolicyDocument{{Key: adminPolicyKeyA, Document: policytest.Signer(t, adminPolicyKeyA, "")}}, ExpectedPolicySetSHA256: view.PolicySetSHA256, ExpectedSnapshotSHA256: snapshot}, "policy_validation_failed"},
+		{"unkeyed document", adminproto.ApplyPolicyRequest{Documents: []adminproto.PolicyDocument{{Document: signerPolicyDoc("1")}}, ExpectedPolicySetSHA256: view.PolicySetSHA256, ExpectedSnapshotSHA256: snapshot}, "invalid_policy_request"},
+		{"default removal", adminproto.ApplyPolicyRequest{Remove: []string{policy.DefaultKey}, ExpectedPolicySetSHA256: view.PolicySetSHA256, ExpectedSnapshotSHA256: snapshot}, "invalid_policy_request"},
+		{"removal of a key on the default", adminproto.ApplyPolicyRequest{Remove: []string{adminPolicyKeyA}, ExpectedPolicySetSHA256: view.PolicySetSHA256, ExpectedSnapshotSHA256: snapshot}, "invalid_policy_request"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			result := svc.ApplyPolicy(tc.req)
@@ -194,6 +204,7 @@ func TestCosignerPolicyApplyAddsReplacesAndRemovesPerKey(t *testing.T) {
 			{Key: adminPolicyKeyB, Document: cosignerPolicyDoc(adminPolicyKeyB)},
 		},
 		ExpectedPolicySetSHA256: view.PolicySetSHA256,
+		ExpectedSnapshotSHA256:  svc.GetPolicyContext().SnapshotSHA256,
 	})
 	if !result.Success {
 		t.Fatalf("ApplyPolicy(add) = %+v", result)
@@ -209,7 +220,8 @@ func TestCosignerPolicyApplyAddsReplacesAndRemovesPerKey(t *testing.T) {
 		t.Fatalf("runtime key policies = %+v, want 2 with A's own document in force", np.Keys)
 	}
 
-	removed := svc.ApplyPolicy(adminproto.ApplyPolicyRequest{Remove: []string{adminPolicyKeyB}, ExpectedPolicySetSHA256: result.Policy.PolicySetSHA256})
+	removed := svc.ApplyPolicy(adminproto.ApplyPolicyRequest{Remove: []string{adminPolicyKeyB},
+		ExpectedPolicySetSHA256: result.Policy.PolicySetSHA256, ExpectedSnapshotSHA256: svc.GetPolicyContext().SnapshotSHA256})
 	if !removed.Success || len(removed.Policy.Documents) != 2 || removed.Policy.Documents[1].Key != adminPolicyKeyA {
 		t.Fatalf("ApplyPolicy(remove) = %+v", removed)
 	}
@@ -236,6 +248,7 @@ func TestCosignerPolicyApplyAddsReplacesAndRemovesPerKey(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			tc.req.ExpectedPolicySetSHA256 = removed.Policy.PolicySetSHA256
+			tc.req.ExpectedSnapshotSHA256 = svc.GetPolicyContext().SnapshotSHA256
 			if got := svc.ApplyPolicy(tc.req); got.Success || got.Code != "invalid_policy_request" {
 				t.Fatalf("ApplyPolicy() = %+v, want invalid_policy_request", got)
 			}
@@ -290,6 +303,7 @@ func TestPolicyApplyEntersRecoveryBeforeReleasingTheLock(t *testing.T) {
 	result := svc.ApplyPolicy(adminproto.ApplyPolicyRequest{
 		Documents:               []adminproto.PolicyDocument{{Key: policy.DefaultKey, Document: signerPolicyDoc("2000")}},
 		ExpectedPolicySetSHA256: view.PolicySetSHA256,
+		ExpectedSnapshotSHA256:  svc.GetPolicyContext().SnapshotSHA256,
 	})
 	if result.Success || !result.CommitUncertain || result.Code != "policy_reload_failed" {
 		t.Fatalf("ApplyPolicy() = %+v, want an uncertain reload failure", result)
@@ -307,6 +321,7 @@ func TestPolicyApplyEntersRecoveryBeforeReleasingTheLock(t *testing.T) {
 	again := svc.ApplyPolicy(adminproto.ApplyPolicyRequest{
 		Documents:               []adminproto.PolicyDocument{{Key: policy.DefaultKey, Document: signerPolicyDoc("3000")}},
 		ExpectedPolicySetSHA256: view.PolicySetSHA256,
+		ExpectedSnapshotSHA256:  svc.GetPolicyContext().SnapshotSHA256,
 	})
 	if again.Success || again.Code != protocol.ResultCodeRecoveryBlocked || again.CommitUncertain {
 		t.Fatalf("ApplyPolicy() in recovery = %+v, want recovery_blocked", again)
@@ -335,6 +350,7 @@ func TestPolicyApplyUncertainCommitReloadsAndEntersRecovery(t *testing.T) {
 	result := svc.ApplyPolicy(adminproto.ApplyPolicyRequest{
 		Documents:               []adminproto.PolicyDocument{{Key: policy.DefaultKey, Document: signerPolicyDoc("2000")}},
 		ExpectedPolicySetSHA256: view.PolicySetSHA256,
+		ExpectedSnapshotSHA256:  svc.GetPolicyContext().SnapshotSHA256,
 	})
 	fsutil.TestHook = nil
 
