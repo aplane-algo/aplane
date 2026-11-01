@@ -1191,7 +1191,7 @@ The concrete on-disk layouts, key-file compatibility, keystore metadata versioni
 Operationally:
 
 - client-local state lives under the client data directory, including plugins (`plugins.available/`, `plugins.yaml`), scripts (`scripts/`), the SSH identity (`.ssh/`), caches (`cache/`), swap state (`swap/<network>/`), and the cooperative `.apclient.lock`,
-- signer-local state lives under the signer data directory, with the plaintext key type library at `library/templates/`, signer-wide ASA metadata at `cache/<network>_asa_cache.json`, managed backup archives at `backups/default/`, and all sensitive runtime assets rooted under `identities/default/`,
+- signer-local state lives under the signer data directory, with the plaintext key type library at `library/templates/`, managed backup archives at `backups/default/`, and all sensitive runtime assets rooted under `identities/default/`, including the node's ASA set (an optional `asa_set.json` in each generation, beside its policy documents); the signer keeps no ASA cache,
 - systemd signer state is service-user-only (`0700` directories and `0600`
   ordinary files); the operator Unix group has no traversal rights and reaches
   signer operations only through authenticated transports. See

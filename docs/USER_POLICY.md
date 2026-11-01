@@ -701,9 +701,10 @@ appolicy test policy/               # re-run the saved cases in policy/.appolicy
   where the asset's decimals are known, in display units: from the node's
   ASA set in the export, else from the built-in asset table.
 
-This `appolicy` is not the retired binary of the same name, and its flags
-(`-online`, `-check`, `-yaml`, `-sha256`, `-save`) are refused with a pointer
-to `apadmin policy`.
+This `appolicy` is not the retired binary of the same name: it edits and
+checks files only, and never contacts a node or opens a store. The retired
+flags (`-online`, `-check`, `-yaml`, `-sha256`, `-save`) are refused with a
+pointer to `apadmin policy`.
 
 #### Commands of the retired policy binary
 
