@@ -24,9 +24,10 @@ import (
 var ErrPolicyInvalid = errors.New("policy is invalid")
 
 // WriteOfflineTemplate writes a template apadmin carries itself: the
-// shipped default for the role named by --embedded, or the cosigner preset
-// named by --preset, as the starting document for --key (or as the default
-// itself); or, for --list-presets, the list of cosigner presets. It needs no
+// shipped default for the role named by --embedded, or the preset named by
+// --preset for the role --role names (cosigner by default), as the starting
+// document for --key (or as the default itself); or, for --list-presets,
+// that role's presets. It needs no
 // node and no passphrase. Every other template form prints a node's own
 // default.
 func WriteOfflineTemplate(command Command, streams Streams) error {
@@ -41,13 +42,25 @@ func WriteOfflineTemplate(command Command, streams Streams) error {
 	switch {
 	case command.ListPresets:
 		var b strings.Builder
-		for _, preset := range policytext.Presets(noderole.RoleCosigner) {
+		role := command.presetRole()
+		for _, preset := range policytext.Presets(role) {
 			fmt.Fprintf(&b, "%-20s %s\n", preset.Name, preset.Summary)
+		}
+		if note := policytext.PresetNote(role); note != "" {
+			fmt.Fprintf(&b, "\n%s\n", note)
 		}
 		text = b.String()
 	case command.Preset != "":
 		var err error
-		if text, err = policytext.PresetTemplate(noderole.RoleCosigner, command.Preset, command.documentKey()); err != nil {
+		role := command.presetRole()
+		if text, err = policytext.PresetTemplate(role, command.Preset, command.documentKey()); err != nil {
+			// The role is never inferred from the name; say which flag
+			// selects the other catalog when the name is there.
+			for _, other := range []noderole.Role{noderole.RoleSigner, noderole.RoleCosigner} {
+				if other != role && presetNamed(other, command.Preset) {
+					return fmt.Errorf("%w; %q is a %s preset: add --role %s", err, command.Preset, other, other)
+				}
+			}
 			return err
 		}
 	default:
@@ -481,4 +494,13 @@ func governedKeysNote(view adminproto.PolicyView, docs []adminproto.PolicyDocume
 		return " (governs no held key; every held key has a policy of its own)"
 	}
 	return fmt.Sprintf(" (governs %d held key(s): %s)", len(governed), strings.Join(governed, ", "))
+}
+
+func presetNamed(role noderole.Role, name string) bool {
+	for _, p := range policytext.Presets(role) {
+		if p.Name == name {
+			return true
+		}
+	}
+	return false
 }

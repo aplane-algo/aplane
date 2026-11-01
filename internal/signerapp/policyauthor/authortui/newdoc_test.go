@@ -169,3 +169,55 @@ func TestNewDocumentReviewIdentityAndCopies(t *testing.T) {
 		t.Fatalf("copy fee = %d, want the unsaved 500000", fee)
 	}
 }
+
+// A signer's new document offers the signer presets after the default and
+// the workspace copies, with the note on what they leave unchanged; a short
+// window still reaches every choice, and an unfilled preset opens as a draft
+// that fails check at its placeholder.
+func TestNewSignerDocumentOffersThePresets(t *testing.T) {
+	ws, _ := workspace(t, map[string][]byte{"ops.json": fixture(t, "signer_key_full.json")})
+	next, _ := New(ws, nil, nil).Update(tea.WindowSizeMsg{Width: 100, Height: 40})
+	m := next.(Model)
+	m, _ = press(t, m, "n")
+	m = typeText(t, m, newKeyAddress)
+	m, _ = press(t, m, "enter")
+	if m.newDoc.step != newStart {
+		t.Fatalf("step %v", m.newDoc.step)
+	}
+	if flat := strings.Join(strings.Fields(view(m)), " "); !strings.Contains(flat, "Presets: Permitted transactions follow User Auto-Approve.") {
+		t.Fatalf("the note is not shown:\n%s", view(m))
+	}
+	// The last choice is reachable in a short window.
+	next, _ = m.Update(tea.WindowSizeMsg{Width: 100, Height: 6})
+	m = next.(Model)
+	for i := 0; i < 10 && !strings.Contains(view(m), "> Preset transfers-only"); i++ {
+		m, _ = press(t, m, "down")
+	}
+	if !strings.Contains(view(m), "> Preset transfers-only") {
+		t.Fatalf("the last preset never came into view:\n%s", view(m))
+	}
+	// So is the first, which a window kept at the bottom would hide.
+	for i := 0; i < 10 && m.newDoc.choice > 0; i++ {
+		m, _ = press(t, m, "up")
+	}
+	if !strings.Contains(view(m), "> The shipped signer default") {
+		t.Fatalf("the first choice is selected but not in view:\n%s", view(m))
+	}
+	for i := 0; i < 10 && !strings.Contains(view(m), "> Preset listed-destinations"); i++ {
+		m, _ = press(t, m, "down")
+	}
+	m, _ = press(t, m, "enter", "enter")
+	if m.screen != screenDocument || m.shown().Key != newKeyAddress {
+		t.Fatalf("the preset did not open as a new document: screen %v", m.screen)
+	}
+	if m.shown().Document != nil || !strings.Contains(view(m), "does not pass check") {
+		t.Fatalf("an unfilled preset is valid, or not flagged:\n%s", view(m))
+	}
+	found := false
+	for _, p := range m.problemsFor(m.current, m.shown()) {
+		found = found || p.Pointer == "/address_sets/destinations/0"
+	}
+	if !found {
+		t.Fatalf("no problem at the placeholder: %+v", m.problemsFor(m.current, m.shown()))
+	}
+}

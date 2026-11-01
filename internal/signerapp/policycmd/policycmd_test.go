@@ -528,6 +528,39 @@ func TestTemplatePresetNeedsNoNode(t *testing.T) {
 	}
 }
 
+// --role selects a catalog, never inferred: without it the presets are the
+// cosigner's, as before, and a signer-only name says which flag to add.
+func TestTemplatePresetRole(t *testing.T) {
+	const testSignerKey = "CEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI7JH2AYM"
+	t.Setenv(retiredPassphraseEnv, "")
+	t.Setenv(passphraseEnv, "")
+	for _, runner := range []Runner{OnlineRunner{}, RescueRunner{}} {
+		var stdout bytes.Buffer
+		if err := runner.Run(context.Background(), Command{Verb: VerbTemplate, Preset: "self-only", Key: testSignerKey, PresetRole: "signer"}, Streams{Stdout: &stdout}); err != nil {
+			t.Fatal(err)
+		}
+		want, err := policytext.PresetTemplate(noderole.RoleSigner, "self-only", testSignerKey)
+		if err != nil || stdout.String() != want {
+			t.Fatalf("signer preset = %q, %v", stdout.String(), err)
+		}
+		stdout.Reset()
+		if err := runner.Run(context.Background(), Command{Verb: VerbTemplate, ListPresets: true, PresetRole: "signer"}, Streams{Stdout: &stdout}); err != nil {
+			t.Fatal(err)
+		}
+		if out := stdout.String(); !strings.Contains(out, "transfers-only") || strings.Contains(out, "capped-any") || !strings.Contains(out, "User Auto-Approve") {
+			t.Fatalf("signer preset list:\n%s", out)
+		}
+		err = runner.Run(context.Background(), Command{Verb: VerbTemplate, Preset: "transfers-only"}, Streams{Stdout: &stdout})
+		if err == nil || !strings.Contains(err.Error(), "unknown cosigner policy preset") || !strings.Contains(err.Error(), "add --role signer") {
+			t.Fatalf("a signer name without --role: %v", err)
+		}
+		err = runner.Run(context.Background(), Command{Verb: VerbTemplate, Preset: "capped-any", PresetRole: "signer"}, Streams{Stdout: &stdout})
+		if err == nil || !strings.Contains(err.Error(), "add --role cosigner") {
+			t.Fatalf("a cosigner name with --role signer: %v", err)
+		}
+	}
+}
+
 func TestRescueSignerApplyPreservesExactBytesAndVerifies(t *testing.T) {
 	root, passphrase := initializedPolicyStore(t, noderole.RoleSigner)
 	t.Setenv(retiredPassphraseEnv, "")

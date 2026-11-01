@@ -25,6 +25,10 @@ type StartingPoint struct {
 // Draft builds the starting document for key.
 func (s StartingPoint) Draft(key string) (*policy.Draft, error) { return s.build(key) }
 
+// StartingPointsNote is what to show beside role's starting points about
+// the presets among them, or "" when there is nothing to add.
+func StartingPointsNote(role noderole.Role) string { return policytext.PresetNote(role) }
+
 // StartingPoints lists what a new document for role can start from: the
 // shipped default for the role, a copy of each valid document of that role
 // in the workspace, and the role's presets.

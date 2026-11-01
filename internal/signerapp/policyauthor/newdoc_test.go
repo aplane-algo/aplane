@@ -4,6 +4,7 @@
 package policyauthor
 
 import (
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -18,9 +19,17 @@ func TestStartingPointsBuildDocumentsForTheNewKey(t *testing.T) {
 	writeFile(t, dir, "c.json", fixture(t, "cosigner_default.json"))
 	w, _ := Open(dir)
 
+	// The default, then workspace copies, then the role's presets.
 	signer := w.StartingPoints(noderole.RoleSigner)
-	if len(signer) != 2 || !strings.Contains(signer[0].Label, "shipped signer default") || !strings.Contains(signer[1].Label, "ops.json") {
-		t.Fatalf("signer starting points: %+v", signer)
+	var labels []string
+	for _, sp := range signer {
+		labels = append(labels, sp.Label)
+	}
+	if got := strings.Join(labels, " | "); got != "The shipped signer default | A copy of ops.json | Preset deny-all | Preset self-only | Preset listed-destinations | Preset transfers-only" {
+		t.Fatalf("signer starting points: %s", got)
+	}
+	if StartingPointsNote(noderole.RoleSigner) == "" || StartingPointsNote(noderole.RoleCosigner) != "" {
+		t.Fatal("the signer note is missing, or the cosigner has one")
 	}
 	for _, sp := range signer {
 		d, err := sp.Draft(testSignerKey2)
@@ -28,7 +37,17 @@ func TestStartingPointsBuildDocumentsForTheNewKey(t *testing.T) {
 			t.Fatal(err)
 		}
 		out, _ := d.Canonical()
-		if _, err := policy.DecodePolicyV1(out, testSignerKey2, noderole.RoleSigner); err != nil {
+		_, err = policy.DecodePolicyV1(out, testSignerKey2, noderole.RoleSigner)
+		// An unfilled preset still opens as a draft, failing check at its
+		// placeholder until the operator fills it in.
+		if sp.Label == "Preset listed-destinations" {
+			var docErr *policy.DocumentError
+			if !errors.As(err, &docErr) || docErr.Pointer != "/address_sets/destinations/0" {
+				t.Fatalf("%s: %v, want an error at its placeholder", sp.Label, err)
+			}
+			continue
+		}
+		if err != nil {
 			t.Fatalf("%s: %v", sp.Label, err)
 		}
 	}

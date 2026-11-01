@@ -1328,8 +1328,8 @@ in [ARCH_STORE.md](ARCH_STORE.md#generations).
 | `remove [--yes] K...` | Run `check`, stop on errors, print the diff, confirm, then delete keys' own documents; the keys follow the default. `default` is refused |
 | `template [--key K]` | Write the node's current default as the starting document for key `K`, or annotated as the default itself |
 | `template --embedded signer\|cosigner [--key K]` | Write the shipped default for that role instead; needs no node and no passphrase |
-| `template --preset NAME [--key K]` | Write a cosigner preset instead; needs no node and no passphrase |
-| `template --list-presets` | List the cosigner presets |
+| `template [--role signer\|cosigner] --preset NAME [--key K]` | Write a preset instead (cosigner without `--role`); needs no node and no passphrase |
+| `template [--role signer\|cosigner] --list-presets` | List the presets for the role (cosigner without `--role`) |
 
 Each file is one document and names its key in its `key` field; several
 files apply in one commit. Diffs are effective: `diff` compares decoded
@@ -1401,7 +1401,10 @@ set to `K`, or annotated as the default itself when `--key` is omitted. A
 key that gets a document of its own therefore starts from exactly what it was
 already doing. `apadmin policy template --embedded signer|cosigner [--key K]`
 prints the shipped default instead, and `--preset NAME [--key K]` prints a
-cosigner preset; these and `--list-presets` are the forms that need no node,
+preset, from the catalog `--role signer|cosigner` selects (cosigner when
+omitted, as before signer presets existed; the role is never inferred from
+the name, and a name from the other catalog says which `--role` to add);
+these and `--list-presets` are the forms that need no node,
 store, or passphrase (`policycmd.Command.NeedsNoNode`). The online and rescue
 forms fail rather than fall back to the shipped default, so a customized node
 default is never silently replaced by the shipped one. Each template carries
@@ -1409,13 +1412,15 @@ a header comment; stripped of it, a template decodes equal to the document it
 stands for (`policytext.Template`, `policytext.EmbeddedTemplate`).
 
 Presets (`policytext.Presets`, `policytext.PresetTemplate`) are named
-starting documents for the cosigner role, embedded from
-`internal/signerapp/policytext/presets/cosigner/*.jsonc`. They exist
-because the shipped cosigner default cosigns nothing, so every new cosigner
-key needs routes before it is usable. A preset is starting text only: it adds
-no policy semantics and reaches the node through the same check, diff, and
-apply. Every preset sets `reject_rekey` and the three `reject_*` flags,
-allows only `pay` and `axfer`, and caps the fee at 10000 microAlgos:
+starting documents per role, embedded from
+`internal/signerapp/policytext/presets/<role>/*.jsonc`. A preset is starting
+text only: it adds no policy semantics and reaches the node through the same
+check, diff, and apply; after creation the document has no link to it.
+
+Cosigner presets exist because the shipped cosigner default cosigns nothing,
+so every new cosigner key needs routes before it is usable. Every cosigner
+preset sets `reject_rekey` and the three `reject_*` flags, allows only `pay`
+and `axfer`, and caps the fee at 10000 microAlgos:
 
 | Preset | Allows | Placeholders |
 |--------|--------|--------------|
@@ -1430,6 +1435,37 @@ amount can be, so `check` rejects an unfilled preset at the placeholder's JSON
 Pointer and a half-edited preset cannot be applied. Tests pin that each
 preset, once filled, passes the JSON Schema and the decoder with no advisory,
 and allows exactly what its name says.
+
+Signer presets are a stricter start than the shipped signer default:
+
+| Preset | Allows |
+|--------|--------|
+| `deny-all` | Nothing |
+| `self-only` | `pay` and `axfer` to the sender itself |
+| `listed-destinations` | `pay` and `axfer` to `@destinations` (a placeholder); an opt-in needs the sender listed |
+| `transfers-only` | `pay` and `axfer` to any address |
+
+Each sets `transaction_types` `"*": "reject"` (required on a signer),
+`reject_foreign_rekey`, the three `reject_*` flags, `always_review_warnings`,
+`auto_approve_self_noop_transfer: false`, `reject` for all three routing
+misses, and routes over `"*"` networks, sources and assets with no close or
+clawback allowance. The fee cap is 80000 microAlgos: the fee goes to the
+fee sink whatever the route, so without a cap a client could burn the
+balance through fees on transfers `self-only` and `listed-destinations`
+permit. 80000 covers a full group of 16 payments or asset transfers at the
+minimum fee. The planner adds, per member: one base fee, the note bytes
+beyond the free allowance, the native Falcon contribution, and its share of
+the LogicSig program-byte surcharge; a Falcon-delegated LogicSig pays both
+of the last two. At the largest note and program that is 76916 microAlgos
+on v42 and v43 (`TestSignerPresetFeeCapCoversAFullGroup` derives it from the
+consensus parameters). It is not a universal bound: fees other members pool onto
+this key's transaction (an app call's inner transactions) and congestion
+fees can exceed it, and the documents say to raise it then. The signer
+presets do not approve (a permitted transaction reaches the Operator
+Default or review, so User Auto-Approve decides), do not forbid a rekey to
+another held key, and do not cap amounts; `policytext.SignerPresetNote`
+says so in each template and in both pickers. Tests check each template's
+guards on the compiled config and its verdicts through `policyeval`.
 
 `apadmin policy rescue VERB` runs the same verbs directly against the store with
 the same rules as the daemon (the shared `internal/signerapp/policyapply`

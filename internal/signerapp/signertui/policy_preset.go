@@ -13,9 +13,10 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// On a cosigner node, editing the node default or a key that has no policy
-// of its own first offers a choice of starting text: what the editor would
-// open on anyway, or one of the cosigner presets (policytext.Presets). A
+// Editing the node default or a key that has no policy of its own first
+// offers a choice of starting text: what the editor would open on anyway, or
+// one of the role's presets (policytext.Presets), with the role's note on
+// what they leave unchanged. A
 // preset is only starting text; it reaches the node through the same check,
 // diff review, and confirmed apply as any other edit. Editing a key's own
 // policy opens the editor directly, since that edit starts from the key's
@@ -109,29 +110,63 @@ func (m Model) handlePolicyPresetPickKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) renderPolicyPresetPick() string {
 	pick := m.policies.presetPick
-	var sb strings.Builder
-	sb.WriteString(titleStyle.Render("Start Policy"))
-	sb.WriteString("\n")
 	target := "the node default"
 	if pick.row.key != policy.DefaultKey {
 		target = "key " + pick.row.key
 	}
-	sb.WriteString(subtitleStyle.Render(fmt.Sprintf("Choose the starting text for %s. Nothing changes until you review and apply the edit.", target)))
-	sb.WriteString("\n\n")
-	line := func(i int, text string) {
-		cursor := "  "
-		if i == pick.selected {
-			cursor = "> "
+	// Wrap to the terminal once its width is known; before the first
+	// resize there is nothing to fit.
+	wrap := func(text string) []string {
+		if m.width > 0 {
+			text = wrapText(text, max(20, m.width-4))
 		}
-		sb.WriteString(cursor + text + "\n")
+		return strings.Split(strings.TrimRight(subtitleStyle.Render(text), "\n"), "\n")
 	}
-	line(0, policyPresetFirstChoice(pick.row))
-	for i, preset := range pick.presets {
+	var header []string
+	header = append(header, titleStyle.Render("Start Policy"), "")
+	header = append(header, wrap(fmt.Sprintf("Choose the starting text for %s. Nothing changes until you review and apply the edit.", target))...)
+	if role, err := noderole.ParseRole(m.policies.policy.NodeRole); err == nil {
+		if note := policytext.PresetNote(role); note != "" {
+			header = append(header, wrap("Presets: "+note)...)
+		}
+	}
+	header = append(header, "")
+
+	choices := []string{policyPresetFirstChoice(pick.row)}
+	for _, preset := range pick.presets {
 		text := fmt.Sprintf("Preset %-20s %s", preset.Name, preset.Summary)
 		if preset.Placeholders {
 			text += " (fill in placeholders)"
 		}
-		line(i+1, text)
+		choices = append(choices, text)
 	}
-	return sb.String()
+	for i, text := range choices {
+		cursor := "  "
+		if i == pick.selected {
+			cursor = "> "
+		}
+		choices[i] = cursor + text
+	}
+	// Count rendered lines: a styled entry may span more than one.
+	header = strings.Split(strings.Join(header, "\n"), "\n")
+	return strings.Join(fitPresetPick(header, choices, pick.selected, m.windowBodyHeight()), "\n")
+}
+
+// fitPresetPick lays the picker into height lines (0 for no limit), so the
+// selected choice is always on screen: the choices scroll around it, and in
+// a short window the header gives way before any choice does, from the
+// bottom up, keeping the title.
+func fitPresetPick(header, choices []string, selected, height int) []string {
+	if height <= 0 || len(header)+len(choices) <= height {
+		return append(header, choices...)
+	}
+	rows := max(1, min(len(choices), height-len(header)))
+	if len(header)+rows > height {
+		header = header[:max(1, height-rows)]
+	}
+	first := 0
+	if selected >= rows {
+		first = selected - rows + 1
+	}
+	return append(header, choices[first:first+rows]...)
 }

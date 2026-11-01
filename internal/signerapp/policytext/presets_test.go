@@ -201,11 +201,15 @@ func TestPresetTemplateRejectsUnknownNamesAndRoles(t *testing.T) {
 	if _, err := PresetTemplate(noderole.RoleCosigner, "nope", presetTestKey); err == nil || !strings.Contains(err.Error(), "listed-destinations") {
 		t.Fatalf("unknown preset error = %v, want the list of presets", err)
 	}
-	if Presets(noderole.RoleSigner) != nil {
-		t.Fatal("signer presets exist")
+	// The catalogs are separate: a cosigner-only name is not a signer preset.
+	if _, err := PresetTemplate(noderole.RoleSigner, "capped-any", presetTestKey); err == nil || !strings.Contains(err.Error(), "unknown signer policy preset") {
+		t.Fatalf("a cosigner preset rendered as a signer one: %v", err)
 	}
-	if _, err := PresetTemplate(noderole.RoleSigner, "deny-all", policy.DefaultKey); err == nil {
-		t.Fatal("rendered a signer preset")
+	if _, err := PresetTemplate(noderole.RoleCosigner, "transfers-only", presetTestKey); err == nil {
+		t.Fatal("a signer preset rendered as a cosigner one")
+	}
+	if Presets("") != nil {
+		t.Fatal("a role with no presets has some")
 	}
 }
 

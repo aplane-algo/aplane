@@ -16,15 +16,21 @@ import (
 // operator picks what a key should do instead of writing routes from
 // nothing. Presets are starting text only: they change no policy semantics,
 // and a preset goes through the same check, diff, and apply as any other
-// document. Presets exist for the cosigner role, whose shipped default
-// cosigns nothing and so leaves every new key unusable until it gets routes.
+// document. Cosigner presets exist because the shipped cosigner default
+// cosigns nothing, leaving every new key unusable until it gets routes.
+// Signer presets give a stricter start than the shipped signer default,
+// which allows every transaction type and leaves routing misses to the
+// operator default. The two roles' presets share names but not meaning: a
+// cosigner refuses every rekey, a signer only rekeys to addresses it does
+// not hold, and a signer's permitted transactions still follow User
+// Auto-Approve.
 //
 // A preset may carry comments, removed on apply, and placeholders such as
 // "REPLACE-WITH-DESTINATION-ADDRESS" for values only the operator knows.
 // A placeholder is never a valid value, so check rejects the document at
 // the placeholder's JSON Pointer until it is filled in.
 
-//go:embed presets/cosigner/*.jsonc
+//go:embed presets/cosigner/*.jsonc presets/signer/*.jsonc
 var presetFiles embed.FS
 
 // Preset names one starting document and the intent it serves.
@@ -47,13 +53,40 @@ var cosignerPresets = []Preset{
 	{Name: "any-transfer", Summary: "Transfers anywhere; no spend protection (testing)"},
 }
 
+var signerPresets = []Preset{
+	{Name: "deny-all", Summary: "Sign nothing: every transaction is rejected"},
+	{Name: "self-only", Summary: "Self-transfers only: opt-ins and self-payments; no other transaction type"},
+	{Name: "listed-destinations", Summary: "Payments and asset transfers to the addresses you list; opt-ins need the sender listed", Placeholders: true},
+	{Name: "transfers-only", Summary: "Payments and asset transfers anywhere; every other transaction type is rejected"},
+}
+
+// SignerPresetNote is what every signer preset leaves as it was, for a
+// preset picker and each signer preset's header: permitted transactions are
+// not approved by the preset, a rekey to another key this signer holds can
+// still be allowed, and only the fee is capped.
+const SignerPresetNote = "Permitted transactions follow User Auto-Approve. Rekeying to another key held by this signer can still be allowed. These presets cap each transaction fee at 0.08 ALGO; transfer amounts are not capped."
+
+// PresetNote is what a preset picker for role should say about every preset
+// it offers, or "" when there is nothing to add. Comments are removed when a
+// preset becomes a draft, so a picker shows this rather than relying on the
+// template's header.
+func PresetNote(role noderole.Role) string {
+	if role == noderole.RoleSigner {
+		return SignerPresetNote
+	}
+	return ""
+}
+
 // Presets lists the presets for role, in the order to offer them. A role
 // with no presets returns nil.
 func Presets(role noderole.Role) []Preset {
-	if role != noderole.RoleCosigner {
-		return nil
+	switch role {
+	case noderole.RoleCosigner:
+		return append([]Preset(nil), cosignerPresets...)
+	case noderole.RoleSigner:
+		return append([]Preset(nil), signerPresets...)
 	}
-	return append([]Preset(nil), cosignerPresets...)
+	return nil
 }
 
 // PresetTemplate renders preset name for role as the starting document for
@@ -61,7 +94,7 @@ func Presets(role noderole.Role) []Preset {
 func PresetTemplate(role noderole.Role, name, key string) (string, error) {
 	preset, ok := findPreset(role, name)
 	if !ok {
-		names := make([]string, 0, len(cosignerPresets))
+		var names []string
 		for _, p := range Presets(role) {
 			names = append(names, p.Name)
 		}
@@ -87,6 +120,9 @@ func PresetTemplate(role noderole.Role, name, key string) (string, error) {
 	if preset.Placeholders {
 		header += fmt.Sprintf("// Fill in every %s... value before applying; check rejects the\n// document until you do.\n", PresetPlaceholderPrefix)
 	}
+	if role == noderole.RoleSigner {
+		header += "// " + strings.Join(wrapWords(SignerPresetNote, 74), "\n// ") + "\n"
+	}
 	return header + body, nil
 }
 
@@ -97,4 +133,24 @@ func findPreset(role noderole.Role, name string) (Preset, bool) {
 		}
 	}
 	return Preset{}, false
+}
+
+// wrapWords breaks text into lines of at most width bytes at spaces.
+func wrapWords(text string, width int) []string {
+	var lines []string
+	line := ""
+	for _, word := range strings.Fields(text) {
+		if line != "" && len(line)+1+len(word) > width {
+			lines = append(lines, line)
+			line = ""
+		}
+		if line != "" {
+			line += " "
+		}
+		line += word
+	}
+	if line != "" {
+		lines = append(lines, line)
+	}
+	return lines
 }

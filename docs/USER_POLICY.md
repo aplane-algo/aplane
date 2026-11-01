@@ -163,6 +163,61 @@ on a cosigner key without a policy of its own, or on the cosigner default,
 first asks for the starting text: the current document, or one of the
 presets.
 
+### Signer presets
+
+A signer key has presets too, stricter starting points than the shipped
+signer default (which allows every transaction type and leaves routing
+misses to the operator default). They share three names with the cosigner
+presets but not their meaning, so the command line takes `--role signer` to
+select them; without `--role`, `--preset` and `--list-presets` mean the
+cosigner presets, as before.
+
+| Preset | Allows | Placeholders |
+|--------|--------|--------------|
+| `deny-all` | Nothing: every transaction is rejected | none |
+| `self-only` | Payments and asset transfers to the sender itself (ASA opt-ins, self-payments, nonzero ones too) | none |
+| `listed-destinations` | Payments and asset transfers to the addresses in `@destinations`; an ASA opt-in passes only if the sender is listed | the destination addresses |
+| `transfers-only` | Payments and asset transfers to any address; amounts are not capped | none |
+
+Every signer preset rejects every other transaction type (application calls,
+asset configuration and freezes, key registration), close-outs, clawbacks
+and routing misses; rejects rekeys to an address this node does not hold;
+sends warnings to review; and leaves self no-op auto-approval off. What the
+presets do not do:
+
+- **They do not approve anything.** A permitted transaction goes to the
+  Operator Default (or to review, when a warning asks for it), so it follows
+  User Auto-Approve: with it off, you approve each one; with it on, nothing
+  asks. No preset changes that setting.
+- **They do not forbid rekeys.** A rekey to another key this signer holds can
+  still be allowed, and that key's own policy then governs the account. A
+  preset limits destinations and transaction types; it is not a custody
+  boundary.
+- **They do not cap amounts.** Only the fee is capped, at 0.08 ALGO per
+  transaction. That stops a client burning the balance in fees on transfers
+  the routes allow. It covers a full group of 16 payments or asset
+  transfers at the minimum fee, every member at its most expensive
+  authorization (a Falcon-delegated LogicSig at the largest program size)
+  with the largest note allowed (76,916 microAlgos). It does not cover a group that
+  pools other transactions' fees onto this key's, such as an app call
+  paying for its inner transactions, or fees under network congestion:
+  raise `max_fee_microalgos` for those.
+- **They do not inherit.** A preset for one key replaces the node default for
+  that key, and may be looser than it.
+
+Routes match the transaction's sender, so `sources: ["*"]` also covers
+accounts rekeyed to the key.
+
+```bash
+apadmin policy template --role signer --list-presets
+apadmin policy template --role signer --preset listed-destinations --key <ADDRESS> > key.json
+```
+
+In the apadmin TUI, `e` on the signer default or on a held key without a
+policy of its own offers the same choice of starting text as on a cosigner.
+appolicy's `n` offers the role's presets after the shipped default and the
+workspace's documents. Both show the notes above before you choose.
+
 ### When to give a key its own file
 
 Keep keys on the default while one rulebook fits them all: the default is
@@ -294,8 +349,9 @@ documents already in the store, which must be plain JSON.
 
 `apadmin policy template --embedded signer|cosigner [--key K]` writes the
 shipped default for that role instead of the node's own, and
-`apadmin policy template --preset NAME [--key K]` writes a
-[cosigner preset](#cosigner-presets). These, with `--list-presets`, are the
+`apadmin policy template [--role signer|cosigner] --preset NAME [--key K]`
+writes a [cosigner preset](#cosigner-presets), or with `--role signer` a
+[signer preset](#signer-presets). These, with `--list-presets`, are the
 forms that need no node and no passphrase, for writing policy on a machine
 that has no store.
 
@@ -333,9 +389,10 @@ load, and applies it only after you press `y`. Nothing is stored before that.
   file of its own opens the editor on the node default with the key filled in,
   marked "No policy of its own yet". Applying it, changed or not, gives the key
   its own policy. Any other document opens exactly as stored.
-- **Cosigner presets.** On a cosigner node, `e` on the default or on a key
-  without a policy of its own first asks what to start from: the document it
-  would open on anyway, or one of the [cosigner presets](#cosigner-presets).
+- **Presets.** `e` on the default or on a key without a policy of its own
+  first asks what to start from: the document it would open on anyway, or
+  one of the role's presets ([cosigner](#cosigner-presets),
+  [signer](#signer-presets)).
 - **Comments are allowed.** `//` and `/* */` comments outside strings are
   removed before the text reaches the node, so they never appear in the
   stored document. A syntax error is still reported at the line and column
@@ -370,8 +427,8 @@ or lock the node when it finishes.
 | `remove K...` | Show the diff, ask for confirmation, then delete the keys' own policies; the keys follow the node default. The default cannot be removed |
 | `template [--key K]` | Write the node's current default policy as the starting document for key K, or annotated as the default itself |
 | `template --embedded signer\|cosigner [--key K]` | Write the shipped default for that role instead; needs no node and no passphrase |
-| `template --preset NAME [--key K]` | Write a cosigner preset instead; needs no node and no passphrase |
-| `template --list-presets` | List the cosigner presets |
+| `template [--role signer\|cosigner] --preset NAME [--key K]` | Write a preset instead (cosigner without `--role`); needs no node and no passphrase |
+| `template [--role signer\|cosigner] --list-presets` | List the presets for the role (cosigner without `--role`) |
 
 `apply` and `remove` ask "Apply these changes?" on the terminal. Pass `--yes`
 to skip the question in scripts; without a terminal and without `--yes` they
@@ -636,7 +693,8 @@ appolicy test policy/               # re-run the saved cases in policy/.appolicy
     node context as for try.
   - **New documents:** `n` asks which document (the default or a key), what
     it starts from (the shipped default for the role, a copy of a workspace
-    document, or a cosigner preset), and its file name, and opens it unsaved.
+    document, or one of the role's presets), and its file name, and opens it
+    unsaved.
   - A file that is not valid JSON opens read-only: repair it in a text
     editor and press `r`. Quitting with unsaved edits asks first.
 - **check** decodes each file with the node's own decoder, so it reports the
