@@ -6,6 +6,9 @@ package policy
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -337,4 +340,208 @@ func (n DraftNode) Items() []DraftNode {
 		out[i] = DraftNode{n: item}
 	}
 	return out
+}
+
+// Edits. Each returns a new Draft and leaves the receiver unchanged, so an
+// editor can keep earlier drafts for undo. A value is given as JSON text and
+// parsed with the decoder's parser, so an edit can make a document invalid
+// policy but never invalid JSON.
+
+// Set replaces the value at pointer, or adds a member when pointer names a
+// member its parent object lacks (appended after the existing members).
+func (d *Draft) Set(pointer string, value []byte) (*Draft, error) {
+	v, err := parseEditValue(value)
+	if err != nil {
+		return nil, err
+	}
+	if pointer == "" {
+		return newEditedDraft(v)
+	}
+	return d.edit(pointer, func(parent *jsonNode, token string) error {
+		switch parent.kind {
+		case nodeObject:
+			if _, ok := parent.members[token]; !ok {
+				parent.keys = append(parent.keys, token)
+			}
+			parent.members[token] = v
+		case nodeArray:
+			i, err := arrayIndex(token, len(parent.items))
+			if err != nil {
+				return err
+			}
+			parent.items[i] = v
+		default:
+			return fmt.Errorf("cannot set a member of a %s", parent.kind)
+		}
+		return nil
+	})
+}
+
+// Insert adds value to an array at the index pointer's last token names
+// (0 through the length), or at the end for "-".
+func (d *Draft) Insert(pointer string, value []byte) (*Draft, error) {
+	v, err := parseEditValue(value)
+	if err != nil {
+		return nil, err
+	}
+	return d.edit(pointer, func(parent *jsonNode, token string) error {
+		if parent.kind != nodeArray {
+			return fmt.Errorf("cannot insert into a %s", parent.kind)
+		}
+		i := len(parent.items)
+		if token != "-" {
+			if i, err = arrayIndex(token, len(parent.items)+1); err != nil {
+				return err
+			}
+		}
+		parent.items = append(parent.items, nil)
+		copy(parent.items[i+1:], parent.items[i:])
+		parent.items[i] = v
+		return nil
+	})
+}
+
+// Remove deletes the object member or array item at pointer.
+func (d *Draft) Remove(pointer string) (*Draft, error) {
+	return d.edit(pointer, func(parent *jsonNode, token string) error {
+		switch parent.kind {
+		case nodeObject:
+			if _, ok := parent.members[token]; !ok {
+				return fmt.Errorf("no member %q to remove", token)
+			}
+			delete(parent.members, token)
+			parent.keys = slices.DeleteFunc(parent.keys, func(k string) bool { return k == token })
+		case nodeArray:
+			i, err := arrayIndex(token, len(parent.items))
+			if err != nil {
+				return err
+			}
+			parent.items = slices.Delete(parent.items, i, i+1)
+		default:
+			return fmt.Errorf("cannot remove a member of a %s", parent.kind)
+		}
+		return nil
+	})
+}
+
+// Rename gives the object member at pointer a new name, keeping its place in
+// the member order. Renaming onto an existing member is an error.
+func (d *Draft) Rename(pointer, name string) (*Draft, error) {
+	return d.edit(pointer, func(parent *jsonNode, token string) error {
+		if parent.kind != nodeObject {
+			return fmt.Errorf("cannot rename a member of a %s", parent.kind)
+		}
+		v, ok := parent.members[token]
+		if !ok {
+			return fmt.Errorf("no member %q to rename", token)
+		}
+		if name == token {
+			return nil
+		}
+		if _, taken := parent.members[name]; taken {
+			return fmt.Errorf("a member named %q already exists", name)
+		}
+		delete(parent.members, token)
+		parent.members[name] = v
+		for i, k := range parent.keys {
+			if k == token {
+				parent.keys[i] = name
+			}
+		}
+		return nil
+	})
+}
+
+// edit applies change to a copy of the draft at the parent of pointer, then
+// recomputes every node's pointer and checks the nesting limit.
+func (d *Draft) edit(pointer string, change func(parent *jsonNode, token string) error) (*Draft, error) {
+	if pointer == "" || !strings.HasPrefix(pointer, "/") {
+		return nil, fmt.Errorf("pointer %q does not name a member or item", pointer)
+	}
+	root := cloneNode(d.root)
+	tokens := strings.Split(pointer[1:], "/")
+	for i, t := range tokens {
+		tokens[i] = strings.ReplaceAll(strings.ReplaceAll(t, "~1", "/"), "~0", "~")
+	}
+	parent := root
+	for _, t := range tokens[:len(tokens)-1] {
+		switch parent.kind {
+		case nodeObject:
+			parent = parent.members[t]
+		case nodeArray:
+			i, err := arrayIndex(t, len(parent.items))
+			if err != nil {
+				return nil, fmt.Errorf("%s: %w", pointer, err)
+			}
+			parent = parent.items[i]
+		default:
+			parent = nil
+		}
+		if parent == nil {
+			return nil, fmt.Errorf("%s: no such value", pointer)
+		}
+	}
+	if err := change(parent, tokens[len(tokens)-1]); err != nil {
+		return nil, fmt.Errorf("%s: %w", pointer, err)
+	}
+	return newEditedDraft(root)
+}
+
+func newEditedDraft(root *jsonNode) (*Draft, error) {
+	if depth := setPointers(root, "", 0); depth > maxPolicyDocumentDepth {
+		return nil, docErrorf("", "nesting deeper than %d levels", maxPolicyDocumentDepth)
+	}
+	return &Draft{root: root}, nil
+}
+
+// parseEditValue parses a value given as JSON text.
+func parseEditValue(value []byte) (*jsonNode, error) {
+	v, err := parseJSONTree(value)
+	if err != nil {
+		var docErr *DocumentError
+		if errors.As(err, &docErr) {
+			return nil, fmt.Errorf("value: %s", docErr.Msg)
+		}
+		return nil, err
+	}
+	return v, nil
+}
+
+func arrayIndex(token string, n int) (int, error) {
+	i, err := strconv.Atoi(token)
+	if err != nil || i < 0 || i >= n || strconv.Itoa(i) != token {
+		return 0, fmt.Errorf("index %q is out of range", token)
+	}
+	return i, nil
+}
+
+func cloneNode(n *jsonNode) *jsonNode {
+	c := *n
+	if n.members != nil {
+		c.keys = append([]string(nil), n.keys...)
+		c.members = make(map[string]*jsonNode, len(n.members))
+		for k, m := range n.members {
+			c.members[k] = cloneNode(m)
+		}
+	}
+	if n.items != nil {
+		c.items = make([]*jsonNode, len(n.items))
+		for i, item := range n.items {
+			c.items[i] = cloneNode(item)
+		}
+	}
+	return &c
+}
+
+// setPointers gives every node its pointer and returns the nesting depth.
+func setPointers(n *jsonNode, pointer string, depth int) int {
+	n.pointer = pointer
+	deepest := depth
+	for _, k := range n.keys {
+		deepest = max(deepest, setPointers(n.members[k], pointer+"/"+escapeJSONPointer(k), depth+1))
+	}
+	for i, item := range n.items {
+		deepest = max(deepest, setPointers(item, pointer+"/"+strconv.Itoa(i), depth+1))
+	}
+	return deepest
 }
