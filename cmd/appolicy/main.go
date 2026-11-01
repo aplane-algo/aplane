@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-// Command appolicy checks, formats and explains policy files without a node.
-// It reads and writes only the files it is given, plus, read-only, the
-// signer's ASA metadata cache. Installing policy stays with apadmin policy
+// Command appolicy checks, formats, explains and tries policy files without a
+// node. It reads and writes only the files it is given, plus, read-only, the
+// signer's ASA metadata cache and network mapping. Installing policy stays with apadmin policy
 // check and apply.
 package main
 
@@ -54,6 +54,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runFmt(args[1:], stdout, stderr)
 	case "explain":
 		return runExplain(args[1:], stdout, stderr)
+	case "try":
+		return runTry(args[1:], stdout, stderr)
 	case "open":
 		return runOpen(args[1:], stderr)
 	}
@@ -86,6 +88,10 @@ func usage(w io.Writer) {
   appolicy check [--json] PATH...
   appolicy fmt [--check] [--strip-comments] PATH...
   appolicy explain [--signer-data DIR] FILE
+  appolicy try FILE --from ADDR --to ADDR|self [--amount N] [--asset ID]
+               [--network NAME] [--fee N] [--close-to ADDR]
+               [--clawback-from ADDR] [--rekey-to ADDR [--rekey-held]]
+               [--signer-data DIR] [--json]
 
 PATH is a policy file, or a directory whose *.json files are policy files.
 Each document is identified by its "key" field, not its file name.
@@ -101,6 +107,13 @@ Each document is identified by its "key" field, not its file name.
   explain  describe a valid document in plain language. ASA amounts use the
            built-in asset table and, read-only, the signer's ASA cache in
            --signer-data (default $APSIGNER_DATA).
+  try      ask what one valid document decides for one transaction, through
+           the signer's own policy evaluator: rejects, requires review,
+           approves, or leaves it to the operator default. A cosigner
+           document permits or rejects. It answers for the document only and
+           lists what it assumed; the network mapping comes from
+           --signer-data's config.yaml, else the built-in networks. Exit 0
+           whatever the verdict, 2 for bad input.
 
 appolicy never contacts a node. Install policy with apadmin policy check and
 apadmin policy apply.

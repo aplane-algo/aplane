@@ -164,6 +164,78 @@ func TestExplain(t *testing.T) {
 	}
 }
 
+const (
+	treasuryAddr = "CEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI7JH2AYM"
+	opsMainnet   = "EIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRDOHSEZI"
+)
+
+func TestTry(t *testing.T) {
+	path := put(t, t.TempDir(), "treasury.json", fixture(t, "signer_key_full.json"))
+	signerData := t.TempDir()
+	before := tree(t, signerData)
+	tests := []struct {
+		name    string
+		args    []string
+		outcome string
+		ruleID  string
+	}{
+		{name: "within the route and the limits", args: []string{"--amount", "100000000"}, outcome: "default"},
+		// The document's own limit asks first, before the route's 500 ALGO.
+		{name: "above the document's review limit", args: []string{"--amount", "100000001"}, outcome: "review", ruleID: "review_algo_payment_exceeded"},
+		{name: "above the document's reject limit", args: []string{"--amount", "1000000001"}, outcome: "reject"},
+		{name: "no route on testnet", args: []string{"--amount", "1", "--network", "testnet"}, outcome: "reject"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// Flags may follow the file.
+			args := append([]string{"try", path, "--json", "--signer-data", signerData, "--from", treasuryAddr, "--to", opsMainnet, "--network", "mainnet"}, tc.args...)
+			code, out, errOut := appolicy(args...)
+			if code != exitOK {
+				t.Fatalf("try: exit %d: %s", code, errOut)
+			}
+			var report tryReport
+			if err := json.Unmarshal([]byte(out), &report); err != nil {
+				t.Fatalf("try --json output: %v\n%s", err, out)
+			}
+			if report.Outcome != tc.outcome || report.RuleID != tc.ruleID || report.Role != "signer" {
+				t.Fatalf("report = %+v, want outcome %q rule %q", report, tc.outcome, tc.ruleID)
+			}
+			if tc.outcome == "reject" && len(report.Violations) == 0 {
+				t.Fatal("a rejection lists no violations")
+			}
+			if !strings.Contains(strings.Join(report.Assumes, "\n"), "no config.yaml in "+signerData) {
+				t.Fatalf("assumptions = %q, want the network source", report.Assumes)
+			}
+		})
+	}
+	if after := tree(t, signerData); after != before {
+		t.Fatalf("try wrote to the signer data directory:\nbefore %s\nafter  %s", before, after)
+	}
+
+	code, out, _ := appolicy("try", "--signer-data", "", "--from", treasuryAddr, "--to", "self", path)
+	if code != exitOK || !strings.Contains(out, "treasury.json (signer document") || !strings.Contains(out, "assumed:\n  - built-in networks only") {
+		t.Fatalf("try text output: exit %d\n%s", code, out)
+	}
+}
+
+func TestTryRefusesBadInput(t *testing.T) {
+	path := put(t, t.TempDir(), "treasury.json", fixture(t, "signer_key_full.json"))
+	bad := put(t, t.TempDir(), "bad.json", []byte("{"))
+	for name, args := range map[string][]string{
+		"no file":              {"try", "--from", treasuryAddr, "--to", "self"},
+		"two files":            {"try", path, path, "--from", treasuryAddr, "--to", "self"},
+		"invalid document":     {"try", bad, "--from", treasuryAddr, "--to", "self"},
+		"no sender":            {"try", path, "--to", opsMainnet},
+		"held without a rekey": {"try", path, "--from", treasuryAddr, "--to", "self", "--rekey-held"},
+		"unknown network":      {"try", path, "--from", treasuryAddr, "--to", "self", "--network", "nowhere"},
+		"unknown flag":         {"try", path, "--bogus"},
+	} {
+		if code, _, _ := appolicy(append(args, "--signer-data", "")...); code != exitUsage {
+			t.Errorf("%s: exit %d, want %d", name, code, exitUsage)
+		}
+	}
+}
+
 func TestRetiredAndUnknownInvocations(t *testing.T) {
 	for _, args := range [][]string{{"-online"}, {"--check", "x.json"}, {"-yaml"}, {"-save"}, {"-to-sentry"}} {
 		code, _, errOut := appolicy(args...)

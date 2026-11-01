@@ -405,7 +405,7 @@ state.
 
 ### Checking policy files offline with appolicy
 
-`appolicy` edits, checks, formats, and explains policy files without a node,
+`appolicy` edits, checks, formats, explains, and tries policy files without a node,
 a store, or a passphrase. It is installed with the signer binaries.
 
 ```bash
@@ -415,6 +415,8 @@ appolicy check policy/              # every *.json file in a directory
 appolicy check --json policy/       # the same report as JSON, for CI
 appolicy fmt policy/                # rewrite files in canonical form
 appolicy explain treasury.json      # one document in plain language
+appolicy try treasury.json --from ADDR --to ADDR --amount 600000000 --network mainnet
+                                    # what the document decides for one transaction
 ```
 
 - **The editor.** `appolicy PATH...` (or `appolicy open PATH...`) opens a
@@ -470,6 +472,26 @@ appolicy explain treasury.json      # one document in plain language
   `--strip-comments` (move notes into `description` fields), and refuses to
   overwrite a file that changed on disk after it was read. `--check` only
   lists the files it would change.
+- **try** asks what one valid document decides for one transaction, through
+  the same policy evaluator the signer runs. A signer document rejects the
+  transaction, requires review (naming the rule), approves it without review
+  (the self no-op rule), or leaves it to the operator default; a cosigner
+  document permits or rejects it. Describe the transaction with `--from`,
+  `--to` (an address or `self`), `--amount` in base units (microAlgos, or the
+  asset's raw units), and optionally `--asset`, `--network` (default
+  `testnet`), `--fee` (default 1000), `--close-to`, `--clawback-from` and
+  `--rekey-to`. A rekey is foreign unless you add `--rekey-held` to say the
+  node holds the target's key. `--json` prints the result as JSON. It exits 0
+  whatever the verdict and 2 for bad input.
+
+  The answer is the document's, not the node's, and it lists what it
+  assumed: the fee you entered, no fee or dummies the signer adds for
+  LogicSig or post-quantum keys, an unknown key type, and no refusals the
+  signer makes before policy. For a cosigner document it also assumes the
+  cosigner holds the witness key and applies this document. Networks come
+  from the signer's `config.yaml` in `--signer-data` (or `$APSIGNER_DATA`),
+  read-only, else the built-in networks only; the same mapping compiles the
+  document, so a custom network's routes resolve.
 - **explain** describes a valid document. Amounts are shown in base units and,
   where the asset's decimals are known, in display units, from the built-in
   asset table and the signer's ASA cache (`--signer-data`, or
