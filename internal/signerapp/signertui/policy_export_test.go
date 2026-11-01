@@ -133,3 +133,33 @@ func TestPolicyExportIsAdvertised(t *testing.T) {
 		t.Fatal("the policies view does not advertise export")
 	}
 }
+
+// TestPolicyExportEndsOnADaemonError: an error the daemon returns for the
+// document request ends the export with the error shown; an error for any
+// other request leaves it waiting.
+func TestPolicyExportEndsOnADaemonError(t *testing.T) {
+	docs := map[string]string{policy.DefaultKey: "{}\n", policyViewKeyA: "{}\n"}
+	m := loadedPoliciesModel(exportSummary(docs, policy.DefaultKey, policyViewKeyA))
+	next, _ := m.handlePoliciesKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	next, _ = next.(Model).handlePolicyExportFormKeys(tea.KeyMsg{Type: tea.KeyEnter})
+	m = next.(Model)
+	id := m.policies.export.pendingID
+	if id == "" || m.policies.export.busy == "" {
+		t.Fatalf("export did not start: %+v", m.policies.export)
+	}
+
+	next, _ = m.Update(ErrorMsg{ID: "list-keys-1", Error: errors.New("list failed")})
+	if got := next.(Model); got.policies.export.pendingID != id || got.policies.export.busy == "" {
+		t.Fatalf("an unrelated error ended the export: %+v", got.policies.export)
+	}
+
+	next, _ = m.Update(ErrorMsg{ID: id, Error: errors.New("authorization denied")})
+	got := next.(Model)
+	if got.viewState != ViewPolicyExportForm || got.policies.export.pendingID != "" || got.policies.export.busy != "" ||
+		!strings.Contains(got.policies.export.err, "authorization denied") {
+		t.Fatalf("after the daemon error: view %v export %+v", got.viewState, got.policies.export)
+	}
+	if !strings.Contains(stripANSI(got.renderPolicyExportForm()), "authorization denied") {
+		t.Fatal("the export form does not show the error")
+	}
+}

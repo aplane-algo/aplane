@@ -275,6 +275,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewState = ViewCosignerExportPath
 			return m, m.waitForMessageCmd()
 		}
+		if next, ok := m.failPendingPolicyExport(msg.ID, msg.Error); ok {
+			return next, next.waitForMessageCmd()
+		}
 		if next, ok := m.failPendingPolicyApply(msg.ID, msg.Error); ok {
 			return next, next.waitForMessageCmd()
 		}
