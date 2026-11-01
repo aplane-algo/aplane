@@ -72,7 +72,7 @@ func run(ctx context.Context, command Command, streams Streams, backend Backend)
 		printStatus(streams.Stdout, view)
 		return nil
 	case VerbExport:
-		doc, err := backend.Document(ctx, command.documentKey())
+		doc, err := backend.Document(ctx, command.documentKey(), "")
 		if err != nil {
 			return err
 		}
@@ -90,7 +90,7 @@ func run(ctx context.Context, command Command, streams Streams, backend Backend)
 		if err != nil {
 			return err
 		}
-		def, err := backend.Document(ctx, policy.DefaultKey)
+		def, err := backend.Document(ctx, policy.DefaultKey, "")
 		if err != nil {
 			return err
 		}
@@ -110,7 +110,7 @@ func run(ctx context.Context, command Command, streams Streams, backend Backend)
 		}
 		return checkDocuments(ctx, backend, streams, adminproto.CheckPolicyRequest{Documents: docs}, names)
 	case VerbDiff:
-		view, err := getPolicy(ctx, backend)
+		view, snapshot, err := getReviewState(ctx, backend)
 		if err != nil {
 			return err
 		}
@@ -118,14 +118,14 @@ func run(ctx context.Context, command Command, streams Streams, backend Backend)
 		if err != nil {
 			return err
 		}
-		diffs, err := diffChange(ctx, backend, view, docs, nil, names)
+		diffs, err := diffChange(ctx, backend, view, snapshot, docs, nil, names)
 		if err != nil {
 			return err
 		}
 		policyreview.PrintDiffs(streams.Stdout, diffs)
 		return nil
 	case VerbApply, VerbRemove:
-		view, err := getPolicy(ctx, backend)
+		view, snapshot, err := getReviewState(ctx, backend)
 		if err != nil {
 			return err
 		}
@@ -141,7 +141,7 @@ func run(ctx context.Context, command Command, streams Streams, backend Backend)
 		if err := checkDocuments(ctx, backend, streams, adminproto.CheckPolicyRequest{Documents: req.Documents, Remove: req.Remove}, names); err != nil {
 			return err
 		}
-		diffs, err := diffChange(ctx, backend, view, req.Documents, req.Remove, names)
+		diffs, err := diffChange(ctx, backend, view, snapshot, req.Documents, req.Remove, names)
 		if err != nil {
 			return err
 		}
@@ -159,7 +159,10 @@ func run(ctx context.Context, command Command, streams Streams, backend Backend)
 				return ErrApplyNotConfirmed
 			}
 		}
+		// The commit is refused if anything the review saw moved: the
+		// documents, the ASA set or the network mapping.
 		req.ExpectedPolicySetSHA256 = view.PolicySetSHA256
+		req.ExpectedSnapshotSHA256 = snapshot
 		result, err := backend.Apply(ctx, req)
 		if err != nil {
 			return err
@@ -178,6 +181,28 @@ func run(ctx context.Context, command Command, streams Streams, backend Backend)
 	default:
 		return fmt.Errorf("unsupported policy command %q", command.Verb)
 	}
+}
+
+// getReviewState reads the policy summary and the node's context, and
+// returns the summary with the composite snapshot a review is made against.
+// The two reads must describe one state; if the policy moved between them,
+// the review is refused rather than mixing two states.
+func getReviewState(ctx context.Context, backend Backend) (adminproto.PolicyView, string, error) {
+	view, err := getPolicy(ctx, backend)
+	if err != nil {
+		return view, "", err
+	}
+	pctx, err := backend.Context(ctx)
+	if err != nil {
+		return view, "", err
+	}
+	if !pctx.Success {
+		return view, "", resultError(pctx.Code, pctx.Error)
+	}
+	if pctx.PolicySetSHA256 != view.PolicySetSHA256 {
+		return view, "", resultError("policy_snapshot_changed", "the node's policy changed while it was being read; run the command again")
+	}
+	return view, pctx.SnapshotSHA256, nil
 }
 
 func getPolicy(ctx context.Context, backend Backend) (adminproto.PolicyView, error) {
@@ -258,7 +283,7 @@ func resultError(code, msg string) error {
 // compared with the node default; a removal is compared with the default in
 // force after the change, which is the submitted one when the same change
 // replaces it. A change to the default also lists the held keys it governs.
-func diffChange(ctx context.Context, backend Backend, view adminproto.PolicyView, docs []adminproto.PolicyDocument, remove []string, names map[string]string) ([]policyreview.DocumentDiff, error) {
+func diffChange(ctx context.Context, backend Backend, view adminproto.PolicyView, snapshot string, docs []adminproto.PolicyDocument, remove []string, names map[string]string) ([]policyreview.DocumentDiff, error) {
 	role, err := noderole.ParseRole(view.NodeRole)
 	if err != nil {
 		return nil, err
@@ -268,7 +293,10 @@ func diffChange(ctx context.Context, backend Backend, view adminproto.PolicyView
 		own[doc.Key] = true
 	}
 	fetch := func(key string) (string, error) {
-		current, err := backend.Document(ctx, key)
+		// Read against the reviewed snapshot: a document that moved since is
+		// refused, so the diff shows the state the apply will be checked
+		// against.
+		current, err := backend.Document(ctx, key, snapshot)
 		if err != nil {
 			return "", err
 		}

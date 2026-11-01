@@ -47,6 +47,9 @@ type policyApplyState struct {
 	// changed after the review was built is rejected by the node instead of
 	// replaced unseen.
 	reviewedSetSHA256 string
+	// reviewedSnapshot is the composite snapshot taken with it: the ASA set
+	// and network mapping the review was checked against.
+	reviewedSnapshot string
 	// ownCurrent reports that the document the candidate is diffed against
 	// is the key's own, not the node default it follows.
 	ownCurrent bool
@@ -218,7 +221,12 @@ func (m Model) handlePolicyCheckResult(msg PolicyCheckResultMsg) (tea.Model, tea
 		return m, m.waitForMessageCmd()
 	}
 	apply.warnings = warnings
+	if m.policies.snapshot == "" {
+		apply.err = "The node's policy context is still loading; try again"
+		return m, m.waitForMessageCmd()
+	}
 	apply.reviewedSetSHA256 = m.policies.policy.PolicySetSHA256
+	apply.reviewedSnapshot = m.policies.snapshot
 	// The candidate is diffed against the document that governs the key now:
 	// its own, or the node default it follows.
 	key := apply.doc.Key
@@ -230,7 +238,9 @@ func (m Model) handlePolicyCheckResult(msg PolicyCheckResultMsg) (tea.Model, tea
 	apply.pendingDocumentID = newRequestID("policy-apply-doc")
 	id := apply.pendingDocumentID
 	return m, tea.Batch(
-		policyRequestCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendGetPolicyDocument(key, id) }),
+		policyRequestCmd(m.adminClient, id, func(c *IPCClient) error {
+			return c.SendGetPolicyDocumentAt(key, apply.reviewedSnapshot, id)
+		}),
 		m.waitForMessageCmd(),
 	)
 }
@@ -304,7 +314,7 @@ func (m Model) handlePolicyApplyReviewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 		apply.applying = true
 		apply.pendingApplyID = newRequestID("policy-apply")
 		return m, tea.Batch(
-			m.sendApplyPolicyCmd(apply.doc, apply.reviewedSetSHA256, apply.pendingApplyID),
+			m.sendApplyPolicyCmd(apply.doc, apply.reviewedSetSHA256, apply.reviewedSnapshot, apply.pendingApplyID),
 			m.waitForMessageCmd(),
 		)
 	case "up", "k":
@@ -599,14 +609,17 @@ func (m Model) sendCheckPolicyCmd(doc adminproto.PolicyDocument, id string) tea.
 
 // SendApplyPolicy asks the daemon to install one document against the policy
 // set the operator reviewed.
-func (c *IPCClient) SendApplyPolicy(doc adminproto.PolicyDocument, expectedPolicySetSHA256, id string) error {
+func (c *IPCClient) SendApplyPolicy(doc adminproto.PolicyDocument, expectedPolicySetSHA256, expectedSnapshot, id string) error {
 	return c.sendMessage(protocol.ApplyPolicyMessage{
 		BaseMessage:             BaseMessage{Type: protocol.MsgTypeApplyPolicy, ID: id},
 		Documents:               []protocol.PolicyDocumentWire{{Key: doc.Key, Document: doc.Document}},
 		ExpectedPolicySetSHA256: expectedPolicySetSHA256,
+		ExpectedSnapshotSHA256:  expectedSnapshot,
 	})
 }
 
-func (m Model) sendApplyPolicyCmd(doc adminproto.PolicyDocument, expectedPolicySetSHA256, id string) tea.Cmd {
-	return policyRequestCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendApplyPolicy(doc, expectedPolicySetSHA256, id) })
+func (m Model) sendApplyPolicyCmd(doc adminproto.PolicyDocument, expectedPolicySetSHA256, expectedSnapshot, id string) tea.Cmd {
+	return policyRequestCmd(m.adminClient, id, func(c *IPCClient) error {
+		return c.SendApplyPolicy(doc, expectedPolicySetSHA256, expectedSnapshot, id)
+	})
 }

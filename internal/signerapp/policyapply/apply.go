@@ -19,6 +19,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/asaset"
+	"github.com/aplane-algo/aplane/internal/asasetstore"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore"
@@ -352,6 +353,22 @@ func Commit(env Env, req adminproto.ApplyPolicyRequest) (Outcome, error) {
 	}
 	if !strings.EqualFold(req.ExpectedPolicySetSHA256, current.SetSHA256()) {
 		return Outcome{}, Error{"policy_snapshot_changed", "active policy changed; reload it and try again"}
+	}
+	// The review covered the policy and its context: the ASA set and the
+	// network mapping it was checked and rendered against.
+	if strings.TrimSpace(req.ExpectedSnapshotSHA256) == "" {
+		return Outcome{}, Error{"expected_snapshot_sha256_required", "apply requires the snapshot_sha256 of the policy and context it was reviewed against"}
+	}
+	set, err := asasetstore.Load(active, env.Keyring)
+	if err != nil {
+		return Outcome{}, Error{"policy_verify_failed", fmt.Sprintf("verify active asa set: %v", err)}
+	}
+	reviewEnv := env
+	reviewEnv.ASASet = set
+	if _, snapshot, err := Snapshot(reviewEnv, current); err != nil {
+		return Outcome{}, Error{"policy_context_unavailable", err.Error()}
+	} else if !strings.EqualFold(req.ExpectedSnapshotSHA256, snapshot) {
+		return Outcome{}, Error{"policy_snapshot_changed", "the node's ASA set or network mapping changed since this change was reviewed; review it again"}
 	}
 	candidate, problems, err := Candidate(env, current, req.Documents, req.Remove)
 	if err != nil {

@@ -147,6 +147,7 @@ func (s *Session) HandleApplyPolicy(msg *protocol.ApplyPolicyMessage) {
 		Documents:               AdminPolicyDocuments(msg.Documents),
 		Remove:                  msg.Remove,
 		ExpectedPolicySetSHA256: msg.ExpectedPolicySetSHA256,
+		ExpectedSnapshotSHA256:  msg.ExpectedSnapshotSHA256,
 	})
 	_ = s.WriteJSON(ProtocolApplyPolicyResultMessage(msg.ID, result))
 }

@@ -577,6 +577,10 @@ type ApplyPolicyRequest struct {
 	Documents               []PolicyDocument
 	Remove                  []string
 	ExpectedPolicySetSHA256 string
+	// ExpectedSnapshotSHA256 is the composite snapshot (policy set plus
+	// context) the change was reviewed against; the commit is refused if the
+	// documents, the ASA set or the network mapping moved since.
+	ExpectedSnapshotSHA256 string
 }
 
 // ApplyPolicyResult reports an apply; Policy is the new active policy.

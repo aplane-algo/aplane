@@ -404,3 +404,16 @@ func TestWrapIndentedLineKeepsIndentation(t *testing.T) {
 		t.Fatalf("short line = %q", got)
 	}
 }
+
+// A review needs the snapshot of the summary it was checked against, so it
+// waits while the context read is outstanding.
+func TestPolicyApplyWaitsForTheContext(t *testing.T) {
+	m := cosignerPoliciesModel("default")
+	m.policies.snapshot = ""
+	path := writePolicyApplyFile(t, "key-a.json", policyApplyCosignerDoc(policyViewKeyA, ""))
+	m, _ = submitPolicyApplyPath(t, m, path)
+	m = deliverPolicyCheck(m, protocol.CheckPolicyResultMessage{Success: true, Valid: true})
+	if m.policies.apply.pendingDocumentID != "" || !strings.Contains(m.policies.apply.err, "still loading") {
+		t.Fatalf("apply %+v, want the review refused until the context arrives", m.policies.apply)
+	}
+}

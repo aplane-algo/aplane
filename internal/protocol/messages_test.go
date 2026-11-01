@@ -143,10 +143,11 @@ func TestMessageTypeConstantsAreUnique(t *testing.T) {
 	}
 }
 
-// 6.1 adds the ASA set messages, which older clients do not send.
-func TestCurrentAdminProtocolVersionIsAtomicStoreV6(t *testing.T) {
-	if got := CurrentAdminProtocolVersion(); got != (ProtocolVersion{Major: 6, Minor: 1}) {
-		t.Fatalf("CurrentAdminProtocolVersion() = %+v, want 6.1", got)
+// 7.0 makes apply_policy name the composite snapshot it was reviewed
+// against, which a 6.x client does not send.
+func TestCurrentAdminProtocolVersionIsV7(t *testing.T) {
+	if got := CurrentAdminProtocolVersion(); got != (ProtocolVersion{Major: 7, Minor: 0}) {
+		t.Fatalf("CurrentAdminProtocolVersion() = %+v, want 7.0", got)
 	}
 }
 
@@ -951,6 +952,7 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 				Documents:               []PolicyDocumentWire{{Key: "K1", Document: "{}"}},
 				Remove:                  []string{"K2"},
 				ExpectedPolicySetSHA256: "set1",
+				ExpectedSnapshotSHA256:  "snap1",
 			},
 			wantMap: map[string]any{
 				"type":                       MsgTypeApplyPolicy,
@@ -958,6 +960,7 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 				"documents":                  []any{map[string]any{"key": "K1", "document": "{}"}},
 				"remove":                     []any{"K2"},
 				"expected_policy_set_sha256": "set1",
+				"expected_snapshot_sha256":   "snap1",
 			},
 		},
 		{
@@ -1127,7 +1130,7 @@ func TestAdminPassphraseMessagesKeepStringJSONShape(t *testing.T) {
 	}{
 		{
 			name:       "auth",
-			raw:        []byte(`{"kind":"request","type":"auth","id":"auth-1","passphrase":"auth-secret","protocol_version":{"major":6,"minor":0}}`),
+			raw:        []byte(`{"kind":"request","type":"auth","id":"auth-1","passphrase":"auth-secret","protocol_version":{"major":7,"minor":0}}`),
 			msg:        &AuthMessage{},
 			fieldNames: []string{"passphrase"},
 			values:     []string{"auth-secret"},

@@ -95,6 +95,7 @@ const (
 	MsgTypeGetAdminSettings         = protocol.MsgTypeGetAdminSettings
 	MsgTypeAdminSettings            = protocol.MsgTypeAdminSettings
 	MsgTypePolicy                   = protocol.MsgTypePolicy
+	MsgTypePolicyContext            = protocol.MsgTypePolicyContext
 	MsgTypePolicyDocument           = protocol.MsgTypePolicyDocument
 	MsgTypeCheckPolicyResult        = protocol.MsgTypeCheckPolicyResult
 	MsgTypeApplyPolicyResult        = protocol.MsgTypeApplyPolicyResult
@@ -200,6 +201,7 @@ type (
 	UpdateAdminSettingMessage            = protocol.UpdateAdminSettingMessage
 	UpdateAdminSettingResultMessage      = protocol.UpdateAdminSettingResultMessage
 	PolicyMessage                        = protocol.PolicyMessage
+	PolicyContextMessage                 = protocol.PolicyContextMessage
 	PolicyDocumentMessage                = protocol.PolicyDocumentMessage
 	CheckPolicyResultMessage             = protocol.CheckPolicyResultMessage
 	ApplyPolicyResultMessage             = protocol.ApplyPolicyResultMessage

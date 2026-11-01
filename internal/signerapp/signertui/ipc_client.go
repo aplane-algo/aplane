@@ -620,6 +620,9 @@ var signerMessageDecoders = map[string]func(raw []byte) (tea.Msg, error){
 	MsgTypePolicy: decodeAs(func(policyMsg PolicyMessage) tea.Msg {
 		return PolicyLoadedMsg{Policy: policyMsg}
 	}),
+	MsgTypePolicyContext: decodeAs(func(contextMsg PolicyContextMessage) tea.Msg {
+		return PolicyContextLoadedMsg{Context: contextMsg}
+	}),
 	MsgTypePolicyDocument: decodeAs(func(documentMsg PolicyDocumentMessage) tea.Msg {
 		return PolicyDocumentLoadedMsg{Document: documentMsg}
 	}),

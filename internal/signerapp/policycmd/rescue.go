@@ -6,6 +6,7 @@ package policycmd
 import (
 	"context"
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/asasetstore"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/crypto"
@@ -116,6 +117,9 @@ func (b *offlineBackend) reload() error {
 	if b.current, err = policyruntime.Load(b.env.Role, b.env.DataDir, b.env.Config, active, b.env.Keyring); err != nil {
 		return fmt.Errorf("verify active policy: %w", err)
 	}
+	if b.env.ASASet, err = asasetstore.Load(active, b.env.Keyring); err != nil {
+		return fmt.Errorf("verify active asa set: %w", err)
+	}
 	b.env.HeldKeys, err = policyapply.HeldPolicyKeysInGeneration(b.env.Role, active)
 	return err
 }
@@ -124,7 +128,16 @@ func (b *offlineBackend) Get(context.Context) (adminproto.PolicyView, error) {
 	return policyapply.View(b.current, b.env.HeldKeys, ""), nil
 }
 
-func (b *offlineBackend) Document(_ context.Context, key string) (adminproto.PolicyDocumentResult, error) {
+func (b *offlineBackend) Context(context.Context) (adminproto.PolicyContextView, error) {
+	return policyapply.ContextView(b.env, b.current), nil
+}
+
+func (b *offlineBackend) Document(_ context.Context, key, expectedSnapshot string) (adminproto.PolicyDocumentResult, error) {
+	if expectedSnapshot != "" {
+		if _, snapshot, err := policyapply.Snapshot(b.env, b.current); err != nil || snapshot != expectedSnapshot {
+			return adminproto.PolicyDocumentResult{Key: key, Code: "policy_snapshot_changed", Error: "the node's policy or its context changed since the snapshot; read it again"}, nil
+		}
+	}
 	return policyapply.Document(b.current, key), nil
 }
 

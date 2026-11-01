@@ -170,7 +170,11 @@ func (s Streams) normalized() Streams {
 // through the store.
 type Backend interface {
 	Get(context.Context) (adminproto.PolicyView, error)
-	Document(ctx context.Context, key string) (adminproto.PolicyDocumentResult, error)
+	// Context is the node's policy context with its digests.
+	Context(context.Context) (adminproto.PolicyContextView, error)
+	// Document reads one document; a non-empty expectedSnapshot refuses the
+	// read if the policy or context moved since that snapshot.
+	Document(ctx context.Context, key, expectedSnapshot string) (adminproto.PolicyDocumentResult, error)
 	Check(context.Context, adminproto.CheckPolicyRequest) (adminproto.CheckPolicyResult, error)
 	Apply(context.Context, adminproto.ApplyPolicyRequest) (adminproto.ApplyPolicyResult, error)
 }

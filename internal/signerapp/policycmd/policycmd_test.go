@@ -65,12 +65,16 @@ type fakeOnlineSession struct {
 	applyResult      *protocol.ApplyPolicyResultMessage
 	checks           []protocol.CheckPolicyMessage
 	applies          []protocol.ApplyPolicyMessage
+	// snapshot is the node's composite snapshot; contextSet, when set, is a
+	// policy set digest the context reports instead of the summary's.
+	snapshot   string
+	contextSet string
 }
 
 // newFakeSession returns a session for a node of role holding docs. A node
 // always has a default; the shipped one stands in when docs carry none.
 func newFakeSession(role string, docs ...protocol.PolicyDocumentWire) *fakeOnlineSession {
-	f := &fakeOnlineSession{status: "unlocked", bodies: map[string]string{}, policy: protocol.PolicyMessage{
+	f := &fakeOnlineSession{status: "unlocked", bodies: map[string]string{}, snapshot: "active-snapshot", policy: protocol.PolicyMessage{
 		Success: true, NodeRole: role, PolicySetSHA256: "active-set",
 	}}
 	hasDefault := false
@@ -108,9 +112,19 @@ func (f *fakeOnlineSession) SendAndReceive(message interface{}, _ time.Duration)
 		reply := f.policy
 		reply.BaseMessage = protocol.BaseMessage{Type: protocol.MsgTypePolicy, ID: request.ID}
 		return protocol.MarshalAdminMessage(reply)
+	case protocol.GetPolicyContextMessage:
+		set := f.policy.PolicySetSHA256
+		if f.contextSet != "" {
+			set = f.contextSet
+		}
+		reply := protocol.PolicyContextMessage{Success: true, NodeRole: f.policy.NodeRole, PolicySetSHA256: set, SnapshotSHA256: f.snapshot}
+		reply.BaseMessage = protocol.BaseMessage{Type: protocol.MsgTypePolicyContext, ID: request.ID}
+		return protocol.MarshalAdminMessage(reply)
 	case protocol.GetPolicyDocumentMessage:
 		reply := protocol.PolicyDocumentMessage{Code: "policy_document_not_found", Error: "no such policy"}
-		if body, ok := f.bodies[request.Key]; ok {
+		if request.ExpectedSnapshotSHA256 != "" && request.ExpectedSnapshotSHA256 != f.snapshot {
+			reply = protocol.PolicyDocumentMessage{Code: "policy_snapshot_changed", Error: "the node's policy or its context changed since the snapshot"}
+		} else if body, ok := f.bodies[request.Key]; ok {
 			reply = protocol.PolicyDocumentMessage{Success: true, Key: request.Key, Document: body}
 		}
 		reply.BaseMessage = protocol.BaseMessage{Type: protocol.MsgTypePolicyDocument, ID: request.ID}
@@ -209,7 +223,7 @@ func TestOnlineApplyChecksThenAppliesExactBytesAgainstActiveSet(t *testing.T) {
 		t.Fatalf("checks %d applies %d, want 1 each", len(session.checks), len(session.applies))
 	}
 	apply := session.applies[0]
-	if apply.ExpectedPolicySetSHA256 != "active-set" || len(apply.Documents) != 2 ||
+	if apply.ExpectedPolicySetSHA256 != "active-set" || apply.ExpectedSnapshotSHA256 != "active-snapshot" || len(apply.Documents) != 2 ||
 		apply.Documents[0].Key != testKeyA || apply.Documents[0].Document != testCosignerDoc(testKeyA) ||
 		apply.Documents[1].Key != testKeyB {
 		t.Fatalf("apply request = %+v", apply)
@@ -768,4 +782,43 @@ func TestOnlineDiffGovernedKeysReflectTheWholeChange(t *testing.T) {
 	if note := governedKeysNote(view, docs, []string{testKeyB}); note != " (governs 1 held key(s): "+testKeyB+")" {
 		t.Fatalf("governed note with a key gaining its own document = %q", note)
 	}
+}
+
+// The review is made against one state: a summary and context that disagree
+// stop the command before anything is applied.
+func TestOnlineApplyRefusesASummaryAndContextFromDifferentStates(t *testing.T) {
+	onlineEnv(t)
+	session := newFakeSession("cosigner")
+	session.contextSet = "moved-set"
+	file := writePolicyFile(t, "a.json", testCosignerDoc(testKeyA))
+	err := (OnlineRunner{Session: session}).Run(context.Background(), Command{Verb: VerbApply, Args: []string{file}, Yes: true}, Streams{Stdout: io.Discard, Stderr: io.Discard})
+	if err == nil || !strings.Contains(err.Error(), "changed while it was being read") || len(session.applies) != 0 {
+		t.Fatalf("Run() = %v, applies %d", err, len(session.applies))
+	}
+}
+
+// A node that moves between reading the summary and reading the documents
+// for the diff stops the review: the diff never mixes two states.
+func TestOnlineApplyStopsWhenTheNodeMovesDuringReview(t *testing.T) {
+	onlineEnv(t)
+	session := newFakeSession("cosigner", protocol.PolicyDocumentWire{Key: testKeyA, Document: testCosignerDoc(testKeyA)})
+	file := writePolicyFile(t, "a.json", testCosignerDoc(testKeyA))
+	// The context read reports the snapshot; the documents are then served
+	// only for a newer one.
+	moved := &movingSession{fakeOnlineSession: session}
+	err := (OnlineRunner{Session: moved}).Run(context.Background(), Command{Verb: VerbApply, Args: []string{file}, Yes: true}, Streams{Stdout: io.Discard, Stderr: io.Discard})
+	if err == nil || !strings.Contains(err.Error(), "changed since the snapshot") || len(session.applies) != 0 {
+		t.Fatalf("Run() = %v, applies %d", err, len(session.applies))
+	}
+}
+
+// movingSession moves the node's snapshot right after the context is read.
+type movingSession struct{ *fakeOnlineSession }
+
+func (m *movingSession) SendAndReceive(message interface{}, timeout time.Duration) ([]byte, error) {
+	raw, err := m.fakeOnlineSession.SendAndReceive(message, timeout)
+	if _, ok := message.(protocol.GetPolicyContextMessage); ok {
+		m.snapshot = "moved-snapshot"
+	}
+	return raw, err
 }

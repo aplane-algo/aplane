@@ -218,6 +218,7 @@ func applyDefault(t *testing.T, svc Service, sparse string) {
 	result := svc.ApplyPolicy(adminproto.ApplyPolicyRequest{
 		Documents:               []adminproto.PolicyDocument{{Key: policy.DefaultKey, Document: policytest.MustDocument(noderole.RoleSigner, policy.DefaultKey, sparse)}},
 		ExpectedPolicySetSHA256: view.PolicySetSHA256,
+		ExpectedSnapshotSHA256:  svc.GetPolicyContext().SnapshotSHA256,
 	})
 	if !result.Success {
 		t.Fatalf("ApplyPolicy() = %+v", result)

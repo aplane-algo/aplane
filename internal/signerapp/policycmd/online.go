@@ -72,11 +72,39 @@ func (b onlineBackend) Get(context.Context) (adminproto.PolicyView, error) {
 	return viewFromWire(msg), err
 }
 
-func (b onlineBackend) Document(_ context.Context, key string) (adminproto.PolicyDocumentResult, error) {
+func (b onlineBackend) Context(context.Context) (adminproto.PolicyContextView, error) {
+	var msg protocol.PolicyContextMessage
+	err := b.roundTrip(protocol.GetPolicyContextMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeGetPolicyContext, ID: onlineRequestID("policy-context")},
+	}, protocol.MsgTypePolicyContext, &msg)
+	return ContextFromWire(msg), err
+}
+
+// ContextFromWire is the inverse of the server's context projection.
+func ContextFromWire(msg protocol.PolicyContextMessage) adminproto.PolicyContextView {
+	view := adminproto.PolicyContextView{
+		Success: msg.Success, NodeRole: msg.NodeRole, RulesVersion: msg.RulesVersion,
+		ContextSHA256: msg.ContextSHA256, PolicySetSHA256: msg.PolicySetSHA256, SnapshotSHA256: msg.SnapshotSHA256,
+		Code: msg.Code, Error: msg.Error,
+	}
+	for _, n := range msg.Networks {
+		view.Networks = append(view.Networks, adminproto.PolicyNetwork{Network: n.Network, GenesisHash: n.GenesisHash})
+	}
+	for _, a := range msg.Assets {
+		view.Assets = append(view.Assets, adminproto.ASAInfo{
+			Network: a.Network, GenesisHash: a.GenesisHash, AssetID: a.AssetID, Name: a.Name,
+			UnitName: a.UnitName, Decimals: a.Decimals, Origin: a.Origin,
+		})
+	}
+	return view
+}
+
+func (b onlineBackend) Document(_ context.Context, key, expectedSnapshot string) (adminproto.PolicyDocumentResult, error) {
 	var msg protocol.PolicyDocumentMessage
 	err := b.roundTrip(protocol.GetPolicyDocumentMessage{
-		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeGetPolicyDocument, ID: onlineRequestID("policy-document")},
-		Key:         key,
+		BaseMessage:            protocol.BaseMessage{Type: protocol.MsgTypeGetPolicyDocument, ID: onlineRequestID("policy-document")},
+		Key:                    key,
+		ExpectedSnapshotSHA256: expectedSnapshot,
 	}, protocol.MsgTypePolicyDocument, &msg)
 	return adminproto.PolicyDocumentResult{
 		Success: msg.Success, Key: msg.Key, Document: msg.Document, SHA256: msg.SHA256,
@@ -105,6 +133,7 @@ func (b onlineBackend) Apply(_ context.Context, req adminproto.ApplyPolicyReques
 		Documents:               documentsToWire(req.Documents),
 		Remove:                  req.Remove,
 		ExpectedPolicySetSHA256: req.ExpectedPolicySetSHA256,
+		ExpectedSnapshotSHA256:  req.ExpectedSnapshotSHA256,
 	}, protocol.MsgTypeApplyPolicyResult, &msg)
 	result := adminproto.ApplyPolicyResult{
 		Success: msg.Success, Errors: problemsFromWire(msg.Errors),

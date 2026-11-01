@@ -16,8 +16,8 @@ const (
 )
 
 const (
-	AdminProtocolVersionMajor = 6
-	AdminProtocolVersionMinor = 1
+	AdminProtocolVersionMajor = 7
+	AdminProtocolVersionMinor = 0
 )
 
 // ProtocolVersion is the admin IPC protocol version shape surfaced during
@@ -1273,6 +1273,9 @@ type ApplyPolicyMessage struct {
 	Documents               []PolicyDocumentWire `json:"documents,omitempty"`
 	Remove                  []string             `json:"remove,omitempty"`
 	ExpectedPolicySetSHA256 string               `json:"expected_policy_set_sha256"`
+	// ExpectedSnapshotSHA256 is the composite snapshot the change was
+	// reviewed against. Required since admin protocol 7.
+	ExpectedSnapshotSHA256 string `json:"expected_snapshot_sha256"`
 }
 
 // ApplyPolicyResultMessage reports an apply. On success Policy is the new

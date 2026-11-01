@@ -34,6 +34,13 @@ type policiesState struct {
 	// waiting for; responses to any other request are stale and ignored.
 	pendingPolicyID   string
 	pendingDocumentID string
+	// snapshot is the composite snapshot (policy set plus context) of the
+	// summary shown, set only once the context read describes the same
+	// policy set; an apply names it. pendingContextID and loadedContext pair
+	// the two reads, which can arrive in either order.
+	snapshot         string
+	pendingContextID string
+	loadedContext    *PolicyContextMessage
 	// status reports the last apply on the list.
 	status string
 	apply  policyApplyState
@@ -49,6 +56,11 @@ func newRequestID(prefix string) string {
 // PolicyDocumentLoadedMsg carries the daemon's response for one document.
 type PolicyDocumentLoadedMsg struct {
 	Document protocol.PolicyDocumentMessage
+}
+
+// PolicyContextLoadedMsg carries the daemon's policy context response.
+type PolicyContextLoadedMsg struct {
+	Context PolicyContextMessage
 }
 
 // PolicyLoadedMsg carries the daemon's policy response.
@@ -81,7 +93,44 @@ func (m Model) openPolicies() (tea.Model, tea.Cmd) {
 func (m Model) requestPolicy() (tea.Model, tea.Cmd) {
 	m.policies.loading = true
 	m.policies.pendingPolicyID = newRequestID("policy")
-	return m, tea.Batch(m.sendGetPolicyCmd(m.policies.pendingPolicyID), m.waitForMessageCmd())
+	m.policies.pendingContextID = newRequestID("policy-context")
+	m.policies.snapshot, m.policies.loadedContext = "", nil
+	contextID := m.policies.pendingContextID
+	return m, tea.Batch(
+		m.sendGetPolicyCmd(m.policies.pendingPolicyID),
+		ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendGetPolicyContext(contextID) }),
+		m.waitForMessageCmd(),
+	)
+}
+
+// handlePolicyContextLoaded receives the context read paired with the
+// summary.
+func (m Model) handlePolicyContextLoaded(msg PolicyContextLoadedMsg) (tea.Model, tea.Cmd) {
+	if msg.Context.ID == "" || msg.Context.ID != m.policies.pendingContextID {
+		return m, m.waitForMessageCmd()
+	}
+	m.policies.pendingContextID = ""
+	ctx := msg.Context
+	m.policies.loadedContext = &ctx
+	return m.settlePolicySnapshot()
+}
+
+// settlePolicySnapshot pairs the summary and the context once both arrived.
+// They describe one state only when the context names the summary's policy
+// set; otherwise the policy moved between the reads and both are read again.
+func (m Model) settlePolicySnapshot() (tea.Model, tea.Cmd) {
+	ctx := m.policies.loadedContext
+	if m.policies.pendingPolicyID != "" || ctx == nil {
+		return m, m.waitForMessageCmd()
+	}
+	if !ctx.Success || !m.policies.policy.Success {
+		return m, m.waitForMessageCmd()
+	}
+	if ctx.PolicySetSHA256 != m.policies.policy.PolicySetSHA256 {
+		return m.requestPolicy()
+	}
+	m.policies.snapshot = ctx.SnapshotSHA256
+	return m, m.waitForMessageCmd()
 }
 
 func (m Model) handlePolicyLoaded(msg PolicyLoadedMsg) (tea.Model, tea.Cmd) {
@@ -101,7 +150,7 @@ func (m Model) handlePolicyLoaded(msg PolicyLoadedMsg) (tea.Model, tea.Cmd) {
 	if rows := m.policyRows(); m.policies.selected >= len(rows) {
 		m.policies.selected = 0
 	}
-	return m, m.waitForMessageCmd()
+	return m.settlePolicySnapshot()
 }
 
 func (m Model) policyRows() []policyRow {
@@ -354,6 +403,21 @@ func (c *IPCClient) SendGetPolicy(id string) error {
 
 func (m Model) sendGetPolicyCmd(id string) tea.Cmd {
 	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendGetPolicy(id) })
+}
+
+// SendGetPolicyContext requests the node's policy context under request id.
+func (c *IPCClient) SendGetPolicyContext(id string) error {
+	return c.sendMessage(protocol.GetPolicyContextMessage{BaseMessage: BaseMessage{Type: protocol.MsgTypeGetPolicyContext, ID: id}})
+}
+
+// SendGetPolicyDocumentAt requests one policy document under request id,
+// refused by the node if its policy or context moved since snapshot.
+func (c *IPCClient) SendGetPolicyDocumentAt(key, snapshot, id string) error {
+	return c.sendMessage(protocol.GetPolicyDocumentMessage{
+		BaseMessage:            BaseMessage{Type: protocol.MsgTypeGetPolicyDocument, ID: id},
+		Key:                    key,
+		ExpectedSnapshotSHA256: snapshot,
+	})
 }
 
 // SendGetPolicyDocument requests one policy document under request id.

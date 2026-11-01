@@ -28,7 +28,46 @@ func loadedPoliciesModel(policy protocol.PolicyMessage) Model {
 	m = next.(Model)
 	policy.ID = m.policies.pendingPolicyID
 	next, _ = m.handlePolicyLoaded(PolicyLoadedMsg{Policy: policy})
+	return deliverPolicyContext(next.(Model), policy.PolicySetSHA256)
+}
+
+// deliverPolicyContext answers the context read paired with the summary,
+// describing policy set set.
+func deliverPolicyContext(m Model, set string) Model {
+	next, _ := m.handlePolicyContextLoaded(PolicyContextLoadedMsg{Context: protocol.PolicyContextMessage{
+		BaseMessage: BaseMessage{ID: m.policies.pendingContextID}, Success: true,
+		PolicySetSHA256: set, SnapshotSHA256: "snapshot-of-" + set,
+	}})
 	return next.(Model)
+}
+
+func TestPolicySummaryAndContextPairOnOneState(t *testing.T) {
+	m := Model{viewState: ViewKeyList}
+	next, _ := m.openPolicies()
+	m = next.(Model)
+	summaryID := m.policies.pendingPolicyID
+
+	// The context can arrive first; a context of another policy set means the
+	// policy moved between the reads, so both are read again.
+	m = deliverPolicyContext(m, "older-set")
+	if m.policies.snapshot != "" {
+		t.Fatal("a context settled a snapshot before its summary arrived")
+	}
+	next, _ = m.handlePolicyLoaded(PolicyLoadedMsg{Policy: protocol.PolicyMessage{
+		BaseMessage: BaseMessage{ID: summaryID}, Success: true, NodeRole: "signer", PolicySetSHA256: "set-digest",
+	}})
+	m = next.(Model)
+	if m.policies.snapshot != "" || m.policies.pendingPolicyID == "" || m.policies.pendingPolicyID == summaryID || m.policies.pendingContextID == "" {
+		t.Fatalf("mismatched reads: snapshot %q pending %q/%q, want both read again", m.policies.snapshot, m.policies.pendingPolicyID, m.policies.pendingContextID)
+	}
+
+	next, _ = m.handlePolicyLoaded(PolicyLoadedMsg{Policy: protocol.PolicyMessage{
+		BaseMessage: BaseMessage{ID: m.policies.pendingPolicyID}, Success: true, NodeRole: "signer", PolicySetSHA256: "set-digest",
+	}})
+	m = deliverPolicyContext(next.(Model), "set-digest")
+	if m.policies.snapshot != "snapshot-of-set-digest" {
+		t.Fatalf("snapshot = %q, want the context's", m.policies.snapshot)
+	}
 }
 
 func TestKeyListPolicyShortcutOpensPolicies(t *testing.T) {
