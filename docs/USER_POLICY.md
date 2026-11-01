@@ -405,10 +405,11 @@ state.
 
 ### Checking policy files offline with appolicy
 
-`appolicy` checks, formats, and explains policy files without a node, a store,
-or a passphrase. It is installed with the signer binaries.
+`appolicy` browses, checks, formats, and explains policy files without a node,
+a store, or a passphrase. It is installed with the signer binaries.
 
 ```bash
+appolicy policy/                    # browse the files in a terminal UI
 appolicy check treasury.json        # errors and warnings, by JSON Pointer
 appolicy check policy/              # every *.json file in a directory
 appolicy check --json policy/       # the same report as JSON, for CI
@@ -416,6 +417,18 @@ appolicy fmt policy/                # rewrite files in canonical form
 appolicy explain treasury.json      # one document in plain language
 ```
 
+- **Browsing.** `appolicy PATH...` (or `appolicy open PATH...`) opens a
+  terminal UI on the named files. A directory lists its files; a single file
+  opens straight on it. Each document is shown as an outline (summary, guards,
+  fee cap, transaction types, limits, sets, transfers, routes) beside a form
+  of the selected section's fields, with every problem shown on the field it
+  concerns. Fields the document lacks are marked missing, and members the
+  format does not define are listed under "Other fields", so nothing in the
+  file is hidden. Keys: enter on a field shows it in full (for a long
+  description or address list), `]` and `[` jump between problems, `p` lists them,
+  `x` explains the document, `c` compares it with the workspace default or
+  another file you pick, `r` reloads from disk, and `?` lists every key. The
+  browser only reads; editing in it comes later.
 - **check** decodes each file with the node's own decoder, so it reports the
   same errors at the same JSON Pointers, and the same warnings, as
   `apadmin policy check`. It exits 0 when no file has an error and 1 when one
@@ -459,7 +472,9 @@ The earlier `appolicy` edited a node's policy. Its command shapes map to
 | `appolicy --sha256 FILE` | `apadmin policy rescue status` |
 | `appolicy --save` | `apadmin policy rescue apply -` |
 
-There is no wrapper or automatic online-to-rescue fallback.
+There is no wrapper or automatic online-to-rescue fallback. A former command
+line that names a file now opens that file in the browser described above,
+which only reads it.
 
 `apadmin policy rescue` is the stopped-service rescue command family. It takes
 the same verbs, reads the store named by `APSIGNER_DATA` or `-d` directly, and
@@ -1065,8 +1080,8 @@ allow-list is what you add.
 
 Before relying on a policy:
 
-1. While writing, run `appolicy check FILE` and `appolicy explain FILE`; they
-   need no node. Then run `apadmin policy check FILE` (or `apadmin policy
+1. While writing, run `appolicy check FILE` and `appolicy explain FILE`, or
+   browse the file with `appolicy FILE`; they need no node. Then run `apadmin policy check FILE` (or `apadmin policy
    rescue check FILE` while the daemon is stopped), which also checks the
    file against the node's keys, and read its warnings.
 2. Confirm the route miss behavior is intentional, especially

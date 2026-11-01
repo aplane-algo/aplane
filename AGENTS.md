@@ -50,7 +50,7 @@ Apshell is the other major component; it provides a shell-like interface to gene
 - `cmd/appass-file/`: Dev-only plaintext passphrase helper (insecure)
 - `cmd/appass-systemd-creds/`: Production passphrase helper using systemd-creds (TPM2/host key)
 - `cmd/approbe/`: Installer/helper liveness probe and canonical signer IPC-path resolver
-- `cmd/appolicy/`: Offline policy file check, format, and explain; files only, never a node or store
+- `cmd/appolicy/`: Offline policy file browser (terminal UI), check, format, and explain; files only, never a node or store
 - `cmd/aplocalnet/`: LocalNet setup TUI/CLI for algod reachability, client/signer network config, plugin activation, and KMD plugin environment
 - `cmd/compile_teal/`: Dev/build helper that compiles TEAL source to generated Go bytecode
 - `cmd/configdoc/`: Documentation generator for configuration

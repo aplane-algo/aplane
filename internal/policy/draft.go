@@ -6,6 +6,7 @@ package policy
 import (
 	"bytes"
 	"encoding/json"
+	"strconv"
 	"strings"
 )
 
@@ -235,4 +236,105 @@ func writeJSONString(b *bytes.Buffer, s string) error {
 	}
 	b.WriteString(strings.TrimSuffix(out.String(), "\n"))
 	return nil
+}
+
+// DraftNode is one value in a Draft, for reading. The zero DraftNode stands
+// for an absent value: Exists reports false and every accessor returns its
+// zero value, so a caller can walk a broken document without checking each
+// step.
+type DraftNode struct {
+	n *jsonNode
+}
+
+// Root returns the document's top-level value.
+func (d *Draft) Root() DraftNode { return DraftNode{n: d.root} }
+
+// At returns the value a JSON Pointer (RFC 6901) names, or an absent node.
+func (d *Draft) At(pointer string) DraftNode {
+	if pointer == "" {
+		return d.Root()
+	}
+	if !strings.HasPrefix(pointer, "/") {
+		return DraftNode{}
+	}
+	node := d.Root()
+	for _, token := range strings.Split(pointer[1:], "/") {
+		token = strings.ReplaceAll(strings.ReplaceAll(token, "~1", "/"), "~0", "~")
+		switch node.Kind() {
+		case "object":
+			node = node.Member(token)
+		case "array":
+			i, err := strconv.Atoi(token)
+			items := node.Items()
+			if err != nil || i < 0 || i >= len(items) || strconv.Itoa(i) != token {
+				return DraftNode{}
+			}
+			node = items[i]
+		default:
+			return DraftNode{}
+		}
+	}
+	return node
+}
+
+// Exists reports whether the node stands for a value in the document.
+func (n DraftNode) Exists() bool { return n.n != nil }
+
+// Kind is "null", "boolean", "number", "string", "object" or "array", or ""
+// for an absent node.
+func (n DraftNode) Kind() string {
+	if n.n == nil {
+		return ""
+	}
+	return n.n.kind.String()
+}
+
+// Pointer is the node's JSON Pointer in the document.
+func (n DraftNode) Pointer() string {
+	if n.n == nil {
+		return ""
+	}
+	return n.n.pointer
+}
+
+// Text is a string's value or a number's literal text.
+func (n DraftNode) Text() string {
+	if n.n == nil {
+		return ""
+	}
+	return n.n.text
+}
+
+// Bool is a boolean's value.
+func (n DraftNode) Bool() bool { return n.n != nil && n.n.boolean }
+
+// Keys returns an object's member names in document order.
+func (n DraftNode) Keys() []string {
+	if n.n == nil {
+		return nil
+	}
+	return append([]string(nil), n.n.keys...)
+}
+
+// Member returns an object's member, or an absent node.
+func (n DraftNode) Member(key string) DraftNode {
+	if n.n == nil || n.n.kind != nodeObject {
+		return DraftNode{}
+	}
+	if m := n.n.members[key]; m != nil {
+		return DraftNode{n: m}
+	}
+	return DraftNode{}
+}
+
+// Items returns an array's items.
+func (n DraftNode) Items() []DraftNode {
+	if n.n == nil || n.n.kind != nodeArray {
+		return nil
+	}
+	out := make([]DraftNode, len(n.n.items))
+	for i, item := range n.n.items {
+		out[i] = DraftNode{n: item}
+	}
+	return out
 }

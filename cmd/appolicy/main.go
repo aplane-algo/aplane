@@ -18,9 +18,12 @@ import (
 	"sync"
 
 	"github.com/aplane-algo/aplane/internal/asa"
+	"github.com/aplane-algo/aplane/internal/cache"
 	"github.com/aplane-algo/aplane/internal/signerapp/asametadata"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyauthor"
+	"github.com/aplane-algo/aplane/internal/signerapp/policyauthor/authortui"
 	"github.com/aplane-algo/aplane/internal/version"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 const (
@@ -51,12 +54,19 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runFmt(args[1:], stdout, stderr)
 	case "explain":
 		return runExplain(args[1:], stdout, stderr)
+	case "open":
+		return runOpen(args[1:], stderr)
 	}
 	if retired := retiredForm(args); retired != "" {
 		writef(stderr, "appolicy: %s\n", retired)
 		return exitUsage
 	}
-	writef(stderr, "appolicy: unknown command %q\n", args[0])
+	// A path in place of a command opens it: appolicy policy/ is appolicy open
+	// policy/.
+	if _, err := os.Stat(args[0]); err == nil {
+		return runOpen(args, stderr)
+	}
+	writef(stderr, "appolicy: %q is not a command or a file\n", args[0])
 	usage(stderr)
 	return exitUsage
 }
@@ -72,6 +82,7 @@ func writes(w io.Writer, s string) { _, _ = fmt.Fprint(w, s) }
 
 func usage(w io.Writer) {
 	writes(w, `Usage:
+  appolicy [open] [--signer-data DIR] PATH...
   appolicy check [--json] PATH...
   appolicy fmt [--check] [--strip-comments] PATH...
   appolicy explain [--signer-data DIR] FILE
@@ -79,6 +90,8 @@ func usage(w io.Writer) {
 PATH is a policy file, or a directory whose *.json files are policy files.
 Each document is identified by its "key" field, not its file name.
 
+  open     browse the files in a terminal UI: each document's outline, its
+           fields, and their problems. A path in place of a command opens it.
   check    report each file's errors and warnings, by JSON Pointer.
            Exit 0 when no file has an error, 1 when one does.
   fmt      rewrite files in canonical form. A file that is not JSON is left
@@ -102,9 +115,6 @@ func retiredForm(args []string) string {
 		if strings.HasPrefix(args[0], "-") {
 			return fmt.Sprintf("%s is a flag of the retired appolicy, which is not supported; manage a node's policy with apadmin policy (see docs/USER_POLICY.md)", args[0])
 		}
-	}
-	if !strings.HasPrefix(args[0], "-") && strings.HasSuffix(args[0], ".json") {
-		return fmt.Sprintf("appolicy takes a command; to check %s run: appolicy check %s", args[0], args[0])
 	}
 	return ""
 }
@@ -260,21 +270,21 @@ func runExplain(args []string, stdout, stderr io.Writer) int {
 		writef(stderr, "%s is %s; run appolicy check %s\n", f.Path, f.State, f.Path)
 		return exitProblems
 	}
-	writes(stdout, policyauthor.Explain(f.Document, assetLookup(*signerData, stderr)))
+	writes(stdout, policyauthor.Explain(f.Document, assetLookup(*signerData, func(msg string) { writef(stderr, "appolicy: %s\n", msg) })))
 	return exitOK
 }
 
-// assetLookup returns the lookup explain uses: the built-in table, and the
-// signer's cache read-only when a signer data directory is named. A cache
-// that cannot be read or verified is reported once; the built-in entries
-// still answer.
-func assetLookup(signerData string, stderr io.Writer) policyauthor.AssetLookup {
+// assetLookup returns the lookup explain and the TUI use: the built-in table,
+// and the signer's cache read-only when a signer data directory is named. A
+// cache that cannot be read or verified is reported once, through report; the
+// built-in entries still answer.
+func assetLookup(signerData string, report func(string)) policyauthor.AssetLookup {
 	if signerData == "" {
 		return asa.BuiltinMetadata
 	}
 	store, err := asametadata.NewReadOnlyStore(signerData)
 	if err != nil {
-		writef(stderr, "appolicy: %v; using built-in asset metadata only\n", err)
+		report(fmt.Sprintf("%v; using built-in asset metadata only", err))
 		return asa.BuiltinMetadata
 	}
 	var reported sync.Once
@@ -282,9 +292,40 @@ func assetLookup(signerData string, stderr io.Writer) policyauthor.AssetLookup {
 		meta, ok, err := store.MetadataByID(network, assetID)
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
 			reported.Do(func() {
-				writef(stderr, "appolicy: warning: the signer's ASA cache is unusable (%v); amounts use built-in metadata only\n", err)
+				report(fmt.Sprintf("warning: the signer's ASA cache is unusable (%v); amounts use built-in metadata only", err))
 			})
 		}
 		return meta, ok
 	}
+}
+
+// runProgram runs the TUI; tests replace it.
+var runProgram = func(m tea.Model) error {
+	_, err := tea.NewProgram(m, tea.WithAltScreen()).Run()
+	return err
+}
+
+func runOpen(args []string, stderr io.Writer) int {
+	fs := newFlags("open", stderr)
+	signerData := fs.String("signer-data", os.Getenv("APSIGNER_DATA"), "signer data directory whose ASA cache is read, read-only")
+	if err := fs.Parse(args); err != nil {
+		return exitUsage
+	}
+	if fs.NArg() == 0 {
+		writeln(stderr, "appolicy open: name at least one file or directory")
+		return exitUsage
+	}
+	w, ok := openWorkspace(fs.Args(), stderr)
+	if !ok {
+		return exitUsage
+	}
+	// The cache package logs to stdout, which the TUI owns.
+	cache.SetLoggerOutput(io.Discard)
+	var diagnostics []string
+	lookup := assetLookup(*signerData, func(msg string) { diagnostics = append(diagnostics, msg) })
+	if err := runProgram(authortui.New(w, lookup, &diagnostics)); err != nil {
+		writef(stderr, "appolicy: %v\n", err)
+		return exitUsage
+	}
+	return exitOK
 }
