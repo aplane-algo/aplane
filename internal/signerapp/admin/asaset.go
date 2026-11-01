@@ -212,9 +212,9 @@ func (s Service) RemoveASA(req adminproto.RemoveASARequest) adminproto.RemoveASA
 		return next, nil
 	})
 	if err != nil {
-		return adminproto.RemoveASAResult{Code: asaCode(err, "asa_remove_failed"), Error: err.Error(), Blocking: blocking, BlockingOmitted: blockingOmitted, CommitUncertain: uncertain, GenerationID: generationID}
+		return adminproto.RemoveASAResult{Code: asaCode(err, "asa_remove_failed"), Error: err.Error(), Blocking: blocking, BlockingOmitted: blockingOmitted, CommitUncertain: uncertain, GenerationID: generationID, GenesisHash: genesis.String()}
 	}
-	return adminproto.RemoveASAResult{Success: true, GenerationID: generationID}
+	return adminproto.RemoveASAResult{Success: true, GenerationID: generationID, GenesisHash: genesis.String()}
 }
 
 // mutateASASet, under the store mutation lock, loads the current set, lets

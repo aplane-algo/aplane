@@ -40,7 +40,16 @@ Each line is a JSON object with the following fields:
 | `key_count` | int | Number of keys (for reload/start events) |
 | `archive_sha256` | string | SHA-256 digest of a backup/restore archive |
 | `replace_existing` | bool | Whether a credential restore was authorized to replace existing entries |
-| `operation_id` | string | Durable restore operation identifier |
+| `operation_id` | string | Durable restore operation identifier, or the request ID of a policy or ASA set change |
+| `result_code` | string | Result code of a failed or uncertain policy or ASA set change |
+| `changed` | bool | On a succeeded policy or ASA set change only: whether it minted a generation (`false` is written, for a policy apply that changed nothing) |
+| `generation_id` | string | Generation a change minted, also when its commit is uncertain |
+| `policy_updates`, `policy_removals` | string[] | Selectors a policy apply submits or removes, at most 64 each |
+| `policy_updates_omitted`, `policy_removals_omitted` | int | Selectors left out of those lists |
+| `expected_policy_set_sha256`, `expected_snapshot_sha256` | string | The digests an apply request expects: the request's claim, not verified state |
+| `base_policy_set_sha256`, `policy_set_sha256` | string | The verified policy set an apply changed, and the set it left |
+| `asa_action` | string | `add` or `remove` |
+| `network`, `genesis_hash`, `asset_id` | | The asset an ASA set change names; on an outcome, the chain it was resolved to |
 
 Fields are omitted when empty.
 
@@ -93,6 +102,33 @@ Fields are omitted when empty.
 Credential restore entries may include `archive_sha256`, `operation_id`,
 `replace_existing`, and `key_count`, in addition to normal session/
 principal/transport attribution.
+
+### Policy and ASA Set Changes
+
+| Event | Description |
+|-------|-------------|
+| `POLICY_APPLY_INTENT` | An `apply_policy` request was received; written and fsynced before the change runs |
+| `POLICY_APPLY_SUCCEEDED` | The apply succeeded; `changed` says whether it minted a generation |
+| `POLICY_APPLY_FAILED` | The apply was refused or failed before committing |
+| `POLICY_APPLY_COMMIT_UNCERTAIN` | The apply's generation may be committed but is unconfirmed, or the runtime did not reload it; signing is blocked pending recovery |
+| `ASA_SET_UPDATE_INTENT` | An `add_asa` or `remove_asa` request was received; written and fsynced before the change runs |
+| `ASA_SET_UPDATE_SUCCEEDED` | The ASA set change committed |
+| `ASA_SET_UPDATE_FAILED` | The change was refused or failed before committing |
+| `ASA_SET_UPDATE_COMMIT_UNCERTAIN` | As for a policy apply |
+
+Each change writes one intent and then one outcome, both with the admin
+session's attribution and the request ID as `operation_id`. Entries name
+documents by selector and assets by chain and ID, never document contents.
+If the intent cannot be written, the change is refused before it runs: with
+`audit_unavailable` when the daemon has no audit log (it could not be opened
+at startup; repair it and restart the daemon), or `audit_write_failed` when
+the write failed (repair the cause and retry). The daemon still starts and
+signs without an audit log; only these changes, restores and generation
+maintenance require one. A failure to write the outcome is reported on the
+daemon's stderr and never undoes or repeats the change. An intent with no
+outcome, after a crash, is not proof that the change failed: the store's
+generation records say what committed. Offline `apadmin policy rescue` and
+`apstore policy sign` run without the daemon and write no audit entries.
 
 ### Signing
 

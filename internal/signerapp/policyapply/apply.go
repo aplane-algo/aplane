@@ -340,6 +340,12 @@ type Outcome struct {
 	// unconfirmed; the caller must block signing pending reconciliation.
 	Uncertain bool
 	Problems  []adminproto.PolicyProblem
+	// BasePolicySetSHA256 is the verified active policy set the change was
+	// applied to, and PolicySetSHA256 the set it leaves (the same set when
+	// it changed nothing). Both are empty until the active set is verified,
+	// and PolicySetSHA256 until the change is valid.
+	BasePolicySetSHA256 string
+	PolicySetSHA256     string
 }
 
 // Commit verifies the active policy, checks the concurrency base, validates
@@ -387,8 +393,9 @@ func Commit(env Env, req adminproto.ApplyPolicyRequest) (Outcome, error) {
 		bounded, note := BoundProblems(problems, nil)
 		return Outcome{Problems: append(bounded, note...)}, Error{"policy_validation_failed", "policy documents are invalid"}
 	}
+	evidence := Outcome{BasePolicySetSHA256: current.SetSHA256(), PolicySetSHA256: candidate.SetSHA256()}
 	if candidate.SetSHA256() == current.SetSHA256() {
-		return Outcome{}, nil
+		return evidence, nil
 	}
 	now := time.Now
 	if env.Now != nil {
@@ -419,13 +426,15 @@ func Commit(env Env, req adminproto.ApplyPolicyRequest) (Outcome, error) {
 		visible, visibleErr := genstore.ResolveStoreRootWithKeyring(env.KeyPaths, env.Keyring)
 		if errors.Is(mintErr, genstore.ErrStoreRootCommitDurabilityUnknown) ||
 			(visibleErr == nil && visible.GenerationID() == generationID) {
-			return Outcome{GenerationID: generationID, Uncertain: true}, Error{"policy_commit_uncertain", fmt.Sprintf(
+			evidence.GenerationID, evidence.Uncertain = generationID, true
+			return evidence, Error{"policy_commit_uncertain", fmt.Sprintf(
 				"policy committed as generation %s but durability is unconfirmed; signing is blocked pending reconciliation: %v",
 				generationID, mintErr)}
 		}
-		return Outcome{}, Error{"policy_save_failed", fmt.Sprintf("policy apply failed before commit: %v", mintErr)}
+		return Outcome{BasePolicySetSHA256: evidence.BasePolicySetSHA256}, Error{"policy_save_failed", fmt.Sprintf("policy apply failed before commit: %v", mintErr)}
 	}
-	return Outcome{GenerationID: generationID}, nil
+	evidence.GenerationID = generationID
+	return evidence, nil
 }
 
 // writeChange applies an already-validated change to a staged generation.

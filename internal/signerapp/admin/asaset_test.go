@@ -283,8 +283,18 @@ func TestRemoveASARefusals(t *testing.T) {
 	if added := confirmASA9(t, svc); !added.Success {
 		t.Fatal(added)
 	}
-	if got := svc.RemoveASA(adminproto.RemoveASARequest{GenesisHash: asaTestChain, AssetID: 9}); !got.Success {
+	if got := svc.RemoveASA(adminproto.RemoveASARequest{GenesisHash: asaTestChain, AssetID: 9}); !got.Success || got.GenesisHash != asaTestChain || got.GenerationID == "" {
 		t.Fatalf("RemoveASA(by genesis hash) = %+v", got)
+	}
+	// A removal by network carries the chain it resolved to.
+	if added := confirmASA9(t, svc); !added.Success {
+		t.Fatal(added)
+	}
+	if got := svc.RemoveASA(adminproto.RemoveASARequest{Network: "private-dev", AssetID: 9}); !got.Success || got.GenesisHash != asaTestChain {
+		t.Fatalf("RemoveASA(by network) = %+v", got)
+	}
+	if got := svc.RemoveASA(adminproto.RemoveASARequest{Network: "private-dev", AssetID: 9}); got.Code != "not_found" || got.GenesisHash != asaTestChain || got.GenerationID != "" {
+		t.Fatalf("RemoveASA(missing) = %+v", got)
 	}
 }
 

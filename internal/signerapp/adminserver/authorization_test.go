@@ -202,12 +202,17 @@ func TestAdminHandlersWithoutBoundRuntimeReturnProtocolError(t *testing.T) {
 
 // boundPolicySession binds a session over svc with a recording authorizer.
 func boundPolicySession(svc *stubServices) (*Session, *recordingAuthorizer, *queueConn) {
+	session, authorizer, conn, _ := boundAuditedPolicySession(svc, &mutationAudit{})
+	return session, authorizer, conn
+}
+
+func boundAuditedPolicySession(svc *stubServices, audit AuthorizationAudit) (*Session, *recordingAuthorizer, *queueConn, AuthorizationAudit) {
 	ir := productruntime.New(productruntime.Config{})
 	authorizer := &recordingAuthorizer{}
 	conn := &queueConn{}
-	session := NewSession(conn, SessionDeps{Product: svc, Settings: svc, Authorizer: authorizer})
+	session := NewSession(conn, SessionDeps{Product: svc, Settings: svc, Authorizer: authorizer, Audit: audit})
 	session.Bind(&auth.Identity{ID: "admin-principal", Type: "human", Method: "test"}, ir)
-	return session, authorizer, conn
+	return session, authorizer, conn, audit
 }
 
 func TestHandleGetPolicyAuthorizesPolicyView(t *testing.T) {

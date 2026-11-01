@@ -350,6 +350,7 @@ type adminProtoWrite struct {
 	Valid           bool   `json:"valid,omitempty"`
 	PolicySetSHA256 string `json:"policy_set_sha256,omitempty"`
 	Code            string `json:"code,omitempty"`
+	Error           string `json:"error,omitempty"`
 }
 
 func decodeAdminProtoWrites(t *testing.T, conn *queueConn) []adminProtoWrite {

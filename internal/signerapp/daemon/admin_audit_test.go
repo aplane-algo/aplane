@@ -52,6 +52,15 @@ func TestAdminSessionAuditSatisfiesHandlerProbes(t *testing.T) {
 	}); !ok {
 		t.Fatal("production audit does not satisfy quarantine-prune handler probes")
 	}
+	if _, ok := audit.(interface {
+		LogPolicyApplyIntentDurableContext(adminserver.SessionContext, string, adminproto.ApplyPolicyRequest) error
+		LogPolicyApplyResultContext(adminserver.SessionContext, string, adminproto.ApplyPolicyResult)
+		LogASASetUpdateIntentDurableContext(adminserver.SessionContext, string, string, string, string, uint64) error
+		LogASASetAddResultContext(adminserver.SessionContext, string, adminproto.AddASARequest, adminproto.AddASAResult)
+		LogASASetRemoveResultContext(adminserver.SessionContext, string, adminproto.RemoveASARequest, adminproto.RemoveASAResult)
+	}); !ok {
+		t.Fatal("production audit does not satisfy policy and ASA set mutation probes")
+	}
 }
 
 func TestDurableCredentialRestoreIntentGate(t *testing.T) {

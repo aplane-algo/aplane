@@ -88,6 +88,14 @@ const (
 	AuditGenerationAbandonedDiscarded     AuditEventType = "GENERATION_ABANDONED_DISCARDED"
 	AuditDeletedArchivePruneIntent        AuditEventType = "DELETED_ARCHIVE_PRUNE_INTENT"
 	AuditDeletedArchivePruned             AuditEventType = "DELETED_ARCHIVE_PRUNED"
+	AuditPolicyApplyIntent                AuditEventType = "POLICY_APPLY_INTENT"
+	AuditPolicyApplySucceeded             AuditEventType = "POLICY_APPLY_SUCCEEDED"
+	AuditPolicyApplyFailed                AuditEventType = "POLICY_APPLY_FAILED"
+	AuditPolicyApplyUncertain             AuditEventType = "POLICY_APPLY_COMMIT_UNCERTAIN"
+	AuditASASetUpdateIntent               AuditEventType = "ASA_SET_UPDATE_INTENT"
+	AuditASASetUpdateSucceeded            AuditEventType = "ASA_SET_UPDATE_SUCCEEDED"
+	AuditASASetUpdateFailed               AuditEventType = "ASA_SET_UPDATE_FAILED"
+	AuditASASetUpdateUncertain            AuditEventType = "ASA_SET_UPDATE_COMMIT_UNCERTAIN"
 )
 
 // AuditEntry represents a single audit log entry
@@ -138,6 +146,23 @@ type AuditEntry struct {
 	// omitted) for a family with one key per stage.
 	RotatingTree  uint64 `json:"rotating_tree,omitempty"`
 	RotatingIndex uint32 `json:"rotating_index,omitempty"`
+	// POLICY_APPLY_* and ASA_SET_UPDATE_*: see policy_audit.go.
+	ResultCode string `json:"result_code,omitempty"`
+	// Changed is set on a success entry only, false included, so a no-op
+	// is told apart from an entry that does not say.
+	Changed                 *bool    `json:"changed,omitempty"`
+	PolicyUpdates           []string `json:"policy_updates,omitempty"`
+	PolicyUpdatesOmitted    int      `json:"policy_updates_omitted,omitempty"`
+	PolicyRemovals          []string `json:"policy_removals,omitempty"`
+	PolicyRemovalsOmitted   int      `json:"policy_removals_omitted,omitempty"`
+	ExpectedPolicySetSHA256 string   `json:"expected_policy_set_sha256,omitempty"`
+	ExpectedSnapshotSHA256  string   `json:"expected_snapshot_sha256,omitempty"`
+	BasePolicySetSHA256     string   `json:"base_policy_set_sha256,omitempty"`
+	PolicySetSHA256         string   `json:"policy_set_sha256,omitempty"`
+	ASAAction               string   `json:"asa_action,omitempty"`
+	Network                 string   `json:"network,omitempty"`
+	GenesisHash             string   `json:"genesis_hash,omitempty"`
+	AssetID                 uint64   `json:"asset_id,omitempty"`
 }
 
 // AuditLogger handles append-only audit logging

@@ -143,12 +143,23 @@ func (s *Session) HandleApplyPolicy(msg *protocol.ApplyPolicyMessage) {
 	if !s.authorize(msg.ID, auth.ActionPolicyUpdate, auth.Resource{Type: "policy"}) {
 		return
 	}
-	result := s.settingsServices.ApplyPolicy(adminproto.ApplyPolicyRequest{
+	req := adminproto.ApplyPolicyRequest{
 		Documents:               AdminPolicyDocuments(msg.Documents),
 		Remove:                  msg.Remove,
 		ExpectedPolicySetSHA256: msg.ExpectedPolicySetSHA256,
 		ExpectedSnapshotSHA256:  msg.ExpectedSnapshotSHA256,
-	})
+	}
+	audit, _ := s.audit.(policyApplyAudit)
+	var record func() error
+	if audit != nil {
+		record = func() error { return audit.LogPolicyApplyIntentDurableContext(s.SessionContext(), msg.ID, req) }
+	}
+	if code, refusal := s.recordMutationIntent("policy apply", record, true); code != "" {
+		_ = s.WriteJSON(ProtocolApplyPolicyResultMessage(msg.ID, adminproto.ApplyPolicyResult{Code: code, Error: refusal}))
+		return
+	}
+	result := s.settingsServices.ApplyPolicy(req)
+	audit.LogPolicyApplyResultContext(s.SessionContext(), msg.ID, result)
 	_ = s.WriteJSON(ProtocolApplyPolicyResultMessage(msg.ID, result))
 }
 
