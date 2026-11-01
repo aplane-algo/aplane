@@ -1,0 +1,25 @@
+{
+  "format": "aplane.asa-set.v1",
+  "assets": [
+    {
+      "genesis_hash": "AQIDAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+      "asset_id": 1234567,
+      "name": "Example token",
+      "unit_name": "XYZ",
+      "decimals": 6,
+      "creator": "A4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADV34KYE",
+      "confirmed_at": "2026-11-01T12:00:00Z",
+      "network_at_confirmation": "private-dev"
+    },
+    {
+      "genesis_hash": "AQIDAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+      "asset_id": 89,
+      "name": "",
+      "unit_name": "",
+      "decimals": 0,
+      "creator": "BAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAL2IIWQY",
+      "confirmed_at": "2026-11-01T12:00:00Z",
+      "network_at_confirmation": "private-dev"
+    }
+  ]
+}
