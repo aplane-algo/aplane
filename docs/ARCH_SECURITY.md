@@ -1397,9 +1397,14 @@ Store-management audit semantics:
   32-byte prefix and the SHA-256 of the whole ID, so it stays small and an
   intent still correlates with its outcome.
 - every audit entry is normalized before it is written (`normalizeEntry`,
-  in `Log` and `logDurable`): `reason` is cut to 8 KiB, and the
-  `generation_ids` and `archive_entries` lists to 64 members of 128 bytes,
-  with `*_omitted` counts. A cut list is a sample; the omitted names are
+  in `Log` and `logDurable`): `reason` and `txn_details` are cut to 8 KiB,
+  every other string field to 128 bytes, and every list to 64 members of
+  128 bytes, with `*_omitted` counts. This covers paths that log before
+  validating, such as signing requests (`SIGN_REQUEST` carries the
+  client's `auth_address` and transaction details); real identifiers are
+  shorter and pass unchanged, so rotating-release entries stay exact. A
+  test sets every string field of `AuditEntry` to an oversized value, so a
+  field added later cannot be left unbounded. A cut list is a sample; the omitted names are
   not recorded. Normalization changes only the log copy: the request and
   result it describes are untouched, and the service acts on the whole
   selection. With JSON escaping, no entry exceeds 128 KiB. This bounds what

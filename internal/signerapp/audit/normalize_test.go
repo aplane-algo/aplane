@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -138,5 +139,69 @@ func TestShortOlderEventsAreUnchanged(t *testing.T) {
 	}
 	if prune["operation_id"] != "prune-1" {
 		t.Fatalf("operation ID %v", prune["operation_id"])
+	}
+}
+
+// Every string field of AuditEntry is bounded, so a field added later
+// cannot be logged unbounded unnoticed: set them all to an oversized value
+// and check what normalization leaves.
+func TestNormalizeEntryBoundsEveryStringField(t *testing.T) {
+	huge := strings.Repeat("x", 1<<20)
+	var entry AuditEntry
+	v := reflect.ValueOf(&entry).Elem()
+	for i := 0; i < v.NumField(); i++ {
+		f := v.Field(i)
+		switch {
+		case f.Kind() == reflect.String:
+			f.SetString(huge)
+		case f.Kind() == reflect.Slice && f.Type().Elem().Kind() == reflect.String:
+			list := make([]string, 1000)
+			for j := range list {
+				list[j] = huge
+			}
+			f.Set(reflect.ValueOf(list))
+		}
+	}
+	got := reflect.ValueOf(normalizeEntry(entry))
+	for i := 0; i < got.NumField(); i++ {
+		name, f := got.Type().Field(i).Name, got.Field(i)
+		switch {
+		case f.Kind() == reflect.String && len(f.String()) > maxEntryReason:
+			t.Errorf("%s is %d bytes after normalization", name, len(f.String()))
+		case f.Kind() == reflect.Slice && f.Type().Elem().Kind() == reflect.String:
+			if f.Len() > maxAuditSelectors {
+				t.Errorf("%s has %d members after normalization", name, f.Len())
+			}
+			for j := 0; j < f.Len(); j++ {
+				if len(f.Index(j).String()) > maxAuditField {
+					t.Errorf("%s[%d] is %d bytes", name, j, len(f.Index(j).String()))
+					break
+				}
+			}
+		}
+	}
+	line, err := json.Marshal(normalizeEntry(entry))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(line) > 128*1024 {
+		t.Fatalf("a fully oversized entry encodes to %d bytes", len(line))
+	}
+}
+
+// Real identifiers are far below the bounds and pass exactly, so rotating
+// releases and correlation keep their values.
+func TestNormalizeEntryKeepsRealIdentifiers(t *testing.T) {
+	stage := uint64(4)
+	entry := AuditEntry{
+		Event:              AuditRotatingRelease,
+		TxnAuth:            "CEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI7JH2AYM",
+		TxID:               "MJ5RG6E2SYQ5ZT3V4GZ4OEHEPKX3MQ2H7E6NOVRZ2DQWNTGUG2FA",
+		RequesterPrincipal: "client:SHA256:Zm9vYmFyYmF6cXV4Zm9vYmFyYmF6cXV4Zm9vYmFyYmF6",
+		RotatingStage:      &stage,
+		GenerationID:       "gen-1793552194-98177ded",
+	}
+	if got := normalizeEntry(entry); !reflect.DeepEqual(got, entry) {
+		t.Fatalf("normalization changed real identifiers:\n got %+v\nwant %+v", got, entry)
 	}
 }

@@ -186,8 +186,14 @@ If rotation fails, logging continues to the current file.
 Every entry is bounded, whatever a request sent, so one request cannot push
 the retained history out of the log:
 
-- `reason` is at most 8 KiB, which holds a signing rejection's violations for
-  a full group; a longer one keeps its start and notes its original length.
+- `reason` and `txn_details` are at most 8 KiB, which holds a signing
+  rejection's violations for a full group; a longer one keeps its start and
+  notes its original length.
+- Every other text field (addresses, transaction IDs, principals, digests,
+  network names and so on) is at most 128 bytes. Real values are far
+  shorter and are logged exactly; this only cuts what a malformed request
+  sent, such as an oversized `auth_address` in a signing request that is
+  then refused.
 - `operation_id` over 128 bytes becomes its first 32 bytes, `…sha256:` and
   the digest of the whole ID.
 - `generation_ids` and `archive_entries` list at most 64 members of at most

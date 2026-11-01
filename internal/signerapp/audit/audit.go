@@ -222,14 +222,34 @@ func NewAuditLogger(path string) (*AuditLogger, error) {
 	return logger, nil
 }
 
-// normalizeEntry bounds the fields of entry that can carry a request's
-// strings, so no request makes a large entry: the operation ID, the reason,
-// and the generation and archive lists. It changes only what is logged;
-// the request and result the entry describes are untouched, and the lists
-// are copied, never cut in place.
+// normalizeEntry bounds every string field of entry, so no request makes a
+// large entry, whatever path logged it and whether or not the request was
+// later refused: free text (reason, transaction details) to maxEntryReason,
+// every identifier to maxAuditField, and each list to maxAuditSelectors
+// members. Legitimate identifiers (addresses, transaction IDs, digests,
+// generation IDs, principals) are far shorter and pass unchanged, so
+// rotating-release entries stay exact. Only the log copy is bounded: the
+// request and result it describes are untouched, and lists are copied, never
+// cut in place. TestNormalizeEntryBoundsEveryStringField keeps this list
+// complete.
 func normalizeEntry(entry AuditEntry) AuditEntry {
 	entry.OperationID = boundOperationID(entry.OperationID)
 	entry.Reason = boundText(entry.Reason, maxEntryReason)
+	entry.TxnDetails = boundText(entry.TxnDetails, maxEntryReason)
+	entry.Event = AuditEventType(boundText(string(entry.Event), maxAuditField))
+	for _, field := range []*string{
+		&entry.Principal, &entry.RequesterPrincipal, &entry.ApproverPrincipal,
+		&entry.AdminSessionID, &entry.Transport, &entry.Outcome,
+		&entry.TxnAuth, &entry.TxnSender, &entry.TxnType, &entry.TxID,
+		&entry.RemoteAddr, &entry.PolicyRuleID, &entry.WitnessKeyID,
+		&entry.ArchiveSHA256, &entry.GenerationID, &entry.ParentGenerationID,
+		&entry.ManifestSHA256, &entry.LiveInventorySHA256, &entry.ClientLabel,
+		&entry.ResultCode, &entry.ExpectedPolicySetSHA256, &entry.ExpectedSnapshotSHA256,
+		&entry.BasePolicySetSHA256, &entry.PolicySetSHA256, &entry.ASAAction,
+		&entry.Network, &entry.GenesisHash,
+	} {
+		*field = boundText(*field, maxAuditField)
+	}
 	var omitted int
 	if entry.GenerationIDs, omitted = boundList(entry.GenerationIDs); omitted > 0 {
 		entry.GenerationIDsOmitted = omitted
@@ -237,11 +257,17 @@ func normalizeEntry(entry AuditEntry) AuditEntry {
 	if entry.ArchiveEntries, omitted = boundList(entry.ArchiveEntries); omitted > 0 {
 		entry.ArchiveEntriesOmitted = omitted
 	}
+	if entry.PolicyUpdates, omitted = boundList(entry.PolicyUpdates); omitted > 0 {
+		entry.PolicyUpdatesOmitted += omitted
+	}
+	if entry.PolicyRemovals, omitted = boundList(entry.PolicyRemovals); omitted > 0 {
+		entry.PolicyRemovalsOmitted += omitted
+	}
 	return entry
 }
 
-// maxEntryReason bounds any entry's reason. It is larger than the policy and
-// ASA bound because a signing rejection's reason lists every violation of a
+// maxEntryReason bounds any entry's free text: its reason and transaction
+// details. It is larger than the policy and ASA bound because a signing rejection's reason lists every violation of a
 // group of up to 16 transactions (about 5 KiB with two each); it exists to
 // stop multi-megabyte entries, not to shorten real evidence. With JSON
 // escaping (up to six bytes per byte) and a full list, an entry stays under
