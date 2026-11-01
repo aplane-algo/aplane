@@ -730,7 +730,15 @@ Consequences:
   networks and assets, as warnings. It uses the exported networks and ASA
   table exactly, never merging newer built-ins into them, and never reads a
   signer data directory (`test/arch/appolicy_boundary_test.go` keeps it off
-  the store and the admin protocol).
+  the store and the admin protocol). `appolicy try` and `appolicy test` ask
+  what a document decides through the node's own pure evaluator
+  (`policyeval`), for one direct transfer at a time: they are not a full
+  transaction simulator and not an oracle for the policy a node runs now.
+  Saved cases live in `.appolicy/cases.json` in the workspace, in their own
+  format, `aplane.policy-cases.v1` (`policyauthor/cases.go`), separate from
+  the node context and from the daemon's verdict fixtures. The commands,
+  editor, and case format are described for operators in
+  [USER_POLICY.md](USER_POLICY.md#checking-policy-files-offline-with-appolicy).
 - Comments are a producer convenience, not part of the format. The apadmin
   policy commands and the apadmin TUI accept `//` and `/* */` comments
   outside strings and remove them (`policytext.StripComments`) before the
@@ -738,8 +746,11 @@ Consequences:
   check|sign` act on documents already in the store, which must be strict
   JSON.
 - Nothing in a document is implied. Every verdict-bearing field is required,
-  and the decoder fills in no defaults. Optional fields are only those whose
-  absence means "no such thing": no description, no thresholds, no sets, no
+  and the decoder fills in no defaults. The one exception: a cosigner
+  document may omit `transaction_types["*"]`, which rejects every unnamed
+  type, the only value it could take (see
+  [Transaction Types](#transaction-types)). Optional fields are only those
+  whose absence means "no such thing": no description, no thresholds, no sets, no
   blocked destinations, no rekey edges.
 
 The machine-readable schema is
@@ -1533,7 +1544,7 @@ compatibility-bearing audit details live in
 | `transfer_policy.enabled` | Removed; a document always routes |
 | Bare numeric ASA IDs | `asa:<id>` only |
 | Cosigner `on_no_route` / `close_on_no_route` / `clawback_on_no_route` (must be `reject`) | Removed; always reject |
-| Absent fields resolved through product defaults | Every verdict-bearing field required; nothing implied |
+| Absent fields resolved through product defaults | Every verdict-bearing field required; nothing implied, except that a cosigner document may omit `transaction_types["*"]`, which rejects every unnamed type (see [Transaction Types](#transaction-types)) |
 | One document per node with `key_overrides` by address or Witness Key ID | One node default plus zero or one complete document per key; no inheritance |
 | Implicit transaction-type behavior | `transaction_types` with a `*` entry, required in a signer document; a cosigner document may omit it, since it can only be `reject` |
 | Sidecar `policy_mtime_ns` | Removed (already gone) |
@@ -1585,3 +1596,13 @@ Implementation source of truth:
   snapshot.
 - `internal/signerapp/admin/policy.go`: admin policy read, check, and apply
   service.
+- `internal/asaset`, `internal/asasetstore`: the ASA set (`aplane.asa-set.v1`),
+  its built-in table, and its authenticated storage in a generation.
+- `internal/policycontext`: the pure policy context (role, networks, ASA
+  set) and the context and snapshot digests.
+- `internal/policyadmission`: the admission rules for submitted documents.
+- `internal/policyexport`: `apadmin policy export --all` and the node
+  context file (`aplane.policy-node-context.v1`) appolicy reads.
+- `cmd/appolicy`, `internal/signerapp/policyauthor`,
+  `policyauthor/authortui`: the offline editor, check, format, explain,
+  try, and saved cases.

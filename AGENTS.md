@@ -50,7 +50,7 @@ Apshell is the other major component; it provides a shell-like interface to gene
 - `cmd/appass-file/`: Dev-only plaintext passphrase helper (insecure)
 - `cmd/appass-systemd-creds/`: Production passphrase helper using systemd-creds (TPM2/host key)
 - `cmd/approbe/`: Installer/helper liveness probe and canonical signer IPC-path resolver
-- `cmd/appolicy/`: Offline policy file editor (terminal UI), check, format, and explain; files only, never a node or store
+- `cmd/appolicy/`: Offline policy file editor (terminal UI), check, format, explain, try, and test (saved cases); files only, never a node or store
 - `cmd/aplocalnet/`: LocalNet setup TUI/CLI for algod reachability, client/signer network config, plugin activation, and KMD plugin environment
 - `cmd/compile_teal/`: Dev/build helper that compiles TEAL source to generated Go bytecode
 - `cmd/configdoc/`: Documentation generator for configuration
@@ -299,13 +299,15 @@ gofmt -s -w .         # Format code
 
 ### Key Files
 - `identities/default/.ssh/authorized_keys`: daemon-owned registry of enrolled client SSH keys (mode 0600)
-- `identities/default/keys/*.key`: Encrypted account-authority records (mode 0600)
-- `identities/default/keys/*.cos`: Encrypted cosigner witness credentials (mode 0600)
-- `identities/default/.keystore`: Keystore metadata (master salt, passphrase verification)
+- `identities/default/store-root.enc`: The sole authenticated key-authority and generation-selection record
+- `identities/default/.keystore`: Static layout marker (version 6, store-root/v1)
+- `identities/default/generations/<gen-id>/keys/*.key`: Encrypted account-authority records (mode 0600)
+- `identities/default/generations/<gen-id>/keys/*.cos`: Encrypted cosigner witness credentials (mode 0600)
 - `config.yaml`: Process-global server configuration
 - `identities/default/config.yaml`: Product runtime settings
 - `identities/default/unlock.yaml`: Product passphrase-helper configuration
 - `identities/default/generations/<gen-id>/default.json` (node default) and `policies/<selector>.json` (per-key, on both node roles): `aplane.policy.v1` JSON policy documents, each with a `.hmac` sidecar
+- `identities/default/generations/<gen-id>/asa_set.json`: Optional ASA set (`aplane.asa-set.v1`) with a `.hmac` sidecar; absent means the built-in assets only
 
 See `docs/ARCH_STORE.md` for the full on-disk layout and `docs/ARCH_CONTRACTS.md` for where each compatibility contract lives.
 
