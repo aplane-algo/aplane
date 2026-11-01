@@ -121,7 +121,9 @@ session's attribution and the request ID as `operation_id`. Entries name
 documents by selector and assets by chain and ID, never document contents.
 Every string taken from the request or an error is cut to 128 bytes (1024
 for `reason`), with its original length noted, so a malformed request
-cannot write a large entry.
+cannot write a large entry. An `operation_id` longer than 128 bytes, in any
+entry, is written as its first 32 bytes followed by `…sha256:` and the
+digest of the whole ID, the same in the intent and the outcome.
 If the intent cannot be written, the change is refused before it runs: with
 `audit_unavailable` when the daemon has no audit log (it could not be opened
 at startup; repair it and restart the daemon), or `audit_write_failed` when

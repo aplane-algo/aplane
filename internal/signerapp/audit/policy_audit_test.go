@@ -232,3 +232,48 @@ func TestReadRotatingReleasesSkipsAnOversizedLine(t *testing.T) {
 		t.Fatalf("releases = %+v", got)
 	}
 }
+
+// An oversized operation ID becomes a short, stable digest form, in every
+// entry that carries one, so an intent and its outcome still correlate.
+func TestOversizedOperationIDsAreBoundedAndStable(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "audit.log")
+	logger, err := NewAuditLogger(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = logger.Close() }()
+	huge := strings.Repeat("é", 128*1024)
+	ctx := adminserver.SessionContext{}
+	if err := logger.LogPolicyApplyIntentDurableContext(ctx, huge, adminproto.ApplyPolicyRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	logger.LogPolicyApplyResultContext(ctx, huge, adminproto.ApplyPolicyResult{Code: "invalid_policy_request"})
+	if err := logger.LogASASetUpdateIntentDurableContext(ctx, huge, "add", "mainnet", "", 1); err != nil {
+		t.Fatal(err)
+	}
+	logger.LogASASetAddResultContext(ctx, huge, adminproto.AddASARequest{}, adminproto.AddASAResult{Code: "unknown_network"})
+	if err := logger.LogCredentialRestoreIntentDurableContext(ctx, huge, "backup.tar.gz", false); err != nil {
+		t.Fatal(err)
+	}
+	logger.LogPolicyApplyResultContext(ctx, "apply-short", adminproto.ApplyPolicyResult{Code: "x"})
+
+	entries := mutationEntries(t, path)
+	first := entries[0]["operation_id"].(string)
+	if len(first) > maxAuditOperationID || !strings.Contains(first, "…sha256:") || !utf8.ValidString(first) {
+		t.Fatalf("bounded operation ID %q", first)
+	}
+	for i, e := range entries[:5] {
+		if e["operation_id"] != first {
+			t.Fatalf("entry %d operation ID %v, want the same bounded form %q", i, e["operation_id"], first)
+		}
+	}
+	if entries[5]["operation_id"] != "apply-short" {
+		t.Fatalf("a short operation ID changed: %v", entries[5]["operation_id"])
+	}
+	if got := boundOperationID(huge + "x"); got == first {
+		t.Fatal("two different IDs bounded to the same value")
+	}
+	if data, _ := os.ReadFile(path); len(data) > 8*1024 {
+		t.Fatalf("six entries wrote %d bytes", len(data))
+	}
+}

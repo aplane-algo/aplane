@@ -1392,7 +1392,10 @@ Store-management audit semantics:
   request or echoed in an error is bounded (128 bytes per selector,
   digest, network, genesis hash or code, 1024 bytes of error text, with
   the original length noted), and selector lists are capped at 64 with the
-  omitted count: an entry stays small whatever was sent. The release
+  omitted count: an entry stays small whatever was sent. An
+  `operation_id` over 128 bytes, in any audit entry, is replaced by a
+  32-byte prefix and the SHA-256 of the whole ID, so it stays small and an
+  intent still correlates with its outcome. The release
   history reader skips any audit line over 1 MiB rather than failing, so
   one oversized entry cannot hide rotating releases at unlock.
   Offline rescue and `apstore policy sign` are not audited.

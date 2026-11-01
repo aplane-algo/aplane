@@ -172,18 +172,18 @@ func TestOversizedMutationRequestsLeaveTheAuditLogReadable(t *testing.T) {
 	huge := strings.Repeat("A", 256*1024)
 	for _, msg := range []any{
 		protocol.ApplyPolicyMessage{
-			BaseMessage:             protocol.BaseMessage{Type: protocol.MsgTypeApplyPolicy, ID: "apply-huge"},
+			BaseMessage:             protocol.BaseMessage{Type: protocol.MsgTypeApplyPolicy, ID: "apply-" + huge},
 			Documents:               []protocol.PolicyDocumentWire{{Key: huge, Document: "{}"}},
 			Remove:                  []string{huge},
 			ExpectedPolicySetSHA256: huge,
 			ExpectedSnapshotSHA256:  huge,
 		},
 		protocol.AddASAMessage{
-			BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeAddASA, ID: "add-huge"},
+			BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeAddASA, ID: "add-" + huge},
 			Confirmed:   protocol.ASAObservation{Network: huge, GenesisHash: huge, AssetID: 1},
 		},
 		protocol.RemoveASAMessage{
-			BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeRemoveASA, ID: "rm-huge"},
+			BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeRemoveASA, ID: "rm-" + huge},
 			Network:     huge, GenesisHash: huge, AssetID: 1,
 		},
 	} {
@@ -206,8 +206,16 @@ func TestOversizedMutationRequestsLeaveTheAuditLogReadable(t *testing.T) {
 			t.Fatalf("an audit entry is %d bytes: %.200s…", len(line), line)
 		}
 	}
-	if got := len(auditEntries(t, path, "POLICY_APPLY_INTENT", "POLICY_APPLY_FAILED", "ASA_SET_UPDATE_INTENT", "ASA_SET_UPDATE_FAILED")); got != 6 {
-		t.Fatalf("%d intent and outcome entries, want 6", got)
+	entries := auditEntries(t, path, "POLICY_APPLY_INTENT", "POLICY_APPLY_FAILED", "ASA_SET_UPDATE_INTENT", "ASA_SET_UPDATE_FAILED")
+	if len(entries) != 6 {
+		t.Fatalf("%d intent and outcome entries, want 6", len(entries))
+	}
+	// Each outcome keeps its intent's bounded operation ID.
+	for i := 0; i < 6; i += 2 {
+		id, _ := entries[i]["operation_id"].(string)
+		if !strings.Contains(id, "sha256:") || entries[i+1]["operation_id"] != id {
+			t.Fatalf("intent %q and outcome %v do not correlate", id, entries[i+1]["operation_id"])
+		}
 	}
 	if _, err := signeraudit.ReadRotatingReleases(path); err != nil {
 		t.Fatalf("the release history no longer loads: %v", err)

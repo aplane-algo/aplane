@@ -5,12 +5,15 @@ package audit
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/auth"
@@ -214,10 +217,30 @@ func NewAuditLogger(path string) (*AuditLogger, error) {
 	return logger, nil
 }
 
+// maxAuditOperationID bounds an entry's operation ID. Most are request IDs
+// a client chose, so one longer than this is replaced by a short prefix and
+// the SHA-256 of the whole ID: deterministic, so an intent and its outcome
+// still correlate, and small, so oversized IDs cannot rotate away the log's
+// history.
+const maxAuditOperationID = 128
+
+func boundOperationID(id string) string {
+	if len(id) <= maxAuditOperationID {
+		return id
+	}
+	cut := 32
+	for cut > 0 && !utf8.RuneStart(id[cut]) {
+		cut--
+	}
+	sum := sha256.Sum256([]byte(id))
+	return id[:cut] + "…sha256:" + hex.EncodeToString(sum[:])
+}
+
 // Log writes an audit entry
 func (a *AuditLogger) Log(entry AuditEntry) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	entry.OperationID = boundOperationID(entry.OperationID)
 
 	// Set timestamp if not provided
 	if entry.Timestamp.IsZero() {
@@ -271,6 +294,7 @@ func (a *AuditLogger) Log(entry AuditEntry) {
 func (a *AuditLogger) logDurable(entry AuditEntry) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	entry.OperationID = boundOperationID(entry.OperationID)
 
 	if entry.Timestamp.IsZero() {
 		entry.Timestamp = time.Now().UTC()
