@@ -112,6 +112,8 @@ func TestCaseFileRefusesBadCases(t *testing.T) {
 		"wrong format":   `{"format": "aplane.policy.v1", "cases": []}`,
 		"unknown member": `{"format": "aplane.policy-cases.v1", "cases": [], "extra": 1}`,
 		"not json":       `{`,
+		"trailing value": `{"format": "aplane.policy-cases.v1", "cases": []} {"format": "aplane.policy-cases.v1", "cases": [{"name": "x"}]}`,
+		"trailing junk":  `{"format": "aplane.policy-cases.v1", "cases": []} ]`,
 	} {
 		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 			t.Fatal(err)

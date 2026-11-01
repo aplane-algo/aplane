@@ -56,6 +56,12 @@ func press(t *testing.T, m Model, keys ...string) (Model, tea.Cmd) {
 			msg = tea.KeyMsg{Type: tea.KeyDown}
 		case "up":
 			msg = tea.KeyMsg{Type: tea.KeyUp}
+		case "pgup":
+			msg = tea.KeyMsg{Type: tea.KeyPgUp}
+		case "pgdown":
+			msg = tea.KeyMsg{Type: tea.KeyPgDown}
+		case " ":
+			msg = tea.KeyMsg{Type: tea.KeySpace, Runes: []rune(" ")}
 		default:
 			msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(k)}
 		}

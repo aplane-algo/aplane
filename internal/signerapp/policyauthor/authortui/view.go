@@ -104,7 +104,7 @@ func (m Model) footer() string {
 		if m.try.naming {
 			return "enter: Save the case | esc: Cancel"
 		}
-		return "enter: Try | ctrl+s: Save as case | up/down/tab: Field | space: Toggle | esc: Back"
+		return "enter: Try | ctrl+s: Save as case | up/down/tab: Field | space: Toggle | pgup/pgdown: Scroll the answer | esc: Back"
 	}
 	back := "esc: Files"
 	if len(m.ws.Files) == 1 {

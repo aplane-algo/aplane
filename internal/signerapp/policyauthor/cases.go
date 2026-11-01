@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -133,6 +134,11 @@ func LoadCases(dir string) (*CaseFile, error) {
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&cf); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	// A second value after the first would be ignored, silently skipping
+	// its cases and losing them on the next save.
+	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
+		return nil, fmt.Errorf("%s: unexpected content after the cases object", path)
 	}
 	if err := cf.validate(); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)

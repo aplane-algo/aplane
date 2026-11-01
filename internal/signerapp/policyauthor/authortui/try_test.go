@@ -148,3 +148,75 @@ func TestTryCosignerDocumentAndBadCasesFile(t *testing.T) {
 		t.Fatalf("view lacks the cosigner assumption:\n%s", view(m))
 	}
 }
+
+func TestTryEditsDropTheAnswer(t *testing.T) {
+	ws, dir := workspace(t, map[string][]byte{"treasury.json": fixture(t, "signer_key_full.json")})
+	m := tryTopUp(t, New(ws, nil, nil))
+	if m.try.result == nil {
+		t.Fatal("no answer to begin with")
+	}
+	// Change the amount the screen shows: the old answer goes.
+	m = ctrl(t, m, tea.KeyCtrlU)
+	m, _ = press(t, m, "1")
+	if m.try.result != nil {
+		t.Fatal("an edited amount kept the answer for the old one")
+	}
+	m = ctrl(t, m, tea.KeyCtrlS)
+	if m.try.naming || !strings.Contains(m.try.err, "Try the transaction first") {
+		t.Fatalf("ctrl+s after an edit: naming %v err %q", m.try.naming, m.try.err)
+	}
+	// Tried again, the case is the transaction on screen.
+	m, _ = press(t, m, "enter")
+	m = ctrl(t, m, tea.KeyCtrlS)
+	m, _ = press(t, m, "small top-up", "enter")
+	cases, err := policyauthor.LoadCases(dir)
+	if err != nil || len(cases.Cases) != 1 || cases.Cases[0].Txn.Amount != 1 || cases.Cases[0].Expect.Outcome != "default" {
+		t.Fatalf("saved = %+v, %v; want the 1 microAlgo transaction and its answer", cases, err)
+	}
+
+	// The held-key toggle is an edit too.
+	m, _ = press(t, m, "enter")
+	for m.try.cursor != tryRekeyHeld {
+		m, _ = press(t, m, "down")
+	}
+	m, _ = press(t, m, " ")
+	if !m.try.held || m.try.result != nil {
+		t.Fatalf("toggle: held %v, result %+v", m.try.held, m.try.result)
+	}
+	// Moving between fields is not.
+	m, _ = press(t, m, "enter", "up")
+	if m.try.result == nil {
+		t.Fatal("moving the cursor dropped the answer")
+	}
+}
+
+func TestTryFormStaysVisibleWithALongAnswer(t *testing.T) {
+	ws, _ := workspace(t, map[string][]byte{"treasury.json": fixture(t, "signer_key_full.json")})
+	m := New(ws, nil, nil)
+	m.width, m.height = 80, 20
+	// A testnet transfer to ops misses every route: a rejection with its
+	// violation, the summary and six assumptions overflow 20 rows.
+	m, _ = press(t, m, "t", "down", opsMainnet, "down", "1", "enter", "up", "up", "up")
+	if m.try.cursor != tryNetwork || m.try.result == nil {
+		t.Fatalf("cursor %d result %+v", m.try.cursor, m.try.result)
+	}
+	out := view(m)
+	if !strings.Contains(out, "Network") || !strings.Contains(out, "From") || !strings.Contains(out, "more line(s): pgdown") {
+		t.Fatalf("the form or the scroll hint is hidden:\n%s", out)
+	}
+	if strings.Contains(out, "refusals the signer makes before policy") {
+		t.Fatalf("the last assumption fits; make the answer longer:\n%s", out)
+	}
+	m, _ = press(t, m, "pgdown")
+	out = view(m)
+	if !strings.Contains(out, "refusals the signer makes before policy") || !strings.Contains(out, "Network") {
+		t.Fatalf("pgdown did not reach the end of the answer, or hid the form:\n%s", out)
+	}
+	m, _ = press(t, m, "pgdown", "pgdown", "pgup")
+	if m.try.offset != 0 {
+		t.Fatalf("offset after pgup = %d, want 0: pgdown overshot the end", m.try.offset)
+	}
+	if lines := strings.Count(view(m), "\n") + 1; lines > m.height {
+		t.Fatalf("view is %d lines, over the terminal's %d", lines, m.height)
+	}
+}
