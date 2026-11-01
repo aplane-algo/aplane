@@ -99,7 +99,11 @@ type verdictCase struct {
 
 // verdictPlan carries the planner facts Always Approve reads (sign surface).
 type verdictPlan struct {
-	DummiesNeeded   *int   `json:"dummies_needed,omitempty"` // nil: the dummy count
+	DummiesNeeded *int `json:"dummies_needed,omitempty"` // nil: the dummy count
+	// DummyTxns is how many dummies the plan reports appending, independent
+	// of the group: fewer takes the first of the trailing positions, more
+	// repeats the last. Nil reports every trailing position.
+	DummyTxns       *int   `json:"dummy_txns,omitempty"`
 	LsigIndices     []int  `json:"lsig_indices,omitempty"`
 	LSigCount       int    `json:"lsig_count,omitempty"`
 	TotalFees       uint64 `json:"total_fees,omitempty"`
@@ -319,6 +323,9 @@ func (c *verdictCase) runSign(t *testing.T, group []types.Transaction) verdictWa
 		if p.DummiesNeeded != nil {
 			plan.DummiesNeeded = *p.DummiesNeeded
 		}
+		if p.DummyTxns != nil {
+			plan.DummyTxns = reportedDummies(t, group[requests:], *p.DummyTxns)
+		}
 		plan.LsigIndices = p.LsigIndices
 		plan.FeeInfo.LSigCount = p.LSigCount
 		plan.FeeInfo.TotalFees = p.TotalFees
@@ -328,6 +335,26 @@ func (c *verdictCase) runSign(t *testing.T, group []types.Transaction) verdictWa
 	}
 	ruleID, _, err := svc.approveGroupWithPlanContext(context.Background(), req, plan)
 	return rec.outcome(ruleID, err, "policy engine rejected request: ")
+}
+
+// reportedDummies is the plan's dummy list when it disagrees with the group:
+// the first n trailing positions, or all of them with the last repeated.
+func reportedDummies(t *testing.T, tail []types.Transaction, n int) []types.Transaction {
+	t.Helper()
+	if n < 0 {
+		t.Fatalf("dummy_txns = %d", n)
+	}
+	if n <= len(tail) {
+		return tail[:n]
+	}
+	if len(tail) == 0 {
+		t.Fatal("dummy_txns above zero needs a dummy position to repeat")
+	}
+	out := append([]types.Transaction(nil), tail...)
+	for len(out) < n {
+		out = append(out, tail[len(tail)-1])
+	}
+	return out
 }
 
 func (c *verdictCase) runGates(t *testing.T, group []types.Transaction) verdictWant {

@@ -410,7 +410,7 @@
       }
     },
     {
-      "name": "dummies without the LogicSig at position zero",
+      "name": "dummies with no LogicSig position",
       "surface": "sign",
       "base": "shipped",
       "policies": {
@@ -470,6 +470,112 @@
           0
         ],
         "lsig_count": 2,
+        "total_fees": 2000
+      },
+      "expect": {
+        "outcome": "default"
+      }
+    },
+    {
+      "name": "dummies with the LogicSig at another position",
+      "surface": "sign",
+      "base": "shipped",
+      "policies": {
+        "default": {
+          "auto_approve_self_noop_transfer": true
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "fee": 3000,
+          "receiver": "A1"
+        },
+        {
+          "dummy": true
+        },
+        {
+          "dummy": true
+        }
+      ],
+      "requests": 1,
+      "plan": {
+        "lsig_indices": [
+          1
+        ],
+        "lsig_count": 1,
+        "total_fees": 2000
+      },
+      "expect": {
+        "outcome": "default"
+      }
+    },
+    {
+      "name": "the plan reports fewer dummies than the group carries",
+      "surface": "sign",
+      "base": "shipped",
+      "policies": {
+        "default": {
+          "auto_approve_self_noop_transfer": true
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "fee": 2000,
+          "receiver": "A1"
+        },
+        {
+          "dummy": true
+        },
+        {
+          "dummy": true
+        }
+      ],
+      "requests": 1,
+      "plan": {
+        "dummies_needed": 1,
+        "dummy_txns": 1,
+        "lsig_indices": [
+          0
+        ],
+        "lsig_count": 1,
+        "total_fees": 1000
+      },
+      "expect": {
+        "outcome": "default"
+      }
+    },
+    {
+      "name": "the plan reports more dummies than the group carries",
+      "surface": "sign",
+      "base": "shipped",
+      "policies": {
+        "default": {
+          "auto_approve_self_noop_transfer": true
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "fee": 3000,
+          "receiver": "A1"
+        },
+        {
+          "dummy": true
+        }
+      ],
+      "requests": 1,
+      "plan": {
+        "dummies_needed": 2,
+        "dummy_txns": 2,
+        "lsig_indices": [
+          0
+        ],
+        "lsig_count": 1,
         "total_fees": 2000
       },
       "expect": {
