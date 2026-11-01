@@ -257,13 +257,15 @@ func (ir *Runtime) SetNodePolicy(p *policyruntime.NodePolicy) {
 	ir.nodePolicy = p
 }
 
-// ASASet returns the node's verified ASA set (its operator's confirmations;
-// the built-ins are always known), or nil before it loads. The returned value
-// is immutable.
-func (ir *Runtime) ASASet() *asaset.Set {
+// PolicyState returns the node's verified policy and ASA set (its operator's
+// confirmations; the built-ins are always known) read under one lock, so the
+// two always belong to the same unlock or reload. Both are nil before policy
+// loads, and both are immutable. Read them together through this method:
+// separate reads could straddle a reload.
+func (ir *Runtime) PolicyState() (*policyruntime.NodePolicy, *asaset.Set) {
 	ir.policyMu.RLock()
 	defer ir.policyMu.RUnlock()
-	return ir.asaSet
+	return ir.nodePolicy, ir.asaSet
 }
 
 // SetVerifiedPolicyState installs the node's verified policy and ASA set as

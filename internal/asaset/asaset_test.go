@@ -87,18 +87,16 @@ func TestTheSameIDOnTwoChainsIsTwoAssets(t *testing.T) {
 }
 
 func TestNewRefusesBadEntries(t *testing.T) {
-	builtinUSDC := entry(mainnet(t), 31566704)
 	for name, mutate := range map[string]func(*Entry){
-		"no chain":            func(e *Entry) { e.Genesis = GenesisHash{} },
-		"zero asset":          func(e *Entry) { e.AssetID = 0 },
-		"too many decimals":   func(e *Entry) { e.Decimals = MaxDecimals + 1 },
-		"long name":           func(e *Entry) { e.Name = strings.Repeat("n", MaxNameBytes+1) },
-		"long unit":           func(e *Entry) { e.UnitName = "TOOLONGUN" },
-		"invalid UTF-8 name":  func(e *Entry) { e.Name = "\xff" },
-		"bad creator":         func(e *Entry) { e.Creator = "nope" },
-		"no confirmation":     func(e *Entry) { e.ConfirmedAt = time.Time{} },
-		"bad network token":   func(e *Entry) { e.NetworkAtConfirmation = "Not A Token" },
-		"a built-in identity": func(e *Entry) { *e = builtinUSDC },
+		"no chain":           func(e *Entry) { e.Genesis = GenesisHash{} },
+		"zero asset":         func(e *Entry) { e.AssetID = 0 },
+		"too many decimals":  func(e *Entry) { e.Decimals = MaxDecimals + 1 },
+		"long name":          func(e *Entry) { e.Name = strings.Repeat("n", MaxNameBytes+1) },
+		"long unit":          func(e *Entry) { e.UnitName = "TOOLONGUN" },
+		"invalid UTF-8 name": func(e *Entry) { e.Name = "\xff" },
+		"bad creator":        func(e *Entry) { e.Creator = "nope" },
+		"no confirmation":    func(e *Entry) { e.ConfirmedAt = time.Time{} },
+		"bad network token":  func(e *Entry) { e.NetworkAtConfirmation = "Not A Token" },
 	} {
 		e := entry(chainA, 1)
 		mutate(&e)
@@ -198,5 +196,38 @@ func TestSetFileFixtures(t *testing.T) {
 		if _, err := Parse(data); err == nil {
 			t.Errorf("invalid/%s: parsed", filepath.Base(path))
 		}
+	}
+}
+
+// A release can add an asset the operator already confirmed to the built-in
+// table. The stored set must still load, the built-in entry must win, and
+// only a new confirmation of a built-in is refused.
+func TestAConfirmationLaterBuiltInStillLoads(t *testing.T) {
+	stored := entry(mainnet(t), 31566704)
+	stored.UnitName, stored.Decimals = "OLD", 2 // differs from the built-in USDC
+	s, err := New([]Entry{stored})
+	if err != nil {
+		t.Fatalf("New() with a confirmation that is now built in: %v", err)
+	}
+	data, err := s.Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Parse(data); err != nil {
+		t.Fatalf("Parse() of a stored set overlapping the built-ins: %v", err)
+	}
+	usdc, ok := Effective(s).Lookup(stored.Identity)
+	if !ok || usdc.Origin != OriginBuiltin || usdc.UnitName != "USDC" || usdc.Decimals != 6 {
+		t.Fatalf("effective entry = %+v, %v; want the built-in USDC", usdc, ok)
+	}
+	if got := len(Effective(s).Assets()); got != len(Builtins()) {
+		t.Fatalf("effective table has %d assets, want %d: the overlap must not duplicate", got, len(Builtins()))
+	}
+	if _, err := Empty().With(stored); err == nil {
+		t.Fatal("With() accepted a new confirmation of a built-in asset")
+	}
+	// The shadowed confirmation can still be removed.
+	if without, found := s.Without(stored.Identity); !found || len(without.Entries()) != 0 {
+		t.Fatalf("Without() = %+v, %v", without.Entries(), found)
 	}
 }

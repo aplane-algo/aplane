@@ -72,10 +72,19 @@ type Table struct {
 	byID   map[Identity]int
 }
 
-// Effective is the built-in table plus s.
+// Effective is the built-in table plus s. Where a confirmation names a
+// built-in asset (one a later release added to the table), the built-in
+// entry wins, so the table has one deterministic answer per asset.
 func Effective(s *Set) *Table {
 	assets := Builtins()
+	builtins := make(map[Identity]bool, len(assets))
+	for _, a := range assets {
+		builtins[a.Identity] = true
+	}
 	for _, e := range s.entries {
+		if builtins[e.Identity] {
+			continue
+		}
 		assets = append(assets, Asset{Identity: e.Identity, Name: e.Name, UnitName: e.UnitName, Decimals: e.Decimals, Origin: OriginOperator})
 	}
 	return newTable(assets)

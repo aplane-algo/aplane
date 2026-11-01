@@ -519,8 +519,8 @@ func unlockWithASASet(t *testing.T, set *asaset.Set, damage bool) (*productrunti
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ir.ASASet() != nil {
-		t.Fatal("ASASet() before unlock is not nil")
+	if np, set := ir.PolicyState(); np != nil || set != nil {
+		t.Fatal("PolicyState() before unlock is not empty")
 	}
 	_, err = ir.ReloadWithPassphrase(passphrase)
 	return ir, err
@@ -547,12 +547,12 @@ func TestUnlockLoadsTheASASetWithPolicy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReloadWithPassphrase() error = %v", err)
 	}
-	if ir.NodePolicy() == nil {
-		t.Fatal("NodePolicy() = nil after unlock")
+	np, set := ir.PolicyState()
+	if np == nil || np != ir.NodePolicy() {
+		t.Fatal("PolicyState() policy is not the node's policy after unlock")
 	}
-	set := ir.ASASet()
 	if set == nil || len(set.Entries()) != 1 || set.Entries()[0].UnitName != "XYZ" {
-		t.Fatalf("ASASet() = %+v, want the stored set", set)
+		t.Fatalf("PolicyState() set = %+v, want the stored set", set)
 	}
 }
 
@@ -561,7 +561,7 @@ func TestUnlockRejectsADamagedASASet(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "asa set") {
 		t.Fatalf("ReloadWithPassphrase() error = %v, want an asa set integrity failure", err)
 	}
-	if ir.NodePolicy() != nil || ir.ASASet() != nil {
-		t.Fatalf("after a failed unlock: policy %v, set %v; want neither installed", ir.NodePolicy() != nil, ir.ASASet() != nil)
+	if np, set := ir.PolicyState(); np != nil || set != nil {
+		t.Fatalf("after a failed unlock: policy %v, set %v; want neither installed", np != nil, set != nil)
 	}
 }

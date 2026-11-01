@@ -125,18 +125,17 @@ type Set struct {
 // Empty is the set of a node with no confirmations: the built-ins only.
 func Empty() *Set { return &Set{} }
 
-// New validates entries and returns them as a set. Duplicate identities and
-// entries for built-in assets are refused.
+// New validates entries and returns them as a set. Duplicate identities are
+// refused. An entry for a built-in asset is kept: it was confirmed before a
+// release added the asset to the built-in table, and refusing it would stop a
+// valid stored set from loading. The built-in entry wins wherever metadata is
+// used (Effective). Only a new confirmation of a built-in is refused (With).
 func New(entries []Entry) (*Set, error) {
-	builtins := builtinIdentities()
 	sorted := append([]Entry(nil), entries...)
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i].less(sorted[j].Identity) })
 	for i, e := range sorted {
 		if err := e.validate(); err != nil {
 			return nil, fmt.Errorf("%s: %w", e.Identity, err)
-		}
-		if builtins[e.Identity] {
-			return nil, fmt.Errorf("%s is built in and cannot be confirmed again", e.Identity)
 		}
 		if i > 0 && sorted[i-1].Identity == e.Identity {
 			return nil, fmt.Errorf("%s is confirmed twice", e.Identity)
@@ -159,8 +158,14 @@ func (s *Set) Lookup(id Identity) (Entry, bool) {
 	return Entry{}, false
 }
 
-// With returns the set with e added.
-func (s *Set) With(e Entry) (*Set, error) { return New(append(s.Entries(), e)) }
+// With returns the set with a new confirmation e added. A built-in asset
+// cannot be confirmed: the table already knows it.
+func (s *Set) With(e Entry) (*Set, error) {
+	if builtinIdentities()[e.Identity] {
+		return nil, fmt.Errorf("%s is built in and cannot be confirmed", e.Identity)
+	}
+	return New(append(s.Entries(), e))
+}
 
 // Without returns the set without id, and whether it held it.
 func (s *Set) Without(id Identity) (*Set, bool) {
