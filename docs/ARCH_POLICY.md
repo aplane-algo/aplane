@@ -404,10 +404,10 @@ Priced program bytes and native-PQ fee contributions disable this narrow
 auto-approval. The ASA form may opt into an asset if the account does not
 already hold it.
 
-The exact self no-op shape, including signer-generated budget dummies, is
-exempt from transfer routing regardless of whether
-`auto_approve_self_noop_transfer` is enabled. The auto-approval rule still
-controls only whether that shape skips manual approval.
+The self no-op shape is not exempt from transfer routing: routing judges it
+like any other transfer, and the 0-unit ASA form is also an ASA opt-in. The
+auto-approval rule runs only after routing produced no deny or review verdict,
+so it controls only whether a permitted self no-op skips manual approval.
 
 ## Operator Default
 
@@ -543,41 +543,39 @@ Always Deny.
 
 Verdict production for each movement:
 
-1. Routing sits out when the movement is routing-exempt (the self no-op
-   shape below).
-2. If the movement kind is covered by `blocked_destinations` and the movement
+1. If the movement kind is covered by `blocked_destinations` and the movement
    destination is blocked, Always Deny.
-3. Matching routes are collected by network, source, asset, destination, and,
+2. Matching routes are collected by network, source, asset, destination, and,
    for clawback only, asset source.
-4. If no route matches a close-out movement, apply `close_on_no_route`.
-5. If no route matches a clawback movement, apply `clawback_on_no_route`.
-6. If no route matches any other movement, apply `on_no_route`.
+3. If no route matches a close-out movement, apply `close_on_no_route`.
+4. If no route matches a clawback movement, apply `clawback_on_no_route`.
+5. If no route matches any other movement, apply `on_no_route`.
 
-   A cosigner document has none of these three fields; every miss in steps 4
-   to 6 is Always Deny.
-7. A close-out movement with matching routes is Always Deny unless at least one
+   A cosigner document has none of these three fields; every miss in steps 3
+   to 5 is Always Deny.
+6. A close-out movement with matching routes is Always Deny unless at least one
    matching route has `allow_close:true`.
-8. A clawback movement with matching routes is Always Deny unless at least one
+7. A clawback movement with matching routes is Always Deny unless at least one
    matching route has `allow_clawback:true`.
-9. If the amount is known and any matching route has a `reject_above` for the
+8. If the amount is known and any matching route has a `reject_above` for the
    movement's network and asset, the lowest such threshold wins; amounts
    strictly greater than that value are Always Deny.
-10. If the amount is known and any matching route has a `review_above` for the
+9. If the amount is known and any matching route has a `review_above` for the
    movement's network and asset, the lowest such threshold wins; amounts
    strictly greater than that value are Always Review.
-11. Otherwise, client-signing routing produces no verdict and the request
+10. Otherwise, client-signing routing produces no verdict and the request
    continues to warning review, explicit auto-approval, or Operator Default.
    For cosigner routing, a target movement that reaches this step is
    covered by policy; if every target movement is covered and no deny guard
    matched, the transfer-policy portion of cosigner authorization succeeds.
 
-The exact self no-op shape used by `auto_approve_self_noop_transfer`, including
-signer-generated LogicSig-budget dummy transactions, is routing-exempt. Routing
-exemption suppresses all routing verdicts for that shape. Non-routing guards
-such as warning analysis, fee checks, rekey/close/clawback guards, and the
-self no-op auto-approval predicate still apply according to their own rules.
-For cosigner, the self no-op predicate never fires because it requires
-signer-owned address context.
+No movement is exempt from routing. The self no-op shape used by
+`auto_approve_self_noop_transfer` is routed like any other transfer, so under
+`"on_no_route": "reject"` it needs a route to `self` (the shipped default's
+`self-transfer` route is one). Signer-generated LogicSig-budget dummy
+transactions are not signer requests and are never routed. For cosigner, the
+self no-op predicate never fires because it requires signer-owned address
+context.
 
 Non-routing rule IDs:
 

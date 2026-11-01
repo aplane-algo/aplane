@@ -72,7 +72,8 @@ func TestEvaluateAutoRejectionRulesStampsTxnIndexes(t *testing.T) {
 	err := EvaluateAutoRejectionRules(txns, len(txns), nil, nil, fixedPolicy(&policy.Config{TransactionTypes: policytest.AllowAllTypes(),
 		RejectForeignRekey: true,
 		MaxFeeMicroAlgos:   1,
-	}), nil, nil, nil, nil)
+	}), nil, nil, nil)
+
 	if err == nil {
 		t.Fatal("EvaluateAutoRejectionRules() error = nil, want rejection")
 	}
@@ -92,7 +93,8 @@ func TestEvaluateAutoRejectionRulesSkipsForeignAndDummyTransactions(t *testing.T
 
 	err := EvaluateAutoRejectionRules(txns, 2, nil, map[int]bool{0: true}, fixedPolicy(&policy.Config{TransactionTypes: policytest.AllowAllTypes(),
 		RejectForeignRekey: true,
-	}), nil, nil, nil, nil)
+	}), nil, nil, nil)
+
 	if err != nil {
 		t.Fatalf("EvaluateAutoRejectionRules() error = %v, want nil when only foreign/dummy slots violate policy", err)
 	}
@@ -106,7 +108,8 @@ func TestEvaluateAutoRejectionRulesAllowsRekeyToLocalAddress(t *testing.T) {
 
 	err := EvaluateAutoRejectionRules(txns, len(txns), nil, nil, fixedPolicy(&policy.Config{TransactionTypes: policytest.AllowAllTypes(),
 		RejectForeignRekey: true,
-	}), nil, map[string]bool{localAddr.String(): true}, nil, nil)
+	}), nil, map[string]bool{localAddr.String(): true}, nil)
+
 	if err != nil {
 		t.Fatalf("EvaluateAutoRejectionRules() error = %v, want nil for local rekey target", err)
 	}
@@ -164,7 +167,7 @@ func TestEvaluateAutoRejectionRulesRespectsThresholdBoundaries(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := EvaluateAutoRejectionRules([]types.Transaction{tt.txn}, 1, nil, nil, fixedPolicy(tt.cfg), nil, nil, nil, nil)
+			err := EvaluateAutoRejectionRules([]types.Transaction{tt.txn}, 1, nil, nil, fixedPolicy(tt.cfg), nil, nil, nil)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatal("EvaluateAutoRejectionRules() error = nil, want rejection")
@@ -197,7 +200,7 @@ func TestEvaluateAutoRejectionRulesResolvesPolicyPerKey(t *testing.T) {
 	resolver := keyedPolicy(map[string]*policy.Config{ownKey: own}, def)
 	authKeys := []string{ownKey, defaultKey}
 
-	err := EvaluateAutoRejectionRules(txns, len(txns), nil, nil, resolver, authKeys, nil, nil, nil)
+	err := EvaluateAutoRejectionRules(txns, len(txns), nil, nil, resolver, authKeys, nil, nil)
 	if err == nil {
 		t.Fatal("EvaluateAutoRejectionRules() error = nil, want rejection only for the key on the default")
 	}
@@ -210,10 +213,10 @@ func TestEvaluateAutoRejectionRulesResolvesPolicyPerKey(t *testing.T) {
 	}
 
 	// Policy that cannot be resolved fails closed.
-	if err := EvaluateAutoRejectionRules(txns, 1, nil, nil, nil, authKeys, nil, nil, nil); err == nil || err.Kind != ErrorInternal {
+	if err := EvaluateAutoRejectionRules(txns, 1, nil, nil, nil, authKeys, nil, nil); err == nil || err.Kind != ErrorInternal {
 		t.Fatalf("EvaluateAutoRejectionRules(no resolver) error = %#v, want internal", err)
 	}
-	if err := EvaluateAutoRejectionRules(txns, 1, nil, nil, keyedPolicy(nil, nil), authKeys, nil, nil, nil); err == nil || err.Kind != ErrorInternal {
+	if err := EvaluateAutoRejectionRules(txns, 1, nil, nil, keyedPolicy(nil, nil), authKeys, nil, nil); err == nil || err.Kind != ErrorInternal {
 		t.Fatalf("EvaluateAutoRejectionRules(nil policy) error = %#v, want internal", err)
 	}
 }
@@ -248,38 +251,12 @@ func TestEvaluateAutoRejectionRulesAppliesTransferRouting(t *testing.T) {
 		},
 	}
 
-	err := EvaluateAutoRejectionRules([]types.Transaction{txn}, 1, nil, nil, fixedPolicy(cfg), nil, nil, nil, nil)
+	err := EvaluateAutoRejectionRules([]types.Transaction{txn}, 1, nil, nil, fixedPolicy(cfg), nil, nil, nil)
 	if err == nil {
 		t.Fatal("EvaluateAutoRejectionRules() error = nil, want routing rejection")
 	}
 	if !strings.Contains(err.Error(), policy.TransferRoutingRouteMissRuleID) {
 		t.Fatalf("EvaluateAutoRejectionRules() error = %q, want route miss", err.Error())
-	}
-}
-
-func TestEvaluateAutoRejectionRulesSkipsTransferRoutingForExemptIndex(t *testing.T) {
-	source := types.Address{1}
-	cfg := routingPolicyConfigForSigningTest(t, `{
-  "transfer_policy": {
-    "on_no_route": "reject",
-    "routes": []
-  }
-}`)
-	txn := types.Transaction{
-		Type: types.PaymentTx,
-		Header: types.Header{
-			Sender:      source,
-			GenesisHash: testDigest(t, apconfig.AlgorandTestnetGenesisHash),
-		},
-		PaymentTxnFields: types.PaymentTxnFields{
-			Receiver: source,
-			Amount:   0,
-		},
-	}
-
-	err := EvaluateAutoRejectionRules([]types.Transaction{txn}, 1, nil, nil, fixedPolicy(cfg), nil, nil, map[int]bool{0: true}, nil)
-	if err != nil {
-		t.Fatalf("EvaluateAutoRejectionRules() error = %v, want nil for routing-exempt index", err)
 	}
 }
 
@@ -312,9 +289,9 @@ func TestEvaluateAutoRejectionRulesSkipsTransferRoutingForPassthroughForeignAndD
 		fixedPolicy(cfg),
 		nil,
 		nil,
-		nil,
-		nil,
-	)
+
+		nil)
+
 	if err == nil {
 		t.Fatal("EvaluateAutoRejectionRules() error = nil, want route miss on signer-controlled txn")
 	}
@@ -1696,4 +1673,110 @@ func TestSignGroupWithPlanUsesIntersectedValidityWindowForGroups(t *testing.T) {
 	if gotFirstValid != 140 || gotLastValid != 220 {
 		t.Fatalf("approval window = (%d, %d), want (140, 220)", gotFirstValid, gotLastValid)
 	}
+}
+
+// Self no-op transfers, including ASA opt-ins (the same shape), are judged by
+// transfer routing like any other transfer: auto-approval only decides
+// whether a transfer routing has permitted skips the prompt.
+func TestSignGroupWithPlanRoutesSelfNoOpTransfers(t *testing.T) {
+	addr := types.Address{1}
+	genesis := testDigest(t, apconfig.AlgorandTestnetGenesisHash)
+	optIn := func(asset uint64) types.Transaction {
+		return types.Transaction{
+			Type:                   types.AssetTransferTx,
+			Header:                 types.Header{Sender: addr, Fee: types.MicroAlgos(policy.SelfNoOpTransferMaxFeeMicroAlgos), GenesisHash: genesis},
+			AssetTransferTxnFields: types.AssetTransferTxnFields{XferAsset: types.AssetIndex(asset), AssetReceiver: addr},
+		}
+	}
+	selfPay := types.Transaction{
+		Type:             types.PaymentTx,
+		Header:           types.Header{Sender: addr, Fee: types.MicroAlgos(policy.SelfNoOpTransferMaxFeeMicroAlgos), GenesisHash: genesis},
+		PaymentTxnFields: types.PaymentTxnFields{Receiver: addr},
+	}
+	strict := `{"auto_approve_self_noop_transfer": true, "transfer_policy": {"on_no_route": "reject", "routes": []}}`
+	assetRoute := `{"auto_approve_self_noop_transfer": true, "transfer_policy": {"on_no_route": "reject", "routes": [
+		{"id": "optin-12345", "networks": ["testnet"], "sources": ["*"], "assets": ["asa:12345"], "destinations": ["self"]}]}}`
+	tests := []struct {
+		name   string
+		policy string
+		txn    types.Transaction
+		want   string // "approved", "review" or a rejection rule ID
+	}{
+		{"shipped default permits opt-in", "", optIn(12345), "approved"},
+		{"shipped default permits self payment", "", selfPay, "approved"},
+		{"strict table rejects opt-in", strict, optIn(12345), policy.TransferRoutingRouteMissRuleID},
+		{"strict table rejects self payment", strict, selfPay, policy.TransferRoutingRouteMissRuleID},
+		{"asset route permits its asset", assetRoute, optIn(12345), "approved"},
+		{"asset route rejects another asset", assetRoute, optIn(999), policy.TransferRoutingRouteMissRuleID},
+		{"review table reviews opt-in", `{"auto_approve_self_noop_transfer": true, "transfer_policy": {"on_no_route": "review", "routes": []}}`, optIn(12345), "review"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			prompted, executed := false, false
+			service := &Service{
+				Approval: &ApprovalService{
+					UserAutoApprove: userAutoApproveDefault(false),
+					HasClient: func() bool {
+						prompted = true
+						return false
+					},
+				},
+				Executor:                      &Executor{},
+				GenerateTxnDescriptionFromTxn: func(types.Transaction) string { return "txn" },
+				IsUnlocked:                    func() bool { return true },
+				BeforeExecute: func() (func(), *ServiceError) {
+					executed = true
+					return nil, forbidden("stop after approval")
+				},
+			}
+			if tc.policy == "" {
+				service.PolicyFor = fixedPolicy(shippedDefaultWithSelfNoOpAutoApproval(t))
+			} else {
+				service.PolicyFor = fixedPolicy(routingPolicyConfigForSigningTest(t, tc.policy))
+			}
+			req := signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{AuthAddress: "AUTHADDR", TxnBytesHex: "deadbeef"}}}
+			plan := &PlanResult{
+				AllTxns:               []types.Transaction{tc.txn},
+				PassthroughIndices:    map[int]bool{},
+				PassthroughSignedTxns: map[int][]byte{},
+				ForeignIndices:        map[int]bool{},
+			}
+			_, err := service.signGroupWithPlanContext(context.Background(), req, nil, plan)
+			switch tc.want {
+			case "approved":
+				if prompted || !executed {
+					t.Fatalf("prompted = %v, executed = %v, err = %v; want auto-approval", prompted, executed, err)
+				}
+			case "review":
+				if !prompted || executed {
+					t.Fatalf("prompted = %v, executed = %v, err = %v; want review", prompted, executed, err)
+				}
+			default:
+				if err == nil || err.Kind != ErrorForbidden || !strings.Contains(err.Message, tc.want) || prompted || executed {
+					t.Fatalf("err = %v, prompted = %v, executed = %v; want rejection %s", err, prompted, executed, tc.want)
+				}
+			}
+		})
+	}
+}
+
+// shippedDefaultWithSelfNoOpAutoApproval compiles the shipped signer default,
+// whose self-transfer route permits every self no-op, with self no-op
+// auto-approval turned on.
+func shippedDefaultWithSelfNoOpAutoApproval(t *testing.T) *policy.Config {
+	t.Helper()
+	doc := policytest.EmbeddedDefault(t, noderole.RoleSigner)
+	doc = strings.Replace(doc, `"auto_approve_self_noop_transfer": false`, `"auto_approve_self_noop_transfer": true`, 1)
+	decoded, err := policy.DecodePolicyV1([]byte(doc), policy.DefaultKey, noderole.RoleSigner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := decoded.Compile(policy.DefaultConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.AutoApproveSelfNoOpTransfer {
+		t.Fatal("shipped default did not take self no-op auto-approval")
+	}
+	return cfg
 }

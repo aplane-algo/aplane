@@ -447,8 +447,8 @@ func policyVerdicts(txn types.Transaction, cfg *Config) string {
 	for _, phase := range [][]LintViolation{
 		CheckTxnPolicyLints(txn, cfg, nil),
 		CheckTxnReviewPolicyLints(txn, cfg),
-		CheckTxnTransferRoutingPolicyLints(txn, cfg, false),
-		CheckTxnTransferRoutingReviewPolicyLints(txn, cfg, false),
+		CheckTxnTransferRoutingPolicyLints(txn, cfg),
+		CheckTxnTransferRoutingReviewPolicyLints(txn, cfg),
 	} {
 		for _, v := range phase {
 			ids = append(ids, v.RuleID)

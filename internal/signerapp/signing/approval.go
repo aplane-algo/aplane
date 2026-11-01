@@ -312,7 +312,7 @@ func resolvePolicy(policyFor PolicyResolver, authKeys []string, i int) *policy.C
 // knownAddresses is the signer-local address set used to distinguish local
 // rekeys from foreign rekeys. A position whose policy cannot be resolved
 // fails closed.
-func EvaluateAutoRejectionRules(allTxns []types.Transaction, requestCount int, passthroughIndices, foreignIndices map[int]bool, policyFor PolicyResolver, authKeys []string, knownAddresses map[string]bool, routingExemptIndices map[int]bool, console Console) *ServiceError {
+func EvaluateAutoRejectionRules(allTxns []types.Transaction, requestCount int, passthroughIndices, foreignIndices map[int]bool, policyFor PolicyResolver, authKeys []string, knownAddresses map[string]bool, console Console) *ServiceError {
 	console = consoleOf(console)
 	var violations []policy.LintViolation
 
@@ -330,7 +330,7 @@ func EvaluateAutoRejectionRules(allTxns []types.Transaction, requestCount int, p
 			return internal("policy is not loaded")
 		}
 		txnViolations := policy.CheckTxnPolicyLints(txn, cfg, knownAddresses)
-		txnViolations = append(txnViolations, policy.CheckTxnTransferRoutingPolicyLints(txn, cfg, routingExemptIndices[i])...)
+		txnViolations = append(txnViolations, policy.CheckTxnTransferRoutingPolicyLints(txn, cfg)...)
 		for j := range txnViolations {
 			txnViolations[j].TxnIndex = i
 		}
@@ -374,13 +374,6 @@ func EvaluateAutoApprovalRules(req signerapi.GroupSignRequest, plan *PlanResult,
 		return "", false
 	}
 	return policy.AutoApproveSelfNoOpTransferRuleID, true
-}
-
-func routingExemptIndicesForPlan(plan *PlanResult, allTxns []types.Transaction) map[int]bool {
-	if !matchesSelfNoOpTransferPlanAutoApproval(plan, allTxns) {
-		return nil
-	}
-	return map[int]bool{0: true}
 }
 
 func matchesSelfNoOpTransferPlanAutoApproval(plan *PlanResult, allTxns []types.Transaction) bool {

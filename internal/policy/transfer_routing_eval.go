@@ -66,8 +66,8 @@ func ExtractTransferMovements(txn types.Transaction) []TransferMovement {
 
 // CheckTxnTransferRoutingPolicyLints evaluates transfer routing outcomes that
 // hard-reject the transaction.
-func CheckTxnTransferRoutingPolicyLints(txn types.Transaction, cfg *Config, routingExempt bool) []LintViolation {
-	verdicts := evaluateTransferRouting(txn, cfg, routingExempt)
+func CheckTxnTransferRoutingPolicyLints(txn types.Transaction, cfg *Config) []LintViolation {
+	verdicts := evaluateTransferRouting(txn, cfg)
 	out := make([]LintViolation, 0, len(verdicts))
 	for _, verdict := range verdicts {
 		if verdict.Tier != transferRoutingDeny {
@@ -85,8 +85,8 @@ func CheckTxnTransferRoutingPolicyLints(txn types.Transaction, cfg *Config, rout
 
 // CheckTxnTransferRoutingReviewPolicyLints evaluates transfer routing outcomes
 // that force operator review after hard-reject policy has passed.
-func CheckTxnTransferRoutingReviewPolicyLints(txn types.Transaction, cfg *Config, routingExempt bool) []LintViolation {
-	verdicts := evaluateTransferRouting(txn, cfg, routingExempt)
+func CheckTxnTransferRoutingReviewPolicyLints(txn types.Transaction, cfg *Config) []LintViolation {
+	verdicts := evaluateTransferRouting(txn, cfg)
 	out := make([]LintViolation, 0, len(verdicts))
 	for _, verdict := range verdicts {
 		if verdict.Tier != transferRoutingReview {
@@ -175,8 +175,8 @@ func extractAssetTransferMovements(txn types.Transaction) []TransferMovement {
 	return movements
 }
 
-func evaluateTransferRouting(txn types.Transaction, cfg *Config, routingExempt bool) []transferRoutingVerdict {
-	if cfg == nil || cfg.TransferPolicy == nil || routingExempt {
+func evaluateTransferRouting(txn types.Transaction, cfg *Config) []transferRoutingVerdict {
+	if cfg == nil || cfg.TransferPolicy == nil {
 		return nil
 	}
 	movements := ExtractTransferMovements(txn)

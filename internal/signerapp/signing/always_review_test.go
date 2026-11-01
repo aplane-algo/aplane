@@ -31,18 +31,18 @@ func TestEvaluateAlwaysReviewRulesResolvesPolicyPerKey(t *testing.T) {
 		},
 	}
 
-	ruleID, review := EvaluateAlwaysReviewRules([]types.Transaction{txn}, 1, map[int]bool{}, map[int]bool{}, resolver, []string{authKey}, nil, nil)
+	ruleID, review := EvaluateAlwaysReviewRules([]types.Transaction{txn}, 1, map[int]bool{}, map[int]bool{}, resolver, []string{authKey}, nil)
 	if !review {
 		t.Fatal("EvaluateAlwaysReviewRules() review = false, want true")
 	}
 	if ruleID != policy.AlwaysReviewWarningsRuleID {
 		t.Fatalf("ruleID = %q, want %q", ruleID, policy.AlwaysReviewWarningsRuleID)
 	}
-	if _, review := EvaluateAlwaysReviewRules([]types.Transaction{txn}, 1, map[int]bool{}, map[int]bool{}, resolver, []string{"OTHER"}, nil, nil); review {
+	if _, review := EvaluateAlwaysReviewRules([]types.Transaction{txn}, 1, map[int]bool{}, map[int]bool{}, resolver, []string{"OTHER"}, nil); review {
 		t.Fatal("a key on the default reviewed under the other key's policy")
 	}
 	// Policy that cannot be resolved forces review.
-	if _, review := EvaluateAlwaysReviewRules([]types.Transaction{txn}, 1, map[int]bool{}, map[int]bool{}, keyedPolicy(nil, nil), []string{"OTHER"}, nil, nil); !review {
+	if _, review := EvaluateAlwaysReviewRules([]types.Transaction{txn}, 1, map[int]bool{}, map[int]bool{}, keyedPolicy(nil, nil), []string{"OTHER"}, nil); !review {
 		t.Fatal("an unresolvable policy did not force review")
 	}
 }
@@ -50,16 +50,16 @@ func TestEvaluateAlwaysReviewRulesResolvesPolicyPerKey(t *testing.T) {
 func TestEvaluateAlwaysReviewRulesUsesTransactionTypeVerdict(t *testing.T) {
 	cfg := routingPolicyConfigForSigningTest(t, `{"transaction_types": {"*": "allow", "keyreg": "review"}}`)
 	keyreg := types.Transaction{Type: types.KeyRegistrationTx, Header: types.Header{Sender: types.Address{1}}}
-	ruleID, review := EvaluateAlwaysReviewRules([]types.Transaction{keyreg}, 1, map[int]bool{}, map[int]bool{}, fixedPolicy(cfg), nil, nil, nil)
+	ruleID, review := EvaluateAlwaysReviewRules([]types.Transaction{keyreg}, 1, map[int]bool{}, map[int]bool{}, fixedPolicy(cfg), nil, nil)
 	if !review || ruleID != policy.TransactionTypeRuleID("keyreg") {
 		t.Fatalf("EvaluateAlwaysReviewRules(keyreg) = %q, %v; want transaction_type:keyreg review", ruleID, review)
 	}
 	pay := types.Transaction{Type: types.PaymentTx, Header: types.Header{Sender: types.Address{1}}}
-	if _, review := EvaluateAlwaysReviewRules([]types.Transaction{pay}, 1, map[int]bool{}, map[int]bool{}, fixedPolicy(cfg), nil, nil, nil); review {
+	if _, review := EvaluateAlwaysReviewRules([]types.Transaction{pay}, 1, map[int]bool{}, map[int]bool{}, fixedPolicy(cfg), nil, nil); review {
 		t.Fatal("an allowed type was reviewed")
 	}
 	// A reviewed type on a foreign slot is not this signer's verdict.
-	if _, review := EvaluateAlwaysReviewRules([]types.Transaction{keyreg}, 1, map[int]bool{}, map[int]bool{0: true}, fixedPolicy(cfg), nil, nil, nil); review {
+	if _, review := EvaluateAlwaysReviewRules([]types.Transaction{keyreg}, 1, map[int]bool{}, map[int]bool{0: true}, fixedPolicy(cfg), nil, nil); review {
 		t.Fatal("a foreign slot was judged by the type gate")
 	}
 }
@@ -80,9 +80,7 @@ func TestEvaluateAlwaysReviewRulesIgnoresDisabledPolicy(t *testing.T) {
 		map[int]bool{},
 		fixedPolicy(policy.DefaultConfig()),
 		nil,
-		nil,
-		nil,
-	); review {
+		nil); review {
 		t.Fatal("EvaluateAlwaysReviewRules() review = true, want false")
 	}
 }
@@ -114,9 +112,8 @@ func TestEvaluateAlwaysReviewRulesUsesTransferGuardThreshold(t *testing.T) {
 		map[int]bool{},
 		fixedPolicy(cfg),
 		nil,
-		nil,
-		nil,
-	)
+		nil)
+
 	if !review {
 		t.Fatal("EvaluateAlwaysReviewRules() review = false, want true")
 	}
@@ -162,59 +159,13 @@ func TestEvaluateAlwaysReviewRulesUsesTransferRouting(t *testing.T) {
 		map[int]bool{},
 		fixedPolicy(cfg),
 		nil,
-		nil,
-		nil,
-	)
+		nil)
+
 	if !review {
 		t.Fatal("EvaluateAlwaysReviewRules() review = false, want true")
 	}
 	if ruleID != "transfer_policy:review_payee:review_above" {
 		t.Fatalf("ruleID = %q, want transfer routing review threshold", ruleID)
-	}
-}
-
-func TestEvaluateAlwaysReviewRulesSkipsTransferRoutingForExemptIndex(t *testing.T) {
-	source := types.Address{1}
-	dest := types.Address{2}
-	cfg := routingPolicyConfigForSigningTest(t, `{
-  "transfer_policy": {
-    "on_no_route": "reject",
-    "routes": [
-      {
-        "id": "review_payee",
-        "networks": ["testnet"],
-        "sources": ["`+source.String()+`"],
-        "assets": ["algo"],
-        "destinations": ["`+dest.String()+`"],
-        "limits": {"testnet": {"algo": {"review_above": "10"}}}
-      }
-    ]
-  }
-}`)
-	txn := types.Transaction{
-		Type: types.PaymentTx,
-		Header: types.Header{
-			Sender:      source,
-			GenesisHash: testAlwaysReviewGenesisDigest(t, apconfig.AlgorandTestnetGenesisHash),
-		},
-		PaymentTxnFields: types.PaymentTxnFields{
-			Receiver: dest,
-			Amount:   11,
-		},
-	}
-
-	ruleID, review := EvaluateAlwaysReviewRules(
-		[]types.Transaction{txn},
-		1,
-		map[int]bool{},
-		map[int]bool{},
-		fixedPolicy(cfg),
-		nil,
-		nil,
-		map[int]bool{0: true},
-	)
-	if review {
-		t.Fatalf("EvaluateAlwaysReviewRules() = (%q, true), want no review for routing-exempt index", ruleID)
 	}
 }
 
@@ -244,8 +195,7 @@ func TestEvaluateAlwaysReviewRulesForcesReviewOnDangerousPassthrough(t *testing.
 	if _, review := EvaluateAlwaysReviewRules(
 		[]types.Transaction{rekeyTxn}, 1,
 		map[int]bool{0: true}, map[int]bool{},
-		fixedPolicy(cfg), []string{""}, nil, nil,
-	); !review {
+		fixedPolicy(cfg), []string{""}, nil); !review {
 		t.Fatal("dangerous passthrough: review = false, want true")
 	}
 
@@ -254,8 +204,7 @@ func TestEvaluateAlwaysReviewRulesForcesReviewOnDangerousPassthrough(t *testing.
 	if _, review := EvaluateAlwaysReviewRules(
 		[]types.Transaction{plain}, 1,
 		map[int]bool{0: true}, map[int]bool{},
-		fixedPolicy(cfg), []string{""}, nil, nil,
-	); review {
+		fixedPolicy(cfg), []string{""}, nil); review {
 		t.Fatal("benign passthrough: review = true, want false")
 	}
 }
@@ -275,11 +224,11 @@ func TestEvaluateAlwaysReviewRulesReviewsAssetReconfigureWarning(t *testing.T) {
 			AssetParams: types.AssetParams{Manager: types.Address{2}},
 		},
 	}
-	ruleID, review := EvaluateAlwaysReviewRules([]types.Transaction{reconfigure}, 1, map[int]bool{}, map[int]bool{}, fixedPolicy(reviewing), nil, nil, nil)
+	ruleID, review := EvaluateAlwaysReviewRules([]types.Transaction{reconfigure}, 1, map[int]bool{}, map[int]bool{}, fixedPolicy(reviewing), nil, nil)
 	if !review || ruleID != policy.AlwaysReviewWarningsRuleID {
 		t.Fatalf("EvaluateAlwaysReviewRules(reconfigure) = %q, %v; want always_review_warnings", ruleID, review)
 	}
-	if _, review := EvaluateAlwaysReviewRules([]types.Transaction{reconfigure}, 1, map[int]bool{}, map[int]bool{}, fixedPolicy(silent), nil, nil, nil); review {
+	if _, review := EvaluateAlwaysReviewRules([]types.Transaction{reconfigure}, 1, map[int]bool{}, map[int]bool{}, fixedPolicy(silent), nil, nil); review {
 		t.Fatal("a reconfigure was reviewed with always_review_warnings off")
 	}
 
@@ -348,20 +297,20 @@ func TestEvaluateAlwaysReviewRulesExemptsProtocolRekey(t *testing.T) {
 	none, one := map[int]bool{}, 1
 
 	withProtocol := approvalpolicy.Context{KnownAddresses: known, ProtocolRekeyTargets: known}
-	if ruleID, review := evaluateAlwaysReviewRules(txns, one, none, none, fixedPolicy(cfg), nil, withProtocol, nil); review {
+	if ruleID, review := evaluateAlwaysReviewRules(txns, one, none, none, fixedPolicy(cfg), nil, withProtocol); review {
 		t.Fatalf("a protocol rekey was reviewed under %q", ruleID)
 	}
 	heldOnly := approvalpolicy.Context{KnownAddresses: known}
-	if ruleID, review := evaluateAlwaysReviewRules(txns, one, none, none, fixedPolicy(cfg), nil, heldOnly, nil); !review || ruleID != policy.AlwaysReviewWarningsRuleID {
+	if ruleID, review := evaluateAlwaysReviewRules(txns, one, none, none, fixedPolicy(cfg), nil, heldOnly); !review || ruleID != policy.AlwaysReviewWarningsRuleID {
 		t.Fatalf("a held-address rekey without the protocol exemption = %q, %v; want always_review_warnings review", ruleID, review)
 	}
 	elsewhere := rotation
 	elsewhere.RekeyTo = types.Address{8}
-	if ruleID, review := evaluateAlwaysReviewRules([]types.Transaction{elsewhere}, one, none, none, fixedPolicy(cfg), nil, withProtocol, nil); !review || ruleID != policy.AlwaysReviewWarningsRuleID {
+	if ruleID, review := evaluateAlwaysReviewRules([]types.Transaction{elsewhere}, one, none, none, fixedPolicy(cfg), nil, withProtocol); !review || ruleID != policy.AlwaysReviewWarningsRuleID {
 		t.Fatalf("a rekey to a non-protocol address = %q, %v; want always_review_warnings review", ruleID, review)
 	}
 	// The exported form has no exemption.
-	if _, review := EvaluateAlwaysReviewRules(txns, one, none, none, fixedPolicy(cfg), nil, known, nil); !review {
+	if _, review := EvaluateAlwaysReviewRules(txns, one, none, none, fixedPolicy(cfg), nil, known); !review {
 		t.Fatal("EvaluateAlwaysReviewRules exempted a rekey")
 	}
 }

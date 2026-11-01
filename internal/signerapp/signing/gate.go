@@ -27,9 +27,8 @@ type gateInput struct {
 	ForeignIndices     map[int]bool
 	// AuthKeys[i] is the key selector whose policy governs position i ("" or
 	// a short slice resolves to the node default).
-	AuthKeys             []string
-	KnownAddresses       map[string]bool
-	RoutingExemptIndices map[int]bool
+	AuthKeys       []string
+	KnownAddresses map[string]bool
 	// ProtocolRekeyTargets are rekeys the signer issued itself (a rotation's
 	// next stage); warning review does not count them.
 	ProtocolRekeyTargets map[string]bool
@@ -61,7 +60,7 @@ func (s *Service) runApprovalGates(ctx context.Context, in gateInput, console Co
 		}
 		return "", err
 	}
-	if err := EvaluateAutoRejectionRules(in.AllTxns, in.EvalCount, in.PassthroughIndices, in.ForeignIndices, s.policyFor, in.AuthKeys, in.KnownAddresses, in.RoutingExemptIndices, console); err != nil {
+	if err := EvaluateAutoRejectionRules(in.AllTxns, in.EvalCount, in.PassthroughIndices, in.ForeignIndices, s.policyFor, in.AuthKeys, in.KnownAddresses, console); err != nil {
 		if in.LogRejection != nil {
 			in.LogRejection(err.Error())
 		}
@@ -73,7 +72,7 @@ func (s *Service) runApprovalGates(ctx context.Context, in gateInput, console Co
 		limit = len(in.AllTxns)
 	}
 	txns := in.AllTxns[:limit]
-	alwaysReviewRuleID, alwaysReview := evaluateAlwaysReviewRules(txns, in.EvalCount, in.PassthroughIndices, in.ForeignIndices, s.policyFor, in.AuthKeys, approvalpolicy.Context{KnownAddresses: in.KnownAddresses, ProtocolRekeyTargets: in.ProtocolRekeyTargets}, in.RoutingExemptIndices)
+	alwaysReviewRuleID, alwaysReview := evaluateAlwaysReviewRules(txns, in.EvalCount, in.PassthroughIndices, in.ForeignIndices, s.policyFor, in.AuthKeys, approvalpolicy.Context{KnownAddresses: in.KnownAddresses, ProtocolRekeyTargets: in.ProtocolRekeyTargets})
 	if in.ForcedReviewRuleID != "" {
 		alwaysReviewRuleID = in.ForcedReviewRuleID
 		alwaysReview = true
