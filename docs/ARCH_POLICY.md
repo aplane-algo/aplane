@@ -1449,11 +1449,17 @@ Each sets `transaction_types` `"*": "reject"` (required on a signer),
 `reject_foreign_rekey`, the three `reject_*` flags, `always_review_warnings`,
 `auto_approve_self_noop_transfer: false`, `reject` for all three routing
 misses, and routes over `"*"` networks, sources and assets with no close or
-clawback allowance. The fee cap is 50000 microAlgos: the fee goes to the
+clawback allowance. The fee cap is 60000 microAlgos: the fee goes to the
 fee sink whatever the route, so without a cap a client could burn the
 balance through fees on transfers `self-only` and `listed-destinations`
-permit; 50000 is the largest fee a valid group of 16 needs at the minimum
-fee (16 base fees plus 2000 per native Falcon authorization). The signer
+permit. 60000 covers a full group of 16 payments or asset transfers at the
+minimum fee: per member, one base fee, the larger of the native Falcon
+contribution and the largest LogicSig program surcharge, and the largest
+note's surcharge, 52916 microAlgos in all on v42 and v43
+(`TestSignerPresetFeeCapCoversAFullGroup` derives it from the consensus
+parameters). It is not a universal bound: fees other members pool onto
+this key's transaction (an app call's inner transactions) and congestion
+fees can exceed it, and the documents say to raise it then. The signer
 presets do not approve (a permitted transaction reaches the Operator
 Default or review, so User Auto-Approve decides), do not forbid a rekey to
 another held key, and do not cap amounts; `policytext.SignerPresetNote`

@@ -193,11 +193,14 @@ presets do not do:
   still be allowed, and that key's own policy then governs the account. A
   preset limits destinations and transaction types; it is not a custody
   boundary.
-- **They do not cap amounts.** Only the fee is capped, at 0.05 ALGO per
-  transaction. That is the largest fee a valid group of 16 can need at the
-  minimum fee, so it never refuses a legitimate group, but it stops a client
-  burning the balance in fees on transfers the routes allow. Under network
-  congestion the required fee can exceed it; raise it if you need to.
+- **They do not cap amounts.** Only the fee is capped, at 0.06 ALGO per
+  transaction. That stops a client burning the balance in fees on transfers
+  the routes allow. It covers a full group of 16 payments or asset
+  transfers at the minimum fee, with native Falcon authorization and the
+  largest notes allowed (52,916 microAlgos). It does not cover a group that
+  pools other transactions' fees onto this key's, such as an app call
+  paying for its inner transactions, or fees under network congestion:
+  raise `max_fee_microalgos` for those.
 - **They do not inherit.** A preset for one key replaces the node default for
   that key, and may be looser than it.
 

@@ -10,9 +10,12 @@
   "always_review_warnings": true,
   "auto_approve_self_noop_transfer": false,
   // The fee goes to the network whatever the destination, so this cap is
-  // what keeps a client from burning the balance in fees. 0.05 ALGO covers
-  // the largest fee a valid group of 16 can need at the minimum fee.
-  "max_fee_microalgos": "50000",
+  // what keeps a client from burning the balance in fees. 0.06 ALGO covers
+  // a full group of 16 payments or asset transfers at the minimum fee,
+  // native Falcon and maximum notes included. Raise it for groups that
+  // pool other transactions' fees (app calls) onto this key's, or under
+  // network congestion.
+  "max_fee_microalgos": "60000",
   "transaction_types": { "*": "reject", "pay": "allow", "axfer": "allow" },
   "address_sets": {
     "destinations": ["REPLACE-WITH-DESTINATION-ADDRESS"]

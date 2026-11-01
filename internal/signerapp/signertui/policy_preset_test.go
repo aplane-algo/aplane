@@ -144,3 +144,38 @@ func TestPolicyPresetPickOffersSignerPresets(t *testing.T) {
 		t.Fatalf("esc: view %v edit %+v", signer.viewState, signer.policies.apply.edit)
 	}
 }
+
+// In a short terminal the picker scrolls: whichever choice is selected is
+// in the full View, so Enter never opens one the operator cannot see.
+func TestPolicyPresetPickKeepsTheSelectionInView(t *testing.T) {
+	for _, height := range []int{14, 12, 10} {
+		m := loadedPoliciesModel(protocol.PolicyMessage{Success: true, NodeRole: "signer",
+			Documents: []protocol.PolicyDocumentInfoWire{defaultDocInfo}, PolicySetSHA256: "set-digest"})
+		m.width, m.height = 80, height
+		m, _ = pressPolicyKey(t, m, "e")
+		if m.viewState != ViewPolicyPresetPick {
+			t.Fatalf("height %d: view %v", height, m.viewState)
+		}
+		choices := append([]string{"Edit the current policy"}, presetNamesForTest(m.policies.presetPick.presets)...)
+		for i, want := range choices {
+			if i > 0 {
+				m, _ = pressPolicyKey(t, m, "down")
+			}
+			view := stripANSI(m.View())
+			if lines := strings.Split(view, "\n"); len(lines) > height {
+				t.Fatalf("height %d: the view is %d lines", height, len(lines))
+			}
+			if !strings.Contains(view, "> "+want) {
+				t.Fatalf("height %d: choice %d (%s) is selected but not shown:\n%s", height, i, want, view)
+			}
+		}
+	}
+}
+
+func presetNamesForTest(presets []policytext.Preset) []string {
+	out := make([]string, len(presets))
+	for i, p := range presets {
+		out[i] = fmt.Sprintf("Preset %-20s", p.Name)
+	}
+	return out
+}

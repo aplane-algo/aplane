@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/algorand/go-algorand-sdk/v2/protocol"
+	sdkconfig "github.com/algorand/go-algorand-sdk/v2/protocol/config"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
@@ -17,11 +19,15 @@ import (
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyeval"
+	"github.com/aplane-algo/aplane/internal/signing/falcon1024"
 )
 
 const signerPresetKey = "CEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI7JH2AYM"
 
 var presetHeld = types.Address{0x44} // another account this signer holds
+
+// signerPresetFeeCap is the fee cap every signer preset carries.
+const signerPresetFeeCap = 60_000
 
 func signerPresetConfig(t *testing.T, name string) *policy.Config {
 	t.Helper()
@@ -103,7 +109,7 @@ func TestSignerPresetsShareTheirGuards(t *testing.T) {
 	for _, preset := range Presets(noderole.RoleSigner) {
 		cfg := signerPresetConfig(t, preset.Name)
 		if !cfg.RejectForeignRekey || !cfg.RejectCloseRemainder || !cfg.RejectAssetClose || !cfg.RejectClawback ||
-			!cfg.AlwaysReviewWarnings || cfg.AutoApproveSelfNoOpTransfer || cfg.MaxFeeMicroAlgos != 50_000 {
+			!cfg.AlwaysReviewWarnings || cfg.AutoApproveSelfNoOpTransfer || cfg.MaxFeeMicroAlgos != signerPresetFeeCap {
 			t.Errorf("%s: guards %+v", preset.Name, cfg)
 		}
 		tp := cfg.TransferPolicy
@@ -171,8 +177,8 @@ func TestSignerPresetVerdicts(t *testing.T) {
 			"application call":    {Type: types.ApplicationCallTx, Header: types.Header{Sender: presetSender, Fee: 1000, GenesisHash: mainnet}},
 			"key registration":    {Type: types.KeyRegistrationTx, Header: types.Header{Sender: presetSender, Fee: 1000, GenesisHash: mainnet}},
 			"asset configuration": {Type: types.AssetConfigTx, Header: types.Header{Sender: presetSender, Fee: 1000, GenesisHash: mainnet}},
-			"fee at the cap":      with(b, func(t *types.Transaction) { t.Fee = 50_000 }),
-			"fee over the cap":    with(b, func(t *types.Transaction) { t.Fee = 50_001 }),
+			"fee at the cap":      with(b, func(t *types.Transaction) { t.Fee = signerPresetFeeCap }),
+			"fee over the cap":    with(b, func(t *types.Transaction) { t.Fee = signerPresetFeeCap + 1 }),
 			"foreign rekey":       with(b, func(t *types.Transaction) { t.RekeyTo = presetOther }),
 			"held-key rekey":      with(b, func(t *types.Transaction) { t.RekeyTo = presetHeld }),
 			"another sender":      with(b, func(t *types.Transaction) { t.Sender = presetHeld }),
@@ -254,4 +260,36 @@ func presetNames(presets []Preset) string {
 		names[i] = p.Name
 	}
 	return strings.Join(names, " ")
+}
+
+// The signer presets' fee cap covers a full group of payments or asset
+// transfers at the minimum fee, whatever authorizes them: every member at
+// its most expensive authorization (native Falcon, or a LogicSig at the
+// largest program) and the largest note the protocol allows, the whole
+// group's fee landing on one transaction. Computed from each consensus
+// version the signer accepts, so a protocol change that raises it fails
+// here instead of silently refusing such groups. Fees other members pool
+// onto this key's transaction (app calls, their inner transactions) are not
+// covered, and are documented as needing a higher cap.
+func TestSignerPresetFeeCapCoversAFullGroup(t *testing.T) {
+	for _, version := range []protocol.ConsensusVersion{protocol.ConsensusV42, protocol.ConsensusV43} {
+		p, ok := sdkconfig.Consensus[version]
+		if !ok {
+			t.Fatalf("no consensus parameters for %s", version)
+		}
+		const unit = 1_000_000 // one transaction's fee factor
+		surcharge := uint64(p.PerByteTxnSurcharge)
+		note := uint64(p.MaxAbsoluteTxnNoteBytes-p.MaxTxnNoteBytes) * surcharge
+		program := uint64(0)
+		if p.MaxAbsoluteLogicSigProgramSize > p.LogicSigMaxSize {
+			program = (p.MaxAbsoluteLogicSigProgramSize - p.LogicSigMaxSize) * surcharge
+		}
+		member := unit + note + max(falcon1024.PQFeeContribution, program)
+		factor := uint64(p.MaxTxGroupSize) * member
+		bound := (p.MinTxnFee*factor + unit - 1) / unit
+		if bound > signerPresetFeeCap {
+			t.Errorf("%s: a full group can need %d microAlgos, above the presets' cap of %d", version, bound, signerPresetFeeCap)
+		}
+		t.Logf("%s: full-group bound %d microAlgos, cap %d", version, bound, signerPresetFeeCap)
+	}
 }
