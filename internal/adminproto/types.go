@@ -891,3 +891,33 @@ type RemoveASAResult struct {
 	Code            string
 	Error           string
 }
+
+// PolicyNetwork is one network token and the chain it names on the node.
+type PolicyNetwork struct {
+	Network     string
+	GenesisHash string
+}
+
+// PolicyContextView is the node's policy context with its digests: what an
+// export carries and what an apply checks it still matches. PolicySetSHA256
+// and SnapshotSHA256 are read with the context, so the three agree.
+type PolicyContextView struct {
+	Success         bool
+	NodeRole        string
+	RulesVersion    int
+	Networks        []PolicyNetwork
+	Assets          []ASAInfo
+	ContextSHA256   string
+	PolicySetSHA256 string
+	SnapshotSHA256  string
+	Code            string
+	Error           string
+}
+
+// GetPolicyDocumentRequest names one active document. A non-empty
+// ExpectedSnapshotSHA256 refuses the read if the node's policy or context
+// changed since that snapshot, so a multi-document read is coherent.
+type GetPolicyDocumentRequest struct {
+	Key                    string
+	ExpectedSnapshotSHA256 string
+}

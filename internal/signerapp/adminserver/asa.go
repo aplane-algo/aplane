@@ -110,3 +110,26 @@ func AdminASAObservation(o protocol.ASAObservation) adminproto.ASAObservation {
 		Manager: o.Manager, Reserve: o.Reserve, Freeze: o.Freeze, Clawback: o.Clawback,
 	}
 }
+
+// ProtocolPolicyContextMessage projects the node's policy context onto the
+// wire.
+func ProtocolPolicyContextMessage(id string, view adminproto.PolicyContextView) protocol.PolicyContextMessage {
+	msg := protocol.PolicyContextMessage{
+		BaseMessage:     protocol.BaseMessage{Type: protocol.MsgTypePolicyContext, ID: id},
+		Success:         view.Success,
+		NodeRole:        view.NodeRole,
+		RulesVersion:    view.RulesVersion,
+		ContextSHA256:   view.ContextSHA256,
+		PolicySetSHA256: view.PolicySetSHA256,
+		SnapshotSHA256:  view.SnapshotSHA256,
+		Code:            view.Code,
+		Error:           view.Error,
+	}
+	for _, n := range view.Networks {
+		msg.Networks = append(msg.Networks, protocol.PolicyNetwork{Network: n.Network, GenesisHash: n.GenesisHash})
+	}
+	for _, a := range view.Assets {
+		msg.Assets = append(msg.Assets, protocolASAInfo(a))
+	}
+	return msg
+}

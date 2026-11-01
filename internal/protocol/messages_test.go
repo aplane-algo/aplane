@@ -105,6 +105,8 @@ func TestMessageTypeConstantsAreUnique(t *testing.T) {
 		MsgTypeCheckPolicyResult,
 		MsgTypeApplyPolicy,
 		MsgTypeApplyPolicyResult,
+		MsgTypeGetPolicyContext,
+		MsgTypePolicyContext,
 		MsgTypeListASASet,
 		MsgTypeASASet,
 		MsgTypeLookupASA,

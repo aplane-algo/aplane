@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -51,6 +52,10 @@ type Env struct {
 	Keyring  *crypto.Keyring
 	// ASASet is the node's ASA set, for the admission checks; nil skips them.
 	ASASet *asaset.Set
+	// Networks is the node's network mapping. Its zero value means the one
+	// built from Config, so callers that hold the node's resolver pass it
+	// and the context has one source.
+	Networks apconfig.GenesisHashNetworkResolver
 }
 
 // Error is a policy request failure with a stable result code.
@@ -243,15 +248,66 @@ func AdmissionProblems(env Env, doc adminproto.PolicyDocument) []adminproto.Poli
 // NodeContext is the node's policy context: its role, its network mapping
 // (the built-in networks plus the configured custom ones), and its ASA set.
 func NodeContext(env Env) (*policycontext.Context, error) {
-	var custom map[string]string
-	if env.Config != nil {
-		custom = env.Config.GenesisHashNetworks
+	networks := env.Networks
+	if networks.Map() == nil || len(networks.Map()) == 0 {
+		var custom map[string]string
+		if env.Config != nil {
+			custom = env.Config.GenesisHashNetworks
+		}
+		var err error
+		if networks, err = apconfig.NewGenesisHashNetworkResolver(custom); err != nil {
+			return nil, err
+		}
 	}
-	networks, err := apconfig.NewGenesisHashNetworkResolver(custom)
+	set := env.ASASet
+	if set == nil {
+		set = asaset.Empty()
+	}
+	return policycontext.New(env.Role, networks, set)
+}
+
+// Snapshot is the node's composite snapshot: its policy set and its context
+// digested together. Any change to the documents, the ASA set or the network
+// mapping changes it.
+func Snapshot(env Env, np *policyruntime.NodePolicy) (*policycontext.Context, string, error) {
+	ctx, err := NodeContext(env)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	return policycontext.New(env.Role, networks, env.ASASet)
+	return ctx, policycontext.SnapshotSHA256(ctx.SHA256(), np.SetSHA256()), nil
+}
+
+// ContextView projects the node's context, with its digests, for the admin
+// surface.
+func ContextView(env Env, np *policyruntime.NodePolicy) adminproto.PolicyContextView {
+	if np == nil || env.ASASet == nil {
+		return adminproto.PolicyContextView{Code: "policy_unavailable", Error: "policy is not loaded; unlock the signer"}
+	}
+	ctx, snapshot, err := Snapshot(env, np)
+	if err != nil {
+		return adminproto.PolicyContextView{Code: "policy_context_unavailable", Error: err.Error()}
+	}
+	view := adminproto.PolicyContextView{
+		Success:         true,
+		NodeRole:        string(ctx.Role()),
+		RulesVersion:    ctx.RulesVersion(),
+		ContextSHA256:   ctx.SHA256(),
+		PolicySetSHA256: np.SetSHA256(),
+		SnapshotSHA256:  snapshot,
+	}
+	tokens := map[asaset.GenesisHash]string{}
+	for token, genesis := range ctx.Networks() {
+		tokens[genesis] = token
+		view.Networks = append(view.Networks, adminproto.PolicyNetwork{Network: token, GenesisHash: genesis.String()})
+	}
+	sort.Slice(view.Networks, func(i, j int) bool { return view.Networks[i].Network < view.Networks[j].Network })
+	for _, a := range ctx.Assets().Assets() {
+		view.Assets = append(view.Assets, adminproto.ASAInfo{
+			Network: tokens[a.Genesis], GenesisHash: a.Genesis.String(), AssetID: a.AssetID,
+			Name: a.Name, UnitName: a.UnitName, Decimals: a.Decimals, Origin: string(a.Origin),
+		})
+	}
+	return view
 }
 
 // advisoryWarnings reports a valid document's surprising shapes.

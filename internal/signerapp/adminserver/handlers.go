@@ -116,7 +116,16 @@ func (s *Session) HandleGetPolicyDocument(msg *protocol.GetPolicyDocumentMessage
 	if !s.authorize(msg.ID, auth.ActionPolicyView, auth.Resource{Type: "policy"}) {
 		return
 	}
-	_ = s.WriteJSON(ProtocolPolicyDocumentMessage(msg.ID, s.settingsServices.GetPolicyDocument(msg.Key)))
+	_ = s.WriteJSON(ProtocolPolicyDocumentMessage(msg.ID, s.settingsServices.GetPolicyDocumentAt(adminproto.GetPolicyDocumentRequest{
+		Key: msg.Key, ExpectedSnapshotSHA256: msg.ExpectedSnapshotSHA256,
+	})))
+}
+
+func (s *Session) HandleGetPolicyContext(msg *protocol.GetPolicyContextMessage) {
+	if !s.authorize(msg.ID, auth.ActionPolicyView, auth.Resource{Type: "policy"}) {
+		return
+	}
+	_ = s.WriteJSON(ProtocolPolicyContextMessage(msg.ID, s.settingsServices.GetPolicyContext()))
 }
 
 func (s *Session) HandleCheckPolicy(msg *protocol.CheckPolicyMessage) {

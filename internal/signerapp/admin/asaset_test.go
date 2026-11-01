@@ -25,6 +25,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/policy/policytest"
+	"github.com/aplane-algo/aplane/internal/policycontext"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
@@ -437,5 +438,91 @@ func TestRemoveASABoundsBlockingReferences(t *testing.T) {
 	}
 	if !strings.Contains(got.Error, "1000 policy reference(s)") {
 		t.Fatalf("error = %q, want the full count", got.Error)
+	}
+}
+
+func TestPolicyContextDigestsFollowWhatChanged(t *testing.T) {
+	svc, _, _ := setupASAAdmin(t)
+	before := svc.GetPolicyContext()
+	if !before.Success || before.NodeRole != "signer" || before.RulesVersion != 1 {
+		t.Fatalf("GetPolicyContext() = %+v", before)
+	}
+	var privateDev, usdc bool
+	for _, n := range before.Networks {
+		privateDev = privateDev || (n.Network == "private-dev" && n.GenesisHash == asaTestChain)
+	}
+	for _, a := range before.Assets {
+		usdc = usdc || (a.AssetID == 31566704 && a.Origin == "builtin" && a.Network == "mainnet")
+	}
+	if !privateDev || !usdc {
+		t.Fatalf("context lacks the custom network or the built-ins: %+v", before.Networks)
+	}
+	if want := policycontext.SnapshotSHA256(before.ContextSHA256, before.PolicySetSHA256); before.SnapshotSHA256 != want {
+		t.Fatalf("snapshot %s, want %s", before.SnapshotSHA256, want)
+	}
+
+	// The ASA set moves the context, not the policy set.
+	if added := confirmASA9(t, svc); !added.Success {
+		t.Fatal(added)
+	}
+	afterSet := svc.GetPolicyContext()
+	if afterSet.ContextSHA256 == before.ContextSHA256 || afterSet.PolicySetSHA256 != before.PolicySetSHA256 || afterSet.SnapshotSHA256 == before.SnapshotSHA256 {
+		t.Fatalf("after an ASA add: %+v", afterSet)
+	}
+	// A policy apply moves the policy set, not the context.
+	applyDefault(t, svc, `{"max_fee_microalgos": "3000"}`)
+	afterPolicy := svc.GetPolicyContext()
+	if afterPolicy.ContextSHA256 != afterSet.ContextSHA256 || afterPolicy.PolicySetSHA256 == afterSet.PolicySetSHA256 {
+		t.Fatalf("after a policy apply: %+v", afterPolicy)
+	}
+
+	// A read against an old snapshot is refused; against the current one, served.
+	if doc := svc.GetPolicyDocumentAt(adminproto.GetPolicyDocumentRequest{Key: policy.DefaultKey, ExpectedSnapshotSHA256: before.SnapshotSHA256}); doc.Success || doc.Code != "policy_snapshot_changed" {
+		t.Fatalf("read against a stale snapshot = %+v", doc)
+	}
+	if doc := svc.GetPolicyDocumentAt(adminproto.GetPolicyDocumentRequest{Key: policy.DefaultKey, ExpectedSnapshotSHA256: afterPolicy.SnapshotSHA256}); !doc.Success {
+		t.Fatalf("read against the current snapshot = %+v", doc)
+	}
+}
+
+// The ASA set file is bounded at 1 MiB; a context carrying a set that large,
+// plus the built-ins, still fits one admin frame.
+func TestPolicyContextFitsOneAdminFrame(t *testing.T) {
+	svc, ir, _ := setupASAAdmin(t)
+	genesis, _ := asaset.ParseGenesisHash(asaTestChain)
+	var entries []asaset.Entry
+	for i := uint64(1); ; i++ {
+		entries = append(entries, asaset.Entry{
+			Identity: asaset.Identity{Genesis: genesis, AssetID: i}, Name: strings.Repeat("n", asaset.MaxNameBytes),
+			UnitName: strings.Repeat("u", asaset.MaxUnitNameBytes), Decimals: 19, Creator: asaTestCreator,
+			ConfirmedAt: time.Unix(1_700_000_000, 0), NetworkAtConfirmation: "private-dev",
+		})
+		if i%500 != 0 {
+			continue
+		}
+		set, err := asaset.New(entries)
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, _ := set.Marshal()
+		if len(data) > 1<<20 {
+			entries = entries[:len(entries)-500]
+			break
+		}
+	}
+	set, err := asaset.New(entries)
+	if err != nil {
+		t.Fatal(err)
+	}
+	np, _ := ir.PolicyState()
+	ir.SetVerifiedPolicyState(np, set, nil)
+	view := svc.GetPolicyContext()
+	if !view.Success || len(view.Assets) < len(entries) {
+		t.Fatalf("GetPolicyContext() carried %d assets for %d entries", len(view.Assets), len(entries))
+	}
+	if size := encodedSize(t, adminserver.ProtocolPolicyContextMessage("ctx", view)); size > protocol.MaxAdminMessageBytes {
+		t.Fatalf("a context with %d entries is %d bytes, over the %d-byte frame", len(entries), size, protocol.MaxAdminMessageBytes)
+	} else {
+		t.Logf("%d entries: %d bytes", len(entries), size)
 	}
 }
