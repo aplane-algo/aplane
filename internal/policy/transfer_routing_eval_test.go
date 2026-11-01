@@ -99,33 +99,29 @@ func TestTransferRoutingEvaluation(t *testing.T) {
 
 	allowed := base
 	allowed.Amount = 10
-	if got := CheckTxnTransferRoutingPolicyLints(allowed, cfg, false); len(got) != 0 {
+	if got := CheckTxnTransferRoutingPolicyLints(allowed, cfg); len(got) != 0 {
 		t.Fatalf("deny lints below threshold = %+v", got)
 	}
-	if got := CheckTxnTransferRoutingReviewPolicyLints(allowed, cfg, false); len(got) != 0 {
+	if got := CheckTxnTransferRoutingReviewPolicyLints(allowed, cfg); len(got) != 0 {
 		t.Fatalf("review lints below threshold = %+v", got)
 	}
 
 	review := base
 	review.Amount = 11
-	if got := CheckTxnTransferRoutingReviewPolicyLints(review, cfg, false); len(got) != 1 || got[0].RuleID != "transfer_policy:payroll:review_above" {
+	if got := CheckTxnTransferRoutingReviewPolicyLints(review, cfg); len(got) != 1 || got[0].RuleID != "transfer_policy:payroll:review_above" {
 		t.Fatalf("review threshold lints = %+v", got)
 	}
 
 	reject := base
 	reject.Amount = 21
-	if got := CheckTxnTransferRoutingPolicyLints(reject, cfg, false); len(got) != 1 || got[0].RuleID != "transfer_policy:payroll:reject_above" {
+	if got := CheckTxnTransferRoutingPolicyLints(reject, cfg); len(got) != 1 || got[0].RuleID != "transfer_policy:payroll:reject_above" {
 		t.Fatalf("reject threshold lints = %+v", got)
 	}
 
 	miss := base
 	miss.Receiver = other
-	if got := CheckTxnTransferRoutingPolicyLints(miss, cfg, false); len(got) != 1 || got[0].RuleID != TransferRoutingRouteMissRuleID {
+	if got := CheckTxnTransferRoutingPolicyLints(miss, cfg); len(got) != 1 || got[0].RuleID != TransferRoutingRouteMissRuleID {
 		t.Fatalf("route miss lints = %+v", got)
-	}
-
-	if got := CheckTxnTransferRoutingPolicyLints(miss, cfg, true); len(got) != 0 {
-		t.Fatalf("routing-exempt lints = %+v", got)
 	}
 }
 
@@ -146,10 +142,10 @@ func TestTransferRoutingReviewOnNoRoute(t *testing.T) {
 			Amount:   1,
 		},
 	}
-	if got := CheckTxnTransferRoutingPolicyLints(txn, cfg, false); len(got) != 0 {
+	if got := CheckTxnTransferRoutingPolicyLints(txn, cfg); len(got) != 0 {
 		t.Fatalf("deny lints = %+v", got)
 	}
-	if got := CheckTxnTransferRoutingReviewPolicyLints(txn, cfg, false); len(got) != 1 || got[0].RuleID != TransferRoutingRouteMissRuleID {
+	if got := CheckTxnTransferRoutingReviewPolicyLints(txn, cfg); len(got) != 1 || got[0].RuleID != TransferRoutingRouteMissRuleID {
 		t.Fatalf("review lints = %+v", got)
 	}
 }
@@ -167,8 +163,8 @@ func TestTransferRoutingUnknownGenesisHashOnNoRoute(t *testing.T) {
 			onNoRoute: string(TransferOnNoRouteReject),
 			check: func(t *testing.T, txn types.Transaction, cfg *Config) {
 				t.Helper()
-				assertRoutingRuleIDs(t, CheckTxnTransferRoutingPolicyLints(txn, cfg, false), []string{TransferRoutingUnknownGenesisRuleID})
-				assertRoutingRuleIDs(t, CheckTxnTransferRoutingReviewPolicyLints(txn, cfg, false), nil)
+				assertRoutingRuleIDs(t, CheckTxnTransferRoutingPolicyLints(txn, cfg), []string{TransferRoutingUnknownGenesisRuleID})
+				assertRoutingRuleIDs(t, CheckTxnTransferRoutingReviewPolicyLints(txn, cfg), nil)
 			},
 		},
 		{
@@ -176,8 +172,8 @@ func TestTransferRoutingUnknownGenesisHashOnNoRoute(t *testing.T) {
 			onNoRoute: string(TransferOnNoRouteReview),
 			check: func(t *testing.T, txn types.Transaction, cfg *Config) {
 				t.Helper()
-				assertRoutingRuleIDs(t, CheckTxnTransferRoutingPolicyLints(txn, cfg, false), nil)
-				assertRoutingRuleIDs(t, CheckTxnTransferRoutingReviewPolicyLints(txn, cfg, false), []string{TransferRoutingUnknownGenesisRuleID})
+				assertRoutingRuleIDs(t, CheckTxnTransferRoutingPolicyLints(txn, cfg), nil)
+				assertRoutingRuleIDs(t, CheckTxnTransferRoutingReviewPolicyLints(txn, cfg), []string{TransferRoutingUnknownGenesisRuleID})
 			},
 		},
 		{
@@ -185,8 +181,8 @@ func TestTransferRoutingUnknownGenesisHashOnNoRoute(t *testing.T) {
 			onNoRoute: string(TransferOnNoRouteOperatorDefault),
 			check: func(t *testing.T, txn types.Transaction, cfg *Config) {
 				t.Helper()
-				assertRoutingRuleIDs(t, CheckTxnTransferRoutingPolicyLints(txn, cfg, false), nil)
-				assertRoutingRuleIDs(t, CheckTxnTransferRoutingReviewPolicyLints(txn, cfg, false), nil)
+				assertRoutingRuleIDs(t, CheckTxnTransferRoutingPolicyLints(txn, cfg), nil)
+				assertRoutingRuleIDs(t, CheckTxnTransferRoutingReviewPolicyLints(txn, cfg), nil)
 			},
 		},
 	}
@@ -234,7 +230,7 @@ func TestTransferRoutingCloseOutIsDeniedBeforeOperatorDefault(t *testing.T) {
 			CloseRemainderTo: closeTo,
 		},
 	}
-	if got := CheckTxnTransferRoutingPolicyLints(txn, cfg, false); len(got) != 1 || got[0].RuleID != TransferRoutingCloseRejectedRuleID {
+	if got := CheckTxnTransferRoutingPolicyLints(txn, cfg); len(got) != 1 || got[0].RuleID != TransferRoutingCloseRejectedRuleID {
 		t.Fatalf("close rejection lints = %+v", got)
 	}
 }
@@ -269,12 +265,12 @@ func TestTransferRoutingCloseAndClawbackOnNoRouteFallbacks(t *testing.T) {
 			CloseRemainderTo: types.Address{9},
 		},
 	}
-	assertRoutingRuleIDs(t, CheckTxnTransferRoutingPolicyLints(noRouteClose, cfg, false), nil)
-	assertRoutingRuleIDs(t, CheckTxnTransferRoutingReviewPolicyLints(noRouteClose, cfg, false), []string{TransferRoutingCloseRouteMissRuleID})
+	assertRoutingRuleIDs(t, CheckTxnTransferRoutingPolicyLints(noRouteClose, cfg), nil)
+	assertRoutingRuleIDs(t, CheckTxnTransferRoutingReviewPolicyLints(noRouteClose, cfg), []string{TransferRoutingCloseRouteMissRuleID})
 
 	matchedCloseWithoutAllow := noRouteClose
 	matchedCloseWithoutAllow.CloseRemainderTo = closeTo
-	assertRoutingRuleIDs(t, CheckTxnTransferRoutingPolicyLints(matchedCloseWithoutAllow, cfg, false), []string{"transfer_policy:close_without_allow:close_rejected"})
+	assertRoutingRuleIDs(t, CheckTxnTransferRoutingPolicyLints(matchedCloseWithoutAllow, cfg), []string{"transfer_policy:close_without_allow:close_rejected"})
 
 	noRouteClawback := types.Transaction{
 		Type: types.AssetTransferTx,
@@ -289,13 +285,13 @@ func TestTransferRoutingCloseAndClawbackOnNoRouteFallbacks(t *testing.T) {
 			AssetAmount:   1,
 		},
 	}
-	assertRoutingRuleIDs(t, CheckTxnTransferRoutingPolicyLints(noRouteClawback, cfg, false), nil)
-	assertRoutingRuleIDs(t, CheckTxnTransferRoutingReviewPolicyLints(noRouteClawback, cfg, false), nil)
+	assertRoutingRuleIDs(t, CheckTxnTransferRoutingPolicyLints(noRouteClawback, cfg), nil)
+	assertRoutingRuleIDs(t, CheckTxnTransferRoutingReviewPolicyLints(noRouteClawback, cfg), nil)
 
 	ordinaryMiss := noRouteClose
 	ordinaryMiss.Receiver = types.Address{11}
 	ordinaryMiss.CloseRemainderTo = types.Address{}
-	assertRoutingRuleIDs(t, CheckTxnTransferRoutingPolicyLints(ordinaryMiss, cfg, false), []string{TransferRoutingRouteMissRuleID})
+	assertRoutingRuleIDs(t, CheckTxnTransferRoutingPolicyLints(ordinaryMiss, cfg), []string{TransferRoutingRouteMissRuleID})
 }
 
 func TestTransferRoutingAddressSetsMatchByNetwork(t *testing.T) {
@@ -327,12 +323,12 @@ func TestTransferRoutingAddressSetsMatchByNetwork(t *testing.T) {
 			Amount:   1,
 		},
 	}
-	assertRoutingRuleIDs(t, CheckTxnTransferRoutingPolicyLints(pay, cfg, false), nil)
-	assertRoutingRuleIDs(t, CheckTxnTransferRoutingReviewPolicyLints(pay, cfg, false), nil)
+	assertRoutingRuleIDs(t, CheckTxnTransferRoutingPolicyLints(pay, cfg), nil)
+	assertRoutingRuleIDs(t, CheckTxnTransferRoutingReviewPolicyLints(pay, cfg), nil)
 
 	wrongNetworkDestination := pay
 	wrongNetworkDestination.Receiver = mainnetOnlyDest
-	assertRoutingRuleIDs(t, CheckTxnTransferRoutingPolicyLints(wrongNetworkDestination, cfg, false), []string{TransferRoutingRouteMissRuleID})
+	assertRoutingRuleIDs(t, CheckTxnTransferRoutingPolicyLints(wrongNetworkDestination, cfg), []string{TransferRoutingRouteMissRuleID})
 
 	clawback := types.Transaction{
 		Type: types.AssetTransferTx,
@@ -347,8 +343,8 @@ func TestTransferRoutingAddressSetsMatchByNetwork(t *testing.T) {
 			AssetAmount:   1,
 		},
 	}
-	assertRoutingRuleIDs(t, CheckTxnTransferRoutingPolicyLints(clawback, cfg, false), nil)
-	assertRoutingRuleIDs(t, CheckTxnTransferRoutingReviewPolicyLints(clawback, cfg, false), nil)
+	assertRoutingRuleIDs(t, CheckTxnTransferRoutingPolicyLints(clawback, cfg), nil)
+	assertRoutingRuleIDs(t, CheckTxnTransferRoutingReviewPolicyLints(clawback, cfg), nil)
 }
 
 func TestTransferRoutingAssetSetAndOverlappingThresholds(t *testing.T) {
@@ -375,7 +371,7 @@ func TestTransferRoutingAssetSetAndOverlappingThresholds(t *testing.T) {
 			AssetAmount:   60,
 		},
 	}
-	if got := CheckTxnTransferRoutingPolicyLints(txn, cfg, false); len(got) != 1 || got[0].RuleID != "transfer_policy:narrow:reject_above" {
+	if got := CheckTxnTransferRoutingPolicyLints(txn, cfg); len(got) != 1 || got[0].RuleID != "transfer_policy:narrow:reject_above" {
 		t.Fatalf("overlapping threshold lints = %+v", got)
 	}
 }
@@ -405,27 +401,27 @@ func TestTransferRoutingRouteLimitsArePerNetwork(t *testing.T) {
 
 	atReviewThreshold := base
 	atReviewThreshold.Amount = 10
-	assertRoutingRuleIDs(t, CheckTxnTransferRoutingPolicyLints(atReviewThreshold, cfg, false), nil)
-	assertRoutingRuleIDs(t, CheckTxnTransferRoutingReviewPolicyLints(atReviewThreshold, cfg, false), nil)
+	assertRoutingRuleIDs(t, CheckTxnTransferRoutingPolicyLints(atReviewThreshold, cfg), nil)
+	assertRoutingRuleIDs(t, CheckTxnTransferRoutingReviewPolicyLints(atReviewThreshold, cfg), nil)
 
 	aboveNetworkReview := base
 	aboveNetworkReview.Amount = 11
-	assertRoutingRuleIDs(t, CheckTxnTransferRoutingPolicyLints(aboveNetworkReview, cfg, false), nil)
-	assertRoutingRuleIDs(t, CheckTxnTransferRoutingReviewPolicyLints(aboveNetworkReview, cfg, false), []string{"transfer_policy:tiered_pay:review_above"})
+	assertRoutingRuleIDs(t, CheckTxnTransferRoutingPolicyLints(aboveNetworkReview, cfg), nil)
+	assertRoutingRuleIDs(t, CheckTxnTransferRoutingReviewPolicyLints(aboveNetworkReview, cfg), []string{"transfer_policy:tiered_pay:review_above"})
 
 	aboveNetworkReject := base
 	aboveNetworkReject.Amount = 51
-	assertRoutingRuleIDs(t, CheckTxnTransferRoutingPolicyLints(aboveNetworkReject, cfg, false), []string{"transfer_policy:tiered_pay:reject_above"})
+	assertRoutingRuleIDs(t, CheckTxnTransferRoutingPolicyLints(aboveNetworkReject, cfg), []string{"transfer_policy:tiered_pay:reject_above"})
 
 	mainnetReview := base
 	mainnetReview.GenesisHash = testGenesisDigest(t, apconfig.AlgorandMainnetGenesisHash)
 	mainnetReview.Amount = 71
-	assertRoutingRuleIDs(t, CheckTxnTransferRoutingPolicyLints(mainnetReview, cfg, false), nil)
-	assertRoutingRuleIDs(t, CheckTxnTransferRoutingReviewPolicyLints(mainnetReview, cfg, false), []string{"transfer_policy:tiered_pay:review_above"})
+	assertRoutingRuleIDs(t, CheckTxnTransferRoutingPolicyLints(mainnetReview, cfg), nil)
+	assertRoutingRuleIDs(t, CheckTxnTransferRoutingReviewPolicyLints(mainnetReview, cfg), []string{"transfer_policy:tiered_pay:review_above"})
 
 	mainnetReject := mainnetReview
 	mainnetReject.Amount = 101
-	assertRoutingRuleIDs(t, CheckTxnTransferRoutingPolicyLints(mainnetReject, cfg, false), []string{"transfer_policy:tiered_pay:reject_above"})
+	assertRoutingRuleIDs(t, CheckTxnTransferRoutingPolicyLints(mainnetReject, cfg), []string{"transfer_policy:tiered_pay:reject_above"})
 }
 
 func TestTransferRoutingBlockedDestinations(t *testing.T) {
@@ -516,7 +512,7 @@ func TestTransferRoutingBlockedDestinations(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			lints := CheckTxnTransferRoutingPolicyLints(tc.txn, cfg, false)
+			lints := CheckTxnTransferRoutingPolicyLints(tc.txn, cfg)
 			if len(lints) != 1 || lints[0].RuleID != TransferRoutingBlockedDestinationRuleID {
 				t.Fatalf("blocked destination lints = %+v", lints)
 			}
@@ -554,12 +550,12 @@ func TestTransferRoutingCloseAndClawbackBranches(t *testing.T) {
 			CloseRemainderTo: closeRejected,
 		},
 	}
-	assertRoutingRuleIDs(t, CheckTxnTransferRoutingPolicyLints(closeRejectedTxn, cfg, false), []string{"transfer_policy:close_without_allow:close_rejected"})
+	assertRoutingRuleIDs(t, CheckTxnTransferRoutingPolicyLints(closeRejectedTxn, cfg), []string{"transfer_policy:close_without_allow:close_rejected"})
 
 	closeAllowedTxn := closeRejectedTxn
 	closeAllowedTxn.CloseRemainderTo = closeAllowed
-	assertRoutingRuleIDs(t, CheckTxnTransferRoutingPolicyLints(closeAllowedTxn, cfg, false), nil)
-	assertRoutingRuleIDs(t, CheckTxnTransferRoutingReviewPolicyLints(closeAllowedTxn, cfg, false), nil)
+	assertRoutingRuleIDs(t, CheckTxnTransferRoutingPolicyLints(closeAllowedTxn, cfg), nil)
+	assertRoutingRuleIDs(t, CheckTxnTransferRoutingReviewPolicyLints(closeAllowedTxn, cfg), nil)
 
 	clawbackAllowed := types.Transaction{
 		Type: types.AssetTransferTx,
@@ -574,16 +570,16 @@ func TestTransferRoutingCloseAndClawbackBranches(t *testing.T) {
 			AssetAmount:   1,
 		},
 	}
-	assertRoutingRuleIDs(t, CheckTxnTransferRoutingPolicyLints(clawbackAllowed, cfg, false), nil)
-	assertRoutingRuleIDs(t, CheckTxnTransferRoutingReviewPolicyLints(clawbackAllowed, cfg, false), nil)
+	assertRoutingRuleIDs(t, CheckTxnTransferRoutingPolicyLints(clawbackAllowed, cfg), nil)
+	assertRoutingRuleIDs(t, CheckTxnTransferRoutingReviewPolicyLints(clawbackAllowed, cfg), nil)
 
 	clawbackRejected := clawbackAllowed
 	clawbackRejected.AssetSender = otherOwner
-	assertRoutingRuleIDs(t, CheckTxnTransferRoutingPolicyLints(clawbackRejected, cfg, false), []string{TransferRoutingClawbackRejectedRuleID})
+	assertRoutingRuleIDs(t, CheckTxnTransferRoutingPolicyLints(clawbackRejected, cfg), []string{TransferRoutingClawbackRejectedRuleID})
 
 	clawbackCloseRejected := clawbackAllowed
 	clawbackCloseRejected.AssetCloseTo = closeRejected
-	assertRoutingRuleIDs(t, CheckTxnTransferRoutingPolicyLints(clawbackCloseRejected, cfg, false), []string{TransferRoutingCloseRejectedRuleID})
+	assertRoutingRuleIDs(t, CheckTxnTransferRoutingPolicyLints(clawbackCloseRejected, cfg), []string{TransferRoutingCloseRejectedRuleID})
 }
 
 func TestTransferRoutingIgnoresNonTransferTransactions(t *testing.T) {
@@ -601,8 +597,8 @@ func TestTransferRoutingIgnoresNonTransferTransactions(t *testing.T) {
 			GenesisHash: testGenesisDigest(t, apconfig.AlgorandTestnetGenesisHash),
 		},
 	}
-	assertRoutingRuleIDs(t, CheckTxnTransferRoutingPolicyLints(appCall, cfg, false), nil)
-	assertRoutingRuleIDs(t, CheckTxnTransferRoutingReviewPolicyLints(appCall, cfg, false), nil)
+	assertRoutingRuleIDs(t, CheckTxnTransferRoutingPolicyLints(appCall, cfg), nil)
+	assertRoutingRuleIDs(t, CheckTxnTransferRoutingReviewPolicyLints(appCall, cfg), nil)
 }
 
 func TestTransferRoutingMultipleMovementsCanEmitMultipleVerdicts(t *testing.T) {
@@ -627,7 +623,7 @@ func TestTransferRoutingMultipleMovementsCanEmitMultipleVerdicts(t *testing.T) {
 			CloseRemainderTo: closeTo,
 		},
 	}
-	assertRoutingRuleIDs(t, CheckTxnTransferRoutingPolicyLints(txn, cfg, false), []string{
+	assertRoutingRuleIDs(t, CheckTxnTransferRoutingPolicyLints(txn, cfg), []string{
 		TransferRoutingRouteMissRuleID,
 		TransferRoutingCloseRejectedRuleID,
 	})
@@ -658,7 +654,7 @@ func TestTransferRoutingBlockedDestinationPrecedenceAndExemptions(t *testing.T) 
 			CloseRemainderTo: otherBlocked,
 		},
 	}
-	lints := CheckTxnTransferRoutingPolicyLints(txn, cfg, false)
+	lints := CheckTxnTransferRoutingPolicyLints(txn, cfg)
 	if len(lints) != 2 {
 		t.Fatalf("blocked destination lints = %+v, want 2", lints)
 	}
@@ -667,13 +663,10 @@ func TestTransferRoutingBlockedDestinationPrecedenceAndExemptions(t *testing.T) 
 			t.Fatalf("blocked destination lint rule ID = %q", lint.RuleID)
 		}
 	}
-	if got := CheckTxnTransferRoutingPolicyLints(txn, cfg, true); len(got) != 0 {
-		t.Fatalf("routing-exempt blocked destination lints = %+v", got)
-	}
 
 	unknownGenesis := txn
 	unknownGenesis.GenesisHash = types.Digest{9}
-	lints = CheckTxnTransferRoutingPolicyLints(unknownGenesis, cfg, false)
+	lints = CheckTxnTransferRoutingPolicyLints(unknownGenesis, cfg)
 	if len(lints) != 2 {
 		t.Fatalf("unknown-genesis blocked destination lints = %+v, want 2", lints)
 	}
@@ -705,10 +698,10 @@ func TestTransferRoutingBlockedDestinationsSkipOptIn(t *testing.T) {
 			AssetReceiver: blocked,
 		},
 	}
-	if got := CheckTxnTransferRoutingPolicyLints(txn, cfg, false); len(got) != 0 {
+	if got := CheckTxnTransferRoutingPolicyLints(txn, cfg); len(got) != 0 {
 		t.Fatalf("opt-in blocked destination deny lints = %+v", got)
 	}
-	if got := CheckTxnTransferRoutingReviewPolicyLints(txn, cfg, false); len(got) != 0 {
+	if got := CheckTxnTransferRoutingReviewPolicyLints(txn, cfg); len(got) != 0 {
 		t.Fatalf("opt-in blocked destination review lints = %+v", got)
 	}
 }

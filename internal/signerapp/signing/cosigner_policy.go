@@ -83,7 +83,7 @@ func cosignerTargetPolicyLints(txn types.Transaction, targetIndex int, cfg *poli
 		}}
 	}
 	violations = append(violations, withTargetIndex(
-		policy.CheckTxnTransferRoutingPolicyLints(txn, cfg, false),
+		policy.CheckTxnTransferRoutingPolicyLints(txn, cfg),
 		targetIndex,
 	)...)
 	// Defense in depth: decode refuses review-producing fields on a cosigner
@@ -94,7 +94,7 @@ func cosignerTargetPolicyLints(txn types.Transaction, targetIndex int, cfg *poli
 		targetIndex,
 	)...)
 	violations = append(violations, withTargetIndex(
-		policy.CheckTxnTransferRoutingReviewPolicyLints(txn, cfg, false),
+		policy.CheckTxnTransferRoutingReviewPolicyLints(txn, cfg),
 		targetIndex,
 	)...)
 	return violations

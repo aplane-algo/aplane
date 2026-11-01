@@ -215,7 +215,7 @@ func presetViolations(txn types.Transaction, cfg *policy.Config) string {
 	var ids []string
 	for _, phase := range [][]policy.LintViolation{
 		policy.CheckTxnPolicyLints(txn, cfg, nil),
-		policy.CheckTxnTransferRoutingPolicyLints(txn, cfg, false),
+		policy.CheckTxnTransferRoutingPolicyLints(txn, cfg),
 	} {
 		for _, v := range phase {
 			ids = append(ids, v.RuleID)

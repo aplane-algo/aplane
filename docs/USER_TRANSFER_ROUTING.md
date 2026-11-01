@@ -312,8 +312,7 @@ addresses.
 
 The predicate is destination-only. It does not care whether the blocked address
 is also the sender. A non-zero self-payment whose receiver is blocked is
-rejected because the movement destination is blocked. Exact self no-op shapes
-remain routing-exempt, as described below.
+rejected because the movement destination is blocked.
 
 `blocked_destinations` applies to:
 
@@ -330,8 +329,7 @@ recipient.
 `CloseRemainderTo == ZeroAddress` produces no close-out movement and therefore
 has no close-out destination to check. `CloseRemainderTo == Sender` is treated
 like any other close-out destination: if the sender address is blocked, the
-close-to-self movement is rejected unless the transaction shape is otherwise
-routing-exempt.
+close-to-self movement is rejected.
 
 Omitted and empty `blocked_destinations` are equivalent. Entries must be
 concrete Algorand addresses. `self`, `*`, and `@address_set` are invalid in
@@ -645,47 +643,50 @@ per movement and means the movement destination equals the movement source.
 
 Evaluation order for each movement:
 
-1. If the movement is routing-exempt, routing produces no verdict.
-2. If the movement kind is covered by `blocked_destinations` and the movement
+1. If the movement kind is covered by `blocked_destinations` and the movement
    destination is blocked, reject.
-3. Resolve the network token from transaction `GenesisHash`.
-4. Collect matching routes.
-5. If no route matches and the movement is close-out, apply
+2. Resolve the network token from transaction `GenesisHash`.
+3. Collect matching routes.
+4. If no route matches and the movement is close-out, apply
    `close_on_no_route`.
-6. If no route matches and the movement is clawback, apply
+5. If no route matches and the movement is clawback, apply
    `clawback_on_no_route`.
-7. If no route matches for any other movement, apply `on_no_route`.
-8. If the movement is close-out and no matching route has
+6. If no route matches for any other movement, apply `on_no_route`.
+7. If the movement is close-out and no matching route has
    `"allow_close": true`, reject.
-9. If the movement is clawback and no matching route has
+8. If the movement is clawback and no matching route has
    `"allow_clawback": true`, reject.
-10. If amount is known and the lowest matching `reject_above` threshold for
+9. If amount is known and the lowest matching `reject_above` threshold for
    the movement's asset is
    exceeded, reject.
-11. If amount is known and the lowest matching `review_above` threshold for
+10. If amount is known and the lowest matching `review_above` threshold for
    the movement's asset is
    exceeded, force review.
-12. Otherwise routing produces no verdict and the request continues through the
+11. Otherwise routing produces no verdict and the request continues through the
    remaining policy phases.
 
 With `"close_on_no_route": "reject"`, a close-out without an explicit close
 route is rejected even if `on_no_route` is `review` or `operator_default`.
 
-## Routing-Exempt Movements
+## Self No-Op Transfers
 
-The exact self no-op shapes used by `auto_approve_self_noop_transfer` are
-exempt from routing:
+Routing judges every signer-controlled transfer, including the self no-op
+shapes that `auto_approve_self_noop_transfer` recognizes:
 
 - a 0 ALGO payment to self,
-- a 0-unit ASA transfer to self,
-- signer-generated LogicSig-budget dummy transactions using APlane's embedded
-  dummy LogicSig address.
+- a 0-unit ASA transfer to self, which is also the shape of an ASA opt-in.
 
-The exemption is shape-based and does not depend on whether
-`auto_approve_self_noop_transfer` is `true`. Routing exemption suppresses all
-routing verdicts for that shape. Non-routing guards such as fee, rekey,
-close-out, clawback, warning analysis, dummy validation, and the self no-op
-auto-approval predicate still apply.
+Neither shape is exempt. With `"on_no_route": "reject"`, each needs a route to
+`self` for its network and asset, or it is rejected as a route miss. The
+shipped default's `self-transfer` route permits both for every asset; a route
+limited to an asset set permits opt-ins to those assets only.
+
+`auto_approve_self_noop_transfer` runs after routing. It can only let a self
+no-op that routing permitted skip the operator prompt; it cannot permit one
+that routing rejects or sends to review.
+
+Signer-generated LogicSig-budget dummy transactions are not signer requests,
+so routing never evaluates them.
 
 ## Grouped Transactions
 

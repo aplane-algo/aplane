@@ -337,7 +337,6 @@ func (s *Service) approveGroupWithPlanContext(ctx context.Context, req signerapi
 		ForeignIndices:       plan.ForeignIndices,
 		AuthKeys:             authPolicyKeysFromRequest(req, plan),
 		KnownAddresses:       s.knownAddresses(plan),
-		RoutingExemptIndices: routingExemptIndicesForPlan(plan, allTxns),
 		ProtocolRekeyTargets: protocolRekeyTargetsForPlan(plan),
 		ForcedReviewRuleID: func() string {
 			if planHasBoundedAdminOperation(plan) {
