@@ -163,7 +163,7 @@ func NewReloadService(ir *productruntime.Runtime, opts ProductBuildOptions, hook
 			} else if verifiedRole.Role != ir.NodeRole() {
 				return fmt.Errorf("node role verification failed: runtime role %q does not match verified role %q", ir.NodeRole(), verifiedRole.Role)
 			}
-			nodePolicy, err := policyruntime.Load(ir.NodeRole(), opts.DataDir, opts.Config, active, kr)
+			nodePolicy, err := policyruntime.Load(ir.NodeRole(), opts.Config, active, kr)
 			if err != nil {
 				return fmt.Errorf("policy verification failed for product store: %w", err)
 			}

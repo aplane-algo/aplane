@@ -4,8 +4,11 @@
 package daemon
 
 import (
+	"github.com/algorand/go-algorand-sdk/v2/types"
+
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
+	"github.com/aplane-algo/aplane/internal/signerapp/txdesc"
 )
 
 type signingAudit interface {
@@ -17,15 +20,21 @@ type signingAudit interface {
 
 func (fs *Signer) newSigningServiceWithAudit(ir *productruntime.Runtime, auditLog signingAudit) *signersigning.Service {
 	// One request, one policy snapshot: every slot of this request resolves
-	// against the NodePolicy captured here, whatever reloads land later.
+	// against the NodePolicy captured here, whatever reloads land later, and
+	// its approval prompts show amounts from the context it was loaded in.
 	nodePolicy := ir.NodePolicy()
+	var describe signersigning.GenerateTxnDescriptionFromTxnFunc = fs.generateTransactionDescriptionFromTxn
+	if nodePolicy != nil && nodePolicy.Context != nil {
+		ctx := nodePolicy.Context
+		describe = func(txn types.Transaction) string { return txdesc.DescribeTxnInContext(txn, ctx) }
+	}
 	return &signersigning.Service{
 		Planner:                       fs.newPlannerWithAudit(auditLog),
-		Approval:                      fs.newApprovalServiceWithAudit(ir, auditLog),
+		Approval:                      fs.newApprovalServiceWithAudit(ir, auditLog, describe),
 		Executor:                      fs.newExecutionServiceWithAudit(auditLog),
 		AuditLog:                      auditLog,
 		Console:                       signerConsole{},
-		GenerateTxnDescriptionFromTxn: fs.generateTransactionDescriptionFromTxn,
+		GenerateTxnDescriptionFromTxn: describe,
 		IsUnlocked: func() bool {
 			return ir.IsUnlocked()
 		},

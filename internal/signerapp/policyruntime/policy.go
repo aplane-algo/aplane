@@ -6,19 +6,22 @@ package policyruntime
 import (
 	"fmt"
 
+	"github.com/aplane-algo/aplane/internal/asaset"
+	"github.com/aplane-algo/aplane/internal/asasetstore"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/policycontext"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
-	"github.com/aplane-algo/aplane/internal/signerapp/asametadata"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
 // DefaultConfig returns the compile base for this node: process genesis-hash
-// mappings and local ASA amount formatting. Every verdict field is replaced
-// when a document compiles onto it.
-func DefaultConfig(dataDir string, serverCfg *serverconfig.ServerConfig) (*policy.Config, error) {
+// mappings, and ASA amounts in limit messages shown from ctx, the node's
+// policy context (base units only when ctx is nil). Every verdict field is
+// replaced when a document compiles onto it.
+func DefaultConfig(serverCfg *serverconfig.ServerConfig, ctx *policycontext.Context) (*policy.Config, error) {
 	resolver := apconfig.DefaultGenesisHashNetworkResolver()
 	if serverCfg != nil {
 		configured, err := apconfig.NewGenesisHashNetworkResolver(serverCfg.GenesisHashNetworks)
@@ -28,7 +31,15 @@ func DefaultConfig(dataDir string, serverCfg *serverconfig.ServerConfig) (*polic
 		resolver = configured
 	}
 	cfg := policy.DefaultConfigWithGenesisHashResolver(resolver)
-	cfg.FormatASAAmount = asametadata.NewStore(dataDir).Formatter()
+	if ctx != nil {
+		cfg.FormatASAAmount = func(network string, assetID, raw uint64) (string, bool) {
+			a, ok := ctx.Asset(network, assetID)
+			if !ok {
+				return "", false
+			}
+			return a.Display(raw), true
+		}
+	}
 	return cfg, nil
 }
 
@@ -45,6 +56,12 @@ type NodePolicy struct {
 	Default *policy.Config
 	// Keys maps each key with a document of its own to its compiled policy.
 	Keys map[string]*policy.Config
+	// Context is the policy context the documents were compiled in: the
+	// node's networks and effective ASA set when they were loaded. A signing
+	// request that captures this NodePolicy shows amounts from it, in limit
+	// messages and approval prompts alike, whatever reloads land later. It is
+	// nil for documents compiled without one.
+	Context *policycontext.Context
 }
 
 // SetSHA256 digests the node's complete policy document set.
@@ -78,9 +95,11 @@ func (p *NodePolicy) HasOwn(selector string) bool {
 }
 
 // Load verifies, decodes, and compiles the role's policy documents from one
-// already-resolved generation. Any document that fails verification or
-// validation fails the whole load, as does a generation with no default.
-func Load(role noderole.Role, dataDir string, serverCfg *serverconfig.ServerConfig, active storepaths.ActivePaths, kr *crypto.Keyring) (*NodePolicy, error) {
+// already-resolved generation, in the context of that generation's verified
+// ASA set and the configured networks. Any document that fails verification
+// or validation fails the whole load, as does a generation with no default
+// or an ASA set that does not verify.
+func Load(role noderole.Role, serverCfg *serverconfig.ServerConfig, active storepaths.ActivePaths, kr *crypto.Keyring) (*NodePolicy, error) {
 	def, _, err := policy.LoadVerifiedDefault(active, role, kr)
 	if err != nil {
 		return nil, err
@@ -94,21 +113,46 @@ func Load(role noderole.Role, dataDir string, serverCfg *serverconfig.ServerConf
 	for _, entry := range loaded {
 		docs = append(docs, entry.Document)
 	}
-	return Compile(role, dataDir, serverCfg, docs)
+	set, err := asasetstore.Load(active, kr)
+	if err != nil {
+		return nil, err
+	}
+	ctx, err := NewContext(role, serverCfg, set)
+	if err != nil {
+		return nil, err
+	}
+	return Compile(role, serverCfg, docs, ctx)
+}
+
+// NewContext is the policy context of a node of role with serverCfg's
+// networks and the operator confirmations set.
+func NewContext(role noderole.Role, serverCfg *serverconfig.ServerConfig, set *asaset.Set) (*policycontext.Context, error) {
+	var custom map[string]string
+	if serverCfg != nil {
+		custom = serverCfg.GenesisHashNetworks
+	}
+	networks, err := apconfig.NewGenesisHashNetworkResolver(custom)
+	if err != nil {
+		return nil, err
+	}
+	if set == nil {
+		set = asaset.Empty()
+	}
+	return policycontext.New(role, networks, set)
 }
 
 // Compile decodes and compiles exact policy documents for role without
 // touching storage. docs must hold exactly one document with the key
 // policy.DefaultKey and at most one per key selector.
-func Compile(role noderole.Role, dataDir string, serverCfg *serverconfig.ServerConfig, docs []policy.StoredDocument) (*NodePolicy, error) {
+func Compile(role noderole.Role, serverCfg *serverconfig.ServerConfig, docs []policy.StoredDocument, ctx *policycontext.Context) (*NodePolicy, error) {
 	if role != noderole.RoleSigner && role != noderole.RoleCosigner {
 		return nil, fmt.Errorf("unsupported node role %q", role)
 	}
-	defaults, err := DefaultConfig(dataDir, serverCfg)
+	defaults, err := DefaultConfig(serverCfg, ctx)
 	if err != nil {
 		return nil, err
 	}
-	out := &NodePolicy{Role: role, Keys: make(map[string]*policy.Config, len(docs))}
+	out := &NodePolicy{Role: role, Keys: make(map[string]*policy.Config, len(docs)), Context: ctx}
 	var ordered []policy.StoredDocument
 	for _, doc := range docs {
 		if doc.Key == policy.DefaultKey {

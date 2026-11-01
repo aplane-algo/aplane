@@ -97,6 +97,16 @@ func (c *Context) Chain(token string) (asaset.GenesisHash, bool) {
 	return genesis, ok
 }
 
+// Network returns the token that names a chain, if any does.
+func (c *Context) Network(genesis asaset.GenesisHash) (string, bool) {
+	for token, g := range c.networks {
+		if g == genesis {
+			return token, true
+		}
+	}
+	return "", false
+}
+
 // Asset returns what the context knows about an asset named by a network
 // token and an ID, as a policy document names it.
 func (c *Context) Asset(token string, assetID uint64) (asaset.Asset, bool) {

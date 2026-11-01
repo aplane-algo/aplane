@@ -478,8 +478,8 @@ apadmin asa remove private-dev 1234567 # remove a confirmation
   Backups do not carry the ASA set: after restoring a backup onto a fresh
   node, confirm the assets again.
 
-`apadmin policy check` warns about what a document names that the node does
-not know:
+`apadmin policy check` and `apply` refuse a document you submit that names
+something the node does not know:
 
 - a network the node does not map (a typo such as `mainet` in a `limits` key
   would otherwise silently drop that limit);
@@ -490,11 +490,54 @@ not know:
 - a route that has no asset on one of the networks it applies to (`*` means
   every network the node knows).
 
-These are warnings in this release; a later release refuses them for
-documents you submit. Stored documents keep working either way: the same
-problems appear as alerts in the node's status. `appolicy` reports the same
-problems offline: as errors for files from an export, which carries the
-node's networks and ASA set, and as warnings otherwise.
+Only documents you submit are checked. A document already stored keeps
+working as it did, and never blocks an apply of other documents or an ASA set
+change; its problems appear as alerts in the node's status until you fix it.
+Submitting it again, even unchanged, requires fixing it, and removing it needs
+no repair first. `appolicy` reports the same problems offline: as errors for
+files from an export, which carries the node's networks and ASA set, and as
+warnings otherwise.
+
+#### Fixing documents the node refuses
+
+A direct `asa:<id>` term in a route over several networks names a different
+asset, or none, on each chain. Nothing rewrites it for you, because only you
+know which asset you meant on each network. Either give the route one
+network:
+
+```json
+{"id": "usdc-out", "networks": ["mainnet"], "sources": ["*"],
+ "assets": ["asa:31566704"], "destinations": ["*"]}
+```
+
+or name the asset on each network with an asset set, which may hold members
+for only some networks:
+
+```json
+"asset_sets": {
+  "usdc": {"mainnet": ["asa:31566704"], "testnet": ["asa:10458941"]}
+},
+"transfer_policy": {"routes": [
+  {"id": "usdc-out", "networks": ["mainnet", "testnet"], "sources": ["*"],
+   "assets": ["@usdc"], "destinations": ["*"]}
+]}
+```
+
+A route over `"*"` with an asset set needs a member on every network the node
+knows, or an `algo` or `*` alternative for the others; list the networks
+instead when the route is meant for some of them. A network the node does not
+map is usually a typo; otherwise map it in the node's `networks` config. An
+asset outside the ASA set is added with `apadmin asa add NETWORK ID` after
+checking what the lookup shows.
+
+Amounts in approval prompts and limit messages come from the same ASA set:
+a known asset in its display units with its base units beside them, for
+example `ASA Transfer: 1.5 XYZ (150 base units), asset #9, private-dev`, and
+any other in base units with "Not in this node's ASA set". Limit messages,
+from document limits and route limits alike, name the asset and network, for
+example `transfer routing amount 1.5 XYZ (150 base units) of asset #9 exceeds
+reject threshold 1 XYZ (100 base units) on private-dev`. A prompt keeps the
+values it was created with even if the ASA set changes while it waits.
 
 ### Checking policy files offline with appolicy
 
@@ -706,9 +749,13 @@ apstore -d "$APSIGNER_DATA" policy verify
 ```
 
 `apstore policy check` validates every stored document (the default and each
-key file) without verifying sidecars, reports a document that has no sidecar
-yet, and warns about files for keys the node does not hold. `apstore policy
-sign` writes fresh sidecars for every stored document. `apstore policy verify`
+key file) without requiring sidecars, reports a document that has no sidecar
+yet, and warns about files for keys the node does not hold. A document whose
+sidecar is missing or no longer matches was placed by hand, so it is checked
+like a submitted one: an unknown network or an asset outside the ASA set
+fails the check. A document whose sidecar still verifies was accepted before
+and is only warned about. `apstore policy sign` refuses the same documents,
+then writes fresh sidecars for every stored document. `apstore policy verify`
 verifies every sidecar and compiles the policy. These are offline maintenance
 operations; stop `apsigner` and use `sudo` for a systemd store. Hand edits take
 effect only after the next successful signer start, reload, or unlock. Normal

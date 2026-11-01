@@ -84,6 +84,18 @@ func TestAdmission(t *testing.T) {
 		{"an unknown network in a network-keyed address set",
 			`{"address_sets": {"ops": {"nowhere": ["CEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI7JH2AYM"]}}}`,
 			RuleUnknownNetwork + "@/address_sets/ops/nowhere"},
+		{"an unknown network in a route's networks",
+			`{"transfer_policy": {"routes": [` + route("r", `["nowhere"]`, `["algo"]`) + `]}}`,
+			RuleUnknownNetwork + "@/transfer_policy/routes/0/networks/0"},
+		{"an unknown network in a route's limits",
+			`{"transfer_policy": {"routes": [{"id": "r", "networks": ["*"], "sources": ["*"], "assets": ["algo"], "destinations": ["*"], "limits": {"nowhere": {"algo": {"reject_above": "1"}}}}]}}`,
+			RuleUnknownNetwork + "@/transfer_policy/routes/0/limits/nowhere"},
+		{"an unknown network keying an asset set",
+			`{"asset_sets": {"s": {"nowhere": ["algo"]}}}`,
+			RuleUnknownNetwork + "@/asset_sets/s/nowhere"},
+		{"an asset set member outside the set, even unused",
+			`{"asset_sets": {"s": {"private-dev": ["asa:10"]}}}`,
+			RuleAssetNotInSet + "@/asset_sets/s/private-dev/0"},
 		{"an asset outside the set",
 			`{"limits": {"private-dev": {"asa:10": {"reject_above": "1"}}}}`,
 			RuleAssetNotInSet + "@/limits/private-dev/asa:10"},
@@ -156,5 +168,42 @@ func TestStoredAlertsAreBounded(t *testing.T) {
 		if len(a) > MaxAlertBytes {
 			t.Fatalf("an alert is %d bytes", len(a))
 		}
+	}
+}
+
+// A confirmation names a chain, not a token: when the operator points
+// private-dev at another chain, asset 9 on the new private-dev is not the
+// asset that was confirmed.
+func TestAReconfiguredTokenDoesNotCarryItsConfirmations(t *testing.T) {
+	doc, err := policy.DecodePolicyV1([]byte(policytest.Signer(t, policy.DefaultKey,
+		`{"limits": {"private-dev": {"asa:9": {"reject_above": "1"}}}}`)), policy.DefaultKey, noderole.RoleSigner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := rules(Check(doc, nodeContext(t))); got != "" {
+		t.Fatalf("on the confirmed chain: %q", got)
+	}
+	confirmed := nodeContext(t)
+	networks, err := apconfig.NewGenesisHashNetworkResolver(map[string]string{"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=": "private-dev"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var entries []asaset.Entry
+	for _, a := range confirmed.Assets().Assets() {
+		if a.Origin == asaset.OriginOperator {
+			entries = append(entries, asaset.Entry{Identity: a.Identity, UnitName: a.UnitName, Decimals: a.Decimals,
+				Creator: "CEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI7JH2AYM", ConfirmedAt: time.Unix(1_700_000_000, 0), NetworkAtConfirmation: "private-dev"})
+		}
+	}
+	set, err := asaset.New(entries)
+	if err != nil {
+		t.Fatal(err)
+	}
+	moved, err := policycontext.New(noderole.RoleSigner, networks, set)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := rules(Check(doc, moved)); got != RuleAssetNotInSet+"@/limits/private-dev/asa:9" {
+		t.Fatalf("after remapping private-dev: %q", got)
 	}
 }

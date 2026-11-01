@@ -12,7 +12,9 @@ import (
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
 )
 
-func (fs *Signer) newApprovalServiceWithAudit(ir *productruntime.Runtime, auditLog signersigning.AuditRejectLogger) *signersigning.ApprovalService {
+// newApprovalServiceWithAudit builds the approval service for one request;
+// describe renders its transactions in the prompts it raises.
+func (fs *Signer) newApprovalServiceWithAudit(ir *productruntime.Runtime, auditLog signersigning.AuditRejectLogger, describe signersigning.GenerateTxnDescriptionFromTxnFunc) *signersigning.ApprovalService {
 	userAutoApprove := ir.Config().UserAutoApprove()
 	return &signersigning.ApprovalService{
 		UserAutoApprove: &userAutoApprove,
@@ -21,7 +23,7 @@ func (fs *Signer) newApprovalServiceWithAudit(ir *productruntime.Runtime, auditL
 		},
 		AuditLog:                      auditLog,
 		Console:                       signerConsole{},
-		GenerateTxnDescriptionFromTxn: fs.generateTransactionDescriptionFromTxn,
+		GenerateTxnDescriptionFromTxn: describe,
 		KnownAddresses: func() map[string]bool {
 			return ir.KnownAddresses()
 		},

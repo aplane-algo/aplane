@@ -4,8 +4,10 @@
 package policy
 
 import (
+	"fmt"
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/asaset"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
@@ -373,6 +375,49 @@ func TestTransferRoutingAssetSetAndOverlappingThresholds(t *testing.T) {
 	}
 	if got := CheckTxnTransferRoutingPolicyLints(txn, cfg); len(got) != 1 || got[0].RuleID != "transfer_policy:narrow:reject_above" {
 		t.Fatalf("overlapping threshold lints = %+v", got)
+	}
+}
+
+// Route thresholds are reported in the units document-level limits use: an
+// asset the node's context knows in its display units, any other in base
+// units, and always with the asset and network named.
+func TestTransferRoutingThresholdMessagesShowUnits(t *testing.T) {
+	cfg := routingConfig(t, `{
+  "transfer_policy": {"routes": [
+    {"id": "tokens", "networks": ["testnet"], "sources": ["*"], "assets": ["asa:123", "asa:456"], "destinations": ["*"],
+     "limits": {"testnet": {"asa:123": {"review_above": "50", "reject_above": "100"}, "asa:456": {"reject_above": "100"}}}}
+  ]}
+}`)
+	cfg.FormatASAAmount = func(network string, assetID, raw uint64) (string, bool) {
+		if network != "testnet" || assetID != 123 {
+			return "", false
+		}
+		return fmt.Sprintf("%s XYZ (%d base units)", asaset.FormatUnits(raw, 2), raw), true
+	}
+	transfer := func(assetID, amount uint64) types.Transaction {
+		return types.Transaction{
+			Type:   types.AssetTransferTx,
+			Header: types.Header{Sender: types.Address{1}, GenesisHash: testGenesisDigest(t, apconfig.AlgorandTestnetGenesisHash)},
+			AssetTransferTxnFields: types.AssetTransferTxnFields{
+				XferAsset: types.AssetIndex(assetID), AssetReceiver: types.Address{2}, AssetAmount: amount,
+			},
+		}
+	}
+	for _, tc := range []struct {
+		name  string
+		lints []LintViolation
+		want  string
+	}{
+		{"known reject", CheckTxnTransferRoutingPolicyLints(transfer(123, 150), cfg),
+			"transfer routing amount 1.5 XYZ (150 base units) of asset #123 exceeds reject threshold 1 XYZ (100 base units) on testnet"},
+		{"known review", CheckTxnTransferRoutingReviewPolicyLints(transfer(123, 60), cfg),
+			"transfer routing amount 0.6 XYZ (60 base units) of asset #123 exceeds review threshold 0.5 XYZ (50 base units) on testnet"},
+		{"unknown reject", CheckTxnTransferRoutingPolicyLints(transfer(456, 150), cfg),
+			"transfer routing amount 150 base units of asset #456 exceeds reject threshold 100 base units on testnet"},
+	} {
+		if len(tc.lints) != 1 || tc.lints[0].Message != tc.want {
+			t.Fatalf("%s: lints = %+v\nwant message %q", tc.name, tc.lints, tc.want)
+		}
 	}
 }
 

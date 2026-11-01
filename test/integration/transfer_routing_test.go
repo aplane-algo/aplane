@@ -12,9 +12,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/asaset"
+	"github.com/aplane-algo/aplane/internal/asasetstore"
+	apcrypto "github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/policy/policytest"
+	utilkeys "github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 	"github.com/aplane-algo/aplane/test/integration/harness"
 
@@ -82,6 +87,9 @@ func TestTransferRoutingIntegrationExercisesRoutes(t *testing.T) {
 	}
 
 	stopSigner(t, signerd)
+	// The policy names the synthetic clawback asset, so the node must have it
+	// confirmed before apstore admits the hand-placed document.
+	confirmIntegrationASA(t, env.SignerDataDir, testnet, transferRoutingIntegrationAssetID, addresses.authority)
 	writeAndSignIntegrationPolicy(
 		t,
 		apstore,
@@ -249,6 +257,42 @@ func TestTransferRoutingIntegrationExercisesRoutes(t *testing.T) {
 		)
 		expectTransferRoutingReject(t, signerd.GetURL(), req, "transfer_policy:clawback_rejected")
 	})
+}
+
+// confirmIntegrationASA adds assetID on the integration network to the
+// stopped node's ASA set. apadmin asa add looks the asset up on the network,
+// and this one exists only in the transactions the test signs.
+func confirmIntegrationASA(t *testing.T, signerDataDir string, network *harness.TestnetConfig, assetID uint64, creator string) {
+	t.Helper()
+	genesis, err := asaset.ParseGenesisHash(network.GenesisHash)
+	if err != nil {
+		t.Fatalf("integration genesis hash: %v", err)
+	}
+	passphrase := []byte(mustReadPassphrase(t, signerDataDir))
+	defer apcrypto.ZeroBytes(passphrase)
+	active, kr, err := genstore.ResolveStoreRoot(utilkeys.NewPaths(signerDataDir), passphrase)
+	if err != nil {
+		t.Fatalf("failed to authenticate active generation: %v", err)
+	}
+	defer kr.Zero()
+	set, err := asasetstore.Load(active, kr)
+	if err != nil {
+		t.Fatalf("load ASA set: %v", err)
+	}
+	set, err = set.With(asaset.Entry{
+		Identity:              asaset.Identity{Genesis: genesis, AssetID: assetID},
+		Name:                  "Routing Test",
+		UnitName:              "RTT",
+		Creator:               creator,
+		ConfirmedAt:           time.Now(),
+		NetworkAtConfirmation: network.Network,
+	})
+	if err != nil {
+		t.Fatalf("confirm asset %d: %v", assetID, err)
+	}
+	if err := asasetstore.Write(active, set, kr, time.Now()); err != nil {
+		t.Fatalf("write ASA set: %v", err)
+	}
 }
 
 func generateTransferRoutingTestAddresses(t *testing.T, apadmin *harness.ApAdminHarness) transferRoutingTestAddresses {

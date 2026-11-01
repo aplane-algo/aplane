@@ -682,7 +682,7 @@ behavior should live in `internal/apshellapp`, not in `cmd/apshell`.
 |-------|----------|
 | UI | `cmd/apshell`, `cmd/apconsole`, `internal/apshellcli`, `internal/shellrepl`, `internal/signerapp/signertui`, `cmd/apadmin`, `cmd/appass`, `cmd/aplocalnet`, `internal/aplocalnet`, `cmd/apapprover`, `internal/command`, `internal/cmdspec`, `internal/cmdlog`, `internal/theme`, `internal/addressdisplay`, `internal/keytypeux` |
 | Engine | `internal/apshellapp`, `internal/apadminapp`, `internal/apboundedadminapp`, `internal/engine`, `internal/clientstate`, `internal/cache`, `internal/config`, `internal/engine/connect`, `internal/engine/guarded`, `internal/clientsign`, `internal/appresult`, `internal/appinput`, `internal/appspec`, `internal/asa`, `internal/addressbook`, `internal/refname`, `internal/keymgmt`, `internal/partkeyparse`, `internal/txnutil`, `internal/algo` |
-| Signer App | `internal/bootstrap/signer`, `internal/signerapp/daemon`, `internal/signerapp/startup`, `internal/signerapp/runtime`, `internal/signerapp/productruntime`, `internal/signerapp/unlockconfig`, `internal/signerapp/signing`, `internal/signerapp/chainread`, `internal/signerapp/approval`, `internal/signerapp/templates`, `internal/signerapp/templateadmin`, `internal/signerapp/keyadmin`, `internal/signerapp/storeadmin`, `internal/signerapp/backupadmin`, `internal/signerapp/rest`, `internal/signerapp/admin`, `internal/signerapp/adminserver`, `internal/signerapp/svcerr`, `internal/signerapp/enrollment`, `internal/signerapp/enrollqueue`, `internal/signerapp/clientregistry`, `internal/signerapp/asametadata`, `internal/signerapp/audit`, `internal/signerapp/filewatcher`, `internal/signerapp/ipcbind`, `internal/signerapp/txdesc`, `internal/signerapp/policycmd`, `internal/signerapp/policyreview`, `internal/signerapp/policytext`, `internal/signerapp/policyapply`, `internal/signerapp/policyruntime`, `internal/noderole`, `internal/policy`, `internal/integritysidecar`, `internal/signerapp/approvalpolicy`, `internal/signerapp/storevalidate` |
+| Signer App | `internal/bootstrap/signer`, `internal/signerapp/daemon`, `internal/signerapp/startup`, `internal/signerapp/runtime`, `internal/signerapp/productruntime`, `internal/signerapp/unlockconfig`, `internal/signerapp/signing`, `internal/signerapp/chainread`, `internal/signerapp/approval`, `internal/signerapp/templates`, `internal/signerapp/templateadmin`, `internal/signerapp/keyadmin`, `internal/signerapp/storeadmin`, `internal/signerapp/backupadmin`, `internal/signerapp/rest`, `internal/signerapp/admin`, `internal/signerapp/adminserver`, `internal/signerapp/svcerr`, `internal/signerapp/enrollment`, `internal/signerapp/enrollqueue`, `internal/signerapp/clientregistry`, `internal/signerapp/audit`, `internal/signerapp/filewatcher`, `internal/signerapp/ipcbind`, `internal/signerapp/txdesc`, `internal/signerapp/policycmd`, `internal/signerapp/policyreview`, `internal/signerapp/policytext`, `internal/signerapp/policyapply`, `internal/signerapp/policyruntime`, `internal/noderole`, `internal/policy`, `internal/integritysidecar`, `internal/signerapp/approvalpolicy`, `internal/signerapp/storevalidate` |
 | Provider | `internal/signing`, `internal/signing/falcon1024`, `internal/falconparams`, `internal/lsigresource`, `lsig/`, `lsig/rotatingfamily`, `lsig/rotatingtriplewots`, `lsig/rotatingtriplexmss`, `lsig/rotatingtripleslhdsa`, `internal/cosigner`, `internal/boundedadmin`, `internal/boundedmeta`, `internal/txeffects`, `internal/keyclass`, `internal/lsigprovider`, `internal/signingargs`, `internal/logicsigdsa`, `internal/genericlsig`, `internal/lsigsalt`, `internal/tealtemplate`, `internal/addressderive`, `internal/keytypecatalog`, `internal/keytypestate`, `internal/algorithm`, `internal/keygen`, `internal/mnemonic` |
 | Storage/Crypto | `internal/crypto`, `internal/witness`, `internal/witness/artifact`, `internal/merkleallowlist`, `internal/keys`, `internal/keystore`, `internal/storepaths`, `internal/stagetable`, `internal/rotatingkey`, `internal/crypto/wots`, `internal/crypto/rotatinghybrid`, `internal/genstore`, `internal/storelock`, `internal/signerapp/storemut`, `internal/storeinit`, `internal/storepass`, `internal/serverconfig`, `internal/defaultkeytypes`, `internal/clientdata`, `internal/templatestore`, `internal/templatelibrary`, `internal/templatepolicy`, `internal/backup`, `internal/security`, `internal/fsutil` |
 | Integration | `internal/bootstrap/shell`, `internal/auth`, `internal/authz`, `internal/protocol`, `internal/adminproto`, `internal/transport`, `internal/sshtunnel`, `internal/clientenroll`, `internal/endpointrefs`, `internal/plugin`, `internal/scripting`, `internal/jsapi`, `pkg/signerapi`, `internal/signerclient`, `internal/checksum`, `internal/manifest`, `internal/productmode` |
@@ -1149,7 +1149,20 @@ owned by [ARCH_POLICY.md](ARCH_POLICY.md); in code,
 `internal/signerapp/policyreview` owns what the operator reviews before an
 apply.
 
-ASA amount-threshold editing in display units uses signer-wide ASA metadata under `cache/<network>_asa_cache.json` in the signer data directory. Signer code reaches this cache through `internal/signerapp/asametadata.Store`, not by treating it as APCLIENT_DATA cache state. This metadata is process-wide because ASA metadata is public chain state, not signing authority. Built-in ASA metadata is starter data for the same effective cache model; successful live algod lookups for numeric ASA IDs are persisted to the signed cache. Enforcement remains raw-unit and numeric-ASA-ID based, so the metadata cache is not authoritative for requiring review, accepting, or rejecting transactions.
+The signer's asset metadata is its ASA set: the built-in table plus the
+operator's confirmations in the generation's `asa_set.json`
+(`internal/asaset`, `internal/asasetstore`). A `NodePolicy` carries the policy
+context it was loaded in (`internal/policycontext`), so policy reviews, ASA
+limit messages and approval prompts show amounts from the same snapshot,
+through one formatter (`asaset.Asset.Display`): a known asset in display units
+with its base units beside them, any other in base units with no decimals
+guessed. Enforcement remains raw-unit and numeric-ASA-ID based; the ASA set
+labels amounts and decides which assets submitted documents may name, and
+never changes a verdict. The daemon does not link the client cache
+(`internal/cache`) or `internal/asa` (`cmd/apsigner/deps_test.go`). Signer
+data directories from earlier releases may hold a `cache/` directory with an
+ASA cache and `.cache_key`; nothing reads or writes them, and they can be
+deleted.
 
 LocalNet setup is owned by `aplocalnet` (`cmd/aplocalnet` plus
 `internal/aplocalnet`). It is an operator-run setup utility, not a long-running
@@ -2175,7 +2188,7 @@ Important MCP transport and structured-output contracts are documented in [ARCH_
 
 ## Caching and Local State
 
-Client-side cached storage is implemented in `internal/cache`, while caller-facing ASA metadata/ref/amount handling routes through `internal/asa`. The signer also persists signer-wide ASA metadata with `internal/cache`, but signer callers go through `internal/signerapp/asametadata.Store` because that cache is rooted under the signer data directory and is not APCLIENT_DATA state.
+Client-side cached storage is implemented in `internal/cache`, while caller-facing ASA metadata/ref/amount handling routes through `internal/asa`. The signer keeps no ASA cache: its asset metadata is its ASA set.
 
 Caches include:
 
@@ -2190,9 +2203,6 @@ Caches include:
 
 These caches are not interchangeable:
 
-- signer-side ASA metadata cache depends on signer-configured algod endpoints,
-  is process-wide rather than product-runtime state, and has no long-lived
-  process-global in-memory map,
 - signer cache depends on remote signer state; interactive and embedded
   apshell sessions poll authenticated `/status` on the configured
   `signer_status_poll_interval` (default `10s`) and refresh `/keys` when
@@ -2213,7 +2223,6 @@ Write-ownership model:
 - disk-backed cache persistence is owned by `internal/cache`
 - shared APCLIENT_DATA cache writes are serialized through the cooperative `.apclient.lock` owned by `internal/clientdata`
 - apshell starts a passive best-effort cache watcher for shared APCLIENT_DATA; filesystem events only mark cache files dirty, and in-memory reloads are applied at shell/MCP command boundaries
-- signer-side ASA cache reads and writes are serialized in-process by `internal/signerapp/asametadata.Store`
 - `internal/clientstate` remains the higher-level mutation owner for alias/set and related client-state workflows
 - `internal/refname` owns canonical validation and lowercasing for persisted alias and set names
 

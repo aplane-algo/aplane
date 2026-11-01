@@ -13,15 +13,43 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
-	"github.com/aplane-algo/aplane/internal/asa"
+	"github.com/aplane-algo/aplane/internal/asaset"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/policycontext"
 )
 
-type transactionDescriber func(txn types.Transaction) string
+type transactionDescriber func(txn types.Transaction, chain chainView) string
 
-func describePaymentTx(txn types.Transaction) string {
+// chainView is what a description knows of the transaction's chain: the
+// network token that names it, and, with a policy context, the node's ASA
+// set, which labels assets.
+type chainView struct {
+	network string
+	ctx     *policycontext.Context
+}
+
+// asset returns what the node's ASA set knows of asset id on the
+// transaction's chain.
+func (v chainView) asset(genesis types.Digest, id uint64) (asaset.Asset, bool) {
+	if v.ctx == nil {
+		return asaset.Asset{}, false
+	}
+	return v.ctx.Assets().Lookup(asaset.Identity{Genesis: asaset.GenesisHash(genesis), AssetID: id})
+}
+
+// assetRef names asset id, with its unit name when the node's set knows it.
+func (v chainView) assetRef(genesis types.Digest, id uint64) string {
+	if a, ok := v.asset(genesis, id); ok {
+		if unit := asaset.Printable(a.UnitName); unit != "" {
+			return fmt.Sprintf("asset #%d (%s)", id, unit)
+		}
+	}
+	return fmt.Sprintf("asset #%d", id)
+}
+
+func describePaymentTx(txn types.Transaction, chain chainView) string {
 	var desc strings.Builder
-	desc.WriteString(fmt.Sprintf("Payment: %s ALGO", asa.FormatAmountWithDecimals(uint64(txn.Amount), 6)))
+	desc.WriteString(fmt.Sprintf("Payment: %s ALGO", asaset.FormatFixed(uint64(txn.Amount), 6)))
 	desc.WriteString(fmt.Sprintf("\n  From: %s", txn.Sender.String()))
 	desc.WriteString(fmt.Sprintf("\n  To:   %s", txn.Receiver.String()))
 
@@ -32,9 +60,20 @@ func describePaymentTx(txn types.Transaction) string {
 	return desc.String()
 }
 
-func describeAssetTransferTx(txn types.Transaction) string {
+func describeAssetTransferTx(txn types.Transaction, chain chainView) string {
 	var desc strings.Builder
-	desc.WriteString(fmt.Sprintf("ASA Transfer: %d base units of asset #%d", txn.AssetAmount, txn.XferAsset))
+	amount := fmt.Sprintf("%d base units", txn.AssetAmount)
+	asset, known := chain.asset(txn.GenesisHash, uint64(txn.XferAsset))
+	if known {
+		amount = asset.Display(txn.AssetAmount)
+	}
+	desc.WriteString(fmt.Sprintf("ASA Transfer: %s, asset #%d", amount, txn.XferAsset))
+	if chain.network != "" {
+		desc.WriteString(", " + chain.network)
+	}
+	if !known && chain.ctx != nil {
+		desc.WriteString("\n  Not in this node's ASA set")
+	}
 	desc.WriteString(fmt.Sprintf("\n  From: %s", txn.Sender.String()))
 	desc.WriteString(fmt.Sprintf("\n  To:   %s", txn.AssetReceiver.String()))
 
@@ -49,7 +88,7 @@ func describeAssetTransferTx(txn types.Transaction) string {
 	return desc.String()
 }
 
-func describeAssetConfigTx(txn types.Transaction) string {
+func describeAssetConfigTx(txn types.Transaction, chain chainView) string {
 	var desc strings.Builder
 	if txn.ConfigAsset == 0 {
 		desc.WriteString("Asset Creation")
@@ -74,10 +113,10 @@ func describeAssetConfigTx(txn types.Transaction) string {
 			desc.WriteString(fmt.Sprintf("\n  Metadata Hash: %s", hex.EncodeToString(txn.AssetParams.MetadataHash[:])))
 		}
 	} else if txn.AssetParams.IsZero() {
-		desc.WriteString(fmt.Sprintf("Asset Destroy: asset #%d", txn.ConfigAsset))
+		desc.WriteString("Asset Destroy: " + chain.assetRef(txn.GenesisHash, uint64(txn.ConfigAsset)))
 		desc.WriteString(fmt.Sprintf("\n  From: %s", txn.Sender.String()))
 	} else {
-		desc.WriteString(fmt.Sprintf("Asset Reconfiguration: asset #%d", txn.ConfigAsset))
+		desc.WriteString("Asset Reconfiguration: " + chain.assetRef(txn.GenesisHash, uint64(txn.ConfigAsset)))
 		desc.WriteString(fmt.Sprintf("\n  From: %s", txn.Sender.String()))
 		desc.WriteString(fmt.Sprintf("\n  Manager: %s", formatAuthorityAddress(txn.AssetParams.Manager)))
 		desc.WriteString(fmt.Sprintf("\n  Reserve: %s", formatAuthorityAddress(txn.AssetParams.Reserve)))
@@ -87,9 +126,9 @@ func describeAssetConfigTx(txn types.Transaction) string {
 	return desc.String()
 }
 
-func describeAssetFreezeTx(txn types.Transaction) string {
+func describeAssetFreezeTx(txn types.Transaction, chain chainView) string {
 	var desc strings.Builder
-	desc.WriteString(fmt.Sprintf("Asset Freeze: asset #%d", txn.FreezeAsset))
+	desc.WriteString("Asset Freeze: " + chain.assetRef(txn.GenesisHash, uint64(txn.FreezeAsset)))
 	desc.WriteString(fmt.Sprintf("\n  From: %s", txn.Sender.String()))
 	desc.WriteString(fmt.Sprintf("\n  Account: %s", txn.FreezeAccount.String()))
 	if txn.AssetFrozen {
@@ -100,7 +139,7 @@ func describeAssetFreezeTx(txn types.Transaction) string {
 	return desc.String()
 }
 
-func describeApplicationCallTx(txn types.Transaction) string {
+func describeApplicationCallTx(txn types.Transaction, chain chainView) string {
 	var desc strings.Builder
 	if txn.ApplicationID == 0 {
 		desc.WriteString(fmt.Sprintf("App Create (%s)", appOnCompletionLabel(txn.OnCompletion)))
@@ -187,7 +226,7 @@ func resolveBoxAppRef(txn types.Transaction, ref types.BoxReference) string {
 	return fmt.Sprintf("?idx=%d", ref.ForeignAppIdx)
 }
 
-func describeKeyRegistrationTx(txn types.Transaction) string {
+func describeKeyRegistrationTx(txn types.Transaction, chain chainView) string {
 	var desc strings.Builder
 
 	emptyVotePK := types.VotePK{}
@@ -217,7 +256,7 @@ func describeKeyRegistrationTx(txn types.Transaction) string {
 	return desc.String()
 }
 
-func describeUnknownTx(txn types.Transaction) string {
+func describeUnknownTx(txn types.Transaction, chain chainView) string {
 	var desc strings.Builder
 	desc.WriteString(fmt.Sprintf("Transaction Type: %s", txn.Type))
 	desc.WriteString(fmt.Sprintf("\n  From: %s", txn.Sender.String()))
@@ -225,11 +264,11 @@ func describeUnknownTx(txn types.Transaction) string {
 }
 
 // appendCommonFields adds fee, network identity, note, close remainder, rekey, group, and round info.
-func appendCommonFields(desc *strings.Builder, txn types.Transaction, resolver apconfig.GenesisHashNetworkResolver) {
-	fmt.Fprintf(desc, "\n  Fee: %s ALGO", asa.FormatAmountWithDecimals(uint64(txn.Fee), 6))
+func appendCommonFields(desc *strings.Builder, txn types.Transaction, chain chainView) {
+	fmt.Fprintf(desc, "\n  Fee: %s ALGO", asaset.FormatFixed(uint64(txn.Fee), 6))
 
-	if network, ok := resolver.NetworkForGenesisHashBytes(txn.GenesisHash[:]); ok {
-		fmt.Fprintf(desc, "\n  Network: %s", network)
+	if chain.network != "" {
+		fmt.Fprintf(desc, "\n  Network: %s", chain.network)
 	}
 	if txn.GenesisID != "" {
 		fmt.Fprintf(desc, "\n  GenesisID: %s", txn.GenesisID)
@@ -296,14 +335,32 @@ func DescribeTxn(txn types.Transaction) string {
 }
 
 func DescribeTxnWithResolver(txn types.Transaction, resolver apconfig.GenesisHashNetworkResolver) string {
+	network, _ := resolver.NetworkForGenesisHashBytes(txn.GenesisHash[:])
+	return describe(txn, chainView{network: network})
+}
+
+// DescribeTxnInContext describes txn in a node's policy context: the network
+// is the one the context maps the transaction's chain to, and an asset the
+// context's ASA set knows is shown in its display units beside its base
+// units. An approval prompt is built from the context its signing request
+// captured, so a reload while it waits does not change what it says.
+func DescribeTxnInContext(txn types.Transaction, ctx *policycontext.Context) string {
+	if ctx == nil {
+		return DescribeTxn(txn)
+	}
+	network, _ := ctx.Network(asaset.GenesisHash(txn.GenesisHash))
+	return describe(txn, chainView{network: network, ctx: ctx})
+}
+
+func describe(txn types.Transaction, chain chainView) string {
 	describer, exists := transactionDescribers[string(txn.Type)]
 	if !exists {
 		describer = describeUnknownTx
 	}
 
 	var builder strings.Builder
-	builder.WriteString(describer(txn))
-	appendCommonFields(&builder, txn, resolver)
+	builder.WriteString(describer(txn, chain))
+	appendCommonFields(&builder, txn, chain)
 
 	return builder.String()
 }

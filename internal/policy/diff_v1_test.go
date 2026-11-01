@@ -77,20 +77,6 @@ func TestDiffPolicyLabelsKnownAssets(t *testing.T) {
 	)
 }
 
-func TestFormatUnits(t *testing.T) {
-	for _, tc := range []struct {
-		amount, decimals uint64
-		want             string
-	}{
-		{0, 0, "0"}, {5, 0, "5"}, {5, 2, "0.05"}, {150, 2, "1.5"}, {1000000, 6, "1"},
-		{18446744073709551615, 19, "1.8446744073709551615"},
-	} {
-		if got := formatUnits(tc.amount, tc.decimals); got != tc.want {
-			t.Errorf("formatUnits(%d, %d) = %q, want %q", tc.amount, tc.decimals, got, tc.want)
-		}
-	}
-}
-
 func TestDiffPolicyTransactionTypesReportEffectiveVerdicts(t *testing.T) {
 	current := mustSignerDoc(t, DefaultKey, `{"transaction_types":{"*":"allow"}}`)
 	next := mustSignerDoc(t, DefaultKey, `{"transaction_types":{"*":"reject","pay":"allow","axfer":"allow","keyreg":"review"}}`)

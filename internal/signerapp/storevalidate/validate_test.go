@@ -16,6 +16,8 @@ import (
 	"github.com/aplane-algo/aplane/internal/asasetstore"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/noderole"
+	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/policy/policytest"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/storevalidate"
 	"github.com/aplane-algo/aplane/internal/storeinit"
@@ -128,5 +130,37 @@ func TestCandidateAuthenticatesTheASASet(t *testing.T) {
 	writeDamage(t, active.ASASetIntegritySidecar())
 	if err := storevalidate.Candidate(opts); err == nil || !strings.Contains(err.Error(), "asa set") {
 		t.Fatalf("Candidate() with a damaged asa set sidecar error = %v", err)
+	}
+}
+
+// Admission is for submitted documents only: a generation whose stored
+// default names an unknown network and an asset outside the set, as one
+// written before admission was enforced might, still validates, so restore,
+// rollback and rotation keep it.
+func TestCandidateKeepsDocumentsTheNodeWouldNotAdmit(t *testing.T) {
+	clientreg.RegisterClient()
+	root := t.TempDir()
+	paths := storepaths.NewPaths(root)
+	passphrase := []byte("storevalidate-test-passphrase")
+	if _, err := storeinit.Initialize(passphrase, storeinit.Options{ValidateCandidate: storevalidate.FirstGeneration,
+		DataDir: root, Paths: paths, Role: noderole.RoleSigner,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	active, kr, err := genstore.ResolveStoreRoot(paths, passphrase)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer kr.Zero()
+	legacy := policytest.MustDocument(noderole.RoleSigner, policy.DefaultKey,
+		`{"limits": {"mainet": {"algo": {"reject_above": "1"}}, "mainnet": {"asa:999999": {"reject_above": "1"}}}}`)
+	if err := policy.WriteDefault(active, noderole.RoleSigner, []byte(legacy), kr, time.Unix(1_785_200_000, 0)); err != nil {
+		t.Fatal(err)
+	}
+	if err := storevalidate.Candidate(storevalidate.Options{
+		Paths: paths, Candidate: active, Keyring: kr,
+		ExpectedRole: noderole.RoleSigner, DataDir: root, Config: &serverconfig.ServerConfig{},
+	}); err != nil {
+		t.Fatalf("Candidate() with a legacy document = %v, want it valid", err)
 	}
 }

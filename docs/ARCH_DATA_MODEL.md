@@ -105,7 +105,6 @@ Important vocabulary:
 - encrypted installed templates,
 - rotating stage tables (`stages/<address>.stages`, a rebuildable cache),
 - public cosigner references and witness public metadata sidecars,
-- signer-wide ASA metadata cache,
 - audit log,
 - managed backup archives,
 - SSH host key and IPC socket.
@@ -171,7 +170,7 @@ DTOs and contract fixtures.
 | Guarded assembly request | Request-scoped | user and cosigner component signatures plus group bytes | assembled signed group bytes | `/sign/assemble` | `internal/signerapp/signing`, `pkg/signerapi` |
 | App call metadata | Request-scoped | caller/engine prepared request | approval description context | `app_call_info` | `pkg/signerapi`, `internal/engine`, `internal/signerapp/signing` |
 | ASA set | Signer identity | `asa_set.json` plus `asa_set.json.hmac` at the generation root (`aplane.asa-set.v1`), optional; entries keyed by genesis hash and asset ID | `asaset.Set`, published with `NodePolicy` by `productruntime.Runtime.SetVerifiedPolicyState`; `asaset.Effective` adds the built-in table | `apadmin asa list\|add\|remove` through `list_asa_set`, `lookup_asa`, `add_asa`, `remove_asa` (each change mints a generation) | `internal/asaset`, `internal/asasetstore`, `internal/policycontext` |
-| ASA metadata | Network-scoped cache | `cache/<network>_asa_cache.json` | operation-local metadata lookup | admin ASA search/resolve, client display | client: `internal/cache`, `internal/asa`; signer: `internal/signerapp/asametadata.Store` |
+| ASA metadata | Network-scoped cache (client only) | `cache/<network>_asa_cache.json` in client data | operation-local metadata lookup | client display | `internal/cache`, `internal/asa`. The signer's asset metadata is its ASA set (`asa_set.json`), not a cache. |
 | Client alias/set/auth/signer caches | Client data dir | `APCLIENT_DATA/cache/*.json` | client state snapshots | shell/MCP structured output | `internal/clientstate`, `internal/cache`, `internal/refname` for alias/set names |
 | Plugin | Client data dir | `plugins.available/<name>`, `plugins.yaml`, checksums | plugin manager process state | plugin JSON-RPC result | `internal/plugin`, `internal/apshellcli` |
 | JavaScript script | Client data dir | `scripts/*.js` | Goja execution context | shell/MCP `js`, `jssave`, `jslist` | `internal/scripting`, `internal/jsapi` |
@@ -243,7 +242,6 @@ audit.log
 .apstore.lock
 aplane.sock               # same-UID IPC socket default; systemd uses /run/apsigner/aplane.sock
 install/release.json      # systemd installs
-cache/
 library/templates/
 backups/default/
 .ssh/ssh_host_key
@@ -1246,8 +1244,6 @@ and [ARCH_ADMIN.md](ARCH_ADMIN.md#admin-protocol-contract).
 | IPC socket path | runtime endpoint | systemd default `/run/apsigner/aplane.sock`; same-UID local default `<data_dir>/aplane.sock`; explicit override supported | local admin transport listener | `internal/adminipc`, `internal/serverconfig`, `internal/signerapp/daemon`, `internal/signerapp/ipcbind`, `internal/adminproto`, `internal/transport` | Production runtime parent is service-owned `0750`, socket is `0660`, and local admin protocol still requires passphrase auth. |
 | Store mutation lock | runtime/durable coordination | `.apstore.lock` | cooperative store lock | `internal/storelock`, `internal/signerapp/daemon`, `cmd/apstore`, `internal/signerapp/policycmd` | Non-blocking advisory flock. The running daemon holds it shared for its lifetime. Offline `apstore` and policy-rescue mutations take it exclusively, and offline rescue reads take it shared. A conflict fails with `ErrBusy`. It keeps offline mutation out while the daemon runs. Live in-daemon mutations are serialized by in-process locks, not by this file. |
 | Audit log | authoritative audit trail | `audit.log` JSONL | append-only audit logger | `internal/signerapp/audit`, `internal/signerapp/daemon` | Mode `0600`, rotated by size; not authority for signing or recovery. |
-| Signer ASA cache key | cache secret | `cache/.cache_key` | HMAC verifier for signer ASA cache | `internal/cache`, `internal/signerapp/asametadata` | Tampered cache files reject and rebuild from seed where applicable. |
-| Signer ASA cache | cache/display | `cache/<network>_asa_cache.json` | per-operation ASA metadata lookup | `internal/signerapp/asametadata`, `internal/asa` | Signed cache; built-in registry seeds; not authority for policy enforcement. |
 | Managed backup locker | authoritative backup inventory | `backups/default/*.tar.gz` (or `.tgz`) | backup list/restore preview/direct restore input | `internal/backup`, `internal/signerapp/backupadmin` | Imported archives are validated before publication; archive payloads are encrypted `.apb`. |
 | Backup import residue | ephemeral validation state | `backups/default/.import-*.part`, `.import-claimed-*.part`, `.import-validation-*/` | unpublished upload, immutable validation claim, and same-filesystem deep-validation workspace | `internal/signerapp/backupadmin` | Owner-private, excluded from managed inventory, removed on normal completion or daemon startup. |
 | Sealed archive manifest | authenticated archive description | `manifest.sealed` inside managed archives | member inventory and source node role | `internal/backup` | Schema `aplane.credential-backup.manifest.v1` sealed under the export passphrase; every open path verifies exact membership. |
