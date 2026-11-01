@@ -294,3 +294,64 @@ func TestCanonicalOrderWithEveryField(t *testing.T) {
 		t.Fatalf("canonical key order:\n%s\nwant:\n%s", got, want)
 	}
 }
+
+// TestDraftNodeWalkAndPointers walks every value of every parsable fixture and
+// checks that At, given a node's pointer, returns that node.
+func TestDraftNodeWalkAndPointers(t *testing.T) {
+	dir := filepath.Join("..", "..", "test", "contracts", "policy", "v1")
+	files, _ := filepath.Glob(filepath.Join(dir, "*.json"))
+	more, _ := filepath.Glob(filepath.Join(dir, "semantic_invalid", "*.json"))
+	files = append(files, more...)
+	walked := 0
+	for _, file := range files {
+		data, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		draft, err := ParseDraft(data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var walk func(n DraftNode)
+		walk = func(n DraftNode) {
+			walked++
+			if got := draft.At(n.Pointer()); got.Pointer() != n.Pointer() || got.Kind() != n.Kind() || got.Text() != n.Text() {
+				t.Fatalf("%s: At(%q) = %q %s, want the node itself", file, n.Pointer(), got.Pointer(), got.Kind())
+			}
+			for _, k := range n.Keys() {
+				walk(n.Member(k))
+			}
+			for _, item := range n.Items() {
+				walk(item)
+			}
+		}
+		walk(draft.Root())
+	}
+	if walked < 100 {
+		t.Fatalf("walked only %d nodes", walked)
+	}
+}
+
+func TestDraftNodeAccessorsAndAbsentValues(t *testing.T) {
+	draft, err := ParseDraft([]byte(`{"a/b": {"~x": [true, 1.50, "s", null]}, "n": 7}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := draft.At("/a~1b/~0x/1"); got.Kind() != "number" || got.Text() != "1.50" {
+		t.Fatalf("escaped pointer: %s %q", got.Kind(), got.Text())
+	}
+	if got := draft.At("/a~1b/~0x/0"); got.Kind() != "boolean" || !got.Bool() {
+		t.Fatalf("boolean: %s %v", got.Kind(), got.Bool())
+	}
+	if got := draft.At("/a~1b/~0x/3"); got.Kind() != "null" || !got.Exists() {
+		t.Fatal("null item is not an existing null")
+	}
+	if keys := draft.Root().Keys(); len(keys) != 2 || keys[0] != "a/b" || keys[1] != "n" {
+		t.Fatalf("keys = %v", keys)
+	}
+	for _, missing := range []string{"/missing", "/n/0", "/a~1b/~0x/4", "/a~1b/~0x/01", "/a~1b/~0x/-1", "x"} {
+		if got := draft.At(missing); got.Exists() || got.Kind() != "" || got.Keys() != nil || got.Items() != nil || got.Member("k").Exists() {
+			t.Fatalf("At(%q) = %s, want an absent node", missing, got.Kind())
+		}
+	}
+}
