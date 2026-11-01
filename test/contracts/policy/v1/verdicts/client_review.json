@@ -1,0 +1,540 @@
+{
+  "format": "aplane.policy-verdicts.v1",
+  "description": "Always Review and Operator Default on client signing: which rule asks for review, the order hits are taken in, and when nothing decides.",
+  "cases": [
+    {
+      "name": "nothing decides",
+      "surface": "sign",
+      "policies": {
+        "default": {
+          "transfer_policy": {
+            "on_no_route": "operator_default"
+          }
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "receiver": "A2",
+          "amount": 5
+        }
+      ],
+      "expect": {
+        "outcome": "default"
+      }
+    },
+    {
+      "name": "permitted route is not an approval",
+      "surface": "sign",
+      "policies": {
+        "default": {
+          "transfer_policy": {
+            "routes": [
+              {
+                "id": "a1-a2",
+                "networks": [
+                  "testnet"
+                ],
+                "sources": [
+                  "$A1"
+                ],
+                "assets": [
+                  "algo"
+                ],
+                "destinations": [
+                  "$A2"
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "receiver": "A2",
+          "amount": 5
+        }
+      ],
+      "expect": {
+        "outcome": "default"
+      }
+    },
+    {
+      "name": "type review",
+      "surface": "sign",
+      "policies": {
+        "default": {
+          "transaction_types": {
+            "*": "allow",
+            "pay": "review"
+          },
+          "transfer_policy": {
+            "on_no_route": "operator_default"
+          }
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "receiver": "A2",
+          "amount": 5
+        }
+      ],
+      "expect": {
+        "outcome": "review",
+        "rule_id": "transaction_type:pay"
+      }
+    },
+    {
+      "name": "route review_above",
+      "surface": "sign",
+      "policies": {
+        "default": {
+          "transfer_policy": {
+            "routes": [
+              {
+                "id": "payroll",
+                "networks": [
+                  "testnet"
+                ],
+                "sources": [
+                  "*"
+                ],
+                "assets": [
+                  "algo"
+                ],
+                "destinations": [
+                  "$A2"
+                ],
+                "limits": {
+                  "testnet": {
+                    "algo": {
+                      "review_above": "10",
+                      "reject_above": "20"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "receiver": "A2",
+          "amount": 11
+        }
+      ],
+      "expect": {
+        "outcome": "review",
+        "rule_id": "transfer_policy:payroll:review_above"
+      }
+    },
+    {
+      "name": "route miss review",
+      "surface": "sign",
+      "policies": {
+        "default": {
+          "transfer_policy": {
+            "on_no_route": "review"
+          }
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "receiver": "A2",
+          "amount": 5
+        }
+      ],
+      "expect": {
+        "outcome": "review",
+        "rule_id": "transfer_policy:route_miss"
+      }
+    },
+    {
+      "name": "type review comes before routing review in a slot",
+      "surface": "sign",
+      "policies": {
+        "default": {
+          "transaction_types": {
+            "*": "allow",
+            "pay": "review"
+          },
+          "transfer_policy": {
+            "on_no_route": "review"
+          }
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "receiver": "A2",
+          "amount": 5
+        }
+      ],
+      "expect": {
+        "outcome": "review",
+        "rule_id": "transaction_type:pay"
+      }
+    },
+    {
+      "name": "the earlier slot's review wins",
+      "surface": "sign",
+      "policies": {
+        "default": {
+          "transaction_types": {
+            "*": "allow",
+            "axfer": "review"
+          },
+          "transfer_policy": {
+            "on_no_route": "review",
+            "routes": [
+              {
+                "id": "axfer-any",
+                "networks": [
+                  "*"
+                ],
+                "sources": [
+                  "*"
+                ],
+                "assets": [
+                  "asa:7"
+                ],
+                "destinations": [
+                  "*"
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "receiver": "A2",
+          "amount": 1
+        },
+        {
+          "type": "axfer",
+          "sender": "A3",
+          "asset": 7,
+          "asset_receiver": "A4",
+          "asset_amount": 1
+        }
+      ],
+      "expect": {
+        "outcome": "review",
+        "rule_id": "transfer_policy:route_miss"
+      }
+    },
+    {
+      "name": "warning review on the signer's own slot",
+      "surface": "sign",
+      "policies": {
+        "default": {
+          "always_review_warnings": true,
+          "transfer_policy": {
+            "on_no_route": "operator_default"
+          }
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "fee": 2000000,
+          "receiver": "A2",
+          "amount": 5
+        }
+      ],
+      "expect": {
+        "outcome": "review",
+        "rule_id": "always_review_warnings"
+      }
+    },
+    {
+      "name": "warnings off ask for nothing",
+      "surface": "sign",
+      "policies": {
+        "default": {
+          "always_review_warnings": false,
+          "transfer_policy": {
+            "on_no_route": "operator_default"
+          }
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "fee": 2000000,
+          "receiver": "A2",
+          "amount": 5
+        }
+      ],
+      "expect": {
+        "outcome": "default"
+      }
+    },
+    {
+      "name": "a foreign slot's warning asks for review even with warnings off",
+      "surface": "sign",
+      "policies": {
+        "default": {
+          "always_review_warnings": false,
+          "transfer_policy": {
+            "on_no_route": "operator_default"
+          }
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "receiver": "A2",
+          "amount": 1
+        },
+        {
+          "type": "pay",
+          "sender": "A3",
+          "rekey_to": "A8",
+          "receiver": "A3"
+        }
+      ],
+      "classes": {
+        "1": "foreign"
+      },
+      "expect": {
+        "outcome": "review",
+        "rule_id": "always_review_warnings"
+      }
+    },
+    {
+      "name": "a protocol rekey target is not a warning",
+      "surface": "gates",
+      "policies": {
+        "default": {
+          "always_review_warnings": true,
+          "transfer_policy": {
+            "on_no_route": "operator_default"
+          }
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "rekey_to": "A9",
+          "receiver": "A1"
+        }
+      ],
+      "known": [
+        "A9"
+      ],
+      "protocol_rekey_targets": [
+        "A9"
+      ],
+      "expect": {
+        "outcome": "default"
+      }
+    },
+    {
+      "name": "the same rekey without the protocol target is a warning",
+      "surface": "gates",
+      "policies": {
+        "default": {
+          "always_review_warnings": true,
+          "transfer_policy": {
+            "on_no_route": "operator_default"
+          }
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "rekey_to": "A9",
+          "receiver": "A1"
+        }
+      ],
+      "known": [
+        "A9"
+      ],
+      "expect": {
+        "outcome": "review",
+        "rule_id": "always_review_warnings"
+      }
+    },
+    {
+      "name": "a forced review replaces the policy's rule",
+      "surface": "gates",
+      "policies": {
+        "default": {
+          "transaction_types": {
+            "*": "allow",
+            "pay": "review"
+          },
+          "transfer_policy": {
+            "on_no_route": "operator_default"
+          }
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "receiver": "A2",
+          "amount": 5
+        }
+      ],
+      "forced_review": "bounded_admin_operation_requires_review",
+      "expect": {
+        "outcome": "review",
+        "rule_id": "bounded_admin_operation_requires_review"
+      }
+    },
+    {
+      "name": "a forced review applies when no rule matched",
+      "surface": "gates",
+      "policies": {
+        "default": {
+          "transfer_policy": {
+            "on_no_route": "operator_default"
+          }
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "receiver": "A2",
+          "amount": 5
+        }
+      ],
+      "forced_review": "bounded_admin_operation_requires_review",
+      "expect": {
+        "outcome": "review",
+        "rule_id": "bounded_admin_operation_requires_review"
+      }
+    },
+    {
+      "name": "user component review on its target",
+      "surface": "component_user",
+      "policies": {
+        "default": {
+          "transfer_policy": {
+            "on_no_route": "review"
+          }
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "receiver": "A2",
+          "amount": 5
+        }
+      ],
+      "targets": [
+        0
+      ],
+      "component_key": "A1",
+      "expect": {
+        "outcome": "review",
+        "rule_id": "transfer_policy:route_miss"
+      }
+    },
+    {
+      "name": "user component rejects on its target",
+      "surface": "component_user",
+      "policies": {
+        "default": {}
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "receiver": "A2",
+          "amount": 5
+        }
+      ],
+      "targets": [
+        0
+      ],
+      "component_key": "A1",
+      "expect": {
+        "outcome": "reject",
+        "kind": "forbidden",
+        "message": "policy engine rejected request: txn 1: [transfer_policy:route_miss] transfer routing found no route for pay movement"
+      }
+    },
+    {
+      "name": "user component non-target positions are foreign",
+      "surface": "component_user",
+      "policies": {
+        "default": {
+          "always_review_warnings": false,
+          "transfer_policy": {
+            "on_no_route": "operator_default"
+          }
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "receiver": "A2",
+          "amount": 1
+        },
+        {
+          "type": "pay",
+          "sender": "A3",
+          "rekey_to": "A8",
+          "receiver": "A3"
+        }
+      ],
+      "targets": [
+        0
+      ],
+      "component_key": "A1",
+      "expect": {
+        "outcome": "review",
+        "rule_id": "always_review_warnings"
+      }
+    },
+    {
+      "name": "user component never auto-approves a self no-op",
+      "surface": "component_user",
+      "base": "shipped",
+      "policies": {
+        "default": {
+          "auto_approve_self_noop_transfer": true
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "receiver": "A1"
+        }
+      ],
+      "targets": [
+        0
+      ],
+      "component_key": "A1",
+      "expect": {
+        "outcome": "default"
+      }
+    }
+  ]
+}

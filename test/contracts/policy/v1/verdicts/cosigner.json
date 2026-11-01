@@ -1,0 +1,461 @@
+{
+  "format": "aplane.policy-verdicts.v1",
+  "description": "Cosigner /sign/component: what a cosigner policy permits, how violations are collected across targets, its rekey rules, and a missing policy.",
+  "cases": [
+    {
+      "name": "a route permits the target",
+      "surface": "cosigner",
+      "policies": {
+        "W1": {
+          "transfer_policy": {
+            "routes": [
+              {
+                "id": "a1-a2",
+                "networks": [
+                  "testnet"
+                ],
+                "sources": [
+                  "$A1"
+                ],
+                "assets": [
+                  "algo"
+                ],
+                "destinations": [
+                  "$A2"
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "receiver": "A2",
+          "amount": 5
+        }
+      ],
+      "targets": [
+        0
+      ],
+      "component_key": "W1",
+      "expect": {
+        "outcome": "approve"
+      }
+    },
+    {
+      "name": "route miss",
+      "surface": "cosigner",
+      "policies": {
+        "W1": {}
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "receiver": "A2",
+          "amount": 5
+        }
+      ],
+      "targets": [
+        0
+      ],
+      "component_key": "W1",
+      "expect": {
+        "outcome": "reject",
+        "kind": "forbidden",
+        "message": "cosigner policy rejected request: txn 1: [transfer_policy:route_miss] transfer routing found no route for pay movement"
+      }
+    },
+    {
+      "name": "route reject_above",
+      "surface": "cosigner",
+      "policies": {
+        "W1": {
+          "transfer_policy": {
+            "routes": [
+              {
+                "id": "capped",
+                "networks": [
+                  "testnet"
+                ],
+                "sources": [
+                  "*"
+                ],
+                "assets": [
+                  "algo"
+                ],
+                "destinations": [
+                  "*"
+                ],
+                "limits": {
+                  "testnet": {
+                    "algo": {
+                      "reject_above": "10"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "receiver": "A2",
+          "amount": 11
+        }
+      ],
+      "targets": [
+        0
+      ],
+      "component_key": "W1",
+      "expect": {
+        "outcome": "reject",
+        "kind": "forbidden",
+        "message": "cosigner policy rejected request: txn 1: [transfer_policy:capped:reject_above] transfer routing amount 11 exceeds reject threshold 10"
+      }
+    },
+    {
+      "name": "violations collected across sparse targets",
+      "surface": "cosigner",
+      "policies": {
+        "W1": {}
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "receiver": "A2",
+          "amount": 1
+        },
+        {
+          "type": "pay",
+          "sender": "A3",
+          "receiver": "A4",
+          "amount": 1
+        },
+        {
+          "type": "pay",
+          "sender": "A5",
+          "receiver": "A6",
+          "amount": 1
+        }
+      ],
+      "targets": [
+        0,
+        2
+      ],
+      "component_key": "W1",
+      "expect": {
+        "outcome": "reject",
+        "kind": "forbidden",
+        "message": "cosigner policy rejected request: txn 1: [transfer_policy:route_miss] transfer routing found no route for pay movement; txn 3: [transfer_policy:route_miss] transfer routing found no route for pay movement"
+      }
+    },
+    {
+      "name": "unknown networks are violations on each target",
+      "surface": "cosigner",
+      "policies": {
+        "W1": {}
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "network": "unknown",
+          "receiver": "A2",
+          "amount": 1
+        },
+        {
+          "type": "pay",
+          "sender": "A3",
+          "receiver": "A4",
+          "amount": 1
+        },
+        {
+          "type": "pay",
+          "sender": "A5",
+          "network": "unknown",
+          "receiver": "A6",
+          "amount": 1
+        }
+      ],
+      "targets": [
+        0,
+        1,
+        2
+      ],
+      "component_key": "W1",
+      "expect": {
+        "outcome": "reject",
+        "kind": "forbidden",
+        "message": "cosigner policy rejected request: txn 1: [unknown_genesis_hash] cannot evaluate cosigner policy for unknown genesis hash ee00000000000000000000000000000000000000000000000000000000000000; txn 2: [transfer_policy:route_miss] transfer routing found no route for pay movement; txn 3: [unknown_genesis_hash] cannot evaluate cosigner policy for unknown genesis hash ee00000000000000000000000000000000000000000000000000000000000000"
+      }
+    },
+    {
+      "name": "a type rejection ends that target",
+      "surface": "cosigner",
+      "policies": {
+        "W1": {}
+      },
+      "group": [
+        {
+          "type": "appl",
+          "sender": "A1",
+          "app_id": 5
+        }
+      ],
+      "targets": [
+        0
+      ],
+      "component_key": "W1",
+      "expect": {
+        "outcome": "reject",
+        "kind": "forbidden",
+        "message": "cosigner policy rejected request: txn 1: [transaction_type:appl] appl transactions are rejected by policy"
+      }
+    },
+    {
+      "name": "reject_rekey refuses any rekey",
+      "surface": "cosigner",
+      "policies": {
+        "W1": {
+          "reject_rekey": true
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "rekey_to": "A8",
+          "receiver": "A1"
+        }
+      ],
+      "targets": [
+        0
+      ],
+      "component_key": "W1",
+      "expect": {
+        "outcome": "reject",
+        "kind": "forbidden",
+        "message": "cosigner policy rejected request: txn 1: [cosigner_policy:reject_rekey] rekey transactions are rejected by cosigner policy"
+      }
+    },
+    {
+      "name": "rekey_policy permits the rekey without a route",
+      "surface": "cosigner",
+      "policies": {
+        "W1": {
+          "rekey_policy": {
+            "allowed": [
+              {
+                "sender": "$A1",
+                "targets": [
+                  "$A8"
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "rekey_to": "A8",
+          "receiver": "A1"
+        }
+      ],
+      "targets": [
+        0
+      ],
+      "component_key": "W1",
+      "expect": {
+        "outcome": "approve"
+      }
+    },
+    {
+      "name": "a rekey target outside rekey_policy",
+      "surface": "cosigner",
+      "policies": {
+        "W1": {
+          "rekey_policy": {
+            "allowed": [
+              {
+                "sender": "$A1",
+                "targets": [
+                  "$A8"
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "rekey_to": "A9",
+          "receiver": "A1"
+        }
+      ],
+      "targets": [
+        0
+      ],
+      "component_key": "W1",
+      "expect": {
+        "outcome": "reject",
+        "kind": "forbidden",
+        "message": "cosigner policy rejected request: txn 1: [cosigner_policy:reject_rekey] rekey from AEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAKE3PRHE to BEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOZFNMZM is not allowed by cosigner rekey_policy"
+      }
+    },
+    {
+      "name": "a rekey that is not a self-payment",
+      "surface": "cosigner",
+      "policies": {
+        "W1": {
+          "rekey_policy": {
+            "allowed": [
+              {
+                "sender": "$A1",
+                "targets": [
+                  "$A8"
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "rekey_to": "A8",
+          "receiver": "A2"
+        }
+      ],
+      "targets": [
+        0
+      ],
+      "component_key": "W1",
+      "expect": {
+        "outcome": "reject",
+        "kind": "forbidden",
+        "message": "cosigner policy rejected request: txn 1: [cosigner_policy:reject_rekey] rekey transactions must be self-payments"
+      }
+    },
+    {
+      "name": "the default governs a witness key without its own document",
+      "surface": "cosigner",
+      "policies": {
+        "default": {
+          "transfer_policy": {
+            "routes": [
+              {
+                "id": "any",
+                "networks": [
+                  "*"
+                ],
+                "sources": [
+                  "*"
+                ],
+                "assets": [
+                  "*"
+                ],
+                "destinations": [
+                  "*"
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "receiver": "A2",
+          "amount": 5
+        }
+      ],
+      "targets": [
+        0
+      ],
+      "component_key": "W1",
+      "expect": {
+        "outcome": "approve"
+      }
+    },
+    {
+      "name": "a witness key's own document replaces the default",
+      "surface": "cosigner",
+      "policies": {
+        "W1": {},
+        "default": {
+          "transfer_policy": {
+            "routes": [
+              {
+                "id": "any",
+                "networks": [
+                  "*"
+                ],
+                "sources": [
+                  "*"
+                ],
+                "assets": [
+                  "*"
+                ],
+                "destinations": [
+                  "*"
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "receiver": "A2",
+          "amount": 5
+        }
+      ],
+      "targets": [
+        0
+      ],
+      "component_key": "W1",
+      "expect": {
+        "outcome": "reject",
+        "kind": "forbidden",
+        "message": "cosigner policy rejected request: txn 1: [transfer_policy:route_miss] transfer routing found no route for pay movement"
+      }
+    },
+    {
+      "name": "no policy is an internal error",
+      "surface": "cosigner",
+      "policies": {},
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "receiver": "A2",
+          "amount": 5
+        }
+      ],
+      "targets": [
+        0
+      ],
+      "component_key": "W1",
+      "expect": {
+        "outcome": "error",
+        "kind": "internal",
+        "message": "policy is not loaded"
+      }
+    }
+  ]
+}
