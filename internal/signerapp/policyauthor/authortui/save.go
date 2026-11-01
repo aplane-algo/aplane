@@ -78,7 +78,7 @@ func (m Model) saveReview() Model {
 	cur := s.Current()
 	var lines []string
 	if m.failsCheck() {
-		lines = append(lines, m.styles.err.Render("The edited document does not pass check; it can be saved as a draft, but apadmin will refuse it."), "")
+		lines = append(lines, m.styles.err.Render("The edited document does not pass check in this workspace; it can be saved as a draft. Review the listed problems before applying it."), "")
 	}
 	if s.Loaded.HadComments {
 		lines = append(lines, m.styles.warn.Render("This file has comments, which will not be kept; move notes into description fields."), "")
