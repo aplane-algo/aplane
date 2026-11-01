@@ -137,7 +137,9 @@ evaluator is pure. `runApprovalGates` in `internal/signerapp/signing` calls it
 after the signer's own refusals and acts on the verdict: a 403 rejection, the
 operator approval path with the review rule, an auto-approval, or the
 Operator Default. A signer position with no policy is a 500, not a
-rejection. The verdict fixtures in `test/contracts/policy/v1/verdicts` freeze
+rejection. With the cosigner role, the same evaluator returns Approve or
+Reject for every target, and the cosigner's `/sign/component` path acts on it
+(see Verdict Mapping By Role). The verdict fixtures in `test/contracts/policy/v1/verdicts` freeze
 what each signing path decides.
 
 For client signing, Always Review blocks matching policy Always Approve rules.
@@ -1522,12 +1524,16 @@ Implementation source of truth:
 - `internal/signerapp/approvalpolicy/warnings.go`: warning analysis.
 - `cmd/apadmin/policy.go`: policy command adapter and local IPC transport selection.
 - `internal/signerapp/policycmd`: online and offline-rescue policy workflows.
+- `internal/signerapp/policyeval`: the pure verdict evaluator for client
+  signing and the cosigner: Always Deny, Always Review, Always Approve, and
+  the cosigner's per-target rules.
+- `internal/signerapp/signing/gate.go`: the client-signing gate sequence that
+  acts on the verdict.
 - `internal/signerapp/signing/cosigner_policy.go`: cosigner key and policy
-  selection and evaluation.
-- `internal/signerapp/signing/always_review.go`: Always Review evaluation.
+  selection, and the rejection and audit that act on its verdict.
 - `internal/signerapp/signing/approval.go`: policy resolution per slot,
   approval prompts, and operator default behavior.
-- `internal/signerapp/signing/service.go`: phase ordering and the per-request
-  `PolicyFor` snapshot.
+- `internal/signerapp/signing/service.go`: the per-request `PolicyFor`
+  snapshot.
 - `internal/signerapp/admin/policy.go`: admin policy read, check, and apply
   service.

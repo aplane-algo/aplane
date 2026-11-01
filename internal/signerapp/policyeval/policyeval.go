@@ -16,9 +16,22 @@ import (
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
+	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/signerapp/approvalpolicy"
 	signingutil "github.com/aplane-algo/aplane/internal/signing"
+)
+
+// Role selects the verdict surface.
+type Role int
+
+const (
+	// RoleClient is client signing: Always Deny, Always Review, Always
+	// Approve, else the Operator Default.
+	RoleClient Role = iota
+	// RoleCosigner is a cosigner's authorization: Approve or Reject, with no
+	// operator and so no review.
+	RoleCosigner
 )
 
 // SlotClass is what a judged position is to this signer.
@@ -44,8 +57,9 @@ type Slot struct {
 	Policy *policy.Config
 }
 
-// Input is everything a client-signing verdict depends on.
+// Input is everything a verdict depends on.
 type Input struct {
+	Role Role
 	// Group is the finalized group as it will be signed: fees after pooling,
 	// signer-added dummies at the tail.
 	Group []types.Transaction
@@ -61,8 +75,12 @@ type Input struct {
 	// admin operation). It replaces the review rule when set.
 	ForcedReviewRuleID string
 	// Plan is the planner's report for Always Approve. Nil means the surface
-	// has no Always Approve.
+	// has no Always Approve. The cosigner role does not read it.
 	Plan *PlanFacts
+	// Networks maps genesis hashes to networks for the cosigner role's
+	// known-network check; the zero value knows the built-in networks.
+	// Client routing reads the mapping compiled into each policy instead.
+	Networks apconfig.GenesisHashNetworkResolver
 }
 
 // PlanFacts are what the planner reports about how it built Group. The
@@ -103,7 +121,7 @@ const (
 	Approve
 )
 
-// Verdict is the evaluator's answer. Reject carries every violation in the
+// Verdict is the evaluator's answer. A cosigner verdict is Approve or Reject. Reject carries every violation in the
 // order the daemon reports them, each with its group index. Review carries
 // the deciding rule ID, empty when review is required without one; Approve
 // carries the approval rule ID.
@@ -117,10 +135,13 @@ type Verdict struct {
 // has no policy. It is a server fault, not a policy rejection.
 var ErrPolicyNotLoaded = errors.New("policy is not loaded")
 
-// Evaluate computes the client-signing verdict: Always Deny, then Always
-// Review, then Always Approve when nothing asked for review, else the
-// Operator Default.
+// Evaluate computes the verdict for in.Role. For client signing that is
+// Always Deny, then Always Review, then Always Approve when nothing asked for
+// review, else the Operator Default. For a cosigner it is Approve or Reject.
 func Evaluate(in Input) (Verdict, error) {
+	if in.Role == RoleCosigner {
+		return cosignerVerdict(in)
+	}
 	violations, err := Deny(in)
 	if err != nil {
 		return Verdict{}, err

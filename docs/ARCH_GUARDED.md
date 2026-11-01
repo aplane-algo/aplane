@@ -1027,7 +1027,9 @@ Primary packages and files:
 - `internal/signerapp/policyapply`: shared policy check and generation-commit
   rules.
 - `internal/signerapp/signing/cosigner_policy.go`: cosigner key and policy
-  selection and evaluation.
+  selection, and the rejection and audit that act on its verdict.
+- `internal/signerapp/policyeval/cosigner.go`: the cosigner verdict: the
+  known-network check and each target's rules.
 
 Representative tests:
 
