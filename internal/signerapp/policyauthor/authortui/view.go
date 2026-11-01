@@ -42,8 +42,12 @@ func (m Model) View() string {
 		body = m.problemsView()
 	case screenComparePick:
 		body = m.comparePickView()
-	case screenExplain, screenCompare, screenHelp, screenField:
+	case screenExplain, screenCompare, screenHelp, screenField, screenSave, screenOverwrite:
 		body = m.pageView()
+	case screenConflict:
+		body = m.conflictView()
+	case screenNew:
+		body = m.newView()
 	default:
 		body = m.documentView()
 	}
@@ -66,9 +70,26 @@ func (m Model) statusText() string {
 }
 
 func (m Model) footer() string {
+	if m.quitConfirm {
+		return fmt.Sprintf("%d file(s) have unsaved edits. Quit and discard them? y: quit · any other key: stay", m.unsavedCount())
+	}
 	switch m.screen {
+	case screenSave:
+		return "y: Write the file | n/esc: Back | up/down: Scroll"
+	case screenOverwrite:
+		return "y: Overwrite | n/esc: Back | up/down: Scroll"
+	case screenConflict:
+		if m.save.saveAs {
+			return "enter: Save as | esc: Back"
+		}
+		return "r: Reload | a: Save as | o: Overwrite | esc: Back"
 	case screenFiles:
-		return "up/down: Select | enter: Open | r: Reload | q: Quit"
+		return "up/down: Select | enter: Open | n: New document | r: Reload | q: Quit"
+	case screenNew:
+		if m.newDoc.step == newStart || m.newDoc.step == newRole {
+			return "up/down: Choose | enter: Next | esc: Cancel"
+		}
+		return "enter: Next | esc: Cancel"
 	case screenProblems:
 		return "up/down: Select | enter: Go to | esc: Back | q: Quit"
 	case screenComparePick:
@@ -82,7 +103,10 @@ func (m Model) footer() string {
 	if len(m.ws.Files) == 1 {
 		back = "esc: Quit"
 	}
-	return "up/down: Move | tab: Pane | ]/[: Problem | p: Problems | x: Explain | c: Compare | ?: Help | " + back + " | q: Quit"
+	if m.prompt.kind != promptNone {
+		return ""
+	}
+	return "up/down: Move | tab: Pane | enter: Edit | space: Toggle | a: Add | d: Remove | s: Save | u: Undo | ]/[: Problem | p: Problems | x: Explain | c: Compare | ?: Help | " + back + " | q: Quit"
 }
 
 func countLabel(errors, warnings int) string {
@@ -99,8 +123,8 @@ func countLabel(errors, warnings int) string {
 	return strings.Join(parts, " · ")
 }
 
-func (m Model) counts(f *policyauthor.File) (errors, warnings int) {
-	for _, p := range m.problemsFor(f) {
+func (m Model) counts(i int) (errors, warnings int) {
+	for _, p := range m.problemsFor(i, m.shownFile(i)) {
 		if p.Severity == policyauthor.SeverityError {
 			errors++
 		} else {
@@ -112,17 +136,21 @@ func (m Model) counts(f *policyauthor.File) (errors, warnings int) {
 
 func (m Model) filesView() string {
 	var b strings.Builder
-	b.WriteString(m.styles.title.Render("appolicy") + "  " + m.styles.subtle.Render(fmt.Sprintf("%d file(s), %s documents", len(m.ws.Files), roleOrUnknown(m.ws))) + "\n\n")
+	b.WriteString(m.styles.title.Render("appolicy") + "  " + m.styles.subtle.Render(fmt.Sprintf("%d file(s), %s documents", len(m.ws.Files), roleOrUnknown(m.currentWS()))) + "\n\n")
 	if len(m.ws.Files) == 0 {
 		b.WriteString("No policy files.\n")
 	}
 	var lines []string
-	for i, f := range m.ws.Files {
+	for i := range m.ws.Files {
+		f := m.shownFile(i)
 		key := f.Key
 		if key == "" {
 			key = "(no key)"
 		}
-		e, w := m.counts(f)
+		e, w := m.counts(i)
+		if s, ok := m.sessions[f.Path]; ok && s.Modified() {
+			key += "  (modified)"
+		}
 		line := fmt.Sprintf("%-28s %-10s %-30s %s", ansi.Truncate(filepath.Base(f.Path), 28, "…"), f.State, countLabel(e, w), key)
 		line = ansi.Truncate(line, m.width-2, "…")
 		if i == m.fileCursor {
@@ -148,8 +176,8 @@ func roleOrUnknown(ws *policyauthor.Workspace) string {
 }
 
 func (m Model) documentView() string {
-	f := m.file()
-	e, w := m.counts(f)
+	f := m.shown()
+	e, w := m.counts(m.current)
 	key := f.Key
 	if key == "" {
 		key = "(no key)"
@@ -158,7 +186,14 @@ func (m Model) documentView() string {
 	if role == "" {
 		role = "(no role)"
 	}
-	header := m.styles.title.Render(filepath.Base(f.Path)) + "  " + m.styles.subtle.Render(fmt.Sprintf("%s  %s  %s  ", role, key, f.State))
+	header := m.styles.title.Render(filepath.Base(f.Path)) + "  "
+	switch s := m.session(); {
+	case s == nil:
+		header += m.styles.warn.Render("read-only") + "  "
+	case s.Modified():
+		header += m.styles.warn.Render("modified") + "  "
+	}
+	header += m.styles.subtle.Render(fmt.Sprintf("%s  %s  %s  ", role, key, f.State))
 	if e > 0 {
 		header += m.styles.err.Render(countLabel(e, w))
 	} else if w > 0 {
@@ -170,13 +205,21 @@ func (m Model) documentView() string {
 	// A pane's style width includes its padding (one column each side); its
 	// border adds one more each side and a row above and below. Content is
 	// laid out at the inner width and cut to it, so lipgloss never wraps it.
-	inner := max(3, m.height-5)
+	var bar []string
+	if m.prompt.kind != promptNone {
+		bar = m.promptLines()
+	}
+	inner := max(3, m.height-5-len(bar))
 	leftW := max(20, min(40, m.width/3))
 	rightW := max(20, m.width-leftW-4)
 	outline := m.paneStyle(paneOutline).Width(leftW).Height(inner).Render(fit(window(m.outlineLines(leftW-2), m.sectionCursor, inner), leftW-2))
 	formLines, selected := m.formLines(rightW - 2)
 	form := m.paneStyle(paneForm).Width(rightW).Height(inner).Render(fit(window(formLines, selected, inner), rightW-2))
-	return ansi.Truncate(header, m.width, "…") + "\n" + lipgloss.JoinHorizontal(lipgloss.Top, outline, form)
+	out := ansi.Truncate(header, m.width, "…") + "\n" + lipgloss.JoinHorizontal(lipgloss.Top, outline, form)
+	if len(bar) > 0 {
+		out += "\n" + strings.Join(bar, "\n")
+	}
+	return out
 }
 
 func (m Model) paneStyle(p pane) lipgloss.Style {

@@ -355,3 +355,145 @@ func TestDraftNodeAccessorsAndAbsentValues(t *testing.T) {
 		}
 	}
 }
+
+func mustCanonical(t *testing.T, d *Draft) string {
+	t.Helper()
+	out, err := d.Canonical()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.Join(strings.Fields(string(out)), " ")
+}
+
+func TestDraftEditsReturnNewDraftsWithFreshPointers(t *testing.T) {
+	base, err := ParseDraft([]byte(`{"a": 1, "list": ["x", "y"], "obj": {"k": true}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := mustCanonical(t, base)
+	for _, tt := range []struct {
+		name string
+		edit func(*Draft) (*Draft, error)
+		want string
+	}{
+		{"set existing", func(d *Draft) (*Draft, error) { return d.Set("/a", []byte(`"two"`)) },
+			`{ "a": "two", "list": [ "x", "y" ], "obj": { "k": true } }`},
+		{"set new member", func(d *Draft) (*Draft, error) { return d.Set("/obj/new", []byte(`[1]`)) },
+			`{ "a": 1, "list": [ "x", "y" ], "obj": { "k": true, "new": [ 1 ] } }`},
+		{"set item", func(d *Draft) (*Draft, error) { return d.Set("/list/1", []byte(`"z"`)) },
+			`{ "a": 1, "list": [ "x", "z" ], "obj": { "k": true } }`},
+		{"insert at start", func(d *Draft) (*Draft, error) { return d.Insert("/list/0", []byte(`"w"`)) },
+			`{ "a": 1, "list": [ "w", "x", "y" ], "obj": { "k": true } }`},
+		{"insert in middle", func(d *Draft) (*Draft, error) { return d.Insert("/list/1", []byte(`"w"`)) },
+			`{ "a": 1, "list": [ "x", "w", "y" ], "obj": { "k": true } }`},
+		{"append", func(d *Draft) (*Draft, error) { return d.Insert("/list/-", []byte(`{"n": 1}`)) },
+			`{ "a": 1, "list": [ "x", "y", { "n": 1 } ], "obj": { "k": true } }`},
+		{"insert at end index", func(d *Draft) (*Draft, error) { return d.Insert("/list/2", []byte(`"w"`)) },
+			`{ "a": 1, "list": [ "x", "y", "w" ], "obj": { "k": true } }`},
+		{"remove member", func(d *Draft) (*Draft, error) { return d.Remove("/a") },
+			`{ "list": [ "x", "y" ], "obj": { "k": true } }`},
+		{"remove item", func(d *Draft) (*Draft, error) { return d.Remove("/list/0") },
+			`{ "a": 1, "list": [ "y" ], "obj": { "k": true } }`},
+		{"rename keeps order", func(d *Draft) (*Draft, error) { return d.Rename("/a", "b") },
+			`{ "b": 1, "list": [ "x", "y" ], "obj": { "k": true } }`},
+		{"replace root", func(d *Draft) (*Draft, error) { return d.Set("", []byte(`{"only": null}`)) },
+			`{ "only": null }`},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			edited, err := tt.edit(base)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := mustCanonical(t, edited); got != tt.want {
+				t.Fatalf("got  %s\nwant %s", got, tt.want)
+			}
+			if mustCanonical(t, base) != before {
+				t.Fatal("the edit changed the original draft")
+			}
+			var walk func(n DraftNode)
+			walk = func(n DraftNode) {
+				if got := edited.At(n.Pointer()); got.Pointer() != n.Pointer() || got.Kind() != n.Kind() || got.Text() != n.Text() {
+					t.Fatalf("pointer %q is stale", n.Pointer())
+				}
+				for _, k := range n.Keys() {
+					walk(n.Member(k))
+				}
+				for _, item := range n.Items() {
+					walk(item)
+				}
+			}
+			walk(edited.Root())
+		})
+	}
+}
+
+func TestDraftEditErrors(t *testing.T) {
+	base, err := ParseDraft([]byte(`{"a": 1, "list": ["x"], "b": 2}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Under "a" (depth 1), maxPolicyDocumentDepth arrays reach the limit
+	// exactly, as the parser allows; one more is over it.
+	atLimit := strings.Repeat("[", maxPolicyDocumentDepth) + strings.Repeat("]", maxPolicyDocumentDepth)
+	deep := "[" + atLimit + "]"
+	if _, err := base.Set("/a", []byte(atLimit)); err != nil {
+		t.Fatalf("a value at the nesting limit was refused: %v", err)
+	}
+	if _, err := ParseDraft([]byte(`{"a": ` + atLimit + `}`)); err != nil {
+		t.Fatalf("the parser refuses what the edit allows: %v", err)
+	}
+	if _, err := ParseDraft([]byte(`{"a": ` + deep + `}`)); err == nil {
+		t.Fatal("the parser allows what the edit refuses")
+	}
+	for name, edit := range map[string]func() (*Draft, error){
+		"missing parent":      func() (*Draft, error) { return base.Set("/nope/x", []byte(`1`)) },
+		"set past the end":    func() (*Draft, error) { return base.Set("/list/1", []byte(`1`)) },
+		"insert out of range": func() (*Draft, error) { return base.Insert("/list/2", []byte(`1`)) },
+		"insert into object":  func() (*Draft, error) { return base.Insert("/a/0", []byte(`1`)) },
+		"remove absent":       func() (*Draft, error) { return base.Remove("/zz") },
+		"rename onto taken":   func() (*Draft, error) { return base.Rename("/a", "b") },
+		"rename an item":      func() (*Draft, error) { return base.Rename("/list/0", "x") },
+		"bad JSON":            func() (*Draft, error) { return base.Set("/a", []byte(`{`)) },
+		"duplicate key":       func() (*Draft, error) { return base.Set("/a", []byte(`{"k": 1, "k": 2}`)) },
+		"no pointer":          func() (*Draft, error) { return base.Remove("") },
+		"too deep":            func() (*Draft, error) { return base.Set("/a", []byte(deep)) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			if d, err := edit(); err == nil {
+				t.Fatalf("edit accepted: %s", mustCanonical(t, d))
+			}
+		})
+	}
+}
+
+// TestDraftEditKeepsAFixtureDecodable: editing a valid document through the
+// draft yields one the decoder reads with the change applied.
+func TestDraftEditKeepsAFixtureDecodable(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "test", "contracts", "policy", "v1", "signer_key_full.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	draft, err := ParseDraft(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	edited, err := draft.Set("/max_fee_microalgos", []byte(`"5000"`))
+	if err == nil {
+		edited, err = edited.Remove("/transfer_policy/routes/4")
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := edited.Canonical()
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, _ := edited.TopLevelString("key")
+	doc, err := DecodePolicyV1(out, key, "signer")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if doc.MaxFeeMicroAlgos != 5000 || len(doc.Routes) != 4 {
+		t.Fatalf("decoded fee %d, %d routes", doc.MaxFeeMicroAlgos, len(doc.Routes))
+	}
+}

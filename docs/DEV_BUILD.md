@@ -14,7 +14,7 @@ This project builds several first-party commands and developer helpers:
 10. **appass-file** - dev-only plaintext passphrase helper
 11. **appass-systemd-creds** - Linux/systemd production passphrase helper using systemd credentials
 12. **approbe** - installer-facing signer liveness probe
-13. **appolicy** - offline policy file browser, check, format, and explain
+13. **appolicy** - offline policy file editor, check, format, and explain
 14. **applugin-checksum** - plugin checksum generator
 15. **compile_teal** - TEAL-to-Go bytecode generator used by development workflows
 16. **configdoc** - configuration reference generator
@@ -36,7 +36,7 @@ aplane/
 │   ├── appass-file/            # Dev passphrase helper
 │   ├── appass-systemd-creds/   # Linux systemd-creds passphrase helper
 │   ├── approbe/                # Installer liveness probe
-│   ├── appolicy/               # Offline policy file browser, check, format, explain
+│   ├── appolicy/               # Offline policy file editor, check, format, explain
 │   ├── applugin-checksum/      # Plugin integrity helper
 │   ├── compile_teal/         # TEAL-to-Go bytecode generator
 │   └── configdoc/            # Config reference generator
@@ -498,7 +498,7 @@ capability.
 - **aplocalnet** configures a running AlgoKit LocalNet as apshell's default network, updates apsigner genesis mapping, enables the LocalNet plugin, and can persist a KMD URL override for plugin processes
 - **appass-systemd-creds** is built for Linux/systemd releases; Darwin release archives omit it
 - **approbe** checks local signer IPC liveness for installer live-daemon gating
-- **appolicy** browses, checks, formats, and explains policy files offline; it never contacts a node or writes a store
+- **appolicy** edits, checks, formats, and explains policy files offline; it never contacts a node or writes a store
 - Signature operations require admin approval unless policy explicitly approves them or the product runtime has `user_auto_approve:true`
 - Plugin system uses external processes communicating via JSON-RPC
 - Cross-compilation targets Linux ARM64/AMD64 and Darwin ARM64/AMD64

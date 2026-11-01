@@ -106,7 +106,7 @@ func (m Model) pageKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.screen = screenDocument
 		return m, nil
 	case "q":
-		return m, tea.Quit
+		return m.quit()
 	case "up", "k":
 		m.page.offset--
 	case "down", "j":
@@ -157,7 +157,7 @@ func (m Model) problemsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.screen = screenDocument
 		return m, nil
 	case "q":
-		return m, tea.Quit
+		return m.quit()
 	}
 	if len(locs) == 0 {
 		return m, nil
@@ -212,7 +212,7 @@ func (m Model) problemsView() string {
 // Explain.
 
 func (m Model) openExplain() Model {
-	f := m.file()
+	f := m.shown()
 	if f.Document == nil {
 		m.status = "Explain needs a valid document; this one is " + f.State.String()
 		return m
@@ -255,7 +255,7 @@ func (m Model) comparePickKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "esc":
 		m.screen = screenDocument
 	case "q":
-		return m, tea.Quit
+		return m.quit()
 	case "up", "k":
 		for i := m.pickCursor - 1; i >= 0; i-- {
 			if i != m.current {
@@ -304,7 +304,7 @@ func (m Model) comparePickView() string {
 
 // compareWith shows how the open file differs from base.
 func (m Model) compareWith(base *policyauthor.File) Model {
-	f := m.file()
+	f := m.shown()
 	c := policyauthor.Compare(base, f)
 	label := filepath.Base(base.Path)
 	if base == m.ws.Default() {
@@ -391,7 +391,16 @@ func (m Model) openHelp() Model {
 		"  up/down    move in the focused pane",
 		"  tab        switch between the outline and the form",
 		"  left/right outline / form; enter opens a section's form",
-		"  enter      in the form: show the selected field in full",
+		"  enter      in the form: edit the selected field",
+		"  space      toggle a yes/no field",
+		"  tab        while editing a list: insert a suggestion (*, self, @sets, networks...)",
+		"  v          show the selected field in full",
+		"  a          add to the selected section (a route, a set, a limit...)",
+		"  d          remove the selected field, or a route from the outline",
+		"  C          copy the selected address or rekey edge, or a route from the outline",
+		"  u ctrl+r   undo / redo",
+		"  s          save: review the changes, then y to write",
+		"  n          new document (also on the files screen)",
 		"  ] [        next / previous problem",
 		"  p          list every problem; enter jumps to it",
 		"  x          explain the document in plain language",

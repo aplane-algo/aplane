@@ -714,7 +714,7 @@ Consequences:
 - There is no policy editor in the node. Review happens through `check` and
   `diff` before `apply`, which shows the same diff and asks for confirmation.
 - `appolicy` (`cmd/appolicy`, core in `internal/signerapp/policyauthor`,
-  terminal UI in `policyauthor/authortui`) is a producer: it browses, checks,
+  terminal UI in `policyauthor/authortui`) is a producer: it edits, checks,
   formats, and explains policy files offline with the
   node's own decoder and advisories, and never talks to a node or writes a
   store.

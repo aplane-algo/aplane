@@ -25,6 +25,10 @@ const (
 	screenComparePick
 	screenHelp
 	screenField
+	screenSave
+	screenConflict
+	screenOverwrite
+	screenNew
 )
 
 type pane int
@@ -62,6 +66,16 @@ type Model struct {
 	problemCursor int
 	pickCursor    int
 
+	// sessions holds each file's edits, by path, so switching files keeps
+	// them; prompt is the edit bar when one is open.
+	sessions map[string]*policyauthor.Session
+	prompt   prompt
+	// save is the save flow; quitConfirm asks before quitting with edits
+	// that are not saved.
+	save        saveState
+	quitConfirm bool
+	newDoc      newDoc
+
 	status string
 }
 
@@ -72,7 +86,7 @@ func New(ws *policyauthor.Workspace, lookup policyauthor.AssetLookup, diagnostic
 	if diagnostics == nil {
 		diagnostics = new([]string)
 	}
-	m := Model{ws: ws, lookup: lookup, diagnostics: diagnostics, styles: newStyles(), width: 100, height: 30}
+	m := Model{ws: ws, lookup: lookup, diagnostics: diagnostics, styles: newStyles(), width: 100, height: 30, sessions: map[string]*policyauthor.Session{}}
 	if len(ws.Files) == 1 {
 		m = m.open(0)
 	}
@@ -81,10 +95,13 @@ func New(ws *policyauthor.Workspace, lookup policyauthor.AssetLookup, diagnostic
 
 func (m Model) Init() tea.Cmd { return nil }
 
-// problemsFor returns a file's problems and the workspace rules it breaks.
-func (m Model) problemsFor(f *policyauthor.File) []policyauthor.Problem {
+// problemsFor returns the problems of file i shown as f (its edited
+// document, when it has one) and the workspace rules it breaks with every
+// other file's edits applied too.
+func (m Model) problemsFor(i int, f *policyauthor.File) []policyauthor.Problem {
+	ws := m.currentWS().With(i, f)
 	out := append([]policyauthor.Problem(nil), f.Problems...)
-	for _, p := range m.ws.Problems {
+	for _, p := range ws.Problems {
 		if p.Path == f.Path {
 			out = append(out, p)
 		}
@@ -92,12 +109,44 @@ func (m Model) problemsFor(f *policyauthor.File) []policyauthor.Problem {
 	return out
 }
 
+// currentWS is the workspace as the screen shows it: every file with its
+// edits applied, so its role, its keys and the rules across files reflect
+// what the operator sees, saved or not.
+func (m Model) currentWS() *policyauthor.Workspace {
+	ws := m.ws
+	for j, f := range m.ws.Files {
+		if s, ok := m.sessions[f.Path]; ok {
+			ws = ws.With(j, s.Current())
+		}
+	}
+	return ws
+}
+
+// shownFile is file i as the screen shows it: edited, when it has edits.
+func (m Model) shownFile(i int) *policyauthor.File {
+	if s, ok := m.sessions[m.ws.Files[i].Path]; ok {
+		return s.Current()
+	}
+	return m.ws.Files[i]
+}
+
+// unsaved reports whether any file has edits not yet saved.
+func (m Model) unsaved() bool {
+	for _, s := range m.sessions {
+		if s.Modified() {
+			return true
+		}
+	}
+	return false
+}
+
 func (m Model) open(i int) Model {
 	m.current = i
-	f := m.ws.Files[i]
-	m.sections = policyauthor.Outline(f, m.problemsFor(f), m.lookup)
+	f := m.shown()
+	m.sections = policyauthor.Outline(f, m.problemsFor(i, f), m.lookup)
 	m.sectionCursor, m.fieldCursor, m.focus = 0, 0, paneOutline
 	m.screen = screenDocument
+	m.prompt = prompt{}
 	return m
 }
 
@@ -106,6 +155,11 @@ func (m Model) file() *policyauthor.File { return m.ws.Files[m.current] }
 // reload reads the workspace from disk again, keeping the open file and the
 // cursor where they are when the file is still there.
 func (m Model) reload() Model {
+	if m.unsaved() {
+		m.status = "There are unsaved edits; save or undo them before reloading"
+		return m
+	}
+	m.sessions = map[string]*policyauthor.Session{}
 	ws, err := policyauthor.Open(m.ws.Paths...)
 	if err != nil {
 		m.status = "Reload failed: " + err.Error()
@@ -141,8 +195,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width, m.height = msg.Width, msg.Height
 		return m, nil
 	case tea.KeyMsg:
+		if m.quitConfirm {
+			if msg.String() == "ctrl+c" {
+				return m, tea.Quit
+			}
+			return m.quitKeys(msg)
+		}
 		if msg.String() == "ctrl+c" {
-			return m, tea.Quit
+			return m.quit()
 		}
 		if m.screen != screenFiles {
 			m.status = ""
@@ -151,6 +211,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case screenFiles:
 			return m.filesKeys(msg)
 		case screenDocument:
+			if m.prompt.kind != promptNone {
+				return m.promptKeys(msg)
+			}
 			return m.documentKeys(msg)
 		case screenProblems:
 			return m.problemsKeys(msg)
@@ -158,6 +221,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.comparePickKeys(msg)
 		case screenExplain, screenCompare, screenHelp, screenField:
 			return m.pageKeys(msg)
+		case screenSave:
+			return m.saveKeys(msg)
+		case screenConflict:
+			return m.conflictKeys(msg)
+		case screenOverwrite:
+			return m.overwriteKeys(msg)
+		case screenNew:
+			return m.newKeys(msg)
 		}
 	}
 	return m, nil
@@ -166,7 +237,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) filesKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "q", "esc":
-		return m, tea.Quit
+		return m.quit()
 	case "up", "k":
 		m.fileCursor--
 	case "down", "j":
@@ -178,6 +249,8 @@ func (m Model) filesKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "r":
 		return m.reload(), nil
+	case "n":
+		return m.startNew(), nil
 	}
 	m.fileCursor = max(0, min(len(m.ws.Files)-1, m.fileCursor))
 	return m, nil
@@ -186,14 +259,14 @@ func (m Model) filesKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) documentKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "q":
-		return m, tea.Quit
+		return m.quit()
 	case "esc":
 		if m.focus == paneForm {
 			m.focus = paneOutline
 			return m, nil
 		}
 		if len(m.ws.Files) == 1 {
-			return m, tea.Quit
+			return m.quit()
 		}
 		m.screen = screenFiles
 		m.fileCursor = m.current
@@ -210,8 +283,30 @@ func (m Model) documentKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.focus == paneOutline && len(m.sections[m.sectionCursor].Fields) > 0 {
 			m.focus = paneForm
 		} else if m.focus == paneForm && msg.String() == "enter" {
+			return m.editField(), nil
+		}
+	case "v":
+		if m.focus == paneForm {
 			return m.openField(), nil
 		}
+	case " ":
+		if m.focus == paneForm {
+			return m.toggle(), nil
+		}
+	case "a":
+		return m.startAdd(), nil
+	case "d":
+		return m.startRemove(), nil
+	case "C":
+		return m.startCopy(), nil
+	case "s":
+		return m.startSave(), nil
+	case "n":
+		return m.startNew(), nil
+	case "u":
+		return m.undo(), nil
+	case "ctrl+r":
+		return m.redo(), nil
 	case "up", "k":
 		m = m.move(-1)
 	case "down", "j":
