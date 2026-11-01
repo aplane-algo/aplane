@@ -18,6 +18,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
+	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
 )
 
 // A signing service resolves every key against the policy snapshot captured
@@ -87,7 +88,9 @@ func contextWithAsset9(t *testing.T, unit string, decimals uint64) (*policyconte
 // built with.
 func TestSigningServiceShowsAmountsFromTheCapturedContext(t *testing.T) {
 	cfg := &serverconfig.ServerConfig{GenesisHashNetworks: map[string]string{"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=": "private-dev"}}
-	doc := policytest.MustDocument(noderole.RoleSigner, policy.DefaultKey, `{"limits": {"private-dev": {"asa:9": {"reject_above": "100"}}}}`)
+	doc := policytest.MustDocument(noderole.RoleSigner, policy.DefaultKey, `{"limits": {"private-dev": {"asa:9": {"reject_above": "100"}}},
+		"transfer_policy": {"routes": [{"id": "r", "networks": ["private-dev"], "sources": ["*"], "assets": ["asa:9"], "destinations": ["*"],
+			"limits": {"private-dev": {"asa:9": {"review_above": "120"}}}}]}}`)
 	install := func(ir *productruntime.Runtime, unit string, decimals uint64) types.Digest {
 		ctx, genesis := contextWithAsset9(t, unit, decimals)
 		np, err := policyruntime.Compile(noderole.RoleSigner, cfg, []policy.StoredDocument{{Key: policy.DefaultKey, Bytes: []byte(doc)}}, ctx)
@@ -104,11 +107,22 @@ func TestSigningServiceShowsAmountsFromTheCapturedContext(t *testing.T) {
 
 	txn := types.Transaction{Type: types.AssetTransferTx, Header: types.Header{GenesisHash: genesis},
 		AssetTransferTxnFields: types.AssetTransferTxnFields{XferAsset: 9, AssetAmount: 150}}
-	if got := svc.GenerateTxnDescriptionFromTxn(txn); !strings.Contains(got, "ASA Transfer: 1.5 XYZ (150 base units), asset #9, private-dev") {
-		t.Fatalf("the prompt after an ASA set change:\n%s", got)
+	// Group prompts are built by the service, single-transaction prompts by
+	// its approval service; both show the captured context.
+	for name, describe := range map[string]signersigning.GenerateTxnDescriptionFromTxnFunc{
+		"group":              svc.GenerateTxnDescriptionFromTxn,
+		"single transaction": svc.Approval.GenerateTxnDescriptionFromTxn,
+	} {
+		if got := describe(txn); !strings.Contains(got, "ASA Transfer: 1.5 XYZ (150 base units), asset #9, private-dev") {
+			t.Fatalf("the %s prompt after an ASA set change:\n%s", name, got)
+		}
 	}
 	violations := policy.CheckTxnPolicyLints(txn, svc.PolicyFor("ANY"), nil)
-	if msg := policy.JoinLintViolations(violations); !strings.Contains(msg, "1.5 XYZ (150 base units) exceeds") || !strings.Contains(msg, "1 XYZ (100 base units)") {
+	if msg := policy.JoinLintViolations(violations); !strings.Contains(msg, "1.5 XYZ (150 base units) of asset #9 exceeds") || !strings.Contains(msg, "1 XYZ (100 base units)") {
 		t.Fatalf("the limit message after an ASA set change: %s", msg)
+	}
+	routed := policy.CheckTxnTransferRoutingReviewPolicyLints(txn, svc.PolicyFor("ANY"))
+	if msg := policy.JoinLintViolations(routed); !strings.Contains(msg, "1.5 XYZ (150 base units) of asset #9 exceeds review threshold 1.2 XYZ (120 base units) on private-dev") {
+		t.Fatalf("the route limit message after an ASA set change: %s", msg)
 	}
 }

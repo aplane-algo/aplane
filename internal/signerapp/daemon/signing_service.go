@@ -23,14 +23,14 @@ func (fs *Signer) newSigningServiceWithAudit(ir *productruntime.Runtime, auditLo
 	// against the NodePolicy captured here, whatever reloads land later, and
 	// its approval prompts show amounts from the context it was loaded in.
 	nodePolicy := ir.NodePolicy()
-	describe := fs.generateTransactionDescriptionFromTxn
+	var describe signersigning.GenerateTxnDescriptionFromTxnFunc = fs.generateTransactionDescriptionFromTxn
 	if nodePolicy != nil && nodePolicy.Context != nil {
 		ctx := nodePolicy.Context
 		describe = func(txn types.Transaction) string { return txdesc.DescribeTxnInContext(txn, ctx) }
 	}
 	return &signersigning.Service{
 		Planner:                       fs.newPlannerWithAudit(auditLog),
-		Approval:                      fs.newApprovalServiceWithAudit(ir, auditLog),
+		Approval:                      fs.newApprovalServiceWithAudit(ir, auditLog, describe),
 		Executor:                      fs.newExecutionServiceWithAudit(auditLog),
 		AuditLog:                      auditLog,
 		Console:                       signerConsole{},
