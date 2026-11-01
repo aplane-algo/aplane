@@ -565,3 +565,44 @@ func TestUnlockRejectsADamagedASASet(t *testing.T) {
 		t.Fatalf("after a failed unlock: policy %v, set %v; want neither installed", np != nil, set != nil)
 	}
 }
+
+// A stored document naming an asset outside the ASA set still loads and
+// governs signing; the problem is an alert, not a refusal.
+func TestUnlockAlertsAboutStoredAdmissionProblems(t *testing.T) {
+	RegisterProviders()
+	root := t.TempDir()
+	keyPaths := utilkeys.NewPaths(root)
+	cfg := serverconfig.DefaultServerConfig()
+	passphrase := []byte("admission-alert-passphrase")
+	if _, err := storeinit.Initialize(passphrase, storeinit.Options{ValidateCandidate: storevalidate.FirstGeneration,
+		DataDir: root, Paths: keyPaths,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	kr := testKeyringForStore(t, keyPaths, passphrase)
+	active, err := genstore.ResolveStoreRootWithKeyring(keyPaths, kr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	document := []byte(policytest.Signer(t, policy.DefaultKey, `{"limits":{"mainnet":{"asa:12345":{"reject_above":"7"}}}}`))
+	if err := policy.WriteDefault(active, noderole.RoleSigner, document, kr, time.Unix(1700000000, 0)); err != nil {
+		t.Fatal(err)
+	}
+	ir, err := signerstartup.BuildProductRuntime(signerstartup.ProductBuildOptions{
+		DataDir: root, KeyPaths: keyPaths, Config: &cfg, DefaultSessionTimeout: 15 * time.Minute,
+	}, signerstartup.ProductBuildHooks{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ir.ReloadWithPassphrase(passphrase); err != nil {
+		t.Fatalf("ReloadWithPassphrase() error = %v; a stored admission problem must not block unlock", err)
+	}
+	if got := ir.NodePolicy().PolicyFor("").MaxASAAmounts["mainnet"][12345]; got != 7 {
+		t.Fatalf("stored limit = %d, want it enforced", got)
+	}
+	alerts := strings.Join(ir.StatusAlerts(), "\n")
+	if !strings.Contains(alerts, "policy default: asset 12345 on mainnet is not in this node's ASA set") ||
+		!strings.Contains(alerts, "/limits/mainnet/asa:12345") {
+		t.Fatalf("status alerts = %q", alerts)
+	}
+}

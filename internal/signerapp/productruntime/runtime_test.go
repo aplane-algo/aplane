@@ -20,13 +20,13 @@ func TestPolicyStateIsOneConsistentView(t *testing.T) {
 	}
 	states := []state{{&policyruntime.NodePolicy{}, asaset.Empty()}, {&policyruntime.NodePolicy{}, asaset.Empty()}}
 	pairs := map[*policyruntime.NodePolicy]*asaset.Set{states[0].policy: states[0].set, states[1].policy: states[1].set}
-	ir.SetVerifiedPolicyState(states[0].policy, states[0].set)
+	ir.SetVerifiedPolicyState(states[0].policy, states[0].set, nil)
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
 		for i := 0; i < 20000; i++ {
 			s := states[i%2]
-			ir.SetVerifiedPolicyState(s.policy, s.set)
+			ir.SetVerifiedPolicyState(s.policy, s.set, nil)
 		}
 	}()
 	for {

@@ -141,3 +141,30 @@ func quoted(list []string) []string {
 	}
 	return out
 }
+
+// StoredAlerts summarizes the admission problems of a node's stored
+// documents, one line per document that has any. Stored documents are never
+// refused for them; the lines say what to fix before a document is next
+// submitted.
+func StoredAlerts(docs []policy.StoredDocument, ctx *policycontext.Context) []string {
+	if ctx == nil {
+		return nil
+	}
+	var out []string
+	for _, stored := range docs {
+		doc, err := policy.DecodePolicyV1(stored.Bytes, stored.Key, ctx.Role())
+		if err != nil {
+			continue // a stored document that does not decode fails its load first
+		}
+		problems := Check(doc, ctx)
+		if len(problems) == 0 {
+			continue
+		}
+		line := fmt.Sprintf("policy %s: %s (at %s)", stored.Key, problems[0].Message, problems[0].Pointer)
+		if more := len(problems) - 1; more > 0 {
+			line += fmt.Sprintf("; %d more; run apadmin policy check on it", more)
+		}
+		out = append(out, line)
+	}
+	return out
+}

@@ -16,11 +16,15 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
+	"github.com/aplane-algo/aplane/internal/asaset"
+	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/policyadmission"
+	"github.com/aplane-algo/aplane/internal/policycontext"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
 	"github.com/aplane-algo/aplane/internal/signerapp/storevalidate"
@@ -44,6 +48,8 @@ type Env struct {
 	HeldKeys map[string]bool // key selectors the node holds
 	Now      func() time.Time
 	Keyring  *crypto.Keyring
+	// ASASet is the node's ASA set, for the admission checks; nil skips them.
+	ASASet *asaset.Set
 }
 
 // Error is a policy request failure with a stable result code.
@@ -147,10 +153,50 @@ func Check(env Env, current *policyruntime.NodePolicy, req adminproto.CheckPolic
 	if candidate != nil {
 		for _, doc := range req.Documents {
 			result.Warnings = append(result.Warnings, advisoryWarnings(env.Role, doc)...)
+			result.Warnings = append(result.Warnings, AdmissionProblems(env, doc)...)
 		}
 		result.Warnings = append(result.Warnings, CoverageWarnings(KeyStatus(env.HeldKeys, candidate))...)
 	}
 	return result
+}
+
+// AdmissionProblems reports what a submitted document names that this node
+// does not know: a network outside its mapping, an asset outside its ASA set,
+// a direct asa:<id> route term over several networks, and a route with no
+// asset on one of its networks. They are warnings for now; submitted
+// documents will be refused for them once the rules are enforced.
+func AdmissionProblems(env Env, doc adminproto.PolicyDocument) []adminproto.PolicyProblem {
+	if env.ASASet == nil {
+		return nil
+	}
+	decoded, err := policy.DecodePolicyV1([]byte(doc.Document), doc.Key, env.Role)
+	if err != nil {
+		return nil
+	}
+	ctx, err := NodeContext(env)
+	if err != nil {
+		return []adminproto.PolicyProblem{{Key: doc.Key, Message: "the node's policy context is unavailable: " + err.Error()}}
+	}
+	found := policyadmission.Check(decoded, ctx)
+	out := make([]adminproto.PolicyProblem, 0, len(found))
+	for _, p := range found {
+		out = append(out, adminproto.PolicyProblem{Key: doc.Key, Pointer: p.Pointer, Message: p.Message})
+	}
+	return out
+}
+
+// NodeContext is the node's policy context: its role, its network mapping
+// (the built-in networks plus the configured custom ones), and its ASA set.
+func NodeContext(env Env) (*policycontext.Context, error) {
+	var custom map[string]string
+	if env.Config != nil {
+		custom = env.Config.GenesisHashNetworks
+	}
+	networks, err := apconfig.NewGenesisHashNetworkResolver(custom)
+	if err != nil {
+		return nil, err
+	}
+	return policycontext.New(env.Role, networks, env.ASASet)
 }
 
 // advisoryWarnings reports a valid document's surprising shapes.

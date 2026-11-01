@@ -104,7 +104,7 @@ func setupASAAdmin(t *testing.T) (Service, *productruntime.Runtime, *fakeASAChai
 			if err != nil {
 				return err
 			}
-			ir.SetVerifiedPolicyState(np, set)
+			ir.SetVerifiedPolicyState(np, set, nil)
 			return nil
 		})
 	}
@@ -277,7 +277,7 @@ func TestRemoveASARefusals(t *testing.T) {
 
 func TestASASetRequiresLoadedState(t *testing.T) {
 	svc, ir, _ := setupASAAdmin(t)
-	ir.SetVerifiedPolicyState(nil, nil)
+	ir.SetVerifiedPolicyState(nil, nil, nil)
 	if got := svc.ListASASet(); got.Code != "policy_unavailable" {
 		t.Fatalf("ListASASet() before load = %+v", got)
 	}
@@ -285,5 +285,38 @@ func TestASASetRequiresLoadedState(t *testing.T) {
 	noChain.ASAChain = nil
 	if got := noChain.LookupASA(adminproto.LookupASARequest{Network: "private-dev", AssetID: 9}); !strings.Contains(got.Code, "unavailable") {
 		t.Fatalf("LookupASA() without a chain view = %+v", got)
+	}
+}
+
+// policy check warns about what a submitted document names that the node does
+// not know, and stops once the asset is confirmed. Nothing is refused yet.
+func TestPolicyCheckWarnsAboutAdmission(t *testing.T) {
+	svc, _, _ := setupASAAdmin(t)
+	doc := policytest.MustDocument(noderole.RoleSigner, policy.DefaultKey, `{"limits": {"private-dev": {"asa:9": {"reject_above": "5"}}, "mainet": {"algo": {"reject_above": "5"}}}}`)
+	check := func() []adminproto.PolicyProblem {
+		t.Helper()
+		result := svc.CheckPolicy(adminproto.CheckPolicyRequest{Documents: []adminproto.PolicyDocument{{Key: policy.DefaultKey, Document: doc}}})
+		if !result.Success || !result.Valid {
+			t.Fatalf("CheckPolicy() = %+v, want valid", result)
+		}
+		return result.Warnings
+	}
+	pointers := func(problems []adminproto.PolicyProblem) string {
+		var out []string
+		for _, p := range problems {
+			if strings.HasPrefix(p.Pointer, "/limits") {
+				out = append(out, p.Pointer)
+			}
+		}
+		return strings.Join(out, " ")
+	}
+	if got := pointers(check()); got != "/limits/mainet /limits/private-dev/asa:9" {
+		t.Fatalf("warnings before confirming = %q", got)
+	}
+	if added := confirmASA9(t, svc); !added.Success {
+		t.Fatal(added)
+	}
+	if got := pointers(check()); got != "/limits/mainet" {
+		t.Fatalf("warnings after confirming = %q", got)
 	}
 }

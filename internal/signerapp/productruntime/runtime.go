@@ -119,8 +119,10 @@ type Runtime struct {
 	policyMu   sync.RWMutex
 	nodePolicy *policyruntime.NodePolicy
 	// asaSet is the node's verified ASA set, published with nodePolicy so the
-	// two are always read as one view.
-	asaSet *asaset.Set
+	// two are always read as one view; policyAlerts are the admission
+	// problems of the stored documents, computed when they load.
+	asaSet       *asaset.Set
+	policyAlerts []string
 
 	// Enrolled client keys for this identity: the validated view of the
 	// authorized_keys registry. The daemon is its only writer; see
@@ -268,12 +270,28 @@ func (ir *Runtime) PolicyState() (*policyruntime.NodePolicy, *asaset.Set) {
 	return ir.nodePolicy, ir.asaSet
 }
 
-// SetVerifiedPolicyState installs the node's verified policy and ASA set as
-// one atomic runtime update, so no reader sees one without the other.
-func (ir *Runtime) SetVerifiedPolicyState(p *policyruntime.NodePolicy, set *asaset.Set) {
+// SetVerifiedPolicyState installs the node's verified policy and ASA set,
+// with the admission alerts of its stored documents, as one atomic runtime
+// update, so no reader sees one without the others.
+func (ir *Runtime) SetVerifiedPolicyState(p *policyruntime.NodePolicy, set *asaset.Set, alerts []string) {
 	ir.policyMu.Lock()
 	defer ir.policyMu.Unlock()
-	ir.nodePolicy, ir.asaSet = p, set
+	ir.nodePolicy, ir.asaSet, ir.policyAlerts = p, set, slices.Clone(alerts)
+}
+
+// StatusAlerts are every alert a status report carries for this identity:
+// rotating account alerts, then policy admission alerts.
+func (ir *Runtime) StatusAlerts() []string {
+	return append(ir.RotatingAlerts(), ir.PolicyAlerts()...)
+}
+
+// PolicyAlerts are the admission problems of the node's stored policy
+// documents: networks the node does not know, assets outside its ASA set,
+// and the like. A stored document keeps working; these say what to fix.
+func (ir *Runtime) PolicyAlerts() []string {
+	ir.policyMu.RLock()
+	defer ir.policyMu.RUnlock()
+	return slices.Clone(ir.policyAlerts)
 }
 
 // SetPolicy installs a compiled policy as the node default without stored

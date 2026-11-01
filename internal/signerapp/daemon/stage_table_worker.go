@@ -65,7 +65,7 @@ func (fs *Signer) runStageTableWorker(ctx context.Context) {
 			if wasUnlocked {
 				fs.rotatingReleases.Reset()
 				if ir != nil && ir.SetRotatingStatus(nil, nil, nil) {
-					fs.notifyRotatingStatus(ir, nil)
+					fs.notifyRotatingStatus(ir)
 				}
 			}
 			wasUnlocked = false
@@ -138,12 +138,12 @@ func (fs *Signer) publishRotatingStatus(ir *productruntime.Runtime, svc *signers
 			logInfof("rotating account alert cleared: %s", w)
 		}
 	}
-	fs.notifyRotatingStatus(ir, warnings)
+	fs.notifyRotatingStatus(ir)
 }
 
-func (fs *Signer) notifyRotatingStatus(ir *productruntime.Runtime, warnings []string) {
+func (fs *Signer) notifyRotatingStatus(ir *productruntime.Runtime) {
 	if hub := fs.adminHub(); hub != nil {
-		hub.NotifyStatus(ir.GetState().String(), ir.KeyCount(), warnings)
+		hub.NotifyStatus(ir.GetState().String(), ir.KeyCount(), ir.StatusAlerts())
 	}
 }
 

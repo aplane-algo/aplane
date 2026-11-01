@@ -82,12 +82,13 @@ func rotatingStatuses(ir *productruntime.Runtime) []signerapi.RotatingAccountSta
 }
 
 // statusWarnings are the authenticated status warnings: store health plus
-// any rotating account alerts. Rotating alerts name accounts, so they never
-// appear on the unauthenticated health endpoint.
+// any rotating account alerts and policy admission alerts. Both name
+// accounts or policy content, so they never appear on the unauthenticated
+// health endpoint.
 func statusWarnings(ir *productruntime.Runtime) []string {
 	warnings := storeHealthWarnings(ir)
 	if ir != nil {
-		warnings = append(warnings, ir.RotatingAlerts()...)
+		warnings = append(warnings, ir.StatusAlerts()...)
 	}
 	return warnings
 }
