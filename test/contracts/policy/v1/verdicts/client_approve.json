@@ -1,0 +1,586 @@
+{
+  "format": "aplane.policy-verdicts.v1",
+  "description": "Always Approve on /sign: the self no-op rule, each plan check it makes, and what outranks it. Cases start from the shipped signer default with auto_approve_self_noop_transfer on.",
+  "cases": [
+    {
+      "name": "self payment",
+      "surface": "sign",
+      "base": "shipped",
+      "policies": {
+        "default": {
+          "auto_approve_self_noop_transfer": true
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "receiver": "A1"
+        }
+      ],
+      "expect": {
+        "outcome": "approve",
+        "rule_id": "auto_approve_self_noop_transfer"
+      }
+    },
+    {
+      "name": "asset opt-in",
+      "surface": "sign",
+      "base": "shipped",
+      "policies": {
+        "default": {
+          "auto_approve_self_noop_transfer": true
+        }
+      },
+      "group": [
+        {
+          "type": "axfer",
+          "sender": "A1",
+          "asset": 7,
+          "asset_receiver": "A1"
+        }
+      ],
+      "expect": {
+        "outcome": "approve",
+        "rule_id": "auto_approve_self_noop_transfer"
+      }
+    },
+    {
+      "name": "flag off",
+      "surface": "sign",
+      "base": "shipped",
+      "policies": {
+        "default": {
+          "auto_approve_self_noop_transfer": false
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "receiver": "A1"
+        }
+      ],
+      "expect": {
+        "outcome": "default"
+      }
+    },
+    {
+      "name": "strict route table rejects it first",
+      "surface": "sign",
+      "policies": {
+        "default": {
+          "auto_approve_self_noop_transfer": true
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "receiver": "A1"
+        }
+      ],
+      "expect": {
+        "outcome": "reject",
+        "kind": "forbidden",
+        "message": "policy engine rejected request: txn 1: [transfer_policy:route_miss] transfer routing found no route for pay movement"
+      }
+    },
+    {
+      "name": "a review rule outranks it",
+      "surface": "sign",
+      "base": "shipped",
+      "policies": {
+        "default": {
+          "auto_approve_self_noop_transfer": true,
+          "transaction_types": {
+            "*": "allow",
+            "pay": "review"
+          }
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "receiver": "A1"
+        }
+      ],
+      "expect": {
+        "outcome": "review",
+        "rule_id": "transaction_type:pay"
+      }
+    },
+    {
+      "name": "a key's own policy decides, not the default",
+      "surface": "sign",
+      "base": "shipped",
+      "policies": {
+        "A1": {
+          "auto_approve_self_noop_transfer": false
+        },
+        "default": {
+          "auto_approve_self_noop_transfer": true
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "receiver": "A1"
+        }
+      ],
+      "expect": {
+        "outcome": "default"
+      }
+    },
+    {
+      "name": "fee above the cap",
+      "surface": "sign",
+      "base": "shipped",
+      "policies": {
+        "default": {
+          "auto_approve_self_noop_transfer": true
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "fee": 1001,
+          "receiver": "A1"
+        }
+      ],
+      "expect": {
+        "outcome": "default"
+      }
+    },
+    {
+      "name": "a note disqualifies it",
+      "surface": "sign",
+      "base": "shipped",
+      "policies": {
+        "default": {
+          "auto_approve_self_noop_transfer": true
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "note": "hi",
+          "receiver": "A1"
+        }
+      ],
+      "expect": {
+        "outcome": "default"
+      }
+    },
+    {
+      "name": "a non-zero amount is not a no-op",
+      "surface": "sign",
+      "base": "shipped",
+      "policies": {
+        "default": {
+          "auto_approve_self_noop_transfer": true
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "receiver": "A1",
+          "amount": 1
+        }
+      ],
+      "expect": {
+        "outcome": "default"
+      }
+    },
+    {
+      "name": "two requests",
+      "surface": "sign",
+      "base": "shipped",
+      "policies": {
+        "default": {
+          "auto_approve_self_noop_transfer": true
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "receiver": "A1"
+        },
+        {
+          "type": "pay",
+          "sender": "A2",
+          "receiver": "A2"
+        }
+      ],
+      "expect": {
+        "outcome": "default"
+      }
+    },
+    {
+      "name": "pre-grouped",
+      "surface": "sign",
+      "base": "shipped",
+      "policies": {
+        "default": {
+          "auto_approve_self_noop_transfer": true
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "receiver": "A1"
+        }
+      ],
+      "plan": {
+        "pregrouped": true
+      },
+      "expect": {
+        "outcome": "default"
+      }
+    },
+    {
+      "name": "no auth address",
+      "surface": "sign",
+      "base": "shipped",
+      "policies": {
+        "default": {
+          "auto_approve_self_noop_transfer": true
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "receiver": "A1"
+        }
+      ],
+      "plan": {
+        "omit_auth_address": true
+      },
+      "expect": {
+        "outcome": "default"
+      }
+    },
+    {
+      "name": "a fee adjustment without dummies",
+      "surface": "sign",
+      "base": "shipped",
+      "policies": {
+        "default": {
+          "auto_approve_self_noop_transfer": true
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "receiver": "A1"
+        }
+      ],
+      "plan": {
+        "total_fees": 1
+      },
+      "expect": {
+        "outcome": "default"
+      }
+    },
+    {
+      "name": "program fee contribution",
+      "surface": "sign",
+      "base": "shipped",
+      "policies": {
+        "default": {
+          "auto_approve_self_noop_transfer": true
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "receiver": "A1"
+        }
+      ],
+      "plan": {
+        "program_fee": 1
+      },
+      "expect": {
+        "outcome": "default"
+      }
+    },
+    {
+      "name": "post-quantum fee contribution",
+      "surface": "sign",
+      "base": "shipped",
+      "policies": {
+        "default": {
+          "auto_approve_self_noop_transfer": true
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "receiver": "A1"
+        }
+      ],
+      "plan": {
+        "pq_fee": 1
+      },
+      "expect": {
+        "outcome": "default"
+      }
+    },
+    {
+      "name": "LogicSig with signer dummies",
+      "surface": "sign",
+      "base": "shipped",
+      "policies": {
+        "default": {
+          "auto_approve_self_noop_transfer": true
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "fee": 3000,
+          "receiver": "A1"
+        },
+        {
+          "dummy": true
+        },
+        {
+          "dummy": true
+        }
+      ],
+      "requests": 1,
+      "plan": {
+        "lsig_indices": [
+          0
+        ],
+        "lsig_count": 1,
+        "total_fees": 2000
+      },
+      "expect": {
+        "outcome": "approve",
+        "rule_id": "auto_approve_self_noop_transfer"
+      }
+    },
+    {
+      "name": "dummy count differs from what the planner needed",
+      "surface": "sign",
+      "base": "shipped",
+      "policies": {
+        "default": {
+          "auto_approve_self_noop_transfer": true
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "fee": 3000,
+          "receiver": "A1"
+        },
+        {
+          "dummy": true
+        },
+        {
+          "dummy": true
+        }
+      ],
+      "requests": 1,
+      "plan": {
+        "dummies_needed": 3,
+        "lsig_indices": [
+          0
+        ],
+        "lsig_count": 1,
+        "total_fees": 2000
+      },
+      "expect": {
+        "outcome": "default"
+      }
+    },
+    {
+      "name": "dummies without the LogicSig at position zero",
+      "surface": "sign",
+      "base": "shipped",
+      "policies": {
+        "default": {
+          "auto_approve_self_noop_transfer": true
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "fee": 3000,
+          "receiver": "A1"
+        },
+        {
+          "dummy": true
+        },
+        {
+          "dummy": true
+        }
+      ],
+      "requests": 1,
+      "plan": {
+        "lsig_count": 1,
+        "total_fees": 2000
+      },
+      "expect": {
+        "outcome": "default"
+      }
+    },
+    {
+      "name": "dummies with a LogicSig count other than one",
+      "surface": "sign",
+      "base": "shipped",
+      "policies": {
+        "default": {
+          "auto_approve_self_noop_transfer": true
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "fee": 3000,
+          "receiver": "A1"
+        },
+        {
+          "dummy": true
+        },
+        {
+          "dummy": true
+        }
+      ],
+      "requests": 1,
+      "plan": {
+        "lsig_indices": [
+          0
+        ],
+        "lsig_count": 2,
+        "total_fees": 2000
+      },
+      "expect": {
+        "outcome": "default"
+      }
+    },
+    {
+      "name": "fee adjustment above what the dummies cost",
+      "surface": "sign",
+      "base": "shipped",
+      "policies": {
+        "default": {
+          "auto_approve_self_noop_transfer": true
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "fee": 3001,
+          "receiver": "A1"
+        },
+        {
+          "dummy": true
+        },
+        {
+          "dummy": true
+        }
+      ],
+      "requests": 1,
+      "plan": {
+        "lsig_indices": [
+          0
+        ],
+        "lsig_count": 1,
+        "total_fees": 2001
+      },
+      "expect": {
+        "outcome": "default"
+      }
+    },
+    {
+      "name": "fee below the adjustment",
+      "surface": "sign",
+      "base": "shipped",
+      "policies": {
+        "default": {
+          "auto_approve_self_noop_transfer": true
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "fee": 1500,
+          "receiver": "A1"
+        },
+        {
+          "dummy": true
+        },
+        {
+          "dummy": true
+        }
+      ],
+      "requests": 1,
+      "plan": {
+        "lsig_indices": [
+          0
+        ],
+        "lsig_count": 1,
+        "total_fees": 2000
+      },
+      "expect": {
+        "outcome": "default"
+      }
+    },
+    {
+      "name": "a tail transaction that is not the signer's dummy",
+      "surface": "sign",
+      "base": "shipped",
+      "policies": {
+        "default": {
+          "auto_approve_self_noop_transfer": true
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "fee": 2000,
+          "receiver": "A1"
+        },
+        {
+          "type": "pay",
+          "sender": "DUMMY",
+          "fee": 0,
+          "note": "x",
+          "receiver": "DUMMY"
+        }
+      ],
+      "requests": 1,
+      "plan": {
+        "lsig_indices": [
+          0
+        ],
+        "lsig_count": 1,
+        "total_fees": 1000
+      },
+      "expect": {
+        "outcome": "default"
+      }
+    }
+  ]
+}

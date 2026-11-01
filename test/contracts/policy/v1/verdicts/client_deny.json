@@ -1,0 +1,488 @@
+{
+  "format": "aplane.policy-verdicts.v1",
+  "description": "Always Deny on client signing: what is rejected, how violations are collected across positions, and a missing policy.",
+  "cases": [
+    {
+      "name": "type reject",
+      "surface": "sign",
+      "policies": {
+        "default": {
+          "transaction_types": {
+            "*": "allow",
+            "pay": "reject"
+          },
+          "transfer_policy": {
+            "on_no_route": "operator_default"
+          }
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "receiver": "A2",
+          "amount": 5
+        }
+      ],
+      "expect": {
+        "outcome": "reject",
+        "kind": "forbidden",
+        "message": "policy engine rejected request: txn 1: [transaction_type:pay] pay transactions are rejected by policy"
+      }
+    },
+    {
+      "name": "type reject keeps the same slot's routing violation",
+      "surface": "sign",
+      "policies": {
+        "default": {
+          "transaction_types": {
+            "*": "allow",
+            "pay": "reject"
+          }
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "receiver": "A2",
+          "amount": 5
+        }
+      ],
+      "expect": {
+        "outcome": "reject",
+        "kind": "forbidden",
+        "message": "policy engine rejected request: txn 1: [transaction_type:pay] pay transactions are rejected by policy; txn 1: [transfer_policy:route_miss] transfer routing found no route for pay movement"
+      }
+    },
+    {
+      "name": "route miss reject",
+      "surface": "sign",
+      "policies": {
+        "default": {}
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "receiver": "A2",
+          "amount": 5
+        }
+      ],
+      "expect": {
+        "outcome": "reject",
+        "kind": "forbidden",
+        "message": "policy engine rejected request: txn 1: [transfer_policy:route_miss] transfer routing found no route for pay movement"
+      }
+    },
+    {
+      "name": "route reject_above",
+      "surface": "sign",
+      "policies": {
+        "default": {
+          "transfer_policy": {
+            "routes": [
+              {
+                "id": "payroll",
+                "networks": [
+                  "testnet"
+                ],
+                "sources": [
+                  "*"
+                ],
+                "assets": [
+                  "algo"
+                ],
+                "destinations": [
+                  "$A2"
+                ],
+                "limits": {
+                  "testnet": {
+                    "algo": {
+                      "review_above": "10",
+                      "reject_above": "20"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "receiver": "A2",
+          "amount": 21
+        }
+      ],
+      "expect": {
+        "outcome": "reject",
+        "kind": "forbidden",
+        "message": "policy engine rejected request: txn 1: [transfer_policy:payroll:reject_above] transfer routing amount 21 exceeds reject threshold 20"
+      }
+    },
+    {
+      "name": "blocked destination wins over a matching route",
+      "surface": "sign",
+      "policies": {
+        "default": {
+          "transfer_policy": {
+            "blocked_destinations": [
+              "$A2"
+            ],
+            "routes": [
+              {
+                "id": "any",
+                "networks": [
+                  "*"
+                ],
+                "sources": [
+                  "*"
+                ],
+                "assets": [
+                  "*"
+                ],
+                "destinations": [
+                  "*"
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "receiver": "A2",
+          "amount": 1
+        }
+      ],
+      "expect": {
+        "outcome": "reject",
+        "kind": "forbidden",
+        "message": "policy engine rejected request: txn 1: [transfer_policy:blocked_destination] transfer routing rejected blocked destination AIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGFFWAF4 for pay movement"
+      }
+    },
+    {
+      "name": "close-out without allow_close",
+      "surface": "sign",
+      "policies": {
+        "default": {
+          "transfer_policy": {
+            "routes": [
+              {
+                "id": "any",
+                "networks": [
+                  "*"
+                ],
+                "sources": [
+                  "*"
+                ],
+                "assets": [
+                  "*"
+                ],
+                "destinations": [
+                  "*"
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "receiver": "A2",
+          "amount": 1,
+          "close_to": "A3"
+        }
+      ],
+      "expect": {
+        "outcome": "reject",
+        "kind": "forbidden",
+        "message": "policy engine rejected request: txn 1: [transfer_policy:any:close_rejected] transfer routing rejected pay_close movement without close.allow route"
+      }
+    },
+    {
+      "name": "unknown network under on_no_route reject",
+      "surface": "sign",
+      "policies": {
+        "default": {
+          "transfer_policy": {
+            "routes": [
+              {
+                "id": "any",
+                "networks": [
+                  "*"
+                ],
+                "sources": [
+                  "*"
+                ],
+                "assets": [
+                  "*"
+                ],
+                "destinations": [
+                  "*"
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "network": "unknown",
+          "receiver": "A2",
+          "amount": 1
+        }
+      ],
+      "expect": {
+        "outcome": "reject",
+        "kind": "forbidden",
+        "message": "policy engine rejected request: txn 1: [transfer_policy:unknown_genesis_hash] cannot evaluate transfer routing for unknown genesis hash"
+      }
+    },
+    {
+      "name": "foreign rekey rejected",
+      "surface": "sign",
+      "policies": {
+        "default": {
+          "transfer_policy": {
+            "on_no_route": "operator_default"
+          }
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "rekey_to": "A9",
+          "receiver": "A1"
+        }
+      ],
+      "expect": {
+        "outcome": "reject",
+        "kind": "forbidden",
+        "message": "policy engine rejected request: txn 1: [reject_foreign_rekey] foreign rekey transactions are rejected by policy"
+      }
+    },
+    {
+      "name": "rekey to a held key is not foreign",
+      "surface": "sign",
+      "policies": {
+        "default": {
+          "transfer_policy": {
+            "on_no_route": "operator_default"
+          }
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "rekey_to": "A9",
+          "receiver": "A1"
+        }
+      ],
+      "known": [
+        "A9"
+      ],
+      "expect": {
+        "outcome": "default"
+      }
+    },
+    {
+      "name": "violations collected across slots in index order",
+      "surface": "sign",
+      "policies": {
+        "default": {
+          "transaction_types": {
+            "*": "allow",
+            "axfer": "reject"
+          }
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "receiver": "A2",
+          "amount": 1
+        },
+        {
+          "type": "axfer",
+          "sender": "A3",
+          "asset": 7,
+          "asset_receiver": "A4",
+          "asset_amount": 1
+        },
+        {
+          "type": "pay",
+          "sender": "A5",
+          "receiver": "A6",
+          "amount": 1
+        }
+      ],
+      "expect": {
+        "outcome": "reject",
+        "kind": "forbidden",
+        "message": "policy engine rejected request: txn 1: [transfer_policy:route_miss] transfer routing found no route for pay movement; txn 2: [transaction_type:axfer] axfer transactions are rejected by policy; txn 2: [transfer_policy:route_miss] transfer routing found no route for axfer movement; txn 3: [transfer_policy:route_miss] transfer routing found no route for pay movement"
+      }
+    },
+    {
+      "name": "passthrough and foreign slots are not judged by policy",
+      "surface": "sign",
+      "policies": {
+        "default": {
+          "transfer_policy": {
+            "routes": [
+              {
+                "id": "a1-a2",
+                "networks": [
+                  "testnet"
+                ],
+                "sources": [
+                  "$A1"
+                ],
+                "assets": [
+                  "algo"
+                ],
+                "destinations": [
+                  "$A2"
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "receiver": "A2",
+          "amount": 1
+        },
+        {
+          "type": "pay",
+          "sender": "A3",
+          "receiver": "A4",
+          "amount": 1
+        },
+        {
+          "type": "pay",
+          "sender": "A5",
+          "receiver": "A6",
+          "amount": 1
+        }
+      ],
+      "classes": {
+        "1": "passthrough",
+        "2": "foreign"
+      },
+      "expect": {
+        "outcome": "default"
+      }
+    },
+    {
+      "name": "a key's own policy governs its slot",
+      "surface": "sign",
+      "policies": {
+        "A1": {},
+        "default": {
+          "transfer_policy": {
+            "on_no_route": "operator_default"
+          }
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "receiver": "A2",
+          "amount": 1
+        },
+        {
+          "type": "pay",
+          "sender": "A3",
+          "receiver": "A4",
+          "amount": 1
+        }
+      ],
+      "expect": {
+        "outcome": "reject",
+        "kind": "forbidden",
+        "message": "policy engine rejected request: txn 1: [transfer_policy:route_miss] transfer routing found no route for pay movement"
+      }
+    },
+    {
+      "name": "no policy is an internal error",
+      "surface": "sign",
+      "policies": {},
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "receiver": "A2",
+          "amount": 1
+        }
+      ],
+      "expect": {
+        "outcome": "error",
+        "kind": "internal",
+        "message": "policy is not loaded"
+      }
+    },
+    {
+      "name": "no policy after a violating slot discards the violation",
+      "surface": "sign",
+      "policies": {
+        "A1": {}
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "receiver": "A2",
+          "amount": 1
+        },
+        {
+          "type": "pay",
+          "sender": "A3",
+          "receiver": "A4",
+          "amount": 1
+        }
+      ],
+      "expect": {
+        "outcome": "error",
+        "kind": "internal",
+        "message": "policy is not loaded"
+      }
+    },
+    {
+      "name": "gates surface rejects like sign",
+      "surface": "gates",
+      "policies": {
+        "default": {}
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "receiver": "A2",
+          "amount": 5
+        }
+      ],
+      "expect": {
+        "outcome": "reject",
+        "kind": "forbidden",
+        "message": "policy engine rejected request: txn 1: [transfer_policy:route_miss] transfer routing found no route for pay movement"
+      }
+    }
+  ]
+}
