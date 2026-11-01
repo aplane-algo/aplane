@@ -271,7 +271,30 @@ verify_install_layout() {
 
 verify_install() {
     verify_install_layout
+    verify_appolicy
     docker_exec_bash "systemctl is-active apsigner >/dev/null"
+}
+
+# verify_appolicy runs the installed appolicy as the operator in a scratch
+# workspace, away from the service-owned store: the shipped signer default
+# must pass check and explain, and a copy with one wrong-typed field must
+# fail check with exit 1.
+verify_appolicy() {
+    docker_exec_as_tester "$(cat <<'EOF'
+set -euo pipefail
+ws="$(mktemp -d)"
+trap 'rm -rf "$ws"' EXIT
+mkdir "$ws/good" "$ws/bad"
+/usr/local/bin/apadmin policy template --embedded signer > "$ws/good/default.json"
+/usr/local/bin/appolicy check "$ws/good"
+/usr/local/bin/appolicy explain "$ws/good/default.json" | grep -q 'default document'
+sed 's/"reject_close_remainder": false/"reject_close_remainder": "no"/' "$ws/good/default.json" > "$ws/bad/default.json"
+grep -q '"reject_close_remainder": "no"' "$ws/bad/default.json"
+rc=0
+/usr/local/bin/appolicy check "$ws/bad" >/dev/null || rc=$?
+[ "$rc" -eq 1 ] || { echo "appolicy check on a broken document exited $rc, want 1" >&2; exit 1; }
+EOF
+)" || die "installed appolicy failed its check as the operator"
 }
 
 verify_appass_systemd_detection() {

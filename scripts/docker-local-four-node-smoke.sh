@@ -840,6 +840,45 @@ verify_layout() {
     docker_exec_as_tester "$SIGNER_CONTAINER" "test -x /home/$TEST_USER/aplane/apsigner/bin/apsigner && test -f /home/$TEST_USER/aplane/apsigner/config.yaml"
     docker_exec_as_tester "$COSIGNER_CONTAINER" "test -x /home/$TEST_USER/aplane/apsigner/bin/apsigner && test -f /home/$TEST_USER/aplane/apsigner/config.yaml"
     docker_exec_as_tester "$CLIENT_CONTAINER" "test -x /home/$TEST_USER/aplane/apclient/bin/apshell && test -x /home/$TEST_USER/aplane/apclient/bin/apadmin && test -f /home/$TEST_USER/aplane/apclient/endpoints.yaml"
+    verify_appolicy "$SIGNER_CONTAINER" signer
+    verify_appolicy "$COSIGNER_CONTAINER" cosigner
+    docker_exec_as_tester "$CLIENT_CONTAINER" "test ! -e /home/$TEST_USER/aplane/apclient/bin/appolicy" \
+        || die "client install contains appolicy; it ships with the signer tools only"
+}
+
+# appolicy_check_script prints a script that runs the installed appolicy in a
+# scratch workspace, away from any store: the shipped default for role must
+# pass check and explain, and a copy with one wrong-typed field must fail
+# check with exit 1.
+appolicy_check_script() {
+    local bin="$1"
+    local role="$2"
+    cat <<EOF
+set -euo pipefail
+ws="\$(mktemp -d)"
+trap 'rm -rf "\$ws"' EXIT
+mkdir "\$ws/good" "\$ws/bad"
+$bin/apadmin policy template --embedded $role > "\$ws/good/default.json"
+$bin/appolicy check "\$ws/good"
+$bin/appolicy explain "\$ws/good/default.json" | grep -q 'default document'
+sed 's/"reject_close_remainder": false/"reject_close_remainder": "no"/' "\$ws/good/default.json" > "\$ws/bad/default.json"
+grep -q '"reject_close_remainder": "no"' "\$ws/bad/default.json"
+rc=0
+$bin/appolicy check "\$ws/bad" >/dev/null || rc=\$?
+[ "\$rc" -eq 1 ] || { echo "appolicy check on a broken document exited \$rc, want 1" >&2; exit 1; }
+EOF
+}
+
+# verify_appolicy checks that a node install carries a working appolicy
+# beside the signer tools.
+verify_appolicy() {
+    local container="$1"
+    local role="$2"
+    local bin="/home/$TEST_USER/aplane/apsigner/bin"
+    docker_exec_as_tester "$container" "test -x $bin/appolicy" \
+        || die "appolicy missing from the $role install on $container"
+    docker_exec_as_tester "$container" "$(appolicy_check_script "$bin" "$role")" \
+        || die "installed appolicy failed its $role check on $container"
 }
 
 generate_client_ssh_key() {
