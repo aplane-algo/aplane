@@ -269,6 +269,47 @@ func replaceWith(label, pointer, value string) AddAction {
 	}}
 }
 
+// duplicateItem inserts a copy of item, the index-th of the list at list,
+// right after it, to be edited from there.
+func duplicateItem(label, list string, index int, item policy.DraftNode) *AddAction {
+	value := compact(item)
+	return &AddAction{Label: label, apply: func(d *policy.Draft, _ string) (*policy.Draft, error) {
+		return d.Insert(fmt.Sprintf("%s/%d", list, index+1), []byte(value))
+	}}
+}
+
+// copyRoute inserts a copy of route i after it, under a new id.
+func copyRoute(i int, route policy.DraftNode) *AddAction {
+	value := compact(route)
+	return &AddAction{Label: "Copy the route", Prompt: "id for the copy", apply: func(d *policy.Draft, input string) (*policy.Draft, error) {
+		if !validNetworkToken(input) {
+			return nil, fmt.Errorf("a route id is lowercase letters, digits, '_' or '-'")
+		}
+		at := fmt.Sprintf("/transfer_policy/routes/%d", i+1)
+		next, err := d.Insert(at, []byte(value))
+		if err != nil {
+			return nil, err
+		}
+		id, _ := json.Marshal(input)
+		return next.Set(at+"/id", id)
+	}}
+}
+
+// copySet copies a named set under a new name.
+func copySet(kind, base string) AddAction {
+	return AddAction{Label: "Copy an " + kind + " set", Prompt: "the set to copy and the new name, e.g. ops ops-backup", apply: func(d *policy.Draft, input string) (*policy.Draft, error) {
+		parts := strings.Fields(strings.ReplaceAll(input, "@", ""))
+		if len(parts) != 2 || !validNetworkToken(parts[1]) {
+			return nil, fmt.Errorf("enter the set to copy and a new name")
+		}
+		src := d.At(base + "/" + escapeToken(parts[0]))
+		if !src.Exists() {
+			return nil, fmt.Errorf("there is no %s set %q", kind, parts[0])
+		}
+		return ensure(d, base+"/"+escapeToken(parts[1]), compact(src))
+	}}
+}
+
 // NeedsInput reports whether the action takes input, or applies as it is.
 func (a AddAction) NeedsInput() bool { return a.Prompt != "" }
 

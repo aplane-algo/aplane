@@ -301,3 +301,75 @@ func removeMember(t *testing.T, doc, name string) string {
 	out, _ := next.Canonical()
 	return string(out)
 }
+
+func TestCopyActions(t *testing.T) {
+	f := LoadFile(writeFile(t, t.TempDir(), "a.json", fixture(t, "signer_key_full.json")))
+	sections := Outline(f, nil, nil)
+	byID := map[string]Section{}
+	for _, s := range sections {
+		byID[s.ID] = s
+	}
+
+	route := byID["route:1"]
+	if route.Copy == nil || !route.Copy.NeedsInput() {
+		t.Fatal("a route has no copy action that asks for an id")
+	}
+	if _, err := route.Copy.Apply(f.Draft, "Bad Id"); err == nil {
+		t.Fatal("a bad route id was accepted")
+	}
+	next, err := route.Copy.Apply(f.Draft, "treasury-to-ops-2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id := next.At("/transfer_policy/routes/2/id").Text(); id != "treasury-to-ops-2" || next.At("/transfer_policy/routes/1/id").Text() != "treasury-to-ops" {
+		t.Fatalf("copy is not right after the original: %q", id)
+	}
+	if compact(next.At("/transfer_policy/routes/2/sources")) != compact(f.Draft.At("/transfer_policy/routes/1/sources")) {
+		t.Fatal("the copy does not carry the route's fields")
+	}
+	out, _ := next.Canonical()
+	if _, err := policy.DecodePolicyV1(out, f.Key, "signer"); err != nil {
+		t.Fatalf("document with the copied route does not decode: %v", err)
+	}
+
+	var setCopy AddAction
+	for _, a := range byID["address_sets"].Adds {
+		if a.Label == "Copy an address set" {
+			setCopy = a
+		}
+	}
+	next, err = setCopy.Apply(f.Draft, "@ops ops-backup")
+	if err != nil || compact(next.At("/address_sets/ops-backup")) != compact(f.Draft.At("/address_sets/ops")) {
+		t.Fatalf("set copy: %v", err)
+	}
+	if _, err := setCopy.Apply(f.Draft, "nope copy"); err == nil {
+		t.Fatal("copying an unknown set was accepted")
+	}
+	if _, err := setCopy.Apply(f.Draft, "ops treasury"); err == nil {
+		t.Fatal("copying onto an existing set was accepted")
+	}
+
+	var member *AddAction
+	for _, fl := range byID["blocked"].Fields {
+		if fl.Copy != nil {
+			member = fl.Copy
+		}
+	}
+	if member == nil || member.NeedsInput() {
+		t.Fatal("a blocked address has no direct copy")
+	}
+	next, err = member.Apply(f.Draft, "")
+	if err != nil || len(next.At("/transfer_policy/blocked_destinations").Items()) != 2 {
+		t.Fatalf("duplicate member: %v", err)
+	}
+
+	c := LoadFile(writeFile(t, t.TempDir(), "c.json", fixture(t, "cosigner_key_full.json")))
+	for _, s := range Outline(c, nil, nil) {
+		if s.ID == "rekey" {
+			next, err := s.Fields[0].Copy.Apply(c.Draft, "")
+			if err != nil || len(next.At("/rekey_policy/allowed").Items()) != 2 {
+				t.Fatalf("duplicate rekey edge: %v", err)
+			}
+		}
+	}
+}

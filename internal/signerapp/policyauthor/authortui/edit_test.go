@@ -193,3 +193,29 @@ func TestEditBarFitsTheTerminal(t *testing.T) {
 		t.Fatalf("%d lines in an 18-line window:\n%s", lines, view(m))
 	}
 }
+
+func TestCopyInTheTUI(t *testing.T) {
+	m, _ := editModel(t, "signer_key_full.json")
+	for m.sections[m.sectionCursor].ID != "route:1" {
+		m, _ = press(t, m, "down")
+	}
+	m, _ = press(t, m, "C")
+	if m.prompt.kind != promptAdd || !strings.Contains(view(m), "id for the copy") {
+		t.Fatalf("C on a route:\n%s", view(m))
+	}
+	m = typeText(t, m, "ops-topup-2")
+	m, _ = press(t, m, "enter")
+	if m.session().Current().Draft.At("/transfer_policy/routes/2/id").Text() != "ops-topup-2" || !strings.Contains(view(m), "Route ops-topup-2") {
+		t.Fatalf("route copy:\n%s", view(m))
+	}
+	m = selectField(t, m, "/transfer_policy/blocked_destinations/0")
+	m, _ = press(t, m, "C")
+	if len(m.session().Current().Draft.At("/transfer_policy/blocked_destinations").Items()) != 2 {
+		t.Fatal("C did not duplicate the address")
+	}
+	m = selectField(t, m, "/max_fee_microalgos")
+	m, _ = press(t, m, "C")
+	if !strings.Contains(view(m), "Nothing to copy here") {
+		t.Fatal("C on a field with nothing to copy did not say so")
+	}
+}

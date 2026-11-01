@@ -24,9 +24,10 @@ type Section struct {
 	Pointer string
 	Fields  []Field
 	// Adds are the things that can be added here; Remove, when set, deletes
-	// the whole section's object (a route).
+	// the whole section's object (a route), and Copy copies it.
 	Adds   []AddAction
 	Remove *Removal
+	Copy   *AddAction
 	// Problems are those that belong to the section but to none of its
 	// fields, such as a document error with no pointer.
 	Problems []Problem
@@ -46,6 +47,7 @@ type Field struct {
 	Unknown  bool
 	Edit     *EditSpec
 	Remove   *Removal
+	Copy     *AddAction
 	Problems []Problem
 }
 
@@ -252,11 +254,11 @@ func (o *outliner) build() {
 	known["address_sets"] = true
 	sets := root.Member("address_sets")
 	o.add(Section{ID: "address_sets", Title: fmt.Sprintf("Address sets (%d)", len(sets.Keys())), Pointer: "/address_sets",
-		Fields: o.addressSets(sets), Adds: o.addressSetAdds(sets)})
+		Fields: o.addressSets(sets), Adds: append(o.addressSetAdds(sets), copySet("address", "/address_sets"))})
 	known["asset_sets"] = true
 	assetSets := root.Member("asset_sets")
 	o.add(Section{ID: "asset_sets", Title: fmt.Sprintf("Asset sets (%d)", len(assetSets.Keys())), Pointer: "/asset_sets",
-		Fields: o.assetSets(assetSets), Adds: []AddAction{assetSetAdd()}})
+		Fields: o.assetSets(assetSets), Adds: []AddAction{assetSetAdd(), copySet("asset", "/asset_sets")}})
 
 	known["transfer_policy"] = true
 	o.transfers(root.Member("transfer_policy"), cosigner)
@@ -605,10 +607,11 @@ func listFields(label string, list policy.DraftNode, term TermKind, empty *Remov
 		return []Field{{Label: label, Pointer: list.Pointer(), Value: "(none)", Remove: empty}}
 	}
 	out := make([]Field, 0, len(items))
-	for _, item := range items {
+	for i, item := range items {
 		out = append(out, Field{Label: label, Pointer: item.Pointer(), Value: render(item),
 			Edit:   &EditSpec{Kind: EditTerm, Pointer: item.Pointer(), Term: term},
-			Remove: &Removal{Label: "remove this address", Pointer: item.Pointer()}})
+			Remove: &Removal{Label: "remove this address", Pointer: item.Pointer()},
+			Copy:   duplicateItem("Copy this address", list.Pointer(), i, item)})
 	}
 	return out
 }
@@ -725,7 +728,8 @@ func (o *outliner) route(i int, r policy.DraftNode, cosigner bool) {
 		title = "Route " + id.Text()
 	}
 	s := Section{ID: fmt.Sprintf("route:%d", i), Title: title, Depth: 2, Pointer: r.Pointer(),
-		Remove: &Removal{Label: "remove " + strings.ToLower(title), Pointer: r.Pointer()}}
+		Remove: &Removal{Label: "remove " + strings.ToLower(title), Pointer: r.Pointer()},
+		Copy:   copyRoute(i, r)}
 	if r.Kind() != "object" {
 		s.Fields = []Field{{Label: "route", Pointer: r.Pointer(), Value: render(r), Note: "a route must be an object"}}
 		o.add(s)
@@ -767,7 +771,8 @@ func (o *outliner) rekey(rp policy.DraftNode) []Field {
 		}{{"sender", EditTerm}, {"targets", EditTerms}} {
 			n := edge.Member(part.name)
 			out = append(out, Field{Label: label + " " + part.name, Pointer: edge.Pointer() + "/" + part.name, Value: render(n), Missing: !n.Exists(),
-				Edit: &EditSpec{Kind: part.edit, Pointer: edge.Pointer() + "/" + part.name, Term: TermRekeyTarget}, Remove: gone})
+				Edit: &EditSpec{Kind: part.edit, Pointer: edge.Pointer() + "/" + part.name, Term: TermRekeyTarget}, Remove: gone,
+				Copy: duplicateItem("Copy "+strings.ToLower(label), allowed.Pointer(), i, edge)})
 		}
 		out = append(out, unknownFields(edge, map[string]bool{"sender": true, "targets": true}, "a rekey edge")...)
 	}

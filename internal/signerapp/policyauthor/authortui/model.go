@@ -297,6 +297,8 @@ func (m Model) documentKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.startAdd(), nil
 	case "d":
 		return m.startRemove(), nil
+	case "C":
+		return m.startCopy(), nil
 	case "s":
 		return m.startSave(), nil
 	case "n":

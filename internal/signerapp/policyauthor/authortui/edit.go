@@ -331,6 +331,30 @@ func (m Model) applyAdd(a policyauthor.AddAction, input string) Model {
 	return m.relayout()
 }
 
+// startCopy copies the selected field (a list member or a rekey edge), or
+// the selected section from the outline (a route).
+func (m Model) startCopy() Model {
+	if next, ro := m.readOnly(); ro {
+		return next
+	}
+	s := m.sections[m.sectionCursor]
+	var a *policyauthor.AddAction
+	if m.focus == paneForm && m.fieldCursor < len(s.Fields) {
+		a = s.Fields[m.fieldCursor].Copy
+	} else if m.focus == paneOutline {
+		a = s.Copy
+	}
+	if a == nil {
+		m.status = "Nothing to copy here; sets are copied with a in their section"
+		return m
+	}
+	if !a.NeedsInput() {
+		return m.applyAdd(*a, "")
+	}
+	m.prompt = prompt{kind: promptAdd, adds: []policyauthor.AddAction{*a}, title: a.Label, hint: a.Prompt + " · enter: copy · esc: cancel", input: m.newInput("")}
+	return m
+}
+
 // startRemove asks to confirm removing the selected field, or the selected
 // section from the outline.
 func (m Model) startRemove() Model {

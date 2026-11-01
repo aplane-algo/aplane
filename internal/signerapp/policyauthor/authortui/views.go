@@ -396,6 +396,7 @@ func (m Model) openHelp() Model {
 		"  v          show the selected field in full",
 		"  a          add to the selected section (a route, a set, a limit...)",
 		"  d          remove the selected field, or a route from the outline",
+		"  C          copy the selected address or rekey edge, or a route from the outline",
 		"  u ctrl+r   undo / redo",
 		"  s          save: review the changes, then y to write",
 		"  n          new document (also on the files screen)",
