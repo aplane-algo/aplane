@@ -19,6 +19,11 @@ type screen int
 const (
 	screenFiles screen = iota
 	screenDocument
+	screenProblems
+	screenExplain
+	screenCompare
+	screenComparePick
+	screenHelp
 )
 
 type pane int
@@ -48,6 +53,13 @@ type Model struct {
 	sectionCursor int
 	fieldCursor   int
 	focus         pane
+
+	// page is the scrollable view shown on the explain, compare and help
+	// screens; problemCursor and pickCursor select in the problems list and
+	// the compare file picker.
+	page          page
+	problemCursor int
+	pickCursor    int
 
 	status string
 }
@@ -131,11 +143,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.String() == "ctrl+c" {
 			return m, tea.Quit
 		}
+		if m.screen != screenFiles {
+			m.status = ""
+		}
 		switch m.screen {
 		case screenFiles:
 			return m.filesKeys(msg)
 		case screenDocument:
 			return m.documentKeys(msg)
+		case screenProblems:
+			return m.problemsKeys(msg)
+		case screenComparePick:
+			return m.comparePickKeys(msg)
+		case screenExplain, screenCompare, screenHelp:
+			return m.pageKeys(msg)
 		}
 	}
 	return m, nil
@@ -197,6 +218,18 @@ func (m Model) documentKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m = m.move(1 << 20)
 	case "r":
 		return m.reload(), nil
+	case "]":
+		return m.jump(1), nil
+	case "[":
+		return m.jump(-1), nil
+	case "p":
+		return m.openProblems(), nil
+	case "x":
+		return m.openExplain(), nil
+	case "c":
+		return m.openCompare(), nil
+	case "?":
+		return m.openHelp(), nil
 	}
 	return m, nil
 }

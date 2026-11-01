@@ -38,6 +38,12 @@ func (m Model) View() string {
 	switch m.screen {
 	case screenFiles:
 		body = m.filesView()
+	case screenProblems:
+		body = m.problemsView()
+	case screenComparePick:
+		body = m.comparePickView()
+	case screenExplain, screenCompare, screenHelp:
+		body = m.pageView()
 	default:
 		body = m.documentView()
 	}
@@ -63,12 +69,20 @@ func (m Model) footer() string {
 	switch m.screen {
 	case screenFiles:
 		return "up/down: Select | enter: Open | r: Reload | q: Quit"
+	case screenProblems:
+		return "up/down: Select | enter: Go to | esc: Back | q: Quit"
+	case screenComparePick:
+		return "up/down: Select | enter: Compare | esc: Back | q: Quit"
+	case screenCompare:
+		return "up/down/pgup/pgdown: Scroll | o: Other file | esc: Back | q: Quit"
+	case screenExplain, screenHelp:
+		return "up/down/pgup/pgdown: Scroll | esc: Back | q: Quit"
 	}
 	back := "esc: Files"
 	if len(m.ws.Files) == 1 {
 		back = "esc: Quit"
 	}
-	return "up/down: Move | tab/left/right: Switch pane | r: Reload | " + back + " | q: Quit"
+	return "up/down: Move | tab: Pane | ]/[: Problem | p: Problems | x: Explain | c: Compare | ?: Help | " + back + " | q: Quit"
 }
 
 func countLabel(errors, warnings int) string {
