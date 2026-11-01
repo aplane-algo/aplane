@@ -8,12 +8,16 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
+	"github.com/aplane-algo/aplane/internal/asaset"
+	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/policy/policytest"
+	"github.com/aplane-algo/aplane/internal/policycontext"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyeval"
 )
 
@@ -108,18 +112,22 @@ func TestTryCosignerNamesTheDocument(t *testing.T) {
 	}
 }
 
-func TestTrySignerNetworksCompileAndResolveTogether(t *testing.T) {
+func TestTryNodeNetworksCompileAndResolveTogether(t *testing.T) {
 	const custom = "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="
-	dir := t.TempDir()
-	config := "teal_compile_network: testnet\nnetworks:\n  devnet-x:\n    genesis_hash: \"" + custom + "\"\n"
-	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(config), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	networks, err := SignerNetworks(dir)
+	resolver, err := apconfig.NewGenesisHashNetworkResolver(map[string]string{custom: "devnet-x"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(networks.Source, "config.yaml") {
+	ctx, err := policycontext.New(noderole.RoleSigner, resolver, asaset.Empty())
+	if err != nil {
+		t.Fatal(err)
+	}
+	node := &NodeContext{Context: ctx, ExportedAt: time.Now(), Path: "export/.appolicy/node.json"}
+	networks, err := node.Networks(time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(networks.Source, "export/.appolicy/node.json") {
 		t.Fatalf("source = %q", networks.Source)
 	}
 	doc := writeTryDoc(t, policytest.Signer(t, policy.DefaultKey, `{"transfer_policy": {"routes": [{"id": "dev", "networks": ["devnet-x"], "sources": ["*"], "assets": ["*"], "destinations": ["*"]}]}}`))
@@ -134,16 +142,6 @@ func TestTrySignerNetworksCompileAndResolveTogether(t *testing.T) {
 	}
 	if _, err := Try(doc, txn, BuiltinNetworks()); err == nil || !strings.Contains(err.Error(), `network "devnet-x" is not known`) {
 		t.Fatalf("Try() with built-in networks error = %v, want unknown network", err)
-	}
-}
-
-func TestSignerNetworksWithoutConfigUsesBuiltins(t *testing.T) {
-	networks, err := SignerNetworks(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(networks.Source, "built-in networks only") {
-		t.Fatalf("source = %q", networks.Source)
 	}
 }
 

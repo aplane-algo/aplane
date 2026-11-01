@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
+	"github.com/aplane-algo/aplane/internal/apadminapp"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/policyexport"
@@ -261,7 +262,7 @@ func exportAll(ctx context.Context, backend Backend, streams Streams, dir string
 		}
 		docs = append(docs, policyexport.Document{Key: info.Key, Document: doc.Document, SHA256: info.SHA256})
 	}
-	paths, err := policyexport.Write(dir, docs, pctx, time.Now())
+	paths, err := apadminapp.WritePolicyExport(dir, docs, pctx, time.Now())
 	if err != nil {
 		if len(paths) > 0 {
 			return fmt.Errorf("%w; the unfinished export is left in %s", err, dir)

@@ -17,13 +17,9 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/aplane-algo/aplane/internal/adminproto"
-	"github.com/aplane-algo/aplane/internal/asaset"
 	"github.com/aplane-algo/aplane/internal/fsutil"
-	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/policycontext"
-	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
@@ -44,8 +40,8 @@ type Document struct {
 }
 
 // ErrPolicyChanged reports that the documents fetched for an export are not
-// the policy set the summary described: an apply landed while they were
-// being read.
+// the policy set the summary described, or with the context do not make the
+// snapshot the node reported: something changed while they were being read.
 var ErrPolicyChanged = errors.New("the policy changed while it was being exported; refresh and export again")
 
 // FileName is the file a document is exported as: default.json for the node
@@ -59,88 +55,23 @@ func FileName(key string) (string, error) {
 	return key + ".json", nil
 }
 
-// ContextFromView is the context a node described, checked against the
-// digests it sent with it: a context whose contents do not produce its own
-// digest, or a snapshot that is not the context's with its policy set, is
-// refused rather than exported.
-func ContextFromView(view adminproto.PolicyContextView) (*policycontext.Context, error) {
-	if !view.Success {
-		return nil, fmt.Errorf("the node's policy context is unavailable: %s", view.Error)
-	}
-	networks := make(map[string]asaset.GenesisHash, len(view.Networks))
-	for _, n := range view.Networks {
-		genesis, err := asaset.ParseGenesisHash(n.GenesisHash)
-		if err != nil {
-			return nil, fmt.Errorf("network %q: %w", n.Network, err)
-		}
-		if _, dup := networks[n.Network]; dup {
-			return nil, fmt.Errorf("network %q is listed twice", n.Network)
-		}
-		networks[n.Network] = genesis
-	}
-	assets := make([]asaset.Asset, 0, len(view.Assets))
-	for _, a := range view.Assets {
-		genesis, err := asaset.ParseGenesisHash(a.GenesisHash)
-		if err != nil {
-			return nil, fmt.Errorf("asset %d: %w", a.AssetID, err)
-		}
-		assets = append(assets, asaset.Asset{
-			Identity: asaset.Identity{Genesis: genesis, AssetID: a.AssetID},
-			Name:     a.Name, UnitName: a.UnitName, Decimals: a.Decimals, Origin: asaset.Origin(a.Origin),
-		})
-	}
-	table, err := asaset.NewTable(assets)
-	if err != nil {
-		return nil, err
-	}
-	ctx, err := policycontext.FromParts(noderole.Role(view.NodeRole), networks, table, view.RulesVersion)
-	if err != nil {
-		return nil, err
-	}
-	if ctx.SHA256() != view.ContextSHA256 {
-		return nil, errors.New("the node's policy context does not match its context_sha256")
-	}
-	if policycontext.SnapshotSHA256(view.ContextSHA256, view.PolicySetSHA256) != view.SnapshotSHA256 {
-		return nil, errors.New("the node's snapshot_sha256 is not its context's with its policy set")
-	}
-	return ctx, nil
-}
-
-// ViewFromMessage is the policy context a get_policy_context reply carries,
-// the inverse of the server's projection onto the wire.
-func ViewFromMessage(msg protocol.PolicyContextMessage) adminproto.PolicyContextView {
-	view := adminproto.PolicyContextView{
-		Success: msg.Success, NodeRole: msg.NodeRole, RulesVersion: msg.RulesVersion,
-		ContextSHA256: msg.ContextSHA256, PolicySetSHA256: msg.PolicySetSHA256, SnapshotSHA256: msg.SnapshotSHA256,
-		Code: msg.Code, Error: msg.Error,
-	}
-	for _, n := range msg.Networks {
-		view.Networks = append(view.Networks, adminproto.PolicyNetwork{Network: n.Network, GenesisHash: n.GenesisHash})
-	}
-	for _, a := range msg.Assets {
-		view.Assets = append(view.Assets, adminproto.ASAInfo{
-			Network: a.Network, GenesisHash: a.GenesisHash, AssetID: a.AssetID, Name: a.Name,
-			UnitName: a.UnitName, Decimals: a.Decimals, Origin: a.Origin,
-		})
-	}
-	return view
-}
-
 // Write exports a node's active policy documents into dir: one file per
-// document, exactly as stored, and the node's context in
+// document, exactly as stored, and the node's context ctx in
 // .appolicy/node.json. dir must not exist (its parent must) or must be an
 // empty directory; it is never merged into, so an export never mixes with
 // older files. Files are mode 0600 and directories 0700.
 //
-// Before anything is written, every document must match the digest the
-// summary listed, together they must be the policy set the context names,
-// and the context must match its own digests, so a policy that changed
-// during the export is refused rather than written as a mix. The context
+// setSHA256 and snapshotSHA256 are the policy set and composite snapshot
+// digests the node reported with its summary and context. Before anything
+// is written, every document must match the digest the summary listed,
+// together they must be that policy set, and with ctx they must make that
+// snapshot, so a policy or context that changed during the export is
+// refused rather than written as a mix. The context
 // file is written last, after an in-progress marker and every document are
 // durable, and the marker is then removed: a failed export leaves the marker,
 // and is never mistaken for a complete one. It returns the paths of the
 // documents written, in document order.
-func Write(dir string, docs []Document, view adminproto.PolicyContextView, at time.Time) ([]string, error) {
+func Write(dir string, docs []Document, ctx *policycontext.Context, setSHA256, snapshotSHA256 string, at time.Time) ([]string, error) {
 	if dir == "" {
 		return nil, fmt.Errorf("an export directory is required")
 	}
@@ -165,16 +96,15 @@ func Write(dir string, docs []Document, view adminproto.PolicyContextView, at ti
 		digests = append(digests, policy.DocumentDigest{Key: doc.Key, SHA256: doc.SHA256})
 		names = append(names, name)
 	}
-	if policy.PolicySetSHA256(stored) != view.PolicySetSHA256 {
+	if policy.PolicySetSHA256(stored) != setSHA256 {
 		return nil, ErrPolicyChanged
-	}
-	ctx, err := ContextFromView(view)
-	if err != nil {
-		return nil, err
 	}
 	export, err := policycontext.NewExport(ctx, digests, at)
 	if err != nil {
 		return nil, err
+	}
+	if export.Baseline.SnapshotSHA256 != snapshotSHA256 {
+		return nil, ErrPolicyChanged
 	}
 	contextBytes, err := export.Marshal()
 	if err != nil {

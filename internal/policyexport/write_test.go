@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/asaset"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/fsutil"
@@ -39,9 +38,16 @@ func exportSet(docs ...Document) string {
 	return policy.PolicySetSHA256(stored)
 }
 
+// reported is what a node reports with its summary and context: the
+// context, and the policy set and snapshot digests.
+type reported struct {
+	ctx           *policycontext.Context
+	set, snapshot string
+}
+
 // contextView is what a cosigner node with the built-in networks and
-// tables, plus private-dev, sends for the policy set setSHA256.
-func contextView(t *testing.T, setSHA256 string) adminproto.PolicyContextView {
+// tables, plus private-dev, reports for the policy set setSHA256.
+func contextView(t *testing.T, setSHA256 string) reported {
 	t.Helper()
 	networks, err := apconfig.NewGenesisHashNetworkResolver(map[string]string{"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=": "private-dev"})
 	if err != nil {
@@ -51,20 +57,11 @@ func contextView(t *testing.T, setSHA256 string) adminproto.PolicyContextView {
 	if err != nil {
 		t.Fatal(err)
 	}
-	view := adminproto.PolicyContextView{
-		Success: true, NodeRole: string(ctx.Role()), RulesVersion: ctx.RulesVersion(),
-		ContextSHA256: ctx.SHA256(), PolicySetSHA256: setSHA256,
-		SnapshotSHA256: policycontext.SnapshotSHA256(ctx.SHA256(), setSHA256),
-	}
-	for token, genesis := range ctx.Networks() {
-		view.Networks = append(view.Networks, adminproto.PolicyNetwork{Network: token, GenesisHash: genesis.String()})
-	}
-	for _, a := range ctx.Assets().Assets() {
-		view.Assets = append(view.Assets, adminproto.ASAInfo{
-			GenesisHash: a.Genesis.String(), AssetID: a.AssetID, Name: a.Name, UnitName: a.UnitName, Decimals: a.Decimals, Origin: string(a.Origin),
-		})
-	}
-	return view
+	return reported{ctx: ctx, set: setSHA256, snapshot: policycontext.SnapshotSHA256(ctx.SHA256(), setSHA256)}
+}
+
+func (r reported) write(dir string, docs []Document) ([]string, error) {
+	return Write(dir, docs, r.ctx, r.set, r.snapshot, exportTime)
 }
 
 func TestWriteExportsExactBytesAndTheContextLast(t *testing.T) {
@@ -83,7 +80,7 @@ func TestWriteExportsExactBytesAndTheContextLast(t *testing.T) {
 				return nil
 			}
 			defer func() { fsutil.TestHook = nil }()
-			paths, err := Write(dir, docs, view, exportTime)
+			paths, err := view.write(dir, docs)
 			fsutil.TestHook = nil
 			if err != nil {
 				t.Fatal(err)
@@ -113,7 +110,7 @@ func TestWriteExportsExactBytesAndTheContextLast(t *testing.T) {
 			if err != nil || selected == nil {
 				t.Fatalf("Discover() = %v, %v", selected, err)
 			}
-			if selected.Export.Baseline.SnapshotSHA256 != view.SnapshotSHA256 || !selected.Export.ExportedAt.Equal(exportTime) {
+			if selected.Export.Baseline.SnapshotSHA256 != view.snapshot || !selected.Export.ExportedAt.Equal(exportTime) {
 				t.Fatalf("baseline %+v, want the node's snapshot", selected.Export.Baseline)
 			}
 		})
@@ -137,25 +134,20 @@ func TestWriteRefusesBeforeWriting(t *testing.T) {
 		t.Fatal(err)
 	}
 	view := contextView(t, exportSet(good))
-	tampered := view
-	tampered.Assets = append([]adminproto.ASAInfo(nil), view.Assets...)
-	tampered.Assets[0].Decimals++
 	staleSnapshot := view
-	staleSnapshot.SnapshotSHA256 = strings.Repeat("0", 64)
+	staleSnapshot.snapshot = strings.Repeat("0", 64)
 	noDefault := exportDoc(exportTestKey, "{}")
 
 	for _, tt := range []struct {
 		name string
 		dir  string
 		docs []Document
-		view adminproto.PolicyContextView
+		view reported
 		want error
 	}{
 		{"document changed", "", []Document{altered}, view, ErrPolicyChanged},
 		{"set changed", "", []Document{good}, contextView(t, exportSet(good, exportDoc(exportTestKey, "{}"))), ErrPolicyChanged},
-		{"context not its digest", "", []Document{good}, tampered, nil},
-		{"snapshot not the context's", "", []Document{good}, staleSnapshot, nil},
-		{"context unavailable", "", []Document{good}, adminproto.PolicyContextView{Code: "policy_unavailable"}, nil},
+		{"snapshot not the context's", "", []Document{good}, staleSnapshot, ErrPolicyChanged},
 		{"no default", "", []Document{noDefault}, contextView(t, exportSet(noDefault)), nil},
 		{"key not a file name", "", []Document{exportDoc("../escape", "{}")}, view, nil},
 		{"key twice", "", []Document{good, good}, view, nil},
@@ -172,7 +164,7 @@ func TestWriteRefusesBeforeWriting(t *testing.T) {
 			case "-":
 				dir = ""
 			}
-			paths, err := Write(dir, tt.docs, tt.view, exportTime)
+			paths, err := tt.view.write(dir, tt.docs)
 			if err == nil || (tt.want != nil && !errors.Is(err, tt.want)) || len(paths) != 0 {
 				t.Fatalf("err = %v, paths %v; want a refusal (%v)", err, paths, tt.want)
 			}
@@ -202,7 +194,7 @@ func TestAFailedExportIsNeverReadAsComplete(t *testing.T) {
 		return nil
 	}
 	defer func() { fsutil.TestHook = nil }()
-	paths, err := Write(dir, docs, contextView(t, exportSet(docs...)), exportTime)
+	paths, err := contextView(t, exportSet(docs...)).write(dir, docs)
 	fsutil.TestHook = nil
 	if err == nil || len(paths) != 1 {
 		t.Fatalf("Write() = %v, %v; want the second document's failure", paths, err)

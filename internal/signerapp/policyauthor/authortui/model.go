@@ -44,9 +44,9 @@ const (
 type Model struct {
 	ws     *policyauthor.Workspace
 	lookup policyauthor.AssetLookup
-	// diagnostics are messages about data sources (such as an unusable ASA
-	// cache) reported while laying out documents; the first is shown in the
-	// status line.
+	// diagnostics are messages about data sources, such as the node context
+	// the documents are checked against; the first is shown in the status
+	// line.
 	diagnostics *[]string
 	styles      styles
 
@@ -104,9 +104,9 @@ func New(ws *policyauthor.Workspace, lookup policyauthor.AssetLookup, diagnostic
 	return m
 }
 
-// WithNetworks sets the network mapping tries and saved cases use, such as a
-// signer's own (policyauthor.SignerNetworks); the default is the built-in
-// networks.
+// WithNetworks sets the network mapping tries and saved cases use, such as
+// the one a node context carries (policyauthor.NodeContext.Networks); the
+// default is the built-in networks.
 func (m Model) WithNetworks(n policyauthor.Networks) Model {
 	m.networks = n
 	return m
@@ -184,6 +184,9 @@ func (m Model) reload() Model {
 		m.status = "Reload failed: " + err.Error()
 		return m
 	}
+	// The node context was selected when the workspace opened; a reload
+	// reads the files again, against the same node.
+	ws = ws.WithNode(m.ws.Node)
 	var openPath string
 	if m.screen == screenDocument {
 		openPath = m.file().Path

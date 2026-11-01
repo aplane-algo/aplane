@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 
 	"github.com/aplane-algo/aplane/internal/signerapp/policyauthor"
 )
@@ -17,7 +18,7 @@ import (
 // case cannot run.
 func runTest(args []string, stdout, stderr io.Writer) int {
 	fs := newFlags("test", stderr)
-	signerData := fs.String("signer-data", os.Getenv("APSIGNER_DATA"), "signer data directory whose config.yaml network mapping is read, read-only")
+	contextFile := fs.String("node-context", "", "use this export context instead of the workspace's own")
 	dirs, err := parseInterleaved(fs, args)
 	if err != nil {
 		return exitUsage
@@ -39,7 +40,12 @@ func runTest(args []string, stdout, stderr io.Writer) int {
 		writef(stderr, "appolicy test: %v\n", err)
 		return exitUsage
 	}
-	networks, err := signerNetworks(*signerData)
+	node, err := nodeContextForDir(dir, *contextFile)
+	if err != nil {
+		writef(stderr, "appolicy test: %v\n", err)
+		return exitUsage
+	}
+	networks, err := node.Networks(time.Now())
 	if err != nil {
 		writef(stderr, "appolicy test: %v\n", err)
 		return exitUsage

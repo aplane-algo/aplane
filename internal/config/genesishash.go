@@ -115,6 +115,31 @@ func NewGenesisHashNetworkResolver(custom map[string]string) (GenesisHashNetwork
 	return GenesisHashNetworkResolver{hashToNetwork: merged}, nil
 }
 
+// GenesisHashNetworkResolverOf is a resolver of exactly hashToNetwork, such
+// as a node's exported mapping, with no built-in mapping merged in: a
+// built-in network the mapping lacks is unknown to it.
+func GenesisHashNetworkResolverOf(hashToNetwork map[string]string) (GenesisHashNetworkResolver, error) {
+	out := make(map[string]string, len(hashToNetwork))
+	tokenToHash := make(map[string]string, len(hashToNetwork))
+	for rawHash, token := range hashToNetwork {
+		hash, err := CanonicalGenesisHash(rawHash)
+		if err != nil {
+			return GenesisHashNetworkResolver{}, fmt.Errorf("invalid genesis hash %q: %w", rawHash, err)
+		}
+		if err := ValidateNetworkID(token); err != nil {
+			return GenesisHashNetworkResolver{}, fmt.Errorf("invalid network for %q: %w", rawHash, err)
+		}
+		if existing, ok := out[hash]; ok && existing != token {
+			return GenesisHashNetworkResolver{}, fmt.Errorf("genesis hash %q maps to both %q and %q", rawHash, existing, token)
+		}
+		if existing, ok := tokenToHash[token]; ok && existing != hash {
+			return GenesisHashNetworkResolver{}, fmt.Errorf("network %q maps to multiple genesis hashes", token)
+		}
+		out[hash], tokenToHash[token] = token, hash
+	}
+	return GenesisHashNetworkResolver{hashToNetwork: out}, nil
+}
+
 // DefaultGenesisHashNetworkResolver returns a resolver with only built-in
 // Algorand genesis hash mappings.
 func DefaultGenesisHashNetworkResolver() GenesisHashNetworkResolver {

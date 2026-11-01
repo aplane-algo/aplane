@@ -17,7 +17,7 @@ import (
 func writeExport(t *testing.T) []string {
 	t.Helper()
 	docs := []Document{exportDoc(policy.DefaultKey, "{}"), exportDoc(exportTestKey, "{\"k\":1}")}
-	paths, err := Write(filepath.Join(t.TempDir(), "export"), docs, contextView(t, exportSet(docs...)), exportTime)
+	paths, err := contextView(t, exportSet(docs...)).write(filepath.Join(t.TempDir(), "export"), docs)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,10 +56,6 @@ func TestDiscoverRefusesWhatIsNotOneCompleteContext(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(filepath.Dir(damaged[0]), ContextDir, ContextFile), []byte("{}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	missing := writeExport(t)
-	if err := os.Remove(filepath.Join(filepath.Dir(missing[0]), ContextDir, ContextFile)); err != nil {
-		t.Fatal(err)
-	}
 	notDir := bareFile(t)
 	if err := os.WriteFile(filepath.Join(filepath.Dir(notDir), ContextDir), nil, 0o600); err != nil {
 		t.Fatal(err)
@@ -82,13 +78,31 @@ func TestDiscoverRefusesWhatIsNotOneCompleteContext(t *testing.T) {
 		"an export and a draft":    {[]string{first[0], bareFile(t)}, "not from the export"},
 		"an export and stdin":      {[]string{"-", first[0]}, "not from the export"},
 		"a damaged context":        {[]string{damaged[0]}, "context file"},
-		"no context file":          {[]string{missing[0]}, "not a complete export"},
 		"a context path not a dir": {[]string{notDir}, "not a directory"},
 		"a linked context":         {[]string{linked[0]}, "not a regular file"},
 	} {
 		if _, err := Discover(tc.files, ""); err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%s: Discover() error = %v, want one naming %q", name, err, tc.want)
 		}
+	}
+}
+
+// appolicy keeps saved cases in .appolicy too: without a context file or a
+// marker, the directory is not an export.
+func TestACasesDirectoryIsNotAnExport(t *testing.T) {
+	draft := bareFile(t)
+	if err := os.Mkdir(filepath.Join(filepath.Dir(draft), ContextDir), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if selected, err := Discover([]string{draft}, ""); err != nil || selected != nil {
+		t.Fatalf("Discover() = %v, %v; want no context", selected, err)
+	}
+	if selected, err := ForDir(filepath.Dir(draft), ""); err != nil || selected != nil {
+		t.Fatalf("ForDir() = %v, %v; want no context", selected, err)
+	}
+	exported := writeExport(t)
+	if selected, err := ForDir(filepath.Dir(exported[0]), ""); err != nil || selected == nil {
+		t.Fatalf("ForDir(export) = %v, %v", selected, err)
 	}
 }
 

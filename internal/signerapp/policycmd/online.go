@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
+	"github.com/aplane-algo/aplane/internal/apadminapp"
 	"github.com/aplane-algo/aplane/internal/crypto"
-	"github.com/aplane-algo/aplane/internal/policyexport"
 	"github.com/aplane-algo/aplane/internal/protocol"
 )
 
@@ -78,7 +78,7 @@ func (b onlineBackend) Context(context.Context) (adminproto.PolicyContextView, e
 	err := b.roundTrip(protocol.GetPolicyContextMessage{
 		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeGetPolicyContext, ID: onlineRequestID("policy-context")},
 	}, protocol.MsgTypePolicyContext, &msg)
-	return policyexport.ViewFromMessage(msg), err
+	return apadminapp.PolicyContextViewFromMessage(msg), err
 }
 
 func (b onlineBackend) Document(_ context.Context, key, expectedSnapshot string) (adminproto.PolicyDocumentResult, error) {

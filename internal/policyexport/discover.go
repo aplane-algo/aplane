@@ -21,14 +21,16 @@ type Selected struct {
 }
 
 // Discover selects the node context for policy files. A file's context is
-// the export it sits in: the .appolicy directory beside it. override, when
-// set, names a context file to use for every file instead.
+// the export it sits in: .appolicy/node.json beside it. override, when set,
+// names a context file to use for every file instead.
 //
 // It returns nil when no file has a context: the files are not from an
-// export (or come from stdin, named "-"). Everything else that is not one
-// complete, readable context for all the files is an error, never a quiet
-// fallback to no context: an unfinished or damaged export, or files from
-// different exports, or some files from an export and some not.
+// export (or come from stdin, named "-"). A .appolicy directory without a
+// context is not an export; appolicy keeps its saved cases there too.
+// Everything else that is not one complete, readable context for all the
+// files is an error, never a quiet fallback to no context: an unfinished or
+// damaged export, or files from different exports, or some files from an
+// export and some not.
 func Discover(files []string, override string) (*Selected, error) {
 	if override != "" {
 		return Read(override)
@@ -40,19 +42,14 @@ func Discover(files []string, override string) (*Selected, error) {
 			bare = append(bare, "stdin")
 			continue
 		}
-		dir := filepath.Join(filepath.Dir(file), ContextDir)
-		info, err := os.Lstat(dir)
-		if errors.Is(err, os.ErrNotExist) {
-			bare = append(bare, file)
-			continue
-		}
+		path, err := contextPath(filepath.Dir(file))
 		if err != nil {
 			return nil, err
 		}
-		if !info.IsDir() {
-			return nil, fmt.Errorf("%s is not a directory", dir)
+		if path == "" {
+			bare = append(bare, file)
+			continue
 		}
-		path := filepath.Join(dir, ContextFile)
 		if selected != nil {
 			if sameFile(selected.Path, path) {
 				continue
@@ -67,6 +64,44 @@ func Discover(files []string, override string) (*Selected, error) {
 		return nil, fmt.Errorf("%s is not from the export in %s; check or apply it on its own", bare[0], filepath.Dir(filepath.Dir(selected.Path)))
 	}
 	return selected, nil
+}
+
+// ForDir selects the node context for the policy files in dir: override,
+// when set, or the export dir is, if it is one.
+func ForDir(dir, override string) (*Selected, error) {
+	if override != "" {
+		return Read(override)
+	}
+	path, err := contextPath(dir)
+	if err != nil || path == "" {
+		return nil, err
+	}
+	return Read(path)
+}
+
+// contextPath is the context file of the export in dir, or "" when dir is
+// not an export. An unfinished export is one: reading it reports that.
+func contextPath(dir string) (string, error) {
+	contextDir := filepath.Join(dir, ContextDir)
+	info, err := os.Lstat(contextDir)
+	if errors.Is(err, os.ErrNotExist) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("%s is not a directory", contextDir)
+	}
+	path := filepath.Join(contextDir, ContextFile)
+	for _, name := range []string{ContextFile, InProgressFile} {
+		if _, err := os.Lstat(filepath.Join(contextDir, name)); err == nil {
+			return path, nil
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return "", err
+		}
+	}
+	return "", nil
 }
 
 // Read reads the context file at path. An export still in progress, or one

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
+	"github.com/aplane-algo/aplane/internal/apadminapp"
 	"github.com/aplane-algo/aplane/internal/policyexport"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -133,7 +134,7 @@ func (m Model) startPolicyExport() (tea.Model, tea.Cmd) {
 		export.err = "The node's policy context is still loading; try again"
 		return m, nil
 	}
-	export.context = policyexport.ViewFromMessage(*m.policies.loadedContext)
+	export.context = apadminapp.PolicyContextViewFromMessage(*m.policies.loadedContext)
 	export.snapshot = m.policies.snapshot
 	if len(export.queue) == 0 {
 		export.err = "The node lists no policy documents to export"
@@ -177,7 +178,7 @@ func (m Model) handlePolicyExportDocumentLoaded(msg PolicyDocumentLoadedMsg) (te
 
 func writePolicyExportCmd(dir string, docs []policyexport.Document, context adminproto.PolicyContextView) tea.Cmd {
 	return func() tea.Msg {
-		paths, err := policyexport.Write(dir, docs, context, time.Now())
+		paths, err := apadminapp.WritePolicyExport(dir, docs, context, time.Now())
 		return PolicyExportWrittenMsg{Dir: dir, Paths: paths, Err: err}
 	}
 }
