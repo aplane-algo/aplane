@@ -403,6 +403,54 @@ read-only `status`, `export`, and `check` commands unlock it before reading
 policy state and are therefore not guaranteed to preserve the daemon's lock
 state.
 
+### The node's ASA set
+
+A node keeps an ASA set: the built-in asset table plus the assets you confirm
+on it. It does two things only: it labels assets (name, unit name, decimals),
+and it decides which specific assets your policy documents may name. It never
+decides what a transaction may do: a route with `"assets": ["*"]` still lets
+any asset through, listed or not.
+
+An asset is identified by its chain and its ID. The same ID on another
+network is another asset, or none: `31566704` is USDC on mainnet only.
+
+```bash
+apadmin asa list                       # built-ins and confirmations, with the network naming each chain now
+apadmin asa add private-dev 1234567    # look it up on the node and confirm it
+apadmin asa remove private-dev 1234567 # remove a confirmation
+```
+
+- **add** reads the asset from the network's configured algod, after
+  checking that node serves the network's chain, and shows its chain, name,
+  unit name, decimals, total, creator and issuer addresses. A clawback or
+  freeze address is called out: it means the issuer can take or freeze
+  holdings. Only the name, unit name and decimals are recorded; the issuer's
+  addresses can change later. You confirm before anything is stored
+  (`--yes` skips the prompt), and the node reads the asset again and adds it
+  only if nothing changed. A built-in asset needs no confirmation.
+- **remove** is refused while any of the node's policy documents names the
+  asset, and lists where. An entry whose network now names another chain is
+  shown as inactive and removed with `--genesis HASH ID`.
+- Adding and removing commit a new store generation, like a policy apply.
+  Backups do not carry the ASA set: after restoring a backup onto a fresh
+  node, confirm the assets again.
+
+`apadmin policy check` warns about what a document names that the node does
+not know:
+
+- a network the node does not map (a typo such as `mainet` in a `limits` key
+  would otherwise silently drop that limit);
+- an asset outside the ASA set;
+- a direct `asa:<id>` route term in a route over several networks or `*`,
+  since the ID names an asset on one chain only (list one network, or use an
+  asset set with a member per network);
+- a route that has no asset on one of the networks it applies to (`*` means
+  every network the node knows).
+
+These are warnings in this release; a later release refuses them for
+documents you submit. Stored documents keep working either way: the same
+problems appear as alerts in the node's status.
+
 ### Checking policy files offline with appolicy
 
 `appolicy` edits, checks, formats, explains, tries, and tests policy files without a node,

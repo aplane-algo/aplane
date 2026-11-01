@@ -86,7 +86,8 @@ Transport notes:
   same-UID local mode may use `<data_dir>/aplane.sock`, and custom private
   managed stores require an explicit IPC path so an unreadable selected root
   cannot silently retarget a client to the singleton system signer,
-- the current admin protocol version is 6.0; `auth_required` carries it as
+- the current admin protocol version is 6.1 (6.1 added the ASA set
+  messages); `auth_required` carries it as
   `protocol_version:{major,minor}`; clients must send their version in
   `auth.protocol_version`; major-version mismatches
   are rejected during authentication, and minor-version mismatches are logged
@@ -271,6 +272,10 @@ Client to Server:
 - `get_policy_document`
 - `check_policy`
 - `apply_policy`
+- `list_asa_set`
+- `lookup_asa`
+- `add_asa`
+- `remove_asa`
 
 Server to Client:
 
@@ -280,6 +285,10 @@ Server to Client:
 - `policy_document`
 - `check_policy_result`
 - `apply_policy_result`
+- `asa_set`
+- `lookup_asa_result`
+- `add_asa_result`
+- `remove_asa_result`
 
 #### Cosigner References And Store Inventory
 
@@ -515,7 +524,7 @@ Messages:
 
 - `get_policy` -> `policy`: `success`, `node_role`, `documents[]` (document summaries without bytes: the default first, then per-key documents sorted by key), `keys[]` (one entry per held key and per stored document for a key not held, sorted by key; the default is not a key and is not listed), `policy_set_sha256`, optional `generation_id`, optional `code`, optional `error`. `policy_set_sha256` is the lowercase hex SHA-256 over the sorted lines `<key> <document sha256>\n`, one per document, where `<key>` is `default` or the selector. Returns `policy_unavailable` when no policy is loaded.
 - `get_policy_document`: `key` (`default` or a selector) -> `policy_document`: `success`, `key`, `document` (exact bytes), `sha256`, optional `signed_at_unix`, optional `code`, optional `error`. Returns `policy_document_not_found` when `key` is empty or names a key with no document of its own (it follows the node default).
-- `check_policy`: `documents[]`, optional `remove[]` (keys whose own documents the candidate change would delete) -> `check_policy_result`: `success`, `valid`, optional `errors[]`, optional `warnings[]`, optional `code`, optional `error`. Validates the candidate change for the node role without writing. `valid` is true when `errors` is empty. Warnings never block an apply; they report document advisories (such as a `reject_*` setting that overrides a route's `allow_close` or `allow_clawback`, a route for a transaction type the document rejects, or a cosigner document with routes but no fee cap) and documents in the resulting state for keys the node does not hold (`key_not_held`). A key on the default is covered, not a gap.
+- `check_policy`: `documents[]`, optional `remove[]` (keys whose own documents the candidate change would delete) -> `check_policy_result`: `success`, `valid`, optional `errors[]`, optional `warnings[]`, optional `code`, optional `error`. Validates the candidate change for the node role without writing. `valid` is true when `errors` is empty. Warnings never block an apply; they report document advisories (such as a `reject_*` setting that overrides a route's `allow_close` or `allow_clawback`, a route for a transaction type the document rejects, or a cosigner document with routes but no fee cap), documents in the resulting state for keys the node does not hold (`key_not_held`), and admission problems of each submitted document against the node's networks and ASA set: a network the node does not know, an asset outside the set, a direct `asa:<id>` route term over several networks or `*`, and a route with no asset on one of its networks. Admission problems are warnings in this release; they will be refused for submitted documents once the rules are enforced. A key on the default is covered, not a gap.
 - `apply_policy`: `documents[]`, optional `remove[]`, `expected_policy_set_sha256` -> `apply_policy_result`: `success`, optional `errors[]`, optional `policy` (the new `policy` view, including the committed `generation_id`), optional `commit_uncertain`, optional `code`, optional `error`.
 
 Apply rules, the same on both node roles:
@@ -537,6 +546,51 @@ Result codes include `expected_policy_set_sha256_required`,
 
 `get_policy`, `get_policy_document`, and `check_policy` require `policy.view`; `apply_policy` requires
 `policy.update`. Policy messages are not exposed through apshell or MCP.
+
+ASA set messages. The ASA set is the built-in asset table plus the assets the
+operator confirmed; it labels assets and decides which specific assets
+submitted policy documents may name, and never changes what a transaction may
+do. An asset is identified by its chain's genesis hash and its ID. The set is
+policy context, so `list_asa_set` and `lookup_asa` require `policy.view` and
+`add_asa` and `remove_asa` require `policy.update`; none is open to
+`auth_only` sessions.
+
+- asset info: optional `network` (the token naming the asset's chain now;
+  absent for an inactive entry), `genesis_hash`, `asset_id`, `name`,
+  `unit_name`, `decimals`, `origin` (`builtin` or `operator`), optional
+  `shadowed` (an operator entry a later release made built-in; the built-in
+  entry is used), and for operator entries `creator`, `confirmed_at` and
+  `network_at_confirmation`.
+- asset observation: `network`, `genesis_hash`, `asset_id`, `name`,
+  `unit_name`, `decimals`, `total`, `default_frozen`, optional `url`,
+  `creator`, and optional `manager`, `reserve`, `freeze`, `clawback`. The
+  issuer's addresses can change after confirmation and are not stored.
+- `list_asa_set` -> `asa_set`: `assets[]` (built-ins, then confirmations),
+  optional `code`, optional `error`.
+- `lookup_asa`: `network`, `asset_id` -> `lookup_asa_result`: `success`,
+  `asset` (an observation), optional `code`, optional `error`. The daemon
+  reads the asset from the network's configured algod after checking that
+  node's genesis hash; nothing is stored.
+- `add_asa`: `confirmed` (the observation the operator confirmed) ->
+  `add_asa_result`: `success`, `asset` (asset info), optional
+  `generation_id`, optional `commit_uncertain`, optional `code`, optional
+  `error`. The daemon reads the asset again before taking the store lock and
+  adds it only if every confirmed value, the issuer's addresses included,
+  still matches; it then mints a generation (operation `asa-set-update`) and
+  reloads the runtime.
+- `remove_asa`: `network` or, for an inactive entry, `genesis_hash`, and
+  `asset_id` -> `remove_asa_result`: `success`, optional `generation_id`,
+  optional `commit_uncertain`, optional `blocking[]` (`document`, `pointer`:
+  the stored references that keep the entry), optional `code`, optional
+  `error`. Removal is refused while any stored document explicitly names
+  the asset; a direct route term over several networks counts on each of
+  them.
+
+ASA set result codes include `policy_unavailable`, `unknown_network`,
+`asa_builtin`, `asa_already_confirmed`, `lookup_failed`,
+`confirmation_stale`, `asa_referenced`, `not_found`, `identity_locked`,
+`recovery_blocked`, `asa_commit_uncertain`, `asa_reload_failed`, and
+`asa_unavailable`.
 
 Policy selection semantics:
 
