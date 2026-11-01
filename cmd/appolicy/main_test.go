@@ -236,6 +236,52 @@ func TestTryRefusesBadInput(t *testing.T) {
 	}
 }
 
+func TestTestRunsSavedCases(t *testing.T) {
+	dir := t.TempDir()
+	put(t, dir, "treasury.json", fixture(t, "signer_key_full.json"))
+	if code, _, errOut := appolicy("test", "--signer-data", "", dir); code != exitUsage || !strings.Contains(errOut, "no saved cases") {
+		t.Fatalf("test with no cases: exit %d: %s", code, errOut)
+	}
+	writeCases := func(cases string) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Join(dir, ".appolicy"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		put(t, filepath.Join(dir, ".appolicy"), "cases.json", []byte(`{"format": "aplane.policy-cases.v1", "cases": [`+cases+`]}`))
+	}
+	review := `{"name": "large top-up needs review", "document": "treasury.json",
+		"txn": {"network": "mainnet", "sender": "` + treasuryAddr + `", "receiver": "` + opsMainnet + `", "amount": 150000000},
+		"expect": {"outcome": "review", "rule_id": "review_algo_payment_exceeded"}}`
+	writeCases(review)
+	before := tree(t, dir)
+	code, out, errOut := appolicy("test", dir, "--signer-data", "")
+	if code != exitOK || !strings.Contains(out, "ok    large top-up needs review") || !strings.Contains(out, "1 case(s), 0 failed, 0 could not run (built-in networks only)") {
+		t.Fatalf("test: exit %d\n%s\n%s", code, out, errOut)
+	}
+	if after := tree(t, dir); after != before {
+		t.Fatalf("test wrote to the workspace:\nbefore %s\nafter  %s", before, after)
+	}
+
+	wrong := `{"name": "wrong", "document": "treasury.json",
+		"txn": {"network": "mainnet", "sender": "` + treasuryAddr + `", "receiver": "` + opsMainnet + `", "amount": 150000000},
+		"expect": {"outcome": "default"}}`
+	writeCases(review + "," + wrong)
+	if code, out, _ := appolicy("test", "--signer-data", "", dir); code != exitProblems || !strings.Contains(out, "FAIL  wrong: got review (rule review_algo_payment_exceeded), want default") {
+		t.Fatalf("test with a failing case: exit %d\n%s", code, out)
+	}
+
+	missing := `{"name": "missing", "document": "gone.json", "txn": {"sender": "` + treasuryAddr + `", "receiver": "` + opsMainnet + `"}, "expect": {"outcome": "default"}}`
+	writeCases(wrong + "," + missing)
+	if code, out, _ := appolicy("test", "--signer-data", "", dir); code != exitUsage || !strings.Contains(out, "ERROR missing") {
+		t.Fatalf("test with a missing document: exit %d\n%s", code, out)
+	}
+
+	writeCases(`{"name": "bad", "document": "treasury.json", "txn": {}, "expect": {"outcome": "sign"}}`)
+	if code, _, errOut := appolicy("test", "--signer-data", "", dir); code != exitUsage || !strings.Contains(errOut, "cases.json") {
+		t.Fatalf("test with a bad cases file: exit %d: %s", code, errOut)
+	}
+}
+
 func TestRetiredAndUnknownInvocations(t *testing.T) {
 	for _, args := range [][]string{{"-online"}, {"--check", "x.json"}, {"-yaml"}, {"-save"}, {"-to-sentry"}} {
 		code, _, errOut := appolicy(args...)

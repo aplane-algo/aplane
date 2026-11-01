@@ -405,7 +405,7 @@ state.
 
 ### Checking policy files offline with appolicy
 
-`appolicy` edits, checks, formats, explains, and tries policy files without a node,
+`appolicy` edits, checks, formats, explains, tries, and tests policy files without a node,
 a store, or a passphrase. It is installed with the signer binaries.
 
 ```bash
@@ -417,6 +417,7 @@ appolicy fmt policy/                # rewrite files in canonical form
 appolicy explain treasury.json      # one document in plain language
 appolicy try treasury.json --from ADDR --to ADDR --amount 600000000 --network mainnet
                                     # what the document decides for one transaction
+appolicy test policy/               # re-run the saved cases in policy/.appolicy/cases.json
 ```
 
 - **The editor.** `appolicy PATH...` (or `appolicy open PATH...`) opens a
@@ -492,6 +493,35 @@ appolicy try treasury.json --from ADDR --to ADDR --amount 600000000 --network ma
   from the signer's `config.yaml` in `--signer-data` (or `$APSIGNER_DATA`),
   read-only, else the built-in networks only; the same mapping compiles the
   document, so a custom network's routes resolve.
+- **test** re-runs the workspace's saved cases: tries kept with the answer
+  expected, so an edit that changes a decision you already made is caught
+  before the document is installed. They live in `.appolicy/cases.json` in the
+  workspace directory (the default is the current directory), which is never
+  read as a policy document. Each case names a document by its path in the
+  workspace, the transaction, and the outcome (`reject`, `review`, `approve`
+  or `default`, the words try prints) with its rule:
+
+  ```json
+  {
+    "format": "aplane.policy-cases.v1",
+    "cases": [
+      {
+        "name": "600 ALGO top-up to ops needs review",
+        "document": "treasury.json",
+        "txn": {"network": "mainnet", "sender": "TREAS...", "receiver": "OPS...", "amount": 600000000},
+        "expect": {"outcome": "review", "rule_id": "transfer_policy:treasury-to-ops:review_above"}
+      }
+    ]
+  }
+  ```
+
+  The transaction takes try's fields (`network`, default `testnet`; `sender`;
+  `receiver`; `amount`; `asset`; `fee`, default 1000; `close_to`;
+  `clawback_from`; `rekey_to`; `rekey_target_held`). A review or approval
+  matches its deciding rule; a rejection matches its first violation's rule,
+  or any rejection when `rule_id` is omitted. test exits 0 when every case
+  passes, 1 when one fails, and 2 when the file is bad or a case cannot run
+  (its document is missing or invalid). It writes nothing.
 - **explain** describes a valid document. Amounts are shown in base units and,
   where the asset's decimals are known, in display units, from the built-in
   asset table and the signer's ASA cache (`--signer-data`, or

@@ -56,6 +56,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runExplain(args[1:], stdout, stderr)
 	case "try":
 		return runTry(args[1:], stdout, stderr)
+	case "test":
+		return runTest(args[1:], stdout, stderr)
 	case "open":
 		return runOpen(args[1:], stderr)
 	}
@@ -92,6 +94,7 @@ func usage(w io.Writer) {
                [--network NAME] [--fee N] [--close-to ADDR]
                [--clawback-from ADDR] [--rekey-to ADDR [--rekey-held]]
                [--signer-data DIR] [--json]
+  appolicy test [--signer-data DIR] [DIR]
 
 PATH is a policy file, or a directory whose *.json files are policy files.
 Each document is identified by its "key" field, not its file name.
@@ -114,6 +117,10 @@ Each document is identified by its "key" field, not its file name.
            lists what it assumed; the network mapping comes from
            --signer-data's config.yaml, else the built-in networks. Exit 0
            whatever the verdict, 2 for bad input.
+  test     run the saved cases in DIR/.appolicy/cases.json (DIR defaults to
+           the current directory): each is a try with the answer expected.
+           Exit 0 when every case passes, 1 when one fails, 2 when the cases
+           file is bad or a case cannot run.
 
 appolicy never contacts a node. Install policy with apadmin policy check and
 apadmin policy apply.
