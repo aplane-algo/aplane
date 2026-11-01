@@ -171,15 +171,36 @@ func TestReadRotatingReleasesTracksLeaves(t *testing.T) {
 
 // Reading a long history is linear: the release memory restore, which
 // spends wait on after an unlock, must not grow quadratically with the
-// releases a stage accumulated.
+// releases a stage accumulated. The check compares reading n and 8n
+// releases instead of timing one read against a fixed limit, so it holds on
+// a slow or loaded machine: linear reading takes about 8 times as long,
+// quadratic up to 64, and the limit of 16 leaves room either side. Each size
+// keeps its fastest of three reads, so one slow read does not decide.
 func TestReadRotatingReleasesIsLinear(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "audit.log")
+	const n, factor = 2500, 8
+	small, _ := fastestReleaseRead(t, n)
+	large, got := fastestReleaseRead(t, factor*n)
+	ratio := float64(large) / float64(small)
+	t.Logf("%d releases: %v, %d: %v, ratio %.1f", n, small, factor*n, large, ratio)
+	if ratio > 2*factor {
+		t.Fatalf("reading %d releases took %v, %d took %v: %.1fx for %dx the history, want linear (about %dx)", n, small, factor*n, large, ratio, factor, factor)
+	}
+	r := got["ACCT9"]
+	if len(r.Leaves) != factor*n || !r.Reused || r.TxID != fmt.Sprintf("TX%d", factor*n-1) || r.Index != uint32(192+(factor*n-1)%64) {
+		t.Fatalf("read %d leaves, reused %v, latest %s index %d", len(r.Leaves), r.Reused, r.TxID, r.Index)
+	}
+}
+
+// fastestReleaseRead writes n releases for one account, their leaves
+// cycling through 64 indexes so reuse is seen, and returns the fastest of
+// three reads of them with the last result.
+func fastestReleaseRead(t *testing.T, n int) (time.Duration, map[string]RotatingRelease) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "audit.log")
 	f, err := os.Create(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	const n = 20000
 	stage := uint64(3)
 	w := bufio.NewWriter(f)
 	for i := range n {
@@ -196,16 +217,17 @@ func TestReadRotatingReleasesIsLinear(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = f.Close()
-	start := time.Now()
-	got, err := ReadRotatingReleases(path)
-	if err != nil {
-		t.Fatal(err)
+	var fastest time.Duration
+	var got map[string]RotatingRelease
+	for range 3 {
+		start := time.Now()
+		got, err = ReadRotatingReleases(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if d := time.Since(start); fastest == 0 || d < fastest {
+			fastest = d
+		}
 	}
-	if d := time.Since(start); d > 2*time.Second {
-		t.Fatalf("reading %d releases took %v", n, d)
-	}
-	r := got["ACCT9"]
-	if len(r.Leaves) != n || !r.Reused || r.TxID != fmt.Sprintf("TX%d", n-1) || r.Index != uint32(192+(n-1)%64) {
-		t.Fatalf("read %d leaves, reused %v, latest %s index %d", len(r.Leaves), r.Reused, r.TxID, r.Index)
-	}
+	return fastest, got
 }
