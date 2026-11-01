@@ -303,7 +303,7 @@ func (s *Session) HandlePruneGenerationQuarantine(
 			msg.ID,
 			adminproto.PruneGenerationQuarantineResult{
 				Code:  protocol.ResultCodeQuarantineAuditFailed,
-				Error: "quarantine prune aborted: durable audit is unavailable",
+				Error: auditRefusalText("quarantine prune aborted", nil),
 			},
 		))
 		return
@@ -315,11 +315,8 @@ func (s *Session) HandlePruneGenerationQuarantine(
 		_ = s.WriteJSON(ProtocolPruneGenerationQuarantineResultMessage(
 			msg.ID,
 			adminproto.PruneGenerationQuarantineResult{
-				Code: protocol.ResultCodeQuarantineAuditFailed,
-				Error: fmt.Sprintf(
-					"quarantine prune aborted: durable audit failed: %v",
-					err,
-				),
+				Code:  protocol.ResultCodeQuarantineAuditFailed,
+				Error: auditRefusalText("quarantine prune aborted", err),
 			},
 		))
 		return
@@ -368,7 +365,7 @@ func (s *Session) HandleDiscardAbandonedGenerations(
 	if !ok {
 		respond(adminproto.DiscardAbandonedGenerationsResult{
 			Code:  protocol.ResultCodeAbandonedAuditFailed,
-			Error: "abandoned generation discard aborted: durable audit is unavailable",
+			Error: auditRefusalText("abandoned generation discard aborted", nil),
 		})
 		return
 	}
@@ -376,7 +373,7 @@ func (s *Session) HandleDiscardAbandonedGenerations(
 	if err := audit.LogGenerationAbandonedDiscardIntentDurableContext(s.SessionContext(), msg.ID, ids); err != nil {
 		respond(adminproto.DiscardAbandonedGenerationsResult{
 			Code:  protocol.ResultCodeAbandonedAuditFailed,
-			Error: fmt.Sprintf("abandoned generation discard aborted: durable audit failed: %v", err),
+			Error: auditRefusalText("abandoned generation discard aborted", err),
 		})
 		return
 	}
@@ -427,7 +424,7 @@ func (s *Session) HandlePruneDeletedArchive(msg *protocol.PruneDeletedArchiveMes
 	})
 	if !ok {
 		_ = s.WriteJSON(ProtocolPruneDeletedArchiveResultMessage(msg.ID, adminproto.PruneDeletedArchiveResult{
-			Code: protocol.ResultCodeArchiveAuditFailed, Error: "archive prune aborted: durable audit is unavailable",
+			Code: protocol.ResultCodeArchiveAuditFailed, Error: auditRefusalText("archive prune aborted", nil),
 		}))
 		return
 	}
@@ -435,7 +432,7 @@ func (s *Session) HandlePruneDeletedArchive(msg *protocol.PruneDeletedArchiveMes
 	if err := audit.LogDeletedArchivePruneIntentDurableContext(s.SessionContext(), msg.ID, entries); err != nil {
 		_ = s.WriteJSON(ProtocolPruneDeletedArchiveResultMessage(msg.ID, adminproto.PruneDeletedArchiveResult{
 			Code:  protocol.ResultCodeArchiveAuditFailed,
-			Error: fmt.Sprintf("archive prune aborted: durable audit failed: %v", err),
+			Error: auditRefusalText("archive prune aborted", err),
 		}))
 		return
 	}
@@ -769,7 +766,7 @@ func (s *Session) HandleRestoreBackup(msg *protocol.RestoreBackupMessage) {
 		_ = s.WriteJSON(ProtocolRestoreBackupResultMessage(msg.ID, adminproto.RestoreBackupResult{
 			OperationID: msg.ID,
 			Code:        protocol.ResultCodeRestoreAuditFailed,
-			Error:       "restore aborted: durable restore-intent audit is unavailable",
+			Error:       auditRefusalText("restore aborted", nil),
 		}))
 		msg.ExportPassphrase.Zero()
 		return
@@ -780,7 +777,7 @@ func (s *Session) HandleRestoreBackup(msg *protocol.RestoreBackupMessage) {
 		_ = s.WriteJSON(ProtocolRestoreBackupResultMessage(msg.ID, adminproto.RestoreBackupResult{
 			OperationID: msg.ID,
 			Code:        protocol.ResultCodeRestoreAuditFailed,
-			Error:       fmt.Sprintf("restore aborted: durable restore-intent audit failed: %v", err),
+			Error:       auditRefusalText("restore aborted", err),
 		}))
 		msg.ExportPassphrase.Zero()
 		return

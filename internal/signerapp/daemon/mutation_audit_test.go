@@ -6,6 +6,7 @@ package daemon
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -216,6 +217,66 @@ func TestOversizedMutationRequestsLeaveTheAuditLogReadable(t *testing.T) {
 		if !strings.Contains(id, "sha256:") || entries[i+1]["operation_id"] != id {
 			t.Fatalf("intent %q and outcome %v do not correlate", id, entries[i+1]["operation_id"])
 		}
+	}
+	if _, err := signeraudit.ReadRotatingReleases(path); err != nil {
+		t.Fatalf("the release history no longer loads: %v", err)
+	}
+}
+
+// The older durable intents fail closed with ErrAuditUnavailable too, so
+// their handlers advise a restart rather than a retry.
+func TestOlderIntentForwardersReportAMissingLogger(t *testing.T) {
+	svc := (&Signer{}).adminServices()
+	ctx := adminserver.SessionContext{}
+	for name, err := range map[string]error{
+		"restore":           svc.LogCredentialRestoreIntentDurableContext(ctx, "restore-1", "backup.tar.gz", false),
+		"quarantine prune":  svc.LogGenerationQuarantinePruneIntentDurableContext(ctx, "prune-1", []string{"gen-1"}),
+		"abandoned discard": svc.LogGenerationAbandonedDiscardIntentDurableContext(ctx, "discard-1", []string{"gen-1"}),
+		"archive prune":     svc.LogDeletedArchivePruneIntentDurableContext(ctx, "archive-1", []string{"keys/A.key"}),
+	} {
+		if !errors.Is(err, adminserver.ErrAuditUnavailable) {
+			t.Errorf("%s without a logger: %v, want ErrAuditUnavailable", name, err)
+		}
+	}
+}
+
+// Through the production adapter, multi-megabyte inputs to the older events
+// leave small entries and a readable log.
+func TestOlderEventsStayBoundedThroughTheDaemonAdapter(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "audit.log")
+	logger, err := NewAuditLogger(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = logger.Close() }()
+	svc := (&Signer{auditLog: logger}).adminServices()
+	ctx := adminserver.SessionContext{SessionID: "s-1"}
+	huge := strings.Repeat("x", 2<<20)
+	ids := make([]string, 10_000)
+	for i := range ids {
+		ids[i] = fmt.Sprintf("gen-%d", i)
+	}
+	ids[0] = huge
+	svc.LogIdentityLockedContext(ctx, huge)
+	for _, err := range []error{
+		svc.LogCredentialRestoreIntentDurableContext(ctx, "restore-1", huge, false),
+		svc.LogGenerationQuarantinePruneIntentDurableContext(ctx, "prune-1", ids),
+		svc.LogGenerationAbandonedDiscardIntentDurableContext(ctx, "discard-1", ids),
+		svc.LogDeletedArchivePruneIntentDurableContext(ctx, "archive-1", ids),
+	} {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(data) > 64*1024 {
+		t.Fatalf("five oversized events wrote %d bytes", len(data))
+	}
+	if got := len(strings.Split(strings.TrimSpace(string(data)), "\n")); got != 5 {
+		t.Fatalf("%d entries, want 5", got)
 	}
 	if _, err := signeraudit.ReadRotatingReleases(path); err != nil {
 		t.Fatalf("the release history no longer loads: %v", err)

@@ -209,13 +209,30 @@ func TestReadRotatingReleasesSkipsAnOversizedLine(t *testing.T) {
 	if err := logger.LogRotatingReleaseAttributed(attr, "ACCT1", "TX1", 3, 100, 0, 0); err != nil {
 		t.Fatal(err)
 	}
-	logger.Log(AuditEntry{Event: "SOMETHING_LARGE", Reason: strings.Repeat("x", 3<<20)})
+	_ = logger.Close()
+	// The logger now bounds every entry, so the oversized line is written
+	// straight to the file, as a log from an earlier release could hold it.
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString(`{"event":"SOMETHING_LARGE","reason":"` + strings.Repeat("x", 3<<20) + "\"}\n"); err != nil {
+		t.Fatal(err)
+	}
+	_ = f.Close()
+	logger, err = NewAuditLogger(path)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := logger.LogRotatingReleaseAttributed(attr, "ACCT2", "TX2", 5, 200, 0, 0); err != nil {
 		t.Fatal(err)
 	}
 	_ = logger.Close()
+	if info, err := os.Stat(path); err != nil || info.Size() < 3<<20 {
+		t.Fatalf("the oversized line is not in the log: %v", err)
+	}
 	// A last line with no newline is read too.
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
+	f, err = os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
 		t.Fatal(err)
 	}

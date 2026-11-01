@@ -136,9 +136,14 @@ type AuditEntry struct {
 	TermUnavailable      int            `json:"term_unavailable,omitempty"`
 	TermFailed           int            `json:"term_failed,omitempty"`
 	ArchiveEntries       []string       `json:"archive_entries,omitempty"`
-	SuppressedCount      int            `json:"suppressed_count,omitempty"` // AUTH_FAILURES_SUPPRESSED: failures not logged individually
-	ClientLabel          string         `json:"client_label,omitempty"`     // CLIENT_ENROLLED / CLIENT_KEY_REVOKED: display label of the key
-	ClosedConnections    int            `json:"closed_connections,omitempty"`
+	// GenerationIDsOmitted and ArchiveEntriesOmitted count the members left
+	// out of a list longer than an entry holds: the list is then a sample,
+	// and the omitted names are not recorded anywhere.
+	GenerationIDsOmitted  int    `json:"generation_ids_omitted,omitempty"`
+	ArchiveEntriesOmitted int    `json:"archive_entries_omitted,omitempty"`
+	SuppressedCount       int    `json:"suppressed_count,omitempty"` // AUTH_FAILURES_SUPPRESSED: failures not logged individually
+	ClientLabel           string `json:"client_label,omitempty"`     // CLIENT_ENROLLED / CLIENT_KEY_REVOKED: display label of the key
+	ClosedConnections     int    `json:"closed_connections,omitempty"`
 	// ROTATING_RELEASE: the stage whose program the signature revealed and
 	// the last round at which the released transaction can confirm. The
 	// signer rebuilds its release memory from these entries at unlock.
@@ -217,6 +222,58 @@ func NewAuditLogger(path string) (*AuditLogger, error) {
 	return logger, nil
 }
 
+// normalizeEntry bounds every string field of entry, so no request makes a
+// large entry, whatever path logged it and whether or not the request was
+// later refused: free text (reason, transaction details) to maxEntryReason,
+// every identifier to maxAuditField, and each list to maxAuditSelectors
+// members. Legitimate identifiers (addresses, transaction IDs, digests,
+// generation IDs, principals) are far shorter and pass unchanged, so
+// rotating-release entries stay exact. Only the log copy is bounded: the
+// request and result it describes are untouched, and lists are copied, never
+// cut in place. TestNormalizeEntryBoundsEveryStringField keeps this list
+// complete.
+func normalizeEntry(entry AuditEntry) AuditEntry {
+	entry.OperationID = boundOperationID(entry.OperationID)
+	entry.Reason = boundText(entry.Reason, maxEntryReason)
+	entry.TxnDetails = boundText(entry.TxnDetails, maxEntryReason)
+	entry.Event = AuditEventType(boundText(string(entry.Event), maxAuditField))
+	for _, field := range []*string{
+		&entry.Principal, &entry.RequesterPrincipal, &entry.ApproverPrincipal,
+		&entry.AdminSessionID, &entry.Transport, &entry.Outcome,
+		&entry.TxnAuth, &entry.TxnSender, &entry.TxnType, &entry.TxID,
+		&entry.RemoteAddr, &entry.PolicyRuleID, &entry.WitnessKeyID,
+		&entry.ArchiveSHA256, &entry.GenerationID, &entry.ParentGenerationID,
+		&entry.ManifestSHA256, &entry.LiveInventorySHA256, &entry.ClientLabel,
+		&entry.ResultCode, &entry.ExpectedPolicySetSHA256, &entry.ExpectedSnapshotSHA256,
+		&entry.BasePolicySetSHA256, &entry.PolicySetSHA256, &entry.ASAAction,
+		&entry.Network, &entry.GenesisHash,
+	} {
+		*field = boundText(*field, maxAuditField)
+	}
+	var omitted int
+	if entry.GenerationIDs, omitted = boundList(entry.GenerationIDs); omitted > 0 {
+		entry.GenerationIDsOmitted = omitted
+	}
+	if entry.ArchiveEntries, omitted = boundList(entry.ArchiveEntries); omitted > 0 {
+		entry.ArchiveEntriesOmitted = omitted
+	}
+	if entry.PolicyUpdates, omitted = boundList(entry.PolicyUpdates); omitted > 0 {
+		entry.PolicyUpdatesOmitted += omitted
+	}
+	if entry.PolicyRemovals, omitted = boundList(entry.PolicyRemovals); omitted > 0 {
+		entry.PolicyRemovalsOmitted += omitted
+	}
+	return entry
+}
+
+// maxEntryReason bounds any entry's free text: its reason and transaction
+// details. It is larger than the policy and ASA bound because a signing rejection's reason lists every violation of a
+// group of up to 16 transactions (about 5 KiB with two each); it exists to
+// stop multi-megabyte entries, not to shorten real evidence. With JSON
+// escaping (up to six bytes per byte) and a full list, an entry stays under
+// 128 KiB.
+const maxEntryReason = 8 * 1024
+
 // maxAuditOperationID bounds an entry's operation ID. Most are request IDs
 // a client chose, so one longer than this is replaced by a short prefix and
 // the SHA-256 of the whole ID: deterministic, so an intent and its outcome
@@ -240,7 +297,7 @@ func boundOperationID(id string) string {
 func (a *AuditLogger) Log(entry AuditEntry) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	entry.OperationID = boundOperationID(entry.OperationID)
+	entry = normalizeEntry(entry)
 
 	// Set timestamp if not provided
 	if entry.Timestamp.IsZero() {
@@ -294,7 +351,7 @@ func (a *AuditLogger) Log(entry AuditEntry) {
 func (a *AuditLogger) logDurable(entry AuditEntry) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	entry.OperationID = boundOperationID(entry.OperationID)
+	entry = normalizeEntry(entry)
 
 	if entry.Timestamp.IsZero() {
 		entry.Timestamp = time.Now().UTC()
