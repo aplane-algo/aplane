@@ -85,6 +85,7 @@ type stubServices struct {
 	getPolicyCalls         int
 	checkPolicyCalls       int
 	applyPolicyCalls       int
+	addASACalls            int
 	lastInstallTemplate    adminproto.InstallLibraryTemplateRequest
 	lastShowInstalled      adminproto.ShowInstalledTemplateRequest
 	lastShowLibrary        adminproto.ShowLibraryTemplateRequest
@@ -200,6 +201,19 @@ func (s *stubServices) ApplyPolicy(req adminproto.ApplyPolicyRequest) adminproto
 	s.applyPolicyCalls++
 	s.lastApplyPolicy = req
 	return s.applyPolicyResult
+}
+func (s *stubServices) ListASASet() adminproto.ListASASetResult {
+	return adminproto.ListASASetResult{}
+}
+func (s *stubServices) LookupASA(req adminproto.LookupASARequest) adminproto.LookupASAResult {
+	return adminproto.LookupASAResult{}
+}
+func (s *stubServices) AddASA(req adminproto.AddASARequest) adminproto.AddASAResult {
+	s.addASACalls++
+	return adminproto.AddASAResult{}
+}
+func (s *stubServices) RemoveASA(req adminproto.RemoveASARequest) adminproto.RemoveASAResult {
+	return adminproto.RemoveASAResult{}
 }
 func (s *stubServices) ListKeys() ([]adminproto.KeyInfo, error) {
 	return nil, nil

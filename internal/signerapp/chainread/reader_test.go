@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -36,6 +37,9 @@ type fakeNode struct {
 	authAddr string
 	round    uint64
 	failAcct bool
+	// asset is served at /v2/assets/<assetIndex>; assetIndex 0 serves none.
+	assetIndex uint64
+	asset      map[string]any
 }
 
 func (f *fakeNode) serve(t *testing.T) *httptest.Server {
@@ -63,6 +67,12 @@ func (f *fakeNode) serve(t *testing.T) *httptest.Server {
 				body["auth-addr"] = f.authAddr
 			}
 			_ = json.NewEncoder(w).Encode(body)
+		case strings.HasPrefix(r.URL.Path, "/v2/assets/"):
+			if f.assetIndex == 0 || r.URL.Path != fmt.Sprintf("/v2/assets/%d", f.assetIndex) {
+				http.Error(w, `{"message":"asset does not exist"}`, http.StatusNotFound)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"index": f.assetIndex, "params": f.asset})
 		default:
 			http.NotFound(w, r)
 		}
@@ -136,6 +146,34 @@ func TestReadAccountFailsClosed(t *testing.T) {
 			}
 			if _, err := r.ReadAccount(context.Background(), tt.genesis, account); !errors.Is(err, ErrUnavailable) {
 				t.Fatalf("err = %v, want ErrUnavailable", err)
+			}
+		})
+	}
+}
+
+func TestReadAssetFromTheVerifiedNode(t *testing.T) {
+	creator := types.Address{3}.String()
+	node := &fakeNode{genesis: testnetGenesis, assetIndex: 42, asset: map[string]any{
+		"creator": creator, "decimals": 6, "total": 1000, "unit-name": "XYZ", "name": "Example", "clawback": creator,
+	}}
+	params, err := readerFor(node.serve(t)).ReadAsset(context.Background(), testnetGenesis, 42)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if params.UnitName != "XYZ" || params.Decimals != 6 || params.Creator != creator || params.Clawback != creator {
+		t.Fatalf("params = %+v", params)
+	}
+}
+
+func TestReadAssetFailsClosed(t *testing.T) {
+	for name, node := range map[string]fakeNode{
+		"node on another network": {genesis: make([]byte, 32), assetIndex: 42, asset: map[string]any{"creator": types.Address{3}.String()}},
+		"no such asset":           {genesis: testnetGenesis},
+	} {
+		t.Run(name, func(t *testing.T) {
+			node := node
+			if _, err := readerFor(node.serve(t)).ReadAsset(context.Background(), testnetGenesis, 42); !errors.Is(err, ErrUnavailable) {
+				t.Fatalf("ReadAsset() error = %v, want ErrUnavailable", err)
 			}
 		})
 	}

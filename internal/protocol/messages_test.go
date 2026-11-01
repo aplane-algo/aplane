@@ -105,6 +105,14 @@ func TestMessageTypeConstantsAreUnique(t *testing.T) {
 		MsgTypeCheckPolicyResult,
 		MsgTypeApplyPolicy,
 		MsgTypeApplyPolicyResult,
+		MsgTypeListASASet,
+		MsgTypeASASet,
+		MsgTypeLookupASA,
+		MsgTypeLookupASAResult,
+		MsgTypeAddASA,
+		MsgTypeAddASAResult,
+		MsgTypeRemoveASA,
+		MsgTypeRemoveASAResult,
 		MsgTypeListCosignerReferences,
 		MsgTypeCosignerReferencesList,
 		MsgTypeGetCosignerReference,
@@ -133,9 +141,10 @@ func TestMessageTypeConstantsAreUnique(t *testing.T) {
 	}
 }
 
+// 6.1 adds the ASA set messages, which older clients do not send.
 func TestCurrentAdminProtocolVersionIsAtomicStoreV6(t *testing.T) {
-	if got := CurrentAdminProtocolVersion(); got != (ProtocolVersion{Major: 6, Minor: 0}) {
-		t.Fatalf("CurrentAdminProtocolVersion() = %+v, want 6.0", got)
+	if got := CurrentAdminProtocolVersion(); got != (ProtocolVersion{Major: 6, Minor: 1}) {
+		t.Fatalf("CurrentAdminProtocolVersion() = %+v, want 6.1", got)
 	}
 }
 

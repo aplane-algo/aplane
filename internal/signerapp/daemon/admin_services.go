@@ -11,11 +11,14 @@ import (
 	"maps"
 	"strings"
 
+	"github.com/algorand/go-algorand-sdk/v2/client/v2/common/models"
+
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/auth"
+	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/cosigner/cosignerrefs"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore"
@@ -767,7 +770,19 @@ func (s signerAdminServices) LogSessionDisconnectedContext(ctx adminserver.Sessi
 }
 
 func (s signerAdminServices) adminApp() signeradmin.Service {
-	return signeradmin.Service{Deps: signerAdminAppDeps{signer: s.signer}, Runtime: s.ProductRuntime()}
+	return signeradmin.Service{Deps: signerAdminAppDeps{signer: s.signer}, Runtime: s.ProductRuntime(), ASAChain: signerASAChain{signer: s.signer}}
+}
+
+// signerASAChain is the node's network mapping and its genesis-checked algod
+// reads, for confirming assets into the ASA set.
+type signerASAChain struct{ signer *Signer }
+
+func (c signerASAChain) Networks() apconfig.GenesisHashNetworkResolver {
+	return c.signer.genesisHashResolver()
+}
+
+func (c signerASAChain) ReadAsset(ctx context.Context, genesisHash []byte, assetID uint64) (models.AssetParams, error) {
+	return c.signer.chainReader().ReadAsset(ctx, genesisHash, assetID)
 }
 
 func (s signerAdminServices) backupApp() backupadmin.Service {

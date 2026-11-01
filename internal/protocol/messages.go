@@ -17,7 +17,7 @@ const (
 
 const (
 	AdminProtocolVersionMajor = 6
-	AdminProtocolVersionMinor = 0
+	AdminProtocolVersionMinor = 1
 )
 
 // ProtocolVersion is the admin IPC protocol version shape surfaced during
@@ -153,6 +153,17 @@ const (
 	MsgTypeCheckPolicyResult        = "check_policy_result"         // Server → client: validation problems
 	MsgTypeApplyPolicy              = "apply_policy"                // Client → server: replace policy documents in one generation commit
 	MsgTypeApplyPolicyResult        = "apply_policy_result"         // Server → client: apply result and new policy
+
+	// ASA set message types: the assets the operator confirmed, beside the
+	// built-in table.
+	MsgTypeListASASet      = "list_asa_set"      // Client → server: request the node's effective ASA set
+	MsgTypeASASet          = "asa_set"           // Server → client: built-ins and confirmations
+	MsgTypeLookupASA       = "lookup_asa"        // Client → server: read an asset from the node's algod for confirmation
+	MsgTypeLookupASAResult = "lookup_asa_result" // Server → client: what the node's algod reported
+	MsgTypeAddASA          = "add_asa"           // Client → server: add a confirmed asset
+	MsgTypeAddASAResult    = "add_asa_result"    // Server → client: add result
+	MsgTypeRemoveASA       = "remove_asa"        // Client → server: remove an operator confirmation
+	MsgTypeRemoveASAResult = "remove_asa_result" // Server → client: remove result, or the references blocking it
 
 	// Signer-owned cosigner reference and generation inventory messages.
 	MsgTypeListCosignerReferences            = "list_cosigner_references"
@@ -1428,4 +1439,98 @@ type DisplaceConfirmMessage struct {
 type DisplacedMessage struct {
 	BaseMessage
 	Reason string `json:"reason"`
+}
+
+// ASAInfo is one asset of a node's effective ASA set.
+type ASAInfo struct {
+	Network               string `json:"network,omitempty"`
+	GenesisHash           string `json:"genesis_hash"`
+	AssetID               uint64 `json:"asset_id"`
+	Name                  string `json:"name"`
+	UnitName              string `json:"unit_name"`
+	Decimals              uint64 `json:"decimals"`
+	Origin                string `json:"origin"`
+	Shadowed              bool   `json:"shadowed,omitempty"`
+	Creator               string `json:"creator,omitempty"`
+	ConfirmedAt           string `json:"confirmed_at,omitempty"`
+	NetworkAtConfirmation string `json:"network_at_confirmation,omitempty"`
+}
+
+type ListASASetMessage struct{ BaseMessage }
+
+type ASASetMessage struct {
+	BaseMessage
+	Assets []ASAInfo `json:"assets"`
+	Code   string    `json:"code,omitempty"`
+	Error  string    `json:"error,omitempty"`
+}
+
+// ASAObservation is what the node's algod reported for an asset.
+type ASAObservation struct {
+	Network       string `json:"network"`
+	GenesisHash   string `json:"genesis_hash"`
+	AssetID       uint64 `json:"asset_id"`
+	Name          string `json:"name"`
+	UnitName      string `json:"unit_name"`
+	Decimals      uint64 `json:"decimals"`
+	Total         uint64 `json:"total"`
+	DefaultFrozen bool   `json:"default_frozen"`
+	URL           string `json:"url,omitempty"`
+	Creator       string `json:"creator"`
+	Manager       string `json:"manager,omitempty"`
+	Reserve       string `json:"reserve,omitempty"`
+	Freeze        string `json:"freeze,omitempty"`
+	Clawback      string `json:"clawback,omitempty"`
+}
+
+type LookupASAMessage struct {
+	BaseMessage
+	Network string `json:"network"`
+	AssetID uint64 `json:"asset_id"`
+}
+
+type LookupASAResultMessage struct {
+	BaseMessage
+	Success bool           `json:"success"`
+	Asset   ASAObservation `json:"asset"`
+	Code    string         `json:"code,omitempty"`
+	Error   string         `json:"error,omitempty"`
+}
+
+type AddASAMessage struct {
+	BaseMessage
+	Confirmed ASAObservation `json:"confirmed"`
+}
+
+type AddASAResultMessage struct {
+	BaseMessage
+	Success         bool    `json:"success"`
+	Asset           ASAInfo `json:"asset"`
+	GenerationID    string  `json:"generation_id,omitempty"`
+	CommitUncertain bool    `json:"commit_uncertain,omitempty"`
+	Code            string  `json:"code,omitempty"`
+	Error           string  `json:"error,omitempty"`
+}
+
+type RemoveASAMessage struct {
+	BaseMessage
+	Network     string `json:"network,omitempty"`
+	GenesisHash string `json:"genesis_hash,omitempty"`
+	AssetID     uint64 `json:"asset_id"`
+}
+
+// ASAReference is a stored document's explicit reference to an asset.
+type ASAReference struct {
+	Document string `json:"document"`
+	Pointer  string `json:"pointer"`
+}
+
+type RemoveASAResultMessage struct {
+	BaseMessage
+	Success         bool           `json:"success"`
+	GenerationID    string         `json:"generation_id,omitempty"`
+	CommitUncertain bool           `json:"commit_uncertain,omitempty"`
+	Blocking        []ASAReference `json:"blocking,omitempty"`
+	Code            string         `json:"code,omitempty"`
+	Error           string         `json:"error,omitempty"`
 }

@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-// Package chainread gives the signer its own view of an account's on-chain
-// authorizer. Only the rotating signing flow uses it: the ordinary /plan and
-// /sign paths never read the chain.
+// Package chainread gives the signer its own view of chain state: an
+// account's on-chain authorizer, for the rotating signing flow, and an
+// asset's parameters, for an operator confirming it into the node's ASA set.
+// The ordinary /plan and /sign paths never read the chain.
 //
-// The node is chosen from the account's genesis hash through the signer's
+// The node is chosen from the genesis hash through the signer's
 // genesis-hash mapping and networks.<net>.algod, and its own genesis hash
 // must match before any answer is trusted. A missing mapping, a missing algod
 // entry, or a node on another network fails closed.
@@ -20,6 +21,7 @@ import (
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
+	"github.com/algorand/go-algorand-sdk/v2/client/v2/common/models"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
@@ -71,6 +73,24 @@ func (r Reader) ReadAccount(ctx context.Context, genesisHash []byte, account typ
 		return AccountView{}, fmt.Errorf("%w: node returned no round", ErrUnavailable)
 	}
 	return view, nil
+}
+
+// ReadAsset returns asset assetID's parameters from the node serving
+// genesisHash. The answer is trusted only because that node's own genesis
+// hash matched first.
+func (r Reader) ReadAsset(ctx context.Context, genesisHash []byte, assetID uint64) (models.AssetParams, error) {
+	client, err := r.client(ctx, genesisHash)
+	if err != nil {
+		return models.AssetParams{}, err
+	}
+	asset, err := client.GetAssetByID(assetID).Do(ctx)
+	if err != nil {
+		return models.AssetParams{}, fmt.Errorf("%w: read asset %d: %v", ErrUnavailable, assetID, err)
+	}
+	if asset.Index != assetID {
+		return models.AssetParams{}, fmt.Errorf("%w: node returned asset %d for asset %d", ErrUnavailable, asset.Index, assetID)
+	}
+	return asset.Params, nil
 }
 
 func (r Reader) client(ctx context.Context, genesisHash []byte) (*algod.Client, error) {

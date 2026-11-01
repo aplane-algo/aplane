@@ -41,6 +41,10 @@ type Deps interface {
 type Service struct {
 	Deps    Deps
 	Runtime *productruntime.Runtime
+	// ASAChain reads assets for the ASA set; nil leaves the set read-only.
+	ASAChain ASAChain
+	// Now is the clock for ASA set changes; nil is time.Now.
+	Now func() time.Time
 }
 
 var detectPrimaryOutboundIPv4 = primaryOutboundIPv4
