@@ -405,11 +405,11 @@ state.
 
 ### Checking policy files offline with appolicy
 
-`appolicy` browses, checks, formats, and explains policy files without a node,
+`appolicy` edits, checks, formats, and explains policy files without a node,
 a store, or a passphrase. It is installed with the signer binaries.
 
 ```bash
-appolicy policy/                    # browse the files in a terminal UI
+appolicy policy/                    # browse and edit the files in a terminal UI
 appolicy check treasury.json        # errors and warnings, by JSON Pointer
 appolicy check policy/              # every *.json file in a directory
 appolicy check --json policy/       # the same report as JSON, for CI
@@ -417,18 +417,39 @@ appolicy fmt policy/                # rewrite files in canonical form
 appolicy explain treasury.json      # one document in plain language
 ```
 
-- **Browsing.** `appolicy PATH...` (or `appolicy open PATH...`) opens a
+- **The editor.** `appolicy PATH...` (or `appolicy open PATH...`) opens a
   terminal UI on the named files. A directory lists its files; a single file
   opens straight on it. Each document is shown as an outline (summary, guards,
   fee cap, transaction types, limits, sets, transfers, routes) beside a form
   of the selected section's fields, with every problem shown on the field it
-  concerns. Fields the document lacks are marked missing, and members the
-  format does not define are listed under "Other fields", so nothing in the
-  file is hidden. Keys: enter on a field shows it in full (for a long
-  description or address list), `]` and `[` jump between problems, `p` lists them,
-  `x` explains the document, `c` compares it with the workspace default or
-  another file you pick, `r` reloads from disk, and `?` lists every key. The
-  browser only reads; editing in it comes later.
+  concerns. Fields the document lacks are marked missing, optional fields that
+  are not set are shown so they can be set, and members the format does not
+  define are listed under "Other fields", so nothing in the file is hidden.
+  - **Reading:** `v` shows a field in full, `]` and `[` jump between problems,
+    `p` lists them, `x` explains the document, `c` compares it with the
+    workspace default or another file you pick, and `?` lists every key.
+  - **Editing:** enter edits the selected field and space toggles a yes/no
+    one. Choices offer only what the node role allows; amounts are typed in
+    display units when the asset's decimals are known (the editor shows them
+    and where they came from) and stored in base units; address lists are
+    checked as you type. `a` adds to a section (a route, a set, a member, a
+    limit, a transaction type, a rekey edge), `d` removes the selected field
+    or route, and `u` and ctrl+r undo and redo. Every edit is checked at once,
+    the same way check does.
+  - **Saving:** `s` shows the changes against the file as loaded, with
+    tightened and loosened labels, and writes only after `y`, in canonical
+    form. A save that would not pass check is allowed as a draft and says so,
+    and a file's comments are not kept. If the file changed on disk, was
+    deleted, or appeared since it was loaded, nothing is written: you choose
+    to reload it (discarding your edits), save your edits to a new file, or
+    overwrite it after seeing what the overwrite replaces. The check is
+    best-effort; another program can still write the file between the check
+    and the write.
+  - **New documents:** `n` asks which document (the default or a key), what
+    it starts from (the shipped default for the role, a copy of a workspace
+    document, or a cosigner preset), and its file name, and opens it unsaved.
+  - A file that is not valid JSON opens read-only: repair it in a text
+    editor and press `r`. Quitting with unsaved edits asks first.
 - **check** decodes each file with the node's own decoder, so it reports the
   same errors at the same JSON Pointers, and the same warnings, as
   `apadmin policy check`. It exits 0 when no file has an error and 1 when one
@@ -473,8 +494,8 @@ The earlier `appolicy` edited a node's policy. Its command shapes map to
 | `appolicy --save` | `apadmin policy rescue apply -` |
 
 There is no wrapper or automatic online-to-rescue fallback. A former command
-line that names a file now opens that file in the browser described above,
-which only reads it.
+line that names a file now opens that file in the editor described above,
+which writes nothing until you save.
 
 `apadmin policy rescue` is the stopped-service rescue command family. It takes
 the same verbs, reads the store named by `APSIGNER_DATA` or `-d` directly, and
@@ -1081,7 +1102,7 @@ allow-list is what you add.
 Before relying on a policy:
 
 1. While writing, run `appolicy check FILE` and `appolicy explain FILE`, or
-   browse the file with `appolicy FILE`; they need no node. Then run `apadmin policy check FILE` (or `apadmin policy
+   edit the file with `appolicy FILE`; they need no node. Then run `apadmin policy check FILE` (or `apadmin policy
    rescue check FILE` while the daemon is stopped), which also checks the
    file against the node's keys, and read its warnings.
 2. Confirm the route miss behavior is intentional, especially

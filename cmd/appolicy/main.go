@@ -90,8 +90,9 @@ func usage(w io.Writer) {
 PATH is a policy file, or a directory whose *.json files are policy files.
 Each document is identified by its "key" field, not its file name.
 
-  open     browse the files in a terminal UI: each document's outline, its
-           fields, and their problems. A path in place of a command opens it.
+  open     browse and edit the files in a terminal UI: each document's
+           outline, its fields and their problems; edits are saved only after
+           a review. A path in place of a command opens it.
   check    report each file's errors and warnings, by JSON Pointer.
            Exit 0 when no file has an error, 1 when one does.
   fmt      rewrite files in canonical form. A file that is not JSON is left

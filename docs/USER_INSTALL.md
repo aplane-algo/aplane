@@ -755,7 +755,7 @@ This produces statically linked binaries in `bin/`:
 | `aplocalnet` | LocalNet setup TUI/CLI for apshell default network, signer config, plugin activation, and KMD override persistence |
 | `appass-file` | Development-only plaintext passphrase helper |
 | `approbe` | Installer/helper liveness probe and canonical signer IPC-path resolver |
-| `appolicy` | Offline policy file browser, check, format, and explain |
+| `appolicy` | Offline policy file editor, check, format, and explain |
 | `apshell` | Transaction shell (client) |
 
 `applugin-checksum` is built by `make all` through the bundled-plugin build
