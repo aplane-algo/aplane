@@ -4,6 +4,7 @@
 package authortui
 
 import (
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -11,6 +12,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyauthor"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 )
 
 const (
@@ -190,33 +192,84 @@ func TestTryEditsDropTheAnswer(t *testing.T) {
 	}
 }
 
-func TestTryFormStaysVisibleWithALongAnswer(t *testing.T) {
+// pageThrough pages the try screen from the top to the end and back,
+// returning every body line it showed, without styling.
+func pageThrough(t *testing.T, m Model) map[string]bool {
+	t.Helper()
+	seen := map[string]bool{}
+	record := func() {
+		for _, l := range strings.Split(view(m), "\n") {
+			seen[strings.TrimRight(l, " ")] = true
+		}
+	}
+	m.try.offset = 0
+	record()
+	for i := 0; i < 50; i++ {
+		before := m.try.offset
+		m, _ = press(t, m, "pgdown")
+		record()
+		if m.try.offset == before {
+			break
+		}
+	}
+	for i := 0; i < 50 && m.try.offset > 0; i++ {
+		m, _ = press(t, m, "pgup")
+		record()
+	}
+	if m.try.offset != 0 {
+		t.Fatalf("pgup did not return to the top: offset %d", m.try.offset)
+	}
+	return seen
+}
+
+func TestTryScreenPagingReachesEveryLine(t *testing.T) {
+	ws, _ := workspace(t, map[string][]byte{"treasury.json": fixture(t, "signer_key_full.json")})
+	// Heights where the form is pinned and the answer scrolls, and where the
+	// form itself does not fit and everything scrolls.
+	for _, height := range []int{14, 15, 16, 18, 19, 20, 21, 24} {
+		t.Run(fmt.Sprint(height), func(t *testing.T) {
+			m := New(ws, nil, nil)
+			m.width, m.height = 80, height
+			// A testnet transfer to ops misses every route: a rejection with
+			// its violation, the summary and the assumptions.
+			m, _ = press(t, m, "t", "down", opsMainnet, "down", "1", "enter")
+			if m.try.result == nil {
+				t.Fatalf("no answer: %q", m.try.err)
+			}
+			// The status line and footer take the last two rows.
+			if lines := strings.Count(m.tryView(), "\n") + 1; lines > height-2 {
+				t.Fatalf("try body is %d lines, over %d", lines, height-2)
+			}
+			seen := pageThrough(t, m)
+			vp := m.tryViewport()
+			for _, l := range append(append([]string(nil), vp.pinned...), vp.body...) {
+				want := strings.TrimRight(ansi.Strip(ansi.Truncate(l, m.width, "…")), " ")
+				if !seen[want] {
+					t.Fatalf("paging never showed %q", want)
+				}
+			}
+		})
+	}
+}
+
+func TestTryShortTerminalKeepsTheFocusedFieldInView(t *testing.T) {
 	ws, _ := workspace(t, map[string][]byte{"treasury.json": fixture(t, "signer_key_full.json")})
 	m := New(ws, nil, nil)
-	m.width, m.height = 80, 20
-	// A testnet transfer to ops misses every route: a rejection with its
-	// violation, the summary and six assumptions overflow 20 rows.
-	m, _ = press(t, m, "t", "down", opsMainnet, "down", "1", "enter", "up", "up", "up")
-	if m.try.cursor != tryNetwork || m.try.result == nil {
-		t.Fatalf("cursor %d result %+v", m.try.cursor, m.try.result)
+	m.width, m.height = 80, 10
+	m, _ = press(t, m, "t")
+	for i := 0; i < tryFieldCount; i++ {
+		m, _ = press(t, m, "down")
+		label := tryLabels[m.try.cursor]
+		if !strings.Contains(view(m), label) {
+			t.Fatalf("focused field %q is not shown:\n%s", label, view(m))
+		}
 	}
-	out := view(m)
-	if !strings.Contains(out, "Network") || !strings.Contains(out, "From") || !strings.Contains(out, "more line(s): pgdown") {
-		t.Fatalf("the form or the scroll hint is hidden:\n%s", out)
+	// Typing in a field low in the form keeps it in view.
+	for m.try.cursor != tryRekeyTo {
+		m, _ = press(t, m, "down")
 	}
-	if strings.Contains(out, "refusals the signer makes before policy") {
-		t.Fatalf("the last assumption fits; make the answer longer:\n%s", out)
-	}
-	m, _ = press(t, m, "pgdown")
-	out = view(m)
-	if !strings.Contains(out, "refusals the signer makes before policy") || !strings.Contains(out, "Network") {
-		t.Fatalf("pgdown did not reach the end of the answer, or hid the form:\n%s", out)
-	}
-	m, _ = press(t, m, "pgdown", "pgdown", "pgup")
-	if m.try.offset != 0 {
-		t.Fatalf("offset after pgup = %d, want 0: pgdown overshot the end", m.try.offset)
-	}
-	if lines := strings.Count(view(m), "\n") + 1; lines > m.height {
-		t.Fatalf("view is %d lines, over the terminal's %d", lines, m.height)
+	m, _ = press(t, m, "x")
+	if !strings.Contains(view(m), tryLabels[tryRekeyTo]) {
+		t.Fatalf("the field being typed in scrolled away:\n%s", view(m))
 	}
 }

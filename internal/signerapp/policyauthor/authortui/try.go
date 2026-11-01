@@ -125,12 +125,12 @@ func (m Model) tryKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "up", "shift+tab":
 		t.focus(t.cursor - 1)
-		return m, nil
+		return m.revealFocus(), nil
 	case "down", "tab":
 		t.focus(t.cursor + 1)
-		return m, nil
+		return m.revealFocus(), nil
 	case "enter":
-		return m.runTry(), nil
+		return m.runTry().revealFocus(), nil
 	case "ctrl+s":
 		if t.result == nil {
 			t.err = "Try the transaction first (enter), then keep its answer as a case"
@@ -138,19 +138,20 @@ func (m Model) tryKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		t.naming = true
 		t.name = m.newInput("")
-		return m, nil
+		return m.revealFocus(), nil
 	case "pgdown":
-		h := max(1, m.tryResultHeight())
-		t.offset = min(t.offset+h, max(0, len(m.tryResultLines())-h))
+		vp := m.tryViewport()
+		t.offset = min(vp.offset(t.offset)+vp.content, vp.maxOffset)
 		return m, nil
 	case "pgup":
-		t.offset = max(0, t.offset-max(1, m.tryResultHeight()))
+		vp := m.tryViewport()
+		t.offset = max(0, vp.offset(t.offset)-vp.content)
 		return m, nil
 	case " ":
 		if t.cursor == tryRekeyHeld {
 			t.held = !t.held
 			t.edited()
-			return m, nil
+			return m.revealFocus(), nil
 		}
 	}
 	if t.cursor == tryRekeyHeld {
@@ -162,7 +163,7 @@ func (m Model) tryKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if t.inputs[t.cursor].Value() != before {
 		t.edited()
 	}
-	return m, cmd
+	return m.revealFocus(), cmd
 }
 
 // tryTxn reads the form.
@@ -325,32 +326,67 @@ func (m Model) tryResultLines() []string {
 	return lines
 }
 
-// tryResultHeight is the rows left for the answer below the form.
-func (m Model) tryResultHeight() int {
-	return m.height - 2 - len(m.tryFormLines())
+// tryViewport lays the try screen out. When the terminal has room, the form
+// is pinned at the top and only the answer scrolls; otherwise form and
+// answer scroll together. Either way a scrolled body keeps one row for its
+// position, so paging by content rows reaches every line.
+type tryViewport struct {
+	pinned    []string // shown in full above the body
+	body      []string // scrolled
+	content   int      // body rows shown at once
+	maxOffset int
+	// focusLine is the focused field's line in body, -1 when it is pinned.
+	focusLine int
 }
 
-// tryView shows the whole form and, below it, as much of the answer as fits,
-// scrolled with pgup and pgdown. A terminal too short for the form shows the
-// part around the focused field.
-func (m Model) tryView() string {
-	form := m.tryFormLines()
-	result := m.tryResultLines()
-	var lines []string
-	if h := m.tryResultHeight(); h < 2 {
-		focus := 2 + m.try.cursor
+func (m Model) tryViewport() tryViewport {
+	form, result := m.tryFormLines(), m.tryResultLines()
+	rows := max(3, m.height-2)
+	vp := tryViewport{pinned: form, body: result, focusLine: -1}
+	if rows-len(form) < 2 {
+		vp.pinned, vp.body = nil, append(form, result...)
+		vp.focusLine = 2 + m.try.cursor
 		if m.try.naming {
-			focus = len(form) - 2
+			vp.focusLine = len(form) - 2
 		}
-		lines = window(append(form, result...), focus, max(3, m.height-2))
-	} else {
-		offset := max(0, min(m.try.offset, len(result)-h))
-		end := min(len(result), offset+h)
-		shown := result[offset:end]
-		if end < len(result) {
-			shown = append(shown[:len(shown)-1], m.styles.subtle.Render(fmt.Sprintf("… %d more line(s): pgdown", len(result)-end+1)))
-		}
-		lines = append(form, shown...)
+	}
+	avail := rows - len(vp.pinned)
+	vp.content = avail
+	if len(vp.body) > avail {
+		vp.content = avail - 1
+	}
+	vp.maxOffset = max(0, len(vp.body)-vp.content)
+	return vp
+}
+
+// offset is o clamped to the viewport.
+func (vp tryViewport) offset(o int) int { return max(0, min(o, vp.maxOffset)) }
+
+// revealFocus scrolls a form that does not fit so the focused field shows.
+func (m Model) revealFocus() Model {
+	vp := m.tryViewport()
+	if vp.focusLine < 0 {
+		return m
+	}
+	o := vp.offset(m.try.offset)
+	switch {
+	case vp.focusLine < o:
+		o = vp.focusLine
+	case vp.focusLine >= o+vp.content:
+		o = vp.focusLine - vp.content + 1
+	}
+	m.try.offset = vp.offset(o)
+	return m
+}
+
+// tryView shows the form and the answer, scrolled with pgup and pgdown.
+func (m Model) tryView() string {
+	vp := m.tryViewport()
+	o := vp.offset(m.try.offset)
+	end := min(len(vp.body), o+vp.content)
+	lines := append(append([]string(nil), vp.pinned...), vp.body[o:end]...)
+	if len(vp.body) > vp.content {
+		lines = append(lines, m.styles.subtle.Render(fmt.Sprintf("lines %d-%d of %d: pgup/pgdown", o+1, end, len(vp.body))))
 	}
 	for i, l := range lines {
 		lines[i] = ansi.Truncate(l, m.width, "…")
