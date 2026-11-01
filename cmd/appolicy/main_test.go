@@ -13,6 +13,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func fixture(t *testing.T, name string) []byte {
@@ -169,8 +171,8 @@ func TestRetiredAndUnknownInvocations(t *testing.T) {
 			t.Fatalf("%v: exit %d: %s", args, code, errOut)
 		}
 	}
-	if code, _, errOut := appolicy("policy.json"); code != exitUsage || !strings.Contains(errOut, "appolicy check policy.json") {
-		t.Fatalf("bare file: exit %d: %s", code, errOut)
+	if code, _, errOut := appolicy("missing.json"); code != exitUsage || !strings.Contains(errOut, "is not a command or a file") {
+		t.Fatalf("missing bare file: exit %d: %s", code, errOut)
 	}
 	if code, _, _ := appolicy("frobnicate"); code != exitUsage {
 		t.Fatalf("unknown command: exit %d", code)
@@ -198,5 +200,34 @@ func TestCheckValidatesNamedFilesTogether(t *testing.T) {
 	c := put(t, t.TempDir(), "c.json", fixture(t, "cosigner_key_minimal.json"))
 	if code, out, _ := appolicy("check", a, c); code != exitProblems || !strings.Contains(out, "for a cosigner node") {
 		t.Fatalf("mixed roles named as files: exit %d\n%s", code, out)
+	}
+}
+
+// TestOpenRunsTheTUIOnTheWorkspace: open, or a path in place of a command,
+// runs the TUI on every named path as one workspace.
+func TestOpenRunsTheTUIOnTheWorkspace(t *testing.T) {
+	dir := t.TempDir()
+	a := put(t, dir, "a.json", fixture(t, "signer_default.json"))
+	b := put(t, dir, "b.json", fixture(t, "signer_key_full.json"))
+	var ran []tea.Model
+	saved := runProgram
+	runProgram = func(m tea.Model) error { ran = append(ran, m); return nil }
+	t.Cleanup(func() { runProgram = saved })
+
+	for _, args := range [][]string{{"open", a, b}, {dir}, {"open", "--signer-data", t.TempDir(), dir}} {
+		if code, _, errOut := appolicy(args...); code != exitOK {
+			t.Fatalf("%v: exit %d: %s", args, code, errOut)
+		}
+	}
+	if len(ran) != 3 {
+		t.Fatalf("the TUI ran %d times, want 3", len(ran))
+	}
+	for _, m := range ran {
+		if view := m.View(); !strings.Contains(view, "a.json") || !strings.Contains(view, "b.json") {
+			t.Fatalf("the TUI does not list both files:\n%s", view)
+		}
+	}
+	if code, _, _ := appolicy("open"); code != exitUsage {
+		t.Fatalf("open with no path: exit %d", code)
 	}
 }
