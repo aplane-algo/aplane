@@ -1357,6 +1357,17 @@ leaves effective permissions unchanged (term order, or a cosigner `*` entry
 written out or omitted) is still applied, and `diff` reports it as "the
 document differs, but effective permissions are unchanged".
 
+Admission (`internal/policyadmission`, run by `policyapply.Candidate`)
+refuses a submitted document that names a network the node does not map, an
+asset outside its ASA set, a direct `asa:<id>` route term over several
+networks or `*`, or a route with no asset alternative on one of its networks
+(a union over the route's sets, `algo` and `*`). It is not part of decoding or
+compilation: stored documents are never checked at startup, restore,
+rollback, rotation or runtime publication, keep their meaning, and report the
+same problems as status alerts (`policyadmission.StoredAlerts`), so a legacy
+document never blocks an unrelated apply or ASA set change. Submitting it
+again, even unchanged, requires fixing it; removing it does not.
+
 `check`, `diff` and `apply` select the context of the export their files
 come from (`policyexport.Discover`; `--node-context FILE` overrides it,
 `--no-node-context` selects none) and, before any review, refuse with
