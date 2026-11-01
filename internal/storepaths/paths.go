@@ -106,6 +106,11 @@ func ValidateKeyTypeComponent(keyType string) error {
 // generation root, on both node roles.
 const DefaultPolicyFileName = "default.json"
 
+// ASASetFileName is the node's ASA set (its operator's asset
+// confirmations) at a generation root. Its absence means the built-in
+// assets only.
+const ASASetFileName = "asa_set.json"
+
 var (
 	witnessKeyIDPattern = regexp.MustCompile(`^[A-Z2-7]{52}$`)
 	addressPattern      = regexp.MustCompile(`^[A-Z2-7]{58}$`)

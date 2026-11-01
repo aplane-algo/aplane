@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
+	"github.com/aplane-algo/aplane/internal/asaset"
+	"github.com/aplane-algo/aplane/internal/asasetstore"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/noderole"
@@ -478,4 +480,88 @@ func testKeyringForStore(t *testing.T, paths utilkeys.Paths, passphrase []byte) 
 	}
 	t.Cleanup(kr.Zero)
 	return kr
+}
+
+// unlockWithASASet initializes a store, writes set into its current
+// generation, damages it if asked, and unlocks a product runtime over it.
+func unlockWithASASet(t *testing.T, set *asaset.Set, damage bool) (*productruntime.Runtime, error) {
+	t.Helper()
+	RegisterProviders()
+	root := t.TempDir()
+	keyPaths := utilkeys.NewPaths(root)
+	cfg := serverconfig.DefaultServerConfig()
+	passphrase := []byte("asa-set-passphrase")
+	if _, err := storeinit.Initialize(passphrase, storeinit.Options{ValidateCandidate: storevalidate.FirstGeneration,
+		DataDir: root,
+		Paths:   keyPaths,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	kr := testKeyringForStore(t, keyPaths, passphrase)
+	active, err := genstore.ResolveStoreRootWithKeyring(keyPaths, kr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := asasetstore.Write(active, set, kr, time.Unix(1700000000, 0)); err != nil {
+		t.Fatal(err)
+	}
+	if damage {
+		if err := os.WriteFile(active.ASASetIntegritySidecar(), []byte("damaged"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ir, err := signerstartup.BuildProductRuntime(signerstartup.ProductBuildOptions{
+		DataDir:               root,
+		KeyPaths:              keyPaths,
+		Config:                &cfg,
+		DefaultSessionTimeout: 15 * time.Minute,
+	}, signerstartup.ProductBuildHooks{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if np, set := ir.PolicyState(); np != nil || set != nil {
+		t.Fatal("PolicyState() before unlock is not empty")
+	}
+	_, err = ir.ReloadWithPassphrase(passphrase)
+	return ir, err
+}
+
+func testASASet(t *testing.T) *asaset.Set {
+	t.Helper()
+	set, err := asaset.New([]asaset.Entry{{
+		Identity:              asaset.Identity{Genesis: asaset.GenesisHash{1}, AssetID: 7},
+		UnitName:              "XYZ",
+		Decimals:              2,
+		Creator:               "CEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI7JH2AYM",
+		ConfirmedAt:           time.Unix(1700000000, 0),
+		NetworkAtConfirmation: "private-dev",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return set
+}
+
+func TestUnlockLoadsTheASASetWithPolicy(t *testing.T) {
+	ir, err := unlockWithASASet(t, testASASet(t), false)
+	if err != nil {
+		t.Fatalf("ReloadWithPassphrase() error = %v", err)
+	}
+	np, set := ir.PolicyState()
+	if np == nil || np != ir.NodePolicy() {
+		t.Fatal("PolicyState() policy is not the node's policy after unlock")
+	}
+	if set == nil || len(set.Entries()) != 1 || set.Entries()[0].UnitName != "XYZ" {
+		t.Fatalf("PolicyState() set = %+v, want the stored set", set)
+	}
+}
+
+func TestUnlockRejectsADamagedASASet(t *testing.T) {
+	ir, err := unlockWithASASet(t, testASASet(t), true)
+	if err == nil || !strings.Contains(err.Error(), "asa set") {
+		t.Fatalf("ReloadWithPassphrase() error = %v, want an asa set integrity failure", err)
+	}
+	if np, set := ir.PolicyState(); np != nil || set != nil {
+		t.Fatalf("after a failed unlock: policy %v, set %v; want neither installed", np != nil, set != nil)
+	}
 }

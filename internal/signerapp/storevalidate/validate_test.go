@@ -6,8 +6,14 @@ package storevalidate_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
+	"github.com/algorand/go-algorand-sdk/v2/types"
+
+	"github.com/aplane-algo/aplane/internal/asaset"
+	"github.com/aplane-algo/aplane/internal/asasetstore"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
@@ -36,6 +42,13 @@ func TestRecoveryDestinationRefusesDamageOutsideSelectedCredential(t *testing.T)
 		},
 		"deleted archive": func(t *testing.T, active storepaths.GenPaths) {
 			writeDamage(t, filepath.Join(active.DeletedKeysDir(), "BAD.key"))
+		},
+		"asa set sidecar without its set": func(t *testing.T, active storepaths.GenPaths) {
+			writeDamage(t, active.ASASetIntegritySidecar())
+		},
+		"unauthenticated asa set": func(t *testing.T, active storepaths.GenPaths) {
+			writeDamage(t, active.ASASetPath())
+			writeDamage(t, active.ASASetIntegritySidecar())
 		},
 	}
 	for name, damage := range tests {
@@ -70,5 +83,50 @@ func writeDamage(t *testing.T, path string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte("damaged"), 0o600); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// A valid ASA set passes candidate validation; the same store with the set's
+// sidecar damaged does not.
+func TestCandidateAuthenticatesTheASASet(t *testing.T) {
+	clientreg.RegisterClient()
+	root := t.TempDir()
+	paths := storepaths.NewPaths(root)
+	passphrase := []byte("storevalidate-test-passphrase")
+	if _, err := storeinit.Initialize(passphrase, storeinit.Options{ValidateCandidate: storevalidate.FirstGeneration,
+		DataDir: root, Paths: paths, Role: noderole.RoleSigner,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	active, kr, err := genstore.ResolveStoreRoot(paths, passphrase)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer kr.Zero()
+	set, err := asaset.New([]asaset.Entry{{
+		Identity:              asaset.Identity{Genesis: asaset.GenesisHash{1}, AssetID: 7},
+		UnitName:              "XYZ",
+		Decimals:              2,
+		Creator:               types.Address{3}.String(),
+		ConfirmedAt:           time.Unix(1_785_200_000, 0),
+		NetworkAtConfirmation: "private-dev",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := asasetstore.Write(active, set, kr, time.Unix(1_785_200_000, 0)); err != nil {
+		t.Fatal(err)
+	}
+	opts := storevalidate.Options{
+		Paths: paths, Candidate: active, Keyring: kr,
+		ExpectedRole: noderole.RoleSigner, DataDir: root,
+		Config: &serverconfig.ServerConfig{},
+	}
+	if err := storevalidate.Candidate(opts); err != nil {
+		t.Fatalf("Candidate() with a valid asa set error = %v", err)
+	}
+	writeDamage(t, active.ASASetIntegritySidecar())
+	if err := storevalidate.Candidate(opts); err == nil || !strings.Contains(err.Error(), "asa set") {
+		t.Fatalf("Candidate() with a damaged asa set sidecar error = %v", err)
 	}
 }

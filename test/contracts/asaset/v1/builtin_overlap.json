@@ -1,0 +1,15 @@
+{
+  "format": "aplane.asa-set.v1",
+  "assets": [
+    {
+      "genesis_hash": "wGHE2Pwdvd7S12BL5FaOP20EGYesN73ktiC1qzkkit8=",
+      "asset_id": 31566704,
+      "name": "Example token",
+      "unit_name": "XYZ",
+      "decimals": 6,
+      "creator": "A4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADV34KYE",
+      "confirmed_at": "2026-11-01T12:00:00Z",
+      "network_at_confirmation": "private-dev"
+    }
+  ]
+}

@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/aplane-algo/aplane/internal/asasetstore"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/genstore"
@@ -113,6 +114,10 @@ func validateDestinationAuthority(opts Options) error {
 		opts.ExpectedRole, opts.DataDir, opts.Config, opts.Candidate, opts.Keyring,
 	); err != nil {
 		return fmt.Errorf("policy: %w", err)
+	}
+	// The ASA set is optional, but one that is present must authenticate.
+	if _, err := asasetstore.Load(opts.Candidate, opts.Keyring); err != nil {
+		return fmt.Errorf("asa set: %w", err)
 	}
 
 	manager := signertemplates.NewManager(opts.Paths)

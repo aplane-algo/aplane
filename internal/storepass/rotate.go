@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/asasetstore"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/genstore"
@@ -297,7 +298,7 @@ func reencryptSealedGeneration(
 		} else if entry.Term != 0 {
 			return counts, fmt.Errorf("plaintext member %s carries term %d", entry.Path, entry.Term)
 		}
-		if entry.Path == "node.yaml.hmac" || isPolicySidecarMember(entry.Path) {
+		if entry.Path == "node.yaml.hmac" || isPolicySidecarMember(entry.Path) || entry.Path == asaSetSidecarMember {
 			continue
 		}
 		if err := os.WriteFile(filepath.Join(staged.Dir(), filepath.FromSlash(entry.Path)), output, 0o600); err != nil {
@@ -321,6 +322,10 @@ func reencryptSealedGeneration(
 			return counts, err
 		}
 		counts.policies++
+	}
+
+	if err := resignASASetMember(staged, members, oldKeyring, successorKeyring, now); err != nil {
+		return counts, err
 	}
 
 	nodeSidecar, err := noderole.ParseSidecar(members["node.yaml.hmac"])
@@ -347,7 +352,8 @@ func reencryptSealedGeneration(
 func generationMemberContext(relative string) (crypto.ObjectContext, bool, string, error) {
 	base := filepath.Base(relative)
 	switch {
-	case relative == "node.yaml.hmac", isPolicyDocumentMember(relative), isPolicySidecarMember(relative):
+	case relative == "node.yaml.hmac", isPolicyDocumentMember(relative), isPolicySidecarMember(relative),
+		relative == storepaths.ASASetFileName, relative == asaSetSidecarMember:
 		return crypto.ObjectContext{}, false, "", nil
 	case strings.HasPrefix(relative, "keys/"), strings.HasPrefix(relative, "deleted/keys/"):
 		if strings.HasSuffix(base, keys.WitnessPublicMetadataSuffix) {
@@ -432,6 +438,30 @@ func resignPolicyMember(staged storepaths.GenPaths, role noderole.Role, relative
 		return err
 	}
 	return os.WriteFile(filepath.Join(staged.Dir(), filepath.FromSlash(relative+".hmac")), newSidecarBytes, 0o600)
+}
+
+// asaSetSidecarMember is the ASA set's sidecar as a generation member.
+const asaSetSidecarMember = storepaths.ASASetFileName + ".hmac"
+
+// resignASASetMember verifies the outgoing ASA set's sidecar under the old
+// keyring and writes one signed by the successor. A generation without a set
+// has neither file; one of the pair alone fails.
+func resignASASetMember(staged storepaths.GenPaths, members map[string][]byte, oldKeyring, successorKeyring *crypto.Keyring, now time.Time) error {
+	data, hasSet := members[storepaths.ASASetFileName]
+	sidecarBytes, hasSidecar := members[asaSetSidecarMember]
+	switch {
+	case !hasSet && !hasSidecar:
+		return nil
+	case !hasSidecar:
+		return fmt.Errorf("outgoing %s has no sidecar", storepaths.ASASetFileName)
+	case !hasSet:
+		return fmt.Errorf("outgoing %s has no %s", asaSetSidecarMember, storepaths.ASASetFileName)
+	}
+	resigned, err := asasetstore.Resign(data, sidecarBytes, oldKeyring, successorKeyring, now)
+	if err != nil {
+		return fmt.Errorf("re-sign outgoing asa set: %w", err)
+	}
+	return os.WriteFile(staged.ASASetIntegritySidecar(), resigned, 0o600)
 }
 
 func updatePassphraseHelper(result *RotateResult, opts RotateOptions) {

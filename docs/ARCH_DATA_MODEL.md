@@ -99,7 +99,8 @@ Important vocabulary:
 
 - the fixed product keystore and key files,
 - product runtime config, policy documents (`default.json` and
-  `policies/<selector>.json`), the enrolled-client registry, the persisted
+  `policies/<selector>.json`), the ASA set (`asa_set.json`), the
+  enrolled-client registry, the persisted
   enrollment queue (`.ssh/pending_enrollments.json`), and key type state,
 - encrypted installed templates,
 - rotating stage tables (`stages/<address>.stages`, a rebuildable cache),
@@ -169,6 +170,7 @@ DTOs and contract fixtures.
 | Component signing request | Request-scoped | canonical group bytes and target indices | per-target user or cosigner component signatures | `/sign/component` | `internal/signerapp/signing`, `pkg/signerapi` |
 | Guarded assembly request | Request-scoped | user and cosigner component signatures plus group bytes | assembled signed group bytes | `/sign/assemble` | `internal/signerapp/signing`, `pkg/signerapi` |
 | App call metadata | Request-scoped | caller/engine prepared request | approval description context | `app_call_info` | `pkg/signerapi`, `internal/engine`, `internal/signerapp/signing` |
+| ASA set | Signer identity | `asa_set.json` plus `asa_set.json.hmac` at the generation root (`aplane.asa-set.v1`), optional; entries keyed by genesis hash and asset ID | `asaset.Set`, published with `NodePolicy` by `productruntime.Runtime.SetVerifiedPolicyState`; `asaset.Effective` adds the built-in table | (management arrives with the ASA set admin commands) | `internal/asaset`, `internal/asasetstore`, `internal/policycontext` |
 | ASA metadata | Network-scoped cache | `cache/<network>_asa_cache.json` | operation-local metadata lookup | admin ASA search/resolve, client display | client: `internal/cache`, `internal/asa`; signer: `internal/signerapp/asametadata.Store` |
 | Client alias/set/auth/signer caches | Client data dir | `APCLIENT_DATA/cache/*.json` | client state snapshots | shell/MCP structured output | `internal/clientstate`, `internal/cache`, `internal/refname` for alias/set names |
 | Plugin | Client data dir | `plugins.available/<name>`, `plugins.yaml`, checksums | plugin manager process state | plugin JSON-RPC result | `internal/plugin`, `internal/apshellcli` |
@@ -270,6 +272,8 @@ identities/default/
     keytypes/*.template    # encrypted template documents
     default.json           # node default policy, both roles
     default.json.hmac
+    asa_set.json           # optional ASA set: the operator's asset confirmations, both roles
+    asa_set.json.hmac
     policies/<selector>.json           # per-key policy, both roles: address on signer nodes, Witness Key ID on cosigner nodes
     policies/<selector>.json.hmac
     node.yaml.hmac

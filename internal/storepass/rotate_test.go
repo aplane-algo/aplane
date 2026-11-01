@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/asaset"
+	"github.com/aplane-algo/aplane/internal/asasetstore"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/genstore"
@@ -72,6 +74,10 @@ func newRotateFixture(t *testing.T) rotateFixture {
 			if err := policy.ArchiveKeyPolicy(staged, rotateArchivedPolicyKey); err != nil {
 				return err
 			}
+			// An ASA set: rotation must re-sign its sidecar.
+			if err := asasetstore.Write(staged, rotateASASet(t), kr, time.Unix(1_785_200_000, 0)); err != nil {
+				return err
+			}
 			fixture.accountPath = filepath.Join(staged.KeysDir(), "ACCOUNT.key")
 			fixture.deletedPath = filepath.Join(staged.DeletedKeysDir(), "DELETED.key")
 			fixture.templatePath = staged.KeyTypeTemplate("example.v1")
@@ -106,6 +112,22 @@ func newRotateFixture(t *testing.T) rotateFixture {
 	fixture.templatePath = active.KeyTypeTemplate("example.v1")
 	fixture.deletedTplPath = active.DeletedKeyTypeTemplate("removed.v1")
 	return fixture
+}
+
+func rotateASASet(t *testing.T) *asaset.Set {
+	t.Helper()
+	set, err := asaset.New([]asaset.Entry{{
+		Identity:              asaset.Identity{Genesis: asaset.GenesisHash{1}, AssetID: 7},
+		UnitName:              "XYZ",
+		Decimals:              2,
+		Creator:               rotateArchivedPolicyKey,
+		ConfirmedAt:           time.Unix(1_785_200_000, 0),
+		NetworkAtConfirmation: "private-dev",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return set
 }
 
 const rotateArchivedPolicyKey = "CEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI7JH2AYM"
@@ -187,6 +209,10 @@ func TestRotatePublishesCompleteFreshTermSuccessor(t *testing.T) {
 	}
 	if _, err := noderole.LoadAndVerifyGenerationWithKeyring(fixture.paths, active, kr); err != nil {
 		t.Fatalf("successor node role verification: %v", err)
+	}
+	set, err := asasetstore.Load(active, kr)
+	if err != nil || len(set.Entries()) != 1 {
+		t.Fatalf("successor asa set = %+v, %v; want it re-signed for the successor term", set, err)
 	}
 	anchor, ok := kr.HistoricalGenerationAnchor(rotateFirstGeneration)
 	if !ok {

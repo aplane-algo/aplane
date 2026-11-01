@@ -24,6 +24,8 @@ type ActivePaths interface {
 	PolicyPath(selector string) string
 	DeletedPoliciesDir() string
 	NodeRoleIntegritySidecar() string
+	ASASetPath() string
+	ASASetIntegritySidecar() string
 }
 
 var _ ActivePaths = GenPaths{}

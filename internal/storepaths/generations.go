@@ -184,6 +184,17 @@ func (g GenPaths) DefaultPolicyIntegritySidecar() string {
 	return filepath.Join(g.root, DefaultPolicyFileName+".hmac")
 }
 
+// ASASetPath is the generation-owned ASA set.
+func (g GenPaths) ASASetPath() string {
+	return filepath.Join(g.root, ASASetFileName)
+}
+
+// ASASetIntegritySidecar is the generation-owned integrity record of the ASA
+// set.
+func (g GenPaths) ASASetIntegritySidecar() string {
+	return filepath.Join(g.root, ASASetFileName+".hmac")
+}
+
 // PoliciesDir is the generation's per-key policy namespace.
 func (g GenPaths) PoliciesDir() string {
 	return filepath.Join(g.root, "policies")

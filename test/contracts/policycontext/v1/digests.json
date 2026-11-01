@@ -1,0 +1,42 @@
+[
+  {
+    "name": "signer with a built-in and an operator asset on a custom chain",
+    "role": "signer",
+    "rules_version": 1,
+    "networks": {
+      "mainnet": "wGHE2Pwdvd7S12BL5FaOP20EGYesN73ktiC1qzkkit8=",
+      "private-dev": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="
+    },
+    "assets": [
+      {
+        "genesis_hash": "wGHE2Pwdvd7S12BL5FaOP20EGYesN73ktiC1qzkkit8=",
+        "asset_id": 31566704,
+        "origin": "builtin",
+        "decimals": 6,
+        "unit_name": "USDC",
+        "name": "USDC"
+      },
+      {
+        "genesis_hash": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=",
+        "asset_id": 1234567,
+        "origin": "operator",
+        "decimals": 2,
+        "unit_name": "XYZ",
+        "name": "Ünïcode name"
+      }
+    ],
+    "policy_set_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "context_sha256": "0009cfa792e0837afbeb3f82c5e9842125d779b435850462b5a2705ef28c701a",
+    "snapshot_sha256": "54f6c777162df0fb1b3f5037c7748b54f4b9c0e61d68633c0b554c82c8686497"
+  },
+  {
+    "name": "cosigner with no networks or assets",
+    "role": "cosigner",
+    "rules_version": 1,
+    "networks": {},
+    "assets": [],
+    "policy_set_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "context_sha256": "d4cae6c10feb12fa7dbfe81ccc405091dcab2c800ba9e090033d52505f19e3bc",
+    "snapshot_sha256": "72f63de8333290cf5a53c2822fef104ea47b6ed39663bbc713fbc845bea94a4a"
+  }
+]
