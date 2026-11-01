@@ -5,6 +5,8 @@ package authortui
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -239,5 +241,24 @@ func TestRekeyEdgesShowWholeAddresses(t *testing.T) {
 	}
 	if out := view(m); !strings.Contains(out, "EI7JH2AYM") {
 		t.Fatalf("the end of the sender is not on screen:\n%s", out)
+	}
+}
+
+// TestEmptyWorkspaceKeysAndReload: moving in an empty workspace and then
+// reloading after a file appears leaves the cursor on a real row.
+func TestEmptyWorkspaceKeysAndReload(t *testing.T) {
+	ws, dir := workspace(t, map[string][]byte{})
+	next, _ := New(ws, nil, nil).Update(tea.WindowSizeMsg{Width: 100, Height: 20})
+	m := next.(Model)
+	m, _ = press(t, m, "down", "up", "down", "enter")
+	if m.screen != screenFiles || m.fileCursor != 0 || !strings.Contains(view(m), "No policy files.") {
+		t.Fatalf("empty workspace: screen %v cursor %d", m.screen, m.fileCursor)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "a.json"), fixture(t, "signer_default.json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m, _ = press(t, m, "r", "enter")
+	if m.screen != screenDocument || filepath.Base(m.file().Path) != "a.json" {
+		t.Fatalf("after reload and enter: screen %v", m.screen)
 	}
 }

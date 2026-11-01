@@ -4,6 +4,9 @@
 package policyauthor
 
 import (
+	"bytes"
+	"encoding/json"
+	"fmt"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -193,5 +196,63 @@ func TestOutlineOfAnUnparsableFile(t *testing.T) {
 	}
 	if all, errs := sections[0].ProblemCount(); all != 1 || errs != 1 {
 		t.Fatalf("count = %d, %d", all, errs)
+	}
+}
+
+// TestOutlineShowsAnUnknownMemberInEveryObject adds a member the format does
+// not define to every object of the full signer and cosigner documents, and
+// checks that each one is shown by a field. No fixture holds such members in
+// every place, so this is what keeps "nothing in a file is hidden" true for
+// objects the fixtures do not exercise.
+func TestOutlineShowsAnUnknownMemberInEveryObject(t *testing.T) {
+	for _, name := range []string{"signer_key_full.json", "cosigner_key_full.json"} {
+		dec := json.NewDecoder(bytes.NewReader(fixture(t, name)))
+		dec.UseNumber()
+		var doc any
+		if err := dec.Decode(&doc); err != nil {
+			t.Fatal(err)
+		}
+		var probes []string
+		var inject func(v any, pointer string)
+		inject = func(v any, pointer string) {
+			switch v := v.(type) {
+			case map[string]any:
+				for k, child := range v {
+					inject(child, pointer+"/"+escapeToken(k))
+				}
+				v["zz_probe"] = "probe"
+				probes = append(probes, pointer+"/zz_probe")
+			case []any:
+				for i, child := range v {
+					inject(child, fmt.Sprintf("%s/%d", pointer, i))
+				}
+			}
+		}
+		inject(doc, "")
+		data, err := json.Marshal(doc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		f := LoadFile(writeFile(t, t.TempDir(), name, data))
+		var pointers []string
+		for _, s := range Outline(f, f.Problems, nil) {
+			for _, fl := range s.Fields {
+				if fl.Pointer != "" {
+					pointers = append(pointers, fl.Pointer)
+				}
+			}
+		}
+		for _, probe := range probes {
+			shown := false
+			for _, p := range pointers {
+				if covers(p, probe) {
+					shown = true
+					break
+				}
+			}
+			if !shown {
+				t.Errorf("%s: unknown member %s is shown by no field", name, probe)
+			}
+		}
 	}
 }

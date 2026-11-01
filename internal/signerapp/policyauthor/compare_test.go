@@ -52,7 +52,7 @@ func TestCompareStructureModeForInvalidDrafts(t *testing.T) {
 	b := loadText(t, "b.json", `{"format": "aplane.policy.v1", "role": "signer", "x": 2, "list": [1], "new": "v"}`)
 	c := Compare(a, b)
 	got := changeText(c)
-	for _, want := range []string{"changed /x 1 -> 2", "removed /list/1 2", "removed /gone true", "added /new v"} {
+	for _, want := range []string{"changed /x 1 -> 2", "removed /list/1 2", "removed /gone true", `added /new "v"`} {
 		if !strings.Contains(got, want) {
 			t.Errorf("structure diff lacks %q:\n%s", want, got)
 		}
@@ -91,5 +91,19 @@ func TestWorkspaceDefault(t *testing.T) {
 	w, _ = Open(dir)
 	if d := w.Default(); d != nil {
 		t.Fatal("two defaults gave one")
+	}
+}
+
+// TestCompareStructureShowsTypeChanges: a value that changes type shows as
+// JSON on both sides, so false and "false" are told apart.
+func TestCompareStructureShowsTypeChanges(t *testing.T) {
+	base := string(fixture(t, "signer_key_minimal.json"))
+	changed := strings.Replace(base, `"reject_clawback": false`, `"reject_clawback": "false"`, 1)
+	if changed == base {
+		t.Fatal("test did not change the document")
+	}
+	c := Compare(loadText(t, "a.json", base), loadText(t, "b.json", changed))
+	if c.Mode != CompareStructure || !strings.Contains(changeText(c), `changed /reject_clawback false -> "false"`) {
+		t.Fatalf("type change (%s):\n%s", c.Mode, changeText(c))
 	}
 }

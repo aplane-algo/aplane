@@ -117,7 +117,7 @@ func (m Model) reload() Model {
 	}
 	section, field := m.sectionCursor, m.fieldCursor
 	m.ws = ws
-	m.fileCursor = min(m.fileCursor, max(0, len(ws.Files)-1))
+	m.fileCursor = max(0, min(m.fileCursor, len(ws.Files)-1))
 	m.status = "Reloaded from disk"
 	if openPath == "" {
 		return m
@@ -168,17 +168,18 @@ func (m Model) filesKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "q", "esc":
 		return m, tea.Quit
 	case "up", "k":
-		m.fileCursor = max(0, m.fileCursor-1)
+		m.fileCursor--
 	case "down", "j":
-		m.fileCursor = min(len(m.ws.Files)-1, m.fileCursor+1)
+		m.fileCursor++
 	case "enter", "right", "l":
-		if len(m.ws.Files) > 0 {
+		if m.fileCursor >= 0 && m.fileCursor < len(m.ws.Files) {
 			m.status = ""
 			return m.open(m.fileCursor), nil
 		}
 	case "r":
 		return m.reload(), nil
 	}
+	m.fileCursor = max(0, min(len(m.ws.Files)-1, m.fileCursor))
 	return m, nil
 }
 

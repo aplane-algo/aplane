@@ -88,16 +88,17 @@ func docName(key string) string {
 }
 
 // diffNodes compares two parsed values by pointer: objects member by member
-// (base's order, then members only other has), arrays item by item.
+// (base's order, then members only other has), arrays item by item. Values
+// are shown as JSON, so a change of type (false to "false") is visible.
 func diffNodes(c *Comparison, a, b policy.DraftNode) {
 	switch {
 	case !a.Exists() && !b.Exists():
 		return
 	case !a.Exists():
-		c.Changes = append(c.Changes, Change{Effect: "added", Path: b.Pointer(), Summary: render(b)})
+		c.Changes = append(c.Changes, Change{Effect: "added", Path: b.Pointer(), Summary: compact(b)})
 		return
 	case !b.Exists():
-		c.Changes = append(c.Changes, Change{Effect: "removed", Path: a.Pointer(), Summary: render(a)})
+		c.Changes = append(c.Changes, Change{Effect: "removed", Path: a.Pointer(), Summary: compact(a)})
 		return
 	case a.Kind() == "object" && b.Kind() == "object":
 		seen := map[string]bool{}
@@ -126,7 +127,7 @@ func diffNodes(c *Comparison, a, b policy.DraftNode) {
 		return
 	}
 	if compact(a) != compact(b) {
-		c.Changes = append(c.Changes, Change{Effect: "changed", Path: a.Pointer(), Summary: render(a) + " -> " + render(b)})
+		c.Changes = append(c.Changes, Change{Effect: "changed", Path: a.Pointer(), Summary: compact(a) + " -> " + compact(b)})
 	}
 }
 

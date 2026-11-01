@@ -575,6 +575,12 @@ func (o *outliner) rekey(rp policy.DraftNode) []Field {
 	if len(out) == 0 {
 		out = []Field{{Label: "allowed", Pointer: allowed.Pointer(), Value: "(none: every rekey is rejected)"}}
 	}
+	for _, k := range rp.Keys() {
+		if k != "allowed" {
+			n := rp.Member(k)
+			out = append(out, Field{Label: k, Pointer: n.Pointer(), Value: render(n), Unknown: true, Note: "not a field of rekey_policy"})
+		}
+	}
 	return out
 }
 
