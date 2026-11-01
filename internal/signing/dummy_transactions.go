@@ -74,3 +74,39 @@ func SignDummyTransactions(dummyTxns []types.Transaction) ([][]byte, error) {
 
 	return signedDummies, nil
 }
+
+// IsSignerAddedDummy reports whether dummy is the index'th LogicSig-budget
+// dummy the signer appends after original: a zero-fee, zero-amount payment
+// from and to the dummy address, on original's network and validity window
+// and in its group, with the index as its one-byte note.
+func IsSignerAddedDummy(dummy, original types.Transaction, index int) bool {
+	if dummy.Type != types.PaymentTx {
+		return false
+	}
+	dummyAddr, err := DummyAddress()
+	if err != nil {
+		return false
+	}
+	if dummy.Sender != dummyAddr || dummy.Receiver != dummyAddr || dummy.Amount != 0 {
+		return false
+	}
+	if dummy.Fee != 0 || !dummy.RekeyTo.IsZero() || !dummy.CloseRemainderTo.IsZero() {
+		return false
+	}
+	if dummy.GenesisID != original.GenesisID || dummy.GenesisHash != original.GenesisHash {
+		return false
+	}
+	if dummy.FirstValid != original.FirstValid || dummy.LastValid != original.LastValid {
+		return false
+	}
+	if original.Group == (types.Digest{}) || dummy.Group != original.Group {
+		return false
+	}
+	if len(dummy.Note) != 1 || dummy.Note[0] != byte(index) {
+		return false
+	}
+	if dummy.Lease != ([32]byte{}) {
+		return false
+	}
+	return true
+}

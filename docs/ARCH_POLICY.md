@@ -128,11 +128,17 @@ Operational flow:
    - `user_auto_approve:false` requires approval.
    - `user_auto_approve:true` signs without approval.
 
-The engine is ordered and short-circuiting. In `internal/signerapp/signing`,
-`EvaluateAutoRejectionRules` runs the Always Deny rules, then
-`EvaluateAlwaysReviewRules` the Always Review rules, then
-`EvaluateAutoApprovalRules` the Always Approve rules; any Always Deny
-violation rejects the request and no later phase can approve it.
+The engine is ordered and short-circuiting. `policyeval.Evaluate`
+(`internal/signerapp/policyeval`) computes the client-signing verdict: `Deny`
+runs the Always Deny rules over every signer position, then `ReviewRule` the
+Always Review rules, then `ApprovalRule` the Always Approve rules; any Always
+Deny violation rejects the request and no later phase can approve it. The
+evaluator is pure. `runApprovalGates` in `internal/signerapp/signing` calls it
+after the signer's own refusals and acts on the verdict: a 403 rejection, the
+operator approval path with the review rule, an auto-approval, or the
+Operator Default. A signer position with no policy is a 500, not a
+rejection. The verdict fixtures in `test/contracts/policy/v1/verdicts` freeze
+what each signing path decides.
 
 For client signing, Always Review blocks matching policy Always Approve rules.
 `user_auto_approve:true` satisfies Always Review without consulting apadmin,

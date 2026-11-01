@@ -9,6 +9,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/cosigner/canonical"
+	signingutil "github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
@@ -118,14 +119,14 @@ func validateFrozenComponentDummyPartition(request signerapi.ComponentRequest, a
 	}
 	original := allTxns[0]
 	for offset, dummy := range allTxns[originalCount:] {
-		if !matchesSignerAddedDummyForSelfNoOp(dummy, original, offset) {
+		if !signingutil.IsSignerAddedDummy(dummy, original, offset) {
 			return badRequest(fmt.Sprintf("dummy position %d is not the canonical signer-added dummy", originalCount+offset))
 		}
 	}
 	for start := 1; start < originalCount; start++ {
 		canonicalSuffix := true
 		for offset, candidate := range allTxns[start:] {
-			if !matchesSignerAddedDummyForSelfNoOp(candidate, original, offset) {
+			if !signingutil.IsSignerAddedDummy(candidate, original, offset) {
 				canonicalSuffix = false
 				break
 			}

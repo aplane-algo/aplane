@@ -344,9 +344,7 @@ func (s *Service) approveGroupWithPlanContext(ctx context.Context, req signerapi
 			}
 			return ""
 		}(),
-		AutoApprove: func() (string, bool) {
-			return EvaluateAutoApprovalRules(req, plan, allTxns, s.policyFor)
-		},
+		Plan: planFacts(req, plan),
 		LogRejection: func(reason string) {
 			s.logPolicyRejections(req, plan, txns, reason)
 		},

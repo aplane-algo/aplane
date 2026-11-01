@@ -6,7 +6,7 @@ package signing
 import (
 	"context"
 
-	"github.com/aplane-algo/aplane/internal/signerapp/approvalpolicy"
+	"github.com/aplane-algo/aplane/internal/signerapp/policyeval"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
@@ -36,9 +36,9 @@ type gateInput struct {
 	// before policy autoapproval. User Auto-Approve satisfies it without a prompt.
 	// It does not depend on policy settings.
 	ForcedReviewRuleID string
-	// AutoApprove evaluates surface-specific auto-approval rules after review
-	// rules pass. Nil means the surface has no auto-approval path.
-	AutoApprove func() (ruleID string, approved bool)
+	// Plan is what Always Approve reads from the planner. Nil means the
+	// surface has no auto-approval path.
+	Plan *policyeval.PlanFacts
 	// LogRejection records per-position audit events for a policy rejection.
 	LogRejection func(reason string)
 	// RequestOperatorApproval blocks on the surface's operator approval prompt.
@@ -47,9 +47,10 @@ type gateInput struct {
 }
 
 // runApprovalGates runs the shared signer-domain gate sequence: the
-// rekey-to-rotating invariant, hard policy rejection, always-review rules, auto-approval rules, then the operator
-// approval fallback. It returns the matched
-// always-review rule ID for approval audit events ("" when none matched).
+// rekey-to-rotating invariant, then the policy verdict (policyeval.Evaluate:
+// hard rejection, always-review rules, auto-approval rules), then the operator
+// approval fallback. It returns the matched always-review rule ID for approval
+// audit events ("" when none matched).
 func (s *Service) runApprovalGates(ctx context.Context, in gateInput, console Console) (string, *ServiceError) {
 	console = consoleOf(console)
 	if err := s.rejectRekeyToRotating(in.AllTxns, in.EvalCount, in.PassthroughIndices, in.ForeignIndices); err != nil {
@@ -60,41 +61,45 @@ func (s *Service) runApprovalGates(ctx context.Context, in gateInput, console Co
 		}
 		return "", err
 	}
-	if err := EvaluateAutoRejectionRules(in.AllTxns, in.EvalCount, in.PassthroughIndices, in.ForeignIndices, s.policyFor, in.AuthKeys, in.KnownAddresses, console); err != nil {
+	verdict, evalErr := policyeval.Evaluate(policyeval.Input{
+		Group:                in.AllTxns,
+		Slots:                clientSlots(in.AllTxns, in.EvalCount, in.PassthroughIndices, in.ForeignIndices, s.policyFor, in.AuthKeys),
+		KnownAddresses:       in.KnownAddresses,
+		ProtocolRekeyTargets: in.ProtocolRekeyTargets,
+		ForcedReviewRuleID:   in.ForcedReviewRuleID,
+		Plan:                 in.Plan,
+	})
+	var rejection *ServiceError
+	switch {
+	case evalErr != nil:
+		// A position with no policy is a server fault, not a rejection.
+		rejection = internal(evalErr.Error())
+	case verdict.Outcome == policyeval.Reject:
+		rejection = policyRejection(verdict.Violations, console)
+	}
+	if err := rejection; err != nil {
 		if in.LogRejection != nil {
 			in.LogRejection(err.Error())
 		}
 		return "", err
 	}
 
-	limit := in.EvalCount
-	if limit > len(in.AllTxns) {
-		limit = len(in.AllTxns)
-	}
-	txns := in.AllTxns[:limit]
-	alwaysReviewRuleID, alwaysReview := evaluateAlwaysReviewRules(txns, in.EvalCount, in.PassthroughIndices, in.ForeignIndices, s.policyFor, in.AuthKeys, approvalpolicy.Context{KnownAddresses: in.KnownAddresses, ProtocolRekeyTargets: in.ProtocolRekeyTargets})
-	if in.ForcedReviewRuleID != "" {
-		alwaysReviewRuleID = in.ForcedReviewRuleID
-		alwaysReview = true
-	}
-
-	switch {
-	case alwaysReview:
-		if err := in.RequestOperatorApproval(ctx, alwaysReviewRuleID); err != nil {
-			return alwaysReviewRuleID, err
+	switch verdict.Outcome {
+	case policyeval.Review:
+		if err := in.RequestOperatorApproval(ctx, verdict.RuleID); err != nil {
+			return verdict.RuleID, err
 		}
+		console.Sync()
+		return verdict.RuleID, nil
+	case policyeval.Approve:
+		console.Printf("[POLICY] Txn auto-approved (%s)\n", verdict.RuleID)
+		console.Sync()
+		return "", nil
 	default:
-		if in.AutoApprove != nil {
-			if ruleID, approved := in.AutoApprove(); approved {
-				console.Printf("[POLICY] Txn auto-approved (%s)\n", ruleID)
-				console.Sync()
-				return alwaysReviewRuleID, nil
-			}
-		}
 		if err := in.RequestOperatorApproval(ctx, ""); err != nil {
-			return alwaysReviewRuleID, err
+			return "", err
 		}
 	}
 	console.Sync()
-	return alwaysReviewRuleID, nil
+	return "", nil
 }

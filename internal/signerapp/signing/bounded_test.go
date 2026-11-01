@@ -11,6 +11,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/signerapp/policyeval"
 	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 
@@ -128,23 +129,28 @@ func TestClassifyBoundedPath(t *testing.T) {
 }
 
 func TestRunApprovalGatesForcedBoundedReviewPrecedesAutoApproval(t *testing.T) {
-	autoApproveCalls := 0
+	// A self no-op the policy would auto-approve still prompts under the
+	// signer's forced bounded-admin review.
+	selfPay := types.Transaction{Type: types.PaymentTx, Header: types.Header{Sender: types.Address{1}, Fee: 1000}, PaymentTxnFields: types.PaymentTxnFields{Receiver: types.Address{1}}}
+	cfg := policy.DefaultConfig()
+	cfg.AutoApproveSelfNoOpTransfer = true
+	svc := &Service{PolicyFor: fixedPolicy(cfg)}
+	plan := &policyeval.PlanFacts{RequestCount: 1, AuthAddressPresent: true}
+	if rule, approved := policyeval.ApprovalRule(policyeval.Input{
+		Group: []types.Transaction{selfPay},
+		Slots: []policyeval.Slot{{Index: 0, Policy: cfg}},
+		Plan:  plan,
+	}); !approved || rule != policy.AutoApproveSelfNoOpTransferRuleID {
+		t.Fatalf("ApprovalRule() = %q, %v; want the self no-op to be auto-approvable", rule, approved)
+	}
+
 	promptCalls := 0
 	forcedRule := ""
-	// The bounded rekey is a foreign rekey; the test is about gate order, so
-	// the policy leaves it to the operator default.
-	cfg := policy.DefaultConfig()
-	cfg.RejectForeignRekey = false
-	svc := &Service{PolicyFor: fixedPolicy(cfg)}
-
 	ruleID, err := svc.runApprovalGates(context.Background(), gateInput{
-		AllTxns:            []types.Transaction{testBoundedRekey()},
+		AllTxns:            []types.Transaction{selfPay},
 		EvalCount:          1,
 		ForcedReviewRuleID: policy.BoundedAdminOperationRequiresReviewRuleID,
-		AutoApprove: func() (string, bool) {
-			autoApproveCalls++
-			return policy.AutoApproveSelfNoOpTransferRuleID, true
-		},
+		Plan:               plan,
 		RequestOperatorApproval: func(_ context.Context, ruleID string) *ServiceError {
 			promptCalls++
 			forcedRule = ruleID
@@ -154,8 +160,8 @@ func TestRunApprovalGatesForcedBoundedReviewPrecedesAutoApproval(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runApprovalGates() error = %v", err)
 	}
-	if autoApproveCalls != 0 || promptCalls != 1 {
-		t.Fatalf("autoapprove/prompt calls = %d/%d, want 0/1", autoApproveCalls, promptCalls)
+	if promptCalls != 1 {
+		t.Fatalf("prompt calls = %d, want 1", promptCalls)
 	}
 	if ruleID != policy.BoundedAdminOperationRequiresReviewRuleID || forcedRule != ruleID {
 		t.Fatalf("rule IDs = returned %q prompted %q", ruleID, forcedRule)
