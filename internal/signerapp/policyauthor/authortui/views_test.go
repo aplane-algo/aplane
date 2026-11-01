@@ -201,7 +201,7 @@ func TestLongListsFollowTheCursor(t *testing.T) {
 	}
 }
 
-// TestLongFieldValuesAreReadableInFull: enter on a field opens it in full.
+// TestLongFieldValuesAreReadableInFull: v on a field opens it in full.
 func TestLongFieldValuesAreReadableInFull(t *testing.T) {
 	long := strings.Repeat("treasury policy note ", 45) + "END-OF-DESCRIPTION"
 	doc := strings.Replace(string(fixture(t, "signer_key_full.json")), `"description": "Operations key"`, `"description": "`+long+`"`, 1)
@@ -210,9 +210,9 @@ func TestLongFieldValuesAreReadableInFull(t *testing.T) {
 	if label := m.sections[m.sectionCursor].Fields[m.fieldCursor].Label; label != "Description" {
 		t.Fatalf("cursor on %q", label)
 	}
-	m, _ = press(t, m, "enter")
+	m, _ = press(t, m, "v")
 	if m.screen != screenField {
-		t.Fatalf("enter in the form opened screen %v", m.screen)
+		t.Fatalf("v in the form opened screen %v", m.screen)
 	}
 	if body := strings.Join(m.page.lines, " "); !strings.Contains(body, "END-OF-DESCRIPTION") || !strings.Contains(body, "/description") {
 		t.Fatal("the field page does not hold the whole value")
