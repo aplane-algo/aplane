@@ -4,12 +4,14 @@
 package authortui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/asa"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func sizedModel(t *testing.T, files map[string][]byte, w, h int) Model {
@@ -143,5 +145,99 @@ func TestHelpAndPagesFitTheTerminal(t *testing.T) {
 		if key == "?" && !strings.Contains(strings.Join(page.page.lines, "\n"), "never contacts a node") {
 			t.Fatal("help does not say appolicy never contacts a node")
 		}
+	}
+}
+
+// TestEmptyProblemsListIgnoresMoves: a clean file's problems list takes
+// up/down/enter without moving the cursor out of range.
+func TestEmptyProblemsListIgnoresMoves(t *testing.T) {
+	m := sizedModel(t, map[string][]byte{"a.json": fixture(t, "signer_default.json")}, 120, 30)
+	m, _ = press(t, m, "p", "down", "enter", "up", "enter")
+	if m.screen != screenProblems || m.problemCursor != 0 || !strings.Contains(view(m), "No problems.") {
+		t.Fatalf("screen %v cursor %d\n%s", m.screen, m.problemCursor, view(m))
+	}
+	bad := sizedModel(t, map[string][]byte{"b.json": fixture(t, "semantic_invalid/signer_route_unknown_address_set.json")}, 120, 30)
+	bad, _ = press(t, bad, "p", "down", "down", "up", "up", "up")
+	if bad.problemCursor != 0 {
+		t.Fatalf("cursor = %d after moving past both ends of a one-item list", bad.problemCursor)
+	}
+}
+
+// TestLongListsFollowTheCursor: the files screen and the compare picker show
+// the selected row however many files there are.
+func TestLongListsFollowTheCursor(t *testing.T) {
+	files := map[string][]byte{}
+	for i := 0; i < 35; i++ {
+		files[fmt.Sprintf("f%02d.json", i)] = fixture(t, "signer_default.json")
+	}
+	m := sizedModel(t, files, 100, 16)
+	fits := func(where string) {
+		t.Helper()
+		if lines := strings.Count(m.View(), "\n") + 1; lines > 16 {
+			t.Fatalf("%s: %d lines in a 16-line window", where, lines)
+		}
+		if !strings.Contains(view(m), "> ") {
+			t.Fatalf("%s: the selected row is not shown:\n%s", where, view(m))
+		}
+	}
+	fits("files at the top")
+	for i := 0; i < 34; i++ {
+		m, _ = press(t, m, "down")
+	}
+	fits("files at the bottom")
+	if !strings.Contains(view(m), "> f34.json") {
+		t.Fatalf("last file not shown as selected:\n%s", view(m))
+	}
+	m, _ = press(t, m, "enter", "c")
+	fits("picker at the top")
+	for i := 0; i < 34; i++ {
+		m, _ = press(t, m, "down")
+	}
+	fits("picker at the bottom")
+	if !strings.Contains(view(m), "> f33.json") {
+		t.Fatalf("last pickable file not shown as selected:\n%s", view(m))
+	}
+}
+
+// TestLongFieldValuesAreReadableInFull: enter on a field opens it in full.
+func TestLongFieldValuesAreReadableInFull(t *testing.T) {
+	long := strings.Repeat("treasury policy note ", 45) + "END-OF-DESCRIPTION"
+	doc := strings.Replace(string(fixture(t, "signer_key_full.json")), `"description": "Operations key"`, `"description": "`+long+`"`, 1)
+	m := sizedModel(t, map[string][]byte{"a.json": []byte(doc)}, 80, 16)
+	m, _ = press(t, m, "enter", "down", "down", "down")
+	if label := m.sections[m.sectionCursor].Fields[m.fieldCursor].Label; label != "Description" {
+		t.Fatalf("cursor on %q", label)
+	}
+	m, _ = press(t, m, "enter")
+	if m.screen != screenField {
+		t.Fatalf("enter in the form opened screen %v", m.screen)
+	}
+	if body := strings.Join(m.page.lines, " "); !strings.Contains(body, "END-OF-DESCRIPTION") || !strings.Contains(body, "/description") {
+		t.Fatal("the field page does not hold the whole value")
+	}
+	m, _ = press(t, m, "G")
+	if !strings.Contains(view(m), "END-OF-DESCRIPTION") {
+		t.Fatalf("the end of the value is not reachable:\n%s", view(m))
+	}
+	m, _ = press(t, m, "esc")
+	if m.screen != screenDocument || m.focus != paneForm {
+		t.Fatalf("esc returned to %v", m.screen)
+	}
+}
+
+// TestRekeyEdgesShowWholeAddresses: a rekey edge's sender and targets are
+// values, wrapped rather than cut, not truncated labels.
+func TestRekeyEdgesShowWholeAddresses(t *testing.T) {
+	m := sizedModel(t, map[string][]byte{"c.json": fixture(t, "cosigner_key_full.json")}, 100, 40)
+	for m.sections[m.sectionCursor].ID != "rekey" {
+		m, _ = press(t, m, "down")
+	}
+	lines, _ := m.formLines(40)
+	joined := strings.ReplaceAll(ansi.Strip(strings.Join(lines, "")), " ", "")
+	if !strings.Contains(joined, "Edge1senderCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI7JH2AYM") || !strings.Contains(joined, "@new_auth") {
+		t.Fatalf("rekey edge not laid out in full: %q", joined)
+	}
+	if out := view(m); !strings.Contains(out, "EI7JH2AYM") {
+		t.Fatalf("the end of the sender is not on screen:\n%s", out)
 	}
 }

@@ -155,17 +155,24 @@ func (m Model) problemsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m.screen = screenDocument
+		return m, nil
 	case "q":
 		return m, tea.Quit
+	}
+	if len(locs) == 0 {
+		return m, nil
+	}
+	switch msg.String() {
 	case "up", "k":
-		m.problemCursor = max(0, m.problemCursor-1)
+		m.problemCursor--
 	case "down", "j":
-		m.problemCursor = min(len(locs)-1, m.problemCursor+1)
+		m.problemCursor++
 	case "enter":
-		if m.problemCursor < len(locs) {
+		if m.problemCursor >= 0 && m.problemCursor < len(locs) {
 			return m.goTo(locs[m.problemCursor]), nil
 		}
 	}
+	m.problemCursor = max(0, min(len(locs)-1, m.problemCursor))
 	return m, nil
 }
 
@@ -272,6 +279,8 @@ func (m Model) comparePickKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) comparePickView() string {
 	var b strings.Builder
 	b.WriteString(m.styles.title.Render("Compare "+filepath.Base(m.file().Path)+" with") + "\n\n")
+	var lines []string
+	selected := 0
 	for i, f := range m.ws.Files {
 		if i == m.current {
 			continue
@@ -282,13 +291,15 @@ func (m Model) comparePickView() string {
 		}
 		line := ansi.Truncate(fmt.Sprintf("%-28s %-10s %s", filepath.Base(f.Path), f.State, key), m.width-2, "…")
 		if i == m.pickCursor {
+			selected = len(lines)
 			line = m.styles.selected.Render("> " + line)
 		} else {
 			line = "  " + line
 		}
-		b.WriteString(line + "\n")
+		lines = append(lines, line)
 	}
-	return strings.TrimSuffix(b.String(), "\n")
+	b.WriteString(strings.Join(window(lines, selected, m.listHeight()), "\n"))
+	return b.String()
 }
 
 // compareWith shows how the open file differs from base.
@@ -334,6 +345,38 @@ func (m Model) compareWith(base *policyauthor.File) Model {
 	return m.openPage(screenCompare, "Compare", lines)
 }
 
+// Field detail.
+
+// openField shows the selected field in full: its value wrapped to the
+// window, its note, its pointer and its problems, for values longer than the
+// form can show.
+func (m Model) openField() Model {
+	s := m.sections[m.sectionCursor]
+	if m.fieldCursor >= len(s.Fields) {
+		return m
+	}
+	f := s.Fields[m.fieldCursor]
+	width := max(20, m.width-2)
+	var lines []string
+	if f.Pointer != "" {
+		lines = append(lines, m.styles.subtle.Render(ansi.Truncate(f.Pointer, width, "…")), "")
+	}
+	lines = append(lines, wrap(f.Value, width)...)
+	if f.Note != "" {
+		lines = append(lines, "")
+		for _, line := range wrap(f.Note, width) {
+			lines = append(lines, m.styles.subtle.Render(line))
+		}
+	}
+	if len(f.Problems) > 0 {
+		lines = append(lines, "")
+		for _, p := range f.Problems {
+			lines = append(lines, m.problemLines(p, width)...)
+		}
+	}
+	return m.openPage(screenField, s.Title+" › "+f.Label, lines)
+}
+
 // Help.
 
 func (m Model) openHelp() Model {
@@ -348,6 +391,7 @@ func (m Model) openHelp() Model {
 		"  up/down    move in the focused pane",
 		"  tab        switch between the outline and the form",
 		"  left/right outline / form; enter opens a section's form",
+		"  enter      in the form: show the selected field in full",
 		"  ] [        next / previous problem",
 		"  p          list every problem; enter jumps to it",
 		"  x          explain the document in plain language",

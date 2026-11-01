@@ -555,8 +555,22 @@ func (o *outliner) rekey(rp policy.DraftNode) []Field {
 		return []Field{{Label: "rekey_policy", Pointer: rp.Pointer(), Value: render(rp)}}
 	}
 	var out []Field
-	for _, edge := range allowed.Items() {
-		out = append(out, Field{Label: render(edge.Member("sender")), Pointer: edge.Pointer(), Value: "to " + render(edge.Member("targets"))})
+	for i, edge := range allowed.Items() {
+		label := fmt.Sprintf("Edge %d", i+1)
+		if edge.Kind() != "object" {
+			out = append(out, Field{Label: label, Pointer: edge.Pointer(), Value: render(edge)})
+			continue
+		}
+		for _, part := range []string{"sender", "targets"} {
+			n := edge.Member(part)
+			out = append(out, Field{Label: label + " " + part, Pointer: edge.Pointer() + "/" + part, Value: render(n), Missing: !n.Exists()})
+		}
+		for _, k := range edge.Keys() {
+			if k != "sender" && k != "targets" {
+				n := edge.Member(k)
+				out = append(out, Field{Label: k, Pointer: n.Pointer(), Value: render(n), Unknown: true, Note: "not a field of a rekey edge"})
+			}
+		}
 	}
 	if len(out) == 0 {
 		out = []Field{{Label: "allowed", Pointer: allowed.Pointer(), Value: "(none: every rekey is rejected)"}}

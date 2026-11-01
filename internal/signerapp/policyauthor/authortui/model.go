@@ -24,6 +24,7 @@ const (
 	screenCompare
 	screenComparePick
 	screenHelp
+	screenField
 )
 
 type pane int
@@ -155,7 +156,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.problemsKeys(msg)
 		case screenComparePick:
 			return m.comparePickKeys(msg)
-		case screenExplain, screenCompare, screenHelp:
+		case screenExplain, screenCompare, screenHelp, screenField:
 			return m.pageKeys(msg)
 		}
 	}
@@ -207,6 +208,8 @@ func (m Model) documentKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "right", "l", "enter":
 		if m.focus == paneOutline && len(m.sections[m.sectionCursor].Fields) > 0 {
 			m.focus = paneForm
+		} else if m.focus == paneForm && msg.String() == "enter" {
+			return m.openField(), nil
 		}
 	case "up", "k":
 		m = m.move(-1)

@@ -424,7 +424,8 @@ appolicy explain treasury.json      # one document in plain language
   of the selected section's fields, with every problem shown on the field it
   concerns. Fields the document lacks are marked missing, and members the
   format does not define are listed under "Other fields", so nothing in the
-  file is hidden. Keys: `]` and `[` jump between problems, `p` lists them,
+  file is hidden. Keys: enter on a field shows it in full (for a long
+  description or address list), `]` and `[` jump between problems, `p` lists them,
   `x` explains the document, `c` compares it with the workspace default or
   another file you pick, `r` reloads from disk, and `?` lists every key. The
   browser only reads; editing in it comes later.

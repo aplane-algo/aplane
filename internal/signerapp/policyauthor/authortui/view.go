@@ -42,7 +42,7 @@ func (m Model) View() string {
 		body = m.problemsView()
 	case screenComparePick:
 		body = m.comparePickView()
-	case screenExplain, screenCompare, screenHelp:
+	case screenExplain, screenCompare, screenHelp, screenField:
 		body = m.pageView()
 	default:
 		body = m.documentView()
@@ -75,7 +75,7 @@ func (m Model) footer() string {
 		return "up/down: Select | enter: Compare | esc: Back | q: Quit"
 	case screenCompare:
 		return "up/down/pgup/pgdown: Scroll | o: Other file | esc: Back | q: Quit"
-	case screenExplain, screenHelp:
+	case screenExplain, screenHelp, screenField:
 		return "up/down/pgup/pgdown: Scroll | esc: Back | q: Quit"
 	}
 	back := "esc: Files"
@@ -116,6 +116,7 @@ func (m Model) filesView() string {
 	if len(m.ws.Files) == 0 {
 		b.WriteString("No policy files.\n")
 	}
+	var lines []string
 	for i, f := range m.ws.Files {
 		key := f.Key
 		if key == "" {
@@ -129,10 +130,15 @@ func (m Model) filesView() string {
 		} else {
 			line = "  " + line
 		}
-		b.WriteString(line + "\n")
+		lines = append(lines, line)
 	}
+	b.WriteString(strings.Join(window(lines, m.fileCursor, m.listHeight()), "\n"))
 	return b.String()
 }
+
+// listHeight is the rows a list screen has below its title and blank line,
+// above the status and footer lines.
+func (m Model) listHeight() int { return max(1, m.height-5) }
 
 func roleOrUnknown(ws *policyauthor.Workspace) string {
 	if ws.Role == "" {
@@ -296,10 +302,12 @@ func window(lines []string, focus, height int) []string {
 	return lines[start : start+height]
 }
 
-// wrap breaks text into lines of at most width cells, at spaces when it can.
+// wrap breaks text into lines of at most width cells: at spaces and commas
+// when it can, and inside a word longer than a line, such as an address,
+// when it must, so no part of a value is cut off.
 func wrap(text string, width int) []string {
 	if text == "" {
 		return []string{""}
 	}
-	return strings.Split(ansi.Wrap(text, width, " ,"), "\n")
+	return strings.Split(ansi.Hardwrap(ansi.Wrap(text, width, " ,"), width, true), "\n")
 }
