@@ -16,7 +16,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/policy"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 	"github.com/aplane-algo/aplane/internal/signerapp/approvalpolicy"
-	signingutil "github.com/aplane-algo/aplane/internal/signing"
+	"github.com/aplane-algo/aplane/internal/signerapp/policyeval"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
@@ -306,6 +306,57 @@ func resolvePolicy(policyFor PolicyResolver, authKeys []string, i int) *policy.C
 	return policyFor(selector)
 }
 
+// clientSlots returns the positions client signing judges, AllTxns[:requestCount],
+// with each signer position's policy resolved through authKeys.
+func clientSlots(allTxns []types.Transaction, requestCount int, passthroughIndices, foreignIndices map[int]bool, policyFor PolicyResolver, authKeys []string) []policyeval.Slot {
+	limit := requestCount
+	if limit > len(allTxns) {
+		limit = len(allTxns)
+	}
+	slots := make([]policyeval.Slot, 0, limit)
+	for i := 0; i < limit; i++ {
+		switch {
+		case passthroughIndices[i]:
+			slots = append(slots, policyeval.Slot{Index: i, Class: policyeval.SlotPassthrough})
+		case foreignIndices[i]:
+			slots = append(slots, policyeval.Slot{Index: i, Class: policyeval.SlotForeign})
+		default:
+			slots = append(slots, policyeval.Slot{Index: i, Class: policyeval.SlotSigner, Policy: resolvePolicy(policyFor, authKeys, i)})
+		}
+	}
+	return slots
+}
+
+// planFacts is what Always Approve reads from a /sign plan.
+func planFacts(req signerapi.GroupSignRequest, plan *PlanResult) *policyeval.PlanFacts {
+	if plan == nil {
+		return nil
+	}
+	return &policyeval.PlanFacts{
+		RequestCount:            len(req.Requests),
+		AuthAddressPresent:      len(req.Requests) > 0 && req.Requests[0].AuthAddress != "",
+		HasPassthrough:          plan.HasPassthrough,
+		HasForeign:              plan.HasForeign,
+		IsPreGrouped:            plan.IsPreGrouped,
+		DummiesNeeded:           plan.DummiesNeeded,
+		DummyCount:              len(plan.DummyTxns),
+		LsigIndices:             plan.LsigIndices,
+		LSigCount:               plan.FeeInfo.LSigCount,
+		TotalFees:               plan.FeeInfo.TotalFees,
+		ProgramFeeContribution:  plan.FeeInfo.ProgramFeeContribution,
+		NativePQFeeContribution: plan.FeeInfo.NativePQFeeContribution,
+	}
+}
+
+// policyRejection reports Always Deny violations as the signer's policy
+// rejection.
+func policyRejection(violations []policy.LintViolation, console Console) *ServiceError {
+	errText := policy.JoinLintViolations(violations)
+	console.Printf("[POLICY ENGINE] Rejected: %s\n", errText)
+	console.Sync()
+	return forbidden(fmt.Sprintf("policy engine rejected request: %s", errText))
+}
+
 // EvaluateAutoRejectionRules evaluates hard policy rules against each signable
 // transaction. authKeys[i] holds the key selector whose policy governs request
 // i; an empty string or a short slice resolves to the node default.
@@ -313,137 +364,22 @@ func resolvePolicy(policyFor PolicyResolver, authKeys []string, i int) *policy.C
 // rekeys from foreign rekeys. A position whose policy cannot be resolved
 // fails closed.
 func EvaluateAutoRejectionRules(allTxns []types.Transaction, requestCount int, passthroughIndices, foreignIndices map[int]bool, policyFor PolicyResolver, authKeys []string, knownAddresses map[string]bool, console Console) *ServiceError {
-	console = consoleOf(console)
-	var violations []policy.LintViolation
-
-	limit := requestCount
-	if limit > len(allTxns) {
-		limit = len(allTxns)
+	violations, err := policyeval.Deny(policyeval.Input{
+		Group:          allTxns,
+		Slots:          clientSlots(allTxns, requestCount, passthroughIndices, foreignIndices, policyFor, authKeys),
+		KnownAddresses: knownAddresses,
+	})
+	if err != nil {
+		return internal(err.Error())
 	}
-	for i := 0; i < limit; i++ {
-		if passthroughIndices[i] || foreignIndices[i] {
-			continue
-		}
-		txn := allTxns[i]
-		cfg := resolvePolicy(policyFor, authKeys, i)
-		if cfg == nil {
-			return internal("policy is not loaded")
-		}
-		txnViolations := policy.CheckTxnPolicyLints(txn, cfg, knownAddresses)
-		txnViolations = append(txnViolations, policy.CheckTxnTransferRoutingPolicyLints(txn, cfg)...)
-		for j := range txnViolations {
-			txnViolations[j].TxnIndex = i
-		}
-		violations = append(violations, txnViolations...)
-	}
-
 	if len(violations) > 0 {
-		errText := policy.JoinLintViolations(violations)
-		console.Printf("[POLICY ENGINE] Rejected: %s\n", errText)
-		console.Sync()
-		return forbidden(fmt.Sprintf("policy engine rejected request: %s", errText))
+		return policyRejection(violations, consoleOf(console))
 	}
-
 	return nil
 }
 
-// EvaluateAutoApprovalRules evaluates explicit low-risk approval rules after
-// hard rejection policy has passed and before the default approval path runs.
-func EvaluateAutoApprovalRules(req signerapi.GroupSignRequest, plan *PlanResult, allTxns []types.Transaction, policyFor PolicyResolver) (ruleID string, approved bool) {
-	if policyFor == nil || plan == nil {
-		return "", false
-	}
-	if len(req.Requests) != 1 || len(allTxns) == 0 {
-		return "", false
-	}
-	if plan.HasPassthrough || plan.HasForeign || plan.IsPreGrouped {
-		return "", false
-	}
-	if plan.PassthroughIndices[0] || plan.ForeignIndices[0] {
-		return "", false
-	}
-	if req.Requests[0].AuthAddress == "" {
-		return "", false
-	}
-
-	cfg := policyFor(req.Requests[0].AuthAddress)
-	if cfg == nil || !cfg.AutoApproveSelfNoOpTransfer {
-		return "", false
-	}
-	if !matchesSelfNoOpTransferPlanAutoApproval(plan, allTxns) {
-		return "", false
-	}
-	return policy.AutoApproveSelfNoOpTransferRuleID, true
-}
-
 func matchesSelfNoOpTransferPlanAutoApproval(plan *PlanResult, allTxns []types.Transaction) bool {
-	if plan.FeeInfo.ProgramFeeContribution != 0 || plan.FeeInfo.NativePQFeeContribution != 0 {
-		return false
-	}
-	dummyCount := len(plan.DummyTxns)
-	if plan.DummiesNeeded != dummyCount || len(allTxns) != 1+dummyCount {
-		return false
-	}
-	if dummyCount == 0 {
-		return plan.FeeInfo.TotalFees == 0 && policy.MatchesSelfNoOpTransferAutoApproval(allTxns[0])
-	}
-
-	if len(plan.LsigIndices) != 1 || plan.LsigIndices[0] != 0 || plan.FeeInfo.LSigCount != 1 {
-		return false
-	}
-	maxDummyFees := uint64(dummyCount) * policy.SelfNoOpTransferMaxFeeMicroAlgos
-	if plan.FeeInfo.TotalFees == 0 || plan.FeeInfo.TotalFees > maxDummyFees {
-		return false
-	}
-
-	normalized := allTxns[0]
-	if uint64(normalized.Fee) < plan.FeeInfo.TotalFees {
-		return false
-	}
-	normalized.Fee = types.MicroAlgos(uint64(normalized.Fee) - plan.FeeInfo.TotalFees)
-	normalized.Group = types.Digest{}
-	if !policy.MatchesSelfNoOpTransferAutoApproval(normalized) {
-		return false
-	}
-
-	for i, dummy := range allTxns[1:] {
-		if !matchesSignerAddedDummyForSelfNoOp(dummy, allTxns[0], i) {
-			return false
-		}
-	}
-	return true
-}
-
-func matchesSignerAddedDummyForSelfNoOp(dummy, original types.Transaction, index int) bool {
-	if dummy.Type != types.PaymentTx {
-		return false
-	}
-	dummyAddr, err := signingutil.DummyAddress()
-	if err != nil {
-		return false
-	}
-	if dummy.Sender != dummyAddr || dummy.Receiver != dummyAddr || dummy.Amount != 0 {
-		return false
-	}
-	if dummy.Fee != 0 || !dummy.RekeyTo.IsZero() || !dummy.CloseRemainderTo.IsZero() {
-		return false
-	}
-	if dummy.GenesisID != original.GenesisID || dummy.GenesisHash != original.GenesisHash {
-		return false
-	}
-	if dummy.FirstValid != original.FirstValid || dummy.LastValid != original.LastValid {
-		return false
-	}
-	if original.Group == (types.Digest{}) || dummy.Group != original.Group {
-		return false
-	}
-	if len(dummy.Note) != 1 || dummy.Note[0] != byte(index) {
-		return false
-	}
-	if dummy.Lease != ([32]byte{}) {
-		return false
-	}
-	return true
+	return policyeval.MatchesSelfNoOpPlan(allTxns, *planFacts(signerapi.GroupSignRequest{}, plan))
 }
 
 func approvalRequestID(prefix, supplied string) string {

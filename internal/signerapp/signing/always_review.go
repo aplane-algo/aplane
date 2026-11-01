@@ -4,8 +4,8 @@
 package signing
 
 import (
-	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/signerapp/approvalpolicy"
+	"github.com/aplane-algo/aplane/internal/signerapp/policyeval"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
@@ -23,36 +23,10 @@ func EvaluateAlwaysReviewRules(txns []types.Transaction, requestCount int, passt
 // context: a rekey the signer issued itself (ProtocolRekeyTargets) is not a
 // warning-level finding on any leg.
 func evaluateAlwaysReviewRules(txns []types.Transaction, requestCount int, passthroughIndices, foreignIndices map[int]bool, policyFor PolicyResolver, authKeys []string, warnCtx approvalpolicy.Context) (ruleID string, review bool) {
-	limit := requestCount
-	if limit > len(txns) {
-		limit = len(txns)
-	}
-	for i := 0; i < limit; i++ {
-		signerControlled := !passthroughIndices[i] && !foreignIndices[i]
-		if signerControlled {
-			cfg := resolvePolicy(policyFor, authKeys, i)
-			if cfg == nil {
-				return "", true
-			}
-			if violations := policy.CheckTxnReviewPolicyLints(txns[i], cfg); len(violations) > 0 {
-				return violations[0].RuleID, true
-			}
-			if violations := policy.CheckTxnTransferRoutingReviewPolicyLints(txns[i], cfg); len(violations) > 0 {
-				return violations[0].RuleID, true
-			}
-			if cfg.AlwaysReviewWarnings && len(approvalpolicy.CheckDecodedTxnWarningsIn(txns[i], warnCtx)) > 0 {
-				return policy.AlwaysReviewWarningsRuleID, true
-			}
-			continue
-		}
-		// Passthrough/foreign slot: the signer contributes no signature here, but
-		// a group it co-signs that rekeys, closes, clawbacks, or otherwise carries
-		// a dangerous field via a passthrough/foreign leg requires review even when
-		// AlwaysReviewWarnings is off (it only governs the signer's own legs).
-		// User Auto-Approve can satisfy that review without a prompt.
-		if len(approvalpolicy.CheckDecodedTxnWarningsIn(txns[i], warnCtx)) > 0 {
-			return policy.AlwaysReviewWarningsRuleID, true
-		}
-	}
-	return "", false
+	return policyeval.ReviewRule(policyeval.Input{
+		Group:                txns,
+		Slots:                clientSlots(txns, requestCount, passthroughIndices, foreignIndices, policyFor, authKeys),
+		KnownAddresses:       warnCtx.KnownAddresses,
+		ProtocolRekeyTargets: warnCtx.ProtocolRekeyTargets,
+	})
 }

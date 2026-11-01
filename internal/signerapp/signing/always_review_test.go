@@ -15,6 +15,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/policy/policytest"
 	"github.com/aplane-algo/aplane/internal/signerapp/approvalpolicy"
+	"github.com/aplane-algo/aplane/internal/signerapp/policyeval"
 )
 
 func TestEvaluateAlwaysReviewRulesResolvesPolicyPerKey(t *testing.T) {
@@ -245,21 +246,38 @@ func TestEvaluateAlwaysReviewRulesReviewsAssetReconfigureWarning(t *testing.T) {
 }
 
 // A type verdict of review sits in the Always Review tier: it prompts even
-// when a policy auto-approval rule would otherwise approve.
+// when the policy's auto-approval rule would otherwise approve.
 func TestRunApprovalGatesTypeReviewBeatsAutoApprove(t *testing.T) {
-	cfg := routingPolicyConfigForSigningTest(t, `{"transaction_types": {"*": "allow", "keyreg": "review"}}`)
-	keyreg := types.Transaction{Type: types.KeyRegistrationTx, Header: types.Header{Sender: types.Address{1}}}
-	autoApproved, promptedRule := 0, ""
-	ruleID, err := (&Service{PolicyFor: fixedPolicy(cfg)}).runApprovalGates(context.Background(), gateInput{
-		AllTxns: []types.Transaction{keyreg}, EvalCount: 1,
-		AutoApprove:             func() (string, bool) { autoApproved++; return policy.AutoApproveSelfNoOpTransferRuleID, true },
-		RequestOperatorApproval: func(_ context.Context, rule string) *ServiceError { promptedRule = rule; return nil },
-	}, nil)
-	if err != nil {
-		t.Fatalf("runApprovalGates() error = %v", err)
-	}
-	if want := policy.TransactionTypeRuleID("keyreg"); ruleID != want || promptedRule != want || autoApproved != 0 {
-		t.Fatalf("rule %q prompted %q auto-approvals %d, want review under %s with no auto-approval", ruleID, promptedRule, autoApproved, want)
+	selfPay := types.Transaction{Type: types.PaymentTx, Header: types.Header{Sender: types.Address{1}, Fee: 1000}, PaymentTxnFields: types.PaymentTxnFields{Receiver: types.Address{1}}}
+	plan := &policyeval.PlanFacts{RequestCount: 1, AuthAddressPresent: true}
+	for _, tc := range []struct {
+		name   string
+		types  string
+		review bool
+	}{
+		{name: "pay allowed approves", types: `{"*": "allow"}`},
+		{name: "pay review prompts", types: `{"*": "allow", "pay": "review"}`, review: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := routingPolicyConfigForSigningTest(t, `{"auto_approve_self_noop_transfer": true, "transaction_types": `+tc.types+`, "transfer_policy": {"on_no_route": "operator_default"}}`)
+			prompts, promptedRule := 0, ""
+			ruleID, err := (&Service{PolicyFor: fixedPolicy(cfg)}).runApprovalGates(context.Background(), gateInput{
+				AllTxns: []types.Transaction{selfPay}, EvalCount: 1, AuthKeys: []string{selfPay.Sender.String()}, Plan: plan,
+				RequestOperatorApproval: func(_ context.Context, rule string) *ServiceError { prompts++; promptedRule = rule; return nil },
+			}, nil)
+			if err != nil {
+				t.Fatalf("runApprovalGates() error = %v", err)
+			}
+			if !tc.review {
+				if prompts != 0 {
+					t.Fatalf("prompts = %d, want the self no-op auto-approved", prompts)
+				}
+				return
+			}
+			if want := policy.TransactionTypeRuleID("pay"); ruleID != want || promptedRule != want || prompts != 1 {
+				t.Fatalf("rule %q prompted %q prompts %d, want review under %s instead of auto-approval", ruleID, promptedRule, prompts, want)
+			}
+		})
 	}
 }
 
