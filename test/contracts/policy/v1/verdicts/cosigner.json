@@ -116,7 +116,7 @@
       "expect": {
         "outcome": "reject",
         "kind": "forbidden",
-        "message": "cosigner policy rejected request: txn 1: [transfer_policy:capped:reject_above] transfer routing amount 11 exceeds reject threshold 10"
+        "message": "cosigner policy rejected request: txn 1: [transfer_policy:capped:reject_above] transfer routing amount 0.000011 ALGO exceeds reject threshold 0.00001 ALGO on testnet"
       }
     },
     {

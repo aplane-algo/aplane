@@ -213,9 +213,9 @@ func TestCheckTxnPolicyLintsUsesASAAmountFormatter(t *testing.T) {
 			}
 			switch raw {
 			case 2_000_000:
-				return "2 USDC (ASA 10458941)", true
+				return "2 USDC (2000000 base units)", true
 			case 1_000_000:
-				return "1 USDC (ASA 10458941)", true
+				return "1 USDC (1000000 base units)", true
 			default:
 				return "", false
 			}
@@ -235,16 +235,13 @@ func TestCheckTxnPolicyLintsUsesASAAmountFormatter(t *testing.T) {
 		t.Fatalf("len(violations) = %d, want 1", len(got))
 	}
 	for _, want := range []string{
-		"asset transfer amount 2 USDC (ASA 10458941)",
-		"policy max 1 USDC (ASA 10458941)",
+		"asset transfer amount 2 USDC (2000000 base units) of asset #10458941",
+		"policy max 1 USDC (1000000 base units)",
 		"on testnet",
 	} {
 		if !strings.Contains(got[0].Message, want) {
 			t.Fatalf("message %q missing %q", got[0].Message, want)
 		}
-	}
-	if strings.Contains(got[0].Message, "for asset") {
-		t.Fatalf("message %q contains redundant asset suffix", got[0].Message)
 	}
 }
 

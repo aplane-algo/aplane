@@ -49,11 +49,11 @@ func TestAmountThresholdViolations(t *testing.T) {
 	}{
 		{"max algo exceeded", false, payment(testnet), MaxAlgoPaymentExceededRuleID, "payment amount 11 ALGO exceeds policy max 10 ALGO on testnet"},
 		{"max algo unknown network", false, payment(unknown), UnknownGenesisHashRuleID, "cannot evaluate ALGO payment policy limit for unknown genesis hash " + unknownHex},
-		{"max asa exceeded", false, assetTransfer(testnet), MaxASAAmountExceededRuleID, "asset transfer amount 2000000 exceeds policy max 1000000 on testnet"},
+		{"max asa exceeded", false, assetTransfer(testnet), MaxASAAmountExceededRuleID, "asset transfer amount 2000000 base units of asset #7 exceeds policy max 1000000 base units on testnet"},
 		{"max asa unknown network", false, assetTransfer(unknown), UnknownGenesisHashRuleID, "cannot evaluate ASA policy limits for unknown genesis hash " + unknownHex},
 		{"review algo exceeded", true, payment(testnet), ReviewAlgoPaymentExceededRuleID, "payment amount 11 ALGO exceeds review threshold 10 ALGO on testnet"},
 		{"review algo unknown network", true, payment(unknown), ReviewUnknownGenesisHashRuleID, "cannot evaluate ALGO payment review threshold for unknown genesis hash " + unknownHex},
-		{"review asa exceeded", true, assetTransfer(testnet), ReviewASAAmountExceededRuleID, "asset transfer amount 2000000 exceeds review threshold 1000000 on testnet"},
+		{"review asa exceeded", true, assetTransfer(testnet), ReviewASAAmountExceededRuleID, "asset transfer amount 2000000 base units of asset #7 exceeds review threshold 1000000 base units on testnet"},
 		{"review asa unknown network", true, assetTransfer(unknown), ReviewUnknownGenesisHashRuleID, "cannot evaluate ASA transfer review thresholds for unknown genesis hash " + unknownHex},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

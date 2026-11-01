@@ -72,9 +72,9 @@ func (t amountThresholds) check(txn types.Transaction, cfg *Config) []LintViolat
 			add(t.unknownGenesisRuleID, fmt.Sprintf("cannot evaluate %s for unknown genesis hash %x", t.asaUnknownSubject, txn.GenesisHash[:]))
 		} else if limit, ok := t.asa[network][uint64(txn.XferAsset)]; ok && txn.AssetAmount > limit {
 			assetID := uint64(txn.XferAsset)
-			add(t.asaExceededRuleID, fmt.Sprintf("asset transfer amount %s exceeds %s %s on %s",
-				formatASALimitAmount(cfg, network, assetID, txn.AssetAmount), t.limitLabel,
-				formatASALimitAmount(cfg, network, assetID, limit), network))
+			add(t.asaExceededRuleID, fmt.Sprintf("asset transfer amount %s%s exceeds %s %s on %s",
+				formatASALimitAmount(cfg, network, assetID, txn.AssetAmount), assetLabel(TransferAssetRef{ASAID: assetID}),
+				t.limitLabel, formatASALimitAmount(cfg, network, assetID, limit), network))
 		}
 	}
 	return violations

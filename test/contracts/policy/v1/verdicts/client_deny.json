@@ -120,7 +120,7 @@
       "expect": {
         "outcome": "reject",
         "kind": "forbidden",
-        "message": "policy engine rejected request: txn 1: [transfer_policy:payroll:reject_above] transfer routing amount 21 exceeds reject threshold 20"
+        "message": "policy engine rejected request: txn 1: [transfer_policy:payroll:reject_above] transfer routing amount 0.000021 ALGO exceeds reject threshold 0.00002 ALGO on testnet"
       }
     },
     {

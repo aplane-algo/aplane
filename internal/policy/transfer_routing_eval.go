@@ -197,7 +197,7 @@ func evaluateTransferRouting(txn types.Transaction, cfg *Config) []transferRouti
 			}
 			continue
 		}
-		if verdict, ok := evaluateTransferMovement(movement, cfg.TransferPolicy); ok {
+		if verdict, ok := evaluateTransferMovement(movement, cfg); ok {
 			out = append(out, verdict)
 		}
 	}
@@ -218,7 +218,8 @@ func blockedDestinationVerdict(movement TransferMovement, tp *TransferPolicy) (t
 	}, true
 }
 
-func evaluateTransferMovement(movement TransferMovement, tp *TransferPolicy) (transferRoutingVerdict, bool) {
+func evaluateTransferMovement(movement TransferMovement, cfg *Config) (transferRoutingVerdict, bool) {
+	tp := cfg.TransferPolicy
 	matches := matchingTransferRoutes(movement, tp)
 	if len(matches) == 0 {
 		switch {
@@ -259,18 +260,38 @@ func evaluateTransferMovement(movement TransferMovement, tp *TransferPolicy) (tr
 			return transferRoutingVerdict{
 				Tier:   transferRoutingDeny,
 				RuleID: TransferRoutingRouteRuleID(route.ID, TransferRoutingRejectAboveOutcome),
-				Msg:    fmt.Sprintf("transfer routing amount %d exceeds reject threshold %d", movement.Amount, threshold),
+				Msg:    transferThresholdMessage(cfg, movement, "reject", threshold),
 			}, true
 		}
 		if route, threshold, ok := aggregatedReviewThreshold(matches, movement.Network, movement.Asset); ok && movement.Amount > threshold {
 			return transferRoutingVerdict{
 				Tier:   transferRoutingReview,
 				RuleID: TransferRoutingRouteRuleID(route.ID, TransferRoutingReviewAboveOutcome),
-				Msg:    fmt.Sprintf("transfer routing amount %d exceeds review threshold %d", movement.Amount, threshold),
+				Msg:    transferThresholdMessage(cfg, movement, "review", threshold),
 			}, true
 		}
 	}
 	return transferRoutingVerdict{}, false
+}
+
+// transferThresholdMessage says that movement exceeds a route's threshold,
+// with both amounts in the units the document-level limits use.
+func transferThresholdMessage(cfg *Config, movement TransferMovement, tier string, threshold uint64) string {
+	format := func(raw uint64) string {
+		if movement.Asset.Algo {
+			return formatAlgoAmount(raw)
+		}
+		return formatASALimitAmount(cfg, movement.Network, movement.Asset.ASAID, raw)
+	}
+	return fmt.Sprintf("transfer routing amount %s%s exceeds %s threshold %s on %s",
+		format(movement.Amount), assetLabel(movement.Asset), tier, format(threshold), movement.Network)
+}
+
+func assetLabel(asset TransferAssetRef) string {
+	if asset.Algo {
+		return ""
+	}
+	return fmt.Sprintf(" of asset #%d", asset.ASAID)
 }
 
 func routeMissVerdict(tp *TransferPolicy, ruleID, msg string) (transferRoutingVerdict, bool) {

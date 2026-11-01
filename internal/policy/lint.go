@@ -120,7 +120,7 @@ func formatASALimitAmount(cfg *Config, network string, assetID uint64, raw uint6
 			return formatted
 		}
 	}
-	return fmt.Sprintf("%d", raw)
+	return fmt.Sprintf("%d base units", raw)
 }
 
 func formatAlgoAmount(microAlgos uint64) string {
