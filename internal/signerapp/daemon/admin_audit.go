@@ -33,7 +33,7 @@ func (s signerAdminServices) LogCredentialRestoreIntentDurableContext(
 ) error {
 	audit := s.auditLogger()
 	if audit == nil {
-		return fmt.Errorf("audit log unavailable; refusing restore without a durable intent record")
+		return fmt.Errorf("%w; refusing restore without a durable intent record", adminserver.ErrAuditUnavailable)
 	}
 	return audit.LogCredentialRestoreIntentDurableContext(
 		ctx, operationID, archivePath, replaceExisting,
@@ -71,7 +71,7 @@ func (s signerAdminServices) LogGenerationQuarantinePruneIntentDurableContext(
 ) error {
 	audit := s.auditLogger()
 	if audit == nil {
-		return fmt.Errorf("audit log unavailable; refusing quarantine prune without a durable intent record")
+		return fmt.Errorf("%w; refusing quarantine prune without a durable intent record", adminserver.ErrAuditUnavailable)
 	}
 	return audit.LogGenerationQuarantinePruneIntentDurableContext(ctx, operationID, generationIDs)
 }
@@ -93,7 +93,7 @@ func (s signerAdminServices) LogGenerationAbandonedDiscardIntentDurableContext(
 ) error {
 	audit := s.auditLogger()
 	if audit == nil {
-		return fmt.Errorf("audit log unavailable; refusing abandoned discard without a durable intent record")
+		return fmt.Errorf("%w; refusing abandoned discard without a durable intent record", adminserver.ErrAuditUnavailable)
 	}
 	return audit.LogGenerationAbandonedDiscardIntentDurableContext(ctx, operationID, generationIDs)
 }
@@ -115,7 +115,7 @@ func (s signerAdminServices) LogDeletedArchivePruneIntentDurableContext(
 ) error {
 	audit := s.auditLogger()
 	if audit == nil {
-		return fmt.Errorf("audit log unavailable; refusing archive prune without a durable intent record")
+		return fmt.Errorf("%w; refusing archive prune without a durable intent record", adminserver.ErrAuditUnavailable)
 	}
 	return audit.LogDeletedArchivePruneIntentDurableContext(ctx, operationID, entries)
 }

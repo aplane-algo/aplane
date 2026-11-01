@@ -129,7 +129,11 @@ If the intent cannot be written, the change is refused before it runs: with
 at startup; repair it and restart the daemon), or `audit_write_failed` when
 the write failed (repair the cause and retry). The daemon still starts and
 signs without an audit log; only these changes, restores and generation
-maintenance require one. A failure to write the outcome is reported on the
+maintenance require one. Restores and generation maintenance keep their own
+result codes (`restore_audit_failed`, `quarantine_audit_failed`,
+`abandoned_discard_audit_failed`, `archive_audit_failed`), with the same
+advice: restart when the daemon has no audit log, retry after a failed
+write. A failure to write the outcome is reported on the
 daemon's stderr and never undoes or repeats the change. An intent with no
 outcome, after a crash, is not proof that the change failed: the store's
 generation records say what committed. Offline `apadmin policy rescue` and
@@ -176,6 +180,26 @@ The audit log rotates automatically when it reaches **10 MB**:
 Up to two rotated backups are retained (`audit.log.1` and `audit.log.2`).
 
 If rotation fails, logging continues to the current file.
+
+### Entry size
+
+Every entry is bounded, whatever a request sent, so one request cannot push
+the retained history out of the log:
+
+- `reason` is at most 8 KiB, which holds a signing rejection's violations for
+  a full group; a longer one keeps its start and notes its original length.
+- `operation_id` over 128 bytes becomes its first 32 bytes, `…sha256:` and
+  the digest of the whole ID.
+- `generation_ids` and `archive_entries` list at most 64 members of at most
+  128 bytes each. A longer list is a **sample**: `generation_ids_omitted` or
+  `archive_entries_omitted` counts the members left out, and their names are
+  not recorded anywhere in the log. The operation itself still receives and
+  acts on the whole selection.
+- The policy and ASA set fields have their own, tighter bounds (below).
+
+This keeps any one request from flushing the log, but not many requests:
+enough of them can still rotate older entries out of the 30 MB retained.
+Copy the log elsewhere if you need longer retention.
 
 ## Durability
 

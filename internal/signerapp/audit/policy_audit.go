@@ -26,7 +26,8 @@ import (
 // lists are bounded too, with the number left out.
 
 const (
-	// maxAuditSelectors bounds the selectors one entry lists.
+	// maxAuditSelectors bounds the members of one list in an entry:
+	// selectors, generation IDs or archive entries.
 	maxAuditSelectors = 64
 	// maxAuditField bounds one selector, digest, network, genesis hash or
 	// code; real ones are far shorter.
@@ -49,13 +50,19 @@ func boundText(s string, limit int) string {
 	return s[:cut] + note
 }
 
-func boundSelectors(keys []string) ([]string, int) {
-	omitted := 0
-	if len(keys) > maxAuditSelectors {
-		keys, omitted = keys[:maxAuditSelectors], len(keys)-maxAuditSelectors
+// boundList copies at most maxAuditSelectors members of list, each bounded
+// to maxAuditField, and returns how many members it left out. It never
+// changes list itself.
+func boundList(list []string) ([]string, int) {
+	if list == nil {
+		return nil, 0
 	}
-	out := make([]string, len(keys))
-	for i, k := range keys {
+	omitted := 0
+	if len(list) > maxAuditSelectors {
+		list, omitted = list[:maxAuditSelectors], len(list)-maxAuditSelectors
+	}
+	out := make([]string, len(list))
+	for i, k := range list {
 		out[i] = boundText(k, maxAuditField)
 	}
 	return out, omitted
@@ -73,8 +80,8 @@ func (a *AuditLogger) LogPolicyApplyIntentDurableContext(ctx adminserver.Session
 	for _, doc := range req.Documents {
 		keys = append(keys, doc.Key)
 	}
-	entry.PolicyUpdates, entry.PolicyUpdatesOmitted = boundSelectors(keys)
-	entry.PolicyRemovals, entry.PolicyRemovalsOmitted = boundSelectors(req.Remove)
+	entry.PolicyUpdates, entry.PolicyUpdatesOmitted = boundList(keys)
+	entry.PolicyRemovals, entry.PolicyRemovalsOmitted = boundList(req.Remove)
 	entry.ExpectedPolicySetSHA256 = boundText(req.ExpectedPolicySetSHA256, maxAuditField)
 	entry.ExpectedSnapshotSHA256 = boundText(req.ExpectedSnapshotSHA256, maxAuditField)
 	return a.logDurable(entry)

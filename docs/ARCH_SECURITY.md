@@ -1395,7 +1395,22 @@ Store-management audit semantics:
   omitted count: an entry stays small whatever was sent. An
   `operation_id` over 128 bytes, in any audit entry, is replaced by a
   32-byte prefix and the SHA-256 of the whole ID, so it stays small and an
-  intent still correlates with its outcome. The release
+  intent still correlates with its outcome.
+- every audit entry is normalized before it is written (`normalizeEntry`,
+  in `Log` and `logDurable`): `reason` is cut to 8 KiB, and the
+  `generation_ids` and `archive_entries` lists to 64 members of 128 bytes,
+  with `*_omitted` counts. A cut list is a sample; the omitted names are
+  not recorded. Normalization changes only the log copy: the request and
+  result it describes are untouched, and the service acts on the whole
+  selection. With JSON escaping, no entry exceeds 128 KiB. This bounds what
+  one request can write, not the number of requests, so retention (three
+  10 MB files) can still be exhausted by volume. The release-history reader
+  skips lines over 1 MiB, so logs from earlier releases still load.
+- the older durable intents (restore, quarantine prune, abandoned-generation
+  discard, deleted-archive prune) keep their result codes but share the
+  policy changes' advice: with no audit logger the forwarder returns
+  `ErrAuditUnavailable` and the refusal says to repair and restart; a
+  failed write says to repair and retry. The release
   history reader skips any audit line over 1 MiB rather than failing, so
   one oversized entry cannot hide rotating releases at unlock.
   Offline rescue and `apstore policy sign` are not audited.

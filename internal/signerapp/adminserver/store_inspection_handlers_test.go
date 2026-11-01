@@ -6,6 +6,7 @@ package adminserver
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
@@ -21,6 +22,7 @@ type inspectionStub struct {
 	pruneCalls         int
 	archiveListCalls   int
 	archivePruneCalls  int
+	discardCalls       int
 	lastPrune          adminproto.PruneGenerationQuarantineRequest
 	lastArchivePrune   adminproto.PruneDeletedArchiveRequest
 	pruneResult        adminproto.PruneGenerationQuarantineResult
@@ -62,6 +64,7 @@ func (s *inspectionStub) PruneGenerationQuarantine(
 func (s *inspectionStub) DiscardAbandonedGenerations(
 	req adminproto.DiscardAbandonedGenerationsRequest,
 ) adminproto.DiscardAbandonedGenerationsResult {
+	s.discardCalls++
 	return adminproto.DiscardAbandonedGenerationsResult{}
 }
 func (s *inspectionStub) ListDeletedArchive() adminproto.DeletedArchiveInventory {
@@ -264,6 +267,8 @@ func TestHandlePruneGenerationQuarantineFailsClosedWithoutConfirmationOrAudit(t 
 		confirm  bool
 		audit    AuthorizationAudit
 		wantCode string
+		// wantAdvice is what the refusal tells the operator to do.
+		wantAdvice string
 	}{
 		{
 			name:     "confirmation required",
@@ -272,16 +277,25 @@ func TestHandlePruneGenerationQuarantineFailsClosedWithoutConfirmationOrAudit(t 
 			wantCode: protocol.ResultCodeConfirmationRequired,
 		},
 		{
-			name:     "durable audit required",
-			confirm:  true,
-			audit:    &recordingAuthorizationAudit{},
-			wantCode: protocol.ResultCodeQuarantineAuditFailed,
+			name:       "durable audit required",
+			confirm:    true,
+			audit:      &recordingAuthorizationAudit{},
+			wantCode:   protocol.ResultCodeQuarantineAuditFailed,
+			wantAdvice: "restart the daemon",
 		},
 		{
-			name:     "durable audit failure",
-			confirm:  true,
-			audit:    &quarantinePruneAudit{intentErr: fmt.Errorf("disk full")},
-			wantCode: protocol.ResultCodeQuarantineAuditFailed,
+			name:       "no audit logger",
+			confirm:    true,
+			audit:      &quarantinePruneAudit{intentErr: fmt.Errorf("%w; refusing", ErrAuditUnavailable)},
+			wantCode:   protocol.ResultCodeQuarantineAuditFailed,
+			wantAdvice: "restart the daemon",
+		},
+		{
+			name:       "durable audit failure",
+			confirm:    true,
+			audit:      &quarantinePruneAudit{intentErr: fmt.Errorf("disk full")},
+			wantCode:   protocol.ResultCodeQuarantineAuditFailed,
+			wantAdvice: "disk full. Repair the cause, such as a full disk or wrong permissions, and retry",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -309,6 +323,9 @@ func TestHandlePruneGenerationQuarantineFailsClosedWithoutConfirmationOrAudit(t 
 			}
 			if response.Code != test.wantCode {
 				t.Fatalf("response code = %q, want %q", response.Code, test.wantCode)
+			}
+			if !strings.Contains(response.Error, test.wantAdvice) || (test.wantAdvice != "restart the daemon" && strings.Contains(response.Error, "restart")) {
+				t.Fatalf("response error = %q, want advice %q", response.Error, test.wantAdvice)
 			}
 		})
 	}
@@ -379,11 +396,13 @@ func TestHandlePruneDeletedArchiveFailsClosedBeforeMutation(t *testing.T) {
 		authorizeErr error
 		audit        AuthorizationAudit
 		wantCode     string
+		wantAdvice   string
 	}{
 		{name: "authorization", confirm: true, authorizeErr: auth.ErrForbidden, audit: &archivePruneAudit{}, wantCode: protocol.ErrCodeAuthorizationDenied},
 		{name: "confirmation", audit: &archivePruneAudit{}, wantCode: protocol.ResultCodeConfirmationRequired},
-		{name: "audit unavailable", confirm: true, audit: &recordingAuthorizationAudit{}, wantCode: protocol.ResultCodeArchiveAuditFailed},
-		{name: "audit failure", confirm: true, audit: &archivePruneAudit{intentErr: fmt.Errorf("disk full")}, wantCode: protocol.ResultCodeArchiveAuditFailed},
+		{name: "audit unavailable", confirm: true, audit: &recordingAuthorizationAudit{}, wantCode: protocol.ResultCodeArchiveAuditFailed, wantAdvice: "restart the daemon"},
+		{name: "no audit logger", confirm: true, audit: &archivePruneAudit{intentErr: fmt.Errorf("%w; refusing", ErrAuditUnavailable)}, wantCode: protocol.ResultCodeArchiveAuditFailed, wantAdvice: "restart the daemon"},
+		{name: "audit failure", confirm: true, audit: &archivePruneAudit{intentErr: fmt.Errorf("disk full")}, wantCode: protocol.ResultCodeArchiveAuditFailed, wantAdvice: "disk full. Repair the cause, such as a full disk or wrong permissions, and retry"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			ir := productruntime.New(productruntime.Config{})
@@ -400,8 +419,8 @@ func TestHandlePruneDeletedArchiveFailsClosedBeforeMutation(t *testing.T) {
 				t.Fatalf("archive prune called %d times", inspection.archivePruneCalls)
 			}
 			msgs := decodeAdminProtoWrites(t, conn)
-			if len(msgs) != 1 || msgs[0].Code != test.wantCode {
-				t.Fatalf("responses = %#v, want code %q", msgs, test.wantCode)
+			if len(msgs) != 1 || msgs[0].Code != test.wantCode || !strings.Contains(msgs[0].Error, test.wantAdvice) {
+				t.Fatalf("responses = %#v, want code %q advising %q", msgs, test.wantCode, test.wantAdvice)
 			}
 		})
 	}
@@ -417,3 +436,46 @@ func decodeSingleWrite(conn *queueConn, out any) error {
 type writeCountError struct{ got int }
 
 func (e *writeCountError) Error() string { return fmt.Sprintf("write count = %d, want 1", e.got) }
+
+type abandonedDiscardAudit struct {
+	recordingAuthorizationAudit
+	intentErr error
+}
+
+func (a *abandonedDiscardAudit) LogGenerationAbandonedDiscardIntentDurableContext(SessionContext, string, []string) error {
+	return a.intentErr
+}
+
+// An abandoned-generation discard whose intent cannot be recorded never runs,
+// keeps its result code, and says whether to restart the daemon or retry.
+func TestHandleDiscardAbandonedGenerationsFailsClosedWithoutDurableAudit(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		audit  AuthorizationAudit
+		advice string
+	}{
+		{"no audit capability", &recordingAuthorizationAudit{}, "restart the daemon"},
+		{"no audit logger", &abandonedDiscardAudit{intentErr: fmt.Errorf("%w; refusing", ErrAuditUnavailable)}, "restart the daemon"},
+		{"a failed write", &abandonedDiscardAudit{intentErr: fmt.Errorf("disk full")}, "disk full. Repair the cause, such as a full disk or wrong permissions, and retry"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			ir := productruntime.New(productruntime.Config{})
+			ir.SetUnlocked()
+			inspection := &inspectionStub{}
+			conn := &queueConn{}
+			session := NewSession(conn, SessionDeps{Inspection: inspection, Authorizer: &recordingAuthorizer{}, Audit: tt.audit})
+			session.Bind(&auth.Identity{ID: "admin-principal", Type: "human", Method: "test"}, ir)
+			session.HandleDiscardAbandonedGenerations(&protocol.DiscardAbandonedGenerationsMessage{
+				BaseMessage:   protocol.BaseMessage{Type: protocol.MsgTypeDiscardAbandonedGenerations, ID: "discard-fail"},
+				GenerationIDs: []string{"gen-1700000000-0123abcd"}, Confirm: true,
+			})
+			if inspection.discardCalls != 0 {
+				t.Fatalf("discard service called %d times", inspection.discardCalls)
+			}
+			msgs := decodeAdminProtoWrites(t, conn)
+			if len(msgs) != 1 || msgs[0].Code != protocol.ResultCodeAbandonedAuditFailed || !strings.Contains(msgs[0].Error, tt.advice) {
+				t.Fatalf("responses = %#v, want %s advising %q", msgs, protocol.ResultCodeAbandonedAuditFailed, tt.advice)
+			}
+		})
+	}
+}

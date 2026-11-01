@@ -53,12 +53,28 @@ func (s *Session) recordMutationIntent(what string, record func() error, rescue 
 	if rescue {
 		alternative = " To change policy without the daemon, stop it and use apadmin policy rescue, which needs free space for a new generation too."
 	}
-	if errors.Is(err, ErrAuditUnavailable) {
-		return protocol.ResultCodeAuditUnavailable, fmt.Sprintf(
-			"%s refused: the daemon has no audit log, because it could not be opened at startup (see the daemon log). Repair the audit log's storage or permissions, then restart the daemon; retrying the request alone cannot help.%s",
-			what, alternative)
+	unavailable, message := auditIntentRefusal(what+" refused", err)
+	if unavailable {
+		return protocol.ResultCodeAuditUnavailable, message + alternative
 	}
-	return protocol.ResultCodeAuditWriteFailed, fmt.Sprintf(
-		"%s refused: the audit log could not record the request: %v. Repair the cause, such as a full disk or wrong permissions, and retry.%s",
-		what, err, alternative)
+	return protocol.ResultCodeAuditWriteFailed, message + alternative
+}
+
+// auditIntentRefusal explains an intent that could not be recorded, with
+// advice that fits the cause: a daemon with no audit log needs a restart,
+// since only startup opens one; a failed write can be retried once repaired.
+// A nil err means the session has no audit capability at all, which is the
+// first case. prefix starts the message, such as "restore aborted".
+func auditIntentRefusal(prefix string, err error) (unavailable bool, message string) {
+	if err == nil || errors.Is(err, ErrAuditUnavailable) {
+		return true, prefix + ": the daemon has no audit log, because it could not be opened at startup (see the daemon log). Repair the audit log's storage or permissions, then restart the daemon; retrying the request alone cannot help."
+	}
+	return false, fmt.Sprintf("%s: the audit log could not record the request: %v. Repair the cause, such as a full disk or wrong permissions, and retry.", prefix, err)
+}
+
+// auditRefusalText is auditIntentRefusal's message, for an operation that
+// keeps a result code of its own.
+func auditRefusalText(prefix string, err error) string {
+	_, message := auditIntentRefusal(prefix, err)
+	return message
 }

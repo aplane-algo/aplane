@@ -6,6 +6,7 @@ package adminserver
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -67,29 +68,45 @@ func TestRestoreBackupRequiresDurableIntentBeforeService(t *testing.T) {
 	}
 }
 
+// A restore whose intent cannot be recorded never runs, keeps its result
+// code, and says whether to restart the daemon or retry.
 func TestRestoreBackupAbortsWhenDurableIntentFails(t *testing.T) {
-	ir := productruntime.New(productruntime.Config{})
-	ir.SetUnlocked()
-	svc := &stubServices{}
-	audit := &recordingCredentialRestoreAudit{intentErr: errors.New("sync failed")}
-	deps := svc.backupDeps()
-	deps.Audit = audit
-	conn := &queueConn{}
-	session := NewSession(conn, deps)
-	session.Bind(auth.NewProductIdentity("test"), ir)
-	dispatchAdminMessage(t, session, protocol.RestoreBackupMessage{
-		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeRestoreBackup, ID: "restore-fail"},
-		ArchivePath: "backup.tar.gz", ExportPassphrase: protocol.NewSensitiveBytes("passphrase"),
-	})
-	if svc.restoreBackupCalls != 0 {
-		t.Fatalf("restore service called %d times after audit failure", svc.restoreBackupCalls)
-	}
-	var result protocol.RestoreBackupResultMessage
-	if err := json.Unmarshal(conn.writes[0], &result); err != nil {
-		t.Fatal(err)
-	}
-	if result.Code != protocol.ResultCodeRestoreAuditFailed {
-		t.Fatalf("result = %+v", result)
+	for _, tt := range []struct {
+		name   string
+		audit  AuthorizationAudit
+		advice string
+	}{
+		{"no audit capability", &recordingAuthorizationAudit{}, "restart the daemon"},
+		{"no audit logger", &recordingCredentialRestoreAudit{intentErr: fmt.Errorf("%w; refusing restore", ErrAuditUnavailable)}, "restart the daemon"},
+		{"a failed write", &recordingCredentialRestoreAudit{intentErr: errors.New("sync failed")}, "sync failed. Repair the cause, such as a full disk or wrong permissions, and retry"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			ir := productruntime.New(productruntime.Config{})
+			ir.SetUnlocked()
+			svc := &stubServices{}
+			deps := svc.backupDeps()
+			deps.Audit = tt.audit
+			conn := &queueConn{}
+			session := NewSession(conn, deps)
+			session.Bind(auth.NewProductIdentity("test"), ir)
+			dispatchAdminMessage(t, session, protocol.RestoreBackupMessage{
+				BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeRestoreBackup, ID: "restore-fail"},
+				ArchivePath: "backup.tar.gz", ExportPassphrase: protocol.NewSensitiveBytes("passphrase"),
+			})
+			if svc.restoreBackupCalls != 0 {
+				t.Fatalf("restore service called %d times after audit failure", svc.restoreBackupCalls)
+			}
+			var result protocol.RestoreBackupResultMessage
+			if err := json.Unmarshal(conn.writes[0], &result); err != nil {
+				t.Fatal(err)
+			}
+			if result.Code != protocol.ResultCodeRestoreAuditFailed || !strings.Contains(result.Error, tt.advice) {
+				t.Fatalf("result = %+v, want %s advising %q", result, protocol.ResultCodeRestoreAuditFailed, tt.advice)
+			}
+			if tt.advice != "restart the daemon" && strings.Contains(result.Error, "restart") {
+				t.Fatalf("a retryable write failure asks for a restart: %q", result.Error)
+			}
+		})
 	}
 }
 
