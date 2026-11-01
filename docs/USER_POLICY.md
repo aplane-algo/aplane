@@ -452,6 +452,15 @@ appolicy test policy/               # re-run the saved cases in policy/.appolicy
     overwrite it after seeing what the overwrite replaces. The check is
     best-effort; another program can still write the file between the check
     and the write.
+  - **Trying and saved cases:** `t` opens a form to try a transaction
+    against the open document as edited, saved or not, with the same answer
+    and assumptions as `appolicy try`; on a signer key's own document the
+    sender starts as that key. Enter tries it and `ctrl+s` keeps the answer
+    as a saved case under a name. The saved cases run again after every key
+    against the documents as edited: the header shows how many pass or fail,
+    and `T` lists them with what each got and expected, so an edit that
+    changes a decision shows before you save it. Networks come from
+    `--signer-data` as for try.
   - **New documents:** `n` asks which document (the default or a key), what
     it starts from (the shipped default for the role, a copy of a workspace
     document, or a cosigner preset), and its file name, and opens it unsaved.

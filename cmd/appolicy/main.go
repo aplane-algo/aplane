@@ -328,7 +328,7 @@ var runProgram = func(m tea.Model) error {
 
 func runOpen(args []string, stderr io.Writer) int {
 	fs := newFlags("open", stderr)
-	signerData := fs.String("signer-data", os.Getenv("APSIGNER_DATA"), "signer data directory whose ASA cache is read, read-only")
+	signerData := fs.String("signer-data", os.Getenv("APSIGNER_DATA"), "signer data directory whose ASA cache and network mapping are read, read-only")
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
 	}
@@ -344,7 +344,12 @@ func runOpen(args []string, stderr io.Writer) int {
 	cache.SetLoggerOutput(io.Discard)
 	var diagnostics []string
 	lookup := assetLookup(*signerData, func(msg string) { diagnostics = append(diagnostics, msg) })
-	if err := runProgram(authortui.New(w, lookup, &diagnostics)); err != nil {
+	networks, err := signerNetworks(*signerData)
+	if err != nil {
+		writef(stderr, "appolicy: %v\n", err)
+		return exitUsage
+	}
+	if err := runProgram(authortui.New(w, lookup, &diagnostics).WithNetworks(networks)); err != nil {
 		writef(stderr, "appolicy: %v\n", err)
 		return exitUsage
 	}

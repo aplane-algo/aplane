@@ -29,6 +29,8 @@ const (
 	screenConflict
 	screenOverwrite
 	screenNew
+	screenTry
+	screenCases
 )
 
 type pane int
@@ -76,6 +78,14 @@ type Model struct {
 	quitConfirm bool
 	newDoc      newDoc
 
+	// networks maps genesis hashes for tries and cases; try is the try
+	// form. cases are the workspace's saved cases (nil when it has none),
+	// and casesErr why they could not be read.
+	networks policyauthor.Networks
+	try      tryForm
+	cases    *policyauthor.CaseFile
+	casesErr string
+
 	status string
 }
 
@@ -86,10 +96,19 @@ func New(ws *policyauthor.Workspace, lookup policyauthor.AssetLookup, diagnostic
 	if diagnostics == nil {
 		diagnostics = new([]string)
 	}
-	m := Model{ws: ws, lookup: lookup, diagnostics: diagnostics, styles: newStyles(), width: 100, height: 30, sessions: map[string]*policyauthor.Session{}}
+	m := Model{ws: ws, lookup: lookup, diagnostics: diagnostics, styles: newStyles(), width: 100, height: 30, sessions: map[string]*policyauthor.Session{}, networks: policyauthor.BuiltinNetworks()}
+	m = m.loadCases()
 	if len(ws.Files) == 1 {
 		m = m.open(0)
 	}
+	return m
+}
+
+// WithNetworks sets the network mapping tries and saved cases use, such as a
+// signer's own (policyauthor.SignerNetworks); the default is the built-in
+// networks.
+func (m Model) WithNetworks(n policyauthor.Networks) Model {
+	m.networks = n
 	return m
 }
 
@@ -171,6 +190,7 @@ func (m Model) reload() Model {
 	}
 	section, field := m.sectionCursor, m.fieldCursor
 	m.ws = ws
+	m = m.loadCases()
 	m.fileCursor = max(0, min(m.fileCursor, len(ws.Files)-1))
 	m.status = "Reloaded from disk"
 	if openPath == "" {
@@ -219,8 +239,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.problemsKeys(msg)
 		case screenComparePick:
 			return m.comparePickKeys(msg)
-		case screenExplain, screenCompare, screenHelp, screenField:
+		case screenExplain, screenCompare, screenHelp, screenField, screenCases:
 			return m.pageKeys(msg)
+		case screenTry:
+			return m.tryKeys(msg)
 		case screenSave:
 			return m.saveKeys(msg)
 		case screenConflict:
@@ -327,6 +349,10 @@ func (m Model) documentKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.openExplain(), nil
 	case "c":
 		return m.openCompare(), nil
+	case "t":
+		return m.startTry(), nil
+	case "T":
+		return m.openCases(), nil
 	case "?":
 		return m.openHelp(), nil
 	}

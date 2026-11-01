@@ -247,3 +247,21 @@ func DiskDocuments(dir string) func(name string) (*File, error) {
 		return LoadFile(path), nil
 	}
 }
+
+// Documents looks documents up among w's files, under its directory, as
+// shown presents file i: in the editor, with its unsaved edits.
+func (w *Workspace) Documents(shown func(i int) *File) func(name string) (*File, error) {
+	dir := w.Dir()
+	return func(name string) (*File, error) {
+		want, err := filepath.Abs(filepath.Join(dir, name))
+		if err != nil {
+			return nil, err
+		}
+		for i, f := range w.Files {
+			if path, err := filepath.Abs(f.Path); err == nil && path == want {
+				return shown(i), nil
+			}
+		}
+		return nil, fmt.Errorf("%w: %s is not in the workspace", ErrDocumentMissing, name)
+	}
+}
