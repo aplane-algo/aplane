@@ -54,6 +54,43 @@ func TestDiffPolicySettingsAndLimits(t *testing.T) {
 	)
 }
 
+// A labelled diff shows an asset the node knows in its display units, with
+// the base units, decimals, ID and network they came from; an asset it does
+// not know, or the same ID on another network, stays in base units.
+func TestDiffPolicyLabelsKnownAssets(t *testing.T) {
+	current := mustSignerDoc(t, DefaultKey, `{"limits":{
+		"testnet":{"asa:7":{"review_above":"150"},"asa:8":{"review_above":"5"}},
+		"mainnet":{"asa:7":{"review_above":"1"}}}}`)
+	next := mustSignerDoc(t, DefaultKey, `{"limits":{
+		"testnet":{"asa:7":{"review_above":"2500"},"asa:8":{"review_above":"6"}},
+		"mainnet":{"asa:7":{"review_above":"2"}}}}`)
+	label := func(network string, assetID uint64) (string, uint64, bool) {
+		if network == "testnet" && assetID == 7 {
+			return "XY\x1bZ", 2, true
+		}
+		return "", 0, false
+	}
+	assertChanges(t, DiffPolicyV1Labelled(current, next, label),
+		"loosened /limits/mainnet/asa:7/review_above: 1 base units → 2 base units",
+		"loosened /limits/testnet/asa:7/review_above: 1.5 XY?Z (150 base units; 2 decimals, asset 7 on testnet) → 25 XY?Z (2500 base units; 2 decimals, asset 7 on testnet)",
+		"loosened /limits/testnet/asa:8/review_above: 5 base units → 6 base units",
+	)
+}
+
+func TestFormatUnits(t *testing.T) {
+	for _, tc := range []struct {
+		amount, decimals uint64
+		want             string
+	}{
+		{0, 0, "0"}, {5, 0, "5"}, {5, 2, "0.05"}, {150, 2, "1.5"}, {1000000, 6, "1"},
+		{18446744073709551615, 19, "1.8446744073709551615"},
+	} {
+		if got := formatUnits(tc.amount, tc.decimals); got != tc.want {
+			t.Errorf("formatUnits(%d, %d) = %q, want %q", tc.amount, tc.decimals, got, tc.want)
+		}
+	}
+}
+
 func TestDiffPolicyTransactionTypesReportEffectiveVerdicts(t *testing.T) {
 	current := mustSignerDoc(t, DefaultKey, `{"transaction_types":{"*":"allow"}}`)
 	next := mustSignerDoc(t, DefaultKey, `{"transaction_types":{"*":"reject","pay":"allow","axfer":"allow","keyreg":"review"}}`)

@@ -76,6 +76,33 @@ type fakeOnlineSession struct {
 	context *protocol.PolicyContextMessage
 }
 
+// builtinContext is the context of a node of role with the built-in
+// networks and assets only.
+func builtinContext(role string) *policycontext.Context {
+	ctx, err := policycontext.New(noderole.Role(role), apconfig.DefaultGenesisHashNetworkResolver(), asaset.Empty())
+	if err != nil {
+		panic(err)
+	}
+	return ctx
+}
+
+// contextMessage is the policy context reply for ctx with the policy set
+// and snapshot digests the node reports.
+func contextMessage(ctx *policycontext.Context, set, snapshot string) protocol.PolicyContextMessage {
+	msg := protocol.PolicyContextMessage{
+		Success: true, NodeRole: string(ctx.Role()), RulesVersion: ctx.RulesVersion(), ContextSHA256: ctx.SHA256(),
+		PolicySetSHA256: set, SnapshotSHA256: snapshot,
+	}
+	for token, genesis := range ctx.Networks() {
+		msg.Networks = append(msg.Networks, protocol.PolicyNetwork{Network: token, GenesisHash: genesis.String()})
+	}
+	for _, a := range ctx.Assets().Assets() {
+		msg.Assets = append(msg.Assets, protocol.ASAInfo{GenesisHash: a.Genesis.String(), AssetID: a.AssetID,
+			Name: a.Name, UnitName: a.UnitName, Decimals: a.Decimals, Origin: string(a.Origin)})
+	}
+	return msg
+}
+
 // makeReal gives the session true digests and a node's whole context: the
 // built-in networks and assets, plus each of extraNetworks (token to
 // genesis hash), so an export of it can be written and read back.
@@ -98,26 +125,17 @@ func (f *fakeOnlineSession) makeReal(t *testing.T, extraNetworks map[string]stri
 	if err != nil {
 		t.Fatal(err)
 	}
-	msg := &protocol.PolicyContextMessage{
-		Success: true, NodeRole: f.policy.NodeRole, RulesVersion: ctx.RulesVersion(), ContextSHA256: ctx.SHA256(),
-		PolicySetSHA256: f.policy.PolicySetSHA256, SnapshotSHA256: policycontext.SnapshotSHA256(ctx.SHA256(), f.policy.PolicySetSHA256),
-	}
-	for token, genesis := range ctx.Networks() {
-		msg.Networks = append(msg.Networks, protocol.PolicyNetwork{Network: token, GenesisHash: genesis.String()})
-	}
-	for _, a := range ctx.Assets().Assets() {
-		msg.Assets = append(msg.Assets, protocol.ASAInfo{GenesisHash: a.Genesis.String(), AssetID: a.AssetID,
-			Name: a.Name, UnitName: a.UnitName, Decimals: a.Decimals, Origin: string(a.Origin)})
-	}
-	f.context, f.snapshot = msg, msg.SnapshotSHA256
+	msg := contextMessage(ctx, f.policy.PolicySetSHA256, policycontext.SnapshotSHA256(ctx.SHA256(), f.policy.PolicySetSHA256))
+	f.context, f.snapshot = &msg, msg.SnapshotSHA256
 }
 
 // newFakeSession returns a session for a node of role holding docs. A node
 // always has a default; the shipped one stands in when docs carry none.
 func newFakeSession(role string, docs ...protocol.PolicyDocumentWire) *fakeOnlineSession {
-	f := &fakeOnlineSession{status: "unlocked", bodies: map[string]string{}, snapshot: "active-snapshot", policy: protocol.PolicyMessage{
+	f := &fakeOnlineSession{status: "unlocked", bodies: map[string]string{}, policy: protocol.PolicyMessage{
 		Success: true, NodeRole: role, PolicySetSHA256: "active-set",
 	}}
+	f.snapshot = policycontext.SnapshotSHA256(builtinContext(role).SHA256(), "active-set")
 	hasDefault := false
 	for _, doc := range docs {
 		hasDefault = hasDefault || doc.Key == policy.DefaultKey
@@ -158,7 +176,7 @@ func (f *fakeOnlineSession) SendAndReceive(message interface{}, _ time.Duration)
 		if f.contextSet != "" {
 			set = f.contextSet
 		}
-		reply := protocol.PolicyContextMessage{Success: true, NodeRole: f.policy.NodeRole, PolicySetSHA256: set, SnapshotSHA256: f.snapshot}
+		reply := contextMessage(builtinContext(f.policy.NodeRole), set, f.snapshot)
 		if f.context != nil {
 			reply = *f.context
 		}
@@ -267,7 +285,7 @@ func TestOnlineApplyChecksThenAppliesExactBytesAgainstActiveSet(t *testing.T) {
 		t.Fatalf("checks %d applies %d, want 1 each", len(session.checks), len(session.applies))
 	}
 	apply := session.applies[0]
-	if apply.ExpectedPolicySetSHA256 != "active-set" || apply.ExpectedSnapshotSHA256 != "active-snapshot" || len(apply.Documents) != 2 ||
+	if apply.ExpectedPolicySetSHA256 != "active-set" || apply.ExpectedSnapshotSHA256 != session.snapshot || len(apply.Documents) != 2 ||
 		apply.Documents[0].Key != testKeyA || apply.Documents[0].Document != testCosignerDoc(testKeyA) ||
 		apply.Documents[1].Key != testKeyB {
 		t.Fatalf("apply request = %+v", apply)

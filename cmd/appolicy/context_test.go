@@ -155,3 +155,23 @@ func TestADocumentForAnotherRoleThanTheExport(t *testing.T) {
 		t.Fatalf("exit %d\n%s", code, out)
 	}
 }
+
+// A directory named explicitly keeps its context with no policy file in it:
+// an export that stopped before its first document is refused, and a fresh
+// one is still the node's.
+func TestAnEmptyExportDirectoryKeepsItsContext(t *testing.T) {
+	fresh := t.TempDir()
+	writeNodeContext(t, fresh, true)
+	if code, report := checkJSON(t, fresh); code != exitOK || !strings.Contains(report.Context, "the signer node exported to") {
+		t.Fatalf("an empty export: exit %d, context %q", code, report.Context)
+	}
+
+	unfinished := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(unfinished, policyexport.ContextDir), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	put(t, filepath.Join(unfinished, policyexport.ContextDir), policyexport.InProgressFile, nil)
+	if code, _, errOut := appolicy("check", unfinished); code != exitUsage || !strings.Contains(errOut, "did not finish") {
+		t.Fatalf("an export that stopped before its first document: exit %d: %s", code, errOut)
+	}
+}

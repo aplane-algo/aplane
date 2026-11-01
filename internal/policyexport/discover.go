@@ -9,6 +9,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/aplane-algo/aplane/internal/policycontext"
 )
@@ -20,9 +22,10 @@ type Selected struct {
 	Export *policycontext.Export
 }
 
-// Discover selects the node context for policy files. A file's context is
-// the export it sits in: .appolicy/node.json beside it. override, when set,
-// names a context file to use for every file instead.
+// Discover selects the node context for policy files and directories. A
+// file's context is the export it sits in: .appolicy/node.json beside it; a
+// directory's is the export it is, even with no policy files in it yet.
+// override, when set, names a context file to use for every path instead.
 //
 // It returns nil when no file has a context: the files are not from an
 // export (or come from stdin, named "-"). A .appolicy directory without a
@@ -42,7 +45,11 @@ func Discover(files []string, override string) (*Selected, error) {
 			bare = append(bare, "stdin")
 			continue
 		}
-		path, err := contextPath(filepath.Dir(file))
+		dir := filepath.Dir(file)
+		if info, err := os.Stat(file); err == nil && info.IsDir() {
+			dir = file
+		}
+		path, err := contextPath(dir)
 		if err != nil {
 			return nil, err
 		}
@@ -64,6 +71,42 @@ func Discover(files []string, override string) (*Selected, error) {
 		return nil, fmt.Errorf("%s is not from the export in %s; check or apply it on its own", bare[0], filepath.Dir(filepath.Dir(selected.Path)))
 	}
 	return selected, nil
+}
+
+// Compare refuses files from an export the node has moved on from: its
+// live digests, from the context read paired with its summary, are not the
+// export's baseline. The baseline was recomputed from the file's own
+// contents when it was read. The edits must be carried over to a new export
+// rather than reviewed over changes the export never saw.
+func (s *Selected) Compare(contextSHA256, policySetSHA256, snapshotSHA256 string) error {
+	baseline := s.Export.Baseline
+	if baseline.SnapshotSHA256 == snapshotSHA256 {
+		return nil
+	}
+	var moved []string
+	if baseline.PolicySetSHA256 != policySetSHA256 {
+		moved = append(moved, "policy")
+	}
+	if s.Export.Context.SHA256() != contextSHA256 {
+		moved = append(moved, "ASA set, network map or role")
+	}
+	if len(moved) == 0 {
+		moved = append(moved, "policy context")
+	}
+	return &StaleError{Path: s.Path, ExportedAt: s.Export.ExportedAt, Moved: strings.Join(moved, " and ")}
+}
+
+// StaleError reports an export the node has moved on from.
+type StaleError struct {
+	Path       string
+	ExportedAt time.Time
+	// Moved says what changed: the policy, the context, or both.
+	Moved string
+}
+
+func (e *StaleError) Error() string {
+	return fmt.Sprintf("the export %s (taken %s) is stale: the node's %s changed since; export again and carry your edits over",
+		e.Path, e.ExportedAt.Format(time.RFC3339), e.Moved)
 }
 
 // ForDir selects the node context for the policy files in dir: override,

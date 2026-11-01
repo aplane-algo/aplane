@@ -174,3 +174,20 @@ func TestExportFlagsValidate(t *testing.T) {
 		}
 	}
 }
+
+// The review apadmin prints is rendered in the node's context, so an ASA
+// threshold shows in display units beside its base units.
+func TestDiffShowsAmountsInTheNodesUnits(t *testing.T) {
+	onlineEnv(t)
+	session := newFakeSession("signer")
+	file := writePolicyFile(t, "default.json", policytest.MustDocument(noderole.RoleSigner, policy.DefaultKey,
+		`{"limits": {"mainnet": {"asa:31566704": {"review_above": "2500000"}}}}`))
+	var stdout bytes.Buffer
+	if err := (OnlineRunner{Session: session}).Run(context.Background(), Command{Verb: VerbDiff, Args: []string{file}},
+		Streams{Stdout: &stdout, Stderr: &bytes.Buffer{}}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stdout.String(), "none → 2.5 USDC (2500000 base units; 6 decimals, asset 31566704 on mainnet)") {
+		t.Fatalf("diff:\n%s", stdout.String())
+	}
+}

@@ -12,11 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/asaset"
-	apconfig "github.com/aplane-algo/aplane/internal/config"
-	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
-	"github.com/aplane-algo/aplane/internal/policycontext"
 	"github.com/aplane-algo/aplane/internal/policyexport"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	tea "github.com/charmbracelet/bubbletea"
@@ -34,28 +30,7 @@ func exportPoliciesModel(t *testing.T, docs map[string]string, order ...string) 
 	next, _ = m.handlePolicyLoaded(PolicyLoadedMsg{Policy: summary})
 	m = next.(Model)
 
-	networks, err := apconfig.NewGenesisHashNetworkResolver(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx, err := policycontext.New(noderole.RoleCosigner, networks, asaset.Empty())
-	if err != nil {
-		t.Fatal(err)
-	}
-	msg := protocol.PolicyContextMessage{
-		BaseMessage: BaseMessage{ID: m.policies.pendingContextID}, Success: true,
-		NodeRole: string(ctx.Role()), RulesVersion: ctx.RulesVersion(), ContextSHA256: ctx.SHA256(),
-		PolicySetSHA256: summary.PolicySetSHA256, SnapshotSHA256: policycontext.SnapshotSHA256(ctx.SHA256(), summary.PolicySetSHA256),
-	}
-	for token, genesis := range ctx.Networks() {
-		msg.Networks = append(msg.Networks, protocol.PolicyNetwork{Network: token, GenesisHash: genesis.String()})
-	}
-	for _, a := range ctx.Assets().Assets() {
-		msg.Assets = append(msg.Assets, protocol.ASAInfo{GenesisHash: a.Genesis.String(), AssetID: a.AssetID,
-			Name: a.Name, UnitName: a.UnitName, Decimals: a.Decimals, Origin: string(a.Origin)})
-	}
-	next, _ = m.handlePolicyContextLoaded(PolicyContextLoadedMsg{Context: msg})
-	m = next.(Model)
+	m = deliverPolicyContext(m, summary.PolicySetSHA256)
 	if m.policies.snapshot == "" {
 		t.Fatal("the context did not settle a snapshot")
 	}
@@ -226,5 +201,46 @@ func TestPolicyExportEndsOnADaemonError(t *testing.T) {
 	}
 	if !strings.Contains(stripANSI(got.renderPolicyExportForm()), "authorization denied") {
 		t.Fatal("the export form does not show the error")
+	}
+}
+
+// A file loaded from an export is reviewed only while the node is still what
+// was exported, as apadmin policy apply does; an unfinished export is
+// refused at load.
+func TestPolicyLoadFromAnExportComparesTheNode(t *testing.T) {
+	docs := map[string]string{policy.DefaultKey: cosignerDefaultDoc(), policyViewKeyA: policyApplyCosignerDoc(policyViewKeyA, "")}
+	m := exportPoliciesModel(t, docs, policy.DefaultKey, policyViewKeyA)
+	dir := filepath.Join(t.TempDir(), "export")
+	m, _ = runExport(t, m, dir, docs)
+	written := writePolicyExportCmd(m.policies.export.path, m.policies.export.docs, m.policies.export.context)().(PolicyExportWrittenMsg)
+	if written.Err != nil {
+		t.Fatal(written.Err)
+	}
+	next, _ := m.handlePolicyExportWritten(written)
+	m = next.(Model)
+	edited := filepath.Join(dir, policyViewKeyA+".json")
+	if err := os.WriteFile(edited, []byte(policyApplyCosignerDoc(policyViewKeyA, `{"reject_clawback": true}`)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	current, _ := submitPolicyApplyPath(t, m, edited)
+	current = deliverPolicyCheck(current, protocol.CheckPolicyResultMessage{Success: true, Valid: true})
+	if current.policies.apply.pendingDocumentID == "" || current.policies.apply.err != "" {
+		t.Fatalf("a current export: apply %+v, want the review to go on", current.policies.apply)
+	}
+
+	moved := map[string]string{policy.DefaultKey: docs[policy.DefaultKey], policyViewKeyA: policyApplyCosignerDoc(policyViewKeyA, `{"reject_asset_close": true}`)}
+	stale, _ := submitPolicyApplyPath(t, exportPoliciesModel(t, moved, policy.DefaultKey, policyViewKeyA), edited)
+	stale = deliverPolicyCheck(stale, protocol.CheckPolicyResultMessage{Success: true, Valid: true})
+	if stale.policies.apply.pendingDocumentID != "" || !strings.Contains(stale.policies.apply.err, "is stale: the node's policy changed") {
+		t.Fatalf("a stale export: apply %+v, want it refused before review", stale.policies.apply)
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, policyexport.ContextDir, policyexport.InProgressFile), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	unfinished, _ := submitPolicyApplyPath(t, m, edited)
+	if unfinished.policies.apply.pendingCheckID != "" || !strings.Contains(unfinished.policies.apply.err, "did not finish") {
+		t.Fatalf("an unfinished export: apply %+v, want it refused at load", unfinished.policies.apply)
 	}
 }

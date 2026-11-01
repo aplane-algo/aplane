@@ -8,8 +8,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/asaset"
+	apconfig "github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/policy/policytest"
+	"github.com/aplane-algo/aplane/internal/policycontext"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -31,13 +35,41 @@ func loadedPoliciesModel(policy protocol.PolicyMessage) Model {
 	return deliverPolicyContext(next.(Model), policy.PolicySetSHA256)
 }
 
+// testContext is the context of a node of role with the built-in networks
+// and assets only; a signer's when role is not yet known.
+func testContext(role string) *policycontext.Context {
+	if role == "" {
+		role = string(noderole.RoleSigner)
+	}
+	ctx, err := policycontext.New(noderole.Role(role), apconfig.DefaultGenesisHashNetworkResolver(), asaset.Empty())
+	if err != nil {
+		panic(err)
+	}
+	return ctx
+}
+
+// snapshotOf is the snapshot such a node reports for policy set set.
+func snapshotOf(role, set string) string {
+	return policycontext.SnapshotSHA256(testContext(role).SHA256(), set)
+}
+
 // deliverPolicyContext answers the context read paired with the summary,
-// describing policy set set.
+// describing policy set set on a node with the built-in networks and assets.
 func deliverPolicyContext(m Model, set string) Model {
-	next, _ := m.handlePolicyContextLoaded(PolicyContextLoadedMsg{Context: protocol.PolicyContextMessage{
+	ctx := testContext(m.policies.policy.NodeRole)
+	msg := protocol.PolicyContextMessage{
 		BaseMessage: BaseMessage{ID: m.policies.pendingContextID}, Success: true,
-		PolicySetSHA256: set, SnapshotSHA256: "snapshot-of-" + set,
-	}})
+		NodeRole: string(ctx.Role()), RulesVersion: ctx.RulesVersion(), ContextSHA256: ctx.SHA256(),
+		PolicySetSHA256: set, SnapshotSHA256: policycontext.SnapshotSHA256(ctx.SHA256(), set),
+	}
+	for token, genesis := range ctx.Networks() {
+		msg.Networks = append(msg.Networks, protocol.PolicyNetwork{Network: token, GenesisHash: genesis.String()})
+	}
+	for _, a := range ctx.Assets().Assets() {
+		msg.Assets = append(msg.Assets, protocol.ASAInfo{GenesisHash: a.Genesis.String(), AssetID: a.AssetID,
+			Name: a.Name, UnitName: a.UnitName, Decimals: a.Decimals, Origin: string(a.Origin)})
+	}
+	next, _ := m.handlePolicyContextLoaded(PolicyContextLoadedMsg{Context: msg})
 	return next.(Model)
 }
 
@@ -65,7 +97,7 @@ func TestPolicySummaryAndContextPairOnOneState(t *testing.T) {
 		BaseMessage: BaseMessage{ID: m.policies.pendingPolicyID}, Success: true, NodeRole: "signer", PolicySetSHA256: "set-digest",
 	}})
 	m = deliverPolicyContext(next.(Model), "set-digest")
-	if m.policies.snapshot != "snapshot-of-set-digest" {
+	if m.policies.snapshot != snapshotOf("signer", "set-digest") {
 		t.Fatalf("snapshot = %q, want the context's", m.policies.snapshot)
 	}
 }

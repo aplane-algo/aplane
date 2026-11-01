@@ -139,12 +139,11 @@ func run(ctx context.Context, command Command, streams Streams, backend Backend)
 		if err := compareExport(selected, pctx); err != nil {
 			return err
 		}
-		snapshot := pctx.SnapshotSHA256
 		docs, names, err := policyreview.ReadDocuments(command.Args, streams.Stdin)
 		if err != nil {
 			return err
 		}
-		diffs, err := diffChange(ctx, backend, view, snapshot, docs, nil, names)
+		diffs, err := diffChange(ctx, backend, view, pctx, docs, nil, names)
 		if err != nil {
 			return err
 		}
@@ -178,7 +177,7 @@ func run(ctx context.Context, command Command, streams Streams, backend Backend)
 		if err := checkDocuments(ctx, backend, streams, adminproto.CheckPolicyRequest{Documents: req.Documents, Remove: req.Remove}, names); err != nil {
 			return err
 		}
-		diffs, err := diffChange(ctx, backend, view, snapshot, req.Documents, req.Remove, names)
+		diffs, err := diffChange(ctx, backend, view, pctx, req.Documents, req.Remove, names)
 		if err != nil {
 			return err
 		}
@@ -291,31 +290,16 @@ func selectExport(command Command, streams Streams) (*policyexport.Selected, err
 	return selected, nil
 }
 
-// compareExport refuses files from an export the node has moved on from:
-// its policy, or its context, is no longer what was exported. The edits must
-// be carried over to a new export rather than applied over changes the
-// export never saw.
+// compareExport refuses files from an export the node has moved on from
+// (policyexport.Selected.Compare).
 func compareExport(selected *policyexport.Selected, pctx adminproto.PolicyContextView) error {
 	if selected == nil {
 		return nil
 	}
-	baseline := selected.Export.Baseline
-	if baseline.SnapshotSHA256 == pctx.SnapshotSHA256 {
-		return nil
+	if err := selected.Compare(pctx.ContextSHA256, pctx.PolicySetSHA256, pctx.SnapshotSHA256); err != nil {
+		return resultError("policy_export_stale", err.Error())
 	}
-	var moved []string
-	if baseline.PolicySetSHA256 != pctx.PolicySetSHA256 {
-		moved = append(moved, "policy")
-	}
-	if selected.Export.Context.SHA256() != pctx.ContextSHA256 {
-		moved = append(moved, "ASA set, network map or role")
-	}
-	if len(moved) == 0 {
-		moved = append(moved, "policy context")
-	}
-	return resultError("policy_export_stale", fmt.Sprintf(
-		"the export %s (taken %s) is stale: the node's %s changed since; export again and carry your edits over",
-		selected.Path, selected.Export.ExportedAt.Format(time.RFC3339), strings.Join(moved, " and ")))
+	return nil
 }
 
 func getPolicy(ctx context.Context, backend Backend) (adminproto.PolicyView, error) {
@@ -396,11 +380,21 @@ func resultError(code, msg string) error {
 // compared with the node default; a removal is compared with the default in
 // force after the change, which is the submitted one when the same change
 // replaces it. A change to the default also lists the held keys it governs.
-func diffChange(ctx context.Context, backend Backend, view adminproto.PolicyView, snapshot string, docs []adminproto.PolicyDocument, remove []string, names map[string]string) ([]policyreview.DocumentDiff, error) {
+func diffChange(ctx context.Context, backend Backend, view adminproto.PolicyView, pctx adminproto.PolicyContextView, docs []adminproto.PolicyDocument, remove []string, names map[string]string) ([]policyreview.DocumentDiff, error) {
 	role, err := noderole.ParseRole(view.NodeRole)
 	if err != nil {
 		return nil, err
 	}
+	// The diff is rendered in the context of the reviewed snapshot, checked
+	// against its own digests: ASA amounts appear in the display units of
+	// the node's ASA set, beside their base units, and the apply names the
+	// same snapshot.
+	nodeContext, err := apadminapp.PolicyContextFromView(pctx)
+	if err != nil {
+		return nil, err
+	}
+	label := policyreview.ContextLabel(nodeContext)
+	snapshot := pctx.SnapshotSHA256
 	own := map[string]bool{}
 	for _, doc := range view.Documents {
 		own[doc.Key] = true
@@ -425,9 +419,9 @@ func diffChange(ctx context.Context, backend Backend, view adminproto.PolicyView
 	nextDefault := activeDefault
 	var out []policyreview.DocumentDiff
 	for _, doc := range docs {
-		label := names[doc.Key]
-		if label == "" {
-			label = doc.Key
+		name := names[doc.Key]
+		if name == "" {
+			name = doc.Key
 		}
 		current, ownCurrent := activeDefault, false
 		if own[doc.Key] {
@@ -436,22 +430,22 @@ func diffChange(ctx context.Context, backend Backend, view adminproto.PolicyView
 			}
 			ownCurrent = true
 		}
-		changes, identical, err := policyreview.DiffCandidate(role, doc.Key, current, doc.Document, ownCurrent)
+		changes, identical, err := policyreview.DiffCandidate(role, doc.Key, current, doc.Document, ownCurrent, label)
 		if err != nil {
-			return nil, fmt.Errorf("%s: %w", label, err)
+			return nil, fmt.Errorf("%s: %w", name, err)
 		}
 		if doc.Key == policy.DefaultKey {
 			nextDefault = doc.Document
-			label += governedKeysNote(view, docs, remove)
+			name += governedKeysNote(view, docs, remove)
 		}
-		out = append(out, policyreview.DocumentDiff{Label: label, Changes: changes, Identical: identical})
+		out = append(out, policyreview.DocumentDiff{Label: name, Changes: changes, Identical: identical})
 	}
 	for _, key := range remove {
 		current, err := fetch(key)
 		if err != nil {
 			return nil, err
 		}
-		changes, err := policyreview.DiffRemoval(role, key, current, nextDefault)
+		changes, err := policyreview.DiffRemoval(role, key, current, nextDefault, label)
 		if err != nil {
 			return nil, err
 		}

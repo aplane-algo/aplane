@@ -10,9 +10,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/asaset"
+	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/policy/policytest"
+	"github.com/aplane-algo/aplane/internal/policycontext"
 )
 
 const (
@@ -93,24 +96,24 @@ func TestDiffCandidateComparesWithTheGoverningDocument(t *testing.T) {
 	next := testCosignerDoc(testKeyA)
 	// A key gaining its first document is compared with the default it
 	// followed, and is a change even when nothing else differs.
-	changes, identical, err := DiffCandidate(noderole.RoleCosigner, testKeyA, def, next, false)
+	changes, identical, err := DiffCandidate(noderole.RoleCosigner, testKeyA, def, next, false, nil)
 	if err != nil || identical || len(changes) == 0 || changes[0].Path != "/" || !strings.Contains(changes[0].Summary, "policy of its own") {
 		t.Fatalf("new document: changes %+v identical %v err %v", changes, identical, err)
 	}
 	// A key's own document compared with an equal candidate is identical.
-	changes, identical, err = DiffCandidate(noderole.RoleCosigner, testKeyA, next, next, true)
+	changes, identical, err = DiffCandidate(noderole.RoleCosigner, testKeyA, next, next, true, nil)
 	if err != nil || !identical || len(changes) != 0 {
 		t.Fatalf("identical document: changes %+v identical %v err %v", changes, identical, err)
 	}
 	// The default compared with itself is identical too.
-	if _, identical, err := DiffCandidate(noderole.RoleCosigner, policy.DefaultKey, def, def, true); err != nil || !identical {
+	if _, identical, err := DiffCandidate(noderole.RoleCosigner, policy.DefaultKey, def, def, true, nil); err != nil || !identical {
 		t.Fatalf("identical default: identical %v err %v", identical, err)
 	}
-	if _, _, err := DiffCandidate(noderole.RoleSigner, testKeyA, def, next, false); err == nil {
+	if _, _, err := DiffCandidate(noderole.RoleSigner, testKeyA, def, next, false, nil); err == nil {
 		t.Fatal("a cosigner document diffed on a signer node")
 	}
 
-	removal, err := DiffRemoval(noderole.RoleCosigner, testKeyA, next, def)
+	removal, err := DiffRemoval(noderole.RoleCosigner, testKeyA, next, def, nil)
 	if err != nil || len(removal) == 0 || removal[0].Path != "/" || !strings.Contains(removal[0].Summary, "follows the node default") {
 		t.Fatalf("removal: changes %+v err %v", removal, err)
 	}
@@ -218,5 +221,27 @@ func TestReadDocumentsStripsCommentsBeforeTheNode(t *testing.T) {
 	split := "{\"key\": \"default\", \"reject_foreign_rekey\": fa/* note */lse}"
 	if doc, err := DocumentFromText("default.json", split); err == nil || !strings.Contains(err.Error(), `"key" field`) {
 		t.Fatalf("a token split by a comment was accepted: doc %+v err %v", doc, err)
+	}
+}
+
+// The review is rendered in the node's context: a built-in asset shows in
+// its display units beside its base units.
+func TestDiffCandidateLabelsAmountsFromTheContext(t *testing.T) {
+	ctx, err := policycontext.New(noderole.RoleSigner, apconfig.DefaultGenesisHashNetworkResolver(), asaset.Empty())
+	if err != nil {
+		t.Fatal(err)
+	}
+	current := policytest.MustDocument(noderole.RoleSigner, policy.DefaultKey, `{"limits": {"mainnet": {"asa:31566704": {"review_above": "1000000"}}}}`)
+	next := policytest.MustDocument(noderole.RoleSigner, policy.DefaultKey, `{"limits": {"mainnet": {"asa:31566704": {"review_above": "2500000"}}}}`)
+	changes, _, err := DiffCandidate(noderole.RoleSigner, policy.DefaultKey, current, next, true, ContextLabel(ctx))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "1 USDC (1000000 base units; 6 decimals, asset 31566704 on mainnet) → 2.5 USDC (2500000 base units; 6 decimals, asset 31566704 on mainnet)"
+	if len(changes) != 1 || changes[0].Summary != want {
+		t.Fatalf("changes = %+v, want %q", changes, want)
+	}
+	if unlabelled, _, _ := DiffCandidate(noderole.RoleSigner, policy.DefaultKey, current, next, true, nil); unlabelled[0].Summary != "1000000 base units → 2500000 base units" {
+		t.Fatalf("without a context: %q", unlabelled[0].Summary)
 	}
 }

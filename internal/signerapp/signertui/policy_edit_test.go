@@ -599,7 +599,7 @@ func TestPolicyEditCannotApplyAgainstAPolicySetItDidNotReview(t *testing.T) {
 	if m.viewState != ViewPolicyApplyReview || strings.Contains(rendered, "policy of its own") || !strings.Contains(rendered, "/reject_clawback") {
 		t.Fatalf("review after reload must diff against the existing document:\n%s", rendered)
 	}
-	if m.policies.apply.reviewedSetSHA256 != "newer-digest" || m.policies.apply.reviewedSnapshot != "snapshot-of-newer-digest" {
+	if m.policies.apply.reviewedSetSHA256 != "newer-digest" || m.policies.apply.reviewedSnapshot != snapshotOf("cosigner", "newer-digest") {
 		t.Fatalf("review base = %q/%q, want the reloaded policy set", m.policies.apply.reviewedSetSHA256, m.policies.apply.reviewedSnapshot)
 	}
 
@@ -614,7 +614,7 @@ func TestPolicyEditCannotApplyAgainstAPolicySetItDidNotReview(t *testing.T) {
 	}})
 	m, cmd = pressPolicyKey(t, deliverPolicyContext(next.(Model), "newest-digest"), "y")
 	if !m.policies.apply.applying || cmd == nil || m.policies.apply.reviewedSetSHA256 != "newer-digest" ||
-		m.policies.apply.reviewedSnapshot != "snapshot-of-newer-digest" || m.policies.policy.PolicySetSHA256 != "newest-digest" {
+		m.policies.apply.reviewedSnapshot != snapshotOf("cosigner", "newer-digest") || m.policies.policy.PolicySetSHA256 != "newest-digest" {
 		t.Fatalf("y: apply %+v summary set %q, want the apply bound to the reviewed set", m.policies.apply, m.policies.policy.PolicySetSHA256)
 	}
 }

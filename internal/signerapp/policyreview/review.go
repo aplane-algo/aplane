@@ -22,6 +22,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/policycontext"
 	"github.com/aplane-algo/aplane/internal/signerapp/policytext"
 )
 
@@ -168,11 +169,26 @@ type DocumentDiff struct {
 	Identical bool
 }
 
+// ContextLabel labels ASA amounts from a node's policy context: the unit
+// name and decimals of each asset its ASA set holds. A review rendered with
+// the context of the snapshot it was read at is the one the commit, which
+// names that snapshot, applies.
+func ContextLabel(ctx *policycontext.Context) policy.AssetLabel {
+	if ctx == nil {
+		return nil
+	}
+	return func(network string, assetID uint64) (string, uint64, bool) {
+		a, ok := ctx.Asset(network, assetID)
+		return a.UnitName, a.Decimals, ok
+	}
+}
+
 // DiffCandidate compares the candidate document for key with the document
 // that governs the key now: its own when ownCurrent is true, otherwise the
 // node default. A key gaining its first document of its own is a change even
 // when the text equals the default, since the key stops following the default.
-func DiffCandidate(role noderole.Role, key string, current, next string, ownCurrent bool) ([]policy.PolicyChange, bool, error) {
+// label, when set, shows ASA amounts in display units too.
+func DiffCandidate(role noderole.Role, key string, current, next string, ownCurrent bool, label policy.AssetLabel) ([]policy.PolicyChange, bool, error) {
 	nextDoc, err := policy.DecodePolicyV1([]byte(next), key, role)
 	if err != nil {
 		return nil, false, err
@@ -185,7 +201,7 @@ func DiffCandidate(role noderole.Role, key string, current, next string, ownCurr
 	if err != nil {
 		return nil, false, fmt.Errorf("active policy: %w", err)
 	}
-	changes := policy.DiffPolicyV1(currentDoc, nextDoc)
+	changes := policy.DiffPolicyV1Labelled(currentDoc, nextDoc, label)
 	if !ownCurrent && key != policy.DefaultKey {
 		changes = append([]policy.PolicyChange{{Path: "/", Effect: policy.PolicyChangeNeutral,
 			Summary: "the key gets a policy of its own; compared with the node default it followed"}}, changes...)
@@ -196,7 +212,7 @@ func DiffCandidate(role noderole.Role, key string, current, next string, ownCurr
 
 // DiffRemoval describes a key losing its own document: it will follow
 // nextDefault, the default in force after the change.
-func DiffRemoval(role noderole.Role, key string, own, nextDefault string) ([]policy.PolicyChange, error) {
+func DiffRemoval(role noderole.Role, key string, own, nextDefault string, label policy.AssetLabel) ([]policy.PolicyChange, error) {
 	ownDoc, err := policy.DecodePolicyV1([]byte(own), key, role)
 	if err != nil {
 		return nil, fmt.Errorf("active policy for %s: %w", key, err)
@@ -205,7 +221,7 @@ func DiffRemoval(role noderole.Role, key string, own, nextDefault string) ([]pol
 	if err != nil {
 		return nil, fmt.Errorf("default policy: %w", err)
 	}
-	changes := policy.DiffPolicyV1(ownDoc, defaultDoc)
+	changes := policy.DiffPolicyV1Labelled(ownDoc, defaultDoc, label)
 	return append([]policy.PolicyChange{{Path: "/", Effect: policy.PolicyChangeNeutral,
 		Summary: "policy of its own removed; the key follows the node default"}}, changes...), nil
 }

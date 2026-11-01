@@ -34,9 +34,12 @@ func nodeContextOf(s *policyexport.Selected) *policyauthor.NodeContext {
 	return &policyauthor.NodeContext{Context: s.Export.Context, ExportedAt: s.Export.ExportedAt, Path: s.Path}
 }
 
-// workspacePaths are the files a workspace holds, for selecting its context.
+// workspacePaths are the paths a workspace was opened with and the files it
+// holds, for selecting its context: a directory named explicitly is
+// inspected even when it holds no policy file yet, so an export that stopped
+// before its first document, or a fresh one, keeps its context.
 func workspacePaths(w *policyauthor.Workspace) []string {
-	paths := make([]string, 0, len(w.Files))
+	paths := append([]string(nil), w.Paths...)
 	for _, f := range w.Files {
 		paths = append(paths, f.Path)
 	}
