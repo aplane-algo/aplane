@@ -1285,6 +1285,14 @@ Events:
 - `GENERATION_ABANDONED_DISCARDED`
 - `DELETED_ARCHIVE_PRUNE_INTENT`
 - `DELETED_ARCHIVE_PRUNED`
+- `POLICY_APPLY_INTENT`
+- `POLICY_APPLY_SUCCEEDED`
+- `POLICY_APPLY_FAILED`
+- `POLICY_APPLY_COMMIT_UNCERTAIN`
+- `ASA_SET_UPDATE_INTENT`
+- `ASA_SET_UPDATE_SUCCEEDED`
+- `ASA_SET_UPDATE_FAILED`
+- `ASA_SET_UPDATE_COMMIT_UNCERTAIN`
 - `SESSION_CONNECTED`
 - `SESSION_DISCONNECTED`
 - `IDENTITY_LOCKED`
@@ -1360,6 +1368,37 @@ Store-management audit semantics:
   the operation ID, the affected generation IDs or archive entries, and
   `byte_count` (see [Reconciliation and quarantine](ARCH_STORE.md#reconciliation-and-quarantine)
   and [Deleted archive capacity](ARCH_STORE.md#deleted-archive-capacity))
+- live policy and ASA set changes (`apply_policy`, `add_asa`, `remove_asa`)
+  are audited in intent/outcome pairs at the admin session boundary, for
+  both node roles and every admin client. After authorization, the intent
+  is written durably before the service runs; a missing audit log refuses
+  the change with `audit_unavailable` and a failed write with
+  `audit_write_failed`, and the service is never called. This deliberately
+  trades availability for the record: an urgent policy tightening can be
+  blocked by an audit failure, and the refusal names `apadmin policy
+  rescue` (a stopped daemon, and space for a new generation) as the offline
+  alternative. Exactly one outcome follows: `*_SUCCEEDED` (a policy apply
+  records `changed`, `false` for one that minted nothing), `*_FAILED`, or
+  `*_COMMIT_UNCERTAIN`. Outcome evidence (generation ID, the base and
+  resulting policy-set digests, the chain a removal resolved to) is
+  captured where the commit ran, under the store mutation lock, never read
+  back from the runtime afterwards. The outcome write is best effort: its
+  failure is reported on stderr and never rolls back, repeats, or
+  misreports the change. An intent without an outcome is not proof of
+  failure; generation records are the evidence. The actor is the session's
+  principal, never a request field. Intents record what the request names
+  and expects, labelled as expectations; no entry carries document
+  contents. Intents are written before validation, so every string from a
+  request or echoed in an error is bounded (128 bytes per selector,
+  digest, network, genesis hash or code, 1024 bytes of error text, with
+  the original length noted), and selector lists are capped at 64 with the
+  omitted count: an entry stays small whatever was sent. An
+  `operation_id` over 128 bytes, in any audit entry, is replaced by a
+  32-byte prefix and the SHA-256 of the whole ID, so it stays small and an
+  intent still correlates with its outcome. The release
+  history reader skips any audit line over 1 MiB rather than failing, so
+  one oversized entry cannot hide rotating releases at unlock.
+  Offline rescue and `apstore policy sign` are not audited.
 - `CLIENT_ENROLLMENT_REQUESTED` is emitted when a new `request-enrollment` request is queued (a repeat that refreshes an existing entry is not audited again); its principal and requester are `client:<fingerprint>`, and it carries the remote address and `client_label`
 - `CLIENT_ENROLLED` is emitted when an admin session enrolls a key, by approving its queued request or by importing the public key; it carries the key fingerprint, the `client_label` recorded, the request's remote address (empty for an import), and the admin session attribution
 - `CLIENT_ENROLLMENT_REJECTED` is emitted when an admin session rejects a queued request; it carries the fingerprint, `client_label`, and admin session attribution

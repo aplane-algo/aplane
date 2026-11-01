@@ -10,7 +10,8 @@ import (
 )
 
 // The ASA set decides which assets policy documents may name, so it is policy
-// context: reading it takes policy.view and changing it policy.update.
+// context: reading it takes policy.view and changing it policy.update. A
+// change is audited like a policy apply: see mutation_audit.go.
 
 func (s *Session) HandleListASASet(msg *protocol.ListASASetMessage) {
 	if !s.authorize(msg.ID, auth.ActionPolicyView, auth.Resource{Type: "asa_set"}) {
@@ -37,7 +38,20 @@ func (s *Session) HandleAddASA(msg *protocol.AddASAMessage) {
 	if !s.authorize(msg.ID, auth.ActionPolicyUpdate, auth.Resource{Type: "asa_set"}) {
 		return
 	}
-	result := s.settingsServices.AddASA(adminproto.AddASARequest{Confirmed: AdminASAObservation(msg.Confirmed)})
+	req := adminproto.AddASARequest{Confirmed: AdminASAObservation(msg.Confirmed)}
+	audit, _ := s.audit.(asaSetAudit)
+	var record func() error
+	if audit != nil {
+		record = func() error {
+			return audit.LogASASetUpdateIntentDurableContext(s.SessionContext(), msg.ID, "add", req.Confirmed.Network, req.Confirmed.GenesisHash, req.Confirmed.AssetID)
+		}
+	}
+	if code, refusal := s.recordMutationIntent("ASA set change", record, false); code != "" {
+		_ = s.WriteJSON(protocol.AddASAResultMessage{BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeAddASAResult, ID: msg.ID}, Code: code, Error: refusal})
+		return
+	}
+	result := s.settingsServices.AddASA(req)
+	audit.LogASASetAddResultContext(s.SessionContext(), msg.ID, req, result)
 	_ = s.WriteJSON(protocol.AddASAResultMessage{
 		BaseMessage:     protocol.BaseMessage{Type: protocol.MsgTypeAddASAResult, ID: msg.ID},
 		Success:         result.Success,
@@ -53,7 +67,20 @@ func (s *Session) HandleRemoveASA(msg *protocol.RemoveASAMessage) {
 	if !s.authorize(msg.ID, auth.ActionPolicyUpdate, auth.Resource{Type: "asa_set"}) {
 		return
 	}
-	result := s.settingsServices.RemoveASA(adminproto.RemoveASARequest{Network: msg.Network, GenesisHash: msg.GenesisHash, AssetID: msg.AssetID})
+	req := adminproto.RemoveASARequest{Network: msg.Network, GenesisHash: msg.GenesisHash, AssetID: msg.AssetID}
+	audit, _ := s.audit.(asaSetAudit)
+	var record func() error
+	if audit != nil {
+		record = func() error {
+			return audit.LogASASetUpdateIntentDurableContext(s.SessionContext(), msg.ID, "remove", req.Network, req.GenesisHash, req.AssetID)
+		}
+	}
+	if code, refusal := s.recordMutationIntent("ASA set change", record, false); code != "" {
+		_ = s.WriteJSON(protocol.RemoveASAResultMessage{BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeRemoveASAResult, ID: msg.ID}, Code: code, Error: refusal})
+		return
+	}
+	result := s.settingsServices.RemoveASA(req)
+	audit.LogASASetRemoveResultContext(s.SessionContext(), msg.ID, req, result)
 	out := protocol.RemoveASAResultMessage{
 		BaseMessage:     protocol.BaseMessage{Type: protocol.MsgTypeRemoveASAResult, ID: msg.ID},
 		Success:         result.Success,

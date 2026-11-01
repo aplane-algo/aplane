@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"github.com/aplane-algo/aplane/internal/signerapp/storevalidate"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
@@ -129,6 +130,11 @@ func TestSignerPolicyApplyMintsGenerationAndReloads(t *testing.T) {
 	if after := currentGeneration(t, svc, ir); after == before || after != result.Policy.GenerationID {
 		t.Fatalf("generation %s -> %s, result %s", before, after, result.Policy.GenerationID)
 	}
+	// The audit evidence is the commit's own.
+	if !result.Changed || result.GenerationID != result.Policy.GenerationID ||
+		result.BasePolicySetSHA256 != view.PolicySetSHA256 || result.PolicySetSHA256 != result.Policy.PolicySetSHA256 {
+		t.Fatalf("apply evidence = %+v", result)
+	}
 	if got := runtimePolicy(ir, ""); got == nil || got.MaxFeeMicroAlgos != 2000 {
 		t.Fatalf("runtime policy after apply = %#v", got)
 	}
@@ -143,6 +149,48 @@ func TestSignerPolicyApplyMintsGenerationAndReloads(t *testing.T) {
 	})
 	if !unchanged.Success || unchanged.Policy.GenerationID != "" || currentGeneration(t, svc, ir) != result.Policy.GenerationID {
 		t.Fatalf("identical apply = %+v, want no new generation", unchanged)
+	}
+	if unchanged.Changed || unchanged.GenerationID != "" || unchanged.BasePolicySetSHA256 != unchanged.PolicySetSHA256 || unchanged.PolicySetSHA256 == "" {
+		t.Fatalf("no-op evidence = %+v", unchanged)
+	}
+}
+
+// Concurrent applies against one snapshot: one commits and carries its own
+// generation; the rest are refused and carry none, never another's.
+func TestConcurrentPolicyAppliesCarryTheirOwnEvidence(t *testing.T) {
+	svc, ir := setupPolicyAdmin(t, noderole.RoleSigner)
+	view := svc.GetPolicy()
+	snapshot := svc.GetPolicyContext().SnapshotSHA256
+	results := make([]adminproto.ApplyPolicyResult, 6)
+	var wg sync.WaitGroup
+	for i := range results {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			results[i] = svc.ApplyPolicy(adminproto.ApplyPolicyRequest{
+				Documents:               []adminproto.PolicyDocument{{Key: policy.DefaultKey, Document: signerPolicyDoc(fmt.Sprintf("%d", 2000+i))}},
+				ExpectedPolicySetSHA256: view.PolicySetSHA256,
+				ExpectedSnapshotSHA256:  snapshot,
+			})
+		}(i)
+	}
+	wg.Wait()
+	winners := 0
+	for i, r := range results {
+		if r.Success {
+			winners++
+			if r.GenerationID != currentGeneration(t, svc, ir) || svc.GetPolicy().PolicySetSHA256 != r.PolicySetSHA256 ||
+				svc.GetPolicyDocument(policy.DefaultKey).Document != signerPolicyDoc(fmt.Sprintf("%d", 2000+i)) {
+				t.Fatalf("the winner's evidence is not its own commit: %+v", r)
+			}
+			continue
+		}
+		if r.Code != "policy_snapshot_changed" || r.GenerationID != "" || r.Changed {
+			t.Fatalf("a refused apply = %+v", r)
+		}
+	}
+	if winners != 1 {
+		t.Fatalf("%d applies committed against one snapshot", winners)
 	}
 }
 
@@ -308,6 +356,9 @@ func TestPolicyApplyEntersRecoveryBeforeReleasingTheLock(t *testing.T) {
 	if result.Success || !result.CommitUncertain || result.Code != "policy_reload_failed" {
 		t.Fatalf("ApplyPolicy() = %+v, want an uncertain reload failure", result)
 	}
+	if result.GenerationID == "" || result.GenerationID != currentGeneration(t, svc, ir) || result.BasePolicySetSHA256 != view.PolicySetSHA256 {
+		t.Fatalf("a reload failure lost its commit evidence: %+v", result)
+	}
 	if !deps.recoveryAtRelease {
 		t.Fatal("runtime entered recovery only after the store mutation lock was released")
 	}
@@ -356,6 +407,9 @@ func TestPolicyApplyUncertainCommitReloadsAndEntersRecovery(t *testing.T) {
 
 	if result.Success || !result.CommitUncertain || result.Code != "policy_commit_uncertain" {
 		t.Fatalf("ApplyPolicy(durability unknown) = %+v", result)
+	}
+	if result.GenerationID == "" || result.GenerationID != currentGeneration(t, svc, ir) || result.Changed {
+		t.Fatalf("an uncertain commit lost its generation: %+v", result)
 	}
 	if !ir.IsRecovery() {
 		t.Fatal("runtime is not in recovery after an uncertain policy commit")

@@ -84,14 +84,23 @@ func (s Service) ApplyPolicy(req adminproto.ApplyPolicyRequest) adminproto.Apply
 			return adminproto.ApplyPolicyResult{Code: "identity_locked", Error: "identity is locked; unlock the signer before applying policy"}
 		}
 		return adminproto.ApplyPolicyResult{
-			Code:            policyapply.Code(err, "policy_apply_failed"),
-			Error:           err.Error(),
-			Errors:          outcome.Problems,
-			CommitUncertain: outcome.Uncertain,
+			Code:                policyapply.Code(err, "policy_apply_failed"),
+			Error:               err.Error(),
+			Errors:              outcome.Problems,
+			CommitUncertain:     outcome.Uncertain,
+			GenerationID:        outcome.GenerationID,
+			BasePolicySetSHA256: outcome.BasePolicySetSHA256,
+			PolicySetSHA256:     outcome.PolicySetSHA256,
 		}
 	}
 	view := policyapply.View(ir.NodePolicy(), s.heldPolicyKeys(), outcome.GenerationID)
-	return adminproto.ApplyPolicyResult{Success: true, Policy: &view}
+	return adminproto.ApplyPolicyResult{
+		Success: true, Policy: &view,
+		Changed:             outcome.GenerationID != "",
+		GenerationID:        outcome.GenerationID,
+		BasePolicySetSHA256: outcome.BasePolicySetSHA256,
+		PolicySetSHA256:     outcome.PolicySetSHA256,
+	}
 }
 
 // commitAndReload commits the change and reloads the runtime from the

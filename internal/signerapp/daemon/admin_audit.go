@@ -171,3 +171,62 @@ func (s signerAdminServices) LogCosignerReferenceChangedContext(ctx adminserver.
 		audit.LogCosignerReferenceChangedContext(ctx, action, name, componentKey, success)
 	}
 }
+
+// Live policy and ASA set changes. A missing logger is ErrAuditUnavailable,
+// so the handler tells the operator a restart is needed, not a retry.
+
+func (s signerAdminServices) LogPolicyApplyIntentDurableContext(
+	ctx adminserver.SessionContext,
+	operationID string,
+	req adminproto.ApplyPolicyRequest,
+) error {
+	audit := s.auditLogger()
+	if audit == nil {
+		return adminserver.ErrAuditUnavailable
+	}
+	return audit.LogPolicyApplyIntentDurableContext(ctx, operationID, req)
+}
+
+func (s signerAdminServices) LogPolicyApplyResultContext(
+	ctx adminserver.SessionContext,
+	operationID string,
+	result adminproto.ApplyPolicyResult,
+) {
+	if audit := s.auditLogger(); audit != nil {
+		audit.LogPolicyApplyResultContext(ctx, operationID, result)
+	}
+}
+
+func (s signerAdminServices) LogASASetUpdateIntentDurableContext(
+	ctx adminserver.SessionContext,
+	operationID, action, network, genesisHash string,
+	assetID uint64,
+) error {
+	audit := s.auditLogger()
+	if audit == nil {
+		return adminserver.ErrAuditUnavailable
+	}
+	return audit.LogASASetUpdateIntentDurableContext(ctx, operationID, action, network, genesisHash, assetID)
+}
+
+func (s signerAdminServices) LogASASetAddResultContext(
+	ctx adminserver.SessionContext,
+	operationID string,
+	req adminproto.AddASARequest,
+	result adminproto.AddASAResult,
+) {
+	if audit := s.auditLogger(); audit != nil {
+		audit.LogASASetAddResultContext(ctx, operationID, req, result)
+	}
+}
+
+func (s signerAdminServices) LogASASetRemoveResultContext(
+	ctx adminserver.SessionContext,
+	operationID string,
+	req adminproto.RemoveASARequest,
+	result adminproto.RemoveASAResult,
+) {
+	if audit := s.auditLogger(); audit != nil {
+		audit.LogASASetRemoveResultContext(ctx, operationID, req, result)
+	}
+}

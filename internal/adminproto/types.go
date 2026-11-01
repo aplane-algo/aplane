@@ -591,6 +591,16 @@ type ApplyPolicyResult struct {
 	CommitUncertain bool
 	Code            string
 	Error           string
+	// Audit evidence, captured where the commit ran under the store mutation
+	// lock; it is not sent on the wire. Changed reports a successful apply
+	// that minted a generation (false for one that changed nothing).
+	// GenerationID is the generation minted, also when the commit is
+	// uncertain. BasePolicySetSHA256 is the verified set the change applied
+	// to and PolicySetSHA256 the set it leaves, when known.
+	Changed             bool
+	GenerationID        string
+	BasePolicySetSHA256 string
+	PolicySetSHA256     string
 }
 
 // GenerateKeyRequest is the admin-domain request to generate a key.
@@ -888,6 +898,10 @@ type RemoveASAResult struct {
 	Success         bool
 	GenerationID    string
 	CommitUncertain bool
+	// GenesisHash is the chain the entry was resolved to, from the network
+	// or the given genesis hash, once resolved; audit evidence, not sent on
+	// the wire.
+	GenesisHash string
 	// Blocking lists the references that keep the entry from being removed,
 	// and BlockingOmitted how many more there are beyond the reported ones.
 	Blocking        []ASAReference

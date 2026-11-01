@@ -5,8 +5,10 @@ package audit
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 )
 
@@ -91,11 +93,22 @@ func readRotatingReleasesFrom(file string, acc map[string]*releaseAccumulator) e
 		return err
 	}
 	defer func() { _ = f.Close() }()
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 0, 64*1024), 1<<20)
-	for scanner.Scan() {
+	reader := bufio.NewReaderSize(f, 64*1024)
+	for {
+		line, tooLong, err := readAuditLine(reader, maxReleaseLine)
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if tooLong {
+			// No release entry is this long, so skipping the line loses
+			// none; failing would lose the whole history at unlock.
+			continue
+		}
 		var entry AuditEntry
-		if err := json.Unmarshal(scanner.Bytes(), &entry); err != nil {
+		if err := json.Unmarshal(line, &entry); err != nil {
 			continue
 		}
 		if entry.Event != AuditRotatingRelease || entry.TxnAuth == "" || entry.RotatingStage == nil {
@@ -114,5 +127,33 @@ func readRotatingReleasesFrom(file string, acc map[string]*releaseAccumulator) e
 		}
 		a.add(leaf)
 	}
-	return scanner.Err()
+}
+
+// maxReleaseLine bounds the audit lines the release reader parses; a
+// ROTATING_RELEASE entry is a few hundred bytes.
+const maxReleaseLine = 1 << 20
+
+// readAuditLine returns the next line of r without its newline. A line
+// longer than limit is read to its end and reported as too long, with no
+// bytes. io.EOF is returned once no line is left.
+func readAuditLine(r *bufio.Reader, limit int) ([]byte, bool, error) {
+	var line []byte
+	tooLong := false
+	for {
+		chunk, err := r.ReadSlice('\n')
+		if !tooLong {
+			if len(line)+len(chunk) > limit+1 {
+				tooLong, line = true, nil
+			} else {
+				line = append(line, chunk...)
+			}
+		}
+		if errors.Is(err, bufio.ErrBufferFull) {
+			continue
+		}
+		if err != nil && (!errors.Is(err, io.EOF) || (len(line) == 0 && !tooLong)) {
+			return nil, false, err
+		}
+		return bytes.TrimSuffix(line, []byte("\n")), tooLong, nil
+	}
 }

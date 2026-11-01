@@ -5,12 +5,15 @@ package audit
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/auth"
@@ -88,6 +91,14 @@ const (
 	AuditGenerationAbandonedDiscarded     AuditEventType = "GENERATION_ABANDONED_DISCARDED"
 	AuditDeletedArchivePruneIntent        AuditEventType = "DELETED_ARCHIVE_PRUNE_INTENT"
 	AuditDeletedArchivePruned             AuditEventType = "DELETED_ARCHIVE_PRUNED"
+	AuditPolicyApplyIntent                AuditEventType = "POLICY_APPLY_INTENT"
+	AuditPolicyApplySucceeded             AuditEventType = "POLICY_APPLY_SUCCEEDED"
+	AuditPolicyApplyFailed                AuditEventType = "POLICY_APPLY_FAILED"
+	AuditPolicyApplyUncertain             AuditEventType = "POLICY_APPLY_COMMIT_UNCERTAIN"
+	AuditASASetUpdateIntent               AuditEventType = "ASA_SET_UPDATE_INTENT"
+	AuditASASetUpdateSucceeded            AuditEventType = "ASA_SET_UPDATE_SUCCEEDED"
+	AuditASASetUpdateFailed               AuditEventType = "ASA_SET_UPDATE_FAILED"
+	AuditASASetUpdateUncertain            AuditEventType = "ASA_SET_UPDATE_COMMIT_UNCERTAIN"
 )
 
 // AuditEntry represents a single audit log entry
@@ -138,6 +149,23 @@ type AuditEntry struct {
 	// omitted) for a family with one key per stage.
 	RotatingTree  uint64 `json:"rotating_tree,omitempty"`
 	RotatingIndex uint32 `json:"rotating_index,omitempty"`
+	// POLICY_APPLY_* and ASA_SET_UPDATE_*: see policy_audit.go.
+	ResultCode string `json:"result_code,omitempty"`
+	// Changed is set on a success entry only, false included, so a no-op
+	// is told apart from an entry that does not say.
+	Changed                 *bool    `json:"changed,omitempty"`
+	PolicyUpdates           []string `json:"policy_updates,omitempty"`
+	PolicyUpdatesOmitted    int      `json:"policy_updates_omitted,omitempty"`
+	PolicyRemovals          []string `json:"policy_removals,omitempty"`
+	PolicyRemovalsOmitted   int      `json:"policy_removals_omitted,omitempty"`
+	ExpectedPolicySetSHA256 string   `json:"expected_policy_set_sha256,omitempty"`
+	ExpectedSnapshotSHA256  string   `json:"expected_snapshot_sha256,omitempty"`
+	BasePolicySetSHA256     string   `json:"base_policy_set_sha256,omitempty"`
+	PolicySetSHA256         string   `json:"policy_set_sha256,omitempty"`
+	ASAAction               string   `json:"asa_action,omitempty"`
+	Network                 string   `json:"network,omitempty"`
+	GenesisHash             string   `json:"genesis_hash,omitempty"`
+	AssetID                 uint64   `json:"asset_id,omitempty"`
 }
 
 // AuditLogger handles append-only audit logging
@@ -189,10 +217,30 @@ func NewAuditLogger(path string) (*AuditLogger, error) {
 	return logger, nil
 }
 
+// maxAuditOperationID bounds an entry's operation ID. Most are request IDs
+// a client chose, so one longer than this is replaced by a short prefix and
+// the SHA-256 of the whole ID: deterministic, so an intent and its outcome
+// still correlate, and small, so oversized IDs cannot rotate away the log's
+// history.
+const maxAuditOperationID = 128
+
+func boundOperationID(id string) string {
+	if len(id) <= maxAuditOperationID {
+		return id
+	}
+	cut := 32
+	for cut > 0 && !utf8.RuneStart(id[cut]) {
+		cut--
+	}
+	sum := sha256.Sum256([]byte(id))
+	return id[:cut] + "…sha256:" + hex.EncodeToString(sum[:])
+}
+
 // Log writes an audit entry
 func (a *AuditLogger) Log(entry AuditEntry) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	entry.OperationID = boundOperationID(entry.OperationID)
 
 	// Set timestamp if not provided
 	if entry.Timestamp.IsZero() {
@@ -246,6 +294,7 @@ func (a *AuditLogger) Log(entry AuditEntry) {
 func (a *AuditLogger) logDurable(entry AuditEntry) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	entry.OperationID = boundOperationID(entry.OperationID)
 
 	if entry.Timestamp.IsZero() {
 		entry.Timestamp = time.Now().UTC()
