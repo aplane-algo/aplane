@@ -10,12 +10,13 @@
   "always_review_warnings": true,
   "auto_approve_self_noop_transfer": false,
   // The fee goes to the network whatever the destination, so this cap is
-  // what keeps a client from burning the balance in fees. 0.06 ALGO covers
+  // what keeps a client from burning the balance in fees. 0.08 ALGO covers
   // a full group of 16 payments or asset transfers at the minimum fee,
-  // native Falcon and maximum notes included. Raise it for groups that
-  // pool other transactions' fees (app calls) onto this key's, or under
-  // network congestion.
-  "max_fee_microalgos": "60000",
+  // each member at its most expensive authorization (a Falcon-delegated
+  // LogicSig at the largest program) with the largest note. Raise it for
+  // groups that pool other transactions' fees (app calls) onto this key's,
+  // or under network congestion.
+  "max_fee_microalgos": "80000",
   "transaction_types": { "*": "reject", "pay": "allow", "axfer": "allow" },
   "transfer_policy": {
     "on_no_route": "reject",

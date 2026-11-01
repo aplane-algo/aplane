@@ -64,7 +64,7 @@ var signerPresets = []Preset{
 // preset picker and each signer preset's header: permitted transactions are
 // not approved by the preset, a rekey to another key this signer holds can
 // still be allowed, and only the fee is capped.
-const SignerPresetNote = "Permitted transactions follow User Auto-Approve. Rekeying to another key held by this signer can still be allowed. These presets cap each transaction fee at 0.06 ALGO; transfer amounts are not capped."
+const SignerPresetNote = "Permitted transactions follow User Auto-Approve. Rekeying to another key held by this signer can still be allowed. These presets cap each transaction fee at 0.08 ALGO; transfer amounts are not capped."
 
 // PresetNote is what a preset picker for role should say about every preset
 // it offers, or "" when there is nothing to add. Comments are removed when a

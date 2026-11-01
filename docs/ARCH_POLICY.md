@@ -1449,15 +1449,16 @@ Each sets `transaction_types` `"*": "reject"` (required on a signer),
 `reject_foreign_rekey`, the three `reject_*` flags, `always_review_warnings`,
 `auto_approve_self_noop_transfer: false`, `reject` for all three routing
 misses, and routes over `"*"` networks, sources and assets with no close or
-clawback allowance. The fee cap is 60000 microAlgos: the fee goes to the
+clawback allowance. The fee cap is 80000 microAlgos: the fee goes to the
 fee sink whatever the route, so without a cap a client could burn the
 balance through fees on transfers `self-only` and `listed-destinations`
-permit. 60000 covers a full group of 16 payments or asset transfers at the
-minimum fee: per member, one base fee, the larger of the native Falcon
-contribution and the largest LogicSig program surcharge, and the largest
-note's surcharge, 52916 microAlgos in all on v42 and v43
-(`TestSignerPresetFeeCapCoversAFullGroup` derives it from the consensus
-parameters). It is not a universal bound: fees other members pool onto
+permit. 80000 covers a full group of 16 payments or asset transfers at the
+minimum fee. The planner adds, per member: one base fee, the note bytes
+beyond the free allowance, the native Falcon contribution, and its share of
+the LogicSig program-byte surcharge; a Falcon-delegated LogicSig pays both
+of the last two. At the largest note and program that is 76916 microAlgos
+on v42 and v43 (`TestSignerPresetFeeCapCoversAFullGroup` derives it from the
+consensus parameters). It is not a universal bound: fees other members pool onto
 this key's transaction (an app call's inner transactions) and congestion
 fees can exceed it, and the documents say to raise it then. The signer
 presets do not approve (a permitted transaction reaches the Operator

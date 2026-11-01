@@ -193,11 +193,12 @@ presets do not do:
   still be allowed, and that key's own policy then governs the account. A
   preset limits destinations and transaction types; it is not a custody
   boundary.
-- **They do not cap amounts.** Only the fee is capped, at 0.06 ALGO per
+- **They do not cap amounts.** Only the fee is capped, at 0.08 ALGO per
   transaction. That stops a client burning the balance in fees on transfers
   the routes allow. It covers a full group of 16 payments or asset
-  transfers at the minimum fee, with native Falcon authorization and the
-  largest notes allowed (52,916 microAlgos). It does not cover a group that
+  transfers at the minimum fee, every member at its most expensive
+  authorization (a Falcon-delegated LogicSig at the largest program size)
+  with the largest note allowed (76,916 microAlgos). It does not cover a group that
   pools other transactions' fees onto this key's, such as an app call
   paying for its inner transactions, or fees under network congestion:
   raise `max_fee_microalgos` for those.

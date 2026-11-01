@@ -27,7 +27,7 @@ const signerPresetKey = "CEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI7JH2
 var presetHeld = types.Address{0x44} // another account this signer holds
 
 // signerPresetFeeCap is the fee cap every signer preset carries.
-const signerPresetFeeCap = 60_000
+const signerPresetFeeCap = 80_000
 
 func signerPresetConfig(t *testing.T, name string) *policy.Config {
 	t.Helper()
@@ -263,14 +263,19 @@ func presetNames(presets []Preset) string {
 }
 
 // The signer presets' fee cap covers a full group of payments or asset
-// transfers at the minimum fee, whatever authorizes them: every member at
-// its most expensive authorization (native Falcon, or a LogicSig at the
-// largest program) and the largest note the protocol allows, the whole
-// group's fee landing on one transaction. Computed from each consensus
-// version the signer accepts, so a protocol change that raises it fails
-// here instead of silently refusing such groups. Fees other members pool
-// onto this key's transaction (app calls, their inner transactions) are not
-// covered, and are documented as needing a higher cap.
+// transfers at the minimum fee, the whole group's fee landing on one
+// transaction. The planner charges such a member exactly these, and adds
+// them (native_pq_fee.go): its transaction factor (one base fee, plus the
+// note bytes beyond the free allowance; the app-call and heartbeat terms do
+// not apply to a payment or asset transfer), the Falcon contribution when
+// it is authorized under the native Falcon scheme, and its share of the
+// group's LogicSig program-byte surcharge. A Falcon-delegated LogicSig pays
+// both of the last two, so the worst member pays all four. The bound is
+// computed from each consensus version the signer accepts, so a protocol
+// change that raises it fails here instead of silently refusing such
+// groups. Fees other members pool onto this key's transaction (app calls,
+// their inner transactions) are not covered, and are documented as needing
+// a higher cap.
 func TestSignerPresetFeeCapCoversAFullGroup(t *testing.T) {
 	for _, version := range []protocol.ConsensusVersion{protocol.ConsensusV42, protocol.ConsensusV43} {
 		p, ok := sdkconfig.Consensus[version]
@@ -284,7 +289,7 @@ func TestSignerPresetFeeCapCoversAFullGroup(t *testing.T) {
 		if p.MaxAbsoluteLogicSigProgramSize > p.LogicSigMaxSize {
 			program = (p.MaxAbsoluteLogicSigProgramSize - p.LogicSigMaxSize) * surcharge
 		}
-		member := unit + note + max(falcon1024.PQFeeContribution, program)
+		member := unit + note + falcon1024.PQFeeContribution + program
 		factor := uint64(p.MaxTxGroupSize) * member
 		bound := (p.MinTxnFee*factor + unit - 1) / unit
 		if bound > signerPresetFeeCap {
