@@ -62,7 +62,7 @@ func TestEndpointCreateCosignerCommandWritesManualEndpoint(t *testing.T) {
 	rendered := out.String()
 	if !strings.Contains(rendered, "Configured cosigner endpoint cosigner-local") ||
 		strings.Contains(rendered, "port:") ||
-		!strings.Contains(rendered, "request-enrollment --endpoint cosigner-local") {
+		!strings.Contains(rendered, "enroll --endpoint cosigner-local") {
 		t.Fatalf("output missing create details:\n%s", rendered)
 	}
 
@@ -78,7 +78,7 @@ func TestEndpointCreateCosignerCommandWritesManualEndpoint(t *testing.T) {
 		t.Fatalf("endpoint = %#v, want cosigner ssh endpoint", endpoint)
 	}
 	if live, ok := state.App.Config.Endpoints.Endpoint("cosigner-local"); !ok || live.URL != endpoint.URL {
-		t.Fatalf("REPL config endpoint = %#v, %v; same-session request-enrollment would not resolve cosigner-local", live, ok)
+		t.Fatalf("REPL config endpoint = %#v, %v; same-session enroll would not resolve cosigner-local", live, ok)
 	}
 }
 
@@ -115,7 +115,7 @@ func TestEndpointImportCommandRefreshesREPLConfig(t *testing.T) {
 	}
 	endpoint, ok := state.App.Config.Endpoints.Endpoint("local-cosigner")
 	if !ok || endpoint.Role != config.ClientEndpointRoleCosigner || endpoint.URL != "ssh://127.0.0.1:2223" {
-		t.Fatalf("REPL config endpoint = %#v, %v; same-session request-enrollment would not resolve local-cosigner", endpoint, ok)
+		t.Fatalf("REPL config endpoint = %#v, %v; same-session enroll would not resolve local-cosigner", endpoint, ok)
 	}
 }
 
@@ -202,7 +202,7 @@ func TestEndpointAliasCommandsSeeEndpointsAddedElsewhere(t *testing.T) {
 		t.Fatalf("cmdEndpoints(list) error = %v", err)
 	}
 	if _, err := state.App.ResolveEnrollmentTarget("added"); err != nil {
-		t.Fatalf("alias listed by endpoints list is unknown to request-enrollment: %v", err)
+		t.Fatalf("alias listed by endpoints list is unknown to enroll: %v", err)
 	}
 	if _, ok := eng.EndpointRegistry.Endpoint("added"); !ok {
 		t.Fatal("endpoints list left the engine's routing registry without the listed endpoint")

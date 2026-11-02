@@ -885,7 +885,7 @@ This layer includes:
 
 Admin transport model:
 
-- the admin protocol is line-delimited JSON over local IPC only; SSH does not carry it (`aplane` connections accept only direct-tcpip forwards, and `request-enrollment` session channels accept only the `enroll` exec),
+- the admin protocol is line-delimited JSON over local IPC only; SSH does not carry it (`aplane` connections accept only direct-tcpip forwards, and `enroll` session channels accept only the `enroll` exec),
 - every admin message carries an explicit envelope `kind` (`request`, `response`, `notification`),
 - `internal/transport` owns one dispatcher-backed reader per post-auth connection,
 - request/response correlation is by request `id`,
@@ -972,7 +972,7 @@ minisign-signed.
 - Zero or one `apadmin`/`apapprover` admin workflow for the product runtime, connected over local IPC. For remote administration, log in to the signer host and run `apadmin` there.
 - One or more `apshell` clients, local or via SSH tunnel. Interactive `apshell` is both the normal client shell and the enrollment/recovery surface: it may start before client enrollment is complete. Startup requires client config/bootstrap inputs, but not an enrolled key or a trusted signer host. SSH host trust is enforced when interactive `apshell` attempts a signer connection or enrollment flow, not before process startup; whether the key is enrolled is learned from the node at connect time. After successful enrollment at the default signer, `apshell` immediately connects with the enrolled key; cosigner enrollment does not replace the primary connection.
 - `apshell --mcp` is a separate operational surface, not an enrollment or inspection surface. MCP startup is non-interactive and refuses to start unless a default signer endpoint is configured with a trusted endpoint `known_hosts` entry and the startup signer connection succeeds. First-time enrollment and trust bootstrap happen through interactive `apshell`, not MCP.
-- Optional `apconsole` wrapper on the secure signer machine, preserving the same apshell/apadmin/apsigner transport interfaces while composing operator panes. `apconsole` can load `apconsole.yaml` from the install root to determine the client/signer data paths for local IPC administration. Startup resolution is deterministic per field: flags win over environment variables, environment variables win over an explicitly selected profile, and an explicitly selected profile wins over auto-discovery. If explicit sources disagree, `apconsole` exits instead of guessing. In local signer mode, `apconsole` may start before client enrollment is complete because it owns or attaches the local signer/admin surfaces needed for first-time `request-enrollment` approval; when the client SSH host is loopback, it probes the live loopback SSH endpoint before pinning the local signer's configured SSH host key into the client `known_hosts` file, and a mismatch aborts startup. Enrollment is learned from the node when the embedded shell attempts `request-enrollment`, `connect`, or startup auto-connect. The embedded admin pane uses local IPC and does not receive the shell's client data or enrollment client. In local cosigner mode, `apconsole` does not create an embedded shell pane; it renders the signer admin pane above the daemon/status pane. Remote console mode is rejected; SSH into the signer host and run apconsole there. In local mode it attaches to an existing IPC socket or starts `apsigner -d <signer-data>` as a child it owns; the daemon pane reports disabled/attached/starting/ready/failed/exited status and streams owned-daemon logs. When present, the shell pane uses `internal/apshellcli.Session`, preserving apshell command behavior; Ctrl+C cancels a running shell command when the shell pane is focused, and shell `quit`/`exit` closes only that embedded shell pane. Operator controls are root-level function-key pane focus, F4 zoom, Shift+arrow (and Shift+Tab) pane navigation, and `?`/F5 help overlay.
+- Optional `apconsole` wrapper on the secure signer machine, preserving the same apshell/apadmin/apsigner transport interfaces while composing operator panes. `apconsole` can load `apconsole.yaml` from the install root to determine the client/signer data paths for local IPC administration. Startup resolution is deterministic per field: flags win over environment variables, environment variables win over an explicitly selected profile, and an explicitly selected profile wins over auto-discovery. If explicit sources disagree, `apconsole` exits instead of guessing. In local signer mode, `apconsole` may start before client enrollment is complete because it owns or attaches the local signer/admin surfaces needed for first-time `enroll` approval; when the client SSH host is loopback, it probes the live loopback SSH endpoint before pinning the local signer's configured SSH host key into the client `known_hosts` file, and a mismatch aborts startup. Enrollment is learned from the node when the embedded shell attempts `enroll`, `connect`, or startup auto-connect. The embedded admin pane uses local IPC and does not receive the shell's client data or enrollment client. In local cosigner mode, `apconsole` does not create an embedded shell pane; it renders the signer admin pane above the daemon/status pane. Remote console mode is rejected; SSH into the signer host and run apconsole there. In local mode it attaches to an existing IPC socket or starts `apsigner -d <signer-data>` as a child it owns; the daemon pane reports disabled/attached/starting/ready/failed/exited status and streams owned-daemon logs. When present, the shell pane uses `internal/apshellcli.Session`, preserving apshell command behavior; Ctrl+C cancels a running shell command when the shell pane is focused, and shell `quit`/`exit` closes only that embedded shell pane. Operator controls are root-level function-key pane focus, F4 zoom, Shift+arrow (and Shift+Tab) pane navigation, and `?`/F5 help overlay.
 - Optional plugin child processes spawned by `apshell`
 
 Trust boundaries:
@@ -1015,7 +1015,7 @@ accept no runtime locator.
 Startup performs a no-follow check that rejects any direct `identities/`
 entry other than a real `default` directory before loading secrets or starting
 watchers. HTTP authentication maps the enrolled client key of the request's SSH connection to
-`client:<fingerprint>`. SSH accepts only `aplane` and `request-enrollment`;
+`client:<fingerprint>`. SSH accepts only `aplane` and `enroll`;
 an `aplane` connection must present an enrolled key, and every API channel it
 opens carries that key's identity.
 
@@ -1029,7 +1029,7 @@ The runtime enforces these single-product invariants:
   `internal/lsigprovider.registerMu` has no per-owner reference counts;
 - one product runtime owns the watcher, approval coordinator, enrolled-client
   registry, pending enrollment queue, runtime settings, and lock state;
-- SSH uses the fixed usernames `aplane` and `request-enrollment` and carries no
+- SSH uses the fixed usernames `aplane` and `enroll` and carries no
   store or runtime identifier;
 - audit records attribute actors through principal and session fields and carry
   no store or runtime identifier;
@@ -1286,7 +1286,7 @@ admin idle timeout is enforced by `apadmin` as a disconnect; the signer applies
 - SSH: enrolled public key for tunnel connections. The fixed non-secret
   username is `aplane`; the key must be in the node's registry, which is
   re-checked after the handshake. Enrollment is a key-only bootstrap using the
-  `request-enrollment` username: the request is queued for the operator,
+  `enroll` username: the request is queued for the operator,
   who approves it later, and the client connects once it is approved.
 
 ## Server Ownership Model
@@ -1730,7 +1730,7 @@ First-class built-in command families include:
 - alias/set commands: `alias`, `sets`
 - rekey commands: `rekey`, `unrekey`
 - signer/key-management commands: `keys`, `keytypes`, `generate`, `delete`
-- config/toggle/connectivity/session commands: `network`, `write`, `verbose`, `simulate`, `config`, `connect`, `disconnect`, `request-enrollment`, `endpoints`, `cosigner`, `clear`/`cls`, `quit`/`exit`/`q`
+- config/toggle/connectivity/session commands: `network`, `write`, `verbose`, `simulate`, `config`, `connect`, `disconnect`, `enroll`, `endpoints`, `cosigner`, `clear`/`cls`, `quit`/`exit`/`q`
 - scripting/plugin commands: `script`, `js`, `jssave`, `jslist`
 
 Command handling constraints:

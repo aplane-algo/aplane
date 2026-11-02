@@ -104,7 +104,7 @@ func TestRSAClientKeyRefusedBeforeVerification(t *testing.T) {
 		Timeout:         5 * time.Second,
 	})
 	if err == nil {
-		t.Fatal("request-enrollment accepted an RSA key")
+		t.Fatal("enroll accepted an RSA key")
 	}
 	if consulted || prompted {
 		t.Fatalf("RSA key got past the algorithm allowlist (callback=%v, prompt=%v)", consulted, prompted)

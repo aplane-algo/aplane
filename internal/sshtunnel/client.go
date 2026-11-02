@@ -703,7 +703,7 @@ func (c *Client) DialSignerAPI(ctx context.Context) (net.Conn, error) {
 	return sshClient.DialContext(ctx, "tcp", forwardedAPIAddress)
 }
 
-// EnrollmentResult is a node's answer to a request-enrollment: the client
+// EnrollmentResult is a node's answer to an enroll session: the client
 // key's fingerprint and whether the request now waits for the operator
 // (Pending) or the key was already enrolled.
 type EnrollmentResult struct {

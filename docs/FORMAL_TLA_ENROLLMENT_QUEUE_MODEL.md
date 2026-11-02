@@ -97,7 +97,7 @@ cannot silently stop being load-bearing.
   since every reader (`Parse`, `Pruned`) drops lapsed entries; the on-disk
   bytes are rewritten at the next publish.
 - Revocation closing the key's live tunnels, the SSH-side caps on
-  `request-enrollment` connections and channels, and the apadmin
+  `enroll` connections and channels, and the apadmin
   notifications (a new request, and the `enrollment_changed` announcements of
   queue, registry, and connection changes) are outside the model; the first is covered
   by `internal/sshtunnel` tests, the caps by

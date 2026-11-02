@@ -32,7 +32,7 @@ const (
 	// enrollmentSSHUsername is the username of a bootstrap connection that
 	// asks the operator to enroll the client's key. It carries no credential
 	// and may open only the enrollment session.
-	enrollmentSSHUsername = "request-enrollment"
+	enrollmentSSHUsername = "enroll"
 	// enrollmentCommand is the one exec command an enrollment connection may
 	// run. An optional label follows it, separated by a space.
 	enrollmentCommand = "enroll"
@@ -105,7 +105,7 @@ type ProductHooks struct {
 	EnrollKey KeyEnrollerFunc
 }
 
-// EnrollmentHooks configures the request-enrollment flow. A request is
+// EnrollmentHooks configures the enroll flow. A request is
 // recorded and answered at once; the operator approves it later, and the
 // client learns the outcome by connecting. Without the hook the server
 // enrolls the key immediately into its in-memory list, which exists for
@@ -147,7 +147,7 @@ const (
 	// single host cannot keep every slot busy for the handshake timeout.
 	maxPendingSSHHandshakesPerHost = 8
 
-	// request-enrollment connections are unauthenticated, so their footprint
+	// enroll connections are unauthenticated, so their footprint
 	// is bounded: a few concurrent connections, each of which must start
 	// enrollment promptly and may request it only once.
 	maxEnrollmentConns         = 8
@@ -204,7 +204,7 @@ type Server struct {
 	sshConnsMu               sync.Mutex // Protects connection maps and pendingHandshakes
 	testAfterAuthBeforeTrack func()     // Test hook for auth/revocation race coverage
 
-	enrollmentConns        int           // Live request-enrollment connections; protected by sshConnsMu
+	enrollmentConns        int           // Live enroll connections; protected by sshConnsMu
 	enrollmentExecDeadline time.Duration // Tests may shorten the time an enrollment connection has to start
 	enrollmentRespDeadline time.Duration // Tests may shorten the time a client has to accept an enrollment response
 	keepaliveInterval      time.Duration // Tests may shorten keepaliveInterval
@@ -227,7 +227,7 @@ func (s *Server) SetSessionCallback(cb SessionCallback) {
 	s.sessionCallback = cb
 }
 
-// SetEnrollmentHooks configures the request-enrollment flow. Hooks are
+// SetEnrollmentHooks configures the enroll flow. Hooks are
 // immutable after Start.
 func (s *Server) SetEnrollmentHooks(hooks EnrollmentHooks) {
 	s.mu.Lock()
@@ -466,7 +466,7 @@ func (s *Server) handlePublicKeyAuth(conn ssh.ConnMetadata, key ssh.PublicKey) (
 	}
 	if !s.isEnrolled(key) {
 		fmt.Printf("[SSH] Rejected unknown key from %s: %s\n", remoteAddr, keyFingerprint)
-		return nil, fmt.Errorf("unknown key %s; use request-enrollment to enroll", keyFingerprint)
+		return nil, fmt.Errorf("unknown key %s; run enroll in apshell to request enrollment", keyFingerprint)
 	}
 	return &ssh.Permissions{Extensions: map[string]string{
 		"auth_method":     "publickey",
@@ -1051,7 +1051,7 @@ func enrollmentPublicKey(permissions *ssh.Permissions) (ssh.PublicKey, bool) {
 	return key, true
 }
 
-// admitEnrollmentConn counts a live request-enrollment connection, refusing
+// admitEnrollmentConn counts a live enroll connection, refusing
 // one beyond the cap.
 func (s *Server) admitEnrollmentConn() bool {
 	s.sshConnsMu.Lock()

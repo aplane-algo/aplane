@@ -1038,7 +1038,7 @@ check_local_config_consistency() {
     echo "    ssh.port:    $client_ssh_port"
     echo ""
     if [ "$client_ports_source" = "endpoints" ]; then
-        echo "'apshell request-enrollment' and 'connect' use $client_endpoints."
+        echo "'apshell enroll' and 'connect' use $client_endpoints."
         echo "Edit $client_endpoints manually before connecting."
         return 0
     fi
@@ -2083,10 +2083,10 @@ ENVEOF
     if [ -f "$SSH_KEY.pub" ]; then
         echo "  3. Give your public key to the signer operator:"
         echo "     cat $SSH_KEY.pub"
-        echo "  4. Run apshell, then use 'request-enrollment' to have the operator enroll your key"
+        echo "  4. Run apshell, then use 'enroll' to have the operator enroll your key"
     else
         echo "  3. Generate an SSH key and give the public key to the signer operator"
-        echo "  4. Run apshell, then use 'request-enrollment' to have the operator enroll your key"
+        echo "  4. Run apshell, then use 'enroll' to have the operator enroll your key"
     fi
     exit 0
 fi
@@ -2354,10 +2354,10 @@ STARTEOF
     offer_localnet_setup "$CLIENT_BINDIR/aplocalnet" "$APCLIENT_DIR" "$DATA_DIR"
 
     if [ "$NODE_ROLE" = "signer" ]; then
-        echo "The client's SSH key is its credential; run 'request-enrollment' from apshell after install."
+        echo "The client's SSH key is its credential; run 'enroll' from apshell after install."
     else
         echo "The client's SSH key is its credential; after unlocking the cosigner, run"
-        echo "'request-enrollment --endpoint local-cosigner' from apshell in another terminal."
+        echo "'enroll --endpoint local-cosigner' from apshell in another terminal."
     fi
 
     # Offer to add apenv.sh to shell rc
@@ -2386,12 +2386,12 @@ STARTEOF
     echo "  $(shell_quote "$START_SH")"
     echo ""
     if [ "$NODE_ROLE" = "signer" ]; then
-        echo "On first launch, unlock the signer pane, run 'request-enrollment' in the shell pane,"
+        echo "On first launch, unlock the signer pane, run 'enroll' in the shell pane,"
         echo "and approve the request in the signer pane."
     else
         echo "On first launch, unlock the cosigner admin pane. Then open another terminal,"
         echo "source $(shell_quote "$ENV_SH"), start apshell, and run"
-        echo "  request-enrollment --endpoint local-cosigner"
+        echo "  enroll --endpoint local-cosigner"
         echo "Approve the request in the cosigner admin pane."
     fi
     echo ""
@@ -2651,10 +2651,10 @@ if [ -n "$SUDO_USER" ]; then
     write_mcp_config "$APCLIENT_DIR" "$BINDIR/apshell"
 
     if [ "$NODE_ROLE" = "signer" ]; then
-        echo "The client's SSH key is its credential; run 'request-enrollment' from apshell after install."
+        echo "The client's SSH key is its credential; run 'enroll' from apshell after install."
     else
         echo "The client's SSH key is its credential; after unlocking the cosigner, run"
-        echo "'request-enrollment --endpoint local-cosigner' from apshell."
+        echo "'enroll --endpoint local-cosigner' from apshell."
     fi
 
     APCONSOLE_CONFIG="$OPERATOR_ROOT/apconsole.yaml"
@@ -2791,8 +2791,8 @@ echo "  $DATA_DIR/install/uninstall.sh"
 echo ""
 echo "apshell is configured at ${APCLIENT_DIR:-\$HOME/aplane/apclient}."
 if [ "$NODE_ROLE" = "signer" ]; then
-    echo "Use 'request-enrollment' in apshell to have the operator enroll this client's SSH key."
+    echo "Use 'enroll' in apshell to have the operator enroll this client's SSH key."
 else
-    echo "Use 'request-enrollment --endpoint local-cosigner' in apshell to have the operator enroll this client's SSH key at the cosigner."
+    echo "Use 'enroll --endpoint local-cosigner' in apshell to have the operator enroll this client's SSH key at the cosigner."
 fi
 echo "After enrollment has been approved and known_hosts written, use apconsole for the unified secure-machine console."

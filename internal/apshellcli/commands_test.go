@@ -15,19 +15,19 @@ import (
 
 func TestRequestEnrollmentRejectsPositionalHost(t *testing.T) {
 	r := &REPLState{}
-	err := r.runRequestEnrollment([]string{"signer.example"}, nil)
+	err := r.runEnroll([]string{"signer.example"}, nil)
 	if err == nil {
-		t.Fatal("runRequestEnrollment() error = nil, want usage error")
+		t.Fatal("runEnroll() error = nil, want usage error")
 	}
-	if got := err.Error(); got != "usage: "+requestEnrollmentUsage {
-		t.Fatalf("runRequestEnrollment() error = %q", got)
+	if got := err.Error(); got != "usage: "+enrollUsage {
+		t.Fatalf("runEnroll() error = %q", got)
 	}
 	if strings.Contains(err.Error(), "<host>") {
-		t.Fatalf("runRequestEnrollment() retained positional host usage: %v", err)
+		t.Fatalf("runEnroll() retained positional host usage: %v", err)
 	}
 	for _, args := range [][]string{{"--endpoint"}, {"--label"}, {"--endpoint", "x", "extra"}} {
-		if err := r.runRequestEnrollment(args, nil); err == nil || err.Error() != "usage: "+requestEnrollmentUsage {
-			t.Fatalf("runRequestEnrollment(%v) error = %v, want usage error", args, err)
+		if err := r.runEnroll(args, nil); err == nil || err.Error() != "usage: "+enrollUsage {
+			t.Fatalf("runEnroll(%v) error = %v, want usage error", args, err)
 		}
 	}
 }
@@ -92,7 +92,7 @@ func TestCommandRegistration(t *testing.T) {
 		// Remote commands
 		{"connect", command.CategoryRemote},
 		{"disconnect", command.CategoryRemote},
-		{"request-enrollment", command.CategoryRemote},
+		{"enroll", command.CategoryRemote},
 	}
 
 	// Create a minimal REPLState for registry initialization

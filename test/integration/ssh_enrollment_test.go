@@ -30,7 +30,7 @@ import (
 )
 
 // The client's SSH key is its only credential. These tests cover the
-// request-enrollment protocol: a request is queued for the operator and
+// enroll protocol: a request is queued for the operator and
 // answered at once, the operator approves or rejects it over IPC (apadmin)
 // at any later time, waiting requests survive a restart and are announced
 // to an operator at login, a key can be pre-enrolled by import, and
@@ -72,7 +72,7 @@ func TestRequestEnrollmentQueuesAndApprovalEnrolls(t *testing.T) {
 		func(fp string) { started = fp },
 	)
 	if err != nil {
-		t.Fatalf("engine request-enrollment failed unexpectedly: %v", err)
+		t.Fatalf("engine enroll failed unexpectedly: %v", err)
 	}
 	want := mustClientKeyFingerprint(t, env.ClientPublicKeyPath)
 	if !result.Pending || result.Fingerprint != want || started != want {
@@ -156,7 +156,7 @@ func TestRequestEnrollmentTOFURejectsUnknownHost(t *testing.T) {
 		nil,
 	)
 	if err == nil {
-		t.Fatal("expected request-enrollment to fail when TOFU approval is denied")
+		t.Fatal("expected enroll to fail when TOFU approval is denied")
 	}
 	if !strings.Contains(err.Error(), "host key rejected by user") {
 		t.Fatalf("expected TOFU rejection error, got: %v", err)
@@ -183,9 +183,9 @@ func TestRequestEnrollmentQueuesWithoutOperatorAndReplaysAtLogin(t *testing.T) {
 	t.Cleanup(func() { _ = signerd.Stop() })
 
 	apshell := harness.NewApshellHarness(t)
-	output, err := apshell.RunWithInput("request-enrollment --label field-laptop\nquit\n")
+	output, err := apshell.RunWithInput("enroll --label field-laptop\nquit\n")
 	if err != nil {
-		t.Fatalf("request-enrollment command failed unexpectedly: %v\noutput:\n%s", err, output)
+		t.Fatalf("enroll command failed unexpectedly: %v\noutput:\n%s", err, output)
 	}
 	if !strings.Contains(output, "waiting for the operator") {
 		t.Fatalf("expected a pending request in output, got:\n%s", output)
@@ -368,14 +368,14 @@ func TestRequestEnrollmentAutoConfirmRejectsUnknownHost(t *testing.T) {
 	t.Cleanup(func() { _ = signerd.Stop() })
 
 	scriptPath := filepath.Join(t.TempDir(), "request_enrollment.ap")
-	if err := os.WriteFile(scriptPath, []byte("request-enrollment\n"), 0o600); err != nil {
+	if err := os.WriteFile(scriptPath, []byte("enroll\n"), 0o600); err != nil {
 		t.Fatalf("failed to write script file: %v", err)
 	}
 
 	apshell := harness.NewApshellHarness(t)
 	output, err := apshell.Run("-script", scriptPath)
 	if err == nil {
-		t.Fatalf("expected auto-confirm request-enrollment to fail, got output:\n%s", output)
+		t.Fatalf("expected auto-confirm enroll to fail, got output:\n%s", output)
 	}
 	if !strings.Contains(output, "unknown SSH host key") {
 		t.Fatalf("expected unknown-host error, got output:\n%s", output)
@@ -474,9 +474,9 @@ func TestRequestEnrollmentReportsQueueWriteFailure(t *testing.T) {
 	t.Cleanup(func() { _ = signerd.Stop() })
 
 	apshell := harness.NewApshellHarness(t)
-	output, err := apshell.RunWithInput("request-enrollment\nquit\n")
+	output, err := apshell.RunWithInput("enroll\nquit\n")
 	if err != nil {
-		t.Fatalf("request-enrollment command failed unexpectedly: %v\noutput:\n%s", err, output)
+		t.Fatalf("enroll command failed unexpectedly: %v\noutput:\n%s", err, output)
 	}
 	if !strings.Contains(output, "failed to record enrollment request") {
 		t.Fatalf("expected the recording failure, got output:\n%s", output)
@@ -500,7 +500,7 @@ func TestRequestEnrollmentQueueIsCapped(t *testing.T) {
 	submit := func() (string, int) {
 		keyPath := filepath.Join(t.TempDir(), "id_ed25519")
 		writeSSHIdentity(t, keyPath, keyPath+".pub")
-		client, err := dialEnrollmentClient(t, sshCfg.Host, sshCfg.Port, "request-enrollment", mustLoadSSHSigner(t, keyPath), hostKey)
+		client, err := dialEnrollmentClient(t, sshCfg.Host, sshCfg.Port, "enroll", mustLoadSSHSigner(t, keyPath), hostKey)
 		if err != nil {
 			t.Fatalf("dial enrollment: %v", err)
 		}
@@ -649,7 +649,7 @@ func TestConnectUsesSSHAgentWhenIdentityFileMissing(t *testing.T) {
 	}
 	_, err = engNoAgent.RequestEnrollmentWithContext(context.Background(), clientCfg.Host, clientCfg.Port, "", clientCfg.KnownHostsPath, "", nil, nil)
 	if err == nil {
-		t.Fatal("expected missing-agent request-enrollment to fail")
+		t.Fatal("expected missing-agent enroll to fail")
 	}
 	if !strings.Contains(err.Error(), "SSH_AUTH_SOCK is not set") {
 		t.Fatalf("expected missing SSH_AUTH_SOCK error, got: %v", err)
@@ -759,7 +759,7 @@ func TestServerRejectsUnsupportedEnrollmentUsername(t *testing.T) {
 	hostKey := mustLoadSSHPublicKey(t, filepath.Join(env.SignerDataDir, ".ssh", "ssh_host_key.pub"))
 	sshCfg := mustLoadClientSSHConfig(t)
 
-	_, err := dialEnrollmentClient(t, sshCfg.Host, sshCfg.Port, "request-enrollment:other", clientSigner, hostKey)
+	_, err := dialEnrollmentClient(t, sshCfg.Host, sshCfg.Port, "enroll:other", clientSigner, hostKey)
 	if err == nil {
 		t.Fatal("expected unsupported enrollment username handshake to fail")
 	}
@@ -782,7 +782,7 @@ func TestEnrollmentRejectsUnknownExecCommand(t *testing.T) {
 	hostKey := mustLoadSSHPublicKey(t, filepath.Join(env.SignerDataDir, ".ssh", "ssh_host_key.pub"))
 	sshCfg := mustLoadClientSSHConfig(t)
 
-	client, err := dialEnrollmentClient(t, sshCfg.Host, sshCfg.Port, "request-enrollment", clientSigner, hostKey)
+	client, err := dialEnrollmentClient(t, sshCfg.Host, sshCfg.Port, "enroll", clientSigner, hostKey)
 	if err != nil {
 		t.Fatalf("failed to establish enrollment SSH client: %v", err)
 	}
@@ -843,7 +843,7 @@ func TestConnectFailsWhenKnownHostsPathMissingOrUnwritable(t *testing.T) {
 		nil,
 	)
 	if err == nil {
-		t.Fatal("expected request-enrollment to fail with unwritable known_hosts path")
+		t.Fatal("expected enroll to fail with unwritable known_hosts path")
 	}
 	if !strings.Contains(err.Error(), "failed to save host key") {
 		t.Fatalf("expected known_hosts save failure, got: %v", err)
@@ -866,7 +866,7 @@ func TestEnrollmentRequestOutlivesTheSubmittingConnection(t *testing.T) {
 	hostKey := mustLoadSSHPublicKey(t, filepath.Join(env.SignerDataDir, ".ssh", "ssh_host_key.pub"))
 	sshCfg := mustLoadClientSSHConfig(t)
 
-	client, err := dialEnrollmentClient(t, sshCfg.Host, sshCfg.Port, "request-enrollment", clientSigner, hostKey)
+	client, err := dialEnrollmentClient(t, sshCfg.Host, sshCfg.Port, "enroll", clientSigner, hostKey)
 	if err != nil {
 		t.Fatalf("failed to establish enrollment SSH client: %v", err)
 	}

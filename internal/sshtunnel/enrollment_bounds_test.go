@@ -45,7 +45,7 @@ func dialEnrollment(t *testing.T, srv *Server, addr string) *ssh.Client {
 		Timeout:         5 * time.Second,
 	})
 	if err != nil {
-		t.Fatalf("dial request-enrollment: %v", err)
+		t.Fatalf("dial enroll: %v", err)
 	}
 	t.Cleanup(func() { _ = client.Close() })
 	return client

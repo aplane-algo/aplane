@@ -14,7 +14,7 @@ Complete command reference for the APlane shell (`apshell`).
 | **Aliases & Sets** | `alias`, `sets` |
 | **Rekeying** | `rekey list`, `rekey`, `unrekey` |
 | **ASA Management** | `asa list`, `asa add`, `asa remove`, `asa clear` |
-| **Configuration** | `network`, `connect`, `disconnect`, `request-enrollment`, `endpoints`, `cosigner status`, `write`, `verbose`, `simulate`, `config` |
+| **Configuration** | `network`, `connect`, `disconnect`, `enroll`, `endpoints`, `cosigner status`, `write`, `verbose`, `simulate`, `config` |
 | **Automation** | `js`, `jssave`, `jslist`, `script` |
 | **Plugins** | `plugins` |
 | **Session** | `help`, `clear`, `quit` |
@@ -696,7 +696,7 @@ connect primary
 
 `known_hosts_path` is optional; if omitted, apshell uses the default client-data known-hosts path.
 
-**Setup:** Enroll this client's SSH key at the signer with `request-enrollment` after the endpoint has been created or imported.
+**Setup:** Enroll this client's SSH key at the signer with `enroll` after the endpoint has been created or imported.
 
 ---
 
@@ -712,14 +712,14 @@ This is useful before connecting to a different endpoint in scripts.
 
 ---
 
-### request-enrollment
+### enroll
 
 Ask the Signer to enroll this client's SSH key, over SSH.
 
 ```
-request-enrollment
-request-enrollment --endpoint <alias>
-request-enrollment --label <text>
+enroll
+enroll --endpoint <alias>
+enroll --label <text>
 ```
 
 The command always uses the client SSH key and known-hosts path from the
@@ -730,9 +730,9 @@ apadmin.
 
 **Examples:**
 ```
-request-enrollment
-request-enrollment --endpoint main
-request-enrollment --label laptop
+enroll
+enroll --endpoint main
+enroll --label laptop
 ```
 
 The command returns at once. The node queues the request for its operator and
@@ -763,7 +763,7 @@ importing its public key file in apadmin (`i` on Enrolled Clients) or with
 
 The client SSH key must be Ed25519, ECDSA (P-256/384/521), or a
 hardware-backed `sk-` Ed25519/ECDSA key. The default generated key is
-Ed25519. RSA and DSA keys fail SSH authentication, for `request-enrollment`
+Ed25519. RSA and DSA keys fail SSH authentication, for `enroll`
 and `connect` alike, before any approval prompt.
 
 The positional one-off host form is no longer supported. Import or configure
@@ -771,7 +771,7 @@ the endpoint first, then enroll with it:
 
 ```text
 endpoints import --alias main --role signer signer.endpoint.json
-request-enrollment
+enroll
 ```
 
 apadmin uses local IPC independently of apshell endpoints and client keys. For
@@ -861,7 +861,7 @@ ambiguous at signing time.
 **The node must be a cosigner.** After access is established, apshell reads the
 node role and stops if the endpoint is a signer, or if the role is missing,
 unrecognized, or cannot be read. For a signer it prints the signer setup
-commands (`endpoints import --role signer`, `request-enrollment`, `connect`).
+commands (`endpoints import --role signer`, `enroll`, `connect`).
 
 **Replacing a destination.** Changing the URL of an existing connection
 requires interactive replacement consent. The client's enrollment at the old
@@ -993,7 +993,7 @@ exported endpoint envelope. `--endpoint` is the client-reachable endpoint URL,
 usually `ssh://host[:ssh-port]`. The cosigner's REST port is not part of the
 profile: an `ssh://` node forwards every client channel to its own listener.
 It writes routing only. The client's key is still enrolled with
-`request-enrollment --endpoint <alias>`, and SSH host trust still uses the
+`enroll --endpoint <alias>`, and SSH host trust still uses the
 known-hosts flow.
 
 `endpoints discover-cosigners` is a read-only diagnostic. It queries configured
@@ -1008,8 +1008,8 @@ endpoints import --alias main --role signer signer.endpoint.json
 endpoints import --alias local-cosigner --role cosigner cosigner.endpoint.json
 endpoints import --alias main --role signer --dry-run signer.endpoint.json
 endpoints create --alias local-cosigner --endpoint ssh://127.0.0.1:2223
-request-enrollment --endpoint main
-request-enrollment --endpoint local-cosigner
+enroll --endpoint main
+enroll --endpoint local-cosigner
 connect main
 endpoints discover-cosigners
 endpoints list

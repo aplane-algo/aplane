@@ -60,7 +60,7 @@ initialization behavior.
 HTTP authentication resolves the enrolled client key that authenticated the
 request's SSH connection and produces `client:<fingerprint>`; it cannot choose
 a runtime. Normal SSH usernames must be exactly `aplane`, and client enrollment
-must be exactly `request-enrollment`.
+must be exactly `enroll`.
 Product HTTP, admin, CLI, SDK, and audit surfaces expose no runtime selector.
 
 Internal storage APIs also expose no product-store selector:

@@ -375,7 +375,7 @@ func (a *App) CompleteCosignerSetup(ctx context.Context, plan CosignerSetupPlan,
 	case engine.NodeRoleCosigner:
 	case config.ClientEndpointRoleSigner:
 		return result, fmt.Errorf(
-			"%w: %s reports the signer role; set up a signer connection with 'endpoints import --alias <alias> --role signer <endpoint-json>', then 'request-enrollment' and 'connect'",
+			"%w: %s reports the signer role; set up a signer connection with 'endpoints import --alias <alias> --role signer <endpoint-json>', then 'enroll' and 'connect'",
 			ErrCosignerSetupNotCosigner, endpoint.URL,
 		)
 	case "":

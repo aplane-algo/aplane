@@ -78,7 +78,7 @@ const (
 	MsgTypeStatus                   = "status"
 	MsgTypeError                    = "error"
 
-	// Client enrollment: a request-enrollment over SSH queues a request
+	// Client enrollment: an enroll session over SSH queues a request
 	// (notified as client_enrollment_request) that the operator approves,
 	// rejects, or lists later; import_client_key pre-enrolls a key.
 	MsgTypeClientEnrollmentRequest = "client_enrollment_request"

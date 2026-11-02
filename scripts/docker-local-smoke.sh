@@ -35,7 +35,7 @@ This test requires Docker privileges. It starts a stock ubuntu:24.04 container
 (no systemd), creates a non-root test user, runs install.sh in local mode,
 verifies the install layout, exercises appass --check, starts apsigner,
 verifies the installer refuses to run while that signer is running, starts
-apapprover, drives `apshell request-enrollment` end-to-end (including the
+apapprover, drives `apshell enroll` end-to-end (including the
 apapprover-side approval), confirms the client can reach the signer with its
 enrolled key, verifies a stopped in-place upgrade preserves state, then runs the installed uninstaller
 and verifies state preservation.
@@ -277,7 +277,7 @@ verify_appass_local_detection() {
 generate_client_ssh_key() {
     # The local install doesn't generate the apshell SSH key (only --client
     # mode does in install.sh). In real use, the user runs ssh-keygen before
-    # request-enrollment; we do the same here.
+    # enroll; we do the same here.
     local client_dir="/home/$TEST_USER/aplane/apclient"
     docker_exec_as_tester "mkdir -p $client_dir/.ssh && chmod 700 $client_dir/.ssh && \
         ssh-keygen -t ed25519 -f $client_dir/.ssh/id_ed25519 -N '' -q"
@@ -390,15 +390,15 @@ EXPECT_SCRIPT
 }
 
 run_request_enrollment() {
-    # Run request-enrollment non-interactively via apshell -script.
+    # Run enroll non-interactively via apshell -script.
     # AutoConfirm=true is set by script mode; known_hosts is pre-populated so
     # no trust prompt. The request is queued for the operator; apapprover
     # approves it asynchronously.
-    docker_exec_as_tester "echo 'request-enrollment' > /tmp/req-enrollment.script"
+    docker_exec_as_tester "echo 'enroll' > /tmp/req-enrollment.script"
     docker_exec_as_tester ". /home/$TEST_USER/aplane/apenv.sh && \
         apshell -script /tmp/req-enrollment.script 2>&1 | tee /tmp/req-enrollment.log"
     docker_exec_as_tester "grep -q 'waiting for the operator at endpoint' /tmp/req-enrollment.log" \
-        || die "request-enrollment did not report a queued enrollment request"
+        || die "enroll did not report a queued enrollment request"
 }
 
 verify_signer_reachable() {

@@ -37,7 +37,7 @@ type EnrollmentResult struct {
 	Pending bool
 }
 
-// RequestEndpointEnrollment submits an SSH request-enrollment to one
+// RequestEndpointEnrollment submits an SSH enroll request to one
 // endpoint and returns at once. Nothing is stored on the client: its key is
 // its credential, and the node records the request for its operator.
 func RequestEndpointEnrollment(

@@ -981,19 +981,19 @@ start_cosigner_apapprover() {
 }
 
 run_request_enrollment() {
-    docker_exec_as_tester "$CLIENT_CONTAINER" "echo 'request-enrollment' > /tmp/req-enrollment.script"
+    docker_exec_as_tester "$CLIENT_CONTAINER" "echo 'enroll' > /tmp/req-enrollment.script"
     docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \
         apshell -script /tmp/req-enrollment.script 2>&1 | tee /tmp/req-enrollment.log"
     docker_exec_as_tester "$CLIENT_CONTAINER" "grep -q 'waiting for the operator at endpoint' /tmp/req-enrollment.log" \
-        || die "request-enrollment did not report a queued enrollment request"
+        || die "enroll did not report a queued enrollment request"
 }
 
 request_cosigner_enrollment() {
-    docker_exec_as_tester "$CLIENT_CONTAINER" "echo 'request-enrollment --endpoint local-cosigner' > /tmp/req-cosigner-enrollment.script"
+    docker_exec_as_tester "$CLIENT_CONTAINER" "echo 'enroll --endpoint local-cosigner' > /tmp/req-cosigner-enrollment.script"
     docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \
         apshell -script /tmp/req-cosigner-enrollment.script 2>&1 | tee /tmp/req-cosigner-enrollment.log"
     docker_exec_as_tester "$CLIENT_CONTAINER" "grep -q 'waiting for the operator at endpoint local-cosigner' /tmp/req-cosigner-enrollment.log" \
-        || die "request-enrollment did not report a queued enrollment request at local-cosigner"
+        || die "enroll did not report a queued enrollment request at local-cosigner"
 }
 
 install_python_sdk_client() {

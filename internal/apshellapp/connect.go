@@ -62,7 +62,7 @@ func (a *App) Connect(_ context.Context, req ConnectRequest) (*ConnectResult, er
 	)
 	if err != nil {
 		if isAuthenticationFailure(err) {
-			return nil, fmt.Errorf("authentication failed: this client's SSH key (%s) is not enrolled at the signer, or was revoked.\nRun 'request-enrollment' and have the operator approve it", req.IdentityFile)
+			return nil, fmt.Errorf("authentication failed: this client's SSH key (%s) is not enrolled at the signer, or was revoked.\nRun 'enroll' and have the operator approve it", req.IdentityFile)
 		}
 		return nil, err
 	}
@@ -151,7 +151,7 @@ func (a *App) Disconnect(_ context.Context) (*DisconnectResult, error) {
 	}, nil
 }
 
-// EnrollmentTarget is the endpoint a request-enrollment run enrolls with.
+// EnrollmentTarget is the endpoint an enroll run enrolls with.
 type EnrollmentTarget struct {
 	Alias string
 	// AutoConnect reports that the target is the default signer endpoint, so
@@ -159,14 +159,14 @@ type EnrollmentTarget struct {
 	AutoConnect bool
 }
 
-// ResolveEnrollmentTarget resolves a request-enrollment alias; an empty alias
+// ResolveEnrollmentTarget resolves an enroll alias; an empty alias
 // selects the default signer endpoint.
 func (a *App) ResolveEnrollmentTarget(alias string) (EnrollmentTarget, error) {
 	registry := a.Config.ClientEndpointsOrDefault()
 	defaultAlias, defaultEndpoint, hasDefault := registry.DefaultEndpoint()
 	if alias == "" {
 		if !hasDefault {
-			return EnrollmentTarget{}, fmt.Errorf("no default signer endpoint in endpoints.yaml; import or configure a signer endpoint before running request-enrollment")
+			return EnrollmentTarget{}, fmt.Errorf("no default signer endpoint in endpoints.yaml; import or configure a signer endpoint before running enroll")
 		}
 		alias = defaultAlias
 	}

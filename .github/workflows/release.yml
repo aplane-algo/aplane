@@ -191,7 +191,7 @@ jobs:
               'First connection:' \
               '- SSH identity key will be auto-generated in .ssh/id_ed25519' \
               "- You'll be prompted to trust the server's host key (TOFU) unless known_hosts is pre-populated" \
-              '- Ask the operator to enroll your key: run request-enrollment and have them approve it' \
+              '- Ask the operator to enroll your key: run enroll and have them approve it' \
               '' \
               'Files:' \
               '  bin/apshell       - General shell client' \
@@ -214,7 +214,7 @@ jobs:
               'First connection:' \
               '- SSH identity key will be auto-generated in .ssh\id_ed25519' \
               "- You'll be prompted to trust the server's host key (TOFU) unless known_hosts is pre-populated" \
-              '- Ask the operator to enroll your key: run request-enrollment and have them approve it' \
+              '- Ask the operator to enroll your key: run enroll and have them approve it' \
               '' \
               'Files:' \
               '  bin\apshell.exe   - General shell client' \

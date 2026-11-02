@@ -124,7 +124,7 @@ func TestProductAuthRejectsNonProductUsernameBeforeKeyCheck(t *testing.T) {
 	}
 	srv.keyEnroller = func(key ssh.PublicKey, label string) (bool, error) { return true, nil }
 
-	for _, username := range []string{"other-identity", "request-enrollment:other-identity"} {
+	for _, username := range []string{"other-identity", "enroll:other-identity"} {
 		t.Run(username, func(t *testing.T) {
 			checked = false
 			perms, err := srv.handlePublicKeyAuth(testConnMetadata{user: username}, pub)

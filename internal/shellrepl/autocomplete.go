@@ -825,7 +825,7 @@ func CreateDynamicCompleter(aliasCache *cache.AliasCache, asaCache *cache.ASACac
 		readline.PcItem("sign"),
 		readline.PcItem("connect"),
 		readline.PcItem("disconnect"),
-		readline.PcItem("request-enrollment"),
+		readline.PcItem("enroll"),
 		readline.PcItem("write"),
 		readline.PcItem("script"),
 		readline.PcItem("verbose"),

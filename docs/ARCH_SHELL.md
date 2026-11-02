@@ -777,7 +777,7 @@ func (e *Engine) IsConnected() bool {
 | status | `GetStatus` |
 | connect | `ConnectWithTunnel` |
 | disconnect | `Disconnect` |
-| request-enrollment, endpoints add | `RequestEnrollmentWithContext` |
+| enroll, endpoints add | `RequestEnrollmentWithContext` |
 | rekey refresh | `RefreshAuthCache`, `RefreshAuthAddressWithContext` |
 
 ### Benefits of the Engine Pattern
@@ -1611,7 +1611,7 @@ JSON results are returned as text containing JSON bytes via `mcp.NewToolResultTe
 | `help`, `h` | Use `mcp_reference` instead |
 | `config` | Use the safe `status` command instead |
 | `script` | Issue commands individually or use `js` |
-| `request-enrollment` | Client enrollment needs interactive host trust; run it in a real apshell |
+| `enroll` | Client enrollment needs interactive host trust; run it in a real apshell |
 | `cosigner` | `cosigner status` and the forwarding alias `cosigner add` are unavailable through MCP; use apshell directly (guided setup is now `endpoints add`) |
 | `endpoints add` | Guided cosigner endpoint setup needs interactive host trust and an operator approval wait; other `endpoints` subcommands remain structured |
 | `clear`, `cls` | Terminal clearing has no machine meaning |
