@@ -51,6 +51,7 @@ type RestorePreview struct {
 }
 
 type RestoreKeyInfo struct {
+	StageHint     *RotatingStageHint
 	Address       string
 	KeyType       string
 	AlreadyExists bool
@@ -284,6 +285,7 @@ func PreviewRestoreWithNodeRole(
 				}
 				info := RestoreKeyInfo{
 					Address: selector, KeyType: entry.KeyType,
+					StageHint:     validatedRotatingHint(entry, manifest.RotatingStageHints),
 					AlreadyExists: exists || destinationErr != nil,
 				}
 				document, err := readBackupPolicy(keysDir, selector, exportPassphrase, role)

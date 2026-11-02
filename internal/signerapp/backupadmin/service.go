@@ -52,11 +52,12 @@ func (s Service) BackupIdentity(req adminproto.BackupIdentityRequest) adminproto
 			}
 			var backupErr error
 			result, backupErr = backup.CreateKeysArchive(backup.CreateKeysArchiveRequest{
-				Paths:            bound,
-				ArchivePath:      archivePath,
-				Addresses:        req.Addresses,
-				Keyring:          masterKey,
-				ExportPassphrase: passphraseBytes,
+				Paths:              bound,
+				RotatingStageHints: backup.SnapshotRotatingHints(ir.StageTables()),
+				ArchivePath:        archivePath,
+				Addresses:          req.Addresses,
+				Keyring:            masterKey,
+				ExportPassphrase:   passphraseBytes,
 			})
 			return backupErr
 		})
@@ -187,6 +188,11 @@ func projectRestoreKeyInfos(items []backup.RestoreKeyInfo) []adminproto.RestoreK
 			AlreadyExists: item.AlreadyExists,
 			HasPolicy:     item.HasPolicy,
 			Error:         item.Error,
+		}
+		if item.StageHint != nil {
+			n := item.StageHint.Stage
+			out[i].StageHint = &n
+			out[i].StageHintRound = item.StageHint.ObservedRound
 		}
 	}
 	return out

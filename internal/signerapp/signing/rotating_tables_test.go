@@ -228,7 +228,7 @@ func (f *rotatingFixture) stageAddress(t testing.TB, stage uint64) types.Address
 
 func (f *rotatingFixture) table(t testing.TB) *stagetable.Table {
 	t.Helper()
-	tb, err := f.tables.Table(f.account, rotatingTestGenesis, nil)
+	tb, err := f.tables.Table(f.account, rotatingTestGenesis, nil, f.kind.keyType)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -455,7 +455,7 @@ func TestFillStageTablesStopsWhenTableDeletedMidPass(t *testing.T) {
 	if _, statErr := os.Stat(f.tables.Path(f.account.String())); !errors.Is(statErr, os.ErrNotExist) {
 		t.Fatal("deleted table was recreated by the running fill")
 	}
-	fresh, err := f.tables.Table(f.account, rotatingTestGenesis, nil)
+	fresh, err := f.tables.Table(f.account, rotatingTestGenesis, nil, f.kind.keyType)
 	if err != nil || fresh.Len() != 0 {
 		t.Fatalf("table after delete: len %d, err %v", fresh.Len(), err)
 	}

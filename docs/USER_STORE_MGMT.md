@@ -929,3 +929,18 @@ know.
 **Remember**: Your recovery mnemonic is the **master key** to funds controlled
 by that private key. Treat it with the same security as cash. Anyone with these
 words can recreate the private key and control its assets.
+
+### Restoring rotating accounts
+
+Managed backups can carry a stage hint from the signer's latest available
+observation. Restore and `apstore rebuild` use it as a starting point, then
+verify the stage against the seed and the configured chain. The backup does
+not contain the full stages cache or audit/leaf history. Restoring a credential
+successfully does not mean it is ready to spend yet; check `rotate status`.
+
+A matching hint at stage 50,000 requires preparing that stage and its
+successor, without rebuilding stages 0–49,999. Without a useful hint, discovery
+still has a bounded allowance. Record the live stage from `rotate status`
+when making an offline recovery record. If automatic discovery stops, use
+`rotate recover <account> --stage N` with that candidate. A wrong or stale
+hint cannot establish signing authority and may require another bounded search.

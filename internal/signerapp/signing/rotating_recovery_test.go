@@ -318,23 +318,17 @@ func TestHintedRecoveryExactHint(t *testing.T) {
 		t.Fatal(err)
 	}
 	opts := StageFillOptions{Horizon: 2, Batch: 8}
-	// First pass: one probe matches; the grant then fills the gap with
-	// the rest of the pass budget (one batch of 8, so 7 stages).
 	r := f.fill(t, opts)
-	if r.Err != nil || r.Resolved || !r.Pending || r.Scanned != 7 {
-		t.Fatalf("first pass = %+v", r)
+	if r.Err != nil || !r.Resolved || r.Stage != 10 || r.Pending || r.Scanned != 3 {
+		t.Fatalf("sparse hinted recovery: %+v", r)
 	}
-	if st := f.state(); st.Grant == nil || st.Grant.Found == nil || *st.Grant.Found != 10 || st.Grant.Charged != 8 {
-		t.Fatalf("state after probe = %+v", st)
+	if _, ok := f.table(t).Address(0); ok {
+		t.Fatal("filled historical prefix")
 	}
-	r = f.fillUntilSettled(t, opts)
-	if r.Err != nil || !r.Resolved || r.Stage != 10 || r.Scanned != 13 {
-		t.Fatalf("settled = %+v, want stage 10 and lookahead to 12", r)
+	if st := f.state(); st.Last == nil || st.Last.Reason != StopFound || st.Last.Charged != 1 || st.AllowanceSpent != 0 {
+		t.Fatalf("state: %+v", st)
 	}
-	// One probe plus eleven stages of gap (0 … 10).
-	if st := f.state(); st.Last == nil || st.Last.Reason != StopFound || st.Last.Charged != 12 || st.AllowanceSpent != 0 {
-		t.Fatalf("final state = %+v", st)
-	}
+
 }
 
 func TestHintedRecoveryOffByAFewProbesOutward(t *testing.T) {
@@ -349,8 +343,8 @@ func TestHintedRecoveryOffByAFewProbesOutward(t *testing.T) {
 	if r.Err != nil || !r.Resolved || r.Stage != 10 {
 		t.Fatalf("report = %+v", r)
 	}
-	// Probes 8, 9, 7, 10: four derivations, then eleven for the gap.
-	if st := f.state(); st.Last == nil || st.Last.Reason != StopFound || st.Last.Charged != 4+11 {
+	// Probes 8, 9, 7, 10: four derivations, no historical fill.
+	if st := f.state(); st.Last == nil || st.Last.Reason != StopFound || st.Last.Charged != 4 {
 		t.Fatalf("state = %+v", st)
 	}
 }
@@ -364,8 +358,8 @@ func TestHintedRecoveryWrongHintExhaustsTheWindowAndLeavesTheTable(t *testing.T)
 		t.Fatal(err)
 	}
 	r := f.fillUntilSettled(t, StageFillOptions{Horizon: 0, Batch: 64})
-	if r.Err != nil || r.Resolved || r.Scanned != 0 {
-		t.Fatalf("report = %+v, want unresolved with an untouched table", r)
+	if r.Err != nil || r.Resolved || r.Scanned != 5 {
+		t.Fatalf("report = %+v, want unresolved with five retained probes", r)
 	}
 	// Probes 100, 101, 99, 102, 98: five derivations, no match.
 	if st := f.state(); st.Grant != nil || st.Last == nil || st.Last.Reason != StopHintNotFound || st.Last.Charged != 5 {
@@ -373,33 +367,30 @@ func TestHintedRecoveryWrongHintExhaustsTheWindowAndLeavesTheTable(t *testing.T)
 	}
 }
 
-func TestHintedRecoveryGapFillStopsAtTheBudget(t *testing.T) {
+func TestHintedRecoveryFindsHighStageOnFinalAllowedProbe(t *testing.T) {
 	f := newRotatingFixture(t)
 	f.recovery().Configure(0, time.Hour)
-	f.chain.authorizer = f.stageAddress(t, 10)
-	hint := uint64(10)
-	// Budget 5: the probe plus four stages of gap, then it stops with the
-	// progress kept; a second grant with a bigger budget finishes.
-	if _, err := f.recovery().StartOperator(f.lockGen, f.account.String(), &hint, 0, 5, 0); err != nil {
+	hint := uint64(50000)
+	f.chain.authorizer = f.stageAddress(t, hint)
+	if _, err := f.recovery().StartOperator(f.lockGen, f.account.String(), &hint, 1, 1, 0); err != nil {
 		t.Fatal(err)
 	}
-	r := f.fillUntilSettled(t, StageFillOptions{Horizon: 0, Batch: 64})
-	if r.Err != nil || r.Resolved || r.Scanned != 4 {
-		t.Fatalf("report = %+v, want 4 stages filled", r)
+	r := f.fill(t, StageFillOptions{Horizon: 1, Batch: 1})
+	if r.Err != nil || !r.Resolved || r.Stage != hint || !r.Pending || r.Scanned != 1 {
+		t.Fatalf("last probe: %+v", r)
 	}
-	if st := f.state(); st.Last == nil || st.Last.Reason != StopBudgetExhausted || st.Last.Charged != 5 {
-		t.Fatalf("state = %+v", st)
+	if st := f.state(); st.Last == nil || st.Last.Reason != StopFound || st.Last.Charged != 1 {
+		t.Fatalf("state: %+v", st)
 	}
-	if _, err := f.recovery().StartOperator(f.lockGen, f.account.String(), &hint, 0, 100, 0); err != nil {
-		t.Fatal(err)
+	r = f.fill(t, StageFillOptions{Horizon: 1, Batch: 1})
+	if r.Err != nil || !r.Resolved || r.Pending || r.Scanned != 2 {
+		t.Fatalf("next stage: %+v", r)
 	}
-	r = f.fillUntilSettled(t, StageFillOptions{Horizon: 0, Batch: 64})
-	if r.Err != nil || !r.Resolved || r.Stage != 10 || r.Scanned != 11 {
-		t.Fatalf("second grant = %+v", r)
+	if _, ok := f.table(t).Address(hint + 1); !ok {
+		t.Fatal("missing successor")
 	}
-	// One probe plus the remaining seven stages (4 … 10).
-	if st := f.state(); st.Last.Charged != 8 {
-		t.Fatalf("second grant charge = %+v", st.Last)
+	if _, ok := f.table(t).Address(0); ok {
+		t.Fatal("derived historical stage")
 	}
 }
 
@@ -774,7 +765,7 @@ func TestRotatingAccountStatusesProjection(t *testing.T) {
 		t.Fatalf("statuses = %+v", got)
 	}
 	st := got[0]
-	if st.Account != f.account.String() || st.Authorizer != foreign.String() || st.Round != 1000 || st.Classification != signerapi.RotatingClassUnknown || st.Stage != nil || st.CachedStages != 2 {
+	if st.Account != f.account.String() || st.Authorizer != foreign.String() || st.Round != 1000 || st.Classification != signerapi.RotatingClassUnknown || st.Stage != nil || st.CachedEntries != 2 {
 		t.Fatalf("status = %+v", st)
 	}
 	if st.Recovery == nil || !st.Recovery.Active || st.Recovery.Kind != "automatic" || st.Recovery.StagesCharged != 2 || st.Recovery.MaxStages != 3 || st.Recovery.AllowanceSpent != 2 || st.Recovery.AllowanceMax != 3 {
@@ -796,7 +787,7 @@ func TestRotatingAccountStatusesProjection(t *testing.T) {
 	}
 	// A failed read: unobserved, with the cache size still reported.
 	st = f.svc.RotatingAccountStatuses([]StageTableReport{{Account: f.account.String(), Scanned: 5}})[0]
-	if st.Classification != signerapi.RotatingClassUnobserved || st.Authorizer != "" || st.CachedStages != 5 {
+	if st.Classification != signerapi.RotatingClassUnobserved || st.Authorizer != "" || st.CachedEntries != 5 {
 		t.Fatalf("unobserved status = %+v", st)
 	}
 }

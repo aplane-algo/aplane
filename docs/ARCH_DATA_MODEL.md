@@ -177,7 +177,7 @@ DTOs and contract fixtures.
 | Backup archive | Signer identity | `backups/default/*.tar.gz` containing `README.md`, credential `apb/<selector>.apb` files, per-key policy `policies/<selector>.apb` files, and `manifest.sealed` | restore preview/direct restore input | admin backup/restore messages | `internal/backup`, `internal/signerapp/backupadmin` |
 | Backup manifest | Backup archive | `manifest.sealed` schema `aplane.credential-backup.manifest.v1`, sealed under the export passphrase | exact member inventory plus source node role default for rebuild | preview/direct restore | `internal/backup` |
 | Audit record | Signer process | `audit.log` JSONL | append-only logger state | not a request API | `internal/signerapp/audit` |
-| Rotating stage table | Signer identity, outside generations | `identities/default/stages/<address>.stages`, a rebuildable cache derived from the rotating key's seed | stage address lookup for rotating accounts | none | `internal/stagetable`, `internal/storepaths`, `internal/signerapp/productruntime`, `internal/signerapp/daemon` |
+| Rotating stage table | Signer identity, outside generations | `identities/default/stages/<address>.stages`, a rebuildable cache derived from the rotating key's seed | sparse stage address lookup and untrusted recovery observations | optional sealed backup hint | `internal/stagetable`, `internal/storepaths`, `internal/signerapp/productruntime`, `internal/signerapp/daemon` |
 
 ## Relationship Map
 

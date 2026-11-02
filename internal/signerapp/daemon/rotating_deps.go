@@ -17,6 +17,7 @@ import (
 func (fs *Signer) rotatingDeps(ir *productruntime.Runtime) *signersigning.RotatingDeps {
 	return &signersigning.RotatingDeps{
 		Chain:    fs.chainReader(),
+		Wake:     ir.WakeStageWork,
 		Tables:   ir.StageTables(),
 		Locks:    &fs.rotatingLocks,
 		Releases: &fs.rotatingReleases,

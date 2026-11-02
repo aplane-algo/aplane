@@ -2,7 +2,7 @@
 // Copyright (C) 2026 APlane Project LLC
 
 // Package stagetable keeps a rotating account's stage address table: the
-// addresses A_0 … A_{k-1} of its first k stages, derived from the account's
+// addresses at explicitly numbered stages, derived from the account's
 // seed and cached on disk so that finding the stage behind an authorizer is a
 // lookup instead of a derivation per stage.
 //
@@ -12,8 +12,7 @@
 // never a wrong signature. It holds no secrets: stage addresses are hashes,
 // and only the live stage's program can rekey the account.
 //
-// A table is prefix-complete. Its length is the next stage to derive, which
-// is what lets a scan resume after a restart or a request deadline.
+// A table is sparse. Explicit stage numbers preserve gaps and discovery progress.
 package stagetable
 
 import (
@@ -22,6 +21,9 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
+	"maps"
+	"math"
 	"os"
 	"path/filepath"
 	"sync"
@@ -44,6 +46,8 @@ const (
 var ErrDiscarded = errors.New("stage table discarded")
 
 // ErrClosed reports an append to a table whose key has been deleted.
+var ErrPersistence = errors.New("stage cache persistence failed")
+
 var ErrClosed = errors.New("stage table closed")
 
 // ErrNoKey reports a request for the table of an account whose key is not
@@ -57,11 +61,19 @@ type Table struct {
 	path     string
 	selector types.Address
 	genesis  [32]byte
+	keyType  string
 
-	mu     sync.RWMutex
-	addrs  []types.Address
-	index  map[types.Address]uint64
-	closed bool
+	writeMu    sync.Mutex
+	revision   uint64
+	mu         sync.RWMutex
+	addrs      map[uint64]types.Address
+	hint       *Hint
+	dirty      bool
+	writeErr   error
+	searchTurn uint64
+	verified   map[uint64]types.Address
+	index      map[types.Address]uint64
+	closed     bool
 }
 
 // Open loads the table at path for the account with selector on the network
@@ -71,21 +83,32 @@ type Table struct {
 // network is removed and the table starts empty; Open then returns the table
 // together with an error wrapping ErrDiscarded that says why, so the caller
 // can log it and continue. Any other error means the table is unusable.
-func Open(path string, selector types.Address, genesisHash []byte) (*Table, error) {
+func Open(path string, selector types.Address, genesisHash []byte, keyTypes ...string) (*Table, error) {
 	if len(genesisHash) != 32 {
 		return nil, fmt.Errorf("stage table genesis hash must be 32 bytes, got %d", len(genesisHash))
 	}
-	t := &Table{path: path, selector: selector, index: make(map[types.Address]uint64)}
+	t := &Table{path: path, selector: selector, index: make(map[types.Address]uint64), addrs: make(map[uint64]types.Address), verified: make(map[uint64]types.Address)}
 	copy(t.genesis[:], genesisHash)
+	if len(keyTypes) > 0 {
+		t.keyType = keyTypes[0]
+	}
 
-	data, err := os.ReadFile(path)
+	f, err := os.Open(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return t, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("read stage table: %w", err)
 	}
-	addrs, decodeErr := decode(data, selector, t.genesis)
+	defer func() { _ = f.Close() }()
+	data, err := io.ReadAll(io.LimitReader(f, maxCacheBytes+1))
+	if errors.Is(err, os.ErrNotExist) {
+		return t, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read stage table: %w", err)
+	}
+	addrs, hint, decodeErr := decodeCache(data, selector, t.genesis, t.keyType)
 	if decodeErr != nil {
 		if rmErr := fsutil.RemoveDurable(path); rmErr != nil && !errors.Is(rmErr, os.ErrNotExist) {
 			return nil, fmt.Errorf("remove unusable stage table: %w (after: %v)", rmErr, decodeErr)
@@ -93,8 +116,9 @@ func Open(path string, selector types.Address, genesisHash []byte) (*Table, erro
 		return t, fmt.Errorf("%w: %v", ErrDiscarded, decodeErr)
 	}
 	t.addrs = addrs
+	t.hint = hint
 	for i, a := range addrs {
-		t.index[a] = uint64(i)
+		t.index[a] = i
 	}
 	return t, nil
 }
@@ -102,7 +126,7 @@ func Open(path string, selector types.Address, genesisHash []byte) (*Table, erro
 // Path is the table's file.
 func (t *Table) Path() string { return t.path }
 
-// Len is the number of stages the table covers: stages 0 … Len()-1.
+// Len is the number of cached entries, not prefix coverage or a stage index.
 func (t *Table) Len() uint64 {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
@@ -121,79 +145,144 @@ func (t *Table) Lookup(addr types.Address) (uint64, bool) {
 func (t *Table) Address(stage uint64) (types.Address, bool) {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
-	if stage >= uint64(len(t.addrs)) {
-		return types.Address{}, false
-	}
-	return t.addrs[stage], true
+	a, ok := t.addrs[stage]
+	return a, ok
 }
 
-// Append adds the addresses of stages Len() … Len()+len(addrs)-1 and
-// publishes the whole table durably before returning. A failed write leaves
-// both the file and the in-memory table unchanged.
+// Append inserts a range at the first gap from zero. Callers with an explicit
+// stage must use AppendFrom; entry count has no stage semantics.
 func (t *Table) Append(addrs []types.Address) error {
 	t.mu.Lock()
-	defer t.mu.Unlock()
-	return t.appendLocked(uint64(len(t.addrs)), addrs)
+	err := t.insertLocked(t.firstMissingLocked(0), addrs, false)
+	t.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	return t.Flush()
 }
 
-// AppendFrom adds the addresses of stages start … start+len(addrs)-1. Stages
-// the table already covers must match and are skipped, so two fills that
-// derived the same range concurrently both succeed; a mismatch is an error,
-// since two derivations of one stage can only differ if something is wrong.
-// start may not exceed Len(), because the table never has gaps.
+// AppendFrom inserts an explicit derived range without filling preceding gaps.
+// Conflicting cached values are rejected; Repair replaces a verified mapping.
 func (t *Table) AppendFrom(start uint64, addrs []types.Address) error {
 	t.mu.Lock()
-	defer t.mu.Unlock()
-	have := uint64(len(t.addrs))
-	if start > have {
-		return fmt.Errorf("stage table covers %d stages; cannot append from %d", have, start)
+	err := t.insertLocked(start, addrs, false)
+	t.mu.Unlock()
+	if err != nil {
+		return err
 	}
-	for start < have && len(addrs) > 0 {
-		if t.addrs[start] != addrs[0] {
-			return fmt.Errorf("stage %d derived to %s but the table holds %s", start, addrs[0], t.addrs[start])
-		}
-		start++
-		addrs = addrs[1:]
-	}
-	return t.appendLocked(start, addrs)
+	return t.Flush()
 }
 
-func (t *Table) appendLocked(start uint64, addrs []types.Address) error {
+func (t *Table) insertLocked(start uint64, addrs []types.Address, repair bool) error {
 	if t.closed {
 		return ErrClosed
+	}
+	if uint64(len(addrs)) > math.MaxUint64-start {
+		return errors.New("stage range overflows")
+	}
+	next := maps.Clone(t.addrs)
+	index := maps.Clone(t.index)
+	for i, a := range addrs {
+		n := start + uint64(i)
+		if old, ok := next[n]; ok && old != a {
+			if !repair {
+				return fmt.Errorf("stage %d disagrees with cached address", n)
+			}
+			delete(index, old)
+		}
+		if other, ok := index[a]; ok && other != n {
+			if !repair {
+				return fmt.Errorf("stage address %s already present", a)
+			}
+			delete(next, other)
+		}
+		next[n], index[a] = a, n
 	}
 	if len(addrs) == 0 {
 		return nil
 	}
-	if start != uint64(len(t.addrs)) {
-		return fmt.Errorf("stage table covers %d stages; cannot append from %d", len(t.addrs), start)
-	}
-	for _, a := range addrs {
-		if _, dup := t.index[a]; dup {
-			return fmt.Errorf("stage address %s already present in the table", a)
-		}
-	}
-	next := make([]types.Address, 0, len(t.addrs)+len(addrs))
-	next = append(next, t.addrs...)
-	next = append(next, addrs...)
-	if err := fsutil.MkdirAllPrivate(filepath.Dir(t.path)); err != nil {
-		return fmt.Errorf("create stage table directory: %w", err)
-	}
-	if err := fsutil.WriteFileDurable(t.path, encode(t.selector, t.genesis, next)); err != nil {
-		return fmt.Errorf("write stage table: %w", err)
-	}
-	base := uint64(len(t.addrs))
+	t.addrs, t.index, t.dirty = next, index, true
+	t.revision++
 	for i, a := range addrs {
-		t.index[a] = base + uint64(i)
+		t.verified[start+uint64(i)] = a
 	}
-	t.addrs = next
 	return nil
+}
+
+// Repair publishes a freshly derived address, repairing both indexes.
+func (t *Table) Repair(stage uint64, address types.Address) error {
+	t.mu.Lock()
+	err := t.insertLocked(stage, []types.Address{address}, true)
+	t.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	return t.Flush()
+}
+
+// FirstMissing resumes from actual coverage, never the highest cached index.
+func (t *Table) FirstMissing(from uint64) uint64 {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return t.firstMissingLocked(from)
+}
+func (t *Table) firstMissingLocked(from uint64) uint64 {
+	for from < math.MaxUint64 {
+		if _, ok := t.addrs[from]; !ok {
+			break
+		}
+		from++
+	}
+	return from
+}
+
+// Flush retries a failed cache publication. Verified memory remains usable.
+func (t *Table) Flush() error {
+	t.writeMu.Lock()
+	defer t.writeMu.Unlock()
+	t.mu.Lock()
+	if t.closed {
+		t.mu.Unlock()
+		return ErrClosed
+	}
+	if !t.dirty {
+		t.mu.Unlock()
+		return nil
+	}
+	entries, hint, revision := maps.Clone(t.addrs), cloneHint(t.hint), t.revision
+	t.mu.Unlock()
+	data, err := encodeCache(t.selector, t.genesis, entries, hint, t.keyType)
+	if err == nil {
+		err = fsutil.MkdirAllPrivate(filepath.Dir(t.path))
+	}
+	if err == nil {
+		err = fsutil.WriteFileDurable(t.path, data)
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.writeErr = err
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrPersistence, err)
+	}
+	if t.revision == revision {
+		t.dirty = false
+	}
+	return nil
+}
+
+// PersistenceError reports a failed publication without discarding useful work.
+func (t *Table) PersistenceError() error {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return t.writeErr
 }
 
 // close marks the table deleted: every later append fails with ErrClosed, so
 // a fill still holding this handle cannot recreate the file. It waits for an
 // in-flight append to finish first.
 func (t *Table) close() {
+	t.writeMu.Lock()
+	defer t.writeMu.Unlock()
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.closed = true
@@ -254,4 +343,22 @@ func decode(data []byte, selector types.Address, genesis [32]byte) ([]types.Addr
 		seen[addrs[i]] = struct{}{}
 	}
 	return addrs, nil
+}
+
+// Verified reports a seed-derived mapping established in this process. Loaded
+// records are unverified; callers must still compare against a fresh chain read.
+func (t *Table) Verified(stage uint64, a types.Address) bool {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	v, ok := t.verified[stage]
+	cached, present := t.addrs[stage]
+	return !t.closed && ok && v == a && present && cached == a
+}
+
+// RecordDerived records completed derivations in memory. Call Flush after the
+// bounded batch, including on cancellation, to publish its progress.
+func (t *Table) RecordDerived(start uint64, addrs []types.Address) error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.insertLocked(start, addrs, true)
 }

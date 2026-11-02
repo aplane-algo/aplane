@@ -438,11 +438,13 @@ type PreviewRestoreMessage struct {
 }
 
 type RestoreKeyInfo struct {
-	Address       string `json:"address"`
-	KeyType       string `json:"key_type,omitempty"`
-	AlreadyExists bool   `json:"already_exists,omitempty"`
-	HasPolicy     bool   `json:"has_policy,omitempty"`
-	Error         string `json:"error,omitempty"`
+	StageHint      *uint64 `json:"stage_hint,omitempty"`
+	StageHintRound *uint64 `json:"stage_hint_round,omitempty"`
+	Address        string  `json:"address"`
+	KeyType        string  `json:"key_type,omitempty"`
+	AlreadyExists  bool    `json:"already_exists,omitempty"`
+	HasPolicy      bool    `json:"has_policy,omitempty"`
+	Error          string  `json:"error,omitempty"`
 }
 
 type RestoreError struct {

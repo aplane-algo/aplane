@@ -520,7 +520,7 @@ func unresolvedNote(r StageTableReport) string {
 	if g := r.Recovery.Grant; g != nil {
 		progress := fmt.Sprintf("%s recovery running, %d of %d stages used", g.Kind, g.Charged, g.MaxStages)
 		if g.Found != nil {
-			progress += fmt.Sprintf(", stage %d found, filling the cache to it", *g.Found)
+			progress += fmt.Sprintf(", stage %d found", *g.Found)
 		} else if g.Hint != nil {
 			progress += fmt.Sprintf(", probing around stage %d", *g.Hint)
 		}
@@ -544,7 +544,8 @@ func (s *Service) RotatingAccountStatuses(reports []StageTableReport) []signerap
 		st := signerapi.RotatingAccountStatus{
 			Account:        r.Account,
 			Classification: signerapi.RotatingClassUnobserved,
-			CachedStages:   r.Scanned,
+			CachedEntries:  r.Scanned,
+			Preparation:    r.Preparation,
 			Recovery:       recoveryStatus(r.Recovery),
 		}
 		if r.Observed {

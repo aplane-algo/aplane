@@ -133,7 +133,7 @@ func TestStageTableWorkerFillsResolvedAndUnresolvedAccounts(t *testing.T) {
 	if wait := server.fillStageTables(context.Background(), ir); wait != stageTableIdleInterval {
 		t.Fatalf("wait after resolved pass = %v, want idle interval", wait)
 	}
-	table, err := ir.StageTables().Table(account, gh, nil)
+	table, err := ir.StageTables().Table(account, gh, nil, "aplane.rotating-triple-wots.v1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -212,7 +212,7 @@ func TestLockingTheSignerStopsAndDrainsTheStageTableWorker(t *testing.T) {
 		defer close(done)
 		server.fillStageTables(context.Background(), ir)
 	}()
-	table, err := ir.StageTables().Table(account, gh, nil)
+	table, err := ir.StageTables().Table(account, gh, nil, "aplane.rotating-triple-wots.v1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -315,7 +315,7 @@ func TestLockCompletesWhileATableWriteIsStalled(t *testing.T) {
 	close(proceed)
 	<-done
 
-	table, err := ir.StageTables().Table(account, gh, nil)
+	table, err := ir.StageTables().Table(account, gh, nil, "aplane.rotating-triple-wots.v1")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -53,8 +53,11 @@ type RotatingAccountStatus struct {
 	Classification string `json:"classification"`
 	// Stage is the live stage when Classification is "stage".
 	Stage *uint64 `json:"stage,omitempty"`
-	// CachedStages is how many stages, from 0, the signer's table covers.
-	CachedStages uint64 `json:"cached_stages"`
+	// CachedEntries counts sparse address records, not history coverage.
+	CachedEntries uint64 `json:"cached_entries"`
+	// Preparation describes readiness at the last observed stage, not permission
+	// to sign without the normal fresh-chain and target-opening checks.
+	Preparation string `json:"preparation"`
 	// Recovery is present once any search has been started or stopped for
 	// the account in this unlock.
 	Recovery *RotatingRecoveryStatus `json:"recovery,omitempty"`
@@ -74,7 +77,7 @@ type RotatingRecoveryStatus struct {
 	ActiveSeconds int64   `json:"active_seconds,omitempty"`
 	Hint          *uint64 `json:"hint,omitempty"`
 	// FoundStage is set once a hinted search matched the authorizer; the
-	// grant is then filling the cache up to that stage.
+	// discovery ends immediately; successor preparation is separate.
 	FoundStage *uint64 `json:"found_stage,omitempty"`
 
 	// Stopped is why the last grant ended, with its kind, ID and, when it

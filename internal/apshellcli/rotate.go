@@ -212,14 +212,14 @@ func renderSignerRotatingView(r *REPLState, indent string, s *signerapi.Rotating
 	switch s.Classification {
 	case signerapi.RotatingClassStage:
 		if s.Stage != nil {
-			r.printf("%ssigner: live stage %d, %d stages cached\n", indent, *s.Stage, s.CachedStages)
+			r.printf("%ssigner: live stage %d, %s, %d cached entries\n", indent, *s.Stage, s.Preparation, s.CachedEntries)
 		}
 	case signerapi.RotatingClassHeldKey:
-		r.printf("%ssigner: rekeyed to a key this signer holds, %d stages cached\n", indent, s.CachedStages)
+		r.printf("%ssigner: rekeyed to a key this signer holds, %d stages cached\n", indent, s.CachedEntries)
 	case signerapi.RotatingClassUnknown:
-		r.printf("%ssigner: authorizer not placed, %d stages cached\n", indent, s.CachedStages)
+		r.printf("%ssigner: authorizer not placed, %d stages cached\n", indent, s.CachedEntries)
 	default:
-		r.printf("%ssigner: account not read in the last pass, %d stages cached\n", indent, s.CachedStages)
+		r.printf("%ssigner: account not read in the last pass, %d stages cached\n", indent, s.CachedEntries)
 	}
 	renderRecoveryStatus(r, indent, s.Recovery)
 }
@@ -231,7 +231,7 @@ func renderRecoveryStatus(r *REPLState, indent string, rec *signerapi.RotatingRe
 	if rec.Active {
 		line := fmt.Sprintf("%srecovery: %s grant %d running, %d of %d stages used", indent, rec.Kind, rec.GrantID, rec.StagesCharged, rec.MaxStages)
 		if rec.FoundStage != nil {
-			line += fmt.Sprintf(", stage %d found, filling the cache", *rec.FoundStage)
+			line += fmt.Sprintf(", stage %d found", *rec.FoundStage)
 		} else if rec.Hint != nil {
 			line += fmt.Sprintf(", probing around stage %d", *rec.Hint)
 		}

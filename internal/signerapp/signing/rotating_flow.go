@@ -10,6 +10,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"math"
 	"runtime"
 	"time"
 
@@ -78,7 +79,7 @@ func (s *ApprovalService) groupKnownAddresses(plan *PlanResult) map[string]bool 
 func rotatingStageUnproven(scanned uint64) *ServiceError {
 	return &ServiceError{
 		Kind:    ErrorRotatingStageUnproven,
-		Message: fmt.Sprintf("the account's live stage has not been found yet (%d stages scanned); the signer is still extending its stage table, retry shortly", scanned),
+		Message: fmt.Sprintf("the account's live stage has not been found yet (%d stages scanned); use rotate status to check recovery, or rotate recover with a stage hint", scanned),
 	}
 }
 
@@ -157,7 +158,27 @@ func (s *Service) liveStage(ctx context.Context, deps *RotatingDeps, table *stag
 	stage, class := classifyAuthorizer(table, account, authorizer, knownAddressesFromSnapshot(s.Planner.Snapshot()))
 	switch class {
 	case ClassStage:
-		return stage, nil
+		if stage >= math.MaxUint64-1 {
+			return 0, badRequest("live stage has no representable successor")
+		}
+		if stage == 0 {
+			if err := cacheDerived(table, 0, []types.Address{account}); err != nil {
+				return 0, internal(err.Error())
+			}
+			return 0, nil
+		}
+		if table.Verified(stage, authorizer) {
+			return stage, nil
+		}
+		a, err := derivedStageAddress(ctx, deps, table, derive, stage)
+		if err != nil {
+			return 0, err
+		}
+		if a == authorizer {
+			return stage, nil
+		}
+		// A corrupt reverse mapping was repaired. Continue bounded discovery.
+
 	case ClassHeldKey:
 		return 0, badRequest(fmt.Sprintf("the account is rekeyed to %s, a key this signer holds; its rotating stages no longer control it, sign through that key instead", authorizer))
 	}
@@ -168,6 +189,7 @@ func (s *Service) liveStage(ctx context.Context, deps *RotatingDeps, table *stag
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	opts := s.stageFillOptions(account.String(), StageFillOptions{Parallel: runtime.GOMAXPROCS(0)})
+	opts.searchAnchor = releaseSearchAnchor(deps, account.String())
 	profile, _ := rotatingkey.Lookup(s.Planner.Snapshot().KeyTypes[account.String()])
 	for ctx.Err() == nil {
 		found, err := extendUntil(ctx, table, derive, authorizer, opts.batch(), opts)
@@ -184,29 +206,17 @@ func (s *Service) liveStage(ctx context.Context, deps *RotatingDeps, table *stag
 	if !ok {
 		return 0, rotatingStageUnproven(table.Len())
 	}
+	if stage >= math.MaxUint64-1 {
+		return 0, badRequest("live stage has no representable successor")
+	}
 	return stage, nil
 }
 
-// derivedStageAddress derives A_stage from the seed, never from the table,
-// and reconciles the table with the result: a missing prefix is filled, a
-// missing entry is appended, and an entry that disagrees with the derivation
-// means the table has been altered, so it is refused and will be discarded
-// and rebuilt. The target of a rotation always comes from here, because the
-// table is a hint and a rekey target decides who controls the account.
+// derivedStageAddress derives exactly one stage and repairs the disposable cache.
+// Persistence failures do not invalidate a seed-derived address.
 func derivedStageAddress(ctx context.Context, deps *RotatingDeps, table *stagetable.Table, derive stageDeriver, stage uint64) (types.Address, *ServiceError) {
-	// Fill any gap below stage first, from a length captured once so a
-	// concurrent fill cannot shift the starting index under us.
-	if from := table.Len(); from < stage {
-		addrs, err := derive(ctx, from, stage)
-		if err != nil {
-			return types.Address{}, internal(fmt.Sprintf("derive stages: %v", err))
-		}
-		if uint64(len(addrs)) != stage-from {
-			return types.Address{}, unavailable("derivation interrupted")
-		}
-		if err := table.AppendFrom(from, addrs); err != nil {
-			return types.Address{}, internal(fmt.Sprintf("extend stage table: %v", err))
-		}
+	if stage == math.MaxUint64 {
+		return types.Address{}, badRequest("stage has no successor")
 	}
 	addrs, err := derive(ctx, stage, stage+1)
 	if err != nil {
@@ -215,18 +225,20 @@ func derivedStageAddress(ctx context.Context, deps *RotatingDeps, table *stageta
 	if len(addrs) != 1 {
 		return types.Address{}, unavailable("derivation interrupted")
 	}
-	derived := addrs[0]
-	if cached, ok := table.Address(stage); ok {
-		if cached != derived {
-			deps.discardTable(table)
-			return types.Address{}, internal(fmt.Sprintf("stage table entry %d does not match the seed; the table has been discarded and will be rebuilt", stage))
-		}
-		return derived, nil
+	if err := table.RecordDerived(stage, addrs); err != nil {
+		return types.Address{}, internal(fmt.Sprintf("repair stage cache: %v", err))
 	}
-	if err := table.AppendFrom(stage, addrs); err != nil {
-		return types.Address{}, internal(fmt.Sprintf("extend stage table: %v", err))
+	if deps.Wake != nil {
+		deps.Wake()
 	}
-	return derived, nil
+	return addrs[0], nil
+}
+
+// rememberStage stores only an observation that has matched a seed derivation.
+func (s *Service) rememberStage(table *stagetable.Table, stage uint64, authorizer types.Address, round uint64) {
+	if err := table.RecordHint(stagetable.Hint{Stage: stage, Authorizer: authorizer, Round: &round, Source: "local_observation"}); err != nil {
+		consoleOf(s.Console).Printf("[ROTATING] WARNING: could not save stage observation: %v\n", err)
+	}
 }
 
 // PrepareRotatingWithContext prepares one spend from a rotating account: it
@@ -271,7 +283,7 @@ func (s *Service) PrepareRotatingWithContext(ctx context.Context, req signerapi.
 	if err := validateKnownNetwork([]types.Transaction{txn}, s.genesisHashResolver()); err != nil {
 		return nil, err
 	}
-	table, tableErr := deps.Tables.Table(account, genesis, s.keyPresent(req.Account))
+	table, tableErr := deps.Tables.Table(account, genesis, s.keyPresent(req.Account), s.Planner.Snapshot().KeyTypes[req.Account])
 	if table == nil {
 		return nil, internal(fmt.Sprintf("stage table: %v", tableErr))
 	}
@@ -287,10 +299,14 @@ func (s *Service) PrepareRotatingWithContext(ctx context.Context, req signerapi.
 	if err != nil {
 		return nil, err
 	}
+	s.rememberStage(table, stage, view.Authorizer, view.Round)
 	target := stage + 1
 	targetAddr, err := derivedStageAddress(ctx, deps, table, derive, target)
 	if err != nil {
 		return nil, err
+	}
+	if e := table.PersistenceError(); e != nil {
+		consoleOf(s.Console).Printf("[ROTATING] WARNING: stage cache was not saved: %v\n", e)
 	}
 	txn.RekeyTo = targetAddr
 
@@ -354,7 +370,7 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 	if err := validateKnownNetwork([]types.Transaction{spend}, s.genesisHashResolver()); err != nil {
 		return nil, err
 	}
-	table, tableErr := deps.Tables.Table(account, genesis, s.keyPresent(req.Account))
+	table, tableErr := deps.Tables.Table(account, genesis, s.keyPresent(req.Account), s.Planner.Snapshot().KeyTypes[req.Account])
 	if table == nil {
 		return nil, internal(fmt.Sprintf("stage table: %v", tableErr))
 	}
@@ -375,8 +391,7 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 		return nil, err
 	}
 	if derivedTarget != spend.RekeyTo {
-		deps.discardTable(table)
-		return nil, badRequest("rekey target does not derive from this account's seed; the stage table has been discarded, prepare the spend again")
+		return nil, badRequest("rekey target does not derive from this account's seed; the cache entry was repaired, prepare the spend again")
 	}
 
 	// Rule 5: rebuilding the group from the presented spend must reproduce
@@ -516,9 +531,7 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 	if stageAddr != view.Authorizer {
 		return nil, internal("signing stage does not match the live authorizer")
 	}
-	if cached, ok := table.Address(stage); ok && cached != stageAddr {
-		return nil, internal("stage table disagrees with the signing derivation; it will be rebuilt")
-	}
+
 	// Stateless signing performs a complete hypertree signature. Re-read the
 	// chain after that work and before releasing bytes. The existing execution
 	// lease remains held; do not acquire a second lease here.

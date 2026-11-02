@@ -132,7 +132,7 @@ type RecoveryGrant struct {
 	Charged uint64        // derivations charged to this grant
 	Active  time.Duration // time spent deriving for this grant
 	// Found is the hinted stage once a probe matched the authorizer; the
-	// grant's remaining work is filling the table up to it.
+	// discovery then ends without filling preceding stages.
 	Found     *uint64
 	nextProbe uint64 // probes issued so far: 0 = hint, then +1, -1, +2, -2 …
 	cancelled bool

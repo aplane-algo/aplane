@@ -47,22 +47,17 @@ type RotatingDeps struct {
 	// DiscoveryTimeout bounds a request's scan for an unknown live stage.
 	// Zero means DefaultDiscoveryTimeout.
 	DiscoveryTimeout time.Duration
-}
-
-// discardTable drops a table whose contents disagree with the seed, so the
-// background worker rebuilds it from scratch. The key is not touched.
-func (d *RotatingDeps) discardTable(table *stagetable.Table) {
-	if d == nil || d.Tables == nil || table == nil {
-		return
-	}
-	_ = d.Tables.Discard(table)
+	Wake             func()
 }
 
 // RotatingLocks serializes prepare, sign and table maintenance for each
 // rotating account. One instance lives for the life of the process.
 type RotatingLocks struct {
-	mu    sync.Mutex
-	locks map[string]*sync.Mutex
+	jobsMu sync.Mutex
+	jobs   map[stageJobKey]*stageJob
+	slots  chan struct{}
+	mu     sync.Mutex
+	locks  map[string]*sync.Mutex
 }
 
 // Lock locks account and returns its unlock.

@@ -429,7 +429,8 @@ func protocolRestoreKeyInfos(items []adminproto.RestoreKeyInfo) []protocol.Resto
 			KeyType:       item.KeyType,
 			AlreadyExists: item.AlreadyExists,
 			HasPolicy:     item.HasPolicy,
-			Error:         item.Error,
+			StageHint:     item.StageHint, StageHintRound: item.StageHintRound,
+			Error: item.Error,
 		}
 	}
 	return out

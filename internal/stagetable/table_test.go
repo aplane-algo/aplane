@@ -96,7 +96,7 @@ func TestAppendPersistsAndRoundTrips(t *testing.T) {
 	if stage, ok := reopened.Lookup(stageAddr(6)); !ok || stage != 6 {
 		t.Fatalf("reopened Lookup = %d, %v", stage, ok)
 	}
-	if info, err := os.Stat(tb.Path()); err != nil || info.Size() != int64(headerSize+7*addressSize+checksumSize) {
+	if info, err := os.Stat(tb.Path()); err != nil || info.Size() != int64(headerSize+7*40+len(`{"key_type":""}`)+checksumSize) {
 		t.Fatalf("file size = %v, %v", info, err)
 	}
 }
@@ -159,7 +159,7 @@ func TestCorruptTableIsDiscardedAndStartsEmpty(t *testing.T) {
 			// only a derivation can catch this. Open accepts it; the design
 			// relies on signing never trusting the table.
 			body := d[:len(d)-checksumSize]
-			a, b := headerSize+1*addressSize, headerSize+2*addressSize
+			a, b := headerSize+1*40+8, headerSize+2*40+8
 			tmp := append([]byte(nil), body[a:a+addressSize]...)
 			copy(body[a:], body[b:b+addressSize])
 			copy(body[b:], tmp)
@@ -312,9 +312,9 @@ func TestAppendFromToleratesOverlapAndRejectsMismatch(t *testing.T) {
 	if err := tb.AppendFrom(0, stageAddrs(0, 3)); err != nil || tb.Len() != 6 {
 		t.Fatalf("covered append: %v, len %d", err, tb.Len())
 	}
-	// A gap is never allowed.
-	if err := tb.AppendFrom(7, stageAddrs(7, 8)); err == nil {
-		t.Fatal("append past the end accepted")
+	// Sparse ranges preserve missing stages.
+	if err := tb.AppendFrom(7, stageAddrs(7, 8)); err != nil {
+		t.Fatal(err)
 	}
 	// A different address for a covered stage means two derivations disagree.
 	bad := stageAddrs(3, 5)
@@ -322,7 +322,7 @@ func TestAppendFromToleratesOverlapAndRejectsMismatch(t *testing.T) {
 	if err := tb.AppendFrom(3, bad); err == nil {
 		t.Fatal("mismatched overlap accepted")
 	}
-	if tb.Len() != 6 {
+	if tb.Len() != 7 || tb.FirstMissing(0) != 6 {
 		t.Fatalf("failed appends changed Len to %d", tb.Len())
 	}
 }

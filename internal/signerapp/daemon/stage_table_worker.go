@@ -55,10 +55,17 @@ func (fs *Signer) runStageTableWorker(ctx context.Context) {
 	wait := time.Duration(0)
 	wasUnlocked := false
 	for {
+		var wake <-chan struct{}
+		if ir := fs.productRuntime(); ir != nil {
+			wake = ir.StageWork()
+		}
+		forced := false
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+		case <-wake:
+			forced = true
 		}
 		ir := fs.productRuntime()
 		if ir == nil || !ir.IsUnlocked() {
@@ -71,7 +78,7 @@ func (fs *Signer) runStageTableWorker(ctx context.Context) {
 			wasUnlocked = false
 			continue
 		}
-		if wasUnlocked && time.Since(lastRun) < wait {
+		if !forced && wasUnlocked && time.Since(lastRun) < wait {
 			continue
 		}
 		if !wasUnlocked {

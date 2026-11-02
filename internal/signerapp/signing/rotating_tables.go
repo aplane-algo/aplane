@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"sync"
 	"time"
@@ -30,6 +31,8 @@ const DefaultChainReadTimeout = 20 * time.Second
 
 // StageFillOptions tune one pass of FillStageTables.
 type StageFillOptions struct {
+	searchAnchor   *uint64
+	persistBatches bool
 	// Horizon is how many stages past a resolved account's live stage the
 	// table is extended, so upcoming rotations never wait on derivation.
 	Horizon uint64
@@ -122,8 +125,9 @@ type StageTableReport struct {
 	Account string
 	// Resolved reports whether the account's authorizer maps to a stage in
 	// the table. Stage is that stage when it does.
-	Resolved bool
-	Stage    uint64
+	Preparation string
+	Resolved    bool
+	Stage       uint64
 	// Class is the worker's reading of the observed authorizer (empty when
 	// the read failed). ClassHeldKey and ClassUnknown are both unresolved;
 	// only ClassUnknown is ever searched for.
@@ -148,7 +152,7 @@ type StageTableReport struct {
 	// Discarded is set when an unusable on-disk table was replaced.
 	Discarded error
 	// Err is set when the account could not be processed (chain read,
-	// derivation or write failure). The table is left prefix-complete.
+	// derivation or write failure). Completed probes remain cached.
 	Err error
 }
 
@@ -224,8 +228,9 @@ func (s *Service) fillStageTable(ctx context.Context, deps *RotatingDeps, gen ui
 	return report
 }
 
-func (s *Service) fillStageTableOnce(ctx context.Context, deps *RotatingDeps, gen uint64, account string, session *keystore.KeySession, opts StageFillOptions) StageTableReport {
-	report := StageTableReport{Account: account}
+func (s *Service) fillStageTableOnce(ctx context.Context, deps *RotatingDeps, gen uint64, account string, session *keystore.KeySession, opts StageFillOptions) (report StageTableReport) {
+	report = StageTableReport{Account: account}
+	opts.persistBatches = true
 
 	// Identity and network come from the key file; the seed is opened and
 	// closed again inside the call.
@@ -238,7 +243,7 @@ func (s *Service) fillStageTableOnce(ctx context.Context, deps *RotatingDeps, ge
 		_, ok := s.Planner.Snapshot().KeyFiles[account]
 		return ok
 	}
-	table, tableErr := deps.Tables.Table(acct, genesis, present)
+	table, tableErr := deps.Tables.Table(acct, genesis, present, s.Planner.Snapshot().KeyTypes[account])
 	if table == nil {
 		report.Err = tableErr
 		return report
@@ -246,6 +251,30 @@ func (s *Service) fillStageTableOnce(ctx context.Context, deps *RotatingDeps, ge
 	if errors.Is(tableErr, stagetable.ErrDiscarded) {
 		report.Discarded = tableErr
 	}
+	defer func() {
+		if err := table.Flush(); err != nil {
+			if report.Err == nil {
+				report.Err = err
+			}
+			if errors.Is(err, stagetable.ErrClosed) {
+				report.Resolved = false
+				report.Observed = false
+				report.Class = ""
+				report.Pending = ctx.Err() == nil
+			}
+		}
+		report.Scanned = table.Len()
+		report.Preparation = "unresolved"
+		if report.Pending {
+			report.Preparation = "locating"
+		}
+		if report.Resolved {
+			report.Preparation = "preparing_successor"
+			if a, ok := table.Address(report.Stage + 1); ok && table.Verified(report.Stage+1, a) {
+				report.Preparation = "ready"
+			}
+		}
+	}()
 	report.Scanned = table.Len()
 
 	report.ObservedSeq = deps.Releases.Seq()
@@ -258,10 +287,29 @@ func (s *Service) fillStageTableOnce(ctx context.Context, deps *RotatingDeps, ge
 	}
 	report.Observed, report.Authorizer, report.Round = true, view.Authorizer, view.Round
 
+	opts.searchAnchor = releaseSearchAnchor(deps, account)
 	derive := s.stageDeriver(account, session, opts)
 	budget := opts.maxDerivations()
 	held := knownAddressesFromSnapshot(s.Planner.Snapshot())
 	proven, class := classifyAuthorizer(table, acct, view.Authorizer, held)
+	if class == ClassStage && proven != 0 && !table.Verified(proven, view.Authorizer) {
+		addrs, err := derive(ctx, proven, proven+1)
+		budget--
+		if err != nil {
+			report.Err = err
+			return report
+		}
+		if len(addrs) != 1 {
+			return report
+		}
+		if err := cacheDerived(table, proven, addrs); err != nil {
+			report.Err = err
+			return report
+		}
+		if addrs[0] != view.Authorizer {
+			class = ClassUnknown
+		}
+	}
 	report.Class = class
 	switch class {
 	case ClassStage:
@@ -300,27 +348,62 @@ func (s *Service) fillStageTableOnce(ctx context.Context, deps *RotatingDeps, ge
 			return report
 		}
 	}
+	if proven >= math.MaxUint64-1 {
+		report.Err = errors.New("live stage has no representable successor")
+		return report
+	}
 	report.Resolved, report.Stage = true, proven
+	s.rememberStage(table, proven, view.Authorizer, view.Round)
 
 	// Lookahead: cover stages through proven + Horizon, within what is left
 	// of this pass's budget. A family whose stages share trees stops at the
 	// last tree that is built, building the next one from the midpoint of
 	// the live one.
-	target := proven + opts.Horizon + 1
+	target := proven + min(max(uint64(1), opts.Horizon), math.MaxUint64-proven-1) + 1
+	if budget > 0 && ctx.Err() == nil {
+		next := proven + 1
+		a, ok := table.Address(next)
+		if !ok || !table.Verified(next, a) {
+			addrs, err := derive(ctx, next, next+1)
+			budget -= len(addrs)
+			if e := cacheDerived(table, next, addrs); e != nil {
+				report.Err = e
+				return report
+			}
+			if err != nil {
+				report.Err = err
+				return report
+			}
+		}
+	}
 	if limit, capped := s.treeFrontier(ctx, account, session, opts, proven); capped && target > limit {
 		target = limit
 	}
-	if table.Len() < target {
-		limit := table.Len() + uint64(max(budget, 0))
-		if limit > target {
-			limit = target
+	from := table.FirstMissing(proven)
+	for from < target && budget > 0 && ctx.Err() == nil {
+		addrs, err := derive(ctx, from, from+1)
+		if len(addrs) > 0 {
+			budget -= len(addrs)
+			if e := cacheDerived(table, from, addrs); e != nil {
+				report.Err = e
+				break
+			}
 		}
-		if err := extendTo(ctx, table, derive, limit, opts); err != nil {
+		if err != nil {
 			report.Err = err
+			break
 		}
+		if len(addrs) == 0 {
+			break
+		}
+		if err := publishStageBatch(table, opts.maxDerivations()-budget, opts); err != nil {
+			report.Err = err
+			return report
+		}
+		from = table.FirstMissing(from)
 	}
 	report.Scanned = table.Len()
-	report.Pending = report.Err == nil && ctx.Err() == nil && table.Len() < target
+	report.Pending = report.Err == nil && ctx.Err() == nil && from < target
 	return report
 }
 
@@ -353,7 +436,7 @@ func (s *Service) stageDeriver(account string, session *keystore.KeySession, opt
 			return nil, nil
 		}
 		started := time.Now()
-		addrs, err := func() ([]types.Address, error) {
+		work := func() ([]types.Address, error) {
 			ctx, release := opts.keyUse(parent)
 			defer release()
 			if ctx.Err() != nil {
@@ -368,7 +451,15 @@ func (s *Service) stageDeriver(account string, session *keystore.KeySession, opt
 			}
 			defer rs.close()
 			return deriveRange(ctx, rs, from, to, opts)
-		}()
+		}
+		key := stageJobKey{account: account, from: from, to: to, credential: s.Rotating.Tables.Epoch()}
+		if s.Rotating.LockGeneration != nil {
+			key.session = s.Rotating.LockGeneration()
+		}
+		addrs, err := s.Rotating.Locks.deriveJob(parent, key, work)
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			err = nil
+		}
 		if err == nil && len(addrs) > 0 && opts.Pace != nil {
 			opts.Pace(time.Since(started))
 		}
@@ -380,8 +471,8 @@ func (s *Service) stageDeriver(account string, session *keystore.KeySession, opt
 // most budget derivations, each one checked against the grant's remaining
 // stages, active time and cancellation before it runs. A hinted grant
 // probes outward from the hint first, one derivation per probe, and once a
-// probe matches fills the table up to that stage; an unhinted grant extends
-// the table from its edge until the authorizer appears. The grant's
+// probe matches it resolves immediately; an unhinted grant searches
+// sparse gaps with a preference for the last observed stage. The grant's
 // counters are charged per derivation, so a grant of 100 derives at most
 // 100 and a cancel lands between two derivations, not after a batch. It
 // returns whether the authorizer is now in the table, whether the grant is
@@ -430,6 +521,12 @@ func (s *Service) runRecoveryGrant(ctx context.Context, rec *RotatingRecovery, g
 				break
 			}
 			budget--
+			if err := cacheDerived(table, stage, addrs); err != nil {
+				return false, false, spent, err
+			}
+			if err := publishStageBatch(table, spent, opts); err != nil {
+				return false, false, spent, err
+			}
 			if addrs[0] == authorizer {
 				rec.setFound(g, stage)
 				s := stage
@@ -442,16 +539,6 @@ func (s *Service) runRecoveryGrant(ctx context.Context, rec *RotatingRecovery, g
 	case g.Hint != nil && g.Found == nil:
 		// Still probing, or cut short.
 	case g.Found != nil:
-		target := *g.Found + 1
-		if table.Len() < target && budget > 0 {
-			limit := table.Len() + uint64(budget)
-			if limit > target {
-				limit = target
-			}
-			if err := extendTo(ctx, table, derive, limit, opts); err != nil {
-				return false, false, spent, err
-			}
-		}
 		_, found = table.Lookup(authorizer)
 	default:
 		if budget > 0 {
@@ -494,91 +581,46 @@ func resolveStage(table *stagetable.Table, account, authorizer types.Address) (u
 	return table.Lookup(authorizer)
 }
 
-// extendUntil derives up to max further stages and reports whether target
-// appeared among them. Derivation proceeds in chunks of opts.Parallel so the
-// search stops as soon as the target is derived, while writes happen once
-// per batch. A chunk that comes back short means the signer locked or the
-// pass was cancelled: whatever contiguous prefix was derived is written and
-// the pass ends, so the table stays prefix-complete and the next pass
-// resumes from its length.
-func extendUntil(ctx context.Context, table *stagetable.Table, derive stageDeriver, target types.Address, max int, opts StageFillOptions) (bool, error) {
-	remaining := max
-	for remaining > 0 && ctx.Err() == nil {
-		from := table.Len()
-		var pending []types.Address
-		found, cut := false, false
-		for len(pending) < opts.batch() && remaining > 0 && !found && !cut && ctx.Err() == nil {
-			chunk := opts.parallel()
-			if room := opts.batch() - len(pending); chunk > room {
-				chunk = room
-			}
-			if chunk > remaining {
-				chunk = remaining
-			}
-			start := from + uint64(len(pending))
-			addrs, err := derive(ctx, start, start+uint64(chunk))
-			if err != nil {
-				return false, err
-			}
-			cut = len(addrs) < chunk
-			for _, a := range addrs {
-				pending = append(pending, a)
-				remaining--
-				if a == target {
-					found = true
-					break
-				}
-			}
+// cacheDerived retains completed work even when publication fails. Closed
+// handles still fail, preventing a deleted credential's worker from reviving it.
+func cacheDerived(table *stagetable.Table, from uint64, addrs []types.Address) error {
+	return table.RecordDerived(from, addrs)
+}
+
+// extendUntil uses the same sparse coverage and bounded forward preference for
+// prepare and background recovery. Each probe is retained, including misses.
+func extendUntil(ctx context.Context, table *stagetable.Table, derive stageDeriver, target types.Address, budget int, opts StageFillOptions) (bool, error) {
+	initialBudget := budget
+	for budget > 0 && ctx.Err() == nil {
+		var anchors []uint64
+		if opts.searchAnchor != nil {
+			anchors = []uint64{*opts.searchAnchor}
 		}
-		if len(pending) > 0 {
-			if err := table.AppendFrom(from, pending); err != nil {
+		n := table.NextCandidate(anchors...)
+		if n == math.MaxUint64 {
+			return false, errors.New("stage space exhausted")
+		}
+		addrs, err := derive(ctx, n, n+1)
+		if len(addrs) > 0 {
+			if e := cacheDerived(table, n, addrs); e != nil {
+				return false, e
+			}
+			if addrs[0] == target {
+				return true, nil
+			}
+			budget -= len(addrs)
+			if err := publishStageBatch(table, initialBudget-budget, opts); err != nil {
 				return false, err
 			}
 		}
-		if found {
-			return true, nil
+		if err != nil {
+			return false, err
 		}
-		if cut {
-			return false, nil
+		if len(addrs) == 0 {
+			break
 		}
 	}
 	return false, nil
-}
-
-// extendTo grows the table to cover stages 0 … target-1, one batch per
-// write, stopping early when a chunk comes back short.
-func extendTo(ctx context.Context, table *stagetable.Table, derive stageDeriver, target uint64, opts StageFillOptions) error {
-	for table.Len() < target && ctx.Err() == nil {
-		from := table.Len()
-		end := from + uint64(opts.batch())
-		if end > target {
-			end = target
-		}
-		var pending []types.Address
-		cut := false
-		for from+uint64(len(pending)) < end && !cut && ctx.Err() == nil {
-			start := from + uint64(len(pending))
-			chunk := uint64(opts.parallel())
-			if start+chunk > end {
-				chunk = end - start
-			}
-			addrs, err := derive(ctx, start, start+chunk)
-			if err != nil {
-				return err
-			}
-			cut = uint64(len(addrs)) < chunk
-			pending = append(pending, addrs...)
-		}
-		if len(pending) > 0 {
-			if err := table.AppendFrom(from, pending); err != nil {
-				return err
-			}
-		}
-		if cut {
-			return nil
-		}
-	}
-	return nil
 }
 
 // deriveRange derives the addresses of stages from … to-1, in order, with
@@ -672,4 +714,26 @@ func (s *Service) treeFrontier(ctx context.Context, account string, session *key
 		return next + per, true
 	}
 	return next, true
+}
+
+// Audit releases propose candidates only; they are not chain observations.
+func releaseSearchAnchor(deps *RotatingDeps, account string) *uint64 {
+	if r, ok := deps.Releases.Get(account); ok && r.Stage < math.MaxUint64-1 {
+		n := r.Stage
+		return &n
+	}
+	return nil
+}
+
+// Periodic publication preserves completed work during a long paced pass.
+// Foreground discovery only updates memory and wakes the worker to publish it.
+func publishStageBatch(table *stagetable.Table, spent int, opts StageFillOptions) error {
+	if !opts.persistBatches || spent == 0 || spent%opts.batch() != 0 {
+		return nil
+	}
+	err := table.Flush()
+	if errors.Is(err, stagetable.ErrPersistence) {
+		return nil
+	} // Retried at pass end.
+	return err
 }

@@ -212,11 +212,13 @@ type ChangeStorePassphraseResult struct {
 }
 
 type RestoreKeyInfo struct {
-	Address       string
-	KeyType       string
-	AlreadyExists bool
-	HasPolicy     bool
-	Error         string
+	StageHint      *uint64
+	StageHintRound *uint64
+	Address        string
+	KeyType        string
+	AlreadyExists  bool
+	HasPolicy      bool
+	Error          string
 }
 
 type RestoreError struct {

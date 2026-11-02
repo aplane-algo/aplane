@@ -31,11 +31,12 @@ type ArchiveResult struct {
 // Keyring and ExportPassphrase are borrowed for the duration of the call and
 // are not cleared.
 type CreateKeysArchiveRequest struct {
-	Paths            storepaths.Paths
-	ArchivePath      string
-	Addresses        []string
-	Keyring          *crypto.Keyring
-	ExportPassphrase []byte
+	RotatingStageHints map[string]RotatingStageHint
+	Paths              storepaths.Paths
+	ArchivePath        string
+	Addresses          []string
+	Keyring            *crypto.Keyring
+	ExportPassphrase   []byte
 }
 
 // CreateKeysArchive exports selected active keys into one tar.gz/tgz archive.
@@ -117,11 +118,18 @@ func CreateKeysArchive(req CreateKeysArchiveRequest) (*ArchiveResult, error) {
 	}
 	// Last: the manifest inventories every member written above, so it can
 	// only be sealed once they are final.
+	selectedHints := make(map[string]RotatingStageHint)
+	for _, selector := range exported {
+		if h, ok := req.RotatingStageHints[selector]; ok {
+			selectedHints[selector] = h
+		}
+	}
 	if err := WriteSealedManifest(
 		stageDir,
 		nodeRole.Role,
 		time.Now(),
 		req.ExportPassphrase,
+		selectedHints,
 	); err != nil {
 		return nil, err
 	}

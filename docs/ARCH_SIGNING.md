@@ -1597,13 +1597,19 @@ about every 30 seconds, keeps each account's stage address table
 `rotating.stage_horizon` stages past the live stage, subject to family
 preparation ceilings, and publishes status. For SLH-DSA the effective horizon
 is `min(configured, 2)`, with at most four address derivations per account per
-pass (hint probes and prefix growth share that budget) and one derivation at
+pass (hint probes and successor/lookahead derivations share that budget) and one derivation at
 a time within each chunk. Request-time discovery also stops after four new
 addresses and returns `rotating_stage_unproven` if still unresolved; subsequent
-requests and recovery continue from the saved prefix. Required target
+requests and recovery continue from retained sparse coverage. Required target
 rederivation and successor signing verification remain part of every spend,
 outside that discovery budget. The limits are per operation, not a global
 CPU quota; the worker retains its pacing and recovery grant limits.
+Simultaneous identical address jobs share derivation within the credential
+and session lifetime. At most four jobs run concurrently, with the single
+background worker consuming at most one slot. Reload/unlock and operator
+recovery changes wake the worker rather than waiting for the idle interval.
+Readiness describes the last observation only; sign always repeats its full
+fresh-chain, approval, timing and target-opening checks.
 An authorizer that is not in the table is classified before anything is
 derived, in this order:
 
@@ -1615,10 +1621,9 @@ derived, in this order:
 4. `unknown`: not a stage this signer has derived and not a key it holds.
 
 Only an unknown authorizer is searched for, under a *recovery grant*: one
-bounded derivation run from the table's edge that stops when the authorizer
+bounded derivation run through sparse gaps that stops when the authorizer
 appears. The worker grants automatically from a per-account, per-unlock
-allowance (`rotating.recovery_max_stages`, default 1,024, counted from the
-table's edge, never replenished within the unlock, capped in derivation time
+allowance (`rotating.recovery_max_stages`, default 1,024, counting actual probes, never replenished within the unlock, capped in derivation time
 by `rotating.recovery_timeout`); once the allowance is spent or the timeout
 reached, that authorizer is suppressed for the rest of the unlock and the
 account is left unresolved with a `/status` note, exactly as a non-rotating
@@ -1659,23 +1664,27 @@ operator grant replaces a running automatic grant, whose charge stands,
 and is refused (`bad_request`, "cancel it first") while another operator
 grant runs. Both actions are audited as `ROTATING_RECOVERY` with the
 requesting principal. The handler writes the grant and returns; the worker
-executes it on its next pass, one batch per tick, charging the grant per
+is woken immediately and executes it in bounded passes, charging the grant per
 derivation so a budget of 100 derives at most 100 and a cancel lands
 between two derivations. Stage derivation is random access, so a hinted
 grant derives the hinted stage directly and compares it to the authorizer,
 then probes outward (hint+1, hint−1, …) within the window, one derivation
 per probe; a stage is accepted only when its derived address equals the
 chain's authorizer, so a wrong hint costs time, never a wrong stage. The
-table has no gaps, so once a probe matches the grant fills the table from
-its edge up to the found stage as its remaining work; lookahead resumes
-from there. Prepares are not grants: a prepare whose live stage is not
+matching probe is retained immediately and discovery ends, even on the
+last allowed probe. Successor preparation is separate; historical gaps stay
+unfilled. Failed probes also persist. General discovery prefers the latest
+observation before interleaving forward candidates with lower gaps; prepares
+and the worker share that ordering. Prepares are not grants: a prepare whose live stage is not
 cached still runs its own discovery under `DefaultDiscoveryTimeout` and
 charges nothing.
 
 Restore: a rotating key restored from a backup, rebuilt or re-imported has
-everything it needs. The signer reads the live stage from the chain and
-rebuilds the stage address table in the background through the same worker;
-until the table reaches the live stage, requests are refused with
+its seed authority. Managed backups may also supply a sealed stage candidate;
+without one, record the observed stage from `rotate status` and use
+`rotate recover <account> --stage N` when discovery exhausts its allowance.
+The signer derives candidates and compares them with its configured chain;
+until a candidate matches the live authorizer, requests are refused with
 `rotating_stage_unproven` and `/status` carries a note. A backup far behind
 the chain can exhaust the automatic allowance; `rotate recover`, with a
 stage hint when the operator knows roughly how many spends the account has
@@ -1820,7 +1829,9 @@ stored provenance was available. These fields do not change `/sign` behavior.
   account from the worker's last pass: `account`, the observed `authorizer`
   and `round` (absent when the last read failed), `classification`
   (`stage`, `held_key`, `unknown`, `unobserved`), `stage` when classified as
-  a stage, `cached_stages` (the table's length), and optional `recovery`
+  a stage, `cached_entries` (the number of sparse address records),
+  `preparation` (`locating`, `preparing_successor`, `ready`, `unresolved`),
+  and optional `recovery`
   (`signerapi.RotatingRecoveryStatus`: the active grant's `kind`,
   `grant_id`, `stages_charged`, `max_stages`, `active_seconds`, `hint` and
   `found_stage`; why the last grant `stopped`, with `stopped_kind`,

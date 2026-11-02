@@ -15,6 +15,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/signerapp/storevalidate"
+	"github.com/aplane-algo/aplane/internal/stagetable"
 	"github.com/aplane-algo/aplane/internal/storeinit"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
@@ -166,6 +167,11 @@ func cmdRebuildFromBackup(source string, addresses []string, explicitRole nodero
 		},
 	}); err != nil {
 		return fmt.Errorf("rebuild failed; nothing was committed: %w", err)
+	}
+	if hints, err := backup.LoadRebuildHints(sourceRoot, addresses, exportPassphrase); err != nil {
+		logWarnf("optional rotation hints were not restored: %v", err)
+	} else {
+		backup.PublishRotatingHints(stagetable.NewStore(keystorePaths()), hints, logWarnf)
 	}
 	logInfof("rebuild complete: %s", identityDir)
 	return nil

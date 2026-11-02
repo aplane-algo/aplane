@@ -62,19 +62,18 @@ func TestSLHRecoveryPassIncludesHintProbes(t *testing.T) {
 	if _, err := f.recovery().StartOperator(f.lockGen, f.account.String(), &hint, 1, 20, time.Hour); err != nil {
 		t.Fatal(err)
 	}
-	// One hint probe plus three prefix entries exhausts the four-derivation
-	// pass. Counting only prefix growth would incorrectly add lookahead now.
+	// One probe establishes n; only n+1 and n+2 are prepared.
 	r := f.fill(t, StageFillOptions{Horizon: 4096})
-	if r.Err != nil || !r.Resolved || !r.Pending || r.Scanned != 3 {
+	if r.Err != nil || !r.Resolved || r.Pending || r.Scanned != 3 {
 		t.Fatalf("hinted pass: %+v", r)
 	}
-	if st := f.state(); st.Last == nil || st.Last.Charged != 4 {
+	if st := f.state(); st.Last == nil || st.Last.Charged != 1 {
 		t.Fatalf("hint accounting: %+v", st)
 	}
-	r = f.fill(t, StageFillOptions{Horizon: 4096})
-	if r.Err != nil || !r.Resolved || r.Pending || r.Scanned != 5 {
-		t.Fatalf("lookahead continuation: %+v", r)
+	if _, ok := f.table(t).Address(0); ok {
+		t.Fatal("derived historical stage")
 	}
+
 }
 
 func TestSLHAutomaticRecoveryPassBudget(t *testing.T) {

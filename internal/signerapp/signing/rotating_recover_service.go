@@ -69,6 +69,9 @@ func (s *Service) RecoverRotatingWithContext(ctx context.Context, req signerapi.
 	if st := recoveryStatus(deps.Recovery.State(req.Account)); st != nil {
 		resp.Recovery = *st
 	}
+	if deps.Wake != nil {
+		deps.Wake()
+	}
 	return resp, nil
 }
 
