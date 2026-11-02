@@ -282,6 +282,12 @@ func (m Model) handleCosignerImportFormKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 	switch msg.String() {
 	case "esc":
 		return m.cancelCosignerImport(), nil
+	case fileBrowserKey:
+		if m.cosigner.importPaste {
+			return m, nil
+		}
+		m.cosigner.importFocus = 0
+		return m.openFileBrowser(browseCosignerImportFile, m.cosigner.importPath, "", ""), nil
 	case "tab", "down":
 		m = m.suggestCosignerImportNameFromPath()
 		m.cosigner.importFocus = (m.cosigner.importFocus + 1) % 3

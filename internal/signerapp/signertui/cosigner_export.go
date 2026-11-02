@@ -74,6 +74,10 @@ func (m Model) handleCosignerExportPathKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 		m.cosigner.exportError = ""
 		m.viewState = m.cosignerExportReturnView()
 		return m, nil
+	case fileBrowserKey:
+		m.cosigner.exportFocus = 0
+		name := suggestedCosignerExportPath(m.cosigner.exportWitnessID)
+		return m.openFileBrowser(browseCosignerExportFile, m.cosigner.exportPath, "", name), nil
 	case "tab", "down":
 		m.cosigner.exportFocus = (m.cosigner.exportFocus + 1) % (m.cosignerExportLastFocus() + 1)
 		return m, nil

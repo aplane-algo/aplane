@@ -873,6 +873,23 @@ next terminal bracketed-paste event, stores the complete validated value, and
 renders a read-only single-line preview with its middle elided. This behavior
 is shared by standalone `apadmin` and the admin pane embedded in `apconsole`.
 
+Every field that names a file on the machine running `apadmin` can also be
+filled from a file browser (`internal/signerapp/signertui/file_browser.go`):
+`ctrl+o` on the policy file and policy export forms, the cosigner key import
+(file mode) and export forms, the client key import form, and the
+contract-admin reference parameter. The browser lists one directory at a
+time, directories first, and starts in the directory the field already names,
+else the newest `~/policy-export-*` for a policy file, `~/.ssh` for a client
+key, or the home directory. It lists only the files the field expects
+(`*.json`, `*.pub`, `*.wit.json`; `a` lists all), hides dot entries until `.`,
+and fills the field with an absolute path; it reads no file contents, so the
+field's own checks still decide. A symbolic link to a file is listed but
+cannot be chosen, since every loader behind these fields takes regular files
+only. The export forms choose a directory instead, through a "Save here" row,
+and keep the file or directory name already in the field. The browser belongs
+to the view it was opened from: an approval popup raised over it leaves it in
+place, and any other change of view closes it.
+
 ### View States
 
 `ViewState` (defined in `internal/signerapp/signertui/model.go`) is an enum that

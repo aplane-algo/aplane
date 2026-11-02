@@ -141,6 +141,6 @@ func (m Model) renderImportClientKey() string {
 	if m.clients.importError != "" {
 		body.WriteString("\n" + errorStyle.Render(m.clients.importError) + "\n")
 	}
-	body.WriteString("\n" + helpStyle.Render("tab next field  enter submit  esc cancel"))
+	body.WriteString("\n" + helpStyle.Render("tab next field  ctrl+o browse  enter submit  esc cancel"))
 	return m.renderPopup(90, body.String())
 }

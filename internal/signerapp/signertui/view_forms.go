@@ -412,7 +412,7 @@ func (m Model) paramFieldLines(paramDef lsigprovider.ParameterDef, focused bool,
 	}
 	if value == "" {
 		if isAdminReference {
-			value = "Path to public .wit.json on this machine"
+			value = "Path to public .wit.json on this machine (ctrl+o to browse)"
 		} else {
 			value = getPlaceholderForType(paramDef.Type)
 		}

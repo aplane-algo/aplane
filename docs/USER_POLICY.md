@@ -379,10 +379,11 @@ forms that need no node and no passphrase, for writing policy on a machine
 that has no store.
 
 The apadmin TUI can also load one policy file: open Policies (`p`), press `a`,
-and enter the file path. The TUI checks the file, shows the same diff as
-`apadmin policy diff`, and applies it only after you press `y`. The file's
-`"key"` field names the document, and the TUI refuses a file for a key the
-node does not hold; generate or import the key first. The path must name a
+and enter the file path, or press `ctrl+o` to browse for it. The browser
+starts in your newest `~/policy-export-*` directory and lists `.json` files.
+The TUI checks the file, shows the same diff as `apadmin policy diff`, and
+applies it only after you press `y`. The file's `"key"` field names the
+document, and the TUI refuses a file for a key the node does not hold; generate or import the key first. The path must name a
 regular file, not a symlink. A file from an export is compared with the node
 as `apadmin policy apply` does: the TUI refuses an unfinished export, and a
 stale one before the review. The TUI has no `--no-node-context`. To load a
@@ -398,11 +399,12 @@ To take a copy of the node's current policy, open Policies (`p`) and press
 `x`. The TUI writes the same export as `apadmin policy export --all`, into a
 new or empty directory (the prompt suggests `~/policy-export-<time>`): the
 node default as `default.json`, each key's own document as `<key>.json`, and
-the node's context as `.appolicy/node.json`. It refuses a directory that
-already holds files, and it writes nothing if the policy or its context
-changed while the documents were being read; refresh and export again. The
-files can be checked, explained, and edited offline with `appolicy`, and
-installed again with `apadmin policy apply`.
+the node's context as `.appolicy/node.json`; `ctrl+o` browses for where to
+create it. It refuses a directory that already holds files, and it writes
+nothing if the policy or its context changed while the documents were being
+read; refresh and export again. The files can be checked, explained, and
+edited offline with `appolicy`, and installed again with `apadmin policy
+apply`.
 
 ### Editing a policy in apadmin
 

@@ -84,6 +84,9 @@ func (m Model) handlePolicyExportFormKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "enter":
 		return m.startPolicyExport()
+	case fileBrowserKey:
+		name := filepath.Base(suggestedPolicyExportDir(time.Now()))
+		return m.openFileBrowser(browsePolicyExportDir, export.path, "", name), nil
 	case "backspace", "delete":
 		export.path = trimLastRune(export.path)
 		export.err = ""
@@ -220,7 +223,7 @@ func (m Model) renderPolicyExportForm() string {
 	body.WriteString("\n\n")
 	body.WriteString("Export directory (new or empty):\n")
 	body.WriteString(inputActiveStyle.Width(m.constrainParameterFieldWidth(60)).Render(export.path))
-	body.WriteString("\n" + helpStyle.Render("Check, explain or edit the files offline with appolicy; install changes with apadmin policy apply."))
+	body.WriteString("\n" + helpStyle.Render("ctrl+o browses for where to create it. Check, explain or edit the files offline with appolicy; install changes with apadmin policy apply."))
 	body.WriteString("\n")
 	if export.busy != "" {
 		body.WriteString("\n")

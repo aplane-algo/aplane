@@ -109,6 +109,8 @@ func (m Model) handlePolicyApplyFormKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "enter":
 		return m.submitPolicyApplyFile()
+	case fileBrowserKey:
+		return m.openFileBrowser(browsePolicyFile, m.policies.apply.path, "", ""), nil
 	case "backspace", "delete":
 		m.policies.apply.path = trimLastRune(m.policies.apply.path)
 		m.policies.apply.err = ""
@@ -531,7 +533,7 @@ func (m Model) renderPolicyApplyForm() string {
 	body.WriteString("\n\n")
 	body.WriteString("Policy file:\n")
 	body.WriteString(inputActiveStyle.Width(m.constrainParameterFieldWidth(60)).Render(apply.path))
-	body.WriteString("\n" + helpStyle.Render("The file is checked and its changes shown before anything is applied."))
+	body.WriteString("\n" + helpStyle.Render("ctrl+o browses for the file. The file is checked and its changes shown before anything is applied."))
 	body.WriteString("\n")
 	if apply.busy != "" {
 		body.WriteString("\n")
@@ -603,7 +605,7 @@ func (m Model) policyApplyFooterText() string {
 		if apply.busy != "" {
 			return "Esc: Cancel"
 		}
-		return "Enter: Check and review | Esc: Back"
+		return "Enter: Check and review | ctrl+o: Browse | Esc: Back"
 	}
 	if apply.applying {
 		return "Applying..."

@@ -863,6 +863,18 @@ func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.reconnectCmd()
 	}
 
+	// A file browser belongs to the view it was opened from: it takes that
+	// view's keys, waits under an approval popup, and closes when the view
+	// changes for any other reason.
+	if m.browser.active() {
+		switch {
+		case m.fileBrowserOpen():
+			return m.handleFileBrowserKeys(msg)
+		case !isApprovalView(m.viewState):
+			m = m.closeFileBrowser()
+		}
+	}
+
 	// View-specific handling
 	switch m.viewState {
 	case ViewError:
