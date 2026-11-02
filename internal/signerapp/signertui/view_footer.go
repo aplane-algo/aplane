@@ -50,8 +50,19 @@ func (m Model) viewFooterText() string {
 		return "Enter/Esc: Back"
 	case ViewBackupDisplay, ViewImportDisplay:
 		return "Enter/Esc: Back"
-	case ViewRestoreList:
-		return "Enter: Preview | r: Refresh | Esc: Back"
+	case ViewBackups:
+		return m.backupsFooterText()
+	case ViewBackupDeleteConfirm:
+		if m.backups.del.pendingID != "" {
+			return ""
+		}
+		return "left/right/tab: Focus | enter/space: Select | y: Delete | n/esc: Cancel"
+	case ViewBackupUndoConfirm:
+		return "left/right/tab: Focus | enter/space: Select | y: Undo | n/esc: Cancel"
+	case ViewBackupExport:
+		return m.backupExportFooterText()
+	case ViewBackupImport:
+		return m.backupImportFooterText()
 	case ViewRestorePassphrase:
 		if m.restore.previewing {
 			return "Previewing backup archive"
@@ -63,7 +74,7 @@ func (m Model) viewFooterText() string {
 	case ViewRestorePreview:
 		return "Space: Toggle | a: Select all | Tab: Restore button | Enter: Restore | Esc: Back"
 	case ViewStoreRecovery:
-		return "r: Reconcile | x: Roll back restore | b: Restore archive | l: Lock | q: Quit"
+		return "r: Reconcile | x: Roll back restore | b: Backups | l: Lock | q: Quit"
 	case ViewRestoreDisplay:
 		return "up/down: Select | Enter/Esc: Back"
 	case ViewGenerateForm:

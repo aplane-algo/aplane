@@ -72,7 +72,7 @@ func TestStoreRecoveryRestoreShortcutPreservesRecoveryReturn(t *testing.T) {
 	m := Model{viewState: ViewStoreRecovery, signerState: signerRuntimeRecovery}
 	next, cmd := m.handleStoreRecoveryKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}})
 	got := next.(Model)
-	if got.viewState != ViewRestoreList || !got.restore.returnToRecovery {
+	if got.viewState != ViewBackups || !got.restore.returnToRecovery {
 		t.Fatalf("recovery restore shortcut = view %v returnToRecovery %v", got.viewState, got.restore.returnToRecovery)
 	}
 	if cmd == nil {
@@ -93,14 +93,14 @@ func TestUntypedRecoveryRestoreFailureRemainsVisible(t *testing.T) {
 
 func TestRestoreListEscapeReturnsToBlockingRecoveryScreen(t *testing.T) {
 	m := Model{
-		viewState:   ViewRestoreList,
+		viewState:   ViewBackups,
 		signerState: signerRuntimeRecovery,
 		restore: restoreState{
 			returnToRecovery: true,
 			backupsLoaded:    true,
 		},
 	}
-	next, _ := m.handleRestoreListKeys(tea.KeyMsg{Type: tea.KeyEsc})
+	next, _ := m.handleBackupsKeys(tea.KeyMsg{Type: tea.KeyEsc})
 	got := next.(Model)
 	if got.viewState != ViewStoreRecovery || got.signerState != signerRuntimeRecovery {
 		t.Fatalf("escape from recovery restore list = state %v view %v", got.signerState, got.viewState)

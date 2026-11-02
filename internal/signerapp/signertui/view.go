@@ -378,8 +378,8 @@ func (m Model) renderViewContent() string {
 		content = m.renderBackingUp()
 	case ViewBackupDisplay:
 		content = m.renderBackupDisplay()
-	case ViewRestoreList:
-		content = m.renderRestoreList()
+	case ViewBackups:
+		content = m.renderBackups()
 	case ViewRestorePassphrase:
 		content = m.renderRestorePassphrase()
 	case ViewRestorePreview:
@@ -462,6 +462,14 @@ func (m Model) renderViewContent() string {
 		content = m.renderPolicyPresetPick()
 	case ViewPolicyExportForm:
 		content = m.renderPolicyExportForm()
+	case ViewBackupDeleteConfirm:
+		content = m.renderBackupDeleteConfirm()
+	case ViewBackupUndoConfirm:
+		content = m.renderBackupUndoConfirm()
+	case ViewBackupExport:
+		content = m.renderBackupExport()
+	case ViewBackupImport:
+		content = m.renderBackupImport()
 	case ViewTemplateLibrary:
 		content = m.renderTemplateLibrary()
 	case ViewTemplateInstallConfirm:

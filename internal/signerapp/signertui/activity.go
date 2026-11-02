@@ -86,6 +86,9 @@ func (m *Model) applySignerUnlockedState(keyCount int) {
 // apsigner has already failed the session's pending approvals and requests, and
 // the restore passphrase must not outlive the session.
 func (m *Model) endAdminSession() {
+	// The connection is gone: nothing more can be sent on it, and no reply
+	// to a request made on it will arrive.
+	_ = m.interruptBackupTransfers(false)
 	m.clearRestorePassphrase()
 	m.clearPendingApprovals()
 	m.clearCosignerWorkflowState()

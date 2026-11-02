@@ -48,7 +48,11 @@ const (
 	ViewBackupConfirm       // Confirm export passphrase and create managed backup
 	ViewBackingUp           // Loading state while creating backup
 	ViewBackupDisplay       // Shows created backup archive path
-	ViewRestoreList         // Browse signer-managed backup archives
+	ViewBackups             // Backups page: the signer's backup repository
+	ViewBackupDeleteConfirm // Confirm deleting one backup
+	ViewBackupUndoConfirm   // Confirm undoing the latest restore
+	ViewBackupExport        // Export one backup to a local directory
+	ViewBackupImport        // Import a local archive into the repository
 	ViewRestorePassphrase   // Enter export passphrase before previewing restore metadata
 	ViewRestorePreview      // Select keys to restore from a backup archive
 	ViewRestoring           // Loading state while restoring backup keys
@@ -214,6 +218,7 @@ type restoreState struct {
 	selectedBackup      int
 	backupScrollOffset  int
 	archivePath         string
+	archiveCreatedAt    int64 // sealed creation time from the preview
 	passphrase          []byte
 	passphraseError     string
 	previewing          bool
@@ -442,6 +447,7 @@ type Model struct {
 	library            libraryState
 	errorPopup         errorPopupState
 	browser            fileBrowserState // file browser over a path field, if open
+	backups            backupsPageState // the Backups page's own state
 
 	// Displace confirmation state
 	displaceConfirmFocus int // 0 = cancel, 1 = proceed
@@ -695,10 +701,11 @@ type BackupsListMsg struct {
 
 // RestorePreviewMsg is sent when a backup archive preview completes.
 type RestorePreviewMsg struct {
-	ArchivePath string
-	Keys        []RestoreKeyInfo
-	Errors      []RestoreError
-	Error       string
+	ArchivePath      string
+	ArchiveCreatedAt int64
+	Keys             []RestoreKeyInfo
+	Errors           []RestoreError
+	Error            string
 }
 
 // RestoreDisplayResult is the local post-restore display model.

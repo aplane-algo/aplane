@@ -22,17 +22,32 @@ import (
 type RestoreLogger func(format string, args ...any)
 
 type ManagedBackupInfo struct {
-	Path      string
-	FileName  string
+	Path     string
+	FileName string
+	// CreatedAt is the archive file's modification time.
 	CreatedAt time.Time
 	Size      int64
 	Checksum  string
 }
 
+// BestCreatedAt is the creation time a listing can know without the export
+// passphrase: the time in a managed archive's name, else the file time.
+// Copying an archive changes its file time; its name keeps the time it was
+// created.
+func (b ManagedBackupInfo) BestCreatedAt() time.Time {
+	if t, ok := ManagedArchiveNameTime(b.FileName); ok {
+		return t
+	}
+	return b.CreatedAt
+}
+
 type RestorePreview struct {
 	ArchivePath string
-	Keys        []RestoreKeyInfo
-	Errors      []RestoreError
+	// CreatedAtUnix is the creation time sealed in the authenticated
+	// manifest.
+	CreatedAtUnix int64
+	Keys          []RestoreKeyInfo
+	Errors        []RestoreError
 }
 
 type RestoreKeyInfo struct {
@@ -182,7 +197,13 @@ func ListManagedBackups(paths storepaths.Paths) ([]ManagedBackupInfo, error) {
 			Size: size, Checksum: checksum,
 		})
 	}
-	sort.Slice(backups, func(i, j int) bool { return backups[i].CreatedAt.After(backups[j].CreatedAt) })
+	sort.Slice(backups, func(i, j int) bool {
+		a, b := backups[i].BestCreatedAt(), backups[j].BestCreatedAt()
+		if !a.Equal(b) {
+			return a.After(b)
+		}
+		return backups[i].FileName < backups[j].FileName
+	})
 	return backups, nil
 }
 
@@ -248,7 +269,7 @@ func PreviewRestoreWithNodeRole(
 	if err != nil {
 		return nil, authenticatedArchiveError(err)
 	}
-	preview := &RestorePreview{ArchivePath: resolved}
+	preview := &RestorePreview{ArchivePath: resolved, CreatedAtUnix: manifest.CreatedAtUnix}
 	for _, selector := range selectors {
 		entry, err := inspectCredentialBackupEntry(keysDir, selector, exportPassphrase, role)
 		if err == nil {

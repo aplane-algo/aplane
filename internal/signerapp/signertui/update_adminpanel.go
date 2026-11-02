@@ -89,12 +89,6 @@ func (m Model) handleAdminPanelKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.viewState = ViewTemplateLibrary
 				return m, tea.Batch(m.sendListLibraryTemplatesCmd(), m.waitForMessageCmd())
 			}
-			if row.action == "open_backup" {
-				return m.openBackupConfirm()
-			}
-			if row.action == "open_restore" {
-				return m.openRestoreList()
-			}
 			if row.action == "open_policies" {
 				return m.openPolicies()
 			}

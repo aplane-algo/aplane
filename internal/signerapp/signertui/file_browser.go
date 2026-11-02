@@ -42,6 +42,8 @@ const (
 	browseCosignerExportFile
 	browseClientKeyFile
 	browseContractAdminReference
+	browseBackupExportDir
+	browseBackupImportFile
 )
 
 // fileBrowserSpec is what a target asks of the browser.
@@ -50,6 +52,9 @@ type fileBrowserSpec struct {
 	// chooseDir chooses the directory to create a file or directory in; the
 	// field gets that directory joined with the name it already holds.
 	chooseDir bool
+	// fillDir makes a directory chooser fill the field with the directory
+	// itself; the name it shows is the file that will be written there.
+	fillDir bool
 	// suffixes are the file names listed by default; empty lists every file.
 	suffixes []string
 }
@@ -68,6 +73,10 @@ func fileBrowserSpecFor(target fileBrowserTarget) fileBrowserSpec {
 		return fileBrowserSpec{title: "Choose Client Public Key", suffixes: []string{".pub"}}
 	case browseContractAdminReference:
 		return fileBrowserSpec{title: "Choose Contract Admin Reference", suffixes: []string{".wit.json"}}
+	case browseBackupExportDir:
+		return fileBrowserSpec{title: "Choose Where to Export", chooseDir: true, fillDir: true}
+	case browseBackupImportFile:
+		return fileBrowserSpec{title: "Choose Backup Archive", suffixes: []string{".tar.gz", ".tgz"}}
 	default:
 		return fileBrowserSpec{title: "Choose File"}
 	}
@@ -122,7 +131,12 @@ func (m Model) openFileBrowser(target fileBrowserTarget, current, param, name st
 	b := fileBrowserState{target: target, origin: m.viewState, param: param}
 	spec := b.spec()
 	start, fieldName := fileBrowserStartFromField(current)
-	if spec.chooseDir {
+	switch {
+	case spec.fillDir:
+		// The field is the directory itself; name is the file to be written
+		// there. A directory that does not exist yet opens on its parent.
+		b.name = name
+	case spec.chooseDir:
 		b.name = fieldName
 		if b.name == "" {
 			b.name = name
@@ -442,6 +456,9 @@ func (m Model) activateFileBrowserEntry() (tea.Model, tea.Cmd) {
 	entry := b.entries[b.selected]
 	switch {
 	case entry.here:
+		if b.spec().fillDir {
+			return m.chooseFileBrowserPath(b.dir), nil
+		}
 		return m.chooseFileBrowserPath(filepath.Join(b.dir, b.name)), nil
 	case entry.parent:
 		b.up()
@@ -481,6 +498,12 @@ func (m Model) chooseFileBrowserPath(path string) Model {
 	case browseClientKeyFile:
 		m.clients.importPath = path
 		m.clients.importError = ""
+	case browseBackupExportDir:
+		m.backups.export.dir = path
+		m.backups.export.err = ""
+	case browseBackupImportFile:
+		m.backups.imp.path = path
+		m.backups.imp.err = ""
 	case browseContractAdminReference:
 		if m.forms.genericLSigParams == nil {
 			m.forms.genericLSigParams = make(map[string]string)
@@ -526,7 +549,7 @@ func (m Model) renderFileBrowser() string {
 	}
 	end := min(b.scroll+rows, len(b.entries))
 	for i := b.scroll; i < end; i++ {
-		line := ellipsize(fileBrowserEntryLabel(b.entries[i], b.name), width-2)
+		line := ellipsize(fileBrowserEntryLabel(b.entries[i], b.name, spec.fillDir), width-2)
 		if i == b.selected {
 			body.WriteString(selectedStyle.Render("> " + line))
 		} else if b.entries[i].symlink && !b.entries[i].isDir {
@@ -557,6 +580,8 @@ func (m Model) renderFileBrowser() string {
 
 func fileBrowserHint(b fileBrowserState, spec fileBrowserSpec) string {
 	switch {
+	case spec.fillDir:
+		return "Open a directory, then choose \"Export here\"."
 	case spec.chooseDir:
 		return "Open a directory, then choose \"Save here\"."
 	case len(spec.suffixes) > 0 && !b.showAll:
@@ -578,9 +603,11 @@ func fileBrowserPatterns(suffixes []string) []string {
 
 // fileBrowserEntryLabel is an entry's row, with names escaped for the
 // terminal; name is the name a "save here" row keeps.
-func fileBrowserEntryLabel(entry fileBrowserEntry, name string) string {
+func fileBrowserEntryLabel(entry fileBrowserEntry, name string, fillDir bool) string {
 	entry.name, name = terminalSafe(entry.name), terminalSafe(name)
 	switch {
+	case entry.here && fillDir:
+		return "[ Export here as " + name + " ]"
 	case entry.here:
 		return "[ Save here as " + name + " ]"
 	case entry.parent:

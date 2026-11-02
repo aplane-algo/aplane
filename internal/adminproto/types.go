@@ -230,11 +230,12 @@ type PreviewRestoreRequest struct {
 }
 
 type RestorePreviewResult struct {
-	ArchivePath string
-	Keys        []RestoreKeyInfo
-	Errors      []RestoreError
-	Code        string
-	Error       string
+	ArchivePath      string
+	ArchiveCreatedAt int64
+	Keys             []RestoreKeyInfo
+	Errors           []RestoreError
+	Code             string
+	Error            string
 }
 
 // RestoreCredential identifies one complete managed credential selected from

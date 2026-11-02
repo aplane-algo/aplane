@@ -15,15 +15,18 @@ import (
 	"github.com/aplane-algo/aplane/internal/protocol"
 )
 
-func TestKeyListRestoreShortcutOpensRestoreList(t *testing.T) {
+func TestKeyListBackupsShortcutOpensBackupsPage(t *testing.T) {
 	m := Model{
 		viewState: ViewKeyList,
 	}
 
-	next, cmd := m.handleKeyListKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	if next, _ := m.handleKeyListKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}}); next.(Model).viewState == ViewBackups {
+		t.Fatal("r still opens the backups list; it was removed")
+	}
+	next, cmd := m.handleKeyListKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}})
 	got := next.(Model)
-	if got.viewState != ViewRestoreList {
-		t.Fatalf("viewState = %v, want ViewRestoreList", got.viewState)
+	if got.viewState != ViewBackups {
+		t.Fatalf("viewState = %v, want ViewBackups", got.viewState)
 	}
 	if got.restore.backupsLoaded {
 		t.Fatal("restoreBackupsLoaded = true, want false while list request is in flight")
@@ -36,14 +39,14 @@ func TestKeyListRestoreShortcutOpensRestoreList(t *testing.T) {
 func TestRestoreListCancelReturnsToKeyList(t *testing.T) {
 	archivePath := filepath.Join(t.TempDir(), "backups", "default", "aplane-backup.tar.gz")
 	m := Model{
-		viewState: ViewRestoreList,
+		viewState: ViewBackups,
 		restore: restoreState{backupsLoaded: true, backups: []BackupInfo{{
 			Path:     archivePath,
 			FileName: "aplane-backup.tar.gz",
 		}}, selectedBackup: 0},
 	}
 
-	next, cmd := m.handleRestoreListKeys(tea.KeyMsg{Type: tea.KeyEsc})
+	next, cmd := m.handleBackupsKeys(tea.KeyMsg{Type: tea.KeyEsc})
 	got := next.(Model)
 	if got.viewState != ViewKeyList {
 		t.Fatalf("viewState = %v, want ViewKeyList", got.viewState)
@@ -62,7 +65,7 @@ func TestRenderRestoreListDoesNotExposeDaemonBackupDirectory(t *testing.T) {
 		width:     120,
 		height:    30,
 		dataDir:   dataDir,
-		viewState: ViewRestoreList,
+		viewState: ViewBackups,
 		restore: restoreState{backupsLoaded: true, backups: []BackupInfo{{
 			Path:     filepath.Join(dataDir, "backups", "default", "aplane-backup.tar.gz"),
 			FileName: "aplane-backup.tar.gz",
@@ -70,14 +73,14 @@ func TestRenderRestoreListDoesNotExposeDaemonBackupDirectory(t *testing.T) {
 		}}},
 	}
 
-	view := stripANSI(m.renderRestoreList())
+	view := stripANSI(m.renderBackups())
 	if strings.Contains(view, "Backup Directory:") || strings.Contains(view, filepath.Join(dataDir, "backups")) {
 		t.Fatalf("restore list exposed daemon backup directory:\n%s", view)
 	}
 }
 
 func TestBackupsListResponsePopulatesRestoreBrowser(t *testing.T) {
-	m := Model{viewState: ViewRestoreList}
+	m := Model{viewState: ViewBackups}
 	archivePath := filepath.Join(t.TempDir(), "backups", "default", "backup.tar.gz")
 
 	next, _ := m.Update(BackupsListMsg{
@@ -88,8 +91,8 @@ func TestBackupsListResponsePopulatesRestoreBrowser(t *testing.T) {
 		}},
 	})
 	got := next.(Model)
-	if got.viewState != ViewRestoreList {
-		t.Fatalf("viewState = %v, want ViewRestoreList", got.viewState)
+	if got.viewState != ViewBackups {
+		t.Fatalf("viewState = %v, want ViewBackups", got.viewState)
 	}
 	if !got.restore.backupsLoaded {
 		t.Fatal("restoreBackupsLoaded = false, want true")
@@ -184,7 +187,7 @@ func TestRestorePreviewSelectsExistingKeysFreely(t *testing.T) {
 
 	view := got.renderRestorePreview()
 	plain := stripANSI(view)
-	if !strings.Contains(plain, "exists") {
+	if !strings.Contains(plain, "present") || strings.Contains(plain, "same") {
 		t.Fatalf("preview does not mark the conflicting key informationally:\n%s", plain)
 	}
 	if strings.Contains(plain, "Overwrite:") {

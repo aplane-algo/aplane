@@ -10,6 +10,7 @@ import (
 	"crypto/sha512"
 	"encoding/hex"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"unicode"
 
@@ -25,7 +26,7 @@ func (m Model) handleBackupConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.backup.exportPassphrase = ""
 		m.backup.confirmPassphrase = ""
 		m.backup.confirmError = ""
-		m.viewState = ViewKeyList
+		m.viewState = ViewBackups
 		return m, nil
 	case "tab":
 		m.backup.confirmFocus = (m.backup.confirmFocus + 1) % 2
@@ -80,9 +81,10 @@ func (m Model) handleBackupConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) handleBackupDisplayKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "q", "esc", "enter", " ":
+		created := filepath.Base(m.backup.archivePath)
 		m.backup.archivePath = ""
-		m.viewState = ViewKeyList
-		return m, nil
+		next, cmd := m.returnToBackups(created)
+		return next, cmd
 	}
 	return m, nil
 }

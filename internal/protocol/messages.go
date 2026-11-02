@@ -452,11 +452,13 @@ type RestoreError struct {
 
 type RestorePreviewMessage struct {
 	BaseMessage
-	ArchivePath string           `json:"archive_path,omitempty"`
-	Keys        []RestoreKeyInfo `json:"keys,omitempty"`
-	Errors      []RestoreError   `json:"errors,omitempty"`
-	Code        string           `json:"code,omitempty"`
-	Error       string           `json:"error,omitempty"`
+	ArchivePath string `json:"archive_path,omitempty"`
+	// ArchiveCreatedAt is the creation time from the authenticated manifest.
+	ArchiveCreatedAt int64            `json:"archive_created_at,omitempty"`
+	Keys             []RestoreKeyInfo `json:"keys,omitempty"`
+	Errors           []RestoreError   `json:"errors,omitempty"`
+	Code             string           `json:"code,omitempty"`
+	Error            string           `json:"error,omitempty"`
 }
 
 type RestoreCredential struct {

@@ -135,10 +135,7 @@ func (m Model) handleKeyListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.viewState = ViewImportForm
 
 	case "b", "B":
-		return m.openBackupConfirm()
-
-	case "r", "R":
-		return m.openRestoreList()
+		return m.openBackups()
 
 	case "p", "P":
 		return m.openPolicies()

@@ -8,14 +8,12 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/backup"
 	"github.com/aplane-algo/aplane/internal/crypto"
-	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/protocol"
 )
 
@@ -205,6 +203,8 @@ func (s Store) backupCreate(args []string) error {
 	return nil
 }
 
+// backupList prints each backup as name, size, checksum, creation time, and
+// where that time came from, newest first.
 func (s Store) backupList() error {
 	var result protocol.BackupsListMessage
 	if err := s.Client.Request(protocol.ListBackupsMessage{
@@ -220,35 +220,25 @@ func (s Store) backupList() error {
 		return nil
 	}
 	for _, item := range result.Backups {
-		_, _ = fmt.Fprintf(s.Streams.Stdout, "%s  %s  %s\n", item.FileName, backup.FormatFileSize(item.Size), item.Checksum)
+		created, source := BackupCreatedTime(item)
+		_, _ = fmt.Fprintf(s.Streams.Stdout, "%s  %s  %s  %s  %s\n",
+			item.FileName, backup.FormatFileSize(item.Size), item.Checksum,
+			created.Format(time.RFC3339), source.Label())
 	}
 	return nil
 }
 
-func (s Store) backupImport(source string) error {
-	if !backup.IsArchivePath(source) {
-		return fmt.Errorf("backup source must end in .tar.gz or .tgz: %s", source)
-	}
-	info, err := os.Lstat(source)
+func (s Store) backupImport(sourcePath string) error {
+	source, err := PrepareBackupImportSource(sourcePath)
 	if err != nil {
-		return fmt.Errorf("backup source unavailable: %w", err)
-	}
-	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
-		return fmt.Errorf("backup source must be a regular file, not a symlink: %s", source)
-	}
-	if _, err := backup.StatManagedBackupArchive(source); err != nil {
-		return protocol.WithCode("invalid_backup", fmt.Errorf("failed to validate imported backup archive: %w", err))
+		return err
 	}
 	exportPassphrase, err := s.ReadSecret("Enter export passphrase for daemon validation: ")
 	if err != nil {
 		return fmt.Errorf("failed to read backup export passphrase: %w", err)
 	}
 	defer crypto.ZeroBytes(exportPassphrase)
-	checksum, size, err := backup.FileSHA256(source)
-	if err != nil {
-		return fmt.Errorf("failed to checksum backup source: %w", err)
-	}
-	name := filepath.Base(source)
+	name, checksum, size := source.Name, source.Checksum, source.Size
 	var begin protocol.BeginBackupImportResultMessage
 	if err := s.Client.Request(protocol.BeginBackupImportMessage{
 		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeBeginBackupImport, ID: s.requestID("backup-import-begin")}, FileName: name,
@@ -268,7 +258,7 @@ func (s Store) backupImport(source string) error {
 			BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeAbortBackupImport, ID: s.requestID("backup-import-abort")}, UploadID: begin.UploadID,
 		}, &ignored)
 	}()
-	file, err := os.Open(source)
+	file, err := os.Open(source.Path)
 	if err != nil {
 		return err
 	}
@@ -369,102 +359,42 @@ func (s Store) findBackup(name string) (protocol.BackupInfo, error) {
 }
 
 func (s Store) backupExport(name, destinationDir string) error {
-	if backup.IsArchivePath(destinationDir) {
-		return fmt.Errorf("backup export destination must be a directory, not an archive path: %s", destinationDir)
-	}
-	destinationExists := false
-	if info, err := os.Stat(destinationDir); err != nil {
-		if !os.IsNotExist(err) {
-			return fmt.Errorf("failed to inspect backup export destination directory: %w", err)
-		}
-	} else if !info.IsDir() {
-		return fmt.Errorf("backup export destination is not a directory: %s", destinationDir)
-	} else {
-		destinationExists = true
+	if err := CheckBackupExportDestination(destinationDir); err != nil {
+		return err
 	}
 	info, err := s.findBackup(name)
 	if err != nil {
 		return err
 	}
-	fileName := filepath.Base(info.FileName)
-	if fileName == "." || fileName == string(filepath.Separator) || fileName != info.FileName {
-		return fmt.Errorf("managed backup has invalid filename: %s", info.FileName)
-	}
-	if !destinationExists {
-		if err := os.MkdirAll(destinationDir, 0o700); err != nil {
-			return fmt.Errorf("failed to create backup export destination directory: %w", err)
-		}
-	}
-	destination := filepath.Join(destinationDir, fileName)
-	if _, err := os.Lstat(destination); err == nil {
-		return fmt.Errorf("backup export destination already exists: %s", destination)
-	} else if !os.IsNotExist(err) {
-		return err
-	}
-	tmp, err := os.CreateTemp(destinationDir, ".aplane-backup-export-*.part")
+	writer, err := BeginBackupExport(destinationDir, info)
 	if err != nil {
 		return err
 	}
-	tmpPath := tmp.Name()
-	defer func() { _ = tmp.Close(); _ = os.Remove(tmpPath) }()
-	if err := tmp.Chmod(0o600); err != nil {
-		return err
-	}
-	var offset int64
+	defer writer.Abort()
 	for {
 		var chunk protocol.BackupChunkMessage
 		if err := s.Client.Request(protocol.ReadBackupChunkMessage{
 			BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeReadBackupChunk, ID: s.requestID("backup-export-chunk")},
-			FileName:    info.FileName, Offset: offset,
+			FileName:    info.FileName, Offset: writer.Written(),
 		}, &chunk); err != nil {
 			return err
 		}
-		if !chunk.Success {
-			return resultError("backup export failed", chunk.Code, chunk.Error)
+		done, err := writer.Write(chunk)
+		if err != nil {
+			return err
 		}
-		if chunk.Offset != offset {
-			return fmt.Errorf("backup export returned offset %d, expected %d", chunk.Offset, offset)
-		}
-		if len(chunk.Data) > 0 {
-			if _, err := tmp.Write(chunk.Data); err != nil {
-				return err
-			}
-			offset += int64(len(chunk.Data))
-		}
-		if chunk.EOF {
+		if done {
 			break
 		}
-		if len(chunk.Data) == 0 {
-			return fmt.Errorf("backup export returned empty non-final chunk")
-		}
 	}
-	if err := tmp.Sync(); err != nil {
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	checksum, size, err := backup.FileSHA256(tmpPath)
-	if err != nil {
-		return fmt.Errorf("failed to verify exported backup: %w", err)
-	}
-	if size != info.Size {
-		return protocol.WithCode("verification_failed", fmt.Errorf("exported backup size mismatch: got %d, want %d", size, info.Size))
-	}
-	if info.Checksum != "" && checksum != info.Checksum {
-		return protocol.WithCode("verification_failed", fmt.Errorf("exported backup checksum mismatch: got %s, want %s", checksum, info.Checksum))
-	}
-	publication, err := publishBackupExportNoReplace(tmpPath, destination)
+	checksum, warnings, err := writer.Finish()
 	if err != nil {
 		return err
 	}
-	if err := fsutil.SyncDir(destinationDir); err != nil {
-		publication.Warnings = append(publication.Warnings, fmt.Sprintf("destination directory durability could not be confirmed: %v", err))
-	}
-	for _, warning := range publication.Warnings {
+	for _, warning := range warnings {
 		s.warn("backup export warning: %s", warning)
 	}
-	s.info("backup exported: %s", destination)
+	s.info("backup exported: %s", writer.Destination())
 	s.info("checksum: %s", checksum)
 	return nil
 }

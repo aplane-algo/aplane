@@ -1124,3 +1124,15 @@ func max(a, b int) int {
 	}
 	return b
 }
+
+// shutdownSignerPane releases what the signer pane's unfinished backup
+// transfers hold, given the program's final model.
+func shutdownSignerPane(final tea.Model) {
+	m, ok := final.(model)
+	if !ok {
+		return
+	}
+	if signer, ok := m.signer.(tui.Model); ok {
+		signer.Shutdown()
+	}
+}

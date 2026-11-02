@@ -308,7 +308,11 @@ func startConsole(connector tui.AdminConnector, dataDir string, initialNodeRole 
 		_, _ = fmt.Fprintf(realStderr, "panic: %v\n\n%s", r, trace)
 		os.Exit(2)
 	}()
-	if _, err := p.Run(); err != nil {
+	final, err := p.Run()
+	// Whatever ended the program, release what an unfinished backup transfer
+	// in the signer pane holds (a staging file, an open archive, a passphrase).
+	shutdownSignerPane(final)
+	if err != nil {
 		logErrorf("error running console: %v", err)
 		os.Exit(1)
 	}
