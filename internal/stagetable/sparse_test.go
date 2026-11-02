@@ -21,7 +21,7 @@ import (
 func TestSparseRestartAndHintRecency(t *testing.T) {
 	dir := t.TempDir()
 	tb := openTest(t, dir)
-	if err := tb.AppendFrom(50000, stageAddrs(50000, 50003)); err != nil {
+	if err := put(tb, 50000, stageAddrs(50000, 50003)); err != nil {
 		t.Fatal(err)
 	}
 	round := uint64(100)
@@ -72,7 +72,7 @@ func TestSparseSearchDoesNotStarveLowerGaps(t *testing.T) {
 			tb = openTest(t, dir)
 		}
 		n := tb.NextCandidate()
-		if err := tb.AppendFrom(n, stageAddrs(n, n+1)); err != nil {
+		if err := put(tb, n, stageAddrs(n, n+1)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -86,14 +86,14 @@ func TestSparseSearchDoesNotStarveLowerGaps(t *testing.T) {
 
 func TestRepairPreservesIndependentEntriesAndBothIndexes(t *testing.T) {
 	tb := openTest(t, t.TempDir())
-	if err := tb.AppendFrom(50000, stageAddrs(50000, 50003)); err != nil {
+	if err := put(tb, 50000, stageAddrs(50000, 50003)); err != nil {
 		t.Fatal(err)
 	}
 	// Wrong mapping at another index for the actual address of stage 8.
-	if err := tb.AppendFrom(7, stageAddrs(8, 9)); err != nil {
+	if err := put(tb, 7, stageAddrs(8, 9)); err != nil {
 		t.Fatal(err)
 	}
-	if err := tb.Repair(8, stageAddr(8)); err != nil {
+	if err := put(tb, 8, []types.Address{stageAddr(8)}); err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := tb.Address(7); ok {
@@ -118,7 +118,7 @@ func TestPersistenceFailureRetainsWorkAndCanRetry(t *testing.T) {
 		t.Fatal(err)
 	}
 	tb.path = filepath.Join(blocker, "cache")
-	if err := tb.Repair(50000, stageAddr(50000)); !errors.Is(err, ErrPersistence) {
+	if err := put(tb, 50000, []types.Address{stageAddr(50000)}); !errors.Is(err, ErrPersistence) {
 		t.Fatalf("write error: %v", err)
 	}
 	if !tb.Verified(50000, stageAddr(50000)) || tb.PersistenceError() == nil {
@@ -140,7 +140,7 @@ func TestPersistenceFailureRetainsWorkAndCanRetry(t *testing.T) {
 
 func TestSparseOverflowAndLegacyRead(t *testing.T) {
 	tb := openTest(t, t.TempDir())
-	if err := tb.AppendFrom(math.MaxUint64, stageAddrs(0, 1)); err == nil {
+	if err := put(tb, math.MaxUint64, stageAddrs(0, 1)); err == nil {
 		t.Fatal("overflow accepted")
 	}
 	var genesis [32]byte
@@ -153,7 +153,7 @@ func TestSparseOverflowAndLegacyRead(t *testing.T) {
 	if err != nil || reopened.Len() != 3 {
 		t.Fatalf("legacy read: %v", err)
 	}
-	if err := reopened.Repair(50000, stageAddr(50000)); err != nil {
+	if err := put(reopened, 50000, []types.Address{stageAddr(50000)}); err != nil {
 		t.Fatal(err)
 	}
 	migrated, err := Open(tb.path, testSelector, testGenesis, "test-family")
@@ -328,18 +328,89 @@ func TestFirstMissingFrontierForgetsRemovedCoverage(t *testing.T) {
 	}
 }
 
-// A range that repeats an address is refused whole, without mutation, whether
-// or not the caller asked for repair.
+// A range that repeats an address is refused whole, without mutation.
 func TestInsertRefusesAddressRepeatedWithinARange(t *testing.T) {
 	tb := openTest(t, t.TempDir())
 	a := stageAddr(10)
-	if err := tb.AppendFrom(10, []types.Address{a, a}); err == nil {
-		t.Fatal("append accepted a repeated address")
-	}
 	if _, err := tb.RecordDerived(10, []types.Address{a, a}); err == nil {
-		t.Fatal("repair accepted a repeated address")
+		t.Fatal("record accepted a repeated address")
 	}
 	if tb.Len() != 0 || tb.Dirty() {
 		t.Fatalf("refused range changed the table: len=%d dirty=%v", tb.Len(), tb.Dirty())
+	}
+}
+
+// An empty key type is unbound, never a mismatch: a caller that does not know
+// the type must not discard the cache, and an unbound table binds to the first
+// real type and publishes it.
+func TestEmptyKeyTypeIsUnboundNotAMismatch(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	const kt = "aplane.rotating-test.v1"
+	store := NewStore(paths)
+	tb, err := store.Table(testSelector, testGenesis, nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := put(tb, 50000, stageAddrs(50000, 50002)); err != nil {
+		t.Fatal(err)
+	}
+	round := uint64(3)
+	if err := tb.SetHint(Hint{Stage: 50000, Round: &round, Authorizer: stageAddr(50000), Source: "local_observation"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(store.Observations()) != 0 {
+		t.Fatal("unbound table contributed a backup hint")
+	}
+	// The real type arrives: same handle, now bound, nothing discarded.
+	bound, err := store.Table(testSelector, testGenesis, nil, kt)
+	if err != nil || bound != tb || bound.KeyType() != kt || bound.Len() != 2 {
+		t.Fatalf("binding replaced or emptied the table: %v same=%v type=%q len=%d", err, bound == tb, bound.KeyType(), bound.Len())
+	}
+	if err := bound.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	if obs := store.Observations(); len(obs) != 1 || obs[0].KeyType != kt {
+		t.Fatalf("bound table hint: %+v", obs)
+	}
+	// An unknown type afterwards does not rebind or close it.
+	if again, err := store.Table(testSelector, testGenesis, nil, ""); err != nil || again != tb || again.KeyType() != kt {
+		t.Fatalf("empty request rebound the table: %v", err)
+	}
+	// After a restart, opening without a type adopts the stored one, and a
+	// file written while unbound is accepted under the real type.
+	reopened, err := Open(paths.StageTablePath(testSelector.String()), testSelector, testGenesis)
+	if err != nil || reopened.KeyType() != kt || reopened.Len() != 2 {
+		t.Fatalf("reopen without type: %v type=%q len=%d", err, reopened.KeyType(), reopened.Len())
+	}
+	other := filepath.Join(t.TempDir(), "unbound.stages")
+	unbound, _ := Open(other, testSelector, testGenesis)
+	if err := put(unbound, 1, stageAddrs(1, 2)); err != nil {
+		t.Fatal(err)
+	}
+	if typed, err := Open(other, testSelector, testGenesis, kt); err != nil || typed.Len() != 1 || typed.KeyType() != kt {
+		t.Fatalf("unbound file discarded under the real type: %v", err)
+	}
+	// Two real, different types still mismatch.
+	if _, err := Open(paths.StageTablePath(testSelector.String()), testSelector, testGenesis, "aplane.other.v1"); !errors.Is(err, ErrDiscarded) {
+		t.Fatalf("different key type accepted: %v", err)
+	}
+}
+
+// A hint near the top of the stage range must not wedge discovery once the
+// forward stages are cached: the lower gaps are still searched.
+func TestNextCandidateFallsBackWhenForwardSpaceIsExhausted(t *testing.T) {
+	tb := openTest(t, t.TempDir())
+	top := uint64(math.MaxUint64 - 2)
+	if err := tb.RecordHint(Hint{Stage: top, Source: "backup"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := tb.NextCandidate(); got != top {
+		t.Fatalf("first candidate = %d, want the hint %d", got, top)
+	}
+	if err := put(tb, top, stageAddrs(top, top+2)); err != nil {
+		t.Fatal(err)
+	}
+	if got := tb.NextCandidate(); got != 0 {
+		t.Fatalf("candidate after forward exhaustion = %d, want lower gap 0", got)
 	}
 }

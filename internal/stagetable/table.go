@@ -109,7 +109,7 @@ func Open(path string, selector types.Address, genesisHash []byte, keyTypes ...s
 	if err != nil {
 		return nil, fmt.Errorf("read stage table: %w", err)
 	}
-	addrs, hint, decodeErr := decodeCache(data, selector, t.genesis, t.keyType)
+	addrs, hint, storedType, decodeErr := decodeCache(data, selector, t.genesis, t.keyType)
 	if decodeErr != nil {
 		if rmErr := fsutil.RemoveDurable(path); rmErr != nil && !errors.Is(rmErr, os.ErrNotExist) {
 			return nil, fmt.Errorf("remove unusable stage table: %w (after: %v)", rmErr, decodeErr)
@@ -118,6 +118,9 @@ func Open(path string, selector types.Address, genesisHash []byte, keyTypes ...s
 	}
 	t.addrs = addrs
 	t.hint = hint
+	if t.keyType == "" {
+		t.keyType = storedType
+	}
 	for i, a := range addrs {
 		t.index[a] = i
 	}
@@ -150,38 +153,14 @@ func (t *Table) Address(stage uint64) (types.Address, bool) {
 	return a, ok
 }
 
-// Append inserts a range at the first gap from zero. Callers with an explicit
-// stage must use AppendFrom; entry count has no stage semantics.
-func (t *Table) Append(addrs []types.Address) error {
-	t.mu.Lock()
-	_, err := t.insertLocked(t.firstMissingLocked(0), addrs, false)
-	t.mu.Unlock()
-	if err != nil {
-		return err
-	}
-	return t.Flush()
-}
-
-// AppendFrom inserts an explicit derived range without filling preceding gaps.
-// Conflicting cached values are rejected; Repair replaces a verified mapping.
-func (t *Table) AppendFrom(start uint64, addrs []types.Address) error {
-	t.mu.Lock()
-	_, err := t.insertLocked(start, addrs, false)
-	t.mu.Unlock()
-	if err != nil {
-		return err
-	}
-	return t.Flush()
-}
-
-// insertLocked records a derived range and marks it verified. Without repair a
-// conflicting cached value refuses the whole range before anything changes;
-// with repair it replaces the stale mapping in both indexes. The maps are
-// updated in place (callers hold t.mu), so the cost is the range, not the
-// table. changed reports whether the cached mapping changed, which is what
+// insertLocked records a freshly derived range and marks it verified. A
+// derivation is authoritative, so a conflicting cached value is a stale record:
+// it is replaced in both indexes without discarding independent entries. The
+// maps are updated in place (callers hold t.mu), so the cost is the range, not
+// the table. changed reports whether the cached mapping changed, which is what
 // makes the table dirty: re-deriving entries the cache already holds only
 // verifies them and needs no publication.
-func (t *Table) insertLocked(start uint64, addrs []types.Address, repair bool) (changed bool, err error) {
+func (t *Table) insertLocked(start uint64, addrs []types.Address) (changed bool, err error) {
 	if t.closed {
 		return false, ErrClosed
 	}
@@ -189,8 +168,8 @@ func (t *Table) insertLocked(start uint64, addrs []types.Address, repair bool) (
 		return false, errors.New("stage range overflows")
 	}
 	// One range never repeats an address: distinct stages of one seed derive
-	// distinct addresses. Refuse a repeat before anything changes, in both
-	// modes; applying it would silently move the earlier stage's entry.
+	// distinct addresses. Refuse a repeat before anything changes; applying it
+	// would silently move the earlier stage's entry.
 	if len(addrs) > 1 {
 		seen := make(map[types.Address]struct{}, len(addrs))
 		for i, a := range addrs {
@@ -198,17 +177,6 @@ func (t *Table) insertLocked(start uint64, addrs []types.Address, repair bool) (
 				return false, fmt.Errorf("stage %d repeats an address earlier in the range", start+uint64(i))
 			}
 			seen[a] = struct{}{}
-		}
-	}
-	if !repair {
-		for i, a := range addrs {
-			n := start + uint64(i)
-			if old, ok := t.addrs[n]; ok && old != a {
-				return false, fmt.Errorf("stage %d disagrees with cached address", n)
-			}
-			if other, ok := t.index[a]; ok && other != n {
-				return false, fmt.Errorf("stage address %s already present", a)
-			}
 		}
 	}
 	for i, a := range addrs {
@@ -236,17 +204,6 @@ func (t *Table) insertLocked(start uint64, addrs []types.Address, repair bool) (
 		t.revision++
 	}
 	return changed, nil
-}
-
-// Repair publishes a freshly derived address, repairing both indexes.
-func (t *Table) Repair(stage uint64, address types.Address) error {
-	t.mu.Lock()
-	_, err := t.insertLocked(stage, []types.Address{address}, true)
-	t.mu.Unlock()
-	if err != nil {
-		return err
-	}
-	return t.Flush()
 }
 
 // FirstMissing resumes from actual coverage, never the highest cached index.
@@ -312,9 +269,9 @@ func (t *Table) Flush() error {
 		t.mu.Unlock()
 		return nil
 	}
-	entries, hint, revision := maps.Clone(t.addrs), cloneHint(t.hint), t.revision
+	entries, hint, revision, keyType := maps.Clone(t.addrs), cloneHint(t.hint), t.revision, t.keyType
 	t.mu.Unlock()
-	data, err := encodeCache(t.selector, t.genesis, entries, hint, t.keyType)
+	data, err := encodeCache(t.selector, t.genesis, entries, hint, keyType)
 	if err == nil {
 		err = fsutil.MkdirAllPrivate(filepath.Dir(t.path))
 	}
@@ -331,6 +288,31 @@ func (t *Table) Flush() error {
 		t.dirty = false
 	}
 	return nil
+}
+
+// KeyType is the key type the table is bound to, or "" while unbound.
+func (t *Table) KeyType() string {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return t.keyType
+}
+
+// bindKeyType reports whether the table can serve keyType: an empty request
+// or a matching type always can, and an unbound table binds to the first real
+// type it is asked for (it is published with that type from then on).
+func (t *Table) bindKeyType(keyType string) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	switch {
+	case keyType == "" || t.keyType == keyType:
+		return true
+	case t.keyType == "":
+		t.keyType = keyType
+		t.dirty = true
+		t.revision++
+		return true
+	}
+	return false
 }
 
 // Dirty reports whether the table holds changes that are not yet published.
@@ -432,5 +414,5 @@ func (t *Table) Verified(stage uint64, a types.Address) bool {
 func (t *Table) RecordDerived(start uint64, addrs []types.Address) (changed bool, err error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	return t.insertLocked(start, addrs, true)
+	return t.insertLocked(start, addrs)
 }

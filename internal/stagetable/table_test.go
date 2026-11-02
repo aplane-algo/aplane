@@ -43,6 +43,15 @@ func stageAddrs(from, to uint64) []types.Address {
 	return out
 }
 
+// put records a derived range and publishes it, as a fill does at the end of
+// a batch.
+func put(tb *Table, start uint64, addrs []types.Address) error {
+	if _, err := tb.RecordDerived(start, addrs); err != nil {
+		return err
+	}
+	return tb.Flush()
+}
+
 func openTest(t *testing.T, dir string) *Table {
 	t.Helper()
 	tb, err := Open(filepath.Join(dir, "a.stages"), testSelector, testGenesis)
@@ -71,10 +80,10 @@ func TestEmptyTableWhenFileMissing(t *testing.T) {
 func TestAppendPersistsAndRoundTrips(t *testing.T) {
 	dir := t.TempDir()
 	tb := openTest(t, dir)
-	if err := tb.Append(stageAddrs(0, 5)); err != nil {
+	if err := put(tb, 0, stageAddrs(0, 5)); err != nil {
 		t.Fatal(err)
 	}
-	if err := tb.Append(stageAddrs(5, 7)); err != nil {
+	if err := put(tb, 5, stageAddrs(5, 7)); err != nil {
 		t.Fatal(err)
 	}
 	if tb.Len() != 7 {
@@ -101,19 +110,19 @@ func TestAppendPersistsAndRoundTrips(t *testing.T) {
 	}
 }
 
-func TestAppendRejectsDuplicateAndNoop(t *testing.T) {
+func TestEmptyAndCoveredRecordsAreNoops(t *testing.T) {
 	tb := openTest(t, t.TempDir())
-	if err := tb.Append(nil); err != nil {
-		t.Fatalf("empty append: %v", err)
+	if changed, err := tb.RecordDerived(0, nil); err != nil || changed {
+		t.Fatalf("empty record: changed=%v err=%v", changed, err)
 	}
-	if err := tb.Append(stageAddrs(0, 3)); err != nil {
+	if err := put(tb, 0, stageAddrs(0, 3)); err != nil {
 		t.Fatal(err)
 	}
-	if err := tb.Append([]types.Address{stageAddr(1)}); err == nil {
-		t.Fatal("duplicate address accepted")
+	if changed, err := tb.RecordDerived(1, stageAddrs(1, 3)); err != nil || changed || tb.Dirty() {
+		t.Fatalf("covered record: changed=%v err=%v dirty=%v", changed, err, tb.Dirty())
 	}
 	if tb.Len() != 3 {
-		t.Fatalf("failed append changed Len to %d", tb.Len())
+		t.Fatalf("no-op record changed Len to %d", tb.Len())
 	}
 }
 
@@ -121,7 +130,7 @@ func corruptAndReopen(t *testing.T, mutate func(data []byte) []byte) (*Table, er
 	t.Helper()
 	dir := t.TempDir()
 	tb := openTest(t, dir)
-	if err := tb.Append(stageAddrs(0, 4)); err != nil {
+	if err := put(tb, 0, stageAddrs(0, 4)); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(tb.Path())
@@ -191,7 +200,7 @@ func TestCorruptTableIsDiscardedAndStartsEmpty(t *testing.T) {
 				t.Fatal("unusable file was not removed")
 			}
 			// The empty table is usable again.
-			if err := tb.Append(stageAddrs(0, 2)); err != nil {
+			if err := put(tb, 0, stageAddrs(0, 2)); err != nil {
 				t.Fatal(err)
 			}
 		})
@@ -204,7 +213,7 @@ func TestOpenRejectsBadGenesisLength(t *testing.T) {
 	}
 }
 
-func TestConcurrentAppendsSerialize(t *testing.T) {
+func TestConcurrentRecordsSerialize(t *testing.T) {
 	dir := t.TempDir()
 	tb := openTest(t, dir)
 	const workers, each = 8, 16
@@ -214,11 +223,11 @@ func TestConcurrentAppendsSerialize(t *testing.T) {
 		go func(w int) {
 			defer wg.Done()
 			for i := 0; i < each; i++ {
-				// Distinct addresses per worker; order of stages is whatever
-				// the lock decides, and the table must stay prefix-complete.
+				// Distinct stages and addresses per worker, recorded and
+				// published concurrently; the table must end prefix-complete.
 				var a types.Address
 				a[0], a[1], a[31] = byte(w), byte(i), 0x55
-				if err := tb.Append([]types.Address{a}); err != nil {
+				if err := put(tb, uint64(w*each+i), []types.Address{a}); err != nil {
 					t.Error(err)
 					return
 				}
@@ -252,7 +261,7 @@ func TestStoreCachesAndDeletes(t *testing.T) {
 	if err != nil || again != tb {
 		t.Fatalf("store returned a different table (%v)", err)
 	}
-	if err := tb.Append(stageAddrs(0, 2)); err != nil {
+	if err := put(tb, 0, stageAddrs(0, 2)); err != nil {
 		t.Fatal(err)
 	}
 	if tb.Path() != paths.StageTablePath(testSelector.String()) {
@@ -295,35 +304,42 @@ func TestStoreReportsDiscardedTableOnce(t *testing.T) {
 	}
 }
 
-func TestAppendFromToleratesOverlapAndRejectsMismatch(t *testing.T) {
+func TestRecordToleratesOverlapAndRepairsMismatch(t *testing.T) {
 	tb := openTest(t, t.TempDir())
-	if err := tb.Append(stageAddrs(0, 4)); err != nil {
+	if err := put(tb, 0, stageAddrs(0, 4)); err != nil {
 		t.Fatal(err)
 	}
 	// A concurrent fill that derived 2 … 5 again: the overlap matches and
 	// only 4 and 5 are new.
-	if err := tb.AppendFrom(2, stageAddrs(2, 6)); err != nil {
-		t.Fatalf("overlapping append: %v", err)
+	if err := put(tb, 2, stageAddrs(2, 6)); err != nil {
+		t.Fatalf("overlapping record: %v", err)
 	}
 	if tb.Len() != 6 {
 		t.Fatalf("Len = %d, want 6", tb.Len())
 	}
 	// Entirely covered: a no-op.
-	if err := tb.AppendFrom(0, stageAddrs(0, 3)); err != nil || tb.Len() != 6 {
-		t.Fatalf("covered append: %v, len %d", err, tb.Len())
+	if err := put(tb, 0, stageAddrs(0, 3)); err != nil || tb.Len() != 6 {
+		t.Fatalf("covered record: %v, len %d", err, tb.Len())
 	}
 	// Sparse ranges preserve missing stages.
-	if err := tb.AppendFrom(7, stageAddrs(7, 8)); err != nil {
+	if err := put(tb, 7, stageAddrs(7, 8)); err != nil {
 		t.Fatal(err)
 	}
-	// A different address for a covered stage means two derivations disagree.
+	// A fresh derivation that disagrees with a cached record is authoritative:
+	// the stale record is replaced in both indexes, the rest is kept.
 	bad := stageAddrs(3, 5)
 	bad[0][5] ^= 1
-	if err := tb.AppendFrom(3, bad); err == nil {
-		t.Fatal("mismatched overlap accepted")
+	if err := put(tb, 3, bad); err != nil {
+		t.Fatalf("repairing record: %v", err)
+	}
+	if a, _ := tb.Address(3); a != bad[0] {
+		t.Fatal("stale record not replaced")
+	}
+	if _, ok := tb.Lookup(stageAddr(3)); ok {
+		t.Fatal("stale address still indexed")
 	}
 	if tb.Len() != 7 || tb.FirstMissing(0) != 6 {
-		t.Fatalf("failed appends changed Len to %d", tb.Len())
+		t.Fatalf("repair changed coverage: len %d", tb.Len())
 	}
 }
 
@@ -334,17 +350,17 @@ func TestDeleteClosesOpenHandlesSoFillsCannotRecreateTheFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := tb.Append(stageAddrs(0, 2)); err != nil {
+	if err := put(tb, 0, stageAddrs(0, 2)); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.Delete(testSelector.String()); err != nil {
 		t.Fatal(err)
 	}
 	// The stale handle a running fill still holds must refuse to write.
-	if err := tb.Append(stageAddrs(2, 3)); !errors.Is(err, ErrClosed) {
+	if err := put(tb, 2, stageAddrs(2, 3)); !errors.Is(err, ErrClosed) {
 		t.Fatalf("append on deleted table = %v, want ErrClosed", err)
 	}
-	if err := tb.AppendFrom(0, stageAddrs(0, 1)); !errors.Is(err, ErrClosed) {
+	if err := put(tb, 0, stageAddrs(0, 1)); !errors.Is(err, ErrClosed) {
 		t.Fatalf("AppendFrom on deleted table = %v, want ErrClosed", err)
 	}
 	if _, statErr := os.Stat(tb.Path()); !errors.Is(statErr, os.ErrNotExist) {
@@ -390,7 +406,7 @@ func TestTableRefusesAccountsWhoseKeyIsGone(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := tb.Append(stageAddrs(0, 2)); err != nil {
+	if err := put(tb, 0, stageAddrs(0, 2)); err != nil {
 		t.Fatal(err)
 	}
 	// The key is deleted: inventory first, then the table.
@@ -420,7 +436,7 @@ func TestDiscardRemovesTheTableAndAllowsAFreshOne(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := tb.Append(stageAddrs(0, 3)); err != nil {
+	if err := put(tb, 0, stageAddrs(0, 3)); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.Discard(tb); err != nil {
@@ -429,7 +445,7 @@ func TestDiscardRemovesTheTableAndAllowsAFreshOne(t *testing.T) {
 	if _, statErr := os.Stat(tb.Path()); !errors.Is(statErr, os.ErrNotExist) {
 		t.Fatal("discarded file remains")
 	}
-	if err := tb.Append(stageAddrs(3, 4)); !errors.Is(err, ErrClosed) {
+	if err := put(tb, 3, stageAddrs(3, 4)); !errors.Is(err, ErrClosed) {
 		t.Fatalf("stale handle append = %v, want ErrClosed", err)
 	}
 	fresh, err := store.Table(testSelector, testGenesis, nil)
@@ -444,7 +460,7 @@ func TestDiscardOfAStaleHandleLeavesTheRebuiltTableAlone(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := old.Append(stageAddrs(0, 2)); err != nil {
+	if err := put(old, 0, stageAddrs(0, 2)); err != nil {
 		t.Fatal(err)
 	}
 	// First mismatch detection discards; the worker rebuilds.
@@ -455,7 +471,7 @@ func TestDiscardOfAStaleHandleLeavesTheRebuiltTableAlone(t *testing.T) {
 	if err != nil || rebuilt == old {
 		t.Fatalf("rebuilt table: %v, same %v", err, rebuilt == old)
 	}
-	if err := rebuilt.Append(stageAddrs(0, 3)); err != nil {
+	if err := put(rebuilt, 0, stageAddrs(0, 3)); err != nil {
 		t.Fatal(err)
 	}
 	// A second detection that still holds the old handle must not delete
@@ -470,7 +486,7 @@ func TestDiscardOfAStaleHandleLeavesTheRebuiltTableAlone(t *testing.T) {
 	if err != nil || again != rebuilt || again.Len() != 3 {
 		t.Fatalf("store lost the rebuilt table: %v, same %v, len %d", err, again == rebuilt, again.Len())
 	}
-	if err := rebuilt.Append(stageAddrs(3, 4)); err != nil {
+	if err := put(rebuilt, 3, stageAddrs(3, 4)); err != nil {
 		t.Fatalf("rebuilt table unusable after stale discard: %v", err)
 	}
 }

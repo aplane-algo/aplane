@@ -514,7 +514,7 @@ func TestRotatingStatusFromReportsAndMemory(t *testing.T) {
 	// Unresolved account with no search running: a note with the cached
 	// count and the two remedies, never "foreign" or "exited".
 	_, notes = f.svc.RotatingStatus([]StageTableReport{{Account: acct, Observed: true, Class: ClassUnknown, Scanned: 42}})
-	if len(notes) != 1 || !strings.Contains(notes[0], "42 stages this signer has cached") || !strings.Contains(notes[0], "rotate recover") ||
+	if len(notes) != 1 || !strings.Contains(notes[0], "42 stage addresses this signer has cached") || !strings.Contains(notes[0], "rotate recover") ||
 		strings.Contains(notes[0], "foreign") || strings.Contains(notes[0], "exited;") {
 		t.Fatalf("unresolved note = %v", notes)
 	}
@@ -750,7 +750,10 @@ func (f *rotatingFixture) forgeSuccessor(t *testing.T, index uint64, addr types.
 	t.Helper()
 	tb := f.table(t)
 	for tb.Len() <= index {
-		if err := tb.AppendFrom(tb.Len(), []types.Address{f.stageAddress(t, tb.Len())}); err != nil {
+		if _, err := tb.RecordDerived(tb.Len(), []types.Address{f.stageAddress(t, tb.Len())}); err != nil {
+			t.Fatal(err)
+		}
+		if err := tb.Flush(); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -862,7 +865,10 @@ func TestDerivedStageAddressToleratesConcurrentTableGrowth(t *testing.T) {
 			return nil, err
 		}
 		if from == 3 && to == 4 {
-			if err := tb.AppendFrom(from, addrs); err != nil {
+			if _, err := tb.RecordDerived(from, addrs); err != nil {
+				t.Fatal(err)
+			}
+			if err := tb.Flush(); err != nil {
 				t.Fatal(err)
 			}
 		}

@@ -529,7 +529,7 @@ stages (default 1024) past its cache, once per account per unlock, within
 `rotating.recovery_timeout` of derivation time. Within the horizon, and
 for a gap not much larger than it, that is enough and nothing is visible.
 Beyond it the signer stops and `rotate status` shows a note: the authorizer
-is not a stage within what the signer has cached, and the last search
+is not among the stage addresses the signer has cached, and the last search
 stopped with its reason. This is the same situation as any other account
 that was rekeyed to an address this signer does not hold, and the signer
 treats it the same way: it is information, not an alert, and signing from

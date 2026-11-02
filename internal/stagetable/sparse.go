@@ -117,14 +117,16 @@ func (t *Table) NextCandidate(anchors ...uint64) uint64 {
 		return low
 	}
 	forward := t.firstMissingLocked(h)
+	// Forward space exhausted (an untrusted hint near the top of the range):
+	// fall back to the lower gaps before any forward preference applies.
+	if forward == math.MaxUint64 {
+		return low
+	}
 	if forward-h < 16 {
 		return forward
 	}
 	t.searchTurn++
 	if low < h && t.searchTurn%4 == 0 {
-		return low
-	}
-	if forward == math.MaxUint64 {
 		return low
 	}
 	return forward
@@ -157,38 +159,39 @@ func encodeCache(selector types.Address, genesis [32]byte, entries map[uint64]ty
 	return append(buf, sum[:]...), nil
 }
 
-func decodeCache(data []byte, selector types.Address, genesis [32]byte, keyType string) (map[uint64]types.Address, *Hint, error) {
+// decodeCache returns the cache's entries, hint and stored key type.
+func decodeCache(data []byte, selector types.Address, genesis [32]byte, keyType string) (map[uint64]types.Address, *Hint, string, error) {
 	if len(data) < headerSize+checksumSize || len(data) > maxCacheBytes {
-		return nil, nil, errors.New("file too short")
+		return nil, nil, "", errors.New("file too short")
 	}
 	if binary.BigEndian.Uint16(data[len(magic):]) == 1 {
 		old, err := decode(data, selector, genesis)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, "", err
 		}
 		out := make(map[uint64]types.Address, len(old))
 		for i, a := range old {
 			out[uint64(i)] = a
 		}
-		return out, nil, nil
+		return out, nil, "", nil
 	}
 	body, sum := data[:len(data)-checksumSize], data[len(data)-checksumSize:]
 	want := sha256.Sum256(body)
 	if !bytes.Equal(sum, want[:]) {
-		return nil, nil, errors.New("checksum mismatch")
+		return nil, nil, "", errors.New("checksum mismatch")
 	}
 	if string(body[:len(magic)]) != magic || binary.BigEndian.Uint16(body[len(magic):]) != 2 {
-		return nil, nil, errors.New("unsupported stage cache format")
+		return nil, nil, "", errors.New("unsupported stage cache format")
 	}
 	off := len(magic) + 2
 	if !bytes.Equal(body[off:off+32], selector[:]) || !bytes.Equal(body[off+32:off+64], genesis[:]) {
-		return nil, nil, errors.New("stage cache identity mismatch")
+		return nil, nil, "", errors.New("stage cache identity mismatch")
 	}
 	off += 64
 	count := binary.BigEndian.Uint64(body[off:])
 	off += 8
 	if count > uint64(len(body)-off)/40 {
-		return nil, nil, errors.New("invalid stage cache count")
+		return nil, nil, "", errors.New("invalid stage cache count")
 	}
 	entries := make(map[uint64]types.Address, int(count))
 	seen := make(map[types.Address]bool, int(count))
@@ -200,7 +203,7 @@ func decodeCache(data []byte, selector types.Address, genesis [32]byte, keyType 
 		copy(a[:], body[off:off+32])
 		off += 32
 		if n == math.MaxUint64 || (i > 0 && n <= previous) || seen[a] {
-			return nil, nil, fmt.Errorf("duplicate or invalid stage record %d", n)
+			return nil, nil, "", fmt.Errorf("duplicate or invalid stage record %d", n)
 		}
 		entries[n] = a
 		seen[a] = true
@@ -210,20 +213,22 @@ func decodeCache(data []byte, selector types.Address, genesis [32]byte, keyType 
 	dec := json.NewDecoder(bytes.NewReader(body[off:]))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&meta); err != nil {
-		return nil, nil, err
+		return nil, nil, "", err
 	}
 	var extra any
 	if err := dec.Decode(&extra); err != io.EOF {
-		return nil, nil, errors.New("trailing stage cache metadata")
+		return nil, nil, "", errors.New("trailing stage cache metadata")
 	}
 	hint := meta.Hint
-	if keyType != "" && meta.KeyType != keyType {
-		return nil, nil, errors.New("stage cache key type mismatch")
+	// An empty key type on either side is unbound, not a mismatch: a table
+	// opened before its key type was known must not cost the cache later.
+	if keyType != "" && meta.KeyType != "" && meta.KeyType != keyType {
+		return nil, nil, "", errors.New("stage cache key type mismatch")
 	}
 	if hint != nil && (hint.Stage >= math.MaxUint64-1 || (hint.Source != "local_observation" && hint.Source != "backup")) {
-		return nil, nil, errors.New("invalid recovery hint")
+		return nil, nil, "", errors.New("invalid recovery hint")
 	}
-	return entries, hint, nil
+	return entries, hint, meta.KeyType, nil
 }
 
 type cacheMetadata struct {

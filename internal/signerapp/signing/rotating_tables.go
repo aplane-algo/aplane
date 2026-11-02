@@ -303,7 +303,7 @@ func (s *Service) fillStageTableOnce(ctx context.Context, deps *RotatingDeps, ge
 		if len(addrs) != 1 {
 			return report
 		}
-		if err := cacheDerived(table, proven, addrs); err != nil {
+		if _, err := table.RecordDerived(proven, addrs); err != nil {
 			report.Err = err
 			return report
 		}
@@ -367,7 +367,7 @@ func (s *Service) fillStageTableOnce(ctx context.Context, deps *RotatingDeps, ge
 		if !ok || !table.Verified(next, a) {
 			addrs, err := derive(ctx, next, next+1)
 			budget -= len(addrs)
-			if e := cacheDerived(table, next, addrs); e != nil {
+			if _, e := table.RecordDerived(next, addrs); e != nil {
 				report.Err = e
 				return report
 			}
@@ -385,7 +385,7 @@ func (s *Service) fillStageTableOnce(ctx context.Context, deps *RotatingDeps, ge
 		addrs, err := derive(ctx, from, from+1)
 		if len(addrs) > 0 {
 			budget -= len(addrs)
-			if e := cacheDerived(table, from, addrs); e != nil {
+			if _, e := table.RecordDerived(from, addrs); e != nil {
 				report.Err = e
 				break
 			}
@@ -522,7 +522,7 @@ func (s *Service) runRecoveryGrant(ctx context.Context, rec *RotatingRecovery, g
 				break
 			}
 			budget--
-			if err := cacheDerived(table, stage, addrs); err != nil {
+			if _, err := table.RecordDerived(stage, addrs); err != nil {
 				return false, false, spent, err
 			}
 			if err := publishStageBatch(table, spent-len(addrs), spent, opts); err != nil {
@@ -582,13 +582,6 @@ func resolveStage(table *stagetable.Table, account, authorizer types.Address) (u
 	return table.Lookup(authorizer)
 }
 
-// cacheDerived retains completed work even when publication fails. Closed
-// handles still fail, preventing a deleted credential's worker from reviving it.
-func cacheDerived(table *stagetable.Table, from uint64, addrs []types.Address) error {
-	_, err := table.RecordDerived(from, addrs)
-	return err
-}
-
 // extendUntil uses the same sparse coverage and bounded forward preference for
 // prepare and background recovery. Each probe is retained, including misses.
 func extendUntil(ctx context.Context, table *stagetable.Table, derive stageDeriver, target types.Address, budget int, opts StageFillOptions) (bool, error) {
@@ -618,7 +611,7 @@ func extendUntil(ctx context.Context, table *stagetable.Table, derive stageDeriv
 		before := initialBudget - budget
 		addrs, err := derive(ctx, n, n+chunk)
 		if len(addrs) > 0 {
-			if e := cacheDerived(table, n, addrs); e != nil {
+			if _, e := table.RecordDerived(n, addrs); e != nil {
 				return false, e
 			}
 			if slices.Contains(addrs, target) {

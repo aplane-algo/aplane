@@ -365,7 +365,10 @@ func TestFillStageTablesCancelledContextKeepsTablePrefixComplete(t *testing.T) {
 func TestFillStageTablesReportsDiscardedTable(t *testing.T) {
 	f := newRotatingFixture(t)
 	tb := f.table(t)
-	if err := tb.Append([]types.Address{f.account}); err != nil {
+	if _, err := tb.RecordDerived(0, []types.Address{f.account}); err != nil {
+		t.Fatal(err)
+	}
+	if err := tb.Flush(); err != nil {
 		t.Fatal(err)
 	}
 	// Corrupt the file and drop the store's cached copy so Open sees it.

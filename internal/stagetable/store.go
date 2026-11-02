@@ -50,15 +50,25 @@ func (s *Store) Table(selector types.Address, genesisHash []byte, present func()
 	if present != nil && !present() {
 		return nil, ErrNoKey
 	}
+	// An empty key type is no constraint: a caller that does not know it yet
+	// (a snapshot without the entry) must not close or rebind the table.
+	keyType := ""
+	if len(keyTypes) > 0 {
+		keyType = keyTypes[0]
+	}
 	if t, ok := s.tables[key]; ok {
-		if bytes.Equal(t.genesis[:], genesisHash) && (len(keyTypes) == 0 || t.keyType == keyTypes[0]) {
+		if bytes.Equal(t.genesis[:], genesisHash) && t.bindKeyType(keyType) {
 			return t, nil
 		}
 		t.close()
 		delete(s.tables, key)
 		s.epoch++
 	}
-	t, err := Open(s.paths.StageTablePath(key), selector, genesisHash, keyTypes...)
+	var bind []string
+	if keyType != "" {
+		bind = []string{keyType}
+	}
+	t, err := Open(s.paths.StageTablePath(key), selector, genesisHash, bind...)
 	if t == nil {
 		return nil, err
 	}
@@ -125,8 +135,11 @@ func (s *Store) Observations() []Observation {
 	defer s.mu.Unlock()
 	var out []Observation
 	for _, t := range s.tables {
-		if h := t.RecoveryHint(); h != nil {
-			out = append(out, Observation{Account: t.selector, Genesis: t.genesis, KeyType: t.keyType, Hint: *h})
+		// An unbound table cannot name its credential, so it carries no hint.
+		if kt := t.KeyType(); kt != "" {
+			if h := t.RecoveryHint(); h != nil {
+				out = append(out, Observation{Account: t.selector, Genesis: t.genesis, KeyType: kt, Hint: *h})
+			}
 		}
 	}
 	return out

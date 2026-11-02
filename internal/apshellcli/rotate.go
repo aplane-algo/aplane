@@ -31,7 +31,7 @@ type rotatingAccountProjection struct {
 	Alerts     []string `json:"alerts,omitempty"`
 	Notes      []string `json:"notes,omitempty"`
 	// Signer is the signer's own view of the account: observed authorizer,
-	// classification, cached stages and recovery state.
+	// classification, cached entry count and recovery state.
 	Signer *signerapi.RotatingAccountStatus `json:"signer,omitempty"`
 }
 
@@ -206,8 +206,9 @@ func (r *REPLState) runRotateStatus(account string) (command.Result, error) {
 	}, projection)
 }
 
-// renderSignerRotatingView prints the signer's classification, cached
-// stages and recovery state for one account.
+// renderSignerRotatingView prints the signer's classification, cached entry
+// count (sparse records, not coverage from stage 0) and recovery state for one
+// account.
 func renderSignerRotatingView(r *REPLState, indent string, s *signerapi.RotatingAccountStatus) {
 	switch s.Classification {
 	case signerapi.RotatingClassStage:
@@ -215,11 +216,11 @@ func renderSignerRotatingView(r *REPLState, indent string, s *signerapi.Rotating
 			r.printf("%ssigner: live stage %d, %s, %d cached entries\n", indent, *s.Stage, s.Preparation, s.CachedEntries)
 		}
 	case signerapi.RotatingClassHeldKey:
-		r.printf("%ssigner: rekeyed to a key this signer holds, %d stages cached\n", indent, s.CachedEntries)
+		r.printf("%ssigner: rekeyed to a key this signer holds, %d cached entries\n", indent, s.CachedEntries)
 	case signerapi.RotatingClassUnknown:
-		r.printf("%ssigner: authorizer not placed, %d stages cached\n", indent, s.CachedEntries)
+		r.printf("%ssigner: authorizer not placed, %d cached entries\n", indent, s.CachedEntries)
 	default:
-		r.printf("%ssigner: account not read in the last pass, %d stages cached\n", indent, s.CachedEntries)
+		r.printf("%ssigner: account not read in the last pass, %d cached entries\n", indent, s.CachedEntries)
 	}
 	renderRecoveryStatus(r, indent, s.Recovery)
 }

@@ -162,7 +162,7 @@ func (s *Service) liveStage(ctx context.Context, deps *RotatingDeps, table *stag
 			return 0, badRequest("live stage has no representable successor")
 		}
 		if stage == 0 {
-			if err := cacheDerived(table, 0, []types.Address{account}); err != nil {
+			if _, err := table.RecordDerived(0, []types.Address{account}); err != nil {
 				return 0, internal(err.Error())
 			}
 			return 0, nil

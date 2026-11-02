@@ -154,7 +154,7 @@ accounts are slow), so an alert can briefly outlive the rotation that
 resolved it.
 
 `rotate recover` asks the signer to search for the account's live stage. It
-is for the note "authorizer … is not a stage within the N stages this
+is for the note "authorizer … is not among the N stage addresses this
 signer has cached": the signer searched on its own as far as its automatic
 allowance goes and stopped. Without options it searches forward from its
 last observation, interleaving lower gaps, up to `--max-stages` (default 4096) more stages. With `--stage N`
