@@ -971,12 +971,24 @@ identifies the current screen. The enum has families for:
   request's ID and aborts the upload its late reply names; esc or a lock
   before commit aborts the upload on the live connection (allowed while
   locked); once commit is sent the outcome can be unknown. A commit whose
-  reply the page stopped waiting for (esc while checking, a lock) keeps its
-  request ID, and the late reply settles the outcome, success with any
-  warning or definitive failure, as a status on the page without reopening
-  the form. After a lost connection no reply can come: the next list settles
-  it by name and SHA-256 (succeeded, or a name conflict); absence leaves it
-  unknown, since validation may still be running.
+  reply the page stopped waiting for (esc while checking, a lock, or the
+  page's `BackupCommitTimeout` wait, 30 minutes, which is not a limit on the
+  daemon) keeps its request ID, and the late reply settles the outcome,
+  success with any warning or definitive failure, as a status on the page
+  without reopening the form. After a lost connection no reply can come: the
+  next list settles it by name and SHA-256 (succeeded, or a name conflict);
+  absence leaves it unknown, since validation may still be running. Every
+  unresolved import is tracked, not just the latest.
+  Late replies record their outcome but change the screen only when the
+  operator is still on the screen that asked, so a reply arriving after a
+  lock never dismisses the unlock screen. Hashing the import source and the
+  export's final sync, checksum, and publication run as commands off the
+  event loop, so slow storage cannot freeze input, approvals, or lock
+  handling; a canceled check's result is ignored. The import passphrase is
+  zeroed whenever the session ends, entered or not, and `Model.Shutdown`,
+  which apadmin and apconsole call on the final model however the program
+  ends, removes an export's staging file and releases an import's file and
+  passphrase.
 - Store recovery screen (`ViewStoreRecovery`): reconcile, direct credential restore, or rollback of the latest
   eligible restore. While the signer reports the `recovery` runtime state the
   screen is blocking — Escape does not leave it, ordinary administration stays

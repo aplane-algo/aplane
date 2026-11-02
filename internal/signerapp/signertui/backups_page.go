@@ -236,6 +236,11 @@ func (m Model) handleBackupDeleteResult(msg BackupDeleteResultMsg) (tea.Model, t
 	name := del.target.FileName
 	m.backups.del = backupDeleteState{}
 	m.setBackupsStatus("Deleted "+name+".", false)
+	// A reply that arrives after the operator left the dialog (the signer
+	// locked, say) is recorded, not shown by taking over the screen.
+	if m.viewState != ViewBackupDeleteConfirm {
+		return m, m.waitForMessageCmd()
+	}
 	next, cmd := m.returnToBackups("")
 	return next, cmd
 }
@@ -312,6 +317,9 @@ func (m Model) handleRefusedBackupUndo(result protocol.RollbackRestoreResultMess
 		return m, nil, false
 	}
 	m.setBackupsStatus("Undo refused: "+backupResultText(result.Error, "there is no restore to undo"), true)
+	if m.viewState != ViewRestoring {
+		return m, m.waitForMessageCmd(), true
+	}
 	next, cmd := m.returnToBackups("")
 	return next, cmd, true
 }
@@ -478,4 +486,14 @@ func confirmButtons(focus int, action string) string {
 		act = buttonActiveStyle.BorderForeground(lipgloss.Color("196")).Foreground(lipgloss.Color("196")).Render("> " + action)
 	}
 	return lipgloss.JoinHorizontal(lipgloss.Center, cancel, "  ", act)
+}
+
+// Shutdown releases what the Backups page holds when the program exits: an
+// export's staging file, an import's open archive and passphrase. An export
+// already being verified and saved is left to finish; an upload in progress
+// is left to the signer's cleanup of abandoned uploads. The apadmin and
+// apconsole binaries call it on the final model, whatever ended the program.
+func (m Model) Shutdown() {
+	m = m.stopBackupExport()
+	m.shutdownBackupImport()
 }

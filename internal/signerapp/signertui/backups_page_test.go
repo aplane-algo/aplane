@@ -38,6 +38,29 @@ func sentRequestIDs(cmd tea.Cmd) []string {
 	return nil
 }
 
+// findMsg runs cmd and returns the first message it produces that match
+// accepts, looking inside batches.
+func findMsg(cmd tea.Cmd, match func(tea.Msg) bool) tea.Msg {
+	if cmd == nil {
+		return nil
+	}
+	msg := cmd()
+	if batch, ok := msg.(tea.BatchMsg); ok {
+		for _, c := range batch {
+			if found := findMsg(c, match); found != nil {
+				return found
+			}
+		}
+		return nil
+	}
+	if msg != nil && match(msg) {
+		return msg
+	}
+	return nil
+}
+
+func isMsg[T any](msg tea.Msg) bool { _, ok := msg.(T); return ok }
+
 func sentRequest(cmd tea.Cmd, prefix string) string {
 	for _, id := range sentRequestIDs(cmd) {
 		if strings.HasPrefix(id, prefix+"-") {
@@ -198,7 +221,8 @@ func TestBackupExportStreamsVerifiesAndPublishes(t *testing.T) {
 	}
 	// A late reply to the earlier request is ignored.
 	m, _ = update(t, m, BackupChunkMsg{Chunk: protocol.BackupChunkMessage{BaseMessage: protocol.BaseMessage{ID: id}, Success: true, Data: []byte("stale")}})
-	m, _ = update(t, m, BackupChunkMsg{Chunk: protocol.BackupChunkMessage{BaseMessage: protocol.BaseMessage{ID: next}, Success: true, Offset: int64(half), Data: payload[half:], EOF: true}})
+	m, cmd = update(t, m, BackupChunkMsg{Chunk: protocol.BackupChunkMessage{BaseMessage: protocol.BaseMessage{ID: next}, Success: true, Offset: int64(half), Data: payload[half:], EOF: true}})
+	m = finishExport(t, m, cmd)
 	if m.viewState != ViewBackups || !strings.Contains(m.backups.status, "Exported to "+filepath.Join(dest, "aplane-backup-20261102-070725.tar.gz")) {
 		t.Fatalf("export done: view %v status %q", m.viewState, m.backups.status)
 	}
@@ -215,7 +239,8 @@ func TestBackupExportRejectsChecksumMismatchAndCleansUp(t *testing.T) {
 	id := sentRequest(cmd, "backup-export-chunk")
 	tampered := append([]byte(nil), payload...)
 	tampered[0] ^= 1
-	m, _ = update(t, m, BackupChunkMsg{Chunk: protocol.BackupChunkMessage{BaseMessage: protocol.BaseMessage{ID: id}, Success: true, Data: tampered, EOF: true}})
+	m, cmd = update(t, m, BackupChunkMsg{Chunk: protocol.BackupChunkMessage{BaseMessage: protocol.BaseMessage{ID: id}, Success: true, Data: tampered, EOF: true}})
+	m = finishExport(t, m, cmd)
 	if m.viewState != ViewBackupExport || !strings.Contains(m.backups.export.err, "checksum mismatch") {
 		t.Fatalf("mismatch: view %v err %q", m.viewState, m.backups.export.err)
 	}
@@ -255,6 +280,21 @@ func TestBackupExportRefusesExistingDestination(t *testing.T) {
 	}
 }
 
+// finishExport runs the off-loop verification and publication the last chunk
+// started and delivers its result.
+func finishExport(t *testing.T, m Model, cmd tea.Cmd) Model {
+	t.Helper()
+	if m.backups.export.finishing == nil {
+		t.Fatal("the last chunk did not start finishing the export")
+	}
+	done := findMsg(cmd, isMsg[backupExportFinishedMsg])
+	if done == nil {
+		t.Fatal("no finish result")
+	}
+	m, _ = update(t, m, done)
+	return m
+}
+
 func assertNoExportStaging(t *testing.T, dir string) {
 	t.Helper()
 	entries, _ := os.ReadDir(dir)
@@ -271,6 +311,11 @@ func assertNoExportStaging(t *testing.T, dir string) {
 // passphrase entered.
 func importFixture(t *testing.T) (Model, string, int64) {
 	t.Helper()
+	// Commands are run to completion to see what they send; the commit's
+	// timer must not hold a test for half an hour.
+	saved := backupCommitWait
+	backupCommitWait = time.Millisecond
+	t.Cleanup(func() { backupCommitWait = saved })
 	path := filepath.Join(t.TempDir(), "lab.tar.gz")
 	data := []byte(strings.Repeat("archive ", 64))
 	if err := os.WriteFile(path, data, 0o600); err != nil {
@@ -283,6 +328,26 @@ func importFixture(t *testing.T) (Model, string, int64) {
 	m.backups.imp.focus = importFocusButton
 	sum := sha256.Sum256(data)
 	return m, hex.EncodeToString(sum[:]), int64(len(data))
+}
+
+// startImport presses enter on the import form and delivers the off-loop
+// archive check, returning the begin request's ID.
+func startImport(t *testing.T, m Model) (Model, string) {
+	t.Helper()
+	m, cmd := pressKey(t, m, "enter")
+	if m.backups.imp.phase != importPreparing {
+		t.Fatalf("enter: phase %v, want preparing", m.backups.imp.phase)
+	}
+	prepared := findMsg(cmd, isMsg[backupImportPreparedMsg])
+	if prepared == nil {
+		t.Fatal("enter did not start the archive check")
+	}
+	m, cmd = update(t, m, prepared)
+	begin := sentRequest(cmd, "backup-import-begin")
+	if begin == "" {
+		t.Fatalf("the checked archive did not begin an upload: %v", sentRequestIDs(cmd))
+	}
+	return m, begin
 }
 
 func beginReply(id, uploadID string) BeginBackupImportResultMsg {
@@ -304,9 +369,8 @@ func commitReply(id string, ok bool, warning, errText string) CommitBackupImport
 func importToCommit(t *testing.T) (Model, string) {
 	t.Helper()
 	m, _, size := importFixture(t)
-	m, cmd := pressKey(t, m, "enter")
-	begin := sentRequest(cmd, "backup-import-begin")
-	m, cmd = update(t, m, beginReply(begin, "upload-1"))
+	m, begin := startImport(t, m)
+	m, cmd := update(t, m, beginReply(begin, "upload-1"))
 	appendID := sentRequest(cmd, "backup-import-append")
 	m, cmd = update(t, m, appendReply(appendID, size))
 	commit := sentRequest(cmd, "backup-import-commit")
@@ -337,13 +401,12 @@ func TestBackupImportCommitFailureStaysOnForm(t *testing.T) {
 
 func TestBackupImportEscBeforeBeginReplyAbortsTheLateUpload(t *testing.T) {
 	m, _, _ := importFixture(t)
-	m, cmd := pressKey(t, m, "enter")
-	begin := sentRequest(cmd, "backup-import-begin")
+	m, begin := startImport(t, m)
 	m, _ = pressKey(t, m, "esc")
 	if m.viewState != ViewBackups || m.backups.imp.phase != importIdle {
 		t.Fatalf("esc: view %v phase %v", m.viewState, m.backups.imp.phase)
 	}
-	m, cmd = update(t, m, beginReply(begin, "upload-late"))
+	m, cmd := update(t, m, beginReply(begin, "upload-late"))
 	if sentRequest(cmd, "backup-import-abort") == "" {
 		t.Fatalf("the late begin reply was not aborted: %v", sentRequestIDs(cmd))
 	}
@@ -354,9 +417,9 @@ func TestBackupImportEscBeforeBeginReplyAbortsTheLateUpload(t *testing.T) {
 
 func TestBackupImportEscDuringUploadAborts(t *testing.T) {
 	m, _, _ := importFixture(t)
-	m, cmd := pressKey(t, m, "enter")
-	m, _ = update(t, m, beginReply(sentRequest(cmd, "backup-import-begin"), "upload-1"))
-	m, cmd = pressKey(t, m, "esc")
+	m, begin := startImport(t, m)
+	m, _ = update(t, m, beginReply(begin, "upload-1"))
+	m, cmd := pressKey(t, m, "esc")
 	if sentRequest(cmd, "backup-import-abort") == "" || m.viewState != ViewBackups {
 		t.Fatalf("esc during upload: sent %v view %v", sentRequestIDs(cmd), m.viewState)
 	}
@@ -375,7 +438,7 @@ func TestBackupImportLateCommitReplySettlesUnresolvedOutcome(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			m, commit := importToCommit(t)
 			m, _ = pressKey(t, m, "esc")
-			if m.viewState != ViewBackups || m.backups.imp.unresolved == nil || m.backups.imp.unresolved.commitID != commit {
+			if m.viewState != ViewBackups || len(m.backups.imp.unresolved) != 1 || m.backups.imp.unresolved[0].commitID != commit {
 				t.Fatalf("esc while checking: view %v unresolved %+v", m.viewState, m.backups.imp.unresolved)
 			}
 			if banner := stripANSI(m.View()); !strings.Contains(banner, "outcome unknown") {
@@ -383,7 +446,7 @@ func TestBackupImportLateCommitReplySettlesUnresolvedOutcome(t *testing.T) {
 			}
 			m.viewState = ViewKeyList
 			m, _ = update(t, m, commitReply(commit, tc.ok, tc.warning, tc.errText))
-			if m.viewState != ViewKeyList || m.backups.imp.unresolved != nil {
+			if m.viewState != ViewKeyList || len(m.backups.imp.unresolved) != 0 {
 				t.Fatalf("late reply: view %v unresolved %+v, want settled without reopening", m.viewState, m.backups.imp.unresolved)
 			}
 			if !strings.Contains(m.backups.status, tc.want) || m.backups.statusErr != tc.isErr {
@@ -396,25 +459,25 @@ func TestBackupImportLateCommitReplySettlesUnresolvedOutcome(t *testing.T) {
 func TestBackupImportAfterLostConnectionSettlesOnlyByListing(t *testing.T) {
 	m, commit := importToCommit(t)
 	m, _ = update(t, m, DisconnectedMsg{})
-	pending := m.backups.imp.unresolved
-	if pending == nil || pending.commitID != "" || m.backups.imp.phase != importIdle {
-		t.Fatalf("disconnect while checking: unresolved %+v phase %v", pending, m.backups.imp.phase)
+	if len(m.backups.imp.unresolved) != 1 || m.backups.imp.unresolved[0].commitID != "" || m.backups.imp.phase != importIdle {
+		t.Fatalf("disconnect while checking: unresolved %+v phase %v", m.backups.imp.unresolved, m.backups.imp.phase)
 	}
+	pending := m.backups.imp.unresolved[0]
 	// No reply can come on a lost connection; a stray one is not trusted.
 	m, _ = update(t, m, commitReply(commit, false, "", "x"))
-	if m.backups.imp.unresolved == nil {
+	if len(m.backups.imp.unresolved) != 1 {
 		t.Fatal("a reply for the lost connection's commit settled the import")
 	}
 
 	m.viewState = ViewBackups
 	// Validation can still be running: absence keeps the outcome unknown.
 	m, _ = update(t, m, BackupsListMsg{Backups: []BackupInfo{{FileName: "other.tar.gz"}}})
-	if m.backups.imp.unresolved == nil || m.backups.statusErr {
+	if len(m.backups.imp.unresolved) != 1 || m.backups.statusErr {
 		t.Fatalf("an absent import was settled: status %q", m.backups.status)
 	}
 	// The archive appears on a later check.
 	m, _ = update(t, m, BackupsListMsg{Backups: []BackupInfo{{FileName: "lab.tar.gz", Checksum: pending.checksum, Size: pending.size}}})
-	if m.backups.imp.unresolved != nil || !strings.Contains(m.backups.status, "Imported lab.tar.gz") {
+	if len(m.backups.imp.unresolved) != 0 || !strings.Contains(m.backups.status, "Imported lab.tar.gz") {
 		t.Fatalf("listed import: unresolved %+v status %q", m.backups.imp.unresolved, m.backups.status)
 	}
 }
@@ -423,27 +486,27 @@ func TestBackupImportListedWithAnotherChecksumIsANameConflict(t *testing.T) {
 	m, _ := importToCommit(t)
 	m, _ = update(t, m, DisconnectedMsg{})
 	m, _ = update(t, m, BackupsListMsg{Backups: []BackupInfo{{FileName: "lab.tar.gz", Checksum: "other", Size: 1}}})
-	if m.backups.imp.unresolved != nil || !m.backups.statusErr || !strings.Contains(m.backups.status, "different backup named lab.tar.gz") {
+	if len(m.backups.imp.unresolved) != 0 || !m.backups.statusErr || !strings.Contains(m.backups.status, "different backup named lab.tar.gz") {
 		t.Fatalf("name conflict: unresolved %+v status %q", m.backups.imp.unresolved, m.backups.status)
 	}
 }
 
 func TestBackupImportLockAbortsUploadOrLeavesCommitUnresolved(t *testing.T) {
 	m, _, _ := importFixture(t)
-	m, cmd := pressKey(t, m, "enter")
-	m, _ = update(t, m, beginReply(sentRequest(cmd, "backup-import-begin"), "upload-1"))
-	m, cmd = update(t, m, LockIdentityResultMsg{Success: true})
+	m, begin := startImport(t, m)
+	m, _ = update(t, m, beginReply(begin, "upload-1"))
+	m, cmd := update(t, m, LockIdentityResultMsg{Success: true})
 	if sentRequest(cmd, "backup-import-abort") == "" || m.backups.imp.phase != importIdle {
 		t.Fatalf("lock during upload: sent %v phase %v", sentRequestIDs(cmd), m.backups.imp.phase)
 	}
 
 	m, commit := importToCommit(t)
 	m, _ = update(t, m, LockIdentityResultMsg{Success: true})
-	if m.backups.imp.unresolved == nil || m.backups.imp.unresolved.commitID != commit {
+	if len(m.backups.imp.unresolved) != 1 || m.backups.imp.unresolved[0].commitID != commit {
 		t.Fatalf("lock while checking: unresolved %+v, want the commit kept for its reply", m.backups.imp.unresolved)
 	}
 	m, _ = update(t, m, commitReply(commit, true, "", ""))
-	if m.backups.imp.unresolved != nil || !strings.Contains(m.backups.status, "Imported lab.tar.gz") {
+	if len(m.backups.imp.unresolved) != 0 || !strings.Contains(m.backups.status, "Imported lab.tar.gz") {
 		t.Fatalf("reply after lock: unresolved %+v status %q", m.backups.imp.unresolved, m.backups.status)
 	}
 }
@@ -460,5 +523,149 @@ func TestBackupViewHeaderShowsSealedTimeAndWarnsOnMismatch(t *testing.T) {
 	m.restore.archiveCreatedAt = time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC).Unix()
 	if header := stripANSI(m.renderBackupViewHeader(110)); !strings.Contains(header, "renamed") {
 		t.Fatalf("no mismatch warning:\n%s", header)
+	}
+}
+
+// --- regressions from review ---
+
+func TestBackupImportPassphraseIsZeroedWhenTheSessionEnds(t *testing.T) {
+	for name, end := range map[string]tea.Msg{
+		"lock":       LockIdentityResultMsg{Success: true},
+		"disconnect": DisconnectedMsg{},
+	} {
+		t.Run(name, func(t *testing.T) {
+			m, _, _ := importFixture(t)
+			secret := m.backups.imp.passphrase
+			m, _ = update(t, m, end)
+			if m.backups.imp.passphrase != nil || string(secret) != "\x00\x00\x00\x00\x00\x00" {
+				t.Fatalf("passphrase after %s: kept %q, buffer %q", name, m.backups.imp.passphrase, secret)
+			}
+		})
+	}
+}
+
+func TestBackupImportCommitTimeoutLeavesTheOutcomeUnresolved(t *testing.T) {
+	m, commit := importToCommit(t)
+	m, _ = update(t, m, backupCommitTimeoutMsg{id: "another"})
+	if m.backups.imp.phase != importCommitting {
+		t.Fatal("a timeout for another commit stopped this one")
+	}
+	m, _ = update(t, m, backupCommitTimeoutMsg{id: commit})
+	if m.viewState != ViewBackups || m.backups.imp.phase != importIdle ||
+		len(m.backups.imp.unresolved) != 1 || m.backups.imp.unresolved[0].commitID != commit {
+		t.Fatalf("timeout: view %v phase %v unresolved %+v", m.viewState, m.backups.imp.phase, m.backups.imp.unresolved)
+	}
+	m, _ = update(t, m, commitReply(commit, true, "", ""))
+	if len(m.backups.imp.unresolved) != 0 || !strings.Contains(m.backups.status, "Imported lab.tar.gz") {
+		t.Fatalf("late reply after timeout: unresolved %+v status %q", m.backups.imp.unresolved, m.backups.status)
+	}
+}
+
+func TestBackupImportKeepsEveryUnresolvedImport(t *testing.T) {
+	// Import A is left unresolved by a lost connection.
+	m, _ := importToCommit(t)
+	m, _ = update(t, m, DisconnectedMsg{})
+	a := m.backups.imp.unresolved[0]
+	// Import B is left by esc while the signer checks it.
+	m.viewState = ViewBackups
+	m, _ = pressKey(t, m, "i")
+	other := filepath.Join(t.TempDir(), "other.tar.gz")
+	if err := os.WriteFile(other, []byte("other archive"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m.backups.imp.path, m.backups.imp.passphrase, m.backups.imp.focus = other, []byte("secret"), importFocusButton
+	m, begin := startImport(t, m)
+	m, cmd := update(t, m, beginReply(begin, "upload-2"))
+	m, cmd = update(t, m, appendReply(sentRequest(cmd, "backup-import-append"), int64(len("other archive"))))
+	commitB := sentRequest(cmd, "backup-import-commit")
+	m, _ = pressKey(t, m, "esc")
+	if len(m.backups.imp.unresolved) != 2 {
+		t.Fatalf("unresolved = %+v, want both imports", m.backups.imp.unresolved)
+	}
+	if banner := stripANSI(m.View()); !strings.Contains(banner, "lab.tar.gz") || !strings.Contains(banner, "other.tar.gz") {
+		t.Fatalf("banner does not name both imports:\n%s", banner)
+	}
+	// B's reply settles B only; A settles when it is listed.
+	m, _ = update(t, m, commitReply(commitB, true, "", ""))
+	if len(m.backups.imp.unresolved) != 1 || m.backups.imp.unresolved[0].name != "lab.tar.gz" {
+		t.Fatalf("after B's reply: %+v", m.backups.imp.unresolved)
+	}
+	m, _ = update(t, m, BackupsListMsg{Backups: []BackupInfo{{FileName: "lab.tar.gz", Checksum: a.checksum, Size: a.size}}})
+	if len(m.backups.imp.unresolved) != 0 || !strings.Contains(m.backups.status, "Imported lab.tar.gz") {
+		t.Fatalf("after listing A: unresolved %+v status %q", m.backups.imp.unresolved, m.backups.status)
+	}
+}
+
+func TestBackupImportCheckRunsOffTheEventLoopAndCanBeCanceled(t *testing.T) {
+	m, _, _ := importFixture(t)
+	m, cmd := pressKey(t, m, "enter")
+	if m.backups.imp.phase != importPreparing || sentRequest(cmd, "backup-import-begin") != "" {
+		t.Fatalf("enter: phase %v; the archive must be checked before any request", m.backups.imp.phase)
+	}
+	prepared := findMsg(cmd, isMsg[backupImportPreparedMsg])
+	m, _ = pressKey(t, m, "esc")
+	if m.viewState != ViewBackups || m.backups.imp.phase != importIdle {
+		t.Fatalf("esc while checking: view %v phase %v", m.viewState, m.backups.imp.phase)
+	}
+	m, cmd = update(t, m, prepared)
+	if sentRequest(cmd, "backup-import-begin") != "" || m.backups.imp.phase != importIdle {
+		t.Fatal("a canceled check's result started an upload")
+	}
+}
+
+func TestBackupExportFinishRunsOffTheEventLoopAndReportsAfterLeaving(t *testing.T) {
+	m, payload, dest := exportFixture(t)
+	m, cmd := pressKey(t, m, "enter")
+	id := sentRequest(cmd, "backup-export-chunk")
+	m, cmd = update(t, m, BackupChunkMsg{Chunk: protocol.BackupChunkMessage{BaseMessage: protocol.BaseMessage{ID: id}, Success: true, Data: payload, EOF: true}})
+	if m.backups.export.finishing == nil || m.backups.export.writer != nil {
+		t.Fatal("the last chunk did not hand the export to the off-loop finish")
+	}
+	done := findMsg(cmd, isMsg[backupExportFinishedMsg])
+	m, _ = pressKey(t, m, "esc")
+	if m.viewState != ViewBackups {
+		t.Fatalf("esc while finishing: view %v", m.viewState)
+	}
+	m.viewState = ViewKeyList
+	m, _ = update(t, m, done)
+	if m.viewState != ViewKeyList || !strings.Contains(m.backups.status, "Exported to "+dest) || m.backups.export.finishing != nil {
+		t.Fatalf("finished after leaving: view %v status %q", m.viewState, m.backups.status)
+	}
+}
+
+func TestBackupDeleteReplyAfterLockKeepsTheUnlockScreen(t *testing.T) {
+	m := backupsModel(BackupInfo{FileName: "a.tar.gz", Path: "a.tar.gz"}, BackupInfo{FileName: "b.tar.gz", Path: "b.tar.gz"})
+	m, _ = pressKey(t, m, "d")
+	m, cmd := pressKey(t, m, "y")
+	id := sentRequest(cmd, "backup-delete")
+	m, _ = update(t, m, LockIdentityResultMsg{Success: true})
+	if m.viewState != ViewUnlock {
+		t.Fatalf("lock: view %v", m.viewState)
+	}
+	m, _ = update(t, m, BackupDeleteResultMsg{Result: protocol.DeleteBackupResultMessage{BaseMessage: protocol.BaseMessage{ID: id}, Success: true}})
+	if m.viewState != ViewUnlock || !strings.Contains(m.backups.status, "Deleted a.tar.gz") {
+		t.Fatalf("late delete reply: view %v status %q, want the unlock screen kept", m.viewState, m.backups.status)
+	}
+}
+
+func TestShutdownRemovesExportStagingAndReleasesImport(t *testing.T) {
+	m, _, dest := exportFixture(t)
+	m, _ = pressKey(t, m, "enter")
+	if entries, _ := os.ReadDir(dest); len(entries) != 1 {
+		t.Fatalf("expected one staging file, found %d", len(entries))
+	}
+	m.Shutdown()
+	assertNoExportStaging(t, dest)
+
+	im, _, _ := importFixture(t)
+	im, _ = startImport(t, im)
+	secret := im.backups.imp.passphrase
+	file := im.backups.imp.file
+	im.Shutdown()
+	if string(secret) != "\x00\x00\x00\x00\x00\x00" {
+		t.Fatalf("Shutdown left the passphrase: %q", secret)
+	}
+	if _, err := file.Stat(); err == nil {
+		t.Fatal("Shutdown left the archive file open")
 	}
 }

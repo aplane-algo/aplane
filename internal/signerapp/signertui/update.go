@@ -406,6 +406,15 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case CommitBackupImportResultMsg:
 		return m.handleCommitBackupImportResult(msg)
 
+	case backupImportPreparedMsg:
+		return m.handleBackupImportPrepared(msg)
+
+	case backupCommitTimeoutMsg:
+		return m.handleBackupCommitTimeout(msg)
+
+	case backupExportFinishedMsg:
+		return m.handleBackupExportFinished(msg)
+
 	case AbortBackupImportResultMsg:
 		// Abort is best effort; the signer also removes abandoned uploads.
 		return m, m.waitForMessageCmd()

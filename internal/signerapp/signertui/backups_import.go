@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/apadminapp"
@@ -36,6 +37,9 @@ type backupImportPhase int
 
 const (
 	importIdle backupImportPhase = iota
+	// importPreparing checks and hashes the local archive off the event
+	// loop; a large file on slow storage must not freeze the TUI.
+	importPreparing
 	importBeginning
 	importUploading
 	importCommitting
@@ -63,9 +67,26 @@ type backupImportState struct {
 
 	// canceledBegins are begin requests abandoned before their reply.
 	canceledBegins map[string]bool
-	// unresolved is a committed import whose outcome is not known yet.
-	unresolved *unresolvedBackupImport
+	// unresolved are committed imports whose outcome is not known yet. There
+	// can be several: an import left unresolved by a lost connection is
+	// still tracked while a later one is left by esc.
+	unresolved []unresolvedBackupImport
 }
+
+// backupCommitWait is how long the page waits on a commit before leaving its
+// outcome unresolved; the signer's validation has no such limit.
+var backupCommitWait = apadminapp.BackupCommitTimeout
+
+// backupImportPreparedMsg carries the local archive check, run off the event
+// loop. token names the attempt; a stale result is ignored.
+type backupImportPreparedMsg struct {
+	token  string
+	source apadminapp.BackupImportSource
+	err    error
+}
+
+// backupCommitTimeoutMsg fires when the page stops waiting on a commit.
+type backupCommitTimeoutMsg struct{ id string }
 
 type unresolvedBackupImport struct {
 	name     string
@@ -164,24 +185,38 @@ func (m Model) startBackupImport() (tea.Model, tea.Cmd) {
 		imp.err = err.Error()
 		return m, nil
 	}
-	source, err := apadminapp.PrepareBackupImportSource(expanded)
-	if err != nil {
-		imp.err = err.Error()
-		return m, nil
-	}
-	file, err := os.Open(source.Path)
-	if err != nil {
-		imp.err = err.Error()
-		return m, nil
-	}
 	imp.err = ""
-	imp.source = source
+	imp.phase = importPreparing
+	imp.pendingID = newRequestID("backup-import-prepare")
+	token := imp.pendingID
+	return m, func() tea.Msg {
+		source, err := apadminapp.PrepareBackupImportSource(expanded)
+		return backupImportPreparedMsg{token: token, source: source, err: err}
+	}
+}
+
+func (m Model) handleBackupImportPrepared(msg backupImportPreparedMsg) (tea.Model, tea.Cmd) {
+	imp := &m.backups.imp
+	if msg.token == "" || msg.token != imp.pendingID || imp.phase != importPreparing {
+		return m, nil
+	}
+	imp.pendingID = ""
+	if msg.err != nil {
+		m = m.failBackupImport(msg.err)
+		return m, nil
+	}
+	file, err := os.Open(msg.source.Path)
+	if err != nil {
+		m = m.failBackupImport(err)
+		return m, nil
+	}
+	imp.source = msg.source
 	imp.file = file
 	imp.offset = 0
 	imp.uploadID = ""
 	imp.phase = importBeginning
 	imp.pendingID = newRequestID("backup-import-begin")
-	return m, tea.Batch(m.sendBeginBackupImportCmd(imp.pendingID, source.Name), m.waitForMessageCmd())
+	return m, tea.Batch(m.sendBeginBackupImportCmd(imp.pendingID, msg.source.Name), m.waitForMessageCmd())
 }
 
 func (m Model) handleBeginBackupImportResult(msg BeginBackupImportResultMsg) (tea.Model, tea.Cmd) {
@@ -253,14 +288,34 @@ func (m Model) commitBackupImport() (tea.Model, tea.Cmd) {
 	cmd := m.sendCommitBackupImportCmd(imp.pendingID, imp.uploadID, imp.source.Name, imp.source.Size, imp.source.Checksum, imp.passphrase)
 	zeroBytes(imp.passphrase)
 	imp.passphrase = nil
-	return m, tea.Batch(cmd, m.waitForMessageCmd())
+	id := imp.pendingID
+	timeout := tea.Tick(backupCommitWait, func(time.Time) tea.Msg { return backupCommitTimeoutMsg{id: id} })
+	return m, tea.Batch(cmd, timeout, m.waitForMessageCmd())
+}
+
+// handleBackupCommitTimeout stops waiting on a commit that has not replied.
+// The outcome becomes unresolved, keeping the commit's ID for a late reply.
+func (m Model) handleBackupCommitTimeout(msg backupCommitTimeoutMsg) (tea.Model, tea.Cmd) {
+	imp := &m.backups.imp
+	if msg.id == "" || msg.id != imp.pendingID || imp.phase != importCommitting {
+		return m, nil
+	}
+	m.markBackupImportUnresolved(imp.pendingID)
+	m = m.resetBackupImportTransfer()
+	m = m.closeBackupImportForm()
+	if m.viewState == ViewBackupImport {
+		m.viewState = ViewBackups
+	}
+	return m, nil
 }
 
 func (m Model) handleCommitBackupImportResult(msg CommitBackupImportResultMsg) (tea.Model, tea.Cmd) {
 	imp := &m.backups.imp
 	id := msg.Result.ID
-	switch {
-	case id != "" && id == imp.pendingID && imp.phase == importCommitting:
+	if id == "" {
+		return m, m.waitForMessageCmd()
+	}
+	if id == imp.pendingID && imp.phase == importCommitting {
 		imp.pendingID = ""
 		imp.phase = importIdle
 		if !msg.Result.Success {
@@ -268,21 +323,24 @@ func (m Model) handleCommitBackupImportResult(msg CommitBackupImportResultMsg) (
 			return m, m.waitForMessageCmd()
 		}
 		m.setBackupsStatus(importedStatus(imp.source.Name, msg.Result.Warning), false)
+		if m.viewState != ViewBackupImport {
+			return m, m.waitForMessageCmd()
+		}
 		next, cmd := m.returnToBackups(imp.source.Name)
 		return next, cmd
-	case id != "" && imp.unresolved != nil && id == imp.unresolved.commitID:
-		name := imp.unresolved.name
-		imp.unresolved = nil
-		if !msg.Result.Success {
-			m.setBackupsStatus("Import of "+name+" failed: "+backupResultText(msg.Result.Error, "the signer refused the archive"), true)
-		} else {
-			m.setBackupsStatus(importedStatus(name, msg.Result.Warning), false)
-		}
-		if m.viewState == ViewBackups {
-			next, cmd := m.refreshBackups()
-			return next, cmd
-		}
+	}
+	name := m.takeUnresolvedImport(id)
+	if name == "" {
 		return m, m.waitForMessageCmd()
+	}
+	if !msg.Result.Success {
+		m.setBackupsStatus("Import of "+name+" failed: "+backupResultText(msg.Result.Error, "the signer refused the archive"), true)
+	} else {
+		m.setBackupsStatus(importedStatus(name, msg.Result.Warning), false)
+	}
+	if m.viewState == ViewBackups {
+		next, cmd := m.refreshBackups()
+		return next, cmd
 	}
 	return m, m.waitForMessageCmd()
 }
@@ -301,6 +359,8 @@ func (m Model) leaveBackupImport() (tea.Model, tea.Cmd) {
 	imp := &m.backups.imp
 	var cmd tea.Cmd
 	switch imp.phase {
+	case importPreparing:
+		m.setBackupsStatus("Import canceled.", false)
 	case importBeginning:
 		m.cancelBackupImportBegin()
 		m.setBackupsStatus("Import canceled.", false)
@@ -329,9 +389,22 @@ func (m *Model) cancelBackupImportBegin() {
 
 func (m *Model) markBackupImportUnresolved(commitID string) {
 	imp := &m.backups.imp
-	imp.unresolved = &unresolvedBackupImport{
+	imp.unresolved = append(imp.unresolved, unresolvedBackupImport{
 		name: imp.source.Name, checksum: imp.source.Checksum, size: imp.source.Size, commitID: commitID,
+	})
+}
+
+// takeUnresolvedImport removes the unresolved import whose commit is id and
+// returns its name; "" when there is none.
+func (m *Model) takeUnresolvedImport(id string) string {
+	imp := &m.backups.imp
+	for i, pending := range imp.unresolved {
+		if pending.commitID != "" && pending.commitID == id {
+			imp.unresolved = append(imp.unresolved[:i:i], imp.unresolved[i+1:]...)
+			return pending.name
+		}
 	}
+	return ""
 }
 
 // abortBackupImport ends an upload that began, telling the signer to remove
@@ -379,9 +452,8 @@ func (m Model) failPendingBackupImport(id string, err error) (Model, tea.Cmd, bo
 	if id == "" {
 		return m, nil, false
 	}
-	if imp.unresolved != nil && id == imp.unresolved.commitID {
-		m.setBackupsStatus("Import of "+imp.unresolved.name+" failed: "+err.Error(), true)
-		imp.unresolved = nil
+	if name := m.takeUnresolvedImport(id); name != "" {
+		m.setBackupsStatus("Import of "+name+" failed: "+err.Error(), true)
 		return m, nil, true
 	}
 	if id != imp.pendingID {
@@ -422,14 +494,15 @@ func (m *Model) interruptBackupTransfers(connectionLive bool) tea.Cmd {
 	}
 	if !connectionLive {
 		imp.canceledBegins = nil
-		if imp.unresolved != nil {
-			imp.unresolved.commitID = ""
+		for i := range imp.unresolved {
+			imp.unresolved[i].commitID = ""
 		}
 	}
 	if imp.phase != importIdle {
 		*m = m.resetBackupImportTransfer()
-		*m = m.closeBackupImportForm()
 	}
+	// The form's passphrase never outlives the session, entered or not.
+	*m = m.closeBackupImportForm()
 	return cmd
 }
 
@@ -437,35 +510,55 @@ func (m *Model) interruptBackupTransfers(connectionLive bool) tea.Cmd {
 // when it can: a listed backup with its name decides it; absence does not,
 // since the signer may still be validating it.
 func (m Model) reconcileUnresolvedImport() Model {
-	pending := m.backups.imp.unresolved
-	if pending == nil {
-		return m
+	imp := &m.backups.imp
+	var still []unresolvedBackupImport
+	var settled []string
+	failed := false
+	for _, pending := range imp.unresolved {
+		listed := false
+		for _, item := range m.restore.backups {
+			if item.FileName != pending.name {
+				continue
+			}
+			listed = true
+			if item.Checksum == pending.checksum && item.Size == pending.size {
+				settled = append(settled, "Imported "+pending.name+".")
+			} else {
+				settled = append(settled, "A different backup named "+pending.name+" is in the repository; the import did not publish.")
+				failed = true
+			}
+			break
+		}
+		if !listed {
+			still = append(still, pending)
+		}
 	}
-	for _, item := range m.restore.backups {
-		if item.FileName != pending.name {
-			continue
-		}
-		if item.Checksum == pending.checksum && item.Size == pending.size {
-			m.setBackupsStatus(importedStatus(pending.name, ""), false)
-		} else {
-			m.setBackupsStatus("A different backup named "+pending.name+" is in the repository; the import did not publish.", true)
-		}
-		m.backups.imp.unresolved = nil
-		return m
+	imp.unresolved = still
+	if len(settled) > 0 {
+		m.setBackupsStatus(strings.Join(settled, "\n"), failed)
 	}
 	return m
 }
 
 func (m Model) unresolvedImportBanner() string {
-	pending := m.backups.imp.unresolved
-	if pending == nil {
-		return ""
+	var lines []string
+	for _, pending := range m.backups.imp.unresolved {
+		line := "Import of " + terminalSafe(pending.name) + ": outcome unknown. The signer may still be checking it."
+		if pending.commitID != "" {
+			line += " The result shows here when it replies; r checks the list."
+		} else {
+			line += " r checks again."
+		}
+		lines = append(lines, line)
 	}
-	banner := "Import of " + terminalSafe(pending.name) + ": outcome unknown. The signer may still be checking it."
-	if pending.commitID != "" {
-		return banner + " The result shows here when it replies; r checks the list."
-	}
-	return banner + " r checks again."
+	return strings.Join(lines, "\n")
+}
+
+// shutdownBackupImport releases what an import holds when the program exits:
+// the open archive file and the passphrase.
+func (m *Model) shutdownBackupImport() {
+	*m = m.closeBackupImportFile()
+	*m = m.closeBackupImportForm()
 }
 
 func (m Model) renderBackupImport() string {
@@ -496,6 +589,8 @@ func (m Model) renderBackupImport() string {
 	body.WriteString(button + "\n")
 
 	switch imp.phase {
+	case importPreparing:
+		body.WriteString("\n" + subtitleStyle.Render("Checking the file...") + "\n")
 	case importBeginning:
 		body.WriteString("\n" + subtitleStyle.Render("Starting the upload...") + "\n")
 	case importUploading:

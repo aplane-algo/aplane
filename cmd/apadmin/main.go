@@ -185,7 +185,13 @@ func startTUI(connector tui.AdminConnector) {
 	model := tui.NewModel(connector, "").WithStandalone()
 	p := tea.NewProgram(model, tea.WithAltScreen())
 
-	if _, err := p.Run(); err != nil {
+	final, err := p.Run()
+	// Whatever ended the program, release what an unfinished backup transfer
+	// holds (a staging file, an open archive, a passphrase).
+	if m, ok := final.(tui.Model); ok {
+		m.Shutdown()
+	}
+	if err != nil {
 		logErrorf("error running TUI: %v", err)
 		os.Exit(1)
 	}

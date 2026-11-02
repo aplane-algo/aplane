@@ -29,6 +29,18 @@ type backupExportState struct {
 	// chunk request it waits on.
 	writer    *apadminapp.BackupExportWriter
 	pendingID string
+	// finishing is a transfer whose last chunk arrived: its sync, checksum,
+	// and publication run off the event loop and cannot be canceled.
+	finishing *apadminapp.BackupExportWriter
+}
+
+// backupExportFinishedMsg carries a finished export's verification and
+// publication, run off the event loop.
+type backupExportFinishedMsg struct {
+	writer   *apadminapp.BackupExportWriter
+	checksum string
+	warnings []string
+	err      error
 }
 
 func (m Model) openBackupExport(info BackupInfo) Model {
@@ -37,13 +49,20 @@ func (m Model) openBackupExport(info BackupInfo) Model {
 	if dir == "" {
 		dir = "~"
 	}
-	*export = backupExportState{target: info, dir: dir, lastDir: export.lastDir}
+	*export = backupExportState{target: info, dir: dir, lastDir: export.lastDir, finishing: export.finishing}
 	m.viewState = ViewBackupExport
 	return m
 }
 
 func (m Model) handleBackupExportKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	export := &m.backups.export
+	if export.finishing != nil {
+		if msg.String() == "esc" {
+			m.setBackupsStatus("Finishing the export; its result will show here.", false)
+			m.viewState = ViewBackups
+		}
+		return m, nil
+	}
 	if export.writer != nil {
 		if msg.String() == "esc" {
 			m = m.stopBackupExport()
@@ -74,6 +93,10 @@ func (m Model) handleBackupExportKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) startBackupExport() (tea.Model, tea.Cmd) {
 	export := &m.backups.export
+	if export.finishing != nil {
+		export.err = "The previous export is still being saved; try again when it finishes."
+		return m, nil
+	}
 	dir := strings.TrimSpace(export.dir)
 	if dir == "" {
 		export.err = "A destination directory is required"
@@ -119,20 +142,37 @@ func (m Model) handleBackupChunk(msg BackupChunkMsg) (tea.Model, tea.Cmd) {
 	}
 	writer := export.writer
 	export.writer = nil
-	checksum, warnings, err := writer.Finish()
-	if err != nil {
-		export.err = err.Error()
-		return m, m.waitForMessageCmd()
+	export.finishing = writer
+	finish := func() tea.Msg {
+		checksum, warnings, err := writer.Finish()
+		return backupExportFinishedMsg{writer: writer, checksum: checksum, warnings: warnings, err: err}
 	}
-	status := fmt.Sprintf("Exported to %s (SHA-256 %s).", writer.Destination(), checksum)
-	for _, warning := range warnings {
+	return m, tea.Batch(finish, m.waitForMessageCmd())
+}
+
+func (m Model) handleBackupExportFinished(msg backupExportFinishedMsg) (tea.Model, tea.Cmd) {
+	export := &m.backups.export
+	if msg.writer == nil || msg.writer != export.finishing {
+		return m, nil
+	}
+	export.finishing = nil
+	if msg.err != nil {
+		if m.viewState == ViewBackupExport {
+			export.err = "Export failed: " + msg.err.Error()
+		} else {
+			m.setBackupsStatus("Export failed: "+msg.err.Error(), true)
+		}
+		return m, nil
+	}
+	status := fmt.Sprintf("Exported to %s (SHA-256 %s).", msg.writer.Destination(), msg.checksum)
+	for _, warning := range msg.warnings {
 		status += "\nWarning: " + warning
 	}
 	m.setBackupsStatus(status, false)
 	if m.viewState == ViewBackupExport {
 		m.viewState = ViewBackups
 	}
-	return m, m.waitForMessageCmd()
+	return m, nil
 }
 
 // failBackupExport ends a transfer with err, removing its staging file.
@@ -175,6 +215,9 @@ func (m Model) renderBackupExport() string {
 	body.WriteString(inputActiveStyle.Width(m.constrainParameterFieldWidth(60)).Render(terminalSafe(export.dir)))
 	body.WriteString("\n" + helpStyle.Render("ctrl+o browses. The archive keeps its name and stays encrypted under its backup passphrase."))
 	body.WriteString("\n")
+	if export.finishing != nil {
+		body.WriteString("\n" + subtitleStyle.Render("Verifying and saving the copy...") + "\n")
+	}
 	if export.writer != nil {
 		body.WriteString("\n" + subtitleStyle.Render(fmt.Sprintf("Exporting... %s of %s",
 			backup.FormatFileSize(export.writer.Written()), backup.FormatFileSize(export.target.Size))) + "\n")
@@ -186,6 +229,9 @@ func (m Model) renderBackupExport() string {
 }
 
 func (m Model) backupExportFooterText() string {
+	if m.backups.export.finishing != nil {
+		return "esc: Leave (the result is reported later)"
+	}
 	if m.backups.export.writer != nil {
 		return "esc: Cancel"
 	}
