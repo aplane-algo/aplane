@@ -878,6 +878,13 @@ window: when a list is too long, it shows the rows around the selection between
 description, and the form's buttons stay on screen. A window too short even for
 that falls back to the shared popup viewport.
 
+These lists are ordered in two clusters: the protocol-native key types, named
+bare (`ed25519`, `falcon1024`), first, then every published
+`publisher.family.vN` key type, each cluster alphabetical. The generate and
+import forms show one blank row between the clusters. The TUI sorts the
+signer's `list_key_types` reply on receipt (`setServerKeyTypes`), so every
+index into the list uses the same order.
+
 Long byte parameters, including bounded contract-admin public keys, use an atomic paste control
 instead of an editable multi-line field. Activating the control accepts the
 next terminal bracketed-paste event, stores the complete validated value, and

@@ -209,7 +209,7 @@ func TestGenerateAccountFromReferencePreselectsCosigner(t *testing.T) {
 	if next.viewState != ViewGenerateParams {
 		t.Fatalf("viewState = %v, want %v", next.viewState, ViewGenerateParams)
 	}
-	if next.forms.generateKeyType != 1 || next.forms.genericLSigParams["cosigner"] != testWitnessID1 {
+	if next.forms.generateKeyType != 0 || next.forms.genericLSigParams["cosigner"] != testWitnessID1 {
 		t.Fatalf("generation selection = index %d params %#v", next.forms.generateKeyType, next.forms.genericLSigParams)
 	}
 	if !next.cosigner.generateFromManager {
@@ -250,7 +250,8 @@ func TestGenerateAccountFromReferenceChoosesAmongCompatibleTypes(t *testing.T) {
 	if next.viewState != ViewCosignerGenerateType {
 		t.Fatalf("viewState = %v, want %v", next.viewState, ViewCosignerGenerateType)
 	}
-	if got := next.cosigner.generateTypeIndices; len(got) != 2 || got[0] != 0 || got[1] != 2 {
+	// Selection order is alphabetical: guarded-one, guarded-two, wrong.
+	if got := next.cosigner.generateTypeIndices; len(got) != 2 || got[0] != 0 || got[1] != 1 {
 		t.Fatalf("compatible indices = %v", got)
 	}
 
@@ -258,7 +259,7 @@ func TestGenerateAccountFromReferenceChoosesAmongCompatibleTypes(t *testing.T) {
 	next = nextModel.(Model)
 	nextModel, _ = next.handleCosignerGenerateTypeKeys(tea.KeyMsg{Type: tea.KeyEnter})
 	next = nextModel.(Model)
-	if next.viewState != ViewGenerateParams || next.forms.generateKeyType != 2 {
+	if next.viewState != ViewGenerateParams || next.forms.generateKeyType != 1 {
 		t.Fatalf("selected generation = view %v index %d", next.viewState, next.forms.generateKeyType)
 	}
 	if next.forms.genericLSigParams["cosigner"] != testWitnessID1 {

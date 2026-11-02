@@ -7,6 +7,8 @@ package tui
 
 import (
 	"fmt"
+	"slices"
+	"strings"
 	"sync"
 
 	"github.com/aplane-algo/aplane/internal/algorithm"
@@ -28,6 +30,102 @@ func setServerKeyTypes(items []protocol.KeyTypeInfo) {
 	defer serverKeyTypes.Unlock()
 
 	serverKeyTypes.items = append([]protocol.KeyTypeInfo(nil), items...)
+	slices.SortStableFunc(serverKeyTypes.items, func(a, b protocol.KeyTypeInfo) int {
+		return compareKeyTypesForSelection(a.KeyType, b.KeyType)
+	})
+}
+
+// isNativeKeyType reports whether keyType is a protocol-native scheme, named
+// bare (ed25519, falcon1024) rather than publisher.family.vN.
+func isNativeKeyType(keyType string) bool {
+	return !strings.Contains(keyType, ".")
+}
+
+// compareKeyTypesForSelection orders key type pickers in two clusters: the
+// protocol-native key types first, then every published key type, each
+// cluster alphabetical.
+func compareKeyTypesForSelection(a, b string) int {
+	if aNative, bNative := isNativeKeyType(a), isNativeKeyType(b); aNative != bNative {
+		if aNative {
+			return -1
+		}
+		return 1
+	}
+	return strings.Compare(a, b)
+}
+
+func sortKeyTypesForSelection(keyTypes []string) []string {
+	slices.SortStableFunc(keyTypes, compareKeyTypesForSelection)
+	return keyTypes
+}
+
+// nativeKeyTypeCount is how many of keyTypes, in selection order, belong to
+// the native cluster at the top.
+func nativeKeyTypeCount(keyTypes []string) int {
+	count := 0
+	for _, keyType := range keyTypes {
+		if isNativeKeyType(keyType) {
+			count++
+		}
+	}
+	return count
+}
+
+// separateKeyTypeClusters inserts a blank row between the native and the
+// published key type clusters when both are present, and returns the rows
+// with the selected index moved to match.
+func separateKeyTypeClusters(rows []string, nativeCount, selected int) ([]string, int) {
+	if nativeCount <= 0 || nativeCount >= len(rows) {
+		return rows, selected
+	}
+	out := make([]string, 0, len(rows)+1)
+	out = append(out, rows[:nativeCount]...)
+	out = append(out, "")
+	out = append(out, rows[nativeCount:]...)
+	if selected >= nativeCount {
+		selected++
+	}
+	return out, selected
+}
+
+// compiledGenerateKeyTypes is the generate list from the compiled registries,
+// used before the signer has sent its own list.
+func compiledGenerateKeyTypes() []string {
+	types := append([]string(nil), keymgmt.GetValidKeyTypes()...)
+	for _, template := range genericlsig.GetAll() {
+		types = append(types, template.KeyType())
+	}
+	return sortKeyTypesForSelection(types)
+}
+
+// compiledImportKeyTypes is the mnemonic import list from the compiled
+// registries, used before the signer has sent its own list.
+func compiledImportKeyTypes() []string {
+	return sortKeyTypesForSelection(append([]string(nil), keymgmt.GetMnemonicImportKeyTypesWithActivated(nil)...))
+}
+
+// generateKeyTypeIDs is the generate list's key types in display order.
+func generateKeyTypeIDs() []string {
+	if types := getServerKeyTypes(); len(types) > 0 {
+		ids := make([]string, len(types))
+		for i, info := range types {
+			ids[i] = info.KeyType
+		}
+		return ids
+	}
+	return compiledGenerateKeyTypes()
+}
+
+// importKeyTypeIDs is the mnemonic import list's key types in display order.
+func importKeyTypeIDs() []string {
+	if types := getServerImportKeyTypes(); len(types) > 0 {
+		ids := make([]string, len(types))
+		for i, info := range types {
+			ids[i] = info.KeyType
+		}
+		return ids
+	}
+	return compiledImportKeyTypes()
 }
 
 func getServerKeyTypes() []protocol.KeyTypeInfo {
@@ -55,8 +153,8 @@ func getServerImportKeyTypes() []protocol.KeyTypeInfo {
 	return out
 }
 
-// getKeyTypeOptions returns a list of key type display strings for UI selection.
-// Uses keymgmt.GetValidKeyTypes() which returns versioned types (e.g., "aplane.falcon1024.v1").
+// getKeyTypeOptions returns the mnemonic import key type display strings, in
+// selection order (native key types first, then published ones).
 func getKeyTypeOptions() []string {
 	if types := getServerImportKeyTypes(); len(types) > 0 {
 		options := make([]string, len(types))
@@ -70,7 +168,7 @@ func getKeyTypeOptions() []string {
 		return options
 	}
 
-	types := keymgmt.GetMnemonicImportKeyTypesWithActivated(nil)
+	types := compiledImportKeyTypes()
 	options := make([]string, len(types))
 	for i, keyType := range types {
 		meta, err := algorithm.GetMetadata(keyType)
@@ -83,8 +181,9 @@ func getKeyTypeOptions() []string {
 	return options
 }
 
-// getGenerateKeyTypeOptions returns key type options for the generate form.
-// Includes both cryptographic key types (versioned) and generic LogicSig templates.
+// getGenerateKeyTypeOptions returns key type options for the generate form,
+// in selection order: native key types first, then published key types and
+// generic LogicSig templates.
 func getGenerateKeyTypeOptions() []string {
 	if types := getServerKeyTypes(); len(types) > 0 {
 		options := make([]string, len(types))
@@ -94,19 +193,11 @@ func getGenerateKeyTypeOptions() []string {
 		return options
 	}
 
-	// Get cryptographic key types from keymgmt (returns versioned types)
-	types := keymgmt.GetValidKeyTypes()
-	options := make([]string, 0, len(types)+genericlsig.Count())
-
-	for _, keyType := range types {
-		options = append(options, displayKeyType(keyType))
+	types := compiledGenerateKeyTypes()
+	options := make([]string, len(types))
+	for i, keyType := range types {
+		options[i] = displayKeyType(keyType)
 	}
-
-	// Add generic LogicSig templates from registry
-	for _, template := range genericlsig.GetAll() {
-		options = append(options, displayKeyType(template.KeyType()))
-	}
-
 	return options
 }
 
@@ -186,7 +277,7 @@ func getImportKeyTypeByIndex(index int) string {
 		}
 		return ""
 	}
-	types := keymgmt.GetMnemonicImportKeyTypesWithActivated(nil)
+	types := compiledImportKeyTypes()
 	if index >= 0 && index < len(types) {
 		return types[index]
 	}
@@ -203,18 +294,10 @@ func getKeyTypeByIndex(index int) string {
 		return ""
 	}
 
-	types := keymgmt.GetValidKeyTypes()
+	types := compiledGenerateKeyTypes()
 	if index >= 0 && index < len(types) {
 		return types[index]
 	}
-
-	// Index beyond registered key types refers to generic lsig templates
-	genericIndex := index - len(types)
-	genericTemplates := genericlsig.GetAll()
-	if genericIndex >= 0 && genericIndex < len(genericTemplates) {
-		return genericTemplates[genericIndex].KeyType()
-	}
-
 	return ""
 }
 
@@ -223,14 +306,14 @@ func getKeyTypeCount() int {
 	if types := getServerKeyTypes(); len(types) > 0 {
 		return len(types)
 	}
-	return len(keymgmt.GetValidKeyTypes()) + genericlsig.Count()
+	return len(compiledGenerateKeyTypes())
 }
 
 func getImportKeyTypeCount() int {
 	if types := getServerImportKeyTypes(); len(types) > 0 {
 		return len(types)
 	}
-	return len(keymgmt.GetMnemonicImportKeyTypesWithActivated(nil))
+	return len(compiledImportKeyTypes())
 }
 
 // getExpectedWordCount returns the expected mnemonic word count for a key type index.
