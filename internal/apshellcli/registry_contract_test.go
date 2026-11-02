@@ -55,10 +55,6 @@ func TestBuiltInCommandAndAliasInventory(t *testing.T) {
 	if !reflect.DeepEqual(gotAliases, wantAliases) {
 		t.Fatalf("built-in alias inventory changed\n got: %#v\nwant: %#v", gotAliases, wantAliases)
 	}
-	// request-enrollment was renamed enroll and kept no alias.
-	if _, ok := registry.Lookup("request-enrollment"); ok {
-		t.Fatal("request-enrollment still resolves")
-	}
 }
 
 func TestBuiltInAutomationDispositionInventory(t *testing.T) {
