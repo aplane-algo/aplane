@@ -424,6 +424,104 @@ func TestIPCClientDisplacementSuppressesReconnect(t *testing.T) {
 	assertNoClientMsg(t, client, 100*time.Millisecond)
 }
 
+// A login timeout must not trigger the automatic reconnect: the new
+// connection would retake the signer's single login slot.
+func TestIPCClientLoginTimeoutSuppressesReconnect(t *testing.T) {
+	client1, server1 := net.Pipe()
+	client2, server2 := net.Pipe()
+	defer func() { _ = server2.Close() }()
+
+	connector := &queueConnector{
+		conns: []io.ReadWriteCloser{client1, client2},
+	}
+	client := NewAdminClient(connector)
+	client.reconnectDelay = 10 * time.Millisecond
+	client.maxDelay = 20 * time.Millisecond
+
+	if err := client.Connect(); err != nil {
+		t.Fatalf("Connect() error = %v", err)
+	}
+	defer client.Disconnect()
+
+	line, err := protocol.MarshalAdminMessage(AuthResultMessage{
+		BaseMessage: BaseMessage{Type: MsgTypeAuthResult},
+		Success:     false,
+		Code:        protocol.ErrCodeLoginTimeout,
+		Error:       "login timed out",
+	})
+	if err != nil {
+		t.Fatalf("MarshalAdminMessage(auth_result) error = %v", err)
+	}
+	if _, err := server1.Write(append(line, '\n')); err != nil {
+		t.Fatalf("server1.Write() error = %v", err)
+	}
+
+	msg := waitForClientMsg(t, client, 2*time.Second)
+	if result, ok := msg.(AuthResultMsg); !ok || result.Code != protocol.ErrCodeLoginTimeout {
+		t.Fatalf("msg = %#v, want a login_timeout AuthResultMsg", msg)
+	}
+	_ = server1.Close()
+
+	time.Sleep(100 * time.Millisecond)
+	if got := connector.connectCount(); got != 1 {
+		t.Fatalf("connector connect count = %d, want 1 after a login timeout", got)
+	}
+}
+
+// The transport reports a login_timeout and the connection end on separate
+// channels. When both are already queued, the forwarder must still see the
+// timeout before acting on the end, or it reconnects and retakes the signer's
+// login slot. Go picks among ready select cases at random, so repeat.
+func TestIPCClientLoginTimeoutQueuedWithConnectionLossSuppressesReconnect(t *testing.T) {
+	line, err := protocol.MarshalAdminMessage(AuthResultMessage{
+		BaseMessage: BaseMessage{Type: MsgTypeAuthResult},
+		Success:     false,
+		Code:        protocol.ErrCodeLoginTimeout,
+		Error:       "login timed out",
+	})
+	if err != nil {
+		t.Fatalf("MarshalAdminMessage(auth_result) error = %v", err)
+	}
+	base, err := protocol.ParseAdminBaseMessage(line)
+	if err != nil {
+		t.Fatalf("ParseAdminBaseMessage() error = %v", err)
+	}
+
+	for i := 0; i < 50; i++ {
+		spare, spareServer := net.Pipe()
+		connector := &queueConnector{conns: []io.ReadWriteCloser{spare}}
+		client := NewAdminClient(connector)
+		client.reconnectDelay = time.Millisecond
+		client.maxDelay = time.Millisecond
+		done := make(chan struct{})
+		client.mu.Lock()
+		client.sessionID = 1
+		client.done = done
+		client.connected = true
+		client.mu.Unlock()
+
+		notifications := make(chan transport.Notification, 1)
+		notifications <- transport.Notification{Base: base, Raw: line}
+		lifecycle := make(chan transport.LifecycleEvent, 2)
+		lifecycle <- transport.LifecycleEvent{Type: transport.LifecycleConnectionLost, Err: io.EOF}
+		lifecycle <- transport.LifecycleEvent{Type: transport.LifecycleReaderStopped}
+
+		client.forwardMessages(1, done, notifications, lifecycle)
+
+		msg := waitForClientMsg(t, client, 2*time.Second)
+		if result, ok := msg.(AuthResultMsg); !ok || result.Code != protocol.ErrCodeLoginTimeout {
+			t.Fatalf("iteration %d: msg = %#v, want the login_timeout AuthResultMsg", i, msg)
+		}
+		time.Sleep(20 * time.Millisecond)
+		if got := connector.connectCount(); got != 0 {
+			t.Fatalf("iteration %d: reconnected %d time(s) after a queued login timeout", i, got)
+		}
+		client.Disconnect()
+		_ = spareServer.Close()
+		_ = spare.Close()
+	}
+}
+
 func TestIPCClientReconnectFiltersQueuedOldSessionNotification(t *testing.T) {
 	client1, server1 := net.Pipe()
 	client2, server2 := net.Pipe()

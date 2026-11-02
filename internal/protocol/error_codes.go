@@ -66,6 +66,7 @@ const (
 	ErrCodeSignerLocked         = "signer_locked"
 	ErrCodeKeyNotFound          = "key_not_found"
 	ErrCodeNodeFailClosed       = "node_fail_closed"
+	ErrCodeLoginTimeout         = "login_timeout"
 	ErrCodeInternal             = "internal_error"
 )
 

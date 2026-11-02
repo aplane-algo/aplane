@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/transport"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -45,7 +46,9 @@ type IPCClient struct {
 	sessionID uint64
 
 	// Displacement state
-	displaced bool // True when displaced by another client (suppress reconnect)
+	// serverEnded is set when the signer ended the session on purpose
+	// (displacement or a login timeout); reconnecting would undo that.
+	serverEnded bool
 
 	// Reconnection state
 	reconnecting   bool
@@ -87,7 +90,7 @@ func (c *IPCClient) Connect() error {
 	c.conn = conn
 	c.stream = transport.NewStreamClient(conn)
 	c.connected = true
-	c.displaced = false
+	c.serverEnded = false
 	done := c.done
 	c.mu.Unlock()
 
@@ -112,7 +115,7 @@ func (c *IPCClient) Disconnect() {
 	c.conn = nil
 	c.stream = nil
 	c.connected = false
-	c.displaced = false
+	c.serverEnded = false
 	c.reconnecting = false
 	c.sessionID++
 	c.mu.Unlock()
@@ -289,12 +292,12 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 		c.connected = false
 		c.conn = nil
 		c.stream = nil
-		displaced := c.displaced
+		serverEnded := c.serverEnded
 		c.mu.Unlock()
 
-		if displaced {
-			// DisplacedMsg was already sent; don't send a redundant DisconnectedMsg
-			// and don't auto-reconnect
+		if serverEnded {
+			// The TUI was already told why (DisplacedMsg or a login-timeout
+			// AuthResultMsg); don't auto-reconnect.
 			return
 		}
 
@@ -309,49 +312,96 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 			if !ok {
 				return
 			}
+			if event.Type != transport.LifecycleConnectionLost &&
+				event.Type != transport.LifecycleProtocolError &&
+				event.Type != transport.LifecycleReaderStopped {
+				continue
+			}
+			// The transport's single reader queues every notification before
+			// it reports the end of the connection, but on separate channels.
+			// Deliver what is already queued first: a login_timeout or
+			// displacement there must suppress the reconnect below.
+			if c.drainNotifications(sessionID, notifications) {
+				return
+			}
 			switch event.Type {
 			case transport.LifecycleConnectionLost:
 				if event.Err != nil && !errors.Is(event.Err, io.EOF) {
 					c.emit(sessionID, ErrorMsg{Error: event.Err})
 				}
-				return
 			case transport.LifecycleProtocolError:
 				c.emit(sessionID, ErrorMsg{Error: fmt.Errorf("protocol error: %w", event.Err)})
-				return
-			case transport.LifecycleReaderStopped:
-				return
-			default:
-				continue
 			}
+			return
 		case notification, ok := <-notifications:
 			if !ok {
 				return
 			}
-			if notification.Base.Type == MsgTypeDisplaced {
-				// Displacement ends the session without a reconnect.
-				var displaced DisplacedMessage
-				if err := json.Unmarshal(notification.Raw, &displaced); err != nil {
-					c.emitUndecodable(sessionID, notification, err)
-					continue
-				}
-				c.mu.Lock()
-				c.displaced = true
-				c.mu.Unlock()
-				c.emit(sessionID, DisplacedMsg{Reason: displaced.Reason})
+			if c.forwardNotification(sessionID, notification) {
 				return
 			}
-			decode, ok := signerMessageDecoders[notification.Base.Type]
-			if !ok {
-				continue
-			}
-			msg, err := decode(notification.Raw)
-			if err != nil {
-				c.emitUndecodable(sessionID, notification, err)
-				continue
-			}
-			c.emit(sessionID, msg)
 		}
 	}
+}
+
+// drainNotifications forwards notifications already queued without waiting
+// for more. It reports whether one of them ended the session.
+func (c *IPCClient) drainNotifications(sessionID uint64, notifications <-chan transport.Notification) bool {
+	for {
+		select {
+		case notification, ok := <-notifications:
+			if !ok {
+				return false
+			}
+			if c.forwardNotification(sessionID, notification) {
+				return true
+			}
+		default:
+			return false
+		}
+	}
+}
+
+// forwardNotification turns one signer notification into a TUI message. It
+// reports whether the notification ended the session (displacement), after
+// which nothing more is read.
+func (c *IPCClient) forwardNotification(sessionID uint64, notification transport.Notification) bool {
+	if notification.Base.Type == MsgTypeDisplaced {
+		// Displacement ends the session without a reconnect.
+		var displaced DisplacedMessage
+		if err := json.Unmarshal(notification.Raw, &displaced); err != nil {
+			c.emitUndecodable(sessionID, notification, err)
+			return false
+		}
+		c.mu.Lock()
+		c.serverEnded = true
+		c.mu.Unlock()
+		c.emit(sessionID, DisplacedMsg{Reason: displaced.Reason})
+		return true
+	}
+	decode, ok := signerMessageDecoders[notification.Base.Type]
+	if !ok {
+		return false
+	}
+	msg, err := decode(notification.Raw)
+	if err != nil {
+		c.emitUndecodable(sessionID, notification, err)
+		return false
+	}
+	if isLoginTimeout(msg) {
+		// The signer closes the connection next. Reconnecting would take the
+		// single pre-auth slot right back.
+		c.mu.Lock()
+		c.serverEnded = true
+		c.mu.Unlock()
+	}
+	c.emit(sessionID, msg)
+	return false
+}
+
+func isLoginTimeout(msg tea.Msg) bool {
+	result, ok := msg.(AuthResultMsg)
+	return ok && !result.Success && result.Code == protocol.ErrCodeLoginTimeout
 }
 
 // signerMessageDecoders turns each signer message type into the TUI message

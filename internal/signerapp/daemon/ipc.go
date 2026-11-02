@@ -25,6 +25,8 @@ type IPCServer struct {
 	signer   *Signer
 	path     string
 	manager  *adminserver.SessionManager
+
+	preAuthTimeout time.Duration // 0 means preAuthLoginTimeout; settable in tests
 }
 
 const existingIPCProbeTimeout = 300 * time.Millisecond
@@ -139,6 +141,31 @@ func (s *IPCServer) acceptLoop() {
 // displacementTimeout is the maximum time to wait for a displacement confirmation.
 const displacementTimeout = 30 * time.Second
 
+// preAuthLoginTimeout bounds how long one connection may hold the single
+// pre-auth slot. It runs from accept, through any displacement prompt, to a
+// verified passphrase; wrong passphrases do not extend it. Without it, an
+// apadmin left at its login screen blocks every other apadmin indefinitely.
+const preAuthLoginTimeout = 2 * time.Minute
+
+// readDeadlineConn is implemented by admin connections whose reads can be
+// bounded.
+type readDeadlineConn interface {
+	SetReadDeadline(time.Time) error
+}
+
+func (s *IPCServer) loginTimeout() time.Duration {
+	if s.preAuthTimeout > 0 {
+		return s.preAuthTimeout
+	}
+	return preAuthLoginTimeout
+}
+
+func setPreAuthReadDeadline(conn adminproto.AdminConn, deadline time.Time) {
+	if d, ok := conn.(readDeadlineConn); ok {
+		_ = d.SetReadDeadline(deadline)
+	}
+}
+
 func (s *IPCServer) offerDisplacementSession(active *adminserver.Session, newConn adminproto.AdminConn) bool {
 	confirmed, displaced := adminserver.OfferDisplacement(active, newConn, displacementTimeout)
 	if displaced {
@@ -148,6 +175,7 @@ func (s *IPCServer) offerDisplacementSession(active *adminserver.Session, newCon
 }
 
 func (s *IPCServer) acceptAdminSession(adminConn adminproto.AdminConn, transport, authMethod string) {
+	setPreAuthReadDeadline(adminConn, time.Now().Add(s.loginTimeout()))
 	session := adminserver.NewSession(adminConn, s.signer.adminSessionDeps())
 	session.SetAuthMethod(authMethod)
 	session.SetTransportInfo(transport, adminConn.RemoteAddr())
@@ -216,7 +244,11 @@ func (s *IPCServer) handleRegisteredClient(session *adminserver.Session, transpo
 	switch session.AuthenticateOutcome() {
 	case adminserver.AuthOutcomeAuthenticated:
 		cleanupRuntime = !session.AuthenticatedOnly()
+		setPreAuthReadDeadline(adminConn, time.Time{})
 	case adminserver.AuthOutcomeBootstrapHandled:
+		return
+	case adminserver.AuthOutcomeTimedOut:
+		logWarnf("%s client did not log in within %s; connection closed", strings.ToUpper(transport), s.loginTimeout())
 		return
 	default:
 		logWarnf("%s client authentication failed", strings.ToUpper(transport))

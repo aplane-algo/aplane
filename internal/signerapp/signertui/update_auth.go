@@ -33,6 +33,7 @@ func (m Model) handlePassphraseKeys(msg tea.KeyMsg, onSubmit func(string) tea.Cm
 		if m.connectionState == ConnectionDisconnected {
 			m.connectionState = ConnectionConnecting
 			m.auth.passphraseInput = ""
+			m.auth.endedReason = ""
 			return m, m.reconnectCmd()
 		}
 		// Otherwise treat as regular character

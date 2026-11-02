@@ -7,8 +7,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"sync"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
@@ -33,6 +35,9 @@ const (
 	AuthOutcomeFailed AuthOutcome = iota
 	AuthOutcomeAuthenticated
 	AuthOutcomeBootstrapHandled
+	// AuthOutcomeTimedOut means the connection's login deadline passed
+	// before it authenticated; the client was told with login_timeout.
+	AuthOutcomeTimedOut
 )
 
 // Session owns one admin client protocol lifecycle.
@@ -175,6 +180,10 @@ func (s *Session) AuthenticateOutcome() AuthOutcome {
 	for {
 		raw, err := s.conn.ReadMessage()
 		if err != nil {
+			if errors.Is(err, os.ErrDeadlineExceeded) {
+				s.sendAuthResult(false, protocol.ErrCodeLoginTimeout, "login timed out")
+				return AuthOutcomeTimedOut
+			}
 			return AuthOutcomeFailed
 		}
 

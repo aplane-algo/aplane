@@ -46,12 +46,6 @@ func (m *Model) clearWarning() {
 	m.lastWarning = ""
 }
 
-func (m *Model) clearWarningIf(warning string) {
-	if m.lastWarning == warning {
-		m.clearWarning()
-	}
-}
-
 func (m *Model) setTransientWarning(warning string) tea.Cmd {
 	m.setPersistentWarning(warning)
 	return clearWarningTickCmd(m.lastWarningGeneration)
@@ -101,6 +95,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case ConnectedMsg:
 		m.connectionState = ConnectionConnected
+		m.auth.endedReason = ""
 		if msg.Client != nil {
 			m.adminClient = msg.Client
 		}
@@ -123,8 +118,16 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// information arrives via the admin protocol (ListKeyTypes).
 			m.auth.passphraseError = ""
 			m.auth.passphraseInput = ""
-			m.clearWarningIf(localIdleDisconnectReason)
 			m.resetActivityState()
+		} else if msg.Code == protocol.ErrCodeLoginTimeout {
+			// The signer gave up on this login and closes the connection;
+			// stay disconnected rather than retake its single login slot.
+			m.endAdminSession()
+			m.connectionState = ConnectionDisconnected
+			m.auth.passphraseInput = ""
+			m.auth.passphraseError = ""
+			m.auth.endedReason = loginTimeoutReason
+			return m, nil
 		} else {
 			// Authentication failed - show error and stay on auth screen
 			m.auth.passphraseError = msg.Error
@@ -148,16 +151,19 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case localIdleDisconnectedMsg:
+		// Stay disconnected: an automatic reconnect would sit at the login
+		// screen holding the signer's single login slot, locking out every
+		// other apadmin until someone found this terminal.
 		m.endAdminSession()
-		m.connectionState = ConnectionConnecting
+		m.connectionState = ConnectionDisconnected
 		m.signerStatusKnown = false
 		m.viewState = ViewAuth
 		m.auth.passphraseInput = ""
 		m.auth.passphraseError = ""
 		m.auth.loggingIn = false
+		m.auth.endedReason = msg.Reason
 		m.lastError = ""
-		m.setPersistentWarning(msg.Reason)
-		return m, m.reconnectCmd()
+		return m, nil
 
 	case SignerStatusMsg:
 		m.signerWarnings = msg.Warnings
@@ -182,7 +188,6 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Success {
 			m.auth.passphraseError = ""
 			m.auth.passphraseInput = ""
-			m.clearWarningIf(localIdleDisconnectReason)
 			if msg.Code == protocol.ResultCodeRecoveryBlocked {
 				// Unlock succeeded into recovery mode; signing stays blocked
 				// until a strict reconcile/reload succeeds.
@@ -917,9 +922,7 @@ func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.connectionState == ConnectionDisconnected && msg.String() == "c" {
 		m.connectionState = ConnectionConnecting
 		m.lastError = ""
-		if m.lastWarning == localIdleDisconnectReason {
-			m.clearWarning()
-		}
+		m.auth.endedReason = ""
 		return m, m.reconnectCmd()
 	}
 
