@@ -132,16 +132,6 @@ func getKeyTypeSelectionLabel(keyType string) string {
 	return displayKeyType(keyType)
 }
 
-// keyTypeImportNotice warns, on the import form, that a native Falcon
-// account's 25-word phrase is not the 24-word LogicSig Falcon phrase.
-func keyTypeImportNotice(keyType string) string {
-	info, ok := findServerKeyType(keyType)
-	if !ok || info.AuthorizationKind != "native_pq" {
-		return ""
-	}
-	return "Requires consensus v42 or later. Its 25-word Algorand recovery phrase is not interchangeable with the 24-word aplane.falcon1024.v1 phrase."
-}
-
 type paramSpec struct {
 	DisplayName string
 	Description string

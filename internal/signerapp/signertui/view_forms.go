@@ -143,10 +143,6 @@ func (m Model) renderImportForm() string {
 		sb.WriteString(subtitleStyle.Render(wordCountStr))
 	}
 	sb.WriteString("\n\n")
-	if notice := keyTypeImportNotice(getImportKeyTypeByIndex(m.forms.importKeyType)); notice != "" {
-		sb.WriteString(subtitleStyle.Render(notice))
-		sb.WriteString("\n\n")
-	}
 
 	// Submit button
 	var importBtn string
