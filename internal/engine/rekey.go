@@ -49,8 +49,8 @@ func (e *Engine) PrepareRekey(ctx context.Context, params RekeyParams) (*Transac
 	if !checkResult.IsUnrekey {
 		switch flow := e.signerCacheSigningFlow(params.To); {
 		case flow == signerapi.SigningFlowRotating1:
-			return nil, checkResult, fmt.Errorf("cannot rekey to %s: it is a rotating account, whose address authorizes only itself; give %s its own rotating key instead",
-				params.To, params.From)
+			return nil, checkResult, fmt.Errorf("cannot rekey to %s: it is a rotating account, whose address authorizes only itself",
+				params.To)
 		case !guarded.CanAuthorizeOtherAccounts(flow):
 			return nil, checkResult, fmt.Errorf("cannot rekey to %s: it uses signing flow %q, which this client cannot use as another account's authorizer",
 				params.To, flow)
