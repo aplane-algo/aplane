@@ -151,7 +151,7 @@ func TestStageTableWorkerBoundsAnUnknownAuthorizer(t *testing.T) {
 		t.Fatalf("exhausting pass wait = %v, want idle", wait)
 	}
 	status := server.restService().Status(ir)
-	if len(status.Rotating) != 1 || status.Rotating[0].Classification != signerapi.RotatingClassUnknown || status.Rotating[0].CachedStages != 3 {
+	if len(status.Rotating) != 1 || status.Rotating[0].Classification != signerapi.RotatingClassUnknown || status.Rotating[0].CachedEntries != 3 {
 		t.Fatalf("/status rotating = %+v", status.Rotating)
 	}
 	if rec := status.Rotating[0].Recovery; rec == nil || rec.Active || rec.Stopped != "allowance exhausted" || rec.AllowanceSpent != 3 || rec.SuppressedAuthorizer != foreign.String() {
@@ -165,7 +165,7 @@ func TestStageTableWorkerBoundsAnUnknownAuthorizer(t *testing.T) {
 	}
 	// Idle from here: the table does not move.
 	server.fillStageTables(context.Background(), ir)
-	if got := server.restService().Status(ir).Rotating[0].CachedStages; got != 3 {
+	if got := server.restService().Status(ir).Rotating[0].CachedEntries; got != 3 {
 		t.Fatalf("cached stages after suppression = %d, want 3", got)
 	}
 
@@ -179,7 +179,7 @@ func TestStageTableWorkerBoundsAnUnknownAuthorizer(t *testing.T) {
 	if wait := server.fillStageTables(context.Background(), ir); wait != stageTableBusyInterval {
 		t.Fatalf("pass after unlock wait = %v, want busy", wait)
 	}
-	if got := server.restService().Status(ir).Rotating[0].CachedStages; got != 5 {
+	if got := server.restService().Status(ir).Rotating[0].CachedEntries; got != 5 {
 		t.Fatalf("cached stages after unlock = %d, want 5", got)
 	}
 }

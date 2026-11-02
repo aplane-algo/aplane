@@ -81,6 +81,7 @@ type Runtime struct {
 	// stageTables is the process's single owner of rotating accounts' stage
 	// address tables (identities/default/stages), a derivable cache.
 	stageTables *stagetable.Store
+	stageWork   chan struct{}
 
 	// Key users are background holders of loaded key material (the stage
 	// table worker). Lock cancels their context and waits for them to
@@ -202,6 +203,7 @@ func New(cfg Config) *Runtime {
 		keyStore:    cfg.KeyStore,
 		keyPaths:    cfg.KeyPaths,
 		stageTables: stagetable.NewStore(cfg.KeyPaths),
+		stageWork:   make(chan struct{}, 1),
 		lockRuntime: rt,
 		keySession:  session,
 		runtimeCfg:  NewRuntimeConfig(userAutoApprove, cfg.LockOnDisconnect, cfg.SessionTimeout, cfg.ApprovalWait),
@@ -325,12 +327,17 @@ func (ir *Runtime) IsRecovery() bool {
 // PromoteRecoveryToUnlocked atomically transitions recovery -> unlocked,
 // refusing if a racing lock already left recovery (the lock wins).
 func (ir *Runtime) PromoteRecoveryToUnlocked() bool {
-	return ir.lockRuntime.PromoteRecoveryToUnlocked()
+	ok := ir.lockRuntime.PromoteRecoveryToUnlocked()
+	if ok {
+		ir.WakeStageWork()
+	}
+	return ok
 }
 
 // SetUnlocked marks this identity as unlocked without side effects.
 func (ir *Runtime) SetUnlocked() {
 	ir.lockRuntime.SetUnlocked()
+	ir.WakeStageWork()
 }
 
 // SetRecovery marks this identity as recovery-blocked without permitting
@@ -385,6 +392,9 @@ func (ir *Runtime) FinishStoreMaintenance(
 // The passphrase bytes are NOT zeroed by this function.
 func (ir *Runtime) TryUnlock(passphrase []byte, onUnlocked func()) (bool, int, string) {
 	ok, keyCount, errMsg := ir.lockRuntime.TryUnlock(ir.performUnlock(passphrase), onUnlocked)
+	if ok {
+		ir.WakeStageWork()
+	}
 	if !ok && errMsg == signerruntime.LockedDuringUnlockMessage {
 		ir.notifyLocked()
 	}
@@ -1235,8 +1245,14 @@ func (ir *Runtime) reloadLocked(passphrase []byte) (*signertemplates.ReloadRepor
 	if ir.reloadFn == nil {
 		return nil, fmt.Errorf("reload function not configured")
 	}
+	// Close jobs holding the old inventory before publishing replacements.
+	ir.stageTables.Invalidate()
 	// Pass keySession directly — caller holds passphraseLock.
-	return ir.reloadFn(passphrase, ir.keySession)
+	report, err := ir.reloadFn(passphrase, ir.keySession)
+	if err == nil {
+		ir.WakeStageWork()
+	}
+	return report, err
 }
 
 // --- Watcher ---
@@ -1433,3 +1449,12 @@ func (ir *Runtime) performUnlock(passphrase []byte) func() (int, error) {
 		return keyCount, nil
 	}
 }
+
+// WakeStageWork requests a discovery pass after inventory or recovery changes.
+func (ir *Runtime) WakeStageWork() {
+	select {
+	case ir.stageWork <- struct{}{}:
+	default:
+	}
+}
+func (ir *Runtime) StageWork() <-chan struct{} { return ir.stageWork }

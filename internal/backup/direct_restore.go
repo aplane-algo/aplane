@@ -31,11 +31,12 @@ import (
 // cleared with ZeroSecrets. Policy is the credential's archived policy
 // document of its own, nil when the archive carries none.
 type CredentialEntry struct {
-	Selector string
-	Category string
-	KeyType  string
-	KeyJSON  []byte
-	Policy   []byte
+	StageHint *RotatingStageHint
+	Selector  string
+	Category  string
+	KeyType   string
+	KeyJSON   []byte
+	Policy    []byte
 }
 
 func (e *CredentialEntry) ZeroSecrets() {
@@ -179,6 +180,7 @@ func LoadManagedRestoreSet(
 			inspected.ZeroSecrets()
 			return nil, authenticatedArchiveError(err)
 		}
+		inspected.StageHint = validatedRotatingHint(inspected, manifest.RotatingStageHints)
 		set.Entries = append(set.Entries, inspected)
 	}
 	success = true

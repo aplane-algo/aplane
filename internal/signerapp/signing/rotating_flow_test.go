@@ -514,7 +514,7 @@ func TestRotatingStatusFromReportsAndMemory(t *testing.T) {
 	// Unresolved account with no search running: a note with the cached
 	// count and the two remedies, never "foreign" or "exited".
 	_, notes = f.svc.RotatingStatus([]StageTableReport{{Account: acct, Observed: true, Class: ClassUnknown, Scanned: 42}})
-	if len(notes) != 1 || !strings.Contains(notes[0], "42 stages this signer has cached") || !strings.Contains(notes[0], "rotate recover") ||
+	if len(notes) != 1 || !strings.Contains(notes[0], "42 stage addresses this signer has cached") || !strings.Contains(notes[0], "rotate recover") ||
 		strings.Contains(notes[0], "foreign") || strings.Contains(notes[0], "exited;") {
 		t.Fatalf("unresolved note = %v", notes)
 	}
@@ -750,7 +750,10 @@ func (f *rotatingFixture) forgeSuccessor(t *testing.T, index uint64, addr types.
 	t.Helper()
 	tb := f.table(t)
 	for tb.Len() <= index {
-		if err := tb.AppendFrom(tb.Len(), []types.Address{f.stageAddress(t, tb.Len())}); err != nil {
+		if _, err := tb.RecordDerived(tb.Len(), []types.Address{f.stageAddress(t, tb.Len())}); err != nil {
+			t.Fatal(err)
+		}
+		if err := tb.Flush(); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -759,7 +762,7 @@ func (f *rotatingFixture) forgeSuccessor(t *testing.T, index uint64, addr types.
 		t.Fatal(err)
 	}
 	body := data[:len(data)-32]
-	off := 8 + 2 + 32 + 32 + 8 + int(index)*32
+	off := 8 + 2 + 32 + 32 + 8 + int(index)*40 + 8
 	copy(body[off:off+32], addr[:])
 	sum := sha256.Sum256(body)
 	if err := os.WriteFile(tb.Path(), append(body, sum[:]...), 0o600); err != nil {
@@ -775,15 +778,7 @@ func TestForgedSuccessorInTableNeverReachesTheChain(t *testing.T) {
 	foreign := types.Address{0xfe, 0xed, 31: 3}
 	f.forgeSuccessor(t, 1, foreign)
 
-	// Prepare must not hand out the forged successor.
-	_, err := f.prepare(t, f.spend(1000, 1100))
-	if err == nil {
-		t.Fatal("prepare returned a group from a forged table")
-	}
-	if _, statErr := os.Stat(f.tables.Path(f.account.String())); !errors.Is(statErr, os.ErrNotExist) {
-		t.Fatal("forged table was not discarded")
-	}
-	// A rebuilt table yields the real successor.
+	// Prepare repairs the record and returns only the seed-derived successor.
 	prep := mustPrepare(t, f, f.spend(1000, 1100))
 	if prep.RekeyTo != f.stageAddress(t, 1).String() {
 		t.Fatalf("rekey_to %s, want the derived stage 1", prep.RekeyTo)
@@ -802,15 +797,15 @@ func TestForgedSuccessorInTableNeverReachesTheChain(t *testing.T) {
 	for i, x := range plan.AllTxns {
 		group[i] = txnutil.EncodeWithPrefixHex(x)
 	}
-	_, err = f.sign(t, group)
+	_, err := f.sign(t, group)
 	if err == nil || (!strings.Contains(err.Message, "does not match the seed") && !strings.Contains(err.Message, "does not derive")) {
 		t.Fatalf("sign with forged successor: %v, want a refusal naming the seed mismatch", err)
 	}
 	if _, ok := f.svc.Rotating.Releases.Get(f.account.String()); ok {
 		t.Fatal("a refused sign recorded a release")
 	}
-	if _, statErr := os.Stat(f.tables.Path(f.account.String())); !errors.Is(statErr, os.ErrNotExist) {
-		t.Fatal("forged table was not discarded at sign")
+	if got, ok := f.table(t).Address(1); !ok || got != f.stageAddress(t, 1) {
+		t.Fatal("bad successor was not repaired")
 	}
 }
 
@@ -869,8 +864,11 @@ func TestDerivedStageAddressToleratesConcurrentTableGrowth(t *testing.T) {
 		if err != nil {
 			return nil, err
 		}
-		if from == tb.Len() {
-			if err := tb.AppendFrom(from, addrs); err != nil {
+		if from == 3 && to == 4 {
+			if _, err := tb.RecordDerived(from, addrs); err != nil {
+				t.Fatal(err)
+			}
+			if err := tb.Flush(); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -880,7 +878,7 @@ func TestDerivedStageAddressToleratesConcurrentTableGrowth(t *testing.T) {
 	if svcErr != nil {
 		t.Fatalf("derivedStageAddress under concurrent growth: %v", svcErr)
 	}
-	if addr != f.stageAddress(t, 3) || tb.Len() != 4 {
+	if addr != f.stageAddress(t, 3) || tb.Len() != 1 {
 		t.Fatalf("addr %s, len %d", addr, tb.Len())
 	}
 }

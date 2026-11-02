@@ -52,7 +52,13 @@ func (s Service) RestoreBackup(
 	wasRecovery := ir.IsRecovery()
 	var parent, committedGeneration string
 	archiveAuthenticated := false
-	err = s.Deps.WithStoreMutation(func() error {
+	hints := make(map[string]backup.RotatingStageHint)
+	err = s.Deps.WithStoreMutation(func() (restoreErr error) {
+		defer func() {
+			if restoreErr == nil {
+				backup.PublishRotatingHints(ir.StageTables(), hints, s.Deps.Logf)
+			}
+		}()
 		prepareErr := ir.WithKeyring(func(masterKey *crypto.Keyring) error {
 			set, loadErr := backup.LoadManagedRestoreSet(
 				s.Deps.KeyPaths(),
@@ -68,6 +74,11 @@ func (s Service) RestoreBackup(
 			}
 			archiveAuthenticated = true
 			defer set.ZeroSecrets()
+			for _, entry := range set.Entries {
+				if entry.StageHint != nil {
+					hints[entry.Selector] = *entry.StageHint
+				}
+			}
 			result.ArchiveSHA256 = set.ArchiveSHA256
 
 			current, resolveErr := genstore.ResolveStoreRootWithKeyring(s.Deps.KeyPaths(), masterKey)

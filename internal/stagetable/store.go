@@ -4,6 +4,7 @@
 package stagetable
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -23,6 +24,7 @@ type Store struct {
 
 	mu     sync.Mutex
 	tables map[string]*Table
+	epoch  uint64
 }
 
 // NewStore returns the store for paths.
@@ -38,7 +40,7 @@ func NewStore(paths storepaths.Paths) *Store {
 // ErrNoKey. A nil present skips the check. A discarded on-disk table is
 // reported through an error wrapping ErrDiscarded alongside the now-empty
 // table; callers log it and continue.
-func (s *Store) Table(selector types.Address, genesisHash []byte, present func() bool) (*Table, error) {
+func (s *Store) Table(selector types.Address, genesisHash []byte, present func() bool, keyTypes ...string) (*Table, error) {
 	key := selector.String()
 	if err := storepaths.ValidateStageSelector(key); err != nil {
 		return nil, err
@@ -48,10 +50,25 @@ func (s *Store) Table(selector types.Address, genesisHash []byte, present func()
 	if present != nil && !present() {
 		return nil, ErrNoKey
 	}
-	if t, ok := s.tables[key]; ok {
-		return t, nil
+	// An empty key type is no constraint: a caller that does not know it yet
+	// (a snapshot without the entry) must not close or rebind the table.
+	keyType := ""
+	if len(keyTypes) > 0 {
+		keyType = keyTypes[0]
 	}
-	t, err := Open(s.paths.StageTablePath(key), selector, genesisHash)
+	if t, ok := s.tables[key]; ok {
+		if bytes.Equal(t.genesis[:], genesisHash) && t.bindKeyType(keyType) {
+			return t, nil
+		}
+		t.close()
+		delete(s.tables, key)
+		s.epoch++
+	}
+	var bind []string
+	if keyType != "" {
+		bind = []string{keyType}
+	}
+	t, err := Open(s.paths.StageTablePath(key), selector, genesisHash, bind...)
 	if t == nil {
 		return nil, err
 	}
@@ -76,6 +93,7 @@ func (s *Store) Discard(t *Table) error {
 		return nil
 	}
 	delete(s.tables, key)
+	s.epoch++
 	if err := fsutil.RemoveDurable(t.path); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("remove stage table: %w", err)
 	}
@@ -102,9 +120,61 @@ func (s *Store) Delete(selector string) error {
 	if t, ok := s.tables[selector]; ok {
 		t.close()
 		delete(s.tables, selector)
+		s.epoch++
 	}
 	if err := fsutil.RemoveDurable(s.paths.StageTablePath(selector)); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("remove stage table: %w", err)
 	}
 	return nil
 }
+
+// Observations snapshots available hints without reading the chain or loading
+// credentials. An empty cache simply contributes no recovery hint to a backup.
+func (s *Store) Observations() []Observation {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []Observation
+	for _, t := range s.tables {
+		// An unbound table cannot name its credential, so it carries no hint.
+		if kt := t.KeyType(); kt != "" {
+			if h := t.RecoveryHint(); h != nil {
+				out = append(out, Observation{Account: t.selector, Genesis: t.genesis, KeyType: kt, Hint: *h})
+			}
+		}
+	}
+	return out
+}
+
+type Observation struct {
+	Account types.Address
+	Genesis [32]byte
+	KeyType string
+	Hint    Hint
+}
+
+// Invalidate ends the current inventory lifetime: it starts a new derivation
+// epoch, so no request coalesces onto a job started under the old inventory,
+// and it forgets every table's verified memory, so each mapping is derived
+// again before it is trusted. A reload must call it before publishing
+// replacement credential inventory.
+//
+// Handles stay open. A table is bound to its selector, which is the stage 0
+// address re-derived from the seed when the key is loaded, and to its genesis
+// and key type, which Table checks on every call. A reload therefore cannot put
+// a different seed behind an open handle, and closing handles would only fail
+// in-flight requests and stop recovery grants whose credential did not change.
+// Deleting a key (Delete), discarding a table (Discard) and a genesis or key
+// type mismatch (Table) still close the handle.
+func (s *Store) Invalidate() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.epoch++
+	for _, t := range s.tables {
+		t.mu.Lock()
+		clear(t.verified)
+		t.mu.Unlock()
+	}
+}
+
+// Epoch identifies the current inventory lifetime for derivation jobs.
+func (s *Store) Epoch() uint64 { s.mu.Lock(); defer s.mu.Unlock(); return s.epoch }

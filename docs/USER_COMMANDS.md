@@ -144,7 +144,8 @@ the LogicSig fees for the stage program.
 
 `rotate status` shows each rotating account's current on-chain authorizer,
 the signer's own view of it (its live stage and how many stages it has
-cached, or that it could not place the authorizer, and any search running
+cached, whether it is locating the stage, preparing its successor, or ready
+at the last observation, and any search running
 or why the last one stopped), any signer alerts that name it, and notes such
 as a release still in flight. With no account it lists every signable
 rotating account. The signer refreshes its view about every 30 seconds
@@ -153,12 +154,13 @@ accounts are slow), so an alert can briefly outlive the rotation that
 resolved it.
 
 `rotate recover` asks the signer to search for the account's live stage. It
-is for the note "authorizer … is not a stage within the N stages this
+is for the note "authorizer … is not among the N stage addresses this
 signer has cached": the signer searched on its own as far as its automatic
-allowance goes and stopped. Without options it searches on from the edge of
-its cache, up to `--max-stages` (default 4096) more stages. With `--stage N`
+allowance goes and stopped. Without options it searches forward from its
+last observation, interleaving lower gaps, up to `--max-stages` (default 4096) more stages. With `--stage N`
 it derives stage N directly, probes `--window` (default 64) stages either
-side of it, and once one matches fills its cache up to that stage; a wrong
+side of it, and once one matches prepares the successor without rebuilding
+the preceding history; a wrong
 hint costs time, never a wrong stage. `--timeout` caps the search's
 derivation time in seconds (default 300). The command returns at once; the
 signer searches in the background, `rotate status` shows the progress, and

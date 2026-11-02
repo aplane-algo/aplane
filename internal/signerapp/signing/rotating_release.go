@@ -520,11 +520,11 @@ func unresolvedNote(r StageTableReport) string {
 	if g := r.Recovery.Grant; g != nil {
 		progress := fmt.Sprintf("%s recovery running, %d of %d stages used", g.Kind, g.Charged, g.MaxStages)
 		if g.Found != nil {
-			progress += fmt.Sprintf(", stage %d found, filling the cache to it", *g.Found)
+			progress += fmt.Sprintf(", stage %d found", *g.Found)
 		} else if g.Hint != nil {
 			progress += fmt.Sprintf(", probing around stage %d", *g.Hint)
 		}
-		return fmt.Sprintf("rotating account %s: stage not yet found, %d stages cached; %s", r.Account, r.Scanned, progress)
+		return fmt.Sprintf("rotating account %s: stage not yet found, %d cached entries; %s", r.Account, r.Scanned, progress)
 	}
 	stopped := "automatic recovery is disabled"
 	if r.Recovery.AllowanceMax > 0 {
@@ -533,7 +533,7 @@ func unresolvedNote(r StageTableReport) string {
 	if l := r.Recovery.Last; l != nil {
 		stopped = fmt.Sprintf("the last %s search stopped: %s after %d stages", l.Kind, l.Reason, l.Charged)
 	}
-	return fmt.Sprintf("rotating account %s: authorizer %s is not a stage within the %d stages this signer has cached; %s; run `rotate recover` if the account was advanced elsewhere, or delete the key if it was exited", r.Account, r.Authorizer, r.Scanned, stopped)
+	return fmt.Sprintf("rotating account %s: authorizer %s is not among the %d stage addresses this signer has cached; %s; run `rotate recover` if the account was advanced elsewhere, or delete the key if it was exited", r.Account, r.Authorizer, r.Scanned, stopped)
 }
 
 // RotatingAccountStatuses projects a pass's reports into the structured
@@ -544,7 +544,8 @@ func (s *Service) RotatingAccountStatuses(reports []StageTableReport) []signerap
 		st := signerapi.RotatingAccountStatus{
 			Account:        r.Account,
 			Classification: signerapi.RotatingClassUnobserved,
-			CachedStages:   r.Scanned,
+			CachedEntries:  r.Scanned,
+			Preparation:    r.Preparation,
 			Recovery:       recoveryStatus(r.Recovery),
 		}
 		if r.Observed {

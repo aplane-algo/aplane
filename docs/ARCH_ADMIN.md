@@ -1292,3 +1292,9 @@ recoverable view.
 - [ARCH_SHELL.md](ARCH_SHELL.md#mcp-surface) — `apshell` MCP server (separate UI surface)
 - [ARCH_SECURITY.md](ARCH_SECURITY.md) — Admin protocol authentication
 - [ARCH_SECURITY.md](ARCH_SECURITY.md#authorization) — Signer authorization model
+
+Rotating backup preview rows may include `stage_hint` and `stage_hint_round`.
+These are sealed recovery candidates, not observed live stages. The TUI labels
+them as hints. Restoring them does not establish readiness; use `rotate status`
+to follow stage discovery and successor preparation. Cache-only persistence
+failures are logged without changing the credential restore commit outcome.

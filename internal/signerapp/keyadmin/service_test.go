@@ -1001,7 +1001,10 @@ func TestServiceDeleteKeyRemovesStageTable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := table.Append([]types.Address{account}); err != nil {
+	if _, err := table.RecordDerived(0, []types.Address{account}); err != nil {
+		t.Fatal(err)
+	}
+	if err := table.Flush(); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(table.Path()); err != nil {

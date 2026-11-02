@@ -53,7 +53,8 @@ type Manifest struct {
 	CreatedAtUnix  int64  `json:"created_at_unix,omitempty"`
 
 	// Members covers every archive member except the manifest itself.
-	Members []ManifestMember `json:"members"`
+	Members            []ManifestMember             `json:"members"`
+	RotatingStageHints map[string]RotatingStageHint `json:"rotating_stage_hints,omitempty"`
 }
 
 // WriteSealedManifest inventories every file already staged under destDir,
@@ -65,6 +66,7 @@ func WriteSealedManifest(
 	role noderole.Role,
 	createdAt time.Time,
 	exportPassphrase []byte,
+	hints ...map[string]RotatingStageHint,
 ) error {
 	if _, err := noderole.ParseRole(string(role)); err != nil {
 		return err
@@ -85,6 +87,9 @@ func WriteSealedManifest(
 		SourceNodeRole: string(role),
 		CreatedAtUnix:  createdAt.UTC().Unix(),
 		Members:        members,
+	}
+	if len(hints) > 0 {
+		manifest.RotatingStageHints = hints[0]
 	}
 	plaintext, err := json.Marshal(manifest)
 	if err != nil {

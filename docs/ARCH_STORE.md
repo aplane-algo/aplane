@@ -1480,44 +1480,63 @@ Trust: the table is a cache and nothing more.
   it in the background. Deleting the directory while the signer is stopped
   is always safe
 
-Format (version 1): the magic `APSTAGES`, a big-endian `uint16` format
-version, the 32-byte selector, the 32-byte genesis hash, a big-endian
-`uint64` count, that many 32-byte addresses in stage order, and a SHA-256 of
-everything before it. A table is prefix-complete: its length is the next
-stage to derive. A file whose checksum, magic, version, selector or genesis
-hash does not match is discarded and rebuilt from the seed, with a warning
-in the daemon log.
+Format (version 2): `APSTAGES`, big-endian `uint16` version, 32-byte
+selector, 32-byte genesis, big-endian `uint64` entry count, sorted records
+of `(uint64 stage, 32-byte address)`, JSON metadata (`key_type`, optional
+`hint`), and SHA-256 over everything preceding the checksum. The reader caps
+files at 64 MiB and rejects invalid lengths, duplicate indices/addresses,
+overflow and wrong identity. Version 1 arrays are read as explicitly numbered
+entries and rewritten as version 2 on publication. Older binaries cannot
+read version 2 and can discard it, requiring stage rediscovery.
+
+The cache is sparse: its entry count is neither history coverage nor the
+next stage. A matching hint at 50,000 inserts that stage immediately, without
+deriving 0–49,999. Completed unsuccessful probes remain cached. General
+search prefers the persisted observation, or local release candidates when
+no observation exists. It finds the first missing stage above that anchor;
+after an initial 16-position interval, three forward probes alternate with
+one probe into the lowest gap. Coverage persists across restart; no maximum
+cached stage implies coverage below it. Explicit operator windows stay bounded.
+
+The optional hint records `stage`, optional `observed_round`, `authorizer`
+and source (`local_observation` or `backup`). Only a seed-derived address
+matching the configured chain produces a local observation. Merge hints by
+round: known beats absent, higher beats lower, local beats backup on ties,
+and otherwise retain the existing value. Neither hint nor checksum confers
+signing authority. Loaded mappings must be re-derived before acceptance;
+verified memory is tied to the credential inventory lifetime.
 
 Placement and lifecycle:
 
-- the directory sits beside `generations/`, not inside one, so mints,
-  credential restores and restore rollbacks never copy or rewind it, and
-  the key watcher ignores it
-- managed backups and exports never include it; a restored or re-imported
-  key starts with an empty table and keeps signing while the background
-  scan finds its live stage
-- deleting a key removes its table; a background fill that loses the race
-  with deletion cannot recreate it
-- passphrase changes do not touch it: nothing in it is encrypted
-- every write is a whole-file durable publication (temp file, fsync,
-  rename); files are `0600` in a `0700` directory
+- the cache sits beside `generations/`, outside generation transactions;
+  mints and rollbacks do not rewind it
+- backups omit the full file, but may carry an optional stage hint in the
+  sealed manifest; a restore without a hint uses bounded discovery
+- deletion closes handles and removes the file; inventory reload starts a new
+  derivation epoch and forgets verified memory while retaining cached progress,
+  observations and open handles (the selector binds the seed, so a reload
+  cannot change the credential behind a held table, and running requests and
+  recovery grants continue)
+- passphrase changes need no cache encryption changes
+- publication uses a private, atomic, durable whole-file write; background
+  work batches writes. Publication holds a separate write lock; lookups and
+  foreground memory updates do not wait for disk I/O. Prepare/sign wake the
+  worker only when they leave unpublished progress; re-deriving cached entries
+  or seeing the same stage again at a later round is not a change to publish.
+  Restart before that write may require a fresh prepare. A failed publication retains verified memory, warns
+  and retries. A wrong record is repaired in both indexes without discarding
+  independent entries. File-level corruption may discard the cache.
 
-Fill: while unlocked, the signer extends each account's table in the
-background to `rotating.stage_horizon` stages (default 4,096) past the
-account's live stage, subject to the family's preparation ceiling. SLH-DSA
-caps lookahead at two and spends at most four address derivations per account
-per fill pass, including hinted probes; it derives serially within each chunk.
-The cache remains prefix-complete: a successful hint does not skip derivation
-of earlier entries. These limits do not alter credential validation or cache
-trust. An account whose authorizer is not in its table and
-is not a key the signer holds is searched for under a bounded recovery
-grant: automatically up to `rotating.recovery_max_stages` (default 1,024)
-past the table's edge per unlock, or at an operator's request with the
-operator's own budget (see `ARCH_SIGNING.md`, "Stage table worker"). The
-seed is held only inside the derivation itself, and locking the signer
-cancels the pass. The audit log, not the table, is what
-rebuilds the signer's memory of released transactions at unlock (see the
-`ROTATING_RELEASE` entry in `ARCH_SIGNING.md`).
+While unlocked, the worker prepares the immediate successor before additional
+lookahead, bounded by `rotating.stage_horizon` and family ceilings. A zero
+lookahead still prepares the successor required to spend. SLH-DSA
+caps lookahead at two and address derivations at four per pass. Unknown
+authorizers are searched under the existing automatic per-unlock allowance
+(default 1,024) or explicit operator grants. Finding the stage ends discovery;
+preparing its successor does not require historical derivation. Neither cache
+count nor an exhausted search proves an account has exited rotation.
+Seeds remain held only during derivation, outside cache I/O and pacing.
+The audit log independently restores released-transaction and leaf memory.
 
 ### Backup and restore matrix
 
@@ -1820,7 +1839,15 @@ A managed archive contains exactly:
 The sealed manifest plaintext uses schema
 `aplane.credential-backup.manifest.v1`, schema version 1. It records the
 source node role, packaging time, and the complete member inventory
-(`path`, `sha256`, `size`). Backups carry no node default policy, approval defaults,
+(`path`, `sha256`, `size`). An optional `rotating_stage_hints` map keyed by
+account contains `stage`, optional `observed_round` and `authorizer`,
+`genesis_hash` (hex), and full `key_type`. Creation snapshots available
+observations without a chain read. Restore and fresh-store rebuild validate
+identity against selected credentials, then merge candidates with source
+`backup` only after successful installation. Bad auxiliary hints are ignored;
+cache publication failure warns without reversing a successful restore.
+Archives with no hints remain readable. Hints are not current authority.
+Backups carry no node default policy, approval defaults,
 genesis-hash mappings, templates, endpoints, client enrollment, or other
 operator configuration. The manifest is encrypted under the export passphrase.
 Knowing that passphrase authenticates the archive as produced or endorsed by a
