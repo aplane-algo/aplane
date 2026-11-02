@@ -317,9 +317,6 @@ func (m Model) handleRefusedBackupUndo(result protocol.RollbackRestoreResultMess
 		return m, nil, false
 	}
 	m.setBackupsStatus("Undo refused: "+backupResultText(result.Error, "there is no restore to undo"), true)
-	if m.viewState != ViewRestoring {
-		return m, m.waitForMessageCmd(), true
-	}
 	next, cmd := m.returnToBackups("")
 	return next, cmd, true
 }
@@ -496,4 +493,33 @@ func confirmButtons(focus int, action string) string {
 func (m Model) Shutdown() {
 	m = m.stopBackupExport()
 	m.shutdownBackupImport()
+}
+
+// restoreFlowWaiting reports whether the operator is on a screen that waits
+// for a rollback or reconcile reply: the progress screen that sent it, or
+// the store recovery screen. Any other screen means the signer locked or the
+// session ended meanwhile, and a late reply must not take over the screen.
+func (m Model) restoreFlowWaiting() bool {
+	return m.viewState == ViewRestoring || m.viewState == ViewStoreRecovery
+}
+
+// recordLateRollback records a rollback reply that arrived after the
+// operator left the screen waiting for it. It changes no screen and sends no
+// reconcile: the signer's state on the next unlock says whether one is
+// needed.
+func (m Model) recordLateRollback(result protocol.RollbackRestoreResultMessage) Model {
+	fromPage := m.backups.undoPending
+	m.backups.undoPending = false
+	if result.Success {
+		m.restore.recoveryError = ""
+		if fromPage {
+			m.setBackupsStatus("The latest restore was undone.", false)
+		}
+		return m
+	}
+	m.restore.recoveryError = result.Error
+	if fromPage {
+		m.setBackupsStatus("Undo refused: "+backupResultText(result.Error, "there is no restore to undo"), true)
+	}
+	return m
 }

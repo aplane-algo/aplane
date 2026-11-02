@@ -669,3 +669,41 @@ func TestShutdownRemovesExportStagingAndReleasesImport(t *testing.T) {
 		t.Fatal("Shutdown left the archive file open")
 	}
 }
+
+func TestBackupUndoRepliesAfterLockKeepTheUnlockScreen(t *testing.T) {
+	m := backupsModel()
+	m, _ = pressKey(t, m, "u", "y")
+	m, _ = update(t, m, LockIdentityResultMsg{Success: true})
+	if m.viewState != ViewUnlock {
+		t.Fatalf("lock: view %v", m.viewState)
+	}
+	m, _ = update(t, m, RollbackRestoreResultMsg{Result: protocol.RollbackRestoreResultMessage{Success: true}})
+	if m.viewState != ViewUnlock || m.backups.undoPending || !strings.Contains(m.backups.status, "latest restore was undone") {
+		t.Fatalf("late undo success: view %v pending %v status %q", m.viewState, m.backups.undoPending, m.backups.status)
+	}
+	if strings.Contains(m.restore.recoveryError, "reconciling") {
+		t.Fatal("a late undo success started a reconcile")
+	}
+
+	// A reconcile already sent before the lock does not unlock the screen
+	// either way when its reply arrives.
+	for _, result := range []protocol.ReconcileStoreResultMessage{{Success: true, KeyCount: 3}, {Error: "store damaged"}} {
+		got, _ := update(t, m, ReconcileStoreResultMsg{Result: result})
+		if got.viewState != ViewUnlock || got.signerState != signerRuntimeLocked {
+			t.Fatalf("late reconcile %+v: view %v state %v, want the unlock screen and locked state kept", result, got.viewState, got.signerState)
+		}
+	}
+}
+
+func TestBackupUndoSuccessStillReconcilesWhileWaiting(t *testing.T) {
+	m := backupsModel()
+	m, _ = pressKey(t, m, "u", "y")
+	m, _ = update(t, m, RollbackRestoreResultMsg{Result: protocol.RollbackRestoreResultMessage{Success: true}})
+	if m.viewState != ViewStoreRecovery || !strings.Contains(m.restore.recoveryError, "reconciling") {
+		t.Fatalf("undo success: view %v recovery %q, want the reconcile started", m.viewState, m.restore.recoveryError)
+	}
+	m, _ = update(t, m, ReconcileStoreResultMsg{Result: protocol.ReconcileStoreResultMessage{Success: true, KeyCount: 2}})
+	if m.viewState != ViewKeyList {
+		t.Fatalf("reconciled: view %v, want the key list", m.viewState)
+	}
+}

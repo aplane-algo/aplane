@@ -495,6 +495,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 
 	case RollbackRestoreResultMsg:
+		if !m.restoreFlowWaiting() {
+			return m.recordLateRollback(msg.Result), m.waitForMessageCmd()
+		}
 		if !msg.Result.Success {
 			if next, cmd, ok := m.handleRefusedBackupUndo(msg.Result); ok {
 				return next, cmd
@@ -517,6 +520,14 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.sendReconcileStoreCmd(), m.waitForMessageCmd())
 
 	case ReconcileStoreResultMsg:
+		if !m.restoreFlowWaiting() {
+			// The signer locked or the session ended after the reconcile was
+			// sent; its state on the next unlock says what is needed.
+			if !msg.Result.Success {
+				m.restore.recoveryError = msg.Result.Error
+			}
+			return m, m.waitForMessageCmd()
+		}
 		if !msg.Result.Success {
 			m.signerState = signerRuntimeRecovery
 			m.restore.recoveryError = msg.Result.Error
