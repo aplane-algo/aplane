@@ -363,26 +363,24 @@ func (m Model) renderCosignerGenerateType() string {
 		return m.renderPopup(70, "Cosigner reference is no longer available")
 	}
 	keyTypes := getServerKeyTypes()
-	var body strings.Builder
-	body.WriteString(titleStyle.Render("Generate Guarded Account"))
-	body.WriteString("\n\n")
-	body.WriteString("Cosigner: " + reference.Name + "  " + apadminapp.CompactWitnessKeyID(reference.ComponentKey) + "\n\n")
-	body.WriteString("Choose a compatible account key type:\n\n")
+	header := titleStyle.Render("Generate Guarded Account") + "\n\n" +
+		"Cosigner: " + reference.Name + "  " + apadminapp.CompactWitnessKeyID(reference.ComponentKey) + "\n\n" +
+		"Choose a compatible account key type:\n\n"
+	var rows []string
+	selected := 0
 	for row, index := range m.cosigner.generateTypeIndices {
 		if index < 0 || index >= len(keyTypes) {
 			continue
 		}
 		label := displayKeyType(keyTypes[index].KeyType)
-		prefix := "  "
 		if row == m.cosigner.generateTypeSelected {
-			prefix = "> "
-			body.WriteString(selectedStyle.Render(prefix + label))
+			selected = len(rows)
+			rows = append(rows, selectedStyle.Render("> "+label))
 		} else {
-			body.WriteString(prefix + label)
+			rows = append(rows, "  "+label)
 		}
-		body.WriteString("\n")
 	}
-	return m.renderPopup(80, body.String())
+	return m.renderPopup(80, m.fitSelectionList(header, rows, selected, "", 80))
 }
 
 func (m Model) renderCosignerRemoveConfirm() string {

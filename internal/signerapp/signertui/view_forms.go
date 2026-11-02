@@ -96,28 +96,23 @@ func (m Model) renderBackupDisplay() string {
 
 // renderImportForm renders the key import form
 func (m Model) renderImportForm() string {
-	var sb strings.Builder
-
-	sb.WriteString(titleStyle.Render("Import Key from Mnemonic"))
-	sb.WriteString("\n\n")
+	header := titleStyle.Render("Import Key from Mnemonic") + "\nKey Type:\n"
 
 	// Key type selection (dynamically built from registered algorithms)
 	keyTypes := getKeyTypeOptions()
-	sb.WriteString("Key Type:\n")
+	rows := make([]string, len(keyTypes))
 	for i, kt := range keyTypes {
-		prefix := "  "
-		if i == m.forms.importKeyType {
-			prefix = "> "
+		switch {
+		case m.forms.importFocus == 0 && i == m.forms.importKeyType:
+			rows[i] = selectedStyle.Render("> " + kt)
+		case i == m.forms.importKeyType:
+			rows[i] = keyTypeStyle.Render("> " + kt)
+		default:
+			rows[i] = subtitleStyle.Render("  " + kt)
 		}
-		if m.forms.importFocus == 0 && i == m.forms.importKeyType {
-			sb.WriteString(selectedStyle.Render(prefix + kt))
-		} else if i == m.forms.importKeyType {
-			sb.WriteString(keyTypeStyle.Render(prefix + kt))
-		} else {
-			sb.WriteString(subtitleStyle.Render(prefix + kt))
-		}
-		sb.WriteString("\n")
 	}
+
+	var sb strings.Builder
 	sb.WriteString("\n")
 
 	// Mnemonic input
@@ -169,7 +164,7 @@ func (m Model) renderImportForm() string {
 		sb.WriteString("\n")
 	}
 
-	return m.renderPopup(70, sb.String())
+	return m.renderPopup(70, m.fitSelectionList(header, rows, m.forms.importKeyType, sb.String(), 70))
 }
 
 // renderImportDisplay renders the key import confirmation screen
@@ -188,44 +183,38 @@ func (m Model) renderImportDisplay() string {
 
 // renderGenerateForm renders the key type selection form
 func (m Model) renderGenerateForm() string {
-	var sb strings.Builder
-
-	sb.WriteString(titleStyle.Render("Generate New Key"))
-	sb.WriteString("\n\n")
+	// The title's own margin leaves one blank line above the list.
+	header := titleStyle.Render("Generate New Key") + "\n"
 
 	// Key type selection (dynamically built from registered algorithms)
 	keyTypes := getGenerateKeyTypeOptions()
-	sb.WriteString("Select Key Type:\n\n")
+	rows := make([]string, len(keyTypes))
 	for i, kt := range keyTypes {
-		prefix := "  "
 		if i == m.forms.generateKeyType {
-			prefix = "> "
-		}
-		if i == m.forms.generateKeyType {
-			sb.WriteString(selectedStyle.Render(prefix + kt))
+			rows[i] = selectedStyle.Render("> " + kt)
 		} else {
-			sb.WriteString(subtitleStyle.Render(prefix + kt))
+			rows[i] = subtitleStyle.Render("  " + kt)
 		}
-		sb.WriteString("\n")
 	}
-	sb.WriteString("\n")
 
+	var footer strings.Builder
+	footer.WriteString("\n")
 	// Selected key type label.
 	selectedKeyType := getKeyTypeByIndex(m.forms.generateKeyType)
-	sb.WriteString(subtitleStyle.Render(getKeyTypeSelectionLabel(selectedKeyType)))
-	sb.WriteString("\n\n")
+	footer.WriteString(subtitleStyle.Render(getKeyTypeSelectionLabel(selectedKeyType)))
+	footer.WriteString("\n\n")
 	if notice := keyTypeGenerationNotice(selectedKeyType); notice != "" {
-		sb.WriteString(subtitleStyle.Render(notice))
-		sb.WriteString("\n\n")
+		footer.WriteString(subtitleStyle.Render(notice))
+		footer.WriteString("\n\n")
 	}
 
 	// Error message
 	if m.forms.generateError != "" {
-		sb.WriteString(errorStyle.Render(m.forms.generateError))
-		sb.WriteString("\n")
+		footer.WriteString(errorStyle.Render(m.forms.generateError))
+		footer.WriteString("\n")
 	}
 
-	return m.renderPopup(70, sb.String())
+	return m.renderPopup(70, m.fitSelectionList(header, rows, m.forms.generateKeyType, footer.String(), 70))
 }
 
 // renderParameterModal renders the shared parameter input modal for both generate and import.
