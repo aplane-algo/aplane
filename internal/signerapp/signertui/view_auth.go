@@ -26,6 +26,13 @@ func (m Model) renderPassphrasePrompt(subtitle string, showTimeout bool) string 
 	var sb strings.Builder
 
 	// Show connection error prominently if disconnected
+	if m.connectionState == ConnectionDisconnected && m.auth.endedReason != "" {
+		sb.WriteString("\n")
+		sb.WriteString(subtitleStyle.Render(m.auth.endedReason))
+		sb.WriteString("\n")
+		sb.WriteString(helpStyle.Render("Press 'c' to reconnect."))
+		return sb.String()
+	}
 	if m.connectionState == ConnectionDisconnected {
 		sb.WriteString("\n")
 		sb.WriteString(errorStyle.Render("⚠ Server not responding"))

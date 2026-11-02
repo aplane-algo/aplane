@@ -72,7 +72,13 @@ passphrase verification or runtime work.
 
 Admin sessions share one process-wide authenticated-pending slot and one
 active admin slot, plus one pre-auth pending slot until a session's passphrase
-has been verified.
+has been verified. A connection may hold the pre-auth slot for at most two
+minutes, counted from accept and including any displacement prompt; wrong
+passphrases do not extend it. When the deadline passes the server sends a
+failed `auth_result` with code `login_timeout` and closes the connection, so an
+`apadmin` left at its login screen cannot lock out every other admin client.
+`apadmin` does not reconnect automatically after `login_timeout`; it shows the
+reason and waits for the operator to press `c`.
 
 Transport notes:
 
@@ -737,6 +743,7 @@ error-message codes are defined in `internal/protocol/error_codes.go`:
 - `unknown_message_type`
 - `key_not_found`
 - `node_fail_closed`
+- `login_timeout`
 - `internal_error`
 
 Consumers should branch on message `type` and `code` first, and use `error` for display or fallback handling.
@@ -1257,9 +1264,11 @@ arms a local idle timer from the latest local activity baseline. If the UI is
 still idle when that timer fires, it disconnects the admin session. Any signer
 lock that follows that disconnect is decided by the signer-owned
 `lock_on_disconnect` setting. Manual lock actions are separate explicit
-`lock_identity` requests. After a local idle disconnect, `apadmin` immediately
-returns to the authentication view and starts a fresh pre-auth reconnect so the
-operator sees the login screen instead of the stale authenticated view.
+`lock_identity` requests. After a local idle disconnect, `apadmin` returns to
+the authentication view in the disconnected state, shows why, and reconnects
+only when the operator presses `c`. It does not reconnect automatically: a
+fresh connection would sit at the login screen holding the signer's single
+pre-auth slot and lock out every other admin client.
 Disconnect, reconnect, reauthentication, and server lock notifications clear
 pending activity and idle state. Every end of an admin session (disconnect,
 reconnect, reauthentication, local idle disconnect, or displacement by another

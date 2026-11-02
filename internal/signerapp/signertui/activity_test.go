@@ -4,8 +4,11 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/aplane-algo/aplane/internal/protocol"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -185,15 +188,18 @@ func TestLocalIdleTickIgnoresStaleTickAfterNewerKeystroke(t *testing.T) {
 	}
 }
 
-func TestLocalIdleDisconnectedMsgShowsAuthAndReconnectsWithoutLocking(t *testing.T) {
+// An idle disconnect once reconnected straight to the login screen, where
+// apadmin held the signer's single login slot and locked out every other
+// apadmin. It now stays disconnected until the operator presses c.
+func TestLocalIdleDisconnectedMsgStaysDisconnectedWithoutLocking(t *testing.T) {
 	m := activityReadyModel()
 	m.activity.lastInputAt = time.Now()
 	m.activity.idleDisconnectSent = true
 
 	got, cmd := updateForTest(t, m, localIdleDisconnectedMsg{Reason: localIdleDisconnectReason})
 
-	if got.connectionState != ConnectionConnecting {
-		t.Fatalf("connectionState = %v, want connecting", got.connectionState)
+	if got.connectionState != ConnectionDisconnected {
+		t.Fatalf("connectionState = %v, want disconnected", got.connectionState)
 	}
 	if got.viewState != ViewAuth {
 		t.Fatalf("viewState = %v, want ViewAuth", got.viewState)
@@ -201,18 +207,59 @@ func TestLocalIdleDisconnectedMsgShowsAuthAndReconnectsWithoutLocking(t *testing
 	if got.auth.passphraseInput != "" || got.auth.passphraseError != "" || got.auth.loggingIn {
 		t.Fatalf("auth state = %+v, want fresh login prompt", got.auth)
 	}
+	if got.auth.endedReason != localIdleDisconnectReason {
+		t.Fatalf("endedReason = %q, want %q", got.auth.endedReason, localIdleDisconnectReason)
+	}
 	if got.signerState == signerRuntimeLocked {
 		t.Fatal("signerState = locked, want unchanged unlocked")
 	}
 	if got.signerStatusKnown {
 		t.Fatal("signerStatusKnown = true, want unknown after local disconnect")
 	}
-	if got.lastWarning != localIdleDisconnectReason {
-		t.Fatalf("lastWarning = %q, want %q", got.lastWarning, localIdleDisconnectReason)
-	}
 	assertActivityStateCleared(t, got)
+	if cmd != nil {
+		t.Fatal("local idle disconnect returned a command, want no automatic reconnect")
+	}
+	if view := got.renderAuthView(); !strings.Contains(view, localIdleDisconnectReason) ||
+		!strings.Contains(view, "Press 'c' to reconnect") {
+		t.Fatalf("auth view = %q, want the idle reason and the reconnect hint", view)
+	}
+
+	got, cmd = updateForTest(t, got, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	if got.connectionState != ConnectionConnecting || got.auth.endedReason != "" {
+		t.Fatalf("after c: connectionState = %v, endedReason = %q; want connecting with no reason",
+			got.connectionState, got.auth.endedReason)
+	}
 	if cmd == nil {
-		t.Fatal("local idle disconnect cmd = nil, want automatic reconnect command")
+		t.Fatal("c returned no command, want a reconnect")
+	}
+}
+
+// The signer's login timeout ends the session the same way: disconnected,
+// told why, no automatic reconnect.
+func TestLoginTimeoutAuthResultStaysDisconnected(t *testing.T) {
+	m := activityReadyModel()
+	m.connectionState = ConnectionConnected
+	m.viewState = ViewAuth
+	m.auth.passphraseInput = "half-typed"
+
+	got, cmd := updateForTest(t, m, AuthResultMsg{
+		Success: false,
+		Code:    protocol.ErrCodeLoginTimeout,
+		Error:   "login timed out",
+	})
+
+	if got.connectionState != ConnectionDisconnected {
+		t.Fatalf("connectionState = %v, want disconnected", got.connectionState)
+	}
+	if got.auth.endedReason != loginTimeoutReason {
+		t.Fatalf("endedReason = %q, want %q", got.auth.endedReason, loginTimeoutReason)
+	}
+	if got.auth.passphraseInput != "" {
+		t.Fatal("login timeout kept the half-typed passphrase")
+	}
+	if cmd != nil {
+		t.Fatal("login timeout returned a command, want no automatic reconnect")
 	}
 }
 

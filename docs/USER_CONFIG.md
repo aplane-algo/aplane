@@ -427,6 +427,12 @@ If `lock_on_disconnect` is `false`, the signer remains unlocked until manual
 lock, process stop, restart, or another explicit lock path. The time-based
 disconnect can be disabled by setting `passphrase_timeout: "0"`.
 
+After an idle disconnect, `apadmin` shows the login screen in a disconnected
+state and reconnects only when you press `c`. Separately, the signer closes any
+admin connection that has not logged in within two minutes, so an `apadmin`
+left at its login screen does not stop another `apadmin` from connecting. Press
+`c` on that screen to reconnect.
+
 When `apadmin` is connected, keyboard input in the TUI counts as user activity
 for the admin session. Background screen refreshes, admin-panel polling, IPC
 responses, window resize events, and mouse events do not keep the admin session

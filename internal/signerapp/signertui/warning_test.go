@@ -5,27 +5,18 @@ package tui
 
 import "testing"
 
-func TestLocalIdleWarningClearsAfterSuccessfulAuth(t *testing.T) {
+// The reason a session ended belongs to the disconnected screen only; a new
+// connection clears it.
+func TestConnectedClearsSessionEndedReason(t *testing.T) {
 	m := activityReadyModel()
 	m.viewState = ViewAuth
-	m.setPersistentWarning(localIdleDisconnectReason)
+	m.connectionState = ConnectionConnecting
+	m.auth.endedReason = localIdleDisconnectReason
 
-	got, _ := updateForTest(t, m, AuthResultMsg{Success: true})
+	got, _ := updateForTest(t, m, ConnectedMsg{})
 
-	if got.lastWarning != "" {
-		t.Fatalf("lastWarning = %q, want cleared", got.lastWarning)
-	}
-}
-
-func TestLocalIdleWarningClearsAfterSuccessfulUnlock(t *testing.T) {
-	m := activityReadyModel()
-	m.viewState = ViewUnlock
-	m.setPersistentWarning(localIdleDisconnectReason)
-
-	got, _ := updateForTest(t, m, UnlockResultMsg{Success: true})
-
-	if got.lastWarning != "" {
-		t.Fatalf("lastWarning = %q, want cleared", got.lastWarning)
+	if got.auth.endedReason != "" {
+		t.Fatalf("endedReason = %q, want cleared", got.auth.endedReason)
 	}
 }
 

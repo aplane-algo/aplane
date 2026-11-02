@@ -14,6 +14,7 @@ import (
 
 const (
 	localIdleDisconnectReason             = "apadmin disconnected after inactivity timeout"
+	loginTimeoutReason                    = "Login timed out"
 	manualLockReason                      = "apadmin manual lock"
 	invalidPassphraseTimeoutWarningPrefix = "Invalid passphrase timeout from server: "
 )

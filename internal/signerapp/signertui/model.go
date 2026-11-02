@@ -166,6 +166,10 @@ type authState struct {
 	passphraseMasked bool
 	passphraseError  string
 	loggingIn        bool // true while waiting for auth/unlock response
+	// endedReason explains a deliberate disconnect (local idle timeout or the
+	// signer's login timeout). apadmin stays disconnected, so it does not hold
+	// the signer's single login slot, until the operator presses c.
+	endedReason string
 }
 
 // keyListState is the main key list with filter and tabs.

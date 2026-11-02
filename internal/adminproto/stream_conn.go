@@ -67,6 +67,20 @@ func (c *StreamAdminConn) ReadMessage() ([]byte, error) {
 	return protocol.ReadJSONLine(c.reader)
 }
 
+type readDeadlineSetter interface {
+	SetReadDeadline(time.Time) error
+}
+
+// SetReadDeadline bounds pending and future reads when the underlying stream
+// supports deadlines; otherwise it reports that it cannot.
+func (c *StreamAdminConn) SetReadDeadline(t time.Time) error {
+	d, ok := c.closer.(readDeadlineSetter)
+	if !ok {
+		return errors.ErrUnsupported
+	}
+	return d.SetReadDeadline(t)
+}
+
 type writeDeadlineSetter interface {
 	SetWriteDeadline(time.Time) error
 }
