@@ -495,7 +495,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 
 	case RollbackRestoreResultMsg:
-		if !m.restoreFlowWaiting() {
+		if m.signerKnownLocked() {
 			return m.recordLateRollback(msg.Result), m.waitForMessageCmd()
 		}
 		if !msg.Result.Success {
@@ -520,21 +520,30 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.sendReconcileStoreCmd(), m.waitForMessageCmd())
 
 	case ReconcileStoreResultMsg:
-		if !m.restoreFlowWaiting() {
-			// The signer locked or the session ended after the reconcile was
-			// sent; its state on the next unlock says what is needed.
+		if m.signerKnownLocked() {
+			// The signer locked after the reconcile was sent; its state on
+			// the next unlock says what is needed. (A reply from an ended
+			// session is never delivered.)
 			if !msg.Result.Success {
 				m.restore.recoveryError = msg.Result.Error
 			}
 			return m, m.waitForMessageCmd()
 		}
 		if !msg.Result.Success {
+			// The signer is recovery-blocked whichever screen the operator
+			// moved to; the recovery screen is where that is handled.
 			m.signerState = signerRuntimeRecovery
 			m.restore.recoveryError = msg.Result.Error
 			m.viewState = ViewStoreRecovery
 			return m, m.waitForMessageCmd()
 		}
 		m.restore.recoveryError = ""
+		if !m.restoreFlowWaiting() {
+			// The operator moved on from the recovery screen meanwhile: keep
+			// their screen and refresh the keys the rollback changed.
+			m.keyCount = msg.Result.KeyCount
+			return m, tea.Batch(m.waitForMessageCmd(), m.sendListKeysCmd())
+		}
 		return m, m.enterUnlocked(msg.Result.KeyCount)
 
 	case ImportResultMsg:

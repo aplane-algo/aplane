@@ -707,3 +707,28 @@ func TestBackupUndoSuccessStillReconcilesWhileWaiting(t *testing.T) {
 		t.Fatalf("reconciled: view %v, want the key list", m.viewState)
 	}
 }
+
+func TestReconcileFailureAfterLeavingRecoveryStillBlocks(t *testing.T) {
+	m := backupsModel()
+	m, _ = pressKey(t, m, "u", "y")
+	m, _ = update(t, m, RollbackRestoreResultMsg{Result: protocol.RollbackRestoreResultMessage{Success: true}})
+	if m.viewState != ViewStoreRecovery {
+		t.Fatalf("undo success: view %v", m.viewState)
+	}
+	// The signer is unlocked, so the recovery screen is not blocking: the
+	// operator leaves it while the reconcile runs.
+	m, _ = pressKey(t, m, "esc")
+	if m.viewState == ViewStoreRecovery {
+		t.Fatal("esc did not leave the non-blocking recovery screen")
+	}
+	left := m.viewState
+
+	failed, _ := update(t, m, ReconcileStoreResultMsg{Result: protocol.ReconcileStoreResultMessage{Error: "store damaged"}})
+	if failed.signerState != signerRuntimeRecovery || failed.viewState != ViewStoreRecovery {
+		t.Fatalf("reconcile failure after leaving: state %v view %v, want recovery shown", failed.signerState, failed.viewState)
+	}
+	ok, _ := update(t, m, ReconcileStoreResultMsg{Result: protocol.ReconcileStoreResultMessage{Success: true, KeyCount: 4}})
+	if ok.viewState != left || ok.keyCount != 4 {
+		t.Fatalf("reconcile success after leaving: view %v keys %d, want the operator's screen kept", ok.viewState, ok.keyCount)
+	}
+}

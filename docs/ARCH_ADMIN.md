@@ -981,11 +981,15 @@ identifies the current screen. The enum has families for:
   unresolved import is tracked, not just the latest.
   Late replies record their outcome but change the screen only when the
   operator is still on the screen that asked, so a reply arriving after a
-  lock never dismisses the unlock screen. The same holds for rollback and
-  reconcile replies, from this page or the store recovery screen: they drive
-  the screen only while the progress or recovery screen waits for them; a
-  late rollback success sends no reconcile, and the signer's state on the
-  next unlock says whether one is needed. Hashing the import source and the
+  lock never dismisses the unlock screen. Rollback and reconcile replies,
+  from this page or the store recovery screen, are only recorded once the
+  signer has reported it is locked: a late rollback success then sends no
+  reconcile, and the signer's state on the next unlock says whether one is
+  needed. While the session is unlocked they are applied whatever screen the
+  operator moved to: a reconcile failure moves the TUI into recovery and
+  opens the blocking recovery screen; a reconcile success enters the key list
+  only from the progress or recovery screen, and otherwise refreshes the keys
+  in place. Replies from an ended session are never delivered. Hashing the import source and the
   export's final sync, checksum, and publication run as commands off the
   event loop, so slow storage cannot freeze input, approvals, or lock
   handling; a canceled check's result is ignored. The import passphrase is

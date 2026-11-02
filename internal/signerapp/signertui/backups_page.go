@@ -497,16 +497,15 @@ func (m Model) Shutdown() {
 
 // restoreFlowWaiting reports whether the operator is on a screen that waits
 // for a rollback or reconcile reply: the progress screen that sent it, or
-// the store recovery screen. Any other screen means the signer locked or the
-// session ended meanwhile, and a late reply must not take over the screen.
+// the store recovery screen. A successful reconcile only takes over the
+// screen from one of these.
 func (m Model) restoreFlowWaiting() bool {
 	return m.viewState == ViewRestoring || m.viewState == ViewStoreRecovery
 }
 
-// recordLateRollback records a rollback reply that arrived after the
-// operator left the screen waiting for it. It changes no screen and sends no
-// reconcile: the signer's state on the next unlock says whether one is
-// needed.
+// recordLateRollback records a rollback reply that arrived after the signer
+// locked. It changes no screen and sends no reconcile: the signer's state on
+// the next unlock says whether one is needed.
 func (m Model) recordLateRollback(result protocol.RollbackRestoreResultMessage) Model {
 	fromPage := m.backups.undoPending
 	m.backups.undoPending = false
@@ -522,4 +521,10 @@ func (m Model) recordLateRollback(result protocol.RollbackRestoreResultMessage) 
 		m.setBackupsStatus("Undo refused: "+backupResultText(result.Error, "there is no restore to undo"), true)
 	}
 	return m
+}
+
+// signerKnownLocked reports that the signer has said it is locked. Locked is
+// also the state before any status arrives, which is not a lock.
+func (m Model) signerKnownLocked() bool {
+	return m.signerStatusKnown && m.signerState == signerRuntimeLocked
 }
