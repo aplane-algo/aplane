@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
@@ -184,7 +185,35 @@ func ensureStoreDir(path string) error {
 	return nil
 }
 
+// ManagedArchiveTimestampLayout is the UTC time in a managed archive's name.
+const ManagedArchiveTimestampLayout = "20060102-150405.000000000"
+
+const (
+	managedArchivePrefix = "aplane-backup-"
+	managedArchiveSuffix = ".tar.gz"
+)
+
 func BuildManagedArchivePath(paths storepaths.Paths, ts string) string {
-	fileName := fmt.Sprintf("aplane-backup-%s.tar.gz", ts)
+	fileName := managedArchivePrefix + ts + managedArchiveSuffix
 	return filepath.Join(paths.ProductBackupsDir(), fileName)
+}
+
+// ManagedArchiveNameTime is the creation time a managed archive's name
+// carries (aplane-backup-YYYYMMDD-HHMMSS[.nnnnnnnnn].tar.gz), in UTC. Names
+// are not authenticated; ok is false for any other name.
+func ManagedArchiveNameTime(fileName string) (time.Time, bool) {
+	stamp, found := strings.CutPrefix(fileName, managedArchivePrefix)
+	if !found {
+		return time.Time{}, false
+	}
+	stamp, found = strings.CutSuffix(stamp, managedArchiveSuffix)
+	if !found {
+		return time.Time{}, false
+	}
+	for _, layout := range []string{ManagedArchiveTimestampLayout, "20060102-150405"} {
+		if t, err := time.ParseInLocation(layout, stamp, time.UTC); err == nil {
+			return t, true
+		}
+	}
+	return time.Time{}, false
 }

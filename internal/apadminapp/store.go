@@ -205,6 +205,8 @@ func (s Store) backupCreate(args []string) error {
 	return nil
 }
 
+// backupList prints each backup as name, size, checksum, creation time, and
+// where that time came from, newest first.
 func (s Store) backupList() error {
 	var result protocol.BackupsListMessage
 	if err := s.Client.Request(protocol.ListBackupsMessage{
@@ -220,7 +222,10 @@ func (s Store) backupList() error {
 		return nil
 	}
 	for _, item := range result.Backups {
-		_, _ = fmt.Fprintf(s.Streams.Stdout, "%s  %s  %s\n", item.FileName, backup.FormatFileSize(item.Size), item.Checksum)
+		created, source := BackupCreatedTime(item)
+		_, _ = fmt.Fprintf(s.Streams.Stdout, "%s  %s  %s  %s  %s\n",
+			item.FileName, backup.FormatFileSize(item.Size), item.Checksum,
+			created.Format(time.RFC3339), source.Label())
 	}
 	return nil
 }

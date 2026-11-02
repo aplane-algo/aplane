@@ -304,11 +304,12 @@ func ProtocolRestorePreviewMessage(id string, result adminproto.RestorePreviewRe
 			Type: protocol.MsgTypeRestorePreview,
 			ID:   id,
 		},
-		ArchivePath: result.ArchivePath,
-		Keys:        protocolRestoreKeyInfos(result.Keys),
-		Errors:      protocolRestoreErrors(result.Errors),
-		Code:        result.Code,
-		Error:       result.Error,
+		ArchivePath:      result.ArchivePath,
+		ArchiveCreatedAt: result.ArchiveCreatedAt,
+		Keys:             protocolRestoreKeyInfos(result.Keys),
+		Errors:           protocolRestoreErrors(result.Errors),
+		Code:             result.Code,
+		Error:            result.Error,
 	}
 }
 

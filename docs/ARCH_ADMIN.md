@@ -433,7 +433,10 @@ interlocks.
   credential that fails canonical validation fails the request.
 - `list_backups` -> `backups_list`: `backups[]`, optional `code`,
   `error`; each item has a basename-only compatibility `path`, file name,
-  packaging metadata, checksum, and size. Successful backup-create and import
+  packaging metadata, checksum, and size; `created_at` is the archive file's
+  modification time. Items are ordered newest first by the time in a managed
+  archive's name (`aplane-backup-<UTC time>.tar.gz`), falling back to that
+  file time. Successful backup-create and import
   responses likewise expose only archive basenames, never the signer store
   root. A successful checksum read is not a claim that encrypted archive
   contents were authenticated. This read-only operation is available to
@@ -471,8 +474,9 @@ interlocks.
   a managed archive without filesystem access to the private signer store.
   It requires the signer store to be unlocked or recovery-blocked.
 - `preview_restore`: `archive_path`, sensitive `export_passphrase` ->
-  `restore_preview`: resolved archive path, `keys[]`, `errors[]`, optional
-  `code`, `error`. Each key reports address, key type, destination
+  `restore_preview`: resolved archive path, optional `archive_created_at`
+  (the creation time sealed in the authenticated manifest), `keys[]`,
+  `errors[]`, optional `code`, `error`. Each key reports address, key type, destination
   presence, `has_policy`, and validation error. Preview never mutates the store and, like
   `list_backups`, is available in unlocked or recovery state.
 - `restore_backup`: `archive_path`, optional `addresses[]`, sensitive

@@ -82,7 +82,7 @@ func (s Service) BackupIdentity(req adminproto.BackupIdentityRequest) adminproto
 }
 
 func managedBackupTimestamp(t time.Time) string {
-	return t.UTC().Format("20060102-150405.000000000")
+	return t.UTC().Format(backup.ManagedArchiveTimestampLayout)
 }
 
 func (s Service) ListBackups() adminproto.ListBackupsResult {
@@ -171,9 +171,10 @@ func (s Service) PreviewRestore(req adminproto.PreviewRestoreRequest) adminproto
 	// they are not failed export-passphrase guesses.
 	limiter.RecordSuccess(archivePath)
 	return adminproto.RestorePreviewResult{
-		ArchivePath: preview.ArchivePath,
-		Keys:        projectRestoreKeyInfos(preview.Keys),
-		Errors:      projectRestoreErrors(preview.Errors),
+		ArchivePath:      preview.ArchivePath,
+		ArchiveCreatedAt: preview.CreatedAtUnix,
+		Keys:             projectRestoreKeyInfos(preview.Keys),
+		Errors:           projectRestoreErrors(preview.Errors),
 	}
 }
 

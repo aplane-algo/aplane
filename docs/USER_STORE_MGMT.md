@@ -132,6 +132,22 @@ The daemon verifies the archive before reporting success.
 ./apadmin backup delete aplane-backup-20260423-010203.tar.gz
 ```
 
+`backup list` prints one line per backup, newest first: file name, size,
+checksum, creation time (UTC), and where that time came from:
+
+```text
+aplane-backup-20261102-070725.677012380.tar.gz  13.5 KB  4f1c…9a2e  2026-11-02T07:07:25Z  from name
+lab-signer-oct.tar.gz  13.4 KB  77b0…c1d4  2026-10-30T18:02:11Z  file time
+```
+
+- `from name`: the time in the name the node gave the backup when it
+  created it. It survives copying and importing.
+- `file time`: the archive file's modification time, for a backup whose name
+  carries no time. Copying the file changes it.
+
+Neither is authenticated. A restore preview opens the backup with its
+passphrase and reports the creation time sealed inside it.
+
 Use `backup import` when you want to admit an external archive into the managed
 backup locker so it is visible to backup listing and restore flows. The command
 prompts for the export passphrase, decrypts and validates the encrypted key
