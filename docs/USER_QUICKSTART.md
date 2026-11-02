@@ -77,7 +77,7 @@ SSH key. This is a human-approved process done via the signer admin.
 In the shell pane, run:
 
 ```
-request-enrollment
+enroll
 ```
 The command returns at once with the request waiting. You will see an
 approval prompt in the signer admin pane (or, if it was not open, the request

@@ -108,7 +108,7 @@ These return an error telling you the right path:
 | Blocked | Use instead |
 |---------|-------------|
 | `js`, `jssave`, `jslist` | the dedicated MCP tools |
-| `request-enrollment` | interactive host trust — run real `apshell` in a terminal |
+| `enroll` | interactive host trust — run real `apshell` in a terminal |
 | `quit`, `exit` | MCP disconnect |
 | `keyreg` with no args | provide args directly (`keyreg alice online`) — paste mode is interactive |
 
@@ -455,7 +455,7 @@ bytes even though apshell does not submit them.
 
 - **`connect [alias]`** opens the SSH tunnel to the signer (default endpoint, or
   a named one). **`disconnect`** closes it.
-- **`request-enrollment`** asks the signer to enroll this client's SSH key —
+- **`enroll`** asks the signer to enroll this client's SSH key —
   **interactive and not available via MCP**; run real `apshell` in a terminal
   once to submit the request, then have the operator approve it. MCP refuses
   to start without a trusted host, and the signer refuses the tunnel until the
@@ -605,7 +605,7 @@ each MCP server instance uses its own:
 - **All-foreign sign/plan requests are rejected.**
 - **Refresh after external or unconfirmed rekeys, or a reported cache refresh
   failure.**
-- **`request-enrollment`, `js`, `jssave`, `jslist`, `quit`, `exit`, and `keyreg`
+- **`enroll`, `js`, `jssave`, `jslist`, `quit`, `exit`, and `keyreg`
   (no args) are not available via the `execute` tool** — use the dedicated
   tools or a terminal.
 - **Amounts: human units in the shell, microAlgos in JS** (`algo()` /

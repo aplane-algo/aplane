@@ -2,8 +2,21 @@
 
 Entries are newest first and include pre-release development history. Older
 token, setup-file, and protocol-v5 entries describe behavior superseded by the
-enrolled-key model and current admin protocol v6.0; they are not current setup
+enrolled-key model and current admin protocol v7.0; they are not current setup
 instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
+Entries below that name `request-enrollment` describe the enrollment command
+before it was renamed `enroll`.
+
+## Enrollment command renamed `enroll`
+
+- apshell's `request-enrollment` command is now `enroll`, with the same flags
+  (`--endpoint`, `--label`). The old name is gone; it is an unknown command.
+- The SSH username a client uses to request enrollment is now `enroll`
+  (it was `request-enrollment`); the session's exec command and the queued
+  request's ID already used `enroll`. This is a wire change: an older
+  apshell or SDK cannot enroll with an upgraded signer, and the reverse.
+  Upgrade the signer, apshell and the SDKs together. Already enrolled keys
+  are unaffected; they connect as before.
 
 ## Rotating SLH-DSA triple accounts and signing hardening
 

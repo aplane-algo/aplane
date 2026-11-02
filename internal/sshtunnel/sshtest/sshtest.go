@@ -52,7 +52,7 @@ type Node struct {
 	requests []EnrollmentRequest
 }
 
-// EnrollmentRequest is one request-enrollment the node received.
+// EnrollmentRequest is one enroll the node received.
 type EnrollmentRequest struct {
 	Fingerprint string
 	Label       string

@@ -190,7 +190,7 @@ cd /path/to/aplane
 
 For local signer nodes, this opens shell, signer admin, and daemon panes in one
 Bubble Tea console while preserving the same apshell, apadmin, and apsigner
-transport interfaces. Unlock the signer pane, then run `request-enrollment` in
+transport interfaces. Unlock the signer pane, then run `enroll` in
 the shell pane. Local `apconsole` probes the live loopback SSH endpoint before
 pinning the local signer's SSH host key into the client `known_hosts` file.
 Approve the request in the signer pane; that enrolls the client's SSH key at
@@ -217,7 +217,7 @@ For a signer node:
 1. Run `./start.sh` from the install root
 2. Unlock the signer pane with the keystore passphrase
 3. Generate a signing key in the signer pane (press `g`)
-4. In the shell pane, run `request-enrollment` to enroll the client's SSH key at the signer
+4. In the shell pane, run `enroll` to enroll the client's SSH key at the signer
 5. Approve the request in the signer pane
 
 For a cosigner node:
@@ -227,7 +227,7 @@ For a cosigner node:
 3. Follow [Configure a cosigner for guarded accounts](#configure-a-cosigner-for-guarded-accounts)
    below to export the key and add the connection in apshell.
 
-`request-enrollment` creates the client SSH key if it is missing, queues the
+`enroll` creates the client SSH key if it is missing, queues the
 request at the node, and returns at once. An operator approves the key in
 `apadmin` or `apapprover` whenever convenient; the request pops up if they are
 connected and is shown again at their next login. The key is the client's
@@ -269,7 +269,7 @@ on the same cosigner needs no client change.
 
 For an already configured `local-cosigner` endpoint, you can enroll the
 client's key separately. In another terminal, source the install's `apenv.sh`,
-start apshell, and run `request-enrollment --endpoint local-cosigner`. Approve
+start apshell, and run `enroll --endpoint local-cosigner`. Approve
 the queued request in the cosigner admin pane after comparing the complete
 client SSH fingerprint. This manual access step does not import a public
 cosigner key into the primary signer.
@@ -464,7 +464,7 @@ This installs:
 - `~/aplane/apclient/endpoints.yaml` — client endpoint registry; new installs start with a `primary` signer endpoint
 - `~/aplane/apclient/.mcp.json` — MCP client configuration for `apshell --mcp`
 - `~/aplane/apclient/.codex/config.toml` — Codex project MCP configuration for `apshell --mcp`; Codex loads it when started from this trusted client directory
-- `~/aplane/apclient/.ssh/id_ed25519` — SSH key for signer tunnel, generated during install if `ssh-keygen` is available or by `apshell request-enrollment` when first needed
+- `~/aplane/apclient/.ssh/id_ed25519` — SSH key for signer tunnel, generated during install if `ssh-keygen` is available or by `apshell enroll` when first needed
 - `~/aplane/apclient/plugins.yaml` — enabled plugin names; new installs start with an empty activation list
 - `~/aplane/apclient/plugins.available/algokit-localnet/` — bundled LocalNet operations plugin, loaded only when `algokit-localnet` is listed in `plugins.yaml`
 - `~/aplane/apclient/scripts/` — saved JavaScript/MCP snippets
@@ -473,10 +473,10 @@ This installs:
 
 1. Ensure `~/aplane/apclient/bin` is on your `PATH`, or invoke `apshell` by full path
 2. Edit `~/aplane/apclient/endpoints.yaml` to set your remote signer host
-3. Run `apshell`, then use `request-enrollment` to generate or reuse your SSH key and ask the signer to enroll it; the command returns at once
+3. Run `apshell`, then use `enroll` to generate or reuse your SSH key and ask the signer to enroll it; the command returns at once
 4. Ask the signer operator to approve the queued request in `apadmin` or `apapprover` (or to import your public key), then run `connect`
 
-The `request-enrollment` flow enrolls the client's SSH key, which is its only
+The `enroll` flow enrolls the client's SSH key, which is its only
 credential. It does not enroll a cosigner witness as a guarded-account
 co-authority. For guarded accounts, follow
 [Configure a cosigner for guarded accounts](#configure-a-cosigner-for-guarded-accounts).
@@ -1055,7 +1055,7 @@ generation.
 `config.yaml` and `unlock.yaml` are created on first edit through `apadmin` or
 `appass`. `identities/default/.ssh/authorized_keys` is the daemon-owned
 registry of enrolled client SSH keys, and `pending_enrollments.json` beside it
-holds the `request-enrollment` requests waiting for approval; do not hand-edit
+holds the `enroll` requests waiting for approval; do not hand-edit
 either. `passphrase.cred` exists only when `appass` configures auto-unlock with
 `systemd-creds`.
 

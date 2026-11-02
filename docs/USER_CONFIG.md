@@ -171,7 +171,7 @@ EOF
 
 # Ask the signer to enroll this client's SSH key; the operator approves later
 ./apshell
-> request-enrollment
+> enroll
 # Once the operator has approved it in apadmin:
 > connect
 
@@ -220,7 +220,7 @@ apadmin -d "$APSIGNER_DATA" endpoint export \
 # client side, inside apshell
 endpoints import --alias main --role signer signer.endpoint.json
 endpoints show main
-request-enrollment --endpoint main
+enroll --endpoint main
 connect main
 ```
 
@@ -230,7 +230,7 @@ when the operator already knows the client-reachable URL:
 ```bash
 endpoints create --alias local-cosigner \
   --endpoint ssh://cosigner.example.com:1127
-request-enrollment --endpoint local-cosigner
+enroll --endpoint local-cosigner
 endpoints discover-cosigners
 ```
 
@@ -265,7 +265,7 @@ as the fallback.
 
 Importing an endpoint creates routing/configuration only. It does not copy SSH
 host trust, private keys, or passphrases, and it does not enroll the client's
-key at the node; that is still done with `request-enrollment --endpoint <alias>`
+key at the node; that is still done with `enroll --endpoint <alias>`
 (or automatically by `endpoints add`). Re-import with the same alias replaces
 that alias's endpoint data.
 
@@ -285,7 +285,7 @@ Then:
 ```bash
 connect                 # default endpoint
 connect main
-request-enrollment --endpoint main
+enroll --endpoint main
 ```
 
 Useful local commands:
@@ -300,8 +300,8 @@ endpoints delete old-signer
 ```
 
 Enrollment is endpoint-only. Import or configure a signer endpoint before
-running `request-enrollment`; create or import a cosigner endpoint before
-running `request-enrollment --endpoint <alias>`.
+running `enroll`; create or import a cosigner endpoint before
+running `enroll --endpoint <alias>`.
 
 ---
 
@@ -1048,7 +1048,7 @@ token, no `Authorization` header, and no credential file to copy.
 
 ### How It Works
 
-1. **Enrollment**: the client runs `request-enrollment`, which queues a
+1. **Enrollment**: the client runs `enroll`, which queues a
    request and returns; the signer operator approves the client's SSH key
    fingerprint in `apadmin` (or `apapprover`) whenever convenient, or imports
    the public key directly
@@ -1068,13 +1068,13 @@ apadmin authenticates over local IPC independently of client keys.
 
 ```bash
 # In apshell - queues a request; the operator approves it later in apadmin
-> request-enrollment
+> enroll
 
 # For a named endpoint in endpoints.yaml (signer or cosigner)
-> request-enrollment --endpoint main
+> enroll --endpoint main
 
 # With a display label shown in the apadmin client list
-> request-enrollment --label laptop
+> enroll --label laptop
 ```
 
 The command creates the client SSH key if it is missing, performs first-use
@@ -1122,7 +1122,7 @@ Revoking a key:
 
 1. Removes it from the registry
 2. Closes that client's live SSH connections immediately
-3. Requires the client to run `request-enrollment` again, for the operator to
+3. Requires the client to run `enroll` again, for the operator to
    approve later (or the operator to re-import the key)
 
 Use **revoke all keys** as the emergency lever when a client machine may be

@@ -32,7 +32,7 @@ This test requires Docker privileges. It starts an Ubuntu 24.04 container with
 systemd, installs the local release tarball in --systemd mode, verifies the
 service/files/permissions, verifies the installer refuses to run while the
 systemd service is active, runs appass --check to confirm systemd-mode detection,
-drives `apshell request-enrollment` end-to-end as the non-root installing user
+drives `apshell enroll` end-to-end as the non-root installing user
 (with apapprover unlocking the signer and auto-approving), confirms the client
 can reach the signer with its enrolled key, verifies a stopped in-place systemd
 upgrade preserves state, stages the on-disk state of
@@ -445,14 +445,14 @@ EXPECT_SCRIPT
 
 run_request_enrollment() {
     # AutoConfirm=true in script mode rejects unknown hosts; known_hosts is
-    # seeded, so request-enrollment proceeds without interactive prompts.
+    # seeded, so enroll proceeds without interactive prompts.
     # The request is queued for the operator; apapprover approves it
     # asynchronously.
-    docker_exec_as_tester "echo 'request-enrollment' > /tmp/req-enrollment.script"
+    docker_exec_as_tester "echo 'enroll' > /tmp/req-enrollment.script"
     docker_exec_as_tester ". $OPERATOR_ROOT/apenv.sh && \
         apshell -script /tmp/req-enrollment.script 2>&1 | tee /tmp/req-enrollment.log"
     docker_exec_as_tester "grep -q 'waiting for the operator at endpoint' /tmp/req-enrollment.log" \
-        || die "request-enrollment did not report a queued enrollment request"
+        || die "enroll did not report a queued enrollment request"
 }
 
 verify_signer_reachable() {

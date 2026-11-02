@@ -28,7 +28,7 @@ func (m Model) renderEnrolledClients() string {
 
 	sb.WriteString(fmt.Sprintf("Waiting for approval (%d)\n", len(m.clients.pending)))
 	if len(m.clients.pending) == 0 {
-		sb.WriteString("  none. Clients request enrollment with: request-enrollment\n")
+		sb.WriteString("  none. Clients request enrollment with: enroll\n")
 	}
 	for i, req := range m.clients.pending {
 		cursor := "  "
@@ -97,7 +97,7 @@ func (m Model) renderRevokeClientConfirm() string {
 		sb.WriteString(errorStyle.Render("This client's connections will be closed."))
 	}
 	sb.WriteString("\n")
-	sb.WriteString(subtitleStyle.Render("A revoked client must request enrollment again with: request-enrollment"))
+	sb.WriteString(subtitleStyle.Render("A revoked client must request enrollment again with: enroll"))
 	sb.WriteString("\n\n")
 
 	var cancelBtn, revokeBtn string

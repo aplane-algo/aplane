@@ -92,30 +92,30 @@ func (r *REPLState) cmdConnect(args []string, _ interface{}) (command.Result, er
 	})
 }
 
-func (r *REPLState) cmdRequestEnrollment(args []string, ctx interface{}) (command.Result, error) {
-	return newTerminalCommandResult(nil), r.runRequestEnrollment(args, ctx)
+func (r *REPLState) cmdEnroll(args []string, ctx interface{}) (command.Result, error) {
+	return newTerminalCommandResult(nil), r.runEnroll(args, ctx)
 }
 
-const requestEnrollmentUsage = "request-enrollment [--endpoint <alias>] [--label <text>]"
+const enrollUsage = "enroll [--endpoint <alias>] [--label <text>]"
 
-func (r *REPLState) runRequestEnrollment(args []string, _ interface{}) error {
+func (r *REPLState) runEnroll(args []string, _ interface{}) error {
 	alias, label := "", ""
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--endpoint", "-e":
 			if i+1 >= len(args) {
-				return fmt.Errorf("usage: %s", requestEnrollmentUsage)
+				return fmt.Errorf("usage: %s", enrollUsage)
 			}
 			alias = args[i+1]
 			i++
 		case "--label", "-l":
 			if i+1 >= len(args) {
-				return fmt.Errorf("usage: %s", requestEnrollmentUsage)
+				return fmt.Errorf("usage: %s", enrollUsage)
 			}
 			label = args[i+1]
 			i++
 		default:
-			return fmt.Errorf("usage: %s", requestEnrollmentUsage)
+			return fmt.Errorf("usage: %s", enrollUsage)
 		}
 	}
 	return requestEnrollment(r, alias, label)
@@ -169,7 +169,7 @@ func (r *REPLState) cmdEndpoints(args []string, _ interface{}) (command.Result, 
 					r.println(line)
 				}
 				if !result.DryRun {
-					r.printf("Run 'request-enrollment --endpoint %s' before using this endpoint.\n", result.Alias)
+					r.printf("Run 'enroll --endpoint %s' before using this endpoint.\n", result.Alias)
 				}
 			})
 		}, endpointMutationProjection{
@@ -191,7 +191,7 @@ func (r *REPLState) cmdEndpoints(args []string, _ interface{}) (command.Result, 
 					r.println(line)
 				}
 				if !result.DryRun {
-					r.printf("Run 'request-enrollment --endpoint %s' before using this endpoint.\n", result.Alias)
+					r.printf("Run 'enroll --endpoint %s' before using this endpoint.\n", result.Alias)
 				}
 			})
 		}, endpointMutationProjection{

@@ -35,10 +35,10 @@ func TestBuiltInCommandAndAliasInventory(t *testing.T) {
 
 	wantNames := []string{
 		"accounts", "alias", "app", "asa", "balance", "clear", "close",
-		"config", "connect", "cosigner", "delete", "disconnect", "endpoints", "generate",
-		"help", "holders", "info", "js", "jslist", "jssave", "keyreg", "keys",
+		"config", "connect", "cosigner", "delete", "disconnect", "endpoints", "enroll",
+		"generate", "help", "holders", "info", "js", "jslist", "jssave", "keyreg", "keys",
 		"keytypes", "network", "optin", "optout", "participation", "plugins",
-		"quit", "rekey", "request-enrollment", "rotate", "script", "send", "sets", "sign",
+		"quit", "rekey", "rotate", "script", "send", "sets", "sign",
 		"simulate", "status", "sweep", "unrekey", "validate", "verbose", "write",
 	}
 	wantAliases := map[string]string{
@@ -55,6 +55,10 @@ func TestBuiltInCommandAndAliasInventory(t *testing.T) {
 	if !reflect.DeepEqual(gotAliases, wantAliases) {
 		t.Fatalf("built-in alias inventory changed\n got: %#v\nwant: %#v", gotAliases, wantAliases)
 	}
+	// request-enrollment was renamed enroll and kept no alias.
+	if _, ok := registry.Lookup("request-enrollment"); ok {
+		t.Fatal("request-enrollment still resolves")
+	}
 }
 
 func TestBuiltInAutomationDispositionInventory(t *testing.T) {
@@ -62,7 +66,7 @@ func TestBuiltInAutomationDispositionInventory(t *testing.T) {
 	registry := state.initCommandRegistry()
 	blocked := map[string]bool{
 		"help": true, "config": true, "script": true, "js": true,
-		"jssave": true, "jslist": true, "request-enrollment": true, "cosigner": true,
+		"jssave": true, "jslist": true, "enroll": true, "cosigner": true,
 		"clear": true, "quit": true,
 	}
 	for _, cmd := range registry.All() {

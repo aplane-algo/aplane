@@ -38,7 +38,7 @@ func CheckClientKey(key ssh.PublicKey) error {
 }
 
 // checkEnrollmentKey reports whether key may be enrolled through
-// request-enrollment. clientKeyAlgorithms already refuses other keys during
+// enroll. clientKeyAlgorithms already refuses other keys during
 // authentication; this check keeps enrollment correct if that list changes.
 func checkEnrollmentKey(key ssh.PublicKey) error {
 	if !slices.Contains(clientKeyAlgorithms, key.Type()) {

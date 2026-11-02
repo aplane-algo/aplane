@@ -94,7 +94,7 @@ The first time a client connects, the signer must enroll the client's SSH key,
 a human-approved step. In the shell pane, run:
 
 ```
-request-enrollment
+enroll
 ```
 
 The command returns at once with the request waiting. You will see an approval

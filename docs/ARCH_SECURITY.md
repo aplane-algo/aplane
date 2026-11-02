@@ -99,7 +99,7 @@ the verified key fingerprint. A request carries no credential of its own.
   at the endpoint's `identity_file` (default `$APCLIENT_DATA/.ssh/id_ed25519`,
   mode 0600) or held by an SSH agent
 - Enrolled once per node, either by an operator approving the client's
-  `request-enrollment` request or by the operator importing the public key;
+  `enroll` request or by the operator importing the public key;
   the node records it in `identities/default/.ssh/authorized_keys`
 - Identified everywhere by its SHA256 fingerprint; the principal is
   `client:<fingerprint>`
@@ -292,13 +292,13 @@ Client                                               Server
 ```
 
 Keys are enrolled only by the operator: by approving a queued
-`request-enrollment` request, or by importing a public key directly.
+`enroll` request, or by importing a public key directly.
 
 **Key points:**
 - A key that is not enrolled fails the handshake with the standard SSH
   "unable to authenticate" error; the client surfaces this as
   `sshtunnel.ErrKeyNotEnrolled` and apshell tells the user to run
-  `request-enrollment`
+  `enroll`
 - Enrollment is re-checked against the installed registry after the handshake,
   so a key revoked while its handshake was in flight is refused
 - The server never carries session channels for `aplane`: port forwarding
@@ -342,7 +342,7 @@ secret of any kind.
 | Property | Implementation |
 |----------|----------------|
 | Client authentication | Enrolled SSH public key; the registry is `identities/default/.ssh/authorized_keys` |
-| Key enrollment | Operator approval of a queued `request-enrollment` request, or operator import of the public key |
+| Key enrollment | Operator approval of a queued `enroll` request, or operator import of the public key |
 | Host key verification | TOFU model with persistent known_hosts |
 | Credential confidentiality | The private key never leaves the client; no shared secret exists on either side |
 | Replay resistance | Standard SSH public-key authentication over a session-bound exchange |
@@ -360,7 +360,7 @@ All SSH connections are logged for audit purposes:
 
 Logged information:
 - Remote IP address and port
-- Connect/disconnect events, including `request-enrollment` connections
+- Connect/disconnect events, including `enroll` connections
 - The key fingerprint appears only in the enrollment and revocation events,
   not in the session entries
 
@@ -424,7 +424,7 @@ the server has started.
 ### Client Enrollment via SSH
 
 A client whose key is not yet enrolled asks the node to enroll it with the
-`request-enrollment` command. The request is queued for the operator and
+`enroll` command. The request is queued for the operator and
 answered at once; the client learns the outcome by connecting. Together
 with operator import of a public key (below), this is the whole bootstrap.
 
@@ -433,7 +433,7 @@ with operator import of a public key (below), this is the whole bootstrap.
 │  apshell │                                          │  apsigner │
 └────┬─────┘                                          └─────┬──────┘
      │                                                      │
-     │  1. SSH connect (username=request-enrollment,        │
+     │  1. SSH connect (username=enroll,        │
      │     any supported key)                               │
      │─────────────────────────────────────────────────────>│
      │                                                      │
@@ -485,7 +485,7 @@ with operator import of a public key (below), this is the whole bootstrap.
 
 **Protocol steps:**
 
-1. client connects as `request-enrollment` with any supported key
+1. client connects as `enroll` with any supported key
 2. server rejects every other username before SSH auth succeeds
 3. the exec request `enroll` or `enroll <label>` is accepted on that
    connection; the label is at most 64 bytes of printable single-line text,
@@ -549,7 +549,7 @@ The admin protocol message is `import_client_key` (one OpenSSH
 public-key line; its comment is the label unless one is given). Imports reject
 authorized_keys options, including reserved `aplane-` options, and trailing key
 lines with `invalid_request`; unsupported restrictions are never silently
-discarded. The key type check is the same as for `request-enrollment`, the
+discarded. The key type check is the same as for `enroll`, the
 write follows the publication rule, a waiting request for the same key is cleared, and
 `CLIENT_ENROLLED` is audited with an empty remote address.
 
@@ -568,7 +568,7 @@ stores `public_key` (an OpenSSH line), optional `label` and `remote_addr`, and
 `internal/signerapp/enrollqueue`; the product runtime serializes queue and
 registry mutations under the same lock.
 
-**Limits.** `request-enrollment` accepts any supported client key, so the
+**Limits.** `enroll` accepts any supported client key, so the
 flow is reachable without credentials, and the queue it writes to is bounded:
 - One queue entry per key: a repeated request refreshes the entry's
   timestamp, remote address, and label (when given) rather than adding one,
@@ -577,14 +577,14 @@ flow is reachable without credentials, and the queue it writes to is bounded:
   refused with `enrollment queue is full` until the operator approves or
   rejects an entry
 - An entry lapses after 7 days (`enrollqueue.TTL`); the client requests again
-- Each `request-enrollment` connection may make one enrollment request, and the
+- Each `enroll` connection may make one enrollment request, and the
   connection closes when that request ends, whatever the outcome
-- A `request-enrollment` connection that has not started enrollment within 30
+- An `enroll` connection that has not started enrollment within 30
   seconds is closed
-- At most 8 `request-enrollment` connections are open at once
+- At most 8 `enroll` connections are open at once
 - The client key must be Ed25519, ECDSA (P-256/384/521), or a
   hardware-backed `sk-` Ed25519/ECDSA key. This applies to every SSH client,
-  not only `request-enrollment`: the server's public-key algorithm list refuses
+  not only `enroll`: the server's public-key algorithm list refuses
   other keys (RSA, DSA, certificates) before the key is parsed or any
   signature is verified. RSA is excluded because its verification cost grows
   with a modulus size the client chooses, and a key refused only in the
@@ -596,7 +596,7 @@ flow is reachable without credentials, and the queue it writes to is bounded:
 - The server sends each SSH client a keepalive every 15 seconds and closes a
   connection that does not reply within 30 seconds, so a client that keeps
   TCP open but stops answering does not hold its connection indefinitely
-- Each `request-enrollment` connection may have at most 2 open session channels;
+- Each `enroll` connection may have at most 2 open session channels;
   further channels are rejected before they are accepted
 - A client must accept the enrollment response within 10 seconds; a client
   that stops reading (for example by advertising a zero receive window) is
@@ -656,9 +656,9 @@ revocation of every key.
 `CloseAllClientConnections(reason)` close connections by key.
 
 **Client re-authorization:**
-- The client must run `request-enrollment` again (same flow as initial enrollment), or the operator re-imports its public key
+- The client must run `enroll` again (same flow as initial enrollment), or the operator re-imports its public key
 - The operator approves the new request from the apadmin TUI or `apadmin clients approve`, at any later time
-- If a client runs `request-enrollment` while still connected to that node, the session is disconnected first
+- If a client runs `enroll` while still connected to that node, the session is disconnected first
 - Once re-enrolled, the client can `connect` normally with the same key
 
 **Use cases:**
@@ -697,13 +697,13 @@ All apshell connections to the signer use SSH tunneling, regardless of whether t
   relative paths resolve against the client data directory
 - Server SSH listener settings live in signer `config.yaml` under
   `endpoint.ssh:`
-- `request-enrollment [--endpoint <alias>] [--label <text>]` uses the same
+- `enroll [--endpoint <alias>] [--label <text>]` uses the same
   endpoint record to reach the node it enrolls with
 
 **Bootstrap requirement:**
-Non-interactive modes (scripts, JS runner) reject unknown SSH hosts — they require the signer's host key to already be in `known_hosts`. Users must first connect interactively with `apshell` (via `connect` or `request-enrollment`), which prompts for TOFU host key approval and saves it. After that, scripts and automation can connect without prompts.
+Non-interactive modes (scripts, JS runner) reject unknown SSH hosts — they require the signer's host key to already be in `known_hosts`. Users must first connect interactively with `apshell` (via `connect` or `enroll`), which prompts for TOFU host key approval and saves it. After that, scripts and automation can connect without prompts.
 
-The `request-enrollment` flow (or an operator import of the public key) is the only bootstrap path: one operator decision enrolls the client's key, and that key is the client's whole credential. This is a single trust decision that fully onboards the client; the client does not wait for it, and connects once it has been made.
+The `enroll` flow (or an operator import of the public key) is the only bootstrap path: one operator decision enrolls the client's key, and that key is the client's whole credential. This is a single trust decision that fully onboards the client; the client does not wait for it, and connects once it has been made.
 
 ## Authorization
 
@@ -908,7 +908,7 @@ not by a signer-side activity grant.
 #### No Remote Admin Transport
 
 The admin protocol is carried only over the local IPC socket. SSH carries
-API port forwarding and `request-enrollment` bootstrap. API-authenticated
+API port forwarding and `enroll` bootstrap. API-authenticated
 connections refuse session channels; enrollment connections accept only the
 enrollment exec flow, so no admin subsystem is reachable over SSH. Remote
 administration means logging in to the signer host and running `apadmin`
@@ -1419,7 +1419,7 @@ Store-management audit semantics:
   history reader skips any audit line over 1 MiB rather than failing, so
   one oversized entry cannot hide rotating releases at unlock.
   Offline rescue and `apstore policy sign` are not audited.
-- `CLIENT_ENROLLMENT_REQUESTED` is emitted when a new `request-enrollment` request is queued (a repeat that refreshes an existing entry is not audited again); its principal and requester are `client:<fingerprint>`, and it carries the remote address and `client_label`
+- `CLIENT_ENROLLMENT_REQUESTED` is emitted when a new `enroll` request is queued (a repeat that refreshes an existing entry is not audited again); its principal and requester are `client:<fingerprint>`, and it carries the remote address and `client_label`
 - `CLIENT_ENROLLED` is emitted when an admin session enrolls a key, by approving its queued request or by importing the public key; it carries the key fingerprint, the `client_label` recorded, the request's remote address (empty for an import), and the admin session attribution
 - `CLIENT_ENROLLMENT_REJECTED` is emitted when an admin session rejects a queued request; it carries the fingerprint, `client_label`, and admin session attribution
 - `CLIENT_KEY_REVOKED` is emitted when an admin session revokes one enrolled key or every key; it carries the fingerprint, `client_label`, closed-connection count (single-key revocation only; revoke-all entries carry no count), and admin session attribution
