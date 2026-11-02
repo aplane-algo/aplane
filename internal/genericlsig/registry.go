@@ -59,8 +59,3 @@ func GetAll() []Template {
 func IsGenericLSigType(keyType string) bool {
 	return Get(keyType) != nil
 }
-
-// Count returns the number of registered templates.
-func Count() int {
-	return len(GetAll())
-}

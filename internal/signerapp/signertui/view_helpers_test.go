@@ -96,8 +96,15 @@ func TestServerKeyTypesDriveGenerateAndImportOptions(t *testing.T) {
 	if got, want := getImportKeyTypeCount(), 2; got != want {
 		t.Fatalf("getImportKeyTypeCount() = %d, want %d", got, want)
 	}
-	if got, want := getKeyTypeByIndex(1), "test.timed-policy.v1"; got != want {
-		t.Fatalf("generate key type index 1 = %q, want %q", got, want)
+	// Native key types come first, then published ones, each alphabetical.
+	wantGenerate := []string{"ed25519", "aplane.ed25519.v1", "aplane.falcon1024-allowlist.v1", "aplane.falcon1024.v1", "test.timed-policy.v1"}
+	for i, want := range wantGenerate {
+		if got := getKeyTypeByIndex(i); got != want {
+			t.Fatalf("generate key type index %d = %q, want %q", i, got, want)
+		}
+	}
+	if got := strings.Join(getGenerateKeyTypeOptions(), ","); got != strings.Join(wantGenerate, ",") {
+		t.Fatalf("generate options = %s, want %s", got, strings.Join(wantGenerate, ","))
 	}
 	if got, want := getImportKeyTypeByIndex(1), "aplane.falcon1024.v1"; got != want {
 		t.Fatalf("import key type index 1 = %q, want %q", got, want)
@@ -113,6 +120,65 @@ func TestServerKeyTypesDriveGenerateAndImportOptions(t *testing.T) {
 	}
 	if got, want := spec.Params[0].MaxItems, 30; got != want {
 		t.Fatalf("MaxItems = %d, want %d", got, want)
+	}
+}
+
+func TestKeyTypeSelectionOrderClustersNativeFirst(t *testing.T) {
+	got := sortKeyTypesForSelection([]string{
+		"zeta.custom.v1", "falcon1024", "aplane.rotating-triple-xmss.v1",
+		"ed25519", "aplane.falcon1024.v1", "acme.allowlist.v2",
+	})
+	want := []string{
+		"ed25519", "falcon1024",
+		"acme.allowlist.v2", "aplane.falcon1024.v1", "aplane.rotating-triple-xmss.v1", "zeta.custom.v1",
+	}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("order = %v, want %v", got, want)
+	}
+	if n := nativeKeyTypeCount(got); n != 2 {
+		t.Fatalf("native count = %d, want 2", n)
+	}
+}
+
+func TestSeparateKeyTypeClustersInsertsOneBlankRow(t *testing.T) {
+	rows := []string{"ed25519", "falcon1024", "aplane.a.v1", "aplane.b.v1"}
+	got, selected := separateKeyTypeClusters(rows, 2, 2)
+	if strings.Join(got, "|") != "ed25519|falcon1024||aplane.a.v1|aplane.b.v1" || selected != 3 {
+		t.Fatalf("rows = %q selected %d", got, selected)
+	}
+	if _, selected := separateKeyTypeClusters(rows, 2, 1); selected != 1 {
+		t.Fatalf("native selection moved to %d", selected)
+	}
+	for _, native := range []int{0, len(rows)} {
+		if got, selected := separateKeyTypeClusters(rows, native, 1); len(got) != len(rows) || selected != 1 {
+			t.Fatalf("single cluster (native=%d) got separator: %q selected %d", native, got, selected)
+		}
+	}
+}
+
+func TestGenerateFormShowsClustersWithSeparator(t *testing.T) {
+	defer setServerKeyTypes(nil)
+	setServerKeyTypes([]protocol.KeyTypeInfo{
+		{KeyType: "aplane.falcon1024.v1"}, {KeyType: "falcon1024"}, {KeyType: "acme.custom.v1"}, {KeyType: "ed25519"},
+	})
+	m := Model{width: 100, height: 40, viewState: ViewGenerateForm}
+	m.forms.generateKeyType = 2 // acme.custom.v1, the first published key type
+	var listed []string
+	for _, line := range strings.Split(stripANSI(m.renderGenerateForm()), "\n") {
+		line = strings.TrimSpace(strings.Trim(line, "║"))
+		if line == "" && len(listed) > 0 && len(listed) < 4 {
+			listed = append(listed, "")
+			continue
+		}
+		for _, name := range []string{"ed25519", "falcon1024", "> acme.custom.v1", "aplane.falcon1024.v1"} {
+			if line == name {
+				listed = append(listed, line)
+			}
+		}
+	}
+	want := "ed25519|falcon1024||> acme.custom.v1|aplane.falcon1024.v1"
+	if got := strings.Join(listed, "|"); got != want {
+		t.Fatalf("listed = %q, want %q\n%s", got, want, stripANSI(m.renderGenerateForm()))
 	}
 }
 

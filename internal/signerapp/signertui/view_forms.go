@@ -154,7 +154,8 @@ func (m Model) renderImportForm() string {
 		sb.WriteString("\n")
 	}
 
-	return m.renderPopup(70, m.fitSelectionList(header, rows, m.forms.importKeyType, sb.String(), 70))
+	rows, selected := separateKeyTypeClusters(rows, nativeKeyTypeCount(importKeyTypeIDs()), m.forms.importKeyType)
+	return m.renderPopup(70, m.fitSelectionList(header, rows, selected, sb.String(), 70))
 }
 
 // renderImportDisplay renders the key import confirmation screen
@@ -200,7 +201,8 @@ func (m Model) renderGenerateForm() string {
 		footer.WriteString("\n")
 	}
 
-	return m.renderPopup(70, m.fitSelectionList(header, rows, m.forms.generateKeyType, footer.String(), 70))
+	rows, selected := separateKeyTypeClusters(rows, nativeKeyTypeCount(generateKeyTypeIDs()), m.forms.generateKeyType)
+	return m.renderPopup(70, m.fitSelectionList(header, rows, selected, footer.String(), 70))
 }
 
 // renderParameterModal renders the shared parameter input modal for both generate and import.
