@@ -161,7 +161,7 @@ func TestGenerateFormDoesNotShowParameterCountSummary(t *testing.T) {
 	}
 }
 
-func TestNativeFalconGenerationAndImportShowRecoveryNotice(t *testing.T) {
+func TestNativeFalconRecoveryNoticeOnImportOnly(t *testing.T) {
 	defer setServerKeyTypes(nil)
 	setServerKeyTypes([]protocol.KeyTypeInfo{{
 		KeyType:           "falcon1024",
@@ -178,12 +178,13 @@ func TestNativeFalconGenerationAndImportShowRecoveryNotice(t *testing.T) {
 	}
 	generate := stripANSI(m.renderGenerateForm())
 	importForm := stripANSI(m.renderImportForm())
-	for name, rendered := range map[string]string{"generate": generate, "import": importForm} {
-		for _, want := range []string{"consensus v42", "25-word", "24-word aplane.falcon1024.v1"} {
-			if !strings.Contains(rendered, want) {
-				t.Fatalf("%s form missing %q:\n%s", name, want, rendered)
-			}
+	for _, want := range []string{"consensus v42", "25-word", "24-word aplane.falcon1024.v1"} {
+		if !strings.Contains(importForm, want) {
+			t.Fatalf("import form missing %q:\n%s", want, importForm)
 		}
+	}
+	if strings.Contains(generate, "consensus v42") || strings.Contains(generate, "recovery phrase") {
+		t.Fatalf("generate form still shows the recovery phrase notice:\n%s", generate)
 	}
 }
 

@@ -132,7 +132,9 @@ func getKeyTypeSelectionLabel(keyType string) string {
 	return displayKeyType(keyType)
 }
 
-func keyTypeGenerationNotice(keyType string) string {
+// keyTypeImportNotice warns, on the import form, that a native Falcon
+// account's 25-word phrase is not the 24-word LogicSig Falcon phrase.
+func keyTypeImportNotice(keyType string) string {
 	info, ok := findServerKeyType(keyType)
 	if !ok || info.AuthorizationKind != "native_pq" {
 		return ""

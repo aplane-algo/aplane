@@ -143,7 +143,7 @@ func (m Model) renderImportForm() string {
 		sb.WriteString(subtitleStyle.Render(wordCountStr))
 	}
 	sb.WriteString("\n\n")
-	if notice := keyTypeGenerationNotice(getImportKeyTypeByIndex(m.forms.importKeyType)); notice != "" {
+	if notice := keyTypeImportNotice(getImportKeyTypeByIndex(m.forms.importKeyType)); notice != "" {
 		sb.WriteString(subtitleStyle.Render(notice))
 		sb.WriteString("\n\n")
 	}
@@ -203,10 +203,6 @@ func (m Model) renderGenerateForm() string {
 	selectedKeyType := getKeyTypeByIndex(m.forms.generateKeyType)
 	footer.WriteString(subtitleStyle.Render(getKeyTypeSelectionLabel(selectedKeyType)))
 	footer.WriteString("\n\n")
-	if notice := keyTypeGenerationNotice(selectedKeyType); notice != "" {
-		footer.WriteString(subtitleStyle.Render(notice))
-		footer.WriteString("\n\n")
-	}
 
 	// Error message
 	if m.forms.generateError != "" {
