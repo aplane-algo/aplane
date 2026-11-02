@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"maps"
 	"os"
 	"sync"
 
@@ -140,21 +139,27 @@ type Observation struct {
 	Hint    Hint
 }
 
-// Invalidate closes outstanding handles while retaining durable progress. A
-// reload must call it before publishing replacement credential inventory.
+// Invalidate ends the current inventory lifetime: it starts a new derivation
+// epoch, so no request coalesces onto a job started under the old inventory,
+// and it forgets every table's verified memory, so each mapping is derived
+// again before it is trusted. A reload must call it before publishing
+// replacement credential inventory.
+//
+// Handles stay open. A table is bound to its selector, which is the stage 0
+// address re-derived from the seed when the key is loaded, and to its genesis
+// and key type, which Table checks on every call. A reload therefore cannot put
+// a different seed behind an open handle, and closing handles would only fail
+// in-flight requests and stop recovery grants whose credential did not change.
+// Deleting a key (Delete), discarding a table (Discard) and a genesis or key
+// type mismatch (Table) still close the handle.
 func (s *Store) Invalidate() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.epoch++
-	for key, t := range s.tables {
-		t.writeMu.Lock()
+	for _, t := range s.tables {
 		t.mu.Lock()
-		t.closed = true
-		s.tables[key] = &Table{path: t.path, selector: t.selector, genesis: t.genesis, keyType: t.keyType,
-			addrs: maps.Clone(t.addrs), index: maps.Clone(t.index), hint: cloneHint(t.hint), dirty: t.dirty, writeErr: t.writeErr,
-			verified: make(map[uint64]types.Address), revision: t.revision, searchTurn: t.searchTurn}
+		clear(t.verified)
 		t.mu.Unlock()
-		t.writeMu.Unlock()
 	}
 }
 

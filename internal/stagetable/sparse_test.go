@@ -5,13 +5,17 @@ package stagetable
 
 import (
 	"errors"
-	"github.com/aplane-algo/aplane/internal/fsutil"
 	"math"
 	"os"
 	"path/filepath"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/aplane-algo/aplane/internal/fsutil"
+	"github.com/aplane-algo/aplane/internal/storepaths"
+
+	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
 func TestSparseRestartAndHintRecency(t *testing.T) {
@@ -164,7 +168,7 @@ func TestSparseOverflowAndLegacyRead(t *testing.T) {
 func TestSlowPublicationDoesNotBlockMemoryAndPreservesNewerWork(t *testing.T) {
 	dir := t.TempDir()
 	tb := openTest(t, dir)
-	if err := tb.RecordDerived(50000, stageAddrs(50000, 50001)); err != nil {
+	if _, err := tb.RecordDerived(50000, stageAddrs(50000, 50001)); err != nil {
 		t.Fatal(err)
 	}
 	entered, release, done := make(chan struct{}), make(chan struct{}), make(chan error, 1)
@@ -189,7 +193,8 @@ func TestSlowPublicationDoesNotBlockMemoryAndPreservesNewerWork(t *testing.T) {
 			memory <- errors.New("missing entry")
 			return
 		}
-		memory <- tb.RecordDerived(50001, stageAddrs(50001, 50002))
+		_, err := tb.RecordDerived(50001, stageAddrs(50001, 50002))
+		memory <- err
 	}()
 	select {
 	case err := <-memory:
@@ -213,5 +218,128 @@ func TestSlowPublicationDoesNotBlockMemoryAndPreservesNewerWork(t *testing.T) {
 	reopened := openTest(t, dir)
 	if reopened.Len() != 2 {
 		t.Fatalf("old snapshot erased newer work: %d entries", reopened.Len())
+	}
+}
+
+// A reload ends verified memory and the derivation epoch but must not close
+// handles: the selector binds the seed, so in-flight requests and recovery
+// grants holding the table keep working and keep the same table identity.
+func TestInvalidateKeepsHandlesAndForgetsVerifiedMemory(t *testing.T) {
+	store := NewStore(storepaths.NewPaths(t.TempDir()))
+	tb, err := store.Table(testSelector, testGenesis, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tb.RecordDerived(10, stageAddrs(10, 12)); err != nil {
+		t.Fatal(err)
+	}
+	if !tb.Verified(10, stageAddr(10)) {
+		t.Fatal("derived entry not verified")
+	}
+	epoch := store.Epoch()
+	store.Invalidate()
+	if store.Epoch() == epoch {
+		t.Fatal("reload kept the derivation epoch")
+	}
+	if tb.Verified(10, stageAddr(10)) || tb.Verified(11, stageAddr(11)) {
+		t.Fatal("reload kept verified memory")
+	}
+	if a, ok := tb.Address(11); !ok || a != stageAddr(11) {
+		t.Fatal("reload dropped cached progress")
+	}
+	again, err := store.Table(testSelector, testGenesis, nil)
+	if err != nil || again != tb {
+		t.Fatalf("reload replaced the handle (%v)", err)
+	}
+	// The old handle still accepts work, which verifies again.
+	if _, err := tb.RecordDerived(12, stageAddrs(12, 13)); err != nil {
+		t.Fatalf("in-flight handle closed by reload: %v", err)
+	}
+	if err := tb.Flush(); err != nil {
+		t.Fatalf("in-flight handle cannot publish: %v", err)
+	}
+	// Deletion still closes it.
+	if err := store.Delete(testSelector.String()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tb.RecordDerived(13, stageAddrs(13, 14)); !errors.Is(err, ErrClosed) {
+		t.Fatalf("deleted handle accepted work: %v", err)
+	}
+}
+
+// Re-deriving entries the cache already holds, or seeing the same stage again
+// at a later round, verifies or refreshes memory without needing publication.
+func TestUnchangedObservationsDoNotDirtyTheTable(t *testing.T) {
+	tb := openTest(t, t.TempDir())
+	if changed, err := tb.RecordDerived(50000, stageAddrs(50000, 50002)); err != nil || !changed {
+		t.Fatalf("new entries: changed=%v err=%v", changed, err)
+	}
+	round := uint64(7)
+	if err := tb.RecordHint(Hint{Stage: 50000, Round: &round, Authorizer: stageAddr(50000), Source: "local_observation"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := tb.Flush(); err != nil || tb.Dirty() {
+		t.Fatalf("flush: %v dirty=%v", err, tb.Dirty())
+	}
+	if changed, err := tb.RecordDerived(50000, stageAddrs(50000, 50002)); err != nil || changed || tb.Dirty() {
+		t.Fatalf("re-derived entries: changed=%v err=%v dirty=%v", changed, err, tb.Dirty())
+	}
+	later := uint64(9)
+	if err := tb.RecordHint(Hint{Stage: 50000, Round: &later, Authorizer: stageAddr(50000), Source: "local_observation"}); err != nil {
+		t.Fatal(err)
+	}
+	if tb.Dirty() {
+		t.Fatal("repeat observation dirtied the table")
+	}
+	if h := tb.RecoveryHint(); h == nil || h.Round == nil || *h.Round != later {
+		t.Fatalf("repeat observation round not kept in memory: %+v", h)
+	}
+	// A moved stage is a real change.
+	moved := later + 1
+	if err := tb.RecordHint(Hint{Stage: 50001, Round: &moved, Authorizer: stageAddr(50001), Source: "local_observation"}); err != nil {
+		t.Fatal(err)
+	}
+	if !tb.Dirty() {
+		t.Fatal("new stage observation not published")
+	}
+}
+
+// Remembered scan frontiers must not survive a repair that removes coverage.
+func TestFirstMissingFrontierForgetsRemovedCoverage(t *testing.T) {
+	tb := openTest(t, t.TempDir())
+	if _, err := tb.RecordDerived(0, stageAddrs(0, 10)); err != nil {
+		t.Fatal(err)
+	}
+	if got := tb.FirstMissing(0); got != 10 {
+		t.Fatalf("FirstMissing = %d, want 10", got)
+	}
+	// Stage 3's address turns out to be stage 20's: the repair moves it.
+	if _, err := tb.RecordDerived(20, []types.Address{stageAddr(3)}); err != nil {
+		t.Fatal(err)
+	}
+	if got := tb.FirstMissing(0); got != 3 {
+		t.Fatalf("FirstMissing after repair = %d, want 3", got)
+	}
+	if got := tb.MissingRun(3, 5); got != 1 {
+		t.Fatalf("MissingRun(3) = %d, want 1", got)
+	}
+	if got := tb.MissingRun(10, 5); got != 5 {
+		t.Fatalf("MissingRun(10) = %d, want 5", got)
+	}
+}
+
+// A range that repeats an address is refused whole, without mutation, whether
+// or not the caller asked for repair.
+func TestInsertRefusesAddressRepeatedWithinARange(t *testing.T) {
+	tb := openTest(t, t.TempDir())
+	a := stageAddr(10)
+	if err := tb.AppendFrom(10, []types.Address{a, a}); err == nil {
+		t.Fatal("append accepted a repeated address")
+	}
+	if _, err := tb.RecordDerived(10, []types.Address{a, a}); err == nil {
+		t.Fatal("repair accepted a repeated address")
+	}
+	if tb.Len() != 0 || tb.Dirty() {
+		t.Fatalf("refused range changed the table: len=%d dirty=%v", tb.Len(), tb.Dirty())
 	}
 }

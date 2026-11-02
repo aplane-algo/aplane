@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"sort"
 	"sync"
 	"time"
@@ -396,7 +397,7 @@ func (s *Service) fillStageTableOnce(ctx context.Context, deps *RotatingDeps, ge
 		if len(addrs) == 0 {
 			break
 		}
-		if err := publishStageBatch(table, opts.maxDerivations()-budget, opts); err != nil {
+		if err := publishStageBatch(table, opts.maxDerivations()-budget-len(addrs), opts.maxDerivations()-budget, opts); err != nil {
 			report.Err = err
 			return report
 		}
@@ -524,7 +525,7 @@ func (s *Service) runRecoveryGrant(ctx context.Context, rec *RotatingRecovery, g
 			if err := cacheDerived(table, stage, addrs); err != nil {
 				return false, false, spent, err
 			}
-			if err := publishStageBatch(table, spent, opts); err != nil {
+			if err := publishStageBatch(table, spent-len(addrs), spent, opts); err != nil {
 				return false, false, spent, err
 			}
 			if addrs[0] == authorizer {
@@ -584,7 +585,8 @@ func resolveStage(table *stagetable.Table, account, authorizer types.Address) (u
 // cacheDerived retains completed work even when publication fails. Closed
 // handles still fail, preventing a deleted credential's worker from reviving it.
 func cacheDerived(table *stagetable.Table, from uint64, addrs []types.Address) error {
-	return table.RecordDerived(from, addrs)
+	_, err := table.RecordDerived(from, addrs)
+	return err
 }
 
 // extendUntil uses the same sparse coverage and bounded forward preference for
@@ -600,16 +602,30 @@ func extendUntil(ctx context.Context, table *stagetable.Table, derive stageDeriv
 		if n == math.MaxUint64 {
 			return false, errors.New("stage space exhausted")
 		}
-		addrs, err := derive(ctx, n, n+1)
+		// The first probe is the candidate alone: after a restore or a single
+		// rotation it is usually the live stage, and one derivation proves it.
+		// Once it misses, derive the gap that starts at each candidate in one
+		// call, so up to opts.Parallel derivations run at once. A chunk never
+		// crosses a cached entry, so nothing already held is derived again.
+		chunk := uint64(1)
+		if budget < initialBudget {
+			chunk = uint64(min(opts.parallel(), budget))
+			if room := math.MaxUint64 - n; chunk > room {
+				chunk = room
+			}
+			chunk = max(table.MissingRun(n, chunk), 1)
+		}
+		before := initialBudget - budget
+		addrs, err := derive(ctx, n, n+chunk)
 		if len(addrs) > 0 {
 			if e := cacheDerived(table, n, addrs); e != nil {
 				return false, e
 			}
-			if addrs[0] == target {
+			if slices.Contains(addrs, target) {
 				return true, nil
 			}
 			budget -= len(addrs)
-			if err := publishStageBatch(table, initialBudget-budget, opts); err != nil {
+			if err := publishStageBatch(table, before, initialBudget-budget, opts); err != nil {
 				return false, err
 			}
 		}
@@ -725,10 +741,13 @@ func releaseSearchAnchor(deps *RotatingDeps, account string) *uint64 {
 	return nil
 }
 
-// Periodic publication preserves completed work during a long paced pass.
-// Foreground discovery only updates memory and wakes the worker to publish it.
-func publishStageBatch(table *stagetable.Table, spent int, opts StageFillOptions) error {
-	if !opts.persistBatches || spent == 0 || spent%opts.batch() != 0 {
+// publishStageBatch preserves completed work during a long paced pass: it
+// flushes once each time the pass's derivations cross a batch boundary.
+// before and after are the derivations spent before and after the latest
+// call, so a chunk that steps over a boundary still publishes. Foreground
+// discovery only updates memory and wakes the worker to publish it.
+func publishStageBatch(table *stagetable.Table, before, after int, opts StageFillOptions) error {
+	if !opts.persistBatches || after <= before || after/opts.batch() == before/opts.batch() {
 		return nil
 	}
 	err := table.Flush()

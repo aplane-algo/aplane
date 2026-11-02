@@ -68,6 +68,18 @@ func (t *Table) RecordHint(h Hint) error {
 		return ErrClosed
 	}
 	old := t.hint
+	if old != nil && h.Source == old.Source && h.Stage == old.Stage && h.Authorizer == old.Authorizer {
+		// The same observation seen again. A later round is kept in memory for
+		// backup snapshots, but it is not a change worth publishing: stages only
+		// move forward, so the stored round already orders this hint correctly
+		// against any older backup, and rewriting the cache on every pass would
+		// turn a steady-state account into a durable write per observation.
+		if h.Round != nil && (old.Round == nil || *h.Round > *old.Round) {
+			r := *h.Round
+			t.hint.Round = &r
+		}
+		return nil
+	}
 	newer := old == nil
 	if old != nil {
 		switch {

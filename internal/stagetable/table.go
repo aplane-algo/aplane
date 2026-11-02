@@ -73,6 +73,7 @@ type Table struct {
 	searchTurn uint64
 	verified   map[uint64]types.Address
 	index      map[types.Address]uint64
+	frontier   map[uint64]uint64 // scan start -> first missing stage found
 	closed     bool
 }
 
@@ -153,7 +154,7 @@ func (t *Table) Address(stage uint64) (types.Address, bool) {
 // stage must use AppendFrom; entry count has no stage semantics.
 func (t *Table) Append(addrs []types.Address) error {
 	t.mu.Lock()
-	err := t.insertLocked(t.firstMissingLocked(0), addrs, false)
+	_, err := t.insertLocked(t.firstMissingLocked(0), addrs, false)
 	t.mu.Unlock()
 	if err != nil {
 		return err
@@ -165,7 +166,7 @@ func (t *Table) Append(addrs []types.Address) error {
 // Conflicting cached values are rejected; Repair replaces a verified mapping.
 func (t *Table) AppendFrom(start uint64, addrs []types.Address) error {
 	t.mu.Lock()
-	err := t.insertLocked(start, addrs, false)
+	_, err := t.insertLocked(start, addrs, false)
 	t.mu.Unlock()
 	if err != nil {
 		return err
@@ -173,46 +174,74 @@ func (t *Table) AppendFrom(start uint64, addrs []types.Address) error {
 	return t.Flush()
 }
 
-func (t *Table) insertLocked(start uint64, addrs []types.Address, repair bool) error {
+// insertLocked records a derived range and marks it verified. Without repair a
+// conflicting cached value refuses the whole range before anything changes;
+// with repair it replaces the stale mapping in both indexes. The maps are
+// updated in place (callers hold t.mu), so the cost is the range, not the
+// table. changed reports whether the cached mapping changed, which is what
+// makes the table dirty: re-deriving entries the cache already holds only
+// verifies them and needs no publication.
+func (t *Table) insertLocked(start uint64, addrs []types.Address, repair bool) (changed bool, err error) {
 	if t.closed {
-		return ErrClosed
+		return false, ErrClosed
 	}
 	if uint64(len(addrs)) > math.MaxUint64-start {
-		return errors.New("stage range overflows")
+		return false, errors.New("stage range overflows")
 	}
-	next := maps.Clone(t.addrs)
-	index := maps.Clone(t.index)
+	// One range never repeats an address: distinct stages of one seed derive
+	// distinct addresses. Refuse a repeat before anything changes, in both
+	// modes; applying it would silently move the earlier stage's entry.
+	if len(addrs) > 1 {
+		seen := make(map[types.Address]struct{}, len(addrs))
+		for i, a := range addrs {
+			if _, dup := seen[a]; dup {
+				return false, fmt.Errorf("stage %d repeats an address earlier in the range", start+uint64(i))
+			}
+			seen[a] = struct{}{}
+		}
+	}
+	if !repair {
+		for i, a := range addrs {
+			n := start + uint64(i)
+			if old, ok := t.addrs[n]; ok && old != a {
+				return false, fmt.Errorf("stage %d disagrees with cached address", n)
+			}
+			if other, ok := t.index[a]; ok && other != n {
+				return false, fmt.Errorf("stage address %s already present", a)
+			}
+		}
+	}
 	for i, a := range addrs {
 		n := start + uint64(i)
-		if old, ok := next[n]; ok && old != a {
-			if !repair {
-				return fmt.Errorf("stage %d disagrees with cached address", n)
-			}
-			delete(index, old)
+		old, ok := t.addrs[n]
+		if ok && old == a {
+			t.verified[n] = a
+			continue
 		}
-		if other, ok := index[a]; ok && other != n {
-			if !repair {
-				return fmt.Errorf("stage address %s already present", a)
-			}
-			delete(next, other)
+		if ok {
+			delete(t.index, old)
 		}
-		next[n], index[a] = a, n
+		if other, ok := t.index[a]; ok && other != n {
+			delete(t.addrs, other)
+			delete(t.verified, other)
+			// Coverage shrank, so remembered scan frontiers may be stale.
+			clear(t.frontier)
+		}
+		t.addrs[n], t.index[a] = a, n
+		t.verified[n] = a
+		changed = true
 	}
-	if len(addrs) == 0 {
-		return nil
+	if changed {
+		t.dirty = true
+		t.revision++
 	}
-	t.addrs, t.index, t.dirty = next, index, true
-	t.revision++
-	for i, a := range addrs {
-		t.verified[start+uint64(i)] = a
-	}
-	return nil
+	return changed, nil
 }
 
 // Repair publishes a freshly derived address, repairing both indexes.
 func (t *Table) Repair(stage uint64, address types.Address) error {
 	t.mu.Lock()
-	err := t.insertLocked(stage, []types.Address{address}, true)
+	_, err := t.insertLocked(stage, []types.Address{address}, true)
 	t.mu.Unlock()
 	if err != nil {
 		return err
@@ -222,18 +251,52 @@ func (t *Table) Repair(stage uint64, address types.Address) error {
 
 // FirstMissing resumes from actual coverage, never the highest cached index.
 func (t *Table) FirstMissing(from uint64) uint64 {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	return t.firstMissingLocked(from)
 }
-func (t *Table) firstMissingLocked(from uint64) uint64 {
-	for from < math.MaxUint64 {
-		if _, ok := t.addrs[from]; !ok {
+
+// MissingRun counts the consecutive stages from from that the table does not
+// hold, up to limit, so a caller can derive a whole gap chunk at once without
+// re-deriving cached entries on either side of it.
+func (t *Table) MissingRun(from, limit uint64) uint64 {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	var n uint64
+	for n < limit && from+n < math.MaxUint64 {
+		if _, ok := t.addrs[from+n]; ok {
 			break
 		}
-		from++
+		n++
 	}
-	return from
+	return n
+}
+
+// maxFrontiers bounds the remembered scan starts. Callers scan from a handful
+// of fixed points (zero, the hint, the live stage), so a small memo is enough.
+const maxFrontiers = 8
+
+// firstMissingLocked returns the first stage at or after from that the table
+// does not hold. It resumes from the frontier it last found for the same
+// start, so repeated scans over a long covered run cost only the new entries;
+// that is valid because coverage only grows, and insertLocked forgets the
+// frontiers when a repair removes an entry. Callers hold t.mu for writing.
+func (t *Table) firstMissingLocked(from uint64) uint64 {
+	n := from
+	if f, ok := t.frontier[from]; ok && f > n {
+		n = f
+	}
+	for n < math.MaxUint64 {
+		if _, ok := t.addrs[n]; !ok {
+			break
+		}
+		n++
+	}
+	if t.frontier == nil || len(t.frontier) >= maxFrontiers {
+		t.frontier = make(map[uint64]uint64, maxFrontiers)
+	}
+	t.frontier[from] = n
+	return n
 }
 
 // Flush retries a failed cache publication. Verified memory remains usable.
@@ -268,6 +331,13 @@ func (t *Table) Flush() error {
 		t.dirty = false
 	}
 	return nil
+}
+
+// Dirty reports whether the table holds changes that are not yet published.
+func (t *Table) Dirty() bool {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return t.dirty
 }
 
 // PersistenceError reports a failed publication without discarding useful work.
@@ -356,8 +426,10 @@ func (t *Table) Verified(stage uint64, a types.Address) bool {
 }
 
 // RecordDerived records completed derivations in memory. Call Flush after the
-// bounded batch, including on cancellation, to publish its progress.
-func (t *Table) RecordDerived(start uint64, addrs []types.Address) error {
+// bounded batch, including on cancellation, to publish its progress. changed
+// reports whether the cached mapping changed and so needs publication;
+// re-deriving entries the cache already holds only verifies them.
+func (t *Table) RecordDerived(start uint64, addrs []types.Address) (changed bool, err error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return t.insertLocked(start, addrs, true)

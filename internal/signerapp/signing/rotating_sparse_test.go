@@ -9,6 +9,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 	"github.com/aplane-algo/aplane/internal/stagetable"
@@ -151,5 +152,85 @@ func TestInterruptedSharedProbeRetriesForLiveWaiter(t *testing.T) {
 	<-done
 	if a := <-result; a != (types.Address{3}) {
 		t.Fatal("live waiter lost its probe")
+	}
+}
+
+// After a first single-stage probe misses, discovery derives each gap
+// opts.Parallel stages at a time, never re-deriving a cached entry.
+func TestExtendUntilDerivesGapsInParallelChunks(t *testing.T) {
+	f, _ := newSigningFixture(t)
+	table := f.table(t)
+	// Stage 5 is already cached, so the chunk starting at 1 must stop before it.
+	if _, err := table.RecordDerived(5, []types.Address{{5}}); err != nil {
+		t.Fatal(err)
+	}
+	var ranges [][2]uint64
+	derive := func(_ context.Context, from, to uint64) ([]types.Address, error) {
+		ranges = append(ranges, [2]uint64{from, to})
+		out := make([]types.Address, 0, to-from)
+		for i := from; i < to; i++ {
+			out = append(out, types.Address{byte(i), 1})
+		}
+		return out, nil
+	}
+	target := types.Address{9, 1}
+	found, err := extendUntil(context.Background(), table, derive, target, 16, StageFillOptions{Parallel: 4})
+	if err != nil || !found {
+		t.Fatalf("found=%v err=%v ranges=%v", found, err, ranges)
+	}
+	want := [][2]uint64{{0, 1}, {1, 5}, {6, 10}}
+	if len(ranges) != len(want) {
+		t.Fatalf("ranges = %v, want %v", ranges, want)
+	}
+	for i := range want {
+		if ranges[i] != want[i] {
+			t.Fatalf("ranges = %v, want %v", ranges, want)
+		}
+	}
+}
+
+// A chunk that steps over a batch boundary still publishes once.
+func TestPublishStageBatchFlushesOnBoundaryCrossing(t *testing.T) {
+	f, _ := newSigningFixture(t)
+	table := f.table(t)
+	opts := StageFillOptions{Batch: 4, persistBatches: true}
+	if _, err := table.RecordDerived(0, []types.Address{{1}, {2}, {3}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := publishStageBatch(table, 0, 3, opts); err != nil || !table.Dirty() {
+		t.Fatalf("flushed before the boundary: err=%v dirty=%v", err, table.Dirty())
+	}
+	if err := publishStageBatch(table, 3, 6, opts); err != nil || table.Dirty() {
+		t.Fatalf("boundary crossing not published: err=%v dirty=%v", err, table.Dirty())
+	}
+}
+
+// A reload must not stop a running recovery grant whose credential did not
+// change: the table handle survives Invalidate, so the grant keeps its search.
+func TestRecoveryGrantSurvivesInventoryReload(t *testing.T) {
+	rec := &RotatingRecovery{MaxStages: 1000, Timeout: time.Hour}
+	rec.SetGenerationSource(func() uint64 { return 1 })
+	store := stagetable.NewStore(storepaths.NewPaths(t.TempDir()))
+	account := types.Address{0xA1}
+	genesis := make([]byte, 32)
+	table, err := store.Table(account, genesis, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	authorizer := types.Address{7}
+	op, svcErr := rec.StartOperator(1, account.String(), nil, 0, 500, 0)
+	if svcErr != nil {
+		t.Fatal(svcErr)
+	}
+	if g := rec.grantFor(1, account.String(), authorizer, table); g == nil || g.ID != op.ID {
+		t.Fatalf("operator grant not bound: %+v", g)
+	}
+	store.Invalidate()
+	after, err := store.Table(account, genesis, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if g := rec.grantFor(1, account.String(), authorizer, after); g == nil || g.ID != op.ID {
+		t.Fatalf("reload stopped the operator grant: %+v, state %+v", g, rec.State(account.String()))
 	}
 }

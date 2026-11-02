@@ -1512,14 +1512,18 @@ Placement and lifecycle:
   mints and rollbacks do not rewind it
 - backups omit the full file, but may carry an optional stage hint in the
   sealed manifest; a restore without a hint uses bounded discovery
-- deletion closes handles and removes the file; inventory reload invalidates
-  old jobs and handles while retaining cached progress and observations
+- deletion closes handles and removes the file; inventory reload starts a new
+  derivation epoch and forgets verified memory while retaining cached progress,
+  observations and open handles (the selector binds the seed, so a reload
+  cannot change the credential behind a held table, and running requests and
+  recovery grants continue)
 - passphrase changes need no cache encryption changes
 - publication uses a private, atomic, durable whole-file write; background
   work batches writes. Publication holds a separate write lock; lookups and
   foreground memory updates do not wait for disk I/O. Prepare/sign wake the
-  worker to persist their progress. Restart before that write may require a
-  fresh prepare. A failed publication retains verified memory, warns
+  worker only when they leave unpublished progress; re-deriving cached entries
+  or seeing the same stage again at a later round is not a change to publish.
+  Restart before that write may require a fresh prepare. A failed publication retains verified memory, warns
   and retries. A wrong record is repaired in both indexes without discarding
   independent entries. File-level corruption may discard the cache.
 

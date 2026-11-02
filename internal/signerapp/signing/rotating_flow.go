@@ -225,10 +225,14 @@ func derivedStageAddress(ctx context.Context, deps *RotatingDeps, table *stageta
 	if len(addrs) != 1 {
 		return types.Address{}, unavailable("derivation interrupted")
 	}
-	if err := table.RecordDerived(stage, addrs); err != nil {
+	if _, err := table.RecordDerived(stage, addrs); err != nil {
 		return types.Address{}, internal(fmt.Sprintf("repair stage cache: %v", err))
 	}
-	if deps.Wake != nil {
+	// Ask the worker to publish only when this request left unpublished work
+	// (its own entry or discovery progress). A request that found everything
+	// already cached must not force a pass: steady-state spends would otherwise
+	// trigger a chain read for every rotating account on each request.
+	if deps.Wake != nil && table.Dirty() {
 		deps.Wake()
 	}
 	return addrs[0], nil
