@@ -261,7 +261,8 @@ aprekey generate --out /media/cold/bounded-admin
 
 Copy the generated public `<WitnessKeyID>.wit.json` file to the machine running
 `apadmin`. When generating `aplane.falcon1024-allowlist-alock.v1`, enter that
-file's local path in **Contract Admin Reference File (.wit.json)**. `apadmin`
+file's local path in **Contract Admin Reference File (.wit.json)**, or press
+`ctrl+o` in that field to browse for it. `apadmin`
 validates the public reference and supplies its `public_key_hex` to the signer;
 it never reads the private `.wit` file. Keep the `.wit` artifact outside the
 signer. Scripted generation still accepts the `bounded_admin_public_key` hex

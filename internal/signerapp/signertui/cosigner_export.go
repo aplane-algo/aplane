@@ -74,6 +74,10 @@ func (m Model) handleCosignerExportPathKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 		m.cosigner.exportError = ""
 		m.viewState = m.cosignerExportReturnView()
 		return m, nil
+	case fileBrowserKey:
+		m.cosigner.exportFocus = 0
+		name := suggestedCosignerExportPath(m.cosigner.exportWitnessID)
+		return m.openFileBrowser(browseCosignerExportFile, m.cosigner.exportPath, "", name), nil
 	case "tab", "down":
 		m.cosigner.exportFocus = (m.cosigner.exportFocus + 1) % (m.cosignerExportLastFocus() + 1)
 		return m, nil
@@ -181,7 +185,7 @@ func (m Model) renderCosignerExportPath() string {
 	if m.cosigner.exportFocus == 0 {
 		pathStyle = inputActiveStyle
 	}
-	body.WriteString(pathStyle.Width(m.constrainParameterFieldWidth(60)).Render(m.cosigner.exportPath))
+	body.WriteString(pathStyle.Width(m.constrainParameterFieldWidth(60)).Render(terminalSafe(m.cosigner.exportPath)))
 	body.WriteString("\n" + helpStyle.Render("Public key only. Clients are given this cosigner's address separately."))
 	body.WriteString("\n\n")
 	button := buttonInactiveStyle.Render("EXPORT KEY FILE")
@@ -197,7 +201,7 @@ func (m Model) renderCosignerExportPath() string {
 	body.WriteString(jsonButton)
 	body.WriteString("\n")
 	if m.cosigner.exportError != "" {
-		body.WriteString("\n" + errorStyle.Render(m.cosigner.exportError) + "\n")
+		body.WriteString("\n" + errorStyle.Render(terminalSafeLines(m.cosigner.exportError)) + "\n")
 	}
 	return m.renderPopup(90, body.String())
 }
@@ -214,7 +218,7 @@ func (m Model) renderCosignerExportResult() string {
 	var body strings.Builder
 	body.WriteString(titleStyle.Render("Cosigner Key Exported"))
 	body.WriteString("\n\nPublic key file saved to:\n")
-	body.WriteString(m.cosigner.exportWrittenPath)
+	body.WriteString(terminalSafe(m.cosigner.exportWrittenPath))
 	body.WriteString("\n\nWitness Key ID:\n")
 	body.WriteString(wrapPlainText(groupedWitnessKeyID(m.cosigner.exportWitnessID), m.popupBodyWidth(90)))
 	body.WriteString("\n")

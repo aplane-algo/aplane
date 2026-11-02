@@ -109,6 +109,8 @@ func (m Model) handlePolicyApplyFormKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "enter":
 		return m.submitPolicyApplyFile()
+	case fileBrowserKey:
+		return m.openFileBrowser(browsePolicyFile, m.policies.apply.path, "", ""), nil
 	case "backspace", "delete":
 		m.policies.apply.path = trimLastRune(m.policies.apply.path)
 		m.policies.apply.err = ""
@@ -530,8 +532,8 @@ func (m Model) renderPolicyApplyForm() string {
 	body.WriteString(subtitleStyle.Render("The file's \"key\" field names the document: \"default\" for the node default, or a key the node holds."))
 	body.WriteString("\n\n")
 	body.WriteString("Policy file:\n")
-	body.WriteString(inputActiveStyle.Width(m.constrainParameterFieldWidth(60)).Render(apply.path))
-	body.WriteString("\n" + helpStyle.Render("The file is checked and its changes shown before anything is applied."))
+	body.WriteString(inputActiveStyle.Width(m.constrainParameterFieldWidth(60)).Render(terminalSafe(apply.path)))
+	body.WriteString("\n" + helpStyle.Render("ctrl+o browses for the file. The file is checked and its changes shown before anything is applied."))
 	body.WriteString("\n")
 	if apply.busy != "" {
 		body.WriteString("\n")
@@ -540,11 +542,11 @@ func (m Model) renderPolicyApplyForm() string {
 	}
 	if apply.err != "" {
 		body.WriteString("\n")
-		body.WriteString(errorStyle.Render(wrapPlainText(apply.err, m.popupBodyWidth(90))))
+		body.WriteString(errorStyle.Render(wrapPlainText(terminalSafeLines(apply.err), m.popupBodyWidth(90))))
 		body.WriteString("\n")
 	}
 	for _, line := range apply.problems {
-		body.WriteString(wrapPlainText(line, m.popupBodyWidth(90)))
+		body.WriteString(wrapPlainText(terminalSafeLines(line), m.popupBodyWidth(90)))
 		body.WriteString("\n")
 	}
 	return m.renderPopup(90, body.String())
@@ -556,7 +558,7 @@ func (m Model) renderPolicyApplyReview() string {
 	var sb strings.Builder
 	sb.WriteString(titleStyle.Render("Review Policy Change"))
 	sb.WriteString("\n")
-	sb.WriteString(subtitleStyle.Render(ellipsize(apply.file+"  →  "+m.policyApplyTargetLabel(), width)))
+	sb.WriteString(subtitleStyle.Render(ellipsize(terminalSafe(apply.file)+"  →  "+m.policyApplyTargetLabel(), width)))
 	sb.WriteString("\n\n")
 
 	lines := m.policyApplyReviewLines()
@@ -603,7 +605,7 @@ func (m Model) policyApplyFooterText() string {
 		if apply.busy != "" {
 			return "Esc: Cancel"
 		}
-		return "Enter: Check and review | Esc: Back"
+		return "Enter: Check and review | ctrl+o: Browse | Esc: Back"
 	}
 	if apply.applying {
 		return "Applying..."

@@ -282,6 +282,12 @@ func (m Model) handleCosignerImportFormKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 	switch msg.String() {
 	case "esc":
 		return m.cancelCosignerImport(), nil
+	case fileBrowserKey:
+		if m.cosigner.importPaste {
+			return m, nil
+		}
+		m.cosigner.importFocus = 0
+		return m.openFileBrowser(browseCosignerImportFile, m.cosigner.importPath, "", ""), nil
 	case "tab", "down":
 		m = m.suggestCosignerImportNameFromPath()
 		m.cosigner.importFocus = (m.cosigner.importFocus + 1) % 3
@@ -619,7 +625,7 @@ func (m Model) renderCosignerImportForm() string {
 		body.WriteString("\n" + helpStyle.Render("Use your terminal paste shortcut. Backspace/Delete clears the JSON."))
 	} else {
 		body.WriteString("Cosigner key file:\n")
-		body.WriteString(pathStyle.Width(m.constrainParameterFieldWidth(60)).Render(m.cosigner.importPath))
+		body.WriteString(pathStyle.Width(m.constrainParameterFieldWidth(60)).Render(terminalSafe(m.cosigner.importPath)))
 	}
 	body.WriteString("\n\nReference name:\n")
 	body.WriteString(nameStyle.Width(m.constrainParameterFieldWidth(40)).Render(m.cosigner.importName))
@@ -633,7 +639,7 @@ func (m Model) renderCosignerImportForm() string {
 	body.WriteString("\n")
 	if m.cosigner.importError != "" {
 		body.WriteString("\n")
-		body.WriteString(errorStyle.Render(m.cosigner.importError))
+		body.WriteString(errorStyle.Render(terminalSafeLines(m.cosigner.importError)))
 		body.WriteString("\n")
 	}
 	return m.renderPopup(80, body.String())
@@ -661,7 +667,7 @@ func (m Model) renderCosignerImportReview() string {
 	}
 	if m.cosigner.importError != "" {
 		body.WriteString("\n\n")
-		body.WriteString(errorStyle.Render(m.cosigner.importError))
+		body.WriteString(errorStyle.Render(terminalSafeLines(m.cosigner.importError)))
 	}
 	body.WriteString("\n")
 	return m.renderPopup(90, body.String())

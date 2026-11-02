@@ -352,6 +352,9 @@ func (m Model) adminEndpointDisplayURL() string {
 }
 
 func (m Model) renderViewContent() string {
+	if m.fileBrowserOpen() {
+		return m.renderFileBrowser()
+	}
 	var content string
 
 	switch m.viewState {

@@ -94,6 +94,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.signing.request != nil {
 			m.resizeSigningViewport()
 		}
+		if m.browser.active() {
+			m.browser.keepSelectionVisible(m.fileBrowserVisibleRows())
+		}
 		return m, nil
 
 	case ConnectedMsg:
@@ -861,6 +864,18 @@ func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.clearWarning()
 		}
 		return m, m.reconnectCmd()
+	}
+
+	// A file browser belongs to the view it was opened from: it takes that
+	// view's keys, waits under an approval popup, and closes when the view
+	// changes for any other reason.
+	if m.browser.active() {
+		switch {
+		case m.fileBrowserOpen():
+			return m.handleFileBrowserKeys(msg)
+		case !isApprovalView(m.viewState):
+			m = m.closeFileBrowser()
+		}
 	}
 
 	// View-specific handling

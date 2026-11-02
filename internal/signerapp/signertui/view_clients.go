@@ -124,7 +124,7 @@ func (m Model) renderImportClientKey() string {
 	if m.clients.importFocus == importClientKeyFocusPath {
 		pathStyle = inputActiveStyle
 	}
-	body.WriteString(pathStyle.Width(m.constrainParameterFieldWidth(60)).Render(m.clients.importPath))
+	body.WriteString(pathStyle.Width(m.constrainParameterFieldWidth(60)).Render(terminalSafe(m.clients.importPath)))
 	body.WriteString("\n\nLabel (optional; the file's comment is used when empty):\n")
 	labelStyle := inputInactiveStyle
 	if m.clients.importFocus == importClientKeyFocusLabel {
@@ -139,8 +139,8 @@ func (m Model) renderImportClientKey() string {
 	body.WriteString(button)
 	body.WriteString("\n")
 	if m.clients.importError != "" {
-		body.WriteString("\n" + errorStyle.Render(m.clients.importError) + "\n")
+		body.WriteString("\n" + errorStyle.Render(terminalSafeLines(m.clients.importError)) + "\n")
 	}
-	body.WriteString("\n" + helpStyle.Render("tab next field  enter submit  esc cancel"))
+	body.WriteString("\n" + helpStyle.Render("tab next field  ctrl+o browse  enter submit  esc cancel"))
 	return m.renderPopup(90, body.String())
 }

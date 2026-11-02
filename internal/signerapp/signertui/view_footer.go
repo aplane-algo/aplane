@@ -10,6 +10,9 @@ import (
 )
 
 func (m Model) viewFooterText() string {
+	if m.fileBrowserOpen() {
+		return m.fileBrowserFooterText()
+	}
 	switch m.viewState {
 	case ViewAuth, ViewUnlock:
 		return m.passphraseFooterText()
@@ -73,7 +76,7 @@ func (m Model) viewFooterText() string {
 		if m.cosigner.importPaste {
 			return "Paste: Replace JSON | Tab: Next | Enter: Continue | Esc: Back"
 		}
-		return "Tab: Next | Enter: Review | Esc: Back"
+		return "Tab: Next | ctrl+o: Browse | Enter: Review | Esc: Back"
 	case ViewCosignerImportReview:
 		if len(m.cosigner.reuseAliases) > 0 {
 			return "Enter/y: Use existing key | n/Esc: Back"
@@ -88,7 +91,7 @@ func (m Model) viewFooterText() string {
 	case ViewCosignerGenerateType:
 		return "up/down: Select | enter: Continue | esc/q: Back"
 	case ViewCosignerExportPath:
-		return "Tab: Next | Enter: Select | Esc: Back"
+		return "Tab: Next | ctrl+o: Browse | Enter: Select | Esc: Back"
 	case ViewCosignerExportResult:
 		return "Enter/Esc: Back"
 	case ViewCosignerExportJSON:
@@ -123,7 +126,7 @@ func (m Model) viewFooterText() string {
 		if m.policies.export.busy != "" {
 			return "esc: Cancel"
 		}
-		return "enter: Export | esc: Cancel"
+		return "enter: Export | ctrl+o: Browse | esc: Cancel"
 	case ViewTemplateLibrary:
 		return "up/down: Select | enter: Toggle availability | t: Template | r: Refresh | esc: Back"
 	case ViewTemplateInstallConfirm:
@@ -157,6 +160,9 @@ func (m Model) parameterModalFooterText(keyType, verb string) string {
 		if isMultilineParamType(param.Type) {
 			return ""
 		}
+	}
+	if param, ok := focusedParam(m.forms.generateFocus, spec.Params); ok && isContractAdminReferenceParam(param) {
+		return "Tab: Next | ctrl+o: Browse | Enter: " + verb + " | Esc: Back"
 	}
 	return "Tab: Next | </> Switch mode | Enter: " + verb + " | Esc: Back"
 }

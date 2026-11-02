@@ -307,7 +307,7 @@ func (m Model) renderPolicies() string {
 	sb.WriteString("\n")
 	if m.policies.status != "" {
 		sb.WriteString("\n")
-		sb.WriteString(m.policies.status)
+		sb.WriteString(terminalSafeLines(m.policies.status))
 		sb.WriteString("\n")
 	}
 	return sb.String()

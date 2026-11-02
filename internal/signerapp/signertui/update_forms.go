@@ -410,6 +410,11 @@ func (m Model) handleParamModalKeys(
 			return next, nil, errText
 		}
 	}
+	if msg.String() == fileBrowserKey {
+		if param, ok := focusedParam(m.forms.generateFocus, params); ok && isContractAdminReferenceParam(param) {
+			return m.openFileBrowser(browseContractAdminReference, m.forms.genericLSigParams[param.Name], param.Name, ""), nil, ""
+		}
+	}
 	if input, ok := paramTextInput(msg, m.forms.generateFocus, params); ok {
 		return m.typeIntoCurrentParam(input, params)
 	}

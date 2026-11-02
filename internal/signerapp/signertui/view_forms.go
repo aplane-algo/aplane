@@ -394,6 +394,7 @@ func (m Model) paramFieldLines(paramDef lsigprovider.ParameterDef, focused bool,
 			currentValue = m.cosignerSelectionDisplay(currentValue)
 		}
 		if isAdminReference {
+			currentValue = terminalSafe(currentValue)
 			if currentRunes := []rune(currentValue); len(currentRunes) >= fieldWidth {
 				currentValue = string(currentRunes[len(currentRunes)-fieldWidth+1:])
 			}
@@ -412,7 +413,7 @@ func (m Model) paramFieldLines(paramDef lsigprovider.ParameterDef, focused bool,
 	}
 	if value == "" {
 		if isAdminReference {
-			value = "Path to public .wit.json on this machine"
+			value = "Path to public .wit.json on this machine (ctrl+o to browse)"
 		} else {
 			value = getPlaceholderForType(paramDef.Type)
 		}
@@ -421,7 +422,7 @@ func (m Model) paramFieldLines(paramDef lsigprovider.ParameterDef, focused bool,
 		value = m.cosignerSelectionDisplay(m.forms.genericLSigParams[paramDef.Name])
 	}
 	if isAdminReference && !focused {
-		value = middleEllipsize(value, fieldWidth)
+		value = middleEllipsize(terminalSafe(value), fieldWidth)
 	}
 	return paramInputLines(value)
 }

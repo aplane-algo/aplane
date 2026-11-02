@@ -84,6 +84,9 @@ func (m Model) handlePolicyExportFormKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "enter":
 		return m.startPolicyExport()
+	case fileBrowserKey:
+		name := filepath.Base(suggestedPolicyExportDir(time.Now()))
+		return m.openFileBrowser(browsePolicyExportDir, export.path, "", name), nil
 	case "backspace", "delete":
 		export.path = trimLastRune(export.path)
 		export.err = ""
@@ -219,8 +222,8 @@ func (m Model) renderPolicyExportForm() string {
 	body.WriteString(subtitleStyle.Render("Writes every active policy document, exactly as stored, as default.json and <key>.json, with the node's context in .appolicy/node.json."))
 	body.WriteString("\n\n")
 	body.WriteString("Export directory (new or empty):\n")
-	body.WriteString(inputActiveStyle.Width(m.constrainParameterFieldWidth(60)).Render(export.path))
-	body.WriteString("\n" + helpStyle.Render("Check, explain or edit the files offline with appolicy; install changes with apadmin policy apply."))
+	body.WriteString(inputActiveStyle.Width(m.constrainParameterFieldWidth(60)).Render(terminalSafe(export.path)))
+	body.WriteString("\n" + helpStyle.Render("ctrl+o browses for where to create it. Check, explain or edit the files offline with appolicy; install changes with apadmin policy apply."))
 	body.WriteString("\n")
 	if export.busy != "" {
 		body.WriteString("\n")
@@ -229,7 +232,7 @@ func (m Model) renderPolicyExportForm() string {
 	}
 	if export.err != "" {
 		body.WriteString("\n")
-		body.WriteString(errorStyle.Render(wrapPlainText(export.err, m.popupBodyWidth(90))))
+		body.WriteString(errorStyle.Render(wrapPlainText(terminalSafeLines(export.err), m.popupBodyWidth(90))))
 		body.WriteString("\n")
 	}
 	return m.renderPopup(90, body.String())

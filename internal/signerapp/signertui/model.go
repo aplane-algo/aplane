@@ -441,6 +441,7 @@ type Model struct {
 	details            keyDetailsState
 	library            libraryState
 	errorPopup         errorPopupState
+	browser            fileBrowserState // file browser over a path field, if open
 
 	// Displace confirmation state
 	displaceConfirmFocus int // 0 = cancel, 1 = proceed
