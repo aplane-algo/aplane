@@ -320,16 +320,39 @@ map changed since, it stops before showing any review:
 apadmin: the export DIR/.appolicy/node.json (taken 2026-11-01T12:00:00Z) is stale: the node's policy changed since; export again and carry your edits over (policy_export_stale)
 ```
 
-Export again into a new directory and carry your edits over; the old export
-does not track what changed. After any successful apply, an export taken
-before it is stale. Applying several files from one export in one command
-keeps them together. Files from two exports, or from an export and elsewhere,
-are refused in one command. `--node-context FILE` names the context to
-compare instead of the one beside the files, and `--no-node-context`
-compares none. Files not from an export (and stdin) are applied as before,
-and apadmin notes that there is no export baseline to compare. Either way,
-the node still checks the review against its state at commit: an apply is
-refused if anything the review saw changed before it is committed.
+The old export does not track what changed, so apadmin cannot tell whether
+your edits still fit the node. There are two ways on:
+
+- **Export again.** Export into a new directory and carry your edits over.
+  Each file is a complete document, so carrying an edited file over means
+  copying it into the new export in place of the fresh copy. If the same
+  document also changed on the node since the old export, merge the two by
+  hand.
+- **Review against the node as it is now.** `--no-node-context` skips the
+  export comparison:
+
+  ```bash
+  apadmin policy diff --no-node-context DIR/<key>.json
+  apadmin policy apply --no-node-context DIR/<key>.json
+  ```
+
+  `diff` and `apply` always compare a file with the document that governs
+  its key now, not with the export, so the review shows exactly what the
+  apply changes on the live node. Apply when the review shows only your
+  edits. If it shows a change you did not make, the file would undo a change
+  made on the node since the export; export again instead.
+
+After any successful apply, an export taken before it is stale, including
+the rest of the same export. Applying several files from one export in one
+command keeps them together. Files from two exports, or from an export and
+elsewhere, are refused in one command. `--node-context FILE` names the
+context to compare instead of the one beside the files.
+
+A file is from an export when its directory holds `.appolicy/`. Files
+elsewhere (and stdin) are applied as before, and apadmin notes that there is
+no export baseline to compare. Either way, the node still checks the review
+against its state at commit: an apply is refused if anything the review saw
+changed before it is committed.
 
 To start a file for a key, write out the node's current default with the key
 filled in and edit it:
@@ -362,8 +385,14 @@ and enter the file path. The TUI checks the file, shows the same diff as
 node does not hold; generate or import the key first. The path must name a
 regular file, not a symlink. A file from an export is compared with the node
 as `apadmin policy apply` does: the TUI refuses an unfinished export, and a
-stale one before the review. The TUI does not remove documents or take several
-files at once; `apadmin policy` covers those.
+stale one before the review. The TUI has no `--no-node-context`. To load a
+file from a stale export, export again, or copy the file into a directory
+that has no `.appolicy/` and load the copy. The TUI then reviews the copy
+against the node as it is now, the same as `--no-node-context`. Apply it only
+when the review shows just your edits (see
+[Exporting the whole policy](#exporting-the-whole-policy)). The TUI does not
+remove documents or take several files at once; `apadmin policy` covers
+those.
 
 To take a copy of the node's current policy, open Policies (`p`) and press
 `x`. The TUI writes the same export as `apadmin policy export --all`, into a
@@ -429,6 +458,11 @@ or lock the node when it finishes.
 | `template --embedded signer\|cosigner [--key K]` | Write the shipped default for that role instead; needs no node and no passphrase |
 | `template [--role signer\|cosigner] --preset NAME [--key K]` | Write a preset instead (cosigner without `--role`); needs no node and no passphrase |
 | `template [--role signer\|cosigner] --list-presets` | List the presets for the role (cosigner without `--role`) |
+
+`check`, `diff` and `apply` also take `--node-context FILE`, to compare the
+node with that export context instead of the one beside the files, and
+`--no-node-context`, to compare it with none; see
+[Exporting the whole policy](#exporting-the-whole-policy).
 
 `apply` and `remove` ask "Apply these changes?" on the terminal. Pass `--yes`
 to skip the question in scripts; without a terminal and without `--yes` they
@@ -1430,7 +1464,7 @@ Before relying on a policy:
 | `check` rejects a file with "missing required field" | Key files and defaults are complete documents; start from `apadmin policy template --key K` rather than a fragment. |
 | `check` rejects a file with "is not accepted in a cosigner document" | The file carries a signer-only field (`reject_foreign_rekey`, `always_review_warnings`, `auto_approve_self_noop_transfer`, the `*_on_no_route` family, `review_above`, or a `review` type verdict). |
 | `export --key K` fails with `policy_document_not_found` | The key has no policy of its own; it follows the default, which `export` without `--key` returns. |
-| `check`, `diff` or `apply` fails with `policy_export_stale` | The files come from an export the node has moved on from: its policy, ASA set or network map changed since. Export again with `export --all` into a new directory and carry your edits over. |
+| `check`, `diff` or `apply` fails with `policy_export_stale` | The files come from an export the node has moved on from: its policy, ASA set or network map changed since. Export again with `export --all` into a new directory and copy your edited files into it, or run `diff --no-node-context FILE` to review against the live node and `apply --no-node-context FILE` when the diff shows only your edits (in the TUI, load a copy from outside the export). See [Exporting the whole policy](#exporting-the-whole-policy). |
 | `appolicy` refuses `--signer-data` | appolicy no longer reads a signer's data directory. Export with `apadmin policy export --all DIR` and open the files in `DIR`. |
 | A cosigner key rejects every request | It has no file and follows the deny-all default; give it one with `apadmin policy template --key <WitnessKeyID>`, edited and applied. |
 | A request is rejected with `transaction_type:<type>` | The governing document's `transaction_types` rejects that type, directly or through `*`. |
