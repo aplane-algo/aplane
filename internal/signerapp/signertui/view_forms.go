@@ -18,13 +18,7 @@ func (m Model) renderBackupConfirm() string {
 	var sb strings.Builder
 
 	sb.WriteString(titleStyle.Render("Create Backup"))
-	sb.WriteString("\n")
-	if dir := m.backupDirectoryLabel(); dir != "" {
-		sb.WriteString(subtitleStyle.Render("Backup Directory: " + dir))
-		sb.WriteString("\n\n")
-	} else {
-		sb.WriteString("\n")
-	}
+	sb.WriteString("\n\n")
 	sb.WriteString(subtitleStyle.Render(fmt.Sprintf(
 		"Scope: back up all active credentials of this identity (%d %s).",
 		m.keyCount,
@@ -88,8 +82,8 @@ func (m Model) renderBackupDisplay() string {
 	var sb strings.Builder
 	sb.WriteString(titleStyle.Render("Backup Created"))
 	sb.WriteString("\n\n")
-	sb.WriteString("Archive path:\n")
-	sb.WriteString(m.backup.archivePath)
+	sb.WriteString("Archive:\n")
+	sb.WriteString(terminalSafe(m.backup.archivePath))
 	sb.WriteString("\n")
 	return m.renderPopup(90, sb.String())
 }

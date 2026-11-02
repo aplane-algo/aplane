@@ -5,55 +5,13 @@ package tui
 
 import tea "github.com/charmbracelet/bubbletea"
 
-func (m Model) openRestoreList() (tea.Model, tea.Cmd) {
+// openBackups opens the Backups page and lists the repository.
+func (m Model) openBackups() (tea.Model, tea.Cmd) {
 	fromRecovery := m.signerState == signerRuntimeRecovery || m.viewState == ViewStoreRecovery
 	m.resetRestoreFlow(true)
 	m.restore.returnToRecovery = fromRecovery
-	m.viewState = ViewRestoreList
+	m.viewState = ViewBackups
 	return m, tea.Batch(m.sendListBackupsCmd(), m.waitForMessageCmd())
-}
-
-func (m Model) handleRestoreListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "q", "esc":
-		if m.restore.returnToRecovery || m.signerState == signerRuntimeRecovery {
-			m.resetRestoreFlow(true)
-			return m.openStoreRecovery()
-		}
-		m.resetRestoreFlow(true)
-		m.viewState = ViewKeyList
-		return m, nil
-	case "r", "R":
-		m.restore.backupsLoaded = false
-		m.restore.backups = nil
-		return m, tea.Batch(m.sendListBackupsCmd(), m.waitForMessageCmd())
-	case "up", "k":
-		if m.restore.selectedBackup > 0 {
-			m.restore.selectedBackup--
-		}
-	case "down", "j":
-		if m.restore.selectedBackup < len(m.restore.backups)-1 {
-			m.restore.selectedBackup++
-		}
-	case "enter":
-		backupInfo, ok := m.currentRestoreBackup()
-		if !ok {
-			return m, nil
-		}
-		m.clearRestorePassphrase()
-		m.restore.archivePath = backupInfo.Path
-		m.restore.passphraseError = ""
-		m.restore.previewError = ""
-		m.restore.previewKeys = nil
-		m.restore.previewErrors = nil
-		m.restore.selected = nil
-		m.restore.selectedKey = 0
-		m.restore.previewScrollOffset = 0
-		m.restore.replaceExisting = false
-		m.restore.replaceConflicts = nil
-		m.viewState = ViewRestorePassphrase
-	}
-	return m, nil
 }
 
 func (m Model) handleRestorePassphraseKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -68,7 +26,7 @@ func (m Model) handleRestorePassphraseKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 	case "esc":
 		m.clearRestorePassphrase()
 		m.restore.passphraseError = ""
-		m.viewState = ViewRestoreList
+		m.viewState = ViewBackups
 		return m, nil
 	case "enter":
 		if len(m.restore.passphrase) == 0 {
@@ -118,7 +76,7 @@ func (m Model) handleRestorePreviewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "q", "esc":
 		m.clearRestorePassphrase()
 		m.restore.previewError = ""
-		m.viewState = ViewRestoreList
+		m.viewState = ViewBackups
 		return m, nil
 	case "up", "k":
 		if m.restore.previewFocus != restoreFocusList {

@@ -441,3 +441,39 @@ func TestTerminalSafe(t *testing.T) {
 		}
 	}
 }
+
+func TestFileBrowserBackupImportListsArchivesOnly(t *testing.T) {
+	root := t.TempDir()
+	for _, name := range []string{"a.tar.gz", "b.tgz", "c.json", "d.tar"} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	m := Model{viewState: ViewBackupImport}
+	m.backups.imp.path = root + string(filepath.Separator)
+	m = press(t, m, "ctrl+o")
+	if got := strings.Join(browserNames(m.browser), " "); got != "../ a.tar.gz b.tgz" {
+		t.Fatalf("listing = %q, want the archives only", got)
+	}
+	m = press(t, selectBrowserEntry(t, m, "b.tgz"), "enter")
+	if m.backups.imp.path != filepath.Join(root, "b.tgz") {
+		t.Fatalf("path = %q", m.backups.imp.path)
+	}
+}
+
+func TestFileBrowserBackupExportFillsTheDirectoryItself(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, "usb"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	m := Model{viewState: ViewBackupExport, width: 100, height: 40}
+	m.backups.export = backupExportState{target: BackupInfo{FileName: "aplane-backup-x.tar.gz"}, dir: root}
+	m = press(t, m, "ctrl+o")
+	if view := stripANSI(m.renderViewContent()); !strings.Contains(view, "Export here as aplane-backup-x.tar.gz") {
+		t.Fatalf("the chooser does not name the archive:\n%s", view)
+	}
+	m = press(t, selectBrowserEntry(t, m, "usb/"), "enter", "g", "enter")
+	if want := filepath.Join(root, "usb"); m.backups.export.dir != want || m.browser.active() {
+		t.Fatalf("dir = %q, want %q (the directory, not a file in it)", m.backups.export.dir, want)
+	}
+}

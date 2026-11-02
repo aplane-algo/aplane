@@ -172,8 +172,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Signer locked; show unlock screen immediately regardless of
 			// current view. Any in-progress operation would fail anyway since
 			// the keyring has been zeroed.
+			abort := m.interruptBackupTransfers(true)
 			m.applySignerLockedState()
-			return m, tea.Batch(m.waitForMessageCmd(), m.sendListKeyTypesCmd(), m.sendGetAdminSettingsCmd())
+			return m, tea.Batch(m.waitForMessageCmd(), m.sendListKeyTypesCmd(), m.sendGetAdminSettingsCmd(), abort)
 		}
 
 	case UnlockResultMsg:
@@ -202,8 +203,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case LockIdentityResultMsg:
 		if msg.Success {
 			m.manualLock.pending = false
+			abort := m.interruptBackupTransfers(true)
 			m.applySignerLockedState()
-			return m, tea.Batch(m.waitForMessageCmd(), m.sendListKeyTypesCmd())
+			return m, tea.Batch(m.waitForMessageCmd(), m.sendListKeyTypesCmd(), abort)
 		}
 		return m, tea.Batch(m.waitForMessageCmd(), m.handleManualLockFailed(msg.Error))
 
@@ -281,6 +283,15 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if next, ok := m.failPendingPolicyExport(msg.ID, msg.Error); ok {
 			return next, next.waitForMessageCmd()
 		}
+		if next, ok := m.failPendingBackupExport(msg.ID, msg.Error); ok {
+			return next, next.waitForMessageCmd()
+		}
+		if next, cmd, ok := m.failPendingBackupImport(msg.ID, msg.Error); ok {
+			return next, tea.Batch(cmd, next.waitForMessageCmd())
+		}
+		if next, ok := m.failPendingBackupDelete(msg.ID, msg.Error); ok {
+			return next, next.waitForMessageCmd()
+		}
 		if next, ok := m.failPendingPolicyApply(msg.ID, msg.Error); ok {
 			return next, next.waitForMessageCmd()
 		}
@@ -302,7 +313,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.waitForMessageCmd()
 			}
 			m.lastError = msg.Error.Error()
-			m.viewState = ViewRestoreList
+			m.viewState = ViewBackups
 			return m, m.waitForMessageCmd()
 		}
 		m.lastError = msg.Error.Error()
@@ -378,17 +389,25 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.waitForMessageCmd()
 
 	case BackupsListMsg:
-		m.restore.backupsLoaded = true
-		if msg.Error != "" {
-			m.lastError = "Backup list failed: " + msg.Error
-		} else {
-			m.lastError = ""
-			m.restore.backups = msg.Backups
-			m.clampRestoreSelection()
-			if m.viewState != ViewRestoreList {
-				m.viewState = ViewRestoreList
-			}
-		}
+		return m.handleBackupsListed(msg), m.waitForMessageCmd()
+
+	case BackupDeleteResultMsg:
+		return m.handleBackupDeleteResult(msg)
+
+	case BackupChunkMsg:
+		return m.handleBackupChunk(msg)
+
+	case BeginBackupImportResultMsg:
+		return m.handleBeginBackupImportResult(msg)
+
+	case AppendBackupImportResultMsg:
+		return m.handleAppendBackupImportResult(msg)
+
+	case CommitBackupImportResultMsg:
+		return m.handleCommitBackupImportResult(msg)
+
+	case AbortBackupImportResultMsg:
+		// Abort is best effort; the signer also removes abandoned uploads.
 		return m, m.waitForMessageCmd()
 
 	case RestorePreviewMsg:
@@ -407,6 +426,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.lastError = ""
 		m.restore.archivePath = msg.ArchivePath
+		m.restore.archiveCreatedAt = msg.ArchiveCreatedAt
 		m.restore.previewKeys = msg.Keys
 		m.restore.previewErrors = msg.Errors
 		m.restore.passphraseError = ""
@@ -467,6 +487,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case RollbackRestoreResultMsg:
 		if !msg.Result.Success {
+			if next, cmd, ok := m.handleRefusedBackupUndo(msg.Result); ok {
+				return next, cmd
+			}
 			if msg.Result.Code == protocol.ResultCodeRestoreRollbackFailed {
 				m.signerState = signerRuntimeRecovery
 			}
@@ -479,6 +502,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, m.waitForMessageCmd()
 		}
+		m.backups.undoPending = false
 		m.restore.recoveryError = "Restore rollback completed; reconciling current generation"
 		m.viewState = ViewStoreRecovery
 		return m, tea.Batch(m.sendReconcileStoreCmd(), m.waitForMessageCmd())
@@ -896,8 +920,16 @@ func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleBackupConfirmKeys(msg)
 	case ViewBackupDisplay:
 		return m.handleBackupDisplayKeys(msg)
-	case ViewRestoreList:
-		return m.handleRestoreListKeys(msg)
+	case ViewBackups:
+		return m.handleBackupsKeys(msg)
+	case ViewBackupDeleteConfirm:
+		return m.handleBackupDeleteConfirmKeys(msg)
+	case ViewBackupUndoConfirm:
+		return m.handleBackupUndoConfirmKeys(msg)
+	case ViewBackupExport:
+		return m.handleBackupExportKeys(msg)
+	case ViewBackupImport:
+		return m.handleBackupImportKeys(msg)
 	case ViewRestorePassphrase:
 		return m.handleRestorePassphraseKeys(msg)
 	case ViewRestorePreview:
@@ -1011,6 +1043,11 @@ func (m Model) usesSharedPopupViewport() bool {
 		ViewBackupConfirm,
 		ViewBackingUp,
 		ViewBackupDisplay,
+		ViewBackups,
+		ViewBackupDeleteConfirm,
+		ViewBackupUndoConfirm,
+		ViewBackupExport,
+		ViewBackupImport,
 		ViewRestorePassphrase,
 		ViewRestoring,
 		ViewDeleteConfirm,

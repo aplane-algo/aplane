@@ -33,7 +33,7 @@ func (m Model) handleStoreRecoveryKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.viewState = ViewRestoring
 		return m, tea.Batch(m.sendRollbackRestoreCmd(), m.waitForMessageCmd())
 	case "b", "B":
-		return m.openRestoreList()
+		return m.openBackups()
 	case "l", "L":
 		return m, tea.Batch(
 			m.sendLockIdentityCmd("operator locked signer from store recovery"),

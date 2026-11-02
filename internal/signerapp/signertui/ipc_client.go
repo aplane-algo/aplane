@@ -448,10 +448,11 @@ var signerMessageDecoders = map[string]func(raw []byte) (tea.Msg, error){
 	}),
 	MsgTypeRestorePreview: decodeAs(func(preview RestorePreviewMessage) tea.Msg {
 		return RestorePreviewMsg{
-			ArchivePath: preview.ArchivePath,
-			Keys:        preview.Keys,
-			Errors:      preview.Errors,
-			Error:       preview.Error,
+			ArchivePath:      preview.ArchivePath,
+			ArchiveCreatedAt: preview.ArchiveCreatedAt,
+			Keys:             preview.Keys,
+			Errors:           preview.Errors,
+			Error:            preview.Error,
 		}
 	}),
 	MsgTypeRestoreBackupResult: decodeAs(func(restored RestoreBackupResultMessage) tea.Msg {

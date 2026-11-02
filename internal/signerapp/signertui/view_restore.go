@@ -7,62 +7,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
-	"time"
 )
-
-func (m Model) renderRestoreList() string {
-	var sb strings.Builder
-	popupWidth := m.popupWidth(90)
-
-	sb.WriteString(titleStyle.Render("Restore Backup"))
-	sb.WriteString("\n")
-	if dir := m.backupDirectoryLabel(); dir != "" {
-		sb.WriteString(subtitleStyle.Render("Backup Directory: " + dir))
-		sb.WriteString("\n\n")
-	} else {
-		sb.WriteString("\n")
-	}
-
-	if !m.restore.backupsLoaded {
-		sb.WriteString(subtitleStyle.Render("Loading backup archives..."))
-		sb.WriteString("\n")
-		return m.renderPopup(popupWidth, sb.String())
-	}
-
-	if len(m.restore.backups) == 0 {
-		sb.WriteString(subtitleStyle.Render("No signer-managed backup archives found."))
-		return m.renderPopup(popupWidth, sb.String())
-	}
-
-	sb.WriteString(subtitleStyle.Render("Select a backup archive to preview."))
-	sb.WriteString("\n\n")
-	for i, backupInfo := range m.restore.backups {
-		prefix := "  "
-		if i == m.restore.selectedBackup {
-			prefix = "> "
-		}
-		line := fmt.Sprintf("%s%-34s  %s  %s",
-			prefix,
-			restoreBackupName(backupInfo),
-			formatRestoreTime(backupInfo.CreatedAt),
-			formatRestoreSize(backupInfo.Size),
-		)
-		if i == m.restore.selectedBackup {
-			sb.WriteString(selectedStyle.Render(line))
-		} else {
-			sb.WriteString(normalStyle.Render(line))
-		}
-		sb.WriteString("\n")
-	}
-
-	return m.renderPopup(popupWidth, sb.String())
-}
-
-func (m Model) backupDirectoryLabel() string {
-	// Managed backup paths are daemon-owned implementation details. The
-	// authenticated list response supplies archive names and metadata.
-	return ""
-}
 
 func (m Model) renderRestorePassphrase() string {
 	var sb strings.Builder
@@ -123,10 +68,10 @@ func (m Model) renderRestorePreview() string {
 	popupWidth := m.popupWidth(110)
 	rowWidth := restorePreviewRowWidth(popupWidth)
 
-	sb.WriteString(titleStyle.Render("Restore Preview"))
+	sb.WriteString(titleStyle.Render("Backup Contents"))
 	sb.WriteString("\n")
-	sb.WriteString(fmt.Sprintf("Archive:   %s\n", restoreArchiveLabel(m.restore.archivePath)))
-	sb.WriteString(fmt.Sprintf("Selected: %d\n", m.selectedRestoreCount()))
+	sb.WriteString(m.renderBackupViewHeader(popupWidth))
+	sb.WriteString(fmt.Sprintf("Selected: %d (\"present\": this node holds a key at that address)\n", m.selectedRestoreCount()))
 	sb.WriteString("\n")
 
 	if len(m.restore.previewKeys) == 0 {
@@ -308,41 +253,11 @@ func restoreDisplayKeyLine(key RestoreKeyInfo, prefix string, maxWidth int) stri
 	return fmt.Sprintf("%s%s%s", prefix, restorePreviewAddress(key, addressWidth), suffix)
 }
 
-func restoreBackupName(info BackupInfo) string {
-	if info.FileName != "" {
-		return info.FileName
-	}
-	return filepath.Base(info.Path)
-}
-
 func restoreArchiveLabel(path string) string {
 	if path == "" {
 		return "(none)"
 	}
 	return filepath.Base(path)
-}
-
-func formatRestoreTime(unix int64) string {
-	if unix <= 0 {
-		return "unknown"
-	}
-	return time.Unix(unix, 0).Local().Format("2006-01-02 15:04")
-}
-
-func formatRestoreSize(size int64) string {
-	if size <= 0 {
-		return "0 B"
-	}
-	const unit = int64(1024)
-	if size < unit {
-		return fmt.Sprintf("%d B", size)
-	}
-	div, exp := unit, 0
-	for n := size / unit; n >= unit; n /= unit {
-		div *= unit
-		exp++
-	}
-	return fmt.Sprintf("%.1f %ciB", float64(size)/float64(div), "KMGTPE"[exp])
 }
 
 func restoreSelectionMark(m Model, key RestoreKeyInfo) string {
@@ -385,8 +300,10 @@ func restorePreviewKeyLine(m Model, key RestoreKeyInfo, prefix string, maxWidth 
 func restorePreviewSuffix(key RestoreKeyInfo) string {
 	var suffix string
 	if key.AlreadyExists {
-		// Informational: replacement still requires explicit confirmation.
-		suffix += "  exists"
+		// The node holds a key at this address. Preview does not compare
+		// the two; restore's conflict check decides, and replacement still
+		// requires explicit confirmation.
+		suffix += "  present"
 	}
 	if key.HasPolicy {
 		suffix += "  +policy"

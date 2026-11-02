@@ -887,8 +887,9 @@ is shared by standalone `apadmin` and the admin pane embedded in `apconsole`.
 Every field that names a file on the machine running `apadmin` can also be
 filled from a file browser (`internal/signerapp/signertui/file_browser.go`):
 `ctrl+o` on the policy file and policy export forms, the cosigner key import
-(file mode) and export forms, the client key import form, and the
-contract-admin reference parameter. The browser lists one directory at a
+(file mode) and export forms, the client key import form, the
+contract-admin reference parameter, and the Backups page's export directory
+and import archive (`*.tar.gz`, `*.tgz`). The browser lists one directory at a
 time, directories first, and starts in the directory the field already names,
 else the newest `~/policy-export-*` for a policy file, `~/.ssh` for a client
 key, or the home directory. It lists only the files the field expects
@@ -943,8 +944,39 @@ identifies the current screen. The enum has families for:
   selection (`ViewCosignerGenerateType`), and cosigner public export
   (`ViewCosignerExportPath`, `ViewCosignerExporting`, `ViewCosignerExportResult`,
   `ViewCosignerExportJSON`)
-- Managed backup create flow (`ViewBackupConfirm`, `ViewBackingUp`, `ViewBackupDisplay`)
-- Managed backup restore flow (`ViewRestoreList` through `ViewRestoreDisplay`)
+- Backups page (`ViewBackups`, `internal/signerapp/signertui/backups_*.go`),
+  opened with `b` from the key list and from the store recovery screen: the
+  signer's backup repository, newest first, each with its creation time (from
+  the managed name, else the file time, marked), name, and size, under a
+  logical "N backups on this signer" header (the TUI does not know the
+  daemon's backups directory). Its actions:
+  - `n` create (`ViewBackupConfirm`, `ViewBackingUp`, `ViewBackupDisplay`;
+    returns to the page with the new backup selected);
+  - `enter` view and restore (`ViewRestorePassphrase` through
+    `ViewRestoreDisplay`): the view names the backup with its sealed creation
+    time (`restore_preview`'s `archive_created_at`), warns when that differs
+    from the time in its name by more than a minute, and marks a key the node
+    already holds "present", never "same";
+  - `x` export (`ViewBackupExport`) and `i` import (`ViewBackupImport`),
+    driving the same file-side helpers as `apadmin backup export|import`
+    (`internal/apadminapp/backup_transfer.go`) from response-driven state
+    machines, one request outstanding, matched by ID;
+  - `d` delete (`ViewBackupDeleteConfirm`), focus on CANCEL, with a warning
+    for the newest or the only backup;
+  - `u` undo the latest restore (`ViewBackupUndoConfirm`), always offered:
+    the daemon decides eligibility and a refusal returns to the page.
+  Create and delete need the signer unlocked and are left out of the footer
+  in recovery mode; the rest work in recovery.
+  Import outcomes: esc before `begin_backup_import` replies keeps that
+  request's ID and aborts the upload its late reply names; esc or a lock
+  before commit aborts the upload on the live connection (allowed while
+  locked); once commit is sent the outcome can be unknown. A commit whose
+  reply the page stopped waiting for (esc while checking, a lock) keeps its
+  request ID, and the late reply settles the outcome, success with any
+  warning or definitive failure, as a status on the page without reopening
+  the form. After a lost connection no reply can come: the next list settles
+  it by name and SHA-256 (succeeded, or a name conflict); absence leaves it
+  unknown, since validation may still be running.
 - Store recovery screen (`ViewStoreRecovery`): reconcile, direct credential restore, or rollback of the latest
   eligible restore. While the signer reports the `recovery` runtime state the
   screen is blocking — Escape does not leave it, ordinary administration stays

@@ -206,29 +206,45 @@ It does **not** include:
 
 **Important:** Backup files use standalone `envelope_version 2` encryption. Each `.apb` file embeds its own salt, so only the file and the export passphrase are needed to decrypt it.
 
-### Live Backup via apadmin
+### Backups in the apadmin TUI
 
-The apadmin TUI can also trigger a signer-managed backup.
+Press `b` on the key list to open **Backups**, the signer's backup
+repository. It lists every backup, newest first, with its creation time,
+name, and size. A time marked `*` is the archive file's time, for a backup
+whose name carries no creation time.
 
-In the TUI:
-1. Unlock the signer
-2. From the key list, press `b` to open the backup confirmation screen
-3. Enter and confirm an export passphrase
+| Key | Action |
+|---|---|
+| `n` | Create a backup of every active key. You choose its export passphrase. |
+| `enter` | Enter the backup's passphrase and see what it holds: its sealed creation time and each key, with "present" when this signer already holds a key at that address. Select keys and restore from there. |
+| `x` | Export the backup to a directory on this machine (`ctrl+o` browses). Same checks as `apadmin backup export`. |
+| `i` | Import an archive from this machine (`ctrl+o` browses for `.tar.gz`/`.tgz`). The signer checks every key with the backup passphrase before adding it. Importing does not change keys. |
+| `d` | Delete the backup, after a confirmation. Export it first to keep a copy. |
+| `u` | Undo the most recent restore. The signer refuses when its latest change was not a restore it can still undo. |
+| `r` | Refresh the list. |
 
-The signer writes the backup archive on the signer host under:
+In recovery mode the page still lists, views, restores, exports, and
+imports; creating and deleting need the signer unlocked.
+
+An import can take a while to check. Pressing esc while the signer checks it
+leaves the page; the result appears on the Backups page when the signer
+replies. If the connection to the signer is lost meanwhile, the page shows
+the import's outcome as unknown until the backup appears in the list: the
+signer may still be checking it.
+
+Backups are written on the signer host under:
 
 ```text
-<signer-data>/backups/default/aplane-backup-YYYYMMDD-HHMMSS.tar.gz
+<signer-data>/backups/default/aplane-backup-YYYYMMDD-HHMMSS.nnnnnnnnn.tar.gz
 ```
 
 Notes:
 - This backup uses the same encrypted `.apb` payload format as `apadmin backup create`
 - The export passphrase is chosen at backup time and may differ from the store passphrase
-- The destination path is signer-managed; the operator does not choose it in the TUI
+- The backup's location is signer-managed; export it to choose where a copy goes
 - Only the active product keys are exported
-- `apadmin` can restore these managed archives interactively; its batch
-  commands own import, export, and scripted restore. `apstore verify` remains
-  available for offline inspection of an external archive.
+- `apstore verify` remains available for offline inspection of an external
+  archive.
 
 ---
 
