@@ -94,6 +94,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.signing.request != nil {
 			m.resizeSigningViewport()
 		}
+		if m.browser.active() {
+			m.browser.keepSelectionVisible(m.fileBrowserVisibleRows())
+		}
 		return m, nil
 
 	case ConnectedMsg:

@@ -886,7 +886,10 @@ and fills the field with an absolute path; it reads no file contents, so the
 field's own checks still decide. A symbolic link to a file is listed but
 cannot be chosen, since every loader behind these fields takes regular files
 only. The export forms choose a directory instead, through a "Save here" row,
-and keep the file or directory name already in the field. The browser belongs
+and keep the file or directory name already in the field. File names, the
+chosen path, and errors that name it are printed with control, formatting,
+and invalid UTF-8 characters shown as escapes (`\x1b`, `\u202e`), so a name
+cannot drive the terminal; the field keeps the real path. The browser belongs
 to the view it was opened from: an approval popup raised over it leaves it in
 place, and any other change of view closes it.
 

@@ -4,6 +4,7 @@
 package tui
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -372,5 +373,71 @@ func TestFileBrowserWaitsUnderApprovalAndClosesOnViewChange(t *testing.T) {
 	m = press(t, m, "down")
 	if m.browser.active() {
 		t.Fatal("leaving the form's view did not close the browser")
+	}
+}
+
+func TestFileBrowserEscapesNamesButKeepsPath(t *testing.T) {
+	root := t.TempDir()
+	const clear = "\x1b[2J"
+	name := "evil" + clear + "\u202e.json"
+	if err := os.WriteFile(filepath.Join(root, name), []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m := Model{viewState: ViewPolicyApplyForm, width: 100, height: 40}
+	m.policies.apply.path = root + string(filepath.Separator)
+	m = press(t, m, "ctrl+o")
+	view := m.View()
+	if strings.Contains(view, clear) || strings.Contains(view, "\u202e") {
+		t.Fatal("the browser printed a file name's control characters")
+	}
+	if !strings.Contains(view, `evil\x1b[2J\u202e.json`) {
+		t.Fatalf("the browser does not show the escaped name:\n%s", view)
+	}
+
+	m = press(t, selectBrowserEntry(t, m, name), "enter")
+	if want := filepath.Join(root, name); m.policies.apply.path != want {
+		t.Fatalf("field = %q, want the file's real path %q", m.policies.apply.path, want)
+	}
+	if view := m.View(); strings.Contains(view, clear) || !strings.Contains(view, `\x1b[2J`) {
+		t.Fatalf("the form printed the chosen path's control characters:\n%s", view)
+	}
+}
+
+func TestFileBrowserKeepsSelectionVisibleAfterResize(t *testing.T) {
+	root := t.TempDir()
+	for i := 0; i < 60; i++ {
+		if err := os.WriteFile(filepath.Join(root, fmt.Sprintf("f%02d.json", i)), []byte("{}"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	m := Model{viewState: ViewPolicyApplyForm, width: 100, height: 40}
+	m.policies.apply.path = root + string(filepath.Separator)
+	m = press(t, m, "ctrl+o", "G")
+	next, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
+	m = next.(Model)
+	if view := m.View(); !strings.Contains(view, "> f59.json") {
+		t.Fatalf("the selected entry is not shown after shrinking the window:\n%s", view)
+	}
+	if rows := m.fileBrowserVisibleRows(); m.browser.selected >= m.browser.scroll+rows {
+		t.Fatalf("selected %d scroll %d rows %d: the stored scroll was not reconciled", m.browser.selected, m.browser.scroll, rows)
+	}
+}
+
+func TestTerminalSafe(t *testing.T) {
+	for _, tc := range []struct{ in, line, lines string }{
+		{"plain name.json", "plain name.json", "plain name.json"},
+		{"ünïcode ✓", "ünïcode ✓", "ünïcode ✓"},
+		{"a\x1b[2Jb", `a\x1b[2Jb`, `a\x1b[2Jb`},
+		{"rtl\u202eexe.json", `rtl\u202eexe.json`, `rtl\u202eexe.json`},
+		{"bad\xffbyte", `bad\xffbyte`, `bad\xffbyte`},
+		{"two\nlines\tand\rcr", `two\nlines\tand\rcr`, "two\nlines\tand\\rcr"},
+		{"bell\a", `bell\a`, `bell\a`},
+	} {
+		if got := terminalSafe(tc.in); got != tc.line {
+			t.Errorf("terminalSafe(%q) = %q, want %q", tc.in, got, tc.line)
+		}
+		if got := terminalSafeLines(tc.in); got != tc.lines {
+			t.Errorf("terminalSafeLines(%q) = %q, want %q", tc.in, got, tc.lines)
+		}
 	}
 }

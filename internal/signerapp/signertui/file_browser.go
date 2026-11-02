@@ -506,6 +506,10 @@ func (m Model) fileBrowserVisibleRows() int {
 
 func (m Model) renderFileBrowser() string {
 	b := m.browser
+	rows := m.fileBrowserVisibleRows()
+	// The window may have changed size since the last key; show the
+	// selection whatever the stored scroll says.
+	b.keepSelectionVisible(rows)
 	spec := b.spec()
 	width := m.popupBodyWidth(90)
 	var body strings.Builder
@@ -513,10 +517,9 @@ func (m Model) renderFileBrowser() string {
 	body.WriteString("\n")
 	body.WriteString(subtitleStyle.Render(ellipsize(fileBrowserHint(b, spec), width)))
 	body.WriteString("\n\n")
-	body.WriteString(ellipsizeMiddle(b.dir, width))
+	body.WriteString(ellipsizeMiddle(terminalSafe(b.dir), width))
 	body.WriteString("\n\n")
 
-	rows := m.fileBrowserVisibleRows()
 	if len(b.entries) == 0 {
 		body.WriteString(helpStyle.Render("(nothing to show here; . shows hidden entries)"))
 		body.WriteString("\n")
@@ -546,7 +549,7 @@ func (m Model) renderFileBrowser() string {
 	}
 	if b.err != "" {
 		body.WriteString("\n")
-		body.WriteString(errorStyle.Render(wrapPlainText(b.err, width)))
+		body.WriteString(errorStyle.Render(wrapPlainText(terminalSafe(b.err), width)))
 		body.WriteString("\n")
 	}
 	return m.renderPopup(90, body.String())
@@ -573,7 +576,10 @@ func fileBrowserPatterns(suffixes []string) []string {
 	return out
 }
 
+// fileBrowserEntryLabel is an entry's row, with names escaped for the
+// terminal; name is the name a "save here" row keeps.
 func fileBrowserEntryLabel(entry fileBrowserEntry, name string) string {
+	entry.name, name = terminalSafe(entry.name), terminalSafe(name)
 	switch {
 	case entry.here:
 		return "[ Save here as " + name + " ]"
