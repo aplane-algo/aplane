@@ -867,6 +867,13 @@ they navigate or cycle only on choice fields and the submit button. Tab and the
 arrow keys always navigate. Parameter fields accept ASCII only and refuse other
 input with an error rather than rewriting it.
 
+The key type lists of the generate, import, and guarded-account forms fit the
+window: when a list is too long, it shows the rows around the selection between
+"more above" and "more below" lines (`fitSelectionList` in
+`internal/signerapp/signertui/selection_list.go`), so the selection, its
+description, and the form's buttons stay on screen. A window too short even for
+that falls back to the shared popup viewport.
+
 Long byte parameters, including bounded contract-admin public keys, use an atomic paste control
 instead of an editable multi-line field. Activating the control accepts the
 next terminal bracketed-paste event, stores the complete validated value, and
