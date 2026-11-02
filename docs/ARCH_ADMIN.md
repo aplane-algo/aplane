@@ -987,9 +987,9 @@ identifies the current screen. The enum has families for:
   reconcile, and the signer's state on the next unlock says whether one is
   needed. While the session is unlocked they are applied whatever screen the
   operator moved to: a reconcile failure moves the TUI into recovery and
-  opens the blocking recovery screen; a reconcile success enters the key list
-  only from the progress or recovery screen, and otherwise refreshes the keys
-  in place. Replies from an ended session are never delivered. Hashing the import source and the
+  opens the blocking recovery screen; a reconcile success enters the unlocked
+  state, loading what unlock loads, and shows the key list only from the
+  progress or recovery screen, otherwise keeping the operator's screen. Replies from an ended session are never delivered. Hashing the import source and the
   export's final sync, checksum, and publication run as commands off the
   event loop, so slow storage cannot freeze input, approvals, or lock
   handling; a canceled check's result is ignored. The import passphrase is

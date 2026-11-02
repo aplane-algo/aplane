@@ -732,3 +732,31 @@ func TestReconcileFailureAfterLeavingRecoveryStillBlocks(t *testing.T) {
 		t.Fatalf("reconcile success after leaving: view %v keys %d, want the operator's screen kept", ok.viewState, ok.keyCount)
 	}
 }
+
+func TestReconcileSuccessAfterLeavingRecoveryUnlocksInPlace(t *testing.T) {
+	m := backupsModel(BackupInfo{FileName: "a.tar.gz", Path: "a.tar.gz"})
+	m.signerState, m.signerStatusKnown = signerRuntimeRecovery, true
+	m.viewState = ViewStoreRecovery
+	// From the recovery screen the operator opens Backups before the
+	// reconcile's reply arrives.
+	m, _ = pressKey(t, m, "b")
+	if m.viewState != ViewBackups || !m.restore.returnToRecovery {
+		t.Fatalf("b: view %v returnToRecovery %v", m.viewState, m.restore.returnToRecovery)
+	}
+	m.restore.backupsLoaded, m.restore.backups = true, []BackupInfo{{FileName: "a.tar.gz", Path: "a.tar.gz"}}
+	m, cmd := update(t, m, ReconcileStoreResultMsg{Result: protocol.ReconcileStoreResultMessage{Success: true, KeyCount: 5}})
+	if m.signerState != signerRuntimeUnlocked || m.viewState != ViewBackups || m.keyCount != 5 || m.restore.returnToRecovery {
+		t.Fatalf("reconcile success: state %v view %v keys %d returnToRecovery %v, want unlocked on the same screen",
+			m.signerState, m.viewState, m.keyCount, m.restore.returnToRecovery)
+	}
+	if footer := m.viewFooterText(); !strings.Contains(footer, "n: New") || !strings.Contains(footer, "d: Delete") {
+		t.Fatalf("create and delete still hidden: %q", footer)
+	}
+	_, unlockCmd := approvalTestModel(ViewUnlock).Update(UnlockResultMsg{Success: true, KeyCount: 1})
+	if want, got := batchSize(t, unlockCmd), batchSize(t, cmd); got != want {
+		t.Fatalf("in-place unlock issues %d commands, unlock issues %d", got, want)
+	}
+	if got, _ := pressKey(t, m, "esc"); got.viewState != ViewKeyList {
+		t.Fatalf("esc from Backups after unlocking: view %v, want the key list", got.viewState)
+	}
+}

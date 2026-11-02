@@ -539,10 +539,14 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.restore.recoveryError = ""
 		if !m.restoreFlowWaiting() {
-			// The operator moved on from the recovery screen meanwhile: keep
-			// their screen and refresh the keys the rollback changed.
-			m.keyCount = msg.Result.KeyCount
-			return m, tea.Batch(m.waitForMessageCmd(), m.sendListKeysCmd())
+			// The operator moved on from the recovery screen meanwhile: the
+			// signer is unlocked all the same, so enter that state, loading
+			// what unlock loads, but keep their screen.
+			view := m.viewState
+			cmd := m.enterUnlocked(msg.Result.KeyCount)
+			m.viewState = view
+			m.restore.returnToRecovery = false
+			return m, cmd
 		}
 		return m, m.enterUnlocked(msg.Result.KeyCount)
 
