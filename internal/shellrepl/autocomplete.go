@@ -396,8 +396,12 @@ func (c *ContextCompleter) completeAddressFromCommand(lineStr string, allAddress
 		return completionForCandidates(allAddresses, current.currentArg, current.trailingSpace)
 	}
 
-	if current.command == "sweep" && inSweepSourceList(current) {
-		return completionForCandidates(append(allAddresses, "to"), current.currentArg, current.trailingSpace)
+	if current.command == "sweep" && afterSweepSource(current) {
+		// Only "to" may follow the source; more accounts go inside brackets.
+		if suggestions, offset, ok := completionForCandidates([]string{"to"}, current.currentArg, current.trailingSpace); ok {
+			return suggestions, offset, true
+		}
+		return nil, 0, true
 	}
 
 	if current.command == "sets" && len(current.args) > 0 {
@@ -463,21 +467,23 @@ func (c *ContextCompleter) completeAlias(lineStr string, allAddresses []string) 
 	return nil, 0, true
 }
 
-// inSweepSourceList reports whether the argument being completed is a second or
-// later account in sweep's `from account1 account2 ...` list. The first one
-// follows "from" and is handled with the other keyword-introduced accounts.
-func inSweepSourceList(cmd completableCommand) bool {
-	for i := cmd.currentArgIdx - 1; i >= 0 && i < len(cmd.args); i-- {
-		arg := strings.ToLower(cmd.args[i])
-		switch {
-		case arg == "from":
-			return i < cmd.currentArgIdx-1
-		case arg == "to" || arg == "leaving" || arg == "nowait" ||
-			strings.HasPrefix(arg, "fee=") || strings.HasPrefix(arg, "arg:"):
-			return false
-		}
+// afterSweepSource reports whether the current argument directly follows a
+// complete sweep source, as ParseSweepCommand reads it after "from": one
+// unbracketed account or set, or a closed bracket list.
+func afterSweepSource(cmd completableCommand) bool {
+	if len(cmd.args) < 2 || !strings.EqualFold(cmd.args[1], "from") || cmd.currentArgIdx > len(cmd.args) {
+		return false
 	}
-	return false
+	span := cmd.args[2:max(cmd.currentArgIdx, 2)]
+	switch {
+	case len(span) == 0:
+		return false
+	case strings.HasPrefix(span[0], "["):
+		_, end, err := cmdspec.ExtractBracketList(span, 0)
+		return err == nil && end == len(span)-1
+	default:
+		return len(span) == 1
+	}
 }
 
 // rotateSubcommands are the words rotate takes in place of an account.

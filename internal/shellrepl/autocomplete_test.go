@@ -385,22 +385,41 @@ func TestRotateCompletesItsForms(t *testing.T) {
 	}
 }
 
-func TestSweepCompletesLaterSourceAccounts(t *testing.T) {
+func TestSweepOffersOnlyToAfterACompleteSource(t *testing.T) {
 	first := addressAvoidingPrefixes("t")
 	second := addressAvoidingPrefixes("t")
+	for _, source := range []string{first, strings.ToLower(first), "@team", "[" + first + " " + second + "]"} {
+		for _, typed := range []string{"", "t"} {
+			line := "sweep usdc from " + source + " " + typed
+			got := completionsFor(t, line, first, second)
+			if len(got) != 1 || got[0] != "to" {
+				t.Errorf("%q completed to %q, want only to", line, got)
+				continue
+			}
+			// The completed line must be one the sweep parser accepts.
+			args := strings.Fields(strings.TrimPrefix(line[:len(line)-len(typed)]+"to "+second, "sweep "))
+			if _, err := ParseSweepCommand(args); err != nil {
+				t.Errorf("completed %q does not parse: %v", line, err)
+			}
+		}
+	}
+	// A second unbracketed account is not valid sweep syntax, so nothing completes it.
 	for _, typed := range []string{second[:4], strings.ToLower(second[:4])} {
 		line := "sweep usdc from " + first + " " + typed
+		if got := completionsFor(t, line, first, second); len(got) != 0 {
+			t.Errorf("%q completed to %q, want nothing", line, got)
+		}
+	}
+	// Inside an open bracket list, later accounts still complete in either case.
+	for _, typed := range []string{second[:4], strings.ToLower(second[:4])} {
+		line := "sweep usdc from [" + first + " " + typed
 		got := completionsFor(t, line, first, second)
 		if len(got) != 1 || !strings.EqualFold(got[0], second) {
 			t.Errorf("%q completed to %q, want %s", line, got, second)
 		}
 	}
-	got := completionsFor(t, "sweep usdc from "+first+" t", first, second)
-	if len(got) != 1 || got[0] != "to" {
-		t.Errorf("sweep source list did not offer to: %q", got)
-	}
-	// After the destination keyword, the source-list rule no longer applies.
-	if inSweepSourceList(newCompletableCommand("sweep usdc from " + first + " to " + second + " ")) {
-		t.Error("treated the position after `to <dest>` as a source account")
+	// After the destination keyword, the source rule no longer applies.
+	if afterSweepSource(newCompletableCommand("sweep usdc from " + first + " to " + second + " ")) {
+		t.Error("treated the position after `to <dest>` as following the source")
 	}
 }
