@@ -907,6 +907,17 @@ set, keyword, number, file, and conditional branching. The `custom` type is
 reserved for plugin-provided completion; the runtime returns no custom
 suggestions.
 
+Built-in commands complete in two layers. `ContextCompleter.Do` first tries
+context paths that understand a command's argument positions and match account
+addresses case-insensitively (`completeAddressFromCommand`, plus dedicated
+`alias`, `rekey`, and `rotate` completers). Only lines none of them claim fall
+through to the readline prefix tree, which compares case-sensitively against
+uppercase addresses, so a lowercase prefix finds nothing there. A command
+whose arguments include accounts should therefore be covered by a context
+path. Keywords stay case-sensitive where the command handler compares them
+exactly: readline only appends the rest of a suggestion, so folding case would
+complete `RE` into a word the handler rejects.
+
 ### Command Result Rendering
 
 Every registered handler returns a `command.Result`:

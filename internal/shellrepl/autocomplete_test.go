@@ -4,6 +4,8 @@
 package shellrepl
 
 import (
+	"sort"
+	"strings"
 	"testing"
 
 	"github.com/algorand/go-algorand-sdk/v2/crypto"
@@ -301,5 +303,104 @@ func TestAliasDeleteCompletesSingleQuotedAliasName(t *testing.T) {
 	}
 	if got := string(suggestions[0]); got != "asury cold " {
 		t.Fatalf("first suggestion = %q, want asury cold", got)
+	}
+}
+
+// completionsFor runs the full completer (context paths plus prefix tree)
+// over line and returns the completed words: the typed partial plus each
+// suggested remainder, trimmed.
+func completionsFor(t *testing.T, line string, addresses ...string) []string {
+	t.Helper()
+	signerCache := cache.NewSignerCache()
+	for _, address := range addresses {
+		signerCache.AddAddress(address, "ed25519")
+	}
+	completer := CreateDynamicCompleter(&cache.AliasCache{Aliases: map[string]string{}}, &cache.ASACache{}, &cache.SetCache{}, &signerCache, nil, nil, nil)
+	suggestions, offset := completer.Do([]rune(line), len(line))
+	typed := line[len(line)-offset:]
+	words := make([]string, 0, len(suggestions))
+	for _, suggestion := range suggestions {
+		words = append(words, strings.TrimSpace(typed+string(suggestion)))
+	}
+	sort.Strings(words)
+	return words
+}
+
+func TestRotateCompletesAccountsCaseInsensitively(t *testing.T) {
+	address := crypto.GenerateAccount().Address.String()
+	other := crypto.GenerateAccount().Address.String()
+	for _, prefix := range []string{"rotate ", "rotate status ", "rotate recover "} {
+		for _, typed := range []string{address[:4], strings.ToLower(address[:4])} {
+			got := completionsFor(t, prefix+typed, address, other)
+			if len(got) != 1 || !strings.EqualFold(got[0], address) {
+				t.Errorf("%q completed to %q, want %s", prefix+typed, got, address)
+			}
+		}
+	}
+}
+
+// addressAvoidingPrefixes returns a fresh address that starts with none of
+// prefixes (case-insensitively), so keyword-prefix cases stay deterministic.
+func addressAvoidingPrefixes(prefixes ...string) string {
+	for {
+		address := crypto.GenerateAccount().Address.String()
+		clear := true
+		for _, prefix := range prefixes {
+			if strings.HasPrefix(address, strings.ToUpper(prefix)) {
+				clear = false
+			}
+		}
+		if clear {
+			return address
+		}
+	}
+}
+
+func TestRotateCompletesItsForms(t *testing.T) {
+	address := addressAvoidingPrefixes("st", "re")
+	for _, tc := range []struct {
+		line string
+		want []string
+	}{
+		{"rotate ", []string{address, "recover", "status"}},
+		{"rotate st", []string{"status"}},
+		{"rotate re", []string{"recover"}},
+		// The handler takes keywords only in lowercase; readline would append
+		// "cover" to "RE", producing a word rotate rejects.
+		{"rotate RE", nil},
+		{"rotate " + address + " ", []string{"nowait"}},
+		{"rotate " + address + " now", []string{"nowait"}},
+		{"rotate status ", []string{address}},
+		{"rotate status " + address + " ", nil},
+		{"rotate recover " + address + " ", []string{"--max-stages", "--stage", "--timeout", "--window", "cancel"}},
+		{"rotate recover " + address + " ca", []string{"cancel"}},
+		{"rotate recover " + address + " --stage ", nil},
+		{"rotate recover " + address + " --stage 4 ", []string{"--max-stages", "--timeout", "--window"}},
+		{"rotate recover " + address + " cancel ", nil},
+	} {
+		got := completionsFor(t, tc.line, address)
+		if strings.Join(got, ",") != strings.Join(tc.want, ",") {
+			t.Errorf("%q completed to %q, want %q", tc.line, got, tc.want)
+		}
+	}
+}
+
+func TestSweepCompletesLaterSourceAccounts(t *testing.T) {
+	first := addressAvoidingPrefixes("t")
+	second := addressAvoidingPrefixes("t")
+	for _, typed := range []string{second[:4], strings.ToLower(second[:4])} {
+		line := "sweep usdc from " + first + " " + typed
+		got := completionsFor(t, line, first, second)
+		if len(got) != 1 || !strings.EqualFold(got[0], second) {
+			t.Errorf("%q completed to %q, want %s", line, got, second)
+		}
+	}
+	got := completionsFor(t, "sweep usdc from "+first+" t", first, second)
+	if len(got) != 1 || got[0] != "to" {
+		t.Errorf("sweep source list did not offer to: %q", got)
+	}
+	// After the destination keyword, the source-list rule no longer applies.
+	if inSweepSourceList(newCompletableCommand("sweep usdc from " + first + " to " + second + " ")) {
+		t.Error("treated the position after `to <dest>` as a source account")
 	}
 }
