@@ -43,7 +43,9 @@ spare fee from one reserved for inner transactions: an app call whose extra fee
 funds an opcode-budget loop looks the same as an overpayment. A client that
 prepays the signer's charge therefore pays it twice. Build transactions with
 ordinary suggested fees, plus whatever your own execution needs, and let the
-signer add its charge.
+signer add its charge. [An App Call That Pays for Inner
+Transactions](#example-an-app-call-that-pays-for-inner-transactions) works
+through the numbers.
 
 ## LogicSig Resource Fees
 
@@ -165,6 +167,28 @@ program_fee_factor = 2500 * 100 = 250000
 At a 1,000-microAlgo minimum fee, that factor contributes 250 microAlgos to the
 group requirement. Adding three dummies just to eliminate the surcharge would
 cost 3,000 microAlgos in new base fees, so APlane pays the surcharge instead.
+
+## Example: An App Call That Pays for Inner Transactions
+
+A native Falcon key calls an app that issues two inner payments with fee 0, so
+both draw on the group's fee credit. The client pays its own 1,000-microAlgo
+base fee plus 2,000 for the inner payments. The native Falcon contribution adds
+2,000 to the outer transaction's cost.
+
+| | Surplus counted toward the charge | Charge added on top |
+|---|---|---|
+| Client pays (base + inner reserve) | 3,000 | 3,000 |
+| Signer adds | 0 (3,000 already covers base + Falcon) | 2,000 |
+| Group pays | 3,000 | 5,000 |
+| Outer cost (base + Falcon) | 3,000 | 3,000 |
+| Fee credit left for the inner payments | 0 | 2,000 |
+
+Counting the surplus leaves no credit, so algod rejects the group at the first
+inner submit even though the operator approved it. Adding the charge on top
+leaves the client's 2,000 for its inner payments. A larger contract fails the
+same way: a Mithras deposit from a native Falcon key lost 4,000 of the inner
+fees its opcode-budget loop needed.
+`test/integration/inner_fee_reserve_test.go` confirms this group on LocalNet.
 
 ## Immutable and Multi-Party Groups
 
