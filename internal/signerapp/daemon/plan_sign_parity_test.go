@@ -485,11 +485,14 @@ func TestPlanAndSignAgreeOnDummyAndFeeMutationsForSingleFalconGroup(t *testing.T
 	if planResp.Mutations.DummiesAdded <= 0 {
 		t.Fatalf("/plan mutations dummies_added = %#v, want > 0", planResp.Mutations)
 	}
-	if len(planResp.Mutations.FeesModified) != 0 {
-		t.Fatalf("/plan fees_modified = %#v, want none because the original fee already funds the group", planResp.Mutations.FeesModified)
+	// The per-byte suggested fee overpays the group, but a client surplus never
+	// counts toward the signer's charge: the dummy's base fee is added on top
+	// of the client's fee (FEE_HANDLING.md, Fee Ownership).
+	if !reflect.DeepEqual(planResp.Mutations.FeesModified, []int{0}) {
+		t.Fatalf("/plan fees_modified = %#v, want the charge on the Falcon slot", planResp.Mutations.FeesModified)
 	}
-	if planResp.Mutations.TotalFeesDelta != 0 {
-		t.Fatalf("/plan total_fees_delta = %d, want 0 from pooled overpayment", planResp.Mutations.TotalFeesDelta)
+	if minimum := 1000 * planResp.Mutations.DummiesAdded; planResp.Mutations.TotalFeesDelta < minimum {
+		t.Fatalf("/plan total_fees_delta = %d, want at least the %d dummy base fees on top of the client's fee", planResp.Mutations.TotalFeesDelta, minimum)
 	}
 	if planResp.Mutations.OriginalCount != 1 || planResp.Mutations.FinalCount != len(planResp.Transactions) {
 		t.Fatalf("/plan mutations counts = %#v, want original=1 final=%d", planResp.Mutations, len(planResp.Transactions))

@@ -189,9 +189,10 @@ Modified:  hash([txn1', txn2, d1, d2, d3]) = 0x1234...
 
 ## Fee Distribution
 
-See [TXN_FEE_SPLITTING.md](TXN_FEE_SPLITTING.md) for unified group-fee
-planning. Existing fees are pooled, and any remaining deficit is assigned only
-to mutable signer-controlled slots.
+See [FEE_HANDLING.md](FEE_HANDLING.md) for unified group-fee
+planning. The client's fees pay the client's own transactions; the signer adds
+its authorization charge on top, only to mutable signer-controlled slots, and
+never spends a client surplus on it.
 
 ## Implementation
 
@@ -442,5 +443,5 @@ See [ARCH_SIGNING.md](ARCH_SIGNING.md) for full protocol documentation.
 
 - [ARCH_CRYPTO.md](ARCH_CRYPTO.md) - Cryptography layer architecture
 - [ARCH_SIGNING.md](ARCH_SIGNING.md) - Transaction signing flow and passthrough mode
-- [TXN_FEE_SPLITTING.md](TXN_FEE_SPLITTING.md) - Fee distribution details
+- [FEE_HANDLING.md](FEE_HANDLING.md) - Fee ownership and group fee planning
 - [TXN_BYTES_HEX.md](TXN_BYTES_HEX.md) - Transaction byte encoding for signer requests

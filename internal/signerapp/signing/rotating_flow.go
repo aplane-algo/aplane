@@ -111,9 +111,8 @@ func validateRotatingSpend(txn types.Transaction, account types.Address, genesis
 // and /plan use, so the spend gets the same resource solver, fee allocator
 // and group construction as every other group. The builder sees only the
 // account's resource profile, so the result is a pure function of the spend
-// and the profile: running it again on a spend it already adjusted
-// reproduces the same group, which is what lets sign check a presented
-// group by rebuilding it.
+// and the profile, which is what lets sign check a presented group by
+// rebuilding it (rebuildPreparedRotatingGroup).
 func (p *Planner) buildRotatingGroup(account string, txn types.Transaction, profile *lsigresource.Profile) (*PlanResult, *ServiceError) {
 	txn.Group = types.Digest{}
 	final, err := p.finalizeGroup(groupFinalization{
@@ -139,6 +138,29 @@ func (p *Planner) buildRotatingGroup(account string, txn types.Transaction, prof
 		FeeInfo:              final.FeeInfo,
 		NeedsRegroup:         final.NeedsRegroup,
 	}, nil
+}
+
+// rebuildPreparedRotatingGroup rebuilds a prepared rotating group from the
+// spend it carries. The presented spend already includes the signer's
+// authorization charge, and running the builder on it again would add the
+// charge a second time. The charge depends only on the group's shape, never
+// on its fees, and the builder puts all of it on the spend (the group's only
+// signer-controlled slot), so building once measures it and taking it off
+// recovers the client's spend exactly; the group built from that spend is
+// the one prepare returned. A spend paying less than the charge was not
+// prepared by this signer.
+func (p *Planner) rebuildPreparedRotatingGroup(account string, presented types.Transaction, profile *lsigresource.Profile) (*PlanResult, *ServiceError) {
+	probe, err := p.buildRotatingGroup(account, presented, profile)
+	if err != nil {
+		return nil, err
+	}
+	charge := probe.FeeInfo.TotalFees
+	if uint64(presented.Fee) < charge {
+		return nil, badRequest(fmt.Sprintf("spend fee %d is below the signer's %d microAlgo authorization charge; prepare the spend again", presented.Fee, charge))
+	}
+	client := presented
+	client.Fee = types.MicroAlgos(uint64(presented.Fee) - charge)
+	return p.buildRotatingGroup(account, client, profile)
 }
 
 // requestDeriver derives stages without background pacing, honoring the
@@ -398,9 +420,9 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 		return nil, badRequest("rekey target does not derive from this account's seed; the cache entry was repaired, prepare the spend again")
 	}
 
-	// Rule 5: rebuilding the group from the presented spend must reproduce
+	// Rule 5: rebuilding the group from the client's spend must reproduce
 	// the presented bytes exactly.
-	rebuilt, groupErr := s.Planner.buildRotatingGroup(account.String(), spend, profile)
+	rebuilt, groupErr := s.Planner.rebuildPreparedRotatingGroup(account.String(), spend, profile)
 	if groupErr != nil {
 		return nil, groupErr
 	}

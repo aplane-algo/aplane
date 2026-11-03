@@ -1,4 +1,7 @@
-# Group Fee Planning for LogicSig and Native-PQ Authorization
+# Fee Handling
+
+How APlane divides a group's fees between the client and the signer, and how
+the signer plans the fees its LogicSig and native-PQ authorization adds.
 
 ## Overview
 
@@ -6,18 +9,41 @@ APlane computes one required fee for the finalized unsigned group. The fee
 calculation happens after required resource dummies have been appended and
 before the group ID, approval components, or signatures are produced.
 
-The client sets ordinary transaction fees from its algod SuggestedParams. The
-signer verifies that ordinary requirement and then accounts for:
+The client sets ordinary transaction fees from its algod SuggestedParams.
+Those fees pay the client's costs, and the signer adds what its authorization
+costs on top (see [Fee Ownership](#fee-ownership)). The requirement accounts
+for:
 
 - one base fee factor for every transaction;
 - transaction byte-pricing factors in the compiled v42 contract;
-- the native-PQ scheme contribution for each native Falcon authorization;
-- the v42 LogicSig program-byte factor; and
-- all caller-supplied fees already present across the group.
+- the native-PQ scheme contribution for each native Falcon authorization; and
+- the v42 LogicSig program-byte factor.
 
 The signer does not repair a client-created ordinary fee deficit. It raises
-fees only for authorization-induced requirements and never mutates a foreign
-or passthrough slot.
+fees only by its authorization charge and never mutates a foreign or
+passthrough slot.
+
+## Fee Ownership
+
+An Algorand group pays its fees as a pool, and a fee field carries no label
+saying what it pays for. APlane divides the pool by who causes each cost:
+
+- The client owns its ordinary requirement: the base and byte-pricing factors
+  of the transactions it built. It also owns whatever the group spends when it
+  runs, such as inner transactions drawing on the group's fee credit, which the
+  signer cannot see before the group executes.
+- The signer owns its authorization charge: the base fees of the resource
+  dummies it appends, priced LogicSig program bytes, and native-PQ
+  contributions, including those of foreign slots whose `lsig_resources` or
+  `pq_scheme` hints it plans.
+
+The signer adds its charge on top of the client's fees. A surplus the client
+supplied never counts toward the charge, because the signer cannot tell a
+spare fee from one reserved for inner transactions: an app call whose extra fee
+funds an opcode-budget loop looks the same as an overpayment. A client that
+prepays the signer's charge therefore pays it twice. Build transactions with
+ordinary suggested fees, plus whatever your own execution needs, and let the
+signer add its charge.
 
 ## LogicSig Resource Fees
 
@@ -57,26 +83,53 @@ transaction contributes `1_000_000`. APlane sums all applicable factors over
 the final group and scales once by the v42 minimum fee:
 
 ```text
-required_group_fee = ceil(min_txn_fee * total_fee_factor / 1_000_000)
-fee_deficit = max(0, required_group_fee - sum(existing transaction fees))
+required_group_fee   = ceil(min_txn_fee * total_fee_factor / 1_000_000)
+ordinary_requirement = ceil(min_txn_fee * client_fee_factor / 1_000_000)
+authorization_charge = required_group_fee - ordinary_requirement
 ```
+
+`client_fee_factor` sums the base and byte-pricing factors of the client's own
+transactions. The signer rejects a group whose fees total less than
+`ordinary_requirement`, then adds `authorization_charge`. The group then pays at
+least `required_group_fee` and keeps any surplus the client supplied.
 
 `charged_program_bytes * PerByteTxnSurcharge` is a fee-factor contribution,
 not a microAlgo value. Native Falcon's scheme contribution is also a factor;
 the ordinary transaction base must not be counted twice.
 
-If a deficit remains, APlane distributes it across mutable signer-controlled
+APlane distributes the charge across mutable signer-controlled
 transactions. A top-level native-PQ slot outside the LogicSig participant set
 is preferred first because that authorization creates its own PQ fee
 contribution; this also lets an explicit native-PQ sponsor preserve a
 LogicSig's compiled fee ceiling. LogicSig participants identified by resource
 planning follow, then any remaining mutable slots. Any remainder is assigned
-deterministically. Existing pooled fees count toward the requirement; APlane
-does not add a second copy of a fee the caller has already paid.
+deterministically. A bounded slot is never raised above its compiled
+`max_fee`.
 
 Foreign unsigned entries with `lsig_resources` contribute to resource and fee
 planning but are not mutated. Passthrough entries are immutable signed bytes.
-If no signer-controlled transaction can cover a deficit, planning fails.
+If no signer-controlled transaction can take the charge, or bounded fee
+ceilings leave too little room for it, planning fails.
+
+## Planning Twice
+
+The authorization charge depends only on the group's shape (its
+transactions and their sizes, the dummies, and the authorizations), never on
+its fees, so it is the same however much the client paid. Running the planner
+again on fees it already raised would add the charge a second time, so no path
+does:
+
+- `/plan` output for a multi-transaction group carries its group ID. Sent back
+  to `/sign`, it is pre-grouped and immutable: it is checked against the full
+  requirement and not raised. Guarded and bounded component signing check a
+  frozen group the same way.
+- The rotating flow's sign step checks a prepared group by rebuilding it. It
+  measures the charge on the presented spend, takes it off to recover the
+  client's spend, and rebuilds from that.
+- A single transaction carries no group ID, so the signer cannot tell a draft
+  from its own output. Send the original draft to `/sign`, not the transaction
+  `/plan` returned: planning the planned transaction again adds the charge
+  again.
 
 ## Example: Falcon LogicSig on v42
 
@@ -92,7 +145,8 @@ The argument exceeds the individual 1,000-byte allowance, so `N = 2`. The
 group contains the real transaction and one resource dummy. The two group
 members provide 2,000 free program bytes, so no program surcharge is due in
 this example. With a 1,000-microAlgo minimum fee, the group must pay 2,000
-microAlgos total.
+microAlgos total: the client's transaction pays its own 1,000 and the signer
+adds the dummy's 1,000.
 
 The actual Falcon signature is variable-length. Planning uses the proven
 1,423-byte maximum before signing; signed assembly rejects a signature that
@@ -114,10 +168,12 @@ cost 3,000 microAlgos in new base fees, so APlane pays the surcharge instead.
 
 ## Immutable and Multi-Party Groups
 
-Pre-grouped and passthrough-bearing groups are immutable. If their existing
-shape or aggregate fees do not satisfy the active consensus rules, the signer
-rejects them rather than changing fees, inserting dummies, or recomputing the
-group ID.
+Pre-grouped and passthrough-bearing groups are immutable. Their fees must
+already pay the full requirement, authorization charge included. If their
+existing shape or aggregate fees do not satisfy the active consensus rules,
+the signer rejects them rather than changing fees, inserting dummies, or
+recomputing the group ID. A party that pre-groups such a group must therefore
+include the charge itself, for example by building it from `/plan` output.
 
 For an unsigned multi-party group, call `/plan` first. Foreign LogicSig slots
 carry the selected path's structured hint:

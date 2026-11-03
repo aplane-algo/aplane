@@ -410,7 +410,12 @@ Online `keyreg` options:
 running supported consensus v42 or v43, signs, submits, and optionally waits.
 
 `plan()` sends transaction sign requests to the signer group planner without
-signing or triggering approval. Request fields:
+signing or triggering approval. The planned fees include the signer's
+authorization charge, added on top of the fees you set (see
+[FEE_HANDLING.md](FEE_HANDLING.md#fee-ownership)). To sign a single
+transaction, submit its original draft rather than the transaction `plan()`
+returned: a single transaction has no group ID, so planning the planned
+transaction again adds the charge again. Request fields:
 
 ```javascript
 {

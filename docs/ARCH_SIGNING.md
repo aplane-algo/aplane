@@ -779,8 +779,11 @@ Post-quantum signatures (e.g., Falcon up to 1,423 bytes) exceed Algorand's 1,000
 2. Resolves the selected path's program, argument, and opcode resources.
 3. Solves the smallest consensus-valid group and creates required resource
    dummy self-payments.
-4. Computes one aggregate fee requirement across the final group, crediting
-   caller-supplied fees and assigning any deficit only to mutable signer slots.
+4. Computes one aggregate fee requirement across the final group, checks that
+   the caller's fees cover the caller's own transactions, and adds the
+   signer's authorization charge on top, only to mutable signer slots. A
+   caller surplus is never spent on the charge; see
+   [Fee Ownership](FEE_HANDLING.md#fee-ownership).
 5. Computes the group ID across the fee-finalized transactions.
 6. Approves, signs, and returns the complete group.
 
@@ -831,7 +834,8 @@ submission/simulation. The apsigner `/plan` endpoint itself remains independent
 of a client algod.
 The signer rejects an ordinary fee deficit, then adds only authorization-
 induced requirements: resource-dummy base fees, priced LogicSig program bytes,
-and native-PQ contributions. The signer's separately configured compile algod
+and native-PQ contributions. It adds them on top of the caller's fees, never
+out of a caller surplus, which may be paying for inner transactions. The signer's separately configured compile algod
 remains responsible only for template compilation/simulation workflows.
 
 ### Server Modification Behavior
