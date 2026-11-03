@@ -11,9 +11,8 @@ import (
 	"github.com/aplane-algo/aplane/internal/protocol"
 )
 
-// ProjectGenerateIPC discards the generated mnemonic by design: recovery
-// material does not cross the admin-protocol boundary. Use encrypted backups
-// for recovery.
+// ProjectGenerateIPC omits recovery material. Native mnemonic export is a
+// separate authenticated operation; other key classes use encrypted backups.
 func ProjectGenerateIPC(result *GenerateResult, err *Error) adminproto.GenerateKeyResult {
 	if err != nil {
 		return adminproto.GenerateKeyResult{
@@ -75,6 +74,7 @@ func ProjectKeyDetailsIPC(result *KeyDetailsResult, err *Error) adminproto.GetKe
 		DisplayTEAL:              result.DisplayTEAL,
 		TemplateProvenanceStatus: result.TemplateProvenanceStatus,
 		TemplateProvenanceNote:   result.TemplateProvenanceNote,
+		MnemonicExportable:       result.MnemonicExportable,
 	}
 }
 

@@ -109,8 +109,10 @@ Important vocabulary:
 - managed backup archives,
 - SSH host key and IPC socket.
 
-Plaintext signer-managed private key material never crosses this boundary. Clients send transaction
-intent and receive finalized signed transaction bytes, not key material.
+Signing clients send transaction intent and receive finalized signed transaction
+bytes, not key material. Explicit native mnemonic export is the narrow exception:
+authenticated local apadmin can request recovery material after fresh passphrase
+verification; SDK/HTTP, scripting, and plugin surfaces cannot.
 
 ### Client Boundary
 
@@ -1153,7 +1155,7 @@ These decisions are part of the current data model and contract surface:
 | External `.wit` bundles are not signer-managed credentials. | Contract-admin private material stays in standalone custody (`aprekey`); signer and `apstore` never treat `.wit` as `.key`/`.cos`. |
 | Inventory `signing_flow` labels are frozen routing tokens. | Clients implement empty, `cosigner1`, `bounded1`, `bounded-cosigner1`, and `rotating1` and fail closed on unknown labels. |
 | Live `/sign` responds with `GroupSignResponse`. | There is no separate signerapi `SignResponse` DTO. |
-| Admin mnemonic export messages do not release recovery material. | Servers deny `export_key`, `GenerateResultMessage.Mnemonic` is omitted, and recovery material is handled through encrypted backups instead of admin result payloads. |
+| Recovery material is released only by explicit local native-key export. | `export_key` requires local IPC, authorization, an unlocked healthy store and fresh passphrase verification; only native Ed25519/Falcon are eligible. Generate results still omit mnemonics. |
 | `internal/signerapp/signing` uses SDK DTOs at the service boundary. | It is not a duplicate durable authority; request DTO changes belong in `pkg/signerapi` with fixtures. |
 | Plugin manifest schema 2.0 is command-only. | `functions` and `protocol_version` are rejected before execution; plugin JSON-RPC protocol and manifest schema are separate models. |
 | Template `ReloadReport` is a reload projection. | It verifies product-store activation results but does not persist template authority; encrypted template files and key type state records remain the durable sources. |
@@ -1277,8 +1279,8 @@ and [ARCH_ADMIN.md](ARCH_ADMIN.md#admin-protocol-contract).
 | Element | Kind | Authority | Projection | Owner | Checks |
 |---|---|---|---|---|---|
 | Managed credential envelope | authoritative secret storage | selected generation `keys/*.key` or `keys/*.cos` encrypted JSON | decrypted canonical payload | `internal/keys`, `internal/keystore` | Category selects the sole filename class; envelope and payload versions checked before use; the term envelope's AAD binds the account address or Witness Key ID, so a credential filed under another name does not decrypt. |
-| Native Ed25519 key | signing authority | `.key` category `ed25519` | address to private key material | `internal/signing`, `internal/keygen`, `internal/keys` | Address derives from key material; private key never leaves signer boundary. |
-| Native PQ key | signing authority | `.key` category `native_pq`, key type `falcon1024` | address to protocol-native Falcon-1024 key material | `internal/signing/falcon1024`, `internal/keys` | Protocol-native post-quantum account; private key never leaves signer boundary. |
+| Native Ed25519 key | signing authority | `.key` category `ed25519` | address to private key material | `internal/signing`, `internal/keygen`, `internal/keys` | Address derives from key material; explicit local mnemonic export is available. |
+| Native PQ key | signing authority | `.key` category `native_pq`, key type `falcon1024` | address to protocol-native Falcon-1024 key material | `internal/signing/falcon1024`, `internal/keys` | Protocol-native post-quantum account; format 2 retains encrypted recovery entropy for explicit local mnemonic export. |
 | Rotating account key | signing authority | `.key` category `rotating_lsig` | address, rotating stage material, stage table | `internal/keys`, `internal/signerapp/signing`, `lsig/*` | Inventory uses `signing_flow: rotating1`; served only by `/sign/rotating/prepare` and `/sign/rotating/sign`; ordinary signing endpoints refuse with `rotating_signing_required`. |
 | DSA LogicSig key | signing authority | `.key` category `dsa_lsig` | address, bytecode, private signing key, signing args | `internal/keys`, `internal/signerapp/signing`, `lsig/*` | Stored bytecode and `signing_args` are sign-time authority. |
 | Generic LogicSig key | signing authority | `.key` category `generic_lsig` | address, bytecode, runtime arg schema | `internal/keys`, `lsig/generictemplate` | TEAL-only key stores no private signing key; address derives from bytecode. |
@@ -1409,7 +1411,7 @@ and [ARCH_ADMIN.md](ARCH_ADMIN.md#admin-protocol-contract).
 | Admin envelope | wire contract | line-delimited JSON `kind`, `type`, `id` | request/response/notification routing | `internal/protocol`, `internal/transport`, `internal/signerapp/adminserver` | Missing/unsupported messages yield protocol error. |
 | Passphrase messages | secret wire fields | JSON string decoded as `protocol.SensitiveBytes` | auth/unlock/changepass/store messages | `internal/protocol`, `internal/adminproto`, `internal/signerapp/adminserver` | Handlers clone/zero mutable buffers where possible. |
 | Admin key list entry | wire projection | admin service key metadata | `protocol.AdminKeyInfo` projected from `adminproto.KeyInfo` | `internal/protocol`, `internal/adminproto`, `internal/signerapp/adminserver` | Deliberately distinct from the richer HTTP `signerapi.KeyInfo`; extend both admin types together for TUI-visible fields. |
-| Key management messages | wire contract | `generate_key`, `delete_key`, `import_key`, details/list | admin key operations | `internal/protocol`, `internal/adminproto`, `internal/signerapp/adminserver` | Import mnemonic is accepted only over local IPC; generate responses omit mnemonic; export message types decode to an explicit denial. |
+| Key management messages | wire contract | `generate_key`, `delete_key`, `import_key`, details/list | admin key operations | `internal/protocol`, `internal/adminproto`, `internal/signerapp/adminserver` | Import mnemonic is accepted only over local IPC; generate responses omit mnemonic; explicit native mnemonic export requires fresh passphrase verification on local IPC. |
 | Template management messages | wire contract | library/install/show/import/remove/activate/deactivate messages | template/key type lifecycle | `internal/protocol`, `internal/adminproto`, `internal/signerapp/adminserver`, `internal/signerapp/signertui` | Authenticated IPC admin sessions can show/import/remove installed template source; user-facing CLI/TUI verbs are enable/disable. |
 | Sign approval prompt | runtime wire model | signer approval coordinator request | admin `sign_request` | `internal/protocol`, `internal/signerapp/adminserver`, `internal/signerapp/approval` | Approval prompts carry descriptions; response attaches approver principal. |
 | Client enrollment prompt | runtime wire model | queued SSH enrollment request | admin `client_enrollment_request` notification, pending list, approve/reject/import messages, enrolled-key list, and revocation messages | `internal/protocol`, `internal/signerapp/adminserver`, `internal/signerapp/enrollment` | Admin approval (or import) enrolls the key whenever the operator acts; revocation closes the key's connections. |

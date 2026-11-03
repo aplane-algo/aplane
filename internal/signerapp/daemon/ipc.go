@@ -134,7 +134,7 @@ func (s *IPCServer) acceptLoop() {
 		}
 
 		logInfof("apadmin client connected via IPC")
-		go s.acceptAdminSession(adminproto.NewUnixAdminConn(conn, nil), "ipc", "ipc-passphrase")
+		go s.acceptAdminSession(adminproto.NewUnixAdminConn(conn), "ipc", "ipc-passphrase")
 	}
 }
 

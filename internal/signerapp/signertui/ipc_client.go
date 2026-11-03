@@ -38,6 +38,9 @@ type IPCClient struct {
 
 	// Channel for incoming messages to forward to TUI
 	msgChan chan queuedMsg
+	// sendMu is held shared by emit for its whole enqueue and exclusively by
+	// discardStaleQueued, so a drain sees a queue no producer can add to.
+	sendMu sync.RWMutex
 
 	// Done channel for shutdown
 	done chan struct{}
@@ -105,6 +108,7 @@ func (c *IPCClient) Disconnect() {
 	c.mu.Lock()
 	if !c.connected && c.done == nil {
 		c.mu.Unlock()
+		c.discardStaleQueued()
 		return
 	}
 
@@ -131,6 +135,52 @@ func (c *IPCClient) Disconnect() {
 		_ = stream.Close()
 	} else if conn != nil {
 		_ = conn.Close()
+	}
+	c.discardStaleQueued()
+}
+
+// zeroSensitiveMsg clears recovery material carried by a message that will
+// never reach the model.
+func zeroSensitiveMsg(msg tea.Msg) {
+	if result, ok := msg.(nativeMnemonicResultMsg); ok {
+		result.Mnemonic.Zero()
+	}
+}
+
+// discardStaleQueued drops, and clears, queued messages from ended sessions.
+// No listener may ever consume them (listeners also exit on done), so without
+// this a recovery phrase queued just before a disconnect would stay resident.
+// It waits for in-flight emits, which unblock once their session's done is
+// closed, so none can enqueue a stale message behind the drain. Messages of
+// the current session are put back in order.
+func (c *IPCClient) discardStaleQueued() {
+	c.sendMu.Lock()
+	defer c.sendMu.Unlock()
+	c.mu.Lock()
+	current := c.sessionID
+	c.mu.Unlock()
+	var keep []queuedMsg
+drain:
+	for {
+		select {
+		case queued := <-c.msgChan:
+			if queued.sessionID < current {
+				zeroSensitiveMsg(queued.msg)
+				continue
+			}
+			keep = append(keep, queued)
+		default:
+			break drain
+		}
+	}
+	for _, queued := range keep {
+		select {
+		case c.msgChan <- queued:
+		default:
+			// Unreachable: the drain freed at least this much room and
+			// emits are excluded. Never block teardown on it.
+			zeroSensitiveMsg(queued.msg)
+		}
 	}
 }
 
@@ -251,12 +301,15 @@ func (c *IPCClient) SendAndReceive(msg interface{}, timeout time.Duration) ([]by
 }
 
 func (c *IPCClient) emit(sessionID uint64, msg tea.Msg) bool {
+	c.sendMu.RLock()
+	defer c.sendMu.RUnlock()
 	c.mu.Lock()
 	currentSession := c.sessionID
 	done := c.done
 	c.mu.Unlock()
 
 	if currentSession > sessionID || done == nil {
+		zeroSensitiveMsg(msg)
 		return false
 	}
 
@@ -265,6 +318,7 @@ func (c *IPCClient) emit(sessionID uint64, msg tea.Msg) bool {
 	// of leaking.
 	select {
 	case <-done:
+		zeroSensitiveMsg(msg)
 		return false
 	case c.msgChan <- queuedMsg{sessionID: sessionID, msg: msg}:
 		return true
@@ -366,6 +420,10 @@ func (c *IPCClient) drainNotifications(sessionID uint64, notifications <-chan tr
 // reports whether the notification ended the session (displacement), after
 // which nothing more is read.
 func (c *IPCClient) forwardNotification(sessionID uint64, notification transport.Notification) bool {
+	if notification.Base.Type == protocol.MsgTypeExportResult {
+		defer protocol.SensitiveBytes(notification.Raw).Zero()
+	}
+
 	if notification.Base.Type == MsgTypeDisplaced {
 		// Displacement ends the session without a reconnect.
 		var displaced DisplacedMessage
@@ -475,6 +533,7 @@ var signerMessageDecoders = map[string]func(raw []byte) (tea.Msg, error){
 		}
 		return KeysListMsg{Keys: keys}
 	}),
+	protocol.MsgTypeExportResult: decodeAs(func(result protocol.ExportResultMessage) tea.Msg { return nativeMnemonicResultMsg(result) }),
 	MsgTypeGenerateResult: decodeAs(func(genResult GenerateResultMessage) tea.Msg {
 		return GenerateResultMsg{
 			Success: genResult.Success,
@@ -568,6 +627,7 @@ var signerMessageDecoders = map[string]func(raw []byte) (tea.Msg, error){
 			DisplayTEAL:              detailsResult.DisplayTEAL,
 			TemplateProvenanceStatus: detailsResult.TemplateProvenanceStatus,
 			TemplateProvenanceNote:   detailsResult.TemplateProvenanceNote,
+			MnemonicExportable:       detailsResult.MnemonicExportable,
 			Error:                    detailsResult.Error,
 		}
 	}),
@@ -804,6 +864,7 @@ func (c *IPCClient) ListenForMessages() tea.Cmd {
 			select {
 			case queued := <-c.msgChan:
 				if queued.sessionID < currentSession {
+					zeroSensitiveMsg(queued.msg)
 					continue
 				}
 				return queued.msg

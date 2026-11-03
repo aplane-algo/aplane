@@ -77,9 +77,11 @@ type KeyDetailsResult struct {
 	DisplayTEAL              string
 	TemplateProvenanceStatus string
 	TemplateProvenanceNote   string
+	MnemonicExportable       bool
 }
 
 type AuditLogger interface {
+	LogKeyExported(ctx context.Context, address, keyType, outcome string)
 	LogKeyGenerated(ctx context.Context, address, keyType string)
 	LogKeyDeleted(ctx context.Context, address, deletedPath string)
 	LogKeyImported(ctx context.Context, address, keyType string)

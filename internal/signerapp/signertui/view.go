@@ -430,6 +430,8 @@ func (m Model) renderViewContent() string {
 		content = "Displaying JSON in the terminal..."
 	case ViewGenerating:
 		content = m.renderGenerating()
+	case ViewMnemonicExport:
+		content = m.renderMnemonicExport()
 	case ViewGenerateDisplay:
 		content = m.renderGenerateDisplay()
 	case ViewDeleteConfirm:

@@ -73,6 +73,7 @@ func (s Service) GetKeyDetails(address string) (*KeyDetailsResult, *Error) {
 			return fmt.Errorf("read key %s: %w", address, err)
 		}
 		result.KeyType = info.Type
+		result.MnemonicExportable = info.MnemonicExportable
 		if witness.IsKeyType(info.Type) {
 			result.PublicKeyHex = info.PublicKeyHex
 		}

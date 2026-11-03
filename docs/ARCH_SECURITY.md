@@ -916,7 +916,10 @@ there.
 
 Recovery-material operations are narrower than normal admin
 operations: `keys.import` is accepted only on local IPC admin sessions,
-`keys.export` is denied on all admin transports, and `keys.generate` never
+`keys.export` is accepted only on local IPC for native Ed25519 and native Falcon
+credentials, requires fresh passphrase verification and an unlocked healthy
+store, and emits an audit event without recovery material. All other credential
+classes remain non-exportable. `keys.generate` never
 returns generated recovery material over the admin protocol.
 
 ### Action Vocabulary
@@ -939,7 +942,7 @@ makes action typos such as `keys.veiw` fail before allowlist matching.
 | `keys.view` | List keys or view key details | `keys`, `key` | Yes for key list/details |
 | `keys.generate` | Generate a key | `key` | Yes |
 | `keys.import` | Import a key | `key` | Yes |
-| `keys.export` | Export a key mnemonic (disabled) | `key` | Yes |
+| `keys.export` | Explicitly reveal an exportable native key mnemonic over local IPC | `key` | Yes |
 | `keys.delete` | Delete a key | `key` | Yes |
 | `keys.recover` | Start or cancel a rotating account's stage recovery: a bounded search that derives stage addresses into the signer's own cache and never signs | `key` | Yes to start; a cancel answers while locked |
 | `cosigners.view` | List/show public cosigner references and export public witness metadata | `cosigner_references`, `cosigner_reference`, `cosigner_public` | No |
@@ -1733,7 +1736,7 @@ This applies to:
 
 - **IPC auth** — passphrase verified by unwrapping the keyring, then zeroed.
 - **Unlock** — passphrase used to unwrap the keyring, zeroed immediately after `passphraseLock` is released.
-- **Export request**: the passphrase field of a key-export request is zeroed on receipt; key export is always refused.
+- **Export request**: the passphrase is zeroed after verification on every exit path; mutable mnemonic buffers and serialized responses are zeroed after delivery. Admin streams are read with `protocol.FrameReader` rather than `bufio.Reader`: it refills only when empty (bufio slides partial frames and leaves the originals behind), clears every consumed byte and outgrown line buffer, and so leaves the decoded frame as its only mutable copy. Dropped notifications are cleared, and closing a transport stream client clears raw frames still queued for a consumer that has stopped reading. apadmin clears the display on dismissal, timeout, lock, disconnect, and program shutdown (whatever ends it), clears recovery-phrase replies still queued when its session ends, and rejects stale replies. Go rendering/encoding can create transient immutable strings; cleanup does not promise erasure of terminal captures or every runtime copy.
 - **Startup auto-unlock** — `startPassphrase` from `TEST_PASSPHRASE` or `passphrase_command_argv` is zeroed immediately after the initial `ReloadWithPassphrase` call completes.
 
 ### Passphrase Command Helper Protocol

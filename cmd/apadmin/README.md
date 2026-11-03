@@ -107,6 +107,7 @@ explicitly. apadmin does not use `APCLIENT_DATA`, client tokens, or endpoint fil
 ### Key Management
 - **Generate**: Create native keys and template-backed LogicSig types
 - **Import**: Import keys from mnemonic phrases
+- **Native recovery phrase**: In key details, press `m` and re-enter the signer passphrase to reveal a 25-word Ed25519 or native Falcon phrase. Older Falcon credentials without retained recovery entropy require encrypted backups.
 - **Backup**: Create encrypted signer-managed backup archives for recovery
 - **Delete**: Remove keys
 

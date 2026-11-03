@@ -485,12 +485,18 @@ func confirmButtons(focus int, action string) string {
 	return lipgloss.JoinHorizontal(lipgloss.Center, cancel, "  ", act)
 }
 
-// Shutdown releases what the Backups page holds when the program exits: an
-// export's staging file, an import's open archive and passphrase. An export
-// already being verified and saved is left to finish; an upload in progress
-// is left to the signer's cleanup of abandoned uploads. The apadmin and
-// apconsole binaries call it on the final model, whatever ended the program.
+// Shutdown releases what the model holds when the program exits: a revealed
+// recovery phrase or typed export passphrase, recovery-phrase replies still
+// queued on the admin client, an export's staging file, an import's open
+// archive and passphrase. An export already being verified and saved is left
+// to finish; an upload in progress is left to the signer's cleanup of
+// abandoned uploads. The apadmin and apconsole binaries call it on the final
+// model, whatever ended the program (keyboard quit, signal, or the console).
 func (m Model) Shutdown() {
+	m.clearMnemonicExport()
+	if m.adminClient != nil {
+		m.adminClient.Disconnect()
+	}
 	m = m.stopBackupExport()
 	m.shutdownBackupImport()
 }

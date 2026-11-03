@@ -615,9 +615,8 @@ type GenerateKeyRequest struct {
 
 // GenerateKeyResult is the admin-domain result of key generation.
 //
-// Recovery material (mnemonic / word count) is intentionally absent: it is
-// produced inside the signer keyadmin layer and persisted to the encrypted
-// keyfile, but never crosses the admin-protocol boundary.
+// Recovery material is intentionally absent from generation results. Native
+// recovery phrases cross the admin boundary only through explicit ExportKey.
 type GenerateKeyResult struct {
 	Success    bool
 	Address    string
@@ -670,6 +669,7 @@ type GetKeyDetailsResult struct {
 	DisplayTEAL              string
 	TemplateProvenanceStatus string
 	TemplateProvenanceNote   string
+	MnemonicExportable       bool
 	Code                     string
 	Error                    string
 }
@@ -941,4 +941,27 @@ type PolicyContextView struct {
 type GetPolicyDocumentRequest struct {
 	Key                    string
 	ExpectedSnapshotSHA256 string
+}
+
+// ExportKeyRequest requires fresh authentication even on an unlocked session.
+type ExportKeyRequest struct {
+	Address    string
+	Passphrase []byte
+}
+
+// ExportDelivery sends a successful export result. The service calls it while
+// still holding the key for use, so a lock cannot complete mid-release and the
+// audit records whether delivery succeeded. It must not retain Mnemonic.
+type ExportDelivery func(ExportKeyResult) error
+
+// ExportKeyResult carries recovery material only into ExportDelivery; results
+// returned by the service never hold it.
+type ExportKeyResult struct {
+	Success   bool
+	Address   string
+	KeyType   string
+	Mnemonic  []byte
+	WordCount int
+	Code      string
+	Error     string
 }

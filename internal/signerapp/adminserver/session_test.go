@@ -43,6 +43,8 @@ func (c *queueConn) RemoteAddr() string { return "test" }
 func (c *queueConn) Close() error       { return nil }
 
 type stubServices struct {
+	exportResult adminproto.ExportKeyResult
+	exportCalls  int
 	runtime      *productruntime.Runtime
 	verifyErrs   []error
 	unlockOK     bool
@@ -1037,4 +1039,19 @@ func TestHandleSignResponseCarriesApproverPrincipal(t *testing.T) {
 	if response.ApproverPrincipal != "alice-admin" {
 		t.Fatalf("ApproverPrincipal = %q, want alice-admin", response.ApproverPrincipal)
 	}
+}
+
+// ExportKey mimics the service contract: a successful phrase leaves only
+// through deliver and is cleared before the result returns.
+func (s *stubServices) ExportKey(_ context.Context, req adminproto.ExportKeyRequest, deliver adminproto.ExportDelivery) adminproto.ExportKeyResult {
+	s.exportCalls++
+	result := s.exportResult
+	if result.Success {
+		if err := deliver(result); err != nil {
+			result.Success, result.Code = false, "internal"
+		}
+	}
+	protocol.SensitiveBytes(result.Mnemonic).Zero()
+	result.Mnemonic = nil
+	return result
 }

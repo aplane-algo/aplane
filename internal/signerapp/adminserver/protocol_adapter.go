@@ -719,6 +719,7 @@ func ProtocolKeyDetailsMessage(id string, result adminproto.GetKeyDetailsResult)
 		DisplayTEAL:              result.DisplayTEAL,
 		TemplateProvenanceStatus: result.TemplateProvenanceStatus,
 		TemplateProvenanceNote:   result.TemplateProvenanceNote,
+		MnemonicExportable:       result.MnemonicExportable,
 		Code:                     result.Code,
 		Error:                    result.Error,
 	}

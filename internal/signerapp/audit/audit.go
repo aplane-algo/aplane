@@ -66,6 +66,7 @@ const (
 	AuditKeyGenerated                     AuditEventType = "KEY_GENERATED"
 	AuditKeyDeleted                       AuditEventType = "KEY_DELETED"
 	AuditKeyImported                      AuditEventType = "KEY_IMPORTED"
+	AuditKeyExported                      AuditEventType = "KEY_EXPORTED"
 	AuditKeyRejected                      AuditEventType = "KEY_REJECTED"
 	AuditBackupCreated                    AuditEventType = "BACKUP_CREATED"
 	AuditBackupFailed                     AuditEventType = "BACKUP_FAILED"
@@ -1253,5 +1254,15 @@ func (a *AuditLogger) LogCosignerReferenceChangedContext(ctx adminserver.Session
 	}
 	entry.Reason = fmt.Sprintf("action=%s name=%s", action, name)
 	entry.WitnessKeyID = componentKey
+	a.Log(entry)
+}
+
+// LogKeyExported records recovery-material release attempts, never the material.
+func (a *AuditLogger) LogKeyExported(ctx context.Context, address, keyType, outcome string) {
+	entry := contextAuditFields(ctx)
+	entry.Event = AuditKeyExported
+	entry.Outcome = outcome
+	entry.TxnAuth = address
+	entry.Reason = keyType
 	a.Log(entry)
 }

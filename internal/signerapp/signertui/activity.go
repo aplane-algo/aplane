@@ -57,6 +57,7 @@ func (m *Model) resetActivityState() {
 }
 
 func (m *Model) applySignerLockedState() {
+	m.clearMnemonicExport()
 	m.clearRestorePassphrase()
 	m.clearPendingApprovals()
 	m.manualLock.pending = false
@@ -87,6 +88,7 @@ func (m *Model) applySignerUnlockedState(keyCount int) {
 // apsigner has already failed the session's pending approvals and requests, and
 // the restore passphrase must not outlive the session.
 func (m *Model) endAdminSession() {
+	m.clearMnemonicExport()
 	// The connection is gone: nothing more can be sent on it, and no reply
 	// to a request made on it will arrive.
 	_ = m.interruptBackupTransfers(false)
@@ -122,6 +124,7 @@ func (m *Model) enterRecovery() tea.Cmd {
 // store validation blocks signing server-side, so ordinary navigation is disabled
 // until every marker is resolved.
 func (m *Model) applySignerRecoveryState() {
+	m.clearMnemonicExport()
 	m.clearRestorePassphrase()
 	m.manualLock.pending = false
 	m.manualLock.focus = 0

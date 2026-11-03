@@ -184,6 +184,8 @@ func (m Model) openBackupConfirm() (tea.Model, tea.Cmd) {
 // handleKeyDetailsKeys handles keyboard input on key details screen
 func (m Model) handleKeyDetailsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
+	case "m":
+		return m.openMnemonicExport()
 	case "esc", "enter", " ", "q":
 		m.viewState = ViewKeyList
 		m.details.scrollOffset = 0 // Reset scroll on close

@@ -1330,7 +1330,7 @@ sends explicit cancellation.
 
 - HTTP signing and planning,
 - key inventory exposure,
-- key generation, mnemonic import, delete, and export rejection
+- key generation, mnemonic import, delete, and authenticated local native mnemonic export
   admin operations,
 - approval orchestration,
 - admin protocol interactions over local IPC,

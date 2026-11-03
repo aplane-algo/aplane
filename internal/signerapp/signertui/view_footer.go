@@ -23,6 +23,9 @@ func (m Model) viewFooterText() string {
 		return m.keyListFooterText()
 	case ViewKeyDetails:
 		parts := []string{"d=delete"}
+		if m.details.mnemonicExportable {
+			parts = append(parts, "m=recovery phrase")
+		}
 		if m.isCosignerNode() && witness.IsKeyType(m.details.keyType) {
 			parts = append(parts, "e=export cosigner key")
 		}
@@ -31,6 +34,8 @@ func (m Model) viewFooterText() string {
 		}
 		parts = append(parts, "esc/q: Back")
 		return strings.Join(parts, " | ")
+	case ViewMnemonicExport:
+		return "Esc: close recovery phrase"
 	case ViewTEALFullDisplay:
 		footer := "Esc/q close"
 		if len(strings.Split(m.details.teal, "\n")) > m.tealFullDisplayVisibleLines() {

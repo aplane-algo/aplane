@@ -396,6 +396,9 @@ type KeyFileInfo struct {
 	PublicKeyHex        string            // Hex-encoded public key stored in the key payload.
 	Parameters          map[string]string // Parameters for LogicSig keys (nil for DSA keys)
 	TemplateFingerprint string
+	// MnemonicExportable reports whether the credential can reconstruct its
+	// recovery phrase (see keys.Payload.RecoveryPhraseAvailable).
+	MnemonicExportable bool
 }
 
 // DetectKeyInfoFromFileWithKeyring reads a managed credential and returns
@@ -425,7 +428,7 @@ func DetectKeyInfoFromFileWithKeyring(keyFile string, kr *crypto.Keyring) (*KeyF
 
 // parseKeyFileInfo parses decrypted key file data and extracts type and parameters.
 func parseKeyFileInfo(data []byte) (*KeyFileInfo, error) {
-	payload, err := keys.ParsePayload(data)
+	payload, err := keys.ParseStoredPayload(data)
 	if err != nil {
 		return nil, err
 	}
@@ -436,6 +439,7 @@ func parseKeyFileInfo(data []byte) (*KeyFileInfo, error) {
 		PublicKeyHex:        meta.PublicKeyHex,
 		Parameters:          meta.Parameters,
 		TemplateFingerprint: meta.TemplateFingerprint,
+		MnemonicExportable:  payload.RecoveryPhraseAvailable(),
 	}, nil
 }
 
@@ -467,7 +471,7 @@ func GetDisplayTEALWithKeyring(keyFile string, kr *crypto.Keyring) (string, erro
 // parseDisplayTEAL extracts TEAL source from decrypted key file data.
 // Returns the stored TEAL source if available, empty string otherwise.
 func parseDisplayTEAL(data []byte) (string, error) {
-	payload, err := keys.ParsePayload(data)
+	payload, err := keys.ParseStoredPayload(data)
 	if err != nil {
 		return "", err
 	}

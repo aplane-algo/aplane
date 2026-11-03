@@ -16,7 +16,7 @@ func newIPCServerWithActiveConn(conn net.Conn) *IPCServer {
 	server := &IPCServer{
 		manager: adminserver.NewSessionManager(),
 	}
-	session := adminserver.NewSession(adminproto.NewUnixAdminConn(conn, nil), adminserver.SessionDeps{})
+	session := adminserver.NewSession(adminproto.NewUnixAdminConn(conn), adminserver.SessionDeps{})
 	_ = registerPendingSession(server.manager, session)
 	server.manager.PromoteToActive(session)
 	return server
@@ -36,7 +36,7 @@ func registerPendingSession(manager *adminserver.SessionManager, session *admins
 }
 
 func newBoundTestSession(server *IPCServer, conn net.Conn, ir *productruntime.Runtime) *adminserver.Session {
-	session := adminserver.NewSession(adminproto.NewUnixAdminConn(conn, nil), server.signer.adminSessionDeps())
+	session := adminserver.NewSession(adminproto.NewUnixAdminConn(conn), server.signer.adminSessionDeps())
 	remoteAddr := "test-ipc"
 	if addr := conn.RemoteAddr(); addr != nil {
 		remoteAddr = addr.String()

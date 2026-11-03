@@ -1224,12 +1224,12 @@ bytecode, creation parameters, and signing metadata version 2. The injected
 Contract Admin Key ID and program binding from durable metadata; neither is a
 caller-selected creation parameter.
 
-Decrypted key payloads use one canonical v1 JSON schema owned by
+Decrypted key payloads use canonical versioned JSON schemas owned by
 `internal/keys.ParsePayload` and `internal/keys.MarshalPayload`. Readers reject
 unknown fields, duplicate JSON object members, non-canonical timestamps, and
 noncanonical payload aliases. Creation parameters are stored only in `parameters`;
 LogicSig bytecode is stored only in `lsig_bytecode`. The durable payload does
-not store a separately trusted address, template name, entropy, or
+not store a separately trusted address, template name, legacy `entropy`, or
 runtime-argument metadata under `runtime_args`.
 
 Rotating LogicSig accounts use `category: "rotating_lsig"`. The key types
@@ -1289,7 +1289,31 @@ The salt is the lowest byte whose
 `SHA512/256("PQA" || "f1" || salt || public_key)` address is not an
 Ed25519 curve point. Its 25-word Algorand mnemonic encodes 32 bytes of
 recovery entropy; the Falcon working seed is
-`SHA512/256("PQK" || "f1" || entropy)`. Recovery entropy is never persisted.
+`SHA512/256("PQK" || "f1" || entropy)`. Newly generated and mnemonic-imported
+native Falcon credentials use `format_version: 2` and retain the 32-byte entropy
+as canonical hex `recovery_entropy` inside the encrypted payload. The full
+admission parse (`keys.ParsePayload`, also run by `MarshalPayload` before any
+write) requires it to reproduce the exact stored public/private key pair; it is
+never included in public metadata or signing projections. Re-deriving the pair
+is a full Falcon key generation, so hot reads of credentials already in the
+authenticated store (key scans, signing lookups, key list and details) use
+`keys.ParseStoredPayload`, which checks the entropy structurally and runs the
+cheaper key-pair probe instead. Ingress paths (backup restore, import, copy)
+and mnemonic export always use the full parse. Backup/restore and
+passphrase changes preserve it, and secret cleanup wipes it.
+
+Format 1 remains readable and is still written for other key classes. It
+forbids recovery entropy; format 2 is accepted only for native Falcon with
+exactly 32 bytes of matching entropy. Old Falcon credentials remain usable
+but cannot export a mnemonic because their entropy was discarded. No entropy
+can be reconstructed from their expanded private key. Readers through v0.46.0
+reject format 2; stores/backups containing these credentials require the newer
+reader. Native addresses and signing algorithms are unchanged.
+
+Native Ed25519 recovery phrases are reconstructed from the validated private
+key and need no storage change. Both native types may explicitly export their
+25-word phrase through authenticated local apadmin with fresh passphrase
+verification. Other credential classes continue using encrypted backups.
 
 `aplane.falcon1024.v1` remains a LogicSig DSA with a 24-word BIP-39 mnemonic
 and TEAL authorization, but its pre-release derivation moved in place to TEAL

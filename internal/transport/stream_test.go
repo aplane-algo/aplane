@@ -5,6 +5,7 @@ package transport
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"net"
 	"testing"
@@ -134,5 +135,40 @@ func TestStreamClientReadMessageReadsJSONLine(t *testing.T) {
 	}
 	if msg.State != "unlocked" || msg.KeyCount != 2 {
 		t.Fatalf("decoded status = %+v, want unlocked/2", msg)
+	}
+}
+
+func TestStreamClientCloseClearsQueuedNotifications(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	defer func() { _ = serverConn.Close() }()
+
+	client := NewStreamClient(clientConn)
+	notifications := client.Notifications()
+	go func() {
+		_, _ = serverConn.Write(mustJSONLine(t, protocol.ExportResultMessage{
+			BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeExportResult, ID: "export-1"},
+			Success:     true,
+			Mnemonic:    protocol.NewSensitiveBytes("secret recovery phrase"),
+		}))
+	}()
+
+	// Hold a reference to the queued frame, then put it back unconsumed: the
+	// consumer stopped reading (as the TUI does on disconnect).
+	var queued Notification
+	select {
+	case queued = <-notifications:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for the export notification")
+	}
+	client.dispatcher.notifications <- queued
+
+	if err := client.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+	if len(client.dispatcher.notifications) != 0 {
+		t.Fatal("queued notification survived Close")
+	}
+	if !bytes.Equal(queued.Raw, make([]byte, len(queued.Raw))) {
+		t.Fatal("queued raw frame retained recovery material after Close")
 	}
 }

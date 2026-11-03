@@ -22,6 +22,7 @@ const (
 	ViewKeyList
 	ViewKeyDetails // Shows key metadata (parameters for generic LogicSigs)
 	ViewTEALFullDisplay
+	ViewMnemonicExport
 	ViewSigningPopup
 	ViewClientEnrollmentPopup // Client enrollment approval popup
 	ViewGenerateForm
@@ -378,6 +379,7 @@ type keyDetailsState struct {
 	teal                     string
 	templateProvenanceStatus string
 	templateProvenanceNote   string
+	mnemonicExportable       bool
 	saveStatus               string
 }
 
@@ -441,6 +443,7 @@ type Model struct {
 	backup             backupState
 	restore            restoreState
 	forms              formsState
+	mnemonicExport     mnemonicExportState
 	cosigner           cosignerState
 	del                deleteConfirmState
 	admin              adminPanelState
@@ -811,6 +814,7 @@ type KeyDetailsMsg struct {
 	DisplayTEAL              string
 	TemplateProvenanceStatus string
 	TemplateProvenanceNote   string
+	MnemonicExportable       bool
 	Error                    string
 }
 

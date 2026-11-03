@@ -4,7 +4,6 @@
 package transport
 
 import (
-	"bufio"
 	"fmt"
 	"net"
 	"sync"
@@ -19,7 +18,7 @@ type IPCClient struct {
 	writeMu    sync.Mutex
 	conn       net.Conn
 	socketPath string
-	reader     *bufio.Reader
+	reader     *protocol.FrameReader
 	dispatcher *dispatcher
 }
 
@@ -38,7 +37,7 @@ func (c *IPCClient) Dial() error {
 	}
 	c.mu.Lock()
 	c.conn = conn
-	c.reader = bufio.NewReader(conn)
+	c.reader = protocol.NewFrameReader(conn)
 	c.dispatcher = nil
 	c.mu.Unlock()
 	return nil
@@ -104,7 +103,7 @@ func (c *IPCClient) ReadMessage() ([]byte, error) {
 	if reader == nil {
 		return nil, fmt.Errorf("not connected")
 	}
-	return protocol.ReadJSONLine(reader)
+	return reader.ReadFrame()
 }
 
 // SendAndReceive sends a JSON message and waits for a response.

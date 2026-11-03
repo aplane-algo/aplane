@@ -144,10 +144,11 @@ func TestMessageTypeConstantsAreUnique(t *testing.T) {
 }
 
 // 7.0 makes apply_policy name the composite snapshot it was reviewed
-// against, which a 6.x client does not send.
+// against, which a 6.x client does not send. 7.1 adds native mnemonic export
+// (export_result) and key_details.mnemonic_exportable.
 func TestCurrentAdminProtocolVersionIsV7(t *testing.T) {
-	if got := CurrentAdminProtocolVersion(); got != (ProtocolVersion{Major: 7, Minor: 0}) {
-		t.Fatalf("CurrentAdminProtocolVersion() = %+v, want 7.0", got)
+	if got := CurrentAdminProtocolVersion(); got != (ProtocolVersion{Major: 7, Minor: 1}) {
+		t.Fatalf("CurrentAdminProtocolVersion() = %+v, want 7.1", got)
 	}
 }
 
