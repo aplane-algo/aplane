@@ -35,7 +35,7 @@ The cryptographic subsystem is split across these packages:
 | LogicSig provider interfaces, registry, and salting | `internal/lsigprovider`, `internal/logicsigdsa`, `internal/genericlsig`, `internal/lsigsalt` |
 | Built-in LogicSig families | `lsig/`, especially `lsig/falcon1024`, `lsig/ed25519lsig`, `lsig/falcon1024_guarded`, `lsig/composeddsa`, `lsig/generictemplate`, `lsig/rotatingtriplewots`, `lsig/rotatingtriplexmss`, `lsig/rotatingtripleslhdsa`, `lsig/rotatingfamily` |
 | Algorithm metadata, keygen, mnemonics | `internal/algorithm`, `internal/keygen`, `internal/mnemonic` |
-| Key-type visibility and state | `internal/keytypecatalog`, `internal/keytypestate`, `internal/defaultkeytypes` (new-store default key-type installation) |
+| Key-type visibility and state | `internal/keytypecatalog`, `internal/keytypestate` |
 | Encrypted key/template persistence | `internal/crypto`, `internal/keys`, `internal/keystore`, `internal/templatestore`, `internal/templatelibrary` |
 | Signer reload and template registration | `internal/signerapp/templates` |
 
@@ -169,7 +169,7 @@ Built-in LogicSig DSA providers live under `lsig/`. The compiled providers are:
 
 | Key type | Registered family | Availability |
 |---|---|---|
-| `aplane.falcon1024.v1` | `aplane.falcon1024` | default-enabled |
+| `aplane.falcon1024.v1` | `aplane.falcon1024` | library-visible |
 | `aplane.falcon1024-cosigner1024.v1` | `aplane.falcon1024-cosigner1024` | library-visible |
 | `aplane.ed25519.v1` | `aplane.ed25519` | library-visible |
 
@@ -188,10 +188,10 @@ Generic LogicSig templates are TEAL-only providers. `internal/genericlsig`
 provides the template-oriented filtered view over the same unified registry.
 
 Template YAML files under top-level `library/templates/` are install sources,
-not active key types by presence alone. New signer-role stores initialize with
-`aplane.falcon1024-allowlist.v1` installed and enabled as an encrypted
-product-store `.template`; other templates become active only after
-installation and reload/unlock by the signer.
+not active key types by presence alone. New stores install none of them; a
+template becomes active only after installation and reload/unlock by the
+signer. Only the protocol-native `ed25519` and `falcon1024` key types are
+enabled by default.
 
 ### Off-curve LogicSig salting
 
@@ -399,7 +399,6 @@ Optional YAML templates have a source-library lifecycle:
   `<APSIGNER_DATA>/library/templates/`,
 - `internal/storepaths.Paths.TemplateLibraryDir()` is the source of truth for the signer-data library path,
 - library YAML files are reference material only; they are not active key types by being present on disk,
-- new signer-store initialization installs the bundled `aplane.falcon1024-allowlist.v1` YAML into the product store by default,
 - `apadmin` browses the signer-data library over the admin IPC protocol,
 - installing a library template parses and encrypts the YAML into the product template store under
   the selected generation's `keytypes/<key_type>.template` and writes an enabled state record,

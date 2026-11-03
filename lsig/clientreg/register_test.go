@@ -25,16 +25,18 @@ import (
 func TestCanonicalCompiledLogicSigInventory(t *testing.T) {
 	RegisterClient()
 
-	defaultEnabled := catalogKeyTypes(keytypecatalog.DefaultEnabled())
-	wantDefaultEnabled := []string{"aplane.falcon1024.v1"}
-	if !reflect.DeepEqual(defaultEnabled, wantDefaultEnabled) {
-		t.Fatalf("default-enabled compiled LogicSig inventory = %v, want %v", defaultEnabled, wantDefaultEnabled)
+	// Only the protocol-native key types (ed25519, falcon1024) are enabled by
+	// default, and they register outside lsig: every compiled LogicSig key
+	// type is opt-in through the key type library.
+	if defaultEnabled := catalogKeyTypes(keytypecatalog.DefaultEnabled()); len(defaultEnabled) != 0 {
+		t.Fatalf("default-enabled compiled LogicSig inventory = %v, want none", defaultEnabled)
 	}
 
 	libraryVisible := catalogKeyTypes(keytypecatalog.LibraryVisible())
 	wantLibraryVisible := []string{
 		"aplane.ed25519.v1",
 		"aplane.falcon1024-cosigner1024.v1",
+		"aplane.falcon1024.v1",
 		"aplane.rotating-triple-slhdsa.v1",
 		"aplane.rotating-triple-wots.v1",
 		"aplane.rotating-triple-xmss.v1",

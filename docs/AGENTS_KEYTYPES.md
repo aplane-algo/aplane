@@ -304,10 +304,10 @@ After installing:
 
 Do not tell the user that editing top-level `library/templates/` installs a template.
 Files under top-level `library/templates/` are library entries, not active
-runtime definitions by presence alone. The default template
-(`aplane.falcon1024-allowlist.v1`) is installed during new signer-store
-initialization; other templates require an authenticated import or KeyType
-Library install.
+runtime definitions by presence alone. New stores install no templates; every
+template requires an authenticated import or KeyType Library install, and
+every LogicSig key type (compiled or template) is opt-in. Only the
+protocol-native `ed25519` and `falcon1024` are enabled by default.
 
 For the full disable/remove mechanics (state record transitions, archive
 locations, in-use guard, and reload behavior), see

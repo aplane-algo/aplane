@@ -182,7 +182,7 @@ func (s Service) GenerateKey(ctx context.Context, keyType string, params map[str
 		return nil, &Error{Kind: ErrorInternal, Message: "failed to read key type state"}
 	}
 	if !canGenerate {
-		return nil, &Error{Kind: ErrorInvalidInput, Message: fmt.Sprintf("invalid key type: %s", keyType)}
+		return nil, unavailableKeyTypeError(activeKeyPaths, keyType)
 	}
 	if genericlsig.IsGenericLSigType(keyType) {
 		if generateGenericLSig == nil {
@@ -232,6 +232,20 @@ func (s Service) GenerateKey(ctx context.Context, keyType string, params map[str
 // resolveRotatingNetwork replaces a configured network name in the network
 // parameter with that network's genesis hash. The generator itself knows only
 // the built-in names, because it cannot see signer configuration.
+// unavailableKeyTypeError explains why keyType cannot create keys on this
+// node. A key type the binary carries, or a template the store has installed,
+// names the step that enables it; any other key type is unknown here. Only
+// the protocol-native key types are enabled by default.
+func unavailableKeyTypeError(paths storepaths.Paths, keyType string) *Error {
+	rec, recorded, err := keytypestate.Get(paths, keyType)
+	if err == nil && (keytypecatalog.IsLibraryVisible(keyType) || (recorded && rec.State != keytypestate.StateEnabled)) {
+		return &Error{Kind: ErrorInvalidInput, Message: fmt.Sprintf(
+			"key type %s is not enabled on this node; enable it with `apadmin keytype enable %s` or in the apadmin KeyType Library",
+			keyType, keyType)}
+	}
+	return &Error{Kind: ErrorInvalidInput, Message: fmt.Sprintf("invalid key type: %s", keyType)}
+}
+
 func (s Service) resolveRotatingNetwork(params map[string]string) map[string]string {
 	name := strings.TrimSpace(params[rotatingkey.RotatingNetworkParameter])
 	if name == "" || s.NetworkGenesisHashes == nil {

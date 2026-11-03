@@ -1575,8 +1575,14 @@ generate_corridor_key() {
 }
 
 generate_falcon_key() {
-    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'connect\ngenerate aplane.falcon1024.v1\n' > /tmp/generate-falcon.script"
     local out
+    # Only the protocol-native key types are enabled by default.
+    if ! out="$(docker_exec_as_tester "$SIGNER_CONTAINER" ". /home/$TEST_USER/aplane/apenv.sh && \
+        APSIGNER_PASSPHRASE='$TEST_PASSPHRASE' apadmin keytype enable aplane.falcon1024.v1 2>&1")"; then
+        printf '%s\n' "$out" >&2
+        die "failed to enable the Falcon LogicSig key type on signer"
+    fi
+    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'connect\ngenerate aplane.falcon1024.v1\n' > /tmp/generate-falcon.script"
     if ! out="$(docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \
         apshell -script /tmp/generate-falcon.script 2>&1")"; then
         printf '%s\n' "$out" >&2

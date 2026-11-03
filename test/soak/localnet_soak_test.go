@@ -88,6 +88,10 @@ func TestLocalNetSignerTransactionSoak(t *testing.T) {
 	}
 	startUnlock()
 	t.Cleanup(stopUnlock)
+	// Only the protocol-native key types are enabled by default.
+	if err := apadmin.ActivateKeyType(falcon1024V1KeyType); err != nil {
+		t.Fatalf("activate %s: %v", falcon1024V1KeyType, err)
+	}
 
 	start := time.Now()
 	deadline := time.Time{}

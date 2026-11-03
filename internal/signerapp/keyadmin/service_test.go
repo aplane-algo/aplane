@@ -44,6 +44,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 	ed25519signerreg "github.com/aplane-algo/aplane/internal/signing/ed25519/signerreg"
+	nativefalconreg "github.com/aplane-algo/aplane/internal/signing/falcon1024/signerreg"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/templatestore"
 	"github.com/aplane-algo/aplane/internal/witness"
@@ -655,6 +656,7 @@ func TestServiceImportKeyFalcon1024V1PersistsKey(t *testing.T) {
 	svc := Service{AuditLog: audit, Runtime: ir}
 	mnemonic := "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art"
 
+	enableKeyTypeForTest(t, ir, "aplane.falcon1024.v1")
 	result, err := svc.ImportKey(context.Background(), "aplane.falcon1024.v1", mnemonic, nil)
 	if err != nil {
 		t.Fatalf("ImportKey(aplane.falcon1024.v1) error = %#v", err)
@@ -1026,4 +1028,43 @@ func TestServiceDeleteKeyRemovesStageTable(t *testing.T) {
 
 func (a *auditRecorder) LogKeyExported(_ context.Context, address, keyType, outcome string) {
 	a.exported = append(a.exported, struct{ address, keyType, outcome string }{address, keyType, outcome})
+}
+
+// enableKeyTypeForTest writes the product enablement record for a compiled
+// library key type, as `apadmin keytype enable` does.
+func enableKeyTypeForTest(t *testing.T, ir *productruntime.Runtime, keyType string) {
+	t.Helper()
+	if err := keytypestate.Put(ir.KeyPaths(), keytypestate.Record{
+		KeyType: keyType, Source: keytypestate.SourceCompiled, State: keytypestate.StateEnabled,
+	}); err != nil {
+		t.Fatalf("keytypestate.Put(%q) error = %v", keyType, err)
+	}
+}
+
+// Only the protocol-native key types are enabled by default. A new runtime
+// refuses to generate or import the LogicSig Falcon type, and the refusal
+// names the step that enables it; an unknown key type is still just invalid.
+func TestServiceRefusesALibraryKeyTypeUntilEnabled(t *testing.T) {
+	configureFalconCompileMock(t)
+	nativefalconreg.RegisterSigner()
+
+	ir := setupProductRuntime(t)
+	svc := Service{AuditLog: &auditRecorder{}, Runtime: ir}
+	const want = "key type aplane.falcon1024.v1 is not enabled on this node; enable it with `apadmin keytype enable aplane.falcon1024.v1`"
+	mnemonic := "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art"
+
+	if _, err := svc.GenerateKey(context.Background(), "aplane.falcon1024.v1", nil, nil); err == nil || err.Kind != ErrorInvalidInput || !strings.Contains(err.Message, want) {
+		t.Fatalf("GenerateKey(aplane.falcon1024.v1) before enabling = %#v, want %q", err, want)
+	}
+	if _, err := svc.ImportKey(context.Background(), "aplane.falcon1024.v1", mnemonic, nil); err == nil || err.Kind != ErrorInvalidInput || !strings.Contains(err.Message, want) {
+		t.Fatalf("ImportKey(aplane.falcon1024.v1) before enabling = %#v, want %q", err, want)
+	}
+	if _, err := svc.GenerateKey(context.Background(), "example.unknown.v1", nil, nil); err == nil || err.Message != "invalid key type: example.unknown.v1" {
+		t.Fatalf("GenerateKey(unknown) = %#v, want the invalid key type refusal", err)
+	}
+	for _, native := range []string{"ed25519", "falcon1024"} {
+		if result, err := svc.GenerateKey(context.Background(), native, nil, nil); err != nil || result.Address == "" {
+			t.Fatalf("GenerateKey(%s) on a new runtime = %+v, %#v; want the native key type enabled by default", native, result, err)
+		}
+	}
 }

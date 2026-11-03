@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
-	"github.com/aplane-algo/aplane/internal/defaultkeytypes"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/noderole"
@@ -139,7 +138,7 @@ func Initialize(passphrase []byte, opts Options) (Result, error) {
 				if err := policy.WriteEmbeddedDefault(staged, role, keyring, time.Now()); err != nil {
 					return fmt.Errorf("create generation default policy: %w", err)
 				}
-				return defaultkeytypes.InstallForNewStoreActive(staged, role, keyring, opts.Logf)
+				return nil
 			},
 		}); err != nil {
 			return result, fmt.Errorf("failed to mint initial generation: %w", err)

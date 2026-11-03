@@ -387,6 +387,15 @@ func TestAdminGenerateFalcon1024(t *testing.T) {
 		KeyType: "aplane.falcon1024.v1",
 	})
 
+	// Only the protocol-native key types are enabled by default; a new store
+	// refuses the LogicSig Falcon type and names the step that enables it.
+	refused := httptest.NewRecorder()
+	server.handleAdminGenerate(refused, requestWithIdentity(http.MethodPost, "/admin/generate", reqBody))
+	if refused.Code != http.StatusBadRequest || !strings.Contains(refused.Body.String(), "apadmin keytype enable aplane.falcon1024.v1") {
+		t.Fatalf("generate before enabling = %d %s, want a refusal naming the enable command", refused.Code, refused.Body.String())
+	}
+	enableKeyTypeForTest(t, server, "aplane.falcon1024.v1")
+
 	w := httptest.NewRecorder()
 	r := requestWithIdentity(http.MethodPost, "/admin/generate", reqBody)
 	server.handleAdminGenerate(w, r)
@@ -597,6 +606,7 @@ func TestAdminDeleteFalcon1024(t *testing.T) {
 	defer algodCleanup()
 
 	// Generate a aplane.falcon1024.v1 key
+	enableKeyTypeForTest(t, server, "aplane.falcon1024.v1")
 	genBody, _ := json.Marshal(AdminGenerateRequest{KeyType: "aplane.falcon1024.v1"})
 	genW := httptest.NewRecorder()
 	genR := requestWithIdentity(http.MethodPost, "/admin/generate", genBody)

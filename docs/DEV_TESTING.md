@@ -851,7 +851,9 @@ bin/apshell -d /path/to/apclient
 apshell> connect
 apshell> network <testnet|localnet>
 
-# Test key generation
+# Test key generation (LogicSig key types need enabling first:
+# apadmin keytype enable aplane.falcon1024.v1)
+apshell> generate falcon1024
 apshell> generate aplane.falcon1024.v1
 
 # Test transaction commands

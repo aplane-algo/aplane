@@ -206,9 +206,14 @@ func (v *ApAdminHarness) RunPolicy(stdin string, args ...string) (PolicyResult, 
 	}
 }
 
-// GenerateKey generates a new Falcon key using apadmin test mode
-// The seed parameter is ignored as apadmin always generates random keys
+// GenerateKey generates a new Falcon LogicSig key using apadmin test mode,
+// enabling aplane.falcon1024.v1 first: only the protocol-native key types are
+// enabled by default. The seed parameter is ignored as apadmin always
+// generates random keys.
 func (v *ApAdminHarness) GenerateKey(seed string) (string, error) {
+	if err := v.ActivateKeyType("aplane.falcon1024.v1"); err != nil {
+		return "", err
+	}
 	return v.GenerateKeyWithType("aplane.falcon1024.v1")
 }
 

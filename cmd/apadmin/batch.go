@@ -404,8 +404,8 @@ Environment variables:
 
 Examples:
   apadmin --test list
-  apadmin --test generate aplane.falcon1024.v1
   apadmin --test generate falcon1024
+  apadmin --test generate aplane.falcon1024.v1   # after: apadmin keytype enable aplane.falcon1024.v1
   apadmin --test import ed25519 word1 word2 ... word25
 `)
 }
