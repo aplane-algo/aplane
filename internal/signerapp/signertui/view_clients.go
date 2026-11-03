@@ -117,15 +117,15 @@ func (m Model) renderRevokeClientConfirm() string {
 func (m Model) renderImportClientKey() string {
 	var body strings.Builder
 	body.WriteString(titleStyle.Render("Import Client Key"))
-	body.WriteString("\n\n")
-	body.WriteString(subtitleStyle.Render("Enroll a client's SSH public key without a request from it. Verify the key's fingerprint with the client's owner first."))
+	body.WriteString("\n")
+	body.WriteString(subtitleStyle.Render(wrapPlainText("Enrolls a client's SSH public key directly; verify its fingerprint first.", m.popupBodyWidth(90))))
 	body.WriteString("\n\nPublic key file (one OpenSSH public-key line, e.g. id_ed25519.pub):\n")
 	pathStyle := inputInactiveStyle
 	if m.clients.importFocus == importClientKeyFocusPath {
 		pathStyle = inputActiveStyle
 	}
 	body.WriteString(pathStyle.Width(m.constrainParameterFieldWidth(60)).Render(terminalSafe(m.clients.importPath)))
-	body.WriteString("\n\nLabel (optional; the file's comment is used when empty):\n")
+	body.WriteString("\nLabel (optional; defaults to the file's comment):\n")
 	labelStyle := inputInactiveStyle
 	if m.clients.importFocus == importClientKeyFocusLabel {
 		labelStyle = inputActiveStyle
@@ -141,6 +141,5 @@ func (m Model) renderImportClientKey() string {
 	if m.clients.importError != "" {
 		body.WriteString("\n" + errorStyle.Render(terminalSafeLines(m.clients.importError)) + "\n")
 	}
-	body.WriteString("\n" + helpStyle.Render("tab next field  ctrl+o browse  enter submit  esc cancel"))
 	return m.renderPopup(90, body.String())
 }

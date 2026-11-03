@@ -24,18 +24,59 @@ const (
 )
 
 const (
-	splitMinWidth  = 100
-	splitMinHeight = 28
 	headerHeight   = 2 // title row + tab row
 	footerHeight   = 1
-	paneBorderSize = 2  // rounded border: 1 char each side (also 1 row top + 1 row bottom)
-	topPaneGap     = 1  // visual gutter between the signer and shell panes
-	signerPaneCols = 45 // signer:shell split is 45:55 in split mode
-	shellPaneCols  = 55
+	paneBorderSize = 2 // rounded border: 1 char each side (also 1 row top + 1 row bottom)
+	topPaneGap     = 1 // visual gutter between the signer column and the shell pane
 
 	compactDaemonMinBodyRows = 5
 	compactDaemonMaxBodyRows = 6
 )
+
+// The split layout puts the signer pane above the daemon pane in a left
+// column and gives the shell pane the full height to the right. The signer
+// column is exactly as wide as apadmin's minimum window plus the pane border,
+// and the shell takes the rest of the width. The daemon pane keeps its
+// compact height, and the signer pane takes the rest of the column.
+//
+// splitMinWidth and splitMinHeight are the smallest terminal that shows the
+// split layout with the shell pane: the signer pane gets apadmin's minimum
+// window (tui.MinWidth by tui.MinHeight), the shell at least
+// shellPaneMinWidth columns, and the daemon its tallest compact height.
+// Without a shell pane only the height applies. A smaller terminal shows one
+// pane at a time.
+const (
+	signerPaneWidth     = tui.MinWidth + paneBorderSize
+	signerPaneMinHeight = tui.MinHeight + paneBorderSize + 1 // + pane header row
+	shellPaneMinWidth   = 50
+	daemonPaneMaxHeight = paneBorderSize + 1 + compactDaemonMaxBodyRows
+
+	splitMinWidth  = signerPaneWidth + topPaneGap + shellPaneMinWidth
+	splitMinHeight = headerHeight + footerHeight + signerPaneMinHeight + daemonPaneMaxHeight
+)
+
+// splitAvailable reports whether a terminal of this size shows the split
+// layout.
+func (m model) splitAvailable(width, height int) bool {
+	minWidth, minHeight := splitMinWidth, splitMinHeight
+	if !m.shellEnabled() {
+		minWidth = signerPaneWidth
+	}
+	if !m.daemonPaneShown() {
+		minHeight -= daemonPaneMaxHeight
+	}
+	return width >= minWidth && height >= minHeight
+}
+
+// daemonPaneShown reports whether the console has a daemon pane. It does
+// for an apsigner this console started, which streams its log there, or
+// tried and failed to start, whose pane says why, and while the pane carries
+// startup configuration notices. Otherwise an apsigner running elsewhere has
+// no pane, function key, or place in pane navigation; the title bar still
+// shows its status.
+func (m model) daemonPaneShown() bool {
+	return m.daemon.hasLogNavigation() || m.daemon.status == daemonStatusFailed || m.daemon.configNotices
+}
 
 type model struct {
 	focus         pane
@@ -164,18 +205,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "f1":
 			m.focus = paneSigner
 			return m, nil
+		// Each function key always names the same pane, and does nothing
+		// when that pane is absent.
 		case "f2":
 			if m.shellEnabled() {
 				m.focus = paneShell
-			} else if m.daemon.hasLogNavigation() {
-				m.focus = paneDaemon
 			}
 			return m, nil
 		case "f3":
-			if !m.shellEnabled() || !m.daemon.hasLogNavigation() {
-				return m, nil
+			if m.daemon.hasLogNavigation() {
+				m.focus = paneDaemon
 			}
-			m.focus = paneDaemon
 			return m, nil
 		case "f4":
 			m.zoomed = !m.zoomed
@@ -396,7 +436,7 @@ func (m model) layout() layout {
 
 	contentWidth := max(20, width)
 	contentHeight := max(1, height-headerHeight-footerHeight)
-	split := !m.zoomed && width >= splitMinWidth && height >= splitMinHeight
+	split := !m.zoomed && m.splitAvailable(width, height)
 	if !split {
 		r := rect{width: contentWidth, height: contentHeight}
 		return layout{
@@ -408,38 +448,32 @@ func (m model) layout() layout {
 			daemon:        r,
 		}
 	}
+	return m.splitLayout(contentWidth, contentHeight)
+}
 
-	topHeight := max(8, (contentHeight*2)/3)
-	daemonHeight := max(5, contentHeight-topHeight)
-	if !m.daemon.owned {
-		daemonHeight = m.daemon.preferredCompactHeight()
+// splitLayout divides the content area into the split panes, whatever its
+// size; layout decides whether the terminal is large enough to split.
+func (m model) splitLayout(contentWidth, contentHeight int) layout {
+	daemon := rect{}
+	if m.daemonPaneShown() {
+		daemon = rect{width: contentWidth, height: min(m.daemon.preferredCompactHeight(), max(1, contentHeight-1))}
 	}
-	if contentHeight-daemonHeight < 8 {
-		daemonHeight = max(5, contentHeight-8)
-	}
-	topHeight = contentHeight - daemonHeight
-	if !m.shellEnabled() {
-		return layout{
-			split:         true,
-			contentWidth:  contentWidth,
-			contentHeight: contentHeight,
-			shell:         rect{},
-			signer:        rect{width: contentWidth, height: topHeight},
-			daemon:        rect{width: contentWidth, height: daemonHeight},
+	signer := rect{width: contentWidth, height: contentHeight - daemon.height}
+	shell := rect{}
+	if m.shellEnabled() {
+		signer.width = signerPaneWidth
+		if daemon.height > 0 {
+			daemon.width = signerPaneWidth
 		}
+		shell = rect{width: max(1, contentWidth-signerPaneWidth-topPaneGap), height: contentHeight}
 	}
-
-	topWidth := contentWidth - topPaneGap
-	signerWidth := (topWidth*signerPaneCols + (signerPaneCols+shellPaneCols)/2) / (signerPaneCols + shellPaneCols)
-	shellWidth := topWidth - signerWidth
-
 	return layout{
 		split:         true,
 		contentWidth:  contentWidth,
 		contentHeight: contentHeight,
-		shell:         rect{width: shellWidth, height: topHeight},
-		signer:        rect{width: signerWidth, height: topHeight},
-		daemon:        rect{width: contentWidth, height: daemonHeight},
+		shell:         shell,
+		signer:        signer,
+		daemon:        daemon,
 	}
 }
 
@@ -474,14 +508,17 @@ func (m model) renderBody(l layout) string {
 	}
 
 	signerBox := renderPaneWithMeta(m.signerPaneTitle(), m.signerPaneMeta(), m.focus == paneSigner, m.signer.View(), l.signer.width, l.signer.height)
-	daemonBox := renderPane("Daemon", m.focus == paneDaemon, daemonBody, l.daemon.width, l.daemon.height)
+	signerColumn := signerBox
+	if m.daemonPaneShown() {
+		daemonBox := renderPane("Daemon", m.focus == paneDaemon, daemonBody, l.daemon.width, l.daemon.height)
+		signerColumn = lipgloss.JoinVertical(lipgloss.Left, signerBox, daemonBox)
+	}
 	if !m.shellEnabled() {
-		return lipgloss.JoinVertical(lipgloss.Left, signerBox, daemonBox)
+		return signerColumn
 	}
 	shellBody := paneBody(l.shell, m.shell.View)
 	shellBox := renderPane("Shell", m.focus == paneShell, shellBody, l.shell.width, l.shell.height)
-	top := lipgloss.JoinHorizontal(lipgloss.Top, signerBox, strings.Repeat(" ", topPaneGap), shellBox)
-	return lipgloss.JoinVertical(lipgloss.Left, top, daemonBox)
+	return lipgloss.JoinHorizontal(lipgloss.Top, signerColumn, strings.Repeat(" ", topPaneGap), shellBox)
 }
 
 func (m model) signerPaneTitle() string {
@@ -627,7 +664,7 @@ func (m model) renderTitle(width int) string {
 	mode := "split"
 	if m.zoomed {
 		mode = "zoom"
-	} else if m.width < splitMinWidth || m.height < splitMinHeight {
+	} else if !m.layout().split {
 		mode = "focus"
 	}
 
@@ -717,11 +754,7 @@ func (m model) renderTabs(width int) string {
 		tabItems = append(tabItems, tab("F2", "Shell", paneShell))
 	}
 	if m.daemon.hasLogNavigation() {
-		if !m.shellEnabled() {
-			tabItems = append(tabItems, tab("F2", "Daemon", paneDaemon))
-		} else {
-			tabItems = append(tabItems, tab("F3", "Daemon", paneDaemon))
-		}
+		tabItems = append(tabItems, tab("F3", "Daemon", paneDaemon))
 	}
 	tabs := lipgloss.JoinHorizontal(lipgloss.Top, tabItems...)
 	hint := lipgloss.NewStyle().Foreground(lipgloss.Color(p.Help)).Render("F4 zoom · " + m.navigationHint() + " navigate")
@@ -777,7 +810,7 @@ func (m model) navigationHint() string {
 func (m model) focusHint() string {
 	if !m.shellEnabled() {
 		if m.daemon.hasLogNavigation() {
-			return "F1 signer · F2 daemon"
+			return "F1 signer · F3 daemon"
 		}
 		return "F1 signer"
 	}
@@ -873,7 +906,11 @@ func (m model) renderHelpOverlay() string {
 	lines = append(lines,
 		"",
 		kv("Signer pane", "apadmin Bubble Tea UI over local IPC"),
-		kv("Daemon pane", "local apsigner status and owned-daemon logs"),
+	)
+	if m.daemonPaneShown() {
+		lines = append(lines, kv("Daemon pane", "local apsigner status and owned-daemon logs"))
+	}
+	lines = append(lines,
 		"",
 		kv("focus", m.focus.String()),
 		kv("daemon", string(m.daemon.status)),
@@ -908,7 +945,7 @@ func (m model) helpFocusText() string {
 func (m model) helpFocusKeys() string {
 	if !m.shellEnabled() {
 		if m.daemon.hasLogNavigation() {
-			return "F1 F2"
+			return "F1 F3"
 		}
 		return "F1"
 	}
@@ -1043,12 +1080,11 @@ func (m model) paneBelow() pane {
 	if !m.shellEnabled() {
 		return paneDaemon
 	}
-	switch m.focus {
-	case paneSigner, paneShell:
+	// The daemon pane sits below the signer pane; nothing is below the shell.
+	if m.focus == paneSigner {
 		return paneDaemon
-	default:
-		return m.focus
 	}
+	return m.focus
 }
 
 func nextPaneAvailable(p pane, includeShell, includeDaemon bool) pane {

@@ -18,6 +18,12 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
+// ownedDaemon is the daemon model of an apsigner this console started, which
+// has a daemon pane.
+func ownedDaemon(lines int) daemonModel {
+	return daemonModel{status: daemonStatusReady, owned: true, events: make(chan daemonEvent), lines: make([]string, lines)}
+}
+
 func TestLayoutSplitAndZoom(t *testing.T) {
 	m := model{width: splitMinWidth, height: splitMinHeight}
 	if got := m.layout(); !got.split {
@@ -36,35 +42,90 @@ func TestLayoutSmallTerminalFallsBackToFocusedPane(t *testing.T) {
 		t.Fatalf("layout().split = true, want false below split width")
 	}
 
-	m = model{width: splitMinWidth, height: splitMinHeight - 1}
+	m = model{width: splitMinWidth, height: splitMinHeight - 1, daemon: ownedDaemon(0)}
 	if got := m.layout(); got.split {
 		t.Fatalf("layout().split = true, want false below split height")
 	}
 }
 
-func TestSplitLayoutCompactsExternallyManagedDaemon(t *testing.T) {
-	m := model{
-		daemon: newDaemonModel(daemonInfo{
-			Status:  daemonStatusAttached,
-			DataDir: "/tmp/apsigner",
-			IPCPath: "/tmp/apsigner/apsigner.sock",
-			Detail:  "attached to existing apsigner",
-		}, nil),
-		width:  splitMinWidth,
-		height: splitMinHeight,
-	}
+// An apsigner running elsewhere has no daemon pane: the signer pane takes the
+// whole column, the daemon has no function key or tab, pane navigation skips
+// it, and a terminal shorter by the daemon pane still splits.
+func TestSplitLayoutOmitsExternallyManagedDaemon(t *testing.T) {
+	for _, status := range []daemonStatus{daemonStatusAttached, daemonStatusDisabled} {
+		m := model{
+			focus:  paneSigner,
+			shell:  newShellModel(nil, []string{"shell ready"}),
+			signer: stubTeaModel{},
+			daemon: newDaemonModel(daemonInfo{
+				Status:  status,
+				DataDir: "/tmp/apsigner",
+				IPCPath: "/tmp/apsigner/apsigner.sock",
+				Detail:  "attached to existing apsigner",
+			}, nil),
+			width:  splitMinWidth,
+			height: splitMinHeight - daemonPaneMaxHeight,
+		}
 
-	l := m.layout()
-	wantDaemonHeight := m.daemon.preferredCompactHeight()
-	if l.daemon.height != wantDaemonHeight {
-		t.Fatalf("daemon height = %d, want compact height %d", l.daemon.height, wantDaemonHeight)
-	}
-	if l.signer.height != l.contentHeight-wantDaemonHeight {
-		t.Fatalf("top pane height = %d, want %d", l.signer.height, l.contentHeight-wantDaemonHeight)
+		l := m.layout()
+		if !l.split {
+			t.Fatalf("%s: no split in a terminal short only by the daemon pane", status)
+		}
+		if l.daemon.height != 0 || l.signer.height != l.contentHeight {
+			t.Fatalf("%s: daemon height %d, signer height %d, want 0 and %d", status, l.daemon.height, l.signer.height, l.contentHeight)
+		}
+		if body := m.renderBody(l); strings.Contains(body, "Daemon") {
+			t.Fatalf("%s: daemon pane rendered:\n%s", status, body)
+		}
+		if tabs := m.renderTabs(l.contentWidth); strings.Contains(tabs, "Daemon") || strings.Contains(tabs, "F3") {
+			t.Fatalf("%s: daemon tab shown: %q", status, tabs)
+		}
+		for _, key := range []tea.KeyMsg{{Type: tea.KeyF3}, {Type: tea.KeyShiftDown}} {
+			next, _ := m.Update(key)
+			if got := next.(model).focus; got != paneSigner {
+				t.Fatalf("%s: %s moved focus to %s", status, key, got)
+			}
+		}
+		for range 3 {
+			next, _ := m.Update(tea.KeyMsg{Type: tea.KeyShiftRight})
+			m = next.(model)
+			if m.focus == paneDaemon {
+				t.Fatalf("%s: pane cycling reached the daemon", status)
+			}
+		}
 	}
 }
 
-func TestSplitLayoutKeepsOwnedDaemonLogArea(t *testing.T) {
+// Startup configuration notices keep the daemon pane on screen even for an
+// apsigner running elsewhere, since nothing else shows them on a cosigner.
+func TestSplitLayoutKeepsDaemonPaneForConfigNotices(t *testing.T) {
+	daemon := newDaemonModel(daemonInfo{Status: daemonStatusAttached}, nil)
+	daemon.lines = append(daemon.lines, cosignerShellDisabledLines([]string{"using signer_data from -d"})...)
+	daemon.configNotices = true
+	m := model{shellDisabled: true, signer: stubTeaModel{}, daemon: daemon, width: splitMinWidth, height: splitMinHeight}
+	if body := m.renderBody(m.layout()); !strings.Contains(body, "using signer_data from -d") {
+		t.Fatalf("config notice not shown:\n%s", body)
+	}
+}
+
+// A failed start keeps the daemon pane, which says why apsigner is not
+// running.
+func TestSplitLayoutKeepsDaemonPaneForFailedStart(t *testing.T) {
+	m := model{
+		signer: stubTeaModel{},
+		daemon: newDaemonModel(daemonInfo{Status: daemonStatusFailed, Detail: "apsigner exited during startup"}, nil),
+		width:  splitMinWidth,
+		height: splitMinHeight,
+	}
+	l := m.layout()
+	if l.daemon.height == 0 || !strings.Contains(m.renderBody(l), "Daemon") {
+		t.Fatalf("daemon pane missing after a failed start: daemon %+v", l.daemon)
+	}
+}
+
+// The daemon pane is the one the operator watches least, so an owned daemon
+// keeps its compact height too and the extra rows go to the signer pane.
+func TestSplitLayoutGivesOwnedDaemonCompactHeight(t *testing.T) {
 	m := model{
 		daemon: newDaemonModel(daemonInfo{
 			Status:  daemonStatusStarting,
@@ -78,24 +139,28 @@ func TestSplitLayoutKeepsOwnedDaemonLogArea(t *testing.T) {
 	}
 
 	l := m.layout()
-	compactHeight := paneBorderSize + 1 + compactDaemonMaxBodyRows
-	if l.daemon.height <= compactHeight {
-		t.Fatalf("daemon height = %d, want larger log area than compact height %d", l.daemon.height, compactHeight)
+	if want := m.daemon.preferredCompactHeight(); l.daemon.height != want {
+		t.Fatalf("daemon height = %d, want compact height %d", l.daemon.height, want)
+	}
+	if l.signer.height != l.contentHeight-l.daemon.height {
+		t.Fatalf("signer height = %d, want the rest of the column, %d", l.signer.height, l.contentHeight-l.daemon.height)
 	}
 }
 
-func TestSplitLayoutUsesSignerShellFortyFiveFiftyFiveRatio(t *testing.T) {
-	m := model{
-		width:  201, // 200 top-pane columns after the one-column pane gap.
-		height: splitMinHeight,
-	}
+// The signer column is exactly apadmin's minimum width; the shell takes the
+// rest of the width and the full height.
+func TestSplitLayoutFixesSignerColumnWidth(t *testing.T) {
+	m := model{width: 201, height: splitMinHeight, daemon: ownedDaemon(0)}
 
 	l := m.layout()
 	if !l.split {
 		t.Fatal("layout().split = false, want split layout")
 	}
-	if l.signer.width != 90 || l.shell.width != 110 {
-		t.Fatalf("pane widths = signer %d shell %d, want 90/110", l.signer.width, l.shell.width)
+	if l.signer.width != signerPaneWidth || l.daemon.width != signerPaneWidth {
+		t.Fatalf("signer column widths = signer %d daemon %d, want %d", l.signer.width, l.daemon.width, signerPaneWidth)
+	}
+	if want := 201 - signerPaneWidth - topPaneGap; l.shell.width != want || l.shell.height != l.contentHeight {
+		t.Fatalf("shell = %dx%d, want %dx%d", l.shell.width, l.shell.height, want, l.contentHeight)
 	}
 }
 
@@ -105,7 +170,7 @@ func TestShellDisabledSplitLayoutUsesFullWidthSignerAboveDaemon(t *testing.T) {
 		shellDisabled: true,
 		shell:         newShellModel(nil, []string{"shell ready"}),
 		signer:        stubTeaModel{},
-		daemon:        newDaemonModel(daemonInfo{Status: daemonStatusAttached, Detail: "attached"}, nil),
+		daemon:        newDaemonModel(daemonInfo{Status: daemonStatusStarting, Owned: true, Detail: "starting"}, make(chan daemonEvent)),
 		width:         splitMinWidth,
 		height:        splitMinHeight,
 	}
@@ -390,7 +455,7 @@ func TestShiftTabCyclesPaneLikeShiftRight(t *testing.T) {
 	}
 }
 
-func TestShellDisabledNavigationUsesF2ForDaemon(t *testing.T) {
+func TestShellDisabledNavigationKeepsDaemonOnF3(t *testing.T) {
 	m := model{
 		focus:         paneSigner,
 		shellDisabled: true,
@@ -404,9 +469,17 @@ func TestShellDisabledNavigationUsesF2ForDaemon(t *testing.T) {
 	if cmd != nil {
 		t.Fatalf("F2 cmd = %v, want nil", cmd)
 	}
+	if got := next.(model); got.focus != paneSigner {
+		t.Fatalf("F2 focus = %v, want signer: F2 names the shell pane, which is absent", got.focus)
+	}
+
+	next, cmd = m.Update(tea.KeyMsg{Type: tea.KeyF3})
+	if cmd != nil {
+		t.Fatalf("F3 cmd = %v, want nil", cmd)
+	}
 	got := next.(model)
 	if got.focus != paneDaemon {
-		t.Fatalf("F2 focus = %v, want daemon", got.focus)
+		t.Fatalf("F3 focus = %v, want daemon", got.focus)
 	}
 
 	next, cmd = m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
@@ -450,7 +523,7 @@ func TestShellDisabledTabsAndTitleOmitShell(t *testing.T) {
 	if strings.Contains(tabs, "Shell") {
 		t.Fatalf("tabs include shell while disabled: %q", tabs)
 	}
-	if !strings.Contains(tabs, "F1 Cosigner Admin") || !strings.Contains(tabs, "F2 Daemon") {
+	if !strings.Contains(tabs, "F1 Cosigner Admin") || !strings.Contains(tabs, "F3 Daemon") {
 		t.Fatalf("tabs missing signer/daemon controls: %q", tabs)
 	}
 	if !strings.Contains(tabs, "Shift ↑ ↓ navigate") {
@@ -1628,5 +1701,54 @@ func TestCommandPromptPasteJoinsLines(t *testing.T) {
 	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Paste: true, Runes: []rune("balance\r\nsend")})
 	if m.input != "balance send" {
 		t.Fatalf("command input = %q, want the paste joined into one line", m.input)
+	}
+}
+
+// The split layout never gives apadmin a pane smaller than its minimum
+// window, nor the shell or daemon less than theirs, and the thresholds are no
+// larger than they need to be.
+func TestSplitLayoutGivesSignerPaneApadminMinimum(t *testing.T) {
+	fullDaemon := ownedDaemon(compactDaemonMaxBodyRows)
+	external := daemonModel{status: daemonStatusAttached}
+	for _, shellDisabled := range []bool{false, true} {
+		for _, daemon := range []daemonModel{ownedDaemon(0), fullDaemon, external} {
+			width, height := splitMinWidth, splitMinHeight
+			if shellDisabled {
+				width = signerPaneWidth
+			}
+			want := daemon.preferredCompactHeight()
+			if daemon.events == nil {
+				height, want = splitMinHeight-daemonPaneMaxHeight, 0
+			}
+			m := model{width: width, height: height, shellDisabled: shellDisabled, daemon: daemon}
+			l := m.layout()
+			w, h := l.signer.width-paneBorderSize, l.signer.height-paneBorderSize-1
+			if !l.split || w < tui.MinWidth || h < tui.MinHeight {
+				t.Fatalf("shell disabled %v, daemon lines %d: split %v, signer pane %dx%d, want at least %dx%d",
+					shellDisabled, len(daemon.lines), l.split, w, h, tui.MinWidth, tui.MinHeight)
+			}
+			if l.daemon.height != want {
+				t.Fatalf("shell disabled %v, daemon %s: daemon height %d, want %d", shellDisabled, daemon.status, l.daemon.height, want)
+			}
+			if !shellDisabled && l.shell.width < shellPaneMinWidth {
+				t.Fatalf("shell width %d, want at least %d", l.shell.width, shellPaneMinWidth)
+			}
+		}
+	}
+	// One column or row less falls back to one pane at a time, and would
+	// have been too small for the shell or for apadmin.
+	m := model{width: splitMinWidth - 1, height: splitMinHeight, daemon: fullDaemon}
+	if m.layout().split {
+		t.Fatal("split one column below splitMinWidth")
+	}
+	if l := m.splitLayout(splitMinWidth-1, splitMinHeight-headerHeight-footerHeight); l.shell.width >= shellPaneMinWidth {
+		t.Fatalf("splitMinWidth %d is larger than needed: one column less leaves the shell %d wide", splitMinWidth, l.shell.width)
+	}
+	m = model{width: splitMinWidth, height: splitMinHeight - 1, daemon: fullDaemon}
+	if m.layout().split {
+		t.Fatal("split one row below splitMinHeight")
+	}
+	if l := m.splitLayout(splitMinWidth, splitMinHeight-1-headerHeight-footerHeight); l.signer.height-paneBorderSize-1 >= tui.MinHeight {
+		t.Fatalf("splitMinHeight %d is larger than needed: one row less leaves apadmin %d rows", splitMinHeight, l.signer.height-paneBorderSize-1)
 	}
 }

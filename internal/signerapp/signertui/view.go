@@ -259,6 +259,9 @@ func (m Model) View() string {
 	if m.quitting {
 		return "Goodbye!\n"
 	}
+	if m.belowMinSize() {
+		return m.renderTooSmall()
+	}
 
 	content := m.renderViewContent()
 	footer := m.renderWindowFooter()

@@ -433,8 +433,8 @@ func TestParameterModalMultilineFieldBottomFitsShortPane(t *testing.T) {
 	}})
 
 	m := Model{
-		width:     58,
-		height:    18,
+		width:     MinWidth,
+		height:    MinHeight,
 		viewState: ViewGenerateParams,
 		forms: formsState{generateKeyType: 0, generateFocus: 0, genericLSigParams: map[string]string{
 			"recipients": strings.Join([]string{
@@ -444,6 +444,12 @@ func TestParameterModalMultilineFieldBottomFitsShortPane(t *testing.T) {
 				strings.Repeat("D", 58),
 				strings.Repeat("E", 58),
 				strings.Repeat("F", 58),
+				strings.Repeat("G", 58),
+				strings.Repeat("H", 58),
+				strings.Repeat("I", 58),
+				strings.Repeat("J", 58),
+				strings.Repeat("K", 58),
+				strings.Repeat("L", 58),
 			}, "\n"),
 		}, genericLSigParamModes: map[string]int{}, genericLSigParamScroll: map[string]int{
 			"recipients": 0,

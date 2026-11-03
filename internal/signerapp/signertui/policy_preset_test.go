@@ -148,7 +148,7 @@ func TestPolicyPresetPickOffersSignerPresets(t *testing.T) {
 // In a short terminal the picker scrolls: whichever choice is selected is
 // in the full View, so Enter never opens one the operator cannot see.
 func TestPolicyPresetPickKeepsTheSelectionInView(t *testing.T) {
-	for _, height := range []int{14, 12, 10} {
+	for _, height := range []int{MinHeight, MinHeight + 2} {
 		m := loadedPoliciesModel(protocol.PolicyMessage{Success: true, NodeRole: "signer",
 			Documents: []protocol.PolicyDocumentInfoWire{defaultDocInfo}, PolicySetSHA256: "set-digest"})
 		m.width, m.height = 80, height

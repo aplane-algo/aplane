@@ -179,6 +179,7 @@ func main() {
 	daemon := newDaemonModel(daemonStartup, daemonProcessEventChan(daemonProcess))
 	if !shellEnabled {
 		daemon.lines = append(daemon.lines, cosignerShellDisabledLines(startupCfg.Notices)...)
+		daemon.configNotices = len(startupCfg.Notices) > 0
 	}
 
 	startConsole(tui.LocalIPCConnector{Path: ipcPath}, startupCfg.ClientData, string(nodeRole), shellSession, shellStartup, shellEnabled, daemonProcess, daemon)
