@@ -3,7 +3,7 @@
 </p>
 
 <sub><a href="docs/USER_QUICKSTART.md">APlane QuickStart</a></sub>&nbsp;&nbsp;<sub><a href="https://github.com/aplane-algo/aplanesdk">SDK Repo</a></sub>
-# APlane — A Control Plane for Algorand Operations
+# APlane - A Control Plane for Algorand Operations
 
 Define new key types, manage keys, enforce transaction policies, and automate on-chain workflows.
 
