@@ -108,6 +108,43 @@ func TestSplitLayoutKeepsDaemonPaneForConfigNotices(t *testing.T) {
 	}
 }
 
+// A failed start has no log stream, but its pane must still be reachable
+// when the terminal shows one pane at a time: F3, its tab, and pane cycling
+// all lead to it.
+func TestFailedStartDaemonPaneReachableInFocusMode(t *testing.T) {
+	m := model{
+		focus:  paneSigner,
+		shell:  newShellModel(nil, []string{"shell ready"}),
+		signer: stubTeaModel{},
+		daemon: newDaemonModel(daemonInfo{Status: daemonStatusFailed, Detail: "apsigner exited during startup"}, nil),
+		width:  120,
+		height: 30,
+	}
+	if m.layout().split {
+		t.Fatal("120x30 should show one pane at a time")
+	}
+	if tabs := ansi.Strip(m.renderTabs(120)); !strings.Contains(tabs, "F3 Daemon") {
+		t.Fatalf("no daemon tab: %q", tabs)
+	}
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyF3})
+	got := next.(model)
+	if got.focus != paneDaemon {
+		t.Fatalf("F3 focus = %v, want daemon", got.focus)
+	}
+	if body := ansi.Strip(got.renderBody(got.layout())); !strings.Contains(body, "apsigner exited during startup") {
+		t.Fatalf("failure detail not shown:\n%s", body)
+	}
+	reached := false
+	for range 3 {
+		next, _ = m.Update(tea.KeyMsg{Type: tea.KeyShiftRight})
+		m = next.(model)
+		reached = reached || m.focus == paneDaemon
+	}
+	if !reached {
+		t.Fatal("pane cycling never reaches the failed daemon pane")
+	}
+}
+
 // A failed start keeps the daemon pane, which says why apsigner is not
 // running.
 func TestSplitLayoutKeepsDaemonPaneForFailedStart(t *testing.T) {

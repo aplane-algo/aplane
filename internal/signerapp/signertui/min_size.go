@@ -32,9 +32,10 @@ func (m Model) windowRows() int {
 
 // belowMinSize reports whether the window is known and smaller than the
 // floor. Before the first size message arrives the size is unknown, and the
-// views render at their fallback widths.
+// views render at their fallback widths. A model given both dimensions
+// directly also counts as sized.
 func (m Model) belowMinSize() bool {
-	if m.width <= 0 || m.height <= 0 {
+	if !m.sizeKnown && (m.width <= 0 || m.height <= 0) {
 		return false
 	}
 	return m.width < MinWidth || m.windowRows() < MinHeight
@@ -56,9 +57,9 @@ func (m Model) renderTooSmall() string {
 		lines = append(lines, "", errorStyle.Render("An approval request is waiting."))
 	}
 	lines = append(lines, "", helpStyle.Render("ctrl+c: Quit"))
-	body := lipgloss.NewStyle().Width(m.width).Render(strings.Join(lines, "\n"))
-	if rows := strings.Split(body, "\n"); len(rows) > m.height {
-		body = strings.Join(rows[:m.height], "\n")
+	body := lipgloss.NewStyle().Width(max(m.width, 1)).Render(strings.Join(lines, "\n"))
+	if rows, keep := strings.Split(body, "\n"), max(m.height, 1); len(rows) > keep {
+		body = strings.Join(rows[:keep], "\n")
 	}
 	return body
 }

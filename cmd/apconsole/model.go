@@ -71,9 +71,11 @@ func (m model) splitAvailable(width, height int) bool {
 // daemonPaneShown reports whether the console has a daemon pane. It does
 // for an apsigner this console started, which streams its log there, or
 // tried and failed to start, whose pane says why, and while the pane carries
-// startup configuration notices. Otherwise an apsigner running elsewhere has
-// no pane, function key, or place in pane navigation; the title bar still
-// shows its status.
+// startup configuration notices. The pane, its F3 key, its tab, and its place
+// in pane navigation exist together, so a pane that is shown can always be
+// reached, also when the terminal shows one pane at a time. Otherwise an
+// apsigner running elsewhere has none of them; the title bar still shows its
+// status.
 func (m model) daemonPaneShown() bool {
 	return m.daemon.hasLogNavigation() || m.daemon.status == daemonStatusFailed || m.daemon.configNotices
 }
@@ -213,7 +215,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		case "f3":
-			if m.daemon.hasLogNavigation() {
+			if m.daemonPaneShown() {
 				m.focus = paneDaemon
 			}
 			return m, nil
@@ -753,7 +755,7 @@ func (m model) renderTabs(width int) string {
 	if m.shellEnabled() {
 		tabItems = append(tabItems, tab("F2", "Shell", paneShell))
 	}
-	if m.daemon.hasLogNavigation() {
+	if m.daemonPaneShown() {
 		tabItems = append(tabItems, tab("F3", "Daemon", paneDaemon))
 	}
 	tabs := lipgloss.JoinHorizontal(lipgloss.Top, tabItems...)
@@ -809,12 +811,12 @@ func (m model) navigationHint() string {
 
 func (m model) focusHint() string {
 	if !m.shellEnabled() {
-		if m.daemon.hasLogNavigation() {
+		if m.daemonPaneShown() {
 			return "F1 signer · F3 daemon"
 		}
 		return "F1 signer"
 	}
-	if m.daemon.hasLogNavigation() {
+	if m.daemonPaneShown() {
 		return "F1 signer · F2 shell · F3 daemon"
 	}
 	return "F1 signer · F2 shell"
@@ -931,12 +933,12 @@ func (m model) renderHelpOverlay() string {
 
 func (m model) helpFocusText() string {
 	if !m.shellEnabled() {
-		if m.daemon.hasLogNavigation() {
+		if m.daemonPaneShown() {
 			return "focus signer or daemon"
 		}
 		return "focus signer"
 	}
-	if m.daemon.hasLogNavigation() {
+	if m.daemonPaneShown() {
 		return "focus shell, signer, or daemon"
 	}
 	return "focus shell or signer"
@@ -944,12 +946,12 @@ func (m model) helpFocusText() string {
 
 func (m model) helpFocusKeys() string {
 	if !m.shellEnabled() {
-		if m.daemon.hasLogNavigation() {
+		if m.daemonPaneShown() {
 			return "F1 F3"
 		}
 		return "F1"
 	}
-	if m.daemon.hasLogNavigation() {
+	if m.daemonPaneShown() {
 		return "F1 F2 F3"
 	}
 	return "F1 F2"
@@ -964,12 +966,12 @@ func (m model) helpCycleKeys() string {
 
 func (m model) helpCycleText() string {
 	if !m.shellEnabled() {
-		if m.daemon.hasLogNavigation() {
+		if m.daemonPaneShown() {
 			return "cycle signer and daemon panes"
 		}
 		return "signer pane only"
 	}
-	if m.daemon.hasLogNavigation() {
+	if m.daemonPaneShown() {
 		return "cycle shell, signer, and daemon panes"
 	}
 	return "cycle shell and signer panes"
@@ -977,12 +979,12 @@ func (m model) helpCycleText() string {
 
 func (m model) helpScrollText() string {
 	if !m.shellEnabled() {
-		if m.daemon.hasLogNavigation() {
+		if m.daemonPaneShown() {
 			return "scroll daemon log when focused"
 		}
 		return "no scrollable pane"
 	}
-	if m.daemon.hasLogNavigation() {
+	if m.daemonPaneShown() {
 		return "scroll shell transcript or daemon log when focused"
 	}
 	return "scroll shell transcript when shell pane is focused"
@@ -1056,11 +1058,11 @@ func scrollDirection(msg tea.KeyMsg) int {
 }
 
 func (m model) nextPane() pane {
-	return nextPaneAvailable(m.focus, m.shellEnabled(), m.daemon.hasLogNavigation())
+	return nextPaneAvailable(m.focus, m.shellEnabled(), m.daemonPaneShown())
 }
 
 func (m model) prevPane() pane {
-	return prevPaneAvailable(m.focus, m.shellEnabled(), m.daemon.hasLogNavigation())
+	return prevPaneAvailable(m.focus, m.shellEnabled(), m.daemonPaneShown())
 }
 
 func (m model) paneAbove() pane {
@@ -1074,7 +1076,7 @@ func (m model) paneAbove() pane {
 }
 
 func (m model) paneBelow() pane {
-	if !m.daemon.hasLogNavigation() {
+	if !m.daemonPaneShown() {
 		return m.focus
 	}
 	if !m.shellEnabled() {

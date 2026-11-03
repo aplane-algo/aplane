@@ -88,6 +88,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return next, tea.Batch(activityCmd, cmd)
 
 	case tea.WindowSizeMsg:
+		m.sizeKnown = true
 		m.width = msg.Width
 		m.height = msg.Height
 		if m.standalone {

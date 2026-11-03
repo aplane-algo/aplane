@@ -73,6 +73,24 @@ func TestBelowMinSizeIgnoresKeysButQuit(t *testing.T) {
 	}
 }
 
+// A standalone terminal one row tall leaves the model a height of zero, which
+// is still a known, too-small window, not an unknown one.
+func TestOneRowStandaloneTerminalIsBelowMinSize(t *testing.T) {
+	for _, size := range [][2]int{{MinWidth, 1}, {0, MinHeight}} {
+		m := sizedForTest(t, Model{viewState: ViewKeyList, standalone: true, connectionState: ConnectionConnected}, size[0], size[1])
+		if !m.belowMinSize() {
+			t.Fatalf("%dx%d: not treated as below the minimum size", size[0], size[1])
+		}
+		next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("g")})
+		if got := next.(Model); got.viewState != ViewKeyList || cmd != nil {
+			t.Fatalf("%dx%d: g acted on the hidden key list: view %v", size[0], size[1], got.viewState)
+		}
+		if view := stripANSI(m.View()); strings.Contains(view, "Generate") {
+			t.Fatalf("%dx%d: the key list shows through: %q", size[0], size[1], view)
+		}
+	}
+}
+
 // At the minimum size every view fits its window without falling back to the
 // panel scroller and without cutting content off. The views are rendered with
 // no data; views whose data can be arbitrarily long (key lists, transaction
