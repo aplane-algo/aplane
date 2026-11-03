@@ -234,9 +234,10 @@ The default-enabled `ed25519` and `falcon1024` providers allow user-entered
 mnemonic import without product-store activation; the library-visible
 `aplane.falcon1024.v1` and `aplane.ed25519.v1` providers allow mnemonic import
 after they are enabled in the product store. YAML templates and the other library-visible compiled
-providers do not allow user-entered mnemonic import. `apadmin restore` creates
-or enables this state record idempotently when restoring a key for a
-library-visible compiled provider.
+providers do not allow user-entered mnemonic import. `apadmin restore` does
+not create or change this state record: a restored key signs whether or not
+its type is enabled on the destination, but creating further keys of that type
+still requires enabling it there.
 
 Native `falcon1024` is not a LogicSig provider. It uses the explicit
 `native_pq` authorization kind, a 25-word Algorand mnemonic, top-level

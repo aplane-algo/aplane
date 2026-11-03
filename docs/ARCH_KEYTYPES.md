@@ -919,7 +919,7 @@ func Get(keyType string) LogicSigDSA {
 ```
 lsig/clientreg.RegisterClient()
     │
-    ├── keytypecatalog.Register(aplane.falcon1024.v1, default_enabled)
+    ├── keytypecatalog.Register(aplane.falcon1024.v1, library)
     │   └── falcon.RegisterClient()
     │       ├── v1.RegisterLogicSigDSA() → Falcon1024V1
     │       └── ... (metadata, address derivation)
