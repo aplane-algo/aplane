@@ -17,7 +17,7 @@ const (
 
 const (
 	AdminProtocolVersionMajor = 7
-	AdminProtocolVersionMinor = 0
+	AdminProtocolVersionMinor = 1
 )
 
 // ProtocolVersion is the admin IPC protocol version shape surfaced during

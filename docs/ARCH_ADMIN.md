@@ -92,7 +92,9 @@ Transport notes:
   same-UID local mode may use `<data_dir>/aplane.sock`, and custom private
   managed stores require an explicit IPC path so an unreadable selected root
   cannot silently retarget a client to the singleton system signer,
-- the current admin protocol version is 7.0 (7.0 adds `get_policy_context`
+- the current admin protocol version is 7.1 (7.1 makes `export_key` return
+  `export_result` with a native recovery phrase over local IPC and adds
+  `key_details.mnemonic_exportable`; 7.0 adds `get_policy_context`
   and makes `apply_policy` name the composite snapshot it was reviewed
   against, so a 6.x client is refused at authentication rather than applying
   without that check; 6.1 added the ASA set messages); `auth_required`
