@@ -65,7 +65,7 @@ func TestIPCLazyDispatcherInitialization(t *testing.T) {
 
 	client := NewIPC("/tmp/test.sock")
 	client.conn = clientConn
-	client.reader = bufio.NewReader(clientConn)
+	client.reader = protocol.NewFrameReader(clientConn)
 
 	if client.dispatcher != nil {
 		t.Fatal("dispatcher should start nil")
@@ -123,7 +123,7 @@ func TestIPCSendAndReceiveInitializesDispatcher(t *testing.T) {
 
 	client := NewIPC("/tmp/test.sock")
 	client.conn = clientConn
-	client.reader = bufio.NewReader(clientConn)
+	client.reader = protocol.NewFrameReader(clientConn)
 
 	go func() {
 		reader := bufio.NewReader(serverConn)
@@ -154,7 +154,7 @@ func TestIPCUnlockInitializesDispatcher(t *testing.T) {
 
 	client := NewIPC("/tmp/test.sock")
 	client.conn = clientConn
-	client.reader = bufio.NewReader(clientConn)
+	client.reader = protocol.NewFrameReader(clientConn)
 
 	go func() {
 		reader := bufio.NewReader(serverConn)
@@ -201,7 +201,7 @@ func TestIPCAuthenticateHappyPath(t *testing.T) {
 
 	client := NewIPC("/tmp/test.sock")
 	client.conn = clientConn
-	client.reader = bufio.NewReader(clientConn)
+	client.reader = protocol.NewFrameReader(clientConn)
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -259,7 +259,7 @@ func TestIPCAuthenticateClientExistsMismatch(t *testing.T) {
 
 	client := NewIPC("/tmp/test.sock")
 	client.conn = clientConn
-	client.reader = bufio.NewReader(clientConn)
+	client.reader = protocol.NewFrameReader(clientConn)
 
 	go func() {
 		// Send client_exists message
@@ -295,7 +295,7 @@ func TestIPCAuthenticateOnlyUsesFailClosedMessageType(t *testing.T) {
 
 	client := NewIPC("/tmp/test.sock")
 	client.conn = clientConn
-	client.reader = bufio.NewReader(clientConn)
+	client.reader = protocol.NewFrameReader(clientConn)
 	errCh := make(chan error, 1)
 	go func() {
 		defer close(errCh)
@@ -338,7 +338,7 @@ func TestIPCAuthenticateUnauthorizedReturnsFormattedError(t *testing.T) {
 
 	client := NewIPC("/tmp/test.sock")
 	client.conn = clientConn
-	client.reader = bufio.NewReader(clientConn)
+	client.reader = protocol.NewFrameReader(clientConn)
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -389,7 +389,7 @@ func TestIPCAuthenticatePreAuthErrorIncludesServerReason(t *testing.T) {
 
 	client := NewIPC("/tmp/test.sock")
 	client.conn = clientConn
-	client.reader = bufio.NewReader(clientConn)
+	client.reader = protocol.NewFrameReader(clientConn)
 
 	errCh := make(chan error, 1)
 	go func() {

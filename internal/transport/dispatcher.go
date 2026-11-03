@@ -46,9 +46,14 @@ type dispatcher struct {
 	// the notification stream.
 	strictUnknownResponses bool
 
-	mu            sync.Mutex
-	started       bool
-	closed        bool
+	mu      sync.Mutex
+	started bool
+	closed  bool
+	// released is set once the stream owner closed the stream: queued
+	// notifications will never be read, so the read loop clears any it still
+	// holds when it exits. readDone closes when the read loop exits.
+	released      bool
+	readDone      chan struct{}
 	pending       map[string]chan dispatchResult
 	notifications chan Notification
 	lifecycle     chan LifecycleEvent
@@ -158,10 +163,58 @@ func (d *dispatcher) startLocked() {
 		return
 	}
 	d.started = true
+	d.readDone = make(chan struct{})
 	go d.readLoop()
 }
 
+// releaseWait bounds how long release waits for the read loop to notice its
+// stream closed; the loop clears what it queued on exit either way.
+const releaseWait = 2 * time.Second
+
+// release is called after the owner closed the stream. Notifications still
+// queued will never be consumed, and their raw frames can carry recovery
+// material, so it clears them: once the read loop has stopped queueing (or
+// after a bounded wait), and again from the read loop's own exit, so a frame
+// queued after the first sweep is still cleared.
+func (d *dispatcher) release() {
+	d.mu.Lock()
+	d.released = true
+	readDone := d.readDone
+	d.mu.Unlock()
+	if readDone != nil {
+		select {
+		case <-readDone:
+		case <-time.After(releaseWait):
+		}
+	}
+	d.clearQueuedNotifications()
+}
+
+func (d *dispatcher) clearQueuedNotifications() {
+	for {
+		select {
+		case notification := <-d.notifications:
+			protocol.SensitiveBytes(notification.Raw).Zero()
+		default:
+			return
+		}
+	}
+}
+
 func (d *dispatcher) readLoop() {
+	defer func() {
+		// Sweep before signalling readDone, so a release that waited on it
+		// returns only after every frame this loop queued is cleared. A
+		// release that sets the flag after this check sweeps itself once
+		// readDone closes.
+		d.mu.Lock()
+		released := d.released
+		d.mu.Unlock()
+		if released {
+			d.clearQueuedNotifications()
+		}
+		close(d.readDone)
+	}()
 	for {
 		response, err := d.conn.ReadMessage()
 		if err != nil {
@@ -171,6 +224,7 @@ func (d *dispatcher) readLoop() {
 
 		base, err := parseBaseMessage(response)
 		if err != nil {
+			protocol.SensitiveBytes(response).Zero()
 			d.failAll(dispatcherLifecycleProtocolError, err)
 			return
 		}
@@ -191,6 +245,9 @@ func (d *dispatcher) readLoop() {
 			select {
 			case d.notifications <- notification:
 			default:
+				// A dropped frame is never read again; it may carry
+				// recovery material.
+				protocol.SensitiveBytes(response).Zero()
 				dropped := d.droppedNotifications.Add(1)
 				slog.Warn("admin notification dropped: buffer full",
 					"type", base.Type,

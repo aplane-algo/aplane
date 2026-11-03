@@ -382,7 +382,7 @@ func scanKeysDirectoryInternalReport(active storepaths.ActivePaths, excludedSele
 			continue
 		}
 
-		payload, err := ParsePayload(data)
+		payload, err := ParseStoredPayload(data)
 		if err != nil {
 			crypto.ZeroBytes(data)
 			warn(keyPayloadScanWarningCode(err), keyFile, err)

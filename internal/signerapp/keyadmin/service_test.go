@@ -62,6 +62,7 @@ func init() {
 }
 
 type auditRecorder struct {
+	exported  []struct{ address, keyType, outcome string }
 	generated []struct {
 		address string
 		keyType string
@@ -1021,4 +1022,8 @@ func TestServiceDeleteKeyRemovesStageTable(t *testing.T) {
 	if err != nil || fresh.Len() != 0 {
 		t.Fatalf("table after delete: len %d, err %v", fresh.Len(), err)
 	}
+}
+
+func (a *auditRecorder) LogKeyExported(_ context.Context, address, keyType, outcome string) {
+	a.exported = append(a.exported, struct{ address, keyType, outcome string }{address, keyType, outcome})
 }

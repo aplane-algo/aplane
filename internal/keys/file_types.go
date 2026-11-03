@@ -23,6 +23,8 @@ const (
 	CategoryWitness         = "witness"
 	CategoryRotatingLsig    = "rotating_lsig"
 	CurrentKeyFormatVersion = 1
+	// NativeRecoveryKeyFormatVersion adds recovery entropy to native Falcon credentials.
+	NativeRecoveryKeyFormatVersion = 2
 )
 
 const CurrentSigningMetadataVersion = 1

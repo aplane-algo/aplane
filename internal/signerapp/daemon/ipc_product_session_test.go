@@ -15,7 +15,7 @@ import (
 func addActiveProductSession(t *testing.T, server *IPCServer) *ipcJSONRecorderConn {
 	t.Helper()
 	recorder := &ipcJSONRecorderConn{}
-	session := adminserver.NewSession(adminproto.NewUnixAdminConn(recorder, nil), adminserver.SessionDeps{})
+	session := adminserver.NewSession(adminproto.NewUnixAdminConn(recorder), adminserver.SessionDeps{})
 	if !registerPendingSession(server.sessionManager(), session) {
 		t.Fatal("registerPendingSession() = false, want true")
 	}
@@ -89,7 +89,7 @@ func TestIPCOutboundMessagesExcludePendingAndPreAuthSessions(t *testing.T) {
 
 	pendingRecorder := &ipcJSONRecorderConn{}
 	pending := adminserver.NewSession(
-		adminproto.NewUnixAdminConn(pendingRecorder, nil),
+		adminproto.NewUnixAdminConn(pendingRecorder),
 		adminserver.SessionDeps{},
 	)
 	if !registerPendingSession(ipcServer.sessionManager(), pending) {
@@ -98,7 +98,7 @@ func TestIPCOutboundMessagesExcludePendingAndPreAuthSessions(t *testing.T) {
 
 	preAuthRecorder := &ipcJSONRecorderConn{}
 	preAuth := adminserver.NewSession(
-		adminproto.NewUnixAdminConn(preAuthRecorder, nil),
+		adminproto.NewUnixAdminConn(preAuthRecorder),
 		adminserver.SessionDeps{},
 	)
 	if !ipcServer.sessionManager().RegisterPreAuthPending(preAuth) {

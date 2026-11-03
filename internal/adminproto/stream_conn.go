@@ -4,7 +4,6 @@
 package adminproto
 
 import (
-	"bufio"
 	"errors"
 	"io"
 	"net"
@@ -27,7 +26,7 @@ const adminWriteTimeout = 30 * time.Second
 // concurrently to the same stream.
 type StreamAdminConn struct {
 	closer  io.Closer
-	reader  *bufio.Reader
+	reader  *protocol.FrameReader
 	addr    string
 	writeMu sync.Mutex
 	writer  io.Writer
@@ -45,16 +44,22 @@ func (c *StreamAdminConn) effectiveWriteTimeout() time.Duration {
 func NewStreamAdminConn(rw io.ReadWriteCloser, addr string) *StreamAdminConn {
 	return &StreamAdminConn{
 		closer: rw,
-		reader: bufio.NewReader(rw),
+		reader: protocol.NewFrameReader(rw),
 		addr:   addr,
 		writer: rw,
 	}
 }
 
-func NewUnixAdminConn(conn net.Conn, reader *bufio.Reader) *StreamAdminConn {
-	if reader == nil && conn != nil {
-		reader = bufio.NewReader(conn)
+func NewUnixAdminConn(conn net.Conn) *StreamAdminConn {
+	var reader *protocol.FrameReader
+	if conn != nil {
+		reader = protocol.NewFrameReader(conn)
 	}
+	return NewUnixAdminConnWithReader(conn, reader)
+}
+
+// NewUnixAdminConnWithReader reads frames from reader instead of conn.
+func NewUnixAdminConnWithReader(conn net.Conn, reader *protocol.FrameReader) *StreamAdminConn {
 	return &StreamAdminConn{
 		closer: conn,
 		reader: reader,
@@ -64,7 +69,7 @@ func NewUnixAdminConn(conn net.Conn, reader *bufio.Reader) *StreamAdminConn {
 }
 
 func (c *StreamAdminConn) ReadMessage() ([]byte, error) {
-	return protocol.ReadJSONLine(c.reader)
+	return c.reader.ReadFrame()
 }
 
 type readDeadlineSetter interface {

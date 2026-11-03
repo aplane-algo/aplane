@@ -10,7 +10,8 @@ import (
 
 // NativePQKeyPairValidator performs signer-owned private-key validation
 // without linking the Falcon implementation into client-safe storage code.
-type NativePQKeyPairValidator func(publicKey, privateKey []byte) error
+// When recoveryEntropy is present, it must reproduce the exact key pair.
+type NativePQKeyPairValidator func(publicKey, privateKey, recoveryEntropy []byte) error
 
 var nativePQValidators = struct {
 	sync.RWMutex
@@ -31,12 +32,12 @@ func RegisterNativePQKeyPairValidator(scheme string, validator NativePQKeyPairVa
 	nativePQValidators.byScheme[scheme] = validator
 }
 
-func validateNativePQKeyPair(scheme string, publicKey, privateKey []byte) error {
+func validateNativePQKeyPair(scheme string, publicKey, privateKey, recoveryEntropy []byte) error {
 	nativePQValidators.RLock()
 	validator := nativePQValidators.byScheme[scheme]
 	nativePQValidators.RUnlock()
 	if validator == nil {
 		return fmt.Errorf("native PQ scheme %q is not registered in this signer", scheme)
 	}
-	return validator(publicKey, privateKey)
+	return validator(publicKey, privateKey, recoveryEntropy)
 }

@@ -784,22 +784,20 @@ type DeleteResultMessage struct {
 	Error   string `json:"error,omitempty"`
 }
 
-// ExportKeyMessage requests export of a key's mnemonic. Current servers deny
-// this request on every admin transport.
+// ExportKeyMessage requests native-key mnemonic export over local IPC.
 type ExportKeyMessage struct {
 	BaseMessage
 	Address    string         `json:"address"`
 	Passphrase SensitiveBytes `json:"passphrase"` // Required to verify user identity before export
 }
 
-// ExportResultMessage is retained for legacy decode compatibility. Current
-// servers return an error instead of this response.
+// ExportResultMessage carries native recovery material. Zero Mnemonic after use.
 type ExportResultMessage struct {
 	BaseMessage
 	Success    bool              `json:"success"`
 	Address    string            `json:"address,omitempty"`
 	KeyType    string            `json:"key_type,omitempty"` // Full versioned type: "ed25519", "aplane.falcon1024.v1", etc.
-	Mnemonic   string            `json:"mnemonic,omitempty"` // Legacy compatibility field; current responses omit it.
+	Mnemonic   SensitiveBytes    `json:"mnemonic,omitempty"`
 	WordCount  int               `json:"word_count,omitempty"`
 	Parameters map[string]string `json:"parameters,omitempty"` // Creation parameters needed for address re-derivation
 	Code       string            `json:"code,omitempty"`
@@ -841,8 +839,10 @@ type KeyDetailsMessage struct {
 	DisplayTEAL              string            `json:"display_teal,omitempty"` // TEAL source for generic LogicSigs (actual compiled source)
 	TemplateProvenanceStatus string            `json:"template_provenance_status,omitempty"`
 	TemplateProvenanceNote   string            `json:"template_provenance_note,omitempty"`
-	Code                     string            `json:"code,omitempty"`
-	Error                    string            `json:"error,omitempty"`
+	// MnemonicExportable marks native keys whose recovery phrase export_key can release.
+	MnemonicExportable bool   `json:"mnemonic_exportable,omitempty"`
+	Code               string `json:"code,omitempty"`
+	Error              string `json:"error,omitempty"`
 }
 
 type TemplateParamInfo struct {

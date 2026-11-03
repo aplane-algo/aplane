@@ -327,6 +327,7 @@ func (s *Session) WriteJSON(v interface{}) error {
 	if err != nil {
 		return err
 	}
+	defer protocol.SensitiveBytes(data).Zero()
 	return s.conn.WriteMessage(data)
 }
 

@@ -4,6 +4,7 @@
 package adminserver
 
 import (
+	"bytes"
 	"encoding/json"
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"strings"
@@ -40,10 +41,10 @@ func TestSessionRejectsImportOutsideIPC(t *testing.T) {
 	}
 }
 
-func TestSessionRejectsExportOnAnyAdminTransport(t *testing.T) {
-	for _, transport := range []string{TransportIPC, TransportSSH, TransportUnknown} {
+func TestSessionRejectsExportOutsideIPC(t *testing.T) {
+	for _, transport := range []string{TransportSSH, TransportUnknown} {
 		t.Run(transport, func(t *testing.T) {
-			session, conn, _ := newKeyTransportTestSession(transport)
+			session, conn, svc := newKeyTransportTestSession(transport)
 
 			session.HandleExportKey(&protocol.ExportKeyMessage{
 				BaseMessage: protocol.BaseMessage{ID: "export", Type: protocol.MsgTypeExportKey},
@@ -51,12 +52,15 @@ func TestSessionRejectsExportOnAnyAdminTransport(t *testing.T) {
 				Passphrase:  protocol.NewSensitiveBytes("passphrase"),
 			})
 
+			if svc.exportCalls != 0 {
+				t.Fatal("remote export called service")
+			}
 			msg := decodeProtocolError(t, conn)
 			if msg.Code != protocol.ErrCodeAuthorizationDenied {
 				t.Fatalf("error code = %q, want %q", msg.Code, protocol.ErrCodeAuthorizationDenied)
 			}
-			if !strings.Contains(msg.Error, "key export is disabled") {
-				t.Fatalf("error = %q, want export disabled guidance", msg.Error)
+			if !strings.Contains(msg.Error, "local AP Admin") {
+				t.Fatalf("error = %q, want local IPC guidance", msg.Error)
 			}
 		})
 	}
@@ -190,5 +194,33 @@ func decodeOnlyMessage(t *testing.T, conn *queueConn, out any) {
 	}
 	if err := json.Unmarshal(conn.writes[0], out); err != nil {
 		t.Fatalf("decode response: %v", err)
+	}
+}
+
+func TestSessionExportsOnlyOverIPCAndClearsBuffers(t *testing.T) {
+	session, conn, svc := newKeyTransportTestSession(TransportIPC)
+	words := protocol.NewSensitiveBytes("test recovery material")
+	pass := protocol.NewSensitiveBytes("passphrase")
+	svc.exportResult = adminproto.ExportKeyResult{Success: true, Address: "ADDR", KeyType: "ed25519", Mnemonic: words, WordCount: 25}
+	session.HandleExportKey(&protocol.ExportKeyMessage{BaseMessage: protocol.BaseMessage{ID: "export"}, Address: "ADDR", Passphrase: pass})
+	var reply protocol.ExportResultMessage
+	decodeOnlyMessage(t, conn, &reply)
+	defer reply.Mnemonic.Zero()
+	if svc.exportCalls != 1 || !reply.Success || string(reply.Mnemonic) != "test recovery material" {
+		t.Fatal("export not delivered")
+	}
+	if !bytes.Equal(words, make([]byte, len(words))) || !bytes.Equal(pass, make([]byte, len(pass))) {
+		t.Fatal("server retained export buffers")
+	}
+}
+
+func TestSessionExportSendsUndeliveredFailure(t *testing.T) {
+	session, conn, svc := newKeyTransportTestSession(TransportIPC)
+	svc.exportResult = adminproto.ExportKeyResult{Address: "ADDR", Code: "invalid_passphrase", Error: "incorrect passphrase"}
+	session.HandleExportKey(&protocol.ExportKeyMessage{BaseMessage: protocol.BaseMessage{ID: "export"}, Address: "ADDR", Passphrase: protocol.NewSensitiveBytes("wrong")})
+	var reply protocol.ExportResultMessage
+	decodeOnlyMessage(t, conn, &reply)
+	if reply.Success || reply.ID != "export" || reply.Code != "invalid_passphrase" || len(reply.Mnemonic) != 0 {
+		t.Fatalf("failure reply = %+v", reply)
 	}
 }

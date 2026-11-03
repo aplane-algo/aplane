@@ -27,7 +27,7 @@ import (
 )
 
 // Payload is the usable, decoded representation of the canonical decrypted
-// key payload. PrivateKey is owned by the payload and must be cleared with
+// key payload. PrivateKey and RecoveryEntropy are owned and must be cleared with
 // ZeroSecrets when the payload is no longer needed.
 type Payload struct {
 	FormatVersion          int
@@ -35,6 +35,7 @@ type Payload struct {
 	KeyType                string
 	PublicKey              []byte
 	PrivateKey             []byte
+	RecoveryEntropy        []byte
 	PQScheme               string
 	PQAddressSalt          *byte
 	Parameters             map[string]string
@@ -76,14 +77,15 @@ type CanonicalPayloadMetadata struct {
 	CreatedAt              string
 }
 
-// payloadWireV1 is the sole canonical JSON DTO for decrypted key payloads.
+// payloadWire is the canonical JSON DTO for decrypted payload versions 1 and 2.
 // It remains private so durable JSON field ownership stays in this package.
-type payloadWireV1 struct {
+type payloadWire struct {
 	FormatVersion          *int                        `json:"format_version"`
 	Category               string                      `json:"category"`
 	KeyType                string                      `json:"key_type"`
 	PublicKeyHex           string                      `json:"public_key,omitempty"`
 	PrivateKeyHex          string                      `json:"private_key,omitempty"`
+	RecoveryEntropyHex     string                      `json:"recovery_entropy,omitempty"`
 	PQScheme               string                      `json:"pq_scheme,omitempty"`
 	PQAddressSalt          *byte                       `json:"pq_address_salt,omitempty"`
 	Parameters             map[string]string           `json:"parameters,omitempty"`
@@ -295,14 +297,32 @@ func (p *Payload) SetBoundedAuthorization(metadata *boundedmeta.Metadata) error 
 }
 
 // ParsePayload strictly decodes and validates canonical decrypted key JSON.
+// It is the full admission check: native Falcon recovery entropy must
+// re-derive the exact stored key pair. Use it for every credential entering a
+// store (backup restore, import, copy) and before releasing recovery material.
 func ParsePayload(data []byte) (*Payload, error) {
+	return parsePayload(data, true)
+}
+
+// ParseStoredPayload decodes a credential read back from the authenticated
+// store, which only holds payloads MarshalPayload or ParsePayload admitted. It
+// applies every check ParsePayload does except re-deriving native Falcon key
+// pairs from recovery entropy (a full Falcon key generation); the entropy is
+// still checked structurally and the cheaper key-pair probe still runs. Use it
+// on hot read paths (signing lookups, scans, metadata views), never on
+// ingress or before exporting recovery material.
+func ParseStoredPayload(data []byte) (*Payload, error) {
+	return parsePayload(data, false)
+}
+
+func parsePayload(data []byte, verifyRecovery bool) (*Payload, error) {
 	if err := validateCanonicalJSONObject(data); err != nil {
 		return nil, incompatibleKeyFormat("invalid canonical payload JSON: %v", err)
 	}
 
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
-	var wire payloadWireV1
+	var wire payloadWire
 	if err := decoder.Decode(&wire); err != nil {
 		return nil, incompatibleKeyFormat("failed to decode canonical payload: %v", err)
 	}
@@ -314,7 +334,7 @@ func ParsePayload(data []byte) (*Payload, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := payload.Validate(); err != nil {
+	if err := payload.validate(verifyRecovery); err != nil {
 		payload.ZeroSecrets()
 		return nil, err
 	}
@@ -331,12 +351,13 @@ func MarshalPayload(payload *Payload) ([]byte, error) {
 		return nil, err
 	}
 	formatVersion := payload.FormatVersion
-	wire := payloadWireV1{
+	wire := payloadWire{
 		FormatVersion:          &formatVersion,
 		Category:               payload.Category,
 		KeyType:                payload.KeyType,
 		PublicKeyHex:           hex.EncodeToString(payload.PublicKey),
 		PrivateKeyHex:          hex.EncodeToString(payload.PrivateKey),
+		RecoveryEntropyHex:     hex.EncodeToString(payload.RecoveryEntropy),
 		PQScheme:               payload.PQScheme,
 		PQAddressSalt:          cloneBytePtr(payload.PQAddressSalt),
 		Parameters:             maps.Clone(payload.Parameters),
@@ -362,12 +383,39 @@ func MarshalPayload(payload *Payload) ([]byte, error) {
 
 // Validate checks the canonical category shape and category-independent value
 // invariants. Provider-specific availability remains a load/sign concern.
+// Validate applies the full admission check, including native Falcon
+// recovery-entropy re-derivation (see ParsePayload).
 func (p *Payload) Validate() error {
+	return p.validate(true)
+}
+
+// RecoveryPhraseAvailable reports whether this credential carries what is
+// needed to reconstruct its recovery phrase: a native Ed25519 key, or a native
+// Falcon key that retained its recovery entropy. It is the single eligibility
+// rule for mnemonic export.
+func (p *Payload) RecoveryPhraseAvailable() bool {
+	switch p.Category {
+	case CategoryEd25519:
+		return p.KeyType == "ed25519"
+	case CategoryNativePQ:
+		return p.KeyType == nativefalcon.KeyType && len(p.RecoveryEntropy) == nativefalcon.RecoveryEntropySize
+	}
+	return false
+}
+
+func (p *Payload) validate(verifyRecovery bool) error {
 	if p == nil {
 		return incompatibleKeyFormat("key payload is nil")
 	}
-	if p.FormatVersion != CurrentKeyFormatVersion {
-		return incompatibleKeyFormat("format_version %d is not supported by this runtime; expected %d", p.FormatVersion, CurrentKeyFormatVersion)
+	if p.FormatVersion != CurrentKeyFormatVersion && p.FormatVersion != NativeRecoveryKeyFormatVersion {
+		return incompatibleKeyFormat("format_version %d is not supported by this runtime; expected 1 or 2", p.FormatVersion)
+	}
+	if p.FormatVersion == NativeRecoveryKeyFormatVersion {
+		if p.Category != CategoryNativePQ || p.KeyType != nativefalcon.KeyType || len(p.RecoveryEntropy) != nativefalcon.RecoveryEntropySize {
+			return incompatibleKeyFormat("format_version 2 requires native Falcon with 32-byte recovery_entropy")
+		}
+	} else if len(p.RecoveryEntropy) != 0 {
+		return incompatibleKeyFormat("format_version 1 forbids recovery_entropy")
 	}
 	if p.KeyType == "" || p.KeyType != strings.TrimSpace(p.KeyType) {
 		return incompatibleKeyFormat("key_type must be non-empty and canonical")
@@ -392,7 +440,7 @@ func (p *Payload) Validate() error {
 		}
 		return validateNonLogicSigPayload(p)
 	case CategoryNativePQ:
-		if err := validateNativePQPayload(p); err != nil {
+		if err := validateNativePQPayload(p, verifyRecovery); err != nil {
 			return err
 		}
 		return validateNoLogicSigFields(p)
@@ -541,9 +589,11 @@ func (p *Payload) ZeroSecrets() {
 	}
 	crypto.ZeroBytes(p.PrivateKey)
 	p.PrivateKey = nil
+	crypto.ZeroBytes(p.RecoveryEntropy)
+	p.RecoveryEntropy = nil
 }
 
-func payloadFromWire(wire payloadWireV1) (*Payload, error) {
+func payloadFromWire(wire payloadWire) (*Payload, error) {
 	if wire.FormatVersion == nil {
 		return nil, incompatibleKeyFormat("missing format_version")
 	}
@@ -570,7 +620,13 @@ func payloadFromWire(wire payloadWireV1) (*Payload, error) {
 		crypto.ZeroBytes(privateKey)
 		return nil, incompatibleKeyFormat("created_at must be canonical RFC3339 UTC")
 	}
+	recoveryEntropy, err := decodeCanonicalHex("recovery_entropy", wire.RecoveryEntropyHex)
+	if err != nil {
+		crypto.ZeroBytes(privateKey)
+		return nil, err
+	}
 	return &Payload{
+		RecoveryEntropy:        recoveryEntropy,
 		FormatVersion:          *wire.FormatVersion,
 		Category:               wire.Category,
 		KeyType:                wire.KeyType,
@@ -629,7 +685,7 @@ func validateEd25519Payload(p *Payload) error {
 	return nil
 }
 
-func validateNativePQPayload(p *Payload) error {
+func validateNativePQPayload(p *Payload, verifyRecovery bool) error {
 	if p.KeyType != nativefalcon.KeyType {
 		return incompatibleKeyFormat("native_pq category requires key_type %q", nativefalcon.KeyType)
 	}
@@ -655,7 +711,12 @@ func validateNativePQPayload(p *Payload) error {
 	if !nativefalcon.IsCompliant(address) {
 		return incompatibleKeyFormat("native Falcon address is not PQ compliant")
 	}
-	if err := validateNativePQKeyPair(p.PQScheme, p.PublicKey, p.PrivateKey); err != nil {
+	// Without recoveryEntropy the validator runs its cheaper key-pair probe.
+	recoveryEntropy := p.RecoveryEntropy
+	if !verifyRecovery {
+		recoveryEntropy = nil
+	}
+	if err := validateNativePQKeyPair(p.PQScheme, p.PublicKey, p.PrivateKey, recoveryEntropy); err != nil {
 		return incompatibleKeyFormat("invalid native PQ key pair: %v", err)
 	}
 	return nil

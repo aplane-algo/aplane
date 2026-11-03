@@ -19,7 +19,7 @@ var registerNativeValidatorForKeygenTestOnce sync.Once
 
 func registerNativeValidatorForKeygenTest() {
 	registerNativeValidatorForKeygenTestOnce.Do(func() {
-		keys.RegisterNativePQKeyPairValidator(nativefalcon.Scheme, func(publicKey, privateKey []byte) error {
+		keys.RegisterNativePQKeyPairValidator(nativefalcon.Scheme, func(publicKey, privateKey, recoveryEntropy []byte) error {
 			var public falcon.PublicKey
 			var private falcon.PrivateKey
 			copy(public[:], publicKey)

@@ -4,7 +4,6 @@
 package transport
 
 import (
-	"bufio"
 	"io"
 	"sync"
 	"time"
@@ -16,7 +15,7 @@ import (
 // notifications/lifecycle without owning reconnect or authentication policy.
 type StreamClient struct {
 	stream     io.ReadWriteCloser
-	reader     *bufio.Reader
+	reader     *protocol.FrameReader
 	dispatcher *dispatcher
 	writeMu    sync.Mutex
 }
@@ -27,7 +26,7 @@ type StreamClient struct {
 func NewStreamClient(stream io.ReadWriteCloser) *StreamClient {
 	client := &StreamClient{
 		stream: stream,
-		reader: bufio.NewReader(stream),
+		reader: protocol.NewFrameReader(stream),
 	}
 	client.dispatcher = newDispatcherWithMode(client, false)
 	return client
@@ -40,7 +39,10 @@ func (c *StreamClient) Close() error {
 	// Close the underlying stream first so the dispatcher's read loop
 	// receives an error and exits. Do not nil the reader or dispatcher
 	// here — the read loop goroutine may still be referencing them.
-	return c.stream.Close()
+	err := c.stream.Close()
+	// Nothing reads notifications after Close; clear the queued raw frames.
+	c.dispatcher.release()
+	return err
 }
 
 func (c *StreamClient) WriteJSON(v interface{}) error {
@@ -48,13 +50,14 @@ func (c *StreamClient) WriteJSON(v interface{}) error {
 	if err != nil {
 		return err
 	}
+	defer protocol.SensitiveBytes(data).Zero()
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
 	return protocol.WriteJSONLine(c.stream, data)
 }
 
 func (c *StreamClient) ReadMessage() ([]byte, error) {
-	return protocol.ReadJSONLine(c.reader)
+	return c.reader.ReadFrame()
 }
 
 // SendAndReceive sends a message and waits for the correlated response.

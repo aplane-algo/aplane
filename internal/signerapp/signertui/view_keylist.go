@@ -402,6 +402,9 @@ func (m Model) renderKeyDetails() string {
 		}
 	}
 
+	if m.details.mnemonicExportable {
+		sb.WriteString("m: Show recovery phrase\n")
+	}
 	// Show save status if present
 	if m.details.saveStatus != "" {
 		sb.WriteString("\n")

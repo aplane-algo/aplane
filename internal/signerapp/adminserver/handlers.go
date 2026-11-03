@@ -1038,7 +1038,7 @@ func (s *Session) HandleDeleteKey(msg *protocol.DeleteKeyMessage) {
 }
 
 func (s *Session) HandleExportKey(msg *protocol.ExportKeyMessage) {
-	msg.Passphrase.Zero()
+	defer msg.Passphrase.Zero()
 	if s.requireUnlockedRuntime(msg.ID) == nil {
 		return
 	}
@@ -1046,9 +1046,29 @@ func (s *Session) HandleExportKey(msg *protocol.ExportKeyMessage) {
 	if !s.authorize(msg.ID, auth.ActionKeysExport, resource) {
 		return
 	}
-	const reason = "key export is disabled; use encrypted backups for recovery"
-	s.logAuthorizationDenied(s.Identity(), auth.ActionKeysExport, resource, reason)
-	_ = s.SendError(msg.ID, protocol.ErrCodeAuthorizationDenied, reason)
+	if s.Transport() != TransportIPC {
+		const reason = "key export is only available on local AP Admin"
+		s.logAuthorizationDenied(s.Identity(), auth.ActionKeysExport, resource, reason)
+		_ = s.SendError(msg.ID, protocol.ErrCodeAuthorizationDenied, reason)
+		return
+	}
+	// The service delivers a successful phrase itself, while it still holds
+	// the key for use, so its audit outcome reflects what reached the client.
+	deliver := func(result adminproto.ExportKeyResult) error {
+		return s.WriteJSON(protocolExportResult(msg.ID, result))
+	}
+	result := s.keyServices.ExportKey(s.auditContext(), adminproto.ExportKeyRequest{Address: msg.Address, Passphrase: msg.Passphrase}, deliver)
+	if !result.Success {
+		_ = s.WriteJSON(protocolExportResult(msg.ID, result))
+	}
+}
+
+func protocolExportResult(id string, result adminproto.ExportKeyResult) *protocol.ExportResultMessage {
+	return &protocol.ExportResultMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeExportResult, ID: id},
+		Success:     result.Success, Address: result.Address, KeyType: result.KeyType,
+		Mnemonic: result.Mnemonic, WordCount: result.WordCount, Code: result.Code, Error: result.Error,
+	}
 }
 
 func (s *Session) HandleImportKey(msg *protocol.ImportKeyMessage) {

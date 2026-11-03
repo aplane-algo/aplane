@@ -70,9 +70,8 @@ AP Admin. Ed25519 mnemonics may come from another wallet system (for example,
 Lute or Pera). Mnemonic import is local IPC-only; the node has no SSH admin
 channel.
 
-Because APlane currently relies on encrypted key file backups instead of
-mnemonic export, this option is primarily useful for importing accounts from
-external systems.
+Native recovery phrases can also be explicitly displayed through local AP Admin.
+Encrypted backups remain the recovery method for other credential classes.
 
 
 ---
@@ -94,7 +93,24 @@ In the TUI:
 Mnemonic import uses AP Admin over local IPC. For remote operation, log in
 to the signer host and run AP Admin there; the node has no SSH admin channel.
 
-Mnemonic export is disabled. Use encrypted backup archives for recovery.
+### Show a native recovery phrase
+
+Open a native key's details and press `m` (Show recovery phrase). Enter the
+signer passphrase again to display its numbered 25-word phrase, key type, and
+address. Press Enter or Esc to close. The phrase is hidden again two minutes
+after it appears (an unanswered passphrase prompt also closes after two minutes),
+and lock or disconnect clears it. There is no automatic clipboard or plaintext
+file output. Generation itself does not display recovery phrases.
+
+This supports existing Ed25519 keys and newly generated/imported native
+`falcon1024` keys that retain recovery entropy. Older Falcon credentials cannot
+recover their original phrase: use encrypted backups. LogicSig, rotating, and
+witness credentials do not support mnemonic export. Key details show the `m`
+option only for keys whose phrase can be exported.
+
+Native Falcon credentials with recovery entropy use payload format 2. APlane
+v0.46.0 and older cannot read these new credentials or restore backups containing
+them. Existing format-1 credentials remain readable by newer releases.
 
 ---
 
@@ -895,21 +911,17 @@ template YAML.
 **Solution**:
 1. Connect with the apadmin TUI to unlock (enter your passphrase)
 
-### No Mnemonic Export Command
+### Mnemonic Export Unavailable
 
-**Problem**: You expected an apadmin mnemonic export command
+**Problem**: Key details do not offer `m` (Show recovery phrase).
 
-**Cause**: The signer does not expose mnemonic export. Encrypted credential
-backup remains available over the admin protocol. Generated
-mnemonics are stored in encrypted key files for recovery metadata, but are not
-sent back to apadmin.
+**Cause**: Export is restricted to native Ed25519 and native Falcon keys. Older
+Falcon credentials did not retain the entropy needed to reconstruct their phrase.
 
-**Solution**:
-- Use encrypted backups for recovery
-- If you already have an external mnemonic, keep that offline and separate from
-  the store passphrase
-- Use `apadmin backup` or signer-managed apadmin backup after generating new
-  keys
+**Solution**: Use encrypted backups for those credentials. For supported native
+keys, open their details in local apadmin and press `m`, then re-enter the signer
+passphrase. Keep any externally held recovery phrase offline and separate from
+the store passphrase.
 
 ### Forgotten Encryption Passphrase
 

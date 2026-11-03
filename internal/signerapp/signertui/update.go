@@ -269,7 +269,22 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Continue listening for messages
 		return m, m.waitForMessageCmd()
 
+	case nativeMnemonicResultMsg:
+		return m.handleNativeMnemonicResult(msg)
+	case mnemonicExpiredMsg:
+		if msg.Serial == m.mnemonicExport.serial {
+			m.clearMnemonicExport()
+			if m.viewState == ViewMnemonicExport {
+				m.viewState = ViewKeyDetails
+			}
+		}
+		return m, nil
 	case ErrorMsg:
+		if m.mnemonicExport.pending && msg.ID == m.mnemonicExport.requestID {
+			m.mnemonicExport.pending = false
+			m.mnemonicExport.error = msg.Error.Error()
+			return m, m.waitForMessageCmd()
+		}
 		if m.viewState == ViewCosignerImporting {
 			m.cosigner.importError = msg.Error.Error()
 			m.viewState = ViewCosignerImportReview
@@ -672,6 +687,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.details.teal = msg.DisplayTEAL
 			m.details.templateProvenanceStatus = msg.TemplateProvenanceStatus
 			m.details.templateProvenanceNote = msg.TemplateProvenanceNote
+			m.details.mnemonicExportable = msg.MnemonicExportable
 			m.details.scrollOffset = 0 // Reset scroll on open
 			m.viewState = ViewKeyDetails
 		} else {
@@ -899,6 +915,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // handleKeyPress handles keyboard input based on current view
 func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if msg.String() == "ctrl+c" || (msg.String() == "q" && (m.viewState == ViewGenerating || m.viewState == ViewImporting || m.viewState == ViewCosignerImporting || m.viewState == ViewCosignerRemoving || m.viewState == ViewCosignerExporting || m.viewState == ViewDeleting || m.viewState == ViewTemplateInstalling || m.viewState == ViewRestoring)) {
+		m.clearMnemonicExport()
 		return m, tea.Quit
 	}
 	if m.usesSharedPopupViewport() {
@@ -940,6 +957,8 @@ func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	// View-specific handling
 	switch m.viewState {
+	case ViewMnemonicExport:
+		return m.handleMnemonicExportKeys(msg)
 	case ViewError:
 		return m.handleErrorKeys(msg)
 	case ViewAuth:
@@ -1072,6 +1091,7 @@ func (m Model) usesSharedPopupViewport() bool {
 		ViewCosignerExportResult,
 		ViewGenerating,
 		ViewGenerateDisplay,
+		ViewMnemonicExport,
 		ViewImportForm,
 		ViewImportParams,
 		ViewImporting,

@@ -6,17 +6,16 @@ package keygen
 import (
 	"context"
 	"crypto/rand"
-	"crypto/sha512"
 	"encoding/hex"
 	"fmt"
 	"strings"
 	"sync"
 
-	"github.com/algorand/falcon"
 	algomnemonic "github.com/algorand/go-algorand-sdk/v2/mnemonic"
 	securecrypto "github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keys"
 	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
+	nativeops "github.com/aplane-algo/aplane/internal/signing/falcon1024/signerops"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
@@ -77,15 +76,7 @@ func (g *NativeFalconGenerator) GenerateRandom(ctx context.Context, paths storep
 }
 
 func (g *NativeFalconGenerator) generate(paths storepaths.Paths, entropy []byte, kr *securecrypto.Keyring, mnemonicWords string) (*GenerationResult, error) {
-	seedInput := make([]byte, 0, len("PQK")+len(nativefalcon.Scheme)+len(entropy))
-	seedInput = append(seedInput, "PQK"...)
-	seedInput = append(seedInput, nativefalcon.Scheme...)
-	seedInput = append(seedInput, entropy...)
-	workingSeed := sha512.Sum512_256(seedInput)
-	securecrypto.ZeroBytes(seedInput)
-	defer securecrypto.ZeroBytes(workingSeed[:])
-
-	publicKey, privateKey, err := falcon.GenerateKey(workingSeed[:])
+	publicKey, privateKey, err := nativeops.DeriveKeyPair(entropy)
 	if err != nil {
 		return nil, fmt.Errorf("generate native Falcon key pair: %w", err)
 	}
@@ -96,6 +87,8 @@ func (g *NativeFalconGenerator) generate(paths storepaths.Paths, entropy []byte,
 	}
 	payload := keys.NewNativeFalconPayload(publicKey[:], privateKey[:], salt)
 	defer payload.ZeroSecrets()
+	payload.FormatVersion = keys.NativeRecoveryKeyFormatVersion
+	payload.RecoveryEntropy = append([]byte(nil), entropy...)
 	keyFiles, err := keys.SavePayload(paths, payload, kr)
 	if err != nil {
 		return nil, fmt.Errorf("save native Falcon key: %w", err)

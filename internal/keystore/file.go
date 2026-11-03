@@ -279,7 +279,7 @@ func (f *FileKeyStore) Get(ctx context.Context, address string) (*signing.KeyMat
 	}
 	defer crypto.ZeroBytes(decryptedData)
 
-	payload, err := keys.ParsePayload(decryptedData)
+	payload, err := keys.ParseStoredPayload(decryptedData)
 	if err != nil {
 		return nil, err
 	}

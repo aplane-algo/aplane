@@ -4,6 +4,7 @@
 package signerreg
 
 import (
+	"crypto/subtle"
 	"fmt"
 	"sync"
 
@@ -11,6 +12,7 @@ import (
 	securecrypto "github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keys"
 	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
+	"github.com/aplane-algo/aplane/internal/signing/falcon1024/signerops"
 )
 
 var registerValidatorOnce sync.Once
@@ -23,9 +25,20 @@ func RegisterKeyValidator() {
 	})
 }
 
-func validateKeyPair(publicKey, privateKey []byte) error {
+func validateKeyPair(publicKey, privateKey, recoveryEntropy []byte) error {
 	if len(publicKey) != falcon.PublicKeySize || len(privateKey) != falcon.PrivateKeySize {
 		return fmt.Errorf("invalid Falcon key sizes")
+	}
+	if len(recoveryEntropy) != 0 {
+		public, private, err := signerops.DeriveKeyPair(recoveryEntropy)
+		defer securecrypto.ZeroBytes(private[:])
+		if err != nil {
+			return err
+		}
+		if subtle.ConstantTimeCompare(public[:], publicKey) != 1 || subtle.ConstantTimeCompare(private[:], privateKey) != 1 {
+			return fmt.Errorf("recovery entropy does not reproduce the stored Falcon key pair")
+		}
+		return nil
 	}
 	var public falcon.PublicKey
 	var private falcon.PrivateKey

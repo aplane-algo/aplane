@@ -56,6 +56,7 @@ type SettingsServices interface {
 }
 
 type KeyServices interface {
+	ExportKey(ctx context.Context, req adminproto.ExportKeyRequest, deliver adminproto.ExportDelivery) adminproto.ExportKeyResult
 	ListKeys() ([]adminproto.KeyInfo, error)
 	GetKeyDetails(req adminproto.GetKeyDetailsRequest) adminproto.GetKeyDetailsResult
 	GenerateKey(ctx context.Context, req adminproto.GenerateKeyRequest) adminproto.GenerateKeyResult
