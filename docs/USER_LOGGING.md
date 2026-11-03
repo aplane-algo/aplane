@@ -81,6 +81,7 @@ Fields are omitted when empty.
 | `KEY_GENERATED` | A new key was generated through the authenticated admin surface |
 | `KEY_DELETED` | A key was deleted through the authenticated admin surface |
 | `KEY_IMPORTED` | A key was imported through the authenticated admin surface |
+| `KEY_EXPORTED` | A recovery-material export attempt was recorded; `outcome` identifies the result |
 | `KEY_REJECTED` | A key file was skipped during signer scan because it violated a load-time key-file invariant |
 | `BACKUP_CREATED` | A key backup was created through the authenticated admin surface |
 | `BACKUP_IMPORTED` | A deeply verified uploaded backup was published into managed storage |
@@ -102,6 +103,20 @@ Fields are omitted when empty.
 Credential restore entries may include `archive_sha256`, `operation_id`,
 `replace_existing`, and `key_count`, in addition to normal session/
 principal/transport attribution.
+
+### Generation and Deleted-Archive Maintenance
+
+Maintenance records intent before destructive work and records its outcome:
+
+| Event pair | Operation |
+|------------|-----------|
+| `GENERATION_QUARANTINE_INTENT` / `GENERATION_QUARANTINED` | Quarantine a non-authoritative generation |
+| `GENERATION_QUARANTINE_PRUNE_INTENT` / `GENERATION_QUARANTINE_PRUNED` | Prune a quarantined generation |
+| `GENERATION_ABANDONED_DISCARD_INTENT` / `GENERATION_ABANDONED_DISCARDED` | Discard an abandoned, unvalidatable generation |
+| `DELETED_ARCHIVE_PRUNE_INTENT` / `DELETED_ARCHIVE_PRUNED` | Prune selected deleted-archive entries through the admin protocol |
+
+See [store maintenance](USER_STORE_MGMT.md) for restrictions and the current
+CLI limitation on deleted-archive pruning.
 
 ### Policy and ASA Set Changes
 
@@ -147,6 +162,8 @@ generation records say what committed. Offline `apadmin policy rescue` and
 | `SIGN_APPROVED` | Transaction signed successfully by the signer (not emitted for passthrough or foreign entries) |
 | `SIGN_REJECTED` | Transaction rejected by policy or operator |
 | `SIGN_FAILED` | Signing failed due to a technical error (key not found, assembly error, etc.) |
+| `ROTATING_RELEASE` | A rotating-account signature was released; retained records rebuild release and leaf-use history after unlock |
+| `ROTATING_RECOVERY` | A rotating-account recovery action or outcome was recorded |
 
 ### Authentication
 
@@ -201,7 +218,8 @@ the retained history out of the log:
   `archive_entries_omitted` counts the members left out, and their names are
   not recorded anywhere in the log. The operation itself still receives and
   acts on the whole selection.
-- The policy and ASA set fields have their own, tighter bounds (below).
+- The policy and ASA set fields have their own, tighter bounds in
+  [Policy and ASA Set Changes](#policy-and-asa-set-changes).
 
 This keeps any one request from flushing the log, but not many requests:
 enough of them can still rotate older entries out of the 30 MB retained.

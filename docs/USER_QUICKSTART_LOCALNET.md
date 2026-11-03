@@ -73,9 +73,11 @@ Because `apenv.sh` is already sourced in this terminal, you can run:
 apconsole
 ```
 
-This launches `apconsole`, which shows the signer admin pane, shell pane, and
-signer daemon pane together. Use `F1`, `F2`, and `F3` to focus those panes.
-`F4` toggles a focused pane view. Press `?` for the built-in help overlay.
+Use `F1`, `F2`, and `F3` to focus the admin, shell, and daemon panes.
+The split layout needs at least 133 columns by 39 rows when the console
+starts the daemon; smaller terminals use a focused pane. Allow at least
+82 columns by 30 rows for the admin UI. `F4` toggles the focused pane view;
+`?` opens help. See the [console layout](USER_QUICKSTART.md#2-launch-the-console).
 
 ## 5. Unlock the signer
 
@@ -100,7 +102,8 @@ enroll
 The command returns at once with the request waiting. You will see an approval
 prompt in the signer admin pane (or, if it was not open, the request is shown
 when you log in and on the Enrolled Clients screen). Navigate to it with `F1`
-or `Shift`+left arrow and accept it.
+or `Shift`+left arrow. Compare the complete SSH-key fingerprint with the
+one shown by `enroll`, then accept the matching request.
 
 Once approved, connect from the shell pane:
 
@@ -118,11 +121,11 @@ keys
 
 Copy the address for the new `falcon1024` key you generated in step 6.
 
-The shell should connect to LocalNet automatically; the prompt will reflect the
-new network. If needed, run:
+The prompt should show `localnet`, as configured by `aplocalnet`. If needed,
+select it explicitly (`connect` connects to the signer, not a network):
 
 ```
-connect
+network localnet
 ```
 
 ## 9. Fund your Falcon address
@@ -151,21 +154,24 @@ Submit a self-send from the Falcon address back to the same address:
 send 1 algo from <your-falcon-address> to <your-falcon-address>
 ```
 
-By default, the signer requires human approval on all transactions. Approve the
-request in the signer admin pane. If the approval window is small, use `F4` to
-zoom in, then `F4` again to zoom back out.
+The shipped policy's self-transfer route permits this payment, but a route
+match does not approve it. With `auto_approve_self_noop_transfer: false` and
+`user_auto_approve: false`, this one-ALGO self-send requires operator approval.
+Press `F1`, inspect the request, and approve it only if it matches. Use `F4`
+to zoom the admin pane if needed, then `F2` to return to the shell.
+The transferred ALGO stays in the account; the transaction fee is deducted.
 
 apshell prints the submitted transaction ID. To inspect the transaction in
 Lora, go to https://lora.algokit.io, select `LocalNet`, and search for the
 transaction ID. If your LocalNet algod is not using the default
 `http://localhost:4001`, open Lora's settings and set the correct algod URL.
 
-This proves the signer can build, sign, and submit a real LocalNet transaction
-with your new key.
+This demonstrates the full workflow: the shell builds and submits a LocalNet
+transaction, and the signer checks policy and signs it with your new key.
 
 ## Further Exploration
 
-By default, APlane exposes only the native `ed25519` and `falcon1024` key
+On signer nodes, APlane exposes only the native `ed25519` and `falcon1024` key
 types. To try LogicSig key types, such as `aplane.falcon1024.v1` or the bundled
 templates, open the signer admin pane, press `s` for settings, then press `k`
 for key types. The KeyType Library lets you enable compiled providers and

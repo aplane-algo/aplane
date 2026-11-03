@@ -3,11 +3,13 @@
 </p>
 
 <sub><a href="docs/USER_QUICKSTART.md">APlane QuickStart</a></sub>&nbsp;&nbsp;<sub><a href="https://github.com/aplane-algo/aplanesdk">SDK Repo</a></sub>
-# APlane - A Signing System for Algorand 
+# APlane — A Control Plane for Algorand Operations
 
-APlane is a flexible command-line signing system for Algorand. It supports
-native Ed25519 and protocol-native Falcon-1024 accounts and provides a framework for 
-developing new types of keys using Algorand Logic Signatures.
+Manage keys, enforce transaction policies, and automate on-chain workflows.
+
+APlane supports native Ed25519 and protocol-native Falcon-1024 accounts and
+provides a framework for developing new types of keys using Algorand Logic
+Signatures.
 
 It is designed for security-focused operations where private keys can be isolated on dedicated signing machines with restricted network exposure.
 

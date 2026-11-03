@@ -13,7 +13,7 @@ This manual is the missing layer between them: the **operating model** — how t
 system is wired, what actually signs your transactions, what can block a call,
 and how to go from nothing to a confirmed transaction. It distills the
 human-facing `ARCH_*`/`USER_*` docs; each section ends with pointers to the full
-source. It is intended to be served on demand via an `mcp_manual` tool, the same
+source. It is served on demand via the `mcp_manual` tool, the same
 way `js_reference` serves `USER_JSAPI.md`.
 
 > Precedence: where this manual and a live tool result disagree, trust the live
@@ -31,7 +31,7 @@ way `js_reference` serves `USER_JSAPI.md`.
 +----------+                    +--------+---------+               +-----------+
                                          |
                                          v
-                                  algod / indexer
+                                  algod
                                   (the network)
 ```
 
@@ -39,12 +39,14 @@ Three distinct processes:
 
 1. **You (the MCP client)** issue tool calls over stdio.
 2. **apshell** is the *client*: it parses commands, resolves aliases, builds
-   transactions, talks to the network (algod/indexer), and routes signing
+   transactions, talks to the network through algod, and routes signing
    requests to the signer. **Account signing keys stay on apsigner; the client
    holds only its own SSH key.**
-3. **apsigner** is the *signer*: a network-isolated daemon that owns the keys,
-   applies policy, and signs. Reached over an enrolled SSH tunnel for local
-   and remote API calls; direct loopback REST serves only `/health`.
+3. **apsigner** is the *signer*: a separate daemon that owns the keys,
+   applies policy, and signs. It also contacts its configured algod for work
+   such as TEAL compilation and fresh rotating-account state checks. Client
+   API calls arrive over an enrolled SSH tunnel; direct loopback REST serves
+   only `/health`.
 
 **The one rule that explains everything else:** *ordinary signing returns
 authorization, not private keys.* The client builds and submits; the signer
@@ -109,7 +111,12 @@ These return an error telling you the right path:
 |---------|-------------|
 | `js`, `jssave`, `jslist` | the dedicated MCP tools |
 | `enroll` | interactive host trust — run real `apshell` in a terminal |
-| `quit`, `exit` | MCP disconnect |
+| `help` | `mcp_reference` |
+| `config` | `status` for safe runtime information; edit configuration outside MCP |
+| `script` | individual `execute` calls or the `js` tool |
+| `cosigner` (all subcommands), `endpoints add` | interactive apshell for the guided trust workflow |
+| `clear` | no machine-readable equivalent is needed |
+| `quit`, `exit`, `q` | MCP disconnect |
 | `keyreg` with no args | provide args directly (`keyreg alice online`) — paste mode is interactive |
 
 > Full detail: [ARCH_SHELL.md](ARCH_SHELL.md#mcp-surface) (MCP and REPL surfaces).
@@ -161,7 +168,7 @@ Box names also accept `<app-id>:<name>`.
 
 ## 4. The key model
 
-### Four authorization categories
+### Authorization categories
 
 | Category | What signs | Signature lands in |
 |----------|-----------|--------------------|
@@ -169,6 +176,7 @@ Box names also accept `<app-id>:<name>`.
 | **Native Falcon-1024** (`falcon1024`) | the key signs the full transaction | top-level `SignedTxn.PQsig` (scheme `f1`) |
 | **DSA-backed LogicSig** (`dsa_lsig`) | a crypto key signs, wrapped in a LogicSig | `LogicSig.Args[0]` (Falcon variable, at most 1,423 bytes) |
 | **Generic LogicSig** (`generic_lsig`) | TEAL logic only — **no key, no signature** | args filled from the key file's stored schema |
+| **Rotating LogicSig** | Falcon-1024, Ed25519, and WOTS, XMSS, or SLH-DSA authorize each stage | stage LogicSig arguments; each spend rekeys to the next stage |
 
 The two native account key types are not LogicSig-backed. Witness keys are
 auxiliary non-account keys; signer-custodied instances serve the cosigner
@@ -189,27 +197,33 @@ component role, while standalone `.wit` instances may serve contract admin.
 | `aplane.falcon1024-timelock.v1` | dsa_lsig (composed) | optional template |
 | `aplane.htlc.v1` | generic_lsig | optional template |
 | `aplane.falcon1024-cosigner1024.v1` | guarded dsa_lsig | library-visible |
-| `aplane.witness-falcon1024.v1` | witness key | cosigner node `.cos` custody or external `.wit` custody |
+| `aplane.rotating-triple-wots.v1` | rotating LogicSig | library-visible |
+| `aplane.rotating-triple-xmss.v1` | rotating LogicSig | library-visible |
+| `aplane.rotating-triple-slhdsa.v1` | rotating LogicSig | library-visible |
+| `aplane.witness-falcon1024.v1` | witness key | default-enabled on cosigner nodes (`.cos`); external `.wit` custody also supported |
 
 **Always call `keytypes` to see what the connected signer actually exposes** —
-availability is product-scoped. Visibility states: `default_enabled` (every
-store), `library` (compiled in but needs an enabled state record in the product
+availability is product-scoped. Visibility states: `default_enabled` (for the applicable node role), `library` (compiled in but needs an enabled state record in the product
 store), `disabled`. A library-visible or template key type must be activated
 by an operator before it appears; an agent cannot install templates (that needs
 the master passphrase over local IPC) — generate the YAML and hand it to the
 user.
 
-### Why a key is independent of the network
+### Network binding and stored credentials
 
-A LogicSig's address is the hash of its compiled program. The program is
-deterministic, so the same key produces the same address on every Algorand
-network. **Generating a key does not bind it to mainnet/testnet/localnet** —
-network only matters when you fund, opt in, or transact. Signing authority lives
-in the key *file* (compiled bytecode, derivation metadata, and signing metadata
-captured at creation), not in the template. Salt metadata is derivation-specific:
-compiler-auto-salted records omit `salt_counter`, while compatible manual-salt
-records retain it. Disabling or changing a key type therefore never breaks an
-existing key's ability to sign.
+Native account addresses are independent of the network. A LogicSig address
+is the hash of its program, so it is the same wherever that exact program is
+used. However, **rotating accounts bind their stages to a genesis hash**:
+generating from the same seed for different networks produces different
+accounts. Templates can also bake network restrictions into their programs.
+Balances, opt-ins, and on-chain authorizers are always network-specific.
+
+Existing LogicSig credentials retain their compiled bytecode and derivation
+and signing metadata; rotating credentials instead retain the seed and bound
+genesis hash used to derive stage programs. Disabling a key type stops new
+creation without disabling existing valid credentials. Signing still requires
+a supported provider. Compiler-auto-salted records omit `salt_counter`, while
+compatible manual-salt records retain it.
 
 ### Creation params vs runtime args
 
@@ -404,8 +418,11 @@ Runtime settings (`user_auto_approve`, `lock_on_disconnect`,
   Default still apply. Routing does **not** choose the sender or move funds for
   you.
 - **Auto-approve self no-op** (`auto_approve_self_noop_transfer`) is the only
-  Always Approve field and is deliberately narrow (a single 0-value self
-  transfer, no group/rekey/close/clawback/note, fee ≤ 1000).
+  Always Approve field and is off in the shipped policy. It requires one
+  zero-value self-transfer with no rekey, close, clawback, note, or lease. Only
+  permitted signer resource dummies may accompany it, with a normalized fee
+  of at most 1,000 microAlgos. Priced program bytes and native PQ charges
+  disqualify it. It does not apply to a one-ALGO self-send.
 - Wire-level auth outcomes: `401` (authentication), `403` (authorization,
   fail-closed).
 
@@ -464,7 +481,8 @@ bytes even though apshell does not submit them.
   to start without a trusted host, and the signer refuses the tunnel until the
   key is enrolled.
 - **`endpoints`** manages signer/cosigner routing profiles (`list`, `show`,
-  `create`, `import`, `discover-cosigners`, `default`, `delete`). Routing lives in
+  `create`, `import`, `discover-cosigners`, `default`, `delete`, plus interactive
+  `add`). Routing lives in
   `endpoints.yaml`, not `config.yaml`. There is exactly one `role: signer`
   endpoint; the rest are `role: cosigner`.
 
@@ -599,7 +617,8 @@ each MCP server instance uses its own:
 ## 12. Quick gotcha checklist
 
 - **Keys live on the signer.** You only ever see addresses.
-- **A key is network-agnostic.** Generating it commits to no network.
+- **Check network binding.** Rotating accounts bind to one network; templates
+  may also embed network restrictions.
 - **`keytypes` is the source of truth** for what you can generate, not this list.
 - **Signing can block or be denied** by policy; `Always Review` waits on a human.
 - **A locked signer fails closed.** You cannot unlock it from the client.
@@ -608,9 +627,8 @@ each MCP server instance uses its own:
 - **All-foreign sign/plan requests are rejected.**
 - **Refresh after external or unconfirmed rekeys, or a reported cache refresh
   failure.**
-- **`enroll`, `js`, `jssave`, `jslist`, `quit`, `exit`, and `keyreg`
-  (no args) are not available via the `execute` tool** — use the dedicated
-  tools or a terminal.
+- **Some commands require dedicated tools or a terminal.** Check the
+  [blocked-command table](#commands-blocked-from-execute) before using `execute`.
 - **Amounts: human units in the shell, microAlgos in JS** (`algo()` /
   `microalgos()`).
 - **Asset names resolve per network.** Inspect with `plan()` and remember that

@@ -9,7 +9,7 @@ APlane supports three install modes:
 | Mode | Command | Use Case |
 |------|---------|----------|
 | **Local** (default) | `./install.sh [--role signer\|cosigner] [path]` | Development, demos, multi-instance. Rootless by default, no systemd. |
-| **Client-only** | `./install.sh --client` | apshell only, connects to a remote signer. |
+| **Client-only** | `./install.sh --client` | apshell and aprekey on Linux/macOS, connecting to a remote signer. |
 | **Systemd** | `sudo ./install.sh --systemd [--role signer\|cosigner] [operator-root] [--bindir <path>] [--no-enable] [--no-start]` | systemd service for production servers. |
 
 **Requirements:** Linux with systemd for `--systemd` mode. Auto-unlock requires systemd 250+ (Ubuntu 24.04+, Debian 12+, RHEL/Rocky 9+, Fedora 36+). Local and bootstrap `--client` modes work on both Linux and macOS. Windows is client-only via the `aplane-client_<version>_windows_amd64.zip` release archive.
@@ -96,14 +96,14 @@ APLANE_INSTALL_ROOT=/path/to/my/aplane ./install.sh
 │   ├── bin/               # apsigner, apadmin, apapprover, apstore, appass, approbe, appolicy, and other signer-side tools
 │   ├── config.yaml        # Signer config (ports, SSH, algod)
 │   ├── library/           # KeyType Library install sources
-│   │   └── templates/     # Template YAML install sources for defaults and apadmin
+│   │   └── templates/     # Optional template YAML install sources for apadmin
 │   ├── .ssh/              # SSH host key
 │   └── identities/default/ # Keystore (created during install)
 │       ├── store-root.enc
 │       ├── .keystore
 │       └── .ssh/          # authorized_keys registry of enrolled client keys
 ├── apclient/              # Client data directory ($APCLIENT_DATA)
-│   ├── bin/               # apshell
+│   ├── bin/               # apshell, aprekey, aplocalnet
 │   ├── config.yaml        # Client config (network and UI defaults)
 │   ├── endpoints.yaml     # Client endpoint registry
 │   ├── .mcp.json          # MCP client config for apshell --mcp
@@ -218,7 +218,9 @@ For a signer node:
 2. Unlock the signer pane with the keystore passphrase
 3. Generate a signing key in the signer pane (press `g`)
 4. In the shell pane, run `enroll` to enroll the client's SSH key at the signer
-5. Approve the request in the signer pane
+5. Compare the complete SSH-key fingerprint with the one shown by `enroll`,
+   then approve the matching request in the signer pane
+6. Run `connect` in the shell pane
 
 For a cosigner node:
 
@@ -245,10 +247,11 @@ the cosigner's address. Complete them in this order:
    **Export Cosigner Key** from its success or key-details screen. The file
    is the public key only. The result screen shows the address clients should
    use, from the configured `endpoint.advertise_url`.
-2. On the primary signer, start **Generate account** in `apadmin` for the
-   compatible guarded account, open its **Cosigner** field, and choose **Use
-   key file...**. Compare the complete Witness Key ID with the value shown on
-   the cosigner, import, and finish generating the account. A key that is
+2. On the primary signer, enable the guarded or Corridor key type through
+   the KeyType Library. Start **Generate account** in `apadmin`, select that
+   type, open its **Cosigner** field, and choose **Use key file...**. Compare
+   the complete Witness Key ID with the value shown on the cosigner, import,
+   and finish generating the account. A key that is
    already imported is offered under its existing name.
 3. In `apshell`, run `endpoints add <cosigner-url>`. Accept or edit the
    suggested connection name. Compare the full client SSH key fingerprint shown
@@ -259,7 +262,9 @@ the cosigner's address. Complete them in this order:
 
 Run `cosigner status` at any time to inspect routes before funding or rekeying.
 It is a point-in-time connection check, not confirmation of transaction policy
-or on-chain validity.
+or on-chain validity. The shipped cosigner policy rejects signing requests;
+configure a suitable node-default or per-witness policy before use. See
+[the cosigner policy guide](USER_POLICY.md#the-shipped-cosigner-default).
 
 The key file contains the public key and nothing else. It never contains the
 cosigner's address, the private cosigner key, or SSH host trust. The client never sees it: it keeps only the connection, so another key
@@ -876,10 +881,11 @@ two in sync. Encrypting the credential the first time requires root because
 `systemd-creds encrypt` accesses the TPM2 or host key directly, which is why
 `appass` is run with `sudo`.
 
-`appass-systemd-creds` helper configurations refuse non-root
-`apadmin changepass` before prompting because rewriting the encrypted
-systemd credential requires root. See [Changing the Passphrase](#changing-the-passphrase)
-below.
+`apadmin changepass` runs through the daemon. Store rotation can succeed even
+if the passphrase helper cannot rewrite the systemd credential; the command
+then reports a helper-update warning. The new store passphrase is already
+active. Repair auto-unlock with the new passphrase before relying on a service
+restart. See [Changing the Passphrase](#changing-the-passphrase) below.
 
 ### Locked-start setup
 
@@ -987,14 +993,19 @@ Use the apadmin TUI to generate signing keys:
 apadmin
 ```
 
-Press `g` and select a key type to generate. apsigner auto-detects new keys via file watching — no restart needed.
+Press `g` and select an enabled key type to generate. The daemon publishes
+and reloads the new credential as part of the operation; no restart is needed.
 
 ### Backup Keys
 
 ```bash
 apadmin backup create all
-apadmin backup export aplane-backup-YYYYMMDD-HHMMSS.tar.gz /mnt/usb
+apadmin backup list
+apadmin backup export <backup-name> /mnt/usb
 ```
+
+Replace `<backup-name>` with the exact archive name reported by create/list,
+including its fractional-second timestamp.
 
 See [USER_STORE_MGMT.md](USER_STORE_MGMT.md) for full backup/restore documentation.
 
@@ -1162,8 +1173,13 @@ apadmin changepass
 This asks you to manually enter the current passphrase, appends a fresh store
 key term, and synchronously completes the durable rewrap of mutable store
 content before returning. It re-signs every policy and node-role integrity
-sidecar and updates `passphrase.cred`. Retained prior generations remain
-readable under pre-change terms until pruned. Restart the service afterward:
+sidecar, then attempts to update the configured helper. Retained prior
+generations remain readable under pre-change terms until pruned.
+
+If a helper-update warning appears, the store passphrase has already changed.
+Stop the service, run `sudo appass -d /var/lib/apsigner` with the **new**
+passphrase to repair auto-unlock, then start the service. Otherwise, restart
+normally to load the updated credential:
 
 Systemd data directories contain a `.prod` marker. Daemon-backed commands use
 the public admin socket and do not require filesystem access. Offline commands
@@ -1184,19 +1200,23 @@ A `passphrase.cred` encrypted by `systemd-creds` is bound to the original machin
 1. **On the old machine** — create a backup:
    ```bash
    apadmin backup create all
-   apadmin backup export aplane-backup-YYYYMMDD-HHMMSS.tar.gz /mnt/usb
+   apadmin backup list
+   apadmin backup export <backup-name> /mnt/usb
    ```
+   Use the exact archive name from create/list for `<backup-name>` in both
+   steps. Copy that exported file to the new machine.
 
 2. **On the new machine** — install apsigner, initialize a fresh destination
    store, start apsigner, then restore:
    ```bash
-   apadmin backup import /mnt/usb/aplane-backup.tar.gz
-   apadmin restore preview aplane-backup.tar.gz
-   apadmin restore apply aplane-backup.tar.gz
+   apadmin backup import /mnt/usb/<backup-name>
+   apadmin restore preview <imported-backup-id-or-name>
+   apadmin restore apply <imported-backup-id-or-name>
    ```
 
-   `restore apply` authenticates and validates the complete credential set,
-   then commits it in one generation transaction. A restored key brings its own
+   Use the managed ID or name reported by `backup import` for the preview
+   and apply commands. `restore apply` authenticates and validates the complete
+   credential set, then commits it in one generation transaction. A restored key brings its own
    per-key policy if it has one; otherwise the new machine's default policy and
    configuration govern it. If the signer enters
    recovery mode, use `restore reconcile`, `restore rollback`, or a direct

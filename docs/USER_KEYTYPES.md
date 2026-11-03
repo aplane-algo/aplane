@@ -141,9 +141,10 @@ LogicSig keys rather than expecting their old addresses to remain stable.
 ## Compiled Providers
 
 Compiled providers are registered from Go code when `apsigner` starts. The
-protocol-native `ed25519` and `falcon1024` are default-enabled; every other
-compiled provider, including `aplane.falcon1024.v1`, is library-visible and
-requires product-local enablement.
+protocol-native `ed25519` and `falcon1024` are default-enabled on signer nodes;
+other account providers, including `aplane.falcon1024.v1`, are library-visible
+and require product-local enablement. On cosigner nodes,
+`aplane.witness-falcon1024.v1` is default-enabled for witness credentials.
 
 Enable a library-visible compiled provider:
 
@@ -161,8 +162,9 @@ apadmin -d $APSIGNER_DATA template import library/templates/aplane.corridor.v1.y
 
 Before generating a guarded or bounded-cosigner account, choose **Export
 Cosigner Key** on the cosigner. On the primary signer, start **Generate
-account** in `apadmin`, open the **Cosigner** field, and choose **Use key
-file...** or **Paste public JSON...**. Compare the complete Witness Key ID with the value
+account** in `apadmin`, select the enabled guarded or Corridor key type, then
+open the **Cosigner** field and choose **Use key file...** or **Paste public
+JSON...**. Compare the complete Witness Key ID with the value
 shown on the cosigner and import; the form returns with that key selected. A
 key that is already imported is offered under its existing name rather than
 imported again. The UI submits the stable Witness Key ID and the signer
@@ -307,12 +309,13 @@ microAlgo ceiling.
 
 `aplane.rotating-triple-wots.v1` is a library-visible compiled key type for
 an account whose address never changes while the program that authorizes it
-changes on every spend. `aplane.rotating-triple-xmss.v1` is its sibling
-with RFC 8391 XMSS in place of the per-stage WOTS key; everything in this
-section applies to both, and the differences are listed under
-[Rotating triple XMSS accounts](#rotating-triple-xmss-accounts). Each program (a *stage*) checks three signatures
-over the transaction ID, a Falcon-1024, a WOTS-w16 (SHA-256) and an Ed25519
-signature, all derived from one seed held only by the signer. A stage's
+changes on every spend. Its siblings replace the per-stage WOTS key with
+[XMSS](#rotating-triple-xmss-accounts) or
+[SLH-DSA](#rotating-triple-slh-dsa-accounts). The shared workflow applies to
+all three; their signature, resource, and retry differences are described below.
+For WOTS, each program (a *stage*) checks three signatures over the transaction
+ID: Falcon-1024, WOTS-w16 (SHA-256), and Ed25519. Their keys are derived
+from one seed held only by the signer. A stage's
 public keys are revealed only when it signs, and the same spend rekeys the
 account to the next, never-revealed stage. Forging a spend from a live stage
 needs a break of the Falcon lattice assumption, of SHA-256 and of Ed25519 at
@@ -331,7 +334,7 @@ every network the signer knows: the built-in `mainnet`, `testnet` and
 `genesis_hash`, such as `localnet`. A raw base64 genesis hash is also accepted.
 The form pre-selects the signer's only configured custom network when there
 is exactly one, and `testnet` otherwise; it never pre-selects `mainnet`.
-Unlike other key types, a rotating account is bound to one network: its stages
+A rotating account is bound to one network: its stages
 are derived with that network's genesis hash, so the same seed gives different
 addresses on different networks. The account address is stage 0's program
 address. Fund it like any other account.
@@ -377,8 +380,9 @@ Restrictions:
   `rotating_signing_required`.
 - There is no way to hand the account to another key. To leave the scheme,
   move the funds to another account.
-- Like every APlane key, its mnemonic is never shown. Back it up with a
-  managed backup; mnemonic import is refused.
+- Rotating accounts do not support mnemonic export or import. Back them up
+  with a [managed backup](USER_STORE_MGMT.md#managed-backup-with-apadmin). Native-key
+  mnemonic export is a separate workflow.
 
 Related commands:
 
@@ -480,19 +484,18 @@ that remains.
 SLH-DSA needs no one-time leaf tracking: retries and restored copies do not
 exhaust a leaf range. The signer still reports an expired release while its
 stage controls the account, and the usual rotation and recovery commands apply.
-Stage derivation computes a fresh SLH root, so rebuilding a long address cache
-also requires that work for every stage.
+Stage derivation computes a fresh SLH root for each address actually probed.
 Lookahead is capped at two stages, with at most four address derivations per
-account per background pass and per request-time discovery. A large restore
-therefore progresses across passes; a stage hint still requires rebuilding
-the earlier cache entries. Increasing `rotating.stage_horizon` cannot override
-this family's ceiling. Smaller configured horizons are honored.
-Budget for that when restoring: on the hardware measured in the evaluation
-record the signer rebuilds roughly two to three stages per second, so an
-account restored at stage 1,000 needs several minutes before its live stage
-is proven, and every spend attempted in the meantime is refused with
-`rotating_stage_unproven`. Watch `rotate status` for the scan to reach the
-live stage rather than retrying the spend.
+account per background pass and per request-time discovery. Increasing
+`rotating.stage_horizon` cannot override this ceiling; smaller horizons are
+honored.
+
+Recovery uses a sparse cache. A matching backup hint or `rotate recover
+<account> --stage N` lets the signer derive that stage and its successor
+without rebuilding stages 0 through N-1. Without a useful hint, discovery may
+need multiple bounded passes. Until the live stage is proven from the seed
+and chain, signing returns `rotating_stage_unproven`; inspect `rotate status`
+for progress or supply a stage hint.
 
 Stateless signing does not mean unlimited use of one key. The documented
 lifetime envelope aggregates signing across restored copies, retries, failed
@@ -511,26 +514,33 @@ looking for the new library entry.
 
 ### Backups and restore
 
-The key file is the whole credential. The signer stores nothing else it
-needs to sign: it reads the account's current stage from the chain at every
-request and keeps only a plaintext cache of stage addresses under
-`identities/default/stages/`, which it rebuilds from the seed whenever the
-cache is missing or damaged. A key restored from a managed backup signs
-again as soon as that cache catches up with the account's live stage,
-which the signer does in the background; until then a spend is refused with
-`rotating_stage_unproven`, and `rotate status` shows how far the scan has
-come. Deleting the `stages/` directory while the signer is stopped is
-always safe. `rotating.stage_horizon` in the signer's `config.yaml` (default
-4096) requests how many stages past the live one the signer derives ahead,
-subject to family limits (SLH-DSA: at most two).
+The key file contains the seed and network binding needed to derive the
+account's stages. On every signing request, the signer checks the current
+authorizer against its own algod. It keeps a non-authoritative, sparse cache
+of stage addresses and observations under `identities/default/stages/`.
+Loaded entries are verified against the seed; a stage must also match the
+chain before it can authorize a spend.
+
+Managed backups can carry a recovery hint, not the full cache or audit log.
+A matching hint lets a restored signer prepare the live stage and its successor
+directly. If the hint is missing or stale, bounded discovery or an explicit
+`rotate recover <account> --stage N` may be needed. Until proof succeeds, signing returns
+`rotating_stage_unproven`. Use `rotate status` to inspect progress.
+
+The cache can be removed while the signer is stopped without losing the
+credential, but this loses recovery hints and may delay signing. Preserve the
+audit log separately if release alerts and XMSS leaf-use history must survive
+recovery. `rotating.stage_horizon` in `config.yaml` (default 4096) requests
+lookahead past the live stage, subject to family limits (SLH-DSA: at most two).
 
 The background catch-up is bounded. When the signer sees an authorizer it
 cannot place, neither a stage it has already derived nor another key it
 holds, it searches on its own for at most `rotating.recovery_max_stages`
-stages (default 1024) past its cache, once per account per unlock, within
-`rotating.recovery_timeout` of derivation time. Within the horizon, and
-for a gap not much larger than it, that is enough and nothing is visible.
-Beyond it the signer stops and `rotate status` shows a note: the authorizer
+candidate stages (default 1024), once per account per unlock, within
+`rotating.recovery_timeout` of derivation time. Discovery uses available
+observations and probes gaps in the sparse cache; the budget limits work,
+not the highest stage number that a hint can name.
+When that budget is exhausted, `rotate status` shows a note: the authorizer
 is not among the stage addresses the signer has cached, and the last search
 stopped with its reason. This is the same situation as any other account
 that was rekeyed to an address this signer does not hold, and the signer
@@ -546,8 +556,9 @@ cannot tell them apart:
   many spends the account has made, `rotate recover <account> --stage N`:
   stage derivation is random access, so the signer derives stage N directly
   and compares it to the chain, probes a few stages either side
-  (`--window`, default 64), and once it matches fills the cache up to that
-  stage. A wrong hint costs time, never a wrong stage: a stage is accepted
+  (`--window`, default 64), and once it matches prepares that stage and its
+  successor without deriving the entire earlier history. A wrong hint costs
+  time, never a wrong stage: a stage is accepted
   only when its derived address equals the chain's authorizer. The search
   runs in the background; `rotate status` shows its progress, and
   `rotate recover <account> cancel` stops it.

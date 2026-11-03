@@ -49,13 +49,16 @@ Most transaction functions accept a final options object:
 ```javascript
 {
   wait: true,          // default true
-  fee: 1000,           // optional flat fee in microAlgos
+  fee: 1000,           // optional client base fee in microAlgos
   note: "memo text"    // optional transaction note
 }
 ```
 
-When `fee` is supplied, it is used as a flat fee. If omitted, normal fee
-calculation is used.
+When `fee` is supplied, the client uses it as a flat base fee. If omitted,
+normal client fee calculation is used. The signer adds its authorization
+charge on top; this option is not a cap on the final fee. Caller-supplied
+excess for purposes such as inner transactions is preserved. See
+[FEE_HANDLING.md](FEE_HANDLING.md#fee-ownership).
 
 Address arguments can be full Algorand addresses or aliases known to `apshell`.
 Set names use arrays in JavaScript API calls; the `@setname` shell syntax is for
@@ -190,7 +193,8 @@ persisted alias or set names.
 }
 ```
 
-Examples:
+Examples (the operator must install `aplane.htlc.v1` before generating from
+it; substitute real addresses and a SHA-256 hash):
 
 ```javascript
 for (const kt of keyTypes()) {
@@ -524,8 +528,12 @@ appCallRaw(appId, from, appArgs, options = {})
 }
 ```
 
-`onCompletion` supports `noop`, `optin`, `closeout`, `clear`, `update`, and
-`delete`.
+Use `noop`, `optin`, `closeout`, `clear`, or `delete` for `onCompletion`.
+The parser also recognizes `update`, but these JavaScript options do not
+accept replacement approval/clear programs, so an update fails validation.
+For updates, use the shell's [`app call`](USER_COMMANDS.md#app) with
+`oncomp=update`, `approval=<path>`, and `clear=<path>` (through the MCP
+`execute` tool or an interactive terminal).
 
 Box references can be strings for boxes in the current app, or objects:
 

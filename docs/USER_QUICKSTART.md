@@ -25,7 +25,8 @@ The two key environment variables that APlane uses are APSIGNER_DATA and APCLIEN
 
 ## 2. Launch the console
 
-There is a standalone unified console, apconsole, that gives you a unified view of the APlane components. APlane uses three independent components that are separate processes:
+`apconsole` brings together the signer admin UI, transaction shell, and daemon
+logs. These interfaces are also available through standalone commands:
 
 - **`apsigner`** — the signing daemon (encrypted keys, approval + audit)
 - **`apadmin`** — the apsigner management TUI where you unlock the keystore,
@@ -35,17 +36,22 @@ There is a standalone unified console, apconsole, that gives you a unified view 
 
 `apshell` can run on a different machine from the signer. `apadmin` uses local
 IPC on the signer host; remote operators log in to that host. With APlane's
-`apconsole` we will run all three together on the local machine. It is a
-convenience wrapper around these three that gives you a unified view.
+`apconsole`, we will use the admin and shell interfaces together on the local
+machine, with `apsigner` running as a separate daemon.
 
 ```bash
 ~/aplane/start.sh
 ```
-This shell command sets the required environment variables and launches apconsole. You will see this:
+This command sets the required environment variables and launches `apconsole`.
+In split view, the signer admin pane sits above the daemon logs on the left,
+and the shell occupies the full height on the right. This layout needs a
+terminal of at least 133 columns by 39 rows when the console starts the daemon.
+Smaller terminals show one pane at a time.
 
-![Quickstart screenshot 1](https://raw.githubusercontent.com/aplane-algo/aplane.io/main/img/qs1.png)
-
-At the top-left is the signer admin panel; the shell is at the top-right. The signer daemon itself runs at the bottom.
+The admin UI needs an 80×24 content area. If it shows **Window too small**,
+enlarge the terminal or use `F4` to zoom the admin pane. Console borders and
+headers take additional space: use at least an 82×30 terminal for a focused
+admin pane.
 
 Use `F1`, `F2`, and `F3` to focus the signer, shell, and daemon panes. You can
 also use `Shift`+arrow to navigate between panes. `F4` toggles a focused pane
@@ -56,8 +62,8 @@ to mainnet if desired.
 
 ## 3. Unlock the signer
 
-By default, apconsole starts focused on the top-left signer admin pane. If for some reason it isn't, 
-hit F1 or use <shift>-arrow to navigate to it. Enter the keystore passphrase you set during 
+By default, `apconsole` starts focused on the signer admin pane. If it is not,
+press `F1` to focus it. Enter the keystore passphrase you set during
 installation. This unlocks the signer, giving it access to your encrypted keystore
 (which is empty).
 
@@ -66,7 +72,7 @@ installation. This unlocks the signer, giving it access to your encrypted keysto
 In the signer pane, press `g` and select `falcon1024` to generate a native
 Falcon-1024 post-quantum key.
 
-In APlane terminology, a "key" is a file managed by the signer that contains all information 
+In APlane terminology, a "key" is a file managed by the signer that contains all information
 (private key material, LogicSig and parameters, etc.) necessary to sign for an account.
 
 ## 5. Enroll the client
@@ -82,10 +88,9 @@ enroll
 The command returns at once with the request waiting. You will see an
 approval prompt in the signer admin pane (or, if it was not open, the request
 is shown when you log in and on the Enrolled Clients screen). Navigate to it
-with F1 or <Shift>-LeftArrow and accept it. (`Esc` leaves the request
-waiting for later; it does not reject it.)
-
-![Quickstart screenshot 2](https://raw.githubusercontent.com/aplane-algo/aplane.io/main/img/qs2.png)
+with `F1`, compare the client SSH key fingerprint with the one shown in the
+shell, and accept it. (`Esc` leaves the request waiting for later; it does
+not reject it.)
 
 Approval enrolls the client's SSH key at the signer; the key is the client's
 only credential.
@@ -131,40 +136,39 @@ lets you use tab-completion.
 
 ## 9. Send a one-ALGO transaction to yourself
 
-Submit a self-send from the Falcon address back to the same address. 
+Submit a self-send from the Falcon address back to the same address.
 
 ```
 send 1 algo from <your-falcon-address> to <your-falcon-address>
 ```
-By default, the signer requires human approval on all transactions. You will see an approval window pop up
-in the signer admin panel.
+The shipped signer policy includes a `self-transfer` route that permits this
+payment to proceed through policy evaluation. A route match does not approve
+it. With the shipped `auto_approve_self_noop_transfer: false` and
+`user_auto_approve: false`, this one-ALGO self-send requires operator approval.
 
-![Quickstart screenshot 3](https://raw.githubusercontent.com/aplane-algo/aplane.io/main/img/qs3.png)
+Press `F1`, inspect the transaction, and approve only if it matches your
+request. Use `F4` to zoom the admin pane if needed, then `F2` to return to
+the shell.
 
-Navigate to the admin panel. Since the approval window is small, hit F4 to zoom in.
+The shell reports the transaction result. Copy the transaction ID into
+[Lora on testnet](https://lora.algokit.io/testnet) to inspect the transaction.
+It uses a native Falcon signature, with no LogicSig or resource "dummy"
+transactions. A self-send leaves the transferred ALGO in the same account;
+the transaction fee is still deducted.
 
-![Quickstart screenshot 4](https://raw.githubusercontent.com/aplane-algo/aplane.io/main/img/qs4.png)
-  
-Approve and zoom back out with F4 again. In the shell, you see the transaction results. If you copy the
-transaction ID and paste it into Lora at https://lora.algokit.io/testnet, you
-will see the transaction, authorized by a native Falcon signature with no LogicSig or resource
-"dummy" transactions.
+This demonstrates the full workflow: the shell builds and submits the
+transaction, and the signer checks policy and signs it.
 
-![Quickstart screenshot 5](https://raw.githubusercontent.com/aplane-algo/aplane.io/main/img/qs5.png)
-
-This proves the signer can build, sign, and submit a real testnet transaction with your new key.
-
-A self-send is routed by the node's default policy: any account may send to
-itself without a prompt. A transfer to any other address falls through to the
-operator default, so it prompts unless `user_auto_approve` is on. See
-[USER_POLICY.md](USER_POLICY.md) for routes and per-key policies; `apadmin
-policy template --key <address>` writes a starting document for one key with
-the fields explained.
+Under the shipped policy, a transfer to another address falls through to the
+operator default and requires approval unless `user_auto_approve` is on. See
+[USER_POLICY.md](USER_POLICY.md) for routes and per-key policies;
+`apadmin policy template --key <address>` writes a starting document for one
+key with the fields explained.
 
 ## Further Exploration
 
-By default, APlane exposes only the native `ed25519` and `falcon1024` key
-types. To try LogicSig key types, such as `aplane.falcon1024.v1` or the bundled
+On a signer node, the default key types are native `ed25519` and
+`falcon1024`. To try LogicSig key types, such as `aplane.falcon1024.v1` or the bundled
 templates, open the signer admin pane, press `s` for settings, then press `k`
 for key types. The KeyType Library lets you enable compiled providers and
 templates for the product store.
@@ -172,10 +176,11 @@ templates for the product store.
 To try a guarded account, first set up a separate cosigner node and generate its
 `aplane.witness-falcon1024.v1` key. Choose **Export Cosigner Key**; the file
 holds the public key only, and the result screen shows the address to give
-clients. In the primary signer's apadmin, start **Generate account**, open the
-**Cosigner** field, and choose **Use key file...** (or **Paste public
-JSON...**). Compare the full Witness Key ID before importing, then finish
-generating the account.
+clients. In the primary signer's KeyType Library, enable
+`aplane.falcon1024-cosigner1024.v1`. Start **Generate account**, select that
+key type, open the **Cosigner** field, and choose **Use key file...** (or
+**Paste public JSON...**). Compare the full Witness Key ID before importing,
+then finish generating the account.
 
 In apshell, run `endpoints add <cosigner-url>`, for example
 `endpoints add ssh://cosigner.example:1127`. Accept the suggested connection
@@ -188,7 +193,10 @@ cosigner and reports the keys it advertises. With apshell connected to the prima
 funding or rekeying. Route availability does not establish transaction-policy
 or on-chain validity.
 
-For more detail, see [USER_KEYTYPES.md](USER_KEYTYPES.md).
+A new cosigner's default policy rejects every signing request. Before using
+the guarded account, configure an explicit cosigner policy for the intended
+transactions, including a fee limit. See [USER_POLICY.md](USER_POLICY.md) for
+cosigner policies and [USER_KEYTYPES.md](USER_KEYTYPES.md) for account setup.
 
 ## Optional: MCP for Agents
 
@@ -208,7 +216,7 @@ shell in "MCP mode" as the MCP server.
 If you connect an agent through that MCP server, first ask it to call
 `mcp_manual` for the operating model, then `mcp_reference` for the live apshell
 command surface. MCP essentially gives the
-agent an `execute` command that acts as a general command-line interface, much as humans execute via the 
+agent an `execute` command that acts as a general command-line interface, much as humans execute via the
 command line.
 
 ## What's next

@@ -805,7 +805,18 @@ signer policy.
   successor's program rejects the retired range; see
   [USER_KEYTYPES.md](USER_KEYTYPES.md#rotating-triple-xmss-accounts)
 
-Stage programs of both rotating types are assembled locally rather than
+#### `aplane.rotating-triple-slhdsa.v1`
+
+Compiled opt-in rotating account, requiring Falcon-1024, Ed25519 and
+SLH-DSA (the SLH-DSA-SHA2-128s construction with a two-layer hypertree, not
+a FIPS 205 parameter set) over the TxID. Same transaction permissions and
+rotation guards as XMSS; no leaf index or checksum cap. Signature arguments
+total at most 5887 bytes, which needs a six-transaction group; the
+68645-opcode ceiling fits in four. Transaction policy belongs to signer approval; the program requires
+rekey away from sender, forbids ALGO close and caps the validity span at 100.
+See [USER_KEYTYPES.md](USER_KEYTYPES.md#rotating-triple-slh-dsa-accounts).
+
+Stage programs of all three rotating types are assembled locally rather than
 through algod, using the TEAL v13 assembler's salt rule, and are cross-checked
 against the stock assembler in tests. Transaction policy beyond those checks
 lives in signer approval and local signer policy.
@@ -857,9 +868,9 @@ and [ARCH_GUARDED.md](ARCH_GUARDED.md#corridor-v1) for its complete contract.
 
 ### Template Library
 
-These ship as plaintext YAML templates. Some are installed into new signer
-stores by default; others require explicit installation into the product
-keystore before generation.
+These ship as plaintext YAML install sources. New signer stores do not
+install them automatically. Enable one through apadmin's KeyType Library or
+explicitly import its YAML into the product store before generating accounts.
 
 #### Generic Templates
 
@@ -1022,14 +1033,3 @@ For public generic LogicSigs, APlane resolves this in favor of safety:
   [Algorand Not So Smart Contracts](https://github.com/crytic/building-secure-contracts/tree/master/not-so-smart-contracts/algorand)
   — external examples covering rekeying, fee drain, close-out, group size,
   replay, asset ID, ASA liveness, and app-call completion pitfalls
-
-#### `aplane.rotating-triple-slhdsa.v1`
-
-Compiled opt-in rotating account, requiring Falcon-1024, Ed25519 and
-SLH-DSA (the SLH-DSA-SHA2-128s construction with a two-layer hypertree, not
-a FIPS 205 parameter set) over the TxID. Same transaction permissions and
-rotation guards as XMSS; no leaf index or checksum cap. Signature arguments
-total at most 5887 bytes, which needs a six-transaction group; the
-68645-opcode ceiling fits in four. Transaction policy belongs to signer approval; the program requires
-rekey away from sender, forbids ALGO close and caps the validity span at 100.
-See [USER_KEYTYPES.md](USER_KEYTYPES.md#rotating-triple-slh-dsa-accounts).

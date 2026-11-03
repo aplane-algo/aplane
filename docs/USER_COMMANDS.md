@@ -124,8 +124,9 @@ close temp-account to treasury nowait
 
 ### rotate
 
-Rotate a rotating account (`aplane.rotating-triple-wots.v1` or
-`aplane.rotating-triple-xmss.v1`) to its next stage, show rotating accounts,
+Rotate a rotating account (`aplane.rotating-triple-wots.v1`,
+`aplane.rotating-triple-xmss.v1`, or `aplane.rotating-triple-slhdsa.v1`)
+to its next stage, show rotating accounts,
 or ask the signer to search for an account's live stage.
 
 ```
@@ -796,8 +797,9 @@ cosigner's address:
    endpoint or host trust. Use **SHOW JSON** to copy the document
    instead of saving a file. The result screen shows the address clients
    should use, taken from `endpoint.advertise_url` when it is configured.
-2. **On the primary signer:** in apadmin, **Generate account**, open the
-   **Cosigner** field, and choose **Use key file...** (or **Paste public
+2. **On the primary signer:** enable the guarded or Corridor key type first.
+   In apadmin, **Generate account**, select that type, open the **Cosigner**
+   field, and choose **Use key file...** (or **Paste public
    JSON...**). Compare the complete Witness Key ID with the cosigner, then
    import. The account form returns with the cosigner filled in and the other
    parameters kept. A key that is already imported is offered under its
@@ -1545,11 +1547,15 @@ box=text:counter
 
 ## Common Options
 
+`fee=` sets the client base fee. The signer adds its authorization charge on
+top and preserves caller-supplied excess, such as fees for inner transactions;
+it is not a final-fee cap. See [FEE_HANDLING.md](FEE_HANDLING.md#fee-ownership).
+
 Many transaction commands support these options:
 
 | Option | Description |
 |--------|-------------|
-| `fee=<microalgos>` | Override network-suggested fee |
+| `fee=<microalgos>` | Override the client base fee in microAlgos |
 | `nowait` | Submit without waiting for confirmation |
 | `note=<text>` | Attach a note to supported transaction commands, such as `send` and `app` |
 

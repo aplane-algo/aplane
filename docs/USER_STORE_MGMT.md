@@ -134,7 +134,7 @@ archive verification and policy check/display operations are read-only.
 `apadmin backup create` asks the daemon to create a managed archive under:
 
 ```text
-<signer-data>/backups/default/aplane-backup-YYYYMMDD-HHMMSS.tar.gz
+<signer-data>/backups/default/aplane-backup-YYYYMMDD-HHMMSS.nnnnnnnnn.tar.gz
 ```
 
 The daemon verifies the archive before reporting success.
@@ -144,8 +144,8 @@ The daemon verifies the archive before reporting success.
 ```bash
 ./apadmin backup import /mnt/usb/aplane-backup.tar.gz
 ./apadmin backup list
-./apadmin backup export aplane-backup-20260423-010203.tar.gz /mnt/usb
-./apadmin backup delete aplane-backup-20260423-010203.tar.gz
+./apadmin backup export aplane-backup-20261102-070725.677012380.tar.gz /mnt/usb
+./apadmin backup delete aplane-backup-20261102-070725.677012380.tar.gz
 ```
 
 `backup list` prints one line per backup, newest first: file name, size,
@@ -438,8 +438,8 @@ originated from Lute or Pera:
 
 Use `apadmin` when `apsigner` is running and unlocked:
 
-1. From the key list, press `r` to open managed backups.
-2. Select an archive under `<signer-data>/backups/default/`.
+1. From the key list, press `b` to open **Backups**.
+2. Select an archive in the list and press `enter` to open it.
 3. Enter the export passphrase.
 4. Review the credential addresses, key types, and destination conflicts.
 5. Select credentials and confirm restore. Enable replacement only when you
@@ -578,18 +578,16 @@ A changepass interrupted before the root replacement may leave its successor
 quarantined. Retry is intentionally blocked until that non-authoritative entry
 is inspected and explicitly pruned.
 
-The selected generation's deleted archive is capacity-bounded. Inspect and
-prune it through the authenticated live admin surface:
+The selected generation's deleted archive is capacity-bounded: 4,096 entries
+and 256 MiB, with emergency-deletion reserve below the hard bound. A delete
+that would exceed the limit fails before changing the active credential.
 
-```bash
-apadmin archive list
-apadmin archive prune --confirm deleted/keys/<selector>.key
-```
-
-The limit is 4,096 entries and 256 MiB, with emergency-deletion reserve below
-the hard bound. A delete that would exceed the limit fails before changing the
-active credential. Archive prune accepts only canonical deleted credential or
-template paths or complete archived policy document/sidecar pairs, requires `identity.archive.prune`, and durably audits intent.
+**Current CLI limitation:** the live admin protocol and internal catalog have
+archive list/prune operations, but the production `apadmin` command dispatcher
+does not expose `archive`. Do not rely on `apadmin archive list` or
+`apadmin archive prune` in maintenance scripts, and do not manually remove
+files from the selected generation. CLI wiring is required before this
+maintenance workflow is available from `apadmin`.
 
 Passphrase rotation does not require generation pruning. Retained generations
 remain rollback targets and stay readable under their historical key terms.
@@ -756,13 +754,16 @@ From the key list:
 |-----|--------|
 | `g` | Generate new key |
 | `i` | Import key from mnemonic |
-| `b` | Create managed backup |
-| `r` | Restore managed backup |
+| `b` | Open Backups to create, view, restore, import, or export archives |
 | `s` | Open admin/settings panel |
 | `enter` | Show key details |
 | `↑/↓` (or `k/j`) | Navigate key list |
 | `/` | Filter key list |
 | `q` | Quit |
+
+On the **Backups** page, press `n` to create a backup or select an archive
+and press `enter` to view its contents and restore selected keys. See
+[Backups in the apadmin TUI](#backups-in-the-apadmin-tui) for all page shortcuts.
 
 From the key details view:
 
@@ -803,10 +804,6 @@ From the key details view:
 
 # Change keystore passphrase
 ./apadmin changepass
-
-# Inspect/prune the selected generation's deleted archive
-./apadmin archive list
-./apadmin archive prune --confirm <deleted/path> [deleted/path...]
 
 # Audit private permissions for a local same-UID store
 ./apstore permissions audit

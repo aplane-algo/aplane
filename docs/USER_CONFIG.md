@@ -15,13 +15,21 @@ There are two distinct config.yaml formats:
 
 Both programs use a **data directory** for configuration and state:
 
-**apshell / Python SDK (clients):**
+**apshell (client):**
 - Required: `-d <path>` flag or `APCLIENT_DATA` env var (no default)
 - Installer convention: `~/aplane/apclient`
 
-**apsigner / apadmin / apstore (server tools):**
+**apsigner / apstore (server and offline tools):**
 - Required: `-d <path>` flag or `APSIGNER_DATA` env var (no default)
 - Installer convention: `~/aplane/apsigner`
+
+**apadmin / apapprover (live admin clients):**
+- Local installs: use `-d <path>` or `APSIGNER_DATA` to locate the socket
+- An explicit IPC path (`--ipc-path` or `APSIGNER_IPC_PATH`) can select the socket
+- Without an explicit selection, use the systemd socket `/run/apsigner/aplane.sock`
+
+SDK configuration is documented in the separate
+[aplanesdk repository](https://github.com/aplane-algo/aplanesdk).
 
 Config files are located at `<data_dir>/config.yaml`.
 Unknown YAML fields are rejected at startup. This is intentional: misspelled
@@ -361,11 +369,14 @@ approves unmatched requests. A key with no policy file of its own signs
 whatever the node default does not reject.
 
 `rotating.stage_horizon` (default 4096) sets how many stages past a rotating
-account's live stage the signer derives ahead into its stage address cache
-(see [USER_KEYTYPES.md](USER_KEYTYPES.md#rotating-accounts)).
-`rotating.recovery_max_stages` (default 1024) is how far past that cache the
-signer searches on its own, per account per unlock, when it sees an
-authorizer it cannot place; 0 turns the automatic search off, leaving
+account's live stage the signer derives ahead into its sparse stage cache,
+subject to family limits (SLH-DSA: at most two). A zero horizon still prepares
+the immediate successor required for a spend. Recovery hints can jump directly
+to a stage without deriving its entire history; see
+[USER_KEYTYPES.md](USER_KEYTYPES.md#rotating-accounts).
+`rotating.recovery_max_stages` (default 1024) bounds automatic candidate probes
+per account per unlock when the signer cannot place an authorizer. It is not
+a ceiling on the stage number a hint may name; 0 turns automatic search off, leaving
 `rotate recover` and the search a spend request runs for itself.
 `rotating.recovery_timeout` (default 5m) caps one automatic search's
 derivation time. The signer reads a rotating account's live stage from the
@@ -502,6 +513,7 @@ ssh -t user@signer 'apadmin -d /path/to/signer-data'
 # Create data directory (installer convention: ~/aplane/apsigner)
 export APSIGNER_DATA=~/aplane/apsigner
 mkdir -p "$APSIGNER_DATA"
+chmod 700 "$HOME/aplane" "$APSIGNER_DATA"
 
 # Start from the example config
 cp examples/config/apsigner/config.yaml.example "$APSIGNER_DATA/config.yaml"
@@ -1252,8 +1264,8 @@ For example, `passphrase_command_argv: ["/usr/local/bin/appass-file", "/etc/apla
 
 ```yaml
 # INSECURE / DEV ONLY: Passphrase stored in plaintext file
-# Relative path (./appass-file) resolved relative to data directory
-passphrase_command_argv: ["./appass-file", "passphrase"]
+# Local install: helper path resolved relative to the signer data directory
+passphrase_command_argv: ["bin/appass-file", "passphrase"]
 ```
 
 Use `appass`, not manual line editing, if you want to switch between prompt mode and passfile mode on an existing signer data directory.
@@ -1373,7 +1385,9 @@ If `appass` shows a warning after switching modes, treat it as a completed switc
 
 **Recommendations:**
 
-1. **Audit logging**: All auto-approved signatures are logged for audit trails.
+1. **Audit logging**: Keep the audit logger healthy and retain its files.
+   Normal successful signatures are audited, but the signer can continue when
+   the audit logger is unavailable; see [USER_LOGGING.md](USER_LOGGING.md).
 2. **Network isolation**: Run headless Signer on a private network segment.
 
 ### Interactive vs Headless Comparison
