@@ -240,6 +240,51 @@ make applugin-checksums         # Generate checksums.sha256 for all example plug
 - Use interfaces for dependencies to enable mocking
 - Example: `Authenticator` interface allows mock auth in tests
 
+### Formal Models
+TLA+ models in `docs/formal/` transcribe security-critical guards from the
+code. `docs/FORMAL_TRACEABILITY.md` maps each property to its code and test
+anchors; `docs/FORMALIZATION_ROADMAP.md` holds the inventory and the working
+rules for changing a model. CI's `make formal-test` checks only the specs
+against their recorded metrics and cannot see the code drift away from them,
+so a PR that changes modeled code keeps the correspondence itself.
+
+| Code | Model |
+|---|---|
+| `internal/signerapp/approval/` | `approval_coordinator.tla`, `approval_composition.tla` |
+| `internal/signerapp/daemon/ipc.go`, `internal/signerapp/adminserver/session.go`, `displacement.go` | `session_ownership.tla` |
+| `internal/genstore/` (commit, root commit, reconcile, quarantine), `internal/storepass/rotate.go`, `internal/crypto/store_root.go` | `store_root_commit.tla` |
+| store-commit callers (`internal/signerapp/admin/`, `backupadmin/`), `internal/signerapp/templates/reload.go`, `internal/keystore/file.go`, `daemon/admin_services.go` | `recovery_binding.tla` |
+| `internal/signerapp/enrollqueue/`, `enrollment/service.go`, `productruntime/runtime.go` (registry and queue publication), `daemon/server.go` (approve/reject/import) | `enrollment_queue.tla` |
+| `internal/signerapp/signing/component_assemble.go`, `component_sign.go` | `guarded_assembly.tla` |
+| `internal/signerapp/signing/bounded_cosigner.go`, `internal/engine/guarded/submit.go` | `bounded_cosigner.tla` |
+| `internal/engine/plugin_*.go`, `internal/apshellcli/external_plugins.go`, `plugin_group_review.go`, `internal/apshellapp/submission.go` | `plugin_signing.tla` |
+| `internal/signerapp/signing/planner.go`, `execution.go`, `service.go`, `gate.go`, `internal/signerapp/policyeval/`, `pkg/signerapi/` | `sign_boundary.tla`, `policy_precedence.tla`, `composition.tla` |
+| `internal/signerapp/signing/rotating_release.go`, `rotating_flow.go` (leaf choice), `rotating_tables.go` | `rotating_leaf_release.tla` |
+
+When a PR touches these paths:
+- Renaming, moving, or deleting a function or test: grep
+  `FORMAL_TRACEABILITY.md` and the `FORMAL_TLA_*_MODEL.md` companions for it
+  and update the anchor in the same PR.
+- Changing the order or presence of a guard a spec transcribes (check order,
+  recovery before lock release, fail-all triggers, verdict precedence,
+  publication order): update the spec, its prose companion, and the
+  traceability row in the same PR, run `make formal-test` (and
+  `make formal-test-deep` where the model has a deep config), and follow the
+  roadmap's working rules for metrics and negative controls. Never weaken a
+  spec to make a check pass; if the code no longer implements a guard, say so
+  in the PR and ask.
+- Adding a new path that performs a modeled transition (a new store-commit
+  caller, session exit, approval outcome, plugin group mode, sign-request
+  mode, or durable store-root/generation transition): add it to the
+  traceability row and the companion's list of what the action stands for.
+  If no model covers it, name it in the PR description as a model-extension
+  candidate.
+- Handler additions, UI work, and refactors that keep every guard in place
+  need only the anchor check.
+
+The periodic drift review recorded in the roadmap is a backstop for what
+slips through, not the process.
+
 ## Security Guidelines
 
 ### Key Material
