@@ -614,6 +614,7 @@ addr, err := apadmin.GenerateKey("seed")                    // Falcon key; seed 
 addr, err := apadmin.GenerateKeyWithType("ed25519")         // Specific native type
 addr, err := apadmin.GenerateKeyWithType("aplane.falcon1024.v1")   // Specific LogicSig DSA type
 addr, err := apadmin.ImportKey(mnemonic)               // From mnemonic
+res, err := apadmin.ExportKey(addr)                    // Native recovery phrase over IPC; zero res.Mnemonic
 err := apadmin.DeleteKey(addr)                         // Delete one
 err := apadmin.ActivateKeyType("aplane.ed25519.v1") // Enable library-visible compiled key type
 _, err := apadmin.CreateBackup("export-passphrase")    // Signer-managed backup

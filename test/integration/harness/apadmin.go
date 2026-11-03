@@ -486,6 +486,44 @@ func (v *ApAdminHarness) testPassphrase() (string, error) {
 	return passphrase, nil
 }
 
+// ExportKey reveals a native key's recovery phrase over the admin IPC
+// protocol, re-verifying the signer passphrase as apadmin does. The caller
+// owns and should zero the returned result's Mnemonic.
+func (v *ApAdminHarness) ExportKey(address string) (*protocol.ExportResultMessage, error) {
+	passphrase, err := v.testPassphrase()
+	if err != nil {
+		return nil, err
+	}
+	return v.ExportKeyWithPassphrase(address, passphrase)
+}
+
+// ExportKeyWithPassphrase sends export_key with the given re-entered
+// passphrase. A refused export is returned as a result with Success false and
+// its Code set (from export_result or a protocol error), not as an error.
+func (v *ApAdminHarness) ExportKeyWithPassphrase(address, passphrase string) (*protocol.ExportResultMessage, error) {
+	response, err := v.ipcRequest(protocol.ExportKeyMessage{
+		BaseMessage: protocol.BaseMessage{
+			Type: protocol.MsgTypeExportKey,
+			ID:   fmt.Sprintf("export-%d", time.Now().UnixNano()),
+		},
+		Address:    address,
+		Passphrase: protocol.NewSensitiveBytes(passphrase),
+	}, 30*time.Second)
+	defer protocol.SensitiveBytes(response).Zero()
+	if err != nil {
+		return nil, err
+	}
+	var result protocol.ExportResultMessage
+	if err := json.Unmarshal(response, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse export result: %w", err)
+	}
+	if result.Type != protocol.MsgTypeExportResult && result.Type != protocol.MsgTypeError {
+		result.Mnemonic.Zero()
+		return nil, fmt.Errorf("unexpected export reply type %q", result.Type)
+	}
+	return &result, nil
+}
+
 // DeleteKey deletes a key using apadmin test mode
 func (v *ApAdminHarness) DeleteKey(address string) error {
 	_, err := v.Run("--test", "delete", address)
