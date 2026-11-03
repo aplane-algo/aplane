@@ -7,6 +7,29 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## apadmin needs an 80×24 window; apconsole's split layout is rebuilt
+
+- apadmin lays out for a window of at least 80×24 and every screen fits at
+  that size. In a smaller window it shows only a "Window too small" screen,
+  which says when an approval request is waiting, and ignores every key but
+  `ctrl+c`, so no key acts on a screen you cannot see.
+- apconsole's split view now puts apadmin in a left column exactly 80
+  columns wide inside its border, with the daemon pane under it at its
+  compact height, and gives the shell the rest of the width at full height.
+  Split view starts at 133×39 (82 columns wide on a cosigner node); in a
+  smaller terminal apconsole shows one pane at a time, where apadmin's pane
+  needs a terminal of at least 82×30.
+- An apsigner apconsole did not start (an attached socket, systemd attach
+  mode, or `--no-start-daemon`) gets no daemon pane, and split view then
+  starts at 30 rows; the title bar still shows the daemon's status. A failed
+  start keeps the pane, which says why.
+- Function keys are fixed: F1 is apadmin, F2 the shell, F3 the daemon, and a
+  key whose pane is absent does nothing. On cosigner nodes the daemon moves
+  from F2 to F3.
+- The client key import, cosigner key import and export, and backup import
+  forms are compacted to fit; the cosigner export buttons now sit side by
+  side.
+
 ## Only the native key types are enabled by default; new installs only
 
 - This release is new-install only: the installer's minimum supported upgrade
