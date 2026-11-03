@@ -14,9 +14,11 @@ import (
 // Otherwise the header and footer stay whole (they carry the description of
 // the selection and any buttons) and the list shows only the rows around the
 // selected one, between "more above" and "more below" lines, so the selection
-// and everything after the list stay on screen. Each row is one line; the
-// header and footer end with the newlines they need. A window too small even
-// for that falls back to the shared popup viewport.
+// and everything after the list stay on screen. When only one or two rows fit,
+// the "more" lines are dropped so the footer still fits. Each row is one line;
+// the header and footer end with the newlines they need. A window too small
+// even for the header, one row and the footer falls back to the shared popup
+// viewport.
 func (m Model) fitSelectionList(header string, rows []string, selected int, footer string, popupWidth int) string {
 	full := header + joinRows(rows) + footer
 	available := m.popupContentHeight()
@@ -29,7 +31,14 @@ func (m Model) fitSelectionList(header string, rows []string, selected int, foot
 	}
 	// One stand-in row measures the lines the header and footer take.
 	fixed := wrappedHeight(header+"x\n"+footer, width) - 1
-	visible := max(available-fixed-2, 1)
+	room := available - fixed
+	if room >= 1 && room < 3 {
+		// No space for the "more" lines as well as a row: the selection and
+		// the footer matter more than the count of hidden rows.
+		start, end := selectionWindow(selected, len(rows), room)
+		return header + joinRows(rows[start:end]) + footer
+	}
+	visible := max(room-2, 1)
 	if visible >= len(rows) {
 		return full
 	}

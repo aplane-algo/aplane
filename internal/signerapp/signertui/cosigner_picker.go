@@ -599,13 +599,7 @@ func (m Model) renderCosignerPicker() string {
 func (m Model) renderCosignerImportForm() string {
 	var body strings.Builder
 	body.WriteString(titleStyle.Render("Import Cosigner Key"))
-	body.WriteString("\n\n")
-	if m.cosigner.importPaste {
-		body.WriteString(subtitleStyle.Render("Paste the setup JSON exported by the cosigner node (up to 64 KiB)."))
-	} else {
-		body.WriteString(subtitleStyle.Render("Choose the setup file exported by the cosigner node."))
-	}
-	body.WriteString("\n\n")
+	body.WriteString("\n")
 
 	pathStyle := inputInactiveStyle
 	nameStyle := inputInactiveStyle
@@ -616,15 +610,14 @@ func (m Model) renderCosignerImportForm() string {
 		nameStyle = inputActiveStyle
 	}
 	if m.cosigner.importPaste {
-		body.WriteString("Cosigner key JSON:\n")
-		preview := "Paste JSON here"
+		body.WriteString("Cosigner key JSON exported by the cosigner node (up to 64 KiB):\n")
+		preview := "Paste with your terminal's paste shortcut"
 		if m.cosigner.importJSON != "" {
-			preview = fmt.Sprintf("%d bytes captured; paste again to replace", len(m.cosigner.importJSON))
+			preview = fmt.Sprintf("%d bytes; paste again to replace, Backspace clears", len(m.cosigner.importJSON))
 		}
 		body.WriteString(pathStyle.Width(m.constrainParameterFieldWidth(60)).Render(preview))
-		body.WriteString("\n" + helpStyle.Render("Use your terminal paste shortcut. Backspace/Delete clears the JSON."))
 	} else {
-		body.WriteString("Cosigner key file:\n")
+		body.WriteString("Cosigner key file exported by the cosigner node:\n")
 		body.WriteString(pathStyle.Width(m.constrainParameterFieldWidth(60)).Render(terminalSafe(m.cosigner.importPath)))
 	}
 	body.WriteString("\n\nReference name:\n")

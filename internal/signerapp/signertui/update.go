@@ -71,6 +71,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		if m.belowMinSize() {
+			// The operator cannot see the screen a key would act on, so
+			// only quitting is allowed, and nothing counts as activity.
+			if msg.String() == "ctrl+c" {
+				return m.handleKeyPress(msg)
+			}
+			return m, nil
+		}
 		var activityCmd tea.Cmd
 		m, activityCmd = m.recordUserActivity(time.Now(), msg)
 		next, cmd := m.handleKeyPress(msg)
@@ -80,6 +88,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return next, tea.Batch(activityCmd, cmd)
 
 	case tea.WindowSizeMsg:
+		m.sizeKnown = true
 		m.width = msg.Width
 		m.height = msg.Height
 		if m.standalone {

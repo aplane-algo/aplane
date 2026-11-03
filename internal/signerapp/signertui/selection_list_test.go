@@ -56,7 +56,7 @@ func assertFitsWindow(t *testing.T, m Model) string {
 
 func TestGenerateFormKeepsSelectionAndDescriptionVisible(t *testing.T) {
 	names := manyServerKeyTypes(t, 20)
-	m := Model{viewState: ViewGenerateForm, width: 90, height: 22, standalone: true}
+	m := Model{viewState: ViewGenerateForm, width: 90, height: MinHeight - 1, standalone: true}
 
 	view := assertFitsWindow(t, m)
 	if !strings.Contains(view, "> "+names[0]) || !strings.Contains(view, "more below") || strings.Contains(view, names[19]) {
@@ -95,5 +95,45 @@ func TestImportFormKeepsButtonVisible(t *testing.T) {
 	}
 	if !strings.Contains(view, "> "+names[6]) {
 		t.Fatalf("the selected key type is off screen:\n%s", view)
+	}
+}
+
+// With room for the title, one row, and the selection's description, a long
+// list scrolls instead of pushing the description out of the box: the
+// description stays below the selected row, and the box never falls back to
+// the panel scroller. The form is rendered directly, below the window floor,
+// because a long footer (a wrapped error) can leave it that little room even
+// in a window at the floor.
+func TestGenerateFormKeepsDescriptionAtBottomInEveryWindow(t *testing.T) {
+	var infos []protocol.KeyTypeInfo
+	for i := 0; i < 30; i++ {
+		infos = append(infos, protocol.KeyTypeInfo{
+			KeyType:     fmt.Sprintf("test.keytype-%02d.v1", i),
+			DisplayName: fmt.Sprintf("Description %02d", i),
+		})
+	}
+	setServerKeyTypes(infos)
+	t.Cleanup(func() { setServerKeyTypes(nil) })
+
+	for height := 11; height <= 30; height++ {
+		for selected, info := range infos {
+			m := Model{viewState: ViewGenerateForm, width: 90, height: height}
+			m.forms.generateKeyType = selected
+			view := stripANSI(m.renderGenerateForm())
+			if lines := strings.Count(view, "\n") + 1; lines > m.windowBodyHeight() {
+				t.Fatalf("height %d, selection %d: form is %d lines for %d body rows:\n%s",
+					height, selected, lines, m.windowBodyHeight(), view)
+			}
+			row := strings.Index(view, "> "+info.KeyType)
+			label := strings.Index(view, info.DisplayName)
+			if row < 0 || label < row {
+				t.Fatalf("height %d, selection %d: selected row at %d, description at %d:\n%s",
+					height, selected, row, label, view)
+			}
+			if strings.Contains(view, "Panel lines") {
+				t.Fatalf("height %d, selection %d: the box fell back to the panel scroller:\n%s",
+					height, selected, view)
+			}
+		}
 	}
 }

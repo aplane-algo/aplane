@@ -5,6 +5,7 @@ package tui
 
 import (
 	"bufio"
+	"github.com/charmbracelet/lipgloss"
 	"io"
 	"strings"
 
@@ -84,6 +85,16 @@ func (m Model) handleCosignerExportPathKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 	case "shift+tab", "up":
 		focusCount := m.cosignerExportLastFocus() + 1
 		m.cosigner.exportFocus = (m.cosigner.exportFocus + focusCount - 1) % focusCount
+		return m, nil
+	case "left", "right":
+		// The buttons sit side by side.
+		if m.cosigner.exportFocus >= m.cosignerExportButtonFocus() {
+			if msg.String() == "right" {
+				m.cosigner.exportFocus = min(m.cosigner.exportFocus+1, m.cosignerExportLastFocus())
+			} else {
+				m.cosigner.exportFocus = max(m.cosigner.exportFocus-1, m.cosignerExportButtonFocus())
+			}
+		}
 		return m, nil
 	case "backspace":
 		if m.cosigner.exportFocus == 0 {
@@ -176,8 +187,8 @@ func (m Model) cosignerExportReturnView() ViewState {
 func (m Model) renderCosignerExportPath() string {
 	var body strings.Builder
 	body.WriteString(titleStyle.Render("Export Cosigner Key"))
-	body.WriteString("\n\n")
-	body.WriteString(subtitleStyle.Render("Save this cosigner key's public key file on this machine. No private key, address, or access token is included."))
+	body.WriteString("\n")
+	body.WriteString(subtitleStyle.Render(wrapPlainText("Saves the public key file on this machine; no private key or token.", m.popupBodyWidth(90))))
 	body.WriteString("\n\nWitness Key ID:\n")
 	body.WriteString(wrapPlainText(groupedWitnessKeyID(m.cosigner.exportWitnessID), m.popupBodyWidth(90)))
 	body.WriteString("\n\nOutput path:\n")
@@ -192,13 +203,11 @@ func (m Model) renderCosignerExportPath() string {
 	if m.cosigner.exportFocus == m.cosignerExportButtonFocus() {
 		button = buttonActiveStyle.Render("EXPORT KEY FILE")
 	}
-	body.WriteString(button)
-	body.WriteString("\n\n")
 	jsonButton := buttonInactiveStyle.Render("SHOW JSON")
 	if m.cosigner.exportFocus == m.cosignerExportJSONButtonFocus() {
 		jsonButton = buttonActiveStyle.Render("SHOW JSON")
 	}
-	body.WriteString(jsonButton)
+	body.WriteString(lipgloss.JoinHorizontal(lipgloss.Center, button, "  ", jsonButton))
 	body.WriteString("\n")
 	if m.cosigner.exportError != "" {
 		body.WriteString("\n" + errorStyle.Render(terminalSafeLines(m.cosigner.exportError)) + "\n")

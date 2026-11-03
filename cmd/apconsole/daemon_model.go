@@ -16,6 +16,9 @@ type daemonModel struct {
 	lines        []string
 	events       <-chan daemonEvent
 	scrollOffset int
+	// configNotices is set when lines carry startup configuration notices,
+	// which keep the pane on screen even for an apsigner running elsewhere.
+	configNotices bool
 }
 
 type daemonLogMsg struct {

@@ -124,6 +124,8 @@ func (m Model) viewFooterText() string {
 		return "up/down: Select | r: Revoke selected | A: Revoke all | esc: Back"
 	case ViewRevokeClientConfirm:
 		return "left/right/tab: Focus | enter/space: Select | y: Revoke | n/esc: Cancel"
+	case ViewImportClientKey:
+		return "Tab: Next | ctrl+o: Browse | Enter: Continue | Esc: Cancel"
 	case ViewLockConfirm:
 		return "left/right/tab: Focus | enter/space: Select | y: Lock | n/esc: Cancel"
 	case ViewDisplaceConfirm:

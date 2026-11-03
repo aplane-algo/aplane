@@ -467,9 +467,12 @@ type Model struct {
 	signerWarnings        []string // signer-raised alerts from the last status message
 	lastWarningGeneration uint64
 
-	// Screen dimensions
-	width  int
-	height int
+	// Screen dimensions. sizeKnown is set by the first size message, so a
+	// zero dimension it carried (a one-row standalone terminal leaves height
+	// 0) still counts as a known, too-small window.
+	width     int
+	height    int
+	sizeKnown bool
 
 	// Shared popup viewport state. Position is normalized to
 	// panelScrollScale so it remains valid when the panel is resized.

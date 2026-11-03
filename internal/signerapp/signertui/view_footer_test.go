@@ -47,7 +47,7 @@ func TestWindowFooterAndStatusArePinnedAcrossScreens(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			m := tt.model
 			m.width = 88
-			m.height = 22
+			m.height = MinHeight
 			m.connectionState = ConnectionConnected
 			m.signerStatusKnown = true
 
@@ -70,8 +70,8 @@ func TestWindowFooterAndStatusArePinnedAcrossScreens(t *testing.T) {
 func TestWindowFooterWrapsAbovePinnedStatus(t *testing.T) {
 	m := Model{
 		viewState:         ViewKeyList,
-		width:             34,
-		height:            18,
+		width:             MinWidth,
+		height:            MinHeight,
 		connectionState:   ConnectionConnected,
 		signerStatusKnown: true,
 		keylist:           keyListState{keys: []KeyInfo{{Address: "ADDR", KeyType: "ed25519"}}},

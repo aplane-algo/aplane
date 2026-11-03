@@ -894,6 +894,17 @@ import forms show one blank row between the clusters. The TUI sorts the
 signer's `list_key_types` reply on receipt (`setServerKeyTypes`), so every
 index into the list uses the same order.
 
+The TUI lays out for a window of at least 80×24 (`MinWidth`, `MinHeight` in
+`internal/signerapp/signertui/min_size.go`); `TestEveryViewFitsAtMinSize`
+renders every view at that size and fails on one that needs the panel
+scroller or cuts content off. Long data, such as key lists and transaction
+details, still scrolls by its own controls. In a smaller window the TUI shows
+only a "Window too small" screen, which says when an approval request is
+waiting, and ignores every key but `ctrl+c`, so no key acts on a screen the
+operator cannot see. A selection list that cannot show every row scrolls
+around the selection and keeps the text and buttons below it on screen
+(`fitSelectionList`).
+
 Long byte parameters, including bounded contract-admin public keys, use an atomic paste control
 instead of an editable multi-line field. Activating the control accepts the
 next terminal bracketed-paste event, stores the complete validated value, and

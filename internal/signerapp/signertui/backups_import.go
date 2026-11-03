@@ -567,7 +567,7 @@ func (m Model) renderBackupImport() string {
 	var body strings.Builder
 	body.WriteString(titleStyle.Render("Import Backup"))
 	body.WriteString("\n")
-	body.WriteString(subtitleStyle.Render(wrapPlainText("Adds an archive to the signer's backups. Keys do not change until you restore.", width)))
+	body.WriteString(subtitleStyle.Render(wrapPlainText("Adds an archive to the signer's backups; keys change only on restore.", width)))
 	body.WriteString("\n\n")
 
 	pathStyle, passStyle := inputInactiveStyle, inputInactiveStyle

@@ -308,8 +308,8 @@ func TestRestorePreviewReservesContinuationRows(t *testing.T) {
 
 func TestRestoreDisplayPopupFitsTerminalHeightAndScrollsRestoredKeys(t *testing.T) {
 	archivePath := filepath.Join(t.TempDir(), "backups", "default", "aplane-backup.tar.gz")
-	restored := make([]RestoreKeyInfo, 0, 8)
-	for i := 0; i < 8; i++ {
+	restored := make([]RestoreKeyInfo, 0, 16)
+	for i := 0; i < 16; i++ {
 		restored = append(restored, RestoreKeyInfo{
 			Address: fmt.Sprintf("RESTOREDADDR%02d", i),
 			KeyType: "ed25519",
@@ -318,7 +318,7 @@ func TestRestoreDisplayPopupFitsTerminalHeightAndScrollsRestoredKeys(t *testing.
 	m := Model{
 		viewState: ViewRestoreDisplay,
 		width:     90,
-		height:    21,
+		height:    MinHeight,
 		restore: restoreState{result: RestoreDisplayResult{
 			ArchivePath: archivePath,
 			Activated:   restored,
@@ -334,14 +334,14 @@ func TestRestoreDisplayPopupFitsTerminalHeightAndScrollsRestoredKeys(t *testing.
 	if !strings.Contains(clean, "▼") || !strings.Contains(clean, "more below") {
 		t.Fatalf("restore display missing scroll-down indicator:\n%s", clean)
 	}
-	if strings.Contains(clean, "RESTOREDADDR07") {
+	if strings.Contains(clean, "RESTOREDADDR15") {
 		t.Fatalf("restore display shows key outside initial window:\n%s", clean)
 	}
 	if !strings.Contains(clean, "> RESTOREDADDR00  [ed25519]") {
 		t.Fatalf("restore display missing selected cursor on first row:\n%s", clean)
 	}
 
-	for range 5 {
+	for range 12 {
 		next, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
 		m = next.(Model)
 	}
@@ -353,10 +353,10 @@ func TestRestoreDisplayPopupFitsTerminalHeightAndScrollsRestoredKeys(t *testing.
 	if !strings.Contains(clean, "▲") || !strings.Contains(clean, "more above") {
 		t.Fatalf("scrolled restore display missing scroll-up indicator:\n%s", clean)
 	}
-	if !strings.Contains(clean, "RESTOREDADDR05") {
+	if !strings.Contains(clean, "RESTOREDADDR12") {
 		t.Fatalf("scrolled restore display missing later restored key:\n%s", clean)
 	}
-	if !strings.Contains(clean, "> RESTOREDADDR05  [ed25519]") {
+	if !strings.Contains(clean, "> RESTOREDADDR12  [ed25519]") {
 		t.Fatalf("scrolled restore display did not move cursor to later key:\n%s", clean)
 	}
 }

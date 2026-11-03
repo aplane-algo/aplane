@@ -20,7 +20,7 @@ func TestAuthResultSeriousUnlockErrorShowsBlockingPopup(t *testing.T) {
 		viewState:       ViewAuth,
 		connectionState: ConnectionConnected,
 		auth:            authState{passphraseInput: "secret", passphraseError: "old error", passphraseMasked: true}, width: 80,
-		height: 20,
+		height: MinHeight,
 	}
 
 	next, _ := m.Update(AuthResultMsg{Success: false, Code: protocol.ErrCodeUnlockFailed, Error: msg})
