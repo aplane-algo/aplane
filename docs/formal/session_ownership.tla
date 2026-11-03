@@ -154,7 +154,9 @@ PromoteReplace(s) ==
     /\ UNCHANGED <<authenticated, unlocked, lockOnDisconnect>>
 
 \* Exit models every way a session leaves, uniformly through the disconnect
-\* defer in ipc.go handleRegisteredClient: failed auth (default branch),
+\* defer in ipc.go handleRegisteredClient: failed auth (default branch) or
+\* login timeout (AuthOutcomeTimedOut: the pre-auth read deadline fires on a
+\* read, so always before any passphrase verifies and nothing is unlocked),
 \* pending-slot or promotion failure (early return while Authed),
 \* displacement close, and plain connection drop. ClearActive removes the
 \* session from the owner slot if it still holds it; owner cleanup (fail

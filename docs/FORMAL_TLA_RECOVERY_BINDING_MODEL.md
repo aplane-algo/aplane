@@ -34,9 +34,11 @@ The transitions transcribe the post-commit reload and the recovery paths:
 - `CommitRoot` and `BeginReload` take the store mutation lock; the first
   also moves the root selection (the commit itself is
   `store_root_commit.tla`, collapsed to one step here). They stand for
-  `ApplyPolicy` in `internal/signerapp/admin/policy.go`, the restore and
-  rollback paths in `internal/signerapp/backupadmin`, and the recovery
-  reconcile in `internal/signerapp/daemon/admin_services.go`.
+  `ApplyPolicy` in `internal/signerapp/admin/policy.go`, the ASA set
+  confirm/remove mint in `internal/signerapp/admin/asaset.go`
+  (`mutateASASet`), the restore and rollback paths in
+  `internal/signerapp/backupadmin`, and the recovery reconcile in
+  `internal/signerapp/daemon/admin_services.go`.
 - `ReloadBind` is the reload's first step in
   `internal/signerapp/templates/reload.go`: `BindStoreRootSelection`
   authenticates a fresh exact root read and binds what it selects before

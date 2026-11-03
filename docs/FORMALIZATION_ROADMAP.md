@@ -368,3 +368,52 @@ refusals that no model represents); plugin presign-plan's post-sign
 `approval_composition.tla` (currently a sound over-approximation); and the
 coordinator's Queued-to-failed path when the post-turn client recheck or the
 send fails (folded into Cancel/Failed today).
+
+Drift review (2026-11-03, HEAD `c6ffc6b7`): range `343fdd36..c6ffc6b7` (168
+commits, 137 non-merge). `make formal-test` (19 runs) and `make
+formal-test-deep` (9 runs) match their recorded outcomes and metrics; all four
+negative controls still fail on their named properties. `metrics.json` matches
+every model status header. The range did not touch the approval coordinator,
+guarded assembly, bounded cosigner, or plugin signing code. Checked: `23b494e2`
+adds a two-minute pre-auth login deadline (`AuthOutcomeTimedOut`); it fires
+only on a read, so always before a passphrase verifies, and leaves through the
+same disconnect defer as a failed auth with `cleanupRuntime` false, which
+`session_ownership.tla`'s `Exit` already covers (comment updated). `62ca8e6e`
+makes `asa_set.json` and its sidecar optional generation authority, pinned in
+the inventory and seal like `default.json` and re-signed inside the staged
+generation on passphrase rotation; the mint order, exact-input pinning, and
+single root rename in `store_root_commit.tla` are unchanged. `22e65243` adds a
+new store-commit caller, `admin/asaset.go::mutateASASet` (ASA confirm/remove):
+it refuses in recovery and calls `SetRecovery` inside `WithStoreMutation` on an
+uncertain commit (then reloads) and on a failed reload, matching
+`recovery_binding.tla`'s `CommitRoot`/`ReloadFail`; added as a stand-in in the
+model doc and the RB2 anchors. No Go test pins its recovery-before-release
+order the way `TestPolicyApplyEntersRecoveryBeforeReleasingTheLock` does for
+policy apply; that is a test gap, not a divergence. `productruntime/runtime.go`
+gained ASA set, policy alert, and stage-work wake state only; queue and
+registry publication are unchanged. `44156763`/`84e8c055` move client and
+cosigner verdicts into `policyeval.Evaluate` (Deny, then `ReviewRule`, then
+`ApprovalRule`, then the operator default; cosigner Approve/Reject only),
+which is `policy_precedence.tla`'s `Decide`; `ec685803` drops the self no-op
+routing exemption so routing (deny tier) judges it before auto-approval, which
+only removes a bypass of the deny tier. The rotating sparse-recovery commits
+(`0ae80999`, `31389c1a`, `934e20b1`) do not change the leaf-release guards:
+`ObservedSeq` is still read before the chain read, the sign path still calls
+`AwaitRestored`, and release memory feeds stage search only as a candidate,
+never as an observation. The audit bounding commits (`1aa80b46`, `c13a7e56`,
+`d4729f33`) bound string fields only (transaction IDs and addresses fit), so
+`ROTATING_RELEASE` entries keep their leaf fields and still load at unlock, and
+oversized refused requests can no longer rotate release history out of the log
+(one of `rotating_leaf_release.tla`'s tagged loss sources). Anchor sweep: one
+stale anchor fixed: PS6 cited `signing/approval.go::EvaluateAutoApprovalRules`,
+removed by `44156763`; it now cites `policyeval/policyeval.go::ApprovalRule`
+fed by `approval.go::planFacts`. Every other cited file and named test exists.
+No divergence found.
+
+New-surface candidates: the policy apply reviewed-snapshot precondition
+(`1f6fde35`, `policy_snapshot_changed`) is a pre-commit compare-and-swap that
+only refuses, outside every model's scope. The rotating stage tables are now
+sparse and recover a live stage without rebuilding history, and restore
+publishes rotating stage hints after a successful mutation; both extend the
+already listed rotating stage-table recovery candidate rather than adding a
+new one.
