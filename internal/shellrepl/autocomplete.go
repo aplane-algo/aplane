@@ -354,6 +354,9 @@ func (c *ContextCompleter) Do(line []rune, pos int) ([][]rune, int) {
 	if suggestions, offset, ok := c.completeRekey(lineStr, allAddresses); ok {
 		return suggestions, offset
 	}
+	if suggestions, offset, ok := completeRotate(lineStr, allAddresses); ok {
+		return suggestions, offset
+	}
 
 	if suggestions, offset, ok := c.completeAddressFromCommand(lineStr, allAddresses); ok {
 		return suggestions, offset
@@ -391,6 +394,14 @@ func (c *ContextCompleter) completeAddressFromCommand(lineStr string, allAddress
 	}
 	if firstAddressArgCommands[current.command] && current.currentArgIdx == 0 {
 		return completionForCandidates(allAddresses, current.currentArg, current.trailingSpace)
+	}
+
+	if current.command == "sweep" && afterSweepSource(current) {
+		// Only "to" may follow the source; more accounts go inside brackets.
+		if suggestions, offset, ok := completionForCandidates([]string{"to"}, current.currentArg, current.trailingSpace); ok {
+			return suggestions, offset, true
+		}
+		return nil, 0, true
 	}
 
 	if current.command == "sets" && len(current.args) > 0 {
@@ -454,6 +465,111 @@ func (c *ContextCompleter) completeAlias(lineStr string, allAddresses []string) 
 		return nil, 0, true
 	}
 	return nil, 0, true
+}
+
+// afterSweepSource reports whether the current argument directly follows a
+// complete sweep source, as ParseSweepCommand reads it after "from": one
+// unbracketed account or set, or a closed bracket list.
+func afterSweepSource(cmd completableCommand) bool {
+	if len(cmd.args) < 2 || !strings.EqualFold(cmd.args[1], "from") || cmd.currentArgIdx > len(cmd.args) {
+		return false
+	}
+	span := cmd.args[2:max(cmd.currentArgIdx, 2)]
+	switch {
+	case len(span) == 0:
+		return false
+	case strings.HasPrefix(span[0], "["):
+		_, end, err := cmdspec.ExtractBracketList(span, 0)
+		return err == nil && end == len(span)-1
+	default:
+		return len(span) == 1
+	}
+}
+
+// rotateSubcommands are the words rotate takes in place of an account.
+var rotateSubcommands = []string{"status", "recover"}
+
+// rotateRecoverOptions are what `rotate recover <account>` takes next: either
+// cancel alone, or any of the search options, each followed by a value.
+var rotateRecoverOptions = []string{"--stage", "--window", "--max-stages", "--timeout"}
+
+// completeRotate owns completion for every rotate argument. Accounts match
+// case-insensitively like the other address commands; keywords match exactly,
+// as the rotate handler compares them, because readline only appends the rest
+// of a suggestion and "RE" would otherwise complete to an invalid "REcover".
+// readline's prefix tree compares everything case-sensitively and cannot tell
+// rotate's forms apart:
+//
+//	rotate <account> [nowait]
+//	rotate status [<account>]
+//	rotate recover <account> [--stage N] [--window W] [--max-stages M] [--timeout SECONDS]
+//	rotate recover <account> cancel
+func completeRotate(lineStr string, allAddresses []string) ([][]rune, int, bool) {
+	current := newCompletableCommand(lineStr)
+	if current.command != "rotate" || current.inQuotes {
+		return nil, 0, false
+	}
+	idx := current.currentArgIdx
+	if idx < 0 {
+		// Still typing the command name: the prefix tree completes it.
+		return nil, 0, false
+	}
+
+	var keywords, accounts []string
+	if idx == 0 {
+		keywords, accounts = rotateSubcommands, allAddresses
+	} else {
+		switch form := current.args[0]; {
+		case form == "status" || form == "recover":
+			if idx == 1 {
+				accounts = allAddresses
+			} else if form == "recover" {
+				keywords = rotateRecoverCandidates(current)
+			}
+		case idx == 1:
+			keywords = []string{"nowait"}
+		}
+	}
+	candidates := append(exactPrefixMatches(keywords, current.currentArg), accounts...)
+	if suggestions, offset, ok := completionForCandidates(candidates, current.currentArg, current.trailingSpace); ok {
+		return suggestions, offset, true
+	}
+	// A rotate line with nothing to offer here: do not fall back to the
+	// prefix tree, which would offer accounts in the wrong positions.
+	return nil, 0, true
+}
+
+// exactPrefixMatches keeps the keywords that start with partial, comparing
+// case-sensitively.
+func exactPrefixMatches(keywords []string, partial string) []string {
+	var matches []string
+	for _, keyword := range keywords {
+		if strings.HasPrefix(keyword, partial) {
+			matches = append(matches, keyword)
+		}
+	}
+	return matches
+}
+
+// rotateRecoverCandidates offers what can follow `rotate recover <account>`:
+// cancel or an option first, then options not yet given. Nothing is offered
+// after cancel or where an option's value is expected.
+func rotateRecoverCandidates(cmd completableCommand) []string {
+	if cmd.hasArg("cancel") || strings.HasPrefix(cmd.previousArg(), "--") {
+		// hasArg and previousArg fold case; the handler takes only the
+		// lowercase spellings, so this only errs toward offering less.
+		return nil
+	}
+	var candidates []string
+	if cmd.currentArgIdx == 2 {
+		candidates = append(candidates, "cancel")
+	}
+	for _, option := range rotateRecoverOptions {
+		if !cmd.hasArg(option) {
+			candidates = append(candidates, option)
+		}
+	}
+	return candidates
 }
 
 func (c *ContextCompleter) completeRekey(lineStr string, allAddresses []string) ([][]rune, int, bool) {
@@ -785,12 +901,8 @@ func CreateDynamicCompleter(aliasCache *cache.AliasCache, asaCache *cache.ASACac
 			readline.PcItem("deploy"),
 		),
 
-		readline.PcItem("rotate",
-			readline.PcItemDynamic(func(line string) []string {
-				suggestions := []string{"status", "nowait"}
-				return append(suggestions, getAllAddresses(signerCache, aliasCache, ensureSignerCache)...)
-			}),
-		),
+		// Arguments are completed by completeRotate.
+		readline.PcItem("rotate"),
 
 		readline.PcItem("delete",
 			readline.PcItemDynamic(func(line string) []string {
