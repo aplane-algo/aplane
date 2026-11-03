@@ -266,7 +266,7 @@ All documentation is in the [`docs/`](docs/) directory.
 
 ### Transaction Details
 - [TXN_MIXED_GROUPS.md](docs/TXN_MIXED_GROUPS.md) - Mixed signature atomic groups
-- [TXN_FEE_SPLITTING.md](docs/TXN_FEE_SPLITTING.md) - Fee distribution
+- [FEE_HANDLING.md](docs/FEE_HANDLING.md) - Fee ownership and group fee planning
 - [TXN_BALANCE_VERIFICATION.md](docs/TXN_BALANCE_VERIFICATION.md) - Balance checks
 - [TXN_BYTES_HEX.md](docs/TXN_BYTES_HEX.md) - Transaction encoding
 

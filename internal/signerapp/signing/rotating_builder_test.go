@@ -63,9 +63,11 @@ func previousRotatingGroup(t *testing.T, txn types.Transaction, profile *lsigres
 
 // TestRotatingBuilderMatchesThePreviousBuilder checks, for every rotating
 // key type and a spread of user fees, that the shared builder produces the
-// exact group the private one did, and that rebuilding a built spend
-// reproduces it, which is what sign relies on. A spend below the ordinary
-// fee floor is refused, as it always was.
+// exact group the private one did, that the signer's charge is the same at
+// every fee and lands on the spend on top of the user's fee, and that
+// rebuilding a prepared spend reproduces the group, which is what sign
+// relies on. A spend below the ordinary fee floor is refused, as it always
+// was, and so is a presented spend paying less than the charge.
 func TestRotatingBuilderMatchesThePreviousBuilder(t *testing.T) {
 	for _, kind := range rotatingTestTypes {
 		t.Run(kind.keyType, func(t *testing.T) {
@@ -80,7 +82,8 @@ func TestRotatingBuilderMatchesThePreviousBuilder(t *testing.T) {
 			if _, err := f.svc.Planner.buildRotatingGroup(account, underpaid, profile); err == nil || !strings.Contains(err.Message, "below the v42 ordinary transaction requirement") {
 				t.Fatalf("a spend paying no fee: err = %v, want the ordinary fee floor refusal", err)
 			}
-			for _, fee := range []uint64{1000, 5000, 250_000} {
+			var charge uint64
+			for n, fee := range []uint64{1000, 5000, 250_000} {
 				spend := f.spend(1000, 1100)
 				spend.Fee = types.MicroAlgos(fee)
 				spend.RekeyTo = types.Address{0x51}
@@ -97,15 +100,34 @@ func TestRotatingBuilderMatchesThePreviousBuilder(t *testing.T) {
 						t.Fatalf("fee %d: transaction %d differs from the previous builder's", fee, i+1)
 					}
 				}
-				again, err := f.svc.Planner.buildRotatingGroup(account, plan.AllTxns[0], profile)
+				if n == 0 {
+					charge = plan.FeeInfo.TotalFees
+					if charge == 0 {
+						t.Fatalf("fee %d: the rotating spend carries no signer charge", fee)
+					}
+				}
+				if plan.FeeInfo.TotalFees != charge || uint64(plan.AllTxns[0].Fee) != fee+charge {
+					t.Fatalf("fee %d: charge %d and spend fee %d, want charge %d on top of the user's fee", fee, plan.FeeInfo.TotalFees, plan.AllTxns[0].Fee, charge)
+				}
+				again, err := f.svc.Planner.rebuildPreparedRotatingGroup(account, plan.AllTxns[0], profile)
 				if err != nil {
 					t.Fatal(err)
 				}
 				for i := range want {
 					if !bytes.Equal(txnutil.EncodeWithPrefix(again.AllTxns[i]), txnutil.EncodeWithPrefix(plan.AllTxns[i])) {
-						t.Fatalf("fee %d: rebuilding the built spend changed transaction %d", fee, i+1)
+						t.Fatalf("fee %d: rebuilding the prepared spend changed transaction %d", fee, i+1)
 					}
 				}
+			}
+			// A presented spend paying less than the charge cannot have come
+			// from prepare. Below the ordinary floor the builder refuses it
+			// first; above it, the charge check does.
+			short := f.spend(1000, 1100)
+			short.RekeyTo = types.Address{0x51}
+			short.Fee = types.MicroAlgos(charge - 1)
+			_, err := f.svc.Planner.rebuildPreparedRotatingGroup(account, short, profile)
+			if err == nil || (charge > 1001 && !strings.Contains(err.Message, "authorization charge")) {
+				t.Fatalf("a presented spend paying %d below the charge %d: err = %v, want a refusal", short.Fee, charge, err)
 			}
 		})
 	}

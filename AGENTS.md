@@ -407,7 +407,7 @@ See `docs/ARCH_STORE.md` for the full on-disk layout and `docs/ARCH_CONTRACTS.md
 ### Transaction Docs
 - `TXN_BALANCE_VERIFICATION.md`: Balance verification transactions
 - `TXN_BYTES_HEX.md`: Transaction bytes hex format
-- `TXN_FEE_SPLITTING.md`: Fee splitting in transaction groups
+- `FEE_HANDLING.md`: Fee ownership between client and signer, and group fee planning
 - `TXN_MIXED_GROUPS.md`: Mixed transaction groups
 
 ## Plugin Development

@@ -98,7 +98,9 @@ func frozenBoundedTestService(t *testing.T, programBytes uint64) (*Service, stri
 		Header: types.Header{
 			// A sender distinct from the signer-owned auth address models a
 			// rekeyed account. Authorization must still resolve through authorizer.
-			Sender: types.Address{2}, Fee: 10_000, FirstValid: 1, LastValid: 10,
+			// The fee is the client's suggested minimum; the planner adds its
+			// authorization charge on top, within the bounded max_fee.
+			Sender: types.Address{2}, Fee: 1_000, FirstValid: 1, LastValid: 10,
 			GenesisHash: genesisHash,
 		},
 		PaymentTxnFields: types.PaymentTxnFields{Receiver: types.Address{3}, Amount: 1},

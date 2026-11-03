@@ -7,6 +7,28 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## Signer fee charges no longer consume a client's extra fee
+
+- The signer used to count every fee already in a group toward the charges
+  its own authorization adds: native Falcon contributions, opcode-budget
+  dummy base fees and priced LogicSig program bytes. An app call's extra fee
+  reserved for inner transactions was therefore spent on those charges, and
+  the group failed on chain once its inner transactions ran out of fee
+  credit. A Mithras deposit from a native Falcon key failed this way. The
+  signer now adds its charge on top of the client's fees and never spends a
+  client surplus. See [Fee Ownership](FEE_HANDLING.md#fee-ownership).
+- A client that already included the signer's charge in its own fees now
+  pays it twice. Build transactions with ordinary suggested fees and let the
+  signer add its charge.
+- A group whose only signer-controlled slots are bounded keys, and whose
+  surplus previously covered the charge, is refused at planning when the
+  bounded `max_fee` leaves too little room for it.
+- Send a single transaction's original draft to `/sign`, not the transaction
+  `/plan` returned: a single transaction has no group ID, so planning the
+  planned transaction again adds the charge again. Multi-transaction `/plan`
+  output is unaffected, because its group ID makes `/sign` check it without
+  raising it.
+
 ## Enrollment command renamed `enroll`
 
 - apshell's `request-enrollment` command is now `enroll`, with the same flags

@@ -331,8 +331,11 @@ passthrough.
   group fee surcharge instead. This release supports exactly v42 and v43,
   with identical resource rules.
 - The signer computes one aggregate consensus fee over the final group,
-  credits existing pooled fees, and assigns any deficit only to mutable
-  signer-controlled slots. Foreign and passthrough slots are never rewritten.
+  checks that the client's fees cover the client's own transactions, and adds
+  its authorization charge (dummy base fees, priced LogicSig program bytes,
+  native-PQ contributions) on top, only to mutable signer-controlled slots. A
+  client surplus, such as an app call's extra fee for inner transactions, is
+  never spent on the charge. Foreign and passthrough slots are never rewritten.
 - **Pre-grouped transactions are immutable.** If a pre-grouped batch needs more
   dummies than its budget allows, the request is **rejected** — submit the
   transactions *ungrouped* and let the signer build the group.
@@ -353,7 +356,7 @@ group. Plugin-built groups can bypass them.
 
 > Full detail: [ARCH_SIGNING.md](ARCH_SIGNING.md),
 > [TXN_MIXED_GROUPS.md](TXN_MIXED_GROUPS.md),
-> [TXN_FEE_SPLITTING.md](TXN_FEE_SPLITTING.md),
+> [FEE_HANDLING.md](FEE_HANDLING.md),
 > [USER_TRANSFER_ROUTING.md](USER_TRANSFER_ROUTING.md),
 > [TXN_BALANCE_VERIFICATION.md](TXN_BALANCE_VERIFICATION.md).
 

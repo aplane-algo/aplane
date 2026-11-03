@@ -306,7 +306,7 @@ A slot that fails admission is refused with `bad_request` naming the slot.
    deficit, and the rotating slot may cover another slot's surcharge.
    Policy evaluates the final fee on each account, and the client sees
    every change in `mutations.fees_modified` and in the simulated group.
-   `TXN_FEE_SPLITTING.md` gains a sentence saying rotating groups follow
+   `FEE_HANDLING.md` gains a sentence saying rotating groups follow
    its rules unchanged.
 5. Return the canonical group with `rotations` and `owned_indexes`.
 
@@ -600,7 +600,7 @@ Contract fixtures: group-form prepare request, both responses with the
 - `docs/ARCH_SIGNING.md` rotating section: the group form, the `rotations`
   list, the rebuild contract stated honestly, the signing order and the
   audit guarantees of 4.3.
-- `docs/TXN_FEE_SPLITTING.md`: rotating groups follow its rules unchanged.
+- `docs/FEE_HANDLING.md`: rotating groups follow its rules unchanged.
 - `docs/TXN_MIXED_GROUPS.md`: rotating accounts can join a group whose
   other members this signer signs; cross-subsidy of fees.
 - `docs/USER_KEYTYPES.md`: the restrictions list and the "single-transaction

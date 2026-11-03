@@ -136,12 +136,27 @@ func applyGroupFees(txns []types.Transaction, budgets []authorizationBudget, res
 		return DummyFeeInfo{}, badRequest("dummy fee contribution overflowed")
 	}
 	info.DummyFeeContribution = uint64(dummyCount) * minFee
-	if paid >= required {
+	// An immutable group (pre-grouped, or carrying signatures) cannot be
+	// raised, so it is only checked: it must already pay the full requirement.
+	if immutable {
+		if paid < required {
+			return DummyFeeInfo{}, badRequest(fmt.Sprintf("immutable group pays %d microAlgos, requires at least %d under consensus fee rules", paid, required))
+		}
 		return info, nil
 	}
-	delta := required - paid
-	if immutable {
-		return DummyFeeInfo{}, badRequest(fmt.Sprintf("immutable group pays %d microAlgos, requires at least %d under consensus fee rules", paid, required))
+	// Fee ownership: the client's fees pay the client's costs, the ordinary
+	// requirement checked above plus anything the group spends when it runs,
+	// such as inner transactions drawing on the group's fee credit. The signer
+	// pays what authorization adds: resource-dummy bases, priced LogicSig
+	// program bytes and native-PQ contributions. A client surplus never offsets
+	// that charge, because the planner cannot see what the surplus is for.
+	//
+	// The charge is a function of the group's shape alone, never of its fees,
+	// so it is the same however much the client paid. The rotating flow relies
+	// on that to recover the client's spend from a prepared group.
+	delta := required - ordinaryRequired
+	if delta == 0 {
+		return info, nil
 	}
 	targets := make([]int, 0, len(budgets))
 	seen := make(map[int]bool, len(budgets))
@@ -173,7 +188,7 @@ func applyGroupFees(txns []types.Transaction, budgets []authorizationBudget, res
 		}
 	}
 	if len(targets) == 0 {
-		return DummyFeeInfo{}, badRequest("group fee deficit has no signer-controlled transaction")
+		return DummyFeeInfo{}, badRequest("the signer's authorization charge has no signer-controlled transaction to pay it")
 	}
 	totalCapacity := uint64(0)
 	for _, target := range targets {
@@ -189,7 +204,7 @@ func applyGroupFees(txns []types.Transaction, budgets []authorizationBudget, res
 		totalCapacity = saturatingAdd(totalCapacity, capacity)
 	}
 	if totalCapacity < delta {
-		return DummyFeeInfo{}, badRequest(fmt.Sprintf("group fee deficit of %d microAlgos exceeds signer-controlled bounded fee capacity", delta))
+		return DummyFeeInfo{}, badRequest(fmt.Sprintf("the signer's authorization charge of %d microAlgos exceeds signer-controlled bounded fee capacity", delta))
 	}
 	remaining := delta
 	for _, target := range targets {
