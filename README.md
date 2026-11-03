@@ -5,7 +5,7 @@
 <sub><a href="docs/USER_QUICKSTART.md">APlane QuickStart</a></sub>&nbsp;&nbsp;<sub><a href="https://github.com/aplane-algo/aplanesdk">SDK Repo</a></sub>
 # APlane — A Control Plane for Algorand Operations
 
-Manage keys, enforce transaction policies, and automate on-chain workflows.
+Define new key types, manage keys, enforce transaction policies, and automate on-chain workflows.
 
 APlane supports native Ed25519 and protocol-native Falcon-1024 accounts and
 provides a framework for developing new types of keys using Algorand Logic
