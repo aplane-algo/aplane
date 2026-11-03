@@ -20,7 +20,8 @@ Some signing schemes (LogicSig DSA) sign the **transaction ID hash**, while othe
 Signer needs to inspect transaction details to implement security features:
 
 1. **Signer policy**: Reject transactions that violate configured fee, ALGO/ASA
-   amount, rekey, close-out, foreign rekey, or clawback rules
+   amount, network, foreign rekey, close-out, clawback, or transfer routing
+   rules
 2. **Approval warnings**: Surface transaction type, receiver, amount, rekey,
    close-out, app-call, and group context to the operator
 3. **Accurate display**: Show the operator what they're signing
@@ -123,8 +124,10 @@ Sign-mode request construction encodes the unsigned transaction with the `TX`
 prefix via `txnutil.EncodeWithPrefix`, hex-encodes the result into
 `TxnBytesHex`, and attaches `AuthAddress`, `TxnSender`, and any generic
 LogicSig args. See `internal/clientsign/submit.go` for the standard
-sign-and-submit path and `internal/engine/plugin_signing.go` for
-plugin/mixed-party call sites.
+sign-and-submit path. The other call sites are
+`internal/engine/plugin_presign.go` (plugin pre-sign planning),
+`internal/engine/guarded/submit.go` (guarded and bounded-cosigner groups), and
+`internal/engine/bounded_admin.go` (bounded-admin partial signing).
 
 ### In Signer (server side)
 
@@ -173,14 +176,17 @@ inbound requests, but clients should send and expect the TX-prefixed form.
 ### Signer Policy Enforcement
 
 `TxnBytesHex` lets the signer apply the same hard-reject policy to Ed25519,
-LogicSig DSA, and generic LogicSig transactions:
+native Falcon, LogicSig DSA, and generic LogicSig transactions:
 
 - maximum fee ceilings
 - network-scoped ALGO payment ceilings
 - network-scoped ASA transfer ceilings
+- reject a transaction for a network the node does not know
 - reject foreign rekey
 - reject close remainder / asset close
 - reject clawback
+- transfer routing: blocked destinations, and transfers, close-outs or
+  clawbacks that match no configured route
 
 Policy runs before human approval. If policy rejects a request, no approval
 prompt is shown and no signing occurs.
@@ -196,7 +202,9 @@ group-ID assignment.
 
 - `pkg/signerapi/types.go` - SignRequest type definition
 - `internal/clientsign/submit.go` - client-side request construction
-- `internal/engine/plugin_signing.go` - plugin/mixed-party request construction
+- `internal/engine/plugin_presign.go` - plugin pre-sign request construction
+- `internal/engine/guarded/submit.go` - guarded and bounded-cosigner request construction
+- `internal/engine/bounded_admin.go` - bounded-admin partial request construction
 - `internal/txnutil/txn.go` - TX-prefixed transaction encoding helpers
 - `internal/signerapp/signing/planner.go` - request categorization and transaction decoding
 - `internal/signerapp/signing/execution.go` - key-type-specific message selection and assembly

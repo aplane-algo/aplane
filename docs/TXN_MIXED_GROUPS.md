@@ -95,7 +95,7 @@ Result: v42 argument pooling requires N=2, but adding a dummy would break the gr
 
 **Error**:
 ```
-immutable group requires 1 additional dummy transaction for LogicSig arguments/opcode budget; submit an ungrouped unsigned group instead
+immutable group requires 1 additional dummy transaction(s) for LogicSig arguments/opcode budget; submit an ungrouped unsigned group instead
 ```
 
 **Workaround**: Clear group IDs before signing:
