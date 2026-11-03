@@ -27,7 +27,6 @@ var storeOwningPackages = []string{
 	"internal/keytypestate",
 	"internal/templatestore",
 	"internal/templatelibrary",
-	"internal/defaultkeytypes",
 	"internal/backup",
 	"internal/storepass",
 	"internal/asasetstore",

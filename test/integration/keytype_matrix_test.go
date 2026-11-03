@@ -78,8 +78,10 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 	if err := apadmin.UnlockSigner(); err != nil {
 		t.Fatalf("failed to unlock signer: %v", err)
 	}
-	if err := apadmin.ActivateKeyType(ed25519lsig.KeyTypeV1); err != nil {
-		t.Fatalf("failed to activate %s for key-type matrix: %v", ed25519lsig.KeyTypeV1, err)
+	for _, keyType := range []string{ed25519lsig.KeyTypeV1, "aplane.falcon1024.v1"} {
+		if err := apadmin.ActivateKeyType(keyType); err != nil {
+			t.Fatalf("failed to activate %s for key-type matrix: %v", keyType, err)
+		}
 	}
 	signerClient := signerclient.NewSignerClient(signerd.GetURL())
 	fundingAddress, err := apadmin.ImportFundingKey(os.Getenv("TEST_FUNDING_MNEMONIC"))

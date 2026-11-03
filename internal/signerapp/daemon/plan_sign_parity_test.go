@@ -423,6 +423,7 @@ func TestPlanAndSignAgreeOnDummyAndFeeMutationsForSingleFalconGroup(t *testing.T
 	server.productRuntime().Config().SetUserAutoApprove(true)
 
 	receiver := "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ"
+	enableKeyTypeForTest(t, server, "aplane.falcon1024.v1")
 	falconBody, _ := json.Marshal(AdminGenerateRequest{KeyType: "aplane.falcon1024.v1"})
 	falconW := httptest.NewRecorder()
 	server.handleAdminGenerate(falconW, requestWithIdentity(http.MethodPost, "/admin/generate", falconBody))

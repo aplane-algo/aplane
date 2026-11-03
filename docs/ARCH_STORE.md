@@ -786,7 +786,7 @@ This separation is deliberate:
 | Installed YAML template | selected generation `keytypes/<key_type>.template` | Encrypted generation source for the product runtime after reload. |
 | Deleted key archive | selected generation `deleted/keys/` | Removed key files; outside active scans. |
 | Deleted template archive | selected generation `deleted/keytypes/` | Removed template files; outside active scans. |
-| Signer library template | `library/templates/<key_type>.yaml` | Install source only; not active by itself. New signer-role stores install the bundled Falcon allowlist v1 source during initialization; other entries require product-store import/enablement. |
+| Signer library template | `library/templates/<key_type>.yaml` | Install source only; not active by itself. Every entry requires product-store import/enablement; initialization installs none. |
 | Compiled provider | Go provider registry and key type catalog | Binary capability; product-store visibility may be default-enabled or opt-in. |
 | Backup payload | `.apb` inside managed backup archive | Encrypted credential unit containing key material and durable signing metadata; an archive also carries each key's own per-key policy document as a separate `.apb`. Template YAML is not included. |
 
@@ -878,7 +878,7 @@ subject to the node role gate above.
 |---|---|---|---|---|
 | Unsupported by binary | No provider is registered in the current process. | No. | No, if signing needs that provider; native/DSA key types need registered support. | Install/run a binary that supports the key type. |
 | Role-forbidden key type | The node role does not allow this key class. | No, even if the provider is default-enabled or enabled. | No for active inventory; reload rejects role-conflicting active keys. | Use a data root initialized for the correct node role. |
-| Default-enabled account-signing provider | Provider/generator is registered and cataloged as default-enabled; no identity record required. Examples include native `ed25519`, native `falcon1024`, and LogicSig `aplane.falcon1024.v1`. | Yes on signer nodes. | Yes on signer nodes, if the key file is valid and the transaction network supports its authorization kind. | None. |
+| Default-enabled account-signing provider | Provider/generator is registered and cataloged as default-enabled; no identity record required. Only the protocol-native `ed25519` and `falcon1024` are; every LogicSig provider, including `aplane.falcon1024.v1`, is library-visible. | Yes on signer nodes. | Yes on signer nodes, if the key file is valid and the transaction network supports its authorization kind. | None. |
 | Default-enabled cosigner key type | Raw cosigner-key generator/signing support is registered and cataloged as default-enabled. The current type is `aplane.witness-falcon1024.v1`. | Yes on cosigner nodes. | Component-signing only on cosigner nodes; never normal spending `/sign`. | None. |
 | Library-visible compiled provider, inactive | Provider is registered and cataloged as library-visible; no identity `keytypes/<key_type>.json` record exists. | No. | Existing key may sign if the provider is registered, the key file is valid, and the node role allows it. | Enable from KeyType Library or `apadmin keytype enable`. |
 | Library-visible compiled provider, enabled and fingerprint consistent | `keytypes/<key_type>.json` has `source:"compiled"`, `state:"enabled"`, and matching fingerprint. | Yes when allowed by node role. | Yes, if the key file is valid and allowed by node role. | Disable, if no stored key uses it. |
@@ -936,10 +936,8 @@ There are two supported mutation contexts:
   `internal/signerapp/templateadmin`, which holds the store mutation lock,
   calls `templatelibrary`, then asks the read-only
   `internal/signerapp/templates` runtime owner to reload;
-- initial default installation is owned by `internal/defaultkeytypes`, which
-  calls `templatelibrary` while constructing an unpublished generation and
-  makes it visible through initial `store-root.enc` publication. No live
-  identity or reload exists in that context.
+- store initialization installs no key types or templates; the first
+  generation carries no `keytypes/` records.
 
 Reload failure does not imply one uniform rollback rule. Install, import, and
 installed-YAML enable restore their prior durable state when reload or
@@ -979,25 +977,21 @@ There are two plaintext library locations with the same relative layout:
 The signer-data path is defined by `internal/storepaths.Paths.TemplateLibraryDir()`. Release installers,
 installer re-runs, and test setup flows may refresh this directory from the repository or packaged copy. Files in this
 directory are reference material and are not active key types by themselves.
-New signer-store initialization installs and enables
-`aplane.falcon1024-allowlist.v1` from the bundled library source into the
-product-store encrypted template store; cosigner-role initialization skips this
-signer account key type. Other bundled templates remain install sources until
-explicitly imported/enabled in the product store.
+Store initialization installs none of them; every bundled template remains an
+install source until explicitly imported/enabled in the product store.
 
 The bundled templates that ship under `library/templates/` are:
 
 | Template | Purpose |
 |----------|---------|
 | `aplane.falcon1024-timelock.v1` | Falcon-1024 signature gated by round-based timelock |
-| `aplane.falcon1024-allowlist.v1` | Falcon-1024 signature restricted to a fixed set of receiver addresses (default-installed) |
+| `aplane.falcon1024-allowlist.v1` | Falcon-1024 signature restricted to a fixed set of receiver addresses |
 | `aplane.falcon1024-allowlist.v2` | Falcon-1024 allowlist using a fixed-depth Merkle root with signer-generated proofs |
 | `aplane.htlc.v1` | Hash time-locked contract |
 | `aplane.falcon1024-allowlist-alock.v1` | Falcon-1024 bounded allowlist whose pure rekey additionally requires an external Falcon admin signature |
 | `aplane.corridor.v1` | Optional bounded Falcon profile with a Merkle recipient allowlist, cosigner-authorized spends, and external-admin pure rekey |
 
-Only `aplane.falcon1024-allowlist.v1` is installed and enabled by default for
-new signer stores; the rest are available to install from the library.
+None is installed by default; all are available to install from the library.
 
 `apadmin` presents this mixed source as the KeyType Library. It lists the signer-data library over the
 admin protocol and also includes installed product-store templates that no longer have a matching plaintext
@@ -2029,7 +2023,6 @@ Primary implementation owners:
   `internal/signerapp/templates`
 - key generation: `internal/keygen`, `internal/signerapp/keyadmin`
 - live key type/template admin locking and reload: `internal/signerapp/templateadmin`
-- staged default-template bootstrap: `internal/defaultkeytypes`
 - backup/restore: `internal/backup`, `internal/signerapp/backupadmin`
 - signing execution: `internal/signerapp/signing`
 

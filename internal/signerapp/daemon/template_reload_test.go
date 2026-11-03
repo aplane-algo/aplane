@@ -257,3 +257,21 @@ teal: |
   int 1
 `, family, version, displayName, description))
 }
+
+// enableKeyTypeForTest writes the product enablement record for a compiled
+// library key type, as `apadmin keytype enable` does. Only the
+// protocol-native key types are enabled by default.
+func enableKeyTypeForTest(t *testing.T, server *Signer, keyType string) {
+	t.Helper()
+	activeKeyPaths, err := server.productRuntime().ActiveKeyPaths()
+	if err != nil {
+		t.Fatalf("ActiveKeyPaths(%q) error = %v", keyType, err)
+	}
+	if err := keytypestate.Put(activeKeyPaths, keytypestate.Record{
+		KeyType: keyType,
+		Source:  keytypestate.SourceCompiled,
+		State:   keytypestate.StateEnabled,
+	}); err != nil {
+		t.Fatalf("keytypestate.Put(%q) error = %v", keyType, err)
+	}
+}

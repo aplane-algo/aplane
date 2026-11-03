@@ -294,6 +294,14 @@ teal: |
 			if err := sourceApSigner.UnlockSigner(); err != nil {
 				t.Fatalf("failed to unlock source signer: %v", err)
 			}
+			// A library key type is enabled on the source only; restoring it
+			// into the destination must not depend on the type being enabled
+			// there.
+			if keyType == "aplane.falcon1024.v1" {
+				if err := sourceApSigner.ActivateKeyType(keyType); err != nil {
+					t.Fatalf("activate %s on the source: %v", keyType, err)
+				}
+			}
 
 			sourceClient := signerclient.NewSignerClient(sourceSigner.GetURL())
 			address := mustAdminGenerateKeyNoCleanup(t, sourceClient, sourceSigner, keyType, generateParams)

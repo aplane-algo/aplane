@@ -59,6 +59,9 @@ func TestKeyDerivationRegression(t *testing.T) {
 	if err := apadmin.UnlockSigner(); err != nil {
 		t.Fatalf("failed to unlock signer: %v", err)
 	}
+	if err := apadmin.ActivateKeyType("aplane.falcon1024.v1"); err != nil {
+		t.Fatalf("activate aplane.falcon1024.v1: %v", err)
+	}
 
 	signerClient := signerclient.NewSignerClient(signerd.GetURL())
 

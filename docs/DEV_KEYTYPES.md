@@ -76,8 +76,7 @@ Feature code must not write template files or key-type state records directly.
 Route install, import, enable, disable, and remove transitions through
 `internal/templatelibrary`. Live administrative workflows in
 `internal/signerapp/templateadmin` supply the store mutation lock and
-runtime reload; new-store defaults in `internal/defaultkeytypes` supply an
-unpublished staged generation and publish it through `internal/genstore`.
+runtime reload; store initialization installs no templates.
 `internal/templatestore` and `internal/keytypestate` expose persistence
 primitives, while `internal/signerapp/templates` is a read-only runtime reload
 owner.
@@ -202,8 +201,7 @@ is not required for restoring or signing a key with complete durable metadata.
 Shipped YAML template sources live under the top-level `library/templates/`
 directory and are installed into the product namespace before use. Source-tree
 YAML files are install sources only; the runtime form is the encrypted
-`.template` file plus key type state record. New signer stores install and
-enable `aplane.falcon1024-allowlist.v1` for `default` during initialization.
+`.template` file plus key type state record. New stores install none of them.
 
 Go-defined key types:
 
@@ -211,18 +209,19 @@ Go-defined key types:
 |---|---|---|---|---|
 | `ed25519` | Native signing key | Go-defined | default-enabled | `internal/signing/ed25519`, `internal/keygen/ed25519.go` |
 | `falcon1024` | Protocol-native PQ signing key | Go-defined | default-enabled on signer nodes | `internal/signing/falcon1024` |
-| `aplane.falcon1024.v1` | DSA LogicSig provider | Go-defined | default-enabled | `lsig/falcon1024/v1/standard.go` |
+| `aplane.falcon1024.v1` | DSA LogicSig provider | Go-defined | library-visible | `lsig/falcon1024/v1/standard.go` |
 | `aplane.witness-falcon1024.v1` | Witness key (cosigner custody or external contract-admin custody) | Go-defined | default-enabled on cosigner nodes | `internal/witness`, `lsig/falcon1024/keygen/witness.go` |
 | `aplane.falcon1024-cosigner1024.v1` | Guarded-account DSA LogicSig provider | Go-defined | library-visible | `lsig/falcon1024_guarded` |
 | `aplane.ed25519.v1` | DSA LogicSig provider | Go-defined | library-visible | `lsig/ed25519lsig` |
 
 Compiled key types can be registered as binary capabilities without being
 default-visible for generation. Visibility is recorded in
-`internal/keytypecatalog`: `ed25519`, `falcon1024`, `aplane.falcon1024.v1`, and
-`aplane.witness-falcon1024.v1` are default-enabled, while
-`aplane.falcon1024-cosigner1024.v1` and
-`aplane.ed25519.v1` are library-visible and not available for generation until
-the product store enables them from the library. `aplane.ed25519.v1` is the Ed25519
+`internal/keytypecatalog`: only the protocol-native `ed25519` and `falcon1024`
+(signer nodes) and the witness key type `aplane.witness-falcon1024.v1`
+(cosigner nodes) are default-enabled, while `aplane.falcon1024.v1`,
+`aplane.falcon1024-cosigner1024.v1`, and `aplane.ed25519.v1` are
+library-visible and not available for generation until the product store
+enables them from the library. `aplane.ed25519.v1` is the Ed25519
 LogicSig DSA provider, distinct from the native `ed25519` signing key. See
 `docs/ARCH_KEYTYPES.md` for the exact
 split between native `ed25519`, the `aplane.ed25519` LogicSig routing family,
@@ -231,13 +230,14 @@ Opt-in state records are plaintext product-store metadata under
 the selected generation's `keytypes/<key_type>.json`; they affect discovery and key
 creation, not the ability to sign with keys that already exist. Mnemonic import
 is additionally gated by the provider's explicit mnemonic-import capability.
-The default-enabled `ed25519`, `falcon1024`, and `aplane.falcon1024.v1` providers allow
-user-entered mnemonic import without product-store activation; the
-library-visible `aplane.ed25519.v1` provider allows mnemonic import after it is
-enabled in the product store. YAML templates and the other library-visible compiled
-providers do not allow user-entered mnemonic import. `apadmin restore` creates
-or enables this state record idempotently when restoring a key for a
-library-visible compiled provider.
+The default-enabled `ed25519` and `falcon1024` providers allow user-entered
+mnemonic import without product-store activation; the library-visible
+`aplane.falcon1024.v1` and `aplane.ed25519.v1` providers allow mnemonic import
+after they are enabled in the product store. YAML templates and the other library-visible compiled
+providers do not allow user-entered mnemonic import. `apadmin restore` does
+not create or change this state record: a restored key signs whether or not
+its type is enabled on the destination, but creating further keys of that type
+still requires enabling it there.
 
 Native `falcon1024` is not a LogicSig provider. It uses the explicit
 `native_pq` authorization kind, a 25-word Algorand mnemonic, top-level
@@ -278,7 +278,7 @@ Bundled YAML templates, if installed:
 | Library key type | Behavior category | Install command | Runtime storage |
 |---|---|---|---|
 | `aplane.htlc.v1` | Generic LogicSig template | `apadmin template import library/templates/aplane.htlc.v1.yaml` | selected generation `keytypes/aplane.htlc.v1.{json,template}` |
-| `aplane.falcon1024-allowlist.v1` | Bounded1 composed DSA template | Installed/enabled during new signer-store initialization; existing stores can run `apadmin template import library/templates/aplane.falcon1024-allowlist.v1.yaml` | selected generation `keytypes/aplane.falcon1024-allowlist.v1.{json,template}` |
+| `aplane.falcon1024-allowlist.v1` | Bounded1 composed DSA template | `apadmin template import library/templates/aplane.falcon1024-allowlist.v1.yaml` | selected generation `keytypes/aplane.falcon1024-allowlist.v1.{json,template}` |
 | `aplane.falcon1024-allowlist.v2` | Bounded1 composed DSA template | `apadmin template import library/templates/aplane.falcon1024-allowlist.v2.yaml` | selected generation `keytypes/aplane.falcon1024-allowlist.v2.{json,template}` |
 | `aplane.falcon1024-allowlist-alock.v1` | Bounded1 composed DSA template | `apadmin template import library/templates/aplane.falcon1024-allowlist-alock.v1.yaml` | selected generation `keytypes/aplane.falcon1024-allowlist-alock.v1.{json,template}` |
 | `aplane.falcon1024-timelock.v1` | Bounded1 composed DSA template | `apadmin template import library/templates/aplane.falcon1024-timelock.v1.yaml` | selected generation `keytypes/aplane.falcon1024-timelock.v1.{json,template}` |
@@ -286,9 +286,8 @@ Bundled YAML templates, if installed:
 
 These template files are install sources, not product built-ins. They do not
 appear in `apshell keytypes` or the `apadmin` generate view until installed and
-enabled in the product store, then loaded by `apsigner`. New signer-role stores
-start with `aplane.falcon1024-allowlist.v1` already installed and enabled;
-cosigner-role stores do not. The `apadmin`
+enabled in the product store, then loaded by `apsigner`. New stores start with
+none of them installed. The `apadmin`
 KeyType Library lists plaintext library entries and also reports installed
 templates that do not have a matching library YAML source; those
 installed-only rows are derived from encrypted `.template`
@@ -543,8 +542,7 @@ runtime args.
 
 Files in the top-level `library/templates/` directory are install sources, not
 active key types by presence alone. Installing one of these YAML entries through
-new signer-store initialization, `apadmin template import`, or the
-authenticated KeyType Library flow writes an encrypted `.template` file and
+`apadmin template import` or the authenticated KeyType Library flow writes an encrypted `.template` file and
 adjacent enabled state record under the product store's `keytypes/`
 directory. Enabled installed templates are registered on the product store's
 reload/unlock path.

@@ -436,9 +436,10 @@ composed-template providers surface through the key generation / DSA registries
 inventory layer (`internal/signerapp/rest`). `internal/keytypecatalog` holds
 visibility metadata, not the assembled list.
 
-Default-enabled compiled providers include signer account providers
-(`ed25519`, protocol-native `falcon1024`, `aplane.falcon1024.v1`) and witness providers
-(`aplane.witness-falcon1024.v1`). Node role gates
+Default-enabled compiled providers are the protocol-native signer account
+providers (`ed25519` and `falcon1024`) and the witness provider
+(`aplane.witness-falcon1024.v1`). Every LogicSig provider, including
+`aplane.falcon1024.v1`, is library-visible. Node role gates
 determine which default-enabled key classes may be generated or served by a
 store. Optional compiled providers and YAML templates become available only
 after product-store enablement or installation.
@@ -458,10 +459,8 @@ Product-store key type records are plaintext because they are not key material:
 Installed templates are encrypted adjacent `.template` files under the same
 `keytypes/` directory. Library templates under `library/templates/` are
 plaintext install sources only; they are not active key types by presence
-alone. New signer-role stores initialize with
-`aplane.falcon1024-allowlist.v1` installed and enabled from the bundled library
-source; otherwise YAML templates become active only after product-store
-installation and enablement.
+alone. New stores install none of them; YAML templates become active only
+after product-store installation and enablement.
 
 ### Policy
 
@@ -1306,7 +1305,7 @@ and [ARCH_ADMIN.md](ARCH_ADMIN.md#admin-protocol-contract).
 |---|---|---|---|---|---|
 | Compiled provider registry | process authority | Go registrations in `lsig/clientreg` and provider packages | provider lookup by `key_type` | `internal/lsigprovider`, `internal/keygen`, `internal/signing` | Canonical `key_type` strings are identifiers; display labels are not. |
 | Key type visibility catalog | process metadata | `internal/keytypecatalog` registrations | default-enabled/library-visible/disabled state | `internal/keytypecatalog` | Library-visible providers require a product-store state record before generation. |
-| Plaintext template library | install source | repo or signer-data `library/templates/*.yaml` | KeyType Library candidates | `internal/templatelibrary`, `internal/defaultkeytypes` | Not active by presence alone; new signer-role stores install the bundled Falcon allowlist v1 default; other entries require product-store import/enablement, and invalid entries are reported but not enabled. |
+| Plaintext template library | install source | repo or signer-data `library/templates/*.yaml` | KeyType Library candidates | `internal/templatelibrary` | Not active by presence alone; every entry requires product-store import/enablement, and invalid entries are reported but not enabled. |
 | YAML template spec | generation contract | template YAML `schema_version`, `template_mode`, `template_type` | parsed `BaseTemplateSpec` (`template_type` is optional) | `internal/templatestore` (`BaseTemplateSpec`), `internal/templatelibrary`, `lsig/generictemplate`, `lsig/composeddsa` (per-type specs) | Unknown/missing required fields reject import/install. |
 | Template install result | wire/runtime projection | admin request response | install/rollback report | `internal/signerapp/templateadmin`, `internal/protocol` | `internal/templatelibrary` coordinates encrypted bytes and state records; the live admin path supplies locking and reload. |
 | `/keytypes` metadata | wire projection | enabled providers/templates plus references | `signerapi.KeyTypesResponse` | `internal/signerapp/rest`, `pkg/signerapi` | Creation params are future-generation metadata; contract fixtures cover shape. |

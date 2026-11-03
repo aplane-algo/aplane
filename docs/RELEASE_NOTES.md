@@ -7,6 +7,23 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## Only the native key types are enabled by default; new installs only
+
+- This release is new-install only: the installer's minimum supported upgrade
+  version is v0.48.0, so an earlier install needs a fresh install root and
+  fresh `apclient`/`apsigner` data directories.
+- Signer nodes now enable only the protocol-native key types, `ed25519` and
+  `falcon1024`, by default. The LogicSig Falcon key type
+  `aplane.falcon1024.v1` is library-visible like every other LogicSig key
+  type, and new stores install no templates (the
+  `aplane.falcon1024-allowlist.v1` template is no longer installed by
+  default). Cosigner nodes keep `aplane.witness-falcon1024.v1` enabled.
+- Enable any other key type from the apadmin KeyType Library or with
+  `apadmin keytype enable <key_type>`; import templates with
+  `apadmin template import`. Generating or importing a key type the node has
+  not enabled now names that step instead of reporting an invalid key type.
+- The quickstarts now generate a native `falcon1024` key.
+
 ## Signer fee charges no longer consume a client's extra fee
 
 - The signer used to count every fee already in a group toward the charges

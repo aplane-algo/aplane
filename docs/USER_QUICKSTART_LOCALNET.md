@@ -85,7 +85,7 @@ it access to your encrypted keystore.
 
 ## 6. Generate a signing key
 
-In the signer pane, press `g` and select `aplane.falcon1024.v1` to generate a
+In the signer pane, press `g` and select `falcon1024` to generate a native
 Falcon-1024 post-quantum key.
 
 ## 7. Enroll the client
@@ -116,7 +116,7 @@ In apshell, list your signer-managed addresses:
 keys
 ```
 
-Copy the address for the new `aplane.falcon1024.v1` key you generated in step 6.
+Copy the address for the new `falcon1024` key you generated in step 6.
 
 The shell should connect to LocalNet automatically; the prompt will reflect the
 new network. If needed, run:
@@ -165,12 +165,11 @@ with your new key.
 
 ## Further Exploration
 
-By default, APlane exposes the native `ed25519` and `falcon1024` key types plus
-the `aplane.falcon1024.v1` and `aplane.falcon1024-allowlist.v1` LogicSig key
-types. To try additional LogicSig templates from
-the bundled library, open the signer admin pane, press `s` for settings, then
-press `k` for key types. The KeyType Library lets you enable additional
-compiled providers and templates for the product store.
+By default, APlane exposes only the native `ed25519` and `falcon1024` key
+types. To try LogicSig key types, such as `aplane.falcon1024.v1` or the bundled
+templates, open the signer admin pane, press `s` for settings, then press `k`
+for key types. The KeyType Library lets you enable compiled providers and
+templates for the product store.
 
 For more detail, see [USER_KEYTYPES.md](USER_KEYTYPES.md).
 

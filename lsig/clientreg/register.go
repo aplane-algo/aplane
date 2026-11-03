@@ -36,7 +36,7 @@ func RegisterClient() {
 		registerCompiledProvider(keytypecatalog.Entry{
 			KeyType:      "aplane.falcon1024.v1",
 			Family:       family.Name,
-			Availability: keytypecatalog.AvailabilityDefaultEnabled,
+			Availability: keytypecatalog.AvailabilityLibrary,
 		}, falcon.RegisterClient)
 		registerCompiledProvider(keytypecatalog.Entry{
 			KeyType:      falcon1024guarded.KeyTypeV1,

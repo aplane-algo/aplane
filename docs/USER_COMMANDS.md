@@ -1198,10 +1198,10 @@ generate <key_type> [param=value ...]
 ```
 generate ed25519
 generate falcon1024
-generate aplane.falcon1024.v1
+generate aplane.falcon1024.v1                                   # after activating from the KeyType Library
 generate aplane.ed25519.v1                                      # after activating from the KeyType Library
 generate aplane.htlc.v1 hash=SHA256_HEX recipient=ADDR1 refund_address=ADDR2 timeout_round=50000000
-generate aplane.falcon1024-allowlist.v1 recipients="@validators"        # address[] params resolve aliases and sets
+generate aplane.falcon1024-allowlist.v1 recipients="@validators"        # after installing; address[] params resolve aliases and sets
 generate aplane.falcon1024-allowlist.v2 recipients="@operators"            # after installing/enabling from the KeyType Library
 ```
 

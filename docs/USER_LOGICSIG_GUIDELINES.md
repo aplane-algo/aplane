@@ -720,8 +720,8 @@ When designing or reviewing a LogicSig TEAL policy:
 ## Bundled LogicSigs In APlane
 
 APlane bundles both signer-gated LogicSig providers and template library
-entries. New signer stores install the Falcon allowlist v1 template by default;
-other bundled templates require explicit import. Users should understand the
+entries. New signer stores enable none of them: compiled providers need
+enabling and bundled templates need explicit import. Users should understand the
 security model of each one before funding or relying on it.
 
 ### Signer-Gated Compiled Providers

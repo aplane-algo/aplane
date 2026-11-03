@@ -63,7 +63,7 @@ installation. This unlocks the signer, giving it access to your encrypted keysto
 
 ## 4. Generate a signing key
 
-In the signer pane, press `g` and select `aplane.falcon1024.v1` to generate a
+In the signer pane, press `g` and select `falcon1024` to generate a native
 Falcon-1024 post-quantum key.
 
 In APlane terminology, a "key" is a file managed by the signer that contains all information 
@@ -109,7 +109,7 @@ In apshell, list your signer-managed addresses:
 keys
 ```
 
-Copy the address for the new `aplane.falcon1024.v1` key you generated in step 4.
+Copy the address for the new `falcon1024` key you generated in step 4.
 
 ## 8. Fund it on testnet
 
@@ -147,8 +147,8 @@ Navigate to the admin panel. Since the approval window is small, hit F4 to zoom 
   
 Approve and zoom back out with F4 again. In the shell, you see the transaction results. If you copy the
 transaction ID and paste it into Lora at https://lora.algokit.io/testnet, you
-will see the transaction. If you click on "Group" you can see the entire Falcon PQ group, including
-the resource "dummy" transactions that this Falcon LogicSig flow requires.
+will see the transaction, authorized by a native Falcon signature with no LogicSig or resource
+"dummy" transactions.
 
 ![Quickstart screenshot 5](https://raw.githubusercontent.com/aplane-algo/aplane.io/main/img/qs5.png)
 
@@ -163,12 +163,11 @@ the fields explained.
 
 ## Further Exploration
 
-By default, APlane exposes the native `ed25519` and `falcon1024` key types plus
-the `aplane.falcon1024.v1` and `aplane.falcon1024-allowlist.v1` LogicSig key
-types. To try additional LogicSig templates from
-the bundled library, open the signer admin pane, press `s` for settings, then
-press `k` for key types. The KeyType Library lets you enable additional
-compiled providers and templates for the product store.
+By default, APlane exposes only the native `ed25519` and `falcon1024` key
+types. To try LogicSig key types, such as `aplane.falcon1024.v1` or the bundled
+templates, open the signer admin pane, press `s` for settings, then press `k`
+for key types. The KeyType Library lets you enable compiled providers and
+templates for the product store.
 
 To try a guarded account, first set up a separate cosigner node and generate its
 `aplane.witness-falcon1024.v1` key. Choose **Export Cosigner Key**; the file

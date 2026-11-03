@@ -180,9 +180,9 @@ component role, while standalone `.wit` instances may serve contract admin.
 |---------|----------|----------------------|
 | `ed25519` | native | default-enabled |
 | `falcon1024` | native_pq | **default-enabled** (protocol-native post-quantum) |
-| `aplane.falcon1024.v1` | dsa_lsig | **default-enabled** (post-quantum default) |
+| `aplane.falcon1024.v1` | dsa_lsig | library-visible (LogicSig post-quantum) |
 | `aplane.ed25519.v1` | Ed25519 dsa_lsig | library-visible |
-| `aplane.falcon1024-allowlist.v1` | dsa_lsig (composed) | bundled, installed+enabled on new stores |
+| `aplane.falcon1024-allowlist.v1` | dsa_lsig (composed) | optional template |
 | `aplane.falcon1024-allowlist.v2` | bounded dsa_lsig (Merkle allowlist) | optional template |
 | `aplane.falcon1024-allowlist-alock.v1` | bounded dsa_lsig (admin-protected rekey) | optional template |
 | `aplane.corridor.v1` | bounded-cosigner dsa_lsig (Merkle spend corridor, admin-protected rekey) | optional template |
@@ -516,7 +516,7 @@ generated key on LocalNet.
 ```text
 status                         # confirm signer_connected + network=localnet
 keytypes                       # see what you can generate
-generate aplane.falcon1024.v1  # create a post-quantum key (returns an address)
+generate falcon1024            # create a native post-quantum key (returns an address)
 keys                           # read the new address
 localnet fund <address>        # fund it from the LocalNet KMD wallet
 balance <address> algo         # confirm funds

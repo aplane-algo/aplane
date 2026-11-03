@@ -12,7 +12,6 @@ import (
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
-	"github.com/aplane-algo/aplane/internal/defaultkeytypes"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/noderole"
@@ -83,21 +82,24 @@ func TestInitializeCreatesStoreMetadataKeysAndPolicy(t *testing.T) {
 	if role.Role != noderole.RoleSigner {
 		t.Fatalf("node role = %q, want %q", role.Role, noderole.RoleSigner)
 	}
-	for _, keyType := range []string{defaultkeytypes.Falcon1024AllowlistKeyType} {
-		rec, ok, err := keytypestate.GetActive(active, keyType)
-		if err != nil {
-			t.Fatalf("keytypestate.GetActive(default key type %s) error = %v", keyType, err)
-		}
-		if !ok {
-			t.Fatalf("default key type %s state missing", keyType)
-		}
-		if rec.Source != keytypestate.SourceYAMLComposed || rec.State != keytypestate.StateEnabled {
-			t.Fatalf("default key type %s state = (%s, %s), want (%s, %s)",
-				keyType, rec.Source, rec.State, keytypestate.SourceYAMLComposed, keytypestate.StateEnabled)
-		}
-		if !templatestore.TemplateExistsActive(active, keyType, templatestore.TemplateTypeComposed) {
-			t.Fatalf("default key type template %s missing", keyType)
-		}
+	assertNoKeyTypesEnabled(t, active, "signer")
+}
+
+// assertNoKeyTypesEnabled checks that a new store enables only the compiled
+// default key types: it carries no key type state records and no installed
+// templates, so library key types such as aplane.falcon1024.v1 and the bundled
+// aplane.falcon1024-allowlist.v1 template stay opt-in.
+func assertNoKeyTypesEnabled(t *testing.T, active storepaths.ActivePaths, role string) {
+	t.Helper()
+	records, err := keytypestate.ListActive(active)
+	if err != nil {
+		t.Fatalf("keytypestate.ListActive() error = %v", err)
+	}
+	if len(records) != 0 {
+		t.Fatalf("%s initialization enabled key types: %+v", role, records)
+	}
+	if templatestore.TemplateExistsActive(active, "aplane.falcon1024-allowlist.v1", templatestore.TemplateTypeComposed) {
+		t.Fatalf("%s initialization installed the bundled allowlist template", role)
 	}
 }
 
@@ -136,13 +138,7 @@ func TestInitializeCreatesExplicitCosignerNodeRole(t *testing.T) {
 	if docs, err := policy.LoadVerifiedKeyPolicies(active, noderole.RoleCosigner, kr); err != nil || len(docs) != 0 {
 		t.Fatalf("cosigner store key policies = %v, %v, want none", docs, err)
 	}
-	rec, ok, err := keytypestate.GetActive(active, defaultkeytypes.Falcon1024AllowlistKeyType)
-	if err != nil {
-		t.Fatalf("keytypestate.GetActive(default key type) error = %v", err)
-	}
-	if ok {
-		t.Fatalf("cosigner initialization installed signer default key type: %+v", rec)
-	}
+	assertNoKeyTypesEnabled(t, active, "cosigner")
 }
 
 // A failure after the node role is written but before the store root is

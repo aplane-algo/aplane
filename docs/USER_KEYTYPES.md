@@ -48,17 +48,18 @@ APlane has two optional key type paths:
 | Compiled provider | `aplane.ed25519.v1` | Go code in the current binary | `apadmin keytype enable` or apadmin KeyType Library |
 | YAML template | `aplane.htlc.v1` | Plaintext library YAML, then encrypted product-local `.template` after import | `apadmin template import` or apadmin KeyType Library |
 
-Default-enabled compiled providers, such as `ed25519`, `falcon1024`, and
-`aplane.falcon1024.v1`, are available without extra steps on signer nodes.
-Library-visible compiled providers are present in the binary but require a
-product-local enablement record before the signer can discover or generate
-them.
+Only the protocol-native key types, `ed25519` and `falcon1024`, are
+default-enabled on signer nodes; they are available without extra steps.
+Every other compiled provider, including the LogicSig Falcon key type
+`aplane.falcon1024.v1`, is library-visible: present in the binary, but
+requiring a product-local enablement record before the signer can discover,
+generate, or import keys of that type. Existing keys stay signable whether or
+not their type is enabled.
 
 YAML templates are different: a library YAML file is only an install source. It
 does not become an active key type until it is imported into the product store.
-Signer stores are initialized with `aplane.falcon1024-allowlist.v1` installed
-and enabled from the bundled library source. Any missing library template can
-be imported explicitly with the template-management commands below.
+New stores install no templates; import any library template explicitly with
+the template-management commands below.
 
 ## Operator Mental Model
 
@@ -139,9 +140,10 @@ LogicSig keys rather than expecting their old addresses to remain stable.
 
 ## Compiled Providers
 
-Compiled providers are registered from Go code when `apsigner` starts. Some are
-default-enabled; others are library-visible and require product-local
-enablement.
+Compiled providers are registered from Go code when `apsigner` starts. The
+protocol-native `ed25519` and `falcon1024` are default-enabled; every other
+compiled provider, including `aplane.falcon1024.v1`, is library-visible and
+requires product-local enablement.
 
 Enable a library-visible compiled provider:
 

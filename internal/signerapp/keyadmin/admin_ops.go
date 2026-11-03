@@ -168,7 +168,7 @@ func (s Service) ImportKey(ctx context.Context, keyType, mnemonic string, params
 		return nil, &Error{Kind: ErrorInternal, Message: "failed to read key type state"}
 	}
 	if !canGenerate {
-		return nil, &Error{Kind: ErrorInvalidInput, Message: "invalid key type: " + keyType}
+		return nil, unavailableKeyTypeError(activeKeyPaths, keyType)
 	}
 	if !keymgmt.SupportsMnemonicImport(keyType) {
 		return nil, &Error{Kind: ErrorInvalidInput, Message: "mnemonic import not supported for key type: " + keyType}

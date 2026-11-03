@@ -19,7 +19,6 @@ const (
 	templateLibraryPackage = modulePrefix + "/internal/templatelibrary"
 	templateStorePackage   = modulePrefix + "/internal/templatestore"
 	keyTypeStatePackage    = modulePrefix + "/internal/keytypestate"
-	defaultKeyTypesPackage = modulePrefix + "/internal/defaultkeytypes"
 	templateAdminPackage   = modulePrefix + "/internal/signerapp/templateadmin"
 	templateRuntimePackage = modulePrefix + "/internal/signerapp/templates"
 )
@@ -131,9 +130,6 @@ func TestTemplateMutationDependencyDirection(t *testing.T) {
 			t.Errorf("%s imports %s: the template mutation owner must remain independent of signerapp orchestration", templateLibraryPackage, imported)
 		}
 	}
-	if !containsImport(imports[defaultKeyTypesPackage], templateLibraryPackage) {
-		t.Errorf("%s no longer imports %s: staged bootstrap must route template installation through the feature owner", defaultKeyTypesPackage, templateLibraryPackage)
-	}
 }
 
 // TestRetiredTemplatePersistenceAPIsStayDeleted prevents the production-unused
@@ -207,15 +203,6 @@ func templateLeafCallsInFile(path string) ([]templateLeafCall, []string, error) 
 		return true
 	})
 	return calls, dotImports, nil
-}
-
-func containsImport(imports []string, want string) bool {
-	for _, imported := range imports {
-		if imported == want {
-			return true
-		}
-	}
-	return false
 }
 
 // TestTemplateLeafCallParserResolvesAliases is a fast unit control for the

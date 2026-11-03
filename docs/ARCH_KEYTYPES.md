@@ -503,7 +503,7 @@ Examples of the composed ontology:
 |----------|--------|----------|-------------|
 | `ed25519` | n/a | `ed25519` | Native Algorand Ed25519 account; not a LogicSig |
 | `falcon1024` | n/a | `native_pq` | Native protocol Falcon-1024 account (scheme `f1`, supported consensus v42 or v43); not a LogicSig |
-| `aplane.falcon1024.v1` | `aplane.falcon1024` | `dsa_lsig` | Default-enabled pure Falcon signature |
+| `aplane.falcon1024.v1` | `aplane.falcon1024` | `dsa_lsig` | Library-visible pure Falcon signature |
 | `aplane.falcon1024-cosigner1024.v1` | `aplane.falcon1024-cosigner1024` | `dsa_lsig` | Library-visible guarded account: Falcon-1024 user + Falcon-1024 cosigner component signatures |
 | `aplane.falcon1024-allowlist-alock.v1` | `falcon1024-allowlist-alock` | `dsa_lsig` | Optional bounded1 composed template: Falcon spending, fixed recipient/asset/amount allowlist, external Falcon contract-admin rekey |
 | `aplane.corridor.v1` | `corridor` | `dsa_lsig` | Optional bounded1 composed template: Falcon spending, framework Merkle recipient policy, cosigner-gated spend, and external-admin pure rekey |
@@ -725,7 +725,7 @@ signer template reload coordinator.
 **Scoping invariant:** compiled providers are shared product capabilities, while
 runtime-added `.template` files belong to the one durable `default` activation set. In practice:
 
-- default-enabled built-in key types are available wherever their providers are registered
+- default-enabled built-in key types are available wherever their providers are registered; only the protocol-native `ed25519` and `falcon1024` (signer nodes) and the witness key type `aplane.witness-falcon1024.v1` (cosigner nodes) are default-enabled
 - library-visible built-in key types require an enabled product-store state record before generation surfaces expose them
 - runtime-added `.template` files live in the selected generation's `keytypes/` with adjacent state records and affect the product runtime when enabled; disabled installed templates remain stored but are skipped during reload
 
@@ -919,7 +919,7 @@ func Get(keyType string) LogicSigDSA {
 ```
 lsig/clientreg.RegisterClient()
     │
-    ├── keytypecatalog.Register(aplane.falcon1024.v1, default_enabled)
+    ├── keytypecatalog.Register(aplane.falcon1024.v1, library)
     │   └── falcon.RegisterClient()
     │       ├── v1.RegisterLogicSigDSA() → Falcon1024V1
     │       └── ... (metadata, address derivation)
