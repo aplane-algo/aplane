@@ -10,6 +10,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/aplane-algo/aplane/internal/protocol"
 )
@@ -216,8 +217,8 @@ func TestEnrollmentAnswerFromPopupIsReported(t *testing.T) {
 		t.Fatalf("lastWarning = %q, want the failed approval reported", m.lastWarning)
 	}
 	m = updateModel(t, m, RejectEnrollmentResultMsg{Success: true, Fingerprint: "SHA256:two"})
-	if !strings.Contains(m.lastWarning, "Enrollment request for SHA256:two rejected") {
-		t.Fatalf("lastWarning = %q, want the rejection reported", m.lastWarning)
+	if m.lastNotice != "Rejected SHA256:two." {
+		t.Fatalf("lastNotice = %q, want the rejection reported", m.lastNotice)
 	}
 
 	// On the Enrolled Clients screen the status line is the place.
@@ -225,6 +226,52 @@ func TestEnrollmentAnswerFromPopupIsReported(t *testing.T) {
 	m = updateModel(t, m, ApproveEnrollmentResultMsg{Success: false, Error: "boom", Fingerprint: "SHA256:one"})
 	if m.clients.status != "Approval of SHA256:one failed: boom" || m.lastWarning != "" {
 		t.Fatalf("status = %q, warning = %q", m.clients.status, m.lastWarning)
+	}
+}
+
+// A successful answer given from the popup is a notice, not a warning, and
+// its outcome fits apadmin's 80-column minimum beside the connection state.
+func TestEnrollmentSuccessFromPopupIsANoticeThatFits(t *testing.T) {
+	const fingerprint = "SHA256:AbCdEfGhIjKlMnOpQrStUvWxYz0123456789+/AbCdE"
+	m := approvalTestModel(ViewKeyList)
+	m.connectionState = ConnectionConnected
+	m.signerStatusKnown = true
+	m.signerState = signerRuntimeUnlocked
+	m.keyCount = 3
+
+	m = updateModel(t, m, ApproveEnrollmentResultMsg{Success: true, Fingerprint: fingerprint, Label: "laptop"})
+	if m.lastWarning != "" {
+		t.Fatalf("lastWarning = %q, want none for a success", m.lastWarning)
+	}
+	if want := "Enrolled SHA256:AbCdEfGhI… (laptop)."; m.lastNotice != want {
+		t.Fatalf("lastNotice = %q, want %q", m.lastNotice, want)
+	}
+	bar := m.renderStatusBar()
+	if strings.Contains(bar, "Warning:") {
+		t.Fatalf("status bar labels a success as a warning: %q", bar)
+	}
+	if !strings.Contains(bar, m.lastNotice) {
+		t.Fatalf("status bar %q does not show notice %q", bar, m.lastNotice)
+	}
+	if width := lipgloss.Width(bar); width > 80 {
+		t.Fatalf("status bar is %d columns, want at most 80: %q", width, bar)
+	}
+
+	stale := m.lastNoticeGeneration - 1
+	m = updateModel(t, m, clearNoticeMsg{Generation: stale})
+	if m.lastNotice == "" {
+		t.Fatal("stale clear removed the notice")
+	}
+	m = updateModel(t, m, clearNoticeMsg{Generation: m.lastNoticeGeneration})
+	if m.lastNotice != "" {
+		t.Fatalf("lastNotice = %q, want it cleared", m.lastNotice)
+	}
+
+	// The Enrolled Clients screen has the width for the whole fingerprint.
+	m = approvalTestModel(ViewEnrolledClients)
+	m = updateModel(t, m, ApproveEnrollmentResultMsg{Success: true, Fingerprint: fingerprint, Label: "laptop"})
+	if want := "Enrolled " + fingerprint + " (laptop)."; m.clients.status != want || m.lastNotice != "" {
+		t.Fatalf("status = %q, notice = %q, want status %q", m.clients.status, m.lastNotice, want)
 	}
 }
 

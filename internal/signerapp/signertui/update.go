@@ -21,7 +21,7 @@ import (
 // adminRefreshInterval is how often the admin panel polls for updated settings.
 const adminRefreshInterval = 2 * time.Second
 
-const transientWarningDuration = 5 * time.Second
+const transientStatusDuration = 5 * time.Second
 
 // adminRefreshTickCmd returns a tea.Cmd that fires after adminRefreshInterval.
 func adminRefreshTickCmd() tea.Cmd {
@@ -31,7 +31,7 @@ func adminRefreshTickCmd() tea.Cmd {
 }
 
 func clearWarningTickCmd(generation uint64) tea.Cmd {
-	return tea.Tick(transientWarningDuration, func(time.Time) tea.Msg {
+	return tea.Tick(transientStatusDuration, func(time.Time) tea.Msg {
 		return clearWarningMsg{Generation: generation}
 	})
 }
@@ -49,6 +49,18 @@ func (m *Model) clearWarning() {
 func (m *Model) setTransientWarning(warning string) tea.Cmd {
 	m.setPersistentWarning(warning)
 	return clearWarningTickCmd(m.lastWarningGeneration)
+}
+
+func clearNoticeTickCmd(generation uint64) tea.Cmd {
+	return tea.Tick(transientStatusDuration, func(time.Time) tea.Msg {
+		return clearNoticeMsg{Generation: generation}
+	})
+}
+
+func (m *Model) setTransientNotice(notice string) tea.Cmd {
+	m.lastNoticeGeneration++
+	m.lastNotice = notice
+	return clearNoticeTickCmd(m.lastNoticeGeneration)
 }
 
 // Update handles all TUI events and messages. A pending approval popup stays
@@ -674,6 +686,12 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case clearWarningMsg:
 		if msg.Generation == m.lastWarningGeneration {
 			m.lastWarning = ""
+		}
+		return m, nil
+
+	case clearNoticeMsg:
+		if msg.Generation == m.lastNoticeGeneration {
+			m.lastNotice = ""
 		}
 		return m, nil
 
