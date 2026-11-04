@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- Go 1.25 or later
+- Go 1.27 or later
 - Make
 - Git
 - `golangci-lint` for `make lint` and `make integrity-check`

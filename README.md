@@ -274,7 +274,7 @@ All documentation is in the [`docs/`](docs/) directory.
 
 ## Requirements
 
-- Go 1.25+
+- Go 1.27+
 - CGO enabled for binaries with cryptographic providers
 - Linux or macOS
 

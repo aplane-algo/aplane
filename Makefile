@@ -622,7 +622,7 @@ lint: compile-docassets
 # pre-commit hook and CI; installation is environment-specific).
 staticcheck:
 	@if ! command -v staticcheck >/dev/null 2>&1; then \
-		echo "Error: staticcheck not found. Install with: go install honnef.co/go/tools/cmd/staticcheck@2025.1.1"; \
+		echo "Error: staticcheck not found. Install with: go install honnef.co/go/tools/cmd/staticcheck@2026.2.2"; \
 		exit 1; \
 	fi
 	@echo "Running staticcheck..."
