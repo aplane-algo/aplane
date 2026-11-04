@@ -22,6 +22,7 @@ signing flow; see [ARCH_SIGNING.md](ARCH_SIGNING.md#http-api-contract),
 - [REPL Surface](#repl-surface)
 - [App Interaction](#app-interaction)
 - [MCP Surface](#mcp-surface)
+- [Client Output and Logging](#client-output-and-logging)
 - [Key Files](#key-files)
 - [Related Documentation](#related-documentation)
 
@@ -1690,6 +1691,131 @@ overlap:
 mu.Lock()
 defer mu.Unlock()
 ```
+
+## Client Output and Logging
+
+Client programs produce four kinds of output, and each has one owner:
+
+| Class | What it is | Path |
+|---|---|---|
+| Result | The answer to a command, or something the user must keep | Typed application result, rendered by the host (`r.Out`, `command.Result`) |
+| Prompt | Asks for a decision or input | The line reader, or the host's approval handler |
+| Progress | Status that matters while an operation runs | `ProgressLine`, `SignerProgressOut`, or a host callback |
+| Log | Operational diagnostics | `log/slog`, through the handler the host installs |
+
+If a command's answer would be incomplete without a message, it is a result, and
+no log level may hide it.
+
+### Logging Pipeline
+
+Packages call `log/slog` and import nothing of ours, so a shared package doesn't
+need to know whether it runs under a terminal, a TUI, or an MCP host. Each host
+calls `clientlog.Install` once, before it builds anything that can log.
+
+A source gets its logger at call time:
+
+```go
+func logger() *slog.Logger { return slog.With("component", "cache") }
+```
+
+A package variable built with `slog.With` would bind the default handler during
+package initialization, before the host installs one, and bypass the pipeline.
+
+The handler renders one readable line, keeping every attribute and escaping the
+whole line, since names, values, and errors can all carry outside text:
+
+```text
+[cache] warning: failed to save auth cache error="disk full"
+[plugin mithras stderr] cannot find module foo
+```
+
+A plugin's output has `component=plugin` and its name in a separate attribute,
+because a plugin chooses its name and could otherwise pass as `cache`.
+
+| Level | Meaning | Examples |
+|---|---|---|
+| `error` | A failure nothing else reports | Recovered keepalive panic |
+| `warn` | The operator should know or act | Cache tampering, connection loss, key revocation, skipped plugin, failed plugin's last lines |
+| `info` | Routine detail | Plugin stderr, sandbox line, host key saved |
+| `debug` | Detail for diagnosing the client | Cache hits, forwarded-connection errors, response-close errors |
+
+The default level is `warn`, except that `--mcp` starts at `info`, because its
+stderr is the host's log rather than a display. `APSHELL_DEBUG` starts any mode at
+`debug`, and `loglevel` changes the level at runtime. Text that reaches the
+standard `log` package has no level, so the host assigns it `warn` rather than
+hide it.
+
+| Host | Where logs go |
+|---|---|
+| `apshell` REPL | stderr, through readline while it runs so the prompt is redrawn |
+| `apshell --script`, `--mcp`, `aprekey`, `apapprover`, `apadmin` batch modes | stderr |
+| apconsole | `clientlog.Deferred`, pulled into the shell pane; written out on exit if the node has no shell |
+| `apadmin` TUI | `clientlog.Deferred`, written out on exit; lost notifications are shown live |
+| `appolicy`, `aplocalnet`, `applugin-checksum` | No handler, because they can't log (see [Enforcement](#enforcement)) |
+| `apstore`, `apsigner` | Outside this contract |
+
+An admin TUI shows lost notifications as a count in its status bar, independently
+of any log level, so that one condition doesn't depend on log delivery. Any other
+diagnostic a pane-less TUI must show live needs its own decision about how.
+
+### Deferred Delivery
+
+While a TUI owns the terminal, nothing may write to it directly, and a log call
+can come from the TUI's own update loop, so a writer can't wait for the display.
+`clientlog.Deferred` is a bounded queue the TUI pulls from with a blocking
+`tea.Cmd`. It holds records from before the TUI exists, so warnings raised during
+startup still reach the pane.
+
+- Records leave in submission order. Severity only affects eviction: when the
+  queue is full, ordinary records go first, so lower-level traffic can't evict a
+  warning. Warning traffic can, and a marker reports it. The queue promises order
+  and accounting, not that nothing is lost.
+- A batch stays held until `Update` has stored it and acknowledged it, so a batch
+  the TUI never received is still there when it stops.
+- `Flush` waits for what was submitted before the call, so a command's own
+  diagnostics appear above its result. A dropped record counts once its marker is
+  delivered.
+- `Close` runs as soon as the TUI stops, before anything that can exit. It writes
+  everything unacknowledged, and later records go straight to stderr.
+
+### What This Doesn't Promise
+
+A bounded queue can lose warnings under warning overflow, though it reports that.
+Synchronous stderr can block or fail. An acknowledgment means the TUI stored a
+line, not that anyone read it. With `info` on, a failed plugin's lines are
+best-effort: another source can evict them from a TUI's queue.
+
+### What Stays Outside the Pipeline
+
+- The key-scan warning in `internal/keys` is shared with the signer and writes to
+  stderr itself. Client hosts never reach it.
+- A program's reason for stopping, such as apconsole's `logErrorf`, stays a direct
+  write, because it must not depend on a log level.
+- `apapprover` uses `cmdlog` for its interface. Only its diagnostics are logs.
+- `apadmin` prints its startup warnings before the TUI opens. They describe optional
+  capabilities, and using one reports its own error, so they need no live display.
+- Terminal output from `internal/apshellcli` belongs to the host, not to a source.
+
+### Enforcement
+
+`test/arch/client_logging_test.go` keeps client packages from writing diagnostics
+directly, keeps packages from retaining the default logger during initialization,
+and limits process logging setup to `cmd/*`. It also rejects `slog.NewLogLogger` and
+direct handler calls, and requires every binary that links a logging source to
+install a handler or be listed with a reason. Its exceptions are result and progress
+fallbacks, and the list shrinks as those writers become required.
+
+`make logging-reach-check` proves a binary with no handler can't log. It analyzes
+each binary as built for production and requires `Logger.log` and `Logger.logAttrs`
+to be listed as unreachable, so a call that becomes reachable fails it even if no
+dependency changed, and so does a Go release that renames them. It applies to the
+platform it runs on and to ordinary logging only, which is why the test above
+rejects the other routes.
+
+`analysis/keylog` checks structured logging arguments by name. That is not secret
+detection: it can't see a secret inside a struct. Plugin stderr can hold anything a
+plugin prints, so it is kept off disk, and failure replay is a deliberate exception
+to its usual filtering.
 
 ## Key Files
 

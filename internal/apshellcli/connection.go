@@ -14,10 +14,7 @@ import (
 
 func executeConnectConfigured(r *REPLState) (*apshellapp.ConnectResult, error) {
 	hostKeyApproval := buildHostKeyApproval(r)
-	return r.app().ConnectConfigured(r.commandContext(), hostKeyApproval, func() {
-		r.println("⚠️  Disconnected from signer")
-		r.print("> ")
-	})
+	return r.app().ConnectConfigured(r.commandContext(), hostKeyApproval, nil)
 }
 
 // connectConfigured is the startup/interactive lifecycle wrapper. Registered
@@ -33,10 +30,7 @@ func connectConfigured(r *REPLState) error {
 
 func executeConnectEndpointAlias(r *REPLState, alias string) (*apshellapp.ConnectResult, error) {
 	hostKeyApproval := buildHostKeyApproval(r)
-	return r.app().ConnectEndpointAlias(r.commandContext(), alias, hostKeyApproval, func() {
-		r.println("⚠️  Disconnected from signer")
-		r.print("> ")
-	})
+	return r.app().ConnectEndpointAlias(r.commandContext(), alias, hostKeyApproval, nil)
 }
 
 func (r *REPLState) cmdDisconnect(args []string, _ interface{}) (command.Result, error) {
@@ -134,10 +128,21 @@ func buildHostKeyApproval(r *REPLState) sshtunnel.HostKeyApprovalHandler {
 		if r.HostKeyApproval != nil {
 			return r.HostKeyApproval(host, fingerprint)
 		}
+		r.printf("\n[SSH] Unknown host: %s\n", host)
+		r.printf("[SSH] Host key fingerprint: %s\n", fingerprint)
+		r.println(sshtunnel.HostKeyApprovalTimeoutNotice())
 		response, err := r.readPromptResponse("Do you want to trust this server? [y/N]: ")
 		if err != nil {
 			return false, err
 		}
 		return response == "y" || response == "yes", nil
 	}
+}
+
+// announceIdentityCreated tells the user a new SSH key now exists. The key itself
+// is a result, so it comes from endpoints public-key, not from this one message.
+func (r *REPLState) announceIdentityCreated(created sshtunnel.IdentityCreated) {
+	r.progressPrintln("Generated new SSH identity key: " + created.Path)
+	r.progressPrintln("Public key fingerprint: " + created.Fingerprint)
+	r.progressPrintln("Run 'endpoints public-key' to print the key.")
 }

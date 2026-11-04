@@ -76,6 +76,7 @@ func (s *ConnectionState) ConnectWithTunnel(
 	if hostKeyApproval != nil {
 		client.SetHostKeyApprovalHandler(hostKeyApproval)
 	}
+	client.SetIdentityCreatedCallback(s.IdentityCreatedHandler())
 
 	client.SetDisconnectCallback(func() {
 		s.Mu.Lock()
@@ -176,6 +177,7 @@ func (s *ConnectionState) RequestEnrollmentWithContext(
 	if hostKeyApproval != nil {
 		client.SetHostKeyApprovalHandler(hostKeyApproval)
 	}
+	client.SetIdentityCreatedCallback(s.IdentityCreatedHandler())
 	if onEnrollmentStart != nil {
 		client.SetEnrollmentStartCallback(onEnrollmentStart)
 	}

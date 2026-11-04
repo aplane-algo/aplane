@@ -1601,7 +1601,6 @@ func TestPreparedGroupDepositMethodFlow(t *testing.T) {
 func newIntegrationEngine(t *testing.T, algodClient *algod.Client, signerURL string) (*engine.Engine, error) {
 	t.Helper()
 
-	cache.InitLogger()
 	cacheStore := cache.NewStore(t.TempDir())
 
 	eng, err := engine.NewEngine(harness.IntegrationNetwork(),

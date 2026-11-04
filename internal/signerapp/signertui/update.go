@@ -361,6 +361,10 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Continue listening for messages
 		return m, m.waitForMessageCmd()
 
+	case NotificationsLostMsg:
+		m.notificationsLost = max(m.notificationsLost, msg.Total)
+		return m, m.waitForMessageCmd()
+
 	case KeysChangedMsg:
 		// Server notified us that keys or key types changed - refresh both projections.
 		return m, tea.Batch(m.waitForMessageCmd(), m.sendListKeysCmd(), m.sendListKeyTypesCmd())

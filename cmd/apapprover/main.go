@@ -11,6 +11,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"math/big"
 	"os"
 	"os/signal"
@@ -19,6 +20,7 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminipc"
+	"github.com/aplane-algo/aplane/internal/clientlog"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/transport"
@@ -92,6 +94,8 @@ func approvalPrompt(code string) string {
 const enrollmentAnswerTimeout = 10 * time.Second
 
 func main() {
+	clientlog.Install(clientlog.StartLevel(slog.LevelWarn), clientlog.WriterSink(os.Stderr))
+
 	dataDir := flag.String("d", "", "Data directory (required, or set APSIGNER_DATA)")
 	ipcPathFlag := flag.String("ipc-path", "", "Admin IPC socket path (or set APSIGNER_IPC_PATH)")
 	flag.Parse()
@@ -116,6 +120,8 @@ func main() {
 	}
 	notifications := ipcClient.Notifications()
 	lifecycle := ipcClient.LifecycleEvents()
+	lost := notificationLossReporter{count: ipcClient.DroppedNotifications, warnf: logWarnf}
+	notificationDrops := ipcClient.NotificationDrops()
 	for {
 		select {
 		case <-sigChan:
@@ -123,14 +129,35 @@ func main() {
 			return
 		case event := <-lifecycle:
 			if connectionEnded(event) {
+				lost.report()
 				return
 			}
+		case <-notificationDrops:
+			lost.report()
 		case input := <-inputChan:
 			a.handleInput(input)
 		case notification := <-notifications:
 			a.handleNotification(notification)
 		}
 	}
+}
+
+// notificationLossReporter tells the operator when the client lost signer
+// notifications. Approval requests travel as notifications, so one may be
+// missing from this screen.
+type notificationLossReporter struct {
+	count    func() uint64
+	warnf    func(format string, args ...any)
+	reported uint64
+}
+
+func (r *notificationLossReporter) report() {
+	total := r.count()
+	if total <= r.reported {
+		return
+	}
+	r.reported = total
+	r.warnf("%d signer notifications lost; an approval request may be missing", total)
 }
 
 // connectApprover reads the passphrase, connects to the signer's admin IPC
@@ -368,9 +395,9 @@ func (a *approver) handleNotification(notification transport.Notification) {
 	decoded, handled, err := decodeNotification(notification)
 	switch {
 	case err != nil:
-		logWarnf("%v", err)
+		slog.Warn(err.Error(), "component", "apapprover")
 	case !handled:
-		logWarnf("ignoring unknown IPC message type %q", notification.Base.Type)
+		slog.Warn("ignoring unknown IPC message", "component", "apapprover", "type", notification.Base.Type)
 	case decoded.errMsg != nil:
 		logErrorf("%s", decoded.errMsg.Error)
 	case decoded.canceled != nil:

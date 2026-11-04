@@ -77,4 +77,21 @@ func (c *StreamClient) LifecycleEvents() <-chan LifecycleEvent {
 	return c.dispatcher.lifecycleChan()
 }
 
+// DroppedNotifications reports how many notifications this stream discarded
+// because the notification buffer was full.
+func (c *StreamClient) DroppedNotifications() uint64 {
+	return c.dispatcher.DroppedNotifications()
+}
+
+// NotificationDrops signals that DroppedNotifications may have changed.
+func (c *StreamClient) NotificationDrops() <-chan struct{} {
+	return c.dispatcher.notificationDropsChan()
+}
+
+// ReaderDone closes when the stream's reader has exited, after which
+// DroppedNotifications no longer changes.
+func (c *StreamClient) ReaderDone() <-chan struct{} {
+	return c.dispatcher.readerDoneChan()
+}
+
 var _ adminProtocolConn = (*StreamClient)(nil)

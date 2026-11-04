@@ -40,9 +40,10 @@ func TestIPCClientForwardsSignRequestCanceled(t *testing.T) {
 	}
 
 	client := &IPCClient{
-		msgChan:   make(chan queuedMsg, 2),
-		done:      make(chan struct{}),
-		sessionID: 1,
+		msgChan:          make(chan queuedMsg, 2),
+		done:             make(chan struct{}),
+		sessionID:        1,
+		notificationLoss: newNotificationLoss(),
 	}
 	notifications := make(chan transport.Notification, 1)
 	lifecycle := make(chan transport.LifecycleEvent)
@@ -669,7 +670,12 @@ func TestIPCClientManualDisconnectDoesNotEmitReconnectLifecycle(t *testing.T) {
 }
 
 func TestIPCClientReportsUndecodableMessage(t *testing.T) {
-	client := &IPCClient{msgChan: make(chan queuedMsg, 2), done: make(chan struct{}), sessionID: 1}
+	client := &IPCClient{
+		msgChan:          make(chan queuedMsg, 2),
+		done:             make(chan struct{}),
+		sessionID:        1,
+		notificationLoss: newNotificationLoss(),
+	}
 	notifications := make(chan transport.Notification, 1)
 	lifecycle := make(chan transport.LifecycleEvent)
 	go client.forwardMessages(1, client.done, notifications, lifecycle)

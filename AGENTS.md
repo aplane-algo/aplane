@@ -72,6 +72,7 @@ Apshell is the other major component; it provides a shell-like interface to gene
 - `internal/scripting/`, `internal/jsapi/`: Goja runtime and JavaScript bindings
 - `internal/sshtunnel/`: SSH tunnel server/client
 - `internal/config/`: Client and server configuration loading/validation
+- `internal/clientlog/`: Client logging pipeline; see "Client Output and Logging" in `docs/ARCH_SHELL.md`
 
 For a current ownership map and source-of-truth files, prefer `docs/ARCH_OVERVIEW.md` over this summary.
 
@@ -133,6 +134,14 @@ make analyze-keyzero      # Check key material zeroing
 make analyze-keylog       # Check for keys in logs
 make analyze-insecurerand # Check for insecure random
 make analyze-seedphrase   # Check for BIP-39 seed phrases in files
+```
+
+### Client Logging
+Client packages report diagnostics through `log/slog`, getting the logger at call
+time, and hosts decide where they go. Results, prompts, and progress keep their own
+paths. See "Client Output and Logging" in `docs/ARCH_SHELL.md`.
+```bash
+make logging-reach-check  # Prove binaries without a handler can't log (CI-only)
 ```
 
 ### Static Analysis

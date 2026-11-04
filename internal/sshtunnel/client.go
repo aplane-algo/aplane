@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"os"
 	"path/filepath"
@@ -45,32 +46,16 @@ func classifyHandshakeError(err error) error {
 	return err
 }
 
-// statusWriter is the destination for SSH client status/error messages emitted
-// from background goroutines (keepalive monitors, connection-closed handlers,
-// host-key prompts, identity-key generation). Defaults to os.Stdout so the
-// standalone apshell behavior is unchanged. TUI hosts (apconsole) must call
-// SetStatusWriter(io.Discard) — otherwise these direct writes corrupt the
-// bubbletea-managed display when the tunnel emits between frames.
-var (
-	statusMu     sync.RWMutex
-	statusWriter io.Writer = os.Stdout
-)
-
-// SetStatusWriter overrides where SSH client status messages are written.
-// Pass io.Discard to suppress them. nil restores the default (os.Stdout).
-func SetStatusWriter(w io.Writer) {
-	if w == nil {
-		w = os.Stdout
-	}
-	statusMu.Lock()
-	statusWriter = w
-	statusMu.Unlock()
+// logger returns the SSH client's logger. It is made at each call, because a
+// logger kept from package initialization would miss the handler the host installs.
+func logger() *slog.Logger {
+	return slog.With("component", "ssh")
 }
 
-func status() io.Writer {
-	statusMu.RLock()
-	defer statusMu.RUnlock()
-	return statusWriter
+// IdentityCreated describes an identity key generated while connecting.
+type IdentityCreated struct {
+	Path        string
+	Fingerprint string
 }
 
 // HostKeyApprovalTimeoutNotice is shared by the shell and console prompts.
@@ -103,8 +88,9 @@ func (s *keepaliveStopSignal) stop() {
 	})
 }
 
-// HostKeyApprovalHandler is called when connecting to an unknown SSH server.
-// It should display the host and fingerprint to the user and return true if trusted.
+// HostKeyApprovalHandler is called when connecting to an unknown SSH server. It
+// owns the prompt: it should show the user the host, the fingerprint, and
+// HostKeyApprovalTimeoutNotice, and return true if the server is trusted.
 type HostKeyApprovalHandler func(host string, fingerprint string) (bool, error)
 
 // Client represents an SSH tunnel client with public-key authentication and
@@ -122,6 +108,7 @@ type Client struct {
 	knownHostsPath    string
 	hostKeyApproval   HostKeyApprovalHandler // Callback for TOFU host key approval
 	onEnrollmentStart func(string)
+	onIdentityCreated func(IdentityCreated)
 
 	mu        sync.Mutex
 	connected bool
@@ -167,6 +154,14 @@ func (c *Client) SetDisconnectCallback(callback func()) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.onDisconnect = callback
+}
+
+// SetIdentityCreatedCallback sets a callback for when connecting generates a new
+// identity key, so the host can announce it. Without one, it is logged as a warning.
+func (c *Client) SetIdentityCreatedCallback(callback func(IdentityCreated)) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.onIdentityCreated = callback
 }
 
 // SetHostKeyApprovalHandler sets a callback for TOFU host key approval.
@@ -277,7 +272,7 @@ func (c *Client) authMethod(onSigned func(string)) (ssh.AuthMethod, net.Conn, er
 }
 
 // generateIdentityKey creates a new Ed25519 key pair and saves it to the specified path.
-// Returns the signer for immediate use. The public key is printed for the user to register.
+// Returns the signer for immediate use. ReadIdentityPublicKey gets the public key.
 func (c *Client) generateIdentityKey(path string) (ssh.Signer, error) {
 	pubKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
@@ -309,18 +304,24 @@ func (c *Client) generateIdentityKey(path string) (ssh.Signer, error) {
 		return nil, fmt.Errorf("failed to create signer: %w", err)
 	}
 
-	// Format public key for display
 	sshPubKey, err := ssh.NewPublicKey(pubKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create SSH public key: %w", err)
 	}
-	authorizedKey := ssh.MarshalAuthorizedKey(sshPubKey)
-
-	_, _ = fmt.Fprintf(status(), "\n[SSH] Generated new identity key: %s\n", path)
-	_, _ = fmt.Fprintf(status(), "[SSH] Public key fingerprint: %s\n", ssh.FingerprintSHA256(sshPubKey))
-	_, _ = fmt.Fprintf(status(), "[SSH] Public key (for authorized_keys):\n%s\n", string(authorizedKey))
+	c.announceIdentityCreated(IdentityCreated{Path: path, Fingerprint: ssh.FingerprintSHA256(sshPubKey)})
 
 	return signer, nil
+}
+
+func (c *Client) announceIdentityCreated(created IdentityCreated) {
+	c.mu.Lock()
+	callback := c.onIdentityCreated
+	c.mu.Unlock()
+	if callback != nil {
+		callback(created)
+		return
+	}
+	logger().Warn("generated a new SSH identity key", "path", created.Path, "fingerprint", created.Fingerprint)
 }
 
 func (c *Client) agentAuthMethod(onSigned func(string)) (ssh.AuthMethod, net.Conn, error) {
@@ -397,9 +398,6 @@ func (c *Client) hostKeyCallback() (ssh.HostKeyCallback, error) {
 		var approved bool
 		var approvalErr error
 		approvalOnce.Do(func() {
-			_, _ = fmt.Fprintf(status(), "\n[SSH] Unknown host: %s\n", hostname)
-			_, _ = fmt.Fprintf(status(), "[SSH] Host key fingerprint: %s\n", fingerprint)
-			_, _ = fmt.Fprintln(status(), HostKeyApprovalTimeoutNotice())
 			approved, approvalErr = handler(hostname, fingerprint)
 		})
 
@@ -414,7 +412,7 @@ func (c *Client) hostKeyCallback() (ssh.HostKeyCallback, error) {
 		if err := c.saveHostKey(knownHostsPath, hostname, key); err != nil {
 			return fmt.Errorf("failed to save host key: %w", err)
 		}
-		_, _ = fmt.Fprintf(status(), "[SSH] Host key saved to %s\n", knownHostsPath)
+		logger().Info("host key saved", "path", knownHostsPath)
 
 		return nil
 	}, nil
@@ -548,7 +546,7 @@ func (c *Client) acceptConnections(ctx context.Context) {
 func (c *Client) handleConnection(localConn net.Conn) {
 	defer func() {
 		if err := localConn.Close(); err != nil && !isExpectedCloseError(err) {
-			_, _ = fmt.Fprintf(status(), "Failed to close local connection: %v\n", err)
+			logger().Debug("failed to close local connection", "error", err)
 		}
 	}()
 
@@ -563,12 +561,12 @@ func (c *Client) handleConnection(localConn net.Conn) {
 	// Open a channel to the node's REST API through the SSH connection.
 	remoteConn, err := sshClient.Dial("tcp", forwardedAPIAddress)
 	if err != nil {
-		_, _ = fmt.Fprintf(status(), "Failed to dial remote port: %v\n", err)
+		logger().Debug("failed to dial remote port", "error", err)
 		return
 	}
 	defer func() {
 		if err := remoteConn.Close(); err != nil && !isExpectedCloseError(err) {
-			_, _ = fmt.Fprintf(status(), "Failed to close remote connection: %v\n", err)
+			logger().Debug("failed to close remote connection", "error", err)
 		}
 	}()
 
@@ -868,7 +866,7 @@ func (c *Client) monitorConnection(ctx context.Context, sshClient *ssh.Client, k
 		defer close(keepaliveDone)
 		defer func() {
 			if r := recover(); r != nil {
-				_, _ = fmt.Fprintf(status(), "\n[SSH] Keepalive goroutine panic: %v\n", r)
+				logger().Error("keepalive goroutine panic", "panic", r)
 				c.handleDisconnect()
 			}
 		}()
@@ -886,7 +884,7 @@ func (c *Client) monitorConnection(ctx context.Context, sshClient *ssh.Client, k
 				_, _, err := sshClient.SendRequest("keepalive@openssh.com", true, nil)
 				if err != nil {
 					// Connection is dead
-					_, _ = fmt.Fprintf(status(), "\n[SSH] Keepalive failed: %v\n", err)
+					logger().Warn("keepalive failed", "error", err)
 					c.handleDisconnect()
 					return
 				}
@@ -901,7 +899,7 @@ func (c *Client) monitorConnection(ctx context.Context, sshClient *ssh.Client, k
 		case <-c.closeChan:
 			// Local shutdown path: suppress expected "use of closed network connection" noise.
 		default:
-			_, _ = fmt.Fprintf(status(), "\n[SSH] Connection closed with error: %v\n", err)
+			logConnectionError(err)
 		}
 	}
 
@@ -927,6 +925,16 @@ func (c *Client) monitorConnection(ctx context.Context, sshClient *ssh.Client, k
 	c.handleDisconnect()
 }
 
+// logConnectionError reports why a connection ended, if that says anything: EOF is
+// just how a remote close looks, and handleDisconnect reports the close itself.
+func logConnectionError(err error) {
+	if errors.Is(err, io.EOF) {
+		logger().Debug("connection closed", "error", err)
+		return
+	}
+	logger().Warn("connection closed", "error", err)
+}
+
 // handleDisconnect is called when the connection dies
 func (c *Client) handleDisconnect() {
 	c.mu.Lock()
@@ -936,13 +944,18 @@ func (c *Client) handleDisconnect() {
 	reason := c.disconnectReason
 	c.mu.Unlock()
 
-	// Only trigger callback once
-	if wasConnected && callback != nil {
-		if reason == DisconnectReasonKeyRevoked {
-			_, _ = fmt.Fprintln(status(), "\n[SSH] Disconnected: this client's key was revoked by the signer")
-		} else {
-			_, _ = fmt.Fprintln(status(), "\n[SSH] Connection closed by remote server")
-		}
+	// Only report once. A local Close has already cleared connected, so this is the
+	// remote side going away. Not every connection has a callback: a cosigner
+	// connection doesn't, and its loss must still be reported.
+	if !wasConnected {
+		return
+	}
+	if reason == DisconnectReasonKeyRevoked {
+		logger().Warn("disconnected: this client's key was revoked by the signer")
+	} else {
+		logger().Warn("connection closed by remote server")
+	}
+	if callback != nil {
 		callback()
 	}
 }

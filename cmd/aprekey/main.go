@@ -12,6 +12,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"os/signal"
 	"strings"
@@ -22,6 +23,7 @@ import (
 	boundedauthorization "github.com/aplane-algo/aplane/internal/boundedadmin/authorization"
 	"github.com/aplane-algo/aplane/internal/boundedadmin/helpersign"
 	boundedprotocol "github.com/aplane-algo/aplane/internal/boundedadmin/protocol"
+	"github.com/aplane-algo/aplane/internal/clientlog"
 	apcrypto "github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/witness/artifact"
 	"golang.org/x/term"
@@ -65,6 +67,8 @@ func (e *usageError) Error() string { return e.err.Error() }
 func (e *usageError) Unwrap() error { return e.err }
 
 func main() {
+	clientlog.Install(clientlog.StartLevel(slog.LevelWarn), clientlog.WriterSink(os.Stderr))
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	app := application{

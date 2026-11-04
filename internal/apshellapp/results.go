@@ -722,6 +722,14 @@ type EndpointShowResult struct {
 	Endpoint EndpointEntry
 }
 
+// EndpointPublicKeyResult is the public half of an endpoint's SSH identity.
+type EndpointPublicKeyResult struct {
+	Alias string
+	// PublicKey is one OpenSSH public-key line, as an operator imports it.
+	PublicKey   string
+	Fingerprint string
+}
+
 // EndpointImportResult describes a public endpoint-envelope import.
 type EndpointImportResult struct {
 	Alias          string

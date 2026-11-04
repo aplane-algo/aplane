@@ -27,6 +27,7 @@ type ConnectionState struct {
 	ConnectionTarget  string
 	connectingTarget  string
 	portDialTimeout   func(network, address string, timeout time.Duration) (net.Conn, error)
+	identityCreated   func(sshtunnel.IdentityCreated)
 }
 
 // NewState creates an empty connection state.
@@ -53,6 +54,21 @@ func (s *ConnectionState) GetConnectionTarget() string {
 	s.Mu.Lock()
 	defer s.Mu.Unlock()
 	return s.ConnectionTarget
+}
+
+// SetIdentityCreatedHandler sets what happens when connecting generates a new SSH
+// identity key, for every connection made from now on.
+func (s *ConnectionState) SetIdentityCreatedHandler(handler func(sshtunnel.IdentityCreated)) {
+	s.Mu.Lock()
+	defer s.Mu.Unlock()
+	s.identityCreated = handler
+}
+
+// IdentityCreatedHandler returns the handler set by SetIdentityCreatedHandler.
+func (s *ConnectionState) IdentityCreatedHandler() func(sshtunnel.IdentityCreated) {
+	s.Mu.Lock()
+	defer s.Mu.Unlock()
+	return s.identityCreated
 }
 
 // SetSignerProgressWriter updates the output writer used by the current signer client

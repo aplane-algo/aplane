@@ -4,9 +4,11 @@
 package harness
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -174,6 +176,72 @@ func (a *ApshellHarness) runRaw(input string, args ...string) (string, error) {
 	}
 
 	return output, nil
+}
+
+// MCPSession is a running apshell --mcp whose streams are kept apart, so a test
+// can hold stdout to the JSON-RPC transport.
+type MCPSession struct {
+	cmd    *exec.Cmd
+	stdin  io.WriteCloser
+	lines  chan string
+	stderr bytes.Buffer
+	done   chan error
+}
+
+// StartMCP runs apshell --mcp against the configured signer.
+func (a *ApshellHarness) StartMCP() (*MCPSession, error) {
+	if err := a.Build(); err != nil {
+		return nil, err
+	}
+	cmd := exec.Command(a.binaryPath, "--mcp")
+	cmd.Dir = a.workDir
+	cmd.Env = append(os.Environ(), fmt.Sprintf("APCLIENT_DATA=%s", a.clientData))
+	cmd.Env = append(cmd.Env, a.envVars...)
+	session := &MCPSession{cmd: cmd, lines: make(chan string, 64), done: make(chan error, 1)}
+	cmd.Stderr = &session.stderr
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return nil, err
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, err
+	}
+	session.stdin = stdin
+	if err := cmd.Start(); err != nil {
+		return nil, err
+	}
+	go func() {
+		scanner := bufio.NewScanner(stdout)
+		scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
+		for scanner.Scan() {
+			session.lines <- scanner.Text()
+		}
+		close(session.lines)
+		session.done <- cmd.Wait()
+	}()
+	return session, nil
+}
+
+// Send writes one JSON-RPC message.
+func (s *MCPSession) Send(message string) error {
+	_, err := io.WriteString(s.stdin, message+"\n")
+	return err
+}
+
+// Lines delivers each line apshell writes to stdout.
+func (s *MCPSession) Lines() <-chan string { return s.lines }
+
+// Close ends stdin, waits for apshell to exit, and returns what it wrote to stderr.
+func (s *MCPSession) Close(timeout time.Duration) (string, error) {
+	_ = s.stdin.Close()
+	select {
+	case err := <-s.done:
+		return s.stderr.String(), err
+	case <-time.After(timeout):
+		_ = s.cmd.Process.Kill()
+		return "", fmt.Errorf("apshell --mcp did not exit within %s", timeout)
+	}
 }
 
 // SendTransaction sends a payment transaction using apshell

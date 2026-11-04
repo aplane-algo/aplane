@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 
+	"github.com/aplane-algo/aplane/internal/clientlog"
 	"github.com/aplane-algo/aplane/internal/config"
 
 	"github.com/chzyer/readline"
@@ -85,8 +86,13 @@ func startREPL(network string, config config.Config, dataDir string) {
 		return
 	}
 	defer func() {
+		// SetSink returns once a write to readline has finished, so no diagnostic
+		// reaches readline while it closes.
+		clientlog.SetSink(clientlog.WriterSink(os.Stderr))
 		_ = rl.Close() // Best-effort close, errors during shutdown not critical
 	}()
+	// Readline redraws its prompt around what is written through it.
+	clientlog.SetSink(clientlog.WriterSink(rl.Stderr()))
 
 	state.bindInteractiveIO(rl)
 	stopPolling := state.startSignerStatusPolling(func() {

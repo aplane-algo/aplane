@@ -38,6 +38,7 @@
 | Network context tokens and genesis hashes | [ARCH_NETWORKS.md](ARCH_NETWORKS.md) |
 | Plugin contract | [ARCH_PLUGINS.md](ARCH_PLUGINS.md) |
 | MCP tool contract | [ARCH_SHELL.md](ARCH_SHELL.md#tool-surface) |
+| Client output classes, logging pipeline, deferred delivery | [ARCH_SHELL.md](ARCH_SHELL.md#client-output-and-logging) |
 | Runtime ownership and shutdown | [ARCH_OVERVIEW.md](ARCH_OVERVIEW.md#lockunlock-lifecycle) |
 | Standalone swap client | [ARCH_OVERVIEW.md](ARCH_OVERVIEW.md#standalone-swap-client) |
 

@@ -57,6 +57,33 @@ APlane Shell supports **external plugins** — standalone executables that run a
 6. **Idle**: Plugin remains running between commands
 7. **Cleanup**: Plugin receives `shutdown` call when APlane Shell exits
 
+### Plugin Stderr
+
+The host reads each plugin's stderr for as long as the plugin runs, whether or
+not the output is shown, so a plugin never blocks on a full pipe. A long line
+arrives in pieces.
+
+Each line goes through the client logging pipeline (see "Client Output and
+Logging" in [ARCH_SHELL.md](ARCH_SHELL.md)) at `info`, whatever it says: nothing
+a plugin prints can raise its own level. It appears under the fixed prefix
+`[plugin name stderr]`, and the whole line, name included, is escaped for the
+terminal. A plugin's name is its own choice, so it is never used as a log
+component, where a plugin called `cache` could pass as the host.
+
+| Host | Output | Default |
+|------|--------|---------|
+| Interactive `apshell`, `--script` | Host stderr | Hidden; shown with `loglevel info` |
+| apconsole shell pane | The pane | Hidden; shown with `loglevel info` |
+| `apshell --mcp` | Host stderr | Shown; this is the host's log, not a display |
+
+While `info` is off, the host keeps the last 20 lines of each plugin. If an
+`initialize`, `execute`, or `signTransactions` call fails, it logs those lines as
+warnings before returning the error, because a crashed plugin's stderr is often
+the only record of why. Promoting them is the host's decision, and they keep the
+plugin prefix. With `info` on, the lines were already logged and aren't repeated.
+A result with `success: false` is a normal outcome and reports nothing extra, so
+put anything the user must see in `message`.
+
 ### Plugin Discovery
 
 Plugins are discovered from the client plugin catalog:
@@ -976,7 +1003,7 @@ using the plugin and delete `$APCLIENT_DATA/plugin-state/<name>` manually.
 2. Always respond with matching request ID
 3. Use `jsonrpc: "2.0"` in all responses
 4. Flush stdout after each response
-5. Log errors to stderr (not stdout)
+5. Log to stderr, not stdout, and keep it for diagnostics: users see it only at `loglevel info` or after a failure
 
 **Parameter Resolution:**
 1. Prefer `assets` for ASA metadata and resolve symbols case-insensitively against `unitName` or `name`
@@ -1161,13 +1188,13 @@ Uses dynamically generated Seatbelt profiles with `sandbox-exec`. The profile:
 
 **Verifying Sandbox Status:**
 
-When a plugin starts, you'll see:
+When a plugin starts at `loglevel info`, you'll see:
 ```
-[plugin-name] Running in sandbox (bubblewrap (Linux))
+[plugin plugin-name] Running in sandbox (bubblewrap (Linux))
 ```
 or
 ```
-[plugin-name] Running in sandbox (sandbox-exec (macOS))
+[plugin plugin-name] Running in sandbox (sandbox-exec (macOS))
 ```
 
 **Process Isolation:**

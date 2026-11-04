@@ -13,7 +13,6 @@ import (
 var testCacheStore *cache.Store
 
 func TestMain(m *testing.M) {
-	cache.InitLogger()
 
 	// Use a temp directory for cache files so tests don't create
 	// a "cache/" directory inside the source tree.

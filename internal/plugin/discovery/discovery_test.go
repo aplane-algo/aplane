@@ -4,9 +4,13 @@
 package discovery
 
 import (
+	"bytes"
+	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/plugin/integrity"
@@ -218,4 +222,28 @@ func discoveredPluginSummaries(plugins []*Plugin) []string {
 		summaries = append(summaries, plugin.Manifest.Name+":"+command)
 	}
 	return summaries
+}
+
+func TestSkippedPluginIsLoggedAsAWarning(t *testing.T) {
+	previous := slog.Default()
+	flags := log.Flags()
+	t.Cleanup(func() {
+		slog.SetDefault(previous)
+		log.SetOutput(os.Stderr)
+		log.SetFlags(flags)
+	})
+	var out bytes.Buffer
+	slog.SetDefault(slog.New(slog.NewTextHandler(&out, nil)))
+
+	d := New()
+	if _, err := d.discoverEnabledInPath(t.TempDir(), []string{"missing-plugin"}); err != nil {
+		t.Fatalf("discoverEnabledInPath() error = %v", err)
+	}
+
+	got := out.String()
+	for _, want := range []string{"level=WARN", "component=plugins", "name=missing-plugin"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("log = %q, want %q", got, want)
+		}
+	}
 }

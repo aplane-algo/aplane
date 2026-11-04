@@ -5,9 +5,12 @@
 package manager
 
 import (
+	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -20,6 +23,19 @@ import (
 	"github.com/aplane-algo/aplane/internal/plugin/discovery"
 	"github.com/aplane-algo/aplane/internal/plugin/jsonrpc"
 	"github.com/aplane-algo/aplane/internal/plugin/sandbox"
+)
+
+const (
+	// maxStderrLineBytes bounds one piece of plugin stderr. A longer line is
+	// reported in pieces so the pipe keeps draining. It leaves room for the prefix
+	// within the logging pipeline's line limit.
+	maxStderrLineBytes = 3072
+	// maxHeldStderrLines is how many hidden stderr lines each plugin keeps for
+	// the report after a failure.
+	maxHeldStderrLines = 20
+	// stderrDrainWait bounds the wait for a failed plugin's last stderr lines.
+	// A plugin that exited reaches EOF at once; one that hung uses all of it.
+	stderrDrainWait = 200 * time.Millisecond
 )
 
 var (
@@ -39,6 +55,14 @@ type Instance struct {
 	stdout    io.ReadCloser
 	stderr    io.ReadCloser
 	stateLock *pluginStateLock
+
+	// stderrDone closes when monitorStderr returns. It is nil for instances
+	// that have no stderr monitor.
+	stderrDone chan struct{}
+	// heldStderr is the newest stderr that wasn't logged, kept for a failure
+	// report. It is raw plugin text; the logging handler escapes it.
+	heldStderrMu sync.Mutex
+	heldStderr   []string
 }
 
 // Manager manages external plugin instances
@@ -57,8 +81,6 @@ type Manager struct {
 	// dataDir is the apshell data dir; per-plugin state directories live under
 	// dataDir/plugin-state/<name>. Empty disables persistent plugin state.
 	dataDir string
-
-	stderrWriter io.Writer
 
 	startPluginInstanceHook func(*discovery.Plugin, runtimeConfig) (*Instance, error)
 	initializePluginHook    func(*Instance, runtimeConfig) error
@@ -92,10 +114,9 @@ func NewManagerWithDataDir(dataDir string) *Manager {
 		resolvedDataDir = dataDir
 	}
 	return &Manager{
-		discoverer:   discoverer,
-		instances:    make(map[string]*Instance),
-		stderrWriter: os.Stderr,
-		dataDir:      resolvedDataDir,
+		discoverer: discoverer,
+		instances:  make(map[string]*Instance),
+		dataDir:    resolvedDataDir,
 	}
 }
 
@@ -126,27 +147,6 @@ func validPluginStateName(name string) bool {
 		return false
 	}
 	return name == filepath.Base(name)
-}
-
-// SetStderrWriter overrides the destination for plugin stderr output and the
-// sandbox-startup banner. Pass io.Discard to suppress noise in TUI hosts where
-// raw stderr corrupts the display. Defaults to os.Stderr; nil restores it.
-func (m *Manager) SetStderrWriter(w io.Writer) {
-	if w == nil {
-		w = os.Stderr
-	}
-	m.mu.Lock()
-	m.stderrWriter = w
-	m.mu.Unlock()
-}
-
-func (m *Manager) stderr() io.Writer {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	if m.stderrWriter == nil {
-		return os.Stderr
-	}
-	return m.stderrWriter
 }
 
 // SetCachedPluginsForTest seeds the cached discovery result for tests.
@@ -330,8 +330,8 @@ func (m *Manager) StartPlugin(pluginName string) (*Instance, error) {
 	}
 
 	// Snapshot startup hooks under lock, but do not hold the manager lock while
-	// starting or initializing the subprocess. Plugin startup emits stderr
-	// through m.stderr(), which also reads manager state.
+	// starting or initializing the subprocess, which takes as long as the plugin
+	// does.
 	m.mu.Lock()
 	if inst, ok := m.instances[pluginName]; ok {
 
@@ -353,6 +353,7 @@ func (m *Manager) StartPlugin(pluginName string) (*Instance, error) {
 		return nil, err
 	}
 	if err := initFn(instance, cfg); err != nil {
+		instance.reportHeldStderr()
 		instance.Stop()
 		return nil, fmt.Errorf("failed to initialize plugin: %w", err)
 	}
@@ -416,7 +417,7 @@ func (m *Manager) startPluginInstance(plugin *discovery.Plugin, cfg runtimeConfi
 		return nil, fmt.Errorf("failed to start plugin: %w", err)
 	}
 
-	_, _ = fmt.Fprintf(m.stderr(), "[%s] Running in sandbox (%s)\n", plugin.Manifest.Name, sandbox.GetSandboxInfo())
+	logSandboxBanner(plugin)
 
 	// Create pipes
 	stdin, err := cmd.StdinPipe()
@@ -462,10 +463,12 @@ func (m *Manager) startPluginInstance(plugin *discovery.Plugin, cfg runtimeConfi
 		stdout:    stdout,
 		stderr:    stderr,
 		stateLock: stateLock,
+
+		stderrDone: make(chan struct{}),
 	}
 
 	// Monitor stderr in background
-	go m.monitorStderr(instance)
+	go instance.monitorStderr()
 
 	return instance, nil
 }
@@ -511,17 +514,84 @@ func (m *Manager) configSnapshot() runtimeConfig {
 	}
 }
 
-// monitorStderr reads and logs plugin stderr output
-func (m *Manager) monitorStderr(instance *Instance) {
-	buf := make([]byte, 1024)
+// monitorStderr reads plugin stderr until EOF, one line at a time. It must keep
+// reading whether or not the lines are shown: a plugin blocks once the pipe fills.
+func (i *Instance) monitorStderr() {
+	if i.stderrDone != nil {
+		defer close(i.stderrDone)
+	}
+	reader := bufio.NewReaderSize(i.stderr, maxStderrLineBytes)
 	for {
-		n, err := instance.stderr.Read(buf)
-		if err != nil {
-			break
+		line, err := reader.ReadSlice('\n')
+		if len(line) > 0 {
+			i.logStderrLine(string(line))
 		}
-		if n > 0 {
-			_, _ = fmt.Fprintf(m.stderr(), "[%s stderr]: %s", instance.Plugin.Manifest.Name, buf[:n])
+		if err != nil && !errors.Is(err, bufio.ErrBufferFull) {
+			return
 		}
+	}
+}
+
+// pluginLogger returns the logger for what a plugin says. The plugin's name goes
+// in its own attribute, never as the component: a plugin chooses its name, and
+// the handler shows these records under a prefix a plugin cannot imitate.
+func pluginLogger(name string) *slog.Logger {
+	return slog.With("component", "plugin", "plugin", name)
+}
+
+func (i *Instance) stderrLogger() *slog.Logger {
+	return pluginLogger(i.Plugin.Manifest.Name).With("stream", "stderr")
+}
+
+func logSandboxBanner(plugin *discovery.Plugin) {
+	pluginLogger(plugin.Manifest.Name).Info(fmt.Sprintf("Running in sandbox (%s)", sandbox.GetSandboxInfo()))
+}
+
+// logStderrLine logs one line at info, because a plugin's stderr is routine detail
+// and nothing in its text can raise that. A line that wouldn't be shown is held
+// instead, in case the plugin then fails.
+func (i *Instance) logStderrLine(raw string) {
+	line := strings.TrimRight(raw, "\r\n")
+	logger := i.stderrLogger()
+	if logger.Enabled(context.Background(), slog.LevelInfo) {
+		logger.Info(line)
+		return
+	}
+	i.holdStderr(line)
+}
+
+func (i *Instance) holdStderr(line string) {
+	i.heldStderrMu.Lock()
+	defer i.heldStderrMu.Unlock()
+	i.heldStderr = append(i.heldStderr, line)
+	if len(i.heldStderr) > maxHeldStderrLines {
+		i.heldStderr = i.heldStderr[len(i.heldStderr)-maxHeldStderrLines:]
+	}
+}
+
+func (i *Instance) takeHeldStderr() []string {
+	i.heldStderrMu.Lock()
+	defer i.heldStderrMu.Unlock()
+	held := i.heldStderr
+	i.heldStderr = nil
+	return held
+}
+
+// reportHeldStderr logs the held stderr of a plugin that just failed, as warnings
+// so they show at the default level, because that output is often the only record
+// of why it failed. That is the host's decision; the text still carries the plugin
+// prefix. Call it before stopping the instance: Stop closes the pipe, which would
+// lose lines still in flight.
+func (i *Instance) reportHeldStderr() {
+	if i.stderrDone != nil {
+		select {
+		case <-i.stderrDone:
+		case <-time.After(stderrDrainWait):
+		}
+	}
+	logger := i.stderrLogger()
+	for _, line := range i.takeHeldStderr() {
+		logger.Warn(line)
 	}
 }
 
@@ -547,6 +617,7 @@ func (m *Manager) ExecuteCommand(pluginName, command string, args []string, cont
 
 	err = instance.Client.CallWithTimeout(jsonrpc.MethodExecute, params, &result, timeout)
 	if err != nil {
+		instance.reportHeldStderr()
 		m.discardInstance(pluginName, instance)
 		return nil, fmt.Errorf("command execution failed: %w", err)
 	}
@@ -571,6 +642,7 @@ func (m *Manager) SignTransactions(pluginName string, params jsonrpc.SignTransac
 	}
 
 	if err := instance.Client.CallWithTimeout(jsonrpc.MethodSignTransactions, params, &result, timeout); err != nil {
+		instance.reportHeldStderr()
 		m.discardInstance(pluginName, instance)
 		return nil, fmt.Errorf("plugin signTransactions failed: %w", err)
 	}

@@ -57,6 +57,7 @@ var builtInAutomationPolicies = map[string]command.AutomationPolicy{
 	"network":       command.StructuredAutomation,
 	"write":         command.StructuredAutomation,
 	"verbose":       command.StructuredAutomation,
+	"loglevel":      command.StructuredAutomation,
 	"simulate":      command.StructuredAutomation,
 	"connect":       command.StructuredAutomation,
 	"disconnect":    command.StructuredAutomation,
@@ -348,6 +349,14 @@ func (r *REPLState) initCommandRegistry() *command.Registry {
 		Description: "Toggle detailed signing output (default: off)",
 		Category:    command.CategoryConfig,
 		Handler:     command.NewInternalHandler(r.cmdVerbose),
+	})
+
+	mustRegister(registry, &command.Command{
+		Name:        "loglevel",
+		Usage:       logLevelUsage,
+		Description: "Show or set which diagnostics appear; info shows plugin output (default: warn)",
+		Category:    command.CategoryConfig,
+		Handler:     command.NewInternalHandler(r.cmdLogLevel),
 	})
 
 	mustRegister(registry, &command.Command{

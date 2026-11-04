@@ -42,7 +42,6 @@ func TestFindByCommandRejectsDuplicateProviders(t *testing.T) {
 
 func TestStartPluginDoesNotHoldManagerLockDuringStartup(t *testing.T) {
 	m := NewManager()
-	m.SetStderrWriter(io.Discard)
 	m.cachedPlugins = []*discovery.Plugin{
 		{
 			Manifest: &manifest.Manifest{
@@ -52,7 +51,7 @@ func TestStartPluginDoesNotHoldManagerLockDuringStartup(t *testing.T) {
 		},
 	}
 	m.startPluginInstanceHook = func(plugin *discovery.Plugin, cfg runtimeConfig) (*Instance, error) {
-		_, _ = m.stderr().Write([]byte("startup banner\n"))
+		m.configSnapshot() // Takes the manager lock, so holding it here would hang.
 		return newTestPluginInstance(t), nil
 	}
 	m.initializePluginHook = func(instance *Instance, cfg runtimeConfig) error { return nil }

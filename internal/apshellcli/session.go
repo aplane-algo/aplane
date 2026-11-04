@@ -271,22 +271,6 @@ func (s *Session) SetInteractiveLinePromptContext(fn func(context.Context, strin
 	}
 }
 
-// SetPluginStderr redirects plugin stderr (and the sandbox-startup banner) to
-// w. Use io.Discard from TUI hosts where raw stderr would corrupt the display.
-// No-op if the plugin runtime is not the concrete manager that supports it.
-func (s *Session) SetPluginStderr(w io.Writer) {
-	if s == nil || s.state == nil {
-		return
-	}
-	app := s.state.app()
-	if app == nil || app.Plugins == nil {
-		return
-	}
-	if setter, ok := app.Plugins.(interface{ SetStderrWriter(io.Writer) }); ok {
-		setter.SetStderrWriter(w)
-	}
-}
-
 // Cancel interrupts the currently executing embedded command, if any.
 func (s *Session) Cancel() bool {
 	if s == nil {

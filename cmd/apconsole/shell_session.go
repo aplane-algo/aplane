@@ -26,8 +26,5 @@ func loadShellConsole(clientDataDirFlag, networkFlag string) (*apshellcli.Sessio
 		lines = append(lines, "Shell disabled: "+err.Error())
 		return nil, lines
 	}
-	// Plugin stderr would otherwise be written straight to the terminal,
-	// scrambling the bubbletea-managed apconsole layout.
-	session.SetPluginStderr(io.Discard)
 	return session, lines
 }

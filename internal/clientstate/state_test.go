@@ -186,7 +186,6 @@ func TestAddAliasUpdatePrunesStaleOldAuthCacheEntry(t *testing.T) {
 }
 
 func TestNewInitializedLoadsPersistedAuthCacheWithoutAlgodRefresh(t *testing.T) {
-	cache.InitLogger()
 
 	dataDir := t.TempDir()
 	store := cache.NewStore(dataDir)

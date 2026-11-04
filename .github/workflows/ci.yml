@@ -57,6 +57,9 @@ jobs:
       - name: Check for dead code
         run: make deadcode-check DEADCODE_BIN_DIR="$HOME/.cache/aplane-deadcode/${{ steps.deadcode.outputs.version }}"
 
+      - name: Check that binaries without a logging handler can't log
+        run: make logging-reach-check DEADCODE_BIN_DIR="$HOME/.cache/aplane-deadcode/${{ steps.deadcode.outputs.version }}"
+
   test:
     name: Test
     needs: lint

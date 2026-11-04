@@ -7,7 +7,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime/debug"
@@ -22,14 +22,13 @@ import (
 	"github.com/aplane-algo/aplane/internal/algorithm"
 	"github.com/aplane-algo/aplane/internal/apshellcli"
 	bootstrap "github.com/aplane-algo/aplane/internal/bootstrap/signer"
-	"github.com/aplane-algo/aplane/internal/cache"
+	"github.com/aplane-algo/aplane/internal/clientlog"
 	"github.com/aplane-algo/aplane/internal/keygen"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/manifest"
 	"github.com/aplane-algo/aplane/internal/mnemonic"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	tui "github.com/aplane-algo/aplane/internal/signerapp/signertui"
-	"github.com/aplane-algo/aplane/internal/sshtunnel"
 	"github.com/aplane-algo/aplane/internal/theme"
 	"github.com/aplane-algo/aplane/internal/version"
 )
@@ -41,6 +40,10 @@ func main() {
 			os.Exit(0)
 		}
 	}
+
+	// Before anything can log: warnings raised while the shell pane's state loads
+	// wait in the queue for the pane.
+	clientlog.Install(clientlog.StartLevel(slog.LevelWarn), consoleLogs)
 
 	RegisterProviders()
 
@@ -63,24 +66,14 @@ func main() {
 	dataDirSet := flagWasSet("d")
 	clientDataDirSet := flagWasSet("client-data")
 
-	// SSH tunnel client emits status messages from background goroutines via
-	// fmt.Print* (keepalive failures, "[SSH] Connection closed by remote
-	// server", etc). Those would land on the TTY between bubbletea frames and
-	// scramble the layout — discard them here.
-	sshtunnel.SetStatusWriter(io.Discard)
-	// internal/cache uses slog with an os.Stdout handler. Cache hits/misses,
-	// integrity checks, and resolution debug logs would otherwise land on the
-	// TTY mid-frame and corrupt the layout. Silence them in the TUI host.
-	cache.SetLoggerOutput(io.Discard)
-
 	if err := ensureProviders(); err != nil {
 		logErrorf("%v", err)
-		os.Exit(1)
+		exitConsole(1)
 	}
 	network, err := apshellcli.ResolveNetworkOverride(*networkLong, *networkShort)
 	if err != nil {
 		logErrorf("%v", err)
-		os.Exit(2)
+		exitConsole(2)
 	}
 
 	wd, _ := os.Getwd()
@@ -101,24 +94,24 @@ func main() {
 	})
 	if err != nil {
 		logErrorf("%v", err)
-		os.Exit(1)
+		exitConsole(1)
 	}
 
 	resolvedDataDir, err := bootstrap.ResolveDataDir(startupCfg.SignerData)
 	if err != nil {
 		logErrorf("%v", err)
 		logErrorf("use -d <path>, set APSIGNER_DATA, or configure signer_data in apconsole.yaml")
-		os.Exit(1)
+		exitConsole(1)
 	}
 	if accessErr := unix.Access(resolvedDataDir, unix.R_OK|unix.X_OK); accessErr != nil {
 		if !os.IsPermission(accessErr) {
 			logErrorf("cannot access data directory: %s", resolvedDataDir)
-			os.Exit(1)
+			exitConsole(1)
 		}
 		ipcPath, err := resolveConsoleIPCPath(resolvedDataDir, *ipcPathFlag, startupCfg.signerDataSource)
 		if err != nil {
 			logErrorf("%v", err)
-			os.Exit(1)
+			exitConsole(1)
 		}
 		theme.Init("")
 		shellSession, shellStartup := loadShellConsole(startupCfg.ClientData, network)
@@ -140,17 +133,17 @@ func main() {
 	if err != nil {
 		logErrorf("%v", err)
 		logErrorf("use -d <path>, set APSIGNER_DATA, or configure signer_data in apconsole.yaml")
-		os.Exit(1)
+		exitConsole(1)
 	}
 	ipcPath, err := resolveConsoleIPCPath(startup.DataDir, *ipcPathFlag, startupCfg.signerDataSource)
 	if err != nil {
 		logErrorf("%v", err)
-		os.Exit(1)
+		exitConsole(1)
 	}
 	daemonIPCPath, err := resolveDaemonIPCPathForLifecycle(startup.DataDir, startup.Config.IPCPath, !*noStartDaemon)
 	if err != nil {
 		logErrorf("cannot resolve daemon IPC path: %v", err)
-		os.Exit(1)
+		exitConsole(1)
 	}
 	theme.Init(startup.Config.Theme)
 	configureAlgodOnDSAs(startup.Config)
@@ -183,6 +176,17 @@ func main() {
 	}
 
 	startConsole(tui.LocalIPCConnector{Path: ipcPath}, startupCfg.ClientData, string(nodeRole), shellSession, shellStartup, shellEnabled, daemonProcess, daemon)
+}
+
+// consoleLogs queues diagnostics for the shell pane. Its Close writes what the
+// pane never took, so a console with no shell still reports them on exit.
+var consoleLogs = clientlog.NewDeferred()
+
+// exitConsole leaves before the TUI starts, writing out any queued diagnostics
+// first, because os.Exit skips deferred calls.
+func exitConsole(code int) {
+	_ = consoleLogs.Close(os.Stderr)
+	os.Exit(code)
 }
 
 func consoleStartupNoticeLines(notices []string) []string {
@@ -250,6 +254,9 @@ func startConsole(connector tui.AdminConnector, dataDir string, initialNodeRole 
 		connector, dataDir, shellExecutorForSession(shellSession), shellStartup,
 		daemon, shellEnabled, initialNodeRole,
 	)
+	if shellSession != nil {
+		model.shell.logs = consoleLogs
+	}
 	if width, height, ok := terminalSize(realStdout); ok {
 		model.width = width
 		model.height = height
@@ -301,6 +308,7 @@ func startConsole(connector tui.AdminConnector, dataDir string, initialNodeRole 
 		// (the redirect defer runs after this one in LIFO order).
 		// Leave alt screen and re-enable cursor before printing/exiting.
 		_, _ = fmt.Fprint(realStderr, "\x1b[?1049l\x1b[?25h")
+		_ = consoleLogs.Close(realStderr)
 		trace := debug.Stack()
 		path := writePanicTrace(dataDir, r, trace)
 		if path != "" {
@@ -310,6 +318,10 @@ func startConsole(connector tui.AdminConnector, dataDir string, initialNodeRole 
 		os.Exit(2)
 	}()
 	final, err := p.Run()
+	// Straight away: the code below can exit, and session shutdown can still log.
+	// Records from here on go directly to the terminal. stderr is the only channel
+	// left if this fails.
+	_ = consoleLogs.Close(realStderr)
 	// Whatever ended the program, release what an unfinished backup transfer
 	// in the signer pane holds (a staging file, an open archive, a passphrase).
 	shutdownSignerPane(final)

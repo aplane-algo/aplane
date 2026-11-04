@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/aplane-algo/aplane/internal/appresult"
+	"github.com/aplane-algo/aplane/internal/clientlog"
 )
 
 // WriteMode reports the current write-mode state.
@@ -45,4 +46,20 @@ func (a *App) SimulateMode() appresult.Toggle {
 func (a *App) SetSimulateMode(enabled bool) appresult.Toggle {
 	a.eng.SetSimulate(enabled)
 	return appresult.Toggle{Name: "simulate", Enabled: a.eng.GetSimulate(), Changed: true}
+}
+
+// LogLevel reports the level at which diagnostics are shown.
+func (a *App) LogLevel() appresult.LogLevel {
+	return appresult.LogLevel{Level: clientlog.LevelName(clientlog.Level())}
+}
+
+// SetLogLevel changes the level at which diagnostics are shown. It applies to the
+// whole process. An unknown name changes nothing.
+func (a *App) SetLogLevel(name string) (appresult.LogLevel, error) {
+	level, err := clientlog.ParseLevel(name)
+	if err != nil {
+		return appresult.LogLevel{}, err
+	}
+	clientlog.SetLevel(level)
+	return appresult.LogLevel{Level: clientlog.LevelName(level), Changed: true}, nil
 }

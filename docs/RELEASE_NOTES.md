@@ -7,6 +7,48 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## Lost signer notifications are shown
+
+- If apadmin, apconsole's signer pane, or apapprover can't keep up with the
+  signer, notifications are dropped, and an approval request can be among them.
+  The TUIs now show the number lost in the status bar for the rest of the
+  session, including across reconnects, and apapprover prints a warning.
+
+## `endpoints public-key` prints the client's SSH public key
+
+- `endpoints public-key [<alias>]` prints the OpenSSH public key line and
+  fingerprint of an endpoint's SSH identity, for an operator to import. It reads
+  the existing key, so it works at any time and never creates one.
+
+## apconsole shows cache warnings
+
+- apconsole used to discard every cache warning, including the one reporting
+  that a cache may have been tampered with. They now appear in the shell pane,
+  whether raised during startup or later in the session.
+- Cache messages go to stderr, not stdout, so they no longer mix with `--script`
+  results. The routine message on first use now appears only at `loglevel info`.
+
+## Diagnostics have one control: `loglevel`
+
+- `loglevel [error|warn|info|debug]` sets which diagnostics appear in `apshell`
+  and in the apconsole shell pane. The default is `warn`.
+- Use `loglevel info` to show plugin output. It no longer appears by default, so
+  plugins don't write over command results, and `apshell --mcp` still logs it to
+  stderr. The sandbox startup line appears at `info` too.
+- If a plugin fails while its output is hidden, its last 20 lines are shown as
+  warnings above the error, so a crash keeps its reason.
+- Plugin output in apconsole used to be discarded. It now appears in the shell
+  pane at `loglevel info`.
+- Plugin output is reported a line at a time under a fixed `[plugin name stderr]`
+  prefix, and terminal control characters in it, including in the plugin's name,
+  are shown as escapes.
+- `verbose` is unchanged: it controls signing detail only.
+- SSH connection loss and key revocation are now warnings, on stderr in `apshell`
+  and in the shell pane in apconsole, which used to discard them.
+- A newly generated SSH key is announced with its fingerprint, in apconsole too.
+  `endpoints public-key` prints the key itself, which replaces the copy that was
+  printed once at generation.
+
 ## Builds move to a pinned Go 1.27 toolchain
 
 - Releases are built with Go 1.27.3, pinned by the `toolchain` line in

@@ -10,8 +10,11 @@ import (
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/appresult"
+	"github.com/aplane-algo/aplane/internal/clientlog"
 	"github.com/aplane-algo/aplane/internal/command"
 )
+
+var logLevelUsage = "loglevel [" + strings.Join(clientlog.LevelNames, "|") + "]"
 
 func execWrite(r *REPLState, args []string) (toggleOutcome, error) {
 	if len(args) == 0 {
@@ -143,4 +146,19 @@ func executeSimulate(r *REPLState, args []string) (command.Result, error) {
 func mustSetWriteModeOff(r *REPLState) appresult.Toggle {
 	toggle, _ := r.app().SetWriteMode(false)
 	return toggle
+}
+
+// execLogLevel reports or changes the level at which diagnostics are shown.
+func execLogLevel(r *REPLState, args []string) (appresult.LogLevel, error) {
+	switch len(args) {
+	case 0:
+		return r.app().LogLevel(), nil
+	case 1:
+		result, err := r.app().SetLogLevel(strings.ToLower(args[0]))
+		if err != nil {
+			return appresult.LogLevel{}, fmt.Errorf("%w; usage: %s", err, logLevelUsage)
+		}
+		return result, nil
+	}
+	return appresult.LogLevel{}, fmt.Errorf("usage: %s", logLevelUsage)
 }

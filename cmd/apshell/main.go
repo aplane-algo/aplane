@@ -6,10 +6,12 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log/slog"
 	"os"
 
 	"github.com/aplane-algo/aplane/internal/apshellcli"
 	bootstrap "github.com/aplane-algo/aplane/internal/bootstrap/shell"
+	"github.com/aplane-algo/aplane/internal/clientlog"
 	"github.com/aplane-algo/aplane/internal/manifest"
 	"github.com/aplane-algo/aplane/internal/theme"
 	"github.com/aplane-algo/aplane/internal/version"
@@ -33,6 +35,14 @@ func main() {
 		fmt.Printf("apshell %s\n", version.String())
 		os.Exit(0)
 	}
+
+	// Plugin output is routine detail, so it stays hidden unless asked for. Under
+	// MCP, stderr is the host's log rather than a display, so it stays visible.
+	startLevel := slog.LevelWarn
+	if *mcpMode {
+		startLevel = slog.LevelInfo
+	}
+	clientlog.Install(clientlog.StartLevel(startLevel), clientlog.WriterSink(os.Stderr))
 
 	// Register all providers (must be called before manifest or any registry queries)
 	RegisterProviders()

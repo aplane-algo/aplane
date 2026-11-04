@@ -12,7 +12,6 @@ import (
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/common/models"
 	"github.com/algorand/go-algorand-sdk/v2/protocol"
-	"github.com/aplane-algo/aplane/internal/cache"
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/engine"
 	"github.com/aplane-algo/aplane/internal/plugin/discovery"
@@ -64,7 +63,6 @@ func (f *fakePluginRuntime) SignTransactions(string, jsonrpc.SignTransactionsPar
 }
 
 func TestSwitchNetworkUpdatesEngineAndPlugins(t *testing.T) {
-	cache.InitLogger()
 	algod := newConsensusAlgodServer(t, string(protocol.ConsensusV42))
 	defer algod.Close()
 
@@ -105,7 +103,6 @@ func TestSwitchNetworkUpdatesEngineAndPlugins(t *testing.T) {
 }
 
 func TestSwitchNetworkRejectsUnsupportedConsensus(t *testing.T) {
-	cache.InitLogger()
 	algod := newConsensusAlgodServer(t, string(protocol.ConsensusV41))
 	defer algod.Close()
 
@@ -150,7 +147,6 @@ func newConsensusAlgodServer(t *testing.T, consensus string) *httptest.Server {
 }
 
 func TestSwitchNetworkRejectsDisallowedNetwork(t *testing.T) {
-	cache.InitLogger()
 
 	cfg := config.DefaultConfig()
 	cfg.NetworksAllowed = []string{"testnet"}

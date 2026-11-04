@@ -57,6 +57,9 @@ type IPCClient struct {
 	reconnecting   bool
 	reconnectDelay time.Duration
 	maxDelay       time.Duration
+
+	// notificationLoss is shared with the client this one replaces, if any.
+	notificationLoss *notificationLoss
 }
 
 // NewAdminClient creates a new admin client for an arbitrary transport.
@@ -67,6 +70,8 @@ func NewAdminClient(connector AdminConnector) *IPCClient {
 		done:           make(chan struct{}),
 		reconnectDelay: 1 * time.Second,
 		maxDelay:       30 * time.Second,
+
+		notificationLoss: newNotificationLoss(),
 	}
 }
 
@@ -92,13 +97,16 @@ func (c *IPCClient) Connect() error {
 
 	c.conn = conn
 	c.stream = transport.NewStreamClient(conn)
+	stream := c.stream
 	c.connected = true
 	c.serverEnded = false
 	done := c.done
 	c.mu.Unlock()
 
+	c.notificationLoss.track(stream)
+
 	// Start message reader goroutine
-	go c.forwardMessages(sessionID, done, c.stream.Notifications(), c.stream.LifecycleEvents())
+	go c.forwardMessages(sessionID, done, stream.Notifications(), stream.LifecycleEvents())
 
 	return nil
 }
@@ -325,6 +333,13 @@ func (c *IPCClient) emit(sessionID uint64, msg tea.Msg) bool {
 	}
 }
 
+// reportNotificationLoss sends the running total of lost notifications, if any.
+func (c *IPCClient) reportNotificationLoss(sessionID uint64) {
+	if total := c.notificationLoss.total(); total > 0 {
+		c.emit(sessionID, NotificationsLostMsg{Total: total})
+	}
+}
+
 // emitUndecodable reports a signer message the TUI cannot decode. Dropping it
 // would leave a screen waiting for a result that never arrives.
 func (c *IPCClient) emitUndecodable(sessionID uint64, notification transport.Notification, err error) {
@@ -338,6 +353,10 @@ func (c *IPCClient) emitUndecodable(sessionID uint64, notification transport.Not
 // forwards them to the TUI while preserving reconnect/displacement semantics.
 func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, notifications <-chan transport.Notification, lifecycle <-chan transport.LifecycleEvent) {
 	defer func() {
+		// A loss can land just before the connection ends, and no later signal
+		// reaches this loop.
+		c.reportNotificationLoss(sessionID)
+
 		c.mu.Lock()
 		if c.sessionID != sessionID {
 			c.mu.Unlock()
@@ -358,10 +377,15 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 		go c.reconnect(sessionID, done)
 	}()
 
+	// Losses from before this connection may not have reached the model.
+	c.reportNotificationLoss(sessionID)
+
 	for {
 		select {
 		case <-done:
 			return
+		case <-c.notificationLoss.changed:
+			c.reportNotificationLoss(sessionID)
 		case event, ok := <-lifecycle:
 			if !ok {
 				return
@@ -1466,6 +1490,9 @@ func (m Model) reconnectCmd() tea.Cmd {
 
 		// Create new client and connect
 		client := NewAdminClient(m.connector)
+		if m.adminClient != nil {
+			client.notificationLoss = m.adminClient.notificationLoss
+		}
 
 		if err := client.Connect(); err != nil {
 			return DisconnectedMsg{Error: err}

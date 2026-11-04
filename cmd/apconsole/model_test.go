@@ -1108,7 +1108,7 @@ func TestShellCanceledExecRendersInterrupted(t *testing.T) {
 
 func TestShellErrorExecClearsRunningAndRendersError(t *testing.T) {
 	exec := &fakeShellExecutor{execErr: fmt.Errorf("approval timed out")}
-	msg, ok := executeShellLine(exec, "sign")().(shellExecMsg)
+	msg, ok := executeShellLine(exec, nil, "sign")().(shellExecMsg)
 	if !ok {
 		t.Fatalf("executeShellLine returned %T, want shellExecMsg", msg)
 	}

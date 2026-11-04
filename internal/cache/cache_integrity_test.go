@@ -394,3 +394,40 @@ func TestVerifyHMACRejectsMalformedSignature(t *testing.T) {
 		t.Fatalf("error = %q, want invalid HMAC format", err.Error())
 	}
 }
+
+func TestTamperedCacheLogsAWarning(t *testing.T) {
+	out := captureLog(t)
+	store := NewStore(t.TempDir())
+	aliases := LoadAliasCacheFromStore(store)
+	aliases.Aliases["a"] = "b"
+	if err := aliases.SaveCache(); err != nil {
+		t.Fatalf("SaveCache() error = %v", err)
+	}
+	filename := storePath(store, "alias_cache.json")
+	raw, err := os.ReadFile(filename)
+	if err != nil {
+		t.Fatalf("ReadFile(%q) error = %v", filename, err)
+	}
+	var signed SignedCache
+	if err := json.Unmarshal(raw, &signed); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	signed.HMAC = strings.Repeat("0", len(signed.HMAC))
+	rewritten, err := json.Marshal(signed)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	if err := os.WriteFile(filename, rewritten, 0o600); err != nil {
+		t.Fatalf("WriteFile(%q) error = %v", filename, err)
+	}
+	out.Reset()
+
+	LoadAliasCacheFromStore(store)
+
+	got := out.String()
+	for _, want := range []string{"level=WARN", "component=cache", "SECURITY: alias cache may have been tampered with"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("log = %q, want %q", got, want)
+		}
+	}
+}

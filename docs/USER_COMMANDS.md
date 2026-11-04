@@ -14,7 +14,7 @@ Complete command reference for the APlane shell (`apshell`).
 | **Aliases & Sets** | `alias`, `sets` |
 | **Rekeying** | `rekey list`, `rekey`, `unrekey` |
 | **ASA Management** | `asa list`, `asa add`, `asa remove`, `asa clear` |
-| **Configuration** | `network`, `connect`, `disconnect`, `enroll`, `endpoints`, `cosigner status`, `write`, `verbose`, `simulate`, `config` |
+| **Configuration** | `network`, `connect`, `disconnect`, `enroll`, `endpoints`, `cosigner status`, `write`, `verbose`, `loglevel`, `simulate`, `config` |
 | **Automation** | `js`, `jssave`, `jslist`, `script` |
 | **Plugins** | `plugins` |
 | **Session** | `help`, `clear`, `quit` |
@@ -762,7 +762,8 @@ again. Repeating a request before it is answered refreshes the same entry.
 
 The operator can also enroll a key without a request from the client, by
 importing its public key file in apadmin (`i` on Enrolled Clients) or with
-`apadmin clients import`.
+`apadmin clients import`. `endpoints public-key` prints the client's key in the
+form the operator needs, as often as you like, and never creates a key.
 
 The client SSH key must be Ed25519, ECDSA (P-256/384/521), or a
 hardware-backed `sk-` Ed25519/ECDSA key. The default generated key is
@@ -973,6 +974,7 @@ setup use [endpoints add](#endpoints-add); for route checks use `cosigner status
 ```
 endpoints list
 endpoints show <alias>
+endpoints public-key [<alias>]
 endpoints add [<cosigner-url>] [--alias <alias>] [--replace] [--dry-run]
 endpoints create --alias <alias> --endpoint <url> [--dry-run]
 endpoints import --alias <alias> --role signer|cosigner [--dry-run] <endpoint-json>
@@ -1254,6 +1256,36 @@ Toggle detailed signing output. When enabled, shows additional details after sig
 ```
 verbose [on|off]
 ```
+
+To see plugin output, use `loglevel info`.
+
+---
+
+### loglevel
+
+Show or set which diagnostics appear, in `apshell` and in the apconsole shell
+pane. Results, prompts, and progress always appear; this only filters logs. The
+setting lasts until the program exits.
+
+```
+loglevel                        # Show the current level
+loglevel error                  # Failures only
+loglevel warn                   # Also warnings (default)
+loglevel info                   # Also routine detail, including plugin output
+loglevel debug                  # Also the client's internal detail
+```
+
+Plugin output appears at `info`, as `[plugin name stderr]` lines, with a line
+when each plugin starts. Plugins start on first use, so set the level before a
+plugin's first command to see its startup output.
+
+At `warn`, plugin output stays hidden unless a plugin fails: its last 20 hidden
+lines are then shown as warnings above the error. At `info` the lines were
+already shown, so they aren't repeated, and if a very fast burst of output
+overflows apconsole's queue, some can be lost.
+
+`apshell --mcp` starts at `info`, so plugin output stays in the MCP host's log.
+Setting `APSHELL_DEBUG` to any value starts every mode at `debug`.
 
 ---
 

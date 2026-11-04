@@ -1290,6 +1290,16 @@ pending approvals, and a pending manual lock. Every path into the unlocked
 state (signer status, unlock, or a completed recovery reconcile) loads the same
 keys, key types, cosigner references, and settings.
 
+### Lost Notifications
+
+An admin client buffers up to 64 notifications. If it can't keep up, the
+transport drops the excess and counts it, and an approval request can be among
+what was dropped. The TUI totals these losses across reconnects, independently
+of any log level, and shows the total in its status bar for the rest of the
+session. `apapprover` prints a warning when the count rises. The total is
+carried on a signal separate from the lifecycle events, which drive reconnect
+and must not compete with it for buffer space.
+
 ### Error Handling
 
 Errors surface in `ViewError` or inline in the active screen's status area,
