@@ -254,6 +254,19 @@ func (m *ReleaseMemory) Get(account string) (ReleaseRecord, bool) {
 	return r, ok
 }
 
+// ForLeafChoice returns the account's entry and whether a leaf may be chosen
+// from it. The two are read together, so a Reset can't fall between them: a
+// memory that is held, or still restoring this account, may be missing the
+// stage's releases, and choosing from it could reuse a leaf.
+func (m *ReleaseMemory) ForLeafChoice(account string) (ReleaseRecord, bool) {
+	if m == nil {
+		return ReleaseRecord{}, true
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.byAccount[account], !m.armed && !m.pending[account]
+}
+
 // Clear forgets the account's entry.
 func (m *ReleaseMemory) Clear(account string) {
 	if m == nil {

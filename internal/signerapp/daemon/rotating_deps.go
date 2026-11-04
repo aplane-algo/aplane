@@ -27,6 +27,7 @@ func (fs *Signer) rotatingDeps(ir *productruntime.Runtime) *signersigning.Rotati
 		// worker ticks, or a lock notification delivered late, can neither
 		// keep an old allowance alive nor erase a new one.
 		LockGeneration: ir.LockGeneration,
+		KeyUse:         ir.KeyUseContext,
 	}
 }
 

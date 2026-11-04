@@ -504,6 +504,14 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 		return nil, badRequest(fmt.Sprintf("fewer than %d rounds remain before last valid round %d (current round %d); prepare the spend again", rotatingkey.RotatingMinRemaining, spend.LastValid, view.Round))
 	}
 
+	// From here until the signature is decided the seed is in memory, so a
+	// lock cancels this work and waits for it. requestCtx outlives that window.
+	requestCtx := ctx
+	ctx, endKeyUse := deps.keyUse(ctx)
+	defer endKeyUse()
+	if refused := s.releaseRefused(ctx, deps, req.Account, lockGeneration); refused != nil {
+		return nil, refused
+	}
 	rs, svcErr := s.openRotatingSession(ctx, req.Account, session)
 	if svcErr != nil {
 		return nil, svcErr
@@ -533,10 +541,16 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 	// chooses the leaf, never whether to sign.
 	txIDText := base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(txID[:])
 	leafProfile, _ := rotatingkey.Lookup(rs.keyType)
-	prior, _ := deps.Releases.Get(req.Account)
 	var leaf LeafRelease
 	var leafReused bool
 	if !leafProfile.StatelessHash {
+		// AwaitRestored above doesn't settle this: a reset can arrive after it,
+		// and choosing from the emptied memory would reuse a leaf. Reading the
+		// record and its restore state together closes that gap.
+		prior, restored := deps.Releases.ForLeafChoice(req.Account)
+		if leafProfile.LeavesPerStage > 1 && !restored {
+			return nil, unavailable("release memory is still being restored from the audit log")
+		}
 		leaf, leafReused = chooseLeaf(leafProfile, stage, txID[:], txIDText, prior)
 	}
 	stageSig, signErr := rs.ops.SignStage(rs.secret, stage, leaf.Index, txID[:])
@@ -575,16 +589,6 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 			uint64(spend.LastValid) < fresh.Round+rotatingkey.RotatingMinRemaining {
 			return nil, badRequest("validity window aged during signing; prepare the spend again")
 		}
-		if ctx.Err() != nil {
-			return nil, unavailable(ctx.Err().Error())
-		}
-		if (s.IsUnlocked != nil && !s.IsUnlocked()) ||
-			(deps.LockGeneration != nil && deps.LockGeneration() != lockGeneration) {
-			return nil, lockedError()
-		}
-		if !s.keyPresent(req.Account)() {
-			return nil, unavailable("rotating key was removed during signing")
-		}
 	}
 	signed := make([]string, 0, len(allTxns))
 	signed = append(signed, hex.EncodeToString(msgpack.Encode(stxn)))
@@ -598,6 +602,15 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 
 	groupIDText := base64.StdEncoding.EncodeToString(group.GroupID[:])
 
+	// The last check that can stop a signature for every family. The seed
+	// goes before the audit write: users of key material never hold it across
+	// I/O, so a stalled disk can't keep a lock from completing.
+	if refused := s.releaseRefused(ctx, deps, req.Account, lockGeneration); refused != nil {
+		return nil, refused
+	}
+	rs.close()
+	endKeyUse()
+
 	// The release is audited durably and remembered before the signature
 	// leaves. Both are observational: a failure is reported, not fatal.
 	if logger, ok := s.AuditLog.(AuditRotatingReleaseLogger); ok && logger != nil {
@@ -610,6 +623,11 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 		Account: req.Account, Stage: stage, StageAddr: stageAddr, NextAddr: spend.RekeyTo,
 		TxID: txIDText, LastValid: uint64(spend.LastValid), Reused: leafReused, Leaves: []LeafRelease{leaf}, StatelessHash: leafProfile.StatelessHash,
 	})
+	// The write above can take a while. A refusal here counts as a release
+	// that never left, which only makes the leaf look used.
+	if refused := s.releaseRefused(requestCtx, deps, req.Account, lockGeneration); refused != nil {
+		return nil, refused
+	}
 	consoleOf(s.Console).Printf("[ROTATING] Rotation pending %d -> %d for %s\n", stage, targetStage, req.Account)
 	s.logSuccessfulSignatures(signReq, plan, allTxns, policyRuleID)
 	return &signerapi.RotatingSignResponse{
@@ -619,6 +637,24 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 		TxID:    txIDText,
 		GroupID: groupIDText,
 	}, nil
+}
+
+// releaseRefused reports why a signature must not leave: the signer locked, or
+// locked and unlocked, since the request was approved, the request was
+// cancelled, or the key was removed. Every family needs this. Rereading the
+// chain is separate, because only slow signing leaves time for it to change.
+func (s *Service) releaseRefused(ctx context.Context, deps *RotatingDeps, account string, lockGeneration uint64) *ServiceError {
+	if (s.IsUnlocked != nil && !s.IsUnlocked()) ||
+		(deps.LockGeneration != nil && deps.LockGeneration() != lockGeneration) {
+		return lockedError()
+	}
+	if ctx.Err() != nil {
+		return unavailable(ctx.Err().Error())
+	}
+	if !s.keyPresent(account)() {
+		return unavailable("rotating key was removed during signing")
+	}
+	return nil
 }
 
 // rotatingAccount returns the account address, genesis hash and resource
@@ -648,7 +684,8 @@ func (s *Service) keyPresent(account string) func() bool {
 // picks a leaf inside the stage's range, and the first unused leaf upward
 // from it, wrapping, is taken; two signers that share a seed and no memory
 // therefore collide with probability one in LeavesPerStage rather than
-// always. When every leaf is used the TxID's pick is reused and reported:
+// always, for TxIDs nobody chose: whoever controls a transaction's contents can
+// aim it at a leaf in about LeavesPerStage tries. When every leaf is used the TxID's pick is reused and reported:
 // state chooses the leaf, never whether to sign. A family with one key per
 // stage always gets leaf 0.
 func chooseLeaf(profile rotatingkey.Profile, stage uint64, txID []byte, txIDText string, prior ReleaseRecord) (LeafRelease, bool) {

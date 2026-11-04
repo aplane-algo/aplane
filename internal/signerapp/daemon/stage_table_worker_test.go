@@ -21,6 +21,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto/rotatinghybrid"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/keys"
+	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/txnutil"
 	"github.com/aplane-algo/aplane/lsig/rotatingtriplewots/signerops"
@@ -488,9 +489,113 @@ func TestWorkerPublishesRotatingStatus(t *testing.T) {
 	// After a restart the memory is empty; the unlock path rebuilds it from
 	// the audit log with verified addresses.
 	server.rotatingReleases.Reset()
-	server.rebuildReleaseMemory(context.Background(), ir)
+	server.rebuildReleaseMemory(context.Background(), ir, ir.LockGeneration())
 	rec, ok := server.rotatingReleases.Get(account.String())
 	if !ok || rec.Stage != 0 || rec.TxID != resp.TxID || rec.StageAddr != account || rec.NextAddr != stage1 {
 		t.Fatalf("rebuilt release memory = %+v, %v", rec, ok)
 	}
+}
+
+// A real lock has to wait for a sign in progress: that is what makes "no copy
+// of a seed outlives the unlocked state" true for the sign path.
+func TestLockWaitsForTheRotatingSignPath(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	ir := server.productRuntime()
+	deps := server.rotatingDeps(ir)
+	if deps.KeyUse == nil {
+		t.Fatal("the rotating sign path isn't registered as a key user")
+	}
+	ctx, release := deps.KeyUse(context.Background())
+	locked := make(chan struct{})
+	go func() {
+		ir.Lock()
+		close(locked)
+	}()
+	select {
+	case <-ctx.Done():
+	case <-time.After(5 * time.Second):
+		t.Fatal("the lock didn't cancel the sign in progress")
+	}
+	select {
+	case <-locked:
+		t.Fatal("the lock finished while the sign still held the seed")
+	case <-time.After(100 * time.Millisecond):
+	}
+	release()
+	select {
+	case <-locked:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the lock didn't finish after the sign let go")
+	}
+}
+
+func releaseMemoryHeld(server *Signer, account string) bool {
+	_, restored := server.rotatingReleases.ForLeafChoice(account)
+	return !restored
+}
+
+// A restore a lock cut short may be missing releases. If the wait opened anyway,
+// a quick unlock would let a spend choose a leaf from it.
+func TestRestoreEndedByALockStaysHeld(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	ir := server.productRuntime()
+	const account = "ACCOUNT"
+
+	server.rotatingReleases.Restoring([]string{account})
+	generation := ir.LockGeneration()
+	server.finishReleaseRestore(ir, generation)
+	if releaseMemoryHeld(server, account) {
+		t.Fatal("a finished restore left the account held")
+	}
+
+	server.rotatingReleases.Restoring([]string{account})
+	ir.Lock()
+	server.finishReleaseRestore(ir, generation)
+	if !releaseMemoryHeld(server, account) {
+		t.Fatal("a restore ended by a lock opened the wait")
+	}
+}
+
+// A lock and unlock between two worker passes leave the state looking unchanged.
+// The generation has to show the worker that the memory needs restoring.
+func TestWorkerRestoresAfterALockItNeverSaw(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	ir := server.productRuntime()
+	const account = "ACCOUNT"
+	// Held from the start, so the wait below can only end with the worker's own
+	// restore, after its startup Reset.
+	server.rotatingReleases.Reset()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		server.runStageTableWorker(ctx)
+	}()
+	defer func() {
+		cancel()
+		<-done
+	}()
+	eventually := func(what string, ok func() bool) {
+		t.Helper()
+		for deadline := time.Now().Add(10 * time.Second); !ok(); {
+			if time.Now().After(deadline) {
+				t.Fatalf("timed out waiting: %s", what)
+			}
+			ir.WakeStageWork()
+			time.Sleep(5 * time.Millisecond)
+		}
+	}
+	eventually("the first restore", func() bool { return !releaseMemoryHeld(server, account) })
+
+	server.rotatingReleases.Record(signersigning.ReleaseRecord{Account: account, Stage: 3, TxID: "PLANTED"})
+	ir.Lock()
+	ir.SetUnlocked()
+	eventually("the restore after the unseen lock", func() bool {
+		rec, _ := server.rotatingReleases.ForLeafChoice(account)
+		return rec.TxID != "PLANTED" && !releaseMemoryHeld(server, account)
+	})
 }

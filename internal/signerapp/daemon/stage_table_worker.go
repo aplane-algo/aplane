@@ -54,6 +54,7 @@ func (fs *Signer) runStageTableWorker(ctx context.Context) {
 	var lastRun time.Time
 	wait := time.Duration(0)
 	wasUnlocked := false
+	var restoredGeneration uint64
 	for {
 		var wake <-chan struct{}
 		if ir := fs.productRuntime(); ir != nil {
@@ -78,11 +79,19 @@ func (fs *Signer) runStageTableWorker(ctx context.Context) {
 			wasUnlocked = false
 			continue
 		}
+		// A lock and unlock can both fall between two passes. The generation
+		// sees what polling the state can't.
+		generation := ir.LockGeneration()
+		if wasUnlocked && generation != restoredGeneration {
+			fs.rotatingReleases.Reset()
+			wasUnlocked = false
+		}
 		if !forced && wasUnlocked && time.Since(lastRun) < wait {
 			continue
 		}
 		if !wasUnlocked {
-			fs.rebuildReleaseMemory(ctx, ir)
+			fs.rebuildReleaseMemory(ctx, ir, generation)
+			restoredGeneration = generation
 		}
 		wasUnlocked = true
 		lastRun = time.Now()
@@ -92,10 +101,10 @@ func (fs *Signer) runStageTableWorker(ctx context.Context) {
 
 // rebuildReleaseMemory refills the release memory from the audit log after
 // an unlock, deriving each remembered stage's addresses inside key-use
-// windows. Entries the log no longer holds are simply absent.
-func (fs *Signer) rebuildReleaseMemory(ctx context.Context, ir *productruntime.Runtime) {
-	// Whatever the restore achieves, no spend waits for it afterwards.
-	defer fs.rotatingReleases.RestoredAll()
+// windows. Entries the log no longer holds are simply absent. generation is the
+// unlocked session the restore serves.
+func (fs *Signer) rebuildReleaseMemory(ctx context.Context, ir *productruntime.Runtime, generation uint64) {
+	defer fs.finishReleaseRestore(ir, generation)
 	if fs.auditLog == nil {
 		return
 	}
@@ -125,6 +134,17 @@ func (fs *Signer) rebuildReleaseMemory(ctx context.Context, ir *productruntime.R
 	if rebuilt > 0 {
 		logInfof("rotating release memory: %d release(s) restored from the audit log", rebuilt)
 	}
+}
+
+// finishReleaseRestore ends a restore. Whatever it achieved, no spend waits for it
+// afterwards, unless a lock ended it: then the memory may be missing releases
+// and stays held for the next unlock's restore.
+func (fs *Signer) finishReleaseRestore(ir *productruntime.Runtime, generation uint64) {
+	if ir.LockGeneration() != generation {
+		fs.rotatingReleases.Reset()
+		return
+	}
+	fs.rotatingReleases.RestoredAll()
 }
 
 // publishRotatingStatus records a pass's warnings, notes and per-account

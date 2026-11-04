@@ -41,6 +41,8 @@ type recordingReleaseAudit struct {
 	// rules holds the rule IDs of approvals that matched one.
 	approved int
 	rules    []string
+	// onRelease runs as a release is audited.
+	onRelease func()
 }
 
 func (a *recordingReleaseAudit) LogSignApproved(string, string, string) { a.approved++ }
@@ -48,6 +50,9 @@ func (a *recordingReleaseAudit) LogSignApprovedWithPolicyRule(_, _, _ string, po
 	a.rules = append(a.rules, policyRuleID)
 }
 func (a *recordingReleaseAudit) LogRotatingRelease(account, txid string, stage, lastValid, tree uint64, index uint32) error {
+	if a.onRelease != nil {
+		a.onRelease()
+	}
 	if a.fail != nil {
 		return a.fail
 	}
