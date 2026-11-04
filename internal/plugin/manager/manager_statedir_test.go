@@ -5,7 +5,6 @@ package manager
 
 import (
 	"errors"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -83,7 +82,7 @@ func TestPluginStateLockRejectsConcurrentManagerStart(t *testing.T) {
 	}
 	defer lock.Release()
 
-	m2 := &Manager{dataDir: tmp, stderrWriter: io.Discard}
+	m2 := &Manager{dataDir: tmp}
 	plugin := &discovery.Plugin{
 		Dir: tmp,
 		Manifest: &manifest.Manifest{

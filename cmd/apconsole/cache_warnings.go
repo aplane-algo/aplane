@@ -9,6 +9,7 @@ import (
 	"os"
 	"sync"
 
+	"github.com/aplane-algo/aplane/internal/clientlog"
 	"github.com/aplane-algo/aplane/internal/termsafe"
 )
 
@@ -28,6 +29,10 @@ type cacheWarnings struct {
 	pending []string
 	deliver func(line string)
 }
+
+// consoleLogs queues diagnostics for the shell pane. Its Close writes what the
+// pane never took, so a console with no shell still reports them on exit.
+var consoleLogs = clientlog.NewDeferred()
 
 // consoleCacheWarnings holds the real stderr, taken before apconsole points
 // os.Stderr at /dev/null for the TUI.

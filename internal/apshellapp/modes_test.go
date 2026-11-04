@@ -4,10 +4,12 @@
 package apshellapp
 
 import (
+	"log/slog"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/clientlog"
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/engine"
 )
@@ -58,5 +60,36 @@ func TestSetVerboseAndSimulateMode(t *testing.T) {
 	}
 	if !eng.GetSimulate() {
 		t.Fatal("simulate mode not enabled")
+	}
+}
+
+func TestLogLevelReportsAndChangesTheProcessLevel(t *testing.T) {
+	previous := clientlog.Level()
+	t.Cleanup(func() { clientlog.SetLevel(previous) })
+	clientlog.SetLevel(slog.LevelWarn)
+	app := &App{}
+
+	if got := app.LogLevel(); got.Level != "warn" || got.Changed {
+		t.Fatalf("LogLevel() = %+v", got)
+	}
+	got, err := app.SetLogLevel("info")
+	if err != nil {
+		t.Fatalf("SetLogLevel() error = %v", err)
+	}
+	if got.Level != "info" || !got.Changed || clientlog.Level() != slog.LevelInfo {
+		t.Fatalf("SetLogLevel() = %+v, level %v", got, clientlog.Level())
+	}
+}
+
+func TestSetLogLevelRejectsUnknownNamesWithoutChangingTheLevel(t *testing.T) {
+	previous := clientlog.Level()
+	t.Cleanup(func() { clientlog.SetLevel(previous) })
+	clientlog.SetLevel(slog.LevelWarn)
+
+	if _, err := (&App{}).SetLogLevel("notice"); err == nil {
+		t.Fatal("SetLogLevel() accepted an unknown level")
+	}
+	if clientlog.Level() != slog.LevelWarn {
+		t.Fatalf("level = %v, want it unchanged", clientlog.Level())
 	}
 }

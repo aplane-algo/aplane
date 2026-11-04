@@ -7,46 +7,69 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"log"
+	"log/slog"
+	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/clientlog"
 	"github.com/aplane-algo/aplane/internal/plugin/discovery"
 	"github.com/aplane-algo/aplane/internal/plugin/jsonrpc"
 	"github.com/aplane-algo/aplane/internal/plugin/manifest"
 )
 
-// recordingWriter keeps each Write separately, to check the one-line-per-Write
-// contract that TUI hosts rely on.
-type recordingWriter struct {
-	mu     sync.Mutex
-	writes []string
+// recordingSink keeps what reaches the end of the logging pipeline.
+type recordingSink struct {
+	mu      sync.Mutex
+	records []clientlog.Record
 }
 
-func (w *recordingWriter) Write(p []byte) (int, error) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	w.writes = append(w.writes, string(p))
-	return len(p), nil
+func (s *recordingSink) WriteRecord(record clientlog.Record) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.records = append(s.records, record)
+	return nil
 }
 
-func (w *recordingWriter) lines() []string {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	return append([]string(nil), w.writes...)
+func (s *recordingSink) lines() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	lines := make([]string, len(s.records))
+	for i, record := range s.records {
+		lines[i] = record.Line
+	}
+	return lines
+}
+
+// installLogs runs the real pipeline for one test, so these tests see what a host
+// shows: the prefix, the escaping, and the level filter.
+func installLogs(t *testing.T, level slog.Level) *recordingSink {
+	t.Helper()
+	previous := slog.Default()
+	flags := log.Flags()
+	t.Cleanup(func() {
+		slog.SetDefault(previous)
+		log.SetOutput(os.Stderr)
+		log.SetFlags(flags)
+	})
+	sink := &recordingSink{}
+	clientlog.Install(level, sink)
+	return sink
 }
 
 // runStderrMonitor feeds chunks to a monitor exactly as written and waits for it
 // to reach EOF.
-func runStderrMonitor(t *testing.T, m *Manager, instance *Instance, chunks ...string) {
+func runStderrMonitor(t *testing.T, instance *Instance, chunks ...string) {
 	t.Helper()
 	reader, writer := io.Pipe()
 	instance.stderr = reader
 	instance.stderrDone = make(chan struct{})
-	go m.monitorStderr(instance)
+	go instance.monitorStderr()
 	for _, chunk := range chunks {
 		if _, err := writer.Write([]byte(chunk)); err != nil {
 			t.Fatalf("write stderr: %v", err)
@@ -61,64 +84,72 @@ func runStderrMonitor(t *testing.T, m *Manager, instance *Instance, chunks ...st
 }
 
 func stderrTestInstance() *Instance {
-	return &Instance{
-		Plugin: &discovery.Plugin{Manifest: &manifest.Manifest{Name: "mithras"}},
-	}
+	return &Instance{Plugin: testPlugin("mithras")}
 }
 
-func stderrTestManager(gate func() bool) (*Manager, *recordingWriter) {
-	m := NewManager()
-	out := &recordingWriter{}
-	m.SetStderrWriter(out)
-	m.SetStderrGate(gate)
-	return m, out
+func testPlugin(name string) *discovery.Plugin {
+	return &discovery.Plugin{Manifest: &manifest.Manifest{Name: name}}
 }
 
-func assertWrites(t *testing.T, got, want []string) {
+func assertLines(t *testing.T, got, want []string) {
 	t.Helper()
-	if strings.Join(got, "") != strings.Join(want, "") || len(got) != len(want) {
-		t.Fatalf("writes = %q, want %q", got, want)
+	if !slices.Equal(got, want) {
+		t.Fatalf("lines = %q, want %q", got, want)
 	}
 }
 
-func TestStderrShownOneLinePerWriteWithoutGate(t *testing.T) {
-	m, out := stderrTestManager(nil)
+func TestStderrShownOneLineAtATimeAtInfo(t *testing.T) {
+	sink := installLogs(t, slog.LevelInfo)
 
-	runStderrMonitor(t, m, stderrTestInstance(), "first li", "ne\nsecond\nthird", " line\r\nno newline")
+	runStderrMonitor(t, stderrTestInstance(), "first li", "ne\nsecond\nthird", " line\r\nno newline")
 
-	assertWrites(t, out.lines(), []string{
-		"[mithras stderr]: first line\n",
-		"[mithras stderr]: second\n",
-		"[mithras stderr]: third line\n",
-		"[mithras stderr]: no newline\n",
+	assertLines(t, sink.lines(), []string{
+		"[plugin mithras stderr] first line",
+		"[plugin mithras stderr] second",
+		"[plugin mithras stderr] third line",
+		"[plugin mithras stderr] no newline",
 	})
 }
 
-func TestStderrHiddenByGateUntilReportedOnFailure(t *testing.T) {
-	m, out := stderrTestManager(func() bool { return false })
-	instance := stderrTestInstance()
+func TestStderrIsLoggedAtInfoWhateverItSays(t *testing.T) {
+	sink := installLogs(t, slog.LevelInfo)
 
-	runStderrMonitor(t, m, instance, "noise\n", "crash reason\n")
-	if got := out.lines(); len(got) != 0 {
-		t.Fatalf("hidden stderr reached the writer: %q", got)
+	runStderrMonitor(t, stderrTestInstance(), "ERROR: FATAL\nlevel=error msg=boom\n")
+
+	for _, record := range sink.records {
+		if record.Level != slog.LevelInfo {
+			t.Fatalf("record %q has level %v; a plugin's text must not set it", record.Line, record.Level)
+		}
 	}
-
-	m.reportHeldStderr(instance)
-	want := []string{"[mithras stderr]: noise\n", "[mithras stderr]: crash reason\n"}
-	assertWrites(t, out.lines(), want)
-
-	m.reportHeldStderr(instance)
-	assertWrites(t, out.lines(), want)
 }
 
-func TestStderrGateFollowsChangesWhileRunning(t *testing.T) {
-	var visible atomic.Bool
-	m, out := stderrTestManager(visible.Load)
+func TestStderrHiddenByDefaultUntilReportedOnFailure(t *testing.T) {
+	sink := installLogs(t, slog.LevelWarn)
+	instance := stderrTestInstance()
+
+	runStderrMonitor(t, instance, "noise\n", "crash reason\n")
+	if got := sink.lines(); len(got) != 0 {
+		t.Fatalf("hidden stderr reached the sink: %q", got)
+	}
+
+	instance.reportHeldStderr()
+	want := []string{
+		"[plugin mithras stderr] warning: noise",
+		"[plugin mithras stderr] warning: crash reason",
+	}
+	assertLines(t, sink.lines(), want)
+
+	instance.reportHeldStderr()
+	assertLines(t, sink.lines(), want)
+}
+
+func TestStderrFollowsTheLevelWhileRunning(t *testing.T) {
+	sink := installLogs(t, slog.LevelWarn)
 	instance := stderrTestInstance()
 	reader, writer := io.Pipe()
 	instance.stderr = reader
 	instance.stderrDone = make(chan struct{})
-	go m.monitorStderr(instance)
+	go instance.monitorStderr()
 
 	write := func(s string) {
 		t.Helper()
@@ -127,32 +158,35 @@ func TestStderrGateFollowsChangesWhileRunning(t *testing.T) {
 		}
 	}
 	write("hidden\n")
-	write("sync\n") // The read of this line proves the monitor finished the first.
-	visible.Store(true)
+	write("sync\n") // Reading this line proves the monitor finished the first.
+	clientlog.SetLevel(slog.LevelInfo)
 	write("shown\n")
 	_ = writer.Close()
 	<-instance.stderrDone
 
-	for _, line := range out.lines() {
-		if strings.Contains(line, "hidden") {
-			t.Fatalf("line written while hidden reached the writer: %q", out.lines())
-		}
+	lines := sink.lines()
+	if len(lines) == 0 || lines[len(lines)-1] != "[plugin mithras stderr] shown" {
+		t.Fatalf("lines = %q, want the line written after the level changed", lines)
 	}
-	if got := out.lines(); len(got) == 0 || got[len(got)-1] != "[mithras stderr]: shown\n" {
-		t.Fatalf("writes = %q, want the line written while visible", got)
+	if slices.Contains(lines, "[plugin mithras stderr] hidden") {
+		t.Fatalf("lines = %q, a hidden line was shown", lines)
 	}
 }
 
 func TestStderrEscapesTerminalControls(t *testing.T) {
-	m, out := stderrTestManager(nil)
+	sink := installLogs(t, slog.LevelInfo)
 
-	runStderrMonitor(t, m, stderrTestInstance(), "ok\x1b[2J\rfake prompt\n")
+	runStderrMonitor(t, stderrTestInstance(), "ok\x1b[2J\rfake prompt\n")
 
-	assertWrites(t, out.lines(), []string{`[mithras stderr]: ok\x1b[2J\rfake prompt` + "\n"})
+	assertLines(t, sink.lines(), []string{`[plugin mithras stderr] ok\x1b[2J\rfake prompt`})
 }
 
-func hostilePlugin(name string) *discovery.Plugin {
-	return &discovery.Plugin{Manifest: &manifest.Manifest{Name: name}}
+func TestPluginCannotPassAsAHostComponent(t *testing.T) {
+	sink := installLogs(t, slog.LevelInfo)
+
+	runStderrMonitor(t, &Instance{Plugin: testPlugin("cache")}, "SECURITY: all is well\n")
+
+	assertLines(t, sink.lines(), []string{"[plugin cache stderr] SECURITY: all is well"})
 }
 
 func TestPluginLinesEscapeHostileManifestName(t *testing.T) {
@@ -165,75 +199,71 @@ func TestPluginLinesEscapeHostileManifestName(t *testing.T) {
 			t.Fatal("expected output")
 		}
 		for _, line := range lines {
-			body := strings.TrimSuffix(line, "\n")
-			if strings.ContainsAny(body, "\x1b\u202e\n\r") {
-				t.Fatalf("control character reached the writer: %q", line)
+			if strings.ContainsAny(line, "\x1b\u202e\n\r") {
+				t.Fatalf("control character reached the sink: %q", line)
 			}
-			if !strings.Contains(body, escaped) {
-				t.Fatalf("line %q does not show the escaped name %q", line, escaped)
-			}
-			if !strings.HasSuffix(line, "\n") {
-				t.Fatalf("line %q lost its trusted newline", line)
+			if !strings.HasPrefix(line, "[plugin "+escaped) {
+				t.Fatalf("line %q does not lead with the escaped name %q", line, escaped)
 			}
 		}
 	}
 
-	t.Run("visible stderr", func(t *testing.T) {
-		m, out := stderrTestManager(nil)
-		runStderrMonitor(t, m, &Instance{Plugin: hostilePlugin(name)}, "hello\n")
-		assertSafe(t, out.lines())
+	t.Run("logged stderr", func(t *testing.T) {
+		sink := installLogs(t, slog.LevelInfo)
+		runStderrMonitor(t, &Instance{Plugin: testPlugin(name)}, "hello\n")
+		assertSafe(t, sink.lines())
 	})
 
 	t.Run("held stderr replayed on failure", func(t *testing.T) {
-		m, out := stderrTestManager(func() bool { return false })
-		instance := &Instance{Plugin: hostilePlugin(name)}
-		runStderrMonitor(t, m, instance, "hello\n")
-		m.reportHeldStderr(instance)
-		assertSafe(t, out.lines())
+		sink := installLogs(t, slog.LevelWarn)
+		instance := &Instance{Plugin: testPlugin(name)}
+		runStderrMonitor(t, instance, "hello\n")
+		instance.reportHeldStderr()
+		assertSafe(t, sink.lines())
 	})
 
 	t.Run("sandbox banner", func(t *testing.T) {
-		m, out := stderrTestManager(nil)
-		m.emitSandboxBanner(hostilePlugin(name))
-		assertSafe(t, out.lines())
+		sink := installLogs(t, slog.LevelInfo)
+		logSandboxBanner(testPlugin(name))
+		assertSafe(t, sink.lines())
 	})
 }
 
-func TestSandboxBannerFollowsGate(t *testing.T) {
-	m, out := stderrTestManager(func() bool { return false })
+func TestSandboxBannerIsRoutineDetail(t *testing.T) {
+	sink := installLogs(t, slog.LevelWarn)
 
-	m.emitSandboxBanner(hostilePlugin("mithras"))
+	logSandboxBanner(testPlugin("mithras"))
 
-	if got := out.lines(); len(got) != 0 {
-		t.Fatalf("hidden banner reached the writer: %q", got)
+	if got := sink.lines(); len(got) != 0 {
+		t.Fatalf("banner shown at the default level: %q", got)
 	}
 }
 
 func TestStderrOverlongLineKeepsDraining(t *testing.T) {
-	m, out := stderrTestManager(nil)
+	sink := installLogs(t, slog.LevelInfo)
 	long := strings.Repeat("x", 3*maxStderrLineBytes)
 
-	runStderrMonitor(t, m, stderrTestInstance(), long+"\n", "after\n")
+	runStderrMonitor(t, stderrTestInstance(), long+"\n", "after\n")
 
-	lines := out.lines()
+	lines := sink.lines()
 	if len(lines) < 4 {
-		t.Fatalf("got %d writes, want the long line in pieces", len(lines))
+		t.Fatalf("got %d lines, want the long line in pieces", len(lines))
 	}
 	for _, line := range lines {
-		if !strings.HasPrefix(line, "[mithras stderr]: ") || !strings.HasSuffix(line, "\n") {
-			t.Fatalf("malformed write: %.60q", line)
+		if !strings.HasPrefix(line, "[plugin mithras stderr] ") {
+			t.Fatalf("malformed line: %.60q", line)
 		}
 	}
 	if got := strings.Count(strings.Join(lines, ""), "x"); got != len(long) {
-		t.Fatalf("kept %d of %d bytes", got, len(long))
+		t.Fatalf("kept %d of %d bytes; a piece must fit in one log line", got, len(long))
 	}
-	if last := lines[len(lines)-1]; last != "[mithras stderr]: after\n" {
-		t.Fatalf("last write = %q", last)
+	if last := lines[len(lines)-1]; last != "[plugin mithras stderr] after" {
+		t.Fatalf("last line = %q", last)
 	}
 }
 
 func TestHeldStderrKeepsNewestLines(t *testing.T) {
-	m, out := stderrTestManager(func() bool { return false })
+	sink := installLogs(t, slog.LevelWarn)
 	instance := stderrTestInstance()
 
 	total := maxHeldStderrLines + 5
@@ -241,24 +271,24 @@ func TestHeldStderrKeepsNewestLines(t *testing.T) {
 	for i := range chunks {
 		chunks[i] = fmt.Sprintf("line %d\n", i)
 	}
-	runStderrMonitor(t, m, instance, chunks...)
-	m.reportHeldStderr(instance)
+	runStderrMonitor(t, instance, chunks...)
+	instance.reportHeldStderr()
 
-	lines := out.lines()
+	lines := sink.lines()
 	if len(lines) != maxHeldStderrLines {
 		t.Fatalf("reported %d lines, want %d", len(lines), maxHeldStderrLines)
 	}
-	if want := "[mithras stderr]: line 5\n"; lines[0] != want {
+	if want := "[plugin mithras stderr] warning: line 5"; lines[0] != want {
 		t.Fatalf("oldest kept = %q, want %q", lines[0], want)
 	}
-	if want := fmt.Sprintf("[mithras stderr]: line %d\n", total-1); lines[len(lines)-1] != want {
+	if want := fmt.Sprintf("[plugin mithras stderr] warning: line %d", total-1); lines[len(lines)-1] != want {
 		t.Fatalf("newest kept = %q, want %q", lines[len(lines)-1], want)
 	}
 }
 
 // startCrashingPlugin runs a real process that logs its reason and exits, with
 // no JSON-RPC peer, so a host call on it fails the way a crashed plugin does.
-func startCrashingPlugin(t *testing.T, m *Manager) *Instance {
+func startCrashingPlugin(t *testing.T) *Instance {
 	t.Helper()
 	cmd := exec.Command("sh", "-c", "echo 'cannot find module foo' >&2; exit 1")
 	stdin, err := cmd.StdinPipe()
@@ -292,7 +322,7 @@ func startCrashingPlugin(t *testing.T, m *Manager) *Instance {
 		stderr:     stderr,
 		stderrDone: make(chan struct{}),
 	}
-	go m.monitorStderr(instance)
+	go instance.monitorStderr()
 	return instance
 }
 
@@ -338,7 +368,8 @@ func TestFailedPluginReportsHiddenStderr(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			m, out := stderrTestManager(func() bool { return false })
+			sink := installLogs(t, slog.LevelWarn)
+			m := NewManager()
 			m.cachedPlugins = []*discovery.Plugin{{
 				Manifest: &manifest.Manifest{
 					Name:     "mithras",
@@ -346,14 +377,14 @@ func TestFailedPluginReportsHiddenStderr(t *testing.T) {
 				},
 			}}
 			m.startPluginInstanceHook = func(*discovery.Plugin, runtimeConfig) (*Instance, error) {
-				return startCrashingPlugin(t, m), nil
+				return startCrashingPlugin(t), nil
 			}
 			tt.setup(m)
 
 			if err := tt.run(m); err == nil {
 				t.Fatal("expected the host call to fail")
 			}
-			assertWrites(t, out.lines(), []string{"[mithras stderr]: cannot find module foo\n"})
+			assertLines(t, sink.lines(), []string{"[plugin mithras stderr] warning: cannot find module foo"})
 		})
 	}
 }

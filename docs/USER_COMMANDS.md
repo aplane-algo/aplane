@@ -14,7 +14,7 @@ Complete command reference for the APlane shell (`apshell`).
 | **Aliases & Sets** | `alias`, `sets` |
 | **Rekeying** | `rekey list`, `rekey`, `unrekey` |
 | **ASA Management** | `asa list`, `asa add`, `asa remove`, `asa clear` |
-| **Configuration** | `network`, `connect`, `disconnect`, `enroll`, `endpoints`, `cosigner status`, `write`, `verbose`, `simulate`, `config` |
+| **Configuration** | `network`, `connect`, `disconnect`, `enroll`, `endpoints`, `cosigner status`, `write`, `verbose`, `loglevel`, `simulate`, `config` |
 | **Automation** | `js`, `jssave`, `jslist`, `script` |
 | **Plugins** | `plugins` |
 | **Session** | `help`, `clear`, `quit` |
@@ -1245,25 +1245,45 @@ When write mode is active, the prompt shows a `w` flag (e.g., `testnet w>`).
 
 ### verbose
 
-Toggle detailed output, in `apshell` and in the apconsole shell pane. Off by
-default. When enabled, shows additional details after signing:
+Toggle detailed signing output. When enabled, shows additional details after signing:
 - Fee adjustments (total fee delta across the group)
 - Passthrough transaction count (pre-signed transactions included as-is)
 - Foreign transaction count (transactions not signed by this signer)
 - Dummy transaction count (budget transactions added for LogicSig)
 
-It also shows plugin logs, as `[name stderr]:` lines, and each plugin's sandbox
-line when it starts. Plugins start on first use, so turn this on before a
-plugin's first command to see its startup output.
-
-With verbose off, plugin logs stay hidden unless a plugin fails: its most recent
-hidden lines are then printed above the error. `apshell --mcp` ignores this
-setting for plugin logs and always writes them to stderr, which is the MCP
-host's log.
-
 ```
 verbose [on|off]
 ```
+
+To see plugin output, use `loglevel info`.
+
+---
+
+### loglevel
+
+Show or set which diagnostics appear, in `apshell` and in the apconsole shell
+pane. Results, prompts, and progress always appear; this only filters logs. The
+setting lasts until the program exits.
+
+```
+loglevel                        # Show the current level
+loglevel error                  # Failures only
+loglevel warn                   # Also warnings (default)
+loglevel info                   # Also routine detail, including plugin output
+loglevel debug                  # Also the client's internal detail
+```
+
+Plugin output appears at `info`, as `[plugin name stderr]` lines, with a line
+when each plugin starts. Plugins start on first use, so set the level before a
+plugin's first command to see its startup output.
+
+At `warn`, plugin output stays hidden unless a plugin fails: its last 20 hidden
+lines are then shown as warnings above the error. At `info` the lines were
+already shown, so they aren't repeated, and if a very fast burst of output
+overflows apconsole's queue, some can be lost.
+
+`apshell --mcp` starts at `info`, so plugin output stays in the MCP host's log.
+Setting `APSHELL_DEBUG` to any value starts every mode at `debug`.
 
 ---
 

@@ -60,6 +60,20 @@ func toggleProjection(tr toggleOutcome) interface{} {
 	}{tr.Name, tr.Enabled}
 }
 
+func renderLogLevel(r *REPLState, result appresult.LogLevel) {
+	if result.Changed {
+		r.printf("✓ Log level set to %s\n", result.Level)
+		return
+	}
+	r.printf("Log level: %s\n", result.Level)
+}
+
+func logLevelProjection(result appresult.LogLevel) interface{} {
+	return struct {
+		Level string `json:"level"`
+	}{result.Level}
+}
+
 func capitalize(s string) string {
 	if s == "" {
 		return s

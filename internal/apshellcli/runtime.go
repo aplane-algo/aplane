@@ -23,16 +23,6 @@ func initPluginRuntime(r *REPLState) error {
 	return nil
 }
 
-// quietPluginStderr shows plugin stderr only in verbose mode. Interactive shells
-// and scripts use it because that output is noise beside command results. MCP
-// does not: its stderr is the host's log, not a display.
-func quietPluginStderr(r *REPLState) {
-	app := r.app()
-	if gated, ok := app.Plugins.(interface{ SetStderrGate(func() bool) }); ok {
-		gated.SetStderrGate(func() bool { return app.VerboseMode().Enabled })
-	}
-}
-
 func discoverExternalPlugins(r *REPLState) ([]*discovery.Plugin, error) {
 	if r.app().Plugins == nil {
 		return nil, nil

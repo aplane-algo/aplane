@@ -21,18 +21,21 @@ before it was renamed `enroll`.
   shell pane, or in the pane as they happen during a session, and a warning
   raised during startup stays on the terminal after apconsole exits.
 
-## Plugin logs are off by default in apshell and apconsole
+## Diagnostics have one control: `loglevel`
 
-- `verbose on` now also shows plugin stderr and the sandbox startup line. It
-  is off by default, so plugins no longer log over command output in `apshell`
-  and `--script` runs. `--mcp` still writes plugin stderr to its own stderr.
-- The apconsole shell pane follows the same setting. It used to discard plugin
-  stderr entirely; with `verbose on` the lines now appear in the pane.
-- With verbose off, a plugin that fails still has its last 20 hidden lines
-  printed above the error, so a crash keeps its reason.
-- Plugin stderr and the sandbox startup line are now reported a line at a time,
-  and terminal control characters in them, including in the plugin's name, are
-  shown as escapes.
+- `loglevel [error|warn|info|debug]` sets which diagnostics appear in `apshell`
+  and in the apconsole shell pane. The default is `warn`.
+- Use `loglevel info` to show plugin output. It no longer appears by default, so
+  plugins don't write over command results, and `apshell --mcp` still logs it to
+  stderr. The sandbox startup line appears at `info` too.
+- If a plugin fails while its output is hidden, its last 20 lines are shown as
+  warnings above the error, so a crash keeps its reason.
+- Plugin output in apconsole used to be discarded. It now appears in the shell
+  pane at `loglevel info`.
+- Plugin output is reported a line at a time under a fixed `[plugin name stderr]`
+  prefix, and terminal control characters in it, including in the plugin's name,
+  are shown as escapes.
+- `verbose` is unchanged: it controls signing detail only.
 
 ## Builds move to a pinned Go 1.27 toolchain
 

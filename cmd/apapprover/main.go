@@ -11,6 +11,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"math/big"
 	"os"
 	"os/signal"
@@ -19,6 +20,7 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminipc"
+	"github.com/aplane-algo/aplane/internal/clientlog"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/transport"
@@ -92,6 +94,8 @@ func approvalPrompt(code string) string {
 const enrollmentAnswerTimeout = 10 * time.Second
 
 func main() {
+	clientlog.Install(clientlog.StartLevel(slog.LevelWarn), clientlog.WriterSink(os.Stderr))
+
 	dataDir := flag.String("d", "", "Data directory (required, or set APSIGNER_DATA)")
 	ipcPathFlag := flag.String("ipc-path", "", "Admin IPC socket path (or set APSIGNER_IPC_PATH)")
 	flag.Parse()

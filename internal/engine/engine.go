@@ -140,15 +140,14 @@ func (e *Core) GetWriteMode() bool {
 	return e.WriteMode
 }
 
-// SetVerbose enables or disables detailed signing output and plugin stderr.
+// SetVerbose enables or disables detailed signing output
 func (e *Core) SetVerbose(enabled bool) {
-	e.verbose.Store(enabled)
+	e.Verbose = enabled
 }
 
-// GetVerbose returns the current verbose mode state. It is safe to call from
-// any goroutine; the plugin stderr monitors read it while commands run.
+// GetVerbose returns the current verbose mode state
 func (e *Core) GetVerbose() bool {
-	return e.verbose.Load()
+	return e.Verbose
 }
 
 // SetSimulate enables or disables transaction simulation mode

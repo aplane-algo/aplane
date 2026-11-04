@@ -264,6 +264,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		shell, cmd := m.shell.Update(msg)
 		m.shell = shell
 		return m, cmd
+	case shellLogBatchMsg:
+		if !m.shellEnabled() {
+			return m, nil
+		}
+		shell, cmd := m.shell.Update(msg)
+		m.shell = shell
+		return m, cmd
 	case shellProgressLineMsg:
 		if !m.shellEnabled() {
 			return m, nil

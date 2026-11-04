@@ -30,6 +30,12 @@ type Toggle struct {
 	Changed bool
 }
 
+// LogLevel is the canonical structured result for the diagnostic level.
+type LogLevel struct {
+	Level   string
+	Changed bool
+}
+
 // MCPStatus is the structured MCP projection for engine status.
 type MCPStatus struct {
 	Network          string `json:"network"`

@@ -4,13 +4,14 @@
 package apshellcli
 
 import (
+	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/apshellapp"
+	"github.com/aplane-algo/aplane/internal/clientlog"
 	"github.com/aplane-algo/aplane/internal/config"
 )
 
@@ -77,42 +78,54 @@ func TestSessionStartupConnectSkipsWithoutDefaultEndpoint(t *testing.T) {
 	}
 }
 
-// fakePluginGate records the gate quietPluginStderr installs. It embeds the real
-// interface so only the stderr methods exist; the session must not start a plugin.
-type fakePluginGate struct {
-	apshellapp.PluginRuntime
-	gate func() bool
-}
-
-func (f *fakePluginGate) SetStderrGate(gate func() bool) { f.gate = gate }
-
-func TestPluginStderrFollowsVerboseMode(t *testing.T) {
+func TestLogLevelCommand(t *testing.T) {
 	session, err := NewSession("testnet", config.DefaultConfig(), t.TempDir(), nil)
 	if err != nil {
 		t.Fatalf("NewSession() error = %v", err)
 	}
 	defer session.Shutdown()
+	previous := clientlog.Level()
+	t.Cleanup(func() { clientlog.SetLevel(previous) })
+	clientlog.SetLevel(slog.LevelWarn)
 
-	app := session.state.app()
-	real := app.Plugins
-	defer func() { app.Plugins = real }()
-	fake := &fakePluginGate{PluginRuntime: real}
-	app.Plugins = fake
-	quietPluginStderr(session.state)
-
-	if fake.gate() {
-		t.Fatal("plugin stderr should be hidden by default")
+	output, _, err := session.ExecuteLineCaptured("loglevel")
+	if err != nil || !strings.Contains(output, "Log level: warn") {
+		t.Fatalf("loglevel = %q, %v", output, err)
 	}
+
+	output, _, err = session.ExecuteLineCaptured("loglevel INFO")
+	if err != nil || !strings.Contains(output, "Log level set to info") {
+		t.Fatalf("loglevel INFO = %q, %v", output, err)
+	}
+	if clientlog.Level() != slog.LevelInfo {
+		t.Fatalf("level = %v, want info", clientlog.Level())
+	}
+
+	for _, line := range []string{"loglevel loud", "loglevel info debug"} {
+		_, _, err = session.ExecuteLineCaptured(line)
+		if err == nil || !strings.Contains(err.Error(), "usage: loglevel [error|warn|info|debug]") {
+			t.Fatalf("%s error = %v, want usage", line, err)
+		}
+		if clientlog.Level() != slog.LevelInfo {
+			t.Fatalf("%s changed the level to %v", line, clientlog.Level())
+		}
+	}
+}
+
+func TestVerboseDoesNotChangeTheLogLevel(t *testing.T) {
+	session, err := NewSession("testnet", config.DefaultConfig(), t.TempDir(), nil)
+	if err != nil {
+		t.Fatalf("NewSession() error = %v", err)
+	}
+	defer session.Shutdown()
+	previous := clientlog.Level()
+	t.Cleanup(func() { clientlog.SetLevel(previous) })
+	clientlog.SetLevel(slog.LevelWarn)
+
 	if _, _, err := session.ExecuteLineCaptured("verbose on"); err != nil {
 		t.Fatalf("verbose on: %v", err)
 	}
-	if !fake.gate() {
-		t.Fatal("verbose on should show plugin stderr")
-	}
-	if _, _, err := session.ExecuteLineCaptured("verbose off"); err != nil {
-		t.Fatalf("verbose off: %v", err)
-	}
-	if fake.gate() {
-		t.Fatal("verbose off should hide plugin stderr")
+	if clientlog.Level() != slog.LevelWarn {
+		t.Fatalf("level = %v, verbose must stay separate", clientlog.Level())
 	}
 }

@@ -65,7 +65,7 @@ func (e *Engine) defaultSubmitOptions(ctx context.Context, wait bool, writeNotic
 	return clientsign.SubmitOptions{
 		Ctx:                 ctx,
 		WaitForConfirmation: wait,
-		Verbose:             e.GetVerbose(),
+		Verbose:             e.Verbose,
 		Simulate:            e.Simulate,
 		Out:                 out,
 		TxnWriter:           e.WriteTxnCallback(writeNotices),

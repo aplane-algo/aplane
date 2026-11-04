@@ -15,6 +15,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/aplane-algo/aplane/internal/clientlog"
 )
 
 type shellExecutor interface {
@@ -23,6 +25,13 @@ type shellExecutor interface {
 	Complete(line string, pos int) (offset int, candidates []string)
 	Prompt() string
 	StartupConnect() (output string, err error)
+}
+
+// logSource is the pane's view of the diagnostic queue.
+type logSource interface {
+	Next(ctx context.Context) (clientlog.Batch, bool)
+	Ack(id uint64)
+	Flush(ctx context.Context) error
 }
 
 type shellHistoryStore interface {
@@ -41,6 +50,7 @@ type shellModel struct {
 	historyBrowsing bool
 	historyStore    shellHistoryStore
 	executor        shellExecutor
+	logs            logSource
 	running         bool
 	startupRunning  bool
 	cancelRequested bool
@@ -102,6 +112,11 @@ type shellStartupConnectMsg struct {
 	err    error
 }
 
+// shellLogBatchMsg delivers queued diagnostics to the pane.
+type shellLogBatchMsg struct {
+	batch clientlog.Batch
+}
+
 // shellProgressLineMsg is a live status line emitted by a blocking command
 // (e.g. enroll) that would otherwise be trapped in the captured output
 // buffer until the command returns.
@@ -112,6 +127,10 @@ type shellProgressLineMsg struct {
 type shellSpinnerTickMsg struct{}
 
 const shellSpinnerInterval = 120 * time.Millisecond
+
+// shellLogFlushWait bounds how long a finished command waits for its diagnostics
+// to reach the pane, in case the event loop has stopped.
+const shellLogFlushWait = 2 * time.Second
 
 var shellSpinnerFrames = [...]string{"-", "\\", "|", "/"}
 
@@ -146,8 +165,9 @@ func (m shellModel) Init() tea.Cmd {
 		return nil
 	}
 	return tea.Batch(
-		startupConnectShell(m.executor),
+		startupConnectShell(m.executor, m.logs),
 		shellSpinnerTick(),
+		pullShellLogs(m.logs),
 	)
 }
 
@@ -203,6 +223,14 @@ func (m shellModel) Update(msg tea.Msg) (shellModel, tea.Cmd) {
 			m.appendLines(strings.Split(msg.text, "\n")...)
 		}
 		return m, nil
+	case shellLogBatchMsg:
+		m.clearCompletions()
+		for _, record := range msg.batch.Records {
+			m.appendLines(record.Line)
+		}
+		m.appendLines(msg.batch.LossMarkers()...)
+		m.logs.Ack(msg.batch.ID)
+		return m, pullShellLogs(m.logs)
 	case shellSpinnerTickMsg:
 		if !m.busy() {
 			return m, nil
@@ -251,7 +279,7 @@ func (m shellModel) updateKey(msg tea.KeyMsg) (shellModel, tea.Cmd) {
 			m.appendLines("apshell session restarted")
 			if m.executor != nil {
 				m.startupRunning = true
-				return m, tea.Batch(startupConnectShell(m.executor), shellSpinnerTick())
+				return m, tea.Batch(startupConnectShell(m.executor, m.logs), shellSpinnerTick())
 			}
 		}
 		return m, nil
@@ -346,7 +374,7 @@ func (m shellModel) updateKey(msg tea.KeyMsg) (shellModel, tea.Cmd) {
 			}
 			m.running = true
 			m.cancelRequested = false
-			return m, tea.Batch(executeShellLine(m.executor, line), shellSpinnerTick())
+			return m, tea.Batch(executeShellLine(m.executor, m.logs, line), shellSpinnerTick())
 		}
 	}
 	m.trim()
@@ -460,11 +488,42 @@ func shellSpinnerTick() tea.Cmd {
 	})
 }
 
-func startupConnectShell(executor shellExecutor) tea.Cmd {
+func startupConnectShell(executor shellExecutor, logs logSource) tea.Cmd {
 	return func() tea.Msg {
 		output, err := executor.StartupConnect()
+		flushShellLogs(logs)
 		return shellStartupConnectMsg{output: output, err: err}
 	}
+}
+
+// pullShellLogs waits for the next batch of diagnostics. Pulling rather than
+// having the queue send means a log call never waits on the event loop, which may
+// be the goroutine making it. The pane starts pulling only once the shell is
+// enabled, so records don't vanish into a pane that isn't shown; a console with no
+// shell leaves them for the queue's Close.
+func pullShellLogs(logs logSource) tea.Cmd {
+	if logs == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		batch, ok := logs.Next(context.Background())
+		if !ok {
+			return nil
+		}
+		return shellLogBatchMsg{batch: batch}
+	}
+}
+
+// flushShellLogs lets what a command logged reach the pane first, so a failed
+// plugin's lines sit above the command's error. Commands run off the event loop,
+// which is what lets this wait. A failure here doesn't change the command's result.
+func flushShellLogs(logs logSource) {
+	if logs == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), shellLogFlushWait)
+	defer cancel()
+	_ = logs.Flush(ctx)
 }
 
 // isPaneClearCommand reports whether the input is apshell's "clear"/"cls" with
@@ -650,9 +709,10 @@ func longestCommonPrefix(strs []string) string {
 	return prefix
 }
 
-func executeShellLine(executor shellExecutor, line string) tea.Cmd {
+func executeShellLine(executor shellExecutor, logs logSource, line string) tea.Cmd {
 	return func() tea.Msg {
 		output, exit, err := executor.ExecuteLineCaptured(line)
+		flushShellLogs(logs)
 		return shellExecMsg{command: line, output: output, exit: exit, err: err}
 	}
 }

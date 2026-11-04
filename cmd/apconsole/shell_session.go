@@ -6,7 +6,6 @@ package main
 import (
 	"fmt"
 	"io"
-	"strings"
 
 	"github.com/aplane-algo/aplane/internal/apshellcli"
 	shellbootstrap "github.com/aplane-algo/aplane/internal/bootstrap/shell"
@@ -28,12 +27,4 @@ func loadShellConsole(clientDataDirFlag, networkFlag string) (*apshellcli.Sessio
 		return nil, lines
 	}
 	return session, lines
-}
-
-// shellPaneWriter delivers plugin stderr to the shell pane, one line per Write.
-type shellPaneWriter func(line string)
-
-func (w shellPaneWriter) Write(p []byte) (int, error) {
-	w(strings.TrimRight(string(p), "\r\n"))
-	return len(p), nil
 }

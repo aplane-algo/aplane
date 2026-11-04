@@ -37,7 +37,7 @@ func TestBuiltInCommandAndAliasInventory(t *testing.T) {
 		"accounts", "alias", "app", "asa", "balance", "clear", "close",
 		"config", "connect", "cosigner", "delete", "disconnect", "endpoints", "enroll",
 		"generate", "help", "holders", "info", "js", "jslist", "jssave", "keyreg", "keys",
-		"keytypes", "network", "optin", "optout", "participation", "plugins",
+		"keytypes", "loglevel", "network", "optin", "optout", "participation", "plugins",
 		"quit", "rekey", "rotate", "script", "send", "sets", "sign",
 		"simulate", "status", "sweep", "unrekey", "validate", "verbose", "write",
 	}

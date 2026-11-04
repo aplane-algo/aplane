@@ -59,6 +59,16 @@ func (r *REPLState) cmdVerbose(args []string, _ interface{}) (command.Result, er
 	}, toggleProjection(result))
 }
 
+func (r *REPLState) cmdLogLevel(args []string, _ interface{}) (command.Result, error) {
+	result, err := execLogLevel(r, args)
+	if err != nil {
+		return nil, err
+	}
+	return newShellCommandResult(func(w io.Writer) error {
+		return r.withOutput(w, func() { renderLogLevel(r, result) })
+	}, logLevelProjection(result))
+}
+
 func (r *REPLState) cmdSimulate(args []string, _ interface{}) (command.Result, error) {
 	return executeSimulate(r, args)
 }

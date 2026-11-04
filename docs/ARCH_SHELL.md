@@ -22,6 +22,7 @@ signing flow; see [ARCH_SIGNING.md](ARCH_SIGNING.md#http-api-contract),
 - [REPL Surface](#repl-surface)
 - [App Interaction](#app-interaction)
 - [MCP Surface](#mcp-surface)
+- [Client Output and Logging](#client-output-and-logging)
 - [Key Files](#key-files)
 - [Related Documentation](#related-documentation)
 
@@ -1690,6 +1691,86 @@ overlap:
 mu.Lock()
 defer mu.Unlock()
 ```
+
+## Client Output and Logging
+
+Client programs produce four kinds of output, and each has one owner:
+
+| Class | What it is | Path |
+|---|---|---|
+| Result | The answer to a command, or something the user must keep | Typed application result, rendered by the host (`r.Out`, `command.Result`) |
+| Prompt | Asks for a decision or input | The line reader, or the host's approval handler |
+| Progress | Status that matters while an operation runs | `ProgressLine`, `SignerProgressOut`, or a host callback |
+| Log | Operational diagnostics | `log/slog`, through the handler the host installs |
+
+If a command's answer would be incomplete without a message, it is a result, and
+no log level may hide it.
+
+### Logging Pipeline
+
+Packages call `log/slog` and import nothing of ours, so a shared package doesn't
+need to know whether it runs under a terminal, a TUI, or an MCP host. Each host
+calls `clientlog.Install` once, before it builds anything that can log.
+
+A source gets its logger at call time:
+
+```go
+func logger() *slog.Logger { return slog.With("component", "cache") }
+```
+
+A package variable built with `slog.With` would bind the default handler during
+package initialization, before the host installs one, and bypass the pipeline.
+
+The handler renders one readable line, keeping every attribute and escaping the
+whole line, since names, values, and errors can all carry outside text:
+
+```text
+[cache] warning: failed to save auth cache error="disk full"
+[plugin mithras stderr] cannot find module foo
+```
+
+A plugin's output has `component=plugin` and its name in a separate attribute,
+because a plugin chooses its name and could otherwise pass as `cache`.
+
+| Level | Meaning | Examples |
+|---|---|---|
+| `error` | A failure nothing else reports | |
+| `warn` | The operator should know or act | Dropped notification, failed plugin's last lines |
+| `info` | Routine detail | Plugin stderr, sandbox line |
+| `debug` | Detail for diagnosing the client | Response-close errors |
+
+The default level is `warn`, except that `--mcp` starts at `info`, because its
+stderr is the host's log rather than a display. `APSHELL_DEBUG` starts any mode at
+`debug`, and `loglevel` changes the level at runtime. Text that reaches the
+standard `log` package has no level, so the host assigns it `warn` rather than
+hide it.
+
+| Host | Where logs go |
+|---|---|
+| `apshell` REPL | stderr, through readline while it runs so the prompt is redrawn |
+| `apshell --script`, `--mcp`, `aprekey`, `apapprover`, `apadmin` batch modes | stderr |
+| apconsole | `clientlog.Deferred`, pulled into the shell pane |
+| `apadmin` TUI | `clientlog.Deferred`, written out on exit; lost notifications are shown live |
+
+### Deferred Delivery
+
+While a TUI owns the terminal, nothing may write to it directly, and a log call
+can come from the TUI's own update loop, so a writer can't wait for the display.
+`clientlog.Deferred` is a bounded queue the TUI pulls from with a blocking
+`tea.Cmd`. It holds records from before the TUI exists, so warnings raised during
+startup still reach the pane.
+
+- Records leave in submission order. Severity only affects eviction: when the
+  queue is full, ordinary records go first, so lower-level traffic can't evict a
+  warning. Warning traffic can, and a marker reports it. The queue promises order
+  and accounting, not that nothing is lost.
+- A batch stays held until `Update` has stored it and acknowledged it, so a batch
+  the TUI never received is still there when it stops.
+- `Flush` waits for what was submitted before the call, so a command's own
+  diagnostics appear above its result. A dropped record counts once its marker is
+  delivered.
+- `Close` runs as soon as the TUI stops, before anything that can exit. It writes
+  everything unacknowledged, and later records go straight to stderr.
 
 ## Key Files
 

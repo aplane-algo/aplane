@@ -7,6 +7,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/adminipc"
 	"github.com/aplane-algo/aplane/internal/algorithm"
 	bootstrap "github.com/aplane-algo/aplane/internal/bootstrap/signer"
+	"github.com/aplane-algo/aplane/internal/clientlog"
 	"github.com/aplane-algo/aplane/internal/keygen"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/manifest"
@@ -41,6 +43,8 @@ func main() {
 			os.Exit(0)
 		}
 	}
+
+	clientlog.Install(clientlog.StartLevel(slog.LevelWarn), clientlog.WriterSink(os.Stderr))
 
 	// Register all providers (must be called before manifest or any registry queries)
 	RegisterProviders()
@@ -181,11 +185,18 @@ func validateFlagSpelling(args []string) error {
 func startTUI(connector tui.AdminConnector) {
 	logInfof("starting apadmin TUI")
 
+	// Nothing may write to the terminal while the TUI owns it. Diagnostics wait
+	// for it to finish; the lost-notification count is shown live, in the TUI.
+	logs := clientlog.NewDeferred()
+	clientlog.SetSink(logs)
+
 	// Create and run the TUI
 	model := tui.NewModel(connector, "").WithStandalone()
 	p := tea.NewProgram(model, tea.WithAltScreen())
 
 	final, err := p.Run()
+	// stderr is the only channel left if this fails.
+	_ = logs.Close(os.Stderr)
 	// Whatever ended the program, release what an unfinished backup transfer
 	// holds (a staging file, an open archive, a passphrase).
 	if m, ok := final.(tui.Model); ok {
