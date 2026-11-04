@@ -7,6 +7,19 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## Plugin logs are off by default in apshell and apconsole
+
+- `verbose on` now also shows plugin stderr and the sandbox startup line. It
+  is off by default, so plugins no longer log over command output in `apshell`
+  and `--script` runs. `--mcp` still writes plugin stderr to its own stderr.
+- The apconsole shell pane follows the same setting. It used to discard plugin
+  stderr entirely; with `verbose on` the lines now appear in the pane.
+- With verbose off, a plugin that fails still has its last 20 hidden lines
+  printed above the error, so a crash keeps its reason.
+- Plugin stderr and the sandbox startup line are now reported a line at a time,
+  and terminal control characters in them, including in the plugin's name, are
+  shown as escapes.
+
 ## Builds move to a pinned Go 1.27 toolchain
 
 - Releases are built with Go 1.27.3, pinned by the `toolchain` line in

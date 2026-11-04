@@ -41,6 +41,7 @@ func NewSession(network string, cfg config.Config, dataDir string, out io.Writer
 	if err := initPluginRuntime(state); err != nil {
 		return nil, err
 	}
+	quietPluginStderr(state)
 	return &Session{
 		state:       state,
 		stopPolling: state.startSignerStatusPolling(nil),
@@ -272,8 +273,10 @@ func (s *Session) SetInteractiveLinePromptContext(fn func(context.Context, strin
 }
 
 // SetPluginStderr redirects plugin stderr (and the sandbox-startup banner) to
-// w. Use io.Discard from TUI hosts where raw stderr would corrupt the display.
-// No-op if the plugin runtime is not the concrete manager that supports it.
+// w, which receives each line in one Write. TUI hosts must set it because raw
+// stderr corrupts the display. What reaches w follows verbose mode, plus the
+// held lines of a plugin that fails. No-op if the plugin runtime is not the
+// concrete manager that supports it.
 func (s *Session) SetPluginStderr(w io.Writer) {
 	if s == nil || s.state == nil {
 		return

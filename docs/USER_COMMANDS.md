@@ -1245,11 +1245,21 @@ When write mode is active, the prompt shows a `w` flag (e.g., `testnet w>`).
 
 ### verbose
 
-Toggle detailed signing output. When enabled, shows additional details after signing:
+Toggle detailed output, in `apshell` and in the apconsole shell pane. Off by
+default. When enabled, shows additional details after signing:
 - Fee adjustments (total fee delta across the group)
 - Passthrough transaction count (pre-signed transactions included as-is)
 - Foreign transaction count (transactions not signed by this signer)
 - Dummy transaction count (budget transactions added for LogicSig)
+
+It also shows plugin logs, as `[name stderr]:` lines, and each plugin's sandbox
+line when it starts. Plugins start on first use, so turn this on before a
+plugin's first command to see its startup output.
+
+With verbose off, plugin logs stay hidden unless a plugin fails: its most recent
+hidden lines are then printed above the error. `apshell --mcp` ignores this
+setting for plugin logs and always writes them to stderr, which is the MCP
+host's log.
 
 ```
 verbose [on|off]

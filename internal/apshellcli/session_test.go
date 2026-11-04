@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/apshellapp"
 	"github.com/aplane-algo/aplane/internal/config"
 )
 
@@ -73,5 +74,45 @@ func TestSessionStartupConnectSkipsWithoutDefaultEndpoint(t *testing.T) {
 	}
 	if output != "" {
 		t.Fatalf("StartupConnect() output = %q, want no connection attempt without a default endpoint", output)
+	}
+}
+
+// fakePluginGate records the gate quietPluginStderr installs. It embeds the real
+// interface so only the stderr methods exist; the session must not start a plugin.
+type fakePluginGate struct {
+	apshellapp.PluginRuntime
+	gate func() bool
+}
+
+func (f *fakePluginGate) SetStderrGate(gate func() bool) { f.gate = gate }
+
+func TestPluginStderrFollowsVerboseMode(t *testing.T) {
+	session, err := NewSession("testnet", config.DefaultConfig(), t.TempDir(), nil)
+	if err != nil {
+		t.Fatalf("NewSession() error = %v", err)
+	}
+	defer session.Shutdown()
+
+	app := session.state.app()
+	real := app.Plugins
+	defer func() { app.Plugins = real }()
+	fake := &fakePluginGate{PluginRuntime: real}
+	app.Plugins = fake
+	quietPluginStderr(session.state)
+
+	if fake.gate() {
+		t.Fatal("plugin stderr should be hidden by default")
+	}
+	if _, _, err := session.ExecuteLineCaptured("verbose on"); err != nil {
+		t.Fatalf("verbose on: %v", err)
+	}
+	if !fake.gate() {
+		t.Fatal("verbose on should show plugin stderr")
+	}
+	if _, _, err := session.ExecuteLineCaptured("verbose off"); err != nil {
+		t.Fatalf("verbose off: %v", err)
+	}
+	if fake.gate() {
+		t.Fatal("verbose off should hide plugin stderr")
 	}
 }

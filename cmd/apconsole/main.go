@@ -280,6 +280,11 @@ func startConsole(connector tui.AdminConnector, dataDir string, initialNodeRole 
 		shellSession.SetProgressLine(func(line string) {
 			p.Send(shellProgressLineMsg{text: line})
 		})
+		// Plugin stderr would otherwise be written straight to the terminal,
+		// scrambling the bubbletea-managed apconsole layout.
+		shellSession.SetPluginStderr(shellPaneWriter(func(line string) {
+			p.Send(shellProgressLineMsg{text: line})
+		}))
 		shellSession.SetInteractiveLinePromptContext(func(ctx context.Context, prompt string) (string, error) {
 			resp := make(chan string, 1)
 			p.Send(shellLinePromptMsg{prompt: prompt, response: resp})

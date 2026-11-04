@@ -143,7 +143,7 @@ func TestPrintLogAndModeHelpers(t *testing.T) {
 	if got := output[len(output)-1]; got != "[debug] visible" {
 		t.Fatalf("verbose log output = %q, want debug prefix", got)
 	}
-	if !eng.Verbose {
+	if !eng.GetVerbose() {
 		t.Fatal("engine verbose flag was not enabled")
 	}
 

@@ -76,6 +76,7 @@ func startREPL(network string, config config.Config, dataDir string) {
 		fmt.Printf("Error: failed to initialize plugins: %v\n", err)
 		os.Exit(1)
 	}
+	quietPluginStderr(state)
 	printInteractiveStartupConnectionStatus(state)
 
 	rl, err := readline.NewEx(state.newReadlineConfig())
@@ -175,6 +176,7 @@ func runScriptMode(network string, config config.Config, dataDir string, scriptP
 		fmt.Printf("Error: failed to initialize plugins: %v\n", err)
 		os.Exit(1)
 	}
+	quietPluginStderr(state)
 	_ = attemptStartupConnection(state)
 
 	// Run the script

@@ -345,7 +345,7 @@ func (r *REPLState) initCommandRegistry() *command.Registry {
 	mustRegister(registry, &command.Command{
 		Name:        "verbose",
 		Usage:       "verbose [on|off]",
-		Description: "Toggle detailed signing output (default: off)",
+		Description: "Toggle detailed signing output and plugin logs (default: off)",
 		Category:    command.CategoryConfig,
 		Handler:     command.NewInternalHandler(r.cmdVerbose),
 	})

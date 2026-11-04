@@ -5,6 +5,7 @@ package engine
 
 import (
 	"sync"
+	"sync/atomic"
 
 	"github.com/aplane-algo/aplane/internal/clientstate"
 	"github.com/aplane-algo/aplane/internal/config"
@@ -37,7 +38,7 @@ type Core struct {
 	// Remote Signing
 	// Configuration
 	WriteMode        bool
-	Verbose          bool // Controls detailed signing output (default: false)
-	Simulate         bool // Simulate mode: transactions are simulated instead of submitted (default: false)
+	verbose          atomic.Bool // Controls detailed signing output and plugin stderr (default: false)
+	Simulate         bool        // Simulate mode: transactions are simulated instead of submitted (default: false)
 	EndpointRegistry config.ClientEndpointRegistry
 }

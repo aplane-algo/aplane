@@ -5,6 +5,7 @@
 package manager
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"io"
@@ -20,6 +21,19 @@ import (
 	"github.com/aplane-algo/aplane/internal/plugin/discovery"
 	"github.com/aplane-algo/aplane/internal/plugin/jsonrpc"
 	"github.com/aplane-algo/aplane/internal/plugin/sandbox"
+	"github.com/aplane-algo/aplane/internal/termsafe"
+)
+
+const (
+	// maxStderrLineBytes bounds one line of plugin stderr. A longer line is
+	// reported in pieces so the pipe keeps draining.
+	maxStderrLineBytes = 4096
+	// maxHeldStderrLines is how many hidden stderr lines each plugin keeps for
+	// the report after a failure.
+	maxHeldStderrLines = 20
+	// stderrDrainWait bounds the wait for a failed plugin's last stderr lines.
+	// A plugin that exited reaches EOF at once; one that hung uses all of it.
+	stderrDrainWait = 200 * time.Millisecond
 )
 
 var (
@@ -39,6 +53,13 @@ type Instance struct {
 	stdout    io.ReadCloser
 	stderr    io.ReadCloser
 	stateLock *pluginStateLock
+
+	// stderrDone closes when monitorStderr returns. It is nil for instances
+	// that have no stderr monitor.
+	stderrDone chan struct{}
+	// heldStderr is the newest hidden stderr, kept for a failure report.
+	heldStderrMu sync.Mutex
+	heldStderr   []string
 }
 
 // Manager manages external plugin instances
@@ -59,6 +80,7 @@ type Manager struct {
 	dataDir string
 
 	stderrWriter io.Writer
+	stderrGate   func() bool
 
 	startPluginInstanceHook func(*discovery.Plugin, runtimeConfig) (*Instance, error)
 	initializePluginHook    func(*Instance, runtimeConfig) error
@@ -129,8 +151,10 @@ func validPluginStateName(name string) bool {
 }
 
 // SetStderrWriter overrides the destination for plugin stderr output and the
-// sandbox-startup banner. Pass io.Discard to suppress noise in TUI hosts where
-// raw stderr corrupts the display. Defaults to os.Stderr; nil restores it.
+// sandbox-startup banner. Each line arrives in one Write, newline included, and
+// the plugin's name and text are already escaped. TUI hosts use this to route
+// lines into their own display, or pass io.Discard, because raw stderr corrupts
+// the screen. Defaults to os.Stderr; nil restores it.
 func (m *Manager) SetStderrWriter(w io.Writer) {
 	if w == nil {
 		w = os.Stderr
@@ -138,6 +162,24 @@ func (m *Manager) SetStderrWriter(w io.Writer) {
 	m.mu.Lock()
 	m.stderrWriter = w
 	m.mu.Unlock()
+}
+
+// SetStderrGate decides, line by line, whether plugin stderr and the sandbox
+// banner reach the stderr writer. Hidden lines are still read, so a plugin never
+// blocks on a full pipe, and the newest are reported if that plugin then fails.
+// The gate runs on the plugin's stderr goroutine, so it must be safe for
+// concurrent use. Nil, the default, shows every line.
+func (m *Manager) SetStderrGate(visible func() bool) {
+	m.mu.Lock()
+	m.stderrGate = visible
+	m.mu.Unlock()
+}
+
+func (m *Manager) stderrVisible() bool {
+	m.mu.RLock()
+	visible := m.stderrGate
+	m.mu.RUnlock()
+	return visible == nil || visible()
 }
 
 func (m *Manager) stderr() io.Writer {
@@ -353,6 +395,7 @@ func (m *Manager) StartPlugin(pluginName string) (*Instance, error) {
 		return nil, err
 	}
 	if err := initFn(instance, cfg); err != nil {
+		m.reportHeldStderr(instance)
 		instance.Stop()
 		return nil, fmt.Errorf("failed to initialize plugin: %w", err)
 	}
@@ -416,7 +459,7 @@ func (m *Manager) startPluginInstance(plugin *discovery.Plugin, cfg runtimeConfi
 		return nil, fmt.Errorf("failed to start plugin: %w", err)
 	}
 
-	_, _ = fmt.Fprintf(m.stderr(), "[%s] Running in sandbox (%s)\n", plugin.Manifest.Name, sandbox.GetSandboxInfo())
+	m.emitSandboxBanner(plugin)
 
 	// Create pipes
 	stdin, err := cmd.StdinPipe()
@@ -462,6 +505,8 @@ func (m *Manager) startPluginInstance(plugin *discovery.Plugin, cfg runtimeConfi
 		stdout:    stdout,
 		stderr:    stderr,
 		stateLock: stateLock,
+
+		stderrDone: make(chan struct{}),
 	}
 
 	// Monitor stderr in background
@@ -511,17 +556,77 @@ func (m *Manager) configSnapshot() runtimeConfig {
 	}
 }
 
-// monitorStderr reads and logs plugin stderr output
+// monitorStderr reads plugin stderr until EOF, one line at a time. It must keep
+// reading whatever the gate decides: a plugin blocks once the pipe fills.
 func (m *Manager) monitorStderr(instance *Instance) {
-	buf := make([]byte, 1024)
+	if instance.stderrDone != nil {
+		defer close(instance.stderrDone)
+	}
+	reader := bufio.NewReaderSize(instance.stderr, maxStderrLineBytes)
 	for {
-		n, err := instance.stderr.Read(buf)
-		if err != nil {
-			break
+		line, err := reader.ReadSlice('\n')
+		if len(line) > 0 {
+			m.emitStderrLine(instance, string(line))
 		}
-		if n > 0 {
-			_, _ = fmt.Fprintf(m.stderr(), "[%s stderr]: %s", instance.Plugin.Manifest.Name, buf[:n])
+		if err != nil && !errors.Is(err, bufio.ErrBufferFull) {
+			return
 		}
+	}
+}
+
+// pluginLine renders one line of plugin output. The whole line is escaped,
+// because a manifest name is as untrusted as what the plugin prints. Only the
+// final newline is added afterwards.
+func pluginLine(format string, args ...any) string {
+	return termsafe.Line(fmt.Sprintf(format, args...)) + "\n"
+}
+
+func (m *Manager) emitSandboxBanner(plugin *discovery.Plugin) {
+	if m.stderrVisible() {
+		line := pluginLine("[%s] Running in sandbox (%s)", plugin.Manifest.Name, sandbox.GetSandboxInfo())
+		_, _ = io.WriteString(m.stderr(), line)
+	}
+}
+
+// emitStderrLine prefixes and escapes one line, then shows or holds it.
+func (m *Manager) emitStderrLine(instance *Instance, raw string) {
+	line := pluginLine("[%s stderr]: %s", instance.Plugin.Manifest.Name, strings.TrimRight(raw, "\r\n"))
+	if m.stderrVisible() {
+		_, _ = io.WriteString(m.stderr(), line)
+		return
+	}
+	instance.holdStderr(line)
+}
+
+func (i *Instance) holdStderr(line string) {
+	i.heldStderrMu.Lock()
+	defer i.heldStderrMu.Unlock()
+	i.heldStderr = append(i.heldStderr, line)
+	if len(i.heldStderr) > maxHeldStderrLines {
+		i.heldStderr = i.heldStderr[len(i.heldStderr)-maxHeldStderrLines:]
+	}
+}
+
+func (i *Instance) takeHeldStderr() []string {
+	i.heldStderrMu.Lock()
+	defer i.heldStderrMu.Unlock()
+	held := i.heldStderr
+	i.heldStderr = nil
+	return held
+}
+
+// reportHeldStderr writes the hidden stderr of a plugin that just failed, since
+// that output is often the only record of why. Call it before stopping the
+// instance: Stop closes the pipe, which would lose lines still in flight.
+func (m *Manager) reportHeldStderr(instance *Instance) {
+	if instance.stderrDone != nil {
+		select {
+		case <-instance.stderrDone:
+		case <-time.After(stderrDrainWait):
+		}
+	}
+	for _, line := range instance.takeHeldStderr() {
+		_, _ = io.WriteString(m.stderr(), line)
 	}
 }
 
@@ -547,6 +652,7 @@ func (m *Manager) ExecuteCommand(pluginName, command string, args []string, cont
 
 	err = instance.Client.CallWithTimeout(jsonrpc.MethodExecute, params, &result, timeout)
 	if err != nil {
+		m.reportHeldStderr(instance)
 		m.discardInstance(pluginName, instance)
 		return nil, fmt.Errorf("command execution failed: %w", err)
 	}
@@ -571,6 +677,7 @@ func (m *Manager) SignTransactions(pluginName string, params jsonrpc.SignTransac
 	}
 
 	if err := instance.Client.CallWithTimeout(jsonrpc.MethodSignTransactions, params, &result, timeout); err != nil {
+		m.reportHeldStderr(instance)
 		m.discardInstance(pluginName, instance)
 		return nil, fmt.Errorf("plugin signTransactions failed: %w", err)
 	}

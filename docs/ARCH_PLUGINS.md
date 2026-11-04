@@ -57,6 +57,26 @@ APlane Shell supports **external plugins** — standalone executables that run a
 6. **Idle**: Plugin remains running between commands
 7. **Cleanup**: Plugin receives `shutdown` call when APlane Shell exits
 
+### Plugin Stderr
+
+The host reads each plugin's stderr for as long as the plugin runs, whether or
+not the output is shown, so a plugin never blocks on a full pipe. Each line is
+prefixed `[name stderr]:` and the whole line, name included, is escaped for the
+terminal, since both are untrusted text. A line longer than 4096 bytes arrives
+in pieces.
+
+| Host | Output | Default |
+|------|--------|---------|
+| Interactive `apshell`, `--script` | Host stderr | Hidden; shown with `verbose on` |
+| apconsole shell pane | The pane | Hidden; shown with `verbose on` |
+| `apshell --mcp` | Host stderr | Always shown |
+
+While output is hidden, the host keeps the last 20 lines of each plugin. If an
+`initialize`, `execute`, or `signTransactions` call fails, it writes those lines
+before returning the error, because a crashed plugin's stderr is often the only
+record of why. A result with `success: false` is a normal outcome and reports
+nothing extra, so put anything the user must see in `message`.
+
 ### Plugin Discovery
 
 Plugins are discovered from the client plugin catalog:
@@ -976,7 +996,7 @@ using the plugin and delete `$APCLIENT_DATA/plugin-state/<name>` manually.
 2. Always respond with matching request ID
 3. Use `jsonrpc: "2.0"` in all responses
 4. Flush stdout after each response
-5. Log errors to stderr (not stdout)
+5. Log to stderr, not stdout, and keep it for diagnostics: users see it only in verbose mode or after a failure
 
 **Parameter Resolution:**
 1. Prefer `assets` for ASA metadata and resolve symbols case-insensitively against `unitName` or `name`
@@ -1161,7 +1181,7 @@ Uses dynamically generated Seatbelt profiles with `sandbox-exec`. The profile:
 
 **Verifying Sandbox Status:**
 
-When a plugin starts, you'll see:
+When a plugin starts in verbose mode, you'll see:
 ```
 [plugin-name] Running in sandbox (bubblewrap (Linux))
 ```

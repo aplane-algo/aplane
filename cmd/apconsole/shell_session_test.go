@@ -41,3 +41,31 @@ networks:
 		t.Fatalf("startup lines = %q, want endpoint-routing migration guidance", got)
 	}
 }
+
+func TestShellPaneWriterDeliversLineWithoutNewline(t *testing.T) {
+	var got []string
+	w := shellPaneWriter(func(line string) { got = append(got, line) })
+
+	input := "[mithras stderr]: hello\r\n"
+	n, err := w.Write([]byte(input))
+	if err != nil || n != len(input) {
+		t.Fatalf("Write() = %d, %v, want %d, nil", n, err, len(input))
+	}
+	if len(got) != 1 || got[0] != "[mithras stderr]: hello" {
+		t.Fatalf("lines = %q", got)
+	}
+}
+
+func TestShellPaneShowsPluginStderrLine(t *testing.T) {
+	m := newShellModel(nil, []string{"Ready."})
+
+	w := shellPaneWriter(func(line string) {
+		m, _ = m.Update(shellProgressLineMsg{text: line})
+	})
+	if _, err := w.Write([]byte("[mithras stderr]: hello\n")); err != nil {
+		t.Fatal(err)
+	}
+	if last := m.lines[len(m.lines)-1]; last != "[mithras stderr]: hello" {
+		t.Fatalf("last pane line = %q", last)
+	}
+}
