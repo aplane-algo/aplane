@@ -12,7 +12,7 @@
 > states at depth 9).
 
 A rotating account of a leaf family (`rotatingkey.Profile.LeavesPerStage > 1`,
-today the XMSS triple) holds several one-time leaves per stage. Signing the
+today the XMSS and WOTS+C triples) holds several one-time leaves per stage. Signing the
 same leaf for two different transactions spends a one-time key twice. The
 signer chooses the leaf from the stage's release history, kept in process
 memory (`ReleaseMemory`) and rebuilt from the audit log at unlock. This model

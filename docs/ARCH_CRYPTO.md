@@ -214,7 +214,8 @@ Signing always uses the stored final bytecode and never recomputes salting from
 a live template.
 
 The rotating accounts (`aplane.rotating-triple-wots.v1`,
-`aplane.rotating-triple-xmss.v1` and `aplane.rotating-triple-slhdsa.v1`) are the one exception to both rules. They
+`aplane.rotating-triple-xmss.v1`, `aplane.rotating-triple-slhdsa.v1` and
+`aplane.rotating-triple-wotsc.v1`) are the one exception to both rules. They
 store no bytecode: each stage's
 program is assembled locally from a frozen template and the stage's public
 constants, and when the unsalted address is on-curve, the stage package

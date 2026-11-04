@@ -310,9 +310,10 @@ microAlgo ceiling.
 `aplane.rotating-triple-wots.v1` is a library-visible compiled key type for
 an account whose address never changes while the program that authorizes it
 changes on every spend. Its siblings replace the per-stage WOTS key with
-[XMSS](#rotating-triple-xmss-accounts) or
-[SLH-DSA](#rotating-triple-slh-dsa-accounts). The shared workflow applies to
-all three; their signature, resource, and retry differences are described below.
+[XMSS](#rotating-triple-xmss-accounts),
+[SLH-DSA](#rotating-triple-slh-dsa-accounts) or
+[WOTS+C](#rotating-triple-wotsc-accounts). The shared workflow applies to
+all of them; their signature, resource, and retry differences are described below.
 For WOTS, each program (a *stage*) checks three signatures over the transaction
 ID: Falcon-1024, WOTS-w16 (SHA-256), and Ed25519. Their keys are derived
 from one seed held only by the signer. A stage's
@@ -465,6 +466,30 @@ Everything else is the same: one network per account, the same restrictions,
 `rotate`, `rotate status` and `rotate recover`, the alerts, and the backup
 and restore rules below.
 
+### Rotating triple WOTS+C accounts
+
+`aplane.rotating-triple-wotsc.v1` uses a tree of 64 WOTS+C one-time keys alongside
+Falcon-1024 and Ed25519, with fresh keys per stage. It's the cheapest rotating type:
+3 transactions per spend (2 resource dummies), a minimum group fee of 0.003 ALGO,
+and a 628-byte hash signature. Its transaction-type, rekey, close-out and validity
+restrictions are the same as XMSS.
+
+WOTS+C isn't a standard, and this construction hasn't been independently reviewed.
+The key type isn't frozen yet, and a change would derive different accounts from the
+same seed, so don't hold real funds in it. Its hash leg is 128-bit, the same level as SLH-DSA and below the 256-bit XMSS and WOTS
+hashes. Falcon-1024 and Ed25519 are still required for every spend.
+
+Each stage can sign 64 different transactions. A retry of a rebuilt transaction takes
+the next unused leaf, and resubmitting the same bytes keeps its leaf. The signer never
+refuses: the 65th different transaction reuses a leaf and is reported until the
+account moves past the stage. A failed transaction doesn't cause reuse by itself, but
+reuse can happen if the signer loses its release history, for example after a restored
+backup, or if two signers share a seed. The signer can't report reuse it can't see, so
+don't run two signers for one account.
+
+If a leaf has signed two transactions, send a rotate-only spend promptly. See
+[the specification](KEYTYPE_ROTATING_TRIPLE_WOTSC.md#91-failed-transactions-and-leaf-reuse).
+
 ### Rotating triple SLH-DSA accounts
 
 `aplane.rotating-triple-slhdsa.v1` uses SLH-DSA alongside Falcon-1024 and
@@ -529,8 +554,8 @@ directly. If the hint is missing or stale, bounded discovery or an explicit
 
 The cache can be removed while the signer is stopped without losing the
 credential, but this loses recovery hints and may delay signing. Preserve the
-audit log separately if release alerts and XMSS leaf-use history must survive
-recovery. `rotating.stage_horizon` in `config.yaml` (default 4096) requests
+audit log separately if release alerts and XMSS or WOTS+C leaf-use history must
+survive recovery. `rotating.stage_horizon` in `config.yaml` (default 4096) requests
 lookahead past the live stage, subject to family limits (SLH-DSA: at most two).
 
 The background catch-up is bounded. When the signer sees an authorizer it

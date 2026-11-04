@@ -28,6 +28,10 @@ scheme. Sections 2 through 9 compare the two released variants and keep
 their exact layouts; section 11 specifies where SLH-DSA differs, with the
 frozen contract in [ARCH_CRYPTO.md](ARCH_CRYPTO.md#rotating-slh-dsa-triple)
 and the qualification record in [SLHDSA_EVALUATION.md](SLHDSA_EVALUATION.md).
+
+A fourth implementation, `aplane.rotating-triple-wotsc.v1`, is unreleased and
+specified separately in
+[KEYTYPE_ROTATING_TRIPLE_WOTSC.md](KEYTYPE_ROTATING_TRIPLE_WOTSC.md).
 Its implementation is `lsig/rotatingtripleslhdsa/`, with the primitive in
 `internal/crypto/slhdsa/`. It was first released in v0.45.0.
 
