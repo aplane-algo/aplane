@@ -7,6 +7,22 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## Builds move to a pinned Go 1.27 toolchain
+
+- Releases are built with Go 1.27.3, pinned by the `toolchain` line in
+  `go.mod`. Building from source needs Go 1.27 or later, and the macOS
+  binaries now need macOS 13 or later.
+- `golang.org/x/crypto` moves to v0.58.0 and `golang.org/x/text` to v0.43.0,
+  and the Go update picks up standard library fixes. These clear the known
+  advisories reachable from the shipped binaries, most of them in the SSH
+  transport.
+- Release builds now run from `v*` tags only, every workflow action is pinned
+  to a commit, and signing needs approval through a protected environment.
+- The Go SDK needs Go 1.26 or later from aplanesdk v0.48.1.
+- Answering a client enrollment request from the popup now reports the
+  outcome in the status bar with a shortened fingerprint, so it fits at 80
+  columns, and a success no longer carries a `Warning:` label.
+
 ## apadmin needs an 80×24 window; apconsole's split layout is rebuilt
 
 - apadmin lays out for a window of at least 80×24 and every screen fits at
@@ -26,9 +42,6 @@ before it was renamed `enroll`.
 - Function keys are fixed: F1 is apadmin, F2 the shell, F3 the daemon, and a
   key whose pane is absent does nothing. On cosigner nodes the daemon moves
   from F2 to F3.
-- Answering a client enrollment request from the popup now reports the
-  outcome in the status bar with a shortened fingerprint, so it fits at 80
-  columns, and a success no longer carries a `Warning:` label.
 - The client key import, cosigner key import and export, and backup import
   forms are compacted to fit; the cosigner export buttons now sit side by
   side.
