@@ -2,6 +2,8 @@
 
 apsigner maintains an append-only audit log that records security-relevant events. The log provides a structured trail for compliance and incident investigation.
 
+This page covers the signer's audit log. To see more or less diagnostic output from `apshell` or apconsole, use [`loglevel`](USER_COMMANDS.md#loglevel).
+
 ## Log Location
 
 The audit log is written to `audit.log` in the apsigner data directory:

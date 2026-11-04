@@ -634,7 +634,7 @@ aplane/
 │   ├── noderole/, keyclass/       # Durable signer node role and key-type classification gates
 │   ├── policy/                    # Signer and cosigner policy documents, compilation, and evaluation
 │   ├── appinput/, appspec/        # App command parsing and ABI spec handling
-│   └── fsutil/, theme/, cmdlog/, ...   # Focused support packages
+│   └── fsutil/, theme/, cmdlog/, clientlog/, termsafe/, ...   # Focused support packages
 │
 ├── lsig/                          # LogicSig provider implementations
 │   ├── all.go                     # Built-in LogicSig registration aggregator

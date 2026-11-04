@@ -1,4 +1,4 @@
-.PHONY: testmode-check staticcheck race-cover-test build-check all clean apshell aprekey apsigner apadmin apconsole apapprover apstore appass aplocalnet appass-file appass-systemd-creds approbe appolicy applugin-checksum applugin-checksums help compile-teal compile-docassets curated-docs test check formal-test formal-test-deep formal-copy-sync-check race-test unit-test contract-test integration-test integration-test-testnet integration-test-localnet integration-test-reuse integration-test-cleanup store-lifecycle-test store-capacity-test store-crash-test store-release-drill soak-test-localnet apshell-command-coverage-localnet bundled-plugins bundled-plugins-linux bundled-plugins-darwin example-plugins examples-plugins install-example-plugins check-example-plugins build-bundled-plugins build-example-plugins docker-systemd-test docker-local-test docker-local-release-test apshell-arm64 aprekey-arm64 apsigner-arm64 apadmin-arm64 apconsole-arm64 apstore-arm64 apapprover-arm64 appass-arm64 aplocalnet-arm64 appass-file-arm64 appass-systemd-creds-arm64 approbe-arm64 appolicy-arm64 applugin-checksum-arm64 bin-arm64 bin-amd64 bin-darwin-amd64 bin-darwin-arm64 security-analysis analyze-keyzero analyze-keylog analyze-seedphrase config-docs release-local fmt-check vet mod-tidy-check deadcode-check print-deadcode-version smoke-test integrity-check lint
+.PHONY: logging-reach-check testmode-check staticcheck race-cover-test build-check all clean apshell aprekey apsigner apadmin apconsole apapprover apstore appass aplocalnet appass-file appass-systemd-creds approbe appolicy applugin-checksum applugin-checksums help compile-teal compile-docassets curated-docs test check formal-test formal-test-deep formal-copy-sync-check race-test unit-test contract-test integration-test integration-test-testnet integration-test-localnet integration-test-reuse integration-test-cleanup store-lifecycle-test store-capacity-test store-crash-test store-release-drill soak-test-localnet apshell-command-coverage-localnet bundled-plugins bundled-plugins-linux bundled-plugins-darwin example-plugins examples-plugins install-example-plugins check-example-plugins build-bundled-plugins build-example-plugins docker-systemd-test docker-local-test docker-local-release-test apshell-arm64 aprekey-arm64 apsigner-arm64 apadmin-arm64 apconsole-arm64 apstore-arm64 apapprover-arm64 appass-arm64 aplocalnet-arm64 appass-file-arm64 appass-systemd-creds-arm64 approbe-arm64 appolicy-arm64 applugin-checksum-arm64 bin-arm64 bin-amd64 bin-darwin-amd64 bin-darwin-arm64 security-analysis analyze-keyzero analyze-keylog analyze-seedphrase config-docs release-local fmt-check vet mod-tidy-check deadcode-check print-deadcode-version smoke-test integrity-check lint
 
 # Default target when running just "make"
 .DEFAULT_GOAL := all
@@ -494,6 +494,19 @@ deadcode-check: compile-docassets
 		exit 1; \
 	fi
 	@echo "✓ no dead code"
+
+# Proves that binaries with no logging handler can't emit a record. Separate from
+# deadcode-check, which analyzes all packages with tests and testmode together.
+# Without DEADCODE_BIN_DIR, the tool is kept per version under the Go build cache.
+logging-reach-check: compile-docassets
+	@bindir="$(DEADCODE_BIN_DIR)"; \
+	if [ -z "$$bindir" ]; then bindir="$$(go env GOCACHE)/aplane-deadcode/$(DEADCODE_VERSION)"; fi; \
+	if [ ! -x "$$bindir/deadcode" ]; then \
+		GOBIN=$$bindir go install golang.org/x/tools/cmd/deadcode@$(DEADCODE_VERSION) >/dev/null 2>&1 || { \
+			echo "✗ failed to install deadcode tool"; exit 1; \
+		}; \
+	fi; \
+	./scripts/dev/check-logging-reach.sh "$$bindir/deadcode"
 
 print-deadcode-version:
 	@echo $(DEADCODE_VERSION)

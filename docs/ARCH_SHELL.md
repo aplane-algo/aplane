@@ -1734,10 +1734,10 @@ because a plugin chooses its name and could otherwise pass as `cache`.
 
 | Level | Meaning | Examples |
 |---|---|---|
-| `error` | A failure nothing else reports | |
-| `warn` | The operator should know or act | Dropped notification, failed plugin's last lines |
-| `info` | Routine detail | Plugin stderr, sandbox line |
-| `debug` | Detail for diagnosing the client | Response-close errors |
+| `error` | A failure nothing else reports | Recovered keepalive panic |
+| `warn` | The operator should know or act | Cache tampering, connection loss, key revocation, skipped plugin, failed plugin's last lines |
+| `info` | Routine detail | Plugin stderr, sandbox line, host key saved |
+| `debug` | Detail for diagnosing the client | Cache hits, forwarded-connection errors, response-close errors |
 
 The default level is `warn`, except that `--mcp` starts at `info`, because its
 stderr is the host's log rather than a display. `APSHELL_DEBUG` starts any mode at
@@ -1749,8 +1749,14 @@ hide it.
 |---|---|
 | `apshell` REPL | stderr, through readline while it runs so the prompt is redrawn |
 | `apshell --script`, `--mcp`, `aprekey`, `apapprover`, `apadmin` batch modes | stderr |
-| apconsole | `clientlog.Deferred`, pulled into the shell pane |
+| apconsole | `clientlog.Deferred`, pulled into the shell pane; written out on exit if the node has no shell |
 | `apadmin` TUI | `clientlog.Deferred`, written out on exit; lost notifications are shown live |
+| `appolicy`, `aplocalnet`, `applugin-checksum` | No handler, because they can't log (see [Enforcement](#enforcement)) |
+| `apstore`, `apsigner` | Outside this contract |
+
+An admin TUI shows lost notifications as a count in its status bar, independently
+of any log level, so that one condition doesn't depend on log delivery. Any other
+diagnostic a pane-less TUI must show live needs its own decision about how.
 
 ### Deferred Delivery
 
@@ -1771,6 +1777,45 @@ startup still reach the pane.
   delivered.
 - `Close` runs as soon as the TUI stops, before anything that can exit. It writes
   everything unacknowledged, and later records go straight to stderr.
+
+### What This Doesn't Promise
+
+A bounded queue can lose warnings under warning overflow, though it reports that.
+Synchronous stderr can block or fail. An acknowledgment means the TUI stored a
+line, not that anyone read it. With `info` on, a failed plugin's lines are
+best-effort: another source can evict them from a TUI's queue.
+
+### What Stays Outside the Pipeline
+
+- The key-scan warning in `internal/keys` is shared with the signer and writes to
+  stderr itself. Client hosts never reach it.
+- A program's reason for stopping, such as apconsole's `logErrorf`, stays a direct
+  write, because it must not depend on a log level.
+- `apapprover` uses `cmdlog` for its interface. Only its diagnostics are logs.
+- `apadmin` prints its startup warnings before the TUI opens. They describe optional
+  capabilities, and using one reports its own error, so they need no live display.
+- Terminal output from `internal/apshellcli` belongs to the host, not to a source.
+
+### Enforcement
+
+`test/arch/client_logging_test.go` keeps client packages from writing diagnostics
+directly, keeps packages from retaining the default logger during initialization,
+and limits process logging setup to `cmd/*`. It also rejects `slog.NewLogLogger` and
+direct handler calls, and requires every binary that links a logging source to
+install a handler or be listed with a reason. Its exceptions are result and progress
+fallbacks, and the list shrinks as those writers become required.
+
+`make logging-reach-check` proves a binary with no handler can't log. It analyzes
+each binary as built for production and requires `Logger.log` and `Logger.logAttrs`
+to be listed as unreachable, so a call that becomes reachable fails it even if no
+dependency changed, and so does a Go release that renames them. It applies to the
+platform it runs on and to ordinary logging only, which is why the test above
+rejects the other routes.
+
+`analysis/keylog` checks structured logging arguments by name. That is not secret
+detection: it can't see a secret inside a struct. Plugin stderr can hold anything a
+plugin prints, so it is kept off disk, and failure replay is a deliberate exception
+to its usual filtering.
 
 ## Key Files
 
