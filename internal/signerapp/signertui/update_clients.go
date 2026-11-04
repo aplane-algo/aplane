@@ -86,40 +86,57 @@ func (m Model) handleEnrolledKeysList(msg EnrolledKeysListMsg) (tea.Model, tea.C
 
 // handleApproveEnrollmentResult reports the signer's answer where the
 // operator is looking: the Enrolled Clients status line when that screen is
-// up, otherwise (an answer given from the popup) a transient footer note,
-// so a failed approval is never silent.
+// up, otherwise (an answer given from the popup) the status bar, so a failed
+// approval is never silent.
 func (m Model) handleApproveEnrollmentResult(msg ApproveEnrollmentResultMsg) (tea.Model, tea.Cmd) {
 	m.settleEnrollmentAnswer(msg.Fingerprint)
-	var status string
-	switch {
-	case msg.Success && msg.Label != "":
-		status = fmt.Sprintf("Client key %s enrolled (%s).", msg.Fingerprint, msg.Label)
-	case msg.Success:
-		status = fmt.Sprintf("Client key %s enrolled.", msg.Fingerprint)
-	default:
-		status = fmt.Sprintf("Approval of %s failed: %s", msg.Fingerprint, msg.Error)
+	status := func(fingerprint string) string {
+		switch {
+		case msg.Success && msg.Label != "":
+			return fmt.Sprintf("Enrolled %s (%s).", fingerprint, msg.Label)
+		case msg.Success:
+			return fmt.Sprintf("Enrolled %s.", fingerprint)
+		default:
+			return fmt.Sprintf("Approval of %s failed: %s", fingerprint, msg.Error)
+		}
 	}
-	return m.reportEnrollmentAnswer(status, msg.Success)
+	return m.reportEnrollmentAnswer(msg.Fingerprint, msg.Success, status)
 }
 
 func (m Model) handleRejectEnrollmentResult(msg RejectEnrollmentResultMsg) (tea.Model, tea.Cmd) {
 	m.settleEnrollmentAnswer(msg.Fingerprint)
-	status := fmt.Sprintf("Enrollment request for %s rejected.", msg.Fingerprint)
-	if !msg.Success {
-		status = fmt.Sprintf("Rejection of %s failed: %s", msg.Fingerprint, msg.Error)
+	status := func(fingerprint string) string {
+		if !msg.Success {
+			return fmt.Sprintf("Rejection of %s failed: %s", fingerprint, msg.Error)
+		}
+		return fmt.Sprintf("Rejected %s.", fingerprint)
 	}
-	return m.reportEnrollmentAnswer(status, msg.Success)
+	return m.reportEnrollmentAnswer(msg.Fingerprint, msg.Success, status)
 }
 
-func (m Model) reportEnrollmentAnswer(status string, success bool) (tea.Model, tea.Cmd) {
+// reportEnrollmentAnswer takes the status as a function of the fingerprint
+// because the status bar shares one line with the connection state: there
+// the fingerprint is shortened so the outcome stays on screen. A success is
+// a notice, not a warning.
+func (m Model) reportEnrollmentAnswer(
+	fingerprint string,
+	success bool,
+	status func(fingerprint string) string,
+) (tea.Model, tea.Cmd) {
 	if success {
 		m.lastError = ""
 	}
-	if m.viewState != ViewEnrolledClients {
-		return m, tea.Batch(m.setTransientWarning(status), m.waitForMessageCmd())
+	if m.viewState == ViewEnrolledClients {
+		m.clients.status = status(fingerprint)
+		return m, m.refreshClientsCmd()
 	}
-	m.clients.status = status
-	return m, m.refreshClientsCmd()
+	var clearCmd tea.Cmd
+	if success {
+		clearCmd = m.setTransientNotice(status(shortDigest(fingerprint)))
+	} else {
+		clearCmd = m.setTransientWarning(status(shortDigest(fingerprint)))
+	}
+	return m, tea.Batch(clearCmd, m.waitForMessageCmd())
 }
 
 func (m Model) handleImportClientKeyResult(msg ImportClientKeyResultMsg) (tea.Model, tea.Cmd) {

@@ -26,6 +26,9 @@ before it was renamed `enroll`.
 - Function keys are fixed: F1 is apadmin, F2 the shell, F3 the daemon, and a
   key whose pane is absent does nothing. On cosigner nodes the daemon moves
   from F2 to F3.
+- Answering a client enrollment request from the popup now reports the
+  outcome in the status bar with a shortened fingerprint, so it fits at 80
+  columns, and a success no longer carries a `Warning:` label.
 - The client key import, cosigner key import and export, and backup import
   forms are compacted to fit; the cosigner export buttons now sit side by
   side.

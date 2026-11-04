@@ -467,6 +467,10 @@ type Model struct {
 	signerWarnings        []string // signer-raised alerts from the last status message
 	lastWarningGeneration uint64
 
+	// Notice (shown in status bar): a completed action, not a problem.
+	lastNotice           string
+	lastNoticeGeneration uint64
+
 	// Screen dimensions. sizeKnown is set by the first size message, so a
 	// zero dimension it carried (a one-row standalone terminal leaves height
 	// 0) still counts as a known, too-small window.
@@ -791,6 +795,10 @@ type AdminSettingUpdatedMsg struct {
 type adminRefreshTickMsg struct{}
 
 type clearWarningMsg struct {
+	Generation uint64
+}
+
+type clearNoticeMsg struct {
 	Generation uint64
 }
 

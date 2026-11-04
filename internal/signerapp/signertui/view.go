@@ -626,6 +626,11 @@ func (m Model) renderStatusBar() string {
 		parts = append(parts, errorStyle.Render("ALERT: "+warning))
 	}
 
+	// Notice if any
+	if m.lastNotice != "" {
+		parts = append(parts, statusConnectedStyle.Render(m.lastNotice))
+	}
+
 	// Warning if any
 	if m.lastWarning != "" {
 		parts = append(parts, warningStyle.Render("Warning: "+m.lastWarning))
