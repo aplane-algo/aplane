@@ -81,7 +81,7 @@ dynamically linked because Apple does not support fully static binaries.
 
 ### Prerequisites
 
-- Go 1.25+
+- Go 1.27+
 - Node.js 20+ and npm only when explicitly building TypeScript example plugins
 
 #### For macOS builds:

@@ -1,6 +1,8 @@
 module github.com/aplane-algo/aplane/tools/xmssoracle
 
-go 1.26.0
+go 1.27.0
+
+toolchain go1.27.3
 
 require (
 	github.com/aplane-algo/aplane v0.0.0-00010101000000-000000000000
@@ -16,8 +18,8 @@ require (
 	github.com/nightlyone/lockfile v1.0.0 // indirect
 	github.com/templexxx/cpu v0.1.1 // indirect
 	github.com/templexxx/xorsimd v0.4.4 // indirect
-	golang.org/x/crypto v0.57.0 // indirect
-	golang.org/x/sys v0.48.0 // indirect
+	golang.org/x/crypto v0.58.0 // indirect
+	golang.org/x/sys v0.49.0 // indirect
 )
 
 replace github.com/aplane-algo/aplane => ../..

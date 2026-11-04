@@ -422,7 +422,7 @@ formal-test-deep: formal-copy-sync-check
 # Fail if any Go file is not gofmt-clean.
 fmt-check:
 	@echo "Checking gofmt..."
-	@unformatted=$$(gofmt -l .); \
+	@unformatted=$$("$$(go env GOROOT)/bin/gofmt" -l .); \
 	if [ -n "$$unformatted" ]; then \
 		echo "✗ Unformatted files:"; \
 		echo "$$unformatted"; \
@@ -622,7 +622,7 @@ lint: compile-docassets
 # pre-commit hook and CI; installation is environment-specific).
 staticcheck:
 	@if ! command -v staticcheck >/dev/null 2>&1; then \
-		echo "Error: staticcheck not found. Install with: go install honnef.co/go/tools/cmd/staticcheck@2025.1.1"; \
+		echo "Error: staticcheck not found. Install with: go install honnef.co/go/tools/cmd/staticcheck@2026.2.2"; \
 		exit 1; \
 	fi
 	@echo "Running staticcheck..."

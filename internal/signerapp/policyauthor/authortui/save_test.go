@@ -118,7 +118,7 @@ func TestSaveConflictDeletedReloadAndSaveAs(t *testing.T) {
 	if !strings.Contains(view(m), "recreates it") {
 		t.Fatalf("overwrite of a deleted file:\n%s", view(m))
 	}
-	m, _ = press(t, m, "y")
+	press(t, m, "y")
 	if _, err := os.Stat(path); err != nil {
 		t.Fatal("the file was not recreated")
 	}
