@@ -30,6 +30,10 @@ var (
 // boundary rather than the SSH implementation package.
 type HostKeyApproval = sshtunnel.HostKeyApprovalHandler
 
+// IdentityCreatedHandler is told when connecting generates a new SSH identity key.
+// The alias keeps higher client layers on the connect boundary, as above.
+type IdentityCreatedHandler = func(sshtunnel.IdentityCreated)
+
 // CosignerSSHConfig describes a one-shot SSH connection used for cosigner
 // component signing. It does not mutate the primary signer connection.
 type CosignerSSHConfig struct {
@@ -39,6 +43,7 @@ type CosignerSSHConfig struct {
 	KnownHostsPath  string
 	ProgressOut     io.Writer
 	HostKeyApproval sshtunnel.HostKeyApprovalHandler
+	IdentityCreated IdentityCreatedHandler
 }
 
 const cosignerSSHHTTPAuthority = "cosigner.aplane.invalid:80"
@@ -61,6 +66,7 @@ func ConnectCosignerWithSSH(ctx context.Context, cfg CosignerSSHConfig) (*signer
 	if cfg.HostKeyApproval != nil {
 		sshConnection.SetHostKeyApprovalHandler(cfg.HostKeyApproval)
 	}
+	sshConnection.SetIdentityCreatedCallback(cfg.IdentityCreated)
 	if err := sshConnection.ConnectWithKey(sshCtx); err != nil {
 		_ = detachSetup()
 		cancelSSH()

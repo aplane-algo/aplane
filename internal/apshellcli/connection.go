@@ -134,10 +134,21 @@ func buildHostKeyApproval(r *REPLState) sshtunnel.HostKeyApprovalHandler {
 		if r.HostKeyApproval != nil {
 			return r.HostKeyApproval(host, fingerprint)
 		}
+		r.printf("\n[SSH] Unknown host: %s\n", host)
+		r.printf("[SSH] Host key fingerprint: %s\n", fingerprint)
+		r.println(sshtunnel.HostKeyApprovalTimeoutNotice())
 		response, err := r.readPromptResponse("Do you want to trust this server? [y/N]: ")
 		if err != nil {
 			return false, err
 		}
 		return response == "y" || response == "yes", nil
 	}
+}
+
+// announceIdentityCreated tells the user a new SSH key now exists. The key itself
+// is a result, so it comes from endpoints public-key, not from this one message.
+func (r *REPLState) announceIdentityCreated(created sshtunnel.IdentityCreated) {
+	r.progressPrintln("Generated new SSH identity key: " + created.Path)
+	r.progressPrintln("Public key fingerprint: " + created.Fingerprint)
+	r.progressPrintln("Run 'endpoints public-key' to print the key.")
 }

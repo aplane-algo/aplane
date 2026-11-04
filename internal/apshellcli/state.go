@@ -84,6 +84,7 @@ func NewREPLState(network string, config *config.Config, dataDir string) (*REPLS
 		DataDir: dataDir,
 	}
 	state.SetOutput(os.Stdout)
+	state.app().SetIdentityCreatedHandler(state.announceIdentityCreated)
 
 	return state, nil
 }

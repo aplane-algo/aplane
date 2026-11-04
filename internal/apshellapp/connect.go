@@ -112,6 +112,12 @@ func (a *App) ConnectEndpointAlias(ctx context.Context, alias string, hostKeyApp
 	return a.connectEndpoint(ctx, alias, endpoint, hostKeyApproval, onDisconnect)
 }
 
+// SetIdentityCreatedHandler sets what happens when connecting generates a new SSH
+// identity key. The shell announces it as progress.
+func (a *App) SetIdentityCreatedHandler(handler func(sshtunnel.IdentityCreated)) {
+	a.eng.Connection.SetIdentityCreatedHandler(handler)
+}
+
 func (a *App) configuredEndpoint(alias string) (config.ClientEndpointConfig, error) {
 	endpoint, ok := a.Config.ClientEndpointsOrDefault().Endpoint(alias)
 	if !ok {

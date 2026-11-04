@@ -11,6 +11,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -67,10 +68,11 @@ func TestReadIdentityPublicKeyDerivesTheExistingKey(t *testing.T) {
 }
 
 func TestReadIdentityPublicKeyMatchesAGeneratedKey(t *testing.T) {
-	SetStatusWriter(discardStatus{})
-	t.Cleanup(func() { SetStatusWriter(nil) })
 	path := filepath.Join(t.TempDir(), "id")
-	signer, err := (&Client{}).generateIdentityKey(path)
+	client := NewClient("example.com", 22, 0, path, "")
+	var created []IdentityCreated
+	client.SetIdentityCreatedCallback(func(c IdentityCreated) { created = append(created, c) })
+	signer, err := client.generateIdentityKey(path)
 	if err != nil {
 		t.Fatalf("generateIdentityKey() error = %v", err)
 	}
@@ -87,11 +89,11 @@ func TestReadIdentityPublicKeyMatchesAGeneratedKey(t *testing.T) {
 	if first != second || first.Fingerprint != ssh.FingerprintSHA256(signer.PublicKey()) {
 		t.Fatalf("read %+v then %+v, want the generated key both times", first, second)
 	}
+	want := []IdentityCreated{{Path: path, Fingerprint: first.Fingerprint}}
+	if !slices.Equal(created, want) {
+		t.Fatalf("announced %+v, want %+v", created, want)
+	}
 }
-
-type discardStatus struct{}
-
-func (discardStatus) Write(p []byte) (int, error) { return len(p), nil }
 
 func TestReadIdentityPublicKeyDoesNotCreateAMissingKey(t *testing.T) {
 	dir := t.TempDir()

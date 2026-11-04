@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/aplane-algo/aplane/internal/sshtunnel/sshtest"
+	"io"
 	"net/http"
 	"os"
 	"strings"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/apshellapp"
 	"github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/sshtunnel"
 	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
@@ -193,6 +195,53 @@ func TestContextAwarePromptAdaptersReturnCancellation(t *testing.T) {
 	}
 	if _, err := buildHostKeyApproval(state)("host", "fingerprint"); !errors.Is(err, context.Canceled) {
 		t.Fatalf("host approval error = %v, want context.Canceled", err)
+	}
+}
+
+func TestHostKeyPromptNamesWhatItAsksYouToTrust(t *testing.T) {
+	var out bytes.Buffer
+	state := &REPLState{
+		Out: &out,
+		LineReaderContext: func(context.Context) (string, error) {
+			return "y", nil
+		},
+	}
+
+	approved, err := buildHostKeyApproval(state)("signer.example", "SHA256:abc")
+
+	if err != nil || !approved {
+		t.Fatalf("approval = %v, %v", approved, err)
+	}
+	for _, want := range []string{"signer.example", "SHA256:abc", sshtunnel.HostKeyApprovalTimeoutNotice()} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("prompt %q does not show %q", out.String(), want)
+		}
+	}
+}
+
+func TestAutomationGetsNoHostKeyPrompt(t *testing.T) {
+	var out bytes.Buffer
+	state := &REPLState{Out: &out, AutoConfirm: true}
+
+	if _, err := buildHostKeyApproval(state)("signer.example", "SHA256:abc"); err == nil {
+		t.Fatal("an unknown host was accepted without a person")
+	}
+	if out.Len() != 0 {
+		t.Fatalf("printed %q", out.String())
+	}
+}
+
+func TestIdentityCreatedIsAnnouncedAsProgress(t *testing.T) {
+	var lines []string
+	state := &REPLState{Out: io.Discard, ProgressLine: func(line string) { lines = append(lines, line) }}
+
+	state.announceIdentityCreated(sshtunnel.IdentityCreated{Path: "/keys/id", Fingerprint: "SHA256:abc"})
+
+	got := strings.Join(lines, "\n")
+	for _, want := range []string{"/keys/id", "SHA256:abc", "endpoints public-key"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("announcement %q does not show %q", got, want)
+		}
 	}
 }
 

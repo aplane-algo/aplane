@@ -282,6 +282,7 @@ func (s *Signer) connectConfiguredCosignerEndpoint(ctx context.Context, endpoint
 			KnownHostsPath:  endpoint.KnownHostsPath,
 			ProgressOut:     progressOut,
 			HostKeyApproval: s.hostKeyApproval,
+			IdentityCreated: s.identityCreatedHandler(),
 		})
 		if err != nil {
 			return nil, nil, "", err
@@ -591,6 +592,13 @@ func discoverCosignerComponentKeys(keys []signerapi.KeyInfo) ([]DiscoveredCosign
 		return discovered[i].KeyType < discovered[j].KeyType
 	})
 	return discovered, nil
+}
+
+func (s *Signer) identityCreatedHandler() connect.IdentityCreatedHandler {
+	if s == nil || s.conn == nil {
+		return nil
+	}
+	return s.conn.IdentityCreatedHandler()
 }
 
 func (s *Signer) signerProgressWriter() io.Writer {

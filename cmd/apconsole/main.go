@@ -7,7 +7,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -30,7 +29,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/mnemonic"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	tui "github.com/aplane-algo/aplane/internal/signerapp/signertui"
-	"github.com/aplane-algo/aplane/internal/sshtunnel"
 	"github.com/aplane-algo/aplane/internal/theme"
 	"github.com/aplane-algo/aplane/internal/version"
 )
@@ -68,11 +66,6 @@ func main() {
 	dataDirSet := flagWasSet("d")
 	clientDataDirSet := flagWasSet("client-data")
 
-	// SSH tunnel client emits status messages from background goroutines via
-	// fmt.Print* (keepalive failures, "[SSH] Connection closed by remote
-	// server", etc). Those would land on the TTY between bubbletea frames and
-	// scramble the layout — discard them here.
-	sshtunnel.SetStatusWriter(io.Discard)
 	if err := ensureProviders(); err != nil {
 		logErrorf("%v", err)
 		exitConsole(1)

@@ -43,6 +43,11 @@ before it was renamed `enroll`.
   prefix, and terminal control characters in it, including in the plugin's name,
   are shown as escapes.
 - `verbose` is unchanged: it controls signing detail only.
+- SSH connection loss and key revocation are now warnings, on stderr in `apshell`
+  and in the shell pane in apconsole, which used to discard them.
+- A newly generated SSH key is announced with its fingerprint, in apconsole too.
+  `endpoints public-key` prints the key itself, which replaces the copy that was
+  printed once at generation.
 
 ## Builds move to a pinned Go 1.27 toolchain
 
