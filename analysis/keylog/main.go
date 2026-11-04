@@ -4,7 +4,8 @@
 // Package main implements a static analyzer that detects potential key material in logs or errors.
 //
 // This analyzer scans for logging statements or error messages that might
-// accidentally include private key material via format specifiers.
+// accidentally include private key material, through format specifiers or as
+// structured logging arguments.
 package main
 
 import (
@@ -116,6 +117,7 @@ func main() {
 		filesChecked++
 		fileFindings := checkFile(path)
 		findings = append(findings, fileFindings...)
+		findings = append(findings, checkStructuredLogging(path, fileFindings)...)
 		return nil
 	})
 
@@ -210,6 +212,31 @@ func checkFile(path string) []finding {
 	}
 
 	return findings
+}
+
+// checkStructuredLogging adds the findings only the syntax tree can see. A file
+// that cannot be read or parsed is reported, since it was not checked. Lines
+// already reported by the line scan are not repeated.
+func checkStructuredLogging(path string, already []finding) []finding {
+	src, err := os.ReadFile(path)
+	if err != nil {
+		return []finding{{file: path, line: 1, reason: "Could not read file: " + err.Error()}}
+	}
+	structured, err := structuredLogFindings(path, src)
+	if err != nil {
+		return []finding{{file: path, line: 1, reason: "Could not analyze file: " + err.Error()}}
+	}
+	reported := make(map[int]bool, len(already))
+	for _, f := range already {
+		reported[f.line] = true
+	}
+	var added []finding
+	for _, f := range structured {
+		if !reported[f.line] {
+			added = append(added, f)
+		}
+	}
+	return added
 }
 
 // sensitiveFormattedName returns the first identifier on a formatting line
