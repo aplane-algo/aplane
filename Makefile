@@ -422,7 +422,7 @@ formal-test-deep: formal-copy-sync-check
 # Fail if any Go file is not gofmt-clean.
 fmt-check:
 	@echo "Checking gofmt..."
-	@unformatted=$$(gofmt -l .); \
+	@unformatted=$$("$$(go env GOROOT)/bin/gofmt" -l .); \
 	if [ -n "$$unformatted" ]; then \
 		echo "✗ Unformatted files:"; \
 		echo "$$unformatted"; \
