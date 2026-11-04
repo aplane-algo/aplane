@@ -89,7 +89,7 @@ func printStructTableWithPrefix(t reflect.Type, prefix string) {
 		}
 
 		// Check if this is a nested struct (pointer to struct)
-		if field.Type.Kind() == reflect.Ptr && field.Type.Elem().Kind() == reflect.Struct {
+		if field.Type.Kind() == reflect.Pointer && field.Type.Elem().Kind() == reflect.Struct {
 			// Get description for the nested struct itself
 			desc := field.Tag.Get("description")
 			if desc == "" {
@@ -124,7 +124,7 @@ func printStructTableWithPrefix(t reflect.Type, prefix string) {
 			fmt.Printf("| `%s` | map | (none) | %s |\n", fieldName, desc)
 			// If the map value is a pointer to struct, print its fields with a <network> placeholder
 			valType := field.Type.Elem()
-			if valType.Kind() == reflect.Ptr && valType.Elem().Kind() == reflect.Struct {
+			if valType.Kind() == reflect.Pointer && valType.Elem().Kind() == reflect.Struct {
 				printStructTableWithPrefix(valType.Elem(), fieldName+".<network>")
 			}
 			continue
@@ -182,7 +182,7 @@ func formatType(t reflect.Type) string {
 		return "bool"
 	case reflect.Slice:
 		return "[]" + formatType(t.Elem())
-	case reflect.Ptr:
+	case reflect.Pointer:
 		return "*" + formatType(t.Elem())
 	default:
 		return t.String()

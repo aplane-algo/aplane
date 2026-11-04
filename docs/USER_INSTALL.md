@@ -736,7 +736,7 @@ The rest of this guide explains each step in detail.
    # "yes" means TPM2 is available; "no" means host-key-only fallback
    ```
 
-3. **Build tools** — Go 1.25+ and musl-tools. See [DEV_BUILD.md](DEV_BUILD.md) for full build prerequisites.
+3. **Build tools** — Go 1.27+ and musl-tools. See [DEV_BUILD.md](DEV_BUILD.md) for full build prerequisites.
 
 ---
 

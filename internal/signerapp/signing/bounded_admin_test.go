@@ -24,21 +24,21 @@ func testBoundedAdminPlan(t *testing.T) (*PlanResult, signerapi.BoundedAdminRequ
 		spendingKey[i] = 0x11
 	}
 	return &PlanResult{
-			AllTxns:            []types.Transaction{txn},
-			PassthroughIndices: map[int]bool{},
-			ForeignIndices:     map[int]bool{},
-			BoundedItems: []*boundedPlanItem{{
-				Path:              boundedPathAdminKeyRekey,
-				Metadata:          metadata,
-				SpendingPublicKey: spendingKey,
-			}},
-		}, signerapi.BoundedAdminRequest{
-			Operation: signerapi.BoundedAdminOperationRekey,
-			Requests: []signerapi.SignRequest{{
-				AuthAddress: txn.Sender.String(),
-				TxnBytesHex: "00",
-			}},
-		}
+		AllTxns:            []types.Transaction{txn},
+		PassthroughIndices: map[int]bool{},
+		ForeignIndices:     map[int]bool{},
+		BoundedItems: []*boundedPlanItem{{
+			Path:              boundedPathAdminKeyRekey,
+			Metadata:          metadata,
+			SpendingPublicKey: spendingKey,
+		}},
+	}, signerapi.BoundedAdminRequest{
+		Operation: signerapi.BoundedAdminOperationRekey,
+		Requests: []signerapi.SignRequest{{
+			AuthAddress: txn.Sender.String(),
+			TxnBytesHex: "00",
+		}},
+	}
 }
 
 func TestValidateBoundedAdminPlanRequiresNarrowTypedPath(t *testing.T) {
