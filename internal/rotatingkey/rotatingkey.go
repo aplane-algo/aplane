@@ -69,6 +69,14 @@ const (
 	// RotatingTripleXmssFamily is the versionless family of the XMSS triple.
 	RotatingTripleXmssFamily = "aplane.rotating-triple-xmss"
 
+	// RotatingTripleWotscV1 is the rotating account key type whose hash-based
+	// signature comes from a tree of 64 WOTS+C keys, built per stage, beside a
+	// Falcon-1024 and an Ed25519 key per stage.
+	RotatingTripleWotscV1 = "aplane.rotating-triple-wotsc.v1"
+
+	// RotatingTripleWotscFamily is the versionless family of the WOTS+C triple.
+	RotatingTripleWotscFamily = "aplane.rotating-triple-wotsc"
+
 	// RotatingTripleWotsFamily is the versionless family of the WOTS triple,
 	// matching the naming of every other family.
 	RotatingTripleWotsFamily = "aplane.rotating-triple-wots"
@@ -120,6 +128,25 @@ const (
 	RotatingXmssLeavesPerStage = 64
 	RotatingXmssStagesPerTree  = 65536 / RotatingXmssLeavesPerStage
 
+	// RotatingWotscStagePublicKeySize is the WOTS+C triple's stage 0 record:
+	// public seed, root, Falcon-1024 key, Ed25519 key. Each stage is its own
+	// tree, so unlike XMSS it needs no account tag.
+	RotatingWotscStagePublicKeySize = 16 + 16 + 1793 + 32
+
+	// RotatingWotscMaxProgramBytes is the salted WOTS+C stage program.
+	RotatingWotscMaxProgramBytes = 2486
+
+	// RotatingWotscMaxArgumentBytes is a 628-byte WOTS+C signature, a 64-byte
+	// Ed25519 signature and a Falcon-1024 signature of at most 1,423 bytes.
+	RotatingWotscMaxArgumentBytes = 628 + 64 + 1423
+
+	// RotatingWotscMaxOpcodeCost is the exact cost of every accepted run: the
+	// digit sum fixes the chain steps at 240, whatever the leaf or TxID.
+	RotatingWotscMaxOpcodeCost = 5881 + 41*240
+
+	// RotatingWotscLeavesPerStage is the size of each stage's own tree.
+	RotatingWotscLeavesPerStage = 64
+
 	// RotatingMaxValidityWindow is the longest LastValid-FirstValid span a
 	// stage program accepts.
 	RotatingMaxValidityWindow = 100
@@ -141,6 +168,9 @@ const (
 const (
 	RotatingTripleWotsDisplayName = "Rotating triple WOTS (Falcon-1024 + WOTS + Ed25519)"
 	RotatingTripleWotsDescription = "Fixed account address whose authorizing Falcon-1024, hash-based WOTS and Ed25519 stage program changes on every spend. Signs only through the rotating1 flow."
+
+	RotatingTripleWotscDisplayName = "Rotating triple WOTS+C (Falcon-1024 + WOTS+C + Ed25519)"
+	RotatingTripleWotscDescription = "Fixed account address whose authorizing Falcon-1024, hash-based WOTS+C and Ed25519 stage program changes on every spend. Each stage has its own tree of 64 one-time keys. Not a standard construction. Signs only through rotating1."
 
 	RotatingTripleXmssDisplayName = "Rotating triple XMSS (Falcon-1024 + XMSS + Ed25519)"
 	RotatingTripleXmssDescription = "Fixed account address whose authorizing Falcon-1024, RFC 8391 XMSS and Ed25519 stage program changes on every spend. One XMSS tree serves 1,024 stages, each signing with its own 64 leaves. Signs only through the rotating1 flow."
@@ -263,6 +293,19 @@ var profiles = map[string]Profile{
 		LeavesPerStage:     RotatingXmssLeavesPerStage,
 		StagesPerTree:      RotatingXmssStagesPerTree,
 	},
+	RotatingTripleWotscV1: {
+		KeyType:            RotatingTripleWotscV1,
+		Family:             RotatingTripleWotscFamily,
+		DisplayName:        RotatingTripleWotscDisplayName,
+		Description:        RotatingTripleWotscDescription,
+		StagePublicKeySize: RotatingWotscStagePublicKeySize,
+		MaxProgramBytes:    RotatingWotscMaxProgramBytes,
+		MaxArgumentBytes:   RotatingWotscMaxArgumentBytes,
+		MaxOpcodeCost:      RotatingWotscMaxOpcodeCost,
+		OneTimeStage:       true,
+		ReusedStageRestsOn: "Falcon-1024 and Ed25519",
+		LeavesPerStage:     RotatingWotscLeavesPerStage,
+	},
 }
 
 // IsRotatingKeyType reports whether keyType is a rotating account.
@@ -279,7 +322,7 @@ func Lookup(keyType string) (Profile, bool) {
 
 // KeyTypes lists the rotating key types in a fixed order.
 func KeyTypes() []string {
-	return []string{RotatingTripleWotsV1, RotatingTripleXmssV1, RotatingTripleSlhdsaV1}
+	return []string{RotatingTripleWotsV1, RotatingTripleXmssV1, RotatingTripleSlhdsaV1, RotatingTripleWotscV1}
 }
 
 // RoutingFamily returns the family of a rotating key type. Rotating key

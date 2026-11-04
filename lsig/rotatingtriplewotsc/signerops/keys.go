@@ -37,6 +37,11 @@ func NewDeriver(seed *rotatinghybrid.Seed, genesisHash [rotatinghybrid.GenesisHa
 	return rotatinghybrid.NewDeriverWithLabel(seed, genesisHash, DerivationLabel)
 }
 
+// signHash makes the WOTS+C signature; tests replace it to observe the buffer.
+var signHash = func(key *wotsc.SigningKey, leaf uint32, message []byte) ([]byte, error) {
+	return key.Sign(leaf, message)
+}
+
 // StageKeys owns one stage's private keys. Call Zero after use.
 type StageKeys struct {
 	hash      *wotsc.SigningKey
@@ -91,7 +96,7 @@ func (k *StageKeys) Sign(leaf uint32, message []byte) (hashSig, edSig, falconSig
 	if err := stagesign.CheckMessage(message); err != nil {
 		return nil, nil, nil, err
 	}
-	hashSig, err = k.hash.Sign(leaf, message)
+	hashSig, err = signHash(k.hash, leaf, message)
 	if err != nil {
 		return nil, nil, nil, err
 	}

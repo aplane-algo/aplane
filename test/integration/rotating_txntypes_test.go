@@ -337,3 +337,7 @@ return
 func TestRotatingSlhdsaTransactionTypes(t *testing.T) {
 	runRotatingTransactionTypes(t, rotatingkey.RotatingTripleSlhdsaV1)
 }
+
+func TestRotatingWotscTransactionTypes(t *testing.T) {
+	runRotatingTransactionTypes(t, rotatingkey.RotatingTripleWotscV1)
+}

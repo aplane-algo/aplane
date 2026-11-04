@@ -28,6 +28,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/txnutil"
 	rotatingslhsignerreg "github.com/aplane-algo/aplane/lsig/rotatingtripleslhdsa/signerreg"
 	rotatingtriplesignerreg "github.com/aplane-algo/aplane/lsig/rotatingtriplewots/signerreg"
+	rotatingwotscsignerreg "github.com/aplane-algo/aplane/lsig/rotatingtriplewotsc/signerreg"
 	rotatingxmsssignerreg "github.com/aplane-algo/aplane/lsig/rotatingtriplexmss/signerreg"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 	"github.com/aplane-algo/aplane/test/integration/harness"
@@ -85,6 +86,14 @@ func TestRotatingXmssSignerFlowOnChain(t *testing.T) {
 func TestRotatingSlhdsaSignerFlowOnChain(t *testing.T) {
 	runRotatingSignerFlowOnChain(t, localnetRotatingType{
 		keyType: rotatingkey.RotatingTripleSlhdsaV1, register: rotatingslhsignerreg.Register, newKeyPayload: rotatingslhsignerreg.NewKeyPayload,
+	})
+}
+
+// TestRotatingWotscSignerFlowOnChain runs the same flow for the WOTS+C triple,
+// whose stages each have their own tree of 64 one-time keys.
+func TestRotatingWotscSignerFlowOnChain(t *testing.T) {
+	runRotatingSignerFlowOnChain(t, localnetRotatingType{
+		keyType: rotatingkey.RotatingTripleWotscV1, register: rotatingwotscsignerreg.Register, newKeyPayload: rotatingwotscsignerreg.NewKeyPayload,
 	})
 }
 

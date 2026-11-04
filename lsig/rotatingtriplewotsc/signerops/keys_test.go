@@ -6,6 +6,7 @@ package signerops
 import (
 	"bytes"
 	"crypto/sha256"
+	"fmt"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/crypto/rotatinghybrid"
@@ -146,6 +147,34 @@ func BenchmarkSignStage(b *testing.B) {
 	for b.Loop() {
 		if _, _, _, err := keys.Sign(7, message[:]); err != nil {
 			b.Fatal(err)
+		}
+	}
+}
+
+// TestGoldenStages freezes derivation: the addresses of existing accounts
+// depend on every value here, so a change is a new key type, never an update.
+func TestGoldenStages(t *testing.T) {
+	material := fixedKeyMaterial()
+	d, err := rotatinghybrid.OpenDeriver(material.Seed, material.GenesisHash, DerivationLabel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Zero()
+	for _, want := range []struct {
+		stage                                uint64
+		address, seed, root, ed25519, falcon string
+		salted                               bool
+	}{
+		{0, "DKPKHH5SWTPRHLTHD5VJMMKEQWNOJOVQQH3QOURLM6K46IFQWPH4Z67E44", "357f7a847b9bf63ec1711cef85632d8d", "b3d250ee22469a762c36070b280f2e6e", "facd47bed18086f45ee5335cdbfd8ab7db1a7f4ea78ff5cd7f2e3b1a91696dd2", "349e40fed84e4c7c74f10124ce1f98b7cbfb2a2aff350085479f963268785c5e", true},
+		{1, "QZYH4RFNQXEV6I2M2UAEFXSELN6AESZAQRQNF5PL2DXNDALYA7IL37WICU", "a829cd7c34a4585f85d2cbd688a05146", "3cc9e58fabf0c620c461b7bf41a1c822", "730db92f97a0caaff2edb7acdcb728a63a0195e7fca0fb2eab2c7090e93621b9", "1e5e746ee22506ab6c78b5cebe97853b4e3b0421fd869fa4c04b0ba26f79d6d7", true},
+		{1000, "ZAKKRZCITMU5J5SZENMXGKX75SCPXQPF7LCB7ACOHFVS4IPJTCRJNSOGVI", "e1838985ea9143cc59870d1beefaaa62", "bf6124a7d920344cc528499dc037cf03", "73fddfb47569993dc1ce6cb020e211efe7562e464ea5b15950cd4a19aecc6821", "c248507c29d31e190d6e36116613b283496d37587ec17c5d14fb2f6ecc1313e9", true},
+	} {
+		keys, program := deriveStage(t, d, want.stage)
+		pk := keys.PublicKeys()
+		falcon := sha256.Sum256(pk.Falcon[:])
+		got := fmt.Sprintf("%s %x %x %x %x %v", program.Address, pk.Seed, pk.Root, pk.Ed25519, falcon, program.Salted)
+		if expected := fmt.Sprintf("%s %s %s %s %s %v", want.address, want.seed, want.root, want.ed25519, want.falcon, want.salted); got != expected {
+			t.Fatalf("stage %d:\n got %s\nwant %s", want.stage, got, expected)
 		}
 	}
 }

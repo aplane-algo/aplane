@@ -1033,7 +1033,13 @@ func TestReleaseMemoryMergesAuditedHistory(t *testing.T) {
 // again. The audited leaf is set to exactly the leaf the new spend's TxID
 // would pick, so a sign that skipped the wait would reuse it.
 func TestRotatingLeafSignWaitsForTheReleaseRestore(t *testing.T) {
-	f, audit := newSigningFixtureFor(t, xmssTestType)
+	for _, kind := range []rotatingTestType{xmssTestType, wotscTestType} {
+		t.Run(kind.keyType, func(t *testing.T) { testRotatingLeafSignWaitsForTheReleaseRestore(t, kind) })
+	}
+}
+
+func testRotatingLeafSignWaitsForTheReleaseRestore(t *testing.T, kind rotatingTestType) {
+	f, audit := newSigningFixtureFor(t, kind)
 	profile, ok := rotatingkey.Lookup(f.kind.keyType)
 	if !ok || profile.LeavesPerStage <= 1 {
 		t.Fatalf("%s is not a leaf family", f.kind.keyType)

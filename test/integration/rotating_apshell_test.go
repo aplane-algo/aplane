@@ -135,3 +135,7 @@ func runRotatingApshellEndToEnd(t *testing.T, keyType string) {
 func TestRotatingSlhdsaApshellEndToEnd(t *testing.T) {
 	runRotatingApshellEndToEnd(t, rotatingkey.RotatingTripleSlhdsaV1)
 }
+
+func TestRotatingWotscApshellEndToEnd(t *testing.T) {
+	runRotatingApshellEndToEnd(t, rotatingkey.RotatingTripleWotscV1)
+}
