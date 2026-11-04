@@ -52,7 +52,7 @@ the verified key fingerprint. A request carries no credential of its own.
 │  └── direct-tcpip channel handed off as an API connection       │
 │      (sshtunnel.APIConn, fingerprint attached to the context)   │
 │  Request: POST /sign                                            │
-│  Body: { "requests": [{ "auth_address": "...",                 │
+│  Body: { "requests": [{ "auth_address": "...",                  │
 │                        "txn_bytes_hex": "..." }] }              │
 └─────────────────────────────────────────────────────────────────┘
                               │
@@ -167,7 +167,7 @@ passphrase prompt remotely.
 
 ```
 ┌──────────────┐                              ┌──────────────┐
-│ apadmin  │                              │  apsigner      │
+│ apadmin      │                              │  apsigner    │
 └──────┬───────┘                              └──────┬───────┘
        │                                             │
        │  1. Connect to aplane.sock                  │
@@ -188,7 +188,7 @@ passphrase prompt remotely.
        │<────────────────────────────────────────────│
        │                                             │
        │     Session bound to product runtime        │
-       │     (Session.bound = productruntime.Runtime)      │
+       │ (Session.bound = productruntime.Runtime)    │
        │                                             │
        │  ══════ SESSION AUTHENTICATED ══════════════│
        │                                             │
@@ -258,11 +258,11 @@ Every apshell connection to an apsigner, local or remote, is an SSH tunnel:
 
 ```
 ┌──────────┐                                          ┌────────────┐
-│  apshell │◄═══════ SSH Tunnel (persistent) ════════►│  apsigner │
+│  apshell │◄═══════ SSH Tunnel (persistent) ════════►│  apsigner  │
 └──────────┘                                          └────────────┘
      │                                                       │
-     │    HTTP requests ride direct-tcpip channels that       │
-     │    carry the connection's enrolled-key identity        │
+     │    HTTP requests ride direct-tcpip channels that      │
+     │    carry the connection's enrolled-key identity       │
      │                                                       │
 ```
 
@@ -280,12 +280,12 @@ Client                                               Server
   │  1. SSH connect (username=aplane, pubkey=KEY)         │
   │──────────────────────────────────────────────────────>│
   │                                                       │
-  │  2. Key type accepted? Fingerprint enrolled?         │
-  │     Enrollment re-checked after the handshake        │
+  │  2. Key type accepted? Fingerprint enrolled?          │
+  │     Enrollment re-checked after the handshake         │
   │<──────────────────────────────────────────────────────│
   │                                                       │
-  │  3. SSH session established; the server records the  │
-  │     connection under the key's fingerprint           │
+  │  3. SSH session established; the server records the   │
+  │     connection under the key's fingerprint            │
   │                                                       │
   │  4. direct-tcpip channels -> API connections carrying │
   │     that fingerprint -> HTTP handlers                 │
@@ -373,12 +373,12 @@ does not log the username, interactive responses, or authentication errors.
 Server SSH settings live under `endpoint.ssh:`. If the block or individual
 fields are omitted, apsigner fills in defaults and still starts the SSH server.
 
-| Option | Default | Description |
-|--------|---------|-------------|
-| `endpoint.signer_port` | `11270` | Loopback REST API port behind the endpoint |
-| `endpoint.ssh.listen_address` | `127.0.0.1` | SSH listener bind address |
-| `endpoint.ssh.port` | `1127` | SSH listener port |
-| `endpoint.ssh.host_key_path` | `.ssh/ssh_host_key` | Server host key (auto-generated if missing) |
+| Option                        | Default             | Description                                |
+|-------------------------------|---------------------|--------------------------------------------|
+| `endpoint.signer_port`        | `11270`             | Loopback REST API port behind the endpoint |
+| `endpoint.ssh.listen_address` | `127.0.0.1`         | SSH listener bind address                  |
+| `endpoint.ssh.port`           | `1127`              | SSH listener port                          |
+| `endpoint.ssh.host_key_path`  | `.ssh/ssh_host_key` | Server host key (auto-generated if missing)|
 
 The enrolled-client registry is not configurable: it is always
 `identities/default/.ssh/authorized_keys` inside the product store, and the
@@ -430,14 +430,14 @@ with operator import of a public key (below), this is the whole bootstrap.
 
 ```
 ┌──────────┐                                          ┌────────────┐
-│  apshell │                                          │  apsigner │
+│  apshell │                                          │  apsigner  │
 └────┬─────┘                                          └─────┬──────┘
      │                                                      │
-     │  1. SSH connect (username=enroll,        │
+     │  1. SSH connect (username=enroll,                    │
      │     any supported key)                               │
      │─────────────────────────────────────────────────────>│
      │                                                      │
-     │  2. exec "enroll [<label>]"                           │
+     │  2. exec "enroll [<label>]"                          │
      │─────────────────────────────────────────────────────>│
      │                                                      │
      │  3. Request written to the pending queue             │
@@ -619,7 +619,7 @@ revocation of every key.
 
 ```
 ┌──────────┐      ┌──────────┐                     ┌────────────┐
-│ apadmin │      │  apshell │                     │  apsigner │
+│ apadmin  │      │  apshell │                     │  apsigner  │
 └────┬─────┘      └────┬─────┘                     └─────┬──────┘
      │                  │                                 │
      │  1. Operator revokes key SHA256:...                │
@@ -672,7 +672,7 @@ All apshell connections to the signer use SSH tunneling, regardless of whether t
 
 ```
 ┌──────────┐                                          ┌────────────┐
-│  apshell │◄═══════ SSH Tunnel (encrypted) ═════════►│  apsigner │
+│  apshell │◄═══════ SSH Tunnel (encrypted) ═════════►│  apsigner  │
 │          │ :random ───── direct-tcpip channels ────►│ API conns  │
 └──────────┘                                          └────────────┘
      │
