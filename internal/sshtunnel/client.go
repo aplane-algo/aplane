@@ -899,7 +899,7 @@ func (c *Client) monitorConnection(ctx context.Context, sshClient *ssh.Client, k
 		case <-c.closeChan:
 			// Local shutdown path: suppress expected "use of closed network connection" noise.
 		default:
-			logger().Warn("connection closed", "error", err)
+			logConnectionError(err)
 		}
 	}
 
@@ -923,6 +923,16 @@ func (c *Client) monitorConnection(ctx context.Context, sshClient *ssh.Client, k
 
 	// Handle disconnection
 	c.handleDisconnect()
+}
+
+// logConnectionError reports why a connection ended, if that says anything: EOF is
+// just how a remote close looks, and handleDisconnect reports the close itself.
+func logConnectionError(err error) {
+	if errors.Is(err, io.EOF) {
+		logger().Debug("connection closed", "error", err)
+		return
+	}
+	logger().Warn("connection closed", "error", err)
 }
 
 // handleDisconnect is called when the connection dies

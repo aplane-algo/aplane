@@ -14,10 +14,7 @@ import (
 
 func executeConnectConfigured(r *REPLState) (*apshellapp.ConnectResult, error) {
 	hostKeyApproval := buildHostKeyApproval(r)
-	return r.app().ConnectConfigured(r.commandContext(), hostKeyApproval, func() {
-		r.println("⚠️  Disconnected from signer")
-		r.print("> ")
-	})
+	return r.app().ConnectConfigured(r.commandContext(), hostKeyApproval, nil)
 }
 
 // connectConfigured is the startup/interactive lifecycle wrapper. Registered
@@ -33,10 +30,7 @@ func connectConfigured(r *REPLState) error {
 
 func executeConnectEndpointAlias(r *REPLState, alias string) (*apshellapp.ConnectResult, error) {
 	hostKeyApproval := buildHostKeyApproval(r)
-	return r.app().ConnectEndpointAlias(r.commandContext(), alias, hostKeyApproval, func() {
-		r.println("⚠️  Disconnected from signer")
-		r.print("> ")
-	})
+	return r.app().ConnectEndpointAlias(r.commandContext(), alias, hostKeyApproval, nil)
 }
 
 func (r *REPLState) cmdDisconnect(args []string, _ interface{}) (command.Result, error) {

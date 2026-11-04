@@ -7,6 +7,9 @@ import (
 	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
+	"errors"
+	"fmt"
+	"io"
 	"log"
 	"log/slog"
 	"net"
@@ -61,6 +64,21 @@ func TestConnectionLossIsLoggedAsAWarning(t *testing.T) {
 				t.Fatal("the disconnect callback didn't run")
 			}
 		})
+	}
+}
+
+func TestConnectionErrorIsAWarningUnlessItIsAPlainClose(t *testing.T) {
+	out := captureLog(t)
+
+	logConnectionError(fmt.Errorf("wrapped: %w", io.EOF))
+	if got := out.String(); !strings.Contains(got, "level=DEBUG") {
+		t.Fatalf("log = %q, want debug: the close is reported separately", got)
+	}
+
+	out.Reset()
+	logConnectionError(errors.New("connection reset"))
+	if got := out.String(); !strings.Contains(got, "level=WARN") {
+		t.Fatalf("log = %q, want a warning", got)
 	}
 }
 
