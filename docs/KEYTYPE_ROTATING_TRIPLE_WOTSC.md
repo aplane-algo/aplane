@@ -46,7 +46,7 @@ measured on LocalNet (section 11).
 | Decision | Why |
 |---|---|
 | A separate key type | v1 stage programs are frozen, and SLH-DSA's value is having no state |
-| No leaf counter | After an old backup, or with a second signer, a counter repeats the same leaf every time. The TxID pick collides 1 time in 64 |
+| No leaf counter | After an old backup, or with a second signer, a counter repeats the same leaf every time. The TxID pick collides 1 time in 64 for TxIDs nobody chose (section 9.1) |
 | Reuse a leaf rather than refuse | Every stage requires this signature and there's no other recovery path, so refusing freezes the funds |
 | Keys derived per stage | The signer stores only the seed, so random values couldn't be rebuilt on restore |
 | `n`, `w`, `S` and `h` frozen | n=24 needs 48 chains and S=360, and FIPS 205 moves H and T to SHA-512 at that level. The AVM has no plain SHA-512 opcode |
@@ -141,8 +141,11 @@ The signing flow chooses the leaf with the existing `chooseLeaf`:
   wrapping, is taken.
 - If all 64 are used, the pick is reused and reported.
 
-State chooses the leaf, never whether to sign. An audit write failure is logged
-and doesn't withhold the signature. No leaf counter is stored. The audit entry for a
+State chooses the leaf, never whether to sign, with one exception that isn't about
+leaves: while the release memory is being restored, a sign waits, and if a reset arrives
+after that wait, the sign is refused rather than choosing from an empty memory. The
+leaf is chosen from a record read together with its restore state, so a reset can't
+fall between them. An audit write failure is logged and doesn't withhold the signature. No leaf counter is stored. The audit entry for a
 release is synced durably, as for every rotating type, and it's the only record.
 
 ### 5.3 Digest and grinding
@@ -189,6 +192,13 @@ on one core, so no tree cache is needed.
 Before release, `StageOps.SignStage` re-parses the derived program and verifies
 all three signatures locally, as the other types do. It rejects an index outside
 0 to 63. A failed signature is zeroed and refused.
+
+A signature is then released only if the signer hasn't locked since approval, the
+request hasn't been cancelled and the key is still present, as for every rotating type.
+The sign path is a key user, so a lock cancels it and waits for the seed to go. The seed
+goes before the audit write, so a stalled disk can't hold up a lock, and the checks run
+again after the write. A release refused at that point stays on record, which only
+makes its leaf look used.
 
 ## 6. Stage program
 
@@ -378,6 +388,11 @@ With history missing, the leaf comes from the TxID alone:
 | 2 | 1.6% |
 | 3 | 4.6% |
 | 5 | 15% |
+
+These odds assume nobody chose the TxIDs. Whoever controls a transaction's contents can
+grind its note to aim it at a leaf in about 64 tries, so with history missing, 1 in 64
+is not a bound against an adversary. This doesn't get past an intact history, which
+gives every transaction an unused leaf whatever it picks.
 
 A failed transaction also leaves the stage exposed. Its keys are revealed and keep
 control of the account until a rotation lands, with no time limit. The hash leg stays

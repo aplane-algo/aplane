@@ -1544,7 +1544,10 @@ the TxID with stage `n`'s keys (Falcon-1024, WOTS and Ed25519; or
 Falcon-1024, an XMSS or WOTS+C leaf and Ed25519), verifies every signature, writes a
 `ROTATING_RELEASE` audit entry (account, TxID, stage, `last_valid`, and for
 a leaf family the tree and leaf index) with a durable sync, records the
-release in memory, and responds.
+release in memory, and responds. The sign path is a key user: a lock cancels it
+and waits for the seed to be zeroed, which happens before the audit write. It
+refuses the release if the signer locked since approval, the request was cancelled
+or the key was removed, both before that write and after it.
 
 For a family whose stage holds several one-time leaves
 (`rotatingkey.Profile.LeavesPerStage`), the signer chooses the leaf under

@@ -362,7 +362,9 @@ wire contract lives in [ARCH_SIGNING.md](ARCH_SIGNING.md#rotating-accounts-rotat
    current round, and at least 10 rounds remain before `last_valid`. It proves
    the successor opens (`CheckStageOpens`), signs, verifies, writes a
    `ROTATING_RELEASE` audit entry (account, TxID, stage, `last_valid`, tree and
-   leaf index), records the release in memory and responds.
+   leaf index), records the release in memory and responds. It refuses the
+   release if the signer locked since approval, the request was cancelled or
+   the key was removed.
 3. **Open test.** `CheckStageOpens` test-signs the target stage locally before
    any spend signature is released. Both variants sign the SHA-256 hash of
    their derivation label followed by ` stage open test`: a fixed label, not a

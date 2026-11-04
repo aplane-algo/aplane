@@ -2,14 +2,15 @@
 
 > Status: TLC checked over the bounded finite state space (one account, three
 > stages, two leaves per stage, three transaction IDs per stage, at most four
-> memory records); the recorded positive run generated 1,408,640 distinct
-> states at depth 28 with no counterexamples, and the deep configuration
-> (five records) 8,553,448 distinct states at depth 30. Two expected-failure
+> memory records); the recorded positive run generated 4,630,882 distinct
+> states at depth 33 with no counterexamples, and the deep configuration
+> (five records) 31,908,458 distinct states at depth 37. Three expected-failure
 > negative controls each violate `LF1_NoReuseBeforeExhaustion` and must keep
 > producing that exact counterexample: `rotating_leaf_release_negative_wait.cfg`
-> (`WaitForRestore = FALSE`, 259 distinct states at depth 6) and
-> `rotating_leaf_release_negative_seq.cfg` (`SeqGuard = FALSE`, 1,918 distinct
-> states at depth 9).
+> (no restore check at all, 702 distinct states at depth 8),
+> `rotating_leaf_release_negative_recheck.cfg` (`RecheckAtChoice = FALSE`, 467
+> distinct states at depth 9) and `rotating_leaf_release_negative_seq.cfg`
+> (`SeqGuard = FALSE`, 8,283 distinct states at depth 12).
 
 A rotating account of a leaf family (`rotatingkey.Profile.LeavesPerStage > 1`,
 today the XMSS and WOTS+C triples) holds several one-time leaves per stage. Signing the
@@ -35,13 +36,18 @@ history, so the question is whether the history is complete.
 
 ## What TLC actually verifies
 
-- `Sign(tx)` transcribes `SignRotatingWithContext` in
-  `internal/signerapp/signing/rotating_flow.go`: the wait for the restore
-  (`AwaitRestored`, leaf families only), the leaf choice from `Releases.Get`
-  (`chooseLeaf`: the transaction's own leaf, else the first unused leaf from
-  the TxID's pick wrapping, else the pick again), the best-effort audit write,
-  and `Releases.Record`. The ghost `truth` records every release whose
-  signature left the signer.
+- `Admit(tx)`, `Sign` and `Refuse` transcribe `SignRotatingWithContext` in
+  `internal/signerapp/signing/rotating_flow.go`. `Admit` is the wait for the
+  restore (`AwaitRestored`, leaf families only), before the account lock. `Sign`
+  is the leaf choice from `ForLeafChoice` under the lock (`chooseLeaf`: the
+  transaction's own leaf, else the first unused leaf from the TxID's pick
+  wrapping, else the pick again), the best-effort audit write, and
+  `Releases.Record`. `Refuse` ends a sign that may no longer go on. Anything can
+  happen between `Admit` and `Sign`. The ghost `truth` records every release
+  whose signature left the signer.
+- `SawLocked` and `DelayedReset` are the stage table worker seeing the lock and
+  running `ReleaseMemory.Reset` as two separate steps, so the reset can land after
+  a later unlock.
 - `Land` is a release confirming: the authorizer moves to the next stage.
 - `Lock`, `Unlock`, `RestoreBegin`, `RestoreApply`, and `RestoreFail`
   transcribe `ReleaseMemory.Reset`/`Restoring`/`RecordAudited`/`Restored` and
@@ -58,6 +64,7 @@ The guards are constants:
 | Constant | In the code | Role |
 |---|---|---|
 | `WaitForRestore` | TRUE: `AwaitRestored` before the account lock | Without it the first sign after an unlock picks from an empty memory |
+| `RecheckAtChoice` | TRUE: `ForLeafChoice` under the account lock | Without it a delayed reset empties the memory after a sign was admitted |
 | `SeqGuard` | TRUE: `rec.Seq > r.ObservedSeq` skips the clear | Without it a stale observation erases a newer release |
 
 Loss is separate. `AuditMayFail`, `AuditMayLose`, and `RestoreMayFail` model
@@ -72,17 +79,18 @@ The negative controls (each with every loss source off):
 
 | Mutation | Result |
 |---|---|
-| `WaitForRestore = FALSE` | LF1 fails in six steps: sign, lock, unlock, then a second transaction with the same pick signs before the restore and takes the same leaf |
-| `SeqGuard = FALSE` | LF1 fails in nine steps: a status pass reads the chain, the release lands, the next stage signs, the stale pass clears that release, and the next transaction reuses its leaf |
+| `WaitForRestore = FALSE`, `RecheckAtChoice = FALSE` | LF1 fails: with no restore check at all, a sign picks from an empty memory |
+| `RecheckAtChoice = FALSE` | LF1 fails: the worker sees a lock, an unlock and restore follow, one transaction signs, a second is admitted, the delayed reset lands, and the second picks from the empty memory |
+| `SeqGuard = FALSE` | LF1 fails: a status pass reads the chain, the release lands, the next stage signs, the stale pass clears that release, and the next transaction reuses its leaf |
 
 The harness (`scripts/run-formal-tests.py`) requires exactly that violation
-for both.
+for each.
 
 ## Modeling choices and limits
 
 - One account and one signer. Several signers sharing a seed and no memory
-  collide with probability one in `LeavesPerStage` by design (`chooseLeaf`)
-  and are not modeled.
+  collide with probability one in `LeavesPerStage` by design, for TxIDs nobody
+  chose (`chooseLeaf`), and are not modeled.
 - Stateless-hash families (SLH-DSA) keep no leaf history, so the wait and the
   leaf choice do not apply to them (`leafProfile.StatelessHash`); they are not
   modeled.
@@ -92,15 +100,14 @@ for both.
   count.
 - A restore reads the log once, at `RestoreBegin`; the audited release names
   the highest stage in the log with every leaf the log holds for it.
-- `Lock` abandons a restore in flight. The lock-generation fence on the sign
-  path is the stateless family's check and is not modeled.
+- `Lock` abandons a restore in flight, and the restore never opens the wait: the
+  worker's generation check keeps the memory held for the next restore. The
+  lock-generation fence on the sign path stops a release, not a leaf choice, and is
+  modeled only as `Sign` needing an unlocked signer. At most one sign is in flight,
+  because the account lock serializes them.
 - Validity windows, expiry, the stage-table recovery grants, and the one-time
   warning text are not modeled; they change what the signer reports, not the
   leaf it picks.
-- The seam between `AwaitRestored` (before the account lock) and the leaf
-  choice (under it) is modeled as one step because a restore only adds to the
-  memory and the state it waits on is monotone; the interleaving with
-  `Record` is covered by the merge.
 - The state space is bounded by `MaxSeq` (the memory's record counter), so
   the claim is over executions with at most that many record events, not an
   unbounded history.

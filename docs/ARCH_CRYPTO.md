@@ -693,8 +693,9 @@ The design record for this new implementation of an established contract:
    skips leaf selection/history and one-time reuse warnings. Release/expiry
    observations remain, including audit restoration; legacy audit leaf fields
    are zero placeholders and are discarded on restore for this profile.
-   After expensive signing, the signer rereads authorizer and round and checks
-   cancellation, unlocked generation and key presence before returning bytes.
+   After expensive signing, the signer rereads authorizer and round, then, as for
+   every rotating family, checks cancellation, unlocked generation and key presence
+   before returning bytes.
    An aged window or changed stage requires fresh preparation. No signature is
    released or recorded on those failures.
 6. **Resources and compatibility:** frozen TEAL v13 template, 2834 bytes

@@ -7,6 +7,17 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## Rotating signatures stop at lock
+
+- A lock during rotating signing could neither stop the signature nor wait for the
+  seed to be cleared. Locking now cancels the request and waits for it, and the signer
+  refuses to release a signature if it locked, the request was cancelled or the key
+  was removed. Slow SLH-DSA signing already checked this; WOTS, XMSS and WOTS+C did not.
+- A leaf-family spend could reuse a one-time leaf, with unused leaves left and nothing
+  reported, if a delayed reset of the release memory landed after the spend passed its
+  restore check. The spend now fails with an error and can be retried.
+- A restore that a lock cut short no longer lets spends through with releases missing.
+
 ## Rotating WOTS+C key type
 
 - New library key type `aplane.rotating-triple-wotsc.v1`: a rotating account whose
