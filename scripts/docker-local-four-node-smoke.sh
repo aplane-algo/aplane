@@ -1475,12 +1475,16 @@ verify_guided_cosigner_setup() {
     fi
 }
 
-enable_guarded_keytype() {
+# Only the protocol-native key types are enabled by default. Call this before the
+# signer's approval session starts: apadmin takes the admin session, and the signer
+# locks when it exits.
+enable_keytype() {
+    local keytype="$1"
     local out
     if ! out="$(docker_exec_as_tester "$SIGNER_CONTAINER" ". /home/$TEST_USER/aplane/apenv.sh && \
-        APSIGNER_PASSPHRASE='$TEST_PASSPHRASE' apadmin keytype enable aplane.falcon1024-cosigner1024.v1 2>&1")"; then
+        APSIGNER_PASSPHRASE='$TEST_PASSPHRASE' apadmin keytype enable $keytype 2>&1")"; then
         printf '%s\n' "$out" >&2
-        die "failed to enable guarded Falcon/Falcon cosigner key type on signer"
+        die "failed to enable key type $keytype on signer"
     fi
     printf '%s\n' "$out"
 }
@@ -1576,12 +1580,6 @@ generate_corridor_key() {
 
 generate_falcon_key() {
     local out
-    # Only the protocol-native key types are enabled by default.
-    if ! out="$(docker_exec_as_tester "$SIGNER_CONTAINER" ". /home/$TEST_USER/aplane/apenv.sh && \
-        APSIGNER_PASSPHRASE='$TEST_PASSPHRASE' apadmin keytype enable aplane.falcon1024.v1 2>&1")"; then
-        printf '%s\n' "$out" >&2
-        die "failed to enable the Falcon LogicSig key type on signer"
-    fi
     docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'connect\ngenerate aplane.falcon1024.v1\n' > /tmp/generate-falcon.script"
     if ! out="$(docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \
         apshell -script /tmp/generate-falcon.script 2>&1")"; then
@@ -1928,8 +1926,9 @@ main() {
     log "Adding cosigner endpoint from client container"
     create_client_cosigner_endpoint
 
-    log "Enabling guarded Falcon/Falcon cosigner key type on signer"
-    enable_guarded_keytype
+    log "Enabling the LogicSig key types used here on signer"
+    enable_keytype aplane.falcon1024-cosigner1024.v1
+    enable_keytype aplane.falcon1024.v1
 
     log "Importing optional Corridor template on signer"
     import_corridor_template
