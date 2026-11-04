@@ -62,6 +62,10 @@ type dispatcher struct {
 	// notifications buffer was full. Approval-request notifications flow
 	// through this channel, so drops must be observable rather than silent.
 	droppedNotifications atomic.Uint64
+	// notificationDrops holds one pending signal that droppedNotifications
+	// changed. It stays apart from lifecycle, which discards what it can't buffer
+	// and carries the terminal events that drive reconnect.
+	notificationDrops chan struct{}
 }
 
 type dispatchResult struct {
@@ -80,6 +84,7 @@ func newDispatcherWithMode(conn adminProtocolConn, strictUnknownResponses bool) 
 		pending:                make(map[string]chan dispatchResult),
 		notifications:          make(chan Notification, 64),
 		lifecycle:              make(chan LifecycleEvent, 16),
+		notificationDrops:      make(chan struct{}, 1),
 	}
 }
 
@@ -87,6 +92,28 @@ func newDispatcherWithMode(conn adminProtocolConn, strictUnknownResponses bool) 
 // the notification buffer was full.
 func (d *dispatcher) DroppedNotifications() uint64 {
 	return d.droppedNotifications.Load()
+}
+
+// notificationDropsChan signals that DroppedNotifications may have changed.
+// Several drops can share one signal, so read the count after receiving it.
+func (d *dispatcher) notificationDropsChan() <-chan struct{} {
+	return d.notificationDrops
+}
+
+// readerDoneChan closes when the read loop has exited, starting the loop if
+// needed. Only the read loop drops notifications, so the count is final then.
+func (d *dispatcher) readerDoneChan() <-chan struct{} {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if !d.started && !d.closed {
+		d.startLocked()
+	}
+	if d.readDone == nil {
+		done := make(chan struct{})
+		close(done)
+		return done
+	}
+	return d.readDone
 }
 
 func (d *dispatcher) request(msg interface{}, timeout time.Duration) ([]byte, error) {
@@ -253,6 +280,10 @@ func (d *dispatcher) readLoop() {
 					"type", base.Type,
 					"id", base.ID,
 					"dropped_total", dropped)
+				select {
+				case d.notificationDrops <- struct{}{}:
+				default:
+				}
 			}
 			continue
 		}

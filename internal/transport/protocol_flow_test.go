@@ -6,6 +6,7 @@ package transport
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -612,4 +613,83 @@ func mustMarshalProtocolMessage(t *testing.T, msg interface{}) []byte {
 		t.Fatalf("MarshalAdminMessage() error = %v", err)
 	}
 	return data
+}
+
+func dropTestConn(t *testing.T, frames int, finished chan struct{}) *stubAdminProtocolConn {
+	t.Helper()
+	notifications := make([][]byte, 0, frames)
+	for i := 0; i < frames; i++ {
+		notifications = append(notifications, mustMarshalProtocolMessage(t, protocol.KeysChangedMessage{
+			BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeKeysChanged},
+			KeyCount:    i,
+		}))
+	}
+	return &stubAdminProtocolConn{
+		readFunc: func(s *stubAdminProtocolConn) ([]byte, error) {
+			s.mu.Lock()
+			defer s.mu.Unlock()
+			if s.readIndex < len(notifications) {
+				msg := notifications[s.readIndex]
+				s.readIndex++
+				return msg, nil
+			}
+			<-finished
+			return nil, fmt.Errorf("connection closed")
+		},
+	}
+}
+
+func TestDispatcherCoalescesDropSignalsAwayFromLifecycle(t *testing.T) {
+	const dropped = 40
+	finished := make(chan struct{})
+	dispatcher := newDispatcher(dropTestConn(t, 64+dropped, finished))
+	dispatcher.notificationsChan() // starts the reader
+	lifecycle := dispatcher.lifecycleChan()
+
+	select {
+	case <-dispatcher.notificationDropsChan():
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for a drop signal")
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for dispatcher.DroppedNotifications() != dropped {
+		if time.Now().After(deadline) {
+			t.Fatalf("DroppedNotifications() = %d, want %d", dispatcher.DroppedNotifications(), dropped)
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	// Terminal events must still fit: drops don't use the lifecycle buffer.
+	close(finished)
+	select {
+	case <-dispatcher.readerDoneChan():
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for the reader to stop")
+	}
+	var types []LifecycleType
+	for len(lifecycle) > 0 {
+		types = append(types, (<-lifecycle).Type)
+	}
+	if !slices.Contains(types, LifecycleConnectionLost) || !slices.Contains(types, LifecycleReaderStopped) {
+		t.Fatalf("lifecycle events = %v, want the terminal events", types)
+	}
+	if len(types) != 2 {
+		t.Fatalf("lifecycle events = %v, want only the two terminal events", types)
+	}
+}
+
+func TestReaderDoneMeansTheDropCountIsFinal(t *testing.T) {
+	finished := make(chan struct{})
+	close(finished)
+	dispatcher := newDispatcher(dropTestConn(t, 70, finished))
+
+	select {
+	case <-dispatcher.readerDoneChan(): // starts the reader
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for the reader to stop")
+	}
+
+	if got := dispatcher.DroppedNotifications(); got != 6 {
+		t.Fatalf("DroppedNotifications() = %d, want 6", got)
+	}
 }

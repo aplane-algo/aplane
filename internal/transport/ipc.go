@@ -119,6 +119,17 @@ func (c *IPCClient) LifecycleEvents() <-chan LifecycleEvent {
 	return c.adminDispatcher().lifecycleChan()
 }
 
+// DroppedNotifications reports how many notifications this connection discarded
+// because the notification buffer was full.
+func (c *IPCClient) DroppedNotifications() uint64 {
+	return c.adminDispatcher().DroppedNotifications()
+}
+
+// NotificationDrops signals that DroppedNotifications may have changed.
+func (c *IPCClient) NotificationDrops() <-chan struct{} {
+	return c.adminDispatcher().notificationDropsChan()
+}
+
 func (c *IPCClient) adminDispatcher() *dispatcher {
 	c.mu.Lock()
 	defer c.mu.Unlock()

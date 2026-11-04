@@ -626,6 +626,15 @@ func (m Model) renderStatusBar() string {
 		parts = append(parts, errorStyle.Render("ALERT: "+warning))
 	}
 
+	// A lost notification can be an approval request, so this stays for the session.
+	if m.notificationsLost > 0 {
+		noun := "notifications"
+		if m.notificationsLost == 1 {
+			noun = "notification"
+		}
+		parts = append(parts, warningStyle.Render(fmt.Sprintf("Warning: %d signer %s lost", m.notificationsLost, noun)))
+	}
+
 	// Notice if any
 	if m.lastNotice != "" {
 		parts = append(parts, statusConnectedStyle.Render(m.lastNotice))

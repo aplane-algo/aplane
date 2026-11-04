@@ -116,6 +116,8 @@ func main() {
 	}
 	notifications := ipcClient.Notifications()
 	lifecycle := ipcClient.LifecycleEvents()
+	lost := notificationLossReporter{count: ipcClient.DroppedNotifications, warnf: logWarnf}
+	notificationDrops := ipcClient.NotificationDrops()
 	for {
 		select {
 		case <-sigChan:
@@ -123,14 +125,35 @@ func main() {
 			return
 		case event := <-lifecycle:
 			if connectionEnded(event) {
+				lost.report()
 				return
 			}
+		case <-notificationDrops:
+			lost.report()
 		case input := <-inputChan:
 			a.handleInput(input)
 		case notification := <-notifications:
 			a.handleNotification(notification)
 		}
 	}
+}
+
+// notificationLossReporter tells the operator when the client lost signer
+// notifications. Approval requests travel as notifications, so one may be
+// missing from this screen.
+type notificationLossReporter struct {
+	count    func() uint64
+	warnf    func(format string, args ...any)
+	reported uint64
+}
+
+func (r *notificationLossReporter) report() {
+	total := r.count()
+	if total <= r.reported {
+		return
+	}
+	r.reported = total
+	r.warnf("%d signer notifications lost; an approval request may be missing", total)
 }
 
 // connectApprover reads the passphrase, connects to the signer's admin IPC

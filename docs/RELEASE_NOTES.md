@@ -7,6 +7,13 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## Lost signer notifications are shown
+
+- If apadmin, apconsole's signer pane, or apapprover can't keep up with the
+  signer, notifications are dropped, and an approval request can be among them.
+  The TUIs now show the number lost in the status bar for the rest of the
+  session, including across reconnects, and apapprover prints a warning.
+
 ## apconsole shows cache warnings
 
 - apconsole used to discard every cache warning, including the one reporting

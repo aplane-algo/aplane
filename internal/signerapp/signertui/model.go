@@ -465,6 +465,7 @@ type Model struct {
 	// Warning message (shown in status bar)
 	lastWarning           string
 	signerWarnings        []string // signer-raised alerts from the last status message
+	notificationsLost     uint64   // highest total reported; independent of the log level
 	lastWarningGeneration uint64
 
 	// Notice (shown in status bar): a completed action, not a problem.
@@ -544,6 +545,12 @@ func (m Model) Init() tea.Cmd {
 }
 
 // Tea messages for async operations
+
+// NotificationsLostMsg reports the running total of admin notifications lost
+// this session because the client couldn't keep up.
+type NotificationsLostMsg struct {
+	Total uint64
+}
 
 // ConnectedMsg is sent when IPC connection is established.
 type ConnectedMsg struct {
