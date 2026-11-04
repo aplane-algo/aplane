@@ -15,6 +15,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/endpointrefs"
 	"github.com/aplane-algo/aplane/internal/engine"
+	"github.com/aplane-algo/aplane/internal/sshtunnel"
 	"github.com/aplane-algo/aplane/internal/witness"
 )
 
@@ -77,6 +78,50 @@ func (a *App) EndpointShow(_ context.Context, alias string) (*EndpointShowResult
 	return &EndpointShowResult{
 		Endpoint: a.endpointEntry(alias, endpoint, alias == defaultAlias),
 	}, nil
+}
+
+// EndpointPublicKey returns the public key of an endpoint's SSH identity, for an
+// operator to import, or of the default endpoint's if alias is empty. It reads the
+// existing key and never creates one, so it works at any time and repeatedly.
+func (a *App) EndpointPublicKey(_ context.Context, alias string) (*EndpointPublicKeyResult, error) {
+	registry, err := a.loadEndpointView()
+	if err != nil {
+		return nil, err
+	}
+	var endpoint config.ClientEndpointConfig
+	if alias == "" {
+		var ok bool
+		alias, endpoint, ok = registry.DefaultEndpoint()
+		if !ok {
+			return nil, fmt.Errorf("no default endpoint; name one with: endpoints public-key <alias>")
+		}
+	} else {
+		if err := config.ValidateClientEndpointAlias(alias); err != nil {
+			return nil, err
+		}
+		var ok bool
+		endpoint, ok = registry.Endpoint(alias)
+		if !ok {
+			return nil, fmt.Errorf("unknown endpoint alias %q", alias)
+		}
+	}
+
+	identityFile := endpoint.IdentityFile
+	if identityFile == "" {
+		return nil, fmt.Errorf("endpoint %q has no identity file, so its key would come from an SSH agent; "+
+			"ssh-add -L lists the keys loaded there, which may not be the one this endpoint uses", alias)
+	}
+	key, err := sshtunnel.ReadIdentityPublicKey(identityFile)
+	switch {
+	case errors.Is(err, sshtunnel.ErrNoIdentityKey):
+		return nil, fmt.Errorf("endpoint %q has no SSH key yet at %s; one is created the first time it connects", alias, identityFile)
+	case errors.Is(err, sshtunnel.ErrIdentityKeyEncrypted):
+		return nil, fmt.Errorf("the SSH key at %s is encrypted, so apshell can't read it; "+
+			"ssh-keygen -y -f %s prints its public key after asking for the passphrase", identityFile, identityFile)
+	case err != nil:
+		return nil, err
+	}
+	return &EndpointPublicKeyResult{Alias: alias, PublicKey: key.AuthorizedKey, Fingerprint: key.Fingerprint}, nil
 }
 
 // EndpointImport imports an apadmin-exported public endpoint envelope into the

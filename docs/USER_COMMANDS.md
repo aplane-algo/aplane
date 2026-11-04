@@ -762,7 +762,8 @@ again. Repeating a request before it is answered refreshes the same entry.
 
 The operator can also enroll a key without a request from the client, by
 importing its public key file in apadmin (`i` on Enrolled Clients) or with
-`apadmin clients import`.
+`apadmin clients import`. `endpoints public-key` prints the client's key in the
+form the operator needs, as often as you like, and never creates a key.
 
 The client SSH key must be Ed25519, ECDSA (P-256/384/521), or a
 hardware-backed `sk-` Ed25519/ECDSA key. The default generated key is
@@ -973,6 +974,7 @@ setup use [endpoints add](#endpoints-add); for route checks use `cosigner status
 ```
 endpoints list
 endpoints show <alias>
+endpoints public-key [<alias>]
 endpoints add [<cosigner-url>] [--alias <alias>] [--replace] [--dry-run]
 endpoints create --alias <alias> --endpoint <url> [--dry-run]
 endpoints import --alias <alias> --role signer|cosigner [--dry-run] <endpoint-json>

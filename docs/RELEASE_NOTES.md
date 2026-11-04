@@ -14,6 +14,12 @@ before it was renamed `enroll`.
   The TUIs now show the number lost in the status bar for the rest of the
   session, including across reconnects, and apapprover prints a warning.
 
+## `endpoints public-key` prints the client's SSH public key
+
+- `endpoints public-key [<alias>]` prints the OpenSSH public key line and
+  fingerprint of an endpoint's SSH identity, for an operator to import. It reads
+  the existing key, so it works at any time and never creates one.
+
 ## apconsole shows cache warnings
 
 - apconsole used to discard every cache warning, including the one reporting

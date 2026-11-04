@@ -19,6 +19,7 @@ import (
 
 const endpointsUsage = "endpoints list | " +
 	"endpoints show <alias> | " +
+	"endpoints public-key [<alias>] | " +
 	endpointsAddUsage + " | " +
 	"endpoints create --alias <alias> --endpoint <url> [--dry-run] | " +
 	"endpoints import --alias <alias> --role signer|cosigner [--dry-run] <endpoint-json> | " +
@@ -162,6 +163,23 @@ func (r *REPLState) cmdEndpoints(args []string, _ interface{}) (command.Result, 
 		return newShellCommandResult(func(w io.Writer) error {
 			return r.withOutput(w, func() { r.renderEndpointShow(result) })
 		}, projectEndpointEntry(result.Endpoint))
+	case "public-key":
+		if len(args) > 2 {
+			return nil, fmt.Errorf("usage: endpoints public-key [<alias>]")
+		}
+		alias := ""
+		if len(args) == 2 {
+			alias = args[1]
+		}
+		result, err := r.app().EndpointPublicKey(r.commandContext(), alias)
+		if err != nil {
+			return nil, err
+		}
+		return newShellCommandResult(func(w io.Writer) error {
+			return r.withOutput(w, func() { r.renderEndpointPublicKey(result) })
+		}, endpointPublicKeyProjection{
+			Alias: result.Alias, PublicKey: result.PublicKey, Fingerprint: result.Fingerprint,
+		})
 	case "add":
 		return r.runEndpointsAdd(args[1:])
 	case "create":
@@ -397,6 +415,12 @@ func (r *REPLState) renderEndpointShow(result *apshellapp.EndpointShowResult) {
 	r.printf("URL: %s\n", endpoint.URL)
 	r.printf("Identity file: %s\n", endpoint.IdentityFile)
 	r.printf("Known hosts: %s\n", endpoint.KnownHostsPath)
+}
+
+func (r *REPLState) renderEndpointPublicKey(result *apshellapp.EndpointPublicKeyResult) {
+	r.printf("Endpoint: %s\n", result.Alias)
+	r.printf("Fingerprint: %s\n", result.Fingerprint)
+	r.println(result.PublicKey)
 }
 
 func yesNo(ok bool) string {

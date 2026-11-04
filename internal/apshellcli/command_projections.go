@@ -160,6 +160,12 @@ func projectEndpointEntry(endpoint apshellapp.EndpointEntry) endpointProjection 
 	}
 }
 
+type endpointPublicKeyProjection struct {
+	Alias       string `json:"alias"`
+	PublicKey   string `json:"public_key"`
+	Fingerprint string `json:"fingerprint"`
+}
+
 type endpointMutationProjection struct {
 	Mode            string `json:"mode"`
 	Alias           string `json:"alias"`

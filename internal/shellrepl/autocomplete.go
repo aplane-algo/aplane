@@ -913,6 +913,7 @@ func CreateDynamicCompleter(aliasCache *cache.AliasCache, asaCache *cache.ASACac
 		readline.PcItem("endpoints",
 			readline.PcItem("list"),
 			readline.PcItem("show"),
+			readline.PcItem("public-key"),
 			readline.PcItem("add"),
 			readline.PcItem("create"),
 			readline.PcItem("import"),

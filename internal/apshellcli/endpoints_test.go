@@ -244,3 +244,17 @@ func TestEndpointArgParsersShareFlagRules(t *testing.T) {
 		t.Errorf("create accepted the retired --cosignerport flag: %v", err)
 	}
 }
+
+func TestEndpointPublicKeyProjectionOmitsCredentialPaths(t *testing.T) {
+	data, err := json.Marshal(endpointPublicKeyProjection{
+		Alias: "main", PublicKey: "ssh-ed25519 AAAA", Fingerprint: "SHA256:abc",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{"identity", ".ssh", "/secret/"} {
+		if bytes.Contains(data, []byte(forbidden)) {
+			t.Fatalf("projection %s contains %q", data, forbidden)
+		}
+	}
+}
