@@ -395,9 +395,9 @@ func (a *approver) handleNotification(notification transport.Notification) {
 	decoded, handled, err := decodeNotification(notification)
 	switch {
 	case err != nil:
-		logWarnf("%v", err)
+		slog.Warn(err.Error(), "component", "apapprover")
 	case !handled:
-		logWarnf("ignoring unknown IPC message type %q", notification.Base.Type)
+		slog.Warn("ignoring unknown IPC message", "component", "apapprover", "type", notification.Base.Type)
 	case decoded.errMsg != nil:
 		logErrorf("%s", decoded.errMsg.Error)
 	case decoded.canceled != nil:

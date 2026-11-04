@@ -7,7 +7,9 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"log"
 	"log/slog"
+	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -158,6 +160,28 @@ func TestLogBatchReachesTheShellThroughTheConsoleModel(t *testing.T) {
 
 	if !slices.Contains(updated.(model).shell.lines, "[ssh] warning: connection lost") {
 		t.Fatalf("lines = %q", updated.(model).shell.lines)
+	}
+}
+
+func TestStartupWarningsGoThroughThePipeline(t *testing.T) {
+	previous := slog.Default()
+	flags := log.Flags()
+	t.Cleanup(func() {
+		slog.SetDefault(previous)
+		log.SetOutput(os.Stderr)
+		log.SetFlags(flags)
+	})
+	logs := clientlog.NewDeferred()
+	clientlog.Install(slog.LevelWarn, logs)
+
+	logWarnf("composed Falcon templates will be unavailable")
+
+	batch, ok := logs.Next(context.Background())
+	if !ok || len(batch.Records) != 1 {
+		t.Fatalf("batch = %+v, %v", batch, ok)
+	}
+	if got := batch.Records[0].Line; got != "[apconsole] warning: composed Falcon templates will be unavailable" {
+		t.Fatalf("line = %q", got)
 	}
 }
 

@@ -197,7 +197,7 @@ func doJSON[T any](c *Client, ctx context.Context, method, path string, body any
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
-			slog.Debug("failed to close response body", "error", err)
+			logger().Debug("failed to close response body", "error", err)
 		}
 	}()
 
@@ -301,7 +301,7 @@ func (c *Client) HealthWithContext(ctx context.Context) error {
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
-			slog.Debug("failed to close response body", "error", err)
+			logger().Debug("failed to close response body", "error", err)
 		}
 	}()
 
@@ -414,7 +414,7 @@ func (c *Client) postSignApprovalRequest(ctx context.Context, path, requestID st
 			cancelCtx, cancel := context.WithTimeout(context.Background(), signCancelTimeout)
 			defer cancel()
 			if err := c.CancelSignRequestWithContext(cancelCtx, requestID); err != nil {
-				slog.Debug("failed to cancel sign request", "request_id", requestID, "error", err)
+				logger().Debug("failed to cancel sign request", "request_id", requestID, "error", err)
 			}
 		})
 	}
@@ -448,7 +448,7 @@ func (c *Client) postSignApprovalRequest(ctx context.Context, path, requestID st
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
-			slog.Debug("failed to close response body", "error", err)
+			logger().Debug("failed to close response body", "error", err)
 		}
 	}()
 
@@ -601,7 +601,7 @@ func (c *Client) CancelSignRequestWithContext(ctx context.Context, requestID str
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
-			slog.Debug("failed to close response body", "error", err)
+			logger().Debug("failed to close response body", "error", err)
 		}
 	}()
 
@@ -617,6 +617,12 @@ func (c *Client) CancelSignRequestWithContext(ctx context.Context, requestID str
 		return fmt.Errorf("sign cancel failed: %s", cancelResp.Error)
 	}
 	return nil
+}
+
+// logger returns the signer client's logger. It is made at each call, because a
+// logger kept from package initialization would miss the handler the host installs.
+func logger() *slog.Logger {
+	return slog.With("component", "signerclient")
 }
 
 func (c *Client) progressWriter() io.Writer {
@@ -646,7 +652,7 @@ func (c *Client) GetKeysWithContext(ctx context.Context) (*KeysResult, error) {
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
-			slog.Debug("failed to close response body", "error", err)
+			logger().Debug("failed to close response body", "error", err)
 		}
 	}()
 

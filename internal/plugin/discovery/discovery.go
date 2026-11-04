@@ -7,6 +7,7 @@ package discovery
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -140,7 +141,7 @@ func (d *Discoverer) Discover() ([]*Plugin, error) {
 		}
 		if err != nil {
 			// Log error but continue with other paths
-			fmt.Fprintf(os.Stderr, "Warning: error searching %s: %v\n", searchPath, err)
+			logger().Warn("error searching for plugins", "path", searchPath, "error", err)
 			continue
 		}
 
@@ -156,6 +157,13 @@ func (d *Discoverer) Discover() ([]*Plugin, error) {
 	return plugins, nil
 }
 
+// logger returns the discovery logger. It is made at each call, because a logger
+// kept from package initialization would miss the handler the host installs. The
+// component "plugin" is reserved for what plugins themselves print.
+func logger() *slog.Logger {
+	return slog.With("component", "plugins")
+}
+
 func (d *Discoverer) discoverEnabledInPath(searchPath string, enabled []string) ([]*Plugin, error) {
 	var plugins []*Plugin
 
@@ -163,7 +171,7 @@ func (d *Discoverer) discoverEnabledInPath(searchPath string, enabled []string) 
 		pluginDir := filepath.Join(searchPath, name)
 		plugin, err := d.loadPluginDir(pluginDir)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: enabled plugin %s skipped: %v\n", name, err)
+			logger().Warn("enabled plugin skipped", "name", name, "error", err)
 			continue
 		}
 		plugins = append(plugins, plugin)

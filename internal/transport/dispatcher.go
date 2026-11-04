@@ -277,6 +277,7 @@ func (d *dispatcher) readLoop() {
 				protocol.SensitiveBytes(response).Zero()
 				dropped := d.droppedNotifications.Add(1)
 				slog.Warn("admin notification dropped: buffer full",
+					"component", "transport",
 					"type", base.Type,
 					"id", base.ID,
 					"dropped_total", dropped)
