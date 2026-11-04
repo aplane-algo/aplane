@@ -582,6 +582,43 @@ func TestReleaseMemoryMarksStageReuse(t *testing.T) {
 	}
 }
 
+// A family with a tree per stage reuses leaf numbers at every stage. Each stage
+// must get all of its leaves, and a leaf spent at one stage must stay free at
+// the next, because the two are different keys.
+func TestChooseLeafOwnTreePerStage(t *testing.T) {
+	profile := rotatingkey.Profile{LeavesPerStage: 64}
+	const stage = 9
+	prior := ReleaseRecord{Stage: stage}
+	used := map[uint32]bool{}
+	for i := range 64 {
+		txID := []byte{byte(i * 3)} // Several share a pick, so the search is exercised.
+		name := fmt.Sprintf("T%d", i)
+		leaf, reused := chooseLeaf(profile, stage, txID, name, prior)
+		if reused {
+			t.Fatalf("release %d reported reuse with %d leaves used", i, len(used))
+		}
+		if leaf.Tree != 0 || leaf.Index >= 64 || used[leaf.Index] {
+			t.Fatalf("release %d chose leaf %+v, used %v", i, leaf, used)
+		}
+		used[leaf.Index] = true
+		leaf.TxID = name
+		prior.Leaves = append(prior.Leaves, leaf)
+	}
+
+	// An identical transaction keeps its leaf, even with every leaf spent.
+	if leaf, reused := chooseLeaf(profile, stage, []byte{0}, "T0", prior); reused || leaf.Index != prior.Leaves[0].Index {
+		t.Fatalf("retry chose %+v, reused %v", leaf, reused)
+	}
+	// The 65th distinct transaction is the first reuse. It still gets a leaf.
+	if leaf, reused := chooseLeaf(profile, stage, []byte{200}, "T64", prior); !reused || leaf.Index != 200%64 {
+		t.Fatalf("65th release chose %+v, reused %v", leaf, reused)
+	}
+	// The next stage has its own keys, so nothing recorded here applies.
+	if leaf, reused := chooseLeaf(profile, stage+1, []byte{200}, "T64", prior); reused || leaf.Index != 200%64 {
+		t.Fatalf("next stage chose %+v, reused %v", leaf, reused)
+	}
+}
+
 func TestChooseLeaf(t *testing.T) {
 	triple, _ := rotatingkey.Lookup(rotatingkey.RotatingTripleWotsV1)
 	if l, reused := chooseLeaf(triple, 9, []byte{200}, "T", ReleaseRecord{}); l.Index != 0 || l.Tree != 0 || reused {

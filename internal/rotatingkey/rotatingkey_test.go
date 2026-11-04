@@ -80,6 +80,30 @@ func TestFrozenSizesMatchImplementation(t *testing.T) {
 	}
 }
 
+// A family with several leaves and no shared tree must get all of them at
+// every stage. Reading StagesPerTree == 0 as one leaf would quietly make every
+// retry reuse a key.
+func TestLeafRangeOfOwnTreePerStage(t *testing.T) {
+	p := Profile{LeavesPerStage: 64}
+	for _, stage := range []uint64{0, 1, 63, 64, 1 << 40} {
+		if lo, hi := p.LeafRange(stage); lo != 0 || hi != 64 {
+			t.Fatalf("stage %d: LeafRange = [%d, %d)", stage, lo, hi)
+		}
+		if tree := p.TreeOf(stage); tree != 0 {
+			t.Fatalf("stage %d: TreeOf = %d", stage, tree)
+		}
+	}
+}
+
+func TestLeafRangeOfSingleKeyFamilies(t *testing.T) {
+	for _, keyType := range []string{RotatingTripleWotsV1, RotatingTripleSlhdsaV1} {
+		p, _ := Lookup(keyType)
+		if lo, hi := p.LeafRange(5); lo != 0 || hi != 1 {
+			t.Fatalf("%s: LeafRange = [%d, %d)", keyType, lo, hi)
+		}
+	}
+}
+
 func TestLeafRange(t *testing.T) {
 	triple, _ := Lookup(RotatingTripleWotsV1)
 	if lo, hi := triple.LeafRange(5); lo != 0 || hi != 1 {

@@ -192,7 +192,8 @@ type Profile struct {
 	// family with one key per stage. StagesPerTree is how many consecutive
 	// stages share one tree, 0 when every stage is its own tree. Together
 	// they place a stage's leaf range: stage n's leaves are
-	// (n mod StagesPerTree) * LeavesPerStage onward.
+	// (n mod StagesPerTree) * LeavesPerStage onward, or 0 onward when every
+	// stage is its own tree.
 	LeavesPerStage int
 	StagesPerTree  int
 }
@@ -207,8 +208,11 @@ type PreparationLimits struct {
 
 // LeafRange returns the leaf indices stage n may sign with, lo <= leaf < hi.
 func (p Profile) LeafRange(stage uint64) (lo, hi uint64) {
-	if p.LeavesPerStage <= 1 || p.StagesPerTree <= 0 {
+	if p.LeavesPerStage <= 1 {
 		return 0, 1
+	}
+	if p.StagesPerTree <= 0 {
+		return 0, uint64(p.LeavesPerStage)
 	}
 	lo = (stage % uint64(p.StagesPerTree)) * uint64(p.LeavesPerStage)
 	return lo, lo + uint64(p.LeavesPerStage)
