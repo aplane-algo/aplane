@@ -732,3 +732,39 @@ The design record for this new implementation of an established contract:
    exact lengths and the declared opcode ceiling on both program shapes.
    Node measurements match the affine formula; this does not claim that a
    random signature attains the conservative all-layers maximum.
+
+## Rotating WOTS+C triple
+
+`aplane.rotating-triple-wotsc.v1` requires Falcon-1024, Ed25519 and a signature
+from a tree of 64 WOTS+C keys, built per stage, over the raw TxID. The frozen
+contract is in [KEYTYPE_ROTATING_TRIPLE_WOTSC.md](KEYTYPE_ROTATING_TRIPLE_WOTSC.md).
+WOTS+C isn't a standard, and no proof covers this construction. Independent review
+is pending, and passing vectors and pinning bytes don't establish it.
+
+The design record for this new implementation of an established contract:
+
+1. **Identity and authority:** fixed account, fresh stage per spend, existing
+   rotating1 endpoints, canonical grouping, policy and approval. Same transaction
+   types and guards as XMSS. No cosigner or external-admin path.
+2. **Cryptography and bindings:** all three signatures bind the raw 32-byte TxID.
+   Parameters are n=16, w=16, 32 chains, digit sum 240, h=6, with the FIPS 205 SHA2
+   tweakable hash and address layout. The fixed sum replaces checksum chains: the
+   signer searches at most 8,192 deterministic randomizers, and the verifier requires
+   the sum.
+3. **Derivation and custody:** existing network-bound HKDF with the distinct label
+   `APLANE_ROTATING_TRIPLE_WOTSC_V1`; per-stage tags 1 (Falcon), 2 (Ed25519), 3
+   (SK.seed), 4 (SK.prf), 5 (PK.seed). The stored 64-byte BIP-39 seed is the sole
+   secret, and each tree's public nodes are rebuilt per call in about 5 ms.
+4. **Durable authority:** unchanged rotating credential shape, with a 1857-byte
+   stage-zero record (seed16 || root16 || Falcon1793 || Ed25519 32), rederived in full
+   on parse.
+5. **Choreography and retries:** the existing leaf choice, release memory, audit
+   restore and reuse reporting. State chooses the leaf, never whether to sign. The
+   open test never signs with a leaf.
+6. **Resources and compatibility:** frozen TEAL v13 template, 2483 bytes unsalted /
+   2486 salted, 2115 argument bytes, exactly 15721 opcode units on every accepted run,
+   a three-transaction group and no program surcharge. A changed template or
+   derivation is a new key type.
+7. **Evidence:** vectors from a second implementation, the verifier run offline
+   against the primitive with mutated verifiers, and on-chain acceptance, rejection
+   and cost on LocalNet.
