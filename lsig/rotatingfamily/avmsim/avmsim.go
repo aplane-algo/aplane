@@ -1,7 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-package stage
+// Package avmsim is a small interpreter for the TEAL subset the rotating stage
+// verifiers use, so a test can run the real verifier source offline and
+// compare it with the Go primitive. It models the AVM's stack, scratch space,
+// subroutines and the 4096-byte value limit, and refuses any opcode it does
+// not know: a verifier edit that reaches for a new opcode fails the test
+// until the interpreter learns it, which keeps the interpreter honest instead
+// of silently skipping what it cannot run. It is not an AVM: costs, groups
+// and most transaction fields are out of scope.
+package avmsim
 
 import (
 	"crypto/sha256"
@@ -13,58 +21,53 @@ import (
 	"strings"
 )
 
-// avmSim is a small interpreter for the TEAL subset the SLH-DSA stage
-// verifiers use, so a test can run the real verifier source offline and
-// compare it with the Go primitive. It models the AVM's stack, scratch space,
-// subroutines and the 4096-byte value limit, and refuses any opcode it does
-// not know: a verifier edit that reaches for a new opcode fails the test
-// until the interpreter learns it, which keeps the interpreter honest instead
-// of silently skipping what it cannot run. It is not an AVM: costs, groups
-// and most transaction fields are out of scope.
-
 const (
 	avmMaxBytes = 4096
 	avmMaxStack = 1000
 	avmMaxSteps = 20_000_000
 )
 
-type avmValue struct {
+// Value is one stack value.
+type Value struct {
 	bytes   []byte
 	uint    uint64
 	isBytes bool
 }
 
-func avmUint(u uint64) avmValue  { return avmValue{uint: u} }
-func avmBytes(b []byte) avmValue { return avmValue{bytes: b, isBytes: true} }
+// Bytes returns a byte value's contents, or nil for an integer.
+func (v Value) Bytes() []byte { return v.bytes }
+
+func avmUint(u uint64) Value  { return Value{uint: u} }
+func avmBytes(b []byte) Value { return Value{bytes: b, isBytes: true} }
 
 type avmInstr struct {
 	op   string
 	args []string
 }
 
-// avmTxn is the transaction the program sees.
-type avmTxn struct {
+// Txn is the transaction the program sees.
+type Txn struct {
 	TxID, Sender, RekeyTo, CloseRemainderTo []byte
 	FirstValid, LastValid                   uint64
 }
 
-// avmHooks run the signature opcodes the interpreter does not implement. A
+// Hooks run the signature opcodes the interpreter does not implement. A
 // hook receives the data, signature and key and returns whether it verifies.
-type avmHooks struct {
+type Hooks struct {
 	Ed25519 func(data, sig, key []byte) bool
 	Falcon  func(data, sig, key []byte) bool
 	// Equal observes the operands of every == and !=, so a test can pin
 	// what a verifier's final comparison actually compares.
-	Equal func(a, b avmValue)
+	Equal func(a, b Value)
 }
 
-type avmProgram struct {
+type Program struct {
 	code   []avmInstr
 	labels map[string]int
 }
 
-func avmAssemble(src string) (*avmProgram, error) {
-	p := &avmProgram{labels: map[string]int{}}
+func Assemble(src string) (*Program, error) {
+	p := &Program{labels: map[string]int{}}
 	for n, line := range strings.Split(src, "\n") {
 		if i := strings.Index(line, "//"); i >= 0 {
 			line = line[:i]
@@ -86,28 +89,29 @@ func avmAssemble(src string) (*avmProgram, error) {
 	return p, nil
 }
 
-var errAVMReject = errors.New("program rejected")
+// ErrReject reports a program that failed an assert or returned false.
+var ErrReject = errors.New("program rejected")
 
-// avmUnsupportedError reports something the interpreter cannot model: an
+// UnsupportedError reports something the interpreter cannot model: an
 // unknown opcode, an unsupported field, a missing hook, a bad label or
 // immediate, or a step limit. It is distinct from a modeled AVM fault
 // (overflow, out-of-range slice, type error), which rejects the transaction
 // on chain too. A harness must fail on it, never read it as a rejection.
-type avmUnsupportedError struct{ msg string }
+type UnsupportedError struct{ msg string }
 
-func (e *avmUnsupportedError) Error() string { return "unsupported by the interpreter: " + e.msg }
+func (e *UnsupportedError) Error() string { return "unsupported by the interpreter: " + e.msg }
 
 func unsupportedf(format string, a ...any) error {
-	return &avmUnsupportedError{msg: fmt.Sprintf(format, a...)}
+	return &UnsupportedError{msg: fmt.Sprintf(format, a...)}
 }
 
-// run executes the program and reports whether it approves. A runtime fault
+// Run executes the program and reports whether it approves. A runtime fault
 // (type error, overflow, out-of-range slice, oversized value) is an error,
 // as it is on the AVM, and means the transaction is rejected too.
-func (p *avmProgram) run(txn avmTxn, args [][]byte, hooks avmHooks) (bool, error) {
+func (p *Program) Run(txn Txn, args [][]byte, hooks Hooks) (bool, error) {
 	var (
-		stack   []avmValue
-		scratch [256]avmValue
+		stack   []Value
+		scratch [256]Value
 		calls   []int
 		pc      int
 		steps   int
@@ -115,9 +119,9 @@ func (p *avmProgram) run(txn avmTxn, args [][]byte, hooks avmHooks) (bool, error
 	fail := func(err error) (bool, error) {
 		return false, fmt.Errorf("pc %d %s: %w", pc, p.code[pc].op, err)
 	}
-	pop := func() (avmValue, error) {
+	pop := func() (Value, error) {
 		if len(stack) == 0 {
-			return avmValue{}, errors.New("stack underflow")
+			return Value{}, errors.New("stack underflow")
 		}
 		v := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
@@ -137,7 +141,7 @@ func (p *avmProgram) run(txn avmTxn, args [][]byte, hooks avmHooks) (bool, error
 		}
 		return v.bytes, err
 	}
-	push := func(v avmValue) error {
+	push := func(v Value) error {
 		if len(stack) >= avmMaxStack {
 			return errors.New("stack overflow")
 		}
@@ -212,7 +216,7 @@ func (p *avmProgram) run(txn avmTxn, args [][]byte, hooks avmHooks) (bool, error
 			}
 		case "store":
 			var n int
-			var v avmValue
+			var v Value
 			if n, err = imm(0); err == nil {
 				if v, err = pop(); err == nil {
 					scratch[n] = v
@@ -267,7 +271,7 @@ func (p *avmProgram) run(txn avmTxn, args [][]byte, hooks avmHooks) (bool, error
 				calls = calls[:len(calls)-1]
 			}
 		case "swap":
-			var a, b avmValue
+			var a, b Value
 			if b, err = pop(); err == nil {
 				if a, err = pop(); err == nil {
 					err = push(b)
@@ -278,7 +282,7 @@ func (p *avmProgram) run(txn avmTxn, args [][]byte, hooks avmHooks) (bool, error
 			}
 		case "select":
 			var c uint64
-			var a, b avmValue
+			var a, b Value
 			if c, err = popUint(); err == nil {
 				if b, err = pop(); err == nil {
 					if a, err = pop(); err == nil {
@@ -302,7 +306,7 @@ func (p *avmProgram) run(txn avmTxn, args [][]byte, hooks avmHooks) (bool, error
 				}
 			}
 		case "==", "!=":
-			var a, b avmValue
+			var a, b Value
 			if b, err = pop(); err == nil {
 				if a, err = pop(); err == nil {
 					if a.isBytes != b.isBytes {
@@ -460,7 +464,7 @@ func (p *avmProgram) run(txn avmTxn, args [][]byte, hooks avmHooks) (bool, error
 	if len(stack) == 1 && !stack[0].isBytes && stack[0].uint != 0 {
 		return true, nil
 	}
-	return false, errAVMReject
+	return false, ErrReject
 }
 
 func boolUint(b bool) uint64 {
@@ -470,7 +474,7 @@ func boolUint(b bool) uint64 {
 	return 0
 }
 
-func pushExtract(push func(avmValue) error, a []byte, s, l uint64, toEnd bool) error {
+func pushExtract(push func(Value) error, a []byte, s, l uint64, toEnd bool) error {
 	if s > uint64(len(a)) {
 		return errors.New("extract start out of range")
 	}
@@ -524,7 +528,7 @@ func uintOp(op string, a, b uint64) (uint64, error) {
 	return 0, unsupportedf("operator %s", op)
 }
 
-func txnField(txn avmTxn, field string) avmValue {
+func txnField(txn Txn, field string) Value {
 	switch field {
 	case "TxID":
 		return avmBytes(txn.TxID)
