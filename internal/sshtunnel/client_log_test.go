@@ -67,6 +67,55 @@ func TestConnectionLossIsLoggedAsAWarning(t *testing.T) {
 	}
 }
 
+// A cosigner connection has no disconnect callback, and its loss still needs
+// reporting, because a plain remote close is only logged here.
+func TestConnectionLossIsReportedWithoutACallback(t *testing.T) {
+	out := captureLog(t)
+	client := NewClient("example.com", 22, 0, "", "")
+	client.connected = true
+
+	client.handleDisconnect()
+
+	got := out.String()
+	for _, want := range []string{"level=WARN", "connection closed by remote server"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("log = %q, want %q", got, want)
+		}
+	}
+}
+
+func TestConnectionLossIsReportedOnce(t *testing.T) {
+	out := captureLog(t)
+	client := NewClient("example.com", 22, 0, "", "")
+	calls := 0
+	client.SetDisconnectCallback(func() { calls++ })
+	client.connected = true
+
+	client.handleDisconnect()
+	client.handleDisconnect()
+
+	if got := strings.Count(out.String(), "connection closed by remote server"); got != 1 || calls != 1 {
+		t.Fatalf("reported %d times, called back %d times; want once each", got, calls)
+	}
+}
+
+// Cosigner connections are closed after each use, so a local close that read as a
+// remote one would warn every time.
+func TestLocalCloseIsNotReportedAsARemoteClose(t *testing.T) {
+	out := captureLog(t)
+	client := NewClient("example.com", 22, 0, "", "")
+	client.connected = true
+
+	if err := client.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+	client.handleDisconnect() // What the connection monitor does once Wait returns.
+
+	if out.Len() != 0 {
+		t.Fatalf("log = %q, a local close isn't a lost connection", out.String())
+	}
+}
+
 func TestConnectionErrorIsAWarningUnlessItIsAPlainClose(t *testing.T) {
 	out := captureLog(t)
 

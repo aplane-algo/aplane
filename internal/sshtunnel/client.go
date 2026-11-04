@@ -944,13 +944,18 @@ func (c *Client) handleDisconnect() {
 	reason := c.disconnectReason
 	c.mu.Unlock()
 
-	// Only trigger callback once
-	if wasConnected && callback != nil {
-		if reason == DisconnectReasonKeyRevoked {
-			logger().Warn("disconnected: this client's key was revoked by the signer")
-		} else {
-			logger().Warn("connection closed by remote server")
-		}
+	// Only report once. A local Close has already cleared connected, so this is the
+	// remote side going away. Not every connection has a callback: a cosigner
+	// connection doesn't, and its loss must still be reported.
+	if !wasConnected {
+		return
+	}
+	if reason == DisconnectReasonKeyRevoked {
+		logger().Warn("disconnected: this client's key was revoked by the signer")
+	} else {
+		logger().Warn("connection closed by remote server")
+	}
+	if callback != nil {
 		callback()
 	}
 }
