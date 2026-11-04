@@ -6,11 +6,8 @@ package jsapi
 import (
 	"os"
 	"testing"
-
-	"github.com/aplane-algo/aplane/internal/cache"
 )
 
 func TestMain(m *testing.M) {
-	cache.InitLogger()
 	os.Exit(m.Run())
 }

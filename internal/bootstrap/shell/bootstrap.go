@@ -9,7 +9,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/aplane-algo/aplane/internal/cache"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 )
 
@@ -37,8 +36,6 @@ func Load(dataDirFlag, networkFlag string) (*Startup, error) {
 	if err := apconfig.CheckSupportedClientEndpointConfig(dataDir); err != nil {
 		return nil, err
 	}
-
-	cache.InitLogger()
 
 	cfg, err := apconfig.LoadConfig(dataDir)
 	if err != nil {

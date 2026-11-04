@@ -4,14 +4,11 @@
 package cache
 
 import (
-	"bytes"
-	"os"
 	"strings"
 	"testing"
 )
 
 func init() {
-	InitLogger()
 }
 
 func TestLoadASACacheFromStoreKeepsBuiltinsAndAddsCachedAssets(t *testing.T) {
@@ -119,13 +116,9 @@ func TestResolveBuiltinASAReferenceAndInfo(t *testing.T) {
 }
 
 func TestLoadASACacheReportsBuiltinDisagreementOnceAndKeepsBuiltin(t *testing.T) {
-	var out bytes.Buffer
-	SetLoggerOutput(&out)
+	out := captureLog(t)
 	reportedDisagreements.Clear()
-	t.Cleanup(func() {
-		SetLoggerOutput(os.Stdout)
-		reportedDisagreements.Clear()
-	})
+	t.Cleanup(reportedDisagreements.Clear)
 
 	store := NewStore(t.TempDir())
 	asaCache := LoadASACacheFromStore(store, "testnet")

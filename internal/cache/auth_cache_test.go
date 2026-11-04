@@ -529,7 +529,6 @@ func TestBuildAuthCacheEmptyInputs(t *testing.T) {
 }
 
 func TestBuildAuthCachePrunesEntriesNotOwnedByCurrentAliasesOrSigners(t *testing.T) {
-	InitLogger()
 	store := NewStore(t.TempDir())
 	network := "testnet"
 

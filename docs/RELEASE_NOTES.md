@@ -17,9 +17,10 @@ before it was renamed `enroll`.
 ## apconsole shows cache warnings
 
 - apconsole used to discard every cache warning, including the one reporting
-  that a cache may have been tampered with. They now appear at the top of the
-  shell pane, or in the pane as they happen during a session, and a warning
-  raised during startup stays on the terminal after apconsole exits.
+  that a cache may have been tampered with. They now appear in the shell pane,
+  whether raised during startup or later in the session.
+- Cache messages go to stderr, not stdout, so they no longer mix with `--script`
+  results. The routine message on first use now appears only at `loglevel info`.
 
 ## Diagnostics have one control: `loglevel`
 

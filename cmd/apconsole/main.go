@@ -23,7 +23,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/algorithm"
 	"github.com/aplane-algo/aplane/internal/apshellcli"
 	bootstrap "github.com/aplane-algo/aplane/internal/bootstrap/signer"
-	"github.com/aplane-algo/aplane/internal/cache"
 	"github.com/aplane-algo/aplane/internal/clientlog"
 	"github.com/aplane-algo/aplane/internal/keygen"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
@@ -74,12 +73,6 @@ func main() {
 	// server", etc). Those would land on the TTY between bubbletea frames and
 	// scramble the layout — discard them here.
 	sshtunnel.SetStatusWriter(io.Discard)
-	// internal/cache uses slog with an os.Stdout handler. Cache hits/misses,
-	// integrity checks, and resolution debug logs would otherwise land on the
-	// TTY mid-frame and corrupt the layout. Silence them in the TUI host.
-	cache.SetLoggerOutput(io.Discard)
-	cache.SetWarningObserver(consoleCacheWarnings.add)
-
 	if err := ensureProviders(); err != nil {
 		logErrorf("%v", err)
 		exitConsole(1)
@@ -192,6 +185,10 @@ func main() {
 	startConsole(tui.LocalIPCConnector{Path: ipcPath}, startupCfg.ClientData, string(nodeRole), shellSession, shellStartup, shellEnabled, daemonProcess, daemon)
 }
 
+// consoleLogs queues diagnostics for the shell pane. Its Close writes what the
+// pane never took, so a console with no shell still reports them on exit.
+var consoleLogs = clientlog.NewDeferred()
+
 // exitConsole leaves before the TUI starts, writing out any queued diagnostics
 // first, because os.Exit skips deferred calls.
 func exitConsole(code int) {
@@ -260,7 +257,6 @@ func startConsole(connector tui.AdminConnector, dataDir string, initialNodeRole 
 	// the terminal, write the stack trace to a log file (alt-screen mode would
 	// otherwise erase it on exit), and then re-panic so the trace also reaches
 	// stderr if anything is reading it.
-	shellStartup = append(consoleCacheWarnings.takeStartup(), shellStartup...)
 	model := newModelWithShell(
 		connector, dataDir, shellExecutorForSession(shellSession), shellStartup,
 		daemon, shellEnabled, initialNodeRole,
@@ -280,11 +276,6 @@ func startConsole(connector tui.AdminConnector, dataDir string, initialNodeRole 
 		tea.WithInput(realStdin),
 		tea.WithOutput(realStdout),
 	)
-	// p.Send blocks until the event loop takes the message, and a warning can be
-	// raised on the event loop itself.
-	consoleCacheWarnings.attach(func(line string) {
-		go p.Send(shellProgressLineMsg{text: line})
-	})
 	// Wire the shell session's SSH host key approval through the TUI. The
 	// goroutine running the shell command blocks on the response channel while
 	// bubbletea renders the prompt in the shell pane and waits for y/N.

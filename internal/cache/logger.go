@@ -5,112 +5,24 @@ package cache
 
 import (
 	"fmt"
-	"io"
 	"log/slog"
-	"os"
-	"sync"
-	"sync/atomic"
 )
 
-var (
-	// logger is read from arbitrary goroutines (cache mutators, TUI hosts)
-	// while SetLoggerOutput/InitLogger may rebuild it concurrently, so it is
-	// published via an atomic pointer rather than a bare global.
-	logger     atomic.Pointer[slog.Logger]
-	loggerMu   sync.Mutex
-	loggerSink io.Writer = os.Stdout
-
-	warningObserver atomic.Pointer[func(string)]
-)
-
-func init() {
-	// Ensure Logger is non-nil from package load so cache code paths that
-	// fire before an explicit InitLogger() (e.g. during bootstrap) still log.
-	InitLogger()
+// logger returns the cache's logger. It is made at each call, because a logger
+// kept from package initialization would miss the handler the host installs.
+func logger() *slog.Logger {
+	return slog.With("component", "cache")
 }
 
-// SetLoggerOutput overrides the destination for cache log messages. Pass
-// io.Discard from TUI hosts (apconsole) to keep log output from corrupting
-// the bubbletea-managed display. Defaults to os.Stdout for standalone use.
-// Affects subsequent InitLogger() calls and the active Logger if already built.
-func SetLoggerOutput(w io.Writer) {
-	if w == nil {
-		w = os.Stdout
-	}
-	loggerMu.Lock()
-	loggerSink = w
-	loggerMu.Unlock()
-	InitLogger()
-}
-
-// InitLogger initializes the global logger with appropriate log level
-// Set APSHELL_DEBUG=1 environment variable to enable debug logging
-func InitLogger() {
-	level := slog.LevelInfo // Default: only show Info, Warn, Error
-
-	// Check for debug mode
-	if os.Getenv("APSHELL_DEBUG") != "" {
-		level = slog.LevelDebug
-	}
-
-	loggerMu.Lock()
-	sink := loggerSink
-	loggerMu.Unlock()
-
-	handler := slog.NewTextHandler(sink, &slog.HandlerOptions{
-		Level: level,
-		// Remove timestamp and other metadata for cleaner output
-		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
-			// Remove time attribute for cleaner CLI output
-			if a.Key == slog.TimeKey {
-				return slog.Attr{}
-			}
-			// Remove level attribute for cleaner CLI output
-			if a.Key == slog.LevelKey {
-				return slog.Attr{}
-			}
-			return a
-		},
-	})
-
-	logger.Store(slog.New(handler))
-}
-
-// Debug logs a debug message (only shown when APSHELL_DEBUG is set)
+// Debug logs a debug message. Other packages use it for cache-related detail.
 func Debug(msg string, args ...any) {
-	if l := logger.Load(); l != nil {
-		l.Debug(msg, args...)
-	}
+	logger().Debug(msg, args...)
 }
 
-// infof and warnf are package-internal helpers that route formatted text
-// through the configured logger sink. They replace ad-hoc fmt.Print* calls
-// inside cache mutators so TUI hosts (apconsole) can suppress these messages
-// via SetLoggerOutput(io.Discard).
 func infof(format string, args ...any) {
-	if l := logger.Load(); l != nil {
-		l.Info(fmt.Sprintf(format, args...))
-	}
+	logger().Info(fmt.Sprintf(format, args...))
 }
 
 func warnf(format string, args ...any) {
-	message := fmt.Sprintf(format, args...)
-	if observe := warningObserver.Load(); observe != nil {
-		(*observe)(message)
-	}
-	if l := logger.Load(); l != nil {
-		l.Warn(message)
-	}
-}
-
-// SetWarningObserver installs fn to receive the text of every cache warning,
-// whatever SetLoggerOutput does with them. A TUI host that discards the cache
-// log uses it so warnings such as cache tampering are not lost. fn may be called
-// from any goroutine and must not block. Nil removes the observer.
-func SetWarningObserver(fn func(message string)) {
-	if fn == nil {
-		warningObserver.Store(nil)
-		return
-	}
-	warningObserver.Store(&fn)
+	logger().Warn(fmt.Sprintf(format, args...))
 }

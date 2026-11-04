@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"strings"
 	"sync"
@@ -396,13 +395,8 @@ func TestVerifyHMACRejectsMalformedSignature(t *testing.T) {
 	}
 }
 
-func TestTamperedCacheWarnsObserverWhenLogIsDiscarded(t *testing.T) {
-	SetLoggerOutput(io.Discard)
-	t.Cleanup(func() { SetLoggerOutput(os.Stdout) })
-	var warnings []string
-	SetWarningObserver(func(message string) { warnings = append(warnings, message) })
-	t.Cleanup(func() { SetWarningObserver(nil) })
-
+func TestTamperedCacheLogsAWarning(t *testing.T) {
+	out := captureLog(t)
 	store := NewStore(t.TempDir())
 	aliases := LoadAliasCacheFromStore(store)
 	aliases.Aliases["a"] = "b"
@@ -426,10 +420,14 @@ func TestTamperedCacheWarnsObserverWhenLogIsDiscarded(t *testing.T) {
 	if err := os.WriteFile(filename, rewritten, 0o600); err != nil {
 		t.Fatalf("WriteFile(%q) error = %v", filename, err)
 	}
+	out.Reset()
 
 	LoadAliasCacheFromStore(store)
 
-	if len(warnings) != 1 || !strings.Contains(warnings[0], "SECURITY: alias cache may have been tampered with") {
-		t.Fatalf("warnings = %q, want one tamper warning", warnings)
+	got := out.String()
+	for _, want := range []string{"level=WARN", "component=cache", "SECURITY: alias cache may have been tampered with"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("log = %q, want %q", got, want)
+		}
 	}
 }

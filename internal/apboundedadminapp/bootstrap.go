@@ -11,7 +11,6 @@ import (
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
-	"github.com/aplane-algo/aplane/internal/cache"
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/engine"
 	"github.com/aplane-algo/aplane/internal/engine/connect"
@@ -38,7 +37,6 @@ func openRuntime(clientData, networkOverride string, stderr io.Writer, connectSi
 			return nil, err
 		}
 	}
-	cache.InitLogger()
 	cfg, err := config.LoadConfig(dataDir)
 	if err != nil {
 		return nil, fmt.Errorf("invalid configuration: %w", err)
