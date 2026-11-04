@@ -72,6 +72,7 @@ func main() {
 	// integrity checks, and resolution debug logs would otherwise land on the
 	// TTY mid-frame and corrupt the layout. Silence them in the TUI host.
 	cache.SetLoggerOutput(io.Discard)
+	cache.SetWarningObserver(consoleCacheWarnings.add)
 
 	if err := ensureProviders(); err != nil {
 		logErrorf("%v", err)
@@ -246,6 +247,7 @@ func startConsole(connector tui.AdminConnector, dataDir string, initialNodeRole 
 	// the terminal, write the stack trace to a log file (alt-screen mode would
 	// otherwise erase it on exit), and then re-panic so the trace also reaches
 	// stderr if anything is reading it.
+	shellStartup = append(consoleCacheWarnings.takeStartup(), shellStartup...)
 	model := newModelWithShell(
 		connector, dataDir, shellExecutorForSession(shellSession), shellStartup,
 		daemon, shellEnabled, initialNodeRole,
@@ -262,6 +264,11 @@ func startConsole(connector tui.AdminConnector, dataDir string, initialNodeRole 
 		tea.WithInput(realStdin),
 		tea.WithOutput(realStdout),
 	)
+	// p.Send blocks until the event loop takes the message, and a warning can be
+	// raised on the event loop itself.
+	consoleCacheWarnings.attach(func(line string) {
+		go p.Send(shellProgressLineMsg{text: line})
+	})
 	// Wire the shell session's SSH host key approval through the TUI. The
 	// goroutine running the shell command blocks on the response channel while
 	// bubbletea renders the prompt in the shell pane and waits for y/N.

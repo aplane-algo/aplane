@@ -7,6 +7,13 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## apconsole shows cache warnings
+
+- apconsole used to discard every cache warning, including the one reporting
+  that a cache may have been tampered with. They now appear at the top of the
+  shell pane, or in the pane as they happen during a session, and a warning
+  raised during startup stays on the terminal after apconsole exits.
+
 ## Plugin logs are off by default in apshell and apconsole
 
 - `verbose on` now also shows plugin stderr and the sandbox startup line. It

@@ -19,6 +19,8 @@ var (
 	logger     atomic.Pointer[slog.Logger]
 	loggerMu   sync.Mutex
 	loggerSink io.Writer = os.Stdout
+
+	warningObserver atomic.Pointer[func(string)]
 )
 
 func init() {
@@ -92,7 +94,23 @@ func infof(format string, args ...any) {
 }
 
 func warnf(format string, args ...any) {
-	if l := logger.Load(); l != nil {
-		l.Warn(fmt.Sprintf(format, args...))
+	message := fmt.Sprintf(format, args...)
+	if observe := warningObserver.Load(); observe != nil {
+		(*observe)(message)
 	}
+	if l := logger.Load(); l != nil {
+		l.Warn(message)
+	}
+}
+
+// SetWarningObserver installs fn to receive the text of every cache warning,
+// whatever SetLoggerOutput does with them. A TUI host that discards the cache
+// log uses it so warnings such as cache tampering are not lost. fn may be called
+// from any goroutine and must not block. Nil removes the observer.
+func SetWarningObserver(fn func(message string)) {
+	if fn == nil {
+		warningObserver.Store(nil)
+		return
+	}
+	warningObserver.Store(&fn)
 }
