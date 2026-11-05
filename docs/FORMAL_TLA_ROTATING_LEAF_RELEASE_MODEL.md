@@ -2,15 +2,17 @@
 
 > Status: TLC checked over the bounded finite state space (one account, three
 > stages, two leaves per stage, three transaction IDs per stage, at most four
-> memory records); the recorded positive run generated 4,630,882 distinct
-> states at depth 33 with no counterexamples, and the deep configuration
-> (five records) 31,908,458 distinct states at depth 37. Three expected-failure
+> memory records); the recorded positive run generated 6,028,594 distinct
+> states at depth 34 with no counterexamples, and the deep configuration
+> (five records) 41,272,266 distinct states at depth 38. Four expected-failure
 > negative controls each violate `LF1_NoReuseBeforeExhaustion` and must keep
 > producing that exact counterexample: `rotating_leaf_release_negative_wait.cfg`
-> (no restore check at all, 702 distinct states at depth 8),
+> (no restore check at all, 708 distinct states at depth 8),
 > `rotating_leaf_release_negative_recheck.cfg` (`RecheckAtChoice = FALSE`, 467
-> distinct states at depth 9) and `rotating_leaf_release_negative_seq.cfg`
-> (`SeqGuard = FALSE`, 8,283 distinct states at depth 12).
+> distinct states at depth 9), `rotating_leaf_release_negative_cut.cfg`
+> (`CutRestoreHolds = FALSE`, 12,034 distinct states at depth 13) and
+> `rotating_leaf_release_negative_seq.cfg` (`SeqGuard = FALSE`, 8,465 distinct
+> states at depth 12).
 
 A rotating account of a leaf family (`rotatingkey.Profile.LeavesPerStage > 1`,
 today the XMSS and WOTS+C triples) holds several one-time leaves per stage. Signing the
@@ -48,6 +50,9 @@ history, so the question is whether the history is complete.
 - `SawLocked` and `DelayedReset` are the stage table worker seeing the lock and
   running `ReleaseMemory.Reset` as two separate steps, so the reset can land after
   a later unlock.
+- `CutRestoreEnds` is a restore that a lock interrupted returning, possibly after
+  the next unlock. `Lock` starts it and the worker begins no new restore until it
+  ends.
 - `Land` is a release confirming: the authorizer moves to the next stage.
 - `Lock`, `Unlock`, `RestoreBegin`, `RestoreApply`, and `RestoreFail`
   transcribe `ReleaseMemory.Reset`/`Restoring`/`RecordAudited`/`Restored` and
@@ -65,11 +70,13 @@ The guards are constants:
 |---|---|---|
 | `WaitForRestore` | TRUE: `AwaitRestored` before the account lock | Without it the first sign after an unlock picks from an empty memory |
 | `RecheckAtChoice` | TRUE: `ForLeafChoice` under the account lock | Without it a delayed reset empties the memory after a sign was admitted |
+| `CutRestoreHolds` | TRUE: `RebuildReleaseMemory` stops without opening the wait when `interrupted` | Without it a restore a lock cut short opens the wait with the history missing |
 | `SeqGuard` | TRUE: `rec.Seq > r.ObservedSeq` skips the clear | Without it a stale observation erases a newer release |
 
 Loss is separate. `AuditMayFail`, `AuditMayLose`, and `RestoreMayFail` model
 the best-effort audit write (a failure is reported, not fatal), a log that
-rotated past old entries, and a restore that fails and opens the wait. Each
+rotated past old entries, and a restore that fails for a reason other than a
+lock and opens the wait. Each
 sets the ghost `lossy`, and LF1 and LF2 are claimed only while it is FALSE.
 This is the stated contract in the code ("state chooses the leaf, never
 whether to sign"): the scheme is an interlock over the history the signer can
@@ -81,6 +88,7 @@ The negative controls (each with every loss source off):
 |---|---|
 | `WaitForRestore = FALSE`, `RecheckAtChoice = FALSE` | LF1 fails: with no restore check at all, a sign picks from an empty memory |
 | `RecheckAtChoice = FALSE` | LF1 fails: the worker sees a lock, an unlock and restore follow, one transaction signs, a second is admitted, the delayed reset lands, and the second picks from the empty memory |
+| `CutRestoreHolds = FALSE` | LF1 fails: a lock cuts a restore short, the signer unlocks, the restore returns and opens the wait, and a sign picks from the empty memory |
 | `SeqGuard = FALSE` | LF1 fails: a status pass reads the chain, the release lands, the next stage signs, the stale pass clears that release, and the next transaction reuses its leaf |
 
 The harness (`scripts/run-formal-tests.py`) requires exactly that violation
@@ -100,9 +108,7 @@ for each.
   count.
 - A restore reads the log once, at `RestoreBegin`; the audited release names
   the highest stage in the log with every leaf the log holds for it.
-- `Lock` abandons a restore in flight, and the restore never opens the wait: the
-  worker's generation check keeps the memory held for the next restore. The
-  lock-generation fence on the sign path stops a release, not a leaf choice, and is
+- `Lock` cuts a restore in flight short. The lock-generation fence on the sign path stops a release, not a leaf choice, and is
   modeled only as `Sign` needing an unlocked signer. At most one sign is in flight,
   because the account lock serializes them.
 - Validity windows, expiry, the stage-table recovery grants, and the one-time

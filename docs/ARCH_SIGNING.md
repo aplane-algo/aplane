@@ -1547,7 +1547,7 @@ a leaf family the tree and leaf index) with a durable sync, records the
 release in memory, and responds. The sign path is a key user: a lock cancels it
 and waits for the seed to be zeroed, which happens before the audit write. It
 refuses the release if the signer locked since approval, the request was cancelled
-or the key was removed, both before that write and after it.
+or the key was removed, both before that write and after the last audit write.
 
 For a family whose stage holds several one-time leaves
 (`rotatingkey.Profile.LeavesPerStage`), the signer chooses the leaf under

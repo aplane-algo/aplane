@@ -346,8 +346,8 @@ Follow-up (2026-10-31): `rotating_leaf_release.tla` models the rotating
 leaf-family release memory, the first rotating-flow model (it narrows the
 rotating model-extension candidate below to the leaf choice; the prepare-time
 `rekey_to` mutation, stage-proof, timing, and open-test refusals, and the
-stage-table recovery grants remain unmodeled). LF1-LF3 hold over 4,630,882
-states (depth 33; deep 31,908,458 at depth 37) with the stated loss sources
+stage-table recovery grants remain unmodeled). LF1-LF3 hold over 6,028,594
+states (depth 34; deep 41,272,266 at depth 38) with the stated loss sources
 (failed audit write, rotated log, failed restore) tagged and excluded from the
 claim. Two negative controls each violate LF1: `WaitForRestore = FALSE`
 (sign before the post-unlock restore) in 259 states at depth 6, and

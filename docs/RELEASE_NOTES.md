@@ -16,7 +16,9 @@ before it was renamed `enroll`.
 - A leaf-family spend could reuse a one-time leaf, with unused leaves left and nothing
   reported, if a delayed reset of the release memory landed after the spend passed its
   restore check. The spend now fails with an error and can be retried.
-- A restore that a lock cut short no longer lets spends through with releases missing.
+- A restore that a lock cut short no longer lets spends through with releases missing,
+  however quickly the signer is unlocked again. Its accounts stay held until the next
+  restore.
 
 ## Rotating WOTS+C key type
 

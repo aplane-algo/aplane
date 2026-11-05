@@ -393,7 +393,10 @@ type AuditedRelease struct {
 // the verified stage and successor addresses for each account inside a
 // KeyUse window. Entries for accounts the signer no longer holds are
 // skipped. It returns the number of records rebuilt and the first failure,
-// if any; a failure for one account does not stop the others.
+// if any; a failure for one account does not stop the others and opens that
+// account's wait. A lock or cancellation is different: it stops the restore and
+// leaves the accounts it didn't reach held, because a quick unlock could
+// otherwise let a spend choose a leaf with their history missing.
 func (s *Service) RebuildReleaseMemory(ctx context.Context, session *keystore.KeySession, entries []AuditedRelease, opts StageFillOptions) (int, error) {
 	deps, depErr := s.rotatingDeps()
 	if depErr != nil || deps.Releases == nil {
@@ -406,9 +409,18 @@ func (s *Service) RebuildReleaseMemory(ctx context.Context, session *keystore.Ke
 	for _, e := range entries {
 		accounts = append(accounts, e.Account)
 	}
+	var generation uint64
+	if deps.LockGeneration != nil {
+		generation = deps.LockGeneration()
+	}
+	// A lock advances the generation before it cancels anything, and a key-use
+	// context can be cancelled before ctx is, so ctx alone can look alive.
+	interrupted := func() bool {
+		return ctx.Err() != nil || (deps.LockGeneration != nil && deps.LockGeneration() != generation)
+	}
 	deps.Releases.Restoring(accounts)
 	for _, e := range entries {
-		if ctx.Err() != nil {
+		if interrupted() {
 			break
 		}
 		if _, held := snapshot.KeyFiles[e.Account]; !held {
@@ -419,6 +431,9 @@ func (s *Service) RebuildReleaseMemory(ctx context.Context, session *keystore.Ke
 		if err != nil {
 			if firstErr == nil {
 				firstErr = fmt.Errorf("rotating account %s: %w", e.Account, err)
+			}
+			if interrupted() {
+				break
 			}
 			deps.Releases.Restored(e.Account)
 			continue

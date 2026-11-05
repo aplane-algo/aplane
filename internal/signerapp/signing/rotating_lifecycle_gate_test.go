@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/signerapp/chainread"
@@ -197,6 +198,126 @@ func TestRotatingLeafChoiceRefusesADelayedReset(t *testing.T) {
 			rec, _ := f.svc.Rotating.Releases.Get(f.account.String())
 			if rec.Reused || len(rec.Leaves) != 2 || rec.Leaves[0].Index == rec.Leaves[1].Index {
 				t.Fatalf("second release after the restore: %+v", rec)
+			}
+		})
+	}
+}
+
+// restoreInterruptedBy fails a restore's derivation the way a lock does, and
+// runs stop as the lock lands. It returns the restore's result.
+func restoreInterruptedBy(t *testing.T, f *rotatingFixture, first ReleaseRecord, ctx context.Context, stop func()) (int, error) {
+	t.Helper()
+	ran := false
+	n, err := f.svc.RebuildReleaseMemory(ctx, f.session, []AuditedRelease{{
+		Account: f.account.String(), Stage: first.Stage, TxID: first.TxID, LastValid: first.LastValid, Leaves: first.Leaves,
+	}}, StageFillOptions{KeyUse: func(parent context.Context) (context.Context, func()) {
+		ran = true
+		stop()
+		cancelled, cancel := context.WithCancel(parent)
+		cancel()
+		return cancelled, func() {}
+	}})
+	if !ran {
+		t.Fatal("the restore never reached the derivation")
+	}
+	return n, err
+}
+
+// A lock can cancel a restore's derivation and an unlock follow before the
+// worker gets back. The account's history is still missing, so its wait has to
+// stay closed. Both ways of seeing the lock are covered: the key-use context can
+// be cancelled before the restore's own context is, leaving only the generation.
+func TestInterruptedRestoreKeepsTheAccountHeld(t *testing.T) {
+	for _, mode := range []string{"context cancelled", "generation only"} {
+		t.Run(mode, func(t *testing.T) {
+			f, audit := newSigningFixtureFor(t, wotscTestType)
+			prep := mustPrepare(t, f, f.spend(1000, 1100))
+			mustSign(t, f, prep.Transactions)
+			first, _ := f.svc.Rotating.Releases.Get(f.account.String())
+			second := groupWithPick(t, f, prep, first.Leaves[0].Index)
+
+			f.svc.Rotating.Releases.Reset()
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			n, err := restoreInterruptedBy(t, f, first, ctx, func() {
+				f.lockGen++
+				if mode == "context cancelled" {
+					cancel()
+				}
+			})
+			if n != 0 || err == nil {
+				t.Fatalf("restore: rebuilt %d, err %v", n, err)
+			}
+			if _, restored := f.svc.Rotating.Releases.ForLeafChoice(f.account.String()); restored {
+				t.Fatal("an interrupted restore opened the account's wait")
+			}
+			short, stop := context.WithTimeout(context.Background(), 50*time.Millisecond)
+			defer stop()
+			resp, signErr := f.svc.SignRotatingWithContext(short, signerapi.RotatingSignRequest{
+				Account: f.account.String(), Transactions: second,
+			}, f.session)
+			if resp != nil || signErr == nil || signErr.Kind != ErrorUnavailable {
+				t.Fatalf("response %v, error %v, want a refusal while held", resp, signErr)
+			}
+			if len(audit.releases) != 1 {
+				t.Fatalf("%d releases audited, want the first only", len(audit.releases))
+			}
+		})
+	}
+}
+
+// A failure that isn't a lock is the stated loss case: state chooses the leaf,
+// never whether to sign, so the account has to be let through.
+func TestFailedRestoreStillOpensTheAccount(t *testing.T) {
+	f, _ := newSigningFixtureFor(t, wotscTestType)
+	prep := mustPrepare(t, f, f.spend(1000, 1100))
+	mustSign(t, f, prep.Transactions)
+	first, _ := f.svc.Rotating.Releases.Get(f.account.String())
+	f.svc.Rotating.Releases.Reset()
+	n, err := restoreInterruptedBy(t, f, first, context.Background(), func() {})
+	if n != 0 || err == nil {
+		t.Fatalf("restore: rebuilt %d, err %v", n, err)
+	}
+	if _, restored := f.svc.Rotating.Releases.ForLeafChoice(f.account.String()); !restored {
+		t.Fatal("a failed restore left the account held")
+	}
+}
+
+// lockAfterSuccessAudit locks the signer during the last audit write of a sign.
+type lockAfterSuccessAudit struct {
+	*recordingReleaseAudit
+	lock func()
+}
+
+func (a *lockAfterSuccessAudit) LogSignApproved(address, sender, details string) {
+	a.recordingReleaseAudit.LogSignApproved(address, sender, details)
+	a.lock()
+}
+
+func (a *lockAfterSuccessAudit) LogSignApprovedWithPolicyRule(address, sender, details, ruleID string) {
+	a.recordingReleaseAudit.LogSignApprovedWithPolicyRule(address, sender, details, ruleID)
+	a.lock()
+}
+
+// Audit writes block, so a lock can land during the very last one. Nothing that
+// blocks may come after the final check.
+func TestRotatingSignStopsAtALockDuringTheLastAuditWrite(t *testing.T) {
+	for _, kind := range rotatingTestTypes {
+		t.Run(kind.keyType, func(t *testing.T) {
+			f, audit := newSigningFixtureFor(t, kind)
+			prep := mustPrepare(t, f, f.spend(1000, 1100))
+			locked := false
+			f.svc.AuditLog = &lockAfterSuccessAudit{recordingReleaseAudit: audit, lock: func() {
+				locked = true
+				f.lockGen++
+				f.svc.IsUnlocked = func() bool { return false }
+			}}
+			resp, err := f.sign(t, prep.Transactions)
+			if !locked {
+				t.Fatal("the sign never reached its last audit write")
+			}
+			if resp != nil || err == nil || err.Kind != ErrorLocked {
+				t.Fatalf("response %v, error %v, want a lock refusal", resp, err)
 			}
 		})
 	}

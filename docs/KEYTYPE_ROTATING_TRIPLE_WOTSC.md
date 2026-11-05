@@ -197,8 +197,9 @@ A signature is then released only if the signer hasn't locked since approval, th
 request hasn't been cancelled and the key is still present, as for every rotating type.
 The sign path is a key user, so a lock cancels it and waits for the seed to go. The seed
 goes before the audit write, so a stalled disk can't hold up a lock, and the checks run
-again after the write. A release refused at that point stays on record, which only
-makes its leaf look used.
+again after the last audit write. A release refused at that point stays on record, which
+only makes its leaf look used. Nothing that blocks comes after that check in the signer,
+but the response still has to be written, so a lock can arrive while it is on its way.
 
 ## 6. Stage program
 
