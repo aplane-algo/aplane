@@ -39,7 +39,9 @@ const (
 
 	integrationBurnAddress = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ"
 	minBurnBalance         = uint64(100_000)
-	nativeFundingBalance   = uint64(100_000_000)
+	// Rotating accounts can't close out, so what the rotating tests fund stays in
+	// them and repeated runs on one fixture add up. LocalNet ALGO costs nothing.
+	nativeFundingBalance = uint64(1_000_000_000)
 )
 
 type candidate struct {
