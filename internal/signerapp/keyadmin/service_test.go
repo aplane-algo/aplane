@@ -963,6 +963,105 @@ func logicSigAddressString(t *testing.T, bytecode []byte) string {
 	return address.String()
 }
 
+// A provider whose contract varies by key is compared against the account's own
+// definition, on both the list and details paths.
+func TestServiceKeyInventoryComparesAccountDefinition(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		stored     string
+		wantStatus string
+	}{
+		{name: "shape unchanged", stored: "1:" + strings.Repeat("a", 64)},
+		{name: "shape changed", stored: "1:" + strings.Repeat("b", 64), wantStatus: lsigprovider.TemplateProvenanceStatusConflict},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			keyType := "test.keyadmin-instance-" + strings.ReplaceAll(test.name, " ", "-") + ".v1"
+			lsigprovider.RegisterIfAbsent(keyadminInstanceProvider{keyadminFingerprintProvider{
+				keyType:     keyType,
+				fingerprint: "1:" + strings.Repeat("c", 64),
+			}})
+			t.Cleanup(func() { lsigprovider.Unregister(keyType) })
+
+			ir := setupProductRuntime(t)
+			bytecode := []byte{0x26, 0x01, 0x01, 0x05, 0x81, 0x01}
+			address := logicSigAddressString(t, bytecode)
+			payload := keys.NewGenericLSigPayload(keyType, map[string]string{"shape": "list"}, bytecode, 5, "", nil, test.stored)
+			if err := payload.SetLogicSigOpcodeProfile(lsigresource.DefaultOpcodeProfile(lsigresource.SingleTransactionOpcodeCeiling), false); err != nil {
+				t.Fatal(err)
+			}
+			if err := ir.WithKeyring(func(mk *crypto.Keyring) error {
+				_, saveErr := keys.SavePayload(ir.KeyPaths(), payload, mk)
+				return saveErr
+			}); err != nil {
+				t.Fatalf("write key file error = %v", err)
+			}
+			if _, err := ir.Reload(); err != nil {
+				t.Fatalf("Reload() error = %v", err)
+			}
+
+			list, svcErr := (Service{Runtime: ir}).ListKeys()
+			if svcErr != nil || len(list) != 1 {
+				t.Fatalf("ListKeys() = (%+v, %v)", list, svcErr)
+			}
+			if list[0].TemplateProvenanceStatus != test.wantStatus {
+				t.Fatalf("ListKeys() status = %q, want %q", list[0].TemplateProvenanceStatus, test.wantStatus)
+			}
+			details, svcErr := (Service{Runtime: ir}).GetKeyDetails(address)
+			if svcErr != nil {
+				t.Fatalf("GetKeyDetails() error = %v", svcErr)
+			}
+			if details.TemplateProvenanceStatus != test.wantStatus {
+				t.Fatalf("GetKeyDetails() status = %q, want %q", details.TemplateProvenanceStatus, test.wantStatus)
+			}
+		})
+	}
+}
+
+func TestServiceGenerateKeyResolvesThroughInstance(t *testing.T) {
+	ir := setupProductRuntime(t)
+	const keyType = "test.keyadmin-instance-generate.v1"
+	lsigprovider.RegisterIfAbsent(keyadminInstanceProvider{keyadminFingerprintProvider{keyType: keyType}})
+	t.Cleanup(func() { lsigprovider.Unregister(keyType) })
+	svc := Service{AuditLog: &auditRecorder{}, Runtime: ir}
+
+	_, err := svc.GenerateKey(context.Background(), keyType, map[string]string{"shape": "other"}, nil)
+	if err == nil || err.Kind != ErrorInvalidInput || !strings.Contains(err.Message, "unknown shape") {
+		t.Fatalf("GenerateKey(unknown shape) error = %#v", err)
+	}
+	// A cosigner the parameters ask for is resolved before the instance, and an
+	// unknown reference never falls back to an account without one.
+	_, err = svc.GenerateKey(context.Background(), keyType, map[string]string{"shape": "list", "cosigner": "missing"}, nil)
+	if err == nil || err.Kind != ErrorInvalidInput || !strings.Contains(err.Message, "not found") {
+		t.Fatalf("GenerateKey(unknown cosigner) error = %#v", err)
+	}
+}
+
+// keyadminInstanceProvider selects its contract from a "shape" parameter.
+type keyadminInstanceProvider struct {
+	keyadminFingerprintProvider
+}
+
+func (p keyadminInstanceProvider) CosignerComponentKeyType(params map[string]string) (string, bool) {
+	if params["cosigner"] == "" {
+		return "", false
+	}
+	return "aplane.witness-falcon1024.v1", true
+}
+
+func (p keyadminInstanceProvider) ResolveInstance(params map[string]string) (*lsigprovider.Instance, error) {
+	if params["shape"] != "list" {
+		return nil, errors.New("unknown shape")
+	}
+	return &lsigprovider.Instance{Values: params}, nil
+}
+
+func (p keyadminInstanceProvider) StoredFingerprint(parameters map[string]string, _ *boundedmeta.Metadata) (string, error) {
+	if parameters["shape"] != "list" {
+		return "", errors.New("unknown shape")
+	}
+	return "1:" + strings.Repeat("a", 64), nil
+}
+
 type keyadminFingerprintProvider struct {
 	keyType     string
 	fingerprint string

@@ -37,6 +37,10 @@ func CompareTemplateFingerprint(keyType, storedFingerprint string) (status, note
 	if !ok {
 		return TemplateProvenanceStatusUnavailable, "registered key type does not expose a template fingerprint"
 	}
+	return compareFingerprints(storedFingerprint, liveFingerprint)
+}
+
+func compareFingerprints(storedFingerprint, liveFingerprint string) (status, note string) {
 	match, comparable := FingerprintsMatch(storedFingerprint, liveFingerprint)
 	if !comparable {
 		// Different fingerprint formats (a future formula version, or an

@@ -327,6 +327,57 @@ func TestGenerateFromSeedPersistsBoundedMetadataAfterDerivation(t *testing.T) {
 	}
 }
 
+// perKeyGeneratorDSA has a contract that depends on its parameters, so the
+// provenance an account records must come from its shape.
+type perKeyGeneratorDSA struct {
+	testFalcon1024V1
+}
+
+const perKeyGeneratorKeyType = "test.per-key-generator.v1"
+
+var perKeyGeneratorFingerprint = "1:" + strings.Repeat("a", 64)
+
+func (d *perKeyGeneratorDSA) KeyType() string { return perKeyGeneratorKeyType }
+func (d *perKeyGeneratorDSA) CompatibilityFingerprint() string {
+	return "1:" + strings.Repeat("c", 64)
+}
+func (d *perKeyGeneratorDSA) CosignerComponentKeyType(map[string]string) (string, bool) {
+	return "", false
+}
+func (d *perKeyGeneratorDSA) ResolveInstance(params map[string]string) (*lsigprovider.Instance, error) {
+	return &lsigprovider.Instance{Values: params, Fingerprint: perKeyGeneratorFingerprint}, nil
+}
+func (d *perKeyGeneratorDSA) StoredFingerprint(map[string]string, *boundedmeta.Metadata) (string, error) {
+	return perKeyGeneratorFingerprint, nil
+}
+
+func TestGenerateRecordsTheAccountsOwnFingerprint(t *testing.T) {
+	paths, cleanup := setupTestKeystore(t)
+	defer cleanup()
+	logicsigdsa.Register(&perKeyGeneratorDSA{})
+	t.Cleanup(func() { lsigprovider.Unregister(perKeyGeneratorKeyType) })
+
+	generator := NewLogicSigGenerator("generator-per-key", map[string]LogicSigKeygenOps{perKeyGeneratorKeyType: &testFalcon1024V1{}})
+	seed := make([]byte, 64)
+	result, err := generator.GenerateFromSeed(context.Background(), paths, seed, cryptotest.Keyring(t, testMasterKey), perKeyGeneratorKeyType, nil)
+	if err != nil {
+		t.Fatalf("GenerateFromSeed() error = %v", err)
+	}
+	keyJSON, err := apkeys.ReadDecryptedKeyJSONWithKeyring(result.KeyFiles.PrivateFile, cryptotest.Keyring(t, testMasterKey))
+	if err != nil {
+		t.Fatalf("ReadDecryptedKeyJSONWithKeyring() error = %v", err)
+	}
+	defer crypto.ZeroBytes(keyJSON)
+	stored, err := apkeys.ParsePayload(keyJSON)
+	if err != nil {
+		t.Fatalf("ParsePayload() error = %v", err)
+	}
+	defer stored.ZeroSecrets()
+	if stored.TemplateFingerprint != perKeyGeneratorFingerprint {
+		t.Fatalf("TemplateFingerprint = %q, want the shape fingerprint", stored.TemplateFingerprint)
+	}
+}
+
 // TestGenerateFromSeedWithEncryption verifies encrypted key storage
 func TestGenerateFromSeedWithEncryption(t *testing.T) {
 	paths, cleanup := setupTestKeystore(t)
