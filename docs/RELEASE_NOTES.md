@@ -30,9 +30,8 @@ before it was renamed `enroll`.
   leaves, a rebuilt transaction takes a fresh leaf; an identical retry keeps its
   recorded leaf. Exhaustion or missing history can still cause reuse, and missing
   history can also prevent a reuse warning.
-- WOTS+C is experimental, so don't hold real funds in it. It isn't frozen, and a
-  change would derive different accounts from the same seed. XMSS and SLH-DSA are
-  the frozen rotating key types.
+- WOTS+C isn't frozen, and a change would derive different accounts from the same
+  seed. XMSS and SLH-DSA are the frozen rotating key types.
 - There's no migration. A store with this key type enabled, or holding one of its
   key files, goes into recovery when it loads, even if it holds no WOTS keys.
 - This release is new-install only: the installer's minimum supported upgrade
@@ -45,8 +44,7 @@ before it was renamed `enroll`.
   stages require Falcon-1024, Ed25519 and a signature from a tree of 64 WOTS+C keys.
   A spend needs 3 transactions and a 628-byte hash signature, the smallest of the
   rotating types. Enable it, then generate an account as for the others.
-- WOTS+C is experimental and isn't a standard.
-  The key type isn't frozen, so don't hold real funds in it. See
+- WOTS+C isn't a standard, and the key type isn't frozen. See
   [KEYTYPE_ROTATING_TRIPLE_HYBRID.md](KEYTYPE_ROTATING_TRIPLE_HYBRID.md#12-wotsc-variant).
 
 ## Lost signer notifications are shown
