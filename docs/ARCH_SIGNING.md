@@ -49,7 +49,7 @@ APlane supports four fundamentally different authorization mechanisms:
 | **Ed25519** | Native Algorand keys | `SignedTxn.Sig` | Derive standard signing bytes and produce native Ed25519 signature |
 | **Native Falcon-1024** | `falcon1024` (`authorization_kind:"native_pq"`) | `SignedTxn.PQsig` | Authorize the structured transaction with Falcon over the standard signing bytes; no LogicSig |
 | **LogicSig DSA** | Falcon-1024 | `LogicSig.Args[0]` | Derive DSA message (transaction ID), sign it, assemble LogicSig |
-| **Generic LogicSig** | Timelock, Hashlock | No signature | Assemble LogicSig bytecode and canonical runtime args |
+| **Generic LogicSig** | HTLC | No signature | Assemble LogicSig bytecode and canonical runtime args |
 
 For standard transactions, the client sends transactions to `/sign` and receives a finalized group representation. Each request entry uses one of three modes — **sign**, **passthrough**, or **foreign**; `/plan` uses the same request grammar but stops before approval and signing. See [Mode Selection](#mode-selection) below for the trichotomy.
 
@@ -749,7 +749,7 @@ Server receives: { auth_address, txn_bytes_hex, lsig_args }
 #### Runtime Args
 
 Generic LogicSigs may require runtime arguments, such as a preimage for a
-Hashed TimeLock Contract (HTLC). The client sends args **by name**, and the
+Hash Time-Locked Contract (HTLC). The client sends args **by name**, and the
 server orders them according to the runtime-arg schema stored in the key file
 at generation time:
 

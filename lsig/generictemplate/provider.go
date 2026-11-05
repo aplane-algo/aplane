@@ -178,6 +178,7 @@ type RuntimeArgSpec struct {
 	Type        string `yaml:"type"`        // bytes | string | uint64
 	Required    bool   `yaml:"required"`    // If true, transaction will fail without this arg
 	ByteLength  int    `yaml:"byte_length"` // Expected byte length (0 = variable)
+	MaxSize     int    `yaml:"max_size"`    // Variable-length ceiling, which sizes the LogicSig argument budget
 }
 
 // YAMLTemplate implements genericlsig.Template from a parsed YAML spec.
@@ -301,6 +302,7 @@ func RuntimeArgSpecToRuntimeArgDefs(specs []RuntimeArgSpec) []lsigprovider.Runti
 			Type:        a.Type,
 			Required:    a.Required,
 			ByteLength:  a.ByteLength,
+			MaxSize:     a.MaxSize,
 		}
 	}
 	return defs
@@ -860,6 +862,7 @@ func compatibilityFingerprintForSpec(spec *TemplateSpec) string {
 			Type:       a.Type,
 			Required:   a.Required,
 			ByteLength: a.ByteLength,
+			MaxSize:    a.MaxSize,
 		}
 	}
 

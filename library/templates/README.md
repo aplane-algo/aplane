@@ -35,7 +35,7 @@ apadmin template import library/templates/aplane.falcon1024-allowlist.v1.yaml
 
 | Key type | File | Purpose | Creation params | Runtime args |
 |---|---|---|---|---|
-| `aplane.htlc.v1` | `aplane.htlc.v1.yaml` | Hash time-locked contract for ALGO or ASA transfers: recipient can claim before timeout with a preimage; refund address can reclaim after timeout; optional parameterized ASA opt-in is available for approved asset IDs only. | `hash` (default input mode: preimage), `recipient`, `refund_address`, `timeout_round`, `allowed_optin_assets` (`uint64[]`, optional) | `preimage` |
+| `aplane.htlc.v1` | `aplane.htlc.v1.yaml` | Hash time-locked ALGO contract: recipient can claim the whole balance before timeout with a preimage; refund address can reclaim the whole balance after timeout. | `hash` (default input mode: preimage), `recipient`, `refund_address`, `timeout_round` | `preimage` |
 
 ## Falcon-1024 Composed Templates
 

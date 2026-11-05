@@ -98,7 +98,7 @@ func TestKeyDerivationRegression(t *testing.T) {
 				"refund_address": integrationBurnAddress,
 				"timeout_round":  fixedTimeoutRound,
 			},
-			wantAddress: "MG4FJOLMCZ4A26VVPMDPLEX7V4GOS6OQ6EHP3BGOICFIDTKG5ETYMTOQYY",
+			wantAddress: "SGCU7MLRXQ4H227YCRTTT6MHL2N64WGJPHH3OTPID2CK4JNGJU6DITLIUQ",
 		},
 	}
 

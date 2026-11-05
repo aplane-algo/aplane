@@ -228,7 +228,7 @@ compatible manual-salt records retain it.
 ### Creation params vs runtime args
 
 - **Creation params** are baked into the address at generation time (e.g. a
-  allowlist's `recipients`, a timelock's unlock round, a hashlock's hash). Pass
+  allowlist's `recipients`, a timelock's unlock round, an HTLC's hash). Pass
   them to `generate`/`generateKey`. Address-list and uint-list params are
   canonicalized (sorted) before the address is derived.
 - **Runtime args** are supplied per transaction at signing time (e.g. an HTLC
@@ -244,7 +244,8 @@ compatible manual-salt records retain it.
   pure rekey additionally requires an external Falcon admin signature.
 - `aplane.falcon1024-timelock.v1` — bounded Falcon transfer and pure-rekey
   paths gated by `FirstValid >= unlock_round`.
-- `aplane.htlc.v1` — claim with preimage before timeout, refund after.
+- `aplane.htlc.v1` — ALGO only and all-or-nothing: `close` to the recipient with the
+  preimage before timeout, or to the refund address after.
 
 ### Corridors
 

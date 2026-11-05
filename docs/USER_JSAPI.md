@@ -280,7 +280,7 @@ Examples:
 send("alice", "bob", algo(2), { note: "rent" })
 sweep("old-account", "treasury", { wait: true })
 
-close("hashlock-lsig", "treasury", {
+close("htlc-lsig", "treasury", {
   lsigArgs: {
     preimage: "text:secret"
   }

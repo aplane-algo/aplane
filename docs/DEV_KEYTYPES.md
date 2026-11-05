@@ -584,7 +584,7 @@ For `address[]` and `uint64[]`, input is a comma-separated string:
 
 ```text
 recipients=ADDR1, ADDR2, ADDR3
-allowed_optin_assets=123, 456, 789
+allowed_assets=123, 456, 789
 ```
 
 Rules:
@@ -742,6 +742,7 @@ runtime_args:               # optional
     type: <type>            # bytes | string | uint64
     required: true
     byte_length: <n>        # 0 = variable length
+    max_size: <n>           # ceiling for a variable-length arg; sizes its budget
 
 teal: |
   #pragma version 13

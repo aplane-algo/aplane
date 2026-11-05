@@ -1879,33 +1879,62 @@ func TestLSigSigningFlow(t *testing.T) {
 		t.Fatalf("failed to get algod status: %v", err)
 	}
 
-	preimage := bytes.Repeat([]byte("p"), 32)
-	preimageHash := sha256.Sum256(preimage)
-	params := map[string]string{
-		"hash":           hex.EncodeToString(preimageHash[:]),
-		"recipient":      funder.GetAddress(),
-		"refund_address": funder.GetAddress(),
-		"timeout_round":  fmt.Sprintf("%d", status.LastRound+1_000),
-	}
-
-	lsigAddr := mustAdminGenerateKey(t, signerClient, signerd, "aplane.htlc.v1", params)
-
+	const funding = 300_000
 	apshell := harness.NewApshellHarness(t)
-
-	if err := funder.FundMicroAlgosAndWait(lsigAddr, 300_000); err != nil {
-		t.Fatalf("failed to fund generic LSig account: %v", err)
+	assertClosedTo := func(t *testing.T, htlc, destination, command string) {
+		t.Helper()
+		output, err := apshell.RunWithInput(command + "\nquit\n")
+		if err != nil {
+			t.Fatalf("failed to submit %q: %v\noutput:\n%s", command, err, output)
+		}
+		if _, err := testnet.WaitForConfirmation(mustExtractTxID(t, output), 10); err != nil {
+			t.Fatalf("%q failed to confirm: %v", command, err)
+		}
+		received, err := testnet.Client.AccountInformation(destination).Do(context.Background())
+		if err != nil {
+			t.Fatalf("failed to read destination balance: %v", err)
+		}
+		if received.Amount == 0 || received.Amount >= funding {
+			t.Fatalf("destination holds %d, want the %d funded less a fee", received.Amount, funding)
+		}
+		closed, err := testnet.Client.AccountInformation(htlc).Do(context.Background())
+		if err != nil {
+			t.Fatalf("failed to read HTLC balance: %v", err)
+		}
+		if closed.Amount != 0 {
+			t.Fatalf("HTLC still holds %d after close-out", closed.Amount)
+		}
 	}
 
-	claimOutput, err := apshell.RunWithInput(
-		fmt.Sprintf("close %s to %s arg:preimage=0x%s\nquit\n", lsigAddr, funder.GetAddress(), hex.EncodeToString(preimage)),
-	)
-	if err != nil {
-		t.Fatalf("failed to submit generic LSig claim path: %v\noutput:\n%s", err, claimOutput)
+	// Claim with a typed phrase, the way apadmin's text input mode hashes it.
+	const phrase = "open-sesame"
+	phraseHash := sha256.Sum256([]byte(phrase))
+	claimRecipient := crypto.GenerateAccount().Address.String()
+	claimAddr := mustAdminGenerateKey(t, signerClient, signerd, "aplane.htlc.v1", map[string]string{
+		"hash":           hex.EncodeToString(phraseHash[:]),
+		"recipient":      claimRecipient,
+		"refund_address": funder.GetAddress(),
+		"timeout_round":  fmt.Sprintf("%d", status.LastRound+2_000),
+	})
+	if err := funder.FundMicroAlgosAndWait(claimAddr, funding); err != nil {
+		t.Fatalf("failed to fund HTLC for claim: %v", err)
 	}
-	claimTxID := mustExtractTxID(t, claimOutput)
-	if _, err := testnet.WaitForConfirmation(claimTxID, 10); err != nil {
-		t.Fatalf("generic LSig claim transaction failed to confirm: %v", err)
+	assertClosedTo(t, claimAddr, claimRecipient,
+		fmt.Sprintf("close %s to %s arg:preimage=text:%s", claimAddr, claimRecipient, phrase))
+
+	// Refund once the timeout has passed, with no preimage.
+	refundDestination := crypto.GenerateAccount().Address.String()
+	refundAddr := mustAdminGenerateKey(t, signerClient, signerd, "aplane.htlc.v1", map[string]string{
+		"hash":           hex.EncodeToString(phraseHash[:]),
+		"recipient":      funder.GetAddress(),
+		"refund_address": refundDestination,
+		"timeout_round":  fmt.Sprintf("%d", status.LastRound),
+	})
+	if err := funder.FundMicroAlgosAndWait(refundAddr, funding); err != nil {
+		t.Fatalf("failed to fund HTLC for refund: %v", err)
 	}
+	assertClosedTo(t, refundAddr, refundDestination,
+		fmt.Sprintf("close %s to %s", refundAddr, refundDestination))
 }
 
 func TestLSigRuntimeArgValidation(t *testing.T) {
@@ -1946,13 +1975,29 @@ func TestLSigRuntimeArgValidation(t *testing.T) {
 		t.Fatalf("failed to get suggested params: %v", err)
 	}
 
+	t.Run("short arg accepted", func(t *testing.T) {
+		req := signerapi.GroupSignRequest{
+			Requests: []signerapi.SignRequest{{
+				AuthAddress: genericAddr,
+				TxnBytesHex: mustUnsignedPaymentTxnHex(t, sp, genericAddr, integrationBurnAddress, 0, "lsig-short-arg"),
+				LsigArgs: map[string]string{
+					"preimage": hex.EncodeToString([]byte("short")),
+				},
+			}},
+		}
+		status, body := postSignRequest(t, signerd.GetURL(), req)
+		if status != http.StatusOK {
+			t.Fatalf("expected a typed-phrase preimage to sign, got %d: %s", status, string(body))
+		}
+	})
+
 	t.Run("invalid arg length", func(t *testing.T) {
 		req := signerapi.GroupSignRequest{
 			Requests: []signerapi.SignRequest{{
 				AuthAddress: genericAddr,
 				TxnBytesHex: mustUnsignedPaymentTxnHex(t, sp, genericAddr, integrationBurnAddress, 0, "lsig-invalid-len"),
 				LsigArgs: map[string]string{
-					"preimage": hex.EncodeToString([]byte("short")),
+					"preimage": hex.EncodeToString(bytes.Repeat([]byte("x"), 65)),
 				},
 			}},
 		}
@@ -1960,7 +2005,7 @@ func TestLSigRuntimeArgValidation(t *testing.T) {
 		if status != http.StatusBadRequest {
 			t.Fatalf("expected 400 for invalid preimage length, got %d: %s", status, string(body))
 		}
-		if !strings.Contains(string(body), "expected 32 bytes") {
+		if !strings.Contains(string(body), "maximum 64 bytes") {
 			t.Fatalf("expected byte-length validation error, got %s", string(body))
 		}
 	})

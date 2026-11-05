@@ -39,7 +39,7 @@ included as normal user-account operations.
 | `aplane.falcon1024-timelock.v1` | C | N | C | C | N | N | N | N | N | N | C |
 | `aplane.falcon1024-cosigner1024.v1` | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
 | `aplane.corridor.v1` | C | N | C | Y | N | N | N | N | N | N | C |
-| `aplane.htlc.v1` | C | C | C | C | C | N | N | N | N | N | N |
+| `aplane.htlc.v1` | C | C | N | N | N | N | N | N | N | N | N |
 | `aplane.rotating-triple-xmss.v1` | C | N | C | C | C | C | C | C | C | C | C |
 | `aplane.rotating-triple-slhdsa.v1` | C | N | C | C | C | C | C | C | C | C | C |
 | `aplane.rotating-triple-wotsc.v1` | C | N | C | C | C | C | C | C | C | C | C |
@@ -110,10 +110,9 @@ included as normal user-account operations.
   are rejected. Rekey is only the bounded pure 0-ALGO self-payment form and
   requires the distinct offline Falcon contract-admin signature; the cosigner is
   forbidden on that path.
-- `aplane.htlc.v1` allows claim paths to the configured recipient before
-  timeout with the configured preimage, refund paths to the configured refund
-  address after timeout, and approved ASA opt-in for configured
-  `allowed_optin_assets`.
+- `aplane.htlc.v1` admits only an ALGO payment that closes the account: to the
+  configured recipient with the configured preimage, in a transaction that expires
+  before timeout, or to the configured refund address after timeout.
 
 The SLH-DSA rotating triple admits the same transactions and rotation guards as
 XMSS. Its stateless hash scheme has no leaf range or leaf-reuse restriction.

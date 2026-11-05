@@ -6,8 +6,6 @@ package integration_test
 import (
 	"context"
 	"encoding/hex"
-	"fmt"
-	"strings"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/lsigresource"
@@ -131,17 +129,6 @@ func newAllowlistLockOpcodeAccount(
 		adminPublicKey: append([]byte(nil), adminPublicKey...), adminPrivateKey: append([]byte(nil), adminPrivateKey...),
 		provider: provider, metadata: metadata,
 	}
-}
-
-func matrixAssetIDsEndingWith(assetID uint64, count int) string {
-	ids := make([]string, 0, count)
-	for candidate := uint64(1); len(ids) < count-1; candidate++ {
-		if candidate != assetID {
-			ids = append(ids, fmt.Sprintf("%d", candidate))
-		}
-	}
-	ids = append(ids, fmt.Sprintf("%d", assetID))
-	return strings.Join(ids, ",")
 }
 
 func bestEffortBoundedAdminRekey(

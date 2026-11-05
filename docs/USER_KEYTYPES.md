@@ -675,6 +675,70 @@ For the full filesystem layout and state-record transitions for disable,
 enable, remove, and reload, see
 [DEV_KEYTYPES.md](DEV_KEYTYPES.md) (Product Filesystem State).
 
+## Worked Example: HTLC
+
+`aplane.htlc.v1` is the bundled example of a generic LogicSig, and shows both kinds
+of input a key type can take: creation parameters, fixed into the address when the
+account is generated, and runtime arguments, supplied with each transaction.
+
+An HTLC holds ALGO until one of two things happens. The recipient claims the whole
+balance with a secret before a timeout, or the refund address reclaims it after.
+It has no private key, so anyone may submit either transaction, but the destination
+is fixed.
+
+Install the template and generate an account. Take the SHA-256 of your secret:
+
+```bash
+apadmin -d $APSIGNER_DATA template import library/templates/aplane.htlc.v1.yaml
+printf %s 'open-sesame' | sha256sum
+```
+
+```text
+generate aplane.htlc.v1 hash=SHA256_HEX recipient=ADDR1 refund_address=ADDR2 timeout_round=50000000
+```
+
+`hash`, `recipient`, `refund_address` and `timeout_round` are creation parameters.
+In `apadmin` you can type the phrase instead, and it is hashed for you. Fund the
+account like any other, on one network only, because a round number means a
+different time on each network:
+
+```text
+send 1 algo from alice to HTLC_ADDRESS
+```
+
+To claim, pass the secret as the `preimage` runtime argument, which can be up to 64
+bytes:
+
+```text
+close HTLC_ADDRESS to ADDR1 arg:preimage=text:open-sesame
+```
+
+To refund once `timeout_round` has passed, no argument is needed:
+
+```text
+close HTLC_ADDRESS to ADDR2
+```
+
+Use `close`, not `send`. The program accepts only a payment that closes the account,
+because a repeatable partial payment would let anyone burn the balance in fees.
+
+The transaction must also fit its window. A claim must expire before `timeout_round`,
+and `apshell` uses a validity window of about 1,000 rounds, so start a claim at least
+that long before the timeout, and set timeouts well beyond it. An SDK client can set
+a shorter window.
+
+A typed phrase is fine for a demonstration, but it can be guessed, and whoever guesses
+it can claim. For real use, generate a random 32-byte secret, and use its hash:
+
+```text
+close HTLC_ADDRESS to ADDR1 arg:preimage=0xSECRET_HEX
+```
+
+For a swap on one chain, use an atomic group instead. An HTLC is for swaps across
+chains, where each side locks funds under the same hash, the side holding the secret
+sets the longer timeout, and a Bitcoin HTLC normally requires exactly 32 bytes. See
+[USER_LOGICSIG_GUIDELINES.md](USER_LOGICSIG_GUIDELINES.md) for the security review.
+
 ## Reload Behavior
 
 On unlock or reload, `apsigner`:

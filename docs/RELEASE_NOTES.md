@@ -7,6 +7,22 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## HTLC is ALGO-only and pays out once
+
+- `aplane.htlc.v1` no longer handles ASAs, and `allowed_optin_assets` is gone. Same-chain
+  swaps use atomic groups; the HTLC is for swaps across chains.
+- Claim and refund must now close the account. A repeatable partial payment would have
+  let anyone burn the balance in fees once the preimage was public or the timeout had
+  passed. The opt-in path allowed the same without either.
+- A claim must now expire before `timeout_round`. Checking only `FirstValid` let a
+  backdated claim land up to about 1,000 rounds after the timeout, so the two windows
+  overlapped. A default 1,000-round claim must now start that far before the timeout.
+- The fee is now capped at 10,000 microAlgos rather than fixed at 1,000, so a higher
+  network minimum can't strand funds.
+- The preimage can now be 1 to 64 bytes rather than exactly 32, so the typed phrase
+  `apadmin` offers at creation can actually be claimed. Generic templates can set
+  `max_size` on a variable-length runtime argument.
+
 ## Rekey-locked allowlist renamed and its limits removed
 
 - `aplane.falcon1024-allowlist-alock.v1` is now

@@ -513,7 +513,7 @@ Examples of the composed ontology:
 | `aplane.falcon1024-allowlist-lock.v1` | `falcon1024-allowlist-lock` | `dsa_lsig` | Optional bounded1 composed template: Falcon spending, fixed recipient allowlist, external Falcon contract-admin rekey |
 | `aplane.corridor.v1` | `corridor` | `dsa_lsig` | Optional bounded1 composed template: Falcon spending, framework Merkle recipient policy, cosigner-gated spend, and external-admin pure rekey |
 | `aplane.ed25519.v1` | `aplane.ed25519` | `dsa_lsig` | Library-visible Ed25519 LogicSig DSA provider; distinct from native `ed25519` |
-| `aplane.htlc.v1` | `htlc` | `generic_lsig` | Optional template library: hash-locked payment |
+| `aplane.htlc.v1` | `htlc` | `generic_lsig` | Optional template library: hash time-locked ALGO payment |
 | `aplane.falcon1024-allowlist.v1` | `falcon1024-allowlist` | `dsa_lsig` | Bundled bounded1 composed template: installed/enabled in new signer-role stores; Falcon + fixed receiver allowlist |
 | `aplane.falcon1024-allowlist.v2` | `falcon1024-allowlist` | `dsa_lsig` | Optional bounded1 composed template: Falcon + signer-derived Merkle receiver proof |
 | `aplane.falcon1024-timelock.v1` | `falcon1024-timelock` | `dsa_lsig` | Optional bounded1 composed template: Falcon + validity-round gate on spend and rekey |

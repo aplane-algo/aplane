@@ -1160,7 +1160,6 @@ teal: |
 }
 
 func TestTemplateLibraryGenericTemplates(t *testing.T) {
-	optInAssets := "10458941,31566704"
 	for _, name := range []string{
 		"aplane.htlc.v1.yaml",
 	} {
@@ -1190,36 +1189,55 @@ func TestTemplateLibraryGenericTemplates(t *testing.T) {
 				if err != nil {
 					t.Fatalf("GenerateTEAL() error = %v", err)
 				}
-				if !strings.Contains(teal, "txn Fee\nint 1000\n==\nassert") {
-					t.Fatalf("htlc TEAL missing strict fee cap:\n%s", teal)
-				}
-				if strings.Contains(teal, "txn XferAsset\nint 10458941\n==") {
-					t.Fatalf("htlc TEAL unexpectedly contains approved opt-in checks without parameter:\n%s", teal)
-				}
-				assertCompileWithSaltOffCurve(t, tmpl, params)
-				tealWithOptIn, err := tmpl.GenerateTEAL(map[string]string{
-					"hash":                 "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-					"recipient":            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ",
-					"refund_address":       "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ",
-					"timeout_round":        "12345",
-					"allowed_optin_assets": optInAssets,
-				})
-				if err != nil {
-					t.Fatalf("GenerateTEAL() with allowed_optin_assets error = %v", err)
-				}
-				for _, assetID := range []string{"10458941", "31566704"} {
-					snippet := "txn XferAsset\nint " + assetID + "\n=="
-					if !strings.Contains(tealWithOptIn, snippet) {
-						t.Fatalf("htlc TEAL missing approved opt-in asset %s:\n%s", assetID, tealWithOptIn)
+				for _, want := range []string{
+					"txn Fee\nint 10000\n<=\nassert",
+					"txn TypeEnum\nint pay\n==\nassert",
+					"txn LastValid\nint 12345\n<\nassert",
+					"addr AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ\n==\nassert\n\nint 1\nreturn",
+				} {
+					if !strings.Contains(teal, want) {
+						t.Fatalf("htlc TEAL missing %q:\n%s", want, teal)
 					}
 				}
-				if !strings.Contains(tealWithOptIn, "maybe_optin:\ntxn AssetSender\nglobal ZeroAddress\n==\nassert") ||
-					!strings.Contains(tealWithOptIn, "bz continue_paths") ||
-					!strings.Contains(tealWithOptIn, "txn AssetCloseTo\nglobal ZeroAddress\n==\nassert") {
-					t.Fatalf("htlc approved opt-in path must enforce zero close-out:\n%s", tealWithOptIn)
+				// Each path must close the account, or anyone could burn the
+				// balance in fees with repeated partial payments.
+				if strings.Count(teal, "txn CloseRemainderTo\naddr ") != 2 {
+					t.Fatalf("htlc TEAL must require close-out on both paths:\n%s", teal)
 				}
+				if strings.Contains(teal, "axfer") || strings.Contains(teal, "txn XferAsset") {
+					t.Fatalf("htlc TEAL must stay ALGO-only:\n%s", teal)
+				}
+				assertCompileWithSaltOffCurve(t, tmpl, params)
 			}
 		})
+	}
+}
+
+// A variable-length runtime argument needs max_size: it is the only source of
+// the LogicSig argument budget when byte_length is 0.
+func TestHTLCPreimageIsVariableLengthAndBounded(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "library", "templates", "aplane.htlc.v1.yaml"))
+	if err != nil {
+		t.Fatalf("failed to read template: %v", err)
+	}
+	spec, err := ParseTemplateSpec(data)
+	if err != nil {
+		t.Fatalf("ParseTemplateSpec() error = %v", err)
+	}
+	tmpl := NewYAMLTemplate(spec)
+
+	args := tmpl.RuntimeArgs()
+	if len(args) != 1 || args[0].ByteLength != 0 || args[0].MaxSize != 64 {
+		t.Fatalf("RuntimeArgs() = %+v, want one variable-length arg capped at 64 bytes", args)
+	}
+	for _, size := range []int{1, 11, 32, 64} {
+		if _, err := lsigprovider.ValidateAndOrderArgs(args, map[string][]byte{"preimage": make([]byte, size)}); err != nil {
+			t.Errorf("%d-byte preimage rejected: %v", size, err)
+		}
+	}
+	_, err = lsigprovider.ValidateAndOrderArgs(args, map[string][]byte{"preimage": make([]byte, 65)})
+	if err == nil || !strings.Contains(err.Error(), "maximum 64 bytes") {
+		t.Fatalf("65-byte preimage error = %v, want maximum 64 bytes", err)
 	}
 }
 
