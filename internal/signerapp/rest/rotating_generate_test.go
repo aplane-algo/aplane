@@ -15,7 +15,7 @@ import (
 )
 
 func TestRotatingKeyGenerationIsOptIn(t *testing.T) {
-	for _, keyType := range []string{rotatingkey.RotatingTripleWotsV1, rotatingkey.RotatingTripleSlhdsaV1, rotatingkey.RotatingTripleWotscV1} {
+	for _, keyType := range []string{rotatingkey.RotatingTripleSlhdsaV1, rotatingkey.RotatingTripleWotscV1} {
 		t.Run(keyType, func(t *testing.T) { testRotatingKeyGenerationIsOptIn(t, keyType) })
 	}
 }

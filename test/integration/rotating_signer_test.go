@@ -27,7 +27,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/txnutil"
 	rotatingslhsignerreg "github.com/aplane-algo/aplane/lsig/rotatingtripleslhdsa/signerreg"
-	rotatingtriplesignerreg "github.com/aplane-algo/aplane/lsig/rotatingtriplewots/signerreg"
 	rotatingwotscsignerreg "github.com/aplane-algo/aplane/lsig/rotatingtriplewotsc/signerreg"
 	rotatingxmsssignerreg "github.com/aplane-algo/aplane/lsig/rotatingtriplexmss/signerreg"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
@@ -59,26 +58,18 @@ type localnetRotatingType struct {
 }
 
 var (
-	localnetTriple = localnetRotatingType{
-		keyType: rotatingkey.RotatingTripleWotsV1, register: rotatingtriplesignerreg.Register, newKeyPayload: rotatingtriplesignerreg.NewKeyPayload,
-	}
 	localnetXmss = localnetRotatingType{
 		keyType: rotatingkey.RotatingTripleXmssV1, register: rotatingxmsssignerreg.Register, newKeyPayload: rotatingxmsssignerreg.NewKeyPayload,
 	}
 )
 
-// TestRotatingTripleSignerFlowOnChain drives the signer's stateless rotating
+// TestRotatingXmssSignerFlowOnChain drives the signer's stateless rotating
 // prepare and sign service against a live network: real chain reads through
 // chainread, the stage address table as the only file, the default policy,
 // and submission of the exact signed groups. It then deletes the table and
 // keeps signing (the restore case), and shows that two releases from one
 // stage are both signed but only one can land. Approval is user_auto_approve.
-func TestRotatingTripleSignerFlowOnChain(t *testing.T) {
-	runRotatingSignerFlowOnChain(t, localnetTriple)
-}
-
-// TestRotatingXmssSignerFlowOnChain runs the same flow for the XMSS triple,
-// whose stages sign with leaves of a shared tree built at key creation.
+// XMSS stages sign with leaves of a shared tree built at key creation.
 func TestRotatingXmssSignerFlowOnChain(t *testing.T) {
 	runRotatingSignerFlowOnChain(t, localnetXmss)
 }

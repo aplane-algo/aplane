@@ -48,14 +48,9 @@ func RegisterClient() {
 			Family:       ed25519lsig.FamilyName,
 			Availability: keytypecatalog.AvailabilityLibrary,
 		}, ed25519lsig.RegisterClient)
-		// The rotating account has no client-side provider; the entry only
+		// The rotating accounts have no client-side provider; each entry only
 		// makes the key type opt-in. Signer binaries register its storage,
 		// stage cryptography and generator through lsig/signerreg.
-		registerCompiledProvider(keytypecatalog.Entry{
-			KeyType:      rotatingkey.RotatingTripleWotsV1,
-			Family:       rotatingkey.RotatingTripleWotsFamily,
-			Availability: keytypecatalog.AvailabilityLibrary,
-		}, func() {})
 		registerCompiledProvider(keytypecatalog.Entry{
 			KeyType:      rotatingkey.RotatingTripleXmssV1,
 			Family:       rotatingkey.RotatingTripleXmssFamily,

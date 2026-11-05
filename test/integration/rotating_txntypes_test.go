@@ -21,15 +21,11 @@ import (
 	"github.com/aplane-algo/aplane/test/integration/harness"
 )
 
-// TestRotatingTripleTransactionTypes sends every single-transaction type
+// TestRotatingXmssTransactionTypes sends every single-transaction type
 // apshell offers, other than payments, from a rotating account: asset opt-in,
 // transfer and close-out, application calls with an opt-in and a box
 // reference, and online and offline key registration. Each must confirm and
 // move the account's authorizer to a fresh stage address.
-func TestRotatingTripleTransactionTypes(t *testing.T) {
-	runRotatingTransactionTypes(t, rotatingkey.RotatingTripleWotsV1)
-}
-
 func TestRotatingXmssTransactionTypes(t *testing.T) {
 	runRotatingTransactionTypes(t, rotatingkey.RotatingTripleXmssV1)
 }

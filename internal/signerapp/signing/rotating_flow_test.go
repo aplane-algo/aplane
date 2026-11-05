@@ -65,7 +65,7 @@ func (a *recordingReleaseAudit) LogRotatingRelease(account, txid string, stage, 
 // chain.
 func newSigningFixture(t *testing.T) (*rotatingFixture, *recordingReleaseAudit) {
 	t.Helper()
-	return newSigningFixtureFor(t, tripleTestType)
+	return newSigningFixtureFor(t, wotscTestType)
 }
 
 func newSigningFixtureFor(t testing.TB, kind rotatingTestType) (*rotatingFixture, *recordingReleaseAudit) {
@@ -625,9 +625,8 @@ func TestChooseLeafOwnTreePerStage(t *testing.T) {
 }
 
 func TestChooseLeaf(t *testing.T) {
-	triple, _ := rotatingkey.Lookup(rotatingkey.RotatingTripleWotsV1)
-	if l, reused := chooseLeaf(triple, 9, []byte{200}, "T", ReleaseRecord{}); l.Index != 0 || l.Tree != 0 || reused {
-		t.Fatalf("triple leaf = %+v, %v", l, reused)
+	if l, reused := chooseLeaf(rotatingkey.Profile{LeavesPerStage: 1}, 9, []byte{200}, "T", ReleaseRecord{}); l.Index != 0 || l.Tree != 0 || reused {
+		t.Fatalf("single key leaf = %+v, %v", l, reused)
 	}
 	x, _ := rotatingkey.Lookup(rotatingkey.RotatingTripleXmssV1)
 	const stage = 1025 // tree 1, leaves 64..127
@@ -666,10 +665,10 @@ func TestChooseLeaf(t *testing.T) {
 }
 
 // TestRotatingStatusReportsStageReuse signs two different transactions from
-// one stage without either landing. A stage with a one-time WOTS key then
-// rests on its other schemes until the account moves, which is a warning; a
-// type without a one-time scheme would only mention the reuse in the note.
-// Either way the mark survives until a chain read shows the account moved.
+// one stage without either landing, then runs the stage out of leaves. A reused
+// one-time key leaves the stage resting on its other schemes until the account
+// moves, which is a warning, and the mark survives until a chain read shows the
+// account moved. A stateless family has nothing to reuse.
 func TestRotatingStatusReportsStageReuse(t *testing.T) {
 	for _, kind := range rotatingTestTypes {
 		t.Run(kind.keyType, func(t *testing.T) {
@@ -699,53 +698,53 @@ func TestRotatingStatusReportsStageReuse(t *testing.T) {
 				}
 				return
 			}
-			if profile.LeavesPerStage > 1 {
-				// Two transactions take two leaves: no reuse, an attempt
-				// count in the note, and distinct leaves in the signatures.
-				if rec.Reused || len(rec.Leaves) != 2 || rec.Leaves[0].Index == rec.Leaves[1].Index || rec.TxID != second.TxID {
-					t.Fatalf("leaf family after two releases = %+v", rec)
-				}
-				_, notes := f.svc.RotatingStatus(report(f.account, 1050))
-				if len(notes) != 1 || !strings.Contains(notes[0], "attempt 2 of") {
-					t.Fatalf("leaf family note = %v", notes)
-				}
-				return
+			// Two transactions take two leaves: no reuse, an attempt count in
+			// the note, and distinct leaves in the signatures.
+			if rec.Reused || len(rec.Leaves) != 2 || rec.Leaves[0].Index == rec.Leaves[1].Index || rec.TxID != second.TxID {
+				t.Fatalf("leaf family after two releases = %+v", rec)
 			}
-			if !rec.Reused || rec.TxID != second.TxID {
-				t.Fatalf("release memory after two releases = %+v", rec)
+			_, notes := f.svc.RotatingStatus(report(f.account, 1050))
+			if len(notes) != 1 || !strings.Contains(notes[0], "attempt 2 of") {
+				t.Fatalf("leaf family note = %v", notes)
+			}
+
+			// Every other leaf goes, so the next transaction has to reuse one.
+			lo, hi := profile.LeafRange(0)
+			for index := lo; index < hi; index++ {
+				if rec.LeafUsed(profile.TreeOf(0), uint32(index), "") {
+					continue
+				}
+				used := rec
+				used.TxID = fmt.Sprintf("EARLIER%d", index)
+				used.Leaves = []LeafRelease{{Tree: profile.TreeOf(0), Index: uint32(index), TxID: used.TxID, LastValid: 1100}}
+				f.svc.Rotating.Releases.Record(used)
+			}
+			last := mustSign(t, f, mustPrepare(t, f, f.spend(1002, 1102)).Transactions)
+			rec, _ = f.svc.Rotating.Releases.Get(acct)
+			if !rec.Reused || rec.TxID != last.TxID {
+				t.Fatalf("release memory with every leaf used = %+v", rec)
 			}
 
 			warnings, notes := f.svc.RotatingStatus(report(f.account, 1050))
-			switch {
-			case profile.OneTimeStage:
-				if len(warnings) != 1 || len(notes) != 0 || !strings.Contains(warnings[0], "more than one transaction") || !strings.Contains(warnings[0], "rests on "+profile.ReusedStageRestsOn) || !strings.Contains(warnings[0], second.TxID) {
-					t.Fatalf("one-time stage reuse in flight: warnings %v, notes %v", warnings, notes)
-				}
-				again, _ := f.svc.RotatingStatus(report(f.account, 1060))
-				if len(again) != 1 || again[0] != warnings[0] {
-					t.Fatalf("reuse warning text changed between passes: %q vs %q", again, warnings)
-				}
-			default:
-				if len(warnings) != 0 || len(notes) != 1 || !strings.Contains(notes[0], "in flight") || !strings.Contains(notes[0], "more than one transaction") {
-					t.Fatalf("reusable stage reuse in flight: warnings %v, notes %v", warnings, notes)
-				}
+			if len(warnings) != 1 || len(notes) != 0 || !strings.Contains(warnings[0], "more than one transaction") || !strings.Contains(warnings[0], profile.ReusedStageRestsOn) {
+				t.Fatalf("one-time stage reuse in flight: warnings %v, notes %v", warnings, notes)
+			}
+			again, _ := f.svc.RotatingStatus(report(f.account, 1060))
+			if len(again) != 1 || again[0] != warnings[0] {
+				t.Fatalf("reuse warning text changed between passes: %q vs %q", again, warnings)
 			}
 			// Expired as well: the expired warning carries the reuse.
-			warnings, _ = f.svc.RotatingStatus(report(f.account, 1102))
+			warnings, _ = f.svc.RotatingStatus(report(f.account, 1103))
 			if len(warnings) != 1 || !strings.Contains(warnings[0], "rotate-only spend") || !strings.Contains(warnings[0], "more than one transaction") {
 				t.Fatalf("expired reused stage: warnings %v", warnings)
 			}
 			// A repair signed from the same stage keeps the account marked
 			// rather than resetting to a clean in-flight note.
-			f.chain.round = 1102
-			repair := mustSign(t, f, mustPrepare(t, f, f.spend(1102, 1202)).Transactions)
+			f.chain.round = 1103
+			repair := mustSign(t, f, mustPrepare(t, f, f.spend(1103, 1203)).Transactions)
 			warnings, notes = f.svc.RotatingStatus(report(f.account, 1110))
-			if profile.OneTimeStage {
-				if len(warnings) != 1 || !strings.Contains(warnings[0], repair.TxID) {
-					t.Fatalf("repair from a one-time stage silenced the reuse warning: warnings %v, notes %v", warnings, notes)
-				}
-			} else if len(warnings) != 0 || len(notes) != 1 || !strings.Contains(notes[0], "more than one transaction") {
-				t.Fatalf("repair note: warnings %v, notes %v", warnings, notes)
+			if len(warnings) != 1 || !strings.Contains(warnings[0], repair.TxID) {
+				t.Fatalf("repair from a one-time stage silenced the reuse warning: warnings %v, notes %v", warnings, notes)
 			}
 			// Landed: the stage is retired and the mark goes with it.
 			warnings, notes = f.svc.RotatingStatus(report(f.stageAddress(t, 1), 1120))
@@ -853,9 +852,9 @@ func TestForgedSuccessorInTableNeverReachesTheChain(t *testing.T) {
 
 func mustProfile(t *testing.T) *lsigresource.Profile {
 	t.Helper()
-	argumentBytes := uint64(rotatingkey.RotatingWotsMaxArgumentBytes)
-	profile, err := lsigresource.Materialize(rotatingkey.RotatingWotsMaxProgramBytes, &argumentBytes, nil,
-		lsigresource.DefaultOpcodeProfile(rotatingkey.RotatingWotsMaxOpcodeCost))
+	argumentBytes := uint64(rotatingkey.RotatingWotscMaxArgumentBytes)
+	profile, err := lsigresource.Materialize(rotatingkey.RotatingWotscMaxProgramBytes, &argumentBytes, nil,
+		lsigresource.DefaultOpcodeProfile(rotatingkey.RotatingWotscMaxOpcodeCost))
 	if err != nil {
 		t.Fatal(err)
 	}
