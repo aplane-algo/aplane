@@ -149,7 +149,7 @@ func (fs *Signer) restoreReleases(ctx context.Context, ir *productruntime.Runtim
 	}
 	ctx, cancel := ir.LockCancelContext(ctx)
 	defer cancel()
-	svc := &signersigning.Service{Planner: fs.newPlannerWithAudit(nil), Console: signerConsole{}, Rotating: fs.rotatingDeps(ir)}
+	svc := &signersigning.Service{Planner: fs.newPlannerWithAudit(nil), Console: signerConsole{}, IsUnlocked: ir.IsUnlocked, Rotating: fs.rotatingDeps(ir)}
 	rebuilt, err := svc.RebuildReleaseMemory(ctx, ir.SnapshotKeySession(), generation, audited, signersigning.StageFillOptions{KeyUse: ir.KeyUseContext})
 	if err != nil {
 		logWarnf("rotating release memory: %v", err)

@@ -419,8 +419,11 @@ func (s *Service) RebuildReleaseMemory(ctx context.Context, session *keystore.Ke
 	}
 	// A lock advances the generation before it cancels anything, and a key-use
 	// context can be cancelled before ctx is, so ctx alone can look alive.
+	// Recovery moves neither, so the signer's state is checked as well.
 	interrupted := func() bool {
-		return ctx.Err() != nil || (deps.LockGeneration != nil && deps.LockGeneration() != generation)
+		return ctx.Err() != nil ||
+			(deps.LockGeneration != nil && deps.LockGeneration() != generation) ||
+			(s.IsUnlocked != nil && !s.IsUnlocked())
 	}
 	deps.Releases.Restoring(accounts)
 	for _, e := range entries {
@@ -436,7 +439,7 @@ func (s *Service) RebuildReleaseMemory(ctx context.Context, session *keystore.Ke
 			if firstErr == nil {
 				firstErr = fmt.Errorf("rotating account %s: %w", e.Account, err)
 			}
-			if interrupted() {
+			if errors.Is(err, ErrRestoreInterrupted) || interrupted() {
 				return rebuilt, ErrRestoreInterrupted
 			}
 			deps.Releases.Restored(e.Account)
@@ -461,8 +464,10 @@ func (s *Service) releaseAddresses(ctx context.Context, account string, stage ui
 	if err != nil {
 		return types.Address{}, types.Address{}, err
 	}
+	// The deriver reports a cut as a short result, not an error: a lock or
+	// recovery refused the key use. That isn't a failure of this account.
 	if len(addrs) != 2 {
-		return types.Address{}, types.Address{}, context.Canceled
+		return types.Address{}, types.Address{}, ErrRestoreInterrupted
 	}
 	return addrs[0], addrs[1], nil
 }

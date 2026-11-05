@@ -229,7 +229,7 @@ func restoreInterruptedBy(t *testing.T, f *rotatingFixture, first ReleaseRecord,
 // stay closed. Both ways of seeing the lock are covered: the key-use context can
 // be cancelled before the restore's own context is, leaving only the generation.
 func TestInterruptedRestoreKeepsTheAccountHeld(t *testing.T) {
-	for _, mode := range []string{"context cancelled", "generation only"} {
+	for _, mode := range []string{"context cancelled", "generation only", "key use refused and nothing else moved"} {
 		t.Run(mode, func(t *testing.T) {
 			f, audit := newSigningFixtureFor(t, wotscTestType)
 			prep := mustPrepare(t, f, f.spend(1000, 1100))
@@ -241,6 +241,10 @@ func TestInterruptedRestoreKeepsTheAccountHeld(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			n, err := restoreInterruptedBy(t, f, first, ctx, func() {
+				// Recovery refuses the key use and moves nothing a restore can see.
+				if mode == "key use refused and nothing else moved" {
+					return
+				}
 				f.lockGen++
 				if mode == "context cancelled" {
 					cancel()
@@ -293,20 +297,55 @@ func TestRestoreBoundToAnEarlierGenerationStaysHeld(t *testing.T) {
 	}
 }
 
-// A failure that isn't a lock is the stated loss case: state chooses the leaf,
-// never whether to sign, so the account has to be let through.
+// failingKeyStore can't load a key, whatever the signer's state.
+type failingKeyStore struct{}
+
+func (failingKeyStore) Get(context.Context, string) (*coresigning.KeyMaterial, error) {
+	return nil, errors.New("key file is damaged")
+}
+
+// restoreWithAFailedDerivation runs a restore whose derivation really fails: the
+// key can't be loaded. A cancelled key use isn't a failure and can't stand in for
+// one, because the signer refuses key use exactly when it is interrupted.
+func restoreWithAFailedDerivation(t *testing.T, f *rotatingFixture) (int, error) {
+	t.Helper()
+	first, _ := f.svc.Rotating.Releases.Get(f.account.String())
+	f.svc.Rotating.Releases.Reset()
+	session := keystore.NewKeySession(failingKeyStore{})
+	session.InitializeSession()
+	t.Cleanup(session.Destroy)
+	return f.svc.RebuildReleaseMemory(context.Background(), session, f.lockGen, []AuditedRelease{{
+		Account: f.account.String(), Stage: first.Stage, TxID: first.TxID, LastValid: first.LastValid, Leaves: first.Leaves,
+	}}, StageFillOptions{})
+}
+
+// A failure that isn't an interruption is the stated loss case: state chooses the
+// leaf, never whether to sign, so the account has to be let through.
 func TestFailedRestoreStillOpensTheAccount(t *testing.T) {
 	f, _ := newSigningFixtureFor(t, wotscTestType)
 	prep := mustPrepare(t, f, f.spend(1000, 1100))
 	mustSign(t, f, prep.Transactions)
-	first, _ := f.svc.Rotating.Releases.Get(f.account.String())
-	f.svc.Rotating.Releases.Reset()
-	n, err := restoreInterruptedBy(t, f, first, context.Background(), func() {})
+	n, err := restoreWithAFailedDerivation(t, f)
 	if n != 0 || err == nil || errors.Is(err, ErrRestoreInterrupted) {
 		t.Fatalf("restore: rebuilt %d, err %v", n, err)
 	}
 	if _, restored := f.svc.Rotating.Releases.ForLeafChoice(f.account.String()); !restored {
 		t.Fatal("a failed restore left the account held")
+	}
+}
+
+// The same failure on a signer that can't sign proves nothing about the account,
+// and the signer may come back with nothing changed.
+func TestFailedRestoreOnASignerThatCantSignStaysHeld(t *testing.T) {
+	f, _ := newSigningFixtureFor(t, wotscTestType)
+	prep := mustPrepare(t, f, f.spend(1000, 1100))
+	mustSign(t, f, prep.Transactions)
+	f.svc.IsUnlocked = func() bool { return false }
+	if _, err := restoreWithAFailedDerivation(t, f); !errors.Is(err, ErrRestoreInterrupted) {
+		t.Fatalf("error = %v, want an interrupted restore", err)
+	}
+	if _, restored := f.svc.Rotating.Releases.ForLeafChoice(f.account.String()); restored {
+		t.Fatal("a failure on a signer that can't sign opened the wait")
 	}
 }
 

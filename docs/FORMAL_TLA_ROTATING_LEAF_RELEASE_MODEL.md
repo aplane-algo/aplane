@@ -109,7 +109,9 @@ for each.
   count.
 - A restore reads the log once, at `RestoreBegin`; the audited release names
   the highest stage in the log with every leaf the log holds for it.
-- `Lock` cuts a restore in flight short. The lock-generation fence on the sign path stops a release, not a leaf choice, and is
+- `Lock` cuts a restore in flight short. It also stands for recovery, which stops a
+  restore the same way without moving the generation: the model has no generation
+  to tell them apart. The lock-generation fence on the sign path stops a release, not a leaf choice, and is
   modeled only as `Sign` needing an unlocked signer. At most one sign is in flight,
   because the account lock serializes them.
 - Validity windows, expiry, the stage-table recovery grants, and the one-time

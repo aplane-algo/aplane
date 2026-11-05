@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"os"
@@ -593,6 +594,36 @@ func TestRestoreFromAnEarlierSessionStaysHeld(t *testing.T) {
 	}
 	if !releaseMemoryHeld(server, account) {
 		t.Fatal("a restore for an earlier session opened the wait")
+	}
+}
+
+// Recovery can start after the restore's context exists. It cancels nothing and
+// moves no generation, and the only sign of it is the refused key use.
+func TestRecoveryDuringARestoreKeepsTheAccountHeld(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	ir := server.productRuntime()
+	account, _ := installRotatingKey(t, server)
+	generation := ir.LockGeneration()
+	ctx, cancel := ir.LockCancelContext(context.Background())
+	defer cancel()
+	session := ir.SnapshotKeySession()
+	server.rotatingReleases.Reset()
+	svc := &signersigning.Service{Planner: server.newPlannerWithAudit(nil), Rotating: server.rotatingDeps(ir)}
+
+	ir.SetRecovery()
+	if ctx.Err() != nil || ir.LockGeneration() != generation {
+		t.Fatal("recovery moved something this test relies on it not moving")
+	}
+	n, err := svc.RebuildReleaseMemory(ctx, session, generation, []signersigning.AuditedRelease{{
+		Account: account.String(), Stage: 0, TxID: "OLD", LastValid: 1000,
+		Leaves: []signersigning.LeafRelease{{Tree: 0, Index: 0, TxID: "OLD", LastValid: 1000}},
+	}}, signersigning.StageFillOptions{KeyUse: ir.KeyUseContext})
+	if n != 0 || !errors.Is(err, signersigning.ErrRestoreInterrupted) {
+		t.Fatalf("restore: rebuilt %d, err %v", n, err)
+	}
+	if !releaseMemoryHeld(server, account.String()) {
+		t.Fatal("recovery during a restore opened the wait")
 	}
 }
 
