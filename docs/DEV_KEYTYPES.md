@@ -422,8 +422,8 @@ Examples:
 
 Characteristics:
 - DSA base plus additional constraints
-- Layer 3 is either a framework policy with no TEAL, or an author TEAL suffix that
-  creation params feed
+- Layer 3 is a framework policy with no TEAL, an author TEAL suffix that creation
+  params feed, or a framework allowlist followed by author TEAL
 - declared in YAML; every shipped composed policy is a template
 
 Typical code areas:
@@ -527,7 +527,8 @@ Use **YAML composed template** when:
 - a YAML file under the top-level `library/templates/` directory is the right fit
 
 Prefer a framework policy over author TEAL when one fits: a recipient allowlist needs
-no TEAL at all. See [Bounded schema](#bounded-schema-schema_version-2).
+no TEAL at all. For a custom rule on top of an allowlist, declare both rather than
+rewriting the list check. See [Bounded schema](#bounded-schema-schema_version-2).
 
 `NewComposedFalcon` can define a composed type in Go, but no shipped type uses it for a
 composed policy. It builds the `aplane.falcon1024.v1` base provider, and tests use it.
@@ -781,7 +782,7 @@ should still avoid hand-written constant blocks in TEAL source.
 Every bundled composed template uses schema v2, which adds a required `bounded` block
 to the fields above. [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md#yaml-contract) is the
 authoritative contract. This lists every field, so it is a reference and not one valid
-template: for example, `layer3` and `teal` cannot be used together.
+template: for example, `cosigner` cannot be combined with a spending-key rekey.
 
 ```yaml
 schema_version: 2
@@ -802,7 +803,7 @@ bounded:
   cosigner:                  # optional; Falcon base only
     contract: cosigner1
     required_on: [spend]
-  layer3:                    # optional; omit to use author teal
+  layer3:                    # optional; required without teal, may be used with it
     policy: merkle_allowlist     # fixed_allowlist | merkle_allowlist
     recipients_parameter: recipients
   derived_args:              # required by merkle_allowlist
@@ -810,7 +811,7 @@ bounded:
       kind: merkle_allowlist_proof
       parameter: recipients
       max_size: 512
-  runtime_args:              # caller values for Layer 3; top-level runtime_args reject
+  runtime_args:              # read by teal; top-level runtime_args reject
     - name: preimage
       type: bytes            # bytes | string | uint64
       max_size: 64
@@ -819,15 +820,21 @@ bounded:
 
 The rules that most often surprise authors:
 
-- `bounded.layer3` and `teal` are mutually exclusive. One of them is required.
-- A framework policy accepts only its recipients parameter, which must be a required
-  `address[]` with `min_items: 1`. `max_items` is at most 30 for `fixed_allowlist` and
-  65,536 for `merkle_allowlist`.
+- At least one of `bounded.layer3` and `teal` is required. With both, the allowlist runs
+  first, then the TEAL, and both must pass. Do not write the stored values
+  `fixed_allowlist_custom` or `merkle_allowlist_custom` in a template.
+- The recipients parameter must be a required `address[]` with `min_items: 1`.
+  `max_items` is at most 30 for `fixed_allowlist` and 65,536 for `merkle_allowlist`.
+- With no `teal`, extra parameters and `runtime_args` are rejected, because nothing
+  would read them.
 - `bounded_admin_public_key` and the cosigner parameters are injected by the framework
   and cannot be declared. `bounded_` and `__aplane_bounded1_` are reserved.
 - A cosigner cannot be combined with a spending-key rekey.
 - Author TEAL reads `arg 1` onward, in the static slot order: base signatures, derived
-  arguments, runtime arguments, cosigner signature, admin signature.
+  arguments, runtime arguments, cosigner signature, admin signature. A runtime argument
+  beside a Merkle proof is therefore `arg 2`.
+- `policy_gate` decides what a spending-key rekey checks: `layer3` applies the list and
+  the author rule, and `none` skips both.
 - Author TEAL cannot use `return`.
 
 A framework-policy template has no `teal` at all. This is the complete

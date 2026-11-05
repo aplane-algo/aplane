@@ -83,6 +83,48 @@ func TestMetadataValidateRejectsInvalidContracts(t *testing.T) {
 	}
 }
 
+func TestMetadataValidateCombinedLayer3Policies(t *testing.T) {
+	layout := SignatureArgLayout{Count: 1, MaxSizes: []int{64}}
+	proof := DerivedArg{Name: "merkle_proof", Kind: DerivedArgMerkleProof, Parameter: "recipients", MaxSize: MerkleProofSize}
+	metadata := func(policy string, derived ...DerivedArg) *Metadata {
+		slots := BaseArgumentLayout(layout, false)
+		for _, arg := range derived {
+			slots = append(slots, ArgumentSlot{
+				Index: len(slots), Name: arg.Name, Source: ArgSourceDerived, MaxSize: arg.MaxSize,
+				Paths: ArgumentPathMask{Spend: ArgOptional, SpendingRekey: ArgForbidden, AdminRekey: ArgForbidden},
+			})
+		}
+		return &Metadata{
+			Contract: ContractV1, BaseSignatureArgLayout: layout, ArgumentLayout: slots,
+			SpendEffects: []string{"pay"}, MaxFee: 1_000, Layer3Policy: policy, DerivedArgs: derived,
+		}
+	}
+	for _, test := range []struct {
+		name    string
+		input   *Metadata
+		wantErr string
+	}{
+		{name: "fixed", input: metadata(Layer3PolicyFixedAllowlistCustom)},
+		{name: "merkle", input: metadata(Layer3PolicyMerkleAllowlistCustom, proof)},
+		{name: "fixed takes no proof", input: metadata(Layer3PolicyFixedAllowlistCustom, proof), wantErr: "must not declare derived arguments"},
+		{name: "merkle needs a proof", input: metadata(Layer3PolicyMerkleAllowlistCustom), wantErr: "requires exactly one derived"},
+		{name: "vocabulary stays closed", input: metadata("timelock_custom"), wantErr: "unsupported bounded1 layer3_policy"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := test.input.ValidateProfile()
+			if test.wantErr == "" {
+				if err != nil {
+					t.Fatalf("ValidateProfile() error = %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), test.wantErr) {
+				t.Fatalf("ValidateProfile() error = %v, want %q", err, test.wantErr)
+			}
+		})
+	}
+}
+
 func TestMetadataArgumentLayoutPathSizes(t *testing.T) {
 	metadata := &Metadata{
 		Contract:               ContractV1,
