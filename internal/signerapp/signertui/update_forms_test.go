@@ -241,7 +241,7 @@ func TestHandleContractAdminReferencePath(t *testing.T) {
 	defer setServerKeyTypes(nil)
 	path, publicKeyHex := writeContractAdminReference(t)
 	setServerKeyTypes([]protocol.KeyTypeInfo{{
-		KeyType:     "aplane.falcon1024-allowlist-alock.v1",
+		KeyType:     "aplane.falcon1024-allowlist-lock.v1",
 		DisplayName: "Falcon Bounded Allowlist",
 		CreationParams: []protocol.TemplateParamInfo{{
 			Name:      "bounded_admin_public_key",
@@ -264,7 +264,7 @@ func TestHandleContractAdminReferencePath(t *testing.T) {
 	if got.forms.genericLSigParams["bounded_admin_public_key"] != path {
 		t.Fatalf("reference path = %q, want %q", got.forms.genericLSigParams["bounded_admin_public_key"], path)
 	}
-	params, err := got.applyInputModeTransforms(getParamSpecForKeyType("aplane.falcon1024-allowlist-alock.v1").Params)
+	params, err := got.applyInputModeTransforms(getParamSpecForKeyType("aplane.falcon1024-allowlist-lock.v1").Params)
 	if err != nil {
 		t.Fatalf("applyInputModeTransforms() error = %v", err)
 	}
@@ -544,7 +544,7 @@ func TestHandleParamModalKeys_ContractAdminPathAllowsSpaces(t *testing.T) {
 	defer setServerKeyTypes(nil)
 	path, _ := writeContractAdminReference(t)
 	setServerKeyTypes([]protocol.KeyTypeInfo{{
-		KeyType:     "aplane.falcon1024-allowlist-alock.v1",
+		KeyType:     "aplane.falcon1024-allowlist-lock.v1",
 		DisplayName: "Falcon Bounded Allowlist",
 		CreationParams: []protocol.TemplateParamInfo{{
 			Name:      "bounded_admin_public_key",

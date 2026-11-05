@@ -745,7 +745,7 @@ logicsig-opcode-validation:
 		exit 2; \
 	fi
 	@APLANE_INTEGRATION_NETWORK=$(APLANE_INTEGRATION_NETWORK) ./test/setup-test-env.sh
-	@set -a && . ./.env.test && set +a && APLANE_INTEGRATION_NETWORK=$(APLANE_INTEGRATION_NETWORK) INTEGRATION=1 go test -count=1 -timeout 30m -v -run '^(TestIncludedKeyTypesSignInBatchedGroups|TestALockDeclaredOpcodeCeilings|TestCorridorDeclaredOpcodeCeilings)$$' $(INTEGRATION_TEST_PKG)
+	@set -a && . ./.env.test && set +a && APLANE_INTEGRATION_NETWORK=$(APLANE_INTEGRATION_NETWORK) INTEGRATION=1 go test -count=1 -timeout 30m -v -run '^(TestIncludedKeyTypesSignInBatchedGroups|TestAllowlistLockDeclaredOpcodeCeilings|TestCorridorDeclaredOpcodeCeilings)$$' $(INTEGRATION_TEST_PKG)
 
 soak-test-localnet:
 	@echo "Running LocalNet soak test..."

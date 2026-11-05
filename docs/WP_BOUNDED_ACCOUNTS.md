@@ -15,8 +15,8 @@
 A bounded account uses a stateless authorization program to restrict the
 transactions it can accept. The program defines who must sign, which kinds of
 transactions are permitted, and what conditions each transaction must satisfy.
-Those conditions can include approved destinations, a fee ceiling, asset and
-amount restrictions, or a round before which spending is prohibited.
+Those conditions can include approved destinations, a fee ceiling, or a round
+before which spending is prohibited.
 
 An allowlisted bounded account is one example: its transfers can go only to
 itself or to specified recipients. Connecting such accounts through their
@@ -77,7 +77,7 @@ bounded accounts also include profiles without destination restrictions.
 |---|---|---|
 | `aplane.falcon1024-allowlist.v1` | Self or an inline recipient list | Spending key alone |
 | `aplane.falcon1024-allowlist.v2` | Self or membership in a Merkle recipient list | Spending key alone |
-| `aplane.falcon1024-allowlist-alock.v1` | Self or an inline recipient list, with optional asset and per-transaction amount limits | Spending key plus a separate Falcon contract-admin key |
+| `aplane.falcon1024-allowlist-lock.v1` | Self or an inline recipient list | Spending key plus a separate Falcon contract-admin key |
 | `aplane.corridor.v1` | Self or membership in a Merkle recipient list, plus a Falcon cosigner signature for every spend | Spending key plus a separate Falcon contract-admin key |
 | `aplane.falcon1024-timelock.v1` | Transaction's first valid round must reach the configured unlock round | Spending key, subject to the same round condition |
 
@@ -86,10 +86,6 @@ up to 65,536 recipients, committing to the list through a fixed root. The
 signer stores the recipient list and derives a membership proof when needed;
 the on-chain program verifies that proof. Updating the stored list alone
 cannot change the root embedded in the existing program.
-
-The rekey-locked allowlist's optional ALGO limit is in microAlgos; its optional
-ASA amount limit is in the asset's base units. These are per-transaction
-limits. They do not count previous transfers or establish a daily budget.
 
 For a network intended to contain spending-key theft, the rekey-locked
 allowlist or Corridor supplies an essential additional property: the spending
@@ -125,8 +121,8 @@ established account addresses instead. Rings, meshes, and mutual links can
 therefore be constructed without recursively defining program addresses.
 
 A listed recipient creates a permitted destination edge, **A → B**. Whether a
-particular transfer can use that edge also depends on its asset, amount,
-required signatures, and other applicable conditions. Self-transfers and
+particular transfer can use that edge also depends on its required signatures
+and other applicable conditions. Self-transfers and
 asset opt-ins follow the selected profile's rules.
 
 The graph needs no separate on-chain routing registry: each authorizing
@@ -211,8 +207,8 @@ That is a specific containment property, not a guarantee that the account
 cannot lose value:
 
 - An attacker with sufficient spending authorization may make repeated
-  permitted transfers, including transfers toward an approved exit. A
-  per-transaction amount limit does not cap their aggregate value.
+  permitted transfers, including transfers toward an approved exit. The
+  bundled profiles do not limit assets or amounts on-chain.
 - Fees are outflows too. The fee ceiling limits each protected transaction,
   not the total fees payable over the account's lifetime.
 - The program checks transactions authorized by this account. Asset-level

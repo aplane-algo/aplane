@@ -111,15 +111,11 @@ type BoundedDerivedArgSpec struct {
 	MaxSize   int    `yaml:"max_size"`
 }
 
-// TransactionLayer3Spec selects a framework-owned spending policy and binds
-// its typed options to creation parameters. A nil value means expert-authored
-// custom TEAL.
+// TransactionLayer3Spec selects a framework-owned spending policy and binds it
+// to its recipients parameter. A nil value means expert-authored custom TEAL.
 type TransactionLayer3Spec struct {
-	Policy                    string `yaml:"policy"`
-	RecipientsParameter       string `yaml:"recipients_parameter"`
-	AssetIDsParameter         string `yaml:"asset_ids_parameter"`
-	MaxPaymentAmountParameter string `yaml:"max_payment_amount_parameter"`
-	MaxAssetAmountParameter   string `yaml:"max_asset_amount_parameter"`
+	Policy              string `yaml:"policy"`
+	RecipientsParameter string `yaml:"recipients_parameter"`
 }
 
 // TransactionAdminOperation is one operation in a schema-v2 bounded profile.
@@ -182,6 +178,7 @@ type RuntimeArgSpec struct {
 	Type        string `yaml:"type"`        // bytes | string | uint64
 	Required    bool   `yaml:"required"`    // If true, transaction will fail without this arg
 	ByteLength  int    `yaml:"byte_length"` // Expected byte length (0 = variable)
+	MaxSize     int    `yaml:"max_size"`    // Variable-length ceiling, which sizes the LogicSig argument budget
 }
 
 // YAMLTemplate implements genericlsig.Template from a parsed YAML spec.
@@ -305,6 +302,7 @@ func RuntimeArgSpecToRuntimeArgDefs(specs []RuntimeArgSpec) []lsigprovider.Runti
 			Type:        a.Type,
 			Required:    a.Required,
 			ByteLength:  a.ByteLength,
+			MaxSize:     a.MaxSize,
 		}
 	}
 	return defs
@@ -864,6 +862,7 @@ func compatibilityFingerprintForSpec(spec *TemplateSpec) string {
 			Type:       a.Type,
 			Required:   a.Required,
 			ByteLength: a.ByteLength,
+			MaxSize:    a.MaxSize,
 		}
 	}
 

@@ -54,8 +54,8 @@ send 1.5 algo from alice to bob
 send 100 usdc from alice to bob note="Payment for services"
 send 1 algo from alice to @friends atomic
 send 1 algo from [alice bob charlie] to treasury atomic
-send 0.5 algo from lsig-htlc to bob arg:preimage=hello
-send 0.5 algo from lsig-htlc to bob arg:preimage=hex:abcdef
+send 0.5 algo from lsig-account to bob arg:preimage=hello
+send 0.5 algo from lsig-account to bob arg:preimage=hex:abcdef
 ```
 
 ---

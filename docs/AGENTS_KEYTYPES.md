@@ -32,7 +32,7 @@ Do not edit shipped library templates or Go providers just to satisfy a user's
 custom policy. Shipped templates, compiled providers, and installed template key
 types are compatibility boundaries. Changing the behavior of an existing key
 type such as `aplane.htlc.v1`, `aplane.falcon1024-allowlist.v1`, or
-`aplane.falcon1024-allowlist-alock.v1` can break existing keys and backups. The
+`aplane.falcon1024-allowlist-lock.v1` can break existing keys and backups. The
 guarded cosigner provider (`aplane.falcon1024-cosigner1024.v1`) is Go-defined.
 `aplane.corridor.v1` and `aplane.falcon1024-allowlist.v2` are shipped,
 versioned YAML templates and remain compatibility boundaries.

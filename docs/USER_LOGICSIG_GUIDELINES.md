@@ -482,7 +482,8 @@ Assume any allowed path may be exercised by an arbitrary third party.
 
 For bundled generic LogicSigs, a strong default is to require an exact minimal
 fee such as `txn Fee == 1000`. This prevents the LogicSig account from becoming
-an open-ended fee payer.
+an open-ended fee payer. A fee ceiling is also acceptable when every path closes
+the account, because each path can then run only once.
 
 ### Be Clear About The Security Boundary
 
@@ -528,7 +529,8 @@ Use this profile for generic TEAL-only templates that may be funded directly.
 The template should enforce:
 
 - transaction type allowlist
-- exact fee or explicitly modeled sponsored-fee group
+- exact fee, explicitly modeled sponsored-fee group, or a fee ceiling when every
+  path closes the account
 - `RekeyTo == ZeroAddress`
 - payment close-out policy
 - asset close-out policy
@@ -589,7 +591,8 @@ assert
 
 If fee pooling is required, constrain the group shape and prove which
 transaction pays the fee. Do not let a public LogicSig account pay unbounded
-fees.
+fees. See [Why Strict Fee Is The Default](#why-strict-fee-is-the-default) for when
+a ceiling is acceptable instead.
 
 ### Payment Close-Out
 
@@ -831,7 +834,7 @@ lives in signer approval and local signer policy.
 
 #### Bounded Authorization Allowlist
 
-`aplane.falcon1024-allowlist-alock.v1` is a schema-v2 composed account with
+`aplane.falcon1024-allowlist-lock.v1` is a schema-v2 composed account with
 Falcon-1024 spending and external Falcon contract-admin authorization. The
 composer-owned `bounded1` envelope admits only pure payments, pure asset
 transfers, independently authorized asset opt-ins, or a pure self-payment
@@ -841,10 +844,10 @@ signature and an external contract-admin signature through
 `POST /sign/bounded-admin` and `aprekey`.
 
 Its framework-owned `fixed_allowlist` policy handles all admitted spend effects
-without author TEAL. It constrains `Receiver`/`AssetReceiver`, optionally
-constrains `XferAsset`, `Amount`, and `AssetAmount`, and compiles canonical
-recipient/asset lists inline with an audited maximum of 30 entries each. It
-uses no runtime proof or signer-derived LogicSig argument. The external private
+without author TEAL. It constrains `Receiver`/`AssetReceiver` and compiles the
+canonical recipient list inline with an audited maximum of 30 entries. Asset
+and amount limits stay in signer policy, because one program is valid on every
+network and asset IDs are network-local. It uses no runtime proof or signer-derived LogicSig argument. The external private
 key exists only in a `.wit` artifact; losing all copies removes
 the admin-key rekey path but does not stop policy-compliant spending. See
 [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md).
@@ -889,29 +892,39 @@ participant may be able to exercise it.
 
 - generic hash-time-lock style template
 - public once funded
-- strict fixed fee
+- ALGO only; it accepts no asset transfer or opt-in
+- every path closes the account, so each runs once
+- fee ceiling of 10,000 microAlgos
 - no key registration path
-- optional parameterized ASA opt-in only for explicitly approved asset IDs
 
 HTLC-style policies should be reviewed with special care around validity-window
 crossing behavior and preimage handling.
 
-In `aplane.htlc.v1`, `timeout_round` is enforced in TEAL using `txn FirstValid`:
+In `aplane.htlc.v1`, `timeout_round` is enforced in TEAL on both validity fields:
 
 - refund path requires `txn FirstValid >= timeout_round`
-- claim path requires `txn FirstValid < timeout_round`
+- claim path requires `txn LastValid < timeout_round`
 
 In other words, `timeout_round` is the first round at which a refund
-transaction may begin its validity window, and claim transactions must begin
-their validity window before that round.
+transaction may begin its validity window, and a claim's whole validity window
+must end before that round. The windows never overlap, so a backdated claim
+cannot land after the timeout. That is what lets a swap rely on one side's timeout
+being shorter than the other's.
 
-Leaving `allowed_optin_assets` empty disables only the public ASA opt-in helper
-path. It does not make the account ALGO-only: if the LogicSig account already
-holds an ASA, the claim and refund paths can send or close that ASA to the
-configured recipient or refund address according to the HTLC timing rules. That
-distinction is intentional: third parties must not be able to opt the escrow
-into arbitrary new assets through helper transactions that are unrelated to the
-hashlock policy itself.
+Both paths need no signature, so anyone may submit them; the destination is
+fixed. Required close-out is what makes that safe. With a partial payment, anyone
+could repeat zero-amount payments and burn the balance in fees once the preimage
+is public or the timeout has passed.
+
+The program is not bound to a network, and `timeout_round` means a different time
+on each one. Fund the address on one network only.
+
+The preimage can be a typed phrase of up to 64 bytes, which is enough for a
+demonstration. A phrase can be guessed, though, and whoever guesses it can claim.
+
+For a swap, use an atomic group on one chain; an HTLC is for swaps across chains.
+Use a random 32-byte secret for those: Bitcoin HTLCs normally require exactly 32
+bytes, and nothing here enforces that for you.
 
 #### Falcon-Backed Composed Templates
 
@@ -932,6 +945,10 @@ emergency response to spending-key compromise. This preserves the timelock as
 an authority condition; use the external-admin allowlist or a reviewed custom
 policy when an earlier separately co-authorized rekey path is required. The
 external-admin path still requires the spending key.
+
+The program is not bound to a network, and `unlock_round` means a different time on
+each one, so the account could be unlocked on one network and locked on another.
+Fund the address on one network only.
 
 ##### `aplane.falcon1024-allowlist.v2`
 
@@ -1015,9 +1032,14 @@ For public generic LogicSigs, APlane resolves this in favor of safety:
 - they also avoid accidentally turning reusable public templates into
   user-funded fee pools
 
+The exception is a program where every path closes the account, such as
+`aplane.htlc.v1`. Each path runs once, so a ceiling limits the griefing to a single
+fee, while an exact fee could strand the funds if the network minimum rose above it.
+
 ### Design Principles
 
-- use strict fixed fees as the default for public generic LogicSigs
+- use strict fixed fees as the default for public generic LogicSigs, or a fee
+  ceiling when every path closes the account
 - only allow sponsored-fee grouped execution through explicit, carefully
   designed TEAL rules
 - bind every ASA path to an intended `XferAsset` or approved asset allowlist

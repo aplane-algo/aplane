@@ -125,7 +125,7 @@ Built-in and bundled key types include:
 - the generic `aplane.htlc.v1` template
 - bounded Falcon templates: `aplane.falcon1024-allowlist.v1`,
   `aplane.falcon1024-allowlist.v2`, `aplane.falcon1024-timelock.v1`, and
-  `aplane.falcon1024-allowlist-alock.v1`, plus the bounded-cosigner
+  `aplane.falcon1024-allowlist-lock.v1`, plus the bounded-cosigner
   `aplane.corridor.v1`
 - the rotating accounts `aplane.rotating-triple-xmss.v1`,
   `aplane.rotating-triple-slhdsa.v1` and `aplane.rotating-triple-wotsc.v1`

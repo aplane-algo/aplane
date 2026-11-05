@@ -244,18 +244,18 @@ It does not import a new YAML source; use `template import` for that.
 
 ## Falcon Rekey-Locked Allowlist
 
-`aplane.falcon1024-allowlist-alock.v1` is the framework-owned transaction
+`aplane.falcon1024-allowlist-lock.v1` is the framework-owned transaction
 authorization account. It requires a Falcon spending signature on every
 transaction and a separate external Falcon contract-admin signature for a
 pure rekey. Its on-chain policy permits only ALGO payments and ASA transfers,
 denies all close/clawback effects, and constrains the destination to the sender
 or one of 1-30 compiled recipients.
 
-Optional creation parameters further constrain ASA IDs and per-transaction
-ALGO/ASA amounts. Omitting `asset_ids` allows any ASA ID; omitting an amount
-limit leaves that type's amount unrestricted. Asset and amount checks still
-apply to self-transfers. The signer injects the `bounded_admin_public_key`
-creation field; it is not a second signer-held key.
+The program doesn't limit which asset moves or how much. One program is valid
+on every network, and an asset ID names an asset on one chain only, so set
+asset and amount limits per network in [signer policy](USER_POLICY.md). The
+signer injects the `bounded_admin_public_key` creation field; it is not a
+second signer-held key.
 
 Generate the external contract-admin key first:
 
@@ -264,7 +264,7 @@ aprekey generate --out /media/cold/bounded-admin
 ```
 
 Copy the generated public `<WitnessKeyID>.wit.json` file to the machine running
-`apadmin`. When generating `aplane.falcon1024-allowlist-alock.v1`, enter that
+`apadmin`. When generating `aplane.falcon1024-allowlist-lock.v1`, enter that
 file's local path in **Contract Admin Reference File (.wit.json)**, or press
 `ctrl+o` in that field to browse for it. `apadmin`
 validates the public reference and supplies its `public_key_hex` to the signer;
@@ -299,7 +299,7 @@ client configuration. Confirm the displayed genesis hash as part of a custom
 network ceremony; `complete` verifies it against the selected configured
 network before submission.
 
-The maximum policy cell has 30 recipients and 30 asset IDs. Its resource
+The maximum policy cell has 30 recipients. Its resource
 profile is path-specific: v42 group size is driven by argument and opcode
 capacity, while any excess program bytes are paid through the group fee. The
 signer rejects a finalized path whose fee would exceed the compiled 10,000
@@ -674,6 +674,70 @@ handles the storage difference behind the scenes.
 For the full filesystem layout and state-record transitions for disable,
 enable, remove, and reload, see
 [DEV_KEYTYPES.md](DEV_KEYTYPES.md) (Product Filesystem State).
+
+## Worked Example: HTLC
+
+`aplane.htlc.v1` is the bundled example of a generic LogicSig, and shows both kinds
+of input a key type can take: creation parameters, fixed into the address when the
+account is generated, and runtime arguments, supplied with each transaction.
+
+An HTLC holds ALGO until one of two things happens. The recipient claims the whole
+balance with a secret before a timeout, or the refund address reclaims it after.
+It has no private key, so anyone may submit either transaction, but the destination
+is fixed.
+
+Install the template and generate an account. Take the SHA-256 of your secret:
+
+```bash
+apadmin -d $APSIGNER_DATA template import library/templates/aplane.htlc.v1.yaml
+printf %s 'open-sesame' | sha256sum
+```
+
+```text
+generate aplane.htlc.v1 hash=SHA256_HEX recipient=ADDR1 refund_address=ADDR2 timeout_round=50000000
+```
+
+`hash`, `recipient`, `refund_address` and `timeout_round` are creation parameters.
+In `apadmin` you can type the phrase instead, and it is hashed for you. Fund the
+account like any other, on one network only, because a round number means a
+different time on each network:
+
+```text
+send 1 algo from alice to HTLC_ADDRESS
+```
+
+To claim, pass the secret as the `preimage` runtime argument, which can be up to 64
+bytes:
+
+```text
+close HTLC_ADDRESS to ADDR1 arg:preimage=text:open-sesame
+```
+
+To refund once `timeout_round` has passed, no argument is needed:
+
+```text
+close HTLC_ADDRESS to ADDR2
+```
+
+Use `close`, not `send`. The program accepts only a payment that closes the account,
+because a repeatable partial payment would let anyone burn the balance in fees.
+
+The transaction must also fit its window. A claim must expire before `timeout_round`,
+and `apshell` uses a validity window of about 1,000 rounds, so start a claim at least
+that long before the timeout, and set timeouts well beyond it. An SDK client can set
+a shorter window.
+
+A typed phrase is fine for a demonstration, but it can be guessed, and whoever guesses
+it can claim. For real use, generate a random 32-byte secret, and use its hash:
+
+```text
+close HTLC_ADDRESS to ADDR1 arg:preimage=0xSECRET_HEX
+```
+
+For a swap on one chain, use an atomic group instead. An HTLC is for swaps across
+chains, where each side locks funds under the same hash, the side holding the secret
+sets the longer timeout, and a Bitcoin HTLC normally requires exactly 32 bytes. See
+[USER_LOGICSIG_GUIDELINES.md](USER_LOGICSIG_GUIDELINES.md) for the security review.
 
 ## Reload Behavior
 

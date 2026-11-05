@@ -155,7 +155,7 @@ client settings remain in `config.yaml`. See
   Ed25519), a stable address whose stage program changes on every spend
 - **generic LogicSigs**: HTLCs and user-loaded custom TEAL
 - **bounded/composed LogicSigs**: allowlists, timelocks, cosigner-gated Corridor,
-  amount/asset bounds, and external contract-admin rekey controls
+  and external contract-admin rekey controls
 
 ### Automation & Integration
 - JavaScript scripting with full transaction API

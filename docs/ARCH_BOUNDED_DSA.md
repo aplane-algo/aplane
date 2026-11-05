@@ -75,7 +75,7 @@ is a complete value-spending policy.
 | Layer-3 arguments | declared static runtime and signer-derived slots |
 | Signer-derived primitive | fixed-depth Merkle allowlist proof (512 bytes) |
 | Framework Layer-3 policies | `fixed_allowlist`, `merkle_allowlist` |
-| Inline recipient/asset maximum | 30 entries per list |
+| Inline recipient maximum | 30 entries |
 | Flow labels | `bounded1` without a cosigner; `bounded-cosigner1` with a spend cosigner |
 | Online cosigner endpoints | `POST /plan`, `POST /sign/component`, `POST /sign/assemble` |
 | Admin endpoint | `POST /sign/bounded-admin` |
@@ -155,7 +155,7 @@ effect surface:
 | `aplane.falcon1024-allowlist.v1` | inline fixed recipient allowlist | spending key; no Layer 3 gate | none |
 | `aplane.falcon1024-allowlist.v2` | fixed-depth Merkle recipient allowlist | spending key; no Layer 3 gate | optional signer-derived `merkle_proof` on spend |
 | `aplane.falcon1024-timelock.v1` | `FirstValid >= unlock_round` | spending key; Layer 3 required | none |
-| `aplane.falcon1024-allowlist-alock.v1` | inline recipient/asset/amount allowlist | external Falcon admin key | trailing admin signature |
+| `aplane.falcon1024-allowlist-lock.v1` | inline recipient allowlist | external Falcon admin key | trailing admin signature |
 | `aplane.corridor.v1` | framework Merkle recipient allowlist plus cosigner spend gate | external Falcon admin key | Merkle proof, cosigner signature, trailing admin signature |
 
 Every profile rejects close, clawback, hybrid rekey, and non-transfer types.
@@ -401,7 +401,7 @@ accepts the base component or cosigner signature.
 The first implementation must freeze and test a vector using:
 
 ```text
-full_key_type: aplane.falcon1024-allowlist-alock.v1
+full_key_type: aplane.falcon1024-allowlist-lock.v1
 base_primitive: falcon1024
 teal_version: 12
 spending_public_key: 1,793 bytes of 0x11
@@ -449,10 +449,10 @@ contract_admin_key_id:
   MM3VSIAUKJ2BT2JBNB7V3HX2YUP7SMLWRWGWDQPEGSZ4ZRK6SLVQ
 
 bounded_program_binding:
-  bddc0ee16bac8ebad4519c1f138bbfc87e94817fc1d68119f310567fb98e5001
+  d721742f981915ddf710de228678bffd0b932e8f58dd63c6852467a0bddb0b35
 
 admin_message:
-  dc6c476953d76d3fcea7ace82ef90624b170fa6aed699988d381ce790a613ce1
+  5e46ffe51229497376e1a50e4bebbb9028e6ef0da8285ddd62cd5135efb6eb0b
 ```
 
 Whitespace and line wrapping above are presentation only. Code tests decode
@@ -646,7 +646,7 @@ template_type: composed
 template_mode: generated
 base_key_type: aplane.falcon1024.v1
 publisher: aplane
-family: falcon1024-allowlist-alock
+family: falcon1024-allowlist-lock
 version: 1
 display_name: Falcon-1024 Rekey-Locked Allowlist
 
@@ -661,9 +661,6 @@ bounded:
   layer3:
     policy: fixed_allowlist
     recipients_parameter: recipients
-    asset_ids_parameter: asset_ids
-    max_payment_amount_parameter: max_payment_amount
-    max_asset_amount_parameter: max_asset_amount
 
 parameters:
   - name: recipients
@@ -671,28 +668,18 @@ parameters:
     required: true
     min_items: 1
     max_items: 30
-  - name: asset_ids
-    type: uint64[]
-    required: false
-    min_items: 1
-    max_items: 30
-  - name: max_payment_amount
-    type: uint64
-    required: false
-    min: 1
-  - name: max_asset_amount
-    type: uint64
-    required: false
-    min: 1
 ```
 
 `fixed_allowlist` is composer-owned and rejects a non-empty `teal` field. It
-handles every effect in `spend_effects`: `pay` constrains `Receiver` and
-optional `Amount`; `axfer` and `asset_opt_in` constrain `AssetReceiver` and
-optionally `XferAsset` and `AssetAmount`. The sender is always a legal
-self-recipient, but asset and amount limits still apply. Empty optional asset/amount values
-omit only that named constraint. Both list parameters are canonicalized and
-bounded to 30 entries. The policy uses no runtime proof or signer-derived arg.
+handles every effect in `spend_effects`: `pay` constrains `Receiver`; `axfer`
+and `asset_opt_in` constrain `AssetReceiver`. The sender is always a legal
+self-recipient. The recipients parameter is canonicalized and bounded to 30
+entries. The policy uses no runtime proof or signer-derived arg.
+
+Neither framework policy compiles an asset or amount check. One program is
+valid on every network, while an asset ID names an asset on one chain only and
+a base-unit amount means nothing across assets. Per-network asset and amount
+limits belong to signer policy.
 A spending-key rekey with `policy_gate: layer3` requires `pay` in
 `spend_effects`, because a pure rekey is payment-shaped and must enter the
 framework policy's payment branch.
@@ -701,9 +688,8 @@ framework policy's payment branch.
 `address[]` recipients parameter with 1-65,536 entries. It requires exactly one
 512-byte `merkle_allowlist_proof` derived argument bound to that parameter,
 computes the fixed-depth root during program generation, and verifies the
-proof for every non-self payment or asset receiver. It accepts no asset-ID or
-amount options and rejects author TEAL. Omitting `bounded.layer3` selects
-contained custom author TEAL.
+proof for every non-self payment or asset receiver. It rejects author TEAL.
+Omitting `bounded.layer3` selects contained custom author TEAL.
 
 ### Merkle Allowlist Compatibility Contract
 

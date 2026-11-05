@@ -106,7 +106,6 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 	preimage := bytes.Repeat([]byte("k"), 32)
 	preimageHash := sha256.Sum256(preimage)
 	timelockRound := baseRound
-	htlcAssetID := corridorTestAssetID(t, testnet, funder)
 	cleanupAuthority := algocrypto.GenerateAccount()
 	// An admin-key rekey may only target a credential the signer holds, so the
 	// test-owned cleanup authority is also imported into the signer. The test
@@ -130,11 +129,11 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 	// rule re-derives such a program through the configured compiler at
 	// release, so a held LogicSig target exercises that path end to end.
 	heldLsigTarget := mustAdminGenerateKey(t, signerClient, signerd, "aplane.falcon1024.v1", nil)
-	alockAdminPublicKey, alockAdminPrivateKey, err := signerops.New(nil).GenerateKeypair(randomFalconSeed(t))
+	allowlistLockAdminPublicKey, allowlistLockAdminPrivateKey, err := signerops.New(nil).GenerateKeypair(randomFalconSeed(t))
 	if err != nil {
-		t.Fatalf("generate matrix ALock cleanup admin key: %v", err)
+		t.Fatalf("generate matrix allowlist-lock cleanup admin key: %v", err)
 	}
-	t.Cleanup(func() { securecrypto.ZeroBytes(alockAdminPrivateKey) })
+	t.Cleanup(func() { securecrypto.ZeroBytes(allowlistLockAdminPrivateKey) })
 
 	cases := []includedKeyTypeCase{
 		{
@@ -147,20 +146,54 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 			keyType: "aplane.falcon1024.v1",
 		},
 		{
-			keyType:            "aplane.htlc.v1",
-			opcodeVectorName:   "maximum-claim",
-			opcodeAssetOptInID: htlcAssetID,
+			keyType:          "aplane.htlc.v1",
+			opcodeVectorName: "maximum-claim",
 			params: map[string]string{
-				"hash":                 hex.EncodeToString(preimageHash[:]),
-				"recipient":            funder.GetAddress(),
-				"refund_address":       funder.GetAddress(),
-				"timeout_round":        fmt.Sprintf("%d", baseRound+1_000),
-				"allowed_optin_assets": matrixAssetIDsEndingWith(htlcAssetID, 16),
+				"hash":           hex.EncodeToString(preimageHash[:]),
+				"recipient":      funder.GetAddress(),
+				"refund_address": funder.GetAddress(),
+				"timeout_round":  fmt.Sprintf("%d", baseRound+2_000),
 			},
 			positiveArgs: map[string]string{"preimage": hex.EncodeToString(preimage)},
 			negative: includedKeyTypeNegative{
-				name: "wrong preimage",
-				args: map[string]string{"preimage": hex.EncodeToString(bytes.Repeat([]byte("x"), 32))},
+				name:     "wrong preimage",
+				args:     map[string]string{"preimage": hex.EncodeToString(bytes.Repeat([]byte("x"), 32))},
+				closeOut: true,
+			},
+		},
+		{
+			keyType:          "aplane.htlc.v1",
+			opcodeVectorName: "claim-repeat-guard",
+			params: map[string]string{
+				"hash":           hex.EncodeToString(preimageHash[:]),
+				"recipient":      funder.GetAddress(),
+				"refund_address": funder.GetAddress(),
+				// A distinct timeout gives this case its own address.
+				"timeout_round": fmt.Sprintf("%d", baseRound+2_001),
+			},
+			positiveArgs: map[string]string{"preimage": hex.EncodeToString(preimage)},
+			negative: includedKeyTypeNegative{
+				name: "claim without close-out",
+				args: map[string]string{"preimage": hex.EncodeToString(preimage)},
+			},
+		},
+		{
+			// The default validity window outlasts this timeout, so the negative's
+			// only defect is a claim that could still land after the timeout.
+			keyType:           "aplane.htlc.v1",
+			opcodeVectorName:  "claim-expires-before-timeout",
+			positiveLastValid: baseRound + 800,
+			params: map[string]string{
+				"hash":           hex.EncodeToString(preimageHash[:]),
+				"recipient":      funder.GetAddress(),
+				"refund_address": funder.GetAddress(),
+				"timeout_round":  fmt.Sprintf("%d", baseRound+900),
+			},
+			positiveArgs: map[string]string{"preimage": hex.EncodeToString(preimage)},
+			negative: includedKeyTypeNegative{
+				name:     "claim valid past timeout",
+				args:     map[string]string{"preimage": hex.EncodeToString(preimage)},
+				closeOut: true,
 			},
 		},
 		{
@@ -172,6 +205,10 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 				"recipient":      funder.GetAddress(),
 				"refund_address": funder.GetAddress(),
 				"timeout_round":  fmt.Sprintf("%d", baseRound),
+			},
+			negative: includedKeyTypeNegative{
+				name:       "refund without close-out",
+				firstValid: baseRound,
 			},
 		},
 		{
@@ -187,14 +224,11 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 			params:  map[string]string{"recipients": matrixMaximumRecipients(funder.GetAddress())},
 		},
 		{
-			keyType:         "aplane.falcon1024-allowlist-alock.v1",
-			adminPrivateKey: alockAdminPrivateKey,
+			keyType:         "aplane.falcon1024-allowlist-lock.v1",
+			adminPrivateKey: allowlistLockAdminPrivateKey,
 			params: map[string]string{
-				"recipients":         matrixMaximumRecipients(funder.GetAddress()),
-				"asset_ids":          matrixMaximumAssetIDs(),
-				"max_payment_amount": "18446744073709551615",
-				"max_asset_amount":   "18446744073709551615",
-				composeddsa.BoundedAdminPublicKeyParameter: hex.EncodeToString(alockAdminPublicKey),
+				"recipients": matrixMaximumRecipients(funder.GetAddress()),
+				composeddsa.BoundedAdminPublicKeyParameter: hex.EncodeToString(allowlistLockAdminPublicKey),
 			},
 		},
 		{
@@ -303,9 +337,6 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 				})
 			}
 
-			validateMatrixHTLCAssetOptInOpcodeCeilings(
-				t, compileAlgod, signerd.GetURL(), fundingAddress, batch, mustSuggestedParams(t, testnet), fundingRound,
-			)
 			validateMatrixRekeyOpcodeCeilings(t, compileAlgod, cleanupPlans, fundingRound)
 
 			validateMatrixOpcodeCeilings(t, compileAlgod, batch, signResp.Signed, fundingRound)
@@ -322,12 +353,12 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 func assertBundledOpcodeValidationInventory(t *testing.T) {
 	t.Helper()
 	validated := map[string]struct{}{
-		"aplane.corridor.v1.yaml":                   {},
-		"aplane.falcon1024-allowlist-alock.v1.yaml": {},
-		"aplane.falcon1024-allowlist.v1.yaml":       {},
-		"aplane.falcon1024-allowlist.v2.yaml":       {},
-		"aplane.falcon1024-timelock.v1.yaml":        {},
-		"aplane.htlc.v1.yaml":                       {},
+		"aplane.corridor.v1.yaml":                  {},
+		"aplane.falcon1024-allowlist-lock.v1.yaml": {},
+		"aplane.falcon1024-allowlist.v1.yaml":      {},
+		"aplane.falcon1024-allowlist.v2.yaml":      {},
+		"aplane.falcon1024-timelock.v1.yaml":       {},
+		"aplane.htlc.v1.yaml":                      {},
 	}
 	entries, err := templates.FS.ReadDir(".")
 	if err != nil {
@@ -378,7 +409,7 @@ func prepareMatrixRekeyCleanups(
 			plans = append(plans, prepareMatrixSpendingRekeyCleanup(
 				t, signerURL, fundingAddress, account, sp, approvalClient, cleanupAuthority,
 			))
-		case account.keyType == "aplane.falcon1024-allowlist-alock.v1":
+		case account.keyType == "aplane.falcon1024-allowlist-lock.v1":
 			plans = append(plans, prepareMatrixAdminRekeyCleanup(
 				t, testnet, signerClient, account, sp, approvalClient, cleanupAuthority, heldLsigTarget,
 			))
@@ -624,71 +655,12 @@ func matrixSupportsSpendingRekey(keyType string) bool {
 type includedKeyTypeCase struct {
 	keyType            string
 	opcodeVectorName   string
-	opcodeAssetOptInID uint64
 	adminPrivateKey    []byte
 	params             map[string]string
 	positiveArgs       map[string]string
 	positiveFirstValid uint64
+	positiveLastValid  uint64
 	negative           includedKeyTypeNegative
-}
-
-func validateMatrixHTLCAssetOptInOpcodeCeilings(
-	t *testing.T,
-	client *sdkalgod.Client,
-	signerURL string,
-	fundingAddress string,
-	accounts []includedKeyTypeAccount,
-	sp types.SuggestedParams,
-	simulationRound uint64,
-) {
-	t.Helper()
-	for _, account := range accounts {
-		if account.opcodeAssetOptInID == 0 {
-			continue
-		}
-		t.Run(account.keyType+"/opcode/maximum-asset-optin", func(t *testing.T) {
-			txn := corridorAssetTransferTxn(
-				t, sp, account.address, account.address, 0, account.opcodeAssetOptInID, "keytype-matrix-asset-optin",
-			)
-			req := matrixSignRequest(t, sp, fundingAddress, []matrixSignTxn{{authAddress: account.address, txn: txn}})
-			status, body := postSignRequest(t, signerURL, req)
-			if status != http.StatusOK {
-				t.Fatalf("expected HTLC asset opt-in signing to succeed, got %d: %s", status, string(body))
-			}
-			var signResp signerapi.GroupSignResponse
-			if err := json.Unmarshal(body, &signResp); err != nil {
-				t.Fatalf("parse HTLC asset opt-in sign response: %v", err)
-			}
-			if signResp.Error != "" {
-				t.Fatalf("unexpected HTLC asset opt-in sign error: %s", signResp.Error)
-			}
-			assertMatrixPlannerDummies(t, signResp, len(req.Requests), 0)
-			signed := make([]types.SignedTxn, len(signResp.Signed))
-			for i, encoded := range signResp.Signed {
-				signed[i] = decodeSignedTxnHex(t, encoded)
-			}
-			// The vector is built after the funding-visibility wait. A public
-			// TestNet node may therefore give it a FirstValid later than the
-			// funding round whose state the simulation must include.
-			opcodeSimulationRound := matrixOpcodeSimulationRound(t, simulationRound, signed)
-			profile := matrixDeclaredOpcodeProfile(t, account.keyType)
-			report, err := harness.ValidateDeclaredOpcodeCeiling(context.Background(), client, harness.OpcodeCeilingValidation{
-				Name:          account.keyType,
-				FinalProgram:  signed[0].Lsig.Logic,
-				Profile:       profile,
-				Round:         opcodeSimulationRound,
-				RequiredPaths: []lsigresource.AuthorizationPath{lsigresource.PathDefault},
-				Vectors: []harness.OpcodeCeilingVector{{
-					Name: "maximum-asset-optin", Path: lsigresource.PathDefault, SignedTxns: signed, LSigIndex: 0,
-				}},
-			})
-			if err != nil {
-				t.Fatalf("validate HTLC asset opt-in opcode ceiling: %v", err)
-			}
-			observed := report.Paths[lsigresource.PathDefault]
-			t.Logf("asset-optin opcode cost: %d observed / %d declared", observed.MaximumObserved, observed.DeclaredCeiling)
-		})
-	}
 }
 
 func matrixOpcodeSimulationRound(t *testing.T, stateRound uint64, signed []types.SignedTxn) uint64 {
@@ -736,6 +708,7 @@ type includedKeyTypeNegative struct {
 	receiver   string
 	args       map[string]string
 	firstValid uint64
+	closeOut   bool
 }
 
 type includedKeyTypeAccount struct {
@@ -762,6 +735,9 @@ func (a includedKeyTypeAccount) positiveSignTxn(
 		closeTo = destination
 	}
 	txn := mustPaymentTxnForMatrix(t, sp, a.address, destination, "keytype-matrix-positive", closeTo, a.positiveFirstValid)
+	if a.positiveLastValid != 0 {
+		txn.LastValid = types.Round(a.positiveLastValid)
+	}
 	if uint64(txn.Fee)+retainedBalance >= matrixAccountFunding {
 		t.Fatalf(
 			"matrix transaction fee %d plus retained balance %d exhaust account funding %d",
@@ -783,9 +759,13 @@ func (a includedKeyTypeAccount) negativeSignTxn(t *testing.T, sp types.Suggested
 	if a.negative.receiver != "" {
 		destination = a.negative.receiver
 	}
+	closeTo := ""
+	if a.negative.closeOut {
+		closeTo = destination
+	}
 	return matrixSignTxn{
 		authAddress: a.address,
-		txn:         mustPaymentTxnForMatrix(t, sp, a.address, destination, "keytype-matrix-negative", "", a.negative.firstValid),
+		txn:         mustPaymentTxnForMatrix(t, sp, a.address, destination, "keytype-matrix-negative", closeTo, a.negative.firstValid),
 		lsigArgs:    a.negative.args,
 	}
 }
@@ -1316,14 +1296,6 @@ func matrixMaximumRecipients(destination string) string {
 	return strings.Join(recipients, ",")
 }
 
-func matrixMaximumAssetIDs() string {
-	ids := make([]string, 30)
-	for i := range ids {
-		ids[i] = fmt.Sprintf("%d", i+1)
-	}
-	return strings.Join(ids, ",")
-}
-
 func mustPaymentTxnForMatrix(
 	t *testing.T,
 	sp types.SuggestedParams,
@@ -1389,7 +1361,7 @@ func installAllBundledTemplates(t *testing.T, signerDataDir string) {
 		"aplane.htlc.v1.yaml",
 		"aplane.falcon1024-allowlist.v1.yaml",
 		"aplane.falcon1024-allowlist.v2.yaml",
-		"aplane.falcon1024-allowlist-alock.v1.yaml",
+		"aplane.falcon1024-allowlist-lock.v1.yaml",
 		"aplane.falcon1024-timelock.v1.yaml",
 	}
 	templatePaths := make([]string, 0, len(templateFiles))

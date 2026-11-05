@@ -30,7 +30,7 @@ APLANE_INTEGRATION_NETWORK=localnet ./test/setup-test-env.sh
 account. It is never interpreted as Ed25519. Public-network runs therefore
 require a network that has activated native Falcon authorization (v42).
 
-Corridor/ALock asset vectors reuse the oldest clean `Corridor Test Asset`
+Corridor and allowlist-lock asset vectors reuse the oldest clean `Corridor Test Asset`
 created by the funding account for which the account still holds the complete
 10-unit supply. If the account has no such fixture, the test creates one on the
 selected network. If a matching fixture exists but is depleted, the test fails

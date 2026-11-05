@@ -227,6 +227,12 @@ func ValidateRuntimeArgSpecs(args []RuntimeArgSpec) error {
 		default:
 			return fmt.Errorf("runtime_arg %s has invalid type %q (must be bytes, string, or uint64)", a.Name, a.Type)
 		}
+		if a.MaxSize < 0 {
+			return fmt.Errorf("runtime_arg %s has negative max_size", a.Name)
+		}
+		if a.ByteLength > 0 && a.MaxSize > 0 {
+			return fmt.Errorf("runtime_arg %s cannot set both byte_length and max_size", a.Name)
+		}
 	}
 	return nil
 }

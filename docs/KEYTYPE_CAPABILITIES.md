@@ -35,11 +35,11 @@ included as normal user-account operations.
 | `aplane.ed25519.v1` | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
 | `aplane.falcon1024-allowlist.v1` | C | N | C | Y | N | N | N | N | N | N | C |
 | `aplane.falcon1024-allowlist.v2` | C | N | C | Y | N | N | N | N | N | N | C |
-| `aplane.falcon1024-allowlist-alock.v1` | C | N | C | C | N | N | N | N | N | N | C |
+| `aplane.falcon1024-allowlist-lock.v1` | C | N | C | C | N | N | N | N | N | N | C |
 | `aplane.falcon1024-timelock.v1` | C | N | C | C | N | N | N | N | N | N | C |
 | `aplane.falcon1024-cosigner1024.v1` | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
 | `aplane.corridor.v1` | C | N | C | Y | N | N | N | N | N | N | C |
-| `aplane.htlc.v1` | C | C | C | C | C | N | N | N | N | N | N |
+| `aplane.htlc.v1` | C | C | N | N | N | N | N | N | N | N | N |
 | `aplane.rotating-triple-xmss.v1` | C | N | C | C | C | C | C | C | C | C | C |
 | `aplane.rotating-triple-slhdsa.v1` | C | N | C | C | C | C | C | C | C | C | C |
 | `aplane.rotating-triple-wotsc.v1` | C | N | C | C | C | C | C | C | C | C | C |
@@ -79,9 +79,8 @@ included as normal user-account operations.
   fixed-depth proof against the root derived from the key-file recipient list.
   Self-send, asset opt-in, and pure spending-key rekey require no proof. Close,
   clawback, and non-transfer types are rejected.
-- `aplane.falcon1024-allowlist-alock.v1` admits only pure `pay` and `axfer`
-  spends to self or a compiled recipient. Optional asset-ID and amount limits
-  narrow that set. It rejects close, clawback, and every other transaction
+- `aplane.falcon1024-allowlist-lock.v1` admits only pure `pay` and `axfer`
+  spends to self or a compiled recipient. It rejects close, clawback, and every other transaction
   type. Rekey is restricted to the pure payment normal form and additionally
   requires the external Falcon contract-admin signature.
 - `aplane.rotating-triple-wotsc.v1` admits any transaction type, but every transaction must rekey to an address other
@@ -111,10 +110,9 @@ included as normal user-account operations.
   are rejected. Rekey is only the bounded pure 0-ALGO self-payment form and
   requires the distinct offline Falcon contract-admin signature; the cosigner is
   forbidden on that path.
-- `aplane.htlc.v1` allows claim paths to the configured recipient before
-  timeout with the configured preimage, refund paths to the configured refund
-  address after timeout, and approved ASA opt-in for configured
-  `allowed_optin_assets`.
+- `aplane.htlc.v1` admits only an ALGO payment that closes the account: to the
+  configured recipient with the configured preimage, in a transaction that expires
+  before timeout, or to the configured refund address after timeout.
 
 The SLH-DSA rotating triple admits the same transactions and rotation guards as
 XMSS. Its stateless hash scheme has no leaf range or leaf-reuse restriction.

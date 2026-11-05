@@ -20,10 +20,7 @@ func TestFixedAllowlistPolicyRendersCompleteSpendDispatch(t *testing.T) {
 	recipientA := types.Address{1}
 	recipientB := types.Address{2}
 	teal, err := provider.GenerateTEAL([]byte{1}, map[string]string{
-		"recipients":         recipientB.String() + "," + recipientA.String(),
-		"asset_ids":          "11,7",
-		"max_payment_amount": "1000000",
-		"max_asset_amount":   "250",
+		"recipients": recipientB.String() + "," + recipientA.String(),
 	})
 	if err != nil {
 		t.Fatalf("GenerateTEAL() error = %v", err)
@@ -33,18 +30,12 @@ func TestFixedAllowlistPolicyRendersCompleteSpendDispatch(t *testing.T) {
 		"txn TypeEnum\npushint 4\n==\nbnz __aplane_bounded1_layer3_axfer",
 		"txn Receiver\ntxn Sender\n==\nbnz __aplane_bounded1_layer3_pay_amount",
 		"txn AssetReceiver\ntxn Sender\n==\nbnz __aplane_bounded1_layer3_asset_constraints",
-		"txn XferAsset\ncallsub __aplane_bounded1_layer3_asset_allowed\nassert",
-		"txn Amount\npushint 1000000\n<=\nassert",
-		"txn AssetAmount\npushint 250\n<=\nassert",
-		"pushint 7",
-		"pushint 11",
+		"txn Receiver\ncallsub __aplane_bounded1_layer3_recipient_allowed\nassert",
+		"txn AssetReceiver\ncallsub __aplane_bounded1_layer3_recipient_allowed\nassert",
 	} {
 		if !strings.Contains(teal, want) {
 			t.Fatalf("GenerateTEAL() missing %q:\n%s", want, teal)
 		}
-	}
-	if first, second := strings.Index(teal, "pushint 7"), strings.Index(teal, "pushint 11"); first < 0 || second < first {
-		t.Fatalf("asset IDs are not canonicalized:\n%s", teal)
 	}
 	if strings.Count(teal, "__aplane_bounded1_layer3_recipient_yes") != 3 {
 		t.Fatalf("recipient membership does not contain exactly two branches and one label:\n%s", teal)
@@ -54,21 +45,56 @@ func TestFixedAllowlistPolicyRendersCompleteSpendDispatch(t *testing.T) {
 	}
 }
 
-func TestFixedAllowlistPolicyOptionalConstraintsAreAbsentWhenOmitted(t *testing.T) {
+// An asset ID names an asset on one network only and a base-unit amount means
+// nothing across assets, but one program runs on every network. The fixed
+// allowlist therefore compiles no asset or amount check of its own.
+func TestFixedAllowlistPolicyCompilesNoAssetOrAmountConstraint(t *testing.T) {
 	teal, err := fixedAllowlistTestProvider().GenerateTEAL([]byte{1}, map[string]string{
 		"recipients": types.Address{1}.String(),
 	})
 	if err != nil {
 		t.Fatalf("GenerateTEAL() error = %v", err)
 	}
-	for _, absent := range []string{
-		"callsub __aplane_bounded1_layer3_asset_allowed",
-		"txn Amount\npushint 1000000",
-		"txn AssetAmount\npushint 250",
-	} {
-		if strings.Contains(teal, absent) {
-			t.Fatalf("GenerateTEAL() contains omitted constraint %q:\n%s", absent, teal)
+	policy := teal[strings.Index(teal, "// === framework-owned fixed allowlist ==="):]
+	for _, absent := range []string{"txn XferAsset", "txn Amount", "txn AssetAmount"} {
+		if strings.Contains(policy, absent) {
+			t.Fatalf("allowlist policy contains %q:\n%s", absent, policy)
 		}
+	}
+}
+
+func TestFixedAllowlistTemplateRejectsAssetAndAmountOptions(t *testing.T) {
+	for _, field := range []string{"asset_ids_parameter", "max_payment_amount_parameter", "max_asset_amount_parameter"} {
+		t.Run(field, func(t *testing.T) {
+			_, err := ParseTemplateSpec([]byte(`schema_version: 2
+derivation_version: 3
+template_type: composed
+base_key_type: aplane.falcon1024.v1
+template_mode: generated
+publisher: test
+family: fixed
+version: 1
+display_name: Test
+description: Test
+bounded:
+  contract: bounded1
+  spend_effects: [pay, axfer]
+  max_fee: 10000
+  layer3:
+    policy: fixed_allowlist
+    recipients_parameter: recipients
+    ` + field + `: limit
+parameters:
+  - name: recipients
+    type: address[]
+    required: true
+    min_items: 1
+    max_items: 30
+`))
+			if err == nil || !strings.Contains(err.Error(), "field "+field+" not found") {
+				t.Fatalf("ParseTemplateSpec() error = %v, want rejection of %s", err, field)
+			}
+		})
 	}
 }
 
@@ -88,7 +114,7 @@ func TestFixedAllowlistPolicyRejectsUnsafeSchema(t *testing.T) {
 		{name: "unbounded recipients", policy: valid, params: []lsigprovider.ParameterDef{{Name: "recipients", Type: "address[]", Required: true, MinItems: 1}}, want: "max_items"},
 		{name: "over audited maximum", policy: valid, params: []lsigprovider.ParameterDef{{Name: "recipients", Type: "address[]", Required: true, MinItems: 1, MaxItems: BoundedInlineListMax + 1}}, want: "max_items"},
 		{name: "unused parameter", policy: valid, params: append(validParams, lsigprovider.ParameterDef{Name: "hidden", Type: "uint64"}), want: "is not used"},
-		{name: "wrong asset type", policy: &Layer3Policy{Policy: Layer3PolicyFixedAllowlist, RecipientsParameter: "recipients", AssetIDsParameter: "asset_ids"}, params: append(validParams, lsigprovider.ParameterDef{Name: "asset_ids", Type: "uint64"}), want: "must have type uint64[]"},
+		{name: "wrong recipients type", policy: valid, params: []lsigprovider.ParameterDef{{Name: "recipients", Type: "uint64[]", Required: true, MinItems: 1, MaxItems: 30}}, want: "must have type address[]"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -108,11 +134,9 @@ func TestMerkleAllowlistPolicyRequiresClosedProofContract(t *testing.T) {
 		t.Fatalf("validateLayer3Policy() error = %v", err)
 	}
 
-	withExtraConstraint := *policy
-	withExtraConstraint.MaxPaymentAmountParameter = "limit"
-	err := validateLayer3Policy(&withExtraConstraint, append(params, lsigprovider.ParameterDef{Name: "limit", Type: "uint64"}), profile)
-	if err == nil || !strings.Contains(err.Error(), "supports only recipients_parameter") {
-		t.Fatalf("validateLayer3Policy(extra constraint) error = %v", err)
+	err := validateLayer3Policy(policy, append(params, lsigprovider.ParameterDef{Name: "limit", Type: "uint64"}), profile)
+	if err == nil || !strings.Contains(err.Error(), "is not used") {
+		t.Fatalf("validateLayer3Policy(extra parameter) error = %v", err)
 	}
 
 	provider := &ComposedDSA{
@@ -184,10 +208,7 @@ func fixedAllowlistTestProvider() *ComposedDSA {
 		KeyType: "aplane.test-fixed-allowlist.v1", BaseKeyType: "aplane.falcon1024.v1",
 		FamilyName: "aplane.test", Version: 1, Ops: boundedTestOps{}, SaltStyle: lsigsalt.StylePushbytes,
 		TemplateMode: "generated", Params: fixedAllowlistTestParams(), Bounded: fixedAllowlistTestProfile(),
-		Layer3: &Layer3Policy{
-			Policy: Layer3PolicyFixedAllowlist, RecipientsParameter: "recipients", AssetIDsParameter: "asset_ids",
-			MaxPaymentAmountParameter: "max_payment_amount", MaxAssetAmountParameter: "max_asset_amount",
-		},
+		Layer3: &Layer3Policy{Policy: Layer3PolicyFixedAllowlist, RecipientsParameter: "recipients"},
 	})
 }
 
@@ -200,8 +221,5 @@ func fixedAllowlistTestProfile() *BoundedAuthorizationProfile {
 func fixedAllowlistTestParams() []lsigprovider.ParameterDef {
 	return []lsigprovider.ParameterDef{
 		{Name: "recipients", Type: "address[]", Required: true, MinItems: 1, MaxItems: BoundedInlineListMax},
-		{Name: "asset_ids", Type: "uint64[]", MinItems: 1, MaxItems: BoundedInlineListMax},
-		{Name: "max_payment_amount", Type: "uint64"},
-		{Name: "max_asset_amount", Type: "uint64"},
 	}
 }

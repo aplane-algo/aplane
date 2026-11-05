@@ -313,7 +313,7 @@ func TestFileBrowserFillsContractAdminParameter(t *testing.T) {
 	defer setServerKeyTypes(nil)
 	path, publicKeyHex := writeContractAdminReference(t)
 	setServerKeyTypes([]protocol.KeyTypeInfo{{
-		KeyType:     "aplane.falcon1024-allowlist-alock.v1",
+		KeyType:     "aplane.falcon1024-allowlist-lock.v1",
 		DisplayName: "Falcon Bounded Allowlist",
 		CreationParams: []protocol.TemplateParamInfo{{
 			Name:      "bounded_admin_public_key",
@@ -342,7 +342,7 @@ func TestFileBrowserFillsContractAdminParameter(t *testing.T) {
 	if got := m.forms.genericLSigParams["bounded_admin_public_key"]; got != path || m.forms.generateError != "" {
 		t.Fatalf("parameter %q error %q, want %q and no error", got, m.forms.generateError, path)
 	}
-	params, err := m.applyInputModeTransforms(getParamSpecForKeyType("aplane.falcon1024-allowlist-alock.v1").Params)
+	params, err := m.applyInputModeTransforms(getParamSpecForKeyType("aplane.falcon1024-allowlist-lock.v1").Params)
 	if err != nil {
 		t.Fatalf("applyInputModeTransforms() error = %v", err)
 	}

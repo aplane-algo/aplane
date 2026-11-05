@@ -146,9 +146,6 @@ func guardedAccountParameters(_ string, parameters map[string]string) map[string
 // through /keys unless its public status is reviewed here.
 var boundedInventoryParameterNames = []string{
 	"recipients",
-	"asset_ids",
-	"max_payment_amount",
-	"max_asset_amount",
 	"unlock_round",
 	boundedmeta.CosignerPublicKeyParameter,
 	boundedmeta.AdminPublicKeyParameter,

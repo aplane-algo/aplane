@@ -75,7 +75,7 @@ func TestValidateKnownWitnessRoleExclusivityRejectsLocalWitness(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateKey(witness) error = %v", err)
 	}
-	err = validateKnownWitnessRoleExclusivity(paths, "aplane.falcon1024-allowlist-alock.v1", map[string]string{
+	err = validateKnownWitnessRoleExclusivity(paths, "aplane.falcon1024-allowlist-lock.v1", map[string]string{
 		boundedmeta.AdminPublicKeyParameter: generated.PublicKeyHex,
 	}, cryptotest.Keyring(t, masterKey))
 	if err == nil || !strings.Contains(err.Error(), "cosigner custody") {

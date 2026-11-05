@@ -35,7 +35,7 @@ apadmin template import library/templates/aplane.falcon1024-allowlist.v1.yaml
 
 | Key type | File | Purpose | Creation params | Runtime args |
 |---|---|---|---|---|
-| `aplane.htlc.v1` | `aplane.htlc.v1.yaml` | Hash time-locked contract for ALGO or ASA transfers: recipient can claim before timeout with a preimage; refund address can reclaim after timeout; optional parameterized ASA opt-in is available for approved asset IDs only. | `hash` (default input mode: preimage), `recipient`, `refund_address`, `timeout_round`, `allowed_optin_assets` (`uint64[]`, optional) | `preimage` |
+| `aplane.htlc.v1` | `aplane.htlc.v1.yaml` | Hash time-locked ALGO contract: recipient can claim the whole balance before timeout with a preimage; refund address can reclaim the whole balance after timeout. | `hash` (default input mode: preimage), `recipient`, `refund_address`, `timeout_round` | `preimage` |
 
 ## Falcon-1024 Composed Templates
 
@@ -43,7 +43,7 @@ apadmin template import library/templates/aplane.falcon1024-allowlist.v1.yaml
 |---|---|---|---|---|
 | `aplane.falcon1024-allowlist.v1` | `aplane.falcon1024-allowlist.v1.yaml` | Bounded1 Falcon spending with an inline recipient allowlist; close, clawback, hybrid effects, and non-transfer types reject. Pure rekey requires the spending key. | `recipients` (`address[]`, 1-30) | None |
 | `aplane.falcon1024-allowlist.v2` | `aplane.falcon1024-allowlist.v2.yaml` | Bounded1 Falcon spending with a fixed-depth Merkle recipient allowlist. Pure rekey requires the spending key and no proof. | `recipients` (`address[]`, 1-65536) | None; signer generates the optional 512-byte spend proof |
-| `aplane.falcon1024-allowlist-alock.v1` | `aplane.falcon1024-allowlist-alock.v1.yaml` | Framework-owned bounded1 ALGO/ASA allowlist with optional asset-ID and per-type amount limits; pure rekeys additionally require an external Falcon contract-admin signature. | `recipients` (`address[]`, 1-30), optional `asset_ids` (`uint64[]`, 1-30), optional `max_payment_amount`, optional `max_asset_amount`, framework-injected `bounded_admin_public_key` | None |
+| `aplane.falcon1024-allowlist-lock.v1` | `aplane.falcon1024-allowlist-lock.v1.yaml` | Framework-owned bounded1 ALGO/ASA recipient allowlist; pure rekeys additionally require an external Falcon contract-admin signature. | `recipients` (`address[]`, 1-30), framework-injected `bounded_admin_public_key` | None |
 | `aplane.falcon1024-timelock.v1` | `aplane.falcon1024-timelock.v1.yaml` | Bounded1 Falcon spending and spending-key pure rekey, both requiring `FirstValid >= unlock_round`. | `unlock_round` | None |
 | `aplane.corridor.v1` | `aplane.corridor.v1.yaml` | Bounded1 Falcon spending with a framework Merkle recipient allowlist and cosigner authorization; pure rekey requires a separate external Falcon contract-admin witness. | `recipients` (`address[]`, 1-65536), framework-resolved `cosigner_public_key`, framework-injected `bounded_admin_public_key` | None; signer generates the 512-byte spend proof and bounded assembly supplies the cosigner slot |
 

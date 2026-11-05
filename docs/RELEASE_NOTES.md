@@ -7,6 +7,33 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## HTLC is ALGO-only and pays out once
+
+- `aplane.htlc.v1` no longer handles ASAs, and `allowed_optin_assets` is gone. Same-chain
+  swaps use atomic groups; the HTLC is for swaps across chains.
+- Claim and refund must now close the account. A repeatable partial payment would have
+  let anyone burn the balance in fees once the preimage was public or the timeout had
+  passed. The opt-in path allowed the same without either.
+- A claim must now expire before `timeout_round`. Checking only `FirstValid` let a
+  backdated claim land up to about 1,000 rounds after the timeout, so the two windows
+  overlapped. A default 1,000-round claim must now start that far before the timeout.
+- The fee is now capped at 10,000 microAlgos rather than fixed at 1,000, so a higher
+  network minimum can't strand funds.
+- The preimage can now be 1 to 64 bytes rather than exactly 32, so the typed phrase
+  `apadmin` offers at creation can actually be claimed. Generic templates can set
+  `max_size` on a variable-length runtime argument.
+
+## Rekey-locked allowlist renamed and its limits removed
+
+- `aplane.falcon1024-allowlist-alock.v1` is now
+  `aplane.falcon1024-allowlist-lock.v1`, with no alias for the old name.
+- It no longer takes `asset_ids`, `max_payment_amount` or `max_asset_amount`; it
+  takes `recipients` and the contract-admin key. One program is valid on every network, so a listed asset ID
+  could mean a different asset on each chain, and one base-unit cap meant very
+  different amounts for assets with different decimals. Set per-network asset and
+  amount limits in signer policy.
+- Composed templates can no longer set the matching `bounded.layer3` fields.
+
 ## Rotating signatures stop at lock
 
 - A lock during rotating signing could neither stop the signature nor wait for the

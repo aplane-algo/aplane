@@ -170,7 +170,7 @@ from the presence of a witness key alone.
 | `falcon1024` | Native PQ | none | protocol Falcon-1024 scheme `f1`, self-owned | none | empty flow; `/sign`; supported consensus v42 or v43; top-level `PQsig` |
 | `aplane.falcon1024.v1` | DSA LogicSig | plain DSA | Falcon-1024, self-owned | none | empty flow; `/sign` |
 | `aplane.falcon1024-allowlist.v1` | DSA LogicSig | bounded `bounded1`; fixed recipient allowlist | `aplane.falcon1024.v1` | none | `bounded1`; spend/rekey through `/sign` as permitted by the profile |
-| `aplane.falcon1024-allowlist-alock.v1` | DSA LogicSig | bounded `bounded1`; fixed recipient/asset/amount allowlist | `aplane.falcon1024.v1` | external Falcon contract admin for rekey | `bounded1`; spend through `/sign`, admin rekey through `/sign/bounded-admin` plus `aprekey` |
+| `aplane.falcon1024-allowlist-lock.v1` | DSA LogicSig | bounded `bounded1`; fixed recipient allowlist | `aplane.falcon1024.v1` | external Falcon contract admin for rekey | `bounded1`; spend through `/sign`, admin rekey through `/sign/bounded-admin` plus `aprekey` |
 | `aplane.falcon1024-cosigner1024.v1` | DSA LogicSig | dedicated guarded verifier | `aplane.falcon1024.v1` | signer-custodied Falcon cosigner witness | `cosigner1`; user `/sign/component`, cosigner `/sign/component`, then `/sign/assemble` |
 | `aplane.corridor.v1` | DSA LogicSig | bounded `bounded1`; framework Merkle recipient allowlist | `aplane.falcon1024.v1` | signer-custodied Falcon cosigner on spend; distinct external Falcon admin on rekey | `bounded-cosigner1`; `/plan`, kind-tagged `/sign/component`, then `/sign/assemble` |
 | `aplane.rotating-triple-xmss.v1` | DSA LogicSig (`rotating_lsig`) | dedicated compiled stage program; a new program per spend | Falcon-1024 and Ed25519 stage keys and an RFC 8391 XMSS tree shared by 1,024 stages, derived from one seed | none | `rotating1`; the signer also chooses the stage's one-time leaf |
@@ -219,7 +219,7 @@ own explicit definition.
 |---|---|---|---|---|
 | No | No | No | **Implemented:** plain Falcon and Ed25519 LogicSigs | **Design required:** no current combined contract |
 | No | No | Yes | **Implemented:** dedicated Falcon/Falcon guarded account | **Design required:** no current combined contract |
-| No | Yes | No | **Implemented:** bounded allowlist and timelock profiles | **Implemented:** `aplane.falcon1024-allowlist-alock.v1` |
+| No | Yes | No | **Implemented:** bounded allowlist and timelock profiles | **Implemented:** `aplane.falcon1024-allowlist-lock.v1` |
 | No | Yes | Yes | **Supported profile shape:** bounded cosigner spend gate with no admin operations | **Implemented:** `aplane.corridor.v1` |
 | Yes | No | No | **Implemented:** `aplane.rotating-triple-xmss.v1`, `aplane.rotating-triple-slhdsa.v1`, `aplane.rotating-triple-wotsc.v1` | **Design required:** current rotating contracts have no external-admin path |
 | Yes | No | Yes | **Design required:** rotating plus external cosigner | **Design required:** rotating plus cosigner plus external admin |
@@ -369,7 +369,7 @@ Canonical forms:
   `publisher.family.vN`, where `vN` is a literal `v` followed by a positive
   decimal version, for example `aplane.falcon1024.v1`,
   `aplane.htlc.v1`, `aplane.falcon1024-allowlist.v1`, and
-  `aplane.falcon1024-allowlist-alock.v1`
+  `aplane.falcon1024-allowlist-lock.v1`
 - witness keys use the same canonical key-type identifier contract,
   currently `aplane.witness-falcon1024.v1`; signer-custodied instances serve
   as cosigner component-signing keys selected by 52-character txid-shaped
@@ -380,7 +380,7 @@ Canonical forms:
   and Witness Key ID, but private material remains in a structurally distinct
   standalone `.wit` container owned by `aprekey`. It is never a signer-managed
   `.key`/`.cos` credential or spending account.
-- `aplane.falcon1024-allowlist-alock.v1` is reserved for the schema-v2
+- `aplane.falcon1024-allowlist-lock.v1` is reserved for the schema-v2
   framework-owned bounded1 allowlist. Its spending key and contract admin key
   are both Falcon-1024. Bounded1 has no Ed25519 contract-admin variant and no
   admin-key algorithm selector.
@@ -494,7 +494,7 @@ Examples of the composed ontology:
 | `ed25519` | Native | n/a | none |
 | `aplane.falcon1024.v1` | DSA LogicSig | Plain DSA | none |
 | `aplane.falcon1024-allowlist.v1` | DSA LogicSig | Bounded DSA (`bounded1`) | none |
-| `aplane.falcon1024-allowlist-alock.v1` | DSA LogicSig | Bounded DSA (`bounded1`) | external Falcon witness enrolled as contract admin for rekey |
+| `aplane.falcon1024-allowlist-lock.v1` | DSA LogicSig | Bounded DSA (`bounded1`) | external Falcon witness enrolled as contract admin for rekey |
 | `aplane.falcon1024-cosigner1024.v1` | DSA LogicSig | dedicated compiled guarded verifier | signer-custodied Falcon witness enrolled as cosigner |
 | `aplane.corridor.v1` | DSA LogicSig | Bounded DSA (`bounded1`) with framework Merkle policy | signer-custodied Falcon cosigner on spend plus external Falcon contract admin on rekey |
 | `aplane.htlc.v1` | Generic LogicSig | generic TEAL policy | none |
@@ -510,10 +510,10 @@ Examples of the composed ontology:
 | `falcon1024` | n/a | `native_pq` | Native protocol Falcon-1024 account (scheme `f1`, supported consensus v42 or v43); not a LogicSig |
 | `aplane.falcon1024.v1` | `aplane.falcon1024` | `dsa_lsig` | Library-visible pure Falcon signature |
 | `aplane.falcon1024-cosigner1024.v1` | `aplane.falcon1024-cosigner1024` | `dsa_lsig` | Library-visible guarded account: Falcon-1024 user + Falcon-1024 cosigner component signatures |
-| `aplane.falcon1024-allowlist-alock.v1` | `falcon1024-allowlist-alock` | `dsa_lsig` | Optional bounded1 composed template: Falcon spending, fixed recipient/asset/amount allowlist, external Falcon contract-admin rekey |
+| `aplane.falcon1024-allowlist-lock.v1` | `falcon1024-allowlist-lock` | `dsa_lsig` | Optional bounded1 composed template: Falcon spending, fixed recipient allowlist, external Falcon contract-admin rekey |
 | `aplane.corridor.v1` | `corridor` | `dsa_lsig` | Optional bounded1 composed template: Falcon spending, framework Merkle recipient policy, cosigner-gated spend, and external-admin pure rekey |
 | `aplane.ed25519.v1` | `aplane.ed25519` | `dsa_lsig` | Library-visible Ed25519 LogicSig DSA provider; distinct from native `ed25519` |
-| `aplane.htlc.v1` | `htlc` | `generic_lsig` | Optional template library: hash-locked payment |
+| `aplane.htlc.v1` | `htlc` | `generic_lsig` | Optional template library: hash time-locked ALGO payment |
 | `aplane.falcon1024-allowlist.v1` | `falcon1024-allowlist` | `dsa_lsig` | Bundled bounded1 composed template: installed/enabled in new signer-role stores; Falcon + fixed receiver allowlist |
 | `aplane.falcon1024-allowlist.v2` | `falcon1024-allowlist` | `dsa_lsig` | Optional bounded1 composed template: Falcon + signer-derived Merkle receiver proof |
 | `aplane.falcon1024-timelock.v1` | `falcon1024-timelock` | `dsa_lsig` | Optional bounded1 composed template: Falcon + validity-round gate on spend and rekey |
@@ -820,7 +820,7 @@ signing helpers that the diagram omits) and gives a one-line role for each.
 | Category | Example Key Types | Has Keys | Signing |
 |----------|-------------------|----------|---------|
 | `generic_lsig` | `aplane.htlc.v1` after template import | No | TEAL-only authorization |
-| `dsa_lsig` | `aplane.falcon1024.v1`, `aplane.ed25519.v1`, bounded `aplane.falcon1024-allowlist-alock.v1`, guarded `aplane.falcon1024-cosigner1024.v1`, `aplane.corridor.v1`; bundled Falcon templates after install | Yes | Cryptographic signature |
+| `dsa_lsig` | `aplane.falcon1024.v1`, `aplane.ed25519.v1`, bounded `aplane.falcon1024-allowlist-lock.v1`, guarded `aplane.falcon1024-cosigner1024.v1`, `aplane.corridor.v1`; bundled Falcon templates after install | Yes | Cryptographic signature |
 | `rotating_lsig` | `aplane.rotating-triple-xmss.v1`, `aplane.rotating-triple-slhdsa.v1`, `aplane.rotating-triple-wotsc.v1` | Yes | Per-stage hybrid signatures through the `rotating1` flow; signer-side codec, not an `lsigprovider` provider |
 
 ### Interface hierarchy

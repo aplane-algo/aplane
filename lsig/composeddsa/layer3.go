@@ -32,14 +32,13 @@ const (
 	BoundedInlineListMax = 30
 )
 
-// Layer3Policy binds a framework-owned policy to typed creation parameters.
-// Empty optional parameter names mean that constraint is not compiled.
+// Layer3Policy binds a framework-owned policy to its recipients parameter.
+// Recipient addresses are the only network-independent constraint a shared
+// program can compile; asset and amount limits belong to per-network signer
+// policy.
 type Layer3Policy struct {
-	Policy                    string `json:"policy"`
-	RecipientsParameter       string `json:"recipients_parameter"`
-	AssetIDsParameter         string `json:"asset_ids_parameter,omitempty"`
-	MaxPaymentAmountParameter string `json:"max_payment_amount_parameter,omitempty"`
-	MaxAssetAmountParameter   string `json:"max_asset_amount_parameter,omitempty"`
+	Policy              string `json:"policy"`
+	RecipientsParameter string `json:"recipients_parameter"`
 }
 
 func cloneLayer3Policy(policy *Layer3Policy) *Layer3Policy {
@@ -55,11 +54,8 @@ func layer3PolicyFromTemplate(spec *generictemplate.BoundedAuthorizationSpec, pa
 		return nil, nil
 	}
 	layer3 := &Layer3Policy{
-		Policy:                    spec.Layer3.Policy,
-		RecipientsParameter:       spec.Layer3.RecipientsParameter,
-		AssetIDsParameter:         spec.Layer3.AssetIDsParameter,
-		MaxPaymentAmountParameter: spec.Layer3.MaxPaymentAmountParameter,
-		MaxAssetAmountParameter:   spec.Layer3.MaxAssetAmountParameter,
+		Policy:              spec.Layer3.Policy,
+		RecipientsParameter: spec.Layer3.RecipientsParameter,
 	}
 	if err := validateLayer3Policy(layer3, params, profile); err != nil {
 		return nil, fmt.Errorf("invalid bounded.layer3: %w", err)
@@ -77,79 +73,49 @@ func validateLayer3Policy(policy *Layer3Policy, params []lsigprovider.ParameterD
 	if profile == nil {
 		return fmt.Errorf("framework-owned Layer-3 policy requires bounded1")
 	}
-	if policy.Policy == Layer3PolicyMerkleAllowlist &&
-		(policy.AssetIDsParameter != "" || policy.MaxPaymentAmountParameter != "" || policy.MaxAssetAmountParameter != "") {
-		return fmt.Errorf("merkle_allowlist supports only recipients_parameter")
-	}
 
-	byName := make(map[string]lsigprovider.ParameterDef, len(params))
-	for _, param := range params {
-		byName[param.Name] = param
-	}
-	used := make(map[string]struct{}, len(params))
 	listMax := BoundedInlineListMax
 	if policy.Policy == Layer3PolicyMerkleAllowlist {
 		listMax = merkleallowlist.MaxItems
 	}
-	if err := requireLayer3Parameter(byName, used, policy.RecipientsParameter, "recipients_parameter", "address[]", true, true, listMax); err != nil {
-		return err
-	}
-	if err := requireLayer3Parameter(byName, used, policy.AssetIDsParameter, "asset_ids_parameter", "uint64[]", false, true, BoundedInlineListMax); err != nil {
-		return err
-	}
-	if err := requireLayer3Parameter(byName, used, policy.MaxPaymentAmountParameter, "max_payment_amount_parameter", "uint64", false, false, 0); err != nil {
-		return err
-	}
-	if err := requireLayer3Parameter(byName, used, policy.MaxAssetAmountParameter, "max_asset_amount_parameter", "uint64", false, false, 0); err != nil {
+	if err := validateRecipientsParameter(policy.RecipientsParameter, params, listMax); err != nil {
 		return err
 	}
 	for _, param := range params {
-		if _, ok := used[param.Name]; !ok {
+		if param.Name != policy.RecipientsParameter {
 			return fmt.Errorf("parameter %q is not used by framework policy %q", param.Name, policy.Policy)
 		}
 	}
 
-	allowsPay := profileAllowsSpendEffect(profile, txeffects.SpendEffectPay)
-	allowsAxfer := profileAllowsSpendEffect(profile, txeffects.SpendEffectAxfer, txeffects.SpendEffectAssetOptIn)
-	if boundedRekeyUsesLayer3(profile) && !allowsPay {
+	if boundedRekeyUsesLayer3(profile) && !profileAllowsSpendEffect(profile, txeffects.SpendEffectPay) {
 		return fmt.Errorf("%s Layer-3-gated rekey requires pay in spend_effects", policy.Policy)
-	}
-	if !allowsPay && policy.MaxPaymentAmountParameter != "" {
-		return fmt.Errorf("max_payment_amount_parameter requires pay in spend_effects")
-	}
-	if !allowsAxfer && (policy.AssetIDsParameter != "" || policy.MaxAssetAmountParameter != "") {
-		return fmt.Errorf("asset options require axfer in spend_effects")
 	}
 	return nil
 }
 
-func requireLayer3Parameter(byName map[string]lsigprovider.ParameterDef, used map[string]struct{}, name, field, wantType string, required, list bool, listMax int) error {
+func validateRecipientsParameter(name string, params []lsigprovider.ParameterDef, listMax int) error {
 	if name == "" {
-		if required {
-			return fmt.Errorf("%s is required", field)
+		return fmt.Errorf("recipients_parameter is required")
+	}
+	for _, param := range params {
+		if param.Name != name {
+			continue
+		}
+		if param.Type != "address[]" {
+			return fmt.Errorf("recipients_parameter parameter %q must have type address[], got %s", name, param.Type)
+		}
+		if !param.Required {
+			return fmt.Errorf("recipients_parameter parameter %q must be required", name)
+		}
+		if param.MinItems < 1 {
+			return fmt.Errorf("recipients_parameter parameter %q must set min_items >= 1", name)
+		}
+		if param.MaxItems < 1 || param.MaxItems > listMax {
+			return fmt.Errorf("recipients_parameter parameter %q max_items must be between 1 and %d", name, listMax)
 		}
 		return nil
 	}
-	param, ok := byName[name]
-	if !ok {
-		return fmt.Errorf("%s references unknown parameter %q", field, name)
-	}
-	if param.Type != wantType {
-		return fmt.Errorf("%s parameter %q must have type %s, got %s", field, name, wantType, param.Type)
-	}
-	if required && !param.Required {
-		return fmt.Errorf("%s parameter %q must be required", field, name)
-	}
-	if list {
-		if param.MinItems < 1 {
-			return fmt.Errorf("%s parameter %q must set min_items >= 1", field, name)
-		}
-		if param.MaxItems < 1 || param.MaxItems > listMax {
-			return fmt.Errorf("%s parameter %q max_items must be between 1 and %d", field, name, listMax)
-		}
-	}
-	used[name] = struct{}{}
-	return nil
+	return fmt.Errorf("recipients_parameter references unknown parameter %q", name)
 }
 
 func profileAllowsSpendEffect(profile *BoundedAuthorizationProfile, wanted ...txeffects.SpendEffect) bool {
@@ -175,7 +141,6 @@ func (c *ComposedDSA) renderLayer3Policy(params map[string]string, profile *Boun
 	}
 
 	recipients := splitCanonicalList(params[c.layer3.RecipientsParameter])
-	assetIDs := splitCanonicalList(params[c.layer3.AssetIDsParameter])
 	var b strings.Builder
 	b.WriteString("// === framework-owned fixed allowlist ===\n")
 	if profileAllowsSpendEffect(profile, txeffects.SpendEffectPay) {
@@ -186,12 +151,15 @@ func (c *ComposedDSA) renderLayer3Policy(params map[string]string, profile *Boun
 	}
 	b.WriteString("err\n\n")
 
+	// The self-recipient branches keep their own labels ahead of the jump to
+	// done. The label names predate the removal of the amount and asset checks
+	// they once guarded; the TEAL text and its branch offsets are frozen by the
+	// allowlist goldens, and the offsets decide fixed-list account addresses.
 	if profileAllowsSpendEffect(profile, txeffects.SpendEffectPay) {
 		b.WriteString("__aplane_bounded1_layer3_pay:\n")
 		b.WriteString("txn Receiver\ntxn Sender\n==\nbnz __aplane_bounded1_layer3_pay_amount\n")
 		b.WriteString("txn Receiver\ncallsub __aplane_bounded1_layer3_recipient_allowed\nassert\n")
 		b.WriteString("__aplane_bounded1_layer3_pay_amount:\n")
-		writeOptionalAmountLimit(&b, "Amount", params[c.layer3.MaxPaymentAmountParameter])
 		b.WriteString("b __aplane_bounded1_layer3_done\n\n")
 	}
 
@@ -200,18 +168,11 @@ func (c *ComposedDSA) renderLayer3Policy(params map[string]string, profile *Boun
 		b.WriteString("txn AssetReceiver\ntxn Sender\n==\nbnz __aplane_bounded1_layer3_asset_constraints\n")
 		b.WriteString("txn AssetReceiver\ncallsub __aplane_bounded1_layer3_recipient_allowed\nassert\n")
 		b.WriteString("__aplane_bounded1_layer3_asset_constraints:\n")
-		if len(assetIDs) > 0 {
-			b.WriteString("txn XferAsset\ncallsub __aplane_bounded1_layer3_asset_allowed\nassert\n")
-		}
-		writeOptionalAmountLimit(&b, "AssetAmount", params[c.layer3.MaxAssetAmountParameter])
 		b.WriteString("b __aplane_bounded1_layer3_done\n\n")
 	}
 
 	if err := writeInlineAddressMembership(&b, recipients); err != nil {
 		return "", err
-	}
-	if len(assetIDs) > 0 {
-		writeInlineUintMembership(&b, assetIDs)
 	}
 	b.WriteString("__aplane_bounded1_layer3_done:\n")
 	return b.String(), nil
@@ -295,14 +256,6 @@ func (c *ComposedDSA) paramsWithoutAdminKey() []lsigprovider.ParameterDef {
 	return params
 }
 
-func writeOptionalAmountLimit(b *strings.Builder, field, value string) {
-	if strings.TrimSpace(value) == "" {
-		return
-	}
-	b.WriteString("txn " + field + "\n")
-	b.WriteString("pushint " + strings.TrimSpace(value) + "\n<=\nassert\n")
-}
-
 func writeInlineAddressMembership(b *strings.Builder, values []string) error {
 	b.WriteString("__aplane_bounded1_layer3_recipient_allowed:\n")
 	for _, value := range values {
@@ -316,14 +269,4 @@ func writeInlineAddressMembership(b *strings.Builder, values []string) error {
 	b.WriteString("pop\npushint 0\nretsub\n")
 	b.WriteString("__aplane_bounded1_layer3_recipient_yes:\npop\npushint 1\nretsub\n\n")
 	return nil
-}
-
-func writeInlineUintMembership(b *strings.Builder, values []string) {
-	b.WriteString("__aplane_bounded1_layer3_asset_allowed:\n")
-	for _, value := range values {
-		b.WriteString("dup\npushint " + value + "\n==\n")
-		b.WriteString("bnz __aplane_bounded1_layer3_asset_yes\n")
-	}
-	b.WriteString("pop\npushint 0\nretsub\n")
-	b.WriteString("__aplane_bounded1_layer3_asset_yes:\npop\npushint 1\nretsub\n\n")
 }
