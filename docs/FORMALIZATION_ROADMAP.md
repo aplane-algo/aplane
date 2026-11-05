@@ -357,7 +357,9 @@ claim. Two negative controls each violate LF1: `WaitForRestore = FALSE`
 gap found while writing it, that no Go test drove `SignRotatingWithContext`
 through the restore wait, is closed by
 `TestRotatingLeafSignWaitsForTheReleaseRestore` (verified to fail with the
-`AwaitRestored` call removed).
+`AwaitRestored` call removed). The check at leaf choice later made that test
+pass without the wait, so `TestRotatingSignWaitsForARestoreAndThenSigns` now
+detects the removal.
 
 Model-extension candidates: the rotating flow (`/sign/rotating/prepare` and
 `/sign/rotating/sign`: same slot classes and gates, but a prepare-time

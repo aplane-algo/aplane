@@ -426,10 +426,19 @@ func (c *countingChain) ReadAccount(ctx context.Context, genesisHash []byte, acc
 	return c.base.ReadAccount(ctx, genesisHash, account)
 }
 
-// A spend that arrives during a restore waits for it and then signs. The check
-// at leaf choice would refuse it anyway, so a refusal says nothing about the wait.
-// What shows it is that the sign doesn't reach the chain read under the account
-// lock until the restore is done.
+// hasWaiter reports whether a caller is parked in AwaitRestored: nothing else
+// creates changed, and it stays set until the caller is woken.
+func (m *ReleaseMemory) hasWaiter() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.changed != nil
+}
+
+// A spend that arrives during a restore waits for it, ahead of the account lock
+// and the chain read, and then signs. The check at leaf choice would refuse it
+// anyway, so a refusal says nothing about the wait. The test follows the sign to
+// the wait itself rather than allowing it time to get there, so a sign that is
+// merely slow can't pass for one that is waiting.
 func TestRotatingSignWaitsForARestoreAndThenSigns(t *testing.T) {
 	f, audit := newSigningFixtureFor(t, wotscTestType)
 	prep := mustPrepare(t, f, f.spend(1000, 1100))
@@ -446,9 +455,27 @@ func TestRotatingSignWaitsForARestoreAndThenSigns(t *testing.T) {
 		}, f.session)
 		done <- err
 	}()
-	time.Sleep(300 * time.Millisecond)
+	poll := time.NewTicker(time.Millisecond)
+	defer poll.Stop()
+	for !f.svc.Rotating.Releases.hasWaiter() {
+		select {
+		case err := <-done:
+			t.Fatalf("the sign returned without waiting for the restore: %v", err)
+		case <-ctx.Done():
+			t.Fatal("the sign never reached the wait")
+		case <-poll.C:
+		}
+	}
 	if n := chain.reads.Load(); n != 0 {
 		t.Fatalf("the sign read the chain %d times before the restore finished", n)
+	}
+	locked := make(chan func(), 1)
+	go func() { locked <- f.svc.Rotating.Locks.Lock(f.account.String()) }()
+	select {
+	case unlock := <-locked:
+		unlock()
+	case <-ctx.Done():
+		t.Fatal("the sign held the account lock while it waited for the restore")
 	}
 	f.svc.Rotating.Releases.RestoredAll()
 	select {
