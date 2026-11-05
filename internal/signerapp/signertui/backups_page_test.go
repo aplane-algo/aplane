@@ -517,7 +517,7 @@ func TestBackupViewHeaderShowsSealedTimeAndWarnsOnMismatch(t *testing.T) {
 	m.restore.archivePath = name
 	m.restore.archiveCreatedAt = time.Date(2026, 11, 2, 7, 7, 25, 0, time.UTC).Unix()
 	header := stripANSI(m.renderBackupViewHeader(110))
-	if !strings.Contains(header, "(sealed in the backup)") || !strings.Contains(header, "SHA-256 abcd") || strings.Contains(header, "renamed") {
+	if !strings.Contains(header, "(sealed in the backup)") || !strings.Contains(header, "SHA-256:  abcd") || strings.Contains(header, "renamed") {
 		t.Fatalf("header:\n%s", header)
 	}
 	m.restore.archiveCreatedAt = time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC).Unix()

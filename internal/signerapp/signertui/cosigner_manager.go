@@ -282,7 +282,7 @@ func (m Model) renderCosignerReferences() string {
 	body.WriteString(subtitleStyle.Render("Public witness authorities enrolled for guarded-account generation."))
 	body.WriteString("\n\n")
 	if len(references) == 0 {
-		body.WriteString("No cosigner references enrolled. Press i to import a public envelope file or p to paste JSON.\n")
+		body.WriteString(wrapPlainText("No cosigner references enrolled. Press i to import a public envelope file or p to paste JSON.", m.tableWidth()) + "\n")
 	} else {
 		nameWidth, idWidth := m.cosignerReferenceColumns(references)
 		start := m.cosigner.managerScroll
@@ -316,7 +316,7 @@ func (m Model) renderCosignerReferences() string {
 	}
 	if m.cosigner.managerStatus != "" {
 		body.WriteString("\n")
-		body.WriteString(subtitleStyle.Render(m.cosigner.managerStatus))
+		body.WriteString(subtitleStyle.Render(wrapPlainText(m.cosigner.managerStatus, m.tableWidth())))
 		body.WriteString("\n")
 	}
 	return body.String()

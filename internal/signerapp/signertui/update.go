@@ -1110,6 +1110,7 @@ func (m Model) usesSharedPopupViewport() bool {
 		ViewGenerateForm,
 		ViewGenerateParams,
 		ViewCosignerPicker,
+		ViewRestorePreview,
 		ViewCosignerImportForm,
 		ViewCosignerImportReview,
 		ViewCosignerImporting,

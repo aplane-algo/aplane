@@ -65,8 +65,9 @@ func (m Model) renderRestorePassphrase() string {
 }
 
 const (
-	restoreRowLeadWidth = 4 // cursor and selection mark
-	restoreColumnGap    = 2
+	restorePreviewPopupWidth = 110
+	restoreRowLeadWidth      = 4 // cursor and selection mark
+	restoreColumnGap         = 2
 	// restoreAddressMinWidth is 7 leading chars + "..." + 7 trailing chars.
 	restoreAddressMinWidth = 17
 	// restoreErrorKeyTypeWidth is what a key type keeps beside an error.
@@ -75,34 +76,23 @@ const (
 
 func (m Model) renderRestorePreview() string {
 	var sb strings.Builder
-	popupWidth := m.popupWidth(110)
+	popupWidth := m.popupWidth(restorePreviewPopupWidth)
 	rowWidth := restorePreviewRowWidth(popupWidth)
+	m.clampRestorePreviewScroll()
 
-	sb.WriteString(titleStyle.Render("Backup Contents"))
-	sb.WriteString("\n")
-	sb.WriteString(m.renderBackupViewHeader(popupWidth))
-	sb.WriteString(fmt.Sprintf("Selected: %d (\"present\": this node holds a key at that address)\n", m.selectedRestoreCount()))
-	sb.WriteString("\n")
-
+	sb.WriteString(m.restorePreviewHeader())
 	if len(m.restore.previewKeys) == 0 {
+		sb.WriteString("\n")
 		sb.WriteString(subtitleStyle.Render("No restorable keys were found in this archive."))
 		sb.WriteString("\n")
 	} else {
 		addressWidth := restorePreviewAddressWidth(m.restore.previewKeys, rowWidth)
-		visibleHeight := m.restorePreviewVisibleHeight()
 		scrollOffset := m.restore.previewScrollOffset
-		if scrollOffset >= len(m.restore.previewKeys) {
-			scrollOffset = 0
-		}
 
 		sb.WriteString(scrollMoreAboveLine(scrollOffset))
 		sb.WriteString("\n")
 
-		endIdx := scrollOffset + visibleHeight
-		if endIdx > len(m.restore.previewKeys) {
-			endIdx = len(m.restore.previewKeys)
-		}
-
+		endIdx := min(scrollOffset+m.restorePreviewVisibleHeight(), len(m.restore.previewKeys))
 		for i := scrollOffset; i < endIdx; i++ {
 			key := m.restore.previewKeys[i]
 			prefix := "  "
@@ -124,10 +114,27 @@ func (m Model) renderRestorePreview() string {
 
 		sb.WriteString(scrollMoreBelowLine(len(m.restore.previewKeys) - endIdx))
 		sb.WriteString("\n")
-
-		sb.WriteString(fmt.Sprintf("  Total: %d keys\n", len(m.restore.previewKeys)))
 	}
+	sb.WriteString(m.restorePreviewFooter())
 
+	return m.renderPopup(popupWidth, sb.String())
+}
+
+// restorePreviewHeader and restorePreviewFooter are the lines around the key
+// list; restorePreviewVisibleHeight gives the list what they leave.
+func (m Model) restorePreviewHeader() string {
+	var sb strings.Builder
+	popupWidth := m.popupWidth(restorePreviewPopupWidth)
+	sb.WriteString(titleStyle.Render("Backup Contents"))
+	sb.WriteString("\n")
+	sb.WriteString(m.renderBackupViewHeader(popupWidth))
+	sb.WriteString(fmt.Sprintf("Selected: %d of %d (\"present\": this node holds a key at that address)\n",
+		m.selectedRestoreCount(), len(m.restore.previewKeys)))
+	return sb.String()
+}
+
+func (m Model) restorePreviewFooter() string {
+	var sb strings.Builder
 	if len(m.restore.previewErrors) > 0 {
 		sb.WriteString("\n")
 		sb.WriteString(warningStyle.Render("Preview warnings:"))
@@ -156,8 +163,7 @@ func (m Model) renderRestorePreview() string {
 		sb.WriteString(errorStyle.Render(m.restore.previewError))
 		sb.WriteString("\n")
 	}
-
-	return m.renderPopup(popupWidth, sb.String())
+	return sb.String()
 }
 
 // restoreActionButton renders one commit button. ready styles a button whose

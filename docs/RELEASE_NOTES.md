@@ -18,6 +18,12 @@ before it was renamed `enroll`.
 - The Policies list uses short statuses. The selected row's full status and its document's
   size, SHA-256, and applied time appear below the list.
 - KeyType Library, Cosigner References, and Choose Cosigner rows now line up in fixed columns.
+- The restore preview keeps its RESTORE button on screen at 80×24, showing fewer keys at a
+  time if it has to. Its size and SHA-256 are now on separate lines, and the selected and
+  total counts share one.
+- Status messages and the policy review prompt now wrap instead of running off the screen.
+- The Policies list now scrolls with the selection, so a long list no longer hides its last
+  rows, the selected row's details, or the result of an apply.
 
 ## HTLC is ALGO-only and pays out once
 

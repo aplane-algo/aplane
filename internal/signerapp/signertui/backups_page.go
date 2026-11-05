@@ -465,7 +465,7 @@ func (m Model) renderBackupViewHeader(popupWidth int) string {
 	}
 	for _, item := range m.restore.backups {
 		if item.FileName == name {
-			sb.WriteString(fmt.Sprintf("Size:     %s   SHA-256 %s\n", backup.FormatFileSize(item.Size), item.Checksum))
+			sb.WriteString(fmt.Sprintf("Size:     %s\nSHA-256:  %s\n", backup.FormatFileSize(item.Size), item.Checksum))
 			break
 		}
 	}

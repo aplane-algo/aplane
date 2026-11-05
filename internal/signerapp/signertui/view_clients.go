@@ -68,29 +68,12 @@ func (m Model) renderEnrolledClients() string {
 	footer.WriteString("\n")
 	if m.clients.status != "" {
 		footer.WriteString("\n")
-		footer.WriteString(m.clients.status)
+		footer.WriteString(wrapPlainText(terminalSafeLines(m.clients.status), m.tableWidth()))
 		footer.WriteString("\n")
 	}
 
 	fixed := strings.Count(header.String(), "\n") + strings.Count(footer.String(), "\n")
-	return header.String() + m.clientListWindow(lines, selectedLine, fixed) + footer.String()
-}
-
-// clientListWindow shows the lines around the selected one when the list would
-// push it, or the details below the list, out of the window. The list does not
-// otherwise scroll.
-func (m Model) clientListWindow(lines []string, selected, fixed int) string {
-	height := m.windowBodyHeight()
-	if height <= 0 || fixed+len(lines) <= height {
-		return joinRows(lines)
-	}
-	const moreLines = 2
-	start, end := selectionWindow(selected, len(lines), max(height-fixed-moreLines, 1))
-	var sb strings.Builder
-	sb.WriteString(scrollMoreAboveLine(start) + "\n")
-	sb.WriteString(joinRows(lines[start:end]))
-	sb.WriteString(scrollMoreBelowLine(len(lines)-end) + "\n")
-	return sb.String()
+	return header.String() + m.listWindow(lines, selectedLine, fixed) + footer.String()
 }
 
 // A fingerprint is compared by eye and approving acts on the selected row at
