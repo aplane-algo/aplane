@@ -1,17 +1,18 @@
 # Key Type Specification: Rotating Triple Hybrid
 
-Status: implemented as three separate key types. `aplane.rotating-triple-xmss.v1`
-and `aplane.rotating-triple-wots.v1` are each frozen by their first release
-(v0.44.0), and `aplane.rotating-triple-slhdsa.v1` by its first release
-(v0.45.0); its design is in section 11. This document specifies all three for
-implementers and reviewers: their shared design and the hash-based
-schemes. It restates, and does not replace, the authoritative sources:
+Status: implemented as three separate key types.
+`aplane.rotating-triple-xmss.v1` is frozen by its first release (v0.44.0) and
+`aplane.rotating-triple-slhdsa.v1` by its first release (v0.45.0); its design
+is in section 11. `aplane.rotating-triple-wotsc.v1` is unreleased and freezes at
+its first release; its design is in section 12. This document specifies all three
+for implementers and reviewers: their shared design and the hash-based schemes. It restates, and does not replace, the
+authoritative sources:
 
 - `lsig/rotatingtriplexmss/`: XMSS stage template, derivation, signing, tree
   cache, key file codec, generator and registration
-- `lsig/rotatingtriplewots/`: WOTS stage template, derivation, signing, key file
-  codec, generator and registration
-- `internal/crypto/xmss/` and `internal/crypto/wots/`: hash-based primitives
+- `lsig/rotatingtriplewotsc/`: WOTS+C stage template, derivation, signing, key
+  file codec, generator and registration
+- `internal/crypto/xmss/` and `internal/crypto/wotsc/`: hash-based primitives
 - `internal/crypto/rotatinghybrid/`: shared seed derivation
 - `lsig/rotatingfamily/`: what all three rotating key types share:
   registration and the generator, the stage's Ed25519 and Falcon-1024 half,
@@ -24,14 +25,11 @@ schemes. It restates, and does not replace, the authoritative sources:
 
 The third implementation, `aplane.rotating-triple-slhdsa.v1`, reuses the
 shared `rotating1` account and signing contracts with a stateless hash-based
-scheme. Sections 2 through 9 compare the two released variants and keep
-their exact layouts; section 11 specifies where SLH-DSA differs, with the
+scheme. Sections 2 through 9 compare the XMSS and WOTS+C variants and keep
+their exact layouts. Section 11 specifies where SLH-DSA differs, with the
 frozen contract in [ARCH_CRYPTO.md](ARCH_CRYPTO.md#rotating-slh-dsa-triple)
 and the qualification record in [SLHDSA_EVALUATION.md](SLHDSA_EVALUATION.md).
-
-A fourth implementation, `aplane.rotating-triple-wotsc.v1`, is unreleased and
-specified separately in
-[KEYTYPE_ROTATING_TRIPLE_WOTSC.md](KEYTYPE_ROTATING_TRIPLE_WOTSC.md).
+Section 12 gives the WOTS+C construction.
 Its implementation is `lsig/rotatingtripleslhdsa/`, with the primitive in
 `internal/crypto/slhdsa/`. It was first released in v0.45.0.
 
@@ -53,19 +51,20 @@ must verify:
 |---|---|---|
 | Falcon-1024 | lattice, post-quantum | per-stage key |
 | Ed25519 | classical (`ed25519verify_bare`) | per-stage key |
-| Hash-based signature | XMSS, WOTS or SLH-DSA, SHA-256 | one-time leaf, per-stage one-time key, or per-stage few-time key (section 11) |
+| Hash-based signature | XMSS, WOTS+C or SLH-DSA, SHA-256 | one-time leaf or per-stage few-time key (section 11) |
 
 The hash-based scheme is selected by the key type when the account is created.
-Each type has its own frozen stage template, derivation label and addresses;
+Each type has its own stage template, derivation label and addresses, which freeze at
+its first release;
 the signing request does not select or switch the scheme.
 
-| Item | XMSS | WOTS |
+| Item | XMSS | WOTS+C |
 |---|---|---|
-| Key type | `aplane.rotating-triple-xmss.v1` | `aplane.rotating-triple-wots.v1` |
-| Family | `aplane.rotating-triple-xmss` | `aplane.rotating-triple-wots` |
-| Hash-based key | one leaf of an XMSS tree | one WOTS key per stage |
-| One-time keys available per stage | 64 leaves | 1 key |
-| Stages sharing a tree | 1,024 | no shared tree |
+| Key type | `aplane.rotating-triple-xmss.v1` | `aplane.rotating-triple-wotsc.v1` |
+| Family | `aplane.rotating-triple-xmss` | `aplane.rotating-triple-wotsc` |
+| Hash-based key | one leaf of an XMSS tree | one leaf of the stage's own tree |
+| One-time keys available per stage | 64 leaves | 64 leaves |
+| Stages sharing a tree | 1,024 | none: each stage has its own tree |
 | Category and codec | DSA LogicSig, `rotating_lsig` | same |
 | Signing flow | `rotating1` | same |
 | Creation parameter | `network` (name or base64 genesis hash) | same |
@@ -74,28 +73,30 @@ the signing request does not select or switch the scheme.
 
 ## 2. Parameters and sizes (frozen)
 
-| Parameter | XMSS | WOTS |
+The XMSS values are frozen. The WOTS+C values freeze at its first release.
+
+| Parameter | XMSS | WOTS+C |
 |---|---|---|
-| Hash-based construction | `XMSS-SHA2_16_256` | APlane WOTS-w16 with a simple tweakable chain hash |
-| Hash and Winternitz parameters | SHA-256, n = 32, w = 16, h = 16 | SHA-256, n = 32, w = 16 |
-| Chains | 67: 64 message digits + 3 checksum digits | same |
+| Hash-based construction | `XMSS-SHA2_16_256` | Tree of WOTS+C keys with the FIPS 205 SHA2 tweakable hash |
+| Hash and Winternitz parameters | SHA-256, n = 32, w = 16, h = 16 | SHA-256, n = 16, w = 16, h = 6 |
+| Chains | 67: 64 message digits + 3 checksum digits | 32 message digits, no checksum digits |
 | Steps per chain | 15 | 15 |
-| Leaves per tree | 65,536 | no tree |
-| Leaves per stage | 64 | 1 one-time key |
-| Randomizer search limit | 64 counters | none |
-| Message checksum cap | 511 | none; checksum can reach 960 |
-| Maximum accepted chain steps | 525 | 990 |
+| Leaves per tree | 65,536 | 64 |
+| Leaves per stage | 64 | 64 |
+| Randomizer search limit | 64 counters | 8,192 counters |
+| Message checksum cap | 511 | none; the digits must sum to exactly 240 |
+| Maximum accepted chain steps | 525 | 240, on every accepted run |
 | Validity window cap | 100 rounds (`LastValid - FirstValid`) | same |
 | TEAL version | 13 | 13 |
-| Stage program bytes, unsalted / salted | 2,661 / 2,664 | 2,100 / 2,103 |
-| Stage 0 public record bytes | 1,921 | 1,889 |
-| Hash-based signature bytes | 2,692 | 2,144 |
+| Stage program bytes, unsalted / salted | 2,661 / 2,664 | 2,483 / 2,486 |
+| Stage 0 public record bytes | 1,921 | 1,857 |
+| Hash-based signature bytes | 2,692 | 628 |
 | Ed25519 signature bytes | 64 | 64 |
 | Falcon-1024 signature bytes | at most 1,423, compressed | same |
 | Falcon-1024 public key bytes | 1,793 | 1,793 |
-| Maximum total argument bytes | 4,179 | 3,631 |
-| Maximum opcode cost | 95,857 | 59,772 |
-| Group size | 5: one spend + four resource dummies | 4: one spend + three resource dummies |
+| Maximum total argument bytes | 4,179 | 2,115 |
+| Maximum opcode cost | 95,857 | 15,721 |
+| Group size | 5: one spend + four resource dummies | 3: one spend + two resource dummies |
 
 The stage packages own the templates and cost models. The corresponding
 profiles in `internal/rotatingkey` expose their frozen bounds to storage,
@@ -108,15 +109,15 @@ address. Stage `n` normally signs one transaction, which rekeys the account to
 stage `n + 1`'s program address. Releasing a signature does not itself advance
 the stage: the chain must confirm a rotation.
 
-The WOTS variant derives a fresh WOTS key for every stage. The XMSS variant
-assigns stage `n` to tree `n div 1024` and the leaf range
+The WOTS+C variant derives a fresh tree of 64 WOTS+C keys for every stage. The
+XMSS variant assigns stage `n` to tree `n div 1024` and the leaf range
 `[64 * (n mod 1024), 64 * (n mod 1024) + 64)` (`stage.RangeFor`). A new tree is needed at every
 multiple of 1,024 stages; the worker builds it ahead of need from the midpoint
 of the live tree.
 
 ### 3.1 Stage program
 
-Both frozen TEAL v13 templates require:
+Every TEAL v13 stage template requires:
 
 1. `RekeyTo` is non-zero and is not the sender.
 2. `CloseRemainderTo` is zero.
@@ -131,30 +132,31 @@ big-endian integers). It requires a 2,692-byte signature, an index within
 `[Lo, Hi)`, a message checksum at most 511, and successful WOTS+, L-tree and
 authentication-path verification against the root.
 
-The WOTS program embeds four constants: the Ed25519 key (32 bytes), Falcon key
-(1,793), stage tweak (32) and WOTS public key (32). It requires a 2,144-byte
-signature and checks that the hash of its 67 completed chains equals the
-embedded WOTS public key.
+The WOTS+C program embeds four constants: the Ed25519 key (32 bytes), Falcon key
+(1,793), public seed (16) and tree root (16). It requires a 628-byte signature,
+a leaf index below 64, a digest whose digits sum to exactly 240, and successful
+chain and authentication-path verification against the root.
 
 The XMSS program verifies everything with `sha256`, `concat`, `extract3`,
 `replace3`, `b^`, `itob` and one subroutine (`hnode`). The `toByte(3) || SEED`
 prefix of every `PRF` call is hoisted into the per-phase address prefixes, and
 a chain step is kept as `step << 32` so a single `itob` yields both trailing
 address words. The checksum cap is asserted when the chain loop reaches the
-checksum chains. The WOTS program runs one loop over its 67 chains, keeping the
-TxID, chain index, running checksum, concatenated chain ends, current element,
-step, digit and `chain * 256` in scratch slots 0 through 7.
+checksum chains. The WOTS+C program runs one loop over its 32 chains and one
+over the six path nodes; a chain is unrolled, and `switch` enters its 15 hash
+steps at the digit.
 
-Neither program restricts transaction type or constrains `RekeyTo` beyond
+No stage program restricts transaction type or constrains `RekeyTo` beyond
 condition 1. Anyone holding a valid triple of signatures over a transaction
-that satisfies conditions 1 to 3 could spend it, which is why the keys are
-one-time per stage and the signer releases a stage's signatures only for a
-transaction that rekeys to the account's next stage. Spending policy is
-enforced by the signer's policy layer.
+that satisfies conditions 1 to 3 could spend it. The signer therefore releases
+a stage's signatures only for a transaction that rekeys to the account's next
+stage. Within an XMSS or WOTS+C stage, each hash-based leaf must authenticate
+only one distinct message; the stage provides 64 such leaves. Spending policy
+is enforced by the signer's policy layer.
 
 ### 3.2 Derivation of the stage address
 
-Each scheme's `stage.Build(keys)` fills its own frozen template and computes
+Each scheme's `stage.Build(keys)` fills its own template and computes
 `SHA-512/256("Program" || bytecode)`. If the address is on the Ed25519 curve,
 it appends `intcblock 1 <salt>` (bytes `0x20 0x01 <salt>`), choosing the lowest
 salt in `[0, 128)` giving an off-curve address, as the TEAL v13 assembler does.
@@ -170,16 +172,13 @@ unsalted stages.
 
 ## 4. Key derivation
 
-The only stored private material is a 64-byte BIP-39-style seed. Both variants
+The only stored private material is a 64-byte BIP-39-style seed. All variants
 use HKDF-SHA-512 with their own label as the extraction salt:
 
 | Scheme | Derivation label |
 |---|---|
 | XMSS | `APLANE_ROTATING_XMSS_V1` |
-| WOTS | `APLANE_ROTATING_TRIPLE_V1` |
-
-The shared package `internal/crypto/rotatinghybrid` also defines a default
-label, `APLANE_ROTATING_HYBRID_V1`; neither v1 key type uses it.
+| WOTS+C | `APLANE_ROTATING_TRIPLE_WOTSC_V1` |
 
 Every expansion includes the network's 32-byte genesis hash `G`. Account-level
 info is `tag || G`; stage- or tree-level info is `tag || G || u64be(counter)`.
@@ -187,10 +186,12 @@ Thus the same seed derives different material across networks and key types.
 
 | Output | Tag | Counter | Bytes | Scheme |
 |---|---|---|---|---|
-| Public account tag | `0x10` | none | 32 | both |
+| Public account tag | `0x10` | none | 32 | XMSS |
 | Stage Falcon-1024 seed | `0x01` | stage `n` | 48 | both |
 | Stage Ed25519 seed | `0x02` | stage `n` | 32 | both |
-| Stage WOTS chain secrets | `0x11` | stage `n` | 2,144 | WOTS |
+| Secret seed (`SK.seed`) | `0x03` | stage `n` | 16 | WOTS+C |
+| Randomizer key (`SK.prf`) | `0x04` | stage `n` | 16 | WOTS+C |
+| Public seed (`PK.seed`) | `0x05` | stage `n` | 16 | WOTS+C |
 | Tree secret seed (`SK_SEED`) | `0x20` | tree number | 32 | XMSS |
 | Tree PRF key (`SK_PRF`) | `0x21` | tree number | 32 | XMSS |
 | Tree public seed | `0x22` | tree number | 32 | XMSS |
@@ -202,7 +203,8 @@ XMSS additionally builds the public tree (65,536 WOTS+ leaves, about 4 MiB of
 nodes). It takes seconds to generate and is cached only in memory, with no
 secrets retained. The cache holds at most 3 trees per account (live, next, one
 behind) and 16 overall, with least-recently-used eviction. Concurrent requests
-for the same tree share one generation. WOTS needs no public tree cache.
+for the same tree share one generation. WOTS+C rebuilds its small per-stage tree
+in about 5 ms and needs no cache.
 
 ## 5. Signing
 
@@ -249,40 +251,27 @@ including otherwise valid RFC signatures. The bounded randomizer procedure and
 best-effort leaf management make this **not a conformant stateful XMSS signer**
 under RFC 8391 or NIST SP 800-208.
 
-### 5.3 WOTS
+### 5.3 WOTS+C
 
-The WOTS variant uses the construction in `internal/crypto/wots`: n = 32,
-w = 16, 64 message digits and 3 checksum digits. It has 67 SHA-256 chains,
-each with 15 steps. This is the per-stage WOTS-w16 scheme, distinct from the
-masked WOTS+ construction inside XMSS.
-
-The stage tweak binds the chains to the network, account and stage:
+The WOTS+C variant uses the construction in `internal/crypto/wotsc`: a tree of 64
+keys per stage with n = 16, w = 16 and 32 message digits. A fixed digit sum of 240
+replaces the checksum chains: the signer searches up to 8,192 deterministic
+randomizers until the digest qualifies, and the verifier requires the sum.
 
 ```text
-T = SHA-256("APLANE_WOTS_V1" || G || account_tag || u64be(n))
-F(T, chain, step, x) = SHA-256(T || u64be(chain * 256 + step) || x)
+arg 0 = leaf (4) || R (16) || chain_element[0] || ... || chain_element[31] || auth[0..5]
 ```
 
-Split `TxID` into 64 hexadecimal digits, high nibble first, then append the
-three hexadecimal digits of `sum(15 - message_digit)`. For each chain, signing
-advances its secret by that chain's digit value and emits the resulting
-32-byte element:
-
-```text
-arg 0 = chain_element[0] || ... || chain_element[66]  (2,144 bytes)
-```
-
-Verification completes each chain to step 15 and hashes the 67 chain ends
-together with SHA-256. The result must equal the embedded 32-byte WOTS public
-key. There is no randomizer, leaf index, authentication path or checksum cap.
-Each stage has one WOTS key, which must authenticate only one released message
-to retain its one-time security property.
+The signature is 628 bytes. Because the digit sum is fixed, every accepted run
+completes exactly 240 chain steps. Each leaf must authenticate only one released
+message to retain its one-time security property. Section 12 has the full
+construction.
 
 ### 5.4 Arguments
 
-| Argument | XMSS variant | WOTS variant |
+| Argument | XMSS variant | WOTS+C variant |
 |---|---|---|
-| `arg 0` | XMSS signature, 2,692 bytes | WOTS signature, 2,144 bytes |
+| `arg 0` | XMSS signature, 2,692 bytes | WOTS+C signature, 628 bytes |
 | `arg 1` | Ed25519 signature, 64 bytes | same |
 | `arg 2` | Falcon-1024 signature, at most 1,423 bytes | same |
 
@@ -290,45 +279,54 @@ to retain its one-time security property.
 
 Before releasing anything, `StageOps.SignStage` re-parses the derived program
 and verifies all three signatures locally through the scheme's `signerops.Verify`.
-XMSS also checks the leaf range and checksum cap. Failed signatures are zeroed
-and refused.
+XMSS also checks the leaf range and checksum cap. WOTS+C rejects an index outside
+0 to 63. Failed signatures are zeroed and refused.
+
+A signature is then released only if the signer hasn't locked since approval, the
+request hasn't been cancelled and the key is still present. The sign path is a key
+user, so a lock cancels it and waits for the seed to go. The seed goes before the
+audit write, so a stalled disk can't hold up a lock, and the checks run again after
+the last audit write. A release refused at that point stays on record, which only
+makes its leaf look used. Nothing that blocks comes after that check in the signer,
+but the response still has to be written, so a lock can arrive while it is on its
+way.
 
 ## 6. Resource profile and cost
 
 Each group member contributes 20,000 units of pooled LogicSig execution cost
 and 1,000 bytes of pooled large-argument allowance.
 
-| Property | XMSS | WOTS |
+| Property | XMSS | WOTS+C |
 |---|---|---|
-| Unsalted verifier cost | `25,507 + 134 * steps` | `7,301 + 53 * steps` |
-| Maximum chain steps | 525 | 990 |
-| Salt overhead | none; salt follows `return` | 1 opcode |
-| Worst accepting run | 95,857 | 59,772 |
-| Maximum argument bytes | 4,179 | 3,631 |
-| Group pool | 100,000 cost / 5,000 argument bytes | 80,000 cost / 4,000 argument bytes |
-| Resource dummies | 4 | 3 |
+| Unsalted verifier cost | `25,507 + 134 * steps` | `5,881 + 41 * 240` |
+| Maximum chain steps | 525 | 240 |
+| Salt overhead | none; salt follows `return` | same |
+| Worst accepting run | 95,857 | 15,721, on every accepted run |
+| Maximum argument bytes | 4,179 | 2,115 |
+| Group pool | 100,000 cost / 5,000 argument bytes | 60,000 cost / 3,000 argument bytes |
+| Resource dummies | 4 | 2 |
 
 For hexadecimal checksum digits `a b d`, the number of verification chain
 steps is `45 + 255a + 15b`. XMSS's cap of 511 bounds this at 525; a checksum
-of 512 already needs 555. WOTS accepts the full checksum range and may need
-990 steps. The generic XMSS primitive's `MaxVerifySteps = 990` remains
+of 512 already needs 555. WOTS+C's fixed digit sum makes the count exactly 240.
+The generic XMSS primitive's `MaxVerifySteps = 990` remains
 unchanged; the 525-step bound belongs to the XMSS stage profile.
 
 ## 7. Key file and storage
 
-Both variants use a managed `.key` credential with the `rotating_lsig` codec
+All variants use a managed `.key` credential with the `rotating_lsig` codec
 (`keys.RotatingCodec`), containing the seed, network genesis hash and a
 scheme-specific stage 0 public record:
 
 | Scheme | Public record, in order | Bytes |
 |---|---|---|
 | XMSS | account tag (32), Falcon public key (1,793), tree 0 root (32), tree 0 public seed (32), Ed25519 public key (32) | 1,921 |
-| WOTS | stage 0 tweak (32), Falcon public key (1,793), WOTS public key (32), Ed25519 public key (32) | 1,889 |
+| WOTS+C | public seed (16), root (16), Falcon public key (1,793), Ed25519 public key (32) | 1,857 |
 
 The account address is derived from this record. No bytecode is stored; XMSS's
 stage 0 leaf range is fixed and is not stored either.
 
-On parsing a WOTS key file, `validateSeed` derives stage 0 and compares the
+On parsing a WOTS+C key file, `validateSeed` derives stage 0 and compares the
 entire public record. For XMSS, it checks the cheap derivations immediately:
 account tag, tree public seed, Ed25519 key and Falcon key. It compares the root
 when tree 0 is already cached. A wrong root is caught before a spend can be
@@ -342,7 +340,7 @@ the signer and its managed backups.
 
 ## 8. Signing choreography (`rotating1`)
 
-Both variants use only `POST /sign/rotating/prepare` and
+All variants use only `POST /sign/rotating/prepare` and
 `POST /sign/rotating/sign`. `/plan`, `/sign`, `/sign/bounded-admin` and
 `/sign/component` refuse them with `rotating_signing_required`. The complete
 wire contract lives in [ARCH_SIGNING.md](ARCH_SIGNING.md#rotating-accounts-rotating1).
@@ -366,12 +364,11 @@ wire contract lives in [ARCH_SIGNING.md](ARCH_SIGNING.md#rotating-accounts-rotat
    release if the signer locked since approval, the request was cancelled or
    the key was removed.
 3. **Open test.** `CheckStageOpens` test-signs the target stage locally before
-   any spend signature is released. Both variants sign the SHA-256 hash of
+   any spend signature is released. The leaf variants sign the SHA-256 hash of
    their derivation label followed by ` stage open test`: a fixed label, not a
-   TxID, so the test signature authorizes nothing. WOTS tests all three
-   signatures and wipes the test arguments without releasing them. XMSS tests
-   Ed25519 and Falcon and checks the embedded root, public seed and leaf range;
-   it never signs with a target-stage XMSS leaf.
+   TxID, so the test signature authorizes nothing. They test Ed25519 and Falcon
+   and check the embedded root and public seed, and XMSS also its leaf range. They
+   never sign with a target-stage leaf.
 
 Clients route on `signing_flow`, verify the prepared group preserves the
 intended spend except for the rotation, fee, group ID and canonical dummies,
@@ -380,34 +377,38 @@ no prepare session; policy evaluates the spend presented to sign.
 
 ### 8.1 One-time key and leaf selection
 
-WOTS always uses the stage's single one-time key; there is no selectable leaf.
-For XMSS, the signer chooses a leaf under the account lock from release memory:
+The signer chooses a leaf under the account lock from release memory:
 
 - An already released transaction keeps its leaf, reproducing its hash-based
   signature on an identical retry.
 - Otherwise the first byte of `TxID` picks a position within the stage's range,
   then the first unused leaf upward, wrapping, is selected, so two signers
-  sharing a seed and no memory collide one time in 64 rather than always.
+  sharing a seed and no memory collide one time in 64 rather than always, for
+  TxIDs nobody chose.
 - If all 64 leaves have been used, the pick is reused and reported.
 
-Release memory chooses the XMSS leaf; it does not refuse further releases.
-An audit write failure is logged and does not withhold the signature.
+Release memory chooses the leaf; it does not refuse further releases, with one
+exception that isn't about leaves: while the memory is being restored, a sign waits,
+and if a reset arrives after that wait, the sign is refused rather than choosing from
+an empty memory. The leaf is chosen from a record read together with its restore
+state, so a reset can't fall between them. An audit write failure is logged and does
+not withhold the signature. The `rotating_leaf_release.tla` model covers any family
+with several leaves per stage; see
+[FORMAL_TLA_ROTATING_LEAF_RELEASE_MODEL.md](FORMAL_TLA_ROTATING_LEAF_RELEASE_MODEL.md).
 
 ### 8.2 Release memory and alerts
 
 The signer keeps the newest release per account and that stage's release
 history in process memory, rebuilt at unlock from `ROTATING_RELEASE` audit
 entries. It records the stage, TxID, `last_valid` and one-time leaf history
-(WOTS uses leaf 0; XMSS records tree and index). Signing waits for audit
+(tree and index; a WOTS+C tree is always 0). Signing waits for audit
 restoration, bounded by the request context.
 
 - A release that expires while its stage remains the authorizer raises a
   warning: it cannot confirm and the exposed stage still controls the account.
-- Releasing a second distinct transaction on the same one-time key marks the
-  stage reused and warns until the account moves past it (the profile's
-  `OneTimeStage` flag). For WOTS this means
-  any second distinct transaction; for XMSS it means reusing a leaf. Multiple
-  XMSS releases on distinct leaves show an attempt count without a reuse warning.
+- Releasing a second distinct transaction on the same leaf marks the stage
+  reused and warns until the account moves past it. Multiple releases on distinct leaves show an attempt
+  count without a reuse warning.
 
 ### 8.3 Stage table worker and recovery
 
@@ -425,18 +426,16 @@ address equals the authorizer read from the chain.
 
 ## 9. Security properties and claims
 
-- **All three signatures required.** A forgery needs a break of Falcon-1024,
-  of Ed25519 and of SHA-256 at once, so long as the stage's one-time key has
-  signed only one message. These properties assume the seed remains secret and
-  the verifier and surrounding protocol work correctly.
+- **All three signatures required.** The stage accepts a transaction only when
+  its Falcon-1024, Ed25519 and hash-based signatures all verify over the same
+  TxID. A reduction showing that forging the exact WOTS+C construction
+  necessarily breaks SHA-256 has not been established. Security claims assume
+  the seed remains secret, each hash-based scheme's usage limits are respected,
+  and the verifier and surrounding protocol work correctly.
 - **Bounded exposure.** A released stage controls the account until a rotation
-  confirms. Successor WOTS stages embed new keys; successor XMSS stages embed
+  confirms. Successor WOTS+C stages embed a new tree; successor XMSS stages embed
   a disjoint leaf range and, at tree boundaries, a new root.
-- **WOTS reuse.** Releasing signatures on two different messages with one stage
-  forfeits the one-time security claim for that key. The stage still requires
-  Falcon-1024 and Ed25519 until rotation confirms. Repeating the same message
-  does not create a second WOTS message signature.
-- **XMSS reuse.** A leaf must sign only one message. A stage can use up to 64
+- **Leaf reuse.** A leaf must sign only one message. A stage can use up to 64
   distinct leaves before exhausting its allocation, but rollback, lost audit
   history or independent signers sharing a seed can cause earlier reuse. This
   is capacity, not a guarantee. A repeated leaf forfeits its one-time security
@@ -453,14 +452,68 @@ address equals the authorizer read from the chain.
 - **Network binding.** Every derivation includes the genesis hash.
 
 The XMSS variant makes no claim to conformant RFC 8391 or SP 800-208 stateful
-signing. The WOTS variant is the APlane construction described in §5.3, not
-the XMSS WOTS+ format. Neither variant provides on-chain spending limits or an
+signing. The WOTS+C variant isn't a standard; see
+section 12. No variant provides on-chain spending limits or an
 external-admin recovery path. Policy belongs to the signer; recovery depends
 on the backed-up credential.
 
+### 9.1 Failed transactions and leaf reuse
+
+For the leaf variants, a failed transaction doesn't cause reuse by itself. A retry
+with a new TxID takes the next unused leaf, so reuse needs a second problem on top of
+the failure.
+
+| Failure | Signature released | Leaf used | Reuse risk |
+|---|---|---|---|
+| Simulation fails | No, caught before signing | No | None |
+| Signer refuses (stage moved, window aged) | No | No | None |
+| Node rejects the submit | Yes | Yes | None: the retry takes the next leaf |
+| Transaction expires without landing | Yes | Yes | None: the repair takes the next leaf |
+| Same bytes are resubmitted | Yes | Same leaf | None: the signature is identical |
+| Response is lost after signing | Assume yes | Yes | None: the leaf is recorded before the signature leaves |
+
+The signer holds a per-account lock while signing, so concurrent requests can't take
+the same leaf.
+
+Each stage allows 64 different signed transactions, which is the first attempt plus
+63 retries. The 65th reuses a leaf and is reported. It isn't refused, and a rotation
+gives the account 64 fresh leaves. The client's automatic retry covers only refusals
+before signing, so it doesn't use leaves.
+
+Reuse needs one of these:
+
+- More than 64 signed transactions on one stage.
+- History missing when the retry signs, because:
+  - a backup was restored;
+  - two signers share a seed;
+  - the audit log rotated past the stage's releases;
+  - an audit write failed and the signer then restarted; or
+  - the audit restore failed for an ordinary reason, since the signer then goes
+    ahead rather than refusing. A restore interrupted by a lock, cancellation,
+    recovery or refused key use keeps the account held instead.
+
+With history missing, the leaf comes from the TxID alone, and a signer that has lost
+that history can't see the reuse, so nothing reports it:
+
+| Different transactions on one stage | Chance two share a leaf |
+|---|---|
+| 2 | 1.6% |
+| 3 | 4.6% |
+| 5 | 15% |
+
+These odds assume nobody chose the TxIDs. Whoever controls a transaction's contents can
+grind its note to aim it at a leaf in about 64 tries, so with history missing, 1 in 64
+is not a bound against an adversary. This doesn't get past an intact history, which
+gives every transaction an unused leaf whatever it picks.
+
+A failed transaction also leaves the stage exposed. Its keys are revealed and keep
+control of the account until a rotation lands, with no time limit. The hash leg stays
+intact while each leaf has signed once, but the fix is a prompt rotate-only spend,
+which the signer already warns about.
+
 ## 10. Policy and transaction authority
 
-| Property | Both variants |
+| Property | All variants |
 |---|---|
 | Admitted transaction types | any, subject to the stage guards |
 | Required | non-zero `RekeyTo` different from sender; zero `CloseRemainderTo`; validity window at most 100 rounds |
@@ -499,8 +552,8 @@ land only through the window expiring or the operator's own concurrent spend
 from the same stage. With another sender in the group, that sender decides
 whether the rotation lands: it can withhold its signature, or invalidate its
 own transaction inside the window after the stage signature is public. The
-remedy is a second spend from the same stage, which for WOTS is a second
-signature on a different message (section 9). The design tolerates that as a
+remedy is a second spend from the same stage, which takes another of its
+leaves (section 9). The design tolerates that as a
 rare, self-inflicted case with alerts; it does not let a counterparty
 trigger it on demand.
 
@@ -530,7 +583,7 @@ transactions.
    [PROPOSAL_ROTATING_INTEGRATION.md](PROPOSAL_ROTATING_INTEGRATION.md).
 2. *Multi-stage release.* Several rotating slots in one group, each signed
    by the next stage in the chain. This needs its own design for budget (a
-   WOTS spend costs up to 59,772 and an XMSS spend up to 95,857 of a pool
+   WOTS+C spend costs 15,721 and an XMSS spend up to 95,857 of a pool
    that grows by 20,000 per member up to 16 members), release memory, audit
    and one-time key accounting.
 
@@ -540,8 +593,8 @@ program, so the templates stay unpinned on group size at no cost.
 
 ## 11. SLH-DSA variant
 
-`aplane.rotating-triple-slhdsa.v1` replaces the one-time hash-based key of
-the two released variants with a **stateless few-time** key per stage: an
+`aplane.rotating-triple-slhdsa.v1` replaces the one-time leaves of the other
+variants with a **stateless few-time** key per stage: an
 SLH-DSA key under the SLH-DSA-SHA2-128s construction of FIPS 205, with the
 hypertree rescaled to two layers. Everything the earlier sections say about
 the account model (§3), the stage program guards (§3.1), the address
@@ -553,7 +606,7 @@ replaces the one-time rule, and the resulting claims.
 
 ### 11.1 Why a stateless scheme
 
-The WOTS and XMSS variants rest on a one-time rule: a key or leaf that signs
+The XMSS and WOTS+C variants rest on a one-time rule: a leaf that signs
 two different messages forfeits its hash-based protection for the rest of
 the stage. Holding that rule costs machinery. The XMSS variant keeps a leaf
 history in release memory, restores it from the audit log at unlock, waits
@@ -773,7 +826,7 @@ No release cap, counter or used-leaf tracking is added: a cap could strand
 an account whose every released spend expired, and tracking leaves to
 redraw the randomizer would reintroduce the state this variant exists to
 avoid. Independent verification of the bound and of the assumption for the
-intended deployments is the review gate (§14).
+intended deployments is the review gate (§15).
 
 Release memory (§8.2) keeps only the latest release for this variant:
 `StatelessHash` records carry no leaf history, restore nothing from the
@@ -816,29 +869,270 @@ The 41 units per chain step are 6 unit-cost instructions and one SHA-256.
 
 ### 11.8 Comparison
 
-| Item | XMSS | WOTS | SLH-DSA |
+| Item | XMSS | WOTS+C | SLH-DSA |
 |---|---|---|---|
-| Hash-based key per stage | 64 one-time leaves of a shared tree | one one-time key | one few-time key |
-| Rule on the hash-based key | each leaf signs one message | the key signs one message | at most about 2^22 distinct messages |
-| State the rule needs | leaf history, audit restore, tree cache | release memory for reporting only | none |
-| Loss of state | leaf reuse, caught and reported | reuse reported | none |
-| Group size | 5 | 4 | 6 |
-| Hash-based signature bytes | 2,692 | 2,144 | 4,400 |
-| Worst opcode cost | 95,857 | 59,772 | 68,645 |
-| Signing, this host | tree cache amortized | microseconds | about 0.2 s |
-| Stage derivation, this host | tree cache amortized | microseconds | about 100 ms |
-| Standing | RFC 8391 format and set, non-conformant signer | APlane construction | FIPS 205 construction, private parameter set |
-| Status | released v1 | released v1 | released v1 |
+| Hash-based key per stage | 64 one-time leaves of a shared tree | its own tree of 64 one-time leaves | one few-time key |
+| Rule on the hash-based key | each leaf signs one message | each leaf signs one message | at most about 2^22 distinct messages |
+| State the rule needs | leaf history, audit restore, tree cache | leaf history, audit restore | none |
+| Loss of state | possible undetected leaf reuse | same | none |
+| Group size | 5 | 3 | 6 |
+| Hash-based signature bytes | 2,692 | 628 | 4,400 |
+| Worst opcode cost | 95,857 | 15,721 | 68,645 |
+| Signing, this host | tree cache amortized | about 9 ms | about 0.2 s |
+| Stage derivation, this host | tree cache amortized | about 43 ms | about 100 ms |
+| Standing | RFC 8391 format and set, non-conformant signer | Published scheme, private instantiation | FIPS 205 construction, private parameter set |
+| Status | released v1 | unreleased | released v1 |
 
-## 12. Compatibility and versioning
+## 12. WOTS+C variant
 
-- Each v1 key type separately freezes its stage template, embedded constants,
+`aplane.rotating-triple-wotsc.v1` uses a Merkle tree of 64 WOTS+C one-time keys,
+built per stage. Everything the earlier sections say about the account model (§3),
+the stage program guards (§3.1), the address derivation (§3.2), the signing
+choreography (§8), failed transactions (§9.1) and the policy boundary (§10) applies
+unchanged. This section covers what differs: why WOTS+C, the parameter set, the
+construction, the signing and argument layout, the stage verifier, the resource
+profile, and the resulting claims. It is unreleased, and it freezes at its first
+release.
+
+### 12.1 Why WOTS+C
+
+The variant is an alternative to XMSS, not a replacement for SLH-DSA, which exists
+so a stage key needs no state: it can be retried, restored from an old backup or run
+from several copies without coordination. WOTS+C keeps the one-time rule and handles
+it the way XMSS does. What it offers is size and cost (§11.8): a fixed digit sum
+replaces the checksum chains, and each stage has its own small tree, so there's no
+public tree cache.
+
+| Decision | Why |
+|---|---|
+| A separate key type | v1 stage programs are frozen, and SLH-DSA's value is having no state |
+| No leaf counter | After an old backup, or with a second signer, a counter repeats the same leaf every time. The TxID pick collides 1 time in 64 for TxIDs nobody chose (§9.1) |
+| Reuse a leaf rather than refuse | Every stage requires this signature and there's no other recovery path, so refusing freezes the funds |
+| Keys derived per stage | The signer stores only the seed, so random values couldn't be rebuilt on restore |
+| `n`, `w`, `S` and `h` fixed | n=24 needs 48 chains and S=360, and FIPS 205 moves H and T to SHA-512 at that level. The AVM has no plain SHA-512 opcode |
+| `S` is 240 | It's the most likely sum, so grinding is shortest. Argument bytes set the group size, so a higher S saves nothing that matters |
+| Grinding limit of 8,192 | Keeps signing bounded, and failure is negligible (§12.5) |
+
+### 12.2 Parameter set
+
+| Name | Value | Notes |
+|---|---|---|
+| n | 16 | Hash output bytes |
+| w | 16 | 4 bits per digit |
+| len | 32 | Message chains. No checksum chains |
+| S | 240 | Required digit sum |
+| h | 6 | 64 leaves per stage |
+| Grinding limit | 8,192 | Counters tried per signature |
+
+Each stage is its own tree, so `StagesPerTree` is 0 and `Profile.LeafRange` gives
+every stage `[0, 64)`. `TreeOf` stays 0, so every stage uses leaf numbers 0 to 63
+under tree 0. That's safe because `chooseLeaf` ignores a prior record unless
+`prior.Stage == stage`, and each stage has its own keys. Setting `StagesPerTree` to 1
+would be wrong: `treeFrontier` would treat the family as shared-tree and limit stage
+lookahead to about one stage.
+
+### 12.3 Derivation and stage record
+
+Derivation follows §4 under the label `APLANE_ROTATING_TRIPLE_WOTSC_V1`, with
+stage-level info `tag || G || u64be(n)`, as for SLH-DSA. The tags are in §4's table,
+and derivation is random access.
+
+The stage 0 public record is `PK.seed` (16), `PK.root` (16), Falcon public key
+(1,793) and Ed25519 public key (32), 1,857 bytes in total. Tree generation is cheap
+enough that `validateSeed` compares the entire record.
+
+`CheckStageOpens` follows XMSS: it tests Ed25519 and Falcon, and checks the embedded
+`PK.seed` and `PK.root` against a rebuilt tree. It never signs with a target-stage
+leaf, because a leaf is one-time and that stage hasn't spent yet.
+
+### 12.4 Primitives and tree
+
+The primitives follow the FIPS 205 SHA2 style.
+
+```text
+seedblock    = PK.seed || 0^48              # one full SHA-256 block
+Th(ADRS, M)  = SHA-256(seedblock || ADRSc || M)[0:16]
+```
+
+`ADRSc` is 22 bytes, with integers big-endian:
+
+| Bytes | Field | Value |
+|---|---|---|
+| 0 | layer | 0 |
+| 1-8 | tree | 0 |
+| 9 | type | 0 WOTS_HASH, 1 WOTS_PK, 2 TREE, 5 WOTS_PRF |
+| 10-13 | keypair | Leaf index. 0 for tree nodes |
+| 14-17 | chain or height | |
+| 18-21 | hash or index | |
+
+For leaf `i` and chain `j`:
+
+```text
+sk[i][j] = Th(ADRS{type=5, keypair=i, chain=j, hash=0}, SK.seed)
+
+chain(x, start, steps, i, j):
+    for k in start .. start+steps-1:
+        x = Th(ADRS{type=0, keypair=i, chain=j, hash=k}, x)
+
+leaf[i] = Th(ADRS{type=1, keypair=i},
+             chain(sk[i][0], 0, 15, i, 0) || ... || chain(sk[i][31], 0, 15, i, 31))
+```
+
+A node at height `z+1` and index `t` is
+`Th(ADRS{type=2, chain=z+1, hash=t}, left || right)`. The root at height 6 is
+`PK.root`.
+
+### 12.5 Signing and arguments
+
+The signing flow chooses the leaf as in §8.1. Then:
+
+```text
+digest(R, i, TxID) = SHA-256(PK.seed || PK.root || R || u32be(i) || TxID)[0:16]
+digits             = 32 nibbles of digest, high nibble first
+```
+
+For `ctr = 0, 1, ..., 8191`:
+
+1. `R = SHA-256(SK.prf || u32be(i) || TxID || u32be(ctr))[0:16]`
+2. Use the first `R` whose digits sum to exactly 240.
+
+If no counter qualifies, the signer returns an error without generating a signature.
+Each try succeeds with probability about 1/66, so that happens with probability about
+2^-181. Search counters aren't leaf indices and don't consume leaves. The search is
+deterministic, so the same stage, leaf and TxID reproduce the same signature.
+
+A digest input can't equal a `Th` input, because their lengths differ: the digest
+hashes 84 bytes and `Th` hashes at least 102.
+
+```text
+arg 0 = u32be(i) || R || sigma_0 .. sigma_31 || auth_0 .. auth_5
+        4          16   32 * 16               6 * 16
+
+sigma_j = chain(sk[i][j], 0, d_j, i, j)
+auth_z  = sibling at height z on the path from leaf i
+```
+
+The signer rebuilds the stage tree to produce the path. That takes about 5 ms on one
+core, so no tree cache is needed, and `RotatingTreeOps`, tree rollover and a leaf
+range in the program aren't needed either.
+
+### 12.6 Stage verifier
+
+The guards are those of §3.1, then:
+
+1. Assert `arg 0` is exactly 628 bytes and `i < 64`.
+2. Compute the digest and its digits.
+3. Assert the digits sum to exactly 240. This is mandatory: without it, a digest
+   of all high digits forges trivially.
+4. For each `j`, compute `chain(sigma_j, d_j, 15 - d_j, i, j)`, reusing the SLH-DSA
+   verifier's `switch` fall-through.
+5. Compress the 32 chain ends with type 1 to get the leaf.
+6. Climb six levels. With `t = i` to start, for `z = 0 .. 5`:
+   take `bit = t & 1`, set `t = t >> 1`, then
+   `node = Th(ADRS{type=2, chain=z+1, hash=t}, bit ? auth_z || node : node || auth_z)`.
+7. Assert `node == PK.root`.
+
+The hash work is exactly 240 chain steps, 1 compression, 6 tree nodes and 1 digest:
+248 SHA-256 calls for every accepted signature. Because the step count is fixed, the
+cost model is one constant, not `base + step * steps`.
+
+### 12.7 Resource profile and cost
+
+| Property | Value |
+|---|---|
+| Maximum argument bytes | 2,115 |
+| Group size | 3: one spend and two dummies |
+| Fee at minimum | 3,000 microAlgos, no program surcharge |
+| Group pool | 60,000 opcode units, 3,000 argument bytes |
+| Opcode cost | 15,721: 9,840 for chain steps plus 5,881 for everything else |
+| Stage program bytes | 2,483, or 2,486 salted |
+
+Arguments decide the group size, because `lsigresource` sizes the group from argument
+bytes and opcode cost. Program bytes don't affect it, but they do affect the fee: a
+group's programs get 1,000 free bytes per member, and bytes above that carry a
+surcharge. A three-member group has 3,000 free bytes and the two dummies use 12, so a
+stage program up to 2,988 bytes pays no surcharge.
+
+`Preparation` stays at its zero value: full stage derivation takes about 43 ms, most
+of it Falcon-1024 key generation.
+
+### 12.8 Claims
+
+- **All three signatures required.** The stage accepts a transaction only when
+  its Falcon-1024, Ed25519 and WOTS+C signatures all verify over the same TxID.
+- **Hash output size.** The leg uses 16-byte outputs, compared with XMSS's 32 bytes.
+  Output size alone doesn't establish a security level or equivalence to SLH-DSA.
+  The expected attacks are a second preimage of the 128-bit digest or a preimage of
+  a chain step, but no reduction shows these are the only ones.
+- **Fixed sum.** With equal digit sums, one digit vector can only cover another if
+  they're identical, so a forger gains nothing from raising digits. Three million
+  attempts against a single signature found nothing.
+- **Leaf reuse.** A leaf that signs two different messages loses its one-time
+  claim. Falcon-1024 and Ed25519 remain required. A signer that holds the stage's
+  history reports the reuse until the account moves past it (§9.1).
+- **Network binding.** Every derivation includes the genesis hash.
+- **Bounded exposure.** A released stage controls the account until a rotation
+  confirms, as for every rotating type.
+
+Not claimed:
+
+- Conformance to any standard. WOTS+C isn't in FIPS 205, RFC 8391 or SP 800-208.
+- That the SPHINCS+C paper's proof covers this exact construction. No proof has
+  been written for it, so this needs independent review before release.
+- Conformant stateful signing. Leaf management is best-effort, as for XMSS.
+
+### 12.9 Cost of leaf reuse
+
+Measured on the reference implementation. Costs are tries for a forgery on an
+attacker-chosen TxID.
+
+| Signatures on one leaf | Median cost | Cheapest of 60 sampled |
+|---|---|---|
+| 2 | 2^39 | 2^31 |
+| 3 | 2^25 | 2^18 |
+| 4 | 2^18 | 2^14 |
+| 6 | 2^13 | 2^11 |
+
+A forgery from three signatures was carried out and verified, using no secret key,
+in 2 seconds on 4 cores. Two reuses are enough to treat the hash leg as lost.
+
+### 12.10 Measurements
+
+Measured on one development host and LocalNet:
+
+| Check | Result |
+|---|---|
+| Signature size | 628 bytes |
+| Verification | 247 `Th` calls plus the digest |
+| Grinding | Mean 64 tries over 400 signatures, maximum 313 |
+| Exact tries at S=240 | 66 |
+| Tamper cases rejected | 44 of 44 |
+| Stage tree generation (Go, with midstate) | 4.6 ms |
+| Full stage derivation, with Falcon-1024 | 43 ms |
+| Full three-part signature | 8.6 ms |
+| Hash signature, Go | 40 microseconds |
+| On-chain cost | 15,721 in all 60 runs: 6 leaves, salted and not, 5 fresh accounts |
+| Go against Python | All 14 vectors identical |
+| TEAL against Go | Agrees on all 64 leaves and every flipped byte; 8 of 8 mutated verifiers caught |
+| On-chain rejections | 21 of 21 |
+
+The grinding sample comes from one run, and a second 400 gave a mean of 67 and a
+maximum of 450. The grinding limit is tested in Go, and the derivation in §12.3 is
+what the on-chain runs use.
+
+The Python oracle shares no code with the Go package, but came from the same design
+and author, so it catches coding slips, not design mistakes. Falcon-1024 and Ed25519
+are stubbed in the offline TEAL runs, and run for real in the on-chain ones.
+
+## 13. Compatibility and versioning
+
+- At its first release, each v1 key type separately freezes its stage template, embedded constants,
   derivation label and tags, signing procedure, public record and resource
   profile. XMSS also freezes its checksum cap and leaf allocation. Any change
   to the TEAL changes every stage address. Changing these contracts mints a
   new key type version; it does not edit v1.
 - The three schemes have separate identifiers and derivation labels
-  (`APLANE_ROTATING_TRIPLE_V1`, `APLANE_ROTATING_XMSS_V1` and
+  (`APLANE_ROTATING_TRIPLE_WOTSC_V1`, `APLANE_ROTATING_XMSS_V1` and
   `APLANE_ROTATING_TRIPLE_SLHDSA_V1`), so their addresses never collide by
   construction. This document groups them under a shared design name; it
   introduces no additional key type, scheme negotiation or conversion of
@@ -851,9 +1145,9 @@ The 41 units per chain step are 6 unit-cost instructions and one SHA-256.
   be identified rather than reinterpreted as released v1 templates.
 - The shared signing-flow identifier remains `rotating1`. Clients route on
   `signing_flow`, not key type strings.
-- The installer floor for upgrades is v0.44.0.
+- The installer floor for upgrades is v0.48.0.
 
-## 13. Evidence (tests)
+## 14. Evidence (tests)
 
 | Area | Where |
 |---|---|
@@ -864,23 +1158,29 @@ The 41 units per chain step are 6 unit-cost instructions and one SHA-256.
 | SLH-DSA on-chain acceptance and rejection, cost model against node traces on both program shapes, six-transaction group | `test/integration/rotating_slhdsa_onchain_test.go` |
 | SLH-DSA preparation ceilings, bounded discovery, post-sign chain recheck, restored releases without leaf history; lifecycle benchmark | `internal/signerapp/signing/rotating_slhdsa_test.go`, `rotating_slhdsa_bench_test.go` |
 | XMSS stage build, parse, salt, offsets and cost | `lsig/rotatingtriplexmss/stage/program_test.go`, `template_dump_test.go` |
-| WOTS stage build, parse, salt, offsets and cost | `lsig/rotatingtriplewots/stage/program_test.go` |
+| WOTS+C stage build, parse, salt, offsets and cost | `lsig/rotatingtriplewotsc/stage/program_test.go`, `template_dump_test.go` |
 | Algod assembler agreement for salted and unsalted stages, all three schemes | the three `stage` packages' tests (LocalNet) |
-| Derivation, signing, verification and tampered fields; XMSS range violations and checksum above cap | `lsig/rotatingtriplexmss/signerops/keys_test.go`, `lsig/rotatingtriplewots/signerops/keys_test.go` |
-| Codec, generator, seed validation and registration | `lsig/rotatingtriplexmss/signerreg/register_test.go`, `lsig/rotatingtriplewots/signerreg/register_test.go` |
+| Derivation, signing, verification and tampered fields; XMSS range violations and checksum above cap | `lsig/rotatingtriplexmss/signerops/keys_test.go`, `lsig/rotatingtriplewotsc/signerops/keys_test.go` |
+| Codec, generator, seed validation and registration | `lsig/rotatingtriplexmss/signerreg/register_test.go`, `lsig/rotatingtriplewotsc/signerreg/contract_test.go` |
 | XMSS vectors from an independent oracle (`tools/xmssoracle`), RFC reference vector, 32 bounded signatures (10 with searched randomizer) | `internal/crypto/xmss/` |
 | XMSS checksum boundaries (511/525, 512/555) and exhaustive step counts | `internal/crypto/xmss/`, `lsig/rotatingtriplexmss/stage/` tests |
-| WOTS digits, chains, signatures and step counts | `internal/crypto/wots/wots_test.go` |
+| WOTS+C vectors from a second implementation (`tools/wotscoracle`), signing, rejection and the grinding limit | `internal/crypto/wotsc/wotsc_test.go` |
+| WOTS+C TEAL verifier run offline against the primitive: every leaf, every flipped byte, wrong digit sums and mutated verifiers | `lsig/rotatingtriplewotsc/stage/verifier_equiv_test.go`, `lsig/rotatingfamily/avmsim` |
 | Shared HKDF derivation | `internal/crypto/rotatinghybrid/derive_test.go` |
 | XMSS on-chain acceptance, cost model at the step ceiling, tree rollover, five-transaction group | `test/integration/rotating_xmss_onchain_test.go` |
-| WOTS on-chain acceptance, resource costs, four-transaction group | `test/integration/rotating_triple_onchain_test.go` |
+| WOTS+C on-chain acceptance, constant cost, three-transaction group | `test/integration/rotating_wotsc_onchain_test.go` |
 | Shared signing flow, release gates and recovery | `internal/signerapp/signing/rotating_*_test.go`, `test/integration/rotating_signer_test.go` |
 | Every non-payment transaction type through apshell and the signer (asset opt-in, transfer and close-out; app opt-in, call and box reference; online and offline key registration), all three schemes; refusal by a contract that rejects rekeying calls, with nothing signed | `test/integration/rotating_txntypes_test.go` |
 
 Full XMSS tree builds are skipped under the race detector (`internal/racetest`).
 
-## 14. Open items
+## 15. Open items
 
+- WOTS+C needs independent review before its first release, because the template and
+  derivation freeze then. No proof covers this construction (§12.8).
+- WOTS+C needs a second implementation written from section 12 alone.
+  `tools/wotscoracle` shares no code with the Go package but came from the same
+  design, so it can't catch a design mistake, and WOTS+C has no published vectors.
 - Independent review of the SLH-DSA rescaled parameter set and of the
   per-stage signing margin argument (§11.5) is a listed gate in
   [SLHDSA_EVALUATION.md](SLHDSA_EVALUATION.md).

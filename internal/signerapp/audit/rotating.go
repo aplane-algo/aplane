@@ -21,12 +21,12 @@ type RotatingRelease struct {
 	LastValid uint64
 	Tree      uint64
 	Index     uint32
-	// Leaves lists every distinct transaction the stage released, oldest
-	// first, with the leaf each signed with; the last is this entry.
+	// Leaves lists the stage's distinct transactions found in the retained
+	// log, in first-seen order, with the leaf each signed with. Identical
+	// retries do not append another entry.
 	Leaves []RotatingLeaf
-	// Reused reports that two entries of the same stage signed with the
-	// same leaf: for a family with one key per stage, any two distinct
-	// transactions. Entries the log has rotated past cannot be seen, so
+	// Reused reports that two distinct transactions of the same stage signed
+	// with the same leaf. Entries the log has rotated past cannot be seen, so
 	// false means none was seen, not none was made.
 	Reused bool
 }
@@ -41,10 +41,10 @@ type RotatingLeaf struct {
 
 // ReadRotatingReleases returns the newest ROTATING_RELEASE entry per account
 // from the audit log at path and its rotated predecessors (path+".2", then
-// path+".1", then path), oldest first so later entries win. Entries that no
-// longer exist because the log rotated past them are simply absent: the
-// release memory this feeds is observational and degrades to silence, never
-// to a wrong signature. Malformed lines are skipped.
+// path+".1", then path), oldest first so later entries win. The collected
+// history feeds both one-time leaf selection and release alerts. Entries
+// the log rotated past are absent, and malformed lines are skipped; missing
+// history can cause undetected leaf reuse after release memory is rebuilt.
 func ReadRotatingReleases(path string) (map[string]RotatingRelease, error) {
 	acc := make(map[string]*releaseAccumulator)
 	for _, file := range []string{path + ".2", path + ".1", path} {

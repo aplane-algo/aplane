@@ -56,5 +56,5 @@ height 22 the declared ceiling is 68645 AVM opcodes, which fits four
 transactions, and the 5,887 bytes of LogicSig arguments decide the group,
 six transactions; at height 63 the ceiling is 187258 and the 9,343 argument
 bytes need ten. See `docs/ARCH_CRYPTO.md` for the design record and cost
-proof. `VerifyStats` counts hash calls and WOTS verification steps; LocalNet
+proof. `VerifyStats` counts hash calls and WOTS+ verification steps; LocalNet
 tests compare those steps to the verifier's exact cost model.

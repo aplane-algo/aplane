@@ -26,8 +26,8 @@ import (
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/txnutil"
-	"github.com/aplane-algo/aplane/lsig/rotatingtriplewots/signerops"
-	rotatingsignerreg "github.com/aplane-algo/aplane/lsig/rotatingtriplewots/signerreg"
+	"github.com/aplane-algo/aplane/lsig/rotatingtriplewotsc/signerops"
+	rotatingsignerreg "github.com/aplane-algo/aplane/lsig/rotatingtriplewotsc/signerreg"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
@@ -136,7 +136,7 @@ func TestStageTableWorkerFillsResolvedAndUnresolvedAccounts(t *testing.T) {
 	if wait := server.fillStageTables(context.Background(), ir); wait != stageTableIdleInterval {
 		t.Fatalf("wait after resolved pass = %v, want idle interval", wait)
 	}
-	table, err := ir.StageTables().Table(account, gh, nil, "aplane.rotating-triple-wots.v1")
+	table, err := ir.StageTables().Table(account, gh, nil, "aplane.rotating-triple-wotsc.v1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -215,7 +215,7 @@ func TestLockingTheSignerStopsAndDrainsTheStageTableWorker(t *testing.T) {
 		defer close(done)
 		server.fillStageTables(context.Background(), ir)
 	}()
-	table, err := ir.StageTables().Table(account, gh, nil, "aplane.rotating-triple-wots.v1")
+	table, err := ir.StageTables().Table(account, gh, nil, "aplane.rotating-triple-wotsc.v1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -318,7 +318,7 @@ func TestLockCompletesWhileATableWriteIsStalled(t *testing.T) {
 	close(proceed)
 	<-done
 
-	table, err := ir.StageTables().Table(account, gh, nil, "aplane.rotating-triple-wots.v1")
+	table, err := ir.StageTables().Table(account, gh, nil, "aplane.rotating-triple-wotsc.v1")
 	if err != nil {
 		t.Fatal(err)
 	}

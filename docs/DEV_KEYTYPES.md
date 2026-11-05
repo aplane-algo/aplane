@@ -429,7 +429,6 @@ in `lsig/falcon1024/register.go`.
 Examples:
 - `aplane.rotating-triple-slhdsa.v1` (Falcon-1024 + two-layer
   SLH-DSA-SHA2-128 + Ed25519; stateless hash signing, no leaf allocation)
-- `aplane.rotating-triple-wots.v1` (Falcon-1024 + WOTS + Ed25519 stages)
 - `aplane.rotating-triple-xmss.v1` (Falcon-1024 + RFC 8391 XMSS + Ed25519
   stages; one XMSS tree per 1,024 stages, 64 leaves per stage)
 - `aplane.rotating-triple-wotsc.v1` (Falcon-1024 + WOTS+C + Ed25519 stages; each
@@ -439,9 +438,12 @@ Characteristics:
 - the account address is fixed while its authorizing program changes on every
   spend; no program is stored
 - the key file (category `rotating_lsig`) holds a seed, the genesis hash and
-  stage 0's public keys, and is the whole credential: the live stage is read
-  from the chain at every request, and the only file beside the key is a
-  plaintext stage address cache that is never trusted
+  stage 0's public keys, and holds the signing authority: the live stage is
+  read from the chain at every request, and a plaintext stage address cache
+  is checked against the seed and chain before use
+- XMSS and WOTS+C select leaves using release history restored from the audit
+  log. That history is separate from the credential and address cache; losing
+  it can cause undetected leaf reuse. Signing waits while its restore is pending
 - it has no `lsigprovider`; it signs only through the `rotating1` flow, which
   reads the signer's own node
 
@@ -456,9 +458,7 @@ Typical code areas:
 - `internal/signerapp/daemon` (stage table worker, status publication)
 - `internal/clientsign` and `internal/engine` (client routing and checks)
 - `internal/crypto/rotatinghybrid` (the HKDF stage deriver, labelled per key
-  type) and `internal/crypto/wots` (the WOTS-w16 primitive)
-- `lsig/rotatingtriplewots/` (the stage program, the WOTS half of the stage
-  ops, and the stage 0 record layout; it reuses the two crypto packages above)
+  type)
 - `internal/crypto/xmss` (RFC 8391 XMSS-SHA2_16_256) and
   `lsig/rotatingtriplexmss/` (its stage program, the XMSS half of the stage
   ops with the public tree cache, and its record layout); `tools/xmssoracle`

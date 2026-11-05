@@ -38,7 +38,6 @@ func TestCanonicalCompiledLogicSigInventory(t *testing.T) {
 		"aplane.falcon1024-cosigner1024.v1",
 		"aplane.falcon1024.v1",
 		"aplane.rotating-triple-slhdsa.v1",
-		"aplane.rotating-triple-wots.v1",
 		"aplane.rotating-triple-wotsc.v1",
 		"aplane.rotating-triple-xmss.v1",
 	}

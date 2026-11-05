@@ -38,7 +38,7 @@ func TestSLHPreparationLimits(t *testing.T) {
 	other := newRotatingFixture(t)
 	unchanged := other.svc.stageFillOptions(other.account.String(), opts)
 	if unchanged.Horizon != opts.Horizon || unchanged.Batch != opts.Batch || unchanged.MaxDerivations != opts.MaxDerivations || unchanged.Parallel != opts.Parallel {
-		t.Fatalf("changed WOTS limits: %+v", unchanged)
+		t.Fatalf("changed the limits of a family without a ceiling: %+v", unchanged)
 	}
 }
 

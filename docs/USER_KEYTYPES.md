@@ -307,26 +307,27 @@ microAlgo ceiling.
 
 ## Rotating Accounts
 
-`aplane.rotating-triple-wots.v1` is a library-visible compiled key type for
-an account whose address never changes while the program that authorizes it
-changes on every spend. Its siblings replace the per-stage WOTS key with
+The rotating key types are library-visible compiled key types for an account
+whose address never changes while the program that authorizes it changes on
+every spend. They differ in their hash-based key:
 [XMSS](#rotating-triple-xmss-accounts),
 [SLH-DSA](#rotating-triple-slh-dsa-accounts) or
-[WOTS+C](#rotating-triple-wotsc-accounts). The shared workflow applies to
+[WOTS+C](#rotating-triple-wotsc-accounts), which isn't ready for real funds yet. The shared workflow applies to
 all of them; their signature, resource, and retry differences are described below.
-For WOTS, each program (a *stage*) checks three signatures over the transaction
-ID: Falcon-1024, WOTS-w16 (SHA-256), and Ed25519. Their keys are derived
+Each program (a *stage*) checks three signatures over the transaction
+ID: Falcon-1024, a SHA-256 hash-based signature, and Ed25519. Their keys are derived
 from one seed held only by the signer. A stage's
 public keys are revealed only when it signs, and the same spend rekeys the
-account to the next, never-revealed stage. Forging a spend from a live stage
-needs a break of the Falcon lattice assumption, of SHA-256 and of Ed25519 at
-once, within the time between that stage's signature and the confirmation
-of its spend.
+account to the next, never-revealed stage. All three signatures must verify
+over the same transaction ID. The live stage remains authorized until a
+rotation confirms. For the custom WOTS+C construction, no security reduction
+has established that forging its hash-based signature necessarily breaks
+SHA-256; independent cryptographic review remains required before release.
 
 Enable the key type, then generate an account bound to one network:
 
 ```bash
-apadmin -d $APSIGNER_DATA keytype enable aplane.rotating-triple-wots.v1
+apadmin -d $APSIGNER_DATA keytype enable aplane.rotating-triple-xmss.v1
 ```
 
 In apadmin, **Generate account** asks for one parameter, `network`, and offers
@@ -343,12 +344,17 @@ address. Fund it like any other account.
 Spending works through apshell as usual. `send` and other single-transaction
 commands route through the `rotating1` flow automatically: the signer reads
 which stage currently controls the account from its own node, prepares the
-transaction (setting the rekey to the next stage, adding three resource
+transaction (setting the rekey to the next stage, adding the resource
 dummies and the fees), apshell checks and simulates the exact group before
 anything is signed, and the signer signs after approval and a fresh read of
-the chain. The three signatures total up to 3,631 bytes, so every spend
-carries three resource dummies and pays four minimum fees; a stage program is
-about 2,100 bytes.
+the chain. The key type sets the cost. Every spend carries resource dummies
+to make room for its three signatures, and pays one minimum fee per transaction:
+
+| Key type | Signature bytes, at most | Transactions per spend | Minimum fee | Stage program |
+|---|---|---|---|---|
+| XMSS | 4,179 | 5 | 0.005 ALGO | about 2,700 bytes |
+| SLH-DSA | 5,887 | 6 | 0.006 ALGO | about 2,800 bytes |
+| WOTS+C | 2,115 | 3 | 0.003 ALGO | about 2,500 bytes |
 
 Restrictions:
 
@@ -402,33 +408,36 @@ unlocked, it checks each rotating account after unlock and then about every
 (daemon log, `/status` warnings, the apadmin status bar and `rotate status`)
 when a signed transaction expired while its stage still controls the
 account. Answer the alert with `rotate <account>`. The memory is rebuilt at
-unlock from the signer's audit log, so keep the audit log if you want
-alerts to survive a restart; the account's safety does not depend on it.
+unlock from the signer's audit log. Preserve that log for both release alerts
+and XMSS or WOTS+C leaf-use history: losing the history can cause undetected
+leaf reuse after a restart or restore. The seed cannot reconstruct it.
 
 Two transactions signed from the same stage both rotate to the same next
 stage. The first to confirm wins; the ledger rejects the second because the
 account has already moved. If a send fails to submit and you resend it after
 another spend went through, expect that rejection; prepare it again.
 
-A WOTS key must never sign two different messages, and the rotation makes
-every stage sign once in normal operation. A stage signs twice only when a
-release did not move the account and another was signed from the same
-stage: a signed transaction expired without confirming and a repair spend
-(`rotate`) followed, or a client whose submission failed rebuilt the
-transaction with a fresh validity window and asked again. Until one of
-those transactions lands, the stage has lost only its WOTS protection and
-rests on Falcon-1024 and Ed25519. The signer reports this as a warning
-("stage N has signed more than one transaction") for as long as the stage
-still controls the account, alongside the expired-release alert; both clear
-once a chain read shows the account has moved. The warning rests on the
-signer's release memory, which the audit log rebuilds at unlock: a release
-the log has rotated past is unknown, so a reuse older than the retained log
-is not reported.
+Each WOTS+C or XMSS leaf must authenticate only one distinct message. A
+stage normally signs one spend, but may sign again before a rotation
+confirms: for example, an expired transaction may need a repair spend
+(`rotate`), or a failed submission may be rebuilt with a fresh validity
+window. Each stage has 64 one-time leaves. With intact history, an identical
+retry keeps its leaf and a different transaction takes an unused leaf while
+one remains.
+
+If a leaf signs two different messages, its one-time security claim is lost;
+Falcon-1024 and Ed25519 remain required until the account rotates. When the
+signer knows both releases, it reports reuse as a warning ("stage N has
+signed more than one transaction") for as long as that stage controls the
+account, even while a release is still in flight. Reuse and expired-release
+warnings clear once a chain read shows the account has moved. Missing audit
+history can prevent detection, so absence of a warning does not prove that
+no leaf was reused.
 
 ### Rotating triple XMSS accounts
 
-`aplane.rotating-triple-xmss.v1` keeps the Falcon-1024 and Ed25519 keys per
-stage and replaces the WOTS key with RFC 8391 XMSS (`XMSS-SHA2_16_256`). One
+`aplane.rotating-triple-xmss.v1` uses Falcon-1024 and Ed25519 keys per
+stage with RFC 8391 XMSS (`XMSS-SHA2_16_256`) as its hash-based key. One
 XMSS tree of 65,536 one-time leaves serves 1,024 consecutive stages, and
 each stage signs with its own 64 leaves; the stage program refuses a
 signature from any other leaf. What that changes for you:
@@ -438,22 +447,20 @@ signature from any other leaf. What that changes for you:
   address. The next tree is built in the background once the account passes
   the middle of the current one, so rotations never wait for it in normal
   operation.
-- **Fees are slightly higher.** The three signatures total up to 4,179
+- **Fees are higher.** The three signatures total up to 4,179
   bytes, so every spend carries four resource dummies and pays five minimum
-  fees, one more than the WOTS triple; a stage program is about 2,700
+  fees, two more than the WOTS+C triple; a stage program is about 2,700
   bytes. The verifier's opcode budget fits the same five transactions
   because the stage accepts only signatures whose hashed message meets a
   checksum cap, which the signer satisfies by choosing the randomizer, a
   step invisible to you and to any RFC 8391 verifier.
-- **Retries do not spend the stage's hedge.** A stage can release up to 64
-  distinct transactions, each on its own leaf, before any leaf repeats. An
-  expired release and its repair, or a rebuilt and re-signed transaction,
-  therefore keep all three signature schemes intact; `rotate status` notes
-  the attempt count ("attempt 2 of 64"). Only when a leaf does repeat, after
-  64 distinct attempts from one stage, or after the signer lost its release
-  memory and its audit log, does the stage rest on Falcon-1024 and Ed25519
-  until the account moves, and the signer reports that exactly as it does
-  for a twice-signed triple stage.
+- **Retries can use separate leaves.** With intact release history, a stage
+  can release up to 64 distinct transactions, each on its own leaf, preserving
+  the one-time rule. `rotate status` notes the attempt count ("attempt 2 of
+  64"). The 65th distinct transaction reuses a leaf; missing history or
+  independent signers sharing a seed can cause earlier reuse. The signer
+  warns only about reuse it can detect. A reused leaf loses its one-time
+  security claim; Falcon-1024 and Ed25519 remain required until rotation.
 - **Standards.** The signature format, verifier and parameter set are RFC
   8391 XMSS. The signer manages leaf indices on a best-effort basis through
   its release memory and audit log, as described above, so it does not meet
@@ -476,19 +483,23 @@ restrictions are the same as XMSS.
 
 WOTS+C isn't a standard, and this construction hasn't been independently reviewed.
 The key type isn't frozen yet, and a change would derive different accounts from the
-same seed, so don't hold real funds in it. Its hash leg is 128-bit, the same level as SLH-DSA and below the 256-bit XMSS and WOTS
-hashes. Falcon-1024 and Ed25519 are still required for every spend.
+same seed, so don't hold real funds in it. It uses 16-byte (128-bit) hash outputs,
+compared with XMSS's 32-byte outputs. Output size alone does not establish a
+security level or equivalence to SLH-DSA. Falcon-1024 and Ed25519 are still
+required for every spend.
 
-Each stage can sign 64 different transactions. A retry of a rebuilt transaction takes
-the next unused leaf, and resubmitting the same bytes keeps its leaf. The signer never
-refuses: the 65th different transaction reuses a leaf and is reported until the
-account moves past the stage. A failed transaction doesn't cause reuse by itself, but
-reuse can happen if the signer loses its release history, for example after a restored
-backup, or if two signers share a seed. The signer can't report reuse it can't see, so
-don't run two signers for one account.
+With intact release history, each stage can sign 64 different transactions on
+different leaves. An identical signing retry keeps its recorded leaf; a rebuilt
+transaction takes an unused leaf while one remains. Exhaustion itself does not
+cause refusal: the 65th different transaction reuses a leaf and is reported until
+the account moves past the stage. A failed transaction doesn't cause reuse by
+itself, but missing history or two signers sharing a seed can cause earlier reuse.
+History can be lost through backup restore, audit rotation, an audit write failure
+followed by restart, or an ordinary audit-restore failure. The signer can't report
+reuse it can't see, so don't run two signers for one account.
 
-If a leaf has signed two transactions, send a rotate-only spend promptly. See
-[the specification](KEYTYPE_ROTATING_TRIPLE_WOTSC.md#91-failed-transactions-and-leaf-reuse).
+If a leaf has signed two different transactions, send a rotate-only spend promptly. See
+[the specification](KEYTYPE_ROTATING_TRIPLE_HYBRID.md#91-failed-transactions-and-leaf-reuse).
 
 ### Rotating triple SLH-DSA accounts
 

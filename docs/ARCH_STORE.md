@@ -1227,25 +1227,22 @@ not store a separately trusted address, template name, legacy `entropy`, or
 runtime-argument metadata under `runtime_args`.
 
 Rotating LogicSig accounts use `category: "rotating_lsig"`. The key types
-are `aplane.rotating-triple-wots.v1` (Falcon-1024 + WOTS-w16 + Ed25519
-stages) and `aplane.rotating-triple-xmss.v1` (Falcon-1024 + RFC 8391 XMSS +
-Ed25519 stages), and `aplane.rotating-triple-slhdsa.v1` (Falcon-1024 +
+are `aplane.rotating-triple-xmss.v1` (Falcon-1024 + RFC 8391 XMSS +
+Ed25519 stages), `aplane.rotating-triple-slhdsa.v1` (Falcon-1024 +
 two-layer SLH-DSA-SHA2-128 + Ed25519), and `aplane.rotating-triple-wotsc.v1`
 (Falcon-1024 + a tree of WOTS+C keys + Ed25519); each fixes its own derivation and stage program template,
 and `internal/rotatingkey` classifies them and carries their frozen sizes
 in a per-type profile. SLH-DSA marks `StatelessHash` and keeps no one-time
-leaf history. The WOTS, XMSS and WOTS+C profiles also mark the stage as one-time,
-because it includes a one-time hash-based signature, names what a reused
-stage still rests on, and for the XMSS and WOTS+C triples how many leaves a stage holds;
-that changes only what the signer reports (`ARCH_SIGNING.md`, rotating
-alerts) and which leaf it signs with, never whether it signs.
+leaf history. Each hash-based leaf of the XMSS and WOTS+C profiles is one-time,
+and each stage has 64 such leaves. The profiles control leaf selection.
+Signing waits for release-history restoration, including its
+interruption handling; exhausting the leaves is reported but does not itself
+refuse a release (see `ARCH_SIGNING.md`, rotating accounts).
 
 - `private_key` is the 64-byte BIP-39 seed. Mnemonic entropy is not stored.
 - `genesis_hash` (32 bytes, hex) binds stage derivation to one network. No
   other category may carry it.
-- `public_key` is stage 0's public record. Triple: the stage tweak (32
-  bytes), the Falcon-1024 public key (1793), the WOTS public key (32) and
-  the Ed25519 public key (32), 1889 in all. XMSS triple: the public account
+- `public_key` is stage 0's public record. XMSS triple: the public account
   tag (32), the Falcon-1024 public key (1793), tree 0's root (32) and
   public seed (32), and the Ed25519 public key (32), 1921 in all. SLH-DSA
   triple and WOTS+C triple: public seed (16), root (16), Falcon public key
@@ -1264,14 +1261,15 @@ alerts) and which leaf it signs with, never whether it signs.
   binary without that registration rejects the file; scanning reports it and
   reload fails into recovery.
 - Scanning and inventory never expose the stage public keys. The resource
-  profile is the same for every stage: triple 2103 program bytes, 3631
-  argument bytes and an opcode ceiling of 59772 (three resource dummies);
-  XMSS triple 2664, 4179 and 95857 (four resource dummies); WOTS+C triple
-  2486, 2115 and 15721 (two resource dummies).
-- The key file is the whole credential. The signer keeps no durable state
-  for the account: which stage is live is read from the chain at every
-  request, and the stage address table under `stages/` (below) is a cache
-  rebuilt from the seed. The XMSS triple additionally keeps the public
+  profile is the same for every stage: XMSS triple 2664 program bytes, 4179
+  argument bytes and an opcode ceiling of 95857 (four resource dummies);
+  WOTS+C triple 2486, 2115 and 15721 (two resource dummies).
+- The key file holds the signing authority. Which stage is live is read
+  from the chain at every request, and the stage address table under
+  `stages/` (below) is a cache rebuilt from the seed. XMSS and WOTS+C also
+  retain release history in the audit log to rebuild leaf-use memory at
+  unlock. The seed cannot reconstruct that history; losing it can cause
+  undetected leaf reuse. The XMSS triple additionally keeps the public
   nodes of its trees in memory, rebuilt from the seed when missing: at most
   three per account (the live tree, the next one built ahead of it, and one
   behind) and sixteen across accounts, the least recently used dropped
@@ -1583,12 +1581,17 @@ uses the authenticated manifest source role, which every valid archive carries.
 | Key already exists and is canonically identical | Idempotent no-op. | No template/provider effect. | Existing destination state remains authoritative. |
 | Key already exists but differs or is unreadable | Conflict unless `replace_existing` is explicit. | No template/provider effect. | Replacement occurs only inside the atomic restore generation. |
 
-A restored rotating account (either rotating key type) needs nothing
-beyond its key file: the signer reads the live stage from the chain and
-rebuilds the account's stage address table, a cache under
-`identities/default/stages/` that backups never carry, in the background.
-Until the table reaches the live stage, signing refuses with
-`rotating_stage_unproven`.
+A restored rotating account gets its signing authority from its key file.
+The signer derives candidate stages and checks them against the live
+authorizer on its own chain. It rebuilds the stage address cache under
+`identities/default/stages/`; managed backups may supply recovery hints,
+but do not carry the cache or audit log. Until the live stage is proven,
+signing refuses with `rotating_stage_unproven`.
+
+Preserve the audit log separately to retain release alerts and XMSS or WOTS+C
+leaf-use history. Reconstructing the stage addresses does not reconstruct
+which leaves have signed. Missing history can cause undetected reuse even
+when the restored credential and live-stage discovery are valid.
 
 ### Runtime reload behavior
 

@@ -44,15 +44,17 @@ type RotatingStageOps interface {
 	// StageAddress returns stage i's program address.
 	StageAddress(key *RotatingKeyMaterial, stage uint64) (types.Address, error)
 
-	// CheckStageOpens signs a fixed test message with stage i's derived keys
-	// and verifies it against the keys embedded in stage i's program, proving
-	// a rotation target can authorize the account once it is live.
+	// CheckStageOpens checks stage i's derived keys against its program.
+	// XMSS and WOTS+C test-sign a fixed message with Falcon-1024 and Ed25519,
+	// and compare the derived hash-based public constants with the embedded
+	// ones; they never sign with a successor one-time leaf. SLH-DSA also
+	// test-signs and verifies its hash-based signature on the fixed message.
 	CheckStageOpens(key *RotatingKeyMaterial, stage uint64) error
 
 	// SignStage signs message with stage i, verifies every signature against
 	// the stage program's keys, and returns the program and arguments. index
 	// selects the one-time leaf for families whose stage holds several (the
-	// signing flow chooses it); a family with one key per stage ignores it.
+	// signing flow chooses it); a stateless family ignores it.
 	SignStage(key *RotatingKeyMaterial, stage uint64, index uint32, message []byte) (RotatingStageSignature, error)
 }
 

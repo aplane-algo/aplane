@@ -13,7 +13,7 @@ import (
 
 func TestClassificationMatchesImplementation(t *testing.T) {
 	p, ok := rotatingkey.Lookup(rotatingkey.RotatingTripleWotscV1)
-	if !ok || p.StatelessHash || !p.OneTimeStage || p.LeavesPerStage != wotsc.Leaves || p.StagesPerTree != 0 {
+	if !ok || p.StatelessHash || p.LeavesPerStage != wotsc.Leaves || p.StagesPerTree != 0 {
 		t.Fatalf("profile %+v", p)
 	}
 	if p.StagePublicKeySize != packedSize || p.MaxProgramBytes != stage.SaltedProgramSize || p.MaxArgumentBytes != stage.MaxArgumentBytes || p.MaxOpcodeCost != stage.MaxOpcodeCost {

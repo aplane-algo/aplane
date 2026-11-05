@@ -14,18 +14,13 @@ import (
 	"github.com/aplane-algo/aplane/test/integration/harness"
 )
 
-// TestRotatingTripleApshellEndToEnd runs a rotating account through the
+// TestRotatingXmssApshellEndToEnd runs a rotating account through the
 // shipped binaries: apadmin enables the key type and generates the account,
 // and two ordinary apshell sends route through prepare, unsigned simulation,
 // sign and submit. Each confirmed send must move the account's authorizer to
 // a new stage address. The rotate-only command and rotate status complete
-// the client surface; there is no exit.
-func TestRotatingTripleApshellEndToEnd(t *testing.T) {
-	runRotatingApshellEndToEnd(t, rotatingkey.RotatingTripleWotsV1)
-}
-
-// TestRotatingXmssApshellEndToEnd runs the same client surface for the XMSS
-// triple; its spends need a five-transaction group.
+// the client surface; there is no exit. XMSS spends need a five-transaction
+// group.
 func TestRotatingXmssApshellEndToEnd(t *testing.T) {
 	runRotatingApshellEndToEnd(t, rotatingkey.RotatingTripleXmssV1)
 }

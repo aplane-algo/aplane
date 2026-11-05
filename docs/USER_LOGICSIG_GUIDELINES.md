@@ -45,8 +45,8 @@ policy, whether it is:
 ## Signing Authority
 
 **Signing authority lives in the key file, not in the template.** Every
-LogicSig key file stores its final compiled bytecode, derivation metadata, and
-signing metadata at creation time. Current TEAL v13 auto-salted records omit
+provider-backed LogicSig key file stores its final compiled bytecode,
+derivation metadata, and signing metadata at creation time. Current TEAL v13 auto-salted records omit
 `salt_counter`; compatible manual-counter records retain it. Sign-time code
 uses the stored metadata;
 DSA-backed keys invoke the appropriate base signing provider to produce and
@@ -54,6 +54,12 @@ pack signatures. Templates are used for generation, discovery, lifecycle, and
 provenance, not to reconstruct missing signing metadata. Template provenance
 conflicts or absence may warn in inventory but do not by themselves invalidate
 a valid key.
+
+Rotating accounts use a different credential format: the key file stores the
+seed, network genesis hash and stage-zero public record, with no compiled
+bytecode or signing metadata. The signer derives each stage program locally.
+For XMSS and WOTS+C, the audit log separately preserves the leaf-use history
+needed to avoid reuse after restart; the seed cannot reconstruct that history.
 
 ## Scope
 
@@ -753,34 +759,36 @@ off-curve LogicSig account whose program performs Ed25519 verification.
 Transaction policy is expected to live primarily in signer approval and local
 signer policy.
 
-#### `aplane.rotating-triple-wots.v1`
+#### `aplane.rotating-triple-wotsc.v1`
 
 - dedicated compiled stage program, library-visible and signer-gated: the
   account's address is fixed while each spend rekeys it to the next stage's
-  program, with a Falcon-1024, a WOTS-w16 and an Ed25519 signature all
-  required
+  program, with a Falcon-1024, a WOTS+C and an Ed25519 signature all required.
+  WOTS+C isn't a standard construction
 - each stage requires, in order, a non-zero rekey that is not the sender, no
-  close-out, a validity window of at most 100 rounds, an Ed25519 signature
-  over the TxID (argument 1), a Falcon-1024 signature over the TxID
-  (argument 2) and a WOTS-w16 signature of exactly 2,144 bytes over the TxID
-  (argument 0: 67 SHA-256 chains, verified with `sha256`, `itob` and
-  `concat`)
-- worst-case opcode cost 59,772 and 3,631 argument bytes, so a spend needs
-  three resource dummies; the cost for a given TxID is 7,301 plus 53 per
-  chain step, pinned against the node's budget report in the LocalNet test
+  close-out, a validity window of at most 100 rounds, a WOTS+C signature of
+  exactly 628 bytes (argument 0), an Ed25519 signature over the TxID (argument
+  1) and a Falcon-1024 signature over the TxID (argument 2), then verifies the
+  WOTS+C signature against the stage's tree of 64 keys: the leaf index must be
+  below 64 and the digest's digits must sum to exactly 240
+- every accepted run costs exactly 15721 opcode units, and signature arguments
+  total at most 2115 bytes, so a spend needs two resource dummies
 - the signer, not TEAL, guarantees that every rekey targets the account's
   next never-revealed stage; the program accepts any other non-sender rekey
-  target. Nothing enforces that a stage signs once: the stateless flow signs
-  again from the live stage when a release expired or a client re-signs a
-  rebuilt transaction, and the signer reports the reuse as a warning until
-  the account moves; a reused stage loses its WOTS protection and rests on
-  Falcon-1024 and Ed25519 until a spend lands; see
-  [USER_KEYTYPES.md](USER_KEYTYPES.md#rotating-accounts)
+  target. The live stage may sign again before a rotation confirms. With
+  intact release history, an identical retry keeps its leaf and a different
+  transaction uses an unused leaf while one remains. Leaf selection uses
+  process memory restored from the audit log; signing waits while restoration
+  is pending. Exhaustion or missing history can cause reuse, which is reported
+  only when the history reveals it. A leaf used for two different messages
+  loses its one-time security claim; Falcon-1024 and Ed25519 remain required
+  until a rotation confirms. See
+  [USER_KEYTYPES.md](USER_KEYTYPES.md#rotating-triple-wotsc-accounts)
 
 #### `aplane.rotating-triple-xmss.v1`
 
-- the triple's sibling with RFC 8391 `XMSS-SHA2_16_256` in place of the
-  per-stage WOTS key: one tree of 65,536 leaves serves 1,024 stages, each
+- compiled opt-in rotating account with RFC 8391 `XMSS-SHA2_16_256` as its
+  hash-based key: one tree of 65,536 leaves serves 1,024 stages, each
   stage owning 64 leaves, and the program embeds the tree's root and public
   seed and the stage's leaf range
 - each stage requires, in order, the same rekey, close-out and validity
@@ -815,15 +823,6 @@ total at most 5887 bytes, which needs a six-transaction group; the
 68645-opcode ceiling fits in four. Transaction policy belongs to signer approval; the program requires
 rekey away from sender, forbids ALGO close and caps the validity span at 100.
 See [USER_KEYTYPES.md](USER_KEYTYPES.md#rotating-triple-slh-dsa-accounts).
-
-#### `aplane.rotating-triple-wotsc.v1`
-
-Compiled opt-in rotating account, requiring Falcon-1024, Ed25519 and a signature
-from a tree of 64 WOTS+C keys over the TxID. WOTS+C isn't a standard construction.
-Same transaction permissions and rotation guards as XMSS, with no leaf range,
-because each stage is its own tree. Signature arguments total at most 2115 bytes,
-which needs a three-transaction group; every accepted run costs exactly 15721 opcode
-units. See [USER_KEYTYPES.md](USER_KEYTYPES.md#rotating-triple-wotsc-accounts).
 
 Stage programs of every rotating type are assembled locally rather than
 through algod, using the TEAL v13 assembler's salt rule, and are cross-checked

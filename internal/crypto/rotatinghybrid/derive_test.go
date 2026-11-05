@@ -15,6 +15,8 @@ import (
 	falconmnemonic "github.com/algorandfoundation/falcon-signatures/mnemonic"
 )
 
+const testLabel = "APLANE_ROTATING_TEST"
+
 const testMnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon " +
 	"abandon abandon abandon abandon abandon abandon abandon abandon " +
 	"abandon abandon abandon abandon abandon abandon abandon art"
@@ -79,25 +81,21 @@ func TestStageMatchesDocumentedDerivation(t *testing.T) {
 		t.Fatal(err)
 	}
 	genesis := testGenesis(7)
-	d, err := NewDeriver(&seed, genesis)
+	d, err := NewDeriverWithLabel(&seed, genesis, testLabel)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer d.Zero()
 
 	for _, stage := range []uint64{0, 1, 2, 1 << 40} {
-		got, err := d.Stage(stage)
-		if err != nil {
-			t.Fatalf("Stage(%d) error = %v", stage, err)
+		got := make([]byte, FalconSeedSize)
+		if err := d.ExpandStage(0x01, stage, got); err != nil {
+			t.Fatalf("ExpandStage(%d) error = %v", stage, err)
 		}
-		info := func(tag byte) string {
-			b := append([]byte{tag}, genesis[:]...)
-			return string(binary.BigEndian.AppendUint64(b, stage))
-		}
-		wantFalcon, _ := hkdf.Key(sha512.New, seed[:], []byte(DerivationLabel), info(0x01), FalconSeedSize)
-		wantEd, _ := hkdf.Key(sha512.New, seed[:], []byte(DerivationLabel), info(0x02), Ed25519SeedSize)
-		if !bytes.Equal(got.Falcon[:], wantFalcon) || !bytes.Equal(got.Ed25519[:], wantEd) {
-			t.Fatalf("Stage(%d) does not match the documented derivation", stage)
+		info := append([]byte{0x01}, genesis[:]...)
+		want, _ := hkdf.Key(sha512.New, seed[:], []byte(testLabel), string(binary.BigEndian.AppendUint64(info, stage)), FalconSeedSize)
+		if !bytes.Equal(got, want) {
+			t.Fatalf("ExpandStage(%d) does not match the documented derivation", stage)
 		}
 	}
 }
@@ -107,31 +105,31 @@ func TestStageSeedsAreIndependent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	stage := func(genesis [GenesisHashSize]byte, i uint64) StageSeeds {
-		d, err := NewDeriver(&seed, genesis)
+	expand := func(genesis [GenesisHashSize]byte, tag byte, i uint64) [Ed25519SeedSize]byte {
+		d, err := NewDeriverWithLabel(&seed, genesis, testLabel)
 		if err != nil {
 			t.Fatal(err)
 		}
 		defer d.Zero()
-		s, err := d.Stage(i)
-		if err != nil {
+		var out [Ed25519SeedSize]byte
+		if err := d.ExpandStage(tag, i, out[:]); err != nil {
 			t.Fatal(err)
 		}
-		return s
+		return out
 	}
 
-	base := stage(testGenesis(1), 0)
-	if base != stage(testGenesis(1), 0) {
+	base := expand(testGenesis(1), 1, 0)
+	if base != expand(testGenesis(1), 1, 0) {
 		t.Fatal("derivation is not deterministic")
 	}
-	if base == stage(testGenesis(1), 1) {
+	if base == expand(testGenesis(1), 1, 1) {
 		t.Fatal("adjacent stages share seeds")
 	}
-	if base == stage(testGenesis(2), 0) {
+	if base == expand(testGenesis(2), 1, 0) {
 		t.Fatal("different networks share seeds")
 	}
-	if bytes.Equal(base.Falcon[:Ed25519SeedSize], base.Ed25519[:]) {
-		t.Fatal("Falcon and Ed25519 seeds are not domain-separated")
+	if base == expand(testGenesis(1), 2, 0) {
+		t.Fatal("two tags share seeds")
 	}
 }
 
@@ -194,7 +192,7 @@ func TestDeriverZero(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	d, err := NewDeriver(&seed, testGenesis(0))
+	d, err := NewDeriverWithLabel(&seed, testGenesis(0), testLabel)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -203,8 +201,8 @@ func TestDeriverZero(t *testing.T) {
 	if !bytes.Equal(prk, make([]byte, len(prk))) {
 		t.Fatal("Zero() left PRK bytes behind")
 	}
-	if _, err := d.Stage(0); err == nil {
-		t.Fatal("Stage() after Zero() succeeded")
+	if err := d.ExpandStage(1, 0, make([]byte, 32)); err == nil {
+		t.Fatal("ExpandStage() after Zero() succeeded")
 	}
 
 	seed.Zero()

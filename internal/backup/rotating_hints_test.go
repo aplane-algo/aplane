@@ -17,17 +17,17 @@ import (
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/stagetable"
 	"github.com/aplane-algo/aplane/internal/storepaths"
-	wots "github.com/aplane-algo/aplane/lsig/rotatingtriplewots/signerreg"
+	wotsc "github.com/aplane-algo/aplane/lsig/rotatingtriplewotsc/signerreg"
 )
 
 func TestRotatingHintArchiveRestoreAndRebuild(t *testing.T) {
-	wots.Register()
+	wotsc.Register()
 	var seed rotatinghybrid.Seed
 	seed[0] = 19
 	defer crypto.ZeroBytes(seed[:])
 	var genesis [32]byte
 	genesis[0] = 7
-	payload, account, err := wots.NewKeyPayload(&seed, genesis)
+	payload, account, err := wotsc.NewKeyPayload(&seed, genesis)
 	if err != nil {
 		t.Fatal(err)
 	}

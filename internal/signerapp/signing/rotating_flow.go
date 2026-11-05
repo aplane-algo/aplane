@@ -477,7 +477,7 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 	// log after an unlock waits for it, bounded by the request. A restore
 	// that fails opens the wait: state chooses the leaf, never whether to
 	// sign.
-	if p, ok := rotatingkey.Lookup(s.Planner.Snapshot().KeyTypes[req.Account]); ok && p.LeavesPerStage > 1 {
+	if p, ok := rotatingkey.Lookup(s.Planner.Snapshot().KeyTypes[req.Account]); ok && !p.StatelessHash {
 		if err := deps.Releases.AwaitRestored(ctx, req.Account); err != nil {
 			return nil, unavailable("release memory is still being restored from the audit log: " + err.Error())
 		}
@@ -548,7 +548,7 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 		// and choosing from the emptied memory would reuse a leaf. Reading the
 		// record and its restore state together closes that gap.
 		prior, restored := deps.Releases.ForLeafChoice(req.Account)
-		if leafProfile.LeavesPerStage > 1 && !restored {
+		if !restored {
 			return nil, unavailable("release memory is still being restored from the audit log")
 		}
 		leaf, leafReused = chooseLeaf(leafProfile, stage, txID[:], txIDText, prior)
@@ -687,15 +687,12 @@ func (s *Service) keyPresent(account string) func() bool {
 // therefore collide with probability one in LeavesPerStage rather than
 // always, for TxIDs nobody chose: whoever controls a transaction's contents can
 // aim it at a leaf in about LeavesPerStage tries. When every leaf is used the TxID's pick is reused and reported:
-// state chooses the leaf, never whether to sign. A family with one key per
-// stage always gets leaf 0.
+// state chooses the leaf, never whether to sign. Stateless families have no
+// leaves and don't call this.
 func chooseLeaf(profile rotatingkey.Profile, stage uint64, txID []byte, txIDText string, prior ReleaseRecord) (LeafRelease, bool) {
 	lo, hi := profile.LeafRange(stage)
 	tree := profile.TreeOf(stage)
 	leaf := LeafRelease{Tree: tree, Index: uint32(lo)}
-	if hi-lo <= 1 {
-		return leaf, false
-	}
 	if prior.Stage == stage {
 		if used, ok := prior.LeafFor(txIDText); ok {
 			return used, false
