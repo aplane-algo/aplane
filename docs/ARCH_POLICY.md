@@ -1493,7 +1493,7 @@ and requires the store mutation lock. Hand-placed documents take effect only
 after the next successful reload, unlock, or restart.
 
 The apadmin TUI Policies view lists the default first (labelled "node
-default (governs every key without its own policy)"), then every held key as
+default"), then every held key as
 "own policy" or "default", then stored documents for keys not held. Enter
 opens a document; `e` edits it (a key on the default opens the editor on the
 default with the key filled in, marked "No policy of its own yet"; on a

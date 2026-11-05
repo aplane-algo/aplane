@@ -409,11 +409,11 @@ apply`.
 ### Editing a policy in apadmin
 
 To change a policy without a file, open Policies (`p`), select the document,
-and press `e`. The list shows the node default first, labelled "node default
-(governs every key without its own policy)", then every held key marked "own
-policy" or "default", and any stored file for a key the node no longer holds
-("policy, key not held"). The document's JSON opens in an editor. Edit it,
-then press `ctrl+s`: apadmin checks the text, shows the same diff as a file
+and press `e`. The list shows the node default first, labelled "node default",
+then every held key marked "own policy" or "default", and any stored file for
+a key the node no longer holds ("key not held"). Below the list, the selected
+row shows its status in full and its document's size, SHA-256, and applied
+time. The document's JSON opens in an editor. Edit it, then press `ctrl+s`: apadmin checks the text, shows the same diff as a file
 load, and applies it only after you press `y`. Nothing is stored before that.
 
 - **A key on the default opens on the default.** Selecting a key that has no

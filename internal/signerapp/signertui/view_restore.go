@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 )
 
 func (m Model) renderRestorePassphrase() string {
@@ -63,6 +64,15 @@ func (m Model) renderRestorePassphrase() string {
 	return m.renderPopup(90, sb.String())
 }
 
+const (
+	restoreRowLeadWidth = 4 // cursor and selection mark
+	restoreColumnGap    = 2
+	// restoreAddressMinWidth is 7 leading chars + "..." + 7 trailing chars.
+	restoreAddressMinWidth = 17
+	// restoreErrorKeyTypeWidth is what a key type keeps beside an error.
+	restoreErrorKeyTypeWidth = 12
+)
+
 func (m Model) renderRestorePreview() string {
 	var sb strings.Builder
 	popupWidth := m.popupWidth(110)
@@ -78,6 +88,7 @@ func (m Model) renderRestorePreview() string {
 		sb.WriteString(subtitleStyle.Render("No restorable keys were found in this archive."))
 		sb.WriteString("\n")
 	} else {
+		addressWidth := restorePreviewAddressWidth(m.restore.previewKeys, rowWidth)
 		visibleHeight := m.restorePreviewVisibleHeight()
 		scrollOffset := m.restore.previewScrollOffset
 		if scrollOffset >= len(m.restore.previewKeys) {
@@ -98,7 +109,7 @@ func (m Model) renderRestorePreview() string {
 			if i == m.restore.selectedKey {
 				prefix = "> "
 			}
-			line := restorePreviewKeyLine(m, key, prefix, rowWidth)
+			line := restorePreviewKeyLine(m, key, prefix, addressWidth, rowWidth)
 			if key.Error != "" {
 				sb.WriteString(errorStyle.Render(line))
 			} else if key.AlreadyExists {
@@ -276,28 +287,45 @@ func restorePreviewRowWidth(popupWidth int) int {
 	return width
 }
 
-func restorePreviewKeyLine(m Model, key RestoreKeyInfo, prefix string, maxWidth int) string {
-	mark := restoreSelectionMark(m, key)
-	keyType := "[" + displayKeyType(key.KeyType) + "]"
-	suffix := "  " + keyType + restorePreviewSuffix(key)
-
-	addressWidth := keyAddressWidth(maxWidth, prefix, mark, suffix)
-	if addressWidth < keyAddressShortWidth && len(suffix) > len("  "+keyType) {
-		extraBudget := maxWidth - len(prefix) - len(mark) - len("  "+keyType) - keyAddressShortWidth
-		extra := ellipsize(restorePreviewSuffix(key), extraBudget)
-		suffix = "  " + keyType + extra
-		addressWidth = keyAddressWidth(maxWidth, prefix, mark, suffix)
+// restorePreviewAddressWidth is the address column for the whole list, so key
+// types start in the same place on every row. It gives way, down to
+// restoreAddressMinWidth, to the row that needs the most room.
+func restorePreviewAddressWidth(keys []RestoreKeyInfo, rowWidth int) int {
+	width := keyAddressShortWidth
+	for _, key := range keys {
+		room := rowWidth - restoreRowLeadWidth - restoreColumnGap - restoreKeyTypeWidth(key) - len(restorePreviewFlags(key))
+		width = min(width, max(room, restoreAddressMinWidth))
 	}
-
-	return fmt.Sprintf("%s%s%s%s",
-		prefix,
-		mark,
-		restorePreviewAddress(key, addressWidth),
-		suffix,
-	)
+	return width
 }
 
-func restorePreviewSuffix(key RestoreKeyInfo) string {
+// restorePreviewKeyLine lays out one key row with its flags against the right
+// edge. The flags are what a restore decision turns on, so they stay whole and
+// the key type gives way when a row is still too long.
+func restorePreviewKeyLine(m Model, key RestoreKeyInfo, prefix string, addressWidth, rowWidth int) string {
+	flags := restorePreviewFlags(key)
+	room := rowWidth - restoreRowLeadWidth - addressWidth - restoreColumnGap - len(flags)
+	if key.Error != "" {
+		// An error is free text: it takes what the key type does not need.
+		errorWidth := max(room-min(restoreKeyTypeWidth(key), restoreErrorKeyTypeWidth)-restoreColumnGap, 0)
+		flags += "  " + ellipsize(key.Error, errorWidth)
+		room = rowWidth - restoreRowLeadWidth - addressWidth - restoreColumnGap - utf8.RuneCountInString(flags)
+	}
+	keyType := "[" + ellipsizeMiddle(displayKeyType(key.KeyType), max(room-2, 0)) + "]"
+	address := restorePreviewAddress(key, addressWidth)
+	addressPad := max(addressWidth-utf8.RuneCountInString(ellipsizeMiddle(key.Address, addressWidth)), 0)
+	flagPad := max(room-len(keyType), 0)
+
+	return prefix + restoreSelectionMark(m, key) + address + strings.Repeat(" ", addressPad) +
+		"  " + keyType + strings.Repeat(" ", flagPad) + flags
+}
+
+func restoreKeyTypeWidth(key RestoreKeyInfo) int {
+	return len("[" + displayKeyType(key.KeyType) + "]")
+}
+
+// restorePreviewFlags is the short, fixed vocabulary at the end of a key row.
+func restorePreviewFlags(key RestoreKeyInfo) string {
 	var suffix string
 	if key.StageHint != nil {
 		suffix += fmt.Sprintf("  hint %d", *key.StageHint)
@@ -310,9 +338,6 @@ func restorePreviewSuffix(key RestoreKeyInfo) string {
 	}
 	if key.HasPolicy {
 		suffix += "  +policy"
-	}
-	if key.Error != "" {
-		suffix += "  " + key.Error
 	}
 	return suffix
 }

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/lipgloss"
 )
@@ -16,66 +17,135 @@ import (
 // renderEnrolledClients lists the enrollment requests waiting for approval
 // and the enrolled client keys.
 func (m Model) renderEnrolledClients() string {
-	var sb strings.Builder
-	sb.WriteString(titleStyle.Render("Enrolled Clients"))
-	sb.WriteString("\n")
+	var header strings.Builder
+	header.WriteString(titleStyle.Render("Enrolled Clients"))
+	header.WriteString("\n")
 	if m.clients.loading && len(m.clients.keys) == 0 && len(m.clients.pending) == 0 {
-		sb.WriteString(subtitleStyle.Render("Loading enrollment requests and enrolled client keys..."))
-		return sb.String()
+		header.WriteString(subtitleStyle.Render("Loading enrollment requests and enrolled client keys..."))
+		return header.String()
 	}
-	sb.WriteString(subtitleStyle.Render("Each key is one client's credential. Approving a request enrolls its key; revoking a key closes its connections."))
-	sb.WriteString("\n\n")
+	header.WriteString(subtitleStyle.Render(wrapPlainText("Each key is one client's credential. Approving a request enrolls its key; revoking a key closes its connections.", m.tableWidth())))
+	header.WriteString("\n\n")
 
-	sb.WriteString(fmt.Sprintf("Waiting for approval (%d)\n", len(m.clients.pending)))
+	labelWidth := m.clientLabelWidth()
+	lines := []string{fmt.Sprintf("Waiting for approval (%d)", len(m.clients.pending))}
 	if len(m.clients.pending) == 0 {
-		sb.WriteString("  none. Clients request enrollment with: enroll\n")
+		lines = append(lines, "  none. Clients request enrollment with: enroll")
 	}
+	selectedLine := 0
 	for i, req := range m.clients.pending {
 		cursor := "  "
 		if i == m.clients.selected {
 			cursor = "> "
+			selectedLine = len(lines)
 		}
-		line := cursor + req.Fingerprint
-		if req.Label != "" {
-			line += "  " + req.Label
-		}
-		line += "  " + req.KeyType
-		if req.RemoteAddr != "" {
-			line += "  from " + req.RemoteAddr
-		}
-		line += "  " + time.Unix(req.RequestedAt, 0).Local().Format("2006-01-02 15:04")
-		sb.WriteString(line + "\n")
+		lines = append(lines, strings.TrimRight(clientRow(cursor, req.Fingerprint, req.Label, labelWidth), " "))
 	}
 
-	sb.WriteString(fmt.Sprintf("\nEnrolled (%d)\n", len(m.clients.keys)))
+	lines = append(lines, "", fmt.Sprintf("Enrolled (%d)", len(m.clients.keys)))
 	if len(m.clients.keys) == 0 {
-		sb.WriteString("  no enrolled client keys\n")
+		lines = append(lines, "  no enrolled client keys")
 	}
 	for i, key := range m.clients.keys {
 		cursor := "  "
 		if i+len(m.clients.pending) == m.clients.selected {
 			cursor = "> "
+			selectedLine = len(lines)
 		}
-		line := cursor + key.Fingerprint
-		if key.Label != "" {
-			line += "  " + key.Label
-		}
-		line += "  " + key.KeyType
+		line := clientRow(cursor, key.Fingerprint, key.Label, labelWidth)
 		if key.Connected {
-			line += "  " + warningStyle.Render("connected")
+			line += "  " + warningStyle.Render(clientConnectedFlag)
 		}
-		sb.WriteString(line + "\n")
+		lines = append(lines, strings.TrimRight(line, " "))
 	}
 
-	sb.WriteString("\n")
-	sb.WriteString(helpStyle.Render("a approve  x reject  r revoke  A revoke all  i import key file  esc back"))
-	sb.WriteString("\n")
-	if m.clients.status != "" {
-		sb.WriteString("\n")
-		sb.WriteString(m.clients.status)
-		sb.WriteString("\n")
+	var footer strings.Builder
+	if details := m.selectedClientDetails(); len(details) > 0 {
+		footer.WriteString("\n" + strings.Join(details, "\n") + "\n")
 	}
+	footer.WriteString("\n")
+	footer.WriteString(helpStyle.Render("a approve  x reject  r revoke  A revoke all  i import key file  esc back"))
+	footer.WriteString("\n")
+	if m.clients.status != "" {
+		footer.WriteString("\n")
+		footer.WriteString(m.clients.status)
+		footer.WriteString("\n")
+	}
+
+	fixed := strings.Count(header.String(), "\n") + strings.Count(footer.String(), "\n")
+	return header.String() + m.clientListWindow(lines, selectedLine, fixed) + footer.String()
+}
+
+// clientListWindow shows the lines around the selected one when the list would
+// push it, or the details below the list, out of the window. The list does not
+// otherwise scroll.
+func (m Model) clientListWindow(lines []string, selected, fixed int) string {
+	height := m.windowBodyHeight()
+	if height <= 0 || fixed+len(lines) <= height {
+		return joinRows(lines)
+	}
+	const moreLines = 2
+	start, end := selectionWindow(selected, len(lines), max(height-fixed-moreLines, 1))
+	var sb strings.Builder
+	sb.WriteString(scrollMoreAboveLine(start) + "\n")
+	sb.WriteString(joinRows(lines[start:end]))
+	sb.WriteString(scrollMoreBelowLine(len(lines)-end) + "\n")
 	return sb.String()
+}
+
+// A fingerprint is compared by eye and approving acts on the selected row at
+// once, so rows keep it whole. The label gets the rest of the row after the
+// connected flag; selectedClientDetails shows it in full with everything else
+// that does not fit on a row.
+const (
+	clientFingerprintWidth = 50 // "SHA256:" + 43 base64 characters
+	clientConnectedFlag    = "connected"
+	clientLabelMinWidth    = 8
+)
+
+func (m Model) clientLabelWidth() int {
+	longest := 0
+	for _, req := range m.clients.pending {
+		longest = max(longest, utf8.RuneCountInString(terminalSafe(req.Label)))
+	}
+	for _, key := range m.clients.keys {
+		longest = max(longest, utf8.RuneCountInString(terminalSafe(key.Label)))
+	}
+	const cursorAndGaps = 2 + 2 + 2
+	room := m.tableWidth() - cursorAndGaps - clientFingerprintWidth - len(clientConnectedFlag)
+	return min(longest, max(room, clientLabelMinWidth))
+}
+
+func clientRow(cursor, fingerprint, label string, labelWidth int) string {
+	return fmt.Sprintf("%s%-*s  %-*s", cursor, clientFingerprintWidth, fingerprint,
+		labelWidth, ellipsizeMiddle(terminalSafe(label), labelWidth))
+}
+
+// selectedClientDetails describes the selected row below the list.
+func (m Model) selectedClientDetails() []string {
+	field := func(label, value string) string { return fmt.Sprintf("%-11s%s", label+":", value) }
+	var lines []string
+	addLabel := func(label string) {
+		if label != "" {
+			lines = append(lines, field("Label", terminalSafe(label)))
+		}
+	}
+	selected := m.clients.selected
+	if selected >= 0 && selected < len(m.clients.pending) {
+		req := m.clients.pending[selected]
+		addLabel(req.Label)
+		lines = append(lines, field("Key type", req.KeyType))
+		if req.RemoteAddr != "" {
+			lines = append(lines, field("From", req.RemoteAddr))
+		}
+		return append(lines, field("Requested", time.Unix(req.RequestedAt, 0).Local().Format("2006-01-02 15:04")))
+	}
+	if index := selected - len(m.clients.pending); index >= 0 && index < len(m.clients.keys) {
+		key := m.clients.keys[index]
+		addLabel(key.Label)
+		lines = append(lines, field("Key type", key.KeyType))
+	}
+	return lines
 }
 
 // renderRevokeClientConfirm renders the client key revocation dialog.

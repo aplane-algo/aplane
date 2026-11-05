@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/policy"
@@ -285,25 +286,30 @@ func (m Model) renderPolicies() string {
 		return sb.String()
 	}
 	p := m.policies.policy
-	sb.WriteString(subtitleStyle.Render(fmt.Sprintf("%s node  ·  e edits the selected policy; a loads a policy file; x exports the policy; apadmin policy covers remove and rescue", p.NodeRole)))
+	sb.WriteString(subtitleStyle.Render(wrapPlainText(fmt.Sprintf("%s node  ·  e edits the selected policy; a loads a policy file; x exports the policy; apadmin policy covers remove and rescue", p.NodeRole), m.tableWidth())))
 	sb.WriteString("\n\n")
 	rows := m.policyRows()
 	if len(rows) == 0 {
 		sb.WriteString("No policy documents.\n")
 	}
+	labelWidth := m.policyLabelWidth(rows)
 	for i, row := range rows {
 		cursor := "  "
 		if i == m.policies.selected {
 			cursor = "> "
 		}
-		sb.WriteString(cursor + row.label() + "  " + policyStatusLabel(row.key, row.status))
-		if row.doc != nil {
-			sb.WriteString("  " + policyDocumentMeta(*row.doc))
+		sb.WriteString(fmt.Sprintf("%s%-*s  %s\n", cursor, labelWidth, ellipsizeMiddle(row.label(), labelWidth), policyRowStatus(row.key, row.status)))
+	}
+	sb.WriteString("\n")
+	if m.policies.selected >= 0 && m.policies.selected < len(rows) {
+		selected := rows[m.policies.selected]
+		sb.WriteString(wrapPlainText(policyStatusLabel(selected.key, selected.status), m.tableWidth()) + "\n")
+		if selected.doc != nil {
+			sb.WriteString(policyDocumentMeta(*selected.doc) + "\n")
 		}
 		sb.WriteString("\n")
 	}
-	sb.WriteString("\n")
-	sb.WriteString(subtitleStyle.Render("policy_set_sha256 " + p.PolicySetSHA256))
+	sb.WriteString(subtitleStyle.Render(wrapPlainText("policy_set_sha256 "+p.PolicySetSHA256, m.tableWidth())))
 	sb.WriteString("\n")
 	if m.policies.status != "" {
 		sb.WriteString("\n")
@@ -311,6 +317,35 @@ func (m Model) renderPolicies() string {
 		sb.WriteString("\n")
 	}
 	return sb.String()
+}
+
+// policyStatusColumnWidth fits the longest policyRowStatus.
+const policyStatusColumnWidth = 12
+
+// policyLabelWidth sizes the list so an address, 58 characters, stays whole at
+// MinWidth and statuses line up.
+func (m Model) policyLabelWidth(rows []policyRow) int {
+	const cursorAndGap = 2 + 2
+	longest := 0
+	for _, row := range rows {
+		longest = max(longest, utf8.RuneCountInString(row.label()))
+	}
+	return min(longest, max(m.tableWidth()-cursorAndGap-policyStatusColumnWidth, 8))
+}
+
+// policyRowStatus is the status on a list row; policyStatusLabel, shown below
+// the list, is the same status in full.
+func policyRowStatus(key, status string) string {
+	switch {
+	case key == policy.DefaultKey:
+		return "node default"
+	case status == adminproto.PolicyKeyOwn:
+		return "own policy"
+	case status == adminproto.PolicyKeyNotHeld:
+		return "key not held"
+	default:
+		return "default"
+	}
 }
 
 func policyStatusLabel(key, status string) string {
