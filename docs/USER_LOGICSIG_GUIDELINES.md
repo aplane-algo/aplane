@@ -946,6 +946,10 @@ an authority condition; use the external-admin allowlist or a reviewed custom
 policy when an earlier separately co-authorized rekey path is required. The
 external-admin path still requires the spending key.
 
+The program is not bound to a network, and `unlock_round` means a different time on
+each one, so the account could be unlocked on one network and locked on another.
+Fund the address on one network only.
+
 ##### `aplane.falcon1024-allowlist.v2`
 
 - bounded Falcon payments and asset transfers with a Merkle recipient allowlist
