@@ -3,8 +3,8 @@
 Status: implemented as three separate key types.
 `aplane.rotating-triple-xmss.v1` is frozen by its first release (v0.44.0) and
 `aplane.rotating-triple-slhdsa.v1` by its first release (v0.45.0); its design
-is in section 11. `aplane.rotating-triple-wotsc.v1` is unreleased and freezes at
-its first release; its design is in section 12. This document specifies all three
+is in section 11. `aplane.rotating-triple-wotsc.v1` is experimental and isn't
+frozen; its design is in section 12. This document specifies all three
 for implementers and reviewers: their shared design and the hash-based schemes. It restates, and does not replace, the
 authoritative sources:
 
@@ -54,8 +54,8 @@ must verify:
 | Hash-based signature | XMSS, WOTS+C or SLH-DSA, SHA-256 | one-time leaf or per-stage few-time key (section 11) |
 
 The hash-based scheme is selected by the key type when the account is created.
-Each type has its own stage template, derivation label and addresses, which freeze at
-its first release;
+Each type has its own stage template, derivation label and addresses, frozen at its
+first release except for WOTS+C, which is experimental;
 the signing request does not select or switch the scheme.
 
 | Item | XMSS | WOTS+C |
@@ -73,7 +73,7 @@ the signing request does not select or switch the scheme.
 
 ## 2. Parameters and sizes (frozen)
 
-The XMSS values are frozen. The WOTS+C values freeze at its first release.
+The XMSS values are frozen. The WOTS+C values aren't, because the type is experimental.
 
 | Parameter | XMSS | WOTS+C |
 |---|---|---|
@@ -881,7 +881,7 @@ The 41 units per chain step are 6 unit-cost instructions and one SHA-256.
 | Signing, this host | tree cache amortized | about 9 ms | about 0.2 s |
 | Stage derivation, this host | tree cache amortized | about 43 ms | about 100 ms |
 | Standing | RFC 8391 format and set, non-conformant signer | Published scheme, private instantiation | FIPS 205 construction, private parameter set |
-| Status | released v1 | unreleased | released v1 |
+| Status | released v1 | experimental | released v1 |
 
 ## 12. WOTS+C variant
 
@@ -891,8 +891,7 @@ the stage program guards (§3.1), the address derivation (§3.2), the signing
 choreography (§8), failed transactions (§9.1) and the policy boundary (§10) applies
 unchanged. This section covers what differs: why WOTS+C, the parameter set, the
 construction, the signing and argument layout, the stage verifier, the resource
-profile, and the resulting claims. It is unreleased, and it freezes at its first
-release.
+profile, and the resulting claims. It is experimental and isn't frozen.
 
 ### 12.1 Why WOTS+C
 
@@ -1078,7 +1077,7 @@ Not claimed:
 
 - Conformance to any standard. WOTS+C isn't in FIPS 205, RFC 8391 or SP 800-208.
 - That the SPHINCS+C paper's proof covers this exact construction. No proof has
-  been written for it, so this needs independent review before release.
+  been written for it.
 - Conformant stateful signing. Leaf management is best-effort, as for XMSS.
 
 ### 12.9 Cost of leaf reuse
@@ -1126,11 +1125,12 @@ are stubbed in the offline TEAL runs, and run for real in the on-chain ones.
 
 ## 13. Compatibility and versioning
 
-- At its first release, each v1 key type separately freezes its stage template, embedded constants,
+- At its first release, each v1 key type except the experimental WOTS+C separately freezes its stage template, embedded constants,
   derivation label and tags, signing procedure, public record and resource
   profile. XMSS also freezes its checksum cap and leaf allocation. Any change
   to the TEAL changes every stage address. Changing these contracts mints a
   new key type version; it does not edit v1.
+- WOTS+C isn't frozen, so a change can derive different accounts from the same seed.
 - The three schemes have separate identifiers and derivation labels
   (`APLANE_ROTATING_TRIPLE_WOTSC_V1`, `APLANE_ROTATING_XMSS_V1` and
   `APLANE_ROTATING_TRIPLE_SLHDSA_V1`), so their addresses never collide by
@@ -1176,8 +1176,6 @@ Full XMSS tree builds are skipped under the race detector (`internal/racetest`).
 
 ## 15. Open items
 
-- WOTS+C needs independent review before its first release, because the template and
-  derivation freeze then. No proof covers this construction (§12.8).
 - WOTS+C needs a second implementation written from section 12 alone.
   `tools/wotscoracle` shares no code with the Go package but came from the same
   design, so it can't catch a design mistake, and WOTS+C has no published vectors.

@@ -312,7 +312,7 @@ whose address never changes while the program that authorizes it changes on
 every spend. They differ in their hash-based key:
 [XMSS](#rotating-triple-xmss-accounts),
 [SLH-DSA](#rotating-triple-slh-dsa-accounts) or
-[WOTS+C](#rotating-triple-wotsc-accounts), which isn't ready for real funds yet. The shared workflow applies to
+[WOTS+C](#rotating-triple-wotsc-accounts), which is experimental and not for real funds. The shared workflow applies to
 all of them; their signature, resource, and retry differences are described below.
 Each program (a *stage*) checks three signatures over the transaction
 ID: Falcon-1024, a SHA-256 hash-based signature, and Ed25519. Their keys are derived
@@ -322,7 +322,7 @@ account to the next, never-revealed stage. All three signatures must verify
 over the same transaction ID. The live stage remains authorized until a
 rotation confirms. For the custom WOTS+C construction, no security reduction
 has established that forging its hash-based signature necessarily breaks
-SHA-256; independent cryptographic review remains required before release.
+SHA-256.
 
 Enable the key type, then generate an account bound to one network:
 
@@ -481,9 +481,8 @@ Falcon-1024 and Ed25519, with fresh keys per stage. It's the cheapest rotating t
 and a 628-byte hash signature. Its transaction-type, rekey, close-out and validity
 restrictions are the same as XMSS.
 
-WOTS+C isn't a standard, and this construction hasn't been independently reviewed.
-The key type isn't frozen yet, and a change would derive different accounts from the
-same seed, so don't hold real funds in it. It uses 16-byte (128-bit) hash outputs,
+WOTS+C is experimental and isn't a standard. The key type isn't frozen, and a change
+would derive different accounts from the same seed, so don't hold real funds in it. It uses 16-byte (128-bit) hash outputs,
 compared with XMSS's 32-byte outputs. Output size alone does not establish a
 security level or equivalence to SLH-DSA. Falcon-1024 and Ed25519 are still
 required for every spend.
