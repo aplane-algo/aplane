@@ -1886,7 +1886,14 @@ mnemonic import capability; clients must not infer importability from
 `mnemonic_word_count`. It does not otherwise expose whether the binary
 has populated signer-side signing, keygen, mnemonic, or key-processor registries.
 Client/signer provider-boundary refactors must preserve this schema and field
-meaning. The `family` field carries the middle segment of the canonical
+meaning.
+
+Under the [approved native-only mnemonic policy](ARCH_KEYTYPES.md#mnemonic-backup-and-recovery),
+all LogicSig types will advertise `mnemonic_import: false`. That change is
+pending: the two plain Falcon and Ed25519 LogicSig providers still advertise
+import support when enabled.
+
+The `family` field carries the middle segment of the canonical
 `publisher.family.vN` identifier and is intended for display and grouping;
 the canonical `key_type` is what clients send back on subsequent requests.
 Clients route signing by the advertised `signing_flow`; server registries and

@@ -7,6 +7,17 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## Mnemonic import will be removed from plain LogicSig accounts
+
+- A later release will stop accepting mnemonic import for `aplane.falcon1024.v1` and
+  `aplane.ed25519.v1`. Mnemonic import, export, and recovery will apply only to native
+  `ed25519` and `falcon1024`. See
+  [mnemonic backup and recovery](ARCH_KEYTYPES.md#mnemonic-backup-and-recovery).
+- If a phrase is your only backup of one of these accounts, import it and make an encrypted
+  backup before that release. Accounts already in a store keep signing, and encrypted
+  backup and restore do not change.
+- Nothing changes yet: both types still accept mnemonic import once enabled.
+
 ## apadmin lists fit the 80-column minimum
 
 - Enrolled Clients keeps the whole fingerprint and the `connected` flag on each row. Label,

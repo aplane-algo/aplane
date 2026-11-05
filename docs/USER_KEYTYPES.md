@@ -123,12 +123,20 @@ The names intentionally describe different account types:
 | Key type | Authorization | Recovery | Network requirement |
 |---|---|---|---|
 | `falcon1024` | Protocol-native top-level `PQsig` | 25-word Algorand mnemonic | this release supports exactly consensus v42 and v43 |
-| `aplane.falcon1024.v1` | TEAL v13 LogicSig containing a Falcon signature | 24-word BIP-39 mnemonic | recognized network using supported consensus v42 or v43 |
+| `aplane.falcon1024.v1` | TEAL v13 LogicSig containing a Falcon signature | Encrypted key file or managed backup | recognized network using supported consensus v42 or v43 |
 
 There is no conversion between them. A mnemonic or backup entry for one type
 cannot be imported as the other. Native Falcon transactions also consume a
 higher protocol fee; APlane presents and applies the required fee adjustment
 before approval.
+
+Use encrypted backups for every LogicSig account. The approved policy reserves
+mnemonic import, export, and recovery for native accounts (`ed25519` and
+`falcon1024`). **Import enforcement is pending:** enabled plain
+`aplane.falcon1024.v1` still accepts a 24-word BIP-39 phrase and plain
+`aplane.ed25519.v1` a 25-word Algorand phrase. Those two import paths are planned
+for removal; LogicSig mnemonic export is already unavailable. See
+[mnemonic backup and recovery](ARCH_KEYTYPES.md#mnemonic-backup-and-recovery).
 
 All bundled APlane LogicSig types are kept off the Ed25519 curve by the TEAL
 v13 assembler's salt rule. Provider-backed types compile through algod and
@@ -210,7 +218,9 @@ see [the cosigner command reference](USER_COMMANDS.md#apadmin-cosigner) and
 
 `aplane.ed25519.v1` is the LogicSig-wrapped Ed25519 provider; native
 `ed25519` remains default-enabled and does not need this activation step.
-After activation, `aplane.ed25519.v1` also supports mnemonic import.
+After activation, `aplane.ed25519.v1` currently also supports mnemonic import;
+this exception will be removed under the
+[approved native-only policy](ARCH_KEYTYPES.md#mnemonic-backup-and-recovery).
 
 Enabling writes or updates:
 

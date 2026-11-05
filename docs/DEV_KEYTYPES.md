@@ -239,11 +239,18 @@ not create or change this state record: a restored key signs whether or not
 its type is enabled on the destination, but creating further keys of that type
 still requires enabling it there.
 
+**Approved policy, implementation pending:** remove mnemonic import from the
+two plain LogicSig providers, leaving user-facing mnemonic import, export, and
+recovery only for native account types. The preceding paragraph describes the
+current code. New LogicSig types must not offer mnemonic recovery; retain
+internal seed derivation and use complete encrypted credentials/backups for
+recovery. See [the policy and enforcement requirements](ARCH_KEYTYPES.md#mnemonic-backup-and-recovery).
+
 Native `falcon1024` is not a LogicSig provider. It uses the explicit
 `native_pq` authorization kind, a 25-word Algorand mnemonic, top-level
 `SignedTxn.PQsig`, and the `internal/signing/falcon1024` signer-only provider.
-Do not route it through `lsig/falcon1024` or reuse the 24-word recovery and
-derivation contract of `aplane.falcon1024.v1`.
+Do not route it through `lsig/falcon1024` or reuse the BIP-39 seed derivation
+contract of `aplane.falcon1024.v1`.
 
 Installed YAML templates use the same state-record model. The encrypted
 `.template` file under the selected generation's `keytypes/<key_type>.template` is

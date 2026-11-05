@@ -394,6 +394,12 @@ interlocks.
 - `keys_list`: `keys`, where each key has `address`, `key_type`, optional `name`, optional `template_provenance_status`, optional `template_provenance_note`
 - `keys_changed`: `key_count`
 
+Mnemonic import currently permits native `ed25519` and `falcon1024`, plus the
+plain LogicSig types `aplane.falcon1024.v1` and `aplane.ed25519.v1` after
+enablement. The [approved native-only policy](ARCH_KEYTYPES.md#mnemonic-backup-and-recovery)
+removes those two LogicSig import paths; implementation is pending. Mnemonic
+export is already native-only as specified above.
+
 > **Boundary note — admin `keys_list` is not the HTTP key inventory.** The admin
 > transport entry is `protocol.AdminKeyInfo` (thin: address, key type, name,
 > template provenance), projected from the admin service DTO `adminproto.KeyInfo`.

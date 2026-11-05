@@ -22,6 +22,19 @@ template to "fix" signing for an existing key. The key file already carries the
 signing authority. Treat template provenance warnings as inventory diagnostics,
 not as a license to mutate stored bytecode or metadata.
 
+## Mnemonic Recovery
+
+Follow the [approved native-only mnemonic policy](ARCH_KEYTYPES.md#mnemonic-backup-and-recovery):
+user-facing mnemonic import, export, and recovery are for native account types;
+LogicSigs use complete encrypted credentials or backups. Do not add LogicSig
+mnemonic recovery to new designs. Internal seed derivation is separate and
+remains supported.
+
+Implementation is pending: the two plain LogicSig providers still allow import
+today. Removing those exceptions requires consistent provider/metadata
+capabilities, common import enforcement, discovery, UI, and tests; a documentation
+change alone does not disable them.
+
 ## Default Behavior
 
 When a user asks for a custom LogicSig template, default to a **user-loaded YAML

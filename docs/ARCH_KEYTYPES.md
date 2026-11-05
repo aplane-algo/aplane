@@ -18,6 +18,7 @@ reference for one of the three axes (Resolve).
 ## Contents
 
 - [Protocol dimensions and terminology](#protocol-dimensions-and-terminology)
+- [Mnemonic backup and recovery](#mnemonic-backup-and-recovery)
 - [Designing a new combination](#designing-a-new-combination)
 - [Key type identifier contract](#key-type-identifier-contract)
 - [Authorization object ontology](#authorization-object-ontology)
@@ -200,6 +201,37 @@ Version the dimension whose compatibility contract changes:
 These versions may advance independently. A key type version must still pin the
 complete behavior it relies on, and compatibility-bearing changes commonly
 require advancing more than one dimension together.
+
+## Mnemonic backup and recovery
+
+**Approved policy, 2026-11-05 — implementation pending:** user-facing mnemonic
+import, export, and recovery apply only to native account types, currently
+`ed25519` and `falcon1024`. No LogicSig type offers mnemonic recovery under this
+policy, including plain DSA, composed/bounded, guarded, rotating, and generic
+LogicSigs. Witness credentials continue to use encrypted backups too.
+
+Recover LogicSig accounts from their complete encrypted credentials or managed
+backups. A private-key seed alone is not a complete account backup: program
+identity, parameters, and signing/derivation metadata also matter. Rotating
+accounts additionally retain their existing
+[recovery requirements](USER_STORE_MGMT.md#restoring-rotating-accounts),
+including stage and leaf-safety checks.
+
+The implementation currently differs from this policy in one respect: enabled
+plain `aplane.falcon1024.v1` and `aplane.ed25519.v1` still accept mnemonic
+import. Composed, guarded, rotating, and generic LogicSigs already refuse it.
+Mnemonic export is already native-only, and generation responses omit recovery
+phrases. Implementing the policy removes the two plain LogicSig import paths;
+it does not invalidate existing credentials or change signing, encrypted
+backup/restore, or internal seed derivation.
+
+Import enforcement and discovery must agree on the account's full key type and
+native authorization category. Neither a `base_key_type`, family mnemonic
+handler, nor `mnemonic_word_count` grants user-facing import capability. Keep
+provider and metadata declarations, the common import gate, `/keytypes`, and
+apadmin's import choices consistent when implementing this change. Native
+Falcon mnemonic export still requires retained recovery entropy; see
+[the stored credential format](ARCH_STORE.md#managed-credential-files).
 
 ## Designing a new combination
 

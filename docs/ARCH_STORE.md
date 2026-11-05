@@ -1309,10 +1309,17 @@ key and need no storage change. Both native types may explicitly export their
 25-word phrase through authenticated local apadmin with fresh passphrase
 verification. Other credential classes continue using encrypted backups.
 
-`aplane.falcon1024.v1` remains a LogicSig DSA with a 24-word BIP-39 mnemonic
-and TEAL authorization, but its pre-release derivation moved in place to TEAL
-v13 compiler auto-salting. Neither mnemonic nor stored key material is
+`aplane.falcon1024.v1` remains a LogicSig DSA with BIP-39 seed derivation and
+TEAL authorization, but its pre-release derivation moved in place to TEAL v13
+compiler auto-salting. Its seed derivation and stored key material are not
 interchangeable with native `falcon1024`.
+
+The [approved native-only mnemonic policy](ARCH_KEYTYPES.md#mnemonic-backup-and-recovery)
+will remove the currently accepted phrase-import paths for plain
+`aplane.falcon1024.v1` and `aplane.ed25519.v1`; implementation is pending.
+All LogicSig recovery guidance uses complete encrypted credentials/backups.
+This policy does not remove internal seed derivation or alter stored credentials
+and their encrypted backup/restore contracts.
 
 This section uses **versioned signing-metadata keys** for key files that carry
 `signing_metadata_version >= 1`. Non-bounded LogicSig keys use version 1;

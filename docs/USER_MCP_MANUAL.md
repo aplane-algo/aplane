@@ -278,8 +278,11 @@ hybrid rekey-and-spend forms are rejected.
 | Rekey | `rekey <acct> to <signer>` | `rekey(from, to)` |
 | Unrekey | `unrekey <acct>` | `unrekey(acct)` |
 
-Mnemonic import exists only for families whose provider supports it (generic
-LogicSig templates have no key to import).
+Mnemonic import is a local apadmin IPC operation, outside the shell/MCP surface.
+The [approved native-only policy](ARCH_KEYTYPES.md#mnemonic-backup-and-recovery)
+limits mnemonic import, export, and recovery to native accounts. Implementation
+is pending for two existing plain LogicSig import exceptions; use encrypted
+backups for all LogicSig accounts.
 
 > **Rekey refresh:** a confirmed rekey through the ordinary single-transaction
 > workflow or bounded-admin completion refreshes the affected client

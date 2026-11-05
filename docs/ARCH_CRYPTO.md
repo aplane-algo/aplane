@@ -158,7 +158,7 @@ client-safe metadata and address derivation live in
 `internal/signing/falcon1024`; signer-only generation, payload validation, and
 transaction signing live below that package and link `github.com/algorand/falcon`.
 Recovery uses a 25-word Algorand mnemonic encoding 32 bytes of entropy. It is
-not compatible with the 24-word BIP-39 mnemonic or key material used by the
+not compatible with the BIP-39 seed derivation or key material used by the
 LogicSig key type `aplane.falcon1024.v1`. New native Falcon credentials retain
 the original entropy inside encrypted payload format 2 so local apadmin can
 explicitly export it. Older credentials lack that entropy and continue to
