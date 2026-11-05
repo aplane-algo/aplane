@@ -38,7 +38,7 @@ func (s Service) ListKeys() ([]ListKeyInfo, *Error) {
 			if err != nil {
 				return fmt.Errorf("read key %s: %w", addr, err)
 			}
-			templateProvenanceStatus, templateProvenanceNote := lsigprovider.CompareTemplateFingerprint(info.Type, info.TemplateFingerprint)
+			templateProvenanceStatus, templateProvenanceNote := lsigprovider.CompareAccountProvenance(info.Type, info.TemplateFingerprint, info.Parameters, info.BoundedAuthorization)
 			keysList = append(keysList, ListKeyInfo{
 				Address:                  addr,
 				KeyType:                  info.Type,
@@ -78,7 +78,7 @@ func (s Service) GetKeyDetails(address string) (*KeyDetailsResult, *Error) {
 			result.PublicKeyHex = info.PublicKeyHex
 		}
 		result.Parameters = keyDetailsParameters(info.Type, info.Parameters)
-		result.TemplateProvenanceStatus, result.TemplateProvenanceNote = lsigprovider.CompareTemplateFingerprint(info.Type, info.TemplateFingerprint)
+		result.TemplateProvenanceStatus, result.TemplateProvenanceNote = lsigprovider.CompareAccountProvenance(info.Type, info.TemplateFingerprint, info.Parameters, info.BoundedAuthorization)
 		if result.DisplayTEAL, err = keymgmt.GetDisplayTEALWithKeyring(keyFile, mk); err != nil {
 			return fmt.Errorf("read TEAL for key %s: %w", address, err)
 		}

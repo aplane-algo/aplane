@@ -890,6 +890,13 @@ MnemonicProvider (extends SigningProvider)
 └── SupportsMnemonicImport() bool
 ```
 
+A provider whose contract varies by key also implements `InstanceResolver`:
+`CosignerComponentKeyType` runs before references are resolved, `ResolveInstance` selects
+the contract for a set of resolved parameters, and `StoredFingerprint` identifies a
+stored account's definition from its stored values alone. No shipped provider
+implements it yet. Callers use the package functions of the same names, which adapt
+every fixed provider, so they do not need to tell the two kinds apart.
+
 Private-key key generation, signing, and mnemonic conversion are deliberately
 outside this client-visible registry. Signer-side startup wires those operations
 through the `internal/signing`, `internal/keygen`, and `internal/mnemonic`
@@ -1381,8 +1388,8 @@ is saved before the final steps.
 | Step | Work | Owner |
 |---|---|---|
 | 1 | Check the key type is allowed for the node role | `keyclass.ValidateKeyTypeAllowedForNodeRole` |
-| 2 | Resolve rotating network names, and turn a `cosigner` reference into `cosigner_public_key` for guarded and cosigner-enabled bounded types | `cosignerrefs` |
-| 3 | Canonicalize parameters, including sorting `address[]` values | `lsigprovider.NormalizeCreationParams` |
+| 2 | Resolve rotating network names, and turn a `cosigner` reference into `cosigner_public_key` for guarded and cosigner-enabled bounded types | `lsigprovider.CosignerComponentKeyType`, `cosignerrefs` |
+| 3 | Select the instance the parameters ask for and canonicalize them, including sorting `address[]` values | `lsigprovider.ResolveInstance` |
 | 4 | Reject a cosigner key that collides with an existing authority | `validateVisibleCosignerAuthorityCollisions` |
 | 5 | Take the mutation lock and check the key type is enabled | `keytypestate.CanGenerate` |
 | 6 | Branch: generic LogicSigs go to `generateGenericLSig`; everything else continues below | `genericlsig.IsGenericLSigType` |
@@ -1410,10 +1417,14 @@ normalizes and validates, compiles with `CompileWithSalt` using the configured
 
 Three boundaries matter when changing this path:
 
-- **Per-type assumptions.** `CreationParams`, `RuntimeArgs` and
-  `BoundedAuthorizationMetadata` answer once per key type, and steps 2 to 4 and 8 use
-  them. `BuildBoundedAuthorizationMetadata` is the per-account step, because it receives
-  the public key, parameters and final bytecode.
+- **Definition versus instance.** `CreationParams`, `RuntimeArgs` and
+  `BoundedAuthorizationMetadata` answer once per key type. Steps 2 to 4 ask
+  `lsigprovider` instead, so a provider whose contract varies by key can implement
+  `InstanceResolver`, and a fixed provider gets the same answers from its definition.
+  `BuildBoundedAuthorizationMetadata` is the per-account step, because it receives the
+  public key, parameters and final bytecode.
+- **Provenance.** An account records `lsigprovider.CreationFingerprint`, and inventory
+  checks it with `CompareAccountProvenance` against that account's own definition.
 - **Generation versus signing.** The template, provider and fingerprint matter up to
   step 15. Signing uses the stored bytecode and metadata, and a bounded key finds its
   signature packing through `BaseKeyType`, so a template change does not alter existing

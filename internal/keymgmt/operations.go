@@ -396,6 +396,8 @@ type KeyFileInfo struct {
 	PublicKeyHex        string            // Hex-encoded public key stored in the key payload.
 	Parameters          map[string]string // Parameters for LogicSig keys (nil for DSA keys)
 	TemplateFingerprint string
+	// BoundedAuthorization is the stored bounded contract, or nil for any other key.
+	BoundedAuthorization *boundedmeta.Metadata
 	// MnemonicExportable reports whether the credential can reconstruct its
 	// recovery phrase (see keys.Payload.RecoveryPhraseAvailable).
 	MnemonicExportable bool
@@ -435,11 +437,12 @@ func parseKeyFileInfo(data []byte) (*KeyFileInfo, error) {
 	defer payload.ZeroSecrets()
 	meta := payload.Metadata()
 	return &KeyFileInfo{
-		Type:                meta.KeyType,
-		PublicKeyHex:        meta.PublicKeyHex,
-		Parameters:          meta.Parameters,
-		TemplateFingerprint: meta.TemplateFingerprint,
-		MnemonicExportable:  payload.RecoveryPhraseAvailable(),
+		Type:                 meta.KeyType,
+		PublicKeyHex:         meta.PublicKeyHex,
+		Parameters:           meta.Parameters,
+		TemplateFingerprint:  meta.TemplateFingerprint,
+		BoundedAuthorization: boundedmeta.Clone(meta.BoundedAuthorization),
+		MnemonicExportable:   payload.RecoveryPhraseAvailable(),
 	}, nil
 }
 

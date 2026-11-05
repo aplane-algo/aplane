@@ -152,16 +152,20 @@ func (g *LogicSigGenerator) generateKey(ctx context.Context, paths storepaths.Pa
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve LogicSig opcode profile: %w", err)
 	}
+	templateFingerprint, err := lsigprovider.CreationFingerprint(keyType, params)
+	if err != nil {
+		return nil, err
+	}
 	var payload *keys.Payload
 	if derived.CompilerAutoSalted {
 		payload = keys.NewAutoSaltedDSALSigPayload(
 			keyType, baseKeyType, pub, priv, params, lsigBytecode, tealSource,
-			signingArgs, lsigprovider.TemplateFingerprintForKeyType(keyType),
+			signingArgs, templateFingerprint,
 		)
 	} else {
 		payload = keys.NewDSALSigPayload(
 			keyType, baseKeyType, pub, priv, params, lsigBytecode, derived.Counter,
-			tealSource, signingArgs, lsigprovider.TemplateFingerprintForKeyType(keyType),
+			tealSource, signingArgs, templateFingerprint,
 		)
 	}
 	defer payload.ZeroSecrets()

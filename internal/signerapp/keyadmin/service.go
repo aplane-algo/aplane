@@ -104,10 +104,6 @@ type Service struct {
 
 type GenerateGenericLSigFunc func(context.Context, *productruntime.Runtime, string, map[string]string) (string, error)
 
-type boundedInventoryProvider interface {
-	BoundedAuthorizationMetadata() *boundedmeta.Metadata
-}
-
 func (s Service) GenerateKey(ctx context.Context, keyType string, params map[string]string, generateGenericLSig GenerateGenericLSigFunc) (*GenerateResult, *Error) {
 	ir := s.Runtime
 	keyType = keytypecatalog.Canonicalize(keyType)
@@ -133,32 +129,26 @@ func (s Service) GenerateKey(ctx context.Context, keyType string, params map[str
 		}
 		params = resolved
 	} else if provider := lsigprovider.Get(keyType); provider != nil {
-		if boundedProvider, ok := provider.(boundedInventoryProvider); ok {
-			if metadata := boundedProvider.BoundedAuthorizationMetadata(); metadata != nil && metadata.Cosigner != nil {
-				resolved, err := cosignerrefs.ResolveCreationParamsForComponent(
-					ir.KeyPaths(), keyType, metadata.Cosigner.ComponentKeyType, params,
-				)
-				if err != nil {
-					return nil, &Error{Kind: ErrorInvalidInput, Message: err.Error()}
-				}
-				params = resolved
+		if component, ok := lsigprovider.CosignerComponentKeyType(provider, params); ok {
+			resolved, err := cosignerrefs.ResolveCreationParamsForComponent(ir.KeyPaths(), keyType, component, params)
+			if err != nil {
+				return nil, &Error{Kind: ErrorInvalidInput, Message: err.Error()}
 			}
+			params = resolved
 		}
 	}
 
 	if provider := lsigprovider.Get(keyType); provider != nil {
 		// Canonicalize at the admin boundary so persisted params and API responses
 		// are stable; lower layers also normalize defensively.
-		normalized, err := lsigprovider.NormalizeCreationParams(params, provider.CreationParams())
+		instance, err := lsigprovider.ResolveInstance(provider, params)
 		if err != nil {
 			return nil, &Error{Kind: ErrorInvalidInput, Message: err.Error()}
 		}
-		params = normalized
-		if boundedProvider, ok := provider.(boundedInventoryProvider); ok {
-			if metadata := boundedProvider.BoundedAuthorizationMetadata(); metadata != nil && metadata.Cosigner != nil {
-				if err := validateVisibleCosignerAuthorityCollisions(ir, params[boundedmeta.CosignerPublicKeyParameter]); err != nil {
-					return nil, &Error{Kind: ErrorInvalidInput, Message: err.Error()}
-				}
+		params = instance.Values
+		if instance.Bounded != nil && instance.Bounded.Cosigner != nil {
+			if err := validateVisibleCosignerAuthorityCollisions(ir, params[boundedmeta.CosignerPublicKeyParameter]); err != nil {
+				return nil, &Error{Kind: ErrorInvalidInput, Message: err.Error()}
 			}
 		}
 	}
