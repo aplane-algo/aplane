@@ -761,7 +761,7 @@ func TestRotatingStatusReportsStageReuse(t *testing.T) {
 
 func TestRebuildReleaseMemoryDerivesVerifiedAddresses(t *testing.T) {
 	f, _ := newSigningFixture(t)
-	n, err := f.svc.RebuildReleaseMemory(context.Background(), f.session, []AuditedRelease{
+	n, err := f.svc.RebuildReleaseMemory(context.Background(), f.session, f.lockGen, []AuditedRelease{
 		{Account: f.account.String(), Stage: 3, TxID: "TX", LastValid: 500, Reused: true},
 		{Account: types.Address{5}.String(), Stage: 1, TxID: "GONE", LastValid: 9},
 	}, StageFillOptions{})
@@ -1076,7 +1076,7 @@ func testRotatingLeafSignWaitsForTheReleaseRestore(t *testing.T, kind rotatingTe
 	}
 
 	// The log holds an earlier release of this stage on the leaf this spend picks.
-	if n, err := f.svc.RebuildReleaseMemory(context.Background(), f.session, []AuditedRelease{{
+	if n, err := f.svc.RebuildReleaseMemory(context.Background(), f.session, f.lockGen, []AuditedRelease{{
 		Account: f.account.String(), Stage: 0, TxID: "EARLIER", LastValid: 900,
 		Leaves: []LeafRelease{{Tree: profile.TreeOf(0), Index: picked, TxID: "EARLIER", LastValid: 900}},
 	}}, StageFillOptions{}); err != nil || n != 1 {

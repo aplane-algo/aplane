@@ -2,16 +2,16 @@
 
 > Status: TLC checked over the bounded finite state space (one account, three
 > stages, two leaves per stage, three transaction IDs per stage, at most four
-> memory records); the recorded positive run generated 6,028,594 distinct
+> memory records); the recorded positive run generated 6,868,682 distinct
 > states at depth 34 with no counterexamples, and the deep configuration
-> (five records) 41,272,266 distinct states at depth 38. Four expected-failure
+> (five records) 46,925,814 distinct states at depth 38. Four expected-failure
 > negative controls each violate `LF1_NoReuseBeforeExhaustion` and must keep
 > producing that exact counterexample: `rotating_leaf_release_negative_wait.cfg`
-> (no restore check at all, 708 distinct states at depth 8),
-> `rotating_leaf_release_negative_recheck.cfg` (`RecheckAtChoice = FALSE`, 467
+> (no restore check at all, 812 distinct states at depth 8),
+> `rotating_leaf_release_negative_recheck.cfg` (`RecheckAtChoice = FALSE`, 492
 > distinct states at depth 9), `rotating_leaf_release_negative_cut.cfg`
-> (`CutRestoreHolds = FALSE`, 12,034 distinct states at depth 13) and
-> `rotating_leaf_release_negative_seq.cfg` (`SeqGuard = FALSE`, 8,465 distinct
+> (`CutRestoreHolds = FALSE`, 6,292 distinct states at depth 12) and
+> `rotating_leaf_release_negative_seq.cfg` (`SeqGuard = FALSE`, 9,273 distinct
 > states at depth 12).
 
 A rotating account of a leaf family (`rotatingkey.Profile.LeavesPerStage > 1`,
@@ -51,8 +51,9 @@ history, so the question is whether the history is complete.
   running `ReleaseMemory.Reset` as two separate steps, so the reset can land after
   a later unlock.
 - `CutRestoreEnds` is a restore that a lock interrupted returning, possibly after
-  the next unlock. `Lock` starts it and the worker begins no new restore until it
-  ends.
+  the next unlock. `Lock` starts it, including while armed, because the worker
+  binds a restore to its session before it reads the log. No new restore begins
+  until it ends.
 - `Land` is a release confirming: the authorizer moves to the next stage.
 - `Lock`, `Unlock`, `RestoreBegin`, `RestoreApply`, and `RestoreFail`
   transcribe `ReleaseMemory.Reset`/`Restoring`/`RecordAudited`/`Restored` and
@@ -70,7 +71,7 @@ The guards are constants:
 |---|---|---|
 | `WaitForRestore` | TRUE: `AwaitRestored` before the account lock | Without it the first sign after an unlock picks from an empty memory |
 | `RecheckAtChoice` | TRUE: `ForLeafChoice` under the account lock | Without it a delayed reset empties the memory after a sign was admitted |
-| `CutRestoreHolds` | TRUE: `RebuildReleaseMemory` stops without opening the wait when `interrupted` | Without it a restore a lock cut short opens the wait with the history missing |
+| `CutRestoreHolds` | TRUE: the wait opens only after `rebuildReleaseMemory` sees a restore finish, bound to the generation read before its context and session | Without it a restore a lock cut short opens the wait with the history missing |
 | `SeqGuard` | TRUE: `rec.Seq > r.ObservedSeq` skips the clear | Without it a stale observation erases a newer release |
 
 Loss is separate. `AuditMayFail`, `AuditMayLose`, and `RestoreMayFail` model

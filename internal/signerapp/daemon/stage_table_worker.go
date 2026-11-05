@@ -5,6 +5,7 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"time"
 
@@ -69,6 +70,13 @@ func (fs *Signer) runStageTableWorker(ctx context.Context) {
 			forced = true
 		}
 		ir := fs.productRuntime()
+		// Read before the state: if the signer then reads unlocked, a lock
+		// after this point moves the generation away from this value. Read
+		// after, a lock between the two would look like the current session.
+		var generation uint64
+		if ir != nil {
+			generation = ir.LockGeneration()
+		}
 		if ir == nil || !ir.IsUnlocked() {
 			if wasUnlocked {
 				fs.rotatingReleases.Reset()
@@ -81,7 +89,6 @@ func (fs *Signer) runStageTableWorker(ctx context.Context) {
 		}
 		// A lock and unlock can both fall between two passes. The generation
 		// sees what polling the state can't.
-		generation := ir.LockGeneration()
 		if wasUnlocked && generation != restoredGeneration {
 			fs.rotatingReleases.Reset()
 			wasUnlocked = false
@@ -90,7 +97,9 @@ func (fs *Signer) runStageTableWorker(ctx context.Context) {
 			continue
 		}
 		if !wasUnlocked {
-			fs.rebuildReleaseMemory(ctx, ir, generation)
+			if !fs.rebuildReleaseMemory(ctx, ir, generation) {
+				continue
+			}
 			restoredGeneration = generation
 		}
 		wasUnlocked = true
@@ -102,19 +111,33 @@ func (fs *Signer) runStageTableWorker(ctx context.Context) {
 // rebuildReleaseMemory refills the release memory from the audit log after
 // an unlock, deriving each remembered stage's addresses inside key-use
 // windows. Entries the log no longer holds are simply absent. generation is the
-// unlocked session the restore serves.
-func (fs *Signer) rebuildReleaseMemory(ctx context.Context, ir *productruntime.Runtime, generation uint64) {
-	defer fs.finishReleaseRestore(ir, generation)
+// unlocked session the restore serves. It reports whether the restore finished:
+// only then does the wait open, and otherwise the accounts stay held for another
+// attempt.
+func (fs *Signer) rebuildReleaseMemory(ctx context.Context, ir *productruntime.Runtime, generation uint64) bool {
+	interrupted := fs.restoreReleases(ctx, ir, generation)
+	if interrupted || ir.LockGeneration() != generation {
+		fs.rotatingReleases.Reset()
+		return false
+	}
+	fs.rotatingReleases.RestoredAll()
+	return true
+}
+
+// restoreReleases reads the audit log into the release memory and reports whether
+// a lock or cancellation interrupted it. A log that can't be read is the stated
+// loss case, not an interruption.
+func (fs *Signer) restoreReleases(ctx context.Context, ir *productruntime.Runtime, generation uint64) bool {
 	if fs.auditLog == nil {
-		return
+		return false
 	}
 	entries, err := signeraudit.ReadRotatingReleases(fs.auditLog.Path())
 	if err != nil {
 		logWarnf("rotating release memory: could not read the audit log: %v", err)
-		return
+		return false
 	}
 	if len(entries) == 0 {
-		return
+		return false
 	}
 	audited := make([]signersigning.AuditedRelease, 0, len(entries))
 	for _, e := range entries {
@@ -127,24 +150,14 @@ func (fs *Signer) rebuildReleaseMemory(ctx context.Context, ir *productruntime.R
 	ctx, cancel := ir.LockCancelContext(ctx)
 	defer cancel()
 	svc := &signersigning.Service{Planner: fs.newPlannerWithAudit(nil), Console: signerConsole{}, Rotating: fs.rotatingDeps(ir)}
-	rebuilt, err := svc.RebuildReleaseMemory(ctx, ir.SnapshotKeySession(), audited, signersigning.StageFillOptions{KeyUse: ir.KeyUseContext})
+	rebuilt, err := svc.RebuildReleaseMemory(ctx, ir.SnapshotKeySession(), generation, audited, signersigning.StageFillOptions{KeyUse: ir.KeyUseContext})
 	if err != nil {
 		logWarnf("rotating release memory: %v", err)
 	}
 	if rebuilt > 0 {
 		logInfof("rotating release memory: %d release(s) restored from the audit log", rebuilt)
 	}
-}
-
-// finishReleaseRestore ends a restore. Whatever it achieved, no spend waits for it
-// afterwards, unless a lock ended it: then the memory may be missing releases
-// and stays held for the next unlock's restore.
-func (fs *Signer) finishReleaseRestore(ir *productruntime.Runtime, generation uint64) {
-	if ir.LockGeneration() != generation {
-		fs.rotatingReleases.Reset()
-		return
-	}
-	fs.rotatingReleases.RestoredAll()
+	return errors.Is(err, signersigning.ErrRestoreInterrupted)
 }
 
 // publishRotatingStatus records a pass's warnings, notes and per-account

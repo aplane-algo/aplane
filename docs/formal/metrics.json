@@ -88,35 +88,35 @@
   },
   {
     "spec": "rotating_leaf_release",
-    "distinct_states": 6028594,
+    "distinct_states": 6868682,
     "depth": 34
   },
   {
     "spec": "rotating_leaf_release",
     "cfg": "rotating_leaf_release_negative_wait",
     "expected_invariant_violation": "LF1_NoReuseBeforeExhaustion",
-    "distinct_states": 708,
+    "distinct_states": 812,
     "depth": 8
   },
   {
     "spec": "rotating_leaf_release",
     "cfg": "rotating_leaf_release_negative_recheck",
     "expected_invariant_violation": "LF1_NoReuseBeforeExhaustion",
-    "distinct_states": 467,
+    "distinct_states": 492,
     "depth": 9
   },
   {
     "spec": "rotating_leaf_release",
     "cfg": "rotating_leaf_release_negative_cut",
     "expected_invariant_violation": "LF1_NoReuseBeforeExhaustion",
-    "distinct_states": 12034,
-    "depth": 13
+    "distinct_states": 6292,
+    "depth": 12
   },
   {
     "spec": "rotating_leaf_release",
     "cfg": "rotating_leaf_release_negative_seq",
     "expected_invariant_violation": "LF1_NoReuseBeforeExhaustion",
-    "distinct_states": 8465,
+    "distinct_states": 9273,
     "depth": 12
   }
 ]

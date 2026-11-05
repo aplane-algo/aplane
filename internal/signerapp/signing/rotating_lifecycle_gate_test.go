@@ -5,6 +5,7 @@ package signing
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -188,7 +189,7 @@ func TestRotatingLeafChoiceRefusesADelayedReset(t *testing.T) {
 			}
 
 			// Once the log is restored, the same transaction takes an unused leaf.
-			if n, rebuildErr := f.svc.RebuildReleaseMemory(context.Background(), f.session, []AuditedRelease{{
+			if n, rebuildErr := f.svc.RebuildReleaseMemory(context.Background(), f.session, f.lockGen, []AuditedRelease{{
 				Account: f.account.String(), Stage: first.Stage, TxID: first.TxID, LastValid: first.LastValid, Leaves: first.Leaves,
 			}}, StageFillOptions{}); rebuildErr != nil || n != 1 {
 				t.Fatalf("restore: rebuilt %d, err %v", n, rebuildErr)
@@ -208,7 +209,7 @@ func TestRotatingLeafChoiceRefusesADelayedReset(t *testing.T) {
 func restoreInterruptedBy(t *testing.T, f *rotatingFixture, first ReleaseRecord, ctx context.Context, stop func()) (int, error) {
 	t.Helper()
 	ran := false
-	n, err := f.svc.RebuildReleaseMemory(ctx, f.session, []AuditedRelease{{
+	n, err := f.svc.RebuildReleaseMemory(ctx, f.session, f.lockGen, []AuditedRelease{{
 		Account: f.account.String(), Stage: first.Stage, TxID: first.TxID, LastValid: first.LastValid, Leaves: first.Leaves,
 	}}, StageFillOptions{KeyUse: func(parent context.Context) (context.Context, func()) {
 		ran = true
@@ -245,7 +246,7 @@ func TestInterruptedRestoreKeepsTheAccountHeld(t *testing.T) {
 					cancel()
 				}
 			})
-			if n != 0 || err == nil {
+			if n != 0 || !errors.Is(err, ErrRestoreInterrupted) {
 				t.Fatalf("restore: rebuilt %d, err %v", n, err)
 			}
 			if _, restored := f.svc.Rotating.Releases.ForLeafChoice(f.account.String()); restored {
@@ -266,6 +267,32 @@ func TestInterruptedRestoreKeepsTheAccountHeld(t *testing.T) {
 	}
 }
 
+// The restore's generation is read before its context and session exist. A lock
+// landing after that, even before the restore starts, has to count as interrupting
+// it: the signer's key use is already cancelled, and the restore's own context
+// may not be yet.
+func TestRestoreBoundToAnEarlierGenerationStaysHeld(t *testing.T) {
+	f, _ := newSigningFixtureFor(t, wotscTestType)
+	prep := mustPrepare(t, f, f.spend(1000, 1100))
+	mustSign(t, f, prep.Transactions)
+	first, _ := f.svc.Rotating.Releases.Get(f.account.String())
+	f.svc.Rotating.Releases.Reset()
+
+	generation := f.lockGen
+	f.lockGen++ // The lock lands before RebuildReleaseMemory runs.
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := f.svc.RebuildReleaseMemory(context.Background(), f.session, generation, []AuditedRelease{{
+		Account: f.account.String(), Stage: first.Stage, TxID: first.TxID, LastValid: first.LastValid, Leaves: first.Leaves,
+	}}, StageFillOptions{KeyUse: func(context.Context) (context.Context, func()) { return cancelled, func() {} }})
+	if !errors.Is(err, ErrRestoreInterrupted) {
+		t.Fatalf("error = %v, want an interrupted restore", err)
+	}
+	if _, restored := f.svc.Rotating.Releases.ForLeafChoice(f.account.String()); restored {
+		t.Fatal("a restore from before the lock opened the account's wait")
+	}
+}
+
 // A failure that isn't a lock is the stated loss case: state chooses the leaf,
 // never whether to sign, so the account has to be let through.
 func TestFailedRestoreStillOpensTheAccount(t *testing.T) {
@@ -275,7 +302,7 @@ func TestFailedRestoreStillOpensTheAccount(t *testing.T) {
 	first, _ := f.svc.Rotating.Releases.Get(f.account.String())
 	f.svc.Rotating.Releases.Reset()
 	n, err := restoreInterruptedBy(t, f, first, context.Background(), func() {})
-	if n != 0 || err == nil {
+	if n != 0 || err == nil || errors.Is(err, ErrRestoreInterrupted) {
 		t.Fatalf("restore: rebuilt %d, err %v", n, err)
 	}
 	if _, restored := f.svc.Rotating.Releases.ForLeafChoice(f.account.String()); !restored {

@@ -148,7 +148,7 @@ func TestSLHRestoredReleaseHasNoLeafHistory(t *testing.T) {
 	f, _ := newSigningFixtureFor(t, slhTestType)
 	entries := []AuditedRelease{{Account: f.account.String(), Stage: 0, TxID: "B", LastValid: 1100, Reused: true,
 		Leaves: []LeafRelease{{TxID: "A"}, {TxID: "B"}}}}
-	n, err := f.svc.RebuildReleaseMemory(context.Background(), f.session, entries, StageFillOptions{})
+	n, err := f.svc.RebuildReleaseMemory(context.Background(), f.session, f.lockGen, entries, StageFillOptions{})
 	if err != nil || n != 1 {
 		t.Fatalf("restore %d: %v", n, err)
 	}
@@ -157,7 +157,7 @@ func TestSLHRestoredReleaseHasNoLeafHistory(t *testing.T) {
 		t.Fatalf("restored record %+v", rec)
 	}
 	f.svc.Rotating.Releases.Record(ReleaseRecord{Account: f.account.String(), Stage: 0, TxID: "C", LastValid: 1110, StatelessHash: true})
-	_, err = f.svc.RebuildReleaseMemory(context.Background(), f.session, entries, StageFillOptions{})
+	_, err = f.svc.RebuildReleaseMemory(context.Background(), f.session, f.lockGen, entries, StageFillOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}

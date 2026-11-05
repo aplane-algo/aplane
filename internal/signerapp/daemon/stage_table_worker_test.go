@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -535,26 +536,77 @@ func releaseMemoryHeld(server *Signer, account string) bool {
 	return !restored
 }
 
-// A restore a lock cut short may be missing releases. If the wait opened anyway,
-// a quick unlock would let a spend choose a leaf from it.
+// A restore a lock cut short may be missing releases. The wait has to stay closed
+// whichever generation the restore was given: one read just after the lock
+// matches the current one, so the generation can't be the only thing consulted.
 func TestRestoreEndedByALockStaysHeld(t *testing.T) {
+	for _, mode := range []string{"generation from before the lock", "generation from after the lock", "recovery, which moves no generation"} {
+		t.Run(mode, func(t *testing.T) {
+			server, cleanup := setupTestSigner(t)
+			defer cleanup()
+			ir := server.productRuntime()
+			account, _ := installRotatingKey(t, server)
+			auditPath := filepath.Join(t.TempDir(), "audit.log")
+			auditLog, err := NewAuditLogger(auditPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = auditLog.Close() }()
+			server.auditLog = auditLog
+			if err := (&signingAuditLogger{log: auditLog}).LogRotatingRelease(account.String(), "TXID", 0, 1000, 0, 0); err != nil {
+				t.Fatal(err)
+			}
+
+			server.rotatingReleases.Reset()
+			generation := ir.LockGeneration()
+			if mode == "recovery, which moves no generation" {
+				ir.SetRecovery()
+			} else {
+				ir.Lock()
+			}
+			if mode == "generation from after the lock" {
+				generation = ir.LockGeneration()
+			}
+			if server.rebuildReleaseMemory(context.Background(), ir, generation) {
+				t.Fatal("a restore on a signer that can't sign reported that it finished")
+			}
+			if !releaseMemoryHeld(server, account.String()) {
+				t.Fatal("a restore ended by a lock opened the wait")
+			}
+		})
+	}
+}
+
+// A restore with nothing to do can't be interrupted, so only the generation shows
+// that it served an earlier session.
+func TestRestoreFromAnEarlierSessionStaysHeld(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 	ir := server.productRuntime()
 	const account = "ACCOUNT"
-
-	server.rotatingReleases.Restoring([]string{account})
+	server.rotatingReleases.Reset()
 	generation := ir.LockGeneration()
-	server.finishReleaseRestore(ir, generation)
+	ir.Lock()
+	ir.SetUnlocked()
+	if server.rebuildReleaseMemory(context.Background(), ir, generation) {
+		t.Fatal("a restore for an earlier session reported that it finished")
+	}
+	if !releaseMemoryHeld(server, account) {
+		t.Fatal("a restore for an earlier session opened the wait")
+	}
+}
+
+func TestFinishedRestoreOpensTheWait(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	ir := server.productRuntime()
+	const account = "ACCOUNT"
+	server.rotatingReleases.Reset()
+	if !server.rebuildReleaseMemory(context.Background(), ir, ir.LockGeneration()) {
+		t.Fatal("a restore with nothing to do didn't finish")
+	}
 	if releaseMemoryHeld(server, account) {
 		t.Fatal("a finished restore left the account held")
-	}
-
-	server.rotatingReleases.Restoring([]string{account})
-	ir.Lock()
-	server.finishReleaseRestore(ir, generation)
-	if !releaseMemoryHeld(server, account) {
-		t.Fatal("a restore ended by a lock opened the wait")
 	}
 }
 

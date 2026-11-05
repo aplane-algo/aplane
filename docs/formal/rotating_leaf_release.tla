@@ -242,7 +242,7 @@ Lock ==
     /\ phase' = "locked"
     /\ memStage' = None
     /\ memRecs' = {}
-    /\ cut' = (cut \/ phase = "restoring")
+    /\ cut' = (cut \/ phase \in {"armed", "restoring"})
     /\ UNCHANGED <<chain, truth, audit, snap, memSeq, seq, obsStage, obsSeq,
                    admitted, resetDue, lossy, bad, drift>>
 
@@ -267,6 +267,8 @@ DelayedReset ==
                    admitted, cut, lossy, bad, drift>>
 
 \* CutRestoreEnds is the cut restore returning, possibly after the next unlock.
+\* A lock while armed counts: the worker may have bound the restore to this
+\* session and not yet read the log.
 \* Its accounts stay held with CutRestoreHolds. Without it the restore opens
 \* their wait as it would for a failed derivation, and the memory is empty.
 CutRestoreEnds ==

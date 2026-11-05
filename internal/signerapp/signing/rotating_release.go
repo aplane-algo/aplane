@@ -5,6 +5,7 @@ package signing
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 
@@ -389,6 +390,10 @@ type AuditedRelease struct {
 	Leaves []LeafRelease
 }
 
+// ErrRestoreInterrupted reports a restore that a lock or cancellation stopped.
+// Accounts it didn't reach are still held and their history is still missing.
+var ErrRestoreInterrupted = errors.New("release restore interrupted")
+
 // RebuildReleaseMemory fills the release memory from audit entries, deriving
 // the verified stage and successor addresses for each account inside a
 // KeyUse window. Entries for accounts the signer no longer holds are
@@ -396,8 +401,11 @@ type AuditedRelease struct {
 // if any; a failure for one account does not stop the others and opens that
 // account's wait. A lock or cancellation is different: it stops the restore and
 // leaves the accounts it didn't reach held, because a quick unlock could
-// otherwise let a spend choose a leaf with their history missing.
-func (s *Service) RebuildReleaseMemory(ctx context.Context, session *keystore.KeySession, entries []AuditedRelease, opts StageFillOptions) (int, error) {
+// otherwise let a spend choose a leaf with their history missing. It then
+// returns ErrRestoreInterrupted, and only a restore that returns without it has
+// finished. generation is the session the restore serves, read before ctx and
+// session were made: a lock after that point has to count as interrupting it.
+func (s *Service) RebuildReleaseMemory(ctx context.Context, session *keystore.KeySession, generation uint64, entries []AuditedRelease, opts StageFillOptions) (int, error) {
 	deps, depErr := s.rotatingDeps()
 	if depErr != nil || deps.Releases == nil {
 		return 0, nil
@@ -409,10 +417,6 @@ func (s *Service) RebuildReleaseMemory(ctx context.Context, session *keystore.Ke
 	for _, e := range entries {
 		accounts = append(accounts, e.Account)
 	}
-	var generation uint64
-	if deps.LockGeneration != nil {
-		generation = deps.LockGeneration()
-	}
 	// A lock advances the generation before it cancels anything, and a key-use
 	// context can be cancelled before ctx is, so ctx alone can look alive.
 	interrupted := func() bool {
@@ -421,7 +425,7 @@ func (s *Service) RebuildReleaseMemory(ctx context.Context, session *keystore.Ke
 	deps.Releases.Restoring(accounts)
 	for _, e := range entries {
 		if interrupted() {
-			break
+			return rebuilt, ErrRestoreInterrupted
 		}
 		if _, held := snapshot.KeyFiles[e.Account]; !held {
 			deps.Releases.Restored(e.Account)
@@ -433,7 +437,7 @@ func (s *Service) RebuildReleaseMemory(ctx context.Context, session *keystore.Ke
 				firstErr = fmt.Errorf("rotating account %s: %w", e.Account, err)
 			}
 			if interrupted() {
-				break
+				return rebuilt, ErrRestoreInterrupted
 			}
 			deps.Releases.Restored(e.Account)
 			continue
