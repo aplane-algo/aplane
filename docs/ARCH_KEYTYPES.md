@@ -1385,6 +1385,13 @@ the checks. The route decides what is resolved on the client first.
 `GenerateKey` then runs these steps. The first failure stops generation, and nothing
 is saved before the final steps.
 
+`PrepareGenerateKey` runs steps 1 to 5 through the same code, then validates the values
+and reports the resolved request, so a review cannot be judged differently from the
+generation that follows it. It is local IPC only and creates nothing. Apadmin then
+sends the reviewed public keys and the fingerprint it saw, and generation rejects the
+request if the definition changed. The fingerprint is a comparison value, not an
+authorization: generation repeats every check.
+
 | Step | Work | Owner |
 |---|---|---|
 | 1 | Check the key type is allowed for the node role | `keyclass.ValidateKeyTypeAllowedForNodeRole` |

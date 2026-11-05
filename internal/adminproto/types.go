@@ -606,11 +606,50 @@ type ApplyPolicyResult struct {
 	PolicySetSHA256     string
 }
 
-// GenerateKeyRequest is the admin-domain request to generate a key.
-type GenerateKeyRequest struct {
+// PrepareGenerateKeyRequest asks what a generation request would create.
+type PrepareGenerateKeyRequest struct {
 	KeyType    string
-	Name       string
 	Parameters map[string]string
+}
+
+// PreparedAdminOperation is one administrative operation of a prepared account.
+type PreparedAdminOperation struct {
+	Kind          string
+	Authorization string
+	PolicyGate    string
+}
+
+// PreparedBoundedProfile is the bounded contract of a prepared account.
+type PreparedBoundedProfile struct {
+	Contract         string
+	SpendEffects     []string
+	MaxFee           uint64
+	AdminOperations  []PreparedAdminOperation
+	Layer3Policy     string
+	CosignerRequired bool
+}
+
+// PrepareGenerateKeyResult describes the account a request would create. It has
+// no address, because the spending key does not exist yet.
+type PrepareGenerateKeyResult struct {
+	Success       bool
+	KeyType       string
+	Parameters    map[string]string
+	Fingerprint   string
+	Bounded       *PreparedBoundedProfile
+	AdminKeyID    string
+	CosignerKeyID string
+	Code          string
+	Error         string
+}
+
+// GenerateKeyRequest is the admin-domain request to generate a key.
+// ExpectedFingerprint is optional and comes from a prepared review.
+type GenerateKeyRequest struct {
+	KeyType             string
+	Name                string
+	Parameters          map[string]string
+	ExpectedFingerprint string
 }
 
 // GenerateKeyResult is the admin-domain result of key generation.

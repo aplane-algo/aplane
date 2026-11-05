@@ -92,7 +92,8 @@ Transport notes:
   same-UID local mode may use `<data_dir>/aplane.sock`, and custom private
   managed stores require an explicit IPC path so an unreadable selected root
   cannot silently retarget a client to the singleton system signer,
-- the current admin protocol version is 7.1 (7.1 makes `export_key` return
+- the current admin protocol version is 7.2 (7.2 adds `prepare_generate_key`
+  and an optional `generate_key.expected_fingerprint`; 7.1 makes `export_key` return
   `export_result` with a native recovery phrase over local IPC and adds
   `key_details.mnemonic_exportable`; 7.0 adds `get_policy_context`
   and makes `apply_policy` name the composite snapshot it was reviewed
@@ -170,6 +171,7 @@ Server to Client:
 Client to Server:
 
 - `list_keys`
+- `prepare_generate_key`
 - `generate_key`
 - `delete_key`
 - `export_key`
@@ -179,6 +181,7 @@ Client to Server:
 Server to Client:
 
 - `keys_list`
+- `prepare_generate_result`
 - `generate_result`
 - `delete_result`
 - `export_result`
@@ -383,7 +386,8 @@ interlocks.
 
 #### Key Management
 
-- `generate_key`: `key_type`, optional `name`, optional `parameters`; accepted over IPC, but generated recovery material is not returned over the admin protocol. the rotating key types (such as `aplane.rotating-triple-wotsc.v1`) require the parameter `network` (a network the signer knows, or a base64 genesis hash)
+- `prepare_generate_key`: `key_type`, optional `parameters` -> `prepare_generate_result`: `success`, optional `key_type`, `parameters`, `fingerprint`, `bounded`, `admin_key_id`, `cosigner_key_id`, `code`, `error`. Local IPC only, under `keys.generate`. It runs generation's checks and reports the resolved request so apadmin can review it. It creates no key, changes no store state, and has no address, because the spending key does not exist yet. A reference name resolves to its public key in `parameters`, and `bounded` carries `contract`, `spend_effects`, `max_fee`, `admin_operations`, `layer3_policy`, and `cosigner_required`
+- `generate_key`: `key_type`, optional `name`, optional `expected_fingerprint`, optional `parameters`; accepted over IPC, but generated recovery material is not returned over the admin protocol. the rotating key types (such as `aplane.rotating-triple-wotsc.v1`) require the parameter `network` (a network the signer knows, or a base64 genesis hash)
 - `generate_result`: `success`, optional `address`, `key_type`, `parameters`, `code`, `error`; `mnemonic` and `word_count` fields remain in the schema but are omitted by signer responses
 - `delete_key`: `address` -> `delete_result`: `success`, optional `code`, `error`
 - `export_key`: `address`, `passphrase` -> `export_result`: `success`, `address`, `key_type`, `mnemonic`, `word_count`, optional `code` and `error`. Native `ed25519` and `falcon1024` only, on authenticated local IPC with an unlocked healthy store and fresh passphrase verification. Other transports return `authorization_denied`; other key classes return `forbidden`; native Falcon credentials without recovery entropy return `unavailable`. Successful responses contain 25 words. The signer sends a successful `export_result` while it still holds the key for use and audits `KEY_EXPORTED` with outcome `released` only once that write succeeded; a failed write is audited as a failure. Eligibility is projected as `key_details.mnemonic_exportable`, and apadmin key details offers `m` only for keys so marked; the phrase stays visible for two minutes from reveal and clears on dismissal, lock, or session end. This is an explicit export operation; generate responses still omit recovery material.

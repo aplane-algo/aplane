@@ -59,6 +59,7 @@ type KeyServices interface {
 	ExportKey(ctx context.Context, req adminproto.ExportKeyRequest, deliver adminproto.ExportDelivery) adminproto.ExportKeyResult
 	ListKeys() ([]adminproto.KeyInfo, error)
 	GetKeyDetails(req adminproto.GetKeyDetailsRequest) adminproto.GetKeyDetailsResult
+	PrepareGenerateKey(req adminproto.PrepareGenerateKeyRequest) adminproto.PrepareGenerateKeyResult
 	GenerateKey(ctx context.Context, req adminproto.GenerateKeyRequest) adminproto.GenerateKeyResult
 	DeleteKey(ctx context.Context, req adminproto.DeleteKeyRequest) adminproto.DeleteKeyResult
 	ImportKey(ctx context.Context, req adminproto.ImportKeyRequest) adminproto.ImportKeyResult

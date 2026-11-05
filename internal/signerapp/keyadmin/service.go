@@ -104,12 +104,19 @@ type Service struct {
 
 type GenerateGenericLSigFunc func(context.Context, *productruntime.Runtime, string, map[string]string) (string, error)
 
-func (s Service) GenerateKey(ctx context.Context, keyType string, params map[string]string, generateGenericLSig GenerateGenericLSigFunc) (*GenerateResult, *Error) {
+// resolvedCreation is a creation request after its references are resolved and
+// its instance selected.
+type resolvedCreation struct {
+	keyType  string
+	params   map[string]string
+	instance *lsigprovider.Instance
+}
+
+// resolveCreation runs the checks generation and preparation share, so a
+// reviewed request cannot be judged differently from the one that follows it.
+func (s Service) resolveCreation(keyType string, params map[string]string) (*resolvedCreation, *Error) {
 	ir := s.Runtime
 	keyType = keytypecatalog.Canonicalize(keyType)
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	if ir == nil {
 		return nil, &Error{Kind: ErrorInternal, Message: "product runtime is nil"}
 	}
@@ -138,13 +145,15 @@ func (s Service) GenerateKey(ctx context.Context, keyType string, params map[str
 		}
 	}
 
+	var instance *lsigprovider.Instance
 	if provider := lsigprovider.Get(keyType); provider != nil {
 		// Canonicalize at the admin boundary so persisted params and API responses
 		// are stable; lower layers also normalize defensively.
-		instance, err := lsigprovider.ResolveInstance(provider, params)
+		resolved, err := lsigprovider.ResolveInstance(provider, params)
 		if err != nil {
 			return nil, &Error{Kind: ErrorInvalidInput, Message: err.Error()}
 		}
+		instance = resolved
 		params = instance.Values
 		if instance.Bounded != nil && instance.Bounded.Cosigner != nil {
 			if err := validateVisibleCosignerAuthorityCollisions(ir, params[boundedmeta.CosignerPublicKeyParameter]); err != nil {
@@ -152,6 +161,27 @@ func (s Service) GenerateKey(ctx context.Context, keyType string, params map[str
 			}
 		}
 	}
+	return &resolvedCreation{keyType: keyType, params: params, instance: instance}, nil
+}
+
+// GenerateKey creates a key with no prior review. See GenerateReviewedKey.
+func (s Service) GenerateKey(ctx context.Context, keyType string, params map[string]string, generateGenericLSig GenerateGenericLSigFunc) (*GenerateResult, *Error) {
+	return s.GenerateReviewedKey(ctx, keyType, params, "", generateGenericLSig)
+}
+
+// GenerateReviewedKey creates a key. A non-empty expectedFingerprint is the one
+// PrepareGenerateKey returned: it is a comparison value, not an authorization,
+// and a mismatch means the definition changed after the operator reviewed it.
+func (s Service) GenerateReviewedKey(ctx context.Context, keyType string, params map[string]string, expectedFingerprint string, generateGenericLSig GenerateGenericLSigFunc) (*GenerateResult, *Error) {
+	ir := s.Runtime
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	creation, resolveErr := s.resolveCreation(keyType, params)
+	if resolveErr != nil {
+		return nil, resolveErr
+	}
+	keyType, params = creation.keyType, creation.params
 
 	unlockMutation, lockErr := s.lockUnlockedMutation()
 	if lockErr != nil {
@@ -173,6 +203,16 @@ func (s Service) GenerateKey(ctx context.Context, keyType string, params map[str
 	}
 	if !canGenerate {
 		return nil, unavailableKeyTypeError(activeKeyPaths, keyType)
+	}
+	if expectedFingerprint != "" {
+		// Compared under the lock, which also guards template changes.
+		current, err := lsigprovider.CreationFingerprint(keyType, params)
+		if err != nil {
+			return nil, &Error{Kind: ErrorInvalidInput, Message: err.Error()}
+		}
+		if current != expectedFingerprint {
+			return nil, &Error{Kind: ErrorInvalidInput, Message: fmt.Sprintf("key type %s changed after this request was reviewed; review it again", keyType)}
+		}
 	}
 	if genericlsig.IsGenericLSigType(keyType) {
 		if generateGenericLSig == nil {

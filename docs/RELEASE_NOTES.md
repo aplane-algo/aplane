@@ -7,6 +7,14 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## Admin protocol 7.2 can prepare a key generation request
+
+- The new local-IPC `prepare_generate_key` message reports what a request would create:
+  its resolved parameters, bounded contract, and external authority IDs. It creates
+  nothing, and later generation repeats every check.
+- `generate_key` accepts an optional `expected_fingerprint`, and rejects the request if
+  the definition changed after review. apadmin does not use either yet.
+
 ## Bounded templates can add a custom rule to a framework allowlist
 
 - A schema-v2 template can now declare `bounded.layer3` with `fixed_allowlist` or
