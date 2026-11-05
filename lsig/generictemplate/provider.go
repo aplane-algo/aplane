@@ -156,6 +156,9 @@ type ParameterSpec struct {
 	Min *uint64 `yaml:"min"` // Minimum allowed value
 	Max *uint64 `yaml:"max"` // Maximum allowed value
 
+	// NonZero rejects the all-zero address (address type only).
+	NonZero bool `yaml:"nonzero"`
+
 	// Default value (for optional parameters)
 	Default string `yaml:"default"`
 }
@@ -265,6 +268,7 @@ func ParameterSpecToParameterDefs(specs []ParameterSpec) []lsigprovider.Paramete
 			Placeholder: p.Placeholder,
 			Min:         p.Min,
 			Max:         p.Max,
+			NonZero:     p.NonZero,
 			Default:     p.Default,
 		}
 	}
@@ -852,6 +856,7 @@ func compatibilityFingerprintForSpec(spec *TemplateSpec) string {
 			Min:       p.Min,
 			Max:       p.Max,
 			Default:   p.Default,
+			NonZero:   p.NonZero,
 		}
 	}
 

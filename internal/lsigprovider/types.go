@@ -63,6 +63,11 @@ type ParameterDef struct {
 	Min *uint64 // Minimum allowed value (nil = no minimum)
 	Max *uint64 // Maximum allowed value (nil = no maximum)
 
+	// NonZero rejects the all-zero address. On a transaction field the zero
+	// address means "not set", so a program that compares a close target or
+	// similar field to this parameter would treat "no close" as a match.
+	NonZero bool
+
 	// Default value (applied if an optional parameter is missing or empty)
 	Default string
 }

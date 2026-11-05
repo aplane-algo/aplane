@@ -143,6 +143,7 @@ type CanonicalParameter struct {
 	Min       *uint64 `json:"min,omitempty"`
 	Max       *uint64 `json:"max,omitempty"`
 	Default   string  `json:"default,omitempty"`
+	NonZero   bool    `json:"nonzero,omitempty"`
 }
 
 // CanonicalRuntimeArg is the shape of a runtime arg as it appears in
@@ -169,6 +170,7 @@ func ProjectParameterDef(p ParameterDef) CanonicalParameter {
 		Min:       p.Min,
 		Max:       p.Max,
 		Default:   p.Default,
+		NonZero:   p.NonZero,
 	}
 }
 

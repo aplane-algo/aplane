@@ -37,6 +37,10 @@ import (
 )
 
 const integrationBurnAddress = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ"
+
+// integrationHTLCDestination is a fixed nonzero address, since an HTLC refuses
+// the zero address as a destination.
+const integrationHTLCDestination = "EIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRDOHSEZI"
 const integrationTemplatePublisher = "test"
 
 func integrationTemplateKeyType(family string) string {
@@ -1910,6 +1914,25 @@ func TestLSigSigningFlow(t *testing.T) {
 	const phrase = "open-sesame"
 	phraseHash := sha256.Sum256([]byte(phrase))
 	claimRecipient := crypto.GenerateAccount().Address.String()
+
+	// A zero destination would let a path repeat, so generation refuses it.
+	for _, name := range []string{"recipient", "refund_address"} {
+		params := map[string]string{
+			"hash":           hex.EncodeToString(phraseHash[:]),
+			"recipient":      claimRecipient,
+			"refund_address": funder.GetAddress(),
+			"timeout_round":  fmt.Sprintf("%d", status.LastRound+2_000),
+		}
+		params[name] = types.ZeroAddress.String()
+		resp, err := signerClient.AdminGenerate("aplane.htlc.v1", params)
+		if err == nil {
+			t.Fatalf("generation accepted a zero %s: %+v", name, resp)
+		}
+		if !strings.Contains(err.Error(), "the zero address is not allowed") {
+			t.Fatalf("generation refused a zero %s for the wrong reason: %v", name, err)
+		}
+	}
+
 	claimAddr := mustAdminGenerateKey(t, signerClient, signerd, "aplane.htlc.v1", map[string]string{
 		"hash":           hex.EncodeToString(phraseHash[:]),
 		"recipient":      claimRecipient,
@@ -1965,8 +1988,8 @@ func TestLSigRuntimeArgValidation(t *testing.T) {
 	genericPreimageHash := sha256.Sum256(genericPreimage)
 	genericAddr := mustAdminGenerateKey(t, signerClient, signerd, "aplane.htlc.v1", map[string]string{
 		"hash":           hex.EncodeToString(genericPreimageHash[:]),
-		"recipient":      integrationBurnAddress,
-		"refund_address": integrationBurnAddress,
+		"recipient":      integrationHTLCDestination,
+		"refund_address": integrationHTLCDestination,
 		"timeout_round":  "999999999",
 	})
 
