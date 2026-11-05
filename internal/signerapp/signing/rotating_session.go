@@ -44,10 +44,24 @@ type RotatingDeps struct {
 	// in. nil means one unending session.
 	Recovery       *RotatingRecovery
 	LockGeneration func() uint64
+	// KeyUse, if set, brackets the sign path's use of a loaded seed: its
+	// context is cancelled the moment the signer locks, and a lock waits for
+	// release before it reports the seed gone. Nil means nothing to wait for.
+	KeyUse func(context.Context) (context.Context, func())
 	// DiscoveryTimeout bounds a request's scan for an unknown live stage.
 	// Zero means DefaultDiscoveryTimeout.
 	DiscoveryTimeout time.Duration
 	Wake             func()
+}
+
+// keyUse opens a window for holding a seed. The returned release is safe to
+// call more than once.
+func (d *RotatingDeps) keyUse(ctx context.Context) (context.Context, func()) {
+	if d.KeyUse == nil {
+		return ctx, func() {}
+	}
+	useCtx, release := d.KeyUse(ctx)
+	return useCtx, sync.OnceFunc(release)
 }
 
 // RotatingLocks serializes prepare, sign and table maintenance for each

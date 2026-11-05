@@ -650,6 +650,7 @@ aplane/
 │   ├── rotatingtriplewots/        # Rotating Falcon + WOTS + Ed25519 triple hybrid stage (signerops/, signerreg/, stage/)
 │   ├── rotatingtriplexmss/        # Rotating Falcon + XMSS + Ed25519 triple hybrid stage (signerops/, signerreg/, stage/)
 │   ├── rotatingtripleslhdsa/      # Rotating Falcon + SLH-DSA + Ed25519 triple hybrid stage (signerops/, signerreg/, stage/)
+│   ├── rotatingtriplewotsc/       # Rotating Falcon + WOTS+C + Ed25519 triple hybrid stage (signerops/, signerreg/, stage/)
 │   └── generictemplate/           # YAML-backed generic template provider
 │
 ├── library/templates/             # Optional plaintext KeyType Library YAML sources
@@ -2070,14 +2071,14 @@ indexes them.
 Rotating accounts are not guarded accounts; they use their own `rotating1`
 signing flow. Ownership:
 
-- `lsig/rotatingtriplewots`, `lsig/rotatingtriplexmss` and
-  `lsig/rotatingtripleslhdsa`: the Falcon-1024 + Ed25519 rotating stages
-  with WOTS-w16, RFC 8391 XMSS (with the public tree cache) and the rescaled
-  SLH-DSA. Each owns its program template, its stage 0 record layout and the
+- `lsig/rotatingtriplewots`, `lsig/rotatingtriplexmss`,
+  `lsig/rotatingtripleslhdsa` and `lsig/rotatingtriplewotsc`: the Falcon-1024 +
+  Ed25519 rotating stages with WOTS-w16, RFC 8391 XMSS (with the public tree
+  cache), the rescaled SLH-DSA and a per-stage tree of WOTS+C keys. Each owns its program template, its stage 0 record layout and the
   hash-based half of its stage, over `internal/crypto/rotatinghybrid`, which
   derives the per-stage key seeds, and its primitive in `internal/crypto/wots`,
-  `internal/crypto/xmss` or `internal/crypto/slhdsa`.
-- `lsig/rotatingfamily`: what the three share. `signerreg` holds the
+  `internal/crypto/xmss`, `internal/crypto/slhdsa` or `internal/crypto/wotsc`.
+- `lsig/rotatingfamily`: what they share. `signerreg` holds the
   registration descriptor and the generator, `stagesign` the stage's Ed25519
   and Falcon-1024 half and its buffer wiping, `stageprog` the salt search and
   strict parse of a stage program, and `rotatingtest` the contract suite each

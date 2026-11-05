@@ -17,6 +17,7 @@ import (
 	guardedsignerreg "github.com/aplane-algo/aplane/lsig/falcon1024_guarded/signerreg"
 	rotatingslhsignerreg "github.com/aplane-algo/aplane/lsig/rotatingtripleslhdsa/signerreg"
 	rotatingtriplesignerreg "github.com/aplane-algo/aplane/lsig/rotatingtriplewots/signerreg"
+	rotatingwotscsignerreg "github.com/aplane-algo/aplane/lsig/rotatingtriplewotsc/signerreg"
 	rotatingxmsssignerreg "github.com/aplane-algo/aplane/lsig/rotatingtriplexmss/signerreg"
 )
 
@@ -48,6 +49,7 @@ func RegisterSigner() {
 		rotatingtriplesignerreg.Register()
 		rotatingxmsssignerreg.Register()
 		rotatingslhsignerreg.Register()
+		rotatingwotscsignerreg.Register()
 	})
 }
 

@@ -41,6 +41,8 @@ type recordingReleaseAudit struct {
 	// rules holds the rule IDs of approvals that matched one.
 	approved int
 	rules    []string
+	// onRelease runs as a release is audited.
+	onRelease func()
 }
 
 func (a *recordingReleaseAudit) LogSignApproved(string, string, string) { a.approved++ }
@@ -48,6 +50,9 @@ func (a *recordingReleaseAudit) LogSignApprovedWithPolicyRule(_, _, _ string, po
 	a.rules = append(a.rules, policyRuleID)
 }
 func (a *recordingReleaseAudit) LogRotatingRelease(account, txid string, stage, lastValid, tree uint64, index uint32) error {
+	if a.onRelease != nil {
+		a.onRelease()
+	}
 	if a.fail != nil {
 		return a.fail
 	}
@@ -582,6 +587,43 @@ func TestReleaseMemoryMarksStageReuse(t *testing.T) {
 	}
 }
 
+// A family with a tree per stage reuses leaf numbers at every stage. Each stage
+// must get all of its leaves, and a leaf spent at one stage must stay free at
+// the next, because the two are different keys.
+func TestChooseLeafOwnTreePerStage(t *testing.T) {
+	profile := rotatingkey.Profile{LeavesPerStage: 64}
+	const stage = 9
+	prior := ReleaseRecord{Stage: stage}
+	used := map[uint32]bool{}
+	for i := range 64 {
+		txID := []byte{byte(i * 3)} // Several share a pick, so the search is exercised.
+		name := fmt.Sprintf("T%d", i)
+		leaf, reused := chooseLeaf(profile, stage, txID, name, prior)
+		if reused {
+			t.Fatalf("release %d reported reuse with %d leaves used", i, len(used))
+		}
+		if leaf.Tree != 0 || leaf.Index >= 64 || used[leaf.Index] {
+			t.Fatalf("release %d chose leaf %+v, used %v", i, leaf, used)
+		}
+		used[leaf.Index] = true
+		leaf.TxID = name
+		prior.Leaves = append(prior.Leaves, leaf)
+	}
+
+	// An identical transaction keeps its leaf, even with every leaf spent.
+	if leaf, reused := chooseLeaf(profile, stage, []byte{0}, "T0", prior); reused || leaf.Index != prior.Leaves[0].Index {
+		t.Fatalf("retry chose %+v, reused %v", leaf, reused)
+	}
+	// The 65th distinct transaction is the first reuse. It still gets a leaf.
+	if leaf, reused := chooseLeaf(profile, stage, []byte{200}, "T64", prior); !reused || leaf.Index != 200%64 {
+		t.Fatalf("65th release chose %+v, reused %v", leaf, reused)
+	}
+	// The next stage has its own keys, so nothing recorded here applies.
+	if leaf, reused := chooseLeaf(profile, stage+1, []byte{200}, "T64", prior); reused || leaf.Index != 200%64 {
+		t.Fatalf("next stage chose %+v, reused %v", leaf, reused)
+	}
+}
+
 func TestChooseLeaf(t *testing.T) {
 	triple, _ := rotatingkey.Lookup(rotatingkey.RotatingTripleWotsV1)
 	if l, reused := chooseLeaf(triple, 9, []byte{200}, "T", ReleaseRecord{}); l.Index != 0 || l.Tree != 0 || reused {
@@ -719,7 +761,7 @@ func TestRotatingStatusReportsStageReuse(t *testing.T) {
 
 func TestRebuildReleaseMemoryDerivesVerifiedAddresses(t *testing.T) {
 	f, _ := newSigningFixture(t)
-	n, err := f.svc.RebuildReleaseMemory(context.Background(), f.session, []AuditedRelease{
+	n, err := f.svc.RebuildReleaseMemory(context.Background(), f.session, f.lockGen, []AuditedRelease{
 		{Account: f.account.String(), Stage: 3, TxID: "TX", LastValid: 500, Reused: true},
 		{Account: types.Address{5}.String(), Stage: 1, TxID: "GONE", LastValid: 9},
 	}, StageFillOptions{})
@@ -996,7 +1038,13 @@ func TestReleaseMemoryMergesAuditedHistory(t *testing.T) {
 // again. The audited leaf is set to exactly the leaf the new spend's TxID
 // would pick, so a sign that skipped the wait would reuse it.
 func TestRotatingLeafSignWaitsForTheReleaseRestore(t *testing.T) {
-	f, audit := newSigningFixtureFor(t, xmssTestType)
+	for _, kind := range []rotatingTestType{xmssTestType, wotscTestType} {
+		t.Run(kind.keyType, func(t *testing.T) { testRotatingLeafSignWaitsForTheReleaseRestore(t, kind) })
+	}
+}
+
+func testRotatingLeafSignWaitsForTheReleaseRestore(t *testing.T, kind rotatingTestType) {
+	f, audit := newSigningFixtureFor(t, kind)
 	profile, ok := rotatingkey.Lookup(f.kind.keyType)
 	if !ok || profile.LeavesPerStage <= 1 {
 		t.Fatalf("%s is not a leaf family", f.kind.keyType)
@@ -1028,7 +1076,7 @@ func TestRotatingLeafSignWaitsForTheReleaseRestore(t *testing.T) {
 	}
 
 	// The log holds an earlier release of this stage on the leaf this spend picks.
-	if n, err := f.svc.RebuildReleaseMemory(context.Background(), f.session, []AuditedRelease{{
+	if n, err := f.svc.RebuildReleaseMemory(context.Background(), f.session, f.lockGen, []AuditedRelease{{
 		Account: f.account.String(), Stage: 0, TxID: "EARLIER", LastValid: 900,
 		Leaves: []LeafRelease{{Tree: profile.TreeOf(0), Index: picked, TxID: "EARLIER", LastValid: 900}},
 	}}, StageFillOptions{}); err != nil || n != 1 {

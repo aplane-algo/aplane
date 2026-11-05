@@ -6,7 +6,7 @@ Rotating one-time leaf model: which leaf a rotating stage signs with, and
 which state that choice depends on.
 
 A rotating account of a leaf family (rotatingkey.Profile.LeavesPerStage > 1,
-today the XMSS triple) holds several one-time leaves per stage. Signing the
+today the XMSS and WOTS+C triples) holds several one-time leaves per stage. Signing the
 same leaf for two different transactions spends a one-time key twice. The
 signer therefore chooses the leaf from the stage's release history:
 
@@ -21,12 +21,19 @@ audit log at unlock. The model checks that, outside the named loss cases, the
 memory is a complete record of the stage's releases whenever the signer can
 sign, so the leaf choice never reuses a leaf while an unused one remains.
 
-Three guards keep the memory complete, and one modeled loss class is excused
+Five guards keep the memory complete, and one modeled loss class is excused
 explicitly:
 
   WaitForRestore   a leaf-family sign waits (AwaitRestored) until the audit
                    restore after an unlock has finished, so it never chooses
                    a leaf from an empty memory.
+  RecheckAtChoice  the leaf is chosen from a memory read together with its
+                   restore state (ForLeafChoice). WaitForRestore alone is not
+                   enough: it passes before the account lock, and a Reset that
+                   a worker decided on earlier can land after it.
+  CutRestoreHolds  a restore that a lock cut short leaves the accounts it did
+                   not reach held (RebuildReleaseMemory), however quickly the
+                   next unlock comes.
   SeqGuard         a status pass that reads the chain clears an account's
                    memory only if no release was recorded after the pass read
                    the chain (Record/Seq/clearIfUnchanged), so a stale
@@ -42,20 +49,26 @@ explicitly:
   see, not a guarantee against a history the signer lost.
 
 The negative controls turn off WaitForRestore (the memory is empty when the
-first post-unlock sign picks a leaf) and SeqGuard (a stale observation erases
+first post-unlock sign picks a leaf), RecheckAtChoice (a delayed Reset empties
+the memory after a sign was admitted), CutRestoreHolds (a cut restore opens the
+wait with the history missing) and SeqGuard (a stale observation erases
 the current release), each with every loss source off, and TLC reproduces
 the leaf reuse under a complete history.
 
 Scope: one account, one signer. Several signers sharing a seed and no memory
-collide with probability one in LeavesPerStage by design (chooseLeaf) and are
-not modeled. Stateless-hash families keep no leaf history and are not
+collide with probability one in LeavesPerStage by design for TxIDs nobody
+chose (chooseLeaf) and are not modeled. Stateless-hash families keep no leaf history and are not
 modeled. Chain validity windows, expiry, and the stage-table recovery grants
 are not modeled; only release memory, restore and observation are.
 
 Code anchors:
-  - Sign transcribes internal/signerapp/signing/rotating_flow.go
-    SignRotatingWithContext (AwaitRestored before the account lock, chooseLeaf
-    from Releases.Get under it, audit write, Releases.Record) and chooseLeaf.
+  - Admit and Sign transcribe internal/signerapp/signing/rotating_flow.go
+    SignRotatingWithContext: Admit is AwaitRestored before the account lock,
+    Sign is chooseLeaf from ForLeafChoice under it, the audit write and
+    Releases.Record, and Refuse is the refusal when the recheck fails or the
+    signer locked.
+  - SawLocked and DelayedReset are the stage table worker observing the lock
+    and later running ReleaseMemory.Reset, with any number of steps between.
   - Land is the release (or any transaction) confirming: the live authorizer
     moves to the next stage (rule 1 reads it under the lock).
   - Unlock/RestoreBegin/RestoreApply/RestoreFail/Lock transcribe
@@ -69,6 +82,8 @@ See FORMAL_TLA_ROTATING_LEAF_RELEASE_MODEL.md for the prose companion.
 
 CONSTANTS
     WaitForRestore,   \* BOOLEAN: sign waits for the post-unlock restore
+    RecheckAtChoice,  \* BOOLEAN: the leaf choice rechecks the restore state
+    CutRestoreHolds,  \* BOOLEAN: a restore a lock cut short keeps accounts held
     SeqGuard,         \* BOOLEAN: observation clears only unchanged memory
     AuditMayFail,     \* BOOLEAN: the audit write may fail (best effort)
     AuditMayLose,     \* BOOLEAN: the log may drop an old entry
@@ -81,6 +96,7 @@ CONSTANTS
 Leaves == 0..(NLeaves - 1)
 Txs == 1..NTx
 None == 99  \* no stage (outside 0..MaxStage)
+NoTx == 0   \* no transaction admitted (outside Txs)
 
 \* A release is <<stage, leaf, tx>>; a memory entry within a stage is <<leaf, tx>>.
 
@@ -96,12 +112,15 @@ VARIABLES
     seq,         \* the memory's last-assigned sequence number
     obsStage,    \* a status pass's chain read awaiting its clear step, or None
     obsSeq,      \* the Seq captured before that read
+    admitted,    \* a sign past AwaitRestored, not yet at the leaf choice, or NoTx
+    resetDue,    \* the worker saw the lock and has not yet run its Reset
+    cut,         \* a restore a lock cut short has not yet returned
     lossy,       \* ghost: a loss source fired (audit write failed, entry lost, restore failed)
     bad,         \* ghost: a leaf was reused for a different transaction while a leaf was unused
     drift        \* ghost: a retried transaction signed on a different leaf
 
 vars == <<chain, phase, truth, audit, snap, memStage, memRecs, memSeq, seq,
-          obsStage, obsSeq, lossy, bad, drift>>
+          obsStage, obsSeq, admitted, resetDue, cut, lossy, bad, drift>>
 
 Init ==
     /\ chain = 0
@@ -115,6 +134,9 @@ Init ==
     /\ seq = 0
     /\ obsStage = None
     /\ obsSeq = 0
+    /\ admitted = NoTx
+    /\ resetDue = FALSE
+    /\ cut = FALSE
     /\ lossy = FALSE
     /\ bad = FALSE
     /\ drift = FALSE
@@ -146,14 +168,33 @@ ChooseLeaf(recs, tx) ==
 ----------------------------------------------------------------------------
 (* Signing and landing *)
 
-\* Sign releases a signature for transaction tx from the current stage. It
-\* needs an unlocked signer and, with WaitForRestore, a finished restore.
-\* The leaf comes from the memory only when the memory is about this stage.
-Sign(tx) ==
+\* Admit is a sign passing the wait, before the account lock. With
+\* WaitForRestore it needs a finished restore. The stage and the memory are read
+\* later, at the leaf choice, so anything can happen in between.
+Admit(tx) ==
+    /\ admitted = NoTx
     /\ chain < MaxStage
     /\ seq < MaxSeq
     /\ IF WaitForRestore THEN phase = "open" ELSE phase # "locked"
-    /\ LET prior == IF memStage = chain THEN memRecs ELSE {}
+    /\ admitted' = tx
+    /\ UNCHANGED <<chain, phase, truth, audit, snap, memStage, memRecs, memSeq,
+                   seq, obsStage, obsSeq, resetDue, cut, lossy, bad, drift>>
+
+\* Whether the sign may go on at the leaf choice. An unlocked signer is the
+\* release check. RecheckAtChoice adds the restore state, read with the memory.
+CanChoose ==
+    /\ chain < MaxStage
+    /\ seq < MaxSeq
+    /\ IF RecheckAtChoice THEN phase = "open" ELSE phase # "locked"
+
+\* Sign releases a signature for the admitted transaction from the current
+\* stage. The leaf comes from the memory only when the memory is about this
+\* stage.
+Sign ==
+    /\ admitted # NoTx
+    /\ CanChoose
+    /\ LET tx == admitted
+           prior == IF memStage = chain THEN memRecs ELSE {}
            leaf == ChooseLeaf(prior, tx)
            rel == <<chain, leaf, tx>>
            atStage == RecsAt(truth, chain)
@@ -172,7 +213,16 @@ Sign(tx) ==
            /\ memRecs' = prior \cup {<<leaf, tx>>}
            /\ seq' = seq + 1
            /\ memSeq' = seq + 1
-    /\ UNCHANGED <<chain, phase, snap, obsStage, obsSeq>>
+    /\ admitted' = NoTx
+    /\ UNCHANGED <<chain, phase, snap, obsStage, obsSeq, resetDue, cut>>
+
+\* Refuse ends a sign that may not go on. Nothing is signed or recorded.
+Refuse ==
+    /\ admitted # NoTx
+    /\ ~CanChoose
+    /\ admitted' = NoTx
+    /\ UNCHANGED <<chain, phase, truth, audit, snap, memStage, memRecs, memSeq,
+                   seq, obsStage, obsSeq, resetDue, cut, lossy, bad, drift>>
 
 \* Land is a released transaction confirming: the authorizer moves on.
 Land ==
@@ -180,7 +230,7 @@ Land ==
     /\ RecsAt(truth, chain) # {}
     /\ chain' = chain + 1
     /\ UNCHANGED <<phase, truth, audit, snap, memStage, memRecs, memSeq, seq,
-                   obsStage, obsSeq, lossy, bad, drift>>
+                   obsStage, obsSeq, admitted, resetDue, cut, lossy, bad, drift>>
 
 ----------------------------------------------------------------------------
 (* Lock, unlock and the audit restore *)
@@ -192,24 +242,58 @@ Lock ==
     /\ phase' = "locked"
     /\ memStage' = None
     /\ memRecs' = {}
+    /\ cut' = (cut \/ phase \in {"armed", "restoring"})
     /\ UNCHANGED <<chain, truth, audit, snap, memSeq, seq, obsStage, obsSeq,
-                   lossy, bad, drift>>
+                   admitted, resetDue, lossy, bad, drift>>
+
+\* SawLocked is the worker observing the lock. Its Reset runs later, as a
+\* separate step, and nothing stops an unlock and a sign from coming between.
+SawLocked ==
+    /\ phase = "locked"
+    /\ ~resetDue
+    /\ resetDue' = TRUE
+    /\ UNCHANGED <<chain, phase, truth, audit, snap, memStage, memRecs, memSeq,
+                   seq, obsStage, obsSeq, admitted, cut, lossy, bad, drift>>
+
+\* DelayedReset is that Reset landing: it forgets the memory and holds every
+\* account until the next restore, whatever the signer is doing by then.
+DelayedReset ==
+    /\ resetDue
+    /\ resetDue' = FALSE
+    /\ memStage' = None
+    /\ memRecs' = {}
+    /\ phase' = IF phase = "locked" THEN "locked" ELSE "armed"
+    /\ UNCHANGED <<chain, truth, audit, snap, memSeq, seq, obsStage, obsSeq,
+                   admitted, cut, lossy, bad, drift>>
+
+\* CutRestoreEnds is the cut restore returning, possibly after the next unlock.
+\* A lock while armed counts: the worker may have bound the restore to this
+\* session and not yet read the log.
+\* Its accounts stay held with CutRestoreHolds. Without it the restore opens
+\* their wait as it would for a failed derivation, and the memory is empty.
+CutRestoreEnds ==
+    /\ cut
+    /\ cut' = FALSE
+    /\ phase' = IF CutRestoreHolds \/ phase = "locked" THEN phase ELSE "open"
+    /\ UNCHANGED <<chain, truth, audit, snap, memStage, memRecs, memSeq, seq,
+                   obsStage, obsSeq, admitted, resetDue, lossy, bad, drift>>
 
 \* Unlock arms the memory: every account is held until the log is read.
 Unlock ==
     /\ phase = "locked"
     /\ phase' = "armed"
     /\ UNCHANGED <<chain, truth, audit, snap, memStage, memRecs, memSeq, seq,
-                   obsStage, obsSeq, lossy, bad, drift>>
+                   obsStage, obsSeq, admitted, resetDue, cut, lossy, bad, drift>>
 
 \* RestoreBegin reads the log (Restoring). With no entry for the account
 \* nothing is pending and the wait opens at once.
 RestoreBegin ==
     /\ phase = "armed"
+    /\ ~cut \* the worker runs one restore at a time
     /\ snap' = audit
     /\ phase' = IF audit = {} THEN "open" ELSE "restoring"
     /\ UNCHANGED <<chain, truth, audit, memStage, memRecs, memSeq, seq,
-                   obsStage, obsSeq, lossy, bad, drift>>
+                   obsStage, obsSeq, admitted, resetDue, cut, lossy, bad, drift>>
 
 \* The audited release for the account lists every leaf the log holds for
 \* the stage it names: the highest stage in the snapshot.
@@ -236,17 +320,18 @@ RestoreApply ==
     /\ seq' = seq + 1
     /\ memSeq' = seq + 1
     /\ phase' = "open"
-    /\ UNCHANGED <<chain, truth, audit, snap, obsStage, obsSeq, lossy, bad, drift>>
+    /\ UNCHANGED <<chain, truth, audit, snap, obsStage, obsSeq, admitted, resetDue, cut,
+                   lossy, bad, drift>>
 
-\* RestoreFail: the stage addresses could not be derived, or the restore was
-\* cancelled. The wait opens (Restored/RestoredAll) without a record.
+\* RestoreFail: the stage addresses could not be derived, for a reason other
+\* than a lock. The wait opens (Restored/RestoredAll) without a record.
 RestoreFail ==
     /\ RestoreMayFail
     /\ phase = "restoring"
     /\ phase' = "open"
     /\ lossy' = TRUE
     /\ UNCHANGED <<chain, truth, audit, snap, memStage, memRecs, memSeq, seq,
-                   obsStage, obsSeq, bad, drift>>
+                   obsStage, obsSeq, admitted, resetDue, cut, bad, drift>>
 
 \* AuditLose: the log rotated past an old entry, or the file lost it.
 AuditLose ==
@@ -255,7 +340,7 @@ AuditLose ==
            /\ audit' = audit \ {r}
            /\ lossy' = TRUE
     /\ UNCHANGED <<chain, phase, truth, snap, memStage, memRecs, memSeq, seq,
-                   obsStage, obsSeq, bad, drift>>
+                   obsStage, obsSeq, admitted, resetDue, cut, bad, drift>>
 
 ----------------------------------------------------------------------------
 (* The status pass *)
@@ -266,7 +351,7 @@ Observe ==
     /\ obsStage' = chain
     /\ obsSeq' = seq
     /\ UNCHANGED <<chain, phase, truth, audit, snap, memStage, memRecs, memSeq,
-                   seq, lossy, bad, drift>>
+                   seq, admitted, resetDue, cut, lossy, bad, drift>>
 
 \* ApplyObservation is RotatingStatus after the read: an entry whose stage is
 \* not the one the chain read showed is cleared, unless (SeqGuard) a release
@@ -279,13 +364,18 @@ ApplyObservation ==
             /\ memRecs' = {}
        ELSE UNCHANGED <<memStage, memRecs>>
     /\ UNCHANGED <<chain, phase, truth, audit, snap, memSeq, seq, obsSeq,
-                   lossy, bad, drift>>
+                   admitted, resetDue, cut, lossy, bad, drift>>
 
 ----------------------------------------------------------------------------
 Next ==
-    \/ \E tx \in Txs : Sign(tx)
+    \/ \E tx \in Txs : Admit(tx)
+    \/ Sign
+    \/ Refuse
     \/ Land
     \/ Lock
+    \/ CutRestoreEnds
+    \/ SawLocked
+    \/ DelayedReset
     \/ Unlock
     \/ RestoreBegin
     \/ RestoreApply
@@ -306,6 +396,9 @@ TypeOK ==
     /\ audit \subseteq truth
     /\ memStage \in ({None} \cup (0..MaxStage))
     /\ obsStage \in ({None} \cup (0..MaxStage))
+    /\ admitted \in ({NoTx} \cup Txs)
+    /\ resetDue \in BOOLEAN
+    /\ cut \in BOOLEAN
     /\ memSeq \in 0..MaxSeq
     /\ seq \in 0..MaxSeq
     /\ lossy \in BOOLEAN /\ bad \in BOOLEAN /\ drift \in BOOLEAN

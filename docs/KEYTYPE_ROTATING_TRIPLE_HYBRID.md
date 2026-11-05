@@ -28,6 +28,10 @@ scheme. Sections 2 through 9 compare the two released variants and keep
 their exact layouts; section 11 specifies where SLH-DSA differs, with the
 frozen contract in [ARCH_CRYPTO.md](ARCH_CRYPTO.md#rotating-slh-dsa-triple)
 and the qualification record in [SLHDSA_EVALUATION.md](SLHDSA_EVALUATION.md).
+
+A fourth implementation, `aplane.rotating-triple-wotsc.v1`, is unreleased and
+specified separately in
+[KEYTYPE_ROTATING_TRIPLE_WOTSC.md](KEYTYPE_ROTATING_TRIPLE_WOTSC.md).
 Its implementation is `lsig/rotatingtripleslhdsa/`, with the primitive in
 `internal/crypto/slhdsa/`. It was first released in v0.45.0.
 
@@ -358,7 +362,9 @@ wire contract lives in [ARCH_SIGNING.md](ARCH_SIGNING.md#rotating-accounts-rotat
    current round, and at least 10 rounds remain before `last_valid`. It proves
    the successor opens (`CheckStageOpens`), signs, verifies, writes a
    `ROTATING_RELEASE` audit entry (account, TxID, stage, `last_valid`, tree and
-   leaf index), records the release in memory and responds.
+   leaf index), records the release in memory and responds. It refuses the
+   release if the signer locked since approval, the request was cancelled or
+   the key was removed.
 3. **Open test.** `CheckStageOpens` test-signs the target stage locally before
    any spend signature is released. Both variants sign the SHA-256 hash of
    their derivation label followed by ` stage open test`: a fixed label, not a
@@ -854,7 +860,7 @@ The 41 units per chain step are 6 unit-cost instructions and one SHA-256.
 | SLH-DSA construction against the NIST ACVP vectors on the standard shape; rescaled golden vectors; digest split and leaf-index coverage; tampering and cross-shape rejection | `internal/crypto/slhdsa/slhdsa_test.go` |
 | SLH-DSA stage build, parse, salt, offsets, argument literals pinned to the parameter set, and cost ceiling | `lsig/rotatingtripleslhdsa/stage/program_test.go`, `template_dump_test.go` |
 | SLH-DSA derivation golden vectors, signing, verification and argument layout | `lsig/rotatingtripleslhdsa/signerops/keys_test.go`, `signerreg/register_test.go` |
-| SLH-DSA TEAL verifier run offline in a test interpreter against `slhdsa.Verify` on both program shapes: valid signatures (eight messages on the rescaled shape, one on the full-height shape), a bit flipped at the start of every 16-byte node of the first signature on both shapes, other message, other key, wrong lengths, exchanged layers, and the full-width final root comparison | `lsig/rotatingtripleslhdsa/stage/verifier_equiv_test.go`, `avmsim_test.go` |
+| SLH-DSA TEAL verifier run offline in a test interpreter against `slhdsa.Verify` on both program shapes: valid signatures (eight messages on the rescaled shape, one on the full-height shape), a bit flipped at the start of every 16-byte node of the first signature on both shapes, other message, other key, wrong lengths, exchanged layers, and the full-width final root comparison | `lsig/rotatingtripleslhdsa/stage/verifier_equiv_test.go`, `lsig/rotatingfamily/avmsim` |
 | SLH-DSA on-chain acceptance and rejection, cost model against node traces on both program shapes, six-transaction group | `test/integration/rotating_slhdsa_onchain_test.go` |
 | SLH-DSA preparation ceilings, bounded discovery, post-sign chain recheck, restored releases without leaf history; lifecycle benchmark | `internal/signerapp/signing/rotating_slhdsa_test.go`, `rotating_slhdsa_bench_test.go` |
 | XMSS stage build, parse, salt, offsets and cost | `lsig/rotatingtriplexmss/stage/program_test.go`, `template_dump_test.go` |

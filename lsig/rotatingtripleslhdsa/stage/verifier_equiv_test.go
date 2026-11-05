@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/crypto/slhdsa"
+	"github.com/aplane-algo/aplane/lsig/rotatingfamily/avmsim"
 )
 
 // verifierRig runs a hypertree shape's TEAL verifier in the interpreter
@@ -20,10 +21,10 @@ type verifierRig struct {
 	t      *testing.T
 	shape  hypertree
 	sk     *slhdsa.SigningKey
-	prog   *avmProgram
+	prog   *avmsim.Program
 	hooked int
 	// lastEqual is the operand pair of the most recent == the program ran.
-	lastEqual [2]avmValue
+	lastEqual [2]avmsim.Value
 }
 
 func newVerifierRig(t *testing.T, shape hypertree, tag byte) *verifierRig {
@@ -40,7 +41,7 @@ func newVerifierRig(t *testing.T, shape hypertree, tag byte) *verifierRig {
 	for i := range keys.Falcon {
 		keys.Falcon[i] = tag + byte(i%251)
 	}
-	prog, err := avmAssemble(substitute(shape.teal, keys))
+	prog, err := avmsim.Assemble(substitute(shape.teal, keys))
 	if err != nil {
 		t.Fatalf("assemble: %v", err)
 	}
@@ -72,18 +73,18 @@ func (r *verifierRig) teal(txid, sig []byte) bool {
 func (r *verifierRig) tealArgs(txid []byte, slhArgs [][]byte) bool {
 	r.t.Helper()
 	args := append(slices.Clone(slhArgs), []byte("ed25519 signature"), []byte("falcon signature"))
-	ok, err := r.prog.run(avmTxn{
+	ok, err := r.prog.Run(avmsim.Txn{
 		TxID:       txid,
 		Sender:     bytes.Repeat([]byte{1}, 32),
 		RekeyTo:    bytes.Repeat([]byte{2}, 32),
 		FirstValid: 1000, LastValid: 1100,
 		CloseRemainderTo: make([]byte, 32),
-	}, args, avmHooks{
+	}, args, avmsim.Hooks{
 		Ed25519: func(_, _, _ []byte) bool { r.hooked++; return true },
 		Falcon:  func(_, _, _ []byte) bool { r.hooked++; return true },
-		Equal:   func(a, b avmValue) { r.lastEqual = [2]avmValue{a, b} },
+		Equal:   func(a, b avmsim.Value) { r.lastEqual = [2]avmsim.Value{a, b} },
 	})
-	var unsupported *avmUnsupportedError
+	var unsupported *avmsim.UnsupportedError
 	if errors.As(err, &unsupported) {
 		// An interpreter limit is not a rejection: reading it as one would let
 		// every negative case pass on a path the interpreter cannot run.
@@ -96,7 +97,7 @@ func (r *verifierRig) tealArgs(txid []byte, slhArgs [][]byte) bool {
 	return ok
 }
 
-func isRejection(err error) bool { return err == errAVMReject }
+func isRejection(err error) bool { return err == avmsim.ErrReject }
 
 func (r *verifierRig) goVerify(txid, sig []byte) bool {
 	return r.shape.params.Verify(&r.sk.Public, txid, sig, nil) == nil
@@ -157,7 +158,7 @@ func TestVerifierMatchesPrimitive(t *testing.T) {
 			// from a truncated one (a wrong root still differs in byte 0), so
 			// pin the operands of the last comparison directly.
 			r.teal(firstID, first)
-			if got, want := r.lastEqual[0].bytes, r.lastEqual[1].bytes; len(got) != slhdsa.N || !bytes.Equal(got, want) || !bytes.Equal(want, r.sk.Public.Root[:]) {
+			if got, want := r.lastEqual[0].Bytes(), r.lastEqual[1].Bytes(); len(got) != slhdsa.N || !bytes.Equal(got, want) || !bytes.Equal(want, r.sk.Public.Root[:]) {
 				t.Fatalf("final comparison operands = %x, %x; want the full %d-byte root %x", got, want, slhdsa.N, r.sk.Public.Root)
 			}
 			if r.hooked == 0 {
@@ -207,78 +208,5 @@ func TestVerifierMatchesPrimitive(t *testing.T) {
 				t.Fatal("swapped hypertree layers accepted")
 			}
 		})
-	}
-}
-
-// TestAVMSimOpcodes pins the interpreter's reading of the opcodes whose
-// semantics are easy to get backwards, so a verifier result is evidence about
-// the verifier and not about the interpreter.
-func TestAVMSimOpcodes(t *testing.T) {
-	run := func(src string) (bool, error) {
-		p, err := avmAssemble(src)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return p.run(avmTxn{}, nil, avmHooks{})
-	}
-	pass := []struct{ name, src string }{
-		{"extract zero length reads to the end", "pushbytes 0x010203\nextract 1 0\npushbytes 0x0203\n==\nreturn"},
-		{"extract3", "pushbytes 0x01020304\npushint 1\npushint 2\nextract3\npushbytes 0x0203\n==\nreturn"},
-		{"replace2 overwrites in place", "pushbytes 0x01020304\npushbytes 0xaabb\nreplace2 1\npushbytes 0x01aabb04\n==\nreturn"},
-		{"select picks the second when true", "pushint 7\npushint 9\npushint 1\nselect\npushint 9\n==\nreturn"},
-		{"select picks the first when false", "pushint 7\npushint 9\npushint 0\nselect\npushint 7\n==\nreturn"},
-		{"shl wraps", "pushint 0x8000000000000001\npushint 1\nshl\npushint 2\n==\nreturn"},
-		{"switch falls through out of range", "pushint 5\nswitch a b\npushint 1\nreturn\na:\npushint 0\nreturn\nb:\npushint 0\nreturn"},
-		{"switch jumps", "pushint 1\nswitch a b\npushint 0\nreturn\na:\npushint 0\nreturn\nb:\npushint 1\nreturn"},
-		{"getbyte and setbyte", "pushbytes 0x0102\npushint 1\npushint 9\nsetbyte\npushint 1\ngetbyte\npushint 9\n==\nreturn"},
-		{"subroutine", "callsub f\nreturn\nf:\npushint 1\nretsub"},
-		{"btoi", "pushbytes 0x0102\nbtoi\npushint 258\n==\nreturn"},
-	}
-	for _, tc := range pass {
-		if ok, err := run(tc.src); !ok || err != nil {
-			t.Errorf("%s: ok %v, err %v", tc.name, ok, err)
-		}
-	}
-	faults := []struct{ name, src string }{
-		{"add overflow", "pushint 18446744073709551615\npushint 1\n+\nreturn"},
-		{"sub underflow", "pushint 1\npushint 2\n-\nreturn"},
-		{"shift by 64", "pushint 1\npushint 64\nshr\nreturn"},
-		{"concat past 4096", "pushint 4096\nbzero\npushbytes 0x00\nconcat\nreturn"},
-		{"extract out of range", "pushbytes 0x01\nextract 0 2\nreturn"},
-		{"replace2 out of range", "pushbytes 0x01\npushbytes 0x0203\nreplace2 0\nreturn"},
-		{"type confusion", "pushbytes 0x01\npushint 1\n==\nreturn"},
-		{"unknown opcode", "bitlen\nreturn"},
-	}
-	for _, tc := range faults {
-		if ok, err := run(tc.src); ok || err == nil {
-			t.Errorf("%s: ok %v, err %v, want a fault", tc.name, ok, err)
-		}
-	}
-	// An opcode the interpreter does not know is not an AVM fault: it must
-	// surface as unsupported so a harness can refuse to read it as a rejection.
-	_, err := run("bitlen\nreturn")
-	var unsupported *avmUnsupportedError
-	if !errors.As(err, &unsupported) {
-		t.Errorf("unknown opcode error = %v, want an unsupported-by-the-interpreter error", err)
-	}
-	// Literal formats the interpreter does not understand are likewise
-	// unsupported, not faults: base64 and string byte literals, named and
-	// malformed integer constants, and instructions missing an immediate.
-	for _, src := range []string{
-		"pushint 1\nb nowhere",
-		"global Round\nreturn",
-		"pushbytes base64(AQ==)\nbtoi\nreturn",
-		`pushbytes "a"` + "\nbtoi\nreturn",
-		"pushbytes 0xZZ\nreturn",
-		"pushbytes 0x0\nreturn",
-		"pushint NoOp\nreturn",
-		"pushint 18446744073709551616\nreturn",
-		"pushint\nreturn",
-		"pushbytes\nreturn",
-		"callsub\nreturn",
-	} {
-		if _, err := run(src); !errors.As(err, &unsupported) {
-			t.Errorf("%q: error = %v, want unsupported", src, err)
-		}
 	}
 }

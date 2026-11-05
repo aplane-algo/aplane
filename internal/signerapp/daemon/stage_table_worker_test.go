@@ -8,9 +8,11 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -21,6 +23,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto/rotatinghybrid"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/keys"
+	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/txnutil"
 	"github.com/aplane-algo/aplane/lsig/rotatingtriplewots/signerops"
@@ -488,9 +491,194 @@ func TestWorkerPublishesRotatingStatus(t *testing.T) {
 	// After a restart the memory is empty; the unlock path rebuilds it from
 	// the audit log with verified addresses.
 	server.rotatingReleases.Reset()
-	server.rebuildReleaseMemory(context.Background(), ir)
+	server.rebuildReleaseMemory(context.Background(), ir, ir.LockGeneration())
 	rec, ok := server.rotatingReleases.Get(account.String())
 	if !ok || rec.Stage != 0 || rec.TxID != resp.TxID || rec.StageAddr != account || rec.NextAddr != stage1 {
 		t.Fatalf("rebuilt release memory = %+v, %v", rec, ok)
 	}
+}
+
+// A real lock has to wait for a sign in progress: that is what makes "no copy
+// of a seed outlives the unlocked state" true for the sign path.
+func TestLockWaitsForTheRotatingSignPath(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	ir := server.productRuntime()
+	deps := server.rotatingDeps(ir)
+	if deps.KeyUse == nil {
+		t.Fatal("the rotating sign path isn't registered as a key user")
+	}
+	ctx, release := deps.KeyUse(context.Background())
+	locked := make(chan struct{})
+	go func() {
+		ir.Lock()
+		close(locked)
+	}()
+	select {
+	case <-ctx.Done():
+	case <-time.After(5 * time.Second):
+		t.Fatal("the lock didn't cancel the sign in progress")
+	}
+	select {
+	case <-locked:
+		t.Fatal("the lock finished while the sign still held the seed")
+	case <-time.After(100 * time.Millisecond):
+	}
+	release()
+	select {
+	case <-locked:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the lock didn't finish after the sign let go")
+	}
+}
+
+func releaseMemoryHeld(server *Signer, account string) bool {
+	_, restored := server.rotatingReleases.ForLeafChoice(account)
+	return !restored
+}
+
+// A restore a lock cut short may be missing releases. The wait has to stay closed
+// whichever generation the restore was given: one read just after the lock
+// matches the current one, so the generation can't be the only thing consulted.
+func TestRestoreEndedByALockStaysHeld(t *testing.T) {
+	for _, mode := range []string{"generation from before the lock", "generation from after the lock", "recovery, which moves no generation"} {
+		t.Run(mode, func(t *testing.T) {
+			server, cleanup := setupTestSigner(t)
+			defer cleanup()
+			ir := server.productRuntime()
+			account, _ := installRotatingKey(t, server)
+			auditPath := filepath.Join(t.TempDir(), "audit.log")
+			auditLog, err := NewAuditLogger(auditPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = auditLog.Close() }()
+			server.auditLog = auditLog
+			if err := (&signingAuditLogger{log: auditLog}).LogRotatingRelease(account.String(), "TXID", 0, 1000, 0, 0); err != nil {
+				t.Fatal(err)
+			}
+
+			server.rotatingReleases.Reset()
+			generation := ir.LockGeneration()
+			if mode == "recovery, which moves no generation" {
+				ir.SetRecovery()
+			} else {
+				ir.Lock()
+			}
+			if mode == "generation from after the lock" {
+				generation = ir.LockGeneration()
+			}
+			if server.rebuildReleaseMemory(context.Background(), ir, generation) {
+				t.Fatal("a restore on a signer that can't sign reported that it finished")
+			}
+			if !releaseMemoryHeld(server, account.String()) {
+				t.Fatal("a restore ended by a lock opened the wait")
+			}
+		})
+	}
+}
+
+// A restore with nothing to do can't be interrupted, so only the generation shows
+// that it served an earlier session.
+func TestRestoreFromAnEarlierSessionStaysHeld(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	ir := server.productRuntime()
+	const account = "ACCOUNT"
+	server.rotatingReleases.Reset()
+	generation := ir.LockGeneration()
+	ir.Lock()
+	ir.SetUnlocked()
+	if server.rebuildReleaseMemory(context.Background(), ir, generation) {
+		t.Fatal("a restore for an earlier session reported that it finished")
+	}
+	if !releaseMemoryHeld(server, account) {
+		t.Fatal("a restore for an earlier session opened the wait")
+	}
+}
+
+// Recovery can start after the restore's context exists. It cancels nothing and
+// moves no generation, and the only sign of it is the refused key use.
+func TestRecoveryDuringARestoreKeepsTheAccountHeld(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	ir := server.productRuntime()
+	account, _ := installRotatingKey(t, server)
+	generation := ir.LockGeneration()
+	ctx, cancel := ir.LockCancelContext(context.Background())
+	defer cancel()
+	session := ir.SnapshotKeySession()
+	server.rotatingReleases.Reset()
+	svc := &signersigning.Service{Planner: server.newPlannerWithAudit(nil), Rotating: server.rotatingDeps(ir)}
+
+	ir.SetRecovery()
+	if ctx.Err() != nil || ir.LockGeneration() != generation {
+		t.Fatal("recovery moved something this test relies on it not moving")
+	}
+	n, err := svc.RebuildReleaseMemory(ctx, session, generation, []signersigning.AuditedRelease{{
+		Account: account.String(), Stage: 0, TxID: "OLD", LastValid: 1000,
+		Leaves: []signersigning.LeafRelease{{Tree: 0, Index: 0, TxID: "OLD", LastValid: 1000}},
+	}}, signersigning.StageFillOptions{KeyUse: ir.KeyUseContext})
+	if n != 0 || !errors.Is(err, signersigning.ErrRestoreInterrupted) {
+		t.Fatalf("restore: rebuilt %d, err %v", n, err)
+	}
+	if !releaseMemoryHeld(server, account.String()) {
+		t.Fatal("recovery during a restore opened the wait")
+	}
+}
+
+func TestFinishedRestoreOpensTheWait(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	ir := server.productRuntime()
+	const account = "ACCOUNT"
+	server.rotatingReleases.Reset()
+	if !server.rebuildReleaseMemory(context.Background(), ir, ir.LockGeneration()) {
+		t.Fatal("a restore with nothing to do didn't finish")
+	}
+	if releaseMemoryHeld(server, account) {
+		t.Fatal("a finished restore left the account held")
+	}
+}
+
+// A lock and unlock between two worker passes leave the state looking unchanged.
+// The generation has to show the worker that the memory needs restoring.
+func TestWorkerRestoresAfterALockItNeverSaw(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	ir := server.productRuntime()
+	const account = "ACCOUNT"
+	// Held from the start, so the wait below can only end with the worker's own
+	// restore, after its startup Reset.
+	server.rotatingReleases.Reset()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		server.runStageTableWorker(ctx)
+	}()
+	defer func() {
+		cancel()
+		<-done
+	}()
+	eventually := func(what string, ok func() bool) {
+		t.Helper()
+		for deadline := time.Now().Add(10 * time.Second); !ok(); {
+			if time.Now().After(deadline) {
+				t.Fatalf("timed out waiting: %s", what)
+			}
+			ir.WakeStageWork()
+			time.Sleep(5 * time.Millisecond)
+		}
+	}
+	eventually("the first restore", func() bool { return !releaseMemoryHeld(server, account) })
+
+	server.rotatingReleases.Record(signersigning.ReleaseRecord{Account: account, Stage: 3, TxID: "PLANTED"})
+	ir.Lock()
+	ir.SetUnlocked()
+	eventually("the restore after the unseen lock", func() bool {
+		rec, _ := server.rotatingReleases.ForLeafChoice(account)
+		return rec.TxID != "PLANTED" && !releaseMemoryHeld(server, account)
+	})
 }

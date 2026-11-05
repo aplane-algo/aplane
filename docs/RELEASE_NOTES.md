@@ -7,6 +7,29 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## Rotating signatures stop at lock
+
+- A lock during rotating signing could neither stop the signature nor wait for the
+  seed to be cleared. Locking now cancels the request and waits for it, and the signer
+  refuses to release a signature if it locked, the request was cancelled or the key
+  was removed. Slow SLH-DSA signing already checked this; WOTS, XMSS and WOTS+C did not.
+- A leaf-family spend could reuse a one-time leaf, with unused leaves left and nothing
+  reported, if a delayed reset of the release memory landed after the spend passed its
+  restore check. The spend now fails with an error and can be retried.
+- A restore that a lock cut short no longer lets spends through with releases missing,
+  however quickly the signer is unlocked again. Its accounts stay held until the next
+  restore.
+
+## Rotating WOTS+C key type
+
+- New library key type `aplane.rotating-triple-wotsc.v1`: a rotating account whose
+  stages require Falcon-1024, Ed25519 and a signature from a tree of 64 WOTS+C keys.
+  A spend needs 3 transactions and a 628-byte hash signature, the smallest of the
+  rotating types. Enable it, then generate an account as for the others.
+- WOTS+C isn't a standard and this construction hasn't been independently reviewed.
+  The key type isn't frozen yet, so don't hold real funds in it. See
+  [KEYTYPE_ROTATING_TRIPLE_WOTSC.md](KEYTYPE_ROTATING_TRIPLE_WOTSC.md).
+
 ## Lost signer notifications are shown
 
 - If apadmin, apconsole's signer pane, or apapprover can't keep up with the

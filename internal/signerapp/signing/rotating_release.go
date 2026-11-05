@@ -5,6 +5,7 @@ package signing
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 
@@ -254,6 +255,19 @@ func (m *ReleaseMemory) Get(account string) (ReleaseRecord, bool) {
 	return r, ok
 }
 
+// ForLeafChoice returns the account's entry and whether a leaf may be chosen
+// from it. The two are read together, so a Reset can't fall between them: a
+// memory that is held, or still restoring this account, may be missing the
+// stage's releases, and choosing from it could reuse a leaf.
+func (m *ReleaseMemory) ForLeafChoice(account string) (ReleaseRecord, bool) {
+	if m == nil {
+		return ReleaseRecord{}, true
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.byAccount[account], !m.armed && !m.pending[account]
+}
+
 // Clear forgets the account's entry.
 func (m *ReleaseMemory) Clear(account string) {
 	if m == nil {
@@ -376,12 +390,22 @@ type AuditedRelease struct {
 	Leaves []LeafRelease
 }
 
+// ErrRestoreInterrupted reports a restore that a lock or cancellation stopped.
+// Accounts it didn't reach are still held and their history is still missing.
+var ErrRestoreInterrupted = errors.New("release restore interrupted")
+
 // RebuildReleaseMemory fills the release memory from audit entries, deriving
 // the verified stage and successor addresses for each account inside a
 // KeyUse window. Entries for accounts the signer no longer holds are
 // skipped. It returns the number of records rebuilt and the first failure,
-// if any; a failure for one account does not stop the others.
-func (s *Service) RebuildReleaseMemory(ctx context.Context, session *keystore.KeySession, entries []AuditedRelease, opts StageFillOptions) (int, error) {
+// if any; a failure for one account does not stop the others and opens that
+// account's wait. A lock or cancellation is different: it stops the restore and
+// leaves the accounts it didn't reach held, because a quick unlock could
+// otherwise let a spend choose a leaf with their history missing. It then
+// returns ErrRestoreInterrupted, and only a restore that returns without it has
+// finished. generation is the session the restore serves, read before ctx and
+// session were made: a lock after that point has to count as interrupting it.
+func (s *Service) RebuildReleaseMemory(ctx context.Context, session *keystore.KeySession, generation uint64, entries []AuditedRelease, opts StageFillOptions) (int, error) {
 	deps, depErr := s.rotatingDeps()
 	if depErr != nil || deps.Releases == nil {
 		return 0, nil
@@ -393,10 +417,18 @@ func (s *Service) RebuildReleaseMemory(ctx context.Context, session *keystore.Ke
 	for _, e := range entries {
 		accounts = append(accounts, e.Account)
 	}
+	// A lock advances the generation before it cancels anything, and a key-use
+	// context can be cancelled before ctx is, so ctx alone can look alive.
+	// Recovery moves neither, so the signer's state is checked as well.
+	interrupted := func() bool {
+		return ctx.Err() != nil ||
+			(deps.LockGeneration != nil && deps.LockGeneration() != generation) ||
+			(s.IsUnlocked != nil && !s.IsUnlocked())
+	}
 	deps.Releases.Restoring(accounts)
 	for _, e := range entries {
-		if ctx.Err() != nil {
-			break
+		if interrupted() {
+			return rebuilt, ErrRestoreInterrupted
 		}
 		if _, held := snapshot.KeyFiles[e.Account]; !held {
 			deps.Releases.Restored(e.Account)
@@ -406,6 +438,9 @@ func (s *Service) RebuildReleaseMemory(ctx context.Context, session *keystore.Ke
 		if err != nil {
 			if firstErr == nil {
 				firstErr = fmt.Errorf("rotating account %s: %w", e.Account, err)
+			}
+			if errors.Is(err, ErrRestoreInterrupted) || interrupted() {
+				return rebuilt, ErrRestoreInterrupted
 			}
 			deps.Releases.Restored(e.Account)
 			continue
@@ -429,8 +464,10 @@ func (s *Service) releaseAddresses(ctx context.Context, account string, stage ui
 	if err != nil {
 		return types.Address{}, types.Address{}, err
 	}
+	// The deriver reports a cut as a short result, not an error: a lock or
+	// recovery refused the key use. That isn't a failure of this account.
 	if len(addrs) != 2 {
-		return types.Address{}, types.Address{}, context.Canceled
+		return types.Address{}, types.Address{}, ErrRestoreInterrupted
 	}
 	return addrs[0], addrs[1], nil
 }

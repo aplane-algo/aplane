@@ -432,6 +432,8 @@ Examples:
 - `aplane.rotating-triple-wots.v1` (Falcon-1024 + WOTS + Ed25519 stages)
 - `aplane.rotating-triple-xmss.v1` (Falcon-1024 + RFC 8391 XMSS + Ed25519
   stages; one XMSS tree per 1,024 stages, 64 leaves per stage)
+- `aplane.rotating-triple-wotsc.v1` (Falcon-1024 + WOTS+C + Ed25519 stages; each
+  stage is its own tree of 64 leaves)
 
 Characteristics:
 - the account address is fixed while its authorizing program changes on every
@@ -461,14 +463,19 @@ Typical code areas:
   `lsig/rotatingtriplexmss/` (its stage program, the XMSS half of the stage
   ops with the public tree cache, and its record layout); `tools/xmssoracle`
   regenerates the package's vectors from an independent implementation
+- `internal/crypto/wotsc` (the WOTS+C tree primitive) and
+  `lsig/rotatingtriplewotsc/` (its stage program, the WOTS+C half of the stage
+  ops, and its record layout); `tools/wotscoracle` regenerates the package's
+  vectors from a second implementation
 - `internal/crypto/slhdsa` (the SLH-DSA primitive, parametric in the
   hypertree shape) and `lsig/rotatingtripleslhdsa/` (its stage program for the
   built-in hypertree height, the SLH-DSA half of the stage ops, and its record
   layout)
-- `lsig/rotatingfamily/` (what the three share: `signerreg` registers a key
+- `lsig/rotatingfamily/` (what they share: `signerreg` registers a key
   type from its descriptor and provides the generator, `stagesign` the
   stage's Ed25519 and Falcon-1024 half, `stageprog` the stage program's salt
-  search and strict parse, and `rotatingtest` the contract suite)
+  search and strict parse, `rotatingtest` the contract suite, and `avmsim` the
+  offline AVM interpreter for verifier tests)
 
 These are protocol-level key types, not templates. A new rotating stage
 scheme is a new key type on the same flow:

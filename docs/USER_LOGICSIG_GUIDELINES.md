@@ -816,7 +816,16 @@ total at most 5887 bytes, which needs a six-transaction group; the
 rekey away from sender, forbids ALGO close and caps the validity span at 100.
 See [USER_KEYTYPES.md](USER_KEYTYPES.md#rotating-triple-slh-dsa-accounts).
 
-Stage programs of all three rotating types are assembled locally rather than
+#### `aplane.rotating-triple-wotsc.v1`
+
+Compiled opt-in rotating account, requiring Falcon-1024, Ed25519 and a signature
+from a tree of 64 WOTS+C keys over the TxID. WOTS+C isn't a standard construction.
+Same transaction permissions and rotation guards as XMSS, with no leaf range,
+because each stage is its own tree. Signature arguments total at most 2115 bytes,
+which needs a three-transaction group; every accepted run costs exactly 15721 opcode
+units. See [USER_KEYTYPES.md](USER_KEYTYPES.md#rotating-triple-wotsc-accounts).
+
+Stage programs of every rotating type are assembled locally rather than
 through algod, using the TEAL v13 assembler's salt rule, and are cross-checked
 against the stock assembler in tests. Transaction policy beyond those checks
 lives in signer approval and local signer policy.

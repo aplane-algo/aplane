@@ -83,8 +83,8 @@ type Runtime struct {
 	stageTables *stagetable.Store
 	stageWork   chan struct{}
 
-	// Key users are background holders of loaded key material (the stage
-	// table worker). Lock cancels their context and waits for them to
+	// Key users are holders of loaded key material outside the session (the
+	// stage table worker and the rotating sign path). Lock cancels their context and waits for them to
 	// release before it clears the session, so no copy of a seed outlives
 	// the unlocked state.
 	keyUseMu     sync.Mutex
@@ -1102,7 +1102,7 @@ func (ir *Runtime) RotatingNotes() []string {
 // derivation.
 const keyUseDrainWarnAfter = 5 * time.Second
 
-// KeyUseContext registers a background holder of loaded key material. The
+// KeyUseContext registers a holder of loaded key material. The
 // returned context is cancelled the moment the signer locks, and release must
 // be called once the caller holds no key material; Lock waits for every
 // registered user to release before it clears the session. While the signer

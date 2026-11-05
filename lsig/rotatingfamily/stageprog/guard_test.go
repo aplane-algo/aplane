@@ -9,6 +9,7 @@ import (
 
 	slhstage "github.com/aplane-algo/aplane/lsig/rotatingtripleslhdsa/stage"
 	wotsstage "github.com/aplane-algo/aplane/lsig/rotatingtriplewots/stage"
+	wotscstage "github.com/aplane-algo/aplane/lsig/rotatingtriplewotsc/stage"
 	xmssstage "github.com/aplane-algo/aplane/lsig/rotatingtriplexmss/stage"
 )
 
@@ -22,7 +23,7 @@ import (
 //	txn LastValid; txn FirstValid; -; pushint 100; <=; assert  window <= 100
 //
 // The templates are frozen and define addresses, so the guard cannot be
-// shared code; this test keeps the three copies identical.
+// shared code; this test keeps the copies identical.
 var rotationGuard = []byte{
 	0x0d,
 	0x31, 0x20, 0x32, 0x03, 0x13, 0x44,
@@ -44,16 +45,21 @@ func TestEveryStageProgramOpensWithTheRotationGuard(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	wotsc, err := wotscstage.Build(&wotscstage.PublicKeys{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	for name, program := range map[string][]byte{
 		"WOTS":    wots.Bytecode,
 		"XMSS":    xmss.Bytecode,
 		"SLH-DSA": slh.Bytecode,
+		"WOTS+C":  wotsc.Bytecode,
 	} {
 		if !bytes.HasPrefix(program, rotationGuard) {
 			t.Errorf("the %s stage program does not open with the rotation guard: % x", name, program[:len(rotationGuard)])
 		}
 	}
-	if wotsstage.MaxValidityWindow != 100 || xmssstage.MaxValidityWindow != 100 || slhstage.MaxValidityWindow != 100 {
+	if wotsstage.MaxValidityWindow != 100 || xmssstage.MaxValidityWindow != 100 || slhstage.MaxValidityWindow != 100 || wotscstage.MaxValidityWindow != 100 {
 		t.Error("a stage package's validity window differs from the guard's 100 rounds")
 	}
 }
