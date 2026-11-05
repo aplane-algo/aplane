@@ -31,7 +31,7 @@ import (
 )
 
 // GetValidKeyTypes returns all valid key types that can be generated.
-// This returns versioned types (e.g., "aplane.falcon1024.v1") not family names.
+// LogicSig entries use concrete versioned types, not routing family names.
 func GetValidKeyTypes() []string {
 	return GetValidKeyTypesWithActivated(nil)
 }
@@ -52,7 +52,7 @@ func GetValidKeyTypesWithActivated(activated []string) []string {
 		}
 	}
 
-	// Add versioned LogicSig DSA types (e.g., "aplane.falcon1024.v1")
+	// Add eligible versioned LogicSig DSA types.
 	for _, keyType := range logicsigdsa.GetKeyTypes() {
 		if keyTypeEnabledForGeneration(keyType, activatedSet) {
 			types = appendKeyType(types, seen, keyType)
@@ -133,7 +133,7 @@ func IsValidKeyTypeWithActivated(keyType string, activated []string) bool {
 // true.
 func SupportsMnemonicImport(keyType string) bool {
 	keyType = strings.ToLower(strings.TrimSpace(keyType))
-	if keyType == "" {
+	if keyType == "" || keytypecatalog.IsInternalOnly(keyType) {
 		return false
 	}
 
@@ -172,6 +172,9 @@ func activatedKeyTypeSet(activated []string) map[string]bool {
 }
 
 func keyTypeEnabledForGeneration(keyType string, activated map[string]bool) bool {
+	if keytypecatalog.IsInternalOnly(keyType) {
+		return false
+	}
 	if keytypecatalog.IsDefaultEnabled(keyType) {
 		return true
 	}

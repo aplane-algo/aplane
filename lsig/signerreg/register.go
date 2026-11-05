@@ -30,7 +30,7 @@ func RegisterSigner() {
 		registerCompiledSigner(keytypecatalog.Entry{
 			KeyType:      "aplane.falcon1024.v1",
 			Family:       family.Name,
-			Availability: keytypecatalog.AvailabilityLibrary,
+			Availability: keytypecatalog.AvailabilityInternalOnly,
 		}, falconsignerreg.RegisterSigner)
 		registerCompiledSigner(keytypecatalog.Entry{
 			KeyType:      falcon1024guarded.KeyTypeV1,
@@ -40,7 +40,7 @@ func RegisterSigner() {
 		registerCompiledSigner(keytypecatalog.Entry{
 			KeyType:      ed25519lsig.KeyTypeV1,
 			Family:       ed25519lsig.FamilyName,
-			Availability: keytypecatalog.AvailabilityLibrary,
+			Availability: keytypecatalog.AvailabilityInternalOnly,
 		}, ed25519lsigsignerreg.RegisterSigner)
 		// Rotating key files are readable in every signer-side binary so
 		// scans, backups and offline tools agree on them. Signing for them is

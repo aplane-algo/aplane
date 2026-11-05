@@ -209,42 +209,27 @@ Go-defined key types:
 |---|---|---|---|---|
 | `ed25519` | Native signing key | Go-defined | default-enabled | `internal/signing/ed25519`, `internal/keygen/ed25519.go` |
 | `falcon1024` | Protocol-native PQ signing key | Go-defined | default-enabled on signer nodes | `internal/signing/falcon1024` |
-| `aplane.falcon1024.v1` | DSA LogicSig provider | Go-defined | library-visible | `lsig/falcon1024/v1/standard.go` |
+| `aplane.falcon1024.v1` | DSA LogicSig provider | Go-defined | internal-only | `lsig/falcon1024/v1/standard.go` |
 | `aplane.witness-falcon1024.v1` | Witness key (cosigner custody or external contract-admin custody) | Go-defined | default-enabled on cosigner nodes | `internal/witness`, `lsig/falcon1024/keygen/witness.go` |
 | `aplane.falcon1024-cosigner1024.v1` | Guarded-account DSA LogicSig provider | Go-defined | library-visible | `lsig/falcon1024_guarded` |
-| `aplane.ed25519.v1` | DSA LogicSig provider | Go-defined | library-visible | `lsig/ed25519lsig` |
+| `aplane.ed25519.v1` | DSA LogicSig provider | Go-defined | internal-only | `lsig/ed25519lsig` |
 
 Compiled key types can be registered as binary capabilities without being
 default-visible for generation. Visibility is recorded in
 `internal/keytypecatalog`: only the protocol-native `ed25519` and `falcon1024`
 (signer nodes) and the witness key type `aplane.witness-falcon1024.v1`
-(cosigner nodes) are default-enabled, while `aplane.falcon1024.v1`,
-`aplane.falcon1024-cosigner1024.v1`, and `aplane.ed25519.v1` are
-library-visible and not available for generation until the product store
-enables them from the library. `aplane.ed25519.v1` is the Ed25519
-LogicSig DSA provider, distinct from the native `ed25519` signing key. See
-`docs/ARCH_KEYTYPES.md` for the exact
-split between native `ed25519`, the `aplane.ed25519` LogicSig routing family,
-and the concrete `aplane.ed25519.v1` key type.
-Opt-in state records are plaintext product-store metadata under
-the selected generation's `keytypes/<key_type>.json`; they affect discovery and key
-creation, not the ability to sign with keys that already exist. Mnemonic import
-is additionally gated by the provider's explicit mnemonic-import capability.
-The default-enabled `ed25519` and `falcon1024` providers allow user-entered
-mnemonic import without product-store activation; the library-visible
-`aplane.falcon1024.v1` and `aplane.ed25519.v1` providers allow mnemonic import
-after they are enabled in the product store. YAML templates and the other library-visible compiled
-providers do not allow user-entered mnemonic import. `apadmin restore` does
-not create or change this state record: a restored key signs whether or not
-its type is enabled on the destination, but creating further keys of that type
-still requires enabling it there.
+(cosigner nodes) are default-enabled. The plain `aplane.falcon1024.v1` and
+`aplane.ed25519.v1` providers are `internal_only`: registered for composition,
+signing, and encrypted restore, but never standalone creation or mnemonic
+import. The guarded provider remains library-visible and requires enablement.
+See [internal providers](ARCH_KEYTYPES.md#internal-providers).
 
-**Approved policy, implementation pending:** remove mnemonic import from the
-two plain LogicSig providers, leaving user-facing mnemonic import, export, and
-recovery only for native account types. The preceding paragraph describes the
-current code. New LogicSig types must not offer mnemonic recovery; retain
-internal seed derivation and use complete encrypted credentials/backups for
-recovery. See [the policy and enforcement requirements](ARCH_KEYTYPES.md#mnemonic-backup-and-recovery).
+Product-store enablement records affect creation, not existing-key signing.
+An old enabled record cannot override internal-only availability. The current
+public mnemonic-import types are native `ed25519` and `falcon1024`; internal
+seed handlers are separate from user-facing eligibility. Restore neither
+creates nor changes enablement records and does not need the creation template
+when the key carries complete signing metadata and its base provider is present.
 
 Native `falcon1024` is not a LogicSig provider. It uses the explicit
 `native_pq` authorization kind, a 25-word Algorand mnemonic, top-level
@@ -270,6 +255,7 @@ Use these terms consistently:
 | **Binary capability** | Compiled providers | The current binary contains and registers the provider code, whether or not the product store enables that key type. |
 | **Default-enabled** | Compiled providers | Catalog availability `default_enabled`; the product runtime can see and create the key type without a product-store state record. |
 | **Library-visible** | Compiled providers | Catalog availability `library`; the provider is registered in the binary and appears in the KeyType Library, but an enabled product-store state record is required before it appears in generation surfaces. |
+| **Internal-only** | Compiled providers | Registered for composition, signing and restore; excluded from library/discovery and standalone creation/import even with an old enabled record. |
 | **Disabled** | Compiled providers | Catalog availability `disabled`; the provider may exist in source but should not be registered or exposed by the runtime path that owns the catalog entry. |
 | **Enabled in product store** | Library-visible compiled providers | An enabled `source:"compiled"` state record exposes the compiled key type to product discovery and generation surfaces. |
 | **Installed** | YAML templates | The selected generation has an encrypted `.template` file under `keytypes/<key_type>.template`; plaintext files under `library/templates/` are only install sources. |

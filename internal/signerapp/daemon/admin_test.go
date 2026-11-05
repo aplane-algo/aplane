@@ -376,48 +376,21 @@ func TestAdminGenerateEd25519(t *testing.T) {
 	}
 }
 
-func TestAdminGenerateFalcon1024(t *testing.T) {
+func TestAdminGenerateRejectsInternalProviders(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
-
-	algodCleanup := configureMockAlgod(t, server)
-	defer algodCleanup()
-
-	reqBody, _ := json.Marshal(AdminGenerateRequest{
-		KeyType: "aplane.falcon1024.v1",
-	})
-
-	// Only the protocol-native key types are enabled by default; a new store
-	// refuses the LogicSig Falcon type and names the step that enables it.
-	refused := httptest.NewRecorder()
-	server.handleAdminGenerate(refused, requestWithIdentity(http.MethodPost, "/admin/generate", reqBody))
-	if refused.Code != http.StatusBadRequest || !strings.Contains(refused.Body.String(), "apadmin keytype enable aplane.falcon1024.v1") {
-		t.Fatalf("generate before enabling = %d %s, want a refusal naming the enable command", refused.Code, refused.Body.String())
-	}
-	enableKeyTypeForTest(t, server, "aplane.falcon1024.v1")
-
-	w := httptest.NewRecorder()
-	r := requestWithIdentity(http.MethodPost, "/admin/generate", reqBody)
-	server.handleAdminGenerate(w, r)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("Expected 200, got %d: %s", w.Code, w.Body.String())
-	}
-
-	var resp AdminGenerateResponse
-	decodeResponse(t, w, &resp)
-
-	if resp.Error != "" {
-		t.Fatalf("Unexpected error: %s", resp.Error)
-	}
-	if resp.Address == "" {
-		t.Fatal("Expected non-empty address")
-	}
-	if resp.KeyType != "aplane.falcon1024.v1" {
-		t.Errorf("Expected key_type aplane.falcon1024.v1, got %s", resp.KeyType)
-	}
-	if len(resp.Address) != 58 {
-		t.Errorf("Expected 58-char Algorand address, got %d chars", len(resp.Address))
+	for _, keyType := range []string{"aplane.falcon1024.v1", "aplane.ed25519.v1"} {
+		for _, stale := range []bool{false, true} {
+			if stale {
+				enableKeyTypeForTest(t, server, keyType)
+			}
+			reqBody, _ := json.Marshal(AdminGenerateRequest{KeyType: keyType})
+			w := httptest.NewRecorder()
+			server.handleAdminGenerate(w, requestWithIdentity(http.MethodPost, "/admin/generate", reqBody))
+			if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "internal-only") {
+				t.Fatalf("generate %s (stale=%v) = %d %s", keyType, stale, w.Code, w.Body.String())
+			}
+		}
 	}
 }
 
@@ -605,20 +578,7 @@ func TestAdminDeleteFalcon1024(t *testing.T) {
 	algodCleanup := configureMockAlgod(t, server)
 	defer algodCleanup()
 
-	// Generate a aplane.falcon1024.v1 key
-	enableKeyTypeForTest(t, server, "aplane.falcon1024.v1")
-	genBody, _ := json.Marshal(AdminGenerateRequest{KeyType: "aplane.falcon1024.v1"})
-	genW := httptest.NewRecorder()
-	genR := requestWithIdentity(http.MethodPost, "/admin/generate", genBody)
-	server.handleAdminGenerate(genW, genR)
-
-	if genW.Code != http.StatusOK {
-		t.Fatalf("Generate failed: %d: %s", genW.Code, genW.Body.String())
-	}
-
-	var genResp AdminGenerateResponse
-	decodeResponse(t, genW, &genResp)
-	address := genResp.Address
+	address := existingFalconCredentialForTest(t, server)
 
 	// Reload keys
 	if err := reloadKeysForTest(server); err != nil {

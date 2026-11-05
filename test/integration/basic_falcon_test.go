@@ -44,7 +44,9 @@ func TestMain(m *testing.M) {
 	}
 
 	// Run tests
-	os.Exit(m.Run())
+	code := m.Run()
+	harness.RemoveSharedBuilds()
+	os.Exit(code)
 }
 
 // TestBasicFalconTransaction tests a simple Falcon-signed payment

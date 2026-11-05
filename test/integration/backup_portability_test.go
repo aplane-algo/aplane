@@ -17,12 +17,14 @@ import (
 	"time"
 
 	backupbundle "github.com/aplane-algo/aplane/internal/backup"
+	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
 	apcrypto "github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	utilkeys "github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/templatestore"
+	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 	"github.com/aplane-algo/aplane/test/integration/harness"
 )
@@ -43,7 +45,11 @@ func TestBackupPortabilityFirstMilestone(t *testing.T) {
 		name               string
 		prepareSource      func(t *testing.T, sourceDataDir string, apadmin *harness.ApAdminHarness) (string, map[string]string)
 		prepareDestination func(t *testing.T, destDataDir string)
-		buildSignRequest   func(t *testing.T, address string) signerapi.SignRequest
+		// activateOnSource enables the key type on the source signer only, so
+		// the case proves restore does not depend on destination enablement.
+		activateOnSource bool
+		// A nil buildSignRequest skips the destination signing check.
+		buildSignRequest func(t *testing.T, address string) signerapi.SignRequest
 	}{
 		{
 			name: "ed25519",
@@ -68,6 +74,22 @@ func TestBackupPortabilityFirstMilestone(t *testing.T) {
 					TxnBytesHex: mustUnsignedPaymentTxnHex(t, sp, address, integrationBurnAddress, 0, "backup-portability"),
 				}
 			},
+		},
+		{
+			// Signing this account needs a live cosigner, so the case stops at
+			// the restored inventory entry.
+			name: "library guarded account enabled only on the source",
+			prepareSource: func(t *testing.T, _ string, _ *harness.ApAdminHarness) (string, map[string]string) {
+				cosignerPublicKey, cosignerPrivateKey, err := signerops.New(nil).GenerateKeypair(randomFalconSeed(t))
+				if err != nil {
+					t.Fatalf("generate cosigner key: %v", err)
+				}
+				apcrypto.ZeroBytes(cosignerPrivateKey)
+				return keytypes.GuardedFalcon1024Cosigner1024V1, map[string]string{
+					keytypes.ParameterCosignerPublicKey: hex.EncodeToString(cosignerPublicKey),
+				}
+			},
+			activateOnSource: true,
 		},
 		{
 			name: "user-loaded HTLC template",
@@ -294,10 +316,7 @@ teal: |
 			if err := sourceApSigner.UnlockSigner(); err != nil {
 				t.Fatalf("failed to unlock source signer: %v", err)
 			}
-			// A library key type is enabled on the source only; restoring it
-			// into the destination must not depend on the type being enabled
-			// there.
-			if keyType == "aplane.falcon1024.v1" {
+			if tc.activateOnSource {
 				if err := sourceApSigner.ActivateKeyType(keyType); err != nil {
 					t.Fatalf("activate %s on the source: %v", keyType, err)
 				}
@@ -371,6 +390,20 @@ teal: |
 			}
 			if listedKeyType != keyType {
 				t.Fatalf("restored credential key type = %q, want %q", listedKeyType, keyType)
+			}
+			if tc.activateOnSource {
+				destKeyTypes, err := destClient.GetKeyTypes()
+				if err != nil {
+					t.Fatalf("list destination key types: %v", err)
+				}
+				for _, info := range destKeyTypes.KeyTypes {
+					if info.KeyType == keyType {
+						t.Fatalf("restore enabled %s on the destination", keyType)
+					}
+				}
+			}
+			if tc.buildSignRequest == nil {
+				return
 			}
 
 			signReq := signerapi.GroupSignRequest{
@@ -659,17 +692,28 @@ func TestBackupAllArchiveContainsOnlyActiveKeys(t *testing.T) {
 func mustAdminGenerateKeyNoCleanup(t *testing.T, signerClient *signerclient.Client, signerd *harness.SignerHarness, keyType string, params map[string]string) string {
 	t.Helper()
 
-	resp, err := signerClient.AdminGenerate(keyType, params)
-	if err != nil {
-		t.Fatalf("failed to generate %s via admin API: %v", keyType, err)
+	var address string
+	if harness.IsLegacyLogicSigFixture(keyType) {
+		// Internal plain LogicSigs enter the test signer as existing credentials.
+		restored, err := harness.NewApAdminHarness(t, signerd.GetWorkDir()).RestoreLegacyLogicSig(keyType, nil)
+		if err != nil {
+			t.Fatalf("restore legacy %s fixture: %v", keyType, err)
+		}
+		address = restored
+	} else {
+		resp, err := signerClient.AdminGenerate(keyType, params)
+		if err != nil {
+			t.Fatalf("failed to generate %s via admin API: %v", keyType, err)
+		}
+		if resp.Address == "" {
+			t.Fatalf("admin generate for %s returned empty address", keyType)
+		}
+		address = resp.Address
 	}
-	if resp.Address == "" {
-		t.Fatalf("admin generate for %s returned empty address", keyType)
+	if !waitForKey(t, signerd.GetURL(), address, 10*time.Second) {
+		t.Fatalf("signer did not reload generated key %s", address)
 	}
-	if !waitForKey(t, signerd.GetURL(), resp.Address, 10*time.Second) {
-		t.Fatalf("signer did not reload generated key %s", resp.Address)
-	}
-	return resp.Address
+	return address
 }
 
 func mustReadPassphrase(t *testing.T, signerDataDir string) string {

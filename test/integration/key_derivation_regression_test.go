@@ -5,9 +5,12 @@ package integration_test
 
 import (
 	"encoding/hex"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/mnemonic/bip39impl"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	"github.com/aplane-algo/aplane/test/integration/harness"
 )
@@ -58,9 +61,6 @@ func TestKeyDerivationRegression(t *testing.T) {
 	t.Cleanup(apadmin.Cleanup)
 	if err := apadmin.UnlockSigner(); err != nil {
 		t.Fatalf("failed to unlock signer: %v", err)
-	}
-	if err := apadmin.ActivateKeyType("aplane.falcon1024.v1"); err != nil {
-		t.Fatalf("activate aplane.falcon1024.v1: %v", err)
 	}
 
 	signerClient := signerclient.NewSignerClient(signerd.GetURL())
@@ -115,7 +115,19 @@ func TestKeyDerivationRegression(t *testing.T) {
 				got string
 				err error
 			)
-			if tc.mnemonic != "" {
+			if tc.keyType == "aplane.falcon1024.v1" {
+				// Preserve the old address vector through internal seed derivation and
+				// encrypted restore, not a now-forbidden public mnemonic import.
+				seed, seedErr := bip39impl.NewHandler("aplane.falcon1024", 24).SeedFromMnemonic(strings.Fields(tc.mnemonic), "")
+				if seedErr != nil {
+					t.Fatal(seedErr)
+				}
+				defer crypto.ZeroBytes(seed)
+				got, err = apadmin.RestoreLegacyLogicSig(tc.keyType, seed)
+				if err != nil {
+					t.Fatal(err)
+				}
+			} else if tc.mnemonic != "" {
 				got, err = apadmin.ImportKeyWithTypeAndParams(tc.keyType, tc.mnemonic, tc.params)
 				if err != nil {
 					t.Fatalf("ImportKeyWithTypeAndParams(%s) failed: %v", tc.keyType, err)

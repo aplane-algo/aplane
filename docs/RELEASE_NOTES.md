@@ -17,16 +17,19 @@ before it was renamed `enroll`.
 - A framework-policy template with no `teal` now rejects `bounded.runtime_args`, since
   nothing would read them. Existing keys are not affected.
 
-## Mnemonic import will be removed from plain LogicSig accounts
+## Plain LogicSig providers are internal-only
 
-- A later release will stop accepting mnemonic import for `aplane.falcon1024.v1` and
-  `aplane.ed25519.v1`. Mnemonic import, export, and recovery will apply only to native
-  `ed25519` and `falcon1024`. See
+- Plain `aplane.falcon1024.v1` and `aplane.ed25519.v1` are internal-only:
+  absent from the KeyType Library and creation discovery, with standalone
+  enablement, generation and mnemonic import rejected even for old enabled
+  records. Use native `falcon1024` and `ed25519` for ordinary accounts.
+- Their providers remain registered for composed templates and existing-key
+  signing and encrypted restore. Existing accounts remain visible and eligible
+  as contract-admin rekey targets; create a native account if a new target is
+  needed. No account or enablement record is rewritten.
+- This implements the previously announced removal of plain LogicSig mnemonic
+  import. Mnemonic import, export, and recovery apply only to native accounts. See
   [mnemonic backup and recovery](ARCH_KEYTYPES.md#mnemonic-backup-and-recovery).
-- If a phrase is your only backup of one of these accounts, import it and make an encrypted
-  backup before that release. Accounts already in a store keep signing, and encrypted
-  backup and restore do not change.
-- Nothing changes yet: both types still accept mnemonic import once enabled.
 
 ## apadmin lists fit the 80-column minimum
 

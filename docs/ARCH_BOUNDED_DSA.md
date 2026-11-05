@@ -89,9 +89,14 @@ typed `/sign/bounded-admin` partial-signing endpoint. Apshell's ordinary send
 path does not select or complete contract-admin operations.
 
 An admin-key rekey may only move the account to a signing credential the
-signer itself holds: a native Ed25519 or Falcon-1024 key, or a plain
-`aplane.falcon1024.v1` or `aplane.ed25519.v1` LogicSig account. Eligibility
-is an explicit allowlist: those programs are pure signature gates, whereas a
+signer itself holds: a native Ed25519 or Falcon-1024 key, or an existing
+plain `aplane.falcon1024.v1` or `aplane.ed25519.v1` LogicSig account,
+including one restored from an encrypted backup. The plain LogicSig types
+are [internal-only](ARCH_KEYTYPES.md#internal-providers), so new standalone
+accounts of those types cannot be generated. Create a native `ed25519` or
+`falcon1024` account when a new rekey target is needed.
+
+Eligibility is an explicit allowlist: those programs are pure signature gates, whereas a
 bounded, guarded or author-composed template may restrict what the account
 can do once it is the authority, so bounded, guarded, composed, generic,
 witness and rotating credentials do not qualify, and neither does any address

@@ -308,6 +308,9 @@ func CanGenerate(paths storepaths.Paths, keyType string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	if keytypecatalog.IsInternalOnly(keyType) {
+		return false, nil
+	}
 	return ok && rec.State == StateEnabled, nil
 }
 
