@@ -35,6 +35,9 @@ before it was renamed `enroll`.
   XMSS and SLH-DSA are the frozen rotating key types.
 - There's no migration. A store with this key type enabled, or holding one of its
   key files, goes into recovery when it loads, even if it holds no WOTS keys.
+- This release is new-install only: the installer's minimum supported upgrade
+  version is v0.49.0, so an earlier install, or a development build before
+  v0.49.0, needs a fresh install root.
 
 ## Rotating WOTS+C key type
 
