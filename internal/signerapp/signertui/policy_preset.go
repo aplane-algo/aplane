@@ -132,35 +132,52 @@ func (m Model) renderPolicyPresetPick() string {
 	}
 	header = append(header, "")
 
-	choices := []string{policyPresetFirstChoice(pick.row)}
-	for _, preset := range pick.presets {
-		text := fmt.Sprintf("Preset %-20s %s", preset.Name, preset.Summary)
-		if preset.Placeholders {
-			text += " (fill in placeholders)"
-		}
-		choices = append(choices, text)
+	// A summary wraps under itself, so each choice can span several lines;
+	// the picker scrolls by line and follows the end of the selected choice.
+	const summaryColumn = len("> Preset ") + 20 + 1
+	summaryWidth := 0
+	if m.width > 0 {
+		summaryWidth = max(20, m.width-summaryColumn)
 	}
-	for i, text := range choices {
+	var lines []string
+	selectedLine := 0
+	for i := 0; i <= len(pick.presets); i++ {
 		cursor := "  "
 		if i == pick.selected {
 			cursor = "> "
 		}
-		choices[i] = cursor + text
+		if i == 0 {
+			lines = append(lines, cursor+policyPresetFirstChoice(pick.row))
+		} else {
+			preset := pick.presets[i-1]
+			summary := preset.Summary
+			if preset.Placeholders {
+				summary += " (fill in placeholders)"
+			}
+			wrapped := strings.Split(wrapPlainText(summary, summaryWidth), "\n")
+			lines = append(lines, fmt.Sprintf("%sPreset %-20s %s", cursor, preset.Name, wrapped[0]))
+			for _, continuation := range wrapped[1:] {
+				lines = append(lines, strings.Repeat(" ", summaryColumn)+continuation)
+			}
+		}
+		if i == pick.selected {
+			selectedLine = len(lines) - 1
+		}
 	}
 	// Count rendered lines: a styled entry may span more than one.
 	header = strings.Split(strings.Join(header, "\n"), "\n")
-	return strings.Join(fitPresetPick(header, choices, pick.selected, m.windowBodyHeight()), "\n")
+	return strings.Join(fitPresetPick(header, lines, selectedLine, m.windowBodyHeight()), "\n")
 }
 
 // fitPresetPick lays the picker into height lines (0 for no limit), so the
-// selected choice is always on screen: the choices scroll around it, and in
-// a short window the header gives way before any choice does, from the
-// bottom up, keeping the title.
-func fitPresetPick(header, choices []string, selected, height int) []string {
-	if height <= 0 || len(header)+len(choices) <= height {
-		return append(header, choices...)
+// selected line is always on screen: the lines scroll around it, and in a
+// short window the header gives way before any choice does, from the bottom
+// up, keeping the title.
+func fitPresetPick(header, lines []string, selected, height int) []string {
+	if height <= 0 || len(header)+len(lines) <= height {
+		return append(header, lines...)
 	}
-	rows := max(1, min(len(choices), height-len(header)))
+	rows := max(1, min(len(lines), height-len(header)))
 	if len(header)+rows > height {
 		header = header[:max(1, height-rows)]
 	}
@@ -168,5 +185,5 @@ func fitPresetPick(header, choices []string, selected, height int) []string {
 	if selected >= rows {
 		first = selected - rows + 1
 	}
-	return append(header, choices[first:first+rows]...)
+	return append(header, lines[first:first+rows]...)
 }

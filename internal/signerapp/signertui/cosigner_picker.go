@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/aplane-algo/aplane/internal/apadminapp"
 	"github.com/aplane-algo/aplane/internal/cosigner/cosignerrefs"
@@ -557,18 +558,35 @@ func (m Model) choicesForAllReferences() []cosignerChoice {
 	return choices
 }
 
+// cosignerPickerAliasWidth sizes the alias column from every choice, leaving
+// room for the widest ID and alias count.
+func (m Model) cosignerPickerAliasWidth() int {
+	longest, rest := 0, 0
+	for _, choice := range m.cosigner.choices {
+		longest = max(longest, utf8.RuneCountInString(choice.PrimaryAlias))
+		used := len("> ") + len("  ") + len(apadminapp.CompactWitnessKeyID(choice.WitnessKeyID))
+		if len(choice.Aliases) > 1 {
+			used += len(fmt.Sprintf("  (%d aliases)", len(choice.Aliases)))
+		}
+		rest = max(rest, used)
+	}
+	return min(longest, max(m.popupBodyWidth(80)-rest, 8))
+}
+
 func (m Model) renderCosignerPicker() string {
 	var body strings.Builder
 	body.WriteString(titleStyle.Render("Choose Cosigner"))
 	body.WriteString("\n\n")
 	body.WriteString(subtitleStyle.Render("Select an imported cosigner key for this account, or use the setup file exported by the cosigner."))
 	body.WriteString("\n\n")
+	aliasWidth := m.cosignerPickerAliasWidth()
 	for index, choice := range m.cosigner.choices {
 		prefix := "  "
 		if index == m.cosigner.selected {
 			prefix = "> "
 		}
-		row := fmt.Sprintf("%s%s  %s", prefix, choice.PrimaryAlias, apadminapp.CompactWitnessKeyID(choice.WitnessKeyID))
+		row := fmt.Sprintf("%s%-*s  %s", prefix, aliasWidth, ellipsizeMiddle(choice.PrimaryAlias, aliasWidth),
+			apadminapp.CompactWitnessKeyID(choice.WitnessKeyID))
 		if len(choice.Aliases) > 1 {
 			row += fmt.Sprintf("  (%d aliases)", len(choice.Aliases))
 		}

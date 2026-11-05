@@ -13,7 +13,11 @@ before it was renamed `enroll`.
   key type, source address, and request time for the selected row now appear below the list.
 - The restore preview keeps its `present`, `hint`, and `+policy` flags whole; the address and
   key type shorten instead.
-- KeyType Library and Cosigner References rows now line up in fixed columns.
+- The policy preset picker wraps each summary, so the whole text and the
+  `(fill in placeholders)` note stay visible.
+- The Policies list uses short statuses. The selected row's full status and its document's
+  size, SHA-256, and applied time appear below the list.
+- KeyType Library, Cosigner References, and Choose Cosigner rows now line up in fixed columns.
 
 ## HTLC is ALGO-only and pays out once
 

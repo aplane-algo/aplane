@@ -1123,15 +1123,15 @@ list of the node's policy documents and key coverage, loaded with the
 `get_policy` admin message (`internal/signerapp/signertui/policy_view.go`).
 The list is the same on both node roles:
 
-- the `default` row first, labelled `node default (governs every key without
-  its own policy)`,
+- the `default` row first, labelled `node default`,
 - then every held key (address on a signer node, Witness Key ID on a cosigner
   node) with its status: `own policy` or `default`,
-- then stored documents for keys the node does not hold: `policy, key not
-  held`.
+- then stored documents for keys the node does not hold: `key not held`.
 
-Each row with a document shows its size, SHA-256, and applied time from the
-sidecar's diagnostic `signed_at`; the header shows the `policy_set_sha256`.
+Below the list, the selected row shows its full status (`node default (governs
+every key without its own policy)`, `policy, key not held`) and, for a row with
+a document, its size, SHA-256, and applied time from the sidecar's diagnostic
+`signed_at`. The `policy_set_sha256` follows those details.
 Enter fetches that document with `get_policy_document` and opens a read-only
 scrollable view of its exact bytes; Esc returns. A key on `default` has no
 document of its own to open.

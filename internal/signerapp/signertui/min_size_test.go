@@ -12,7 +12,11 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/aplane-algo/aplane/internal/adminproto"
+	"github.com/aplane-algo/aplane/internal/noderole"
+	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/protocol"
+	"github.com/aplane-algo/aplane/internal/signerapp/policytext"
 )
 
 // sizedForTest delivers a terminal or pane size the way Bubble Tea does.
@@ -201,6 +205,105 @@ func TestListsKeepTheirContentAtMinSize(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// Every preset's whole summary is on screen, on either node role, however it
+// wraps.
+func TestPolicyPresetPickShowsWholeSummariesAtMinSize(t *testing.T) {
+	for _, role := range []noderole.Role{noderole.RoleSigner, noderole.RoleCosigner} {
+		presets := policytext.Presets(role)
+		m := sizedForTest(t, Model{viewState: ViewPolicyPresetPick, policies: policiesState{
+			policy:     protocol.PolicyMessage{NodeRole: string(role)},
+			presetPick: policyPresetPickState{presets: presets, selected: len(presets)},
+		}}, MinWidth, MinHeight)
+		view := strings.Join(strings.Fields(stripANSI(m.View())), " ")
+		for _, preset := range presets {
+			want := preset.Summary
+			if preset.Placeholders {
+				want += " (fill in placeholders)"
+			}
+			if !strings.Contains(view, want) {
+				t.Errorf("%s: %q missing from:\n%s", role, want, stripANSI(m.View()))
+			}
+		}
+	}
+}
+
+func TestPoliciesListFitsAtMinSize(t *testing.T) {
+	const address = "SGCU7MLRXQ4H227YCRTTT6MHL2N64WGJPHH3OTPID2CK4JNGJU6DITLIUQ"
+	m := sizedForTest(t, Model{viewState: ViewPolicies, policies: policiesState{policy: protocol.PolicyMessage{
+		NodeRole: "signer",
+		Documents: []protocol.PolicyDocumentInfoWire{
+			{Key: policy.DefaultKey, SHA256: "0123456789abcdef0123", Size: 512, SignedAtUnix: 1700000000},
+			{Key: address, SHA256: "0123456789abcdef0123", Size: 256, SignedAtUnix: 1700000000},
+		},
+		Keys:            []protocol.PolicyKeyStatusWire{{Key: address, Status: adminproto.PolicyKeyNotHeld}},
+		PolicySetSHA256: strings.Repeat("ab", 32),
+	}, selected: 1}}, MinWidth, MinHeight)
+	view := stripANSI(m.View())
+	for _, want := range []string{
+		address + "  key not held", "policy, key not held", "256 bytes", "applied 2023-11-14",
+		"apadmin policy covers remove and rescue", strings.Repeat("ab", 32)[:40],
+	} {
+		if !strings.Contains(strings.Join(strings.Fields(view), " "), strings.Join(strings.Fields(want), " ")) {
+			t.Errorf("%q missing from:\n%s", want, view)
+		}
+	}
+}
+
+// A long list follows the selection and keeps the details below it on screen.
+func TestEnrolledClientsListFollowsSelection(t *testing.T) {
+	var keys []protocol.EnrolledKeyInfo
+	for i := range 30 {
+		keys = append(keys, protocol.EnrolledKeyInfo{
+			Fingerprint: fmt.Sprintf("SHA256:%043d", i), Label: fmt.Sprintf("client-%02d", i), KeyType: "ssh-ed25519",
+		})
+	}
+	for _, selected := range []int{0, 15, 29} {
+		m := sizedForTest(t, Model{viewState: ViewEnrolledClients, clients: clientsState{keys: keys, selected: selected}}, MinWidth, MinHeight)
+		view := stripANSI(m.View())
+		if lines := strings.Count(view, "\n") + 1; lines > MinHeight {
+			t.Errorf("selected %d: %d lines in a %d-line window", selected, lines, MinHeight)
+		}
+		for _, want := range []string{
+			"> " + keys[selected].Fingerprint, fmt.Sprintf("Label:     client-%02d", selected), "a approve",
+		} {
+			if !strings.Contains(view, want) {
+				t.Errorf("selected %d: %q missing from:\n%s", selected, want, view)
+			}
+		}
+		if selected > 0 && !strings.Contains(view, "above") || selected < 29 && !strings.Contains(view, "below") {
+			t.Errorf("selected %d: no scroll hint in:\n%s", selected, view)
+		}
+	}
+}
+
+func TestCosignerPickerColumnsAlign(t *testing.T) {
+	const witnessKey = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+	m := sizedForTest(t, Model{viewState: ViewCosignerPicker, cosigner: cosignerState{choices: []cosignerChoice{
+		{PrimaryAlias: "ops", WitnessKeyID: witnessKey},
+		{PrimaryAlias: "a-cosigner-alias-longer-than-the-popup-has-room-for", WitnessKeyID: witnessKey, Aliases: []string{"a", "b", "c"}},
+	}}}, MinWidth, MinHeight)
+
+	column := -1
+	rows := 0
+	view := stripANSI(m.View())
+	for _, line := range strings.Split(view, "\n") {
+		index := strings.Index(line, "abcdef0123...")
+		if index < 0 {
+			continue
+		}
+		rows++
+		if column < 0 {
+			column = index
+		}
+		if index != column {
+			t.Errorf("witness ID at %d, want %d: %q", index, column, line)
+		}
+	}
+	if rows != 2 || !strings.Contains(view, "(3 aliases)") {
+		t.Fatalf("found %d rows, want 2 with the alias count:\n%s", rows, view)
 	}
 }
 

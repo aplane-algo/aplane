@@ -169,7 +169,7 @@ func TestPolicyExportStopsOnAnUnavailableDocumentOrSendFailure(t *testing.T) {
 
 func TestPolicyExportIsAdvertised(t *testing.T) {
 	m := loadedPoliciesModel(exportSummary(map[string]string{policy.DefaultKey: "{}"}, policy.DefaultKey))
-	if !strings.Contains(m.policiesFooterText(), "x: Export") || !strings.Contains(stripANSI(m.renderPolicies()), "x exports the policy") {
+	if !strings.Contains(m.policiesFooterText(), "x: Export") || !strings.Contains(strings.Join(strings.Fields(stripANSI(m.renderPolicies())), " "), "x exports the policy") {
 		t.Fatal("the policies view does not advertise export")
 	}
 }

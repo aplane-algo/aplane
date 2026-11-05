@@ -17,57 +17,79 @@ import (
 // renderEnrolledClients lists the enrollment requests waiting for approval
 // and the enrolled client keys.
 func (m Model) renderEnrolledClients() string {
-	var sb strings.Builder
-	sb.WriteString(titleStyle.Render("Enrolled Clients"))
-	sb.WriteString("\n")
+	var header strings.Builder
+	header.WriteString(titleStyle.Render("Enrolled Clients"))
+	header.WriteString("\n")
 	if m.clients.loading && len(m.clients.keys) == 0 && len(m.clients.pending) == 0 {
-		sb.WriteString(subtitleStyle.Render("Loading enrollment requests and enrolled client keys..."))
-		return sb.String()
+		header.WriteString(subtitleStyle.Render("Loading enrollment requests and enrolled client keys..."))
+		return header.String()
 	}
-	sb.WriteString(subtitleStyle.Render(wrapPlainText("Each key is one client's credential. Approving a request enrolls its key; revoking a key closes its connections.", m.tableWidth())))
-	sb.WriteString("\n\n")
+	header.WriteString(subtitleStyle.Render(wrapPlainText("Each key is one client's credential. Approving a request enrolls its key; revoking a key closes its connections.", m.tableWidth())))
+	header.WriteString("\n\n")
 
 	labelWidth := m.clientLabelWidth()
-	sb.WriteString(fmt.Sprintf("Waiting for approval (%d)\n", len(m.clients.pending)))
+	lines := []string{fmt.Sprintf("Waiting for approval (%d)", len(m.clients.pending))}
 	if len(m.clients.pending) == 0 {
-		sb.WriteString("  none. Clients request enrollment with: enroll\n")
+		lines = append(lines, "  none. Clients request enrollment with: enroll")
 	}
+	selectedLine := 0
 	for i, req := range m.clients.pending {
 		cursor := "  "
 		if i == m.clients.selected {
 			cursor = "> "
+			selectedLine = len(lines)
 		}
-		sb.WriteString(strings.TrimRight(clientRow(cursor, req.Fingerprint, req.Label, labelWidth), " ") + "\n")
+		lines = append(lines, strings.TrimRight(clientRow(cursor, req.Fingerprint, req.Label, labelWidth), " "))
 	}
 
-	sb.WriteString(fmt.Sprintf("\nEnrolled (%d)\n", len(m.clients.keys)))
+	lines = append(lines, "", fmt.Sprintf("Enrolled (%d)", len(m.clients.keys)))
 	if len(m.clients.keys) == 0 {
-		sb.WriteString("  no enrolled client keys\n")
+		lines = append(lines, "  no enrolled client keys")
 	}
 	for i, key := range m.clients.keys {
 		cursor := "  "
 		if i+len(m.clients.pending) == m.clients.selected {
 			cursor = "> "
+			selectedLine = len(lines)
 		}
 		line := clientRow(cursor, key.Fingerprint, key.Label, labelWidth)
 		if key.Connected {
 			line += "  " + warningStyle.Render(clientConnectedFlag)
 		}
-		sb.WriteString(strings.TrimRight(line, " ") + "\n")
+		lines = append(lines, strings.TrimRight(line, " "))
 	}
 
+	var footer strings.Builder
 	if details := m.selectedClientDetails(); len(details) > 0 {
-		sb.WriteString("\n" + strings.Join(details, "\n") + "\n")
+		footer.WriteString("\n" + strings.Join(details, "\n") + "\n")
+	}
+	footer.WriteString("\n")
+	footer.WriteString(helpStyle.Render("a approve  x reject  r revoke  A revoke all  i import key file  esc back"))
+	footer.WriteString("\n")
+	if m.clients.status != "" {
+		footer.WriteString("\n")
+		footer.WriteString(m.clients.status)
+		footer.WriteString("\n")
 	}
 
-	sb.WriteString("\n")
-	sb.WriteString(helpStyle.Render("a approve  x reject  r revoke  A revoke all  i import key file  esc back"))
-	sb.WriteString("\n")
-	if m.clients.status != "" {
-		sb.WriteString("\n")
-		sb.WriteString(m.clients.status)
-		sb.WriteString("\n")
+	fixed := strings.Count(header.String(), "\n") + strings.Count(footer.String(), "\n")
+	return header.String() + m.clientListWindow(lines, selectedLine, fixed) + footer.String()
+}
+
+// clientListWindow shows the lines around the selected one when the list would
+// push it, or the details below the list, out of the window. The list does not
+// otherwise scroll.
+func (m Model) clientListWindow(lines []string, selected, fixed int) string {
+	height := m.windowBodyHeight()
+	if height <= 0 || fixed+len(lines) <= height {
+		return joinRows(lines)
 	}
+	const moreLines = 2
+	start, end := selectionWindow(selected, len(lines), max(height-fixed-moreLines, 1))
+	var sb strings.Builder
+	sb.WriteString(scrollMoreAboveLine(start) + "\n")
+	sb.WriteString(joinRows(lines[start:end]))
+	sb.WriteString(scrollMoreBelowLine(len(lines)-end) + "\n")
 	return sb.String()
 }
 

@@ -154,10 +154,21 @@ func TestPoliciesViewListsTheDefaultAndKeysAndOpensDocuments(t *testing.T) {
 		PolicySetSHA256: "set-digest",
 	})
 	rendered := stripANSI(m.renderPolicies())
-	for _, want := range []string{"default  node default", policyViewKeyB + "  default", policyViewKeyA + "  own policy",
-		fmt.Sprintf("%d bytes", len(doc)), "applied 2023-11-14", "set-digest", "a loads a policy file"} {
+	for _, want := range []string{"  node default\n", "node default (governs every key without its own policy)",
+		policyViewKeyB + "  default", policyViewKeyA + "  own policy", "set-digest", "a loads a policy file"} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("policies view missing %q:\n%s", want, rendered)
+		}
+	}
+	if strings.Contains(rendered, fmt.Sprintf("%d bytes", len(doc))) {
+		t.Fatalf("details for an unselected row:\n%s", rendered)
+	}
+	selected := m
+	selected.policies.selected = 2
+	rendered = stripANSI(selected.renderPolicies())
+	for _, want := range []string{fmt.Sprintf("%d bytes", len(doc)), "applied 2023-11-14"} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("selected row details missing %q:\n%s", want, rendered)
 		}
 	}
 	if rows := m.policyRows(); len(rows) != 3 || rows[0].key != policy.DefaultKey || rows[1].key != policyViewKeyB || rows[1].doc != nil {
