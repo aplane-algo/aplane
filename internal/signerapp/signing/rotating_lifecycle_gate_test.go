@@ -319,6 +319,31 @@ func restoreWithAFailedDerivation(t *testing.T, f *rotatingFixture) (int, error)
 	}}, StageFillOptions{})
 }
 
+// A key that really can't be loaded isn't a cut, so nothing about the failure says
+// a lock came first. Only the generation bound before the restore started does:
+// read later, it would match, and the account would open in the next session.
+func TestFailedRestoreFromAnEarlierSessionStaysHeld(t *testing.T) {
+	f, _ := newSigningFixtureFor(t, wotscTestType)
+	prep := mustPrepare(t, f, f.spend(1000, 1100))
+	mustSign(t, f, prep.Transactions)
+	first, _ := f.svc.Rotating.Releases.Get(f.account.String())
+	f.svc.Rotating.Releases.Reset()
+	generation := f.lockGen
+	f.lockGen++
+	session := keystore.NewKeySession(failingKeyStore{})
+	session.InitializeSession()
+	t.Cleanup(session.Destroy)
+	_, err := f.svc.RebuildReleaseMemory(context.Background(), session, generation, []AuditedRelease{{
+		Account: f.account.String(), Stage: first.Stage, TxID: first.TxID, LastValid: first.LastValid, Leaves: first.Leaves,
+	}}, StageFillOptions{})
+	if !errors.Is(err, ErrRestoreInterrupted) {
+		t.Fatalf("error = %v, want an interrupted restore", err)
+	}
+	if _, restored := f.svc.Rotating.Releases.ForLeafChoice(f.account.String()); restored {
+		t.Fatal("a failure from an earlier session opened the wait")
+	}
+}
+
 // A failure that isn't an interruption is the stated loss case: state chooses the
 // leaf, never whether to sign, so the account has to be let through.
 func TestFailedRestoreStillOpensTheAccount(t *testing.T) {
