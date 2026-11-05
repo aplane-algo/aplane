@@ -176,7 +176,7 @@ Box names also accept `<app-id>:<name>`.
 | **Native Falcon-1024** (`falcon1024`) | the key signs the full transaction | top-level `SignedTxn.PQsig` (scheme `f1`) |
 | **DSA-backed LogicSig** (`dsa_lsig`) | a crypto key signs, wrapped in a LogicSig | `LogicSig.Args[0]` (Falcon variable, at most 1,423 bytes) |
 | **Generic LogicSig** (`generic_lsig`) | TEAL logic only — **no key, no signature** | args filled from the key file's stored schema |
-| **Rotating LogicSig** | Falcon-1024, Ed25519, and WOTS, XMSS, SLH-DSA, or WOTS+C authorize each stage | stage LogicSig arguments; each spend rekeys to the next stage |
+| **Rotating LogicSig** | Falcon-1024, Ed25519, and XMSS, SLH-DSA, or WOTS+C authorize each stage | stage LogicSig arguments; each spend rekeys to the next stage |
 
 The two native account key types are not LogicSig-backed. Witness keys are
 auxiliary non-account keys; signer-custodied instances serve the cosigner
@@ -197,7 +197,6 @@ component role, while standalone `.wit` instances may serve contract admin.
 | `aplane.falcon1024-timelock.v1` | dsa_lsig (composed) | optional template |
 | `aplane.htlc.v1` | generic_lsig | optional template |
 | `aplane.falcon1024-cosigner1024.v1` | guarded dsa_lsig | library-visible |
-| `aplane.rotating-triple-wots.v1` | rotating LogicSig | library-visible |
 | `aplane.rotating-triple-xmss.v1` | rotating LogicSig | library-visible |
 | `aplane.rotating-triple-slhdsa.v1` | rotating LogicSig | library-visible |
 | `aplane.rotating-triple-wotsc.v1` | rotating LogicSig | library-visible |

@@ -31,18 +31,15 @@ type ReleaseRecord struct {
 	NextAddr      types.Address
 	TxID          string
 	LastValid     uint64
-	// Leaves lists every distinct transaction the stage has released while
-	// it stayed live, oldest first, with the one-time leaf each signed with.
-	// The last entry is the latest release (TxID and LastValid above). A
-	// family with one key per stage lists every release on leaf 0.
+	// Leaves lists the distinct transactions remembered for this stage,
+	// oldest first, with the one-time leaf each signed with. Identical retries
+	// do not append another entry. It is empty for a StatelessHash record.
 	Leaves []LeafRelease
-	// Reused reports that two of the stage's releases signed with the same
-	// one-time leaf: an expired release and its repair, or a client that
-	// re-signed a rebuilt transaction, on a family with one key per stage;
-	// or a stage that ran out of leaves. It is carried forward by Record
-	// until the account moves past the stage. For a one-time stage scheme
-	// (rotatingkey.Profile.OneTimeStage) this is the condition the status
-	// reports; for the others it is informational.
+	// Reused reports that two distinct transactions remembered for this
+	// stage signed with the same one-time leaf. Missing history can hide
+	// reuse. Record carries the flag until the account moves past the stage;
+	// OneTimeStage profiles report it as a warning. StatelessHash records
+	// have neither leaf history nor a reuse flag.
 	Reused bool
 	// Seq orders records against chain observations: a record with a Seq
 	// above the Seq captured before a chain read was made after that read,
@@ -101,8 +98,10 @@ func leavesReused(leaves []LeafRelease) bool {
 	return false
 }
 
-// ReleaseMemory holds one ReleaseRecord per rotating account. It is
-// observational: it changes what the signer reports, never what it signs.
+// ReleaseMemory holds one ReleaseRecord per rotating account. It supplies
+// the history for one-time leaf selection and release alerts, and gates
+// signing while restoration is pending. Leaf tracking is best-effort:
+// exhaustion does not refuse signing, and missing history can hide reuse.
 type ReleaseMemory struct {
 	mu        sync.Mutex
 	seq       uint64
@@ -382,15 +381,16 @@ type AuditedRelease struct {
 	Stage     uint64
 	TxID      string
 	LastValid uint64
-	// Reused reports that the log holds an earlier release from the same
-	// stage on the same leaf. Entries the log rotated past are unknown, so
+	// Reused reports that the log holds two distinct transactions from the
+	// same stage on the same leaf. Entries the log rotated past are unknown, so
 	// false means "none seen", not "none made".
 	Reused bool
 	// Leaves lists the stage's releases the log holds, oldest first.
 	Leaves []LeafRelease
 }
 
-// ErrRestoreInterrupted reports a restore that a lock or cancellation stopped.
+// ErrRestoreInterrupted reports a restore stopped by a lock, cancellation,
+// recovery or refused key use.
 // Accounts it didn't reach are still held and their history is still missing.
 var ErrRestoreInterrupted = errors.New("release restore interrupted")
 
@@ -398,13 +398,14 @@ var ErrRestoreInterrupted = errors.New("release restore interrupted")
 // the verified stage and successor addresses for each account inside a
 // KeyUse window. Entries for accounts the signer no longer holds are
 // skipped. It returns the number of records rebuilt and the first failure,
-// if any; a failure for one account does not stop the others and opens that
-// account's wait. A lock or cancellation is different: it stops the restore and
-// leaves the accounts it didn't reach held, because a quick unlock could
-// otherwise let a spend choose a leaf with their history missing. It then
-// returns ErrRestoreInterrupted, and only a restore that returns without it has
-// finished. generation is the session the restore serves, read before ctx and
-// session were made: a lock after that point has to count as interrupting it.
+// if any; an ordinary failure for one account does not stop the others and
+// opens that account's wait. Interruption by a lock, cancellation, recovery
+// or refused key use instead leaves unrestored accounts held, because a
+// quick return to unlocked could otherwise allow a spend to choose a leaf
+// with its history missing. It returns ErrRestoreInterrupted, and only a
+// restore that returns without it has finished. generation is the session
+// the restore serves, read before ctx and session were made: a lock after
+// that point has to count as interrupting it.
 func (s *Service) RebuildReleaseMemory(ctx context.Context, session *keystore.KeySession, generation uint64, entries []AuditedRelease, opts StageFillOptions) (int, error) {
 	deps, depErr := s.rotatingDeps()
 	if depErr != nil || deps.Releases == nil {
@@ -484,10 +485,9 @@ func (s *Service) releaseAddresses(ctx context.Context, account string, stage ui
 //   - the same, past the validity: expired, still live (warning), because the
 //     revealed stage still controls the account and that transaction can
 //     never confirm;
-//   - the same, within the validity, but the stage has released over more
-//     than one transaction and its scheme is one-time: reused (warning),
-//     because the stage has lost its one-time scheme's protection until the
-//     account moves; for other schemes the reuse is harmless and stays a note;
+//   - the same, within the validity, but a one-time leaf has signed more than
+//     one transaction: reused (warning), because the stage has lost its
+//     hash-based protection until the account moves;
 //   - authorizer anywhere else: the release landed or the account moved on;
 //     the memory is cleared and nothing is said. A record made after the
 //     pass's chain read is newer than the observation and is left alone;

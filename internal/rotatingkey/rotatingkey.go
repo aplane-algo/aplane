@@ -6,8 +6,8 @@
 // registry, provider, or algorithm family, so storage, scanning, and inventory
 // can apply the same rules in any binary.
 //
-// The sizes below are frozen by the key type. Tests check them against
-// lsig/rotatingtriplewots, the implementation that owns them.
+// The sizes below are frozen by the key type at its first release. Tests check
+// them against each family's stage package, which owns them.
 package rotatingkey
 
 const (

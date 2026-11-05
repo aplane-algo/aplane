@@ -151,8 +151,9 @@ type AuditEntry struct {
 	RotatingStage     *uint64 `json:"rotating_stage,omitempty"`
 	RotatingLastValid uint64  `json:"rotating_last_valid,omitempty"`
 	// RotatingTree and RotatingIndex name the one-time leaf the stage signed
-	// with, for families whose stage holds several; both are 0 (and
-	// omitted) for a family with one key per stage.
+	// with. Zero values are omitted: WOTS+C always has tree 0, and leaf 0 is
+	// valid. A stateless family allocates no leaf and leaves both fields 0;
+	// omitted fields alone therefore do not identify a stateless family.
 	RotatingTree  uint64 `json:"rotating_tree,omitempty"`
 	RotatingIndex uint32 `json:"rotating_index,omitempty"`
 	// POLICY_APPLY_* and ASA_SET_UPDATE_*: see policy_audit.go.

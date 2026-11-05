@@ -178,7 +178,7 @@ public record is still rederived on credential validation.
 | Address derivations during request-time stage discovery | 4 |
 | Parallel address derivations within one chunk | 1 |
 
-Smaller caller budgets still apply. WOTS and XMSS retain their existing settings.
+Smaller caller budgets still apply. XMSS and WOTS+C retain their existing settings.
 These are work limits, not on-chain resources or lifetime-signature limits, and
 can be tuned without changing stage addresses. Concurrent operations do not share
 a global CPU quota. Credential validation and required target rederivation and

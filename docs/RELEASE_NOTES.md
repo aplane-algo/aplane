@@ -10,15 +10,31 @@ before it was renamed `enroll`.
 ## Rotating signatures stop at lock
 
 - A lock during rotating signing could neither stop the signature nor wait for the
-  seed to be cleared. Locking now cancels the request and waits for it, and the signer
-  refuses to release a signature if it locked, the request was cancelled or the key
-  was removed. Slow SLH-DSA signing already checked this; WOTS, XMSS and WOTS+C did not.
+  seed to be cleared. Locking now cancels the request and waits for the seed to be
+  cleared. The signer refuses to release a signature if it locked, the request was
+  cancelled or the key was removed. Slow SLH-DSA signing already checked this;
+  WOTS, XMSS and WOTS+C did not.
 - A leaf-family spend could reuse a one-time leaf, with unused leaves left and nothing
   reported, if a delayed reset of the release memory landed after the spend passed its
   restore check. The spend now fails with an error and can be retried.
-- A restore that a lock cut short no longer lets spends through with releases missing,
-  however quickly the signer is unlocked again. Its accounts stay held until the next
-  restore.
+- A restore interrupted by a lock, cancellation, recovery or refused key use no
+  longer lets spends through with releases missing. Unrestored accounts stay held
+  for another restore attempt in the current session. Ordinary restore failures
+  still open the wait and can leave leaf history missing.
+
+## Rotating WOTS key type removed
+
+- `aplane.rotating-triple-wots.v1` is gone. `aplane.rotating-triple-wotsc.v1` is its
+  intended replacement: a smaller signature, a lower constant cost, one transaction fewer, and
+  64 one-time leaves per stage instead of one. With intact history and unused
+  leaves, a rebuilt transaction takes a fresh leaf; an identical retry keeps its
+  recorded leaf. Exhaustion or missing history can still cause reuse, and missing
+  history can also prevent a reuse warning.
+- WOTS+C isn't ready for real funds. It hasn't been independently reviewed and isn't
+  frozen, so a change would derive different accounts from the same seed. Until then,
+  XMSS and SLH-DSA are the frozen rotating key types.
+- There's no migration. A store with this key type enabled, or holding one of its
+  key files, goes into recovery when it loads, even if it holds no WOTS keys.
 
 ## Rotating WOTS+C key type
 
@@ -28,7 +44,7 @@ before it was renamed `enroll`.
   rotating types. Enable it, then generate an account as for the others.
 - WOTS+C isn't a standard and this construction hasn't been independently reviewed.
   The key type isn't frozen yet, so don't hold real funds in it. See
-  [KEYTYPE_ROTATING_TRIPLE_WOTSC.md](KEYTYPE_ROTATING_TRIPLE_WOTSC.md).
+  [KEYTYPE_ROTATING_TRIPLE_HYBRID.md](KEYTYPE_ROTATING_TRIPLE_HYBRID.md#12-wotsc-variant).
 
 ## Lost signer notifications are shown
 

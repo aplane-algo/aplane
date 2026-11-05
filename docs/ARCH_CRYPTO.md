@@ -33,7 +33,7 @@ The cryptographic subsystem is split across these packages:
 |---|---|
 | Native signing | `internal/signing`, `internal/signing/ed25519`, `internal/signing/falcon1024` |
 | LogicSig provider interfaces, registry, and salting | `internal/lsigprovider`, `internal/logicsigdsa`, `internal/genericlsig`, `internal/lsigsalt` |
-| Built-in LogicSig families | `lsig/`, especially `lsig/falcon1024`, `lsig/ed25519lsig`, `lsig/falcon1024_guarded`, `lsig/composeddsa`, `lsig/generictemplate`, `lsig/rotatingtriplewots`, `lsig/rotatingtriplexmss`, `lsig/rotatingtripleslhdsa`, `lsig/rotatingfamily` |
+| Built-in LogicSig families | `lsig/`, especially `lsig/falcon1024`, `lsig/ed25519lsig`, `lsig/falcon1024_guarded`, `lsig/composeddsa`, `lsig/generictemplate`, `lsig/rotatingtriplewotsc`, `lsig/rotatingtriplexmss`, `lsig/rotatingtripleslhdsa`, `lsig/rotatingfamily` |
 | Algorithm metadata, keygen, mnemonics | `internal/algorithm`, `internal/keygen`, `internal/mnemonic` |
 | Key-type visibility and state | `internal/keytypecatalog`, `internal/keytypestate` |
 | Encrypted key/template persistence | `internal/crypto`, `internal/keys`, `internal/keystore`, `internal/templatestore`, `internal/templatelibrary` |
@@ -127,8 +127,9 @@ Built-in and bundled key types include:
   `aplane.falcon1024-allowlist.v2`, `aplane.falcon1024-timelock.v1`, and
   `aplane.falcon1024-allowlist-alock.v1`, plus the bounded-cosigner
   `aplane.corridor.v1`
-- the rotating account `aplane.rotating-triple-wots.v1` (library-visible,
-  signer-only)
+- the rotating accounts `aplane.rotating-triple-xmss.v1`,
+  `aplane.rotating-triple-slhdsa.v1` and `aplane.rotating-triple-wotsc.v1`
+  (library-visible, signer-only)
 
 Creation parameters are part of the provider boundary. `internal/lsigprovider`
 owns shared parameter metadata and normalization helpers used by UI adapters,
@@ -177,10 +178,10 @@ These providers implement the unified `internal/lsigprovider.SigningProvider`
 surface. `internal/logicsigdsa` is the DSA-oriented filtered view over
 that unified registry.
 
-`aplane.rotating-triple-wots.v1` is also a compiled, library-visible
-catalog entry, but it has no client-side LogicSig provider and does not
-register in `internal/lsigprovider`; signer binaries register its storage,
-stage cryptography, and generator through `lsig/signerreg`.
+The rotating key types are also compiled, library-visible catalog entries,
+but they have no client-side LogicSig provider and do not register in
+`internal/lsigprovider`; signer binaries register their storage, stage
+cryptography, and generators through `lsig/signerreg`.
 
 ### Generic LogicSig templates
 
@@ -213,8 +214,8 @@ and must not author a salt marker, salt preamble, or salt-style selector.
 Signing always uses the stored final bytecode and never recomputes salting from
 a live template.
 
-The rotating accounts (`aplane.rotating-triple-wots.v1`,
-`aplane.rotating-triple-xmss.v1`, `aplane.rotating-triple-slhdsa.v1` and
+The rotating accounts (`aplane.rotating-triple-xmss.v1`,
+`aplane.rotating-triple-slhdsa.v1` and
 `aplane.rotating-triple-wotsc.v1`) are the one exception to both rules. They
 store no bytecode: each stage's
 program is assembled locally from a frozen template and the stage's public
@@ -226,25 +227,22 @@ in bulk in the background, without trusting a node for addresses. A test
 compares the local bytes with algod's assembler output for salted and
 unsalted stages.
 
-A WOTS triple stage requires three signatures, each over the TxID: a Falcon-1024
-signature, an Ed25519 signature (`ed25519verify_bare`) and a Winternitz
-one-time signature (`internal/crypto/wots`): n = 32, w = 16, 64 message
-digits and 3 checksum digits, 67 SHA-256 chains of 15 steps, with the
-SPHINCS+ "simple" tweakable hash
-`F(T, c, j, x) = SHA-256(T || u64be(c*256 + j) || x)` and a per-stage tweak
-`T = SHA-256("APLANE_WOTS_V1" || G || tag || u64be(i))`, where the public
-account tag is HKDF output of the seed alone. The stage program verifies the
-WOTS signature with `sha256`, `itob` and `concat` only. A forgery needs a
-break of SHA-256, of the Falcon lattice assumption and of Ed25519 at once.
+A rotating stage requires three signatures, each over the TxID: a Falcon-1024
+signature, an Ed25519 signature (`ed25519verify_bare`) and a hash-based
+signature whose scheme the key type fixes. All three must verify over the same
+TxID. No reduction shows that forging the exact WOTS+C construction necessarily
+breaks SHA-256, so what a forgery needs depends on the scheme; see
+[KEYTYPE_ROTATING_TRIPLE_HYBRID.md](KEYTYPE_ROTATING_TRIPLE_HYBRID.md#9-security-properties-and-claims).
 
-A WOTS key must sign one message; the rotation makes every stage sign once
-in normal operation. A twice-signed stage (after an expired release and its
-repair, or a client re-signing a rebuilt transaction) loses only the WOTS
-half and still rests on Falcon-1024 and Ed25519 until the next release
-lands. Nothing prevents the second signature; the signer reports it
+The hash-based keys of the XMSS and WOTS+C triples are one-time, and each stage
+holds 64 of them. The rotation makes every stage sign once in normal operation.
+A second signature from a stage, after an expired release and its repair or a
+client re-signing a rebuilt transaction, takes another leaf. A leaf that signs
+twice loses only the hash-based half and still rests on Falcon-1024 and Ed25519
+until the next release lands. Nothing prevents it; the signer reports it
 (`ARCH_SIGNING.md`, rotating alerts).
 
-`aplane.rotating-triple-xmss.v1` replaces the per-stage WOTS key with RFC
+`aplane.rotating-triple-xmss.v1` uses RFC
 8391 XMSS (`internal/crypto/xmss`, parameter set `XMSS-SHA2_16_256`: SHA-256,
 n = 32, w = 16, h = 16). One tree of 65,536 one-time leaves serves 1,024
 consecutive stages, and each stage owns 64 of its leaves: stage `n` uses
@@ -297,10 +295,10 @@ without the cap, as the leaf rule documents.
 Per tree the signer derives the XMSS secret seed, PRF key and public seed
 (HKDF label `APLANE_ROTATING_XMSS_V1`, tags `0x20` to `0x22`, counter = tree
 number, genesis hash in every expansion); per stage the Falcon-1024 and
-Ed25519 seeds as the triple does. The tree's public nodes (about 4 MiB) are
+Ed25519 seeds as the other rotating types do. The tree's public nodes (about 4 MiB) are
 a cache the signer rebuilds from the seed; no secret is cached.
 
-The claim differs from the triple's in one respect. A leaf must sign one
+A leaf must sign one
 message, and a stage normally uses one leaf per transaction, so a stage can
 release up to 64 distinct transactions before any leaf repeats; the signer
 chooses leaves (`ARCH_SIGNING.md`, rotating accounts) and reports a repeat.
@@ -666,7 +664,7 @@ The design record for this new implementation of an established contract:
 
 1. **Identity and authority:** fixed account, fresh stage per spend; reuse
    existing rotating1 prepare/sign endpoints, canonical grouping, signer policy
-   and approval. Same transaction types and guards as WOTS/XMSS: rekey away from
+   and approval. Same transaction types and guards as XMSS and WOTS+C: rekey away from
    sender, no ALGO close, validity span <=100. Signer derives the next stage and
    proves it opens. No cosigner or external-admin path is introduced.
 2. **Cryptography and bindings:** all three signatures bind the raw 32-byte
@@ -702,7 +700,7 @@ The design record for this new implementation of an established contract:
    unsalted / 2837 salted, canonical first off-curve salt as other rotating
    stages. Args 0..3 are R+FORS (2928), both HT layers (1472), Ed25519 (64),
    Falcon (<=1423): 5887 bytes total. Each stays below the AVM byte-value
-   limit. The exact cost is 26825 + 41 times WOTS chain steps. A layer's
+   limit. The exact cost is 26825 + 41 times WOTS+ chain steps. A layer's
    checksum c lies in 0..480 and requires c + 45 - digitSum16(c) steps, at
    most 510; two layers give a ceiling of 68645, inside four transactions.
    The argument bytes decide the group: planning uses 6 transactions (5
@@ -737,8 +735,8 @@ The design record for this new implementation of an established contract:
 ## Rotating WOTS+C triple
 
 `aplane.rotating-triple-wotsc.v1` requires Falcon-1024, Ed25519 and a signature
-from a tree of 64 WOTS+C keys, built per stage, over the raw TxID. The frozen
-contract is in [KEYTYPE_ROTATING_TRIPLE_WOTSC.md](KEYTYPE_ROTATING_TRIPLE_WOTSC.md).
+from a tree of 64 WOTS+C keys, built per stage, over the raw TxID. The
+contract is in [KEYTYPE_ROTATING_TRIPLE_HYBRID.md](KEYTYPE_ROTATING_TRIPLE_HYBRID.md#12-wotsc-variant).
 WOTS+C isn't a standard, and no proof covers this construction. Independent review
 is pending, and passing vectors and pinning bytes don't establish it.
 
@@ -762,7 +760,7 @@ The design record for this new implementation of an established contract:
 5. **Choreography and retries:** the existing leaf choice, release memory, audit
    restore and reuse reporting. State chooses the leaf, never whether to sign. The
    open test never signs with a leaf.
-6. **Resources and compatibility:** frozen TEAL v13 template, 2483 bytes unsalted /
+6. **Resources and compatibility:** TEAL v13 template that freezes at first release, 2483 bytes unsalted /
    2486 salted, 2115 argument bytes, exactly 15721 opcode units on every accepted run,
    a three-transaction group and no program surcharge. A changed template or
    derivation is a new key type.

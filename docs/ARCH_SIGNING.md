@@ -1467,15 +1467,16 @@ cancelable through `/sign/cancel`.
 A rotating account keeps one address while its authorizing stage program
 changes on every spend. Stage `n` is a program over the Falcon-1024 and
 Ed25519 keys derived for `n` from the account's seed and the stage's
-hash-based key (a WOTS key for the triple; for the XMSS triple, the root of
-the tree serving `n` and the stage's 64-leaf index range; for the WOTS+C triple,
-the root of the stage's own tree); stage 0's
+hash-based key (for the XMSS triple, the root of the tree serving `n` and the
+stage's 64-leaf index range; for the WOTS+C triple, the root of the stage's own
+tree); stage 0's
 program address is the account. Both endpoints use the `sign_request` action,
 resolve the key by the account address, refuse any account that is not
 rotating, and read the account's authorizer and the round from the signer's
-own node (see `ARCH_NETWORKS.md`). The signer keeps no durable state for the
-account between requests: the chain says which stage is live, the seed says
-which stage comes next.
+own node (see `ARCH_NETWORKS.md`). The chain identifies the live stage, and
+the seed derives its successor. XMSS and WOTS+C also use release history,
+restored from the audit log, to avoid choosing previously used leaves. That
+history cannot be reconstructed from the seed or the chain.
 
 The invariant every release upholds: a signature from stage `n` is released
 only while `n` is the authorizer, and its transaction rekeys the account to
@@ -1495,7 +1496,7 @@ transaction, or a later rotation, confirms.
 The signer reads the authorizer, finds its stage `n` (through the stage
 address table, confirmed by derivation), sets `rekey_to` to stage `n + 1`'s
 address derived from the seed, adds the resource dummies the key type's
-profile needs (three for the triple hybrid), sets fees
+profile needs (two for the WOTS+C triple), sets fees
 and the group ID with the same group builder `/sign` and `/plan` use, and
 returns the exact unsigned group. It stores nothing.
 Preparation needs no approval and reveals nothing secret. An account whose
@@ -1540,8 +1541,8 @@ account's lock, it reads the chain again and refuses unless the authorizer
 is still stage `n` (`rotating_stage_changed` otherwise: nothing was signed),
 `first_valid` is at most 2 rounds ahead of the round read, and at least 10
 rounds remain before `last_valid`. It proves stage `n + 1` can sign, signs
-the TxID with stage `n`'s keys (Falcon-1024, WOTS and Ed25519; or
-Falcon-1024, an XMSS or WOTS+C leaf and Ed25519), verifies every signature, writes a
+the TxID with stage `n`'s keys (Falcon-1024, a hash-based signature and
+Ed25519), verifies every signature, writes a
 `ROTATING_RELEASE` audit entry (account, TxID, stage, `last_valid`, and for
 a leaf family the tree and leaf index) with a durable sync, records the
 release in memory, and responds. The sign path is a key user: a lock cancels it
@@ -1551,16 +1552,23 @@ or the key was removed, both before that write and after the last audit write.
 
 For a family whose stage holds several one-time leaves
 (`rotatingkey.Profile.LeavesPerStage`), the signer chooses the leaf under
-the account lock, from its release memory: a transaction the stage already
-released keeps its leaf, so an identical retry reproduces the identical
-signature; otherwise the TxID's first byte picks a leaf inside the stage's
-range and the first unused leaf upward from it, wrapping, is taken, so two
-signers sharing a seed and no memory collide one time in `LeavesPerStage`
-rather than always; when every leaf is used the pick is reused and reported.
-State chooses the leaf, never whether to sign. An audit
-write failure is logged as a warning and does not withhold the signature:
-the entry only feeds the alerts below, so a release missing from the log is
-one whose alert cannot be restored after a restart, never a safety gap.
+the account lock, from its release memory: a recorded transaction keeps its
+leaf, so an identical retry reproduces its hash-based signature. Otherwise
+the TxID's first byte picks a leaf inside the stage's range and the first
+unused leaf upward from it, wrapping, is taken. For two independent,
+unchosen TxIDs, signers sharing a seed but no history collide with probability
+`1 / LeavesPerStage`. This is not an adversarial bound: whoever controls the
+transaction's contents can target a leaf in about `LeavesPerStage` attempts.
+Intact history selects an unused leaf regardless of that pick while capacity
+remains. When every leaf is used, the pick is reused and reported; exhaustion
+does not itself refuse a release.
+
+Signing waits for release-history restoration as described below. An audit
+write failure is logged as a warning and does not withhold the signature.
+The release remains recorded in process memory, but after that memory is
+lost the missing audit entry can lead to undetected leaf reuse. Audit history
+supports both leaf selection and alerts; losing it can forfeit the hash-based
+one-time security claim even though Falcon-1024 and Ed25519 remain required.
 
 There is no limit on releases per stage. Two spends prepared from the same
 stage both rekey to the same `n + 1`; whichever lands second is rejected by
@@ -1576,7 +1584,7 @@ store would change that outcome.
 
 Creating and using rotating accounts:
 
-- `aplane.rotating-triple-wots.v1` (Falcon-1024 + WOTS + Ed25519 stages)
+- `aplane.rotating-triple-wotsc.v1` (Falcon-1024 + WOTS+C + Ed25519 stages)
   is a `Library` key type: an operator enables it, then generates with the
   single creation parameter `network`: any network the signer knows
   (built-in or configured, which `/keytypes` lists as the parameter's
@@ -1707,17 +1715,26 @@ what the stage released while the log was being read, so a leaf used in
 that window stays listed, and an audited release from a stage the account
 has already moved past is ignored. A spend from a leaf family that arrives
 before its account's audited release has been restored waits for it,
-bounded by the request's own context; a restore that fails or finds nothing
-opens the wait, so state still never decides whether to sign. The signer
-checks every rotating account's authorizer on its own node right
+bounded by the request's own context. Under the account lock, the signer
+reads the leaf history and restore state together and refuses if a reset
+has made the history pending again.
+
+Each restore is bound to the lock generation captured before its session,
+context and unlocked-state check. A restore interrupted by a lock,
+cancellation, recovery or refused key use leaves unrestored accounts held;
+the worker retries instead of opening the wait. A completed restore with no
+entries, or an ordinary failure unrelated to interruption, opens the affected
+wait. Such a failure can leave history missing and allow undetected reuse.
+
+The signer checks every rotating account's authorizer on its own node right
 after unlock and then about every 30 seconds while unlocked (a nominal
 interval: chain reads and paced derivation can stretch it). A release whose
 `last_valid` has passed while its stage is still the authorizer raises a
 warning: that transaction can never confirm and the revealed keys still
 control the account. A release still within its window is a note. A read
 that shows the account past the release clears it; a stale read never
-erases a newer release. Only the newest release is kept, but a release
-that replaces one from the same stage over a different TxID marks the
+erases a newer release. The record lists the stage's releases and their
+leaves, and a release that repeats a leaf over a different TxID marks the
 record as reused (a retry that re-records the same TxID does not), and the
 mark survives until the account moves past the stage; the audit reader
 applies the same rule across the entries it can see, so a reuse older than
@@ -1725,18 +1742,18 @@ the retained log goes unreported. An earlier release from the same stage
 that expired while a newer one is still within its window is reported
 through the newer one: the stage is the same, and the newer transaction
 either lands and moves the account or expires and raises the warning, which
-then also says the stage has signed more than one transaction. Because the
-stage includes a one-time WOTS signature, a reused stage that is still live
+then gives the attempt count, or says the stage has signed more than one
+transaction if a leaf repeated. Because a one-time leaf has signed two messages, a reused stage that is still live
 raises a warning even while the newest release is within its window: until
-the account moves, the stage rests on Falcon-1024 and Ed25519. (For a key
-type without a one-time scheme the reuse would be harmless and only appear
-in the in-flight note; the profile's `OneTimeStage` flag selects which.)
+the account moves, the stage rests on Falcon-1024 and Ed25519. A stateless
+family has no leaf to reuse, so it reports only the in-flight note.
 Warnings appear in the daemon log once when they
 appear and once when they clear, in authenticated `/status` `warnings`, in
 apadmin's status bar, and in apshell's `rotate status`; notes appear in
 `/status` `notes`. The remedy for an expired release is a rotate-only spend
-through the endpoints above. Alerts are observational: safety does not
-depend on them, on the table, or on the audit log.
+through the endpoints above. Alerts themselves are observational. The release
+history that feeds them also guides one-time leaf selection, so a missing
+warning does not establish that no leaf was reused.
 
 `/keys` response:
 
