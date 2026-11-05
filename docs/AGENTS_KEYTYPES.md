@@ -59,6 +59,12 @@ Before writing code or YAML, classify the requested key type:
 If the user is asking for a template policy and does not mention Falcon,
 generate a generic LogicSig YAML template.
 
+A composed template uses schema v2 and a `bounded` block unless there is a stated
+reason not to. Prefer a framework policy to author TEAL: `bounded.layer3` with
+`fixed_allowlist` or `merkle_allowlist` needs no `teal`, and declaring both is rejected.
+The field reference is in
+[DEV_KEYTYPES.md](DEV_KEYTYPES.md#bounded-schema-schema_version-2).
+
 For Go provider work, keep the client/signer boundary intact. Client-visible
 provider metadata and LogicSig derivation may register through the LogicSig
 provider registries, but private-key operations must be passed through explicit

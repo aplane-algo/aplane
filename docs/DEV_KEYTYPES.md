@@ -410,12 +410,14 @@ Reference implementations: `lsig/falcon1024/` and `lsig/ed25519lsig/`.
 ### D. Composed DSA Template
 
 Examples:
-- `aplane.falcon1024-allowlist.v1`
+- `aplane.falcon1024-allowlist.v1`, whose allowlist comes from a framework policy
+- `aplane.falcon1024-timelock.v1`, whose rule is author TEAL
 
 Characteristics:
-- DSA base plus additional TEAL constraints
-- creation params feed a TEAL suffix
-- can be declared in Go or YAML
+- DSA base plus additional constraints
+- Layer 3 is either a framework policy with no TEAL, or an author TEAL suffix that
+  creation params feed
+- declared in YAML; every shipped composed policy is a template
 
 Typical code areas:
 - `lsig/composeddsa/`
@@ -513,9 +515,15 @@ Use **Go** when:
 
 Use **YAML composed template** when:
 - the base DSA key type already exists
-- you are adding a constrained variant by TEAL suffix
-- parameters map cleanly to suffix substitution
+- you are adding a constrained variant by framework policy or TEAL suffix
+- parameters map cleanly to the policy or to suffix substitution
 - a YAML file under the top-level `library/templates/` directory is the right fit
+
+Prefer a framework policy over author TEAL when one fits: a recipient allowlist needs
+no TEAL at all. See [Bounded schema](#bounded-schema-schema_version-2).
+
+`NewComposedFalcon` can define a composed type in Go, but no shipped type uses it for a
+composed policy. It builds the `aplane.falcon1024.v1` base provider, and tests use it.
 
 ## YAML Template Notes
 
@@ -760,6 +768,97 @@ should still avoid hand-written constant blocks in TEAL source.
 | `address` | `ABC...XYZ` | decoded 32-byte value in `bytecblock` |
 | `uint64` | `12345` | value in `intcblock` |
 | `bytes` | `deadbeef` | `0xdeadbeef` in `bytecblock` |
+
+### Bounded schema (`schema_version: 2`)
+
+Every bundled composed template uses schema v2, which adds a required `bounded` block
+to the fields above. [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md#yaml-contract) is the
+authoritative contract. This lists every field, so it is a reference and not one valid
+template: for example, `layer3` and `teal` cannot be used together.
+
+```yaml
+schema_version: 2
+derivation_version: 3
+template_type: composed
+base_key_type: aplane.falcon1024.v1
+template_mode: generated     # strict | generated; legacy is not allowed
+# ...publisher, family, version, display_name, max_opcode_cost as above
+
+bounded:
+  contract: bounded1
+  spend_effects: [pay, axfer, asset_opt_in]  # non-empty subset
+  max_fee: 10000             # required; at most 10000
+  admin_operations:          # empty list: no rekey path
+    - kind: rekey
+      authorization: admin_key   # spending_key | admin_key
+      policy_gate: none          # none | layer3; admin_key requires none
+  cosigner:                  # optional; Falcon base only
+    contract: cosigner1
+    required_on: [spend]
+  layer3:                    # optional; omit to use author teal
+    policy: merkle_allowlist     # fixed_allowlist | merkle_allowlist
+    recipients_parameter: recipients
+  derived_args:              # required by merkle_allowlist
+    - name: merkle_proof
+      kind: merkle_allowlist_proof
+      parameter: recipients
+      max_size: 512
+  runtime_args:              # caller values for Layer 3; top-level runtime_args reject
+    - name: preimage
+      type: bytes            # bytes | string | uint64
+      max_size: 64
+      required_on: [spend]   # add rekey when the rekey uses policy_gate: layer3
+```
+
+The rules that most often surprise authors:
+
+- `bounded.layer3` and `teal` are mutually exclusive. One of them is required.
+- A framework policy accepts only its recipients parameter, which must be a required
+  `address[]` with `min_items: 1`. `max_items` is at most 30 for `fixed_allowlist` and
+  65,536 for `merkle_allowlist`.
+- `bounded_admin_public_key` and the cosigner parameters are injected by the framework
+  and cannot be declared. `bounded_` and `__aplane_bounded1_` are reserved.
+- A cosigner cannot be combined with a spending-key rekey.
+- Author TEAL reads `arg 1` onward, in the static slot order: base signatures, derived
+  arguments, runtime arguments, cosigner signature, admin signature.
+- Author TEAL cannot use `return`.
+
+A framework-policy template has no `teal` at all. This is the complete
+`aplane.falcon1024-allowlist-lock.v1` definition, less display text:
+
+```yaml
+schema_version: 2
+derivation_version: 3
+template_type: composed
+base_key_type: aplane.falcon1024.v1
+template_mode: generated
+publisher: aplane
+family: falcon1024-allowlist-lock
+version: 1
+display_name: "Falcon-1024 Rekey-Locked Allowlist"
+max_opcode_cost: 20000
+
+bounded:
+  contract: bounded1
+  spend_effects: [pay, axfer, asset_opt_in]
+  max_fee: 10000
+  admin_operations:
+    - kind: rekey
+      authorization: admin_key
+      policy_gate: none
+  layer3:
+    policy: fixed_allowlist
+    recipients_parameter: recipients
+
+parameters:
+  - name: recipients
+    type: address[]
+    required: true
+    min_items: 1
+    max_items: 30
+```
+
+`aplane.falcon1024-timelock.v1` is the shortest author-TEAL example.
 
 ## TEAL Security Patterns
 
@@ -1079,8 +1178,8 @@ Common paths:
 - [ ] Registers with `internal/logicsigdsa`
 - [ ] Keeps `composeddsa.DSAOps` client-safe: metadata, TEAL generation, and signature-argument packing only
 - [ ] Supplies private-key operations through signer-side `signerops` packages when needed
-- [ ] Go-defined templates are reachable from `lsig/composeddsa` or equivalent composed template registration code
-- [ ] Go-defined templates are reachable from an owning startup path such as `lsig/clientreg.RegisterClient()` or `lsig/signerreg.RegisterSigner()`
+- [ ] If defined in Go, which no shipped composed policy is, the type is reachable from `lsig/composeddsa` or equivalent composed template registration code
+- [ ] If defined in Go, the type is reachable from an owning startup path such as `lsig/clientreg.RegisterClient()` or `lsig/signerreg.RegisterSigner()`
 - [ ] User-loaded YAML installs into the product encrypted template store with a key type state record, can be disabled by setting that record to `disabled`, and is not registered directly from startup registration
 
 ## Parameter Checklist

@@ -24,6 +24,7 @@ reference for one of the three axes (Resolve).
 - [Key types summary](#key-types-summary)
 - [The three axes](#the-three-axes)
 - [LogicSig providers](#logicsig-providers)
+- [Account generation](#account-generation)
 - [See also](#see-also)
 
 ## Protocol dimensions and terminology
@@ -1031,7 +1032,15 @@ and rejects unknown or missing required args.
 The generic `lsig/composeddsa` engine combines a DSA base with an optional TEAL
 suffix. Strict template suffixes use declared `template_variables` and `$name`
 constant references; generated-mode suffixes keep the restricted list-expansion
-path. Falcon exposes that engine through Falcon-specific names:
+path. A bounded template may have no suffix at all, because a framework policy
+supplies its Layer 3 (see [Framework Layer 3 policies](#framework-layer-3-policies)).
+
+Three things build a `ComposedDSA`: the Falcon base provider, the Ed25519 base
+provider, and the template constructor `NewProviderFromTemplateSpec`. Every
+shipped composed policy is a YAML template. No key type ships as a composed policy
+defined in Go, though the API allows it. Falcon exposes the engine through
+Falcon-specific names in `lsig/falcon1024/v1/composer.go`. This example shows that
+API and is not a registered key type:
 
 ```go
 ExampleFalconHashlock = NewComposedFalcon(ComposedFalconConfig{
@@ -1105,12 +1114,31 @@ salt style is not exposed through public wire DTOs.
 #### Bounded1 composer extension
 
 Schema-v2 composed templates add a composer-owned transaction envelope ahead
-of the author suffix. Authentication remains first; fee/type/effect dispatch
-is second; author Layer 3 runs on admitted spends and on spending-key rekeys
-only when the profile selects `policy_gate: layer3`; external-admin rekeys skip
-Layer 3. The
-composer owns all `__aplane_bounded1_` labels and the `bounded_` parameter
-namespace.
+of Layer 3. Authentication remains first; fee/type/effect dispatch is second;
+Layer 3 runs on admitted spends and on spending-key rekeys only when the profile
+selects `policy_gate: layer3`; external-admin rekeys skip Layer 3. The composer
+owns all `__aplane_bounded1_` labels and the `bounded_` parameter namespace.
+
+`GenerateTEAL` emits the program in this order: the pragma, any strict-mode
+constants, the base signature verification, the bounded envelope, Layer 3, then
+the shared accept block.
+
+##### Framework Layer 3 policies
+
+Layer 3 comes from exactly one of two places:
+
+| Source | Template declares | Stored `layer3_policy` | Bundled example |
+|---|---|---|---|
+| Framework policy | `bounded.layer3` and no `teal` | `fixed_allowlist` or `merkle_allowlist` | `aplane.falcon1024-allowlist.v1`, `aplane.corridor.v1` |
+| Author TEAL | `teal` and no `bounded.layer3` | `custom` | `aplane.falcon1024-timelock.v1`, `aplane.falcon1024-allowlist.v2` |
+
+A framework policy is rendered by the composer in `lsig/composeddsa/layer3.go`, so
+the template contains no TEAL. `fixed_allowlist` compiles up to 30 recipients inline.
+`merkle_allowlist` compiles the root of up to 65,536 recipients and needs a
+signer-derived proof. Both check only recipients, and the sender is always a legal
+self-recipient. Declaring both sources is rejected, as is any parameter a framework
+policy does not use. See the YAML contract in
+[ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md#yaml-contract).
 
 Bounded-capable bases expose a static signature-argument layout. Bounded1 keeps
 `LSigProvider.BuildArgs` unchanged, then assembles declared signer-derived and
@@ -1296,6 +1324,64 @@ admin slot reserved, and `aprekey` independently validates the finalized
 transaction and fills only that slot. Durable bounded metadata owns the layout
 and per-path maximum signed size. See
 [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md).
+
+## Account generation
+
+Every route into account creation reaches `keyadmin.Service.GenerateKey`, which owns
+the checks. The route decides what is resolved on the client first.
+
+| Route | Path to `GenerateKey` | Client-side resolution |
+|---|---|---|
+| apadmin | IPC `generate_key`, `Session.HandleGenerateKey` | Reads a public `.wit.json` and sends its `bounded_admin_public_key` |
+| apshell, MCP, JS | `POST /admin/generate`, `rest.Service.AdminGenerate` | Expands aliases and sets in `address[]` parameters, through `expandGenerateAddressListParams` |
+| SDKs | `POST /admin/generate` | None |
+
+`GenerateKey` then runs these steps. The first failure stops generation, and nothing
+is saved before the final steps.
+
+| Step | Work | Owner |
+|---|---|---|
+| 1 | Check the key type is allowed for the node role | `keyclass.ValidateKeyTypeAllowedForNodeRole` |
+| 2 | Resolve rotating network names, and turn a `cosigner` reference into `cosigner_public_key` for guarded and cosigner-enabled bounded types | `cosignerrefs` |
+| 3 | Canonicalize parameters, including sorting `address[]` values | `lsigprovider.NormalizeCreationParams` |
+| 4 | Reject a cosigner key that collides with an existing authority | `validateVisibleCosignerAuthorityCollisions` |
+| 5 | Take the mutation lock and check the key type is enabled | `keytypestate.CanGenerate` |
+| 6 | Branch: generic LogicSigs go to `generateGenericLSig`; everything else continues below | `genericlsig.IsGenericLSigType` |
+| 7 | Check witness role exclusivity and choose the family generator | `keymgmt.GenerateKeyWithActivatedContext`, `keygen.GetGenerator` |
+
+For a DSA LogicSig, `generateKey` in `lsig/dsafamily/signerreg/generator.go` then runs:
+
+| Step | Work | Owner |
+|---|---|---|
+| 8 | Normalize again, then validate values against the parameter definitions | `ValidateCreationParams` |
+| 9 | Generate the keypair from the seed | The family's keygen ops |
+| 10 | Render TEAL, compile it, and validate the salted address | `deriveSaltedLogicSig`, `DeriveLsigWithSalt`, `lsigsalt` |
+| 11 | Capture the TEAL source and runtime argument definitions | `GenerateTEAL`, `RuntimeArgs` |
+| 12 | For a bounded type, build the durable contract: authority IDs, argument layout and program binding | `BuildBoundedAuthorizationMetadata` |
+| 13 | Resolve the reviewed opcode profile | `lsigprovider.ResolveOpcodeProfile` |
+| 14 | Build the payload with bytecode, parameters, metadata and the template fingerprint | `keys.NewAutoSaltedDSALSigPayload`, `SetBoundedAuthorization` |
+| 15 | Check the payload's selector equals the derived address, then save the key file | `Payload.Selector`, `keys.SavePayload` |
+
+`GenerateKey` finishes by reloading the runtime and writing the audit entry. The seed
+and private key are zeroed in `generateKey` on every path.
+
+A generic LogicSig has no keypair, so `GenerateGenericLSig` replaces steps 7 to 15. It
+normalizes and validates, compiles with `CompileWithSalt` using the configured
+`teal_compile_network`, resolves the opcode profile, and saves through `SaveGenericLSig`.
+
+Three boundaries matter when changing this path:
+
+- **Per-type assumptions.** `CreationParams`, `RuntimeArgs` and
+  `BoundedAuthorizationMetadata` answer once per key type, and steps 2 to 4 and 8 use
+  them. `BuildBoundedAuthorizationMetadata` is the per-account step, because it receives
+  the public key, parameters and final bytecode.
+- **Generation versus signing.** The template, provider and fingerprint matter up to
+  step 15. Signing uses the stored bytecode and metadata, and a bounded key finds its
+  signature packing through `BaseKeyType`, so a template change does not alter existing
+  keys.
+- **Budget checks.** Generation does not solve the group or fee budget. Bundled shapes
+  are proven by `TestBundledBoundedCompiledBudgetMatrix`, and the signing planner rejects
+  a path that exceeds its fee ceiling.
 
 ## See also
 
