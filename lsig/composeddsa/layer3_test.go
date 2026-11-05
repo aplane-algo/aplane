@@ -118,7 +118,7 @@ func TestFixedAllowlistPolicyRejectsUnsafeSchema(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			err := validateLayer3Policy(test.policy, test.params, profile)
+			err := validateLayer3Policy(test.policy, test.params, profile, false)
 			if err == nil || !strings.Contains(err.Error(), test.want) {
 				t.Fatalf("validateLayer3Policy() error = %v, want %q", err, test.want)
 			}
@@ -130,11 +130,11 @@ func TestMerkleAllowlistPolicyRequiresClosedProofContract(t *testing.T) {
 	profile := fixedAllowlistTestProfile()
 	policy := &Layer3Policy{Policy: Layer3PolicyMerkleAllowlist, RecipientsParameter: "recipients"}
 	params := []lsigprovider.ParameterDef{{Name: "recipients", Type: "address[]", Required: true, MinItems: 1, MaxItems: 65536}}
-	if err := validateLayer3Policy(policy, params, profile); err != nil {
+	if err := validateLayer3Policy(policy, params, profile, false); err != nil {
 		t.Fatalf("validateLayer3Policy() error = %v", err)
 	}
 
-	err := validateLayer3Policy(policy, append(params, lsigprovider.ParameterDef{Name: "limit", Type: "uint64"}), profile)
+	err := validateLayer3Policy(policy, append(params, lsigprovider.ParameterDef{Name: "limit", Type: "uint64"}), profile, false)
 	if err == nil || !strings.Contains(err.Error(), "is not used") {
 		t.Fatalf("validateLayer3Policy(extra parameter) error = %v", err)
 	}
@@ -167,7 +167,7 @@ func TestFixedAllowlistPolicyRejectsLayer3GatedRekeyWithoutPay(t *testing.T) {
 	params := []lsigprovider.ParameterDef{{
 		Name: "recipients", Type: "address[]", Required: true, MinItems: 1, MaxItems: BoundedInlineListMax,
 	}}
-	err := validateLayer3Policy(policy, params, profile)
+	err := validateLayer3Policy(policy, params, profile, false)
 	if err == nil || !strings.Contains(err.Error(), "requires pay in spend_effects") {
 		t.Fatalf("validateLayer3Policy() error = %v, want pay requirement", err)
 	}

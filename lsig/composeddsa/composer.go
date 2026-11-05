@@ -273,7 +273,7 @@ func (c *ComposedDSA) BoundedAuthorizationProfile() *BoundedAuthorizationProfile
 // Layer3PolicyName identifies whether the provider uses framework-owned or
 // contained custom Layer-3 policy.
 func (c *ComposedDSA) Layer3PolicyName() string {
-	return layer3PolicyName(c.layer3)
+	return layer3PolicyName(c.layer3, c.hasAuthorTEAL())
 }
 
 // SignatureArgLayout returns the static base signature layout when the base
@@ -538,7 +538,10 @@ func (c *ComposedDSA) GenerateTEAL(publicKey []byte, params map[string]string) (
 		}
 		b.WriteString(layer3)
 		b.WriteString("\n")
-	} else {
+	}
+	// A framework allowlist is emitted first and falls through, so author TEAL
+	// can only narrow what it admits and nothing the author writes can skip it.
+	if c.layer3 == nil || c.hasAuthorTEAL() {
 		switch mode {
 		case generictemplate.TemplateModeStrict:
 			b.WriteString(strictSuffix.TEAL)
@@ -608,7 +611,13 @@ func (c *ComposedDSA) saltLocator() (lsigsalt.Locator, error) {
 }
 
 func (c *ComposedDSA) hasSuffix() bool {
-	return strings.TrimSpace(c.tealSuffix) != "" || c.layer3 != nil
+	return c.hasAuthorTEAL() || c.layer3 != nil
+}
+
+// hasAuthorTEAL reports whether the template supplied TEAL of its own.
+// hasSuffix is also true for a framework policy, which has none.
+func (c *ComposedDSA) hasAuthorTEAL() bool {
+	return strings.TrimSpace(c.tealSuffix) != ""
 }
 
 func (c *ComposedDSA) resolvedSaltStyle() (lsigsalt.Style, error) {

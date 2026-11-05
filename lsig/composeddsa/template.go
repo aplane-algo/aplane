@@ -72,15 +72,14 @@ func ValidateTemplateSpec(spec *TemplateSpec) error {
 			return err
 		}
 	}
-	if spec.Bounded == nil || spec.Bounded.Layer3 == nil {
-		if strings.TrimSpace(spec.TEAL) == "" {
-			return fmt.Errorf("teal is required for custom Layer-3 policy")
-		}
+	hasAuthorTEAL := strings.TrimSpace(spec.TEAL) != ""
+	if !hasAuthorTEAL && (spec.Bounded == nil || spec.Bounded.Layer3 == nil) {
+		return fmt.Errorf("teal is required for custom Layer-3 policy")
+	}
+	if hasAuthorTEAL {
 		if err := generictemplate.ValidateRelocatableTEAL(spec.TEAL); err != nil {
 			return fmt.Errorf("composed template suffix: %w", err)
 		}
-	} else if strings.TrimSpace(spec.TEAL) != "" {
-		return fmt.Errorf("framework-owned bounded Layer-3 policy must not declare teal")
 	}
 	if err := generictemplate.ValidateParameterSpecs(spec.Parameters); err != nil {
 		return err
@@ -109,7 +108,7 @@ func NewProviderFromTemplateSpec(spec *TemplateSpec) (*ComposedDSA, error) {
 	if err != nil {
 		return nil, err
 	}
-	layer3, err := layer3PolicyFromTemplate(spec.Bounded, generictemplate.ParameterSpecToParameterDefs(spec.Parameters), bounded)
+	layer3, err := layer3PolicyFromTemplate(spec.Bounded, generictemplate.ParameterSpecToParameterDefs(spec.Parameters), bounded, strings.TrimSpace(spec.TEAL) != "")
 	if err != nil {
 		return nil, err
 	}

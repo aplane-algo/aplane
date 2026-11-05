@@ -7,6 +7,16 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## Bounded templates can add a custom rule to a framework allowlist
+
+- A schema-v2 template can now declare `bounded.layer3` with `fixed_allowlist` or
+  `merkle_allowlist` and also supply `teal`. The allowlist runs first, then the TEAL, and
+  both must pass, so a custom rule no longer has to reimplement the recipient check.
+- Such accounts record `fixed_allowlist_custom` or `merkle_allowlist_custom` as their
+  `layer3_policy`. Binaries from before this change reject those key files.
+- A framework-policy template with no `teal` now rejects `bounded.runtime_args`, since
+  nothing would read them. Existing keys are not affected.
+
 ## Mnemonic import will be removed from plain LogicSig accounts
 
 - A later release will stop accepting mnemonic import for `aplane.falcon1024.v1` and
