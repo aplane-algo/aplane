@@ -724,6 +724,8 @@ parameters:
     max: <n>
     max_length: <n>          # optional UI/validation length hint
     default: "<value>"       # optional default for optional params
+    # address only:
+    nonzero: true            # reject the zero address
     # list types only:
     min_items: <n>
     max_items: <n>

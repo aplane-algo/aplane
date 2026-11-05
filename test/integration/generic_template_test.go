@@ -557,8 +557,8 @@ func TestGenericLSigRegenerationProducesSameAddress(t *testing.T) {
 
 	params := map[string]string{
 		"hash":           "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-		"recipient":      integrationBurnAddress,
-		"refund_address": integrationBurnAddress,
+		"recipient":      integrationHTLCDestination,
+		"refund_address": integrationHTLCDestination,
 		"timeout_round":  "999999999",
 	}
 

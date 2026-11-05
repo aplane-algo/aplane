@@ -94,11 +94,11 @@ func TestKeyDerivationRegression(t *testing.T) {
 			mnemonic: "",
 			params: map[string]string{
 				"hash":           preimageHashHex,
-				"recipient":      integrationBurnAddress,
-				"refund_address": integrationBurnAddress,
+				"recipient":      integrationHTLCDestination,
+				"refund_address": integrationHTLCDestination,
 				"timeout_round":  fixedTimeoutRound,
 			},
-			wantAddress: "SGCU7MLRXQ4H227YCRTTT6MHL2N64WGJPHH3OTPID2CK4JNGJU6DITLIUQ",
+			wantAddress: "A7WDSDEAJGOIC36353R5NI7KALZAE75NA44GDVIJEHCJYNXGDZMUUELFRM",
 		},
 	}
 

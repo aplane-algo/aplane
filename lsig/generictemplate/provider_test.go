@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"io"
+	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -1179,10 +1180,11 @@ func TestTemplateLibraryGenericTemplates(t *testing.T) {
 			tmpl := NewYAMLTemplate(spec)
 			switch name {
 			case "aplane.htlc.v1.yaml":
+				const destination = "EIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRDOHSEZI"
 				params := map[string]string{
 					"hash":           "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-					"recipient":      "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ",
-					"refund_address": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ",
+					"recipient":      destination,
+					"refund_address": destination,
 					"timeout_round":  "12345",
 				}
 				teal, err := tmpl.GenerateTEAL(params)
@@ -1193,7 +1195,8 @@ func TestTemplateLibraryGenericTemplates(t *testing.T) {
 					"txn Fee\nint 10000\n<=\nassert",
 					"txn TypeEnum\nint pay\n==\nassert",
 					"txn LastValid\nint 12345\n<\nassert",
-					"addr AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ\n==\nassert\n\nint 1\nreturn",
+					"addr " + destination + "\n==\nassert\n\nint 1\nreturn",
+					"txn CloseRemainderTo\nglobal ZeroAddress\n!=\nassert",
 				} {
 					if !strings.Contains(teal, want) {
 						t.Fatalf("htlc TEAL missing %q:\n%s", want, teal)
@@ -1210,6 +1213,72 @@ func TestTemplateLibraryGenericTemplates(t *testing.T) {
 				assertCompileWithSaltOffCurve(t, tmpl, params)
 			}
 		})
+	}
+}
+
+// A zero destination would make the close-out check pass with no close-out, so
+// each path could repeat and burn the balance in fees.
+func TestHTLCRejectsZeroDestinations(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "library", "templates", "aplane.htlc.v1.yaml"))
+	if err != nil {
+		t.Fatalf("failed to read template library file: %v", err)
+	}
+	spec, err := ParseTemplateSpec(data)
+	if err != nil {
+		t.Fatalf("template library file has invalid YAML: %v", err)
+	}
+	const zero = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ"
+	valid := map[string]string{
+		"hash":           "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+		"recipient":      "EIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRDOHSEZI",
+		"refund_address": "CEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI7JH2AYM",
+		"timeout_round":  "12345",
+	}
+	if err := ValidateParameters(valid, spec); err != nil {
+		t.Fatalf("valid params rejected: %v", err)
+	}
+	for _, name := range []string{"recipient", "refund_address"} {
+		t.Run(name, func(t *testing.T) {
+			params := maps.Clone(valid)
+			params[name] = zero
+			err := ValidateParameters(params, spec)
+			if err == nil || !strings.Contains(err.Error(), "invalid "+name) ||
+				!strings.Contains(err.Error(), "zero address") {
+				t.Fatalf("ValidateParameters() error = %v, want a zero address rejection of %s", err, name)
+			}
+		})
+	}
+	for _, param := range spec.Parameters {
+		if param.Type != "address" {
+			continue
+		}
+		if !param.NonZero {
+			t.Errorf("parameter %s must be nonzero", param.Name)
+		}
+		if param.Example == zero {
+			t.Errorf("parameter %s must not offer the zero address as its example", param.Name)
+		}
+	}
+}
+
+func TestNonZeroConstraintOnlyAppliesToAddresses(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "library", "templates", "aplane.htlc.v1.yaml"))
+	if err != nil {
+		t.Fatalf("failed to read template library file: %v", err)
+	}
+	spec, err := ParseTemplateSpec(data)
+	if err != nil {
+		t.Fatalf("template library file has invalid YAML: %v", err)
+	}
+	for i := range spec.Parameters {
+		if spec.Parameters[i].NonZero {
+			spec.Parameters[i].Type = "uint64"
+			break
+		}
+	}
+	err = ValidateSpec(spec)
+	if err == nil || !strings.Contains(err.Error(), "nonzero is only valid for address type") {
+		t.Fatalf("ValidateSpec() error = %v, want a nonzero type rejection", err)
 	}
 }
 

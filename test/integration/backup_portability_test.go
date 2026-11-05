@@ -80,8 +80,8 @@ func TestBackupPortabilityFirstMilestone(t *testing.T) {
 				preimageHash := sha256.Sum256(bytes.Repeat([]byte("p"), 32))
 				return "aplane.htlc.v1", map[string]string{
 					"hash":           hex.EncodeToString(preimageHash[:]),
-					"recipient":      integrationBurnAddress,
-					"refund_address": integrationBurnAddress,
+					"recipient":      integrationHTLCDestination,
+					"refund_address": integrationHTLCDestination,
 					"timeout_round":  fmt.Sprintf("%d", status.LastRound+1_000),
 				}
 			},
@@ -556,8 +556,8 @@ func TestBackupRestoreStandaloneNoTemplateSucceedsWithoutLocalTemplate(t *testin
 	sourceClient := signerclient.NewSignerClient(sourceSigner.GetURL())
 	address := mustAdminGenerateKeyNoCleanup(t, sourceClient, sourceSigner, "aplane.htlc.v1", map[string]string{
 		"hash":           hex.EncodeToString(preimageHash[:]),
-		"recipient":      integrationBurnAddress,
-		"refund_address": integrationBurnAddress,
+		"recipient":      integrationHTLCDestination,
+		"refund_address": integrationHTLCDestination,
 		"timeout_round":  fmt.Sprintf("%d", status.LastRound+1_000),
 	})
 

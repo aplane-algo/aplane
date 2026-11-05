@@ -30,13 +30,15 @@ parameters:
     description: "Address that can claim funds by providing the preimage"
     type: address
     required: true
-    example: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ"
+    nonzero: true
+    example: "EIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRDOHSEZI"
   - name: refund_address
     label: "Refund Address"
     description: "Address that can reclaim funds after timeout"
     type: address
     required: true
-    example: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ"
+    nonzero: true
+    example: "CEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI7JH2AYM"
   - name: timeout_round
     label: "Timeout Round"
     description: "First round a refund can start; a claim must be finished before this round"
@@ -81,6 +83,14 @@ teal: |
   txn TypeEnum
   int pay
   ==
+  assert
+
+  // A zero CloseRemainderTo means no close-out, so a path comparing it to a zero
+  // destination would pass without closing the account. Creation rejects a zero
+  // destination; this keeps the single-use guarantee in the program itself.
+  txn CloseRemainderTo
+  global ZeroAddress
+  !=
   assert
 
   // Claim and refund windows never overlap: a refund starts at timeout_round, and a

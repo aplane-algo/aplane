@@ -893,7 +893,8 @@ participant may be able to exercise it.
 - generic hash-time-lock style template
 - public once funded
 - ALGO only; it accepts no asset transfer or opt-in
-- every path closes the account, so each runs once
+- every path closes the account, so each runs once; a zero close target is
+  rejected, both at creation and by the program, because it means no close-out
 - fee ceiling of 10,000 microAlgos
 - no key registration path
 

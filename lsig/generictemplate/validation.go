@@ -150,6 +150,9 @@ func ValidateParameterSpecs(params []ParameterSpec) error {
 		if (p.Min != nil || p.Max != nil) && p.Type != "uint64" {
 			return fmt.Errorf("parameter %s: min/max constraints only valid for uint64 type", p.Name)
 		}
+		if p.NonZero && p.Type != "address" {
+			return fmt.Errorf("parameter %s: nonzero is only valid for address type", p.Name)
+		}
 
 		if p.Type == "address[]" || p.Type == "uint64[]" {
 			if p.MinItems < 0 || p.MaxItems < 0 {
@@ -295,6 +298,16 @@ func ValidateParameterValues(params map[string]string, defs []lsigprovider.Param
 		if def.Type == "uint64" && (def.Min != nil || def.Max != nil) {
 			if err := validateUint64Constraints(value, def.Min, def.Max); err != nil {
 				return fmt.Errorf("invalid %s: %w", def.Name, err)
+			}
+		}
+
+		if def.NonZero {
+			address, err := types.DecodeAddress(value)
+			if err != nil {
+				return fmt.Errorf("invalid %s: %w", def.Name, err)
+			}
+			if address == types.ZeroAddress {
+				return fmt.Errorf("invalid %s: the zero address is not allowed", def.Name)
 			}
 		}
 	}

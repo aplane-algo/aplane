@@ -32,6 +32,10 @@ before it was renamed `enroll`.
 - Claim and refund must now close the account. A repeatable partial payment would have
   let anyone burn the balance in fees once the preimage was public or the timeout had
   passed. The opt-in path allowed the same without either.
+- `recipient` and `refund_address` can no longer be the zero address, and the program
+  requires a nonzero close target. A zero `CloseRemainderTo` means no close-out, so a
+  zero destination let either path repeat and burn the balance in fees. Generic and
+  composed templates can set `nonzero: true` on an `address` parameter.
 - A claim must now expire before `timeout_round`. Checking only `FirstValid` let a
   backdated claim land up to about 1,000 rounds after the timeout, so the two windows
   overlapped. A default 1,000-round claim must now start that far before the timeout.

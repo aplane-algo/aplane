@@ -172,7 +172,7 @@ Compiler-backed maximum-path measurements are frozen by
 | Falcon inline allowlist | 3,142 | 1,423 / 2 / 2,115 | n/a |
 | Falcon Merkle allowlist | 2,161 | 1,935 / 2 / 2,017 | n/a |
 | Falcon timelock | 1,934 | 1,423 / 2 / 2,000 | n/a |
-| Falcon rekey-locked allowlist | 5,285 | 1,423 / 2 / 2,330 | 2,846 / 3 / 3,230 |
+| Falcon rekey-locked allowlist | 5,044 | 1,423 / 2 / 2,305 | 2,846 / 3 / 3,206 |
 | Corridor | 5,926 | 3,358 / 4 / 4,195 | 2,846 / 3 / 3,294 |
 
 Fees are microAlgos at a 1,000-microAlgo minimum fee and include v42 program
