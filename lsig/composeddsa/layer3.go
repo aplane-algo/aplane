@@ -49,21 +49,27 @@ func cloneLayer3Policy(policy *Layer3Policy) *Layer3Policy {
 	return &cloned
 }
 
-func layer3PolicyFromTemplate(spec *generictemplate.BoundedAuthorizationSpec, params []lsigprovider.ParameterDef, profile *BoundedAuthorizationProfile) (*Layer3Policy, error) {
+func layer3PolicyFromTemplate(spec *generictemplate.BoundedAuthorizationSpec, params []lsigprovider.ParameterDef, profile *BoundedAuthorizationProfile, hasAuthorTEAL bool) (*Layer3Policy, error) {
 	if spec == nil || spec.Layer3 == nil {
 		return nil, nil
+	}
+	if len(spec.RuntimeArgs) != 0 && !hasAuthorTEAL {
+		return nil, fmt.Errorf("invalid bounded.layer3: %s has no author TEAL to read runtime arguments", spec.Layer3.Policy)
 	}
 	layer3 := &Layer3Policy{
 		Policy:              spec.Layer3.Policy,
 		RecipientsParameter: spec.Layer3.RecipientsParameter,
 	}
-	if err := validateLayer3Policy(layer3, params, profile); err != nil {
+	if err := validateLayer3Policy(layer3, params, profile, hasAuthorTEAL); err != nil {
 		return nil, fmt.Errorf("invalid bounded.layer3: %w", err)
 	}
 	return layer3, nil
 }
 
-func validateLayer3Policy(policy *Layer3Policy, params []lsigprovider.ParameterDef, profile *BoundedAuthorizationProfile) error {
+// validateLayer3Policy checks a framework policy. Author TEAL may run after an
+// allowlist and read its own parameters, so a parameter the policy does not use
+// is an error only when there is no author TEAL to use it.
+func validateLayer3Policy(policy *Layer3Policy, params []lsigprovider.ParameterDef, profile *BoundedAuthorizationProfile, hasAuthorTEAL bool) error {
 	if policy == nil {
 		return nil
 	}
@@ -81,9 +87,11 @@ func validateLayer3Policy(policy *Layer3Policy, params []lsigprovider.ParameterD
 	if err := validateRecipientsParameter(policy.RecipientsParameter, params, listMax); err != nil {
 		return err
 	}
-	for _, param := range params {
-		if param.Name != policy.RecipientsParameter {
-			return fmt.Errorf("parameter %q is not used by framework policy %q", param.Name, policy.Policy)
+	if !hasAuthorTEAL {
+		for _, param := range params {
+			if param.Name != policy.RecipientsParameter {
+				return fmt.Errorf("parameter %q is not used by framework policy %q", param.Name, policy.Policy)
+			}
 		}
 	}
 
@@ -130,7 +138,7 @@ func profileAllowsSpendEffect(profile *BoundedAuthorizationProfile, wanted ...tx
 }
 
 func (c *ComposedDSA) renderLayer3Policy(params map[string]string, profile *BoundedAuthorizationProfile) (string, error) {
-	if err := validateLayer3Policy(c.layer3, c.paramsWithoutAdminKey(), profile); err != nil {
+	if err := validateLayer3Policy(c.layer3, c.paramsWithoutAdminKey(), profile, c.hasAuthorTEAL()); err != nil {
 		return "", err
 	}
 	if c.layer3.Policy == Layer3PolicyMerkleAllowlist {
@@ -228,6 +236,11 @@ func (c *ComposedDSA) renderMerkleAllowlist(params map[string]string, profile *B
 func (c *ComposedDSA) validateFrameworkLayer3Arguments() error {
 	if c.layer3 == nil {
 		return nil
+	}
+	// A framework policy reads no caller argument, so a runtime argument with no
+	// author TEAL would be required on every spend and read by nothing.
+	if len(c.runtimeArgs) != 0 && !c.hasAuthorTEAL() {
+		return fmt.Errorf("%s has no author TEAL to read runtime arguments", c.layer3.Policy)
 	}
 	switch c.layer3.Policy {
 	case Layer3PolicyFixedAllowlist:

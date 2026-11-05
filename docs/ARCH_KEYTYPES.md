@@ -1164,19 +1164,26 @@ the shared accept block.
 
 ##### Framework Layer 3 policies
 
-Layer 3 comes from exactly one of two places:
+Layer 3 takes one of three forms:
 
 | Source | Template declares | Stored `layer3_policy` | Bundled example |
 |---|---|---|---|
 | Framework policy | `bounded.layer3` and no `teal` | `fixed_allowlist` or `merkle_allowlist` | `aplane.falcon1024-allowlist.v1`, `aplane.corridor.v1` |
 | Author TEAL | `teal` and no `bounded.layer3` | `custom` | `aplane.falcon1024-timelock.v1`, `aplane.falcon1024-allowlist.v2` |
+| Framework allowlist plus author TEAL | `bounded.layer3` and `teal` | `fixed_allowlist_custom` or `merkle_allowlist_custom` | None |
 
 A framework policy is rendered by the composer in `lsig/composeddsa/layer3.go`, so
 the template contains no TEAL. `fixed_allowlist` compiles up to 30 recipients inline.
 `merkle_allowlist` compiles the root of up to 65,536 recipients and needs a
 signer-derived proof. Both check only recipients, and the sender is always a legal
-self-recipient. Declaring both sources is rejected, as is any parameter a framework
-policy does not use. See the YAML contract in
+self-recipient. With no `teal`, a parameter or runtime argument the policy does not use
+is rejected.
+
+When a template declares both, the composer emits the allowlist first and it falls
+through to the author TEAL. Both must pass, so the TEAL can only narrow what the list
+admits, and containment rules stop it reaching around the list. It keeps a maintained
+recipient check, and may add its own parameters and runtime arguments. The stored value
+is derived: a template declares only the plain policy. See the YAML contract in
 [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md#yaml-contract).
 
 Bounded-capable bases expose a static signature-argument layout. Bounded1 keeps

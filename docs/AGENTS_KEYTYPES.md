@@ -74,7 +74,9 @@ generate a generic LogicSig YAML template.
 
 A composed template uses schema v2 and a `bounded` block unless there is a stated
 reason not to. Prefer a framework policy to author TEAL: `bounded.layer3` with
-`fixed_allowlist` or `merkle_allowlist` needs no `teal`, and declaring both is rejected.
+`fixed_allowlist` or `merkle_allowlist` needs no `teal`. For a custom rule on top of an
+allowlist, declare both instead of rewriting the list check in TEAL; the allowlist runs
+first and the TEAL can only narrow it.
 The field reference is in
 [DEV_KEYTYPES.md](DEV_KEYTYPES.md#bounded-schema-schema_version-2).
 

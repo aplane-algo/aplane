@@ -462,7 +462,7 @@ func (c *ComposedDSA) boundedAuthorizationMetadataBase() (*boundedmeta.Metadata,
 			MaxSizes: append([]int(nil), layout.MaxSizes...),
 		},
 		MaxFee:       profile.MaxFee,
-		Layer3Policy: layer3PolicyName(c.layer3),
+		Layer3Policy: c.Layer3PolicyName(),
 		RuntimeArgs:  append([]boundedmeta.RuntimeArg(nil), c.boundedRuntimeArgs...),
 		DerivedArgs:  append([]boundedmeta.DerivedArg(nil), c.derivedArgs...),
 	}
@@ -558,13 +558,10 @@ func (c *ComposedDSA) validateBoundedConfig() (*BoundedAuthorizationProfile, Sig
 	if c.layer3 == nil && strings.TrimSpace(c.tealSuffix) == "" {
 		return nil, SignatureArgLayout{}, fmt.Errorf("bounded1 requires a Layer-3 spending policy suffix")
 	}
-	if c.layer3 != nil && strings.TrimSpace(c.tealSuffix) != "" {
-		return nil, SignatureArgLayout{}, fmt.Errorf("framework-owned bounded Layer-3 policy must not include author TEAL")
-	}
 	if err := c.validateFrameworkLayer3Arguments(); err != nil {
 		return nil, SignatureArgLayout{}, fmt.Errorf("invalid bounded Layer-3 arguments: %w", err)
 	}
-	if err := validateLayer3Policy(c.layer3, c.paramsWithoutAdminKey(), profile); err != nil {
+	if err := validateLayer3Policy(c.layer3, c.paramsWithoutAdminKey(), profile, c.hasAuthorTEAL()); err != nil {
 		return nil, SignatureArgLayout{}, fmt.Errorf("invalid bounded Layer-3 policy: %w", err)
 	}
 	if c.ops.TEALVersion() != txeffects.Bounded1Manifest().TEALVersion {
@@ -590,9 +587,17 @@ func (c *ComposedDSA) validateBoundedConfig() (*BoundedAuthorizationProfile, Sig
 	return profile, layout, nil
 }
 
-func layer3PolicyName(policy *Layer3Policy) string {
+func layer3PolicyName(policy *Layer3Policy, hasAuthorTEAL bool) string {
 	if policy == nil {
 		return boundedmeta.Layer3PolicyCustom
+	}
+	if hasAuthorTEAL {
+		switch policy.Policy {
+		case Layer3PolicyFixedAllowlist:
+			return boundedmeta.Layer3PolicyFixedAllowlistCustom
+		case Layer3PolicyMerkleAllowlist:
+			return boundedmeta.Layer3PolicyMerkleAllowlistCustom
+		}
 	}
 	return policy.Policy
 }

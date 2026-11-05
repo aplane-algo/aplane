@@ -1081,9 +1081,9 @@ Template capability notes:
   block, and reject unknown and duplicate fields at every nested level
 - every APlane-bundled composed template uses schema v2; schema v1 remains a
   fully functional expert mode for imported custom DSA policies
-- `bounded.layer3.policy: fixed_allowlist` owns complete pay/axfer Layer-3
-  control flow; its typed parameter references are validated against declared
-  parameter types and its template must omit `teal`
+- `bounded.layer3.policy: fixed_allowlist` owns the pay/axfer recipient check;
+  its typed parameter references are validated against declared parameter types.
+  A template may add `teal`, which runs after the check and can only narrow it
 - schema selection occurs from the raw mapping before version-specific typed
   decoding; merge keys, aliases, multiple documents, and invalid schema
   selectors are rejected
@@ -1355,7 +1355,8 @@ Bounded signing-metadata version 2 additionally requires the canonical
   require `none`
 - `runtime_args` and `derived_args`: canonical declarations, possibly empty
 - `argument_layout`: complete ordered slots with source, maximum, and all path masks
-- `layer3_policy`: exactly `custom`, `fixed_allowlist`, or `merkle_allowlist`
+- `layer3_policy`: exactly `custom`, `fixed_allowlist`, `merkle_allowlist`,
+  `fixed_allowlist_custom`, or `merkle_allowlist_custom`
 - optional `cosigner`: contract, witness key type, resolved public key and Witness
   Key ID, maximum signature size, and exact `[spend]` path; its argument slot
   source is `cosigner`

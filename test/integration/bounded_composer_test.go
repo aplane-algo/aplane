@@ -433,6 +433,13 @@ func (account boundedExecutionAccount) signGroup(t *testing.T, targetTxn types.T
 
 func (account boundedExecutionAccount) signedGroup(t *testing.T, targetTxn types.Transaction, includeAdmin bool) ([]types.SignedTxn, string) {
 	t.Helper()
+	return account.signedGroupWithLayer3Args(t, targetTxn, includeAdmin, nil)
+}
+
+// signedGroupWithLayer3Args places layer3Args directly after the base signature,
+// so a test can present values a signer would refuse to assemble.
+func (account boundedExecutionAccount) signedGroupWithLayer3Args(t *testing.T, targetTxn types.Transaction, includeAdmin bool, layer3Args [][]byte) ([]types.SignedTxn, string) {
+	t.Helper()
 	minFee := uint64(1_000)
 	if targetTxn.Fee > 0 && uint64(targetTxn.Fee) < composeddsa.BoundedMaxFeeV1+1 {
 		minFee = uint64(targetTxn.Fee)
@@ -464,10 +471,17 @@ func (account boundedExecutionAccount) signedGroup(t *testing.T, targetTxn types
 	if err != nil {
 		t.Fatalf("sign bounded spending proof: %v", err)
 	}
-	args, err := account.provider.BuildArgs(spendingSignature, nil)
+	// Signing packs the signature through the base provider, not the composed
+	// one, which would demand this program's runtime arguments here.
+	base := lsigprovider.Get(account.provider.BaseKeyType())
+	if base == nil {
+		t.Fatalf("base provider %s is not registered", account.provider.BaseKeyType())
+	}
+	args, err := base.BuildArgs(spendingSignature, nil)
 	if err != nil {
 		t.Fatalf("build bounded base args: %v", err)
 	}
+	args = append(args, layer3Args...)
 	if includeAdmin {
 		encodedBinding, err := hex.DecodeString(account.metadata.ProgramBindingHex)
 		if err != nil {

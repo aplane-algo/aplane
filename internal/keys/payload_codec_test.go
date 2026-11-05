@@ -208,6 +208,60 @@ func TestBoundedPayloadMetadataRoundTrip(t *testing.T) {
 	}
 }
 
+// A key file written with either combined policy must load back unchanged. Scan,
+// backup, and restore all read it through this path.
+func TestBoundedCombinedLayer3PolicyPayloadRoundTrip(t *testing.T) {
+	layout := boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{4}}
+	proof := boundedmeta.DerivedArg{
+		Name: "merkle_proof", Kind: boundedmeta.DerivedArgMerkleProof,
+		Parameter: "recipients", MaxSize: boundedmeta.MerkleProofSize,
+	}
+	for _, test := range []struct {
+		policy  string
+		derived []boundedmeta.DerivedArg
+	}{
+		{policy: boundedmeta.Layer3PolicyFixedAllowlistCustom},
+		{policy: boundedmeta.Layer3PolicyMerkleAllowlistCustom, derived: []boundedmeta.DerivedArg{proof}},
+	} {
+		t.Run(test.policy, func(t *testing.T) {
+			bytecode := canonicalOffCurveBytecode(t)
+			payload := NewDSALSigPayload(
+				"example.bounded.v1", "aplane.falcon1024.v1", []byte{1, 2, 3, 4}, []byte{5, 6, 7, 8},
+				map[string]string{"recipients": "ADDR"}, bytecode, 0, "", nil, "1:bounded",
+			)
+			defer payload.ZeroSecrets()
+			payload.CreatedAt = canonicalTestTime
+			payloadWithOpcodeProfile(t, payload, true)
+			slots := boundedmeta.BaseArgumentLayout(layout, false)
+			for _, arg := range test.derived {
+				slots = append(slots, boundedmeta.ArgumentSlot{
+					Index: len(slots), Name: arg.Name, Source: boundedmeta.ArgSourceDerived, MaxSize: arg.MaxSize,
+					Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgOptional, SpendingRekey: boundedmeta.ArgForbidden, AdminRekey: boundedmeta.ArgForbidden},
+				})
+			}
+			if err := payload.SetBoundedAuthorization(&boundedmeta.Metadata{
+				Contract: boundedmeta.ContractV1, BaseSignatureArgLayout: layout, ArgumentLayout: slots,
+				SpendEffects: []string{"pay"}, MaxFee: 1_000, DerivedArgs: test.derived, Layer3Policy: test.policy,
+			}); err != nil {
+				t.Fatalf("SetBoundedAuthorization() error = %v", err)
+			}
+			encoded, err := MarshalPayload(payload)
+			if err != nil {
+				t.Fatalf("MarshalPayload() error = %v", err)
+			}
+			defer zeroTestBytes(encoded)
+			parsed, err := ParsePayload(encoded)
+			if err != nil {
+				t.Fatalf("ParsePayload() error = %v", err)
+			}
+			defer parsed.ZeroSecrets()
+			if got := parsed.BoundedAuthorization; got == nil || got.Layer3Policy != test.policy {
+				t.Fatalf("BoundedAuthorization = %#v, want layer3_policy %q", got, test.policy)
+			}
+		})
+	}
+}
+
 func TestBoundedCosignerPayloadMetadataRoundTrip(t *testing.T) {
 	bytecode := canonicalOffCurveBytecode(t)
 	cosignerPublicKey := bytes.Repeat([]byte{0x6d}, boundedmeta.CosignerPublicKeySizeV1)

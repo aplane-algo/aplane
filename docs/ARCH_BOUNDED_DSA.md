@@ -28,7 +28,8 @@ but an individual keypair should never be enrolled in both roles.
 1. **Authentication:** the base DSA signature is required on every path.
 2. **Transaction envelope:** the composer enforces fee, transaction-type,
    administrative-effect, and admin-operation normal-form constraints.
-3. **Layer 3 policy:** author or framework policy runs only for an admitted
+3. **Layer 3 policy:** framework policy, author TEAL, or a framework allowlist
+   followed by author TEAL runs only for an admitted
    pure spend, and for a spending-key rekey only when its operation declares
    `policy_gate: layer3`.
 
@@ -75,6 +76,7 @@ is a complete value-spending policy.
 | Layer-3 arguments | declared static runtime and signer-derived slots |
 | Signer-derived primitive | fixed-depth Merkle allowlist proof (512 bytes) |
 | Framework Layer-3 policies | `fixed_allowlist`, `merkle_allowlist` |
+| Framework allowlist with author TEAL | `fixed_allowlist_custom`, `merkle_allowlist_custom` |
 | Inline recipient maximum | 30 entries |
 | Flow labels | `bounded1` without a cosigner; `bounded-cosigner1` with a spend cosigner |
 | Online cosigner endpoints | `POST /plan`, `POST /sign/component`, `POST /sign/assemble` |
@@ -630,6 +632,67 @@ production canonicalization functions, verifies the frozen constants, and
 requires this document to contain the exact profile, behavior, proof, slot
 masks, binding, and transcript.
 
+### Golden vector 3: allowlist with author TEAL
+
+These vectors freeze the two combined `layer3_policy` values. Both use a Falcon-1024
+base, `spend_effects: [pay, axfer, asset_opt_in]`, `max_fee: 10000`, one spending-key
+rekey with `policy_gate: layer3`, no cosigner, and a required 1-to-64-byte `preimage`
+runtime argument on spend and rekey. The Merkle vector adds the `merkle_proof` derived
+argument bound to `recipients`.
+
+| Index | Name | Source | Max bytes | Spend | Spending rekey | Admin rekey |
+|---:|---|---|---:|---|---|---|
+| 0 | `base_signature_0` | `base_signature` | 1423 | required | required | required |
+| 1 | `preimage` | `runtime` | 64 | required | required | forbidden |
+
+```text
+author_fixed_canonical_bounded_profile_length: 357
+author_fixed_canonical_bounded_profile_hex:
+  0000001941504c414e455f424f554e4445445f50524f46494c455f5631000000
+  08626f756e646564310000000300000003706179000000056178666572000000
+  0c61737365745f6f70745f696e0000000000002710000000010000000572656b
+  65790000000c7370656e64696e675f6b6579000000066c617965723300000000
+  0000001666697865645f616c6c6f776c6973745f637573746f6d000000010000
+  058f000000000000000100000008707265696d61676500000005627974657300
+  0000010000000000000040000000020000000000000010626173655f7369676e
+  61747572655f300000000e626173655f7369676e61747572650000058f000000
+  0872657175697265640000000872657175697265640000000872657175697265
+  640000000100000008707265696d6167650000000772756e74696d6500000040
+  00000008726571756972656400000008726571756972656400000009666f7262
+  696464656e
+```
+
+| Index | Name | Source | Max bytes | Spend | Spending rekey | Admin rekey |
+|---:|---|---|---:|---|---|---|
+| 0 | `base_signature_0` | `base_signature` | 1423 | required | required | required |
+| 1 | `merkle_proof` | `derived` | 512 | optional | forbidden | forbidden |
+| 2 | `preimage` | `runtime` | 64 | required | required | forbidden |
+
+```text
+author_merkle_canonical_bounded_profile_length: 491
+author_merkle_canonical_bounded_profile_hex:
+  0000001941504c414e455f424f554e4445445f50524f46494c455f5631000000
+  08626f756e646564310000000300000003706179000000056178666572000000
+  0c61737365745f6f70745f696e0000000000002710000000010000000572656b
+  65790000000c7370656e64696e675f6b6579000000066c617965723300000000
+  000000176d65726b6c655f616c6c6f776c6973745f637573746f6d0000000100
+  00058f000000010000000c6d65726b6c655f70726f6f66000000166d65726b6c
+  655f616c6c6f776c6973745f70726f6f660000000a726563697069656e747300
+  0002000000000100000008707265696d61676500000005627974657300000001
+  0000000000000040000000030000000000000010626173655f7369676e617475
+  72655f300000000e626173655f7369676e61747572650000058f000000087265
+  7175697265640000000872657175697265640000000872657175697265640000
+  00010000000c6d65726b6c655f70726f6f660000000764657269766564000002
+  00000000086f7074696f6e616c00000009666f7262696464656e00000009666f
+  7262696464656e0000000200000008707265696d6167650000000772756e7469
+  6d65000000400000000872657175697265640000000872657175697265640000
+  0009666f7262696464656e
+```
+
+`TestAllowlistWithAuthorTEALGoldenVectors` is authoritative for every byte. The
+expected values were computed from the encoding in this document by a separate
+encoder, so they do not simply restate the implementation's output.
+
 ## YAML Contract
 
 Schema v1 describes the existing non-bounded composed layout and rejects a
@@ -670,7 +733,7 @@ parameters:
     max_items: 30
 ```
 
-`fixed_allowlist` is composer-owned and rejects a non-empty `teal` field. It
+`fixed_allowlist` is composer-owned. It
 handles every effect in `spend_effects`: `pay` constrains `Receiver`; `axfer`
 and `asset_opt_in` constrain `AssetReceiver`. The sender is always a legal
 self-recipient. The recipients parameter is canonicalized and bounded to 30
@@ -688,8 +751,21 @@ framework policy's payment branch.
 `address[]` recipients parameter with 1-65,536 entries. It requires exactly one
 512-byte `merkle_allowlist_proof` derived argument bound to that parameter,
 computes the fixed-depth root during program generation, and verifies the
-proof for every non-self payment or asset receiver. It rejects author TEAL.
+proof for every non-self payment or asset receiver.
 Omitting `bounded.layer3` selects contained custom author TEAL.
+
+A template may declare `bounded.layer3` with either allowlist and also supply `teal`.
+The framework allowlist runs first and falls through to the author TEAL, and both must
+pass, so the author TEAL can only narrow what the allowlist admits. It cannot skip the
+list: the existing containment rules forbid `return` and any reference to reserved
+bounded labels. Author parameters may sit beside the recipients parameter, and runtime
+arguments beside a Merkle proof, in the static slot order above. The template declares
+only the plain policy; durable metadata records `fixed_allowlist_custom` or
+`merkle_allowlist_custom`, which a template cannot declare directly. These values amend
+this contract under `bounded1` and signing metadata version 2: the encoding and
+authorization flows do not change. A policy gate of `layer3` applies the author rule to
+a spending-key rekey too, and a gate of `none` skips both. An allowlist with no `teal`
+rejects extra parameters and runtime arguments, because nothing would read them.
 
 ### Merkle Allowlist Compatibility Contract
 
@@ -765,7 +841,8 @@ from the final stored bytecode.
 Non-bounded LogicSig keys use `signing_metadata_version: 1`. Bounded keys use
 `signing_metadata_version: 2` and require the canonical
 `bounded_authorization` object. The closed `layer3_policy` value is `custom`,
-`fixed_allowlist`, or `merkle_allowlist`; declared runtime and derived arguments and their complete
+`fixed_allowlist`, `merkle_allowlist`, `fixed_allowlist_custom`, or
+`merkle_allowlist_custom`; declared runtime and derived arguments and their complete
 slot masks are persisted. Top-level `signing_args` are ignored for bounded
 keys. Scan, load, backup, and restore consume the stored object without
 consulting the installed template.
