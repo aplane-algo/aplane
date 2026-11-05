@@ -726,7 +726,7 @@ func TestRotatingStatusReportsStageReuse(t *testing.T) {
 			}
 
 			warnings, notes := f.svc.RotatingStatus(report(f.account, 1050))
-			if len(warnings) != 1 || len(notes) != 0 || !strings.Contains(warnings[0], "more than one transaction") || !strings.Contains(warnings[0], profile.ReusedStageRestsOn) {
+			if len(warnings) != 1 || len(notes) != 0 || !strings.Contains(warnings[0], "more than one transaction") || !strings.Contains(warnings[0], "Falcon-1024 and Ed25519") {
 				t.Fatalf("one-time stage reuse in flight: warnings %v, notes %v", warnings, notes)
 			}
 			again, _ := f.svc.RotatingStatus(report(f.account, 1060))

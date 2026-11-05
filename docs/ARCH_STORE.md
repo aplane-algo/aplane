@@ -1233,10 +1233,9 @@ two-layer SLH-DSA-SHA2-128 + Ed25519), and `aplane.rotating-triple-wotsc.v1`
 (Falcon-1024 + a tree of WOTS+C keys + Ed25519); each fixes its own derivation and stage program template,
 and `internal/rotatingkey` classifies them and carries their frozen sizes
 in a per-type profile. SLH-DSA marks `StatelessHash` and keeps no one-time
-leaf history. The XMSS and WOTS+C profiles set `OneTimeStage` because each
-hash-based leaf is one-time; each stage has 64 such leaves. The profiles name
-the signatures still required after reuse and control leaf selection and
-reuse warnings. Signing waits for release-history restoration, including its
+leaf history. Each hash-based leaf of the XMSS and WOTS+C profiles is one-time,
+and each stage has 64 such leaves. The profiles control leaf selection.
+Signing waits for release-history restoration, including its
 interruption handling; exhausting the leaves is reported but does not itself
 refuse a release (see `ARCH_SIGNING.md`, rotating accounts).
 

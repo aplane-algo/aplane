@@ -168,12 +168,6 @@ type Profile struct {
 	MaxArgumentBytes int
 	MaxOpcodeCost    int
 
-	// OneTimeStage reports that a stage includes a one-time signature
-	// scheme: a stage that signs two different messages loses that scheme's
-	// protection until the account moves past it. The signer still signs
-	// (the flow is stateless by design) but reports the reuse.
-	OneTimeStage bool
-
 	// StatelessHash reports a hash signature scheme that needs no one-time
 	// leaf allocation or reuse history. Rotation/exposure monitoring still applies.
 	StatelessHash bool
@@ -182,10 +176,6 @@ type Profile struct {
 	// Zero limits preserve the caller's settings. These operational limits may
 	// be tuned without changing stage addresses or the cryptographic contract.
 	Preparation PreparationLimits
-
-	// ReusedStageRestsOn names what a reused one-time stage still rests on,
-	// for the reuse warning.
-	ReusedStageRestsOn string
 
 	// LeavesPerStage is how many one-time leaves a stage holds, 1 for a
 	// family with one key per stage. StagesPerTree is how many consecutive
@@ -244,8 +234,6 @@ var profiles = map[string]Profile{
 		MaxProgramBytes:    RotatingXmssMaxProgramBytes,
 		MaxArgumentBytes:   RotatingXmssMaxArgumentBytes,
 		MaxOpcodeCost:      RotatingXmssMaxOpcodeCost,
-		OneTimeStage:       true,
-		ReusedStageRestsOn: "Falcon-1024 and Ed25519",
 		LeavesPerStage:     RotatingXmssLeavesPerStage,
 		StagesPerTree:      RotatingXmssStagesPerTree,
 	},
@@ -258,8 +246,6 @@ var profiles = map[string]Profile{
 		MaxProgramBytes:    RotatingWotscMaxProgramBytes,
 		MaxArgumentBytes:   RotatingWotscMaxArgumentBytes,
 		MaxOpcodeCost:      RotatingWotscMaxOpcodeCost,
-		OneTimeStage:       true,
-		ReusedStageRestsOn: "Falcon-1024 and Ed25519",
 		LeavesPerStage:     RotatingWotscLeavesPerStage,
 	},
 }

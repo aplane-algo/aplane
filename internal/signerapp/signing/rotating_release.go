@@ -38,7 +38,7 @@ type ReleaseRecord struct {
 	// Reused reports that two distinct transactions remembered for this
 	// stage signed with the same one-time leaf. Missing history can hide
 	// reuse. Record carries the flag until the account moves past the stage;
-	// OneTimeStage profiles report it as a warning. StatelessHash records
+	// the status reports it as a warning. StatelessHash records
 	// have neither leaf history nor a reuse flag.
 	Reused bool
 	// Seq orders records against chain observations: a record with a Seq
@@ -539,8 +539,8 @@ func (s *Service) RotatingStatus(reports []StageTableReport) (warnings, notes []
 			warnings = append(warnings, fmt.Sprintf("rotating account %s: stage %d revealed its keys in transaction %s, which expired at round %d without confirming; the revealed keys still control the account%s; send a rotate-only spend now", r.Account, rec.Stage, rec.TxID, rec.LastValid, reuse))
 			continue
 		}
-		if rec.Reused && profile.OneTimeStage {
-			warnings = append(warnings, fmt.Sprintf("rotating account %s: stage %d has signed more than one transaction; its one-time hash-based key is spent and the stage rests on %s until the account moves; latest release %s is in flight (valid through round %d), wait for it to land or send a rotate-only spend", r.Account, rec.Stage, profile.ReusedStageRestsOn, rec.TxID, rec.LastValid))
+		if rec.Reused {
+			warnings = append(warnings, fmt.Sprintf("rotating account %s: stage %d has signed more than one transaction; its one-time hash-based key is spent and the stage rests on Falcon-1024 and Ed25519 until the account moves; latest release %s is in flight (valid through round %d), wait for it to land or send a rotate-only spend", r.Account, rec.Stage, rec.TxID, rec.LastValid))
 			continue
 		}
 		notes = append(notes, fmt.Sprintf("rotating account %s: release from stage %d in flight (transaction %s, valid through round %d)%s", r.Account, rec.Stage, rec.TxID, rec.LastValid, reuse))

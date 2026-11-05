@@ -347,9 +347,14 @@ which stage currently controls the account from its own node, prepares the
 transaction (setting the rekey to the next stage, adding the resource
 dummies and the fees), apshell checks and simulates the exact group before
 anything is signed, and the signer signs after approval and a fresh read of
-the chain. The key type sets the cost: with WOTS+C, the three signatures total
-up to 2,115 bytes, so every spend carries two resource dummies and pays three
-minimum fees, and a stage program is about 2,500 bytes.
+the chain. The key type sets the cost. Every spend carries resource dummies
+to make room for its three signatures, and pays one minimum fee per transaction:
+
+| Key type | Signature bytes, at most | Transactions per spend | Minimum fee | Stage program |
+|---|---|---|---|---|
+| XMSS | 4,179 | 5 | 0.005 ALGO | about 2,700 bytes |
+| SLH-DSA | 5,887 | 6 | 0.006 ALGO | about 2,800 bytes |
+| WOTS+C | 2,115 | 3 | 0.003 ALGO | about 2,500 bytes |
 
 Restrictions:
 

@@ -407,8 +407,7 @@ restoration, bounded by the request context.
 - A release that expires while its stage remains the authorizer raises a
   warning: it cannot confirm and the exposed stage still controls the account.
 - Releasing a second distinct transaction on the same leaf marks the stage
-  reused and warns until the account moves past it (the profile's
-  `OneTimeStage` flag). Multiple releases on distinct leaves show an attempt
+  reused and warns until the account moves past it. Multiple releases on distinct leaves show an attempt
   count without a reuse warning.
 
 ### 8.3 Stage table worker and recovery
