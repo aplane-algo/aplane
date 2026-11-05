@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/aplane-algo/aplane/internal/apadminapp"
 	"github.com/aplane-algo/aplane/internal/cosigner/cosignerrefs"
@@ -283,6 +284,7 @@ func (m Model) renderCosignerReferences() string {
 	if len(references) == 0 {
 		body.WriteString("No cosigner references enrolled. Press i to import a public envelope file or p to paste JSON.\n")
 	} else {
+		nameWidth, idWidth := m.cosignerReferenceColumns(references)
 		start := m.cosigner.managerScroll
 		end := start + m.cosignerManagerVisibleRows()
 		if end > len(references) {
@@ -296,10 +298,10 @@ func (m Model) renderCosignerReferences() string {
 			if index == m.cosigner.managerSelected {
 				prefix = "> "
 			}
-			row := fmt.Sprintf("%s%s  %s  %s",
+			row := fmt.Sprintf("%s%-*s  %-*s  %s",
 				prefix,
-				reference.Name,
-				apadminapp.CompactWitnessKeyID(reference.ComponentKey),
+				nameWidth, ellipsizeMiddle(reference.Name, nameWidth),
+				idWidth, apadminapp.CompactWitnessKeyID(reference.ComponentKey),
 				displayKeyType(reference.KeyType),
 			)
 			if index == m.cosigner.managerSelected {
@@ -318,6 +320,20 @@ func (m Model) renderCosignerReferences() string {
 		body.WriteString("\n")
 	}
 	return body.String()
+}
+
+// cosignerReferenceColumns sizes the list from every reference, not just the
+// visible ones, so columns hold still while scrolling. Only a name gives way
+// when the window is tight; the details screen shows it in full.
+func (m Model) cosignerReferenceColumns(references []CosignerReferenceInfo) (name, id int) {
+	const cursorAndGaps, nameMinWidth = 2 + 2 + 2, 8
+	keyType := 0
+	for _, reference := range references {
+		name = max(name, utf8.RuneCountInString(reference.Name))
+		id = max(id, len(apadminapp.CompactWitnessKeyID(reference.ComponentKey)))
+		keyType = max(keyType, len(displayKeyType(reference.KeyType)))
+	}
+	return min(name, max(m.tableWidth()-cursorAndGaps-id-keyType, nameMinWidth)), id
 }
 
 func (m Model) renderCosignerReferenceDetails() string {

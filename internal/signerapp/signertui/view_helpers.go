@@ -428,6 +428,15 @@ func formatKeyAddress(address, keyType string, maxWidth int, useKeyTypeColor boo
 	return styledAddress(address, keyType)
 }
 
+// tableWidth is the width list rows are laid out for: the window, or MinWidth
+// before the first size message.
+func (m Model) tableWidth() int {
+	if m.width > 0 {
+		return m.width
+	}
+	return MinWidth
+}
+
 func keyAddressWidth(rowWidth int, prefix, mark, suffix string) int {
 	if rowWidth <= 0 {
 		return 0

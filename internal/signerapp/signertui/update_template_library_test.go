@@ -9,6 +9,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/protocol"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 func TestLibraryTemplatesMsgPreservesServerOrder(t *testing.T) {
@@ -64,6 +65,41 @@ func TestLockedSignerStatusFetchesKeyTypes(t *testing.T) {
 	}
 	if len(batch) != 3 {
 		t.Fatalf("batch command count = %d, want wait, key-type fetch, and admin settings fetch", len(batch))
+	}
+}
+
+func TestTemplateLibraryColumnsAlignAtMinWidth(t *testing.T) {
+	entries := []protocol.LibraryTemplateInfo{
+		{KeyType: "aplane.falcon1024-allowlist-lock.v1", TemplateType: "composed", Installed: true, Enabled: true},
+		{KeyType: "aplane.htlc.v1", TemplateType: "generic", Installed: true},
+		{KeyType: "aplane.ed25519.v1", TemplateType: libraryTypeCompiledProvider},
+	}
+	m := sizedForTest(t, Model{viewState: ViewTemplateLibrary, library: libraryState{templates: entries}}, MinWidth, MinHeight)
+
+	typeColumn, statusColumn := -1, -1
+	rows := 0
+	for _, line := range strings.Split(stripANSI(m.renderTemplateLibrary()), "\n") {
+		if !strings.Contains(line, "aplane.") || !strings.Contains(line, "abled") {
+			continue
+		}
+		rows++
+		fields := strings.Fields(strings.TrimPrefix(line, "> "))
+		if len(fields) != 3 {
+			t.Fatalf("row %q has %d columns, want 3", line, len(fields))
+		}
+		gotType, gotStatus := strings.Index(line, " "+fields[1]+" ")+1, strings.LastIndex(line, fields[2])
+		if typeColumn < 0 {
+			typeColumn, statusColumn = gotType, gotStatus
+		}
+		if gotType != typeColumn || gotStatus != statusColumn {
+			t.Errorf("row %q columns at %d/%d, want %d/%d", line, gotType, gotStatus, typeColumn, statusColumn)
+		}
+		if width := lipgloss.Width(line); width > MinWidth {
+			t.Errorf("row %q is %d wide, window is %d", line, width, MinWidth)
+		}
+	}
+	if rows != len(entries) {
+		t.Fatalf("found %d rows, want %d", rows, len(entries))
 	}
 }
 

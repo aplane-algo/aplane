@@ -7,9 +7,12 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/aplane-algo/aplane/internal/protocol"
 )
 
 // sizedForTest delivers a terminal or pane size the way Bubble Tea does.
@@ -129,5 +132,102 @@ func TestEveryViewFitsAtMinSize(t *testing.T) {
 					standalone, v, need, m.windowBodyHeight(), view)
 			}
 		}
+	}
+}
+
+// TestListsKeepTheirContentAtMinSize renders lists with realistic rows, which
+// TestEveryViewFitsAtMinSize cannot: a row wider than the window is clipped
+// without any error, so what matters is that the text is still on screen.
+func TestListsKeepTheirContentAtMinSize(t *testing.T) {
+	const (
+		address     = "SGCU7MLRXQ4H227YCRTTT6MHL2N64WGJPHH3OTPID2CK4JNGJU6DITLIUQ"
+		fingerprint = "SHA256:Abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG"
+		witnessKey  = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+		longType    = "aplane.falcon1024-allowlist-lock.v1"
+	)
+	requestedAt := int64(1790000000)
+	clients := clientsState{
+		pending: []protocol.PendingEnrollmentInfo{{
+			Fingerprint: fingerprint, Label: "a-very-long-label-from-a-laptop", KeyType: "ssh-ed25519",
+			RemoteAddr: "192.168.100.250:51234", RequestedAt: requestedAt,
+		}},
+		keys: []protocol.EnrolledKeyInfo{
+			{Fingerprint: fingerprint, Label: "a-very-long-label-on-ops", KeyType: "ssh-rsa", Connected: true},
+			{Fingerprint: fingerprint, KeyType: "ssh-ed25519"},
+		},
+	}
+	enrolledSelected := clients
+	enrolledSelected.selected = 1
+	hint := uint64(1234567)
+	tests := []struct {
+		name  string
+		model Model
+		want  []string
+	}{
+		{"pending client selected", Model{viewState: ViewEnrolledClients, clients: clients}, []string{
+			"> " + fingerprint, "  connected", "a-very-long-label-from-a-laptop", "192.168.100.250:51234",
+			time.Unix(requestedAt, 0).Local().Format("2006-01-02 15:04"), "closes its connections",
+		}},
+		{"enrolled client selected", Model{viewState: ViewEnrolledClients, clients: enrolledSelected}, []string{
+			"> " + fingerprint, "  connected", "a-very-long-label-on-ops", "ssh-rsa",
+		}},
+		{"restore flags", Model{viewState: ViewRestorePreview, restore: restoreState{previewKeys: []RestoreKeyInfo{
+			{Address: address, KeyType: "ed25519"},
+			{Address: address, KeyType: longType, AlreadyExists: true, HasPolicy: true},
+			{Address: address, KeyType: "aplane.rotating-triple-slhdsa.v1", StageHint: &hint, AlreadyExists: true, HasPolicy: true},
+		}}}, []string{
+			"lock.v1]  present  +policy", "hint 1234567  present  +policy", "[ed25519]",
+		}},
+		{"restore row error", Model{viewState: ViewRestorePreview, restore: restoreState{previewKeys: []RestoreKeyInfo{
+			{Address: address, KeyType: longType, AlreadyExists: true, Error: "archive entry failed its integrity check"},
+		}}}, []string{"present  archive entry"}},
+		{"cosigner references", Model{viewState: ViewCosignerReferences, cosigner: cosignerState{loaded: true, references: []CosignerReferenceInfo{
+			{Name: "a-reference-name-that-is-longer-than-any-window-has-room-for", ComponentKey: witnessKey, KeyType: "aplane.falcon1024.v1"},
+			{Name: "ops", ComponentKey: witnessKey, KeyType: "ed25519"},
+		}}}, []string{"abcdef0123...0123456789  aplane.falcon1024.v1", "abcdef0123...0123456789  ed25519"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			m := sizedForTest(t, test.model, MinWidth, MinHeight)
+			view := stripANSI(m.View())
+			for _, line := range strings.Split(view, "\n") {
+				if lipgloss.Width(line) > MinWidth {
+					t.Errorf("line wider than the window: %q", line)
+				}
+			}
+			for _, want := range test.want {
+				if !strings.Contains(view, want) {
+					t.Errorf("%q missing from:\n%s", want, view)
+				}
+			}
+		})
+	}
+}
+
+func TestCosignerReferenceColumnsAlign(t *testing.T) {
+	const witnessKey = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+	m := sizedForTest(t, Model{viewState: ViewCosignerReferences, cosigner: cosignerState{loaded: true, references: []CosignerReferenceInfo{
+		{Name: "a-reference-name-that-is-longer-than-any-window-has-room-for", ComponentKey: witnessKey, KeyType: "aplane.falcon1024.v1"},
+		{Name: "backup-site", ComponentKey: witnessKey, KeyType: "ed25519"},
+		{Name: "ops", ComponentKey: witnessKey, KeyType: "ed25519"},
+	}}}, MinWidth, MinHeight)
+
+	column := -1
+	rows := 0
+	for _, line := range strings.Split(stripANSI(m.View()), "\n") {
+		index := strings.Index(line, "abcdef0123...")
+		if index < 0 {
+			continue
+		}
+		rows++
+		if column < 0 {
+			column = index
+		}
+		if index != column {
+			t.Errorf("witness ID at %d, want %d: %q", index, column, line)
+		}
+	}
+	if rows != 3 {
+		t.Fatalf("found %d rows, want 3", rows)
 	}
 }

@@ -15,6 +15,14 @@ import (
 
 const libraryTypeCompiledProvider = "compiled_provider"
 
+// The list columns are fixed so rows line up across scrolling. Together with
+// the two-column cursor, single-space gaps, and the eight-column status, they
+// reach column 78 of the MinWidth window.
+const (
+	libraryNameColumnWidth = 46
+	libraryTypeColumnWidth = 20
+)
+
 func (m Model) renderTemplateLibrary() string {
 	var sb strings.Builder
 
@@ -60,7 +68,10 @@ func (m Model) renderTemplateLibrary() string {
 			prefix = "> "
 		}
 		status := templateLibraryStatus(tmpl)
-		line := fmt.Sprintf("%s%-34s %-8s %s", prefix, templateLibraryTitle(tmpl), libraryTypeColumn(tmpl), status)
+		line := fmt.Sprintf("%s%-*s %-*s %s", prefix,
+			libraryNameColumnWidth, templateLibraryTitle(tmpl),
+			libraryTypeColumnWidth, libraryTypeColumn(tmpl),
+			status)
 		if i == selected {
 			sb.WriteString(selectedStyle.Render(line))
 		} else if tmpl.Invalid != "" || tmpl.Conflict != "" {
