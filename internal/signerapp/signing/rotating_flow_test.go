@@ -625,9 +625,6 @@ func TestChooseLeafOwnTreePerStage(t *testing.T) {
 }
 
 func TestChooseLeaf(t *testing.T) {
-	if l, reused := chooseLeaf(rotatingkey.Profile{LeavesPerStage: 1}, 9, []byte{200}, "T", ReleaseRecord{}); l.Index != 0 || l.Tree != 0 || reused {
-		t.Fatalf("single key leaf = %+v, %v", l, reused)
-	}
 	x, _ := rotatingkey.Lookup(rotatingkey.RotatingTripleXmssV1)
 	const stage = 1025 // tree 1, leaves 64..127
 	txID := []byte{70} // 70 mod 64 = 6: leaf 70
@@ -1021,7 +1018,7 @@ func TestReleaseMemoryMergesAuditedHistory(t *testing.T) {
 	if rec, _ = m.Get("B"); !rec.Reused || len(rec.Leaves) != 2 || rec.TxID != "Q" {
 		t.Fatalf("live release after audited = %+v", rec)
 	}
-	// Records without leaves (one key per stage) still dedupe by TxID.
+	// Records without a leaf list still dedupe by TxID.
 	m.RecordAudited(ReleaseRecord{Account: "C", Stage: 1, TxID: "T1"})
 	m.Record(ReleaseRecord{Account: "C", Stage: 1, TxID: "T1"})
 	if rec, _ = m.Get("C"); rec.Reused || len(rec.Leaves) != 1 {
@@ -1045,7 +1042,7 @@ func TestRotatingLeafSignWaitsForTheReleaseRestore(t *testing.T) {
 func testRotatingLeafSignWaitsForTheReleaseRestore(t *testing.T, kind rotatingTestType) {
 	f, audit := newSigningFixtureFor(t, kind)
 	profile, ok := rotatingkey.Lookup(f.kind.keyType)
-	if !ok || profile.LeavesPerStage <= 1 {
+	if !ok || profile.StatelessHash {
 		t.Fatalf("%s is not a leaf family", f.kind.keyType)
 	}
 	prep := mustPrepare(t, f, f.spend(1000, 1100))

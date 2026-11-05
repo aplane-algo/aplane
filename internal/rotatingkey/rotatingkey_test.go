@@ -87,13 +87,11 @@ func TestLeafRangeOfOwnTreePerStage(t *testing.T) {
 
 func TestLeafRangeWithoutLeaves(t *testing.T) {
 	slh, _ := Lookup(RotatingTripleSlhdsaV1)
-	for name, p := range map[string]Profile{"SLH-DSA": slh, "one key per stage": {LeavesPerStage: 1}} {
-		if lo, hi := p.LeafRange(5); lo != 0 || hi != 1 {
-			t.Fatalf("%s: LeafRange = [%d, %d)", name, lo, hi)
-		}
-		if p.TreeOf(5) != 0 {
-			t.Fatalf("%s: TreeOf != 0", name)
-		}
+	if lo, hi := slh.LeafRange(5); lo != 0 || hi != 1 {
+		t.Fatalf("LeafRange = [%d, %d)", lo, hi)
+	}
+	if slh.TreeOf(5) != 0 {
+		t.Fatal("TreeOf != 0")
 	}
 }
 

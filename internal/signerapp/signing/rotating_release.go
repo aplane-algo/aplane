@@ -532,7 +532,7 @@ func (s *Service) RotatingStatus(reports []StageTableReport) (warnings, notes []
 		reuse := ""
 		if rec.Reused {
 			reuse = " (the stage has signed more than one transaction)"
-		} else if profile.LeavesPerStage > 1 && len(rec.Leaves) > 1 {
+		} else if len(rec.Leaves) > 1 {
 			reuse = fmt.Sprintf(" (attempt %d of %d from this stage)", len(rec.Leaves), profile.LeavesPerStage)
 		}
 		if r.Round > rec.LastValid {

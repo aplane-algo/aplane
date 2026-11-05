@@ -177,8 +177,8 @@ type Profile struct {
 	// be tuned without changing stage addresses or the cryptographic contract.
 	Preparation PreparationLimits
 
-	// LeavesPerStage is how many one-time leaves a stage holds, 1 for a
-	// family with one key per stage. StagesPerTree is how many consecutive
+	// LeavesPerStage is how many one-time leaves a stage holds, 0 for a
+	// stateless family. StagesPerTree is how many consecutive
 	// stages share one tree, 0 when every stage is its own tree. Together
 	// they place a stage's leaf range: stage n's leaves are
 	// (n mod StagesPerTree) * LeavesPerStage onward, or 0 onward when every

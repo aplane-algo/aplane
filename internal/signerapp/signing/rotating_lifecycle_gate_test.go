@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -411,6 +412,58 @@ func TestRotatingSignStopsAtALockDuringTheLastAuditWrite(t *testing.T) {
 				t.Fatalf("response %v, error %v, want a lock refusal", resp, err)
 			}
 		})
+	}
+}
+
+// countingChain counts chain reads.
+type countingChain struct {
+	base  *fakeRotatingChain
+	reads atomic.Int32
+}
+
+func (c *countingChain) ReadAccount(ctx context.Context, genesisHash []byte, account types.Address) (chainread.AccountView, error) {
+	c.reads.Add(1)
+	return c.base.ReadAccount(ctx, genesisHash, account)
+}
+
+// A spend that arrives during a restore waits for it and then signs. The check
+// at leaf choice would refuse it anyway, so a refusal says nothing about the wait.
+// What shows it is that the sign doesn't reach the chain read under the account
+// lock until the restore is done.
+func TestRotatingSignWaitsForARestoreAndThenSigns(t *testing.T) {
+	f, audit := newSigningFixtureFor(t, wotscTestType)
+	prep := mustPrepare(t, f, f.spend(1000, 1100))
+	chain := &countingChain{base: f.chain}
+	f.svc.Rotating.Chain = chain
+	f.svc.Rotating.Releases.Reset()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	done := make(chan *ServiceError, 1)
+	go func() {
+		_, err := f.svc.SignRotatingWithContext(ctx, signerapi.RotatingSignRequest{
+			Account: f.account.String(), Transactions: prep.Transactions,
+		}, f.session)
+		done <- err
+	}()
+	time.Sleep(300 * time.Millisecond)
+	if n := chain.reads.Load(); n != 0 {
+		t.Fatalf("the sign read the chain %d times before the restore finished", n)
+	}
+	f.svc.Rotating.Releases.RestoredAll()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("sign after the restore: %v", err)
+		}
+	case <-ctx.Done():
+		t.Fatal("the sign never finished after the restore")
+	}
+	if chain.reads.Load() == 0 {
+		t.Fatal("the sign finished without reading the chain")
+	}
+	if len(audit.releases) != 1 {
+		t.Fatalf("%d releases audited, want 1", len(audit.releases))
 	}
 }
 
