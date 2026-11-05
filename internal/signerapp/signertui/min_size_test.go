@@ -130,7 +130,13 @@ func TestEveryViewFitsAtMinSize(t *testing.T) {
 				continue
 			}
 			tall := sizedForTest(t, base, MinWidth, 400)
-			need := strings.Count(strings.TrimRight(stripANSI(tall.renderViewContent()), "\n"), "\n") + 1
+			content := strings.TrimRight(stripANSI(tall.renderViewContent()), "\n")
+			for _, line := range strings.Split(content, "\n") {
+				if lipgloss.Width(line) > MinWidth {
+					t.Errorf("standalone %v, view %d: clipped at the window edge: %q", standalone, v, line)
+				}
+			}
+			need := strings.Count(content, "\n") + 1
 			if need > m.windowBodyHeight() {
 				t.Errorf("standalone %v, view %d: needs %d rows, has %d, so content is cut off:\n%s",
 					standalone, v, need, m.windowBodyHeight(), view)
@@ -225,6 +231,34 @@ func TestPolicyPresetPickShowsWholeSummariesAtMinSize(t *testing.T) {
 			}
 			if !strings.Contains(view, want) {
 				t.Errorf("%s: %q missing from:\n%s", role, want, stripANSI(m.View()))
+			}
+		}
+	}
+}
+
+// A long policy list follows the selection, and the details and the result of
+// an apply stay on screen below it.
+func TestPoliciesListFollowsSelection(t *testing.T) {
+	var keys []protocol.PolicyKeyStatusWire
+	for i := range 30 {
+		keys = append(keys, protocol.PolicyKeyStatusWire{Key: fmt.Sprintf("%058d", i), Status: adminproto.PolicyKeyOwn})
+	}
+	const status = "Applied key.json as generation gen-1793866881-1e4859eb with a message long enough to wrap onto a second line."
+	for _, selected := range []int{0, 15, 29} {
+		for _, standalone := range []bool{false, true} {
+			m := sizedForTest(t, Model{viewState: ViewPolicies, standalone: standalone, policies: policiesState{
+				selected: selected, status: status,
+				policy: protocol.PolicyMessage{NodeRole: "signer", Keys: keys, PolicySetSHA256: strings.Repeat("ab", 32)},
+			}}, MinWidth, MinHeight)
+			view := stripANSI(m.View())
+			if lines := strings.Count(view, "\n") + 1; lines > MinHeight {
+				t.Errorf("selected %d: %d lines in a %d-line window", selected, lines, MinHeight)
+			}
+			flat := strings.Join(strings.Fields(view), " ")
+			for _, want := range []string{"> " + keys[selected].Key, status, "policy_set_sha256"} {
+				if !strings.Contains(flat, want) {
+					t.Errorf("selected %d, standalone %v: %q missing from:\n%s", selected, standalone, want, view)
+				}
 			}
 		}
 	}
@@ -332,5 +366,82 @@ func TestCosignerReferenceColumnsAlign(t *testing.T) {
 	}
 	if rows != 3 {
 		t.Fatalf("found %d rows, want 3", rows)
+	}
+}
+
+// The window clips anything wider than itself without an error, so these check
+// the text that arrives after an action, which empty views never show.
+func TestStatusMessagesWrapAtMinSize(t *testing.T) {
+	const address = "SGCU7MLRXQ4H227YCRTTT6MHL2N64WGJPHH3OTPID2CK4JNGJU6DITLIUQ"
+	fingerprint := "SHA256:Abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG"
+	review := policyApplyState{edit: policyEditState{active: true}}
+	for i := range 40 {
+		review.warnings = append(review.warnings, fmt.Sprintf("warning %d", i))
+	}
+	tests := []struct {
+		name  string
+		model Model
+		want  string
+	}{
+		{"policies", Model{viewState: ViewPolicies, policies: policiesState{status: "Applied " + address + ".json as generation gen-1793866881-1e4859eb"}},
+			"Applied " + address + ".json as generation gen-1793866881-1e4859eb"},
+		{"clients", Model{viewState: ViewEnrolledClients, clients: clientsState{status: "Client key " + fingerprint + " enrolled (client-13)."}},
+			"Client key " + fingerprint + " enrolled (client-13)."},
+		{"cosigner references", Model{viewState: ViewCosignerReferences, cosigner: cosignerState{loaded: true,
+			references:    []CosignerReferenceInfo{{Name: "ops", ComponentKey: address, KeyType: "aplane.witness-falcon1024.v1"}},
+			managerStatus: "Imported ops. Next: Generate account; configure its cosigner connection in apshell with endpoints add.",
+		}}, "Imported ops. Next: Generate account; configure its cosigner connection in apshell with endpoints add."},
+		{"policy review", Model{viewState: ViewPolicyApplyReview, policies: policiesState{apply: review}},
+			"Apply these changes? The node stores the edited text exactly and activates it immediately."},
+	}
+	for _, test := range tests {
+		for _, standalone := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s standalone %v", test.name, standalone), func(t *testing.T) {
+				model := test.model
+				model.standalone = standalone
+				m := sizedForTest(t, model, MinWidth, MinHeight)
+				view := stripANSI(m.View())
+				if flat := strings.Join(strings.Fields(view), " "); !strings.Contains(flat, test.want) {
+					t.Errorf("%q missing from:\n%s", test.want, view)
+				}
+			})
+		}
+	}
+}
+
+// The RESTORE button and the popup's bottom edge stay on screen at the minimum
+// size, with the backup's full header, however many keys the list scrolls.
+func TestRestorePreviewFitsAtMinSize(t *testing.T) {
+	var keys []RestoreKeyInfo
+	selected := map[string]bool{}
+	for i := range 30 {
+		address := fmt.Sprintf("%058d", i)
+		keys = append(keys, RestoreKeyInfo{Address: address, KeyType: "aplane.falcon1024-allowlist-lock.v1", AlreadyExists: i%2 == 0})
+		selected[address] = true
+	}
+	const archive = "backup-with-no-time-in-its-name.tar.gz"
+	for _, count := range []int{1, 5, 30} {
+		for _, standalone := range []bool{false, true} {
+			m := sizedForTest(t, Model{viewState: ViewRestorePreview, standalone: standalone, restore: restoreState{
+				archivePath: "/backups/" + archive, archiveCreatedAt: 1793866881,
+				backups:     []BackupInfo{{FileName: archive, Size: 72000, Checksum: strings.Repeat("ab", 32)}},
+				previewKeys: keys[:count], selected: selected, previewError: "restore failed: conflict",
+			}}, MinWidth, MinHeight)
+			for step := range count {
+				view := stripANSI(m.View())
+				for _, want := range []string{"RESTORE", "╚", "Selected:", "> "} {
+					if !strings.Contains(view, want) {
+						t.Fatalf("%d keys, standalone %v, row %d: %q missing from:\n%s", count, standalone, step, want, view)
+					}
+				}
+				if strings.Contains(view, "Panel lines") {
+					t.Fatalf("%d keys, standalone %v: falls back to the panel scroller:\n%s", count, standalone, view)
+				}
+				if !strings.Contains(view, "> * "+keys[step].Address[:7]) {
+					t.Fatalf("%d keys, standalone %v: row %d is not on screen:\n%s", count, standalone, step, view)
+				}
+				m = updateModel(t, m, tea.KeyMsg{Type: tea.KeyDown})
+			}
+		}
 	}
 }

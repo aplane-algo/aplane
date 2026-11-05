@@ -274,23 +274,24 @@ func (m Model) handlePolicyDocumentKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) renderPolicies() string {
-	var sb strings.Builder
-	sb.WriteString(titleStyle.Render("Policies"))
-	sb.WriteString("\n")
+	var header strings.Builder
+	header.WriteString(titleStyle.Render("Policies"))
+	header.WriteString("\n")
 	switch {
 	case m.policies.loading:
-		sb.WriteString(subtitleStyle.Render("Loading policy..."))
-		return sb.String()
+		header.WriteString(subtitleStyle.Render("Loading policy..."))
+		return header.String()
 	case m.policies.err != "":
-		sb.WriteString(subtitleStyle.Render("Policy unavailable: " + m.policies.err))
-		return sb.String()
+		header.WriteString(subtitleStyle.Render("Policy unavailable: " + m.policies.err))
+		return header.String()
 	}
 	p := m.policies.policy
-	sb.WriteString(subtitleStyle.Render(wrapPlainText(fmt.Sprintf("%s node  ·  e edits the selected policy; a loads a policy file; x exports the policy; apadmin policy covers remove and rescue", p.NodeRole), m.tableWidth())))
-	sb.WriteString("\n\n")
+	header.WriteString(subtitleStyle.Render(wrapPlainText(fmt.Sprintf("%s node  ·  e edits the selected policy; a loads a policy file; x exports the policy; apadmin policy covers remove and rescue", p.NodeRole), m.tableWidth())))
+	header.WriteString("\n\n")
 	rows := m.policyRows()
+	var lines []string
 	if len(rows) == 0 {
-		sb.WriteString("No policy documents.\n")
+		lines = append(lines, "No policy documents.")
 	}
 	labelWidth := m.policyLabelWidth(rows)
 	for i, row := range rows {
@@ -298,25 +299,28 @@ func (m Model) renderPolicies() string {
 		if i == m.policies.selected {
 			cursor = "> "
 		}
-		sb.WriteString(fmt.Sprintf("%s%-*s  %s\n", cursor, labelWidth, ellipsizeMiddle(row.label(), labelWidth), policyRowStatus(row.key, row.status)))
+		lines = append(lines, fmt.Sprintf("%s%-*s  %s", cursor, labelWidth, ellipsizeMiddle(row.label(), labelWidth), policyRowStatus(row.key, row.status)))
 	}
-	sb.WriteString("\n")
+
+	var footer strings.Builder
+	footer.WriteString("\n")
 	if m.policies.selected >= 0 && m.policies.selected < len(rows) {
 		selected := rows[m.policies.selected]
-		sb.WriteString(wrapPlainText(policyStatusLabel(selected.key, selected.status), m.tableWidth()) + "\n")
+		footer.WriteString(wrapPlainText(policyStatusLabel(selected.key, selected.status), m.tableWidth()) + "\n")
 		if selected.doc != nil {
-			sb.WriteString(policyDocumentMeta(*selected.doc) + "\n")
+			footer.WriteString(policyDocumentMeta(*selected.doc) + "\n")
 		}
-		sb.WriteString("\n")
+		footer.WriteString("\n")
 	}
-	sb.WriteString(subtitleStyle.Render(wrapPlainText("policy_set_sha256 "+p.PolicySetSHA256, m.tableWidth())))
-	sb.WriteString("\n")
+	footer.WriteString(subtitleStyle.Render(wrapPlainText("policy_set_sha256 "+p.PolicySetSHA256, m.tableWidth())))
+	footer.WriteString("\n")
 	if m.policies.status != "" {
-		sb.WriteString("\n")
-		sb.WriteString(terminalSafeLines(m.policies.status))
-		sb.WriteString("\n")
+		footer.WriteString("\n")
+		footer.WriteString(wrapPlainText(terminalSafeLines(m.policies.status), m.tableWidth()))
+		footer.WriteString("\n")
 	}
-	return sb.String()
+	fixed := strings.Count(header.String(), "\n") + strings.Count(footer.String(), "\n")
+	return header.String() + m.listWindow(lines, m.policies.selected, fixed) + footer.String()
 }
 
 // policyStatusColumnWidth fits the longest policyRowStatus.

@@ -100,11 +100,10 @@ func (m Model) restorePreviewVisibleHeight() int {
 	if m.height <= 0 {
 		return 3
 	}
-	h := m.height - 14
-	if h < 1 {
-		return 1
-	}
-	return h
+	const moreLines = 2 // the "more above" and "more below" lines
+	width := m.popupBodyWidth(restorePreviewPopupWidth)
+	chrome := wrappedHeight(m.restorePreviewHeader()+m.restorePreviewFooter(), width) + moreLines
+	return max(m.popupContentHeight()-chrome, 1)
 }
 
 func (m Model) restoreDisplayContentHeight() int {

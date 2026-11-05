@@ -65,6 +65,23 @@ func (m Model) fitSelectionList(header string, rows []string, selected int, foot
 	return sb.String()
 }
 
+// listWindow is fitSelectionList for a full-window screen: fixed lines around
+// the list are already spoken for, and the list shows the lines around the
+// selected one rather than pushing it or what follows out of the window.
+func (m Model) listWindow(lines []string, selected, fixed int) string {
+	height := m.windowBodyHeight()
+	if height <= 0 || fixed+len(lines) <= height {
+		return joinRows(lines)
+	}
+	const moreLines = 2
+	start, end := selectionWindow(selected, len(lines), max(height-fixed-moreLines, 1))
+	var sb strings.Builder
+	sb.WriteString(scrollMoreAboveLine(start) + "\n")
+	sb.WriteString(joinRows(lines[start:end]))
+	sb.WriteString(scrollMoreBelowLine(len(lines)-end) + "\n")
+	return sb.String()
+}
+
 // selectionWindow is the run of visible rows out of total that keeps
 // selected in view, centred where the list allows.
 func selectionWindow(selected, total, visible int) (start, end int) {

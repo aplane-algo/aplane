@@ -518,10 +518,12 @@ func (m Model) policyApplyVisibleLines() int {
 	if m.height <= 0 {
 		return 20
 	}
-	if visible := m.height - 10; visible > 1 {
-		return visible
-	}
-	return 1
+	// Title, target and its gap, the two "more" lines, the gap above the
+	// prompt, a prompt that wraps to two lines, then three rows for the
+	// footer and status bar. The footer's text depends on this count, so
+	// windowBodyHeight cannot be used here.
+	const chrome = 2 + 2 + 2 + 1 + 2 + 3
+	return max(m.height-chrome, 1)
 }
 
 func (m Model) renderPolicyApplyForm() string {
@@ -585,15 +587,15 @@ func (m Model) renderPolicyApplyReview() string {
 	case apply.applying:
 		sb.WriteString(subtitleStyle.Render("Applying policy..."))
 	case apply.applyErr != "" && apply.edit.active:
-		sb.WriteString(errorStyle.Render("Nothing more can be applied from this review; go back to the editor and check again."))
+		sb.WriteString(errorStyle.Render(wrapPlainText("Nothing more can be applied from this review; go back to the editor and check again.", width)))
 	case apply.applyErr != "":
-		sb.WriteString(errorStyle.Render("Nothing more can be applied from this review; go back and load the file again."))
+		sb.WriteString(errorStyle.Render(wrapPlainText("Nothing more can be applied from this review; go back and load the file again.", width)))
 	case apply.unchanged:
 		sb.WriteString(subtitleStyle.Render("Policy unchanged; there is nothing to apply."))
 	case apply.edit.active:
-		sb.WriteString(warningStyle.Render("Apply these changes? The node stores the edited text exactly and activates it immediately."))
+		sb.WriteString(warningStyle.Render(wrapPlainText("Apply these changes? The node stores the edited text exactly and activates it immediately.", width)))
 	default:
-		sb.WriteString(warningStyle.Render("Apply these changes? The node stores the file's exact bytes and activates them immediately."))
+		sb.WriteString(warningStyle.Render(wrapPlainText("Apply these changes? The node stores the file's exact bytes and activates them immediately.", width)))
 	}
 	sb.WriteString("\n")
 	return sb.String()

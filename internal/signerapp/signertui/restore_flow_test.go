@@ -205,7 +205,7 @@ func TestRestorePreviewRendersScrollableKeyWindowLikeKeyList(t *testing.T) {
 	}
 	m := Model{
 		viewState: ViewRestorePreview,
-		height:    16,
+		height:    18,
 		restore:   restoreState{previewKeys: keys, selected: map[string]bool{"RESTOREADDR00": true}},
 	}
 
@@ -216,7 +216,7 @@ func TestRestorePreviewRendersScrollableKeyWindowLikeKeyList(t *testing.T) {
 	if !strings.Contains(view, "▼ 4 more below") {
 		t.Fatalf("rendered restore key list missing scroll-down indicator:\n%s", view)
 	}
-	if !strings.Contains(view, "Total: 6 keys") {
+	if !strings.Contains(view, "Selected: 1 of 6") {
 		t.Fatalf("rendered restore key list missing total count:\n%s", view)
 	}
 	if strings.Contains(view, "RESTOREADDR05") {
@@ -254,7 +254,7 @@ func TestRestorePreviewPopupFitsTerminalHeight(t *testing.T) {
 	m := Model{
 		viewState: ViewRestorePreview,
 		width:     90,
-		height:    16,
+		height:    18,
 		restore:   restoreState{previewKeys: keys, selected: selected, selectedKey: 4, previewScrollOffset: 3},
 	}
 
@@ -271,7 +271,7 @@ func TestRestorePreviewReservesContinuationRows(t *testing.T) {
 	noContinuation := Model{
 		viewState: ViewRestorePreview,
 		width:     90,
-		height:    16,
+		height:    18,
 		restore: restoreState{previewKeys: []RestoreKeyInfo{
 			{Address: "RESTOREADDR00", KeyType: "ed25519"},
 			{Address: "RESTOREADDR01", KeyType: "ed25519"},
@@ -291,7 +291,7 @@ func TestRestorePreviewReservesContinuationRows(t *testing.T) {
 	withContinuation := Model{
 		viewState: ViewRestorePreview,
 		width:     90,
-		height:    16,
+		height:    18,
 		restore:   restoreState{previewKeys: keys, selected: selected, selectedKey: 4, previewScrollOffset: 3},
 	}
 
