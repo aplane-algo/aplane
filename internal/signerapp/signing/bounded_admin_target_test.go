@@ -40,7 +40,7 @@ func TestAdminRekeyTargetIneligible(t *testing.T) {
 		{"native falcon", keys.CategoryNativePQ, "falcon1024", false, ""},
 		{"plain falcon lsig", keys.CategoryDSALsig, plainFalcon1024LsigKeyType, false, ""},
 		{"plain ed25519 lsig", keys.CategoryDSALsig, plainEd25519LsigKeyType, false, ""},
-		{"bounded lsig", keys.CategoryDSALsig, "aplane.falcon1024-allowlist-alock.v1", true, "bounded"},
+		{"bounded lsig", keys.CategoryDSALsig, "aplane.falcon1024-allowlist-lock.v1", true, "bounded"},
 		{"guarded lsig", keys.CategoryDSALsig, "aplane.falcon1024-cosigner1024.v1", false, "guarded"},
 		{"composed template", keys.CategoryDSALsig, composedTestKeyType, false, "not one of the plain"},
 		{"generic lsig", keys.CategoryGenericLsig, "aplane.htlc.v1", false, "generic"},
@@ -79,9 +79,9 @@ func TestCheckBoundedAdminRekeyTargetUsesSnapshot(t *testing.T) {
 	svc := &Service{Planner: &Planner{Snapshot: func() PlannerRuntimeSnapshot {
 		return PlannerRuntimeSnapshot{
 			KeyTypes: map[string]string{
-				bounded.String():      "aplane.falcon1024-allowlist-alock.v1",
+				bounded.String():      "aplane.falcon1024-allowlist-lock.v1",
 				held.String():         "ed25519",
-				boundedHeld.String():  "aplane.falcon1024-allowlist-alock.v1",
+				boundedHeld.String():  "aplane.falcon1024-allowlist-lock.v1",
 				composedHeld.String(): composedTestKeyType,
 			},
 			KeyMetadata: map[string]PlannerKeyMetadata{

@@ -192,7 +192,7 @@ component role, while standalone `.wit` instances may serve contract admin.
 | `aplane.ed25519.v1` | Ed25519 dsa_lsig | library-visible |
 | `aplane.falcon1024-allowlist.v1` | dsa_lsig (composed) | optional template |
 | `aplane.falcon1024-allowlist.v2` | bounded dsa_lsig (Merkle allowlist) | optional template |
-| `aplane.falcon1024-allowlist-alock.v1` | bounded dsa_lsig (admin-protected rekey) | optional template |
+| `aplane.falcon1024-allowlist-lock.v1` | bounded dsa_lsig (admin-protected rekey) | optional template |
 | `aplane.corridor.v1` | bounded-cosigner dsa_lsig (Merkle spend corridor, admin-protected rekey) | optional template |
 | `aplane.falcon1024-timelock.v1` | dsa_lsig (composed) | optional template |
 | `aplane.htlc.v1` | generic_lsig | optional template |
@@ -240,7 +240,7 @@ compatible manual-salt records retain it.
   be self or allowlisted; close, clawback, and non-transfer types are rejected.
 - `aplane.falcon1024-allowlist.v2` — the bounded allowlist using a
   signer-generated Merkle proof for non-self spend destinations.
-- `aplane.falcon1024-allowlist-alock.v1` — the bounded fixed allowlist whose
+- `aplane.falcon1024-allowlist-lock.v1` — the bounded fixed allowlist whose
   pure rekey additionally requires an external Falcon admin signature.
 - `aplane.falcon1024-timelock.v1` — bounded Falcon transfer and pure-rekey
   paths gated by `FirstValid >= unlock_round`.

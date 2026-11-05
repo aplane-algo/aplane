@@ -831,7 +831,7 @@ lives in signer approval and local signer policy.
 
 #### Bounded Authorization Allowlist
 
-`aplane.falcon1024-allowlist-alock.v1` is a schema-v2 composed account with
+`aplane.falcon1024-allowlist-lock.v1` is a schema-v2 composed account with
 Falcon-1024 spending and external Falcon contract-admin authorization. The
 composer-owned `bounded1` envelope admits only pure payments, pure asset
 transfers, independently authorized asset opt-ins, or a pure self-payment
@@ -841,10 +841,10 @@ signature and an external contract-admin signature through
 `POST /sign/bounded-admin` and `aprekey`.
 
 Its framework-owned `fixed_allowlist` policy handles all admitted spend effects
-without author TEAL. It constrains `Receiver`/`AssetReceiver`, optionally
-constrains `XferAsset`, `Amount`, and `AssetAmount`, and compiles canonical
-recipient/asset lists inline with an audited maximum of 30 entries each. It
-uses no runtime proof or signer-derived LogicSig argument. The external private
+without author TEAL. It constrains `Receiver`/`AssetReceiver` and compiles the
+canonical recipient list inline with an audited maximum of 30 entries. Asset
+and amount limits stay in signer policy, because one program is valid on every
+network and asset IDs are network-local. It uses no runtime proof or signer-derived LogicSig argument. The external private
 key exists only in a `.wit` artifact; losing all copies removes
 the admin-key rekey path but does not stop policy-compliant spending. See
 [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md).

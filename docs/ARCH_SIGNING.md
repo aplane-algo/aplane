@@ -1801,8 +1801,8 @@ warning does not establish that no leaf was reused.
   guarded account `key_type`. SDK consumers must treat this as signer-owned
   metadata, not as proof of remote cosigner endpoint ownership.
   Bounded rows expose only the reviewed public parameter projection used by
-  the bundled profiles (`recipients`, asset/amount limits, `unlock_round`, and
-  framework cosigner/admin public keys). Newly stored bounded parameters are
+  the bundled profiles (`recipients`, `unlock_round`, and framework
+  cosigner/admin public keys). Newly stored bounded parameters are
   omitted until explicitly classified as public; `/keys` never defaults to
   exposing the complete stored creation-parameter map.
 - optional `template_provenance_status`, `template_provenance_note`; these are

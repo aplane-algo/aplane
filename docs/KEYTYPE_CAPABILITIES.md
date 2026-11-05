@@ -35,7 +35,7 @@ included as normal user-account operations.
 | `aplane.ed25519.v1` | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
 | `aplane.falcon1024-allowlist.v1` | C | N | C | Y | N | N | N | N | N | N | C |
 | `aplane.falcon1024-allowlist.v2` | C | N | C | Y | N | N | N | N | N | N | C |
-| `aplane.falcon1024-allowlist-alock.v1` | C | N | C | C | N | N | N | N | N | N | C |
+| `aplane.falcon1024-allowlist-lock.v1` | C | N | C | C | N | N | N | N | N | N | C |
 | `aplane.falcon1024-timelock.v1` | C | N | C | C | N | N | N | N | N | N | C |
 | `aplane.falcon1024-cosigner1024.v1` | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
 | `aplane.corridor.v1` | C | N | C | Y | N | N | N | N | N | N | C |
@@ -79,9 +79,8 @@ included as normal user-account operations.
   fixed-depth proof against the root derived from the key-file recipient list.
   Self-send, asset opt-in, and pure spending-key rekey require no proof. Close,
   clawback, and non-transfer types are rejected.
-- `aplane.falcon1024-allowlist-alock.v1` admits only pure `pay` and `axfer`
-  spends to self or a compiled recipient. Optional asset-ID and amount limits
-  narrow that set. It rejects close, clawback, and every other transaction
+- `aplane.falcon1024-allowlist-lock.v1` admits only pure `pay` and `axfer`
+  spends to self or a compiled recipient. It rejects close, clawback, and every other transaction
   type. Rekey is restricted to the pure payment normal form and additionally
   requires the external Falcon contract-admin signature.
 - `aplane.rotating-triple-wotsc.v1` admits any transaction type, but every transaction must rekey to an address other

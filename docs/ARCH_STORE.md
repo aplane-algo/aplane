@@ -988,7 +988,7 @@ The bundled templates that ship under `library/templates/` are:
 | `aplane.falcon1024-allowlist.v1` | Falcon-1024 signature restricted to a fixed set of receiver addresses |
 | `aplane.falcon1024-allowlist.v2` | Falcon-1024 allowlist using a fixed-depth Merkle root with signer-generated proofs |
 | `aplane.htlc.v1` | Hash time-locked contract |
-| `aplane.falcon1024-allowlist-alock.v1` | Falcon-1024 bounded allowlist whose pure rekey additionally requires an external Falcon admin signature |
+| `aplane.falcon1024-allowlist-lock.v1` | Falcon-1024 bounded allowlist whose pure rekey additionally requires an external Falcon admin signature |
 | `aplane.corridor.v1` | Optional bounded Falcon profile with a Merkle recipient allowlist, cosigner-authorized spends, and external-admin pure rekey |
 
 None is installed by default; all are available to install from the library.

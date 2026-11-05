@@ -1,0 +1,33 @@
+schema_version: 2
+derivation_version: 3
+template_type: composed
+base_key_type: aplane.falcon1024.v1
+template_mode: generated
+publisher: aplane
+family: falcon1024-allowlist-lock
+version: 1
+display_name: "Falcon-1024 Rekey-Locked Allowlist"
+description: "Framework-owned ALGO/ASA recipient allowlist, plus external Falcon contract-admin authorization for pure rekeys."
+max_opcode_cost: 20000
+
+bounded:
+  contract: bounded1
+  spend_effects: [pay, axfer, asset_opt_in]
+  max_fee: 10000
+  admin_operations:
+    - kind: rekey
+      authorization: admin_key
+      policy_gate: none
+  layer3:
+    policy: fixed_allowlist
+    recipients_parameter: recipients
+
+parameters:
+  - name: recipients
+    type: address[]
+    required: true
+    min_items: 1
+    max_items: 30
+    label: "Allowlisted Addresses"
+    description: "Addresses permitted to receive ALGO or ASA transfers from this bounded-authorization account"
+    placeholder: "ADDR1, ADDR2, ADDR3"

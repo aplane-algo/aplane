@@ -8,7 +8,6 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/hex"
-	"fmt"
 	"strings"
 	"testing"
 
@@ -26,7 +25,7 @@ import (
 
 func TestBundledFalconAdminAllowlistV1Contract(t *testing.T) {
 	falcon1024.RegisterClient()
-	data, err := templates.ReadFile("aplane.falcon1024-allowlist-alock.v1.yaml")
+	data, err := templates.ReadFile("aplane.falcon1024-allowlist-lock.v1.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,11 +37,11 @@ func TestBundledFalconAdminAllowlistV1Contract(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewProviderFromTemplateSpec() error = %v", err)
 	}
-	if provider.KeyType() != "aplane.falcon1024-allowlist-alock.v1" {
+	if provider.KeyType() != "aplane.falcon1024-allowlist-lock.v1" {
 		t.Fatalf("KeyType() = %q", provider.KeyType())
 	}
 	params := provider.CreationParams()
-	if len(params) != 5 || params[0].Name != "recipients" || params[1].Name != "asset_ids" || params[2].Name != "max_payment_amount" || params[3].Name != "max_asset_amount" || params[4].Name != boundedmeta.AdminPublicKeyParameter || params[0].MaxItems != composeddsa.BoundedInlineListMax || params[1].MaxItems != composeddsa.BoundedInlineListMax {
+	if len(params) != 2 || params[0].Name != "recipients" || params[1].Name != boundedmeta.AdminPublicKeyParameter || params[0].MaxItems != composeddsa.BoundedInlineListMax {
 		t.Fatalf("CreationParams() = %#v", params)
 	}
 	if provider.Layer3PolicyName() != boundedmeta.Layer3PolicyFixedAllowlist {
@@ -67,10 +66,7 @@ func TestBundledFalconAdminAllowlistV1Contract(t *testing.T) {
 	adminKey := bytes.Repeat([]byte{0x31}, composeddsa.BoundedAdminPublicKeySize)
 	recipient := types.Address{1}
 	values := map[string]string{
-		"recipients":         recipient.String(),
-		"asset_ids":          "7,11",
-		"max_payment_amount": "1000000",
-		"max_asset_amount":   "250",
+		"recipients": recipient.String(),
 		composeddsa.BoundedAdminPublicKeyParameter: hex.EncodeToString(adminKey),
 	}
 	teal, err := provider.GenerateTEAL(spendingKey, values)
@@ -86,9 +82,6 @@ func TestBundledFalconAdminAllowlistV1Contract(t *testing.T) {
 		"// === framework-owned fixed allowlist ===",
 		"txn Receiver\ncallsub __aplane_bounded1_layer3_recipient_allowed",
 		"txn AssetReceiver\ncallsub __aplane_bounded1_layer3_recipient_allowed",
-		"txn XferAsset\ncallsub __aplane_bounded1_layer3_asset_allowed",
-		"txn Amount\npushint 1000000\n<=\nassert",
-		"txn AssetAmount\npushint 250\n<=\nassert",
 	} {
 		if !strings.Contains(teal, want) {
 			t.Fatalf("GenerateTEAL() missing %q:\n%s", want, teal)
@@ -111,7 +104,7 @@ func TestBundledFalconAdminAllowlistV1Contract(t *testing.T) {
 	if got, want := metadata.ArgumentBytesForPath(boundedmeta.PathAdminRekey), falconfamily.MaxSignatureSize+boundedmeta.FalconAdminSignatureSize; got != want {
 		t.Fatalf("admin argument bytes = %d, want %d", got, want)
 	}
-	if got, want := provider.CompatibilityFingerprint(), "1:d9269768c8d85857569f91f5b67be4cfe5ad7f7766ddee8c0cab660b15ad43bd"; got != want {
+	if got, want := provider.CompatibilityFingerprint(), "1:f1f591a6a5c0e24dcb52c6126c72ec507773327ee71c0205a3443b1ac9dd219a"; got != want {
 		t.Fatalf("CompatibilityFingerprint() = %q, want %q", got, want)
 	}
 
@@ -148,9 +141,9 @@ func TestBundledFalconAdminAllowlistV1Contract(t *testing.T) {
 	}
 }
 
-func TestBundledFalconAdminAllowlistV1AllowsOmittedOptionalConstraints(t *testing.T) {
+func TestBundledFalconAdminAllowlistV1RejectsAssetAndAmountParameters(t *testing.T) {
 	falcon1024.RegisterClient()
-	data, err := templates.ReadFile("aplane.falcon1024-allowlist-alock.v1.yaml")
+	data, err := templates.ReadFile("aplane.falcon1024-allowlist-lock.v1.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,68 +158,23 @@ func TestBundledFalconAdminAllowlistV1AllowsOmittedOptionalConstraints(t *testin
 
 	spendingKey := bytes.Repeat([]byte{0x21}, falconfamily.PublicKeySize)
 	adminKey := bytes.Repeat([]byte{0x31}, composeddsa.BoundedAdminPublicKeySize)
-	baseValues := map[string]string{
-		"recipients": types.Address{1}.String(),
-		composeddsa.BoundedAdminPublicKeyParameter: hex.EncodeToString(adminKey),
-	}
-	for _, test := range []struct {
-		name   string
-		values map[string]string
-	}{
-		{name: "omitted", values: baseValues},
-		{name: "explicit empty", values: map[string]string{
-			"recipients": types.Address{1}.String(), "asset_ids": "",
-			"max_payment_amount": "", "max_asset_amount": "",
-			composeddsa.BoundedAdminPublicKeyParameter: hex.EncodeToString(adminKey),
-		}},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			teal, err := provider.GenerateTEAL(spendingKey, test.values)
-			if err != nil {
-				t.Fatalf("GenerateTEAL() error = %v", err)
-			}
-			metadata, err := provider.BuildBoundedAuthorizationMetadata(spendingKey, test.values, []byte(teal))
-			if err != nil {
-				t.Fatalf("BuildBoundedAuthorizationMetadata() error = %v", err)
-			}
-			if metadata.ProgramBindingHex == "" || metadata.AdminKeyID == "" {
-				t.Fatalf("missing contract-admin identity metadata: %#v", metadata)
+	for _, name := range []string{"asset_ids", "max_payment_amount", "max_asset_amount"} {
+		t.Run(name, func(t *testing.T) {
+			_, err := provider.GenerateTEAL(spendingKey, map[string]string{
+				"recipients": types.Address{1}.String(),
+				name:         "1",
+				composeddsa.BoundedAdminPublicKeyParameter: hex.EncodeToString(adminKey),
+			})
+			if err == nil || !strings.Contains(err.Error(), "unknown parameter") {
+				t.Fatalf("GenerateTEAL() error = %v, want unknown parameter", err)
 			}
 		})
 	}
 }
 
-func TestBundledFalconAdminAllowlistRejectsSpendingKeyAsAdminWitness(t *testing.T) {
-	falcon1024.RegisterClient()
-	data, err := templates.ReadFile("aplane.falcon1024-allowlist-alock.v1.yaml")
-	if err != nil {
-		t.Fatal(err)
-	}
-	spec, err := composeddsa.ParseTemplateSpec(data)
-	if err != nil {
-		t.Fatalf("ParseTemplateSpec() error = %v", err)
-	}
-	provider, err := composeddsa.NewProviderFromTemplateSpec(spec)
-	if err != nil {
-		t.Fatalf("NewProviderFromTemplateSpec() error = %v", err)
-	}
-
-	publicKey := bytes.Repeat([]byte{0x41}, falconfamily.PublicKeySize)
-	values := map[string]string{
-		"recipients": types.Address{1}.String(),
-		composeddsa.BoundedAdminPublicKeyParameter: hex.EncodeToString(publicKey),
-	}
-	if _, err := provider.GenerateTEAL(publicKey, values); err == nil || !strings.Contains(err.Error(), "must differ from the spending key") {
-		t.Fatalf("GenerateTEAL() error = %v, want key distinctness rejection", err)
-	}
-	if _, err := provider.BuildBoundedAuthorizationMetadata(publicKey, values, []byte{1}); err == nil || !strings.Contains(err.Error(), "must differ from the spending key") {
-		t.Fatalf("BuildBoundedAuthorizationMetadata() error = %v, want key distinctness rejection", err)
-	}
-}
-
 func TestBundledFalconAdminAllowlistV1MaximumBudget(t *testing.T) {
 	falcon1024.RegisterClient()
-	data, err := templates.ReadFile("aplane.falcon1024-allowlist-alock.v1.yaml")
+	data, err := templates.ReadFile("aplane.falcon1024-allowlist-lock.v1.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -240,20 +188,15 @@ func TestBundledFalconAdminAllowlistV1MaximumBudget(t *testing.T) {
 	}
 
 	recipients := make([]string, composeddsa.BoundedInlineListMax)
-	assetIDs := make([]string, composeddsa.BoundedInlineListMax)
 	for i := range recipients {
 		address := types.Address{}
 		address[0] = byte(i + 1)
 		recipients[i] = address.String()
-		assetIDs[i] = fmt.Sprintf("%d", i+1)
 	}
 	spendingKey := bytes.Repeat([]byte{0x21}, falconfamily.PublicKeySize)
 	adminKey := bytes.Repeat([]byte{0x31}, composeddsa.BoundedAdminPublicKeySize)
 	values := map[string]string{
-		"recipients":         strings.Join(recipients, ","),
-		"asset_ids":          strings.Join(assetIDs, ","),
-		"max_payment_amount": "18446744073709551615",
-		"max_asset_amount":   "18446744073709551615",
+		"recipients": strings.Join(recipients, ","),
 		composeddsa.BoundedAdminPublicKeyParameter: hex.EncodeToString(adminKey),
 	}
 	teal, err := provider.GenerateTEAL(spendingKey, values)
@@ -278,16 +221,16 @@ func TestBundledFalconAdminAllowlistV1MaximumBudget(t *testing.T) {
 	}
 	argumentBytes := metadata.ArgumentBytesForPath(boundedmeta.PathAdminRekey)
 	groupSize := (len(bytecode) + argumentBytes + 999) / 1000
-	if len(bytecode) != 5285 || argumentBytes != 2846 || groupSize != 9 {
-		t.Fatalf("maximum legacy budget = bytecode %d, arguments %d, group %d; want 5285/2846/9", len(bytecode), argumentBytes, groupSize)
+	if len(bytecode) != 5044 || argumentBytes != 2846 || groupSize != 8 {
+		t.Fatalf("maximum legacy budget = bytecode %d, arguments %d, group %d; want 5044/2846/8", len(bytecode), argumentBytes, groupSize)
 	}
 	feeTests := []struct {
 		minFee uint64
 		viable bool
 	}{
 		{minFee: 1_000, viable: true},
-		{minFee: 1_111, viable: true},
-		{minFee: 1_112, viable: false},
+		{minFee: 1_250, viable: true},
+		{minFee: 1_251, viable: false},
 	}
 	for _, test := range feeTests {
 		requiredFee := uint64(groupSize) * test.minFee

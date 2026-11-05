@@ -280,7 +280,7 @@ Bundled YAML templates, if installed:
 | `aplane.htlc.v1` | Generic LogicSig template | `apadmin template import library/templates/aplane.htlc.v1.yaml` | selected generation `keytypes/aplane.htlc.v1.{json,template}` |
 | `aplane.falcon1024-allowlist.v1` | Bounded1 composed DSA template | `apadmin template import library/templates/aplane.falcon1024-allowlist.v1.yaml` | selected generation `keytypes/aplane.falcon1024-allowlist.v1.{json,template}` |
 | `aplane.falcon1024-allowlist.v2` | Bounded1 composed DSA template | `apadmin template import library/templates/aplane.falcon1024-allowlist.v2.yaml` | selected generation `keytypes/aplane.falcon1024-allowlist.v2.{json,template}` |
-| `aplane.falcon1024-allowlist-alock.v1` | Bounded1 composed DSA template | `apadmin template import library/templates/aplane.falcon1024-allowlist-alock.v1.yaml` | selected generation `keytypes/aplane.falcon1024-allowlist-alock.v1.{json,template}` |
+| `aplane.falcon1024-allowlist-lock.v1` | Bounded1 composed DSA template | `apadmin template import library/templates/aplane.falcon1024-allowlist-lock.v1.yaml` | selected generation `keytypes/aplane.falcon1024-allowlist-lock.v1.{json,template}` |
 | `aplane.falcon1024-timelock.v1` | Bounded1 composed DSA template | `apadmin template import library/templates/aplane.falcon1024-timelock.v1.yaml` | selected generation `keytypes/aplane.falcon1024-timelock.v1.{json,template}` |
 | `aplane.corridor.v1` | Bounded1 composed DSA template with cosigner-gated spend | `apadmin template import library/templates/aplane.corridor.v1.yaml` | selected generation `keytypes/aplane.corridor.v1.{json,template}` |
 

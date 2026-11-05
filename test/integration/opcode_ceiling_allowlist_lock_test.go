@@ -22,7 +22,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
-func TestALockDeclaredOpcodeCeilings(t *testing.T) {
+func TestAllowlistLockDeclaredOpcodeCeilings(t *testing.T) {
 	network, err := harness.NewTestnetConfig()
 	if err != nil {
 		t.Fatalf("connect to integration algod: %v", err)
@@ -33,9 +33,9 @@ func TestALockDeclaredOpcodeCeilings(t *testing.T) {
 		t.Fatalf("load funding account: %v", err)
 	}
 	assetID := corridorTestAssetID(t, network, funder)
-	account := newALockOpcodeAccount(t, compileAlgod, funder.GetAddress(), assetID)
+	account := newAllowlistLockOpcodeAccount(t, compileAlgod, funder.GetAddress())
 	if err := funder.FundMicroAlgosAndWait(account.address, 500_000); err != nil {
-		t.Fatalf("fund ALock opcode-validation account: %v", err)
+		t.Fatalf("fund allowlist-lock opcode-validation account: %v", err)
 	}
 	cleanupAuthority := algocrypto.GenerateAccount()
 	t.Cleanup(func() {
@@ -45,7 +45,7 @@ func TestALockDeclaredOpcodeCeilings(t *testing.T) {
 	})
 
 	optIn := corridorAssetTransferTxn(
-		t, mustSuggestedParams(t, network), account.address, account.address, 0, assetID, "alock-opcode-asset-optin",
+		t, mustSuggestedParams(t, network), account.address, account.address, 0, assetID, "allowlist-lock-opcode-asset-optin",
 	)
 	rawOptIn, optInID := account.signGroup(t, optIn, false)
 	submitCorridorGroupExpectSuccess(t, network, rawOptIn, optInID)
@@ -53,16 +53,16 @@ func TestALockDeclaredOpcodeCeilings(t *testing.T) {
 
 	sp := mustSuggestedParams(t, network)
 	spendTxn := corridorAssetTransferTxn(
-		t, sp, account.address, funder.GetAddress(), 1, assetID, "alock-opcode-maximum-spend",
+		t, sp, account.address, funder.GetAddress(), 1, assetID, "allowlist-lock-opcode-maximum-spend",
 	)
 	spendGroup, _ := account.signedGroup(t, spendTxn, false)
-	rekeyTxn := boundedPaymentTxn(t, sp, account.address, account.address, 0, "alock-opcode-admin-rekey")
+	rekeyTxn := boundedPaymentTxn(t, sp, account.address, account.address, 0, "allowlist-lock-opcode-admin-rekey")
 	rekeyTxn.RekeyTo = cleanupAuthority.Address
 	adminGroup, _ := account.signedGroup(t, rekeyTxn, true)
 
 	profile := account.provider.LogicSigOpcodeProfile()
 	report, err := harness.ValidateDeclaredOpcodeCeiling(context.Background(), compileAlgod, harness.OpcodeCeilingValidation{
-		Name:         "aplane.falcon1024-allowlist-alock.v1",
+		Name:         "aplane.falcon1024-allowlist-lock.v1",
 		FinalProgram: account.bytecode,
 		Profile:      profile,
 		Bounded:      true,
@@ -76,58 +76,54 @@ func TestALockDeclaredOpcodeCeilings(t *testing.T) {
 		},
 	})
 	if err != nil {
-		t.Fatalf("validate ALock opcode ceilings: %v", err)
+		t.Fatalf("validate allowlist-lock opcode ceilings: %v", err)
 	}
 	for path, observed := range report.Paths {
-		t.Logf("ALock path %d opcode cost: %d observed / %d declared", path, observed.MaximumObserved, observed.DeclaredCeiling)
+		t.Logf("allowlist-lock path %d opcode cost: %d observed / %d declared", path, observed.MaximumObserved, observed.DeclaredCeiling)
 	}
 }
 
-func newALockOpcodeAccount(
+func newAllowlistLockOpcodeAccount(
 	t *testing.T,
 	compileAlgod *sdkalgod.Client,
 	recipient string,
-	assetID uint64,
 ) boundedExecutionAccount {
 	t.Helper()
 	falcon1024.RegisterClient()
-	data, err := templates.ReadFile("aplane.falcon1024-allowlist-alock.v1.yaml")
+	data, err := templates.ReadFile("aplane.falcon1024-allowlist-lock.v1.yaml")
 	if err != nil {
-		t.Fatalf("read ALock template: %v", err)
+		t.Fatalf("read allowlist-lock template: %v", err)
 	}
 	spec, err := composeddsa.ParseTemplateSpec(data)
 	if err != nil {
-		t.Fatalf("parse ALock template: %v", err)
+		t.Fatalf("parse allowlist-lock template: %v", err)
 	}
 	provider, err := composeddsa.NewProviderFromTemplateSpec(spec)
 	if err != nil {
-		t.Fatalf("build ALock provider: %v", err)
+		t.Fatalf("build allowlist-lock provider: %v", err)
 	}
 	provider.SetAlgodClient(compileAlgod)
 
 	ops := signerops.New(nil)
 	spendingPublicKey, spendingPrivateKey, err := ops.GenerateKeypair(randomFalconSeed(t))
 	if err != nil {
-		t.Fatalf("generate ALock spending key: %v", err)
+		t.Fatalf("generate allowlist-lock spending key: %v", err)
 	}
 	adminPublicKey, adminPrivateKey, err := ops.GenerateKeypair(randomFalconSeed(t))
 	if err != nil {
-		t.Fatalf("generate ALock admin key: %v", err)
+		t.Fatalf("generate allowlist-lock admin key: %v", err)
 	}
 	params := map[string]string{
-		"recipients":         matrixMaximumRecipients(recipient),
-		"asset_ids":          matrixMaximumAssetIDsEndingWith(assetID),
-		"max_payment_amount": "18446744073709551615",
-		"max_asset_amount":   "18446744073709551615",
+		"recipients": matrixMaximumRecipients(recipient),
 		composeddsa.BoundedAdminPublicKeyParameter: hex.EncodeToString(adminPublicKey),
 	}
 	derived, err := provider.DeriveLsigWithSalt(context.Background(), spendingPublicKey, params)
 	if err != nil {
-		t.Fatalf("derive ALock LogicSig: %v", err)
+		t.Fatalf("derive allowlist-lock LogicSig: %v", err)
 	}
 	metadata, err := provider.BuildBoundedAuthorizationMetadata(spendingPublicKey, params, derived.Bytecode)
 	if err != nil {
-		t.Fatalf("build ALock metadata: %v", err)
+		t.Fatalf("build allowlist-lock metadata: %v", err)
 	}
 	return boundedExecutionAccount{
 		address: derived.Address.String(), bytecode: append([]byte(nil), derived.Bytecode...),
@@ -135,10 +131,6 @@ func newALockOpcodeAccount(
 		adminPublicKey: append([]byte(nil), adminPublicKey...), adminPrivateKey: append([]byte(nil), adminPrivateKey...),
 		provider: provider, metadata: metadata,
 	}
-}
-
-func matrixMaximumAssetIDsEndingWith(assetID uint64) string {
-	return matrixAssetIDsEndingWith(assetID, 30)
 }
 
 func matrixAssetIDsEndingWith(assetID uint64, count int) string {
@@ -161,17 +153,17 @@ func bestEffortBoundedAdminRekey(
 	t.Helper()
 	defer func() {
 		if recovered := recover(); recovered != nil {
-			t.Logf("cleanup: ALock contract-admin rekey skipped after panic: %v", recovered)
+			t.Logf("cleanup: allowlist-lock contract-admin rekey skipped after panic: %v", recovered)
 		}
 	}()
-	txn := boundedPaymentTxn(t, mustSuggestedParams(t, network), account.address, account.address, 0, "alock-cleanup-admin-rekey")
+	txn := boundedPaymentTxn(t, mustSuggestedParams(t, network), account.address, account.address, 0, "allowlist-lock-cleanup-admin-rekey")
 	txn.RekeyTo = target
 	rawGroup, txid := account.signGroup(t, txn, true)
 	if _, err := network.Client.SendRawTransaction(rawGroup).Do(context.Background()); err != nil {
-		t.Logf("cleanup: ALock contract-admin rekey submit failed: %v", err)
+		t.Logf("cleanup: allowlist-lock contract-admin rekey submit failed: %v", err)
 		return
 	}
 	if _, err := network.WaitForConfirmation(txid, 10); err != nil {
-		t.Logf("cleanup: ALock contract-admin rekey confirmation failed: %v", err)
+		t.Logf("cleanup: allowlist-lock contract-admin rekey confirmation failed: %v", err)
 	}
 }

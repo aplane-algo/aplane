@@ -67,7 +67,7 @@ func TestCanonicalBundledTemplateInventory(t *testing.T) {
 	sort.Strings(got)
 	want := []string{
 		"aplane.corridor.v1.yaml",
-		"aplane.falcon1024-allowlist-alock.v1.yaml",
+		"aplane.falcon1024-allowlist-lock.v1.yaml",
 		"aplane.falcon1024-allowlist.v1.yaml",
 		"aplane.falcon1024-allowlist.v2.yaml",
 		"aplane.falcon1024-timelock.v1.yaml",
@@ -95,7 +95,7 @@ func TestRegisterClientLeavesLibraryTemplatesOptional(t *testing.T) {
 		"aplane.falcon1024-allowlist.v1",
 		"aplane.falcon1024-allowlist.v2",
 		"aplane.falcon1024-timelock.v1",
-		"aplane.falcon1024-allowlist-alock.v1",
+		"aplane.falcon1024-allowlist-lock.v1",
 	} {
 		if lsigprovider.Has(keyType) {
 			t.Fatalf("RegisterClient() registered %s; it should remain an optional template", keyType)

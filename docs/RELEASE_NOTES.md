@@ -7,6 +7,17 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## Rekey-locked allowlist renamed and its limits removed
+
+- `aplane.falcon1024-allowlist-alock.v1` is now
+  `aplane.falcon1024-allowlist-lock.v1`, with no alias for the old name.
+- It no longer takes `asset_ids`, `max_payment_amount` or `max_asset_amount`; it
+  takes `recipients` and the contract-admin key. One program is valid on every network, so a listed asset ID
+  could mean a different asset on each chain, and one base-unit cap meant very
+  different amounts for assets with different decimals. Set per-network asset and
+  amount limits in signer policy.
+- Composed templates can no longer set the matching `bounded.layer3` fields.
+
 ## Rotating signatures stop at lock
 
 - A lock during rotating signing could neither stop the signature nor wait for the

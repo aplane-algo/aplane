@@ -1891,7 +1891,7 @@ contract-admin custody, admin-key rekey routing through `POST /sign/bounded-admi
 and the single finalized-transaction classification boundary are specified in
 [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md).
 
-`aplane.falcon1024-allowlist-alock.v1` is the framework-owned fixed-list
+`aplane.falcon1024-allowlist-lock.v1` is the framework-owned fixed-list
 profile. `aplane.corridor.v1` composes the framework Merkle policy with a
 cosigner spend gate and external-admin rekey. External key generation and ceremonies are owned by
 `aprekey`; apshell and apconsole do not handle private contract-admin

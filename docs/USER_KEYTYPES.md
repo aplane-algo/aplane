@@ -244,18 +244,18 @@ It does not import a new YAML source; use `template import` for that.
 
 ## Falcon Rekey-Locked Allowlist
 
-`aplane.falcon1024-allowlist-alock.v1` is the framework-owned transaction
+`aplane.falcon1024-allowlist-lock.v1` is the framework-owned transaction
 authorization account. It requires a Falcon spending signature on every
 transaction and a separate external Falcon contract-admin signature for a
 pure rekey. Its on-chain policy permits only ALGO payments and ASA transfers,
 denies all close/clawback effects, and constrains the destination to the sender
 or one of 1-30 compiled recipients.
 
-Optional creation parameters further constrain ASA IDs and per-transaction
-ALGO/ASA amounts. Omitting `asset_ids` allows any ASA ID; omitting an amount
-limit leaves that type's amount unrestricted. Asset and amount checks still
-apply to self-transfers. The signer injects the `bounded_admin_public_key`
-creation field; it is not a second signer-held key.
+The program doesn't limit which asset moves or how much. One program is valid
+on every network, and an asset ID names an asset on one chain only, so set
+asset and amount limits per network in [signer policy](USER_POLICY.md). The
+signer injects the `bounded_admin_public_key` creation field; it is not a
+second signer-held key.
 
 Generate the external contract-admin key first:
 
@@ -264,7 +264,7 @@ aprekey generate --out /media/cold/bounded-admin
 ```
 
 Copy the generated public `<WitnessKeyID>.wit.json` file to the machine running
-`apadmin`. When generating `aplane.falcon1024-allowlist-alock.v1`, enter that
+`apadmin`. When generating `aplane.falcon1024-allowlist-lock.v1`, enter that
 file's local path in **Contract Admin Reference File (.wit.json)**, or press
 `ctrl+o` in that field to browse for it. `apadmin`
 validates the public reference and supplies its `public_key_hex` to the signer;
@@ -299,7 +299,7 @@ client configuration. Confirm the displayed genesis hash as part of a custom
 network ceremony; `complete` verifies it against the selected configured
 network before submission.
 
-The maximum policy cell has 30 recipients and 30 asset IDs. Its resource
+The maximum policy cell has 30 recipients. Its resource
 profile is path-specific: v42 group size is driven by argument and opcode
 capacity, while any excess program bytes are paid through the group fee. The
 signer rejects a finalized path whose fee would exceed the compiled 10,000

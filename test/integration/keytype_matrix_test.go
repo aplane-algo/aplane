@@ -130,11 +130,11 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 	// rule re-derives such a program through the configured compiler at
 	// release, so a held LogicSig target exercises that path end to end.
 	heldLsigTarget := mustAdminGenerateKey(t, signerClient, signerd, "aplane.falcon1024.v1", nil)
-	alockAdminPublicKey, alockAdminPrivateKey, err := signerops.New(nil).GenerateKeypair(randomFalconSeed(t))
+	allowlistLockAdminPublicKey, allowlistLockAdminPrivateKey, err := signerops.New(nil).GenerateKeypair(randomFalconSeed(t))
 	if err != nil {
-		t.Fatalf("generate matrix ALock cleanup admin key: %v", err)
+		t.Fatalf("generate matrix allowlist-lock cleanup admin key: %v", err)
 	}
-	t.Cleanup(func() { securecrypto.ZeroBytes(alockAdminPrivateKey) })
+	t.Cleanup(func() { securecrypto.ZeroBytes(allowlistLockAdminPrivateKey) })
 
 	cases := []includedKeyTypeCase{
 		{
@@ -187,14 +187,11 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 			params:  map[string]string{"recipients": matrixMaximumRecipients(funder.GetAddress())},
 		},
 		{
-			keyType:         "aplane.falcon1024-allowlist-alock.v1",
-			adminPrivateKey: alockAdminPrivateKey,
+			keyType:         "aplane.falcon1024-allowlist-lock.v1",
+			adminPrivateKey: allowlistLockAdminPrivateKey,
 			params: map[string]string{
-				"recipients":         matrixMaximumRecipients(funder.GetAddress()),
-				"asset_ids":          matrixMaximumAssetIDs(),
-				"max_payment_amount": "18446744073709551615",
-				"max_asset_amount":   "18446744073709551615",
-				composeddsa.BoundedAdminPublicKeyParameter: hex.EncodeToString(alockAdminPublicKey),
+				"recipients": matrixMaximumRecipients(funder.GetAddress()),
+				composeddsa.BoundedAdminPublicKeyParameter: hex.EncodeToString(allowlistLockAdminPublicKey),
 			},
 		},
 		{
@@ -322,12 +319,12 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 func assertBundledOpcodeValidationInventory(t *testing.T) {
 	t.Helper()
 	validated := map[string]struct{}{
-		"aplane.corridor.v1.yaml":                   {},
-		"aplane.falcon1024-allowlist-alock.v1.yaml": {},
-		"aplane.falcon1024-allowlist.v1.yaml":       {},
-		"aplane.falcon1024-allowlist.v2.yaml":       {},
-		"aplane.falcon1024-timelock.v1.yaml":        {},
-		"aplane.htlc.v1.yaml":                       {},
+		"aplane.corridor.v1.yaml":                  {},
+		"aplane.falcon1024-allowlist-lock.v1.yaml": {},
+		"aplane.falcon1024-allowlist.v1.yaml":      {},
+		"aplane.falcon1024-allowlist.v2.yaml":      {},
+		"aplane.falcon1024-timelock.v1.yaml":       {},
+		"aplane.htlc.v1.yaml":                      {},
 	}
 	entries, err := templates.FS.ReadDir(".")
 	if err != nil {
@@ -378,7 +375,7 @@ func prepareMatrixRekeyCleanups(
 			plans = append(plans, prepareMatrixSpendingRekeyCleanup(
 				t, signerURL, fundingAddress, account, sp, approvalClient, cleanupAuthority,
 			))
-		case account.keyType == "aplane.falcon1024-allowlist-alock.v1":
+		case account.keyType == "aplane.falcon1024-allowlist-lock.v1":
 			plans = append(plans, prepareMatrixAdminRekeyCleanup(
 				t, testnet, signerClient, account, sp, approvalClient, cleanupAuthority, heldLsigTarget,
 			))
@@ -1316,14 +1313,6 @@ func matrixMaximumRecipients(destination string) string {
 	return strings.Join(recipients, ",")
 }
 
-func matrixMaximumAssetIDs() string {
-	ids := make([]string, 30)
-	for i := range ids {
-		ids[i] = fmt.Sprintf("%d", i+1)
-	}
-	return strings.Join(ids, ",")
-}
-
 func mustPaymentTxnForMatrix(
 	t *testing.T,
 	sp types.SuggestedParams,
@@ -1389,7 +1378,7 @@ func installAllBundledTemplates(t *testing.T, signerDataDir string) {
 		"aplane.htlc.v1.yaml",
 		"aplane.falcon1024-allowlist.v1.yaml",
 		"aplane.falcon1024-allowlist.v2.yaml",
-		"aplane.falcon1024-allowlist-alock.v1.yaml",
+		"aplane.falcon1024-allowlist-lock.v1.yaml",
 		"aplane.falcon1024-timelock.v1.yaml",
 	}
 	templatePaths := make([]string, 0, len(templateFiles))
