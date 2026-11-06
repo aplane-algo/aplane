@@ -479,16 +479,10 @@ type PluginsCommandResult struct {
 type GenerateKeyCommandResult struct {
 	KeyType string
 	Address string
-}
-
-func generateKeyCommandResultFromEngine(result *engine.GenerateKeyResult) *GenerateKeyCommandResult {
-	if result == nil {
-		return nil
-	}
-	return &GenerateKeyCommandResult{
-		KeyType: result.KeyType,
-		Address: result.Address,
-	}
+	// Parameters are the canonical values the signer resolved and stored.
+	Parameters    map[string]string
+	AdminKeyID    string
+	CosignerKeyID string
 }
 
 // ValidateItemResult describes one validate attempt.

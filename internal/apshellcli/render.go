@@ -24,6 +24,9 @@ func renderKeys(r *REPLState, keys appresult.Keys) {
 	}
 	for _, k := range keys.Keys {
 		r.printf("%s [%s]%s\n", r.app().FormatAddress(k.Address, ""), r.app().FormatKeyTypeForDisplay(k.Address, k.KeyType), formatTemplateProvenanceStatusSuffix(k.TemplateProvenanceStatus))
+		if k.PolicyLabel != "" {
+			r.printf("  %s\n", k.PolicyLabel)
+		}
 	}
 }
 
@@ -137,6 +140,7 @@ func projectKeys(keys appresult.Keys) interface{} {
 		KeyType                  string `json:"key_type"`
 		TemplateProvenanceStatus string `json:"template_provenance_status,omitempty"`
 		TemplateProvenanceNote   string `json:"template_provenance_note,omitempty"`
+		PolicyLabel              string `json:"policy_label,omitempty"`
 	}
 	result := make([]mcpKey, len(keys.Keys))
 	for i, k := range keys.Keys {
@@ -145,6 +149,7 @@ func projectKeys(keys appresult.Keys) interface{} {
 			KeyType:                  k.KeyType,
 			TemplateProvenanceStatus: k.TemplateProvenanceStatus,
 			TemplateProvenanceNote:   k.TemplateProvenanceNote,
+			PolicyLabel:              k.PolicyLabel,
 		}
 	}
 	return result

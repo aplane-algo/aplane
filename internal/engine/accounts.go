@@ -12,6 +12,8 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/asa"
 	"github.com/aplane-algo/aplane/internal/cache"
+	"github.com/aplane-algo/aplane/internal/keytypeux"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 // GetStatus returns the current engine status as structured data
@@ -154,14 +156,7 @@ func (e *Engine) ListKeys(ctx context.Context) ([]KeyInfo, error) {
 
 	var result []KeyInfo
 	for _, k := range keysResp.Keys {
-		result = append(result, KeyInfo{
-			Address:                  k.Address,
-			KeyType:                  k.KeyType,
-			PublicKeyHex:             k.PublicKeyHex,
-			Parameters:               maps.Clone(k.Parameters),
-			TemplateProvenanceStatus: k.TemplateProvenanceStatus,
-			TemplateProvenanceNote:   k.TemplateProvenanceNote,
-		})
+		result = append(result, keyInfoFromSigner(k))
 	}
 	return result, nil
 }
@@ -189,14 +184,7 @@ func (e *Engine) RefreshKeys(ctx context.Context) ([]KeyInfo, error) {
 	// Build result
 	var result []KeyInfo
 	for _, k := range keysResp.Keys {
-		result = append(result, KeyInfo{
-			Address:                  k.Address,
-			KeyType:                  k.KeyType,
-			PublicKeyHex:             k.PublicKeyHex,
-			Parameters:               maps.Clone(k.Parameters),
-			TemplateProvenanceStatus: k.TemplateProvenanceStatus,
-			TemplateProvenanceNote:   k.TemplateProvenanceNote,
-		})
+		result = append(result, keyInfoFromSigner(k))
 	}
 	return result, nil
 }
@@ -423,4 +411,23 @@ func (e *Core) getAlgorithm(address string) string {
 	}
 
 	return "unknown"
+}
+
+func keyInfoFromSigner(k signerapi.KeyInfo) KeyInfo {
+	info := KeyInfo{
+		Address:                  k.Address,
+		KeyType:                  k.KeyType,
+		PublicKeyHex:             k.PublicKeyHex,
+		Parameters:               maps.Clone(k.Parameters),
+		TemplateProvenanceStatus: k.TemplateProvenanceStatus,
+		TemplateProvenanceNote:   k.TemplateProvenanceNote,
+		PolicyLabel:              keytypeux.BoundedLabel(k.BoundedAuthorization),
+	}
+	if bounded := k.BoundedAuthorization; bounded != nil {
+		info.AdminKeyID = bounded.AdminKeyID
+		if bounded.Cosigner != nil {
+			info.CosignerKeyID = bounded.Cosigner.ComponentKeyID
+		}
+	}
+	return info
 }

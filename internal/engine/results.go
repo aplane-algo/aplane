@@ -53,6 +53,12 @@ type KeyInfo struct {
 	Parameters               map[string]string `json:"parameters,omitempty"`
 	TemplateProvenanceStatus string            `json:"template_provenance_status,omitempty"`
 	TemplateProvenanceNote   string            `json:"template_provenance_note,omitempty"`
+	// PolicyLabel describes a bounded account's stored contract.
+	PolicyLabel string `json:"policy_label,omitempty"`
+	// AdminKeyID and CosignerKeyID are the signer's identities for a bounded
+	// account's external authorities.
+	AdminKeyID    string `json:"admin_key_id,omitempty"`
+	CosignerKeyID string `json:"cosigner_key_id,omitempty"`
 }
 
 // ASAInfo holds asset metadata
@@ -148,4 +154,13 @@ type SetResult struct {
 type GenerateKeyResult struct {
 	Address string
 	KeyType string
+	// Parameters are the canonical values the signer resolved and stored.
+	Parameters map[string]string
+	// AdminKeyID and CosignerKeyID are the signer's own identities for the account's
+	// external authorities, read back from /keys. They are empty when the account
+	// has none, or when the inventory could not be read.
+	AdminKeyID    string
+	CosignerKeyID string
+	// InventoryRead reports whether those two came from the signer.
+	InventoryRead bool
 }

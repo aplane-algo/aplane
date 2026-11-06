@@ -102,6 +102,22 @@ func (f *File) CreationParameters(directory string) (map[string]string, error) {
 	return params, nil
 }
 
+// AdminKeyID identifies the contract admin key in creation parameters, for a summary
+// made before the signer has seen them. The grammar accepts only a Falcon-1024
+// witness here, so this is not a guess at the key's type. It returns "" when the
+// parameters name no admin key.
+func AdminKeyID(params map[string]string) (string, error) {
+	value := params[boundedmeta.AdminPublicKeyParameter]
+	if value == "" {
+		return "", nil
+	}
+	publicKey, err := boundedmeta.ParseAdminPublicKey(value)
+	if err != nil {
+		return "", err
+	}
+	return witness.ID(witness.Falcon1024V1, publicKey)
+}
+
 // LoadFile reads a boundary file and returns its creation parameters.
 func LoadFile(path string) (map[string]string, error) {
 	info, err := os.Stat(path)

@@ -355,6 +355,9 @@ func (m Model) renderKeyDetails() string {
 	sb.WriteString(fmt.Sprintf("%s: %s", m.keyIdentifierLabel(m.details.keyType), m.details.address))
 	sb.WriteString("\n")
 	sb.WriteString(fmt.Sprintf("Type:    %s\n", styledKeyTypeWithTemplateProvenanceStatus(m.details.keyType, m.details.templateProvenanceStatus)))
+	if m.details.policyLabel != "" {
+		sb.WriteString(fmt.Sprintf("Policy:  %s\n", m.details.policyLabel))
+	}
 	if m.details.publicKeyHex != "" {
 		label := "Public key"
 		if witness.IsKeyType(m.details.keyType) {

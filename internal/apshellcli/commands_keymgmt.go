@@ -8,8 +8,10 @@ package apshellcli
 import (
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/aplane-algo/aplane/internal/apshellapp"
+	"github.com/aplane-algo/aplane/internal/boundary"
 	"github.com/aplane-algo/aplane/internal/cmdspec"
 	"github.com/aplane-algo/aplane/internal/command"
 	"github.com/aplane-algo/aplane/internal/keytypefmt"
@@ -29,18 +31,102 @@ func (r *REPLState) cmdGenerate(args []string, _ interface{}) (command.Result, e
 		return nil, fmt.Errorf("invalid parameter %q (expected param=value)", positional[0])
 	}
 
-	result, err := r.app().GenerateKey(r.commandContext(), apshellapp.GenerateKeyRequest{
-		KeyType: keyType,
-		Params:  params,
-	})
-	if err != nil {
-		return nil, err
+	options := apshellapp.TakeGenerateOptions(keyType, params)
+
+	var result *apshellapp.GenerateKeyCommandResult
+	if options.HasBoundaryFile {
+		if len(params) != 0 {
+			return nil, fmt.Errorf("a boundary file sets every parameter; remove the others")
+		}
+		var cancelled bool
+		result, cancelled, err = r.generateFromBoundary(options.BoundaryFile)
+		if err != nil {
+			return nil, err
+		}
+		if cancelled {
+			return newShellCommandResult(func(w io.Writer) error {
+				_, err := fmt.Fprintln(w, "Cancelled.")
+				return err
+			}, generatedKeyProjection{KeyType: keyType})
+		}
+	} else {
+		result, err = r.app().GenerateKey(r.commandContext(), apshellapp.GenerateKeyRequest{KeyType: keyType, Params: params})
+		if err != nil {
+			return nil, err
+		}
+	}
+	if options.ResultFile != "" {
+		if err := apshellapp.WriteGenerationResult(options.ResultFile, result); err != nil {
+			return nil, fmt.Errorf("generated %s, but %w", result.Address, err)
+		}
 	}
 	return newShellCommandResult(func(w io.Writer) error {
 		return r.withOutput(w, func() {
 			r.printf("Generated %s key: %s\n", keytypefmt.Display(result.KeyType), result.Address)
+			renderResolvedGeneration(r, result)
 		})
-	}, generatedKeyProjection{KeyType: result.KeyType, Address: result.Address})
+	}, generatedKeyProjection{
+		KeyType: result.KeyType, Address: result.Address, Parameters: result.Parameters,
+		AdminKeyID: result.AdminKeyID, CosignerKeyID: result.CosignerKeyID,
+	})
+}
+
+// generateFromBoundary shows the local summary and creates the account. Interactive
+// review is not an authorization: the signer checks every request regardless, so
+// unattended callers skip the prompt.
+func (r *REPLState) generateFromBoundary(path string) (*apshellapp.GenerateKeyCommandResult, bool, error) {
+	preview, err := r.app().PreviewBoundaryFile(path)
+	if err != nil {
+		return nil, false, err
+	}
+	if !r.AutoConfirm {
+		renderBoundaryPreview(r, preview)
+		response, err := r.readPromptResponse("Create this account? (y/N): ")
+		if err != nil {
+			return nil, false, err
+		}
+		if response != "y" && response != "yes" {
+			return nil, true, nil
+		}
+	}
+	result, err := r.app().GenerateFromBoundary(r.commandContext(), preview)
+	return result, false, err
+}
+
+// renderBoundaryPreview labels itself as local, because the guarantee differs from
+// apadmin's review: the signer has not confirmed any of this yet.
+func renderBoundaryPreview(r *REPLState, preview *apshellapp.BoundaryPreview) {
+	r.println("Local summary. The signer has not confirmed this.")
+	r.printf("  Transfers:  %s\n", strings.Join(preview.Transfers, ", "))
+	r.printf("  Recipients: %d, encoding %s, list %s\n", preview.Recipients, preview.Encoding, preview.ListDigest[:12])
+	if preview.AdminKeyID != "" {
+		r.printf("  Rekey:      spending key plus contract admin %s\n", preview.AdminKeyID)
+	} else {
+		r.println("  Rekey:      spending key alone, which can rekey out of this boundary")
+	}
+	switch {
+	case preview.Cosigner == "":
+		r.println("  Cosigner:   none")
+	case preview.CosignerIsKey:
+		r.printf("  Cosigner:   Witness Key ID %s\n", preview.Cosigner)
+	default:
+		r.printf("  Cosigner:   %q is unresolved. The signer resolves this name during creation,\n", preview.Cosigner)
+		r.println("              so an edited reference changes the authority. Prefer a Witness Key ID.")
+	}
+}
+
+// renderResolvedGeneration shows what the signer actually created. It comes after
+// creation, so it is a record and not an approval.
+func renderResolvedGeneration(r *REPLState, result *apshellapp.GenerateKeyCommandResult) {
+	if result.AdminKeyID != "" {
+		r.printf("  Contract admin: %s\n", result.AdminKeyID)
+	}
+	if result.CosignerKeyID != "" {
+		r.printf("  Cosigner:       %s\n", result.CosignerKeyID)
+	}
+	if encoding := result.Parameters[boundary.ParameterListEncoding]; encoding != "" {
+		r.printf("  List encoding:  %s\n", encoding)
+	}
 }
 
 func (r *REPLState) cmdDelete(args []string, _ interface{}) (command.Result, error) {

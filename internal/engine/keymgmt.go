@@ -41,13 +41,37 @@ func (e *Engine) GenerateKey(ctx context.Context, keyType string, params map[str
 			return nil, err
 		}
 	}
+	return e.generateResolvedKey(ctx, keyType, params)
+}
+
+// GenerateKeyFromLiterals generates a key from values that are already literal.
+// It skips alias and set expansion, so a validated boundary file's recipients
+// cannot be reinterpreted against this client's address book.
+func (e *Engine) GenerateKeyFromLiterals(ctx context.Context, keyType string, params map[string]string) (*GenerateKeyResult, error) {
+	if !e.IsConnected() {
+		return nil, ErrNotConnected
+	}
+	return e.generateResolvedKey(ctx, keytypecatalog.Canonicalize(keyType), params)
+}
+
+func (e *Engine) generateResolvedKey(ctx context.Context, keyType string, params map[string]string) (*GenerateKeyResult, error) {
 	resp, err := e.AdminGenerateWithContext(ctx, keyType, params)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate key: %w", err)
 	}
+	result := &GenerateKeyResult{Address: resp.Address, KeyType: resp.KeyType, Parameters: resp.Parameters}
 	// Refresh signer cache to include the new key
-	_, _ = e.RefreshKeys(ctx)
-	return &GenerateKeyResult{Address: resp.Address, KeyType: resp.KeyType}, nil
+	keys, refreshErr := e.RefreshKeys(ctx)
+	if refreshErr != nil {
+		return result, nil
+	}
+	for _, key := range keys {
+		if key.Address == resp.Address {
+			result.AdminKeyID, result.CosignerKeyID, result.InventoryRead = key.AdminKeyID, key.CosignerKeyID, true
+			break
+		}
+	}
+	return result, nil
 }
 
 func (e *Engine) DeleteKey(ctx context.Context, address string) error {

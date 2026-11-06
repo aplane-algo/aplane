@@ -871,6 +871,7 @@ Parsing contracts:
 
 - bracketed address lists such as `[ A1 A2 ]` and `[A1 A2]` are accepted where a command already accepts address-list input,
 - `generate` parameter parsing is bracket-aware for `key=value` arguments,
+- for `aplane.bounded.v1` only, `generate` reads `boundary=<file>` and `result=<file>` itself and sends neither to the signer. That type's parameter list is closed and contains neither name, while any other type's parameters belong to the signer and may legally use them. A boundary file sets every parameter, so it cannot be combined with others,
 - LogicSig `arg:name=value` parsing keeps the `arg:name=` split local to `internal/cmdspec/lsigarg.go` and uses the shared byte parser for the value side,
 - byte-oriented shell inputs support `hex:`, `b64:`, `text:`, and `0x...`; bare text is accepted only where command behavior allows it,
 - ASA-facing commands may parse shell input into semantic values (`AssetRef`, `AmountText`) before command execution, but this does not change user syntax,

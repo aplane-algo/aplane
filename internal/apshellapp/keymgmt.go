@@ -7,13 +7,43 @@ import (
 	"context"
 
 	"github.com/aplane-algo/aplane/internal/appresult"
+	"github.com/aplane-algo/aplane/internal/boundary"
 	"github.com/aplane-algo/aplane/internal/engine"
+	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 )
 
 // GenerateKeyRequest captures parsed generate-command inputs.
 type GenerateKeyRequest struct {
 	KeyType string
 	Params  map[string]string
+}
+
+// Generation options apshell reads itself for the general bounded type.
+const (
+	GenerateOptionBoundaryFile = "boundary"
+	GenerateOptionResultFile   = "result"
+)
+
+// GenerateOptions are the apshell-side choices taken out of generate's parameters.
+type GenerateOptions struct {
+	BoundaryFile    string
+	HasBoundaryFile bool
+	ResultFile      string
+}
+
+// TakeGenerateOptions removes apshell's own options from params. It applies only
+// to aplane.bounded.v1, whose closed parameter list contains neither name. Any
+// other type's parameters are the signer's, and a template can legally declare a
+// parameter called boundary or result, so they must pass through untouched.
+func TakeGenerateOptions(keyType string, params map[string]string) GenerateOptions {
+	if keytypecatalog.Canonicalize(keyType) != boundary.KeyTypeV1 {
+		return GenerateOptions{}
+	}
+	options := GenerateOptions{ResultFile: params[GenerateOptionResultFile]}
+	options.BoundaryFile, options.HasBoundaryFile = params[GenerateOptionBoundaryFile]
+	delete(params, GenerateOptionBoundaryFile)
+	delete(params, GenerateOptionResultFile)
+	return options
 }
 
 // DeleteKeyRequest captures parsed delete-command inputs.
@@ -46,6 +76,7 @@ func (a *App) Signers(ctx context.Context) (*SignersCommandResult, error) {
 			KeyType:                  a.eng.GetKeyType(addr),
 			TemplateProvenanceStatus: refreshed.TemplateProvenanceStatus,
 			TemplateProvenanceNote:   refreshed.TemplateProvenanceNote,
+			PolicyLabel:              refreshed.PolicyLabel,
 		}
 	}
 
@@ -72,7 +103,7 @@ func (a *App) GenerateKey(ctx context.Context, req GenerateKeyRequest) (*Generat
 	if err != nil {
 		return nil, err
 	}
-	return generateKeyCommandResultFromEngine(result), nil
+	return generateResultFromEngine(result), nil
 }
 
 // DeleteKey resolves the provided address or alias and deletes the corresponding key.

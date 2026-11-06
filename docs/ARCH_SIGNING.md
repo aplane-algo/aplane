@@ -1877,6 +1877,11 @@ present on key-type inventory for compatibility and is true only for
 `logic_sig` entries. Clients must not infer that every false value means
 Ed25519; native Falcon-1024 also has `requires_logicsig:false`.
 
+`per_key_contract: true` marks a type whose accounts each select their own contract at
+generation. It has no `signing_flow` or `bounded_authorization`, so clients route its
+accounts by `/keys`. Its optional cosigner stays a plain optional parameter: a
+reference never turns into a required selector with a default.
+
 `/keytypes` is a metadata contract. It describes enabled key types and their
 creation/runtime argument shapes for new key generation. The
 `runtime_args` here come from the live template/provider schema and are

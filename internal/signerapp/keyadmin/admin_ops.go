@@ -16,6 +16,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keymgmt"
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
+	"github.com/aplane-algo/aplane/internal/keytypeux"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/signerapp/storemut"
 	"github.com/aplane-algo/aplane/internal/witness"
@@ -79,6 +80,7 @@ func (s Service) GetKeyDetails(address string) (*KeyDetailsResult, *Error) {
 		}
 		result.Parameters = keyDetailsParameters(info.Type, info.Parameters)
 		result.TemplateProvenanceStatus, result.TemplateProvenanceNote = lsigprovider.CompareAccountProvenance(info.Type, info.TemplateFingerprint, info.Parameters, info.BoundedAuthorization)
+		result.PolicyLabel = keytypeux.BoundedMetadataLabel(info.BoundedAuthorization)
 		if result.DisplayTEAL, err = keymgmt.GetDisplayTEALWithKeyring(keyFile, mk); err != nil {
 			return fmt.Errorf("read TEAL for key %s: %w", address, err)
 		}

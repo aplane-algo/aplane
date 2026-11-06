@@ -890,6 +890,7 @@ type KeyDetailsMessage struct {
 	DisplayTEAL              string            `json:"display_teal,omitempty"` // TEAL source for generic LogicSigs (actual compiled source)
 	TemplateProvenanceStatus string            `json:"template_provenance_status,omitempty"`
 	TemplateProvenanceNote   string            `json:"template_provenance_note,omitempty"`
+	PolicyLabel              string            `json:"policy_label,omitempty"`
 	// MnemonicExportable marks native keys whose recovery phrase export_key can release.
 	MnemonicExportable bool   `json:"mnemonic_exportable,omitempty"`
 	Code               string `json:"code,omitempty"`

@@ -1527,6 +1527,22 @@ address, documents the account, and cannot restore it. The KeyType Library shows
 **Needs approval** and offers **Approve current grammar** in place of disable, so
 approval works while accounts use the type.
 
+**apshell.** `generate aplane.bounded.v1 boundary=<file>` reads the file locally and
+shows a summary labelled as local, because the guarantee is weaker than apadmin's
+review: the signer has not seen it, and a cosigner name stays unresolved until creation.
+A stable Witness Key ID can only select that authority, and apshell confirms the result
+against it, reporting an account it cannot confirm. The file's values are literal, so
+they skip this client's alias and set expansion. Results show the parameters the signer
+stored and the authority IDs it reports in `/keys`: apshell derives neither, because
+routing and identity stay daemon concerns. `result=<file>` saves that as
+`aplane.generation-result.v1`, which deliberately has no fingerprints or digest. Only
+apadmin's IPC workflow can issue a full receipt. Interactive confirmation is not an
+authorization, and unattended callers skip it.
+
+**Labels.** `keytypeux.BoundedLabel` builds descriptions such as `Merkle allowlist · admin
+rekey · cosigner` from stored metadata, for `keys` and apadmin's key details. A custom
+policy says only that it is custom, because its conditions are the author's code.
+
 ## See also
 
 - `docs/ARCH_SIGNING.md` — HTTP DTOs, error codes, and SDK contracts.

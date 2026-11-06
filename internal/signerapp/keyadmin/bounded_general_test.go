@@ -99,6 +99,9 @@ func TestGeneralProviderGeneratesFromAReview(t *testing.T) {
 	if details.TemplateProvenanceStatus != "" {
 		t.Fatalf("new account has provenance status %q: %s", details.TemplateProvenanceStatus, details.TemplateProvenanceNote)
 	}
+	if details.PolicyLabel != "Allowlist · spending-key rekey" {
+		t.Fatalf("policy label = %q", details.PolicyLabel)
+	}
 	snapshot, _ := ir.KeySnapshot()
 	readErr := ir.WithKeyring(func(mk *crypto.Keyring) error {
 		info, err := keymgmt.DetectKeyInfoFromFileWithKeyring(snapshot[result.Address], mk)
