@@ -13,6 +13,10 @@ import (
 	"github.com/aplane-algo/aplane/lsig/boundedaccount"
 )
 
+// buildLibraryVisibleKeyTypes lists library key types that depend on the build.
+// A release has none.
+func buildLibraryVisibleKeyTypes() []string { return nil }
+
 // aplane.bounded.v1 ships only with its operator experience. Until then a release
 // must not offer it, and being listed as disabled would still let it be enabled.
 func TestGeneralBoundedKeyTypeIsUnavailable(t *testing.T) {

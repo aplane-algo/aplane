@@ -32,12 +32,13 @@ func TestCanonicalCompiledLogicSigInventory(t *testing.T) {
 	}
 
 	libraryVisible := catalogKeyTypes(keytypecatalog.LibraryVisible())
-	wantLibraryVisible := []string{
+	wantLibraryVisible := append(buildLibraryVisibleKeyTypes(),
 		"aplane.falcon1024-cosigner1024.v1",
 		"aplane.rotating-triple-slhdsa.v1",
 		"aplane.rotating-triple-wotsc.v1",
 		"aplane.rotating-triple-xmss.v1",
-	}
+	)
+	sort.Strings(wantLibraryVisible)
 	if !reflect.DeepEqual(libraryVisible, wantLibraryVisible) {
 		t.Fatalf("library-visible compiled LogicSig inventory = %v, want %v", libraryVisible, wantLibraryVisible)
 	}
