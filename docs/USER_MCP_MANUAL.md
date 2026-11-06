@@ -236,7 +236,7 @@ compatible manual-salt records retain it.
 
 ### Restricted variants (the safety is in the program)
 
-New restricted accounts use `aplane.bounded.v1`. The allowlist and timelock
+New restricted accounts use `aplane.falcon1024-b.v1`. The allowlist and timelock
 templates below are retired, and existing accounts keep working.
 
 - `aplane.falcon1024-allowlist.v1` — bounded pay/asset-transfer receivers must

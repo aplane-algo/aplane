@@ -820,7 +820,7 @@ individually.
 `aplane.corridor.v1` is the first bundled profile that composes optional cosigner
 authorization into `bounded1`. It is a schema-v2 template source at
 `library/retired/aplane.corridor.v1.yaml`, retired from the default library in
-favor of the Corridor preset of `aplane.bounded.v1`; it is not a compiled provider,
+favor of the Corridor preset of `aplane.falcon1024-b.v1`; it is not a compiled provider,
 authorization-contract identifier, key category, or special transaction
 classifier.
 

@@ -210,7 +210,7 @@ Go-defined key types:
 |---|---|---|---|---|
 | `ed25519` | Native signing key | Go-defined | default-enabled | `internal/signing/ed25519`, `internal/keygen/ed25519.go` |
 | `falcon1024` | Protocol-native PQ signing key | Go-defined | default-enabled on signer nodes | `internal/signing/falcon1024` |
-| `aplane.bounded.v1` | General bounded account, one of 96 shapes selected per key | Go-defined | default-enabled on signer nodes | `lsig/boundedaccount`, `internal/boundary` |
+| `aplane.falcon1024-b.v1` | General bounded account, one of 96 shapes selected per key | Go-defined | default-enabled on signer nodes | `lsig/boundedaccount`, `internal/boundary` |
 | `aplane.falcon1024.v1` | DSA LogicSig provider | Go-defined | internal-only | `lsig/falcon1024/v1/standard.go` |
 | `aplane.witness-falcon1024.v1` | Witness key (cosigner custody or external contract-admin custody) | Go-defined | default-enabled on cosigner nodes | `internal/witness`, `lsig/falcon1024/keygen/witness.go` |
 | `aplane.falcon1024-cosigner1024.v1` | Guarded-account DSA LogicSig provider | Go-defined | library-visible | `lsig/falcon1024_guarded` |
@@ -219,7 +219,7 @@ Go-defined key types:
 Compiled key types can be registered as binary capabilities without being
 default-visible for generation. Visibility is recorded in
 `internal/keytypecatalog`: only the protocol-native `ed25519` and `falcon1024`
-and the general bounded `aplane.bounded.v1` (signer nodes) and the witness key type `aplane.witness-falcon1024.v1`
+and the general bounded `aplane.falcon1024-b.v1` (signer nodes) and the witness key type `aplane.witness-falcon1024.v1`
 (cosigner nodes) are default-enabled. The plain `aplane.falcon1024.v1` and
 `aplane.ed25519.v1` providers are `internal_only`: registered for composition,
 signing, and encrypted restore, but never standalone creation or mnemonic
@@ -281,7 +281,7 @@ Bundled YAML templates, if installed:
 
 Everything but `aplane.htlc.v1` is retired: it sits in `library/retired/`, outside
 the library listing, so an operator can repair an existing account. New accounts
-use a preset of `aplane.bounded.v1`. A retired file carries a top-of-file `#`
+use a preset of `aplane.falcon1024-b.v1`. A retired file carries a top-of-file `#`
 comment, never one inside `teal`, which would change its fingerprint. Tests and
 golden vectors for existing accounts read `library/retired/`.
 

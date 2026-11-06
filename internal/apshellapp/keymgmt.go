@@ -32,7 +32,7 @@ type GenerateOptions struct {
 }
 
 // TakeGenerateOptions removes apshell's own options from params. It applies only
-// to aplane.bounded.v1, whose closed parameter list contains neither name. Any
+// to aplane.falcon1024-b.v1, whose closed parameter list contains neither name. Any
 // other type's parameters are the signer's, and a template can legally declare a
 // parameter called boundary or result, so they must pass through untouched.
 func TakeGenerateOptions(keyType string, params map[string]string) GenerateOptions {

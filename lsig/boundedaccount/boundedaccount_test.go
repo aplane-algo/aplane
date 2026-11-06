@@ -25,12 +25,12 @@ import (
 )
 
 const (
-	goldenGrammarFingerprint    = "1:071b74d31eaf462d3087ec364e9ec404829f2669458b9dacef63da86d29ddf15"
-	goldenFirstShapeFingerprint = "1:4cd1c6fd6b43ce9085574e3124f041c47c53e317e395b43272e8a7453eec5a3c"
-	goldenFullShapeFingerprint  = "1:0d5f6c9957c7cd219527f2110910d873982bdfd46e136b5f06742d741827ea4c"
-	goldenBoundaryDigest        = "5403a32fc1b8ae9d8c9fc18d11c881d65f418e03c2dddd7aed1e6afdbae6c727"
-	goldenRenderedPrograms      = "d9c422d5b5e496e84e2aaa853daed7a1a9f7faa9d62f444c84729edeee6364bc"
-	goldenTimelockPrograms      = "340387fd7d52e7b348aa2724ea076373d19a51646b844aebe506ba20e6709be3"
+	goldenGrammarFingerprint    = "1:6849f3503d4c228c80ed8fc16da800bb9bd50b638fb046266152c597c983f4cd"
+	goldenFirstShapeFingerprint = "1:20b80a76bb50a40555910a6d75dd5ea4db729c765627250eaab534f5443d0287"
+	goldenFullShapeFingerprint  = "1:10022265dd8eee15de61a4d0828f74835a4f7a549184983adce608acc6922cb0"
+	goldenBoundaryDigest        = "e92a67f3c4e8ed9330593c657bde8d84dc034f32fc8fae02d04f00568df31da7"
+	goldenRenderedPrograms      = "fd62969d1fd5248808f9b574e4be3a611e1c7b01c1faa9dfe950839563e0f195"
+	goldenTimelockPrograms      = "ccfc86ea8e24606187c36a1c75073993dc43bfebef2f235e5b0ca2395198058b"
 )
 
 func newTestProvider(t *testing.T) *Provider {

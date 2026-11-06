@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-// Package boundedaccount implements aplane.bounded.v1, the general bounded key
+// Package boundedaccount implements aplane.falcon1024-b.v1, the general bounded key
 // type. An account chooses its rules at generation from a closed set of built-in
 // shapes, each an ordinary bounded composition with no author TEAL.
 package boundedaccount

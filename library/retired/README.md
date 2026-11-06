@@ -1,7 +1,7 @@
 # Retired Templates
 
 These five LogicSig templates have left the default KeyType Library. New
-accounts should use a preset of `aplane.bounded.v1`.
+accounts should use a preset of `aplane.falcon1024-b.v1`.
 
 | Template | File | Replacement preset |
 |---|---|---|

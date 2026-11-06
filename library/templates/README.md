@@ -9,7 +9,7 @@ them. After importing a template, unlock or reload `apsigner` before using the
 new key type.
 
 For an allowlist, timelock, or Corridor account, use a preset of
-`aplane.bounded.v1`. It needs no import. The templates those presets replaced
+`aplane.falcon1024-b.v1`. It needs no import. The templates those presets replaced
 are in [`library/retired/`](../retired/README.md), kept to repair existing
 accounts.
 
@@ -47,7 +47,7 @@ apadmin template import library/templates/aplane.htlc.v1.yaml
 
 ### Merkle allowlist proof format
 
-The Merkle encoding of `aplane.bounded.v1` and the retired
+The Merkle encoding of `aplane.falcon1024-b.v1` and the retired
 `aplane.falcon1024-allowlist.v2` and `aplane.corridor.v1` templates store the public
 recipient allowlist in the encrypted key file and commit the LogicSig TEAL to a
 fixed-depth 16 Merkle tree derived from that list:

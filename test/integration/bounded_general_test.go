@@ -548,7 +548,7 @@ func TestBoundedGeneralThroughSigner(t *testing.T) {
 		}
 		account := ""
 		for _, line := range strings.Split(output, "\n") {
-			if _, address, found := strings.Cut(line, "bounded.v1 key: "); found {
+			if _, address, found := strings.Cut(line, boundedaccount.KeyTypeV1+" key: "); found {
 				account = strings.TrimSpace(address)
 			}
 		}

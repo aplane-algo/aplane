@@ -701,7 +701,7 @@ Writable admin settings:
 - `lock_on_disconnect`
 - `passphrase_timeout`
 - `boundary_require_admin_key` and `boundary_require_cosigner`: restrict new
-  `aplane.bounded.v1` accounts only
+  `aplane.falcon1024-b.v1` accounts only
 - `theme`
 
 Node role is not a writable admin setting. It is initialized once in root

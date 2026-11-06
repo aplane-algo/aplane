@@ -20,7 +20,7 @@ import (
 	falcon1024guarded "github.com/aplane-algo/aplane/lsig/falcon1024_guarded"
 )
 
-const boundedAccountFamily = "aplane.bounded"
+const boundedAccountFamily = "aplane.falcon1024-b"
 
 var (
 	registerClientOnce sync.Once
