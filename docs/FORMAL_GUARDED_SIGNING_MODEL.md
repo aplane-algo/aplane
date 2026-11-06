@@ -372,7 +372,7 @@ The client performs no cryptographic verification of component signatures.
 It validates response shape (A11) and forwards signatures to assembly.
 Rejection authority is signer assembly (A6, A7) and the on-chain LogicSig.
 The client therefore must not link the signature verification primitives;
-`cmd/apshell` is pinned to not compile `internal/cosigner/verify` or the
+`cmd/apshell` is pinned to not compile `internal/sigconstruction/verify` or the
 Falcon implementation libraries.
 
 ```text
@@ -464,7 +464,7 @@ Implementation areas that should remain aligned with this model:
 
 - `internal/cosigner/message`
 - `internal/cosigner/canonical`
-- `internal/cosigner/verify`
+- `internal/sigconstruction/verify`
 - `internal/cosigner/keytypes`
 - `internal/signerapp/signing/component.go`
 - `internal/signerapp/signing/component_sign.go`

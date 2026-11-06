@@ -9,9 +9,10 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/aplane-algo/aplane/internal/cosigner/verify"
 	securecrypto "github.com/aplane-algo/aplane/internal/crypto"
 	internalkeygen "github.com/aplane-algo/aplane/internal/keygen"
+	"github.com/aplane-algo/aplane/internal/sigconstruction"
+	sigverify "github.com/aplane-algo/aplane/internal/sigconstruction/verify"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
@@ -99,7 +100,7 @@ func validateWitnessPair(publicKey, privateKey []byte) error {
 		return fmt.Errorf("witness public/private key validation failed: %w", err)
 	}
 	defer securecrypto.ZeroBytes(signature)
-	if err := verify.VerifyFalcon1024(publicKey, []byte(probe), signature); err != nil {
+	if err := sigverify.Verify(sigconstruction.Falcon1024(), publicKey, []byte(probe), signature); err != nil {
 		return fmt.Errorf("witness public key does not match private key")
 	}
 	return nil

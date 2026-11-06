@@ -15,11 +15,11 @@ import (
 
 	boundedmessage "github.com/aplane-algo/aplane/internal/boundedadmin/message"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
-	"github.com/aplane-algo/aplane/internal/cosigner/verify"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/txnutil"
+	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
@@ -111,7 +111,7 @@ func (e *Executor) ExecuteBoundedAdminPartial(ctx context.Context, plan *PlanRes
 			return nil, internal(fmt.Sprintf("base signature arg %d violates bounded metadata", i))
 		}
 	}
-	if len(args) != 1 || verify.VerifyFalcon1024(keyMaterial.PublicKey, txID[:], args[0]) != nil {
+	if !boundedSpendingProofVerifies(keyMaterial, composeddsa.BoundedWorkflowExternalAdmin, txID[:], args...) {
 		return nil, internal("generated bounded spending signature failed verification")
 	}
 	lsigAccount := algocrypto.LogicSigAccount{Lsig: types.LogicSig{Logic: keyMaterial.Bytecode, Args: args}}

@@ -7,9 +7,10 @@ import "slices"
 
 // ComponentLayout is one component's argument slots.
 type ComponentLayout struct {
-	Name     string
-	Start    int
-	maxSizes []int
+	Name      string
+	Primitive PrimitiveID
+	Start     int
+	maxSizes  []int
 }
 
 // Count returns the component's number of argument slots.

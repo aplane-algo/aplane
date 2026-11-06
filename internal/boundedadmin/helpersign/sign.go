@@ -11,8 +11,9 @@ import (
 	"github.com/algorandfoundation/falcon-signatures/falcongo"
 	boundedauthorization "github.com/aplane-algo/aplane/internal/boundedadmin/authorization"
 	boundedprotocol "github.com/aplane-algo/aplane/internal/boundedadmin/protocol"
-	cosignerverify "github.com/aplane-algo/aplane/internal/cosigner/verify"
 	apcrypto "github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/sigconstruction"
+	sigverify "github.com/aplane-algo/aplane/internal/sigconstruction/verify"
 	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/internal/witness/artifact"
 )
@@ -42,7 +43,7 @@ func Sign(request boundedprotocol.Request, credential *artifact.Credential) (bou
 		return boundedprotocol.Response{}, nil, err
 	}
 	defer apcrypto.ZeroBytes(signature)
-	if err := cosignerverify.VerifyFalcon1024(validated.PublicKey, validated.Message[:], signature); err != nil {
+	if err := sigverify.Verify(sigconstruction.Falcon1024(), validated.PublicKey, validated.Message[:], signature); err != nil {
 		return boundedprotocol.Response{}, nil, fmt.Errorf("verify generated contract-admin signature: %w", err)
 	}
 	return boundedprotocol.Response{

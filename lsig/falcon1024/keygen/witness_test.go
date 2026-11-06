@@ -4,6 +4,7 @@
 package keygen
 
 import (
+	"bytes"
 	"context"
 	"testing"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/witness"
 	falconfamily "github.com/aplane-algo/aplane/lsig/falcon1024/family"
+	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
 )
 
 func TestCosignerFalcon1024GenerateRandomScansAndLoads(t *testing.T) {
@@ -104,4 +106,23 @@ func assertComponentMaterial(t *testing.T, km *signing.KeyMaterial, wantSelector
 	material.PrivateKey = nil
 	material.PublicKey = nil
 	km.Value = nil
+}
+
+func TestValidateWitnessPairRefusesMismatchedKeys(t *testing.T) {
+	ops := signerops.New(nil)
+	newPair := func(fill byte) (publicKey, privateKey []byte) {
+		publicKey, privateKey, err := ops.GenerateKeypair(bytes.Repeat([]byte{fill}, 64))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return publicKey, privateKey
+	}
+	publicKey, privateKey := newPair(1)
+	_, otherPrivateKey := newPair(2)
+	if err := validateWitnessPair(publicKey, privateKey); err != nil {
+		t.Fatalf("validateWitnessPair() error = %v", err)
+	}
+	if err := validateWitnessPair(publicKey, otherPrivateKey); err == nil {
+		t.Fatal("validateWitnessPair() accepted a mismatched private key")
+	}
 }

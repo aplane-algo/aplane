@@ -21,7 +21,8 @@ import (
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/cosigner/canonical"
-	"github.com/aplane-algo/aplane/internal/cosigner/verify"
+	"github.com/aplane-algo/aplane/internal/sigconstruction"
+	sigverify "github.com/aplane-algo/aplane/internal/sigconstruction/verify"
 	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/txeffects"
 	"github.com/aplane-algo/aplane/internal/txnutil"
@@ -122,7 +123,7 @@ func Complete(request boundedprotocol.Request, response boundedprotocol.Response
 	if err != nil {
 		return nil, nil, err
 	}
-	if err := verify.VerifyFalcon1024(validated.PublicKey, validated.Message[:], signature); err != nil {
+	if err := sigverify.Verify(sigconstruction.Falcon1024(), validated.PublicKey, validated.Message[:], signature); err != nil {
 		return nil, nil, fmt.Errorf("contract-admin signature is invalid: %w", err)
 	}
 
@@ -290,7 +291,7 @@ func validateAuthorizationMetadata(metadata signerapi.BoundedAdminMetadata, txn 
 	}); err != nil {
 		return nil, nil, binding, message, fmt.Errorf("validate bounded1 program: %w", err)
 	}
-	if err := verify.VerifyFalcon1024(spendingKey, txID[:], partial.Lsig.Args[0]); err != nil {
+	if err := sigverify.Verify(sigconstruction.Falcon1024(), spendingKey, txID[:], partial.Lsig.Args[0]); err != nil {
 		return nil, nil, binding, message, fmt.Errorf("bounded1 spending signature is invalid: %w", err)
 	}
 	return publicKey, spendingKey, binding, message, nil

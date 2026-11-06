@@ -15,11 +15,12 @@ import (
 	"github.com/aplane-algo/aplane/internal/cosigner/canonical"
 	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
 	"github.com/aplane-algo/aplane/internal/cosigner/message"
-	"github.com/aplane-algo/aplane/internal/cosigner/verify"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/sigconstruction"
+	sigverify "github.com/aplane-algo/aplane/internal/sigconstruction/verify"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/txnutil"
 	"github.com/aplane-algo/aplane/internal/witness"
@@ -606,7 +607,7 @@ func TestSignComponentCosignerPolicyAllowsSigning(t *testing.T) {
 	if prepErr != nil {
 		t.Fatalf("prepareComponentSigning() error = %v", prepErr)
 	}
-	if err := verify.VerifyFalcon1024(publicKey, plan.Targets[0].Message[:], sigBytes); err != nil {
+	if err := sigverify.Verify(sigconstruction.Falcon1024(), publicKey, plan.Targets[0].Message[:], sigBytes); err != nil {
 		t.Fatal("cosigner signature does not verify over component message")
 	}
 	if len(audit.approved) != 1 || audit.approved[0].authAddress != componentKey {
@@ -1175,7 +1176,7 @@ func TestSignPreparedCosignerComponentsSignsFalconMessages(t *testing.T) {
 		if err != nil {
 			t.Fatalf("DecodeString(signature) error = %v", err)
 		}
-		if err := verify.VerifyFalcon1024(publicKey, plan.Targets[i].Message[:], sigBytes); err != nil {
+		if err := sigverify.Verify(sigconstruction.Falcon1024(), publicKey, plan.Targets[i].Message[:], sigBytes); err != nil {
 			t.Fatalf("signature %d does not verify over prepared component message", i)
 		}
 	}
@@ -1235,7 +1236,7 @@ func TestSignPreparedCosignerComponentsSignsFalcon1024Messages(t *testing.T) {
 		if err != nil {
 			t.Fatalf("DecodeString(signature) error = %v", err)
 		}
-		if err := verify.VerifyFalcon1024(publicKey, plan.Targets[i].Message[:], sigBytes); err != nil {
+		if err := sigverify.Verify(sigconstruction.Falcon1024(), publicKey, plan.Targets[i].Message[:], sigBytes); err != nil {
 			t.Fatalf("signature %d does not verify over prepared component message: %v", i, err)
 		}
 	}

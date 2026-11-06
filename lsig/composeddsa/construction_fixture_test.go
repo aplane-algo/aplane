@@ -29,7 +29,8 @@ type compositeOps struct {
 	construction sigconstruction.Construction
 }
 
-func (o compositeOps) PublicKeySize() int { return o.construction.PublicKeySize() }
+func (o compositeOps) Construction() sigconstruction.Construction { return o.construction }
+func (o compositeOps) PublicKeySize() int                         { return o.construction.PublicKeySize() }
 func (o compositeOps) CryptoSignatureSize() int {
 	total := 0
 	for _, size := range o.construction.Layout().MaxSizes() {
@@ -361,5 +362,66 @@ func TestEveryProductionBaseResolvesToASupportedConstruction(t *testing.T) {
 		if composeddsa.ProductionSupportsBase("bounded-unknown", base) {
 			t.Fatalf("base %q has support under a contract nothing reviewed", base)
 		}
+	}
+}
+
+// The spending key is a concatenation, so a witness reused as one component never
+// compares equal to it whole.
+func TestWitnessKeyMustDifferFromEverySpendingComponent(t *testing.T) {
+	for name, primitives := range map[string][]sigconstruction.PrimitiveID{
+		"Falcon first":  {sigconstruction.PrimitiveFalcon1024, sigconstruction.PrimitiveEd25519},
+		"Falcon second": {sigconstruction.PrimitiveEd25519, sigconstruction.PrimitiveFalcon1024},
+	} {
+		t.Run(name, func(t *testing.T) {
+			construction := compositeConstruction(t, primitives...)
+			key, parts := syntheticKey(construction)
+			reused := parts[0]
+			if primitives[1] == sigconstruction.PrimitiveFalcon1024 {
+				reused = parts[1]
+			}
+			distinct := bytes.Repeat([]byte{0x41}, len(reused))
+			for role, test := range map[string]struct {
+				extra     string
+				parameter string
+			}{
+				"cosigner": {cosignerYAML, composeddsa.BoundedCosignerPublicKeyParameter},
+				"admin":    {adminKeyRekeyYAML, composeddsa.BoundedAdminPublicKeyParameter},
+			} {
+				provider := compositeProvider(t, construction, test.extra, composeddsa.FixtureSupport{ExternalAdmin: true, Cosigner: true})
+				_, err := provider.GenerateTEAL(key, map[string]string{test.parameter: hex.EncodeToString(reused)})
+				if err == nil || !strings.Contains(err.Error(), "must differ from the spending key") {
+					t.Fatalf("%s: GenerateTEAL() error = %v", role, err)
+				}
+				_, err = provider.BuildBoundedAuthorizationMetadata(key, map[string]string{test.parameter: hex.EncodeToString(reused)}, []byte{1})
+				if err == nil || !strings.Contains(err.Error(), "must differ from the spending key") {
+					t.Fatalf("%s: BuildBoundedAuthorizationMetadata() error = %v", role, err)
+				}
+				if _, err := provider.GenerateTEAL(key, map[string]string{test.parameter: hex.EncodeToString(distinct)}); err != nil {
+					t.Fatalf("%s: GenerateTEAL() with a distinct key error = %v", role, err)
+				}
+			}
+		})
+	}
+}
+
+func TestSupportedSpendingConstructionFollowsThePolicy(t *testing.T) {
+	const contract = composeddsa.BoundedContractV1
+	for _, workflow := range []composeddsa.BoundedWorkflow{composeddsa.BoundedWorkflowCosigner, composeddsa.BoundedWorkflowExternalAdmin} {
+		construction, ok := composeddsa.SupportedSpendingConstruction(contract, "aplane.falcon1024.v1", workflow)
+		if !ok || construction.ID() != sigconstruction.Falcon1024().ID() {
+			t.Fatalf("workflow %d on Falcon = %q, %v", workflow, construction.ID(), ok)
+		}
+		for name, refused := range map[string][2]string{
+			"Ed25519":          {contract, "aplane.ed25519.v1"},
+			"fixture base":     {contract, fixtureBaseKeyType},
+			"unknown contract": {"bounded-unknown", "aplane.falcon1024.v1"},
+		} {
+			if _, ok := composeddsa.SupportedSpendingConstruction(refused[0], refused[1], workflow); ok {
+				t.Fatalf("workflow %d accepted %s", workflow, name)
+			}
+		}
+	}
+	if _, ok := composeddsa.SupportedSpendingConstruction(contract, "aplane.falcon1024.v1", 0); ok {
+		t.Fatal("an unnamed workflow has support")
 	}
 }

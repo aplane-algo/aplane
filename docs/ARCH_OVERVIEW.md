@@ -2022,7 +2022,7 @@ Primary implementation ownership:
 - `pkg/signerapi`: component-signing and assembly DTOs plus fixtures.
 - `internal/cosigner/message`: role-separated component message construction.
 - `internal/cosigner/canonical`: canonical group decoding and group hashing.
-- `internal/cosigner/verify`: component signature verification primitives
+- `internal/sigconstruction/verify`: component signature verification primitives
   (signer-side only; client binaries must not link them).
 - `internal/cosigner/keytypes`: the guarded-account key type and its mapping
   to the cosigner witness component key type; Witness Key ID derivation and

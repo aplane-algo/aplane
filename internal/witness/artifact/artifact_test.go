@@ -69,6 +69,32 @@ func TestGenerateOpenAndInspect(t *testing.T) {
 	})
 }
 
+// Two valid credentials stitched together parse fine, so only the self-test signature
+// can tell that the private material isn't this public key's.
+func TestValidateCredentialRefusesMismatchedPrivateMaterial(t *testing.T) {
+	t.Parallel()
+	passphrase := []byte("correct horse battery staple")
+	open := func() *Credential {
+		bundle, _, _, err := Generate(passphrase, testCreatedAt)
+		if err != nil {
+			t.Fatalf("Generate() error = %v", err)
+		}
+		credential, err := Open(bundle, passphrase)
+		if err != nil {
+			t.Fatalf("Open() error = %v", err)
+		}
+		return credential
+	}
+	credential, other := open(), open()
+	if err := validateCredential(credential); err != nil {
+		t.Fatalf("validateCredential() error = %v", err)
+	}
+	credential.PrivateMaterial = other.PrivateMaterial
+	if err := validateCredential(credential); err == nil {
+		t.Fatal("validateCredential() accepted mismatched private material")
+	}
+}
+
 func TestVerifyRejectsWrongPassphrase(t *testing.T) {
 	t.Parallel()
 

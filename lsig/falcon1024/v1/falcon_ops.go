@@ -29,6 +29,9 @@ func (o *FalconOps) MnemonicScheme() string   { return o.base.MnemonicScheme() }
 func (o *FalconOps) MnemonicWordCount() int   { return o.base.MnemonicWordCount() }
 func (o *FalconOps) DisplayColor() string     { return o.base.DisplayColor() }
 
+// Construction returns the signature construction these operations render.
+func (o *FalconOps) Construction() sigconstruction.Construction { return sigconstruction.Falcon1024() }
+
 // BuildVerifyTEAL emits the Falcon verification footer for a LogicSig program.
 func (o *FalconOps) BuildVerifyTEAL(publicKey []byte) (string, error) {
 	verify, err := sigconstruction.Falcon1024().VerifyTEAL(publicKey, "txn TxID", 0)

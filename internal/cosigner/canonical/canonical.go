@@ -5,7 +5,7 @@
 // transport used by component signing. It is pure Go (no signature crypto,
 // no Falcon libraries) so client binaries can canonicalize groups without
 // linking CGo; component signature verification lives in
-// internal/cosigner/verify.
+// internal/sigconstruction/verify.
 package canonical
 
 import (

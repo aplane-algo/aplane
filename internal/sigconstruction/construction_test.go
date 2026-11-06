@@ -266,6 +266,51 @@ func TestCatalogMatchesTheFrozenAuthoritySizes(t *testing.T) {
 	}
 }
 
+func TestSharesComponentKeyComparesCompatibleComponents(t *testing.T) {
+	falconKey := bytes.Repeat([]byte{0x11}, falconKeySize)
+	edKey := bytes.Repeat([]byte{0x22}, ed25519KeySize)
+	otherFalcon := bytes.Repeat([]byte{0x33}, falconKeySize)
+	first := must(t, Definition{ID: "a", Components: components(PrimitiveFalcon1024, PrimitiveEd25519)})
+	second := must(t, Definition{ID: "b", Components: components(PrimitiveEd25519, PrimitiveFalcon1024)})
+	joined := append(bytes.Clone(falconKey), edKey...)
+	reversed := append(bytes.Clone(edKey), otherFalcon...)
+
+	if !SharesComponentKey(first, joined, Falcon1024(), falconKey) {
+		t.Fatal("missed a witness key inside a larger construction")
+	}
+	if !SharesComponentKey(Falcon1024(), falconKey, first, joined) {
+		t.Fatal("the comparison depends on argument order")
+	}
+	if !SharesComponentKey(first, joined, second, reversed) {
+		t.Fatal("missed a shared Ed25519 component at a different position")
+	}
+	if SharesComponentKey(first, joined, Falcon1024(), otherFalcon) {
+		t.Fatal("reported a key the construction does not hold")
+	}
+	if SharesComponentKey(first, joined[1:], Falcon1024(), falconKey) {
+		t.Fatal("compared a key that does not parse")
+	}
+	if SharesComponentKey(Construction{}, nil, Falcon1024(), falconKey) {
+		t.Fatal("a zero construction shares a key")
+	}
+}
+
+// Equal bytes under different primitives are not the same key.
+func TestSharesComponentKeyIgnoresOtherPrimitives(t *testing.T) {
+	profiles := map[PrimitiveID]*primitiveProfile{
+		"other":          {publicKeySize: ed25519KeySize, slots: []argSlot{{maxSize: 64}}},
+		PrimitiveEd25519: primitiveProfiles[PrimitiveEd25519],
+	}
+	other, err := newConstruction(Definition{ID: "x", Components: components("other")}, profiles)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := bytes.Repeat([]byte{0x22}, ed25519KeySize)
+	if SharesComponentKey(other, key, Ed25519(), key) {
+		t.Fatal("compared components of different primitives")
+	}
+}
+
 func TestCatalogResolvesProductionIdentifiersOnly(t *testing.T) {
 	if construction, ok := ForBaseKeyType(" APLANE.FALCON1024.V1 "); !ok || construction.ID() != "falcon1024" {
 		t.Fatalf("ForBaseKeyType() = %q, %v", construction.ID(), ok)
