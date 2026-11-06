@@ -128,6 +128,11 @@ definitions or the fingerprint formula:
 - `base_primitive` tokens are a frozen namespace: add rows, never rename a token.
 - Bump `CompatibilityFingerprintVersion` only on a fingerprint-formula change
   (field set / hashing rules), never on a rename; update the goldens with it.
+- Do not add a new-account restriction to `ValidateTemplateSpec`,
+  `validateBoundedConfig`, or the bounded metadata helpers. Installed templates
+  reach them on load, and an error changes the fingerprint and fails the store's
+  validation. Add it to `checkBoundedGenerationSupport`, which only `GenerateTEAL`
+  calls.
 - A base-key-type or provider-identifier rename is a separate compatibility
   event: add a retained registry alias so existing keys keep signing — the
   `base_primitive` projection does not make a rename safe for signing.
