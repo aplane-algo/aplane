@@ -1348,7 +1348,10 @@ install_template_library() {
     local src="$SCRIPT_DIR/library/templates"
     local library_root="$data_dir/library"
     local dest="$library_root/templates"
+    local retired_src="$SCRIPT_DIR/library/retired"
+    local retired_dest="$library_root/retired"
     local copied=0
+    local dir
 
     if [ ! -d "$src" ]; then
         echo "Template library not found at $src; skipping template copy."
@@ -1366,23 +1369,35 @@ install_template_library() {
         esac
     done
 
-    if [ -n "$owner" ] && [ -n "$group" ]; then
-        chown "$owner:$group" "$library_root"
-        chmod 700 "$library_root"
-        chown -R "$owner:$group" "$dest"
-        chmod 700 "$dest"
-        for file in "$dest"/*; do
+    # Retired templates stay out of the library listing, but an operator may
+    # need one to repair an existing account.
+    if [ -d "$retired_src" ]; then
+        mkdir -p "$retired_dest"
+        for file in "$retired_src"/*; do
             [ -f "$file" ] || continue
-            chmod 600 "$file"
-        done
-    else
-        chmod 700 "$library_root"
-        chmod 700 "$dest"
-        for file in "$dest"/*; do
-            [ -f "$file" ] || continue
-            chmod 600 "$file"
+            case "$(basename "$file")" in
+                README.md|*.yaml)
+                    cp "$file" "$retired_dest/"
+                    ;;
+            esac
         done
     fi
+
+    if [ -n "$owner" ] && [ -n "$group" ]; then
+        chown "$owner:$group" "$library_root"
+    fi
+    chmod 700 "$library_root"
+    for dir in "$dest" "$retired_dest"; do
+        [ -d "$dir" ] || continue
+        if [ -n "$owner" ] && [ -n "$group" ]; then
+            chown -R "$owner:$group" "$dir"
+        fi
+        chmod 700 "$dir"
+        for file in "$dir"/*; do
+            [ -f "$file" ] || continue
+            chmod 600 "$file"
+        done
+    done
 
     echo "Installed template library to $dest ($copied file(s))."
 }

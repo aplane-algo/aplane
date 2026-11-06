@@ -818,8 +818,9 @@ individually.
 ## Corridor v1
 
 `aplane.corridor.v1` is the first bundled profile that composes optional cosigner
-authorization into `bounded1`. It is an optional schema-v2 template source at
-`library/templates/aplane.corridor.v1.yaml`; it is not a compiled provider,
+authorization into `bounded1`. It is a schema-v2 template source at
+`library/retired/aplane.corridor.v1.yaml`, retired from the default library in
+favor of the Corridor preset of `aplane.bounded.v1`; it is not a compiled provider,
 authorization-contract identifier, key category, or special transaction
 classifier.
 
@@ -1018,8 +1019,8 @@ Primary packages and files:
 - `lsig/falcon1024_guarded`: guarded LogicSig provider and template behavior.
 - `lsig/composeddsa`: optional bounded cosigner composition and framework-owned
   fixed/Merkle Layer-3 policies.
-- `library/templates/aplane.corridor.v1.yaml`: the canonical optional Corridor
-  profile source.
+- `library/retired/aplane.corridor.v1.yaml`: the retired Corridor profile source,
+  kept to repair existing accounts.
 - `internal/apadminapp/catalog.go`: public cosigner export/import/list/show/remove
   workflows used by `apadmin`.
 - `internal/signerapp/policycmd`: live and rescue policy workflows through

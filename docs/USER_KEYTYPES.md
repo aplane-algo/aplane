@@ -94,7 +94,6 @@ Use `-d <path>` or `APSIGNER_DATA` to select the signer data directory:
 apadmin -d $APSIGNER_DATA template list
 apadmin -d $APSIGNER_DATA template show example.my_escrow.v1 --show-sensitive-template
 apadmin -d $APSIGNER_DATA template import library/templates/aplane.htlc.v1.yaml
-apadmin -d $APSIGNER_DATA template import library/templates/aplane.falcon1024-allowlist.v1.yaml
 apadmin -d $APSIGNER_DATA template remove example.my_escrow.v1
 apadmin -d $APSIGNER_DATA keytype enable aplane.falcon1024-cosigner1024.v1
 apadmin -d $APSIGNER_DATA keytype disable aplane.falcon1024-cosigner1024.v1
@@ -160,16 +159,12 @@ Enable a library-visible compiled provider:
 apadmin -d $APSIGNER_DATA keytype enable aplane.falcon1024-cosigner1024.v1
 ```
 
-This enables the guarded Falcon account type. Corridor is installed through
-the template library instead:
-
-```bash
-apadmin -d $APSIGNER_DATA template import library/templates/aplane.corridor.v1.yaml
-```
+This enables the guarded Falcon account type. A Corridor account needs no
+enabling: it is the Corridor preset of `aplane.bounded.v1`.
 
 Before generating a guarded or bounded-cosigner account, choose **Export
 Cosigner Key** on the cosigner. On the primary signer, start **Generate
-account** in `apadmin`, select the enabled guarded or Corridor key type, then
+account** in `apadmin`, select the guarded key type or `aplane.bounded.v1`, then
 open the **Cosigner** field and choose **Use key file...** or **Paste public
 JSON...**. Compare the complete Witness Key ID with the value
 shown on the cosigner and import; the form returns with that key selected. A
@@ -728,9 +723,34 @@ apadmin -d $APSIGNER_DATA template import library/templates/aplane.htlc.v1.yaml
 Import encrypts the YAML into the product keystore and enables the key type
 for the signer.
 
-Fresh signer stores already include `aplane.falcon1024-allowlist.v1`;
-`template import` remains the path for stores that do not have it
-and for the other bundled templates such as `aplane.falcon1024-allowlist.v2`.
+New stores install no template. For an allowlist, timelock, or Corridor account,
+use a [preset of `aplane.bounded.v1`](#bounded-accounts).
+
+### Retired templates
+
+Five templates have left the default library in favor of those presets:
+
+| Template | Replacement preset |
+|---|---|
+| `aplane.falcon1024-allowlist.v1` | Allowlist |
+| `aplane.falcon1024-allowlist.v2` | Allowlist |
+| `aplane.falcon1024-allowlist-lock.v1` | Locked Allowlist |
+| `aplane.corridor.v1` | Corridor |
+| `aplane.falcon1024-timelock.v1` | Timelock |
+
+Existing accounts are unaffected: an installed template keeps working and stays
+in the KeyType Library, where its stored YAML can still be viewed. An upgraded
+signer may also keep listing the old library files, because the installer does
+not delete them.
+
+The files stay available to repair an account, under
+`<APSIGNER_DATA>/library/retired/`:
+
+```bash
+apadmin -d $APSIGNER_DATA template import $APSIGNER_DATA/library/retired/aplane.corridor.v1.yaml
+```
+
+Re-importing matches an installed copy.
 
 Generated provider-backed LogicSig keys store the final compiler-auto-salted
 off-curve bytecode and its derivation marker in the `.key` file (rotating

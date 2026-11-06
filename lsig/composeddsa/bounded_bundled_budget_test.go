@@ -18,7 +18,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	txsigning "github.com/aplane-algo/aplane/internal/signing"
-	"github.com/aplane-algo/aplane/library/templates"
+	"github.com/aplane-algo/aplane/library/retired"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	falcon1024 "github.com/aplane-algo/aplane/lsig/falcon1024"
 	falconfamily "github.com/aplane-algo/aplane/lsig/falcon1024/family"
@@ -70,7 +70,7 @@ func TestBundledBoundedCompiledBudgetMatrix(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			data, err := templates.ReadFile(test.name)
+			data, err := retired.ReadFile(test.name)
 			if err != nil {
 				t.Fatal(err)
 			}

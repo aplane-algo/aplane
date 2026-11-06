@@ -199,7 +199,8 @@ base provider through its normal installation flow. The creation template
 is not required for restoring or signing a key with complete durable metadata.
 
 Shipped YAML template sources live under the top-level `library/templates/`
-directory and are installed into the product namespace before use. Source-tree
+directory, with retired ones under `library/retired/`,
+and are installed into the product namespace before use. Source-tree
 YAML files are install sources only; the runtime form is the encrypted
 `.template` file plus key type state record. New stores install none of them.
 
@@ -272,11 +273,17 @@ Bundled YAML templates, if installed:
 | Library key type | Behavior category | Install command | Runtime storage |
 |---|---|---|---|
 | `aplane.htlc.v1` | Generic LogicSig template | `apadmin template import library/templates/aplane.htlc.v1.yaml` | selected generation `keytypes/aplane.htlc.v1.{json,template}` |
-| `aplane.falcon1024-allowlist.v1` | Bounded1 composed DSA template | `apadmin template import library/templates/aplane.falcon1024-allowlist.v1.yaml` | selected generation `keytypes/aplane.falcon1024-allowlist.v1.{json,template}` |
-| `aplane.falcon1024-allowlist.v2` | Bounded1 composed DSA template | `apadmin template import library/templates/aplane.falcon1024-allowlist.v2.yaml` | selected generation `keytypes/aplane.falcon1024-allowlist.v2.{json,template}` |
-| `aplane.falcon1024-allowlist-lock.v1` | Bounded1 composed DSA template | `apadmin template import library/templates/aplane.falcon1024-allowlist-lock.v1.yaml` | selected generation `keytypes/aplane.falcon1024-allowlist-lock.v1.{json,template}` |
-| `aplane.falcon1024-timelock.v1` | Bounded1 composed DSA template | `apadmin template import library/templates/aplane.falcon1024-timelock.v1.yaml` | selected generation `keytypes/aplane.falcon1024-timelock.v1.{json,template}` |
-| `aplane.corridor.v1` | Bounded1 composed DSA template with cosigner-gated spend | `apadmin template import library/templates/aplane.corridor.v1.yaml` | selected generation `keytypes/aplane.corridor.v1.{json,template}` |
+| `aplane.falcon1024-allowlist.v1` | Bounded1 composed DSA template | `apadmin template import library/retired/aplane.falcon1024-allowlist.v1.yaml` | selected generation `keytypes/aplane.falcon1024-allowlist.v1.{json,template}` |
+| `aplane.falcon1024-allowlist.v2` | Bounded1 composed DSA template | `apadmin template import library/retired/aplane.falcon1024-allowlist.v2.yaml` | selected generation `keytypes/aplane.falcon1024-allowlist.v2.{json,template}` |
+| `aplane.falcon1024-allowlist-lock.v1` | Bounded1 composed DSA template | `apadmin template import library/retired/aplane.falcon1024-allowlist-lock.v1.yaml` | selected generation `keytypes/aplane.falcon1024-allowlist-lock.v1.{json,template}` |
+| `aplane.falcon1024-timelock.v1` | Bounded1 composed DSA template | `apadmin template import library/retired/aplane.falcon1024-timelock.v1.yaml` | selected generation `keytypes/aplane.falcon1024-timelock.v1.{json,template}` |
+| `aplane.corridor.v1` | Bounded1 composed DSA template with cosigner-gated spend | `apadmin template import library/retired/aplane.corridor.v1.yaml` | selected generation `keytypes/aplane.corridor.v1.{json,template}` |
+
+Everything but `aplane.htlc.v1` is retired: it sits in `library/retired/`, outside
+the library listing, so an operator can repair an existing account. New accounts
+use a preset of `aplane.bounded.v1`. A retired file carries a top-of-file `#`
+comment, never one inside `teal`, which would change its fingerprint. Tests and
+golden vectors for existing accounts read `library/retired/`.
 
 These template files are install sources, not product built-ins. They do not
 appear in `apshell keytypes` or the `apadmin` generate view until installed and

@@ -16,7 +16,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/merkleallowlist"
-	"github.com/aplane-algo/aplane/library/templates"
+	"github.com/aplane-algo/aplane/library/retired"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	falcon1024 "github.com/aplane-algo/aplane/lsig/falcon1024"
 	falconfamily "github.com/aplane-algo/aplane/lsig/falcon1024/family"
@@ -24,7 +24,7 @@ import (
 
 func TestCorridorGoldenVector(t *testing.T) {
 	falcon1024.RegisterClient()
-	data, err := templates.ReadFile("aplane.corridor.v1.yaml")
+	data, err := retired.ReadFile("aplane.corridor.v1.yaml")
 	if err != nil {
 		t.Fatalf("ReadFile() error = %v", err)
 	}

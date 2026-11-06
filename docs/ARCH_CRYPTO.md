@@ -399,6 +399,7 @@ Optional YAML templates have a source-library lifecycle:
 - install and test setup flows copy those plaintext YAML files into the signer data root at
   `<APSIGNER_DATA>/library/templates/`,
 - `internal/storepaths.Paths.TemplateLibraryDir()` is the source of truth for the signer-data library path,
+- retired templates follow the same path under `library/retired/`, outside the library listing,
 - library YAML files are reference material only; they are not active key types by being present on disk,
 - `apadmin` browses the signer-data library over the admin IPC protocol,
 - installing a library template parses and encrypts the YAML into the product template store under

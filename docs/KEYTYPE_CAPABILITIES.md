@@ -44,6 +44,9 @@ included as normal user-account operations.
 | `aplane.rotating-triple-slhdsa.v1` | C | N | C | C | C | C | C | C | C | C | C |
 | `aplane.rotating-triple-wotsc.v1` | C | N | C | C | C | C | C | C | C | C | C |
 
+The allowlist, timelock, and Corridor templates are retired from the default library in
+favor of the presets of `aplane.bounded.v1`. Their rows still describe existing accounts.
+
 ## Capability Columns
 
 - `Pay`: ALGO payment transaction (`pay`).

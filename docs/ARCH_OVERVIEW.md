@@ -653,6 +653,7 @@ aplane/
 │   └── generictemplate/           # YAML-backed generic template provider
 │
 ├── library/templates/             # Optional plaintext KeyType Library YAML sources
+├── library/retired/               # Retired templates, kept to repair existing accounts
 ├── pkg/signerapi/                 # Public signer HTTP DTO source of truth used by external SDKs
 ├── pkg/policyschema/              # Public v1 policy JSON schema
 └── examples/
@@ -955,7 +956,7 @@ bundled plugin targets), `.github/workflows/release.yml`,
 `scripts/docker-systemd-smoke.sh`,
 `scripts/docker-local-four-node-smoke.sh`,
 `plugins/algokit-localnet/`, `bootstrap-install.sh`, `install.sh`,
-`uninstall.sh`, `installer/`, and `library/templates/`. Full release archives
+`uninstall.sh`, `installer/`, `library/templates/`, and `library/retired/`. Full release archives
 include installer helpers, template libraries, and staged plugin runtime
 payloads at `plugins.available/algokit-localnet`;
 client-only archives include `apshell`/`apshell.exe`, client config templates,
@@ -1114,6 +1115,8 @@ The signer data root may also contain `library/templates/*.yaml`, a plaintext
 KeyType Library source copied from release or installer artifacts. Files there
 are reference material until an authenticated admin installs a YAML template or
 enables a library-visible compiled provider for the product runtime.
+`library/retired/*.yaml` sits beside it, outside the listing, to repair existing
+accounts.
 
 Key-class role is process/data-root scoped, not identity scoped. An initialized
 signer data directory has a root `node.yaml` with exactly one role:

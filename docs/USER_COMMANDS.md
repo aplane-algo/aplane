@@ -1204,9 +1204,8 @@ generate <key_type> [param=value ...]
 generate ed25519
 generate falcon1024
 generate aplane.htlc.v1 hash=SHA256_HEX recipient=ADDR1 refund_address=ADDR2 timeout_round=50000000
-generate aplane.falcon1024-allowlist.v1 recipients="@validators"        # after installing; address[] params resolve aliases and sets
+generate aplane.bounded.v1 spend_effects=pay rekey_authority=spending_key recipients="@validators"   # address[] params resolve aliases and sets
 generate aplane.bounded.v1 boundary=rules.yaml result=account.json
-generate aplane.falcon1024-allowlist.v2 recipients="@operators"            # after installing/enabling from the KeyType Library
 ```
 
 Run `keytypes` to see available key types and required generation parameters.

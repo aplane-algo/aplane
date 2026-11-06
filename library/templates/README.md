@@ -4,10 +4,14 @@ This directory contains LogicSig templates that users can import into a signer
 keystore through `apadmin`.
 
 Templates in this directory are plaintext install sources. Presence here does
-not make a key type active by itself. New signer stores automatically install
-and enable `aplane.falcon1024-allowlist.v1`; existing stores and the other
-templates use the normal import flow. After importing a template, unlock or
-reload `apsigner` before using the new key type.
+not make a key type active by itself, and new signer stores install none of
+them. After importing a template, unlock or reload `apsigner` before using the
+new key type.
+
+For an allowlist, timelock, or Corridor account, use a preset of
+`aplane.bounded.v1`. It needs no import. The templates those presets replaced
+are in [`library/retired/`](../retired/README.md), kept to repair existing
+accounts.
 
 ## Install
 
@@ -17,35 +21,11 @@ Generic LogicSig templates are TEAL-only accounts with no private key:
 apadmin template import library/templates/aplane.htlc.v1.yaml
 ```
 
-Falcon-1024 composed templates combine a Falcon signature with additional TEAL checks:
-
-```bash
-apadmin template import library/templates/aplane.falcon1024-timelock.v1.yaml
-apadmin template import library/templates/aplane.falcon1024-allowlist.v2.yaml
-apadmin template import library/templates/aplane.corridor.v1.yaml
-```
-
-For existing stores that were initialized before this default was added:
-
-```bash
-apadmin template import library/templates/aplane.falcon1024-allowlist.v1.yaml
-```
-
 ## Generic Templates
 
 | Key type | File | Purpose | Creation params | Runtime args |
 |---|---|---|---|---|
 | `aplane.htlc.v1` | `aplane.htlc.v1.yaml` | Hash time-locked ALGO contract: recipient can claim the whole balance before timeout with a preimage; refund address can reclaim the whole balance after timeout. | `hash` (default input mode: preimage), `recipient`, `refund_address`, `timeout_round` | `preimage` |
-
-## Falcon-1024 Composed Templates
-
-| Key type | File | Purpose | Creation params | Runtime args |
-|---|---|---|---|---|
-| `aplane.falcon1024-allowlist.v1` | `aplane.falcon1024-allowlist.v1.yaml` | Bounded1 Falcon spending with an inline recipient allowlist; close, clawback, hybrid effects, and non-transfer types reject. Pure rekey requires the spending key. | `recipients` (`address[]`, 1-30) | None |
-| `aplane.falcon1024-allowlist.v2` | `aplane.falcon1024-allowlist.v2.yaml` | Bounded1 Falcon spending with a fixed-depth Merkle recipient allowlist. Pure rekey requires the spending key and no proof. | `recipients` (`address[]`, 1-65536) | None; signer generates the optional 512-byte spend proof |
-| `aplane.falcon1024-allowlist-lock.v1` | `aplane.falcon1024-allowlist-lock.v1.yaml` | Framework-owned bounded1 ALGO/ASA recipient allowlist; pure rekeys additionally require an external Falcon contract-admin signature. | `recipients` (`address[]`, 1-30), framework-injected `bounded_admin_public_key` | None |
-| `aplane.falcon1024-timelock.v1` | `aplane.falcon1024-timelock.v1.yaml` | Bounded1 Falcon spending and spending-key pure rekey, both requiring `FirstValid >= unlock_round`. | `unlock_round` | None |
-| `aplane.corridor.v1` | `aplane.corridor.v1.yaml` | Bounded1 Falcon spending with a framework Merkle recipient allowlist and cosigner authorization; pure rekey requires a separate external Falcon contract-admin witness. | `recipients` (`address[]`, 1-65536), framework-resolved `cosigner_public_key`, framework-injected `bounded_admin_public_key` | None; signer generates the 512-byte spend proof and bounded assembly supplies the cosigner slot |
 
 ## Notes
 
@@ -67,7 +47,8 @@ apadmin template import library/templates/aplane.falcon1024-allowlist.v1.yaml
 
 ### Merkle allowlist proof format
 
-`aplane.falcon1024-allowlist.v2` and `aplane.corridor.v1` store the public
+The Merkle encoding of `aplane.bounded.v1` and the retired
+`aplane.falcon1024-allowlist.v2` and `aplane.corridor.v1` templates store the public
 recipient allowlist in the encrypted key file and commit the LogicSig TEAL to a
 fixed-depth 16 Merkle tree derived from that list:
 

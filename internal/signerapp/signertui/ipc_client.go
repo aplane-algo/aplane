@@ -687,6 +687,15 @@ var signerMessageDecoders = map[string]func(raw []byte) (tea.Msg, error){
 			Error:         result.Error,
 		}
 	}),
+	MsgTypeShowInstalledTemplateResult: decodeAs(func(result ShowInstalledTemplateResultMessage) tea.Msg {
+		return ShowLibraryTemplateResultMsg{
+			Success:      result.Success,
+			KeyType:      result.KeyType,
+			TemplateType: result.TemplateType,
+			TemplateYAML: result.TemplateYAML,
+			Error:        result.Error,
+		}
+	}),
 	MsgTypeActivateKeyTypeResult: decodeAs(func(result ActivateKeyTypeResultMessage) tea.Msg {
 		return ActivateKeyTypeResultMsg{
 			Success:       result.Success,
@@ -1404,6 +1413,21 @@ func (c *IPCClient) SendShowLibraryTemplate(keyType, templateType string) error 
 		TemplateType: templateType,
 	}
 	return c.sendMessage(msg)
+}
+
+func (c *IPCClient) SendShowInstalledTemplate(keyType string) error {
+	msg := ShowInstalledTemplateMessage{
+		BaseMessage: BaseMessage{
+			Type: MsgTypeShowInstalledTemplate,
+			ID:   fmt.Sprintf("tmpl-show-installed-%d", time.Now().UnixNano()),
+		},
+		KeyType: keyType,
+	}
+	return c.sendMessage(msg)
+}
+
+func (m Model) sendShowInstalledTemplateCmd(keyType string) tea.Cmd {
+	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendShowInstalledTemplate(keyType) })
 }
 
 func (m Model) sendShowLibraryTemplateCmd(keyType, templateType string) tea.Cmd {

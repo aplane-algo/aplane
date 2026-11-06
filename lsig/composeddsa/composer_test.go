@@ -706,7 +706,7 @@ func TestFalconAllowlistTemplateUsesBoundedFixedAllowlist(t *testing.T) {
 		BaseKeyType: "aplane.falcon1024.v1", FamilyName: "falcon1024", Version: 1,
 		Ops: falconBoundaryTestOps{}, NewAddressDeriver: func(string) addressderive.Deriver { return testDeriver{} },
 	})
-	data, err := os.ReadFile(filepath.Join("..", "..", "library", "templates", "aplane.falcon1024-allowlist.v1.yaml"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "library", "retired", "aplane.falcon1024-allowlist.v1.yaml"))
 	if err != nil {
 		t.Fatalf("ReadFile(aplane.falcon1024-allowlist.v1.yaml) error = %v", err)
 	}
@@ -777,7 +777,7 @@ func TestFalconTimelockOnlyAddsGatingPredicate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			data, err := os.ReadFile(filepath.Join("..", "..", "library", "templates", tt.file))
+			data, err := os.ReadFile(filepath.Join("..", "..", "library", "retired", tt.file))
 			if err != nil {
 				t.Fatalf("ReadFile(%s) error = %v", tt.file, err)
 			}
@@ -810,7 +810,7 @@ func TestFalconMerkleAllowlistTemplateRootProofContract(t *testing.T) {
 		},
 	})
 
-	data, err := os.ReadFile(filepath.Join("..", "..", "library", "templates", "aplane.falcon1024-allowlist.v2.yaml"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "library", "retired", "aplane.falcon1024-allowlist.v2.yaml"))
 	if err != nil {
 		t.Fatalf("ReadFile(aplane.falcon1024-allowlist.v2.yaml) error = %v", err)
 	}
@@ -918,7 +918,7 @@ func TestFalconAllowlistTemplateRendersMaxRecipientsWithinComposerBoundary(t *te
 		},
 	})
 
-	data, err := os.ReadFile(filepath.Join("..", "..", "library", "templates", "aplane.falcon1024-allowlist.v1.yaml"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "library", "retired", "aplane.falcon1024-allowlist.v1.yaml"))
 	if err != nil {
 		t.Fatalf("ReadFile(aplane.falcon1024-allowlist.v1.yaml) error = %v", err)
 	}

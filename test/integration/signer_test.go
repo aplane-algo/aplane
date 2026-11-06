@@ -9,8 +9,10 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -25,6 +27,8 @@ import (
 	"github.com/aplane-algo/aplane/internal/signing"
 	utilkeys "github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/transport"
+	"github.com/aplane-algo/aplane/library/retired"
+	"github.com/aplane-algo/aplane/library/templates"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 	"github.com/aplane-algo/aplane/test/integration/harness"
 
@@ -89,11 +93,11 @@ func mustImportTemplateViaApadmin(t *testing.T, signerDataDir string, apadmin *h
 func syncTemplateLibraryFile(t *testing.T, signerDataDir, filename string) string {
 	t.Helper()
 
-	srcPath, err := filepath.Abs(filepath.Join("..", "..", "library", "templates", filename))
-	if err != nil {
-		t.Fatalf("failed to resolve template path %s: %v", filename, err)
+	// An existing account's template may be retired from the default library.
+	data, err := templates.ReadFile(filename)
+	if errors.Is(err, fs.ErrNotExist) {
+		data, err = retired.ReadFile(filename)
 	}
-	data, err := os.ReadFile(srcPath)
 	if err != nil {
 		t.Fatalf("failed to read template %s: %v", filename, err)
 	}

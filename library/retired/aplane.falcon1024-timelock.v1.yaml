@@ -1,3 +1,6 @@
+# DEPRECATED: retired from the default library. New accounts should use
+# the Timelock preset of aplane.bounded.v1.
+# This file is kept to repair existing accounts. See library/retired/README.md.
 schema_version: 2
 derivation_version: 3
 template_type: composed

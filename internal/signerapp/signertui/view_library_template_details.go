@@ -18,7 +18,7 @@ func (m Model) renderLibraryTemplateDetails() string {
 	}
 
 	var sb strings.Builder
-	sb.WriteString(titleStyle.Render(libraryDetailsTitle(m.library.detailsTemplateType, m.library.detailsKeyType)))
+	sb.WriteString(titleStyle.Render(libraryDetailsTitle(m.library.detailsTemplateType, m.library.detailsKeyType, m.library.detailsInstalled)))
 	sb.WriteString("\n")
 	if publisher := keyTypePublisher(m.library.detailsKeyType); publisher != "" {
 		sb.WriteString(subtitleStyle.Render("Publisher: " + publisher))
@@ -78,9 +78,12 @@ func (m Model) renderLibraryTemplateDetails() string {
 	return sb.String()
 }
 
-func libraryDetailsTitle(templateType, keyType string) string {
+func libraryDetailsTitle(templateType, keyType string, installed bool) string {
 	if templateType == libraryTypeCompiledProvider {
 		return fmt.Sprintf("Compiled provider: %s", displayKeyType(keyType))
+	}
+	if installed {
+		return fmt.Sprintf("Installed YAML: %s", displayKeyType(keyType))
 	}
 	return fmt.Sprintf("Library YAML: %s", displayKeyType(keyType))
 }

@@ -7,6 +7,21 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## Five templates leave the default library
+
+- `aplane.falcon1024-allowlist.v1`, `aplane.falcon1024-allowlist.v2`,
+  `aplane.falcon1024-allowlist-lock.v1`, `aplane.corridor.v1`, and
+  `aplane.falcon1024-timelock.v1` moved to `library/retired/`. New accounts should use the
+  matching preset of `aplane.bounded.v1`.
+- Existing accounts are unaffected. Fingerprints and addresses do not change, schema v2 stays
+  supported, and installed templates keep working and stay listed. The store is not touched.
+- The installer copies the files to `<APSIGNER_DATA>/library/retired/` so an operator can
+  repair an account; a re-import matches the installed copy. It does not delete older copies
+  from `library/templates/`, so an upgraded signer keeps listing them.
+- apadmin's KeyType Library can now view the stored YAML of an installed template that has
+  no library file.
+- See [USER_KEYTYPES.md](USER_KEYTYPES.md#retired-templates).
+
 ## Bounded templates can use framework timelock policies
 
 - A schema-v2 template can now set `bounded.layer3.policy` to `timelock`,

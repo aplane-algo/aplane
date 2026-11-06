@@ -66,6 +66,7 @@ aplane/
 │   ├── generictemplate/      # YAML-backed generic LogicSig providers
 │   └── composeddsa/          # DSA + TEAL-suffix composition helpers
 ├── library/templates/        # KeyType Library YAML sources
+├── library/retired/          # Retired templates, kept to repair existing accounts
 ├── test/integration/         # End-to-end integration tests
 ├── examples/                 # Example scripts and external plugins
 ├── analysis/                 # Security analyzers
