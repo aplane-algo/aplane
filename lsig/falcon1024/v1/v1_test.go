@@ -21,6 +21,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/algo"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
+	"github.com/aplane-algo/aplane/internal/sigconstruction"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
 
@@ -413,5 +414,16 @@ func TestFalcon1024V1PlainSignatureBound(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestCatalogMatchesFalconSizes(t *testing.T) {
+	ops := NewFalconOps(nil)
+	if got := sigconstruction.Falcon1024().PublicKeySize(); got != ops.PublicKeySize() {
+		t.Fatalf("PublicKeySize() = %d, family says %d", got, ops.PublicKeySize())
+	}
+	layout := ops.SignatureArgLayout()
+	if layout.Count != 1 || len(layout.MaxSizes) != 1 || layout.MaxSizes[0] != ops.CryptoSignatureSize() {
+		t.Fatalf("SignatureArgLayout() = %+v, family says %d", layout, ops.CryptoSignatureSize())
 	}
 }

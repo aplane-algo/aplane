@@ -129,9 +129,10 @@ another admin primitive requires a new bounded-authorization contract.
 Generation also refuses a workflow the spending base can't complete. The
 contract-admin ceremony and the bounded cosigner flow need a Falcon-1024 spending
 key, so `admin_key` rekey or a cosigner on another base is refused, as is any
-bounded profile on a base the support policy doesn't list. This is an admission
-decision for new accounts, separate from structural validity, and it runs only
-from `GenerateTEAL`. `ValidateTemplateSpec` and `validateBoundedConfig` stay
+bounded profile on a base the support policy doesn't list. The policy is keyed by
+the base's signature construction from `internal/sigconstruction`, so a registered
+base with no construction is refused too. This is an admission decision for new
+accounts, separate from structural validity, and it runs only from `GenerateTEAL`. `ValidateTemplateSpec` and `validateBoundedConfig` stay
 structural, because installed templates reach both on load: an error there changes
 the template's compatibility fingerprint, which makes it a content defect, and that
 sends unlock to recovery mode and blocks store commits.

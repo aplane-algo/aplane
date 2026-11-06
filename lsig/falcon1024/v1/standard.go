@@ -12,6 +12,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
+	"github.com/aplane-algo/aplane/internal/sigconstruction"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
@@ -177,10 +178,7 @@ func (f *Falcon1024V1) SupportsMnemonicImport() bool {
 // BuildArgs assembles the LogicSig Args array.
 // For pure Falcon-1024, args are: [signature].
 func (f *Falcon1024V1) BuildArgs(signature []byte, runtimeArgs map[string][]byte) ([][]byte, error) {
-	if err := checkSignatureSize(signature); err != nil {
-		return nil, err
-	}
-	return [][]byte{signature}, nil
+	return sigconstruction.Falcon1024().PackSignature(signature)
 }
 
 // Compile-time interface checks

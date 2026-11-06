@@ -11,7 +11,9 @@ import (
 	boundedmessage "github.com/aplane-algo/aplane/internal/boundedadmin/message"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	cosignermessage "github.com/aplane-algo/aplane/internal/cosigner/message"
+	"github.com/aplane-algo/aplane/internal/sigconstruction"
 	"github.com/aplane-algo/aplane/internal/txeffects"
+	"github.com/aplane-algo/aplane/internal/witness"
 )
 
 const (
@@ -131,6 +133,16 @@ func (c *ComposedDSA) renderCosignerAuthorization(publicKey []byte, params map[s
 	if cosignerArgIndex < 0 {
 		return "", fmt.Errorf("bounded cosigner argument slot is missing")
 	}
+	construction, ok := sigconstruction.ForWitnessKeyType(metadata.Cosigner.ComponentKeyType)
+	if !ok {
+		return "", fmt.Errorf("bounded cosigner key type %q has no signature construction", metadata.Cosigner.ComponentKeyType)
+	}
+	message := fmt.Sprintf("pushbytes 0x%s\npushbytes 0x%02x\nconcat\ntxn TxID\nconcat\nsha512_256",
+		hex.EncodeToString([]byte(cosignermessage.DomainTagV1)), byte(cosignermessage.RoleCosigner))
+	verify, err := construction.VerifyTEAL(cosignerPublicKey, message, cosignerArgIndex)
+	if err != nil {
+		return "", err
+	}
 	return fmt.Sprintf(`// Cosigner-authorized pure spend
 arg %d
 len
@@ -142,19 +154,8 @@ len
 pushint %d
 <=
 assert
-pushbytes 0x%s
-pushbytes 0x%02x
-concat
-txn TxID
-concat
-sha512_256
-arg %d
-pushbytes 0x%s
-falcon_verify
-assert
-`, cosignerArgIndex, cosignerArgIndex, metadata.Cosigner.SignatureMaxSize,
-		hex.EncodeToString([]byte(cosignermessage.DomainTagV1)), byte(cosignermessage.RoleCosigner),
-		cosignerArgIndex, hex.EncodeToString(cosignerPublicKey)), nil
+%sassert
+`, cosignerArgIndex, cosignerArgIndex, metadata.Cosigner.SignatureMaxSize, verify), nil
 }
 
 func writeSpendEffectDecision(b *strings.Builder, allowed bool) {
@@ -180,6 +181,15 @@ func (c *ComposedDSA) renderAdminKeyAuthorization(publicKey []byte, params map[s
 		return "", err
 	}
 
+	construction, ok := sigconstruction.ForWitnessKeyType(witness.Falcon1024V1)
+	if !ok {
+		return "", fmt.Errorf("bounded admin key type %q has no signature construction", witness.Falcon1024V1)
+	}
+	message := fmt.Sprintf("pushbytes 0x%s\ntxn TxID\nconcat\nsha512_256", hex.EncodeToString(prefix))
+	verify, err := construction.VerifyTEAL(adminPublicKey, message, adminArgIndex)
+	if err != nil {
+		return "", err
+	}
 	return fmt.Sprintf(`// Contract-admin-authorized pure rekey
 arg %d
 len
@@ -191,16 +201,8 @@ len
 pushint %d
 <=
 assert
-pushbytes 0x%s
-txn TxID
-concat
-sha512_256
-arg %d
-pushbytes 0x%s
-falcon_verify
-assert
-`, adminArgIndex, adminArgIndex, BoundedAdminSignatureMaxSize,
-		hex.EncodeToString(prefix), adminArgIndex, hex.EncodeToString(adminPublicKey)), nil
+%sassert
+`, adminArgIndex, adminArgIndex, BoundedAdminSignatureMaxSize, verify), nil
 }
 
 func writeZeroAddressAssertion(b *strings.Builder, field txeffects.TxField) {

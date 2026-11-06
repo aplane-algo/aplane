@@ -1005,6 +1005,17 @@ LocalNet remains a thin network acceptance layer: the restored-key and
 post-rotation paths sign, submit, and confirm real transactions under
 `make integration-test-localnet`.
 
+## LogicSig Execution Tests in Other Packages
+
+After `INTEGRATION_TEST_PKG`, the integration targets run
+`TestCompositeLogicSigsExecuteLocalnet` from `./lsig/composeddsa`. It executes
+test-only signature compositions, which production can't generate, on a real AVM.
+It needs `INTEGRATION=1` and `APLANE_INTEGRATION_NETWORK=localnet`, and it skips on
+TestNet and in unit runs. The other tests in that package are unit tests, so the
+targets don't run the whole package. The fixtures live in `_test.go` files, and only
+`lsig/composeddsa/export_test.go` can compose on an unregistered base or set a
+support policy on one composer.
+
 ## Writing Integration Tests
 
 Project-specific conventions for new integration tests. Generic Go testing

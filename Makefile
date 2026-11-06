@@ -679,6 +679,12 @@ contract-sync-check:
 #   APLANE_INTEGRATION_NETWORK=localnet make integration-test INTEGRATION_GO_ARGS='-count=1 -timeout 25m -v -run TestName'
 INTEGRATION_TEST_PKG ?= ./test/integration
 INTEGRATION_GO_ARGS ?= -count=1 -timeout 25m
+# LogicSig execution of test-only compositions, which live beside the composer. Only
+# this test runs: the rest of that package are unit tests, and its compile tests
+# would pick up the integration environment's algod without its token. It skips
+# unless the network is LocalNet.
+COMPOSITE_EXECUTION_TEST_PKG ?= ./lsig/composeddsa
+COMPOSITE_EXECUTION_GO_ARGS ?= -count=1 -timeout 10m -run '^TestCompositeLogicSigsExecuteLocalnet$$'
 SOAK_TEST_PKG ?= ./test/soak
 SOAK_GO_ARGS ?= -count=1 -timeout 2h
 COMMAND_COVERAGE_GO_ARGS ?= -count=1 -timeout 15m
@@ -729,7 +735,7 @@ integration-test:
 	@echo "Running integration tests..."
 	@./test/setup-test-env.sh
 	@echo "Loading environment from regenerated .env.test"
-	@set -a && . ./.env.test && set +a && INTEGRATION=1 go test $(INTEGRATION_GO_ARGS) $(INTEGRATION_TEST_PKG)
+	@set -a && . ./.env.test && set +a && INTEGRATION=1 go test $(INTEGRATION_GO_ARGS) $(INTEGRATION_TEST_PKG) && INTEGRATION=1 go test $(COMPOSITE_EXECUTION_GO_ARGS) $(COMPOSITE_EXECUTION_TEST_PKG)
 	@./test/run-sdk-integration.sh
 
 integration-test-testnet:
@@ -768,12 +774,12 @@ integration-test-reuse:
 	@echo "Running integration tests with existing fixture..."
 	@if [ -f .env.test ]; then \
 		echo "Loading environment from .env.test"; \
-		set -a && . ./.env.test && set +a && INTEGRATION=1 go test $(INTEGRATION_GO_ARGS) $(INTEGRATION_TEST_PKG); \
+		set -a && . ./.env.test && set +a && INTEGRATION=1 go test $(INTEGRATION_GO_ARGS) $(INTEGRATION_TEST_PKG) && INTEGRATION=1 go test $(COMPOSITE_EXECUTION_GO_ARGS) $(COMPOSITE_EXECUTION_TEST_PKG); \
 		./test/run-sdk-integration.sh; \
 	else \
 		echo "Note: Create .env.test with TEST_FUNDING_MNEMONIC, TEST_PASSPHRASE, DISABLE_MEMORY_LOCK"; \
 		echo "Example: echo 'TEST_FUNDING_MNEMONIC=\"your 25 words\"' > .env.test"; \
-		INTEGRATION=1 go test $(INTEGRATION_GO_ARGS) $(INTEGRATION_TEST_PKG); \
+		INTEGRATION=1 go test $(INTEGRATION_GO_ARGS) $(INTEGRATION_TEST_PKG) && INTEGRATION=1 go test $(COMPOSITE_EXECUTION_GO_ARGS) $(COMPOSITE_EXECUTION_TEST_PKG); \
 	fi
 
 # Delete leaked test apps from previous integration runs that failed cleanup.

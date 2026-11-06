@@ -32,8 +32,23 @@ func ParseTemplateSpec(data []byte) (*TemplateSpec, error) {
 	return generictemplate.ParseTemplateSpec(data)
 }
 
+// templateBaseRules answers the questions a template asks about its base.
+type templateBaseRules struct {
+	registered     func(baseKeyType string) bool
+	allowsCosigner func(baseKeyType string) bool
+}
+
+var productionTemplateBaseRules = templateBaseRules{
+	registered:     IsBaseRegistered,
+	allowsCosigner: func(baseKeyType string) bool { return baseKeyType == "aplane.falcon1024.v1" },
+}
+
 // ValidateTemplateSpec validates required fields and composed-base consistency.
 func ValidateTemplateSpec(spec *TemplateSpec) error {
+	return validateTemplateSpec(spec, productionTemplateBaseRules)
+}
+
+func validateTemplateSpec(spec *TemplateSpec, rules templateBaseRules) error {
 	if err := spec.ValidateBase(CurrentTemplateSchemaVersion); err != nil {
 		return err
 	}
@@ -43,7 +58,7 @@ func ValidateTemplateSpec(spec *TemplateSpec) error {
 	if err := templatestore.ValidateBaseKeyType(templatestore.TemplateType(spec.TemplateType), spec.BaseKeyType); err != nil {
 		return err
 	}
-	if !IsBaseRegistered(spec.BaseKeyType) {
+	if !rules.registered(spec.BaseKeyType) {
 		return fmt.Errorf("base_key_type %q is not registered as composable", spec.BaseKeyType)
 	}
 	for _, parameter := range spec.Parameters {
@@ -62,7 +77,7 @@ func ValidateTemplateSpec(spec *TemplateSpec) error {
 		if _, err := boundedProfileFromTemplate(spec.Bounded); err != nil {
 			return err
 		}
-		if spec.Bounded.Cosigner != nil && spec.BaseKeyType != "aplane.falcon1024.v1" {
+		if spec.Bounded.Cosigner != nil && !rules.allowsCosigner(spec.BaseKeyType) {
 			return fmt.Errorf("bounded.cosigner requires base_key_type %q", "aplane.falcon1024.v1")
 		}
 		if len(spec.RuntimeArgs) != 0 {
@@ -104,6 +119,13 @@ func NewProviderFromTemplateSpec(spec *TemplateSpec) (*ComposedDSA, error) {
 	if !ok {
 		return nil, fmt.Errorf("base_key_type %q is not registered as composable", spec.BaseKeyType)
 	}
+	return newProviderFromBase(spec, base)
+}
+
+// newProviderFromBase composes a validated spec on a resolved base. It does not
+// consult the base registry, so tests can compose on a base production never
+// registers.
+func newProviderFromBase(spec *TemplateSpec, base BaseRegistration) (*ComposedDSA, error) {
 	bounded, err := boundedProfileFromTemplate(spec.Bounded)
 	if err != nil {
 		return nil, err
