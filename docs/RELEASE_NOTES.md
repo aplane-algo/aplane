@@ -7,6 +7,19 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## Bounded templates can use framework timelock policies
+
+- A schema-v2 template can now set `bounded.layer3.policy` to `timelock`,
+  `fixed_allowlist_timelock`, or `merkle_allowlist_timelock`, with a new
+  `unlock_round_parameter`. Each requires `FirstValid >= unlock_round`, and the combined
+  policies then apply the matching recipient check. They reject `teal`.
+- A rekey with `policy_gate: none` and every admin-key rekey skip the timelock, so they
+  can move the account before the unlock round.
+- Such accounts record the policy name as their `layer3_policy`. Binaries from before
+  this change reject those key files.
+- `aprekey` program validation now accepts Layer 3 that reads `txn FirstValid`, which also
+  lets an existing custom timelock with an admin key complete a ceremony.
+
 ## Admin protocol 7.2 can prepare a key generation request
 
 - The new local-IPC `prepare_generate_key` message reports what a request would create:

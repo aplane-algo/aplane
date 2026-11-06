@@ -52,8 +52,11 @@ var fixedOpcodeNames = map[byte]string{
 	0x8d: "switch", 0x8e: "match",
 }
 
+// txnFields names the fields a composer-owned region or framework Layer 3 policy
+// reads. A field outside it stops the decode, so custom Layer 3 reading any other
+// field cannot pass this validator.
 var txnFields = map[byte]string{
-	0: "Sender", 1: "Fee", 7: "Receiver", 8: "Amount", 9: "CloseRemainderTo",
+	0: "Sender", 1: "Fee", 2: "FirstValid", 7: "Receiver", 8: "Amount", 9: "CloseRemainderTo",
 	16: "TypeEnum", 17: "XferAsset", 18: "AssetAmount", 19: "AssetSender", 20: "AssetReceiver", 21: "AssetCloseTo", 23: "TxID", 32: "RekeyTo",
 }
 

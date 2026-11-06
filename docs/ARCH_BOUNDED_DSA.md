@@ -75,7 +75,7 @@ is a complete value-spending policy.
 | Maximum compiled `max_fee` | 10,000 microAlgos |
 | Layer-3 arguments | declared static runtime and signer-derived slots |
 | Signer-derived primitive | fixed-depth Merkle allowlist proof (512 bytes) |
-| Framework Layer-3 policies | `fixed_allowlist`, `merkle_allowlist` |
+| Framework Layer-3 policies | `fixed_allowlist`, `merkle_allowlist`, `timelock`, `fixed_allowlist_timelock`, `merkle_allowlist_timelock` |
 | Framework allowlist with author TEAL | `fixed_allowlist_custom`, `merkle_allowlist_custom` |
 | Inline recipient maximum | 30 entries |
 | Flow labels | `bounded1` without a cosigner; `bounded-cosigner1` with a spend cosigner |
@@ -187,6 +187,23 @@ pricing. The table uses the conservative 20,000-opcode per-path ceiling; its
 group count includes the resource dummies and their own program/opcode use.
 The planner rejects a selected path before releasing a signature when its
 finalized fee would exceed the profile ceiling.
+
+`TestTimelockPolicyCompiledBudgetMatrix` freezes the framework timelock policies on the
+same terms, with full inline lists and the largest unlock round. These are template
+compositions, not bundled profiles. Each row gives the final bytecode, then the group
+size and fee of the spend path and of the admin path.
+
+| Policy | Rekey authority | Final bytecode | Spend group / fee | Admin group / fee |
+|---|---|---:|---:|---:|
+| `timelock` | spending key | 1,932 | 2 / 2,000 | n/a |
+| `timelock` | admin key | 3,837 | 2 / 2,185 | 3 / 3,085 |
+| `timelock` | admin key, cosigner | 5,680 | 3 / 3,270 | 3 / 3,270 |
+| `fixed_allowlist_timelock` | spending key | 3,153 | 2 / 2,116 | n/a |
+| `fixed_allowlist_timelock` | admin key | 5,056 | 2 / 2,307 | 3 / 3,207 |
+| `fixed_allowlist_timelock` | admin key, cosigner | 6,898 | 3 / 3,391 | 3 / 3,391 |
+| `merkle_allowlist_timelock` | spending key | 2,196 | 2 / 2,021 | n/a |
+| `merkle_allowlist_timelock` | admin key | 4,096 | 2 / 2,211 | 3 / 3,111 |
+| `merkle_allowlist_timelock` | admin key, cosigner | 5,938 | 4 / 4,196 | 3 / 3,295 |
 
 ## Effect Model
 
@@ -371,7 +388,10 @@ versioned key type fixes the definition, canonical behavior values bind the
 instance, and helper validation requires the exact supplied bytecode to derive
 the current authorization address. The helper structurally validates every
 composer-owned gate and verification site rather than searching for byte
-substrings.
+substrings. Layer 3 stays opaque, but the decoder names only the transaction and global
+fields that composer regions and framework policies read. A program whose custom Layer 3
+reads any other field fails this validation, so it cannot complete an external-admin
+ceremony even though its spend path works.
 
 TEAL v13 bounded programs may contain either historical fixed-width branch
 offsets or the finalized signed varint encoding. The offline helper does not
@@ -698,6 +718,68 @@ author_merkle_canonical_bounded_profile_hex:
 expected values were computed from the encoding in this document by a separate
 encoder, so they do not simply restate the implementation's output.
 
+### Golden vector 4: timelock policies
+
+These vectors freeze the three timelock `layer3_policy` values. Each uses a Falcon-1024
+base, `spend_effects: [pay, axfer, asset_opt_in]`, `max_fee: 10000`, one spending-key
+rekey with `policy_gate: layer3`, no cosigner, and no runtime arguments. The unlock round
+and recipients are behavior parameters, so they do not appear in the profile.
+`timelock` and `fixed_allowlist_timelock` have the single-slot layout. The Merkle vector
+adds the `merkle_proof` derived argument bound to `recipients`.
+
+| Index | Name | Source | Max bytes | Spend | Spending rekey | Admin rekey |
+|---:|---|---|---:|---|---|---|
+| 0 | `base_signature_0` | `base_signature` | 1423 | required | required | required |
+| 1 | `merkle_proof` | `derived` | 512 | optional | forbidden | forbidden |
+
+```text
+timelock_canonical_bounded_profile_length: 242
+timelock_canonical_bounded_profile_hex:
+  0000001941504c414e455f424f554e4445445f50524f46494c455f5631000000
+  08626f756e646564310000000300000003706179000000056178666572000000
+  0c61737365745f6f70745f696e0000000000002710000000010000000572656b
+  65790000000c7370656e64696e675f6b6579000000066c617965723300000000
+  0000000874696d656c6f636b000000010000058f000000000000000000000001
+  0000000000000010626173655f7369676e61747572655f300000000e62617365
+  5f7369676e61747572650000058f000000087265717569726564000000087265
+  717569726564000000087265717569726564
+```
+
+```text
+fixed_allowlist_timelock_canonical_bounded_profile_length: 258
+fixed_allowlist_timelock_canonical_bounded_profile_hex:
+  0000001941504c414e455f424f554e4445445f50524f46494c455f5631000000
+  08626f756e646564310000000300000003706179000000056178666572000000
+  0c61737365745f6f70745f696e0000000000002710000000010000000572656b
+  65790000000c7370656e64696e675f6b6579000000066c617965723300000000
+  0000001866697865645f616c6c6f776c6973745f74696d656c6f636b00000001
+  0000058f0000000000000000000000010000000000000010626173655f736967
+  6e61747572655f300000000e626173655f7369676e61747572650000058f0000
+  0008726571756972656400000008726571756972656400000008726571756972
+  6564
+```
+
+```text
+merkle_allowlist_timelock_canonical_bounded_profile_length: 392
+merkle_allowlist_timelock_canonical_bounded_profile_hex:
+  0000001941504c414e455f424f554e4445445f50524f46494c455f5631000000
+  08626f756e646564310000000300000003706179000000056178666572000000
+  0c61737365745f6f70745f696e0000000000002710000000010000000572656b
+  65790000000c7370656e64696e675f6b6579000000066c617965723300000000
+  000000196d65726b6c655f616c6c6f776c6973745f74696d656c6f636b000000
+  010000058f000000010000000c6d65726b6c655f70726f6f66000000166d6572
+  6b6c655f616c6c6f776c6973745f70726f6f660000000a726563697069656e74
+  730000020000000000000000020000000000000010626173655f7369676e6174
+  7572655f300000000e626173655f7369676e61747572650000058f0000000872
+  6571756972656400000008726571756972656400000008726571756972656400
+  0000010000000c6d65726b6c655f70726f6f6600000007646572697665640000
+  0200000000086f7074696f6e616c00000009666f7262696464656e0000000966
+  6f7262696464656e
+```
+
+`TestTimelockPolicyGoldenVectors` is authoritative for every byte. The separate encoder
+reproduced both author-TEAL vectors before computing these.
+
 ## YAML Contract
 
 Schema v1 describes the existing non-bounded composed layout and rejects a
@@ -771,6 +853,27 @@ this contract under `bounded1` and signing metadata version 2: the encoding and
 authorization flows do not change. A policy gate of `layer3` applies the author rule to
 a spending-key rekey too, and a gate of `none` skips both. An allowlist with no `teal`
 rejects extra parameters and runtime arguments, because nothing would read them.
+
+`timelock` requires `FirstValid >= unlock_round` and reads no recipient list.
+`fixed_allowlist_timelock` and `merkle_allowlist_timelock` apply the same check, then
+render exactly the recipient check of the matching allowlist, under the same list limits
+and Merkle proof contract. These policies name the unlock round through
+`unlock_round_parameter`, which must identify a required `uint64` parameter with
+`min: 1`, and they reject a `recipients_parameter` or `unlock_round_parameter` they do not
+use. A round compiles the same way on every network but means a different time on each,
+and it does not bind the program to one network.
+
+The timelock also applies to self-receivers, which the recipient check would otherwise
+admit. It applies to a rekey only through a `policy_gate` of `layer3`, which requires
+`pay` in `spend_effects`. A spending-key rekey with a gate of `none` and every admin-key
+rekey skip it, so they can move the account before the unlock round. An admin-key rekey
+still needs the spending signature.
+
+Timelock policies reject author TEAL, parameters they do not read, and runtime arguments.
+An author who needs a list and custom time conditions uses a plain allowlist and writes
+those conditions in the TEAL. These values amend this contract under `bounded1` and
+signing metadata version 2: the encoding and authorization flows do not change. Older
+binaries reject the new values.
 
 ### Merkle Allowlist Compatibility Contract
 
@@ -846,8 +949,9 @@ from the final stored bytecode.
 Non-bounded LogicSig keys use `signing_metadata_version: 1`. Bounded keys use
 `signing_metadata_version: 2` and require the canonical
 `bounded_authorization` object. The closed `layer3_policy` value is `custom`,
-`fixed_allowlist`, `merkle_allowlist`, `fixed_allowlist_custom`, or
-`merkle_allowlist_custom`; declared runtime and derived arguments and their complete
+`fixed_allowlist`, `merkle_allowlist`, `fixed_allowlist_custom`,
+`merkle_allowlist_custom`, `timelock`, `fixed_allowlist_timelock`, or
+`merkle_allowlist_timelock`; declared runtime and derived arguments and their complete
 slot masks are persisted. Top-level `signing_args` are ignored for bounded
 keys. Scan, load, backup, and restore consume the stored object without
 consulting the installed template.

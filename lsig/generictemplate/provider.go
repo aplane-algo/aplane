@@ -112,10 +112,12 @@ type BoundedDerivedArgSpec struct {
 }
 
 // TransactionLayer3Spec selects a framework-owned spending policy and binds it
-// to its recipients parameter. A nil value means expert-authored custom TEAL.
+// to the parameters that policy reads. A nil value means expert-authored custom
+// TEAL.
 type TransactionLayer3Spec struct {
-	Policy              string `yaml:"policy"`
-	RecipientsParameter string `yaml:"recipients_parameter"`
+	Policy               string `yaml:"policy"`
+	RecipientsParameter  string `yaml:"recipients_parameter"`
+	UnlockRoundParameter string `yaml:"unlock_round_parameter"`
 }
 
 // TransactionAdminOperation is one operation in a schema-v2 bounded profile.

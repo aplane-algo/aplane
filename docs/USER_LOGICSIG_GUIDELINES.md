@@ -244,6 +244,10 @@ single-use: a caller can vary unchecked fields and produce multiple valid
 transaction IDs in the same period unless the lease or another explicit
 mechanism enforces mutual exclusion.
 
+A bounded template can use the framework `timelock`, `fixed_allowlist_timelock`, or
+`merkle_allowlist_timelock` policy instead of writing this check. A rekey that does not
+pass through Layer 3 is not delayed by it, including every external admin-key rekey.
+
 ### 10. Group Semantics
 
 Apply this section when the template permits grouped execution, depends on
