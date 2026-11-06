@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
 	backupbundle "github.com/aplane-algo/aplane/internal/backup"
 	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
 	apcrypto "github.com/aplane-algo/aplane/internal/crypto"
@@ -24,6 +25,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	utilkeys "github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/templatestore"
+	"github.com/aplane-algo/aplane/lsig/boundedaccount"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 	"github.com/aplane-algo/aplane/test/integration/harness"
@@ -40,6 +42,9 @@ func TestBackupPortabilityFirstMilestone(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to get suggested params: %v", err)
 	}
+
+	// The burn address is the zero address, which a boundary refuses.
+	generalRecipient := algocrypto.GenerateAccount().Address.String()
 
 	cases := []struct {
 		name               string
@@ -118,6 +123,25 @@ func TestBackupPortabilityFirstMilestone(t *testing.T) {
 					LsigArgs: map[string]string{
 						"preimage": hex.EncodeToString(preimage),
 					},
+				}
+			},
+		},
+		{
+			// The destination never approves this grammar, and the restored
+			// account must sign anyway: approval governs new accounts only.
+			name:             "general bounded account",
+			activateOnSource: true,
+			prepareSource: func(_ *testing.T, _ string, _ *harness.ApAdminHarness) (string, map[string]string) {
+				return boundedaccount.KeyTypeV1, map[string]string{
+					boundedaccount.ParameterSpendEffects:   "pay",
+					boundedaccount.ParameterRekeyAuthority: boundedaccount.RekeySpendingKey,
+					boundedaccount.ParameterRecipients:     generalRecipient,
+				}
+			},
+			buildSignRequest: func(t *testing.T, address string) signerapi.SignRequest {
+				return signerapi.SignRequest{
+					AuthAddress: address,
+					TxnBytesHex: mustUnsignedPaymentTxnHex(t, sp, address, generalRecipient, 0, "backup-portability"),
 				}
 			},
 		},

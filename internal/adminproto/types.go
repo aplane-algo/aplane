@@ -632,24 +632,27 @@ type PreparedBoundedProfile struct {
 // PrepareGenerateKeyResult describes the account a request would create. It has
 // no address, because the spending key does not exist yet.
 type PrepareGenerateKeyResult struct {
-	Success       bool
-	KeyType       string
-	Parameters    map[string]string
-	Fingerprint   string
-	Bounded       *PreparedBoundedProfile
-	AdminKeyID    string
-	CosignerKeyID string
-	Code          string
-	Error         string
+	Success           bool
+	KeyType           string
+	Parameters        map[string]string
+	Fingerprint       string
+	ReviewFingerprint string
+	BoundaryDigest    string
+	Bounded           *PreparedBoundedProfile
+	AdminKeyID        string
+	CosignerKeyID     string
+	Code              string
+	Error             string
 }
 
 // GenerateKeyRequest is the admin-domain request to generate a key.
-// ExpectedFingerprint is optional and comes from a prepared review.
+// The Expected fields are optional and come from a prepared review.
 type GenerateKeyRequest struct {
-	KeyType             string
-	Name                string
-	Parameters          map[string]string
-	ExpectedFingerprint string
+	KeyType                string
+	Name                   string
+	Parameters             map[string]string
+	ExpectedFingerprint    string
+	ExpectedBoundaryDigest string
 }
 
 // GenerateKeyResult is the admin-domain result of key generation.
@@ -726,6 +729,9 @@ type LibraryTemplateInfo struct {
 	Enabled      bool
 	Conflict     string
 	Invalid      string
+	// NeedsApproval means the type is enabled but its current definition has
+	// not been approved, so it cannot create accounts until it is.
+	NeedsApproval bool
 }
 
 type ListLibraryTemplatesResult struct {

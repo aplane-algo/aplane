@@ -350,7 +350,8 @@ Durable signing metadata includes:
 - `base_key_type` for composed DSA keys,
 - stored signing-argument schema in JSON field `signing_args`,
 - optional `bounded_authorization` for bounded1 DSA keys (metadata version 2),
-- optional `template_fingerprint`,
+- optional `template_fingerprint`, which for `aplane.bounded.v1` is the selected
+  shape's fingerprint rather than the type-wide grammar fingerprint,
 - `pq_scheme` and `pq_address_salt` for native PQ keys,
 - `lsig_opcode_profile` and `teal_source` where applicable,
 - `genesis_hash` for rotating keys,

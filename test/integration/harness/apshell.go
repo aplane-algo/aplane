@@ -71,7 +71,7 @@ func (a *ApshellHarness) Build() error {
 	}
 
 	// Build apshell
-	cmd := exec.Command("go", "build", "-o", binaryPath, "./cmd/apshell")
+	cmd := exec.Command("go", "build", "-tags", "testmode", "-o", binaryPath, "./cmd/apshell")
 	cmd.Dir = projectRoot
 	output, err := cmd.CombinedOutput()
 	if err != nil {

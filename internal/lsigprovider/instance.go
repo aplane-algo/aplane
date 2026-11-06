@@ -23,6 +23,13 @@ type Instance struct {
 	Bounded *boundedmeta.Metadata
 	// Fingerprint is the definition this account records as its provenance.
 	Fingerprint string
+	// ReviewFingerprint is what an operator approves by reviewing this request.
+	// It is Fingerprint unless the type's approval covers more than one
+	// definition, as a grammar does.
+	ReviewFingerprint string
+	// BoundaryDigest compares the resolved policy and external authorities of
+	// two accounts. It is empty for a type that does not define one.
+	BoundaryDigest string
 }
 
 // InstanceResolver is implemented by providers whose contract varies by key.
@@ -84,10 +91,11 @@ func ResolveInstance(provider LSigProvider, params map[string]string) (*Instance
 	}
 	fingerprint, _ := CompatibilityFingerprintOf(provider)
 	return &Instance{
-		Parameters:  definitions,
-		Values:      values,
-		Bounded:     fixedBoundedMetadata(provider),
-		Fingerprint: fingerprint,
+		Parameters:        definitions,
+		Values:            values,
+		Bounded:           fixedBoundedMetadata(provider),
+		Fingerprint:       fingerprint,
+		ReviewFingerprint: fingerprint,
 	}, nil
 }
 

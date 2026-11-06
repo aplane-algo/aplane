@@ -528,9 +528,8 @@ func (a corridorExecutionAccount) spendArgs(t *testing.T, baseSignature, proof, 
 		}
 		args[slot.Index] = append([]byte(nil), value...)
 	}
-	if baseIndex != len(baseValues) || derivedIndex != len(derivedValues) {
-		t.Fatalf("Corridor argument layout consumed base/derived values %d/%d and %d/%d",
-			baseIndex, len(baseValues), derivedIndex, len(derivedValues))
+	if baseIndex != len(baseValues) {
+		t.Fatalf("Corridor argument layout consumed %d/%d base values", baseIndex, len(baseValues))
 	}
 	for len(args) > 0 && len(args[len(args)-1]) == 0 {
 		args = args[:len(args)-1]

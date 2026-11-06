@@ -309,6 +309,12 @@ func boundedAdminPublicKeyParameterDef() lsigprovider.ParameterDef {
 	}
 }
 
+// BoundedAuthorityParameterDefs returns the definitions of the authority keys
+// the composer injects, for a provider that presents them itself.
+func BoundedAuthorityParameterDefs() (admin, cosigner lsigprovider.ParameterDef) {
+	return boundedAdminPublicKeyParameterDef(), boundedCosignerPublicKeyParameterDef()
+}
+
 func boundedCosignerPublicKeyParameterDef() lsigprovider.ParameterDef {
 	return lsigprovider.ParameterDef{
 		Name:        BoundedCosignerPublicKeyParameter,

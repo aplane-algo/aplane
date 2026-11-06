@@ -7,6 +7,15 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## Admin protocol 7.3 adds review values for the general bounded key type
+
+- `prepare_generate_result` adds `review_fingerprint` and `boundary_digest`, and library
+  templates add `needs_approval`. `generate_key` accepts an optional
+  `expected_boundary_digest`. A prepared request now sends `review_fingerprint` as
+  `expected_fingerprint`; for existing key types it equals `fingerprint`.
+- The `aplane.bounded.v1` provider is in the source tree but not available in any
+  release. Its operator experience has to ship with it.
+
 ## Admin protocol 7.2 can prepare a key generation request
 
 - The new local-IPC `prepare_generate_key` message reports what a request would create:
