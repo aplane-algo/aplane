@@ -133,7 +133,8 @@ Falcon-1024 recovery mnemonic. Public-network integration therefore requires a
 funded account on a v42-capable ledger. LocalNet setup creates and funds a
 disposable native Falcon account from KMD automatically.
 
-The generated test signer fixture lives under `/tmp/aplane-test-env`.
+The generated test signer fixture lives under `/tmp/aplane-test-env`, or a
+path-derived `/tmp/aplane-test-env-<checksum>` in a linked worktree.
 `TEST_PASSPHRASE` is derived from that fixture rather than inherited from the
 shell. When `APLANE_SDKS_REPO` points at a local `aplanesdk` checkout,
 `make integration-test` also runs that repo's live signer integration suites

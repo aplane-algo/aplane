@@ -1,7 +1,7 @@
 # Store process integration tests
 
 This package exercises signer storage independently of algod and the shared
-`/tmp/aplane-test-env` fixture. Every test starts from a genuine blank signer
+integration fixture. Every test starts from a genuine blank signer
 data directory, initializes it through `apstore`, and launches real `apsigner`,
 offline `apstore`, and live `apadmin` processes.
 

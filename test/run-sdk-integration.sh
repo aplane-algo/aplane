@@ -182,6 +182,7 @@ chmod 700 "$runtime_dir"
 
 project_root="$(pwd)"
 binary="temp/apsigner-sdk-integration"
+mkdir -p temp
 go build -o "$binary" ./cmd/apsigner
 binary_abs="$project_root/$binary"
 
@@ -226,7 +227,7 @@ print(signer_port, ssh_port)
 PY
 )
 
-log_file="${TMPDIR:-/tmp}/aplane-sdk-integration-apsigner.log"
+log_file="$(dirname "$APSIGNER_DATA")/sdk-integration-apsigner.log"
 
 pushd "$APSIGNER_DATA" >/dev/null
 "$binary_abs" >"$log_file" 2>&1 &

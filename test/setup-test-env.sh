@@ -18,15 +18,38 @@
 #     setup bootstraps a disposable native Falcon funding account from KMD
 #   - ssh-keygen must be available
 #
+# Fixture root:
+#   - The primary checkout uses /tmp/aplane-test-env.
+#   - A linked git worktree uses /tmp/aplane-test-env-<checksum of its path>,
+#     so worktrees can run integration tests at the same time.
+#   - APLANE_TEST_ENV overrides either default. A separate clone needs it,
+#     because git cannot tell a second clone from the first.
+#   - Setup records the owning checkout in the root and refuses to replace a
+#     root it did not generate or one that another checkout owns.
+#
 # Output:
-#   - Creates /tmp/aplane-test-env/ with signer data
+#   - Creates the fixture root with signer data
 #   - Writes .env.test in the project root
 #   - Prints eval-able export commands
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
+DEFAULT_TEST_ENV="/tmp/aplane-test-env"
+TEST_ENV_OWNER_FILE=".aplane-test-env-owner"
+
+# Print the fixture root for this checkout when APLANE_TEST_ENV is not set.
+default_test_env_root() {
+    local git_dir common_dir
+    git_dir="$(git -C "$PROJECT_ROOT" rev-parse --git-dir 2>/dev/null || true)"
+    common_dir="$(git -C "$PROJECT_ROOT" rev-parse --git-common-dir 2>/dev/null || true)"
+    if [ "$git_dir" != "$common_dir" ]; then
+        echo "$DEFAULT_TEST_ENV-$(printf '%s' "$PROJECT_ROOT" | cksum | cut -d' ' -f1)"
+    else
+        echo "$DEFAULT_TEST_ENV"
+    fi
+}
 
 # ---------------------------------------------------------------------------
 # Validate prerequisites
@@ -77,7 +100,32 @@ fi
 # Create test environment
 # ---------------------------------------------------------------------------
 
-TEST_ENV="/tmp/aplane-test-env"
+TEST_ENV="${APLANE_TEST_ENV:-$(default_test_env_root)}"
+case "$TEST_ENV" in
+    /*)
+        ;;
+    *)
+        echo "ERROR: APLANE_TEST_ENV must be an absolute path (got '$TEST_ENV')" >&2
+        exit 1
+        ;;
+esac
+if [ -e "$TEST_ENV" ]; then
+    TEST_ENV_OWNER=""
+    if [ -f "$TEST_ENV/$TEST_ENV_OWNER_FILE" ]; then
+        TEST_ENV_OWNER="$(cat "$TEST_ENV/$TEST_ENV_OWNER_FILE")"
+    fi
+    if [ -z "$TEST_ENV_OWNER" ] && [ "$TEST_ENV" != "$DEFAULT_TEST_ENV" ]; then
+        echo "ERROR: refusing to replace $TEST_ENV: it is not a generated test environment" >&2
+        echo "  Choose a path that does not exist yet." >&2
+        exit 1
+    fi
+    if [ -n "$TEST_ENV_OWNER" ] && [ "$TEST_ENV_OWNER" != "$PROJECT_ROOT" ] && [ -d "$TEST_ENV_OWNER" ]; then
+        echo "ERROR: refusing to replace $TEST_ENV: it belongs to $TEST_ENV_OWNER" >&2
+        echo "  Set APLANE_TEST_ENV to a path for this checkout, and check that the" >&2
+        echo "  shell has not inherited it from another checkout's .env.test." >&2
+        exit 1
+    fi
+fi
 SIGNER_DATA="$TEST_ENV/apsigner"
 CLIENT_DATA="$TEST_ENV/apclient"
 SIGNER_RUNTIME_DIR="$SIGNER_DATA/run"
@@ -158,6 +206,7 @@ SSH_PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("",0)); print(s
 # Clean up any previous test env
 rm -rf "$TEST_ENV"
 mkdir -p "$SIGNER_DATA/.ssh"
+printf '%s\n' "$PROJECT_ROOT" > "$TEST_ENV/$TEST_ENV_OWNER_FILE"
 mkdir -p "$SIGNER_RUNTIME_DIR"
 mkdir -p "$CLIENT_DATA/.ssh"
 chmod 700 "$TEST_ENV" "$SIGNER_DATA" "$SIGNER_RUNTIME_DIR"
@@ -322,6 +371,9 @@ APLANE_INTEGRATION_GENESIS_ID="$INTEGRATION_GENESIS_ID"
 APLANE_INTEGRATION_GENESIS_HASH="$INTEGRATION_GENESIS_HASH"
 TEST_FUNDING_MNEMONIC="$TEST_FUNDING_MNEMONIC"
 TEST_PASSPHRASE="$TEST_PASSPHRASE"
+APLANE_TEST_ENV="$TEST_ENV"
+APLANE_SHARED_APSIGNER_DATA="$SIGNER_DATA"
+APLANE_SHARED_APCLIENT_DATA="$CLIENT_DATA"
 APSIGNER_DATA="$SIGNER_DATA"
 APCLIENT_DATA="$CLIENT_DATA"
 ALGOD_URL="$ALGOD_URL"
@@ -345,6 +397,7 @@ echo "  Wrote .env.test"
 echo ""
 echo "Test environment ready:"
 echo "  Network:     $INTEGRATION_NETWORK"
+echo "  Root:        $TEST_ENV"
 echo "  Signer data: $SIGNER_DATA"
 echo "  Client data: $CLIENT_DATA"
 echo "  Signer port: $SIGNER_PORT"
