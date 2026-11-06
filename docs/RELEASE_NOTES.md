@@ -7,6 +7,17 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## Admin and cosigner files use role-specific extensions
+
+- `aprekey generate` writes `<WitnessKeyID>.adm` for the encrypted admin key and
+  `<WitnessKeyID>.adm.json` for its public reference. Existing `.wit` artifacts
+  and `.wit.json` admin references remain readable.
+- Cosigner private credentials remain `.cos`. New cosigner public sidecars and
+  suggested export filenames use `.cos.json`; existing `.wit.json` store sidecars
+  remain valid for loading, export, passphrase rotation, and rollback.
+- This changes filenames only. Witness Key IDs, JSON schemas, encryption, and
+  signing authority are unchanged. Existing files are not automatically renamed.
+
 ## Five templates leave the default library
 
 - `aplane.falcon1024-allowlist.v1`, `aplane.falcon1024-allowlist.v2`,

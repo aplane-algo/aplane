@@ -356,7 +356,7 @@ func generationMemberContext(relative string) (crypto.ObjectContext, bool, strin
 		relative == storepaths.ASASetFileName, relative == asaSetSidecarMember:
 		return crypto.ObjectContext{}, false, "", nil
 	case strings.HasPrefix(relative, "keys/"), strings.HasPrefix(relative, "deleted/keys/"):
-		if strings.HasSuffix(base, keys.WitnessPublicMetadataSuffix) {
+		if keys.IsWitnessPublicMetadataFilename(base) {
 			return crypto.ObjectContext{}, false, "", nil
 		}
 		selector, class, ok := keys.ParseManagedCredentialFilename(base)

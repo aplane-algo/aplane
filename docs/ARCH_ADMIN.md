@@ -935,7 +935,7 @@ and import archive (`*.tar.gz`, `*.tgz`). The browser lists one directory at a
 time, directories first, and starts in the directory the field already names,
 else the newest `~/policy-export-*` for a policy file, `~/.ssh` for a client
 key, or the home directory. It lists only the files the field expects
-(`*.json`, `*.pub`, `*.wit.json`; `a` lists all), hides dot entries until `.`,
+(`*.json`, `*.pub`, `*.adm.json`, and legacy `*.wit.json`; `a` lists all), hides dot entries until `.`,
 and fills the field with an absolute path; it reads no file contents, so the
 field's own checks still decide. A symbolic link to a file is listed but
 cannot be chosen, since every loader behind these fields takes regular files
@@ -1091,7 +1091,7 @@ sequences are emitted. File export or batch stdout also preserves the original
 JSON bytes. Files are written on the machine running `apadmin`. Ordinary account keys do not expose
 this action. The output path is directly editable and does not rename the
 witness credential or add an authority claim to the public envelope. Imports
-recognize the `.aplane-cosigner.json` suffix and may prefill an editable alias
+recognize the `.cos.json` suffix and may prefill an editable alias
 from its sanitized filename stem.
 
 The import form accepts the public witness document only; a file that carries

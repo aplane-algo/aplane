@@ -107,6 +107,9 @@ func TestSavePayloadWritesWitnessPublicMetadata(t *testing.T) {
 	}
 
 	path := WitnessPublicMetadataPathActive(mustResolveActiveForTest(t, paths), componentKey)
+	if filepath.Base(path) != componentKey+".cos.json" {
+		t.Fatalf("public reference path = %q, want .cos.json", path)
+	}
 	assertKeyFileMode(t, path, fsutil.StoreFilePerm)
 	env, ok, err := ReadWitnessPublicMetadataActive(mustResolveActiveForTest(t, paths), componentKey)
 	if err != nil {
@@ -120,6 +123,21 @@ func TestSavePayloadWritesWitnessPublicMetadata(t *testing.T) {
 	}
 	if wantPublicKey := fmt.Sprintf("%x", publicKey); env.PublicKeyHex != wantPublicKey {
 		t.Fatalf("PublicKeyHex = %q, want %q", env.PublicKeyHex, wantPublicKey)
+	}
+	legacyPath := filepath.Join(filepath.Dir(path), componentKey+".wit.json")
+	if err := os.Rename(path, legacyPath); err != nil {
+		t.Fatal(err)
+	}
+	legacy, found, err := ReadWitnessPublicMetadataActive(mustResolveActiveForTest(t, paths), componentKey)
+	if err != nil || !found || legacy != env {
+		t.Fatalf("legacy public metadata = %+v, %v, %v; want original reference", legacy, found, err)
+	}
+	// An invalid canonical sidecar must not be hidden by a valid legacy copy.
+	if err := os.WriteFile(path, []byte("invalid JSON"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := ReadWitnessPublicMetadataActive(mustResolveActiveForTest(t, paths), componentKey); err == nil {
+		t.Fatal("invalid canonical public metadata fell back to the legacy sidecar")
 	}
 }
 

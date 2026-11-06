@@ -422,7 +422,7 @@ Canonical forms:
   `component_key`.
 - external bounded contract-admin authorities use the same witness key type
   and Witness Key ID, but private material remains in a structurally distinct
-  standalone `.wit` container owned by `aprekey`. It is never a signer-managed
+  standalone `.adm` container owned by `aprekey`. It is never a signer-managed
   `.key`/`.cos` credential or spending account.
 - `aplane.falcon1024-allowlist-lock.v1` is reserved for the schema-v2
   framework-owned bounded1 allowlist. Its spending key and contract admin key
@@ -515,7 +515,7 @@ They participate in a specific account or operation contract:
 | Type | Custody and use | Signer key type? |
 |---|---|---|
 | **Witness key, cosigner enrollment** | Stored as a cosigner-managed `.cos` credential and used through `/sign/component`; its signature is assembled into a guarded-account LogicSig. | Yes. `aplane.witness-falcon1024.v1`, durable category `witness`; never accepted as a spending account by ordinary `/sign`. |
-| **Witness key, contract-admin enrollment** | Stored in a standalone encrypted `.wit` artifact and used only for a declared bounded admin operation through `aprekey`. | The key form has the same witness key type, but this custody container is never an `apstore` or signer key. |
+| **Witness key, contract-admin enrollment** | Stored in a standalone encrypted `.adm` artifact and used only for a declared bounded admin operation through `aprekey`. | The key form has the same witness key type, but this custody container is never an `apstore` or signer key. |
 
 The current authority overlays are therefore **unguarded**, **cosigner guarded**,
 and **contract-admin-authorized operation**. Contract-admin authority is
@@ -1394,7 +1394,7 @@ the checks. The route decides what is resolved on the client first.
 
 | Route | Path to `GenerateKey` | Client-side resolution |
 |---|---|---|
-| apadmin | IPC `generate_key`, `Session.HandleGenerateKey` | Reads a public `.wit.json` and sends its `bounded_admin_public_key` |
+| apadmin | IPC `generate_key`, `Session.HandleGenerateKey` | Reads a public `.adm.json` and sends its `bounded_admin_public_key` |
 | apshell, MCP, JS | `POST /admin/generate`, `rest.Service.AdminGenerate` | Expands aliases and sets in `address[]` parameters, through `expandGenerateAddressListParams` |
 | SDKs | `POST /admin/generate` | None |
 

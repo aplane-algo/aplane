@@ -164,7 +164,7 @@ func TestManagerCosignerImportReturnsToManager(t *testing.T) {
 
 func TestCosignerImportSuggestsSanitizedFilenameStem(t *testing.T) {
 	m := Model{cosigner: cosignerState{
-		importPath:  "/operator/exports/Lab Cosigner #1.aplane-cosigner.json",
+		importPath:  "/operator/exports/Lab Cosigner #1.cos.json",
 		importFocus: 0,
 	}}
 	nextModel, _ := m.handleCosignerImportFormKeys(tea.KeyMsg{Type: tea.KeyTab})

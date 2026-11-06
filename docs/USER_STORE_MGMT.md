@@ -670,7 +670,7 @@ restored addresses in apadmin.
 ## External Contract Admin Artifacts
 
 Bounded contract-admin private authority is a witness key stored only in an
-encrypted `.wit` artifact managed by `aprekey`. It is never an
+encrypted `.adm` artifact managed by `aprekey`. It is never an
 apsigner managed credential, an `apstore` `.apb`, or part of signer
 backup/restore. Do not
 put these files in the signer data directory or submit them to signer tooling.
@@ -685,15 +685,21 @@ Keep multiple independently protected copies and protect the artifact
 passphrase separately. Test each copy periodically:
 
 ```bash
-aprekey inspect /media/cold/<WITNESS_KEY_ID>.wit
-aprekey verify /media/cold/<WITNESS_KEY_ID>.wit
+aprekey inspect /media/cold/<WITNESS_KEY_ID>.adm
+aprekey verify /media/cold/<WITNESS_KEY_ID>.adm
 ```
 
-The `.wit.json` sidecar contains only public convenience data;
+The `.adm.json` sidecar contains only public convenience data;
 the encrypted artifact header is self-sufficient. Losing every artifact copy
 or its passphrase permanently removes every admin-key operation from the
 immutable bounded LogicSig. Ordinary spending remains possible only within its
 compiled policy.
+
+Existing `.wit` admin artifacts and `.wit.json` public references remain
+readable. New admin files use `.adm` and `.adm.json`; cosigner public sidecars
+and suggested exports use `.cos.json`. Renaming an external admin artifact
+does not change its contents, Witness Key ID, or passphrase. Managed store
+sidecars need no manual renaming: existing names remain supported.
 
 Do not enroll this keypair as a cosigner, and do not use a cosigner witness as a
 contract admin. Both roles use the same witness key form, but their custody
@@ -704,7 +710,7 @@ Separated ceremonies additionally use `.apbounded-admin-request` request files
 and `.apbounded-admin-signature` response files. They contain no private key material and are not
 managed backup archives, but they bind short-lived signing authority for one exact
 transaction. Store or destroy them according to the operator's ceremony audit
-policy. They cannot recover a lost `.wit` artifact.
+policy. They cannot recover a lost `.adm` artifact.
 
 ## Security Best Practices
 

@@ -126,7 +126,7 @@ func TestGenerationInventoryAndSealAuthenticateMemberTerms(t *testing.T) {
 	gen := mintTestGeneration(t, paths, testGenA, map[string]string{
 		"keys/A.key":               "placeholder",
 		"keytypes/example.v1.json": "{}",
-		"keys/WITNESS.wit.json":    `{"schema":"public"}`,
+		"keys/WITNESS.cos.json":    `{"schema":"public"}`,
 	})
 	kr := cryptotest.Keyring(t, bytes.Repeat([]byte{0x41}, 32))
 	sealed, err := kr.Seal([]byte("credential"), crypto.AccountKeyContext("A"))
@@ -140,7 +140,7 @@ func TestGenerationInventoryAndSealAuthenticateMemberTerms(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildInventory() error = %v", err)
 	}
-	for _, path := range []string{"keytypes/example.v1.json", "keys/WITNESS.wit.json"} {
+	for _, path := range []string{"keytypes/example.v1.json", "keys/WITNESS.cos.json"} {
 		entry := inventoryEntry(t, inventory, path)
 		if entry.Term != 0 {
 			t.Fatalf("plaintext inventory entry %s term = %d, want 0", path, entry.Term)

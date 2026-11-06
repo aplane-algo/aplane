@@ -346,6 +346,8 @@ func cosignerImportNameFromPath(path string) string {
 	base := filepath.Base(path)
 	if strings.HasSuffix(strings.ToLower(base), cosignerKeyFileSuffix) {
 		base = base[:len(base)-len(cosignerKeyFileSuffix)]
+	} else if strings.HasSuffix(strings.ToLower(base), ".aplane-cosigner.json") {
+		base = base[:len(base)-len(".aplane-cosigner.json")]
 	} else {
 		base = strings.TrimSuffix(base, filepath.Ext(base))
 	}

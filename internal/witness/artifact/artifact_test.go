@@ -199,10 +199,10 @@ func TestGenerateFilesAndLoad(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateFiles() error = %v", err)
 	}
-	if filepath.Base(files.BundlePath) != files.Reference.WitnessKeyID+BundleExtension {
+	if filepath.Base(files.BundlePath) != files.Reference.WitnessKeyID+".adm" {
 		t.Fatalf("bundle path = %q", files.BundlePath)
 	}
-	if filepath.Base(files.ReferencePath) != files.Reference.WitnessKeyID+ReferenceExtension {
+	if filepath.Base(files.ReferencePath) != files.Reference.WitnessKeyID+".adm.json" {
 		t.Fatalf("reference path = %q", files.ReferencePath)
 	}
 	for _, path := range []string{files.BundlePath, files.ReferencePath} {
@@ -224,6 +224,14 @@ func TestGenerateFilesAndLoad(t *testing.T) {
 	}
 	if inspected != files.Reference {
 		t.Fatalf("Inspect() = %#v, want %#v", inspected, files.Reference)
+	}
+	legacyPath := filepath.Join(directory, files.Reference.WitnessKeyID+".wit")
+	if err := os.Rename(files.BundlePath, legacyPath); err != nil {
+		t.Fatal(err)
+	}
+	legacyData, err := LoadFile(legacyPath)
+	if err != nil || !bytes.Equal(legacyData, data) {
+		t.Fatalf("legacy artifact did not retain its bytes: %v", err)
 	}
 }
 
@@ -252,7 +260,7 @@ func TestFileOperationsRejectOverwriteAndWrongFileKinds(t *testing.T) {
 	t.Parallel()
 
 	directory := t.TempDir()
-	existing := filepath.Join(directory, "existing.wit")
+	existing := filepath.Join(directory, "existing.adm")
 	if err := os.WriteFile(existing, []byte("original"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -267,15 +275,17 @@ func TestFileOperationsRejectOverwriteAndWrongFileKinds(t *testing.T) {
 		t.Fatalf("existing content = %q, want original", content)
 	}
 
-	wrongExtension := filepath.Join(directory, "credential.apb")
-	if err := os.WriteFile(wrongExtension, []byte("{}"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := LoadFile(wrongExtension); err == nil || !strings.Contains(err.Error(), BundleExtension) {
-		t.Fatalf("LoadFile(.apb) error = %v, want extension rejection", err)
+	for _, suffix := range []string{".apb", ".key", ".cos", ".adm.json", ".cos.json", ".wit.json"} {
+		wrongExtension := filepath.Join(directory, "credential"+suffix)
+		if err := os.WriteFile(wrongExtension, []byte("{}"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := LoadFile(wrongExtension); err == nil || !strings.Contains(err.Error(), BundleExtension) {
+			t.Fatalf("LoadFile(%s) error = %v, want extension rejection", suffix, err)
+		}
 	}
 
-	symlink := filepath.Join(directory, "linked.wit")
+	symlink := filepath.Join(directory, "linked.adm")
 	if err := os.Symlink(existing, symlink); err != nil {
 		t.Fatal(err)
 	}

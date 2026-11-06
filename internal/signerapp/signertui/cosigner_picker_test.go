@@ -287,7 +287,7 @@ func TestPrepareCosignerImportReviewRejectsFileWithEndpoint(t *testing.T) {
 		t.Fatal(err)
 	}
 	withEndpoint := strings.Replace(string(data), "{\n", "{\n  \"endpoint\": {\"url\": \"ssh://cosigner.example:2223\"},\n", 1)
-	path := filepath.Join(t.TempDir(), "lab.aplane-cosigner.json")
+	path := filepath.Join(t.TempDir(), "lab.cos.json")
 	if err := os.WriteFile(path, []byte(withEndpoint), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -371,7 +371,7 @@ func writeTUISetupFile(t *testing.T, reference witness.PublicReference) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(t.TempDir(), "lab.aplane-cosigner.json")
+	path := filepath.Join(t.TempDir(), "lab.cos.json")
 	if err := os.WriteFile(path, data, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -501,7 +501,7 @@ func TestManagerImportDoesNotOfferReuse(t *testing.T) {
 
 func TestCosignerExportResultPointsAtSetupFlow(t *testing.T) {
 	m := Model{width: 100, height: 40, cosigner: cosignerState{
-		exportWitnessID: testWitnessID1, exportWrittenPath: "/tmp/lab.aplane-cosigner.json",
+		exportWitnessID: testWitnessID1, exportWrittenPath: "/tmp/lab.cos.json",
 	}}
 	rendered := stripANSI(m.renderCosignerExportResult())
 	for _, want := range []string{

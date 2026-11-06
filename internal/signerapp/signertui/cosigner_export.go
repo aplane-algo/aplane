@@ -18,7 +18,7 @@ import (
 // Clients configure the cosigner's address themselves, with endpoints add,
 // so the file carries no endpoint, token, or host trust.
 
-const cosignerKeyFileSuffix = ".aplane-cosigner.json"
+const cosignerKeyFileSuffix = witness.CosignerPublicReferenceExtension
 
 func suggestedCosignerExportPath(witnessKeyID string) string {
 	compact := strings.ToLower(strings.TrimSpace(witnessKeyID))

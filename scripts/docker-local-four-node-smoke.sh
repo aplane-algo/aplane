@@ -1420,17 +1420,17 @@ enroll_cosigner_reference_to_signer() {
     local public_file out
     public_file="$(mktemp)"
     if ! docker_exec_as_tester "$COSIGNER_CONTAINER" ". /home/$TEST_USER/aplane/apenv.sh && \
-        APSIGNER_PASSPHRASE='$TEST_PASSPHRASE' apadmin cosigner export '$COSIGNER_COMPONENT_KEY' /tmp/cosigner-public.json"; then
+        APSIGNER_PASSPHRASE='$TEST_PASSPHRASE' apadmin cosigner export '$COSIGNER_COMPONENT_KEY' /tmp/cosigner-public.cos.json"; then
         die "failed to export cosigner public reference over local IPC"
     fi
     # The key file carries the public key only; it goes to the signer. The
     # client is given the cosigner's address by hand in endpoints add.
-    docker cp "$COSIGNER_CONTAINER:/tmp/cosigner-public.json" "$public_file"
-    docker cp "$public_file" "$SIGNER_CONTAINER:/tmp/cosigner-public.json"
+    docker cp "$COSIGNER_CONTAINER:/tmp/cosigner-public.cos.json" "$public_file"
+    docker cp "$public_file" "$SIGNER_CONTAINER:/tmp/cosigner-public.cos.json"
     rm -f "$public_file"
-    docker_exec "$SIGNER_CONTAINER" chown "$TEST_USER:$TEST_USER" /tmp/cosigner-public.json
+    docker_exec "$SIGNER_CONTAINER" chown "$TEST_USER:$TEST_USER" /tmp/cosigner-public.cos.json
     if ! out="$(docker_exec_as_tester "$SIGNER_CONTAINER" ". /home/$TEST_USER/aplane/apenv.sh && \
-        APSIGNER_PASSPHRASE='$TEST_PASSPHRASE' apadmin cosigner import /tmp/cosigner-public.json '$COSIGNER_REFERENCE_NAME' && \
+        APSIGNER_PASSPHRASE='$TEST_PASSPHRASE' apadmin cosigner import /tmp/cosigner-public.cos.json '$COSIGNER_REFERENCE_NAME' && \
         APSIGNER_PASSPHRASE='$TEST_PASSPHRASE' apadmin cosigner show '$COSIGNER_REFERENCE_NAME' 2>&1")"; then
         printf '%s\n' "$out" >&2
         die "local IPC cosigner-reference import failed"
@@ -1536,7 +1536,7 @@ EXPECT_SCRIPT
     fi
     printf '%s\n' "$out"
 
-    CORRIDOR_ADMIN_KEY="$(docker_exec_as_tester "$CLIENT_CONTAINER" "set -- '$admin_dir'/*.wit; \
+    CORRIDOR_ADMIN_KEY="$(docker_exec_as_tester "$CLIENT_CONTAINER" "set -- '$admin_dir'/*.adm; \
         [ \$# -eq 1 ] && [ -f \"\$1\" ] && printf '%s' \"\$1\"")"
     [ -n "$CORRIDOR_ADMIN_KEY" ] || die "could not locate generated Corridor admin artifact"
     CORRIDOR_ADMIN_PUBLIC_KEY="$(docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \

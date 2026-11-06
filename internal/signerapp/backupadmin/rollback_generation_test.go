@@ -19,6 +19,23 @@ import (
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
+func TestRollbackCosignerReferencesRemainPlaintext(t *testing.T) {
+	for _, suffix := range []string{".cos.json", ".wit.json"} {
+		path := "keys/WITNESS" + suffix
+		if _, sealed, err := rollbackMemberContext(genstore.InventoryEntry{Path: path}); err != nil || sealed {
+			t.Fatalf("rollbackMemberContext(%s) = %v, %v; want plaintext metadata", path, sealed, err)
+		}
+		if _, _, err := rollbackMemberContext(genstore.InventoryEntry{Path: path, Term: 1}); err == nil {
+			t.Fatalf("rollback accepted encrypted public metadata %s", path)
+		}
+	}
+	for _, suffix := range []string{".adm", ".adm.json", ".wit"} {
+		if _, _, err := rollbackMemberContext(genstore.InventoryEntry{Path: "keys/ADMIN" + suffix}); err == nil {
+			t.Fatalf("rollback accepted external admin file %s", suffix)
+		}
+	}
+}
+
 func TestRollbackMintReconstructsOnlyActiveAuthorityAndPreservesMonotonicState(t *testing.T) {
 	const (
 		genA = "gen-1785300000-cafef00d"

@@ -17,7 +17,14 @@ import (
 	"github.com/aplane-algo/aplane/internal/witness"
 )
 
-const WitnessPublicMetadataSuffix = ".wit.json"
+const WitnessPublicMetadataSuffix = witness.CosignerPublicReferenceExtension
+
+// IsWitnessPublicMetadataFilename includes the legacy public sidecars so an
+// existing generation can still be validated, rotated, and rolled back.
+func IsWitnessPublicMetadataFilename(name string) bool {
+	return strings.HasSuffix(name, WitnessPublicMetadataSuffix) ||
+		strings.HasSuffix(name, witness.LegacyPublicReferenceExtension)
+}
 
 // WitnessPublicMetadataPathActive returns the public-only metadata sidecar
 // path for a signer-custodied witness key.
@@ -34,6 +41,10 @@ func ReadWitnessPublicMetadataActive(active storepaths.ActivePaths, witnessKeyID
 	}
 	path := WitnessPublicMetadataPathActive(active, witnessKeyID)
 	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		path = filepath.Join(active.KeysDir(), witnessKeyID+witness.LegacyPublicReferenceExtension)
+		data, err = os.ReadFile(path)
+	}
 	if err != nil {
 		if os.IsNotExist(err) {
 			return cosignerrefs.ExportEnvelope{}, false, nil
@@ -50,14 +61,17 @@ func ReadWitnessPublicMetadataActive(active storepaths.ActivePaths, witnessKeyID
 	return normalized, true, nil
 }
 
-// validateWitnessPublicMetadataFilename validates a .wit.json sidecar in
+// validateWitnessPublicMetadataFilename validates a .cos.json or legacy .wit.json sidecar in
 // place during key scan: the filename must carry a canonical Witness Key ID,
 // and the content must be a well-formed public reference whose embedded ID
 // matches the filename. This mirrors what ReadWitnessPublicMetadataActive
 // enforces at read time, so a generation cannot commit a sidecar that its
 // own consumers would later reject.
 func validateWitnessPublicMetadataFilename(path string) error {
-	base := strings.TrimSuffix(filepath.Base(path), WitnessPublicMetadataSuffix)
+	base, canonical := strings.CutSuffix(filepath.Base(path), WitnessPublicMetadataSuffix)
+	if !canonical {
+		base = strings.TrimSuffix(base, witness.LegacyPublicReferenceExtension)
+	}
 	witnessKeyID, err := witness.NormalizeID(base)
 	if err != nil {
 		return fmt.Errorf("filename: %w", err)

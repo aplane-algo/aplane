@@ -280,7 +280,7 @@ func rollbackPolicyContext(path, name string, term int64) (crypto.ObjectContext,
 }
 
 func rollbackCredentialContext(path, name string, term int64) (crypto.ObjectContext, bool, error) {
-	if strings.HasSuffix(name, keys.WitnessPublicMetadataSuffix) {
+	if keys.IsWitnessPublicMetadataFilename(name) {
 		if term != 0 {
 			return crypto.ObjectContext{}, false, fmt.Errorf(
 				"rollback plaintext member %s carries term %d",

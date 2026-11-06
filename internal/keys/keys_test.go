@@ -357,13 +357,16 @@ func TestScanKeysDirectoryWithKeyring(t *testing.T) {
 		}
 		writes := map[string][]byte{
 			// Valid sidecar: accepted silently.
+			witnessKeyID + ".cos.json": envelopeJSON,
 			witnessKeyID + ".wit.json": envelopeJSON,
 			// Sidecar whose filename is not a canonical Witness Key ID.
-			"offline.wit.json": envelopeJSON,
+			"offline.cos.json": envelopeJSON,
 			// Sidecar whose content does not parse.
-			strings.Repeat("A", len(witnessKeyID)-1) + "B.wit.json": []byte("not json"),
+			strings.Repeat("A", len(witnessKeyID)-1) + "B.cos.json": []byte("not json"),
 			// External artifact bundle: aprekey-owned, never a store resident.
-			witnessKeyID + ".wit": []byte("encrypted bundle"),
+			witnessKeyID + ".adm":      []byte("encrypted bundle"),
+			witnessKeyID + ".wit":      []byte("encrypted bundle"),
+			witnessKeyID + ".adm.json": envelopeJSON,
 		}
 		for name, data := range writes {
 			if err := os.WriteFile(filepath.Join(keysDir, name), data, 0600); err != nil {
@@ -387,10 +390,10 @@ func TestScanKeysDirectoryWithKeyring(t *testing.T) {
 		}
 		want := map[KeyScanWarningCode]int{
 			KeyScanWarningWitnessMetadataInvalid: 2,
-			KeyScanWarningUnexpectedEntry:        1,
+			KeyScanWarningUnexpectedEntry:        3,
 		}
-		if len(report.Warnings) != 3 || got[KeyScanWarningWitnessMetadataInvalid] != want[KeyScanWarningWitnessMetadataInvalid] || got[KeyScanWarningUnexpectedEntry] != want[KeyScanWarningUnexpectedEntry] {
-			t.Fatalf("warnings = %#v, want 2 invalid-metadata + 1 unexpected-entry", report.Warnings)
+		if len(report.Warnings) != 5 || got[KeyScanWarningWitnessMetadataInvalid] != want[KeyScanWarningWitnessMetadataInvalid] || got[KeyScanWarningUnexpectedEntry] != want[KeyScanWarningUnexpectedEntry] {
+			t.Fatalf("warnings = %#v, want 2 invalid-metadata + 3 unexpected-entry", report.Warnings)
 		}
 	})
 
@@ -418,7 +421,7 @@ func TestScanKeysDirectoryWithKeyring(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Marshal(envelope) error = %v", err)
 		}
-		if err := os.WriteFile(filepath.Join(keysDir, otherKeyID+".wit.json"), envelopeJSON, 0600); err != nil {
+		if err := os.WriteFile(filepath.Join(keysDir, otherKeyID+".cos.json"), envelopeJSON, 0600); err != nil {
 			t.Fatal(err)
 		}
 		report, err := scanKeysDirectoryInternalReport(mustResolveActiveForTest(t, paths), nil, func(string) ([]byte, error) {

@@ -25,6 +25,22 @@ import (
 
 const rotateFirstGeneration = "gen-1785200000-00000001"
 
+func TestGenerationMemberContextKeepsCosignerReferencesPublic(t *testing.T) {
+	for _, prefix := range []string{"keys/", "deleted/keys/"} {
+		for _, suffix := range []string{".cos.json", ".wit.json"} {
+			path := prefix + "WITNESS" + suffix
+			if _, sealed, kind, err := generationMemberContext(path); err != nil || sealed || kind != "" {
+				t.Fatalf("generationMemberContext(%s) = %v, %q, %v; want plaintext metadata", path, sealed, kind, err)
+			}
+		}
+		for _, suffix := range []string{".adm", ".adm.json", ".wit"} {
+			if _, _, _, err := generationMemberContext(prefix + "ADMIN" + suffix); err == nil {
+				t.Fatalf("rotation accepted external admin file %s", prefix+"ADMIN"+suffix)
+			}
+		}
+	}
+}
+
 type rotateFixture struct {
 	paths          storepaths.Paths
 	oldPassphrase  []byte

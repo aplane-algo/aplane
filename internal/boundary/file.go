@@ -151,7 +151,7 @@ func LoadFile(path string) (map[string]string, error) {
 	return file.CreationParameters(filepath.Dir(path))
 }
 
-// readAdminPublicKey reads the public .wit.json envelope. A relative path is
+// readAdminPublicKey reads the public .adm.json envelope. A relative path is
 // resolved against the boundary file, so a file works from any directory.
 func readAdminPublicKey(directory, path string) (string, error) {
 	if !filepath.IsAbs(path) {

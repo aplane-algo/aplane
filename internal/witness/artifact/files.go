@@ -11,13 +11,15 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/aplane-algo/aplane/internal/witness"
 )
 
 const (
-	// BundleExtension identifies encrypted standalone witness artifacts.
-	BundleExtension = ".wit"
-	// ReferenceExtension identifies public witness reference sidecars.
-	ReferenceExtension = ".wit.json"
+	// BundleExtension identifies encrypted standalone admin key artifacts.
+	BundleExtension = witness.AdminArtifactExtension
+	// ReferenceExtension identifies public admin key reference sidecars.
+	ReferenceExtension = witness.AdminPublicReferenceExtension
 )
 
 // FileSet describes files created for one standalone witness credential.
@@ -64,10 +66,10 @@ func GenerateFiles(directory string, passphrase []byte, now time.Time) (FileSet,
 	return files, nil
 }
 
-// LoadFile reads a regular .wit file with a fixed upper bound. Symlinks and
-// other file types are rejected.
+// LoadFile reads a regular .adm file (or an existing .wit file) with a fixed
+// upper bound. Symlinks and other file types are rejected.
 func LoadFile(path string) ([]byte, error) {
-	if filepath.Ext(path) != BundleExtension {
+	if !witness.IsAdminArtifactPath(path) {
 		return nil, fmt.Errorf("witness artifact must use the %s extension", BundleExtension)
 	}
 	info, err := os.Lstat(path)

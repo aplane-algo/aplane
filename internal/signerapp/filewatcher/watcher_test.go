@@ -13,8 +13,11 @@ func TestIsReloadCandidate(t *testing.T) {
 		{"account.key", true},
 		{"cosigner.cos", true},
 		{"policy.template", true},
-		{"external.wit", false},
-		{"external.wit.json", false},
+		{"external.adm", false},
+		{"external.adm.json", false},
+		{"cosigner.cos.json", false},
+		{"legacy.wit", false},
+		{"legacy.wit.json", false},
 		{"notes.json", false},
 	}
 	for _, test := range tests {
