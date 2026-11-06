@@ -126,6 +126,16 @@ aliases. `bounded1` has no admin-key algorithm selector. `authorization: admin_k
 always means the profile's single Falcon-1024 contract admin key. Supporting
 another admin primitive requires a new bounded-authorization contract.
 
+Generation also refuses a workflow the spending base can't complete. The
+contract-admin ceremony and the bounded cosigner flow need a Falcon-1024 spending
+key, so `admin_key` rekey or a cosigner on another base is refused, as is any
+bounded profile on a base the support policy doesn't list. This is an admission
+decision for new accounts, separate from structural validity, and it runs only
+from `GenerateTEAL`. `ValidateTemplateSpec` and `validateBoundedConfig` stay
+structural, because installed templates reach both on load: an error there changes
+the template's compatibility fingerprint, which makes it a content defect, and that
+sends unlock to recovery mode and blocks store commits.
+
 The 10,000 microAlgo ceiling supports the currently measured Falcon/Falcon
 fixed-list shape at a 1,000 microAlgo network minimum fee. It is an absolute
 v1 profile ceiling, not a promise of viability on networks with a higher

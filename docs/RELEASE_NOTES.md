@@ -7,6 +7,16 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## Bounded generation refuses workflows a base cannot complete
+
+- New accounts are refused when their base can't complete a declared workflow. An
+  `authorization: admin_key` rekey or a cosigner on a non-Falcon base is refused at generation,
+  because the admin ceremony and bounded cosigner flow need a Falcon-1024 spending key. Such an
+  account could previously be created with an external-admin rekey that could never complete.
+- Installed templates and existing accounts are unaffected. Fingerprints don't change, the
+  template stays listed, and the store keeps unlocking and committing.
+- Template import is unchanged, so the refusal appears when generating an account.
+
 ## Five templates leave the default library
 
 - `aplane.falcon1024-allowlist.v1`, `aplane.falcon1024-allowlist.v2`,
