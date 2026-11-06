@@ -778,7 +778,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.waitForMessageCmd()
 
 	case ActivateKeyTypeResultMsg:
-		return m.finishLibraryAction(msg.Success, m.libraryActivatedStatus(msg.KeyType, msg.AlreadyExists), msg.Error, libraryActivateFailure())
+		return m.finishLibraryAction(msg.Success, libraryEnabledStatus(msg.KeyType, msg.AlreadyExists), msg.Error, libraryActivateFailure())
 
 	case DeactivateKeyTypeResultMsg:
 		status := displayKeyType(msg.KeyType) + " was already disabled"

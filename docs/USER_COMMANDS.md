@@ -1205,13 +1205,15 @@ generate ed25519
 generate falcon1024
 generate aplane.htlc.v1 hash=SHA256_HEX recipient=ADDR1 refund_address=ADDR2 timeout_round=50000000
 generate aplane.falcon1024-allowlist.v1 recipients="@validators"        # after installing; address[] params resolve aliases and sets
+generate aplane.bounded.v1 boundary=rules.yaml result=account.json
 generate aplane.falcon1024-allowlist.v2 recipients="@operators"            # after installing/enabling from the KeyType Library
 ```
 
 Run `keytypes` to see available key types and required generation parameters.
 Use the full key type shown by `keytypes`.
-For installing or activating optional key types, see
-[USER_KEYTYPES.md](USER_KEYTYPES.md).
+For installing or activating optional key types, and for boundary files, see
+[USER_KEYTYPES.md](USER_KEYTYPES.md). `boundary=` and `result=` are apshell options for
+`aplane.bounded.v1` only; for every other key type they are ordinary parameters.
 
 ---
 

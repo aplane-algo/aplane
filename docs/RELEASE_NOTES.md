@@ -22,16 +22,16 @@ before it was renamed `enroll`.
 
 ## Admin protocol 7.3 adds review values for the general bounded key type
 
-- `prepare_generate_result` adds `review_fingerprint` and `boundary_digest`, and library
-  templates add `needs_approval`, `approved_fingerprint`, `current_fingerprint`, and
-  `approval_summary`. Admin settings add `boundary_require_admin_key` and
-  `boundary_require_cosigner`, both writable. Key types add `per_key_contract`.
+- `prepare_generate_result` adds `review_fingerprint` and `boundary_digest`. Admin
+  settings add `boundary_require_admin_key` and `boundary_require_cosigner`, both writable. Key types add `per_key_contract`.
   `apadmin` now prepares every parameterized request before generating it. Key details
   add `policy_label`. `generate_key` accepts an optional
   `expected_boundary_digest`. A prepared request now sends `review_fingerprint` as
   `expected_fingerprint`; for existing key types it equals `fingerprint`.
-- The `aplane.bounded.v1` provider is in the source tree but not available in any
-  release. Its operator experience has to ship with it.
+- `aplane.bounded.v1` is new and enabled by default on every signer, on fresh installs and
+  upgrades alike. It lets an operator choose an account's recipient rules at generation
+  instead of importing a template for each. See
+  [USER_KEYTYPES.md](USER_KEYTYPES.md#bounded-accounts).
 
 ## Admin protocol 7.2 can prepare a key generation request
 

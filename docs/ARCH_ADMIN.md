@@ -94,9 +94,8 @@ Transport notes:
   cannot silently retarget a client to the singleton system signer,
 - the current admin protocol version is 7.3 (7.3 adds `review_fingerprint` and
   `boundary_digest` to `prepare_generate_result`, an optional
-  `generate_key.expected_boundary_digest`, approval status to library templates,
-  `per_key_contract` to key types, and the two `boundary_require_*` admin
-  settings; 7.2 adds `prepare_generate_key`
+  `generate_key.expected_boundary_digest`, `per_key_contract` to key types, and the two
+  `boundary_require_*` admin settings; 7.2 adds `prepare_generate_key`
   and an optional `generate_key.expected_fingerprint`; 7.1 makes `export_key` return
   `export_result` with a native recovery phrase over local IPC and adds
   `key_details.mnemonic_exportable`; 7.0 adds `get_policy_context`

@@ -62,18 +62,6 @@ func (s Service) ListLibraryTemplates() adminproto.ListLibraryTemplatesResult {
 	}
 	out := make([]adminproto.LibraryTemplateInfo, len(items))
 	for i, item := range items {
-		var approval keytypestate.Approval
-		if item.Enabled {
-			// The same predicate as the generation gate. An unreadable record
-			// fails the listing instead of offering to approve over it.
-			if approval, err = keytypestate.CurrentApproval(s.Deps.KeyPaths(), item.KeyType); err != nil {
-				return adminproto.ListLibraryTemplatesResult{Code: protocol.ResultCodeListFailed, Error: err.Error()}
-			}
-		}
-		summary := ""
-		if describer, ok := lsigprovider.Get(item.KeyType).(lsigprovider.ApprovalDescriber); ok {
-			summary = describer.ApprovalSummary()
-		}
 		out[i] = adminproto.LibraryTemplateInfo{
 			KeyType:      item.KeyType,
 			TemplateType: item.TemplateType,
@@ -87,11 +75,6 @@ func (s Service) ListLibraryTemplates() adminproto.ListLibraryTemplatesResult {
 			Enabled:      item.Enabled,
 			Conflict:     item.Conflict,
 			Invalid:      item.Invalid,
-
-			NeedsApproval:       approval.Needed,
-			ApprovedFingerprint: approval.Approved,
-			CurrentFingerprint:  approval.Current,
-			ApprovalSummary:     summary,
 		}
 	}
 	return adminproto.ListLibraryTemplatesResult{Templates: out}

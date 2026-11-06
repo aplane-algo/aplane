@@ -160,12 +160,6 @@ const (
 )
 
 func libraryActionFor(tmpl LibraryTemplateInfo) libraryAction {
-	// Activation records the current fingerprint even on an enabled type. It must
-	// come first: the usual action here is disable, which refuses while accounts
-	// use the type, and those accounts must not stand in the way of approval.
-	if tmpl.NeedsApproval {
-		return libraryActionActivate
-	}
 	if !tmpl.Installed && !isCompiledProviderLibraryEntry(tmpl) {
 		return libraryActionInstall
 	}
@@ -221,13 +215,6 @@ func (m Model) finishLibraryAction(success bool, status, errText, fallbackErr st
 		m.sendListKeyTypesCmd(),
 		m.sendListKeysCmd(),
 	)
-}
-
-func (m Model) libraryActivatedStatus(keyType string, alreadyExists bool) string {
-	if m.library.pendingTemplate != nil && m.library.pendingTemplate.NeedsApproval {
-		return displayKeyType(keyType) + ": current grammar approved"
-	}
-	return libraryEnabledStatus(keyType, alreadyExists)
 }
 
 func libraryEnabledStatus(keyType string, alreadyExists bool) string {

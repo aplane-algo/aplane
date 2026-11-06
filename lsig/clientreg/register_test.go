@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/boundary"
 	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
 	"github.com/aplane-algo/aplane/internal/keymgmt"
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
@@ -24,21 +25,21 @@ import (
 func TestCanonicalCompiledLogicSigInventory(t *testing.T) {
 	RegisterClient()
 
-	// Only the protocol-native key types (ed25519, falcon1024) are enabled by
-	// default, and they register outside lsig. Plain LogicSig bases are internal;
-	// the other compiled account types are opt-in through the key type library.
-	if defaultEnabled := catalogKeyTypes(keytypecatalog.DefaultEnabled()); len(defaultEnabled) != 0 {
-		t.Fatalf("default-enabled compiled LogicSig inventory = %v, want none", defaultEnabled)
+	// The general bounded type is the one LogicSig type enabled by default. The
+	// protocol-native types are too, but they register outside lsig. Plain LogicSig
+	// bases are internal; the other compiled types are opt-in through the library.
+	defaultEnabled := catalogKeyTypes(keytypecatalog.DefaultEnabled())
+	if !reflect.DeepEqual(defaultEnabled, []string{boundary.KeyTypeV1}) {
+		t.Fatalf("default-enabled compiled LogicSig inventory = %v, want %s only", defaultEnabled, boundary.KeyTypeV1)
 	}
 
 	libraryVisible := catalogKeyTypes(keytypecatalog.LibraryVisible())
-	wantLibraryVisible := append(buildLibraryVisibleKeyTypes(),
+	wantLibraryVisible := []string{
 		"aplane.falcon1024-cosigner1024.v1",
 		"aplane.rotating-triple-slhdsa.v1",
 		"aplane.rotating-triple-wotsc.v1",
 		"aplane.rotating-triple-xmss.v1",
-	)
-	sort.Strings(wantLibraryVisible)
+	}
 	if !reflect.DeepEqual(libraryVisible, wantLibraryVisible) {
 		t.Fatalf("library-visible compiled LogicSig inventory = %v, want %v", libraryVisible, wantLibraryVisible)
 	}

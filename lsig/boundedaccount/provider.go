@@ -53,8 +53,8 @@ type Provider struct {
 	cosignerComponent string
 }
 
-// NewProvider builds every shape. It fails if any cannot be built, because an
-// approved grammar must not contain a shape that errors on first use.
+// NewProvider builds every shape. It fails if any cannot be built, because the
+// grammar must not offer a shape that errors on first use.
 func NewProvider() (*Provider, error) {
 	provider := &Provider{params: creationParameters(), byShape: make(map[string]*shapeDefinition)}
 	for _, shape := range Shapes() {
@@ -285,21 +285,12 @@ func shapeFromMetadata(metadata *boundedmeta.Metadata) (Shape, error) {
 	return shape, nil
 }
 
-// GrammarFingerprint is the fingerprint enabling this type pins.
+// GrammarFingerprint identifies the whole grammar a review was made against.
 func (p *Provider) GrammarFingerprint() string { return p.grammar }
 
-// CompatibilityFingerprint is the type's approval fingerprint: the grammar. An
-// account's own provenance is its shape's fingerprint, from ResolveInstance.
+// CompatibilityFingerprint is the type-wide fingerprint: the grammar. An account's
+// own provenance is its shape's fingerprint, from ResolveInstance.
 func (p *Provider) CompatibilityFingerprint() string { return p.grammar }
-
-// GenerationRequiresCurrentApproval is true: a grammar can gain shapes, and
-// approving one version of it does not approve the next.
-func (p *Provider) GenerationRequiresCurrentApproval() bool { return true }
-
-// ApprovalSummary says what approving the current grammar allows.
-func (p *Provider) ApprovalSummary() string {
-	return fmt.Sprintf("Recipient allowlists held inline or as a Merkle list, for pay, axfer and asset opt-in, with spending-key or admin-key rekey and an optional cosigner (%d account shapes).", len(p.ordered))
-}
 
 // KeyType returns the key type identifier.
 func (p *Provider) KeyType() string { return KeyTypeV1 }
@@ -471,6 +462,4 @@ var (
 	_ lsigprovider.AlgodConfigurable     = (*Provider)(nil)
 	_ lsigprovider.InstanceResolver      = (*Provider)(nil)
 	_ lsigprovider.OpcodeProfileProvider = (*Provider)(nil)
-	_ lsigprovider.ApprovalGated         = (*Provider)(nil)
-	_ lsigprovider.ApprovalDescriber     = (*Provider)(nil)
 )

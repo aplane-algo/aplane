@@ -276,15 +276,6 @@ func checkGenerationAllowed(paths storepaths.Paths, keyType string) *Error {
 	if !canGenerate {
 		return unavailableKeyTypeError(paths, keyType)
 	}
-	needsApproval, err := keytypestate.NeedsApproval(paths, keyType)
-	if err != nil {
-		return &Error{Kind: ErrorInternal, Message: "failed to read key type state"}
-	}
-	if needsApproval {
-		return &Error{Kind: ErrorInvalidInput, Message: fmt.Sprintf(
-			"key type %s has changed and needs approval before it can create accounts: use Approve current grammar in the KeyType Library, or run apadmin keytype enable %s; existing accounts keep working",
-			keyType, keyType)}
-	}
 	return nil
 }
 
