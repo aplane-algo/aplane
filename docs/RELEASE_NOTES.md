@@ -20,6 +20,13 @@ before it was renamed `enroll`.
 - `aprekey` program validation now accepts Layer 3 that reads `txn FirstValid`, which also
   lets an existing custom timelock with an admin key complete a ceremony.
 
+## Bounded accounts can have a timelock
+
+- `aplane.bounded.v1` accepts `unlock_round`, alone or with a recipient list, and apadmin
+  has a Timelock preset. A spending-key rekey waits for the round. An admin rekey does
+  not, so it stays available for recovery.
+- Existing bounded accounts and their fingerprints are unchanged.
+
 ## Admin protocol 7.3 adds review values for the general bounded key type
 
 - `prepare_generate_result` adds `review_fingerprint` and `boundary_digest`. Admin

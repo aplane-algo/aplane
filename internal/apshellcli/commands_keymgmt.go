@@ -98,10 +98,20 @@ func (r *REPLState) generateFromBoundary(path string) (*apshellapp.GenerateKeyCo
 func renderBoundaryPreview(r *REPLState, preview *apshellapp.BoundaryPreview) {
 	r.println("Local summary. The signer has not confirmed this.")
 	r.printf("  Transfers:  %s\n", strings.Join(preview.Transfers, ", "))
-	r.printf("  Recipients: %d, encoding %s, list %s\n", preview.Recipients, preview.Encoding, preview.ListDigest[:12])
-	if preview.AdminKeyID != "" {
-		r.printf("  Rekey:      spending key plus contract admin %s\n", preview.AdminKeyID)
+	if preview.Recipients > 0 {
+		r.printf("  Recipients: %d, encoding %s, list %s\n", preview.Recipients, preview.Encoding, preview.ListDigest[:12])
 	} else {
+		r.println("  Recipients: any, once unlocked")
+	}
+	if preview.UnlockRound != "" {
+		r.printf("  Unlocks at: round %s, on the network this signer uses\n", preview.UnlockRound)
+	}
+	switch {
+	case preview.AdminKeyID != "":
+		r.printf("  Rekey:      spending key plus contract admin %s\n", preview.AdminKeyID)
+	case preview.UnlockRound != "":
+		r.println("  Rekey:      spending key alone, after the unlock round")
+	default:
 		r.println("  Rekey:      spending key alone, which can rekey out of this boundary")
 	}
 	switch {
@@ -126,6 +136,9 @@ func renderResolvedGeneration(r *REPLState, result *apshellapp.GenerateKeyComman
 	}
 	if encoding := result.Parameters[boundary.ParameterListEncoding]; encoding != "" {
 		r.printf("  List encoding:  %s\n", encoding)
+	}
+	if round := result.Parameters[boundary.ParameterUnlockRound]; round != "" {
+		r.printf("  Unlock round:   %s\n", round)
 	}
 }
 

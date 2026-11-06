@@ -22,6 +22,9 @@ const (
 	ParameterRekeyAuthority = "rekey_authority"
 	ParameterListEncoding   = "list_encoding"
 	ParameterRecipients     = "recipients"
+	// ParameterUnlockRound is the first round the account can spend. A round
+	// compiles the same way everywhere but means a different time on each network.
+	ParameterUnlockRound = "unlock_round"
 	// ParameterCosigner is the signer-side reference selector. It is resolved to
 	// a public key before an instance is selected.
 	ParameterCosigner = "cosigner"

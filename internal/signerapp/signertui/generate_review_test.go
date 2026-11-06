@@ -129,6 +129,79 @@ func TestTimelockPoliciesReviewHonestly(t *testing.T) {
 	}
 }
 
+func TestTimelockReviewStatesWhatTheLockDoesNot(t *testing.T) {
+	for _, test := range []struct {
+		name          string
+		policy, rekey string
+		gate          string
+		want          []string
+	}{
+		{"no list, spending key", boundedmeta.Layer3PolicyTimelock, boundedmeta.AdminAuthorizationSpend, boundedmeta.PolicyGateLayer3,
+			[]string{"any, once unlocked", "after the unlock round", "rekey out of this boundary"}},
+		{"no list, admin key", boundedmeta.Layer3PolicyTimelock, boundedmeta.AdminAuthorizationAdmin, boundedmeta.PolicyGateNone,
+			[]string{"any, once unlocked", "even before the unlock round"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			prepared := preparedAccount(test.policy, test.rekey, false, 0)
+			prepared.Bounded.AdminOperations[0].PolicyGate = test.gate
+			prepared.Parameters = map[string]string{unlockRoundParameter: "50000000"}
+			m := Model{viewState: ViewGenerateReview, width: 80, height: 23, standalone: true, forms: formsState{review: &prepared}}
+			view := strings.Join(strings.Fields(strings.ReplaceAll(m.renderGenerateReview(), "║", " ")), " ")
+			for _, want := range append(test.want, "round 50000000", "GENERATE") {
+				if !strings.Contains(view, want) {
+					t.Errorf("review lacks %q:\n%s", want, view)
+				}
+			}
+			if strings.Contains(view, "Panel lines") {
+				t.Errorf("review scrolls at 80x24:\n%s", view)
+			}
+		})
+	}
+}
+
+// Codex's reproduction: an imported template names its list beneficiaries. An
+// account with a list must never be described as able to pay anyone.
+func TestRestrictedAccountsNeverReadAsUnrestricted(t *testing.T) {
+	for _, policy := range []string{
+		boundedmeta.Layer3PolicyFixedAllowlist, boundedmeta.Layer3PolicyMerkleAllowlist,
+		boundedmeta.Layer3PolicyFixedAllowlistCustom, boundedmeta.Layer3PolicyMerkleAllowlistCustom,
+		boundedmeta.Layer3PolicyFixedAllowlistTimelock, boundedmeta.Layer3PolicyMerkleAllowlistTimelock,
+		"a_policy_added_later",
+	} {
+		t.Run(policy, func(t *testing.T) {
+			prepared := preparedAccount(policy, boundedmeta.AdminAuthorizationSpend, false, 0)
+			prepared.Parameters = map[string]string{"beneficiaries": "A,B", unlockRoundParameter: "50"}
+			m := Model{viewState: ViewGenerateReview, width: 80, height: 23, standalone: true, forms: formsState{review: &prepared}}
+			view := m.renderGenerateReview()
+			if strings.Contains(view, "any, once unlocked") {
+				t.Fatalf("a restricted account reads as unrestricted:\n%s", view)
+			}
+			if !strings.Contains(view, "restricted") || !strings.Contains(view, "see details") {
+				t.Fatalf("review does not point to the list:\n%s", view)
+			}
+			if strings.Contains(view, "Panel lines") {
+				t.Fatalf("review scrolls at 80x24:\n%s", view)
+			}
+			m.viewState = ViewGenerateReviewDetails
+			m.height = 400
+			if details := m.renderGenerateReviewDetails(); !strings.Contains(details, "beneficiaries") {
+				t.Fatalf("details do not show the list:\n%s", details)
+			}
+		})
+	}
+}
+
+func TestParameterNamesDoNotInventAList(t *testing.T) {
+	row, note := reviewRecipients(boundedmeta.Layer3PolicyCustom, []string{"A", "B"})
+	if !strings.Contains(row, "Custom policy") || strings.Contains(row, "inline") || note != "" {
+		t.Fatalf("row = %q, note = %q", row, note)
+	}
+	row, _ = reviewRecipients(boundedmeta.Layer3PolicyTimelock, nil)
+	if !strings.Contains(row, "any, once unlocked") {
+		t.Fatalf("row = %q", row)
+	}
+}
+
 func TestCustomPolicyIsLabelledAsCustom(t *testing.T) {
 	prepared := preparedAccount(boundedmeta.Layer3PolicyCustom, boundedmeta.AdminAuthorizationSpend, false, 0)
 	m := Model{viewState: ViewGenerateReview, width: 80, height: 23, standalone: true, forms: formsState{review: &prepared}}
@@ -366,7 +439,7 @@ func TestRekeySummaryStatesItsPolicyGate(t *testing.T) {
 func TestBoundaryPresetScreenFitsAt80x24(t *testing.T) {
 	m := Model{viewState: ViewBoundaryPreset, width: 80, height: 24}
 	view := m.renderBoundaryPreset()
-	for _, want := range []string{"Allowlist", "Locked Allowlist", "Corridor", "Load boundary file", "expert templates"} {
+	for _, want := range []string{"Allowlist", "Locked Allowlist", "Corridor", "Timelock", "Load boundary file"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("preset screen lacks %q:\n%s", want, view)
 		}
@@ -386,6 +459,7 @@ func TestPresetAsksOnlyForWhatItLeavesOpen(t *testing.T) {
 		{0, []string{"recipients"}},
 		{1, []string{"recipients", boundedmeta.AdminPublicKeyParameter}},
 		{2, []string{"recipients", boundedmeta.AdminPublicKeyParameter, boundary.ParameterCosigner}},
+		{3, []string{boundary.ParameterUnlockRound}},
 	} {
 		preset := boundary.Presets()[test.preset]
 		m := Model{forms: formsState{boundaryPreset: &preset}}

@@ -24,6 +24,7 @@ type BoundaryPreview struct {
 	Recipients    int
 	ListDigest    string
 	Encoding      string
+	UnlockRound   string
 	Rekey         string
 	AdminKeyID    string
 	Cosigner      string
@@ -36,19 +37,20 @@ func (a *App) PreviewBoundaryFile(path string) (*BoundaryPreview, error) {
 	if err != nil {
 		return nil, err
 	}
-	recipients := strings.Split(parameters[boundary.ParameterRecipients], ",")
-	encoding := parameters[boundary.ParameterListEncoding]
-	if encoding == "" {
-		encoding = boundary.EncodingAuto
-	}
 	preview := &BoundaryPreview{
-		Parameters: parameters,
-		Transfers:  strings.Split(parameters[boundary.ParameterSpendEffects], ","),
-		Recipients: len(recipients),
-		ListDigest: boundary.RecipientListDigest(parameters[boundary.ParameterRecipients]),
-		Encoding:   encoding,
-		Rekey:      parameters[boundary.ParameterRekeyAuthority],
-		Cosigner:   parameters[boundary.ParameterCosigner],
+		Parameters:  parameters,
+		Transfers:   strings.Split(parameters[boundary.ParameterSpendEffects], ","),
+		UnlockRound: parameters[boundary.ParameterUnlockRound],
+		Rekey:       parameters[boundary.ParameterRekeyAuthority],
+		Cosigner:    parameters[boundary.ParameterCosigner],
+	}
+	if list := parameters[boundary.ParameterRecipients]; list != "" {
+		preview.Recipients = len(strings.Split(list, ","))
+		preview.ListDigest = boundary.RecipientListDigest(list)
+		preview.Encoding = parameters[boundary.ParameterListEncoding]
+		if preview.Encoding == "" {
+			preview.Encoding = boundary.EncodingAuto
+		}
 	}
 	if preview.AdminKeyID, err = boundary.AdminKeyID(parameters); err != nil {
 		return nil, fmt.Errorf("identify contract admin key: %w", err)

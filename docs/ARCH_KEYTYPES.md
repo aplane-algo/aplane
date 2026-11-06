@@ -1464,9 +1464,13 @@ presets, and receipt, which clients use; `lsig/boundedaccount` holds the shapes 
 provider. Its catalog entry is `AvailabilityDefaultEnabled`, so every signer can create
 these accounts with no setup, and it does not appear in the KeyType Library.
 
-A shape is a spend subset, a list encoding, and a rekey arrangement: 7 subsets x 2
-encodings x 3 arrangements (spending key, admin key, admin key plus cosigner), which is
-42 shapes. `Shapes()` is the single enumeration. Each shape is an ordinary schema-v2
+A shape is a spend subset, a recipient rule, a rekey arrangement, and optionally a
+timelock. Allowlists are 7 subsets x 2 encodings x 3 arrangements (spending key, admin
+key, admin key plus cosigner), which is 42 shapes. Timelocks add three policies, with
+an inline list, a Merkle list, or no list. Each has 7 subsets for each admin arrangement
+and 4 for spending-key rekey, because a gated rekey is judged as a payment and needs
+`pay`. That is 54 more, 96 in all. `Shapes()` is the single enumeration, and new shapes
+go after the existing ones. Each shape is an ordinary schema-v2
 template spec with no author TEAL, so it passes every check an imported template passes.
 The provider holds one composer per shape and no per-account state.
 
@@ -1476,6 +1480,7 @@ The provider holds one composer per shape and no per-account state.
 | Requests | `selectShape` is the security gate, for file and direct requests alike. The client sends public values, never a path or the YAML, and a cosigner name stays a name for the signer to resolve. |
 | Stored parameters | Canonical values include the selectors `spend_effects`, `rekey_authority`, and `list_encoding`, with `auto` resolved. The generator resolves stored values a second time, so they must select the same shape. Only a shape's declared parameters reach its composer, because those enter the program binding. |
 | Encoding | `auto` is inline through 10 recipients and Merkle from 11. Explicit inline stops at 30. The list holds at most 65,536 distinct nonzero addresses. |
+| Timelock | `unlock_round` must be positive. Recipients are optional only with one, and `encoding` needs a list. A spending-key rekey is gated by Layer 3, so it waits for the round too, or the lock could be left at any time. An admin rekey is not gated: it is the recovery path. A round means a different time on each network, and it does not bind the program to one. |
 | Fee and arguments | The compiled ceiling is 10,000 microAlgos, and there are no runtime arguments. Base is Falcon-1024. |
 | Resources | `BuildBoundedAuthorizationMetadata` solves the spend and rekey paths under the current consensus profile and refuses one that cannot run within the ceiling, before the key is saved. This is a backstop: signing still checks the actual network. |
 | Mnemonics | No mnemonic import. The account recovers from its encrypted credential or a backup. |

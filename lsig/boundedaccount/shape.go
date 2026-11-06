@@ -8,6 +8,7 @@ package boundedaccount
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/boundary"
@@ -25,6 +26,7 @@ const (
 	ParameterRekeyAuthority = boundary.ParameterRekeyAuthority
 	ParameterListEncoding   = boundary.ParameterListEncoding
 	ParameterRecipients     = boundary.ParameterRecipients
+	ParameterUnlockRound    = boundary.ParameterUnlockRound
 	ParameterCosigner       = boundary.ParameterCosigner
 
 	EncodingAuto   = boundary.EncodingAuto
@@ -56,18 +58,39 @@ var spendEffectOrder = []txeffects.SpendEffect{
 // Shape is one account definition the grammar can select.
 type Shape struct {
 	// Spend is a non-empty subset in canonical order.
-	Spend    []txeffects.SpendEffect
+	Spend []txeffects.SpendEffect
+	// Encoding is empty when the shape has no recipient list.
 	Encoding string
 	Rekey    string
 	Cosigner bool
+	// Timelock requires an unlock round before anything can be spent.
+	Timelock bool
 }
 
 // Policy names the shape's framework Layer 3 policy.
 func (s Shape) Policy() string {
-	if s.Encoding == EncodingMerkle {
+	switch {
+	case s.Timelock && s.Encoding == EncodingMerkle:
+		return composeddsa.Layer3PolicyMerkleAllowlistTimelock
+	case s.Timelock && s.Encoding == EncodingInline:
+		return composeddsa.Layer3PolicyFixedAllowlistTimelock
+	case s.Timelock:
+		return composeddsa.Layer3PolicyTimelock
+	case s.Encoding == EncodingMerkle:
 		return composeddsa.Layer3PolicyMerkleAllowlist
+	default:
+		return composeddsa.Layer3PolicyFixedAllowlist
 	}
-	return composeddsa.Layer3PolicyFixedAllowlist
+}
+
+// PolicyGate says whether Layer 3 also constrains rekey. A spending-key rekey
+// waits for the unlock round like a spend, or a timelock could be walked out of at
+// any time. An admin rekey is the recovery path, so it stays available.
+func (s Shape) PolicyGate() string {
+	if s.Timelock && s.Rekey == RekeySpendingKey {
+		return boundedmeta.PolicyGateLayer3
+	}
+	return boundedmeta.PolicyGateNone
 }
 
 // Descriptor labels the shape in its fingerprints, so it names everything that
@@ -82,12 +105,15 @@ func (s Shape) Descriptor() string {
 		cosigner = "required"
 	}
 	return fmt.Sprintf("spend=%s;policy=%s;rekey=%s/%s;cosigner=%s",
-		strings.Join(spend, ","), s.Policy(), s.Rekey, boundedmeta.PolicyGateNone, cosigner)
+		strings.Join(spend, ","), s.Policy(), s.Rekey, s.PolicyGate(), cosigner)
 }
 
-// Shapes enumerates every shape the grammar can select, in a stable order.
-// A cosigner requires admin-key rekey, because rekey is mandatory in this grammar
-// and bounded1 forbids spending-key rekey with a cosigner.
+// Shapes enumerates every shape the grammar can select, in a stable order. Allowlist
+// shapes come first, so this order extends rather than reshuffles.
+//
+// A cosigner requires admin-key rekey, because rekey is mandatory in this grammar and
+// bounded1 forbids spending-key rekey with a cosigner. A spending-key rekey on a
+// timelock is gated by Layer 3, which judges it as a payment, so it needs pay.
 func Shapes() []Shape {
 	type family struct {
 		rekey    string
@@ -95,7 +121,7 @@ func Shapes() []Shape {
 	}
 	families := []family{{RekeySpendingKey, false}, {RekeyAdminKey, false}, {RekeyAdminKey, true}}
 	var shapes []Shape
-	for _, encoding := range []string{EncodingInline, EncodingMerkle} {
+	forEachShape := func(encoding string, timelock bool) {
 		for _, f := range families {
 			for mask := 1; mask < 1<<len(spendEffectOrder); mask++ {
 				var spend []txeffects.SpendEffect
@@ -104,9 +130,18 @@ func Shapes() []Shape {
 						spend = append(spend, effect)
 					}
 				}
-				shapes = append(shapes, Shape{Spend: spend, Encoding: encoding, Rekey: f.rekey, Cosigner: f.cosigner})
+				if timelock && f.rekey == RekeySpendingKey && !slices.Contains(spend, txeffects.SpendEffectPay) {
+					continue
+				}
+				shapes = append(shapes, Shape{Spend: spend, Encoding: encoding, Rekey: f.rekey, Cosigner: f.cosigner, Timelock: timelock})
 			}
 		}
+	}
+	for _, encoding := range []string{EncodingInline, EncodingMerkle} {
+		forEachShape(encoding, false)
+	}
+	for _, encoding := range []string{"", EncodingInline, EncodingMerkle} {
+		forEachShape(encoding, true)
 	}
 	return shapes
 }

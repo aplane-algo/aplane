@@ -31,6 +31,7 @@ import (
 	"io/fs"
 	"log"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -591,18 +592,37 @@ func validateUniqueYAMLKeys(node *yaml.Node) error {
 // DecodeOption tightens DecodeStrictYAML.
 type DecodeOption func(*yaml.Node) error
 
-// RequireStringScalars rejects any scalar that YAML did not type as a string.
-// yaml.v3 would otherwise quietly turn 123 or true into a string field, and turn
-// null into an absent one.
-func RequireStringScalars(node *yaml.Node) error {
+// RequireStringScalars rejects any scalar that YAML did not type as a string,
+// except that the named mapping fields may hold an integer. yaml.v3 would otherwise
+// quietly turn 123 or true into a string field, and turn null into an absent one.
+func RequireStringScalars(integerFields ...string) DecodeOption {
+	return func(node *yaml.Node) error {
+		return requireStringScalars(node, integerFields)
+	}
+}
+
+func requireStringScalars(node *yaml.Node, integerFields []string) error {
 	switch node.Kind {
 	case yaml.ScalarNode:
 		if node.Tag != "!!str" {
 			return fmt.Errorf("value %q on line %d must be a string", node.Value, node.Line)
 		}
-	case yaml.MappingNode, yaml.SequenceNode:
+	case yaml.SequenceNode:
 		for _, child := range node.Content {
-			if err := RequireStringScalars(child); err != nil {
+			if err := requireStringScalars(child, integerFields); err != nil {
+				return err
+			}
+		}
+	case yaml.MappingNode:
+		for i := 0; i < len(node.Content); i += 2 {
+			key, value := node.Content[i], node.Content[i+1]
+			if value.Kind == yaml.ScalarNode && value.Tag == "!!int" && slices.Contains(integerFields, key.Value) {
+				continue
+			}
+			if err := requireStringScalars(key, integerFields); err != nil {
+				return err
+			}
+			if err := requireStringScalars(value, integerFields); err != nil {
 				return err
 			}
 		}
