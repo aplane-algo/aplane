@@ -412,16 +412,16 @@ rules live in [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md). From a data-model pers
   `POST /sign/bounded-admin` rather than ordinary runtime args or cosigner assembly.
 - The spending key remains signer-managed (`.key`). The Falcon contract-admin
   private material is **not** a signer-managed credential: it lives in a
-  standalone encrypted `.adm` bundle (`aplane.witness-key-bundle.v1`) owned by
+  standalone encrypted `.cos` bundle (`aplane.witness-key-bundle.v1`) owned by
   `aprekey` / `internal/witness/artifact`, optionally with a public
-  `.adm.json` sidecar.
+  `.cos.json` sidecar.
 - Separated ceremonies use short-lived non-secret files
   `.apbounded-admin-request` / `.apbounded-admin-signature` (schemas
   `aplane.bounded-admin-request.v2` / `aplane.bounded-admin-signature.v1`)
   owned by `internal/boundedadmin/protocol` and
   `internal/apboundedadminapp`.
 - Signer and `apstore` must not import, decrypt, back up, or restore private
-  `.adm` artifacts as managed keys.
+  `.cos` artifacts as managed keys.
 
 ### Key Types And Templates
 
@@ -1090,7 +1090,7 @@ through `genstore.Mint`; no live signer store is being mutated.
 | Term keys | secret | unsealed from `store-root.enc` at unlock; cached only while unlocked; zeroed on lock |
 | `.key` account private material | secret | encrypted at rest; decrypted on demand |
 | `.cos` cosigner witness material | secret | encrypted at rest; usable only in the cosigner component-signing domain |
-| External `.adm` contract-admin private material | secret | standalone `aplane.witness-key-bundle.v1`; never signer-managed; not backed up by `apstore` |
+| External `.cos` contract-admin private material | secret | standalone `aplane.witness-key-bundle.v1`; never signer-managed; not backed up by `apstore` |
 | Bounded ceremony request/signature files | short-lived signing authority | non-secret but bind network/partial; mode `0600`, no overwrite |
 | Installed `.template` files | sensitive policy material | encrypted in the product store |
 | `default.json`, `policies/*.json` | safety-critical | authenticated by HMAC sidecars; `aplane.policy.v1` documents whose `role` must match the node |
@@ -1152,7 +1152,7 @@ These decisions are part of the current data model and contract surface:
 | Cosigner routing is operation-scoped runtime state. | Clients query authenticated `/keys` for each guarded or bounded-cosigner operation; no cosigner-key inventory is persisted in `endpoints.yaml`. |
 | `cosigners/<name>.json` records are public generation references. | They help the TUI select a cosigner public key but do not prove endpoint ownership or signer custody. |
 | Guarded account key files store the resolved embedded public key. | Endpoint alias, reference name, and route selection are client/runtime concerns, not sign-time authority for the key. |
-| External `.adm` bundles are not signer-managed credentials. | Contract-admin private material stays in standalone custody (`aprekey`); signer and `apstore` never treat `.adm` as `.key`/`.cos`. |
+| External `.cos` bundles are not signer-managed credentials. | Contract-admin private material stays in standalone custody (`aprekey`); signer and `apstore` require store term envelopes and reject standalone `.cos` bundles. |
 | Inventory `signing_flow` labels are frozen routing tokens. | Clients implement empty, `cosigner1`, `bounded1`, `bounded-cosigner1`, and `rotating1` and fail closed on unknown labels. |
 | Live `/sign` responds with `GroupSignResponse`. | There is no separate signerapi `SignResponse` DTO. |
 | Recovery material is released only by explicit local native-key export. | `export_key` requires local IPC, authorization, an unlocked healthy store and fresh passphrase verification; only native Ed25519/Falcon are eligible. Generate results still omit mnemonics. |
@@ -1288,7 +1288,7 @@ and [ARCH_ADMIN.md](ARCH_ADMIN.md#admin-protocol-contract).
 | Bounded-cosigner account key | signing/assembly authority | `.key` category `dsa_lsig`, bounded metadata with `cosigner` (for example `aplane.corridor.v1`) | local base key, bytecode, bounded metadata, embedded cosigner public key | `lsig/composeddsa`, `internal/boundedmeta`, `internal/signerapp/signing` | `/sign` rejects cosigner-gated spend; inventory uses `signing_flow: bounded-cosigner1`; bounded component and assembly endpoints consume stored metadata. |
 | Bounded account key metadata | signing authority metadata | key payload `bounded_authorization` at `signing_metadata_version: 2` | inventory `bounded_authorization` / path sizing | `internal/boundedmeta`, `lsig/composeddsa`, `internal/keys`, `internal/signerapp/signing` | Required for bounded1 DSA keys; ordinary `/sign` rejects admin-key operations that need `/sign/bounded-admin`. |
 | Cosigner witness key | component-sign authority | `.cos` category `witness`, key type `aplane.witness-*` | raw cosigner-role witness key | `internal/keygen`, `internal/signing`, `internal/signerapp/signing` | Selected by Witness Key ID; `/sign` rejects; cosigner-role `/sign/component` only; not a spending account. |
-| External contract-admin witness bundle | secret standalone custody | `<WITNESS_KEY_ID>.adm` schema `aplane.witness-key-bundle.v1` | `aprekey` generate/inspect/verify/sign | `internal/witness/artifact`, `cmd/aprekey` | Never a signer-managed `.key`/`.cos`; signer/`apstore` must not import, decrypt, back up, or restore private material. |
+| External contract-admin witness bundle | secret standalone custody | `<WITNESS_KEY_ID>.cos` schema `aplane.witness-key-bundle.v1` | `aprekey` generate/inspect/verify/sign | `internal/witness/artifact`, `cmd/aprekey` | Shares the `.cos` suffix, but its standalone schema is not a store term envelope; signer/`apstore` cannot load or back up this private material. |
 | Witness Key ID | public selector | 52-character uppercase base32 SHA-512/256 of canonical length-prefixed domain, key type, and public key bytes | cosigner key row `address`, public reference `witness_key_id`, and role-specific `component_key` fields | `internal/witness` | Txid-shaped but not a valid Algorand address; rejected where an Algorand address is required. |
 | Cosigner public metadata sidecar | public metadata | `keys/<witness_key_id>.cos.json` | `apadmin cosigner export` source | `internal/keys`, `internal/cosigner/cosignerrefs` | Witness Key ID/key type/public key consistency verified; no private material. |
 | Key creation parameters | provenance/generation input | key payload `parameters` | `/keys` `parameters`, key details | `internal/keys`, `internal/keymgmt` | Canonical payload parser rejects duplicate object members, unknown fields, and noncanonical aliases. |
@@ -1436,7 +1436,7 @@ and [ARCH_ADMIN.md](ARCH_ADMIN.md#admin-protocol-contract).
 | Component signature set | request-scoped wire data | `/sign/component` response | per-target signatures by target index | `internal/signerapp/signing`, `pkg/signerapi` | Each signature is bound to one target TxID and role. |
 | Guarded assembly target | request-scoped wire data | `/sign/assemble` request targets | LogicSig args packing plan | `internal/signerapp/signing` | User and cosigner signatures are verified before packed bytes are returned. |
 | Guarded send orchestration | long-lived client workflow | signer inventory plus endpoint registry plus requests | `/plan`, user component call (signer-domain gated), optional non-guarded `/sign`, cosigner call, assembly, then client algod submit or simulate | `internal/engine/guarded`, `internal/engine`, `internal/apshellapp` | Client holds no key material but does hold the final executable group; endpoint routing is not trust; guarded targets are classified by effective signer and may be direct senders or AuthAddr authorizers; mixed groups sign non-guarded originals over the same canonical bytes. |
-| Bounded admin ceremony orchestration | long-lived offline/online workflow | `/sign/bounded-admin` partial plus external `.adm` custody | request/signature files and final submit | `cmd/aprekey`, `internal/apboundedadminapp`, `internal/boundedadmin`, `internal/engine` | Online rekey/unrekey or prepare/sign/complete; signer never holds contract-admin private material. |
+| Bounded admin ceremony orchestration | long-lived offline/online workflow | `/sign/bounded-admin` partial plus external `.cos` custody | request/signature files and final submit | `cmd/aprekey`, `internal/apboundedadminapp`, `internal/boundedadmin`, `internal/engine` | Online rekey/unrekey or prepare/sign/complete; signer never holds contract-admin private material. |
 
 ### Plugin, JavaScript, And MCP Models
 

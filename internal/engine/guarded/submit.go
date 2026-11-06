@@ -775,7 +775,7 @@ func cosignerComponentSelector(componentKeyType string, cosignerPublicKey string
 func cosignerComponentLabel(componentKeyType, cosignerPublicKey string) string {
 	selector, err := cosignerComponentSelector(componentKeyType, cosignerPublicKey)
 	if err == nil {
-		return fmt.Sprintf("Witness Key ID %s (%s)", selector, componentKeyType)
+		return fmt.Sprintf("Cosigner Key ID %s (%s)", selector, componentKeyType)
 	}
 	return fmt.Sprintf("cosigner public key %s (%s)", shortCosignerPublicKeyHex(cosignerPublicKey), componentKeyType)
 }
@@ -883,9 +883,9 @@ func (s *Signer) requestCosignerComponentSignatures(ctx context.Context, groupBy
 func (s *Signer) requestOneCosignerComponentSignatureSet(ctx context.Context, endpoint *resolvedCosignerEndpoint, groupBytesHex []string, originalCount int, cosignerKey cosignerRequestKey, indices []int, signatures map[int]string, appCallInfo []*signerapi.AppCallInfo) (string, error) {
 	componentSelector, err := cosignerComponentSelector(cosignerKey.ComponentKeyType, cosignerKey.PublicKey)
 	if err != nil {
-		return "", fmt.Errorf("failed to derive Witness Key ID for cosigner public key %s: %w", shortCosignerPublicKeyHex(cosignerKey.PublicKey), err)
+		return "", fmt.Errorf("failed to derive Cosigner Key ID for cosigner public key %s: %w", shortCosignerPublicKeyHex(cosignerKey.PublicKey), err)
 	}
-	componentLabel := fmt.Sprintf("Witness Key ID %s (%s)", componentSelector, cosignerKey.ComponentKeyType)
+	componentLabel := fmt.Sprintf("Cosigner Key ID %s (%s)", componentSelector, cosignerKey.ComponentKeyType)
 
 	resp, err := endpoint.client.RequestComponentsWithContext(ctx, componentRequestForIndices(groupBytesHex, originalCount, indices, signerapi.ComponentTargetKindCosigner, componentSelector, appCallInfo))
 	if err != nil {

@@ -570,7 +570,7 @@ func ApplyCredentialEntry(
 		entry.Selector,
 		entry.KeyJSON,
 	); err != nil {
-		return fmt.Errorf("write restored witness public metadata: %w", err)
+		return fmt.Errorf("write restored cosigner public metadata: %w", err)
 	}
 	return nil
 }

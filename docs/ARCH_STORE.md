@@ -777,8 +777,8 @@ This separation is deliberate:
 | LogicSig key file | selected generation `keys/<address>.key` | Final LogicSig bytecode, derivation metadata, signing metadata, and any private DSA key material. |
 | Cosigner witness credential | selected generation `keys/<witness_key_id>.cos` | Witness key in cosigner custody; component-signing authority for cosigner-role `/sign/component`, never an Algorand spending account. |
 | Witness public sidecar | selected generation `keys/<witness_key_id>.cos.json` | Canonical public witness reference for a local cosigner key. |
-| External contract-admin witness | Operator-controlled `<witness_key_id>.adm`, outside signer data | The same Falcon witness form in standalone custody; owned only by `aprekey`, never by signer or `apstore`. |
-| Contract-admin public reference | Operator-controlled `<witness_key_id>.adm.json` | Disposable canonical public witness reference used during bounded account generation. |
+| External contract-admin witness | Operator-controlled `<witness_key_id>.cos`, outside signer data | The same Falcon witness form in standalone custody; owned only by `aprekey`, never by signer or `apstore`. |
+| Contract-admin public reference | Operator-controlled `<witness_key_id>.cos.json` | Disposable canonical public witness reference used during bounded account generation. |
 | Node role | `<APSIGNER_DATA>/node.yaml` | Single-purpose role for the signer data root. |
 | Node role integrity sidecar | selected generation `node.yaml.hmac` | Product-store HMAC over the exact root `node.yaml` bytes. |
 | Product runtime config | `identities/default/config.yaml` | Product runtime settings such as approval and lock timeouts; it does not carry key-class role. Unknown fields are rejected. |
@@ -804,9 +804,16 @@ legacy sidecar only when the `.cos.json` file is absent; malformed canonical
 metadata never falls back to a legacy copy. New writes and restores use
 `.cos.json` without renaming existing generation members.
 
+Spend and admin cosigners share `.cos` and `.cos.json` filenames. Store custody
+requires a store term envelope; standalone admin custody requires the
+passphrase-encrypted `aplane.witness-key-bundle.v1` format. A `.cos` filename is
+only a scan candidate: the store reader still rejects standalone bundles.
+Conversely, `aprekey` rejects store term envelopes. Neither reader converts a
+credential merely because it was moved or renamed.
+
 The durable and wire contracts use `component_key`, `component_selector`, and
-component signing terminology. Human-facing UI may label the same selector as a
-Cosigner Key or Witness Key ID; that label does not change the storage or HTTP
+component signing terminology. Human-facing UI labels the same selector as a
+Cosigner Key ID; that label does not change the storage or HTTP
 field names.
 
 `node.yaml` is plaintext so the process can report its role during early
@@ -1164,7 +1171,7 @@ key is rejected during reload rather than published as a signable key.
 | DSA LogicSig key valid | Payload has private DSA material, stored LogicSig bytecode, a valid derivation record, `signing_metadata_version`, `base_key_type`, and valid signing metadata. | Yes on signer nodes when the base signing provider is registered. | Restores from stored metadata; composed template is not required. |
 | Generic LogicSig key valid | Payload has stored LogicSig bytecode, a valid derivation record, `signing_metadata_version`, and stored signing args. | Yes on signer nodes. | Restores from stored metadata; template is not required. |
 | Cosigner key valid | Payload category/type is a cosigner key and Witness Key ID is canonical. | Only through cosigner-role component signing on cosigner nodes; normal `/sign` and spending paths reject it. | Restores as a cosigner key on cosigner nodes, regenerating the public sidecar; never as a spending account. |
-| Bounded account key valid | DSA LogicSig key whose bytecode embeds an external contract-admin public key and whose v2 metadata derives the matching Contract Admin Key ID and program binding. | Pure spends use signer-held authority; admin-key operations additionally require external completion through `aprekey`. | Restores from durable bounded metadata. The external `.adm` artifact is never part of signer backup or restore. |
+| Bounded account key valid | DSA LogicSig key whose bytecode embeds an external contract-admin public key and whose v2 metadata derives the matching Contract Admin Key ID and program binding. | Pure spends use signer-held authority; admin-key operations additionally require external completion through `aprekey`. | Restores from durable bounded metadata. The external `.cos` artifact is never part of signer backup or restore. |
 | Guarded account key valid | DSA LogicSig key whose bytecode embeds the cosigner public key. | Only on signer nodes through guarded orchestration: user component signature, cosigner component signature, local assembly. | Restores from stored bytecode and metadata. |
 | LogicSig derivation invalid | Payload has bytecode but an unknown or inconsistent derivation record; for example, a manual-counter key omits `salt_counter`, or an `algod_v13_auto_salt` key includes one or stores pre-v13 bytecode. | No; scan/verify/restore reject. | Restore rejects. |
 | LogicSig on-curve address | Stored LogicSig bytecode derives an on-curve address. | No; scan/verify/restore reject. | Restore rejects. |
@@ -1423,8 +1430,9 @@ CanonicalName(payload) = Selector(payload) || ExtensionForCategory(payload.categ
 After decrypting a `.key` or `.cos` candidate, the scanner derives the payload
 selector and category. It accepts the file only when the basename equals the
 canonical name. A witness payload in `<id>.key`, an account payload in
-`<address>.cos`, or any selector mismatch is skipped and reported. External
-`.adm` (or legacy `.wit`) artifacts and all public reference sidecars are never
+`<address>.cos`, or any selector mismatch is skipped and reported. Standalone
+`.cos` bundles are rejected by the store-encryption reader before payload loading;
+legacy `.wit`/`.adm` files and all public reference sidecars are never
 private-credential candidates. Writers and restore derive
 the same canonical destination. Restore rejects a contradictory managed class
 for the same selector even with `replace_existing`; an exact canonical destination
@@ -1850,7 +1858,8 @@ configuration.
 Export:
 
 1. discovers canonical managed credentials from active `.key` and `.cos`
-   files; external `.adm`, contract-admin, and deleted artifacts are excluded
+   files and requires valid store encryption; standalone passphrase-encrypted
+   `.cos` bundles cannot be exported as managed authority, and deleted artifacts are excluded
 2. opens each credential with its object-bound destination term envelope
 3. parses and validates the complete credential payload, then canonicalizes it
 4. re-encrypts the canonical payload with standalone envelope version 2 under

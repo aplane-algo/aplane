@@ -179,7 +179,7 @@ holds the public key only, and the result screen shows the address to give
 clients. In the primary signer's KeyType Library, enable
 `aplane.falcon1024-cosigner1024.v1`. Start **Generate account**, select that
 key type, open the **Cosigner** field, and choose **Use key file...** (or
-**Paste public JSON...**). Compare the full Witness Key ID before importing,
+**Paste public JSON...**). Compare the full Cosigner Key ID before importing,
 then finish generating the account.
 
 In apshell, run `endpoints add <cosigner-url>`, for example

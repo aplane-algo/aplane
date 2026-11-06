@@ -44,7 +44,7 @@ func TestAdminRekeyTargetIneligible(t *testing.T) {
 		{"guarded lsig", keys.CategoryDSALsig, "aplane.falcon1024-cosigner1024.v1", false, "guarded"},
 		{"composed template", keys.CategoryDSALsig, composedTestKeyType, false, "not one of the plain"},
 		{"generic lsig", keys.CategoryGenericLsig, "aplane.htlc.v1", false, "generic"},
-		{"witness", keys.CategoryWitness, "aplane.witness-falcon1024.v1", false, "witness"},
+		{"witness", keys.CategoryWitness, "aplane.witness-falcon1024.v1", false, "cosigner"},
 		{"rotating", keys.CategoryRotatingLsig, "aplane.rotating-triple-wotsc.v1", false, "rotating"},
 		{"unknown", "something", "x", false, "unsupported"},
 	}

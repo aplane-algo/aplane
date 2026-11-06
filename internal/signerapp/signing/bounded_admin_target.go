@@ -85,7 +85,7 @@ func adminRekeyTargetIneligible(category, keyType string, bounded bool) string {
 	case keys.CategoryGenericLsig:
 		return "a generic LogicSig with no signing credential"
 	case keys.CategoryWitness:
-		return "a witness credential, not an account"
+		return "a cosigner credential, not an account"
 	case keys.CategoryRotatingLsig:
 		return "a rotating account"
 	}

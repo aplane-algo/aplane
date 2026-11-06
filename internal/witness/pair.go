@@ -36,7 +36,7 @@ func ValidatePair(keyType string, publicKey, privateKey []byte) error {
 	validator := pairValidators[keyType]
 	pairMu.RUnlock()
 	if validator == nil {
-		return fmt.Errorf("no pair validator registered for witness key type %s", keyType)
+		return fmt.Errorf("no pair validator registered for cosigner key type %s", keyType)
 	}
 	return validator(publicKey, privateKey)
 }

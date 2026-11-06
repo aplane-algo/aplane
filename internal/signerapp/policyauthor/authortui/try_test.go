@@ -146,7 +146,7 @@ func TestTryCosignerDocumentAndBadCasesFile(t *testing.T) {
 	if m.try.result == nil || !strings.Contains(m.try.result.Summary, "this cosigner policy document rejects the supplied transaction") {
 		t.Fatalf("cosigner try: %+v err %q", m.try.result, m.try.err)
 	}
-	if !strings.Contains(view(m), "the cosigner holds the witness key") {
+	if !strings.Contains(view(m), "the cosigner holds the cosigner key") {
 		t.Fatalf("view lacks the cosigner assumption:\n%s", view(m))
 	}
 }

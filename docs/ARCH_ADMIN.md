@@ -935,7 +935,8 @@ and import archive (`*.tar.gz`, `*.tgz`). The browser lists one directory at a
 time, directories first, and starts in the directory the field already names,
 else the newest `~/policy-export-*` for a policy file, `~/.ssh` for a client
 key, or the home directory. It lists only the files the field expects
-(`*.json`, `*.pub`, `*.adm.json`, and legacy `*.wit.json`; `a` lists all), hides dot entries until `.`,
+(`*.json`, `*.pub`, `*.cos.json`, and legacy `*.wit.json`/`*.adm.json`; `a` lists all),
+hides dot entries until `.`,
 and fills the field with an absolute path; it reads no file contents, so the
 field's own checks still decide. A symbolic link to a file is listed but
 cannot be chosen, since every loader behind these fields takes regular files

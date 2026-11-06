@@ -517,8 +517,8 @@ func applyCosignerReferenceParams(ir *productruntime.Runtime, infos []signerapi.
 		}
 		cosignerParam := signerapi.CreationParamInfo{
 			Name:        cosignerrefs.ParamCosignerName,
-			Label:       "Witness Key ID",
-			Description: "Imported Witness Key ID to embed in the guarded account",
+			Label:       "Cosigner Key ID",
+			Description: "Imported Cosigner Key ID to embed in the guarded account",
 			Type:        "select",
 			Required:    true,
 			Options:     append([]string(nil), componentIDs...),

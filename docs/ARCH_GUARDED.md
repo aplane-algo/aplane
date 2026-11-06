@@ -59,14 +59,15 @@ transaction bytes.
 
 ## Roles And Boundaries
 
-Bounded contract administration is not a cosigner role. A bounded profile may
-independently declare a cosigner spend gate and an external contract-admin rekey
-authority. The former uses the `bounded-cosigner1` online flow and a
-signer-custodied `.cos` witness; the latter uses `/sign/bounded-admin`,
-`aprekey`, and a separately held `.adm` artifact without contacting a cosigner.
-Both authorities use the witness key form, but their custody and signature
-domains are disjoint. An individual keypair should never be enrolled in both
-roles.
+Cosigner keys have distinct spend and admin roles. A bounded profile may
+independently declare a spend cosigner gate and an admin cosigner for rekeying.
+The former uses the `bounded-cosigner1` online flow and a store-encrypted `.cos`
+credential; the latter uses `/sign/bounded-admin`, `aprekey`, and a standalone
+passphrase-encrypted `.cos` file without contacting the online cosigner node.
+Both use the same witness key form and public reference schema, but their custody
+and signature domains are disjoint. One keypair must not serve both roles.
+The protocol's `cosigner` node role and component flow still mean online
+cosigning, not admin-cosigner custody.
 
 Every signer data root has one root `node.yaml` role:
 
@@ -93,22 +94,24 @@ Primary ownership:
 
 ## Key Model
 
-Cosigner uses a role-neutral witness key as its auxiliary signing authority. The
-same witness key form may be held externally for a bounded contract-admin
-role, but an individual keypair should serve only one role for its entire life.
+Cosigner is the user-facing name for the role-neutral witness key form.
+The same form serves spend or admin cosigning, with one keypair assigned to
+one role for its entire life. The UI's Cosigner Key ID is the existing Witness
+Key ID; wire names, key-type identifiers, and identity derivation are unchanged.
 
 ### Cosigner Keys And Witness Key IDs
 
-Cosigner keys are raw witness keys held by cosigner nodes. They are not
-Algorand accounts and cannot spend funds directly.
+Online cosigner nodes hold raw witness keys. These are not Algorand accounts
+and cannot spend funds directly.
 
 Their canonical private record is
 the selected generation's `keys/<WitnessKeyID>.cos`. The `.cos` container uses the
 product store's current term key, bound to the credential's Witness Key ID, and a
 canonical `category: witness` payload. It is
-distinct from the independently encrypted external `.adm` artifact opened only
-by `aprekey`; signer scanning never opens admin artifacts or public reference
-sidecars as private state.
+distinct from the independently encrypted external `.cos` artifact opened only
+by `aprekey`. Both use `.cos`, so the suffix alone does not prove custody.
+Signer readers accept only store term envelopes; `aprekey` accepts only
+standalone bundles. Public sidecars never enter private-key decryption.
 
 Current cosigner key types:
 
@@ -901,7 +904,7 @@ Generation resolves three distinct Falcon keypairs:
 1. the signer-held spending key;
 2. the cosigner-node `.cos` witness selected by `cosigner` or supplied as
    `cosigner_public_key`; and
-3. the offline `.adm` contract-admin witness represented by
+3. the offline `.cos` contract-admin witness represented by
    `bounded_admin_public_key`.
 
 Visible collisions reject. The generated `.key` stores the resolved public

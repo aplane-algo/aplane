@@ -238,7 +238,7 @@ func tryAssumptions(role noderole.Role, t TryTxn, built types.Transaction, netwo
 	}
 	if role == noderole.RoleCosigner {
 		return append(out,
-			"the cosigner holds the witness key",
+			"the cosigner holds the cosigner key",
 			"this tests the document, not which document the cosigner applies or whether its deployed copy matches",
 		)
 	}

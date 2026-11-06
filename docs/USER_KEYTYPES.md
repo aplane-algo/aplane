@@ -29,21 +29,25 @@ it is not a dedicated compiled policy.
 
 | Auxiliary authority type | Meaning |
 |---|---|
-| **Cosigner witness key** | A signer-managed, non-account witness used through `/sign/component` and assembled into a guarded transaction. |
-| **Contract-admin witness key** | The same witness key form in a standalone `.adm` container, used only for a bounded admin operation. It is not imported into the signer. |
+| **Spend cosigner key** | Co-authorizes bounded spending with the spending key through the online cosigning flow. The cosigner node manages the private key. |
+| **Admin cosigner key** | Co-authorizes bounded rekeying with the spending key through `aprekey`. The private key is held separately from the signer. |
 
-Both roles use `aplane.witness-falcon1024.v1` and the same Witness Key ID
-derivation. Custody keeps their capabilities separate: hot signer `.cos`
-records use durable category `witness` and can sign only the cosigner component
-domain; standalone `.adm` files can sign only the bounded admin domain. Never
-reuse one witness keypair across these roles. Local generation rejects known
-collisions, but cannot detect a key copied or enrolled out of band.
+Both are **cosigner keys**, stored as encrypted `.cos` files, with unencrypted
+`.cos.json` public references. A store-managed file is encrypted with the
+store's key; a standalone file is encrypted using its own passphrase. The
+encryption format is recorded in the contents. Moving or renaming a file does
+not convert it between these formats, and current tools do not offer private-key
+conversion between the two roles.
 
-Admin keys use `.adm` private files and `.adm.json` public references. Cosigner
-keys use `.cos` private files and `.cos.json` public references. Existing `.wit`
-admin files and `.wit.json` public references remain readable; new files use
-the role-specific names. Both public reference formats retain the shared
-`aplane.witness-key-public.v1` schema.
+The UI calls their shared identifier the **Cosigner Key ID**. Existing
+protocol and storage names remain `witness_key_id`, `category: witness`,
+`aplane.witness-falcon1024.v1`, and `aplane.witness-key-public.v1`; engineering
+references may call the same identifier a Witness Key ID. Its value is unchanged.
+
+Use a different keypair for each role. The online cosigner and `aprekey` sign
+different message domains; local generation rejects known cross-role reuse.
+Existing `.wit`/`.wit.json` files and the earlier standalone `.adm`/`.adm.json`
+names remain readable. New files use `.cos`/`.cos.json`.
 
 ### Definition and availability
 
@@ -157,7 +161,7 @@ protocol-native `ed25519` and `falcon1024` and the general bounded
 `aplane.falcon1024-b.v1` are default-enabled on signer nodes;
 other selectable compiled account providers are library-visible
 and require product-local enablement. On cosigner nodes,
-`aplane.witness-falcon1024.v1` is default-enabled for witness credentials.
+`aplane.witness-falcon1024.v1` is default-enabled for cosigner credentials.
 
 Enable a library-visible compiled provider:
 
@@ -172,10 +176,10 @@ Before generating a guarded or bounded-cosigner account, choose **Export
 Cosigner Key** on the cosigner. On the primary signer, start **Generate
 account** in `apadmin`, select the guarded key type or `aplane.falcon1024-b.v1`, then
 open the **Cosigner** field and choose **Use key file...** or **Paste public
-JSON...**. Compare the complete Witness Key ID with the value
+JSON...**. Compare the complete Cosigner Key ID with the value
 shown on the cosigner and import; the form returns with that key selected. A
 key that is already imported is offered under its existing name rather than
-imported again. The UI submits the stable Witness Key ID and the signer
+imported again. The UI submits the stable Cosigner Key ID and the signer
 resolves it to the full public key; the normal workflow does not ask the
 operator to paste Falcon hex.
 
@@ -183,10 +187,10 @@ The **Cosigners** manager (`e` in signer-side `apadmin`) remains available for
 managing imported keys directly. Press `i` to import a key file or
 `p: Paste JSON` to paste the public document using your terminal's paste
 shortcut, review or edit the proposed reference name, and compare the full
-Witness Key ID. Multiline JSON is accepted up to 64 KiB, with the same
+Cosigner Key ID. Multiline JSON is accepted up to 64 KiB, with the same
 validation and signer-reference import as file import. Choosing
 `Generate account` from an imported key shows only enabled account key types
-compatible with that witness type.
+compatible with that cosigner key type.
 
 The key file contains the public key only; it carries no address. Client
 routing, client enrollment, and SSH host trust are separate explicit steps
@@ -202,7 +206,7 @@ In apshell, run `endpoints add <cosigner-url>`, using the address the cosigner
 export screen showed. Approve the **Client Access Request**
 in cosigner-side apadmin after comparing the complete client SSH key
 fingerprint on both screens. If enrollment is pending, rerun setup after
-approval. Apshell then confirms the node role and advertised witness metadata.
+approval. Apshell then confirms the node role and advertised cosigner metadata.
 The client does not compare against the exported key file; the signer embeds
 that trust anchor. The
 client stores the connection, not the key: another key on the same cosigner
@@ -265,8 +269,8 @@ Generate a key and choose `aplane.falcon1024-b.v1`, then a preset:
 | Preset | What it sets | You supply |
 |---|---|---|
 | Allowlist | All transfer kinds; the spending key alone can rekey; automatic list encoding | Recipients |
-| Locked Allowlist | All transfer kinds; rekey also needs a contract admin; automatic list encoding | Recipients, admin `.adm.json` file |
-| Corridor | All transfer kinds; contract-admin rekey; a cosigner on every spend; Merkle list | Recipients, admin `.adm.json` file, cosigner |
+| Locked Allowlist | All transfer kinds; rekey also needs a contract admin; automatic list encoding | Recipients, admin `.cos.json` file |
+| Corridor | All transfer kinds; contract-admin rekey; a cosigner on every spend; Merkle list | Recipients, admin `.cos.json` file, cosigner |
 | Timelock | All transfer kinds; the spending key alone can rekey, after the unlock round; no recipient list | Unlock round |
 | Load boundary file | Whatever the file says | The file |
 
@@ -289,7 +293,7 @@ recipients:
 encoding: auto
 rekey:
   authority: admin_key
-  admin_key: ./bounded-admin/operations.adm.json
+  admin_key: ./bounded-admin/operations.cos.json
 cosigner: ops-cosigner
 ```
 
@@ -303,8 +307,8 @@ These addresses are illustrations, not funding destinations.
 | `encoding` | Optional, and needs a list. `auto` (the default) is inline through 10 recipients and Merkle above that. `inline` accepts at most 30. |
 | `unlock_round` | Optional. The first round the account can spend. With no list, the account can pay anyone once unlocked. |
 | `rekey.authority` | Required. `spending_key` or `admin_key`. |
-| `rekey.admin_key` | The public `.adm.json` file, relative to the boundary file. Required only with `admin_key`. |
-| `cosigner` | Optional. A cosigner reference name on the signer, or a Witness Key ID. A cosigner needs `admin_key`. |
+| `rekey.admin_key` | The public `.cos.json` file, relative to the boundary file. Required only with `admin_key`. |
+| `cosigner` | Optional. A cosigner reference name on the signer, or a Cosigner Key ID. A cosigner needs `admin_key`. |
 
 With `unlock_round` and `spending_key`, `spend` must include `pay`.
 
@@ -326,7 +330,7 @@ generate aplane.falcon1024-b.v1 spend_effects=pay rekey_authority=spending_key r
 
 apshell shows a local summary and asks before creating the account. The signer has not
 seen that summary, so a cosigner name in it is unresolved, and editing that reference
-before creation changes which cosigner is used. Prefer a Witness Key ID: it can only
+before creation changes which cosigner is used. Prefer a Cosigner Key ID: it can only
 select that cosigner, and apshell checks the created account against it. After creation,
 apshell shows what the signer actually stored.
 
@@ -339,6 +343,10 @@ with fingerprints and a digest.
 a minimum for new accounts. `boundary_require_admin_key` refuses spending-key rekey, and
 `boundary_require_cosigner` refuses accounts without a cosigner. They apply on every route,
 and they do not affect existing accounts or imported templates.
+
+The Settings panel labels these **Bounded: require admin cosigner** and
+**Bounded: require spend cosigner**, respectively. The former governs rekey
+authorization; the latter governs ordinary spending.
 
 Review these points before funding an account:
 
@@ -372,19 +380,19 @@ Generate the external contract-admin key first:
 aprekey generate --out /media/cold/bounded-admin
 ```
 
-Copy the generated public `<WitnessKeyID>.adm.json` file to the machine running
+Copy the generated public `<WitnessKeyID>.cos.json` file to the machine running
 `apadmin`. When generating `aplane.falcon1024-allowlist-lock.v1`, enter that
-file's local path in **Contract Admin Reference File (.adm.json)**, or press
+file's local path in **Admin Cosigner Reference File (.cos.json)**, or press
 `ctrl+o` in that field to browse for it. `apadmin`
 validates the public reference and supplies its `public_key_hex` to the signer;
-it never reads the private `.adm` file. Keep the `.adm` artifact outside the
+it never reads the private `.cos` file. Keep the `.cos` artifact outside the
 signer. Scripted generation still accepts the `bounded_admin_public_key` hex
 parameter. Ordinary spends use the normal client flow. Rekey with the dedicated
 helper:
 
 ```bash
 aprekey rekey --client-data "$APCLIENT_DATA" \
-  --key /media/cold/bounded-admin/<ID>.adm \
+  --key /media/cold/bounded-admin/<ID>.cos \
   <account> to <new-authorizer>
 ```
 

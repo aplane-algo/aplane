@@ -82,7 +82,7 @@ func (p *PreparedGeneration) resolveAuthorityIDs() error {
 			return fmt.Errorf("invalid %s: %w", boundedmeta.AdminPublicKeyParameter, err)
 		}
 		if p.AdminKeyID, err = witness.ID(witness.Falcon1024V1, publicKey); err != nil {
-			return fmt.Errorf("identify contract admin key: %w", err)
+			return fmt.Errorf("identify admin cosigner key: %w", err)
 		}
 	}
 	component, ok := keytypes.CosignerComponentKeyTypeForGuardedAccount(p.KeyType)

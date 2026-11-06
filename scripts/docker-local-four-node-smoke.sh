@@ -1514,11 +1514,11 @@ generate_corridor_admin_key() {
 set timeout 180
 spawn bash -lc ". /home/$TEST_USER/aplane/apclient/apenv.sh && exec aprekey generate --out '$admin_dir'"
 expect {
-  "Bounded-admin key passphrase:" { send "$TEST_PASSPHRASE\r" }
+  "Admin cosigner key passphrase:" { send "$TEST_PASSPHRASE\r" }
   timeout { exit 1 }
 }
 expect {
-  "Confirm bounded-admin key passphrase:" { send "$TEST_PASSPHRASE\r" }
+  "Confirm admin cosigner key passphrase:" { send "$TEST_PASSPHRASE\r" }
   timeout { exit 2 }
 }
 expect eof
@@ -1536,7 +1536,7 @@ EXPECT_SCRIPT
     fi
     printf '%s\n' "$out"
 
-    CORRIDOR_ADMIN_KEY="$(docker_exec_as_tester "$CLIENT_CONTAINER" "set -- '$admin_dir'/*.adm; \
+    CORRIDOR_ADMIN_KEY="$(docker_exec_as_tester "$CLIENT_CONTAINER" "set -- '$admin_dir'/*.cos; \
         [ \$# -eq 1 ] && [ -f \"\$1\" ] && printf '%s' \"\$1\"")"
     [ -n "$CORRIDOR_ADMIN_KEY" ] || die "could not locate generated Corridor admin artifact"
     CORRIDOR_ADMIN_PUBLIC_KEY="$(docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \
@@ -1806,7 +1806,7 @@ expect {
   timeout { exit 1 }
 }
 expect {
-  "Bounded-admin key passphrase:" { send "$TEST_PASSPHRASE\r" }
+  "Admin cosigner key passphrase:" { send "$TEST_PASSPHRASE\r" }
   timeout { exit 2 }
 }
 expect eof

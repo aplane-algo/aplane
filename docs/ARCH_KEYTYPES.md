@@ -414,7 +414,7 @@ Canonical forms:
   decimal version, for example `aplane.falcon1024.v1`,
   `aplane.htlc.v1`, `aplane.falcon1024-allowlist.v1`, and
   `aplane.falcon1024-allowlist-lock.v1`
-- witness keys use the same canonical key-type identifier contract,
+- cosigner keys (the internal witness key form) use the same canonical key-type identifier contract,
   currently `aplane.witness-falcon1024.v1`; signer-custodied instances serve
   as cosigner component-signing keys selected by 52-character txid-shaped
   Witness Key IDs, not spending accounts. The
@@ -422,8 +422,9 @@ Canonical forms:
   `component_key`.
 - external bounded contract-admin authorities use the same witness key type
   and Witness Key ID, but private material remains in a structurally distinct
-  standalone `.adm` container owned by `aprekey`. It is never a signer-managed
-  `.key`/`.cos` credential or spending account.
+  standalone `.cos` container owned by `aprekey`. The extension is shared with
+  store-managed cosigner credentials; its standalone passphrase envelope is not
+  a store term envelope. The key is an admin cosigner, never a spending account.
 - `aplane.falcon1024-allowlist-lock.v1` is reserved for the schema-v2
   framework-owned bounded1 allowlist. Its spending key and contract admin key
   are both Falcon-1024. Bounded1 has no Ed25519 contract-admin variant and no
@@ -515,7 +516,7 @@ They participate in a specific account or operation contract:
 | Type | Custody and use | Signer key type? |
 |---|---|---|
 | **Witness key, cosigner enrollment** | Stored as a cosigner-managed `.cos` credential and used through `/sign/component`; its signature is assembled into a guarded-account LogicSig. | Yes. `aplane.witness-falcon1024.v1`, durable category `witness`; never accepted as a spending account by ordinary `/sign`. |
-| **Witness key, contract-admin enrollment** | Stored in a standalone encrypted `.adm` artifact and used only for a declared bounded admin operation through `aprekey`. | The key form has the same witness key type, but this custody container is never an `apstore` or signer key. |
+| **Witness key, contract-admin enrollment** | Stored in a standalone encrypted `.cos` artifact and used only for a declared bounded admin operation through `aprekey`. | The key form has the same witness key type, but this custody container is never an `apstore` or signer key. |
 
 The current authority overlays are therefore **unguarded**, **cosigner guarded**,
 and **contract-admin-authorized operation**. Contract-admin authority is
@@ -1394,7 +1395,7 @@ the checks. The route decides what is resolved on the client first.
 
 | Route | Path to `GenerateKey` | Client-side resolution |
 |---|---|---|
-| apadmin | IPC `generate_key`, `Session.HandleGenerateKey` | Reads a public `.adm.json` and sends its `bounded_admin_public_key` |
+| apadmin | IPC `generate_key`, `Session.HandleGenerateKey` | Reads a public `.cos.json` and sends its `bounded_admin_public_key` |
 | apshell, MCP, JS | `POST /admin/generate`, `rest.Service.AdminGenerate` | Expands aliases and sets in `address[]` parameters, through `expandGenerateAddressListParams` |
 | SDKs | `POST /admin/generate` | None |
 

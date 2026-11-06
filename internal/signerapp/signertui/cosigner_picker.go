@@ -235,7 +235,7 @@ func (m Model) prepareCosignerImportReview() Model {
 	m.cosigner.importName = name
 	if m.cosigner.requiredKeyType != "" && reference.KeyType != m.cosigner.requiredKeyType {
 		m.cosigner.importError = fmt.Sprintf(
-			"public witness key type %s is incompatible; this account requires %s",
+			"public cosigner key type %s is incompatible; this account requires %s",
 			reference.KeyType,
 			m.cosigner.requiredKeyType,
 		)
@@ -243,7 +243,7 @@ func (m Model) prepareCosignerImportReview() Model {
 	}
 	witnessJSON, err := witness.MarshalPublicReference(reference)
 	if err != nil {
-		m.cosigner.importError = fmt.Sprintf("invalid public witness envelope: %v", err)
+		m.cosigner.importError = fmt.Sprintf("invalid public cosigner envelope: %v", err)
 		return m
 	}
 	m.cosigner.reuseAliases = nil
@@ -642,7 +642,7 @@ func (m Model) renderCosignerImportForm() string {
 	}
 	body.WriteString("\n\nReference name:\n")
 	body.WriteString(nameStyle.Width(m.constrainParameterFieldWidth(40)).Render(m.cosigner.importName))
-	body.WriteString("\n" + helpStyle.Render("Defaults from the filename or Witness Key ID; edit if needed."))
+	body.WriteString("\n" + helpStyle.Render("Defaults from the filename or Cosigner Key ID; edit if needed."))
 	body.WriteString("\n\n")
 	button := buttonInactiveStyle.Render("REVIEW COSIGNER KEY")
 	if m.cosigner.importFocus == 2 {
@@ -667,14 +667,14 @@ func (m Model) renderCosignerImportReview() string {
 	body.WriteString("\n\n")
 	body.WriteString("Store this public cosigner key as " + m.cosigner.importName + "\n")
 	body.WriteString("Key type: " + m.cosigner.previewKeyType + "\n\n")
-	body.WriteString("Witness Key ID (compare the complete value):\n")
+	body.WriteString("Cosigner Key ID (compare the complete value):\n")
 	body.WriteString(wrapPlainText(groupedWitnessKeyID(m.cosigner.previewWitnessID), m.popupBodyWidth(90)))
 	body.WriteString("\n\n")
 	body.WriteString("\n")
 	button := buttonActiveStyle.Render("IMPORT")
 	body.WriteString(button)
 	body.WriteString("\n")
-	body.WriteString(warningStyle.Render("Compare the complete Witness Key ID before importing."))
+	body.WriteString(warningStyle.Render("Compare the complete Cosigner Key ID before importing."))
 	if m.cosigner.paramName != "" {
 		body.WriteString("\n" + helpStyle.Render("The imported key stays in Cosigners and is reused next time, even if account creation is cancelled."))
 	}
@@ -699,7 +699,7 @@ func (m Model) renderCosignerReuseReview() string {
 		body.WriteString(fmt.Sprintf(" (%d other name(s) refer to the same key.)", others))
 	}
 	body.WriteString("\nKey type: " + m.cosigner.previewKeyType + "\n\n")
-	body.WriteString("Witness Key ID:\n")
+	body.WriteString("Cosigner Key ID:\n")
 	body.WriteString(wrapPlainText(groupedWitnessKeyID(m.cosigner.previewWitnessID), m.popupBodyWidth(90)))
 	body.WriteString("\n\n")
 	body.WriteString(buttonActiveStyle.Render("USE " + strings.ToUpper(primary)))

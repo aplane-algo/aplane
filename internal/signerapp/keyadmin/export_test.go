@@ -192,7 +192,7 @@ func TestNativeMnemonicExportRejectsWitness(t *testing.T) {
 		t.Fatalf("unexpected result code %s", result.Code)
 	}
 	if details, detailsErr := svc.GetKeyDetails(key.Address); detailsErr != nil || details.MnemonicExportable {
-		t.Fatal("key details mark a witness key exportable")
+		t.Fatal("key details mark a cosigner key exportable")
 	}
 }
 

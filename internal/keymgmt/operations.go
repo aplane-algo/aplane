@@ -241,11 +241,11 @@ func validateKnownWitnessRoleExclusivity(paths storepaths.Paths, keyType string,
 		}
 		references, err := cosignerrefs.List(paths)
 		if err != nil {
-			return fmt.Errorf("check cosigner witness references: %w", err)
+			return fmt.Errorf("check cosigner references: %w", err)
 		}
 		scanned, err := keys.ScanKeysDirectoryWithKeyring(paths, kr)
 		if err != nil {
-			return fmt.Errorf("check local cosigner witness keys: %w", err)
+			return fmt.Errorf("check local spend cosigner keys: %w", err)
 		}
 		if err := rejectAdminWitnessKnownAsCosigner(adminPublicKeyHex, references, scanned); err != nil {
 			return err
@@ -277,12 +277,12 @@ func validateKnownWitnessRoleExclusivity(paths storepaths.Paths, keyType string,
 func rejectAdminWitnessKnownAsCosigner(adminPublicKeyHex string, references []cosignerrefs.Record, scanned map[string]keys.KeyScanInfo) error {
 	for _, reference := range references {
 		if strings.EqualFold(reference.PublicKeyHex, adminPublicKeyHex) {
-			return fmt.Errorf("witness key %s is already known in the cosigner role and cannot be enrolled as a contract admin", reference.ComponentKey)
+			return fmt.Errorf("cosigner key %s is already known in the cosigner role and cannot be enrolled as a contract admin", reference.ComponentKey)
 		}
 	}
 	for witnessKeyID, info := range scanned {
 		if witness.IsKeyType(info.KeyType) && strings.EqualFold(info.PublicKeyHex, adminPublicKeyHex) {
-			return fmt.Errorf("witness key %s is already stored in cosigner custody and cannot be enrolled as a contract admin", witnessKeyID)
+			return fmt.Errorf("cosigner key %s is already stored in cosigner custody and cannot be enrolled as a contract admin", witnessKeyID)
 		}
 	}
 	return nil
@@ -292,7 +292,7 @@ func rejectCosignerWitnessKnownAsAdmin(cosignerPublicKeyHex, cosignerWitnessID s
 	for _, info := range scanned {
 		metadata := info.BoundedAuthorization
 		if metadata != nil && strings.EqualFold(metadata.AdminPublicKeyHex, cosignerPublicKeyHex) {
-			return fmt.Errorf("witness key %s is already enrolled as a contract admin and cannot be enrolled as a cosigner", cosignerWitnessID)
+			return fmt.Errorf("cosigner key %s is already enrolled as a contract admin and cannot be enrolled as a cosigner", cosignerWitnessID)
 		}
 	}
 	return nil

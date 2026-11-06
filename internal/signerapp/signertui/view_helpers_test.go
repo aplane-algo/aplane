@@ -375,7 +375,7 @@ func TestBytesParameterFieldUsesDeclaredHexLength(t *testing.T) {
 func TestParameterModalShowsContractAdminReferencePath(t *testing.T) {
 	defer setServerKeyTypes(nil)
 
-	const suffix = "B6VKKS7RQNVGBTM2ZPE3ICM2W7DLBNM62JKE3UVV4D4KRY3ND7IQ.adm.json"
+	const suffix = "B6VKKS7RQNVGBTM2ZPE3ICM2W7DLBNM62JKE3UVV4D4KRY3ND7IQ.cos.json"
 	value := "/media/cold/" + strings.Repeat("directory/", 12) + suffix
 	setServerKeyTypes([]protocol.KeyTypeInfo{{
 		KeyType:     "aplane.falcon1024-allowlist-lock.v1",
@@ -401,7 +401,7 @@ func TestParameterModalShowsContractAdminReferencePath(t *testing.T) {
 	}
 
 	rendered := stripANSI(m.renderParameterModalForKeyType("aplane.falcon1024-allowlist-lock.v1", "GENERATE", ""))
-	if !strings.Contains(rendered, "Contract Admin Reference File (.adm.json)") || !strings.Contains(rendered, "...") || !strings.Contains(rendered, "D7IQ.adm.json") {
+	if !strings.Contains(rendered, "Admin Cosigner Reference File (.cos.json)") || !strings.Contains(rendered, "...") || !strings.Contains(rendered, "D7IQ.cos.json") {
 		t.Fatalf("parameter modal does not show the public reference path:\n%s", rendered)
 	}
 	if strings.Contains(rendered, "PASTE KEY") || strings.Contains(rendered, "REPLACE KEY") {
@@ -416,7 +416,7 @@ func TestParameterModalShowsContractAdminReferencePath(t *testing.T) {
 
 	m.forms.generateFocus = 0
 	rendered = stripANSI(m.renderParameterModalForKeyType("aplane.falcon1024-allowlist-lock.v1", "GENERATE", ""))
-	if !strings.Contains(rendered, "D7IQ.adm.json_") {
+	if !strings.Contains(rendered, "D7IQ.cos.json_") {
 		t.Fatalf("editing reference path does not show its suffix:\n%s", rendered)
 	}
 }

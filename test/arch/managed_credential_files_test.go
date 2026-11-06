@@ -15,7 +15,9 @@ import (
 )
 
 // TestManagedCredentialExtensionsHaveOneOwner prevents filesystem consumers
-// from recreating the account/cosigner extension table outside internal/keys.
+// from recreating the account/cosigner extension table outside its owners.
+// The cosigner suffix is shared with the standalone format, so it lives in
+// internal/witness; account and managed-class semantics remain in internal/keys.
 func TestManagedCredentialExtensionsHaveOneOwner(t *testing.T) {
 	root := filepath.Join("..", "..")
 	extensions := map[string]bool{
@@ -46,8 +48,7 @@ func TestManagedCredentialExtensionsHaveOneOwner(t *testing.T) {
 		// genstore's closed archive/quarantine grammar must classify filenames
 		// without importing keys, which depends on genstore for authenticated
 		// active-generation resolution.
-		if strings.HasPrefix(slashed, "internal/keys/") ||
-			slashed == "internal/genstore/archive_prune.go" ||
+		if slashed == "internal/genstore/archive_prune.go" ||
 			slashed == "internal/genstore/quarantine.go" {
 			return nil
 		}
@@ -62,7 +63,13 @@ func TestManagedCredentialExtensionsHaveOneOwner(t *testing.T) {
 			}
 			value, err := strconv.Unquote(literal.Value)
 			if err == nil && extensions[value] {
-				t.Errorf("%s owns managed credential extension literal %q; use internal/keys", rel, value)
+				if value == "."+"key" && strings.HasPrefix(slashed, "internal/keys/") {
+					return true
+				}
+				if value == "."+"cos" && slashed == "internal/witness/files.go" {
+					return true
+				}
+				t.Errorf("%s duplicates credential extension literal %q; use internal/keys or internal/witness", rel, value)
 			}
 			return true
 		})

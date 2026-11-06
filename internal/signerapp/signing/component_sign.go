@@ -177,7 +177,7 @@ func loadCosignerComponentKey(ctx context.Context, session componentKeyGetter, c
 		case errors.Is(err, keystore.ErrStoreLocked):
 			return nil, nil, lockedError()
 		case errors.Is(err, keystore.ErrKeyNotFound):
-			return nil, nil, badRequest(fmt.Sprintf("Witness Key ID %q not found", componentKeySelector))
+			return nil, nil, badRequest(fmt.Sprintf("Cosigner Key ID %q not found", componentKeySelector))
 		default:
 			return nil, nil, internal(fmt.Sprintf("failed to load cosigner key: %v", err))
 		}
@@ -201,13 +201,13 @@ func loadCosignerComponentKey(ctx context.Context, session componentKeyGetter, c
 	}
 	if componentKey.WitnessKeyID != componentKeySelector {
 		zeroLoadedKeyMaterial(keyMaterial)
-		return nil, nil, internal("loaded Witness Key ID does not match requested Witness Key ID")
+		return nil, nil, internal("loaded Cosigner Key ID does not match requested Cosigner Key ID")
 	}
 	publicKeySize, publicOK := witness.PublicKeySize(keyMaterial.Type)
 	privateKeySize, privateOK := witness.PrivateKeySize(keyMaterial.Type)
 	if !publicOK || !privateOK {
 		zeroLoadedKeyMaterial(keyMaterial)
-		return nil, nil, internal(fmt.Sprintf("loaded cosigner key has unsupported witness key type %q", keyMaterial.Type))
+		return nil, nil, internal(fmt.Sprintf("loaded cosigner key has unsupported cosigner key type %q", keyMaterial.Type))
 	}
 	if len(componentKey.PrivateKey) != privateKeySize {
 		zeroLoadedKeyMaterial(keyMaterial)

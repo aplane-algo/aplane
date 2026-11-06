@@ -199,7 +199,7 @@ Independence depends on who controls the machines and credentials. See
 Bounded programs restrict the admitted transaction effects, fee ceiling, and
 administrative operations before applying their spending policy. A template's
 additional policy can narrow the admitted spend set. External contract-admin
-authority is held separately in an encrypted `.adm` artifact used by
+authority is held separately in an encrypted `.cos` artifact used by
 `aprekey`, rather than in the signer's managed credential store. An authorized
 contract-admin rekey still requires the base spending signature: the admin
 key alone cannot recover a lost spending key. A cosigner spend gate and a
@@ -1970,8 +1970,9 @@ Signer-custodied cosigner witnesses use
 `<active-generation>/keys/<WitnessKeyID>.cos`; account authority uses the same
 active namespace with `<AlgorandAddress>.key`. Physically, the active namespace
 is `identities/default/generations/<gen-id>/keys/`, selected by the store root.
-There is no root-level credential namespace or compatibility fallback. External contract-admin
-witnesses remain standalone `.adm` artifacts and are never scanned by the signer.
+There is no root-level credential namespace or compatibility fallback. External
+admin cosigners use standalone `.cos` bundles. Store readers reject that bundle format;
+sharing the filename suffix does not make them store-managed credentials.
 The full cosigner public key remains the verifier key embedded in guarded
 account LogicSig bytecode. The same witness key form can serve a bounded
 contract-admin enrollment under standalone custody, but one keypair should

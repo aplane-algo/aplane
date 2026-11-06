@@ -335,7 +335,7 @@ Day-to-day:
 - Use `apadmin policy rescue` for offline or scriptable policy inspection,
   validation, and application of the node's policy documents: the node
   default `default.json` and the per-key files `policies/<key>.json` (a
-  signing address on a signer node, a Witness Key ID on a cosigner node).
+  signing address on a signer node, a Cosigner Key ID on a cosigner node).
 - Use `appass` only to switch passphrase auto-handling mode (`prompt`,
   `passfile`, `systemd-creds`).
 - `appass` refuses to run while `apsigner` is active for the same data
@@ -673,7 +673,7 @@ unknown field is rejected. Amounts are decimal strings in base units.
 |-------|------|------|---------|
 | `format` | both | string | Required; `aplane.policy.v1` |
 | `role` | both | string | Required; `signer` or `cosigner`, matching the node |
-| `key` | both | string | Required; `default`, or the key the file governs (a signing address or a Witness Key ID), matching the file name |
+| `key` | both | string | Required; `default`, or the key the file governs (a signing address or a Cosigner Key ID), matching the file name |
 | `description` | both | string | Notes for reviewers |
 | `reject_foreign_rekey` | signer | bool | Reject txns with non-zero `RekeyTo` when the rekey target is not held by this node |
 | `reject_rekey` | cosigner | bool | Coarse deny-all switch for non-zero `RekeyTo`; with `false`, a rekey still fails unless `rekey_policy.allowed` authorizes the sender-to-target edge |

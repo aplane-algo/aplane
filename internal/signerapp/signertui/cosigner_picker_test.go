@@ -137,7 +137,7 @@ func TestGenerateCosignerParamOpensFriendlyPickerAndSubmitsWitnessID(t *testing.
 	next, _ = m.handleCosignerPickerKeys(tea.KeyMsg{Type: tea.KeyEnter})
 	m = next.(Model)
 	if got := m.forms.genericLSigParams["cosigner"]; got != testWitnessID2 {
-		t.Fatalf("submitted cosigner = %q, want canonical Witness Key ID", got)
+		t.Fatalf("submitted cosigner = %q, want canonical Cosigner Key ID", got)
 	}
 }
 
@@ -225,7 +225,7 @@ func TestCosignerImportResultRefreshesMetadataAndSelectsImportedWitness(t *testi
 	}}})
 	m = next.(Model)
 	if got := m.forms.genericLSigParams["cosigner"]; got != testWitnessID1 {
-		t.Fatalf("resumed cosigner selection = %q, want imported Witness Key ID", got)
+		t.Fatalf("resumed cosigner selection = %q, want imported Cosigner Key ID", got)
 	}
 	if _, ok := m.forms.genericLSigParams["cosigner_public_key"]; ok {
 		t.Fatal("resumed form retained raw cosigner_public_key input")
@@ -270,7 +270,7 @@ func TestPrepareCosignerImportReviewVerifiesEnvelopeAndShowsFullID(t *testing.T)
 	rendered := stripANSI(m.renderCosignerImportReview())
 	for _, group := range strings.Fields(groupedWitnessKeyID(keyID)) {
 		if !strings.Contains(rendered, group) {
-			t.Fatalf("review omitted Witness Key ID group %q:\n%s", group, rendered)
+			t.Fatalf("review omitted Cosigner Key ID group %q:\n%s", group, rendered)
 		}
 	}
 	if strings.Contains(rendered, reference.PublicKeyHex) {
@@ -474,7 +474,7 @@ func TestAccountCreationImportsNewSetupFileKeyWithReview(t *testing.T) {
 		t.Fatalf("viewState = %v reuse = %v error = %q, want an import review", m.viewState, m.cosigner.reuseAliases, m.cosigner.importError)
 	}
 	rendered := stripANSI(m.renderCosignerImportReview())
-	for _, want := range []string{"Compare the complete Witness Key ID before importing.", "The imported key stays in Cosigners"} {
+	for _, want := range []string{"Compare the complete Cosigner Key ID before importing.", "The imported key stays in Cosigners"} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("import review omitted %q:\n%s", want, rendered)
 		}

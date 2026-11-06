@@ -92,7 +92,7 @@ func newGuardedExecutableTestHandler(t *testing.T, publicKeyHex string, capture 
 	}
 	componentSelector, err := witness.ID(witness.Falcon1024V1, publicKey)
 	if err != nil {
-		t.Fatalf("Witness Key ID: %v", err)
+		t.Fatalf("Cosigner Key ID: %v", err)
 	}
 
 	mux := http.NewServeMux()

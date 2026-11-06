@@ -46,6 +46,6 @@ func TestPublicReferenceRejectsUnknownFieldAndMismatchedID(t *testing.T) {
 		t.Fatal("unknown field was accepted")
 	}
 	if _, err := NewPublicReference(Falcon1024V1, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", publicKeyHex); err == nil {
-		t.Fatal("mismatched witness key ID was accepted")
+		t.Fatal("mismatched cosigner key ID was accepted")
 	}
 }

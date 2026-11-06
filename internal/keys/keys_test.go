@@ -282,7 +282,7 @@ func TestScanKeysDirectoryWithKeyring(t *testing.T) {
 		}
 	})
 
-	t.Run("legacy witness key extension is rejected", func(t *testing.T) {
+	t.Run("legacy cosigner key extension is rejected", func(t *testing.T) {
 		masterKey := testMasterKey(t)
 		paths := storepaths.NewPaths(t.TempDir())
 		paths = genstoretest.MintFirst(t, paths)

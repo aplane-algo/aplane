@@ -205,7 +205,7 @@ func TestServiceGenerateKeyCosignerComponent(t *testing.T) {
 				t.Fatal("GenerateKey(component) public key is empty")
 			}
 			if !witness.IsID(result.Address) {
-				t.Fatalf("GenerateKey(component) address = %q, want Witness Key ID", result.Address)
+				t.Fatalf("GenerateKey(component) address = %q, want Cosigner Key ID", result.Address)
 			}
 			if result.Address == result.PublicKeyHex {
 				t.Fatal("GenerateKey(component) address unexpectedly equals public key hex")

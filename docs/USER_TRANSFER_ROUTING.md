@@ -14,7 +14,7 @@ Routing is part of every v1 JSON policy document. A node holds one default
 document, which governs every key without a policy of its own, and a file per
 key that has one; a key's file replaces the default for that key wholesale,
 routes included. On a signer node a key is a signing address; on a cosigner
-node it is a cosigner Witness Key ID, and its policy governs every account
+node it is a cosigner Cosigner Key ID, and its policy governs every account
 composed with that key:
 
 ```text
@@ -1009,7 +1009,7 @@ that references `@treasury` must define it.
 
 A cosigner node holds the same layout: `default.json`, which the shipped
 version makes deny-all (`transaction_types` `{"*": "reject"}`, no routes,
-`reject_rekey` true), and `policies/<WitnessKeyID>.json` for each witness key
+`reject_rekey` true), and `policies/<WitnessKeyID>.json` for each cosigner key
 that is meant to sign. A cosigner document's `transfer_policy` has only
 `blocked_destinations` and `routes`: there is no `on_no_route` family,
 because an unmatched movement, close-out, or clawback is always rejected.
@@ -1055,7 +1055,7 @@ file follows the default and so rejects every request.
 }
 ```
 
-The `key` field must equal the Witness Key ID the document is stored under.
+The `key` field must equal the Cosigner Key ID the document is stored under.
 `apadmin policy template --key <WitnessKeyID>` writes the deny-all default
 with the key filled in; the routes are what you add. `apadmin policy apply`
 takes one file per document and leaves documents for other keys unchanged;

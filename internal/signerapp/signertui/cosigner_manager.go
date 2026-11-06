@@ -171,7 +171,7 @@ func (m Model) beginSelectedCosignerGeneration() (tea.Model, tea.Cmd) {
 	indices := m.compatibleCosignerGenerateTypeIndices(reference.KeyType)
 	switch len(indices) {
 	case 0:
-		m.cosigner.importError = "No enabled account key type accepts this witness key type"
+		m.cosigner.importError = "No enabled account key type accepts this cosigner key type"
 		return m, nil
 	case 1:
 		return m.beginGenerateWithCosignerReference(indices[0], reference)
@@ -279,7 +279,7 @@ func (m Model) renderCosignerReferences() string {
 	var body strings.Builder
 	body.WriteString(titleStyle.Render("Cosigner References"))
 	body.WriteString("\n")
-	body.WriteString(subtitleStyle.Render("Public witness authorities enrolled for guarded-account generation."))
+	body.WriteString(subtitleStyle.Render("Public cosigner keys enrolled for guarded-account generation."))
 	body.WriteString("\n\n")
 	if len(references) == 0 {
 		body.WriteString(wrapPlainText("No cosigner references enrolled. Press i to import a public envelope file or p to paste JSON.", m.tableWidth()) + "\n")
@@ -355,7 +355,7 @@ func (m Model) renderCosignerReferenceDetails() string {
 	if len(aliases) > 1 {
 		body.WriteString("Aliases:  " + strings.Join(aliases, ", ") + "\n")
 	}
-	body.WriteString("\nWitness Key ID:\n")
+	body.WriteString("\nCosigner Key ID:\n")
 	body.WriteString(wrapPlainText(groupedWitnessKeyID(reference.ComponentKey), m.popupBodyWidth(90)))
 	body.WriteString("\n")
 	if reference.PublicKeySHA256 != "" {
@@ -408,7 +408,7 @@ func (m Model) renderCosignerRemoveConfirm() string {
 	body.WriteString(warningStyle.Render("REMOVE COSIGNER REFERENCE"))
 	body.WriteString("\n\n")
 	body.WriteString("Remove alias " + reference.Name + " from guarded-account generation?\n\n")
-	body.WriteString("Witness Key ID:\n")
+	body.WriteString("Cosigner Key ID:\n")
 	body.WriteString(wrapPlainText(groupedWitnessKeyID(reference.ComponentKey), m.popupBodyWidth(80)))
 	body.WriteString("\n\n")
 	cancel := buttonInactiveStyle.Render("CANCEL")

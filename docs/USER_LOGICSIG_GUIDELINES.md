@@ -852,7 +852,7 @@ without author TEAL. It constrains `Receiver`/`AssetReceiver` and compiles the
 canonical recipient list inline with an audited maximum of 30 entries. Asset
 and amount limits stay in signer policy, because one program is valid on every
 network and asset IDs are network-local. It uses no runtime proof or signer-derived LogicSig argument. The external private
-key exists only in a `.adm` artifact; losing all copies removes
+key exists only in a `.cos` artifact; losing all copies removes
 the admin-key rekey path but does not stop policy-compliant spending. See
 [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md).
 

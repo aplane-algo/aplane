@@ -194,7 +194,7 @@ func (w KeyScanWarning) Message() string {
 	case KeyScanWarningUnexpectedEntry:
 		return fmt.Sprintf("Unexpected entry in keys namespace %s: %v", w.KeyFile, w.Err)
 	case KeyScanWarningWitnessMetadataInvalid:
-		return fmt.Sprintf("Invalid witness public metadata %s: %v", w.KeyFile, w.Err)
+		return fmt.Sprintf("Invalid cosigner public metadata %s: %v", w.KeyFile, w.Err)
 	default:
 		return fmt.Sprintf("Failed to scan key file %s: %v", w.KeyFile, w.Err)
 	}
@@ -239,7 +239,7 @@ func ReadAndDecryptFile(path string, kr *crypto.Keyring, ctx crypto.ObjectContex
 	}
 
 	if !crypto.IsEncrypted(data) {
-		return nil, fmt.Errorf("%s must be encrypted", entityName)
+		return nil, fmt.Errorf("%s must be encrypted with the store key", entityName)
 	}
 
 	if kr == nil {
@@ -336,10 +336,9 @@ func scanKeysDirectoryInternalReport(active storepaths.ActivePaths, excludedSele
 	}
 
 	// Scan only signer-managed private credential classes. Public witness
-	// references (.cos.json, or legacy .wit.json) are the sole expected non-credential residents
-	// and are validated without decryption; external witness artifact
-	// bundles (.adm, or legacy .wit) are aprekey-owned and never signer store residents
-	// (docs/ARCH_BOUNDED_DSA.md, External Contract Admin Artifact Contract).
+	// references (.cos.json, or legacy .wit.json) are validated without decryption.
+	// A .cos filename is a private credential candidate, but the store reader
+	// accepts only term envelopes, never standalone passphrase-encrypted bundles.
 	// Everything unrecognized is reported so store validation fails closed on
 	// unexpected content. Nothing outside the managed credential classes ever
 	// reaches decryptFunc.
@@ -358,9 +357,10 @@ func scanKeysDirectoryInternalReport(active storepaths.ActivePaths, excludedSele
 				if err := validateWitnessPublicMetadataFilename(entryPath); err != nil {
 					warn(KeyScanWarningWitnessMetadataInvalid, entryPath, err)
 				}
-			case witness.IsAdminArtifactPath(entry.Name()):
+			case filepath.Ext(entry.Name()) == witness.LegacyArtifactExtension,
+				filepath.Ext(entry.Name()) == witness.LegacyAdminArtifactExtension:
 				warn(KeyScanWarningUnexpectedEntry, entryPath,
-					fmt.Errorf("external witness artifact bundles are aprekey-owned and not signer store residents; move it outside the keystore"))
+					fmt.Errorf("standalone cosigner files belong outside the store; use aprekey to open them"))
 			default:
 				warn(KeyScanWarningUnexpectedEntry, entryPath,
 					fmt.Errorf("not a managed credential"))

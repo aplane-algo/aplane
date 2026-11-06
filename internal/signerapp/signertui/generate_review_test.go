@@ -402,7 +402,7 @@ func TestDetailsShowEveryResolvedParameter(t *testing.T) {
 		t.Errorf("a long value was cut:\n%s", details)
 	}
 	if strings.Contains(details, "cdcdcdcd") {
-		t.Error("an authority key repeats what its Witness Key ID says")
+		t.Error("an authority key repeats what its Cosigner Key ID says")
 	}
 }
 

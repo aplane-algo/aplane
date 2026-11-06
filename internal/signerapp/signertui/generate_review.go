@@ -287,8 +287,8 @@ func (m Model) renderGenerateReviewDetails() string {
 		sb.WriteString(label + ":\n  " + value + "\n")
 	}
 	field("Policy", review.Bounded.Layer3Policy)
-	field("Contract admin Witness Key ID", review.AdminKeyID)
-	field("Cosigner Witness Key ID", review.CosignerKeyID)
+	field("Admin Cosigner Key ID", review.AdminKeyID)
+	field("Spend Cosigner Key ID", review.CosignerKeyID)
 	if review.BoundaryDigest != "" {
 		field("Grammar fingerprint", review.ReviewFingerprint)
 		field("Selected-shape fingerprint", review.Fingerprint)

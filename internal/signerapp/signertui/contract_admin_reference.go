@@ -22,14 +22,14 @@ func isContractAdminReferenceParam(param lsigprovider.ParameterDef) bool {
 }
 
 // loadContractAdminPublicKey converts a local public reference into the hex
-// parameter expected by the signer. The private .adm artifact is never read.
+// parameter expected by the signer. The private .cos artifact is never read.
 func loadContractAdminPublicKey(inputPath string) (string, error) {
 	path := strings.TrimSpace(inputPath)
 	if path == "" {
-		return "", fmt.Errorf("select a contract-admin .adm.json file")
+		return "", fmt.Errorf("select a contract-admin .cos.json file")
 	}
-	if !witness.IsAdminPublicReferencePath(path) {
-		return "", fmt.Errorf("contract-admin reference must be a .adm.json file")
+	if !witness.IsPublicReferencePath(path) {
+		return "", fmt.Errorf("contract-admin reference must be a .cos.json file")
 	}
 	if path == "~" || strings.HasPrefix(path, "~/") {
 		home, err := os.UserHomeDir()

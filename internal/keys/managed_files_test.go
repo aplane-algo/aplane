@@ -75,10 +75,10 @@ func TestCanonicalManagedCredentialFilename(t *testing.T) {
 	}
 
 	if _, err := CanonicalManagedCredentialFilename(witnessID, CategoryEd25519); err == nil {
-		t.Fatal("Witness Key ID was accepted as an account selector")
+		t.Fatal("Cosigner Key ID was accepted as an account selector")
 	}
 	if _, err := CanonicalManagedCredentialFilename(account, CategoryWitness); err == nil {
-		t.Fatal("account address was accepted as a Witness Key ID")
+		t.Fatal("account address was accepted as a Cosigner Key ID")
 	}
 }
 

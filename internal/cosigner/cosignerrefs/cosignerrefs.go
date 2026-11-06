@@ -86,7 +86,7 @@ func Import(paths storepaths.Paths, name string, data []byte) (*Record, error) {
 			return &existing, nil
 		}
 		return nil, fmt.Errorf(
-			"cosigner reference %q already exists with Witness Key ID %s; remove it explicitly before importing Witness Key ID %s",
+			"cosigner reference %q already exists with Cosigner Key ID %s; remove it explicitly before importing Cosigner Key ID %s",
 			record.Name, existing.ComponentKey, record.ComponentKey,
 		)
 	}
@@ -251,7 +251,7 @@ func ResolveCreationParamsForComponent(paths storepaths.Paths, keyType, componen
 		return nil, err
 	}
 	if !ok {
-		return nil, fmt.Errorf("cosigner reference or Witness Key ID %q not found", strings.TrimSpace(selector))
+		return nil, fmt.Errorf("cosigner reference or Cosigner Key ID %q not found", strings.TrimSpace(selector))
 	}
 	if rec.KeyType != componentKeyType {
 		return nil, fmt.Errorf("cosigner reference %q uses %s, but %s requires %s", rec.Name, rec.KeyType, keyType, componentKeyType)
@@ -373,7 +373,7 @@ func validatePublicKey(keyType, componentKey, publicKeyHex string) ([]byte, stri
 		return nil, "", err
 	}
 	if derivedSelector != componentKey {
-		return nil, "", fmt.Errorf("witness key ID %q does not match public key-derived Witness Key ID %q", componentKey, derivedSelector)
+		return nil, "", fmt.Errorf("cosigner key ID %q does not match public key-derived Cosigner Key ID %q", componentKey, derivedSelector)
 	}
 	sum := sha256.Sum256(publicKeyBytes)
 	return publicKeyBytes, hex.EncodeToString(sum[:]), nil

@@ -96,7 +96,7 @@ func TestTryCosignerNamesTheDocument(t *testing.T) {
 	if got.Outcome != policyeval.Approve || got.Summary != "this cosigner policy document permits the supplied transaction" {
 		t.Fatalf("Try() = %+v", got)
 	}
-	if !strings.Contains(strings.Join(got.Assumes, "\n"), "the cosigner holds the witness key") {
+	if !strings.Contains(strings.Join(got.Assumes, "\n"), "the cosigner holds the cosigner key") {
 		t.Fatalf("assumptions = %q", got.Assumes)
 	}
 

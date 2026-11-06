@@ -16,10 +16,10 @@ import (
 )
 
 const (
-	// BundleExtension identifies encrypted standalone admin key artifacts.
-	BundleExtension = witness.AdminArtifactExtension
-	// ReferenceExtension identifies public admin key reference sidecars.
-	ReferenceExtension = witness.AdminPublicReferenceExtension
+	// BundleExtension is shared with store-managed cosigner credentials.
+	BundleExtension = witness.CredentialExtension
+	// ReferenceExtension identifies public references for either cosigner role.
+	ReferenceExtension = witness.PublicReferenceExtension
 )
 
 // FileSet describes files created for one standalone witness credential.
@@ -54,46 +54,47 @@ func GenerateFiles(directory string, passphrase []byte, now time.Time) (FileSet,
 		return FileSet{}, err
 	}
 	if err := writeExclusiveAtomic(files.BundlePath, bundleBytes); err != nil {
-		return FileSet{}, fmt.Errorf("write witness artifact: %w", err)
+		return FileSet{}, fmt.Errorf("write standalone cosigner file: %w", err)
 	}
 	if err := writeExclusiveAtomic(files.ReferencePath, referenceBytes); err != nil {
 		cleanupErr := os.Remove(files.BundlePath)
 		if cleanupErr != nil {
-			return FileSet{}, fmt.Errorf("write public witness reference: %w (also failed to remove incomplete artifact: %v)", err, cleanupErr)
+			return FileSet{}, fmt.Errorf("write public cosigner reference: %w (also failed to remove incomplete artifact: %v)", err, cleanupErr)
 		}
-		return FileSet{}, fmt.Errorf("write public witness reference: %w", err)
+		return FileSet{}, fmt.Errorf("write public cosigner reference: %w", err)
 	}
 	return files, nil
 }
 
-// LoadFile reads a regular .adm file (or an existing .wit file) with a fixed
-// upper bound. Symlinks and other file types are rejected.
+// LoadFile reads a regular .cos file (or a legacy .wit/.adm file) with a fixed
+// upper bound. The caller must inspect the standalone bundle schema before use.
+// Symlinks and other file types are rejected.
 func LoadFile(path string) ([]byte, error) {
-	if !witness.IsAdminArtifactPath(path) {
-		return nil, fmt.Errorf("witness artifact must use the %s extension", BundleExtension)
+	if !witness.IsStandaloneCredentialPath(path) {
+		return nil, fmt.Errorf("standalone cosigner file must use the %s extension", BundleExtension)
 	}
 	info, err := os.Lstat(path)
 	if err != nil {
-		return nil, fmt.Errorf("inspect witness artifact: %w", err)
+		return nil, fmt.Errorf("inspect standalone cosigner file: %w", err)
 	}
 	if !info.Mode().IsRegular() {
-		return nil, fmt.Errorf("witness artifact must be a regular file")
+		return nil, fmt.Errorf("standalone cosigner file must be a regular file")
 	}
 	if info.Size() <= 0 || info.Size() > maxArtifactBytes {
-		return nil, fmt.Errorf("witness artifact size %d is invalid", info.Size())
+		return nil, fmt.Errorf("standalone cosigner file size %d is invalid", info.Size())
 	}
 	file, err := os.Open(path)
 	if err != nil {
-		return nil, fmt.Errorf("open witness artifact: %w", err)
+		return nil, fmt.Errorf("open standalone cosigner file: %w", err)
 	}
 	defer func() { _ = file.Close() }()
 
 	data, err := io.ReadAll(io.LimitReader(file, maxArtifactBytes+1))
 	if err != nil {
-		return nil, fmt.Errorf("read witness artifact: %w", err)
+		return nil, fmt.Errorf("read standalone cosigner file: %w", err)
 	}
 	if len(data) > maxArtifactBytes {
-		return nil, fmt.Errorf("witness artifact exceeds %d bytes", maxArtifactBytes)
+		return nil, fmt.Errorf("standalone cosigner file exceeds %d bytes", maxArtifactBytes)
 	}
 	return data, nil
 }

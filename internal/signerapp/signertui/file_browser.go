@@ -74,7 +74,7 @@ func fileBrowserSpecFor(target fileBrowserTarget) fileBrowserSpec {
 	case browseClientKeyFile:
 		return fileBrowserSpec{title: "Choose Client Public Key", suffixes: []string{".pub"}}
 	case browseContractAdminReference:
-		return fileBrowserSpec{title: "Choose Contract Admin Reference", suffixes: []string{witness.AdminPublicReferenceExtension, witness.LegacyPublicReferenceExtension}}
+		return fileBrowserSpec{title: "Choose Admin Cosigner Reference", suffixes: []string{witness.PublicReferenceExtension, witness.LegacyPublicReferenceExtension, witness.LegacyAdminPublicReferenceExtension}}
 	case browseBackupExportDir:
 		return fileBrowserSpec{title: "Choose Where to Export", chooseDir: true, fillDir: true}
 	case browseBoundaryFile:

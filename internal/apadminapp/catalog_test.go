@@ -456,7 +456,7 @@ func TestCatalogCosignerExportStdoutIsJSONOnly(t *testing.T) {
 			return fmt.Errorf("request = %T", message)
 		}
 		if request.WitnessKeyID != witnessKeyID {
-			return fmt.Errorf("witness key ID = %q", request.WitnessKeyID)
+			return fmt.Errorf("cosigner key ID = %q", request.WitnessKeyID)
 		}
 		*result.(*protocol.ExportCosignerPublicResultMessage) = protocol.ExportCosignerPublicResultMessage{
 			Success: true, EnvelopeJSON: envelope,
@@ -488,8 +488,8 @@ func TestCatalogCosignerExportRejectsSpendingKeyBeforeRequest(t *testing.T) {
 	err := (Catalog{Client: requester, Streams: Streams{Stdout: io.Discard}}).Run(
 		"cosigner", []string{"export", spendingAddress},
 	)
-	if err == nil || !strings.Contains(err.Error(), "invalid Witness Key ID") {
-		t.Fatalf("cosigner export error = %v, want Witness Key ID rejection", err)
+	if err == nil || !strings.Contains(err.Error(), "invalid Cosigner Key ID") {
+		t.Fatalf("cosigner export error = %v, want Cosigner Key ID rejection", err)
 	}
 	if len(requester.requests) != 0 {
 		t.Fatalf("requests = %d, want validation before request", len(requester.requests))

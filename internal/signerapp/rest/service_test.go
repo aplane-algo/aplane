@@ -442,7 +442,7 @@ func TestServiceComponentKeyGenerateAndInventoryProjection(t *testing.T) {
 		t.Fatal("AdminGenerate public key is empty")
 	}
 	if !witness.IsID(genResp.Address) {
-		t.Fatalf("AdminGenerate address = %q, want Witness Key ID", genResp.Address)
+		t.Fatalf("AdminGenerate address = %q, want Cosigner Key ID", genResp.Address)
 	}
 	if genResp.Address == genResp.PublicKeyHex {
 		t.Fatal("AdminGenerate address unexpectedly equals public key hex")
@@ -766,11 +766,11 @@ func TestServiceKeyTypesForRuntimeUsesCosignerReferenceOptions(t *testing.T) {
 	if params[0].Name != cosignerrefs.ParamCosignerName || params[0].Type != "select" {
 		t.Fatalf("cosigner param = %#v, want select cosigner", params[0])
 	}
-	if params[0].Label != "Witness Key ID" {
-		t.Fatalf("cosigner label = %q, want Witness Key ID label", params[0].Label)
+	if params[0].Label != "Cosigner Key ID" {
+		t.Fatalf("cosigner label = %q, want Cosigner Key ID label", params[0].Label)
 	}
 	if len(params[0].Options) != 1 || params[0].Options[0] != componentKey || params[0].Default != componentKey {
-		t.Fatalf("cosigner options/default = %#v/%q, want Witness Key ID %s", params[0].Options, params[0].Default, componentKey)
+		t.Fatalf("cosigner options/default = %#v/%q, want Cosigner Key ID %s", params[0].Options, params[0].Default, componentKey)
 	}
 }
 

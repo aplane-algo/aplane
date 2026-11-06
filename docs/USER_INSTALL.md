@@ -250,7 +250,7 @@ the cosigner's address. Complete them in this order:
 2. On the primary signer, enable the guarded or Corridor key type through
    the KeyType Library. Start **Generate account** in `apadmin`, select that
    type, open its **Cosigner** field, and choose **Use key file...**. Compare
-   the complete Witness Key ID with the value shown on the cosigner, import,
+   the complete Cosigner Key ID with the value shown on the cosigner, import,
    and finish generating the account. A key that is
    already imported is offered under its existing name.
 3. In `apshell`, run `endpoints add <cosigner-url>`. Accept or edit the
@@ -1061,7 +1061,7 @@ $APSIGNER_DATA/identities/default/
 default rejects foreign rekeys and reviews warning-level findings; the
 cosigner default rejects everything, so a cosigner key signs nothing until it
 is given a file of its own under `policies/` with `apadmin policy apply`.
-`<key>` is a signing address on a signer node and a Witness Key ID on a
+`<key>` is a signing address on a signer node and a Cosigner Key ID on a
 cosigner node. Every policy apply that changes the policy set commits a new
 generation.
 `config.yaml` and `unlock.yaml` are created on first edit through `apadmin` or

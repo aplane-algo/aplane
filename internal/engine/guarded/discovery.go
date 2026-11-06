@@ -363,7 +363,7 @@ func uniqueCosignerSelections(required []cosignerRequestKey, states []*cosignerE
 				selector = "invalid"
 			}
 			return selected, false, fmt.Errorf(
-				"%w: Witness Key ID %s (%s) is advertised by endpoints %s; remove duplicate endpoint profiles so each witness has exactly one live route",
+				"%w: Cosigner Key ID %s (%s) is advertised by endpoints %s; remove duplicate endpoint profiles so each witness has exactly one live route",
 				errCosignerDiscoveryDuplicateRoute,
 				selector,
 				key.ComponentKeyType,
@@ -414,7 +414,7 @@ func unresolvedCosignerDiscoveryError(required []cosignerRequestKey, selected ma
 		if err != nil {
 			selector = "invalid"
 		}
-		missing = append(missing, fmt.Sprintf("Witness Key ID %s (%s)", selector, key.ComponentKeyType))
+		missing = append(missing, fmt.Sprintf("Cosigner Key ID %s (%s)", selector, key.ComponentKeyType))
 	}
 	summary := make([]string, 0, len(aliases))
 	causes := make([]error, 0, len(aliases)+1)
@@ -433,7 +433,7 @@ func unresolvedCosignerDiscoveryError(required []cosignerRequestKey, selected ma
 			summary = append(summary, alias+": no matching key")
 		}
 	}
-	message := fmt.Sprintf("no live cosigner route for %s; endpoint results: %s; configure a role %q endpoint for the cosigner process that advertises the required Witness Key ID", strings.Join(missing, ", "), strings.Join(summary, "; "), config.ClientEndpointRoleCosigner)
+	message := fmt.Sprintf("no live cosigner route for %s; endpoint results: %s; configure a role %q endpoint for the cosigner process that advertises the required Cosigner Key ID", strings.Join(missing, ", "), strings.Join(summary, "; "), config.ClientEndpointRoleCosigner)
 	if len(causes) > 0 {
 		return fmt.Errorf("%s: %w", message, errors.Join(causes...))
 	}
@@ -562,15 +562,15 @@ func discoverCosignerComponentKeys(keys []signerapi.KeyInfo) ([]DiscoveredCosign
 		}
 		publicKey, err := normalizeCosignerPublicKeyHex(key.PublicKeyHex)
 		if err != nil {
-			return nil, fmt.Errorf("%w: Witness Key ID %q has invalid public_key_hex: %v", ErrCosignerDiscoveryInvalidMetadata, key.Address, err)
+			return nil, fmt.Errorf("%w: Cosigner Key ID %q has invalid public_key_hex: %v", ErrCosignerDiscoveryInvalidMetadata, key.Address, err)
 		}
 		selector, err := witness.NormalizeID(key.Address)
 		if err != nil {
-			return nil, fmt.Errorf("%w: metadata for %s has invalid advertised Witness Key ID %q: %v", ErrCosignerDiscoveryInvalidMetadata, cosignerComponentLabel(key.KeyType, publicKey), key.Address, err)
+			return nil, fmt.Errorf("%w: metadata for %s has invalid advertised Cosigner Key ID %q: %v", ErrCosignerDiscoveryInvalidMetadata, cosignerComponentLabel(key.KeyType, publicKey), key.Address, err)
 		}
 		expectedSelector, err := cosignerComponentSelector(key.KeyType, publicKey)
 		if err != nil {
-			return nil, fmt.Errorf("%w: failed to derive Witness Key ID for cosigner public key %s: %v", ErrCosignerDiscoveryInvalidMetadata, shortCosignerPublicKeyHex(publicKey), err)
+			return nil, fmt.Errorf("%w: failed to derive Cosigner Key ID for cosigner public key %s: %v", ErrCosignerDiscoveryInvalidMetadata, shortCosignerPublicKeyHex(publicKey), err)
 		}
 		if selector != expectedSelector {
 			return nil, fmt.Errorf("%w: cosigner component %s advertised selector %s, want %s", ErrCosignerDiscoveryInvalidMetadata, cosignerComponentLabel(key.KeyType, publicKey), selector, expectedSelector)

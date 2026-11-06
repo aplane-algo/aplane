@@ -147,7 +147,7 @@ func (m Model) newView() string {
 	case newKey:
 		what := "an Algorand address"
 		if n.role == noderole.RoleCosigner {
-			what = "a Witness Key ID"
+			what = "a Cosigner Key ID"
 		}
 		lines = append(lines, fmt.Sprintf("Which document? \"default\" for the node default, or %s for one key's own:", what), n.input.View())
 	case newStart:

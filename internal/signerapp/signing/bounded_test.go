@@ -187,7 +187,7 @@ func TestBuildApprovalDescriptionNamesBoundedRekeyAuthority(t *testing.T) {
 	)
 	for _, want := range []string{
 		"Bounded authorization contract admin operation: REKEY",
-		"Authorization: external contract admin key " + metadata.AdminKeyID,
+		"Authorization: external admin cosigner key " + metadata.AdminKeyID,
 		"Profile maximum fee: 5000 microAlgos",
 	} {
 		if !strings.Contains(description, want) {

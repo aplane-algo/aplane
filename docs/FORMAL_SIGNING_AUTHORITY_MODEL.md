@@ -424,9 +424,10 @@ FileName(f) != CanonicalName(Payload(f)) =>
 Canonical writers use the same function. Restore may replace an exact
 canonical destination only with `replace_existing:true` in the live restore
 request (`overwrite` is the internal persistence option) and always rejects a
-contradictory `.key`/`.cos` class for the same selector. Admin artifacts (`.adm`,
-or legacy `.wit`) and public sidecars (`.adm.json`, `.cos.json`, or legacy
-`.wit.json`) are outside the managed-credential candidate set. Accepted duplicate selectors
+contradictory `.key`/`.cos` class for the same selector. A `.cos` filename is a
+candidate in either custody format, but only store term envelopes can load as
+managed authority; standalone bundles fail before payload loading. Legacy
+`.wit`/`.adm` files and public sidecars are outside the candidate set. Accepted duplicate selectors
 remain a fatal collision fallback rather than selecting by directory order.
 
 Status: implemented. See

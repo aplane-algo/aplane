@@ -76,7 +76,7 @@ func TestVerifyRejectsWrongPassphrase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Generate() error = %v", err)
 	}
-	if _, err := Verify(bundle, []byte("wrong passphrase")); err == nil || !strings.Contains(err.Error(), "decrypt witness artifact") {
+	if _, err := Verify(bundle, []byte("wrong passphrase")); err == nil || !strings.Contains(err.Error(), "decrypt standalone cosigner file") {
 		t.Fatalf("Verify() error = %v, want decryption failure", err)
 	}
 }
@@ -143,7 +143,7 @@ func TestOpenRejectsCiphertextCorruption(t *testing.T) {
 	if err != nil {
 		t.Fatalf("encode corrupted bundle: %v", err)
 	}
-	if _, err := Open(corrupted, passphrase); err == nil || !strings.Contains(err.Error(), "decrypt witness artifact") {
+	if _, err := Open(corrupted, passphrase); err == nil || !strings.Contains(err.Error(), "decrypt standalone cosigner file") {
 		t.Fatalf("Open() error = %v, want authenticated decryption failure", err)
 	}
 }
@@ -199,10 +199,10 @@ func TestGenerateFilesAndLoad(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateFiles() error = %v", err)
 	}
-	if filepath.Base(files.BundlePath) != files.Reference.WitnessKeyID+".adm" {
+	if filepath.Base(files.BundlePath) != files.Reference.WitnessKeyID+".cos" {
 		t.Fatalf("bundle path = %q", files.BundlePath)
 	}
-	if filepath.Base(files.ReferencePath) != files.Reference.WitnessKeyID+".adm.json" {
+	if filepath.Base(files.ReferencePath) != files.Reference.WitnessKeyID+".cos.json" {
 		t.Fatalf("reference path = %q", files.ReferencePath)
 	}
 	for _, path := range []string{files.BundlePath, files.ReferencePath} {
@@ -225,13 +225,15 @@ func TestGenerateFilesAndLoad(t *testing.T) {
 	if inspected != files.Reference {
 		t.Fatalf("Inspect() = %#v, want %#v", inspected, files.Reference)
 	}
-	legacyPath := filepath.Join(directory, files.Reference.WitnessKeyID+".wit")
-	if err := os.Rename(files.BundlePath, legacyPath); err != nil {
-		t.Fatal(err)
-	}
-	legacyData, err := LoadFile(legacyPath)
-	if err != nil || !bytes.Equal(legacyData, data) {
-		t.Fatalf("legacy artifact did not retain its bytes: %v", err)
+	for _, suffix := range []string{".wit", ".adm"} {
+		legacyPath := filepath.Join(directory, files.Reference.WitnessKeyID+suffix)
+		if err := os.WriteFile(legacyPath, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		legacyData, err := LoadFile(legacyPath)
+		if err != nil || !bytes.Equal(legacyData, data) {
+			t.Fatalf("legacy artifact %s did not retain its bytes: %v", suffix, err)
+		}
 	}
 }
 
@@ -260,7 +262,7 @@ func TestFileOperationsRejectOverwriteAndWrongFileKinds(t *testing.T) {
 	t.Parallel()
 
 	directory := t.TempDir()
-	existing := filepath.Join(directory, "existing.adm")
+	existing := filepath.Join(directory, "existing.cos")
 	if err := os.WriteFile(existing, []byte("original"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -275,7 +277,7 @@ func TestFileOperationsRejectOverwriteAndWrongFileKinds(t *testing.T) {
 		t.Fatalf("existing content = %q, want original", content)
 	}
 
-	for _, suffix := range []string{".apb", ".key", ".cos", ".adm.json", ".cos.json", ".wit.json"} {
+	for _, suffix := range []string{".apb", ".key", ".cos.json", ".wit.json", ".adm.json"} {
 		wrongExtension := filepath.Join(directory, "credential"+suffix)
 		if err := os.WriteFile(wrongExtension, []byte("{}"), 0o600); err != nil {
 			t.Fatal(err)
@@ -285,7 +287,7 @@ func TestFileOperationsRejectOverwriteAndWrongFileKinds(t *testing.T) {
 		}
 	}
 
-	symlink := filepath.Join(directory, "linked.adm")
+	symlink := filepath.Join(directory, "linked.cos")
 	if err := os.Symlink(existing, symlink); err != nil {
 		t.Fatal(err)
 	}

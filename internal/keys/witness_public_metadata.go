@@ -17,7 +17,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/witness"
 )
 
-const WitnessPublicMetadataSuffix = witness.CosignerPublicReferenceExtension
+const WitnessPublicMetadataSuffix = witness.PublicReferenceExtension
 
 // IsWitnessPublicMetadataFilename includes the legacy public sidecars so an
 // existing generation can still be validated, rotated, and rolled back.
@@ -49,14 +49,14 @@ func ReadWitnessPublicMetadataActive(active storepaths.ActivePaths, witnessKeyID
 		if os.IsNotExist(err) {
 			return cosignerrefs.ExportEnvelope{}, false, nil
 		}
-		return cosignerrefs.ExportEnvelope{}, false, fmt.Errorf("failed to read witness public metadata %s: %w", path, err)
+		return cosignerrefs.ExportEnvelope{}, false, fmt.Errorf("failed to read cosigner public metadata %s: %w", path, err)
 	}
 	normalized, err := witness.ParsePublicReference(data)
 	if err != nil {
-		return cosignerrefs.ExportEnvelope{}, false, fmt.Errorf("invalid witness public metadata %s: %w", path, err)
+		return cosignerrefs.ExportEnvelope{}, false, fmt.Errorf("invalid cosigner public metadata %s: %w", path, err)
 	}
 	if normalized.WitnessKeyID != witnessKeyID {
-		return cosignerrefs.ExportEnvelope{}, false, fmt.Errorf("witness public metadata %s ID %q does not match %q", path, normalized.WitnessKeyID, witnessKeyID)
+		return cosignerrefs.ExportEnvelope{}, false, fmt.Errorf("cosigner public metadata %s ID %q does not match %q", path, normalized.WitnessKeyID, witnessKeyID)
 	}
 	return normalized, true, nil
 }
@@ -85,7 +85,7 @@ func validateWitnessPublicMetadataFilename(path string) error {
 		return err
 	}
 	if normalized.WitnessKeyID != witnessKeyID {
-		return fmt.Errorf("embedded witness key ID %q does not match filename %q", normalized.WitnessKeyID, witnessKeyID)
+		return fmt.Errorf("embedded cosigner key ID %q does not match filename %q", normalized.WitnessKeyID, witnessKeyID)
 	}
 	return nil
 }
@@ -95,7 +95,7 @@ func validateWitnessPublicMetadataFilename(path string) error {
 func WriteWitnessPublicMetadataFromKeyJSONActive(active storepaths.ActivePaths, address string, keyJSON []byte) (string, bool, error) {
 	payload, err := ParsePayload(keyJSON)
 	if err != nil {
-		return "", false, fmt.Errorf("failed to parse key payload for witness public metadata: %w", err)
+		return "", false, fmt.Errorf("failed to parse key payload for cosigner public metadata: %w", err)
 	}
 	defer payload.ZeroSecrets()
 	if payload.Category != CategoryWitness || !witness.IsKeyType(payload.KeyType) {
@@ -121,16 +121,16 @@ func writeWitnessPublicMetadataFromPayload(active storepaths.ActivePaths, select
 	}
 	env, err := cosignerrefs.NewExportEnvelope(witnessKeyID, payload.KeyType, hex.EncodeToString(payload.PublicKey))
 	if err != nil {
-		return fmt.Errorf("failed to build witness public metadata: %w", err)
+		return fmt.Errorf("failed to build cosigner public metadata: %w", err)
 	}
 	data, err := json.MarshalIndent(env, "", "  ")
 	if err != nil {
-		return fmt.Errorf("failed to encode witness public metadata: %w", err)
+		return fmt.Errorf("failed to encode cosigner public metadata: %w", err)
 	}
 	data = append(data, '\n')
 	path := WitnessPublicMetadataPathActive(active, witnessKeyID)
 	if err := fsutil.WriteFileDurable(path, data); err != nil {
-		return fmt.Errorf("failed to write witness public metadata %s: %w", path, err)
+		return fmt.Errorf("failed to write cosigner public metadata %s: %w", path, err)
 	}
 	return nil
 }

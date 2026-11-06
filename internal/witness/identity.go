@@ -62,10 +62,10 @@ func PrivateKeySize(keyType string) (int, bool) {
 func ID(keyType string, publicKey []byte) (string, error) {
 	wantSize, ok := PublicKeySize(keyType)
 	if !ok {
-		return "", fmt.Errorf("key type %q is not a witness key type", keyType)
+		return "", fmt.Errorf("key type %q is not a cosigner key type", keyType)
 	}
 	if len(publicKey) != wantSize {
-		return "", fmt.Errorf("witness public key length %d invalid (expected %d bytes)", len(publicKey), wantSize)
+		return "", fmt.Errorf("cosigner public key length %d invalid (expected %d bytes)", len(publicKey), wantSize)
 	}
 	return DeriveID(keyType, publicKey), nil
 }
@@ -85,20 +85,20 @@ func DeriveID(keyType string, publicKey []byte) string {
 func NormalizeID(value string) (string, error) {
 	raw := strings.TrimSpace(value)
 	if raw == "" {
-		return "", fmt.Errorf("witness key ID is required")
+		return "", fmt.Errorf("cosigner key ID is required")
 	}
 	if len(raw) != IDLength {
-		return "", fmt.Errorf("witness key ID length %d invalid (expected %d characters)", len(raw), IDLength)
+		return "", fmt.Errorf("cosigner key ID length %d invalid (expected %d characters)", len(raw), IDLength)
 	}
 	decoded, err := idEncoding.DecodeString(raw)
 	if err != nil {
-		return "", fmt.Errorf("witness key ID must be uppercase base32 without padding: %w", err)
+		return "", fmt.Errorf("cosigner key ID must be uppercase base32 without padding: %w", err)
 	}
 	if len(decoded) != sha512.Size256 {
-		return "", fmt.Errorf("witness key ID digest length %d invalid (expected %d bytes)", len(decoded), sha512.Size256)
+		return "", fmt.Errorf("cosigner key ID digest length %d invalid (expected %d bytes)", len(decoded), sha512.Size256)
 	}
 	if idEncoding.EncodeToString(decoded) != raw {
-		return "", fmt.Errorf("witness key ID must be canonical uppercase base32 without padding")
+		return "", fmt.Errorf("cosigner key ID must be canonical uppercase base32 without padding")
 	}
 	return raw, nil
 }

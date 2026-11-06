@@ -22,7 +22,7 @@ func TestIPCServiceLogGenerateWitnessCredential(t *testing.T) {
 		IsWitnessKey: true,
 	})
 
-	for _, want := range []string{"cosigner witness credential", "WITNESSID", "WITNESSID" + keys.CosignerCredentialExtension} {
+	for _, want := range []string{"cosigner credential", "WITNESSID", "WITNESSID" + keys.CosignerCredentialExtension} {
 		if !strings.Contains(logged, want) {
 			t.Fatalf("log = %q, want %q", logged, want)
 		}

@@ -100,7 +100,7 @@ func TestMixedGuardedGroupTransaction(t *testing.T) {
 		sshtest.Options{Dir: filepath.Join(clientDataDir, ".ssh")})
 	cosignerID, err := witness.ID(witness.Falcon1024V1, cosignerPub)
 	if err != nil {
-		t.Fatalf("Failed to derive cosigner Witness Key ID: %v", err)
+		t.Fatalf("Failed to derive cosigner Cosigner Key ID: %v", err)
 	}
 	reference, err := witness.NewPublicReference(witness.Falcon1024V1, cosignerID, cosignerPubHex)
 	if err != nil {
@@ -333,7 +333,7 @@ func mockCosignerEndpoint(
 	t.Helper()
 	componentSelector, err := witness.ID(witness.Falcon1024V1, publicKey)
 	if err != nil {
-		t.Fatalf("Failed to derive Witness Key ID: %v", err)
+		t.Fatalf("Failed to derive Cosigner Key ID: %v", err)
 	}
 	publicKeyHex := hex.EncodeToString(publicKey)
 
@@ -357,7 +357,7 @@ func mockCosignerEndpoint(
 			return
 		}
 		if req.TargetKind() != signerapi.ComponentTargetKindCosigner || len(req.Targets) == 0 || req.Targets[0].ComponentKey != componentSelector {
-			http.Error(w, "wrong Witness Key ID", http.StatusBadRequest)
+			http.Error(w, "wrong Cosigner Key ID", http.StatusBadRequest)
 			return
 		}
 		group, err := canonical.DecodeGroupHex(req.GroupBytesHex)

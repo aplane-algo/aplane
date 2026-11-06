@@ -7,16 +7,20 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
-## Admin and cosigner files use role-specific extensions
+## Cosigner keys share one file extension across spend and admin roles
 
-- `aprekey generate` writes `<WitnessKeyID>.adm` for the encrypted admin key and
-  `<WitnessKeyID>.adm.json` for its public reference. Existing `.wit` artifacts
-  and `.wit.json` admin references remain readable.
+- `aprekey generate` writes `<WitnessKeyID>.cos` for the encrypted admin cosigner
+  key and `<WitnessKeyID>.cos.json` for its public reference. Existing
+  `.wit`/`.wit.json` and earlier `.adm`/`.adm.json` standalone files remain readable.
 - Cosigner private credentials remain `.cos`. New cosigner public sidecars and
   suggested export filenames use `.cos.json`; existing `.wit.json` store sidecars
   remain valid for loading, export, passphrase rotation, and rollback.
-- This changes filenames only. Witness Key IDs, JSON schemas, encryption, and
-  signing authority are unchanged. Existing files are not automatically renamed.
+- UI and CLI labels use **Cosigner Key ID**, **admin cosigner**, and **spend
+  cosigner**. The underlying `witness_key_id`, key type, JSON schemas, encryption,
+  and signing authority are unchanged. Existing files are not automatically renamed.
+- Store-managed `.cos` files require store encryption; standalone `.cos` files
+  require passphrase encryption. Each reader validates its own format. Copying
+  or renaming a file does not convert custody or grant another signing role.
 
 ## Five templates leave the default library
 

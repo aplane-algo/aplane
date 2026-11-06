@@ -81,7 +81,7 @@ func TestNewDocumentInAnEmptyWorkspaceAsksTheRole(t *testing.T) {
 		t.Fatalf("role step:\n%s", view(m))
 	}
 	m, _ = press(t, m, "right", "enter")
-	if m.newDoc.role != "cosigner" || !strings.Contains(view(m), "Witness Key ID") {
+	if m.newDoc.role != "cosigner" || !strings.Contains(view(m), "Cosigner Key ID") {
 		t.Fatalf("role %q\n%s", m.newDoc.role, view(m))
 	}
 	m = typeText(t, m, "default")

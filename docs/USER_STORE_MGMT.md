@@ -108,7 +108,7 @@ file output. Generation itself does not display recovery phrases.
 This supports existing Ed25519 keys and newly generated/imported native
 `falcon1024` keys that retain recovery entropy. Older Falcon credentials cannot
 recover their original phrase: use encrypted backups. LogicSig, rotating, and
-witness credentials do not support mnemonic export. Key details show the `m`
+cosigner credentials do not support mnemonic export. Key details show the `m`
 option only for keys whose phrase can be exported.
 
 Native Falcon credentials with recovery entropy use payload format 2. APlane
@@ -208,7 +208,7 @@ an otherwise successful verification.
 - All `.apb` files (encrypted with the export passphrase) in the `apb/` subdirectory
 - For each backed-up key with a policy of its own, `policies/<key>.apb`: the
   key's exact policy document, encrypted with the same passphrase (a signing
-  address on a signer node, a Witness Key ID on a cosigner node)
+  address on a signer node, a Cosigner Key ID on a cosigner node)
 - `README.md` with decryption instructions
 - `manifest.sealed`, the archive's authenticated description: an inventory of
   every other member with its digest, the source node role, and archive
@@ -669,48 +669,45 @@ restored addresses in apadmin.
 
 ## External Contract Admin Artifacts
 
-Bounded contract-admin private authority is a witness key stored only in an
-encrypted `.adm` artifact managed by `aprekey`. It is never an
-apsigner managed credential, an `apstore` `.apb`, or part of signer
-backup/restore. Do not
-put these files in the signer data directory or submit them to signer tooling.
+A bounded account's **admin cosigner** co-authorizes rekeying with the spending
+key. `aprekey` keeps its private key in a standalone `.cos` file encrypted with
+its own passphrase. It is outside the signer store and its backups.
 
-Cosigner-role witnesses are different operational custody of the same key form:
-they are stored in the cosigner product store as `<WitnessKeyID>.cos`, encrypted by
-that store's term key, included in normal `.apb` backup/restore, and usable
-only for the cosigner component-signing domain. Account authority remains in
-`<AlgorandAddress>.key`.
+An online **spend cosigner** uses the same key type and `.cos` extension, with
+its private key encrypted by the cosigner store's term key and included in normal
+`.apb` backup/restore. Account authority remains in `<AlgorandAddress>.key`.
+Both readers check the encryption format in the file: a standalone `.cos` file
+cannot be loaded as a managed store credential, and a store-encrypted `.cos`
+file cannot be opened by `aprekey`. Copying a file does not convert it.
 
 Keep multiple independently protected copies and protect the artifact
 passphrase separately. Test each copy periodically:
 
 ```bash
-aprekey inspect /media/cold/<WITNESS_KEY_ID>.adm
-aprekey verify /media/cold/<WITNESS_KEY_ID>.adm
+aprekey inspect /media/cold/<WITNESS_KEY_ID>.cos
+aprekey verify /media/cold/<WITNESS_KEY_ID>.cos
 ```
 
-The `.adm.json` sidecar contains only public convenience data;
+The `.cos.json` sidecar contains only public convenience data;
 the encrypted artifact header is self-sufficient. Losing every artifact copy
 or its passphrase permanently removes every admin-key operation from the
 immutable bounded LogicSig. Ordinary spending remains possible only within its
 compiled policy.
 
-Existing `.wit` admin artifacts and `.wit.json` public references remain
-readable. New admin files use `.adm` and `.adm.json`; cosigner public sidecars
-and suggested exports use `.cos.json`. Renaming an external admin artifact
-does not change its contents, Witness Key ID, or passphrase. Managed store
-sidecars need no manual renaming: existing names remain supported.
+Existing `.wit`/`.wit.json` and earlier standalone `.adm`/`.adm.json` files remain
+readable. New files use `.cos` and `.cos.json`. Renaming a standalone file does
+not change its contents, Cosigner Key ID, or passphrase. Managed store sidecars
+need no manual renaming: existing names remain supported.
 
-Do not enroll this keypair as a cosigner, and do not use a cosigner witness as a
-contract admin. Both roles use the same witness key form, but their custody
-boundaries permit different signature domains. The software rejects collisions
-it can see locally; it cannot detect out-of-band copies.
+Use separate keypairs for admin and spend cosigning. Their custody boundaries
+permit different signature domains. The software rejects cross-role reuse it
+can see locally; it cannot detect out-of-band copies.
 
 Separated ceremonies additionally use `.apbounded-admin-request` request files
 and `.apbounded-admin-signature` response files. They contain no private key material and are not
 managed backup archives, but they bind short-lived signing authority for one exact
 transaction. Store or destroy them according to the operator's ceremony audit
-policy. They cannot recover a lost `.adm` artifact.
+policy. They cannot recover a lost `.cos` artifact.
 
 ## Security Best Practices
 
@@ -941,7 +938,7 @@ passphrase. If you have a native account's mnemonic, you can instead initialize
 a fresh keystore and import that native key with local AP Admin. This recovers
 only that key, not other credentials or store configuration.
 
-For LogicSig and witness credentials, keep an encrypted backup archive created
+For LogicSig and cosigner credentials, keep an encrypted backup archive created
 by `apadmin` with an export passphrase you know. See
 [Mnemonic Import](#2-mnemonic-import) for native recovery.
 

@@ -283,7 +283,7 @@ func boundedAuthorizationLabel(item *boundedPlanItem) string {
 	case boundedPathSpendingKeyRekey:
 		return "spending key only"
 	case boundedPathAdminKeyRekey:
-		return "external contract admin key " + item.Metadata.AdminKeyID
+		return "external admin cosigner key " + item.Metadata.AdminKeyID
 	default:
 		return "unknown"
 	}

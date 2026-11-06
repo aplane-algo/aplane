@@ -19,7 +19,7 @@ import (
 
 const (
 	AccountKeyExtension         = ".key"
-	CosignerCredentialExtension = ".cos"
+	CosignerCredentialExtension = witness.CredentialExtension
 )
 
 // MaxCosignerCredentials caps the cosigner credentials one store holds. With
@@ -93,8 +93,8 @@ func (c ManagedCredentialClass) Extension() string {
 }
 
 // ParseManagedCredentialFilename recognizes only signer-managed private
-// credential files. Standalone .adm artifacts and public sidecars are never
-// candidates.
+// credential filenames. A .cos candidate must still contain a valid store term
+// envelope; a standalone passphrase-encrypted bundle cannot load as store authority.
 func ParseManagedCredentialFilename(name string) (selector string, class ManagedCredentialClass, ok bool) {
 	switch {
 	case strings.HasSuffix(name, AccountKeyExtension):
@@ -250,7 +250,7 @@ func validateManagedSelector(selector string, class ManagedCredentialClass) erro
 		return nil
 	case ManagedCredentialCosigner:
 		if _, err := witness.NormalizeID(selector); err != nil {
-			return fmt.Errorf("invalid canonical Witness Key ID %q: %w", selector, err)
+			return fmt.Errorf("invalid canonical Cosigner Key ID %q: %w", selector, err)
 		}
 		return nil
 	default:

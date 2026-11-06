@@ -47,7 +47,7 @@ argument slots, Falcon contract-admin signing, or the `bounded1` /
 `bounded-cosigner1` signing flows.
 Admin-capable account files contain the spending key and immutable public
 contract-admin metadata; private admin material exists only in the external
-`.adm` artifact. Never copy that private key into account
+`.cos` artifact. Never copy that private key into account
 parameters, signer storage, or caller-supplied runtime arguments.
 
 ## Key Type Source Model

@@ -47,8 +47,8 @@ func (m Model) adminRows() []adminRow {
 	if !m.isCosignerNode() {
 		// A cosigner node holds no bounded accounts to restrict.
 		bounded := []adminRow{
-			{section: "User-Editable", label: "Bounded: require admin key", key: adminproto.AdminSettingBoundaryRequireAdmin, value: boolStr(s.BoundaryRequireAdminKey), editable: true, isBool: true},
-			{section: "User-Editable", label: "Bounded: require cosigner", key: adminproto.AdminSettingBoundaryRequireCo, value: boolStr(s.BoundaryRequireCosigner), editable: true, isBool: true},
+			{section: "User-Editable", label: "Bounded: require admin cosigner", key: adminproto.AdminSettingBoundaryRequireAdmin, value: boolStr(s.BoundaryRequireAdminKey), editable: true, isBool: true},
+			{section: "User-Editable", label: "Bounded: require spend cosigner", key: adminproto.AdminSettingBoundaryRequireCo, value: boolStr(s.BoundaryRequireCosigner), editable: true, isBool: true},
 		}
 		rows = append(rows[:4:4], append(bounded, rows[4:]...)...)
 	}

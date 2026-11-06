@@ -27,7 +27,7 @@ func (s *Service) evaluateCosignerComponentPolicy(plan *ComponentSignPlan) *Serv
 		return badRequest(err.Error())
 	}
 	if s.HoldsCosignerKey == nil || !s.HoldsCosignerKey(componentKey) {
-		return badRequest(fmt.Sprintf("Witness Key ID %q not found", componentKey))
+		return badRequest(fmt.Sprintf("Cosigner Key ID %q not found", componentKey))
 	}
 	cfg := s.policyFor(componentKey)
 	if cfg == nil {

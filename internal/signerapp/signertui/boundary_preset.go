@@ -26,7 +26,7 @@ func (m Model) paramSpecFor(keyType string) *paramSpec {
 		if field == boundary.ParameterCosigner {
 			params = append(params, lsigprovider.ParameterDef{
 				Name:        field,
-				Label:       "Witness Key ID",
+				Label:       "Cosigner Key ID",
 				Description: "Imported cosigner that must approve every spend",
 				Type:        "select",
 				Required:    true,

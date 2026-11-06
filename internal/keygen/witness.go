@@ -19,7 +19,7 @@ func SaveWitnessKey(paths storepaths.Paths, keyType string, publicKey, privateKe
 	defer payload.ZeroSecrets()
 	keyFiles, err := keys.SavePayload(paths, payload, kr)
 	if err != nil {
-		return nil, fmt.Errorf("failed to save witness key: %w", err)
+		return nil, fmt.Errorf("failed to save cosigner key: %w", err)
 	}
 
 	return &GenerationResult{

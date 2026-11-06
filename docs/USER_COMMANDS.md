@@ -515,8 +515,8 @@ accounts are intentionally not completed in apshell or apconsole; use the
 dedicated contract-admin client:
 
 ```bash
-aprekey rekey --key <key.adm> [--client-data <dir>] [--network <name>] [--fee <microalgos>] [--nowait] <account> to <new-authorizer>
-aprekey unrekey --key <key.adm> [--client-data <dir>] [--network <name>] [--fee <microalgos>] [--nowait] <account>
+aprekey rekey --key <key.cos> [--client-data <dir>] [--network <name>] [--fee <microalgos>] [--nowait] <account> to <new-authorizer>
+aprekey unrekey --key <key.cos> [--client-data <dir>] [--network <name>] [--fee <microalgos>] [--nowait] <account>
 ```
 
 `<new-authorizer>` must be a key the same signer holds: a native Ed25519 or
@@ -543,7 +543,7 @@ online without contacting the signer again:
 ```bash
 aprekey prepare-rekey --out <request.apbounded-admin-request> [--client-data <dir>] [--network <name>] [--fee <microalgos>] <account> to <new-authorizer>
 aprekey prepare-unrekey --out <request.apbounded-admin-request> [--client-data <dir>] [--network <name>] [--fee <microalgos>] <account>
-aprekey sign --key <key.adm> --request <request.apbounded-admin-request> --out <response.apbounded-admin-signature>
+aprekey sign --key <key.cos> --request <request.apbounded-admin-request> --out <response.apbounded-admin-signature>
 aprekey complete [--client-data <dir>] [--network <name>] [--nowait] <request.apbounded-admin-request> with <response.apbounded-admin-signature>
 ```
 
@@ -802,7 +802,7 @@ cosigner's address:
 2. **On the primary signer:** enable the guarded or Corridor key type first.
    In apadmin, **Generate account**, select that type, open the **Cosigner**
    field, and choose **Use key file...** (or **Paste public
-   JSON...**). Compare the complete Witness Key ID with the cosigner, then
+   JSON...**). Compare the complete Cosigner Key ID with the cosigner, then
    import. The account form returns with the cosigner filled in and the other
    parameters kept. A key that is already imported is offered under its
    existing name instead of being imported again.
@@ -951,7 +951,7 @@ primary signer's guarded-account requirements. It queries configured endpoints
 without changing client configuration, credentials, SSH trust, or cached keys.
 Unknown SSH hosts require separate interactive setup with `endpoints add`.
 
-Connections show authenticated reachability, advertised Witness Key IDs, and
+Connections show authenticated reachability, advertised Cosigner Key IDs, and
 individual errors. Account requirements show available, missing, or duplicate
 routes. If the primary signer is disconnected, locked, or inaccessible, its
 account requirements are explicitly unavailable; endpoint observations still
@@ -1005,7 +1005,7 @@ known-hosts flow.
 
 `endpoints discover-cosigners` is a read-only diagnostic. It queries configured
 cosigner endpoints over SSH with the client's enrolled key, validates the advertised
-Witness Key IDs, and prints live results. It does not update `endpoints.yaml`
+Cosigner Key IDs, and prints live results. It does not update `endpoints.yaml`
 or the connected signer's generation catalog. Guarded and bounded-cosigner
 operations perform this discovery automatically for the keys they require.
 
@@ -1082,8 +1082,8 @@ writes too.
 
 Run `import` against the primary signer and choose a local alias such as
 `lab-cosigner`. The signer validates the key type, public key, and derived
-Witness Key ID before storing the public reference. Compare the complete
-Witness Key ID displayed by the cosigner and signer before accepting it. A
+Cosigner Key ID before storing the public reference. Compare the complete
+Cosigner Key ID displayed by the cosigner and signer before accepting it. A
 file that carries anything beyond the public key is refused.
 
 When the source is `-`, stdin is reserved for the bounded JSON document:
@@ -1100,14 +1100,14 @@ passphrase separate fail before authentication.
 
 The interactive signer-side `apadmin` TUI provides the same public-reference
 catalog under `e: Cosigners`. It uses aliases for navigation, shows the complete
-grouped Witness Key ID on trust screens, and can start generation of a
+grouped Cosigner Key ID on trust screens, and can start generation of a
 compatible guarded or bounded-cosigner account without exposing a raw Falcon
 public-key input. The account-generation **Cosigner** field also offers **Use
 key file...** and **Paste public JSON...**, which import a key in place and
 return to the form with it selected; a key that is already imported is offered
 under its existing name.
 
-On a cosigner node, open a witness key and choose `e: Export cosigner key`,
+On a cosigner node, open a cosigner key and choose `e: Export cosigner key`,
 then select **SHOW JSON** for full JSON in the terminal: the console
 temporarily suspends and prints the complete document without inserting line
 breaks into long values. Select the JSON using the terminal's normal copy
@@ -1118,10 +1118,10 @@ when it is configured.
 
 To import copied JSON, press `p: Paste JSON` in the Cosigner References manager.
 Use your terminal's paste shortcut in the JSON field, then Tab to review or
-edit the reference name suggested from the file or Witness Key ID. Continue
+edit the reference name suggested from the file or Cosigner Key ID. Continue
 to review. The field accepts a complete multiline public witness document, up
 to 64 KiB. Pasting again replaces the document; Backspace/Delete clears it.
-Compare the full Witness Key ID on the shared import review screen before
+Compare the full Cosigner Key ID on the shared import review screen before
 importing.
 
 #### Batch export and import

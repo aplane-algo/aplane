@@ -45,7 +45,7 @@ func (g *WitnessFalcon1024Generator) GenerateFromSeed(ctx context.Context, paths
 
 	publicKey, privateKey, err := g.signerOps().GenerateKeypair(seedCopy)
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate witness key: %w", err)
+		return nil, fmt.Errorf("failed to generate cosigner key: %w", err)
 	}
 	defer securecrypto.ZeroBytes(privateKey)
 
@@ -70,13 +70,13 @@ func (g *WitnessFalcon1024Generator) GenerateRandom(ctx context.Context, paths s
 
 	seed := make([]byte, witnessFalcon1024SeedSize)
 	if _, err := rand.Read(seed); err != nil {
-		return nil, fmt.Errorf("failed to generate witness key seed: %w", err)
+		return nil, fmt.Errorf("failed to generate cosigner key seed: %w", err)
 	}
 	defer securecrypto.ZeroBytes(seed)
 
 	publicKey, privateKey, err := g.signerOps().GenerateKeypair(seed)
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate witness key: %w", err)
+		return nil, fmt.Errorf("failed to generate cosigner key: %w", err)
 	}
 	defer securecrypto.ZeroBytes(privateKey)
 
@@ -96,11 +96,11 @@ func validateWitnessPair(publicKey, privateKey []byte) error {
 	const probe = "APLANE_WITNESS_KEY_PAIR_V1"
 	signature, err := signerops.New(nil).Sign(privateKey, []byte(probe))
 	if err != nil {
-		return fmt.Errorf("witness public/private key validation failed: %w", err)
+		return fmt.Errorf("cosigner public/private key validation failed: %w", err)
 	}
 	defer securecrypto.ZeroBytes(signature)
 	if err := verify.VerifyFalcon1024(publicKey, []byte(probe), signature); err != nil {
-		return fmt.Errorf("witness public key does not match private key")
+		return fmt.Errorf("cosigner public key does not match private key")
 	}
 	return nil
 }

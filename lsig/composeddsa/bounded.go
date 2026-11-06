@@ -381,7 +381,7 @@ func (c *ComposedDSA) BuildBoundedAuthorizationMetadata(publicKey []byte, params
 			return nil, err
 		}
 		if bytes.Equal(cosignerPublicKey, publicKey) {
-			return nil, fmt.Errorf("bounded cosigner witness key must differ from the spending key")
+			return nil, fmt.Errorf("bounded spend cosigner key must differ from the spending key")
 		}
 		componentKeyID, err := witness.ID(profile.Cosigner.ComponentKeyType, cosignerPublicKey)
 		if err != nil {
@@ -397,7 +397,7 @@ func (c *ComposedDSA) BuildBoundedAuthorizationMetadata(publicKey []byte, params
 			return nil, err
 		}
 		if bytes.Equal(adminPublicKey, cosignerPublicKey) {
-			return nil, fmt.Errorf("bounded cosigner witness key must differ from the contract-admin key")
+			return nil, fmt.Errorf("bounded spend cosigner key must differ from the contract-admin key")
 		}
 		profileEncoding, err := CanonicalBoundedProfile(profile, metadata)
 		if err != nil {
@@ -428,7 +428,7 @@ func (c *ComposedDSA) validatedAdminPublicKey(spendingPublicKey []byte, params m
 		return nil, err
 	}
 	if bytes.Equal(adminPublicKey, spendingPublicKey) {
-		return nil, fmt.Errorf("bounded admin witness key must differ from the spending key")
+		return nil, fmt.Errorf("bounded admin cosigner key must differ from the spending key")
 	}
 	return adminPublicKey, nil
 }
@@ -439,7 +439,7 @@ func (c *ComposedDSA) validatedCosignerPublicKey(spendingPublicKey []byte, param
 		return nil, err
 	}
 	if bytes.Equal(cosignerPublicKey, spendingPublicKey) {
-		return nil, fmt.Errorf("bounded cosigner witness key must differ from the spending key")
+		return nil, fmt.Errorf("bounded spend cosigner key must differ from the spending key")
 	}
 	if c.bounded != nil && boundedRequiresAdminKey(c.bounded) {
 		adminPublicKey, err := decodeHexParameter(params[BoundedAdminPublicKeyParameter], BoundedAdminPublicKeyParameter, BoundedAdminPublicKeySize)
@@ -447,7 +447,7 @@ func (c *ComposedDSA) validatedCosignerPublicKey(spendingPublicKey []byte, param
 			return nil, err
 		}
 		if bytes.Equal(cosignerPublicKey, adminPublicKey) {
-			return nil, fmt.Errorf("bounded cosigner witness key must differ from the contract-admin key")
+			return nil, fmt.Errorf("bounded spend cosigner key must differ from the contract-admin key")
 		}
 	}
 	return cosignerPublicKey, nil

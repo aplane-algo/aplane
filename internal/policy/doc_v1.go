@@ -191,7 +191,7 @@ func ValidateDocumentKey(role noderole.Role, key string) error {
 		}
 	case noderole.RoleCosigner:
 		if id, err := witness.NormalizeID(key); err != nil || id != key {
-			return fmt.Errorf("a cosigner policy key must be %q or a Witness Key ID, not %q", DefaultKey, key)
+			return fmt.Errorf("a cosigner policy key must be %q or a Cosigner Key ID, not %q", DefaultKey, key)
 		}
 	default:
 		return fmt.Errorf("unsupported node role %q", role)

@@ -18,7 +18,7 @@ const (
 	maxPublicReference    = 16 * 1024
 )
 
-var ErrUnsupportedPublicReferenceSchema = errors.New("unsupported witness public-reference schema")
+var ErrUnsupportedPublicReferenceSchema = errors.New("unsupported cosigner public-reference schema")
 
 // PublicReference is the canonical non-secret witness identity projection.
 type PublicReference struct {
@@ -31,7 +31,7 @@ type PublicReference struct {
 // NewPublicReference validates and constructs a canonical public reference.
 func NewPublicReference(keyType, keyID, publicKeyHex string) (PublicReference, error) {
 	if !IsKeyType(keyType) {
-		return PublicReference{}, fmt.Errorf("key type %q is not a witness key type", keyType)
+		return PublicReference{}, fmt.Errorf("key type %q is not a cosigner key type", keyType)
 	}
 	keyID, err := NormalizeID(keyID)
 	if err != nil {
@@ -68,7 +68,7 @@ func MarshalPublicReference(reference PublicReference) ([]byte, error) {
 	}
 	data, err := json.MarshalIndent(normalized, "", "  ")
 	if err != nil {
-		return nil, fmt.Errorf("encode public witness reference: %w", err)
+		return nil, fmt.Errorf("encode public cosigner reference: %w", err)
 	}
 	return append(data, '\n'), nil
 }
@@ -76,16 +76,16 @@ func MarshalPublicReference(reference PublicReference) ([]byte, error) {
 // ParsePublicReference strictly decodes and validates a public reference.
 func ParsePublicReference(data []byte) (PublicReference, error) {
 	if len(data) == 0 || len(data) > maxPublicReference {
-		return PublicReference{}, fmt.Errorf("public witness reference size %d is invalid", len(data))
+		return PublicReference{}, fmt.Errorf("public cosigner reference size %d is invalid", len(data))
 	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	var reference PublicReference
 	if err := decoder.Decode(&reference); err != nil {
-		return PublicReference{}, fmt.Errorf("decode public witness reference: %w", err)
+		return PublicReference{}, fmt.Errorf("decode public cosigner reference: %w", err)
 	}
 	if err := requireEOF(decoder); err != nil {
-		return PublicReference{}, fmt.Errorf("decode public witness reference: %w", err)
+		return PublicReference{}, fmt.Errorf("decode public cosigner reference: %w", err)
 	}
 	if reference.Schema != PublicReferenceSchema {
 		return PublicReference{}, fmt.Errorf("%w %q", ErrUnsupportedPublicReferenceSchema, reference.Schema)

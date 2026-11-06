@@ -18,7 +18,7 @@ import (
 // Clients configure the cosigner's address themselves, with endpoints add,
 // so the file carries no endpoint, token, or host trust.
 
-const cosignerKeyFileSuffix = witness.CosignerPublicReferenceExtension
+const cosignerKeyFileSuffix = witness.PublicReferenceExtension
 
 func suggestedCosignerExportPath(witnessKeyID string) string {
 	compact := strings.ToLower(strings.TrimSpace(witnessKeyID))
@@ -52,9 +52,9 @@ func (m Model) openCosignerExportFor(rawWitnessKeyID, keyType string, returnView
 	witnessKeyID, err := witness.NormalizeID(rawWitnessKeyID)
 	if err != nil {
 		if returnView == ViewGenerateDisplay {
-			m.forms.generateError = "Export unavailable: invalid Witness Key ID"
+			m.forms.generateError = "Export unavailable: invalid Cosigner Key ID"
 		} else {
-			m.details.saveStatus = "Export unavailable: invalid Witness Key ID"
+			m.details.saveStatus = "Export unavailable: invalid Cosigner Key ID"
 		}
 		return m, nil
 	}
@@ -189,7 +189,7 @@ func (m Model) renderCosignerExportPath() string {
 	body.WriteString(titleStyle.Render("Export Cosigner Key"))
 	body.WriteString("\n")
 	body.WriteString(subtitleStyle.Render(wrapPlainText("Saves the public key file on this machine; no private key or token.", m.popupBodyWidth(90))))
-	body.WriteString("\n\nWitness Key ID:\n")
+	body.WriteString("\n\nCosigner Key ID:\n")
 	body.WriteString(wrapPlainText(groupedWitnessKeyID(m.cosigner.exportWitnessID), m.popupBodyWidth(90)))
 	body.WriteString("\n\nOutput path:\n")
 	pathStyle := inputInactiveStyle
@@ -228,7 +228,7 @@ func (m Model) renderCosignerExportResult() string {
 	body.WriteString(titleStyle.Render("Cosigner Key Exported"))
 	body.WriteString("\n\nPublic key file saved to:\n")
 	body.WriteString(terminalSafe(m.cosigner.exportWrittenPath))
-	body.WriteString("\n\nWitness Key ID:\n")
+	body.WriteString("\n\nCosigner Key ID:\n")
 	body.WriteString(wrapPlainText(groupedWitnessKeyID(m.cosigner.exportWitnessID), m.popupBodyWidth(90)))
 	body.WriteString("\n")
 	body.WriteString("\nOn the signer: Generate account -> Cosigner -> Use key file.")

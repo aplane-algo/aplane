@@ -83,7 +83,7 @@ func selectShape(params map[string]string, defs []lsigprovider.ParameterDef) (*s
 	case rekey == RekeySpendingKey && cosigner != "":
 		return nil, fmt.Errorf("a cosigner requires %s=%s", ParameterRekeyAuthority, RekeyAdminKey)
 	case admin != "" && admin == cosigner:
-		return nil, fmt.Errorf("bounded cosigner witness key must differ from the contract-admin key")
+		return nil, fmt.Errorf("bounded spend cosigner key must differ from the contract-admin key")
 	case timelock && rekey == RekeySpendingKey && !slices.Contains(spend, txeffects.SpendEffectPay):
 		return nil, fmt.Errorf("a timelock with %s=%s requires pay in %s", ParameterRekeyAuthority, RekeySpendingKey, ParameterSpendEffects)
 	}

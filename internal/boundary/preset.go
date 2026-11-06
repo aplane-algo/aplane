@@ -77,7 +77,7 @@ func Presets() []Preset {
 // SampleValues are what an operator supplies to a preset.
 type SampleValues struct {
 	Recipients  []string
-	AdminKey    string // path to a public .adm.json envelope
+	AdminKey    string // path to a public .cos.json envelope
 	Cosigner    string
 	UnlockRound string
 }

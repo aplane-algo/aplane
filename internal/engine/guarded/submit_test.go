@@ -404,8 +404,8 @@ func TestRequestCosignerComponentSignaturesExplicitMismatchDoesNotFallback(t *te
 		t.Fatalf("cosignerComponentSelector() error = %v", selectorErr)
 	}
 	errText := err.Error()
-	if !strings.Contains(errText, "no live cosigner route for Witness Key ID") || !strings.Contains(errText, componentSelector) {
-		t.Fatalf("requestCosignerComponentSignatures() error = %q, want endpoint mismatch with Witness Key ID %s", err, componentSelector)
+	if !strings.Contains(errText, "no live cosigner route for Cosigner Key ID") || !strings.Contains(errText, componentSelector) {
+		t.Fatalf("requestCosignerComponentSignatures() error = %q, want endpoint mismatch with Cosigner Key ID %s", err, componentSelector)
 	}
 	if strings.Contains(errText, cosignerHex) {
 		t.Fatalf("requestCosignerComponentSignatures() error exposed raw cosigner public key: %q", err)
@@ -650,7 +650,7 @@ func TestCosignerComponentLabelUsesFalconCosignerKeyID(t *testing.T) {
 
 	label := cosignerComponentLabel(witness.Falcon1024V1, cosignerHex)
 	if !strings.Contains(label, componentSelector) || !strings.Contains(label, witness.Falcon1024V1) {
-		t.Fatalf("cosignerComponentLabel() = %q, want Witness Key ID %s and key type", label, componentSelector)
+		t.Fatalf("cosignerComponentLabel() = %q, want Cosigner Key ID %s and key type", label, componentSelector)
 	}
 	if strings.Contains(label, cosignerHex) {
 		t.Fatalf("cosignerComponentLabel() exposed raw Falcon cosigner public key: %q", label)
@@ -679,7 +679,7 @@ func cosignerEndpointHandler(t *testing.T, publicKeyHex string, privateKey []byt
 	}
 	componentSelector, err := witness.ID(witness.Falcon1024V1, publicKey)
 	if err != nil {
-		t.Fatalf("Witness Key ID: %v", err)
+		t.Fatalf("Cosigner Key ID: %v", err)
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/keys", func(w http.ResponseWriter, r *http.Request) {
@@ -703,7 +703,7 @@ func cosignerEndpointHandler(t *testing.T, publicKeyHex string, privateKey []byt
 			return
 		}
 		if req.TargetKind() != signerapi.ComponentTargetKindCosigner || req.Targets[0].ComponentKey != componentSelector {
-			http.Error(w, "wrong Witness Key ID", http.StatusBadRequest)
+			http.Error(w, "wrong Cosigner Key ID", http.StatusBadRequest)
 			return
 		}
 		group, err := canonical.DecodeGroupHex(req.GroupBytesHex)

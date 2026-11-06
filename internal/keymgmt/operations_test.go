@@ -400,7 +400,7 @@ func TestGenerateKeyCosignerComponent(t *testing.T) {
 				t.Fatal("PublicKeyHex is empty")
 			}
 			if !witness.IsID(result.Address) {
-				t.Fatalf("Address = %q, want Witness Key ID", result.Address)
+				t.Fatalf("Address = %q, want Cosigner Key ID", result.Address)
 			}
 			if result.Address == result.PublicKeyHex {
 				t.Fatal("component address unexpectedly equals public key hex")

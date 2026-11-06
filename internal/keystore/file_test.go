@@ -588,8 +588,8 @@ func TestFileKeyStoreScanRejectsComponentPublicPrivateMismatch(t *testing.T) {
 	if len(report.Keys) != 0 || len(report.Warnings) != 1 {
 		t.Fatalf("scan report = %#v, want one rejected key", report)
 	}
-	if !strings.Contains(report.Warnings[0].Reason(), "witness public key does not match private key") {
-		t.Fatalf("scan warning = %v, want witness key mismatch", report.Warnings[0])
+	if !strings.Contains(report.Warnings[0].Reason(), "cosigner public key does not match private key") {
+		t.Fatalf("scan warning = %v, want cosigner key mismatch", report.Warnings[0])
 	}
 }
 

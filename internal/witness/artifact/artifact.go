@@ -145,7 +145,7 @@ func Generate(passphrase []byte, now time.Time) (bundleBytes, referenceBytes []b
 	defer apcrypto.ZeroBytes(plaintext)
 	encryptedJSON, err := apcrypto.EncryptStandalone(plaintext, passphrase)
 	if err != nil {
-		return nil, nil, PublicReference{}, fmt.Errorf("encrypt witness artifact: %w", err)
+		return nil, nil, PublicReference{}, fmt.Errorf("encrypt standalone cosigner file: %w", err)
 	}
 	defer apcrypto.ZeroBytes(encryptedJSON)
 
@@ -165,11 +165,11 @@ func Generate(passphrase []byte, now time.Time) (bundleBytes, referenceBytes []b
 	}
 	bundleBytes, err = json.MarshalIndent(bundle, "", "  ")
 	if err != nil {
-		return nil, nil, PublicReference{}, fmt.Errorf("encode witness artifact: %w", err)
+		return nil, nil, PublicReference{}, fmt.Errorf("encode standalone cosigner file: %w", err)
 	}
 	referenceBytes, err = json.MarshalIndent(reference, "", "  ")
 	if err != nil {
-		return nil, nil, PublicReference{}, fmt.Errorf("encode public witness reference: %w", err)
+		return nil, nil, PublicReference{}, fmt.Errorf("encode public cosigner reference: %w", err)
 	}
 	return bundleBytes, referenceBytes, reference, nil
 }
@@ -215,7 +215,7 @@ func Open(data, passphrase []byte) (credential *Credential, err error) {
 	}
 	plaintext, err := apcrypto.DecryptStandalone(encryptedJSON, passphrase)
 	if err != nil {
-		return nil, fmt.Errorf("decrypt witness artifact: %w", err)
+		return nil, fmt.Errorf("decrypt standalone cosigner file: %w", err)
 	}
 	defer apcrypto.ZeroBytes(plaintext)
 
@@ -263,11 +263,11 @@ func Verify(data, passphrase []byte) (PublicReference, error) {
 
 func parseBundle(data []byte) (Bundle, error) {
 	if len(data) == 0 || len(data) > maxArtifactBytes {
-		return Bundle{}, fmt.Errorf("witness artifact size %d is invalid", len(data))
+		return Bundle{}, fmt.Errorf("standalone cosigner file size %d is invalid", len(data))
 	}
 	var bundle Bundle
 	if err := decodeStrict(data, &bundle); err != nil {
-		return Bundle{}, fmt.Errorf("decode witness artifact: %w", err)
+		return Bundle{}, fmt.Errorf("decode standalone cosigner file: %w", err)
 	}
 	if bundle.Schema != BundleSchema {
 		return Bundle{}, &ProtocolError{Code: ErrorUnsupportedArtifactSchema, Err: fmt.Errorf("unsupported artifact schema %q", bundle.Schema)}
@@ -291,19 +291,19 @@ func validateEncryption(encryption apcrypto.EncryptedDataStandalone) error {
 		return fmt.Errorf("unsupported nested encryption envelope version %d", encryption.EnvelopeVersion)
 	}
 	if encryption.KDFTime != standaloneKDFTime || encryption.KDFMemory != standaloneKDFMemory || encryption.KDFThreads != standaloneKDFThreads {
-		return fmt.Errorf("unsupported witness artifact KDF parameters")
+		return fmt.Errorf("unsupported standalone cosigner file KDF parameters")
 	}
 	salt, err := base64.StdEncoding.DecodeString(encryption.Salt)
 	if err != nil || len(salt) != standaloneSaltBytes {
-		return fmt.Errorf("witness artifact encryption salt is invalid")
+		return fmt.Errorf("standalone cosigner file encryption salt is invalid")
 	}
 	nonce, err := base64.StdEncoding.DecodeString(encryption.Nonce)
 	if err != nil || len(nonce) != standaloneNonceBytes {
-		return fmt.Errorf("witness artifact encryption nonce is invalid")
+		return fmt.Errorf("standalone cosigner file encryption nonce is invalid")
 	}
 	ciphertext, err := base64.StdEncoding.DecodeString(encryption.Ciphertext)
 	if err != nil || len(ciphertext) < standaloneGCMTagBytes {
-		return fmt.Errorf("witness artifact encryption ciphertext is invalid")
+		return fmt.Errorf("standalone cosigner file encryption ciphertext is invalid")
 	}
 	return nil
 }
@@ -314,7 +314,7 @@ func validateCredential(credential *Credential) error {
 		return err
 	}
 	if credential.KeyType != witness.Falcon1024V1 {
-		return fmt.Errorf("unsupported witness key type %q", credential.KeyType)
+		return fmt.Errorf("unsupported cosigner key type %q", credential.KeyType)
 	}
 	if len(credential.PrivateMaterial) != witness.Falcon1024PrivateKeySize {
 		return fmt.Errorf("Falcon-1024 private material length %d invalid", len(credential.PrivateMaterial))
@@ -381,7 +381,7 @@ func decodeCanonicalPublicKey(value string) ([]byte, error) {
 		return nil, fmt.Errorf("public key must be canonical lowercase hex")
 	}
 	if len(publicKey) != witness.Falcon1024PublicKeySize {
-		return nil, fmt.Errorf("witness public key length %d invalid (expected %d bytes)", len(publicKey), witness.Falcon1024PublicKeySize)
+		return nil, fmt.Errorf("cosigner public key length %d invalid (expected %d bytes)", len(publicKey), witness.Falcon1024PublicKeySize)
 	}
 	return publicKey, nil
 }

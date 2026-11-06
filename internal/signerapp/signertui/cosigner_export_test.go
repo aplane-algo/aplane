@@ -184,7 +184,7 @@ func TestComposeCosignerExportArtifactIsTheKeyOnly(t *testing.T) {
 	}
 	parsed, err := witness.ParsePublicReference([]byte(artifact))
 	if err != nil {
-		t.Fatalf("exported file is not a public witness reference: %v", err)
+		t.Fatalf("exported file is not a public cosigner reference: %v", err)
 	}
 	if parsed != reference || strings.Contains(artifact, "endpoint") {
 		t.Fatalf("artifact = %s", artifact)

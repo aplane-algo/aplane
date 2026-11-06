@@ -138,7 +138,7 @@ func witnessPublicKeySizeForTest(t *testing.T) int {
 	t.Helper()
 	size, ok := witness.PublicKeySize(witness.Falcon1024V1)
 	if !ok {
-		t.Fatal("missing witness public key size")
+		t.Fatal("missing cosigner public key size")
 	}
 	return size
 }

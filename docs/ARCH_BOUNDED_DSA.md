@@ -17,10 +17,10 @@ the v1 compatibility baseline.
 
 A bounded authorization contract is a stateless LogicSig program that
 defines the complete transaction envelope accepted for an account. Its
-contract admin key is a separately custodied witness key that co-authorizes a
+admin cosigner (the contract admin key) is a separately custodied key that co-authorizes a
 named administrative operation with the base spending key. It is not an
 independent spending-key recovery key, Algorand Governance, the `apadmin`
-client, or an ASA manager key. The key form is shared with cosigner witnesses,
+client, or an ASA manager key. The key form is shared with spend cosigners,
 but an individual keypair should never be enrolled in both roles.
 
 `bounded1` has three ordered regions:
@@ -993,7 +993,7 @@ request.
 Contract-admin private keys never appear in signer inventory. Bounded account
 rows expose the immutable derived `admin_key_id`, program binding, Layer-3
 policy, and other non-secret bounded-authorization metadata. Apsigner does
-not report artifact availability because `.adm` custody is
+not report artifact availability because `.cos` custody is
 external and intentionally outside the signer data model.
 
 `/keytypes` exposes the framework-injected scalar
@@ -1005,10 +1005,12 @@ option. Generation derives the ID from the public key.
 ## External Contract Admin Artifact Contract
 
 `aprekey` owns external contract-admin witness custody. Its encrypted
-artifacts use the `.adm` extension and filenames of the form
-`<WITNESS_KEY_ID>.adm`. They are not signer-managed `.key` or `.cos` files
-or `apstore` `.apb` backup bundles. Existing `.wit` artifacts remain readable;
-the helper rejects every other extension before parsing or passphrase work.
+artifacts use the `.cos` extension and filenames of the form
+`<WITNESS_KEY_ID>.cos`, sharing the suffix with store-managed cosigner keys.
+Their standalone bundle schema and passphrase envelope differ from store term
+envelopes and `apstore` `.apb` backup bundles. Existing `.wit` and `.adm` artifacts
+remain readable. The helper rejects every other extension and validates the
+standalone schema before passphrase work; store-encrypted `.cos` files are rejected.
 The signer and `apstore` must not import,
 decrypt, back up, or restore these artifacts.
 
@@ -1058,7 +1060,7 @@ Private plaintext, private key bytes, passphrases, and temporary signatures
 must be cleared on success and failure.
 
 Generation also writes
-`<WITNESS_KEY_ID>.adm.json` with schema
+`<WITNESS_KEY_ID>.cos.json` with schema
 `aplane.witness-key-public.v1`, `key_type`, `witness_key_id`, and
 `public_key_hex`. This sidecar is public convenience data only. The encrypted
 artifact's public header is authoritative and remains sufficient for inspect, verify,
@@ -1068,9 +1070,10 @@ existing non-symlink directory. Each output is committed atomically; the pair
 is not a transactional filesystem unit, and the public sidecar can always be
 reconstructed from the committed artifact.
 
-Readers also accept existing `.wit.json` admin references. The extension names
-the custody role; the witness identity, public schema, and encrypted bundle
-schema are unchanged. New outputs always use `.adm` and `.adm.json`.
+Readers also accept existing `.wit.json` and `.adm.json` admin references.
+The shared extension identifies a cosigner credential, not its role or encryption
+mode. Witness identity, public schema, and encrypted bundle schema are unchanged.
+New outputs always use `.cos` and `.cos.json`.
 
 Successful `aprekey generate` output is:
 
@@ -1088,7 +1091,7 @@ Successful `aprekey generate` output is:
 
 The result does not contain filesystem paths. Callers derive the two generated
 filenames from `--out` and `reference.witness_key_id` using the canonical
-`.adm` and `.adm.json` suffixes. Moving the generated files does not invalidate
+`.cos` and `.cos.json` suffixes. Moving the generated files does not invalidate
 the result or either file.
 
 ## Contract Admin Ceremony Contract

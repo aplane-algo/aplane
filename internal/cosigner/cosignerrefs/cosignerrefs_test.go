@@ -85,7 +85,7 @@ func TestImportIsIdempotentAndRejectsNameReplacement(t *testing.T) {
 		t.Fatalf("Get() after rejected replacement = (%#v, %v, %v)", stored, found, getErr)
 	}
 	if stored.ComponentKey != first.ComponentKey {
-		t.Fatalf("stored Witness Key ID = %q, want original %q", stored.ComponentKey, first.ComponentKey)
+		t.Fatalf("stored Cosigner Key ID = %q, want original %q", stored.ComponentKey, first.ComponentKey)
 	}
 }
 
@@ -104,7 +104,7 @@ func TestImportRejectsMismatchedWitnessIdentity(t *testing.T) {
 		want   string
 	}{
 		{
-			name: "public key does not match Witness Key ID",
+			name: "public key does not match Cosigner Key ID",
 			mutate: func(envelope map[string]any) {
 				envelope["witness_key_id"] = otherID
 			},
@@ -117,7 +117,7 @@ func TestImportRejectsMismatchedWitnessIdentity(t *testing.T) {
 				envelope["key_type"] = unsupported
 				envelope["witness_key_id"] = witness.DeriveID(unsupported, publicKey)
 			},
-			want: "is not a witness key type",
+			want: "is not a cosigner key type",
 		},
 	}
 
@@ -207,10 +207,10 @@ func TestResolveCreationParamsUsesImportedReference(t *testing.T) {
 		ParamCosignerName: componentKey,
 	})
 	if err != nil {
-		t.Fatalf("ResolveCreationParams(Witness Key ID) error = %v", err)
+		t.Fatalf("ResolveCreationParams(Cosigner Key ID) error = %v", err)
 	}
 	if got := resolved[keytypes.ParameterCosignerPublicKey]; got != strings.Repeat("ab", falconfamily.PublicKeySize) {
-		t.Fatalf("Witness Key ID cosigner_public_key = %q, want imported public key", got)
+		t.Fatalf("Cosigner Key ID cosigner_public_key = %q, want imported public key", got)
 	}
 }
 

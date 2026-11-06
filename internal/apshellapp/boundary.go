@@ -53,7 +53,7 @@ func (a *App) PreviewBoundaryFile(path string) (*BoundaryPreview, error) {
 		}
 	}
 	if preview.AdminKeyID, err = boundary.AdminKeyID(parameters); err != nil {
-		return nil, fmt.Errorf("identify contract admin key: %w", err)
+		return nil, fmt.Errorf("identify admin cosigner key: %w", err)
 	}
 	if preview.Cosigner != "" {
 		if normalized, err := witness.NormalizeID(preview.Cosigner); err == nil {

@@ -424,7 +424,7 @@ func (c Catalog) runCosigner(args []string) error {
 func (c Catalog) exportCosigner(args []string) error {
 	keyID, err := witness.NormalizeID(args[0])
 	if err != nil {
-		return fmt.Errorf("invalid Witness Key ID: %w", err)
+		return fmt.Errorf("invalid Cosigner Key ID: %w", err)
 	}
 	result, err := requestInspectionWithRetry(c, func() any {
 		return protocol.ExportCosignerPublicMessage{

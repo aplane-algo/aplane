@@ -36,7 +36,7 @@ func (a *App) CosignerStatus(ctx context.Context, _ CosignerStatusRequest) (*Cos
 	for _, connection := range result.Connections {
 		lines = append(lines, fmt.Sprintf("  %s: %s", connection.Alias, connection.State), "    endpoint: "+connection.URL)
 		for _, id := range connection.Witnesses {
-			lines = append(lines, "    Witness Key ID: "+witness.GroupedID(id))
+			lines = append(lines, "    Cosigner Key ID: "+witness.GroupedID(id))
 		}
 		if connection.Error != "" {
 			lines = append(lines, "    reason: "+connection.Error)
@@ -66,7 +66,7 @@ func (a *App) CosignerStatus(ctx context.Context, _ CosignerStatusRequest) (*Cos
 		}
 		lines = append(lines, fmt.Sprintf("  %s: %s", label, account.State))
 		if account.WitnessKeyID != "" {
-			lines = append(lines, "    Witness Key ID: "+witness.GroupedID(account.WitnessKeyID))
+			lines = append(lines, "    Cosigner Key ID: "+witness.GroupedID(account.WitnessKeyID))
 		}
 		if len(account.Routes) > 0 {
 			lines = append(lines, "    routes: "+strings.Join(account.Routes, ", "))

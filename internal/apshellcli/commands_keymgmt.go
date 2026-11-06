@@ -118,10 +118,10 @@ func renderBoundaryPreview(r *REPLState, preview *apshellapp.BoundaryPreview) {
 	case preview.Cosigner == "":
 		r.println("  Cosigner:   none")
 	case preview.CosignerIsKey:
-		r.printf("  Cosigner:   Witness Key ID %s\n", preview.Cosigner)
+		r.printf("  Cosigner:   Cosigner Key ID %s\n", preview.Cosigner)
 	default:
 		r.printf("  Cosigner:   %q is unresolved. The signer resolves this name during creation,\n", preview.Cosigner)
-		r.println("              so an edited reference changes the authority. Prefer a Witness Key ID.")
+		r.println("              so an edited reference changes the authority. Prefer a Cosigner Key ID.")
 	}
 }
 

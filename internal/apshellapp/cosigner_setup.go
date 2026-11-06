@@ -396,7 +396,7 @@ func (a *App) CompleteCosignerSetup(ctx context.Context, plan CosignerSetupPlan,
 	if len(result.Routes.Duplicates) > 0 {
 		ids := sortedKeys(result.Routes.Duplicates)
 		return result, fmt.Errorf(
-			"%w: Witness Key ID %s is advertised by connections %s; signing needs a unique route",
+			"%w: Cosigner Key ID %s is advertised by connections %s; signing needs a unique route",
 			ErrCosignerSetupDuplicateRoute, witness.GroupedID(ids[0]), strings.Join(result.Routes.Duplicates[ids[0]], " and "),
 		)
 	}
@@ -528,13 +528,13 @@ func cosignerSetupRenderLines(result *CosignerSetupResult, accountLabel func(str
 	}
 	for _, id := range sortedKeys(routes.Duplicates) {
 		lines = append(lines, fmt.Sprintf(
-			"Duplicate route: Witness Key ID %s is advertised by %s. Signing needs a unique route.",
+			"Duplicate route: Cosigner Key ID %s is advertised by %s. Signing needs a unique route.",
 			witness.GroupedID(id), strings.Join(routes.Duplicates[id], " and "),
 		))
 	}
 	for _, id := range sortedKeys(routes.OtherDuplicates) {
 		lines = append(lines, fmt.Sprintf(
-			"Duplicate route on other connections: Witness Key ID %s via %s.",
+			"Duplicate route on other connections: Cosigner Key ID %s via %s.",
 			witness.GroupedID(id), strings.Join(routes.OtherDuplicates[id], ", "),
 		))
 	}

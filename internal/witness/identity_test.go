@@ -25,7 +25,7 @@ func TestIDKnownVector(t *testing.T) {
 		t.Fatalf("ID() = %q, want %q", got, want)
 	}
 	if len(got) != IDLength || !IsID(got) {
-		t.Fatalf("ID() = %q is not a canonical Witness Key ID", got)
+		t.Fatalf("ID() = %q is not a canonical Cosigner Key ID", got)
 	}
 	if _, err := types.DecodeAddress(got); err == nil {
 		t.Fatalf("ID() = %q decoded as an Algorand address", got)

@@ -47,7 +47,7 @@ func TestCosignerStatusObservesLiveRoutesWithoutMutation(t *testing.T) {
 		}
 	}
 	joined := strings.Join(result.RenderLines, "\n")
-	if !strings.Contains(joined, "Witness Key ID: "+witness.GroupedID(id)) || strings.Contains(joined, "Witness Key ID: "+id) {
+	if !strings.Contains(joined, "Cosigner Key ID: "+witness.GroupedID(id)) || strings.Contains(joined, "Cosigner Key ID: "+id) {
 		t.Fatalf("status did not group the display ID: %s", joined)
 	}
 	cacheAfter, _ := json.Marshal(app.eng.SignerCache)

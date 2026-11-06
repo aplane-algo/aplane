@@ -57,7 +57,7 @@ func TestDecodePolicyV1ReportsJSONPointer(t *testing.T) {
 		{"signer document on cosigner node", signer(""), DefaultKey, noderole.RoleCosigner, "/role", "not accepted on a cosigner node"},
 		{"key mismatch", signer(""), v1Ops.String(), noderole.RoleSigner, "/key", "does not match its file name"},
 		{"signer key is witness id", signerJSON(t, testWitnessKeyIDV1, ""), testWitnessKeyIDV1, noderole.RoleSigner, "/key", "Algorand address"},
-		{"cosigner key is address", cosignerJSON(t, v1Ops.String(), ""), v1Ops.String(), noderole.RoleCosigner, "/key", "Witness Key ID"},
+		{"cosigner key is address", cosignerJSON(t, v1Ops.String(), ""), v1Ops.String(), noderole.RoleCosigner, "/key", "Cosigner Key ID"},
 		{"bad address checksum", signerJSON(t, strings.Repeat("A", 58), ""), strings.Repeat("A", 58), noderole.RoleSigner, "/key", "Algorand address"},
 		{"missing required bool", []byte(strings.Replace(string(signer("")), `"always_review_warnings": false,`, "", 1)), DefaultKey, noderole.RoleSigner, "", `missing required field "always_review_warnings"`},
 		{"missing max fee", []byte(strings.Replace(string(signer("")), `"max_fee_microalgos": "0",`, "", 1)), DefaultKey, noderole.RoleSigner, "", `missing required field "max_fee_microalgos"`},

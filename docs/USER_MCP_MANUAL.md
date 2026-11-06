@@ -178,9 +178,9 @@ Box names also accept `<app-id>:<name>`.
 | **Generic LogicSig** (`generic_lsig`) | TEAL logic only — **no key, no signature** | args filled from the key file's stored schema |
 | **Rotating LogicSig** | Falcon-1024, Ed25519, and XMSS, SLH-DSA, or WOTS+C authorize each stage | stage LogicSig arguments; each spend rekeys to the next stage |
 
-The two native account key types are not LogicSig-backed. Witness keys are
+The two native account key types are not LogicSig-backed. Cosigner keys are
 auxiliary non-account keys; signer-custodied instances serve the cosigner
-component role, while standalone `.adm` instances may serve contract admin.
+component role, while standalone `.cos` instances may serve contract admin.
 
 ### Key types (identifiers are `publisher.family.vN`)
 
@@ -200,7 +200,7 @@ component role, while standalone `.adm` instances may serve contract admin.
 | `aplane.rotating-triple-xmss.v1` | rotating LogicSig | library-visible |
 | `aplane.rotating-triple-slhdsa.v1` | rotating LogicSig | library-visible |
 | `aplane.rotating-triple-wotsc.v1` | rotating LogicSig | library-visible |
-| `aplane.witness-falcon1024.v1` | witness key | default-enabled on cosigner nodes (`.cos`); external `.adm` custody also supported |
+| `aplane.witness-falcon1024.v1` | cosigner key | default-enabled on cosigner nodes (`.cos`); external `.cos` custody also supported |
 
 **Always call `keytypes` to see what the connected signer actually exposes** —
 availability is product-scoped. Visibility states: `default_enabled` (for the applicable node role), `library` (compiled in but needs an enabled state record in the product
@@ -256,7 +256,7 @@ A **Corridor v1** account uses the retired `aplane.corridor.v1` bounded-cosigner
 LogicSig profile. Its non-self payment and asset-transfer destinations must
 prove membership in the generation-time Merkle recipient set, and every spend
 also needs the enrolled cosigner's Falcon authorization. A distinct offline
-contract-admin witness co-authorizes pure rekey operations.
+admin cosigner co-authorizes pure rekey operations.
 
 Recipient-constrained accounts can compose into **graphs** — a directed edge
 A→B exists wherever B is in A's recipient set — so operators can build chains,
@@ -407,7 +407,7 @@ Always Deny  >  Always Review  >  Always Approve  >  Operator Default
 Policy is a set of v1 JSON documents in the selected generation: the node
 default `identities/default/generations/<selected-generation>/default.json`,
 which governs every key without a policy of its own, and `policies/<key>.json`
-for a key that has one (a signing address on a signer node, a Witness Key ID
+for a key that has one (a signing address on a signer node, a Cosigner Key ID
 on a cosigner node; the file replaces the default for that key wholesale).
 Each has an HMAC sidecar; a missing/mismatched sidecar **fails closed**.
 Runtime settings (`user_auto_approve`, `lock_on_disconnect`,

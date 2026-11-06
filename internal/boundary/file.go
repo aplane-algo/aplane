@@ -151,7 +151,7 @@ func LoadFile(path string) (map[string]string, error) {
 	return file.CreationParameters(filepath.Dir(path))
 }
 
-// readAdminPublicKey reads the public .adm.json envelope. A relative path is
+// readAdminPublicKey reads the public .cos.json envelope. A relative path is
 // resolved against the boundary file, so a file works from any directory.
 func readAdminPublicKey(directory, path string) (string, error) {
 	if !filepath.IsAbs(path) {
@@ -159,14 +159,14 @@ func readAdminPublicKey(directory, path string) (string, error) {
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return "", fmt.Errorf("read admin witness: %w", err)
+		return "", fmt.Errorf("read admin cosigner: %w", err)
 	}
 	reference, err := witness.ParsePublicReference(data)
 	if err != nil {
-		return "", fmt.Errorf("admin witness %s: %w", path, err)
+		return "", fmt.Errorf("admin cosigner %s: %w", path, err)
 	}
 	if reference.KeyType != witness.Falcon1024V1 {
-		return "", fmt.Errorf("admin witness %s has key type %s, need %s", path, reference.KeyType, witness.Falcon1024V1)
+		return "", fmt.Errorf("admin cosigner %s has key type %s, need %s", path, reference.KeyType, witness.Falcon1024V1)
 	}
 	return reference.PublicKeyHex, nil
 }

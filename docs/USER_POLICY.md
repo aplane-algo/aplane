@@ -48,7 +48,7 @@ identities/default/generations/<selected-generation>/policies/<key>.json.hmac
 identities/default/generations/<selected-generation>/deleted/policies/   # files of deleted keys
 ```
 
-`<key>` is the signing address on a signer node and the Witness Key ID on a
+`<key>` is the signing address on a signer node and the Cosigner Key ID on a
 cosigner node. Each `.hmac` sidecar authenticates the exact document bytes. A
 missing or mismatched sidecar, a document that does not decode, or a
 generation with no `default.json` makes the node refuse to load rather than
@@ -766,7 +766,7 @@ appolicy test policy/               # re-run the saved cases in policy/.appolicy
   assumed: the fee you entered, no fee or dummies the signer adds for
   LogicSig or post-quantum keys, an unknown key type, and no refusals the
   signer makes before policy. For a cosigner document it also assumes the
-  cosigner holds the witness key and applies this document. Networks come
+  cosigner holds the cosigner key and applies this document. Networks come
   from the node context, exactly as exported, else the built-in networks
   only; the same mapping compiles the document, so a custom network's routes
   resolve.
@@ -887,7 +887,7 @@ in base units, and ASA IDs are written `asa:<id>`.
 |-------|------|----------|---------|
 | `format` | both | yes | `"aplane.policy.v1"`. |
 | `role` | both | yes | `"signer"` or `"cosigner"`; must match the node. |
-| `key` | both | yes | `"default"` for the node default, or the key the file governs: a signing address on a signer node, a Witness Key ID on a cosigner node. Must match the file name. |
+| `key` | both | yes | `"default"` for the node default, or the key the file governs: a signing address on a signer node, a Cosigner Key ID on a cosigner node. Must match the file name. |
 | `description` | both | no | Notes for reviewers. |
 | `reject_foreign_rekey` | signer | yes | Reject txns whose non-zero `RekeyTo` target is not held by this node. |
 | `reject_rekey` | cosigner | yes | Coarse deny-all switch for txns with non-zero `RekeyTo`. With `false`, a rekey still fails unless `rekey_policy` allows the edge. |
@@ -1119,7 +1119,7 @@ How to read this:
   needs routes naming that address, a set holding it, or `*`. After a
   rekey the two differ: if account A is rekeyed to this key, this file
   governs A's transactions, and its routes must name A, not the key. On a
-  cosigner node the document belongs to a Witness Key ID and its `sources`
+  cosigner node the document belongs to a Cosigner Key ID and its `sources`
   are guarded account addresses; see
   [Cosigner Documents](USER_TRANSFER_ROUTING.md#cosigner-documents).
 - A route match lets the transfer continue through the other rules; it is
@@ -1394,7 +1394,7 @@ match the route is rejected, including an ASA opt-in, since the
 `self-transfer` route is not in this document. Non-transfer policy layers
 still apply independently.
 
-The cosigner equivalent is one file per witness key. Its `transfer_policy`
+The cosigner equivalent is one file per cosigner key. Its `transfer_policy`
 holds only `routes` and `blocked_destinations`, its `transaction_types` may
 allow only `pay` and `axfer` (every type it does not name is rejected, so
 `"*": "reject"` may be left out), and a finite fee cap keeps a permitted

@@ -446,7 +446,7 @@ func (p *Payload) validate(verifyRecovery bool) error {
 		return validateNoLogicSigFields(p)
 	case CategoryWitness:
 		if !cosignerwitness.IsKeyType(p.KeyType) {
-			return incompatibleKeyFormat("witness category requires a witness key type, got %q", p.KeyType)
+			return incompatibleKeyFormat("witness category requires a cosigner key type, got %q", p.KeyType)
 		}
 		if err := validateWitnessPayload(p); err != nil {
 			return err
@@ -766,20 +766,20 @@ func validateNoNativePQFields(p *Payload) error {
 func validateWitnessPayload(p *Payload) error {
 	publicSize, ok := cosignerwitness.PublicKeySize(p.KeyType)
 	if !ok {
-		return incompatibleKeyFormat("unsupported witness key type %q", p.KeyType)
+		return incompatibleKeyFormat("unsupported cosigner key type %q", p.KeyType)
 	}
 	privateSize, ok := cosignerwitness.PrivateKeySize(p.KeyType)
 	if !ok {
-		return incompatibleKeyFormat("unsupported witness key type %q", p.KeyType)
+		return incompatibleKeyFormat("unsupported cosigner key type %q", p.KeyType)
 	}
 	if len(p.PublicKey) != publicSize {
-		return incompatibleKeyFormat("witness public key length %d invalid (expected %d bytes)", len(p.PublicKey), publicSize)
+		return incompatibleKeyFormat("cosigner public key length %d invalid (expected %d bytes)", len(p.PublicKey), publicSize)
 	}
 	if len(p.PrivateKey) != privateSize {
 		return incompatibleKeyFormat("witness private key length %d invalid (expected %d bytes)", len(p.PrivateKey), privateSize)
 	}
 	if err := cosignerwitness.ValidatePair(p.KeyType, p.PublicKey, p.PrivateKey); err != nil {
-		return incompatibleKeyFormat("invalid witness key pair: %v", err)
+		return incompatibleKeyFormat("invalid cosigner key pair: %v", err)
 	}
 	return nil
 }

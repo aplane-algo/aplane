@@ -67,7 +67,7 @@ func TestPreviewRecognizesAStableWitnessKeyID(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !preview.CosignerIsKey || preview.Cosigner != id {
-		t.Fatalf("preview = %+v, want Witness Key ID %s", preview, id)
+		t.Fatalf("preview = %+v, want Cosigner Key ID %s", preview, id)
 	}
 }
 
