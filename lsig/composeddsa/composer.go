@@ -121,6 +121,10 @@ type ComposedDSA struct {
 	layer3             *Layer3Policy
 	opcodeProfile      lsigresource.OpcodeProfile
 
+	// generationPolicy replaces the production support policy for this composer
+	// only. It stays nil outside tests: nothing but export_test.go sets it.
+	generationPolicy boundedGenerationPolicy
+
 	// Algod client for TEAL compilation (must be set before DeriveLsig)
 	algodClient *algod.Client
 	algodMu     sync.RWMutex

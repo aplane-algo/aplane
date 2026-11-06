@@ -4,9 +4,7 @@
 package v1
 
 import (
-	"encoding/hex"
-	"fmt"
-
+	"github.com/aplane-algo/aplane/internal/sigconstruction"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	"github.com/aplane-algo/aplane/lsig/ed25519lsig/family"
 )
@@ -25,27 +23,20 @@ func (o *Ops) DisplayColor() string     { return family.DisplayColor }
 func (o *Ops) TEALVersion() int         { return family.TEALVersion }
 
 func (o *Ops) BuildVerifyTEAL(publicKey []byte) (string, error) {
-	if len(publicKey) != family.PublicKeySize {
-		return "", fmt.Errorf("invalid public key size: expected %d, got %d", family.PublicKeySize, len(publicKey))
+	verify, err := sigconstruction.Ed25519().VerifyTEAL(publicKey, "txn TxID", 0)
+	if err != nil {
+		return "", err
 	}
-
-	return fmt.Sprintf(`// === Ed25519 Signature Verification ===
-txn TxID
-arg 0
-pushbytes 0x%s
-ed25519verify_bare
-`, hex.EncodeToString(publicKey)), nil
+	return "// === Ed25519 Signature Verification ===\n" + verify, nil
 }
 
 func (o *Ops) BuildSignatureArgs(signature []byte) ([][]byte, error) {
-	if len(signature) != family.MaxSignatureSize {
-		return nil, fmt.Errorf("invalid Ed25519 signature size: expected %d, got %d", family.MaxSignatureSize, len(signature))
-	}
-	return [][]byte{signature}, nil
+	return sigconstruction.Ed25519().PackSignature(signature)
 }
 
 func (o *Ops) SignatureArgLayout() composeddsa.SignatureArgLayout {
-	return composeddsa.SignatureArgLayout{Count: 1, MaxSizes: []int{family.MaxSignatureSize}}
+	layout := sigconstruction.Ed25519().Layout()
+	return composeddsa.SignatureArgLayout{Count: layout.Count(), MaxSizes: layout.MaxSizes()}
 }
 
 var _ composeddsa.BoundedCapableDSAOps = (*Ops)(nil)

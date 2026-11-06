@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/sigconstruction"
 )
 
 // boundedWorkflowSupport records which bounded workflows have been reviewed for a
@@ -18,16 +19,28 @@ type boundedWorkflowSupport struct {
 }
 
 type boundedSupportKey struct {
-	contract    string
-	baseKeyType string
+	contract     string
+	construction sigconstruction.ConstructionID
 }
 
 // boundedSupportPolicy decides whether a new account may be created with a
-// profile. It is keyed by what generation already knows, and answers no
-// structural question.
+// profile. It is keyed by construction rather than by base name, so a registered
+// base with no construction has no support. It answers no structural question.
 var boundedSupportPolicy = map[boundedSupportKey]boundedWorkflowSupport{
-	{BoundedContractV1, "aplane.falcon1024.v1"}: {externalAdmin: true, cosigner: true},
-	{BoundedContractV1, "aplane.ed25519.v1"}:    {},
+	{BoundedContractV1, sigconstruction.Falcon1024().ID()}: {externalAdmin: true, cosigner: true},
+	{BoundedContractV1, sigconstruction.Ed25519().ID()}:    {},
+}
+
+// boundedGenerationPolicy answers the support question for one composer.
+type boundedGenerationPolicy func(contract, baseKeyType string) (boundedWorkflowSupport, bool)
+
+func productionBoundedGenerationPolicy(contract, baseKeyType string) (boundedWorkflowSupport, bool) {
+	construction, ok := sigconstruction.ForBaseKeyType(baseKeyType)
+	if !ok {
+		return boundedWorkflowSupport{}, false
+	}
+	support, ok := boundedSupportPolicy[boundedSupportKey{contract, construction.ID()}]
+	return support, ok
 }
 
 // checkBoundedGenerationSupport refuses a bounded program the current
@@ -42,7 +55,11 @@ func (c *ComposedDSA) checkBoundedGenerationSupport() error {
 	if c.bounded == nil {
 		return nil
 	}
-	support, ok := boundedSupportPolicy[boundedSupportKey{c.bounded.Contract, c.baseKeyType}]
+	policy := c.generationPolicy
+	if policy == nil {
+		policy = productionBoundedGenerationPolicy
+	}
+	support, ok := policy(c.bounded.Contract, c.baseKeyType)
 	if !ok {
 		return fmt.Errorf("%s accounts cannot be generated on base key type %q", c.bounded.Contract, c.baseKeyType)
 	}
