@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/aplane-algo/aplane/internal/boundary"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/merkleallowlist"
 	"github.com/aplane-algo/aplane/internal/txeffects"
@@ -17,28 +18,21 @@ import (
 )
 
 const (
-	// KeyTypeV1 is the general bounded key type.
-	KeyTypeV1 = "aplane.bounded.v1"
+	KeyTypeV1        = boundary.KeyTypeV1
+	BoundarySchemaV1 = boundary.SchemaV1
 
-	// BoundarySchemaV1 identifies the boundary file grammar.
-	BoundarySchemaV1 = "aplane.boundary.v1"
+	ParameterSpendEffects   = boundary.ParameterSpendEffects
+	ParameterRekeyAuthority = boundary.ParameterRekeyAuthority
+	ParameterListEncoding   = boundary.ParameterListEncoding
+	ParameterRecipients     = boundary.ParameterRecipients
+	ParameterCosigner       = boundary.ParameterCosigner
 
-	// Creation parameter names. The first three select a shape; the last two are
-	// the composer parameters a shape declares besides its authority keys.
-	ParameterSpendEffects   = "spend_effects"
-	ParameterRekeyAuthority = "rekey_authority"
-	ParameterListEncoding   = "list_encoding"
-	ParameterRecipients     = "recipients"
-	// ParameterCosigner is the signer-side reference selector. It is resolved to
-	// a public key before an instance is selected.
-	ParameterCosigner = "cosigner"
+	EncodingAuto   = boundary.EncodingAuto
+	EncodingInline = boundary.EncodingInline
+	EncodingMerkle = boundary.EncodingMerkle
 
-	EncodingAuto   = "auto"
-	EncodingInline = "inline"
-	EncodingMerkle = "merkle"
-
-	RekeySpendingKey = boundedmeta.AdminAuthorizationSpend
-	RekeyAdminKey    = boundedmeta.AdminAuthorizationAdmin
+	RekeySpendingKey = boundary.RekeySpendingKey
+	RekeyAdminKey    = boundary.RekeyAdminKey
 
 	// AutoInlineMax is the largest list auto encodes inline. It is part of the
 	// grammar's meaning, so changing it changes the grammar fingerprint.

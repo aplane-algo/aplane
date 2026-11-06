@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/aplane-algo/aplane/internal/boundary"
 	"github.com/aplane-algo/aplane/internal/protocol"
 )
 
@@ -42,6 +43,9 @@ const (
 	ViewCosignerExportJSON
 	ViewGenerating      // Loading state while generating
 	ViewGenerateDisplay // Shows generated key confirmation
+	ViewBoundaryPreset  // Chooses how to define a bounded account
+	ViewGenerateReview  // Reviews a bounded account before generating it
+	ViewGenerateReviewDetails
 	ViewImportForm
 	ViewImportParams        // Parameter input modal for DSA hybrids with params
 	ViewImporting           // Loading state while importing
@@ -272,6 +276,27 @@ type formsState struct {
 	generateError             string
 	generateFocus             int // 0 = key type, then dynamic params, then generate button
 	generateParamScrollOffset int
+
+	// boundaryPreset is the guided arrangement being filled in, if any.
+	boundaryPreset      *boundary.Preset
+	boundaryPresetIndex int
+	boundaryFile        string
+	// boundaryFileRequest marks a request that came straight from a file, so a
+	// failure returns to the screen that loaded it.
+	boundaryFileRequest bool
+
+	// pendingGenerateParams is the request as entered, while it is prepared.
+	pendingGenerateParams map[string]string
+	// review is the prepared request on screen. It ends with the generation it
+	// leads to, so it can never describe a later account.
+	review      *PrepareGenerateResultMessage
+	reviewFocus int
+	// reviewedRequestID is the generation sent from review.
+	reviewedRequestID string
+	// receipt exists only when that exact request created the account on screen.
+	receipt      *boundary.Receipt
+	receiptPath  string
+	receiptError string
 
 	genericLSigParams      map[string]string
 	genericLSigParamOrder  []string
@@ -644,10 +669,16 @@ type ErrorMsg struct {
 
 // GenerateResultMsg is sent when key generation completes
 type GenerateResultMsg struct {
+	ID      string
 	Success bool
 	Address string
 	KeyType string // Full versioned type: "ed25519", "aplane.falcon1024.v1", etc.
 	Error   string
+}
+
+// PrepareGenerateResultMsg reports what a generation request would create.
+type PrepareGenerateResultMsg struct {
+	Result PrepareGenerateResultMessage
 }
 
 // DeleteResultMsg is sent when key deletion completes
@@ -768,21 +799,23 @@ type DisplacedMsg struct {
 
 // AdminSettings holds the admin panel settings received from the server
 type AdminSettings struct {
-	UserAutoApprove      bool
-	LockOnDisconnect     bool
-	PassphraseTimeout    string
-	PassphraseMethod     string
-	NodeRole             string
-	SSHEnabled           bool
-	SSHListenAddress     string
-	SSHPort              int
-	SSHFingerprint       string
-	SSHClients           int
-	SignerPort           int
-	TEALCompileNet       string
-	EndpointAdvertiseURL string
-	EndpointDisplayURL   string
-	Theme                string
+	UserAutoApprove         bool
+	BoundaryRequireAdminKey bool
+	BoundaryRequireCosigner bool
+	LockOnDisconnect        bool
+	PassphraseTimeout       string
+	PassphraseMethod        string
+	NodeRole                string
+	SSHEnabled              bool
+	SSHListenAddress        string
+	SSHPort                 int
+	SSHFingerprint          string
+	SSHClients              int
+	SignerPort              int
+	TEALCompileNet          string
+	EndpointAdvertiseURL    string
+	EndpointDisplayURL      string
+	Theme                   string
 }
 
 // AdminSettingsMsg is sent when admin settings are received

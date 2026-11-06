@@ -73,6 +73,12 @@ type ApprovalGated interface {
 	GenerationRequiresCurrentApproval() bool
 }
 
+// ApprovalDescriber says in plain words what enabling a provider approves, for
+// the screen where an operator decides.
+type ApprovalDescriber interface {
+	ApprovalSummary() string
+}
+
 // SigningProvider extends LSigProvider with DSA signature metadata and
 // derivation. Private-key signing and key generation are intentionally not part
 // of this client-visible interface; they live in signer-side registries.

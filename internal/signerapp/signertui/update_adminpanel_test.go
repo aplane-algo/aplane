@@ -40,6 +40,8 @@ func TestAdminRowsGroupEditableSettingsFirst(t *testing.T) {
 		"Lock-on-disconnect",
 		"Passphrase timeout",
 		"Color theme",
+		"Bounded: require admin key",
+		"Bounded: require cosigner",
 	}
 	for i, want := range wantLabels {
 		if rows[i].label != want {
@@ -52,14 +54,14 @@ func TestAdminRowsGroupEditableSettingsFirst(t *testing.T) {
 			t.Fatalf("row %d editable = false, want true", i)
 		}
 	}
-	if rows[4].section != "Runtime" || rows[4].label != "Admin transport" {
-		t.Fatalf("row 4 = %q/%q, want Runtime/Admin transport", rows[4].section, rows[4].label)
+	if rows[6].section != "Runtime" || rows[6].label != "Admin transport" {
+		t.Fatalf("row 6 = %q/%q, want Runtime/Admin transport", rows[6].section, rows[6].label)
 	}
-	if rows[5].section != "Runtime" || rows[5].label != "Node role" || rows[5].value != "signer" {
-		t.Fatalf("row 5 = %q/%q/%q, want Runtime/Node role/signer", rows[5].section, rows[5].label, rows[5].value)
+	if rows[7].section != "Runtime" || rows[7].label != "Node role" || rows[7].value != "signer" {
+		t.Fatalf("row 7 = %q/%q/%q, want Runtime/Node role/signer", rows[7].section, rows[7].label, rows[7].value)
 	}
-	if rows[7].section != "Runtime" || rows[7].label != "Signer Port" || rows[7].value != "4010" {
-		t.Fatalf("row 7 = %q/%q/%q, want Runtime/Signer Port/4010", rows[7].section, rows[7].label, rows[7].value)
+	if rows[9].section != "Runtime" || rows[9].label != "Signer Port" || rows[9].value != "4010" {
+		t.Fatalf("row 9 = %q/%q/%q, want Runtime/Signer Port/4010", rows[9].section, rows[9].label, rows[9].value)
 	}
 	if rows[0].key != adminproto.AdminSettingUserAutoApprove || rows[0].value != "false" {
 		t.Fatalf("user auto-approve row = key %q value %q, want user_auto_approve/false", rows[0].key, rows[0].value)
@@ -130,5 +132,14 @@ func TestAdminPanelLockShortcutOpensLockConfirm(t *testing.T) {
 	}
 	if cmd != nil {
 		t.Fatalf("cmd = %v, want nil", cmd)
+	}
+}
+
+func TestBoundedSettingsAreHiddenOnCosignerNodes(t *testing.T) {
+	m := Model{admin: adminPanelState{settings: &AdminSettings{NodeRole: "cosigner"}}}
+	for _, row := range m.adminRows() {
+		if strings.HasPrefix(row.label, "Bounded:") {
+			t.Fatalf("a cosigner node offers %q", row.label)
+		}
 	}
 }

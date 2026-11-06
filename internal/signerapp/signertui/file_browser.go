@@ -44,6 +44,7 @@ const (
 	browseContractAdminReference
 	browseBackupExportDir
 	browseBackupImportFile
+	browseBoundaryFile
 )
 
 // fileBrowserSpec is what a target asks of the browser.
@@ -75,6 +76,8 @@ func fileBrowserSpecFor(target fileBrowserTarget) fileBrowserSpec {
 		return fileBrowserSpec{title: "Choose Contract Admin Reference", suffixes: []string{".wit.json"}}
 	case browseBackupExportDir:
 		return fileBrowserSpec{title: "Choose Where to Export", chooseDir: true, fillDir: true}
+	case browseBoundaryFile:
+		return fileBrowserSpec{title: "Choose Boundary File", suffixes: []string{".yaml", ".yml"}}
 	case browseBackupImportFile:
 		return fileBrowserSpec{title: "Choose Backup Archive", suffixes: []string{".tar.gz", ".tgz"}}
 	default:
@@ -204,6 +207,11 @@ func fileBrowserDefaultDirs(target fileBrowserTarget) []string {
 		}
 	case browseClientKeyFile:
 		return []string{filepath.Join(home, ".ssh")}
+	case browseBoundaryFile:
+		// Boundary files and receipts belong where the operator is working.
+		if dir, err := os.Getwd(); err == nil {
+			return []string{dir}
+		}
 	}
 	return nil
 }
@@ -504,6 +512,9 @@ func (m Model) chooseFileBrowserPath(path string) Model {
 	case browseBackupImportFile:
 		m.backups.imp.path = path
 		m.backups.imp.err = ""
+	case browseBoundaryFile:
+		m.forms.boundaryFile = path
+		m.forms.generateError = ""
 	case browseContractAdminReference:
 		if m.forms.genericLSigParams == nil {
 			m.forms.genericLSigParams = make(map[string]string)

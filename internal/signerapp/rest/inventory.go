@@ -295,6 +295,13 @@ func (s Service) buildKeyTypes(validTypes []string, enabledGeneric []string) []s
 				}
 			}
 
+			// A per-key type has no fixed contract to report. Its cosigner is
+			// optional, so this names the capability without asking for one.
+			if resolver, ok := provider.(lsigprovider.InstanceResolver); ok {
+				info.PerKeyContract = true
+				info.CosignerComponentKeyType, _ = resolver.CosignerComponentKeyType(map[string]string{cosignerrefs.ParamCosignerName: ""})
+			}
+
 			for _, p := range provider.CreationParams() {
 				info.CreationParams = append(info.CreationParams, signerapi.CreationParamInfo{
 					Name:        p.Name,
@@ -499,7 +506,9 @@ func applyCosignerReferenceParams(ir *productruntime.Runtime, infos []signerapi.
 
 	for i := range infos {
 		componentType := infos[i].CosignerComponentKeyType
-		if componentType == "" {
+		// Replacing the field with a required selector would add a cosigner to
+		// every account of a type where one is optional.
+		if componentType == "" || infos[i].PerKeyContract {
 			continue
 		}
 		componentIDs := componentIDsByType[componentType]

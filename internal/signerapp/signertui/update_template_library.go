@@ -151,20 +151,39 @@ func (m Model) handleTemplateInstallConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.
 	return m, nil
 }
 
+type libraryAction int
+
+const (
+	libraryActionInstall libraryAction = iota
+	libraryActionActivate
+	libraryActionDeactivate
+)
+
+func libraryActionFor(tmpl LibraryTemplateInfo) libraryAction {
+	// Activation records the current fingerprint even on an enabled type. It must
+	// come first: the usual action here is disable, which refuses while accounts
+	// use the type, and those accounts must not stand in the way of approval.
+	if tmpl.NeedsApproval {
+		return libraryActionActivate
+	}
+	if !tmpl.Installed && !isCompiledProviderLibraryEntry(tmpl) {
+		return libraryActionInstall
+	}
+	if libraryEntryEnabled(tmpl) {
+		return libraryActionDeactivate
+	}
+	return libraryActionActivate
+}
+
 func (m Model) libraryActionCmd(tmpl LibraryTemplateInfo, id string) tea.Cmd {
-	if isCompiledProviderLibraryEntry(tmpl) {
-		if tmpl.Installed {
-			return m.sendDeactivateKeyTypeCmd(tmpl.KeyType, id)
-		}
+	switch libraryActionFor(tmpl) {
+	case libraryActionActivate:
 		return m.sendActivateKeyTypeCmd(tmpl.KeyType, id)
+	case libraryActionDeactivate:
+		return m.sendDeactivateKeyTypeCmd(tmpl.KeyType, id)
+	default:
+		return m.sendInstallLibraryTemplateCmd(tmpl.KeyType, tmpl.TemplateType, id)
 	}
-	if tmpl.Installed {
-		if tmpl.Enabled {
-			return m.sendDeactivateKeyTypeCmd(tmpl.KeyType, id)
-		}
-		return m.sendActivateKeyTypeCmd(tmpl.KeyType, id)
-	}
-	return m.sendInstallLibraryTemplateCmd(tmpl.KeyType, tmpl.TemplateType, id)
 }
 
 func (m Model) ensureTemplateVisible() Model {
@@ -202,6 +221,13 @@ func (m Model) finishLibraryAction(success bool, status, errText, fallbackErr st
 		m.sendListKeyTypesCmd(),
 		m.sendListKeysCmd(),
 	)
+}
+
+func (m Model) libraryActivatedStatus(keyType string, alreadyExists bool) string {
+	if m.library.pendingTemplate != nil && m.library.pendingTemplate.NeedsApproval {
+		return displayKeyType(keyType) + ": current grammar approved"
+	}
+	return libraryEnabledStatus(keyType, alreadyExists)
 }
 
 func libraryEnabledStatus(keyType string, alreadyExists bool) string {

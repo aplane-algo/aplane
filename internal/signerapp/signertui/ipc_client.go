@@ -560,11 +560,15 @@ var signerMessageDecoders = map[string]func(raw []byte) (tea.Msg, error){
 	protocol.MsgTypeExportResult: decodeAs(func(result protocol.ExportResultMessage) tea.Msg { return nativeMnemonicResultMsg(result) }),
 	MsgTypeGenerateResult: decodeAs(func(genResult GenerateResultMessage) tea.Msg {
 		return GenerateResultMsg{
+			ID:      genResult.ID,
 			Success: genResult.Success,
 			Address: genResult.Address,
 			KeyType: genResult.KeyType,
 			Error:   genResult.Error,
 		}
+	}),
+	MsgTypePrepareGenerateResult: decodeAs(func(result PrepareGenerateResultMessage) tea.Msg {
+		return PrepareGenerateResultMsg{Result: result}
 	}),
 	MsgTypeBackupResult: decodeAs(func(backupResult BackupResultMessage) tea.Msg {
 		return BackupResultMsg{
@@ -770,21 +774,23 @@ var signerMessageDecoders = map[string]func(raw []byte) (tea.Msg, error){
 	MsgTypeAdminSettings: decodeAs(func(settings AdminSettingsMessage) tea.Msg {
 		return AdminSettingsMsg{
 			Settings: AdminSettings{
-				UserAutoApprove:      settings.UserAutoApprove,
-				LockOnDisconnect:     settings.LockOnDisconnect,
-				PassphraseTimeout:    settings.PassphraseTimeout,
-				PassphraseMethod:     settings.PassphraseMethod,
-				NodeRole:             settings.NodeRole,
-				SSHEnabled:           settings.SSHEnabled,
-				SSHListenAddress:     settings.SSHListenAddress,
-				SSHPort:              settings.SSHPort,
-				SSHFingerprint:       settings.SSHFingerprint,
-				SSHClients:           settings.SSHClients,
-				SignerPort:           settings.SignerPort,
-				TEALCompileNet:       settings.TEALCompileNet,
-				EndpointAdvertiseURL: settings.EndpointAdvertiseURL,
-				EndpointDisplayURL:   settings.EndpointDisplayURL,
-				Theme:                settings.Theme,
+				UserAutoApprove:         settings.UserAutoApprove,
+				BoundaryRequireAdminKey: settings.BoundaryRequireAdminKey,
+				BoundaryRequireCosigner: settings.BoundaryRequireCosigner,
+				LockOnDisconnect:        settings.LockOnDisconnect,
+				PassphraseTimeout:       settings.PassphraseTimeout,
+				PassphraseMethod:        settings.PassphraseMethod,
+				NodeRole:                settings.NodeRole,
+				SSHEnabled:              settings.SSHEnabled,
+				SSHListenAddress:        settings.SSHListenAddress,
+				SSHPort:                 settings.SSHPort,
+				SSHFingerprint:          settings.SSHFingerprint,
+				SSHClients:              settings.SSHClients,
+				SignerPort:              settings.SignerPort,
+				TEALCompileNet:          settings.TEALCompileNet,
+				EndpointAdvertiseURL:    settings.EndpointAdvertiseURL,
+				EndpointDisplayURL:      settings.EndpointDisplayURL,
+				Theme:                   settings.Theme,
 			},
 		}
 	}),
@@ -1185,6 +1191,39 @@ func (m Model) sendRollbackRestoreCmd() tea.Cmd {
 
 func (m Model) sendReconcileStoreCmd() tea.Cmd {
 	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendReconcileStore() })
+}
+
+// SendPrepareGenerateKey asks what a generation request would create.
+func (c *IPCClient) SendPrepareGenerateKey(keyType string, params map[string]string, id string) error {
+	return c.sendMessage(PrepareGenerateKeyMessage{
+		BaseMessage: BaseMessage{Type: MsgTypePrepareGenerateKey, ID: id},
+		KeyType:     keyType,
+		Parameters:  params,
+	})
+}
+
+func (m Model) sendPrepareGenerateKeyCmd(keyType string, params map[string]string, id string) tea.Cmd {
+	return operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendPrepareGenerateKey(keyType, params, id) })
+}
+
+// SendReviewedGenerateKey generates the account an operator reviewed.
+func (c *IPCClient) SendReviewedGenerateKey(review PrepareGenerateResultMessage, id string) error {
+	return c.sendMessage(reviewedGenerateMessage(review, id))
+}
+
+// reviewedGenerateMessage carries the resolved values, not the original request.
+func reviewedGenerateMessage(review PrepareGenerateResultMessage, id string) GenerateKeyMessage {
+	return GenerateKeyMessage{
+		BaseMessage:            BaseMessage{Type: MsgTypeGenerateKey, ID: id},
+		KeyType:                review.KeyType,
+		Parameters:             review.Parameters,
+		ExpectedFingerprint:    review.ReviewFingerprint,
+		ExpectedBoundaryDigest: review.BoundaryDigest,
+	}
+}
+
+func (m Model) sendReviewedGenerateKeyCmd(review PrepareGenerateResultMessage, id string) tea.Cmd {
+	return operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendReviewedGenerateKey(review, id) })
 }
 
 // SendGenerateKeyWithParamsCmd returns a tea.Cmd that sends a generate key request with parameters

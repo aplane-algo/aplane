@@ -52,7 +52,19 @@ func (m Model) viewFooterText() string {
 		if m.isCosignerNode() && witness.IsKeyType(m.forms.generatedKeyType) {
 			return "e: Export setup file | Enter/Esc: Back"
 		}
+		if _, ok := m.generatedReceipt(); ok {
+			return "s: Save receipt | Enter/Esc: Back"
+		}
 		return "Enter/Esc: Back"
+	case ViewBoundaryPreset:
+		if m.boundaryFileRowSelected() {
+			return "Enter: Load | ctrl+o: Browse | Esc: Back"
+		}
+		return "Up/Down: Choose | Enter: Select | Esc: Back"
+	case ViewGenerateReview:
+		return "Tab: Focus | d: Details | Enter: Select | Esc: Back"
+	case ViewGenerateReviewDetails:
+		return "Ctrl+PgUp/PgDn: Scroll | Esc: Back"
 	case ViewBackupDisplay, ViewImportDisplay:
 		return "Enter/Esc: Back"
 	case ViewBackups:
@@ -170,7 +182,7 @@ func (m Model) passphraseFooterText() string {
 }
 
 func (m Model) parameterModalFooterText(keyType, verb string) string {
-	spec := getParamSpecForKeyType(keyType)
+	spec := m.paramSpecFor(keyType)
 	if spec == nil {
 		return "Esc: Back"
 	}

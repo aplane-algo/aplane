@@ -296,6 +296,11 @@ func (p *Provider) CompatibilityFingerprint() string { return p.grammar }
 // approving one version of it does not approve the next.
 func (p *Provider) GenerationRequiresCurrentApproval() bool { return true }
 
+// ApprovalSummary says what approving the current grammar allows.
+func (p *Provider) ApprovalSummary() string {
+	return fmt.Sprintf("Recipient allowlists held inline or as a Merkle list, for pay, axfer and asset opt-in, with spending-key or admin-key rekey and an optional cosigner (%d account shapes).", len(p.ordered))
+}
+
 // KeyType returns the key type identifier.
 func (p *Provider) KeyType() string { return KeyTypeV1 }
 
@@ -467,4 +472,5 @@ var (
 	_ lsigprovider.InstanceResolver      = (*Provider)(nil)
 	_ lsigprovider.OpcodeProfileProvider = (*Provider)(nil)
 	_ lsigprovider.ApprovalGated         = (*Provider)(nil)
+	_ lsigprovider.ApprovalDescriber     = (*Provider)(nil)
 )

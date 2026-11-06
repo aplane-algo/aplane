@@ -44,6 +44,15 @@ func (m Model) adminRows() []adminRow {
 		{section: "Runtime", label: "Policies", key: "", value: "view active policy", editable: false, action: "open_policies"},
 	}
 
+	if !m.isCosignerNode() {
+		// A cosigner node holds no bounded accounts to restrict.
+		bounded := []adminRow{
+			{section: "User-Editable", label: "Bounded: require admin key", key: adminproto.AdminSettingBoundaryRequireAdmin, value: boolStr(s.BoundaryRequireAdminKey), editable: true, isBool: true},
+			{section: "User-Editable", label: "Bounded: require cosigner", key: adminproto.AdminSettingBoundaryRequireCo, value: boolStr(s.BoundaryRequireCosigner), editable: true, isBool: true},
+		}
+		rows = append(rows[:4:4], append(bounded, rows[4:]...)...)
+	}
+
 	if s.SSHEnabled {
 		rows = append(rows,
 			adminRow{section: "Runtime", label: "SSH port", key: "", value: fmt.Sprintf("%d", s.SSHPort), editable: false},

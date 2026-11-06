@@ -16,6 +16,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/aplane-algo/aplane/internal/boundary"
 	"github.com/aplane-algo/aplane/internal/cosigner/cosignerrefs"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 )
@@ -94,10 +95,15 @@ func (m Model) handleGenerateDisplayKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "e":
 		return m.openGeneratedCosignerExport()
+	case "s", "S":
+		return m.saveGeneratedReceipt(), nil
 	case "q", "esc", "enter", " ":
 		m.selectKeyByAddress(m.forms.generatedAddress)
 		m.forms.generatedAddress = ""
 		m.forms.generatedKeyType = ""
+		m.forms.receipt = nil
+		m.forms.receiptPath = ""
+		m.forms.receiptError = ""
 		m.viewState = ViewKeyList
 	}
 
@@ -322,6 +328,14 @@ func (m Model) handleGenerateFormKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		if keyType == boundary.KeyTypeV1 {
+			m.forms.generateError = ""
+			m.forms.boundaryPreset = nil
+			m.forms.boundaryPresetIndex = 0
+			m.viewState = ViewBoundaryPreset
+			return m, nil
+		}
+
 		// For parameterized LSigs, transition to parameter input modal
 		if spec := getParamSpecForKeyType(keyType); spec != nil {
 			m = m.initGenericLSigParams(m.forms.generateKeyType)
@@ -378,10 +392,14 @@ func (m Model) handleGenerateParamsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	submitFn := func(keyType string, params map[string]string, id string) tea.Cmd {
-		return tea.Batch(m.sendGenerateKeyWithParamsCmd(keyType, "", params, id), m.waitForMessageCmd())
+		return tea.Batch(m.sendPrepareGenerateKeyCmd(keyType, params, id), m.waitForMessageCmd())
 	}
-	m, cmd, errStr := m.handleParamModalKeys(msg, m.forms.generateKeyType, ViewGenerateForm, ViewGenerating, submitFn)
-	if errStr != "" || m.viewState == ViewGenerating || m.viewState == ViewGenerateForm {
+	escView := ViewGenerateForm
+	if m.forms.boundaryPreset != nil {
+		escView = ViewBoundaryPreset
+	}
+	m, cmd, errStr := m.handleParamModalKeys(msg, m.forms.generateKeyType, escView, ViewGenerating, submitFn)
+	if errStr != "" || m.viewState == ViewGenerating || m.viewState == escView {
 		m.forms.generateError = errStr
 	}
 	return m, cmd
@@ -400,7 +418,7 @@ func (m Model) handleParamModalKeys(
 	if escView == ViewImportForm {
 		keyType = getImportKeyTypeByIndex(keyTypeIndex)
 	}
-	spec := getParamSpecForKeyType(keyType)
+	spec := m.paramSpecFor(keyType)
 	if spec == nil {
 		m.viewState = escView
 		return m, nil, "Parameters not found"
@@ -603,6 +621,12 @@ func (m Model) submitParamModal(
 	if err := spec.Validate(transformedParams); err != nil {
 		return m, nil, err.Error()
 	}
+	if preset := m.forms.boundaryPreset; preset != nil && keyType == boundary.KeyTypeV1 {
+		for name, value := range preset.Fixed {
+			transformedParams[name] = value
+		}
+	}
+	m.forms.pendingGenerateParams = transformedParams
 	id := m.beginOperation(submitView)
 	return m, submitFn(keyType, transformedParams, id), ""
 }
@@ -643,7 +667,7 @@ func (m Model) initGenericLSigParams(keyTypeIndex int) Model {
 }
 
 func (m Model) initGenericLSigParamsForKeyType(keyType string) Model {
-	spec := getParamSpecForKeyType(keyType)
+	spec := m.paramSpecFor(keyType)
 	if spec == nil {
 		return m
 	}

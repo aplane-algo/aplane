@@ -435,6 +435,12 @@ func (m Model) renderViewContent() string {
 		content = m.renderGenerating()
 	case ViewMnemonicExport:
 		content = m.renderMnemonicExport()
+	case ViewBoundaryPreset:
+		content = m.renderBoundaryPreset()
+	case ViewGenerateReview:
+		content = m.renderGenerateReview()
+	case ViewGenerateReviewDetails:
+		content = m.renderGenerateReviewDetails()
 	case ViewGenerateDisplay:
 		content = m.renderGenerateDisplay()
 	case ViewDeleteConfirm:

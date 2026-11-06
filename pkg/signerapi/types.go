@@ -527,8 +527,11 @@ type KeyTypeInfo struct {
 	SigningFlow              string                    `json:"signing_flow,omitempty"`                // signing choreography label (for example "cosigner1" or "bounded-cosigner1"); empty = plain /sign
 	CosignerComponentKeyType string                    `json:"cosigner_component_key_type,omitempty"` // cosigner component key type for cosigner-backed signing flows
 	BoundedAuthorization     *BoundedAuthorizationInfo `json:"bounded_authorization,omitempty"`
-	CreationParams           []CreationParamInfo       `json:"creation_params"`
-	RuntimeArgs              []RuntimeArgInfo          `json:"runtime_args"`
+	// PerKeyContract means each account selects its own contract at generation,
+	// so this type has no fixed signing flow or bounded profile. Route by /keys.
+	PerKeyContract bool                `json:"per_key_contract,omitempty"`
+	CreationParams []CreationParamInfo `json:"creation_params"`
+	RuntimeArgs    []RuntimeArgInfo    `json:"runtime_args"`
 }
 
 // CreationParamInfo describes a parameter required to generate a key of a given type.
