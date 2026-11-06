@@ -1355,7 +1355,8 @@ Bounded signing-metadata version 2 additionally requires the canonical
 - `runtime_args` and `derived_args`: canonical declarations, possibly empty
 - `argument_layout`: complete ordered slots with source, maximum, and all path masks
 - `layer3_policy`: exactly `custom`, `fixed_allowlist`, `merkle_allowlist`,
-  `fixed_allowlist_custom`, or `merkle_allowlist_custom`
+  `fixed_allowlist_custom`, `merkle_allowlist_custom`, `timelock`,
+  `fixed_allowlist_timelock`, or `merkle_allowlist_timelock`
 - optional `cosigner`: contract, witness key type, resolved public key and Witness
   Key ID, maximum signature size, and exact `[spend]` path; its argument slot
   source is `cosigner`

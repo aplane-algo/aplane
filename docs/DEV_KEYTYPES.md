@@ -790,9 +790,10 @@ bounded:
     contract: cosigner1
     required_on: [spend]
   layer3:                    # optional; required without teal, may be used with it
-    policy: merkle_allowlist     # fixed_allowlist | merkle_allowlist
+    policy: merkle_allowlist     # see the list below
     recipients_parameter: recipients
-  derived_args:              # required by merkle_allowlist
+    # unlock_round_parameter: unlock_round   # timelock policies only
+  derived_args:              # required by the Merkle policies
     - name: merkle_proof
       kind: merkle_allowlist_proof
       parameter: recipients
@@ -809,8 +810,15 @@ The rules that most often surprise authors:
 - At least one of `bounded.layer3` and `teal` is required. With both, the allowlist runs
   first, then the TEAL, and both must pass. Do not write the stored values
   `fixed_allowlist_custom` or `merkle_allowlist_custom` in a template.
+- `bounded.layer3.policy` is `fixed_allowlist`, `merkle_allowlist`, `timelock`,
+  `fixed_allowlist_timelock`, or `merkle_allowlist_timelock`.
 - The recipients parameter must be a required `address[]` with `min_items: 1`.
-  `max_items` is at most 30 for `fixed_allowlist` and 65,536 for `merkle_allowlist`.
+  `max_items` is at most 30 for the fixed policies and 65,536 for the Merkle policies.
+- The timelock policies require `FirstValid >= unlock_round`. `unlock_round_parameter`
+  must name a required `uint64` parameter with `min: 1`. Bare `timelock` takes no
+  `recipients_parameter`.
+- Timelock policies reject `teal`. For a list plus custom time conditions, use a plain
+  allowlist and write the conditions in the TEAL.
 - With no `teal`, extra parameters and `runtime_args` are rejected, because nothing
   would read them.
 - `bounded_admin_public_key` and the cosigner parameters are injected by the framework
@@ -819,8 +827,12 @@ The rules that most often surprise authors:
 - Author TEAL reads `arg 1` onward, in the static slot order: base signatures, derived
   arguments, runtime arguments, cosigner signature, admin signature. A runtime argument
   beside a Merkle proof is therefore `arg 2`.
-- `policy_gate` decides what a spending-key rekey checks: `layer3` applies the list and
-  the author rule, and `none` skips both.
+- `policy_gate` decides what a spending-key rekey checks: `layer3` applies the list, the
+  timelock, and the author rule, and `none` skips them all. An admin-key rekey skips them
+  too, so it is not delayed by a timelock.
+- An external-admin account must keep custom Layer 3 to the transaction and global fields
+  the `aprekey` validator can decode. `txn FirstValid` is one of them; `txn LastValid` is
+  not, and a program reading it spends normally but cannot complete a ceremony.
 - Author TEAL cannot use `return`.
 
 A framework-policy template has no `teal` at all. This is the complete

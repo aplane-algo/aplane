@@ -76,7 +76,8 @@ A composed template uses schema v2 and a `bounded` block unless there is a state
 reason not to. Prefer a framework policy to author TEAL: `bounded.layer3` with
 `fixed_allowlist` or `merkle_allowlist` needs no `teal`. For a custom rule on top of an
 allowlist, declare both instead of rewriting the list check in TEAL; the allowlist runs
-first and the TEAL can only narrow it.
+first and the TEAL can only narrow it. `timelock`, `fixed_allowlist_timelock`, and
+`merkle_allowlist_timelock` also need no `teal`, and they reject it.
 The field reference is in
 [DEV_KEYTYPES.md](DEV_KEYTYPES.md#bounded-schema-schema_version-2).
 

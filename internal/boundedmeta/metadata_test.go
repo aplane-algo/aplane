@@ -99,6 +99,14 @@ func TestMetadataValidateCombinedLayer3Policies(t *testing.T) {
 			SpendEffects: []string{"pay"}, MaxFee: 1_000, Layer3Policy: policy, DerivedArgs: derived,
 		}
 	}
+	withRuntimeArg := func(input *Metadata) *Metadata {
+		input.RuntimeArgs = []RuntimeArg{{Name: "extra", Type: "bytes", Required: true, MaxSize: 8}}
+		input.ArgumentLayout = append(input.ArgumentLayout, ArgumentSlot{
+			Index: len(input.ArgumentLayout), Name: "extra", Source: ArgSourceRuntime, MaxSize: 8,
+			Paths: ArgumentPathMask{Spend: ArgRequired, SpendingRekey: ArgForbidden, AdminRekey: ArgForbidden},
+		})
+		return input
+	}
 	for _, test := range []struct {
 		name    string
 		input   *Metadata
@@ -109,6 +117,16 @@ func TestMetadataValidateCombinedLayer3Policies(t *testing.T) {
 		{name: "fixed takes no proof", input: metadata(Layer3PolicyFixedAllowlistCustom, proof), wantErr: "must not declare derived arguments"},
 		{name: "merkle needs a proof", input: metadata(Layer3PolicyMerkleAllowlistCustom), wantErr: "requires exactly one derived"},
 		{name: "vocabulary stays closed", input: metadata("timelock_custom"), wantErr: "unsupported bounded1 layer3_policy"},
+		{name: "timelock", input: metadata(Layer3PolicyTimelock)},
+		{name: "fixed timelock", input: metadata(Layer3PolicyFixedAllowlistTimelock)},
+		{name: "merkle timelock", input: metadata(Layer3PolicyMerkleAllowlistTimelock, proof)},
+		{name: "timelock takes no proof", input: metadata(Layer3PolicyTimelock, proof), wantErr: "must not declare derived arguments"},
+		{name: "fixed timelock takes no proof", input: metadata(Layer3PolicyFixedAllowlistTimelock, proof), wantErr: "must not declare derived arguments"},
+		{name: "merkle timelock needs a proof", input: metadata(Layer3PolicyMerkleAllowlistTimelock), wantErr: "requires exactly one derived"},
+		{name: "timelock takes no runtime argument", input: withRuntimeArg(metadata(Layer3PolicyTimelock)), wantErr: "must not declare runtime arguments"},
+		{name: "fixed timelock takes no runtime argument", input: withRuntimeArg(metadata(Layer3PolicyFixedAllowlistTimelock)), wantErr: "must not declare runtime arguments"},
+		{name: "merkle timelock takes no runtime argument", input: withRuntimeArg(metadata(Layer3PolicyMerkleAllowlistTimelock, proof)), wantErr: "must not declare runtime arguments"},
+		{name: "combined allowlist keeps its runtime argument", input: withRuntimeArg(metadata(Layer3PolicyFixedAllowlistCustom))},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			err := test.input.ValidateProfile()

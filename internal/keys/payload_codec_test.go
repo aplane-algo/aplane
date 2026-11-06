@@ -208,8 +208,8 @@ func TestBoundedPayloadMetadataRoundTrip(t *testing.T) {
 	}
 }
 
-// A key file written with either combined policy must load back unchanged. Scan,
-// backup, and restore all read it through this path.
+// A key file written with any policy added after the original three must load
+// back unchanged. Scan, backup, and restore all read it through this path.
 func TestBoundedCombinedLayer3PolicyPayloadRoundTrip(t *testing.T) {
 	layout := boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{4}}
 	proof := boundedmeta.DerivedArg{
@@ -222,6 +222,9 @@ func TestBoundedCombinedLayer3PolicyPayloadRoundTrip(t *testing.T) {
 	}{
 		{policy: boundedmeta.Layer3PolicyFixedAllowlistCustom},
 		{policy: boundedmeta.Layer3PolicyMerkleAllowlistCustom, derived: []boundedmeta.DerivedArg{proof}},
+		{policy: boundedmeta.Layer3PolicyTimelock},
+		{policy: boundedmeta.Layer3PolicyFixedAllowlistTimelock},
+		{policy: boundedmeta.Layer3PolicyMerkleAllowlistTimelock, derived: []boundedmeta.DerivedArg{proof}},
 	} {
 		t.Run(test.policy, func(t *testing.T) {
 			bytecode := canonicalOffCurveBytecode(t)

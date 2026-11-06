@@ -45,6 +45,14 @@ const (
 	MaximumProfileFee                 = 10_000
 )
 
+// The timelock policies require FirstValid >= unlock_round. They take no author
+// TEAL, so they have no *Custom form.
+const (
+	Layer3PolicyTimelock                = "timelock"
+	Layer3PolicyFixedAllowlistTimelock  = "fixed_allowlist_timelock"
+	Layer3PolicyMerkleAllowlistTimelock = "merkle_allowlist_timelock"
+)
+
 // SignatureArgLayout is the durable maximum shape of the spending signature
 // args emitted before any Layer-3 or contract-admin args.
 type SignatureArgLayout struct {
@@ -192,7 +200,8 @@ func (metadata *Metadata) ValidateProfile() error {
 	}
 	switch metadata.Layer3Policy {
 	case Layer3PolicyCustom, Layer3PolicyFixedAllowlist, Layer3PolicyMerkleAllowlist,
-		Layer3PolicyFixedAllowlistCustom, Layer3PolicyMerkleAllowlistCustom:
+		Layer3PolicyFixedAllowlistCustom, Layer3PolicyMerkleAllowlistCustom,
+		Layer3PolicyTimelock, Layer3PolicyFixedAllowlistTimelock, Layer3PolicyMerkleAllowlistTimelock:
 	default:
 		return fmt.Errorf("unsupported bounded1 layer3_policy %q", metadata.Layer3Policy)
 	}
@@ -219,13 +228,21 @@ func (metadata *Metadata) ValidateProfile() error {
 		return err
 	}
 	switch metadata.Layer3Policy {
-	case Layer3PolicyFixedAllowlist, Layer3PolicyFixedAllowlistCustom:
+	case Layer3PolicyFixedAllowlist, Layer3PolicyFixedAllowlistCustom,
+		Layer3PolicyTimelock, Layer3PolicyFixedAllowlistTimelock:
 		if len(metadata.DerivedArgs) != 0 {
 			return fmt.Errorf("%s must not declare derived arguments", metadata.Layer3Policy)
 		}
-	case Layer3PolicyMerkleAllowlist, Layer3PolicyMerkleAllowlistCustom:
+	case Layer3PolicyMerkleAllowlist, Layer3PolicyMerkleAllowlistCustom, Layer3PolicyMerkleAllowlistTimelock:
 		if len(metadata.DerivedArgs) != 1 {
 			return fmt.Errorf("%s requires exactly one derived Merkle proof argument", metadata.Layer3Policy)
+		}
+	}
+	switch metadata.Layer3Policy {
+	case Layer3PolicyTimelock, Layer3PolicyFixedAllowlistTimelock, Layer3PolicyMerkleAllowlistTimelock:
+		// These take no author TEAL, so nothing could read a runtime argument.
+		if len(metadata.RuntimeArgs) != 0 {
+			return fmt.Errorf("%s must not declare runtime arguments", metadata.Layer3Policy)
 		}
 	}
 	return nil

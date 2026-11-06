@@ -428,6 +428,32 @@ func TestValidateAcceptsFrozenStructure(t *testing.T) {
 	}
 }
 
+// The decoder tries both branch encodings, so reading FirstValid must not leave a
+// second parse that diverges from the first and rejects the program.
+func TestValidateAcceptsTimelockInLayer3(t *testing.T) {
+	for _, varintBranches := range []bool{true, false} {
+		program, expected := testExpectedProgramWithBranchEncoding(t, 1, false, varintBranches, func(b *testProgramBuilder) {
+			b.op(0x31, 2) // txn FirstValid
+			b.pushInt(50_000_000)
+			b.op(0x0f) // >=
+			b.op(0x44) // assert
+		})
+		if err := Validate(program, expected); err != nil {
+			t.Fatalf("varintBranches=%v: Validate() error = %v", varintBranches, err)
+		}
+	}
+}
+
+func TestValidateRejectsTxnFieldsOutsideTheDecoderTable(t *testing.T) {
+	program, expected := testExpectedProgramWithLayer3(t, func(b *testProgramBuilder) {
+		b.op(0x31, 3) // txn LastValid
+		b.op(0x48)    // pop
+	})
+	if err := Validate(program, expected); err == nil || !strings.Contains(err.Error(), "unsupported txn field 3") {
+		t.Fatalf("Validate() error = %v, want the unsupported field", err)
+	}
+}
+
 func TestValidateAcceptsDeployedV13FixedWidthBranches(t *testing.T) {
 	program, expected := testExpectedProgramWithBranchEncoding(t, 1, false, false, func(b *testProgramBuilder) {
 		b.pushInt(1)
