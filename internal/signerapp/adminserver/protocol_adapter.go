@@ -667,14 +667,16 @@ func ProtocolPrepareGenerateResultMessage(id string, result adminproto.PrepareGe
 			Type: protocol.MsgTypePrepareGenerateResult,
 			ID:   id,
 		},
-		Success:       result.Success,
-		KeyType:       result.KeyType,
-		Parameters:    result.Parameters,
-		Fingerprint:   result.Fingerprint,
-		AdminKeyID:    result.AdminKeyID,
-		CosignerKeyID: result.CosignerKeyID,
-		Code:          result.Code,
-		Error:         result.Error,
+		Success:           result.Success,
+		KeyType:           result.KeyType,
+		Parameters:        result.Parameters,
+		Fingerprint:       result.Fingerprint,
+		ReviewFingerprint: result.ReviewFingerprint,
+		BoundaryDigest:    result.BoundaryDigest,
+		AdminKeyID:        result.AdminKeyID,
+		CosignerKeyID:     result.CosignerKeyID,
+		Code:              result.Code,
+		Error:             result.Error,
 	}
 	if profile := result.Bounded; profile != nil {
 		message.Bounded = &protocol.PreparedBoundedProfile{
@@ -942,6 +944,8 @@ func protocolLibraryTemplates(items []adminproto.LibraryTemplateInfo) []protocol
 			Enabled:      item.Enabled,
 			Conflict:     item.Conflict,
 			Invalid:      item.Invalid,
+
+			NeedsApproval: item.NeedsApproval,
 		}
 	}
 	return out

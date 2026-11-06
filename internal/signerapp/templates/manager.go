@@ -484,6 +484,13 @@ func validateCompiledProviderRecords(records []keytypestate.Record) templatepoli
 			outcome.InvalidKeyTypes = append(outcome.InvalidKeyTypes, rec.KeyType)
 			continue
 		}
+		// An upgrade that changes what approval covers is not a conflict. The
+		// generation gate holds new accounts until it is approved again, and
+		// existing accounts have nothing to reload.
+		if keytypestate.RequiresCurrentApproval(rec.KeyType) {
+			outcome.IdempotentKeyTypes = append(outcome.IdempotentKeyTypes, rec.KeyType)
+			continue
+		}
 		registryFingerprint, ok := lsigprovider.CompatibilityFingerprintOf(provider)
 		if !ok {
 			registryFingerprint = ""

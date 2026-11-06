@@ -32,7 +32,10 @@ func (s IPCService) PrepareGenerateKey(req adminproto.PrepareGenerateKeyRequest)
 }
 
 func (s IPCService) GenerateKey(ctx context.Context, req adminproto.GenerateKeyRequest) adminproto.GenerateKeyResult {
-	genResult, err := s.Service.GenerateReviewedKey(ctx, req.KeyType, req.Parameters, req.ExpectedFingerprint, s.GenerateGenericLSig)
+	genResult, err := s.Service.GenerateReviewedKey(ctx, req.KeyType, req.Parameters, ReviewedValues{
+		Fingerprint:    req.ExpectedFingerprint,
+		BoundaryDigest: req.ExpectedBoundaryDigest,
+	}, s.GenerateGenericLSig)
 	ipcResult := ProjectGenerateIPC(genResult, err)
 	if !ipcResult.Success {
 		return ipcResult

@@ -1451,9 +1451,62 @@ Three boundaries matter when changing this path:
   step 15. Signing uses the stored bytecode and metadata, and a bounded key finds its
   signature packing through `BaseKeyType`, so a template change does not alter existing
   keys.
-- **Budget checks.** Generation does not solve the group or fee budget. Bundled shapes
-  are proven by `TestBundledBoundedCompiledBudgetMatrix`, and the signing planner rejects
-  a path that exceeds its fee ceiling.
+- **Budget checks.** Generation does not solve the group or fee budget for templates.
+  Bundled shapes are proven by `TestBundledBoundedCompiledBudgetMatrix`, and the signing
+  planner rejects a path that exceeds its fee ceiling. `aplane.bounded.v1` also solves
+  each reachable path at generation, as described below.
+
+### The general bounded key type
+
+`aplane.bounded.v1` (`lsig/boundedaccount/`) selects an account's shape at generation
+instead of fixing one per template. **It is not available in any release yet.** Its
+catalog entry is `AvailabilityDisabled`, so the provider is not registered and no
+library or creation route can reach it, until the operator experience ships with it.
+Only binaries built with the `testmode` tag, which only the integration harness uses,
+offer it.
+
+A shape is a spend subset, a list encoding, and a rekey arrangement: 7 subsets x 2
+encodings x 3 arrangements (spending key, admin key, admin key plus cosigner), which is
+42 shapes. `Shapes()` is the single enumeration. Each shape is an ordinary schema-v2
+template spec with no author TEAL, so it passes every check an imported template passes.
+The provider holds one composer per shape and no per-account state.
+
+| Concern | Rule |
+|---|---|
+| Boundary file | `ParseBoundaryFile` parses `aplane.boundary.v1` strictly: no unknown fields, duplicate keys, aliases, merge keys, extra documents, or non-string scalars. The grammar has no field that can carry TEAL, a template, a base key type, a fee, or runtime arguments. |
+| Requests | `selectShape` is the security gate, for file and direct requests alike. The client sends public values, never a path or the YAML, and a cosigner name stays a name for the signer to resolve. |
+| Stored parameters | Canonical values include the selectors `spend_effects`, `rekey_authority`, and `list_encoding`, with `auto` resolved. The generator resolves stored values a second time, so they must select the same shape. Only a shape's declared parameters reach its composer, because those enter the program binding. |
+| Encoding | `auto` is inline through 10 recipients and Merkle from 11. Explicit inline stops at 30. The list holds at most 65,536 distinct nonzero addresses. |
+| Fee and arguments | The compiled ceiling is 10,000 microAlgos, and there are no runtime arguments. Base is Falcon-1024. |
+| Resources | `BuildBoundedAuthorizationMetadata` solves the spend and rekey paths under the current consensus profile and refuses one that cannot run within the ceiling, before the key is saved. This is a backstop: signing still checks the actual network. |
+| Mnemonics | No mnemonic import. The account recovers from its encrypted credential or a backup. |
+
+Three identities have separate jobs, and `lsigprovider.Instance` carries each one:
+
+| Identity | Field | Scope |
+|---|---|---|
+| Selected-shape fingerprint | `Fingerprint` | One shape. Stored as the account's `template_fingerprint`. A new rule leaves existing shapes alone. |
+| Grammar fingerprint | `ReviewFingerprint` | The labelled, ordered mapping of every shape. Pinned in the enabled record, and it is what approval covers. |
+| Boundary digest | `BoundaryDigest` | Compares resolved policy and external authorities. It excludes the spending key, so equal digests do not mean equal accounts. Its encoding is in [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md). |
+
+Fingerprints hash configuration, not renderer code, so `lsig/boundedaccount/fingerprint.go`
+declares semantics revisions by hand. `TestGeneralFingerprintGoldens` fails when rendered
+output changes, and its comment says which revision that obligates.
+
+**Approval.** A provider that implements `lsigprovider.ApprovalGated` needs an enabled
+record pinning its current fingerprint, not just an enabled record.
+`keytypestate.NeedsApproval` is the one predicate: generation, preparation, and the
+library's `needs_approval` all use it. A missing, malformed, or incomparable fingerprint
+means not approved, unlike reload comparison, where those are benign. Explicit enablement
+renews approval without a disable cycle. A stale approval blocks new accounts only:
+reload does not report a conflict, and existing accounts load, sign, and restore
+unchanged, including on a signer that never approved the grammar.
+
+**Generation settings.** `boundary_require_admin_key` and `boundary_require_cosigner` in
+the product runtime config apply to this key type on every creation route, under the
+mutation lock, and generation rechecks them after a review. They do not reach existing
+accounts or expert templates. Their operator controls ship with the rest of the
+operator experience.
 
 ## See also
 

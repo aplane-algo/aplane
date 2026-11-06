@@ -65,6 +65,14 @@ type CompatibilityFingerprinter interface {
 	CompatibilityFingerprint() string
 }
 
+// ApprovalGated is implemented by a provider whose enablement approves a
+// definition that can grow between releases, such as a grammar of account
+// shapes. New accounts then require an enabled record that pins the current
+// fingerprint, not merely an enabled one.
+type ApprovalGated interface {
+	GenerationRequiresCurrentApproval() bool
+}
+
 // SigningProvider extends LSigProvider with DSA signature metadata and
 // derivation. Private-key signing and key generation are intentionally not part
 // of this client-visible interface; they live in signer-side registries.
