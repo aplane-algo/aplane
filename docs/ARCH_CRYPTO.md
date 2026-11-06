@@ -170,9 +170,9 @@ Built-in LogicSig DSA providers live under `lsig/`. The compiled providers are:
 
 | Key type | Registered family | Availability |
 |---|---|---|
-| `aplane.falcon1024.v1` | `aplane.falcon1024` | library-visible |
+| `aplane.falcon1024.v1` | `aplane.falcon1024` | internal-only |
 | `aplane.falcon1024-cosigner1024.v1` | `aplane.falcon1024-cosigner1024` | library-visible |
-| `aplane.ed25519.v1` | `aplane.ed25519` | library-visible |
+| `aplane.ed25519.v1` | `aplane.ed25519` | internal-only |
 
 These providers implement the unified `internal/lsigprovider.SigningProvider`
 surface. `internal/logicsigdsa` is the DSA-oriented filtered view over
@@ -344,12 +344,13 @@ signer-side signing, keygen, and mnemonic handlers. Ed25519 follows the same spl
 
 Compiled provider registration is distinct from default visibility. The
 `internal/keytypecatalog` package records whether a compiled key type is
-default-enabled, library-visible, or disabled. Registered but non-default
-providers remain binary capabilities, but are filtered out of generation
-surfaces until the product-store activation layer enables them. Terminology is
+default-enabled, library-visible, internal-only, or disabled. Registered but
+non-default providers remain binary capabilities, but are filtered out of
+generation surfaces until the product-store activation layer enables them;
+internal-only providers can never be enabled. Terminology is
 intentional: **registered** means provider code exists in a process-global
-registry; **default-enabled** and **library-visible** are catalog availability
-states; **activated** means the product store has opted into a library-visible
+registry; **default-enabled**, **library-visible**, and **internal-only** are
+catalog availability states; **activated** means the product store has opted into a library-visible
 compiled provider; **installed** means the product store has an encrypted YAML
 template; **enabled** means the key type appears in product discovery,
 generation, and import surfaces. See [DEV_KEYTYPES.md](DEV_KEYTYPES.md) for
@@ -359,14 +360,15 @@ Visibility states recorded by `internal/keytypecatalog`:
 
 - `default_enabled`: visible to the product runtime, subject to node-role gates
 - `library`: compiled capability exists but needs product-store enablement
+- `internal_only`: registered for composition, existing-key signing and restore; no standalone creation or enablement
 - `disabled`: compiled in source, not exposed by the owning runtime path
 
 Product-store key type enable/disable metadata is owned by
 `internal/keytypestate`. State records live under
 the selected generation's `keytypes/<key_type>.json` via
 `internal/storepaths.GenPaths.KeyTypeRecord()`. They make compiled
-library-visible providers such as `aplane.falcon1024-cosigner1024.v1` and
-`aplane.ed25519.v1` available to the product runtime for key type discovery and
+library-visible providers such as `aplane.falcon1024-cosigner1024.v1` available
+to the product runtime for key type discovery and
 generation when `source:"compiled"` and `state:"enabled"`. Mnemonic import is
 gated separately by the provider's explicit mnemonic-import capability.
 Installed YAML templates use the same record with `source:"yaml_generic"` or

@@ -17,7 +17,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
-	"github.com/aplane-algo/aplane/lsig/ed25519lsig"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
 	falcon1024guarded "github.com/aplane-algo/aplane/lsig/falcon1024_guarded"
 )
@@ -26,17 +25,15 @@ func TestCanonicalCompiledLogicSigInventory(t *testing.T) {
 	RegisterClient()
 
 	// Only the protocol-native key types (ed25519, falcon1024) are enabled by
-	// default, and they register outside lsig: every compiled LogicSig key
-	// type is opt-in through the key type library.
+	// default, and they register outside lsig. Plain LogicSig bases are internal;
+	// the other compiled account types are opt-in through the key type library.
 	if defaultEnabled := catalogKeyTypes(keytypecatalog.DefaultEnabled()); len(defaultEnabled) != 0 {
 		t.Fatalf("default-enabled compiled LogicSig inventory = %v, want none", defaultEnabled)
 	}
 
 	libraryVisible := catalogKeyTypes(keytypecatalog.LibraryVisible())
 	wantLibraryVisible := []string{
-		"aplane.ed25519.v1",
 		"aplane.falcon1024-cosigner1024.v1",
-		"aplane.falcon1024.v1",
 		"aplane.rotating-triple-slhdsa.v1",
 		"aplane.rotating-triple-wotsc.v1",
 		"aplane.rotating-triple-xmss.v1",
@@ -112,7 +109,6 @@ func TestRegisterClientMarksLibraryVisible(t *testing.T) {
 
 	libraryGatedKeyTypes := []string{
 		falcon1024guarded.KeyTypeV1,
-		ed25519lsig.KeyTypeV1,
 	}
 
 	for _, keyType := range libraryGatedKeyTypes {
@@ -246,5 +242,22 @@ func bundledTemplateTestParams(file string) map[string]string {
 		}
 	default:
 		return nil
+	}
+}
+
+func TestInternalProvidersRemainComposableButCannotBeActivated(t *testing.T) {
+	RegisterClient()
+	for _, keyType := range []string{"aplane.falcon1024.v1", "aplane.ed25519.v1"} {
+		t.Run(keyType, func(t *testing.T) {
+			if !keytypecatalog.IsInternalOnly(keyType) || !lsigprovider.Has(keyType) || !composeddsa.IsBaseRegistered(keyType) {
+				t.Fatalf("%s must stay registered as an internal composable base", keyType)
+			}
+			if containsKeyType(keymgmt.GetValidKeyTypesWithActivated([]string{keyType}), keyType) {
+				t.Fatalf("stale activation exposed %s for standalone generation", keyType)
+			}
+			if keymgmt.SupportsMnemonicImport(keyType) {
+				t.Fatalf("%s exposed user mnemonic import", keyType)
+			}
+		})
 	}
 }

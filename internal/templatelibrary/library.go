@@ -426,6 +426,9 @@ func ActivateCompiledProvider(paths storepaths.Paths, keyType string) (InstallRe
 	if result.KeyType == "" {
 		return result, fmt.Errorf("key type is required")
 	}
+	if keytypecatalog.IsInternalOnly(result.KeyType) {
+		return result, fmt.Errorf("key type %s is internal-only and cannot be enabled for standalone account creation", result.KeyType)
+	}
 	if !keytypecatalog.IsLibraryVisible(result.KeyType) {
 		return result, fmt.Errorf("key type %s is not library-visible", result.KeyType)
 	}

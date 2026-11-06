@@ -1888,10 +1888,10 @@ has populated signer-side signing, keygen, mnemonic, or key-processor registries
 Client/signer provider-boundary refactors must preserve this schema and field
 meaning.
 
-Under the [approved native-only mnemonic policy](ARCH_KEYTYPES.md#mnemonic-backup-and-recovery),
-all LogicSig types will advertise `mnemonic_import: false`. That change is
-pending: the two plain Falcon and Ed25519 LogicSig providers still advertise
-import support when enabled.
+The internal-only plain Falcon and Ed25519 LogicSig providers are excluded
+from `/keytypes`, even with old enabled records. Their existing accounts remain
+in `/keys`. The advertised LogicSig types report `mnemonic_import: false`.
+See [internal providers](ARCH_KEYTYPES.md#internal-providers).
 
 The `family` field carries the middle segment of the canonical
 `publisher.family.vN` identifier and is intended for display and grouping;

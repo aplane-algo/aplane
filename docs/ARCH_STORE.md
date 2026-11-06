@@ -878,8 +878,9 @@ subject to the node role gate above.
 |---|---|---|---|---|
 | Unsupported by binary | No provider is registered in the current process. | No. | No, if signing needs that provider; native/DSA key types need registered support. | Install/run a binary that supports the key type. |
 | Role-forbidden key type | The node role does not allow this key class. | No, even if the provider is default-enabled or enabled. | No for active inventory; reload rejects role-conflicting active keys. | Use a data root initialized for the correct node role. |
-| Default-enabled account-signing provider | Provider/generator is registered and cataloged as default-enabled; no identity record required. Only the protocol-native `ed25519` and `falcon1024` are; every LogicSig provider, including `aplane.falcon1024.v1`, is library-visible. | Yes on signer nodes. | Yes on signer nodes, if the key file is valid and the transaction network supports its authorization kind. | None. |
+| Default-enabled account-signing provider | Provider/generator is registered and cataloged as default-enabled; no identity record required. Only the protocol-native `ed25519` and `falcon1024` are; plain Falcon/Ed25519 LogicSig providers are internal-only; other selectable compiled LogicSig providers are library-visible. | Yes on signer nodes. | Yes on signer nodes, if the key file is valid and the transaction network supports its authorization kind. | None. |
 | Default-enabled cosigner key type | Raw cosigner-key generator/signing support is registered and cataloged as default-enabled. The current type is `aplane.witness-falcon1024.v1`. | Yes on cosigner nodes. | Component-signing only on cosigner nodes; never normal spending `/sign`. | None. |
+| Internal-only compiled provider | Binary catalog availability `internal_only`; any old state record is retained but cannot grant creation. | Never, including explicit enable/generate/import requests. | Yes for valid existing/restored keys; also usable as a composed base. | Use native accounts or an enabled composed type for new creation. |
 | Library-visible compiled provider, inactive | Provider is registered and cataloged as library-visible; no identity `keytypes/<key_type>.json` record exists. | No. | Existing key may sign if the provider is registered, the key file is valid, and the node role allows it. | Enable from KeyType Library or `apadmin keytype enable`. |
 | Library-visible compiled provider, enabled and fingerprint consistent | `keytypes/<key_type>.json` has `source:"compiled"`, `state:"enabled"`, and matching fingerprint. | Yes when allowed by node role. | Yes, if the key file is valid and allowed by node role. | Disable, if no stored key uses it. |
 | Library-visible compiled provider, enabled but fingerprint inconsistent | State record exists, but the stored fingerprint does not match the provider fingerprint in the current binary. | No; reload ignores the conflicting activation record. | Existing key may sign if the provider is registered, the key file is valid, and node role allows it. | Refresh with `apadmin keytype enable <key_type>`. |
@@ -1314,12 +1315,10 @@ TEAL authorization, but its pre-release derivation moved in place to TEAL v13
 compiler auto-salting. Its seed derivation and stored key material are not
 interchangeable with native `falcon1024`.
 
-The [approved native-only mnemonic policy](ARCH_KEYTYPES.md#mnemonic-backup-and-recovery)
-will remove the currently accepted phrase-import paths for plain
-`aplane.falcon1024.v1` and `aplane.ed25519.v1`; implementation is pending.
-All LogicSig recovery guidance uses complete encrypted credentials/backups.
-This policy does not remove internal seed derivation or alter stored credentials
-and their encrypted backup/restore contracts.
+The [internal-only catalog rule](ARCH_KEYTYPES.md#internal-providers) blocks
+standalone generation and mnemonic import for plain `aplane.falcon1024.v1`
+and `aplane.ed25519.v1`, even with old enabled records. Their stored credentials,
+internal derivation, and encrypted backup/restore contracts are unchanged.
 
 This section uses **versioned signing-metadata keys** for key files that carry
 `signing_metadata_version >= 1`. Non-bounded LogicSig keys use version 1;

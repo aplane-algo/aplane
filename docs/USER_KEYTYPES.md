@@ -45,16 +45,17 @@ APlane has two optional key type paths:
 
 | Kind | Example | Where definition lives | How to enable |
 |---|---|---|---|
-| Compiled provider | `aplane.ed25519.v1` | Go code in the current binary | `apadmin keytype enable` or apadmin KeyType Library |
+| Compiled provider | `aplane.falcon1024-cosigner1024.v1` | Go code in the current binary | `apadmin keytype enable` or apadmin KeyType Library |
 | YAML template | `aplane.htlc.v1` | Plaintext library YAML, then encrypted product-local `.template` after import | `apadmin template import` or apadmin KeyType Library |
 
 Only the protocol-native key types, `ed25519` and `falcon1024`, are
 default-enabled on signer nodes; they are available without extra steps.
-Every other compiled provider, including the LogicSig Falcon key type
-`aplane.falcon1024.v1`, is library-visible: present in the binary, but
-requiring a product-local enablement record before the signer can discover,
-generate, or import keys of that type. Existing keys stay signable whether or
-not their type is enabled.
+Plain LogicSig providers `aplane.falcon1024.v1` and `aplane.ed25519.v1` are
+internal-only. They support templates and existing accounts, but cannot be
+enabled, generated as standalone accounts, or imported from mnemonics.
+Other compiled account providers, such as the guarded and rotating types, are
+library-visible and require product-local enablement. Existing and restored
+keys remain visible and signable whether or not their type permits creation.
 
 YAML templates are different: a library YAML file is only an install source. It
 does not become an active key type until it is imported into the product store.
@@ -94,8 +95,8 @@ apadmin -d $APSIGNER_DATA template show example.my_escrow.v1 --show-sensitive-te
 apadmin -d $APSIGNER_DATA template import library/templates/aplane.htlc.v1.yaml
 apadmin -d $APSIGNER_DATA template import library/templates/aplane.falcon1024-allowlist.v1.yaml
 apadmin -d $APSIGNER_DATA template remove example.my_escrow.v1
-apadmin -d $APSIGNER_DATA keytype enable aplane.ed25519.v1
-apadmin -d $APSIGNER_DATA keytype disable aplane.ed25519.v1
+apadmin -d $APSIGNER_DATA keytype enable aplane.falcon1024-cosigner1024.v1
+apadmin -d $APSIGNER_DATA keytype disable aplane.falcon1024-cosigner1024.v1
 ```
 
 In `apadmin`, the KeyType Library presents both library-visible compiled
@@ -130,13 +131,10 @@ cannot be imported as the other. Native Falcon transactions also consume a
 higher protocol fee; APlane presents and applies the required fee adjustment
 before approval.
 
-Use encrypted backups for every LogicSig account. The approved policy reserves
-mnemonic import, export, and recovery for native accounts (`ed25519` and
-`falcon1024`). **Import enforcement is pending:** enabled plain
-`aplane.falcon1024.v1` still accepts a 24-word BIP-39 phrase and plain
-`aplane.ed25519.v1` a 25-word Algorand phrase. Those two import paths are planned
-for removal; LogicSig mnemonic export is already unavailable. See
-[mnemonic backup and recovery](ARCH_KEYTYPES.md#mnemonic-backup-and-recovery).
+Use encrypted backups for every LogicSig account. Mnemonic import, export,
+and recovery are reserved for native accounts. The two plain LogicSig
+providers are internal-only; old enablement records do not restore mnemonic
+import eligibility. See [mnemonic backup and recovery](ARCH_KEYTYPES.md#mnemonic-backup-and-recovery).
 
 All bundled APlane LogicSig types are kept off the Ed25519 curve by the TEAL
 v13 assembler's salt rule. Provider-backed types compile through algod and
@@ -150,19 +148,18 @@ LogicSig keys rather than expecting their old addresses to remain stable.
 
 Compiled providers are registered from Go code when `apsigner` starts. The
 protocol-native `ed25519` and `falcon1024` are default-enabled on signer nodes;
-other account providers, including `aplane.falcon1024.v1`, are library-visible
+other selectable compiled account providers are library-visible
 and require product-local enablement. On cosigner nodes,
 `aplane.witness-falcon1024.v1` is default-enabled for witness credentials.
 
 Enable a library-visible compiled provider:
 
 ```bash
-apadmin -d $APSIGNER_DATA keytype enable aplane.ed25519.v1
+apadmin -d $APSIGNER_DATA keytype enable aplane.falcon1024-cosigner1024.v1
 ```
 
-Another library-visible compiled provider is the guarded account key type
-`aplane.falcon1024-cosigner1024.v1`. Corridor is installed through the template
-library instead:
+This enables the guarded Falcon account type. Corridor is installed through
+the template library instead:
 
 ```bash
 apadmin -d $APSIGNER_DATA template import library/templates/aplane.corridor.v1.yaml
@@ -216,11 +213,9 @@ For scripting, batch import/export, and separate endpoint/enrollment operations,
 see [the cosigner command reference](USER_COMMANDS.md#apadmin-cosigner) and
 [advanced manual endpoint configuration](USER_COMMANDS.md#advanced-manual-endpoint-configuration-and-discovery).
 
-`aplane.ed25519.v1` is the LogicSig-wrapped Ed25519 provider; native
-`ed25519` remains default-enabled and does not need this activation step.
-After activation, `aplane.ed25519.v1` currently also supports mnemonic import;
-this exception will be removed under the
-[approved native-only policy](ARCH_KEYTYPES.md#mnemonic-backup-and-recovery).
+`aplane.ed25519.v1` is an internal LogicSig base. Native `ed25519` remains
+available for ordinary account creation and mnemonic import. The internal base
+needs no enablement when used by an enabled composed template.
 
 Enabling writes or updates:
 
@@ -232,7 +227,7 @@ with:
 
 ```json
 {
-  "key_type": "aplane.ed25519.v1",
+  "key_type": "aplane.falcon1024-cosigner1024.v1",
   "source": "compiled",
   "state": "enabled",
   "fingerprint": "1:<behavior-only sha256 hex>",
@@ -243,7 +238,7 @@ with:
 Disable a library-visible compiled provider:
 
 ```bash
-apadmin -d $APSIGNER_DATA keytype disable aplane.ed25519.v1
+apadmin -d $APSIGNER_DATA keytype disable aplane.falcon1024-cosigner1024.v1
 ```
 
 Disabling removes the product enablement record after checking that no
@@ -290,11 +285,13 @@ aprekey rekey --client-data "$APCLIENT_DATA" \
 ```
 
 `<new-authorizer>` must be a key the same signer holds (a native Ed25519 or
-Falcon key, or a plain `aplane.falcon1024.v1` or `aplane.ed25519.v1` LogicSig
-account; not a bounded, guarded, composed or generic template); the signer
-refuses any other target before asking for approval. Leaving APlane custody
-is two steps: an admin rekey to a local key, then an ordinary `rekey` from
-that key.
+Falcon key, or an existing plain `aplane.falcon1024.v1` or `aplane.ed25519.v1`
+LogicSig account, including one restored from an encrypted backup; not a
+bounded, guarded, composed or generic template); the signer refuses any other
+target before asking for approval. The plain LogicSig types are internal-only
+and cannot be generated as new standalone accounts. If you need a new target,
+create a native `ed25519` or `falcon1024` account. Leaving APlane custody is two
+steps: an admin rekey to a local key, then an ordinary `rekey` from that key.
 
 For an air-gapped ceremony, use `prepare-rekey`, move the resulting
 `.apbounded-admin-request` to the ceremony machine, run `aprekey sign`,
@@ -785,7 +782,7 @@ fingerprint is treated as benign (re-pinned), not a conflict.
 Refresh the enablement record:
 
 ```bash
-apadmin -d $APSIGNER_DATA keytype enable aplane.ed25519.v1
+apadmin -d $APSIGNER_DATA keytype enable aplane.falcon1024-cosigner1024.v1
 ```
 
 This updates the state-record fingerprint. It does not rewrite existing key

@@ -121,7 +121,8 @@ func TestSupportsMnemonicImport(t *testing.T) {
 		want    bool
 	}{
 		{keyType: "ed25519", want: true},
-		{keyType: "aplane.falcon1024.v1", want: true},
+		{keyType: "aplane.falcon1024.v1", want: false},
+		{keyType: "aplane.ed25519.v1", want: false},
 		{keyType: falcon1024guarded.KeyTypeV1, want: false},
 		{keyType: falcon1024guarded.KeyTypeV1, want: false},
 		{keyType: witness.Falcon1024V1, want: false},
@@ -185,7 +186,7 @@ func TestImportKeyRestoresCanonicalPathWhenExistingKeyIsNonCanonical(t *testing.
 }
 
 func TestValidKeyTypesIncludeIdentityActivatedLibraryProvider(t *testing.T) {
-	const keyType = "aplane.ed25519.v1"
+	const keyType = falcon1024guarded.KeyTypeV1
 	if containsKeyType(GetValidKeyTypes(), keyType) {
 		t.Fatal("GetValidKeyTypes() included library-only provider without activation")
 	}

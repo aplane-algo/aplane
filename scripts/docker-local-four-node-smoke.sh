@@ -1580,7 +1580,7 @@ generate_corridor_key() {
 
 generate_falcon_key() {
     local out
-    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'connect\ngenerate aplane.falcon1024.v1\n' > /tmp/generate-falcon.script"
+    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'connect\ngenerate falcon1024\n' > /tmp/generate-falcon.script"
     if ! out="$(docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \
         apshell -script /tmp/generate-falcon.script 2>&1")"; then
         printf '%s\n' "$out" >&2
@@ -1926,9 +1926,8 @@ main() {
     log "Adding cosigner endpoint from client container"
     create_client_cosigner_endpoint
 
-    log "Enabling the LogicSig key types used here on signer"
+    log "Enabling the guarded LogicSig key type on signer"
     enable_keytype aplane.falcon1024-cosigner1024.v1
-    enable_keytype aplane.falcon1024.v1
 
     log "Importing optional Corridor template on signer"
     import_corridor_template

@@ -267,6 +267,10 @@ func (s Service) GenerateReviewedKey(ctx context.Context, keyType string, params
 // names the step that enables it; any other key type is unknown here. Only
 // the protocol-native key types are enabled by default.
 func unavailableKeyTypeError(paths storepaths.Paths, keyType string) *Error {
+	if keytypecatalog.IsInternalOnly(keyType) {
+		return &Error{Kind: ErrorInvalidInput, Message: fmt.Sprintf(
+			"key type %s is internal-only; use a native key type for a standalone account or select an enabled composed key type", keyType)}
+	}
 	rec, recorded, err := keytypestate.Get(paths, keyType)
 	if err == nil && (keytypecatalog.IsLibraryVisible(keyType) || (recorded && rec.State != keytypestate.StateEnabled)) {
 		return &Error{Kind: ErrorInvalidInput, Message: fmt.Sprintf(

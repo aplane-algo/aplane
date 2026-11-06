@@ -72,11 +72,10 @@ IPC-only; the node has no SSH admin channel.
 Native recovery phrases can also be explicitly displayed through local AP Admin.
 Encrypted backups remain the recovery method for other credential classes.
 
-**Approved policy, implementation pending:** mnemonic import, export, and
-recovery are reserved for native accounts. Current code also accepts phrases
-for enabled plain `aplane.falcon1024.v1` (24-word BIP-39) and
-`aplane.ed25519.v1` (25-word Algorand); those two import paths are planned for
-removal. Use encrypted backups for all LogicSig accounts. See
+Mnemonic import, export, and recovery are reserved for native accounts. Plain
+`aplane.falcon1024.v1` and `aplane.ed25519.v1` are internal-only and refuse
+standalone creation and mnemonic import, including on stores with old enabled
+records. Their existing keys still restore from encrypted backups. See
 [the native-only policy](ARCH_KEYTYPES.md#mnemonic-backup-and-recovery).
 
 ---
@@ -862,8 +861,7 @@ compiled-provider enablement and YAML-template import/enable, see
 3. Use the Algorand mnemonic wordlist and checksum for either native type
 4. Check word order (order matters!)
 
-The current plain Falcon LogicSig import exception uses a 24-word BIP-39
-phrase. It is planned for removal; see [Mnemonic Import](#2-mnemonic-import).
+LogicSig phrases cannot be imported; use an encrypted backup for those accounts.
 
 ### Different Address Generated
 
@@ -938,9 +936,8 @@ a fresh keystore and import that native key with local AP Admin. This recovers
 only that key, not other credentials or store configuration.
 
 For LogicSig and witness credentials, keep an encrypted backup archive created
-by `apadmin` with an export passphrase you know. The current plain LogicSig
-import exceptions and their planned removal are described under
-[Mnemonic Import](#2-mnemonic-import).
+by `apadmin` with an export passphrase you know. See
+[Mnemonic Import](#2-mnemonic-import) for native recovery.
 
 ---
 

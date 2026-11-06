@@ -26,7 +26,7 @@ const (
 	commandCoverageOptInEnv = "APLANE_COMMAND_COVERAGE"
 	integrationBurnAddress  = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ"
 	ed25519KeyType          = "ed25519"
-	falcon1024V1KeyType     = "aplane.falcon1024.v1"
+	falcon1024KeyType       = "falcon1024"
 	defaultPaymentAlgos     = 0.01
 	defaultFundMicroAlgos   = 300_000
 	defaultConfirmMaxRounds = 20
@@ -88,10 +88,6 @@ func TestLocalNetSignerTransactionSoak(t *testing.T) {
 	}
 	startUnlock()
 	t.Cleanup(stopUnlock)
-	// Only the protocol-native key types are enabled by default.
-	if err := apadmin.ActivateKeyType(falcon1024V1KeyType); err != nil {
-		t.Fatalf("activate %s: %v", falcon1024V1KeyType, err)
-	}
 
 	start := time.Now()
 	deadline := time.Time{}
@@ -110,7 +106,7 @@ func TestLocalNetSignerTransactionSoak(t *testing.T) {
 		runAccountCycle(t, network, funder, apadmin, apshell, signerd.GetURL(), ed25519KeyType, "ed25519")
 		if falconEvery > 0 && iterations%falconEvery == 0 {
 			falconCycles++
-			runAccountCycle(t, network, funder, apadmin, apshell, signerd.GetURL(), falcon1024V1KeyType, "falcon1024-v1")
+			runAccountCycle(t, network, funder, apadmin, apshell, signerd.GetURL(), falcon1024KeyType, "falcon1024")
 		}
 
 		if restartEvery > 0 && iterations%restartEvery == 0 {

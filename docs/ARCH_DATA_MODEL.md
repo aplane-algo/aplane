@@ -438,9 +438,9 @@ visibility metadata, not the assembled list.
 
 Default-enabled compiled providers are the protocol-native signer account
 providers (`ed25519` and `falcon1024`) and the witness provider
-(`aplane.witness-falcon1024.v1`). Every LogicSig provider, including
-`aplane.falcon1024.v1`, is library-visible. Node role gates
-determine which default-enabled key classes may be generated or served by a
+(`aplane.witness-falcon1024.v1`). Plain Falcon and Ed25519 LogicSig providers
+are internal-only; other selectable compiled LogicSig providers are
+library-visible. Node role gates determine which default-enabled key classes may be generated or served by a
 store. Optional compiled providers and YAML templates become available only
 after product-store enablement or installation.
 
@@ -1304,7 +1304,7 @@ and [ARCH_ADMIN.md](ARCH_ADMIN.md#admin-protocol-contract).
 | Element | Kind | Authority | Projection | Owner | Checks |
 |---|---|---|---|---|---|
 | Compiled provider registry | process authority | Go registrations in `lsig/clientreg` and provider packages | provider lookup by `key_type` | `internal/lsigprovider`, `internal/keygen`, `internal/signing` | Canonical `key_type` strings are identifiers; display labels are not. |
-| Key type visibility catalog | process metadata | `internal/keytypecatalog` registrations | default-enabled/library-visible/disabled state | `internal/keytypecatalog` | Library-visible providers require a product-store state record before generation. |
+| Key type visibility catalog | process metadata | `internal/keytypecatalog` registrations | default-enabled/library-visible/internal-only/disabled availability | `internal/keytypecatalog` | Library-visible providers require a product-store state record before generation. |
 | Plaintext template library | install source | repo or signer-data `library/templates/*.yaml` | KeyType Library candidates | `internal/templatelibrary` | Not active by presence alone; every entry requires product-store import/enablement, and invalid entries are reported but not enabled. |
 | YAML template spec | generation contract | template YAML `schema_version`, `template_mode`, `template_type` | parsed `BaseTemplateSpec` (`template_type` is optional) | `internal/templatestore` (`BaseTemplateSpec`), `internal/templatelibrary`, `lsig/generictemplate`, `lsig/composeddsa` (per-type specs) | Unknown/missing required fields reject import/install. |
 | Template install result | wire/runtime projection | admin request response | install/rollback report | `internal/signerapp/templateadmin`, `internal/protocol` | `internal/templatelibrary` coordinates encrypted bytes and state records; the live admin path supplies locking and reload. |

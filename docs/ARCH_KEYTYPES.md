@@ -18,6 +18,7 @@ reference for one of the three axes (Resolve).
 ## Contents
 
 - [Protocol dimensions and terminology](#protocol-dimensions-and-terminology)
+- [Internal providers](#internal-providers)
 - [Mnemonic backup and recovery](#mnemonic-backup-and-recovery)
 - [Designing a new combination](#designing-a-new-combination)
 - [Key type identifier contract](#key-type-identifier-contract)
@@ -202,9 +203,27 @@ These versions may advance independently. A key type version must still pin the
 complete behavior it relies on, and compatibility-bearing changes commonly
 require advancing more than one dimension together.
 
+## Internal providers
+
+The compiled catalog has an `internal_only` availability value for
+`aplane.falcon1024.v1` and `aplane.ed25519.v1`. Their providers remain registered
+for composition, stored-key signing, and encrypted restore. They do not appear
+in the KeyType Library, `/keytypes`, or creation/import menus and cannot be
+activated or used for standalone generation or mnemonic import. Use native
+`falcon1024` or `ed25519` for ordinary accounts.
+
+An existing enabled state record cannot override `internal_only`. Old records
+are not deleted or rewritten, and corrupt records still follow normal storage
+validation. Existing accounts remain visible in `/keys` and admin inventory.
+Expert templates can still name either provider as their `base_key_type` without
+enabling the base for standalone creation; the template's own enablement applies.
+This availability value is binary catalog metadata, not a new persisted state
+or a change to key payloads. It differs from `disabled`, which can withhold
+provider registration.
+
 ## Mnemonic backup and recovery
 
-**Approved policy, 2026-11-05 — implementation pending:** user-facing mnemonic
+**Native-only mnemonic policy:** user-facing mnemonic
 import, export, and recovery apply only to native account types, currently
 `ed25519` and `falcon1024`. No LogicSig type offers mnemonic recovery under this
 policy, including plain DSA, composed/bounded, guarded, rotating, and generic
@@ -217,20 +236,12 @@ accounts additionally retain their existing
 [recovery requirements](USER_STORE_MGMT.md#restoring-rotating-accounts),
 including stage and leaf-safety checks.
 
-The implementation currently differs from this policy in one respect: enabled
-plain `aplane.falcon1024.v1` and `aplane.ed25519.v1` still accept mnemonic
-import. Composed, guarded, rotating, and generic LogicSigs already refuse it.
-Mnemonic export is already native-only, and generation responses omit recovery
-phrases. Implementing the policy removes the two plain LogicSig import paths;
-it does not invalidate existing credentials or change signing, encrypted
-backup/restore, or internal seed derivation.
-
-Import enforcement and discovery must agree on the account's full key type and
-native authorization category. Neither a `base_key_type`, family mnemonic
-handler, nor `mnemonic_word_count` grants user-facing import capability. Keep
-provider and metadata declarations, the common import gate, `/keytypes`, and
-apadmin's import choices consistent when implementing this change. Native
-Falcon mnemonic export still requires retained recovery entropy; see
+Both plain LogicSig providers are internal-only, so public generation and
+mnemonic import reject them even with old enablement records. Other LogicSig
+providers already refuse mnemonic import. Mnemonic export is native-only and
+generation responses omit recovery phrases. Internal seed/mnemonic handlers
+remain available to derivation code; their presence is not public eligibility.
+Native Falcon export still requires retained recovery entropy; see
 [the stored credential format](ARCH_STORE.md#managed-credential-files).
 
 ## Designing a new combination
@@ -541,11 +552,11 @@ Examples of the composed ontology:
 |----------|--------|----------|-------------|
 | `ed25519` | n/a | `ed25519` | Native Algorand Ed25519 account; not a LogicSig |
 | `falcon1024` | n/a | `native_pq` | Native protocol Falcon-1024 account (scheme `f1`, supported consensus v42 or v43); not a LogicSig |
-| `aplane.falcon1024.v1` | `aplane.falcon1024` | `dsa_lsig` | Library-visible pure Falcon signature |
+| `aplane.falcon1024.v1` | `aplane.falcon1024` | `dsa_lsig` | Internal-only Falcon signature provider; existing accounts remain supported |
 | `aplane.falcon1024-cosigner1024.v1` | `aplane.falcon1024-cosigner1024` | `dsa_lsig` | Library-visible guarded account: Falcon-1024 user + Falcon-1024 cosigner component signatures |
 | `aplane.falcon1024-allowlist-lock.v1` | `falcon1024-allowlist-lock` | `dsa_lsig` | Optional bounded1 composed template: Falcon spending, fixed recipient allowlist, external Falcon contract-admin rekey |
 | `aplane.corridor.v1` | `corridor` | `dsa_lsig` | Optional bounded1 composed template: Falcon spending, framework Merkle recipient policy, cosigner-gated spend, and external-admin pure rekey |
-| `aplane.ed25519.v1` | `aplane.ed25519` | `dsa_lsig` | Library-visible Ed25519 LogicSig DSA provider; distinct from native `ed25519` |
+| `aplane.ed25519.v1` | `aplane.ed25519` | `dsa_lsig` | Internal-only Ed25519 LogicSig DSA provider; distinct from native `ed25519` |
 | `aplane.htlc.v1` | `htlc` | `generic_lsig` | Optional template library: hash time-locked ALGO payment |
 | `aplane.falcon1024-allowlist.v1` | `falcon1024-allowlist` | `dsa_lsig` | Bundled bounded1 composed template: installed/enabled in new signer-role stores; Falcon + fixed receiver allowlist |
 | `aplane.falcon1024-allowlist.v2` | `falcon1024-allowlist` | `dsa_lsig` | Optional bounded1 composed template: Falcon + signer-derived Merkle receiver proof |
@@ -609,7 +620,7 @@ registry names:
 |---|---|---|
 | `ed25519` | Native key type and native routing family | Standard Algorand Ed25519 account signing. It does not use a LogicSig, is default-enabled, and the key type and family are the same string. |
 | `aplane.ed25519` | Qualified LogicSig DSA routing family | APlane's Ed25519-inside-LogicSig registry family. It is not a creatable key type; it is the family-keyed registry bucket for LogicSig metadata, keygen, signing, and mnemonic ops. The `aplane.` qualifier prevents collision with native `ed25519`. |
-| `aplane.ed25519.v1` | Versioned concrete LogicSig DSA key type | Version 1 of the APlane Ed25519 LogicSig DSA provider. Users can enable/create/import this key type; it signs with Ed25519, but verification happens inside TEAL via `ed25519verify_bare`. |
+| `aplane.ed25519.v1` | Versioned concrete LogicSig DSA key type | Version 1 of the APlane Ed25519 LogicSig DSA provider. It remains available for composition and existing credentials, but not standalone creation; it signs with Ed25519, but verification happens inside TEAL via `ed25519verify_bare`. |
 
 For composed templates, the key type's own label and its routing key can differ
 again: `aplane.falcon1024-allowlist.v1` names the allowlist template, while its
@@ -964,13 +975,13 @@ func Get(keyType string) LogicSigDSA {
 ```
 lsig/clientreg.RegisterClient()
     │
-    ├── keytypecatalog.Register(aplane.falcon1024.v1, library)
+    ├── keytypecatalog.Register(aplane.falcon1024.v1, internal_only)
     │   └── falcon.RegisterClient()
     │       ├── v1.RegisterLogicSigDSA() → Falcon1024V1
     │       └── ... (metadata, address derivation)
     ├── keytypecatalog.Register(aplane.falcon1024-cosigner1024.v1, library)
     │   └── falcon1024guarded.RegisterClient()
-    ├── keytypecatalog.Register(aplane.ed25519.v1, library)
+    ├── keytypecatalog.Register(aplane.ed25519.v1, internal_only)
     │   └── ed25519lsig.RegisterClient()
     ├── keytypecatalog.Register(aplane.rotating-triple-xmss.v1, library)
     │   └── (no client provider)

@@ -2439,22 +2439,13 @@ func closeAccountWithSigningKey(
 func mustAdminGenerateKey(t *testing.T, signerClient *signerclient.Client, signerd *harness.SignerHarness, keyType string, params map[string]string) string {
 	t.Helper()
 
-	resp, err := signerClient.AdminGenerate(keyType, params)
-	if err != nil {
-		t.Fatalf("failed to generate %s via admin API: %v", keyType, err)
-	}
-	if resp.Address == "" {
-		t.Fatalf("admin generate for %s returned empty address", keyType)
-	}
+	address := mustAdminGenerateKeyNoCleanup(t, signerClient, signerd, keyType, params)
 	t.Cleanup(func() {
-		if _, err := signerClient.AdminDeleteKey(resp.Address); err != nil {
-			t.Fatalf("failed to delete generated key %s: %v", resp.Address, err)
+		if _, err := signerClient.AdminDeleteKey(address); err != nil {
+			t.Fatalf("failed to delete generated key %s: %v", address, err)
 		}
 	})
-	if !waitForKey(t, signerd.GetURL(), resp.Address, 10*time.Second) {
-		t.Fatalf("signer did not reload generated key %s", resp.Address)
-	}
-	return resp.Address
+	return address
 }
 
 func mustExtractTxID(t *testing.T, output string) string {
