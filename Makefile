@@ -441,11 +441,13 @@ vet: compile-docassets
 # Compile-check code behind the testmode build tag (e.g. cmd/apadmin/batch.go).
 # Tagged files are invisible to the default build graph, so refactors can break
 # them silently; only the integration harness builds with this tag otherwise.
-# This produces no artifacts - it only type-checks the tagged sources.
+# This produces no artifacts. It type-checks the tagged sources and runs the one
+# test that pins what the tag changes: which key types the catalog offers.
 testmode-check:
 	@echo "Compile-checking testmode-tagged sources..."
 	@go build -tags testmode $$(go list -tags testmode -f '{{if or .GoFiles .CgoFiles}}{{.ImportPath}}{{end}}' ./... | grep -v '^github.com/aplane-algo/aplane/temp/')
 	@go vet -tags testmode ./cmd/apadmin/
+	@go test -tags testmode ./lsig/clientreg/
 	@echo "✓ testmode sources compile"
 
 # Fail if go.mod / go.sum are not tidy.

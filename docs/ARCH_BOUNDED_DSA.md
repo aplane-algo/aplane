@@ -1024,6 +1024,31 @@ carry short-lived signing authority. Before submission, `complete` rechecks
 network/genesis, current authorization, validity rounds, program binding, and
 both signatures. It performs no automatic retry or approval refresh.
 
+## General Boundary Digest
+
+`aplane.bounded.v1` accounts have a comparison digest. Using the field encoding above:
+
+```text
+SHA512/256(
+  field("APLANE_GENERAL_BOUNDARY_V1") ||
+  field("aplane.boundary.v1") ||
+  field(selected_shape_fingerprint) ||
+  field(base_primitive) ||
+  field(canonical_bounded_profile) ||
+  field(canonical_behavior_parameters) ||
+  field(admin_public_key_or_empty)
+)
+```
+
+The admin key is bound separately because the canonical behavior encoding omits it. A
+cosigner key is a behavior parameter, so it is covered there. The digest excludes the
+spending key, filenames, reference names, and labels, and it binds the selected shape
+rather than the whole grammar, so an unrelated new rule leaves it unchanged.
+
+It is a comparison value. It does not assert that two accounts have the same address,
+and it replaces neither `bounded_program_binding` nor any signing transcript. It is
+defined only for this key type: custom Layer 3 code is not bound by it.
+
 ## Versioning
 
 After first production deployment, a change to field classification, normal

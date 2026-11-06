@@ -9,7 +9,6 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
-	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/witness"
 )
@@ -17,9 +16,14 @@ import (
 // PreparedGeneration describes the account a generation request would create.
 // It has no address: that depends on a spending key that does not exist yet.
 type PreparedGeneration struct {
-	KeyType     string
-	Parameters  map[string]string
+	KeyType    string
+	Parameters map[string]string
+	// Fingerprint is the provenance the account would record.
 	Fingerprint string
+	// ReviewFingerprint is what the operator approves here and generation checks.
+	ReviewFingerprint string
+	// BoundaryDigest is set only for general-provider accounts.
+	BoundaryDigest string
 	// Bounded is the bounded contract, or nil for any other key type.
 	Bounded       *boundedmeta.Metadata
 	AdminKeyID    string
@@ -44,12 +48,11 @@ func (s Service) PrepareGenerateKey(keyType string, params map[string]string) (*
 	if activeErr != nil {
 		return nil, mapGenerateError(activeErr)
 	}
-	canGenerate, stateErr := keytypestate.CanGenerate(activeKeyPaths, creation.keyType)
-	if stateErr != nil {
-		return nil, &Error{Kind: ErrorInternal, Message: "failed to read key type state"}
+	if err := checkGenerationAllowed(activeKeyPaths, creation.keyType); err != nil {
+		return nil, err
 	}
-	if !canGenerate {
-		return nil, unavailableKeyTypeError(activeKeyPaths, creation.keyType)
+	if err := s.checkBoundaryRequirements(creation.instance); err != nil {
+		return nil, err
 	}
 
 	prepared := &PreparedGeneration{KeyType: creation.keyType, Parameters: creation.params}
@@ -60,6 +63,8 @@ func (s Service) PrepareGenerateKey(keyType string, params map[string]string) (*
 	}
 	if creation.instance != nil {
 		prepared.Fingerprint = creation.instance.Fingerprint
+		prepared.ReviewFingerprint = creation.instance.ReviewFingerprint
+		prepared.BoundaryDigest = creation.instance.BoundaryDigest
 		prepared.Bounded = boundedmeta.Clone(creation.instance.Bounded)
 	}
 	if err := prepared.resolveAuthorityIDs(); err != nil {

@@ -146,7 +146,7 @@ func TestReviewedGenerationKeepsTheReviewedAuthority(t *testing.T) {
 	}
 	importPrepareReference(t, ir, prepareTestReference, 0x62)
 
-	result, err := service.GenerateReviewedKey(context.Background(), keyType, prepared.Parameters, prepared.Fingerprint, nil)
+	result, err := service.GenerateReviewedKey(context.Background(), keyType, prepared.Parameters, ReviewedValues{Fingerprint: prepared.ReviewFingerprint}, nil)
 	if err != nil {
 		t.Fatalf("GenerateReviewedKey() error = %#v", err)
 	}
@@ -166,7 +166,7 @@ func TestReviewedGenerationRejectsAChangedDefinition(t *testing.T) {
 	}
 
 	stale := "1:" + strings.Repeat("0", 64)
-	_, err = service.GenerateReviewedKey(context.Background(), keyType, prepared.Parameters, stale, nil)
+	_, err = service.GenerateReviewedKey(context.Background(), keyType, prepared.Parameters, ReviewedValues{Fingerprint: stale}, nil)
 	if err == nil || err.Kind != ErrorInvalidInput || !strings.Contains(err.Message, "changed after this request was reviewed") {
 		t.Fatalf("GenerateReviewedKey(stale) error = %#v", err)
 	}
@@ -195,7 +195,7 @@ func TestIPCServiceAppliesTheExpectedFingerprint(t *testing.T) {
 		t.Fatalf("GenerateKey(stale) = %+v", stale)
 	}
 	current := service.GenerateKey(context.Background(), adminproto.GenerateKeyRequest{
-		KeyType: keyType, Parameters: prepared.Parameters, ExpectedFingerprint: prepared.Fingerprint,
+		KeyType: keyType, Parameters: prepared.Parameters, ExpectedFingerprint: prepared.ReviewFingerprint,
 	})
 	if !current.Success {
 		t.Fatalf("GenerateKey(current) = %+v", current)

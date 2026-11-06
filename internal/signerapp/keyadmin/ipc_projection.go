@@ -36,12 +36,14 @@ func ProjectPrepareGenerateIPC(prepared *PreparedGeneration, err *Error) adminpr
 		return adminproto.PrepareGenerateKeyResult{Code: generateIPCCode(err), Error: err.Message}
 	}
 	result := adminproto.PrepareGenerateKeyResult{
-		Success:       true,
-		KeyType:       prepared.KeyType,
-		Parameters:    prepared.Parameters,
-		Fingerprint:   prepared.Fingerprint,
-		AdminKeyID:    prepared.AdminKeyID,
-		CosignerKeyID: prepared.CosignerKeyID,
+		Success:           true,
+		KeyType:           prepared.KeyType,
+		Parameters:        prepared.Parameters,
+		Fingerprint:       prepared.Fingerprint,
+		ReviewFingerprint: prepared.ReviewFingerprint,
+		BoundaryDigest:    prepared.BoundaryDigest,
+		AdminKeyID:        prepared.AdminKeyID,
+		CosignerKeyID:     prepared.CosignerKeyID,
 	}
 	if metadata := prepared.Bounded; metadata != nil {
 		profile := &adminproto.PreparedBoundedProfile{

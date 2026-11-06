@@ -1039,10 +1039,11 @@ func (s *Session) HandleGenerateKey(msg *protocol.GenerateKeyMessage) {
 		return
 	}
 	gen := s.keyServices.GenerateKey(s.auditContext(), adminproto.GenerateKeyRequest{
-		KeyType:             msg.KeyType,
-		Name:                msg.Name,
-		Parameters:          msg.Parameters,
-		ExpectedFingerprint: msg.ExpectedFingerprint,
+		KeyType:                msg.KeyType,
+		Name:                   msg.Name,
+		Parameters:             msg.Parameters,
+		ExpectedFingerprint:    msg.ExpectedFingerprint,
+		ExpectedBoundaryDigest: msg.ExpectedBoundaryDigest,
 	})
 	_ = s.WriteJSON(ProtocolGenerateResultMessage(msg.ID, gen))
 }

@@ -17,7 +17,7 @@ const (
 
 const (
 	AdminProtocolVersionMajor = 7
-	AdminProtocolVersionMinor = 2
+	AdminProtocolVersionMinor = 3
 )
 
 // ProtocolVersion is the admin IPC protocol version shape surfaced during
@@ -780,15 +780,20 @@ type PreparedBoundedProfile struct {
 // has no address, because the spending key does not exist yet.
 type PrepareGenerateResultMessage struct {
 	BaseMessage
-	Success       bool                    `json:"success"`
-	KeyType       string                  `json:"key_type,omitempty"`
-	Parameters    map[string]string       `json:"parameters,omitempty"`
-	Fingerprint   string                  `json:"fingerprint,omitempty"`
-	Bounded       *PreparedBoundedProfile `json:"bounded,omitempty"`
-	AdminKeyID    string                  `json:"admin_key_id,omitempty"`
-	CosignerKeyID string                  `json:"cosigner_key_id,omitempty"`
-	Code          string                  `json:"code,omitempty"`
-	Error         string                  `json:"error,omitempty"`
+	Success    bool              `json:"success"`
+	KeyType    string            `json:"key_type,omitempty"`
+	Parameters map[string]string `json:"parameters,omitempty"`
+	// Fingerprint is the provenance the account would record.
+	Fingerprint string `json:"fingerprint,omitempty"`
+	// ReviewFingerprint goes back as generate_key.expected_fingerprint.
+	ReviewFingerprint string `json:"review_fingerprint,omitempty"`
+	// BoundaryDigest goes back as generate_key.expected_boundary_digest.
+	BoundaryDigest string                  `json:"boundary_digest,omitempty"`
+	Bounded        *PreparedBoundedProfile `json:"bounded,omitempty"`
+	AdminKeyID     string                  `json:"admin_key_id,omitempty"`
+	CosignerKeyID  string                  `json:"cosigner_key_id,omitempty"`
+	Code           string                  `json:"code,omitempty"`
+	Error          string                  `json:"error,omitempty"`
 }
 
 // GenerateKeyMessage requests generation of a new key
@@ -796,10 +801,11 @@ type GenerateKeyMessage struct {
 	BaseMessage
 	KeyType string `json:"key_type"` // Versioned key type: "ed25519", "aplane.falcon1024.v1", "aplane.htlc.v1", etc.
 	Name    string `json:"name,omitempty"`
-	// ExpectedFingerprint comes from prepare_generate_result. Generation rejects
+	// The Expected fields come from prepare_generate_result. Generation rejects
 	// the request if the definition has changed since it was reviewed.
-	ExpectedFingerprint string            `json:"expected_fingerprint,omitempty"`
-	Parameters          map[string]string `json:"parameters,omitempty"` // Template parameters (for generic lsigs like timed-allowlist)
+	ExpectedFingerprint    string            `json:"expected_fingerprint,omitempty"`
+	ExpectedBoundaryDigest string            `json:"expected_boundary_digest,omitempty"`
+	Parameters             map[string]string `json:"parameters,omitempty"` // Template parameters (for generic lsigs like timed-allowlist)
 }
 
 // GenerateResultMessage contains the result of key generation
@@ -942,6 +948,9 @@ type LibraryTemplateInfo struct {
 	Enabled      bool                `json:"enabled,omitempty"`
 	Conflict     string              `json:"conflict,omitempty"`
 	Invalid      string              `json:"invalid,omitempty"`
+	// NeedsApproval means the type cannot create accounts until its current
+	// definition is approved.
+	NeedsApproval bool `json:"needs_approval,omitempty"`
 }
 
 type ListLibraryTemplatesMessage struct {

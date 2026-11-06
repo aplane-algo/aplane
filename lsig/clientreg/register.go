@@ -13,11 +13,14 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 	"github.com/aplane-algo/aplane/internal/rotatingkey"
+	"github.com/aplane-algo/aplane/lsig/boundedaccount"
 	"github.com/aplane-algo/aplane/lsig/ed25519lsig"
 	falcon "github.com/aplane-algo/aplane/lsig/falcon1024"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
 	falcon1024guarded "github.com/aplane-algo/aplane/lsig/falcon1024_guarded"
 )
+
+const boundedAccountFamily = "aplane.bounded"
 
 var (
 	registerClientOnce sync.Once
@@ -48,6 +51,11 @@ func RegisterClient() {
 			Family:       ed25519lsig.FamilyName,
 			Availability: keytypecatalog.AvailabilityInternalOnly,
 		}, ed25519lsig.RegisterClient)
+		registerCompiledProvider(keytypecatalog.Entry{
+			KeyType:      boundedaccount.KeyTypeV1,
+			Family:       boundedAccountFamily,
+			Availability: boundedAccountAvailability,
+		}, boundedaccount.RegisterClient)
 		// The rotating accounts have no client-side provider; each entry only
 		// makes the key type opt-in. Signer binaries register its storage,
 		// stage cryptography and generator through lsig/signerreg.

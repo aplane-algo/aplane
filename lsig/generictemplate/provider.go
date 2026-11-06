@@ -586,6 +586,49 @@ func validateUniqueYAMLKeys(node *yaml.Node) error {
 	return nil
 }
 
+// DecodeOption tightens DecodeStrictYAML.
+type DecodeOption func(*yaml.Node) error
+
+// RequireStringScalars rejects any scalar that YAML did not type as a string.
+// yaml.v3 would otherwise quietly turn 123 or true into a string field, and turn
+// null into an absent one.
+func RequireStringScalars(node *yaml.Node) error {
+	switch node.Kind {
+	case yaml.ScalarNode:
+		if node.Tag != "!!str" {
+			return fmt.Errorf("value %q on line %d must be a string", node.Value, node.Line)
+		}
+	case yaml.MappingNode, yaml.SequenceNode:
+		for _, child := range node.Content {
+			if err := RequireStringScalars(child); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// DecodeStrictYAML decodes a single YAML mapping, rejecting unknown fields,
+// duplicate keys, aliases, merge keys, and additional documents.
+func DecodeStrictYAML(data []byte, target any, options ...DecodeOption) error {
+	var document yaml.Node
+	if err := yaml.Unmarshal(data, &document); err != nil {
+		return fmt.Errorf("YAML parse error: %w", err)
+	}
+	if len(document.Content) != 1 || document.Content[0].Kind != yaml.MappingNode {
+		return fmt.Errorf("YAML parse error: document must be a mapping")
+	}
+	if err := validateUniqueYAMLKeys(document.Content[0]); err != nil {
+		return fmt.Errorf("YAML parse error: %w", err)
+	}
+	for _, option := range options {
+		if err := option(document.Content[0]); err != nil {
+			return fmt.Errorf("YAML parse error: %w", err)
+		}
+	}
+	return decodeKnownTemplateFields(data, target)
+}
+
 func decodeKnownTemplateFields(data []byte, target any) error {
 	decoder := yaml.NewDecoder(bytes.NewReader(data))
 	decoder.KnownFields(true)

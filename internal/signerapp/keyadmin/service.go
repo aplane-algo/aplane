@@ -164,15 +164,22 @@ func (s Service) resolveCreation(keyType string, params map[string]string) (*res
 	return &resolvedCreation{keyType: keyType, params: params, instance: instance}, nil
 }
 
-// GenerateKey creates a key with no prior review. See GenerateReviewedKey.
-func (s Service) GenerateKey(ctx context.Context, keyType string, params map[string]string, generateGenericLSig GenerateGenericLSigFunc) (*GenerateResult, *Error) {
-	return s.GenerateReviewedKey(ctx, keyType, params, "", generateGenericLSig)
+// ReviewedValues are what PrepareGenerateKey returned for the request an operator
+// reviewed. They are comparison values, not authorizations: approval and every
+// other check apply whether or not a request carries them.
+type ReviewedValues struct {
+	Fingerprint    string
+	BoundaryDigest string
 }
 
-// GenerateReviewedKey creates a key. A non-empty expectedFingerprint is the one
-// PrepareGenerateKey returned: it is a comparison value, not an authorization,
-// and a mismatch means the definition changed after the operator reviewed it.
-func (s Service) GenerateReviewedKey(ctx context.Context, keyType string, params map[string]string, expectedFingerprint string, generateGenericLSig GenerateGenericLSigFunc) (*GenerateResult, *Error) {
+// GenerateKey creates a key with no prior review. See GenerateReviewedKey.
+func (s Service) GenerateKey(ctx context.Context, keyType string, params map[string]string, generateGenericLSig GenerateGenericLSigFunc) (*GenerateResult, *Error) {
+	return s.GenerateReviewedKey(ctx, keyType, params, ReviewedValues{}, generateGenericLSig)
+}
+
+// GenerateReviewedKey creates a key. A mismatch with reviewed means the definition
+// or the resolved request changed after the operator reviewed it.
+func (s Service) GenerateReviewedKey(ctx context.Context, keyType string, params map[string]string, reviewed ReviewedValues, generateGenericLSig GenerateGenericLSigFunc) (*GenerateResult, *Error) {
 	ir := s.Runtime
 	if ctx == nil {
 		ctx = context.Background()
@@ -197,22 +204,14 @@ func (s Service) GenerateReviewedKey(ctx context.Context, keyType string, params
 	if activationErr != nil {
 		return nil, activationErr
 	}
-	canGenerate, stateErr := keytypestate.CanGenerate(activeKeyPaths, keyType)
-	if stateErr != nil {
-		return nil, &Error{Kind: ErrorInternal, Message: "failed to read key type state"}
+	if err := checkGenerationAllowed(activeKeyPaths, keyType); err != nil {
+		return nil, err
 	}
-	if !canGenerate {
-		return nil, unavailableKeyTypeError(activeKeyPaths, keyType)
+	if err := s.checkBoundaryRequirements(creation.instance); err != nil {
+		return nil, err
 	}
-	if expectedFingerprint != "" {
-		// Compared under the lock, which also guards template changes.
-		current, err := lsigprovider.CreationFingerprint(keyType, params)
-		if err != nil {
-			return nil, &Error{Kind: ErrorInvalidInput, Message: err.Error()}
-		}
-		if current != expectedFingerprint {
-			return nil, &Error{Kind: ErrorInvalidInput, Message: fmt.Sprintf("key type %s changed after this request was reviewed; review it again", keyType)}
-		}
+	if err := checkReviewedValues(keyType, params, reviewed); err != nil {
+		return nil, err
 	}
 	if genericlsig.IsGenericLSigType(keyType) {
 		if generateGenericLSig == nil {
@@ -266,6 +265,69 @@ func (s Service) GenerateReviewedKey(ctx context.Context, keyType string, params
 // node. A key type the binary carries, or a template the store has installed,
 // names the step that enables it; any other key type is unknown here. Only
 // the protocol-native key types are enabled by default.
+// checkGenerationAllowed decides whether keyType may create an account. It must
+// run under the mutation lock, on every creation route.
+func checkGenerationAllowed(paths storepaths.Paths, keyType string) *Error {
+	canGenerate, err := keytypestate.CanGenerate(paths, keyType)
+	if err != nil {
+		return &Error{Kind: ErrorInternal, Message: "failed to read key type state"}
+	}
+	if !canGenerate {
+		return unavailableKeyTypeError(paths, keyType)
+	}
+	needsApproval, err := keytypestate.NeedsApproval(paths, keyType)
+	if err != nil {
+		return &Error{Kind: ErrorInternal, Message: "failed to read key type state"}
+	}
+	if needsApproval {
+		return &Error{Kind: ErrorInvalidInput, Message: fmt.Sprintf(
+			"key type %s has changed and needs approval before it can create accounts: use Approve current grammar in the KeyType Library, or run apadmin keytype enable %s; existing accounts keep working",
+			keyType, keyType)}
+	}
+	return nil
+}
+
+// checkReviewedValues recomputes what a review saw. Called under the lock, which
+// also guards template changes.
+func checkReviewedValues(keyType string, params map[string]string, reviewed ReviewedValues) *Error {
+	if reviewed == (ReviewedValues{}) {
+		return nil
+	}
+	changed := &Error{Kind: ErrorInvalidInput, Message: fmt.Sprintf("key type %s changed after this request was reviewed; review it again", keyType)}
+	provider := lsigprovider.Get(keyType)
+	if provider == nil {
+		return changed
+	}
+	instance, err := lsigprovider.ResolveInstance(provider, params)
+	if err != nil {
+		return &Error{Kind: ErrorInvalidInput, Message: err.Error()}
+	}
+	if reviewed.Fingerprint != "" && reviewed.Fingerprint != instance.ReviewFingerprint {
+		return changed
+	}
+	if reviewed.BoundaryDigest != "" && reviewed.BoundaryDigest != instance.BoundaryDigest {
+		return changed
+	}
+	return nil
+}
+
+// checkBoundaryRequirements applies the general provider's generation settings.
+// Only an instance with a boundary digest comes from that provider, so expert
+// templates and every other type pass through.
+func (s Service) checkBoundaryRequirements(instance *lsigprovider.Instance) *Error {
+	if instance == nil || instance.BoundaryDigest == "" {
+		return nil
+	}
+	requireAdminKey, requireCosigner := s.Runtime.Config().BoundaryRequirements()
+	if requireAdminKey && !instance.Bounded.RequiresAdminKey() {
+		return &Error{Kind: ErrorInvalidInput, Message: "this signer requires bounded accounts to use admin-key rekey (boundary_require_admin_key)"}
+	}
+	if requireCosigner && instance.Bounded.Cosigner == nil {
+		return &Error{Kind: ErrorInvalidInput, Message: "this signer requires bounded accounts to have a cosigner (boundary_require_cosigner)"}
+	}
+	return nil
+}
+
 func unavailableKeyTypeError(paths storepaths.Paths, keyType string) *Error {
 	if keytypecatalog.IsInternalOnly(keyType) {
 		return &Error{Kind: ErrorInvalidInput, Message: fmt.Sprintf(
