@@ -1163,7 +1163,7 @@ type GetAdminSettingsMessage struct {
 type AdminSettingsMessage struct {
 	BaseMessage
 	UserAutoApprove bool `json:"user_auto_approve"`
-	// These restrict new aplane.bounded.v1 accounts only.
+	// These restrict new aplane.falcon1024-b.v1 accounts only.
 	BoundaryRequireAdminKey bool   `json:"boundary_require_admin_key,omitempty"`
 	BoundaryRequireCosigner bool   `json:"boundary_require_cosigner,omitempty"`
 	LockOnDisconnect        bool   `json:"lock_on_disconnect"`

@@ -49,7 +49,7 @@ APlane has two optional key type paths:
 | YAML template | `aplane.htlc.v1` | Plaintext library YAML, then encrypted product-local `.template` after import | `apadmin template import` or apadmin KeyType Library |
 
 The protocol-native key types, `ed25519` and `falcon1024`, and the general bounded
-key type `aplane.bounded.v1` are default-enabled on signer nodes; they are available
+key type `aplane.falcon1024-b.v1` are default-enabled on signer nodes; they are available
 without extra steps.
 Plain LogicSig providers `aplane.falcon1024.v1` and `aplane.ed25519.v1` are
 internal-only. They support templates and existing accounts, but cannot be
@@ -148,7 +148,7 @@ LogicSig keys rather than expecting their old addresses to remain stable.
 
 Compiled providers are registered from Go code when `apsigner` starts. The
 protocol-native `ed25519` and `falcon1024` and the general bounded
-`aplane.bounded.v1` are default-enabled on signer nodes;
+`aplane.falcon1024-b.v1` are default-enabled on signer nodes;
 other selectable compiled account providers are library-visible
 and require product-local enablement. On cosigner nodes,
 `aplane.witness-falcon1024.v1` is default-enabled for witness credentials.
@@ -160,11 +160,11 @@ apadmin -d $APSIGNER_DATA keytype enable aplane.falcon1024-cosigner1024.v1
 ```
 
 This enables the guarded Falcon account type. A Corridor account needs no
-enabling: it is the Corridor preset of `aplane.bounded.v1`.
+enabling: it is the Corridor preset of `aplane.falcon1024-b.v1`.
 
 Before generating a guarded or bounded-cosigner account, choose **Export
 Cosigner Key** on the cosigner. On the primary signer, start **Generate
-account** in `apadmin`, select the guarded key type or `aplane.bounded.v1`, then
+account** in `apadmin`, select the guarded key type or `aplane.falcon1024-b.v1`, then
 open the **Cosigner** field and choose **Use key file...** or **Paste public
 JSON...**. Compare the complete Witness Key ID with the value
 shown on the cosigner and import; the form returns with that key selected. A
@@ -246,7 +246,7 @@ It does not import a new YAML source; use `template import` for that.
 
 ## Bounded Accounts
 
-`aplane.bounded.v1` is a Falcon-1024 account limited to a fixed list of recipients, a
+`aplane.falcon1024-b.v1` is a Falcon-1024 account limited to a fixed list of recipients, a
 time before which it cannot spend, or both. It needs no setup: choose the rules when you
 generate the account. The rules are compiled
 into the account's program, so they cannot change afterwards, and editing a file later
@@ -254,7 +254,7 @@ does nothing to an existing account.
 
 ### Choosing rules in apadmin
 
-Generate a key and choose `aplane.bounded.v1`, then a preset:
+Generate a key and choose `aplane.falcon1024-b.v1`, then a preset:
 
 | Preset | What it sets | You supply |
 |---|---|---|
@@ -313,9 +313,9 @@ list says, subject to its transfer kinds.
 ### Creating an account from apshell
 
 ```
-generate aplane.bounded.v1 boundary=rules.yaml
-generate aplane.bounded.v1 boundary=rules.yaml result=account.json
-generate aplane.bounded.v1 spend_effects=pay rekey_authority=spending_key recipients=ADDR1,ADDR2
+generate aplane.falcon1024-b.v1 boundary=rules.yaml
+generate aplane.falcon1024-b.v1 boundary=rules.yaml result=account.json
+generate aplane.falcon1024-b.v1 spend_effects=pay rekey_authority=spending_key recipients=ADDR1,ADDR2
 ```
 
 apshell shows a local summary and asks before creating the account. The signer has not
@@ -329,7 +329,7 @@ with fingerprints and a digest.
 
 ### Restricting new accounts
 
-`aplane.bounded.v1` cannot be turned off, but two settings in apadmin's Settings panel set
+`aplane.falcon1024-b.v1` cannot be turned off, but two settings in apadmin's Settings panel set
 a minimum for new accounts. `boundary_require_admin_key` refuses spending-key rekey, and
 `boundary_require_cosigner` refuses accounts without a cosigner. They apply on every route,
 and they do not affect existing accounts or imported templates.
@@ -724,7 +724,7 @@ Import encrypts the YAML into the product keystore and enables the key type
 for the signer.
 
 New stores install no template. For an allowlist, timelock, or Corridor account,
-use a [preset of `aplane.bounded.v1`](#bounded-accounts).
+use a [preset of `aplane.falcon1024-b.v1`](#bounded-accounts).
 
 ### Retired templates
 

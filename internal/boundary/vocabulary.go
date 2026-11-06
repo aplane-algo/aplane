@@ -11,7 +11,7 @@ import "github.com/aplane-algo/aplane/internal/boundedmeta"
 
 const (
 	// KeyTypeV1 is the general bounded key type.
-	KeyTypeV1 = "aplane.bounded.v1"
+	KeyTypeV1 = "aplane.falcon1024-b.v1"
 
 	// SchemaV1 identifies the boundary file grammar.
 	SchemaV1 = "aplane.boundary.v1"

@@ -889,7 +889,7 @@ explicitly import its YAML into the product store before generating accounts.
 
 `aplane.htlc.v1` is in the default library. The allowlist, timelock, and Corridor
 templates below are retired: they are kept under `library/retired/` to repair
-existing accounts, and new accounts should use a preset of `aplane.bounded.v1`.
+existing accounts, and new accounts should use a preset of `aplane.falcon1024-b.v1`.
 Their sections still describe what those accounts do.
 
 #### Generic Templates

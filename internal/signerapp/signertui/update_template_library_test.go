@@ -268,7 +268,7 @@ func TestTemplateLibraryViewKeyRefusesEntryWithNothingToShow(t *testing.T) {
 func TestTemplateLibraryPointsSignerNodesAtBoundedPresets(t *testing.T) {
 	entries := []protocol.LibraryTemplateInfo{{KeyType: "aplane.htlc.v1", TemplateType: "generic"}}
 	signer := Model{width: 80, height: 23, library: libraryState{templates: entries}}
-	if view := signer.renderTemplateLibrary(); !strings.Contains(view, "For bounded presets, generate aplane.bounded.v1.") {
+	if view := signer.renderTemplateLibrary(); !strings.Contains(view, "For bounded presets, generate aplane.falcon1024-b.v1.") {
 		t.Fatalf("signer library does not name the presets:\n%s", view)
 	}
 	if width := lipgloss.Width(signer.templateLibrarySubtitle()); width > 76 {

@@ -34,7 +34,7 @@ type AdminSettings struct {
 	EndpointAdvertiseURL string
 	EndpointDisplayURL   string
 	Theme                string
-	// These restrict new aplane.bounded.v1 accounts only.
+	// These restrict new aplane.falcon1024-b.v1 accounts only.
 	BoundaryRequireAdminKey bool
 	BoundaryRequireCosigner bool
 }

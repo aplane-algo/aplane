@@ -146,7 +146,7 @@ func shapeSpec(shape Shape) *composeddsa.TemplateSpec {
 		BaseKeyType:       baseKeyType,
 		TemplateMode:      generictemplate.TemplateModeStrict,
 		Publisher:         "aplane",
-		Family:            "bounded",
+		Family:            "falcon1024-b",
 		Version:           1,
 		DisplayName:       displayName,
 		Description:       description,

@@ -12,7 +12,7 @@ before it was renamed `enroll`.
 - `aplane.falcon1024-allowlist.v1`, `aplane.falcon1024-allowlist.v2`,
   `aplane.falcon1024-allowlist-lock.v1`, `aplane.corridor.v1`, and
   `aplane.falcon1024-timelock.v1` moved to `library/retired/`. New accounts should use the
-  matching preset of `aplane.bounded.v1`.
+  matching preset of `aplane.falcon1024-b.v1`.
 - Existing accounts are unaffected. Fingerprints and addresses do not change, schema v2 stays
   supported, and installed templates keep working and stay listed. The store is not touched.
 - The installer copies the files to `<APSIGNER_DATA>/library/retired/` so an operator can
@@ -37,7 +37,7 @@ before it was renamed `enroll`.
 
 ## Bounded accounts can have a timelock
 
-- `aplane.bounded.v1` accepts `unlock_round`, alone or with a recipient list, and apadmin
+- `aplane.falcon1024-b.v1` accepts `unlock_round`, alone or with a recipient list, and apadmin
   has a Timelock preset. A spending-key rekey waits for the round. An admin rekey does
   not, so it stays available for recovery.
 - Existing bounded accounts and their fingerprints are unchanged.
@@ -50,7 +50,7 @@ before it was renamed `enroll`.
   add `policy_label`. `generate_key` accepts an optional
   `expected_boundary_digest`. A prepared request now sends `review_fingerprint` as
   `expected_fingerprint`; for existing key types it equals `fingerprint`.
-- `aplane.bounded.v1` is new and enabled by default on every signer, on fresh installs and
+- `aplane.falcon1024-b.v1` is new and enabled by default on every signer, on fresh installs and
   upgrades alike. It lets an operator choose an account's recipient rules at generation
   instead of importing a template for each. See
   [USER_KEYTYPES.md](USER_KEYTYPES.md#bounded-accounts).

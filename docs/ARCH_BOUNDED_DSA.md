@@ -1130,7 +1130,7 @@ both signatures. It performs no automatic retry or approval refresh.
 
 ## General Boundary Digest
 
-`aplane.bounded.v1` accounts have a comparison digest. Using the field encoding above:
+`aplane.falcon1024-b.v1` accounts have a comparison digest. Using the field encoding above:
 
 ```text
 SHA512/256(
@@ -1166,7 +1166,7 @@ configuration hash, which this document does not define byte for byte.
 
 ```text
 selected_shape_fingerprint:
-  1:0d5f6c9957c7cd219527f2110910d873982bdfd46e136b5f06742d741827ea4c
+  1:10022265dd8eee15de61a4d0828f74835a4f7a549184983adce608acc6922cb0
 base_primitive: falcon1024-v1
 canonical_bounded_profile_length: 594
 canonical_bounded_profile_sha512_256:
@@ -1175,7 +1175,7 @@ canonical_behavior_parameters_length: 1981
 canonical_behavior_parameters_sha512_256:
   3e37447008e20eab3259c3c109224f012ebd3bee4061db71b97298205665fdc9
 boundary_digest:
-  5403a32fc1b8ae9d8c9fc18d11c881d65f418e03c2dddd7aed1e6afdbae6c727
+  e92a67f3c4e8ed9330593c657bde8d84dc034f32fc8fae02d04f00568df31da7
 ```
 
 ## Versioning

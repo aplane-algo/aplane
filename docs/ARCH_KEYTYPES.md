@@ -1454,12 +1454,12 @@ Three boundaries matter when changing this path:
   keys.
 - **Budget checks.** Generation does not solve the group or fee budget for templates.
   Bundled shapes are proven by `TestBundledBoundedCompiledBudgetMatrix`, and the signing
-  planner rejects a path that exceeds its fee ceiling. `aplane.bounded.v1` also solves
+  planner rejects a path that exceeds its fee ceiling. `aplane.falcon1024-b.v1` also solves
   each reachable path at generation, as described below.
 
 ### The general bounded key type
 
-`aplane.bounded.v1` selects an account's shape at generation
+`aplane.falcon1024-b.v1` selects an account's shape at generation
 instead of fixing one per template. `internal/boundary` holds its family-neutral grammar,
 presets, and receipt, which clients use; `lsig/boundedaccount` holds the shapes and
 provider. Its catalog entry is `AvailabilityDefaultEnabled`, so every signer can create
@@ -1526,7 +1526,7 @@ other result generates as entered. After generation the operator can save a
 `aplane.boundary-receipt.v1` receipt beside where apadmin runs. It names the saved
 address, documents the account, and cannot restore it.
 
-**apshell.** `generate aplane.bounded.v1 boundary=<file>` reads the file locally and
+**apshell.** `generate aplane.falcon1024-b.v1 boundary=<file>` reads the file locally and
 shows a summary labelled as local, because the guarantee is weaker than apadmin's
 review: the signer has not seen it, and a cosigner name stays unresolved until creation.
 A stable Witness Key ID can only select that authority, and apshell confirms the result

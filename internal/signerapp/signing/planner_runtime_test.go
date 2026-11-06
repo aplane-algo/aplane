@@ -652,7 +652,7 @@ func TestPlanGroupRejectsBoundedFeeCeilingAfterDummyPooling(t *testing.T) {
 	metadata := testBoundedMetadata(t, "")
 	metadata.MaxFee = 1_000
 	deps := stubPlannerDeps{
-		keyTypes: map[string]string{authAddr: "aplane.falcon1024-bounded.v1"},
+		keyTypes: map[string]string{authAddr: "aplane.falcon1024-b.v1"},
 		// The v42 program surcharge needs a signer-side fee increase, but the
 		// bounded path permits no increase above the client-supplied base fee.
 		keyMetadata: map[string]PlannerKeyMetadata{authAddr: {

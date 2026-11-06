@@ -95,7 +95,7 @@ func (m Model) renderTemplateLibrary() string {
 }
 
 // templateLibrarySubtitle points at the bounded presets, which are not library
-// rows: aplane.bounded.v1 is always on, so a row could not offer to disable it.
+// rows: aplane.falcon1024-b.v1 is always on, so a row could not offer to disable it.
 // Cosigner nodes hold no bounded accounts.
 func (m Model) templateLibrarySubtitle() string {
 	if m.isCosignerNode() {
