@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	cosignerverify "github.com/aplane-algo/aplane/internal/cosigner/verify"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
@@ -19,6 +18,8 @@ import (
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/noderole"
+	"github.com/aplane-algo/aplane/internal/sigconstruction"
+	sigverify "github.com/aplane-algo/aplane/internal/sigconstruction/verify"
 	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	falconops "github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
@@ -108,7 +109,7 @@ func TestInternalProviderRestoresAndSignsExistingCredentials(t *testing.T) {
 						t.Fatal(err)
 					}
 					if base == "aplane.falcon1024.v1" {
-						if err := cosignerverify.VerifyFalcon1024(pub, message, signature); err != nil {
+						if err := sigverify.Verify(sigconstruction.Falcon1024(), pub, message, signature); err != nil {
 							t.Fatal(err)
 						}
 					} else if !ed25519.Verify(pub, message, signature) {

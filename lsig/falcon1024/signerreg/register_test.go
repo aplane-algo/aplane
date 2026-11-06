@@ -6,7 +6,8 @@ package signerreg_test
 import (
 	"testing"
 
-	cosignerverify "github.com/aplane-algo/aplane/internal/cosigner/verify"
+	"github.com/aplane-algo/aplane/internal/sigconstruction"
+	sigverify "github.com/aplane-algo/aplane/internal/sigconstruction/verify"
 	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
@@ -54,7 +55,7 @@ func TestRegisterSignerInstallsSigningProvider(t *testing.T) {
 	if len(sig) == 0 || len(sig) > family.MaxSignatureSize {
 		t.Fatalf("SignMessage() signature length = %d, want 1..%d", len(sig), family.MaxSignatureSize)
 	}
-	if err := cosignerverify.VerifyFalcon1024(pub, message, sig); err != nil {
+	if err := sigverify.Verify(sigconstruction.Falcon1024(), pub, message, sig); err != nil {
 		t.Fatalf("signature does not verify under the generated public key: %v", err)
 	}
 }

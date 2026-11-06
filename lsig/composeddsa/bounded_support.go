@@ -43,6 +43,37 @@ func productionBoundedGenerationPolicy(contract, baseKeyType string) (boundedWor
 	return support, ok
 }
 
+// BoundedWorkflow names a workflow whose spending proofs a signer verifies.
+type BoundedWorkflow int
+
+const (
+	BoundedWorkflowCosigner BoundedWorkflow = iota + 1
+	BoundedWorkflowExternalAdmin
+)
+
+// SupportedSpendingConstruction returns the spending construction a workflow is
+// reviewed for under a contract. Resolving a base alone would accept any listed
+// base, including one the workflow cannot complete, so verification sites ask here.
+// Production only: fixtures never reach this policy.
+func SupportedSpendingConstruction(contract, baseKeyType string, workflow BoundedWorkflow) (sigconstruction.Construction, bool) {
+	support, ok := productionBoundedGenerationPolicy(contract, baseKeyType)
+	if !ok {
+		return sigconstruction.Construction{}, false
+	}
+	switch workflow {
+	case BoundedWorkflowCosigner:
+		ok = support.cosigner
+	case BoundedWorkflowExternalAdmin:
+		ok = support.externalAdmin
+	default:
+		ok = false
+	}
+	if !ok {
+		return sigconstruction.Construction{}, false
+	}
+	return sigconstruction.ForBaseKeyType(baseKeyType)
+}
+
 // checkBoundedGenerationSupport refuses a bounded program the current
 // implementation could not operate, such as an external-admin rekey on a base
 // the admin ceremony cannot complete.

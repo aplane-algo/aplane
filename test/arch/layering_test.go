@@ -136,6 +136,24 @@ func TestSignatureConstructionsStayClientSafe(t *testing.T) {
 	}
 }
 
+// TestSignatureVerificationHoldsNoAuthority keeps shared verification on public
+// inputs: it can't reach a signing path, a credential, or a family package.
+func TestSignatureVerificationHoldsNoAuthority(t *testing.T) {
+	allowed := map[string]bool{
+		modulePrefix + "/internal/falconparams":    true,
+		modulePrefix + "/internal/sigconstruction": true,
+	}
+	imports, ok := moduleImports(t)[modulePrefix+"/internal/sigconstruction/verify"]
+	if !ok {
+		t.Fatal("internal/sigconstruction/verify is missing from the module")
+	}
+	for _, imp := range imports {
+		if strings.HasPrefix(imp, modulePrefix) && !allowed[imp] {
+			t.Errorf("internal/sigconstruction/verify imports %s", imp)
+		}
+	}
+}
+
 // TestFamilyImportExceptionsStayCurrent fails when a tracked concrete-family
 // import disappears, so the allowlist shrinks as family-neutral registries land.
 func TestFamilyImportExceptionsStayCurrent(t *testing.T) {

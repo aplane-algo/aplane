@@ -22,6 +22,9 @@ func (o *Ops) MnemonicWordCount() int   { return family.MnemonicWordCount }
 func (o *Ops) DisplayColor() string     { return family.DisplayColor }
 func (o *Ops) TEALVersion() int         { return family.TEALVersion }
 
+// Construction returns the signature construction these operations render.
+func (o *Ops) Construction() sigconstruction.Construction { return sigconstruction.Ed25519() }
+
 func (o *Ops) BuildVerifyTEAL(publicKey []byte) (string, error) {
 	verify, err := sigconstruction.Ed25519().VerifyTEAL(publicKey, "txn TxID", 0)
 	if err != nil {

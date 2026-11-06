@@ -21,6 +21,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
+	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
 	falconsignerops "github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
 )
 
@@ -268,6 +269,27 @@ func ed25519LsigTargetMaterial(t *testing.T) (types.Address, *coresigning.KeyMat
 	km.Category = keys.CategoryDSALsig
 	km.Bytecode = adminTargetFakeProgram(km.PublicKey)
 	return algocrypto.AddressFromProgram(km.Bytecode), km
+}
+
+// A native Falcon credential whose private key isn't the stored public key's still
+// derives the right address, so only the signature check can refuse it.
+func TestSelfTestRefusesNativeFalconKeyMismatch(t *testing.T) {
+	registerAdminTargetTestProviders()
+	_, stored := falconLsigTargetMaterial(t, plainFalcon1024LsigKeyType)
+	_, other := falconLsigTargetMaterial(t, plainFalcon1024LsigKeyType)
+	salt := byte(0)
+	stored.Type, stored.Category, stored.PQAddressSalt = adminTargetTestTypeFalcon, keys.CategoryNativePQ, &salt
+	target, err := nativefalcon.Address(salt, stored.PublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := selfTestAdminRekeyTarget(stored, target); err != nil {
+		t.Fatalf("matching key: %v", err)
+	}
+	stored.Value = other.Value
+	if err := selfTestAdminRekeyTarget(stored, target); err == nil {
+		t.Fatal("selfTestAdminRekeyTarget() accepted a mismatched private key")
+	}
 }
 
 func TestVerifyBoundedAdminRekeyTargetSelfTests(t *testing.T) {

@@ -270,7 +270,7 @@ Owned primitives:
 - `internal/cosigner/message`: message construction. Clients and signers must
   use that shared primitive, or an SDK equivalent with matching vectors, rather
   than reconstructing the message independently.
-- `internal/cosigner/verify`: component signature verification (signer-side
+- `internal/sigconstruction/verify`: component signature verification (signer-side
   only; clients treat component signatures as opaque).
 - SDKs must match the same vectors rather than reconstructing a variant.
 
@@ -997,7 +997,7 @@ Primary packages and files:
   enrollment requirements.
 - `internal/cosigner/message`: role-separated component messages.
 - `internal/cosigner/canonical`: canonical group decoding and group hashing.
-- `internal/cosigner/verify`: component signature verification (signer-side
+- `internal/sigconstruction/verify`: component signature verification (signer-side
   only).
 - `internal/cosigner/cosignerrefs`: public cosigner reference catalog.
 - `internal/signerapp/signing`: frozen component validation, bounded

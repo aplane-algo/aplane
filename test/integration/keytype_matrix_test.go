@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -588,6 +589,7 @@ func prepareMatrixAdminRekeyCleanup(
 		ContractAdminKeyID: partial.Authorization.ContractAdminKeyID,
 		SignatureHex:       hex.EncodeToString(adminSignature),
 	}
+	requireContractAdminCeremonyRefusals(t, *partial, testnet.Network, hex.EncodeToString(sp.GenesisHash), account.address, request, response)
 	signed, txns, err := boundedauthorization.Complete(request, response)
 	if err != nil {
 		t.Fatalf("complete contract-admin cleanup request: %v", err)
@@ -599,6 +601,39 @@ func prepareMatrixAdminRekeyCleanup(
 	return matrixRekeyCleanupPlan{
 		account: account, signedHexes: signedHexes, targetFee: uint64(txns[partial.TargetIndex].Fee),
 		path: lsigresource.PathAdminRekey, cleanupPrivateKey: cleanupAuthority.PrivateKey,
+	}
+}
+
+// requireContractAdminCeremonyRefusals tampers with a real ceremony. Only a request
+// the signer released can pass the checks before these two signature checks, so this
+// lives here and not in a unit test.
+func requireContractAdminCeremonyRefusals(t *testing.T, partial signerapi.BoundedAdminPartialResponse, network, genesisHashHex, account string, request boundedprotocol.Request, response boundedprotocol.Response) {
+	t.Helper()
+	wrongSignature, err := hex.DecodeString(response.SignatureHex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrongSignature[len(wrongSignature)/2] ^= 0xff
+	wrongResponse := response
+	wrongResponse.SignatureHex = hex.EncodeToString(wrongSignature)
+	if _, _, err := boundedauthorization.Complete(request, wrongResponse); err == nil || !strings.Contains(err.Error(), "contract-admin signature is invalid") {
+		t.Fatalf("tampered contract-admin signature: error = %v", err)
+	}
+
+	target := decodeSignedTxnHex(t, partial.PartialSigned[partial.TargetIndex])
+	spending := bytes.Clone(target.Lsig.Args[0])
+	spending[len(spending)/2] ^= 0xff
+	target.Lsig.Args[0] = spending
+	partial.PartialSigned = slices.Clone(partial.PartialSigned)
+	partial.PartialSigned[partial.TargetIndex] = hex.EncodeToString(msgpack.Encode(target))
+	tampered, err := boundedprotocol.NewRequest(boundedprotocol.RequestPayload{
+		Partial: partial, Network: network, GenesisHashHex: genesisHashHex, CurrentAuthAddress: account,
+	})
+	if err != nil {
+		t.Fatalf("build tampered request: %v", err)
+	}
+	if _, err := boundedauthorization.ValidateRequest(tampered); err == nil || !strings.Contains(err.Error(), "bounded1 spending signature is invalid") {
+		t.Fatalf("tampered spending signature: error = %v", err)
 	}
 }
 

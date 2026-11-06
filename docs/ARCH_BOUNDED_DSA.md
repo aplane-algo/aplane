@@ -137,6 +137,17 @@ structural, because installed templates reach both on load: an error there chang
 the template's compatibility fingerprint, which makes it a content defect, and that
 sends unlock to recovery mode and blocks store commits.
 
+Signing sites use the same policy. They verify spending proofs and assembly receipts
+through `composeddsa.SupportedSpendingConstruction`, which returns a construction only
+for a workflow that's reviewed on that base. A valid signature on any other base is
+refused where it always was, before a ceremony it couldn't finish. Verification itself
+is in `internal/sigconstruction/verify`, which takes public inputs only, and signing
+stays at its existing role-specific sites.
+
+A witness key must differ from the spending key and from each of its components, so a
+key reused inside a larger construction is caught. That compares known keys only, and
+it can't show that custody or seeds are independent.
+
 The 10,000 microAlgo ceiling supports the currently measured Falcon/Falcon
 fixed-list shape at a 1,000 microAlgo network minimum fee. It is an absolute
 v1 profile ceiling, not a promise of viability on networks with a higher

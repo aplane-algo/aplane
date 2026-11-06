@@ -13,6 +13,7 @@
 package sigconstruction
 
 import (
+	"bytes"
 	"fmt"
 	"strings"
 
@@ -36,8 +37,9 @@ type Definition struct {
 }
 
 type component struct {
-	name    string
-	profile *primitiveProfile
+	name      string
+	primitive PrimitiveID
+	profile   *primitiveProfile
 }
 
 // Construction is a validated, immutable construction.
@@ -72,7 +74,7 @@ func newConstruction(definition Definition, profiles map[PrimitiveID]*primitiveP
 		if !ok {
 			return Construction{}, fmt.Errorf("construction %q component %q uses unknown primitive %q", definition.ID, spec.Name, spec.Primitive)
 		}
-		components = append(components, component{name: spec.Name, profile: profile})
+		components = append(components, component{name: spec.Name, primitive: spec.Primitive, profile: profile})
 	}
 	return Construction{id: definition.ID, components: components}, nil
 }
@@ -90,7 +92,7 @@ func (c Construction) Layout() ArgLayout {
 		for i, slot := range part.profile.slots {
 			sizes[i] = slot.maxSize
 		}
-		layout.components = append(layout.components, ComponentLayout{Name: part.name, Start: start, maxSizes: sizes})
+		layout.components = append(layout.components, ComponentLayout{Name: part.name, Primitive: part.primitive, Start: start, maxSizes: sizes})
 		start += len(sizes)
 	}
 	return layout
@@ -157,6 +159,29 @@ func (c Construction) PackSignature(signature []byte) ([][]byte, error) {
 		return nil, fmt.Errorf("construction %q defines no signature encoding", c.id)
 	}
 	return c.components[0].profile.pack(signature)
+}
+
+// SharesComponentKey reports whether two bindings hold the same key in components of
+// the same primitive. This catches a witness key reused inside a larger construction.
+// It compares known keys only, so it says nothing about custody or seed independence.
+// A key that doesn't parse shares nothing here: parsing is its owner's check.
+func SharesComponentKey(a Construction, aKey []byte, b Construction, bKey []byte) bool {
+	aParts, err := a.SplitPublicKey(aKey)
+	if err != nil {
+		return false
+	}
+	bParts, err := b.SplitPublicKey(bKey)
+	if err != nil {
+		return false
+	}
+	for i, left := range a.components {
+		for j, right := range b.components {
+			if left.primitive == right.primitive && bytes.Equal(aParts[i], bParts[j]) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // Production catalog. It is closed and compiled: there is no runtime registration,
