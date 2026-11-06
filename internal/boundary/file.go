@@ -30,6 +30,8 @@ type File struct {
 		AdminKey  *string `yaml:"admin_key"`
 	} `yaml:"rekey"`
 	Cosigner *string `yaml:"cosigner"`
+	// UnlockRound is text so that a uint64 survives, and may be written as a number.
+	UnlockRound *string `yaml:"unlock_round"`
 }
 
 // ParseFile strictly parses a boundary file. This grammar is closed: it
@@ -41,7 +43,7 @@ func ParseFile(data []byte) (*File, error) {
 		return nil, fmt.Errorf("boundary file exceeds %d bytes", MaxFileBytes)
 	}
 	var file File
-	if err := generictemplate.DecodeStrictYAML(data, &file, generictemplate.RequireStringScalars); err != nil {
+	if err := generictemplate.DecodeStrictYAML(data, &file, generictemplate.RequireStringScalars(ParameterUnlockRound)); err != nil {
 		return nil, fmt.Errorf("boundary file: %w", err)
 	}
 	if file.Schema != SchemaV1 {
@@ -50,8 +52,14 @@ func ParseFile(data []byte) (*File, error) {
 	if len(file.Spend) == 0 {
 		return nil, fmt.Errorf("boundary file: spend is required")
 	}
-	if len(file.Recipients) == 0 {
-		return nil, fmt.Errorf("boundary file: recipients is required")
+	if file.UnlockRound != nil && strings.TrimSpace(*file.UnlockRound) == "" {
+		return nil, fmt.Errorf("boundary file: unlock_round is empty")
+	}
+	if len(file.Recipients) == 0 && (file.Recipients != nil || file.UnlockRound == nil) {
+		return nil, fmt.Errorf("boundary file: recipients is required unless the file sets unlock_round")
+	}
+	if file.Recipients == nil && file.Encoding != nil {
+		return nil, fmt.Errorf("boundary file: encoding needs a recipient list")
 	}
 	if file.Rekey == nil {
 		return nil, fmt.Errorf("boundary file: rekey is required")
@@ -83,8 +91,13 @@ func ParseFile(data []byte) (*File, error) {
 func (f *File) CreationParameters(directory string) (map[string]string, error) {
 	params := map[string]string{
 		ParameterSpendEffects:   strings.Join(f.Spend, ","),
-		ParameterRecipients:     strings.Join(f.Recipients, ","),
 		ParameterRekeyAuthority: f.Rekey.Authority,
+	}
+	if f.Recipients != nil {
+		params[ParameterRecipients] = strings.Join(f.Recipients, ",")
+	}
+	if f.UnlockRound != nil {
+		params[ParameterUnlockRound] = *f.UnlockRound
 	}
 	if f.Encoding != nil {
 		params[ParameterListEncoding] = *f.Encoding

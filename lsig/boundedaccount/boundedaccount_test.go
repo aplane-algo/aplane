@@ -25,11 +25,12 @@ import (
 )
 
 const (
-	goldenGrammarFingerprint    = "1:f623ed7c8601a81433f1fe67150cc49ab7b7589a88764007783627e4744b183c"
+	goldenGrammarFingerprint    = "1:071b74d31eaf462d3087ec364e9ec404829f2669458b9dacef63da86d29ddf15"
 	goldenFirstShapeFingerprint = "1:4cd1c6fd6b43ce9085574e3124f041c47c53e317e395b43272e8a7453eec5a3c"
 	goldenFullShapeFingerprint  = "1:0d5f6c9957c7cd219527f2110910d873982bdfd46e136b5f06742d741827ea4c"
 	goldenBoundaryDigest        = "5403a32fc1b8ae9d8c9fc18d11c881d65f418e03c2dddd7aed1e6afdbae6c727"
 	goldenRenderedPrograms      = "d9c422d5b5e496e84e2aaa853daed7a1a9f7faa9d62f444c84729edeee6364bc"
+	goldenTimelockPrograms      = "340387fd7d52e7b348aa2724ea076373d19a51646b844aebe506ba20e6709be3"
 )
 
 func newTestProvider(t *testing.T) *Provider {
@@ -67,8 +68,13 @@ func requestFor(shape Shape, recipients string) map[string]string {
 	params := map[string]string{
 		ParameterSpendEffects:   joinSpend(shape.Spend),
 		ParameterRekeyAuthority: shape.Rekey,
-		ParameterListEncoding:   shape.Encoding,
-		ParameterRecipients:     recipients,
+	}
+	if shape.Encoding != "" {
+		params[ParameterListEncoding] = shape.Encoding
+		params[ParameterRecipients] = recipients
+	}
+	if shape.Timelock {
+		params[ParameterUnlockRound] = "50000000"
 	}
 	if shape.Rekey == RekeyAdminKey {
 		params[composeddsa.BoundedAdminPublicKeyParameter] = testAdminKey
@@ -80,12 +86,33 @@ func requestFor(shape Shape, recipients string) map[string]string {
 }
 
 // The expected set is written out here rather than derived from the code that
-// produces it: 2 encodings x 3 authority families x 7 spend subsets.
+// produces it. Allowlists are 2 encodings x 3 authority arrangements x 7 spend
+// subsets, which is 42. Timelocks add 3 policies x (spending key x 4 subsets with
+// pay, plus 2 admin arrangements x 7 subsets), which is 54.
 func TestShapesEnumerateTheGrammar(t *testing.T) {
 	shapes := Shapes()
-	if len(shapes) != 42 {
-		t.Fatalf("Shapes() = %d, want 42", len(shapes))
+	if len(shapes) != 96 {
+		t.Fatalf("Shapes() = %d, want 96", len(shapes))
 	}
+	policies := make(map[string]int)
+	for _, shape := range shapes {
+		policies[shape.Policy()]++
+	}
+	for policy, want := range map[string]int{
+		composeddsa.Layer3PolicyFixedAllowlist: 21, composeddsa.Layer3PolicyMerkleAllowlist: 21,
+		composeddsa.Layer3PolicyTimelock: 18, composeddsa.Layer3PolicyFixedAllowlistTimelock: 18, composeddsa.Layer3PolicyMerkleAllowlistTimelock: 18,
+	} {
+		if policies[policy] != want {
+			t.Errorf("%s has %d shapes, want %d", policy, policies[policy], want)
+		}
+	}
+	for _, shape := range shapes {
+		gated := shape.PolicyGate() == boundedmeta.PolicyGateLayer3
+		if gated != (shape.Timelock && shape.Rekey == RekeySpendingKey) {
+			t.Errorf("%s has gate %s", shape.Descriptor(), shape.PolicyGate())
+		}
+	}
+	shapes = shapes[:42]
 	families := make(map[string]int)
 	subsets := make(map[string]int)
 	seen := make(map[string]bool)
@@ -177,6 +204,22 @@ func TestInvalidRequestsFailClosed(t *testing.T) {
 		{"no rekey", allSpend, func(p map[string]string) { delete(p, ParameterRekeyAuthority) }, "rekey_authority must be"},
 		{"bad rekey", allSpend, func(p map[string]string) { p[ParameterRekeyAuthority] = "none" }, "rekey_authority must be"},
 		{"no recipients", allSpend, func(p map[string]string) { delete(p, ParameterRecipients) }, "recipients is required"},
+		{"zero unlock round", allSpend, func(p map[string]string) { p[ParameterUnlockRound] = "0" }, "must be positive"},
+		{"unreadable unlock round", allSpend, func(p map[string]string) { p[ParameterUnlockRound] = "soon" }, "positive whole number"},
+		{"empty unlock round", allSpend, func(p map[string]string) { p[ParameterUnlockRound] = "" }, "positive whole number"},
+		{"oversized unlock round", allSpend, func(p map[string]string) { p[ParameterUnlockRound] = "18446744073709551616" }, "positive whole number"},
+		{"encoding with no list", allSpend, func(p map[string]string) {
+			delete(p, ParameterRecipients)
+			p[ParameterUnlockRound] = "5"
+		}, "no list to encode"},
+		{"spending rekey timelock without pay", allSpend, func(p map[string]string) {
+			p[ParameterUnlockRound] = "5"
+			p[ParameterSpendEffects] = "axfer"
+		}, "requires pay"},
+		{"empty list with a timelock", allSpend, func(p map[string]string) {
+			p[ParameterUnlockRound] = "5"
+			p[ParameterRecipients] = ""
+		}, "recipients is required"},
 		{"zero recipient", allSpend, func(p map[string]string) { p[ParameterRecipients] = testAddress(1) + "," + zero }, "zero address"},
 		{"repeated recipient", allSpend, func(p map[string]string) { p[ParameterRecipients] = testAddress(1) + "," + testAddress(1) }, "repeats"},
 		{"bad recipient", allSpend, func(p map[string]string) { p[ParameterRecipients] = "NOTANADDRESS" }, "invalid address"},
@@ -471,12 +514,18 @@ func TestBoundaryFileRejections(t *testing.T) {
 		{"missing schema", strings.Replace(valid, "schema: aplane.boundary.v1\n", "", 1), "schema must be"},
 		{"no spend", strings.Replace(valid, "spend: [pay]\n", "", 1), "spend is required"},
 		{"empty spend", strings.Replace(valid, "spend: [pay]", "spend: []", 1), "spend is required"},
-		{"no recipients", strings.Replace(valid, "recipients: ["+recipient+"]\n", "", 1), "recipients is required"},
+		{"no recipients or timelock", strings.Replace(valid, "recipients: ["+recipient+"]\n", "", 1), "recipients is required"},
 		{"no rekey", strings.Replace(valid, "rekey: {authority: spending_key}\n", "", 1), "rekey is required"},
 		{"bad authority", strings.Replace(valid, "spending_key", "nobody", 1), "rekey.authority must be"},
 		{"admin path with spending key", strings.Replace(valid, "{authority: spending_key}", "{authority: spending_key, admin_key: a.wit.json}", 1), "not used"},
 		{"admin key without path", strings.Replace(valid, "spending_key", "admin_key", 1), "requires rekey.admin_key"},
-		{"unknown field", valid + "unlock_round: \"5\"\n", "not found"},
+		{"unknown field", valid + "expires: \"5\"\n", "not found"},
+		{"empty unlock round", valid + "unlock_round: \"\"\n", "unlock_round is empty"},
+		{"null unlock round", valid + "unlock_round:\n", "must be a string"},
+		{"float unlock round", valid + "unlock_round: 1.5\n", "must be a string"},
+		{"boolean unlock round", valid + "unlock_round: true\n", "must be a string"},
+		{"empty list with a timelock", strings.Replace(valid, "["+recipient+"]", "[]", 1) + "unlock_round: 5\n", "recipients is required"},
+		{"encoding with no list", strings.Replace(valid, "recipients: ["+recipient+"]\n", "", 1) + "unlock_round: 5\nencoding: auto\n", "needs a recipient list"},
 		{"teal field", valid + "teal: \"int 1\"\n", "not found"},
 		{"template field", valid + "template: x\n", "not found"},
 		{"max fee field", valid + "max_fee: \"1\"\n", "not found"},
@@ -541,8 +590,16 @@ func TestGeneralFingerprintGoldens(t *testing.T) {
 	provider := newTestProvider(t)
 	spending, admin, cosigner := generalGoldenKeys()
 
-	rendered := sha256.New()
-	for _, shape := range Shapes() {
+	allowlists := sha256.New()
+	rendered := allowlists
+	// The first 42 are the shapes that shipped first. Their golden must not move when
+	// the grammar grows: that is the guarantee existing accounts rely on.
+	shapes := Shapes()
+	appended := sha256.New()
+	for index, shape := range shapes {
+		if index >= 42 {
+			rendered = appended
+		}
 		params := requestFor(shape, testAddress(1)+","+testAddress(2))
 		if shape.Rekey == RekeyAdminKey {
 			params[composeddsa.BoundedAdminPublicKeyParameter] = admin
@@ -568,7 +625,8 @@ func TestGeneralFingerprintGoldens(t *testing.T) {
 		{"first shape", provider.ordered[0].fingerprint, goldenFirstShapeFingerprint},
 		{"full shape", instance.Fingerprint, goldenFullShapeFingerprint},
 		{"boundary digest", instance.BoundaryDigest, goldenBoundaryDigest},
-		{"rendered programs", hex.EncodeToString(rendered.Sum(nil)), goldenRenderedPrograms},
+		{"allowlist programs", hex.EncodeToString(allowlists.Sum(nil)), goldenRenderedPrograms},
+		{"timelock programs", hex.EncodeToString(appended.Sum(nil)), goldenTimelockPrograms},
 	} {
 		if golden.got != golden.want {
 			t.Errorf("%s = %s, want %s", golden.name, golden.got, golden.want)
@@ -652,20 +710,26 @@ func TestPresetAndItsFileResolveTheSame(t *testing.T) {
 	recipients := []string{testAddress(2), testAddress(1)}
 	for _, preset := range boundary.Presets() {
 		t.Run(preset.Name, func(t *testing.T) {
-			form := map[string]string{ParameterRecipients: strings.Join(recipients, ",")}
+			form := map[string]string{}
 			for name, value := range preset.Fixed {
 				form[name] = value
 			}
 			hasCosigner := false
 			for _, field := range preset.Fields {
 				switch field {
+				case ParameterRecipients:
+					form[field] = strings.Join(recipients, ",")
+				case ParameterUnlockRound:
+					form[field] = "50000000"
 				case composeddsa.BoundedAdminPublicKeyParameter:
 					form[field] = testAdminKey
 				case ParameterCosigner:
 					hasCosigner = true
 				}
 			}
-			path := writeBoundaryFile(t, directory, preset.SampleBoundaryFile(recipients, "ops.wit.json", "ops-cosigner"))
+			path := writeBoundaryFile(t, directory, preset.SampleBoundaryFile(boundary.SampleValues{
+				Recipients: recipients, AdminKey: "ops.wit.json", Cosigner: "ops-cosigner", UnlockRound: "50000000",
+			}))
 			fromFile, err := boundary.LoadFile(path)
 			if err != nil {
 				t.Fatal(err)
@@ -703,6 +767,7 @@ func TestPresetChoicesAreFrozen(t *testing.T) {
 		{"allowlist", RekeySpendingKey, EncodingAuto, []string{ParameterRecipients}},
 		{"locked-allowlist", RekeyAdminKey, EncodingAuto, []string{ParameterRecipients, composeddsa.BoundedAdminPublicKeyParameter}},
 		{"corridor", RekeyAdminKey, EncodingMerkle, []string{ParameterRecipients, composeddsa.BoundedAdminPublicKeyParameter, ParameterCosigner}},
+		{"timelock", RekeySpendingKey, "", []string{ParameterUnlockRound}},
 	} {
 		index := -1
 		for i, preset := range presets {
@@ -724,7 +789,90 @@ func TestPresetChoicesAreFrozen(t *testing.T) {
 			t.Errorf("%s fields = %v", test.name, preset.Fields)
 		}
 	}
-	if len(presets) != 3 {
+	if len(presets) != 4 {
 		t.Fatalf("%d presets", len(presets))
+	}
+}
+
+func TestUnlockRoundMayBeWrittenAsANumberOrText(t *testing.T) {
+	recipient := testAddress(1)
+	for _, written := range []string{"18446744073709551615", `"18446744073709551615"`} {
+		file, err := boundary.ParseFile([]byte("schema: aplane.boundary.v1\nspend: [pay]\nrecipients: [" + recipient + "]\nrekey: {authority: spending_key}\nunlock_round: " + written + "\n"))
+		if err != nil {
+			t.Fatalf("%s: %v", written, err)
+		}
+		params, err := file.CreationParameters(t.TempDir())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if params[ParameterUnlockRound] != "18446744073709551615" {
+			t.Fatalf("%s became %q", written, params[ParameterUnlockRound])
+		}
+	}
+}
+
+func TestTimelockNeedsNoRecipientList(t *testing.T) {
+	provider := newTestProvider(t)
+	file, err := boundary.ParseFile([]byte("schema: aplane.boundary.v1\nspend: [pay]\nrekey: {authority: spending_key}\nunlock_round: 007\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	params, err := file.CreationParameters(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	instance, err := provider.ResolveInstance(params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if instance.Bounded.Layer3Policy != composeddsa.Layer3PolicyTimelock {
+		t.Fatalf("policy = %s", instance.Bounded.Layer3Policy)
+	}
+	if _, present := instance.Values[ParameterRecipients]; present {
+		t.Fatalf("values = %v", instance.Values)
+	}
+	if got := instance.Values[ParameterUnlockRound]; got != "7" {
+		t.Fatalf("unlock round = %q, want canonical 7", got)
+	}
+}
+
+func TestBoundaryDigestBindsTheUnlockRound(t *testing.T) {
+	provider := newTestProvider(t)
+	shape := Shape{Spend: spendEffectOrder, Encoding: EncodingInline, Rekey: RekeyAdminKey, Timelock: true}
+	digest := func(round string) string {
+		params := requestFor(shape, testRecipients(2))
+		params[ParameterUnlockRound] = round
+		instance, err := provider.ResolveInstance(params)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return instance.BoundaryDigest
+	}
+	if digest("100") == digest("101") {
+		t.Fatal("changing the unlock round did not change the digest")
+	}
+}
+
+// A stored account's gate is part of its shape. A contract the grammar cannot
+// produce must not be reported as matching one that it can.
+func TestStoredFingerprintRefusesAMismatchedGate(t *testing.T) {
+	provider := newTestProvider(t)
+	for _, test := range []struct {
+		shape Shape
+		gate  string
+	}{
+		{Shape{Spend: spendEffectOrder, Rekey: RekeySpendingKey, Timelock: true}, boundedmeta.PolicyGateNone},
+		{Shape{Spend: spendEffectOrder, Encoding: EncodingInline, Rekey: RekeySpendingKey}, boundedmeta.PolicyGateLayer3},
+		{Shape{Spend: spendEffectOrder, Rekey: RekeyAdminKey, Timelock: true}, boundedmeta.PolicyGateLayer3},
+	} {
+		instance, err := provider.ResolveInstance(requestFor(test.shape, testRecipients(2)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		stored := boundedmeta.Clone(instance.Bounded)
+		stored.AdminOperations[0].PolicyGate = test.gate
+		if _, err := provider.StoredFingerprint(nil, stored); err == nil {
+			t.Fatalf("%s accepted gate %s", test.shape.Descriptor(), test.gate)
+		}
 	}
 }

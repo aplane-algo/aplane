@@ -5,6 +5,7 @@ package boundary
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
@@ -52,7 +53,7 @@ func Presets() []Preset {
 		{
 			Name:        "corridor",
 			Title:       "Corridor",
-			Description: "A Merkle list, a contract admin for rekey, and a cosigner on every spend.",
+			Description: "A Merkle list, admin-key rekey, and a cosigner on every spend.",
 			Fixed: map[string]string{
 				ParameterSpendEffects:   allTransfers,
 				ParameterRekeyAuthority: RekeyAdminKey,
@@ -60,28 +61,49 @@ func Presets() []Preset {
 			},
 			Fields: []string{ParameterRecipients, boundedmeta.AdminPublicKeyParameter, ParameterCosigner},
 		},
+		{
+			Name:        "timelock",
+			Title:       "Timelock",
+			Description: "Nothing can be spent or rekeyed until a chosen round.",
+			Fixed: map[string]string{
+				ParameterSpendEffects:   allTransfers,
+				ParameterRekeyAuthority: RekeySpendingKey,
+			},
+			Fields: []string{ParameterUnlockRound},
+		},
 	}
 }
 
+// SampleValues are what an operator supplies to a preset.
+type SampleValues struct {
+	Recipients  []string
+	AdminKey    string // path to a public .wit.json envelope
+	Cosigner    string
+	UnlockRound string
+}
+
 // SampleBoundaryFile renders the preset as a boundary file with the operator's
-// values filled in. adminKey is the path to a public .wit.json envelope.
-func (p Preset) SampleBoundaryFile(recipients []string, adminKey, cosigner string) string {
+// values filled in. It writes only the fields the preset uses.
+func (p Preset) SampleBoundaryFile(values SampleValues) string {
 	var sb strings.Builder
 	sb.WriteString("schema: " + SchemaV1 + "\n")
 	sb.WriteString("spend: [" + strings.ReplaceAll(p.Fixed[ParameterSpendEffects], ",", ", ") + "]\n")
-	sb.WriteString("recipients:\n")
-	for _, recipient := range recipients {
-		sb.WriteString("  - " + recipient + "\n")
+	if slices.Contains(p.Fields, ParameterRecipients) {
+		sb.WriteString("recipients:\n")
+		for _, recipient := range values.Recipients {
+			sb.WriteString("  - " + recipient + "\n")
+		}
+		sb.WriteString("encoding: " + p.Fixed[ParameterListEncoding] + "\n")
 	}
-	sb.WriteString("encoding: " + p.Fixed[ParameterListEncoding] + "\n")
 	sb.WriteString("rekey:\n  authority: " + p.Fixed[ParameterRekeyAuthority] + "\n")
 	if p.Fixed[ParameterRekeyAuthority] == RekeyAdminKey {
-		sb.WriteString(fmt.Sprintf("  admin_key: %s\n", adminKey))
+		sb.WriteString(fmt.Sprintf("  admin_key: %s\n", values.AdminKey))
 	}
-	for _, field := range p.Fields {
-		if field == ParameterCosigner {
-			sb.WriteString("cosigner: " + cosigner + "\n")
-		}
+	if slices.Contains(p.Fields, ParameterCosigner) {
+		sb.WriteString("cosigner: " + values.Cosigner + "\n")
+	}
+	if slices.Contains(p.Fields, ParameterUnlockRound) {
+		sb.WriteString("unlock_round: " + values.UnlockRound + "\n")
 	}
 	return sb.String()
 }

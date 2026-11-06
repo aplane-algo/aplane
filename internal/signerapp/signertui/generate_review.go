@@ -141,6 +141,15 @@ func isMerklePolicy(policy string) bool {
 	return false
 }
 
+// isListPolicy reports whether the framework enforces a recipient list.
+func isListPolicy(policy string) bool {
+	switch policy {
+	case boundedmeta.Layer3PolicyCustom, boundedmeta.Layer3PolicyTimelock:
+		return false
+	}
+	return true
+}
+
 func isTimelockPolicy(policy string) bool {
 	switch policy {
 	case boundedmeta.Layer3PolicyTimelock, boundedmeta.Layer3PolicyFixedAllowlistTimelock, boundedmeta.Layer3PolicyMerkleAllowlistTimelock:
@@ -166,13 +175,46 @@ func reviewRekey(review PrepareGenerateResultMessage) (label, consequence string
 	}
 	operation := profile.AdminOperations[0]
 	if operation.Authorization == boundedmeta.AdminAuthorizationAdmin {
-		return "Spending key plus admin " + middleEllipsize(review.AdminKeyID, reviewIDWidth-29),
-			"Admin rekey bypasses the allowlist and any cosigner."
+		consequence := "Admin rekey bypasses the allowlist and any cosigner."
+		if isTimelockPolicy(profile.Layer3Policy) {
+			consequence = "Admin rekey bypasses these rules, even before the unlock round."
+		}
+		return "Spending key plus admin " + middleEllipsize(review.AdminKeyID, reviewIDWidth-29), consequence
 	}
 	if operation.PolicyGate == boundedmeta.PolicyGateLayer3 {
+		if isTimelockPolicy(profile.Layer3Policy) {
+			return "Spending key, after the unlock round", "That key can then rekey out of this boundary."
+		}
 		return "Spending key, if the policy allows", "Rekey must pass the same policy as a spend."
 	}
 	return "Spending key alone", "That key can rekey out of this boundary."
+}
+
+// reviewRecipients describes who the account can pay, decided by its policy and never
+// by a parameter's name: a template can call its list anything, or give a parameter
+// called recipients to code the framework does not check. Overstating what an account
+// can pay is the mistake to avoid, so only the policy with no list says "any".
+func reviewRecipients(policy string, recipients []string) (row, note string) {
+	if !isListPolicy(policy) {
+		if isCustomPolicy(policy) {
+			return reviewRow("Policy", "Custom policy, from the template author's code"), ""
+		}
+		return reviewRow("Recipients", "any, once unlocked"), ""
+	}
+	encoding := "inline"
+	note = "The whole list is public once the program is published."
+	if isMerklePolicy(policy) {
+		encoding = "Merkle"
+		note = "A spend reveals its recipient and proof, so the list is only partly hidden."
+	}
+	if isCustomPolicy(policy) {
+		encoding += ", custom policy"
+	}
+	if len(recipients) == 0 {
+		return reviewRow("Recipients", fmt.Sprintf("restricted, %s, see details", encoding)), note
+	}
+	digest := boundary.RecipientListDigest(strings.Join(recipients, ","))
+	return reviewRow("Recipients", fmt.Sprintf("%d, %s, list %s", len(recipients), encoding, digest[:12])), note
 }
 
 // reviewUnlockRound names the round and what it depends on: the same number means
@@ -196,23 +238,8 @@ func (m Model) renderGenerateReview() string {
 	sb.WriteString("\n\n")
 	sb.WriteString(reviewRow("Key type", displayKeyType(review.KeyType)+", fixed once created"))
 	sb.WriteString(reviewRow("Transfers", fmt.Sprintf("%s, fee limit %d", spendEffectsLabel(profile.SpendEffects), profile.MaxFee)))
-	custom := isCustomPolicy(profile.Layer3Policy)
-	var note string
-	if recipients := recipientList(review.Parameters); len(recipients) > 0 {
-		encoding := "inline"
-		note = "The whole list is public once the program is published."
-		if isMerklePolicy(profile.Layer3Policy) {
-			encoding = "Merkle"
-			note = "A spend reveals its recipient and proof, so the list is only partly hidden."
-		}
-		if custom {
-			encoding += ", custom policy"
-		}
-		digest := boundary.RecipientListDigest(strings.Join(recipients, ","))
-		sb.WriteString(reviewRow("Recipients", fmt.Sprintf("%d, %s, list %s", len(recipients), encoding, digest[:12])))
-	} else if custom {
-		sb.WriteString(reviewRow("Policy", "Custom policy, from the template author's code"))
-	}
+	row, note := reviewRecipients(profile.Layer3Policy, recipientList(review.Parameters))
+	sb.WriteString(row)
 	rekey, consequence := reviewRekey(*review)
 	sb.WriteString(reviewRow("Rekey", rekey))
 	cosigner := "None"

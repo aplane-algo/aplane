@@ -139,9 +139,6 @@ func (m Model) renderBoundaryPreset() string {
 		file = middleEllipsize(m.forms.boundaryFile, 60)
 	}
 	row(len(presets), "Load boundary file", file)
-	sb.WriteString("\n")
-	sb.WriteString(subtitleStyle.Render("Installed expert templates stay in the key type list."))
-	sb.WriteString("\n")
 	if m.forms.generateError != "" {
 		sb.WriteString("\n")
 		sb.WriteString(errorStyle.Render(wrapText(m.forms.generateError, 64)))

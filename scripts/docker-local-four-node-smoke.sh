@@ -1581,14 +1581,16 @@ generate_corridor_key() {
     [ -n "$CORRIDOR_ADDRESS" ] || die "could not parse generated corridor address"
 }
 
+# Takes an optional extra boundary line, such as an unlock round.
 generate_general_bounded_key() {
+    local extra_line="${1:-}"
     [ -n "$COSIGNER_COMPONENT_KEY" ] || die "Witness Key ID is not set"
     [ -n "$CORRIDOR_ADMIN_KEY" ] || die "Corridor admin artifact is not set"
     [ -n "$CORRIDOR_ALLOWED_ADDRESS" ] || die "corridor allowed address is not set"
 
     local boundary_file="/home/$TEST_USER/aplane/boundary.yaml"
-    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'schema: aplane.boundary.v1\nspend: [pay, axfer, asset_opt_in]\nrecipients:\n  - %s\nencoding: merkle\nrekey:\n  authority: admin_key\n  admin_key: %s\ncosigner: %s\n' \
-        '$CORRIDOR_ALLOWED_ADDRESS' '$CORRIDOR_ADMIN_KEY.json' '$COSIGNER_COMPONENT_KEY' > '$boundary_file'"
+    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'schema: aplane.boundary.v1\nspend: [pay, axfer, asset_opt_in]\nrecipients:\n  - %s\nencoding: merkle\nrekey:\n  authority: admin_key\n  admin_key: %s\ncosigner: %s\n%s\n' \
+        '$CORRIDOR_ALLOWED_ADDRESS' '$CORRIDOR_ADMIN_KEY.json' '$COSIGNER_COMPONENT_KEY' '$extra_line' > '$boundary_file'"
     docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'connect\ngenerate aplane.bounded.v1 boundary=%s\nkeys\n' \
         '$boundary_file' > /tmp/generate-general-bounded.script"
     local out
@@ -1602,7 +1604,7 @@ generate_general_bounded_key() {
     [ -n "$GENERAL_BOUNDED_ADDRESS" ] || die "could not parse generated aplane.bounded.v1 address"
     grep -Fq "Cosigner:       $COSIGNER_COMPONENT_KEY" <<<"$out" \
         || die "aplane.bounded.v1 result did not report the requested cosigner"
-    grep -Fq 'Merkle allowlist · admin rekey · cosigner' <<<"$out" \
+    grep -Fq 'Merkle allowlist' <<<"$out" \
         || die "keys did not describe the aplane.bounded.v1 account"
 }
 
@@ -2074,6 +2076,23 @@ main() {
 
     log "Verifying aplane.bounded.v1 non-allowlisted recipient fails"
     with_general_bounded_account validate_corridor_blocked_send_fails
+
+    log "Generating aplane.bounded.v1 timelock account with a passed unlock round"
+    generate_general_bounded_key "unlock_round: 1"
+
+    log "Funding generated aplane.bounded.v1 timelock account on $NETWORK_TOKEN"
+    with_general_bounded_account fund_corridor_key
+    with_general_bounded_account verify_corridor_funded
+
+    log "Verifying aplane.bounded.v1 timelock allowlisted recipient succeeds"
+    with_general_bounded_account validate_corridor_allowed_send
+
+    log "Generating aplane.bounded.v1 account for the cosigner-loss checks"
+    generate_general_bounded_key
+
+    log "Funding generated aplane.bounded.v1 account on $NETWORK_TOKEN"
+    with_general_bounded_account fund_corridor_key
+    with_general_bounded_account verify_corridor_funded
 
     log "Generating Falcon key through client/signer flow"
     generate_falcon_key

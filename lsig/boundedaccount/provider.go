@@ -92,9 +92,9 @@ func shapeSpec(shape Shape) *composeddsa.TemplateSpec {
 		AdminOperations: []generictemplate.TransactionAdminOperation{{
 			Kind:          string(composeddsa.AdminOperationRekey),
 			Authorization: shape.Rekey,
-			PolicyGate:    boundedmeta.PolicyGateNone,
+			PolicyGate:    shape.PolicyGate(),
 		}},
-		Layer3: &generictemplate.TransactionLayer3Spec{Policy: shape.Policy(), RecipientsParameter: ParameterRecipients},
+		Layer3: &generictemplate.TransactionLayer3Spec{Policy: shape.Policy()},
 	}
 	if shape.Cosigner {
 		bounded.Cosigner = &generictemplate.BoundedCosignerSpec{
@@ -102,9 +102,36 @@ func shapeSpec(shape Shape) *composeddsa.TemplateSpec {
 			RequiredOn: []string{boundedmeta.PathSpend},
 		}
 	}
-	maxItems := InlineMax
+	var parameters []generictemplate.ParameterSpec
+	if shape.Encoding != "" {
+		bounded.Layer3.RecipientsParameter = ParameterRecipients
+		maxItems := InlineMax
+		if shape.Encoding == EncodingMerkle {
+			maxItems = RecipientsMax
+		}
+		parameters = append(parameters, generictemplate.ParameterSpec{
+			Name:        ParameterRecipients,
+			Label:       "Allowed Recipients",
+			Description: "Addresses that may receive payments or asset transfers.",
+			Type:        "address[]",
+			Required:    true,
+			MinItems:    1,
+			MaxItems:    maxItems,
+		})
+	}
+	if shape.Timelock {
+		bounded.Layer3.UnlockRoundParameter = ParameterUnlockRound
+		minRound := uint64(1)
+		parameters = append(parameters, generictemplate.ParameterSpec{
+			Name:        ParameterUnlockRound,
+			Label:       "Unlock Round",
+			Description: "First round the account can spend, on the network it runs on.",
+			Type:        "uint64",
+			Required:    true,
+			Min:         &minRound,
+		})
+	}
 	if shape.Encoding == EncodingMerkle {
-		maxItems = RecipientsMax
 		bounded.DerivedArgs = []generictemplate.BoundedDerivedArgSpec{{
 			Name:      merkleProofArg,
 			Kind:      boundedmeta.DerivedArgMerkleProof,
@@ -125,15 +152,7 @@ func shapeSpec(shape Shape) *composeddsa.TemplateSpec {
 		Description:       description,
 		MaxOpcodeCost:     &opcodeCost,
 		Bounded:           bounded,
-		Parameters: []generictemplate.ParameterSpec{{
-			Name:        ParameterRecipients,
-			Label:       "Allowed Recipients",
-			Description: "Addresses that may receive payments or asset transfers.",
-			Type:        "address[]",
-			Required:    true,
-			MinItems:    1,
-			MaxItems:    maxItems,
-		}},
+		Parameters:        parameters,
 	}
 }
 
@@ -144,6 +163,7 @@ func creationParameters() []lsigprovider.ParameterDef {
 	admin, cosigner := composeddsa.BoundedAuthorityParameterDefs()
 	admin.Required = false
 	cosigner.Required = false
+	minimumRound := uint64(1)
 	return []lsigprovider.ParameterDef{
 		{
 			Name:        ParameterSpendEffects,
@@ -156,11 +176,16 @@ func creationParameters() []lsigprovider.ParameterDef {
 		{
 			Name:        ParameterRecipients,
 			Label:       "Allowed Recipients",
-			Description: "Addresses that may receive payments or asset transfers.",
+			Description: "Addresses that may receive payments or asset transfers. Optional only with an unlock round.",
 			Type:        "address[]",
-			Required:    true,
-			MinItems:    1,
 			MaxItems:    RecipientsMax,
+		},
+		{
+			Name:        ParameterUnlockRound,
+			Label:       "Unlock Round",
+			Description: "First round the account can spend, on the network it runs on.",
+			Type:        "uint64",
+			Min:         &minimumRound,
 		},
 		{
 			Name:        ParameterRekeyAuthority,
@@ -270,17 +295,23 @@ func shapeFromMetadata(metadata *boundedmeta.Metadata) (Shape, error) {
 		return Shape{}, fmt.Errorf("stored account has %d administrative operations", len(metadata.AdminOperations))
 	}
 	operation := metadata.AdminOperations[0]
-	if operation.PolicyGate != boundedmeta.PolicyGateNone {
-		return Shape{}, fmt.Errorf("stored account has policy gate %q", operation.PolicyGate)
-	}
 	shape := Shape{Spend: spend, Rekey: operation.Authorization, Cosigner: metadata.Cosigner != nil}
 	switch metadata.Layer3Policy {
 	case composeddsa.Layer3PolicyFixedAllowlist:
 		shape.Encoding = EncodingInline
 	case composeddsa.Layer3PolicyMerkleAllowlist:
 		shape.Encoding = EncodingMerkle
+	case composeddsa.Layer3PolicyTimelock:
+		shape.Timelock = true
+	case composeddsa.Layer3PolicyFixedAllowlistTimelock:
+		shape.Encoding, shape.Timelock = EncodingInline, true
+	case composeddsa.Layer3PolicyMerkleAllowlistTimelock:
+		shape.Encoding, shape.Timelock = EncodingMerkle, true
 	default:
 		return Shape{}, fmt.Errorf("stored account has policy %q", metadata.Layer3Policy)
+	}
+	if operation.PolicyGate != shape.PolicyGate() {
+		return Shape{}, fmt.Errorf("stored account has policy gate %q", operation.PolicyGate)
 	}
 	return shape, nil
 }

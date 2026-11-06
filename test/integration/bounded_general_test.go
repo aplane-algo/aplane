@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -29,7 +30,7 @@ import (
 	"github.com/aplane-algo/aplane/test/integration/harness"
 )
 
-func generalRequest(shape boundedaccount.Shape, recipients []string, adminKey, cosignerKey []byte) map[string]string {
+func generalRequest(shape boundedaccount.Shape, recipients []string, unlockRound uint64, adminKey, cosignerKey []byte) map[string]string {
 	spend := make([]string, len(shape.Spend))
 	for i, effect := range shape.Spend {
 		spend[i] = string(effect)
@@ -37,8 +38,13 @@ func generalRequest(shape boundedaccount.Shape, recipients []string, adminKey, c
 	params := map[string]string{
 		boundedaccount.ParameterSpendEffects:   strings.Join(spend, ","),
 		boundedaccount.ParameterRekeyAuthority: shape.Rekey,
-		boundedaccount.ParameterListEncoding:   shape.Encoding,
-		boundedaccount.ParameterRecipients:     strings.Join(recipients, ","),
+	}
+	if shape.Encoding != "" {
+		params[boundedaccount.ParameterListEncoding] = shape.Encoding
+		params[boundedaccount.ParameterRecipients] = strings.Join(recipients, ",")
+	}
+	if shape.Timelock {
+		params[boundedaccount.ParameterUnlockRound] = strconv.FormatUint(unlockRound, 10)
 	}
 	if shape.Rekey == boundedaccount.RekeyAdminKey {
 		params[composeddsa.BoundedAdminPublicKeyParameter] = hex.EncodeToString(adminKey)
@@ -49,7 +55,7 @@ func generalRequest(shape boundedaccount.Shape, recipients []string, adminKey, c
 	return params
 }
 
-func newGeneralAccount(t *testing.T, provider *boundedaccount.Provider, shape boundedaccount.Shape, recipients []string) corridorExecutionAccount {
+func newGeneralAccount(t *testing.T, provider *boundedaccount.Provider, shape boundedaccount.Shape, recipients []string, unlockRound uint64) corridorExecutionAccount {
 	t.Helper()
 	ops := signerops.New(nil)
 	spendingPublic, spendingPrivate, err := ops.GenerateKeypair(randomFalconSeed(t))
@@ -64,7 +70,7 @@ func newGeneralAccount(t *testing.T, provider *boundedaccount.Provider, shape bo
 	if err != nil {
 		t.Fatalf("generate admin key: %v", err)
 	}
-	params := generalRequest(shape, recipients, adminPublic, cosignerPublic)
+	params := generalRequest(shape, recipients, unlockRound, adminPublic, cosignerPublic)
 	instance, err := provider.ResolveInstance(params)
 	if err != nil {
 		t.Fatalf("resolve instance: %v", err)
@@ -124,6 +130,10 @@ func TestBoundedGeneralShapeMatrixOnChainLocalnet(t *testing.T) {
 	if err := funder.FundMicroAlgosAndWait(allowed.String(), 300_000); err != nil {
 		t.Fatalf("fund recipient: %v", err)
 	}
+	// A shape with no list has no outsiders, and pays this one like anyone else.
+	if err := funder.FundMicroAlgosAndWait(outside.String(), 300_000); err != nil {
+		t.Fatalf("fund outsider: %v", err)
+	}
 	assetID := corridorTestAssetID(t, network, funder)
 	submitEd25519TxnExpectSuccess(t, network, allowedAccount.PrivateKey,
 		corridorAssetTransferTxn(t, mustSuggestedParams(t, network), allowed.String(), allowed.String(), 0, assetID, "general-recipient-optin"))
@@ -134,7 +144,17 @@ func TestBoundedGeneralShapeMatrixOnChainLocalnet(t *testing.T) {
 
 	for _, shape := range boundedaccount.Shapes() {
 		t.Run(shape.Descriptor(), func(t *testing.T) {
-			account := newGeneralAccount(t, provider, shape, []string{allowed.String(), second.String()})
+			status, err := network.Client.Status().Do(context.Background())
+			if err != nil {
+				t.Fatalf("read status: %v", err)
+			}
+			if status.LastRound < 2 {
+				t.Skip("localnet needs at least two rounds to backdate FirstValid")
+			}
+			// Already reached, so a backdated transaction is the only early one. Each
+			// shape takes its own, because a transaction's life is limited in rounds.
+			unlockRound := status.LastRound
+			account := newGeneralAccount(t, provider, shape, []string{allowed.String(), second.String()}, unlockRound)
 			if err := funder.FundMicroAlgosAndWait(account.address, 400_000); err != nil {
 				t.Fatalf("fund account: %v", err)
 			}
@@ -148,6 +168,7 @@ func TestBoundedGeneralShapeMatrixOnChainLocalnet(t *testing.T) {
 			mayTransfer := slices.Contains(shape.Spend, txeffects.SpendEffectAxfer)
 			mayOptIn := slices.Contains(shape.Spend, txeffects.SpendEffectAssetOptIn)
 			merkle := shape.Encoding == boundedaccount.EncodingMerkle
+			hasList := shape.Encoding != ""
 			proof := func(to types.Address) []byte {
 				if !merkle {
 					return nil
@@ -169,11 +190,37 @@ func TestBoundedGeneralShapeMatrixOnChainLocalnet(t *testing.T) {
 			transfer := func(to string, amount uint64, note string) types.Transaction {
 				return corridorAssetTransferTxn(t, mustSuggestedParams(t, network), account.address, to, amount, assetID, note)
 			}
+			// early backdates a transaction to one round before the unlock.
+			early := func(txn types.Transaction) types.Transaction {
+				txn.FirstValid = types.Round(unlockRound - 1)
+				txn.LastValid = types.Round(unlockRound + 900)
+				return txn
+			}
+			// passesProgram is for what only the network refuses: the program must
+			// admit it, or an admitted spend would be blocked for the wrong reason.
+			passesProgram := func(txn types.Transaction, proofBytes []byte) {
+				t.Helper()
+				raw, _ := account.signGroup(t, txn, proofBytes, nil)
+				_, err := network.Client.SendRawTransaction(raw).Do(context.Background())
+				if err == nil {
+					t.Fatal("the network accepted a transaction it should refuse")
+				}
+				if text := strings.ToLower(err.Error()); strings.Contains(text, "rejected by logic") || strings.Contains(text, "logic eval") {
+					t.Fatalf("the program refused an admitted transaction: %v", err)
+				}
+			}
 
 			t.Run("payment to a listed recipient", func(t *testing.T) { expect(mayPay, payment(allowed.String(), "a"), proof(allowed), nil) })
 			t.Run("payment to itself", func(t *testing.T) { expect(mayPay, payment(account.address, "b"), nil, nil) })
-			t.Run("payment to an outsider", func(t *testing.T) { expect(false, payment(outside.String(), "c"), proof(allowed), nil) })
-			t.Run("transfer to an outsider", func(t *testing.T) { expect(false, transfer(outside.String(), 0, "d"), proof(allowed), nil) })
+			t.Run("payment to an outsider", func(t *testing.T) { expect(mayPay && !hasList, payment(outside.String(), "c"), proof(allowed), nil) })
+			t.Run("transfer to an outsider", func(t *testing.T) {
+				if mayTransfer && !hasList {
+					// The outsider holds no asset, so only the network can refuse.
+					passesProgram(transfer(outside.String(), 1, "d"), nil)
+					return
+				}
+				expect(false, transfer(outside.String(), 0, "d"), proof(allowed), nil)
+			})
 			t.Run("close out to a listed recipient", func(t *testing.T) {
 				txn := payment(allowed.String(), "e")
 				txn.Amount = 0
@@ -199,6 +246,10 @@ func TestBoundedGeneralShapeMatrixOnChainLocalnet(t *testing.T) {
 					})
 				})
 			}
+			if shape.Timelock {
+				t.Run("payment one round early", func(t *testing.T) { expect(false, early(payment(allowed.String(), "g2")), proof(allowed), nil) })
+				t.Run("payment to itself one round early", func(t *testing.T) { expect(false, early(payment(account.address, "g3")), nil, nil) })
+			}
 			t.Run("asset opt-in", func(t *testing.T) { expect(mayOptIn, transfer(account.address, 0, "i"), nil, nil) })
 			switch {
 			case !mayTransfer:
@@ -212,16 +263,7 @@ func TestBoundedGeneralShapeMatrixOnChainLocalnet(t *testing.T) {
 			default:
 				// This account cannot opt in, so it can never hold the asset. The
 				// program must still pass it: the network, not the program, refuses.
-				t.Run("asset transfer", func(t *testing.T) {
-					raw, _ := account.signGroup(t, transfer(allowed.String(), 1, "j"), proof(allowed), nil)
-					_, err := network.Client.SendRawTransaction(raw).Do(context.Background())
-					if err == nil {
-						t.Fatal("transfer from an account with no holding was accepted")
-					}
-					if text := strings.ToLower(err.Error()); strings.Contains(text, "rejected by logic") || strings.Contains(text, "logic eval") {
-						t.Fatalf("the program refused an admitted transfer: %v", err)
-					}
-				})
+				t.Run("asset transfer", func(t *testing.T) { passesProgram(transfer(allowed.String(), 1, "j"), proof(allowed)) })
 			}
 
 			rekey := func(note string) types.Transaction {
@@ -238,11 +280,19 @@ func TestBoundedGeneralShapeMatrixOnChainLocalnet(t *testing.T) {
 			if shape.Rekey == boundedaccount.RekeyAdminKey {
 				t.Run("rekey without the admin key", func(t *testing.T) { expect(false, rekey("l"), nil, nil) })
 				t.Run("rekey with the admin key", func(t *testing.T) {
-					expect(true, rekey("m"), nil, func(txid types.Digest, args [][]byte) [][]byte {
+					txn := rekey("m")
+					if shape.Timelock {
+						// Admin rekey is the recovery path, so the timelock must not delay it.
+						txn = early(txn)
+					}
+					expect(true, txn, nil, func(txid types.Digest, args [][]byte) [][]byte {
 						return account.adminRekeyArgs(t, args[0], txid)
 					})
 				})
 			} else {
+				if shape.Timelock {
+					t.Run("rekey with the spending key one round early", func(t *testing.T) { expect(false, early(rekey("l")), nil, nil) })
+				}
 				t.Run("rekey with the spending key", func(t *testing.T) { expect(true, rekey("m"), nil, nil) })
 			}
 			info, err := network.Client.AccountInformation(account.address).Do(context.Background())
@@ -255,6 +305,10 @@ func TestBoundedGeneralShapeMatrixOnChainLocalnet(t *testing.T) {
 		})
 	}
 }
+
+// generalPassedUnlockRound has been reached on any network, so an account using it
+// can spend immediately and a test can measure its costliest paths.
+const generalPassedUnlockRound = 1
 
 // generalFamily is one list encoding and authority arrangement, with every
 // transfer kind enabled and the list at its largest for that encoding.
@@ -269,8 +323,11 @@ func generalFamilies() []generalFamily {
 		if len(shape.Spend) != 3 {
 			continue
 		}
-		recipients := boundedaccount.InlineMax
-		if shape.Encoding == boundedaccount.EncodingMerkle {
+		recipients := 0
+		switch shape.Encoding {
+		case boundedaccount.EncodingInline:
+			recipients = boundedaccount.InlineMax
+		case boundedaccount.EncodingMerkle:
 			recipients = 64
 		}
 		families = append(families, generalFamily{shape: shape, recipients: recipients})
@@ -299,15 +356,18 @@ func TestBoundedGeneralResourceMatrix(t *testing.T) {
 	provider.SetAlgodClient(compiler)
 
 	for _, shape := range boundedaccount.Shapes() {
-		count := boundedaccount.InlineMax
-		if shape.Encoding == boundedaccount.EncodingMerkle {
+		count := 0
+		switch shape.Encoding {
+		case boundedaccount.EncodingInline:
+			count = boundedaccount.InlineMax
+		case boundedaccount.EncodingMerkle:
 			count = boundedaccount.RecipientsMax
 		}
 		recipients := make([]string, count)
 		for i := range recipients {
 			recipients[i] = algocrypto.GenerateAccount().Address.String()
 		}
-		account := newGeneralAccount(t, provider, shape, recipients)
+		account := newGeneralAccount(t, provider, shape, recipients, generalPassedUnlockRound)
 		if account.metadata.MaxFee != boundedaccount.MaxFee {
 			t.Fatalf("%s MaxFee = %d", shape.Descriptor(), account.metadata.MaxFee)
 		}
@@ -322,7 +382,7 @@ func TestBoundedGeneralResourceMatrix(t *testing.T) {
 			for len(recipients) < family.recipients {
 				recipients = append(recipients, algocrypto.GenerateAccount().Address.String())
 			}
-			account := newGeneralAccount(t, provider, shape, recipients)
+			account := newGeneralAccount(t, provider, shape, recipients, generalPassedUnlockRound)
 			if err := funder.FundMicroAlgosAndWait(account.address, 500_000); err != nil {
 				t.Fatalf("fund account: %v", err)
 			}
@@ -470,6 +530,51 @@ func TestBoundedGeneralThroughSigner(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("apshell timelock boundary file", func(t *testing.T) {
+		directory := t.TempDir()
+		locked := filepath.Join(directory, "locked.yaml")
+		if err := os.WriteFile(locked, []byte("schema: aplane.boundary.v1\nspend: [pay]\nrekey: {authority: spending_key}\nunlock_round: 18446744073709551615\n"), 0o600); err != nil {
+			t.Fatalf("write boundary file: %v", err)
+		}
+		output, err := apshell.RunWithInput(fmt.Sprintf("generate %s boundary=%s\ny\nkeys\nquit\n", boundedaccount.KeyTypeV1, locked))
+		if err != nil {
+			t.Fatalf("run apshell: %v\n%s", err, output)
+		}
+		for _, want := range []string{"Unlocks at: round 18446744073709551615", "Recipients: any, once unlocked", "Unlock round:   18446744073709551615", "Timelock · policy-gated rekey"} {
+			if !strings.Contains(output, want) {
+				t.Fatalf("output lacks %q:\n%s", want, output)
+			}
+		}
+		account := ""
+		for _, line := range strings.Split(output, "\n") {
+			if _, address, found := strings.Cut(line, "bounded.v1 key: "); found {
+				account = strings.TrimSpace(address)
+			}
+		}
+		if account == "" {
+			t.Fatalf("no generated address:\n%s", output)
+		}
+		if err := funder.FundMicroAlgosAndWait(account, 500_000); err != nil {
+			t.Fatalf("fund account: %v", err)
+		}
+		before, err := network.Client.AccountInformation(account).Do(context.Background())
+		if err != nil {
+			t.Fatalf("read balance: %v", err)
+		}
+		refused, err := apshell.RunWithInput(fmt.Sprintf("send 0.1 algo from %s to %s\nquit\n", account, funder.GetAddress()))
+		if err != nil {
+			t.Fatalf("run apshell: %v\n%s", err, refused)
+		}
+		after, err := network.Client.AccountInformation(account).Do(context.Background())
+		if err != nil {
+			t.Fatalf("read balance: %v", err)
+		}
+		if after.Amount != before.Amount || strings.Contains(strings.ToLower(refused), "confirmed") {
+			t.Fatalf("a locked account spent: %d to %d\n%s", before.Amount, after.Amount, refused)
+		}
+		accounts[account] = composeddsa.Layer3PolicyTimelock
+	})
 
 	t.Run("apshell boundary file", func(t *testing.T) {
 		directory := t.TempDir()

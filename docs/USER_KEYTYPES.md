@@ -251,8 +251,9 @@ It does not import a new YAML source; use `template import` for that.
 
 ## Bounded Accounts
 
-`aplane.bounded.v1` is a Falcon-1024 account limited to a fixed list of recipients. It
-needs no setup: choose the rules when you generate the account. The rules are compiled
+`aplane.bounded.v1` is a Falcon-1024 account limited to a fixed list of recipients, a
+time before which it cannot spend, or both. It needs no setup: choose the rules when you
+generate the account. The rules are compiled
 into the account's program, so they cannot change afterwards, and editing a file later
 does nothing to an existing account.
 
@@ -265,6 +266,7 @@ Generate a key and choose `aplane.bounded.v1`, then a preset:
 | Allowlist | All transfer kinds; the spending key alone can rekey; automatic list encoding | Recipients |
 | Locked Allowlist | All transfer kinds; rekey also needs a contract admin; automatic list encoding | Recipients, admin `.wit.json` file |
 | Corridor | All transfer kinds; contract-admin rekey; a cosigner on every spend; Merkle list | Recipients, admin `.wit.json` file, cosigner |
+| Timelock | All transfer kinds; the spending key alone can rekey, after the unlock round; no recipient list | Unlock round |
 | Load boundary file | Whatever the file says | The file |
 
 "All transfer kinds" means `pay`, `axfer`, and `asset_opt_in`. For a narrower list, such as
@@ -296,11 +298,14 @@ These addresses are illustrations, not funding destinations.
 |---|---|
 | `schema` | Required. Must be `aplane.boundary.v1`. |
 | `spend` | Required. Any of `pay`, `axfer`, `asset_opt_in`. |
-| `recipients` | Required. 1 to 65,536 distinct nonzero addresses, written literally: aliases and sets are not expanded. |
-| `encoding` | Optional. `auto` (the default) is inline through 10 recipients and Merkle above that. `inline` accepts at most 30. |
+| `recipients` | Required unless `unlock_round` is set. 1 to 65,536 distinct nonzero addresses, written literally: aliases and sets are not expanded. |
+| `encoding` | Optional, and needs a list. `auto` (the default) is inline through 10 recipients and Merkle above that. `inline` accepts at most 30. |
+| `unlock_round` | Optional. The first round the account can spend. With no list, the account can pay anyone once unlocked. |
 | `rekey.authority` | Required. `spending_key` or `admin_key`. |
 | `rekey.admin_key` | The public `.wit.json` file, relative to the boundary file. Required only with `admin_key`. |
 | `cosigner` | Optional. A cosigner reference name on the signer, or a Witness Key ID. A cosigner needs `admin_key`. |
+
+With `unlock_round` and `spending_key`, `spend` must include `pay`.
 
 Unknown fields, duplicate keys, YAML aliases, and non-string values are refused, and the
 file has no way to carry TEAL, a template, or a fee.
@@ -336,9 +341,12 @@ and they do not affect existing accounts or imported templates.
 
 Review these points before funding an account:
 
-- Spending-key rekey can leave the boundary.
-- Admin rekey still needs the spending signature, and it bypasses the allowlist and any
-  cosigner.
+- Spending-key rekey can leave the boundary. With an unlock round, it waits for that round.
+- Admin rekey still needs the spending signature, and it bypasses the allowlist, any
+  cosigner, and the unlock round. Without that path, a mistaken unlock round could not
+  be recovered from early.
+- An unlock round means a different time on each network. It does not tie the program to
+  one network.
 - These rules limit recipients and transfer kinds. They do not limit amounts or spending
   speed. Use signer policy for that.
 

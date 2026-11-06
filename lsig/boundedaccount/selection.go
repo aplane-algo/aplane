@@ -6,6 +6,7 @@ package boundedaccount
 import (
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
@@ -51,13 +52,22 @@ func selectShape(params map[string]string, defs []lsigprovider.ParameterDef) (*s
 	if rekey != RekeySpendingKey && rekey != RekeyAdminKey {
 		return nil, fmt.Errorf("%s must be %s or %s", ParameterRekeyAuthority, RekeySpendingKey, RekeyAdminKey)
 	}
-	recipients, err := canonicalRecipients(normalized[ParameterRecipients])
+	unlockRound, err := canonicalUnlockRound(params)
 	if err != nil {
 		return nil, err
 	}
-	encoding, err := selectEncoding(params, len(recipients))
-	if err != nil {
-		return nil, err
+	timelock := unlockRound != ""
+	var recipients []string
+	encoding := ""
+	if _, present := params[ParameterRecipients]; present || !timelock {
+		if recipients, err = canonicalRecipients(normalized[ParameterRecipients]); err != nil {
+			return nil, err
+		}
+		if encoding, err = selectEncoding(params, len(recipients)); err != nil {
+			return nil, err
+		}
+	} else if _, present := params[ParameterListEncoding]; present {
+		return nil, fmt.Errorf("%s has no list to encode", ParameterListEncoding)
 	}
 
 	admin := normalized[composeddsa.BoundedAdminPublicKeyParameter]
@@ -74,13 +84,20 @@ func selectShape(params map[string]string, defs []lsigprovider.ParameterDef) (*s
 		return nil, fmt.Errorf("a cosigner requires %s=%s", ParameterRekeyAuthority, RekeyAdminKey)
 	case admin != "" && admin == cosigner:
 		return nil, fmt.Errorf("bounded cosigner witness key must differ from the contract-admin key")
+	case timelock && rekey == RekeySpendingKey && !slices.Contains(spend, txeffects.SpendEffectPay):
+		return nil, fmt.Errorf("a timelock with %s=%s requires pay in %s", ParameterRekeyAuthority, RekeySpendingKey, ParameterSpendEffects)
 	}
 
 	values := map[string]string{
 		ParameterSpendEffects:   joinSpend(spend),
 		ParameterRekeyAuthority: rekey,
-		ParameterListEncoding:   encoding,
-		ParameterRecipients:     strings.Join(recipients, ","),
+	}
+	if recipients != nil {
+		values[ParameterListEncoding] = encoding
+		values[ParameterRecipients] = strings.Join(recipients, ",")
+	}
+	if timelock {
+		values[ParameterUnlockRound] = unlockRound
 	}
 	if admin != "" {
 		values[composeddsa.BoundedAdminPublicKeyParameter] = admin
@@ -89,9 +106,26 @@ func selectShape(params map[string]string, defs []lsigprovider.ParameterDef) (*s
 		values[composeddsa.BoundedCosignerPublicKeyParameter] = cosigner
 	}
 	return &selection{
-		shape:  Shape{Spend: spend, Encoding: encoding, Rekey: rekey, Cosigner: cosigner != ""},
+		shape:  Shape{Spend: spend, Encoding: encoding, Rekey: rekey, Cosigner: cosigner != "", Timelock: timelock},
 		values: values,
 	}, nil
+}
+
+// canonicalUnlockRound returns "" when the request has no timelock. Zero is refused
+// rather than treated as absent: it would compile a timelock every round passes.
+func canonicalUnlockRound(params map[string]string) (string, error) {
+	value, present := params[ParameterUnlockRound]
+	if !present {
+		return "", nil
+	}
+	round, err := strconv.ParseUint(strings.TrimSpace(value), 10, 64)
+	if err != nil {
+		return "", fmt.Errorf("%s must be a positive whole number: %q", ParameterUnlockRound, value)
+	}
+	if round == 0 {
+		return "", fmt.Errorf("%s must be positive", ParameterUnlockRound)
+	}
+	return strconv.FormatUint(round, 10), nil
 }
 
 func canonicalSpend(value string) ([]txeffects.SpendEffect, error) {

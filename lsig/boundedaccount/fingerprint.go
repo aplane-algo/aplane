@@ -23,12 +23,15 @@ import (
 const (
 	// grammarRevision covers the boundary grammar as a whole. It reaches only
 	// the grammar fingerprint, so no account's provenance depends on it.
-	grammarRevision = 1
+	grammarRevision = 2
 	// resolverRevision covers how selectShape turns a request into values.
 	resolverRevision = 1
 	// allowlistRendererRevision covers the framework allowlist renderers and the
 	// bounded envelope around them.
 	allowlistRendererRevision = 1
+	// timelockRendererRevision covers the same for shapes with a timelock. It is
+	// separate so a timelock change leaves allowlist accounts' provenance alone.
+	timelockRendererRevision = 1
 
 	boundaryDigestDomainV1 = "APLANE_GENERAL_BOUNDARY_V1"
 )
@@ -36,6 +39,10 @@ const (
 // shapeFingerprint is one shape's provenance. It binds that shape alone, so a
 // rule added to the grammar leaves existing accounts' provenance unchanged.
 func shapeFingerprint(shape Shape, composer *composeddsa.ComposedDSA) string {
+	rendererRevision := allowlistRendererRevision
+	if shape.Timelock {
+		rendererRevision = timelockRendererRevision
+	}
 	return lsigprovider.HashCompatibilitySpec(struct {
 		Descriptor        string `json:"descriptor"`
 		Composed          string `json:"composed_fingerprint"`
@@ -46,7 +53,7 @@ func shapeFingerprint(shape Shape, composer *composeddsa.ComposedDSA) string {
 		Descriptor:        shape.Descriptor(),
 		Composed:          composer.CompatibilityFingerprint(),
 		ResolverRevision:  resolverRevision,
-		RendererRevision:  allowlistRendererRevision,
+		RendererRevision:  rendererRevision,
 		DefinitionVersion: KeyTypeV1,
 	})
 }
