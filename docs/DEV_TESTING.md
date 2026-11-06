@@ -299,10 +299,15 @@ APLANE_INTEGRATION_NETWORK=localnet make integration-test
 APLANE_INTEGRATION_NETWORK=localnet ./test/setup-test-env.sh
 ```
 
-This creates `/tmp/aplane-test-env/` containing:
+This creates the fixture root containing the tree below. The root is
+`/tmp/aplane-test-env/` in the primary checkout and
+`/tmp/aplane-test-env-<checksum>/` in a linked git worktree, so worktrees can
+run integration tests at the same time; see
+[Concurrent Runs](#concurrent-runs).
 
 ```
-/tmp/aplane-test-env/
+<fixture root>/
+├── .aplane-test-env-owner         # Path of the checkout that generated this root
 ├── apsigner/                     # Signer data directory (APSIGNER_DATA)
 │   ├── config.yaml                # Signer config (random ports, user_auto_approve:true)
 │   ├── passphrase                 # Test passphrase file
@@ -358,9 +363,29 @@ written to `apclient/endpoints.yaml`. Production defaults are 11270 (REST) and
 
 #### Teardown
 
-The setup script removes any previous test environment (`rm -rf /tmp/aplane-test-env`) before creating a new one. The OS also cleans `/tmp` on reboot. No separate teardown script is needed.
+The setup script removes this checkout's previous fixture root before creating a new one. The OS also cleans `/tmp` on reboot. No separate teardown script is needed.
 
 All per-test temp directories (binary builds, apshell work dirs) use Go's `t.TempDir()` and are cleaned up automatically after each test.
+
+#### Concurrent Runs
+
+Each linked worktree has its own fixture root, derived from its path, and its
+own `.env.test`, which also names that root as `APLANE_TEST_ENV` and
+`APLANE_SHARED_APSIGNER_DATA`/`APLANE_SHARED_APCLIENT_DATA`. So
+`make integration-test-localnet` can run in several worktrees at once.
+
+Setup records the owning checkout in `<root>/.aplane-test-env-owner`. It refuses
+to replace a root that another existing checkout owns, or a non-default root
+it did not generate. Set `APLANE_TEST_ENV` to an absolute path to choose a root
+yourself; a separate clone needs this, because it cannot be told apart from the
+primary checkout. Do not export a `.env.test` into a shell and then change
+checkout: the inherited `APLANE_TEST_ENV` names the other checkout's root, and
+setup stops rather than replacing it.
+
+The fixture is what this isolates. Concurrent runs still share one LocalNet or
+TestNet ledger, and on TestNet one funding account, so they contend for block
+space and, on TestNet, balance. `APLANE_SDKS_REPO` also names one SDK checkout
+for all of them. LocalNet setup creates a separate funding account per run.
 
 ### Environment Variables
 
@@ -375,9 +400,12 @@ All per-test temp directories (binary builds, apshell work dirs) use Go's `t.Tem
 | `APLANE_LOCALNET_TOKEN` | LocalNet algod/KMD token fallback when `ALGOD_TOKEN` is unset. | Optional localnet |
 | `APLANE_LOCALNET_WALLET` | KMD wallet used to bootstrap the native Falcon funding account. | Optional localnet |
 | `APLANE_LOCALNET_WALLET_PASSWORD` | Password for the selected KMD wallet. | Optional localnet |
+| `APLANE_TEST_ENV` | Fixture root. Defaults to `/tmp/aplane-test-env`, or a path-derived root in a linked worktree. Setup writes the resolved root to `.env.test`. | Optional |
 | `TEST_PASSPHRASE` | Keystore passphrase (set by setup script) | Auto |
 | `APSIGNER_DATA` | Signer data directory (set by setup script) | Auto |
 | `APCLIENT_DATA` | Client data directory (set by setup script) | Auto |
+| `APLANE_SHARED_APSIGNER_DATA` | Signer fixture that each test clones (set by setup script) | Auto |
+| `APLANE_SHARED_APCLIENT_DATA` | Client fixture that each test clones (set by setup script) | Auto |
 | `DISABLE_MEMORY_LOCK` | Skip mlock for testing (set by setup script) | Auto |
 
 For testnet, the only required user-provided variables are
@@ -439,7 +467,7 @@ make integration-test-reuse
 # Clean up leaked test apps from previous failed runs
 make integration-test-cleanup
 
-# Dry-run cleanup for leftover LocalNet signer keys in /tmp/aplane-test-env
+# Dry-run cleanup for leftover LocalNet signer keys in this checkout's fixture
 set -a && . .env.test && set +a
 go run ./test/integration/cmd/localnet-clean-test-keys
 
@@ -513,7 +541,7 @@ If an older soak run left generated signer keys behind, source the generated
 for a dry run. Add `-yes` to delete the keys from the LocalNet integration
 signer fixture. The cleanup helper refuses to run unless
 `APLANE_INTEGRATION_NETWORK=localnet` and the signer data directory is under
-`/tmp/aplane-test-env`.
+`/tmp/aplane-test-env` or under the generated root named by `APLANE_TEST_ENV`.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -754,7 +782,7 @@ Environment requirements:
 What it does **not** require:
 
 - no `.env.test`,
-- no `/tmp/aplane-test-env`,
+- no integration fixture root,
 - no funded integration account,
 - no algod, KMD, or indexer,
 - no running `apsigner`,
@@ -1222,7 +1250,7 @@ make security-analysis # All local security analyzers, including seed phrase det
 
 7. **"host key rejected by user"**
    - The test environment pre-populates `known_hosts`, but if keys were regenerated
-     without re-running setup, delete `/tmp/aplane-test-env` and rerun the selected integration target
+     without re-running setup, delete the root named by `APLANE_TEST_ENV` in `.env.test` and rerun the selected integration target
 
 8. **"transaction not confirmed"**
    - Testnet may be congested, or localnet may have stopped.

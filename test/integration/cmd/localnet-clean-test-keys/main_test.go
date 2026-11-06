@@ -4,8 +4,11 @@
 package main
 
 import (
-	"github.com/aplane-algo/aplane/internal/serverconfig"
+	"os"
+	"path/filepath"
 	"testing"
+
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 
 	"github.com/aplane-algo/aplane/internal/config"
 )
@@ -16,6 +19,25 @@ func TestRequirePathInside(t *testing.T) {
 	}
 	if err := requirePathInside("/tmp/other-env/apsigner", "/tmp/aplane-test-env"); err == nil {
 		t.Fatal("requirePathInside accepted path outside fixture root")
+	}
+}
+
+func TestResolveFixtureRoot(t *testing.T) {
+	if root, err := resolveFixtureRoot(defaultTestEnv); err != nil || root != defaultTestEnv {
+		t.Fatalf("resolveFixtureRoot default = %q, %v", root, err)
+	}
+
+	unmarked := t.TempDir()
+	if _, err := resolveFixtureRoot(unmarked); err == nil {
+		t.Fatal("resolveFixtureRoot accepted a root that setup did not generate")
+	}
+
+	generated := t.TempDir()
+	if err := os.WriteFile(filepath.Join(generated, testEnvOwnerFile), []byte("/checkout\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if root, err := resolveFixtureRoot(generated); err != nil || root != generated {
+		t.Fatalf("resolveFixtureRoot generated = %q, %v", root, err)
 	}
 }
 

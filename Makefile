@@ -719,8 +719,9 @@ store-release-drill:
 	@APLANE_TEST_BIN_DIR="$(STORE_RELEASE_BIN_DIR)" APLANE_STORE_INTEGRATION=1 go test $(STORE_INTEGRATION_GO_ARGS) $(STORE_INTEGRATION_TEST_PKG) -run '^TestReleaseArtifactStoreDrill$$'
 
 # Run integration tests (tests in test/integration/)
-# Always regenerates the shared fixture and .env.test first to avoid stale
-# /tmp/aplane-test-env state or mismatched passphrases.
+# Always regenerates this checkout's fixture and .env.test first to avoid stale
+# fixture state or mismatched passphrases. Linked worktrees get their own
+# fixture root; see test/setup-test-env.sh.
 # Requires APLANE_INTEGRATION_NETWORK=testnet or localnet.
 integration-test:
 	@echo "Running integration tests..."

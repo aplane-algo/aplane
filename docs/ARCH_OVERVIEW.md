@@ -2559,7 +2559,7 @@ The integration harness behavior is part of the effective repository contract:
   disposable funded native Falcon account; TestNet uses an operator-supplied
   funded native Falcon account and therefore requires a v42-capable network,
 - `make integration-test` regenerates the shared test fixture and `.env.test` before running the suite,
-- the shared fixture lives under `/tmp/aplane-test-env`,
+- the shared fixture lives under `/tmp/aplane-test-env`, or a path-derived `/tmp/aplane-test-env-<checksum>` in a linked worktree, so worktrees can run the suite concurrently,
 - the generated signer fixture uses a private runtime directory with `ipc_path: run/aplane.sock`,
 - `TEST_PASSPHRASE` for integration tests is taken from the generated fixture passphrase rather than trusting an inherited shell value,
 - when `APLANE_SDKS_REPO` points at a local `aplanesdk` checkout, `make integration-test` and

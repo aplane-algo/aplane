@@ -9,8 +9,8 @@ their own apsigner process — no manual process management required.
 ### 1. Test Environment Setup
 
 The `make integration-test` path regenerates an isolated fixture at
-`/tmp/aplane-test-env/` on every run by invoking `test/setup-test-env.sh`
-first. Select the integration network explicitly. For testnet:
+`/tmp/aplane-test-env/` (or a path-derived root in a linked worktree) on every
+run by invoking `test/setup-test-env.sh` first. Select the integration network explicitly. For testnet:
 
 ```bash
 export APLANE_INTEGRATION_NETWORK=testnet
