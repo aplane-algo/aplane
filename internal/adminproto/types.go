@@ -34,10 +34,15 @@ type AdminSettings struct {
 	EndpointAdvertiseURL string
 	EndpointDisplayURL   string
 	Theme                string
+	// These restrict new aplane.bounded.v1 accounts only.
+	BoundaryRequireAdminKey bool
+	BoundaryRequireCosigner bool
 }
 
 const (
 	AdminSettingUserAutoApprove      = "user_auto_approve"
+	AdminSettingBoundaryRequireAdmin = "boundary_require_admin_key"
+	AdminSettingBoundaryRequireCo    = "boundary_require_cosigner"
 	AdminSettingLockOnDisconnect     = "lock_on_disconnect"
 	AdminSettingPassphraseTimeout    = "passphrase_timeout"
 	AdminSettingTheme                = "theme"
@@ -732,6 +737,11 @@ type LibraryTemplateInfo struct {
 	// NeedsApproval means the type is enabled but its current definition has
 	// not been approved, so it cannot create accounts until it is.
 	NeedsApproval bool
+	// ApprovedFingerprint and CurrentFingerprint are set when NeedsApproval is.
+	ApprovedFingerprint string
+	CurrentFingerprint  string
+	// ApprovalSummary says what enabling this type approves, when it says.
+	ApprovalSummary string
 }
 
 type ListLibraryTemplatesResult struct {

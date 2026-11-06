@@ -327,3 +327,78 @@ func TestUpdateAdminSettingRejectsInfrastructureNetworkSettings(t *testing.T) {
 		})
 	}
 }
+
+func TestBoundaryRequirementsAreSavedAndLoaded(t *testing.T) {
+	dataRoot := t.TempDir()
+	for _, key := range []string{adminproto.AdminSettingBoundaryRequireAdmin, adminproto.AdminSettingBoundaryRequireCo} {
+		if err := productruntime.SaveStoredSetting(dataRoot, key, true); err != nil {
+			t.Fatal(err)
+		}
+	}
+	stored, err := productruntime.LoadStoredConfig(dataRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	effective, err := stored.Apply(productruntime.ConfigDefaults{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !effective.BoundaryRequireAdminKey || !effective.BoundaryRequireCosigner {
+		t.Fatalf("effective config = %+v", effective)
+	}
+}
+
+func TestBoundaryRequirementSettingsTakeEffectAndPersist(t *testing.T) {
+	svc, ir, deps := setupAdminService(t)
+	if err := os.WriteFile(filepath.Join(deps.dataDir, "config.yaml"), []byte("theme: auto\n"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		key                     string
+		wantAdmin, wantCosigner bool
+	}{
+		{adminproto.AdminSettingBoundaryRequireAdmin, true, false},
+		{adminproto.AdminSettingBoundaryRequireCo, true, true},
+	} {
+		if err := svc.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{Key: test.key, Value: "true"}); err != nil {
+			t.Fatalf("UpdateAdminSetting(%s) error = %v", test.key, err)
+		}
+		admin, cosigner := ir.Config().BoundaryRequirements()
+		if admin != test.wantAdmin || cosigner != test.wantCosigner {
+			t.Fatalf("%s: requirements = %v, %v", test.key, admin, cosigner)
+		}
+	}
+	stored, err := productruntime.LoadStoredConfig(deps.dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	effective, err := stored.Apply(productruntime.ConfigDefaults{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !effective.BoundaryRequireAdminKey || !effective.BoundaryRequireCosigner {
+		t.Fatalf("persisted config = %+v", effective)
+	}
+	ir.Config().SetBoundaryRequirements(true, false)
+	if settings := svc.BuildAdminSettings(); !settings.BoundaryRequireAdminKey || settings.BoundaryRequireCosigner {
+		t.Fatalf("reported settings = %+v", settings)
+	}
+}
+
+func TestBoundaryRequirementRevertsWhenItCannotBeSaved(t *testing.T) {
+	svc, ir, deps := setupAdminService(t)
+	if err := os.WriteFile(filepath.Join(deps.dataDir, "config.yaml"), []byte("theme: auto\n"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	// A directory where the runtime config belongs makes the save fail.
+	if err := os.MkdirAll(productruntime.ConfigPath(deps.dataDir), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	err := svc.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{Key: adminproto.AdminSettingBoundaryRequireAdmin, Value: "true"})
+	if err == nil {
+		t.Fatal("the save did not fail")
+	}
+	if admin, _ := ir.Config().BoundaryRequirements(); admin {
+		t.Fatal("a requirement stayed active after it could not be saved")
+	}
+}

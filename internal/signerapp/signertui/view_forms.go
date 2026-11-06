@@ -215,7 +215,7 @@ func (m Model) renderParameterModal(keyTypeIndex int, buttonVerb, errorMsg strin
 func (m Model) renderParameterModalForKeyType(keyType, buttonVerb, errorMsg string) string {
 	var sb strings.Builder
 
-	spec := getParamSpecForKeyType(keyType)
+	spec := m.paramSpecFor(keyType)
 	if spec == nil {
 		return m.renderPopup(70, "Error: parameters not available")
 	}
@@ -574,6 +574,18 @@ func (m Model) renderGenerateDisplay() string {
 	sb.WriteString("\n")
 	sb.WriteString(subtitleStyle.Render("Use encrypted backups for recovery."))
 	sb.WriteString("\n")
+	if _, ok := m.generatedReceipt(); ok {
+		sb.WriteString("\n")
+		switch {
+		case m.forms.receiptError != "":
+			sb.WriteString(errorStyle.Render(wrapText(m.forms.receiptError, 68)))
+		case m.forms.receiptPath != "":
+			sb.WriteString(subtitleStyle.Render(wrapText("Receipt saved to "+m.forms.receiptPath, 68)))
+		default:
+			sb.WriteString(subtitleStyle.Render("Press s to save a resolved receipt. It documents the account; it does not restore it."))
+		}
+		sb.WriteString("\n")
+	}
 
 	return m.renderPopup(75, sb.String())
 }

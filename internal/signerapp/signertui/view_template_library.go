@@ -21,6 +21,9 @@ const libraryTypeCompiledProvider = "compiled_provider"
 const (
 	libraryNameColumnWidth = 46
 	libraryTypeColumnWidth = 20
+
+	// approvalFingerprintWidth keeps both ends of a fingerprint on one line.
+	approvalFingerprintWidth = 44
 )
 
 func (m Model) renderTemplateLibrary() string {
@@ -72,6 +75,11 @@ func (m Model) renderTemplateLibrary() string {
 			libraryNameColumnWidth, templateLibraryTitle(tmpl),
 			libraryTypeColumnWidth, libraryTypeColumn(tmpl),
 			status)
+		if tmpl.NeedsApproval {
+			// This status is wider than its column, and it matters more than
+			// the row's type, so it takes the type column's place.
+			line = fmt.Sprintf("%s%-*s %s", prefix, libraryNameColumnWidth, templateLibraryTitle(tmpl), status)
+		}
 		if i == selected {
 			sb.WriteString(selectedStyle.Render(line))
 		} else if tmpl.Invalid != "" || tmpl.Conflict != "" {
@@ -176,6 +184,15 @@ func renderCompiledProviderDetailsText(tmpl LibraryTemplateInfo) string {
 	if tmpl.Description != "" {
 		sb.WriteString(fmt.Sprintf("Description: %s\n", tmpl.Description))
 	}
+	if tmpl.NeedsApproval {
+		sb.WriteString("\nStatus: needs approval\n")
+		if tmpl.ApprovalSummary != "" {
+			sb.WriteString(fmt.Sprintf("Current grammar: %s\n", tmpl.ApprovalSummary))
+		}
+		sb.WriteString(fmt.Sprintf("Approved fingerprint: %s\n", tmpl.ApprovedFingerprint))
+		sb.WriteString(fmt.Sprintf("Current fingerprint: %s\n", tmpl.CurrentFingerprint))
+		sb.WriteString("Restarting does not approve a grammar. Use Approve current grammar here, or run: apadmin keytype enable " + tmpl.KeyType + "\n")
+	}
 	body := templateDetailsBoxLines(tmpl)
 	if len(body) == 1 && body[0] == "" {
 		sb.WriteString("\nNo creation parameters or signing arguments.\n")
@@ -254,6 +271,10 @@ func (m Model) renderTemplateInstallConfirm() string {
 	sb.WriteString(titleStyle.Render(libraryConfirmTitle(*tmpl)))
 	sb.WriteString("\n\n")
 	sb.WriteString(templateDetailField("Key type", displayKeyType(tmpl.KeyType)))
+	if tmpl.NeedsApproval {
+		sb.WriteString(renderApprovalBody(*tmpl))
+		return m.finishTemplateInstallConfirm(&sb, *tmpl)
+	}
 	if publisher := keyTypePublisher(tmpl.KeyType); publisher != "" {
 		sb.WriteString(templateDetailField("Publisher", publisher))
 	}
@@ -266,6 +287,10 @@ func (m Model) renderTemplateInstallConfirm() string {
 		sb.WriteString(subtitleStyle.Render(wrapText(tmpl.Description, 64)))
 		sb.WriteString("\n")
 	}
+	return m.finishTemplateInstallConfirm(&sb, *tmpl)
+}
+
+func (m Model) finishTemplateInstallConfirm(sb *strings.Builder, tmpl LibraryTemplateInfo) string {
 	if m.library.installError != "" {
 		sb.WriteString("\n")
 		sb.WriteString(errorStyle.Render(m.library.installError))
@@ -274,22 +299,46 @@ func (m Model) renderTemplateInstallConfirm() string {
 
 	sb.WriteString("\n")
 	cancel := buttonInactiveStyle.Render("CANCEL")
-	confirm := buttonInactiveStyle.Render(strings.ToUpper(libraryActionVerb(*tmpl)))
+	confirm := buttonInactiveStyle.Render(strings.ToUpper(libraryActionVerb(tmpl)))
 	if m.library.installFocus == 0 {
 		cancel = buttonActiveStyle.Render("CANCEL")
 	} else {
-		confirm = buttonActiveStyle.Render(strings.ToUpper(libraryActionVerb(*tmpl)))
+		confirm = buttonActiveStyle.Render(strings.ToUpper(libraryActionVerb(tmpl)))
 	}
 	sb.WriteString(lipgloss.JoinHorizontal(lipgloss.Center, cancel, "  ", confirm))
 
 	return m.renderPopup(72, sb.String())
 }
 
+// renderApprovalBody says what approval allows and what it leaves alone, tight
+// enough that the buttons stay on screen at 80x24. The details view has the full
+// fingerprints.
+func renderApprovalBody(tmpl LibraryTemplateInfo) string {
+	var sb strings.Builder
+	if tmpl.ApprovalSummary != "" {
+		sb.WriteString("\n")
+		sb.WriteString(normalStyle.Render(wrapText(tmpl.ApprovalSummary, 64)))
+		sb.WriteString("\n")
+	}
+	sb.WriteString("\n")
+	sb.WriteString(subtitleStyle.Render("This allows new accounts. Existing accounts work either way."))
+	sb.WriteString("\n")
+	approved := tmpl.ApprovedFingerprint
+	if approved == "" {
+		approved = "none on record"
+	}
+	sb.WriteString(templateDetailField("Approved", middleEllipsize(approved, approvalFingerprintWidth)))
+	sb.WriteString(templateDetailField("Current", middleEllipsize(tmpl.CurrentFingerprint, approvalFingerprintWidth)))
+	return sb.String()
+}
+
 func (m Model) renderTemplateInstalling() string {
 	var sb strings.Builder
 	title := "Enabling Template Key Type"
 	if m.library.pendingTemplate != nil {
-		if isCompiledProviderLibraryEntry(*m.library.pendingTemplate) {
+		if m.library.pendingTemplate.NeedsApproval {
+			title = "Approving Current Grammar"
+		} else if isCompiledProviderLibraryEntry(*m.library.pendingTemplate) {
 			if m.library.pendingTemplate.Installed {
 				title = "Disabling Key Type"
 			} else {
@@ -343,6 +392,9 @@ func templateLibraryTitle(tmpl LibraryTemplateInfo) string {
 }
 
 func templateLibraryStatus(tmpl LibraryTemplateInfo) string {
+	if tmpl.NeedsApproval {
+		return "Needs approval"
+	}
 	return keytypeux.AvailabilityForCreation(libraryEntryEnabled(tmpl))
 }
 
@@ -358,6 +410,9 @@ func libraryEntryEnabled(tmpl LibraryTemplateInfo) bool {
 }
 
 func libraryActionVerb(tmpl LibraryTemplateInfo) string {
+	if tmpl.NeedsApproval {
+		return "approve current grammar"
+	}
 	if libraryEntryEnabled(tmpl) {
 		return "disable"
 	}
@@ -415,6 +470,9 @@ func compiledKeyTypeColumn(tmpl LibraryTemplateInfo) string {
 }
 
 func libraryConfirmTitle(tmpl LibraryTemplateInfo) string {
+	if tmpl.NeedsApproval {
+		return "Approve Current Grammar"
+	}
 	if libraryEntryEnabled(tmpl) {
 		return "Disable Key Type"
 	}

@@ -375,7 +375,11 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Continue listening for messages
 		return m, m.waitForMessageCmd()
 
+	case PrepareGenerateResultMsg:
+		return m.handlePreparedGeneration(msg.Result)
+
 	case GenerateResultMsg:
+		m = m.settleGenerateReview(msg)
 		if msg.Success {
 			m.lastError = ""
 			m.cosigner.generateFromManager = false
@@ -773,7 +777,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.waitForMessageCmd()
 
 	case ActivateKeyTypeResultMsg:
-		return m.finishLibraryAction(msg.Success, libraryEnabledStatus(msg.KeyType, msg.AlreadyExists), msg.Error, libraryActivateFailure())
+		return m.finishLibraryAction(msg.Success, m.libraryActivatedStatus(msg.KeyType, msg.AlreadyExists), msg.Error, libraryActivateFailure())
 
 	case DeactivateKeyTypeResultMsg:
 		status := displayKeyType(msg.KeyType) + " was already disabled"
@@ -805,6 +809,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if info.KeyType != m.cosigner.pendingKeyType {
 					continue
 				}
+				// A per-key type does not advertise the selector, because its
+				// cosigner is optional. The preset that asked for one is the field.
+				resumeEnrollment = m.forms.boundaryPreset != nil
 				for _, param := range info.CreationParams {
 					if param.Name == cosignerrefs.ParamCosignerName {
 						resumeEnrollment = true
@@ -1026,6 +1033,12 @@ func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleStoreRecoveryKeys(msg)
 	case ViewGenerateDisplay:
 		return m.handleGenerateDisplayKeys(msg)
+	case ViewBoundaryPreset:
+		return m.handleBoundaryPresetKeys(msg)
+	case ViewGenerateReview:
+		return m.handleGenerateReviewKeys(msg)
+	case ViewGenerateReviewDetails:
+		return m.handleGenerateReviewDetailsKeys(msg)
 	case ViewImportDisplay:
 		return m.handleImportDisplayKeys(msg)
 	case ViewImportForm:
@@ -1123,6 +1136,9 @@ func (m Model) usesSharedPopupViewport() bool {
 		ViewCosignerExportResult,
 		ViewGenerating,
 		ViewGenerateDisplay,
+		ViewBoundaryPreset,
+		ViewGenerateReview,
+		ViewGenerateReviewDetails,
 		ViewMnemonicExport,
 		ViewImportForm,
 		ViewImportParams,

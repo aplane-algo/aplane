@@ -17,6 +17,7 @@ import (
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
+	"github.com/aplane-algo/aplane/internal/boundary"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
@@ -408,7 +409,7 @@ rekey:
   authority: admin_key
   admin_key: ./admin/ops.wit.json
 `)
-	params, err := LoadBoundaryFile(path)
+	params, err := boundary.LoadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -437,7 +438,7 @@ func mustHex(t *testing.T, value string) []byte {
 }
 
 func TestBoundaryFileLeavesCosignerNameForTheSigner(t *testing.T) {
-	file, err := ParseBoundaryFile([]byte(`schema: aplane.boundary.v1
+	file, err := boundary.ParseFile([]byte(`schema: aplane.boundary.v1
 spend: [pay]
 recipients: [` + testAddress(1) + `]
 rekey: {authority: spending_key}
@@ -458,7 +459,7 @@ cosigner: ops-cosigner
 func TestBoundaryFileRejections(t *testing.T) {
 	recipient := testAddress(1)
 	valid := "schema: aplane.boundary.v1\nspend: [pay]\nrecipients: [" + recipient + "]\nrekey: {authority: spending_key}\n"
-	if _, err := ParseBoundaryFile([]byte(valid)); err != nil {
+	if _, err := boundary.ParseFile([]byte(valid)); err != nil {
 		t.Fatalf("valid file rejected: %v", err)
 	}
 	tests := []struct {
@@ -494,13 +495,13 @@ func TestBoundaryFileRejections(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			_, err := ParseBoundaryFile([]byte(test.body))
+			_, err := boundary.ParseFile([]byte(test.body))
 			if err == nil || !strings.Contains(err.Error(), test.want) {
 				t.Fatalf("ParseBoundaryFile error = %v, want %q", err, test.want)
 			}
 		})
 	}
-	if _, err := ParseBoundaryFile(bytes.Repeat([]byte{' '}, MaxBoundaryFileBytes+1)); err == nil {
+	if _, err := boundary.ParseFile(bytes.Repeat([]byte{' '}, boundary.MaxFileBytes+1)); err == nil {
 		t.Fatal("accepted an oversized file")
 	}
 }
@@ -515,7 +516,7 @@ spend: [pay]
 recipients: [`+testAddress(1)+`]
 rekey: {authority: admin_key, admin_key: private.wit}
 `)
-	if _, err := LoadBoundaryFile(file); err == nil || !strings.Contains(err.Error(), "admin witness") {
+	if _, err := boundary.LoadFile(file); err == nil || !strings.Contains(err.Error(), "admin witness") {
 		t.Fatalf("LoadBoundaryFile error = %v", err)
 	}
 }
@@ -605,5 +606,125 @@ func TestResourceBackstopRefusesWhatCannotRun(t *testing.T) {
 	lowCeiling.MaxFee = 1_000
 	if err := checkResources(lowCeiling, opcodes, 3_000); err == nil || !strings.Contains(err.Error(), "above the account's ceiling") {
 		t.Fatalf("checkResources(low ceiling) error = %v", err)
+	}
+}
+
+func TestReceiptRequiresTheGeneratedAddress(t *testing.T) {
+	if _, err := (boundary.Receipt{KeyType: KeyTypeV1}).Encode(); err == nil {
+		t.Fatal("encoded a receipt with no address")
+	}
+	encoded, err := boundary.Receipt{Address: testAddress(1), KeyType: KeyTypeV1}.Encode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(encoded), boundary.ReceiptSchemaV1) {
+		t.Fatalf("receipt has no schema: %s", encoded)
+	}
+}
+
+func TestRecipientListDigestSeparatesLists(t *testing.T) {
+	first, second := boundary.RecipientListDigest(testRecipients(2)), boundary.RecipientListDigest(testRecipients(3))
+	if first == second || len(first) != 64 {
+		t.Fatalf("digests = %s, %s", first, second)
+	}
+}
+
+// A completed preset and its saved file must be the same request: they differ only
+// in how the operator supplied it.
+func TestPresetAndItsFileResolveTheSame(t *testing.T) {
+	provider := newTestProvider(t)
+	directory := t.TempDir()
+	id, err := witness.ID(witness.Falcon1024V1, mustHex(t, testAdminKey))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reference, err := witness.NewPublicReference(witness.Falcon1024V1, id, testAdminKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := json.Marshal(reference)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, "ops.wit.json"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	recipients := []string{testAddress(2), testAddress(1)}
+	for _, preset := range boundary.Presets() {
+		t.Run(preset.Name, func(t *testing.T) {
+			form := map[string]string{ParameterRecipients: strings.Join(recipients, ",")}
+			for name, value := range preset.Fixed {
+				form[name] = value
+			}
+			hasCosigner := false
+			for _, field := range preset.Fields {
+				switch field {
+				case composeddsa.BoundedAdminPublicKeyParameter:
+					form[field] = testAdminKey
+				case ParameterCosigner:
+					hasCosigner = true
+				}
+			}
+			path := writeBoundaryFile(t, directory, preset.SampleBoundaryFile(recipients, "ops.wit.json", "ops-cosigner"))
+			fromFile, err := boundary.LoadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if hasCosigner {
+				if fromFile[ParameterCosigner] != "ops-cosigner" {
+					t.Fatalf("file cosigner = %q", fromFile[ParameterCosigner])
+				}
+				delete(fromFile, ParameterCosigner)
+				fromFile[composeddsa.BoundedCosignerPublicKeyParameter] = testCosignerKey
+				form[composeddsa.BoundedCosignerPublicKeyParameter] = testCosignerKey
+			}
+			first, err := provider.ResolveInstance(form)
+			if err != nil {
+				t.Fatal(err)
+			}
+			second, err := provider.ResolveInstance(fromFile)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if first.BoundaryDigest != second.BoundaryDigest || first.Fingerprint != second.Fingerprint {
+				t.Fatal("the preset and its file resolved differently")
+			}
+		})
+	}
+}
+
+// The presets are a frozen part of what the guided screens promise.
+func TestPresetChoicesAreFrozen(t *testing.T) {
+	presets := boundary.Presets()
+	for _, test := range []struct {
+		name, rekey, encoding string
+		fields                []string
+	}{
+		{"allowlist", RekeySpendingKey, EncodingAuto, []string{ParameterRecipients}},
+		{"locked-allowlist", RekeyAdminKey, EncodingAuto, []string{ParameterRecipients, composeddsa.BoundedAdminPublicKeyParameter}},
+		{"corridor", RekeyAdminKey, EncodingMerkle, []string{ParameterRecipients, composeddsa.BoundedAdminPublicKeyParameter, ParameterCosigner}},
+	} {
+		index := -1
+		for i, preset := range presets {
+			if preset.Name == test.name {
+				index = i
+			}
+		}
+		if index < 0 {
+			t.Fatalf("no preset %s", test.name)
+		}
+		preset := presets[index]
+		if preset.Fixed[ParameterSpendEffects] != joinSpend(spendEffectOrder) {
+			t.Errorf("%s spend = %q", test.name, preset.Fixed[ParameterSpendEffects])
+		}
+		if preset.Fixed[ParameterRekeyAuthority] != test.rekey || preset.Fixed[ParameterListEncoding] != test.encoding {
+			t.Errorf("%s fixed = %v", test.name, preset.Fixed)
+		}
+		if strings.Join(preset.Fields, ",") != strings.Join(test.fields, ",") {
+			t.Errorf("%s fields = %v", test.name, preset.Fields)
+		}
+	}
+	if len(presets) != 3 {
+		t.Fatalf("%d presets", len(presets))
 	}
 }

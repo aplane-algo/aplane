@@ -93,6 +93,8 @@ const (
 
 	// Admin settings message types
 	MsgTypeGetAdminSettings         = protocol.MsgTypeGetAdminSettings
+	MsgTypePrepareGenerateKey       = protocol.MsgTypePrepareGenerateKey
+	MsgTypePrepareGenerateResult    = protocol.MsgTypePrepareGenerateResult
 	MsgTypeAdminSettings            = protocol.MsgTypeAdminSettings
 	MsgTypePolicy                   = protocol.MsgTypePolicy
 	MsgTypePolicyContext            = protocol.MsgTypePolicyContext
@@ -145,6 +147,8 @@ type (
 	ListKeysMessage                      = protocol.ListKeysMessage
 	KeysListMessage                      = protocol.KeysListMessage
 	GenerateKeyMessage                   = protocol.GenerateKeyMessage
+	PrepareGenerateKeyMessage            = protocol.PrepareGenerateKeyMessage
+	PrepareGenerateResultMessage         = protocol.PrepareGenerateResultMessage
 	GenerateResultMessage                = protocol.GenerateResultMessage
 	DeleteKeyMessage                     = protocol.DeleteKeyMessage
 	DeleteResultMessage                  = protocol.DeleteResultMessage

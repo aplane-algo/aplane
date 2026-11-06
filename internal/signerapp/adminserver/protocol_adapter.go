@@ -452,22 +452,24 @@ func protocolRestoreErrors(items []adminproto.RestoreError) []protocol.RestoreEr
 
 func ProtocolAdminSettingsMessage(requestID string, settings adminproto.AdminSettings) protocol.AdminSettingsMessage {
 	return protocol.AdminSettingsMessage{
-		BaseMessage:          protocol.BaseMessage{Type: protocol.MsgTypeAdminSettings, ID: requestID},
-		UserAutoApprove:      settings.UserAutoApprove,
-		LockOnDisconnect:     settings.LockOnDisconnect,
-		PassphraseTimeout:    settings.PassphraseTimeout,
-		PassphraseMethod:     settings.PassphraseMethod,
-		NodeRole:             settings.NodeRole,
-		SSHEnabled:           settings.SSHEnabled,
-		SSHListenAddress:     settings.SSHListenAddress,
-		SSHPort:              settings.SSHPort,
-		SSHFingerprint:       settings.SSHFingerprint,
-		SSHClients:           settings.SSHClients,
-		SignerPort:           settings.SignerPort,
-		TEALCompileNet:       settings.TEALCompileNet,
-		EndpointAdvertiseURL: settings.EndpointAdvertiseURL,
-		EndpointDisplayURL:   settings.EndpointDisplayURL,
-		Theme:                settings.Theme,
+		BaseMessage:             protocol.BaseMessage{Type: protocol.MsgTypeAdminSettings, ID: requestID},
+		UserAutoApprove:         settings.UserAutoApprove,
+		BoundaryRequireAdminKey: settings.BoundaryRequireAdminKey,
+		BoundaryRequireCosigner: settings.BoundaryRequireCosigner,
+		LockOnDisconnect:        settings.LockOnDisconnect,
+		PassphraseTimeout:       settings.PassphraseTimeout,
+		PassphraseMethod:        settings.PassphraseMethod,
+		NodeRole:                settings.NodeRole,
+		SSHEnabled:              settings.SSHEnabled,
+		SSHListenAddress:        settings.SSHListenAddress,
+		SSHPort:                 settings.SSHPort,
+		SSHFingerprint:          settings.SSHFingerprint,
+		SSHClients:              settings.SSHClients,
+		SignerPort:              settings.SignerPort,
+		TEALCompileNet:          settings.TEALCompileNet,
+		EndpointAdvertiseURL:    settings.EndpointAdvertiseURL,
+		EndpointDisplayURL:      settings.EndpointDisplayURL,
+		Theme:                   settings.Theme,
 	}
 }
 
@@ -945,7 +947,10 @@ func protocolLibraryTemplates(items []adminproto.LibraryTemplateInfo) []protocol
 			Conflict:     item.Conflict,
 			Invalid:      item.Invalid,
 
-			NeedsApproval: item.NeedsApproval,
+			NeedsApproval:       item.NeedsApproval,
+			ApprovedFingerprint: item.ApprovedFingerprint,
+			CurrentFingerprint:  item.CurrentFingerprint,
+			ApprovalSummary:     item.ApprovalSummary,
 		}
 	}
 	return out
@@ -968,6 +973,7 @@ func protocolKeyTypes(items []signerapi.KeyTypeInfo) []protocol.KeyTypeInfo {
 			MnemonicImport:           item.MnemonicImport,
 			MnemonicScheme:           item.MnemonicScheme,
 			CosignerComponentKeyType: item.CosignerComponentKeyType,
+			PerKeyContract:           item.PerKeyContract,
 			CreationParams:           protocolCreationParams(item.CreationParams),
 			RuntimeArgs:              protocolRuntimeArgs(item.RuntimeArgs),
 		}

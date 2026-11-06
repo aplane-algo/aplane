@@ -1458,8 +1458,10 @@ Three boundaries matter when changing this path:
 
 ### The general bounded key type
 
-`aplane.bounded.v1` (`lsig/boundedaccount/`) selects an account's shape at generation
-instead of fixing one per template. **It is not available in any release yet.** Its
+`aplane.bounded.v1` selects an account's shape at generation
+instead of fixing one per template. `internal/boundary` holds its family-neutral grammar,
+presets, and receipt, which clients use; `lsig/boundedaccount` holds the shapes and
+provider. **It is not available in any release yet.** Its
 catalog entry is `AvailabilityDisabled`, so the provider is not registered and no
 library or creation route can reach it, until the operator experience ships with it.
 Only binaries built with the `testmode` tag, which only the integration harness uses,
@@ -1473,7 +1475,7 @@ The provider holds one composer per shape and no per-account state.
 
 | Concern | Rule |
 |---|---|
-| Boundary file | `ParseBoundaryFile` parses `aplane.boundary.v1` strictly: no unknown fields, duplicate keys, aliases, merge keys, extra documents, or non-string scalars. The grammar has no field that can carry TEAL, a template, a base key type, a fee, or runtime arguments. |
+| Boundary file | `boundary.ParseFile` parses `aplane.boundary.v1` strictly: no unknown fields, duplicate keys, aliases, merge keys, extra documents, or non-string scalars. The grammar has no field that can carry TEAL, a template, a base key type, a fee, or runtime arguments. |
 | Requests | `selectShape` is the security gate, for file and direct requests alike. The client sends public values, never a path or the YAML, and a cosigner name stays a name for the signer to resolve. |
 | Stored parameters | Canonical values include the selectors `spend_effects`, `rekey_authority`, and `list_encoding`, with `auto` resolved. The generator resolves stored values a second time, so they must select the same shape. Only a shape's declared parameters reach its composer, because those enter the program binding. |
 | Encoding | `auto` is inline through 10 recipients and Merkle from 11. Explicit inline stops at 30. The list holds at most 65,536 distinct nonzero addresses. |
@@ -1505,8 +1507,25 @@ unchanged, including on a signer that never approved the grammar.
 **Generation settings.** `boundary_require_admin_key` and `boundary_require_cosigner` in
 the product runtime config apply to this key type on every creation route, under the
 mutation lock, and generation rechecks them after a review. They do not reach existing
-accounts or expert templates. Their operator controls ship with the rest of the
-operator experience.
+accounts or expert templates. Both are writable admin settings, shown in apadmin's
+Settings panel on signer nodes.
+
+**Discovery.** `/keytypes` reports `per_key_contract: true` for a type with an
+`InstanceResolver`, with no signing flow or bounded profile, because each account has its
+own. It still names the cosigner component type, but does not turn the cosigner field
+into a required selector: a cosigner is optional here.
+
+**apadmin.** Choosing this type opens a preset screen. `boundary.Presets()` is the
+one definition behind the screen and sample boundary files; Load boundary file reads a
+file and sends its public values. Every parameterized request is prepared first. A bounded
+result goes to a review screen that keeps fingerprints and digests in a details view,
+then generation sends the exact resolved values with `expected_fingerprint` and
+`expected_boundary_digest`, so an edited reference cannot substitute an authority. Any
+other result generates as entered. After generation the operator can save a
+`aplane.boundary-receipt.v1` receipt beside where apadmin runs. It names the saved
+address, documents the account, and cannot restore it. The KeyType Library shows
+**Needs approval** and offers **Approve current grammar** in place of disable, so
+approval works while accounts use the type.
 
 ## See also
 

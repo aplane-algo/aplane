@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-package boundedaccount
+package boundary
 
 import (
 	"fmt"
@@ -9,18 +9,18 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/witness"
-	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	"github.com/aplane-algo/aplane/lsig/generictemplate"
 )
 
-// MaxBoundaryFileBytes bounds the file size before parsing. It leaves room for
+// MaxFileBytes bounds the file size before parsing. It leaves room for
 // a full list of 58-character addresses in block style.
-const MaxBoundaryFileBytes = 8 << 20
+const MaxFileBytes = 8 << 20
 
-// BoundaryFile is a parsed boundary file. It holds only what the file says: a
+// File is a parsed boundary file. It holds only what the file says: a
 // cosigner stays a name for the signer to resolve, and the admin key stays a path.
-type BoundaryFile struct {
+type File struct {
 	Schema     string   `yaml:"schema"`
 	Spend      []string `yaml:"spend"`
 	Recipients []string `yaml:"recipients"`
@@ -32,20 +32,20 @@ type BoundaryFile struct {
 	Cosigner *string `yaml:"cosigner"`
 }
 
-// ParseBoundaryFile strictly parses a boundary file. This grammar is closed: it
+// ParseFile strictly parses a boundary file. This grammar is closed: it
 // has no field for TEAL, a template, a base key type, a fee, or runtime arguments.
-// Parsing is not the security gate; selectShape applies the semantic rules to
+// Parsing is not the security gate: the provider applies the semantic rules to
 // every request, however it arrived.
-func ParseBoundaryFile(data []byte) (*BoundaryFile, error) {
-	if len(data) > MaxBoundaryFileBytes {
-		return nil, fmt.Errorf("boundary file exceeds %d bytes", MaxBoundaryFileBytes)
+func ParseFile(data []byte) (*File, error) {
+	if len(data) > MaxFileBytes {
+		return nil, fmt.Errorf("boundary file exceeds %d bytes", MaxFileBytes)
 	}
-	var file BoundaryFile
+	var file File
 	if err := generictemplate.DecodeStrictYAML(data, &file, generictemplate.RequireStringScalars); err != nil {
 		return nil, fmt.Errorf("boundary file: %w", err)
 	}
-	if file.Schema != BoundarySchemaV1 {
-		return nil, fmt.Errorf("boundary file: schema must be %s", BoundarySchemaV1)
+	if file.Schema != SchemaV1 {
+		return nil, fmt.Errorf("boundary file: schema must be %s", SchemaV1)
 	}
 	if len(file.Spend) == 0 {
 		return nil, fmt.Errorf("boundary file: spend is required")
@@ -80,7 +80,7 @@ func ParseBoundaryFile(data []byte) (*BoundaryFile, error) {
 // CreationParameters converts the file to flat creation parameters. It sends
 // public values, never a path or the original YAML, and leaves a cosigner name
 // for the signer's reference catalog to resolve.
-func (f *BoundaryFile) CreationParameters(directory string) (map[string]string, error) {
+func (f *File) CreationParameters(directory string) (map[string]string, error) {
 	params := map[string]string{
 		ParameterSpendEffects:   strings.Join(f.Spend, ","),
 		ParameterRecipients:     strings.Join(f.Recipients, ","),
@@ -97,25 +97,25 @@ func (f *BoundaryFile) CreationParameters(directory string) (map[string]string, 
 		if err != nil {
 			return nil, err
 		}
-		params[composeddsa.BoundedAdminPublicKeyParameter] = publicKey
+		params[boundedmeta.AdminPublicKeyParameter] = publicKey
 	}
 	return params, nil
 }
 
-// LoadBoundaryFile reads a boundary file and returns its creation parameters.
-func LoadBoundaryFile(path string) (map[string]string, error) {
+// LoadFile reads a boundary file and returns its creation parameters.
+func LoadFile(path string) (map[string]string, error) {
 	info, err := os.Stat(path)
 	if err != nil {
 		return nil, fmt.Errorf("read boundary file: %w", err)
 	}
-	if info.Size() > MaxBoundaryFileBytes {
-		return nil, fmt.Errorf("boundary file exceeds %d bytes", MaxBoundaryFileBytes)
+	if info.Size() > MaxFileBytes {
+		return nil, fmt.Errorf("boundary file exceeds %d bytes", MaxFileBytes)
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read boundary file: %w", err)
 	}
-	file, err := ParseBoundaryFile(data)
+	file, err := ParseFile(data)
 	if err != nil {
 		return nil, err
 	}

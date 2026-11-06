@@ -90,7 +90,7 @@ For a current ownership map and source-of-truth files, prefer `docs/ARCH_OVERVIE
 - `lsig/composeddsa/`: Runtime-compiled LogicSig composer for DSA-based schemes (guarded/composed signing)
 - `lsig/dsafamily/`: Shared DSA family registration descriptors and key generator
 - `lsig/generictemplate/`: YAML-backed provider for generic LogicSigs
-- `lsig/boundedaccount/`: General bounded key type `aplane.bounded.v1`: boundary file grammar, shapes, and provider
+- `lsig/boundedaccount/`: General bounded key type `aplane.bounded.v1`: shapes and provider; its family-neutral grammar, presets, and receipt are in `internal/boundary/`
 
 ### Other Directories
 - `docs/`: Architecture and usage documentation

@@ -468,3 +468,114 @@ func TestInstalledDisabledTemplateOpensEnableConfirmation(t *testing.T) {
 		}
 	}
 }
+
+func needsApprovalEntry() LibraryTemplateInfo {
+	return LibraryTemplateInfo{
+		KeyType:             "aplane.bounded.v1",
+		TemplateType:        libraryTypeCompiledProvider,
+		DisplayName:         "Bounded Account",
+		Installed:           true,
+		Enabled:             true,
+		NeedsApproval:       true,
+		ApprovedFingerprint: "1:" + strings.Repeat("a", 64),
+		CurrentFingerprint:  "1:" + strings.Repeat("b", 64),
+		ApprovalSummary:     "Recipient allowlists with an optional cosigner (42 account shapes).",
+	}
+}
+
+func TestNeedsApprovalReplacesTheUsualLibraryAction(t *testing.T) {
+	entry := needsApprovalEntry()
+	if got := templateLibraryStatus(entry); got != "Needs approval" {
+		t.Fatalf("status = %q", got)
+	}
+	if got := libraryActionVerb(entry); got != "approve current grammar" {
+		t.Fatalf("action = %q", got)
+	}
+	entry.NeedsApproval = false
+	if got := libraryActionVerb(entry); got != "disable" {
+		t.Fatalf("an approved type's action = %q, want disable", got)
+	}
+}
+
+func TestApprovalConfirmationKeepsItsButtonsAt80x24(t *testing.T) {
+	entry := needsApprovalEntry()
+	m := Model{viewState: ViewTemplateInstallConfirm, width: 80, height: 23, standalone: true, library: libraryState{pendingTemplate: &entry}}
+	for _, recorded := range []string{entry.ApprovedFingerprint, ""} {
+		entry.ApprovedFingerprint = recorded
+		view := m.renderTemplateInstallConfirm()
+		for _, want := range []string{"Approve Current Grammar", "42 account", "Existing accounts work", "APPROVE CURRENT GRAMMAR", "CANCEL", "1:bbbbbbbb"} {
+			if !strings.Contains(view, want) {
+				t.Errorf("confirmation lacks %q:\n%s", want, view)
+			}
+		}
+		if strings.Contains(view, "Panel lines") {
+			t.Errorf("confirmation scrolls at 80x24:\n%s", view)
+		}
+		if recorded == "" && !strings.Contains(view, "none on record") {
+			t.Errorf("a missing approval is not stated:\n%s", view)
+		}
+	}
+}
+
+func TestApprovalDetailsCarryTheFullFingerprintsAndGuidance(t *testing.T) {
+	entry := needsApprovalEntry()
+	details := renderCompiledProviderDetailsText(entry)
+	for _, want := range []string{entry.ApprovedFingerprint, entry.CurrentFingerprint, "Restarting does not approve", "apadmin keytype enable aplane.bounded.v1"} {
+		if !strings.Contains(details, want) {
+			t.Errorf("details lack %q:\n%s", want, details)
+		}
+	}
+}
+
+func TestNeedsApprovalStatusFitsTheLibraryRow(t *testing.T) {
+	entry := needsApprovalEntry()
+	m := Model{viewState: ViewTemplateLibrary, width: 80, height: 23, standalone: true, library: libraryState{templates: []LibraryTemplateInfo{entry}}}
+	view := m.renderTemplateLibrary()
+	if !strings.Contains(view, "Needs approval") {
+		t.Fatalf("status was cut off:\n%s", view)
+	}
+	for _, line := range strings.Split(view, "\n") {
+		if width := lipgloss.Width(line); width > 80 {
+			t.Errorf("line is %d wide: %q", width, line)
+		}
+	}
+}
+
+func TestApprovalSendsActivationNotDisable(t *testing.T) {
+	entry := needsApprovalEntry()
+	entry.ApprovedFingerprint = ""
+	m := Model{viewState: ViewTemplateLibrary, library: libraryState{templates: []LibraryTemplateInfo{entry}}}
+	next, _ := m.handleTemplateLibraryKeys(tea.KeyMsg{Type: tea.KeyEnter})
+	got := next.(Model)
+	if got.viewState != ViewTemplateInstallConfirm || got.library.pendingTemplate == nil {
+		t.Fatalf("view = %v, pending = %v", got.viewState, got.library.pendingTemplate)
+	}
+	if got := got.libraryActivatedStatus(entry.KeyType, false); !strings.Contains(got, "current grammar approved") {
+		t.Fatalf("status = %q", got)
+	}
+	if action := libraryActionFor(entry); action != libraryActionActivate {
+		t.Fatalf("a type needing approval gets action %d, want activate", action)
+	}
+	entry.NeedsApproval = false
+	if action := libraryActionFor(entry); action != libraryActionDeactivate {
+		t.Fatalf("an approved enabled type gets action %d, want deactivate", action)
+	}
+}
+
+func TestLibraryActionsForOtherEntriesAreUnchanged(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		entry LibraryTemplateInfo
+		want  libraryAction
+	}{
+		{"compiled disabled", LibraryTemplateInfo{TemplateType: libraryTypeCompiledProvider}, libraryActionActivate},
+		{"compiled enabled", LibraryTemplateInfo{TemplateType: libraryTypeCompiledProvider, Installed: true}, libraryActionDeactivate},
+		{"template not installed", LibraryTemplateInfo{TemplateType: "composed"}, libraryActionInstall},
+		{"template disabled", LibraryTemplateInfo{TemplateType: "composed", Installed: true}, libraryActionActivate},
+		{"template enabled", LibraryTemplateInfo{TemplateType: "composed", Installed: true, Enabled: true}, libraryActionDeactivate},
+	} {
+		if got := libraryActionFor(test.entry); got != test.want {
+			t.Errorf("%s: action = %d, want %d", test.name, got, test.want)
+		}
+	}
+}
