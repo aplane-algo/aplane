@@ -661,6 +661,36 @@ func protocolCosignerReference(item adminproto.CosignerReferenceInfo) protocol.C
 	}
 }
 
+func ProtocolPrepareGenerateResultMessage(id string, result adminproto.PrepareGenerateKeyResult) protocol.PrepareGenerateResultMessage {
+	message := protocol.PrepareGenerateResultMessage{
+		BaseMessage: protocol.BaseMessage{
+			Type: protocol.MsgTypePrepareGenerateResult,
+			ID:   id,
+		},
+		Success:       result.Success,
+		KeyType:       result.KeyType,
+		Parameters:    result.Parameters,
+		Fingerprint:   result.Fingerprint,
+		AdminKeyID:    result.AdminKeyID,
+		CosignerKeyID: result.CosignerKeyID,
+		Code:          result.Code,
+		Error:         result.Error,
+	}
+	if profile := result.Bounded; profile != nil {
+		message.Bounded = &protocol.PreparedBoundedProfile{
+			Contract:         profile.Contract,
+			SpendEffects:     profile.SpendEffects,
+			MaxFee:           profile.MaxFee,
+			Layer3Policy:     profile.Layer3Policy,
+			CosignerRequired: profile.CosignerRequired,
+		}
+		for _, operation := range profile.AdminOperations {
+			message.Bounded.AdminOperations = append(message.Bounded.AdminOperations, protocol.PreparedAdminOperation(operation))
+		}
+	}
+	return message
+}
+
 func ProtocolGenerateResultMessage(id string, result adminproto.GenerateKeyResult) protocol.GenerateResultMessage {
 	// Mnemonic and WordCount remain in the wire schema for client
 	// compatibility but are never populated: recovery material does not cross

@@ -17,7 +17,7 @@ const (
 
 const (
 	AdminProtocolVersionMajor = 7
-	AdminProtocolVersionMinor = 1
+	AdminProtocolVersionMinor = 2
 )
 
 // ProtocolVersion is the admin IPC protocol version shape surfaced during
@@ -100,18 +100,20 @@ const (
 	MsgTypeRevokeAllEnrolledKeysResult = "revoke_all_enrolled_keys_result"
 
 	// Key management message types
-	MsgTypeListKeys       = "list_keys"
-	MsgTypeKeysList       = "keys_list"
-	MsgTypeGenerateKey    = "generate_key"
-	MsgTypeGenerateResult = "generate_result"
-	MsgTypeDeleteKey      = "delete_key"
-	MsgTypeDeleteResult   = "delete_result"
-	MsgTypeExportKey      = "export_key"
-	MsgTypeExportResult   = "export_result"
-	MsgTypeImportKey      = "import_key"
-	MsgTypeImportResult   = "import_result"
-	MsgTypeGetKeyDetails  = "get_key_details"
-	MsgTypeKeyDetails     = "key_details"
+	MsgTypeListKeys              = "list_keys"
+	MsgTypeKeysList              = "keys_list"
+	MsgTypePrepareGenerateKey    = "prepare_generate_key"
+	MsgTypePrepareGenerateResult = "prepare_generate_result"
+	MsgTypeGenerateKey           = "generate_key"
+	MsgTypeGenerateResult        = "generate_result"
+	MsgTypeDeleteKey             = "delete_key"
+	MsgTypeDeleteResult          = "delete_result"
+	MsgTypeExportKey             = "export_key"
+	MsgTypeExportResult          = "export_result"
+	MsgTypeImportKey             = "import_key"
+	MsgTypeImportResult          = "import_result"
+	MsgTypeGetKeyDetails         = "get_key_details"
+	MsgTypeKeyDetails            = "key_details"
 
 	// Template library and key type metadata message types
 	MsgTypeListLibraryTemplates          = "list_library_templates"
@@ -749,12 +751,55 @@ type KeysListMessage struct {
 	Keys []AdminKeyInfo `json:"keys"`
 }
 
+// PrepareGenerateKeyMessage asks what a generation request would create. It
+// creates nothing, and is available only on local IPC.
+type PrepareGenerateKeyMessage struct {
+	BaseMessage
+	KeyType    string            `json:"key_type"`
+	Parameters map[string]string `json:"parameters,omitempty"`
+}
+
+// PreparedAdminOperation is one administrative operation of a prepared account.
+type PreparedAdminOperation struct {
+	Kind          string `json:"kind"`
+	Authorization string `json:"authorization"`
+	PolicyGate    string `json:"policy_gate"`
+}
+
+// PreparedBoundedProfile is the bounded contract of a prepared account.
+type PreparedBoundedProfile struct {
+	Contract         string                   `json:"contract"`
+	SpendEffects     []string                 `json:"spend_effects"`
+	MaxFee           uint64                   `json:"max_fee"`
+	AdminOperations  []PreparedAdminOperation `json:"admin_operations"`
+	Layer3Policy     string                   `json:"layer3_policy"`
+	CosignerRequired bool                     `json:"cosigner_required,omitempty"`
+}
+
+// PrepareGenerateResultMessage describes the account a request would create. It
+// has no address, because the spending key does not exist yet.
+type PrepareGenerateResultMessage struct {
+	BaseMessage
+	Success       bool                    `json:"success"`
+	KeyType       string                  `json:"key_type,omitempty"`
+	Parameters    map[string]string       `json:"parameters,omitempty"`
+	Fingerprint   string                  `json:"fingerprint,omitempty"`
+	Bounded       *PreparedBoundedProfile `json:"bounded,omitempty"`
+	AdminKeyID    string                  `json:"admin_key_id,omitempty"`
+	CosignerKeyID string                  `json:"cosigner_key_id,omitempty"`
+	Code          string                  `json:"code,omitempty"`
+	Error         string                  `json:"error,omitempty"`
+}
+
 // GenerateKeyMessage requests generation of a new key
 type GenerateKeyMessage struct {
 	BaseMessage
-	KeyType    string            `json:"key_type"` // Versioned key type: "ed25519", "aplane.falcon1024.v1", "aplane.htlc.v1", etc.
-	Name       string            `json:"name,omitempty"`
-	Parameters map[string]string `json:"parameters,omitempty"` // Template parameters (for generic lsigs like timed-allowlist)
+	KeyType string `json:"key_type"` // Versioned key type: "ed25519", "aplane.falcon1024.v1", "aplane.htlc.v1", etc.
+	Name    string `json:"name,omitempty"`
+	// ExpectedFingerprint comes from prepare_generate_result. Generation rejects
+	// the request if the definition has changed since it was reviewed.
+	ExpectedFingerprint string            `json:"expected_fingerprint,omitempty"`
+	Parameters          map[string]string `json:"parameters,omitempty"` // Template parameters (for generic lsigs like timed-allowlist)
 }
 
 // GenerateResultMessage contains the result of key generation

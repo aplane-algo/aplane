@@ -60,6 +60,8 @@ func TestMessageTypeConstantsAreUnique(t *testing.T) {
 		MsgTypeRevokeAllEnrolledKeysResult,
 		MsgTypeListKeys,
 		MsgTypeKeysList,
+		MsgTypePrepareGenerateKey,
+		MsgTypePrepareGenerateResult,
 		MsgTypeGenerateKey,
 		MsgTypeGenerateResult,
 		MsgTypeDeleteKey,
@@ -145,10 +147,11 @@ func TestMessageTypeConstantsAreUnique(t *testing.T) {
 
 // 7.0 makes apply_policy name the composite snapshot it was reviewed
 // against, which a 6.x client does not send. 7.1 adds native mnemonic export
-// (export_result) and key_details.mnemonic_exportable.
+// (export_result) and key_details.mnemonic_exportable. 7.2 adds
+// prepare_generate_key and generate_key.expected_fingerprint.
 func TestCurrentAdminProtocolVersionIsV7(t *testing.T) {
-	if got := CurrentAdminProtocolVersion(); got != (ProtocolVersion{Major: 7, Minor: 1}) {
-		t.Fatalf("CurrentAdminProtocolVersion() = %+v, want 7.1", got)
+	if got := CurrentAdminProtocolVersion(); got != (ProtocolVersion{Major: 7, Minor: 2}) {
+		t.Fatalf("CurrentAdminProtocolVersion() = %+v, want 7.2", got)
 	}
 }
 

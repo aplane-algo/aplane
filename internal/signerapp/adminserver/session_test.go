@@ -64,6 +64,9 @@ type stubServices struct {
 	activateKeyTypeCalls   int
 	deactivateKeyTypeCalls int
 	listKeyTypesCalls      int
+	prepareGenerateCalls   int
+	lastPrepareGenerate    adminproto.PrepareGenerateKeyRequest
+	prepareGenerateResult  adminproto.PrepareGenerateKeyResult
 	generateKeyCalls       int
 	importKeyCalls         int
 	backupCalls            int
@@ -229,6 +232,11 @@ func (s *stubServices) ListKeys() ([]adminproto.KeyInfo, error) {
 }
 func (s *stubServices) GetKeyDetails(req adminproto.GetKeyDetailsRequest) adminproto.GetKeyDetailsResult {
 	return adminproto.GetKeyDetailsResult{}
+}
+func (s *stubServices) PrepareGenerateKey(req adminproto.PrepareGenerateKeyRequest) adminproto.PrepareGenerateKeyResult {
+	s.prepareGenerateCalls++
+	s.lastPrepareGenerate = req
+	return s.prepareGenerateResult
 }
 func (s *stubServices) GenerateKey(ctx context.Context, req adminproto.GenerateKeyRequest) adminproto.GenerateKeyResult {
 	s.generateKeyCalls++

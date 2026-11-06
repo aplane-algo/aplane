@@ -30,6 +30,39 @@ func ProjectGenerateIPC(result *GenerateResult, err *Error) adminproto.GenerateK
 	}
 }
 
+// ProjectPrepareGenerateIPC maps a prepared request to the admin-domain result.
+func ProjectPrepareGenerateIPC(prepared *PreparedGeneration, err *Error) adminproto.PrepareGenerateKeyResult {
+	if err != nil {
+		return adminproto.PrepareGenerateKeyResult{Code: generateIPCCode(err), Error: err.Message}
+	}
+	result := adminproto.PrepareGenerateKeyResult{
+		Success:       true,
+		KeyType:       prepared.KeyType,
+		Parameters:    prepared.Parameters,
+		Fingerprint:   prepared.Fingerprint,
+		AdminKeyID:    prepared.AdminKeyID,
+		CosignerKeyID: prepared.CosignerKeyID,
+	}
+	if metadata := prepared.Bounded; metadata != nil {
+		profile := &adminproto.PreparedBoundedProfile{
+			Contract:         metadata.Contract,
+			SpendEffects:     metadata.SpendEffects,
+			MaxFee:           metadata.MaxFee,
+			Layer3Policy:     metadata.Layer3Policy,
+			CosignerRequired: metadata.Cosigner != nil,
+		}
+		for _, operation := range metadata.AdminOperations {
+			profile.AdminOperations = append(profile.AdminOperations, adminproto.PreparedAdminOperation{
+				Kind:          operation.Kind,
+				Authorization: operation.Authorization,
+				PolicyGate:    operation.PolicyGate,
+			})
+		}
+		result.Bounded = profile
+	}
+	return result
+}
+
 func ProjectDeleteIPC(err *Error) adminproto.DeleteKeyResult {
 	if err != nil {
 		return adminproto.DeleteKeyResult{

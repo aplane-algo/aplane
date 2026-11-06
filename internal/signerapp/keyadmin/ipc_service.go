@@ -26,8 +26,13 @@ func (s IPCService) GetKeyDetails(req adminproto.GetKeyDetailsRequest) adminprot
 	return ProjectKeyDetailsIPC(s.Service.GetKeyDetails(req.Address))
 }
 
+func (s IPCService) PrepareGenerateKey(req adminproto.PrepareGenerateKeyRequest) adminproto.PrepareGenerateKeyResult {
+	prepared, err := s.Service.PrepareGenerateKey(req.KeyType, req.Parameters)
+	return ProjectPrepareGenerateIPC(prepared, err)
+}
+
 func (s IPCService) GenerateKey(ctx context.Context, req adminproto.GenerateKeyRequest) adminproto.GenerateKeyResult {
-	genResult, err := s.Service.GenerateKey(ctx, req.KeyType, req.Parameters, s.GenerateGenericLSig)
+	genResult, err := s.Service.GenerateReviewedKey(ctx, req.KeyType, req.Parameters, req.ExpectedFingerprint, s.GenerateGenericLSig)
 	ipcResult := ProjectGenerateIPC(genResult, err)
 	if !ipcResult.Success {
 		return ipcResult

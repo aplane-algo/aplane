@@ -224,3 +224,65 @@ func TestSessionExportSendsUndeliveredFailure(t *testing.T) {
 		t.Fatalf("failure reply = %+v", reply)
 	}
 }
+
+func TestPrepareGenerateKeyIsLocalOnly(t *testing.T) {
+	for _, transport := range []string{TransportSSH, TransportUnknown} {
+		t.Run(transport, func(t *testing.T) {
+			session, conn, svc := newKeyTransportTestSession(transport)
+			session.HandlePrepareGenerateKey(&protocol.PrepareGenerateKeyMessage{
+				BaseMessage: protocol.BaseMessage{ID: "prepare-remote", Type: protocol.MsgTypePrepareGenerateKey},
+				KeyType:     "ed25519",
+			})
+			if svc.prepareGenerateCalls != 0 {
+				t.Fatalf("prepare calls = %d, want 0", svc.prepareGenerateCalls)
+			}
+			msg := decodeProtocolError(t, conn)
+			if msg.Code != protocol.ErrCodeAuthorizationDenied || !strings.Contains(msg.Error, "local AP Admin") {
+				t.Fatalf("error = %+v, want local IPC guidance", msg)
+			}
+		})
+	}
+}
+
+func TestPrepareGenerateKeyOverIPC(t *testing.T) {
+	session, conn, svc := newKeyTransportTestSession(TransportIPC)
+	svc.prepareGenerateResult = adminproto.PrepareGenerateKeyResult{
+		Success: true, KeyType: "test.bounded.v1", Fingerprint: "1:abc", CosignerKeyID: "COSIGNER",
+		Bounded: &adminproto.PreparedBoundedProfile{
+			Contract: "bounded1", SpendEffects: []string{"pay"}, MaxFee: 10_000, Layer3Policy: "merkle_allowlist", CosignerRequired: true,
+			AdminOperations: []adminproto.PreparedAdminOperation{{Kind: "rekey", Authorization: "admin_key", PolicyGate: "none"}},
+		},
+	}
+	session.HandlePrepareGenerateKey(&protocol.PrepareGenerateKeyMessage{
+		BaseMessage: protocol.BaseMessage{ID: "prepare-ipc", Type: protocol.MsgTypePrepareGenerateKey},
+		KeyType:     "test.bounded.v1",
+		Parameters:  map[string]string{"cosigner": "ops"},
+	})
+	if svc.prepareGenerateCalls != 1 || svc.lastPrepareGenerate.Parameters["cosigner"] != "ops" {
+		t.Fatalf("prepare calls = %d request = %+v", svc.prepareGenerateCalls, svc.lastPrepareGenerate)
+	}
+	var msg protocol.PrepareGenerateResultMessage
+	decodeOnlyMessage(t, conn, &msg)
+	if !msg.Success || msg.Type != protocol.MsgTypePrepareGenerateResult || msg.ID != "prepare-ipc" || msg.Fingerprint != "1:abc" || msg.CosignerKeyID != "COSIGNER" {
+		t.Fatalf("response = %+v", msg)
+	}
+	if msg.Bounded == nil || !msg.Bounded.CosignerRequired || len(msg.Bounded.AdminOperations) != 1 ||
+		msg.Bounded.AdminOperations[0].PolicyGate != "none" || msg.Bounded.Layer3Policy != "merkle_allowlist" {
+		t.Fatalf("bounded = %+v", msg.Bounded)
+	}
+}
+
+func TestGenerateKeyPassesTheExpectedFingerprint(t *testing.T) {
+	session, conn, svc := newKeyTransportTestSession(TransportIPC)
+	svc.generateKeyResult = adminproto.GenerateKeyResult{Success: true, Address: "ADDR", KeyType: "ed25519"}
+	session.HandleGenerateKey(&protocol.GenerateKeyMessage{
+		BaseMessage:         protocol.BaseMessage{ID: "generate-reviewed", Type: protocol.MsgTypeGenerateKey},
+		KeyType:             "ed25519",
+		ExpectedFingerprint: "1:abc",
+	})
+	if svc.lastGenerateKey.ExpectedFingerprint != "1:abc" {
+		t.Fatalf("generate request = %+v", svc.lastGenerateKey)
+	}
+	var msg protocol.GenerateResultMessage
+	decodeOnlyMessage(t, conn, &msg)
+}

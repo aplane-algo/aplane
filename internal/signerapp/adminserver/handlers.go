@@ -1010,6 +1010,26 @@ func (s *Session) HandleSignResponse(msg *protocol.SignResponseMessage) {
 	}
 }
 
+// HandlePrepareGenerateKey reports what a generation request would create, for
+// apadmin's review screen.
+func (s *Session) HandlePrepareGenerateKey(msg *protocol.PrepareGenerateKeyMessage) {
+	if s.requireUnlockedRuntime(msg.ID) == nil {
+		return
+	}
+	resource := auth.Resource{Type: "key"}
+	if !s.authorize(msg.ID, auth.ActionKeysGenerate, resource) {
+		return
+	}
+	if !s.requireLocalTransport(msg.ID, auth.ActionKeysGenerate, resource, "generation preparation is only available on local AP Admin") {
+		return
+	}
+	result := s.keyServices.PrepareGenerateKey(adminproto.PrepareGenerateKeyRequest{
+		KeyType:    msg.KeyType,
+		Parameters: msg.Parameters,
+	})
+	_ = s.WriteJSON(ProtocolPrepareGenerateResultMessage(msg.ID, result))
+}
+
 func (s *Session) HandleGenerateKey(msg *protocol.GenerateKeyMessage) {
 	if s.requireUnlockedRuntime(msg.ID) == nil {
 		return
@@ -1019,9 +1039,10 @@ func (s *Session) HandleGenerateKey(msg *protocol.GenerateKeyMessage) {
 		return
 	}
 	gen := s.keyServices.GenerateKey(s.auditContext(), adminproto.GenerateKeyRequest{
-		KeyType:    msg.KeyType,
-		Name:       msg.Name,
-		Parameters: msg.Parameters,
+		KeyType:             msg.KeyType,
+		Name:                msg.Name,
+		Parameters:          msg.Parameters,
+		ExpectedFingerprint: msg.ExpectedFingerprint,
 	})
 	_ = s.WriteJSON(ProtocolGenerateResultMessage(msg.ID, gen))
 }
@@ -1079,7 +1100,7 @@ func (s *Session) HandleImportKey(msg *protocol.ImportKeyMessage) {
 	if !s.authorize(msg.ID, auth.ActionKeysImport, resource) {
 		return
 	}
-	if !s.requireLocalImportTransport(msg.ID, auth.ActionKeysImport, resource) {
+	if !s.requireLocalTransport(msg.ID, auth.ActionKeysImport, resource, "key import is only available on local AP Admin") {
 		return
 	}
 	imp := s.keyServices.ImportKey(s.auditContext(), adminproto.ImportKeyRequest{
@@ -1090,11 +1111,10 @@ func (s *Session) HandleImportKey(msg *protocol.ImportKeyMessage) {
 	_ = s.WriteJSON(ProtocolImportResultMessage(msg.ID, imp))
 }
 
-func (s *Session) requireLocalImportTransport(requestID string, action auth.Action, resource auth.Resource) bool {
+func (s *Session) requireLocalTransport(requestID string, action auth.Action, resource auth.Resource, reason string) bool {
 	if s.Transport() == TransportIPC {
 		return true
 	}
-	const reason = "key import is only available on local AP Admin"
 	s.logAuthorizationDenied(s.Identity(), action, resource, reason)
 	_ = s.SendError(requestID, protocol.ErrCodeAuthorizationDenied, reason)
 	return false
