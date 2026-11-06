@@ -17,7 +17,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/algo"
 	boundedprogram "github.com/aplane-algo/aplane/internal/boundedadmin/program"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
-	"github.com/aplane-algo/aplane/library/templates"
+	"github.com/aplane-algo/aplane/library/retired"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	falcon1024 "github.com/aplane-algo/aplane/lsig/falcon1024"
 	falconfamily "github.com/aplane-algo/aplane/lsig/falcon1024/family"
@@ -25,7 +25,7 @@ import (
 
 func TestBundledFalconAdminAllowlistV1Contract(t *testing.T) {
 	falcon1024.RegisterClient()
-	data, err := templates.ReadFile("aplane.falcon1024-allowlist-lock.v1.yaml")
+	data, err := retired.ReadFile("aplane.falcon1024-allowlist-lock.v1.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,7 +143,7 @@ func TestBundledFalconAdminAllowlistV1Contract(t *testing.T) {
 
 func TestBundledFalconAdminAllowlistV1RejectsAssetAndAmountParameters(t *testing.T) {
 	falcon1024.RegisterClient()
-	data, err := templates.ReadFile("aplane.falcon1024-allowlist-lock.v1.yaml")
+	data, err := retired.ReadFile("aplane.falcon1024-allowlist-lock.v1.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,7 +174,7 @@ func TestBundledFalconAdminAllowlistV1RejectsAssetAndAmountParameters(t *testing
 
 func TestBundledFalconAdminAllowlistV1MaximumBudget(t *testing.T) {
 	falcon1024.RegisterClient()
-	data, err := templates.ReadFile("aplane.falcon1024-allowlist-lock.v1.yaml")
+	data, err := retired.ReadFile("aplane.falcon1024-allowlist-lock.v1.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}

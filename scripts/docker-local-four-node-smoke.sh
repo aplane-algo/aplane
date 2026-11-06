@@ -1496,7 +1496,7 @@ import_corridor_template() {
     local out
     if ! out="$(docker_exec_as_tester "$SIGNER_CONTAINER" ". /home/$TEST_USER/aplane/apenv.sh && \
         APSIGNER_PASSPHRASE='$TEST_PASSPHRASE' apadmin template import \
-        /home/$TEST_USER/aplane/apsigner/library/templates/aplane.corridor.v1.yaml 2>&1")"; then
+        /home/$TEST_USER/aplane/apsigner/library/retired/aplane.corridor.v1.yaml 2>&1")"; then
         printf '%s\n' "$out" >&2
         die "failed to import Corridor template on signer"
     fi

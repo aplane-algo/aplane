@@ -69,6 +69,8 @@ const (
 	MsgTypeInstallLibraryTemplateResult  = protocol.MsgTypeInstallLibraryTemplateResult
 	MsgTypeShowLibraryTemplate           = protocol.MsgTypeShowLibraryTemplate
 	MsgTypeShowLibraryTemplateResult     = protocol.MsgTypeShowLibraryTemplateResult
+	MsgTypeShowInstalledTemplate         = protocol.MsgTypeShowInstalledTemplate
+	MsgTypeShowInstalledTemplateResult   = protocol.MsgTypeShowInstalledTemplateResult
 	MsgTypeActivateKeyType               = protocol.MsgTypeActivateKeyType
 	MsgTypeActivateKeyTypeResult         = protocol.MsgTypeActivateKeyTypeResult
 	MsgTypeDeactivateKeyType             = protocol.MsgTypeDeactivateKeyType
@@ -162,6 +164,8 @@ type (
 	InstallLibraryTemplateResultMessage  = protocol.InstallLibraryTemplateResultMessage
 	ShowLibraryTemplateMessage           = protocol.ShowLibraryTemplateMessage
 	ShowLibraryTemplateResultMessage     = protocol.ShowLibraryTemplateResultMessage
+	ShowInstalledTemplateMessage         = protocol.ShowInstalledTemplateMessage
+	ShowInstalledTemplateResultMessage   = protocol.ShowInstalledTemplateResultMessage
 	ActivateKeyTypeMessage               = protocol.ActivateKeyTypeMessage
 	ActivateKeyTypeResultMessage         = protocol.ActivateKeyTypeResultMessage
 	DeactivateKeyTypeMessage             = protocol.DeactivateKeyTypeMessage

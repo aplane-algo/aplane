@@ -9,6 +9,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/aplane-algo/aplane/internal/boundary"
 	"github.com/aplane-algo/aplane/internal/keytypeux"
 	"github.com/aplane-algo/aplane/internal/protocol"
 )
@@ -36,7 +37,7 @@ func (m Model) renderTemplateLibrary() string {
 		sb.WriteString(errorStyle.Render(m.library.installError))
 		sb.WriteString("\n\n")
 	} else {
-		sb.WriteString(subtitleStyle.Render("Optional KeyTypes available for this identity"))
+		sb.WriteString(subtitleStyle.Render(m.templateLibrarySubtitle()))
 		sb.WriteString("\n\n")
 	}
 
@@ -91,6 +92,16 @@ func (m Model) renderTemplateLibrary() string {
 	sb.WriteString(m.renderTemplateDetails(m.library.templates[selected]))
 
 	return sb.String()
+}
+
+// templateLibrarySubtitle points at the bounded presets, which are not library
+// rows: aplane.bounded.v1 is always on, so a row could not offer to disable it.
+// Cosigner nodes hold no bounded accounts.
+func (m Model) templateLibrarySubtitle() string {
+	if m.isCosignerNode() {
+		return "Optional KeyTypes available for this identity"
+	}
+	return "Optional KeyTypes. For bounded presets, generate " + boundary.KeyTypeV1 + "."
 }
 
 func (m Model) renderTemplateDetails(tmpl LibraryTemplateInfo) string {

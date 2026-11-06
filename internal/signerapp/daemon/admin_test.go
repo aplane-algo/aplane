@@ -311,7 +311,7 @@ func registerLibraryFalconTemplateForTest(t *testing.T, filename string) {
 	t.Helper()
 	RegisterProviders()
 
-	data, err := os.ReadFile(filepath.Join("..", "..", "..", "library", "templates", filename))
+	data, err := os.ReadFile(filepath.Join("..", "..", "..", "library", "retired", filename))
 	if err != nil {
 		t.Fatalf("read template library file %s: %v", filename, err)
 	}

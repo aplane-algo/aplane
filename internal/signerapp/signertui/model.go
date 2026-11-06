@@ -423,6 +423,7 @@ type libraryState struct {
 	detailsKeyType       string
 	detailsTemplateType  string
 	detailsSourcePath    string
+	detailsInstalled     bool
 	detailsSourceSHA256  string
 	detailsSourceModTime int64
 	detailsContent       string

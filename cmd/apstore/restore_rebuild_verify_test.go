@@ -502,7 +502,7 @@ func TestRestoreKeyDoesNotInstallShippedLibraryComposedTemplateWithoutBundle(t *
 	bytecode := saltedLogicSigBytecodeForTest()
 	address := logicSigAddressForTestForBytes(t, bytecode)
 
-	templateYAML, err := os.ReadFile(filepath.Join("..", "..", "library", "templates", "aplane.falcon1024-timelock.v1.yaml"))
+	templateYAML, err := os.ReadFile(filepath.Join("..", "..", "library", "retired", "aplane.falcon1024-timelock.v1.yaml"))
 	if err != nil {
 		t.Fatalf("ReadFile(aplane.falcon1024-timelock.v1.yaml) error = %v", err)
 	}

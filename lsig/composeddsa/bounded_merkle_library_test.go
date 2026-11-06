@@ -12,7 +12,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
-	"github.com/aplane-algo/aplane/library/templates"
+	"github.com/aplane-algo/aplane/library/retired"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	falcon1024 "github.com/aplane-algo/aplane/lsig/falcon1024"
 	falconfamily "github.com/aplane-algo/aplane/lsig/falcon1024/family"
@@ -20,7 +20,7 @@ import (
 
 func TestBundledBoundedMerkleAllowlistGolden(t *testing.T) {
 	falcon1024.RegisterClient()
-	data, err := templates.ReadFile("aplane.falcon1024-allowlist.v2.yaml")
+	data, err := retired.ReadFile("aplane.falcon1024-allowlist.v2.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}

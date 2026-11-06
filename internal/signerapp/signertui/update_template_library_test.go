@@ -4,6 +4,7 @@
 package tui
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -186,6 +187,97 @@ func TestTemplateLibraryViewKeyOpensDetailsViewerForYAMLEntry(t *testing.T) {
 	closed, _ := got.handleLibraryTemplateDetailsKeys(tea.KeyMsg{Type: tea.KeyEsc})
 	if closed.(Model).viewState != ViewTemplateLibrary {
 		t.Fatalf("viewState after closing library details = %v, want ViewTemplateLibrary", closed.(Model).viewState)
+	}
+}
+
+func TestTemplateLibraryViewKeyShowsInstalledTemplateWithoutLibraryFile(t *testing.T) {
+	keyType := "aplane.corridor.v1"
+	m := Model{
+		viewState: ViewTemplateLibrary,
+		library: libraryState{selectedTemplate: 0, templates: []protocol.LibraryTemplateInfo{{
+			KeyType:      keyType,
+			TemplateType: "composed",
+			Installed:    true,
+		}}},
+	}
+
+	next, _ := m.handleTemplateLibraryKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
+	opened := next.(Model)
+	if opened.viewState != ViewLibraryTemplateDetails || !opened.library.detailsLoading || opened.library.installError != "" {
+		t.Fatalf("t did not open the installed copy: view=%v loading=%v error=%q",
+			opened.viewState, opened.library.detailsLoading, opened.library.installError)
+	}
+
+	shown, _ := opened.Update(ShowLibraryTemplateResultMsg{
+		Success: true, KeyType: keyType, TemplateType: "composed", TemplateYAML: []byte("schema_version: 2\n"),
+	})
+	view := shown.(Model).renderLibraryTemplateDetails()
+	for _, want := range []string{"Installed YAML: ", "schema_version: 2"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("details missing %q:\n%s", want, view)
+		}
+	}
+
+	// A failed lookup carries no template type, and must not stay on Loading.
+	failed, _ := opened.Update(ShowLibraryTemplateResultMsg{KeyType: keyType, Error: "template not found"})
+	if got := failed.(Model); got.library.detailsLoading || got.library.detailsError != "template not found" {
+		t.Fatalf("failed lookup: loading=%v error=%q", got.library.detailsLoading, got.library.detailsError)
+	}
+}
+
+func TestInstalledTemplateReplyReachesTheDetailsView(t *testing.T) {
+	raw, err := json.Marshal(ShowInstalledTemplateResultMessage{
+		BaseMessage:  BaseMessage{Type: MsgTypeShowInstalledTemplateResult},
+		Success:      true,
+		KeyType:      "aplane.corridor.v1",
+		TemplateType: "composed",
+		TemplateYAML: []byte("schema_version: 2\n"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	decode, ok := signerMessageDecoders[MsgTypeShowInstalledTemplateResult]
+	if !ok {
+		t.Fatal("show_installed_template_result has no decoder, so the view would stay on Loading")
+	}
+	decoded, err := decode(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok := decoded.(ShowLibraryTemplateResultMsg)
+	if !ok || !got.Success || got.KeyType != "aplane.corridor.v1" || string(got.TemplateYAML) != "schema_version: 2\n" {
+		t.Fatalf("decoded = %#v", decoded)
+	}
+}
+
+func TestTemplateLibraryViewKeyRefusesEntryWithNothingToShow(t *testing.T) {
+	m := Model{
+		viewState: ViewTemplateLibrary,
+		library: libraryState{selectedTemplate: 0, templates: []protocol.LibraryTemplateInfo{{
+			KeyType:      "test.generic-policy.v1",
+			TemplateType: "generic",
+		}}},
+	}
+	next, _ := m.handleTemplateLibraryKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
+	got := next.(Model)
+	if got.viewState != ViewTemplateLibrary || !strings.Contains(got.library.installError, "no plaintext library YAML") {
+		t.Fatalf("view=%v error=%q", got.viewState, got.library.installError)
+	}
+}
+
+func TestTemplateLibraryPointsSignerNodesAtBoundedPresets(t *testing.T) {
+	entries := []protocol.LibraryTemplateInfo{{KeyType: "aplane.htlc.v1", TemplateType: "generic"}}
+	signer := Model{width: 80, height: 23, library: libraryState{templates: entries}}
+	if view := signer.renderTemplateLibrary(); !strings.Contains(view, "For bounded presets, generate aplane.bounded.v1.") {
+		t.Fatalf("signer library does not name the presets:\n%s", view)
+	}
+	if width := lipgloss.Width(signer.templateLibrarySubtitle()); width > 76 {
+		t.Fatalf("subtitle is %d wide, wider than the 80-column body", width)
+	}
+	cosigner := signer
+	cosigner.initialNodeRole = "cosigner"
+	if view := cosigner.renderTemplateLibrary(); strings.Contains(view, "bounded") {
+		t.Fatalf("cosigner library names presets it cannot generate:\n%s", view)
 	}
 }
 

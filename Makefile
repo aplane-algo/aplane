@@ -317,7 +317,7 @@ release-local: bin-amd64 bin-arm64 bin-windows-amd64 bundled-plugins-linux
 	for arch in amd64 arm64; do \
 		archive="aplane_$${VERSION}_linux_$${arch}.tar.gz"; \
 		rm -rf dist/staging; \
-		mkdir -p dist/staging/aplane/bin dist/staging/aplane/installer/scripts dist/staging/aplane/library/templates dist/staging/aplane/plugins.available; \
+		mkdir -p dist/staging/aplane/bin dist/staging/aplane/installer/scripts dist/staging/aplane/library/templates dist/staging/aplane/library/retired dist/staging/aplane/plugins.available; \
 		cp bin/$${arch}/apshell bin/$${arch}/aprekey bin/$${arch}/apsigner bin/$${arch}/apadmin \
 		   bin/$${arch}/apconsole \
 		   bin/$${arch}/apapprover bin/$${arch}/apstore bin/$${arch}/appass \
@@ -332,6 +332,7 @@ release-local: bin-amd64 bin-arm64 bin-windows-amd64 bundled-plugins-linux
 		   dist/staging/aplane/installer/; \
 		cp installer/scripts/systemd-setup.sh installer/scripts/aplane-env-audit.sh installer/scripts/config-mcp.sh dist/staging/aplane/installer/scripts/; \
 		cp library/templates/README.md library/templates/*.yaml dist/staging/aplane/library/templates/; \
+		cp library/retired/README.md library/retired/*.yaml dist/staging/aplane/library/retired/; \
 		scripts/stage-bundled-plugins.sh --os linux --arch $${arch} dist/staging/aplane/plugins.available; \
 		cp install.sh uninstall.sh dist/staging/aplane/; \
 		write_release_metadata dist/staging/aplane; \
@@ -344,7 +345,7 @@ release-local: bin-amd64 bin-arm64 bin-windows-amd64 bundled-plugins-linux
 		darwinarch=$$(basename "$$darwindir" | sed 's/darwin-//'); \
 		archive="aplane_$${VERSION}_darwin_$${darwinarch}.tar.gz"; \
 		rm -rf dist/staging; \
-		mkdir -p dist/staging/aplane/bin dist/staging/aplane/installer/scripts dist/staging/aplane/library/templates dist/staging/aplane/plugins.available; \
+		mkdir -p dist/staging/aplane/bin dist/staging/aplane/installer/scripts dist/staging/aplane/library/templates dist/staging/aplane/library/retired dist/staging/aplane/plugins.available; \
 		cp $${darwindir}apshell $${darwindir}aprekey $${darwindir}apsigner $${darwindir}apadmin \
 		   $${darwindir}apconsole \
 		   $${darwindir}apapprover $${darwindir}apstore $${darwindir}appass \
@@ -355,6 +356,7 @@ release-local: bin-amd64 bin-arm64 bin-windows-amd64 bundled-plugins-linux
 		   $${darwindir}applugin-checksum dist/staging/aplane/bin/; \
 		cp installer/scripts/aplane-env-audit.sh installer/scripts/config-mcp.sh dist/staging/aplane/installer/scripts/; \
 		cp library/templates/README.md library/templates/*.yaml dist/staging/aplane/library/templates/; \
+		cp library/retired/README.md library/retired/*.yaml dist/staging/aplane/library/retired/; \
 		scripts/stage-bundled-plugins.sh --os darwin --arch $${darwinarch} dist/staging/aplane/plugins.available; \
 		cp install.sh uninstall.sh dist/staging/aplane/; \
 		write_release_metadata dist/staging/aplane; \

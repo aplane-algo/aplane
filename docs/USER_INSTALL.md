@@ -530,7 +530,8 @@ aplane/
 ├── installer/      # systemd files, sudoers template, and installer helper scripts
 │   └── scripts/    # systemd, environment-audit, and MCP config helpers
 ├── library/
-│   └── templates/  # Template library copied into $APSIGNER_DATA/library/templates
+│   ├── templates/  # Template library copied into $APSIGNER_DATA/library/templates
+│   └── retired/    # Retired templates copied into $APSIGNER_DATA/library/retired
 ├── plugins.available/ # Bundled plugin catalog
 ├── install.sh      # Installer
 └── uninstall.sh    # State-preserving uninstaller

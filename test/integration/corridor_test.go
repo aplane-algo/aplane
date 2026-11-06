@@ -19,7 +19,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/merkleallowlist"
 	"github.com/aplane-algo/aplane/internal/signing"
-	"github.com/aplane-algo/aplane/library/templates"
+	"github.com/aplane-algo/aplane/library/retired"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	falcon1024 "github.com/aplane-algo/aplane/lsig/falcon1024"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
@@ -307,7 +307,7 @@ func newCorridorExecutionAccountWithCompiler(
 	}
 	recipientsParam := strings.Join(recipientStrings, ",")
 	falcon1024.RegisterClient()
-	templateData, err := templates.ReadFile("aplane.corridor.v1.yaml")
+	templateData, err := retired.ReadFile("aplane.corridor.v1.yaml")
 	if err != nil {
 		t.Fatalf("failed to read Corridor template: %v", err)
 	}

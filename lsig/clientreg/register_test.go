@@ -53,27 +53,33 @@ func TestCanonicalCompiledLogicSigInventory(t *testing.T) {
 }
 
 func TestCanonicalBundledTemplateInventory(t *testing.T) {
-	entries, err := os.ReadDir(filepath.Join("..", "..", "library", "templates"))
-	if err != nil {
-		t.Fatalf("ReadDir(library/templates) error = %v", err)
-	}
-	var got []string
-	for _, entry := range entries {
-		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".yaml") {
-			got = append(got, entry.Name())
+	for _, test := range []struct {
+		dir  string
+		want []string
+	}{
+		{dir: "templates", want: []string{"aplane.htlc.v1.yaml"}},
+		{dir: "retired", want: []string{
+			"aplane.corridor.v1.yaml",
+			"aplane.falcon1024-allowlist-lock.v1.yaml",
+			"aplane.falcon1024-allowlist.v1.yaml",
+			"aplane.falcon1024-allowlist.v2.yaml",
+			"aplane.falcon1024-timelock.v1.yaml",
+		}},
+	} {
+		entries, err := os.ReadDir(filepath.Join("..", "..", "library", test.dir))
+		if err != nil {
+			t.Fatalf("ReadDir(library/%s) error = %v", test.dir, err)
 		}
-	}
-	sort.Strings(got)
-	want := []string{
-		"aplane.corridor.v1.yaml",
-		"aplane.falcon1024-allowlist-lock.v1.yaml",
-		"aplane.falcon1024-allowlist.v1.yaml",
-		"aplane.falcon1024-allowlist.v2.yaml",
-		"aplane.falcon1024-timelock.v1.yaml",
-		"aplane.htlc.v1.yaml",
-	}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("bundled template inventory = %v, want %v", got, want)
+		var got []string
+		for _, entry := range entries {
+			if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".yaml") {
+				got = append(got, entry.Name())
+			}
+		}
+		sort.Strings(got)
+		if !reflect.DeepEqual(got, test.want) {
+			t.Fatalf("library/%s inventory = %v, want %v", test.dir, got, test.want)
+		}
 	}
 }
 
@@ -169,7 +175,7 @@ func TestBundledComposedTemplatesBindTxIDBeforeSuffix(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.file, func(t *testing.T) {
-			data, err := os.ReadFile(filepath.Join("..", "..", "library", "templates", c.file))
+			data, err := os.ReadFile(filepath.Join("..", "..", "library", "retired", c.file))
 			if err != nil {
 				t.Fatalf("ReadFile: %v", err)
 			}

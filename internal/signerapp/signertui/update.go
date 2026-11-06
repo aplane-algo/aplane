@@ -756,7 +756,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.viewState == ViewLibraryTemplateDetails &&
 			m.library.detailsLoading &&
 			msg.KeyType == m.library.detailsKeyType &&
-			msg.TemplateType == m.library.detailsTemplateType {
+			(m.library.detailsInstalled || msg.TemplateType == m.library.detailsTemplateType) {
 			m.library.detailsLoading = false
 			if msg.Success {
 				m.library.detailsContent = string(msg.TemplateYAML)

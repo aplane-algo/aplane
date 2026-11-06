@@ -190,11 +190,11 @@ component role, while standalone `.wit` instances may serve contract admin.
 | `falcon1024` | native_pq | **default-enabled** (protocol-native post-quantum) |
 | `aplane.falcon1024.v1` | dsa_lsig | internal-only; composition and existing accounts |
 | `aplane.ed25519.v1` | Ed25519 dsa_lsig | internal-only; composition and existing accounts |
-| `aplane.falcon1024-allowlist.v1` | dsa_lsig (composed) | optional template |
-| `aplane.falcon1024-allowlist.v2` | bounded dsa_lsig (Merkle allowlist) | optional template |
-| `aplane.falcon1024-allowlist-lock.v1` | bounded dsa_lsig (admin-protected rekey) | optional template |
-| `aplane.corridor.v1` | bounded-cosigner dsa_lsig (Merkle spend corridor, admin-protected rekey) | optional template |
-| `aplane.falcon1024-timelock.v1` | dsa_lsig (composed) | optional template |
+| `aplane.falcon1024-allowlist.v1` | dsa_lsig (composed) | retired template; existing accounts only |
+| `aplane.falcon1024-allowlist.v2` | bounded dsa_lsig (Merkle allowlist) | retired template; existing accounts only |
+| `aplane.falcon1024-allowlist-lock.v1` | bounded dsa_lsig (admin-protected rekey) | retired template; existing accounts only |
+| `aplane.corridor.v1` | bounded-cosigner dsa_lsig (Merkle spend corridor, admin-protected rekey) | retired template; existing accounts only |
+| `aplane.falcon1024-timelock.v1` | dsa_lsig (composed) | retired template; existing accounts only |
 | `aplane.htlc.v1` | generic_lsig | optional template |
 | `aplane.falcon1024-cosigner1024.v1` | guarded dsa_lsig | library-visible |
 | `aplane.rotating-triple-xmss.v1` | rotating LogicSig | library-visible |
@@ -236,6 +236,9 @@ compatible manual-salt records retain it.
 
 ### Restricted variants (the safety is in the program)
 
+New restricted accounts use `aplane.bounded.v1`. The allowlist and timelock
+templates below are retired, and existing accounts keep working.
+
 - `aplane.falcon1024-allowlist.v1` — bounded pay/asset-transfer receivers must
   be self or allowlisted; close, clawback, and non-transfer types are rejected.
 - `aplane.falcon1024-allowlist.v2` — the bounded allowlist using a
@@ -249,7 +252,7 @@ compatible manual-salt records retain it.
 
 ### Corridors
 
-A **Corridor v1** account uses the optional `aplane.corridor.v1` bounded-cosigner
+A **Corridor v1** account uses the retired `aplane.corridor.v1` bounded-cosigner
 LogicSig profile. Its non-self payment and asset-transfer destinations must
 prove membership in the generation-time Merkle recipient set, and every spend
 also needs the enrolled cosigner's Falcon authorization. A distinct offline

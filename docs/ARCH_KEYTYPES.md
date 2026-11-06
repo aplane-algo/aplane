@@ -851,12 +851,13 @@ signing helpers that the diagram omits) and gives a one-line role for each.
 | `lsig/rotatingtriplewotsc` | Rotating Falcon-1024 + WOTS+C + Ed25519 key type: stage program, signer-side operations, and signer registration |
 | `lsig/rotatingfamily` | What the rotating key types share: registration descriptor and generator (`signerreg`), the stage's Ed25519 and Falcon-1024 half (`stagesign`), stage program salt search and strict parse (`stageprog`), the contract suite each key type runs (`rotatingtest`), and the offline AVM interpreter verifier tests use (`avmsim`) |
 | `internal/crypto/xmss` | RFC 8391 XMSS-SHA2_16_256: tree generation, signing at a caller-chosen leaf, verification; stateless by design |
-| `library/templates/aplane.corridor.v1.yaml` | Optional schema-v2 bounded-cosigner Corridor profile; compiled by `lsig/composeddsa` after product-store install |
+| `library/retired/aplane.corridor.v1.yaml` | Retired schema-v2 bounded-cosigner Corridor profile; compiled by `lsig/composeddsa` after product-store install |
 | `lsig/dsafamily` | Client-safe registration descriptor shared by DSA families (signer-side descriptor in `lsig/dsafamily/signerreg`) |
 | `lsig/signerreg` | Registers all built-in LogicSig signer-side providers with their catalog availability |
 | `internal/signerapp/templates` | Read-only keystore template reload coordinator and state/fingerprint policy |
 | `lsig/generictemplate` | Parser/provider builder for generic YAML templates |
 | `library/templates/` | Optional importable template library |
+| `library/retired/` | Templates retired from the library, kept to repair existing accounts |
 | `lsig/clientreg` | Client registration entry point |
 
 ### Two categories of LogicSigs

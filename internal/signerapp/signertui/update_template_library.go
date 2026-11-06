@@ -93,10 +93,19 @@ func (m Model) openLibraryTemplateDetails(tmpl LibraryTemplateInfo) (Model, tea.
 		m.viewState = ViewLibraryTemplateDetails
 		return m, nil, ""
 	}
-	if tmpl.SourcePath == "" {
-		return m, nil, displayKeyType(tmpl.KeyType) + " has no plaintext library YAML source to view."
-	}
 	m.library.detailsSourcePath = tmpl.SourcePath
+	m.library.detailsInstalled = false
+	if tmpl.SourcePath == "" {
+		if !tmpl.Installed {
+			return m, nil, displayKeyType(tmpl.KeyType) + " has no plaintext library YAML source to view."
+		}
+		// An installed template can outlive its library file, so show the
+		// copy this identity stores.
+		m.library.detailsInstalled = true
+		m.library.detailsLoading = true
+		m.viewState = ViewLibraryTemplateDetails
+		return m, tea.Batch(m.sendShowInstalledTemplateCmd(tmpl.KeyType), m.waitForMessageCmd()), ""
+	}
 	m.library.detailsLoading = true
 	m.viewState = ViewLibraryTemplateDetails
 	return m, tea.Batch(

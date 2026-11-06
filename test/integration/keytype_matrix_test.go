@@ -8,6 +8,7 @@ import (
 	"context"
 	stded25519 "crypto/ed25519"
 	"crypto/sha256"
+	"embed"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -27,6 +28,7 @@ import (
 	txsigning "github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/transport"
 	"github.com/aplane-algo/aplane/internal/txnutil"
+	"github.com/aplane-algo/aplane/library/retired"
 	"github.com/aplane-algo/aplane/library/templates"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	edlsigv1 "github.com/aplane-algo/aplane/lsig/ed25519lsig/v1"
@@ -354,18 +356,20 @@ func assertBundledOpcodeValidationInventory(t *testing.T) {
 		"aplane.falcon1024-timelock.v1.yaml":       {},
 		"aplane.htlc.v1.yaml":                      {},
 	}
-	entries, err := templates.FS.ReadDir(".")
-	if err != nil {
-		t.Fatalf("list bundled LogicSig templates: %v", err)
-	}
-	seen := make(map[string]struct{}, len(entries))
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".yaml") {
-			continue
+	seen := make(map[string]struct{}, len(validated))
+	for _, source := range []embed.FS{templates.FS, retired.FS} {
+		entries, err := source.ReadDir(".")
+		if err != nil {
+			t.Fatalf("list bundled LogicSig templates: %v", err)
 		}
-		seen[entry.Name()] = struct{}{}
-		if _, ok := validated[entry.Name()]; !ok {
-			t.Errorf("bundled template %s has no opcode-ceiling integration vector", entry.Name())
+		for _, entry := range entries {
+			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".yaml") {
+				continue
+			}
+			seen[entry.Name()] = struct{}{}
+			if _, ok := validated[entry.Name()]; !ok {
+				t.Errorf("bundled template %s has no opcode-ceiling integration vector", entry.Name())
+			}
 		}
 	}
 	for name := range validated {
@@ -1261,7 +1265,7 @@ func matrixDeclaredOpcodeProfile(t *testing.T, keyType string) lsigresource.Opco
 		}
 		return generictemplate.NewYAMLTemplate(spec).LogicSigOpcodeProfile()
 	default:
-		data, err := templates.ReadFile(keyType + ".yaml")
+		data, err := retired.ReadFile(keyType + ".yaml")
 		if err != nil {
 			t.Fatal(err)
 		}

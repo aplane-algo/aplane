@@ -192,6 +192,7 @@ main() {
     mkdir -p "$staging/aplane/bin" \
         "$staging/aplane/installer/scripts" \
         "$staging/aplane/library/templates" \
+        "$staging/aplane/library/retired" \
         "$staging/aplane/plugins.available" \
         "$DIST_DIR"
 
@@ -208,6 +209,9 @@ main() {
     cp "$ROOT_DIR"/library/templates/README.md \
         "$ROOT_DIR"/library/templates/*.yaml \
         "$staging/aplane/library/templates/"
+    cp "$ROOT_DIR"/library/retired/README.md \
+        "$ROOT_DIR"/library/retired/*.yaml \
+        "$staging/aplane/library/retired/"
     "$ROOT_DIR/scripts/stage-bundled-plugins.sh" --os "$OS_NAME" --arch "$ARCH" "$staging/aplane/plugins.available"
     cp "$ROOT_DIR/install.sh" \
         "$ROOT_DIR/uninstall.sh" \

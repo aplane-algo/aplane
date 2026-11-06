@@ -874,7 +874,7 @@ flow (a user component signature plus a cosigner component signature). Its
 on-chain LogicSig does not restrict transaction shape once both signatures
 verify, so cosigner policy is the spending boundary.
 
-`aplane.corridor.v1` is instead an optional schema-v2 bounded template. It
+`aplane.corridor.v1` is instead a retired schema-v2 bounded template. It
 requires a cosigner signature only on bounded spend paths, applies a
 framework-owned Merkle recipient policy, and reserves pure rekey for a distinct
 offline contract-admin witness. Its flow is `bounded-cosigner1`. See
@@ -886,6 +886,11 @@ and [ARCH_GUARDED.md](ARCH_GUARDED.md#corridor-v1) for its complete contract.
 These ship as plaintext YAML install sources. New signer stores do not
 install them automatically. Enable one through apadmin's KeyType Library or
 explicitly import its YAML into the product store before generating accounts.
+
+`aplane.htlc.v1` is in the default library. The allowlist, timelock, and Corridor
+templates below are retired: they are kept under `library/retired/` to repair
+existing accounts, and new accounts should use a preset of `aplane.bounded.v1`.
+Their sections still describe what those accounts do.
 
 #### Generic Templates
 
