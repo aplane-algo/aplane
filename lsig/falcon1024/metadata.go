@@ -15,7 +15,7 @@ type FalconMetadata struct{}
 func (m *FalconMetadata) RoutingFamily() string        { return family.Name }
 func (m *FalconMetadata) CryptoSignatureSize() int     { return family.MaxSignatureSize }
 func (m *FalconMetadata) MnemonicWordCount() int       { return family.MnemonicWordCount }
-func (m *FalconMetadata) SupportsMnemonicImport() bool { return true }
+func (m *FalconMetadata) SupportsMnemonicImport() bool { return false }
 func (m *FalconMetadata) MnemonicScheme() string       { return family.MnemonicScheme }
 func (m *FalconMetadata) AuthorizationKind() algorithm.AuthorizationKind {
 	return algorithm.AuthorizationLogicSig

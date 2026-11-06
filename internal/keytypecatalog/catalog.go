@@ -23,6 +23,11 @@ const (
 	// but hidden from normal generation/import until identity opt-in state exists.
 	AvailabilityLibrary Availability = "library"
 
+	// AvailabilityInternalOnly keeps provider registration for composition,
+	// existing-key signing and restore, but forbids standalone enablement,
+	// generation and mnemonic import even when an old enabled record exists.
+	AvailabilityInternalOnly Availability = "internal_only"
+
 	// AvailabilityDisabled means the provider may be compiled in but should not
 	// be registered or exposed by the runtime path that owns the catalog entry.
 	AvailabilityDisabled Availability = "disabled"
@@ -96,6 +101,13 @@ func IsLibraryVisible(keyType string) bool {
 	return ok && entry.Availability == AvailabilityLibrary
 }
 
+// IsInternalOnly reports whether a compiled provider is available only as a
+// dependency or for existing credentials, never for standalone key creation.
+func IsInternalOnly(keyType string) bool {
+	entry, ok := Get(keyType)
+	return ok && entry.Availability == AvailabilityInternalOnly
+}
+
 func filter(include func(Entry) bool) []Entry {
 	mu.RLock()
 	defer mu.RUnlock()
@@ -120,7 +132,7 @@ func normalizeEntry(entry Entry) (Entry, error) {
 		return Entry{}, fmt.Errorf("key type catalog entry %s has empty family", entry.KeyType)
 	}
 	switch entry.Availability {
-	case AvailabilityDefaultEnabled, AvailabilityLibrary, AvailabilityDisabled:
+	case AvailabilityDefaultEnabled, AvailabilityLibrary, AvailabilityInternalOnly, AvailabilityDisabled:
 		return entry, nil
 	default:
 		return Entry{}, fmt.Errorf("key type catalog entry %s has invalid availability %q", entry.KeyType, entry.Availability)

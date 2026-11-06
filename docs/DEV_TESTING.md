@@ -520,7 +520,7 @@ signer fixture. The cleanup helper refuses to run unless
 | `APLANE_SOAK_DURATION` | `30m` | Wall-clock duration for `make soak-test-localnet` |
 | `APLANE_SOAK_MAX_ITERATIONS` | `0` | Optional cap on ed25519 iterations; `0` means duration-bound only |
 | `APLANE_SOAK_RESTART_EVERY` | `0` | Restart `apsigner` after this many ed25519 iterations; `0` disables restarts |
-| `APLANE_SOAK_FALCON_EVERY` | `5` | Add one Falcon-1024 LogicSig account cycle every N ed25519 iterations; `0` disables Falcon cycles |
+| `APLANE_SOAK_FALCON_EVERY` | `5` | Add one native Falcon-1024 account cycle every N ed25519 iterations; `0` disables Falcon cycles |
 | `SOAK_GO_ARGS` | `-count=1 -timeout 2h` | Go test flags for the soak package |
 
 Examples:
@@ -610,13 +610,13 @@ apadmin := harness.NewApAdminHarness(t, signerd.GetWorkDir())
 defer apadmin.Cleanup()  // Deletes all generated keys
 
 // Key management
-addr, err := apadmin.GenerateKey("seed")                    // Falcon key; seed is ignored
+addr, err := apadmin.GenerateKey("seed")                    // Restore a legacy Falcon LogicSig fixture; seed is ignored
 addr, err := apadmin.GenerateKeyWithType("ed25519")         // Specific native type
-addr, err := apadmin.GenerateKeyWithType("aplane.falcon1024.v1")   // Specific LogicSig DSA type
+addr, err := apadmin.RestoreLegacyLogicSig("aplane.ed25519.v1", nil) // Existing internal-provider account
 addr, err := apadmin.ImportKey(mnemonic)               // From mnemonic
 res, err := apadmin.ExportKey(addr)                    // Native recovery phrase over IPC; zero res.Mnemonic
 err := apadmin.DeleteKey(addr)                         // Delete one
-err := apadmin.ActivateKeyType("aplane.ed25519.v1") // Enable library-visible compiled key type
+err := apadmin.ActivateKeyType("aplane.falcon1024-cosigner1024.v1") // Enable library-visible compiled key type
 _, err := apadmin.CreateBackup("export-passphrase")    // Signer-managed backup
 
 // Unlock management
@@ -851,10 +851,9 @@ bin/apshell -d /path/to/apclient
 apshell> connect
 apshell> network <testnet|localnet>
 
-# Test key generation (LogicSig key types need enabling first:
-# apadmin keytype enable aplane.falcon1024.v1)
+# Test native account generation
 apshell> generate falcon1024
-apshell> generate aplane.falcon1024.v1
+apshell> generate ed25519
 
 # Test transaction commands
 apshell> send 0.1 algo from <from> to <to>

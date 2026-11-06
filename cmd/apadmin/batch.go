@@ -299,7 +299,7 @@ func formatBatchKeyType(keyType, templateProvenanceStatus string) string {
 func runTestGenerate(client *testModeClient, args []string) {
 	if len(args) < 1 {
 		logErrorf("usage: apadmin --test generate <key-type>")
-		logErrorf("key types: ed25519, falcon1024, aplane.falcon1024.v1")
+		logErrorf("key types: ed25519, falcon1024, or an enabled library key type")
 		os.Exit(1)
 	}
 
@@ -316,7 +316,7 @@ func runTestGenerate(client *testModeClient, args []string) {
 func runTestImport(client *testModeClient, args []string) {
 	if len(args) < 2 {
 		logErrorf("usage: apadmin --test import <key-type> [key=value ...] <mnemonic words>")
-		logErrorf("key types: ed25519, falcon1024, aplane.falcon1024.v1")
+		logErrorf("key types: ed25519, falcon1024")
 		os.Exit(1)
 	}
 
@@ -393,7 +393,7 @@ func printTestUsage() {
 
 Commands:
   list                              List all keys
-  generate <key-type>               Generate a new key (ed25519, falcon1024, aplane.falcon1024.v1)
+  generate <key-type>               Generate a new key (ed25519, falcon1024, or an enabled library key type)
   import <key-type> <mnemonic>      Import key from mnemonic
   delete <address>                  Delete a key
   unlock                            Unlock the signer (uses TEST_PASSPHRASE)
@@ -405,7 +405,6 @@ Environment variables:
 Examples:
   apadmin --test list
   apadmin --test generate falcon1024
-  apadmin --test generate aplane.falcon1024.v1   # after: apadmin keytype enable aplane.falcon1024.v1
   apadmin --test import ed25519 word1 word2 ... word25
 `)
 }

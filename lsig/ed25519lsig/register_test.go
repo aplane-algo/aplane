@@ -30,8 +30,8 @@ func TestRegisterClientRegistersEd25519LogicSigBase(t *testing.T) {
 	if !ok {
 		t.Fatalf("provider %T does not implement MnemonicProvider", provider)
 	}
-	if !mnemonicProvider.SupportsMnemonicImport() {
-		t.Fatalf("provider %T does not support mnemonic import", provider)
+	if mnemonicProvider.SupportsMnemonicImport() {
+		t.Fatalf("provider %T must not offer mnemonic import", provider)
 	}
 	if got := mnemonicProvider.MnemonicScheme(); got != "algorand" {
 		t.Fatalf("MnemonicScheme() = %q, want algorand", got)

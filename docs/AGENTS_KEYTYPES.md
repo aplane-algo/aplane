@@ -30,10 +30,10 @@ LogicSigs use complete encrypted credentials or backups. Do not add LogicSig
 mnemonic recovery to new designs. Internal seed derivation is separate and
 remains supported.
 
-Implementation is pending: the two plain LogicSig providers still allow import
-today. Removing those exceptions requires consistent provider/metadata
-capabilities, common import enforcement, discovery, UI, and tests; a documentation
-change alone does not disable them.
+Plain Falcon and Ed25519 LogicSig providers are internal-only. Keep them
+registered for composition, signing, and encrypted restore; do not expose them
+as standalone creation choices or let old enablement records grant access.
+See [internal providers](ARCH_KEYTYPES.md#internal-providers).
 
 ## Default Behavior
 
@@ -327,8 +327,10 @@ Do not tell the user that editing top-level `library/templates/` installs a temp
 Files under top-level `library/templates/` are library entries, not active
 runtime definitions by presence alone. New stores install no templates; every
 template requires an authenticated import or KeyType Library install, and
-every LogicSig key type (compiled or template) is opt-in. Only the
-protocol-native `ed25519` and `falcon1024` are enabled by default.
+every creatable LogicSig key type (compiled or template) is opt-in. The plain
+`aplane.falcon1024.v1` and `aplane.ed25519.v1` providers are internal-only and
+cannot be enabled. Only the protocol-native `ed25519` and `falcon1024` are
+enabled by default.
 
 For the full disable/remove mechanics (state record transitions, archive
 locations, in-use guard, and reload behavior), see

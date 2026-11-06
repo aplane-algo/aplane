@@ -402,7 +402,8 @@ func TestServiceGenerateKeyRejectsLibraryProviderBeforeActivation(t *testing.T) 
 func TestServiceGenerateKeyRereadsActivationAfterDeactivation(t *testing.T) {
 	ir := setupProductRuntime(t)
 	svc := Service{Runtime: ir}
-	keyType := "aplane.ed25519.v1"
+	keyType := "test.activation-reread.v1"
+	keytypecatalog.Register(keytypecatalog.Entry{KeyType: keyType, Family: "test.activation-reread", Availability: keytypecatalog.AvailabilityLibrary})
 
 	if err := keytypestate.Put(ir.KeyPaths(), keytypestate.Record{
 		KeyType: keyType,
@@ -648,48 +649,27 @@ func TestServiceGenerateKeyGenericPassesThroughSuccessAndErrors(t *testing.T) {
 	}
 }
 
-func TestServiceImportKeyFalcon1024V1PersistsKey(t *testing.T) {
-	configureFalconCompileMock(t)
-
-	ir := setupProductRuntime(t)
-	audit := &auditRecorder{}
-	svc := Service{AuditLog: audit, Runtime: ir}
-	mnemonic := "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art"
-
-	enableKeyTypeForTest(t, ir, "aplane.falcon1024.v1")
-	result, err := svc.ImportKey(context.Background(), "aplane.falcon1024.v1", mnemonic, nil)
-	if err != nil {
-		t.Fatalf("ImportKey(aplane.falcon1024.v1) error = %#v", err)
-	}
-	if result.Address == "" {
-		t.Fatal("ImportKey(aplane.falcon1024.v1) returned empty address")
-	}
-	if result.KeyType != "aplane.falcon1024.v1" {
-		t.Fatalf("ImportKey(aplane.falcon1024.v1) keyType = %q, want aplane.falcon1024.v1", result.KeyType)
-	}
-	if result.KeyFile == "" {
-		t.Fatal("ImportKey(aplane.falcon1024.v1) returned empty key file")
-	}
-	if _, statErr := os.Stat(result.KeyFile); statErr != nil {
-		t.Fatalf("imported Falcon key file %q stat error = %v", result.KeyFile, statErr)
-	}
-	if _, findErr := ir.FindKeyFile(result.Address); findErr != nil {
-		t.Fatalf("FindKeyFile(%q) after import error = %v", result.Address, findErr)
-	}
-
-	var stored *keymgmt.KeyFileInfo
-	if err := ir.WithKeyring(func(mk *crypto.Keyring) error {
-		var detectErr error
-		stored, detectErr = keymgmt.DetectKeyInfoFromFileWithKeyring(result.KeyFile, mk)
-		return detectErr
-	}); err != nil {
-		t.Fatalf("DetectKeyInfoFromFileWithKeyring() error = %v", err)
-	}
-	if stored.Type != "aplane.falcon1024.v1" {
-		t.Fatalf("stored key type = %q, want aplane.falcon1024.v1", stored.Type)
-	}
-	if len(audit.imported) != 1 || audit.imported[0].keyType != "aplane.falcon1024.v1" {
-		t.Fatalf("import audit = %#v, want one aplane.falcon1024.v1 import", audit.imported)
+func TestServiceInternalKeyTypesRejectCreationDespiteStoredEnablement(t *testing.T) {
+	for _, keyType := range []string{"aplane.falcon1024.v1", "aplane.ed25519.v1"} {
+		t.Run(keyType, func(t *testing.T) {
+			ir := setupProductRuntime(t)
+			audit := &auditRecorder{}
+			svc := Service{Runtime: ir, AuditLog: audit}
+			for _, state := range []keytypestate.State{keytypestate.StateEnabled, keytypestate.StateDisabled} {
+				if err := keytypestate.Put(ir.KeyPaths(), keytypestate.Record{KeyType: keyType, Source: keytypestate.SourceCompiled, State: state}); err != nil {
+					t.Fatal(err)
+				}
+				if result, err := svc.GenerateKey(context.Background(), keyType, nil, nil); result != nil || err == nil || err.Kind != ErrorInvalidInput || !strings.Contains(err.Message, "internal-only") {
+					t.Fatalf("GenerateKey(%s, %s) = %v, %v", keyType, state, result, err)
+				}
+				if result, err := svc.ImportKey(context.Background(), keyType, "invalid phrase", nil); result != nil || err == nil || err.Kind != ErrorInvalidInput || !strings.Contains(err.Message, "internal-only") {
+					t.Fatalf("ImportKey(%s, %s) = %v, %v", keyType, state, result, err)
+				}
+			}
+			if len(audit.generated) != 0 || len(audit.imported) != 0 {
+				t.Fatal("refused creation was audited as successful")
+			}
+		})
 	}
 }
 
@@ -1129,27 +1109,16 @@ func (a *auditRecorder) LogKeyExported(_ context.Context, address, keyType, outc
 	a.exported = append(a.exported, struct{ address, keyType, outcome string }{address, keyType, outcome})
 }
 
-// enableKeyTypeForTest writes the product enablement record for a compiled
-// library key type, as `apadmin keytype enable` does.
-func enableKeyTypeForTest(t *testing.T, ir *productruntime.Runtime, keyType string) {
-	t.Helper()
-	if err := keytypestate.Put(ir.KeyPaths(), keytypestate.Record{
-		KeyType: keyType, Source: keytypestate.SourceCompiled, State: keytypestate.StateEnabled,
-	}); err != nil {
-		t.Fatalf("keytypestate.Put(%q) error = %v", keyType, err)
-	}
-}
-
 // Only the protocol-native key types are enabled by default. A new runtime
-// refuses to generate or import the LogicSig Falcon type, and the refusal
-// names the step that enables it; an unknown key type is still just invalid.
-func TestServiceRefusesALibraryKeyTypeUntilEnabled(t *testing.T) {
+// refuses to generate or import the internal LogicSig Falcon type; native
+// creation stays available and an unknown key type is still just invalid.
+func TestServiceRefusesInternalTypeAndKeepsNativeDefaults(t *testing.T) {
 	configureFalconCompileMock(t)
 	nativefalconreg.RegisterSigner()
 
 	ir := setupProductRuntime(t)
 	svc := Service{AuditLog: &auditRecorder{}, Runtime: ir}
-	const want = "key type aplane.falcon1024.v1 is not enabled on this node; enable it with `apadmin keytype enable aplane.falcon1024.v1`"
+	const want = "key type aplane.falcon1024.v1 is internal-only"
 	mnemonic := "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art"
 
 	if _, err := svc.GenerateKey(context.Background(), "aplane.falcon1024.v1", nil, nil); err == nil || err.Kind != ErrorInvalidInput || !strings.Contains(err.Message, want) {

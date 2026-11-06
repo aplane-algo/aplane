@@ -171,7 +171,7 @@ func (f *Falcon1024V1) RuntimeArgs() []lsigprovider.RuntimeArgDef {
 }
 
 func (f *Falcon1024V1) SupportsMnemonicImport() bool {
-	return true
+	return false
 }
 
 // BuildArgs assembles the LogicSig Args array.

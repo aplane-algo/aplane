@@ -36,7 +36,7 @@ func RegisterClient() {
 		registerCompiledProvider(keytypecatalog.Entry{
 			KeyType:      "aplane.falcon1024.v1",
 			Family:       family.Name,
-			Availability: keytypecatalog.AvailabilityLibrary,
+			Availability: keytypecatalog.AvailabilityInternalOnly,
 		}, falcon.RegisterClient)
 		registerCompiledProvider(keytypecatalog.Entry{
 			KeyType:      falcon1024guarded.KeyTypeV1,
@@ -46,7 +46,7 @@ func RegisterClient() {
 		registerCompiledProvider(keytypecatalog.Entry{
 			KeyType:      ed25519lsig.KeyTypeV1,
 			Family:       ed25519lsig.FamilyName,
-			Availability: keytypecatalog.AvailabilityLibrary,
+			Availability: keytypecatalog.AvailabilityInternalOnly,
 		}, ed25519lsig.RegisterClient)
 		// The rotating accounts have no client-side provider; each entry only
 		// makes the key type opt-in. Signer binaries register its storage,

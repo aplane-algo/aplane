@@ -29,7 +29,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/txnutil"
 	"github.com/aplane-algo/aplane/library/templates"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
-	"github.com/aplane-algo/aplane/lsig/ed25519lsig"
 	edlsigv1 "github.com/aplane-algo/aplane/lsig/ed25519lsig/v1"
 	falcon "github.com/aplane-algo/aplane/lsig/falcon1024"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
@@ -78,11 +77,6 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 	if err := apadmin.UnlockSigner(); err != nil {
 		t.Fatalf("failed to unlock signer: %v", err)
 	}
-	for _, keyType := range []string{ed25519lsig.KeyTypeV1, "aplane.falcon1024.v1"} {
-		if err := apadmin.ActivateKeyType(keyType); err != nil {
-			t.Fatalf("failed to activate %s for key-type matrix: %v", keyType, err)
-		}
-	}
 	signerClient := signerclient.NewSignerClient(signerd.GetURL())
 	fundingAddress, err := apadmin.ImportFundingKey(os.Getenv("TEST_FUNDING_MNEMONIC"))
 	if err != nil {
@@ -125,7 +119,7 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 	if !waitForKey(t, signerd.GetURL(), importedCleanup, 10*time.Second) {
 		t.Fatalf("signer did not reload imported cleanup authority %s", importedCleanup)
 	}
-	// A plain Falcon LogicSig the signer generated: the admin-rekey target
+	// A restored plain Falcon LogicSig: the admin-rekey target
 	// rule re-derives such a program through the configured compiler at
 	// release, so a held LogicSig target exercises that path end to end.
 	heldLsigTarget := mustAdminGenerateKey(t, signerClient, signerd, "aplane.falcon1024.v1", nil)

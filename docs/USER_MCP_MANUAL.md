@@ -188,8 +188,8 @@ component role, while standalone `.wit` instances may serve contract admin.
 |---------|----------|----------------------|
 | `ed25519` | native | default-enabled |
 | `falcon1024` | native_pq | **default-enabled** (protocol-native post-quantum) |
-| `aplane.falcon1024.v1` | dsa_lsig | library-visible (LogicSig post-quantum) |
-| `aplane.ed25519.v1` | Ed25519 dsa_lsig | library-visible |
+| `aplane.falcon1024.v1` | dsa_lsig | internal-only; composition and existing accounts |
+| `aplane.ed25519.v1` | Ed25519 dsa_lsig | internal-only; composition and existing accounts |
 | `aplane.falcon1024-allowlist.v1` | dsa_lsig (composed) | optional template |
 | `aplane.falcon1024-allowlist.v2` | bounded dsa_lsig (Merkle allowlist) | optional template |
 | `aplane.falcon1024-allowlist-lock.v1` | bounded dsa_lsig (admin-protected rekey) | optional template |
@@ -204,7 +204,7 @@ component role, while standalone `.wit` instances may serve contract admin.
 
 **Always call `keytypes` to see what the connected signer actually exposes** —
 availability is product-scoped. Visibility states: `default_enabled` (for the applicable node role), `library` (compiled in but needs an enabled state record in the product
-store), `disabled`. A library-visible or template key type must be activated
+store), `internal_only` (composition and existing credentials only), `disabled`. A library-visible or template key type must be activated
 by an operator before it appears; an agent cannot install templates (that needs
 the master passphrase over local IPC) — generate the YAML and hand it to the
 user.
@@ -280,9 +280,9 @@ hybrid rekey-and-spend forms are rejected.
 
 Mnemonic import is a local apadmin IPC operation, outside the shell/MCP surface.
 The [approved native-only policy](ARCH_KEYTYPES.md#mnemonic-backup-and-recovery)
-limits mnemonic import, export, and recovery to native accounts. Implementation
-is pending for two existing plain LogicSig import exceptions; use encrypted
-backups for all LogicSig accounts.
+limits mnemonic import, export, and recovery to native accounts. Plain LogicSig
+providers are internal-only and cannot be enabled or generated directly. Use
+encrypted backups for all LogicSig accounts.
 
 > **Rekey refresh:** a confirmed rekey through the ordinary single-transaction
 > workflow or bounded-admin completion refreshes the affected client

@@ -32,7 +32,6 @@ import (
 type ApAdminHarness struct {
 	t             *testing.T
 	dataDir       string
-	buildDir      string
 	binaryPath    string
 	unlockProcess *exec.Cmd
 	unlockDone    <-chan error
@@ -43,47 +42,76 @@ type apadminConfig struct {
 	IPCPath string `yaml:"ipc_path"`
 }
 
+// sharedApadmin holds the one apadmin build for this test process, so each
+// harness and restored fixture does not pay for its own link.
+var sharedApadmin struct {
+	sync.Mutex
+	once sync.Once
+	dir  string
+	path string
+	err  error
+}
+
+// sharedApadminBinary builds apadmin on first use and returns its path.
+func sharedApadminBinary() (string, error) {
+	sharedApadmin.once.Do(func() {
+		sharedApadmin.path, sharedApadmin.err = buildSharedApadmin()
+	})
+	return sharedApadmin.path, sharedApadmin.err
+}
+
+func buildSharedApadmin() (string, error) {
+	dir, err := os.MkdirTemp("", "apadmin-build-")
+	if err != nil {
+		return "", fmt.Errorf("failed to create build directory: %w", err)
+	}
+	sharedApadmin.Lock()
+	sharedApadmin.dir = dir
+	sharedApadmin.Unlock()
+
+	// Get project root (where go.mod is)
+	projectRoot, err := findProjectRoot()
+	if err != nil {
+		return "", fmt.Errorf("failed to find project root: %w", err)
+	}
+
+	// Build apadmin with testmode tag for test harness access to test mode
+	binaryPath := filepath.Join(dir, "apadmin")
+	cmd := exec.Command("go", "build", "-tags", "testmode", "-o", binaryPath, "./cmd/apadmin")
+	cmd.Dir = projectRoot
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("failed to build apadmin: %w\nOutput: %s", err, output)
+	}
+	return binaryPath, nil
+}
+
+// RemoveSharedBuilds deletes the process-wide build directory. Call it from
+// TestMain after m.Run: it outlives every individual test.
+func RemoveSharedBuilds() {
+	sharedApadmin.Lock()
+	defer sharedApadmin.Unlock()
+	if sharedApadmin.dir != "" {
+		_ = os.RemoveAll(sharedApadmin.dir)
+	}
+}
+
 // NewApAdminHarness creates a new apadmin CLI test harness.
 // It uses the same data directory as the SignerHarness (from APSIGNER_DATA).
 func NewApAdminHarness(t *testing.T, signerWorkDir string) *ApAdminHarness {
-	// Create temp build directory for binary
-	buildDir := filepath.Join(t.TempDir(), "apadmin-build")
-	if err := os.MkdirAll(buildDir, 0755); err != nil {
-		t.Fatalf("Failed to create build directory: %v", err)
-	}
-
 	return &ApAdminHarness{
-		t:        t,
-		dataDir:  signerWorkDir,
-		buildDir: buildDir,
+		t:       t,
+		dataDir: signerWorkDir,
 	}
 }
 
 // Build compiles apadmin if needed
 func (v *ApAdminHarness) Build() error {
-	// Build to a specific location
-	binaryPath := filepath.Join(v.buildDir, "apadmin")
+	binaryPath, err := sharedApadminBinary()
+	if err != nil {
+		return err
+	}
 	v.binaryPath = binaryPath
-
-	// Check if binary already exists
-	if _, err := os.Stat(binaryPath); err == nil {
-		return nil // Already built
-	}
-
-	// Get project root (where go.mod is)
-	projectRoot, err := findProjectRoot()
-	if err != nil {
-		return fmt.Errorf("failed to find project root: %w", err)
-	}
-
-	// Build apadmin with testmode tag for test harness access to test mode
-	cmd := exec.Command("go", "build", "-tags", "testmode", "-o", binaryPath, "./cmd/apadmin")
-	cmd.Dir = projectRoot
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("failed to build apadmin: %w\nOutput: %s", err, output)
-	}
-
 	return nil
 }
 
@@ -94,6 +122,12 @@ func (v *ApAdminHarness) Run(args ...string) (string, error) {
 
 // RunWithInput executes a apadmin command with stdin input
 func (v *ApAdminHarness) RunWithInput(input string, args ...string) (string, error) {
+	return v.runWithEnv(nil, input, args...)
+}
+
+// runWithEnv is RunWithInput with extra environment entries, which take
+// precedence over the inherited environment.
+func (v *ApAdminHarness) runWithEnv(env []string, input string, args ...string) (string, error) {
 	// Ensure it's built
 	if err := v.Build(); err != nil {
 		return "", err
@@ -113,6 +147,7 @@ func (v *ApAdminHarness) RunWithInput(input string, args ...string) (string, err
 		fmt.Sprintf("APSIGNER_DATA=%s", v.dataDir),
 		"DISABLE_MEMORY_LOCK=1",
 	)
+	cmd.Env = append(cmd.Env, env...)
 
 	// Set stdin if provided
 	if input != "" {
@@ -206,15 +241,15 @@ func (v *ApAdminHarness) RunPolicy(stdin string, args ...string) (PolicyResult, 
 	}
 }
 
-// GenerateKey generates a new Falcon LogicSig key using apadmin test mode,
-// enabling aplane.falcon1024.v1 first: only the protocol-native key types are
-// enabled by default. The seed parameter is ignored as apadmin always
-// generates random keys.
+// GenerateKey supplies a legacy Falcon LogicSig account for signing tests via
+// encrypted restore. New standalone LogicSig generation is no longer offered.
+// The historical seed argument is ignored, as before.
 func (v *ApAdminHarness) GenerateKey(seed string) (string, error) {
-	if err := v.ActivateKeyType("aplane.falcon1024.v1"); err != nil {
-		return "", err
+	address, err := v.RestoreLegacyLogicSig("aplane.falcon1024.v1", nil)
+	if err == nil {
+		v.createdKeys = append(v.createdKeys, address)
 	}
-	return v.GenerateKeyWithType("aplane.falcon1024.v1")
+	return address, err
 }
 
 // GenerateKeyWithType generates a new key of the specified type using test mode
