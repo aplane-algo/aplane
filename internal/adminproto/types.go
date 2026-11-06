@@ -716,6 +716,7 @@ type GetKeyDetailsResult struct {
 	DisplayTEAL              string
 	TemplateProvenanceStatus string
 	TemplateProvenanceNote   string
+	PolicyLabel              string
 	MnemonicExportable       bool
 	Code                     string
 	Error                    string

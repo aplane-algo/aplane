@@ -109,6 +109,7 @@ func ProjectKeyDetailsIPC(result *KeyDetailsResult, err *Error) adminproto.GetKe
 		DisplayTEAL:              result.DisplayTEAL,
 		TemplateProvenanceStatus: result.TemplateProvenanceStatus,
 		TemplateProvenanceNote:   result.TemplateProvenanceNote,
+		PolicyLabel:              result.PolicyLabel,
 		MnemonicExportable:       result.MnemonicExportable,
 	}
 }

@@ -404,6 +404,7 @@ type keyDetailsState struct {
 	teal                     string
 	templateProvenanceStatus string
 	templateProvenanceNote   string
+	policyLabel              string
 	mnemonicExportable       bool
 	saveStatus               string
 }
@@ -865,6 +866,7 @@ type KeyDetailsMsg struct {
 	DisplayTEAL              string
 	TemplateProvenanceStatus string
 	TemplateProvenanceNote   string
+	PolicyLabel              string
 	MnemonicExportable       bool
 	Error                    string
 }

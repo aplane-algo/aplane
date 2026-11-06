@@ -655,6 +655,7 @@ var signerMessageDecoders = map[string]func(raw []byte) (tea.Msg, error){
 			DisplayTEAL:              detailsResult.DisplayTEAL,
 			TemplateProvenanceStatus: detailsResult.TemplateProvenanceStatus,
 			TemplateProvenanceNote:   detailsResult.TemplateProvenanceNote,
+			PolicyLabel:              detailsResult.PolicyLabel,
 			MnemonicExportable:       detailsResult.MnemonicExportable,
 			Error:                    detailsResult.Error,
 		}

@@ -16,6 +16,7 @@ type KeyInfo struct {
 	KeyType                  string
 	TemplateProvenanceStatus string
 	TemplateProvenanceNote   string
+	PolicyLabel              string
 }
 
 // Keys is the canonical structured result for signer-visible keys.

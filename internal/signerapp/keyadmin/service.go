@@ -77,6 +77,7 @@ type KeyDetailsResult struct {
 	DisplayTEAL              string
 	TemplateProvenanceStatus string
 	TemplateProvenanceNote   string
+	PolicyLabel              string
 	MnemonicExportable       bool
 }
 

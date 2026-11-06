@@ -26,7 +26,8 @@ before it was renamed `enroll`.
   templates add `needs_approval`, `approved_fingerprint`, `current_fingerprint`, and
   `approval_summary`. Admin settings add `boundary_require_admin_key` and
   `boundary_require_cosigner`, both writable. Key types add `per_key_contract`.
-  `apadmin` now prepares every parameterized request before generating it. `generate_key` accepts an optional
+  `apadmin` now prepares every parameterized request before generating it. Key details
+  add `policy_label`. `generate_key` accepts an optional
   `expected_boundary_digest`. A prepared request now sends `review_fingerprint` as
   `expected_fingerprint`; for existing key types it equals `fingerprint`.
 - The `aplane.bounded.v1` provider is in the source tree but not available in any

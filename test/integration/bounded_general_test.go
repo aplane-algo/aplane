@@ -6,8 +6,10 @@ package integration_test
 import (
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -475,6 +477,49 @@ func TestBoundedGeneralThroughSigner(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("apshell boundary file", func(t *testing.T) {
+		directory := t.TempDir()
+		recipient := algocrypto.GenerateAccount().Address.String()
+		path := filepath.Join(directory, "boundary.yaml")
+		if err := os.WriteFile(path, []byte("schema: aplane.boundary.v1\nspend: [pay]\nrecipients: ["+recipient+"]\nrekey: {authority: spending_key}\n"), 0o600); err != nil {
+			t.Fatalf("write boundary file: %v", err)
+		}
+		resultFile := filepath.Join(directory, "result.json")
+
+		declined, err := apshell.RunWithInput(fmt.Sprintf("generate %s boundary=%s\nn\nquit\n", boundedaccount.KeyTypeV1, path))
+		if err != nil {
+			t.Fatalf("run apshell: %v\n%s", err, declined)
+		}
+		if !strings.Contains(declined, "Local summary") || !strings.Contains(declined, "Cancelled") {
+			t.Fatalf("declining did not cancel:\n%s", declined)
+		}
+
+		output, err := apshell.RunWithInput(fmt.Sprintf("generate %s boundary=%s result=%s\ny\nkeys\nquit\n", boundedaccount.KeyTypeV1, path, resultFile))
+		if err != nil {
+			t.Fatalf("run apshell: %v\n%s", err, output)
+		}
+		for _, want := range []string{"Generated", "List encoding:  inline", "Allowlist · spending-key rekey"} {
+			if !strings.Contains(output, want) {
+				t.Fatalf("output lacks %q:\n%s", want, output)
+			}
+		}
+		data, err := os.ReadFile(resultFile)
+		if err != nil {
+			t.Fatalf("read result file: %v", err)
+		}
+		var saved struct {
+			Address    string            `json:"address"`
+			Parameters map[string]string `json:"parameters"`
+		}
+		if err := json.Unmarshal(data, &saved); err != nil {
+			t.Fatalf("parse result file: %v", err)
+		}
+		if saved.Parameters[boundedaccount.ParameterRecipients] != recipient || saved.Parameters[boundedaccount.ParameterSpendEffects] != "pay" {
+			t.Fatalf("saved parameters = %v", saved.Parameters)
+		}
+		accounts[saved.Address] = composeddsa.Layer3PolicyFixedAllowlist
+	})
 
 	if err := signerd.Stop(); err != nil {
 		t.Fatalf("stop signer: %v", err)
