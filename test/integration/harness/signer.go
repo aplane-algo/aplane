@@ -136,7 +136,7 @@ func (s *SignerHarness) Build() error {
 	}
 
 	// Build Signer
-	cmd := exec.Command("go", "build", "-tags", "testmode", "-o", binaryPath, "./cmd/apsigner")
+	cmd := exec.Command("go", "build", "-o", binaryPath, "./cmd/apsigner")
 	cmd.Dir = projectRoot
 	output, err := cmd.CombinedOutput()
 	if err != nil {

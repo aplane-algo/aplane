@@ -631,8 +631,6 @@ Manages apadmin CLI for key management:
 - Uses IPC socket for signer communication
 - Tracks generated keys for cleanup
 
-> **Note:** The harness also builds `apsigner` and `apshell` with `testmode`, which is the only way to reach `aplane.bounded.v1` before it ships.
-
 > **Note:** The `--test` flag is gated behind the `testmode` build tag. Production builds of apadmin do not include test mode. The test harness automatically builds with `-tags testmode` to enable it. To build a test-capable binary manually: `go build -tags testmode -o apadmin-test ./cmd/apadmin`
 
 ```go

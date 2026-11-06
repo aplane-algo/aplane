@@ -947,11 +947,6 @@ func protocolLibraryTemplates(items []adminproto.LibraryTemplateInfo) []protocol
 			Enabled:      item.Enabled,
 			Conflict:     item.Conflict,
 			Invalid:      item.Invalid,
-
-			NeedsApproval:       item.NeedsApproval,
-			ApprovedFingerprint: item.ApprovedFingerprint,
-			CurrentFingerprint:  item.CurrentFingerprint,
-			ApprovalSummary:     item.ApprovalSummary,
 		}
 	}
 	return out

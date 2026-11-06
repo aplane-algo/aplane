@@ -54,7 +54,7 @@ func RegisterClient() {
 		registerCompiledProvider(keytypecatalog.Entry{
 			KeyType:      boundedaccount.KeyTypeV1,
 			Family:       boundedAccountFamily,
-			Availability: boundedAccountAvailability,
+			Availability: keytypecatalog.AvailabilityDefaultEnabled,
 		}, boundedaccount.RegisterClient)
 		// The rotating accounts have no client-side provider; each entry only
 		// makes the key type opt-in. Signer binaries register its storage,

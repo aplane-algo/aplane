@@ -1461,11 +1461,8 @@ Three boundaries matter when changing this path:
 `aplane.bounded.v1` selects an account's shape at generation
 instead of fixing one per template. `internal/boundary` holds its family-neutral grammar,
 presets, and receipt, which clients use; `lsig/boundedaccount` holds the shapes and
-provider. **It is not available in any release yet.** Its
-catalog entry is `AvailabilityDisabled`, so the provider is not registered and no
-library or creation route can reach it, until the operator experience ships with it.
-Only binaries built with the `testmode` tag, which only the integration harness uses,
-offer it.
+provider. Its catalog entry is `AvailabilityDefaultEnabled`, so every signer can create
+these accounts with no setup, and it does not appear in the KeyType Library.
 
 A shape is a spend subset, a list encoding, and a rekey arrangement: 7 subsets x 2
 encodings x 3 arrangements (spending key, admin key, admin key plus cosigner), which is
@@ -1488,21 +1485,19 @@ Three identities have separate jobs, and `lsigprovider.Instance` carries each on
 | Identity | Field | Scope |
 |---|---|---|
 | Selected-shape fingerprint | `Fingerprint` | One shape. Stored as the account's `template_fingerprint`. A new rule leaves existing shapes alone. |
-| Grammar fingerprint | `ReviewFingerprint` | The labelled, ordered mapping of every shape. Pinned in the enabled record, and it is what approval covers. |
+| Grammar fingerprint | `ReviewFingerprint` | The labelled, ordered mapping of every shape. A review sends it back, so generation can refuse if the definition changed. |
 | Boundary digest | `BoundaryDigest` | Compares resolved policy and external authorities. It excludes the spending key, so equal digests do not mean equal accounts. Its encoding is in [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md). |
 
 Fingerprints hash configuration, not renderer code, so `lsig/boundedaccount/fingerprint.go`
 declares semantics revisions by hand. `TestGeneralFingerprintGoldens` fails when rendered
 output changes, and its comment says which revision that obligates.
 
-**Approval.** A provider that implements `lsigprovider.ApprovalGated` needs an enabled
-record pinning its current fingerprint, not just an enabled record.
-`keytypestate.NeedsApproval` is the one predicate: generation, preparation, and the
-library's `needs_approval` all use it. A missing, malformed, or incomparable fingerprint
-means not approved, unlike reload comparison, where those are benign. Explicit enablement
-renews approval without a disable cycle. A stale approval blocks new accounts only:
-reload does not report a conflict, and existing accounts load, sign, and restore
-unchanged, including on a signer that never approved the grammar.
+**No separate approval.** Enabling a template approves a definition that lives in an
+editable file, so it needs a fingerprint check. This type's shapes are compiled in, and
+an account's rules are fixed in its program once created, so a new shape can only ever
+create a new account, and it arrives with a release the operator chose to install. The
+grammar fingerprint still lets a review detect that the definition changed before
+generation, and each account still records its shape.
 
 **Generation settings.** `boundary_require_admin_key` and `boundary_require_cosigner` in
 the product runtime config apply to this key type on every creation route, under the
@@ -1523,9 +1518,7 @@ then generation sends the exact resolved values with `expected_fingerprint` and
 `expected_boundary_digest`, so an edited reference cannot substitute an authority. Any
 other result generates as entered. After generation the operator can save a
 `aplane.boundary-receipt.v1` receipt beside where apadmin runs. It names the saved
-address, documents the account, and cannot restore it. The KeyType Library shows
-**Needs approval** and offers **Approve current grammar** in place of disable, so
-approval works while accounts use the type.
+address, documents the account, and cannot restore it.
 
 **apshell.** `generate aplane.bounded.v1 boundary=<file>` reads the file locally and
 shows a summary labelled as local, because the guarantee is weaker than apadmin's

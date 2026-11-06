@@ -127,10 +127,7 @@ func TestBackupPortabilityFirstMilestone(t *testing.T) {
 			},
 		},
 		{
-			// The destination never approves this grammar, and the restored
-			// account must sign anyway: approval governs new accounts only.
-			name:             "general bounded account",
-			activateOnSource: true,
+			name: "general bounded account",
 			prepareSource: func(_ *testing.T, _ string, _ *harness.ApAdminHarness) (string, map[string]string) {
 				return boundedaccount.KeyTypeV1, map[string]string{
 					boundedaccount.ParameterSpendEffects:   "pay",

@@ -7,18 +7,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
-	"os"
 	"strings"
 	"testing"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
-	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/cosigner/cosignerrefs"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keymgmt"
-	"github.com/aplane-algo/aplane/internal/keytypestate"
-	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	"github.com/aplane-algo/aplane/lsig/boundedaccount"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
@@ -29,27 +25,7 @@ func setupGeneralProvider(t *testing.T) (*productruntime.Runtime, Service) {
 	configureFalconCompileMock(t)
 	boundedaccount.RegisterClient()
 	ir := setupProductRuntime(t)
-	approveCurrentGrammar(t, ir)
 	return ir, Service{Runtime: ir}
-}
-
-func approveCurrentGrammar(t *testing.T, ir *productruntime.Runtime) {
-	t.Helper()
-	fingerprint, ok := lsigprovider.CompatibilityFingerprintOf(lsigprovider.Get(boundedaccount.KeyTypeV1))
-	if !ok {
-		t.Fatal("general provider has no fingerprint")
-	}
-	writeGeneralRecord(t, ir, fingerprint)
-}
-
-func writeGeneralRecord(t *testing.T, ir *productruntime.Runtime, fingerprint string) {
-	t.Helper()
-	if err := keytypestate.Put(ir.KeyPaths(), keytypestate.Record{
-		KeyType: boundedaccount.KeyTypeV1, Source: keytypestate.SourceCompiled,
-		State: keytypestate.StateEnabled, Fingerprint: fingerprint,
-	}); err != nil {
-		t.Fatal(err)
-	}
 }
 
 func generalParams(rekey string) map[string]string {
@@ -153,53 +129,6 @@ func TestGeneralProviderRejectsAChangedReview(t *testing.T) {
 	assertNoKeys(t, service)
 }
 
-func TestGeneralProviderRequiresCurrentApproval(t *testing.T) {
-	ir, service := setupGeneralProvider(t)
-	params := generalParams(boundedaccount.RekeySpendingKey)
-	current := lsigprovider.Get(boundedaccount.KeyTypeV1).(lsigprovider.CompatibilityFingerprinter).CompatibilityFingerprint()
-	for name, recorded := range map[string]string{
-		"missing":        "",
-		"malformed":      "not-a-fingerprint",
-		"different form": "999:" + strings.Repeat("a", 64),
-		"mismatched":     strings.SplitN(current, ":", 2)[0] + ":" + strings.Repeat("a", 64),
-	} {
-		t.Run(name, func(t *testing.T) {
-			writeGeneralRecord(t, ir, recorded)
-			_, prepareErr := service.PrepareGenerateKey(boundedaccount.KeyTypeV1, params)
-			if prepareErr == nil || !strings.Contains(prepareErr.Message, "needs approval") {
-				t.Fatalf("PrepareGenerateKey() error = %#v", prepareErr)
-			}
-			_, generateErr := service.GenerateKey(context.Background(), boundedaccount.KeyTypeV1, params, nil)
-			if generateErr == nil || !strings.Contains(generateErr.Message, "Approve current grammar") {
-				t.Fatalf("GenerateKey() error = %#v", generateErr)
-			}
-			ipc := IPCService{Service: service}.GenerateKey(context.Background(), adminproto.GenerateKeyRequest{
-				KeyType: boundedaccount.KeyTypeV1, Parameters: params,
-			})
-			if ipc.Success || !strings.Contains(ipc.Error, "needs approval") {
-				t.Fatalf("IPC GenerateKey() = %+v", ipc)
-			}
-			assertNoKeys(t, service)
-		})
-	}
-
-	approveCurrentGrammar(t, ir)
-	if _, err := service.GenerateKey(context.Background(), boundedaccount.KeyTypeV1, params, nil); err != nil {
-		t.Fatalf("GenerateKey() after approval error = %#v", err)
-	}
-}
-
-func TestStaleApprovalLeavesOtherKeyTypesAlone(t *testing.T) {
-	const keyType = "test.bounded-unaffected.v1"
-	ir, _, _ := setupPrepareTest(t, keyType, "bounded-unaffected")
-	boundedaccount.RegisterClient()
-	writeGeneralRecord(t, ir, "1:"+strings.Repeat("a", 64))
-	service := Service{Runtime: ir}
-	if _, err := service.GenerateKey(context.Background(), keyType, map[string]string{cosignerrefs.ParamCosignerName: prepareTestReference}, nil); err != nil {
-		t.Fatalf("GenerateKey() error = %#v", err)
-	}
-}
-
 func TestBoundaryRequirements(t *testing.T) {
 	ir, service := setupGeneralProvider(t)
 	publicKey, _ := importPrepareReference(t, ir, prepareTestReference, 0x61)
@@ -289,39 +218,5 @@ func TestCosignerReferenceResolvesBeforeTheShapeIsChosen(t *testing.T) {
 	params[cosignerrefs.ParamCosignerName] = ""
 	if _, err := service.PrepareGenerateKey(boundedaccount.KeyTypeV1, params); err == nil {
 		t.Fatal("an explicitly empty reference selected an account with no cosigner")
-	}
-}
-
-// A stale approval stops new accounts only. Existing accounts keep loading and
-// report clean provenance, and nothing rewrites them.
-func TestStaleApprovalLeavesExistingAccountsAlone(t *testing.T) {
-	ir, service := setupGeneralProvider(t)
-	result, err := service.GenerateKey(context.Background(), boundedaccount.KeyTypeV1, generalParams(boundedaccount.RekeySpendingKey), nil)
-	if err != nil {
-		t.Fatalf("GenerateKey() error = %#v", err)
-	}
-	snapshot, _ := ir.KeySnapshot()
-	before, readErr := os.ReadFile(snapshot[result.Address])
-	if readErr != nil {
-		t.Fatal(readErr)
-	}
-
-	writeGeneralRecord(t, ir, "1:"+strings.Repeat("a", 64))
-	if reloadErr := reloadKeys(ir); reloadErr != nil {
-		t.Fatalf("reloadKeys() error = %#v", reloadErr)
-	}
-	details, detailsErr := service.GetKeyDetails(result.Address)
-	if detailsErr != nil {
-		t.Fatalf("GetKeyDetails() error = %#v", detailsErr)
-	}
-	if details.TemplateProvenanceStatus != "" {
-		t.Fatalf("provenance status = %q: %s", details.TemplateProvenanceStatus, details.TemplateProvenanceNote)
-	}
-	after, readErr := os.ReadFile(snapshot[result.Address])
-	if readErr != nil {
-		t.Fatal(readErr)
-	}
-	if !bytes.Equal(before, after) {
-		t.Fatal("a stale approval rewrote an existing key file")
 	}
 }

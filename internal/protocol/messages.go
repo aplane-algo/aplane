@@ -949,14 +949,6 @@ type LibraryTemplateInfo struct {
 	Enabled      bool                `json:"enabled,omitempty"`
 	Conflict     string              `json:"conflict,omitempty"`
 	Invalid      string              `json:"invalid,omitempty"`
-	// NeedsApproval means the type cannot create accounts until its current
-	// definition is approved.
-	NeedsApproval bool `json:"needs_approval,omitempty"`
-	// ApprovedFingerprint and CurrentFingerprint are set when NeedsApproval is.
-	ApprovedFingerprint string `json:"approved_fingerprint,omitempty"`
-	CurrentFingerprint  string `json:"current_fingerprint,omitempty"`
-	// ApprovalSummary says what enabling this type approves, when it says.
-	ApprovalSummary string `json:"approval_summary,omitempty"`
 }
 
 type ListLibraryTemplatesMessage struct {

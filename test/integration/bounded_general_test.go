@@ -374,8 +374,8 @@ func TestBoundedGeneralResourceMatrix(t *testing.T) {
 	}
 }
 
-// This is the account as an operator gets it: the signer generates it after the
-// grammar is approved, assembles its arguments, and rescans it after a restart.
+// This is the account as an operator gets it: with no setup, the signer generates
+// it, assembles its arguments, and rescans it after a restart.
 func TestBoundedGeneralThroughSigner(t *testing.T) {
 	if os.Getenv("TEST_FUNDING_MNEMONIC") == "" {
 		t.Skip("TEST_FUNDING_MNEMONIC not set, skipping funding-backed test")
@@ -410,13 +410,6 @@ func TestBoundedGeneralThroughSigner(t *testing.T) {
 			boundedaccount.ParameterRecipients:     strings.Join(recipients, ","),
 		}
 	}
-	if _, err := client.AdminGenerate(boundedaccount.KeyTypeV1, request(funder.GetAddress())); err == nil {
-		t.Fatal("generated before the grammar was approved")
-	}
-	if err := apadmin.ActivateKeyType(boundedaccount.KeyTypeV1); err != nil {
-		t.Fatalf("approve grammar: %v", err)
-	}
-
 	adminPublicKey, _, err := signerops.New(nil).GenerateKeypair(randomFalconSeed(t))
 	if err != nil {
 		t.Fatalf("generate admin key: %v", err)

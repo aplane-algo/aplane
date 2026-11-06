@@ -1153,6 +1153,31 @@ It is a comparison value. It does not assert that two accounts have the same add
 and it replaces neither `bounded_program_binding` nor any signing transcript. It is
 defined only for this key type: custom Layer 3 code is not bound by it.
 
+### Golden vector 4: general boundary digest
+
+This vector uses the Corridor shape: all three transfer kinds, `merkle_allowlist`,
+admin-key rekey, and a cosigner. The two recipients are the addresses whose 32 raw bytes
+are all zero except `[1] = 1, [31] = 1` and `[1] = 2, [31] = 1`. The admin key is 1,793
+bytes of `0x31`, and the cosigner key is 1,793 bytes of `0x41`.
+
+An independent Python encoder reproduces this digest from the rules in this document.
+The shape fingerprint is an input to that check: it comes from the provider's own
+configuration hash, which this document does not define byte for byte.
+
+```text
+selected_shape_fingerprint:
+  1:0d5f6c9957c7cd219527f2110910d873982bdfd46e136b5f06742d741827ea4c
+base_primitive: falcon1024-v1
+canonical_bounded_profile_length: 594
+canonical_bounded_profile_sha512_256:
+  9e85d14d479ea8f7e15d8b8ec20477145f38ddd9a3c05d7167032dd83d1c6b3e
+canonical_behavior_parameters_length: 1981
+canonical_behavior_parameters_sha512_256:
+  3e37447008e20eab3259c3c109224f012ebd3bee4061db71b97298205665fdc9
+boundary_digest:
+  5403a32fc1b8ae9d8c9fc18d11c881d65f418e03c2dddd7aed1e6afdbae6c727
+```
+
 ## Versioning
 
 After first production deployment, a change to field classification, normal

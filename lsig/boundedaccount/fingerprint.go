@@ -51,9 +51,9 @@ func shapeFingerprint(shape Shape, composer *composeddsa.ComposedDSA) string {
 	})
 }
 
-// grammarFingerprint identifies what enabling this key type approves. Shapes are
-// a labelled, ordered mapping: an unlabelled bag of hashes could not say which
-// behavior belongs to which request.
+// grammarFingerprint identifies the whole grammar, so a review can tell that it
+// changed before generation. Shapes are a labelled, ordered mapping: an unlabelled
+// bag of hashes could not say which behavior belongs to which request.
 func grammarFingerprint(definitions []*shapeDefinition) string {
 	type entry struct {
 		Descriptor  string `json:"descriptor"`

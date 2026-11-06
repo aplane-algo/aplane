@@ -735,14 +735,6 @@ type LibraryTemplateInfo struct {
 	Enabled      bool
 	Conflict     string
 	Invalid      string
-	// NeedsApproval means the type is enabled but its current definition has
-	// not been approved, so it cannot create accounts until it is.
-	NeedsApproval bool
-	// ApprovedFingerprint and CurrentFingerprint are set when NeedsApproval is.
-	ApprovedFingerprint string
-	CurrentFingerprint  string
-	// ApprovalSummary says what enabling this type approves, when it says.
-	ApprovalSummary string
 }
 
 type ListLibraryTemplatesResult struct {

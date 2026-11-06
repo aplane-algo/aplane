@@ -897,37 +897,3 @@ func mustResolveActiveForTemplatesTest(t *testing.T, paths storepaths.Paths) sto
 	}
 	return active
 }
-
-// gatedStub is a compiled provider whose generation needs current approval. It
-// embeds a nil interface: nothing here may call anything beyond these methods.
-type gatedStub struct {
-	lsigprovider.LSigProvider
-	keyType string
-}
-
-func (p gatedStub) KeyType() string                       { return p.keyType }
-func (gatedStub) RoutingFamily() string                   { return "test.reload-gated" }
-func (gatedStub) Version() int                            { return 1 }
-func (gatedStub) Category() string                        { return lsigprovider.CategoryDSALsig }
-func (gatedStub) GenerationRequiresCurrentApproval() bool { return true }
-func (gatedStub) CompatibilityFingerprint() string        { return "1:" + strings.Repeat("b", 64) }
-
-// An upgrade that changes what approval covers must not read as a conflict: the
-// generation gate holds new accounts, and a conflict warning would send operators
-// to restart advice that cannot help.
-func TestChangedApprovalIsNotAReloadConflict(t *testing.T) {
-	const keyType = "test.reload-gated.v1"
-	lsigprovider.Register(gatedStub{keyType: keyType})
-	t.Cleanup(func() { lsigprovider.Unregister(keyType) })
-
-	outcome := validateCompiledProviderRecords([]keytypestate.Record{{
-		KeyType: keyType, Source: keytypestate.SourceCompiled, State: keytypestate.StateEnabled,
-		Fingerprint: "1:" + strings.Repeat("a", 64),
-	}})
-	if len(outcome.ConflictingKeyTypes) != 0 || len(outcome.InvalidKeyTypes) != 0 {
-		t.Fatalf("outcome = %+v", outcome)
-	}
-	if len(outcome.IdempotentKeyTypes) != 1 {
-		t.Fatalf("outcome = %+v, want the record accepted", outcome)
-	}
-}

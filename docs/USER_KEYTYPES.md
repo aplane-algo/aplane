@@ -48,8 +48,9 @@ APlane has two optional key type paths:
 | Compiled provider | `aplane.falcon1024-cosigner1024.v1` | Go code in the current binary | `apadmin keytype enable` or apadmin KeyType Library |
 | YAML template | `aplane.htlc.v1` | Plaintext library YAML, then encrypted product-local `.template` after import | `apadmin template import` or apadmin KeyType Library |
 
-Only the protocol-native key types, `ed25519` and `falcon1024`, are
-default-enabled on signer nodes; they are available without extra steps.
+The protocol-native key types, `ed25519` and `falcon1024`, and the general bounded
+key type `aplane.bounded.v1` are default-enabled on signer nodes; they are available
+without extra steps.
 Plain LogicSig providers `aplane.falcon1024.v1` and `aplane.ed25519.v1` are
 internal-only. They support templates and existing accounts, but cannot be
 enabled, generated as standalone accounts, or imported from mnemonics.
@@ -147,7 +148,8 @@ LogicSig keys rather than expecting their old addresses to remain stable.
 ## Compiled Providers
 
 Compiled providers are registered from Go code when `apsigner` starts. The
-protocol-native `ed25519` and `falcon1024` are default-enabled on signer nodes;
+protocol-native `ed25519` and `falcon1024` and the general bounded
+`aplane.bounded.v1` are default-enabled on signer nodes;
 other selectable compiled account providers are library-visible
 and require product-local enablement. On cosigner nodes,
 `aplane.witness-falcon1024.v1` is default-enabled for witness credentials.
@@ -246,6 +248,99 @@ existing keys use that key type.
 
 `keytype enable` can also re-enable an already-installed disabled YAML template.
 It does not import a new YAML source; use `template import` for that.
+
+## Bounded Accounts
+
+`aplane.bounded.v1` is a Falcon-1024 account limited to a fixed list of recipients. It
+needs no setup: choose the rules when you generate the account. The rules are compiled
+into the account's program, so they cannot change afterwards, and editing a file later
+does nothing to an existing account.
+
+### Choosing rules in apadmin
+
+Generate a key and choose `aplane.bounded.v1`, then a preset:
+
+| Preset | What it sets | You supply |
+|---|---|---|
+| Allowlist | All transfer kinds; the spending key alone can rekey; automatic list encoding | Recipients |
+| Locked Allowlist | All transfer kinds; rekey also needs a contract admin; automatic list encoding | Recipients, admin `.wit.json` file |
+| Corridor | All transfer kinds; contract-admin rekey; a cosigner on every spend; Merkle list | Recipients, admin `.wit.json` file, cosigner |
+| Load boundary file | Whatever the file says | The file |
+
+"All transfer kinds" means `pay`, `axfer`, and `asset_opt_in`. For a narrower list, such as
+ALGO only, use a boundary file.
+
+Before generating, apadmin shows what the signer resolved, including the contract admin
+and cosigner it will use. Press `d` for every parameter, fingerprint, and recipient.
+After generating, press `s` to save a receipt beside where apadmin was started. A receipt
+documents the account. It cannot restore one: use encrypted backups for that.
+
+### Boundary files
+
+```yaml
+schema: aplane.boundary.v1
+spend: [pay, axfer, asset_opt_in]
+recipients:
+  - EIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRDOHSEZI
+  - CEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI7JH2AYM
+encoding: auto
+rekey:
+  authority: admin_key
+  admin_key: ./bounded-admin/operations.wit.json
+cosigner: ops-cosigner
+```
+
+These addresses are illustrations, not funding destinations.
+
+| Field | Meaning |
+|---|---|
+| `schema` | Required. Must be `aplane.boundary.v1`. |
+| `spend` | Required. Any of `pay`, `axfer`, `asset_opt_in`. |
+| `recipients` | Required. 1 to 65,536 distinct nonzero addresses, written literally: aliases and sets are not expanded. |
+| `encoding` | Optional. `auto` (the default) is inline through 10 recipients and Merkle above that. `inline` accepts at most 30. |
+| `rekey.authority` | Required. `spending_key` or `admin_key`. |
+| `rekey.admin_key` | The public `.wit.json` file, relative to the boundary file. Required only with `admin_key`. |
+| `cosigner` | Optional. A cosigner reference name on the signer, or a Witness Key ID. A cosigner needs `admin_key`. |
+
+Unknown fields, duplicate keys, YAML aliases, and non-string values are refused, and the
+file has no way to carry TEAL, a template, or a fee.
+
+The list's encoding changes what becomes public. Inline shows the whole list once the
+program is published. A Merkle spend reveals its recipient and proof, so it reduces
+exposure but does not hide the list. An account can also always pay itself, whatever the
+list says, subject to its transfer kinds.
+
+### Creating an account from apshell
+
+```
+generate aplane.bounded.v1 boundary=rules.yaml
+generate aplane.bounded.v1 boundary=rules.yaml result=account.json
+generate aplane.bounded.v1 spend_effects=pay rekey_authority=spending_key recipients=ADDR1,ADDR2
+```
+
+apshell shows a local summary and asks before creating the account. The signer has not
+seen that summary, so a cosigner name in it is unresolved, and editing that reference
+before creation changes which cosigner is used. Prefer a Witness Key ID: it can only
+select that cosigner, and apshell checks the created account against it. After creation,
+apshell shows what the signer actually stored.
+
+`result=<file>` saves that as JSON. It is not a receipt: only apadmin's review can issue one,
+with fingerprints and a digest.
+
+### Restricting new accounts
+
+`aplane.bounded.v1` cannot be turned off, but two settings in apadmin's Settings panel set
+a minimum for new accounts. `boundary_require_admin_key` refuses spending-key rekey, and
+`boundary_require_cosigner` refuses accounts without a cosigner. They apply on every route,
+and they do not affect existing accounts or imported templates.
+
+Review these points before funding an account:
+
+- Spending-key rekey can leave the boundary.
+- Admin rekey still needs the spending signature, and it bypasses the allowlist and any
+  cosigner.
+- These rules limit recipients and transfer kinds. They do not limit amounts or spending
+  speed. Use signer policy for that.
 
 ## Falcon Rekey-Locked Allowlist
 
