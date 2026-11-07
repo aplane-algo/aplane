@@ -201,8 +201,8 @@ provides the template-oriented filtered view over the same unified registry.
 Template YAML files under top-level `library/templates/` are install sources,
 not active key types by presence alone. New stores install none of them; a
 template becomes active only after installation and reload/unlock by the
-signer. Only the protocol-native `ed25519` and `falcon1024` key types are
-enabled by default.
+signer. Only the protocol-native `ed25519` and `falcon1024` key types and the
+general bounded `aplane.falcon1024-b.v1` are enabled by default.
 
 ### Off-curve LogicSig salting
 

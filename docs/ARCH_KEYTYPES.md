@@ -803,7 +803,7 @@ signer template reload coordinator.
 **Scoping invariant:** compiled providers are shared product capabilities, while
 runtime-added `.template` files belong to the one durable `default` activation set. In practice:
 
-- default-enabled built-in key types are available wherever their providers are registered; only the protocol-native `ed25519` and `falcon1024` (signer nodes) and the witness key type `aplane.witness-falcon1024.v1` (cosigner nodes) are default-enabled
+- default-enabled built-in key types are available wherever their providers are registered; only the protocol-native `ed25519` and `falcon1024` and the general bounded `aplane.falcon1024-b.v1` (signer nodes) and the witness key type `aplane.witness-falcon1024.v1` (cosigner nodes) are default-enabled
 - library-visible built-in key types require an enabled product-store state record before generation surfaces expose them
 - runtime-added `.template` files live in the selected generation's `keytypes/` with adjacent state records and affect the product runtime when enabled; disabled installed templates remain stored but are skipped during reload
 

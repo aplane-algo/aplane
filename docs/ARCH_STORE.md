@@ -7,8 +7,9 @@
 Each signer or cosigner data root contains one product store at
 `identities/default/` and managed backups at `backups/default/`. Store-owning
 APIs accept no identity locator, and live mutation and inspection use one
-process-wide product-store lock. Compatibility-bearing on-disk formats are in
-[ARCH_CONTRACTS.md](ARCH_CONTRACTS.md); the closed product-principal and action
+process-wide product-store lock. This document owns the store's
+compatibility-bearing on-disk formats, and
+[ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) indexes them with the other contracts; the closed product-principal and action
 model is in [ARCH_SECURITY.md](ARCH_SECURITY.md#authorization).
 
 This document does not define transaction planning, policy verdicts, endpoint
@@ -31,8 +32,11 @@ routing, client enrollment, or approval prompts.
   node.yaml
   audit.log
   .apstore.lock
+  .prod                     # systemd-managed marker
+  install/                  # root-owned installer metadata (release.json, service-principal.json)
   library/
     templates/*.yaml        # plaintext KeyType Library YAML sources
+    retired/*.yaml          # retired templates, outside the library listing
   backups/default/
     *.tar.gz                # restorable managed/imported backup archives
     .import-*.part          # unpublished bounded upload residue
@@ -423,8 +427,9 @@ retired `CURRENT` and `keyring.enc` artifacts and directs operators to rebuild
 from credential backup into a fresh store.
 
 Store initialization stages the first generation with its generation-scoped
-node-role sidecar, the role's default policy, and default key types before the
-sole commit publishes `store-root.enc`. The generation starts with
+node-role sidecar and the role's default policy before the sole commit
+publishes `store-root.enc`. It installs no key types or templates:
+default-enabled key types need no `keytypes/` record. The generation starts with
 `default.json` seeded from the embedded default for the node role
 (`policy.WriteEmbeddedDefault`) plus its sidecar, and no per-key documents.
 The signer default rejects a foreign rekey, reviews warning-level fields,
@@ -520,7 +525,8 @@ they are immutable except for explicit generation pruning.
 ### Ordinary generation commit
 
 Credential restore, restore rollback reconstruction, initialization, rebuild,
-passphrase change, and policy apply mint generations. A policy apply or
+passphrase change, policy apply, and ASA set updates (operation
+`asa-set-update`) mint generations. A policy apply or
 removal that changes the policy set, online or rescue, mints one generation
 with operation `policy-apply` (`internal/signerapp/policyapply`), so each
 committed apply leaves a retained generation until explicit generation
@@ -565,8 +571,8 @@ Changing the passphrase also replaces the current data-encryption term:
 5. stage an empty successor;
 6. read every source member once and verify it against the retained seal;
 7. re-encrypt term envelopes and re-sign integrity sidecars under the new term:
-   the node-role sidecar and every policy sidecar, including the documents
-   archived under `deleted/policies/`;
+   the node-role sidecar, every policy sidecar, including the documents
+   archived under `deleted/policies/`, and the ASA set sidecar when present;
 8. validate and publish the complete successor;
 9. replace `store-root.enc` with the new wrapped keyring and selector in one
    durable operation;
@@ -678,14 +684,17 @@ move into `deleted/policies/` with it, on both node roles. Mints check the paren
 successor after apply. An over-limit selected generation blocks ordinary
 validation, mint, and passphrase change until pruned.
 
-`apadmin archive list` reports exact usage and the reserve warning.
-`apadmin archive prune --confirm <deleted/path>...` accepts only canonical
+The admin protocol's `list_deleted_archive` reports exact usage and the
+reserve warning. `prune_deleted_archive`, which takes explicit confirmation,
+accepts only canonical
 `deleted/keys/*.key|*.cos`, `deleted/keytypes/*.template`, and
 `deleted/policies/*.json|*.json.hmac` selections. An archived policy document
 and its sidecar must be selected together. It
 requires `identity.archive.prune`, a recovery-capable authenticated runtime,
 and durable intent audit before mutation. It changes only the selected
 generation; retained copies disappear only with retained-generation pruning.
+The production `apadmin` command dispatcher does not yet expose `archive list`
+or `archive prune` (see [USER_STORE_MGMT.md](USER_STORE_MGMT.md)).
 
 ### Recovery and restoration
 
@@ -827,8 +836,8 @@ Valid roles are exactly `signer` and `cosigner`.
 
 | Node role | Allowed active key classes | Disallowed active key classes | Served signing paths |
 |---|---|---|---|
-| `signer` | Native signing keys, ordinary and bounded LogicSig account keys, guarded account keys, and public cosigner references used for generation. | Cosigner component private keys and all external contract-admin private artifacts. | Normal `/sign`, bounded-admin spending-partial generation, user-role `/sign/component`, `/sign/assemble`. |
-| `cosigner` | Cosigner component private keys and their public sidecars. | Native signing keys, ordinary LogicSig account keys, and guarded account keys. | Cosigner-role `/sign/component`. |
+| `signer` | Native signing keys, ordinary, bounded, and rotating LogicSig account keys, guarded account keys, and public cosigner references used for generation. | Cosigner component private keys and all external contract-admin private artifacts. | Normal `/sign`, `/sign/rotating/prepare` and `/sign/rotating/sign`, bounded-admin spending-partial generation, user-role `/sign/component`, `/sign/assemble`. |
+| `cosigner` | Cosigner component private keys and their public sidecars. | Every account key class: native signing keys and ordinary, bounded, guarded, and rotating LogicSig account keys. | Cosigner-role `/sign/component`. |
 
 Rules:
 
@@ -878,7 +887,7 @@ subject to the node role gate above.
 |---|---|---|---|---|
 | Unsupported by binary | No provider is registered in the current process. | No. | No, if signing needs that provider; native/DSA key types need registered support. | Install/run a binary that supports the key type. |
 | Role-forbidden key type | The node role does not allow this key class. | No, even if the provider is default-enabled or enabled. | No for active inventory; reload rejects role-conflicting active keys. | Use a data root initialized for the correct node role. |
-| Default-enabled account-signing provider | Provider/generator is registered and cataloged as default-enabled; no identity record required. Only the protocol-native `ed25519` and `falcon1024` are; plain Falcon/Ed25519 LogicSig providers are internal-only; other selectable compiled LogicSig providers are library-visible. | Yes on signer nodes. | Yes on signer nodes, if the key file is valid and the transaction network supports its authorization kind. | None. |
+| Default-enabled account-signing provider | Provider/generator is registered and cataloged as default-enabled; no identity record required. These are the protocol-native `ed25519` and `falcon1024` and the general bounded `aplane.falcon1024-b.v1`; plain Falcon/Ed25519 LogicSig providers are internal-only; other selectable compiled LogicSig providers are library-visible. | Yes on signer nodes. | Yes on signer nodes, if the key file is valid and the transaction network supports its authorization kind. | None. |
 | Default-enabled cosigner key type | Raw cosigner-key generator/signing support is registered and cataloged as default-enabled. The current type is `aplane.witness-falcon1024.v1`. | Yes on cosigner nodes. | Component-signing only on cosigner nodes; never normal spending `/sign`. | None. |
 | Internal-only compiled provider | Binary catalog availability `internal_only`; any old state record is retained but cannot grant creation. | Never, including explicit enable/generate/import requests. | Yes for valid existing/restored keys; also usable as a composed base. | Use native accounts or an enabled composed type for new creation. |
 | Library-visible compiled provider, inactive | Provider is registered and cataloged as library-visible; no identity `keytypes/<key_type>.json` record exists. | No. | Existing key may sign if the provider is registered, the key file is valid, and the node role allows it. | Enable from KeyType Library or `apadmin keytype enable`. |
@@ -1025,9 +1034,7 @@ runtime source for key generation and key-type discovery; the installed template
 already-created keys. Template enabled state changes discovery and generation only; it is not a
 signing authorization gate for existing key files. The low-level template store
 persists encrypted template bytes only; `templatelibrary` coordinates it with
-the paired key-type state mutation. Store initialization uses the same encrypted template
-store and enabled state-record model for default YAML key types, but runs before
-the runtime has a live reload surface. Activating a
+the paired key-type state mutation. Activating a
 `compiled_provider` library entry uses `activate_key_type` and writes only the
 product-store state record because the executable provider is already registered in
 the binary. Calling `activate_key_type` for an installed YAML template sets its
@@ -1158,7 +1165,7 @@ key is rejected during reload rather than published as a signable key.
 | DSA LogicSig key valid | Payload has private DSA material, stored LogicSig bytecode, a valid derivation record, `signing_metadata_version`, `base_key_type`, and valid signing metadata. | Yes on signer nodes when the base signing provider is registered. | Restores from stored metadata; composed template is not required. |
 | Generic LogicSig key valid | Payload has stored LogicSig bytecode, a valid derivation record, `signing_metadata_version`, and stored signing args. | Yes on signer nodes. | Restores from stored metadata; template is not required. |
 | Cosigner key valid | Payload category/type is a cosigner key and Witness Key ID is canonical. | Only through cosigner-role component signing on cosigner nodes; normal `/sign` and spending paths reject it. | Restores as a cosigner key on cosigner nodes, regenerating the public sidecar; never as a spending account. |
-| Bounded account key valid | DSA LogicSig key whose bytecode embeds an external contract-admin public key and whose v2 metadata derives the matching Contract Admin Key ID and program binding. | Pure spends use signer-held authority; admin-key operations additionally require external completion through `aprekey`. | Restores from durable bounded metadata. The external `.adm` artifact is never part of signer backup or restore. |
+| Bounded account key valid | DSA LogicSig key with signing-metadata version 2 and a valid `bounded_authorization`. When an operation uses an admin key, the bytecode embeds the external contract-admin public key and the metadata derives the matching Contract Admin Key ID and program binding; a general bounded account (`aplane.falcon1024-b.v1`) whose rekey authority is the spending key embeds none. | Pure spends use signer-held authority, with a cosigner signature when the account has one; admin-key operations additionally require external completion through `aprekey`. | Restores from durable bounded metadata. The external `.adm` artifact is never part of signer backup or restore. |
 | Guarded account key valid | DSA LogicSig key whose bytecode embeds the cosigner public key. | Only on signer nodes through guarded orchestration: user component signature, cosigner component signature, local assembly. | Restores from stored bytecode and metadata. |
 | LogicSig derivation invalid | Payload has bytecode but an unknown or inconsistent derivation record; for example, a manual-counter key omits `salt_counter`, or an `algod_v13_auto_salt` key includes one or stores pre-v13 bytecode. | No; scan/verify/restore reject. | Restore rejects. |
 | LogicSig on-curve address | Stored LogicSig bytecode derives an on-curve address. | No; scan/verify/restore reject. | Restore rejects. |
@@ -1222,10 +1229,12 @@ and parameters rather than a private signing key. Current compiler-auto-salted
 entries omit the legacy `salt_counter`.
 
 Bounded account key files retain category `dsa_lsig`, base key type, stored
-bytecode, creation parameters, and signing metadata version 2. The injected
-`bounded_admin_public_key` is immutable program input. The signer derives the
-Contract Admin Key ID and program binding from durable metadata; neither is a
-caller-selected creation parameter.
+bytecode, creation parameters, and signing metadata version 2. When the
+account has an external admin key, the injected `bounded_admin_public_key` is
+immutable program input, and the signer derives the Contract Admin Key ID and
+program binding from durable metadata; neither is a caller-selected creation
+parameter. A general bounded account whose rekey authority is the spending key
+has no admin key and cannot have a cosigner.
 
 Decrypted key payloads use canonical versioned JSON schemas owned by
 `internal/keys.ParsePayload` and `internal/keys.MarshalPayload`. Readers reject
@@ -1272,7 +1281,8 @@ refuse a release (see `ARCH_SIGNING.md`, rotating accounts).
 - Scanning and inventory never expose the stage public keys. The resource
   profile is the same for every stage: XMSS triple 2664 program bytes, 4179
   argument bytes and an opcode ceiling of 95857 (four resource dummies);
-  WOTS+C triple 2486, 2115 and 15721 (two resource dummies).
+  WOTS+C triple 2486, 2115 and 15721 (two resource dummies); SLH-DSA
+  triple 2837, 5887 and 68645.
 - The key file holds the signing authority. Which stage is live is read
   from the chain at every request, and the stage address table under
   `stages/` (below) is a cache rebuilt from the seed. XMSS and WOTS+C also
@@ -1736,7 +1746,7 @@ Mechanism:
 - reacts to Create, Write, Remove, and Rename on `.key`, `.cos`, and `.template` files
 - a `store-root.enc` replacement is a reload candidate; reload authenticates the new
   active generation. Restore, rollback, and reconcile then re-arm the watcher on
-  the new generation's directories; after a policy apply or passphrase change the
+  the new generation's directories; after a policy apply, ASA set update, or passphrase change the
   key and key type watches stay on the superseded generation until the next
   re-arm or restart, so only store-root replacement triggers a reload for
   out-of-band file edits in that window
@@ -2049,8 +2059,8 @@ Primary implementation owners:
 
 Related documents:
 
-- [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md): compatibility-bearing file and
-  restore contracts
+- [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md): index of compatibility-bearing
+  contracts, which names this document as the owner of the store formats
 - [ARCH_SECURITY.md](ARCH_SECURITY.md#authorization): product principals and actions
 - [ARCH_DATA_MODEL.md](ARCH_DATA_MODEL.md): durable/runtime/wire data model
 - [DEV_KEYTYPES.md](DEV_KEYTYPES.md): developer guide for adding key types

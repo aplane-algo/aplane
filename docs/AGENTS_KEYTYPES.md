@@ -343,10 +343,11 @@ Do not tell the user that editing top-level `library/templates/` installs a temp
 Files under top-level `library/templates/` are library entries, not active
 runtime definitions by presence alone. New stores install no templates; every
 template requires an authenticated import or KeyType Library install, and
-every creatable LogicSig key type (compiled or template) is opt-in. The plain
+every creatable LogicSig key type (compiled or template) except the general
+bounded `aplane.falcon1024-b.v1` is opt-in. The plain
 `aplane.falcon1024.v1` and `aplane.ed25519.v1` providers are internal-only and
-cannot be enabled. Only the protocol-native `ed25519` and `falcon1024` are
-enabled by default.
+cannot be enabled. Only the protocol-native `ed25519` and `falcon1024` and the
+general bounded `aplane.falcon1024-b.v1` are enabled by default.
 
 For the full disable/remove mechanics (state record transitions, archive
 locations, in-use guard, and reload behavior), see
