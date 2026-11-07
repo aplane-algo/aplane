@@ -13,7 +13,6 @@ import (
 	cosignermessage "github.com/aplane-algo/aplane/internal/cosigner/message"
 	"github.com/aplane-algo/aplane/internal/sigconstruction"
 	"github.com/aplane-algo/aplane/internal/txeffects"
-	"github.com/aplane-algo/aplane/internal/witness"
 )
 
 const (
@@ -181,9 +180,9 @@ func (c *ComposedDSA) renderAdminKeyAuthorization(publicKey []byte, params map[s
 		return "", err
 	}
 
-	construction, ok := sigconstruction.ForWitnessKeyType(witness.Falcon1024V1)
+	construction, ok := sigconstruction.ForWitnessKeyType(boundedAdminKeyType)
 	if !ok {
-		return "", fmt.Errorf("bounded admin key type %q has no signature construction", witness.Falcon1024V1)
+		return "", fmt.Errorf("bounded admin key type %q has no signature construction", boundedAdminKeyType)
 	}
 	message := fmt.Sprintf("pushbytes 0x%s\ntxn TxID\nconcat\nsha512_256", hex.EncodeToString(prefix))
 	verify, err := construction.VerifyTEAL(adminPublicKey, message, adminArgIndex)

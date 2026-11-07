@@ -9,6 +9,8 @@ import (
 	"sync"
 
 	"github.com/aplane-algo/aplane/internal/addressderive"
+	"github.com/aplane-algo/aplane/internal/keytypecatalog"
+	"github.com/aplane-algo/aplane/internal/sigconstruction"
 )
 
 // AddressDeriverFactory creates an address deriver for a composed template key type.
@@ -44,7 +46,7 @@ func RegisterBase(reg BaseRegistration) {
 
 // LookupBase returns the registration for a composable DSA base key type.
 func LookupBase(baseKeyType string) (BaseRegistration, bool) {
-	key := strings.ToLower(strings.TrimSpace(baseKeyType))
+	key := keytypecatalog.Canonicalize(baseKeyType)
 	baseRegistry.mu.RLock()
 	defer baseRegistry.mu.RUnlock()
 	reg, ok := baseRegistry.bases[key]
@@ -58,7 +60,7 @@ func IsBaseRegistered(baseKeyType string) bool {
 }
 
 func normalizeBaseRegistration(reg BaseRegistration) (BaseRegistration, error) {
-	reg.BaseKeyType = strings.ToLower(strings.TrimSpace(reg.BaseKeyType))
+	reg.BaseKeyType = keytypecatalog.Canonicalize(reg.BaseKeyType)
 	reg.FamilyName = strings.TrimSpace(reg.FamilyName)
 	if reg.BaseKeyType == "" {
 		return BaseRegistration{}, fmt.Errorf("composeddsa: base key type is required")
@@ -75,5 +77,24 @@ func normalizeBaseRegistration(reg BaseRegistration) (BaseRegistration, error) {
 	if reg.NewAddressDeriver == nil {
 		return BaseRegistration{}, fmt.Errorf("composeddsa: address deriver factory is required for %s", reg.BaseKeyType)
 	}
+	if err := baseConstructionAgrees(reg.BaseKeyType, reg.Ops); err != nil {
+		return BaseRegistration{}, fmt.Errorf("composeddsa: %w", err)
+	}
 	return reg, nil
+}
+
+// baseConstructionAgrees checks that a base name the construction catalog knows is
+// served by ops that render that same construction. Signing resolves an account's
+// construction from its durable base_key_type, so ops that rendered anything else
+// would create accounts the signer verifies against the wrong construction. A name
+// outside the catalog has no production construction to disagree with.
+func baseConstructionAgrees(baseKeyType string, ops DSAOps) error {
+	named, ok := sigconstruction.ForBaseKeyType(baseKeyType)
+	if !ok {
+		return nil
+	}
+	if rendered := ops.Construction().ID(); rendered != named.ID() {
+		return fmt.Errorf("base key type %q names construction %q, but its ops render %q", baseKeyType, named.ID(), rendered)
+	}
+	return nil
 }

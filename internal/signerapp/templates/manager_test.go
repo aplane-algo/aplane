@@ -9,6 +9,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
+	"github.com/aplane-algo/aplane/internal/sigconstruction"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -669,6 +670,12 @@ teal: |
 }
 
 type managerTestOps struct{}
+
+// Construction is the zero value: these stubs are registered only under test base
+// names, which the construction catalog doesn't know.
+func (managerTestOps) Construction() sigconstruction.Construction {
+	return sigconstruction.Construction{}
+}
 
 func (managerTestOps) PublicKeySize() int                          { return 1 }
 func (managerTestOps) CryptoSignatureSize() int                    { return 1 }

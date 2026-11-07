@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 	"github.com/aplane-algo/aplane/internal/witness"
 )
 
@@ -46,6 +47,9 @@ type component struct {
 type Construction struct {
 	id         ConstructionID
 	components []component
+	// layout is computed once at construction. ArgLayout's accessors copy, so
+	// sharing it across callers can't let one mutate another's view.
+	layout ArgLayout
 }
 
 // New validates a definition and returns an independent construction.
@@ -76,7 +80,7 @@ func newConstruction(definition Definition, profiles map[PrimitiveID]*primitiveP
 		}
 		components = append(components, component{name: spec.Name, primitive: spec.Primitive, profile: profile})
 	}
-	return Construction{id: definition.ID, components: components}, nil
+	return Construction{id: definition.ID, components: components, layout: buildLayout(components)}, nil
 }
 
 // ID returns the construction's identifier.
@@ -84,10 +88,12 @@ func (c Construction) ID() ConstructionID { return c.id }
 
 // Layout returns the construction's argument layout: its components' layouts,
 // concatenated in order.
-func (c Construction) Layout() ArgLayout {
-	layout := ArgLayout{components: make([]ComponentLayout, 0, len(c.components))}
+func (c Construction) Layout() ArgLayout { return c.layout }
+
+func buildLayout(components []component) ArgLayout {
+	layout := ArgLayout{components: make([]ComponentLayout, 0, len(components))}
 	start := 0
-	for _, part := range c.components {
+	for _, part := range components {
 		sizes := make([]int, len(part.profile.slots))
 		for i, slot := range part.profile.slots {
 			sizes[i] = slot.maxSize
@@ -213,14 +219,16 @@ func Falcon1024() Construction { return falcon1024Construction }
 // Ed25519 returns the single-component Ed25519 construction.
 func Ed25519() Construction { return ed25519Construction }
 
-// ForBaseKeyType resolves a spending base through the production catalog.
+// ForBaseKeyType resolves a spending base through the production catalog. Both
+// lookups apply keytypecatalog.Canonicalize, the one key-type normalization the
+// signer and clients share, so a spelling resolves the same way on every path.
 func ForBaseKeyType(baseKeyType string) (Construction, bool) {
-	construction, ok := baseConstructions[strings.ToLower(strings.TrimSpace(baseKeyType))]
+	construction, ok := baseConstructions[keytypecatalog.Canonicalize(baseKeyType)]
 	return construction, ok
 }
 
 // ForWitnessKeyType resolves a witness key type through the production catalog.
 func ForWitnessKeyType(keyType string) (Construction, bool) {
-	construction, ok := witnessConstructions[keyType]
+	construction, ok := witnessConstructions[keytypecatalog.Canonicalize(keyType)]
 	return construction, ok
 }

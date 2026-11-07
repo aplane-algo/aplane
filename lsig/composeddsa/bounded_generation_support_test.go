@@ -153,6 +153,22 @@ func TestGenerationRefusesUnknownBoundedBase(t *testing.T) {
 	}
 }
 
+// A direct NewComposedDSA call bypasses RegisterBase. Naming the Falcon base while
+// passing Ed25519 ops would get Falcon's support while the program verified an
+// Ed25519 signature, and signing would later check the account against Falcon.
+func TestGenerationRefusesOpsThatDisagreeWithTheBaseName(t *testing.T) {
+	profile := *unsupportedAdminProvider(t).BoundedAuthorizationProfile()
+	profile.AdminOperations = nil
+	direct := composeddsa.NewComposedDSA(composeddsa.Config{
+		KeyType: "test.direct-mismatched-ops.v1", BaseKeyType: "aplane.falcon1024.v1", FamilyName: "aplane.falcon1024",
+		Version: 1, Ops: ed25519v1.NewOps(), TEALSuffix: "int 1\nassert", Bounded: &profile,
+	})
+	_, err := direct.GenerateTEAL(bytes.Repeat([]byte{0x22}, 32), nil)
+	if err == nil || !strings.Contains(err.Error(), `names construction "falcon1024", but its ops render "ed25519"`) {
+		t.Fatalf("GenerateTEAL() error = %v", err)
+	}
+}
+
 func TestGenerationAllowsSupportedProfiles(t *testing.T) {
 	ed25519lsig.RegisterClient()
 	falcon.RegisterClient()

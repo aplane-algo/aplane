@@ -17,12 +17,17 @@ import (
 
 	boundedmessage "github.com/aplane-algo/aplane/internal/boundedadmin/message"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/sigconstruction"
 	"github.com/aplane-algo/aplane/internal/tealtemplate"
 	"github.com/aplane-algo/aplane/internal/txeffects"
 	"github.com/aplane-algo/aplane/internal/witness"
 )
+
+// boundedAdminKeyType is the contract admin key's witness key type. bounded1 has no
+// admin-key algorithm selector, so this is fixed by the contract, not by a base.
+const boundedAdminKeyType = witness.Falcon1024V1
 
 // The generation-side vocabulary is defined in terms of boundedmeta, the
 // durable storage vocabulary, so the two cannot drift: a contract revision
@@ -381,8 +386,8 @@ func (c *ComposedDSA) BuildBoundedAuthorizationMetadata(publicKey []byte, params
 		if err != nil {
 			return nil, err
 		}
-		if c.spendingKeyHolds(publicKey, cosignerPublicKey) {
-			return nil, fmt.Errorf("bounded cosigner witness key must differ from the spending key")
+		if err := c.refuseSharedSpendingKey("cosigner", publicKey, profile.Cosigner.ComponentKeyType, cosignerPublicKey); err != nil {
+			return nil, err
 		}
 		componentKeyID, err := witness.ID(profile.Cosigner.ComponentKeyType, cosignerPublicKey)
 		if err != nil {
@@ -409,7 +414,7 @@ func (c *ComposedDSA) BuildBoundedAuthorizationMetadata(publicKey []byte, params
 			return nil, err
 		}
 		binding := boundedProgramBinding(c.keyType, c.baseKeyType, c.ops.TEALVersion(), publicKey, adminPublicKey, profileEncoding, behaviorEncoding)
-		adminKeyID, err := witness.ID(witness.Falcon1024V1, adminPublicKey)
+		adminKeyID, err := witness.ID(boundedAdminKeyType, adminPublicKey)
 		if err != nil {
 			return nil, err
 		}
@@ -423,20 +428,31 @@ func (c *ComposedDSA) BuildBoundedAuthorizationMetadata(publicKey []byte, params
 	return metadata, nil
 }
 
-// spendingKeyHolds reports whether a bounded1 witness key is the spending key or one
-// of its components. Bounded1 witnesses are one Falcon key each, so two witnesses are
-// compared whole. A base that names no construction keeps the whole-key comparison.
-func (c *ComposedDSA) spendingKeyHolds(spendingPublicKey, witnessPublicKey []byte) bool {
+// spendingKeyHolds reports whether a witness key is the spending key or one of its
+// components. The witness's construction comes from its key type, as rendering
+// resolves it, so no algorithm is assumed here. An unknown witness key type is an
+// error, not "no overlap".
+func (c *ComposedDSA) spendingKeyHolds(spendingPublicKey []byte, witnessKeyType string, witnessPublicKey []byte) (bool, error) {
 	if bytes.Equal(spendingPublicKey, witnessPublicKey) {
-		return true
+		return true, nil
 	}
-	ops, ok := c.ops.(interface {
-		Construction() sigconstruction.Construction
-	})
+	witnessConstruction, ok := sigconstruction.ForWitnessKeyType(witnessKeyType)
 	if !ok {
-		return false
+		return false, fmt.Errorf("witness key type %q has no signature construction", witnessKeyType)
 	}
-	return sigconstruction.SharesComponentKey(ops.Construction(), spendingPublicKey, sigconstruction.Falcon1024(), witnessPublicKey)
+	return sigconstruction.SharesComponentKey(c.ops.Construction(), spendingPublicKey, witnessConstruction, witnessPublicKey), nil
+}
+
+// refuseSharedSpendingKey wraps spendingKeyHolds with the role-specific refusal.
+func (c *ComposedDSA) refuseSharedSpendingKey(role string, spendingPublicKey []byte, witnessKeyType string, witnessPublicKey []byte) error {
+	shared, err := c.spendingKeyHolds(spendingPublicKey, witnessKeyType, witnessPublicKey)
+	if err != nil {
+		return err
+	}
+	if shared {
+		return fmt.Errorf("bounded %s witness key must differ from the spending key", role)
+	}
+	return nil
 }
 
 func (c *ComposedDSA) validatedAdminPublicKey(spendingPublicKey []byte, params map[string]string) ([]byte, error) {
@@ -444,8 +460,8 @@ func (c *ComposedDSA) validatedAdminPublicKey(spendingPublicKey []byte, params m
 	if err != nil {
 		return nil, err
 	}
-	if c.spendingKeyHolds(spendingPublicKey, adminPublicKey) {
-		return nil, fmt.Errorf("bounded admin witness key must differ from the spending key")
+	if err := c.refuseSharedSpendingKey("admin", spendingPublicKey, boundedAdminKeyType, adminPublicKey); err != nil {
+		return nil, err
 	}
 	return adminPublicKey, nil
 }
@@ -455,10 +471,13 @@ func (c *ComposedDSA) validatedCosignerPublicKey(spendingPublicKey []byte, param
 	if err != nil {
 		return nil, err
 	}
-	if c.spendingKeyHolds(spendingPublicKey, cosignerPublicKey) {
-		return nil, fmt.Errorf("bounded cosigner witness key must differ from the spending key")
+	if c.bounded == nil || c.bounded.Cosigner == nil {
+		return nil, fmt.Errorf("composer declares no bounded cosigner")
 	}
-	if c.bounded != nil && boundedRequiresAdminKey(c.bounded) {
+	if err := c.refuseSharedSpendingKey("cosigner", spendingPublicKey, c.bounded.Cosigner.ComponentKeyType, cosignerPublicKey); err != nil {
+		return nil, err
+	}
+	if boundedRequiresAdminKey(c.bounded) {
 		adminPublicKey, err := decodeHexParameter(params[BoundedAdminPublicKeyParameter], BoundedAdminPublicKeyParameter, BoundedAdminPublicKeySize)
 		if err != nil {
 			return nil, err
@@ -819,7 +838,7 @@ func boundedProgramBinding(keyType, baseKeyType string, tealVersion int, spendin
 }
 
 func boundedBasePrimitive(baseKeyType string) string {
-	normalized := strings.ToLower(strings.TrimSpace(baseKeyType))
+	normalized := keytypecatalog.Canonicalize(baseKeyType)
 	switch normalized {
 	case "aplane.falcon1024.v1":
 		return "falcon1024"

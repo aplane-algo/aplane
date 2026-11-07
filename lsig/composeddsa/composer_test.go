@@ -25,24 +25,31 @@ import (
 	"github.com/aplane-algo/aplane/internal/addressderive"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
+	"github.com/aplane-algo/aplane/internal/sigconstruction"
 )
 
-type testOps struct{}
+// testOps is a stub verifier. Its construction is the zero value unless a test
+// registers it under a catalog base name, which must name the same construction.
+type testOps struct{ construction sigconstruction.Construction }
 
-func (testOps) PublicKeySize() int                          { return 1 }
-func (testOps) CryptoSignatureSize() int                    { return 1 }
-func (testOps) MnemonicScheme() string                      { return "" }
-func (testOps) MnemonicWordCount() int                      { return 0 }
-func (testOps) DisplayColor() string                        { return "" }
-func (testOps) TEALVersion() int                            { return 12 }
-func (testOps) BuildSignatureArgs([]byte) ([][]byte, error) { return nil, nil }
-func (testOps) BuildVerifyTEAL([]byte) (string, error)      { return "int 1\nreturn\n", nil }
+func (o testOps) Construction() sigconstruction.Construction { return o.construction }
+func (testOps) PublicKeySize() int                           { return 1 }
+func (testOps) CryptoSignatureSize() int                     { return 1 }
+func (testOps) MnemonicScheme() string                       { return "" }
+func (testOps) MnemonicWordCount() int                       { return 0 }
+func (testOps) DisplayColor() string                         { return "" }
+func (testOps) TEALVersion() int                             { return 12 }
+func (testOps) BuildSignatureArgs([]byte) ([][]byte, error)  { return nil, nil }
+func (testOps) BuildVerifyTEAL([]byte) (string, error)       { return "int 1\nreturn\n", nil }
 
 type autoSaltTestOps struct{ testOps }
 
 func (autoSaltTestOps) TEALVersion() int { return 13 }
 
+// suffixTestOps stands in for the Falcon base, as boundedTestOps does.
 type suffixTestOps struct{}
+
+func (suffixTestOps) Construction() sigconstruction.Construction { return sigconstruction.Falcon1024() }
 
 func (suffixTestOps) PublicKeySize() int                              { return 1 }
 func (suffixTestOps) CryptoSignatureSize() int                        { return 1 }
@@ -58,6 +65,10 @@ type noLayoutV13Ops struct{ suffixTestOps }
 func (noLayoutV13Ops) TEALVersion() int { return 13 }
 
 type falconBoundaryTestOps struct{}
+
+func (falconBoundaryTestOps) Construction() sigconstruction.Construction {
+	return sigconstruction.Falcon1024()
+}
 
 func (falconBoundaryTestOps) PublicKeySize() int       { return 4 }
 func (falconBoundaryTestOps) CryptoSignatureSize() int { return 4 }
@@ -692,6 +703,10 @@ type markerVerifierOps struct {
 	verifyTEAL string
 }
 
+func (markerVerifierOps) Construction() sigconstruction.Construction {
+	return sigconstruction.Falcon1024()
+}
+
 func (markerVerifierOps) PublicKeySize() int                          { return 1 }
 func (markerVerifierOps) CryptoSignatureSize() int                    { return 1 }
 func (markerVerifierOps) MnemonicScheme() string                      { return "" }
@@ -702,7 +717,7 @@ func (markerVerifierOps) BuildSignatureArgs([]byte) ([][]byte, error) { return n
 func (o markerVerifierOps) BuildVerifyTEAL([]byte) (string, error)    { return o.verifyTEAL, nil }
 
 func TestFalconAllowlistTemplateUsesBoundedFixedAllowlist(t *testing.T) {
-	RegisterBase(BaseRegistration{
+	registerBaseForTest(t, BaseRegistration{
 		BaseKeyType: "aplane.falcon1024.v1", FamilyName: "falcon1024", Version: 1,
 		Ops: falconBoundaryTestOps{}, NewAddressDeriver: func(string) addressderive.Deriver { return testDeriver{} },
 	})
@@ -800,7 +815,7 @@ func TestFalconTimelockOnlyAddsGatingPredicate(t *testing.T) {
 }
 
 func TestFalconMerkleAllowlistTemplateRootProofContract(t *testing.T) {
-	RegisterBase(BaseRegistration{
+	registerBaseForTest(t, BaseRegistration{
 		BaseKeyType: "aplane.falcon1024.v1",
 		FamilyName:  "falcon1024",
 		Version:     1,
@@ -908,7 +923,7 @@ func TestFalconMerkleAllowlistTemplateRootProofContract(t *testing.T) {
 }
 
 func TestFalconAllowlistTemplateRendersMaxRecipientsWithinComposerBoundary(t *testing.T) {
-	RegisterBase(BaseRegistration{
+	registerBaseForTest(t, BaseRegistration{
 		BaseKeyType: "aplane.falcon1024.v1",
 		FamilyName:  "falcon1024",
 		Version:     1,

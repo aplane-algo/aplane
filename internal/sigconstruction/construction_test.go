@@ -315,7 +315,9 @@ func TestCatalogResolvesProductionIdentifiersOnly(t *testing.T) {
 	if construction, ok := ForBaseKeyType(" APLANE.FALCON1024.V1 "); !ok || construction.ID() != "falcon1024" {
 		t.Fatalf("ForBaseKeyType() = %q, %v", construction.ID(), ok)
 	}
-	if construction, ok := ForWitnessKeyType(witness.Falcon1024V1); !ok || construction.ID() != "falcon1024" {
+	// Both lookups normalize the same way, so one spelling can't resolve on one path
+	// and be refused on another.
+	if construction, ok := ForWitnessKeyType(" " + strings.ToUpper(witness.Falcon1024V1) + " "); !ok || construction.ID() != "falcon1024" {
 		t.Fatalf("ForWitnessKeyType() = %q, %v", construction.ID(), ok)
 	}
 	if _, ok := ForBaseKeyType("example.construction-allof.v1"); ok {
@@ -326,5 +328,28 @@ func TestCatalogResolvesProductionIdentifiersOnly(t *testing.T) {
 	}
 	if _, ok := ForWitnessKeyType("aplane.falcon1024.v1"); ok {
 		t.Fatal("a spending base resolved as a witness key type")
+	}
+}
+
+// Layout is computed once and shared. What callers get back must still be theirs to
+// change without reaching the construction or anyone else's copy.
+func TestSharedLayoutCannotBeChangedThroughItsAccessors(t *testing.T) {
+	construction, err := New(Definition{ID: "test.pair", Components: []ComponentSpec{
+		{Name: "falcon", Primitive: PrimitiveFalcon1024},
+		{Name: "ed25519", Primitive: PrimitiveEd25519},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := construction.Layout().MaxSizes()
+	sizes := construction.Layout().MaxSizes()
+	sizes[0] = -1
+	components := construction.Layout().Components()
+	components[1].Start = 99
+	if got := construction.Layout().MaxSizes(); !slices.Equal(got, want) {
+		t.Fatalf("MaxSizes() after a caller's write = %v, want %v", got, want)
+	}
+	if got := construction.Layout().Components()[1].Start; got != 1 {
+		t.Fatalf("Components()[1].Start after a caller's write = %d, want 1", got)
 	}
 }

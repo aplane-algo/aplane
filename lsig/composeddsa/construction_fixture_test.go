@@ -13,6 +13,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/sigconstruction"
+	"github.com/aplane-algo/aplane/lsig/clientreg"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	"github.com/aplane-algo/aplane/lsig/ed25519lsig"
 	falcon "github.com/aplane-algo/aplane/lsig/falcon1024"
@@ -337,22 +338,25 @@ func TestFixturePolicyBelongsToOneComposer(t *testing.T) {
 	}
 }
 
+// Every base the production client registers must name a catalog construction, be
+// served by ops that render that same construction, and have a support policy.
+// Tests in this binary restore any base they register (registerBaseForTest), so
+// what remains after clientreg is exactly the production set.
 func TestEveryProductionBaseResolvesToASupportedConstruction(t *testing.T) {
-	falcon.RegisterClient()
-	ed25519lsig.RegisterClient()
+	clientreg.RegisterClient()
 	bases := composeddsa.RegisteredBaseKeyTypes()
 	if len(bases) < 2 {
 		t.Fatalf("registered bases = %v", bases)
 	}
 	for _, base := range bases {
-		if !strings.HasPrefix(base, "aplane.") {
-			continue // another test in this package registered a stand-in
-		}
 		construction, ok := sigconstruction.ForBaseKeyType(base)
 		if !ok {
 			t.Fatalf("registered base %q has no signature construction", base)
 		}
 		registration, _ := composeddsa.LookupBase(base)
+		if got := registration.Ops.Construction().ID(); got != construction.ID() {
+			t.Fatalf("%q ops render construction %q, the catalog names %q", base, got, construction.ID())
+		}
 		if got := registration.Ops.PublicKeySize(); got != construction.PublicKeySize() {
 			t.Fatalf("%q public key size = %d, construction says %d", base, got, construction.PublicKeySize())
 		}

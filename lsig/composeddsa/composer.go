@@ -18,6 +18,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
+	"github.com/aplane-algo/aplane/internal/sigconstruction"
 	"github.com/aplane-algo/aplane/internal/tealtemplate"
 	"github.com/aplane-algo/aplane/lsig/generictemplate"
 
@@ -36,10 +37,14 @@ var returnTokenPattern = regexp.MustCompile(`\breturn\b`)
 // compilation, and address derivation. DSAOps provides the algorithm-specific
 // metadata, verification TEAL footer, and signature argument packing.
 //
-// An implementation that also has a Construction() sigconstruction.Construction
-// method tells bounded key separation the base's components, so a witness key
-// reused as one component is refused. Without it, keys are compared whole.
+// Construction names the signature construction the ops render. Bounded key
+// separation reads its components, so a witness key reused as one component is
+// refused, and a base registered under a catalog name must render that name's
+// construction (see RegisterBase). Ops with no catalog construction, such as test
+// stubs under a non-catalog base name, return the zero Construction.
 type DSAOps interface {
+	Construction() sigconstruction.Construction
+
 	// Metadata
 	PublicKeySize() int
 	CryptoSignatureSize() int

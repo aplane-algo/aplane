@@ -17,12 +17,18 @@ import (
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
+	"github.com/aplane-algo/aplane/internal/sigconstruction"
 	"github.com/aplane-algo/aplane/internal/txeffects"
 	"github.com/aplane-algo/aplane/internal/witness"
 )
 
+// boundedTestOps is a stub verifier standing in for the Falcon base: tests compose
+// it under "aplane.falcon1024.v1", so it declares that base's construction.
 type boundedTestOps struct{}
 
+func (boundedTestOps) Construction() sigconstruction.Construction {
+	return sigconstruction.Falcon1024()
+}
 func (boundedTestOps) PublicKeySize() int       { return 1 }
 func (boundedTestOps) CryptoSignatureSize() int { return 4 }
 func (boundedTestOps) MnemonicScheme() string   { return "" }
@@ -692,5 +698,52 @@ func assertOrderedMarkers(t *testing.T, text string, markers ...string) {
 			t.Fatalf("marker %q missing or out of order:\n%s", marker, text)
 		}
 		position += next + 1
+	}
+}
+
+// Key separation resolves the witness's construction from its key type, as
+// rendering does, instead of assuming Falcon, and compares component by component.
+// An unknown witness key type is an error rather than "no overlap".
+func TestSpendingKeyHoldsResolvesTheWitnessFromItsKeyType(t *testing.T) {
+	composite, err := sigconstruction.New(sigconstruction.Definition{
+		ID: "test.falcon-ed25519",
+		Components: []sigconstruction.ComponentSpec{
+			{Name: "falcon", Primitive: sigconstruction.PrimitiveFalcon1024},
+			{Name: "ed25519", Primitive: sigconstruction.PrimitiveEd25519},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := NewComposedDSA(Config{KeyType: "test.key-separation.v1", Ops: testOps{construction: composite}})
+	falconKey := bytes.Repeat([]byte{0x11}, sigconstruction.Falcon1024().PublicKeySize())
+	edKey := bytes.Repeat([]byte{0x22}, sigconstruction.Ed25519().PublicKeySize())
+	spendingKey := append(append([]byte{}, falconKey...), edKey...)
+	otherFalconKey := bytes.Repeat([]byte{0x33}, len(falconKey))
+
+	for _, test := range []struct {
+		name          string
+		witnessType   string
+		witnessKey    []byte
+		want, wantErr bool
+	}{
+		{name: "reused Falcon component", witnessType: witness.Falcon1024V1, witnessKey: falconKey, want: true},
+		{name: "non-canonical spelling resolves the same", witnessType: " APLANE.WITNESS-FALCON1024.V1 ", witnessKey: falconKey, want: true},
+		{name: "distinct key", witnessType: witness.Falcon1024V1, witnessKey: otherFalconKey},
+		{name: "whole spending key", witnessType: witness.Falcon1024V1, witnessKey: spendingKey, want: true},
+		{name: "unknown witness type", witnessType: "test.unknown-witness.v1", witnessKey: otherFalconKey, wantErr: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := provider.spendingKeyHolds(spendingKey, test.witnessType, test.witnessKey)
+			if test.wantErr {
+				if err == nil || !strings.Contains(err.Error(), "has no signature construction") {
+					t.Fatalf("spendingKeyHolds() error = %v, want an unknown-witness error", err)
+				}
+				return
+			}
+			if err != nil || got != test.want {
+				t.Fatalf("spendingKeyHolds() = %v, %v, want %v", got, err, test.want)
+			}
+		})
 	}
 }
