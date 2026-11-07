@@ -24,11 +24,11 @@ func RegisterClient() {
 		if err != nil {
 			panic(fmt.Sprintf("boundedaccount: %v", err))
 		}
-		base, ok := composeddsa.LookupBase(baseKeyType)
+		base, ok := composeddsa.LookupBase(provider.BaseKeyType())
 		if !ok {
 			panic("boundedaccount: base key type is not registered")
 		}
-		addressderive.Register(KeyTypeV1, base.NewAddressDeriver(KeyTypeV1))
+		addressderive.Register(provider.KeyType(), base.NewAddressDeriver(provider.KeyType()))
 		logicsigdsa.Register(provider)
 	})
 }

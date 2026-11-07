@@ -16,7 +16,6 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/aplane-algo/aplane/internal/boundary"
 	"github.com/aplane-algo/aplane/internal/cosigner/cosignerrefs"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 )
@@ -328,8 +327,17 @@ func (m Model) handleGenerateFormKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		if keyType == boundary.KeyTypeV1 {
+		// A compiled list can stand in until the signer's arrives, so a selected type
+		// may not be classified yet. Missing inventory isn't an answer that the type
+		// is ordinary: the plain form would create the wrong request for a per-key one.
+		perKey, known := keyTypeIsPerKey(keyType)
+		if !known {
+			m.forms.generateError = "The signer's key types have not loaded. Try again."
+			return m, tea.Batch(m.waitForMessageCmd(), m.sendListKeyTypesCmd())
+		}
+		if perKey {
 			m.forms.generateError = ""
+			m.forms.boundaryKeyType = keyType
 			m.forms.boundaryPreset = nil
 			m.forms.boundaryPresetIndex = 0
 			m.viewState = ViewBoundaryPreset
@@ -621,7 +629,7 @@ func (m Model) submitParamModal(
 	if err := spec.Validate(transformedParams); err != nil {
 		return m, nil, err.Error()
 	}
-	if preset := m.forms.boundaryPreset; preset != nil && keyType == boundary.KeyTypeV1 {
+	if preset := m.forms.boundaryPreset; preset != nil && keyType == m.forms.boundaryKeyType {
 		for name, value := range preset.Fixed {
 			transformedParams[name] = value
 		}

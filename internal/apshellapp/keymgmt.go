@@ -5,11 +5,13 @@ package apshellapp
 
 import (
 	"context"
+	"fmt"
+	"slices"
 
 	"github.com/aplane-algo/aplane/internal/appresult"
-	"github.com/aplane-algo/aplane/internal/boundary"
 	"github.com/aplane-algo/aplane/internal/engine"
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 // GenerateKeyRequest captures parsed generate-command inputs.
@@ -31,19 +33,42 @@ type GenerateOptions struct {
 	ResultFile      string
 }
 
-// TakeGenerateOptions removes apshell's own options from params. It applies only
-// to aplane.falcon1024-b.v1, whose closed parameter list contains neither name. Any
-// other type's parameters are the signer's, and a template can legally declare a
-// parameter called boundary or result, so they must pass through untouched.
-func TakeGenerateOptions(keyType string, params map[string]string) GenerateOptions {
-	if keytypecatalog.Canonicalize(keyType) != boundary.KeyTypeV1 {
-		return GenerateOptions{}
+// TakeGenerateOptions removes apshell's own options from params, for a key type the
+// signer reports as per-key. Such a type's closed parameter list contains neither
+// name. Any other type's parameters are the signer's, and a template can legally
+// declare a parameter called boundary or result, so they pass through untouched.
+//
+// Telling those apart takes the signer's inventory. A failed or incomplete lookup is
+// not an answer that the type is ordinary, so it stops here, before either name is
+// interpreted or forwarded and before any generation request. A request with neither
+// name has nothing to tell apart, so it needs no lookup and can't fail on one.
+func (a *App) TakeGenerateOptions(ctx context.Context, keyType string, params map[string]string) (GenerateOptions, error) {
+	return takeGenerateOptions(keyType, params, func() ([]signerapi.KeyTypeInfo, error) {
+		return a.eng.ListKeyTypes(ctx)
+	})
+}
+
+func takeGenerateOptions(keyType string, params map[string]string, inventory func() ([]signerapi.KeyTypeInfo, error)) (GenerateOptions, error) {
+	boundaryFile, hasBoundaryFile := params[GenerateOptionBoundaryFile]
+	resultFile, hasResultFile := params[GenerateOptionResultFile]
+	if !hasBoundaryFile && !hasResultFile {
+		return GenerateOptions{}, nil
 	}
-	options := GenerateOptions{ResultFile: params[GenerateOptionResultFile]}
-	options.BoundaryFile, options.HasBoundaryFile = params[GenerateOptionBoundaryFile]
+	keyTypes, err := inventory()
+	if err != nil {
+		return GenerateOptions{}, fmt.Errorf("read the signer's key types to interpret %s and %s: %w", GenerateOptionBoundaryFile, GenerateOptionResultFile, err)
+	}
+	canonical := keytypecatalog.Canonicalize(keyType)
+	index := slices.IndexFunc(keyTypes, func(info signerapi.KeyTypeInfo) bool { return info.KeyType == canonical })
+	if index < 0 {
+		return GenerateOptions{}, fmt.Errorf("the signer does not report key type %q, so %s and %s cannot be interpreted", canonical, GenerateOptionBoundaryFile, GenerateOptionResultFile)
+	}
+	if !keyTypes[index].PerKeyContract {
+		return GenerateOptions{}, nil
+	}
 	delete(params, GenerateOptionBoundaryFile)
 	delete(params, GenerateOptionResultFile)
-	return options
+	return GenerateOptions{BoundaryFile: boundaryFile, HasBoundaryFile: hasBoundaryFile, ResultFile: resultFile}, nil
 }
 
 // DeleteKeyRequest captures parsed delete-command inputs.

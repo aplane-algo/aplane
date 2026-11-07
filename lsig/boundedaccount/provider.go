@@ -21,14 +21,38 @@ import (
 )
 
 const (
-	baseKeyType       = "aplane.falcon1024.v1"
 	derivationVersion = 3
 	shapeOpcodeCost   = lsigresource.SingleTransactionOpcodeCeiling
 	merkleProofArg    = "merkle_proof"
 	merkleProofSize   = 512
-	displayName       = "Bounded Account"
-	description       = "Falcon-1024 account limited to a fixed recipient list, chosen at generation."
 )
+
+// Definition is a compiled general bounded key type: its identity, the base that
+// names its spending construction, and the shapes it offers. Listing a shape grants
+// nothing: the bounded support policy still decides at generation, so a definition
+// can't authorize a combination the policy refuses.
+type Definition struct {
+	Publisher   string
+	Family      string
+	Version     int
+	BaseKeyType string
+	DisplayName string
+	Description string
+	Shapes      []Shape
+}
+
+// falcon1024Definition is the production definition, aplane.falcon1024-b.v1.
+func falcon1024Definition() Definition {
+	return Definition{
+		Publisher:   "aplane",
+		Family:      "falcon1024-b",
+		Version:     1,
+		BaseKeyType: "aplane.falcon1024.v1",
+		DisplayName: "Bounded Account",
+		Description: "Falcon-1024 account limited to a fixed recipient list, chosen at generation.",
+		Shapes:      Shapes(),
+	}
+}
 
 // shapeDefinition is one shape with its composer and provenance.
 type shapeDefinition struct {
@@ -44,27 +68,38 @@ type shapeDefinition struct {
 // composer would answer every question with whichever shape it happened to be,
 // including the definition-level bounded metadata this type does not have.
 type Provider struct {
-	identity *composeddsa.ComposedDSA
-	params   []lsigprovider.ParameterDef
-	byShape  map[string]*shapeDefinition
-	ordered  []*shapeDefinition
-	grammar  string
+	definition Definition
+	identity   *composeddsa.ComposedDSA
+	params     []lsigprovider.ParameterDef
+	byShape    map[string]*shapeDefinition
+	ordered    []*shapeDefinition
+	grammar    string
 	// cosignerComponent is the component key type all cosigner shapes share.
 	cosignerComponent string
 }
 
-// NewProvider builds every shape. It fails if any cannot be built, because the
-// grammar must not offer a shape that errors on first use.
+// NewProvider builds the production key type.
 func NewProvider() (*Provider, error) {
-	provider := &Provider{params: creationParameters(), byShape: make(map[string]*shapeDefinition)}
-	for _, shape := range Shapes() {
-		composer, err := composeddsa.NewProviderFromTemplateSpec(shapeSpec(shape))
+	return newProvider(falcon1024Definition())
+}
+
+// newProvider builds every shape of a definition. It fails if any cannot be built,
+// because the grammar must not offer a shape that errors on first use. A shape can
+// build and still be refused at generation: that is the support policy's decision,
+// which this construction must not take, since inventory and durable load reach it.
+func newProvider(definition Definition) (*Provider, error) {
+	if len(definition.Shapes) == 0 {
+		return nil, fmt.Errorf("bounded definition %s.%s has no shapes", definition.Publisher, definition.Family)
+	}
+	provider := &Provider{definition: definition, params: creationParameters(), byShape: make(map[string]*shapeDefinition)}
+	for _, shape := range definition.Shapes {
+		composer, err := composeddsa.NewProviderFromTemplateSpec(shapeSpec(definition, shape))
 		if err != nil {
 			return nil, fmt.Errorf("build shape %s: %w", shape.Descriptor(), err)
 		}
-		definition := &shapeDefinition{shape: shape, composer: composer, fingerprint: shapeFingerprint(shape, composer)}
-		provider.byShape[shape.Descriptor()] = definition
-		provider.ordered = append(provider.ordered, definition)
+		built := &shapeDefinition{shape: shape, composer: composer, fingerprint: shapeFingerprint(shape, composer)}
+		provider.byShape[shape.Descriptor()] = built
+		provider.ordered = append(provider.ordered, built)
 		if shape.Cosigner {
 			provider.cosignerComponent = composer.BoundedAuthorizationMetadata().Cosigner.ComponentKeyType
 		}
@@ -77,7 +112,7 @@ func NewProvider() (*Provider, error) {
 // shapeSpec expresses a shape in the expert template schema, so a shape gets
 // every check an imported template gets and cannot reach a composer state that a
 // template could not.
-func shapeSpec(shape Shape) *composeddsa.TemplateSpec {
+func shapeSpec(definition Definition, shape Shape) *composeddsa.TemplateSpec {
 	version := derivationVersion
 	maxFee := MaxFee
 	opcodeCost := uint64(shapeOpcodeCost)
@@ -143,13 +178,13 @@ func shapeSpec(shape Shape) *composeddsa.TemplateSpec {
 		SchemaVersion:     composeddsa.CurrentTemplateSchemaVersion,
 		DerivationVersion: &version,
 		TemplateType:      "composed",
-		BaseKeyType:       baseKeyType,
+		BaseKeyType:       definition.BaseKeyType,
 		TemplateMode:      generictemplate.TemplateModeStrict,
-		Publisher:         "aplane",
-		Family:            "falcon1024-b",
-		Version:           1,
-		DisplayName:       displayName,
-		Description:       description,
+		Publisher:         definition.Publisher,
+		Family:            definition.Family,
+		Version:           definition.Version,
+		DisplayName:       definition.DisplayName,
+		Description:       definition.Description,
 		MaxOpcodeCost:     &opcodeCost,
 		Bounded:           bounded,
 		Parameters:        parameters,
@@ -238,7 +273,7 @@ func composerValues(definition *shapeDefinition, values map[string]string) map[s
 func (p *Provider) CosignerComponentKeyType(params map[string]string) (string, bool) {
 	_, hasName := params[ParameterCosigner]
 	_, hasKey := params[composeddsa.BoundedCosignerPublicKeyParameter]
-	if !hasName && !hasKey {
+	if (!hasName && !hasKey) || p.cosignerComponent == "" {
 		return "", false
 	}
 	return p.cosignerComponent, true
@@ -324,7 +359,7 @@ func (p *Provider) GrammarFingerprint() string { return p.grammar }
 func (p *Provider) CompatibilityFingerprint() string { return p.grammar }
 
 // KeyType returns the key type identifier.
-func (p *Provider) KeyType() string { return KeyTypeV1 }
+func (p *Provider) KeyType() string { return p.identity.KeyType() }
 
 // RoutingFamily returns the base family, which owns key generation and signing.
 func (p *Provider) RoutingFamily() string { return p.identity.RoutingFamily() }
@@ -336,10 +371,10 @@ func (p *Provider) Version() int { return p.identity.Version() }
 func (p *Provider) Category() string { return lsigprovider.CategoryDSALsig }
 
 // DisplayName returns the human-readable name.
-func (p *Provider) DisplayName() string { return displayName }
+func (p *Provider) DisplayName() string { return p.definition.DisplayName }
 
 // Description returns a short description.
-func (p *Provider) Description() string { return description }
+func (p *Provider) Description() string { return p.definition.Description }
 
 // DisplayColor returns the base's display color.
 func (p *Provider) DisplayColor() string { return p.identity.DisplayColor() }
@@ -382,7 +417,7 @@ func (p *Provider) SetAlgodClient(client *algod.Client) {
 // so signing assembles them from the stored contract and packs the signature
 // through the base key type.
 func (p *Provider) BuildArgs([]byte, map[string][]byte) ([][]byte, error) {
-	return nil, fmt.Errorf("%s arguments are assembled from the stored account contract", KeyTypeV1)
+	return nil, fmt.Errorf("%s arguments are assembled from the stored account contract", p.KeyType())
 }
 
 // ValidateCreationParams checks a request and the composer parameters it selects.
