@@ -671,15 +671,22 @@ signing.
    ```
 
    The adapter delegates to the catalog: `BuildVerifyTEAL` to `VerifyTEAL`,
-   `SignatureArgLayout` to `Layout`, and `BuildSignatureArgs` to `PackSignature`. It also
-   implements `Construction()`, which lets key separation compare each component.
+   `SignatureArgLayout` to `Layout`, and `BuildSignatureArgs` to `PackSignature`.
+   `Construction()` is part of `DSAOps` and must return the construction the catalog
+   lists for the base's name: `RegisterBase` panics otherwise, and bounded generation
+   refuses a directly composed base whose ops disagree with its name. Key separation reads
+   the construction's components, so a witness key reused as one component is refused.
 5. **Wiring.** Add the family to `lsig/clientreg/register.go` and `lsig/signerreg/`.
 6. **Compatibility token.** Add a row to `boundedBasePrimitive` in
    `lsig/composeddsa/bounded.go`. The tokens feed the program binding and fingerprints, so
    never rename one.
 7. **Workflow support.** Add a `boundedSupportPolicy` entry in
    `lsig/composeddsa/bounded_support.go`. Grant only what you've reviewed: a registered base
-   with no entry can't generate bounded accounts. External-admin support also needs a
+   with no entry can't generate bounded accounts. Admission is for new accounts only;
+   signing has its own table, `boundedSigningConstructions` in
+   `internal/signerapp/signing/bounded_construction.go`, of the workflows the signer
+   completes. Add the signing rows first: `TestBoundedGenerationAdmitsOnlySignableWorkflows`
+   fails if admission grants a workflow signing can't finish. External-admin support also needs a
    validator design, because `internal/boundedadmin/program` accepts one Falcon base
    argument only. Cosigner support also needs the template rule in `template.go` and a
    receipt encoding to change.

@@ -15,25 +15,34 @@ import (
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
+	"github.com/aplane-algo/aplane/internal/sigconstruction"
 )
 
-func registerTemplateTestBase(keyType string) {
+func registerTemplateTestBase(t testing.TB, keyType string) {
+	t.Helper()
 	familyName := strings.TrimSuffix(keyType, "-v1")
 	if dot := strings.Index(familyName, "."); dot >= 0 {
 		familyName = familyName[dot+1:]
 	}
 	familyName = strings.TrimSuffix(familyName, ".v1")
-	RegisterBase(BaseRegistration{
+	registerBaseForTest(t, BaseRegistration{
 		BaseKeyType:       keyType,
 		FamilyName:        familyName,
 		Version:           1,
-		Ops:               testOps{},
+		Ops:               testOps{construction: catalogConstruction(keyType)},
 		NewAddressDeriver: func(string) addressderive.Deriver { return testDeriver{} },
 	})
 }
 
+// catalogConstruction is the construction a catalog base name requires of its ops,
+// or the zero value for a name outside the catalog.
+func catalogConstruction(baseKeyType string) sigconstruction.Construction {
+	construction, _ := sigconstruction.ForBaseKeyType(baseKeyType)
+	return construction
+}
+
 func TestValidateTemplateSpecAcceptsComposedRegisteredBase(t *testing.T) {
-	registerTemplateTestBase("test.template-base.v1")
+	registerTemplateTestBase(t, "test.template-base.v1")
 
 	spec, err := ParseTemplateSpec([]byte(`
 schema_version: 1
@@ -73,7 +82,7 @@ teal: |
 }
 
 func TestNewProviderFromTemplateSpecUsesDerivationVersion(t *testing.T) {
-	registerTemplateTestBase("test.template-derivation-base.v1")
+	registerTemplateTestBase(t, "test.template-derivation-base.v1")
 
 	spec, err := ParseTemplateSpec([]byte(`
 schema_version: 1
@@ -103,7 +112,7 @@ teal: |
 }
 
 func TestNewProviderFromTemplateSpecOmittedDerivationUsesNoSalt(t *testing.T) {
-	registerTemplateTestBase("test.template-unsalted-base.v1")
+	registerTemplateTestBase(t, "test.template-unsalted-base.v1")
 
 	spec, err := ParseTemplateSpec([]byte(`
 schema_version: 1
@@ -224,7 +233,7 @@ teal: |
 
 func TestComposedSchemaV2BuildsBoundedProvider(t *testing.T) {
 	baseKeyType := "test.template-bounded-base.v1"
-	RegisterBase(BaseRegistration{
+	registerBaseForTest(t, BaseRegistration{
 		BaseKeyType:       baseKeyType,
 		FamilyName:        "template-bounded-base",
 		Version:           1,
@@ -284,7 +293,7 @@ teal: |
 
 func TestComposedSchemaV2RejectsAuthorDeclaredAdminPublicKey(t *testing.T) {
 	baseKeyType := "test.template-author-admin-key-base.v1"
-	registerTemplateTestBase(baseKeyType)
+	registerTemplateTestBase(t, baseKeyType)
 	spec, err := ParseTemplateSpec([]byte(`
 schema_version: 2
 template_type: composed
@@ -321,7 +330,7 @@ teal: |
 
 func TestComposedSchemaV1RejectsAuthorDeclaredAdminPublicKey(t *testing.T) {
 	baseKeyType := "test.template-v1-author-admin-key-base.v1"
-	registerTemplateTestBase(baseKeyType)
+	registerTemplateTestBase(t, baseKeyType)
 	spec, err := ParseTemplateSpec([]byte(`
 schema_version: 1
 template_type: composed
@@ -349,7 +358,7 @@ teal: |
 }
 
 func TestTemplateSchemaSelectionAndStrictDecoding(t *testing.T) {
-	registerTemplateTestBase("test.template-schema-selection-base.v1")
+	registerTemplateTestBase(t, "test.template-schema-selection-base.v1")
 	tests := []struct {
 		name string
 		yaml string
@@ -424,7 +433,7 @@ teal: int 1
 }
 
 func TestComposedSchemaV2BuildsBoundedCosignerProfile(t *testing.T) {
-	RegisterBase(BaseRegistration{
+	registerBaseForTest(t, BaseRegistration{
 		BaseKeyType:       "aplane.falcon1024.v1",
 		FamilyName:        "falcon1024",
 		Version:           1,
@@ -473,14 +482,14 @@ teal: |
 }
 
 func TestComposedSchemaV2RejectsInvalidBoundedCosigner(t *testing.T) {
-	RegisterBase(BaseRegistration{
+	registerBaseForTest(t, BaseRegistration{
 		BaseKeyType:       "aplane.falcon1024.v1",
 		FamilyName:        "falcon1024",
 		Version:           1,
 		Ops:               boundedTestOps{},
 		NewAddressDeriver: func(string) addressderive.Deriver { return testDeriver{} },
 	})
-	registerTemplateTestBase("test.non-falcon-bounded-cosigner.v1")
+	registerTemplateTestBase(t, "test.non-falcon-bounded-cosigner.v1")
 	base := `
 schema_version: 2
 template_type: composed
@@ -523,7 +532,7 @@ teal: |
 
 func TestComposedSchemaV2RejectsInvalidBoundedArgumentContracts(t *testing.T) {
 	baseKeyType := "test.template-bounded-args-base.v1"
-	registerTemplateTestBase(baseKeyType)
+	registerTemplateTestBase(t, baseKeyType)
 	tests := []struct {
 		name       string
 		bounded    string
@@ -580,7 +589,7 @@ teal: |
 
 func TestComposedSchemaV2RequiresExplicitMaxFee(t *testing.T) {
 	baseKeyType := "test.template-missing-max-fee-base.v1"
-	RegisterBase(BaseRegistration{
+	registerBaseForTest(t, BaseRegistration{
 		BaseKeyType:       baseKeyType,
 		FamilyName:        "template-missing-max-fee-base",
 		Version:           1,
@@ -611,7 +620,7 @@ teal: int 1
 }
 
 func TestValidateTemplateSpecRejectsNonRelocatableTEAL(t *testing.T) {
-	registerTemplateTestBase("test.relocatable-base.v1")
+	registerTemplateTestBase(t, "test.relocatable-base.v1")
 
 	tests := []struct {
 		name string
@@ -666,7 +675,7 @@ teal: |
 }
 
 func TestValidateTemplateSpecAcceptsTemplateVariableSuffix(t *testing.T) {
-	registerTemplateTestBase("test.relocatable-strict-base.v1")
+	registerTemplateTestBase(t, "test.relocatable-strict-base.v1")
 
 	spec, err := ParseTemplateSpec([]byte(`
 schema_version: 1
@@ -709,7 +718,7 @@ teal: |
 
 func TestPrepareKeystoreTemplateRegistrationRegistersDeriverWhenProviderExists(t *testing.T) {
 	baseKeyType := "test.template-existing-provider-base.v1"
-	registerTemplateTestBase(baseKeyType)
+	registerTemplateTestBase(t, baseKeyType)
 
 	data := []byte(`
 schema_version: 1
@@ -750,8 +759,8 @@ teal: |
 }
 
 func TestBundledComposedTemplatesValidate(t *testing.T) {
-	registerTemplateTestBase("aplane.falcon1024.v1")
-	registerTemplateTestBase("aplane.ed25519.v1")
+	registerTemplateTestBase(t, "aplane.falcon1024.v1")
+	registerTemplateTestBase(t, "aplane.ed25519.v1")
 
 	paths := []string{
 		"library/retired/aplane.falcon1024-allowlist-lock.v1.yaml",
@@ -781,7 +790,7 @@ func TestBundledComposedTemplatesValidate(t *testing.T) {
 
 func TestSemanticFingerprintIncludesBaseKeyType(t *testing.T) {
 	for _, keyType := range []string{"fingerprint-a-v1", "fingerprint-b-v1"} {
-		RegisterBase(BaseRegistration{
+		registerBaseForTest(t, BaseRegistration{
 			BaseKeyType:       keyType,
 			FamilyName:        "fingerprint-base",
 			Version:           1,

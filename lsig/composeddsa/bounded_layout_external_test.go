@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/sigconstruction"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	ed25519v1 "github.com/aplane-algo/aplane/lsig/ed25519lsig/v1"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
@@ -14,6 +15,10 @@ import (
 )
 
 type splitSignatureOps struct{}
+
+func (splitSignatureOps) Construction() sigconstruction.Construction {
+	return sigconstruction.Construction{}
+}
 
 func (splitSignatureOps) PublicKeySize() int       { return 32 }
 func (splitSignatureOps) CryptoSignatureSize() int { return 64 }

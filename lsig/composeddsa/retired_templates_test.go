@@ -17,6 +17,9 @@ import (
 // definition. The bytes below it are the file as it stood when retired, so
 // existing stores keep matching, and a retired file does not change again.
 func TestRetiredTemplatesCarryDeprecationComment(t *testing.T) {
+	// The templates name the Falcon base. Register a stand-in here rather than rely
+	// on one another test left behind.
+	registerTemplateTestBase(t, "aplane.falcon1024.v1")
 	for _, test := range []struct {
 		file        string
 		replacement string

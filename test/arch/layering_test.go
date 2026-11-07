@@ -124,6 +124,9 @@ func TestSignatureConstructionsStayClientSafe(t *testing.T) {
 	allowed := map[string]bool{
 		modulePrefix + "/internal/falconparams": true,
 		modulePrefix + "/internal/witness":      true,
+		// The shared key-type normalization. It imports no module package, so it
+		// brings in no signing, verification or family code.
+		modulePrefix + "/internal/keytypecatalog": true,
 	}
 	imports, ok := moduleImports(t)[modulePrefix+"/internal/sigconstruction"]
 	if !ok {

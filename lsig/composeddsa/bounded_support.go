@@ -68,6 +68,13 @@ func (c *ComposedDSA) checkBoundedGenerationSupport() error {
 	if !ok {
 		return fmt.Errorf("%s accounts cannot be generated on base key type %q", c.bounded.Contract, c.baseKeyType)
 	}
+	// The policy resolved the base by name, but the program verifies whatever the
+	// ops render. A direct NewComposedDSA call bypasses RegisterBase, so check here
+	// too that the two agree. Fixture composers carry their own policy and a base
+	// name outside the catalog, so this only constrains production names.
+	if err := baseConstructionAgrees(c.baseKeyType, c.ops); err != nil {
+		return err
+	}
 	if boundedRequiresAdminKey(c.bounded) && !support.externalAdmin {
 		return fmt.Errorf("base key type %q does not support %s rekey under %s: the contract-admin ceremony requires a Falcon-1024 spending key",
 			c.baseKeyType, boundedmeta.AdminAuthorizationAdmin, c.bounded.Contract)
