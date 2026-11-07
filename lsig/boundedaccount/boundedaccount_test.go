@@ -9,8 +9,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/aplane-algo/aplane/internal/txeffects"
-	"github.com/aplane-algo/aplane/lsig/ed25519lsig"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -22,8 +20,10 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/boundary"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/txeffects"
 	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
+	"github.com/aplane-algo/aplane/lsig/ed25519lsig"
 	falcon "github.com/aplane-algo/aplane/lsig/falcon1024"
 )
 

@@ -291,7 +291,9 @@ func (m Model) handleGenerateFormKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "up", "k":
-		// Move to previous key type
+		// Move to previous key type. A cursor key is a deliberate choice even at
+		// the end of the list, so it clears generateNeedsChoice either way.
+		m.forms.generateNeedsChoice = false
 		if m.forms.generateKeyType > 0 {
 			m.forms.generateKeyType--
 		}
@@ -299,6 +301,7 @@ func (m Model) handleGenerateFormKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "down", "j":
 		// Move to next key type
+		m.forms.generateNeedsChoice = false
 		if m.forms.generateKeyType < getKeyTypeCount()-1 {
 			m.forms.generateKeyType++
 		}
@@ -321,6 +324,10 @@ func (m Model) handleGenerateFormKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return next, cmd
 
 	case "enter", " ":
+		if m.forms.generateNeedsChoice {
+			m.forms.generateError = "Choose a key type first."
+			return m, nil
+		}
 		keyType := getKeyTypeByIndex(m.forms.generateKeyType)
 		if keyType == "" {
 			m.forms.generateError = "Invalid key type selected"
@@ -332,7 +339,7 @@ func (m Model) handleGenerateFormKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// is ordinary: the plain form would create the wrong request for a per-key one.
 		perKey, known := keyTypeIsPerKey(keyType)
 		if !known {
-			m.forms.generateError = "The signer's key types have not loaded. Try again."
+			m.forms.generateError = generateKeyTypesNotLoaded
 			return m, tea.Batch(m.waitForMessageCmd(), m.sendListKeyTypesCmd())
 		}
 		if perKey {

@@ -272,7 +272,11 @@ type formsState struct {
 	importedAddress     string
 	importedKeyType     string
 
-	generateKeyType           int // index into key type list
+	generateKeyType int // index into key type list
+	// generateNeedsChoice is set when a new key-type list dropped the type the
+	// Generate cursor named. Enter is refused until the operator moves the cursor,
+	// so a repeated Enter can't act on whatever type now sits at that position.
+	generateNeedsChoice       bool
 	generateError             string
 	generateFocus             int // 0 = key type, then dynamic params, then generate button
 	generateParamScrollOffset int
