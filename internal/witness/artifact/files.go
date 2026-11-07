@@ -113,36 +113,39 @@ func ValidateOutputDirectory(path string) error {
 	if !info.IsDir() {
 		return fmt.Errorf("output path must be an existing directory, not a symlink or file")
 	}
-	store, found, err := enclosingSignerStore(path)
+	inside, err := insideSignerStore(path)
 	if err != nil {
 		return fmt.Errorf("inspect output directory: %w", err)
 	}
-	if found {
-		return fmt.Errorf("output directory is inside the signer store at %s; admin keys belong outside it", store)
+	if inside {
+		return fmt.Errorf("output directory is inside a signer store; admin keys belong outside it")
 	}
 	return nil
 }
 
-// enclosingSignerStore finds the signer store holding directory, if any. An
-// admin key written inside a store fails the next reload closed, which stops
-// the signer. A marker this process cannot see is treated as absent: the check
-// catches a mistaken path, and a store it cannot read is one it cannot write to.
-func enclosingSignerStore(directory string) (string, bool, error) {
-	absolute, err := filepath.Abs(directory)
+// insideSignerStore reports whether directory lies in a signer store. An admin
+// key written there fails the next reload closed, which stops the signer.
+//
+// The walk appends ".." and lets the kernel resolve each step. Cleaning the path
+// first would remove ".." lexically, against the shell's logical working
+// directory, while a relative write follows the physical one. A parent this
+// process cannot inspect ends the walk: the check catches a mistaken path, and a
+// store it cannot read is one it cannot write to.
+func insideSignerStore(directory string) (bool, error) {
+	separator := string(os.PathSeparator)
+	current, err := os.Stat(directory)
 	if err != nil {
-		return "", false, err
+		return false, err
 	}
-	resolved, err := filepath.EvalSymlinks(absolute)
-	if err != nil {
-		return "", false, err
-	}
-	for current := resolved; ; current = filepath.Dir(current) {
-		if _, err := os.Lstat(filepath.Join(current, storepaths.StoreRootName)); err == nil {
-			return current, true, nil
+	for path := directory; ; path += separator + ".." {
+		if _, err := os.Lstat(path + separator + storepaths.StoreRootName); err == nil {
+			return true, nil
 		}
-		if current == filepath.Dir(current) {
-			return "", false, nil
+		parent, err := os.Stat(path + separator + "..")
+		if err != nil || os.SameFile(current, parent) {
+			return false, nil
 		}
+		current = parent
 	}
 }
 

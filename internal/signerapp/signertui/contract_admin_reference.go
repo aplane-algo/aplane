@@ -15,7 +15,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/witness"
 )
 
-const maxContractAdminReferenceBytes = 16 * 1024
+const maxContractAdminReferenceBytes = witness.MaxPublicReferenceBytes
 
 func isContractAdminReferenceParam(param lsigprovider.ParameterDef) bool {
 	return param.Name == boundedmeta.AdminPublicKeyParameter && param.Type == "bytes"

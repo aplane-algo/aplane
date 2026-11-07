@@ -3,6 +3,9 @@
 
 package witness
 
+// MaxPublicReferenceBytes bounds a public reference read from a file.
+const MaxPublicReferenceBytes = 16 * 1024
+
 // File extensions describe custody roles. Both roles share the witness key
 // form, identity, and public-reference schema, so the name is what keeps an
 // admin file and a cosigner file apart at a glance; it proves nothing about

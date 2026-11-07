@@ -441,6 +441,13 @@ func TestCatalogImportsCosignerEnvelopeFromStdin(t *testing.T) {
 }
 
 func TestReadCosignerEnvelopeFromStdinRejectsOversize(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "ops.adm.json")
+	if err := os.WriteFile(path, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReadCosignerPublicEnvelope(path, nil); err == nil || !strings.Contains(err.Error(), "admin key reference") {
+		t.Fatalf("ReadCosignerPublicEnvelope(.adm.json) error = %v, want admin reference rejection", err)
+	}
 	_, err := ReadCosignerPublicEnvelope("-", strings.NewReader(strings.Repeat("x", maxCosignerPublicEnvelopeBytes+1)))
 	if err == nil || !strings.Contains(err.Error(), "exceeds") {
 		t.Fatalf("ReadCosignerPublicEnvelope() error = %v, want size rejection", err)

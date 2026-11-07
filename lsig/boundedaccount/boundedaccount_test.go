@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
@@ -586,6 +587,36 @@ rekey: {authority: admin_key, admin_key: `+name+`}
 `)
 			if _, err := boundary.LoadFile(file); err == nil || !strings.Contains(err.Error(), ".adm.json") {
 				t.Fatalf("LoadFile(%s) error = %v, want .adm.json rejection", name, err)
+			}
+		})
+	}
+}
+
+func TestAdminKeyFileReadIsBounded(t *testing.T) {
+	directory := t.TempDir()
+	target := filepath.Join(directory, "target.adm.json")
+	if err := os.WriteFile(target, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, filepath.Join(directory, "link.adm.json")); err != nil {
+		t.Fatal(err)
+	}
+	if err := syscall.Mkfifo(filepath.Join(directory, "pipe.adm.json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	oversized := bytes.Repeat([]byte{'x'}, witness.MaxPublicReferenceBytes+1)
+	if err := os.WriteFile(filepath.Join(directory, "large.adm.json"), oversized, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"link.adm.json", "pipe.adm.json", "large.adm.json"} {
+		t.Run(name, func(t *testing.T) {
+			file := writeBoundaryFile(t, directory, `schema: aplane.boundary.v1
+spend: [pay]
+recipients: [`+testAddress(1)+`]
+rekey: {authority: admin_key, admin_key: `+name+`}
+`)
+			if _, err := boundary.LoadFile(file); err == nil || !strings.Contains(err.Error(), "read admin witness") {
+				t.Fatalf("LoadFile(%s) error = %v, want read rejection", name, err)
 			}
 		})
 	}

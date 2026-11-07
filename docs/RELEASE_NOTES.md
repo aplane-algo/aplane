@@ -22,7 +22,9 @@ names below are no longer read.
   accept only `.adm.json`, so both refuse a cosigner reference by name. A name doesn't
   prove custody: check the key with `aprekey verify` and compare the ID.
 - apadmin's cosigner import browser now lists `.cos.json` files by default. Press `a`
-  to list everything.
+  to list everything. `cosigner import` refuses a `.adm.json` file.
+- A boundary file's `rekey.admin_key` must be a regular file of at most 16 KiB. A symbolic
+  link is refused.
 - `aprekey generate --out` refuses a directory inside a signer store, where the new
   file would stop the signer at its next reload.
 - Only filenames change. Witness Key IDs, schemas, encryption, and signing authority

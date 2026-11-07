@@ -347,7 +347,7 @@ func TestOutputDirectoryRefusesSignerStores(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := GenerateFiles(directory, []byte("passphrase"), time.Time{}); err == nil ||
-				!strings.Contains(err.Error(), "inside the signer store") {
+				!strings.Contains(err.Error(), "inside a signer store") {
 				t.Fatalf("GenerateFiles(%s) error = %v, want store refusal", directory, err)
 			}
 		})
@@ -361,6 +361,40 @@ func TestOutputDirectoryRefusesSignerStores(t *testing.T) {
 	}
 	if err := ValidateOutputDirectory(root); err != nil {
 		t.Fatalf("ValidateOutputDirectory(outside the store) error = %v", err)
+	}
+}
+
+func TestOutputDirectoryRefusesParentOfSymlinkIntoStore(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := filepath.Join(root, "store")
+	generation := filepath.Join(store, "generations", "gen-1")
+	for _, directory := range []string{filepath.Join(generation, "keys"), filepath.Join(generation, "inner"),
+		filepath.Join(root, "work", "keys")} {
+		if err := os.MkdirAll(directory, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(store, storepaths.StoreRootName), []byte("root"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, "work", "link")
+	if err := os.Symlink(filepath.Join(generation, "inner"), link); err != nil {
+		t.Fatal(err)
+	}
+	// t.Chdir sets PWD to the logical path, as a shell cd through the link does.
+	t.Chdir(link)
+	if _, err := GenerateFiles("../keys", []byte("passphrase"), time.Time{}); err == nil ||
+		!strings.Contains(err.Error(), "inside a signer store") {
+		t.Fatalf("GenerateFiles(../keys) error = %v, want store refusal", err)
+	}
+	if err := ValidateOutputDirectory(filepath.Join(link, "..", "keys")); err != nil {
+		t.Fatalf("ValidateOutputDirectory(cleaned path outside the store) error = %v", err)
+	}
+	if err := ValidateOutputDirectory(link + "/../keys"); err == nil {
+		t.Fatal("ValidateOutputDirectory(raw path through the link) was accepted")
 	}
 }
 
