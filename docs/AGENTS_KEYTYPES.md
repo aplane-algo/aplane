@@ -35,6 +35,16 @@ registered for composition, signing, and encrypted restore; do not expose them
 as standalone creation choices or let old enablement records grant access.
 See [internal providers](ARCH_KEYTYPES.md#internal-providers).
 
+## Signature Constructions
+
+`base_key_type` names a signature construction: an ordered list of primitive components
+that must all verify. Every production base is a construction of one. Do not add a
+multi-component base, register a fixture identity, or widen the bounded support policy
+without an explicit request: each of those needs a signature encoding, a credential
+design, and a contract decision. A key size that fits proves nothing about whether a
+workflow is supported. A registered base with no catalog construction is refused at
+bounded generation. See "Signature constructions" in `docs/ARCH_KEYTYPES.md`.
+
 ## Default Behavior
 
 When a user asks for a custom LogicSig template, default to a **user-loaded YAML
@@ -85,7 +95,7 @@ For Go provider work, keep the client/signer boundary intact. Client-visible
 provider metadata and LogicSig derivation may register through the LogicSig
 provider registries, but private-key operations must be passed through explicit
 signer/keygen ops in signer-side registration paths. A composed template names
-its private signing primitive through `base_key_type` and registers its own
+its signature construction through `base_key_type` and registers its own
 keygen and signing ops; the shared-ops fallback (described in
 DEV_KEYTYPES.md) is acceptable only when the template changes TEAL/params and
 shares its `base_key_type` provider's existing keygen/signing semantics. Do
@@ -94,7 +104,7 @@ format, signature format, mnemonic behavior, or signing semantics.
 
 Do not use `base_key_type` or a provider's `BaseKeyType()` as a universal route
 for account metadata, keygen, mnemonic import, TEAL, address derivation, or
-guarded assembly. It names the private signing primitive. Account semantics are
+guarded assembly. It names the signature construction. Account semantics are
 owned by the full `key_type` unless a specific operation deliberately delegates
 to another key type.
 
@@ -107,8 +117,8 @@ Every custom template needs a unique versioned key type:
 - Set `family` to a new stable lowercase name with no spaces.
 - Set `version` to `1` for the first version.
 - The resulting key type is `<publisher>.<family>.v<version>`.
-- For composed DSA templates, use `base_key_type` to select the DSA signing
-  primitive and `family` to name the template's own versioned key-type line.
+- For composed DSA templates, use `base_key_type` to select the signature
+  construction and `family` to name the template's own versioned key-type line.
 - Never reuse an existing built-in key type or previously installed custom key
   type for changed behavior.
 - If behavior changes, create a new version such as `example.myescrow.v2`.
@@ -307,7 +317,7 @@ apadmin template import <template.yaml>
 ```
 
 For a composed DSA YAML template, use `template_type: composed` and
-`base_key_type` for the private signing primitive, such as
+`base_key_type` for the signature construction, such as
 `aplane.falcon1024.v1` for Falcon-backed templates or `aplane.ed25519.v1` for
 Ed25519-backed
 templates:

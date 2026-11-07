@@ -87,9 +87,10 @@ Terminology:
   it is the declared `family` field. A composed template has its own `family`
   (e.g. `family: falcon1024-allowlist`) — that names the template's own
   version line, separate from whatever it signs with.
-- `base_key_type` is how a composed template names its private signing
-  primitive, e.g. `base_key_type: aplane.falcon1024.v1` to produce and pack
-  Falcon-1024 signatures.
+- `base_key_type` is how a composed template names its signature construction,
+  e.g. `base_key_type: aplane.falcon1024.v1` to produce and pack Falcon-1024
+  signatures. Every production base is a construction of one primitive; see
+  "Signature constructions" in [ARCH_KEYTYPES.md](ARCH_KEYTYPES.md).
 - `base_key_type` is not the account owner or a universal route for metadata,
   key generation, mnemonic import, TEAL, or guarded assembly. The full
   `key_type` owns those semantics unless a narrower contract explicitly
@@ -552,7 +553,7 @@ family: falcon1024-constraint
 version: 1
 ```
 
-In composed templates, `base_key_type` selects the signing primitive only. It
+In composed templates, `base_key_type` selects the signature construction only. It
 does not rename the template, collapse its metadata into the base provider, or
 make the base provider responsible for the template's TEAL, creation params, or
 runtime args.

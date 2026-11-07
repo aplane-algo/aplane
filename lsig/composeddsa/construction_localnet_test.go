@@ -4,6 +4,7 @@
 package composeddsa_test
 
 import (
+	"bytes"
 	"context"
 	stded25519 "crypto/ed25519"
 	"crypto/rand"
@@ -295,6 +296,28 @@ func TestCompositeLogicSigsExecuteLocalnet(t *testing.T) {
 				wrong[i] = newCompositeKey(t, wrong[i].primitive)
 				group, _ := submit(fmt.Sprintf("wrong-%d", i), wrong, test.cosigned)
 				expectRejected(t, network, group)
+			}
+			// Each proof below is valid in every component but one.
+			for i := range account.keys {
+				for label, damage := range map[string]func(args [][]byte, txid []byte){
+					"corrupted": func(args [][]byte, _ []byte) {
+						args[i] = bytes.Clone(args[i])
+						args[i][len(args[i])/2] ^= 0xff
+					},
+					"missing": func(args [][]byte, _ []byte) { args[i] = []byte{} },
+					"signed over the wrong message": func(args [][]byte, txid []byte) {
+						other := bytes.Clone(txid)
+						other[0] ^= 0xff
+						args[i] = account.keys[i].sign(t, other)
+					},
+				} {
+					group, _ := account.signedGroup(t, network, funder.GetAddress(), fmt.Sprintf("%s-%d", label, i), func(txid []byte) [][]byte {
+						args := account.argsFor(t, txid, account.keys, test.cosigned)
+						damage(args, txid)
+						return args
+					})
+					expectRejected(t, network, group)
+				}
 			}
 			if len(test.primitives) == 2 {
 				group, _ := account.signedGroup(t, network, funder.GetAddress(), "swapped", func(txid []byte) [][]byte {

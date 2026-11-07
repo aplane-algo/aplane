@@ -42,7 +42,7 @@ another merely because two dimensions currently use the same string.
 | **Authority lifecycle** | How does the account's authorizer evolve over time? | no mandatory rotation; mandatory per-spend rotation to the next stage (`rotating_lsig`) | Key category; for rotating types the `internal/rotatingkey` profile |
 | **Authorization contract** | Which reusable, versioned on-chain envelope and metadata vocabulary constrain this LogicSig? | `bounded1` | Template `bounded.contract` and durable `bounded_authorization.contract` |
 | **Policy/profile** | What concrete behavior narrows the account contract? | fixed allowlist, Merkle recipient proof, timelock, Corridor composition | Full key-type provider/template plus behavior parameters |
-| **Base key type** | Which private signing primitive produces the account's DSA signature arguments? | `aplane.falcon1024.v1`, `aplane.ed25519.v1` | Stored `base_key_type` and composed provider definition |
+| **Base key type** | Which signature construction produces the account's DSA signature arguments? | `aplane.falcon1024.v1`, `aplane.ed25519.v1` | Stored `base_key_type` and composed provider definition |
 | **Auxiliary authority enrollment** | Which additional authority participates, for which role or operation, and under whose custody? | cosigner witness, external contract-admin witness | Embedded public key, durable metadata, and custody-specific message contract |
 | **Signing flow** | Which versioned client/server protocol obtains a usable signature for this key? | empty ordinary flow, `bounded1`, `cosigner1`, `bounded-cosigner1`, `rotating1` | Signer-advertised `signing_flow` |
 | **Endpoint choreography** | Which ordered calls implement the selected flow for this transaction path? | `/sign`; `/sign/component` then `/sign/assemble`; `/sign/bounded-admin` then `aprekey`; `/sign/rotating/prepare` then `/sign/rotating/sign` | Flow contract, transaction classification, and HTTP DTOs |
@@ -323,6 +323,36 @@ signing flow, implementation) do not make them interchangeable. A `bounded1`
 contract with a cosigner advertises `bounded-cosigner1`; adding rotation to a
 cosigned account needs an explicitly defined choreography, which clients never
 infer from a key type's name or by combining two flow labels.
+
+### Signature constructions
+
+A signature construction is an ordered list of primitive components that must all
+verify. A single algorithm is a construction of one, and no component is primary:
+order sets argument positions and encoding, and every component is required.
+`internal/sigconstruction` is the closed, compiled catalog, and it's linked into
+clients, so it holds only shapes and verification sequences. Verification is in
+`internal/sigconstruction/verify`, which takes public inputs and is signer-side only.
+
+Five ideas stay separate:
+
+- A **primitive profile** is exact verification behavior: key and signature encoding,
+  argument slots, and the TEAL that verifies it.
+- A **signature construction** is the all-of list of primitives.
+- An **authority binding** ties a construction and its keys to a role. The role and the
+  contract decide when a proof is required and what message it signs, so spending,
+  cosigner and contract-admin proofs each keep their own transcript. An assembly
+  receipt is another use of the spending construction.
+- **Bounded contract support** says which workflows are reviewed for a construction
+  under a contract. It's a policy in `lsig/composeddsa`, not a property of the
+  cryptography, and a matching key size proves nothing about it.
+- An **account key type** owns account semantics. A construction doesn't.
+
+`base_key_type` keeps its name and now names a construction. Every production base is
+a construction of one, and stored data doesn't change. Multi-component constructions
+exist only in tests: production has no signature encoding for one, and it can't
+register or generate one. Adding a production hybrid needs a reviewed definition, a
+signature encoding, credentials, and explicit contract support. `bounded1` freezes
+TEAL 13, so an ML-DSA component would also need a new contract.
 
 ### Signature construction and custody are separate choices
 
