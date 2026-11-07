@@ -456,6 +456,9 @@ func TestCosignerReferenceFilesRefuseTheAdminName(t *testing.T) {
 	if _, err := os.Lstat(filepath.Join(dir, "new.adm.json")); !os.IsNotExist(err) {
 		t.Fatalf("refused export left a file: %v", err)
 	}
+	if err := WriteCosignerPublicEnvelope(filepath.Join(dir, "new.ADM.json"), []byte("{}")); err == nil {
+		t.Fatal("WriteCosignerPublicEnvelope accepted the admin name in another case")
+	}
 	cosignerPath := filepath.Join(dir, "lab.cos.json")
 	if err := WriteCosignerPublicEnvelope(cosignerPath, []byte("{}")); err != nil {
 		t.Fatalf("WriteCosignerPublicEnvelope(.cos.json) error = %v", err)

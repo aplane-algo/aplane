@@ -27,7 +27,9 @@ names below are no longer read.
 - A boundary file must be a regular file of at most 8 MiB, and its `rekey.admin_key` a
   regular file of at most 16 KiB. A symbolic link is refused for both.
 - `aprekey generate --out` refuses a directory inside a signer store, where the new
-  file would stop the signer at its next reload.
+  file would stop the signer at its next reload. It also prints the two paths it wrote.
+- A relative `rekey.admin_key` now follows symbolic links the way the system does. A path
+  with `..` through a link could previously read a different file.
 - Only filenames change. Witness Key IDs, schemas, encryption, and signing authority
   are the same.
 - **Keep your existing admin keys.** A `.wit` file behind a deployed bounded account is

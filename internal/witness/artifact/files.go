@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -118,7 +117,7 @@ func resolveOutputDirectory(path string) (string, error) {
 	if strings.TrimSpace(path) == "" {
 		return "", fmt.Errorf("output directory is required")
 	}
-	info, err := os.Lstat(path)
+	info, err := os.Lstat(withoutTrailingSeparators(path))
 	if err != nil {
 		return "", fmt.Errorf("inspect output directory: %w", err)
 	}
@@ -137,6 +136,22 @@ func resolveOutputDirectory(path string) (string, error) {
 		return "", fmt.Errorf("output directory is inside the signer store at %s; admin keys belong outside it", store)
 	}
 	return physical, nil
+}
+
+// withoutTrailingSeparators drops trailing separators and "/." segments. Lstat
+// follows a final symlink when either is present, which would hide the link.
+func withoutTrailingSeparators(path string) string {
+	separator := string(filepath.Separator)
+	for {
+		trimmed := strings.TrimSuffix(strings.TrimRight(path, separator), separator+".")
+		if trimmed == "" {
+			return separator
+		}
+		if trimmed == path {
+			return path
+		}
+		path = trimmed
+	}
 }
 
 // physicalPath returns path with every symlink and ".." resolved by the kernel's
@@ -169,7 +184,7 @@ func enclosingSignerStore(directory string) (string, bool, error) {
 		if err == nil {
 			return current, true, nil
 		}
-		if !errors.Is(err, fs.ErrNotExist) {
+		if !errors.Is(err, os.ErrNotExist) {
 			return "", false, err
 		}
 		if current == filepath.Dir(current) {

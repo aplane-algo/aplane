@@ -361,7 +361,10 @@ the trust input that matters after generation.
 
 `apadmin cosigner export <witness-key-id> [output-json]` and the apadmin TUI's
 **Export Cosigner Key** emit the canonical `aplane.witness-key-public.v1`
-document and nothing else. The command reads the
+document and nothing else. Export refuses an output name ending in `.adm.json`
+in any case, and `cosigner import` refuses such a path, because admin and
+cosigner references share a schema and the name is what tells them apart. The
+command reads the
 `keys/<witness-key-id>.cos.json` sidecar, verifies that `<witness-key-id>`
 equals the canonical Witness Key ID derived from the public key, and never reads
 or decrypts private key material. If the sidecar is missing or malformed,

@@ -592,8 +592,95 @@ rekey: {authority: admin_key, admin_key: `+name+`}
 	}
 }
 
+func TestAdminKeyPathFollowsTheKernelNotTheSpelling(t *testing.T) {
+	reference := func(b byte) ([]byte, string) {
+		t.Helper()
+		publicKey := bytes.Repeat([]byte{b}, witness.Falcon1024PublicKeySize)
+		id, err := witness.ID(witness.Falcon1024V1, publicKey)
+		if err != nil {
+			t.Fatal(err)
+		}
+		public, err := witness.NewPublicReference(witness.Falcon1024V1, id, hex.EncodeToString(publicKey))
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := witness.MarshalPublicReference(public)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return data, id
+	}
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	work := filepath.Join(root, "work")
+	sub := filepath.Join(root, "elsewhere", "sub")
+	other := filepath.Join(root, "other", "deep")
+	for _, directory := range []string{work, sub, other} {
+		if err := os.MkdirAll(directory, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	link := filepath.Join(work, "link")
+	if err := os.Symlink(sub, link); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(other, filepath.Join(sub, "inner")); err != nil {
+		t.Fatal(err)
+	}
+	wantData, wantID := reference(0x11)
+	wrongData, _ := reference(0x22)
+	for path, data := range map[string][]byte{
+		filepath.Join(root, "elsewhere", "ops.adm.json"): wantData,
+		filepath.Join(root, "other", "ops.adm.json"):     wantData,
+		filepath.Join(work, "ops.adm.json"):              wrongData,
+		filepath.Join(sub, "ops.adm.json"):               wrongData,
+	} {
+		if err := os.WriteFile(path, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for name, test := range map[string]struct{ location, spelled, adminKey string }{
+		"boundary file through a link": {
+			filepath.Join(sub, "boundary.yaml"), link + "/boundary.yaml", "../ops.adm.json",
+		},
+		"admin key through a link": {
+			filepath.Join(sub, "boundary.yaml"), link + "/boundary.yaml", "inner/../ops.adm.json",
+		},
+		"boundary path with parent through a link": {
+			filepath.Join(root, "other", "boundary.yaml"), link + "/inner/../boundary.yaml", "ops.adm.json",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			body := `schema: aplane.boundary.v1
+spend: [pay]
+recipients: [` + testAddress(1) + `]
+rekey: {authority: admin_key, admin_key: ` + test.adminKey + `}
+`
+			if err := os.WriteFile(test.location, []byte(body), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			params, err := boundary.LoadFile(test.spelled)
+			if err != nil {
+				t.Fatalf("LoadFile() error = %v", err)
+			}
+			id, err := boundary.AdminKeyID(params)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if id != wantID {
+				t.Fatalf("admin key ID = %s, want the file the kernel resolves (%s)", id, wantID)
+			}
+		})
+	}
+}
+
 func TestAdminKeyFileReadIsBounded(t *testing.T) {
-	directory := t.TempDir()
+	directory, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	target := filepath.Join(directory, "target.adm.json")
 	if err := os.WriteFile(target, []byte("{}"), 0o600); err != nil {
 		t.Fatal(err)

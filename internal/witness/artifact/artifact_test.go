@@ -327,7 +327,10 @@ func TestFileOperationsRejectOverwriteAndWrongFileKinds(t *testing.T) {
 }
 
 func TestOutputDirectoryRefusesSignerStores(t *testing.T) {
-	root := t.TempDir()
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	store := filepath.Join(root, "identities", "default")
 	keys := filepath.Join(store, "generations", "gen-1", "keys")
 	if err := os.MkdirAll(keys, 0o700); err != nil {
@@ -395,6 +398,34 @@ func TestOutputDirectoryRefusesParentOfSymlinkIntoStore(t *testing.T) {
 	}
 	if err := ValidateOutputDirectory(link + "/../keys"); err == nil {
 		t.Fatal("ValidateOutputDirectory(raw path through the link) was accepted")
+	}
+}
+
+func TestOutputDirectoryRefusesSymlinkHoweverSpelled(t *testing.T) {
+	directory := t.TempDir()
+	real := filepath.Join(directory, "real")
+	if err := os.Mkdir(real, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(directory, "link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	for _, spelling := range []string{link, link + "/", link + "//", link + "/.", link + "/./"} {
+		if err := ValidateOutputDirectory(spelling); err == nil || !strings.Contains(err.Error(), "not a symlink") {
+			t.Fatalf("ValidateOutputDirectory(%q) error = %v, want symlink rejection", spelling, err)
+		}
+	}
+	for _, spelling := range []string{real, real + "/", real + "/."} {
+		if err := ValidateOutputDirectory(spelling); err != nil {
+			t.Fatalf("ValidateOutputDirectory(%q) error = %v", spelling, err)
+		}
+	}
+	t.Chdir(real)
+	for _, spelling := range []string{".", "./"} {
+		if err := ValidateOutputDirectory(spelling); err != nil {
+			t.Fatalf("ValidateOutputDirectory(%q) error = %v", spelling, err)
+		}
 	}
 }
 
