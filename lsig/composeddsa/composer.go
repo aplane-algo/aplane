@@ -2,7 +2,7 @@
 // Copyright (C) 2026 APlane Project LLC
 
 // Package composeddsa provides a generic runtime-compiled LogicSig composer
-// for DSA-based schemes (Falcon, ECDSA, etc.).
+// for DSA-based schemes.
 package composeddsa
 
 import (
@@ -35,6 +35,10 @@ var returnTokenPattern = regexp.MustCompile(`\breturn\b`)
 // The composer handles program structure, variable substitution, runtime
 // compilation, and address derivation. DSAOps provides the algorithm-specific
 // metadata, verification TEAL footer, and signature argument packing.
+//
+// An implementation that also has a Construction() sigconstruction.Construction
+// method tells bounded key separation the base's components, so a witness key
+// reused as one component is refused. Without it, keys are compared whole.
 type DSAOps interface {
 	// Metadata
 	PublicKeySize() int
@@ -48,7 +52,7 @@ type DSAOps interface {
 	TEALVersion() int
 
 	// Signature argument packing for LogicSig.Args.
-	// Falcon uses one arg [sig], ECDSA can split into [r, s], etc.
+	// A primitive's signature can span several args, so callers must not assume one.
 	BuildSignatureArgs(signature []byte) ([][]byte, error)
 }
 
