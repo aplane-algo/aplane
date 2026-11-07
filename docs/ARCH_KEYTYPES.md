@@ -343,8 +343,13 @@ Five ideas stay separate:
   cosigner and contract-admin proofs each keep their own transcript. An assembly
   receipt is another use of the spending construction.
 - **Bounded contract support** says which workflows are reviewed for a construction
-  under a contract. It's a policy in `lsig/composeddsa`, not a property of the
-  cryptography, and a matching key size proves nothing about it.
+  under a contract. It isn't a property of the cryptography, and a matching key size
+  proves nothing about it. It has two sides. Admission
+  (`boundedSupportPolicy` in `lsig/composeddsa`) decides which new accounts may be
+  created, and may narrow over time. Signing keeps its own table of the workflows it
+  completes (`boundedSigningConstructions` in
+  `internal/signerapp/signing/bounded_construction.go`), so narrowing admission never
+  strands an existing account. Admission must stay within the signing table.
 - An **account key type** owns account semantics. A construction doesn't.
 
 `base_key_type` keeps its name and now names a construction. Every production base is
@@ -604,8 +609,8 @@ a different place.
 | Axis | Question it answers | Mechanism | Owner package(s) |
 |---|---|---|---|
 | **Resolve** | key type → its implementation | family-keyed registries + a `RoutingFamily` resolver | `internal/lsigprovider`, `internal/logicsigdsa` |
-| **Classify** | key type → category facts (is it a guarded account? which witness form? what key size?) | string switches in neutral leaf packages | `internal/cosigner/keytypes`, `internal/witness`, `internal/rotatingkey` |
-| **Behave** | do the operation (pack signatures, build assembly args, derive, sign) | provider-capability interfaces, queried from the resolved provider | `internal/signerapp/signing`, `internal/lsigprovider`, `internal/logicsigdsa` |
+| **Classify** | key type → category facts (is it a guarded account? which witness form? what key size? which signature construction?) | string switches and closed maps in neutral leaf packages | `internal/cosigner/keytypes`, `internal/witness`, `internal/rotatingkey`, `internal/sigconstruction` |
+| **Behave** | do the operation (pack signatures, build assembly args, derive, sign, render verification) | provider-capability interfaces, queried from the resolved provider or composer ops | `internal/signerapp/signing`, `internal/lsigprovider`, `internal/logicsigdsa`, `lsig/composeddsa` (`DSAOps`) |
 
 **The governing rule:** *do not unify mechanisms across axes that have different
 call-site availability.* Resolve needs the registry; Classify must work with no
@@ -666,6 +671,11 @@ identity live in `internal/witness`; guarded-account role mapping lives in
 - `CosignerComponentKeyTypeForGuardedAccount(keyType)`
 - `witness.IsKeyType(keyType)`
 - `witness.PublicKeySize(keyType)` / `witness.PrivateKeySize(keyType)`
+- `sigconstruction.ForBaseKeyType(baseKeyType)` / `sigconstruction.ForWitnessKeyType(keyType)`:
+  the signature construction a spending base or witness key type names. Both lookups
+  normalize through `keytypecatalog.Canonicalize`. Signing uses the base lookup to
+  resolve an existing account's construction from its durable `base_key_type`
+  (`internal/signerapp/signing/bounded_construction.go`), with no composer in hand.
 
 **Invariant:** these classifiers import no registry, provider, or
 algorithm-family package. This is load-bearing, not incidental.
@@ -708,6 +718,34 @@ Bounded-cosigner assembly does not use a key-type-specific capability hook. It
 reads the durable bounded argument-source contract and dispatches derived
 arguments by the closed `kind` vocabulary; Corridor's Merkle proof is therefore
 a `bounded1` behavior, not a Corridor provider method.
+
+Composer ops are the Behave side of signature constructions. `DSAOps.Construction()`
+(`lsig/composeddsa/composer.go`) names the construction the ops render. The composer
+reads it for what it can't get from a name: key separation compares a witness key
+against each component of the spending key, and fixture bases outside the catalog
+carry their construction only here.
+
+### Which construction is this base?
+
+This question has two answers on two axes, and both stay, because their call sites
+have different things available:
+
+| Answer | Axis | Used where |
+|---|---|---|
+| `sigconstruction.ForBaseKeyType(base_key_type)` | Classify: a closed map, no registry | Signing an existing account, from durable metadata; the generation admission policy |
+| `DSAOps.Construction()` | Behave: the ops in hand | The composer: what it renders, and key separation |
+
+They must agree, and neither silently wins. A disagreement is an error:
+
+- `RegisterBase` panics when a base name the catalog knows is served by ops that render
+  another construction.
+- Bounded generation refuses a directly composed base (`NewComposedDSA`, which skips
+  `RegisterBase`) whose ops disagree with its name.
+- `TestEveryProductionBaseResolvesToASupportedConstruction` checks every base the
+  production client registers.
+
+A base name outside the catalog, such as a test fixture, has no catalog answer to
+disagree with, and it can't generate production bounded accounts.
 
 ### Why not collapse them
 
