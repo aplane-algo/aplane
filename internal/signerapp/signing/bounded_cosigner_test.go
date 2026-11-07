@@ -20,6 +20,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/cosigner/message"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
+	"github.com/aplane-algo/aplane/internal/sigconstruction"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/txnutil"
 	"github.com/aplane-algo/aplane/internal/witness"
@@ -230,23 +231,30 @@ func TestBoundedSpendingProofRequiresSupportedConstruction(t *testing.T) {
 		"external admin": boundedWorkflowExternalAdmin,
 	} {
 		t.Run(name, func(t *testing.T) {
+			falconLayout := layoutOf(sigconstruction.Falcon1024())
 			for label, test := range map[string]struct {
 				base      string
 				contract  string
+				layout    boundedmeta.SignatureArgLayout
 				publicKey []byte
 				message   []byte
 				proof     [][]byte
 				want      bool
 			}{
-				"Falcon":            {"aplane.falcon1024.v1", boundedmeta.ContractV1, falconPublicKey, message, [][]byte{falconSignature}, true},
-				"wrong message":     {"aplane.falcon1024.v1", boundedmeta.ContractV1, falconPublicKey, []byte("other"), [][]byte{falconSignature}, false},
-				"no proof":          {"aplane.falcon1024.v1", boundedmeta.ContractV1, falconPublicKey, message, nil, false},
-				"two proof slots":   {"aplane.falcon1024.v1", boundedmeta.ContractV1, falconPublicKey, message, [][]byte{falconSignature, falconSignature}, false},
-				"valid on Ed25519":  {"aplane.ed25519.v1", boundedmeta.ContractV1, edPublicKey, message, [][]byte{edSignature}, false},
-				"unknown contract":  {"aplane.falcon1024.v1", "bounded-unknown", falconPublicKey, message, [][]byte{falconSignature}, false},
-				"witness as a base": {witness.Falcon1024V1, boundedmeta.ContractV1, falconPublicKey, message, [][]byte{falconSignature}, false},
+				"Falcon":            {"aplane.falcon1024.v1", boundedmeta.ContractV1, falconLayout, falconPublicKey, message, [][]byte{falconSignature}, true},
+				"wrong message":     {"aplane.falcon1024.v1", boundedmeta.ContractV1, falconLayout, falconPublicKey, []byte("other"), [][]byte{falconSignature}, false},
+				"no proof":          {"aplane.falcon1024.v1", boundedmeta.ContractV1, falconLayout, falconPublicKey, message, nil, false},
+				"two proof slots":   {"aplane.falcon1024.v1", boundedmeta.ContractV1, falconLayout, falconPublicKey, message, [][]byte{falconSignature, falconSignature}, false},
+				"valid on Ed25519":  {"aplane.ed25519.v1", boundedmeta.ContractV1, layoutOf(sigconstruction.Ed25519()), edPublicKey, message, [][]byte{edSignature}, false},
+				"unknown contract":  {"aplane.falcon1024.v1", "bounded-unknown", falconLayout, falconPublicKey, message, [][]byte{falconSignature}, false},
+				"witness as a base": {witness.Falcon1024V1, boundedmeta.ContractV1, falconLayout, falconPublicKey, message, [][]byte{falconSignature}, false},
+				// Stored metadata that disagrees with the construction is refused, even
+				// with a valid signature, rather than trusted on either side.
+				"stored max size differs":   {"aplane.falcon1024.v1", boundedmeta.ContractV1, boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{1280}}, falconPublicKey, message, [][]byte{falconSignature}, false},
+				"stored slot count differs": {"aplane.falcon1024.v1", boundedmeta.ContractV1, boundedmeta.SignatureArgLayout{Count: 2, MaxSizes: []int{1423, 1423}}, falconPublicKey, message, [][]byte{falconSignature}, false},
+				"no stored layout":          {"aplane.falcon1024.v1", boundedmeta.ContractV1, boundedmeta.SignatureArgLayout{}, falconPublicKey, message, [][]byte{falconSignature}, false},
 			} {
-				keyMaterial := &coresigning.KeyMaterial{BaseKeyType: test.base, PublicKey: test.publicKey, BoundedAuthorization: &boundedmeta.Metadata{Contract: test.contract}}
+				keyMaterial := &coresigning.KeyMaterial{BaseKeyType: test.base, PublicKey: test.publicKey, BoundedAuthorization: &boundedmeta.Metadata{Contract: test.contract, BaseSignatureArgLayout: test.layout}}
 				if got := boundedSpendingProofVerifies(keyMaterial, workflow, test.message, test.proof...); got != test.want {
 					t.Errorf("%s: boundedSpendingProofVerifies() = %v, want %v", label, got, test.want)
 				}
@@ -274,4 +282,10 @@ func TestCosignerAssemblySignatureRequiresAWitnessKeyType(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "is not a cosigner key type") {
 		t.Fatalf("spending key type: error = %v", err)
 	}
+}
+
+// layoutOf is the durable layout generation writes for a construction.
+func layoutOf(construction sigconstruction.Construction) boundedmeta.SignatureArgLayout {
+	layout := construction.Layout()
+	return boundedmeta.SignatureArgLayout{Count: layout.Count(), MaxSizes: layout.MaxSizes()}
 }
