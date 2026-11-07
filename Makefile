@@ -726,6 +726,19 @@ store-release-drill:
 	@echo "Running store drill against $(STORE_RELEASE_BIN_DIR)..."
 	@APLANE_TEST_BIN_DIR="$(STORE_RELEASE_BIN_DIR)" APLANE_STORE_INTEGRATION=1 go test $(STORE_INTEGRATION_GO_ARGS) $(STORE_INTEGRATION_TEST_PKG) -run '^TestReleaseArtifactStoreDrill$$'
 
+# Report each integration suite, then fail if any failed. The suites run as
+# independent steps, so one failure (a known flaky test, say) never hides whether
+# the others passed. Each Go suite loads .env.test in its own subshell; the SDK
+# script runs with the caller's environment, as it always has.
+INTEGRATION_RESULTS = echo "Integration results:"; \
+	for result in "main $$main" "composite $$composite" "sdk $$sdk"; do \
+		set -- $$result; \
+		if [ "$$2" = "-" ]; then echo "  $$1: not run"; \
+		elif [ "$$2" -eq 0 ]; then echo "  $$1: passed"; \
+		else echo "  $$1: FAILED (exit $$2)"; fi; \
+	done; \
+	[ "$$main" = 0 ] && [ "$$composite" = 0 ] && { [ "$$sdk" = 0 ] || [ "$$sdk" = - ]; }
+
 # Run integration tests (tests in test/integration/)
 # Always regenerates this checkout's fixture and .env.test first to avoid stale
 # fixture state or mismatched passphrases. Linked worktrees get their own
@@ -735,8 +748,11 @@ integration-test:
 	@echo "Running integration tests..."
 	@./test/setup-test-env.sh
 	@echo "Loading environment from regenerated .env.test"
-	@set -a && . ./.env.test && set +a && INTEGRATION=1 go test $(INTEGRATION_GO_ARGS) $(INTEGRATION_TEST_PKG) && INTEGRATION=1 go test $(COMPOSITE_EXECUTION_GO_ARGS) $(COMPOSITE_EXECUTION_TEST_PKG)
-	@./test/run-sdk-integration.sh
+	@main=0; composite=0; sdk=0; \
+	(set -a && . ./.env.test && set +a && INTEGRATION=1 go test $(INTEGRATION_GO_ARGS) $(INTEGRATION_TEST_PKG)) || main=$$?; \
+	(set -a && . ./.env.test && set +a && INTEGRATION=1 go test $(COMPOSITE_EXECUTION_GO_ARGS) $(COMPOSITE_EXECUTION_TEST_PKG)) || composite=$$?; \
+	./test/run-sdk-integration.sh || sdk=$$?; \
+	$(INTEGRATION_RESULTS)
 
 integration-test-testnet:
 	@APLANE_INTEGRATION_NETWORK=testnet $(MAKE) integration-test
@@ -772,15 +788,20 @@ apshell-command-coverage-localnet:
 # This is faster, but can fail if the shared test environment is stale.
 integration-test-reuse:
 	@echo "Running integration tests with existing fixture..."
-	@if [ -f .env.test ]; then \
+	@main=0; composite=0; sdk=0; \
+	if [ -f .env.test ]; then \
 		echo "Loading environment from .env.test"; \
-		set -a && . ./.env.test && set +a && INTEGRATION=1 go test $(INTEGRATION_GO_ARGS) $(INTEGRATION_TEST_PKG) && INTEGRATION=1 go test $(COMPOSITE_EXECUTION_GO_ARGS) $(COMPOSITE_EXECUTION_TEST_PKG); \
-		./test/run-sdk-integration.sh; \
+		(set -a && . ./.env.test && set +a && INTEGRATION=1 go test $(INTEGRATION_GO_ARGS) $(INTEGRATION_TEST_PKG)) || main=$$?; \
+		(set -a && . ./.env.test && set +a && INTEGRATION=1 go test $(COMPOSITE_EXECUTION_GO_ARGS) $(COMPOSITE_EXECUTION_TEST_PKG)) || composite=$$?; \
+		./test/run-sdk-integration.sh || sdk=$$?; \
 	else \
 		echo "Note: Create .env.test with TEST_FUNDING_MNEMONIC, TEST_PASSPHRASE, DISABLE_MEMORY_LOCK"; \
 		echo "Example: echo 'TEST_FUNDING_MNEMONIC=\"your 25 words\"' > .env.test"; \
-		INTEGRATION=1 go test $(INTEGRATION_GO_ARGS) $(INTEGRATION_TEST_PKG) && INTEGRATION=1 go test $(COMPOSITE_EXECUTION_GO_ARGS) $(COMPOSITE_EXECUTION_TEST_PKG); \
-	fi
+		INTEGRATION=1 go test $(INTEGRATION_GO_ARGS) $(INTEGRATION_TEST_PKG) || main=$$?; \
+		INTEGRATION=1 go test $(COMPOSITE_EXECUTION_GO_ARGS) $(COMPOSITE_EXECUTION_TEST_PKG) || composite=$$?; \
+		sdk=-; \
+	fi; \
+	$(INTEGRATION_RESULTS)
 
 # Delete leaked test apps from previous integration runs that failed cleanup.
 # Targets apps matching the test fixture schema (2 global uint, 2 global bytes,

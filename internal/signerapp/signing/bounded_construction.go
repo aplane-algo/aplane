@@ -51,3 +51,12 @@ func boundedSpendingConstruction(contract, baseKeyType string, workflow boundedS
 	}
 	return construction, true
 }
+
+// boundedLayoutMatches reports whether an account's durable base-signature layout is
+// exactly its construction's layout. Generation writes the construction's layout, so a
+// difference means stored metadata and the catalog disagree, and the proof is refused
+// rather than checked against one of them.
+func boundedLayoutMatches(construction sigconstruction.Construction, durable boundedmeta.SignatureArgLayout) bool {
+	layout := construction.Layout()
+	return durable.Count == layout.Count() && slices.Equal(durable.MaxSizes, layout.MaxSizes())
+}

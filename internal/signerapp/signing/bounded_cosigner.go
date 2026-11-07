@@ -171,12 +171,16 @@ func signBoundedBaseComponent(ctx context.Context, req signerapi.GroupSignReques
 }
 
 // boundedSpendingProofVerifies checks a spending proof through the construction the
-// workflow completes for this account's durable base. A base the workflow can't
-// complete has no construction, so its proof is refused at the same point as one
-// that fails to verify.
+// workflow completes for this account's durable base, after checking that the
+// account's durable argument layout is that construction's. A base the workflow can't
+// complete, or metadata that disagrees with its construction, is refused at the same
+// point as a proof that fails to verify.
 func boundedSpendingProofVerifies(keyMaterial *coresigning.KeyMaterial, workflow boundedSigningWorkflow, message []byte, proof ...[]byte) bool {
-	construction, supported := boundedSpendingConstruction(keyMaterial.BoundedAuthorization.Contract, keyMaterial.BaseKeyType, workflow)
-	return supported && sigverify.Verify(construction, keyMaterial.PublicKey, message, proof...) == nil
+	authorization := keyMaterial.BoundedAuthorization
+	construction, supported := boundedSpendingConstruction(authorization.Contract, keyMaterial.BaseKeyType, workflow)
+	return supported &&
+		boundedLayoutMatches(construction, authorization.BaseSignatureArgLayout) &&
+		sigverify.Verify(construction, keyMaterial.PublicKey, message, proof...) == nil
 }
 
 func validateBoundedBaseArgs(keyMaterial *coresigning.KeyMaterial, messageBytes []byte, args [][]byte) *ServiceError {
