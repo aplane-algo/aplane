@@ -440,14 +440,38 @@ func TestCatalogImportsCosignerEnvelopeFromStdin(t *testing.T) {
 	}
 }
 
-func TestReadCosignerEnvelopeFromStdinRejectsOversize(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "ops.adm.json")
-	if err := os.WriteFile(path, []byte("{}"), 0o600); err != nil {
+func TestCosignerReferenceFilesRefuseTheAdminName(t *testing.T) {
+	dir := t.TempDir()
+	adminPath := filepath.Join(dir, "ops.adm.json")
+	if err := os.WriteFile(adminPath, []byte("{}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ReadCosignerPublicEnvelope(path, nil); err == nil || !strings.Contains(err.Error(), "admin key reference") {
+	if _, err := ReadCosignerPublicEnvelope(adminPath, nil); err == nil || !strings.Contains(err.Error(), "admin key reference") {
 		t.Fatalf("ReadCosignerPublicEnvelope(.adm.json) error = %v, want admin reference rejection", err)
 	}
+	if err := WriteCosignerPublicEnvelope(filepath.Join(dir, "new.adm.json"), []byte("{}")); err == nil ||
+		!strings.Contains(err.Error(), ".cos.json") {
+		t.Fatalf("WriteCosignerPublicEnvelope(.adm.json) error = %v, want admin name rejection", err)
+	}
+	if _, err := os.Lstat(filepath.Join(dir, "new.adm.json")); !os.IsNotExist(err) {
+		t.Fatalf("refused export left a file: %v", err)
+	}
+	if err := WriteCosignerPublicEnvelope(filepath.Join(dir, "new.ADM.json"), []byte("{}")); err == nil {
+		t.Fatal("WriteCosignerPublicEnvelope accepted the admin name in another case")
+	}
+	cosignerPath := filepath.Join(dir, "lab.cos.json")
+	if err := WriteCosignerPublicEnvelope(cosignerPath, []byte("{}")); err != nil {
+		t.Fatalf("WriteCosignerPublicEnvelope(.cos.json) error = %v", err)
+	}
+	if _, err := ReadCosignerPublicEnvelope(cosignerPath, nil); err != nil {
+		t.Fatalf("ReadCosignerPublicEnvelope(.cos.json) error = %v", err)
+	}
+	if _, err := ReadCosignerPublicEnvelope("-", strings.NewReader("{}")); err != nil {
+		t.Fatalf("ReadCosignerPublicEnvelope(stdin) error = %v", err)
+	}
+}
+
+func TestReadCosignerEnvelopeFromStdinRejectsOversize(t *testing.T) {
 	_, err := ReadCosignerPublicEnvelope("-", strings.NewReader(strings.Repeat("x", maxCosignerPublicEnvelopeBytes+1)))
 	if err == nil || !strings.Contains(err.Error(), "exceeds") {
 		t.Fatalf("ReadCosignerPublicEnvelope() error = %v, want size rejection", err)

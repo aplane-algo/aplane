@@ -1030,8 +1030,10 @@ option. Generation derives the ID from the public key.
 artifacts use the `.adm` extension and filenames of the form
 `<WITNESS_KEY_ID>.adm`. They are not signer-managed `.key` or `.cos` files
 or `apstore` `.apb` backup bundles. The helper rejects every other extension
-before parsing or passphrase work, and `aprekey generate` refuses an output
-directory inside a signer store. The signer and `apstore` must not import,
+before parsing or passphrase work. `aprekey generate` resolves `--out` to its
+physical directory once and uses that path for its store check and every write.
+It refuses a directory inside a signer store, found by `store-root.enc` in the
+directory or a parent, and refuses when a parent can't be inspected. The signer and `apstore` must not import,
 decrypt, back up, or restore these artifacts.
 
 The top-level JSON contract is:
@@ -1106,7 +1108,9 @@ Successful `aprekey generate` output is:
 
 The result does not contain filesystem paths. Callers derive the two generated
 filenames from `--out` and `reference.witness_key_id` using the canonical
-`.adm` and `.adm.json` suffixes. Moving the generated files does not invalidate
+`.adm` and `.adm.json` suffixes, and must let the kernel resolve `--out` rather
+than cleaning it. `aprekey` prints the two physical paths on stderr for the
+operator; they aren't part of this contract. Moving the generated files does not invalidate
 the result or either file.
 
 ## Contract Admin Ceremony Contract

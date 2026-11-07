@@ -274,6 +274,8 @@ documents the account. It cannot restore one: use encrypted backups for that.
 
 ### Boundary files
 
+A boundary file must be a regular file of at most 8 MiB. A symbolic link is refused.
+
 ```yaml
 schema: aplane.boundary.v1
 spend: [pay, axfer, asset_opt_in]
@@ -297,7 +299,7 @@ These addresses are illustrations, not funding destinations.
 | `encoding` | Optional, and needs a list. `auto` (the default) is inline through 10 recipients and Merkle above that. `inline` accepts at most 30. |
 | `unlock_round` | Optional. The first round the account can spend. With no list, the account can pay anyone once unlocked. |
 | `rekey.authority` | Required. `spending_key` or `admin_key`. |
-| `rekey.admin_key` | The public `.adm.json` file, relative to the boundary file. It must be a regular file with that name, not a symbolic link. Required only with `admin_key`. |
+| `rekey.admin_key` | The public `.adm.json` file, relative to the boundary file's real location. It must be a regular file with that name, not a symbolic link. Required only with `admin_key`. |
 | `cosigner` | Optional. A cosigner reference name on the signer, or a Witness Key ID. A cosigner needs `admin_key`. |
 
 With `unlock_round` and `spending_key`, `spend` must include `pay`.

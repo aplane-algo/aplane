@@ -6,7 +6,6 @@ package apadminapp
 import (
 	"fmt"
 	"io"
-	"strings"
 
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/witness"
@@ -24,7 +23,7 @@ func ReadCosignerPublicEnvelope(path string, stdin io.Reader) ([]byte, error) {
 	if path != "-" {
 		// Admin and cosigner references share a schema, so the name is the only
 		// thing that shows this is the wrong role. Stdin has no name to check.
-		if strings.HasSuffix(path, witness.AdminPublicReferenceExtension) {
+		if witness.IsAdminPublicReferenceName(path) {
 			return nil, fmt.Errorf("%s is an admin key reference, not a cosigner key", path)
 		}
 		data, _, err := fsutil.ReadRegularFileLimited(path, maxCosignerPublicEnvelopeBytes)
@@ -52,6 +51,10 @@ func ReadCosignerPublicEnvelope(path string, stdin io.Reader) ([]byte, error) {
 func WriteCosignerPublicEnvelope(path string, data []byte) error {
 	if path == "" {
 		return fmt.Errorf("output path is required")
+	}
+	if witness.IsAdminPublicReferenceName(path) {
+		return fmt.Errorf("%s uses the admin key name; name a cosigner key file %s",
+			path, witness.CosignerPublicReferenceExtension)
 	}
 	if err := fsutil.WriteFileDurableWithProfile(path, data, fsutil.PrivateStoreFileProfile); err != nil {
 		return fmt.Errorf("failed to write public key envelope: %w", err)

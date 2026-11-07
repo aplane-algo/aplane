@@ -250,6 +250,7 @@ func (app application) generate(args []string) error {
 	if err != nil {
 		return err
 	}
+	_, _ = fmt.Fprintf(app.stderr, "Wrote %s\nWrote %s\n", files.BundlePath, files.ReferencePath)
 	return writeJSON(app.stdout, generateResult{
 		Schema:    "aplane.bounded-admin-generate-result.v1",
 		Reference: files.Reference,

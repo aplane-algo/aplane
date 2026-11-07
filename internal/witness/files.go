@@ -3,6 +3,8 @@
 
 package witness
 
+import "strings"
+
 // MaxPublicReferenceBytes bounds a public reference read from a file.
 const MaxPublicReferenceBytes = 16 * 1024
 
@@ -22,3 +24,10 @@ const (
 	// made from it.
 	CosignerPublicReferenceExtension = ".cos.json"
 )
+
+// IsAdminPublicReferenceName reports whether path carries the admin reference
+// name in any case, so a cosigner file can't take that name on a
+// case-insensitive filesystem.
+func IsAdminPublicReferenceName(path string) bool {
+	return strings.HasSuffix(strings.ToLower(path), AdminPublicReferenceExtension)
+}

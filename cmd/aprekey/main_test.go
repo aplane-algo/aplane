@@ -53,6 +53,11 @@ func TestGenerateInspectVerify(t *testing.T) {
 	if generated.Schema != "aplane.bounded-admin-generate-result.v1" {
 		t.Fatalf("generate schema = %q", generated.Schema)
 	}
+	for _, extension := range []string{artifact.BundleExtension, artifact.ReferenceExtension} {
+		if name := generated.Reference.WitnessKeyID + extension; !strings.Contains(stderr.String(), name) {
+			t.Fatalf("generate stderr = %q, want the path of %s", stderr.String(), name)
+		}
+	}
 	artifactPath := filepath.Join(directory, generated.Reference.WitnessKeyID+artifact.BundleExtension)
 	referencePath := filepath.Join(directory, generated.Reference.WitnessKeyID+artifact.ReferenceExtension)
 	if _, err := os.Stat(referencePath); err != nil {
