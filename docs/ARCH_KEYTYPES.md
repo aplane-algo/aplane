@@ -1516,6 +1516,25 @@ Settings panel on signer nodes.
 own. It still names the cosigner component type, but does not turn the cosigner field
 into a required selector: a cosigner is optional here.
 
+**Client routing.** apadmin and apshell choose the preset and boundary-file flows from
+`per_key_contract`, never from a key type name. The field means the contract varies by
+account, and `TestEveryPerKeyProviderSupportsTheBoundaryWorkflow` pins the further
+assumption that every production per-key type can run those flows. A new per-key type
+that can't must fail that test and get narrower discovery. This classification only
+picks a client flow: the signer still resolves the key type and applies the bounded
+support policy, so a misclassified request is refused rather than gaining anything.
+
+A failed lookup isn't an answer that a type is ordinary. apadmin shows an error and
+reloads instead of opening the plain form, because a compiled list can stand in before
+the signer's arrives. apshell stops before interpreting or forwarding `boundary=` or
+`result=`, and sends no generation request. A `generate` with neither option needs no
+lookup.
+
+**Client and signer combinations.** No tagged signer through v0.49.0 has a per-key type,
+so a client can read a missing `per_key_contract` as "not per-key" there. Untagged builds
+between `8c2c54bf`, which added per-key instances, and `b861ce55`, which added the field,
+can have per-key types without reporting them, and they're unsupported.
+
 **apadmin.** Choosing this type opens a preset screen. `boundary.Presets()` is the
 one definition behind the screen and sample boundary files; Load boundary file reads a
 file and sends its public values. Every parameterized request is prepared first. A bounded

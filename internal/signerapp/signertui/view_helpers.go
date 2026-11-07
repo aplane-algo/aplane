@@ -116,6 +116,17 @@ func generateKeyTypeIDs() []string {
 	return compiledGenerateKeyTypes()
 }
 
+// keyTypeIsPerKey classifies a key type from the signer's inventory. known is false
+// when inventory doesn't hold the type, which says nothing about what it is.
+func keyTypeIsPerKey(keyType string) (perKey, known bool) {
+	for _, info := range getServerKeyTypes() {
+		if info.KeyType == keyType {
+			return info.PerKeyContract, true
+		}
+	}
+	return false, false
+}
+
 // importKeyTypeIDs is the mnemonic import list's key types in display order.
 func importKeyTypeIDs() []string {
 	if types := getServerImportKeyTypes(); len(types) > 0 {
