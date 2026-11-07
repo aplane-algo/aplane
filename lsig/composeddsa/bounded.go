@@ -18,6 +18,7 @@ import (
 	boundedmessage "github.com/aplane-algo/aplane/internal/boundedadmin/message"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
+	"github.com/aplane-algo/aplane/internal/sigconstruction"
 	"github.com/aplane-algo/aplane/internal/tealtemplate"
 	"github.com/aplane-algo/aplane/internal/txeffects"
 	"github.com/aplane-algo/aplane/internal/witness"
@@ -380,7 +381,7 @@ func (c *ComposedDSA) BuildBoundedAuthorizationMetadata(publicKey []byte, params
 		if err != nil {
 			return nil, err
 		}
-		if bytes.Equal(cosignerPublicKey, publicKey) {
+		if c.spendingKeyHolds(publicKey, cosignerPublicKey) {
 			return nil, fmt.Errorf("bounded spend cosigner key must differ from the spending key")
 		}
 		componentKeyID, err := witness.ID(profile.Cosigner.ComponentKeyType, cosignerPublicKey)
@@ -422,12 +423,28 @@ func (c *ComposedDSA) BuildBoundedAuthorizationMetadata(publicKey []byte, params
 	return metadata, nil
 }
 
+// spendingKeyHolds reports whether a bounded1 witness key is the spending key or one
+// of its components. Bounded1 witnesses are one Falcon key each, so two witnesses are
+// compared whole. A base that names no construction keeps the whole-key comparison.
+func (c *ComposedDSA) spendingKeyHolds(spendingPublicKey, witnessPublicKey []byte) bool {
+	if bytes.Equal(spendingPublicKey, witnessPublicKey) {
+		return true
+	}
+	ops, ok := c.ops.(interface {
+		Construction() sigconstruction.Construction
+	})
+	if !ok {
+		return false
+	}
+	return sigconstruction.SharesComponentKey(ops.Construction(), spendingPublicKey, sigconstruction.Falcon1024(), witnessPublicKey)
+}
+
 func (c *ComposedDSA) validatedAdminPublicKey(spendingPublicKey []byte, params map[string]string) ([]byte, error) {
 	adminPublicKey, err := decodeHexParameter(params[BoundedAdminPublicKeyParameter], BoundedAdminPublicKeyParameter, BoundedAdminPublicKeySize)
 	if err != nil {
 		return nil, err
 	}
-	if bytes.Equal(adminPublicKey, spendingPublicKey) {
+	if c.spendingKeyHolds(spendingPublicKey, adminPublicKey) {
 		return nil, fmt.Errorf("bounded admin cosigner key must differ from the spending key")
 	}
 	return adminPublicKey, nil
@@ -438,7 +455,7 @@ func (c *ComposedDSA) validatedCosignerPublicKey(spendingPublicKey []byte, param
 	if err != nil {
 		return nil, err
 	}
-	if bytes.Equal(cosignerPublicKey, spendingPublicKey) {
+	if c.spendingKeyHolds(spendingPublicKey, cosignerPublicKey) {
 		return nil, fmt.Errorf("bounded spend cosigner key must differ from the spending key")
 	}
 	if c.bounded != nil && boundedRequiresAdminKey(c.bounded) {

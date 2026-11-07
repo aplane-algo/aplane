@@ -18,7 +18,7 @@ import (
 func (m Model) paramSpecFor(keyType string) *paramSpec {
 	spec := getParamSpecForKeyType(keyType)
 	preset := m.forms.boundaryPreset
-	if spec == nil || preset == nil || keyType != boundary.KeyTypeV1 {
+	if spec == nil || preset == nil || keyType != m.forms.boundaryKeyType {
 		return spec
 	}
 	params := make([]lsigprovider.ParameterDef, 0, len(preset.Fields))
@@ -62,6 +62,7 @@ func (m Model) handleBoundaryPresetKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m.forms.boundaryPreset = nil
+		m.forms.boundaryKeyType = ""
 		m.forms.boundaryFile = ""
 		m.forms.boundaryFileRequest = false
 		m.forms.generateError = ""
@@ -89,7 +90,7 @@ func (m Model) handleBoundaryPresetKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		preset := boundary.Presets()[m.forms.boundaryPresetIndex]
 		m.forms.boundaryPreset = &preset
 		m.forms.boundaryFileRequest = false
-		m = m.initGenericLSigParamsForKeyType(boundary.KeyTypeV1)
+		m = m.initGenericLSigParamsForKeyType(m.forms.boundaryKeyType)
 		m.forms.generateFocus = 0
 		m.viewState = ViewGenerateParams
 	}
@@ -113,7 +114,7 @@ func (m Model) submitBoundaryFile() (tea.Model, tea.Cmd) {
 	m.forms.genericLSigParams = nil
 	m.forms.pendingGenerateParams = params
 	id := m.beginOperation(ViewGenerating)
-	return m, tea.Batch(m.sendPrepareGenerateKeyCmd(boundary.KeyTypeV1, params, id), m.waitForMessageCmd())
+	return m, tea.Batch(m.sendPrepareGenerateKeyCmd(m.forms.boundaryKeyType, params, id), m.waitForMessageCmd())
 }
 
 func (m Model) renderBoundaryPreset() string {

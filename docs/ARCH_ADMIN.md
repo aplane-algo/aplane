@@ -839,6 +839,18 @@ admin-protocol client and does **not** route through `internal/engine` or the
 
 The implementation lives in `internal/signerapp/signertui/`.
 
+### Choosing a generate flow
+
+The Generate form classifies the selected key type from the signer's inventory. A type
+with `per_key_contract` opens the preset screen, and the form records it in
+`boundaryKeyType`, so later preset and boundary-file steps use that value rather than a
+constant. Nothing here depends on the key type's name.
+
+A compiled list stands in until the signer's list arrives, so a type can be selected before
+it can be classified. That isn't read as an ordinary type: the form shows an error and
+requests the list again instead of opening the plain form, because the plain form would
+build the wrong request for a per-key type.
+
 ### Model / View / Update
 
 The TUI follows the standard Bubble Tea pattern:

@@ -9,7 +9,6 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/aplane-algo/aplane/internal/boundary"
 	"github.com/aplane-algo/aplane/internal/keytypeux"
 	"github.com/aplane-algo/aplane/internal/protocol"
 )
@@ -95,13 +94,13 @@ func (m Model) renderTemplateLibrary() string {
 }
 
 // templateLibrarySubtitle points at the bounded presets, which are not library
-// rows: aplane.falcon1024-b.v1 is always on, so a row could not offer to disable it.
+// rows: a per-key type is always on, so a row could not offer to disable it.
 // Cosigner nodes hold no bounded accounts.
 func (m Model) templateLibrarySubtitle() string {
 	if m.isCosignerNode() {
 		return "Optional KeyTypes available for this identity"
 	}
-	return "Optional KeyTypes. For bounded presets, generate " + boundary.KeyTypeV1 + "."
+	return "Optional KeyTypes. Bounded presets are under Generate."
 }
 
 func (m Model) renderTemplateDetails(tmpl LibraryTemplateInfo) string {

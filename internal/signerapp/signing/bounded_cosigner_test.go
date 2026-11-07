@@ -6,7 +6,11 @@ package signing
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"encoding/hex"
+	"github.com/aplane-algo/aplane/lsig/composeddsa"
+	"strings"
 	"testing"
 
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
@@ -137,7 +141,7 @@ func TestAssembleBoundedTargetVerifiesBothAuthorities(t *testing.T) {
 	newKeyMaterial := func() *coresigning.KeyMaterial {
 		return &coresigning.KeyMaterial{
 			Type: "test.bounded-cosigner.v1", Category: keys.CategoryDSALsig,
-			BaseKeyType: witness.Falcon1024V1, PublicKey: append([]byte(nil), spendingPublicKey...),
+			BaseKeyType: "aplane.falcon1024.v1", PublicKey: append([]byte(nil), spendingPublicKey...),
 			Bytecode: append([]byte(nil), bytecode...), BoundedAuthorization: boundedmeta.Clone(metadata),
 			SigningMetadataVersion: keys.BoundedSigningMetadataVersion,
 		}
@@ -151,6 +155,11 @@ func TestAssembleBoundedTargetVerifiesBothAuthorities(t *testing.T) {
 	badReceipt.AssemblyReceipt = hex.EncodeToString(cosignerSignature)
 	if _, svcErr := assembleBoundedTarget(context.Background(), badReceipt, group.Entries[0], &componentKeyTestSession{key: newKeyMaterial()}); svcErr == nil {
 		t.Fatal("assembleBoundedTarget(wrong receipt) error = nil")
+	}
+	badBase := target
+	badBase.BaseSignatures = []string{hex.EncodeToString(cosignerSignature)}
+	if _, svcErr := assembleBoundedTarget(context.Background(), badBase, group.Entries[0], &componentKeyTestSession{key: newKeyMaterial()}); svcErr == nil {
+		t.Fatal("assembleBoundedTarget(wrong base signature) error = nil")
 	}
 	signedHex, svcErr := assembleBoundedTarget(context.Background(), target, group.Entries[0], &componentKeyTestSession{key: newKeyMaterial()})
 	if svcErr != nil {
@@ -194,4 +203,76 @@ func boundedCosignerTestMetadata(t *testing.T, cosignerPublicKey []byte) *bounde
 		t.Fatalf("test metadata invalid: %v", err)
 	}
 	return metadata
+}
+
+// Bounded cosigner and external-admin flows are reviewed for Falcon spending only. A
+// valid signature on any other base stays refused at the point it always was, because
+// resolving the base alone would let Ed25519 through to a ceremony it can't finish.
+func TestBoundedSpendingProofRequiresSupportedConstruction(t *testing.T) {
+	seed := make([]byte, 48)
+	seed[0] = 1
+	falconPublicKey, falconPrivateKey, err := signerops.New(nil).GenerateKeypair(seed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	message := bytes.Repeat([]byte{5}, 32)
+	falconSignature, err := signerops.New(nil).Sign(falconPrivateKey, message)
+	if err != nil {
+		t.Fatal(err)
+	}
+	edPublicKey, edPrivateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	edSignature := ed25519.Sign(edPrivateKey, message)
+
+	for name, workflow := range map[string]composeddsa.BoundedWorkflow{
+		"cosigner":       composeddsa.BoundedWorkflowCosigner,
+		"external admin": composeddsa.BoundedWorkflowExternalAdmin,
+	} {
+		t.Run(name, func(t *testing.T) {
+			for label, test := range map[string]struct {
+				base      string
+				contract  string
+				publicKey []byte
+				message   []byte
+				proof     [][]byte
+				want      bool
+			}{
+				"Falcon":            {"aplane.falcon1024.v1", boundedmeta.ContractV1, falconPublicKey, message, [][]byte{falconSignature}, true},
+				"wrong message":     {"aplane.falcon1024.v1", boundedmeta.ContractV1, falconPublicKey, []byte("other"), [][]byte{falconSignature}, false},
+				"no proof":          {"aplane.falcon1024.v1", boundedmeta.ContractV1, falconPublicKey, message, nil, false},
+				"two proof slots":   {"aplane.falcon1024.v1", boundedmeta.ContractV1, falconPublicKey, message, [][]byte{falconSignature, falconSignature}, false},
+				"valid on Ed25519":  {"aplane.ed25519.v1", boundedmeta.ContractV1, edPublicKey, message, [][]byte{edSignature}, false},
+				"unknown contract":  {"aplane.falcon1024.v1", "bounded-unknown", falconPublicKey, message, [][]byte{falconSignature}, false},
+				"witness as a base": {witness.Falcon1024V1, boundedmeta.ContractV1, falconPublicKey, message, [][]byte{falconSignature}, false},
+			} {
+				keyMaterial := &coresigning.KeyMaterial{BaseKeyType: test.base, PublicKey: test.publicKey, BoundedAuthorization: &boundedmeta.Metadata{Contract: test.contract}}
+				if got := boundedSpendingProofVerifies(keyMaterial, workflow, test.message, test.proof...); got != test.want {
+					t.Errorf("%s: boundedSpendingProofVerifies() = %v, want %v", label, got, test.want)
+				}
+			}
+		})
+	}
+}
+
+func TestCosignerAssemblySignatureRequiresAWitnessKeyType(t *testing.T) {
+	seed := make([]byte, 48)
+	seed[0] = 2
+	publicKey, privateKey, err := signerops.New(nil).GenerateKeypair(seed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	message := []byte("message")
+	signature, err := signerops.New(nil).Sign(privateKey, message)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyCosignerAssemblySignature(witness.Falcon1024V1, publicKey, message, signature); err != nil {
+		t.Fatalf("verifyCosignerAssemblySignature() error = %v", err)
+	}
+	err = verifyCosignerAssemblySignature("aplane.falcon1024.v1", publicKey, message, signature)
+	if err == nil || !strings.Contains(err.Error(), "is not a cosigner key type") {
+		t.Fatalf("spending key type: error = %v", err)
+	}
 }

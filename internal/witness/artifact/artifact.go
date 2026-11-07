@@ -19,8 +19,9 @@ import (
 	"time"
 
 	"github.com/algorandfoundation/falcon-signatures/falcongo"
-	cosignerverify "github.com/aplane-algo/aplane/internal/cosigner/verify"
 	apcrypto "github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/sigconstruction"
+	sigverify "github.com/aplane-algo/aplane/internal/sigconstruction/verify"
 	"github.com/aplane-algo/aplane/internal/witness"
 )
 
@@ -324,7 +325,7 @@ func validateCredential(credential *Credential) error {
 		return fmt.Errorf("Falcon-1024 artifact self-test signing failed: %w", err)
 	}
 	defer apcrypto.ZeroBytes(signature)
-	if err := cosignerverify.VerifyFalcon1024(publicKey, selfTestMessage, signature); err != nil {
+	if err := sigverify.Verify(sigconstruction.Falcon1024(), publicKey, selfTestMessage, signature); err != nil {
 		return fmt.Errorf("Falcon-1024 private material does not match public key: %w", err)
 	}
 	return nil

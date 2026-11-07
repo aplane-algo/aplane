@@ -22,6 +22,27 @@ before it was renamed `enroll`.
   require passphrase encryption. Each reader validates its own format. Copying
   or renaming a file does not convert custody or grant another signing role.
 
+## Clients choose bounded flows from the signer's inventory
+
+- apadmin and apshell now pick the preset and boundary-file flows from the signer's
+  `per_key_contract` field, not the key type's name. Nothing changes for current key types.
+- If apadmin hasn't received the signer's key types, choosing a type to generate shows an
+  error and reloads them. It no longer opens the form from its compiled list.
+- `generate ... boundary=` or `result=` now reads the signer's key types first. If that fails,
+  or the signer doesn't report the type, apshell stops and sends no generation request. A
+  `generate` with neither option doesn't need the lookup.
+- apadmin's template library now says bounded presets are under Generate.
+
+## Bounded generation refuses workflows a base cannot complete
+
+- New accounts are refused when their base can't complete a declared workflow. An
+  `authorization: admin_key` rekey or a cosigner on a non-Falcon base is refused at generation,
+  because the admin ceremony and bounded cosigner flow need a Falcon-1024 spending key. Such an
+  account could previously be created with an external-admin rekey that could never complete.
+- Installed templates and existing accounts are unaffected. Fingerprints don't change, the
+  template stays listed, and the store keeps unlocking and committing.
+- Template import is unchanged, so the refusal appears when generating an account.
+
 ## Five templates leave the default library
 
 - `aplane.falcon1024-allowlist.v1`, `aplane.falcon1024-allowlist.v2`,

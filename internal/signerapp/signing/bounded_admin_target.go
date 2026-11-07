@@ -13,11 +13,12 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
-	"github.com/aplane-algo/aplane/internal/cosigner/verify"
 	securecrypto "github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/falconparams"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
+	"github.com/aplane-algo/aplane/internal/sigconstruction"
+	sigverify "github.com/aplane-algo/aplane/internal/sigconstruction/verify"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
 	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
 )
@@ -241,7 +242,7 @@ func selfTestAdminRekeyTarget(km *coresigning.KeyMaterial, target types.Address)
 		if derived != target {
 			return fmt.Errorf("stored public key does not derive the target address")
 		}
-		if err := verify.VerifyFalcon1024(km.PublicKey, message, signature); err != nil {
+		if err := sigverify.Verify(sigconstruction.Falcon1024(), km.PublicKey, message, signature); err != nil {
 			return err
 		}
 	case keys.CategoryDSALsig:
@@ -251,7 +252,7 @@ func selfTestAdminRekeyTarget(km *coresigning.KeyMaterial, target types.Address)
 		// sizes are frozen and distinct, so no registry lookup is needed.
 		switch len(km.PublicKey) {
 		case falconparams.PublicKeySize:
-			if err := verify.VerifyFalcon1024(km.PublicKey, message, signature); err != nil {
+			if err := sigverify.Verify(sigconstruction.Falcon1024(), km.PublicKey, message, signature); err != nil {
 				return err
 			}
 		case ed25519.PublicKeySize:

@@ -14,10 +14,11 @@ import (
 	"github.com/aplane-algo/aplane/internal/cosigner/canonical"
 	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
 	"github.com/aplane-algo/aplane/internal/cosigner/message"
-	cosignerverify "github.com/aplane-algo/aplane/internal/cosigner/verify"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
+	"github.com/aplane-algo/aplane/internal/sigconstruction"
+	sigverify "github.com/aplane-algo/aplane/internal/sigconstruction/verify"
 	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
@@ -123,7 +124,7 @@ func assembleGuardedTarget(ctx context.Context, target signerapi.AssemblyTarget,
 	defer crypto.ZeroBytes(cosignerSignature)
 
 	userMessage := message.ComponentMessage(message.RoleUser, entry.TxID)
-	if verifyErr := cosignerverify.VerifyFalcon1024(keyMaterial.PublicKey, userMessage[:], userSignature); verifyErr != nil {
+	if verifyErr := sigverify.Verify(sigconstruction.Falcon1024(), keyMaterial.PublicKey, userMessage[:], userSignature); verifyErr != nil {
 		return "", badRequest(fmt.Sprintf("target index %d user_signature invalid: %v", target.TargetIndex, verifyErr))
 	}
 	cosignerMessage := message.ComponentMessage(message.RoleCosigner, entry.TxID)
@@ -299,12 +300,11 @@ func signedTxnHasSignature(stxn types.SignedTxn) bool {
 }
 
 func verifyCosignerAssemblySignature(componentKeyType string, publicKey, msg, signature []byte) error {
-	switch componentKeyType {
-	case witness.Falcon1024V1:
-		return cosignerverify.VerifyFalcon1024(publicKey, msg, signature)
-	default:
+	construction, ok := sigconstruction.ForWitnessKeyType(componentKeyType)
+	if !ok {
 		return fmt.Errorf("key type %q is not a cosigner key type", componentKeyType)
 	}
+	return sigverify.Verify(construction, publicKey, msg, signature)
 }
 
 func guardedAccountCosignerPublicKey(parameters map[string]string, componentKeyType string) ([]byte, *ServiceError) {

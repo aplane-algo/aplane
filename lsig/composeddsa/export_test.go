@@ -1,0 +1,53 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 APlane Project LLC
+
+package composeddsa
+
+import "slices"
+
+// FixtureSupport is the support a fixture composer claims for itself.
+type FixtureSupport struct {
+	ExternalAdmin bool
+	Cosigner      bool
+}
+
+// NewFixtureProvider composes spec on a base that is never registered. The policy
+// belongs to the returned composer alone, and production cannot reach this file.
+func NewFixtureProvider(spec *TemplateSpec, base BaseRegistration, support FixtureSupport) (*ComposedDSA, error) {
+	rules := templateBaseRules{
+		registered:     func(baseKeyType string) bool { return baseKeyType == base.BaseKeyType },
+		allowsCosigner: func(string) bool { return support.Cosigner },
+	}
+	if err := validateTemplateSpec(spec, rules); err != nil {
+		return nil, err
+	}
+	provider, err := newProviderFromBase(spec, base)
+	if err != nil {
+		return nil, err
+	}
+	provider.generationPolicy = func(_, baseKeyType string) (boundedWorkflowSupport, bool) {
+		if baseKeyType != base.BaseKeyType {
+			return boundedWorkflowSupport{}, false
+		}
+		return boundedWorkflowSupport{externalAdmin: support.ExternalAdmin, cosigner: support.Cosigner}, true
+	}
+	return provider, nil
+}
+
+// RegisteredBaseKeyTypes lists the bases registered in this process.
+func RegisteredBaseKeyTypes() []string {
+	baseRegistry.mu.RLock()
+	defer baseRegistry.mu.RUnlock()
+	keyTypes := make([]string, 0, len(baseRegistry.bases))
+	for keyType := range baseRegistry.bases {
+		keyTypes = append(keyTypes, keyType)
+	}
+	slices.Sort(keyTypes)
+	return keyTypes
+}
+
+// ProductionSupportsBase reports whether a contract's production policy lists a base.
+func ProductionSupportsBase(contract, baseKeyType string) bool {
+	_, ok := productionBoundedGenerationPolicy(contract, baseKeyType)
+	return ok
+}

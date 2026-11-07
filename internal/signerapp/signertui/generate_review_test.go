@@ -462,7 +462,7 @@ func TestPresetAsksOnlyForWhatItLeavesOpen(t *testing.T) {
 		{3, []string{boundary.ParameterUnlockRound}},
 	} {
 		preset := boundary.Presets()[test.preset]
-		m := Model{forms: formsState{boundaryPreset: &preset}}
+		m := Model{forms: formsState{boundaryKeyType: boundary.KeyTypeV1, boundaryPreset: &preset}}
 		spec := m.paramSpecFor(boundary.KeyTypeV1)
 		if spec == nil {
 			t.Fatal("no form")
@@ -484,7 +484,7 @@ func TestPresetSubmissionCarriesItsFixedChoices(t *testing.T) {
 	boundedaccount.RegisterClient()
 	useRegistryKeyTypes(t)
 	preset := boundary.Presets()[0]
-	m := Model{viewState: ViewGenerateParams, forms: formsState{boundaryPreset: &preset}}
+	m := Model{viewState: ViewGenerateParams, forms: formsState{boundaryKeyType: boundary.KeyTypeV1, boundaryPreset: &preset}}
 	m = m.initGenericLSigParamsForKeyType(boundary.KeyTypeV1)
 	m.forms.genericLSigParams[boundary.ParameterRecipients] = types.Address{31: 7}.String()
 	got, _, errText := m.submitParamModal(boundary.KeyTypeV1, m.paramSpecFor(boundary.KeyTypeV1), ViewGenerating,
@@ -505,7 +505,7 @@ func TestImportedCosignerFillsThePresetField(t *testing.T) {
 	boundedaccount.RegisterClient()
 	useRegistryKeyTypes(t)
 	preset := boundary.Presets()[2]
-	m := Model{viewState: ViewGenerateParams, forms: formsState{boundaryPreset: &preset}}
+	m := Model{viewState: ViewGenerateParams, forms: formsState{boundaryKeyType: boundary.KeyTypeV1, boundaryPreset: &preset}}
 	m = m.initGenericLSigParamsForKeyType(boundary.KeyTypeV1)
 	m.forms.genericLSigParams[boundary.ParameterRecipients] = "typed"
 	m.cosigner.pendingKeyType = boundary.KeyTypeV1

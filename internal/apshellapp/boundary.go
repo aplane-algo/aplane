@@ -19,6 +19,7 @@ import (
 // local summary and not a review: the signer has not seen it, so a cosigner name
 // here is only a name until the signer resolves it during creation.
 type BoundaryPreview struct {
+	KeyType       string
 	Parameters    map[string]string
 	Transfers     []string
 	Recipients    int
@@ -31,13 +32,15 @@ type BoundaryPreview struct {
 	CosignerIsKey bool
 }
 
-// PreviewBoundaryFile reads a boundary file and summarizes it locally.
-func (a *App) PreviewBoundaryFile(path string) (*BoundaryPreview, error) {
+// PreviewBoundaryFile reads a boundary file and summarizes it locally. keyType is the
+// per-key type the caller classified from the signer's inventory.
+func (a *App) PreviewBoundaryFile(keyType, path string) (*BoundaryPreview, error) {
 	parameters, err := boundary.LoadFile(path)
 	if err != nil {
 		return nil, err
 	}
 	preview := &BoundaryPreview{
+		KeyType:     keyType,
 		Parameters:  parameters,
 		Transfers:   strings.Split(parameters[boundary.ParameterSpendEffects], ","),
 		UnlockRound: parameters[boundary.ParameterUnlockRound],
@@ -68,7 +71,7 @@ func (a *App) PreviewBoundaryFile(path string) (*BoundaryPreview, error) {
 // literal, so they skip this client's alias expansion. A stable Witness Key ID can
 // only select that authority, and the signer's answer is checked against it.
 func (a *App) GenerateFromBoundary(ctx context.Context, preview *BoundaryPreview) (*GenerateKeyCommandResult, error) {
-	result, err := a.eng.GenerateKeyFromLiterals(ctx, boundary.KeyTypeV1, preview.Parameters)
+	result, err := a.eng.GenerateKeyFromLiterals(ctx, preview.KeyType, preview.Parameters)
 	if err != nil {
 		return nil, err
 	}

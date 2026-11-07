@@ -9,6 +9,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/txeffects"
+	"github.com/aplane-algo/aplane/lsig/ed25519lsig"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -874,5 +876,136 @@ func TestStoredFingerprintRefusesAMismatchedGate(t *testing.T) {
 		if _, err := provider.StoredFingerprint(nil, stored); err == nil {
 			t.Fatalf("%s accepted gate %s", test.shape.Descriptor(), test.gate)
 		}
+	}
+}
+
+// secondDefinition is a test-only general bounded type. It never registers, so it
+// can't reach generation lists, enabled key types, or discovery.
+func secondDefinition(shapes ...Shape) Definition {
+	return Definition{
+		Publisher: "example", Family: "second-bounded", Version: 1, BaseKeyType: "aplane.ed25519.v1",
+		DisplayName: "Second Bounded Fixture", Description: "Test only.", Shapes: shapes,
+	}
+}
+
+func spendingKeyShape() Shape {
+	return Shape{Spend: []txeffects.SpendEffect{txeffects.SpendEffectPay}, Encoding: EncodingInline, Rekey: RekeySpendingKey}
+}
+
+func TestSecondDefinitionDependsOnNoFalconLiteral(t *testing.T) {
+	ed25519lsig.RegisterClient()
+	provider, err := newProvider(secondDefinition(spendingKeyShape()))
+	if err != nil {
+		t.Fatalf("newProvider() error = %v", err)
+	}
+	if provider.KeyType() != "example.second-bounded.v1" || provider.BaseKeyType() != "aplane.ed25519.v1" {
+		t.Fatalf("identity = %s on %s", provider.KeyType(), provider.BaseKeyType())
+	}
+	if provider.DisplayName() != "Second Bounded Fixture" || provider.Description() != "Test only." {
+		t.Fatalf("display = %q, %q", provider.DisplayName(), provider.Description())
+	}
+	if _, err := provider.BuildArgs(nil, nil); err == nil || !strings.Contains(err.Error(), provider.KeyType()) {
+		t.Fatalf("BuildArgs() error = %v", err)
+	}
+	params := map[string]string{
+		ParameterSpendEffects:   "pay",
+		ParameterRekeyAuthority: RekeySpendingKey,
+		ParameterListEncoding:   EncodingInline,
+		ParameterRecipients:     types.Address{1}.String(),
+	}
+	instance, err := provider.ResolveInstance(params)
+	if err != nil {
+		t.Fatalf("ResolveInstance() error = %v", err)
+	}
+	if instance.Bounded == nil || instance.Fingerprint == "" {
+		t.Fatalf("instance = %+v", instance)
+	}
+	production, err := NewProvider()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if instance.ReviewFingerprint == production.GrammarFingerprint() {
+		t.Fatal("a second definition shares the production grammar fingerprint")
+	}
+	teal, err := provider.GenerateTEAL(bytes.Repeat([]byte{0x21}, 32), params)
+	if err != nil {
+		t.Fatalf("GenerateTEAL() error = %v", err)
+	}
+	if !strings.Contains(teal, "ed25519verify_bare") || strings.Contains(teal, "falcon_verify") {
+		t.Fatalf("program does not follow the definition's base:\n%s", teal)
+	}
+	if component, ok := provider.CosignerComponentKeyType(map[string]string{ParameterCosigner: "name"}); ok {
+		t.Fatalf("a definition with no cosigner shape reported %q", component)
+	}
+}
+
+// A fingerprint names its definition, so two types sharing a base and a shape still
+// have separate provenance.
+func TestFingerprintNamesTheDefinition(t *testing.T) {
+	falcon.RegisterClient()
+	production, err := NewProvider()
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition := secondDefinition(spendingKeyShape())
+	definition.BaseKeyType = production.BaseKeyType()
+	second, err := newProvider(definition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	descriptor := spendingKeyShape().Descriptor()
+	if second.byShape[descriptor].fingerprint == production.byShape[descriptor].fingerprint {
+		t.Fatal("two definitions share a shape fingerprint")
+	}
+}
+
+func TestDefinitionOffersOnlyItsShapes(t *testing.T) {
+	ed25519lsig.RegisterClient()
+	provider, err := newProvider(secondDefinition(spendingKeyShape()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = provider.ResolveInstance(map[string]string{
+		ParameterSpendEffects:   "pay,axfer",
+		ParameterRekeyAuthority: RekeySpendingKey,
+		ParameterListEncoding:   EncodingInline,
+		ParameterRecipients:     types.Address{1}.String(),
+	})
+	if err == nil || !strings.Contains(err.Error(), "unsupported bounded shape") {
+		t.Fatalf("ResolveInstance() error = %v", err)
+	}
+	if _, err := newProvider(secondDefinition()); err == nil {
+		t.Fatal("newProvider() accepted a definition with no shapes")
+	}
+}
+
+// A definition can list a shape, but listing it grants nothing. The admin shape builds,
+// so inventory and durable load keep working, and generation applies the policy.
+func TestDefinitionCannotAuthorizeWhatThePolicyRefuses(t *testing.T) {
+	ed25519lsig.RegisterClient()
+	shape := spendingKeyShape()
+	shape.Rekey = RekeyAdminKey
+	provider, err := newProvider(secondDefinition(shape))
+	if err != nil {
+		t.Fatalf("newProvider() error = %v", err)
+	}
+	params := map[string]string{
+		ParameterSpendEffects:                      "pay",
+		ParameterRekeyAuthority:                    RekeyAdminKey,
+		ParameterListEncoding:                      EncodingInline,
+		ParameterRecipients:                        types.Address{1}.String(),
+		composeddsa.BoundedAdminPublicKeyParameter: hex.EncodeToString(bytes.Repeat([]byte{0x31}, composeddsa.BoundedAdminPublicKeySize)),
+	}
+	if _, err := provider.ResolveInstance(params); err != nil {
+		t.Fatalf("ResolveInstance() error = %v", err)
+	}
+	if _, err := provider.GenerateTEAL(bytes.Repeat([]byte{0x21}, 32), params); err == nil || !strings.Contains(err.Error(), "does not support") {
+		t.Fatalf("GenerateTEAL() error = %v", err)
+	}
+
+	cosigned := spendingKeyShape()
+	cosigned.Rekey, cosigned.Cosigner = RekeyAdminKey, true
+	if _, err := newProvider(secondDefinition(cosigned)); err == nil {
+		t.Fatal("newProvider() built a cosigner shape on a base the template rule refuses")
 	}
 }

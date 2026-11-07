@@ -4,9 +4,7 @@
 package v1
 
 import (
-	"encoding/hex"
-	"fmt"
-
+	"github.com/aplane-algo/aplane/internal/sigconstruction"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
 )
@@ -31,18 +29,16 @@ func (o *FalconOps) MnemonicScheme() string   { return o.base.MnemonicScheme() }
 func (o *FalconOps) MnemonicWordCount() int   { return o.base.MnemonicWordCount() }
 func (o *FalconOps) DisplayColor() string     { return o.base.DisplayColor() }
 
+// Construction returns the signature construction these operations render.
+func (o *FalconOps) Construction() sigconstruction.Construction { return sigconstruction.Falcon1024() }
+
 // BuildVerifyTEAL emits the Falcon verification footer for a LogicSig program.
 func (o *FalconOps) BuildVerifyTEAL(publicKey []byte) (string, error) {
-	if len(publicKey) != o.base.PublicKeySize() {
-		return "", fmt.Errorf("invalid public key size: expected %d, got %d", o.base.PublicKeySize(), len(publicKey))
+	verify, err := sigconstruction.Falcon1024().VerifyTEAL(publicKey, "txn TxID", 0)
+	if err != nil {
+		return "", err
 	}
-
-	return fmt.Sprintf(`// === Falcon-1024 Signature Verification ===
-txn TxID
-arg 0
-pushbytes 0x%s
-falcon_verify
-`, hex.EncodeToString(publicKey)), nil
+	return "// === Falcon-1024 Signature Verification ===\n" + verify, nil
 }
 
 // TEALVersion returns the minimum TEAL version required for Falcon verification.
@@ -52,27 +48,13 @@ func (o *FalconOps) TEALVersion() int {
 
 // BuildSignatureArgs packs Falcon signature into one LogicSig arg.
 func (o *FalconOps) BuildSignatureArgs(signature []byte) ([][]byte, error) {
-	if err := checkSignatureSize(signature); err != nil {
-		return nil, err
-	}
-	return [][]byte{signature}, nil
-}
-
-// checkSignatureSize rejects a signature that is empty or longer than the
-// compressed Falcon-1024 maximum that the layout and fee estimate assume.
-func checkSignatureSize(signature []byte) error {
-	if len(signature) == 0 {
-		return fmt.Errorf("signature is required for DSA LogicSig")
-	}
-	if len(signature) > family.MaxSignatureSize {
-		return fmt.Errorf("signature is %d bytes, over the %d-byte Falcon-1024 maximum", len(signature), family.MaxSignatureSize)
-	}
-	return nil
+	return sigconstruction.Falcon1024().PackSignature(signature)
 }
 
 // SignatureArgLayout declares Falcon's single variable-length signature arg.
 func (o *FalconOps) SignatureArgLayout() composeddsa.SignatureArgLayout {
-	return composeddsa.SignatureArgLayout{Count: 1, MaxSizes: []int{family.MaxSignatureSize}}
+	layout := sigconstruction.Falcon1024().Layout()
+	return composeddsa.SignatureArgLayout{Count: layout.Count(), MaxSizes: layout.MaxSizes()}
 }
 
 var _ composeddsa.BoundedCapableDSAOps = (*FalconOps)(nil)

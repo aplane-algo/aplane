@@ -87,9 +87,10 @@ Terminology:
   it is the declared `family` field. A composed template has its own `family`
   (e.g. `family: falcon1024-allowlist`) — that names the template's own
   version line, separate from whatever it signs with.
-- `base_key_type` is how a composed template names its private signing
-  primitive, e.g. `base_key_type: aplane.falcon1024.v1` to produce and pack
-  Falcon-1024 signatures.
+- `base_key_type` is how a composed template names its signature construction,
+  e.g. `base_key_type: aplane.falcon1024.v1` to produce and pack Falcon-1024
+  signatures. Every production base is a construction of one primitive; see
+  "Signature constructions" in [ARCH_KEYTYPES.md](ARCH_KEYTYPES.md).
 - `base_key_type` is not the account owner or a universal route for metadata,
   key generation, mnemonic import, TEAL, or guarded assembly. The full
   `key_type` owns those semantics unless a narrower contract explicitly
@@ -552,7 +553,7 @@ family: falcon1024-constraint
 version: 1
 ```
 
-In composed templates, `base_key_type` selects the signing primitive only. It
+In composed templates, `base_key_type` selects the signature construction only. It
 does not rename the template, collapse its metadata into the base provider, or
 make the base provider responsible for the template's TEAL, creation params, or
 runtime args.
@@ -629,6 +630,87 @@ Not supported:
 - `if`
 - `len`
 - arbitrary `{{...}}` constructs
+
+## Adding a Signature Construction
+
+A base key type names a signature construction: an ordered list of primitive components
+that must all verify. [ARCH_KEYTYPES.md](ARCH_KEYTYPES.md#signature-constructions) defines
+the terms. Every production base is a construction of one, so most work never reaches this
+section. A multi-component base needs review of its encoding, credential, and contract
+support, and it needs code: the catalog and the support policy are compiled, so a template
+or config file can't create one.
+
+A new family owns what the catalog doesn't hold: key generation, the credential, and
+signing.
+
+1. **Primitive, only if the catalog lacks one.** Add a `PrimitiveID` and a profile to
+   `internal/sigconstruction/primitive.go`: public key size, argument slots, the reviewed
+   rendering function, and signature packing. Add its verifier to
+   `internal/sigconstruction/verify/verify.go`. The catalog is linked into clients, so it can
+   hold no signing code or Falcon library. A new opcode can also mean a new contract:
+   `bounded1` freezes TEAL 13.
+2. **Construction.** Add its `Definition` to `internal/sigconstruction/construction.go` and
+   map the base key type in `baseConstructions`. Component order sets argument positions and
+   encoding, so it's frozen once shipped. No component is primary.
+3. **Signature encoding.** `PackSignature` refuses a multi-component construction because
+   none is defined. Define it before anything can sign, including how each component's
+   proof is delimited. A `Sign` must return no usable partial result if a component fails,
+   and must clear what it already produced.
+4. **Family package.** Create `lsig/<family>/`, following `lsig/ed25519lsig/` and
+   `lsig/falcon1024/`:
+
+   ```text
+   lsig/<family>/
+   |-- register.go   client registration, including composeddsa.RegisterBase
+   |-- family/       names, sizes and the base description
+   |-- v1/           provider and DSAOps adapter
+   |-- keys/         key material processing
+   |-- keygen/       key generation
+   |-- signerops/    signing
+   `-- signerreg/    signer-side registration
+   ```
+
+   The adapter delegates to the catalog: `BuildVerifyTEAL` to `VerifyTEAL`,
+   `SignatureArgLayout` to `Layout`, and `BuildSignatureArgs` to `PackSignature`. It also
+   implements `Construction()`, which lets key separation compare each component.
+5. **Wiring.** Add the family to `lsig/clientreg/register.go` and `lsig/signerreg/`.
+6. **Compatibility token.** Add a row to `boundedBasePrimitive` in
+   `lsig/composeddsa/bounded.go`. The tokens feed the program binding and fingerprints, so
+   never rename one.
+7. **Workflow support.** Add a `boundedSupportPolicy` entry in
+   `lsig/composeddsa/bounded_support.go`. Grant only what you've reviewed: a registered base
+   with no entry can't generate bounded accounts. External-admin support also needs a
+   validator design, because `internal/boundedadmin/program` accepts one Falcon base
+   argument only. Cosigner support also needs the template rule in `template.go` and a
+   receipt encoding to change.
+
+Test that family sizes match the catalog, as `TestCatalogMatchesFalconSizes` does, and that
+the base passes `TestEveryProductionBaseResolvesToASupportedConstruction`. Use a fresh key
+type name: `TestRetiredKeyTypeProductsDoNotReturn` denies retired identifiers and paths.
+
+Before a construction is real, tests can compose it without touching production:
+`lsig/composeddsa/export_test.go` composes on a base that's never registered, and
+`TestCompositeLogicSigsExecuteLocalnet` runs fixtures on a real AVM.
+
+### Adding a general bounded definition
+
+`boundedaccount.Definition` is a compiled general bounded key type: `Publisher`, `Family`,
+and `Version` set its identity, `BaseKeyType` names its spending construction,
+`DisplayName` and `Description` are its labels, and `Shapes` lists what it offers.
+`newProvider` builds every shape and fails if one can't be built, so the grammar never
+offers a shape that errors on first use.
+
+Listing a shape grants nothing. A shape can build and still be refused at generation,
+because the support policy decides. Don't put a support check in provider construction:
+inventory and durable load reach it, and `ARCH_BOUNDED_DSA.md` explains why that sends
+stores to recovery.
+
+`RegisterClient` in `lsig/boundedaccount/register.go` registers only the production
+definition and its Falcon base, so a second type needs its own registration there. It then
+reaches clients through `per_key_contract` with no client code. First check
+`TestEveryPerKeyProviderSupportsTheBoundaryWorkflow`, which requires every per-key type to
+resolve every preset. A definition without the admin or cosigner shapes fails it, and the
+fix is narrower discovery and client routing, not an exclusion from the test.
 
 ## Provider Interfaces
 
@@ -714,7 +796,7 @@ schema_version: 1
 derivation_version: 3
 max_opcode_cost: 20000  # optional absolute override; omission defaults to 20000
 template_type: <type>        # generic | composed; optional for generic templates
-base_key_type: <key_type>    # composed signing primitive; omitted for generic templates
+base_key_type: <key_type>    # composed signature construction; omitted for generic templates
 template_mode: <mode>        # strict | generated
 publisher: <namespace>       # lowercase namespace owner, for example aplane
 family: <name>              # lowercase, no spaces
@@ -1175,6 +1257,7 @@ Common paths:
 ### DSA LogicSig Provider
 
 - [ ] Registers with `internal/logicsigdsa`
+- [ ] A composable base resolves to a construction in `internal/sigconstruction` and has a `boundedSupportPolicy` decision
 - [ ] Registers algorithm metadata / mnemonic handlers as needed
 - [ ] Registers signing provider with explicit signer ops, not by relying on the client metadata provider
 - [ ] Registers keygen with explicit keygen ops, not by relying on the client metadata provider

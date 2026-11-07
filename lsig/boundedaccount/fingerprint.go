@@ -54,7 +54,7 @@ func shapeFingerprint(shape Shape, composer *composeddsa.ComposedDSA) string {
 		Composed:          composer.CompatibilityFingerprint(),
 		ResolverRevision:  resolverRevision,
 		RendererRevision:  rendererRevision,
-		DefinitionVersion: KeyTypeV1,
+		DefinitionVersion: composer.KeyType(),
 	})
 }
 

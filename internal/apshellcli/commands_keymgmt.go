@@ -31,7 +31,10 @@ func (r *REPLState) cmdGenerate(args []string, _ interface{}) (command.Result, e
 		return nil, fmt.Errorf("invalid parameter %q (expected param=value)", positional[0])
 	}
 
-	options := apshellapp.TakeGenerateOptions(keyType, params)
+	options, err := r.app().TakeGenerateOptions(r.commandContext(), keyType, params)
+	if err != nil {
+		return nil, err
+	}
 
 	var result *apshellapp.GenerateKeyCommandResult
 	if options.HasBoundaryFile {
@@ -39,7 +42,7 @@ func (r *REPLState) cmdGenerate(args []string, _ interface{}) (command.Result, e
 			return nil, fmt.Errorf("a boundary file sets every parameter; remove the others")
 		}
 		var cancelled bool
-		result, cancelled, err = r.generateFromBoundary(options.BoundaryFile)
+		result, cancelled, err = r.generateFromBoundary(keyType, options.BoundaryFile)
 		if err != nil {
 			return nil, err
 		}
@@ -74,8 +77,8 @@ func (r *REPLState) cmdGenerate(args []string, _ interface{}) (command.Result, e
 // generateFromBoundary shows the local summary and creates the account. Interactive
 // review is not an authorization: the signer checks every request regardless, so
 // unattended callers skip the prompt.
-func (r *REPLState) generateFromBoundary(path string) (*apshellapp.GenerateKeyCommandResult, bool, error) {
-	preview, err := r.app().PreviewBoundaryFile(path)
+func (r *REPLState) generateFromBoundary(keyType, path string) (*apshellapp.GenerateKeyCommandResult, bool, error) {
+	preview, err := r.app().PreviewBoundaryFile(keyType, path)
 	if err != nil {
 		return nil, false, err
 	}

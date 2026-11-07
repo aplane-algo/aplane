@@ -148,8 +148,8 @@ recipient policy, and an external-admin pure rekey. It therefore advertises
 rather than a key-type switch. See [Corridor v1](#corridor-v1).
 
 Guarded account identity is the guarded account `key_type`, not the base
-signing primitive. The stored `base_key_type` names the private signing
-primitive used for the user component key material and signature packing. It
+signature construction. The stored `base_key_type` names the construction used
+for the user component key material and signature packing. It
 does not make the base provider responsible for guarded metadata, creation
 parameters, TEAL, cosigner reference resolution, or final LogicSig argument
 assembly.
@@ -274,7 +274,7 @@ Owned primitives:
 - `internal/cosigner/message`: message construction. Clients and signers must
   use that shared primitive, or an SDK equivalent with matching vectors, rather
   than reconstructing the message independently.
-- `internal/cosigner/verify`: component signature verification (signer-side
+- `internal/sigconstruction/verify`: component signature verification (signer-side
   only; clients treat component signatures as opaque).
 - SDKs must match the same vectors rather than reconstructing a variant.
 
@@ -1006,7 +1006,7 @@ Primary packages and files:
   enrollment requirements.
 - `internal/cosigner/message`: role-separated component messages.
 - `internal/cosigner/canonical`: canonical group decoding and group hashing.
-- `internal/cosigner/verify`: component signature verification (signer-side
+- `internal/sigconstruction/verify`: component signature verification (signer-side
   only).
 - `internal/cosigner/cosignerrefs`: public cosigner reference catalog.
 - `internal/signerapp/signing`: frozen component validation, bounded

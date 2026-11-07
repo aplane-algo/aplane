@@ -17,9 +17,10 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
-	"github.com/aplane-algo/aplane/internal/cosigner/verify"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
+	"github.com/aplane-algo/aplane/internal/sigconstruction"
+	sigverify "github.com/aplane-algo/aplane/internal/sigconstruction/verify"
 	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
 
@@ -625,7 +626,7 @@ func canonicalFalconComponentPair(t *testing.T, fill byte) ([]byte, []byte) {
 			if err != nil {
 				return err
 			}
-			return verify.VerifyFalcon1024(publicKey, message, signature)
+			return sigverify.Verify(sigconstruction.Falcon1024(), publicKey, message, signature)
 		})
 	})
 	publicKey, privateKey, err := signerops.New(nil).GenerateKeypair(bytes.Repeat([]byte{fill}, 64))

@@ -277,6 +277,9 @@ type formsState struct {
 	generateFocus             int // 0 = key type, then dynamic params, then generate button
 	generateParamScrollOffset int
 
+	// boundaryKeyType is the per-key type chosen for presets or a boundary file,
+	// classified from the signer's inventory when it was selected.
+	boundaryKeyType string
 	// boundaryPreset is the guided arrangement being filled in, if any.
 	boundaryPreset      *boundary.Preset
 	boundaryPresetIndex int

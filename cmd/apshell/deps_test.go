@@ -15,7 +15,7 @@ import (
 // also break portable client builds). Component signatures are opaque to the
 // client; they are verified by the signer during guarded assembly and,
 // authoritatively, by the guarded LogicSig on-chain. Signature verification
-// helpers live in internal/cosigner/verify, which only signer-side code may
+// helpers live in internal/sigconstruction/verify, which only signer-side code may
 // import; clients use internal/cosigner/canonical for group canonicalization.
 func TestClientDoesNotLinkFalcon(t *testing.T) {
 	out, err := exec.Command("go", "list", "-deps", ".").Output()
@@ -26,7 +26,7 @@ func TestClientDoesNotLinkFalcon(t *testing.T) {
 	forbidden := []string{
 		"github.com/algorand/falcon",
 		"github.com/algorandfoundation/falcon-signatures/falcongo",
-		"github.com/aplane-algo/aplane/internal/cosigner/verify",
+		"github.com/aplane-algo/aplane/internal/sigconstruction/verify",
 	}
 	deps := string(out)
 	for _, pkg := range forbidden {

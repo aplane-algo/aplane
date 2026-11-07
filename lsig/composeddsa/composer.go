@@ -121,6 +121,10 @@ type ComposedDSA struct {
 	layer3             *Layer3Policy
 	opcodeProfile      lsigresource.OpcodeProfile
 
+	// generationPolicy replaces the production support policy for this composer
+	// only. It stays nil outside tests: nothing but export_test.go sets it.
+	generationPolicy boundedGenerationPolicy
+
 	// Algod client for TEAL compilation (must be set before DeriveLsig)
 	algodClient *algod.Client
 	algodMu     sync.RWMutex
@@ -448,6 +452,9 @@ func (c *ComposedDSA) CompatibilityFingerprint() string {
 // The suffix is a predicate fragment, not a standalone TEAL program, and must
 // not contain its own return instructions.
 func (c *ComposedDSA) GenerateTEAL(publicKey []byte, params map[string]string) (string, error) {
+	if err := c.checkBoundedGenerationSupport(); err != nil {
+		return "", err
+	}
 	normalizedParams, err := lsigprovider.NormalizeCreationParams(params, c.params)
 	if err != nil {
 		return "", err

@@ -972,6 +972,22 @@ runtime by the plugin manager and matched by command name from their
 and presentation system as built-in commands. See
 [ARCH_PLUGINS.md](ARCH_PLUGINS.md) for plugin details.
 
+### Generate Options
+
+`boundary=` and `result=` are apshell's own options, but a template can legally declare
+parameters with those names. So `App.TakeGenerateOptions` in `internal/apshellapp` takes
+them only for a key type the signer reports with `per_key_contract`, and leaves them as
+the signer's parameters for any other type. It never decides from the key type's name.
+
+A failed or incomplete lookup isn't an answer that the type is ordinary. If inventory can't
+be read, is empty, or omits the type, generation stops before either name is interpreted
+or forwarded, and no request is sent. A `generate` with neither option does no lookup, so
+ordinary generation gains no dependency on it. Boundary-file generation carries the
+classified type through its preview into `GenerateKeyFromLiterals`.
+
+This only picks a client flow. See "Client routing" in
+[ARCH_KEYTYPES.md](ARCH_KEYTYPES.md) for what the field does and doesn't promise.
+
 ### Error Handling
 
 | Mode | Behavior |

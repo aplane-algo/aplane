@@ -21,11 +21,12 @@ import (
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/cosigner/canonical"
 	"github.com/aplane-algo/aplane/internal/cosigner/message"
-	cosignerverify "github.com/aplane-algo/aplane/internal/cosigner/verify"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
+	sigverify "github.com/aplane-algo/aplane/internal/sigconstruction/verify"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
+	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
@@ -170,6 +171,14 @@ func signBoundedBaseComponent(ctx context.Context, req signerapi.GroupSignReques
 	return component, nil
 }
 
+// boundedSpendingProofVerifies checks a spending proof through the construction its
+// workflow supports. A base outside that support has no construction here, so its
+// proof is refused at the same point as one that fails to verify.
+func boundedSpendingProofVerifies(keyMaterial *coresigning.KeyMaterial, workflow composeddsa.BoundedWorkflow, message []byte, proof ...[]byte) bool {
+	construction, supported := composeddsa.SupportedSpendingConstruction(keyMaterial.BoundedAuthorization.Contract, keyMaterial.BaseKeyType, workflow)
+	return supported && sigverify.Verify(construction, keyMaterial.PublicKey, message, proof...) == nil
+}
+
 func validateBoundedBaseArgs(keyMaterial *coresigning.KeyMaterial, messageBytes []byte, args [][]byte) *ServiceError {
 	layout := keyMaterial.BoundedAuthorization.BaseSignatureArgLayout
 	if len(args) != layout.Count {
@@ -180,7 +189,7 @@ func validateBoundedBaseArgs(keyMaterial *coresigning.KeyMaterial, messageBytes 
 			return internal(fmt.Sprintf("base signature arg %d violates bounded metadata", i))
 		}
 	}
-	if len(args) != 1 || cosignerverify.VerifyFalcon1024(keyMaterial.PublicKey, messageBytes, args[0]) != nil {
+	if !boundedSpendingProofVerifies(keyMaterial, composeddsa.BoundedWorkflowCosigner, messageBytes, args...) {
 		return internal("generated bounded base component failed verification")
 	}
 	return nil
@@ -239,7 +248,7 @@ func assembleBoundedTarget(ctx context.Context, target signerapi.AssemblyTarget,
 	}
 	defer crypto.ZeroBytes(receipt)
 	receiptMessage, receiptErr := boundedAssemblyReceiptMessage(target.AuthAddress, entry.TxID[:], metadata, runtimeArgs)
-	if receiptErr != nil || cosignerverify.VerifyFalcon1024(keyMaterial.PublicKey, receiptMessage[:], receipt) != nil {
+	if receiptErr != nil || !boundedSpendingProofVerifies(keyMaterial, composeddsa.BoundedWorkflowCosigner, receiptMessage[:], receipt) {
 		return "", badRequest(fmt.Sprintf("target index %d assembly receipt is invalid or stale", target.TargetIndex))
 	}
 	cosignerSignature, cosignerErr := decodeAssemblySignatureHex(target.CosignerSignature, "cosigner_signature")

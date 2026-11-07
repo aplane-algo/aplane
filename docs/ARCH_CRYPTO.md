@@ -183,6 +183,16 @@ but they have no client-side LogicSig provider and do not register in
 `internal/lsigprovider`; signer binaries register their storage, stage
 cryptography, and generators through `lsig/signerreg`.
 
+### Signature constructions
+
+Bounded programs, their gates, and shared verification take their layouts and
+verification sequences from `internal/sigconstruction`. A construction is an ordered
+all-of list of primitive components, and today's bases are constructions of one, so
+their programs and proofs are the raw single-algorithm forms they always were. Signing
+stays at its role-specific sites behind its capability checks: shared verification
+needs no private material and grants no authority. See "Signature constructions" in
+[ARCH_KEYTYPES.md](ARCH_KEYTYPES.md).
+
 ### Generic LogicSig templates
 
 Generic LogicSig templates are TEAL-only providers. `internal/genericlsig`
