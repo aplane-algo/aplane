@@ -412,6 +412,41 @@ removed by `44156763`; it now cites `policyeval/policyeval.go::ApprovalRule`
 fed by `approval.go::planFacts`. Every other cited file and named test exists.
 No divergence found.
 
+Drift review (2026-11-07, HEAD `f6385272`): range `c6ffc6b7..f6385272` (142
+commits, 103 non-merge). `make formal-test` (21 runs) and `make
+formal-test-deep` (9 runs) match their recorded outcomes and metrics; all seven
+negative controls still fail on their named properties. `metrics.json` matches
+the model status headers. Call sites of the store-root commit, `storemut`,
+`BindStoreRootSelection`, session displacement and promotion, approval fail-all,
+assembly, and `PublishSnapshot` are unchanged, and the range did not touch the
+approval coordinator or plugin signing code. Checked: `49a60365` routes guarded
+and bounded verification through `sigconstruction`; check order and failure
+outcomes are unchanged, an unsupported base is refused where a failed
+verification was, and bounded classification did not change, so
+`guarded_assembly.tla` and `bounded_cosigner.tla` hold. `56eefed1` touched
+session code only to zero serialized responses, and its `ParseStoredPayload`
+keeps every strict decode check (S9 anchor updated). The rotating restore and
+reset changes (`236cf13e`, `cad57882`, `e6a6e982`, `11504a8a`) updated
+`rotating_leaf_release.tla` in the same commits, and `2651c553`'s
+`!StatelessHash` test selects the same families as the model's leaf family.
+`prepare_generate_key` (`3ed5a757`) is read-only and grants nothing, because
+generation repeats every check. #209 and #210 changed filenames and client file
+guards, outside every model apart from the anchors they updated.
+
+Model-extension candidates: (1) the rotating sign path's lock gate (`0ece719a`):
+`keyUse` cancels on lock, lock waits for holders, and `releaseRefused` runs again
+after the seed closes and after the last audit write. `rotating_leaf_release.tla`
+checks leaf reuse and models `Lock` only through release memory, so "no rotating
+signature leaves after a lock" is covered by `rotating_lifecycle_gate_test.go`
+alone. Recommended: extend that spec with this property. (2) Mnemonic export
+(`56eefed1`), a new secret release ordered as fresh passphrase, mutation lock,
+key-use window, full `ParsePayload`, delivery, then audit: record as out of
+model unless the key-use property lands, which would cover its lock step.
+(3) `rebuildPreparedRotatingGroup` (`2fa04553`) and the bounded templates, general
+provider, and timelocks (`cbd0ed0b`, `b5cc35b4`, `4c4cfeb7`, `864520ac`): out of
+model. The first is a deterministic pre-release check, and the others are
+on-chain program properties that the golden and AVM tests own.
+
 New-surface candidates: the policy apply reviewed-snapshot precondition
 (`1f6fde35`, `policy_snapshot_changed`) is a pre-commit compare-and-swap that
 only refuses, outside every model's scope. The rotating stage tables are now
