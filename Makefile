@@ -728,8 +728,7 @@ store-release-drill:
 
 # Report each integration suite, then fail if any failed. The suites run as
 # independent steps, so one failure (a known flaky test, say) never hides whether
-# the others passed. Each Go suite loads .env.test in its own subshell; the SDK
-# script runs with the caller's environment, as it always has.
+# the others passed.
 INTEGRATION_RESULTS = echo "Integration results:"; \
 	for result in "main $$main" "composite $$composite" "sdk $$sdk"; do \
 		set -- $$result; \
@@ -738,6 +737,12 @@ INTEGRATION_RESULTS = echo "Integration results:"; \
 		else echo "  $$1: FAILED (exit $$2)"; fi; \
 	done; \
 	[ "$$main" = 0 ] && [ "$$composite" = 0 ] && { [ "$$sdk" = 0 ] || [ "$$sdk" = - ]; }
+
+# Each suite loads .env.test in its own subshell. The SDK suite needs it too:
+# run-sdk-integration.sh decides whether to run from APLANE_SDKS_REPO before it
+# reads .env.test itself, so a value set only in .env.test would otherwise skip
+# the SDK suite and report it as passed.
+WITH_TEST_ENV = set -a && . ./.env.test && set +a &&
 
 # Run integration tests (tests in test/integration/)
 # Always regenerates this checkout's fixture and .env.test first to avoid stale
@@ -749,9 +754,9 @@ integration-test:
 	@./test/setup-test-env.sh
 	@echo "Loading environment from regenerated .env.test"
 	@main=0; composite=0; sdk=0; \
-	(set -a && . ./.env.test && set +a && INTEGRATION=1 go test $(INTEGRATION_GO_ARGS) $(INTEGRATION_TEST_PKG)) || main=$$?; \
-	(set -a && . ./.env.test && set +a && INTEGRATION=1 go test $(COMPOSITE_EXECUTION_GO_ARGS) $(COMPOSITE_EXECUTION_TEST_PKG)) || composite=$$?; \
-	./test/run-sdk-integration.sh || sdk=$$?; \
+	($(WITH_TEST_ENV) INTEGRATION=1 go test $(INTEGRATION_GO_ARGS) $(INTEGRATION_TEST_PKG)) || main=$$?; \
+	($(WITH_TEST_ENV) INTEGRATION=1 go test $(COMPOSITE_EXECUTION_GO_ARGS) $(COMPOSITE_EXECUTION_TEST_PKG)) || composite=$$?; \
+	($(WITH_TEST_ENV) ./test/run-sdk-integration.sh) || sdk=$$?; \
 	$(INTEGRATION_RESULTS)
 
 integration-test-testnet:
@@ -791,9 +796,9 @@ integration-test-reuse:
 	@main=0; composite=0; sdk=0; \
 	if [ -f .env.test ]; then \
 		echo "Loading environment from .env.test"; \
-		(set -a && . ./.env.test && set +a && INTEGRATION=1 go test $(INTEGRATION_GO_ARGS) $(INTEGRATION_TEST_PKG)) || main=$$?; \
-		(set -a && . ./.env.test && set +a && INTEGRATION=1 go test $(COMPOSITE_EXECUTION_GO_ARGS) $(COMPOSITE_EXECUTION_TEST_PKG)) || composite=$$?; \
-		./test/run-sdk-integration.sh || sdk=$$?; \
+		($(WITH_TEST_ENV) INTEGRATION=1 go test $(INTEGRATION_GO_ARGS) $(INTEGRATION_TEST_PKG)) || main=$$?; \
+		($(WITH_TEST_ENV) INTEGRATION=1 go test $(COMPOSITE_EXECUTION_GO_ARGS) $(COMPOSITE_EXECUTION_TEST_PKG)) || composite=$$?; \
+		($(WITH_TEST_ENV) ./test/run-sdk-integration.sh) || sdk=$$?; \
 	else \
 		echo "Note: Create .env.test with TEST_FUNDING_MNEMONIC, TEST_PASSPHRASE, DISABLE_MEMORY_LOCK"; \
 		echo "Example: echo 'TEST_FUNDING_MNEMONIC=\"your 25 words\"' > .env.test"; \
