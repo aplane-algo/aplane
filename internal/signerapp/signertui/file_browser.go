@@ -12,6 +12,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/aplane-algo/aplane/internal/witness"
+
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -67,13 +69,13 @@ func fileBrowserSpecFor(target fileBrowserTarget) fileBrowserSpec {
 	case browsePolicyExportDir:
 		return fileBrowserSpec{title: "Choose Where to Export", chooseDir: true}
 	case browseCosignerImportFile:
-		return fileBrowserSpec{title: "Choose Cosigner Key File", suffixes: []string{".json"}}
+		return fileBrowserSpec{title: "Choose Cosigner Key File", suffixes: []string{witness.CosignerPublicReferenceExtension}}
 	case browseCosignerExportFile:
 		return fileBrowserSpec{title: "Choose Where to Save", chooseDir: true}
 	case browseClientKeyFile:
 		return fileBrowserSpec{title: "Choose Client Public Key", suffixes: []string{".pub"}}
 	case browseContractAdminReference:
-		return fileBrowserSpec{title: "Choose Contract Admin Reference", suffixes: []string{".wit.json"}}
+		return fileBrowserSpec{title: "Choose Contract Admin Reference", suffixes: []string{witness.AdminPublicReferenceExtension}}
 	case browseBackupExportDir:
 		return fileBrowserSpec{title: "Choose Where to Export", chooseDir: true, fillDir: true}
 	case browseBoundaryFile:

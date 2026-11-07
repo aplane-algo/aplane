@@ -119,7 +119,7 @@ func TestCosignerImportDefaultFollowsSourceUnlessEdited(t *testing.T) {
 	if next.(Model).cosigner.importName != "my-cosigner" {
 		t.Fatal("replacement paste overwrote custom name")
 	}
-	m = Model{cosigner: cosignerState{importName: "old", importNameDefault: "old", importPath: "/tmp/New.aplane-cosigner.json"}}
+	m = Model{cosigner: cosignerState{importName: "old", importNameDefault: "old", importPath: "/tmp/New.cos.json"}}
 	m = m.suggestCosignerImportNameFromPath()
 	if m.cosigner.importName != "new" {
 		t.Fatal("replacement path retained stale default")

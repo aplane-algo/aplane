@@ -1015,7 +1015,7 @@ request.
 Contract-admin private keys never appear in signer inventory. Bounded account
 rows expose the immutable derived `admin_key_id`, program binding, Layer-3
 policy, and other non-secret bounded-authorization metadata. Apsigner does
-not report artifact availability because `.wit` custody is
+not report artifact availability because `.adm` custody is
 external and intentionally outside the signer data model.
 
 `/keytypes` exposes the framework-injected scalar
@@ -1027,10 +1027,11 @@ option. Generation derives the ID from the public key.
 ## External Contract Admin Artifact Contract
 
 `aprekey` owns external contract-admin witness custody. Its encrypted
-artifacts use the `.wit` extension and filenames of the form
-`<WITNESS_KEY_ID>.wit`. They are not signer-managed `.key` or `.cos` files
+artifacts use the `.adm` extension and filenames of the form
+`<WITNESS_KEY_ID>.adm`. They are not signer-managed `.key` or `.cos` files
 or `apstore` `.apb` backup bundles. The helper rejects every other extension
-before parsing or passphrase work. The signer and `apstore` must not import,
+before parsing or passphrase work, and `aprekey generate` refuses an output
+directory inside a signer store. The signer and `apstore` must not import,
 decrypt, back up, or restore these artifacts.
 
 The top-level JSON contract is:
@@ -1079,7 +1080,7 @@ Private plaintext, private key bytes, passphrases, and temporary signatures
 must be cleared on success and failure.
 
 Generation also writes
-`<WITNESS_KEY_ID>.wit.json` with schema
+`<WITNESS_KEY_ID>.adm.json` with schema
 `aplane.witness-key-public.v1`, `key_type`, `witness_key_id`, and
 `public_key_hex`. This sidecar is public convenience data only. The encrypted
 artifact's public header is authoritative and remains sufficient for inspect, verify,
@@ -1105,7 +1106,7 @@ Successful `aprekey generate` output is:
 
 The result does not contain filesystem paths. Callers derive the two generated
 filenames from `--out` and `reference.witness_key_id` using the canonical
-`.wit` and `.wit.json` suffixes. Moving the generated files does not invalidate
+`.adm` and `.adm.json` suffixes. Moving the generated files does not invalidate
 the result or either file.
 
 ## Contract Admin Ceremony Contract

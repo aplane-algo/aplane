@@ -296,7 +296,7 @@ func writeContractAdminReference(t *testing.T) (string, string) {
 	if err := os.Mkdir(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(dir, keyID+".wit.json")
+	path := filepath.Join(dir, keyID+".adm.json")
 	if err := os.WriteFile(path, data, 0o600); err != nil {
 		t.Fatal(err)
 	}

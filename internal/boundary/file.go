@@ -151,9 +151,14 @@ func LoadFile(path string) (map[string]string, error) {
 	return file.CreationParameters(filepath.Dir(path))
 }
 
-// readAdminPublicKey reads the public .wit.json envelope. A relative path is
-// resolved against the boundary file, so a file works from any directory.
+// readAdminPublicKey reads the public .adm.json envelope. A relative path is
+// resolved against the boundary file, so a file works from any directory. The
+// name check matches apadmin's admin reference field. A cosigner reference has
+// the same schema, so its name is the only thing here that tells them apart.
 func readAdminPublicKey(directory, path string) (string, error) {
+	if !strings.HasSuffix(path, witness.AdminPublicReferenceExtension) {
+		return "", fmt.Errorf("admin witness %s must be a %s file", path, witness.AdminPublicReferenceExtension)
+	}
 	if !filepath.IsAbs(path) {
 		path = filepath.Join(directory, path)
 	}

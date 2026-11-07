@@ -93,7 +93,7 @@ func (c ManagedCredentialClass) Extension() string {
 }
 
 // ParseManagedCredentialFilename recognizes only signer-managed private
-// credential files. Standalone .wit artifacts and public sidecars are never
+// credential files. Standalone .adm artifacts and public sidecars are never
 // candidates.
 func ParseManagedCredentialFilename(name string) (selector string, class ManagedCredentialClass, ok bool) {
 	switch {

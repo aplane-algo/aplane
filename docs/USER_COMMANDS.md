@@ -515,8 +515,8 @@ accounts are intentionally not completed in apshell or apconsole; use the
 dedicated contract-admin client:
 
 ```bash
-aprekey rekey --key <key.wit> [--client-data <dir>] [--network <name>] [--fee <microalgos>] [--nowait] <account> to <new-authorizer>
-aprekey unrekey --key <key.wit> [--client-data <dir>] [--network <name>] [--fee <microalgos>] [--nowait] <account>
+aprekey rekey --key <key.adm> [--client-data <dir>] [--network <name>] [--fee <microalgos>] [--nowait] <account> to <new-authorizer>
+aprekey unrekey --key <key.adm> [--client-data <dir>] [--network <name>] [--fee <microalgos>] [--nowait] <account>
 ```
 
 `<new-authorizer>` must be a key the same signer holds: a native Ed25519 or
@@ -543,7 +543,7 @@ online without contacting the signer again:
 ```bash
 aprekey prepare-rekey --out <request.apbounded-admin-request> [--client-data <dir>] [--network <name>] [--fee <microalgos>] <account> to <new-authorizer>
 aprekey prepare-unrekey --out <request.apbounded-admin-request> [--client-data <dir>] [--network <name>] [--fee <microalgos>] <account>
-aprekey sign --key <key.wit> --request <request.apbounded-admin-request> --out <response.apbounded-admin-signature>
+aprekey sign --key <key.adm> --request <request.apbounded-admin-request> --out <response.apbounded-admin-signature>
 aprekey complete [--client-data <dir>] [--network <name>] [--nowait] <request.apbounded-admin-request> with <response.apbounded-admin-signature>
 ```
 
@@ -1089,7 +1089,7 @@ file that carries anything beyond the public key is refused.
 When the source is `-`, stdin is reserved for the bounded JSON document:
 
 ```bash
-cat lab-cosigner.aplane-cosigner.json | \
+cat lab-cosigner.cos.json | \
   APSIGNER_PASSPHRASE="$APSIGNER_PASSPHRASE" \
   apadmin -d "$SIGNER_DATA" cosigner import - lab-cosigner
 ```
@@ -1127,8 +1127,8 @@ importing.
 #### Batch export and import
 
 ```bash
-apadmin -d "$COSIGNER_DATA" cosigner export "$WITNESS_KEY_ID" lab-cosigner.aplane-cosigner.json
-apadmin -d "$SIGNER_DATA" cosigner import lab-cosigner.aplane-cosigner.json lab-cosigner
+apadmin -d "$COSIGNER_DATA" cosigner export "$WITNESS_KEY_ID" lab-cosigner.cos.json
+apadmin -d "$SIGNER_DATA" cosigner import lab-cosigner.cos.json lab-cosigner
 ```
 
 Then configure and verify the transaction client in apshell with the

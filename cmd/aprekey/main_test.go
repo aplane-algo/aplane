@@ -115,7 +115,7 @@ func TestGenerateRejectsPassphraseMismatch(t *testing.T) {
 
 func TestInspectWritesTypedSchemaError(t *testing.T) {
 	directory := t.TempDir()
-	path := filepath.Join(directory, "unknown.wit")
+	path := filepath.Join(directory, "unknown.adm")
 	if err := os.WriteFile(path, []byte(`{"schema":"aplane.external-governance-bundle.v2"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -179,13 +179,13 @@ func TestRekeyParsesOnlineWorkflowOptions(t *testing.T) {
 		},
 	}
 	exitCode := app.run([]string{
-		"rekey", "--client-data", "/client", "--network", "localnet", "--key", "/cold/key.wit",
+		"rekey", "--client-data", "/client", "--network", "localnet", "--key", "/cold/key.adm",
 		"--fee", "4000", "account", "to", "target",
 	})
 	if exitCode != 0 {
 		t.Fatalf("exit code = %d, stderr = %s", exitCode, stderr.String())
 	}
-	if got.Operation != apboundedadminapp.OperationRekey || got.ClientData != "/client" || got.Network != "localnet" || got.Artifact != "/cold/key.wit" || got.Account != "account" || got.Target != "target" || got.Fee != 4000 || !got.UseFlatFee || !got.Wait {
+	if got.Operation != apboundedadminapp.OperationRekey || got.ClientData != "/client" || got.Network != "localnet" || got.Artifact != "/cold/key.adm" || got.Account != "account" || got.Target != "target" || got.Fee != 4000 || !got.UseFlatFee || !got.Wait {
 		t.Fatalf("options = %#v", got)
 	}
 	if !strings.Contains(stdout.String(), "TXID") || !strings.Contains(stdout.String(), "confirmed") {
@@ -205,7 +205,7 @@ func TestUnrekeyParsesNowait(t *testing.T) {
 			return &apboundedadminapp.Result{TxID: "TXID"}, nil
 		},
 	}
-	if exitCode := app.run([]string{"unrekey", "--key", "/cold/key.wit", "--nowait", "account"}); exitCode != 0 {
+	if exitCode := app.run([]string{"unrekey", "--key", "/cold/key.adm", "--nowait", "account"}); exitCode != 0 {
 		t.Fatalf("exit code = %d, stderr = %s", exitCode, stderr.String())
 	}
 	if got.Operation != apboundedadminapp.OperationUnrekey || got.Account != "account" || got.Target != "" || got.Wait {

@@ -179,7 +179,7 @@ func fillDeletedArchiveWarningLimit(t *testing.T, active storepaths.GenPaths, kr
 	for i := 2; i < len(filler); i++ {
 		filler[i] = ' '
 	}
-	if err := os.WriteFile(filepath.Join(active.DeletedKeysDir(), "CAPACITY-FILLER.wit.json"), filler, 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(active.DeletedKeysDir(), "CAPACITY-FILLER.cos.json"), filler, 0o600); err != nil {
 		t.Fatal(err)
 	}
 }

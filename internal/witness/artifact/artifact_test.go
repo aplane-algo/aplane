@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/witness"
 )
 
@@ -278,7 +279,7 @@ func TestFileOperationsRejectOverwriteAndWrongFileKinds(t *testing.T) {
 	t.Parallel()
 
 	directory := t.TempDir()
-	existing := filepath.Join(directory, "existing.wit")
+	existing := filepath.Join(directory, "existing.adm")
 	if err := os.WriteFile(existing, []byte("original"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -297,11 +298,18 @@ func TestFileOperationsRejectOverwriteAndWrongFileKinds(t *testing.T) {
 	if err := os.WriteFile(wrongExtension, []byte("{}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	removedExtension := filepath.Join(directory, "key.wit")
+	if err := os.WriteFile(removedExtension, []byte("not an artifact"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadFile(removedExtension); err == nil || !strings.Contains(err.Error(), BundleExtension) {
+		t.Fatalf("LoadFile(.wit) error = %v, want extension rejection", err)
+	}
 	if _, err := LoadFile(wrongExtension); err == nil || !strings.Contains(err.Error(), BundleExtension) {
 		t.Fatalf("LoadFile(.apb) error = %v, want extension rejection", err)
 	}
 
-	symlink := filepath.Join(directory, "linked.wit")
+	symlink := filepath.Join(directory, "linked.adm")
 	if err := os.Symlink(existing, symlink); err != nil {
 		t.Fatal(err)
 	}
@@ -315,6 +323,44 @@ func TestFileOperationsRejectOverwriteAndWrongFileKinds(t *testing.T) {
 	}
 	if err := ValidateOutputDirectory(directoryLink); err == nil {
 		t.Fatal("ValidateOutputDirectory() accepted a symlink")
+	}
+}
+
+func TestOutputDirectoryRefusesSignerStores(t *testing.T) {
+	root := t.TempDir()
+	store := filepath.Join(root, "identities", "default")
+	keys := filepath.Join(store, "generations", "gen-1", "keys")
+	if err := os.MkdirAll(keys, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(store, storepaths.StoreRootName), []byte("root"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(root, "alias")
+	if err := os.Symlink(filepath.Join(store, "generations"), alias); err != nil {
+		t.Fatal(err)
+	}
+	for name, directory := range map[string]string{
+		"store root":   store,
+		"keys":         keys,
+		"through link": filepath.Join(alias, "gen-1", "keys"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := GenerateFiles(directory, []byte("passphrase"), time.Time{}); err == nil ||
+				!strings.Contains(err.Error(), "inside the signer store") {
+				t.Fatalf("GenerateFiles(%s) error = %v, want store refusal", directory, err)
+			}
+		})
+	}
+	entries, err := os.ReadDir(keys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("store keys directory has %d entries, want 0", len(entries))
+	}
+	if err := ValidateOutputDirectory(root); err != nil {
+		t.Fatalf("ValidateOutputDirectory(outside the store) error = %v", err)
 	}
 }
 

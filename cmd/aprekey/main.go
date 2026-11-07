@@ -155,7 +155,7 @@ func (app application) rekey(args []string, unrekey bool) error {
 		return &usageError{err: err}
 	}
 	if keyPath == "" {
-		return &usageError{err: fmt.Errorf("%s requires --key <artifact.wit>", command)}
+		return &usageError{err: fmt.Errorf("%s requires --key <artifact.adm>", command)}
 	}
 	positional := flags.Args()
 	options := apboundedadminapp.Options{
@@ -173,12 +173,12 @@ func (app application) rekey(args []string, unrekey bool) error {
 	})
 	if unrekey {
 		if len(positional) != 1 {
-			return &usageError{err: fmt.Errorf("usage: aprekey unrekey --key <key.wit> [options] <account>")}
+			return &usageError{err: fmt.Errorf("usage: aprekey unrekey --key <key.adm> [options] <account>")}
 		}
 		options.Account = positional[0]
 	} else {
 		if len(positional) != 3 || !strings.EqualFold(positional[1], "to") {
-			return &usageError{err: fmt.Errorf("usage: aprekey rekey --key <key.wit> [options] <account> to <target>")}
+			return &usageError{err: fmt.Errorf("usage: aprekey rekey --key <key.adm> [options] <account> to <target>")}
 		}
 		options.Account = positional[0]
 		options.Target = positional[2]
@@ -310,7 +310,7 @@ func (app application) sign(args []string) error {
 		return &usageError{err: err}
 	}
 	if flags.NArg() != 0 || *keyPath == "" {
-		return &usageError{err: fmt.Errorf("sign requires --key <artifact.wit>")}
+		return &usageError{err: fmt.Errorf("sign requires --key <artifact.adm>")}
 	}
 
 	request, err := apboundedadminapp.ReadRequest(*requestPath, app.input())
@@ -527,15 +527,15 @@ func (app application) writeError(err error) {
 func (app application) usage() {
 	_, _ = fmt.Fprintln(app.stderr, "Usage:")
 	_, _ = fmt.Fprintln(app.stderr, "  aprekey generate --out <directory>")
-	_, _ = fmt.Fprintln(app.stderr, "  aprekey inspect <key.wit>")
-	_, _ = fmt.Fprintln(app.stderr, "  aprekey verify <key.wit>")
-	_, _ = fmt.Fprintln(app.stderr, "  aprekey sign --key <key.wit> < request.json")
+	_, _ = fmt.Fprintln(app.stderr, "  aprekey inspect <key.adm>")
+	_, _ = fmt.Fprintln(app.stderr, "  aprekey verify <key.adm>")
+	_, _ = fmt.Fprintln(app.stderr, "  aprekey sign --key <key.adm> < request.json")
 	_, _ = fmt.Fprintln(app.stderr, "  aprekey prepare-rekey --out <request.apbounded-admin-request> [--client-data <dir>] [--network <network>] [--fee <microalgos>] <account> to <target>")
 	_, _ = fmt.Fprintln(app.stderr, "  aprekey prepare-unrekey --out <request.apbounded-admin-request> [--client-data <dir>] [--network <network>] [--fee <microalgos>] <account>")
-	_, _ = fmt.Fprintln(app.stderr, "  aprekey sign --key <key.wit> --request <request.apbounded-admin-request> --out <response.apbounded-admin-signature>")
+	_, _ = fmt.Fprintln(app.stderr, "  aprekey sign --key <key.adm> --request <request.apbounded-admin-request> --out <response.apbounded-admin-signature>")
 	_, _ = fmt.Fprintln(app.stderr, "  aprekey complete [--client-data <dir>] [--network <network>] [--nowait] <request.apbounded-admin-request> with <response.apbounded-admin-signature>")
-	_, _ = fmt.Fprintln(app.stderr, "  aprekey rekey --key <key.wit> [--client-data <dir>] [--network <network>] [--fee <microalgos>] [--nowait] <account> to <target>")
-	_, _ = fmt.Fprintln(app.stderr, "  aprekey unrekey --key <key.wit> [--client-data <dir>] [--network <network>] [--fee <microalgos>] [--nowait] <account>")
+	_, _ = fmt.Fprintln(app.stderr, "  aprekey rekey --key <key.adm> [--client-data <dir>] [--network <network>] [--fee <microalgos>] [--nowait] <account> to <target>")
+	_, _ = fmt.Fprintln(app.stderr, "  aprekey unrekey --key <key.adm> [--client-data <dir>] [--network <network>] [--fee <microalgos>] [--nowait] <account>")
 }
 
 func readControllingTerminal(prompt string) ([]byte, error) {
@@ -574,7 +574,7 @@ func confirmControllingTerminal(prompt string) (bool, error) {
 
 func exactlyOnePath(command string, args []string) (string, error) {
 	if len(args) != 1 {
-		return "", &usageError{err: fmt.Errorf("%s requires exactly one .wit path", command)}
+		return "", &usageError{err: fmt.Errorf("%s requires exactly one .adm path", command)}
 	}
 	return args[0], nil
 }

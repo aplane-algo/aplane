@@ -94,7 +94,7 @@ func TestEndpointImportPointsCosignerKeyDocumentsAtEndpointsAdd(t *testing.T) {
 	for name, document := range documents {
 		t.Run(name, func(t *testing.T) {
 			dataDir := t.TempDir()
-			path := filepath.Join(dataDir, "lab.aplane-cosigner.json")
+			path := filepath.Join(dataDir, "lab.cos.json")
 			if err := os.WriteFile(path, []byte(document), 0o600); err != nil {
 				t.Fatal(err)
 			}

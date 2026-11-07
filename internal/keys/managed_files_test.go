@@ -108,7 +108,7 @@ func TestValidateManagedCredentialFilename(t *testing.T) {
 }
 
 func TestParseManagedCredentialFilenameExcludesStandaloneWitnessFiles(t *testing.T) {
-	for _, name := range []string{"ID.wit", "ID.wit.json", "ID.json", ".key", "dir/ID.key"} {
+	for _, name := range []string{"ID.adm", "ID.adm.json", "ID.cos.json", "ID.wit", "ID.wit.json", "ID.json", ".key", "dir/ID.key"} {
 		if _, _, ok := ParseManagedCredentialFilename(name); ok {
 			t.Fatalf("ParseManagedCredentialFilename(%q) accepted non-candidate", name)
 		}
@@ -121,7 +121,7 @@ func TestParseManagedCredentialFilenameExcludesStandaloneWitnessFiles(t *testing
 
 func TestScanManagedCredentialFiles(t *testing.T) {
 	dir := t.TempDir()
-	for _, name := range []string{"ACCOUNT.key", "WITNESS.cos", "EXTERNAL.wit", "EXTERNAL.wit.json", "notes.txt"} {
+	for _, name := range []string{"ACCOUNT.key", "WITNESS.cos", "EXTERNAL.adm", "EXTERNAL.adm.json", "notes.txt"} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte("test"), 0o600); err != nil {
 			t.Fatal(err)
 		}

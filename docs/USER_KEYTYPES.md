@@ -30,12 +30,12 @@ it is not a dedicated compiled policy.
 | Auxiliary authority type | Meaning |
 |---|---|
 | **Cosigner witness key** | A signer-managed, non-account witness used through `/sign/component` and assembled into a guarded transaction. |
-| **Contract-admin witness key** | The same witness key form in a standalone `.wit` container, used only for a bounded admin operation. It is not imported into the signer. |
+| **Contract-admin witness key** | The same witness key form in a standalone `.adm` container, used only for a bounded admin operation. It is not imported into the signer. |
 
 Both roles use `aplane.witness-falcon1024.v1` and the same Witness Key ID
 derivation. Custody keeps their capabilities separate: hot signer `.cos`
 records use durable category `witness` and can sign only the cosigner component
-domain; standalone `.wit` files can sign only the bounded admin domain. Never
+domain; standalone `.adm` files can sign only the bounded admin domain. Never
 reuse one witness keypair across these roles. Local generation rejects known
 collisions, but cannot detect a key copied or enrolled out of band.
 
@@ -259,8 +259,8 @@ Generate a key and choose `aplane.falcon1024-b.v1`, then a preset:
 | Preset | What it sets | You supply |
 |---|---|---|
 | Allowlist | All transfer kinds; the spending key alone can rekey; automatic list encoding | Recipients |
-| Locked Allowlist | All transfer kinds; rekey also needs a contract admin; automatic list encoding | Recipients, admin `.wit.json` file |
-| Corridor | All transfer kinds; contract-admin rekey; a cosigner on every spend; Merkle list | Recipients, admin `.wit.json` file, cosigner |
+| Locked Allowlist | All transfer kinds; rekey also needs a contract admin; automatic list encoding | Recipients, admin `.adm.json` file |
+| Corridor | All transfer kinds; contract-admin rekey; a cosigner on every spend; Merkle list | Recipients, admin `.adm.json` file, cosigner |
 | Timelock | All transfer kinds; the spending key alone can rekey, after the unlock round; no recipient list | Unlock round |
 | Load boundary file | Whatever the file says | The file |
 
@@ -283,7 +283,7 @@ recipients:
 encoding: auto
 rekey:
   authority: admin_key
-  admin_key: ./bounded-admin/operations.wit.json
+  admin_key: ./bounded-admin/operations.adm.json
 cosigner: ops-cosigner
 ```
 
@@ -297,7 +297,7 @@ These addresses are illustrations, not funding destinations.
 | `encoding` | Optional, and needs a list. `auto` (the default) is inline through 10 recipients and Merkle above that. `inline` accepts at most 30. |
 | `unlock_round` | Optional. The first round the account can spend. With no list, the account can pay anyone once unlocked. |
 | `rekey.authority` | Required. `spending_key` or `admin_key`. |
-| `rekey.admin_key` | The public `.wit.json` file, relative to the boundary file. Required only with `admin_key`. |
+| `rekey.admin_key` | The public `.adm.json` file, relative to the boundary file. Any other name is refused. Required only with `admin_key`. |
 | `cosigner` | Optional. A cosigner reference name on the signer, or a Witness Key ID. A cosigner needs `admin_key`. |
 
 With `unlock_round` and `spending_key`, `spend` must include `pay`.
@@ -366,19 +366,19 @@ Generate the external contract-admin key first:
 aprekey generate --out /media/cold/bounded-admin
 ```
 
-Copy the generated public `<WitnessKeyID>.wit.json` file to the machine running
+Copy the generated public `<WitnessKeyID>.adm.json` file to the machine running
 `apadmin`. When generating `aplane.falcon1024-allowlist-lock.v1`, enter that
-file's local path in **Contract Admin Reference File (.wit.json)**, or press
+file's local path in **Contract Admin Reference File (.adm.json)**, or press
 `ctrl+o` in that field to browse for it. `apadmin`
 validates the public reference and supplies its `public_key_hex` to the signer;
-it never reads the private `.wit` file. Keep the `.wit` artifact outside the
+it never reads the private `.adm` file. Keep the `.adm` artifact outside the
 signer. Scripted generation still accepts the `bounded_admin_public_key` hex
 parameter. Ordinary spends use the normal client flow. Rekey with the dedicated
 helper:
 
 ```bash
 aprekey rekey --client-data "$APCLIENT_DATA" \
-  --key /media/cold/bounded-admin/<ID>.wit \
+  --key /media/cold/bounded-admin/<ID>.adm \
   <account> to <new-authorizer>
 ```
 

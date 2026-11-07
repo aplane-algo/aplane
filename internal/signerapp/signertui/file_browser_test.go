@@ -102,6 +102,21 @@ func policyApplyFormModel(path string) Model {
 	return m
 }
 
+func TestFileBrowserListsOnlyTheMatchingRoleReference(t *testing.T) {
+	for _, test := range []struct {
+		target fileBrowserTarget
+		want   string
+	}{
+		{browseCosignerImportFile, ".cos.json"},
+		{browseContractAdminReference, ".adm.json"},
+	} {
+		spec := fileBrowserSpecFor(test.target)
+		if len(spec.suffixes) != 1 || spec.suffixes[0] != test.want {
+			t.Fatalf("%s suffixes = %v, want [%s]", spec.title, spec.suffixes, test.want)
+		}
+	}
+}
+
 func TestFileBrowserChoosesPolicyFile(t *testing.T) {
 	root := browserTree(t)
 	m := press(t, policyApplyFormModel(filepath.Join(root, "typed.json")), "ctrl+o")
@@ -222,17 +237,17 @@ func TestFileBrowserCosignerExportKeepsSuggestedName(t *testing.T) {
 	root := t.TempDir()
 	m := Model{viewState: ViewCosignerExportPath}
 	m.cosigner.exportWitnessID = "ABCDEFGHIJKLMNOP"
-	m.cosigner.exportPath = filepath.Join(root, "mine.aplane-cosigner.json")
+	m.cosigner.exportPath = filepath.Join(root, "mine.cos.json")
 	m.cosigner.exportFocus = 1
 	m = press(t, m, "ctrl+o", "enter")
-	if want := filepath.Join(root, "mine.aplane-cosigner.json"); m.cosigner.exportPath != want || m.cosigner.exportFocus != 0 {
+	if want := filepath.Join(root, "mine.cos.json"); m.cosigner.exportPath != want || m.cosigner.exportFocus != 0 {
 		t.Fatalf("path %q focus %d, want %q on the path field", m.cosigner.exportPath, m.cosigner.exportFocus, want)
 	}
 }
 
 func TestFileBrowserCosignerImportSuggestsName(t *testing.T) {
 	root := t.TempDir()
-	path := filepath.Join(root, "lab.aplane-cosigner.json")
+	path := filepath.Join(root, "lab.cos.json")
 	if err := os.WriteFile(path, []byte("{}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -240,7 +255,7 @@ func TestFileBrowserCosignerImportSuggestsName(t *testing.T) {
 	m.cosigner.importPath = root + string(filepath.Separator)
 	m.cosigner.importFocus = 2
 	m = press(t, m, "ctrl+o")
-	m = press(t, selectBrowserEntry(t, m, "lab.aplane-cosigner.json"), "enter")
+	m = press(t, selectBrowserEntry(t, m, "lab.cos.json"), "enter")
 	if m.cosigner.importPath != path || m.cosigner.importName != "lab" {
 		t.Fatalf("path %q name %q, want the file and the name from it", m.cosigner.importPath, m.cosigner.importName)
 	}
