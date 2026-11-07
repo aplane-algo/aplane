@@ -7,6 +7,17 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## Clients choose bounded flows from the signer's inventory
+
+- apadmin and apshell now pick the preset and boundary-file flows from the signer's
+  `per_key_contract` field, not the key type's name. Nothing changes for current key types.
+- If apadmin hasn't received the signer's key types, choosing a type to generate shows an
+  error and reloads them. It no longer opens the form from its compiled list.
+- `generate ... boundary=` or `result=` now reads the signer's key types first. If that fails,
+  or the signer doesn't report the type, apshell stops and sends no generation request. A
+  `generate` with neither option doesn't need the lookup.
+- apadmin's template library now says bounded presets are under Generate.
+
 ## Bounded generation refuses workflows a base cannot complete
 
 - New accounts are refused when their base can't complete a declared workflow. An
