@@ -15,6 +15,7 @@ const (
 	clientsSubcommand     = "clients"
 	endpointSubcommand    = "endpoint"
 	generationsSubcommand = "generations"
+	archiveSubcommand     = "archive"
 
 	testModeListCommand     = "list"
 	testModeGenerateCommand = "generate"
@@ -45,6 +46,7 @@ var productionSubcommands = map[string]productionCommandKind{
 	clientsSubcommand:     productionCatalog,
 	endpointSubcommand:    productionCatalog,
 	generationsSubcommand: productionCatalog,
+	archiveSubcommand:     productionCatalog,
 }
 
 var testModeCommandNames = []string{

@@ -174,9 +174,22 @@ func CatalogAuthMode(command string, args []string) (AuthMode, error) {
 			}
 			return AuthUnlock, nil
 		}
+		if len(args) > 0 && args[0] == "discard" {
+			fs := flag.NewFlagSet("apadmin generations discard", flag.ContinueOnError)
+			fs.SetOutput(io.Discard)
+			_ = fs.Bool("confirm", false, "")
+			if err := fs.Parse(args[1:]); err != nil || fs.NArg() == 0 {
+				return AuthUnlock, errors.New(
+					"usage: apadmin generations discard --confirm <generation-id> [generation-id...]",
+				)
+			}
+			return AuthUnlock, nil
+		}
 	case "archive":
+		// The daemon serves the archive listing only to an unlocked or
+		// recovery-admin session, never to an auth_only observer.
 		if len(args) == 1 && args[0] == "list" {
-			return AuthReadOnly, nil
+			return AuthUnlock, nil
 		}
 		if len(args) > 0 && args[0] == "prune" {
 			fs := flag.NewFlagSet("apadmin archive prune", flag.ContinueOnError)
@@ -193,6 +206,13 @@ func CatalogAuthMode(command string, args []string) (AuthMode, error) {
 
 // Run executes one validated catalog command using an already authenticated
 // client.
+//
+// CatalogCommands names every command Run accepts. cmd/apadmin routes each of
+// them; a test keeps the two lists in step.
+var CatalogCommands = []string{
+	"template", "keytype", "cosigner", "asa", "clients", "endpoint", "generations", "archive",
+}
+
 func (c Catalog) Run(command string, args []string) error {
 	c = c.normalized()
 	if c.Client == nil {

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/apadminapp"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/signerapp/policycmd"
@@ -195,5 +196,20 @@ func TestPolicyCommandRejectsRetiredPassphraseEnvironment(t *testing.T) {
 	})
 	if code != 2 || !strings.Contains(stderr.String(), "APPOLICY_PASSPHRASE is retired") {
 		t.Fatalf("runPolicyCommand() code=%d stderr=%q", code, stderr.String())
+	}
+}
+
+func TestEveryCatalogCommandIsRouted(t *testing.T) {
+	catalog := make(map[string]bool)
+	for _, command := range apadminapp.CatalogCommands {
+		catalog[command] = true
+		if kind, ok := productionSubcommands[command]; !ok || kind != productionCatalog {
+			t.Errorf("catalog command %q is not routed to catalog dispatch (kind %d, routed %t)", command, kind, ok)
+		}
+	}
+	for command, kind := range productionSubcommands {
+		if kind == productionCatalog && !catalog[command] {
+			t.Errorf("command %q routes to catalog dispatch but apadminapp.Catalog does not list it", command)
+		}
 	}
 }

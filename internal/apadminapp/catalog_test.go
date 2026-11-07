@@ -67,7 +67,6 @@ func TestCatalogAuthModePinsPublicReads(t *testing.T) {
 		{"cosigner", "show", "lab"},
 		{"endpoint", "export", "--host", "127.0.0.1"},
 		{"generations", "list"},
-		{"archive", "list"},
 	}
 	for _, command := range readOnly {
 		mode, err := CatalogAuthMode(command[0], command[1:])
@@ -81,11 +80,13 @@ func TestCatalogAuthModePinsPublicReads(t *testing.T) {
 
 	mutating := [][]string{
 		{"template", "list"},
+		{"archive", "list"},
 		{"template", "import", "template.yaml"},
 		{"keytype", "enable", "aplane.ed25519.v1"},
 		{"cosigner", "import", "cosigner.json", "lab"},
 		{"cosigner", "remove", "lab"},
 		{"generations", "prune", "--confirm", "gen-1700000000-0123abcd"},
+		{"generations", "discard", "--confirm", "gen-1700000000-0123abcd"},
 		{"archive", "prune", "--confirm", "deleted/keys/A.key"},
 	}
 	for _, command := range mutating {
@@ -106,6 +107,7 @@ func TestCatalogAuthModeRejectsMalformedBeforeConnection(t *testing.T) {
 		{"cosigner", "import", "only.json"},
 		{"endpoint", "export", "--bogus"},
 		{"generations", "prune"},
+		{"generations", "discard"},
 		{"archive", "prune"},
 	} {
 		if _, err := CatalogAuthMode(command[0], command[1:]); err == nil {
@@ -650,5 +652,40 @@ func TestCosignerImportNormalizesKeyFileAndRejectsExtraFields(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
+	}
+}
+
+func TestCatalogRunAcceptsEveryCatalogCommand(t *testing.T) {
+	requester := &fakeRequester{handle: func(message, result any) error {
+		return fmt.Errorf("unexpected request %T", message)
+	}}
+	for _, command := range CatalogCommands {
+		err := (Catalog{Client: requester, Streams: Streams{Stderr: io.Discard}}).Run(command, nil)
+		if err != nil && strings.Contains(err.Error(), "unknown apadmin command") {
+			t.Fatalf("Run(%q) does not handle a listed command: %v", command, err)
+		}
+	}
+}
+
+func TestCatalogGenerationsDiscardSendsConfirmedRequest(t *testing.T) {
+	want := []string{"gen-1700000000-0123abcd", "gen-1700000001-4567cdef"}
+	requester := &fakeRequester{handle: func(message, result any) error {
+		request, ok := message.(protocol.DiscardAbandonedGenerationsMessage)
+		if !ok {
+			return fmt.Errorf("request = %T", message)
+		}
+		if !request.Confirm || !reflect.DeepEqual(request.GenerationIDs, want) {
+			return fmt.Errorf("request = %#v, want confirmed %v", request, want)
+		}
+		out := result.(*protocol.DiscardAbandonedGenerationsResultMessage)
+		*out = protocol.DiscardAbandonedGenerationsResultMessage{Success: true}
+		return nil
+	}}
+	args := append([]string{"discard", "--confirm"}, want...)
+	if _, err := CatalogAuthMode("generations", args); err != nil {
+		t.Fatalf("CatalogAuthMode() error = %v", err)
+	}
+	if err := (Catalog{Client: requester, Streams: Streams{Stderr: io.Discard}}).Run("generations", args); err != nil {
+		t.Fatal(err)
 	}
 }

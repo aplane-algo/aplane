@@ -7,6 +7,16 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## apadmin can list and prune the deleted archive
+
+- `apadmin archive list` and `apadmin archive prune --confirm <deleted/path>...` now run.
+  The daemon and client code existed, but apadmin's command table didn't route `archive`,
+  so a store at the deleted-archive limit (4,096 entries or 256 MiB) had no supported way
+  to free space. `archive list` unlocks a locked signer first; the daemon never served it
+  to a read-only session.
+- `apadmin generations discard --confirm <generation-id>...` now runs too. apadmin
+  rejected it before connecting.
+
 ## Admin and cosigner files have separate names
 
 This release is install-fresh only. Stores don't carry over in place, and the old

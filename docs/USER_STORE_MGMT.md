@@ -584,12 +584,22 @@ The selected generation's deleted archive is capacity-bounded: 4,096 entries
 and 256 MiB, with emergency-deletion reserve below the hard bound. A delete
 that would exceed the limit fails before changing the active credential.
 
-**Current CLI limitation:** the live admin protocol and internal catalog have
-archive list/prune operations, but the production `apadmin` command dispatcher
-does not expose `archive`. Do not rely on `apadmin archive list` or
-`apadmin archive prune` in maintenance scripts, and do not manually remove
-files from the selected generation. CLI wiring is required before this
-maintenance workflow is available from `apadmin`.
+Inspect the archive and remove explicitly selected entries through the running
+signer:
+
+```bash
+apadmin archive list
+apadmin archive prune --confirm <deleted/path> [deleted/path...]
+```
+
+Both need an unlocked or recovery-admin session; a locked signer is unlocked
+first. Prune accepts only canonical `deleted/keys/*.key|*.cos`,
+`deleted/keytypes/*.template`, and `deleted/policies/*.json|*.json.hmac`
+paths, and an archived policy document must be pruned with its sidecar. It
+requires the `identity.archive.prune` authorization action and writes a durable
+audit intent before deleting anything. It changes only the selected generation;
+retained generations keep their copies until generation pruning. Do not remove
+files from the selected generation by hand.
 
 Passphrase rotation does not require generation pruning. Retained generations
 remain rollback targets and stay readable under their historical key terms.
