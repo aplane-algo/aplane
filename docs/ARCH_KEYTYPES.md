@@ -414,8 +414,7 @@ its pending independent review and production qualification are recorded in
 record and frozen cryptographic/resource contracts are in
 [ARCH_CRYPTO.md](ARCH_CRYPTO.md#rotating-slh-dsa-triple).
 
-The experimental WOTS+C profile is a further implementation of `rotating1`. It
-isn't a standard construction. Its design
+The WOTS+C profile is a further implementation of `rotating1`. Its design
 record is in [ARCH_CRYPTO.md](ARCH_CRYPTO.md#rotating-wotsc-triple) and its
 specification in [KEYTYPE_ROTATING_TRIPLE_HYBRID.md](KEYTYPE_ROTATING_TRIPLE_HYBRID.md#12-wotsc-variant).
 

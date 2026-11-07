@@ -750,8 +750,7 @@ The design record for this new implementation of an established contract:
 `aplane.rotating-triple-wotsc.v1` requires Falcon-1024, Ed25519 and a signature
 from a tree of 64 WOTS+C keys, built per stage, over the raw TxID. The
 contract is in [KEYTYPE_ROTATING_TRIPLE_HYBRID.md](KEYTYPE_ROTATING_TRIPLE_HYBRID.md#12-wotsc-variant).
-WOTS+C is experimental: it isn't a standard, and no proof covers this construction.
-Passing vectors and pinning bytes don't establish one.
+What it claims and doesn't claim is in [section 12.8](KEYTYPE_ROTATING_TRIPLE_HYBRID.md#128-claims).
 
 The design record for this new implementation of an established contract:
 
@@ -775,8 +774,7 @@ The design record for this new implementation of an established contract:
    open test never signs with a leaf.
 6. **Resources and compatibility:** TEAL v13 template, not frozen, 2483 bytes unsalted /
    2486 salted, 2115 argument bytes, exactly 15721 opcode units on every accepted run,
-   a three-transaction group and no program surcharge. The type is experimental, so a
-   changed template or derivation can derive different accounts from the same seed.
+   a three-transaction group and no program surcharge.
 7. **Evidence:** vectors from a second implementation, the verifier run offline
    against the primitive with mutated verifiers, and on-chain acceptance, rejection
    and cost on LocalNet.

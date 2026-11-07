@@ -3,8 +3,8 @@
 Status: implemented as three separate key types.
 `aplane.rotating-triple-xmss.v1` is frozen by its first release (v0.44.0) and
 `aplane.rotating-triple-slhdsa.v1` by its first release (v0.45.0); its design
-is in section 11. `aplane.rotating-triple-wotsc.v1` is experimental and isn't
-frozen; its design is in section 12. This document specifies all three
+is in section 11. `aplane.rotating-triple-wotsc.v1` isn't frozen; its
+design is in section 12. This document specifies all three
 for implementers and reviewers: their shared design and the hash-based schemes. It restates, and does not replace, the
 authoritative sources:
 
@@ -55,7 +55,7 @@ must verify:
 
 The hash-based scheme is selected by the key type when the account is created.
 Each type has its own stage template, derivation label and addresses, frozen at its
-first release except for WOTS+C, which is experimental;
+first release except for WOTS+C;
 the signing request does not select or switch the scheme.
 
 | Item | XMSS | WOTS+C |
@@ -73,7 +73,7 @@ the signing request does not select or switch the scheme.
 
 ## 2. Parameters and sizes (frozen)
 
-The XMSS values are frozen. The WOTS+C values aren't, because the type is experimental.
+The XMSS values are frozen. The WOTS+C values aren't.
 
 | Parameter | XMSS | WOTS+C |
 |---|---|---|
@@ -881,7 +881,7 @@ The 41 units per chain step are 6 unit-cost instructions and one SHA-256.
 | Signing, this host | tree cache amortized | about 9 ms | about 0.2 s |
 | Stage derivation, this host | tree cache amortized | about 43 ms | about 100 ms |
 | Standing | RFC 8391 format and set, non-conformant signer | Published scheme, private instantiation | FIPS 205 construction, private parameter set |
-| Status | released v1 | experimental | released v1 |
+| Status | released v1 | not frozen | released v1 |
 
 ## 12. WOTS+C variant
 
@@ -891,7 +891,7 @@ the stage program guards (§3.1), the address derivation (§3.2), the signing
 choreography (§8), failed transactions (§9.1) and the policy boundary (§10) applies
 unchanged. This section covers what differs: why WOTS+C, the parameter set, the
 construction, the signing and argument layout, the stage verifier, the resource
-profile, and the resulting claims. It is experimental and isn't frozen.
+profile, and the resulting claims.
 
 ### 12.1 Why WOTS+C
 
@@ -1125,7 +1125,7 @@ are stubbed in the offline TEAL runs, and run for real in the on-chain ones.
 
 ## 13. Compatibility and versioning
 
-- At its first release, each v1 key type except the experimental WOTS+C separately freezes its stage template, embedded constants,
+- At its first release, each v1 key type except WOTS+C separately freezes its stage template, embedded constants,
   derivation label and tags, signing procedure, public record and resource
   profile. XMSS also freezes its checksum cap and leaf allocation. Any change
   to the TEAL changes every stage address. Changing these contracts mints a
