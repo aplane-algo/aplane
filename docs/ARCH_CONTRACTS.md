@@ -15,7 +15,7 @@
 
 | Contract | Owner |
 |---|---|
-| HTTP API wire shapes, status codes, `/sign/cancel` | [ARCH_SIGNING.md](ARCH_SIGNING.md#http-api-contract) |
+| HTTP API wire shapes, status codes, `/sign/cancel` | [ARCH_SIGNING.md](ARCH_SIGNING.md#http-api-contract), [`test/contracts/signerapi/`](../test/contracts/signerapi/README.md) |
 | Error model | [ARCH_SIGNING.md](ARCH_SIGNING.md#error-model) |
 | SDK contracts | [ARCH_SIGNING.md](ARCH_SIGNING.md#sdk-contracts) |
 | Admin protocol, admin error codes, admin client capabilities | [ARCH_ADMIN.md](ARCH_ADMIN.md#admin-protocol-contract) |
@@ -23,10 +23,10 @@
 | Signer data directory layout and store formats (store root, term envelopes, managed credential files, key type records, template files, stage address tables) | [ARCH_STORE.md](ARCH_STORE.md) |
 | Generations, reload, key watching, backup and restore | [ARCH_STORE.md](ARCH_STORE.md) |
 | Client data directory layout, endpoint registry, client caches | [ARCH_DATA_MODEL.md](ARCH_DATA_MODEL.md#client-data-model) |
-| Policy document format and storage | [ARCH_POLICY.md](ARCH_POLICY.md#the-boundary) |
+| Policy document format and storage | [ARCH_POLICY.md](ARCH_POLICY.md#the-boundary), [`test/contracts/policy/v1/`](../test/contracts/policy/v1/) |
 | Approval and policy verdicts | [ARCH_POLICY.md](ARCH_POLICY.md#verdict-model) |
 | Policy context and snapshot digests, the node context file (`aplane.policy-node-context.v1`) | [ARCH_POLICY.md](ARCH_POLICY.md#storage-and-acceptance), [`test/contracts/policycontext/v1/`](../test/contracts/policycontext/v1/README.md) |
-| ASA set file (`aplane.asa-set.v1`, `asa_set.json` in a generation) | [ARCH_POLICY.md](ARCH_POLICY.md#storage-and-acceptance), [ARCH_STORE.md](ARCH_STORE.md); source `internal/asaset`, `internal/asasetstore` |
+| ASA set file (`aplane.asa-set.v1`, `asa_set.json` in a generation) | [ARCH_POLICY.md](ARCH_POLICY.md#storage-and-acceptance), [ARCH_STORE.md](ARCH_STORE.md), [`test/contracts/asaset/v1/`](../test/contracts/asaset/v1/); source `internal/asaset`, `internal/asasetstore` |
 | Saved policy cases (`aplane.policy-cases.v1`, `.appolicy/cases.json`) | [ARCH_POLICY.md](ARCH_POLICY.md#the-boundary), [USER_POLICY.md](USER_POLICY.md#checking-policy-files-offline-with-appolicy); source `internal/signerapp/policyauthor/cases.go` |
 | Approval waits and cancellation | [ARCH_SIGNING.md](ARCH_SIGNING.md#approval-waits-and-cancellation) |
 | Native Falcon authorization and consensus resources | [ARCH_SIGNING.md](ARCH_SIGNING.md) |
@@ -34,6 +34,8 @@
 | Audit log | [ARCH_SECURITY.md](ARCH_SECURITY.md#audit-logger) |
 | Cosigner component message and canonicalization, cosigner key file, public key reference library | [ARCH_GUARDED.md](ARCH_GUARDED.md) |
 | `bounded1` authorization, external contract-admin artifact, ceremony, and inventory | [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md) |
+| General bounded key type (`aplane.falcon1024-b.v1`): boundary file (`aplane.boundary.v1`), account receipt (`aplane.boundary-receipt.v1`), boundary digest | [ARCH_KEYTYPES.md](ARCH_KEYTYPES.md#the-general-bounded-key-type), [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md#general-boundary-digest); source `internal/boundary` |
+| Rotating key types: frozen sizes, stage programs, derivation | [KEYTYPE_ROTATING_TRIPLE_HYBRID.md](KEYTYPE_ROTATING_TRIPLE_HYBRID.md), [ARCH_CRYPTO.md](ARCH_CRYPTO.md#rotating-slh-dsa-triple), [ARCH_SIGNING.md](ARCH_SIGNING.md#rotating-accounts-rotating1) for the `rotating1` flow; source `internal/rotatingkey/rotatingkey.go`, `lsig/rotatingfamily/` |
 | Key type identifiers | [ARCH_KEYTYPES.md](ARCH_KEYTYPES.md#key-type-identifier-contract) |
 | Network context tokens and genesis hashes | [ARCH_NETWORKS.md](ARCH_NETWORKS.md) |
 | Plugin contract | [ARCH_PLUGINS.md](ARCH_PLUGINS.md) |
@@ -99,9 +101,9 @@ installer upgrades are intentionally narrow:
   `v1.0`.
 
 This section deliberately does not weaken the security-sensitive key contracts
-below: encrypted key files, keystore metadata, and signing provider lookup still
-define whether an existing key can be unlocked, validated, and signed by a
-future release.
+in [ARCH_STORE.md](ARCH_STORE.md#keys-and-key-types): encrypted key files,
+keystore metadata, and signing provider lookup still define whether an existing
+key can be unlocked, validated, and signed by a future release.
 
 ## Configuration Contracts
 
@@ -258,7 +260,7 @@ Validation:
   30 minutes. The default is `60s`. The product runtime configuration may
   override the process default.
 - initialized signer data roots must contain root `node.yaml` with role
-  `signer` or `cosigner`. New initialization defaults to `signer` unless an
+  `signer` or `cosigner`. New initialization defaults to `signer` unless a
   cosigner node is explicitly requested. Product runtime config `mode` is an
   unsupported field and is rejected.
 - node role gates key generation, mnemonic import, restore, signer key reload,
