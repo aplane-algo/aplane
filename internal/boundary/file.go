@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/lsig/generictemplate"
 )
@@ -151,13 +152,19 @@ func LoadFile(path string) (map[string]string, error) {
 	return file.CreationParameters(filepath.Dir(path))
 }
 
-// readAdminPublicKey reads the public .wit.json envelope. A relative path is
-// resolved against the boundary file, so a file works from any directory.
+// readAdminPublicKey reads the public .adm.json envelope. A relative path is
+// resolved against the boundary file, so a file works from any directory. It
+// applies the same checks as apadmin's admin reference field: the name, a
+// bounded read of a regular file, and the schema. A cosigner reference has the
+// same schema, so its name is the only thing here that tells them apart.
 func readAdminPublicKey(directory, path string) (string, error) {
+	if !strings.HasSuffix(path, witness.AdminPublicReferenceExtension) {
+		return "", fmt.Errorf("admin witness %s must be a %s file", path, witness.AdminPublicReferenceExtension)
+	}
 	if !filepath.IsAbs(path) {
 		path = filepath.Join(directory, path)
 	}
-	data, err := os.ReadFile(path)
+	data, _, err := fsutil.ReadRegularFileLimited(path, witness.MaxPublicReferenceBytes)
 	if err != nil {
 		return "", fmt.Errorf("read admin witness: %w", err)
 	}

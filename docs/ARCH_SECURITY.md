@@ -1902,7 +1902,7 @@ program, and pure-rekey shape before producing the final LogicSig argument.
 Ordinary `/sign` rejects admin-key operations rather than returning an
 apparently complete transaction.
 
-Keeping the `.wit` artifact off the signer makes the account
+Keeping the `.adm` artifact off the signer makes the account
 structurally unable to perform admin-key operations when external custody is
 unavailable. A compromised unlocked signer can still make policy-permitted
 spends and request a partial, but cannot complete the on-chain admin gate.

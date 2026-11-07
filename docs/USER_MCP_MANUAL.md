@@ -180,7 +180,7 @@ Box names also accept `<app-id>:<name>`.
 
 The two native account key types are not LogicSig-backed. Witness keys are
 auxiliary non-account keys; signer-custodied instances serve the cosigner
-component role, while standalone `.wit` instances may serve contract admin.
+component role, while standalone `.adm` instances may serve contract admin.
 
 ### Key types (identifiers are `publisher.family.vN`)
 
@@ -200,7 +200,7 @@ component role, while standalone `.wit` instances may serve contract admin.
 | `aplane.rotating-triple-xmss.v1` | rotating LogicSig | library-visible |
 | `aplane.rotating-triple-slhdsa.v1` | rotating LogicSig | library-visible |
 | `aplane.rotating-triple-wotsc.v1` | rotating LogicSig | library-visible |
-| `aplane.witness-falcon1024.v1` | witness key | default-enabled on cosigner nodes (`.cos`); external `.wit` custody also supported |
+| `aplane.witness-falcon1024.v1` | witness key | default-enabled on cosigner nodes (`.cos`); external `.adm` custody also supported |
 
 **Always call `keytypes` to see what the connected signer actually exposes** —
 availability is product-scoped. Visibility states: `default_enabled` (for the applicable node role), `library` (compiled in but needs an enabled state record in the product

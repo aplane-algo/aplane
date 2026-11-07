@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
@@ -442,7 +443,7 @@ func TestBoundaryFileReachesTheSameInstanceAsDirectParameters(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(directory, "admin"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(directory, "admin", "ops.wit.json"), data, 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(directory, "admin", "ops.adm.json"), data, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	path := writeBoundaryFile(t, directory, `schema: aplane.boundary.v1
@@ -452,7 +453,7 @@ recipients:
   - `+testAddress(1)+`
 rekey:
   authority: admin_key
-  admin_key: ./admin/ops.wit.json
+  admin_key: ./admin/ops.adm.json
 `)
 	params, err := boundary.LoadFile(path)
 	if err != nil {
@@ -519,7 +520,7 @@ func TestBoundaryFileRejections(t *testing.T) {
 		{"no recipients or timelock", strings.Replace(valid, "recipients: ["+recipient+"]\n", "", 1), "recipients is required"},
 		{"no rekey", strings.Replace(valid, "rekey: {authority: spending_key}\n", "", 1), "rekey is required"},
 		{"bad authority", strings.Replace(valid, "spending_key", "nobody", 1), "rekey.authority must be"},
-		{"admin path with spending key", strings.Replace(valid, "{authority: spending_key}", "{authority: spending_key, admin_key: a.wit.json}", 1), "not used"},
+		{"admin path with spending key", strings.Replace(valid, "{authority: spending_key}", "{authority: spending_key, admin_key: a.adm.json}", 1), "not used"},
 		{"admin key without path", strings.Replace(valid, "spending_key", "admin_key", 1), "requires rekey.admin_key"},
 		{"unknown field", valid + "expires: \"5\"\n", "not found"},
 		{"empty unlock round", valid + "unlock_round: \"\"\n", "unlock_round is empty"},
@@ -559,16 +560,65 @@ func TestBoundaryFileRejections(t *testing.T) {
 
 func TestAdminWitnessMustBeAPublicFalconReference(t *testing.T) {
 	directory := t.TempDir()
-	if err := os.WriteFile(filepath.Join(directory, "private.wit"), []byte("not a reference"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(directory, "private.adm"), []byte("not a reference"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	file := writeBoundaryFile(t, directory, `schema: aplane.boundary.v1
 spend: [pay]
 recipients: [`+testAddress(1)+`]
-rekey: {authority: admin_key, admin_key: private.wit}
+rekey: {authority: admin_key, admin_key: private.adm}
 `)
 	if _, err := boundary.LoadFile(file); err == nil || !strings.Contains(err.Error(), "admin witness") {
 		t.Fatalf("LoadBoundaryFile error = %v", err)
+	}
+}
+
+func TestAdminKeyMustUseTheAdminReferenceName(t *testing.T) {
+	directory := t.TempDir()
+	for _, name := range []string{"spend.cos.json", "old.wit.json", "plain.json"} {
+		t.Run(name, func(t *testing.T) {
+			if err := os.WriteFile(filepath.Join(directory, name), []byte("{}"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			file := writeBoundaryFile(t, directory, `schema: aplane.boundary.v1
+spend: [pay]
+recipients: [`+testAddress(1)+`]
+rekey: {authority: admin_key, admin_key: `+name+`}
+`)
+			if _, err := boundary.LoadFile(file); err == nil || !strings.Contains(err.Error(), ".adm.json") {
+				t.Fatalf("LoadFile(%s) error = %v, want .adm.json rejection", name, err)
+			}
+		})
+	}
+}
+
+func TestAdminKeyFileReadIsBounded(t *testing.T) {
+	directory := t.TempDir()
+	target := filepath.Join(directory, "target.adm.json")
+	if err := os.WriteFile(target, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, filepath.Join(directory, "link.adm.json")); err != nil {
+		t.Fatal(err)
+	}
+	if err := syscall.Mkfifo(filepath.Join(directory, "pipe.adm.json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	oversized := bytes.Repeat([]byte{'x'}, witness.MaxPublicReferenceBytes+1)
+	if err := os.WriteFile(filepath.Join(directory, "large.adm.json"), oversized, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"link.adm.json", "pipe.adm.json", "large.adm.json"} {
+		t.Run(name, func(t *testing.T) {
+			file := writeBoundaryFile(t, directory, `schema: aplane.boundary.v1
+spend: [pay]
+recipients: [`+testAddress(1)+`]
+rekey: {authority: admin_key, admin_key: `+name+`}
+`)
+			if _, err := boundary.LoadFile(file); err == nil || !strings.Contains(err.Error(), "read admin witness") {
+				t.Fatalf("LoadFile(%s) error = %v, want read rejection", name, err)
+			}
+		})
 	}
 }
 
@@ -706,7 +756,7 @@ func TestPresetAndItsFileResolveTheSame(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(directory, "ops.wit.json"), data, 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(directory, "ops.adm.json"), data, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	recipients := []string{testAddress(2), testAddress(1)}
@@ -730,7 +780,7 @@ func TestPresetAndItsFileResolveTheSame(t *testing.T) {
 				}
 			}
 			path := writeBoundaryFile(t, directory, preset.SampleBoundaryFile(boundary.SampleValues{
-				Recipients: recipients, AdminKey: "ops.wit.json", Cosigner: "ops-cosigner", UnlockRound: "50000000",
+				Recipients: recipients, AdminKey: "ops.adm.json", Cosigner: "ops-cosigner", UnlockRound: "50000000",
 			}))
 			fromFile, err := boundary.LoadFile(path)
 			if err != nil {

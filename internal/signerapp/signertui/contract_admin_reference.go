@@ -15,21 +15,21 @@ import (
 	"github.com/aplane-algo/aplane/internal/witness"
 )
 
-const maxContractAdminReferenceBytes = 16 * 1024
+const maxContractAdminReferenceBytes = witness.MaxPublicReferenceBytes
 
 func isContractAdminReferenceParam(param lsigprovider.ParameterDef) bool {
 	return param.Name == boundedmeta.AdminPublicKeyParameter && param.Type == "bytes"
 }
 
 // loadContractAdminPublicKey converts a local public reference into the hex
-// parameter expected by the signer. The private .wit artifact is never read.
+// parameter expected by the signer. The private .adm artifact is never read.
 func loadContractAdminPublicKey(inputPath string) (string, error) {
 	path := strings.TrimSpace(inputPath)
 	if path == "" {
-		return "", fmt.Errorf("select a contract-admin .wit.json file")
+		return "", fmt.Errorf("select a contract-admin .adm.json file")
 	}
-	if !strings.HasSuffix(path, ".wit.json") {
-		return "", fmt.Errorf("contract-admin reference must be a .wit.json file")
+	if !strings.HasSuffix(path, witness.AdminPublicReferenceExtension) {
+		return "", fmt.Errorf("contract-admin reference must be a .adm.json file")
 	}
 	if path == "~" || strings.HasPrefix(path, "~/") {
 		home, err := os.UserHomeDir()

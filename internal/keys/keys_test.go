@@ -357,13 +357,15 @@ func TestScanKeysDirectoryWithKeyring(t *testing.T) {
 		}
 		writes := map[string][]byte{
 			// Valid sidecar: accepted silently.
-			witnessKeyID + ".wit.json": envelopeJSON,
+			witnessKeyID + ".cos.json": envelopeJSON,
 			// Sidecar whose filename is not a canonical Witness Key ID.
-			"offline.wit.json": envelopeJSON,
+			"offline.cos.json": envelopeJSON,
 			// Sidecar whose content does not parse.
-			strings.Repeat("A", len(witnessKeyID)-1) + "B.wit.json": []byte("not json"),
+			strings.Repeat("A", len(witnessKeyID)-1) + "B.cos.json": []byte("not json"),
 			// External artifact bundle: aprekey-owned, never a store resident.
-			witnessKeyID + ".wit": []byte("encrypted bundle"),
+			witnessKeyID + ".adm": []byte("encrypted bundle"),
+			// Its public reference is aprekey-owned too.
+			witnessKeyID + ".adm.json": envelopeJSON,
 		}
 		for name, data := range writes {
 			if err := os.WriteFile(filepath.Join(keysDir, name), data, 0600); err != nil {
@@ -387,10 +389,15 @@ func TestScanKeysDirectoryWithKeyring(t *testing.T) {
 		}
 		want := map[KeyScanWarningCode]int{
 			KeyScanWarningWitnessMetadataInvalid: 2,
-			KeyScanWarningUnexpectedEntry:        1,
+			KeyScanWarningUnexpectedEntry:        2,
 		}
-		if len(report.Warnings) != 3 || got[KeyScanWarningWitnessMetadataInvalid] != want[KeyScanWarningWitnessMetadataInvalid] || got[KeyScanWarningUnexpectedEntry] != want[KeyScanWarningUnexpectedEntry] {
-			t.Fatalf("warnings = %#v, want 2 invalid-metadata + 1 unexpected-entry", report.Warnings)
+		for _, warning := range report.Warnings {
+			if warning.Code == KeyScanWarningUnexpectedEntry && !strings.Contains(warning.Message(), "aprekey-owned") {
+				t.Fatalf("unexpected-entry warning = %q, want the targeted admin file message", warning.Message())
+			}
+		}
+		if len(report.Warnings) != 4 || got[KeyScanWarningWitnessMetadataInvalid] != want[KeyScanWarningWitnessMetadataInvalid] || got[KeyScanWarningUnexpectedEntry] != want[KeyScanWarningUnexpectedEntry] {
+			t.Fatalf("warnings = %#v, want 2 invalid-metadata + 2 unexpected-entry", report.Warnings)
 		}
 	})
 
@@ -418,7 +425,7 @@ func TestScanKeysDirectoryWithKeyring(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Marshal(envelope) error = %v", err)
 		}
-		if err := os.WriteFile(filepath.Join(keysDir, otherKeyID+".wit.json"), envelopeJSON, 0600); err != nil {
+		if err := os.WriteFile(filepath.Join(keysDir, otherKeyID+".cos.json"), envelopeJSON, 0600); err != nil {
 			t.Fatal(err)
 		}
 		report, err := scanKeysDirectoryInternalReport(mustResolveActiveForTest(t, paths), nil, func(string) ([]byte, error) {

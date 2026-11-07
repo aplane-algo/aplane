@@ -17,7 +17,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/witness"
 )
 
-const WitnessPublicMetadataSuffix = ".wit.json"
+const WitnessPublicMetadataSuffix = witness.CosignerPublicReferenceExtension
 
 // WitnessPublicMetadataPathActive returns the public-only metadata sidecar
 // path for a signer-custodied witness key.
@@ -50,7 +50,7 @@ func ReadWitnessPublicMetadataActive(active storepaths.ActivePaths, witnessKeyID
 	return normalized, true, nil
 }
 
-// validateWitnessPublicMetadataFilename validates a .wit.json sidecar in
+// validateWitnessPublicMetadataFilename validates a .cos.json sidecar in
 // place during key scan: the filename must carry a canonical Witness Key ID,
 // and the content must be a well-formed public reference whose embedded ID
 // matches the filename. This mirrors what ReadWitnessPublicMetadataActive

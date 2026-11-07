@@ -7,6 +7,34 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## Admin and cosigner files have separate names
+
+This release is install-fresh only. Stores don't carry over in place, and the old
+names below are no longer read.
+
+- `aprekey generate` now writes `<WitnessKeyID>.adm` for the encrypted admin key and
+  `<WitnessKeyID>.adm.json` for its public reference. `.wit` and `.wit.json` are gone,
+  and `aprekey` refuses them.
+- Cosigner private keys stay `.cos`. Their store sidecars are now `.cos.json`, and
+  apadmin suggests `cosigner-<id>.cos.json` for exports instead of
+  `.aplane-cosigner.json`.
+- apadmin's Contract Admin Reference field and a boundary file's `rekey.admin_key`
+  accept only `.adm.json`, so both refuse a cosigner reference by name. A name doesn't
+  prove custody: check the key with `aprekey verify` and compare the ID.
+- apadmin's cosigner import browser now lists `.cos.json` files by default. Press `a`
+  to list everything. `cosigner import` refuses a `.adm.json` file.
+- A boundary file's `rekey.admin_key` must be a regular file of at most 16 KiB. A symbolic
+  link is refused.
+- `aprekey generate --out` refuses a directory inside a signer store, where the new
+  file would stop the signer at its next reload.
+- Only filenames change. Witness Key IDs, schemas, encryption, and signing authority
+  are the same.
+- **Keep your existing admin keys.** A `.wit` file behind a deployed bounded account is
+  still that account's admin authority. Rename `<id>.wit` to `<id>.adm` and
+  `<id>.wit.json` to `<id>.adm.json` in every copy, including cold storage.
+- Move cosigner and signer keys with a normal backup, then restore into the new store.
+  Restore writes the new sidecars.
+
 ## Clients choose bounded flows from the signer's inventory
 
 - apadmin and apshell now pick the preset and boundary-file flows from the signer's

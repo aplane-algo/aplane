@@ -110,7 +110,7 @@ func TestMixedGuardedGroupTransaction(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to compose cosigner key file: %v", err)
 	}
-	keyPath := filepath.Join(t.TempDir(), "integration-cosigner.aplane-cosigner.json")
+	keyPath := filepath.Join(t.TempDir(), "integration-cosigner.cos.json")
 	if err := os.WriteFile(keyPath, keyFile, 0o600); err != nil {
 		t.Fatalf("Failed to write cosigner key file: %v", err)
 	}

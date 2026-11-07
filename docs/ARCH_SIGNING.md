@@ -1906,7 +1906,7 @@ stored metadata resolve the provider and any composed template's base primitive.
 For a bounded profile with `authorization: admin_key`, creation metadata includes
 the framework-injected scalar `bounded_admin_public_key` (`type:"bytes"`). It
 accepts the 1,793-byte Falcon-1024 public key from an external
-`.wit.json` reference. The signer derives the Contract Admin Key
+`.adm.json` reference. The signer derives the Contract Admin Key
 ID, which is the enrolled witness's Witness Key ID, and the program binding;
 neither is accepted as a separate creation input.
 

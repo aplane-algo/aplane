@@ -1536,7 +1536,7 @@ EXPECT_SCRIPT
     fi
     printf '%s\n' "$out"
 
-    CORRIDOR_ADMIN_KEY="$(docker_exec_as_tester "$CLIENT_CONTAINER" "set -- '$admin_dir'/*.wit; \
+    CORRIDOR_ADMIN_KEY="$(docker_exec_as_tester "$CLIENT_CONTAINER" "set -- '$admin_dir'/*.adm; \
         [ \$# -eq 1 ] && [ -f \"\$1\" ] && printf '%s' \"\$1\"")"
     [ -n "$CORRIDOR_ADMIN_KEY" ] || die "could not locate generated Corridor admin artifact"
     CORRIDOR_ADMIN_PUBLIC_KEY="$(docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \

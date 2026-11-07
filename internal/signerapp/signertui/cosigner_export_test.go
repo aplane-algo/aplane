@@ -102,10 +102,10 @@ func TestCosignerEnrollmentExportShowsJSONWithoutPath(t *testing.T) {
 }
 
 func TestCosignerExportEditsOutputPathDirectly(t *testing.T) {
-	m := Model{cosigner: cosignerState{exportPath: "custom.aplane-cosigner.json"}}
+	m := Model{cosigner: cosignerState{exportPath: "custom.cos.json"}}
 	nextModel, _ := m.handleCosignerExportPathKeys(tea.KeyMsg{Type: tea.KeyBackspace})
 	next := nextModel.(Model)
-	if next.cosigner.exportPath != "custom.aplane-cosigner.jso" {
+	if next.cosigner.exportPath != "custom.cos.jso" {
 		t.Fatalf("export path = %q", next.cosigner.exportPath)
 	}
 	view := stripANSI(next.renderCosignerExportPath())
@@ -140,7 +140,7 @@ func TestCosignerExportCarriesNoEndpoint(t *testing.T) {
 	}
 
 	// The result names the advertised address for endpoints add.
-	next.cosigner.exportWrittenPath = "/tmp/lab.aplane-cosigner.json"
+	next.cosigner.exportWrittenPath = "/tmp/lab.cos.json"
 	result := stripANSI(next.renderCosignerExportResult())
 	if !strings.Contains(result, "endpoints add ssh://cosigner.example:2223") || strings.Contains(result, "endpoints add /tmp") {
 		t.Fatalf("export result does not point clients at the cosigner's address:\n%s", result)

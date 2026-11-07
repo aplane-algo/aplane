@@ -63,7 +63,7 @@ Bounded contract administration is not a cosigner role. A bounded profile may
 independently declare a cosigner spend gate and an external contract-admin rekey
 authority. The former uses the `bounded-cosigner1` online flow and a
 signer-custodied `.cos` witness; the latter uses `/sign/bounded-admin`,
-`aprekey`, and a separately held `.wit` artifact without contacting a cosigner.
+`aprekey`, and a separately held `.adm` artifact without contacting a cosigner.
 Both authorities use the witness key form, but their custody and signature
 domains are disjoint. An individual keypair should never be enrolled in both
 roles.
@@ -106,8 +106,8 @@ Their canonical private record is
 the selected generation's `keys/<WitnessKeyID>.cos`. The `.cos` container uses the
 product store's current term key, bound to the credential's Witness Key ID, and a
 canonical `category: witness` payload. It is
-distinct from the independently encrypted external `.wit` artifact opened only
-by `aprekey`; signer scanning never opens `.wit` or `.wit.json` as private state.
+distinct from the independently encrypted external `.adm` artifact opened only
+by `aprekey`; signer scanning never opens `.adm` or `.adm.json` as private state.
 
 Current cosigner key types:
 
@@ -362,7 +362,7 @@ the trust input that matters after generation.
 `apadmin cosigner export <witness-key-id> [output-json]` and the apadmin TUI's
 **Export Cosigner Key** emit the canonical `aplane.witness-key-public.v1`
 document and nothing else. The command reads the
-`keys/<witness-key-id>.wit.json` sidecar, verifies that `<witness-key-id>`
+`keys/<witness-key-id>.cos.json` sidecar, verifies that `<witness-key-id>`
 equals the canonical Witness Key ID derived from the public key, and never reads
 or decrypts private key material. If the sidecar is missing or malformed,
 export fails closed; the operator must regenerate the cosigner key, or restore
@@ -895,7 +895,7 @@ Generation resolves three distinct Falcon keypairs:
 1. the signer-held spending key;
 2. the cosigner-node `.cos` witness selected by `cosigner` or supplied as
    `cosigner_public_key`; and
-3. the offline `.wit` contract-admin witness represented by
+3. the offline `.adm` contract-admin witness represented by
    `bounded_admin_public_key`.
 
 Visible collisions reject. The generated `.key` stores the resolved public

@@ -19,16 +19,11 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/rotatingkey"
 	"github.com/aplane-algo/aplane/internal/storepaths"
+	"github.com/aplane-algo/aplane/internal/witness"
 
 	sdkcrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
-
-// witnessArtifactBundleSuffix mirrors witness/artifact.BundleExtension.
-// External witness artifact bundles are aprekey-owned and never valid signer
-// store residents; the scan recognizes the suffix only to report them with a
-// targeted message and must never decrypt them.
-const witnessArtifactBundleSuffix = ".wit"
 
 // ErrMissingLogicSigSaltCounter indicates a LogicSig key file predates the
 // off-curve address invariant and cannot be safely loaded.
@@ -341,9 +336,11 @@ func scanKeysDirectoryInternalReport(active storepaths.ActivePaths, excludedSele
 	}
 
 	// Scan only signer-managed private credential classes. Public witness
-	// references (.wit.json) are the sole expected non-credential residents
+	// references (.cos.json) are the sole expected non-credential residents
 	// and are validated without decryption; external witness artifact
-	// bundles (.wit) are aprekey-owned and never signer store residents
+	// files (.adm, .adm.json) are aprekey-owned and never signer store residents,
+	// so the scan recognizes the suffixes only to report them with a targeted
+	// message and must never decrypt them
 	// (docs/ARCH_BOUNDED_DSA.md, External Contract Admin Artifact Contract).
 	// Everything unrecognized is reported so store validation fails closed on
 	// unexpected content. Nothing outside the managed credential classes ever
@@ -363,9 +360,10 @@ func scanKeysDirectoryInternalReport(active storepaths.ActivePaths, excludedSele
 				if err := validateWitnessPublicMetadataFilename(entryPath); err != nil {
 					warn(KeyScanWarningWitnessMetadataInvalid, entryPath, err)
 				}
-			case strings.HasSuffix(entry.Name(), witnessArtifactBundleSuffix):
+			case strings.HasSuffix(entry.Name(), witness.AdminArtifactExtension),
+				strings.HasSuffix(entry.Name(), witness.AdminPublicReferenceExtension):
 				warn(KeyScanWarningUnexpectedEntry, entryPath,
-					fmt.Errorf("external witness artifact bundles are aprekey-owned and not signer store residents; move it outside the keystore"))
+					fmt.Errorf("admin key files are aprekey-owned and not signer store residents; move it outside the keystore"))
 			default:
 				warn(KeyScanWarningUnexpectedEntry, entryPath,
 					fmt.Errorf("not a managed credential"))

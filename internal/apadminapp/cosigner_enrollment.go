@@ -6,8 +6,10 @@ package apadminapp
 import (
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/aplane-algo/aplane/internal/fsutil"
+	"github.com/aplane-algo/aplane/internal/witness"
 )
 
 // MaxCosignerPublicEnvelopeBytes bounds a cosigner public key file before it
@@ -20,6 +22,11 @@ const maxCosignerPublicEnvelopeBytes = MaxCosignerPublicEnvelopeBytes
 // regular file, or from stdin when path is "-".
 func ReadCosignerPublicEnvelope(path string, stdin io.Reader) ([]byte, error) {
 	if path != "-" {
+		// Admin and cosigner references share a schema, so the name is the only
+		// thing that shows this is the wrong role. Stdin has no name to check.
+		if strings.HasSuffix(path, witness.AdminPublicReferenceExtension) {
+			return nil, fmt.Errorf("%s is an admin key reference, not a cosigner key", path)
+		}
 		data, _, err := fsutil.ReadRegularFileLimited(path, maxCosignerPublicEnvelopeBytes)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read cosigner public key export: %w", err)

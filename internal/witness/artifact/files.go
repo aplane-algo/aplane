@@ -11,13 +11,16 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/aplane-algo/aplane/internal/storepaths"
+	"github.com/aplane-algo/aplane/internal/witness"
 )
 
 const (
-	// BundleExtension identifies encrypted standalone witness artifacts.
-	BundleExtension = ".wit"
-	// ReferenceExtension identifies public witness reference sidecars.
-	ReferenceExtension = ".wit.json"
+	// BundleExtension identifies encrypted standalone admin key artifacts.
+	BundleExtension = witness.AdminArtifactExtension
+	// ReferenceExtension identifies public admin key reference sidecars.
+	ReferenceExtension = witness.AdminPublicReferenceExtension
 )
 
 // FileSet describes files created for one standalone witness credential.
@@ -64,7 +67,7 @@ func GenerateFiles(directory string, passphrase []byte, now time.Time) (FileSet,
 	return files, nil
 }
 
-// LoadFile reads a regular .wit file with a fixed upper bound. Symlinks and
+// LoadFile reads a regular .adm file with a fixed upper bound. Symlinks and
 // other file types are rejected.
 func LoadFile(path string) ([]byte, error) {
 	if filepath.Ext(path) != BundleExtension {
@@ -96,8 +99,9 @@ func LoadFile(path string) ([]byte, error) {
 	return data, nil
 }
 
-// ValidateOutputDirectory requires an existing directory entry and rejects
-// symlinks before passphrase handling or key generation.
+// ValidateOutputDirectory requires an existing directory entry outside any
+// signer store and rejects symlinks before passphrase handling or key
+// generation.
 func ValidateOutputDirectory(path string) error {
 	if strings.TrimSpace(path) == "" {
 		return fmt.Errorf("output directory is required")
@@ -109,7 +113,40 @@ func ValidateOutputDirectory(path string) error {
 	if !info.IsDir() {
 		return fmt.Errorf("output path must be an existing directory, not a symlink or file")
 	}
+	inside, err := insideSignerStore(path)
+	if err != nil {
+		return fmt.Errorf("inspect output directory: %w", err)
+	}
+	if inside {
+		return fmt.Errorf("output directory is inside a signer store; admin keys belong outside it")
+	}
 	return nil
+}
+
+// insideSignerStore reports whether directory lies in a signer store. An admin
+// key written there fails the next reload closed, which stops the signer.
+//
+// The walk appends ".." and lets the kernel resolve each step. Cleaning the path
+// first would remove ".." lexically, against the shell's logical working
+// directory, while a relative write follows the physical one. A parent this
+// process cannot inspect ends the walk: the check catches a mistaken path, and a
+// store it cannot read is one it cannot write to.
+func insideSignerStore(directory string) (bool, error) {
+	separator := string(os.PathSeparator)
+	current, err := os.Stat(directory)
+	if err != nil {
+		return false, err
+	}
+	for path := directory; ; path += separator + ".." {
+		if _, err := os.Lstat(path + separator + storepaths.StoreRootName); err == nil {
+			return true, nil
+		}
+		parent, err := os.Stat(path + separator + "..")
+		if err != nil || os.SameFile(current, parent) {
+			return false, nil
+		}
+		current = parent
+	}
 }
 
 func requireAbsent(path string) error {

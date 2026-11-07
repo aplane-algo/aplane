@@ -312,7 +312,7 @@ func (m Model) renderParamField(sb *strings.Builder, keyType string, paramDef ls
 func (m Model) paramFieldLabel(paramDef lsigprovider.ParameterDef, focused, isCosignerSelector, isAdminReference bool) (string, string) {
 	labelText := paramDef.Label
 	if isAdminReference {
-		labelText = "Contract Admin Reference File (.wit.json)"
+		labelText = "Contract Admin Reference File (.adm.json)"
 	}
 	var modeHint string
 	if len(paramDef.InputModes) > 1 {
@@ -390,7 +390,7 @@ func (m Model) paramFieldLines(paramDef lsigprovider.ParameterDef, focused bool,
 	}
 	if value == "" {
 		if isAdminReference {
-			value = "Path to public .wit.json on this machine (ctrl+o to browse)"
+			value = "Path to public .adm.json on this machine (ctrl+o to browse)"
 		} else {
 			value = getPlaceholderForType(paramDef.Type)
 		}

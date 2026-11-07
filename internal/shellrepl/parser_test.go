@@ -703,7 +703,7 @@ func TestParseRekeyCommand(t *testing.T) {
 		},
 		{
 			name:      "rekey rejects contract-admin artifact syntax",
-			args:      []string{"alice", "to", "bob", "using", "contract-admin", "/keys/cold.wit"},
+			args:      []string{"alice", "to", "bob", "using", "contract-admin", "/keys/cold.adm"},
 			isUnrekey: false,
 			wantErr:   true,
 		},
