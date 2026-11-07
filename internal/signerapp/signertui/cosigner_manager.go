@@ -197,6 +197,7 @@ func (m Model) beginGenerateWithCosignerReference(keyTypeIndex int, reference Co
 		m.viewState = ViewCosignerReferenceDetails
 		return m, nil
 	}
+	m = m.endBoundaryFlow()
 	m.forms.generateKeyType = keyTypeIndex
 	m.forms.generateFocus = 0
 	m.forms.generateError = ""

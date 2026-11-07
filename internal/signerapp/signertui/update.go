@@ -791,20 +791,11 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Error != "" {
 			m.lastError = msg.Error
 		} else {
+			selectedGenerate := m.generateSelection()
+			selectedImport := getImportKeyTypeByIndex(m.forms.importKeyType)
 			m.serverKeyTypes = msg.KeyTypes
 			setServerKeyTypes(msg.KeyTypes)
-			if m.forms.generateKeyType >= getKeyTypeCount() {
-				m.forms.generateKeyType = getKeyTypeCount() - 1
-			}
-			if m.forms.importKeyType >= getImportKeyTypeCount() {
-				m.forms.importKeyType = getImportKeyTypeCount() - 1
-			}
-			if m.forms.generateKeyType < 0 {
-				m.forms.generateKeyType = 0
-			}
-			if m.forms.importKeyType < 0 {
-				m.forms.importKeyType = 0
-			}
+			m = m.reselectKeyTypes(selectedGenerate, selectedImport)
 			resumeEnrollment := false
 			for _, info := range msg.KeyTypes {
 				if info.KeyType != m.cosigner.pendingKeyType {
