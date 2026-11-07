@@ -56,16 +56,25 @@ func (m Model) generateSelection() string {
 	return getKeyTypeByIndex(m.forms.generateKeyType)
 }
 
+// endBoundaryFlow forgets the preset flow's type, preset and file. They outlive the
+// account the flow generates, so every flow that chooses a type starts here: the
+// type and preset are what generateSelection, the Esc target and the preset's fixed
+// values read, and a stale pair would steer a later flow to the earlier type.
+func (m Model) endBoundaryFlow() Model {
+	m.forms.boundaryPreset = nil
+	m.forms.boundaryKeyType = ""
+	m.forms.boundaryFile = ""
+	m.forms.boundaryFileRequest = false
+	return m
+}
+
 // loseGenerateSelection handles a Generate selection the signer no longer offers.
 // A parameter or preset form for it is abandoned rather than switched to another
 // type's form, and the operator has to choose again.
 func (m Model) loseGenerateSelection(keyType string) Model {
 	switch m.viewState {
 	case ViewGenerateParams, ViewBoundaryPreset:
-		m.forms.boundaryPreset = nil
-		m.forms.boundaryKeyType = ""
-		m.forms.boundaryFile = ""
-		m.forms.boundaryFileRequest = false
+		m = m.endBoundaryFlow()
 		m.forms.genericLSigParams = nil
 		m.viewState = ViewGenerateForm
 	case ViewGenerateForm:

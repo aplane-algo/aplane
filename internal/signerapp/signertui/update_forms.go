@@ -342,10 +342,10 @@ func (m Model) handleGenerateFormKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.forms.generateError = generateKeyTypesNotLoaded
 			return m, tea.Batch(m.waitForMessageCmd(), m.sendListKeyTypesCmd())
 		}
+		m = m.endBoundaryFlow()
 		if perKey {
 			m.forms.generateError = ""
 			m.forms.boundaryKeyType = keyType
-			m.forms.boundaryPreset = nil
 			m.forms.boundaryPresetIndex = 0
 			m.viewState = ViewBoundaryPreset
 			return m, nil

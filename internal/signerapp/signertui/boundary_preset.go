@@ -61,10 +61,7 @@ func boundaryPresetRows() int { return len(boundary.Presets()) + 1 }
 func (m Model) handleBoundaryPresetKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
-		m.forms.boundaryPreset = nil
-		m.forms.boundaryKeyType = ""
-		m.forms.boundaryFile = ""
-		m.forms.boundaryFileRequest = false
+		m = m.endBoundaryFlow()
 		m.forms.generateError = ""
 		m.viewState = ViewGenerateForm
 	case "up", "k":

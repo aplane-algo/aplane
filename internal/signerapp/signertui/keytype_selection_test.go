@@ -160,3 +160,82 @@ func TestPresetFlowSurvivesAReorderedList(t *testing.T) {
 		t.Fatalf("parameter form after the refresh = %v, want the preset's %v", spec, fields)
 	}
 }
+
+// A preset flow records its type and preset, and they outlive the account it
+// generated. The next flow must not inherit them: a list that arrives while an
+// ordinary parameter form is open would otherwise switch the cursor back to the
+// earlier preset's type.
+func TestFinishedPresetLeavesTheNextFlowAlone(t *testing.T) {
+	boundedaccount.RegisterClient()
+	const plain = "example.params.v1"
+	inventory := []protocol.KeyTypeInfo{
+		{KeyType: boundary.KeyTypeV1, PerKeyContract: true},
+		{KeyType: plain, CreationParams: []protocol.TemplateParamInfo{{Name: "limit", Label: "Limit", Type: "uint64", Required: true}}},
+	}
+	withInventory(t, inventory...)
+	enter := tea.KeyMsg{Type: tea.KeyEnter}
+
+	m := Model{viewState: ViewGenerateForm, width: 80, height: 24, forms: formsState{generateKeyType: generateIndexOf(t, boundary.KeyTypeV1)}}
+	m, _ = pressGenerateKey(t, m, enter)
+	next, _ := m.handleBoundaryPresetKeys(enter)
+	m = next.(Model)
+	if m.viewState != ViewGenerateParams || m.forms.boundaryPreset == nil {
+		t.Fatalf("view = %v, preset = %v, want the preset's parameter form", m.viewState, m.forms.boundaryPreset)
+	}
+	// Review and signing are covered elsewhere; this test needs only the outcome.
+	m.viewState = ViewGenerating
+	m = updateModel(t, m, GenerateResultMsg{Success: true, Address: "ADDR", KeyType: boundary.KeyTypeV1})
+	next, _ = m.handleGenerateDisplayKeys(enter)
+	m = next.(Model)
+	next, _ = m.handleKeyListKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
+	m = next.(Model)
+
+	m.forms.generateKeyType = generateIndexOf(t, plain)
+	m, _ = pressGenerateKey(t, m, enter)
+	if m.viewState != ViewGenerateParams {
+		t.Fatalf("view = %v, want %s's parameter form", m.viewState, plain)
+	}
+	m = receiveKeyTypes(t, m, inventory...)
+	if got := getKeyTypeByIndex(m.forms.generateKeyType); got != plain {
+		t.Fatalf("cursor names %q after an unchanged list, want %s", got, plain)
+	}
+	if !slices.Equal(m.forms.genericLSigParamOrder, []string{"limit"}) {
+		t.Fatalf("parameter form = %v, want %s's", m.forms.genericLSigParamOrder, plain)
+	}
+	next, _ = m.handleGenerateParamsKeys(tea.KeyMsg{Type: tea.KeyEsc})
+	if view := next.(Model).viewState; view != ViewGenerateForm {
+		t.Fatalf("Esc from %s's form goes to %v, want the Generate form", plain, view)
+	}
+}
+
+// The cosigner manager opens a parameter form without passing through the Generate
+// form, so it starts its flow clean itself.
+func TestManagerGenerationIgnoresAnEarlierPreset(t *testing.T) {
+	boundedaccount.RegisterClient()
+	const guarded = "guarded.v1"
+	inventory := []protocol.KeyTypeInfo{
+		{KeyType: boundary.KeyTypeV1, PerKeyContract: true},
+		{KeyType: guarded, CosignerComponentKeyType: "witness.v1", CreationParams: []protocol.TemplateParamInfo{
+			{Name: "cosigner", Label: "Cosigner", Type: "select", Required: true},
+		}},
+	}
+	withInventory(t, inventory...)
+	preset := boundary.Presets()[0]
+	m := Model{
+		viewState: ViewCosignerReferenceDetails,
+		forms:     formsState{boundaryKeyType: boundary.KeyTypeV1, boundaryPreset: &preset},
+		cosigner: cosignerState{references: []CosignerReferenceInfo{{
+			Name: "lab", ComponentKey: testWitnessID1, KeyType: "witness.v1",
+		}}},
+	}
+
+	next, _ := m.handleCosignerReferenceDetailsKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
+	m = next.(Model)
+	if m.viewState != ViewGenerateParams {
+		t.Fatalf("view = %v, want %s's parameter form", m.viewState, guarded)
+	}
+	m = receiveKeyTypes(t, m, inventory...)
+	if got := getKeyTypeByIndex(m.forms.generateKeyType); got != guarded {
+		t.Fatalf("cursor names %q after an unchanged list, want %s", got, guarded)
+	}
+}
