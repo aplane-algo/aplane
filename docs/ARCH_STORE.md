@@ -684,17 +684,15 @@ move into `deleted/policies/` with it, on both node roles. Mints check the paren
 successor after apply. An over-limit selected generation blocks ordinary
 validation, mint, and passphrase change until pruned.
 
-The admin protocol's `list_deleted_archive` reports exact usage and the
-reserve warning. `prune_deleted_archive`, which takes explicit confirmation,
-accepts only canonical
+`apadmin archive list` (`list_deleted_archive`) reports exact usage and the
+reserve warning. `apadmin archive prune --confirm <deleted/path>...`
+(`prune_deleted_archive`) accepts only canonical
 `deleted/keys/*.key|*.cos`, `deleted/keytypes/*.template`, and
 `deleted/policies/*.json|*.json.hmac` selections. An archived policy document
 and its sidecar must be selected together. It
 requires `identity.archive.prune`, a recovery-capable authenticated runtime,
 and durable intent audit before mutation. It changes only the selected
 generation; retained copies disappear only with retained-generation pruning.
-The production `apadmin` command dispatcher does not yet expose `archive list`
-or `archive prune` (see [USER_STORE_MGMT.md](USER_STORE_MGMT.md)).
 
 ### Recovery and restoration
 
