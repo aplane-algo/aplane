@@ -615,10 +615,45 @@ spend: [pay]
 recipients: [`+testAddress(1)+`]
 rekey: {authority: admin_key, admin_key: `+name+`}
 `)
-			if _, err := boundary.LoadFile(file); err == nil || !strings.Contains(err.Error(), "read admin witness") {
-				t.Fatalf("LoadFile(%s) error = %v, want read rejection", name, err)
+			want := "read admin witness " + filepath.Join(directory, name)
+			if _, err := boundary.LoadFile(file); err == nil || !strings.Contains(err.Error(), want) {
+				t.Fatalf("LoadFile(%s) error = %v, want %q", name, err, want)
 			}
 		})
+	}
+}
+
+func TestBoundaryFileReadIsBounded(t *testing.T) {
+	directory := t.TempDir()
+	valid := writeBoundaryFile(t, directory, `schema: aplane.boundary.v1
+spend: [pay]
+recipients: [`+testAddress(1)+`]
+rekey: {authority: spending_key}
+`)
+	link := filepath.Join(directory, "link.yaml")
+	if err := os.Symlink(valid, link); err != nil {
+		t.Fatal(err)
+	}
+	pipe := filepath.Join(directory, "pipe.yaml")
+	if err := syscall.Mkfifo(pipe, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	large := filepath.Join(directory, "large.yaml")
+	if err := os.WriteFile(large, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Truncate(large, boundary.MaxFileBytes+1); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{link, pipe, large, filepath.Join(directory, "missing.yaml")} {
+		t.Run(filepath.Base(path), func(t *testing.T) {
+			if _, err := boundary.LoadFile(path); err == nil || !strings.Contains(err.Error(), path) {
+				t.Fatalf("LoadFile(%s) error = %v, want a read error naming the path", path, err)
+			}
+		})
+	}
+	if _, err := boundary.LoadFile(link); err == nil || !strings.Contains(err.Error(), "symbolic link") {
+		t.Fatalf("LoadFile(link) error = %v, want a symbolic link message", err)
 	}
 }
 

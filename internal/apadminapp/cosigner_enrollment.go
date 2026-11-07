@@ -53,6 +53,10 @@ func WriteCosignerPublicEnvelope(path string, data []byte) error {
 	if path == "" {
 		return fmt.Errorf("output path is required")
 	}
+	if strings.HasSuffix(path, witness.AdminPublicReferenceExtension) {
+		return fmt.Errorf("%s uses the admin key name; name a cosigner key file %s",
+			path, witness.CosignerPublicReferenceExtension)
+	}
 	if err := fsutil.WriteFileDurableWithProfile(path, data, fsutil.PrivateStoreFileProfile); err != nil {
 		return fmt.Errorf("failed to write public key envelope: %w", err)
 	}

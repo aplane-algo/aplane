@@ -274,6 +274,8 @@ documents the account. It cannot restore one: use encrypted backups for that.
 
 ### Boundary files
 
+A boundary file must be a regular file of at most 8 MiB. A symbolic link is refused.
+
 ```yaml
 schema: aplane.boundary.v1
 spend: [pay, axfer, asset_opt_in]

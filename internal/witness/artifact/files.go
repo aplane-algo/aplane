@@ -7,9 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -33,7 +35,8 @@ type FileSet struct {
 // GenerateFiles creates a new credential bundle and public reference without
 // overwriting any existing directory entry.
 func GenerateFiles(directory string, passphrase []byte, now time.Time) (FileSet, error) {
-	if err := ValidateOutputDirectory(directory); err != nil {
+	directory, err := resolveOutputDirectory(directory)
+	if err != nil {
 		return FileSet{}, err
 	}
 	bundleBytes, referenceBytes, reference, err := Generate(passphrase, now)
@@ -103,49 +106,75 @@ func LoadFile(path string) ([]byte, error) {
 // signer store and rejects symlinks before passphrase handling or key
 // generation.
 func ValidateOutputDirectory(path string) error {
+	_, err := resolveOutputDirectory(path)
+	return err
+}
+
+// resolveOutputDirectory validates path and returns its physical form. The
+// store check and every write must use this one path: cleaning the spelled path
+// removes ".." lexically, which can name a different directory from the one the
+// kernel resolves through a symlink.
+func resolveOutputDirectory(path string) (string, error) {
 	if strings.TrimSpace(path) == "" {
-		return fmt.Errorf("output directory is required")
+		return "", fmt.Errorf("output directory is required")
 	}
 	info, err := os.Lstat(path)
 	if err != nil {
-		return fmt.Errorf("inspect output directory: %w", err)
+		return "", fmt.Errorf("inspect output directory: %w", err)
 	}
 	if !info.IsDir() {
-		return fmt.Errorf("output path must be an existing directory, not a symlink or file")
+		return "", fmt.Errorf("output path must be an existing directory, not a symlink or file")
 	}
-	inside, err := insideSignerStore(path)
+	physical, err := physicalPath(path)
 	if err != nil {
-		return fmt.Errorf("inspect output directory: %w", err)
+		return "", fmt.Errorf("inspect output directory: %w", err)
 	}
-	if inside {
-		return fmt.Errorf("output directory is inside a signer store; admin keys belong outside it")
+	store, found, err := enclosingSignerStore(physical)
+	if err != nil {
+		return "", fmt.Errorf("inspect output directory: %w", err)
 	}
-	return nil
+	if found {
+		return "", fmt.Errorf("output directory is inside the signer store at %s; admin keys belong outside it", store)
+	}
+	return physical, nil
 }
 
-// insideSignerStore reports whether directory lies in a signer store. An admin
-// key written there fails the next reload closed, which stops the signer.
-//
-// The walk appends ".." and lets the kernel resolve each step. Cleaning the path
-// first would remove ".." lexically, against the shell's logical working
-// directory, while a relative write follows the physical one. A parent this
-// process cannot inspect ends the walk: the check catches a mistaken path, and a
-// store it cannot read is one it cannot write to.
-func insideSignerStore(directory string) (bool, error) {
-	separator := string(os.PathSeparator)
-	current, err := os.Stat(directory)
+// physicalPath returns path with every symlink and ".." resolved by the kernel's
+// view of the filesystem. EvalSymlinks keeps a leading ".." on a relative path,
+// so the rest is joined to the kernel's working directory: os.Getwd and
+// filepath.Abs would use the shell's logical one, which can differ after a cd
+// through a symlink.
+func physicalPath(path string) (string, error) {
+	resolved, err := filepath.EvalSymlinks(path)
 	if err != nil {
-		return false, err
+		return "", err
 	}
-	for path := directory; ; path += separator + ".." {
-		if _, err := os.Lstat(path + separator + storepaths.StoreRootName); err == nil {
-			return true, nil
+	if filepath.IsAbs(resolved) {
+		return resolved, nil
+	}
+	workingDirectory, err := syscall.Getwd()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(workingDirectory, resolved), nil
+}
+
+// enclosingSignerStore finds the signer store holding the physical directory, if
+// any. An admin key written inside a store fails the next reload closed, which
+// stops the signer. Only a missing marker counts as absent: an ancestor that
+// cannot be inspected could be hiding a store, so it is an error.
+func enclosingSignerStore(directory string) (string, bool, error) {
+	for current := directory; ; current = filepath.Dir(current) {
+		_, err := os.Lstat(filepath.Join(current, storepaths.StoreRootName))
+		if err == nil {
+			return current, true, nil
 		}
-		parent, err := os.Stat(path + separator + "..")
-		if err != nil || os.SameFile(current, parent) {
-			return false, nil
+		if !errors.Is(err, fs.ErrNotExist) {
+			return "", false, err
 		}
-		current = parent
+		if current == filepath.Dir(current) {
+			return "", false, nil
+		}
 	}
 }
 

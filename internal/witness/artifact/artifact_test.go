@@ -347,7 +347,7 @@ func TestOutputDirectoryRefusesSignerStores(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := GenerateFiles(directory, []byte("passphrase"), time.Time{}); err == nil ||
-				!strings.Contains(err.Error(), "inside a signer store") {
+				!strings.Contains(err.Error(), "inside the signer store at "+store) {
 				t.Fatalf("GenerateFiles(%s) error = %v, want store refusal", directory, err)
 			}
 		})
@@ -387,7 +387,7 @@ func TestOutputDirectoryRefusesParentOfSymlinkIntoStore(t *testing.T) {
 	// t.Chdir sets PWD to the logical path, as a shell cd through the link does.
 	t.Chdir(link)
 	if _, err := GenerateFiles("../keys", []byte("passphrase"), time.Time{}); err == nil ||
-		!strings.Contains(err.Error(), "inside a signer store") {
+		!strings.Contains(err.Error(), "inside the signer store at") {
 		t.Fatalf("GenerateFiles(../keys) error = %v, want store refusal", err)
 	}
 	if err := ValidateOutputDirectory(filepath.Join(link, "..", "keys")); err != nil {
@@ -395,6 +395,67 @@ func TestOutputDirectoryRefusesParentOfSymlinkIntoStore(t *testing.T) {
 	}
 	if err := ValidateOutputDirectory(link + "/../keys"); err == nil {
 		t.Fatal("ValidateOutputDirectory(raw path through the link) was accepted")
+	}
+}
+
+func TestOutputChecksAndWritesTheSamePhysicalDirectory(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := filepath.Join(root, "store")
+	storeKeys := filepath.Join(store, "generations", "gen-1", "keys")
+	outside := filepath.Join(root, "outside")
+	for _, directory := range []string{storeKeys, filepath.Join(outside, "sub"), filepath.Join(outside, "keys")} {
+		if err := os.MkdirAll(directory, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(store, storepaths.StoreRootName), []byte("root"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(store, "generations", "gen-1", "link")
+	if err := os.Symlink(filepath.Join(outside, "sub"), link); err != nil {
+		t.Fatal(err)
+	}
+	// This spelling cleans to the store's keys directory, but the kernel resolves
+	// it through the link to the directory outside the store.
+	files, err := GenerateFiles(link+"/../keys", []byte("passphrase"), time.Time{})
+	if err != nil {
+		t.Fatalf("GenerateFiles() error = %v", err)
+	}
+	if got, want := filepath.Dir(files.BundlePath), filepath.Join(outside, "keys"); got != want {
+		t.Fatalf("bundle directory = %q, want %q", got, want)
+	}
+	entries, err := os.ReadDir(storeKeys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("store keys directory has %d entries, want 0", len(entries))
+	}
+}
+
+func TestOutputDirectoryFailsClosedOnUnsearchableAncestor(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root ignores directory permissions")
+	}
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	guarded := filepath.Join(root, "guarded")
+	inner := filepath.Join(guarded, "inner")
+	if err := os.MkdirAll(inner, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(inner)
+	if err := os.Chmod(guarded, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(guarded, 0o700) })
+	if err := ValidateOutputDirectory("."); err == nil {
+		t.Fatal("ValidateOutputDirectory(.) accepted a directory whose ancestors cannot be inspected")
 	}
 }
 

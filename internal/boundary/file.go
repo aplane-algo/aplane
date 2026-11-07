@@ -4,10 +4,11 @@
 package boundary
 
 import (
+	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/fsutil"
@@ -134,22 +135,28 @@ func AdminKeyID(params map[string]string) (string, error) {
 
 // LoadFile reads a boundary file and returns its creation parameters.
 func LoadFile(path string) (map[string]string, error) {
-	info, err := os.Stat(path)
+	data, err := readLimited("boundary file", path, MaxFileBytes)
 	if err != nil {
-		return nil, fmt.Errorf("read boundary file: %w", err)
-	}
-	if info.Size() > MaxFileBytes {
-		return nil, fmt.Errorf("boundary file exceeds %d bytes", MaxFileBytes)
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("read boundary file: %w", err)
+		return nil, err
 	}
 	file, err := ParseFile(data)
 	if err != nil {
 		return nil, err
 	}
 	return file.CreationParameters(filepath.Dir(path))
+}
+
+// readLimited reads a bounded regular file. A FIFO or device could otherwise
+// block or feed the caller, which runs on apadmin's UI path.
+func readLimited(label, path string, limit int64) ([]byte, error) {
+	data, _, err := fsutil.ReadRegularFileLimited(path, limit)
+	if errors.Is(err, syscall.ELOOP) {
+		err = errors.New("a symbolic link is not accepted")
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read %s %s: %w", label, path, err)
+	}
+	return data, nil
 }
 
 // readAdminPublicKey reads the public .adm.json envelope. A relative path is
@@ -164,9 +171,9 @@ func readAdminPublicKey(directory, path string) (string, error) {
 	if !filepath.IsAbs(path) {
 		path = filepath.Join(directory, path)
 	}
-	data, _, err := fsutil.ReadRegularFileLimited(path, witness.MaxPublicReferenceBytes)
+	data, err := readLimited("admin witness", path, witness.MaxPublicReferenceBytes)
 	if err != nil {
-		return "", fmt.Errorf("read admin witness: %w", err)
+		return "", err
 	}
 	reference, err := witness.ParsePublicReference(data)
 	if err != nil {
