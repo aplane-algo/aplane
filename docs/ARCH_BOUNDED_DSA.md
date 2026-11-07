@@ -137,10 +137,17 @@ structural, because installed templates reach both on load: an error there chang
 the template's compatibility fingerprint, which makes it a content defect, and that
 sends unlock to recovery mode and blocks store commits.
 
-Signing sites use the same policy. They verify spending proofs and assembly receipts
-through `composeddsa.SupportedSpendingConstruction`, which returns a construction only
-for a workflow that's reviewed on that base. A valid signature on any other base is
-refused where it always was, before a ceremony it couldn't finish. Verification itself
+Signing sites don't read that policy. Admission can narrow over time, and an existing
+account must keep signing, so the signer keeps its own table of the spending
+constructions each workflow completes
+(`internal/signerapp/signing/bounded_construction.go`). It resolves an account's
+construction from its durable contract and `base_key_type`. Both the cosigner flow
+and the external-admin flow complete Falcon-1024 only. A valid signature on any other
+base is refused where it always was, before a ceremony it couldn't finish. The
+bounded-admin plan check applies the same rule before approval: the base decides, and
+a key of the right size on another base is still refused. Admission must stay within
+the signer's table, or it would create accounts the signer can't complete;
+`TestBoundedGenerationAdmitsOnlySignableWorkflows` checks that. Verification itself
 is in `internal/sigconstruction/verify`, which takes public inputs only, and signing
 stays at its existing role-specific sites.
 

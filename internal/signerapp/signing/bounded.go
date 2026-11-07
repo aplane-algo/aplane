@@ -26,6 +26,7 @@ const (
 type boundedPlanItem struct {
 	Path              boundedPath
 	Metadata          *boundedmeta.Metadata
+	BaseKeyType       string
 	SpendingPublicKey []byte
 	RuntimeArgs       map[string][]byte
 }
@@ -57,7 +58,10 @@ func resolveBoundedPlanItems(snapshot PlannerRuntimeSnapshot, req []signerapi.Si
 		}
 		// The planner snapshot is request-owned and read-only downstream, so
 		// the item references its metadata directly instead of cloning again.
-		items[i] = &boundedPlanItem{Path: path, Metadata: metadata, SpendingPublicKey: spendingPublicKey, RuntimeArgs: runtimeArgs}
+		items[i] = &boundedPlanItem{
+			Path: path, Metadata: metadata, BaseKeyType: snapshot.KeyMetadata[request.AuthAddress].BaseKeyType,
+			SpendingPublicKey: spendingPublicKey, RuntimeArgs: runtimeArgs,
+		}
 	}
 	return items, nil
 }

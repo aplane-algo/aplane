@@ -19,7 +19,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/txnutil"
-	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
@@ -52,10 +51,28 @@ func validateBoundedAdminPlan(request signerapi.BoundedAdminRequest, plan *PlanR
 	if plan == nil || len(plan.AllTxns) < 1 || len(plan.BoundedItems) < 1 || plan.BoundedItems[0] == nil || plan.BoundedItems[0].Path != boundedPathAdminKeyRekey {
 		return 0, nil, badRequest("transaction 1 is not an admin-key-authorized bounded rekey")
 	}
-	if len(plan.BoundedItems[0].SpendingPublicKey) != boundedmeta.FalconAdminPublicKeySize {
+	item := plan.BoundedItems[0]
+	if !boundedAdminSpendingBaseSupported(item) {
 		return 0, nil, badRequest("bounded-admin v1 requires a Falcon-1024 spending base")
 	}
-	return 0, plan.BoundedItems[0], nil
+	return 0, item, nil
+}
+
+// boundedAdminSpendingBaseSupported is the plan-time form of the release-time check
+// in ExecuteBoundedAdminPartial: the account's durable base must resolve to a
+// construction the external-admin workflow completes, and its stored spending key
+// must have that construction's shape. A key size alone is not evidence that the
+// workflow supports a base.
+func boundedAdminSpendingBaseSupported(item *boundedPlanItem) bool {
+	if item.Metadata == nil {
+		return false
+	}
+	construction, ok := boundedSpendingConstruction(item.Metadata.Contract, item.BaseKeyType, boundedWorkflowExternalAdmin)
+	if !ok {
+		return false
+	}
+	_, err := construction.SplitPublicKey(item.SpendingPublicKey)
+	return err == nil
 }
 
 func (e *Executor) ExecuteBoundedAdminPartial(ctx context.Context, plan *PlanResult, req signerapi.GroupSignRequest, session *keystore.KeySession, targetIndex int, item *boundedPlanItem) ([]string, *ServiceError) {
@@ -111,7 +128,7 @@ func (e *Executor) ExecuteBoundedAdminPartial(ctx context.Context, plan *PlanRes
 			return nil, internal(fmt.Sprintf("base signature arg %d violates bounded metadata", i))
 		}
 	}
-	if !boundedSpendingProofVerifies(keyMaterial, composeddsa.BoundedWorkflowExternalAdmin, txID[:], args...) {
+	if !boundedSpendingProofVerifies(keyMaterial, boundedWorkflowExternalAdmin, txID[:], args...) {
 		return nil, internal("generated bounded spending signature failed verification")
 	}
 	lsigAccount := algocrypto.LogicSigAccount{Lsig: types.LogicSig{Logic: keyMaterial.Bytecode, Args: args}}

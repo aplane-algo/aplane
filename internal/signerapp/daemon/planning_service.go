@@ -52,7 +52,7 @@ func (d signerPlannerDeps) Snapshot() signersigning.PlannerRuntimeSnapshot {
 	keyMetadata := make(map[string]signersigning.PlannerKeyMetadata, len(snapshot.KeyMetadata))
 	for selector, metadata := range snapshot.KeyMetadata {
 		keyMetadata[selector] = signersigning.PlannerKeyMetadata{
-			Category: metadata.Category, PublicKeyHex: metadata.PublicKeyHex, Parameters: metadata.Parameters,
+			Category: metadata.Category, BaseKeyType: metadata.BaseKeyType, PublicKeyHex: metadata.PublicKeyHex, Parameters: metadata.Parameters,
 			BoundedAuthorization: metadata.BoundedAuthorization,
 			LogicSigResources:    metadata.LogicSigResources,
 		}

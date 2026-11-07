@@ -168,6 +168,7 @@ type KeyIndexSnapshot struct {
 // the runtime key index at one revision.
 type KeyPublicMetadata struct {
 	Category             string
+	BaseKeyType          string
 	PublicKeyHex         string
 	Parameters           map[string]string
 	BoundedAuthorization *boundedmeta.Metadata
@@ -1025,7 +1026,7 @@ func (ir *Runtime) PublishSnapshot(keys, keyTypes map[string]string) {
 		metadata = make(map[string]KeyPublicMetadata, len(summaries))
 		for selector, summary := range summaries {
 			metadata[selector] = KeyPublicMetadata{
-				Category: summary.Category, PublicKeyHex: publicKeys[selector], Parameters: summary.Parameters,
+				Category: summary.Category, BaseKeyType: summary.BaseKeyType, PublicKeyHex: publicKeys[selector], Parameters: summary.Parameters,
 				BoundedAuthorization: summary.BoundedAuthorization,
 				LogicSigResources:    summary.LogicSigResources,
 			}

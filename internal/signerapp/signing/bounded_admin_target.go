@@ -14,7 +14,6 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
 	securecrypto "github.com/aplane-algo/aplane/internal/crypto"
-	"github.com/aplane-algo/aplane/internal/falconparams"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/sigconstruction"
@@ -228,8 +227,8 @@ func selfTestAdminRekeyTarget(km *coresigning.KeyMaterial, target types.Address)
 		if !bytes.Equal(km.PublicKey, target[:]) {
 			return fmt.Errorf("stored public key does not derive the target address")
 		}
-		if !ed25519.Verify(ed25519.PublicKey(km.PublicKey), message, signature) {
-			return fmt.Errorf("Ed25519 signature did not verify")
+		if err := sigverify.Verify(sigconstruction.Ed25519(), km.PublicKey, message, signature); err != nil {
+			return err
 		}
 	case keys.CategoryNativePQ:
 		if km.PQAddressSalt == nil {
@@ -247,20 +246,15 @@ func selfTestAdminRekeyTarget(km *coresigning.KeyMaterial, target types.Address)
 		}
 	case keys.CategoryDSALsig:
 		// verifyPlainLogicSigConstruction already tied the program to the
-		// public key and the target. A plain DSA LogicSig signs with its base
-		// primitive, and the stored public key's size says which one: the two
-		// sizes are frozen and distinct, so no registry lookup is needed.
-		switch len(km.PublicKey) {
-		case falconparams.PublicKeySize:
-			if err := sigverify.Verify(sigconstruction.Falcon1024(), km.PublicKey, message, signature); err != nil {
-				return err
-			}
-		case ed25519.PublicKeySize:
-			if !ed25519.Verify(ed25519.PublicKey(km.PublicKey), message, signature) {
-				return fmt.Errorf("Ed25519 LogicSig signature did not verify")
-			}
-		default:
-			return fmt.Errorf("stored DSA public key has unsupported length %d", len(km.PublicKey))
+		// public key and the target. adminRekeyTargetIneligible admits only the
+		// plain DSA families, and each is its own catalog base, so the key type
+		// names the construction. The key's size is not used to choose one.
+		construction, ok := sigconstruction.ForBaseKeyType(km.Type)
+		if !ok {
+			return fmt.Errorf("plain LogicSig key type %s has no signature construction", km.Type)
+		}
+		if err := sigverify.Verify(construction, km.PublicKey, message, signature); err != nil {
+			return err
 		}
 	default:
 		return fmt.Errorf("credential category %q cannot be self-tested", km.Category)
