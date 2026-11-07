@@ -403,25 +403,3 @@ func TestWitnessKeyMustDifferFromEverySpendingComponent(t *testing.T) {
 		})
 	}
 }
-
-func TestSupportedSpendingConstructionFollowsThePolicy(t *testing.T) {
-	const contract = composeddsa.BoundedContractV1
-	for _, workflow := range []composeddsa.BoundedWorkflow{composeddsa.BoundedWorkflowCosigner, composeddsa.BoundedWorkflowExternalAdmin} {
-		construction, ok := composeddsa.SupportedSpendingConstruction(contract, "aplane.falcon1024.v1", workflow)
-		if !ok || construction.ID() != sigconstruction.Falcon1024().ID() {
-			t.Fatalf("workflow %d on Falcon = %q, %v", workflow, construction.ID(), ok)
-		}
-		for name, refused := range map[string][2]string{
-			"Ed25519":          {contract, "aplane.ed25519.v1"},
-			"fixture base":     {contract, fixtureBaseKeyType},
-			"unknown contract": {"bounded-unknown", "aplane.falcon1024.v1"},
-		} {
-			if _, ok := composeddsa.SupportedSpendingConstruction(refused[0], refused[1], workflow); ok {
-				t.Fatalf("workflow %d accepted %s", workflow, name)
-			}
-		}
-	}
-	if _, ok := composeddsa.SupportedSpendingConstruction(contract, "aplane.falcon1024.v1", 0); ok {
-		t.Fatal("an unnamed workflow has support")
-	}
-}

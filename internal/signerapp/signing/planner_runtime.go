@@ -32,6 +32,7 @@ type PlannerRuntimeSnapshot struct {
 // preflight. It never contains decrypted private material.
 type PlannerKeyMetadata struct {
 	Category             string
+	BaseKeyType          string
 	PublicKeyHex         string
 	Parameters           map[string]string
 	BoundedAuthorization *boundedmeta.Metadata

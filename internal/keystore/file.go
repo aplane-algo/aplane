@@ -43,6 +43,7 @@ type FileKeyStore struct {
 // SigningSummary is the non-sensitive key-file signing metadata cached at scan time.
 type SigningSummary struct {
 	Category               string
+	BaseKeyType            string
 	Parameters             map[string]string
 	SigningArgs            []lsigprovider.RuntimeArgDef
 	BoundedAuthorization   *boundedmeta.Metadata
@@ -527,6 +528,7 @@ func (f *FileKeyStore) GetSigningSummary() map[string]SigningSummary {
 	for k, v := range f.cache {
 		summary := SigningSummary{
 			Category:               v.Category,
+			BaseKeyType:            v.BaseKeyType,
 			Parameters:             maps.Clone(v.Parameters),
 			SigningMetadataVersion: v.SigningMetadataVersion,
 			BoundedAuthorization:   boundedmeta.Clone(v.BoundedAuthorization),

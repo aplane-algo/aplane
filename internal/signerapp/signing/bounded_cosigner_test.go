@@ -9,7 +9,6 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/hex"
-	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	"strings"
 	"testing"
 
@@ -226,9 +225,9 @@ func TestBoundedSpendingProofRequiresSupportedConstruction(t *testing.T) {
 	}
 	edSignature := ed25519.Sign(edPrivateKey, message)
 
-	for name, workflow := range map[string]composeddsa.BoundedWorkflow{
-		"cosigner":       composeddsa.BoundedWorkflowCosigner,
-		"external admin": composeddsa.BoundedWorkflowExternalAdmin,
+	for name, workflow := range map[string]boundedSigningWorkflow{
+		"cosigner":       boundedWorkflowCosigner,
+		"external admin": boundedWorkflowExternalAdmin,
 	} {
 		t.Run(name, func(t *testing.T) {
 			for label, test := range map[string]struct {

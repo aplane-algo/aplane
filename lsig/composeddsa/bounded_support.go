@@ -26,6 +26,11 @@ type boundedSupportKey struct {
 // boundedSupportPolicy decides whether a new account may be created with a
 // profile. It is keyed by construction rather than by base name, so a registered
 // base with no construction has no support. It answers no structural question.
+//
+// It is admission only. Signing an existing account never reads it, so narrowing
+// it can't strand a credential: the signer keeps its own table of the workflows it
+// completes (internal/signerapp/signing/bounded_construction.go), and this policy
+// must stay within that table.
 var boundedSupportPolicy = map[boundedSupportKey]boundedWorkflowSupport{
 	{BoundedContractV1, sigconstruction.Falcon1024().ID()}: {externalAdmin: true, cosigner: true},
 	{BoundedContractV1, sigconstruction.Ed25519().ID()}:    {},
@@ -41,37 +46,6 @@ func productionBoundedGenerationPolicy(contract, baseKeyType string) (boundedWor
 	}
 	support, ok := boundedSupportPolicy[boundedSupportKey{contract, construction.ID()}]
 	return support, ok
-}
-
-// BoundedWorkflow names a workflow whose spending proofs a signer verifies.
-type BoundedWorkflow int
-
-const (
-	BoundedWorkflowCosigner BoundedWorkflow = iota + 1
-	BoundedWorkflowExternalAdmin
-)
-
-// SupportedSpendingConstruction returns the spending construction a workflow is
-// reviewed for under a contract. Resolving a base alone would accept any listed
-// base, including one the workflow cannot complete, so verification sites ask here.
-// Production only: fixtures never reach this policy.
-func SupportedSpendingConstruction(contract, baseKeyType string, workflow BoundedWorkflow) (sigconstruction.Construction, bool) {
-	support, ok := productionBoundedGenerationPolicy(contract, baseKeyType)
-	if !ok {
-		return sigconstruction.Construction{}, false
-	}
-	switch workflow {
-	case BoundedWorkflowCosigner:
-		ok = support.cosigner
-	case BoundedWorkflowExternalAdmin:
-		ok = support.externalAdmin
-	default:
-		ok = false
-	}
-	if !ok {
-		return sigconstruction.Construction{}, false
-	}
-	return sigconstruction.ForBaseKeyType(baseKeyType)
 }
 
 // checkBoundedGenerationSupport refuses a bounded program the current

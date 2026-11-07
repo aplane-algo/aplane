@@ -30,6 +30,7 @@ func testBoundedAdminPlan(t *testing.T) (*PlanResult, signerapi.BoundedAdminRequ
 		BoundedItems: []*boundedPlanItem{{
 			Path:              boundedPathAdminKeyRekey,
 			Metadata:          metadata,
+			BaseKeyType:       plainFalcon1024LsigKeyType,
 			SpendingPublicKey: spendingKey,
 		}},
 	}, signerapi.BoundedAdminRequest{
@@ -59,8 +60,22 @@ func TestValidateBoundedAdminPlanRequiresNarrowTypedPath(t *testing.T) {
 		{name: "spending key path", mutate: func(plan *PlanResult, _ *signerapi.BoundedAdminRequest) {
 			plan.BoundedItems[0].Path = boundedPathSpendingKeyRekey
 		}},
-		{name: "non Falcon base", mutate: func(plan *PlanResult, _ *signerapi.BoundedAdminRequest) {
+		{name: "key not shaped for the base", mutate: func(plan *PlanResult, _ *signerapi.BoundedAdminRequest) {
 			plan.BoundedItems[0].SpendingPublicKey = []byte{1}
+		}},
+		// The base decides, not the key's size: a Falcon-sized key on an Ed25519
+		// base is still a base the admin ceremony can't complete.
+		{name: "Ed25519 base with a Falcon-sized key", mutate: func(plan *PlanResult, _ *signerapi.BoundedAdminRequest) {
+			plan.BoundedItems[0].BaseKeyType = plainEd25519LsigKeyType
+		}},
+		{name: "no base", mutate: func(plan *PlanResult, _ *signerapi.BoundedAdminRequest) {
+			plan.BoundedItems[0].BaseKeyType = ""
+		}},
+		{name: "witness as a base", mutate: func(plan *PlanResult, _ *signerapi.BoundedAdminRequest) {
+			plan.BoundedItems[0].BaseKeyType = witness.Falcon1024V1
+		}},
+		{name: "unknown contract", mutate: func(plan *PlanResult, _ *signerapi.BoundedAdminRequest) {
+			plan.BoundedItems[0].Metadata.Contract = "bounded-unknown"
 		}},
 	}
 	for _, test := range tests {
