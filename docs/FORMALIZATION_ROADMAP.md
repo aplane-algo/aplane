@@ -20,6 +20,7 @@ contracts; these models cover narrower security-critical transitions.
 | `enrollment_queue.tla` | client enrollment registry and queue under the applied-vs-durable publication rule |
 | `recovery_binding.tla` | which generation the runtime binds, serves, and maintains after a failed post-commit reload |
 | `rotating_leaf_release.tla` | one-time leaf choice for a rotating leaf-family stage: release memory, audit restore after unlock, and the status-pass clear |
+| `key_use_lock.tla` | how a lock ends every key use outside a session: registration, drain, session clear, and what a rotating sign or mnemonic export may still release |
 
 The single-product runtime has no decommission state or operation lease, so the
 formal inventory contains no lifecycle model for those concepts. Runtime
@@ -47,8 +48,9 @@ operator choices.
 
 1. Promote reload-during-request snapshot stability from Go tests into a small
    temporal model if that race changes materially.
-2. Add a lock/unlock and server-shutdown ownership model if request-drain or
-   runtime-destruction ordering changes.
+2. Extend `key_use_lock.tla` to shutdown if `Runtime.Destroy` ever runs while a
+   service can still start a key use, or if request-drain ordering changes
+   again.
 3. Extend key-generation crash models only when new durable transitions are
    introduced.
 4. Keep native signing authority and bounded-cosigner refinements aligned with
@@ -445,7 +447,11 @@ model unless the key-use property lands, which would cover its lock step.
 (3) `rebuildPreparedRotatingGroup` (`2fa04553`) and the bounded templates, general
 provider, and timelocks (`cbd0ed0b`, `b5cc35b4`, `4c4cfeb7`, `864520ac`): out of
 model. The first is a deterministic pre-release check, and the others are
-on-chain program properties that the golden and AVM tests own.
+on-chain program properties that the golden and AVM tests own. Follow-up (same
+day): candidate (1) is modeled in `key_use_lock.tla` rather than as an
+extension of `rotating_leaf_release.tla`, whose state space is already in the
+millions; the lock path is shared with mnemonic export and the stage table
+worker, so the new module covers candidate (2) too.
 
 New-surface candidates: the policy apply reviewed-snapshot precondition
 (`1f6fde35`, `policy_snapshot_changed`) is a pre-commit compare-and-swap that

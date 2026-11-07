@@ -271,6 +271,7 @@ so a PR that changes modeled code keeps the correspondence itself.
 | `internal/engine/plugin_*.go`, `internal/apshellcli/external_plugins.go`, `plugin_group_review.go`, `internal/apshellapp/submission.go` | `plugin_signing.tla` |
 | `internal/signerapp/signing/planner.go`, `execution.go`, `service.go`, `gate.go`, `internal/signerapp/policyeval/`, `pkg/signerapi/` | `sign_boundary.tla`, `policy_precedence.tla`, `composition.tla` |
 | `internal/signerapp/signing/rotating_release.go`, `rotating_flow.go` (leaf choice), `rotating_tables.go` | `rotating_leaf_release.tla` |
+| `internal/signerapp/productruntime/runtime.go` (`KeyUseContext`, `drainKeyUsers`, `performLockCleanup`), `internal/signerapp/runtime/runtime.go` (`Lock`, `BeginMaintenance`), `internal/signerapp/signing/rotating_flow.go` (key use, `releaseRefused`), `rotating_session.go`, `internal/signerapp/keyadmin/export.go` | `key_use_lock.tla` |
 
 When a PR touches these paths:
 - Renaming, moving, or deleting a function or test: grep

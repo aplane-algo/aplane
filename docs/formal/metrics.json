@@ -118,5 +118,45 @@
     "expected_invariant_violation": "LF1_NoReuseBeforeExhaustion",
     "distinct_states": 9273,
     "depth": 12
+  },
+  {
+    "spec": "key_use_lock",
+    "distinct_states": 373,
+    "depth": 17
+  },
+  {
+    "spec": "key_use_lock",
+    "cfg": "key_use_lock_negative_recheck",
+    "expected_invariant_violation": "KU1_NoSignatureAfterLock",
+    "distinct_states": 70,
+    "depth": 7
+  },
+  {
+    "spec": "key_use_lock",
+    "cfg": "key_use_lock_negative_generation",
+    "expected_invariant_violation": "KU1_NoSignatureAfterLock",
+    "distinct_states": 184,
+    "depth": 10
+  },
+  {
+    "spec": "key_use_lock",
+    "cfg": "key_use_lock_negative_drain",
+    "expected_invariant_violation": "KU2_NoKeyMaterialAtWipe",
+    "distinct_states": 51,
+    "depth": 6
+  },
+  {
+    "spec": "key_use_lock",
+    "cfg": "key_use_lock_negative_register",
+    "expected_invariant_violation": "KU2_NoKeyMaterialAtWipe",
+    "distinct_states": 55,
+    "depth": 6
+  },
+  {
+    "spec": "key_use_lock",
+    "cfg": "key_use_lock_negative_register_export",
+    "expected_invariant_violation": "KU3_NoExportAfterWipe",
+    "distinct_states": 160,
+    "depth": 8
   }
 ]

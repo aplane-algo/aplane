@@ -59,7 +59,9 @@ Scope: one account, one signer. Several signers sharing a seed and no memory
 collide with probability one in LeavesPerStage by design for TxIDs nobody
 chose (chooseLeaf) and are not modeled. Stateless-hash families keep no leaf history and are not
 modeled. Chain validity windows, expiry, and the stage-table recovery grants
-are not modeled; only release memory, restore and observation are.
+are not modeled; only release memory, restore and observation are. The
+key-use window and the lock-generation fence on the release are in
+key_use_lock.tla.
 
 Code anchors:
   - Admit and Sign transcribe internal/signerapp/signing/rotating_flow.go

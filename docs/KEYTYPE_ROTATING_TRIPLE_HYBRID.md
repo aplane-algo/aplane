@@ -395,6 +395,10 @@ state, so a reset can't fall between them. An audit write failure is logged and 
 not withhold the signature. The `rotating_leaf_release.tla` model covers any family
 with several leaves per stage; see
 [FORMAL_TLA_ROTATING_LEAF_RELEASE_MODEL.md](FORMAL_TLA_ROTATING_LEAF_RELEASE_MODEL.md).
+A lock stops a sign in flight: the sign holds its seed in a key use that the lock
+waits for, and it rechecks the lock generation after the audit write, so a
+signature isn't returned once a lock began. `key_use_lock.tla` checks that; see
+[FORMAL_TLA_KEY_USE_LOCK_MODEL.md](FORMAL_TLA_KEY_USE_LOCK_MODEL.md).
 
 ### 8.2 Release memory and alerts
 

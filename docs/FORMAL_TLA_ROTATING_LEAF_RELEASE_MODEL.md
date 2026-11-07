@@ -112,7 +112,9 @@ for each.
 - `Lock` cuts a restore in flight short. It also stands for recovery, which stops a
   restore the same way without moving the generation: the model has no generation
   to tell them apart. The lock-generation fence on the sign path stops a release, not a leaf choice, and is
-  modeled only as `Sign` needing an unlocked signer. At most one sign is in flight,
+  modeled here only as `Sign` needing an unlocked signer; the fence itself, the
+  key-use window and the recheck after the audit write are in
+  [FORMAL_TLA_KEY_USE_LOCK_MODEL.md](FORMAL_TLA_KEY_USE_LOCK_MODEL.md). At most one sign is in flight,
   because the account lock serializes them.
 - Validity windows, expiry, the stage-table recovery grants, and the one-time
   warning text are not modeled; they change what the signer reports, not the
