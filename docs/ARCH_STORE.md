@@ -1341,9 +1341,9 @@ bounded keys require version 2. LogicSig key payloads include:
 - `signing_args` — optional; the signing-time arg schema in TEAL argument
   order, represented internally by `internal/signingargs.Info`; absent and
   empty are equivalent and mean the key takes no runtime args
-- `base_key_type` — required for composed DSA keys, pointing to the signer-side
-  private signing primitive used for key-material signing and signature arg
-  packing; v1 signing-metadata DSA keys also persist it when it equals
+- `base_key_type` — required for composed DSA keys, naming the signature
+  construction whose signer-side provider signs with the key material and packs
+  signature args; v1 signing-metadata DSA keys also persist it when it equals
   `key_type`. This field does not say which provider owns account metadata,
   creation parameters, TEAL, or guarded assembly.
 - `template_fingerprint` — optional; the behavior-only, versioned (`<n>:`
@@ -1386,7 +1386,7 @@ signing:
   args using stored `signing_args`
 - DSA-backed LogicSig signing reads bytecode and stored `signing_args`, signs
   with the stored key material, and uses `base_key_type` to find the signer-side
-  private signing primitive that packs the cryptographic signature args
+  provider for the signature construction, which packs the cryptographic signature args
 - the generic/composed template registered under `key_type` is not consulted
   to assemble args at sign time
 
@@ -1463,8 +1463,8 @@ consulted to reconstruct missing signing metadata.
   signing-time argument contract captured at generation.
 - Generic LogicSig keys store final bytecode, derivation metadata, and runtime
   argument schema. Only legacy derivations carry `salt_counter`.
-- DSA-backed LogicSig keys additionally store `base_key_type`; that private
-  signing primitive must be available because the signer must produce and pack
+- DSA-backed LogicSig keys additionally store `base_key_type`; that signature
+  construction's provider must be available because the signer must produce and pack
   the DSA signature. The field is not a claim that the base provider owns the
   account's metadata, creation params, or LogicSig assembly. The composed
   template/provider for that `key_type` is not required to sign an

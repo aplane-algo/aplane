@@ -144,8 +144,8 @@ recipient policy, and an external-admin pure rekey. It therefore advertises
 rather than a key-type switch. See [Corridor v1](#corridor-v1).
 
 Guarded account identity is the guarded account `key_type`, not the base
-signing primitive. The stored `base_key_type` names the private signing
-primitive used for the user component key material and signature packing. It
+signature construction. The stored `base_key_type` names the construction used
+for the user component key material and signature packing. It
 does not make the base provider responsible for guarded metadata, creation
 parameters, TEAL, cosigner reference resolution, or final LogicSig argument
 assembly.

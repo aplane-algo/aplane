@@ -476,8 +476,8 @@ Terminology:
 - `family` is the middle segment of `publisher.family.vN`. It groups versions
   of one key type or template policy, for example
   `aplane.falcon1024-allowlist.v1` and `aplane.falcon1024-allowlist.v2`.
-- `base_key_type` is the field composed DSA templates use to point at their
-  private signing primitive. For example,
+- `base_key_type` is the field composed DSA templates use to name their
+  signature construction. For example,
   `base_key_type: aplane.falcon1024.v1` means the template's DSA signature is
   produced and packed with Falcon-1024, while the account/template identity is
   still named by its own `key_type` and `family` segment (e.g.

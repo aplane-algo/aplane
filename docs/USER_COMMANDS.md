@@ -1212,7 +1212,10 @@ Run `keytypes` to see available key types and required generation parameters.
 Use the full key type shown by `keytypes`.
 For installing or activating optional key types, and for boundary files, see
 [USER_KEYTYPES.md](USER_KEYTYPES.md). `boundary=` and `result=` are apshell options for
-`aplane.falcon1024-b.v1` only; for every other key type they are ordinary parameters.
+key types the signer reports as per-key, which today means `aplane.falcon1024-b.v1`. For
+every other key type they are ordinary parameters. With either option, apshell reads the
+signer's key types first. If it can't, or the signer doesn't report the type, it stops and
+generates nothing.
 
 ---
 
