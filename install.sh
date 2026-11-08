@@ -1780,7 +1780,7 @@ abort_if_macos_install_processes_running() {
     install_root="${install_root%/}"
     local found=0
     local pid exe
-    for name in apsigner apadmin apconsole apshell apbounded-admin apstore apapprover appass aplocalnet; do
+    for name in apsigner apadmin apconsole apshell aprekey apbounded-admin apstore apapprover appass aplocalnet; do
         while IFS= read -r pid; do
             [ -n "$pid" ] || continue
             exe="$(ps -p "$pid" -o comm= 2>/dev/null | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' || true)"
@@ -1942,7 +1942,8 @@ if [ "$CLIENT_MODE" = "1" ]; then
     mkdir -p "$BINDIR" "$APCLIENT_DIR/.ssh" "$APCLIENT_DIR/plugins.available" "$APCLIENT_DIR/scripts"
     install_release_metadata "$CLIENT_PATH/install"
     echo "Installing client binaries to $BINDIR..."
-    rm -f "$BINDIR/apbounded-admin" "$BINDIR/appolicy"
+    # Retired client binaries: an upgraded install must not keep offering them.
+    rm -f "$BINDIR/aprekey" "$BINDIR/apbounded-admin" "$BINDIR/appolicy"
     cp "$BIN_SRC/apshell" "$BINDIR/apshell"
     chmod 755 "$BINDIR/apshell"
     repair_macos_binary "$BINDIR/apshell"
@@ -2172,7 +2173,7 @@ if [ "$LOCAL_MODE" = "1" ]; then
     # Create directories
     mkdir -p "$SIGNER_BINDIR" "$CLIENT_BINDIR"
     chmod 700 "$INSTALL_ROOT"
-    rm -f "$CLIENT_BINDIR/apbounded-admin" "$SIGNER_BINDIR/apbounded-admin"
+    rm -f "$CLIENT_BINDIR/aprekey" "$CLIENT_BINDIR/apbounded-admin" "$SIGNER_BINDIR/apbounded-admin"
     # appolicy ships with the signer binaries; remove a client-side copy left
     # by a release that installed the retired binary there.
     rm -f "$CLIENT_BINDIR/appolicy"

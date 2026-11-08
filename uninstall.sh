@@ -372,6 +372,8 @@ if [ "$CLIENT_MODE" = "1" ]; then
     else
         echo "No apshell found at $CLIENT_BINDIR/apshell"
     fi
+    # Retired client binaries an older release may have left.
+    rm -f "$CLIENT_BINDIR/aprekey" "$CLIENT_BINDIR/apbounded-admin"
     rmdir "$CLIENT_BINDIR" 2>/dev/null || true
 
     # Clean up shell rc
@@ -500,6 +502,8 @@ if [ "$LOCAL_MODE" = "1" ]; then
         rm -f "$CLIENT_BINDIR/apshell"
         CLIENT_BINARY_REMOVED=1
     fi
+    # Retired client binaries an older release may have left.
+    rm -f "$CLIENT_BINDIR/aprekey" "$CLIENT_BINDIR/apbounded-admin"
     rmdir "$CLIENT_BINDIR" 2>/dev/null || true
 
     # Remove installer-generated MCP config only if it still points at this
