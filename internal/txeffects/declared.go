@@ -15,9 +15,10 @@ import (
 // Path is the authorization path a declaration admits a transaction on.
 type Path string
 
+// The admitted paths use the names argument path masks and resource profiles use.
 const (
-	PathSpend         Path = "spend"
-	PathSpendingRekey Path = "spending_rekey"
+	PathSpend         Path = boundedmeta.PathSpend
+	PathSpendingRekey Path = boundedmeta.PathSpendingRekey
 	PathRefused       Path = "refused"
 )
 
@@ -51,10 +52,8 @@ type Decision struct {
 // type are refused for every declaration. An invalid declaration is an error, not
 // a refusal, so a corrupt declaration can't be mistaken for a policy decision.
 func ClassifyFor(txn types.Transaction, declaration boundedmeta.PathDeclaration) (Decision, error) {
-	switch declaration.Rekey {
-	case boundedmeta.RekeyRefused, boundedmeta.RekeySpendingKey:
-	default:
-		return Decision{}, fmt.Errorf("unsupported rekey setting %q", declaration.Rekey)
+	if err := boundedmeta.ValidateRekeySetting(declaration.Rekey); err != nil {
+		return Decision{}, err
 	}
 	contract := declaration.Contract
 	refuse := func(decision Decision, rule Rule, reason string) (Decision, error) {

@@ -101,6 +101,23 @@ func (profile *BoundedAuthorizationProfile) validate() error {
 	return nil
 }
 
+// validatedBoundedProfile canonicalizes a profile and checks it against its
+// metadata, which catches contradictions such as a cosigner beside a
+// spending-key rekey. CanonicalBoundedProfile encodes the result.
+func validatedBoundedProfile(profile *BoundedAuthorizationProfile, metadata *boundedmeta.Metadata) (*BoundedAuthorizationProfile, error) {
+	canonical, err := canonicalBoundedProfile(profile)
+	if err != nil {
+		return nil, err
+	}
+	if canonical == nil {
+		return nil, fmt.Errorf("bounded profile is required")
+	}
+	if err := validateCanonicalMetadata(canonical, metadata); err != nil {
+		return nil, err
+	}
+	return canonical, nil
+}
+
 func canonicalBoundedProfile(profile *BoundedAuthorizationProfile) (*BoundedAuthorizationProfile, error) {
 	if profile == nil {
 		return nil, nil
@@ -141,14 +158,8 @@ func boundedFingerprintProjection(profile *BoundedAuthorizationProfile, metadata
 // CanonicalBoundedProfile encodes a profile using the bounded binary contract, which template fingerprints and the general type's boundary digest
 // hash.
 func CanonicalBoundedProfile(profile *BoundedAuthorizationProfile, metadata *boundedmeta.Metadata) ([]byte, error) {
-	canonical, err := canonicalBoundedProfile(profile)
+	canonical, err := validatedBoundedProfile(profile, metadata)
 	if err != nil {
-		return nil, err
-	}
-	if canonical == nil {
-		return nil, fmt.Errorf("bounded profile is required")
-	}
-	if err := validateCanonicalMetadata(canonical, metadata); err != nil {
 		return nil, err
 	}
 	var encoded []byte

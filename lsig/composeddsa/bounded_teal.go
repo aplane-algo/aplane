@@ -29,10 +29,9 @@ func (c *ComposedDSA) renderBoundedPrelude(publicKey []byte, params map[string]s
 	if err != nil {
 		return "", err
 	}
-	// The encoding itself isn't needed here, but producing it validates the profile
-	// against its metadata, which is the render-time guard for contradictions such as a
-	// cosigner beside a spending-key rekey.
-	if _, err := CanonicalBoundedProfile(profile, metadata); err != nil {
+	// The render-time guard for contradictions such as a cosigner beside a
+	// spending-key rekey.
+	if _, err := validatedBoundedProfile(profile, metadata); err != nil {
 		return "", err
 	}
 

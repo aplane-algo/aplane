@@ -97,8 +97,8 @@ func newProvider(definition Definition) (*Provider, error) {
 	for _, shape := range definition.Shapes {
 		// shapeSpec passes the rekey value straight to the template spec, so an
 		// unknown value fails here, before anything is compiled.
-		if shape.Rekey != RekeySpendingKey && shape.Rekey != RekeyRefused {
-			return nil, fmt.Errorf("bounded definition %s.%s: shape %s has unknown rekey authority %q", definition.Publisher, definition.Family, shape.Descriptor(), shape.Rekey)
+		if err := boundedmeta.ValidateRekeySetting(boundedmeta.RekeySetting(shape.Rekey)); err != nil {
+			return nil, fmt.Errorf("bounded definition %s.%s: shape %s has unknown rekey authority: %w", definition.Publisher, definition.Family, shape.Descriptor(), err)
 		}
 		composer, err := composeddsa.NewProviderFromTemplateSpec(shapeSpec(definition, shape))
 		if err != nil {
@@ -336,8 +336,8 @@ func shapeFromMetadata(metadata *boundedmeta.Metadata) (Shape, error) {
 		return Shape{}, err
 	}
 	shape := Shape{Spend: spend, Rekey: string(metadata.Rekey), Cosigner: metadata.Cosigner != nil}
-	if shape.Rekey != RekeySpendingKey && shape.Rekey != RekeyRefused {
-		return Shape{}, fmt.Errorf("stored account has rekey setting %q", metadata.Rekey)
+	if err := boundedmeta.ValidateRekeySetting(metadata.Rekey); err != nil {
+		return Shape{}, fmt.Errorf("stored account: %w", err)
 	}
 	switch metadata.Layer3Policy {
 	case composeddsa.Layer3PolicyFixedAllowlist:
