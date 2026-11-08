@@ -302,12 +302,12 @@ func TestInvalidRequestsFailClosed(t *testing.T) {
 			p[ParameterUnlockRound] = "5"
 			p[ParameterSpendEffects] = "axfer"
 		}, "a timelock requires rekey_authority=refused"},
-		{"refused without pay", refusedShape, func(p map[string]string) { p[ParameterSpendEffects] = "axfer,asset_opt_in" }, "refused requires pay"},
-		{"refused opt-in without axfer", refusedShape, func(p map[string]string) { p[ParameterSpendEffects] = "pay,asset_opt_in" }, "with asset_opt_in requires axfer"},
+		{"refused without pay", refusedShape, func(p map[string]string) { p[ParameterSpendEffects] = "axfer,asset_opt_in" }, "rekey_authority=refused: a bounded account that refuses rekeys needs pay"},
+		{"refused opt-in without axfer", refusedShape, func(p map[string]string) { p[ParameterSpendEffects] = "pay,asset_opt_in" }, "rekey_authority=refused: a bounded account that refuses rekeys and opts into assets needs axfer"},
 		{"cosigned without pay", refusedShape, func(p map[string]string) {
 			p[ParameterSpendEffects] = "axfer"
 			p[composeddsa.BoundedCosignerPublicKeyParameter] = testCosignerKey
-		}, "refused requires pay"},
+		}, "rekey_authority=refused: a bounded account that refuses rekeys needs pay"},
 		{"empty list with a timelock", allSpend, func(p map[string]string) {
 			p[ParameterUnlockRound] = "5"
 			p[ParameterRecipients] = ""

@@ -62,9 +62,11 @@ func testBoundedAssetOptIn() types.Transaction {
 func TestClassifyBoundedPath(t *testing.T) {
 	spendingRekey := testBoundedMetadata(t, boundedmeta.RekeySpendingKey)
 	noRekey := testBoundedMetadata(t, boundedmeta.RekeyRefused)
-	assetOptIn := testBoundedMetadata(t, boundedmeta.RekeyRefused)
+	// A refused account must keep pay, so the single-effect profiles have a
+	// spending-key rekey; the rekey setting plays no part in a spend decision.
+	assetOptIn := testBoundedMetadata(t, boundedmeta.RekeySpendingKey)
 	assetOptIn.SpendEffects = []string{boundedmeta.SpendEffectAssetOptIn}
-	assetTransferOnly := testBoundedMetadata(t, boundedmeta.RekeyRefused)
+	assetTransferOnly := testBoundedMetadata(t, boundedmeta.RekeySpendingKey)
 	assetTransferOnly.SpendEffects = []string{boundedmeta.SpendEffectAxfer}
 
 	tests := []struct {

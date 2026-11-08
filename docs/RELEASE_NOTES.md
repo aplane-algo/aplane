@@ -23,7 +23,9 @@ This release is install-fresh only.
   The Timelock preset can never be rekeyed.
 - Templates declare `rekey: refused` or `rekey: spending_key` in their `bounded` block.
   `admin_operations` and `policy_gate` are refused, and a runtime argument can only be
-  required on spend.
+  required on spend. A template with `rekey: refused` must also allow `pay`, and `axfer`
+  if it allows `asset_opt_in`: such an account can neither close nor be rekeyed, so it
+  would otherwise trap what it holds.
 - The general type has 57 shapes. Every program, fingerprint and boundary digest has
   changed.
 - New limits-only accounts: a boundary file (or request) with `recipient_scope: any` makes

@@ -669,7 +669,7 @@ bounded:
 		}
 	}
 	for _, tt := range []struct {
-		name, block, want string
+		name, spend, block, want string
 	}{
 		{name: "no rekey", block: "", want: "bounded.rekey is required: refused or spending_key"},
 		{name: "empty rekey", block: "  rekey: \"\"\n", want: "bounded.rekey is required"},
@@ -686,9 +686,16 @@ bounded:
 			want:  "field admin_operations not found",
 		},
 		{name: "empty administrative operations", block: "  rekey: refused\n  admin_operations: []\n", want: "field admin_operations not found"},
+		// An expert template is held to the contract's rule, not only the general grammar.
+		{name: "refused without pay", spend: "[axfer]", block: "  rekey: refused\n", want: "needs pay in spend_effects"},
+		{name: "refused opt-in without axfer", spend: "[pay, asset_opt_in]", block: "  rekey: refused\n", want: "needs axfer in spend_effects"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			spec, err := ParseTemplateSpec([]byte(template(tt.block)))
+			yaml := template(tt.block)
+			if tt.spend != "" {
+				yaml = strings.Replace(yaml, "spend_effects: [pay]", "spend_effects: "+tt.spend, 1)
+			}
+			spec, err := ParseTemplateSpec([]byte(yaml))
 			if err == nil {
 				err = ValidateTemplateSpec(spec)
 			}

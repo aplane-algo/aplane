@@ -516,7 +516,12 @@ parameters:
 ```
 
 `rekey: refused` gives the program no rekey path. A cosigner requires
-`rekey: refused`.
+`rekey: refused`. A refused profile can neither close nor be rekeyed, so it must
+keep a transfer for what it holds: `spend_effects` includes `pay`, and `axfer`
+whenever it includes `asset_opt_in`. The profile check and durable metadata
+validation both enforce this (`boundedmeta.ValidateRefusedExit`), for expert
+templates and the general type alike, and durable validation also refuses a
+timelock policy beside `rekey: spending_key`.
 
 `fixed_allowlist` is composer-owned. It
 handles every effect in `spend_effects`: `pay` constrains `Receiver`; `axfer`

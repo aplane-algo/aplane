@@ -56,18 +56,24 @@ func ParseFile(data []byte) (*File, error) {
 	if file.UnlockRound != nil && strings.TrimSpace(*file.UnlockRound) == "" {
 		return nil, fmt.Errorf("boundary file: unlock_round is empty")
 	}
-	anyRecipient := false
+	anyRecipient, listed := false, false
 	if file.RecipientScope != nil {
 		switch *file.RecipientScope {
 		case RecipientScopeAny:
 			anyRecipient = true
 		case RecipientScopeListed:
+			listed = true
 		default:
 			return nil, fmt.Errorf("boundary file: recipient_scope must be %s or %s", RecipientScopeListed, RecipientScopeAny)
 		}
 	}
 	if anyRecipient && file.Recipients != nil {
 		return nil, fmt.Errorf("boundary file: recipient_scope %s takes no recipients", RecipientScopeAny)
+	}
+	// An explicit listed scope asks for a list, even beside an unlock round, as
+	// the provider reads it.
+	if listed && len(file.Recipients) == 0 {
+		return nil, fmt.Errorf("boundary file: recipient_scope %s needs recipients", RecipientScopeListed)
 	}
 	if anyRecipient && file.UnlockRound != nil {
 		return nil, fmt.Errorf("boundary file: recipient_scope %s does not combine with unlock_round", RecipientScopeAny)

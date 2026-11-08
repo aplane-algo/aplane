@@ -197,6 +197,17 @@ func (metadata *Metadata) ValidateProfile() error {
 	if metadata.Cosigner != nil && metadata.Rekey != RekeyRefused {
 		return fmt.Errorf("bounded cosigner profiles do not support a %s rekey", metadata.Rekey)
 	}
+	if metadata.Rekey == RekeyRefused {
+		if err := ValidateRefusedExit(metadata.SpendEffects); err != nil {
+			return err
+		}
+	}
+	// No host rule gates a rekey, so a spending-key rekey would leave a timelock
+	// before its unlock round. Generation refuses it earlier with a policy-specific
+	// message; this keeps stored metadata to the same contract.
+	if metadata.Rekey == RekeySpendingKey && isTimelockPolicy(metadata.Layer3Policy) {
+		return fmt.Errorf("%s requires rekey %s: a spending-key rekey would leave the lock before the unlock round", metadata.Layer3Policy, RekeyRefused)
+	}
 	if err := ValidateSignatureLayout(metadata.BaseSignatureArgLayout); err != nil {
 		return err
 	}
@@ -305,6 +316,28 @@ func ValidateRekeySetting(setting RekeySetting) error {
 	default:
 		return fmt.Errorf("unsupported rekey setting %q", setting)
 	}
+}
+
+// ValidateRefusedExit reports why an account that refuses rekeys could trap what it
+// holds. With no rekey path and no close, a transfer is the only way anything
+// leaves: pay for its ALGO, and axfer for any asset it can opt into. It still
+// keeps its minimum balance, since it can never close.
+func ValidateRefusedExit(spendEffects []string) error {
+	switch {
+	case !slices.Contains(spendEffects, SpendEffectPay):
+		return fmt.Errorf("a bounded account that refuses rekeys needs pay in spend_effects, or its ALGO could never leave")
+	case slices.Contains(spendEffects, SpendEffectAssetOptIn) && !slices.Contains(spendEffects, SpendEffectAxfer):
+		return fmt.Errorf("a bounded account that refuses rekeys and opts into assets needs axfer in spend_effects, or an asset could never leave")
+	}
+	return nil
+}
+
+func isTimelockPolicy(policy string) bool {
+	switch policy {
+	case Layer3PolicyTimelock, Layer3PolicyFixedAllowlistTimelock, Layer3PolicyMerkleAllowlistTimelock:
+		return true
+	}
+	return false
 }
 
 // RefusesRekeys reports whether the account has no rekey path at all.

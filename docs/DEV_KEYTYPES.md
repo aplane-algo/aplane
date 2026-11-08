@@ -905,7 +905,10 @@ The rules that most often surprise authors:
   would read them.
 - The cosigner parameters are injected by the framework and cannot be declared.
   `bounded_` and `__aplane_bounded1_` are reserved.
-- `bounded.rekey` is required. A cosigner requires `rekey: refused`.
+- `bounded.rekey` is required. A cosigner requires `rekey: refused`. With
+  `rekey: refused`, `spend_effects` must include `pay`, and `axfer` if it includes
+  `asset_opt_in`: the account can neither close nor be rekeyed, so a transfer is the
+  only way anything leaves it.
 - Author TEAL reads `arg 1` onward, in the static slot order: base signatures, derived
   arguments, runtime arguments, cosigner signature. A runtime argument
   beside a Merkle proof is therefore `arg 2`.

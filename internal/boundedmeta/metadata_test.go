@@ -37,6 +37,13 @@ func TestMetadataValidateRejectsInvalidContracts(t *testing.T) {
 		{name: "Merkle policy without proof", mutate: func(m *Metadata) { m.Layer3Policy = Layer3PolicyMerkleAllowlist }, want: "exactly one"},
 		{name: "missing rekey setting", mutate: func(m *Metadata) { m.Rekey = "" }, want: `unsupported rekey setting ""`},
 		{name: "unknown rekey setting", mutate: func(m *Metadata) { m.Rekey = "admin_key" }, want: `unsupported rekey setting "admin_key"`},
+		// An account that refuses rekeys can't close either, so a transfer is the only way out.
+		{name: "refused without pay", mutate: func(m *Metadata) { m.SpendEffects = []string{"axfer"} }, want: "needs pay in spend_effects"},
+		{name: "refused opt-in without axfer", mutate: func(m *Metadata) { m.SpendEffects = []string{"pay", "asset_opt_in"} }, want: "needs axfer in spend_effects"},
+		// No host rule gates a rekey, so this would leave the lock before the unlock round.
+		{name: "timelock with a spending-key rekey", mutate: func(m *Metadata) {
+			m.Layer3Policy, m.Rekey = Layer3PolicyTimelock, RekeySpendingKey
+		}, want: "timelock requires rekey refused"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

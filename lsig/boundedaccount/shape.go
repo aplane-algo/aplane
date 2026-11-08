@@ -8,10 +8,10 @@ package boundedaccount
 
 import (
 	"fmt"
-	"slices"
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/boundary"
+	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/merkleallowlist"
 	"github.com/aplane-algo/aplane/internal/txeffects"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
@@ -155,15 +155,15 @@ func Shapes() []Shape {
 }
 
 // refusedSpendError reports why a shape that refuses rekeys could trap what it
-// holds. With no rekey path and no close, a transfer is the only way out: pay for
-// its ALGO, and axfer for any asset it can opt into. An account that never closes
-// keeps its minimum balance regardless.
+// holds. The rule is the contract's (boundedmeta.ValidateRefusedExit); the grammar
+// applies it to choose its shapes and to explain a refused request.
 func refusedSpendError(spend []txeffects.SpendEffect) error {
-	switch {
-	case !slices.Contains(spend, txeffects.SpendEffectPay):
-		return fmt.Errorf("%s=%s requires pay in %s", ParameterRekeyAuthority, RekeyRefused, ParameterSpendEffects)
-	case slices.Contains(spend, txeffects.SpendEffectAssetOptIn) && !slices.Contains(spend, txeffects.SpendEffectAxfer):
-		return fmt.Errorf("%s=%s with asset_opt_in requires axfer in %s", ParameterRekeyAuthority, RekeyRefused, ParameterSpendEffects)
+	effects := make([]string, len(spend))
+	for i, effect := range spend {
+		effects[i] = string(effect)
+	}
+	if err := boundedmeta.ValidateRefusedExit(effects); err != nil {
+		return fmt.Errorf("%s=%s: %w", ParameterRekeyAuthority, RekeyRefused, err)
 	}
 	return nil
 }

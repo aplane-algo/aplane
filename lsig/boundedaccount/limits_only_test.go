@@ -110,11 +110,11 @@ func TestLimitsOnlyRequestsFailClosed(t *testing.T) {
 		{"any refusing rekeys without pay", func(p map[string]string) {
 			p[ParameterRekeyAuthority] = RekeyRefused
 			p[ParameterSpendEffects] = "axfer"
-		}, "requires pay"},
+		}, "needs pay in spend_effects"},
 		{"any refusing rekeys, opting in without axfer", func(p map[string]string) {
 			p[ParameterRekeyAuthority] = RekeyRefused
 			p[ParameterSpendEffects] = "pay,asset_opt_in"
-		}, "requires axfer"},
+		}, "needs axfer in spend_effects"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			params := base()
@@ -284,7 +284,8 @@ func TestLimitsOnlyBoundaryFile(t *testing.T) {
 		head + "recipient_scope: any\nencoding: inline\n":                     "encoding needs a recipient list",
 		head + "recipient_scope: anyone\n":                                    "recipient_scope must be",
 		head + "recipient_scope: \"\"\n":                                      "recipient_scope must be",
-		head + "recipient_scope: listed\n":                                    "recipients is required unless",
+		head + "recipient_scope: listed\n":                                    "recipient_scope listed needs recipients",
+		head + "recipient_scope: listed\nunlock_round: 5\n":                   "recipient_scope listed needs recipients",
 	} {
 		if _, err := boundary.ParseFile([]byte(body)); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("ParseFile(%q) error = %v, want %q", body, err, want)

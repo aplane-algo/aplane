@@ -232,14 +232,29 @@ func TestTimelockPolicyAddsOnlyTheTimelockToTheAllowlist(t *testing.T) {
 // A timelock refuses rekeys, and with no rekey path every one of the seven spend
 // subsets compiles. A spending-key rekey is refused for each of them: pay no
 // longer makes it acceptable, because no host rule gates a rekey.
+// A timelock refuses rekeys, and an account that refuses rekeys must keep a
+// transfer for what it holds, so a timelock template is limited to the subsets
+// with pay, and with axfer whenever it can opt in. The others would trap funds.
 func TestTimelockPolicySpendSubsets(t *testing.T) {
 	publicKey := bytes.Repeat([]byte{0x21}, falconfamily.PublicKeySize)
-	subsets := []string{"pay", "axfer", "asset_opt_in", "pay, axfer", "pay, asset_opt_in", "axfer, asset_opt_in", "pay, axfer, asset_opt_in"}
+	subsets := map[string]string{
+		"pay": "", "pay, axfer": "", "pay, axfer, asset_opt_in": "",
+		"axfer":               "needs pay in spend_effects",
+		"asset_opt_in":        "needs pay in spend_effects",
+		"axfer, asset_opt_in": "needs pay in spend_effects",
+		"pay, asset_opt_in":   "needs axfer in spend_effects",
+	}
 	for _, test := range timelockCases {
-		for _, subset := range subsets {
+		for subset, trapped := range subsets {
 			t.Run(test.policy+"/"+subset, func(t *testing.T) {
 				effects := "spend_effects: [" + subset + "]"
 				refused := strings.Replace(test.yaml(timelockRefusedRekeyYAML, ""), "spend_effects: [pay, axfer, asset_opt_in]", effects, 1)
+				if trapped != "" {
+					if err := timelockGenerateError(refused, test.params(nil)); err == nil || !strings.Contains(err.Error(), trapped) {
+						t.Fatalf("refused-rekey error = %v, want %q", err, trapped)
+					}
+					return
+				}
 				if _, err := authorAllowlistProvider(t, refused).GenerateTEAL(publicKey, test.params(nil)); err != nil {
 					t.Fatalf("refused-rekey GenerateTEAL() error = %v", err)
 				}

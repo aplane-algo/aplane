@@ -292,7 +292,7 @@ These addresses are illustrations, not funding destinations.
 | `schema` | Required. Must be `aplane.boundary.v1`. |
 | `spend` | Required. Any of `pay`, `axfer`, `asset_opt_in`. |
 | `recipients` | Required unless `unlock_round` or `recipient_scope: any` is set. 1 to 65,536 distinct nonzero addresses, written literally: aliases and sets are not expanded. |
-| `recipient_scope` | Optional. `listed` (the default) needs a list or an unlock round. `any` makes a limits-only account: no list, and it can't be combined with `recipients`, `encoding`, or `unlock_round`. Leaving out the list never means `any`: you must write it. |
+| `recipient_scope` | Optional. Left out, the file needs a list or an unlock round; written as `listed`, it needs a list. `any` makes a limits-only account: no list, and it can't be combined with `recipients`, `encoding`, or `unlock_round`. Leaving out the list never means `any`: you must write it. |
 | `encoding` | Optional, and needs a list. `auto` (the default) is inline through 10 recipients and Merkle above that. `inline` accepts at most 30. |
 | `unlock_round` | Optional. The first round the account can spend. With no list, the account can pay anyone once unlocked. |
 | `rekey.authority` | Required. `spending_key` (the spending key alone can rekey) or `refused` (the account can never be rekeyed). |

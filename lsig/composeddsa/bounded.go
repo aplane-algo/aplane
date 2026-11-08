@@ -90,6 +90,11 @@ func (profile *BoundedAuthorizationProfile) validate() error {
 	if err := boundedmeta.ValidateRekeySetting(profile.Rekey); err != nil {
 		return err
 	}
+	if profile.Rekey == boundedmeta.RekeyRefused {
+		if err := boundedmeta.ValidateRefusedExit(spendEffects); err != nil {
+			return err
+		}
+	}
 	if err := boundedmeta.ValidateCosignerAuthorizationProfile(profile.Cosigner); err != nil {
 		return err
 	}
