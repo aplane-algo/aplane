@@ -9,14 +9,14 @@ import (
 	"testing"
 )
 
-// TestFormalTraceabilityPinsLiveCosignerResolverAnchors prevents the guarded
+// TestFormalTraceabilityPinsLiveCosignerResolverAnchors prevents the cosigned
 // routing traceability row from silently retaining renamed or removed tests.
 func TestFormalTraceabilityPinsLiveCosignerResolverAnchors(t *testing.T) {
 	doc, err := os.ReadFile("../../docs/FORMAL_TRACEABILITY.md")
 	if err != nil {
 		t.Fatal(err)
 	}
-	source, err := os.ReadFile("../../internal/engine/guarded/discovery_resolver_test.go")
+	source, err := os.ReadFile("../../internal/engine/cosigned/discovery_resolver_test.go")
 	if err != nil {
 		t.Fatal(err)
 	}

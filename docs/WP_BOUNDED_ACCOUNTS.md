@@ -6,7 +6,7 @@
 > architectural explanation, not an implementation specification. Exact
 > behavior is defined in [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md) and
 > [KEYTYPE_CAPABILITIES.md](KEYTYPE_CAPABILITIES.md); the Corridor profile is
-> specified in [ARCH_GUARDED.md](ARCH_GUARDED.md); operational guidance is in
+> specified in [ARCH_COSIGNED.md](ARCH_COSIGNED.md); operational guidance is in
 > [USER_KEYTYPES.md](USER_KEYTYPES.md).
 
 ![Network of bounded accounts](https://raw.githubusercontent.com/aplane-algo/aplane.io/main/img/mesh.png)
@@ -208,7 +208,7 @@ should be distinct and separately managed.
 
 Rekey authority can remove the restrictions entirely. That is why the
 containment claim for Locked Allowlist and Corridor rests on refusing every
-rekey but one to a listed address, not on how well some rekey key is guarded. A
+rekey but one to a listed address, not on how well some rekey key is protected. A
 cosigned account that takes cosigned rekeys makes no such claim: it is only as
 strong as the spending key and the cosigner together, since both keys, or a
 cosigner node whose policy is compromised, can rekey it anywhere. A listed key does become part of the security model:

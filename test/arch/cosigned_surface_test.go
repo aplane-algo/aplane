@@ -14,15 +14,15 @@ import (
 	"testing"
 )
 
-// guardedSanctionedExports is the reviewed public API of the isolated guarded
+// cosignedSanctionedExports is the reviewed public API of the isolated cosigned
 // (cosigner) signing package: construction, the two routing/submission entry
 // points, endpoint discovery and read-only inspection, and the discovery
 // types, observation state names, and error sentinels.
 // Everything else in the package is choreography internals that must stay
 // unexported so callers cannot compose mid-flow steps out of sequence and skip
 // SignAndSubmitGroup's frozen-bytes verification. Adding an entry here must be
-// a conscious API decision, mirrored in ARCH_OVERVIEW's guarded ownership entry.
-var guardedSanctionedExports = map[string]bool{
+// a conscious API decision, mirrored in ARCH_OVERVIEW's cosigned ownership entry.
+var cosignedSanctionedExports = map[string]bool{
 	"RouteStatus":                          true,
 	"ConnectionObservation":                true,
 	"AccountRouteObservation":              true,
@@ -37,7 +37,7 @@ var guardedSanctionedExports = map[string]bool{
 	"ErrCosignerDiscoveryLocked":           true,
 	"ErrCosignerDiscoveryAuth":             true,
 	"ErrCosignerDiscoveryConfig":           true,
-	"Signer.HasGuardedEffectiveSigner":     true,
+	"Signer.HasCosignedEffectiveSigner":    true,
 	"Signer.SignAndSubmitGroup":            true,
 	"Signer.DiscoverCosignerComponentKeys": true,
 
@@ -64,16 +64,16 @@ var guardedSanctionedExports = map[string]bool{
 	"AccountRouteInvalidMetadata":    true,
 }
 
-// TestGuardedExportSurfaceStaysSanctioned pins the guarded package's exported
+// TestCosignedExportSurfaceStaysSanctioned pins the cosigned package's exported
 // identifier set in both directions: an unlisted export fails (a choreography
 // internal leaked back out), and a listed-but-missing export fails (the list
 // rotted). This makes ARCH_OVERVIEW's "exported surface is only the sanctioned
 // entry points" a checked property.
-func TestGuardedExportSurfaceStaysSanctioned(t *testing.T) {
-	const dir = "../../internal/engine/guarded"
+func TestCosignedExportSurfaceStaysSanctioned(t *testing.T) {
+	const dir = "../../internal/engine/cosigned"
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		t.Fatalf("read internal/engine/guarded: %v", err)
+		t.Fatalf("read internal/engine/cosigned: %v", err)
 	}
 	fset := token.NewFileSet()
 	var files []*ast.File
@@ -89,7 +89,7 @@ func TestGuardedExportSurfaceStaysSanctioned(t *testing.T) {
 		files = append(files, file)
 	}
 	if len(files) == 0 {
-		t.Fatal("no production Go files found in internal/engine/guarded")
+		t.Fatal("no production Go files found in internal/engine/cosigned")
 	}
 
 	found := map[string]bool{}
@@ -130,11 +130,11 @@ func TestGuardedExportSurfaceStaysSanctioned(t *testing.T) {
 
 	var unsanctioned, missing []string
 	for name := range found {
-		if !guardedSanctionedExports[name] {
+		if !cosignedSanctionedExports[name] {
 			unsanctioned = append(unsanctioned, name)
 		}
 	}
-	for name := range guardedSanctionedExports {
+	for name := range cosignedSanctionedExports {
 		if !found[name] {
 			missing = append(missing, name)
 		}
@@ -142,10 +142,10 @@ func TestGuardedExportSurfaceStaysSanctioned(t *testing.T) {
 	sort.Strings(unsanctioned)
 	sort.Strings(missing)
 	for _, name := range unsanctioned {
-		t.Errorf("internal/engine/guarded exports %s, which is not on the sanctioned API list; keep choreography internals unexported, or add it here and to ARCH_OVERVIEW deliberately", name)
+		t.Errorf("internal/engine/cosigned exports %s, which is not on the sanctioned API list; keep choreography internals unexported, or add it here and to ARCH_OVERVIEW deliberately", name)
 	}
 	for _, name := range missing {
-		t.Errorf("sanctioned export %s no longer exists in internal/engine/guarded; remove it from guardedSanctionedExports and ARCH_OVERVIEW", name)
+		t.Errorf("sanctioned export %s no longer exists in internal/engine/cosigned; remove it from cosignedSanctionedExports and ARCH_OVERVIEW", name)
 	}
 }
 

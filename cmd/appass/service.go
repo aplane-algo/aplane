@@ -19,7 +19,7 @@ const defaultServiceFile = "/etc/systemd/system/apsigner.service"
 
 // serviceFilePath is written by the async status load and read by action
 // commands; both run in bubbletea command goroutines, so access goes through
-// the mutex-guarded accessors below.
+// the mutex-cosigned accessors below.
 var serviceFileMu sync.Mutex
 var serviceFilePath = defaultServiceFile
 

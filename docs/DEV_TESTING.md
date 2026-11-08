@@ -24,7 +24,7 @@ The project uses a layered testing approach:
 
 1. **Unit Tests**: Fast, isolated tests for individual components (Go test framework)
 2. **API Contract Tests**: Golden fixture compatibility tests for signer API wire surfaces
-3. **Architecture Tests**: Layering, guarded-surface, signing-flow,
+3. **Architecture Tests**: Layering, cosigned-surface, signing-flow,
    bounded-vocabulary, key-type inventory, managed-credential, and
    witness-boundary guards under `test/arch`
 4. **Integration Tests**: End-to-end tests against an explicitly selected Algorand network profile: public TestNet or a running AlgoKit LocalNet (Go test framework)
@@ -842,13 +842,13 @@ containers on one Docker network. It verifies local install layouts, shared
 LocalNet reachability, SSH client enrollment at signer and cosigner endpoints,
 local IPC `apadmin` public-reference export and import, the `apadmin policy`
 verbs on the cosigner node (`status`, `check`, `diff`, `apply` from a file and
-from stdin, `export --key`, `remove`), guarded signing, Corridor allowlist
-and cosigner-loss behavior, and guarded preparation/signing through a local
+from stdin, `export --key`, `remove`), cosigned signing, Corridor allowlist
+and cosigner-loss behavior, and cosigned preparation/signing through a local
 Python SDK checkout.
 
 `make docker-local-release-test` runs the same topology and product assertions,
 but installs APlane from GitHub release assets, Python from PyPI, and TypeScript
-from npm. It also exercises guarded signing through both published SDKs.
+from npm. It also exercises cosigned signing through both published SDKs.
 
 `make docker-systemd-test` uses `scripts/docker-systemd-smoke.sh`. It verifies `/usr/local/bin` and `/var/lib/apsigner` layout, systemd service status, memory-locking unit settings, `appass --check`, client enrollment approval, the active-service install gate, stopped in-place systemd upgrade state preservation, and uninstall signer-state preservation.
 

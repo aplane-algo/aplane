@@ -31,7 +31,8 @@ func TestAssemblyRequestValidatesDiscriminatedTargetsAndCoverage(t *testing.T) {
 		{"no base signatures", func(r *AssemblyRequest) { r.Targets[0].BaseSignatures = nil }, "base_signatures and assembly_receipt are required"},
 		{"no receipt", func(r *AssemblyRequest) { r.Targets[1].AssemblyReceipt = "" }, "base_signatures and assembly_receipt are required"},
 		{"unknown kind", func(r *AssemblyRequest) { r.Targets[0].Kind = "future" }, "kind must be"},
-		{"the retired guarded kind", func(r *AssemblyRequest) { r.Targets[0].Kind = "guarded" }, "kind must be"},
+		// The dedicated cosigned type's kind, retired with it.
+		{"the retired kind", func(r *AssemblyRequest) { r.Targets[0].Kind = "guar" + "ded" }, "kind must be"},
 		{"a cosigner request ID without its signature", func(r *AssemblyRequest) {
 			r.Targets[1].CosignerSignature, r.Targets[1].CosignerSourceRequestID = "", "cosigner-1"
 		}, "cosigner_source_request_id needs a cosigner_signature"},

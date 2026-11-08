@@ -193,7 +193,7 @@ func (s *Session) HandleGetCosignerReference(msg *protocol.GetCosignerReferenceM
 }
 
 func (s *Session) HandleImportCosignerReference(msg *protocol.ImportCosignerReferenceMessage) {
-	// Reference aliases select the witness public key embedded during guarded
+	// Reference aliases select the witness public key embedded during cosigned
 	// key generation, so mutation shares key generation's unlocked interlock.
 	if s.requireUnlockedRuntime(msg.ID) == nil {
 		return

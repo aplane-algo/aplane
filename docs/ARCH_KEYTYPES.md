@@ -331,7 +331,7 @@ explicitly; it cannot inherit both contracts unchanged.
 
 Use **rotating-bounded** for rotation plus a bounded spending envelope and
 **rotating-cosigned** for rotation plus an additional spending authority. In
-APlane "guarded" usually means cosigner participation, so "rotating-guarded"
+APlane "cosigned" usually means cosigner participation, so "rotating-cosigned"
 does not name a distinct policy dimension without further definition.
 
 Matching words across layers (capability, authorization contract, key type,
@@ -494,7 +494,7 @@ Terminology:
   still named by its own `key_type` and `family` segment (e.g.
   `family: falcon1024-allowlist`).
 - `base_key_type` is not a universal owner or routing key. Account semantics,
-  creation parameters, TEAL bytecode, metadata, and guarded assembly remain
+  creation parameters, TEAL bytecode, metadata, and cosigned assembly remain
   owned by the full `key_type` unless a specific contract says otherwise.
   The general bounded type is the important example: its signing primitive is
   Falcon-1024, but its account semantics, overlays and assembly are the bounded
@@ -521,7 +521,7 @@ collapsed into one flat key-type hierarchy.
 | **Generic LogicSig** | TEAL predicates alone authorize the account; there is no DSA private key. | Encrypted signer `.key` containing final bytecode, parameters, derivation metadata, and signing metadata but no private signing material. |
 
 An account authorization type identifies the account-level mechanism. It does
-not by itself say whether the account is guarded or which transaction effects a
+not by itself say whether the account is cosigned or which transaction effects a
 LogicSig admits.
 
 ### DSA LogicSig policy forms
@@ -545,7 +545,7 @@ DSA LogicSig policy categories are:
 
 Schema-v1 custom policy remains a fully supported expert mode. "Expert" is a
 documentation description, not a feature gate, warning requirement, or reduced
-execution mode. Generic LogicSig templates are a separate category. Guarded
+execution mode. Generic LogicSig templates are a separate category. Cosigned
 signing is an orthogonal authority axis and may be combined with a DSA account
 model without becoming a policy category itself.
 
@@ -558,8 +558,8 @@ They participate in a specific account or operation contract:
 |---|---|---|
 | **Witness key** | Stored as a cosigner-managed `.cos` credential and used through `/sign/component`; its signature is assembled into a cosigned account's LogicSig, on a plain or bounded host. | Yes. `aplane.witness-falcon1024.v1`, durable category `witness`; never accepted as a spending account by ordinary `/sign`. |
 
-The current authority overlays are therefore **unguarded** and **cosigner
-guarded**.
+The current authority overlays are therefore **uncosigned** and **cosigner
+cosigned**.
 
 A witness key is a cosigner key. The program that embeds its public key names the
 account it serves, and the networked signer that holds it may produce only
@@ -1451,7 +1451,7 @@ authorization: generation repeats every check.
 | Step | Work | Owner |
 |---|---|---|
 | 1 | Check the key type is allowed for the node role | `keyclass.ValidateKeyTypeAllowedForNodeRole` |
-| 2 | Resolve rotating network names, and turn a `cosigner` reference into `cosigner_public_key` for guarded and cosigner-enabled bounded types | `lsigprovider.CosignerComponentKeyType`, `cosignerrefs` |
+| 2 | Resolve rotating network names, and turn a `cosigner` reference into `cosigner_public_key` for cosigned and cosigner-enabled bounded types | `lsigprovider.CosignerComponentKeyType`, `cosignerrefs` |
 | 3 | Select the instance the parameters ask for and canonicalize them, including sorting `address[]` values | `lsigprovider.ResolveInstance` |
 | 4 | Reject a cosigner key that collides with an existing authority | `validateVisibleCosignerAuthorityCollisions` |
 | 5 | Take the mutation lock and check the key type is enabled | `keytypestate.CanGenerate` |
@@ -1669,7 +1669,7 @@ policy says only that it is custom, because its conditions are the author's code
 - `docs/ARCH_POLICY.md` — signer and cosigner policy domains that gate signature
   release.
 - `docs/ARCH_NETWORKS.md` — network context and genesis-hash resolution.
-- `docs/ARCH_GUARDED.md` — the guarded/cosigner account choreography.
+- `docs/ARCH_COSIGNED.md` — the cosigned/cosigner account choreography.
 - `docs/DEV_KEYTYPES.md` — how to add a key type (where these axes become
   concrete decisions).
 - [ARCH_CRYPTO.md](ARCH_CRYPTO.md) - Full cryptographic subsystem documentation

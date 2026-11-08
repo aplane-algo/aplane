@@ -31,7 +31,7 @@ type GeneratorSpec struct {
 
 // SignerRegistration is the signer-side half of a family's capabilities.
 type SignerRegistration struct {
-	// RegisterClient is the family's once-guarded client registration; it
+	// RegisterClient is the family's once-cosigned client registration; it
 	// runs first so signer binaries always carry the client-safe surface.
 	RegisterClient func()
 	// SigningProvider is the family's transaction-signing provider; nil for

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-package guarded
+package cosigned
 
 import (
 	"bytes"
@@ -36,19 +36,19 @@ import (
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
-func TestGuardedTargetsNormalizeCosignerPublicKey(t *testing.T) {
+func TestCosignedTargetsNormalizeCosignerPublicKey(t *testing.T) {
 	sender := testAddress(1).String()
 	cosignerHex := testCosignerPublicKeyHex(0xd6)
-	s, _ := newGuardedTestSigner(t, sender, 1500, "0X"+strings.ToUpper(cosignerHex))
-	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "guarded")
+	s, _ := newCosignedTestSigner(t, sender, 1500, "0X"+strings.ToUpper(cosignerHex))
+	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "cosigned")
 
-	if !s.HasGuardedEffectiveSigner([]types.Transaction{txn}) {
-		t.Fatal("hasGuardedEffectiveSigner() = false, want true")
+	if !s.HasCosignedEffectiveSigner([]types.Transaction{txn}) {
+		t.Fatal("hasCosignedEffectiveSigner() = false, want true")
 	}
 
-	targets, err := s.guardedTargets([]types.Transaction{txn})
+	targets, err := s.cosignedTargets([]types.Transaction{txn})
 	if err != nil {
-		t.Fatalf("guardedTargets() error = %v", err)
+		t.Fatalf("cosignedTargets() error = %v", err)
 	}
 	if len(targets) != 1 {
 		t.Fatalf("len(targets) = %d, want 1", len(targets))
@@ -64,46 +64,46 @@ func TestGuardedTargetsNormalizeCosignerPublicKey(t *testing.T) {
 	}
 }
 
-func TestGuardedTargetsUseEffectiveSigner(t *testing.T) {
+func TestCosignedTargetsUseEffectiveSigner(t *testing.T) {
 	sender := testAddress(1).String()
-	guarded := testAddress(3).String()
+	cosigned := testAddress(3).String()
 	cosignerHex := testCosignerPublicKeyHex(0xd6)
-	s, _ := newGuardedTestSigner(t, guarded, 1500, cosignerHex)
-	s.authCache.AuthAddresses = map[string]string{sender: guarded}
-	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "guarded-authorizer")
+	s, _ := newCosignedTestSigner(t, cosigned, 1500, cosignerHex)
+	s.authCache.AuthAddresses = map[string]string{sender: cosigned}
+	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "cosigned-authorizer")
 
-	if !s.HasGuardedEffectiveSigner([]types.Transaction{txn}) {
-		t.Fatal("hasGuardedEffectiveSigner() = false, want true")
+	if !s.HasCosignedEffectiveSigner([]types.Transaction{txn}) {
+		t.Fatal("hasCosignedEffectiveSigner() = false, want true")
 	}
 
-	targets, err := s.guardedTargets([]types.Transaction{txn})
+	targets, err := s.cosignedTargets([]types.Transaction{txn})
 	if err != nil {
-		t.Fatalf("guardedTargets() error = %v", err)
+		t.Fatalf("cosignedTargets() error = %v", err)
 	}
 	if len(targets) != 1 {
 		t.Fatalf("len(targets) = %d, want 1", len(targets))
 	}
-	if targets[0].Index != 0 || targets[0].Sender != sender || targets[0].Account != guarded {
-		t.Fatalf("target = %+v, want index 0 sender %s account %s", targets[0], sender, guarded)
+	if targets[0].Index != 0 || targets[0].Sender != sender || targets[0].Account != cosigned {
+		t.Fatalf("target = %+v, want index 0 sender %s account %s", targets[0], sender, cosigned)
 	}
 	if targets[0].CosignerPublicKey != cosignerHex {
 		t.Fatalf("cosigner public key = %q, want %q", targets[0].CosignerPublicKey, cosignerHex)
 	}
 }
 
-func TestGuardedTargetsNormalizeFalconCosignerPublicKey(t *testing.T) {
+func TestCosignedTargetsNormalizeFalconCosignerPublicKey(t *testing.T) {
 	sender := testAddress(1).String()
 	cosignerHex := testFalconCosignerPublicKeyHex(0xd6)
-	s, _ := newGuardedTestSigner(t, sender, 1500, "0X"+strings.ToUpper(cosignerHex))
-	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "guarded")
+	s, _ := newCosignedTestSigner(t, sender, 1500, "0X"+strings.ToUpper(cosignerHex))
+	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "cosigned")
 
-	if !s.HasGuardedEffectiveSigner([]types.Transaction{txn}) {
-		t.Fatal("hasGuardedEffectiveSigner() = false, want true")
+	if !s.HasCosignedEffectiveSigner([]types.Transaction{txn}) {
+		t.Fatal("hasCosignedEffectiveSigner() = false, want true")
 	}
 
-	targets, err := s.guardedTargets([]types.Transaction{txn})
+	targets, err := s.cosignedTargets([]types.Transaction{txn})
 	if err != nil {
-		t.Fatalf("guardedTargets() error = %v", err)
+		t.Fatalf("cosignedTargets() error = %v", err)
 	}
 	if len(targets) != 1 {
 		t.Fatalf("len(targets) = %d, want 1", len(targets))
@@ -116,48 +116,48 @@ func TestGuardedTargetsNormalizeFalconCosignerPublicKey(t *testing.T) {
 	}
 }
 
-func TestGuardedTargetsRequireCosignerMetadata(t *testing.T) {
+func TestCosignedTargetsRequireCosignerMetadata(t *testing.T) {
 	sender := testAddress(1).String()
-	s, _ := newGuardedTestSigner(t, sender, 1500, "")
-	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "guarded")
+	s, _ := newCosignedTestSigner(t, sender, 1500, "")
+	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "cosigned")
 
-	_, err := s.guardedTargets([]types.Transaction{txn})
+	_, err := s.cosignedTargets([]types.Transaction{txn})
 	if err == nil || !strings.Contains(err.Error(), "missing cosigner_public_key") {
-		t.Fatalf("guardedTargets() error = %v, want missing cosigner_public_key", err)
+		t.Fatalf("cosignedTargets() error = %v, want missing cosigner_public_key", err)
 	}
 }
 
-func TestGuardedTargetsRejectUnsupportedSigningFlow(t *testing.T) {
+func TestCosignedTargetsRejectUnsupportedSigningFlow(t *testing.T) {
 	sender := testAddress(1).String()
 	cosignerHex := testCosignerPublicKeyHex(0xd6)
-	s, sc := newGuardedTestSigner(t, sender, 1500, cosignerHex)
+	s, sc := newCosignedTestSigner(t, sender, 1500, cosignerHex)
 	sc.SetSigningFlowForAddress(sender, "cosigner2")
-	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "guarded")
+	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "cosigned")
 
-	if !s.HasGuardedEffectiveSigner([]types.Transaction{txn}) {
-		t.Fatal("hasGuardedEffectiveSigner() = false, want true for unknown flow (must not fall through to /sign)")
+	if !s.HasCosignedEffectiveSigner([]types.Transaction{txn}) {
+		t.Fatal("hasCosignedEffectiveSigner() = false, want true for unknown flow (must not fall through to /sign)")
 	}
-	_, err := s.guardedTargets([]types.Transaction{txn})
+	_, err := s.cosignedTargets([]types.Transaction{txn})
 	if err == nil || !strings.Contains(err.Error(), `signing flow "cosigner2"`) {
-		t.Fatalf("guardedTargets() error = %v, want unsupported signing flow rejection", err)
+		t.Fatalf("cosignedTargets() error = %v, want unsupported signing flow rejection", err)
 	}
 }
 
-func TestGuardedTargetsDispatchBoundedOutsideCosignerFlow(t *testing.T) {
+func TestCosignedTargetsDispatchBoundedOutsideCosignerFlow(t *testing.T) {
 	sender := testAddress(1).String()
-	s, sc := newGuardedTestSigner(t, sender, 1500, testCosignerPublicKeyHex(0xd6))
+	s, sc := newCosignedTestSigner(t, sender, 1500, testCosignerPublicKeyHex(0xd6))
 	sc.SetSigningFlowForAddress(sender, signerapi.SigningFlowBounded1)
 	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "bounded")
 
-	if s.HasGuardedEffectiveSigner([]types.Transaction{txn}) {
-		t.Fatal("HasGuardedEffectiveSigner() = true for bounded1")
+	if s.HasCosignedEffectiveSigner([]types.Transaction{txn}) {
+		t.Fatal("HasCosignedEffectiveSigner() = true for bounded1")
 	}
-	targets, err := s.guardedTargets([]types.Transaction{txn})
+	targets, err := s.cosignedTargets([]types.Transaction{txn})
 	if err != nil {
-		t.Fatalf("guardedTargets() error = %v", err)
+		t.Fatalf("cosignedTargets() error = %v", err)
 	}
 	if len(targets) != 0 {
-		t.Fatalf("guardedTargets() = %#v, want no cosigner targets", targets)
+		t.Fatalf("cosignedTargets() = %#v, want no cosigner targets", targets)
 	}
 }
 
@@ -180,14 +180,14 @@ func TestBoundedCosignerTargetsAndComponentRequestShape(t *testing.T) {
 		testPaymentTxn(t, testAddress(1), testAddress(3), "bounded"),
 		testPaymentTxn(t, testAddress(2), testAddress(3), "plain"),
 	}
-	targets, err := s.guardedTargets(txns)
+	targets, err := s.cosignedTargets(txns)
 	if err != nil || len(targets) != 1 || targets[0].Route != flowRouteBoundedCosigner {
-		t.Fatalf("guardedTargets() = %#v, %v", targets, err)
+		t.Fatalf("cosignedTargets() = %#v, %v", targets, err)
 	}
 	if targets[0].BoundedMaxFee == nil || *targets[0].BoundedMaxFee != 10_000 {
 		t.Fatalf("bounded max fee = %v, want 10000", targets[0].BoundedMaxFee)
 	}
-	requests, err := s.buildBoundedComponentRequests(txns, map[int]guardedTarget{0: targets[0]}, clientsign.SubmitOptions{
+	requests, err := s.buildBoundedComponentRequests(txns, map[int]cosignedTarget{0: targets[0]}, clientsign.SubmitOptions{
 		LsigArgsMap: []map[string][]byte{{"preimage": {0xaa}}, nil},
 	})
 	if err != nil {
@@ -199,8 +199,8 @@ func TestBoundedCosignerTargetsAndComponentRequestShape(t *testing.T) {
 	if mode, _ := requests[1].Mode(); mode != signerapi.RequestModeForeign || requests[1].LsigResources == nil || requests[1].LsigResources.ProgramBytes != 1700 {
 		t.Fatalf("plain context request = %#v", requests[1])
 	}
-	if sc.SigningFlowForAddress(bounded) != signerapi.SigningFlowCosigned1 || !s.HasGuardedEffectiveSigner(txns) {
-		t.Fatal("bounded-cosigner flow did not enter guarded orchestration")
+	if sc.SigningFlowForAddress(bounded) != signerapi.SigningFlowCosigned1 || !s.HasCosignedEffectiveSigner(txns) {
+		t.Fatal("bounded-cosigner flow did not enter cosigned orchestration")
 	}
 }
 
@@ -222,26 +222,26 @@ func TestBuildBoundedComponentRequestsRejectsKnownLogicSigWithoutResources(t *te
 		testPaymentTxn(t, testAddress(1), testAddress(3), "bounded"),
 		testPaymentTxn(t, testAddress(2), testAddress(3), "foreign"),
 	}
-	targets, err := s.guardedTargets(txns)
+	targets, err := s.cosignedTargets(txns)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = s.buildBoundedComponentRequests(txns, map[int]guardedTarget{0: targets[0]}, clientsign.SubmitOptions{})
+	_, err = s.buildBoundedComponentRequests(txns, map[int]cosignedTarget{0: targets[0]}, clientsign.SubmitOptions{})
 	if err == nil || !strings.Contains(err.Error(), "LogicSig resource profile") {
 		t.Fatalf("buildBoundedComponentRequests() error = %v, want missing LogicSig resource profile", err)
 	}
 }
 
-func TestGuardedTargetsRequireCosignerComponentKeyTypeMetadata(t *testing.T) {
+func TestCosignedTargetsRequireCosignerComponentKeyTypeMetadata(t *testing.T) {
 	sender := testAddress(1).String()
 	cosignerHex := testCosignerPublicKeyHex(0xd6)
-	s, sc := newGuardedTestSigner(t, sender, 1500, cosignerHex)
+	s, sc := newCosignedTestSigner(t, sender, 1500, cosignerHex)
 	sc.SetCosignerComponentKeyTypeForAddress(sender, "")
-	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "guarded")
+	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "cosigned")
 
-	_, err := s.guardedTargets([]types.Transaction{txn})
+	_, err := s.cosignedTargets([]types.Transaction{txn})
 	if err == nil || !strings.Contains(err.Error(), "missing cosigner_component_key_type") {
-		t.Fatalf("guardedTargets() error = %v, want missing cosigner_component_key_type", err)
+		t.Fatalf("cosignedTargets() error = %v, want missing cosigner_component_key_type", err)
 	}
 }
 
@@ -324,17 +324,17 @@ func TestCollectComponentSignaturesRejectsMalformedResponses(t *testing.T) {
 func TestRequestCosignerComponentSignaturesUsesConfiguredSSHEndpoint(t *testing.T) {
 	publicKey, privateKey := testFalconCosignerKeypair(t, 0x61)
 	cosignerHex := hex.EncodeToString(publicKey)
-	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "guarded")
+	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "cosigned")
 	groupBytesHex := encodeGroupHex([]types.Transaction{txn})
 	node := newCosignerEndpointNode(t, cosignerHex, privateKey, nil)
-	s, _ := newGuardedTestSigner(t, txn.Sender.String(), 1500, cosignerHex)
+	s, _ := newCosignedTestSigner(t, txn.Sender.String(), 1500, cosignerHex)
 	s.endpointRegistry = cosignerEndpointRegistry("cosigner-ssh", cosignerNodeEndpoint(node))
 
 	signatures, requestIDs, err := s.requestCosignerComponentSignatures(
 		context.Background(),
 		groupBytesHex,
 		len(groupBytesHex),
-		[]guardedTarget{guardedTargetForTest(txn.Sender.String(), cosignerHex)},
+		[]cosignedTarget{cosignedTargetForTest(txn.Sender.String(), cosignerHex)},
 		nil,
 	)
 	if err != nil {
@@ -379,7 +379,7 @@ func TestRequestCosignerComponentSignaturesExplicitMismatchDoesNotFallback(t *te
 	wrongPublicKey, wrongPrivateKey := testFalconCosignerKeypair(t, 0x63)
 	cosignerHex := hex.EncodeToString(publicKey)
 	wrongHex := hex.EncodeToString(wrongPublicKey)
-	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "guarded")
+	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "cosigned")
 	groupBytesHex := encodeGroupHex([]types.Transaction{txn})
 
 	selfServer := newCosignerEndpointTestServer(t, cosignerHex, privateKey, nil)
@@ -387,7 +387,7 @@ func TestRequestCosignerComponentSignaturesExplicitMismatchDoesNotFallback(t *te
 	var wrongSignCalls atomic.Int32
 	wrongNode := newCosignerEndpointNode(t, wrongHex, wrongPrivateKey, &wrongSignCalls)
 
-	s, _ := newGuardedTestSigner(t, txn.Sender.String(), 1500, cosignerHex)
+	s, _ := newCosignedTestSigner(t, txn.Sender.String(), 1500, cosignerHex)
 	s.conn.SignerClient = signerclient.NewSignerClient(selfServer.URL)
 	s.endpointRegistry = cosignerEndpointRegistry("cosigner-wrong", cosignerNodeEndpoint(wrongNode))
 
@@ -395,7 +395,7 @@ func TestRequestCosignerComponentSignaturesExplicitMismatchDoesNotFallback(t *te
 		context.Background(),
 		groupBytesHex,
 		len(groupBytesHex),
-		[]guardedTarget{guardedTargetForTest(txn.Sender.String(), cosignerHex)},
+		[]cosignedTarget{cosignedTargetForTest(txn.Sender.String(), cosignerHex)},
 		nil,
 	)
 	if err == nil {
@@ -420,7 +420,7 @@ func TestRequestCosignerComponentSignaturesExplicitMismatchDoesNotFallback(t *te
 func TestRequestCosignerComponentSignaturesReportsLockedEndpoint(t *testing.T) {
 	publicKey, _ := testFalconCosignerKeypair(t, 0x64)
 	cosignerHex := hex.EncodeToString(publicKey)
-	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "guarded")
+	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "cosigned")
 	groupBytesHex := encodeGroupHex([]types.Transaction{txn})
 
 	mux := http.NewServeMux()
@@ -429,14 +429,14 @@ func TestRequestCosignerComponentSignaturesReportsLockedEndpoint(t *testing.T) {
 	})
 	node := sshtest.Serve(t, mux)
 
-	s, _ := newGuardedTestSigner(t, txn.Sender.String(), 1500, cosignerHex)
+	s, _ := newCosignedTestSigner(t, txn.Sender.String(), 1500, cosignerHex)
 	s.endpointRegistry = cosignerEndpointRegistry("cosigner-locked", cosignerNodeEndpoint(node))
 
 	_, _, err := s.requestCosignerComponentSignatures(
 		context.Background(),
 		groupBytesHex,
 		len(groupBytesHex),
-		[]guardedTarget{guardedTargetForTest(txn.Sender.String(), cosignerHex)},
+		[]cosignedTarget{cosignedTargetForTest(txn.Sender.String(), cosignerHex)},
 		nil,
 	)
 	if err == nil {
@@ -456,17 +456,17 @@ func TestRequestCosignerComponentSignaturesReportsLockedEndpoint(t *testing.T) {
 func TestRequestCosignerComponentSignaturesUsesExplicitLoopbackEndpoint(t *testing.T) {
 	publicKey, privateKey := testFalconCosignerKeypair(t, 0x65)
 	cosignerHex := hex.EncodeToString(publicKey)
-	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "guarded")
+	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "cosigned")
 	groupBytesHex := encodeGroupHex([]types.Transaction{txn})
 	node := newCosignerEndpointNode(t, cosignerHex, privateKey, nil)
-	s, _ := newGuardedTestSigner(t, txn.Sender.String(), 1500, cosignerHex)
+	s, _ := newCosignedTestSigner(t, txn.Sender.String(), 1500, cosignerHex)
 	s.endpointRegistry = cosignerEndpointRegistry("local-cosigner", cosignerNodeEndpoint(node))
 
 	signatures, _, err := s.requestCosignerComponentSignatures(
 		context.Background(),
 		groupBytesHex,
 		len(groupBytesHex),
-		[]guardedTarget{guardedTargetForTest(txn.Sender.String(), cosignerHex)},
+		[]cosignedTarget{cosignedTargetForTest(txn.Sender.String(), cosignerHex)},
 		nil,
 	)
 	if err != nil {
@@ -491,13 +491,13 @@ func cosignerEndpointRegistry(alias string, endpoint config.ClientEndpointConfig
 	}
 }
 
-func TestDecodeGuardedSignedGroupReturnsSignedObjects(t *testing.T) {
-	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "guarded")
+func TestDecodeCosignedSignedGroupReturnsSignedObjects(t *testing.T) {
+	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "cosigned")
 	signedHex := []string{hex.EncodeToString(msgpack.Encode(types.SignedTxn{Txn: txn}))}
 
-	signedBytes, signedObjects, txns, err := decodeGuardedSignedGroup(signedHex)
+	signedBytes, signedObjects, txns, err := decodeCosignedSignedGroup(signedHex)
 	if err != nil {
-		t.Fatalf("decodeGuardedSignedGroup() error = %v", err)
+		t.Fatalf("decodeCosignedSignedGroup() error = %v", err)
 	}
 	if len(signedBytes) != 1 || len(signedObjects) != 1 || len(txns) != 1 {
 		t.Fatalf("decoded lengths = %d/%d/%d, want 1/1/1", len(signedBytes), len(signedObjects), len(txns))
@@ -567,9 +567,9 @@ func newTestSigner(t *testing.T, build func(c *cache.SignerCache)) (*Signer, *ca
 	return s, &signerCache
 }
 
-// newGuardedTestSigner holds one cosigned plain host, with the signing-flow
+// newCosignedTestSigner holds one cosigned plain host, with the signing-flow
 // metadata the daemon serves for it.
-func newGuardedTestSigner(t *testing.T, sender string, programBytes int, cosignerPublicKey string) (*Signer, *cache.SignerCache) {
+func newCosignedTestSigner(t *testing.T, sender string, programBytes int, cosignerPublicKey string) (*Signer, *cache.SignerCache) {
 	t.Helper()
 	return newTestSigner(t, func(signerCache *cache.SignerCache) {
 		signerCache.AddAddress(sender, "aplane.falcon1024.v1")
@@ -599,7 +599,7 @@ func testAddress(index int) types.Address {
 	return addr
 }
 
-// testPaymentTxn builds a minimal payment transaction for guarded planning
+// testPaymentTxn builds a minimal payment transaction for cosigned planning
 // and component-signing tests.
 func testPaymentTxn(t *testing.T, from, to types.Address, note string) types.Transaction {
 	t.Helper()
@@ -630,8 +630,8 @@ func testFalconCosignerPublicKeyHex(prefix byte) string {
 	return hex.EncodeToString(publicKey)
 }
 
-func guardedTargetForTest(account, cosignerHex string) guardedTarget {
-	return guardedTarget{
+func cosignedTargetForTest(account, cosignerHex string) cosignedTarget {
+	return cosignedTarget{
 		Index:                    0,
 		Sender:                   account,
 		Account:                  account,
@@ -745,8 +745,8 @@ func testFalconCosignerKeypair(t *testing.T, fill byte) ([]byte, []byte) {
 }
 
 func TestVerifyAssembledAgainstFrozen(t *testing.T) {
-	txnA := testPaymentTxn(t, testAddress(1), testAddress(2), "guarded")
-	txnB := testPaymentTxn(t, testAddress(3), testAddress(4), "guarded")
+	txnA := testPaymentTxn(t, testAddress(1), testAddress(2), "cosigned")
+	txnB := testPaymentTxn(t, testAddress(3), testAddress(4), "cosigned")
 	frozen := encodeGroupHex([]types.Transaction{txnA, txnB})
 
 	if err := verifyAssembledAgainstFrozen(frozen, []types.Transaction{txnA, txnB}); err != nil {
@@ -812,11 +812,11 @@ func TestValidatePlannedGroup(t *testing.T) {
 	t.Run("non-dummy appended transaction", func(t *testing.T) {
 		badPlanned := append([]types.Transaction(nil), planned...)
 		badPlanned[1].Amount = 1
-		if err := validatePlannedGroup([]types.Transaction{original}, badPlanned, mutations); err == nil || !strings.Contains(err.Error(), "canonical guarded budget dummy") {
+		if err := validatePlannedGroup([]types.Transaction{original}, badPlanned, mutations); err == nil || !strings.Contains(err.Error(), "canonical cosigned budget dummy") {
 			t.Fatalf("error = %v, want dummy-shape rejection", err)
 		}
-		if _, err := signGuardedDummies(badPlanned[1:]); err == nil || !strings.Contains(err.Error(), "canonical guarded budget dummy") {
-			t.Fatalf("signGuardedDummies() error = %v, want dummy-shape rejection", err)
+		if _, err := signCosignedDummies(badPlanned[1:]); err == nil || !strings.Contains(err.Error(), "canonical cosigned budget dummy") {
+			t.Fatalf("signCosignedDummies() error = %v, want dummy-shape rejection", err)
 		}
 	})
 	t.Run("gratuitous existing group change", func(t *testing.T) {
@@ -835,7 +835,7 @@ func TestValidatePlannedGroup(t *testing.T) {
 	t.Run("fee exceeds advertised ceiling", func(t *testing.T) {
 		if err := validateBoundedTargetFees(
 			[]types.Transaction{plannedOriginal},
-			[]guardedTarget{{Index: 0, BoundedMaxFee: new(uint64(plannedOriginal.Fee) - 1)}},
+			[]cosignedTarget{{Index: 0, BoundedMaxFee: new(uint64(plannedOriginal.Fee) - 1)}},
 		); err == nil || !strings.Contains(err.Error(), "exceeds advertised max_fee") {
 			t.Fatalf("error = %v, want max_fee rejection", err)
 		}
@@ -876,7 +876,7 @@ func TestBoundedTargetsTakeTheirFeeCeilingFromTheContract(t *testing.T) {
 	closing.CloseRemainderTo = testAddress(3)
 	closing.Fee = 1_000_000
 
-	targets, err := setup(signerapi.BoundedContractPlain1, nil).guardedTargets([]types.Transaction{closing})
+	targets, err := setup(signerapi.BoundedContractPlain1, nil).cosignedTargets([]types.Transaction{closing})
 	if err != nil || len(targets) != 1 || targets[0].BoundedMaxFee != nil {
 		t.Fatalf("plain host targets = %#v, %v", targets, err)
 	}
@@ -884,7 +884,7 @@ func TestBoundedTargetsTakeTheirFeeCeilingFromTheContract(t *testing.T) {
 		t.Fatalf("plain host fee check: %v", err)
 	}
 
-	targets, err = setup(signerapi.BoundedContractBounded2, new(uint64(10_000))).guardedTargets([]types.Transaction{closing})
+	targets, err = setup(signerapi.BoundedContractBounded2, new(uint64(10_000))).cosignedTargets([]types.Transaction{closing})
 	if err != nil || len(targets) != 1 {
 		t.Fatalf("bounded host targets = %#v, %v", targets, err)
 	}
@@ -897,8 +897,8 @@ func TestBoundedTargetsTakeTheirFeeCeilingFromTheContract(t *testing.T) {
 		"unknown contract":               setup("bounded3", new(uint64(1))),
 		"bounded host without a ceiling": setup(signerapi.BoundedContractBounded2, nil),
 	} {
-		if _, err := s.guardedTargets([]types.Transaction{closing}); err == nil {
-			t.Fatalf("%s: guardedTargets() accepted it", name)
+		if _, err := s.cosignedTargets([]types.Transaction{closing}); err == nil {
+			t.Fatalf("%s: cosignedTargets() accepted it", name)
 		}
 	}
 }

@@ -57,7 +57,7 @@ func (a *App) CosignerStatus(ctx context.Context, _ CosignerStatusRequest) (*Cos
 	if result.AccountInventory != "available" {
 		lines = append(lines, "  Unavailable: "+result.InventoryError)
 	} else if len(result.Accounts) == 0 {
-		lines = append(lines, "  No guarded accounts in the primary signer's current inventory.")
+		lines = append(lines, "  No cosigned accounts in the primary signer's current inventory.")
 	}
 	for _, account := range result.Accounts {
 		label := account.Address

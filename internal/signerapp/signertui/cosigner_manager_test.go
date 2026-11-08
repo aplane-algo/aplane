@@ -155,7 +155,7 @@ func TestManagerCosignerImportReturnsToManager(t *testing.T) {
 		t.Fatalf("viewState = %v, want %v", next.viewState, ViewCosignerReferences)
 	}
 	if next.cosigner.pendingWitnessID != "" || next.cosigner.pendingKeyType != "" {
-		t.Fatal("manager import incorrectly queued guarded-key generation")
+		t.Fatal("manager import incorrectly queued cosigned-key generation")
 	}
 	if next.cosigner.envelopeJSON != "" {
 		t.Fatal("manager import retained the public envelope")
@@ -185,8 +185,8 @@ func TestGenerateAccountFromReferencePreselectsCosigner(t *testing.T) {
 			CosignerComponentKeyType: "",
 		},
 		{
-			KeyType:                  "guarded.v1",
-			DisplayName:              "Guarded",
+			KeyType:                  "cosigned.v1",
+			DisplayName:              "Cosigned",
 			CosignerComponentKeyType: "witness.v1",
 			CreationParams: []protocol.TemplateParamInfo{
 				{Name: "cosigner", Label: "Cosigner", Type: "select", Required: true},
@@ -227,13 +227,13 @@ func TestGenerateAccountFromReferenceChoosesAmongCompatibleTypes(t *testing.T) {
 	defer setServerKeyTypes(nil)
 	setServerKeyTypes([]protocol.KeyTypeInfo{
 		{
-			KeyType:                  "guarded-one.v1",
+			KeyType:                  "cosigned-one.v1",
 			CosignerComponentKeyType: "witness.v1",
 			CreationParams:           []protocol.TemplateParamInfo{{Name: "cosigner", Type: "select"}},
 		},
 		{KeyType: "wrong.v1", CosignerComponentKeyType: "witness.v2"},
 		{
-			KeyType:                  "guarded-two.v1",
+			KeyType:                  "cosigned-two.v1",
 			CosignerComponentKeyType: "witness.v1",
 			CreationParams:           []protocol.TemplateParamInfo{{Name: "cosigner", Type: "select"}},
 		},
@@ -250,7 +250,7 @@ func TestGenerateAccountFromReferenceChoosesAmongCompatibleTypes(t *testing.T) {
 	if next.viewState != ViewCosignerGenerateType {
 		t.Fatalf("viewState = %v, want %v", next.viewState, ViewCosignerGenerateType)
 	}
-	// Selection order is alphabetical: guarded-one, guarded-two, wrong.
+	// Selection order is alphabetical: cosigned-one, cosigned-two, wrong.
 	if got := next.cosigner.generateTypeIndices; len(got) != 2 || got[0] != 0 || got[1] != 1 {
 		t.Fatalf("compatible indices = %v", got)
 	}

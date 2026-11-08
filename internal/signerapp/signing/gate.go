@@ -13,7 +13,7 @@ import (
 
 // gateInput carries the facts the shared approval gate sequence needs. It is
 // deliberately independent of the /sign request and plan shapes so ordinary
-// group signing and guarded user-component signing evaluate the same gates
+// group signing and cosigned user-component signing evaluate the same gates
 // with the same semantics.
 type gateInput struct {
 	// AllTxns is the full decoded group, including dummy transactions.

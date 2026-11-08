@@ -494,7 +494,7 @@ func TestPlanGroupWhileSignablePreservesPlannerErrorWhileUnlocked(t *testing.T) 
 	}
 }
 
-func TestOrdinarySignRejectsGuardedKeyBeforeApproval(t *testing.T) {
+func TestOrdinarySignRejectsCosignedKeyBeforeApproval(t *testing.T) {
 	approvalCalled := false
 	service := &Service{
 		Approval: &ApprovalService{
@@ -510,7 +510,7 @@ func TestOrdinarySignRejectsGuardedKeyBeforeApproval(t *testing.T) {
 		Executor: &Executor{},
 	}
 	request := signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{
-		AuthAddress: "GUARDED",
+		AuthAddress: "COSIGNED",
 		TxnBytesHex: "deadbeef",
 	}}}
 	plan := &PlanResult{

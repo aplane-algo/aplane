@@ -128,26 +128,26 @@ func TestHTLCCloseOutGuardRejectsZeroDestination(t *testing.T) {
 				"@hash", hash,
 			).Replace(spec.TEAL)
 
-			guarded := compile(t, source)
-			guardedAddress, err := guarded.Address()
+			cosigned := compile(t, source)
+			cosignedAddress, err := cosigned.Address()
 			if err != nil {
 				t.Fatalf("failed to derive HTLC address: %v", err)
 			}
 			const funding = 300_000
-			if err := funder.FundMicroAlgosAndWait(guardedAddress.String(), funding); err != nil {
+			if err := funder.FundMicroAlgosAndWait(cosignedAddress.String(), funding); err != nil {
 				t.Fatalf("failed to fund HTLC: %v", err)
 			}
-			if _, err := submit(t, guarded, path.args, "guarded"); err == nil {
-				t.Fatal("guarded HTLC accepted a payment that does not close the account")
+			if _, err := submit(t, cosigned, path.args, "cosigned"); err == nil {
+				t.Fatal("cosigned HTLC accepted a payment that does not close the account")
 			} else if !strings.Contains(err.Error(), "rejected by logic") {
-				t.Fatalf("guarded HTLC failed for the wrong reason: %v", err)
+				t.Fatalf("cosigned HTLC failed for the wrong reason: %v", err)
 			}
-			balance, err := testnet.GetAccountInfo(guardedAddress.String())
+			balance, err := testnet.GetAccountInfo(cosignedAddress.String())
 			if err != nil {
 				t.Fatalf("failed to read HTLC balance: %v", err)
 			}
 			if balance != funding {
-				t.Fatalf("guarded HTLC holds %d, want %d", balance, funding)
+				t.Fatalf("cosigned HTLC holds %d, want %d", balance, funding)
 			}
 
 			// Without the guard, the same payment passes and repeats.

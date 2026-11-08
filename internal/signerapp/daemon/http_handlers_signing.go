@@ -46,7 +46,7 @@ func (fs *Signer) handleSignComponent(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
-// handleSignAssemble handles the /sign/assemble endpoint for guarded-account
+// handleSignAssemble handles the /sign/assemble endpoint for cosigned-account
 // LogicSig assembly.
 func (fs *Signer) handleSignAssemble(w http.ResponseWriter, r *http.Request) {
 	ir, req, ok := decodeAuthenticatedJSONRequest[signerapi.AssemblyRequest](fs, w, r, http.MethodPost)

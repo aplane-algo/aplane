@@ -13,8 +13,8 @@ import (
 // not verify component signatures, so it must not compile the Falcon
 // implementation libraries (github.com/algorand/falcon is CGo, which would
 // also break portable client builds). Component signatures are opaque to the
-// client; they are verified by the signer during guarded assembly and,
-// authoritatively, by the guarded LogicSig on-chain. Signature verification
+// client; they are verified by the signer during cosigned assembly and,
+// authoritatively, by the cosigned LogicSig on-chain. Signature verification
 // helpers live in internal/sigconstruction/verify, which only signer-side code may
 // import; clients use internal/cosigner/canonical for group canonicalization.
 func TestClientDoesNotLinkFalcon(t *testing.T) {

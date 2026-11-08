@@ -28,7 +28,7 @@ const (
 	ViewClientEnrollmentPopup // Client enrollment approval popup
 	ViewGenerateForm
 	ViewGenerateParams // Parameter input modal for generic LogicSigs
-	ViewCosignerPicker // Select an enrolled cosigner reference for guarded generation
+	ViewCosignerPicker // Select an enrolled cosigner reference for cosigned generation
 	ViewCosignerImportForm
 	ViewCosignerImportReview
 	ViewCosignerImporting

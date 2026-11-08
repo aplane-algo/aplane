@@ -1,6 +1,6 @@
-# Guarded Signing
+# Cosigned Signing
 
-> Guarded signing: the cosigner subsystem that makes a cosigned account need
+> Cosigned signing: the cosigner subsystem that makes a cosigned account need
 > both a user signer and a cosigner signer, and Corridor v1, the bounded preset
 > built on it.
 
@@ -14,7 +14,7 @@ host (`plain1`, the plain key types `aplane.falcon1024.v1` and
 [Corridor v1](#corridor-v1), the preset of the general bounded key type that
 composes cosigner authorization into `bounded2`.
 
-"Guarded" is this document's historical name for the cosigned flow; a later
+"Cosigned" is this document's historical name for the cosigned flow; a later
 naming pass renames it. The dedicated cosigned account type and its `cosigner1`
 flow were retired in phase 5 of the account overlays: the plain host with a
 cosigner replaces it.
@@ -41,10 +41,10 @@ bounded-cosigner choreography is in
 - [Public Cosigner References](#public-cosigner-references)
 - [Endpoint Routing](#endpoint-routing)
 - [Cosigned Transaction Flow](#cosigned-transaction-flow)
-- [Guarded Simulation](#guarded-simulation)
+- [Cosigned Simulation](#cosigned-simulation)
 - [Assembly Invariants](#assembly-invariants)
 - [Cosigner Policy](#cosigner-policy)
-- [Guarded Authorizers](#guarded-authorizers)
+- [Cosigned Authorizers](#cosigned-authorizers)
 - [Mixed Groups](#mixed-groups)
 - [Failure Model](#failure-model)
 - [Audit](#audit)
@@ -599,7 +599,7 @@ account's ceiling only on a bounded host (`bounded2`, `max_fee` present); it
 caches each account's contract from `/keys` and fails closed on one it doesn't
 know.
 
-## Guarded Simulation
+## Cosigned Simulation
 
 Cosigned simulation follows the complete flow above. The user signer runs
 ordinary policy and operator approval before releasing base components; the
@@ -703,7 +703,7 @@ standing statement, fixed in the program.
 See [ARCH_POLICY.md](ARCH_POLICY.md) for the rule inventory, domain-specific
 schema constraints, route behavior, and reject/review/approve mapping.
 
-## Guarded Authorizers
+## Cosigned Authorizers
 
 A cosigned account can be the effective signer for another account rekeyed to
 it. In that case:
@@ -983,7 +983,7 @@ Primary packages and files:
 - `internal/signerapp/daemon`: HTTP runtime (`http_runtime.go`) that registers
   these routes on the signer mux and dispatches them to the `rest` service
   methods.
-- `internal/engine/guarded`: cosigned (`cosigned1`) transaction
+- `internal/engine/cosigned`: cosigned (`cosigned1`) transaction
   orchestration and cosigner endpoint resolution; `internal/engine` composes
   that owner into the client runtime.
 - `internal/config`: endpoint registry parsing (`schema_version` 2 only; retired
@@ -1011,7 +1011,7 @@ Representative tests:
 - `internal/policy/doc_v1_test.go`
 - `internal/policy/store_v1_test.go`
 - `internal/policy/transfer_routing_eval_test.go`
-- `internal/engine/guarded/submit_test.go`
+- `internal/engine/cosigned/submit_test.go`
 - `internal/apshellapp/endpoints_test.go`
 - `internal/apadminapp/catalog_test.go`
 - `scripts/docker-local-four-node-smoke.sh`

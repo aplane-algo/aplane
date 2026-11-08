@@ -212,10 +212,10 @@ func TestFinishedPresetLeavesTheNextFlowAlone(t *testing.T) {
 // form, so it starts its flow clean itself.
 func TestManagerGenerationIgnoresAnEarlierPreset(t *testing.T) {
 	boundedaccount.RegisterClient()
-	const guarded = "guarded.v1"
+	const cosigned = "cosigned.v1"
 	inventory := []protocol.KeyTypeInfo{
 		{KeyType: boundary.KeyTypeV1, PerKeyContract: true, BoundarySchema: boundary.SchemaV1},
-		{KeyType: guarded, CosignerComponentKeyType: "witness.v1", CreationParams: []protocol.TemplateParamInfo{
+		{KeyType: cosigned, CosignerComponentKeyType: "witness.v1", CreationParams: []protocol.TemplateParamInfo{
 			{Name: "cosigner", Label: "Cosigner", Type: "select", Required: true},
 		}},
 	}
@@ -232,10 +232,10 @@ func TestManagerGenerationIgnoresAnEarlierPreset(t *testing.T) {
 	next, _ := m.handleCosignerReferenceDetailsKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
 	m = next.(Model)
 	if m.viewState != ViewGenerateParams {
-		t.Fatalf("view = %v, want %s's parameter form", m.viewState, guarded)
+		t.Fatalf("view = %v, want %s's parameter form", m.viewState, cosigned)
 	}
 	m = receiveKeyTypes(t, m, inventory...)
-	if got := getKeyTypeByIndex(m.forms.generateKeyType); got != guarded {
-		t.Fatalf("cursor names %q after an unchanged list, want %s", got, guarded)
+	if got := getKeyTypeByIndex(m.forms.generateKeyType); got != cosigned {
+		t.Fatalf("cursor names %q after an unchanged list, want %s", got, cosigned)
 	}
 }

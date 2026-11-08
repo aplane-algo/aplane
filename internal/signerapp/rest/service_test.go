@@ -295,10 +295,10 @@ func TestServiceAssembleDelegates(t *testing.T) {
 		t.Fatal("Assemble() passed nil session")
 	}
 	if stub.gotCtx != ctx {
-		t.Fatal("AssembleGuarded() did not pass caller context to signing service")
+		t.Fatal("AssembleCosigned() did not pass caller context to signing service")
 	}
 	if resp.RequestID != "asm-1" || len(resp.SignedGroup) != 1 || resp.SignedGroup[0] != "signed" {
-		t.Fatalf("AssembleGuarded() response = %#v", resp)
+		t.Fatalf("AssembleCosigned() response = %#v", resp)
 	}
 }
 
@@ -1224,7 +1224,7 @@ func TestServiceNodeRoleGatesEndpointRoles(t *testing.T) {
 	if _, err := (Service{}).SignComponents(context.Background(), cosignerOnly, baseReq); err == nil || err.HTTPStatus() != 403 || !strings.Contains(err.Message, "account component signing") {
 		t.Fatalf("SignComponents(bounded-base kind in cosigner node) error = %#v, want forbidden node role error", err)
 	}
-	if _, err := (Service{}).Assemble(context.Background(), cosignerOnly, signerapi.AssemblyRequest{}); err == nil || err.HTTPStatus() != 403 || !strings.Contains(err.Message, "guarded assembly") {
+	if _, err := (Service{}).Assemble(context.Background(), cosignerOnly, signerapi.AssemblyRequest{}); err == nil || err.HTTPStatus() != 403 || !strings.Contains(err.Message, "cosigned assembly") {
 		t.Fatalf("Assemble(cosigner node) error = %#v, want forbidden node role error", err)
 	}
 

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-package guarded
+package cosigned
 
 import (
 	"bytes"
@@ -37,7 +37,7 @@ import (
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
-type guardedSimulationCapture struct {
+type cosignedSimulationCapture struct {
 	baseCalls         atomic.Int32
 	cosignerRoleCalls atomic.Int32
 	assembleCalls     atomic.Int32
@@ -53,39 +53,39 @@ type guardedSimulationCapture struct {
 	events         []string
 }
 
-func (c *guardedSimulationCapture) record(event string) {
+func (c *cosignedSimulationCapture) record(event string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.events = append(c.events, event)
 }
 
-func (c *guardedSimulationCapture) setAssembly(req signerapi.AssemblyRequest, signed []string) {
+func (c *cosignedSimulationCapture) setAssembly(req signerapi.AssemblyRequest, signed []string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.assembly = req
 	c.assembledGroup = append([]string(nil), signed...)
 }
 
-func (c *guardedSimulationCapture) snapshot() (signerapi.AssemblyRequest, []string) {
+func (c *cosignedSimulationCapture) snapshot() (signerapi.AssemblyRequest, []string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.assembly, append([]string(nil), c.assembledGroup...)
 }
 
-func (c *guardedSimulationCapture) eventSnapshot() []string {
+func (c *cosignedSimulationCapture) eventSnapshot() []string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return append([]string(nil), c.events...)
 }
 
-// newGuardedExecutableTestServer serves the normal guarded signing surface.
+// newCosignedExecutableTestServer serves the normal cosigned signing surface.
 // It intentionally exposes no signer simulation behavior.
-func newGuardedExecutableTestServer(t *testing.T, publicKeyHex string, capture *guardedSimulationCapture) *httptest.Server {
+func newCosignedExecutableTestServer(t *testing.T, publicKeyHex string, capture *cosignedSimulationCapture) *httptest.Server {
 	t.Helper()
-	return httptest.NewServer(newGuardedExecutableTestHandler(t, publicKeyHex, capture))
+	return httptest.NewServer(newCosignedExecutableTestHandler(t, publicKeyHex, capture))
 }
 
-func newGuardedExecutableTestHandler(t *testing.T, publicKeyHex string, capture *guardedSimulationCapture) http.Handler {
+func newCosignedExecutableTestHandler(t *testing.T, publicKeyHex string, capture *cosignedSimulationCapture) http.Handler {
 	t.Helper()
 	publicKey, err := hex.DecodeString(publicKeyHex)
 	if err != nil {
@@ -218,21 +218,21 @@ func newGuardedExecutableTestHandler(t *testing.T, publicKeyHex string, capture 
 		capture.signerSimulateHit.Add(1)
 		http.NotFound(w, r)
 	})
-	mux.HandleFunc("/simulate/guarded", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/simulate/cosigned", func(w http.ResponseWriter, r *http.Request) {
 		capture.signerSimulateHit.Add(1)
 		http.NotFound(w, r)
 	})
 	return mux
 }
 
-// guardedCosignerNode fronts handler with an in-process cosigner node and
+// cosignedCosignerNode fronts handler with an in-process cosigner node and
 // returns the endpoint configuration that reaches it.
-func guardedCosignerNode(t *testing.T, handler http.Handler) config.ClientEndpointConfig {
+func cosignedCosignerNode(t *testing.T, handler http.Handler) config.ClientEndpointConfig {
 	t.Helper()
 	return cosignerNodeEndpoint(sshtest.Serve(t, handler))
 }
 
-func newGuardedAlgodSimulationClient(t *testing.T, failure string, captured *models.SimulateRequest) (*algod.Client, func()) {
+func newCosignedAlgodSimulationClient(t *testing.T, failure string, captured *models.SimulateRequest) (*algod.Client, func()) {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v2/transactions/simulate" {
@@ -266,22 +266,22 @@ func newGuardedAlgodSimulationClient(t *testing.T, failure string, captured *mod
 	return client, server.Close
 }
 
-func TestSignAndSubmitGroupSimulateUsesExecutableGuardedFlow(t *testing.T) {
+func TestSignAndSubmitGroupSimulateUsesExecutableCosignedFlow(t *testing.T) {
 	publicKey, _ := testFalconCosignerKeypair(t, 0x71)
 	cosignerHex := hex.EncodeToString(publicKey)
-	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "guarded")
+	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "cosigned")
 
-	capture := &guardedSimulationCapture{}
-	handler := newGuardedExecutableTestHandler(t, cosignerHex, capture)
+	capture := &cosignedSimulationCapture{}
+	handler := newCosignedExecutableTestHandler(t, cosignerHex, capture)
 	signerServer := httptest.NewServer(handler)
 	defer signerServer.Close()
 	var simulateReq models.SimulateRequest
-	algodClient, closeAlgod := newGuardedAlgodSimulationClient(t, "", &simulateReq)
+	algodClient, closeAlgod := newCosignedAlgodSimulationClient(t, "", &simulateReq)
 	defer closeAlgod()
 
-	s, _ := newGuardedTestSigner(t, txn.Sender.String(), 1500, cosignerHex)
+	s, _ := newCosignedTestSigner(t, txn.Sender.String(), 1500, cosignerHex)
 	s.conn.SignerClient = signerclient.NewSignerClient(signerServer.URL)
-	s.endpointRegistry = cosignerEndpointRegistry("local-cosigner", guardedCosignerNode(t, handler))
+	s.endpointRegistry = cosignerEndpointRegistry("local-cosigner", cosignedCosignerNode(t, handler))
 	s.algod = algodClient
 
 	var out bytes.Buffer
@@ -312,7 +312,7 @@ func TestSignAndSubmitGroupSimulateUsesExecutableGuardedFlow(t *testing.T) {
 		t.Fatalf("algod simulate group = %#v, want %d transactions", simulateReq.TxnGroups, len(submitted))
 	}
 	if simulateReq.AllowEmptySignatures || simulateReq.FixSigners {
-		t.Fatal("guarded signed simulation enabled empty-signature overrides")
+		t.Fatal("cosigned signed simulation enabled empty-signature overrides")
 	}
 
 	assembly, assembledHex := capture.snapshot()
@@ -412,7 +412,7 @@ func testBoundedCosignerChoreography(t *testing.T, path, wantEvents string) {
 	server := httptest.NewServer(mux)
 	defer server.Close()
 	var simulateReq models.SimulateRequest
-	algodClient, closeAlgod := newGuardedAlgodSimulationClient(t, "", &simulateReq)
+	algodClient, closeAlgod := newCosignedAlgodSimulationClient(t, "", &simulateReq)
 	defer closeAlgod()
 	s, _ := newTestSigner(t, func(c *cache.SignerCache) {
 		account := txn.Sender.String()
@@ -430,7 +430,7 @@ func testBoundedCosignerChoreography(t *testing.T, path, wantEvents string) {
 		})
 	})
 	s.conn.SignerClient = signerclient.NewSignerClient(server.URL)
-	s.endpointRegistry = cosignerEndpointRegistry("local-cosigner", guardedCosignerNode(t, mux))
+	s.endpointRegistry = cosignerEndpointRegistry("local-cosigner", cosignedCosignerNode(t, mux))
 	s.algod = algodClient
 	if _, _, err := s.SignAndSubmitGroup([]types.Transaction{txn}, clientsign.SubmitOptions{Ctx: t.Context(), Simulate: true, Out: io.Discard}); err != nil {
 		t.Fatalf("SignAndSubmitGroup() error = %v", err)
@@ -443,8 +443,8 @@ func testBoundedCosignerChoreography(t *testing.T, path, wantEvents string) {
 }
 
 // TestMixedGroupsFinishUserSideBeforeCosigner pins the user-first
-// choreography in ARCH_GUARDED.md for mixed groups: the user signer signs the
-// non-guarded positions before the cosigner sees the group, so a /sign
+// choreography in ARCH_COSIGNED.md for mixed groups: the user signer signs the
+// non-cosigned positions before the cosigner sees the group, so a /sign
 // rejection never reaches the cosigner.
 func TestMixedGroupsFinishUserSideBeforeCosigner(t *testing.T) {
 	for _, tc := range []struct {
@@ -462,7 +462,7 @@ func TestMixedGroupsFinishUserSideBeforeCosigner(t *testing.T) {
 			publicKey, _ := testFalconCosignerKeypair(t, 0x73)
 			cosignerHex := hex.EncodeToString(publicKey)
 			txns := []types.Transaction{
-				testPaymentTxn(t, testAddress(1), testAddress(2), "guarded"),
+				testPaymentTxn(t, testAddress(1), testAddress(2), "cosigned"),
 				testPaymentTxn(t, testAddress(3), testAddress(2), "ordinary"),
 			}
 			groupID, err := crypto.ComputeGroupID(txns)
@@ -473,32 +473,32 @@ func TestMixedGroupsFinishUserSideBeforeCosigner(t *testing.T) {
 				txns[i].Group = groupID
 			}
 
-			capture := &guardedSimulationCapture{rejectSign: tc.rejectSign}
-			handler := newGuardedExecutableTestHandler(t, cosignerHex, capture)
+			capture := &cosignedSimulationCapture{rejectSign: tc.rejectSign}
+			handler := newCosignedExecutableTestHandler(t, cosignerHex, capture)
 			server := httptest.NewServer(handler)
 			defer server.Close()
 			var simulateReq models.SimulateRequest
-			algodClient, closeAlgod := newGuardedAlgodSimulationClient(t, "", &simulateReq)
+			algodClient, closeAlgod := newCosignedAlgodSimulationClient(t, "", &simulateReq)
 			defer closeAlgod()
 
-			guarded := txns[0].Sender.String()
-			s, _ := newGuardedTestSigner(t, guarded, 1500, cosignerHex)
+			cosigned := txns[0].Sender.String()
+			s, _ := newCosignedTestSigner(t, cosigned, 1500, cosignerHex)
 			if tc.bounded {
 				s, _ = newTestSigner(t, func(c *cache.SignerCache) {
-					c.AddAddress(guarded, "test.bounded-cosigner.v1")
-					c.SetSigningFlowForAddress(guarded, signerapi.SigningFlowCosigned1)
-					c.SetCosignerComponentKeyTypeForAddress(guarded, witness.Falcon1024V1)
-					c.SetCosignerPublicKeyForAddress(guarded, cosignerHex)
-					c.SetBoundedContractForAddress(guarded, signerapi.BoundedContractBounded2)
-					c.SetBoundedMaxFeeForAddress(guarded, 10_000)
-					c.SetLogicSigResourceProfile(guarded, lsigresource.Profile{
+					c.AddAddress(cosigned, "test.bounded-cosigner.v1")
+					c.SetSigningFlowForAddress(cosigned, signerapi.SigningFlowCosigned1)
+					c.SetCosignerComponentKeyTypeForAddress(cosigned, witness.Falcon1024V1)
+					c.SetCosignerPublicKeyForAddress(cosigned, cosignerHex)
+					c.SetBoundedContractForAddress(cosigned, signerapi.BoundedContractBounded2)
+					c.SetBoundedMaxFeeForAddress(cosigned, 10_000)
+					c.SetLogicSigResourceProfile(cosigned, lsigresource.Profile{
 						ProgramBytes: 4_000,
 						Spend:        &lsigresource.PathProfile{MaxOpcodeCost: 20_000},
 					})
 				})
 			}
 			s.conn.SignerClient = signerclient.NewSignerClient(server.URL)
-			s.endpointRegistry = cosignerEndpointRegistry("local-cosigner", guardedCosignerNode(t, handler))
+			s.endpointRegistry = cosignerEndpointRegistry("local-cosigner", cosignedCosignerNode(t, handler))
 			s.algod = algodClient
 
 			_, _, err = s.SignAndSubmitGroup(txns, clientsign.SubmitOptions{Ctx: t.Context(), Simulate: true, Out: io.Discard})
@@ -553,7 +553,7 @@ func TestBoundedCosignerRejectsPlannedFeeBeforeReleasingComponents(t *testing.T)
 	})
 	s.conn.SignerClient = signerclient.NewSignerClient(server.URL)
 	var simulateReq models.SimulateRequest
-	algodClient, closeAlgod := newGuardedAlgodSimulationClient(t, "", &simulateReq)
+	algodClient, closeAlgod := newCosignedAlgodSimulationClient(t, "", &simulateReq)
 	defer closeAlgod()
 	s.algod = algodClient
 
@@ -569,19 +569,19 @@ func TestBoundedCosignerRejectsPlannedFeeBeforeReleasingComponents(t *testing.T)
 func TestSignAndSubmitGroupSimulateReportsFailure(t *testing.T) {
 	publicKey, _ := testFalconCosignerKeypair(t, 0x72)
 	cosignerHex := hex.EncodeToString(publicKey)
-	txn := testPaymentTxn(t, testAddress(3), testAddress(4), "guarded")
+	txn := testPaymentTxn(t, testAddress(3), testAddress(4), "cosigned")
 
-	capture := &guardedSimulationCapture{}
-	handler := newGuardedExecutableTestHandler(t, cosignerHex, capture)
+	capture := &cosignedSimulationCapture{}
+	handler := newCosignedExecutableTestHandler(t, cosignerHex, capture)
 	signerServer := httptest.NewServer(handler)
 	defer signerServer.Close()
 	var simulateReq models.SimulateRequest
-	algodClient, closeAlgod := newGuardedAlgodSimulationClient(t, "logic eval error", &simulateReq)
+	algodClient, closeAlgod := newCosignedAlgodSimulationClient(t, "logic eval error", &simulateReq)
 	defer closeAlgod()
 
-	s, _ := newGuardedTestSigner(t, txn.Sender.String(), 1500, cosignerHex)
+	s, _ := newCosignedTestSigner(t, txn.Sender.String(), 1500, cosignerHex)
 	s.conn.SignerClient = signerclient.NewSignerClient(signerServer.URL)
-	s.endpointRegistry = cosignerEndpointRegistry("local-cosigner", guardedCosignerNode(t, handler))
+	s.endpointRegistry = cosignerEndpointRegistry("local-cosigner", cosignedCosignerNode(t, handler))
 	s.algod = algodClient
 
 	var out bytes.Buffer
@@ -604,12 +604,12 @@ func TestSignAndSubmitGroupSimulateReportsFailure(t *testing.T) {
 func TestSignAndSubmitGroupRejectsNilAlgodBeforeComponentSigning(t *testing.T) {
 	publicKey, _ := testFalconCosignerKeypair(t, 0x73)
 	cosignerHex := hex.EncodeToString(publicKey)
-	txn := testPaymentTxn(t, testAddress(5), testAddress(6), "guarded")
+	txn := testPaymentTxn(t, testAddress(5), testAddress(6), "cosigned")
 
-	capture := &guardedSimulationCapture{}
-	signerServer := newGuardedExecutableTestServer(t, cosignerHex, capture)
+	capture := &cosignedSimulationCapture{}
+	signerServer := newCosignedExecutableTestServer(t, cosignerHex, capture)
 	defer signerServer.Close()
-	s, _ := newGuardedTestSigner(t, txn.Sender.String(), 1500, cosignerHex)
+	s, _ := newCosignedTestSigner(t, txn.Sender.String(), 1500, cosignerHex)
 	s.conn.SignerClient = signerclient.NewSignerClient(signerServer.URL)
 
 	_, _, err := s.SignAndSubmitGroup([]types.Transaction{txn}, clientsign.SubmitOptions{

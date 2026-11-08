@@ -30,14 +30,14 @@ func assembleDecoded(ctx context.Context, req signerapi.AssemblyRequest, group *
 		return nil, canceledSignRequest(err)
 	}
 	if group == nil {
-		return nil, internal("guarded assembly group is nil")
+		return nil, internal("cosigned assembly group is nil")
 	}
 	if err := req.Validate(); err != nil {
 		return nil, badRequest(err.Error())
 	}
-	req.RequestID = guardedRequestID("asm", req.RequestID)
+	req.RequestID = cosignedRequestID("asm", req.RequestID)
 	if len(group.Entries) != len(req.GroupBytesHex) {
-		return nil, internal("guarded assembly group length does not match request")
+		return nil, internal("cosigned assembly group length does not match request")
 	}
 	if session == nil {
 		return nil, internal("key session is nil")
@@ -59,7 +59,7 @@ func assembleDecoded(ctx context.Context, req signerapi.AssemblyRequest, group *
 		signedGroup[target.TargetIndex] = signedTxnHex
 	}
 	for _, passthrough := range req.Passthrough {
-		signedTxnHex, err := validateGuardedPassthrough(ctx, passthrough, group.Entries[passthrough.TargetIndex], session)
+		signedTxnHex, err := validateCosignedPassthrough(ctx, passthrough, group.Entries[passthrough.TargetIndex], session)
 		if err != nil {
 			return nil, err
 		}
@@ -72,7 +72,7 @@ func assembleDecoded(ctx context.Context, req signerapi.AssemblyRequest, group *
 	}, nil
 }
 
-func validateGuardedPassthrough(ctx context.Context, passthrough signerapi.AssemblyPassthroughItem, entry canonical.Txn, session componentKeyGetter) (string, *ServiceError) {
+func validateCosignedPassthrough(ctx context.Context, passthrough signerapi.AssemblyPassthroughItem, entry canonical.Txn, session componentKeyGetter) (string, *ServiceError) {
 	signedTxnBytes, err := decodeAssemblySignatureHex(passthrough.SignedTxnHex, "signed_txn_hex")
 	if err != nil {
 		return "", err
@@ -90,7 +90,7 @@ func validateGuardedPassthrough(ctx context.Context, passthrough signerapi.Assem
 	// component and assembly flow (spending key and cosigner), never slipped in
 	// as a passthrough that bypasses that verification. Reject if the
 	// passthrough's effective signer is a locally held cosigned account.
-	if err := rejectLocalGuardedPassthrough(ctx, stxn, passthrough.TargetIndex, session); err != nil {
+	if err := rejectLocalCosignedPassthrough(ctx, stxn, passthrough.TargetIndex, session); err != nil {
 		return "", err
 	}
 	// A passthrough slot must carry a real signature: the signer contributes no
@@ -110,12 +110,12 @@ func validateGuardedPassthrough(ctx context.Context, passthrough signerapi.Assem
 	return hex.EncodeToString(reencoded), nil
 }
 
-// rejectLocalGuardedPassthrough rejects a passthrough whose effective signer
+// rejectLocalCosignedPassthrough rejects a passthrough whose effective signer
 // (sender, or AuthAddr when rekeyed) is a cosigned account this signer holds:
 // such an account must be authorized through component signing and assembly,
 // not forwarded as an already-signed passthrough. Accounts this signer does
 // not hold (the common passthrough case) are left alone.
-func rejectLocalGuardedPassthrough(ctx context.Context, stxn types.SignedTxn, targetIndex int, session componentKeyGetter) *ServiceError {
+func rejectLocalCosignedPassthrough(ctx context.Context, stxn types.SignedTxn, targetIndex int, session componentKeyGetter) *ServiceError {
 	var zero types.Address
 	candidates := []types.Address{stxn.Txn.Sender}
 	if stxn.AuthAddr != zero {

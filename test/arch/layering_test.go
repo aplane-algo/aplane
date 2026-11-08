@@ -79,9 +79,9 @@ var templateInfraPackages = map[string]bool{
 // family-specific behavior belongs in the family's lsig tree, registered
 // through the core registries.
 var familyImportExceptions = map[string]string{
-	// The guarded component sign/assemble flow is Falcon-only by design until
+	// The cosigned component sign/assemble flow is Falcon-only by design until
 	// family-neutral component ops exist.
-	modulePrefix + "/internal/signerapp/signing": "guarded component flow is falcon-only pending neutral component ops",
+	modulePrefix + "/internal/signerapp/signing": "cosigned component flow is falcon-only pending neutral component ops",
 }
 
 // isLsigImport reports whether imp is any package in the lsig tree,

@@ -434,7 +434,7 @@ node, then generated with or without overlays; neither takes mnemonic import.
 - `remove_installed_template`: `key_type` -> `remove_installed_template_result`: `success`, optional `key_type`, `template_type`, `removed`, `code`, `error`; available through authenticated IPC admin sessions
 - `activate_key_type`: `key_type` -> `activate_key_type_result`: `success`, optional `key_type`, `already_exists`, `code`, `error`; this wire message activates compiled providers and enables installed YAML templates. The `apadmin` CLI exposes this as `keytype enable`. For installed YAML templates, `already_exists:true` means the template was already enabled.
 - `deactivate_key_type`: `key_type` -> `deactivate_key_type_result`: `success`, optional `key_type`, `removed`, `code`, `error`; this wire message deactivates compiled providers and disables installed YAML templates. The `apadmin` CLI exposes this as `keytype disable`. `removed:true` means the enabled/disabled state changed, and in-use rejection returns `code:"key_type_in_use"` when installed-template disable or compiled-provider disable is blocked.
-- `list_key_types` -> `key_types`: `key_types[]`, optional `code`, `error`; entries mirror the HTTP `/keytypes` schema except that they omit `signing_flow` and `bounded_authorization`; both surfaces carry optional `cosigner_component_key_type`, which `apadmin` uses to filter enrolled public cosigner references for guarded-account generation
+- `list_key_types` -> `key_types`: `key_types[]`, optional `code`, `error`; entries mirror the HTTP `/keytypes` schema except that they omit `signing_flow` and `bounded_authorization`; both surfaces carry optional `cosigner_component_key_type`, which `apadmin` uses to filter enrolled public cosigner references for cosigned-account generation
 
 #### Signing Approval and Client Enrollment
 
@@ -675,7 +675,7 @@ Policy selection semantics:
 
 Cosigner-reference reads/exports require `cosigners.view`; imports/removals require
 `cosigners.manage`, an unlocked signer store, and emit mutation audit events. A
-reference alias selects the witness public key embedded during guarded-key
+reference alias selects the witness public key embedded during cosigned-key
 generation, so public visibility does not make catalog mutation
 security-neutral. Import is idempotent for an identical reference and rejects
 a name already bound to a different Witness Key ID; replacement requires an
@@ -942,7 +942,7 @@ they navigate or cycle only on choice fields and the submit button. Tab and the
 arrow keys always navigate. Parameter fields accept ASCII only and refuse other
 input with an error rather than rewriting it.
 
-The key type lists of the generate, import, and guarded-account forms fit the
+The key type lists of the generate, import, and cosigned-account forms fit the
 window: when a list is too long, it shows the rows around the selection between
 "more above" and "more below" lines (`fitSelectionList` in
 `internal/signerapp/signertui/selection_list.go`), so the selection, its
@@ -1023,7 +1023,7 @@ identifies the current screen. The enum has families for:
 - Generate / import flows (form, params, loading, display)
 - Signer-side public cosigner-reference management (`ViewCosignerReferences`,
   details, import, removal confirmation, and removal progress), the cosigner
-  picker for guarded generation (`ViewCosignerPicker`), cosigner generate-type
+  picker for cosigned generation (`ViewCosignerPicker`), cosigner generate-type
   selection (`ViewCosignerGenerateType`), and cosigner public export
   (`ViewCosignerExportPath`, `ViewCosignerExporting`, `ViewCosignerExportResult`,
   `ViewCosignerExportJSON`)

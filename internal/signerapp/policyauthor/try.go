@@ -244,7 +244,7 @@ func tryAssumptions(role noderole.Role, t TryTxn, built types.Transaction, netwo
 	}
 	return append(out,
 		"no fee or dummies added by the signer for LogicSig or post-quantum keys",
-		"the sender's key type (rotating, guarded) is not known",
+		"the sender's key type (rotating, cosigned) is not known",
 		"refusals the signer makes before policy are not checked",
 	)
 }

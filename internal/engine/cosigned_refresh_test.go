@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-// Engine-side guarded wiring tests: refreshSubmitSigningState must bring the
-// auth and signer caches current before guarded route selection. The guarded
-// choreography itself is tested in internal/engine/guarded.
+// Engine-side cosigned wiring tests: refreshSubmitSigningState must bring the
+// auth and signer caches current before cosigned route selection. The cosigned
+// choreography itself is tested in internal/engine/cosigned.
 package engine
 
 import (
@@ -27,9 +27,9 @@ func testCosignerPublicKeyHex(prefix byte) string {
 	return hex.EncodeToString(publicKey[:])
 }
 
-func TestRefreshSubmitSigningStateDiscoversGuardedAuthorizer(t *testing.T) {
+func TestRefreshSubmitSigningStateDiscoversCosignedAuthorizer(t *testing.T) {
 	sender := testAddress(1).String()
-	guarded := testAddress(3).String()
+	cosigned := testAddress(3).String()
 	cosignerHex := testCosignerPublicKeyHex(0xd6)
 
 	transport := newAccountMockTransport(t)
@@ -37,14 +37,14 @@ func TestRefreshSubmitSigningStateDiscoversGuardedAuthorizer(t *testing.T) {
 		Address:    sender,
 		Amount:     1_000_000,
 		MinBalance: 100_000,
-		AuthAddr:   guarded,
+		AuthAddr:   cosigned,
 		Status:     "Offline",
 	})
-	transport.addAccount(guarded, 1_000_000)
+	transport.addAccount(cosigned, 1_000_000)
 
 	staleSignerCache := cache.NewSignerCache()
 	staleSignerCache.AddAddress(sender, "ed25519")
-	staleSignerCache.AddAddress(guarded, "ed25519")
+	staleSignerCache.AddAddress(cosigned, "ed25519")
 	eng := newConnectedEngineForKeyMgmtTestWithSignerCache(t, staleSignerCache, func(req *http.Request) (*http.Response, error) {
 		if req.Method != http.MethodGet || req.URL.Path != "/keys" {
 			t.Fatalf("unexpected request: %s %s", req.Method, req.URL.Path)
@@ -55,7 +55,7 @@ func TestRefreshSubmitSigningStateDiscoversGuardedAuthorizer(t *testing.T) {
 				Address: sender,
 				KeyType: "ed25519",
 			}, {
-				Address:                  guarded,
+				Address:                  cosigned,
 				KeyType:                  "aplane.falcon1024.v1",
 				SigningFlow:              signerapi.SigningFlowCosigned1,
 				CosignerComponentKeyType: witness.Falcon1024V1,
@@ -70,35 +70,35 @@ func TestRefreshSubmitSigningStateDiscoversGuardedAuthorizer(t *testing.T) {
 	eng.AlgodClient = newAccountMockAlgodClient(t, transport)
 	eng.AuthCache = cache.NewAuthAddressCacheForStore(eng.CacheStore)
 
-	txn := testPreparedTxn(t, testAddress(1), testAddress(2), "guarded-authorizer", nil).Transaction
-	if got := eng.signerCacheKeyType(guarded); got != "ed25519" {
-		t.Fatalf("precondition signer cache key type for guarded authorizer = %q, want stale ed25519", got)
+	txn := testPreparedTxn(t, testAddress(1), testAddress(2), "cosigned-authorizer", nil).Transaction
+	if got := eng.signerCacheKeyType(cosigned); got != "ed25519" {
+		t.Fatalf("precondition signer cache key type for cosigned authorizer = %q, want stale ed25519", got)
 	}
-	if eng.guardedSigner().HasGuardedEffectiveSigner([]types.Transaction{txn}) {
-		t.Fatal("hasGuardedEffectiveSigner() before refresh = true, want false with stale caches")
+	if eng.cosignedSigner().HasCosignedEffectiveSigner([]types.Transaction{txn}) {
+		t.Fatal("hasCosignedEffectiveSigner() before refresh = true, want false with stale caches")
 	}
 
 	if err := eng.refreshSubmitSigningState(context.Background(), []types.Transaction{txn}); err != nil {
 		t.Fatalf("refreshSubmitSigningState() error = %v", err)
 	}
 
-	if auth, ok := eng.AuthCache.GetAuthAddress(sender); !ok || auth != guarded {
-		t.Fatalf("auth cache for sender = %q/%v, want %s/true", auth, ok, guarded)
+	if auth, ok := eng.AuthCache.GetAuthAddress(sender); !ok || auth != cosigned {
+		t.Fatalf("auth cache for sender = %q/%v, want %s/true", auth, ok, cosigned)
 	}
-	if got := eng.signerCacheKeyType(guarded); got != "aplane.falcon1024.v1" {
+	if got := eng.signerCacheKeyType(cosigned); got != "aplane.falcon1024.v1" {
 		t.Fatalf("signer cache key type for cosigned authorizer = %q, want the plain host", got)
 	}
-	if got, ok := eng.signerCacheCosignerPublicKey(guarded); !ok || got != cosignerHex {
-		t.Fatalf("cosigner public key for guarded authorizer = %q/%v, want %s/true", got, ok, cosignerHex)
+	if got, ok := eng.signerCacheCosignerPublicKey(cosigned); !ok || got != cosignerHex {
+		t.Fatalf("cosigner public key for cosigned authorizer = %q/%v, want %s/true", got, ok, cosignerHex)
 	}
-	if got, ok := eng.signerCacheCosignerComponentKeyType(guarded); !ok || got != witness.Falcon1024V1 {
-		t.Fatalf("cosigner component key type for guarded authorizer = %q/%v, want %s/true", got, ok, witness.Falcon1024V1)
+	if got, ok := eng.signerCacheCosignerComponentKeyType(cosigned); !ok || got != witness.Falcon1024V1 {
+		t.Fatalf("cosigner component key type for cosigned authorizer = %q/%v, want %s/true", got, ok, witness.Falcon1024V1)
 	}
-	if profile, ok := eng.signerCacheLogicSigResourceProfile(guarded); !ok || profile.ProgramBytes != 1_500 {
-		t.Fatalf("LogicSig resources for guarded authorizer = %+v/%v, want structured profile", profile, ok)
+	if profile, ok := eng.signerCacheLogicSigResourceProfile(cosigned); !ok || profile.ProgramBytes != 1_500 {
+		t.Fatalf("LogicSig resources for cosigned authorizer = %+v/%v, want structured profile", profile, ok)
 	}
-	if !eng.guardedSigner().HasGuardedEffectiveSigner([]types.Transaction{txn}) {
-		t.Fatal("hasGuardedEffectiveSigner() after refresh = false, want true")
+	if !eng.cosignedSigner().HasCosignedEffectiveSigner([]types.Transaction{txn}) {
+		t.Fatal("hasCosignedEffectiveSigner() after refresh = false, want true")
 	}
 }
 
@@ -110,7 +110,7 @@ func testPublicLogicSigProfile(programBytes uint64) *signerapi.LogicSigResourceP
 
 func TestRefreshSubmitSigningStateDoesNotRefreshCachedAuthAddress(t *testing.T) {
 	sender := testAddress(1).String()
-	guarded := testAddress(3).String()
+	cosigned := testAddress(3).String()
 	cosignerHex := testCosignerPublicKeyHex(0xd6)
 
 	transport := newAccountMockTransport(t)
@@ -124,7 +124,7 @@ func TestRefreshSubmitSigningStateDoesNotRefreshCachedAuthAddress(t *testing.T) 
 				Address: sender,
 				KeyType: "ed25519",
 			}, {
-				Address:                  guarded,
+				Address:                  cosigned,
 				KeyType:                  "aplane.falcon1024.v1",
 				SigningFlow:              signerapi.SigningFlowCosigned1,
 				CosignerComponentKeyType: witness.Falcon1024V1,
@@ -138,17 +138,17 @@ func TestRefreshSubmitSigningStateDoesNotRefreshCachedAuthAddress(t *testing.T) 
 	})
 	eng.AlgodClient = newAccountMockAlgodClient(t, transport)
 	eng.AuthCache = cache.NewAuthAddressCacheForStore(eng.CacheStore)
-	eng.AuthCache.AuthAddresses[sender] = guarded
+	eng.AuthCache.AuthAddresses[sender] = cosigned
 
-	txn := testPreparedTxn(t, testAddress(1), testAddress(2), "guarded-authorizer", nil).Transaction
+	txn := testPreparedTxn(t, testAddress(1), testAddress(2), "cosigned-authorizer", nil).Transaction
 	if err := eng.refreshSubmitSigningState(context.Background(), []types.Transaction{txn}); err != nil {
 		t.Fatalf("refreshSubmitSigningState() error = %v", err)
 	}
 
-	if auth, ok := eng.AuthCache.GetAuthAddress(sender); !ok || auth != guarded {
-		t.Fatalf("auth cache for sender = %q/%v, want cached %s/true", auth, ok, guarded)
+	if auth, ok := eng.AuthCache.GetAuthAddress(sender); !ok || auth != cosigned {
+		t.Fatalf("auth cache for sender = %q/%v, want cached %s/true", auth, ok, cosigned)
 	}
-	if !eng.guardedSigner().HasGuardedEffectiveSigner([]types.Transaction{txn}) {
-		t.Fatal("hasGuardedEffectiveSigner() after refresh = false, want true")
+	if !eng.cosignedSigner().HasCosignedEffectiveSigner([]types.Transaction{txn}) {
+		t.Fatal("hasCosignedEffectiveSigner() after refresh = false, want true")
 	}
 }

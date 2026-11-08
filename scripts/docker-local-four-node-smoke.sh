@@ -1144,7 +1144,7 @@ func main() {
 	if err != nil {
 		fail("prepare payment", err)
 	}
-	result, err := aplane.SignPreparedGuardedGroupWithContext(ctx, aplane.PreparedGuardedGroupOptions{
+	result, err := aplane.SignPreparedCosignedGroupWithContext(ctx, aplane.PreparedCosignedGroupOptions{
 		UserClient:           userClient,
 		CosignerClient:       cosignerClient,
 		CosignerComponentKey: cosignerComponentKey,
@@ -1299,7 +1299,7 @@ from aplanesdk import (
     PreparedGroup,
     SignerClient,
     send_raw_transaction,
-    sign_prepared_guarded_group,
+    sign_prepared_cosigned_group,
 )
 
 MIN_TXN_FEE = 1000
@@ -1338,7 +1338,7 @@ def main() -> int:
             note=b"aplane python sdk plain host validate",
             fee=MIN_TXN_FEE,
         )
-        result = sign_prepared_guarded_group(
+        result = sign_prepared_cosigned_group(
             user_client=user_client,
             cosigner_client=cosigner_client,
             cosigner_component_key=cosigner_component_key,
@@ -1519,7 +1519,7 @@ import {
   SignerClient,
   concatenateSignedTxns,
   sendRawTransaction,
-  signPreparedGuardedGroup,
+  signPreparedCosignedGroup,
 } from "aplanesdk";
 
 const MIN_TXN_FEE = 1000;
@@ -1554,7 +1554,7 @@ async function main() {
       note: new TextEncoder().encode("aplane typescript sdk plain host validate"),
       fee: MIN_TXN_FEE,
     });
-    const result = await signPreparedGuardedGroup({
+    const result = await signPreparedCosignedGroup({
       userClient,
       cosignerClient,
       cosignerComponentKey,

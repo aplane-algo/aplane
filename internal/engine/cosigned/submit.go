@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-package guarded
+package cosigned
 
 import (
 	"bytes"
@@ -24,7 +24,7 @@ import (
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
-type guardedTarget struct {
+type cosignedTarget struct {
 	Index                    int
 	Sender                   string
 	Account                  string
@@ -45,7 +45,7 @@ type cosignerRequestKey struct {
 
 // flowRoute is the client-side route a signing_flow label takes. Every flow
 // label is classified in exactly one place, routeForSigningFlow, and targets
-// carry the result, so the guarded pre-check, target assembly, and resource
+// carry the result, so the cosigned pre-check, target assembly, and resource
 // hints cannot disagree about a label.
 type flowRoute int
 
@@ -57,7 +57,7 @@ const (
 	// orchestration.
 	flowRouteBoundedCosigner
 	// flowRouteUnknown fails closed: the client must be upgraded. Unknown
-	// labels still enter guarded routing so guardedTargets rejects them
+	// labels still enter cosigned routing so cosignedTargets rejects them
 	// explicitly instead of silently falling through to ordinary signing.
 	flowRouteUnknown
 )
@@ -89,10 +89,10 @@ type frozenGroup struct {
 	OriginalCount int
 }
 
-// HasGuardedEffectiveSigner reports whether any transaction's effective
+// HasCosignedEffectiveSigner reports whether any transaction's effective
 // signer declares a component signing flow (signing_flow in signer
 // inventory).
-func (s *Signer) HasGuardedEffectiveSigner(txns []types.Transaction) bool {
+func (s *Signer) HasCosignedEffectiveSigner(txns []types.Transaction) bool {
 	for _, txn := range txns {
 		sender := txn.Sender.String()
 		effectiveSigner := s.authCache.ResolveEffectiveSigner(sender)
@@ -118,14 +118,14 @@ func (s *Signer) SignAndSubmitGroup(txns []types.Transaction, opts clientsign.Su
 		w = os.Stdout
 	}
 
-	targets, err := s.guardedTargets(txns)
+	targets, err := s.cosignedTargets(txns)
 	if err != nil {
 		return nil, nil, err
 	}
 	if len(targets) == 0 {
-		return nil, nil, fmt.Errorf("guarded signing selected with no guarded effective signers")
+		return nil, nil, fmt.Errorf("cosigned signing selected with no cosigned effective signers")
 	}
-	targetsByIndex := make(map[int]guardedTarget, len(targets))
+	targetsByIndex := make(map[int]cosignedTarget, len(targets))
 	for _, target := range targets {
 		targetsByIndex[target.Index] = target
 	}
@@ -136,7 +136,7 @@ func (s *Signer) SignAndSubmitGroup(txns []types.Transaction, opts clientsign.Su
 // signer's base components, then the cosigner's for each target whose path needs
 // one. A listed rekey takes none: the signer's component says so, and assembly
 // checks it again.
-func (s *Signer) signAndSubmitBoundedCosignerGroup(txns []types.Transaction, targets []guardedTarget, targetsByIndex map[int]guardedTarget, opts clientsign.SubmitOptions, w io.Writer) ([]string, []types.Transaction, error) {
+func (s *Signer) signAndSubmitBoundedCosignerGroup(txns []types.Transaction, targets []cosignedTarget, targetsByIndex map[int]cosignedTarget, opts clientsign.SubmitOptions, w io.Writer) ([]string, []types.Transaction, error) {
 	requests, err := s.buildBoundedComponentRequests(txns, targetsByIndex, opts)
 	if err != nil {
 		return nil, nil, err
@@ -161,13 +161,13 @@ func (s *Signer) signAndSubmitBoundedCosignerGroup(txns []types.Transaction, tar
 	if err != nil {
 		return nil, nil, err
 	}
-	cosigned := make([]guardedTarget, 0, len(targets))
+	cosigned := make([]cosignedTarget, 0, len(targets))
 	for _, target := range targets {
 		if components[target.Index].NeedsCosigner() {
 			cosigned = append(cosigned, target)
 		}
 	}
-	// The user side is complete, including any non-guarded positions. Only
+	// The user side is complete, including any non-cosigned positions. Only
 	// now may the client disclose the frozen group to the cosigner endpoint,
 	// and only for the targets that need it.
 	var cosignerSignatures map[int]string
@@ -179,7 +179,7 @@ func (s *Signer) signAndSubmitBoundedCosignerGroup(txns []types.Transaction, tar
 		}
 	}
 	if skipped := len(targets) - len(cosigned); skipped > 0 {
-		_, _ = fmt.Fprintf(w, "[GUARDED] %d listed rekey(s) need no cosigner\n", skipped)
+		_, _ = fmt.Fprintf(w, "[COSIGNED] %d listed rekey(s) need no cosigner\n", skipped)
 	}
 
 	assemblyTargets := make([]signerapi.AssemblyTarget, 0, len(targets))
@@ -224,7 +224,7 @@ func (s *Signer) planFrozenGroup(ctx context.Context, original []types.Transacti
 		return frozenGroup{}, fmt.Errorf("invalid group plan: %w", err)
 	}
 	if dummies := len(planned) - len(original); dummies > 0 {
-		_, _ = fmt.Fprintf(w, "[GUARDED] Signer added %d dummy transaction(s) for LogicSig arguments/opcode budget\n", dummies)
+		_, _ = fmt.Fprintf(w, "[COSIGNED] Signer added %d dummy transaction(s) for LogicSig arguments/opcode budget\n", dummies)
 	}
 	// DecodeGroupHex admits only canonical encodings, so re-encoding yields the
 	// signer's exact bytes in normalized hex.
@@ -234,7 +234,7 @@ func (s *Signer) planFrozenGroup(ctx context.Context, original []types.Transacti
 // requestBoundedBaseComponents obtains the user signer's bounded base
 // component for every target over the frozen group. This is where user policy
 // and operator approval run for bounded targets.
-func (s *Signer) requestBoundedBaseComponents(ctx context.Context, group frozenGroup, requests []signerapi.SignRequest, targets []guardedTarget, targetsByIndex map[int]guardedTarget) (map[int]signerapi.Component, string, error) {
+func (s *Signer) requestBoundedBaseComponents(ctx context.Context, group frozenGroup, requests []signerapi.SignRequest, targets []cosignedTarget, targetsByIndex map[int]cosignedTarget) (map[int]signerapi.Component, string, error) {
 	componentReq := signerapi.ComponentRequest{GroupBytesHex: group.BytesHex}
 	for i, request := range requests {
 		if _, ok := targetsByIndex[i]; ok {
@@ -274,18 +274,18 @@ func (s *Signer) requestBoundedBaseComponents(ctx context.Context, group frozenG
 	return components, componentResp.RequestID, nil
 }
 
-// signContextPositions signs the frozen group's positions that are not guarded
+// signContextPositions signs the frozen group's positions that are not cosigned
 // targets, returning them as assembly passthrough items: budget dummies
-// locally, and non-guarded originals through /sign over the frozen bytes.
-func (s *Signer) signContextPositions(ctx context.Context, group frozenGroup, targetsByIndex map[int]guardedTarget, opts clientsign.SubmitOptions, w io.Writer) ([]signerapi.AssemblyPassthroughItem, error) {
-	signedDummies, err := signGuardedDummies(group.Txns[group.OriginalCount:])
+// locally, and non-cosigned originals through /sign over the frozen bytes.
+func (s *Signer) signContextPositions(ctx context.Context, group frozenGroup, targetsByIndex map[int]cosignedTarget, opts clientsign.SubmitOptions, w io.Writer) ([]signerapi.AssemblyPassthroughItem, error) {
+	signedDummies, err := signCosignedDummies(group.Txns[group.OriginalCount:])
 	if err != nil {
 		return nil, err
 	}
-	if nonGuardedCount := group.OriginalCount - len(targetsByIndex); nonGuardedCount > 0 {
-		_, _ = fmt.Fprintf(w, "[GUARDED] Mixed group: signing %d non-guarded position(s) over canonical bytes\n", nonGuardedCount)
+	if nonCosignedCount := group.OriginalCount - len(targetsByIndex); nonCosignedCount > 0 {
+		_, _ = fmt.Fprintf(w, "[COSIGNED] Mixed group: signing %d non-cosigned position(s) over canonical bytes\n", nonCosignedCount)
 	}
-	signedOriginals, err := s.requestNonGuardedSignatures(ctx, group.Txns, group.BytesHex, group.OriginalCount, targetsByIndex, opts)
+	signedOriginals, err := s.requestNonCosignedSignatures(ctx, group.Txns, group.BytesHex, group.OriginalCount, targetsByIndex, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -312,7 +312,7 @@ func (s *Signer) assembleAndSubmit(group frozenGroup, targets []signerapi.Assemb
 	if err != nil {
 		return nil, nil, fmt.Errorf("group assembly failed: %w", err)
 	}
-	signedBytes, signedObjects, submittedTxns, err := decodeGuardedSignedGroup(assemblyResp.SignedGroup)
+	signedBytes, signedObjects, submittedTxns, err := decodeCosignedSignedGroup(assemblyResp.SignedGroup)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -321,14 +321,14 @@ func (s *Signer) assembleAndSubmit(group frozenGroup, targets []signerapi.Assemb
 	}
 	if opts.Simulate {
 		txIDs, simErr := signing.SimulateSignedTransactionsWithContext(opts.Ctx, signedObjects, s.algod, w)
-		writeGuardedSubmittedTransactions(opts.TxnWriter, submittedTxns, txIDs, group.OriginalCount)
+		writeCosignedSubmittedTransactions(opts.TxnWriter, submittedTxns, txIDs, group.OriginalCount)
 		return txIDs, submittedTxns, simErr
 	}
 	txIDs, err := signing.SubmitTransactionsWithContext(opts.Ctx, signedBytes, s.algod, opts.WaitForConfirmation, w)
 	if err != nil {
 		return txIDs, submittedTxns, err
 	}
-	writeGuardedSubmittedTransactions(opts.TxnWriter, submittedTxns, txIDs, group.OriginalCount)
+	writeCosignedSubmittedTransactions(opts.TxnWriter, submittedTxns, txIDs, group.OriginalCount)
 	return txIDs, submittedTxns, nil
 }
 
@@ -348,7 +348,7 @@ func signModeRequest(i int, authAddress, sender, txnHex string, opts clientsign.
 	return request
 }
 
-func (s *Signer) buildBoundedComponentRequests(txns []types.Transaction, targetsByIndex map[int]guardedTarget, opts clientsign.SubmitOptions) ([]signerapi.SignRequest, error) {
+func (s *Signer) buildBoundedComponentRequests(txns []types.Transaction, targetsByIndex map[int]cosignedTarget, opts clientsign.SubmitOptions) ([]signerapi.SignRequest, error) {
 	requests := make([]signerapi.SignRequest, len(txns))
 	for i, txn := range txns {
 		txnHex := txnutil.EncodeWithPrefixHex(txn)
@@ -451,13 +451,13 @@ func validatePlannedGroup(original, planned []types.Transaction, mutations *sign
 	if mutations != nil && uint64(mutations.TotalFeesDelta) != totalFeeDelta {
 		return fmt.Errorf("mutation total_fees_delta %d does not match observed delta %d", mutations.TotalFeesDelta, totalFeeDelta)
 	}
-	if err := validateGuardedDummies(planned[len(original):]); err != nil {
+	if err := validateCosignedDummies(planned[len(original):]); err != nil {
 		return err
 	}
 	return nil
 }
 
-func validateBoundedTargetFees(planned []types.Transaction, targets []guardedTarget) error {
+func validateBoundedTargetFees(planned []types.Transaction, targets []cosignedTarget) error {
 	for _, target := range targets {
 		if target.Index < 0 || target.Index >= len(planned) {
 			return fmt.Errorf("bounded target index %d is outside planned group", target.Index)
@@ -473,12 +473,12 @@ func validateBoundedTargetFees(planned []types.Transaction, targets []guardedTar
 }
 
 // buildGroupSignRequests builds the per-position /sign request array for the
-// frozen guarded group: dummies as foreign placeholders, guarded targets as
-// foreign entries with LogicSig resource hints, and non-guarded originals in sign
-// mode. It returns the requests plus the non-guarded sign-mode indices.
-func (s *Signer) buildGroupSignRequests(plannedTxns []types.Transaction, groupBytesHex []string, originalCount int, guardedTargets map[int]guardedTarget, opts clientsign.SubmitOptions) ([]signerapi.SignRequest, []int, error) {
+// frozen cosigned group: dummies as foreign placeholders, cosigned targets as
+// foreign entries with LogicSig resource hints, and non-cosigned originals in sign
+// mode. It returns the requests plus the non-cosigned sign-mode indices.
+func (s *Signer) buildGroupSignRequests(plannedTxns []types.Transaction, groupBytesHex []string, originalCount int, cosignedTargets map[int]cosignedTarget, opts clientsign.SubmitOptions) ([]signerapi.SignRequest, []int, error) {
 	signRequests := make([]signerapi.SignRequest, len(plannedTxns))
-	nonGuarded := make([]int, 0, originalCount)
+	nonCosigned := make([]int, 0, originalCount)
 	for i := range plannedTxns {
 		sender := plannedTxns[i].Sender.String()
 		switch {
@@ -491,34 +491,34 @@ func (s *Signer) buildGroupSignRequests(plannedTxns []types.Transaction, groupBy
 					MaxOpcodeCost: 1,
 				},
 			}
-		case guardedTargets[i].Account != "":
-			// Guarded target: foreign with a LogicSig resource hint. Kept in the group
+		case cosignedTargets[i].Account != "":
+			// Cosigned target: foreign with a LogicSig resource hint. Kept in the group
 			// for context and budget accounting but not signed here.
-			target := guardedTargets[i]
+			target := cosignedTargets[i]
 			if target.Sender != sender {
-				return nil, nil, fmt.Errorf("guarded target %d sender %s does not match transaction sender %s", i, target.Sender, sender)
+				return nil, nil, fmt.Errorf("cosigned target %d sender %s does not match transaction sender %s", i, target.Sender, sender)
 			}
 			signRequests[i] = signerapi.SignRequest{TxnBytesHex: groupBytesHex[i]}
-			path, err := guardedLogicSigResourcePath(target)
+			path, err := cosignedLogicSigResourcePath(target)
 			if err != nil {
-				return nil, nil, fmt.Errorf("guarded target %d: %w", i, err)
+				return nil, nil, fmt.Errorf("cosigned target %d: %w", i, err)
 			}
 			if err := applyForeignLogicSigPathHint(&signRequests[i], s.cache, target.Account, path); err != nil {
-				return nil, nil, fmt.Errorf("guarded target %d: %w", i, err)
+				return nil, nil, fmt.Errorf("cosigned target %d: %w", i, err)
 			}
 		default:
-			// Non-guarded original: sign mode over the canonical bytes. Resolve
+			// Non-cosigned original: sign mode over the canonical bytes. Resolve
 			// the effective signer so a rekeyed account is signed by — and
 			// budgeted against — its auth address, matching the plan request.
 			effectiveSigner := s.authCache.ResolveEffectiveSigner(sender)
 			signRequests[i] = signModeRequest(i, effectiveSigner, sender, groupBytesHex[i], opts)
-			nonGuarded = append(nonGuarded, i)
+			nonCosigned = append(nonCosigned, i)
 		}
 	}
-	return signRequests, nonGuarded, nil
+	return signRequests, nonCosigned, nil
 }
 
-func guardedLogicSigResourcePath(target guardedTarget) (lsigresource.AuthorizationPath, error) {
+func cosignedLogicSigResourcePath(target cosignedTarget) (lsigresource.AuthorizationPath, error) {
 	switch target.Route {
 	case flowRouteBoundedCosigner:
 		// Carry the exact path the signer's base component named into the later
@@ -534,7 +534,7 @@ func guardedLogicSigResourcePath(target guardedTarget) (lsigresource.Authorizati
 			return 0, fmt.Errorf("cosigned target has no base component path yet")
 		}
 	default:
-		return 0, fmt.Errorf("guarded target has unsupported flow route %d", target.Route)
+		return 0, fmt.Errorf("cosigned target has unsupported flow route %d", target.Route)
 	}
 }
 
@@ -608,45 +608,45 @@ func conservativeLogicSigResourceUsage(profile lsigresource.Profile) *signerapi.
 	}
 }
 
-// requestNonGuardedSignatures signs the non-guarded original positions of a
-// mixed guarded group over the frozen canonical bytes, so every signature in
-// the group commits to the same final transaction IDs. Guarded targets and
-// dummies are sent as foreign — guarded with a LogicSig resource hint for the guarded
+// requestNonCosignedSignatures signs the non-cosigned original positions of a
+// mixed cosigned group over the frozen canonical bytes, so every signature in
+// the group commits to the same final transaction IDs. Cosigned targets and
+// dummies are sent as foreign — cosigned with a LogicSig resource hint for the cosigned
 // authorizer so the signer's budget accounting stays exact and honest — and
-// only the non-guarded originals are signed; the guarded positions are
+// only the non-cosigned originals are signed; the cosigned positions are
 // assembled later via /sign/assemble. Returns signed-transaction hex keyed by
-// group index. When there are no non-guarded originals (the all-guarded case)
+// group index. When there are no non-cosigned originals (the all-cosigned case)
 // it makes no signer call.
-func (s *Signer) requestNonGuardedSignatures(ctx context.Context, plannedTxns []types.Transaction, groupBytesHex []string, originalCount int, guardedTargets map[int]guardedTarget, opts clientsign.SubmitOptions) (map[int]string, error) {
-	signRequests, nonGuarded, err := s.buildGroupSignRequests(plannedTxns, groupBytesHex, originalCount, guardedTargets, opts)
+func (s *Signer) requestNonCosignedSignatures(ctx context.Context, plannedTxns []types.Transaction, groupBytesHex []string, originalCount int, cosignedTargets map[int]cosignedTarget, opts clientsign.SubmitOptions) (map[int]string, error) {
+	signRequests, nonCosigned, err := s.buildGroupSignRequests(plannedTxns, groupBytesHex, originalCount, cosignedTargets, opts)
 	if err != nil {
 		return nil, err
 	}
 
-	if len(nonGuarded) == 0 {
+	if len(nonCosigned) == 0 {
 		return map[int]string{}, nil
 	}
 
 	signResp, err := s.conn.RequestGroupSignWithContext(ctx, signRequests)
 	if err != nil {
-		return nil, fmt.Errorf("signing non-guarded group positions failed: %w", err)
+		return nil, fmt.Errorf("signing non-cosigned group positions failed: %w", err)
 	}
 	if len(signResp.Signed) != len(signRequests) {
 		return nil, fmt.Errorf("signer returned %d signed position(s), want %d", len(signResp.Signed), len(signRequests))
 	}
 
-	signed := make(map[int]string, len(nonGuarded))
-	for _, i := range nonGuarded {
+	signed := make(map[int]string, len(nonCosigned))
+	for _, i := range nonCosigned {
 		if signResp.Signed[i] == "" {
-			return nil, fmt.Errorf("signer returned no signature for non-guarded position %d", i+1)
+			return nil, fmt.Errorf("signer returned no signature for non-cosigned position %d", i+1)
 		}
 		signed[i] = signResp.Signed[i]
 	}
 	return signed, nil
 }
 
-func (s *Signer) guardedTargets(txns []types.Transaction) ([]guardedTarget, error) {
-	targets := make([]guardedTarget, 0, len(txns))
+func (s *Signer) cosignedTargets(txns []types.Transaction) ([]cosignedTarget, error) {
+	targets := make([]cosignedTarget, 0, len(txns))
 	for i, txn := range txns {
 		sender := txn.Sender.String()
 		account := s.authCache.ResolveEffectiveSigner(sender)
@@ -661,21 +661,21 @@ func (s *Signer) guardedTargets(txns []types.Transaction) ([]guardedTarget, erro
 		}
 		cosignerComponentKeyType, ok := s.cache.CosignerComponentKeyType(account)
 		if !ok {
-			return nil, fmt.Errorf("guarded account %s is missing cosigner_component_key_type metadata; run keys refresh", account)
+			return nil, fmt.Errorf("cosigned account %s is missing cosigner_component_key_type metadata; run keys refresh", account)
 		}
 		cosignerPublicKey, ok := s.cache.CosignerPublicKey(account)
 		if !ok || cosignerPublicKey == "" {
-			return nil, fmt.Errorf("guarded account %s is missing cosigner_public_key metadata; run keys refresh", account)
+			return nil, fmt.Errorf("cosigned account %s is missing cosigner_public_key metadata; run keys refresh", account)
 		}
 		canonicalPublicKey, err := normalizeCosignerPublicKeyHex(cosignerPublicKey)
 		if err != nil {
-			return nil, fmt.Errorf("guarded account %s has invalid cosigner_public_key metadata: %w", account, err)
+			return nil, fmt.Errorf("cosigned account %s has invalid cosigner_public_key metadata: %w", account, err)
 		}
 		boundedMaxFee, err := s.boundedFeeCeiling(account)
 		if err != nil {
 			return nil, err
 		}
-		targets = append(targets, guardedTarget{
+		targets = append(targets, cosignedTarget{
 			Index:                    i,
 			Sender:                   sender,
 			Account:                  account,
@@ -710,7 +710,7 @@ func (s *Signer) boundedFeeCeiling(account string) (*uint64, error) {
 	}
 }
 
-func (t guardedTarget) requestKey() cosignerRequestKey {
+func (t cosignedTarget) requestKey() cosignerRequestKey {
 	return cosignerRequestKey{
 		ComponentKeyType: t.CosignerComponentKeyType,
 		PublicKey:        t.CosignerPublicKey,
@@ -778,13 +778,13 @@ func encodeGroupHex(txns []types.Transaction) []string {
 	return groupHex
 }
 
-func signGuardedDummies(dummyTxns []types.Transaction) ([]string, error) {
-	if err := validateGuardedDummies(dummyTxns); err != nil {
+func signCosignedDummies(dummyTxns []types.Transaction) ([]string, error) {
+	if err := validateCosignedDummies(dummyTxns); err != nil {
 		return nil, err
 	}
 	signedDummies, err := signing.SignDummyTransactions(dummyTxns)
 	if err != nil {
-		return nil, fmt.Errorf("failed to sign guarded dummy transactions: %w", err)
+		return nil, fmt.Errorf("failed to sign cosigned dummy transactions: %w", err)
 	}
 	signedHex := make([]string, len(signedDummies))
 	for i, signed := range signedDummies {
@@ -793,22 +793,22 @@ func signGuardedDummies(dummyTxns []types.Transaction) ([]string, error) {
 	return signedHex, nil
 }
 
-func validateGuardedDummies(dummyTxns []types.Transaction) error {
+func validateCosignedDummies(dummyTxns []types.Transaction) error {
 	dummyAddress, err := signing.DummyAddress()
 	if err != nil {
-		return fmt.Errorf("failed to derive guarded dummy address: %w", err)
+		return fmt.Errorf("failed to derive cosigned dummy address: %w", err)
 	}
 	for i, txn := range dummyTxns {
 		if txn.Type != types.PaymentTx || txn.Sender != dummyAddress || txn.Receiver != dummyAddress ||
 			txn.Amount != 0 || txn.Fee != 0 || len(txn.Note) != 1 || txn.Note[0] != byte(i) ||
 			!txn.RekeyTo.IsZero() || !txn.CloseRemainderTo.IsZero() {
-			return fmt.Errorf("signer-appended transaction %d is not a canonical guarded budget dummy", i)
+			return fmt.Errorf("signer-appended transaction %d is not a canonical cosigned budget dummy", i)
 		}
 	}
 	return nil
 }
 
-func (s *Signer) requestCosignerComponentSignatures(ctx context.Context, groupBytesHex []string, originalCount int, targets []guardedTarget, appCallInfo []*signerapi.AppCallInfo) (map[int]string, map[cosignerRequestKey]string, error) {
+func (s *Signer) requestCosignerComponentSignatures(ctx context.Context, groupBytesHex []string, originalCount int, targets []cosignedTarget, appCallInfo []*signerapi.AppCallInfo) (map[int]string, map[cosignerRequestKey]string, error) {
 	byCosigner := make(map[cosignerRequestKey][]int)
 	for _, target := range targets {
 		key := target.requestKey()
@@ -839,7 +839,7 @@ func (s *Signer) requestCosignerComponentSignatures(ctx context.Context, groupBy
 // requestOneCosignerComponentSignatureSet collects component signatures from a
 // cosigner endpoint without verifying them cryptographically: the client treats
 // component signatures as opaque material. Invalid signatures are rejected by
-// the signer during guarded assembly and, authoritatively, by the guarded
+// the signer during cosigned assembly and, authoritatively, by the cosigned
 // LogicSig on-chain.
 func (s *Signer) requestOneCosignerComponentSignatureSet(ctx context.Context, endpoint *resolvedCosignerEndpoint, groupBytesHex []string, originalCount int, cosignerKey cosignerRequestKey, indices []int, signatures map[int]string, appCallInfo []*signerapi.AppCallInfo) (string, error) {
 	componentSelector, err := cosignerComponentSelector(cosignerKey.ComponentKeyType, cosignerKey.PublicKey)
@@ -914,7 +914,7 @@ func collectComponentSignatures(resp *signerapi.ComponentResponse, expected []in
 	return nil
 }
 
-func decodeGuardedSignedGroup(signedHex []string) ([][]byte, []types.SignedTxn, []types.Transaction, error) {
+func decodeCosignedSignedGroup(signedHex []string) ([][]byte, []types.SignedTxn, []types.Transaction, error) {
 	signedBytes := make([][]byte, len(signedHex))
 	signedObjects := make([]types.SignedTxn, len(signedHex))
 	txns := make([]types.Transaction, len(signedHex))
@@ -934,7 +934,7 @@ func decodeGuardedSignedGroup(signedHex []string) ([][]byte, []types.SignedTxn, 
 	return signedBytes, signedObjects, txns, nil
 }
 
-func writeGuardedSubmittedTransactions(writer func(types.Transaction, string), txns []types.Transaction, txIDs []string, originalCount int) {
+func writeCosignedSubmittedTransactions(writer func(types.Transaction, string), txns []types.Transaction, txIDs []string, originalCount int) {
 	if writer == nil {
 		return
 	}

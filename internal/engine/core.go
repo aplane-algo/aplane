@@ -16,7 +16,7 @@ import (
 // connection lifecycle, the signer key cache, address/signability/asset
 // resolution (including the read-only balance/holders queries the address
 // resolver needs), and the client-data lock. Domain command methods (payments,
-// asset transfers, apps, key management, guarded signing) live on Engine and
+// asset transfers, apps, key management, cosigned signing) live on Engine and
 // reach this infrastructure through the embedded *Core.
 type Core struct {
 	*clientstate.State

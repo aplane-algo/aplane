@@ -123,7 +123,7 @@ does:
 
 - `/plan` output for a multi-transaction group carries its group ID. Sent back
   to `/sign`, it is pre-grouped and immutable: it is checked against the full
-  requirement and not raised. Guarded and bounded component signing check a
+  requirement and not raised. Cosigned and bounded component signing check a
   frozen group the same way.
 - The rotating flow's sign step checks a prepared group by rebuilding it. It
   measures the charge on the presented spend, takes it off to recover the

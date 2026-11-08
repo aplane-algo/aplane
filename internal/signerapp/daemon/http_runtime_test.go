@@ -24,7 +24,7 @@ func TestHTTPWriteTimeoutCoversApprovalWait(t *testing.T) {
 func TestHTTPServerDoesNotExposeSignerSimulationRoutes(t *testing.T) {
 	handler := buildHTTPServer(nil, 0).Handler
 	for _, path := range []string{
-		"/simulate", "/simulate/guarded",
+		"/simulate", "/simulate/cosigned",
 		"/sign/bounded-component", "/sign/bounded-assemble",
 	} {
 		t.Run(path, func(t *testing.T) {

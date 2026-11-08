@@ -1,7 +1,7 @@
 ---------------------- MODULE bounded_cosigner ----------------------
 (*
 Machine-checkable model for the cosigned1 planning and assembly choreography
-implemented by internal/engine/guarded/submit.go and
+implemented by internal/engine/cosigned/submit.go and
 internal/signerapp/signing/bounded_cosigner.go.
 
 A cosigned account's target takes one of three paths: a spend and a declared
@@ -152,7 +152,7 @@ Presented == cosignerReleased /\ input.presentCosigner
    assembly receipt against the bounded spending public key, and then checks
    exact target coverage, the base signature, the cosigner signature where the
    path needs one and its absence where it does not, source/path masks,
-   derived arguments, passthrough binding (validateGuardedPassthrough: the
+   derived arguments, passthrough binding (validateCosignedPassthrough: the
    decoded txid, a signature, and no locally held cosigned signer), and
    canonical transaction bytes before returning one atomic group. A client
    that skipped the cosigner assembles from base_released. *)

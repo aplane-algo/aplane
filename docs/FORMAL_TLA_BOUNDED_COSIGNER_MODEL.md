@@ -7,7 +7,7 @@
 
 This model checks the first-party client's stage order and the security-bearing
 final acceptance boundary of the `cosigned1` choreography. It complements the
-legacy guarded assembly model: first-party orchestration releases an ordinary
+legacy cosigned assembly model: first-party orchestration releases an ordinary
 bounded base signature, requests the cosigner only after signer policy and
 operator approval, and then uses the shared `/sign/assemble` route with the
 distinct `bounded-cosigner` target kind to derive and place the declared
@@ -71,7 +71,7 @@ planned -> base_released -> cosigner_released -> output
 ```
 
 The transition predicates transcribe the relevant decision boundaries in
-`internal/engine/guarded/submit.go` and
+`internal/engine/cosigned/submit.go` and
 `internal/signerapp/signing/bounded_cosigner.go`. Unlike the one-shot assembly
 models, the state graph checks that the first-party orchestration's cosigner
 transition is not reachable before a successful base release. It does not model arbitrary direct calls to
@@ -136,7 +136,7 @@ The checked model passes its standard exhaustive run.
 
 ## Cosigned-flow properties checked in Go
 
-These invariants came from the guarded signing model, retired with the
+These invariants came from the cosigned signing model, retired with the
 dedicated cosigned account in phase 5 of the account overlays; they describe
 code the cosigned flow (`cosigned1`) keeps. A8 is now machine-checked above.
 A1, A3, A6, A7 and A14 described the dedicated account's user component and
@@ -196,11 +196,11 @@ java -jar tla2tools.jar -config docs/formal/bounded_cosigner.cfg \
 
 ## Linking back
 
-- Architecture: [ARCH_GUARDED.md](ARCH_GUARDED.md#corridor-v1),
+- Architecture: [ARCH_COSIGNED.md](ARCH_COSIGNED.md#corridor-v1),
   [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md), and
-  [ARCH_GUARDED.md](ARCH_GUARDED.md).
+  [ARCH_COSIGNED.md](ARCH_COSIGNED.md).
 - Traceability: BS1-BS7, A2, A4, A5, A8-A13 and A15 in
   [FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md).
 - Concrete tests: `internal/signerapp/signing/bounded_cosigner_test.go`,
-  `internal/engine/guarded/submit_test.go`, and
-  `internal/engine/guarded/simulate_submit_test.go`.
+  `internal/engine/cosigned/submit_test.go`, and
+  `internal/engine/cosigned/simulate_submit_test.go`.

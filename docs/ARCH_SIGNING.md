@@ -524,7 +524,7 @@ authorization path, enabling consensus-correct dummy and fee calculation.
 
 4. **`lsig_resources` is advisory for generic foreign entries**: It is a
    structured selected-path declaration used for dummy and program-fee
-   planning. The server trusts the hint. Guarded mixed-group clients provide
+   planning. The server trusts the hint. Cosigned mixed-group clients provide
    signer-advertised values so client and server resource calculations stay in
    parity; incorrect hints can cause early pre-grouped rejection or later algod
    failure.
@@ -532,7 +532,7 @@ authorization path, enabling consensus-correct dummy and fee calculation.
 5. **Dummies are returned by this signer unless already supplied**: Dummy
    transactions created during foreign-mode group construction are assembled
    with APlane's embedded dummy LogicSig and returned in the signer's own
-   output, not as foreign placeholders. In guarded mixed groups, dummies may be
+   output, not as foreign placeholders. In cosigned mixed groups, dummies may be
    client-created and signed locally, then sent as foreign context to the
    intermediate `/sign` and passthrough to `/sign/assemble`.
 
@@ -827,7 +827,7 @@ transaction fee selection through its algod SuggestedParams response and
 validates that response against the explicit v42/v43 allowlist.
 First-party planning and executable workflows refresh this check before asking
 apsigner to plan, releasing signatures, or submitting, including JavaScript
-`plan()`, prebuilt transaction signing, plugin pre-sign callbacks, guarded
+`plan()`, prebuilt transaction signing, plugin pre-sign callbacks, cosigned
 signing, and verbatim pregrouped
 submission/simulation. The apsigner `/plan` endpoint itself remains independent
 of a client algod.
@@ -1108,7 +1108,7 @@ The DTO and error-code source of truth is `pkg/signerapi`, which in-repo
 callers import directly.
 
 The current signer HTTP protocol is `2.0`. Version 2 removes the signer-owned
-ordinary and guarded simulation endpoints and their DTOs. Simulation-capable
+ordinary and cosigned simulation endpoints and their DTOs. Simulation-capable
 clients must use ordinary signing followed by client-side algod simulation.
 This is a coordinated breaking change: clients that call the removed routes
 receive `404` and must be upgraded with apsigner.
@@ -1290,7 +1290,7 @@ See [Mode Selection](#mode-selection) for the foreign/passthrough/sign distincti
   contribute to group consistency, approval context, warning analysis, and
   audit visibility.
 - Apsigner has no simulation endpoint or simulation request mode. Full
-  simulation obtains an executable group through ordinary `/sign`; guarded
+  simulation obtains an executable group through ordinary `/sign`; cosigned
   and bounded-cosigner groups both use `/plan`, `/sign/component`, and
   `/sign/assemble`, and the client verifies the assembled group against the
   frozen canonical bytes. The client then sends the exact returned group to its configured algod simulate
@@ -1403,7 +1403,7 @@ material into another account, metadata instance, or runtime-argument set.
 
 `/sign/assemble` accepts `signerapi.AssemblyRequest`: optional `request_id`,
 the frozen group, discriminated `targets[]`, and optional `passthrough[]`.
-Every target is `bounded-cosigner` (the retired `guarded` kind is refused) and
+Every target is `bounded-cosigner` (the retired `cosigned` kind is refused) and
 carries base signatures, runtime arguments, an assembly receipt, and a cosigner
 signature, which is optional on the wire: a listed rekey carries none.
 `cosigner_source_request_id` needs a `cosigner_signature`. Every position is
@@ -2043,7 +2043,7 @@ Cross-SDK compatibility-bearing behavior:
   optional selected-path LogicSig resource hints, optional app-call display metadata, and
   SDK-side preflight checks. Prepared groups preserve caller/apshell-equivalent
   transaction ordering before handoff to `/plan`, `/sign`, or the
-  guarded component flow.
+  cosigned component flow.
 - For a bounded account, SDKs select the resource path from inventory: `spend`
   for a pure spend, `spending_rekey` for a pure rekey under
   `rekey: spending_key` without a list, and `listed_rekey` for a pure rekey under
@@ -2063,18 +2063,18 @@ Cross-SDK compatibility-bearing behavior:
   final group ID assignment, signer-managed dummy insertion, fee pooling,
   policy, approval, or signing. Those remain apsigner-owned behavior behind
   `/plan` and `/sign`.
-- Guarded prepared signing requires frozen canonical bytes before component
-  signatures are requested. The normative SDK sequence is: classify guarded
+- Cosigned prepared signing requires frozen canonical bytes before component
+  signatures are requested. The normative SDK sequence is: classify cosigned
   targets; construct intended original transactions; send those originals plus
   signer-advertised structured LogicSig resource hints to `/plan`; validate the
   returned canonical group and mutation report; derive the
   target/context/dummy position partition; locally sign only the canonical
   dummy suffix returned by `/plan`; obtain the required bounded-base and
   cosigner components, asking the cosigner for no `listed_rekey` target and
-  sending no cosigner request when no target needs one; call ordinary `/sign` for any non-guarded original
+  sending no cosigner request when no target needs one; call ordinary `/sign` for any non-cosigned original
   positions; and call `/sign/assemble` with the frozen group and signed
   passthrough positions. Resource hints are planning inputs, not locally
-  inserted transactions. Final guarded assembly remains signer-owned, and
+  inserted transactions. Final cosigned assembly remains signer-owned, and
   submission or simulation uses the exact assembled group. Bounded-base
   `/sign/component` requests run the signer-domain approval gates and can block
   on operator approval, so SDK deadlines for them follow the same

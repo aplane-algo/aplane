@@ -212,7 +212,7 @@ All documentation is in the [`docs/`](docs/) directory.
 - [ARCH_SECURITY.md](docs/ARCH_SECURITY.md) - Authentication, SSH transport, client enrollment, audit log, and the product authorization model
 - [ARCH_CRYPTO.md](docs/ARCH_CRYPTO.md) - Cryptographic design
 - [ARCH_KEYTYPES.md](docs/ARCH_KEYTYPES.md) - Key type dimensions and resolution axes, key type identifiers, and LogicSig providers
-- [ARCH_GUARDED.md](docs/ARCH_GUARDED.md) - Guarded signing and cosigner nodes, and the Corridor v1 profile
+- [ARCH_COSIGNED.md](docs/ARCH_COSIGNED.md) - Cosigned signing and cosigner nodes, and the Corridor v1 profile
 - [ARCH_BOUNDED_DSA.md](docs/ARCH_BOUNDED_DSA.md) - The `bounded2` contract: path declaration, effect inventory, and canonical encodings
 - [ARCH_NETWORKS.md](docs/ARCH_NETWORKS.md) - Network context tokens, genesis-hash mapping, and network-scoped policy behavior
 - [ARCH_SHELL.md](docs/ARCH_SHELL.md) - Client side: engine, REPL and parsing contracts, app interaction, and the MCP surface

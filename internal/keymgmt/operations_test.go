@@ -197,7 +197,7 @@ func TestValidKeyTypesExcludeExternalGovernancePrivateKeys(t *testing.T) {
 // A plain host generated through keymgmt persists its plain1 signing metadata
 // beside the cosigner key it embeds.
 func TestGenerateKeyPlainHostPersistsSigningMetadata(t *testing.T) {
-	configureGuardedCompileMock(t)
+	configureCosignedCompileMock(t)
 
 	tests := []struct {
 		keyType           string
@@ -349,7 +349,7 @@ func containsKeyType(items []string, keyType string) bool {
 	return false
 }
 
-func configureGuardedCompileMock(t *testing.T) {
+func configureCosignedCompileMock(t *testing.T) {
 	t.Helper()
 	bytecode := []byte{13, 0x81, 0}
 	var hash string
@@ -364,19 +364,19 @@ func configureGuardedCompileMock(t *testing.T) {
 	if hash == "" {
 		t.Fatal("failed to find deterministic compiler-auto-salted test bytecode")
 	}
-	client, err := algod.MakeClientWithTransport("http://mock-algod", "", nil, guardedCompileMockTransport{bytecode: bytecode, hash: hash})
+	client, err := algod.MakeClientWithTransport("http://mock-algod", "", nil, cosignedCompileMockTransport{bytecode: bytecode, hash: hash})
 	if err != nil {
 		t.Fatalf("MakeClientWithTransport() error = %v", err)
 	}
 	lsigprovider.ConfigureAlgodClient(client)
 }
 
-type guardedCompileMockTransport struct {
+type cosignedCompileMockTransport struct {
 	bytecode []byte
 	hash     string
 }
 
-func (m guardedCompileMockTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+func (m cosignedCompileMockTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if req.Method != http.MethodPost || req.URL.Path != "/v2/teal/compile" {
 		return &http.Response{
 			StatusCode: http.StatusNotFound,

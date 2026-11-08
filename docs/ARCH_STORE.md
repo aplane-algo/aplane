@@ -1338,7 +1338,7 @@ bounded keys require version 2. LogicSig key payloads include:
   construction whose signer-side provider signs with the key material and packs
   signature args; v1 signing-metadata DSA keys also persist it when it equals
   `key_type`. This field does not say which provider owns account metadata,
-  creation parameters, TEAL, or guarded assembly.
+  creation parameters, TEAL, or cosigned assembly.
 - `template_fingerprint` — optional; the behavior-only, versioned (`<n>:`
   prefix) compatibility fingerprint of the template/provider definition that
   created or was bundled with the key, when known. It depends on no user-facing

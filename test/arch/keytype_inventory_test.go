@@ -11,6 +11,10 @@ import (
 	"testing"
 )
 
+// retiredCosignedName is the name phase 6 replaced with "cosigned", split so
+// this file does not match itself.
+const retiredCosignedName = "guar" + "ded"
+
 func TestRetiredKeyTypeProductsDoNotReturn(t *testing.T) {
 	root := filepath.Join("..", "..")
 	retired := []string{
@@ -57,15 +61,14 @@ func TestRetiredKeyTypeProductsDoNotReturn(t *testing.T) {
 		// the plain host. The string cosigner1 alone stays: it is the cosigner
 		// overlay's contract label.
 		"aplane." + "falcon1024-cosigner1024" + ".v1",
-		"lsig/" + "falcon1024_guarded",
 		"SigningFlow" + "Cosigner1",
 		"ComponentTargetKind" + "User",
-		"AssemblyTargetKind" + "Guarded",
 		"message." + "RoleUser",
-		"SignGuarded" + "Group",
-		"sign_guarded" + "_group",
-		"GuardedSigningMetadata" + "NeedsRefresh",
-		"keys_response" + "_guarded",
+		// The naming pass: the old name for a cosigned account, in every
+		// spelling. It covers the client package and ARCH doc that carried it,
+		// its identifiers in the code and the SDKs, and the dedicated type's
+		// retired package, assembly kind, SDK calls and contract fixture.
+		retiredCosignedName,
 		// Mnemonic import is native-only.
 		"Mnemonic" + "Provider",
 	}
@@ -84,6 +87,11 @@ func TestRetiredKeyTypeProductsDoNotReturn(t *testing.T) {
 		".go": true, ".md": true, ".yaml": true, ".yml": true,
 		".json": true, ".sh": true, ".service": true, ".toml": true,
 	}
+
+	// The formal roadmap's drift-review log is dated history too, and the
+	// traceability rows may name the model the A8 check moved from.
+	historyOfCosignedName := map[string]bool{"../../docs/FORMALIZATION_ROADMAP.md": true}
+	retiredModel := strings.ToLower(retiredCosignedName + "_assembly")
 
 	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
 		if err != nil {
@@ -112,6 +120,12 @@ func TestRetiredKeyTypeProductsDoNotReturn(t *testing.T) {
 		lower := strings.ToLower(string(content))
 		for _, token := range retired {
 			scanned := lower
+			if token == retiredCosignedName {
+				if historyOfCosignedName[filepath.ToSlash(path)] {
+					continue
+				}
+				scanned = strings.ReplaceAll(scanned, retiredModel, "")
+			}
 			if slices.Contains(removesRetired[filepath.ToSlash(path)], token) {
 				var kept []string
 				for _, line := range strings.Split(lower, "\n") {

@@ -200,13 +200,13 @@ internal/engine/
 ├── consensus.go           # Algod consensus compatibility checks
 ├── cosigner_status.go     # Cosigner endpoint and account inventory status
 ├── group.go               # PreparedGroup, grouped preparation and execution
-├── guarded.go             # Guarded package wiring and public re-exports
-├── guarded/               # Isolated guarded-account client orchestration
+├── cosigned.go             # Cosigned package wiring and public re-exports
+├── cosigned/               # Isolated cosigned-account client orchestration
 │   ├── discovery.go       # Cosigner endpoint/key discovery
 │   ├── inspect.go         # Setup-time cosigner endpoint inspection
 │   ├── signer.go          # Narrow dependency surface and Signer type
 │   ├── status.go          # Point-in-time route and connection observations
-│   └── submit.go          # Guarded and bounded-cosigner component signing, assembly, and submission
+│   └── submit.go          # Cosigned and bounded-cosigner component signing, assembly, and submission
 ├── init.go                # Package initialization
 ├── keygen_params.go       # Key-generation parameter normalization
 ├── keymgmt.go             # Key management operations
@@ -219,7 +219,7 @@ internal/engine/
 ├── plugin_transactions.go # Plugin transaction processing
 ├── rekey.go               # Rekey/unrekey operations
 ├── rotating.go            # Rotating-account queries and signer status lines
-├── signer_cache.go        # Signer cache helpers and guarded metadata access
+├── signer_cache.go        # Signer cache helpers and cosigned metadata access
 ├── signing.go             # SigningContext, auth address handling
 ├── status_sync.go         # /status keyset-revision synchronization
 ├── transaction.go         # Transaction submission and confirmation
@@ -267,12 +267,12 @@ client, and client-side caches. `connect.ConnectionState` owns signer HTTP and
 SSH tunnel lifecycle state. `Core` adds the client-data lock, cache watcher,
 signer-cache synchronization, and shared address/signability/asset resolution.
 Domain command operations such as payments, assets, apps, key management, and
-guarded signing remain methods on `Engine`.
+cosigned signing remain methods on `Engine`.
 
-Guarded signing is intentionally isolated in `internal/engine/guarded`. It does
+Cosigned signing is intentionally isolated in `internal/engine/cosigned`. It does
 not import `internal/engine`; the facade constructs a short-lived
-`guarded.Signer` from concrete connection/cache/algod dependencies plus a
-narrow read-only signer-cache view. `guarded.go` owns that wiring and re-exports
+`cosigned.Signer` from concrete connection/cache/algod dependencies plus a
+narrow read-only signer-cache view. `cosigned.go` owns that wiring and re-exports
 the discovery types and error sentinels used by existing engine callers. The
 dependency and exported-surface boundaries are pinned by `test/arch`.
 
@@ -713,7 +713,7 @@ command boundaries; those mechanisms improve freshness rather than prove intent.
 
 **Self-healing mechanisms**:
 - SignerCache: rebuilt from `/keys` on `keys`/`accounts` commands, tab completion,
-  `/status` keyset-revision changes, and guarded submit paths whose cached
+  `/status` keyset-revision changes, and cosigned submit paths whose cached
   signer row is missing current signing-flow or cosigner metadata
 - AuthCache: auto-refreshes individual entries when a cached auth address leads to an unsignable key
 - ASACache: fetches from blockchain on cache miss

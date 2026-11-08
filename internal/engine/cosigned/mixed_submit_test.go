@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-package guarded
+package cosigned
 
 import (
 	"context"
@@ -27,24 +27,24 @@ import (
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
-func TestRequestNonGuardedSignaturesShapesModesAndExtracts(t *testing.T) {
-	guarded := testAddress(1).String()
-	nonGuarded := testAddress(2).String()
+func TestRequestNonCosignedSignaturesShapesModesAndExtracts(t *testing.T) {
+	cosigned := testAddress(1).String()
+	nonCosigned := testAddress(2).String()
 	cosignerHex := testCosignerPublicKeyHex(0xd6)
 
 	s := newMixedTestSigner(t, func(c *cache.SignerCache) {
-		c.AddAddress(guarded, "aplane.falcon1024.v1")
-		setTestCosignedResources(c, guarded, 1500)
-		c.SetLogicSigResourceProfile(guarded, lsigresource.Profile{
+		c.AddAddress(cosigned, "aplane.falcon1024.v1")
+		setTestCosignedResources(c, cosigned, 1500)
+		c.SetLogicSigResourceProfile(cosigned, lsigresource.Profile{
 			ProgramBytes: 77,
 			Spend:        &lsigresource.PathProfile{ArgumentBytes: 1_423, MaxOpcodeCost: 1_700},
 		})
-		c.SetCosignerPublicKeyForAddress(guarded, cosignerHex)
-		c.AddAddress(nonGuarded, "ed25519")
+		c.SetCosignerPublicKeyForAddress(cosigned, cosignerHex)
+		c.AddAddress(nonCosigned, "ed25519")
 	})
 
 	plannedTxns := []types.Transaction{
-		testPaymentTxn(t, testAddress(1), testAddress(5), "guarded"),
+		testPaymentTxn(t, testAddress(1), testAddress(5), "cosigned"),
 		testPaymentTxn(t, testAddress(2), testAddress(5), "ordinary"),
 		testPaymentTxn(t, testAddress(9), testAddress(5), "dummy"),
 	}
@@ -55,23 +55,23 @@ func TestRequestNonGuardedSignaturesShapesModesAndExtracts(t *testing.T) {
 	defer server.Close()
 	s.conn.SignerClient = signerclient.NewSignerClient(server.URL)
 
-	signed, err := s.requestNonGuardedSignatures(
+	signed, err := s.requestNonCosignedSignatures(
 		context.Background(), plannedTxns, groupBytesHex, 2,
-		map[int]guardedTarget{0: guardedTargetForTest(guarded, cosignerHex)},
+		map[int]cosignedTarget{0: cosignedTargetForTest(cosigned, cosignerHex)},
 		clientsign.SubmitOptions{},
 	)
 	if err != nil {
-		t.Fatalf("requestNonGuardedSignatures() error = %v", err)
+		t.Fatalf("requestNonCosignedSignatures() error = %v", err)
 	}
 
 	if len(signed) != 1 {
-		t.Fatalf("len(signed) = %d, want 1 (only the non-guarded original)", len(signed))
+		t.Fatalf("len(signed) = %d, want 1 (only the non-cosigned original)", len(signed))
 	}
 	if signed[1] == "" {
-		t.Fatal("non-guarded position 1 signed hex is empty")
+		t.Fatal("non-cosigned position 1 signed hex is empty")
 	}
 	if _, ok := signed[0]; ok {
-		t.Fatal("guarded position 0 must not be signed in the intermediate /sign call")
+		t.Fatal("cosigned position 0 must not be signed in the intermediate /sign call")
 	}
 
 	if got := captured.calls.Load(); got != 1 {
@@ -82,16 +82,16 @@ func TestRequestNonGuardedSignaturesShapesModesAndExtracts(t *testing.T) {
 		t.Fatalf("captured /sign request failed validation (passthrough+foreign mix?): %v", err)
 	}
 	if mode, _ := req.Requests[0].Mode(); mode != signerapi.RequestModeForeign {
-		t.Fatalf("guarded request[0] mode = %q, want foreign", mode)
+		t.Fatalf("cosigned request[0] mode = %q, want foreign", mode)
 	}
 	if got := req.Requests[0].LsigResources; got == nil || got.ProgramBytes != 77 || got.ArgumentBytes != 1_423 || got.MaxOpcodeCost != 1_700 {
-		t.Fatalf("guarded request[0] lsig_resources = %#v", got)
+		t.Fatalf("cosigned request[0] lsig_resources = %#v", got)
 	}
 	if mode, _ := req.Requests[1].Mode(); mode != signerapi.RequestModeSign {
-		t.Fatalf("non-guarded request[1] mode = %q, want sign", mode)
+		t.Fatalf("non-cosigned request[1] mode = %q, want sign", mode)
 	}
-	if req.Requests[1].AuthAddress != nonGuarded || req.Requests[1].TxnSender != nonGuarded {
-		t.Fatalf("non-guarded request[1] auth/sender = %q/%q, want %q", req.Requests[1].AuthAddress, req.Requests[1].TxnSender, nonGuarded)
+	if req.Requests[1].AuthAddress != nonCosigned || req.Requests[1].TxnSender != nonCosigned {
+		t.Fatalf("non-cosigned request[1] auth/sender = %q/%q, want %q", req.Requests[1].AuthAddress, req.Requests[1].TxnSender, nonCosigned)
 	}
 	if mode, _ := req.Requests[2].Mode(); mode != signerapi.RequestModeForeign {
 		t.Fatalf("dummy request[2] mode = %q, want foreign", mode)
@@ -102,23 +102,23 @@ func TestRequestNonGuardedSignaturesShapesModesAndExtracts(t *testing.T) {
 }
 
 func TestBuildBoundedComponentRequestsDeclaresForeignNativeFalcon(t *testing.T) {
-	guarded := testAddress(1).String()
+	cosigned := testAddress(1).String()
 	nativeFalcon := testAddress(2).String()
 	cosignerHex := testCosignerPublicKeyHex(0xd6)
 	s := newMixedTestSigner(t, func(c *cache.SignerCache) {
-		c.AddAddress(guarded, "aplane.falcon1024.v1")
-		setTestCosignedResources(c, guarded, 1_500)
-		c.SetCosignerPublicKeyForAddress(guarded, cosignerHex)
+		c.AddAddress(cosigned, "aplane.falcon1024.v1")
+		setTestCosignedResources(c, cosigned, 1_500)
+		c.SetCosignerPublicKeyForAddress(cosigned, cosignerHex)
 		c.AddAddress(nativeFalcon, "falcon1024")
 	})
 
 	txns := []types.Transaction{
-		testPaymentTxn(t, testAddress(1), testAddress(5), "guarded"),
+		testPaymentTxn(t, testAddress(1), testAddress(5), "cosigned"),
 		testPaymentTxn(t, testAddress(2), testAddress(5), "native-falcon"),
 	}
 	requests, err := s.buildBoundedComponentRequests(
 		txns,
-		map[int]guardedTarget{0: guardedTargetForTest(guarded, cosignerHex)},
+		map[int]cosignedTarget{0: cosignedTargetForTest(cosigned, cosignerHex)},
 		clientsign.SubmitOptions{},
 	)
 	if err != nil {
@@ -135,21 +135,21 @@ func TestBuildBoundedComponentRequestsDeclaresForeignNativeFalcon(t *testing.T) 
 	}
 }
 
-func TestRequestNonGuardedSignaturesUsesGuardedAuthorizerResources(t *testing.T) {
+func TestRequestNonCosignedSignaturesUsesCosignedAuthorizerResources(t *testing.T) {
 	sender := testAddress(4).String()
-	guardedAuthorizer := testAddress(1).String()
-	nonGuarded := testAddress(2).String()
+	cosignedAuthorizer := testAddress(1).String()
+	nonCosigned := testAddress(2).String()
 	cosignerHex := testCosignerPublicKeyHex(0xd6)
 
 	s := newMixedTestSigner(t, func(c *cache.SignerCache) {
-		c.AddAddress(guardedAuthorizer, "aplane.falcon1024.v1")
-		setTestCosignedResources(c, guardedAuthorizer, 1500)
-		c.SetCosignerPublicKeyForAddress(guardedAuthorizer, cosignerHex)
-		c.AddAddress(nonGuarded, "ed25519")
+		c.AddAddress(cosignedAuthorizer, "aplane.falcon1024.v1")
+		setTestCosignedResources(c, cosignedAuthorizer, 1500)
+		c.SetCosignerPublicKeyForAddress(cosignedAuthorizer, cosignerHex)
+		c.AddAddress(nonCosigned, "ed25519")
 	})
 
 	plannedTxns := []types.Transaction{
-		testPaymentTxn(t, testAddress(4), testAddress(5), "guarded-authorizer"),
+		testPaymentTxn(t, testAddress(4), testAddress(5), "cosigned-authorizer"),
 		testPaymentTxn(t, testAddress(2), testAddress(5), "ordinary"),
 	}
 	groupBytesHex := encodeGroupHex(plannedTxns)
@@ -159,12 +159,12 @@ func TestRequestNonGuardedSignaturesUsesGuardedAuthorizerResources(t *testing.T)
 	defer server.Close()
 	s.conn.SignerClient = signerclient.NewSignerClient(server.URL)
 
-	signed, err := s.requestNonGuardedSignatures(
+	signed, err := s.requestNonCosignedSignatures(
 		context.Background(), plannedTxns, groupBytesHex, 2,
-		map[int]guardedTarget{0: {
+		map[int]cosignedTarget{0: {
 			Index:                    0,
 			Sender:                   sender,
-			Account:                  guardedAuthorizer,
+			Account:                  cosignedAuthorizer,
 			CosignerComponentKeyType: witness.Falcon1024V1,
 			CosignerPublicKey:        cosignerHex,
 			Route:                    flowRouteBoundedCosigner,
@@ -173,49 +173,49 @@ func TestRequestNonGuardedSignaturesUsesGuardedAuthorizerResources(t *testing.T)
 		clientsign.SubmitOptions{},
 	)
 	if err != nil {
-		t.Fatalf("requestNonGuardedSignatures() error = %v", err)
+		t.Fatalf("requestNonCosignedSignatures() error = %v", err)
 	}
 	if len(signed) != 1 || signed[1] == "" {
-		t.Fatalf("signed = %#v, want only non-guarded position 1", signed)
+		t.Fatalf("signed = %#v, want only non-cosigned position 1", signed)
 	}
 
 	req := captured.get()
 	if mode, _ := req.Requests[0].Mode(); mode != signerapi.RequestModeForeign {
-		t.Fatalf("guarded-authorizer request[0] mode = %q, want foreign", mode)
+		t.Fatalf("cosigned-authorizer request[0] mode = %q, want foreign", mode)
 	}
 	if req.Requests[0].AuthAddress != "" {
-		t.Fatalf("guarded-authorizer request[0] auth address = %q, want empty foreign request", req.Requests[0].AuthAddress)
+		t.Fatalf("cosigned-authorizer request[0] auth address = %q, want empty foreign request", req.Requests[0].AuthAddress)
 	}
 	if resource := req.Requests[0].LsigResources; resource == nil || resource.ProgramBytes != 1500 || resource.MaxOpcodeCost != 1 {
-		t.Fatalf("guarded-authorizer request[0] resources = %#v, want structured profile", resource)
+		t.Fatalf("cosigned-authorizer request[0] resources = %#v, want structured profile", resource)
 	}
 }
 
 func TestBuildGroupSignRequestsUsesSelectedBoundedSpendResources(t *testing.T) {
-	guarded := testAddress(1).String()
-	nonGuarded := testAddress(2).String()
+	cosigned := testAddress(1).String()
+	nonCosigned := testAddress(2).String()
 	cosignerHex := testCosignerPublicKeyHex(0xd6)
 
 	s := newMixedTestSigner(t, func(c *cache.SignerCache) {
-		c.AddAddress(guarded, "test.bounded-cosigner.v1")
-		c.SetLogicSigResourceProfile(guarded, lsigresource.Profile{
+		c.AddAddress(cosigned, "test.bounded-cosigner.v1")
+		c.SetLogicSigResourceProfile(cosigned, lsigresource.Profile{
 			ProgramBytes:  2_500,
 			Spend:         &lsigresource.PathProfile{ArgumentBytes: 1_423, MaxOpcodeCost: 1_700},
 			SpendingRekey: &lsigresource.PathProfile{ArgumentBytes: 2_846, MaxOpcodeCost: 45_000},
 		})
-		c.AddAddress(nonGuarded, "ed25519")
+		c.AddAddress(nonCosigned, "ed25519")
 	})
 
 	txns := []types.Transaction{
-		testPaymentTxn(t, testAddress(1), testAddress(5), "guarded"),
+		testPaymentTxn(t, testAddress(1), testAddress(5), "cosigned"),
 		testPaymentTxn(t, testAddress(2), testAddress(5), "ordinary"),
 	}
 	requests, signIndices, err := s.buildGroupSignRequests(
 		txns,
 		encodeGroupHex(txns),
 		len(txns),
-		map[int]guardedTarget{0: {
-			Index: 0, Sender: guarded, Account: guarded,
+		map[int]cosignedTarget{0: {
+			Index: 0, Sender: cosigned, Account: cosigned,
 			Route: flowRouteBoundedCosigner, CosignerPublicKey: cosignerHex, BoundedPath: signerapi.ComponentPathSpend,
 		}},
 		clientsign.SubmitOptions{},
@@ -232,8 +232,8 @@ func TestBuildGroupSignRequestsUsesSelectedBoundedSpendResources(t *testing.T) {
 	}
 	// A cosigned rekey is budgeted on the path its base component named.
 	requests, _, err = s.buildGroupSignRequests(txns, encodeGroupHex(txns), len(txns),
-		map[int]guardedTarget{0: {
-			Index: 0, Sender: guarded, Account: guarded,
+		map[int]cosignedTarget{0: {
+			Index: 0, Sender: cosigned, Account: cosigned,
 			Route: flowRouteBoundedCosigner, CosignerPublicKey: cosignerHex, BoundedPath: signerapi.ComponentPathSpendingRekey,
 		}}, clientsign.SubmitOptions{})
 	if err != nil {
@@ -244,27 +244,27 @@ func TestBuildGroupSignRequestsUsesSelectedBoundedSpendResources(t *testing.T) {
 	}
 	// Before its component arrives, a cosigned target has no path to budget.
 	if _, _, err := s.buildGroupSignRequests(txns, encodeGroupHex(txns), len(txns),
-		map[int]guardedTarget{0: {Index: 0, Sender: guarded, Account: guarded, Route: flowRouteBoundedCosigner, CosignerPublicKey: cosignerHex}},
+		map[int]cosignedTarget{0: {Index: 0, Sender: cosigned, Account: cosigned, Route: flowRouteBoundedCosigner, CosignerPublicKey: cosignerHex}},
 		clientsign.SubmitOptions{}); err == nil || !strings.Contains(err.Error(), "no base component path") {
 		t.Fatalf("buildGroupSignRequests(no path) error = %v", err)
 	}
 }
 
-// TestRequestNonGuardedSignaturesAllGuardedMakesNoSignerCall verifies the
-// all-guarded path is unchanged: with no non-guarded originals, no /sign call is
+// TestRequestNonCosignedSignaturesAllCosignedMakesNoSignerCall verifies the
+// all-cosigned path is unchanged: with no non-cosigned originals, no /sign call is
 // made and no passthrough entries are produced.
-func TestRequestNonGuardedSignaturesAllGuardedMakesNoSignerCall(t *testing.T) {
-	guarded := testAddress(1).String()
+func TestRequestNonCosignedSignaturesAllCosignedMakesNoSignerCall(t *testing.T) {
+	cosigned := testAddress(1).String()
 	cosignerHex := testCosignerPublicKeyHex(0xd6)
 
 	s := newMixedTestSigner(t, func(c *cache.SignerCache) {
-		c.AddAddress(guarded, "aplane.falcon1024.v1")
-		setTestCosignedResources(c, guarded, 1500)
-		c.SetCosignerPublicKeyForAddress(guarded, cosignerHex)
+		c.AddAddress(cosigned, "aplane.falcon1024.v1")
+		setTestCosignedResources(c, cosigned, 1500)
+		c.SetCosignerPublicKeyForAddress(cosigned, cosignerHex)
 	})
 
 	plannedTxns := []types.Transaction{
-		testPaymentTxn(t, testAddress(1), testAddress(5), "guarded"),
+		testPaymentTxn(t, testAddress(1), testAddress(5), "cosigned"),
 		testPaymentTxn(t, testAddress(9), testAddress(5), "dummy"),
 	}
 	groupBytesHex := encodeGroupHex(plannedTxns)
@@ -274,39 +274,39 @@ func TestRequestNonGuardedSignaturesAllGuardedMakesNoSignerCall(t *testing.T) {
 	defer server.Close()
 	s.conn.SignerClient = signerclient.NewSignerClient(server.URL)
 
-	signed, err := s.requestNonGuardedSignatures(
+	signed, err := s.requestNonCosignedSignatures(
 		context.Background(), plannedTxns, groupBytesHex, 1,
-		map[int]guardedTarget{0: guardedTargetForTest(guarded, cosignerHex)},
+		map[int]cosignedTarget{0: cosignedTargetForTest(cosigned, cosignerHex)},
 		clientsign.SubmitOptions{},
 	)
 	if err != nil {
-		t.Fatalf("requestNonGuardedSignatures() error = %v", err)
+		t.Fatalf("requestNonCosignedSignatures() error = %v", err)
 	}
 	if len(signed) != 0 {
-		t.Fatalf("len(signed) = %d, want 0 (all-guarded group)", len(signed))
+		t.Fatalf("len(signed) = %d, want 0 (all-cosigned group)", len(signed))
 	}
 	if got := captured.calls.Load(); got != 0 {
-		t.Fatalf("/sign calls = %d, want 0 (no non-guarded positions)", got)
+		t.Fatalf("/sign calls = %d, want 0 (no non-cosigned positions)", got)
 	}
 }
 
-// TestRequestNonGuardedSignaturesRejectsMissingSignature verifies that a signer
+// TestRequestNonCosignedSignaturesRejectsMissingSignature verifies that a signer
 // response with no signature for a sign-mode position is rejected rather than
 // producing an invalid assembly.
-func TestRequestNonGuardedSignaturesRejectsMissingSignature(t *testing.T) {
-	guarded := testAddress(1).String()
-	nonGuarded := testAddress(2).String()
+func TestRequestNonCosignedSignaturesRejectsMissingSignature(t *testing.T) {
+	cosigned := testAddress(1).String()
+	nonCosigned := testAddress(2).String()
 	cosignerHex := testCosignerPublicKeyHex(0xd6)
 
 	s := newMixedTestSigner(t, func(c *cache.SignerCache) {
-		c.AddAddress(guarded, "aplane.falcon1024.v1")
-		setTestCosignedResources(c, guarded, 1500)
-		c.SetCosignerPublicKeyForAddress(guarded, cosignerHex)
-		c.AddAddress(nonGuarded, "ed25519")
+		c.AddAddress(cosigned, "aplane.falcon1024.v1")
+		setTestCosignedResources(c, cosigned, 1500)
+		c.SetCosignerPublicKeyForAddress(cosigned, cosignerHex)
+		c.AddAddress(nonCosigned, "ed25519")
 	})
 
 	plannedTxns := []types.Transaction{
-		testPaymentTxn(t, testAddress(1), testAddress(5), "guarded"),
+		testPaymentTxn(t, testAddress(1), testAddress(5), "cosigned"),
 		testPaymentTxn(t, testAddress(2), testAddress(5), "ordinary"),
 	}
 	groupBytesHex := encodeGroupHex(plannedTxns)
@@ -316,13 +316,13 @@ func TestRequestNonGuardedSignaturesRejectsMissingSignature(t *testing.T) {
 	defer server.Close()
 	s.conn.SignerClient = signerclient.NewSignerClient(server.URL)
 
-	_, err := s.requestNonGuardedSignatures(
+	_, err := s.requestNonCosignedSignatures(
 		context.Background(), plannedTxns, groupBytesHex, 2,
-		map[int]guardedTarget{0: guardedTargetForTest(guarded, cosignerHex)},
+		map[int]cosignedTarget{0: cosignedTargetForTest(cosigned, cosignerHex)},
 		clientsign.SubmitOptions{},
 	)
-	if err == nil || !strings.Contains(err.Error(), "no signature for non-guarded position 2") {
-		t.Fatalf("requestNonGuardedSignatures() error = %v, want missing signature for position 2", err)
+	if err == nil || !strings.Contains(err.Error(), "no signature for non-cosigned position 2") {
+		t.Fatalf("requestNonCosignedSignatures() error = %v, want missing signature for position 2", err)
 	}
 }
 
@@ -333,7 +333,7 @@ func newMixedTestSigner(t *testing.T, build func(c *cache.SignerCache)) *Signer 
 }
 
 // capturedSignRequest records the GroupSignRequest a mock user signer received.
-// req is mutex-guarded so -race sees the handler write happen-before the test
+// req is mutex-cosigned so -race sees the handler write happen-before the test
 // read; emptyAll is set before the server starts and read-only thereafter.
 type capturedSignRequest struct {
 	mu       sync.Mutex

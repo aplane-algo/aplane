@@ -243,7 +243,7 @@ endpoints discover-cosigners
 ```
 
 Discovery is a read-only connectivity diagnostic. To make the cosigner key
-available when generating guarded accounts, export it on the cosigner node with
+available when generating cosigned accounts, export it on the cosigner node with
 `apadmin cosigner export` and explicitly import it on the signer node with
 `apadmin cosigner import`. Signing operations resolve the matching endpoint from
 live authenticated `/keys` responses.

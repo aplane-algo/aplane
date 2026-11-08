@@ -69,7 +69,7 @@ is out of scope here, though section 7 below keeps room for it.
 Rotating prepare and sign accept a group in the ordinary `/sign` slot
 grammar instead of a bare transaction. The group must contain exactly one
 transaction from a rotating account, and every other slot must be a sign slot
-whose effective signing key is a non-rotating, non-witness, non-guarded,
+whose effective signing key is a non-rotating, non-witness, non-cosigned,
 non-bounded key this signer holds. No passthrough slots, no foreign slots.
 The signer normalizes the request into one internal representation, sets
 the rotation fields on the rotating slot, solves resource dummies and fees
@@ -269,7 +269,7 @@ rule.
   `auth_address`), not on its sender: the key must be held; its key type
   must not be rotating (`rejectRotatingKeyType`, applied to owned slots
   only, since it would refuse the designated rotating slot); it must pass
-  `cosignerSignRejectMessage`, which refuses witness and guarded key types;
+  `cosignerSignRejectMessage`, which refuses witness and cosigned key types;
   and its credential metadata must carry no bounded authorization
   (`boundedmeta.Metadata`), checked explicitly because ordinary sign plans
   bounded accounts rather than refusing them and that planning cannot nest
@@ -500,7 +500,7 @@ What changes, stated at its real width:
 
 Exclusions worth a test each: an owned slot that rekeys its sender to the
 rotating account (`rejectRekeyToRotating`); an owned slot whose effective
-signing key is a witness or guarded type (`cosignerSignRejectMessage`); an
+signing key is a witness or cosigned type (`cosignerSignRejectMessage`); an
 owned slot whose credential carries bounded-authorization metadata, which
 ordinary sign would plan rather than refuse; an owned slot sent from a
 stage address, which the held-key rule refuses since stage addresses are
@@ -539,7 +539,7 @@ Unit, signer (`rotating_flow_test.go` and the shared-step tests):
   `lsig_resources` and foreign-only `pq_scheme` refused; a supplied
   rotating target refused rather than replaced.
 - Admission: refusal of a second rotating sender, an unheld effective key,
-  a witness or guarded key, a bounded credential, a window mismatch;
+  a witness or cosigned key, a bounded credential, a window mismatch;
   `rejectRotatingKeyType` on owned slots only.
 - Rekey rules by phase: prepare rejects a caller-supplied rotating target;
   sign accepts the valid prepared target; sign rejects a missing or wrong

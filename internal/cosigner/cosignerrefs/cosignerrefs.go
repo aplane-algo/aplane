@@ -226,7 +226,7 @@ func Delete(paths storepaths.Paths, name string) (bool, error) {
 
 // ResolveCreationParamsForComponent resolves the signer-facing cosigner selector
 // for any provider that declares a cosigner component type. This keeps generic
-// bounded-cosigner templates out of hard-coded guarded-account key-type tables.
+// bounded-cosigner templates out of hard-coded cosigned-account key-type tables.
 func ResolveCreationParamsForComponent(paths storepaths.Paths, keyType, componentKeyType string, params map[string]string) (map[string]string, error) {
 	selector, hasSelector := params[ParamCosignerName]
 	if !hasSelector || strings.TrimSpace(selector) == "" {

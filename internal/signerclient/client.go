@@ -92,7 +92,7 @@ const (
 	mutationTimeout           = 60 * time.Second
 	groupPlanTimeout          = 60 * time.Second
 	componentSignTimeout      = 2 * time.Minute
-	guardedAssemblyTimeout    = 2 * time.Minute
+	cosignedAssemblyTimeout   = 2 * time.Minute
 	signCancelTimeout         = 5 * time.Second
 	signApprovalSlack         = 30 * time.Second
 	defaultSignRequestTimeout = 6 * time.Minute
@@ -477,7 +477,7 @@ func (c *Client) RequestAssembleWithContext(ctx context.Context, reqBody signera
 	if err := reqBody.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid assembly request: %w", err)
 	}
-	result, err := doJSON[signerapi.AssemblyResponse](c, ctx, "POST", "/sign/assemble", reqBody, guardedAssemblyTimeout, "failed to make request to Signer")
+	result, err := doJSON[signerapi.AssemblyResponse](c, ctx, "POST", "/sign/assemble", reqBody, cosignedAssemblyTimeout, "failed to make request to Signer")
 	if err != nil {
 		return nil, err
 	}

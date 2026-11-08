@@ -25,7 +25,7 @@
 - [Client Ownership Model](#client-ownership-model)
 - [Transaction Processing](#transaction-processing)
 - [Bounded Authorization Contracts](#bounded-authorization-contracts)
-- [Guarded Signing And Cosigner Nodes](#guarded-signing-and-cosigner-nodes)
+- [Cosigned Signing And Cosigner Nodes](#cosigned-signing-and-cosigner-nodes)
 - [Provider and Algorithm Model](#provider-and-algorithm-model)
 - [Keystore and Key Lifecycle](#keystore-and-key-lifecycle)
 - [Plugin System](#plugin-system)
@@ -181,10 +181,10 @@ signature algorithm.
 | `cosigned1` | A cosigned account, on a bounded or plain host: the program additionally requires a cosigner for spending and for a cosigned rekey. A rekey to an address on the account's rekey-to list takes the spending key alone; the client asks the cosigner for every other target. Plain `/sign` refuses these accounts. |
 | `rotating1` | Each accepted spend also hands authorization to the next deterministically derived stage. Preparation and signing use dedicated rotating endpoints. |
 
-For guarded signing, the client first obtains a canonical group from `/plan`.
+For cosigned signing, the client first obtains a canonical group from `/plan`.
 Component signing and assembly consume frozen bytes; they do not repair fees
 or change the group. The user signer and cosigner independently apply their
-respective checks. The cosigner verification key embedded in the guarded
+respective checks. The cosigner verification key embedded in the cosigned
 account's program is the trust anchor. An endpoint alias or a `/keys` discovery
 result helps find a route to that key, but cannot substitute another key.
 
@@ -193,7 +193,7 @@ witness credentials used for component signing. There is no mixed node role.
 Running these nodes as separate processes on one machine separates their
 storage and interfaces, but does not by itself create independent trust.
 Independence depends on who controls the machines and credentials. See
-[ARCH_GUARDED.md](ARCH_GUARDED.md).
+[ARCH_COSIGNED.md](ARCH_COSIGNED.md).
 
 Bounded programs restrict the admitted transaction effects and fee ceiling,
 and settle any rekey before applying their spending policy. A template's
@@ -410,8 +410,8 @@ Read [ARCH_SHELL.md](ARCH_SHELL.md) before changing app
 read/call/deploy behavior, ABI handling, `PreparedGroup`, or signer approval
 metadata for app calls.
 
-Read [ARCH_GUARDED.md](ARCH_GUARDED.md) before changing cosigner node behavior,
-guarded account generation, cosigner keys, guarded transaction
+Read [ARCH_COSIGNED.md](ARCH_COSIGNED.md) before changing cosigner node behavior,
+cosigned account generation, cosigner keys, cosigned transaction
 orchestration, endpoint-discovered cosigners, `/sign/component` /
 `/sign/assemble` behavior, the `cosigned1` flow, or the canonical Corridor v1
 bounded-cosigner profile.
@@ -581,7 +581,7 @@ aplane/
 │   ├── signerapp/signertui/       # Shared signer administration TUI package
 │   ├── engine/                    # Reusable client mechanics and transaction operations
 │   ├── engine/connect/            # Remote signer connection and signer-facing HTTP
-│   ├── engine/guarded/            # Guarded and bounded client orchestration
+│   ├── engine/cosigned/            # Cosigned and bounded client orchestration
 │   ├── clientstate/               # Client-side alias/set/cache mutation ownership
 │   ├── cache/                     # Disk-backed client caches
 │   ├── addressbook/, refname/      # Address resolution and persisted alias/set name rules
@@ -618,7 +618,7 @@ aplane/
 │   ├── lsigprovider/              # Unified LogicSig provider registry
 │   ├── logicsigdsa/               # LogicSig DSA interface and registry
 │   ├── lsigsalt/                  # Shared off-curve LogicSig salting
-│   ├── cosigner/                    # Cosigner/guarded component protocol (keytypes, messages, canonical hashing, verification)
+│   ├── cosigner/                    # Cosigner/cosigned component protocol (keytypes, messages, canonical hashing, verification)
 │   ├── mnemonic/                  # Mnemonic handlers
 │   ├── jsapi/, scripting/         # JavaScript bindings and Goja runtime
 │   ├── plugin/                    # Plugin discovery, manifest, RPC, integrity, sandbox
@@ -674,7 +674,7 @@ behavior should live in `internal/apshellapp`, not in `cmd/apshell`.
 | Layer | Packages |
 |-------|----------|
 | UI | `cmd/apshell`, `cmd/apconsole`, `internal/apshellcli`, `internal/shellrepl`, `internal/signerapp/signertui`, `cmd/apadmin`, `cmd/appass`, `cmd/aplocalnet`, `internal/aplocalnet`, `cmd/apapprover`, `internal/command`, `internal/cmdspec`, `internal/cmdlog`, `internal/theme`, `internal/addressdisplay`, `internal/keytypeux` |
-| Engine | `internal/apshellapp`, `internal/apadminapp`, `internal/engine`, `internal/clientstate`, `internal/cache`, `internal/config`, `internal/engine/connect`, `internal/engine/guarded`, `internal/clientsign`, `internal/appresult`, `internal/appinput`, `internal/appspec`, `internal/asa`, `internal/addressbook`, `internal/refname`, `internal/keymgmt`, `internal/partkeyparse`, `internal/txnutil`, `internal/algo` |
+| Engine | `internal/apshellapp`, `internal/apadminapp`, `internal/engine`, `internal/clientstate`, `internal/cache`, `internal/config`, `internal/engine/connect`, `internal/engine/cosigned`, `internal/clientsign`, `internal/appresult`, `internal/appinput`, `internal/appspec`, `internal/asa`, `internal/addressbook`, `internal/refname`, `internal/keymgmt`, `internal/partkeyparse`, `internal/txnutil`, `internal/algo` |
 | Signer App | `internal/bootstrap/signer`, `internal/signerapp/daemon`, `internal/signerapp/startup`, `internal/signerapp/runtime`, `internal/signerapp/productruntime`, `internal/signerapp/unlockconfig`, `internal/signerapp/signing`, `internal/signerapp/chainread`, `internal/signerapp/approval`, `internal/signerapp/templates`, `internal/signerapp/templateadmin`, `internal/signerapp/keyadmin`, `internal/signerapp/storeadmin`, `internal/signerapp/backupadmin`, `internal/signerapp/rest`, `internal/signerapp/admin`, `internal/signerapp/adminserver`, `internal/signerapp/svcerr`, `internal/signerapp/enrollment`, `internal/signerapp/enrollqueue`, `internal/signerapp/clientregistry`, `internal/signerapp/audit`, `internal/signerapp/filewatcher`, `internal/signerapp/ipcbind`, `internal/signerapp/txdesc`, `internal/signerapp/policycmd`, `internal/signerapp/policyreview`, `internal/signerapp/policytext`, `internal/signerapp/policyapply`, `internal/signerapp/policyruntime`, `internal/noderole`, `internal/policy`, `internal/integritysidecar`, `internal/signerapp/approvalpolicy`, `internal/signerapp/storevalidate` |
 | Provider | `internal/signing`, `internal/signing/falcon1024`, `internal/falconparams`, `internal/sigconstruction`, `internal/boundary`, `internal/lsigresource`, `lsig/`, `lsig/boundedaccount`, `lsig/rotatingfamily`, `lsig/rotatingtriplexmss`, `lsig/rotatingtripleslhdsa`, `lsig/rotatingtriplewotsc`, `internal/cosigner`, `internal/boundedmeta`, `internal/txeffects`, `internal/keyclass`, `internal/lsigprovider`, `internal/signingargs`, `internal/logicsigdsa`, `internal/genericlsig`, `internal/lsigsalt`, `internal/tealtemplate`, `internal/addressderive`, `internal/keytypecatalog`, `internal/keytypestate`, `internal/algorithm`, `internal/keygen`, `internal/mnemonic` |
 | Storage/Crypto | `internal/crypto`, `internal/witness`, `internal/merkleallowlist`, `internal/keys`, `internal/keystore`, `internal/storepaths`, `internal/stagetable`, `internal/rotatingkey`, `internal/crypto/wotsc`, `internal/crypto/rotatinghybrid`, `internal/genstore`, `internal/storelock`, `internal/signerapp/storemut`, `internal/storeinit`, `internal/storepass`, `internal/serverconfig`, `internal/clientdata`, `internal/templatestore`, `internal/templatelibrary`, `internal/templatepolicy`, `internal/backup`, `internal/security`, `internal/fsutil` |
@@ -743,14 +743,14 @@ owns the cross-cutting infrastructure — client-scoped caches and network state
 the remote signer connection lifecycle, the signer key cache, address and
 signability resolution, and the client-data lock. `engine.Engine` embeds `*Core`
 and adds the domain command methods (payments, assets, apps, key management,
-guarded signing). This keeps the shared infrastructure in one place rather than
+cosigned signing). This keeps the shared infrastructure in one place rather than
 interleaved with domain logic on a single flat facade.
 
 The live consensus boundary is client-owned in `internal/engine/consensus.go`.
 Transaction construction validates algod SuggestedParams, and first-party
 planning and executable workflows refresh the v42/v43 check before asking
 apsigner to plan, releasing signatures, invoking plugin signers, or submitting
-or simulating immutable signed groups. The guarded flow enters through the same
+or simulating immutable signed groups. The cosigned flow enters through the same
 checked submit boundary. `NewInitializedEngine` may leave `AlgodClient` nil when
 algod is not configured or client creation fails; consensus-gated operations
 then fail with `ErrNoAlgodClient` before contacting a signer, plugin, or network.
@@ -926,7 +926,7 @@ SDK repo consumes for compatibility testing. In-repo callers import
 `pkg/signerapi` directly; there is no internal alias layer.
 `pkg/signerapi/error_codes.go` remains the sole error-code source.
 The SDK client shape, the SDK-native prep layer, the AlgoKit Utils adapters,
-and the guarded prepared-signing sequence are specified in
+and the cosigned prepared-signing sequence are specified in
 [ARCH_SIGNING.md](ARCH_SIGNING.md).
 SDK-facing HTTP behavior includes not only JSON payload shape, but also
 contractual client expectations such as `/status` discovery and
@@ -1585,10 +1585,10 @@ group.
 
 Mixed plugin/server-managed groups retain their ordinary canonicalization and
 signing path, then branch to client algod only after the final executable group
-exists. Guarded groups likewise complete the normal user and cosigner component
+exists. Cosigned groups likewise complete the normal user and cosigner component
 signing plus `/sign/assemble` path before the client routes the assembled group
-to submit or simulate. The client consequently holds executable guarded bytes
-in both modes. See [ARCH_GUARDED.md](ARCH_GUARDED.md).
+to submit or simulate. The client consequently holds executable cosigned bytes
+in both modes. See [ARCH_COSIGNED.md](ARCH_COSIGNED.md).
 
 ## Client Ownership Model
 
@@ -1833,7 +1833,7 @@ The client is responsible for:
 - optionally merging foreign or passthrough outputs,
 - submitting the final signed bytes to algod.
 
-Group canonicalization and the HTTP request/response contracts are described in [ARCH_SIGNING.md](ARCH_SIGNING.md); the component-flow canonicalization and byte-binding rules live in [ARCH_GUARDED.md](ARCH_GUARDED.md).
+Group canonicalization and the HTTP request/response contracts are described in [ARCH_SIGNING.md](ARCH_SIGNING.md); the component-flow canonicalization and byte-binding rules live in [ARCH_COSIGNED.md](ARCH_COSIGNED.md).
 
 ### Transaction Signing Flow (Summary)
 
@@ -1854,7 +1854,7 @@ ordinary signing policy, approval, and audit behavior.
   prompt by `/sign` request ID; `POST /plan` previews group building without
   signing.
 - Component flow: `POST /plan` freezes groups, `POST /sign/component` produces
-  guarded or bounded components, and `POST /sign/assemble` assembles guarded or
+  cosigned or bounded components, and `POST /sign/assemble` assembles cosigned or
   bounded-cosigner signed groups.
 - Rotating (`rotating1` flow): `POST /sign/rotating/prepare` builds the exact
   stage-rotation group and `POST /sign/rotating/sign` signs only that prepared
@@ -1862,7 +1862,7 @@ ordinary signing policy, approval, and audit behavior.
   `rotating_signing_required`.
 
 See [ARCH_SIGNING.md](ARCH_SIGNING.md) for the full REST inventory and wire
-contracts, [ARCH_GUARDED.md](ARCH_GUARDED.md) for guarded choreography, and
+contracts, [ARCH_COSIGNED.md](ARCH_COSIGNED.md) for cosigned choreography, and
 [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md) for bounded choreography.
 
 **Multi-party signing:** Transactions can be marked as **foreign**
@@ -1899,13 +1899,13 @@ single finalized-transaction `Classify`/`Inspect` boundary, and `ClassifyFor`,
 which decides a transaction's path against a path declaration. Signer-side
 planning/execution live in `internal/signerapp/signing`.
 
-## Guarded Signing And Cosigner Nodes
+## Cosigned Signing And Cosigner Nodes
 
 This section is the system-map summary. The detailed subsystem architecture,
-trust boundaries, guarded authorizer semantics, endpoint routing model, and
-implementation map live in [ARCH_GUARDED.md](ARCH_GUARDED.md).
+trust boundaries, cosigned authorizer semantics, endpoint routing model, and
+implementation map live in [ARCH_COSIGNED.md](ARCH_COSIGNED.md).
 
-Guarded signing is APlane's two-party LogicSig authorization path for
+Cosigned signing is APlane's two-party LogicSig authorization path for
 cosigned accounts, on a plain host (`plain1`) or a bounded host (`bounded2`),
 whose LogicSig bytecode requires both:
 
@@ -1956,7 +1956,7 @@ Signer-custodied cosigner witnesses use
 active namespace with `<AlgorandAddress>.key`. Physically, the active namespace
 is `identities/default/generations/<gen-id>/keys/`, selected by the store root.
 There is no root-level credential namespace or compatibility fallback.
-The full cosigner public key remains the verifier key embedded in guarded
+The full cosigner public key remains the verifier key embedded in cosigned
 account LogicSig bytecode. `internal/witness` owns identity and custodian/domain
 capabilities; whether an account is cosigned is read from its durable bounded
 metadata, not its key type.
@@ -1968,7 +1968,7 @@ metadata, not its key type.
 `/plan` is the sole canonicalizing endpoint; component and assembly endpoints
 consume frozen canonical group bytes. The old bounded-specific component and
 assembly routes are retired and return 404. The invariants that survive that
-migration are owned by [ARCH_GUARDED.md](ARCH_GUARDED.md).
+migration are owned by [ARCH_COSIGNED.md](ARCH_COSIGNED.md).
 
 The cosigned choreography is named `cosigned1`. Signer `/keys` inventory
 labels cosigned accounts with `signing_flow: cosigned1` and
@@ -1981,7 +1981,7 @@ routing authority.
 
 ### Endpoint Routing
 
-Runtime guarded and bounded-cosigner routing performs live `/keys` discovery at
+Runtime cosigned and bounded-cosigner routing performs live `/keys` discovery at
 the start of each signing operation and keeps an operation-scoped route
 snapshot. It probes the deterministic configured endpoint order with bounded
 parallelism and stops only after every required embedded public key has one
@@ -2009,13 +2009,13 @@ Primary implementation ownership:
 - `internal/signerapp/rest`: REST service methods for component signing and
   assembly (`Service.SignComponents`, `Service.Assemble`);
   `internal/signerapp/daemon` owns the HTTP routes and handlers.
-- `internal/engine/guarded`: client guarded-send orchestration, cosigner
+- `internal/engine/cosigned`: client cosigned-send orchestration, cosigner
   component-signature collection, and cosigner endpoint resolution/discovery,
   isolated from the engine facade (it depends on the engine only through a
   narrow `SignerCacheView` and injected connection/caches; `internal/engine`
   wires it and re-exports the discovery types). Its exported surface is only
   the sanctioned entry points (`New`/`Deps`/`Signer`/`SignerCacheView`,
-  `HasGuardedEffectiveSigner`, `SignAndSubmitGroup`,
+  `HasCosignedEffectiveSigner`, `SignAndSubmitGroup`,
   `DiscoverCosignerComponentKeys`, `DiscoveredCosignerComponentKey`,
   read-only `InspectRoutes` with `RouteStatus`, `ConnectionObservation`, and
   `AccountRouteObservation` (closed probe connections, no signing) and the
@@ -2050,7 +2050,7 @@ indexes them.
 
 ### Rotating Account Ownership
 
-Rotating accounts are not guarded accounts; they use their own `rotating1`
+Rotating accounts are not cosigned accounts; they use their own `rotating1`
 signing flow. Ownership:
 
 - `lsig/rotatingtriplexmss`, `lsig/rotatingtripleslhdsa` and
@@ -2306,7 +2306,7 @@ is in [ARCH_STORE.md](ARCH_STORE.md#keys-and-key-types).
 6. IPC messages are line-delimited JSON with typed message contracts.
 7. `/sign` and `/plan` share canonical group-shaping rules.
 8. Plugins are process-isolated with no direct keystore access.
-9. Offline keystore mutations (`apstore`) are guarded by the store lock, not transport-specific liveness probes.
+9. Offline keystore mutations (`apstore`) are protected by the store lock, not transport-specific liveness probes.
 10. Durable signer state is rooted at `identities/default/`; request and
     runtime models do not expose a runtime selector.
 11. Product UI/docs are single-operator and single-signing-identity.
@@ -2367,8 +2367,8 @@ Weaker or more coupled areas:
   process handoff,
 - `internal/engine` separates shared infrastructure (`engine.Core`) from the
   domain command methods on `Engine`, is transitively free of UI
-  parsing/formatting imports, and the guarded-signing flow lives in the
-  import-isolated `internal/engine/guarded` package — all enforced by
+  parsing/formatting imports, and the cosigned-signing flow lives in the
+  import-isolated `internal/engine/cosigned` package — all enforced by
   `test/arch`. Remaining follow-up: the client-data lock helper plus the last
   signer-cache `*Locked` split still live on the engine side rather than being
   fully owned by `internal/clientstate`,
@@ -2394,7 +2394,7 @@ Product-level boundaries:
 | Shell App | `internal/apshellapp/app.go`, `internal/apshellapp/runtime.go`, `internal/apshellapp/connect.go` |
 | Admin Client App | `cmd/apadmin/main.go`, `cmd/apadmin/admin_batch.go`, `internal/apadminapp/catalog.go`, `internal/apadminapp/session.go`, `internal/apadminapp/clients.go`, `internal/apadminapp/store.go` |
 | Server Client Enrollment | `internal/signerapp/enrollment/service.go`, `internal/signerapp/enrollqueue/queue.go`, `internal/signerapp/enrollqueue/store.go`, `internal/signerapp/clientregistry/registry.go`, `internal/signerapp/clientregistry/store.go`, `internal/signerapp/daemon/enrollment_service.go`, `internal/signerapp/productruntime/runtime.go` |
-| Engine | `internal/engine/engine.go`, `internal/engine/core.go`, `internal/engine/consensus.go`, `internal/engine/status_sync.go`, `internal/engine/connect/state.go`, `internal/engine/guarded/submit.go` |
+| Engine | `internal/engine/engine.go`, `internal/engine/core.go`, `internal/engine/consensus.go`, `internal/engine/status_sync.go`, `internal/engine/connect/state.go`, `internal/engine/cosigned/submit.go` |
 | Signing | `internal/signerapp/signing/service.go`, `internal/signerapp/signing/planner.go`, `internal/signerapp/signing/planner_runtime.go`, `internal/signerapp/signing/execution.go`, `internal/signerapp/signing/approval.go` |
 | Native Signature Providers | `internal/signing/ed25519`, `internal/signing/falcon1024/address.go`, `internal/signing/falcon1024/register.go`, `internal/signing/falcon1024/signerreg/*.go`, `internal/signing/falcon1024/signerops/*.go`, `internal/falconparams/params.go` |
 | Key Admin | `internal/signerapp/keyadmin/service.go`, `internal/signerapp/keyadmin/admin_ops.go`, `internal/signerapp/keyadmin/generic_lsig.go` |
@@ -2425,9 +2425,9 @@ The repo uses:
 - architecture guard tests in `test/arch`: `layering_test.go` pins shared/signer
   dependency direction and family-agnostic core-package imports;
   `client_layering_test.go` keeps the client engine core free of UI
-  parsing/formatting imports and isolates the guarded package;
-  `guarded_surface_test.go` pins the guarded package's sanctioned exported API;
-  `signingflow_test.go` pins guarded client routing on runtime `signing_flow`
+  parsing/formatting imports and isolates the cosigned package;
+  `cosigned_surface_test.go` pins the cosigned package's sanctioned exported API;
+  `signingflow_test.go` pins cosigned client routing on runtime `signing_flow`
   metadata; `bounded_vocabulary_test.go` pins bounded naming boundaries;
   `keytype_inventory_test.go` pins the bundled key-type inventory;
   `managed_credential_files_test.go` pins managed credential extension
@@ -2517,7 +2517,7 @@ guards:
   Docker network. It verifies local install layout, shared LocalNet
   reachability, SSH client enrollment, local IPC `apadmin` cosigner
   public-reference export and authorized import, client signer
-  reachability, guarded signing, and corridor allowlist enforcement across the
+  reachability, cosigned signing, and corridor allowlist enforcement across the
   Docker network.
 - `make docker-local-release-test` runs the same topology and assertions using
   published GitHub APlane release assets plus the PyPI and npm SDK packages.
@@ -2565,7 +2565,7 @@ Verification expectations remain:
 
 - unit tests for touched core packages pass,
 - `test/arch` remains current when changing package layering, provider
-  registration boundaries, or guarded signing route-selection metadata,
+  registration boundaries, or cosigned signing route-selection metadata,
 - contract fixtures and per-SDK contract tests pass when signer API shapes change,
 - `make formal-test` passes when formalized behavior or `docs/formal/` modules change,
 - external SDK fixtures and timeout behavior are reviewed when `/status`,
@@ -2603,7 +2603,7 @@ Verification expectations remain:
 - [ARCH_SHELL.md](ARCH_SHELL.md) - apshell engine, REPL, app interaction, and MCP surface
 - [ARCH_ADMIN.md](ARCH_ADMIN.md) - admin protocol and signer admin TUI (apadmin)
 - [ARCH_SIGNING.md](ARCH_SIGNING.md) - transaction signing flow and HTTP API
-- [ARCH_GUARDED.md](ARCH_GUARDED.md) - guarded signing, cosigner nodes, and Corridor v1
+- [ARCH_COSIGNED.md](ARCH_COSIGNED.md) - cosigned signing, cosigner nodes, and Corridor v1
 - [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md) - Bounded DSA contracts, effect model, and canonical encodings
 - [ARCH_KEYTYPES.md](ARCH_KEYTYPES.md) - key type axes and LogicSig providers
 - [ARCH_CRYPTO.md](ARCH_CRYPTO.md) - Provider layer details (DSA algorithms)

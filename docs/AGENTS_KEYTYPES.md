@@ -104,7 +104,7 @@ format, signature format, mnemonic behavior, or signing semantics.
 
 Do not use `base_key_type` or a provider's `BaseKeyType()` as a universal route
 for account metadata, keygen, mnemonic import, TEAL, address derivation, or
-guarded assembly. It names the signature construction. Account semantics are
+cosigned assembly. It names the signature construction. Account semantics are
 owned by the full `key_type` unless a specific operation deliberately delegates
 to another key type.
 

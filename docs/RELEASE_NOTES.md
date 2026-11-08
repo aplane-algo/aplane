@@ -25,6 +25,16 @@ This release is install-fresh only.
   post-quantum account name each held classical target and ask the operator to confirm
   that the other listed targets are post-quantum. They say a listed key is an exit in a
   mesh. These are statements, not refusals.
+- "Guarded" is now "cosigned" everywhere it named a cosigned account: the client package
+  `internal/engine/guarded` is `internal/engine/cosigned`, `docs/ARCH_GUARDED.md` is
+  `docs/ARCH_COSIGNED.md` (the MCP docs tool names it `ARCH_COSIGNED`), apshell's
+  `[GUARDED]` progress lines read `[COSIGNED]`, and apadmin's "Generate Guarded Account"
+  reads "Generate Cosigned Account". The SDKs rename their public API with no aliases:
+  `SignPreparedGuardedGroup` and `SimulatePreparedGuardedGroup` become
+  `SignPreparedCosignedGroup` and `SimulatePreparedCosignedGroup` (Python
+  `sign_prepared_cosigned_group`, TypeScript `signPreparedCosignedGroup`, and their
+  simulate twins), and every `Guarded*` type becomes `Cosigned*`. No wire value changes:
+  the flow label stays `cosigned1`. The old name is on `test/arch`'s retired list.
 - apshell's `generate` takes its own options as flags: `--boundary <file>` and
   `--result <file>` (or `--flag=file`) replace `boundary=` and `result=`. Every
   `param=value` now goes to the signer, so a template's own `boundary` or `result`

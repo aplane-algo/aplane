@@ -763,7 +763,7 @@ cosigner's address:
    should use, taken from `endpoint.advertise_url` when it is configured.
 2. **On the primary signer:** choose a key type that takes a cosigner: the
    general bounded type (`aplane.falcon1024-b.v1`, enabled by default, with
-   the Corridor preset) or the guarded type, which must be enabled first.
+   the Corridor preset) or the cosigned type, which must be enabled first.
    In apadmin, **Generate account**, select that type, open the **Cosigner**
    field, and choose **Use key file...** (or **Paste public
    JSON...**). Compare the complete Witness Key ID with the cosigner, then
@@ -911,7 +911,7 @@ one-line notice, and forwards its arguments unchanged.
 ### cosigner status
 
 Run `cosigner status` in apshell to inspect current cosigner connections and the
-primary signer's guarded-account requirements. It queries configured endpoints
+primary signer's cosigned-account requirements. It queries configured endpoints
 without changing client configuration, credentials, SSH trust, or cached keys.
 Unknown SSH hosts require separate interactive setup with `endpoints add`.
 
@@ -970,7 +970,7 @@ known-hosts flow.
 `endpoints discover-cosigners` is a read-only diagnostic. It queries configured
 cosigner endpoints over SSH with the client's enrolled key, validates the advertised
 Witness Key IDs, and prints live results. It does not update `endpoints.yaml`
-or the connected signer's generation catalog. Guarded and bounded-cosigner
+or the connected signer's generation catalog. Cosigned and bounded-cosigner
 operations perform this discovery automatically for the keys they require.
 
 **Examples:**
@@ -1026,7 +1026,7 @@ apshell prints.
 
 ### apadmin cosigner
 
-Manage public cosigner witness references used by guarded-account generation:
+Manage public cosigner witness references used by cosigned-account generation:
 
 ```text
 apadmin cosigner export <witness-key-id> [output-json]
@@ -1065,7 +1065,7 @@ passphrase separate fail before authentication.
 The interactive signer-side `apadmin` TUI provides the same public-reference
 catalog under `e: Cosigners`. It uses aliases for navigation, shows the complete
 grouped Witness Key ID on trust screens, and can start generation of a
-compatible guarded or bounded-cosigner account without exposing a raw Falcon
+compatible cosigned or bounded-cosigner account without exposing a raw Falcon
 public-key input. The account-generation **Cosigner** field also offers **Use
 key file...** and **Paste public JSON...**, which import a key in place and
 return to the form with it selected; a key that is already imported is offered
@@ -1352,8 +1352,8 @@ App budget: 150 consumed / 700 added
 
 Execution traces require algod to support the simulate trace endpoint (AVM v9+). If the node does not support traces, the trace sections are omitted and all other sections still display normally.
 
-Guarded simulation follows the same user and cosigner component approval flow as
-guarded submission. Without user auto-approval, a connected admin client must
+Cosigned simulation follows the same user and cosigner component approval flow as
+cosigned submission. Without user auto-approval, a connected admin client must
 approve the request.
 
 ---

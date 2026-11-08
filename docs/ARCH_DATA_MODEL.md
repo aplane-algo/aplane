@@ -143,7 +143,7 @@ DTOs and contract fixtures.
 | Client config | Client data dir | `APCLIENT_DATA/config.yaml` | `internal/config.Config` network/theme/polling state | SDK config loaders, shell runtime | `internal/config`, `internal/bootstrap/shell` |
 | Release metadata | Release archive and install root | `release.json`, required in release bundles (a git checkout generates it) and copied to `<install root>/install/release.json` | installer/version provenance; `install.sh` reads the installed copy to gate in-place upgrades on the minimum supported version; archive filenames are packaging labels only | installer output, support tooling | release workflow, `make release-local`, `scripts/package-bootstrap-release.sh`, `install.sh` |
 | Endpoint registry | Client data dir | `APCLIENT_DATA/endpoints.yaml` | `config.ClientEndpointRegistry`, derived signer and cosigner connection profiles | shell endpoint commands, connection runtime | `internal/config`, `internal/apshellapp`, `internal/engine/connect` |
-| Live cosigner discovery | Signing operation | authenticated `/keys` responses from configured cosigner endpoints | operation-scoped map keyed by embedded public key hex | guarded and bounded-cosigner orchestration | `internal/engine/guarded` |
+| Live cosigner discovery | Signing operation | authenticated `/keys` responses from configured cosigner endpoints | operation-scoped map keyed by embedded public key hex | cosigned and bounded-cosigner orchestration | `internal/engine/cosigned` |
 | Server config | Signer data dir | `APSIGNER_DATA/config.yaml` | `internal/serverconfig.ServerConfig` snapshot | Admin settings subset | `internal/serverconfig`, `internal/bootstrap/signer` |
 | Node role | Signer data dir plus selected generation | `APSIGNER_DATA/node.yaml` plus selected generation `node.yaml.hmac` | single-purpose signer/cosigner role gate | `/status`, service dispatch, key generation/restore gating | `internal/noderole`, `internal/keyclass`, signer startup, runtime load, keyadmin, restore, signing dispatch |
 | Signing authority | Product signer | `identities/default/` | one `productruntime.Runtime` | lock, readiness, key, and principal-attributed audit state without a runtime ID | `internal/signerapp/productruntime` |
@@ -597,7 +597,7 @@ signer endpoint alias, and endpoint records with `role: signer` or
 `role: cosigner`. Endpoint records own connection details: the `ssh://` URL,
 SSH identity file, and known-hosts path.
 
-Cosigner endpoint records do not contain key inventory. Guarded and
+Cosigner endpoint records do not contain key inventory. Cosigned and
 bounded-cosigner operations query authenticated `/keys` and retain routing only
 for the lifetime of that operation. The signer reference catalog is a
 generation trust-input inventory, while live endpoint discovery is routing
@@ -981,7 +981,7 @@ keys.
 
 1. Client prepares transaction bytes and metadata.
 2. Client classifies effective signers from inventory (`signing_flow` and key
-   type). Cosigned targets use the guarded (cosigned) lifecycle below; rotating accounts use
+   type). Cosigned targets use the cosigned (cosigned) lifecycle below; rotating accounts use
    `/sign/rotating/prepare` and `/sign/rotating/sign`; ordinary targets use
    `/plan` or `/sign`.
 3. Signer validates request shape and transaction network. Plain `/sign`
@@ -1000,7 +1000,7 @@ keys.
 Live `/sign` cancellation is request-scoped runtime state only. There is no
 durable sign request table.
 
-### Guarded Signing Lifecycle
+### Cosigned Signing Lifecycle
 
 1. Client detects a cosigned account (`signing_flow: cosigned1`) from `/keys`
    metadata and local signer inventory.
@@ -1315,7 +1315,7 @@ and [ARCH_ADMIN.md](ARCH_ADMIN.md#admin-protocol-contract).
 | Endpoint registry | authoritative routing config | `APCLIENT_DATA/endpoints.yaml` | `config.ClientEndpointRegistry` | `internal/config`, `internal/apshellapp` | `schema_version:2`; role is `signer` or `cosigner`; at most one signer endpoint and at most 12 cosigner endpoints. |
 | Endpoint alias | local identifier | map key under `endpoints` | endpoint lookup by alias | `internal/config`, `internal/apshellapp` | ASCII letters, digits, `.`, `_`, `-`; aliases are local, not exported. |
 | Endpoint record | authoritative routing record | `endpoints.<alias>` | endpoint connection profile | `internal/config`, `internal/engine/connect` | `ssh://` URL; identity file and known hosts resolve relative to `APCLIENT_DATA`; retired `signer_port`, `local_port`, and `token_file` keys are dropped on load. |
-| Live cosigner inventory | routing metadata | authenticated `/keys` responses | operation-scoped route snapshot | `internal/engine/guarded` | Keyed by embedded public key hex; never persisted and not ownership proof. |
+| Live cosigner inventory | routing metadata | authenticated `/keys` responses | operation-scoped route snapshot | `internal/engine/cosigned` | Keyed by embedded public key hex; never persisted and not ownership proof. |
 | Client SSH identity | client secret | `.ssh/id_ed25519` (endpoint `identity_file`) or an SSH agent key | SSH tunnel private key | `internal/sshtunnel`, `internal/engine/connect` | The client's only credential; enrolled per node through `enroll` (operator approval later) or operator import. |
 | Known hosts | trust store | `.ssh/known_hosts` or endpoint override | SSH host-key verification | `internal/sshtunnel`, `internal/clientenroll`, `cmd/apconsole` | Host trust is not imported through endpoint envelope. |
 | Client mutation lock | local coordination | `.apclient.lock` | cache/config mutation serialization | `internal/clientdata` (lock ownership), used by `internal/clientstate` and `internal/config` | Prevents concurrent local writers from corrupting client state. |
@@ -1377,7 +1377,7 @@ and [ARCH_ADMIN.md](ARCH_ADMIN.md#admin-protocol-contract).
 | HTTP error response | wire contract | `signerapi.ErrorResponse` | non-2xx JSON error | `pkg/signerapi`, `internal/signerapp/daemon`, `internal/signerapp/svcerr` | Contracted in `ARCH_SIGNING.md`. |
 | Health response | wire projection | process liveness | `signerapi.HealthResponse` | `internal/signerapp/rest`, `pkg/signerapi` | Unauthenticated `GET /health`; not product-store state. |
 | Status response | wire projection | authenticated product runtime state | `signerapi.StatusResponse` | `internal/signerapp/daemon`, `internal/signerapp/rest`, `pkg/signerapi` | `keyset_revision` is process-local, not durable. |
-| Keys response | wire projection | loaded key snapshot | `signerapi.KeysResponse` | `internal/signerapp/rest`, `pkg/signerapi` | Cosigner-key rows use Witness Key ID as `address`; guarded rows expose non-secret params. |
+| Keys response | wire projection | loaded key snapshot | `signerapi.KeysResponse` | `internal/signerapp/rest`, `pkg/signerapi` | Cosigner-key rows use Witness Key ID as `address`; cosigned rows expose non-secret params. |
 | Key info row | wire projection | loaded key metadata | `signerapi.KeyInfo` | `internal/signerapp/rest` | `is_witness_key`/`is_spending_account` disambiguate selectors from accounts; may carry `signing_flow`, `cosigner_component_key_type`, and `bounded_authorization`. |
 | Key types response | wire projection | enabled providers/templates and cosigner refs | `signerapi.KeyTypesResponse` | `internal/signerapp/rest` | Runtime args are generation metadata, not existing-key signing args; may carry `signing_flow`. |
 | Group sign request | wire request | client transaction bytes | `signerapi.GroupSignRequest` | `pkg/signerapi`, `internal/signerapp/signing` | Shared by `/sign` and `/plan`; all-foreign invalid. |
@@ -1390,7 +1390,7 @@ and [ARCH_ADMIN.md](ARCH_ADMIN.md#admin-protocol-contract).
 | Admin delete DTO | wire request/projection | address query parameter | delete response or error | `internal/signerapp/daemon`, `internal/signerapp/keyadmin`, `pkg/signerapi` | Missing address 400; missing key 404. |
 | Component request | wire request | canonical group bytes and discriminated target records | `signerapi.ComponentRequest` | `pkg/signerapi`, `internal/signerapp/signing` | Target kind is `cosigner` or `bounded-base` (the retired `user` kind is refused), one kind per request; every original group position is a target or contextual position, and omitted request IDs are generated. |
 | Component response | wire projection | kind-tagged per-target authorization material | `signerapi.ComponentResponse` | `internal/signerapp/signing` | Cosigner components carry one signature; bounded-base components carry base signatures, validated runtime args, an assembly receipt, and the classified `path`. |
-| Assembly request | wire request | group bytes plus `bounded-cosigner` targets and already-signed passthrough positions, together covering every position | `signerapi.AssemblyRequest` | `pkg/signerapi`, `internal/signerapp/signing` | Each target carries base signatures, runtime args, an assembly receipt, and the cosigner signature unless it is a listed rekey; the retired `guarded` kind is refused. Mixed kinds are rejected per `/sign/component` request. |
+| Assembly request | wire request | group bytes plus `bounded-cosigner` targets and already-signed passthrough positions, together covering every position | `signerapi.AssemblyRequest` | `pkg/signerapi`, `internal/signerapp/signing` | Each target carries base signatures, runtime args, an assembly receipt, and the cosigner signature unless it is a listed rekey; the retired `cosigned` kind is refused. Mixed kinds are rejected per `/sign/component` request. |
 | Assembly response | wire projection | assembled signed group bytes | `signerapi.AssemblyResponse` | `internal/signerapp/rest`, `internal/signerapp/signing` | Assembly revalidates each target against signer-owned metadata and does not trust endpoint-advertised public keys. |
 | Rotating prepare request/response | wire request/projection | rotating account transaction intent | `signerapi.RotatingPrepareRequest`, `RotatingPrepareResponse` | `pkg/signerapi`, `internal/signerapp/daemon`, `internal/signerapp/rest`, `internal/signerapp/signing` | `POST /sign/rotating/prepare`; contract fixtures `rotating_prepare_{request,response}.json`. |
 | Rotating sign request/response | wire request/projection | prepared rotating group | `signerapi.RotatingSignRequest`, `RotatingSignResponse` | `pkg/signerapi`, `internal/signerapp/daemon`, `internal/signerapp/rest`, `internal/signerapp/signing` | `POST /sign/rotating/sign`; live request IDs are cancel handles; contract fixtures `rotating_sign_{request,response}.json`. |
@@ -1428,7 +1428,7 @@ and [ARCH_ADMIN.md](ARCH_ADMIN.md#admin-protocol-contract).
 | Cosigner component message | request-scoped signing input | role byte plus target TxID | 32-byte message digest | `internal/cosigner/message` | Shared by signer assembly and TEAL vectors; clients treat component signatures as opaque. |
 | Component signature set | request-scoped wire data | `/sign/component` response | per-target signatures by target index | `internal/signerapp/signing`, `pkg/signerapi` | Each signature is bound to one target TxID and role. |
 | Bounded-cosigner assembly target | request-scoped wire data | `/sign/assemble` request targets | LogicSig args packing plan | `internal/signerapp/signing` | The receipt, the base signatures and, on `spend` and `spending_rekey`, the cosigner signature are verified before packed bytes are returned. |
-| Guarded send orchestration | long-lived client workflow | signer inventory plus endpoint registry plus requests | `/plan`, bounded-base component call (signer-domain gated), optional non-cosigned `/sign`, cosigner call (none for a listed rekey), assembly, then client algod submit or simulate | `internal/engine/guarded`, `internal/engine`, `internal/apshellapp` | Client holds no key material but does hold the final executable group; endpoint routing is not trust; guarded targets are classified by effective signer and may be direct senders or AuthAddr authorizers; mixed groups sign non-guarded originals over the same canonical bytes. |
+| Cosigned send orchestration | long-lived client workflow | signer inventory plus endpoint registry plus requests | `/plan`, bounded-base component call (signer-domain gated), optional non-cosigned `/sign`, cosigner call (none for a listed rekey), assembly, then client algod submit or simulate | `internal/engine/cosigned`, `internal/engine`, `internal/apshellapp` | Client holds no key material but does hold the final executable group; endpoint routing is not trust; cosigned targets are classified by effective signer and may be direct senders or AuthAddr authorizers; mixed groups sign non-cosigned originals over the same canonical bytes. |
 
 ### Plugin, JavaScript, And MCP Models
 
@@ -1487,7 +1487,7 @@ name a test inline:
   `internal/config/client_endpoints.go`,
   `internal/config/client_endpoint_writes_test.go`,
   `internal/apshellapp/endpoints_test.go`.
-- Guarded send orchestration: `internal/engine/guarded/submit_test.go`,
+- Cosigned send orchestration: `internal/engine/cosigned/submit_test.go`,
   `internal/engine/connect/client_test.go`.
 - Cosigner component signing and assembly:
   `internal/signerapp/signing/component_test.go`,
@@ -1527,7 +1527,7 @@ name a test inline:
 | Keystore and key files | `internal/crypto`, `internal/keystore`, `internal/keys`, [ARCH_STORE.md](ARCH_STORE.md) |
 | Signing-arg schema model | `internal/signingargs` |
 | Node role / key class gates | `internal/noderole`, `internal/keyclass` |
-| Cosigner key types/messages/references | `internal/cosigner`, `pkg/signerapi/cosigner.go`, [ARCH_GUARDED.md](ARCH_GUARDED.md) |
+| Cosigner key types/messages/references | `internal/cosigner`, `pkg/signerapi/cosigner.go`, [ARCH_COSIGNED.md](ARCH_COSIGNED.md) |
 | Bounded authorization | `internal/boundedmeta`, `lsig/composeddsa`, [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md) |
 | Key type state/catalog | `internal/keytypestate`, `internal/keytypecatalog` |
 | Template library/store | `internal/templatelibrary`, `internal/templatestore`, `internal/signerapp/templates` |

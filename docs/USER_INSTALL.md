@@ -198,7 +198,7 @@ the signer. Then run `connect` in the shell pane.
 
 For local cosigner nodes, `apconsole` shows the cosigner admin pane and daemon pane
 only. Unlock the cosigner in that console, then follow
-[Configure a cosigner for guarded accounts](#configure-a-cosigner-for-guarded-accounts)
+[Configure a cosigner for cosigned accounts](#configure-a-cosigner-for-cosigned-accounts)
 to export its public key and configure access from your transaction client.
 
 Or start components individually:
@@ -226,7 +226,7 @@ For a cosigner node:
 
 1. Run `./start.sh` from the install root
 2. Unlock the cosigner admin pane with the keystore passphrase
-3. Follow [Configure a cosigner for guarded accounts](#configure-a-cosigner-for-guarded-accounts)
+3. Follow [Configure a cosigner for cosigned accounts](#configure-a-cosigner-for-cosigned-accounts)
    below to export the key and add the connection in apshell.
 
 `enroll` creates the client SSH key if it is missing, queues the
@@ -237,7 +237,7 @@ only credential; nothing else is issued or stored. Run `connect` once the
 request is approved. Enrolling at a cosigner leaves the primary signer
 connection unchanged.
 
-### Configure a cosigner for guarded accounts
+### Configure a cosigner for cosigned accounts
 
 Witness trust, endpoint routing, and transport credentials are deliberately
 separate: the cosigner's key file goes to the signer, and each client is given
@@ -247,7 +247,7 @@ the cosigner's address. Complete them in this order:
    **Export Cosigner Key** from its success or key-details screen. The file
    is the public key only. The result screen shows the address clients should
    use, from the configured `endpoint.advertise_url`.
-2. On the primary signer, enable the guarded or Corridor key type through
+2. On the primary signer, enable the cosigned or Corridor key type through
    the KeyType Library. Start **Generate account** in `apadmin`, select that
    type, open its **Cosigner** field, and choose **Use key file...**. Compare
    the complete Witness Key ID with the value shown on the cosigner, import,
@@ -279,7 +279,7 @@ the queued request in the cosigner admin pane after comparing the complete
 client SSH fingerprint. This manual access step does not import a public
 cosigner key into the primary signer.
 
-For new guarded-account setup, use the guided flow above. See
+For new cosigned-account setup, use the guided flow above. See
 [advanced endpoint commands](USER_COMMANDS.md#advanced-manual-endpoint-configuration-and-discovery)
 for manual routing and discovery.
 
@@ -480,9 +480,9 @@ This installs:
 4. Ask the signer operator to approve the queued request in `apadmin` or `apapprover` (or to import your public key), then run `connect`
 
 The `enroll` flow enrolls the client's SSH key, which is its only
-credential. It does not enroll a cosigner witness as a guarded-account
-co-authority. For guarded accounts, follow
-[Configure a cosigner for guarded accounts](#configure-a-cosigner-for-guarded-accounts).
+credential. It does not enroll a cosigner witness as a cosigned-account
+co-authority. For cosigned accounts, follow
+[Configure a cosigner for cosigned accounts](#configure-a-cosigner-for-cosigned-accounts).
 After approval, run `connect` in interactive `apshell`.
 
 **Constraints:** `--client` cannot be combined with `--systemd` or `--bindir`. It must not be run as root.

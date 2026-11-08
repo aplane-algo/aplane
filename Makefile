@@ -45,7 +45,7 @@ GENERATED_DOCS_DIR = internal/docassets/generated/docs
 CURATED_DOCS = \
 	ARCH_OVERVIEW ARCH_SHELL ARCH_SECURITY ARCH_NETWORKS \
 	ARCH_CRYPTO ARCH_STORE ARCH_KEYTYPES ARCH_SIGNING ARCH_POLICY \
-	ARCH_GUARDED ARCH_PLUGINS \
+	ARCH_COSIGNED ARCH_PLUGINS \
 	USER_COMMANDS USER_JSAPI USER_KEYTYPES USER_POLICY USER_CONFIG \
 	USER_CONFIG_REFERENCE USER_LOGGING USER_QUICKSTART USER_QUICKSTART_LOCALNET \
 	USER_TRANSFER_ROUTING USER_LOGICSIG_GUIDELINES USER_STORE_MGMT \
@@ -515,8 +515,8 @@ docker-systemd-test:
 # End-to-end local install test. Builds a release tarball, boots signer, cosigner,
 # client/admin, and LocalNet algod containers on one Docker network, then
 # verifies SSH client enrollment, shared LocalNet reachability, the complete
-# local-IPC apadmin ID-first cosigner enrollment ceremony, guarded signing, corridor
-# allowlist enforcement, and local Python SDK guarded signing across the Docker
+# local-IPC apadmin ID-first cosigner enrollment ceremony, cosigned signing, corridor
+# allowlist enforcement, and local Python SDK cosigned signing across the Docker
 # network.
 # Requires docker and a local aplanesdk checkout. Pass extra flags via ARGS.
 docker-local-test:
