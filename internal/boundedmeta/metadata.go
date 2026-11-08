@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/aplane-algo/aplane/internal/rekeylist"
 	"github.com/aplane-algo/aplane/internal/witness"
 )
 
@@ -84,6 +85,28 @@ type CosignerAuthorization struct {
 	RequiredOn       []string `json:"required_on"`
 }
 
+// RekeyListContractV1 identifies the rekey-to list overlay's contract: the
+// hiding tree in internal/rekeylist at its fixed depth.
+const RekeyListContractV1 = "rekey_list1"
+
+// Reserved creation parameters of a rekey-to list. The framework injects the
+// entries parameter; the generator fills in the root, which it computes from
+// the entries and a seed derived from the spending key.
+const (
+	RekeyListEntriesParameter = "bounded_rekey_to"
+	RekeyListRootParameter    = "bounded_rekey_to_root"
+)
+
+// RekeyList is the rekey-to list overlay: with it, a rekey may go to a listed
+// address with the spending key alone. Under rekey: refused it is "only these":
+// every other rekey is refused. RootHex is an instance field filled during key
+// generation; the rest is template-level.
+type RekeyList struct {
+	Contract string `json:"contract"`
+	Depth    int    `json:"depth"`
+	RootHex  string `json:"root,omitempty"`
+}
+
 // Metadata is the complete non-secret signing contract for one bounded key.
 type Metadata struct {
 	Contract               string                 `json:"contract"`
@@ -92,6 +115,7 @@ type Metadata struct {
 	MaxFee                 uint64                 `json:"max_fee"`
 	Rekey                  RekeySetting           `json:"rekey"`
 	Cosigner               *CosignerAuthorization `json:"cosigner,omitempty"`
+	RekeyList              *RekeyList             `json:"rekey_list,omitempty"`
 	RuntimeArgs            []RuntimeArg           `json:"runtime_args"`
 	DerivedArgs            []DerivedArg           `json:"derived_args"`
 	ArgumentLayout         []ArgumentSlot         `json:"argument_layout"`
@@ -110,6 +134,10 @@ func Clone(metadata *Metadata) *Metadata {
 		cosigner := *metadata.Cosigner
 		cosigner.RequiredOn = slices.Clone(metadata.Cosigner.RequiredOn)
 		cloned.Cosigner = &cosigner
+	}
+	if metadata.RekeyList != nil {
+		list := *metadata.RekeyList
+		cloned.RekeyList = &list
 	}
 	cloned.RuntimeArgs = slices.Clone(metadata.RuntimeArgs)
 	cloned.DerivedArgs = slices.Clone(metadata.DerivedArgs)
@@ -146,6 +174,7 @@ func (metadata *Metadata) Equal(other *Metadata) bool {
 		metadata.MaxFee == other.MaxFee &&
 		metadata.Rekey == other.Rekey &&
 		equalCosignerAuthorization(metadata.Cosigner, other.Cosigner) &&
+		equalRekeyList(metadata.RekeyList, other.RekeyList) &&
 		slices.Equal(metadata.RuntimeArgs, other.RuntimeArgs) &&
 		slices.Equal(metadata.DerivedArgs, other.DerivedArgs) &&
 		slices.Equal(metadata.ArgumentLayout, other.ArgumentLayout) &&
@@ -197,7 +226,12 @@ func (metadata *Metadata) ValidateProfile() error {
 	if metadata.Cosigner != nil && metadata.Rekey != RekeyRefused {
 		return fmt.Errorf("bounded cosigner profiles do not support a %s rekey", metadata.Rekey)
 	}
-	if metadata.Rekey == RekeyRefused {
+	if err := metadata.ValidateRekeyList(); err != nil {
+		return err
+	}
+	// A listed address is a way out, so only a refused account without a list
+	// must leave a transfer for what it holds.
+	if metadata.Rekey == RekeyRefused && metadata.RekeyList == nil {
 		if err := ValidateRefusedExit(metadata.SpendEffects); err != nil {
 			return err
 		}
@@ -214,14 +248,21 @@ func (metadata *Metadata) ValidateProfile() error {
 	if err := validateArgumentLayout(metadata); err != nil {
 		return err
 	}
+	// Layer 3 reads recipient proofs; a rekey-list proof serves the rekey path.
+	recipientProofs := 0
+	for _, arg := range metadata.DerivedArgs {
+		if arg.Kind == DerivedArgMerkleProof {
+			recipientProofs++
+		}
+	}
 	switch metadata.Layer3Policy {
 	case Layer3PolicyFixedAllowlist, Layer3PolicyFixedAllowlistCustom,
 		Layer3PolicyTimelock, Layer3PolicyFixedAllowlistTimelock, Layer3PolicyNone:
-		if len(metadata.DerivedArgs) != 0 {
+		if recipientProofs != 0 {
 			return fmt.Errorf("%s must not declare derived arguments", metadata.Layer3Policy)
 		}
 	case Layer3PolicyMerkleAllowlist, Layer3PolicyMerkleAllowlistCustom, Layer3PolicyMerkleAllowlistTimelock:
-		if len(metadata.DerivedArgs) != 1 {
+		if recipientProofs != 1 {
 			return fmt.Errorf("%s requires exactly one derived Merkle proof argument", metadata.Layer3Policy)
 		}
 	}
@@ -402,4 +443,50 @@ func DecodeCanonicalHex(field, value string, minSize, maxSize int) ([]byte, erro
 		return nil, fmt.Errorf("%s length %d invalid (expected %d-%d bytes)", field, len(decoded), minSize, maxSize)
 	}
 	return decoded, nil
+}
+
+func equalRekeyList(a, b *RekeyList) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
+}
+
+// ValidateRekeyList checks a rekey-to list record against the rest of the
+// profile. Phase 3 offers it only as "only these" (rekey: refused) and without
+// a cosigner: a listed rekey on a cosigned account needs a signing route that
+// skips the cosigner, which does not exist yet.
+func (metadata *Metadata) ValidateRekeyList() error {
+	listProofs := 0
+	for _, arg := range metadata.DerivedArgs {
+		if arg.Kind == DerivedArgRekeyListProof {
+			listProofs++
+			if metadata.RekeyList == nil || arg.Parameter != RekeyListEntriesParameter {
+				return fmt.Errorf("a rekey-list proof argument needs the rekey-to list over %s", RekeyListEntriesParameter)
+			}
+		}
+	}
+	list := metadata.RekeyList
+	if list == nil {
+		return nil
+	}
+	switch {
+	case list.Contract != RekeyListContractV1:
+		return fmt.Errorf("unsupported rekey-to list contract %q", list.Contract)
+	case list.Depth != rekeylist.Depth:
+		return fmt.Errorf("rekey-to list depth %d, want %d", list.Depth, rekeylist.Depth)
+	case metadata.Rekey != RekeyRefused:
+		return fmt.Errorf("a rekey-to list needs rekey %s (only these addresses)", RekeyRefused)
+	case metadata.Cosigner != nil:
+		return fmt.Errorf("a rekey-to list on a cosigned account is not supported")
+	case listProofs != 1:
+		return fmt.Errorf("a rekey-to list needs exactly one rekey-list proof argument, got %d", listProofs)
+	}
+	if list.RootHex != "" {
+		root, err := hex.DecodeString(list.RootHex)
+		if err != nil || len(root) != 32 {
+			return fmt.Errorf("rekey-to list root must be 32 bytes of hex")
+		}
+	}
+	return nil
 }

@@ -26,6 +26,7 @@ var (
 	allowRules = map[txeffects.Rule]txeffects.Path{
 		txeffects.RuleSpendAllowed: txeffects.PathSpend,
 		txeffects.RuleRekeyAllowed: txeffects.PathSpendingRekey,
+		txeffects.RuleRekeyListed:  txeffects.PathListedRekey,
 	}
 )
 
@@ -131,6 +132,14 @@ func surfaceCorpus(t *testing.T) map[string]types.Transaction {
 // is only ever what the declaration states.
 func TestClassifyForReachesAnExplicitRuleForEveryEffect(t *testing.T) {
 	declarations := grammarDeclarations(t)
+	// Every refused, uncosigned declaration also stands for its "only these"
+	// form: the same account with a rekey-to list.
+	for descriptor, declaration := range declarations {
+		if declaration.Rekey == boundedmeta.RekeyRefused && declaration.Cosigner == nil && !declaration.RekeyList {
+			declaration.RekeyList = true
+			declarations[descriptor+";rekey_list"] = declaration
+		}
+	}
 	corpus := surfaceCorpus(t)
 	reached := make(map[txeffects.Rule]bool)
 	for descriptor, declaration := range declarations {
@@ -157,6 +166,10 @@ func TestClassifyForReachesAnExplicitRuleForEveryEffect(t *testing.T) {
 			case txeffects.PathSpendingRekey:
 				if declaration.Rekey != boundedmeta.RekeySpendingKey || txn.Type != types.PaymentTx || txn.Amount != 0 || txn.Receiver != txn.Sender {
 					t.Fatalf("%s / %s: allowed a rekey the declaration refuses", descriptor, name)
+				}
+			case txeffects.PathListedRekey:
+				if !declaration.RekeyList || txn.Type != types.PaymentTx || txn.Amount != 0 || txn.Receiver != txn.Sender || len(decision.Facts.Effects()) != 1 {
+					t.Fatalf("%s / %s: sent a rekey that is not pure to the listed path", descriptor, name)
 				}
 			}
 		}

@@ -70,7 +70,7 @@ func TestOpcodeProfileRequiresClosedPathShape(t *testing.T) {
 	if err := DefaultOpcodeProfile(1_900).Validate(false); err != nil {
 		t.Fatalf("default profile: %v", err)
 	}
-	if err := BoundedOpcodeProfile(1_700, 1_800).Validate(true); err != nil {
+	if err := BoundedOpcodeProfile(1_700, 1_800, 1_900).Validate(true); err != nil {
 		t.Fatalf("bounded profile: %v", err)
 	}
 	tests := []struct {

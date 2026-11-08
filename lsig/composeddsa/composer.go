@@ -156,6 +156,9 @@ func NewComposedDSA(cfg Config) *ComposedDSA {
 	if bounded != nil && bounded.Cosigner != nil && !hasParameter(params, BoundedCosignerPublicKeyParameter) {
 		params = append(params, boundedCosignerPublicKeyParameterDef())
 	}
+	if bounded != nil && bounded.RekeyList != nil && !hasParameter(params, BoundedRekeyToParameter) {
+		params = append(params, rekeyListEntriesParameterDef())
+	}
 	return &ComposedDSA{
 		keyType:            cfg.KeyType,
 		baseKeyType:        cfg.BaseKeyType,
@@ -461,6 +464,8 @@ func (c *ComposedDSA) GenerateTEAL(publicKey []byte, params map[string]string) (
 	if err := c.checkBoundedGenerationSupport(); err != nil {
 		return "", err
 	}
+	// The rekey-to list's root is the generator's, not a creation parameter.
+	params, generated := splitRekeyListRoot(params)
 	normalizedParams, err := lsigprovider.NormalizeCreationParams(params, c.params)
 	if err != nil {
 		return "", err
@@ -537,7 +542,17 @@ func (c *ComposedDSA) GenerateTEAL(publicKey []byte, params map[string]string) (
 
 	b.WriteString("assert\n\n")
 	if boundedProfile != nil {
-		prelude, err := c.renderBoundedPrelude(publicKey, normalizedParams, boundedProfile)
+		preludeParams := normalizedParams
+		if generated != nil {
+			preludeParams = make(map[string]string, len(normalizedParams)+len(generated))
+			for name, value := range normalizedParams {
+				preludeParams[name] = value
+			}
+			for name, value := range generated {
+				preludeParams[name] = value
+			}
+		}
+		prelude, err := c.renderBoundedPrelude(publicKey, preludeParams, boundedProfile)
 		if err != nil {
 			return "", fmt.Errorf("failed to render bounded envelope: %w", err)
 		}

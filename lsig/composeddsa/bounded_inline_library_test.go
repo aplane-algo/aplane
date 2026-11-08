@@ -27,7 +27,7 @@ func TestBoundedInlineAllowlistGoldens(t *testing.T) {
 		wantFingerprint string
 		wantTEALSHA256  string
 	}{
-		{name: "fixed allowlist", yaml: composeddsa.FixedAllowlistFixtureYAML, publicKey: bytes.Repeat([]byte{0x21}, falconfamily.PublicKeySize), wantFingerprint: "1:ad7ec8b7a9cf35ac87647c14694f462b296018c0a18f8bae646e6628da554f93", wantTEALSHA256: "f848a80eaf26dd0844f67ac4a345e4b0ff23f1709e6017ffe1677cd704c61b51"},
+		{name: "fixed allowlist", yaml: composeddsa.FixedAllowlistFixtureYAML, publicKey: bytes.Repeat([]byte{0x21}, falconfamily.PublicKeySize), wantFingerprint: "1:fab332bb473483ce85dc2c71ef2bd733bca452b074ea75fa820fad2543382a70", wantTEALSHA256: "f848a80eaf26dd0844f67ac4a345e4b0ff23f1709e6017ffe1677cd704c61b51"},
 	}
 
 	for _, test := range tests {

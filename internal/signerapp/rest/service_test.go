@@ -1108,6 +1108,7 @@ func (p restTestDSAProvider) LogicSigOpcodeProfile() lsigresource.OpcodeProfile 
 		return lsigresource.BoundedOpcodeProfile(
 			lsigresource.SingleTransactionOpcodeCeiling,
 			lsigresource.SingleTransactionOpcodeCeiling,
+			lsigresource.SingleTransactionOpcodeCeiling,
 		)
 	}
 	return lsigresource.DefaultOpcodeProfile(lsigresource.SingleTransactionOpcodeCeiling)
@@ -1139,7 +1140,7 @@ func (p restTestDSAProvider) BoundedAuthorizationMetadata() *boundedmeta.Metadat
 		metadata.ArgumentLayout = append(metadata.ArgumentLayout, boundedmeta.ArgumentSlot{
 			Index: 1, Name: boundedmeta.CosignerSignatureSlot, Source: boundedmeta.ArgSourceCosigner,
 			MaxSize: boundedmeta.CosignerSignatureMaxSizeV1,
-			Paths:   boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgForbidden},
+			Paths:   boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgForbidden, ListedRekey: boundedmeta.ArgForbidden},
 		})
 	}
 	for _, spendType := range p.bounded.SpendEffects {

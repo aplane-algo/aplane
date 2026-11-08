@@ -33,7 +33,7 @@ func TestBoundedConditionalGoldens(t *testing.T) {
 			name:            "custom timelock",
 			yaml:            composeddsa.CustomTimelockFixtureYAML,
 			parameters:      map[string]string{"unlock_round": "50000000"},
-			wantFingerprint: "1:9725610f90f101ee5c390846ed4a0ee4bd7dd9a6e934c499ecce3ab9e465db78",
+			wantFingerprint: "1:ac54c2e2172eb70b68ee356cd2fa3bb10d3b5eb3715da6e0d6033a0138c273e5",
 			wantTEALSHA256:  "5e66cac49318633d85ddf52cc4f97ef7127f3d4fae339d25d01256658a2429fc",
 		},
 	}

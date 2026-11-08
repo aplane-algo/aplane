@@ -23,11 +23,13 @@ type LogicSigResourceUsage struct {
 
 // LogicSigResourceProfile publishes the closed paths available for one final
 // stored LogicSig program. Non-bounded keys use Default; bounded keys use the
-// two explicit bounded paths and never silently fall back to Default.
+// three explicit bounded paths and never silently fall back to Default. A rekey
+// on an account with a rekey-to list takes ListedRekey.
 type LogicSigResourceProfile struct {
 	Default       *LogicSigResourceUsage `json:"default,omitempty"`
 	Spend         *LogicSigResourceUsage `json:"spend,omitempty"`
 	SpendingRekey *LogicSigResourceUsage `json:"spending_rekey,omitempty"`
+	ListedRekey   *LogicSigResourceUsage `json:"listed_rekey,omitempty"`
 }
 
 func (r LogicSigResourceUsage) validate() error {
@@ -399,6 +401,16 @@ type BoundedDerivedArgInfo struct {
 type BoundedArgumentPathMask struct {
 	Spend         string `json:"spend"`
 	SpendingRekey string `json:"spending_rekey"`
+	ListedRekey   string `json:"listed_rekey"`
+}
+
+// BoundedRekeyListInfo says that a bounded account has a rekey-to list, and
+// commits to it. The entries are never published: the root reveals nothing
+// about them.
+type BoundedRekeyListInfo struct {
+	Contract string `json:"contract"`
+	Depth    int    `json:"depth"`
+	RootHex  string `json:"root,omitempty"`
 }
 
 type BoundedArgumentSlotInfo struct {
@@ -428,8 +440,10 @@ type BoundedAuthorizationInfo struct {
 	BaseSignatureArgLayout BoundedSignatureArgLayout `json:"base_signature_arg_layout"`
 	SpendEffects           []string                  `json:"spend_effects"`
 	MaxFee                 uint64                    `json:"max_fee"`
-	// Rekey is refused or spending_key.
+	// Rekey is refused or spending_key. With RekeyList, refused is "only these":
+	// a rekey may go to a listed address.
 	Rekey          string                            `json:"rekey"`
+	RekeyList      *BoundedRekeyListInfo             `json:"rekey_list,omitempty"`
 	Cosigner       *BoundedCosignerAuthorizationInfo `json:"cosigner,omitempty"`
 	RuntimeArgs    []RuntimeArgInfo                  `json:"runtime_args"`
 	DerivedArgs    []BoundedDerivedArgInfo           `json:"derived_args"`

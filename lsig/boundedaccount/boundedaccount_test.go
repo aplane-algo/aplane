@@ -27,18 +27,18 @@ import (
 )
 
 const (
-	goldenGrammarFingerprint    = "1:a21097e040d893d3d7dc60b9cf6b22cb62417b8579cad38ed48f94dc5137afe3"
-	goldenFirstShapeFingerprint = "1:dde35ec01de8a905f1263fd8fc246545540bd950aa54994aac356e1951e2df6f"
-	goldenFullShapeFingerprint  = "1:95234d16fc17e23394a79dc62245d0c2eebf5a5a0be10fe12f14d9e2296e566b"
-	goldenBoundaryDigest        = "8d6f9de0e52dac9cc01a9b896311890cd7940cd202718ccda74ba7b86bbfa82e"
+	goldenGrammarFingerprint    = "1:71a9e821ff5fedf2920dd2c332bc7bebe2cc2f4480754b7c36b7f7200dd700e5"
+	goldenFirstShapeFingerprint = "1:8cf7fe450ac0fe0e548ae4e4a075d22035f167a8a27957d723a82d82ac93b0d7"
+	goldenFullShapeFingerprint  = "1:e15126819ade64513db6f8708fa9b0340f56d438e44d619605377fd53b1e6550"
+	goldenBoundaryDigest        = "774b41e54991edc7532ac1c0375d9415faf6767255b746ab95a0920b3fbe5209"
 	goldenRenderedPrograms      = "d6f9605e3277d2410d881560a76ad42e4e6ab3ce4c235e9d160134b4bbb41ae7"
 	goldenTimelockPrograms      = "a0f07a52e1566976b333bc68cb0ed37ac7fe007c10685569a6adf05bb0d97272"
 	// Pins the 14 bounded2 spending-key shapes. It is no longer equal to main
 	// a2874c6e: bounded2 replaced bounded1 in place (contract label, rekey setting,
 	// profile domain), and timelocks no longer offer a spending-key rekey.
-	goldenSpendingKeyPrograms = "65c08e46dbed601d2d87921d6521b480967e877df14655473198981ff018c534"
+	goldenSpendingKeyPrograms = "e505540200bde859f7d0adca8b99d3a5c4bfd3ee79859c56d1b00c5201030f15"
 	// Pins the 13 limits-only shapes: programs, fingerprints and digests.
-	goldenLimitsPrograms = "e79627c026582c1cb19293b9706cfc7ca99bccb6261ea39039bf6a970f87980c"
+	goldenLimitsPrograms = "84636946374efcc70632daadd867d701beef0fc4d0fd100a7bde7714831356b4"
 )
 
 func newTestProvider(t *testing.T) *Provider {

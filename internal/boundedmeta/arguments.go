@@ -3,11 +3,18 @@
 
 package boundedmeta
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/aplane-algo/aplane/internal/rekeylist"
+)
 
 const (
 	PathSpend         = "spend"
 	PathSpendingRekey = "spending_rekey"
+	// PathListedRekey is a pure rekey to an address on the account's rekey-to
+	// list, authorized by the spending key and a list proof.
+	PathListedRekey = "listed_rekey"
 
 	ArgSourceBaseSignature = "base_signature"
 	ArgSourceDerived       = "derived"
@@ -20,12 +27,18 @@ const (
 
 	DerivedArgMerkleProof = "merkle_allowlist_proof"
 	MerkleProofSize       = 512
+
+	// DerivedArgRekeyListProof is the signer-built proof that a rekey target is
+	// on the account's rekey-to list.
+	DerivedArgRekeyListProof = "rekey_list_proof"
+	RekeyListProofSize       = rekeylist.ProofSize
 )
 
 // ArgumentPathMask freezes one slot's use on every bounded path.
 type ArgumentPathMask struct {
 	Spend         string `json:"spend"`
 	SpendingRekey string `json:"spending_rekey"`
+	ListedRekey   string `json:"listed_rekey"`
 }
 
 // ArgumentSlot is one position in the final LogicSig argument array.
@@ -53,7 +66,7 @@ func BaseArgumentLayout(layout SignatureArgLayout) []ArgumentSlot {
 	for i, maxSize := range layout.MaxSizes {
 		slots = append(slots, ArgumentSlot{
 			Index: i, Name: fmt.Sprintf("base_signature_%d", i), Source: ArgSourceBaseSignature, MaxSize: maxSize,
-			Paths: ArgumentPathMask{Spend: ArgRequired, SpendingRekey: ArgRequired},
+			Paths: ArgumentPathMask{Spend: ArgRequired, SpendingRekey: ArgRequired, ListedRekey: ArgRequired},
 		})
 	}
 	return slots
@@ -62,7 +75,7 @@ func BaseArgumentLayout(layout SignatureArgLayout) []ArgumentSlot {
 // ArgumentBytesForPath returns the maximum aggregate LogicSig argument bytes
 // for one bounded authorization path. Program bytes are deliberately excluded.
 func (metadata *Metadata) ArgumentBytesForPath(path string) int {
-	if metadata == nil || (path != PathSpend && path != PathSpendingRekey) {
+	if metadata == nil || (path != PathSpend && path != PathSpendingRekey && path != PathListedRekey) {
 		return 0
 	}
 	size := 0
@@ -80,6 +93,8 @@ func slotRequirement(paths ArgumentPathMask, path string) string {
 		return paths.Spend
 	case PathSpendingRekey:
 		return paths.SpendingRekey
+	case PathListedRekey:
+		return paths.ListedRekey
 	default:
 		return ""
 	}
@@ -98,10 +113,13 @@ func validateArgumentLayout(metadata *Metadata) error {
 	lastSource := -1
 	baseCount := 0
 	derivedNames := make(map[string]struct{}, len(metadata.DerivedArgs))
+	derivedKinds := make(map[string]string, len(metadata.DerivedArgs))
 	for _, arg := range metadata.DerivedArgs {
-		if arg.Name == "" || arg.Kind != DerivedArgMerkleProof || arg.Parameter == "" || arg.MaxSize != MerkleProofSize {
+		size, known := derivedArgSizes[arg.Kind]
+		if arg.Name == "" || !known || arg.Parameter == "" || arg.MaxSize != size {
 			return fmt.Errorf("invalid derived arg %q of kind %q", arg.Name, arg.Kind)
 		}
+		derivedKinds[arg.Name] = arg.Kind
 		if _, duplicate := derivedNames[arg.Name]; duplicate {
 			return fmt.Errorf("duplicate derived arg %q", arg.Name)
 		}
@@ -146,6 +164,7 @@ func validateArgumentLayout(metadata *Metadata) error {
 		}{
 			{path: PathSpend, rule: slot.Paths.Spend},
 			{path: PathSpendingRekey, rule: slot.Paths.SpendingRekey},
+			{path: PathListedRekey, rule: slot.Paths.ListedRekey},
 		} {
 			path, rule := pathRule.path, pathRule.rule
 			if rule != ArgRequired && rule != ArgOptional && rule != ArgForbidden {
@@ -154,7 +173,7 @@ func validateArgumentLayout(metadata *Metadata) error {
 		}
 		switch slot.Source {
 		case ArgSourceBaseSignature:
-			if slot.Paths.Spend != ArgRequired || slot.Paths.SpendingRekey != ArgRequired {
+			if slot.Paths.Spend != ArgRequired || slot.Paths.SpendingRekey != ArgRequired || slot.Paths.ListedRekey != ArgRequired {
 				return fmt.Errorf("base signature slot %d must be required on every path", i)
 			}
 			if baseCount >= len(metadata.BaseSignatureArgLayout.MaxSizes) || slot.MaxSize != metadata.BaseSignatureArgLayout.MaxSizes[baseCount] {
@@ -170,6 +189,15 @@ func validateArgumentLayout(metadata *Metadata) error {
 					return fmt.Errorf("derived argument slot %d maximum size does not match declaration", i)
 				}
 			}
+			// A rekey never reaches Layer 3, so a recipient proof is spend-only, and a
+			// list proof serves the listed rekey alone.
+			want := ArgumentPathMask{Spend: ArgOptional, SpendingRekey: ArgForbidden, ListedRekey: ArgForbidden}
+			if derivedKinds[slot.Name] == DerivedArgRekeyListProof {
+				want = ArgumentPathMask{Spend: ArgForbidden, SpendingRekey: ArgForbidden, ListedRekey: ArgRequired}
+			}
+			if slot.Paths != want {
+				return fmt.Errorf("derived argument slot %d has path rules %+v, want %+v", i, slot.Paths, want)
+			}
 			seenDerived[slot.Name] = struct{}{}
 		case ArgSourceRuntime:
 			if _, ok := runtimeNames[slot.Name]; !ok {
@@ -180,11 +208,14 @@ func validateArgumentLayout(metadata *Metadata) error {
 					return fmt.Errorf("runtime argument slot %d maximum size does not match declaration", i)
 				}
 			}
+			if slot.Paths.SpendingRekey != ArgForbidden || slot.Paths.ListedRekey != ArgForbidden {
+				return fmt.Errorf("runtime argument slot %d must be forbidden on every rekey path", i)
+			}
 			seenRuntime[slot.Name] = struct{}{}
 		case ArgSourceCosigner:
 			cosignerSlots++
 			if slot.Name != CosignerSignatureSlot || metadata.Cosigner == nil || slot.MaxSize != metadata.Cosigner.SignatureMaxSize ||
-				slot.Paths.Spend != ArgRequired || slot.Paths.SpendingRekey != ArgForbidden {
+				slot.Paths.Spend != ArgRequired || slot.Paths.SpendingRekey != ArgForbidden || slot.Paths.ListedRekey != ArgForbidden {
 				return fmt.Errorf("bounded cosigner signature slot must be spend-only and match cosigner metadata")
 			}
 		}
@@ -203,4 +234,10 @@ func validateArgumentLayout(metadata *Metadata) error {
 		return fmt.Errorf("argument layout has %d cosigner slots, want %d", cosignerSlots, wantCosignerSlots)
 	}
 	return nil
+}
+
+// derivedArgSizes is each signer-derived argument kind's exact size.
+var derivedArgSizes = map[string]int{
+	DerivedArgMerkleProof:    MerkleProofSize,
+	DerivedArgRekeyListProof: RekeyListProofSize,
 }

@@ -161,6 +161,8 @@ func opcodeCeilingForPath(profile lsigresource.OpcodeProfile, path lsigresource.
 		ceiling = profile.Spend
 	case lsigresource.PathSpendingRekey:
 		ceiling = profile.SpendingRekey
+	case lsigresource.PathListedRekey:
+		ceiling = profile.ListedRekey
 	default:
 		return 0, fmt.Errorf("unknown authorization path %d", path)
 	}
@@ -178,6 +180,8 @@ func opcodePathName(path lsigresource.AuthorizationPath) string {
 		return "spend"
 	case lsigresource.PathSpendingRekey:
 		return "spending_rekey"
+	case lsigresource.PathListedRekey:
+		return "listed_rekey"
 	default:
 		return fmt.Sprintf("unknown(%d)", path)
 	}

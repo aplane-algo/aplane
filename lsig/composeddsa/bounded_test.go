@@ -98,15 +98,15 @@ func TestCanonicalBoundedCosignerProfileGolden(t *testing.T) {
 		SpendEffects: []string{boundedmeta.SpendEffectPay}, MaxFee: 1_000, Rekey: boundedmeta.RekeyRefused,
 		Layer3Policy: boundedmeta.Layer3PolicyCustom, Cosigner: profile.Cosigner,
 		ArgumentLayout: []boundedmeta.ArgumentSlot{
-			{Index: 0, Name: "base_signature_0", Source: boundedmeta.ArgSourceBaseSignature, MaxSize: 4, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgRequired}},
-			{Index: 1, Name: boundedmeta.CosignerSignatureSlot, Source: boundedmeta.ArgSourceCosigner, MaxSize: boundedmeta.CosignerSignatureMaxSizeV1, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgForbidden}},
+			{Index: 0, Name: "base_signature_0", Source: boundedmeta.ArgSourceBaseSignature, MaxSize: 4, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgRequired, ListedRekey: boundedmeta.ArgRequired}},
+			{Index: 1, Name: boundedmeta.CosignerSignatureSlot, Source: boundedmeta.ArgSourceCosigner, MaxSize: boundedmeta.CosignerSignatureMaxSizeV1, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgForbidden, ListedRekey: boundedmeta.ArgForbidden}},
 		},
 	}
 	encoded, err := CanonicalBoundedProfile(profile, metadata)
 	if err != nil {
 		t.Fatalf("CanonicalBoundedProfile() error = %v", err)
 	}
-	const want = "0000001941504c414e455f424f554e4445445f50524f46494c455f563200000008626f756e64656432000000010000000370617900000000000003e800000007726566757365640000000100000009636f7369676e6572310000001c61706c616e652e7769746e6573732d66616c636f6e313032342e76310000058f00000001000000057370656e6400000006637573746f6d00000001000000040000000000000000000000020000000000000010626173655f7369676e61747572655f300000000e626173655f7369676e6174757265000000040000000872657175697265640000000872657175697265640000000100000012636f7369676e65725f7369676e617475726500000008636f7369676e65720000058f00000008726571756972656400000009666f7262696464656e"
+	const want = "0000001941504c414e455f424f554e4445445f50524f46494c455f563200000008626f756e64656432000000010000000370617900000000000003e80000000772656675736564000000000000000100000009636f7369676e6572310000001c61706c616e652e7769746e6573732d66616c636f6e313032342e76310000058f00000001000000057370656e6400000006637573746f6d00000001000000040000000000000000000000020000000000000010626173655f7369676e61747572655f300000000e626173655f7369676e6174757265000000040000000872657175697265640000000872657175697265640000000872657175697265640000000100000012636f7369676e65725f7369676e617475726500000008636f7369676e65720000058f00000008726571756972656400000009666f7262696464656e00000009666f7262696464656e"
 	if got := hex.EncodeToString(encoded); got != want {
 		t.Fatalf("canonical cosigner profile = %s, want %s", got, want)
 	}

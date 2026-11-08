@@ -19,6 +19,7 @@ type Path string
 const (
 	PathSpend         Path = boundedmeta.PathSpend
 	PathSpendingRekey Path = boundedmeta.PathSpendingRekey
+	PathListedRekey   Path = boundedmeta.PathListedRekey
 	PathRefused       Path = "refused"
 )
 
@@ -31,10 +32,14 @@ const (
 	RuleSpendAllowed     Rule = "spend_allowed"
 	RuleSpendNotDeclared Rule = "spend_not_declared"
 	RuleRekeyAllowed     Rule = "rekey_allowed"
-	RuleRekeyRefused     Rule = "rekey_refused"
-	RuleHybridRekey      Rule = "hybrid_rekey"
-	RuleDeniedEffect     Rule = "denied_effect"
-	RuleDeniedType       Rule = "denied_type"
+	// RuleRekeyListed sends a pure rekey to the listed path. Whether the target
+	// is on the list is the signer's to check against the stored list; a
+	// declaration carries only the list's root.
+	RuleRekeyListed  Rule = "rekey_listed"
+	RuleRekeyRefused Rule = "rekey_refused"
+	RuleHybridRekey  Rule = "hybrid_rekey"
+	RuleDeniedEffect Rule = "denied_effect"
+	RuleDeniedType   Rule = "denied_type"
 )
 
 // Decision is what a path declaration makes of one transaction. Reason is set
@@ -73,6 +78,10 @@ func ClassifyFor(txn types.Transaction, declaration boundedmeta.PathDeclaration)
 		decision.Path, decision.Rule = PathSpend, RuleSpendAllowed
 		return decision, nil
 	case ShapePureRekey:
+		if declaration.RekeyList {
+			decision.Path, decision.Rule = PathListedRekey, RuleRekeyListed
+			return decision, nil
+		}
 		if declaration.Rekey == boundedmeta.RekeyRefused {
 			return refuse(decision, RuleRekeyRefused, fmt.Sprintf("%s account permanently disables rekey", contract))
 		}

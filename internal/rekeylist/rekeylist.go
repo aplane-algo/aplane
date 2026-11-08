@@ -42,6 +42,7 @@ const (
 
 	saltLabel    = "APLANE_REKEY_LIST_SALT_V1"
 	paddingLabel = "APLANE_REKEY_LIST_PAD_V1"
+	seedLabel    = "APLANE_REKEY_LIST_SEED_V1"
 )
 
 // List is one account's rekey-to list: its entries in canonical order and the
@@ -50,6 +51,20 @@ type List struct {
 	seed    [SeedSize]byte
 	entries []types.Address
 	levels  [][][sha256.Size]byte
+}
+
+// SeedFromSpendingKey derives an account's list seed from its spending private
+// key, so the seed is in every backup the key is in and is never stored or sent
+// on its own. The list's privacy then rests on the spending key staying secret.
+func SeedFromSpendingKey(privateKey []byte) ([SeedSize]byte, error) {
+	var seed [SeedSize]byte
+	if len(privateKey) == 0 {
+		return seed, fmt.Errorf("rekey list seed needs the spending private key")
+	}
+	mac := hmac.New(sha256.New, privateKey)
+	mac.Write([]byte(seedLabel))
+	copy(seed[:], mac.Sum(nil))
+	return seed, nil
 }
 
 // NewSeed returns a fresh random seed.

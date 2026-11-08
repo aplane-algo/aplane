@@ -12,6 +12,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
+	"github.com/aplane-algo/aplane/internal/rekeylist"
 	"github.com/aplane-algo/aplane/internal/templatepolicy"
 	"github.com/aplane-algo/aplane/internal/templatestore"
 	"github.com/aplane-algo/aplane/internal/txeffects"
@@ -273,10 +274,17 @@ func boundedProfileFromTemplate(spec *generictemplate.BoundedAuthorizationSpec) 
 			return nil, fmt.Errorf("bounded.spend_effects contains unsupported effect %q", effect)
 		}
 	}
-	if spec.Rekey == "" {
-		return nil, fmt.Errorf("bounded.rekey is required: %s or %s", boundedmeta.RekeyRefused, boundedmeta.RekeySpendingKey)
+	switch spec.Rekey {
+	case "":
+		return nil, fmt.Errorf("bounded.rekey is required: %s, %s or %s", boundedmeta.RekeyRefused, boundedmeta.RekeySpendingKey, BoundedRekeyOnlyThese)
+	case BoundedRekeyOnlyThese:
+		// Only these addresses: no rekey except to an address on the list, which
+		// the framework adds as the bounded_rekey_to parameter.
+		profile.Rekey = boundedmeta.RekeyRefused
+		profile.RekeyList = &boundedmeta.RekeyList{Contract: boundedmeta.RekeyListContractV1, Depth: rekeylist.Depth}
+	default:
+		profile.Rekey = boundedmeta.RekeySetting(spec.Rekey)
 	}
-	profile.Rekey = boundedmeta.RekeySetting(spec.Rekey)
 	canonical, err := canonicalBoundedProfile(profile)
 	if err != nil {
 		return nil, fmt.Errorf("invalid bounded profile: %w", err)

@@ -38,15 +38,16 @@ func TestScanBoundedResourcesUsesPathMasks(t *testing.T) {
 	t.Parallel()
 
 	metadata := &boundedmeta.Metadata{ArgumentLayout: []boundedmeta.ArgumentSlot{
-		{MaxSize: 1_423, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgRequired}},
-		{MaxSize: 512, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgOptional, SpendingRekey: boundedmeta.ArgForbidden}},
-		{MaxSize: 1_423, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgForbidden, SpendingRekey: boundedmeta.ArgRequired}},
+		{MaxSize: 1_423, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgRequired, ListedRekey: boundedmeta.ArgRequired}},
+		{MaxSize: 512, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgOptional, SpendingRekey: boundedmeta.ArgForbidden, ListedRekey: boundedmeta.ArgForbidden}},
+		{MaxSize: 1_423, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgForbidden, SpendingRekey: boundedmeta.ArgRequired, ListedRekey: boundedmeta.ArgForbidden}},
 	}}
 	profile, err := scanLogicSigResources(&Payload{
 		Category:             CategoryDSALsig,
 		LogicSigBytecode:     make([]byte, 4_500),
 		BoundedAuthorization: metadata,
 		LogicSigOpcodeProfile: lsigresource.BoundedOpcodeProfile(
+			lsigresource.SingleTransactionOpcodeCeiling,
 			lsigresource.SingleTransactionOpcodeCeiling,
 			lsigresource.SingleTransactionOpcodeCeiling,
 		),
