@@ -1,7 +1,7 @@
 # Bounded Cosigner Machine-Checkable Model
 
 > Status: TLC checked over every abstract input combination; the recorded run
-> generated 199,168 distinct reachable states at depth 4 and found no
+> generated 66,304 distinct reachable states at depth 4 and found no
 > counterexamples for `Safety`. The normal configuration exhausts the model's
 > full finite state space, so no deep configuration exists for this module.
 
@@ -11,8 +11,7 @@ complements the legacy guarded assembly model: first-party orchestration
 releases an ordinary bounded base signature, requests the cosigner only after
 signer policy and operator approval, and then uses the shared `/sign/assemble`
 route with the distinct `bounded-cosigner` target kind to derive and place the
-declared arguments. Its external-admin path
-deliberately bypasses the cosigner.
+declared arguments.
 
 BS1 is an orchestration property, not a cosigner-endpoint authorization claim.
 The cosigner endpoint does not receive or verify the prior base component, and a
@@ -27,7 +26,7 @@ The spec lives at [formal/bounded_cosigner.tla](formal/bounded_cosigner.tla).
 | Invariant | Meaning | TLA+ predicate |
 |---|---|---|
 | BS1 | In the modeled first-party flow, user policy, approval, and base release precede the cosigner request | `BS1_UserFirst` |
-| BS2 | External-admin completion never requests or consumes a cosigner | `BS2_AdminBypassesCosigner` |
+| BS2 | Retired: it covered the external-admin path, which no longer exists | none |
 | BS3 | Spend output requires a valid assembly receipt plus valid base and cosigner authorities | `BS3_SpendAuthoritiesVerified` |
 | BS4 | Exact target coverage and path-valid argument sources gate output | `BS4_DeclaredArgumentsOnly` |
 | BS5 | Passthrough and canonical transaction bytes remain bound | `BS5_CanonicalGroupBound` |
@@ -36,7 +35,7 @@ The spec lives at [formal/bounded_cosigner.tla](formal/bounded_cosigner.tla).
 
 ## What TLC actually verifies
 
-`Init` enumerates every combination of path (`spend`, `admin`, or invalid),
+`Init` enumerates every combination of path (`spend` or invalid),
 finalized-plan and classification outcomes, signer policy and approval
 decisions, assembly-receipt validity, signature validity, metadata stability,
 exact target coverage,
@@ -47,21 +46,19 @@ TLC then explores the real stage order:
 
 ```text
 planned -> base_released -> cosigner_released -> output
-       \-> admin_partial --------------------> output
        \-> rejected
 ```
 
 The transition predicates transcribe the relevant decision boundaries in
 `internal/engine/guarded/submit.go` and
 `internal/signerapp/signing/bounded_cosigner.go`. Unlike the one-shot assembly
-models, the depth-4 state graph checks that the first-party orchestration's
-cosigner transition is not reachable before a successful base release and that
-the admin branch never enters it. It does not model arbitrary direct calls to
+models, the state graph checks that the first-party orchestration's cosigner
+transition is not reachable before a successful base release. It does not model arbitrary direct calls to
 the cosigner endpoint.
 
 The base gate also includes the approval-binding check
 (`signing/approval_binding.go::checkApprovalBinding`): after approval and before
-any component or partial is produced, the signer refuses a plan that differs
+any component is produced, the signer refuses a plan that differs
 from the one the approval covered. It is one more fail-closed conjunct inside
 `BaseGate` and needs no separate state.
 
@@ -73,8 +70,6 @@ or generated TEAL.
 ## Mutation expectations
 
 - Allowing `CosignerStep` from `planned` violates `BS1_UserFirst`.
-- Routing `admin_partial` through `CosignerStep` violates
-  `BS2_AdminBypassesCosigner`.
 - Removing the receipt conjunct or either signature conjunct from
   `AssembleStep` violates `BS3_SpendAuthoritiesVerified`.
 - Removing source-layout, coverage, or byte-binding conjuncts violates BS4 or
@@ -91,18 +86,19 @@ The checked model passes its standard exhaustive run.
   it would only duplicate identical abstract states without adding a
   per-target invariant.
 - `sourceLayout` abstracts the complete bounded slot contract: base,
-  derived/runtime, cosigner, and admin sources plus their path masks. The Go
+  derived/runtime, and cosigner sources plus their path masks. The Go
   implementation and compiler tests verify the concrete order and slot sizes.
 - The bounded assembly receipt is an abstract boolean. The code mints a
   Falcon-signed receipt during spend signing and verifies it against the
   bounded spending public key during assembly, before accepting the base or
   cosigner component; `receipt` abstracts that whole verification, including
   the metadata-hash and runtime-argument binding checked concretely by
-  `TestBoundedAssemblyReceiptBindsRuntimeAndMetadata`. The admin path has no
-  receipt by contract.
-- The admin branch represents `/sign/bounded-admin` plus external completion.
-  It requires base and admin signatures but intentionally ignores cosigner policy,
-  cosigner signatures, and spend-only derived arguments.
+  `TestBoundedAssemblyReceiptBindsRuntimeAndMetadata`.
+- The external-admin branch (the signer's admin partial plus offline completion)
+  was removed with the admin key; BS2 covered it and is retired. A bounded account
+  with a cosigner refuses rekeys, so the choreography carries spends only. A
+  listed-rekey branch is expected to take BS2's place when the rekey-to list
+  arrives.
 - Liveness is not claimed. Cosigner and approval availability fail closed; the
   model is concerned with what may be released, not eventual completion.
 
@@ -125,7 +121,7 @@ java -jar tla2tools.jar -config docs/formal/bounded_cosigner.cfg \
   [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md), and
   [ARCH_GUARDED.md](ARCH_GUARDED.md).
 - Legacy guarded assembly: [FORMAL_TLA_GUARDED_ASSEMBLY_MODEL.md](FORMAL_TLA_GUARDED_ASSEMBLY_MODEL.md).
-- Traceability: BS1-BS7 in [FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md).
+- Traceability: BS1 and BS3-BS7 in [FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md).
 - Concrete tests: `internal/signerapp/signing/bounded_cosigner_test.go`,
   `internal/engine/guarded/submit_test.go`, and
   `internal/engine/guarded/simulate_submit_test.go`.

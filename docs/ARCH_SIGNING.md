@@ -27,7 +27,6 @@ scope, see [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md).
 - [Client Usage](#client-usage)
 - [How the Server Derives What to Sign](#how-the-server-derives-what-to-sign)
 - [Bounded-Cosigner Spend Flow](#bounded-cosigner-spend-flow)
-- [Bounded Contract-Admin Rekey Flow](#bounded-contract-admin-rekey-flow)
 - [Summary Table](#summary-table)
 - [HTTP API Contract](#http-api-contract) (compatibility-bearing)
   - [Endpoints](#endpoints)
@@ -829,7 +828,7 @@ validates that response against the explicit v42/v43 allowlist.
 First-party planning and executable workflows refresh this check before asking
 apsigner to plan, releasing signatures, or submitting, including JavaScript
 `plan()`, prebuilt transaction signing, plugin pre-sign callbacks, guarded
-signing, bounded-admin partial signing, and verbatim pregrouped
+signing, and verbatim pregrouped
 submission/simulation. The apsigner `/plan` endpoint itself remains independent
 of a client algod.
 The signer rejects an ordinary fee deficit, then adds only authorization-
@@ -1053,34 +1052,8 @@ For inventory rows with `signing_flow: bounded-cosigner1`, the client must:
 4. call `POST /sign/assemble` on the user signer with both components;
 5. submit or simulate the exact returned signed group.
 
-Ordinary `/sign` rejects these spends. Contract-admin rekey remains a separate
-flow and never contacts the cosigner.
-
-## Bounded Contract-Admin Rekey Flow
-
-An admin-key bounded profile keeps pure spending on `/sign`, but routes a pure
-rekey through a typed partial flow:
-
-1. The client constructs a pure zero-amount self-payment rekey.
-2. The separate `aprekey` administrative client calls
-   `POST /sign/bounded-admin`, which performs canonical planning, policy,
-   forced review, approval, dummy/fee/group finalization, and Falcon spending
-   signing.
-3. Apsigner verifies the spending signature and returns finalized unsigned
-   transactions plus one aligned partial LogicSig. It never returns the partial
-   in `signed[]` and never handles contract-admin private material.
-4. `aprekey sign` independently decodes the finalized group, verifies
-   the pure rekey shape, bounded profile, program binding, Contract Admin Key ID,
-   transaction ID, and spending signature, then confirms and adds the external
-   Falcon signature.
-5. Completion verifies both signatures, preserves every unsigned byte and group
-   ID, rechecks authorization/network/validity state, and submits directly to
-   Algod without replanning.
-
-Online `aprekey rekey` performs these stages directly. The separated
-ceremony path splits them across `prepare-rekey`/`prepare-unrekey`, offline
-`sign`, and `complete` using `.apbounded-admin-request` and
-`.apbounded-admin-signature` files.
+Ordinary `/sign` rejects these spends. A bounded account with a cosigner
+declares no rekey operation, so this flow carries spends only.
 
 ## Summary Table
 
@@ -1094,10 +1067,8 @@ ceremony path splits them across `prepare-rekey`/`prepare-unrekey`, offline
 
 Bounded LogicSig DSA is the transaction-aware case: pure spends and
 spending-key rekeys use their declared base, derived, and runtime argument
-slots, while an admin-key rekey uses a signer partial plus an externally
-completed Falcon contract-admin slot. A cosigner-enabled bounded spend inserts
-the cosigner source between Layer-3 and admin slots and uses the user-first
-bounded component choreography above.
+slots. A cosigner-enabled bounded spend adds the cosigner slot after the
+Layer-3 slots and uses the user-first bounded component choreography above.
 
 ---
 
@@ -1133,7 +1104,6 @@ request state and principals without a runtime ID.
 | `GET` | `/keys` | yes | yes |
 | `GET` | `/keytypes` | yes | no (but template-backed types appear only after unlock) |
 | `POST` | `/sign` | yes | yes |
-| `POST` | `/sign/bounded-admin` | yes | yes |
 | `POST` | `/sign/component` | yes | yes |
 | `POST` | `/sign/assemble` | yes | yes |
 | `POST` | `/sign/rotating/prepare` | yes | yes |
@@ -1146,7 +1116,7 @@ request state and principals without a runtime ID.
 
 Method enforcement:
 
-- `/sign`, `/sign/bounded-admin`, `/sign/component`, `/sign/assemble`,
+- `/sign`, `/sign/component`, `/sign/assemble`,
   `/sign/rotating/prepare`, `/sign/rotating/sign`, `/sign/cancel`, `/plan`,
   `/status`, `/admin/generate`, `/admin/keys`, and `/admin/rotating/recover`
   enforce their HTTP method.
@@ -1181,10 +1151,8 @@ The stable wire-contract `code` values that SDK clients branch on are defined in
 | `unavailable` | temporary inability to serve the request | `503` |
 | `cache_refresh` | store mutated but the signer key cache failed to refresh | `500` |
 | `internal` | unexpected server-side failure | `500` |
-| `bounded_admin_required` | admin-key bounded operation sent to ordinary `/sign` | `400` |
 | `bounded_cosigner_required` | cosigner-gated bounded spend sent to ordinary `/sign` | `400` |
-| `bounded_admin_target_rejected` | admin-key bounded rekey whose target is not a nonrotating signing credential this signer holds; refused before policy and re-verified at release | `400` |
-| `rotating_signing_required` | rotating account sent to `/plan`, `/sign`, `/sign/bounded-admin` or `/sign/component` | `400` |
+| `rotating_signing_required` | rotating account sent to `/plan`, `/sign` or `/sign/component` | `400` |
 | `rotating_stage_unproven` | the signer has not yet found the rotating account's live stage; its background scan continues and a retry usually succeeds | `409` |
 | `rotating_stage_changed` | the account's authorizer moved between prepare and sign; nothing was signed, rebuild and prepare again | `409` |
 
@@ -1213,8 +1181,7 @@ Timeout behavior:
   mutations 60 seconds, `/plan` 60 seconds,
   `/sign/rotating/prepare` 60 seconds, `/sign/cancel` 5 seconds,
   `/sign/component` 2 minutes for cosigner targets, `/sign/assemble` 2 minutes,
-  and `/sign`, `/sign/bounded-admin`, `/sign/rotating/sign`, or
-  approval-bearing `/sign/component` based on approval wait.
+  and `/sign`, `/sign/rotating/sign`, or approval-bearing `/sign/component` based on approval wait.
   User and bounded-base `/sign/component` requests can
   block on operator approval and use the same approval-aware deadline as
   `/sign`.
@@ -1296,12 +1263,6 @@ See [Mode Selection](#mode-selection) for the foreign/passthrough/sign distincti
   applied only to signer-controlled slots; passthrough and foreign entries
   contribute to group consistency, approval context, warning analysis, and
   audit visibility.
-- `/sign/bounded-admin` performs the same planning, policy, forced review, group
-  finalization, and spending-key signing for one admin-key-authorized pure
-  rekey, then returns a typed partial for external contract-admin completion.
-  The rekey target must be a nonrotating signing credential this signer holds
-  (`bounded_admin_target_rejected` otherwise). It never loads a contract-admin
-  private key and never returns the partial through `signed[]`.
 - Apsigner has no simulation endpoint or simulation request mode. Full
   simulation obtains an executable group through ordinary `/sign`; guarded
   and bounded-cosigner groups both use `/plan`, `/sign/component`, and
@@ -1346,15 +1307,14 @@ See [Mode Selection](#mode-selection) for the foreign/passthrough/sign distincti
   appended dummy transaction and its embedded LogicSig authorization. Any
   unreported field change, malformed report, or non-canonical dummy fails
   closed on the client.
-- Admin-key bounded operations are rejected with `code:"bounded_admin_required"`;
-  pure spends and explicitly spending-key-authorized rekeys return complete
+- Bounded pure spends and spending-key-authorized rekeys return complete
   base-argument LogicSigs from `/sign` only when no cosigner is required.
 - Cosigner-enabled bounded spends are rejected with
   `code:"bounded_cosigner_required"`; they must use the `bounded-cosigner1`
   choreography below.
 - Rotating accounts (`signing_flow: rotating1`) are rejected before approval
-  with `code:"rotating_signing_required"` on `/plan`, `/sign`,
-  `/sign/bounded-admin` and `/sign/component`.
+  with `code:"rotating_signing_required"` on `/plan`, `/sign` and
+  `/sign/component`.
 - A signed position that rekeys any other account to a rotating account this
   signer holds is rejected with `403` before policy runs, on every path that
   reaches the approval gates. A rotating account's address is its stage 0
@@ -1383,44 +1343,6 @@ See [Mode Selection](#mode-selection) for the foreign/passthrough/sign distincti
 - `passthrough_count`
 - `foreign_count`
 - `reason`
-
-`/sign/bounded-admin` request (`signerapi.BoundedAdminRequest`) carries optional
-`request_id`, `operation:"rekey"`, and shared `requests[]`. V1 requires exactly
-one sign-mode pure rekey, no caller LogicSig arguments, and no passthrough,
-foreign, or unrelated signable entries. The signer may append budget dummies.
-The rekey target must be a nonrotating signing credential this signer holds:
-a native Ed25519 or Falcon-1024 key, or a plain `aplane.falcon1024.v1` or
-`aplane.ed25519.v1` LogicSig account. A target that is unheld, or that is a
-bounded, guarded, composed, generic, witness or rotating credential, is
-refused with `bounded_admin_target_rejected` before policy and approval; the
-same credential is loaded again at release, its stored public key must derive
-the target address (for a LogicSig, its program is re-derived through the
-family provider for the stored key and must match byte for byte), and it
-proves it can sign a domain-separated challenge, so a credential removed or
-replaced after approval fails there. A
-rekey of the bounded account to itself names no other credential and passes;
-a rekey-to-self from any other sender under the bounded program's authority
-returns that account to its own key, which is checked like any other target.
-This is a signer invariant, independent of `reject_foreign_rekey`; leaving
-APlane custody is a separate ordinary rekey from the local credential.
-
-`/sign/bounded-admin` response (`signerapi.BoundedAdminPartialResponse`) contains:
-
-- `schema:"aplane.bounded-admin-partial.v1"` and `operation:"rekey"`
-- finalized TX-prefixed unsigned `transactions[]`
-- aligned `partial_signed[]`, with a spending-only LogicSig at `target_index`
-  and empty strings in every other slot
-- `authorization` with Contract Admin Key ID, public and spending public keys,
-  program binding, finalized transaction ID, diagnostic message, base argument
-  count, the `admin_signature_arg_index` where the external admin signature
-  goes, spend effects, and maximum fee; for a `bounded-cosigner1` key, also
-  `cosigner` metadata so the external verifier can prove the framework-owned
-  cosigner region the rekey bypasses
-- optional `mutations`
-
-The response is not submission-ready. `message_hex` and every other derived
-authorization field must be recomputed by the completing helper from the
-finalized transaction, durable metadata, and program contract.
 
 `/sign/component` accepts `signerapi.ComponentRequest`: optional `request_id`,
 frozen TX-prefixed `group_bytes_hex[]`, discriminated `targets[]`, foreign-only
@@ -1458,9 +1380,8 @@ Assembly keeps the authorization models distinct. Guarded targets are verified
 against their local guarded account key and both component signatures. Bounded
 targets reload durable metadata, verify receipt and both authorities against
 the frozen TxID, derive only declared signer-generated arguments, and check the
-LogicSig address and authorizer. Contract-admin paths never use this endpoint
-or contact a cosigner. Assembly request IDs are correlation-only and are not
-cancelable through `/sign/cancel`.
+LogicSig address and authorizer. Assembly request IDs are correlation-only and
+are not cancelable through `/sign/cancel`.
 
 #### Rotating accounts (`rotating1`)
 
@@ -1778,9 +1699,8 @@ warning does not establish that no leaf was reused.
   `spend_effects`, `max_fee`, `admin_operations` (including each operation's
   `policy_gate`), `cosigner` (for `bounded-cosigner1`), `runtime_args`,
   `derived_args`, the path-specific
-  `argument_layout`, and `layer3_policy`. `/keys` also includes instance-only
-  `admin_key_id` and `program_binding` when
-  applicable. This is routing and assembly metadata, not permission; signer
+  `argument_layout`, and `layer3_policy`. This is routing and assembly
+  metadata, not permission; signer
   classification and stored bytecode remain authoritative.
 - optional `logic_sig_resources`, containing final compiled program bytes and
   path-specific argument-byte and maximum-opcode-cost ceilings
@@ -1903,12 +1823,6 @@ The `family` field carries the middle segment of the canonical
 the canonical `key_type` is what clients send back on subsequent requests.
 Clients route signing by the advertised `signing_flow`; server registries and
 stored metadata resolve the provider and any composed template's base primitive.
-For a bounded profile with `authorization: admin_key`, creation metadata includes
-the framework-injected scalar `bounded_admin_public_key` (`type:"bytes"`). It
-accepts the 1,793-byte Falcon-1024 public key from an external
-`.adm.json` reference. The signer derives the Contract Admin Key
-ID, which is the enrolled witness's Witness Key ID, and the program binding;
-neither is accepted as a separate creation input.
 
 `/admin/generate`:
 
@@ -1947,8 +1861,7 @@ the request context and withdraw any pending manual approval prompt. This
 tracking is not a durable request table, not a polling API, and not an exposed
 async signing state machine.
 
-Cancelable: live `/sign`, `/sign/bounded-admin`, `/sign/rotating/sign`, and
-approval-bearing user or bounded-base `/sign/component`. Cosigner-only
+Cancelable: live `/sign`, `/sign/rotating/sign`, and approval-bearing user or bounded-base `/sign/component`. Cosigner-only
 `/sign/component` and `/sign/assemble` request IDs are correlation-only. Once a cancelable request
 is no longer live, later `/sign/cancel` calls return `state:"not_found"`.
 
@@ -1962,8 +1875,8 @@ is no longer live, later `/sign/cancel` calls return `state:"not_found"`.
 - `state`
 - optional `error`
 
-`/sign/cancel` withdraws a live `/sign`, `/sign/bounded-admin`,
-`/sign/rotating/sign`, or approval-bearing user or bounded-base
+`/sign/cancel` withdraws a live `/sign`, `/sign/rotating/sign`, or
+approval-bearing user or bounded-base
 `/sign/component` request. It is idempotent
 for client behavior. A valid, authenticated cancel request returns `200` with
 `success:true`; cancellation miss is represented in `state`, not as an HTTP
@@ -2087,10 +2000,6 @@ Cross-SDK compatibility-bearing behavior:
   final group ID assignment, signer-managed dummy insertion, fee pooling,
   policy, approval, or signing. Those remain apsigner-owned behavior behind
   `/plan` and `/sign`.
-- The SDKs do not expose `/sign/bounded-admin` and do not build or complete
-  contract-admin rekeys (the Go SDK contract test forbids it). Ordinary SDK
-  signing surfaces `bounded_admin_required`; contract-admin rekeys go through
-  `aprekey`, which uses the in-tree `internal/signerclient`.
 - Guarded prepared signing requires frozen canonical bytes before component
   signatures are requested. The normative SDK sequence is: classify guarded
   targets; construct intended original transactions; send those originals plus

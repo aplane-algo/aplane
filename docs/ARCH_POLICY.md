@@ -251,17 +251,13 @@ every non-transfer type a cosigner is asked to attest is rejected here.
 held by the current signer, which is meaningful only when the signer owns the
 sender. A held rotating account is never an acceptable target: the signer
 refuses that rekey before policy runs, whatever the policy says (see
-[ARCH_SIGNING.md](ARCH_SIGNING.md)). An admin-key bounded rekey
-(`/sign/bounded-admin`) is held to a stricter rule that no policy setting
-relaxes: its target must be a nonrotating signing credential the signer holds
-(see [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md)). `reject_rekey` is the cosigner coarse-deny analog and ignores key
+[ARCH_SIGNING.md](ARCH_SIGNING.md)). `reject_rekey` is the cosigner coarse-deny analog and ignores key
 ownership: when true, any non-zero `RekeyTo` rejects. When it is false, the
 cosigner still fails closed unless `rekey_policy.allowed` authorizes the exact
 sender-to-target edge and the target transaction is a pure 0 ALGO
 self-payment with no close remainder.
 This cosigner-domain rekey surface applies to dedicated `cosigner1` guarded
-accounts. Corridor v1 uses a distinct external contract-admin witness for its
-bounded pure-rekey path and never asks cosigner policy to authorize that target.
+accounts. A Corridor v1 account refuses rekeys, so cosigner policy never sees one.
 
 Network-scoped rules derive transaction network identity from `GenesisHash`,
 not `GenesisID`.
@@ -280,7 +276,7 @@ transactions that name no asset, such as a cosigner rekey (a 0 ALGO
 self-payment), so that no signing path has to prove it cannot carry an asset
 reference. Rules that do not depend on the network, such as `rekey_policy` and
 the transaction-type verdicts, take no network input. `/sign`,
-`/sign/bounded-admin`, bounded-cosigner, and guarded user-component requests
+bounded-cosigner, and guarded user-component requests
 are refused with a bad request (400) before policy; a cosigner has no operator,
 so cosigner component requests are refused as an audited policy rejection
 (`unknown_genesis_hash`, 403). Rotating-account spends are not looked up in the
@@ -664,20 +660,17 @@ Bounded1's on-chain envelope is independent of signer policy. Signer policy may
 reject a transaction admitted by the LogicSig but can never widen the compiled
 envelope or raise its `max_fee`.
 
-Every transaction classified onto a bounded1 admin-operation path triggers the
-stable client-signing Always Review rule
-`bounded_admin_operation_requires_review`. The rule runs after hard rejection
-and before every Always Approve or Operator Default path. It therefore blocks
-`user_auto_approve:true`, `auto_approve_self_noop_transfer`, and warning
-configuration for both spending-key and Falcon contract-admin rekeys.
+Every transaction classified onto a bounded1 admin-operation path (a
+spending-key rekey) triggers the stable client-signing Always Review rule
+`bounded_admin_operation_requires_review`. The rule runs after hard
+rejection and before every Always Approve or Operator Default path. It therefore
+defeats `auto_approve_self_noop_transfer` and warning configuration;
+`user_auto_approve:true` satisfies it without a prompt.
 A client intent to simulate is not an exception because apsigner releases the
 same executable signatures and receives no simulation designation.
 
 The approval description names the operation, sender, rekey target,
-transaction fee and compiled ceiling, authorization mode, and Contract Admin
-Key ID when applicable. The external contract-admin confirmation is an
-additional authorization after signer approval; it cannot override policy
-rejection, cancellation, or operator denial. See
+transaction fee and compiled ceiling, and authorization mode. See
 [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md).
 
 ## Rotating Account Interaction

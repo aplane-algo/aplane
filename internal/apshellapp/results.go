@@ -481,7 +481,6 @@ type GenerateKeyCommandResult struct {
 	Address string
 	// Parameters are the canonical values the signer resolved and stored.
 	Parameters    map[string]string
-	AdminKeyID    string
 	CosignerKeyID string
 }
 

@@ -5,7 +5,6 @@ package keymgmt
 
 import (
 	"context"
-	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -15,7 +14,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/algorithm"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/cosigner/cosignerrefs"
-	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/genstore"
@@ -205,9 +203,6 @@ func GenerateKeyWithActivatedContext(ctx context.Context, paths storepaths.Paths
 	if resolveErr != nil {
 		return nil, fmt.Errorf("%w: cosigner reference resolution failed: %v", keygen.ErrInvalidParams, resolveErr)
 	}
-	if err := validateKnownWitnessRoleExclusivity(paths, keyType, params, kr); err != nil {
-		return nil, fmt.Errorf("%w: %v", keygen.ErrInvalidParams, err)
-	}
 
 	generator, err := keygen.GetGenerator(keyType)
 	if err != nil {
@@ -232,70 +227,6 @@ func GenerateKeyWithActivatedContext(ctx context.Context, paths storepaths.Paths
 		result.IsSpendingAccount = &spending
 	}
 	return result, nil
-}
-
-func validateKnownWitnessRoleExclusivity(paths storepaths.Paths, keyType string, params map[string]string, kr *crypto.Keyring) error {
-	if adminPublicKeyHex := strings.ToLower(strings.TrimSpace(params[boundedmeta.AdminPublicKeyParameter])); adminPublicKeyHex != "" {
-		if _, err := boundedmeta.ParseAdminPublicKey(adminPublicKeyHex); err != nil {
-			return nil // The provider owns the detailed parameter error.
-		}
-		references, err := cosignerrefs.List(paths)
-		if err != nil {
-			return fmt.Errorf("check cosigner witness references: %w", err)
-		}
-		scanned, err := keys.ScanKeysDirectoryWithKeyring(paths, kr)
-		if err != nil {
-			return fmt.Errorf("check local cosigner witness keys: %w", err)
-		}
-		if err := rejectAdminWitnessKnownAsCosigner(adminPublicKeyHex, references, scanned); err != nil {
-			return err
-		}
-	}
-
-	if !keytypes.IsGuardedAccountKeyType(keyType) {
-		return nil
-	}
-	cosignerPublicKeyHex := strings.ToLower(strings.TrimSpace(params[keytypes.ParameterCosignerPublicKey]))
-	if cosignerPublicKeyHex == "" {
-		return nil // The guarded provider reports the missing required parameter.
-	}
-	publicKey, err := hex.DecodeString(cosignerPublicKeyHex)
-	if err != nil {
-		return nil // The guarded provider owns the detailed parameter error.
-	}
-	cosignerWitnessID, err := witness.ID(witness.Falcon1024V1, publicKey)
-	if err != nil {
-		return nil // The guarded provider owns the detailed parameter error.
-	}
-	scanned, err := keys.ScanKeysDirectoryWithKeyring(paths, kr)
-	if err != nil {
-		return fmt.Errorf("check existing contract-admin enrollments: %w", err)
-	}
-	return rejectCosignerWitnessKnownAsAdmin(cosignerPublicKeyHex, cosignerWitnessID, scanned)
-}
-
-func rejectAdminWitnessKnownAsCosigner(adminPublicKeyHex string, references []cosignerrefs.Record, scanned map[string]keys.KeyScanInfo) error {
-	for _, reference := range references {
-		if strings.EqualFold(reference.PublicKeyHex, adminPublicKeyHex) {
-			return fmt.Errorf("witness key %s is already known in the cosigner role and cannot be enrolled as a contract admin", reference.ComponentKey)
-		}
-	}
-	for witnessKeyID, info := range scanned {
-		if witness.IsKeyType(info.KeyType) && strings.EqualFold(info.PublicKeyHex, adminPublicKeyHex) {
-			return fmt.Errorf("witness key %s is already stored in cosigner custody and cannot be enrolled as a contract admin", witnessKeyID)
-		}
-	}
-	return nil
-}
-
-func rejectCosignerWitnessKnownAsAdmin(cosignerPublicKeyHex, cosignerWitnessID string, scanned map[string]keys.KeyScanInfo) error {
-	for _, info := range scanned {
-		metadata := info.BoundedAuthorization
-		if metadata != nil && strings.EqualFold(metadata.AdminPublicKeyHex, cosignerPublicKeyHex) {
-			return fmt.Errorf("witness key %s is already enrolled as a contract admin and cannot be enrolled as a cosigner", cosignerWitnessID)
-		}
-	}
-	return nil
 }
 
 // ImportKey imports a key from a mnemonic phrase.

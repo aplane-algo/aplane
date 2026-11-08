@@ -341,8 +341,7 @@ the signer and its managed backups.
 ## 8. Signing choreography (`rotating1`)
 
 All variants use only `POST /sign/rotating/prepare` and
-`POST /sign/rotating/sign`. `/plan`, `/sign`, `/sign/bounded-admin` and
-`/sign/component` refuse them with `rotating_signing_required`. The complete
+`POST /sign/rotating/sign`. `/plan`, `/sign` and `/sign/component` refuse them with `rotating_signing_required`. The complete
 wire contract lives in [ARCH_SIGNING.md](ARCH_SIGNING.md#rotating-accounts-rotating1).
 
 1. **Prepare.** The client sends one unsigned, ungrouped spend from the account,

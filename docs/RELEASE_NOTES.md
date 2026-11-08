@@ -7,6 +7,32 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## The contract-admin key is gone
+
+This release is install-fresh only.
+
+- `aprekey` is removed, along with the `.adm` admin key and its `.adm.json` public
+  reference. Nothing in APlane reads them any more; a `.adm` file in a key store is just an
+  unexpected file.
+- The signer no longer serves `POST /sign/bounded-admin`. The `bounded_admin_required` and
+  `bounded_admin_target_rejected` error codes are gone, and so are `admin_key_id` and
+  `program_binding` in `/keys` and `/keytypes`. The admin rekey target rule went with them.
+- A bounded1 template can no longer declare an `admin_key` rekey or a
+  `bounded_admin_public_key` parameter. Its rekey is by the spending key, or there is none.
+- The retired templates `aplane.falcon1024-allowlist-lock.v1` and `aplane.corridor.v1` are
+  deleted. Use the Locked Allowlist and Corridor presets of `aplane.falcon1024-b.v1`, which
+  refuse rekeys. The other three retired templates are unchanged.
+- apadmin's Generate form no longer has a Contract Admin Reference field, and its review
+  no longer shows a contract admin. apshell's `generate` result drops `admin_key_id`.
+- apshell's `rekey` and `unrekey` refuse an argument they don't take. They used to ignore
+  one, so `rekey alice to bob using ...` would have become a plain spending-key rekey once
+  the old `using` guard was gone.
+- A witness key is a cosigner key now; it has no admin role.
+- The SDKs drop their bounded-admin request and response types, the client call, and the
+  two error codes.
+- The admin protocol stays at 7.4. It also removes `admin_key_id` from
+  `prepare_generate_result`.
+
 ## General bounded accounts no longer use an admin key
 
 This release is install-fresh only.

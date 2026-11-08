@@ -55,9 +55,7 @@ type KeyInfo struct {
 	TemplateProvenanceNote   string            `json:"template_provenance_note,omitempty"`
 	// PolicyLabel describes a bounded account's stored contract.
 	PolicyLabel string `json:"policy_label,omitempty"`
-	// AdminKeyID and CosignerKeyID are the signer's identities for a bounded
-	// account's external authorities.
-	AdminKeyID    string `json:"admin_key_id,omitempty"`
+	// CosignerKeyID is the signer's identity for a bounded account's cosigner.
 	CosignerKeyID string `json:"cosigner_key_id,omitempty"`
 }
 
@@ -156,11 +154,10 @@ type GenerateKeyResult struct {
 	KeyType string
 	// Parameters are the canonical values the signer resolved and stored.
 	Parameters map[string]string
-	// AdminKeyID and CosignerKeyID are the signer's own identities for the account's
-	// external authorities, read back from /keys. They are empty when the account
-	// has none, or when the inventory could not be read.
-	AdminKeyID    string
+	// CosignerKeyID is the signer's own identity for the account's cosigner, read
+	// back from /keys. It is empty when the account has none, or when the
+	// inventory could not be read.
 	CosignerKeyID string
-	// InventoryRead reports whether those two came from the signer.
+	// InventoryRead reports whether it came from the signer.
 	InventoryRead bool
 }

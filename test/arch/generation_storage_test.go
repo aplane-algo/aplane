@@ -14,8 +14,8 @@ import (
 )
 
 // storeOwningPackages are the packages that read or write identity-store
-// content. Link-based idioms elsewhere (client caches, ceremony artifacts,
-// token files) never touch generations and stay out of scope.
+// content. Link-based idioms elsewhere (client caches, token files) never
+// touch generations and stay out of scope.
 var storeOwningPackages = []string{
 	"internal/genstore",
 	"internal/storeinit",

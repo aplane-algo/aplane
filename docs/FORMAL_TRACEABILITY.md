@@ -92,7 +92,7 @@ Source: [FORMAL_SIGNING_AUTHORITY_MODEL.md](FORMAL_SIGNING_AUTHORITY_MODEL.md)
 | S10 | implemented | Runtime Key Index; S10 | `internal/signerapp/productruntime/runtime.go::KeyIndexSnapshot`; `internal/signerapp/signing/planner.go::PlanGroup`; `internal/signerapp/signing/planner_runtime.go::verifySignableKeys` | `internal/signerapp/productruntime/productruntime_test.go::TestKeyIndexSnapshotMaterializesConsistentCopy`; `internal/signerapp/signing/planner_runtime_test.go::TestPlannerUsesSingleRuntimeSnapshot` | Planning materializes key files, key types, LogicSig resource profiles, and signer-local known addresses from one copied snapshot. |
 | S11 | implemented | Auth Address Binding; S11 | `internal/signerapp/signing/planner_runtime.go` resolves auth addresses through `PlannerRuntimeSnapshot.KeyFiles` | `internal/signerapp/signing/planner_runtime_test.go::TestVerifySignableKeysRequiresKeyFileInSnapshot`; `::TestVerifySignableKeysRequiresKeyTypeMetadata` | |
 | S12 | implemented | S12 | `internal/signerapp/signing/service.go::authPolicyKeysFromRequest` uses `txReq.AuthAddress` as the policy selector; `policyruntime.NodePolicy.PolicyFor` resolves it to the key's own document or the node default | `internal/signerapp/signing/always_review_test.go::TestEvaluateAlwaysReviewRulesResolvesPolicyPerKey`; `service_test.go::TestEvaluateAutoRejectionRulesResolvesPolicyPerKey` | |
-| S13 | implemented | Canonical Filename Binding; S13 | `internal/keys/managed_files.go` owns `CanonicalName = Selector || ExtensionForCategory`; scan rejects selector and category/extension mismatches; save, backup/restore, deletion, rotation, and watching consume the central classes | `internal/keys/managed_files_test.go`; `internal/keys/keys_test.go::TestScanKeysDirectoryWithKeyring`; `internal/keys/save_test.go::TestSavePayloadWritesWitnessPublicMetadata`; `internal/keys/managed_files_test.go::TestManagedCredentialDestinationRejectsContradictoryClass`; `test/arch/managed_credential_files_test.go` | Account authority is `.key`; cosigner witness authority is `.cos`; `.adm` is excluded. Accepted-selector collision invalidation remains a defensive fallback. |
+| S13 | implemented | Canonical Filename Binding; S13 | `internal/keys/managed_files.go` owns `CanonicalName = Selector || ExtensionForCategory`; scan rejects selector and category/extension mismatches; save, backup/restore, deletion, rotation, and watching consume the central classes | `internal/keys/managed_files_test.go`; `internal/keys/keys_test.go::TestScanKeysDirectoryWithKeyring`; `internal/keys/save_test.go::TestSavePayloadWritesWitnessPublicMetadata`; `internal/keys/managed_files_test.go::TestManagedCredentialDestinationRejectsContradictoryClass`; `test/arch/managed_credential_files_test.go` | Account authority is `.key`; cosigner witness authority is `.cos`. Accepted-selector collision invalidation remains a defensive fallback. |
 
 ## Guarded Signing Model
 
@@ -123,7 +123,7 @@ Source: [FORMAL_TLA_BOUNDED_COSIGNER_MODEL.md](FORMAL_TLA_BOUNDED_COSIGNER_MODEL
 | ID | Status | Source § | Code anchor | Test anchor | Notes |
 |---|---|---|---|---|---|
 | BS1 | implemented | BS1 | `internal/engine/guarded/submit.go::signAndSubmitBoundedCosignerGroup`; `internal/signerapp/signing/bounded_cosigner.go::PrepareBoundedComponentWithContext` | `internal/engine/guarded/simulate_submit_test.go::TestBoundedCosignerSimulateUsesUserFirstChoreography`; `internal/signerapp/signing/bounded_cosigner_test.go::TestValidateBoundedComponentPlanRequiresCosignerSpend` | User policy and operator approval complete before the client requests a cosigner. Machine-checked in `bounded_cosigner.tla` (`BS1_UserFirst`). |
-| BS2 | implemented | BS2 | `internal/signerapp/signing/bounded_admin.go`; `internal/apboundedadminapp/app.go` | `internal/signerapp/signing/bounded_admin_test.go::TestValidateBoundedAdminPlanRequiresNarrowTypedPath`; `internal/apboundedadminapp/app_test.go::TestExecuteRekeyCoordinatesExternalSignature` | External-admin completion has no cosigner transition. Machine-checked in `bounded_cosigner.tla` (`BS2_AdminBypassesCosigner`). |
+| BS2 | retired | BS2 | none | none | Covered the external-admin completion path, removed with the admin key. The number is kept so BS3-BS7 keep theirs. |
 | BS3 | implemented | BS3 | `internal/signerapp/signing/bounded_cosigner.go::assembleBoundedTarget` | `internal/signerapp/signing/bounded_cosigner_test.go::TestAssembleBoundedTargetVerifiesBothAuthorities` | Spend assembly verifies the assembly receipt and both authorities against durable metadata. Machine-checked in `bounded_cosigner.tla` (`BS3_SpendAuthoritiesVerified`, including the receipt conjunct). |
 | BS4 | implemented | BS4 | `internal/signerapp/signing/service.go::AssembleWithContext`; `internal/signerapp/signing/bounded_cosigner.go::assembleBoundedTarget`; bounded argument assembly in `internal/signerapp/signing/execution.go` | `internal/engine/guarded/submit_test.go::TestCollectComponentSignaturesRejectsMalformedResponses`; `internal/signerapp/signing/execution_test.go::TestAssembleBoundedArgsPreservesInteriorEmptySlots` | Exact target coverage and source/path masks gate assembly; derived inputs remain signer-owned. Machine-checked in `bounded_cosigner.tla` (`BS4_DeclaredArgumentsOnly`). |
 | BS5 | implemented | BS5 | `internal/engine/guarded/submit.go::verifyAssembledAgainstFrozen`; `internal/signerapp/signing/service.go::AssembleWithContext`; `internal/signerapp/signing/bounded_cosigner.go::assembleBoundedTarget` | `internal/engine/guarded/submit_test.go::TestVerifyAssembledAgainstFrozen`; `internal/signerapp/signing/bounded_cosigner_test.go::TestBoundedAssemblyReceiptBindsRuntimeAndMetadata` | Receipt, passthrough, and final bytes bind the frozen plan. Machine-checked in `bounded_cosigner.tla` (`BS5_CanonicalGroupBound`). |
@@ -407,23 +407,22 @@ violate `Safety` in an initial state.
 [FORMAL_TLA_BOUNDED_COSIGNER_MODEL.md](FORMAL_TLA_BOUNDED_COSIGNER_MODEL.md))
 machine-checks the combined planning and assembly choreography. It is a
 depth-4 transition system covering user-side base release, the later cosigner
-request/release, final bounded assembly, and the cosigner-free external-admin
-branch. TLC generated 199,168 distinct states with no counterexamples. Target
+request/release, and final bounded assembly. TLC generated 66,304 distinct states
+with no counterexamples. Target
 count is intentionally absent: the predicates are group-wide, so a
 target-count field only duplicated states without adding coverage.
 
 | Invariant | TLA+ predicate |
 |---|---|
 | BS1 (first-party user-first choreography) | `BS1_UserFirst` |
-| BS2 (admin bypasses cosigner) | `BS2_AdminBypassesCosigner` |
 | BS3 (both spend authorities verified) | `BS3_SpendAuthoritiesVerified` |
 | BS4 (declared arguments only) | `BS4_DeclaredArgumentsOnly` |
 | BS5 (canonical group bound) | `BS5_CanonicalGroupBound` |
 | BS6 (invalid path cannot output) | `BS6_InvalidNeverOutputs` |
 | BS7 (atomic output) | `BS7_AtomicOutput` |
 
-The named invariants are constructed to expose early cosigner routing, cosigner use
-on admin, omitted signature verification, omitted source/coverage/byte checks,
+The named invariants are constructed to expose early cosigner routing, omitted
+signature verification, omitted source/coverage/byte checks,
 and partial output as counterexamples.
 
 ### Plugin signing module

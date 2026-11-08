@@ -271,12 +271,6 @@ func ParseRekeyCommand(args []string, isUnrekey bool) (RekeyParams, error) {
 		Fee:        0,
 		UseFlatFee: false,
 	}
-	for _, arg := range args {
-		if strings.EqualFold(arg, "using") {
-			return params, fmt.Errorf("external contract-admin keys are handled by aprekey rekey/unrekey")
-		}
-	}
-
 	if isUnrekey {
 		// unrekey <account> [fee=<microalgos>] [nowait] [arg:name=value]
 		if len(args) < 1 {
@@ -286,6 +280,9 @@ func ParseRekeyCommand(args []string, isUnrekey bool) (RekeyParams, error) {
 		params.Signer = args[0] // Rekey to self
 
 		// Parse optional flags
+		if err := refuseUnknownRekeyArgs(args[1:]); err != nil {
+			return params, err
+		}
 		if err := parseWaitFeeLsigTrailingArgs(args[1:], &params.Wait, &params.Fee, &params.UseFlatFee, &params.LsigArgs); err != nil {
 			return params, err
 		}
@@ -310,6 +307,9 @@ func ParseRekeyCommand(args []string, isUnrekey bool) (RekeyParams, error) {
 	}
 	params.Signer = args[2]
 
+	if err := refuseUnknownRekeyArgs(args[3:]); err != nil {
+		return params, err
+	}
 	if err := parseWaitFeeLsigTrailingArgs(args[3:], &params.Wait, &params.Fee, &params.UseFlatFee, &params.LsigArgs); err != nil {
 		return params, err
 	}
@@ -414,6 +414,19 @@ func parseUint64(s string) (uint64, error) {
 		return 0, fmt.Errorf("invalid uint64: %s", s)
 	}
 	return result, nil
+}
+
+// refuseUnknownRekeyArgs rejects a trailing argument rekey does not take. A rekey
+// hands the account to another key, so an option it can't honor must not be
+// dropped silently.
+func refuseUnknownRekeyArgs(args []string) error {
+	for _, arg := range args {
+		if strings.EqualFold(arg, "nowait") || strings.HasPrefix(arg, "fee=") || strings.HasPrefix(arg, "arg:") {
+			continue
+		}
+		return fmt.Errorf("unexpected argument %q: rekey takes only [fee=<microalgos>] [nowait] [arg:name=value]", arg)
+	}
+	return nil
 }
 
 func parseWaitFeeLsigTrailingArgs(args []string, wait *bool, fee *uint64, useFlatFee *bool, lsigArgs *map[string][]byte) error {

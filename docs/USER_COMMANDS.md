@@ -510,49 +510,6 @@ sets team [ alice bob charlie ]
 
 ## Rekeying Commands
 
-The apshell commands below handle ordinary rekey workflows. Admin-key bounded
-accounts are intentionally not completed in apshell or apconsole; use the
-dedicated contract-admin client:
-
-```bash
-aprekey rekey --key <key.adm> [--client-data <dir>] [--network <name>] [--fee <microalgos>] [--nowait] <account> to <new-authorizer>
-aprekey unrekey --key <key.adm> [--client-data <dir>] [--network <name>] [--fee <microalgos>] [--nowait] <account>
-```
-
-`<new-authorizer>` must be a key the same signer holds: a native Ed25519 or
-Falcon key it generated or imported, or a plain `aplane.falcon1024.v1` or
-`aplane.ed25519.v1` LogicSig account. Bounded, guarded, composed-template and
-generic LogicSig accounts do not qualify, because their programs may restrict
-what the account could do afterwards. The signer refuses any other target
-(`bounded_admin_target_rejected`) before asking for approval, so an admin
-rekey never hands the account to an address outside the signer's store. As
-with the ordinary `rekey` command, the client also refuses a target that is
-itself rekeyed on chain. To move an account out of APlane custody, rekey it
-to a local key first, then rekey from that key with the ordinary `rekey`
-command under normal policy.
-
-`APCLIENT_DATA` is used when `--client-data` is omitted. The command connects
-to the configured default signer, obtains its approved spending partial, then
-opens a separate confirmation and artifact-passphrase prompt. It submits only
-after validating and assembling both signatures. Apshell has no private
-contract-admin artifact syntax.
-
-For a separate ceremony machine, prepare online, sign offline, then complete
-online without contacting the signer again:
-
-```bash
-aprekey prepare-rekey --out <request.apbounded-admin-request> [--client-data <dir>] [--network <name>] [--fee <microalgos>] <account> to <new-authorizer>
-aprekey prepare-unrekey --out <request.apbounded-admin-request> [--client-data <dir>] [--network <name>] [--fee <microalgos>] <account>
-aprekey sign --key <key.adm> --request <request.apbounded-admin-request> --out <response.apbounded-admin-signature>
-aprekey complete [--client-data <dir>] [--network <name>] [--nowait] <request.apbounded-admin-request> with <response.apbounded-admin-signature>
-```
-
-The request and response files are non-secret, but they authorize one exact,
-short-lived finalized transaction. Transfer them through an operator-controlled
-channel and retain them as ceremony records. `complete` rejects stale validity
-rounds, changed account authority, wrong network/genesis, or a mismatched
-response; it does not replan or request a fresh signer approval.
-
 ### rekey
 
 Query rekeying status or rekey an account to a new signing authority.
@@ -569,8 +526,7 @@ The target must sign for itself: the command queries the target on chain and
 refuses with `policy rejection: cannot rekey to <target> because it is itself
 rekeyed to <auth>` when the target's authority has been moved elsewhere.
 Algorand does not follow that chain, so such a rekey would hand the account to
-a key the target no longer uses. The same check runs inside `aprekey rekey`
-and `aprekey prepare-rekey`.
+a key the target no longer uses.
 
 **Options:**
 | Option | Description |

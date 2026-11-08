@@ -74,13 +74,13 @@ func (m Model) handleBoundaryPresetKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case fileBrowserKey:
 		if m.boundaryFileRowSelected() {
-			return m.openFileBrowser(browseBoundaryFile, m.forms.boundaryFile, "", ""), nil
+			return m.openFileBrowser(browseBoundaryFile, m.forms.boundaryFile, ""), nil
 		}
 	case "enter", " ":
 		m.forms.generateError = ""
 		if m.boundaryFileRowSelected() {
 			if m.forms.boundaryFile == "" {
-				return m.openFileBrowser(browseBoundaryFile, "", "", ""), nil
+				return m.openFileBrowser(browseBoundaryFile, "", ""), nil
 			}
 			return m.submitBoundaryFile()
 		}

@@ -28,6 +28,21 @@ func TestRetiredKeyTypeProductsDoNotReturn(t *testing.T) {
 		"aplane." + "bounded-admin-key-private" + ".v1",
 		"aplane." + "bounded-admin-key-public" + ".v1",
 		"aplane." + "cosigner-public-key" + ".v1",
+		// The contract-admin key and its ceremony.
+		"ap" + "rekey",
+		"internal/" + "boundedadmin",
+		"apbounded" + "adminapp",
+		"witness/" + "artifact",
+		"/sign/" + "bounded-admin",
+		"aplane." + "bounded-admin-partial" + ".v1",
+		"APLANE_BOUNDED_" + "ADMIN_AUTH_V1",
+		"APLANE_BOUNDED_" + "ADMIN_PROGRAM_V1",
+		"bounded_" + "admin_public_key",
+		"bounded_admin_" + "required",
+		"bounded_admin_" + "target_rejected",
+		".adm" + ".json",
+		"aplane." + "falcon1024-allowlist-lock" + ".v1",
+		"aplane." + "corridor" + ".v1",
 		"lsig/" + "falcon1024_ed25519",
 		"lsig/" + "ecdsak1",
 		"cosigner_" + "ed25519",
@@ -51,6 +66,10 @@ func TestRetiredKeyTypeProductsDoNotReturn(t *testing.T) {
 			return nil
 		}
 		if !textExtensions[filepath.Ext(path)] {
+			return nil
+		}
+		// The release notes are history: they name what each release retired.
+		if filepath.ToSlash(path) == "../../docs/RELEASE_NOTES.md" {
 			return nil
 		}
 		content, readErr := os.ReadFile(path)

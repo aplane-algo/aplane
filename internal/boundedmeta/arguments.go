@@ -14,7 +14,6 @@ const (
 	ArgSourceDerived       = "derived"
 	ArgSourceRuntime       = "runtime"
 	ArgSourceCosigner      = "cosigner"
-	ArgSourceAdmin         = "admin"
 
 	ArgRequired  = "required"
 	ArgOptional  = "optional"
@@ -49,20 +48,14 @@ type DerivedArg struct {
 }
 
 // BaseArgumentLayout builds the canonical layout for profiles that have no
-// Layer-3 arguments. Richer profiles insert derived and runtime slots between
-// these base slots and the optional admin slot.
-func BaseArgumentLayout(layout SignatureArgLayout, requiresAdmin bool) []ArgumentSlot {
-	slots := make([]ArgumentSlot, 0, layout.Count+1)
+// Layer-3 arguments. Richer profiles insert derived, runtime and cosigner slots
+// after these base slots.
+func BaseArgumentLayout(layout SignatureArgLayout) []ArgumentSlot {
+	slots := make([]ArgumentSlot, 0, layout.Count)
 	for i, maxSize := range layout.MaxSizes {
 		slots = append(slots, ArgumentSlot{
 			Index: i, Name: fmt.Sprintf("base_signature_%d", i), Source: ArgSourceBaseSignature, MaxSize: maxSize,
 			Paths: ArgumentPathMask{Spend: ArgRequired, SpendingRekey: ArgRequired, AdminRekey: ArgRequired},
-		})
-	}
-	if requiresAdmin {
-		slots = append(slots, ArgumentSlot{
-			Index: len(slots), Name: "admin_signature", Source: ArgSourceAdmin, MaxSize: FalconAdminSignatureSize,
-			Paths: ArgumentPathMask{Spend: ArgForbidden, SpendingRekey: ArgForbidden, AdminRekey: ArgRequired},
 		})
 	}
 	return slots
@@ -105,7 +98,6 @@ func validateArgumentLayout(metadata *Metadata) error {
 		ArgSourceDerived:       1,
 		ArgSourceRuntime:       2,
 		ArgSourceCosigner:      3,
-		ArgSourceAdmin:         4,
 	}
 	lastSource := -1
 	baseCount := 0
@@ -135,7 +127,6 @@ func validateArgumentLayout(metadata *Metadata) error {
 	seenNames := make(map[string]struct{}, len(metadata.ArgumentLayout))
 	seenDerived := make(map[string]struct{}, len(derivedNames))
 	seenRuntime := make(map[string]struct{}, len(runtimeNames))
-	adminSlots := 0
 	cosignerSlots := 0
 	for i, slot := range metadata.ArgumentLayout {
 		if slot.Index != i {
@@ -201,12 +192,6 @@ func validateArgumentLayout(metadata *Metadata) error {
 				slot.Paths.Spend != ArgRequired || slot.Paths.SpendingRekey != ArgForbidden || slot.Paths.AdminRekey != ArgForbidden {
 				return fmt.Errorf("bounded cosigner signature slot must be spend-only and match cosigner metadata")
 			}
-		case ArgSourceAdmin:
-			adminSlots++
-			if i != len(metadata.ArgumentLayout)-1 || slot.Name != "admin_signature" || slot.MaxSize != FalconAdminSignatureSize ||
-				slot.Paths.Spend != ArgForbidden || slot.Paths.SpendingRekey != ArgForbidden || slot.Paths.AdminRekey != ArgRequired {
-				return fmt.Errorf("contract-admin signature slot must be last and admin-rekey-only")
-			}
 		}
 	}
 	if baseCount != metadata.BaseSignatureArgLayout.Count {
@@ -214,13 +199,6 @@ func validateArgumentLayout(metadata *Metadata) error {
 	}
 	if len(seenDerived) != len(derivedNames) || len(seenRuntime) != len(runtimeNames) {
 		return fmt.Errorf("argument layout does not cover every declared Layer-3 argument")
-	}
-	wantAdminSlots := 0
-	if metadata.RequiresAdminKey() {
-		wantAdminSlots = 1
-	}
-	if adminSlots != wantAdminSlots {
-		return fmt.Errorf("argument layout has %d admin slots, want %d", adminSlots, wantAdminSlots)
 	}
 	wantCosignerSlots := 0
 	if metadata.Cosigner != nil {

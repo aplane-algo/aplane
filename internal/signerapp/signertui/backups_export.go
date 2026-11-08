@@ -78,7 +78,7 @@ func (m Model) handleBackupExportKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		return m.startBackupExport()
 	case fileBrowserKey:
-		return m.openFileBrowser(browseBackupExportDir, export.dir, "", export.target.FileName), nil
+		return m.openFileBrowser(browseBackupExportDir, export.dir, export.target.FileName), nil
 	case "backspace", "delete":
 		export.dir = trimLastRune(export.dir)
 		export.err = ""

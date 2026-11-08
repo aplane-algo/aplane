@@ -5,7 +5,6 @@ package integration_test
 
 import (
 	"context"
-	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -60,7 +59,7 @@ func (rule timelockRule) keyType() string {
 	return "test.timelock-rule-" + rule.name + ".v1"
 }
 
-func (rule timelockRule) yaml(authorization, gate string) string {
+func (rule timelockRule) yaml(gate string) string {
 	recipientsParameter, recipients := "", ""
 	if rule.hasList() {
 		recipientsParameter = "\n    recipients_parameter: recipients"
@@ -99,7 +98,7 @@ parameters:
     type: uint64
     required: true
     min: 1
-%s`, rule.name, rule.name, authorization, gate, rule.policy, recipientsParameter, rule.derived, recipients)
+%s`, rule.name, rule.name, boundedmeta.AdminAuthorizationSpend, gate, rule.policy, recipientsParameter, rule.derived, recipients)
 }
 
 type timelockAccount struct {
@@ -108,10 +107,10 @@ type timelockAccount struct {
 	recipients string
 }
 
-func newTimelockAccount(t *testing.T, network *harness.TestnetConfig, rule timelockRule, authorization, gate string, unlockRound uint64, recipients ...string) timelockAccount {
+func newTimelockAccount(t *testing.T, network *harness.TestnetConfig, rule timelockRule, gate string, unlockRound uint64, recipients ...string) timelockAccount {
 	t.Helper()
 	falcon1024.RegisterClient()
-	spec, err := composeddsa.ParseTemplateSpec([]byte(rule.yaml(authorization, gate)))
+	spec, err := composeddsa.ParseTemplateSpec([]byte(rule.yaml(gate)))
 	if err != nil {
 		t.Fatalf("parse template: %v", err)
 	}
@@ -130,14 +129,6 @@ func newTimelockAccount(t *testing.T, network *harness.TestnetConfig, rule timel
 	if rule.hasList() {
 		params["recipients"] = list
 	}
-	var adminPublicKey, adminPrivateKey []byte
-	if authorization == boundedmeta.AdminAuthorizationAdmin {
-		adminPublicKey, adminPrivateKey, err = ops.GenerateKeypair(randomFalconSeed(t))
-		if err != nil {
-			t.Fatalf("generate admin key: %v", err)
-		}
-		params[composeddsa.BoundedAdminPublicKeyParameter] = hex.EncodeToString(adminPublicKey)
-	}
 	derived, err := provider.DeriveLsigWithSalt(context.Background(), publicKey, params)
 	if err != nil {
 		t.Fatalf("derive LogicSig: %v", err)
@@ -153,7 +144,6 @@ func newTimelockAccount(t *testing.T, network *harness.TestnetConfig, rule timel
 		boundedExecutionAccount: boundedExecutionAccount{
 			address: derived.Address.String(), bytecode: append([]byte(nil), derived.Bytecode...),
 			spendingPublicKey: publicKey, spendingPrivateKey: privateKey,
-			adminPublicKey: adminPublicKey, adminPrivateKey: adminPrivateKey,
 			provider: provider, metadata: metadata,
 		},
 		rule: rule, recipients: list,
@@ -195,9 +185,9 @@ func (account timelockAccount) rekey(t *testing.T, network *harness.TestnetConfi
 	return txn
 }
 
-func (account timelockAccount) submit(t *testing.T, network *harness.TestnetConfig, txn types.Transaction, includeAdmin bool, args [][]byte, accept bool) {
+func (account timelockAccount) submit(t *testing.T, network *harness.TestnetConfig, txn types.Transaction, args [][]byte, accept bool) {
 	t.Helper()
-	signed, txid := account.signedGroupWithLayer3Args(t, txn, includeAdmin, args)
+	signed, txid := account.signedGroupWithLayer3Args(t, txn, args)
 	raw := make([]byte, 0)
 	for _, stxn := range signed {
 		raw = append(raw, msgpack.Encode(stxn)...)
@@ -242,7 +232,7 @@ func TestBoundedTimelockPoliciesOnChainLocalnet(t *testing.T) {
 		t.Run(rule.name, func(t *testing.T) {
 			allowed := funder.GetAddress()
 			second := algocrypto.GenerateAccount().Address.String()
-			account := newTimelockAccount(t, network, rule, boundedmeta.AdminAuthorizationSpend, boundedmeta.PolicyGateLayer3, unlockRound, allowed, second)
+			account := newTimelockAccount(t, network, rule, boundedmeta.PolicyGateLayer3, unlockRound, allowed, second)
 			if err := funder.FundMicroAlgosAndWait(account.address, 2_000_000); err != nil {
 				t.Fatalf("fund account: %v", err)
 			}
@@ -273,7 +263,7 @@ func TestBoundedTimelockPoliciesOnChainLocalnet(t *testing.T) {
 					continue
 				}
 				t.Run(test.name, func(t *testing.T) {
-					account.submit(t, network, test.txn, false, test.args, test.accept)
+					account.submit(t, network, test.txn, test.args, test.accept)
 				})
 			}
 		})
@@ -288,34 +278,20 @@ func TestBoundedTimelockDoesNotDelayUngatedRekeyLocalnet(t *testing.T) {
 	current := unlockRound
 
 	for _, rule := range timelockRules {
-		for _, route := range []struct {
-			name          string
-			authorization string
-		}{
-			{name: "spending key", authorization: boundedmeta.AdminAuthorizationSpend},
-			{name: "admin key", authorization: boundedmeta.AdminAuthorizationAdmin},
-		} {
-			t.Run(rule.name+"/"+route.name, func(t *testing.T) {
-				allowed := funder.GetAddress()
-				second := algocrypto.GenerateAccount().Address.String()
-				account := newTimelockAccount(t, network, rule, route.authorization, boundedmeta.PolicyGateNone, locked, allowed, second)
-				if err := funder.FundMicroAlgosAndWait(account.address, 2_000_000); err != nil {
-					t.Fatalf("fund account: %v", err)
-				}
-				admin := route.authorization == boundedmeta.AdminAuthorizationAdmin
-				t.Run("spend is locked", func(t *testing.T) {
-					account.submit(t, network, account.payment(t, network, allowed, "a", current), false, account.args(t, allowed), false)
-				})
-				if admin {
-					t.Run("rekey without the admin signature is refused", func(t *testing.T) {
-						account.submit(t, network, account.rekey(t, network, "b", current), false, account.args(t, ""), false)
-					})
-				}
-				t.Run("rekey proceeds while locked", func(t *testing.T) {
-					account.submit(t, network, account.rekey(t, network, "c", current), admin, account.args(t, ""), true)
-				})
+		t.Run(rule.name+"/spending key", func(t *testing.T) {
+			allowed := funder.GetAddress()
+			second := algocrypto.GenerateAccount().Address.String()
+			account := newTimelockAccount(t, network, rule, boundedmeta.PolicyGateNone, locked, allowed, second)
+			if err := funder.FundMicroAlgosAndWait(account.address, 2_000_000); err != nil {
+				t.Fatalf("fund account: %v", err)
+			}
+			t.Run("spend is locked", func(t *testing.T) {
+				account.submit(t, network, account.payment(t, network, allowed, "a", current), account.args(t, allowed), false)
 			})
-		}
+			t.Run("rekey proceeds while locked", func(t *testing.T) {
+				account.submit(t, network, account.rekey(t, network, "c", current), account.args(t, ""), true)
+			})
+		})
 	}
 }
 
@@ -350,7 +326,7 @@ func TestBoundedTimelockThroughSigner(t *testing.T) {
 	t.Cleanup(installer.Cleanup)
 	for _, rule := range timelockRules {
 		templatePath := filepath.Join(paths.TemplateLibraryDir(), rule.keyType()+".yaml")
-		yaml := rule.yaml(boundedmeta.AdminAuthorizationSpend, boundedmeta.PolicyGateLayer3)
+		yaml := rule.yaml(boundedmeta.PolicyGateLayer3)
 		if err := os.WriteFile(templatePath, []byte(yaml), 0o644); err != nil {
 			t.Fatalf("write template: %v", err)
 		}

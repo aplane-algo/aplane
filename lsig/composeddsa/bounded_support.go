@@ -6,7 +6,6 @@ package composeddsa
 import (
 	"fmt"
 
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/sigconstruction"
 )
 
@@ -14,8 +13,7 @@ import (
 // spending base under a contract. A listed base supports ordinary spending and
 // spending-key rekey.
 type boundedWorkflowSupport struct {
-	externalAdmin bool
-	cosigner      bool
+	cosigner bool
 }
 
 type boundedSupportKey struct {
@@ -32,7 +30,7 @@ type boundedSupportKey struct {
 // completes (internal/signerapp/signing/bounded_construction.go), and this policy
 // must stay within that table.
 var boundedSupportPolicy = map[boundedSupportKey]boundedWorkflowSupport{
-	{BoundedContractV1, sigconstruction.Falcon1024().ID()}: {externalAdmin: true, cosigner: true},
+	{BoundedContractV1, sigconstruction.Falcon1024().ID()}: {cosigner: true},
 	{BoundedContractV1, sigconstruction.Ed25519().ID()}:    {},
 }
 
@@ -49,8 +47,8 @@ func productionBoundedGenerationPolicy(contract, baseKeyType string) (boundedWor
 }
 
 // checkBoundedGenerationSupport refuses a bounded program the current
-// implementation could not operate, such as an external-admin rekey on a base
-// the admin ceremony cannot complete.
+// implementation could not operate, such as a cosigner on a base the cosigner
+// workflow has not been reviewed for.
 //
 // This is an admission decision for new accounts, so it runs only from
 // GenerateTEAL. It must stay out of ValidateTemplateSpec, validateBoundedConfig
@@ -74,10 +72,6 @@ func (c *ComposedDSA) checkBoundedGenerationSupport() error {
 	// name outside the catalog, so this only constrains production names.
 	if err := baseConstructionAgrees(c.baseKeyType, c.ops); err != nil {
 		return err
-	}
-	if boundedRequiresAdminKey(c.bounded) && !support.externalAdmin {
-		return fmt.Errorf("base key type %q does not support %s rekey under %s: the contract-admin ceremony requires a Falcon-1024 spending key",
-			c.baseKeyType, boundedmeta.AdminAuthorizationAdmin, c.bounded.Contract)
 	}
 	if c.bounded.Cosigner != nil && !support.cosigner {
 		return fmt.Errorf("base key type %q does not support a cosigner under %s", c.baseKeyType, c.bounded.Contract)

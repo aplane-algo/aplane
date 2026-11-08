@@ -17,7 +17,6 @@ import (
 
 const (
 	ContractV1                  = "bounded1"
-	AdminPublicKeyParameter     = "bounded_admin_public_key"
 	Layer3PolicyCustom          = "custom"
 	Layer3PolicyFixedAllowlist  = "fixed_allowlist"
 	Layer3PolicyMerkleAllowlist = "merkle_allowlist"
@@ -27,7 +26,6 @@ const (
 	Layer3PolicyMerkleAllowlistCustom = "merkle_allowlist_custom"
 	AdminOperationRekey               = "rekey"
 	AdminAuthorizationSpend           = "spending_key"
-	AdminAuthorizationAdmin           = "admin_key"
 	PolicyGateNone                    = "none"
 	PolicyGateLayer3                  = "layer3"
 	SpendEffectPay                    = "pay"
@@ -39,9 +37,6 @@ const (
 	CosignerComponentKeyTypeV1        = witness.Falcon1024V1
 	CosignerPublicKeySizeV1           = witness.Falcon1024PublicKeySize
 	CosignerSignatureMaxSizeV1        = witness.Falcon1024SignatureSize
-	FalconAdminPublicKeySize          = witness.Falcon1024PublicKeySize
-	FalconAdminSignatureSize          = witness.Falcon1024SignatureSize
-	ProgramBindingSize                = 32
 	MaximumProfileFee                 = 10_000
 )
 
@@ -54,7 +49,7 @@ const (
 )
 
 // SignatureArgLayout is the durable maximum shape of the spending signature
-// args emitted before any Layer-3 or contract-admin args.
+// args emitted before any Layer-3 or cosigner args.
 type SignatureArgLayout struct {
 	Count    int   `json:"count"`
 	MaxSizes []int `json:"max_sizes"`
@@ -104,9 +99,6 @@ type Metadata struct {
 	DerivedArgs            []DerivedArg           `json:"derived_args"`
 	ArgumentLayout         []ArgumentSlot         `json:"argument_layout"`
 	Layer3Policy           string                 `json:"layer3_policy"`
-	AdminPublicKeyHex      string                 `json:"admin_public_key,omitempty"`
-	AdminKeyID             string                 `json:"admin_key_id,omitempty"`
-	ProgramBindingHex      string                 `json:"program_binding,omitempty"`
 }
 
 // Clone returns a deep copy suitable for crossing cache and API boundaries.
@@ -164,19 +156,13 @@ func (metadata *Metadata) Equal(other *Metadata) bool {
 		slices.Equal(metadata.RuntimeArgs, other.RuntimeArgs) &&
 		slices.Equal(metadata.DerivedArgs, other.DerivedArgs) &&
 		slices.Equal(metadata.ArgumentLayout, other.ArgumentLayout) &&
-		metadata.Layer3Policy == other.Layer3Policy &&
-		metadata.AdminPublicKeyHex == other.AdminPublicKeyHex &&
-		metadata.AdminKeyID == other.AdminKeyID &&
-		metadata.ProgramBindingHex == other.ProgramBindingHex
+		metadata.Layer3Policy == other.Layer3Policy
 }
 
 // Validate checks the durable bounded1 vocabulary without consulting an
 // installed provider or template.
 func (metadata *Metadata) Validate() error {
 	if err := metadata.ValidateProfile(); err != nil {
-		return err
-	}
-	if err := validateAdminMetadata(metadata, metadata.RequiresAdminKey()); err != nil {
 		return err
 	}
 	if err := validateCosignerMetadata(metadata.Cosigner); err != nil {
@@ -186,8 +172,8 @@ func (metadata *Metadata) Validate() error {
 }
 
 // ValidateProfile checks the template-level bounded contract fields. Instance
-// fields such as the rendered program binding are intentionally validated only
-// by Validate after key generation.
+// fields such as the cosigner key are validated only by Validate after key
+// generation.
 func (metadata *Metadata) ValidateProfile() error {
 	if metadata == nil {
 		return fmt.Errorf("bounded authorization metadata is nil")
@@ -321,7 +307,7 @@ func ValidateSpendEffects(spendEffects []string) error {
 }
 
 // ValidateAdminOperations enforces the frozen bounded1 admin-operation rules:
-// rekey is the only kind, authorization is spending_key or admin_key, no
+// rekey is the only kind, the spending key is the only authorization, no
 // duplicate kinds.
 func ValidateAdminOperations(operations []AdminOperation) error {
 	seen := make(map[string]struct{}, len(operations))
@@ -329,14 +315,11 @@ func ValidateAdminOperations(operations []AdminOperation) error {
 		if operation.Kind != AdminOperationRekey {
 			return fmt.Errorf("unsupported admin operation %q", operation.Kind)
 		}
-		if operation.Authorization != AdminAuthorizationSpend && operation.Authorization != AdminAuthorizationAdmin {
+		if operation.Authorization != AdminAuthorizationSpend {
 			return fmt.Errorf("unsupported authorization %q for admin operation %q", operation.Authorization, operation.Kind)
 		}
 		if operation.PolicyGate != PolicyGateNone && operation.PolicyGate != PolicyGateLayer3 {
 			return fmt.Errorf("unsupported policy gate %q for admin operation %q", operation.PolicyGate, operation.Kind)
-		}
-		if operation.Authorization == AdminAuthorizationAdmin && operation.PolicyGate != PolicyGateNone {
-			return fmt.Errorf("admin-key-authorized operation %q requires policy_gate %q", operation.Kind, PolicyGateNone)
 		}
 		if _, exists := seen[operation.Kind]; exists {
 			return fmt.Errorf("duplicate admin operation %q", operation.Kind)
@@ -385,20 +368,6 @@ func (metadata *Metadata) Contained() bool {
 	return metadata.RefusesRekeys() && metadata.HasRecipientList()
 }
 
-// RequiresAdminKey reports whether any stored operation uses the external
-// Falcon contract-admin authority.
-func (metadata *Metadata) RequiresAdminKey() bool {
-	if metadata == nil {
-		return false
-	}
-	for _, operation := range metadata.AdminOperations {
-		if operation.Authorization == AdminAuthorizationAdmin {
-			return true
-		}
-	}
-	return false
-}
-
 func ValidateSignatureLayout(layout SignatureArgLayout) error {
 	if layout.Count <= 0 || len(layout.MaxSizes) != layout.Count {
 		return fmt.Errorf("base_signature_arg_layout count %d does not match %d size bounds", layout.Count, len(layout.MaxSizes))
@@ -409,39 +378,6 @@ func ValidateSignatureLayout(layout SignatureArgLayout) error {
 		}
 	}
 	return nil
-}
-
-func validateAdminMetadata(metadata *Metadata, required bool) error {
-	if !required {
-		if metadata.AdminPublicKeyHex != "" || metadata.AdminKeyID != "" || metadata.ProgramBindingHex != "" {
-			return fmt.Errorf("contract-admin metadata is present without an admin-key-authorized operation")
-		}
-		return nil
-	}
-	publicKey, err := DecodeCanonicalHex("admin_public_key", metadata.AdminPublicKeyHex, FalconAdminPublicKeySize, FalconAdminPublicKeySize)
-	if err != nil {
-		return err
-	}
-	if len(publicKey) == 0 || strings.TrimSpace(metadata.AdminKeyID) == "" {
-		return fmt.Errorf("admin-key-authorized operation requires admin public key and key ID")
-	}
-	wantKeyID, err := witness.ID(witness.Falcon1024V1, publicKey)
-	if err != nil {
-		return err
-	}
-	if metadata.AdminKeyID != wantKeyID {
-		return fmt.Errorf("admin_key_id does not match admin_public_key")
-	}
-	if _, err := DecodeCanonicalHex("program_binding", metadata.ProgramBindingHex, ProgramBindingSize, ProgramBindingSize); err != nil {
-		return err
-	}
-	return nil
-}
-
-// ParseAdminPublicKey decodes the canonical public-key representation used in
-// durable metadata.
-func ParseAdminPublicKey(value string) ([]byte, error) {
-	return DecodeCanonicalHex("admin_public_key", value, FalconAdminPublicKeySize, FalconAdminPublicKeySize)
 }
 
 // DecodeCanonicalHex decodes a canonical hex field: non-empty, lowercase, no

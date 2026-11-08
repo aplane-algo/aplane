@@ -843,7 +843,7 @@ LocalNet reachability, SSH client enrollment at signer and cosigner endpoints,
 local IPC `apadmin` public-reference export and import, the `apadmin policy`
 verbs on the cosigner node (`status`, `check`, `diff`, `apply` from a file and
 from stdin, `export --key`, `remove`), guarded signing, Corridor allowlist
-and external-admin behavior, and guarded preparation/signing through a local
+and cosigner-loss behavior, and guarded preparation/signing through a local
 Python SDK checkout.
 
 `make docker-local-release-test` runs the same topology and product assertions,

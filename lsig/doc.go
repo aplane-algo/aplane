@@ -52,8 +52,8 @@
 // # Where the bounded contract lives
 //
 // bounded1 is owned by neutral packages under internal/: boundedmeta (durable
-// metadata, canonical vocabulary, validation), txeffects (transaction-effect
-// classification) and boundedadmin (contract-admin messages and ceremony).
+// metadata, canonical vocabulary, validation) and txeffects (transaction-effect
+// classification).
 // composeddsa holds only its program renderer and template-level profile
 // validation. Shared code under internal/ reaches composeddsa for template
 // parsing and registration, never for rendering.

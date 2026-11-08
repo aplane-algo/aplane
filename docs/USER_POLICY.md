@@ -944,8 +944,8 @@ address sets are not accepted for rekey policy. The target transaction must be
 a pure 0 ALGO self-payment with non-zero `RekeyTo` and no close remainder.
 
 `rekey_policy` applies to dedicated `cosigner1` guarded accounts. Corridor v1's
-cosigner is spend-only; its pure rekey instead requires the separate offline
-contract-admin witness and does not contact the cosigner.
+cosigner is spend-only, and a Corridor account refuses rekeys, so it never asks
+the cosigner about one.
 
 ## Writing a key policy
 

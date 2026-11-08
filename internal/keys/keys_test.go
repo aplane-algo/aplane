@@ -362,10 +362,11 @@ func TestScanKeysDirectoryWithKeyring(t *testing.T) {
 			"offline.cos.json": envelopeJSON,
 			// Sidecar whose content does not parse.
 			strings.Repeat("A", len(witnessKeyID)-1) + "B.cos.json": []byte("not json"),
-			// External artifact bundle: aprekey-owned, never a store resident.
-			witnessKeyID + ".adm": []byte("encrypted bundle"),
-			// Its public reference is aprekey-owned too.
-			witnessKeyID + ".adm.json": envelopeJSON,
+			// A retired contract-admin artifact, and a public reference under
+			// a non-sidecar name, are ordinary unexpected entries: reported,
+			// never decrypted.
+			witnessKeyID + ".adm":  []byte("encrypted bundle"),
+			witnessKeyID + ".json": envelopeJSON,
 		}
 		for name, data := range writes {
 			if err := os.WriteFile(filepath.Join(keysDir, name), data, 0600); err != nil {
@@ -392,8 +393,8 @@ func TestScanKeysDirectoryWithKeyring(t *testing.T) {
 			KeyScanWarningUnexpectedEntry:        2,
 		}
 		for _, warning := range report.Warnings {
-			if warning.Code == KeyScanWarningUnexpectedEntry && !strings.Contains(warning.Message(), "aprekey-owned") {
-				t.Fatalf("unexpected-entry warning = %q, want the targeted admin file message", warning.Message())
+			if warning.Code == KeyScanWarningUnexpectedEntry && !strings.Contains(warning.Message(), "not a managed credential") {
+				t.Fatalf("unexpected-entry warning = %q, want the unexpected-entry message", warning.Message())
 			}
 		}
 		if len(report.Warnings) != 4 || got[KeyScanWarningWitnessMetadataInvalid] != want[KeyScanWarningWitnessMetadataInvalid] || got[KeyScanWarningUnexpectedEntry] != want[KeyScanWarningUnexpectedEntry] {

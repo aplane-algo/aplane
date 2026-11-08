@@ -258,10 +258,10 @@ func TestCatalogMatchesTheFrozenAuthoritySizes(t *testing.T) {
 		t.Fatal("no construction for the Falcon witness")
 	}
 	maxSizes := falcon.Layout().MaxSizes()
-	if falcon.PublicKeySize() != boundedmeta.CosignerPublicKeySizeV1 || falcon.PublicKeySize() != boundedmeta.FalconAdminPublicKeySize {
+	if falcon.PublicKeySize() != boundedmeta.CosignerPublicKeySizeV1 {
 		t.Fatalf("PublicKeySize() = %d", falcon.PublicKeySize())
 	}
-	if !slices.Equal(maxSizes, []int{boundedmeta.CosignerSignatureMaxSizeV1}) || !slices.Equal(maxSizes, []int{boundedmeta.FalconAdminSignatureSize}) {
+	if !slices.Equal(maxSizes, []int{boundedmeta.CosignerSignatureMaxSizeV1}) {
 		t.Fatalf("MaxSizes() = %v", maxSizes)
 	}
 }

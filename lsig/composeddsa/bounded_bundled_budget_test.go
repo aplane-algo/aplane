@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
-	"encoding/hex"
 	"strings"
 	"testing"
 
@@ -36,32 +35,18 @@ func TestBundledBoundedCompiledBudgetMatrix(t *testing.T) {
 		address[0] = byte(i + 1)
 		recipients[i] = address.String()
 	}
-	adminKey := bytes.Repeat([]byte{0x31}, composeddsa.BoundedAdminPublicKeySize)
-	cosignerKey := bytes.Repeat([]byte{0x41}, boundedmeta.CosignerPublicKeySizeV1)
 	tests := []struct {
 		name       string
 		publicKey  []byte
 		parameters map[string]string
 		bytecode   int
 		spendArgs  int
-		adminArgs  int
 		spendGroup int
-		adminGroup int
 		spendFee   uint64
-		adminFee   uint64
 	}{
 		{name: "aplane.falcon1024-allowlist.v1.yaml", publicKey: bytes.Repeat([]byte{0x21}, falconfamily.PublicKeySize), parameters: map[string]string{"recipients": strings.Join(recipients, ",")}, bytecode: 3142, spendArgs: 1423, spendGroup: 2, spendFee: 2115},
 		{name: "aplane.falcon1024-allowlist.v2.yaml", publicKey: bytes.Repeat([]byte{0x21}, falconfamily.PublicKeySize), parameters: map[string]string{"recipients": recipients[0]}, bytecode: 2161, spendArgs: 1935, spendGroup: 2, spendFee: 2017},
 		{name: "aplane.falcon1024-timelock.v1.yaml", publicKey: bytes.Repeat([]byte{0x21}, falconfamily.PublicKeySize), parameters: map[string]string{"unlock_round": "18446744073709551615"}, bytecode: 1934, spendArgs: 1423, spendGroup: 2, spendFee: 2000},
-		{name: "aplane.falcon1024-allowlist-lock.v1.yaml", publicKey: bytes.Repeat([]byte{0x21}, falconfamily.PublicKeySize), parameters: map[string]string{
-			"recipients": strings.Join(recipients, ","),
-			composeddsa.BoundedAdminPublicKeyParameter: hex.EncodeToString(adminKey),
-		}, bytecode: 5044, spendArgs: 1423, adminArgs: 2846, spendGroup: 2, adminGroup: 3, spendFee: 2305, adminFee: 3206},
-		{name: "aplane.corridor.v1.yaml", publicKey: bytes.Repeat([]byte{0x21}, falconfamily.PublicKeySize), parameters: map[string]string{
-			"recipients": recipients[0],
-			composeddsa.BoundedCosignerPublicKeyParameter: hex.EncodeToString(cosignerKey),
-			composeddsa.BoundedAdminPublicKeyParameter:    hex.EncodeToString(adminKey),
-		}, bytecode: 5926, spendArgs: 3358, adminArgs: 2846, spendGroup: 4, adminGroup: 3, spendFee: 4195, adminFee: 3294},
 	}
 	profile, err := lsigresource.CurrentConsensus()
 	if err != nil {
@@ -100,25 +85,16 @@ func TestBundledBoundedCompiledBudgetMatrix(t *testing.T) {
 			}
 			spendArgs := metadata.ArgumentBytesForPath(boundedmeta.PathSpend)
 			spendPlan := solveV42BundledPath(t, profile, len(bytecode), spendArgs)
-			adminArgs := 0
-			var adminPlan lsigresource.Plan
-			if metadata.RequiresAdminKey() {
-				adminArgs = metadata.ArgumentBytesForPath(boundedmeta.PathAdminRekey)
-				adminPlan = solveV42BundledPath(t, profile, len(bytecode), adminArgs)
-			}
 			spendFee := v42BundledPathFee(spendPlan)
-			adminFee := v42BundledPathFee(adminPlan)
-			if len(bytecode) != test.bytecode || spendArgs != test.spendArgs || adminArgs != test.adminArgs ||
-				int(spendPlan.GroupSize) != test.spendGroup || int(adminPlan.GroupSize) != test.adminGroup ||
-				spendFee != test.spendFee || adminFee != test.adminFee {
+			if len(bytecode) != test.bytecode || spendArgs != test.spendArgs ||
+				int(spendPlan.GroupSize) != test.spendGroup || spendFee != test.spendFee {
 				t.Errorf(
-					"v42 resources = bytecode %d, spend args %d/group %d/fee %d, admin args %d/group %d/fee %d",
+					"v42 resources = bytecode %d, spend args %d/group %d/fee %d",
 					len(bytecode), spendArgs, spendPlan.GroupSize, spendFee,
-					adminArgs, adminPlan.GroupSize, adminFee,
 				)
 			}
-			if spendFee > metadata.MaxFee || adminFee > metadata.MaxFee {
-				t.Fatalf("v42 path fee exceeds bounded maximum %d: spend=%d admin=%d", metadata.MaxFee, spendFee, adminFee)
+			if spendFee > metadata.MaxFee {
+				t.Fatalf("v42 path fee exceeds bounded maximum %d: spend=%d", metadata.MaxFee, spendFee)
 			}
 		})
 	}

@@ -42,7 +42,6 @@ func ProjectPrepareGenerateIPC(prepared *PreparedGeneration, err *Error) adminpr
 		Fingerprint:       prepared.Fingerprint,
 		ReviewFingerprint: prepared.ReviewFingerprint,
 		BoundaryDigest:    prepared.BoundaryDigest,
-		AdminKeyID:        prepared.AdminKeyID,
 		CosignerKeyID:     prepared.CosignerKeyID,
 	}
 	if metadata := prepared.Bounded; metadata != nil {

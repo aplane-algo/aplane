@@ -5,14 +5,12 @@ package signing
 
 import (
 	"context"
-	"encoding/hex"
 	"strings"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyeval"
-	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
@@ -23,7 +21,7 @@ func testBoundedMetadata(t *testing.T, authorization string) *boundedmeta.Metada
 	metadata := &boundedmeta.Metadata{
 		Contract:               boundedmeta.ContractV1,
 		BaseSignatureArgLayout: boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{1280}},
-		ArgumentLayout:         boundedmeta.BaseArgumentLayout(boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{1280}}, authorization == boundedmeta.AdminAuthorizationAdmin),
+		ArgumentLayout:         boundedmeta.BaseArgumentLayout(boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{1280}}),
 		SpendEffects:           []string{"pay", "axfer"},
 		MaxFee:                 5_000,
 		Layer3Policy:           boundedmeta.Layer3PolicyCustom,
@@ -34,19 +32,6 @@ func testBoundedMetadata(t *testing.T, authorization string) *boundedmeta.Metada
 			Authorization: authorization,
 			PolicyGate:    boundedmeta.PolicyGateNone,
 		}}
-	}
-	if authorization == boundedmeta.AdminAuthorizationAdmin {
-		publicKey := make([]byte, boundedmeta.FalconAdminPublicKeySize)
-		for i := range publicKey {
-			publicKey[i] = byte(i + 1)
-		}
-		keyID, err := witness.ID(witness.Falcon1024V1, publicKey)
-		if err != nil {
-			t.Fatal(err)
-		}
-		metadata.AdminPublicKeyHex = hex.EncodeToString(publicKey)
-		metadata.AdminKeyID = keyID
-		metadata.ProgramBindingHex = strings.Repeat("01", boundedmeta.ProgramBindingSize)
 	}
 	if err := metadata.Validate(); err != nil {
 		t.Fatalf("test metadata invalid: %v", err)
@@ -82,7 +67,6 @@ func testBoundedAssetOptIn() types.Transaction {
 
 func TestClassifyBoundedPath(t *testing.T) {
 	spendingRekey := testBoundedMetadata(t, boundedmeta.AdminAuthorizationSpend)
-	adminRekey := testBoundedMetadata(t, boundedmeta.AdminAuthorizationAdmin)
 	noRekey := testBoundedMetadata(t, "")
 	assetOptIn := testBoundedMetadata(t, "")
 	assetOptIn.SpendEffects = []string{boundedmeta.SpendEffectAssetOptIn}
@@ -100,7 +84,6 @@ func TestClassifyBoundedPath(t *testing.T) {
 		{name: "asset opt-in", txn: testBoundedAssetOptIn(), metadata: assetOptIn, wantPath: boundedPathPureSpend},
 		{name: "asset opt-in denied by transfer-only profile", txn: testBoundedAssetOptIn(), metadata: assetTransferOnly, wantErr: "does not allow spend effect \"asset_opt_in\""},
 		{name: "spending key rekey", txn: testBoundedRekey(), metadata: spendingRekey, wantPath: boundedPathSpendingKeyRekey},
-		{name: "admin key rekey", txn: testBoundedRekey(), metadata: adminRekey, wantPath: boundedPathAdminKeyRekey},
 		{name: "rekey disabled", txn: testBoundedRekey(), metadata: noRekey, wantErr: "permanently disables rekey"},
 		{name: "fee over profile", txn: func() types.Transaction { txn := testBoundedPayment(); txn.Fee = 5_001; return txn }(), metadata: spendingRekey, wantErr: "fee 5001 exceeds"},
 		{name: "hybrid rekey transfer", txn: func() types.Transaction { txn := testBoundedRekey(); txn.Amount = 1; return txn }(), metadata: spendingRekey, wantErr: "hybrid transaction effects: rekey"},
@@ -169,7 +152,7 @@ func TestRunApprovalGatesForcedBoundedReviewPrecedesAutoApproval(t *testing.T) {
 }
 
 func TestBuildApprovalDescriptionNamesBoundedRekeyAuthority(t *testing.T) {
-	metadata := testBoundedMetadata(t, boundedmeta.AdminAuthorizationAdmin)
+	metadata := testBoundedMetadata(t, boundedmeta.AdminAuthorizationSpend)
 	txn := testBoundedRekey()
 	description, _, _ := BuildApprovalDescription(
 		signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{AuthAddress: txn.Sender.String()}}},
@@ -178,7 +161,7 @@ func TestBuildApprovalDescriptionNamesBoundedRekeyAuthority(t *testing.T) {
 			PassthroughIndices: map[int]bool{},
 			ForeignIndices:     map[int]bool{},
 			BoundedItems: []*boundedPlanItem{{
-				Path:     boundedPathAdminKeyRekey,
+				Path:     boundedPathSpendingKeyRekey,
 				Metadata: metadata,
 			}},
 		},
@@ -186,8 +169,8 @@ func TestBuildApprovalDescriptionNamesBoundedRekeyAuthority(t *testing.T) {
 		func(types.Transaction) string { return "transaction" },
 	)
 	for _, want := range []string{
-		"Bounded authorization contract admin operation: REKEY",
-		"Authorization: external contract admin key " + metadata.AdminKeyID,
+		"Bounded authorization operation: REKEY",
+		"Authorization: spending key only",
 		"Profile maximum fee: 5000 microAlgos",
 	} {
 		if !strings.Contains(description, want) {

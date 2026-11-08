@@ -82,7 +82,7 @@ func grammarFingerprint(definitions []*shapeDefinition) string {
 
 // boundaryDigest compares two accounts' resolved policy and external authorities.
 // It excludes the spending key, so equal digests do not mean equal accounts, and
-// it replaces neither the program binding nor any signing transcript. A cosigner
+// it replaces no signing transcript. A cosigner
 // key is a behavior parameter and is covered by the behavior encoding.
 //
 // The last field once bound an admin key. No shape has one now; the field stays,

@@ -91,7 +91,7 @@ Node role is stored separately in root `node.yaml`.
 | `TEST_PASSPHRASE` | Passphrase for automated testing (auto-unlocks apsigner) | apsigner, apadmin |
 | `TEST_FUNDING_MNEMONIC` | 25-word native Falcon-1024 mnemonic for funding integration test accounts | integration tests |
 | `DISABLE_MEMORY_LOCK` | Set to any value to disable memory locking (for debugging) | apsigner |
-| `APSHELL_DEBUG` | Set to any value to start at log level debug | apshell, apconsole, apadmin, apapprover, aprekey |
+| `APSHELL_DEBUG` | Set to any value to start at log level debug | apshell, apconsole, apadmin, apapprover |
 | `XDG_RUNTIME_DIR` | Standard private runtime directory useful for custom ipc_path placement | apsigner |
 
 ### Data Directory Configuration

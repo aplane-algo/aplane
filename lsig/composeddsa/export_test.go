@@ -7,8 +7,7 @@ import "slices"
 
 // FixtureSupport is the support a fixture composer claims for itself.
 type FixtureSupport struct {
-	ExternalAdmin bool
-	Cosigner      bool
+	Cosigner bool
 }
 
 // NewFixtureProvider composes spec on a base that is never registered. The policy
@@ -29,7 +28,7 @@ func NewFixtureProvider(spec *TemplateSpec, base BaseRegistration, support Fixtu
 		if baseKeyType != base.BaseKeyType {
 			return boundedWorkflowSupport{}, false
 		}
-		return boundedWorkflowSupport{externalAdmin: support.ExternalAdmin, cosigner: support.Cosigner}, true
+		return boundedWorkflowSupport{cosigner: support.Cosigner}, true
 	}
 	return provider, nil
 }

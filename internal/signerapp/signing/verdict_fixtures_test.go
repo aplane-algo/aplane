@@ -62,7 +62,7 @@ type verdictCase struct {
 	Name string `json:"name"`
 	// Surface is the signing path: "sign" (/sign: planner output through the
 	// approval gates, with Always Approve), "gates" (the shared gate sequence
-	// as rotating and bounded-admin signing drive it), "component_user"
+	// as rotating and bounded cosigner signing drive it), "component_user"
 	// (guarded user-role /sign/component) or "cosigner" (cosigner
 	// /sign/component).
 	Surface string `json:"surface"`

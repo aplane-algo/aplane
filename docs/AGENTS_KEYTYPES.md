@@ -55,10 +55,10 @@ Do not edit shipped library templates or Go providers just to satisfy a user's
 custom policy. Shipped templates, compiled providers, and installed template key
 types are compatibility boundaries. Changing the behavior of an existing key
 type such as `aplane.htlc.v1`, `aplane.falcon1024-allowlist.v1`, or
-`aplane.falcon1024-allowlist-lock.v1` can break existing keys and backups. The
+`aplane.falcon1024-b.v1` can break existing keys and backups. The
 guarded cosigner provider (`aplane.falcon1024-cosigner1024.v1`) is Go-defined.
-`aplane.corridor.v1` and `aplane.falcon1024-allowlist.v2` are shipped,
-versioned YAML templates and remain compatibility boundaries.
+`aplane.falcon1024-allowlist.v2` and `aplane.falcon1024-timelock.v1` are retired,
+versioned YAML templates that still ship, and remain compatibility boundaries.
 
 Installing a user-loaded template with `apadmin template import` requires the
 product-store passphrase through an authenticated daemon admin session. An AI
@@ -159,10 +159,11 @@ For bounded1 work, read
   rekey reaches it only when the profile explicitly selects `policy_gate: layer3`;
 - rekey detection precedes transaction-type dispatch and accepts only the
   frozen pure-rekey normal form;
-- bounded1 uses only a Falcon-1024 contract admin key and has no algorithm
-  selector;
+- a bounded1 rekey is authorized by the spending key alone, and a profile may
+  declare no rekey operation at all;
 - `max_fee` is explicit, compiled, and at most 10,000 microAlgos;
-- caller runtime args can never supply the contract-admin signature;
+- caller runtime args can never supply the cosigner signature or a
+  signer-derived argument;
 - generated bounded keys persist signing-metadata version 2 with the complete
   runtime-argument, signer-derived-argument, and path-specific slot layout;
   signing, inventory, backup, and restore use that stored snapshot rather than

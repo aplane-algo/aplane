@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"strings"
 
-	boundedmessage "github.com/aplane-algo/aplane/internal/boundedadmin/message"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	cosignermessage "github.com/aplane-algo/aplane/internal/cosigner/message"
 	"github.com/aplane-algo/aplane/internal/sigconstruction"
@@ -30,8 +29,10 @@ func (c *ComposedDSA) renderBoundedPrelude(publicKey []byte, params map[string]s
 	if err != nil {
 		return "", err
 	}
-	profileEncoding, err := CanonicalBoundedProfile(profile, metadata)
-	if err != nil {
+	// The encoding itself isn't needed here, but producing it validates the profile
+	// against its metadata, which is the render-time guard for contradictions such as a
+	// cosigner beside a spending-key rekey.
+	if _, err := CanonicalBoundedProfile(profile, metadata); err != nil {
 		return "", err
 	}
 
@@ -83,13 +84,6 @@ func (c *ComposedDSA) renderBoundedPrelude(publicKey []byte, params map[string]s
 				continue
 			}
 			writeZeroAddressAssertion(&b, predicate.Field)
-		}
-		if operation.Authorization == AdminAuthorizationAdminKey {
-			adminTEAL, err := c.renderAdminKeyAuthorization(publicKey, params, profileEncoding, metadata.ArgumentLayout[len(metadata.ArgumentLayout)-1].Index)
-			if err != nil {
-				return "", err
-			}
-			b.WriteString(adminTEAL)
 		}
 		if operation.PolicyGate == AdminPolicyGateLayer3 {
 			if profile.Cosigner != nil {
@@ -163,45 +157,6 @@ func writeSpendEffectDecision(b *strings.Builder, allowed bool) {
 		return
 	}
 	b.WriteString("err\n\n")
-}
-
-func (c *ComposedDSA) renderAdminKeyAuthorization(publicKey []byte, params map[string]string, profileEncoding []byte, adminArgIndex int) (string, error) {
-	adminPublicKey, err := c.validatedAdminPublicKey(publicKey, params)
-	if err != nil {
-		return "", err
-	}
-	behaviorEncoding, err := canonicalBehaviorParameters(params, c.params)
-	if err != nil {
-		return "", err
-	}
-	binding := boundedProgramBinding(c.keyType, c.baseKeyType, c.ops.TEALVersion(), publicKey, adminPublicKey, profileEncoding, behaviorEncoding)
-	prefix, err := boundedmessage.Prefix(boundedmessage.OperationRekey, binding[:])
-	if err != nil {
-		return "", err
-	}
-
-	construction, ok := sigconstruction.ForWitnessKeyType(boundedAdminKeyType)
-	if !ok {
-		return "", fmt.Errorf("bounded admin key type %q has no signature construction", boundedAdminKeyType)
-	}
-	message := fmt.Sprintf("pushbytes 0x%s\ntxn TxID\nconcat\nsha512_256", hex.EncodeToString(prefix))
-	verify, err := construction.VerifyTEAL(adminPublicKey, message, adminArgIndex)
-	if err != nil {
-		return "", err
-	}
-	return fmt.Sprintf(`// Contract-admin-authorized pure rekey
-arg %d
-len
-pushint 0
->
-assert
-arg %d
-len
-pushint %d
-<=
-assert
-%sassert
-`, adminArgIndex, adminArgIndex, BoundedAdminSignatureMaxSize, verify), nil
 }
 
 func writeZeroAddressAssertion(b *strings.Builder, field txeffects.TxField) {

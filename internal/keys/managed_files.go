@@ -93,8 +93,7 @@ func (c ManagedCredentialClass) Extension() string {
 }
 
 // ParseManagedCredentialFilename recognizes only signer-managed private
-// credential files. Standalone .adm artifacts and public sidecars are never
-// candidates.
+// credential files. Public sidecars are never candidates.
 func ParseManagedCredentialFilename(name string) (selector string, class ManagedCredentialClass, ok bool) {
 	switch {
 	case strings.HasSuffix(name, AccountKeyExtension):

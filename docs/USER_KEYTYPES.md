@@ -24,20 +24,16 @@ authorities:
 DSA LogicSigs may use a **plain** signature-only program, a **bounded1** policy,
 an expert-mode **custom** schema-v1 composed policy, or a dedicated compiled
 provider policy. Cosigner guarding is an additional authority, not a DSA policy
-category. Corridor is a bounded1 template that composes this cosigner authority;
-it is not a dedicated compiled policy.
+category. The Corridor preset of the general bounded type composes this
+cosigner authority under bounded1; it is not a dedicated policy.
 
 | Auxiliary authority type | Meaning |
 |---|---|
 | **Cosigner witness key** | A signer-managed, non-account witness used through `/sign/component` and assembled into a guarded transaction. |
-| **Contract-admin witness key** | The same witness key form in a standalone `.adm` container, used only for a bounded admin operation. It is not imported into the signer. |
 
-Both roles use `aplane.witness-falcon1024.v1` and the same Witness Key ID
-derivation. Custody keeps their capabilities separate: hot signer `.cos`
-records use durable category `witness` and can sign only the cosigner component
-domain; standalone `.adm` files can sign only the bounded admin domain. Never
-reuse one witness keypair across these roles. Local generation rejects known
-collisions, but cannot detect a key copied or enrolled out of band.
+A cosigner witness key has type `aplane.witness-falcon1024.v1`. Its `.cos`
+record uses durable category `witness` and can sign only the cosigner component
+domain.
 
 ### Definition and availability
 
@@ -352,71 +348,6 @@ Review these points before funding an account:
   one network.
 - These rules limit recipients and transfer kinds. They do not limit amounts or spending
   speed. Use signer policy for that.
-
-## Falcon Rekey-Locked Allowlist
-
-`aplane.falcon1024-allowlist-lock.v1` is the framework-owned transaction
-authorization account. It requires a Falcon spending signature on every
-transaction and a separate external Falcon contract-admin signature for a
-pure rekey. Its on-chain policy permits only ALGO payments and ASA transfers,
-denies all close/clawback effects, and constrains the destination to the sender
-or one of 1-30 compiled recipients.
-
-The program doesn't limit which asset moves or how much. One program is valid
-on every network, and an asset ID names an asset on one chain only, so set
-asset and amount limits per network in [signer policy](USER_POLICY.md). The
-signer injects the `bounded_admin_public_key` creation field; it is not a
-second signer-held key.
-
-Generate the external contract-admin key first:
-
-```bash
-aprekey generate --out /media/cold/bounded-admin
-```
-
-Copy the generated public `<WitnessKeyID>.adm.json` file to the machine running
-`apadmin`. When generating `aplane.falcon1024-allowlist-lock.v1`, enter that
-file's local path in **Contract Admin Reference File (.adm.json)**, or press
-`ctrl+o` in that field to browse for it. `apadmin`
-validates the public reference and supplies its `public_key_hex` to the signer;
-it never reads the private `.adm` file. Keep the `.adm` artifact outside the
-signer. Scripted generation still accepts the `bounded_admin_public_key` hex
-parameter. Ordinary spends use the normal client flow. Rekey with the dedicated
-helper:
-
-```bash
-aprekey rekey --client-data "$APCLIENT_DATA" \
-  --key /media/cold/bounded-admin/<ID>.adm \
-  <account> to <new-authorizer>
-```
-
-`<new-authorizer>` must be a key the same signer holds (a native Ed25519 or
-Falcon key, or an existing plain `aplane.falcon1024.v1` or `aplane.ed25519.v1`
-LogicSig account, including one restored from an encrypted backup; not a
-bounded, guarded, composed or generic template); the signer refuses any other
-target before asking for approval. The plain LogicSig types are internal-only
-and cannot be generated as new standalone accounts. If you need a new target,
-create a native `ed25519` or `falcon1024` account. Leaving APlane custody is two
-steps: an admin rekey to a local key, then an ordinary `rekey` from that key.
-
-For an air-gapped ceremony, use `prepare-rekey`, move the resulting
-`.apbounded-admin-request` to the ceremony machine, run `aprekey sign`,
-and return only the `.apbounded-admin-signature` file to `complete`. Loss of
-every artifact copy or its passphrase permanently removes the admin-key rekey
-path; ordinary policy-compliant spending can continue.
-
-During offline `sign`, built-in network names are verified against their
-canonical genesis hashes. Custom network names are marked as not independently
-verified offline because their name-to-hash mapping exists only in the online
-client configuration. Confirm the displayed genesis hash as part of a custom
-network ceremony; `complete` verifies it against the selected configured
-network before submission.
-
-The maximum policy cell has 30 recipients. Its resource
-profile is path-specific: v42 group size is driven by argument and opcode
-capacity, while any excess program bytes are paid through the group fee. The
-signer rejects a finalized path whose fee would exceed the compiled 10,000
-microAlgo ceiling.
 
 ## Rotating Accounts
 
@@ -736,19 +667,15 @@ use a [preset of `aplane.falcon1024-b.v1`](#bounded-accounts).
 
 ### Retired templates
 
-Five templates have left the default library in favor of those presets:
+Three templates have left the default library in favor of those presets:
 
-| Template | Replacement preset | Rekey: template, preset |
-|---|---|---|
-| `aplane.falcon1024-allowlist.v1` | Allowlist | spending key, spending key |
-| `aplane.falcon1024-allowlist.v2` | Allowlist | spending key, spending key |
-| `aplane.falcon1024-allowlist-lock.v1` | Locked Allowlist | admin key, refused |
-| `aplane.corridor.v1` | Corridor | admin key, refused |
-| `aplane.falcon1024-timelock.v1` | Timelock | spending key, spending key |
+| Template | Replacement preset |
+|---|---|
+| `aplane.falcon1024-allowlist.v1` | Allowlist |
+| `aplane.falcon1024-allowlist.v2` | Allowlist |
+| `aplane.falcon1024-timelock.v1` | Timelock |
 
-No preset has an admin-key rekey, so a Locked Allowlist or Corridor account made
-from a preset can never be rekeyed, where the template's account could be rekeyed
-through an `aprekey` ceremony.
+Each template and its preset let the spending key alone rekey the account.
 
 Existing accounts are unaffected: an installed template keeps working and stays
 in the KeyType Library, where its stored YAML can still be viewed. An upgraded
@@ -759,7 +686,7 @@ The files stay available to repair an account, under
 `<APSIGNER_DATA>/library/retired/`:
 
 ```bash
-apadmin -d $APSIGNER_DATA template import $APSIGNER_DATA/library/retired/aplane.corridor.v1.yaml
+apadmin -d $APSIGNER_DATA template import $APSIGNER_DATA/library/retired/aplane.falcon1024-allowlist.v2.yaml
 ```
 
 Re-importing matches an installed copy.

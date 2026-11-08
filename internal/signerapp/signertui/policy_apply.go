@@ -110,7 +110,7 @@ func (m Model) handlePolicyApplyFormKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		return m.submitPolicyApplyFile()
 	case fileBrowserKey:
-		return m.openFileBrowser(browsePolicyFile, m.policies.apply.path, "", ""), nil
+		return m.openFileBrowser(browsePolicyFile, m.policies.apply.path, ""), nil
 	case "backspace", "delete":
 		m.policies.apply.path = trimLastRune(m.policies.apply.path)
 		m.policies.apply.err = ""

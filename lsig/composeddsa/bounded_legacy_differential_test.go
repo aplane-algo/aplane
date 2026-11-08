@@ -12,6 +12,8 @@ import (
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 )
 
+// The replacement for the removed governed FG provider is the Locked Allowlist
+// preset of the general bounded type: a fixed allowlist that refuses every rekey.
 func TestFalconBoundedReplacementNarrowsGovernedFGCorpus(t *testing.T) {
 	sender := types.Address{1}
 	allowed := types.Address{2}
@@ -70,7 +72,7 @@ func TestFalconBoundedReplacementNarrowsGovernedFGCorpus(t *testing.T) {
 			txn.Receiver = sender
 			txn.RekeyTo = rekeyTarget
 			return txn
-		}, adminProof: true, legacy: true, bounded: true},
+		}, adminProof: true, legacy: true},
 		{name: "rekey plus ignored asset close", build: func() types.Transaction {
 			txn := basePayment()
 			txn.Amount = 0
@@ -87,31 +89,13 @@ func TestFalconBoundedReplacementNarrowsGovernedFGCorpus(t *testing.T) {
 			if got := legacyGovernedFGAllows(txn, allowed, test.adminProof); got != test.legacy {
 				t.Fatalf("legacy governed FG acceptance = %v, want %v", got, test.legacy)
 			}
-			if got := boundedFixedAllowlistAllows(txn, allowed, test.adminProof); got != test.bounded {
-				t.Fatalf("bounded fixed allowlist acceptance = %v, want %v", got, test.bounded)
+			if got := boundedLockedAllowlistAllows(txn, allowed); got != test.bounded {
+				t.Fatalf("bounded locked allowlist acceptance = %v, want %v", got, test.bounded)
 			}
 			if test.bounded && !test.legacy {
 				t.Fatal("replacement widened the legacy acceptance set")
 			}
 		})
-	}
-}
-
-func TestFalconBoundedReplacementOperationalCost(t *testing.T) {
-	const (
-		legacyFG30Bytecode = 5_013
-		legacyFG30Signed   = 7_573
-		bounded30Bytecode  = 5_279
-		bounded30Signed    = 7_839
-	)
-	if delta := bounded30Bytecode - legacyFG30Bytecode; delta != 266 {
-		t.Fatalf("bytecode delta = %d, want 266", delta)
-	}
-	if delta := bounded30Signed - legacyFG30Signed; delta != 266 {
-		t.Fatalf("post-signing delta = %d, want 266", delta)
-	}
-	if legacyGroup, boundedGroup := (legacyFG30Signed+999)/1000, (bounded30Signed+999)/1000; legacyGroup != 8 || boundedGroup != 8 {
-		t.Fatalf("required groups = legacy %d, bounded %d; want 8/8", legacyGroup, boundedGroup)
 	}
 }
 
@@ -133,13 +117,13 @@ func legacyGovernedFGAllows(txn types.Transaction, allowed types.Address, adminP
 	}
 }
 
-func boundedFixedAllowlistAllows(txn types.Transaction, allowed types.Address, adminProof bool) bool {
+func boundedLockedAllowlistAllows(txn types.Transaction, allowed types.Address) bool {
 	if uint64(txn.Fee) > composeddsa.BoundedMaxFeeV1 {
 		return false
 	}
 	switch txeffects.Classify(txn).Shape {
 	case txeffects.ShapePureRekey:
-		return adminProof
+		return false
 	case txeffects.ShapePureSpend:
 		switch txn.Type {
 		case types.PaymentTx:

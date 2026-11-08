@@ -153,7 +153,7 @@ func TestListsKeepTheirContentAtMinSize(t *testing.T) {
 		address     = "SGCU7MLRXQ4H227YCRTTT6MHL2N64WGJPHH3OTPID2CK4JNGJU6DITLIUQ"
 		fingerprint = "SHA256:Abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG"
 		witnessKey  = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
-		longType    = "aplane.falcon1024-allowlist-lock.v1"
+		longType    = "aplane.falcon1024-allowlist-wide.v1"
 	)
 	requestedAt := int64(1790000000)
 	clients := clientsState{
@@ -186,7 +186,7 @@ func TestListsKeepTheirContentAtMinSize(t *testing.T) {
 			{Address: address, KeyType: longType, AlreadyExists: true, HasPolicy: true},
 			{Address: address, KeyType: "aplane.rotating-triple-slhdsa.v1", StageHint: &hint, AlreadyExists: true, HasPolicy: true},
 		}}}, []string{
-			"lock.v1]  present  +policy", "hint 1234567  present  +policy", "[ed25519]",
+			"wide.v1]  present  +policy", "hint 1234567  present  +policy", "[ed25519]",
 		}},
 		{"restore row error", Model{viewState: ViewRestorePreview, restore: restoreState{previewKeys: []RestoreKeyInfo{
 			{Address: address, KeyType: longType, AlreadyExists: true, Error: "archive entry failed its integrity check"},
@@ -416,7 +416,7 @@ func TestRestorePreviewFitsAtMinSize(t *testing.T) {
 	selected := map[string]bool{}
 	for i := range 30 {
 		address := fmt.Sprintf("%058d", i)
-		keys = append(keys, RestoreKeyInfo{Address: address, KeyType: "aplane.falcon1024-allowlist-lock.v1", AlreadyExists: i%2 == 0})
+		keys = append(keys, RestoreKeyInfo{Address: address, KeyType: "aplane.falcon1024-allowlist-wide.v1", AlreadyExists: i%2 == 0})
 		selected[address] = true
 	}
 	const archive = "backup-with-no-time-in-its-name.tar.gz"

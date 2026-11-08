@@ -10,7 +10,6 @@ This guide explains how to back up and restore your keys.
 - [Managed Backup with apadmin](#managed-backup-with-apadmin)
 - [Keystore Management](#keystore-management)
 - [Restoring Keys](#restoring-keys)
-- [External Contract Admin Artifacts](#external-contract-admin-artifacts)
 - [Security Best Practices](#security-best-practices)
 - [Command Reference](#command-reference)
 - [Troubleshooting](#troubleshooting)
@@ -676,45 +675,6 @@ After successful `apadmin restore apply`, the daemon reloads the product
 runtime. Verify the address matches your backup in the apadmin TUI key list. After
 `apstore rebuild`, start `apsigner`, unlock the product, and verify the
 restored addresses in apadmin.
-
-## External Contract Admin Artifacts
-
-Bounded contract-admin private authority is a witness key stored only in an
-encrypted `.adm` artifact managed by `aprekey`. It is never an
-apsigner managed credential, an `apstore` `.apb`, or part of signer
-backup/restore. Do not
-put these files in the signer data directory or submit them to signer tooling.
-
-Cosigner-role witnesses are different operational custody of the same key form:
-they are stored in the cosigner product store as `<WitnessKeyID>.cos`, encrypted by
-that store's term key, included in normal `.apb` backup/restore, and usable
-only for the cosigner component-signing domain. Account authority remains in
-`<AlgorandAddress>.key`.
-
-Keep multiple independently protected copies and protect the artifact
-passphrase separately. Test each copy periodically:
-
-```bash
-aprekey inspect /media/cold/<WITNESS_KEY_ID>.adm
-aprekey verify /media/cold/<WITNESS_KEY_ID>.adm
-```
-
-The `.adm.json` sidecar contains only public convenience data;
-the encrypted artifact header is self-sufficient. Losing every artifact copy
-or its passphrase permanently removes every admin-key operation from the
-immutable bounded LogicSig. Ordinary spending remains possible only within its
-compiled policy.
-
-Do not enroll this keypair as a cosigner, and do not use a cosigner witness as a
-contract admin. Both roles use the same witness key form, but their custody
-boundaries permit different signature domains. The software rejects collisions
-it can see locally; it cannot detect out-of-band copies.
-
-Separated ceremonies additionally use `.apbounded-admin-request` request files
-and `.apbounded-admin-signature` response files. They contain no private key material and are not
-managed backup archives, but they bind short-lived signing authority for one exact
-transaction. Store or destroy them according to the operator's ceremony audit
-policy. They cannot recover a lost `.adm` artifact.
 
 ## Security Best Practices
 

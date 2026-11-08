@@ -257,7 +257,7 @@ bounded:
   max_fee: 10000
   admin_operations:
     - kind: rekey
-      authorization: admin_key
+      authorization: spending_key
       policy_gate: none
   runtime_args:
     - name: preimage
@@ -279,40 +279,47 @@ teal: |
 	if profile == nil || profile.Contract != BoundedContractV1 || profile.MaxFee != 10_000 {
 		t.Fatalf("BoundedAuthorizationProfile() = %#v", profile)
 	}
-	if got := provider.CreationParams(); len(got) != 1 || got[0].Name != BoundedAdminPublicKeyParameter {
-		t.Fatalf("CreationParams() = %#v, want injected contract-admin public key", got)
+	if got := provider.CreationParams(); len(got) != 0 {
+		t.Fatalf("CreationParams() = %#v, want no injected parameters", got)
 	}
 	if got := provider.RuntimeArgs(); len(got) != 1 || got[0].Name != "preimage" || got[0].MaxSize != 64 || !got[0].Required {
 		t.Fatalf("RuntimeArgs() = %#v, want bounded preimage", got)
 	}
 	metadata := provider.BoundedAuthorizationMetadata()
-	if metadata == nil || len(metadata.ArgumentLayout) != 3 || metadata.ArgumentLayout[1].Source != boundedmeta.ArgSourceRuntime || metadata.ArgumentLayout[2].Source != boundedmeta.ArgSourceAdmin {
-		t.Fatalf("BoundedAuthorizationMetadata() = %#v, want base/runtime/admin layout", metadata)
+	if metadata == nil || len(metadata.ArgumentLayout) != 2 || metadata.ArgumentLayout[1].Source != boundedmeta.ArgSourceRuntime {
+		t.Fatalf("BoundedAuthorizationMetadata() = %#v, want base/runtime layout", metadata)
 	}
 }
 
-func TestComposedSchemaV2RejectsAuthorDeclaredAdminPublicKey(t *testing.T) {
-	baseKeyType := "test.template-author-admin-key-base.v1"
-	registerTemplateTestBase(t, baseKeyType)
+// The bounded_ prefix stays reserved for the framework, so the retired admin
+// parameter name cannot come back as an author parameter.
+func TestComposedSchemaV2RejectsAuthorDeclaredReservedBoundedParameter(t *testing.T) {
+	registerBaseForTest(t, BaseRegistration{
+		BaseKeyType:       "aplane.falcon1024.v1",
+		FamilyName:        "falcon1024",
+		Version:           1,
+		Ops:               boundedTestOps{},
+		NewAddressDeriver: func(string) addressderive.Deriver { return testDeriver{} },
+	})
 	spec, err := ParseTemplateSpec([]byte(`
 schema_version: 2
 template_type: composed
-base_key_type: test.template-author-admin-key-base.v1
+base_key_type: aplane.falcon1024.v1
 template_mode: strict
 publisher: test
-family: author-admin-key
+family: author-reserved
 version: 1
-display_name: Author Admin Key
+display_name: Author Reserved
 bounded:
   contract: bounded1
   spend_effects: [pay]
   max_fee: 10000
   admin_operations:
     - kind: rekey
-      authorization: admin_key
+      authorization: spending_key
       policy_gate: none
 parameters:
-  - name: bounded_admin_public_key
+  - name: bounded_example_key
     type: bytes
     required: true
     max_length: 3586
@@ -323,37 +330,13 @@ teal: |
 	if err != nil {
 		t.Fatalf("ParseTemplateSpec() error = %v", err)
 	}
-	if err := ValidateTemplateSpec(spec); err == nil || !strings.Contains(err.Error(), "framework-injected") {
-		t.Fatalf("ValidateTemplateSpec() error = %v, want injected-parameter rejection", err)
-	}
-}
-
-func TestComposedSchemaV1RejectsAuthorDeclaredAdminPublicKey(t *testing.T) {
-	baseKeyType := "test.template-v1-author-admin-key-base.v1"
-	registerTemplateTestBase(t, baseKeyType)
-	spec, err := ParseTemplateSpec([]byte(`
-schema_version: 1
-template_type: composed
-base_key_type: test.template-v1-author-admin-key-base.v1
-template_mode: strict
-publisher: test
-family: v1-author-admin-key
-version: 1
-display_name: V1 Author Admin Key
-parameters:
-  - name: bounded_admin_public_key
-    type: bytes
-    required: true
-    max_length: 3586
-teal: |
-  int 1
-  assert
-`))
+	provider, err := NewProviderFromTemplateSpec(spec)
 	if err != nil {
-		t.Fatalf("ParseTemplateSpec() error = %v", err)
+		t.Fatalf("NewProviderFromTemplateSpec() error = %v", err)
 	}
-	if err := ValidateTemplateSpec(spec); err == nil || !strings.Contains(err.Error(), "framework-injected") {
-		t.Fatalf("ValidateTemplateSpec() error = %v, want injected-parameter rejection", err)
+	_, err = provider.GenerateTEAL([]byte{1}, map[string]string{"bounded_example_key": strings.Repeat("22", 1793)})
+	if err == nil || !strings.Contains(err.Error(), "reserved bounded_ prefix") {
+		t.Fatalf("GenerateTEAL() error = %v, want reserved-prefix rejection", err)
 	}
 }
 
@@ -763,7 +746,6 @@ func TestBundledComposedTemplatesValidate(t *testing.T) {
 	registerTemplateTestBase(t, "aplane.ed25519.v1")
 
 	paths := []string{
-		"library/retired/aplane.falcon1024-allowlist-lock.v1.yaml",
 		"library/retired/aplane.falcon1024-timelock.v1.yaml",
 		"library/retired/aplane.falcon1024-allowlist.v1.yaml",
 		"library/retired/aplane.falcon1024-allowlist.v2.yaml",

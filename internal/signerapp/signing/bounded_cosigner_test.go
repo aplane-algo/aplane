@@ -205,9 +205,9 @@ func boundedCosignerTestMetadata(t *testing.T, cosignerPublicKey []byte) *bounde
 	return metadata
 }
 
-// Bounded cosigner and external-admin flows are reviewed for Falcon spending only. A
-// valid signature on any other base stays refused at the point it always was, because
-// resolving the base alone would let Ed25519 through to a ceremony it can't finish.
+// The bounded cosigner flow is reviewed for Falcon spending only. A valid signature on
+// any other base stays refused at the point it always was, because resolving the base
+// alone would let Ed25519 through to a ceremony it can't finish.
 func TestBoundedSpendingProofRequiresSupportedConstruction(t *testing.T) {
 	seed := make([]byte, 48)
 	seed[0] = 1
@@ -227,8 +227,7 @@ func TestBoundedSpendingProofRequiresSupportedConstruction(t *testing.T) {
 	edSignature := ed25519.Sign(edPrivateKey, message)
 
 	for name, workflow := range map[string]boundedSigningWorkflow{
-		"cosigner":       boundedWorkflowCosigner,
-		"external admin": boundedWorkflowExternalAdmin,
+		"cosigner": boundedWorkflowCosigner,
 	} {
 		t.Run(name, func(t *testing.T) {
 			falconLayout := layoutOf(sigconstruction.Falcon1024())
@@ -288,4 +287,14 @@ func TestCosignerAssemblySignatureRequiresAWitnessKeyType(t *testing.T) {
 func layoutOf(construction sigconstruction.Construction) boundedmeta.SignatureArgLayout {
 	layout := construction.Layout()
 	return boundedmeta.SignatureArgLayout{Count: layout.Count(), MaxSizes: layout.MaxSizes()}
+}
+
+func TestBoundedCosignerRequiredEmitsContractedCode(t *testing.T) {
+	err := boundedCosignerRequired()
+	if err.Code() != signerapi.ErrCodeBoundedCosignerRequired {
+		t.Fatalf("Code() = %q, want %q", err.Code(), signerapi.ErrCodeBoundedCosignerRequired)
+	}
+	if err.HTTPStatus() != 400 {
+		t.Fatalf("HTTPStatus() = %d, want 400", err.HTTPStatus())
+	}
 }

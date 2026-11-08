@@ -3,8 +3,8 @@
 Unified developer guide for adding a new signable key type or LogicSig template to
 APlane.
 
-Before designing a new combination of rotation, bounded policy, cosigning, or
-external administration, read
+Before designing a new combination of rotation, bounded policy, or cosigning,
+read
 [Designing a new combination](ARCH_KEYTYPES.md#designing-a-new-combination)
 in `docs/ARCH_KEYTYPES.md`. Its capability map distinguishes existing
 implementations from combinations that require a new protocol contract.
@@ -43,12 +43,7 @@ a current-format key.
 Bounded1 is the framework-enforced execution contract used by every bundled
 composed DSA template. Read [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md) before
 changing schema-v2 composed templates, transaction-effect classification,
-argument slots, Falcon contract-admin signing, or the `bounded1` /
-`bounded-cosigner1` signing flows.
-Admin-capable account files contain the spending key and immutable public
-contract-admin metadata; private admin material exists only in the external
-`.adm` artifact. Never copy that private key into account
-parameters, signer storage, or caller-supplied runtime arguments.
+argument slots, or the `bounded1` / `bounded-cosigner1` signing flows.
 
 ## Key Type Source Model
 
@@ -111,8 +106,8 @@ ceilings; program length and argument maxima are derived from the final
 bytecode and the frozen argument layout. Non-bounded LogicSig keys
 use signing-metadata version 1. Bounded keys use version 2 and persist the full
 typed `bounded_authorization` contract, including the static base, derived,
-runtime, and optional admin argument layout; path masks; profile; public admin
-metadata/binding; and maximum signed size. Key files whose stored bytecode
+runtime, and optional cosigner argument layout; path masks; profile; and maximum
+signed size. Key files whose stored bytecode
 derives an on-curve LogicSig address, or whose derivation marker does not match
 their metadata, are rejected during key scan. Key files lacking
 `signing_metadata_version` are
@@ -213,7 +208,7 @@ Go-defined key types:
 | `falcon1024` | Protocol-native PQ signing key | Go-defined | default-enabled on signer nodes | `internal/signing/falcon1024` |
 | `aplane.falcon1024-b.v1` | General bounded account, one of 56 shapes selected per key | Go-defined | default-enabled on signer nodes | `lsig/boundedaccount`, `internal/boundary` |
 | `aplane.falcon1024.v1` | DSA LogicSig provider | Go-defined | internal-only | `lsig/falcon1024/v1/standard.go` |
-| `aplane.witness-falcon1024.v1` | Witness key (cosigner custody or external contract-admin custody) | Go-defined | default-enabled on cosigner nodes | `internal/witness`, `lsig/falcon1024/keygen/witness.go` |
+| `aplane.witness-falcon1024.v1` | Witness key held by a cosigner | Go-defined | default-enabled on cosigner nodes | `internal/witness`, `lsig/falcon1024/keygen/witness.go` |
 | `aplane.falcon1024-cosigner1024.v1` | Guarded-account DSA LogicSig provider | Go-defined | library-visible | `lsig/falcon1024_guarded` |
 | `aplane.ed25519.v1` | DSA LogicSig provider | Go-defined | internal-only | `lsig/ed25519lsig` |
 
@@ -276,9 +271,7 @@ Bundled YAML templates, if installed:
 | `aplane.htlc.v1` | Generic LogicSig template | `apadmin template import library/templates/aplane.htlc.v1.yaml` | selected generation `keytypes/aplane.htlc.v1.{json,template}` |
 | `aplane.falcon1024-allowlist.v1` | Bounded1 composed DSA template | `apadmin template import library/retired/aplane.falcon1024-allowlist.v1.yaml` | selected generation `keytypes/aplane.falcon1024-allowlist.v1.{json,template}` |
 | `aplane.falcon1024-allowlist.v2` | Bounded1 composed DSA template | `apadmin template import library/retired/aplane.falcon1024-allowlist.v2.yaml` | selected generation `keytypes/aplane.falcon1024-allowlist.v2.{json,template}` |
-| `aplane.falcon1024-allowlist-lock.v1` | Bounded1 composed DSA template | `apadmin template import library/retired/aplane.falcon1024-allowlist-lock.v1.yaml` | selected generation `keytypes/aplane.falcon1024-allowlist-lock.v1.{json,template}` |
 | `aplane.falcon1024-timelock.v1` | Bounded1 composed DSA template | `apadmin template import library/retired/aplane.falcon1024-timelock.v1.yaml` | selected generation `keytypes/aplane.falcon1024-timelock.v1.{json,template}` |
-| `aplane.corridor.v1` | Bounded1 composed DSA template with cosigner-gated spend | `apadmin template import library/retired/aplane.corridor.v1.yaml` | selected generation `keytypes/aplane.corridor.v1.{json,template}` |
 
 Everything but `aplane.htlc.v1` is retired: it sits in `library/retired/`, outside
 the library listing, so an operator can repair an existing account. New accounts
@@ -677,19 +670,17 @@ signing.
    refuses a directly composed base whose ops disagree with its name. Key separation reads
    the construction's components, so a witness key reused as one component is refused.
 5. **Wiring.** Add the family to `lsig/clientreg/register.go` and `lsig/signerreg/`.
-6. **Compatibility token.** Add a row to `boundedBasePrimitive` in
-   `lsig/composeddsa/bounded.go`. The tokens feed the program binding and fingerprints, so
-   never rename one.
+6. **Compatibility token.** Add a row to `fingerprintBasePrimitives` in
+   `internal/lsigprovider/fingerprint.go`. The tokens feed fingerprints and the general
+   boundary digest, so never rename one.
 7. **Workflow support.** Add a `boundedSupportPolicy` entry in
    `lsig/composeddsa/bounded_support.go`. Grant only what you've reviewed: a registered base
    with no entry can't generate bounded accounts. Admission is for new accounts only;
    signing has its own table, `boundedSigningConstructions` in
    `internal/signerapp/signing/bounded_construction.go`, of the workflows the signer
    completes. Add the signing rows first: `TestBoundedGenerationAdmitsOnlySignableWorkflows`
-   fails if admission grants a workflow signing can't finish. External-admin support also needs a
-   validator design, because `internal/boundedadmin/program` accepts one Falcon base
-   argument only. Cosigner support also needs the template rule in `template.go` and a
-   receipt encoding to change.
+   fails if admission grants a workflow signing can't finish. Cosigner support also needs
+   the template rule in `template.go` and a receipt encoding to change.
 
 Test that family sizes match the catalog, as `TestCatalogMatchesFalconSizes` does, and that
 the base passes `TestEveryProductionBaseResolvesToASupportedConstruction`. Use a fresh key
@@ -716,7 +707,7 @@ stores to recovery.
 definition and its Falcon base, so a second type needs its own registration there. It then
 reaches clients through `per_key_contract` with no client code. First check
 `TestEveryPerKeyProviderSupportsTheBoundaryWorkflow`, which requires every per-key type to
-resolve every preset. A definition without the admin or cosigner shapes fails it, and the
+resolve every preset. A definition without the refused or cosigner shapes fails it, and the
 fix is narrower discovery and client routing, not an exclusion from the test.
 
 ## Provider Interfaces
@@ -881,8 +872,8 @@ bounded:
   max_fee: 10000             # required; at most 10000
   admin_operations:          # empty list: no rekey path
     - kind: rekey
-      authorization: admin_key   # spending_key | admin_key
-      policy_gate: none          # none | layer3; admin_key requires none
+      authorization: spending_key  # the only authorization
+      policy_gate: none          # none | layer3
   cosigner:                  # optional; Falcon base only
     contract: cosigner1
     required_on: [spend]
@@ -918,22 +909,19 @@ The rules that most often surprise authors:
   allowlist and write the conditions in the TEAL.
 - With no `teal`, extra parameters and `runtime_args` are rejected, because nothing
   would read them.
-- `bounded_admin_public_key` and the cosigner parameters are injected by the framework
-  and cannot be declared. `bounded_` and `__aplane_bounded1_` are reserved.
+- The cosigner parameters are injected by the framework and cannot be declared.
+  `bounded_` and `__aplane_bounded1_` are reserved.
 - A cosigner cannot be combined with a spending-key rekey.
 - Author TEAL reads `arg 1` onward, in the static slot order: base signatures, derived
-  arguments, runtime arguments, cosigner signature, admin signature. A runtime argument
+  arguments, runtime arguments, cosigner signature. A runtime argument
   beside a Merkle proof is therefore `arg 2`.
 - `policy_gate` decides what a spending-key rekey checks: `layer3` applies the list, the
-  timelock, and the author rule, and `none` skips them all. An admin-key rekey skips them
-  too, so it is not delayed by a timelock.
-- An external-admin account must keep custom Layer 3 to the transaction and global fields
-  the `aprekey` validator can decode. `txn FirstValid` is one of them; `txn LastValid` is
-  not, and a program reading it spends normally but cannot complete a ceremony.
+  timelock, and the author rule, and `none` skips them all.
 - Author TEAL cannot use `return`.
 
 A framework-policy template has no `teal` at all. This is the complete
-`aplane.falcon1024-allowlist-lock.v1` definition, less display text:
+`aplane.falcon1024-allowlist.v1` definition, less display text and its retirement
+comment:
 
 ```yaml
 schema_version: 2
@@ -942,9 +930,9 @@ template_type: composed
 base_key_type: aplane.falcon1024.v1
 template_mode: generated
 publisher: aplane
-family: falcon1024-allowlist-lock
+family: falcon1024-allowlist
 version: 1
-display_name: "Falcon-1024 Rekey-Locked Allowlist"
+display_name: "Falcon-1024 Allowlist"
 max_opcode_cost: 20000
 
 bounded:
@@ -953,7 +941,7 @@ bounded:
   max_fee: 10000
   admin_operations:
     - kind: rekey
-      authorization: admin_key
+      authorization: spending_key
       policy_gate: none
   layer3:
     policy: fixed_allowlist

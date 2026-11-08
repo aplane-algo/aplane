@@ -94,57 +94,10 @@ func (s *Service) SignGroupWithContext(ctx context.Context, req signerapi.GroupS
 	if err != nil {
 		return nil, err
 	}
-	if planHasBoundedAdminKeyOperation(plan) {
-		return nil, boundedAdminRequired()
-	}
 	if planHasBoundedCosignerSpend(plan) {
 		return nil, boundedCosignerRequired()
 	}
 	return s.signGroupWithPlanContext(ctx, req, session, plan)
-}
-
-func (s *Service) PrepareBoundedAdminWithContext(ctx context.Context, request signerapi.BoundedAdminRequest, session *keystore.KeySession) (*BoundedAdminResult, *ServiceError) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	if s.Planner == nil || s.Approval == nil || s.Executor == nil {
-		return nil, internal("signing service not fully configured")
-	}
-	req := request.GroupSignRequest()
-	plan, err := s.planGroupWhileSignable(req)
-	if err != nil {
-		return nil, err
-	}
-	targetIndex, item, validationErr := validateBoundedAdminPlan(request, plan)
-	if validationErr != nil {
-		return nil, validationErr
-	}
-	// Signer invariant, ahead of policy and approval: the rekey target must be
-	// a held, eligible credential (bounded_admin_target.go). Checked again at
-	// release from the loaded credential.
-	if targetErr := s.checkBoundedAdminRekeyTarget(plan.AllTxns[targetIndex], req.Requests[targetIndex].AuthAddress); targetErr != nil {
-		return nil, targetErr
-	}
-	policyRuleID, release, gateErr := s.approveGroupWithPlanContext(ctx, req, plan)
-	if gateErr != nil {
-		return nil, gateErr
-	}
-	defer release()
-	if bindErr := checkApprovalBinding(req, plan); bindErr != nil {
-		return nil, bindErr
-	}
-
-	partials, signErr := s.Executor.ExecuteBoundedAdminPartial(ctx, plan, req, session, targetIndex, item)
-	if signErr != nil {
-		return nil, signErr
-	}
-	result, buildErr := buildBoundedAdminResult(plan, len(req.Requests), targetIndex, item, partials)
-	if buildErr != nil {
-		return nil, buildErr
-	}
-	consoleOf(s.Console).Printf("[GROUP] Prepared bounded-admin spending partial; external contract-admin signature required\n")
-	s.logBoundedAdminPartialApproved(req, plan.AllTxns[targetIndex], targetIndex, policyRuleID)
-	return result, nil
 }
 
 // planGroupWhileSignable gives a lock transition priority over a planner
@@ -472,21 +425,6 @@ func (s *Service) logSuccessfulSignatures(req signerapi.GroupSignRequest, plan *
 		}
 		s.AuditLog.LogSignApproved(txReq.AuthAddress, txns[i].Sender.String(), details)
 	}
-}
-
-func (s *Service) logBoundedAdminPartialApproved(req signerapi.GroupSignRequest, txn types.Transaction, targetIndex int, policyRuleID string) {
-	if s.AuditLog == nil || targetIndex < 0 || targetIndex >= len(req.Requests) {
-		return
-	}
-	txReq := req.Requests[targetIndex]
-	const details = "bounded-admin spending partial prepared; external contract-admin signature required"
-	if policyRuleID != "" {
-		if ruleLogger, ok := s.AuditLog.(AuditApprovePolicyRuleLogger); ok && ruleLogger != nil {
-			ruleLogger.LogSignApprovedWithPolicyRule(txReq.AuthAddress, txn.Sender.String(), details, policyRuleID)
-			return
-		}
-	}
-	s.AuditLog.LogSignApproved(txReq.AuthAddress, txn.Sender.String(), details)
 }
 
 func (s *Service) logPolicyRejections(req signerapi.GroupSignRequest, plan *PlanResult, txns []types.Transaction, reason string) {

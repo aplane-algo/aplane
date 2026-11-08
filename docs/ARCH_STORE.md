@@ -784,8 +784,6 @@ This separation is deliberate:
 | LogicSig key file | selected generation `keys/<address>.key` | Final LogicSig bytecode, derivation metadata, signing metadata, and any private DSA key material. |
 | Cosigner witness credential | selected generation `keys/<witness_key_id>.cos` | Witness key in cosigner custody; component-signing authority for cosigner-role `/sign/component`, never an Algorand spending account. |
 | Witness public sidecar | selected generation `keys/<witness_key_id>.cos.json` | Canonical public witness reference for a local cosigner key. |
-| External contract-admin witness | Operator-controlled `<witness_key_id>.adm`, outside signer data | The same Falcon witness form in standalone custody; owned only by `aprekey`, never by signer or `apstore`. |
-| Contract-admin public reference | Operator-controlled `<witness_key_id>.adm.json` | Disposable canonical public witness reference used during bounded account generation. |
 | Node role | `<APSIGNER_DATA>/node.yaml` | Single-purpose role for the signer data root. |
 | Node role integrity sidecar | selected generation `node.yaml.hmac` | Product-store HMAC over the exact root `node.yaml` bytes. |
 | Product runtime config | `identities/default/config.yaml` | Product runtime settings such as approval and lock timeouts; it does not carry key-class role. Unknown fields are rejected. |
@@ -834,7 +832,7 @@ Valid roles are exactly `signer` and `cosigner`.
 
 | Node role | Allowed active key classes | Disallowed active key classes | Served signing paths |
 |---|---|---|---|
-| `signer` | Native signing keys, ordinary, bounded, and rotating LogicSig account keys, guarded account keys, and public cosigner references used for generation. | Cosigner component private keys and all external contract-admin private artifacts. | Normal `/sign`, `/sign/rotating/prepare` and `/sign/rotating/sign`, bounded-admin spending-partial generation, user-role `/sign/component`, `/sign/assemble`. |
+| `signer` | Native signing keys, ordinary, bounded, and rotating LogicSig account keys, guarded account keys, and public cosigner references used for generation. | Cosigner component private keys. | Normal `/sign`, `/sign/rotating/prepare` and `/sign/rotating/sign`, user-role `/sign/component`, `/sign/assemble`. |
 | `cosigner` | Cosigner component private keys and their public sidecars. | Every account key class: native signing keys and ordinary, bounded, guarded, and rotating LogicSig account keys. | Cosigner-role `/sign/component`. |
 
 Rules:
@@ -1000,8 +998,6 @@ The bundled templates are:
 | `aplane.falcon1024-timelock.v1` | `library/retired/` | Falcon-1024 signature gated by round-based timelock |
 | `aplane.falcon1024-allowlist.v1` | `library/retired/` | Falcon-1024 signature restricted to a fixed set of receiver addresses |
 | `aplane.falcon1024-allowlist.v2` | `library/retired/` | Falcon-1024 allowlist using a fixed-depth Merkle root with signer-generated proofs |
-| `aplane.falcon1024-allowlist-lock.v1` | `library/retired/` | Falcon-1024 bounded allowlist whose pure rekey additionally requires an external Falcon admin signature |
-| `aplane.corridor.v1` | `library/retired/` | Bounded Falcon profile with a Merkle recipient allowlist, cosigner-authorized spends, and external-admin pure rekey |
 
 None is installed by default. Only `library/templates/` is offered by the library. Retirement moves a source
 file and nothing else: schema v2 still parses, installed copies keep validating and generating, and the store is
@@ -1163,7 +1159,7 @@ key is rejected during reload rather than published as a signable key.
 | DSA LogicSig key valid | Payload has private DSA material, stored LogicSig bytecode, a valid derivation record, `signing_metadata_version`, `base_key_type`, and valid signing metadata. | Yes on signer nodes when the base signing provider is registered. | Restores from stored metadata; composed template is not required. |
 | Generic LogicSig key valid | Payload has stored LogicSig bytecode, a valid derivation record, `signing_metadata_version`, and stored signing args. | Yes on signer nodes. | Restores from stored metadata; template is not required. |
 | Cosigner key valid | Payload category/type is a cosigner key and Witness Key ID is canonical. | Only through cosigner-role component signing on cosigner nodes; normal `/sign` and spending paths reject it. | Restores as a cosigner key on cosigner nodes, regenerating the public sidecar; never as a spending account. |
-| Bounded account key valid | DSA LogicSig key with signing-metadata version 2 and a valid `bounded_authorization`. When an operation uses an admin key, the bytecode embeds the external contract-admin public key and the metadata derives the matching Contract Admin Key ID and program binding; a general bounded account (`aplane.falcon1024-b.v1`) never has an admin key and embeds none. | Pure spends use signer-held authority, with a cosigner signature when the account has one; admin-key operations additionally require external completion through `aprekey`. | Restores from durable bounded metadata. The external `.adm` artifact is never part of signer backup or restore. |
+| Bounded account key valid | DSA LogicSig key with signing-metadata version 2 and a valid `bounded_authorization`. | Pure spends and spending-key rekeys use signer-held authority, with a cosigner signature on spends when the account has one. | Restores from durable bounded metadata. |
 | Guarded account key valid | DSA LogicSig key whose bytecode embeds the cosigner public key. | Only on signer nodes through guarded orchestration: user component signature, cosigner component signature, local assembly. | Restores from stored bytecode and metadata. |
 | LogicSig derivation invalid | Payload has bytecode but an unknown or inconsistent derivation record; for example, a manual-counter key omits `salt_counter`, or an `algod_v13_auto_salt` key includes one or stores pre-v13 bytecode. | No; scan/verify/restore reject. | Restore rejects. |
 | LogicSig on-curve address | Stored LogicSig bytecode derives an on-curve address. | No; scan/verify/restore reject. | Restore rejects. |
@@ -1227,12 +1223,10 @@ and parameters rather than a private signing key. Current compiler-auto-salted
 entries omit the legacy `salt_counter`.
 
 Bounded account key files retain category `dsa_lsig`, base key type, stored
-bytecode, creation parameters, and signing metadata version 2. When the
-account has an external admin key, the injected `bounded_admin_public_key` is
-immutable program input, and the signer derives the Contract Admin Key ID and
-program binding from durable metadata; neither is a caller-selected creation
-parameter. A general bounded account whose rekey authority is the spending key
-has no admin key and cannot have a cosigner.
+bytecode, creation parameters, and signing metadata version 2. A bounded
+account's only rekey authority is its spending key, and it may declare no rekey
+operation at all. A general bounded account whose rekey authority is the
+spending key cannot have a cosigner.
 
 Decrypted key payloads use canonical versioned JSON schemas owned by
 `internal/keys.ParsePayload` and `internal/keys.MarshalPayload`. Readers reject
@@ -1366,26 +1360,23 @@ Bounded signing-metadata version 2 additionally requires the canonical
 - `contract`: `bounded1`
 - `base_signature_arg_layout`: exact base arg count and per-position maximums
 - `spend_effects`, `max_fee`, and typed `admin_operations`; every operation
-  explicitly carries `policy_gate: none|layer3`, and external-admin operations
-  require `none`
+  explicitly carries `policy_gate: none|layer3`, and the only authorization is
+  `spending_key`; an account that refuses rekeys stores no operation
 - `runtime_args` and `derived_args`: canonical declarations, possibly empty
-- `argument_layout`: complete ordered slots with source, maximum, and all path masks
+- `argument_layout`: complete ordered slots with source, maximum, and all path
+  masks; the `admin_rekey` mask is unused and stays for encoding stability
 - `layer3_policy`: exactly `custom`, `fixed_allowlist`, `merkle_allowlist`,
   `fixed_allowlist_custom`, `merkle_allowlist_custom`, `timelock`,
   `fixed_allowlist_timelock`, or `merkle_allowlist_timelock`
 - optional `cosigner`: contract, witness key type, resolved public key and Witness
   Key ID, maximum signature size, and exact `[spend]` path; its argument slot
   source is `cosigner`
-- `admin_public_key`, `admin_key_id`, and `program_binding` when an operation
-  uses `authorization: admin_key`; the key ID must derive from that public key,
-  and the public key must equal `parameters.bounded_admin_public_key`
 - the final stored bytecode plus `argument_layout` and the durable opcode
   profile are the independent sources for program, argument, and opcode budgets
 
 Bounded payloads with metadata version 1, non-bounded payloads with metadata
 version 2, unknown nested fields, duplicate object members, invalid or
-colliding argument declarations, or inconsistent admin metadata are
-rejected. Backup and restore preserve the object unchanged.
+or colliding argument declarations are rejected. Backup and restore preserve the object unchanged.
 
 Stored LogicSig bytecode and stored signing metadata are authoritative for
 signing:
@@ -1425,8 +1416,8 @@ CanonicalName(payload) = Selector(payload) || ExtensionForCategory(payload.categ
 After decrypting a `.key` or `.cos` candidate, the scanner derives the payload
 selector and category. It accepts the file only when the basename equals the
 canonical name. A witness payload in `<id>.key`, an account payload in
-`<address>.cos`, or any selector mismatch is skipped and reported; `.adm`,
-`.adm.json`, and `.cos.json` are never private-credential candidates. Writers and restore derive
+`<address>.cos`, or any selector mismatch is skipped and reported; `.cos.json`
+is never a private-credential candidate. Writers and restore derive
 the same canonical destination. Restore rejects a contradictory managed class
 for the same selector even with `replace_existing`; an exact canonical destination
 is replaced only when `replace_existing` is set.
@@ -1851,7 +1842,7 @@ configuration.
 Export:
 
 1. discovers canonical managed credentials from active `.key` and `.cos`
-   files; external `.adm`, contract-admin, and deleted artifacts are excluded
+   files; deleted artifacts are excluded
 2. opens each credential with its object-bound destination term envelope
 3. parses and validates the complete credential payload, then canonicalizes it
 4. re-encrypts the canonical payload with standalone envelope version 2 under

@@ -20,6 +20,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+// preparedAccount is a prepared bounded generation. An empty authorization is an
+// account that refuses rekeys.
 func preparedAccount(policy, authorization string, cosigner bool, recipients int) PrepareGenerateResultMessage {
 	list := make([]string, recipients)
 	for i := range list {
@@ -33,17 +35,16 @@ func preparedAccount(policy, authorization string, cosigner bool, recipients int
 		ReviewFingerprint: "1:" + strings.Repeat("d", 64),
 		BoundaryDigest:    strings.Repeat("e", 64),
 		Bounded: &protocol.PreparedBoundedProfile{
-			SpendEffects: []string{"pay", "axfer", "asset_opt_in"},
-			MaxFee:       10_000,
-			Layer3Policy: policy,
-			AdminOperations: []protocol.PreparedAdminOperation{
-				{Kind: "rekey", Authorization: authorization, PolicyGate: boundedmeta.PolicyGateNone},
-			},
+			SpendEffects:     []string{"pay", "axfer", "asset_opt_in"},
+			MaxFee:           10_000,
+			Layer3Policy:     policy,
 			CosignerRequired: cosigner,
 		},
 	}
-	if authorization == boundedmeta.AdminAuthorizationAdmin {
-		prepared.AdminKeyID = strings.Repeat("a1b2", 16)
+	if authorization != "" {
+		prepared.Bounded.AdminOperations = []protocol.PreparedAdminOperation{
+			{Kind: "rekey", Authorization: authorization, PolicyGate: boundedmeta.PolicyGateNone},
+		}
 	}
 	if cosigner {
 		prepared.CosignerKeyID = strings.Repeat("c3d4", 16)
@@ -60,11 +61,11 @@ func TestReviewKeepsItsButtonsAt80x24(t *testing.T) {
 	}{
 		{"inline spending", boundedmeta.Layer3PolicyFixedAllowlist, boundedmeta.AdminAuthorizationSpend, false, 2},
 		{"merkle spending", boundedmeta.Layer3PolicyMerkleAllowlist, boundedmeta.AdminAuthorizationSpend, false, 500},
-		{"inline admin", boundedmeta.Layer3PolicyFixedAllowlist, boundedmeta.AdminAuthorizationAdmin, false, 2},
-		{"merkle admin", boundedmeta.Layer3PolicyMerkleAllowlist, boundedmeta.AdminAuthorizationAdmin, false, 11},
-		{"inline cosigner", boundedmeta.Layer3PolicyFixedAllowlist, boundedmeta.AdminAuthorizationAdmin, true, 2},
-		{"merkle cosigner", boundedmeta.Layer3PolicyMerkleAllowlist, boundedmeta.AdminAuthorizationAdmin, true, 11},
-		{"custom merkle cosigner", boundedmeta.Layer3PolicyMerkleAllowlistCustom, boundedmeta.AdminAuthorizationAdmin, true, 11},
+		{"inline refused", boundedmeta.Layer3PolicyFixedAllowlist, "", false, 2},
+		{"merkle refused", boundedmeta.Layer3PolicyMerkleAllowlist, "", false, 11},
+		{"inline cosigner", boundedmeta.Layer3PolicyFixedAllowlist, "", true, 2},
+		{"merkle cosigner", boundedmeta.Layer3PolicyMerkleAllowlist, "", true, 11},
+		{"custom merkle cosigner", boundedmeta.Layer3PolicyMerkleAllowlistCustom, "", true, 11},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			prepared := preparedAccount(test.policy, test.rekey, test.cosigner, test.recipients)
@@ -85,7 +86,7 @@ func TestReviewKeepsItsButtonsAt80x24(t *testing.T) {
 // The main review stays plain. A fingerprint there would invite an operator to
 // treat it as the thing being approved.
 func TestReviewKeepsDigestsInDetails(t *testing.T) {
-	prepared := preparedAccount(boundedmeta.Layer3PolicyMerkleAllowlist, boundedmeta.AdminAuthorizationAdmin, true, 11)
+	prepared := preparedAccount(boundedmeta.Layer3PolicyMerkleAllowlist, "", true, 11)
 	m := Model{viewState: ViewGenerateReview, width: 80, height: 23, standalone: true, forms: formsState{review: &prepared}}
 	main := m.renderGenerateReview()
 	for _, hidden := range []string{prepared.Fingerprint, prepared.ReviewFingerprint, prepared.BoundaryDigest} {
@@ -100,7 +101,7 @@ func TestReviewKeepsDigestsInDetails(t *testing.T) {
 	m.viewState = ViewGenerateReviewDetails
 	m.height = 400
 	details := m.renderGenerateReviewDetails()
-	for _, want := range []string{prepared.Fingerprint, prepared.ReviewFingerprint, prepared.BoundaryDigest, prepared.AdminKeyID, prepared.CosignerKeyID, "RECIPIENT" + strings.Repeat("0", 47) + "9"} {
+	for _, want := range []string{prepared.Fingerprint, prepared.ReviewFingerprint, prepared.BoundaryDigest, prepared.CosignerKeyID, "RECIPIENT" + strings.Repeat("0", 47) + "9"} {
 		if !strings.Contains(details, want) {
 			t.Errorf("details lack %q:\n%s", want, details)
 		}
@@ -114,7 +115,7 @@ func TestTimelockPoliciesReviewHonestly(t *testing.T) {
 		{boundedmeta.Layer3PolicyFixedAllowlistTimelock, "inline", "whole list is public"},
 		{boundedmeta.Layer3PolicyMerkleAllowlistTimelock, "Merkle", "partly hidden"},
 	} {
-		prepared := preparedAccount(test.policy, boundedmeta.AdminAuthorizationAdmin, true, 11)
+		prepared := preparedAccount(test.policy, "", true, 11)
 		prepared.Parameters[unlockRoundParameter] = "50000000"
 		m := Model{viewState: ViewGenerateReview, width: 80, height: 23, standalone: true, forms: formsState{review: &prepared}}
 		view := m.renderGenerateReview()
@@ -138,8 +139,8 @@ func TestTimelockReviewStatesWhatTheLockDoesNot(t *testing.T) {
 	}{
 		{"no list, spending key", boundedmeta.Layer3PolicyTimelock, boundedmeta.AdminAuthorizationSpend, boundedmeta.PolicyGateLayer3,
 			[]string{"any, once unlocked", "after the unlock round", "rekey out of this boundary"}},
-		{"no list, admin key", boundedmeta.Layer3PolicyTimelock, boundedmeta.AdminAuthorizationAdmin, boundedmeta.PolicyGateNone,
-			[]string{"any, once unlocked", "even before the unlock round"}},
+		{"no list, ungated spending key", boundedmeta.Layer3PolicyTimelock, boundedmeta.AdminAuthorizationSpend, boundedmeta.PolicyGateNone,
+			[]string{"any, once unlocked", "Spending key alone", "rekey out of this boundary"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			prepared := preparedAccount(test.policy, test.rekey, false, 0)
@@ -219,7 +220,7 @@ func TestCustomPolicyIsLabelledAsCustom(t *testing.T) {
 // A reference edited after review must not change what is generated, so the
 // request carries the resolved values, and the comparison values go with it.
 func TestReviewedRequestCarriesTheResolvedValues(t *testing.T) {
-	prepared := preparedAccount(boundedmeta.Layer3PolicyMerkleAllowlist, boundedmeta.AdminAuthorizationAdmin, true, 2)
+	prepared := preparedAccount(boundedmeta.Layer3PolicyMerkleAllowlist, "", true, 2)
 	prepared.Parameters[boundedmeta.CosignerPublicKeyParameter] = "resolved"
 	message := reviewedGenerateMessage(prepared, "id")
 	if message.Parameters[boundedmeta.CosignerPublicKeyParameter] != "resolved" {
@@ -279,7 +280,7 @@ func reviewedResult(address string, prepared PrepareGenerateResultMessage) (Mode
 
 func TestReceiptNamesTheSavedAccountAndNeverOverwrites(t *testing.T) {
 	t.Chdir(t.TempDir())
-	prepared := preparedAccount(boundedmeta.Layer3PolicyFixedAllowlist, boundedmeta.AdminAuthorizationAdmin, false, 2)
+	prepared := preparedAccount(boundedmeta.Layer3PolicyFixedAllowlist, "", true, 2)
 	m, result := reviewedResult("ADDRESS", prepared)
 	m = m.settleGenerateReview(result)
 	m.forms.generatedAddress = result.Address
@@ -297,7 +298,7 @@ func TestReceiptNamesTheSavedAccountAndNeverOverwrites(t *testing.T) {
 	}
 	if receipt.Schema != boundary.ReceiptSchemaV1 || receipt.Address != "ADDRESS" || receipt.KeyType != boundary.KeyTypeV1 ||
 		receipt.GrammarFingerprint != prepared.ReviewFingerprint || receipt.ShapeFingerprint != prepared.Fingerprint ||
-		receipt.BoundaryDigest != prepared.BoundaryDigest || receipt.AdminKeyID != prepared.AdminKeyID {
+		receipt.BoundaryDigest != prepared.BoundaryDigest || receipt.CosignerKeyID != prepared.CosignerKeyID {
 		t.Fatalf("receipt = %+v", receipt)
 	}
 	info, err := os.Stat(filepath.Base(m.forms.receiptPath))
@@ -315,7 +316,7 @@ func TestReceiptNamesTheSavedAccountAndNeverOverwrites(t *testing.T) {
 // Every way a review can fail to produce an account must leave nothing behind
 // for a later account to inherit.
 func TestReceiptNeverCrossesAccounts(t *testing.T) {
-	prepared := preparedAccount(boundedmeta.Layer3PolicyFixedAllowlist, boundedmeta.AdminAuthorizationAdmin, false, 2)
+	prepared := preparedAccount(boundedmeta.Layer3PolicyFixedAllowlist, boundedmeta.AdminAuthorizationSpend, false, 2)
 	for _, test := range []struct {
 		name   string
 		mutate func(*GenerateResultMsg)
@@ -439,6 +440,19 @@ func TestRekeySummaryStatesItsPolicyGate(t *testing.T) {
 	m := Model{viewState: ViewGenerateReview, width: 80, height: 23, standalone: true, forms: formsState{review: &prepared}}
 	if view := m.renderGenerateReview(); !strings.Contains(view, "if the policy allows") || strings.Contains(view, "Panel lines") {
 		t.Fatalf("review:\n%s", view)
+	}
+}
+
+// A refused account and an authority this client doesn't know must each say so,
+// never read as an ordinary spending-key rekey.
+func TestRekeySummaryNamesRefusedAndUnknownAuthorities(t *testing.T) {
+	refused := preparedAccount(boundedmeta.Layer3PolicyFixedAllowlist, "", false, 2)
+	if label, note := reviewRekey(refused); label != "None" || !strings.Contains(note, "No rekey path") {
+		t.Fatalf("refused rekey = %q, %q", label, note)
+	}
+	unknown := preparedAccount(boundedmeta.Layer3PolicyFixedAllowlist, "admin_key", false, 2)
+	if label, note := reviewRekey(unknown); !strings.Contains(label, "Unknown authority admin_key") || strings.Contains(label, "Spending key") || !strings.Contains(note, "cannot describe") {
+		t.Fatalf("unknown rekey = %q, %q", label, note)
 	}
 }
 

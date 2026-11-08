@@ -37,15 +37,15 @@ another merely because two dimensions currently use the same string.
 
 | Dimension | Question it answers | Examples | Source of truth |
 |---|---|---|---|
-| **Key type** | What durable kind of account or witness key is this? | `ed25519`, `aplane.falcon1024.v1`, `aplane.corridor.v1` | Stored `key_type`; provider/template definition |
+| **Key type** | What durable kind of account or witness key is this? | `ed25519`, `aplane.falcon1024.v1`, `aplane.falcon1024-b.v1` | Stored `key_type`; provider/template definition |
 | **Account authorization type** | What protocol-level mechanism authorizes the account? | native signature, DSA LogicSig, generic LogicSig | Key category and stored key material |
 | **Authority lifecycle** | How does the account's authorizer evolve over time? | no mandatory rotation; mandatory per-spend rotation to the next stage (`rotating_lsig`) | Key category; for rotating types the `internal/rotatingkey` profile |
 | **Authorization contract** | Which reusable, versioned on-chain envelope and metadata vocabulary constrain this LogicSig? | `bounded1` | Template `bounded.contract` and durable `bounded_authorization.contract` |
 | **Policy/profile** | What concrete behavior narrows the account contract? | fixed allowlist, Merkle recipient proof, timelock, Corridor composition | Full key-type provider/template plus behavior parameters |
 | **Base key type** | Which signature construction produces the account's DSA signature arguments? | `aplane.falcon1024.v1`, `aplane.ed25519.v1` | Stored `base_key_type` and composed provider definition |
-| **Auxiliary authority enrollment** | Which additional authority participates, for which role or operation, and under whose custody? | cosigner witness, external contract-admin witness | Embedded public key, durable metadata, and custody-specific message contract |
+| **Auxiliary authority enrollment** | Which additional authority participates, for which role or operation, and under whose custody? | cosigner witness | Embedded public key, durable metadata, and custody-specific message contract |
 | **Signing flow** | Which versioned client/server protocol obtains a usable signature for this key? | empty ordinary flow, `bounded1`, `cosigner1`, `bounded-cosigner1`, `rotating1` | Signer-advertised `signing_flow` |
-| **Endpoint choreography** | Which ordered calls implement the selected flow for this transaction path? | `/sign`; `/sign/component` then `/sign/assemble`; `/sign/bounded-admin` then `aprekey`; `/sign/rotating/prepare` then `/sign/rotating/sign` | Flow contract, transaction classification, and HTTP DTOs |
+| **Endpoint choreography** | Which ordered calls implement the selected flow for this transaction path? | `/sign`; `/sign/component` then `/sign/assemble`; `/sign/rotating/prepare` then `/sign/rotating/sign` | Flow contract, transaction classification, and HTTP DTOs |
 | **Provider and routing family** | Which registered implementation performs keygen, derivation, signing, or assembly? | composed provider routed through `aplane.falcon1024`; dedicated guarded provider | Provider registry and `RoutingFamily()` |
 | **Principal authorization** | May the authenticated caller invoke this operation on the target identity/resource? | `sign.request`, `sign.component`, `sign.assemble` | Reserved product principal, closed action allowlist, and HTTP/admin enforcement point |
 | **Signer policy domain** | Which off-chain rules gate release of a signature that the key and on-chain program could produce? | client-signing policy, cosigner policy | Node role, the node's policy documents, and the selected policy key |
@@ -68,15 +68,15 @@ The terms are related, but none is a synonym for another:
 - A **signing flow** is a wire-routing capability, not an on-chain program.
   Clients select it from inventory and must fail closed on unknown values.
 - An **endpoint choreography** is the transaction-path-specific sequence inside
-  a flow. One key-level flow can have more than one path: a bounded spend uses
-  ordinary `/sign`, while an admin-key rekey uses `/sign/bounded-admin` and
-  external completion.
+  a flow. One key-level flow can have more than one path: a `bounded1` spend
+  and a spending-key rekey both use ordinary `/sign`, but under their own
+  argument-slot rules, and the rekey forces review.
 - A **provider** is an implementation mechanism. Changing registry ownership or
   routing does not by itself change a key type, authorization contract, or
   signing flow, although behavior-visible changes may require versioning those
   contracts.
 
-Four adjectives recur when combinations are discussed. Each has a narrow
+Three adjectives recur when combinations are discussed. Each has a narrow
 meaning:
 
 - **Nonrotating** means no mandatory per-spend rotation. It does not mean the
@@ -90,10 +90,6 @@ meaning:
   separate custody and authorization role. Falcon plus Ed25519 signatures
   derived from one signer-held seed are a multi-algorithm construction, not a
   cosigner.
-- **Admin-keyed** means a distinct external key participates in a named
-  administrative operation. In current `bounded1` it co-authorizes pure rekey
-  with the spending key; it cannot spend or recover a lost spending key. The
-  `apadmin` management client is not this cryptographic authority.
 
 The word **contract** has three related but distinct uses in APlane:
 
@@ -102,7 +98,7 @@ The word **contract** has three related but distinct uses in APlane:
 - A **wire or storage contract** is a compatibility-bearing DTO, file shape, or
   behavioral guarantee, indexed in `ARCH_CONTRACTS.md`.
 - A **message or transcript contract** is an exact cryptographic encoding and
-  domain, such as `APLANE_COSIGNER_V1` or `APLANE_BOUNDED_ADMIN_AUTH_V1`.
+  domain, such as `APLANE_COSIGNER_V1` or `APLANE_BOUNDED_COSIGNER_ASSEMBLY_V1`.
 
 Likewise, account authorization is distinct from principal authorization and
 signer policy. The account key and LogicSig determine what can authorize the
@@ -152,7 +148,7 @@ Runtime selection follows these rules:
 3. Signer inventory projects a `signing_flow`; the client routes on that field,
    not on key-type naming conventions, `base_key_type`, or provider family.
 4. Transaction classification may choose a path-specific choreography inside
-   the flow, such as bounded spend versus external-admin rekey.
+   the flow, such as bounded spend versus spending-key rekey.
 5. HTTP principal authorization decides whether the caller may invoke the
    endpoint. Signer or cosigner policy independently decides whether the specific
    transaction may receive a signature.
@@ -173,9 +169,8 @@ from the presence of a witness key alone.
 | `falcon1024` | Native PQ | none | protocol Falcon-1024 scheme `f1`, self-owned | none | empty flow; `/sign`; supported consensus v42 or v43; top-level `PQsig` |
 | `aplane.falcon1024.v1` | DSA LogicSig | plain DSA | Falcon-1024, self-owned | none | empty flow; `/sign` |
 | `aplane.falcon1024-allowlist.v1` | DSA LogicSig | bounded `bounded1`; fixed recipient allowlist | `aplane.falcon1024.v1` | none | `bounded1`; spend/rekey through `/sign` as permitted by the profile |
-| `aplane.falcon1024-allowlist-lock.v1` | DSA LogicSig | bounded `bounded1`; fixed recipient allowlist | `aplane.falcon1024.v1` | external Falcon contract admin for rekey | `bounded1`; spend through `/sign`, admin rekey through `/sign/bounded-admin` plus `aprekey` |
 | `aplane.falcon1024-cosigner1024.v1` | DSA LogicSig | dedicated guarded verifier | `aplane.falcon1024.v1` | signer-custodied Falcon cosigner witness | `cosigner1`; user `/sign/component`, cosigner `/sign/component`, then `/sign/assemble` |
-| `aplane.corridor.v1` | DSA LogicSig | bounded `bounded1`; framework Merkle recipient allowlist | `aplane.falcon1024.v1` | signer-custodied Falcon cosigner on spend; distinct external Falcon admin on rekey | `bounded-cosigner1`; `/plan`, kind-tagged `/sign/component`, then `/sign/assemble` |
+| `aplane.falcon1024-b.v1`, Corridor preset | DSA LogicSig | bounded `bounded1`; framework Merkle recipient allowlist; rekeys refused | `aplane.falcon1024.v1` | signer-custodied Falcon cosigner on spend | `bounded-cosigner1`; `/plan`, kind-tagged `/sign/component`, then `/sign/assemble` |
 | `aplane.rotating-triple-xmss.v1` | DSA LogicSig (`rotating_lsig`) | dedicated compiled stage program; a new program per spend | Falcon-1024 and Ed25519 stage keys and an RFC 8391 XMSS tree shared by 1,024 stages, derived from one seed | none | `rotating1`; the signer also chooses the stage's one-time leaf |
 | `aplane.rotating-triple-slhdsa.v1` | DSA LogicSig (`rotating_lsig`) | dedicated compiled stage program; a new program per spend | Falcon-1024, two-layer SLH-DSA-SHA2-128 and Ed25519 per-stage keys derived from one seed | none | `rotating1`; stateless hash signing, no leaf allocation |
 | `aplane.rotating-triple-wotsc.v1` | DSA LogicSig (`rotating_lsig`) | dedicated compiled stage program; a new program per spend | Falcon-1024, Ed25519 and a tree of 64 WOTS+C keys per stage, derived from one seed | none | `rotating1`, as XMSS; the signer chooses the stage's one-time leaf |
@@ -253,34 +248,32 @@ declaration that every combination is implemented or safe to compose.
 
 ### Capability map
 
-For DSA LogicSig accounts, four booleans give a useful overview:
-`rotating × bounded × cosigned × external-admin-keyed`. Native accounts and
+For DSA LogicSig accounts, three booleans give a useful overview:
+`rotating × bounded × cosigned`. Native accounts and
 generic TEAL-only LogicSigs are outside the map. "Bounded" means the
 implemented `bounded1` contract; a rotating bounded contract would need its
 own explicit definition.
 
-| Rotating | Bounded | Cosigned | No external admin key | External admin key |
-|---|---|---|---|---|
-| No | No | No | **Implemented:** plain Falcon and Ed25519 LogicSigs | **Design required:** no current combined contract |
-| No | No | Yes | **Implemented:** dedicated Falcon/Falcon guarded account | **Design required:** no current combined contract |
-| No | Yes | No | **Implemented:** bounded allowlist and timelock profiles | **Implemented:** `aplane.falcon1024-allowlist-lock.v1` |
-| No | Yes | Yes | **Supported profile shape:** bounded cosigner spend gate with no admin operations | **Implemented:** `aplane.corridor.v1` |
-| Yes | No | No | **Implemented:** `aplane.rotating-triple-xmss.v1`, `aplane.rotating-triple-slhdsa.v1`, `aplane.rotating-triple-wotsc.v1` | **Design required:** current rotating contracts have no external-admin path |
-| Yes | No | Yes | **Design required:** rotating plus external cosigner | **Design required:** rotating plus cosigner plus external admin |
-| Yes | Yes | No | **Design required:** rotating plus bounded policy | **Design required:** rotating bounded policy plus external admin |
-| Yes | Yes | Yes | **Design required:** rotating bounded policy plus cosigner | **Design required:** all four capabilities |
+| Rotating | Bounded | Cosigned | Status |
+|---|---|---|---|
+| No | No | No | **Implemented:** plain Falcon and Ed25519 LogicSigs |
+| No | No | Yes | **Implemented:** dedicated Falcon/Falcon guarded account |
+| No | Yes | No | **Implemented:** bounded allowlist and timelock profiles |
+| No | Yes | Yes | **Implemented:** the Corridor preset of `aplane.falcon1024-b.v1` |
+| Yes | No | No | **Implemented:** `aplane.rotating-triple-xmss.v1`, `aplane.rotating-triple-slhdsa.v1`, `aplane.rotating-triple-wotsc.v1` |
+| Yes | No | Yes | **Design required:** rotating plus external cosigner |
+| Yes | Yes | No | **Design required:** rotating plus bounded policy |
+| Yes | Yes | Yes | **Design required:** rotating bounded policy plus cosigner |
 
 "Implemented" names an existing type, not arbitrary combinations of
-algorithms and policies. "Supported profile shape" is an option the existing
-contract admits, not a shipped template; a concrete profile still needs
-validation and tests. "Design required" makes no claim that the combination is
+algorithms and policies. "Design required" makes no claim that the combination is
 compatible merely because each capability exists separately.
 
-The no-admin column does not say whether rekey is allowed. The bundled Falcon
-allowlist and timelock profiles permit spending-key-authorized rekey, whereas a
+The map does not say whether rekey is allowed. The Falcon allowlist and
+timelock profiles permit spending-key-authorized rekey, whereas a
 cosigner-enabled `bounded1` profile cannot: `boundedmeta` rejects a
 `spending_key` rekey operation when a cosigner is present, so such a profile
-either omits rekey or uses the external-admin path.
+declares no rekey operation.
 
 ### Authority belongs to operations
 
@@ -296,18 +289,16 @@ authority can do on each operation and which other signatures stay required.
 | Recovery | What survives loss of each key, unavailable cosigners, cache loss, and restore |
 
 For Corridor, ordinary spending requires the spending key and the cosigner
-under the bounded spending policy. Pure administrative rekey instead requires
-the spending key and the external contract admin under the frozen admin normal
-form; the spend cosigner and the Layer 3 policy do not gate that path
-(`boundedmeta` forces `policy_gate: none` on admin-key operations). This is
-separation of authority by operation, not a general admin override.
+under the bounded spending policy, and no operation can rekey the account. A
+lost cosigner therefore cannot be replaced; a later release adds a rekey-to
+list for this.
 
 Current `bounded1` exposes only rekey as an admin operation. It has no
 policy-editing or witness-replacement API; rekey can install a new authorizing
 program, which is different from mutating an existing program's policy.
 
 Current rotating contracts permit only the predetermined next-stage
-transition. They have no arbitrary exit and no external-admin recovery path.
+transition. They have no arbitrary exit.
 Combining rotation with administrative rekey must reconcile those restrictions
 explicitly; it cannot inherit both contracts unchanged.
 
@@ -339,8 +330,8 @@ Five ideas stay separate:
   argument slots, and the TEAL that verifies it.
 - A **signature construction** is the all-of list of primitives.
 - An **authority binding** ties a construction and its keys to a role. The role and the
-  contract decide when a proof is required and what message it signs, so spending,
-  cosigner and contract-admin proofs each keep their own transcript. An assembly
+  contract decide when a proof is required and what message it signs, so spending
+  and cosigner proofs each keep their own transcript. An assembly
   receipt is another use of the spending construction.
 - **Bounded contract support** says which workflows are reviewed for a construction
   under a contract. It isn't a property of the cryptography, and a matching key size
@@ -447,27 +438,19 @@ Canonical forms:
   `publisher.family.vN`, where `vN` is a literal `v` followed by a positive
   decimal version, for example `aplane.falcon1024.v1`,
   `aplane.htlc.v1`, `aplane.falcon1024-allowlist.v1`, and
-  `aplane.falcon1024-allowlist-lock.v1`
+  `aplane.falcon1024-b.v1`
 - witness keys use the same canonical key-type identifier contract,
   currently `aplane.witness-falcon1024.v1`; signer-custodied instances serve
   as cosigner component-signing keys selected by 52-character txid-shaped
   Witness Key IDs, not spending accounts. The
   compatibility wire/storage field name for that selector remains
   `component_key`.
-- external bounded contract-admin authorities use the same witness key type
-  and Witness Key ID, but private material remains in a structurally distinct
-  standalone `.adm` container owned by `aprekey`. It is never a signer-managed
-  `.key`/`.cos` credential or spending account.
-- `aplane.falcon1024-allowlist-lock.v1` is reserved for the schema-v2
-  framework-owned bounded1 allowlist. Its spending key and contract admin key
-  are both Falcon-1024. Bounded1 has no Ed25519 contract-admin variant and no
-  admin-key algorithm selector.
 - the dedicated guarded account key type
   `aplane.falcon1024-cosigner1024.v1` names both its account DSA and cosigner DSA.
-  `aplane.corridor.v1` is instead an optional schema-v2 composed template: its
-  durable `bounded_authorization` metadata declares `bounded1`, a `cosigner1`
-  spend gate, and the framework Merkle allowlist policy. Clients must not infer
-  those dimensions from the key-type string.
+  An `aplane.falcon1024-b.v1` Corridor account instead records `bounded1`, a
+  `cosigner1` spend gate, and the framework Merkle allowlist policy in its
+  durable `bounded_authorization` metadata. Clients must not infer those
+  dimensions from the key-type string.
 
 YAML templates declare `publisher`, `family`, and integer `version`; the
 computed key type is `publisher.family.v<version>`. Clients and tools must send
@@ -521,7 +504,7 @@ LogicSig admits.
 
 The schema-v2 composed-DSA contract uses **bounded DSA** for DSA-backed LogicSigs
 whose admitted transaction effects, maximum fee, argument layout, and optional
-contract-admin operations are represented by canonical signer metadata and
+rekey operation are represented by canonical signer metadata and
 enforced in both planning and TEAL. Its machine names are `bounded` and
 `bounded1`.
 
@@ -548,22 +531,14 @@ They participate in a specific account or operation contract:
 
 | Type | Custody and use | Signer key type? |
 |---|---|---|
-| **Witness key, cosigner enrollment** | Stored as a cosigner-managed `.cos` credential and used through `/sign/component`; its signature is assembled into a guarded-account LogicSig. | Yes. `aplane.witness-falcon1024.v1`, durable category `witness`; never accepted as a spending account by ordinary `/sign`. |
-| **Witness key, contract-admin enrollment** | Stored in a standalone encrypted `.adm` artifact and used only for a declared bounded admin operation through `aprekey`. | The key form has the same witness key type, but this custody container is never an `apstore` or signer key. |
+| **Witness key** | Stored as a cosigner-managed `.cos` credential and used through `/sign/component`; its signature is assembled into a guarded or bounded-cosigner LogicSig. | Yes. `aplane.witness-falcon1024.v1`, durable category `witness`; never accepted as a spending account by ordinary `/sign`. |
 
-The current authority overlays are therefore **unguarded**, **cosigner guarded**,
-and **contract-admin-authorized operation**. Contract-admin authority is
-operation-specific: the spending key still authenticates every bounded path,
-and the external admin key currently authorizes only a pure rekey.
+The current authority overlays are therefore **unguarded** and **cosigner
+guarded**.
 
-Witness **form**, **custody**, and **enrollment** are separate dimensions. The
-key record carries no role field: the program that embeds the public key names
-the role, and the custodian controls which message domain can be signed. A
-networked signer may produce only `APLANE_COSIGNER_V1` component-domain
-signatures; the offline ceremony may produce only
-`APLANE_BOUNDED_ADMIN_AUTH_V1` signatures. One witness keypair should serve one
-role for its entire life. The software rejects collisions visible in local
-stores and cosigner references, but cannot detect out-of-band key copying.
+A witness key is a cosigner key. The program that embeds its public key names the
+account it serves, and the networked signer that holds it may produce only
+`APLANE_COSIGNER_V1` component-domain signatures.
 
 Examples of the composed ontology:
 
@@ -572,9 +547,8 @@ Examples of the composed ontology:
 | `ed25519` | Native | n/a | none |
 | `aplane.falcon1024.v1` | DSA LogicSig | Plain DSA | none |
 | `aplane.falcon1024-allowlist.v1` | DSA LogicSig | Bounded DSA (`bounded1`) | none |
-| `aplane.falcon1024-allowlist-lock.v1` | DSA LogicSig | Bounded DSA (`bounded1`) | external Falcon witness enrolled as contract admin for rekey |
 | `aplane.falcon1024-cosigner1024.v1` | DSA LogicSig | dedicated compiled guarded verifier | signer-custodied Falcon witness enrolled as cosigner |
-| `aplane.corridor.v1` | DSA LogicSig | Bounded DSA (`bounded1`) with framework Merkle policy | signer-custodied Falcon cosigner on spend plus external Falcon contract admin on rekey |
+| `aplane.falcon1024-b.v1`, Corridor preset | DSA LogicSig | Bounded DSA (`bounded1`) with framework Merkle policy; rekeys refused | signer-custodied Falcon cosigner on spend |
 | `aplane.htlc.v1` | Generic LogicSig | generic TEAL policy | none |
 | `aplane.rotating-triple-xmss.v1` | DSA LogicSig (`rotating_lsig`) | dedicated compiled stage program (Falcon-1024, RFC 8391 XMSS-SHA2_16_256 and Ed25519, all required), a new program per spend; one XMSS tree per 1,024 stages, 64 leaves per stage | none; the signer reads the chain for the live stage (`rotating1` flow) |
 | `aplane.rotating-triple-slhdsa.v1` | DSA LogicSig (`rotating_lsig`) | dedicated compiled stage program (Falcon-1024, two-layer SLH-DSA-SHA2-128 and Ed25519, all required), a new program per spend | none; `rotating1`, no one-time leaf state |
@@ -588,8 +562,7 @@ Examples of the composed ontology:
 | `falcon1024` | n/a | `native_pq` | Native protocol Falcon-1024 account (scheme `f1`, supported consensus v42 or v43); not a LogicSig |
 | `aplane.falcon1024.v1` | `aplane.falcon1024` | `dsa_lsig` | Internal-only Falcon signature provider; existing accounts remain supported |
 | `aplane.falcon1024-cosigner1024.v1` | `aplane.falcon1024-cosigner1024` | `dsa_lsig` | Library-visible guarded account: Falcon-1024 user + Falcon-1024 cosigner component signatures |
-| `aplane.falcon1024-allowlist-lock.v1` | `falcon1024-allowlist-lock` | `dsa_lsig` | Optional bounded1 composed template: Falcon spending, fixed recipient allowlist, external Falcon contract-admin rekey |
-| `aplane.corridor.v1` | `corridor` | `dsa_lsig` | Optional bounded1 composed template: Falcon spending, framework Merkle recipient policy, cosigner-gated spend, and external-admin pure rekey |
+| `aplane.falcon1024-b.v1` | `falcon1024-b` | `dsa_lsig` | Default-enabled general bounded type on signer nodes: each account is one bounded1 shape chosen from a closed grammar |
 | `aplane.ed25519.v1` | `aplane.ed25519` | `dsa_lsig` | Internal-only Ed25519 LogicSig DSA provider; distinct from native `ed25519` |
 | `aplane.htlc.v1` | `htlc` | `generic_lsig` | Optional template library: hash time-locked ALGO payment |
 | `aplane.falcon1024-allowlist.v1` | `falcon1024-allowlist` | `dsa_lsig` | Bundled bounded1 composed template: installed/enabled in new signer-role stores; Falcon + fixed receiver allowlist |
@@ -601,7 +574,7 @@ Examples of the composed ontology:
 
 ## The three axes
 
-A "key type" (e.g. `aplane.falcon1024.v1`, `aplane.corridor.v1`,
+A "key type" (e.g. `aplane.falcon1024.v1`, `aplane.falcon1024-b.v1`,
 `aplane.falcon1024-cosigner1024.v1`) is asked three different *kinds* of
 question, and each kind uses a different mechanism because each is callable from
 a different place.
@@ -906,9 +879,7 @@ signing helpers that the diagram omits) and gives a one-line role for each.
 | `lsig/falcon1024` | Falcon-1024 DSA base provider; `v1/composer.go` is the Falcon-specific wrapper over `lsig/composeddsa` |
 | `lsig/ed25519lsig` | Library-visible Ed25519 LogicSig DSA provider |
 | `lsig/falcon1024_guarded` | Falcon/Falcon guarded-account DSA provider (`aplane.falcon1024-cosigner1024.v1`) |
-| `internal/boundedadmin/{message,program,protocol,authorization,helpersign}` | External Falcon contract-admin transcript, program validation, request/response protocol, and completion |
-| `internal/witness` | Role-neutral witness-key vocabulary and identity (key IDs, sizes, public references) |
-| `internal/witness/artifact` | Standalone witness-key custody artifact format |
+| `internal/witness` | Witness-key vocabulary and identity (key IDs, sizes, public references) |
 | `internal/falconparams` | Client-safe Falcon-1024 size constants shared by LogicSig, witness, and signer metadata |
 | `internal/boundedmeta` | Durable, non-secret bounded-authorization metadata stored with a LogicSig key |
 | `internal/merkleallowlist` | Merkle recipient allowlist construction and proofs used by bounded templates |
@@ -918,7 +889,6 @@ signing helpers that the diagram omits) and gives a one-line role for each.
 | `lsig/rotatingtriplewotsc` | Rotating Falcon-1024 + WOTS+C + Ed25519 key type: stage program, signer-side operations, and signer registration |
 | `lsig/rotatingfamily` | What the rotating key types share: registration descriptor and generator (`signerreg`), the stage's Ed25519 and Falcon-1024 half (`stagesign`), stage program salt search and strict parse (`stageprog`), the contract suite each key type runs (`rotatingtest`), and the offline AVM interpreter verifier tests use (`avmsim`) |
 | `internal/crypto/xmss` | RFC 8391 XMSS-SHA2_16_256: tree generation, signing at a caller-chosen leaf, verification; stateless by design |
-| `library/retired/aplane.corridor.v1.yaml` | Retired schema-v2 bounded-cosigner Corridor profile; compiled by `lsig/composeddsa` after product-store install |
 | `lsig/dsafamily` | Client-safe registration descriptor shared by DSA families (signer-side descriptor in `lsig/dsafamily/signerreg`) |
 | `lsig/signerreg` | Registers all built-in LogicSig signer-side providers with their catalog availability |
 | `internal/signerapp/templates` | Read-only keystore template reload coordinator and state/fingerprint policy |
@@ -932,7 +902,7 @@ signing helpers that the diagram omits) and gives a one-line role for each.
 | Category | Example Key Types | Has Keys | Signing |
 |----------|-------------------|----------|---------|
 | `generic_lsig` | `aplane.htlc.v1` after template import | No | TEAL-only authorization |
-| `dsa_lsig` | `aplane.falcon1024.v1`, `aplane.ed25519.v1`, bounded `aplane.falcon1024-allowlist-lock.v1`, guarded `aplane.falcon1024-cosigner1024.v1`, `aplane.corridor.v1`; bundled Falcon templates after install | Yes | Cryptographic signature |
+| `dsa_lsig` | `aplane.falcon1024.v1`, `aplane.ed25519.v1`, bounded `aplane.falcon1024-b.v1`, guarded `aplane.falcon1024-cosigner1024.v1`; bundled Falcon templates after install | Yes | Cryptographic signature |
 | `rotating_lsig` | `aplane.rotating-triple-xmss.v1`, `aplane.rotating-triple-slhdsa.v1`, `aplane.rotating-triple-wotsc.v1` | Yes | Per-stage hybrid signatures through the `rotating1` flow; signer-side codec, not an `lsigprovider` provider |
 
 ### Interface hierarchy
@@ -1234,7 +1204,7 @@ salt style is not exposed through public wire DTOs.
 Schema-v2 composed templates add a composer-owned transaction envelope ahead
 of Layer 3. Authentication remains first; fee/type/effect dispatch is second;
 Layer 3 runs on admitted spends and on spending-key rekeys only when the profile
-selects `policy_gate: layer3`; external-admin rekeys skip Layer 3. The composer
+selects `policy_gate: layer3`. The composer
 owns all `__aplane_bounded1_` labels and the `bounded_` parameter namespace.
 
 `GenerateTEAL` emits the program in this order: the pragma, any strict-mode
@@ -1247,7 +1217,7 @@ Layer 3 takes one of three forms:
 
 | Source | Template declares | Stored `layer3_policy` | Bundled example |
 |---|---|---|---|
-| Framework policy | `bounded.layer3` and no `teal` | `fixed_allowlist`, `merkle_allowlist`, `timelock`, `fixed_allowlist_timelock`, or `merkle_allowlist_timelock` | `aplane.falcon1024-allowlist.v1`, `aplane.corridor.v1` |
+| Framework policy | `bounded.layer3` and no `teal` | `fixed_allowlist`, `merkle_allowlist`, `timelock`, `fixed_allowlist_timelock`, or `merkle_allowlist_timelock` | `aplane.falcon1024-allowlist.v1`, every `aplane.falcon1024-b.v1` shape |
 | Author TEAL | `teal` and no `bounded.layer3` | `custom` | `aplane.falcon1024-timelock.v1`, `aplane.falcon1024-allowlist.v2` |
 | Framework allowlist plus author TEAL | `bounded.layer3` and `teal` | `fixed_allowlist_custom` or `merkle_allowlist_custom` | None |
 
@@ -1273,8 +1243,8 @@ Bounded-capable bases expose a static signature-argument layout. Bounded1 keeps
 `LSigProvider.BuildArgs` unchanged, then assembles declared signer-derived and
 caller runtime Layer-3 arguments into frozen slots selected by the plan. Durable
 key metadata, rather than the installed YAML template, records path routing,
-base argument count/sizes, all argument declarations and slots, profile, Falcon
-contract-admin metadata, and reviewed per-path opcode ceilings.
+base argument count/sizes, all argument declarations and slots, profile,
+optional cosigner authorization, and reviewed per-path opcode ceilings.
 
 Bounded emission uses the template/provider's declared derivation contract; it
 does not invent a second bounded salt. Current bundled providers compile TEAL
@@ -1438,19 +1408,17 @@ parser/provider builder.
 
 Most DSA providers produce a fixed argument list from one key. Bounded1 starts
 with that base layout, then statically orders signer-derived Layer-3 arguments,
-caller runtime Layer-3 arguments, an optional cosigner signature slot
-(bounded-cosigner1 profiles), and an optional final contract-admin slot.
+caller runtime Layer-3 arguments, and an optional final cosigner signature slot
+(bounded-cosigner1 profiles).
 Each slot records its source, maximum size, and spend/spending-rekey/admin-rekey
-requirement. Interior slots forbidden on a selected path are explicit empty byte
+requirement; no authority uses the admin-rekey path, which stays for encoding
+stability. Interior slots forbidden on a selected path are explicit empty byte
 strings; unused trailing slots may be omitted. Callers cannot populate derived
-or admin slots.
+or cosigner slots.
 
 The planner selects the path and freezes its slots. The executor verifies plan
 integrity, generates only declared derived arguments, and places caller runtime
-arguments only in their declared slots. An admin-key rekey is routed through
-`/sign/bounded-admin`: apsigner returns the base-signature partial with the final
-admin slot reserved, and `aprekey` independently validates the finalized
-transaction and fills only that slot. Durable bounded metadata owns the layout
+arguments only in their declared slots. Durable bounded metadata owns the layout
 and per-path maximum signed size. See
 [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md).
 
@@ -1461,7 +1429,7 @@ the checks. The route decides what is resolved on the client first.
 
 | Route | Path to `GenerateKey` | Client-side resolution |
 |---|---|---|
-| apadmin | IPC `generate_key`, `Session.HandleGenerateKey` | Reads a public `.adm.json` and sends its `bounded_admin_public_key` |
+| apadmin | IPC `generate_key`, `Session.HandleGenerateKey` | Reads a boundary file locally, through `boundary.LoadFile` |
 | apshell, MCP, JS | `POST /admin/generate`, `rest.Service.AdminGenerate` | Expands aliases and sets in `address[]` parameters, through `expandGenerateAddressListParams` |
 | SDKs | `POST /admin/generate` | None |
 
@@ -1483,7 +1451,7 @@ authorization: generation repeats every check.
 | 4 | Reject a cosigner key that collides with an existing authority | `validateVisibleCosignerAuthorityCollisions` |
 | 5 | Take the mutation lock and check the key type is enabled | `keytypestate.CanGenerate` |
 | 6 | Branch: generic LogicSigs go to `generateGenericLSig`; everything else continues below | `genericlsig.IsGenericLSigType` |
-| 7 | Check witness role exclusivity and choose the family generator | `keymgmt.GenerateKeyWithActivatedContext`, `keygen.GetGenerator` |
+| 7 | Choose the family generator | `keymgmt.GenerateKeyWithActivatedContext`, `keygen.GetGenerator` |
 
 For a DSA LogicSig, `generateKey` in `lsig/dsafamily/signerreg/generator.go` then runs:
 
@@ -1493,7 +1461,7 @@ For a DSA LogicSig, `generateKey` in `lsig/dsafamily/signerreg/generator.go` the
 | 9 | Generate the keypair from the seed | The family's keygen ops |
 | 10 | Render TEAL, compile it, and validate the salted address | `deriveSaltedLogicSig`, `DeriveLsigWithSalt`, `lsigsalt` |
 | 11 | Capture the TEAL source and runtime argument definitions | `GenerateTEAL`, `RuntimeArgs` |
-| 12 | For a bounded type, build the durable contract: authority IDs, argument layout and program binding | `BuildBoundedAuthorizationMetadata` |
+| 12 | For a bounded type, build the durable contract: cosigner ID and argument layout | `BuildBoundedAuthorizationMetadata` |
 | 13 | Resolve the reviewed opcode profile | `lsigprovider.ResolveOpcodeProfile` |
 | 14 | Build the payload with bytecode, parameters, metadata and the template fingerprint | `keys.NewAutoSaltedDSALSigPayload`, `SetBoundedAuthorization` |
 | 15 | Check the payload's selector equals the derived address, then save the key file | `Payload.Selector`, `keys.SavePayload` |
@@ -1552,7 +1520,7 @@ The provider holds one composer per shape and no per-account state.
 |---|---|
 | Boundary file | `boundary.ParseFile` parses `aplane.boundary.v1` strictly: no unknown fields, duplicate keys, aliases, merge keys, extra documents, or non-string scalars. The grammar has no field that can carry TEAL, a template, a base key type, a fee, or runtime arguments. |
 | Requests | `selectShape` is the security gate, for file and direct requests alike. The client sends public values, never a path or the YAML, and a cosigner name stays a name for the signer to resolve. |
-| Stored parameters | Canonical values include the selectors `spend_effects`, `rekey_authority`, and `list_encoding`, with `auto` resolved. The generator resolves stored values a second time, so they must select the same shape. Only a shape's declared parameters reach its composer, because those enter the program binding. |
+| Stored parameters | Canonical values include the selectors `spend_effects`, `rekey_authority`, and `list_encoding`, with `auto` resolved. The generator resolves stored values a second time, so they must select the same shape. Only a shape's declared parameters reach its composer, because those enter the canonical behavior encoding. |
 | Encoding | `auto` is inline through 10 recipients and Merkle from 11. Explicit inline stops at 30. The list holds at most 65,536 distinct nonzero addresses. |
 | Timelock | `unlock_round` must be positive. Recipients are optional only with one, and `encoding` needs a list. A spending-key rekey is gated by Layer 3, so it waits for the round too, or the lock could be left at any time. A round means a different time on each network, and it does not bind the program to one. |
 | Fee and arguments | The compiled ceiling is 10,000 microAlgos, and there are no runtime arguments. Base is Falcon-1024. |

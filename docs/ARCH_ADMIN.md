@@ -94,7 +94,8 @@ Transport notes:
   cannot silently retarget a client to the singleton system signer,
 - the current admin protocol version is 7.4 (7.4 renames the writable admin setting
   `boundary_require_admin_key` to `boundary_require_contained`; a 7.3 client's update of
-  the old key is refused as unknown; 7.3 adds `review_fingerprint` and
+  the old key is refused as unknown; 7.4 also removes `admin_key_id` from
+  `prepare_generate_result`; 7.3 adds `review_fingerprint` and
   `boundary_digest` to `prepare_generate_result`, an optional
   `generate_key.expected_boundary_digest`, `per_key_contract` to key types, and the two
   `boundary_require_*` admin settings; 7.2 adds `prepare_generate_key`
@@ -391,7 +392,7 @@ interlocks.
 
 #### Key Management
 
-- `prepare_generate_key`: `key_type`, optional `parameters` -> `prepare_generate_result`: `success`, optional `key_type`, `parameters`, `fingerprint`, `review_fingerprint`, `boundary_digest`, `bounded`, `admin_key_id`, `cosigner_key_id`, `code`, `error`. Local IPC only, under `keys.generate`. It runs generation's checks and reports the resolved request so apadmin can review it. It creates no key, changes no store state, and has no address, because the spending key does not exist yet. A reference name resolves to its public key in `parameters`, and `bounded` carries `contract`, `spend_effects`, `max_fee`, `admin_operations`, `layer3_policy`, and `cosigner_required`
+- `prepare_generate_key`: `key_type`, optional `parameters` -> `prepare_generate_result`: `success`, optional `key_type`, `parameters`, `fingerprint`, `review_fingerprint`, `boundary_digest`, `bounded`, `cosigner_key_id`, `code`, `error`. Local IPC only, under `keys.generate`. It runs generation's checks and reports the resolved request so apadmin can review it. It creates no key, changes no store state, and has no address, because the spending key does not exist yet. A reference name resolves to its public key in `parameters`, and `bounded` carries `contract`, `spend_effects`, `max_fee`, `admin_operations`, `layer3_policy`, and `cosigner_required`
 - `generate_key`: `key_type`, optional `name`, optional `expected_fingerprint`, optional `expected_boundary_digest`, optional `parameters`; accepted over IPC, but generated recovery material is not returned over the admin protocol. the rotating key types (such as `aplane.rotating-triple-wotsc.v1`) require the parameter `network` (a network the signer knows, or a base64 genesis hash)
 - `generate_result`: `success`, optional `address`, `key_type`, `parameters`, `code`, `error`; `mnemonic` and `word_count` fields remain in the schema but are omitted by signer responses
 - `delete_key`: `address` -> `delete_result`: `success`, optional `code`, `error`
@@ -934,22 +935,16 @@ operator cannot see. A selection list that cannot show every row scrolls
 around the selection and keeps the text and buttons below it on screen
 (`fitSelectionList`).
 
-Long byte parameters, including bounded contract-admin public keys, use an atomic paste control
-instead of an editable multi-line field. Activating the control accepts the
-next terminal bracketed-paste event, stores the complete validated value, and
-renders a read-only single-line preview with its middle elided. This behavior
-is shared by standalone `apadmin` and the admin pane embedded in `apconsole`.
-
 Every field that names a file on the machine running `apadmin` can also be
 filled from a file browser (`internal/signerapp/signertui/file_browser.go`):
 `ctrl+o` on the policy file and policy export forms, the cosigner key import
-(file mode) and export forms, the client key import form, the
-contract-admin reference parameter, and the Backups page's export directory
+(file mode) and export forms, the client key import form, and the Backups
+page's export directory
 and import archive (`*.tar.gz`, `*.tgz`). The browser lists one directory at a
 time, directories first, and starts in the directory the field already names,
 else the newest `~/policy-export-*` for a policy file, `~/.ssh` for a client
 key, or the home directory. It lists only the files the field expects
-(`*.json`, `*.pub`, `*.adm.json`, `*.cos.json`; `a` lists all), hides dot entries until `.`,
+(`*.json`, `*.pub`, `*.cos.json`; `a` lists all), hides dot entries until `.`,
 and fills the field with an absolute path; it reads no file contents, so the
 field's own checks still decide. A symbolic link to a file is listed but
 cannot be chosen, since every loader behind these fields takes regular files

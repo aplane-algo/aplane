@@ -30,18 +30,9 @@ const (
 	ErrCodeCacheRefresh = "cache_refresh"
 	// ErrCodeInternal covers unexpected server-side failures.
 	ErrCodeInternal = "internal"
-	// ErrCodeBoundedAdminRequired directs contract-admin operations to the
-	// external bounded-admin completion flow.
-	ErrCodeBoundedAdminRequired = "bounded_admin_required"
 	// ErrCodeBoundedCosignerRequired directs cosigner-gated bounded spends to the
 	// bounded component and assembly flow.
 	ErrCodeBoundedCosignerRequired = "bounded_cosigner_required"
-	// ErrCodeBoundedAdminTargetRejected refuses an admin-key bounded rekey
-	// whose target is not a nonrotating signing credential this signer holds.
-	// Admin rekeys may only move an account to a credential in the signer's
-	// own store; leaving APlane custody is a separate ordinary rekey from
-	// that credential.
-	ErrCodeBoundedAdminTargetRejected = "bounded_admin_target_rejected"
 	// ErrCodeRotatingSigningRequired directs rotating accounts to the rotating
 	// prepare and sign flow.
 	ErrCodeRotatingSigningRequired = "rotating_signing_required"

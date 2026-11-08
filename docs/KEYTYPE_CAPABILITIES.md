@@ -33,21 +33,18 @@ included as normal user-account operations.
 | `falcon1024` | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
 | `aplane.falcon1024.v1` | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
 | `aplane.ed25519.v1` | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
+| `aplane.falcon1024-b.v1` | C | N | C | C | N | N | N | N | N | N | C |
 | `aplane.falcon1024-allowlist.v1` | C | N | C | Y | N | N | N | N | N | N | C |
 | `aplane.falcon1024-allowlist.v2` | C | N | C | Y | N | N | N | N | N | N | C |
-| `aplane.falcon1024-allowlist-lock.v1` | C | N | C | C | N | N | N | N | N | N | C |
 | `aplane.falcon1024-timelock.v1` | C | N | C | C | N | N | N | N | N | N | C |
 | `aplane.falcon1024-cosigner1024.v1` | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
-| `aplane.corridor.v1` | C | N | C | Y | N | N | N | N | N | N | C |
 | `aplane.htlc.v1` | C | C | N | N | N | N | N | N | N | N | N |
 | `aplane.rotating-triple-xmss.v1` | C | N | C | C | C | C | C | C | C | C | C |
 | `aplane.rotating-triple-slhdsa.v1` | C | N | C | C | C | C | C | C | C | C | C |
 | `aplane.rotating-triple-wotsc.v1` | C | N | C | C | C | C | C | C | C | C | C |
 
-The allowlist, timelock, and Corridor templates are retired from the default library in
-favor of the presets of `aplane.falcon1024-b.v1`. Their rows still describe existing accounts.
-The Locked Allowlist and Corridor presets refuse rekeys, where the retired templates
-allowed an admin-key rekey.
+The allowlist and timelock templates are retired from the default library in favor of
+the presets of `aplane.falcon1024-b.v1`. Their rows still describe existing accounts.
 
 ## Capability Columns
 
@@ -70,6 +67,13 @@ allowed an admin-key rekey.
 - `ed25519`, native `falcon1024`, `aplane.falcon1024.v1`, and `aplane.ed25519.v1` do not restrict
   transaction type or special transaction fields at the key-type layer. Local
   signer policy remains the safety boundary.
+- `aplane.falcon1024-b.v1` is the general bounded type. Each account's shape decides
+  which of `pay`, `axfer`, and `asset_opt_in` it admits, whether a recipient list
+  (inline or Merkle) limits non-self destinations, whether spending waits for an
+  unlock round, and whether a cosigner signs every spend. It rejects close,
+  clawback, and all non-transfer transaction types. Rekey is either the bounded1
+  pure self-payment form authorized by the spending key, or refused: such an
+  account, including every Corridor account, has no rekey path.
 - `aplane.falcon1024-allowlist.v1` is a bounded1 template. It admits only pure
   payments and pure asset transfers to self or an inline allowlisted recipient,
   plus asset opt-in. It rejects
@@ -84,10 +88,6 @@ allowed an admin-key rekey.
   fixed-depth proof against the root derived from the key-file recipient list.
   Self-send, asset opt-in, and pure spending-key rekey require no proof. Close,
   clawback, and non-transfer types are rejected.
-- `aplane.falcon1024-allowlist-lock.v1` admits only pure `pay` and `axfer`
-  spends to self or a compiled recipient. It rejects close, clawback, and every other transaction
-  type. Rekey is restricted to the pure payment normal form and additionally
-  requires the external Falcon contract-admin signature.
 - `aplane.rotating-triple-wotsc.v1` admits any transaction type, but every transaction must rekey to an address other
   than the sender, must not close out ALGO, and must have a validity window
   of at most 100 rounds; that is the condition behind every `C`. The signer
@@ -106,15 +106,7 @@ allowed an admin-key rekey.
   cosigner component signature is separate from this table: current cosigner
   authorization requires transfer-route coverage or an explicitly allowed pure
   rekey edge. Other non-transfer targets reject, and rekeys without a matching
-  `rekey_policy.allowed` edge reject. Bounded-cosigner rekeys do not use this gate.
-- `aplane.corridor.v1` is a bounded-cosigner template. Its on-chain LogicSig
-  requires the Falcon spending signature and cosigner signature for every spend,
-  then permits `pay` and `axfer` only when the receiver is self or is proven by
-  a signer-derived 512-byte fixed-depth Merkle proof against the key-file
-  recipient list. Close and clawback fields and non-transfer transaction types
-  are rejected. Rekey is only the bounded pure 0-ALGO self-payment form and
-  requires the distinct offline Falcon contract-admin signature; the cosigner is
-  forbidden on that path.
+  `rekey_policy.allowed` edge reject.
 - `aplane.htlc.v1` admits only an ALGO payment that closes the account: to the
   configured recipient with the configured preimage, in a transaction that expires
   before timeout, or to the configured refund address after timeout.

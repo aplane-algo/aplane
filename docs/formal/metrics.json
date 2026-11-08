@@ -41,7 +41,7 @@
   },
   {
     "spec": "bounded_cosigner",
-    "distinct_states": 199168,
+    "distinct_states": 66304,
     "depth": 4
   },
   {

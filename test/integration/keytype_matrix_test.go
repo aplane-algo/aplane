@@ -11,18 +11,13 @@ import (
 	"embed"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"os"
-	"slices"
 	"strings"
 	"testing"
 	"time"
 
-	boundedauthorization "github.com/aplane-algo/aplane/internal/boundedadmin/authorization"
-	boundedprotocol "github.com/aplane-algo/aplane/internal/boundedadmin/protocol"
-	securecrypto "github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerclient"
@@ -34,7 +29,6 @@ import (
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	edlsigv1 "github.com/aplane-algo/aplane/lsig/ed25519lsig/v1"
 	falcon "github.com/aplane-algo/aplane/lsig/falcon1024"
-	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
 	falconlsigv1 "github.com/aplane-algo/aplane/lsig/falcon1024/v1"
 	"github.com/aplane-algo/aplane/lsig/generictemplate"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
@@ -43,7 +37,6 @@ import (
 	sdkalgod "github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
 	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
-	"github.com/algorand/go-algorand-sdk/v2/mnemonic"
 	"github.com/algorand/go-algorand-sdk/v2/transaction"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
@@ -104,33 +97,6 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 	preimageHash := sha256.Sum256(preimage)
 	timelockRound := baseRound
 	cleanupAuthority := algocrypto.GenerateAccount()
-	// An admin-key rekey may only target a credential the signer holds, so the
-	// test-owned cleanup authority is also imported into the signer. The test
-	// keeps its private key to close rekeyed accounts locally.
-	cleanupMnemonic, err := mnemonic.FromPrivateKey(cleanupAuthority.PrivateKey)
-	if err != nil {
-		t.Fatalf("derive cleanup authority mnemonic: %v", err)
-	}
-	importedCleanup, err := apadmin.ImportKeyWithType("ed25519", cleanupMnemonic)
-	if err != nil {
-		t.Fatalf("import cleanup authority into the signer: %v", err)
-	}
-	if importedCleanup != cleanupAuthority.Address.String() {
-		t.Fatalf("imported cleanup authority %s does not match %s", importedCleanup, cleanupAuthority.Address)
-	}
-	t.Cleanup(func() { _ = apadmin.DeleteKey(importedCleanup) })
-	if !waitForKey(t, signerd.GetURL(), importedCleanup, 10*time.Second) {
-		t.Fatalf("signer did not reload imported cleanup authority %s", importedCleanup)
-	}
-	// A restored plain Falcon LogicSig: the admin-rekey target
-	// rule re-derives such a program through the configured compiler at
-	// release, so a held LogicSig target exercises that path end to end.
-	heldLsigTarget := mustAdminGenerateKey(t, signerClient, signerd, "aplane.falcon1024.v1", nil)
-	allowlistLockAdminPublicKey, allowlistLockAdminPrivateKey, err := signerops.New(nil).GenerateKeypair(randomFalconSeed(t))
-	if err != nil {
-		t.Fatalf("generate matrix allowlist-lock cleanup admin key: %v", err)
-	}
-	t.Cleanup(func() { securecrypto.ZeroBytes(allowlistLockAdminPrivateKey) })
 
 	cases := []includedKeyTypeCase{
 		{
@@ -221,14 +187,6 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 			params:  map[string]string{"recipients": matrixMaximumRecipients(funder.GetAddress())},
 		},
 		{
-			keyType:         "aplane.falcon1024-allowlist-lock.v1",
-			adminPrivateKey: allowlistLockAdminPrivateKey,
-			params: map[string]string{
-				"recipients": matrixMaximumRecipients(funder.GetAddress()),
-				composeddsa.BoundedAdminPublicKeyParameter: hex.EncodeToString(allowlistLockAdminPublicKey),
-			},
-		},
-		{
 			keyType:            "aplane.falcon1024-timelock.v1",
 			params:             map[string]string{"unlock_round": fmt.Sprintf("%d", timelockRound)},
 			positiveFirstValid: timelockRound,
@@ -267,8 +225,7 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 			// accounts reject CloseRemainderTo by contract, so they first rekey to
 			// this test-owned Ed25519 authority and are then closed normally.
 			cleanupPlans := prepareMatrixRekeyCleanups(
-				t, testnet, signerClient, signerd.GetURL(), fundingAddress,
-				batch, sp, approvalClient, cleanupAuthority, heldLsigTarget,
+				t, signerd.GetURL(), fundingAddress, batch, sp, approvalClient, cleanupAuthority,
 			)
 			cleanupReserves := matrixCleanupReserves(cleanupPlans)
 
@@ -350,12 +307,10 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 func assertBundledOpcodeValidationInventory(t *testing.T) {
 	t.Helper()
 	validated := map[string]struct{}{
-		"aplane.corridor.v1.yaml":                  {},
-		"aplane.falcon1024-allowlist-lock.v1.yaml": {},
-		"aplane.falcon1024-allowlist.v1.yaml":      {},
-		"aplane.falcon1024-allowlist.v2.yaml":      {},
-		"aplane.falcon1024-timelock.v1.yaml":       {},
-		"aplane.htlc.v1.yaml":                      {},
+		"aplane.falcon1024-allowlist.v1.yaml": {},
+		"aplane.falcon1024-allowlist.v2.yaml": {},
+		"aplane.falcon1024-timelock.v1.yaml":  {},
+		"aplane.htlc.v1.yaml":                 {},
 	}
 	seen := make(map[string]struct{}, len(validated))
 	for _, source := range []embed.FS{templates.FS, retired.FS} {
@@ -390,27 +345,19 @@ type matrixRekeyCleanupPlan struct {
 
 func prepareMatrixRekeyCleanups(
 	t *testing.T,
-	testnet *harness.TestnetConfig,
-	signerClient *signerclient.Client,
 	signerURL string,
 	fundingAddress string,
 	accounts []includedKeyTypeAccount,
 	sp types.SuggestedParams,
 	approvalClient *transport.IPCClient,
 	cleanupAuthority algocrypto.Account,
-	heldLsigTarget string,
 ) []matrixRekeyCleanupPlan {
 	t.Helper()
 	plans := make([]matrixRekeyCleanupPlan, 0)
 	for _, account := range accounts {
-		switch {
-		case matrixSupportsSpendingRekey(account.keyType):
+		if matrixSupportsSpendingRekey(account.keyType) {
 			plans = append(plans, prepareMatrixSpendingRekeyCleanup(
 				t, signerURL, fundingAddress, account, sp, approvalClient, cleanupAuthority,
-			))
-		case account.keyType == "aplane.falcon1024-allowlist-lock.v1":
-			plans = append(plans, prepareMatrixAdminRekeyCleanup(
-				t, testnet, signerClient, account, sp, approvalClient, cleanupAuthority, heldLsigTarget,
 			))
 		}
 	}
@@ -488,155 +435,6 @@ func awaitMatrixSigning(t *testing.T, done <-chan struct{}, approvalClient *tran
 	}
 }
 
-func prepareMatrixAdminRekeyCleanup(
-	t *testing.T,
-	testnet *harness.TestnetConfig,
-	signerClient *signerclient.Client,
-	account includedKeyTypeAccount,
-	sp types.SuggestedParams,
-	approvalClient *transport.IPCClient,
-	cleanupAuthority algocrypto.Account,
-	heldLsigTarget string,
-) matrixRekeyCleanupPlan {
-	t.Helper()
-	if len(account.adminPrivateKey) == 0 {
-		t.Fatalf("%s cleanup admin private key is missing", account.keyType)
-	}
-	txn := mustPaymentTxnForMatrix(
-		t, sp, account.address, account.address, "keytype-matrix-admin-rekey", "", account.positiveFirstValid,
-	)
-	txn.RekeyTo = cleanupAuthority.Address
-
-	// Signer invariant: an admin rekey may only move the account to a
-	// credential the signer holds. An unheld target is refused before policy
-	// and approval, so no approval prompt appears.
-	foreignTxn := txn
-	foreignTxn.RekeyTo = algocrypto.GenerateAccount().Address
-	if _, err := signerClient.RequestBoundedAdmin(
-		signerapi.BoundedAdminOperationRekey,
-		[]signerapi.SignRequest{{
-			AuthAddress: account.address,
-			TxnSender:   account.address,
-			TxnBytesHex: txnHexForMatrix(foreignTxn),
-		}},
-	); err == nil {
-		t.Fatalf("%s admin rekey to an unheld target was accepted", account.keyType)
-	} else {
-		var httpErr *signerclient.HTTPStatusError
-		if !errors.As(err, &httpErr) || httpErr.Code != signerapi.ErrCodeBoundedAdminTargetRejected {
-			t.Fatalf("%s admin rekey to an unheld target: err = %v, want code %s", account.keyType, err, signerapi.ErrCodeBoundedAdminTargetRejected)
-		}
-	}
-
-	requestApprovedAdminRekey := func(target types.Address, what string) *signerapi.BoundedAdminPartialResponse {
-		adminTxn := txn
-		adminTxn.RekeyTo = target
-		var partial *signerapi.BoundedAdminPartialResponse
-		var requestErr error
-		done := make(chan struct{})
-		go func() {
-			defer close(done)
-			partial, requestErr = signerClient.RequestBoundedAdmin(
-				signerapi.BoundedAdminOperationRekey,
-				[]signerapi.SignRequest{{
-					AuthAddress: account.address,
-					TxnSender:   account.address,
-					TxnBytesHex: txnHexForMatrix(adminTxn),
-				}},
-			)
-		}()
-		awaitMatrixSigning(t, done, approvalClient, "contract-admin rekey ("+what+")")
-		if requestErr != nil {
-			t.Fatalf("prepare contract-admin rekey (%s): %v", what, requestErr)
-		}
-		if partial == nil {
-			t.Fatalf("contract-admin rekey (%s) returned no partial", what)
-		}
-		return partial
-	}
-
-	// A held plain LogicSig target passes the same rule, including the
-	// release-time re-derivation of its program through the signer's
-	// compiler. The partial is deliberately never completed or submitted.
-	heldLsig, err := types.DecodeAddress(heldLsigTarget)
-	if err != nil {
-		t.Fatalf("decode held LogicSig target: %v", err)
-	}
-	requestApprovedAdminRekey(heldLsig, "held LogicSig target")
-
-	partial := requestApprovedAdminRekey(cleanupAuthority.Address, "cleanup authority")
-
-	request, err := boundedprotocol.NewRequest(boundedprotocol.RequestPayload{
-		Partial:            *partial,
-		Network:            testnet.Network,
-		GenesisHashHex:     hex.EncodeToString(sp.GenesisHash),
-		CurrentAuthAddress: account.address,
-	})
-	if err != nil {
-		t.Fatalf("build contract-admin cleanup request: %v", err)
-	}
-	validated, err := boundedauthorization.ValidateRequest(request)
-	if err != nil {
-		t.Fatalf("validate contract-admin cleanup request: %v", err)
-	}
-	adminSignature, err := signerops.New(nil).Sign(account.adminPrivateKey, validated.Message[:])
-	if err != nil {
-		t.Fatalf("sign contract-admin cleanup request: %v", err)
-	}
-	response := boundedprotocol.Response{
-		Schema:             boundedprotocol.ResponseSchemaV1,
-		RequestHashHex:     request.RequestHashHex,
-		ContractAdminKeyID: partial.Authorization.ContractAdminKeyID,
-		SignatureHex:       hex.EncodeToString(adminSignature),
-	}
-	requireContractAdminCeremonyRefusals(t, *partial, testnet.Network, hex.EncodeToString(sp.GenesisHash), account.address, request, response)
-	signed, txns, err := boundedauthorization.Complete(request, response)
-	if err != nil {
-		t.Fatalf("complete contract-admin cleanup request: %v", err)
-	}
-	signedHexes := make([]string, len(signed))
-	for i := range signed {
-		signedHexes[i] = hex.EncodeToString(signed[i])
-	}
-	return matrixRekeyCleanupPlan{
-		account: account, signedHexes: signedHexes, targetFee: uint64(txns[partial.TargetIndex].Fee),
-		path: lsigresource.PathAdminRekey, cleanupPrivateKey: cleanupAuthority.PrivateKey,
-	}
-}
-
-// requireContractAdminCeremonyRefusals tampers with a real ceremony. Only a request
-// the signer released can pass the checks before these two signature checks, so this
-// lives here and not in a unit test.
-func requireContractAdminCeremonyRefusals(t *testing.T, partial signerapi.BoundedAdminPartialResponse, network, genesisHashHex, account string, request boundedprotocol.Request, response boundedprotocol.Response) {
-	t.Helper()
-	wrongSignature, err := hex.DecodeString(response.SignatureHex)
-	if err != nil {
-		t.Fatal(err)
-	}
-	wrongSignature[len(wrongSignature)/2] ^= 0xff
-	wrongResponse := response
-	wrongResponse.SignatureHex = hex.EncodeToString(wrongSignature)
-	if _, _, err := boundedauthorization.Complete(request, wrongResponse); err == nil || !strings.Contains(err.Error(), "contract-admin signature is invalid") {
-		t.Fatalf("tampered contract-admin signature: error = %v", err)
-	}
-
-	target := decodeSignedTxnHex(t, partial.PartialSigned[partial.TargetIndex])
-	spending := bytes.Clone(target.Lsig.Args[0])
-	spending[len(spending)/2] ^= 0xff
-	target.Lsig.Args[0] = spending
-	partial.PartialSigned = slices.Clone(partial.PartialSigned)
-	partial.PartialSigned[partial.TargetIndex] = hex.EncodeToString(msgpack.Encode(target))
-	tampered, err := boundedprotocol.NewRequest(boundedprotocol.RequestPayload{
-		Partial: partial, Network: network, GenesisHashHex: genesisHashHex, CurrentAuthAddress: account,
-	})
-	if err != nil {
-		t.Fatalf("build tampered request: %v", err)
-	}
-	if _, err := boundedauthorization.ValidateRequest(tampered); err == nil || !strings.Contains(err.Error(), "bounded1 spending signature is invalid") {
-		t.Fatalf("tampered spending signature: error = %v", err)
-	}
-}
-
 func validateMatrixRekeyOpcodeCeilings(
 	t *testing.T,
 	client *sdkalgod.Client,
@@ -648,10 +446,6 @@ func validateMatrixRekeyOpcodeCeilings(
 		plan := plan
 		pathName := "spending-rekey"
 		vectorName := "maximum-spending-key-rekey"
-		if plan.path == lsigresource.PathAdminRekey {
-			pathName = "admin-rekey"
-			vectorName = "maximum-admin-key-rekey"
-		}
 		t.Run(plan.account.keyType+"/opcode/"+pathName, func(t *testing.T) {
 			signed := make([]types.SignedTxn, len(plan.signedHexes))
 			for i, encoded := range plan.signedHexes {
@@ -688,7 +482,6 @@ func matrixSupportsSpendingRekey(keyType string) bool {
 type includedKeyTypeCase struct {
 	keyType            string
 	opcodeVectorName   string
-	adminPrivateKey    []byte
 	params             map[string]string
 	positiveArgs       map[string]string
 	positiveFirstValid uint64
@@ -1394,7 +1187,6 @@ func installAllBundledTemplates(t *testing.T, signerDataDir string) {
 		"aplane.htlc.v1.yaml",
 		"aplane.falcon1024-allowlist.v1.yaml",
 		"aplane.falcon1024-allowlist.v2.yaml",
-		"aplane.falcon1024-allowlist-lock.v1.yaml",
 		"aplane.falcon1024-timelock.v1.yaml",
 	}
 	templatePaths := make([]string, 0, len(templateFiles))

@@ -241,9 +241,8 @@ func (p *Planner) finalizeGroup(in groupFinalization) (*finalizedGroup, *Service
 		}
 	}
 
-	// Classify bounded requests before budgeting: the admin-key rekey slot must
-	// reserve the contract-admin signature bytes that ordinary spends never
-	// carry. This pass sees pre-pooling fees, so it is sizing input only — the
+	// Classify bounded requests before budgeting: each path's argument bytes size
+	// the group. This pass sees pre-pooling fees, so it is sizing input only — the
 	// authoritative classification runs on the finalized group below.
 	sizingBoundedItems, err := resolveBoundedPlanItems(in.Snapshot, in.Requests, in.Txns, in.PassthroughIndices, in.ForeignIndices)
 	if err != nil {

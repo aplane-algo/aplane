@@ -153,9 +153,6 @@ func NewComposedDSA(cfg Config) *ComposedDSA {
 			panic("composeddsa: invalid opcode profile: " + err.Error())
 		}
 	}
-	if boundedRequiresAdminKey(bounded) && !hasParameter(params, BoundedAdminPublicKeyParameter) {
-		params = append(params, boundedAdminPublicKeyParameterDef())
-	}
 	if bounded != nil && bounded.Cosigner != nil && !hasParameter(params, BoundedCosignerPublicKeyParameter) {
 		params = append(params, boundedCosignerPublicKeyParameterDef())
 	}
@@ -359,8 +356,8 @@ func (c *ComposedDSA) buildBoundedSpendArgs(signatureArgs, runtimeArgs [][]byte)
 			}
 			value = signatureArgs[baseIndex]
 			baseIndex++
-		case boundedmeta.ArgSourceDerived, boundedmeta.ArgSourceCosigner, boundedmeta.ArgSourceAdmin:
-			// BuildArgs has no transaction context or external admin authority.
+		case boundedmeta.ArgSourceDerived, boundedmeta.ArgSourceCosigner:
+			// BuildArgs has no transaction context or cosigner authority.
 			// Keep interior slots explicit so later runtime values retain their
 			// frozen indexes; unused trailing slots are trimmed below.
 		case boundedmeta.ArgSourceRuntime:

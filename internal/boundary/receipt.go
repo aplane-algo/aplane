@@ -23,7 +23,6 @@ type Receipt struct {
 	Address            string            `json:"address"`
 	KeyType            string            `json:"key_type"`
 	Parameters         map[string]string `json:"parameters"`
-	AdminKeyID         string            `json:"admin_key_id,omitempty"`
 	CosignerKeyID      string            `json:"cosigner_key_id,omitempty"`
 	GrammarFingerprint string            `json:"grammar_fingerprint"`
 	ShapeFingerprint   string            `json:"selected_shape_fingerprint"`

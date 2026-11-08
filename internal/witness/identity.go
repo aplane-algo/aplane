@@ -17,9 +17,8 @@ import (
 )
 
 const (
-	// Falcon1024V1 is a non-spending Falcon-1024 witness key. Enrollment and
-	// custody determine whether an instance serves as a cosigner or contract
-	// admin; one keypair must never serve both roles.
+	// Falcon1024V1 is a non-spending Falcon-1024 witness key, held by a
+	// cosigner.
 	Falcon1024V1 = "aplane.witness-falcon1024.v1"
 
 	Falcon1024PublicKeySize  = falconparams.PublicKeySize

@@ -5,7 +5,6 @@ package composeddsa
 
 import (
 	"bytes"
-	"crypto/sha512"
 	"encoding/hex"
 	"fmt"
 	"slices"
@@ -15,19 +14,13 @@ import (
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
-	boundedmessage "github.com/aplane-algo/aplane/internal/boundedadmin/message"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
-	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/sigconstruction"
 	"github.com/aplane-algo/aplane/internal/tealtemplate"
 	"github.com/aplane-algo/aplane/internal/txeffects"
 	"github.com/aplane-algo/aplane/internal/witness"
 )
-
-// boundedAdminKeyType is the contract admin key's witness key type. bounded1 has no
-// admin-key algorithm selector, so this is fixed by the contract, not by a base.
-const boundedAdminKeyType = witness.Falcon1024V1
 
 // The generation-side vocabulary is defined in terms of boundedmeta, the
 // durable storage vocabulary, so the two cannot drift: a contract revision
@@ -37,12 +30,6 @@ const (
 	BoundedContractV1 = boundedmeta.ContractV1
 	// BoundedMaxFeeV1 is the largest fee a bounded1 profile may compile.
 	BoundedMaxFeeV1 uint64 = boundedmeta.MaximumProfileFee
-	// BoundedAdminPublicKeyParameter is injected for admin-key profiles.
-	BoundedAdminPublicKeyParameter = boundedmeta.AdminPublicKeyParameter
-	// BoundedAdminPublicKeySize is the frozen Falcon-1024 public-key size.
-	BoundedAdminPublicKeySize = boundedmeta.FalconAdminPublicKeySize
-	// BoundedAdminSignatureMaxSize is the frozen Falcon-1024 signature bound.
-	BoundedAdminSignatureMaxSize = boundedmeta.FalconAdminSignatureSize
 	// BoundedCosignerPublicKeyParameter is injected for cosigner-enabled profiles.
 	BoundedCosignerPublicKeyParameter = boundedmeta.CosignerPublicKeyParameter
 
@@ -51,7 +38,6 @@ const (
 
 	boundedProfileDomainV1            = "APLANE_BOUNDED_PROFILE_V1"
 	boundedBehaviorParametersDomainV1 = "APLANE_BOUNDED_BEHAVIOR_PARAMETERS_V1"
-	boundedAdminProgramDomainV1       = "APLANE_BOUNDED_ADMIN_PROGRAM_V1"
 )
 
 // AdminOperationKind identifies a bounded administrative operation.
@@ -66,7 +52,6 @@ type AdminOperationAuthorization string
 
 const (
 	AdminAuthorizationSpendingKey AdminOperationAuthorization = boundedmeta.AdminAuthorizationSpend
-	AdminAuthorizationAdminKey    AdminOperationAuthorization = boundedmeta.AdminAuthorizationAdmin
 )
 
 // AdminPolicyGate selects whether Layer 3 also constrains an operation.
@@ -187,7 +172,8 @@ func boundedFingerprintProjection(profile *BoundedAuthorizationProfile, metadata
 }
 
 // CanonicalBoundedProfile encodes a profile using the frozen bounded1 binary
-// contract used by program bindings and offline artifacts.
+// contract, which template fingerprints and the general type's boundary digest
+// hash.
 func CanonicalBoundedProfile(profile *BoundedAuthorizationProfile, metadata *boundedmeta.Metadata) ([]byte, error) {
 	canonical, err := canonicalBoundedProfile(profile)
 	if err != nil {
@@ -292,33 +278,10 @@ func equalCosignerProfile(a, b *boundedmeta.CosignerAuthorization) bool {
 		a.SignatureMaxSize == b.SignatureMaxSize && slices.Equal(a.RequiredOn, b.RequiredOn)
 }
 
-func boundedRequiresAdminKey(profile *BoundedAuthorizationProfile) bool {
-	if profile == nil {
-		return false
-	}
-	for _, operation := range profile.AdminOperations {
-		if operation.Authorization == AdminAuthorizationAdminKey {
-			return true
-		}
-	}
-	return false
-}
-
-func boundedAdminPublicKeyParameterDef() lsigprovider.ParameterDef {
-	return lsigprovider.ParameterDef{
-		Name:        BoundedAdminPublicKeyParameter,
-		Label:       "Contract Admin Public Key",
-		Description: "Falcon-1024 public key for bounded authorization contract administration",
-		Type:        "bytes",
-		Required:    true,
-		MaxLength:   BoundedAdminPublicKeySize * 2,
-	}
-}
-
-// BoundedAuthorityParameterDefs returns the definitions of the authority keys
-// the composer injects, for a provider that presents them itself.
-func BoundedAuthorityParameterDefs() (admin, cosigner lsigprovider.ParameterDef) {
-	return boundedAdminPublicKeyParameterDef(), boundedCosignerPublicKeyParameterDef()
+// BoundedCosignerParameterDef returns the definition of the cosigner key the
+// composer injects, for a provider that presents it itself.
+func BoundedCosignerParameterDef() lsigprovider.ParameterDef {
+	return boundedCosignerPublicKeyParameterDef()
 }
 
 func boundedCosignerPublicKeyParameterDef() lsigprovider.ParameterDef {
@@ -380,9 +343,8 @@ func (c *ComposedDSA) BuildBoundedAuthorizationMetadata(publicKey []byte, params
 		return metadata, err
 	}
 	profile := c.bounded
-	var cosignerPublicKey []byte
 	if profile.Cosigner != nil {
-		cosignerPublicKey, err = decodeHexParameter(params[BoundedCosignerPublicKeyParameter], BoundedCosignerPublicKeyParameter, boundedmeta.CosignerPublicKeySizeV1)
+		cosignerPublicKey, err := decodeHexParameter(params[BoundedCosignerPublicKeyParameter], BoundedCosignerPublicKeyParameter, boundedmeta.CosignerPublicKeySizeV1)
 		if err != nil {
 			return nil, err
 		}
@@ -397,31 +359,6 @@ func (c *ComposedDSA) BuildBoundedAuthorizationMetadata(publicKey []byte, params
 		metadata.Cosigner.ComponentKeyID = componentKeyID
 	}
 
-	if boundedRequiresAdminKey(profile) {
-		adminPublicKey, err := c.validatedAdminPublicKey(publicKey, params)
-		if err != nil {
-			return nil, err
-		}
-		if bytes.Equal(adminPublicKey, cosignerPublicKey) {
-			return nil, fmt.Errorf("bounded cosigner witness key must differ from the contract-admin key")
-		}
-		profileEncoding, err := CanonicalBoundedProfile(profile, metadata)
-		if err != nil {
-			return nil, err
-		}
-		behaviorEncoding, err := canonicalBehaviorParameters(params, c.params)
-		if err != nil {
-			return nil, err
-		}
-		binding := boundedProgramBinding(c.keyType, c.baseKeyType, c.ops.TEALVersion(), publicKey, adminPublicKey, profileEncoding, behaviorEncoding)
-		adminKeyID, err := witness.ID(boundedAdminKeyType, adminPublicKey)
-		if err != nil {
-			return nil, err
-		}
-		metadata.AdminPublicKeyHex = hex.EncodeToString(adminPublicKey)
-		metadata.AdminKeyID = adminKeyID
-		metadata.ProgramBindingHex = hex.EncodeToString(binding[:])
-	}
 	if err := metadata.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid generated bounded metadata: %w", err)
 	}
@@ -455,17 +392,6 @@ func (c *ComposedDSA) refuseSharedSpendingKey(role string, spendingPublicKey []b
 	return nil
 }
 
-func (c *ComposedDSA) validatedAdminPublicKey(spendingPublicKey []byte, params map[string]string) ([]byte, error) {
-	adminPublicKey, err := decodeHexParameter(params[BoundedAdminPublicKeyParameter], BoundedAdminPublicKeyParameter, BoundedAdminPublicKeySize)
-	if err != nil {
-		return nil, err
-	}
-	if err := c.refuseSharedSpendingKey("admin", spendingPublicKey, boundedAdminKeyType, adminPublicKey); err != nil {
-		return nil, err
-	}
-	return adminPublicKey, nil
-}
-
 func (c *ComposedDSA) validatedCosignerPublicKey(spendingPublicKey []byte, params map[string]string) ([]byte, error) {
 	cosignerPublicKey, err := decodeHexParameter(params[BoundedCosignerPublicKeyParameter], BoundedCosignerPublicKeyParameter, boundedmeta.CosignerPublicKeySizeV1)
 	if err != nil {
@@ -476,15 +402,6 @@ func (c *ComposedDSA) validatedCosignerPublicKey(spendingPublicKey []byte, param
 	}
 	if err := c.refuseSharedSpendingKey("cosigner", spendingPublicKey, c.bounded.Cosigner.ComponentKeyType, cosignerPublicKey); err != nil {
 		return nil, err
-	}
-	if boundedRequiresAdminKey(c.bounded) {
-		adminPublicKey, err := decodeHexParameter(params[BoundedAdminPublicKeyParameter], BoundedAdminPublicKeyParameter, BoundedAdminPublicKeySize)
-		if err != nil {
-			return nil, err
-		}
-		if bytes.Equal(cosignerPublicKey, adminPublicKey) {
-			return nil, fmt.Errorf("bounded cosigner witness key must differ from the contract-admin key")
-		}
 	}
 	return cosignerPublicKey, nil
 }
@@ -559,12 +476,6 @@ func boundedArgumentLayout(layout SignatureArgLayout, profile *BoundedAuthorizat
 			Paths:   boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgForbidden, AdminRekey: boundedmeta.ArgForbidden},
 		})
 	}
-	if boundedRequiresAdminKey(profile) {
-		slots = append(slots, boundedmeta.ArgumentSlot{
-			Index: len(slots), Name: "admin_signature", Source: boundedmeta.ArgSourceAdmin, MaxSize: BoundedAdminSignatureMaxSize,
-			Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgForbidden, SpendingRekey: boundedmeta.ArgForbidden, AdminRekey: boundedmeta.ArgRequired},
-		})
-	}
 	return slots
 }
 
@@ -603,7 +514,7 @@ func (c *ComposedDSA) validateBoundedConfig() (*BoundedAuthorizationProfile, Sig
 	if err := c.validateFrameworkLayer3Arguments(); err != nil {
 		return nil, SignatureArgLayout{}, fmt.Errorf("invalid bounded Layer-3 arguments: %w", err)
 	}
-	if err := validateLayer3Policy(c.layer3, c.paramsWithoutAdminKey(), profile, c.hasAuthorTEAL()); err != nil {
+	if err := validateLayer3Policy(c.layer3, c.paramsWithoutCosignerKey(), profile, c.hasAuthorTEAL()); err != nil {
 		return nil, SignatureArgLayout{}, fmt.Errorf("invalid bounded Layer-3 policy: %w", err)
 	}
 	if c.ops.TEALVersion() != txeffects.Bounded1Manifest().TEALVersion {
@@ -659,13 +570,7 @@ func validateBoundedReservedNames(profile *BoundedAuthorizationProfile, params [
 		if !strings.HasPrefix(param.Name, boundedReservedNamePrefix) {
 			continue
 		}
-		if param.Name != BoundedAdminPublicKeyParameter || !boundedRequiresAdminKey(profile) {
-			return fmt.Errorf("parameter name %q uses reserved bounded_ prefix", param.Name)
-		}
-		want := boundedAdminPublicKeyParameterDef()
-		if param.Type != want.Type || !param.Required || param.MaxLength != want.MaxLength {
-			return fmt.Errorf("parameter %q does not match the framework-injected contract", param.Name)
-		}
+		return fmt.Errorf("parameter name %q uses reserved bounded_ prefix", param.Name)
 	}
 	for _, arg := range runtimeArgs {
 		if isBoundedCosignerReservedName(arg.Name) {
@@ -726,17 +631,8 @@ func canonicalBehaviorParameters(params map[string]string, defs []lsigprovider.P
 
 	var encoded []byte
 	encoded = boundedmeta.AppendField(encoded, []byte(boundedBehaviorParametersDomainV1))
-	count := 0
+	encoded = boundedmeta.AppendUint32(encoded, uint32(len(defs)))
 	for _, def := range defs {
-		if def.Name != BoundedAdminPublicKeyParameter {
-			count++
-		}
-	}
-	encoded = boundedmeta.AppendUint32(encoded, uint32(count))
-	for _, def := range defs {
-		if def.Name == BoundedAdminPublicKeyParameter {
-			continue
-		}
 		value, present := normalized[def.Name]
 		var canonical []byte
 		if def.Required || (present && value != "") {
@@ -753,7 +649,7 @@ func canonicalBehaviorParameters(params map[string]string, defs []lsigprovider.P
 }
 
 // CanonicalBoundedBehaviorParameters encodes behavior-bearing creation values
-// in parameter-definition order. The injected admin public key is excluded.
+// in parameter-definition order.
 func CanonicalBoundedBehaviorParameters(params map[string]string, defs []lsigprovider.ParameterDef) ([]byte, error) {
 	return canonicalBehaviorParameters(params, defs)
 }
@@ -821,41 +717,4 @@ func splitCanonicalList(value string) []string {
 		parts[i] = strings.TrimSpace(parts[i])
 	}
 	return parts
-}
-
-func boundedProgramBinding(keyType, baseKeyType string, tealVersion int, spendingPublicKey, adminPublicKey, profileEncoding, behaviorEncoding []byte) [sha512.Size256]byte {
-	var encoded []byte
-	encoded = boundedmeta.AppendField(encoded, []byte(boundedAdminProgramDomainV1))
-	encoded = boundedmeta.AppendField(encoded, []byte(BoundedContractV1))
-	encoded = boundedmeta.AppendField(encoded, []byte(keyType))
-	encoded = boundedmeta.AppendField(encoded, []byte(boundedBasePrimitive(baseKeyType)))
-	encoded = boundedmeta.AppendField(encoded, boundedmeta.AppendUint64(nil, uint64(tealVersion)))
-	encoded = boundedmeta.AppendField(encoded, spendingPublicKey)
-	encoded = boundedmeta.AppendField(encoded, adminPublicKey)
-	encoded = boundedmeta.AppendField(encoded, profileEncoding)
-	encoded = boundedmeta.AppendField(encoded, behaviorEncoding)
-	return sha512.Sum512_256(encoded)
-}
-
-func boundedBasePrimitive(baseKeyType string) string {
-	normalized := keytypecatalog.Canonicalize(baseKeyType)
-	switch normalized {
-	case "aplane.falcon1024.v1":
-		return "falcon1024"
-	case "aplane.ed25519.v1", "aplane.ed25519lsig.v1":
-		return "ed25519"
-	default:
-		return normalized
-	}
-}
-
-// BoundedProgramBinding derives the immutable bounded1 account binding.
-func BoundedProgramBinding(keyType, baseKeyType string, tealVersion int, spendingPublicKey, adminPublicKey, profileEncoding, behaviorEncoding []byte) [sha512.Size256]byte {
-	return boundedProgramBinding(keyType, baseKeyType, tealVersion, spendingPublicKey, adminPublicKey, profileEncoding, behaviorEncoding)
-}
-
-// BoundedAdminMessage returns the exact digest signed for a bounded1 admin
-// operation.
-func BoundedAdminMessage(operation AdminOperationKind, binding [sha512.Size256]byte, transactionID []byte) ([sha512.Size256]byte, error) {
-	return boundedmessage.AdminMessage(string(operation), binding[:], transactionID)
 }

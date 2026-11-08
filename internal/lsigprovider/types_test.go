@@ -163,7 +163,7 @@ func TestValidateAndOrderArgsRejectsLeftShift(t *testing.T) {
 
 func TestNormalizeCreationParamsCanonicalizesBytesHex(t *testing.T) {
 	defs := []ParameterDef{{
-		Name: "bounded_admin_public_key",
+		Name: "cosigner_public_key",
 		Type: "bytes",
 	}}
 
@@ -179,12 +179,12 @@ func TestNormalizeCreationParamsCanonicalizesBytesHex(t *testing.T) {
 		{"already canonical", "ab12cd", "ab12cd"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := NormalizeCreationParams(map[string]string{"bounded_admin_public_key": tc.input}, defs)
+			got, err := NormalizeCreationParams(map[string]string{"cosigner_public_key": tc.input}, defs)
 			if err != nil {
 				t.Fatalf("NormalizeCreationParams() error = %v", err)
 			}
-			if got["bounded_admin_public_key"] != tc.want {
-				t.Fatalf("bounded_admin_public_key = %q, want %q", got["bounded_admin_public_key"], tc.want)
+			if got["cosigner_public_key"] != tc.want {
+				t.Fatalf("cosigner_public_key = %q, want %q", got["cosigner_public_key"], tc.want)
 			}
 		})
 	}

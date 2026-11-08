@@ -3,21 +3,20 @@
 This project builds several first-party commands and developer helpers:
 
 1. **apshell** - client shell, JavaScript runner, MCP server, and plugin host
-2. **aprekey** - external Falcon contract-admin artifact and bounded ceremony client
-3. **apsigner** - signing daemon, HTTP API, admin protocol, approval coordinator, and SSH tunnel server
-4. **apadmin** - TUI and batch admin client over local IPC, owning all general live administration plus policy rescue
-5. **apconsole** - secure-machine unified console for apshell, apadmin, and apsigner panes
-6. **apapprover** - minimal approval-only CLI over local IPC
-7. **apstore** - stopped-daemon keystore bootstrap, verification, and rescue client
-8. **appass** - passphrase auto-unlock setup TUI
-9. **aplocalnet** - LocalNet setup TUI/CLI
-10. **appass-file** - dev-only plaintext passphrase helper
-11. **appass-systemd-creds** - Linux/systemd production passphrase helper using systemd credentials
-12. **approbe** - installer-facing signer liveness probe
-13. **appolicy** - offline policy file editor, check, format, and explain
-14. **applugin-checksum** - plugin checksum generator
-15. **compile_teal** - TEAL-to-Go bytecode generator used by development workflows
-16. **configdoc** - configuration reference generator
+2. **apsigner** - signing daemon, HTTP API, admin protocol, approval coordinator, and SSH tunnel server
+3. **apadmin** - TUI and batch admin client over local IPC, owning all general live administration plus policy rescue
+4. **apconsole** - secure-machine unified console for apshell, apadmin, and apsigner panes
+5. **apapprover** - minimal approval-only CLI over local IPC
+6. **apstore** - stopped-daemon keystore bootstrap, verification, and rescue client
+7. **appass** - passphrase auto-unlock setup TUI
+8. **aplocalnet** - LocalNet setup TUI/CLI
+9. **appass-file** - dev-only plaintext passphrase helper
+10. **appass-systemd-creds** - Linux/systemd production passphrase helper using systemd credentials
+11. **approbe** - installer-facing signer liveness probe
+12. **appolicy** - offline policy file editor, check, format, and explain
+13. **applugin-checksum** - plugin checksum generator
+14. **compile_teal** - TEAL-to-Go bytecode generator used by development workflows
+15. **configdoc** - configuration reference generator
 
 ## Project Structure
 
@@ -25,7 +24,6 @@ This project builds several first-party commands and developer helpers:
 aplane/
 ├── cmd/
 │   ├── apshell/              # Shell, scripting, MCP, and plugin host
-│   ├── aprekey/       # External contract-admin artifact and ceremony CLI
 │   ├── apsigner/            # Signing daemon and admin/HTTP/SSH runtime
 │   ├── apadmin/             # Admin TUI and live batch client
 │   ├── apconsole/            # Secure-machine unified console
@@ -127,7 +125,6 @@ make all
 
 # Build individual binaries
 make apshell
-make aprekey
 make apsigner
 make apadmin
 make apconsole
@@ -200,10 +197,6 @@ mkdir -p bin
 # Build apshell with musl static linking
 CGO_ENABLED=1 CC=musl-gcc go build -ldflags '-extldflags "-static"' \
   -o bin/apshell ./cmd/apshell
-
-# Build aprekey with musl static linking
-CGO_ENABLED=1 CC=musl-gcc go build -ldflags '-extldflags "-static"' \
-  -o bin/aprekey ./cmd/aprekey
 
 # Build apsigner with musl static linking
 CGO_ENABLED=1 CC=musl-gcc go build -ldflags '-extldflags "-static"' \

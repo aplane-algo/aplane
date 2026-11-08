@@ -11,8 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aplane-algo/aplane/internal/protocol"
-	"github.com/aplane-algo/aplane/internal/witness"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -108,7 +106,6 @@ func TestFileBrowserListsOnlyTheMatchingRoleReference(t *testing.T) {
 		want   string
 	}{
 		{browseCosignerImportFile, ".cos.json"},
-		{browseContractAdminReference, ".adm.json"},
 	} {
 		spec := fileBrowserSpecFor(test.target)
 		if len(spec.suffixes) != 1 || spec.suffixes[0] != test.want {
@@ -321,48 +318,6 @@ func TestFileBrowserFallsBackFromMissingDirectory(t *testing.T) {
 	m := press(t, policyApplyFormModel(filepath.Join(home, "gone", "x.json")), "ctrl+o")
 	if m.browser.dir != home || m.browser.err != "" {
 		t.Fatalf("dir %q err %q, want home without an error", m.browser.dir, m.browser.err)
-	}
-}
-
-func TestFileBrowserFillsContractAdminParameter(t *testing.T) {
-	defer setServerKeyTypes(nil)
-	path, publicKeyHex := writeContractAdminReference(t)
-	setServerKeyTypes([]protocol.KeyTypeInfo{{
-		KeyType:     "aplane.falcon1024-allowlist-lock.v1",
-		DisplayName: "Falcon Bounded Allowlist",
-		CreationParams: []protocol.TemplateParamInfo{{
-			Name:      "bounded_admin_public_key",
-			Label:     "Contract Admin Public Key",
-			Type:      "bytes",
-			MaxLength: witness.Falcon1024PublicKeySize * 2,
-		}},
-	}})
-	dir := filepath.Dir(path)
-	m := Model{
-		viewState: ViewGenerateParams,
-		forms: formsState{
-			genericLSigParams:     map[string]string{"bounded_admin_public_key": dir + string(filepath.Separator)},
-			genericLSigParamModes: map[string]int{"bounded_admin_public_key": 0},
-			generateError:         "stale",
-		},
-	}
-	if footer := m.viewFooterText(); !strings.Contains(footer, "ctrl+o: Browse") {
-		t.Fatalf("footer %q does not offer the browser on the reference field", footer)
-	}
-	m = press(t, m, "ctrl+o")
-	if !m.fileBrowserOpen() || m.browser.dir != dir {
-		t.Fatalf("ctrl+o: open %v dir %q, want %q", m.fileBrowserOpen(), m.browser.dir, dir)
-	}
-	m = press(t, selectBrowserEntry(t, m, filepath.Base(path)), "enter")
-	if got := m.forms.genericLSigParams["bounded_admin_public_key"]; got != path || m.forms.generateError != "" {
-		t.Fatalf("parameter %q error %q, want %q and no error", got, m.forms.generateError, path)
-	}
-	params, err := m.applyInputModeTransforms(getParamSpecForKeyType("aplane.falcon1024-allowlist-lock.v1").Params)
-	if err != nil {
-		t.Fatalf("applyInputModeTransforms() error = %v", err)
-	}
-	if params["bounded_admin_public_key"] != publicKeyHex {
-		t.Fatal("the chosen reference did not resolve to its public key")
 	}
 }
 

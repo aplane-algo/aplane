@@ -462,46 +462,6 @@ func (c *Client) postSignApprovalRequest(ctx context.Context, path, requestID st
 	return nil
 }
 
-// RequestBoundedAdmin asks the signer for the spending half of one external
-// contract-admin operation. The returned object is not submission-ready.
-func (c *Client) RequestBoundedAdmin(operation string, requests []signerapi.SignRequest) (*signerapi.BoundedAdminPartialResponse, error) {
-	return c.RequestBoundedAdminWithContext(context.Background(), operation, requests)
-}
-
-func (c *Client) RequestBoundedAdminWithContext(ctx context.Context, operation string, requests []signerapi.SignRequest) (*signerapi.BoundedAdminPartialResponse, error) {
-	requestID, err := newSignRequestID()
-	if err != nil {
-		return nil, fmt.Errorf("failed to create sign request ID: %w", err)
-	}
-	reqBody := signerapi.BoundedAdminRequest{RequestID: requestID, Operation: operation, Requests: requests}
-	if err := reqBody.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid bounded-admin request: %w", err)
-	}
-	jsonBody, err := json.Marshal(reqBody)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal bounded-admin request: %w", err)
-	}
-
-	var partial signerapi.BoundedAdminPartialResponse
-	err = c.postSignApprovalRequest(ctx, "/sign/bounded-admin", requestID, jsonBody, func(resp *http.Response) error {
-		decoder := json.NewDecoder(io.LimitReader(resp.Body, 512*1024))
-		if err := decoder.Decode(&partial); err != nil {
-			return fmt.Errorf("failed to decode bounded-admin response: %w", err)
-		}
-		if partial.Schema != signerapi.BoundedAdminPartialSchemaV1 {
-			return fmt.Errorf("unsupported bounded-admin partial schema %q", partial.Schema)
-		}
-		if partial.Operation != operation {
-			return fmt.Errorf("bounded-admin response operation %q does not match request %q", partial.Operation, operation)
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	return &partial, nil
-}
-
 func (c *Client) RequestAssemble(req signerapi.AssemblyRequest) (*signerapi.AssemblyResponse, error) {
 	return c.RequestAssembleWithContext(context.Background(), req)
 }

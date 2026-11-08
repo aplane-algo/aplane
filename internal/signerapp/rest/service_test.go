@@ -88,13 +88,11 @@ func init() {
 
 type stubSigningService struct {
 	gotReq             signerapi.GroupSignRequest
-	gotBoundedAdmin    signerapi.BoundedAdminRequest
 	gotComponents      signerapi.ComponentRequest
 	gotUnifiedAssembly signerapi.AssemblyRequest
 	gotSession         *keystore.KeySession
 	gotCtx             context.Context
 	result             *signersigning.SignGroupResult
-	boundedAdmin       *signersigning.BoundedAdminResult
 	components         *signerapi.ComponentResponse
 	assembly           *signersigning.AssemblyResult
 	err                *signersigning.ServiceError
@@ -110,13 +108,6 @@ func (s *stubSigningService) SignComponentsWithContext(ctx context.Context, req 
 func (s *stubSigningService) AssembleWithContext(ctx context.Context, req signerapi.AssemblyRequest, session *keystore.KeySession) (*signersigning.AssemblyResult, *signersigning.ServiceError) {
 	s.gotCtx, s.gotUnifiedAssembly, s.gotSession = ctx, req, session
 	return s.assembly, s.assemblyErr
-}
-
-func (s *stubSigningService) PrepareBoundedAdminWithContext(ctx context.Context, req signerapi.BoundedAdminRequest, session *keystore.KeySession) (*signersigning.BoundedAdminResult, *signersigning.ServiceError) {
-	s.gotCtx = ctx
-	s.gotBoundedAdmin = req
-	s.gotSession = session
-	return s.boundedAdmin, s.err
 }
 
 type testContextKey string
@@ -208,35 +199,6 @@ func TestServiceSignGroupDelegates(t *testing.T) {
 	}
 	if stub.gotCtx != ctx {
 		t.Fatal("SignGroup() did not pass caller context to signing service")
-	}
-}
-
-func TestServicePrepareBoundedAdminDelegatesTypedPartial(t *testing.T) {
-	ir := setupProductRuntime(t, true)
-	stub := &stubSigningService{boundedAdmin: &signersigning.BoundedAdminResult{
-		Operation:     signerapi.BoundedAdminOperationRekey,
-		Transactions:  []string{"TXfinal", "TXdummy"},
-		PartialSigned: []string{"partial", ""},
-		TargetIndex:   0,
-		Authorization: signerapi.BoundedAdminMetadata{
-			ContractAdminKeyID: "ADMIN",
-		},
-	}}
-	svc := Service{Deps: Dependencies{NewSigningService: func(*productruntime.Runtime) SigningService { return stub }}}
-	req := signerapi.BoundedAdminRequest{
-		RequestID: "bounded-admin-1",
-		Operation: signerapi.BoundedAdminOperationRekey,
-		Requests:  []signerapi.SignRequest{{AuthAddress: "GOVERNED", TxnBytesHex: "5458"}},
-	}
-	resp, err := svc.PrepareBoundedAdmin(t.Context(), ir, req)
-	if err != nil {
-		t.Fatalf("PrepareBoundedAdmin() error = %v", err)
-	}
-	if stub.gotBoundedAdmin.RequestID != req.RequestID || stub.gotSession == nil {
-		t.Fatalf("delegated request/session = (%#v, %p)", stub.gotBoundedAdmin, stub.gotSession)
-	}
-	if resp.Schema != signerapi.BoundedAdminPartialSchemaV1 || len(resp.PartialSigned) != 2 || resp.PartialSigned[1] != "" {
-		t.Fatalf("response = %#v", resp)
 	}
 }
 
@@ -519,7 +481,7 @@ func TestBuildKeyTypesServesRuntimeBoundedMetadata(t *testing.T) {
 			SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectAxfer, txeffects.SpendEffectPay},
 			MaxFee:       2_000,
 			AdminOperations: []composeddsa.AdminOperationSpec{{
-				Kind: composeddsa.AdminOperationRekey, Authorization: composeddsa.AdminAuthorizationAdminKey, PolicyGate: composeddsa.AdminPolicyGateNone,
+				Kind: composeddsa.AdminOperationRekey, Authorization: composeddsa.AdminAuthorizationSpendingKey, PolicyGate: composeddsa.AdminPolicyGateNone,
 			}},
 		},
 	})
@@ -539,7 +501,7 @@ func TestBuildKeyTypesServesRuntimeBoundedMetadata(t *testing.T) {
 	if got := strings.Join(bounded.SpendEffects, ","); got != "pay,axfer" {
 		t.Fatalf("spend_effects = %q", got)
 	}
-	if len(bounded.AdminOperations) != 1 || bounded.AdminOperations[0].Authorization != string(composeddsa.AdminAuthorizationAdminKey) {
+	if len(bounded.AdminOperations) != 1 || bounded.AdminOperations[0].Authorization != string(composeddsa.AdminAuthorizationSpendingKey) {
 		t.Fatalf("admin_operations = %#v", bounded.AdminOperations)
 	}
 }
@@ -574,16 +536,19 @@ func TestBoundedInfoFromStoredIncludesInstanceMetadata(t *testing.T) {
 	metadata := &boundedmeta.Metadata{
 		Contract:               boundedmeta.ContractV1,
 		BaseSignatureArgLayout: boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{1280}},
-		ArgumentLayout:         boundedmeta.BaseArgumentLayout(boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{1280}}, true),
+		ArgumentLayout:         boundedmeta.BaseArgumentLayout(boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{1280}}),
 		SpendEffects:           []string{"pay"},
 		MaxFee:                 1_000,
-		AdminOperations:        []boundedmeta.AdminOperation{{Kind: boundedmeta.AdminOperationRekey, Authorization: boundedmeta.AdminAuthorizationAdmin, PolicyGate: boundedmeta.PolicyGateNone}},
 		Layer3Policy:           boundedmeta.Layer3PolicyCustom,
-		AdminKeyID:             "ADMIN",
-		ProgramBindingHex:      strings.Repeat("ab", 32),
+		Cosigner: &boundedmeta.CosignerAuthorization{
+			Contract: boundedmeta.CosignerContractV1, ComponentKeyType: boundedmeta.CosignerComponentKeyTypeV1,
+			PublicKeyHex: strings.Repeat("ab", 32), ComponentKeyID: "COSIGNER",
+			SignatureMaxSize: boundedmeta.CosignerSignatureMaxSizeV1, RequiredOn: []string{boundedmeta.PathSpend},
+		},
 	}
 	info := boundedInfo(metadata)
-	if info.AdminKeyID != "ADMIN" || info.ProgramBindingHex != metadata.ProgramBindingHex || info.Layer3Policy != boundedmeta.Layer3PolicyCustom {
+	if info.Cosigner == nil || info.Cosigner.ComponentKeyID != "COSIGNER" || info.Cosigner.PublicKeyHex != metadata.Cosigner.PublicKeyHex ||
+		info.Layer3Policy != boundedmeta.Layer3PolicyCustom || len(info.AdminOperations) != 0 {
 		t.Fatalf("boundedInfo() = %#v", info)
 	}
 }
@@ -619,12 +584,10 @@ func TestBoundedAccountParametersProjection(t *testing.T) {
 	got := boundedAccountParameters(map[string]string{
 		"recipients": "ADDR1,ADDR2",
 		composeddsa.BoundedCosignerPublicKeyParameter: "cosigner-public",
-		composeddsa.BoundedAdminPublicKeyParameter:    "admin-public",
 		"future_sensitive_parameter":                  "must-not-leak",
 	})
-	if len(got) != 3 || got["recipients"] != "ADDR1,ADDR2" ||
-		got[composeddsa.BoundedCosignerPublicKeyParameter] != "cosigner-public" ||
-		got[composeddsa.BoundedAdminPublicKeyParameter] != "admin-public" {
+	if len(got) != 2 || got["recipients"] != "ADDR1,ADDR2" ||
+		got[composeddsa.BoundedCosignerPublicKeyParameter] != "cosigner-public" {
 		t.Fatalf("boundedAccountParameters() = %#v, want reviewed public projection", got)
 	}
 	if _, ok := got["future_sensitive_parameter"]; ok {
@@ -1165,7 +1128,7 @@ func (p restTestDSAProvider) BoundedAuthorizationMetadata() *boundedmeta.Metadat
 	metadata := &boundedmeta.Metadata{
 		Contract:               p.bounded.Contract,
 		BaseSignatureArgLayout: boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{1280}},
-		ArgumentLayout:         boundedmeta.BaseArgumentLayout(boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{1280}}, false),
+		ArgumentLayout:         boundedmeta.BaseArgumentLayout(boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{1280}}),
 		MaxFee:                 p.bounded.MaxFee,
 		Layer3Policy:           boundedmeta.Layer3PolicyCustom,
 	}

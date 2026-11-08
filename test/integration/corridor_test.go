@@ -7,7 +7,6 @@ import (
 	"context"
 	stded25519 "crypto/ed25519"
 	cryptorand "crypto/rand"
-	"encoding/hex"
 	"fmt"
 	"sort"
 	"strings"
@@ -19,13 +18,11 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/merkleallowlist"
 	"github.com/aplane-algo/aplane/internal/signing"
-	"github.com/aplane-algo/aplane/library/retired"
-	"github.com/aplane-algo/aplane/lsig/composeddsa"
-	falcon1024 "github.com/aplane-algo/aplane/lsig/falcon1024"
+	"github.com/aplane-algo/aplane/internal/txeffects"
+	"github.com/aplane-algo/aplane/lsig/boundedaccount"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
 	"github.com/aplane-algo/aplane/test/integration/harness"
 
-	sdkalgod "github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/common/models"
 	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
@@ -35,6 +32,7 @@ import (
 
 const corridorExecutionGroupSize = 10
 
+// A Corridor account refuses rekeys, so its spend is the only path to measure.
 func TestCorridorDeclaredOpcodeCeilings(t *testing.T) {
 	network, err := harness.NewTestnetConfig()
 	if err != nil {
@@ -46,38 +44,28 @@ func TestCorridorDeclaredOpcodeCeilings(t *testing.T) {
 		t.Fatalf("load funding account: %v", err)
 	}
 	funderAddress := mustDecodeAddress(t, funder.GetAddress())
-	account := newCorridorExecutionAccountWithCompiler(t, compileAlgod, []types.Address{funderAddress})
+	provider := newGeneralProvider(t, network)
+	account := newCorridorExecutionAccount(t, provider, funderAddress)
+	proof := account.proofFor(t, funderAddress)
 	if err := funder.FundMicroAlgosAndWait(account.address, 500_000); err != nil {
 		t.Fatalf("fund Corridor opcode-validation account: %v", err)
 	}
-	cleanupAuthority := algocrypto.GenerateAccount()
-	t.Cleanup(func() {
-		bestEffortCorridorAdminRekey(t, network, account, cleanupAuthority.Address)
-		bestEffortCloseRekeyedAccount(t, network, account.address, funder.GetAddress(), cleanupAuthority.PrivateKey)
-	})
+	// It can never close, so its minimum balance stays behind: 0.1 ALGO per run on
+	// a public network.
+	t.Cleanup(func() { sweepRefusedAccount(t, network, account, funder.GetAddress(), proof) })
 
 	sp := mustSuggestedParams(t, network)
 	spendTxn := corridorPaymentTxn(t, sp, account.address, funder.GetAddress(), 0, "corridor-opcode-spend")
-	spendGroup, _ := account.signedGroup(t, spendTxn, account.proofFor(t, funderAddress), nil)
-	rekeyTxn := corridorPaymentTxn(t, sp, account.address, account.address, 0, "corridor-opcode-admin-rekey")
-	rekeyTxn.RekeyTo = cleanupAuthority.Address
-	adminGroup, _ := account.signedGroup(t, rekeyTxn, nil, func(txid types.Digest, args [][]byte) [][]byte {
-		return account.adminRekeyArgs(t, args[0], txid)
-	})
+	spendGroup, _ := account.signedGroup(t, spendTxn, proof, nil)
 
-	profile := matrixDeclaredOpcodeProfile(t, "aplane.corridor.v1")
 	report, err := harness.ValidateDeclaredOpcodeCeiling(context.Background(), compileAlgod, harness.OpcodeCeilingValidation{
-		Name:         "aplane.corridor.v1",
-		FinalProgram: account.bytecode,
-		Profile:      profile,
-		Bounded:      true,
-		RequiredPaths: []lsigresource.AuthorizationPath{
-			lsigresource.PathSpend,
-			lsigresource.PathAdminRekey,
-		},
+		Name:          "Corridor " + corridorShape().Descriptor(),
+		FinalProgram:  account.bytecode,
+		Profile:       provider.LogicSigOpcodeProfile(),
+		Bounded:       true,
+		RequiredPaths: []lsigresource.AuthorizationPath{lsigresource.PathSpend},
 		Vectors: []harness.OpcodeCeilingVector{
 			{Name: "maximum-spend", Path: lsigresource.PathSpend, SignedTxns: spendGroup, LSigIndex: 0},
-			{Name: "maximum-admin-rekey", Path: lsigresource.PathAdminRekey, SignedTxns: adminGroup, LSigIndex: 0},
 		},
 	})
 	if err != nil {
@@ -106,7 +94,9 @@ func TestCorridorLogicSigExecutionMatrixLocalnet(t *testing.T) {
 	allowed := allowedAccount.Address
 	outside := algocrypto.GenerateAccount().Address
 	funderAddress := mustDecodeAddress(t, funder.GetAddress())
-	transferAccount := newCorridorExecutionAccount(t, testnet, []types.Address{allowed, funderAddress})
+	provider := newGeneralProvider(t, testnet)
+	transferAccount := newCorridorExecutionAccount(t, provider, allowed, funderAddress)
+	funderProof := transferAccount.proofFor(t, funderAddress)
 	if err := funder.FundMicroAlgosAndWait(transferAccount.address, 500_000); err != nil {
 		t.Fatalf("failed to fund corridor transfer account %s: %v", transferAccount.address, err)
 	}
@@ -120,15 +110,19 @@ func TestCorridorLogicSigExecutionMatrixLocalnet(t *testing.T) {
 	bestEffortSubmitCorridorCase(t, testnet, transferAccount, func(sp types.SuggestedParams) types.Transaction {
 		return corridorAssetTransferTxn(t, sp, transferAccount.address, transferAccount.address, 0, assetID, "corridor-self-asset-optin")
 	}, nil)
-	sendAssetFromFunder(t, testnet, funder, transferAccount.address, assetID, 2)
-	cleanupAuthority := algocrypto.GenerateAccount()
+	// Cleanups run last first, so every Corridor account pays out before the
+	// allowed recipient closes to the funder.
 	t.Cleanup(func() {
-		bestEffortCorridorAdminRekey(t, testnet, transferAccount, cleanupAuthority.Address)
-		bestEffortCloseBoundedAsset(t, testnet, transferAccount.address, funder.GetAddress(), assetID, cleanupAuthority.PrivateKey)
-		bestEffortCloseRekeyedAccount(t, testnet, transferAccount.address, funder.GetAddress(), cleanupAuthority.PrivateKey)
 		bestEffortCloseBoundedAsset(t, testnet, allowed.String(), funder.GetAddress(), assetID, allowedAccount.PrivateKey)
 		bestEffortCloseRekeyedAccount(t, testnet, allowed.String(), funder.GetAddress(), allowedAccount.PrivateKey)
 	})
+	// A Corridor account can neither close nor be rekeyed. What it holds goes back
+	// to the funder, a listed recipient, and its minimum balance stays.
+	t.Cleanup(func() {
+		returnCorridorAsset(t, testnet, transferAccount, funder.GetAddress(), funderProof, assetID)
+		sweepRefusedAccount(t, testnet, transferAccount, funder.GetAddress(), funderProof)
+	})
+	sendAssetFromFunder(t, testnet, funder, transferAccount.address, assetID, 2)
 
 	t.Run("payment to allowlisted recipient with proof succeeds", func(t *testing.T) {
 		txn := corridorPaymentTxn(t, mustSuggestedParams(t, testnet), transferAccount.address, allowed.String(), 0, "corridor-allow")
@@ -208,10 +202,12 @@ func TestCorridorLogicSigExecutionMatrixLocalnet(t *testing.T) {
 	})
 
 	rekeyTarget := algocrypto.GenerateAccount()
-	rekeyAccount := newCorridorExecutionAccount(t, testnet, []types.Address{allowed})
+	rekeyAccount := newCorridorExecutionAccount(t, provider, allowed)
+	allowedProof := rekeyAccount.proofFor(t, allowed)
 	if err := funder.FundMicroAlgosAndWait(rekeyAccount.address, 200_000); err != nil {
 		t.Fatalf("failed to fund corridor rekey account %s: %v", rekeyAccount.address, err)
 	}
+	t.Cleanup(func() { sweepRefusedAccount(t, testnet, rekeyAccount, allowed.String(), allowedProof) })
 
 	t.Run("malformed rekey with nonzero amount fails", func(t *testing.T) {
 		txn := corridorPaymentTxn(t, mustSuggestedParams(t, testnet), rekeyAccount.address, rekeyAccount.address, 1, "corridor-deny-rekey-amount")
@@ -235,30 +231,19 @@ func TestCorridorLogicSigExecutionMatrixLocalnet(t *testing.T) {
 		submitCorridorGroupExpectFailure(t, testnet, rawGroup)
 	})
 
-	t.Run("pure rekey without contract-admin proof fails", func(t *testing.T) {
+	// No rekey path exists, so a well-formed rekey with both signatures fails too.
+	t.Run("pure rekey is refused", func(t *testing.T) {
 		txn := corridorPaymentTxn(t, mustSuggestedParams(t, testnet), rekeyAccount.address, rekeyAccount.address, 0, "corridor-allow-rekey")
 		txn.RekeyTo = rekeyTarget.Address
 		rawGroup, _ := rekeyAccount.signGroup(t, txn, nil, nil)
 		submitCorridorGroupExpectFailure(t, testnet, rawGroup)
-	})
-
-	t.Run("pure rekey with contract-admin proof succeeds", func(t *testing.T) {
-		txn := corridorPaymentTxn(t, mustSuggestedParams(t, testnet), rekeyAccount.address, rekeyAccount.address, 0, "corridor-admin-rekey")
-		txn.RekeyTo = rekeyTarget.Address
-		rawGroup, txid := rekeyAccount.signGroup(t, txn, nil, func(txid types.Digest, args [][]byte) [][]byte {
-			return rekeyAccount.adminRekeyArgs(t, args[0], txid)
-		})
-		submitCorridorGroupExpectSuccess(t, testnet, rawGroup, txid)
 		accountInfo, err := testnet.Client.AccountInformation(rekeyAccount.address).Do(context.Background())
 		if err != nil {
-			t.Fatalf("read rekeyed Corridor account: %v", err)
+			t.Fatalf("read Corridor account: %v", err)
 		}
-		if accountInfo.AuthAddr != rekeyTarget.Address.String() {
-			t.Fatalf("Corridor auth address = %q, want %q", accountInfo.AuthAddr, rekeyTarget.Address.String())
+		if accountInfo.AuthAddr != "" {
+			t.Fatalf("Corridor account was rekeyed to %s", accountInfo.AuthAddr)
 		}
-		t.Cleanup(func() {
-			bestEffortCloseRekeyedAccount(t, testnet, rekeyAccount.address, funder.GetAddress(), rekeyTarget.PrivateKey)
-		})
 	})
 }
 
@@ -268,81 +253,36 @@ type corridorExecutionAccount struct {
 	recipientsParam    string
 	userPrivateKey     []byte
 	cosignerPrivateKey []byte
-	adminPrivateKey    []byte
 	metadata           *boundedmeta.Metadata
 }
 
-func newCorridorExecutionAccount(t *testing.T, testnet *harness.TestnetConfig, recipients []types.Address) corridorExecutionAccount {
-	t.Helper()
-	return newCorridorExecutionAccountWithCompiler(t, testnet.Client, recipients)
+// corridorShape is the general bounded type's Corridor preset
+// (internal/boundary/preset.go): every transfer kind, a Merkle list, a cosigner on
+// every spend, and no rekey path.
+func corridorShape() boundedaccount.Shape {
+	return boundedaccount.Shape{
+		Spend:    []txeffects.SpendEffect{txeffects.SpendEffectPay, txeffects.SpendEffectAxfer, txeffects.SpendEffectAssetOptIn},
+		Encoding: boundedaccount.EncodingMerkle,
+		Rekey:    boundedaccount.RekeyRefused,
+		Cosigner: true,
+	}
 }
 
-func newCorridorExecutionAccountWithCompiler(
-	t *testing.T,
-	compiler *sdkalgod.Client,
-	recipients []types.Address,
-) corridorExecutionAccount {
+func newCorridorExecutionAccount(t *testing.T, provider *boundedaccount.Provider, recipients ...types.Address) corridorExecutionAccount {
 	t.Helper()
 	if len(recipients) == 0 {
 		t.Fatal("corridor execution account requires at least one recipient")
 	}
-
-	ops := signerops.New(nil)
-	userPublicKey, userPrivateKey, err := ops.GenerateKeypair(randomFalconSeed(t))
-	if err != nil {
-		t.Fatalf("failed to generate corridor user keypair: %v", err)
-	}
-	cosignerPublicKey, cosignerPrivateKey, err := ops.GenerateKeypair(randomFalconSeed(t))
-	if err != nil {
-		t.Fatalf("failed to generate corridor cosigner keypair: %v", err)
-	}
-	adminPublicKey, adminPrivateKey, err := ops.GenerateKeypair(randomFalconSeed(t))
-	if err != nil {
-		t.Fatalf("failed to generate corridor admin keypair: %v", err)
-	}
-
 	recipientStrings := make([]string, len(recipients))
 	for i, recipient := range recipients {
 		recipientStrings[i] = recipient.String()
 	}
-	recipientsParam := strings.Join(recipientStrings, ",")
-	falcon1024.RegisterClient()
-	templateData, err := retired.ReadFile("aplane.corridor.v1.yaml")
-	if err != nil {
-		t.Fatalf("failed to read Corridor template: %v", err)
+	account := newGeneralAccount(t, provider, corridorShape(), recipientStrings, 0)
+	if account.metadata.Layer3Policy != boundedmeta.Layer3PolicyMerkleAllowlist || account.metadata.Cosigner == nil || len(account.metadata.AdminOperations) != 0 {
+		t.Fatalf("account is not a Corridor: layer3_policy=%q cosigner=%v admin_operations=%v",
+			account.metadata.Layer3Policy, account.metadata.Cosigner != nil, account.metadata.AdminOperations)
 	}
-	spec, err := composeddsa.ParseTemplateSpec(templateData)
-	if err != nil {
-		t.Fatalf("failed to parse Corridor template: %v", err)
-	}
-	provider, err := composeddsa.NewProviderFromTemplateSpec(spec)
-	if err != nil {
-		t.Fatalf("failed to build Corridor provider: %v", err)
-	}
-	provider.SetAlgodClient(compiler)
-	params := map[string]string{
-		"recipients": recipientsParam,
-		composeddsa.BoundedCosignerPublicKeyParameter: hex.EncodeToString(cosignerPublicKey),
-		composeddsa.BoundedAdminPublicKeyParameter:    hex.EncodeToString(adminPublicKey),
-	}
-	derived, err := provider.DeriveLsigWithSalt(context.Background(), userPublicKey, params)
-	if err != nil {
-		t.Fatalf("failed to derive corridor LogicSig: %v", err)
-	}
-	metadata, err := provider.BuildBoundedAuthorizationMetadata(userPublicKey, params, derived.Bytecode)
-	if err != nil {
-		t.Fatalf("failed to build Corridor bounded metadata: %v", err)
-	}
-
-	return corridorExecutionAccount{
-		address:            derived.Address.String(),
-		bytecode:           derived.Bytecode,
-		recipientsParam:    recipientsParam,
-		userPrivateKey:     userPrivateKey,
-		cosignerPrivateKey: cosignerPrivateKey,
-		adminPrivateKey:    adminPrivateKey,
-		metadata:           metadata,
-	}
+	return account
 }
 
 func (a corridorExecutionAccount) proofFor(t *testing.T, recipient types.Address) []byte {
@@ -456,42 +396,6 @@ func (a corridorExecutionAccount) argumentIndex(t *testing.T, source string) int
 	return -1
 }
 
-func (a corridorExecutionAccount) adminRekeyArgs(t *testing.T, baseSignature []byte, txid types.Digest) [][]byte {
-	t.Helper()
-	if a.metadata == nil {
-		t.Fatal("Corridor bounded metadata is missing")
-	}
-	binding, err := hex.DecodeString(a.metadata.ProgramBindingHex)
-	if err != nil {
-		t.Fatalf("decode Corridor program binding: %v", err)
-	}
-	var bindingDigest [32]byte
-	if len(binding) != len(bindingDigest) {
-		t.Fatalf("Corridor program binding length = %d, want %d", len(binding), len(bindingDigest))
-	}
-	copy(bindingDigest[:], binding)
-	adminMessage, err := composeddsa.BoundedAdminMessage(composeddsa.AdminOperationRekey, bindingDigest, txid[:])
-	if err != nil {
-		t.Fatalf("build Corridor admin message: %v", err)
-	}
-	adminSignature, err := signerops.New(nil).Sign(a.adminPrivateKey, adminMessage[:])
-	if err != nil {
-		t.Fatalf("sign Corridor admin message: %v", err)
-	}
-	args := make([][]byte, len(a.metadata.ArgumentLayout))
-	for _, slot := range a.metadata.ArgumentLayout {
-		switch slot.Source {
-		case boundedmeta.ArgSourceBaseSignature:
-			args[slot.Index] = append([]byte(nil), baseSignature...)
-		case boundedmeta.ArgSourceAdmin:
-			args[slot.Index] = append([]byte(nil), adminSignature...)
-		default:
-			args[slot.Index] = []byte{}
-		}
-	}
-	return args
-}
-
 func (a corridorExecutionAccount) spendArgs(t *testing.T, baseSignature, proof, cosignerSignature []byte) [][]byte {
 	t.Helper()
 	if a.metadata == nil {
@@ -518,8 +422,6 @@ func (a corridorExecutionAccount) spendArgs(t *testing.T, baseSignature, proof, 
 			derivedIndex++
 		case boundedmeta.ArgSourceCosigner:
 			value = cosignerSignature
-		case boundedmeta.ArgSourceAdmin:
-			value = nil
 		default:
 			t.Fatalf("Corridor test does not support argument source %q", slot.Source)
 		}
@@ -847,30 +749,27 @@ func bestEffortSubmitCorridorCase(
 	}
 }
 
-func bestEffortCorridorAdminRekey(
-	t *testing.T,
-	testnet *harness.TestnetConfig,
-	account corridorExecutionAccount,
-	target types.Address,
-) {
+// returnCorridorAsset transfers what a Corridor account holds of the shared test
+// asset to a listed recipient. The account can't close out the asset, but the
+// fixture's supply must end back with the funder.
+func returnCorridorAsset(t *testing.T, testnet *harness.TestnetConfig, account corridorExecutionAccount, to string, proof []byte, assetID uint64) {
 	t.Helper()
-	defer func() {
-		if r := recover(); r != nil {
-			t.Logf("cleanup: Corridor contract-admin rekey skipped after panic: %v", r)
+	info, err := testnet.Client.AccountInformation(account.address).Do(context.Background())
+	if err != nil {
+		t.Fatalf("read %s: %v", account.address, err)
+	}
+	var held uint64
+	for _, holding := range info.Assets {
+		if holding.AssetId == assetID {
+			held = holding.Amount
 		}
-	}()
-	txn := corridorPaymentTxn(t, mustSuggestedParams(t, testnet), account.address, account.address, 0, "corridor-cleanup-admin-rekey")
-	txn.RekeyTo = target
-	rawGroup, txid := account.signGroup(t, txn, nil, func(txid types.Digest, args [][]byte) [][]byte {
-		return account.adminRekeyArgs(t, args[0], txid)
-	})
-	if _, err := testnet.Client.SendRawTransaction(rawGroup).Do(context.Background()); err != nil {
-		t.Logf("cleanup: Corridor contract-admin rekey submit failed: %v", err)
+	}
+	if held == 0 {
 		return
 	}
-	if _, err := testnet.WaitForConfirmation(txid, 10); err != nil {
-		t.Logf("cleanup: Corridor contract-admin rekey confirmation failed: %v", err)
-	}
+	txn := corridorAssetTransferTxn(t, mustSuggestedParams(t, testnet), account.address, to, held, assetID, "corridor-cleanup-asset")
+	rawGroup, txid := account.signGroup(t, txn, proof, nil)
+	submitCorridorGroupExpectSuccess(t, testnet, rawGroup, txid)
 }
 
 func bestEffortCloseRekeyedAccount(t *testing.T, testnet *harness.TestnetConfig, account, destination string, authPrivateKey stded25519.PrivateKey) {

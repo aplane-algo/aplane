@@ -319,7 +319,7 @@ func (m Model) handleImportClientKeyKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case fileBrowserKey:
 		m.clients.importFocus = importClientKeyFocusPath
-		return m.openFileBrowser(browseClientKeyFile, m.clients.importPath, "", ""), nil
+		return m.openFileBrowser(browseClientKeyFile, m.clients.importPath, ""), nil
 	case "tab", "down":
 		m.clients.importFocus = (m.clients.importFocus + 1) % 3
 		return m, nil

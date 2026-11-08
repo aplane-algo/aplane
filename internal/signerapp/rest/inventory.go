@@ -148,7 +148,6 @@ var boundedInventoryParameterNames = []string{
 	"recipients",
 	"unlock_round",
 	boundedmeta.CosignerPublicKeyParameter,
-	boundedmeta.AdminPublicKeyParameter,
 }
 
 func boundedAccountParameters(parameters map[string]string) map[string]string {
@@ -425,11 +424,9 @@ func boundedInfo(metadata *boundedmeta.Metadata) *signerapi.BoundedAuthorization
 			Count:    metadata.BaseSignatureArgLayout.Count,
 			MaxSizes: append([]int(nil), metadata.BaseSignatureArgLayout.MaxSizes...),
 		},
-		SpendEffects:      append([]string(nil), metadata.SpendEffects...),
-		MaxFee:            metadata.MaxFee,
-		Layer3Policy:      metadata.Layer3Policy,
-		AdminKeyID:        metadata.AdminKeyID,
-		ProgramBindingHex: metadata.ProgramBindingHex,
+		SpendEffects: append([]string(nil), metadata.SpendEffects...),
+		MaxFee:       metadata.MaxFee,
+		Layer3Policy: metadata.Layer3Policy,
 	}
 	if metadata.Cosigner != nil {
 		info.Cosigner = &signerapi.BoundedCosignerAuthorizationInfo{

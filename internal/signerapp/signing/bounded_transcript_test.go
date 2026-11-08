@@ -4,14 +4,11 @@
 package signing
 
 import (
-	"bytes"
 	"testing"
 
-	boundedmessage "github.com/aplane-algo/aplane/internal/boundedadmin/message"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/cosigner/message"
 	"github.com/aplane-algo/aplane/internal/sigconstruction"
-	sigverify "github.com/aplane-algo/aplane/internal/sigconstruction/verify"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
@@ -35,7 +32,6 @@ func TestBoundedTranscriptsAreRoleSeparated(t *testing.T) {
 	}
 	spendingPublic, spendingPrivate := keypair(1)
 	cosignerPublic, cosignerPrivate := keypair(2)
-	adminPublic, adminPrivate := keypair(3)
 
 	var txID [32]byte
 	for i := range txID {
@@ -46,10 +42,6 @@ func TestBoundedTranscriptsAreRoleSeparated(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	admin, err := boundedmessage.AdminMessage(boundedmessage.OperationRekey, bytes.Repeat([]byte{0x5a}, boundedmeta.ProgramBindingSize), txID[:])
-	if err != nil {
-		t.Fatal(err)
-	}
 	userComponent := message.ComponentMessage(message.RoleUser, txID)
 	cosignerComponent := message.ComponentMessage(message.RoleCosigner, txID)
 	transcripts := map[string][]byte{
@@ -57,7 +49,6 @@ func TestBoundedTranscriptsAreRoleSeparated(t *testing.T) {
 		"assembly receipt":   receipt[:],
 		"user component":     userComponent[:],
 		"cosigner component": cosignerComponent[:],
-		"admin":              admin[:],
 	}
 	seen := map[string]string{}
 	for name, transcript := range transcripts {
@@ -88,17 +79,11 @@ func TestBoundedTranscriptsAreRoleSeparated(t *testing.T) {
 		"cosigner component": func(transcript, signature []byte) bool {
 			return verifyCosignerAssemblySignature(witness.Falcon1024V1, cosignerPublic, transcript, signature) == nil
 		},
-		// The admin signature is checked outside the signer, as the
-		// external-admin authorization does: Falcon over the admin message.
-		"admin": func(transcript, signature []byte) bool {
-			return sigverify.Verify(sigconstruction.Falcon1024(), adminPublic, transcript, signature) == nil
-		},
 	}
 	signers := map[string][]byte{
 		"spend":              spendingPrivate,
 		"assembly receipt":   spendingPrivate,
 		"cosigner component": cosignerPrivate,
-		"admin":              adminPrivate,
 	}
 	for role, verify := range verifiers {
 		signature := sign(signers[role], transcripts[role])

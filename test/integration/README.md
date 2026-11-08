@@ -30,12 +30,13 @@ APLANE_INTEGRATION_NETWORK=localnet ./test/setup-test-env.sh
 account. It is never interpreted as Ed25519. Public-network runs therefore
 require a network that has activated native Falcon authorization (v42).
 
-Corridor and allowlist-lock asset vectors reuse the oldest clean `Corridor Test Asset`
-created by the funding account for which the account still holds the complete
-10-unit supply. If the account has no such fixture, the test creates one on the
-selected network. If a matching fixture exists but is depleted, the test fails
-instead of creating a replacement, preventing repeated runs from accumulating
-assets when cleanup is incomplete.
+Bounded-account asset vectors (Corridor, the general bounded type and the bounded
+composer) reuse the oldest clean `Corridor Test Asset` created by the funding
+account for which the account still holds the complete 10-unit supply. If the
+account has no such fixture, the test creates one on the selected network. If a
+matching fixture exists but is depleted, the test fails instead of creating a
+replacement, preventing repeated runs from accumulating assets when cleanup is
+incomplete.
 
 This creates configs, SSH keys, token, and keystore, then writes `.env.test`
 in the project root with all required environment variables.

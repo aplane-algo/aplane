@@ -13,8 +13,8 @@ func TestCosignerKeyTypeClassifiers(t *testing.T) {
 	if !IsGuardedAccountKeyType(GuardedFalcon1024Cosigner1024V1) {
 		t.Fatal("Falcon guarded account key type was not classified as guarded")
 	}
-	if IsGuardedAccountKeyType("aplane.corridor.v1") {
-		t.Fatal("bounded Corridor template was classified as a legacy guarded account")
+	if IsGuardedAccountKeyType("aplane.falcon1024-b.v1") {
+		t.Fatal("bounded key type (Corridor preset) was classified as a legacy guarded account")
 	}
 	if !IsCosignerKeyType(witness.Falcon1024V1) {
 		t.Fatal("witness key type was not classified as cosigner-owned")
@@ -31,8 +31,8 @@ func TestCosignerComponentKeyTypeForGuardedAccount(t *testing.T) {
 			t.Fatalf("CosignerComponentKeyTypeForGuardedAccount(%q) = (%q, %v)", keyType, got, ok)
 		}
 	}
-	if got, ok := CosignerComponentKeyTypeForGuardedAccount("aplane.corridor.v1"); ok || got != "" {
-		t.Fatalf("bounded Corridor template unexpectedly classified as guarded account: (%q, %v)", got, ok)
+	if got, ok := CosignerComponentKeyTypeForGuardedAccount("aplane.falcon1024-b.v1"); ok || got != "" {
+		t.Fatalf("bounded key type (Corridor preset) unexpectedly classified as guarded account: (%q, %v)", got, ok)
 	}
 	if got, ok := CosignerComponentKeyTypeForGuardedAccount(witness.Falcon1024V1); ok || got != "" {
 		t.Fatalf("witness key unexpectedly classified as guarded account: (%q, %v)", got, ok)

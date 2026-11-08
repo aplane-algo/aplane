@@ -27,8 +27,6 @@ func TestRetiredTemplatesCarryDeprecationComment(t *testing.T) {
 	}{
 		{"aplane.falcon1024-allowlist.v1.yaml", "the Allowlist preset of aplane.falcon1024-b.v1", "ec78337365093494cf36507a327eb5b845fa3e6bfee4fe66262a199fa48c3ff8"},
 		{"aplane.falcon1024-allowlist.v2.yaml", "the Allowlist preset of aplane.falcon1024-b.v1", "abcae47883883117dff9d861a33ea545458a079d635569bae460041bec7215c9"},
-		{"aplane.falcon1024-allowlist-lock.v1.yaml", "the Locked Allowlist preset of aplane.falcon1024-b.v1", "cfa0dec292fc27a73d2f79a2d4d223e4c6994313efb1ab0f19c8807e8b7a332f"},
-		{"aplane.corridor.v1.yaml", "the Corridor preset of aplane.falcon1024-b.v1", "0871035319d12c825a64aad2ca9e34be913bb388bbfdc6411f8865e98c50cd55"},
 		{"aplane.falcon1024-timelock.v1.yaml", "the Timelock preset of aplane.falcon1024-b.v1", "4fd2347d691d95bb577567f4582d0bd9146d0297b9c730ef83845fb41e9110b2"},
 	} {
 		t.Run(test.file, func(t *testing.T) {

@@ -87,8 +87,8 @@ func NewProvider() (*Provider, error) {
 // because the grammar must not offer a shape that errors on first use. A shape can
 // build and still be refused at generation: that is the support policy's decision,
 // which this construction must not take, since inventory and durable load reach it.
-// composeddsa's bounded_generation_support_test.go pins that the policy runs only
-// from GenerateTEAL.
+// composeddsa's bounded_generation_support_test.go covers the policy's refusals at
+// GenerateTEAL.
 func newProvider(definition Definition) (*Provider, error) {
 	if len(definition.Shapes) == 0 {
 		return nil, fmt.Errorf("bounded definition %s.%s has no shapes", definition.Publisher, definition.Family)
@@ -206,7 +206,7 @@ func shapeSpec(definition Definition, shape Shape) *composeddsa.TemplateSpec {
 // might use, so the cosigner key is optional here and required by selectShape when
 // the request selects a shape that uses it.
 func creationParameters() []lsigprovider.ParameterDef {
-	_, cosigner := composeddsa.BoundedAuthorityParameterDefs()
+	cosigner := composeddsa.BoundedCosignerParameterDef()
 	cosigner.Required = false
 	minimumRound := uint64(1)
 	return []lsigprovider.ParameterDef{
@@ -264,8 +264,8 @@ func (p *Provider) resolve(params map[string]string) (*shapeDefinition, map[stri
 }
 
 // composerValues keeps only the parameters a shape's composer declares. The
-// composer encodes its declared parameters into the program binding, so selectors
-// must not reach it.
+// composer treats every value it receives as one of its own parameters, so
+// selectors must not reach it.
 func composerValues(definition *shapeDefinition, values map[string]string) map[string]string {
 	declared := make(map[string]string)
 	for _, def := range definition.composer.CreationParams() {

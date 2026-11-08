@@ -4,7 +4,7 @@
 
 > **TL;DR**
 > - The LogicSigs bundled with APlane (Falcon timelock, Falcon inline and
->   Merkle allowlists, the rekey-locked Falcon allowlist, HTLC, and the
+>   Merkle allowlists, the general bounded account, HTLC, and the
 >   signer-gated DSA providers) are safe to fund and use as documented.
 > - Anything you compile yourself — your own TEAL, your own YAML template, or
 >   an externally-supplied LogicSig — needs to pass the full review checklist
@@ -246,7 +246,7 @@ mechanism enforces mutual exclusion.
 
 A bounded template can use the framework `timelock`, `fixed_allowlist_timelock`, or
 `merkle_allowlist_timelock` policy instead of writing this check. A rekey that does not
-pass through Layer 3 is not delayed by it, including every external admin-key rekey.
+pass through Layer 3, one whose `policy_gate` is `none`, is not delayed by it.
 
 ### 10. Group Semantics
 
@@ -836,35 +836,28 @@ through algod, using the TEAL v13 assembler's salt rule, and are cross-checked
 against the stock assembler in tests. Transaction policy beyond those checks
 lives in signer approval and local signer policy.
 
-#### Bounded Authorization Allowlist
+#### `aplane.falcon1024-b.v1`
 
-`aplane.falcon1024-allowlist-lock.v1` is a schema-v2 composed account with
-Falcon-1024 spending and external Falcon contract-admin authorization. The
-composer-owned `bounded1` envelope admits only pure payments, pure asset
-transfers, independently authorized asset opt-ins, or a pure self-payment
-rekey, caps the protected transaction fee, and denies close and clawback
-effects before Layer 3. A rekey requires both the spending
-signature and an external contract-admin signature through
-`POST /sign/bounded-admin` and `aprekey`.
+`aplane.falcon1024-b.v1` is the default-enabled general bounded account, with
+Falcon-1024 spending and a `bounded1` program chosen from a fixed set of shapes.
+The composer-owned envelope admits only pure payments, pure asset transfers,
+independently authorized asset opt-ins, or a pure self-payment rekey, caps the
+protected transaction fee, and denies close and clawback effects before Layer 3.
+A rekey needs only the spending signature, or the account refuses rekeys and its
+program has no rekey path.
 
-Its framework-owned `fixed_allowlist` policy handles all admitted spend effects
-without author TEAL. It constrains `Receiver`/`AssetReceiver` and compiles the
-canonical recipient list inline with an audited maximum of 30 entries. Asset
-and amount limits stay in signer policy, because one program is valid on every
-network and asset IDs are network-local. It uses no runtime proof or signer-derived LogicSig argument. The external private
-key exists only in a `.adm` artifact; losing all copies removes
-the admin-key rekey path but does not stop policy-compliant spending. See
+Its framework recipient list constrains `Receiver`/`AssetReceiver`, inline or
+as a Merkle root, and an optional unlock round delays spending. Asset and amount
+limits stay in signer policy, because one program is valid on every network and
+asset IDs are network-local. See
+[USER_KEYTYPES.md](USER_KEYTYPES.md#bounded-accounts) and
 [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md).
 
-Do not combine a bounded cosigner gate with a spending-key-authorized rekey.
-That rekey would bypass the spend-only cosigner authority and has no
-`bounded-cosigner1` signing route. V1 validation rejects the combination;
-escaping a failed cosigner requires an external contract-admin rekey.
-
-The external admin key is not an independent recovery key. The rekey still
-requires the spending signature. Losing the spending key is fatal even when
-the admin witness survives; operators must back up both authorities
-independently.
+A bounded cosigner gate needs an account that refuses rekeys. A spending-key
+rekey would bypass the spend-only cosigner authority and has no
+`bounded-cosigner1` signing route, so V1 validation rejects the combination.
+Such an account can neither close nor be rekeyed, so its funds cannot be
+recovered if the cosigner is lost.
 
 #### Guarded Cosigner Provider
 
@@ -874,10 +867,10 @@ flow (a user component signature plus a cosigner component signature). Its
 on-chain LogicSig does not restrict transaction shape once both signatures
 verify, so cosigner policy is the spending boundary.
 
-`aplane.corridor.v1` is instead a retired schema-v2 bounded template. It
+The Corridor preset of `aplane.falcon1024-b.v1` is instead a bounded account. It
 requires a cosigner signature only on bounded spend paths, applies a
-framework-owned Merkle recipient policy, and reserves pure rekey for a distinct
-offline contract-admin witness. Its flow is `bounded-cosigner1`. See
+framework-owned Merkle recipient policy, and refuses rekeys. Its flow is
+`bounded-cosigner1`. See
 [KEYTYPE_CAPABILITIES.md](KEYTYPE_CAPABILITIES.md) for the per-operation matrix
 and [ARCH_GUARDED.md](ARCH_GUARDED.md#corridor-v1) for its complete contract.
 
@@ -887,7 +880,7 @@ These ship as plaintext YAML install sources. New signer stores do not
 install them automatically. Enable one through apadmin's KeyType Library or
 explicitly import its YAML into the product store before generating accounts.
 
-`aplane.htlc.v1` is in the default library. The allowlist, timelock, and Corridor
+`aplane.htlc.v1` is in the default library. The allowlist and timelock
 templates below are retired: they are kept under `library/retired/` to repair
 existing accounts, and new accounts should use a preset of `aplane.falcon1024-b.v1`.
 Their sections still describe what those accounts do.
@@ -952,9 +945,7 @@ the template's Layer 3 condition.
 
 The account cannot be rekeyed before the unlock round, including as an
 emergency response to spending-key compromise. This preserves the timelock as
-an authority condition; use the external-admin allowlist or a reviewed custom
-policy when an earlier separately co-authorized rekey path is required. The
-external-admin path still requires the spending key.
+an authority condition.
 
 The program is not bound to a network, and `unlock_round` means a different time on
 each one, so the account could be unlocked on one network and locked on another.
