@@ -7,17 +7,20 @@
 #
 # The test keeps the existing docker-local behavior surface focused on install,
 # SSH client enrollment, client reachability, shared LocalNet wiring, cosigner
-# endpoint enrollment, local IPC cosigner-reference import,
-# guarded transaction-signing flows, and corridor allowlist enforcement. It
-# also validates the guarded account with SDK intent prep plus component signing.
+# endpoint enrollment, local IPC cosigner-reference import, the cosigned flow,
+# and corridor allowlist enforcement. A plain host (aplane.falcon1024.v1 with a
+# cosigner) signs a 0 ALGO self-send through apshell and through the Python,
+# TypeScript and Go SDKs, each with its real cosigner node, and then closes out.
 # A general aplane.falcon1024-b.v1 account with the Corridor preset's rules, created
 # from a boundary file with no key type setup, carries the cosigned checks. It can
 # be rekeyed only to its listed address, with the spending key alone, so once its
 # cosigner is gone it can't spend but its listed key still takes it over. A plus
 # cosigned account's other rekeys go to the real cosigner node, whose policy
 # refuses them until it allows the rekey edge.
-# Local mode uses the local Python SDK checkout; release mode uses the Python
-# package from PyPI and the TypeScript package from npm.
+# Local mode uses the local aplanesdk checkout for all three SDKs: Python
+# installed from source, TypeScript built and packed on the host, and a Go
+# program built statically on the host. Release mode uses PyPI, npm and the
+# published Go module.
 
 set -euo pipefail
 
@@ -54,7 +57,8 @@ ED25519_ADDRESS=""
 PLUS_COSIGNED_ADDRESS=""
 COSIGNER_COMPONENT_KEY=""
 COSIGNER_REFERENCE_NAME="docker-cosigner"
-GUARDED_ADDRESS=""
+PLAIN_HOST_ADDRESS=""
+CLOSE_DESTINATION_ADDRESS=""
 CORRIDOR_ADDRESS=""
 GENERAL_BOUNDED_ADDRESS=""
 CORRIDOR_ALLOWED_ADDRESS=""
@@ -64,6 +68,8 @@ SDK_SOURCE_DIR=""
 SDK_CONTAINER_DIR="/home/$TEST_USER/src/aplanesdk-python"
 SDK_VENV="/home/$TEST_USER/aplane/apclient/python-sdk-venv"
 TS_SDK_DIR="/home/$TEST_USER/aplane/apclient/typescript-sdk"
+GO_SDK_BIN=""
+GO_SDK_CONTAINER_BIN="/home/$TEST_USER/aplane/apclient/go-sdk-validate"
 
 usage() {
     cat <<'EOF'
@@ -88,18 +94,18 @@ The client runs a client-only install plus apadmin, points endpoints.yaml at the
 signer container DNS name, adds the cosigner endpoint through apshell, enrolls
 the client key at both nodes, generates a cosigner key through the cosigner endpoint,
 then exports and imports the public cosigner reference with local IPC apadmin,
-enables guarded Falcon/Falcon,
-imports the optional Corridor template, and verifies apshell can create, fund,
-and validate guarded, Corridor, and plain Falcon accounts against the selected
-network. It then
-submits the same guarded 0 ALGO self-send with SDK preparation and guarded
-signing helpers. It also sends an allowlisted Corridor payment through the
+enables the plain host (aplane.falcon1024.v1), and verifies apshell can create,
+fund, and validate a cosigned plain host, Corridor, and native Falcon accounts
+against the selected network. The plain host signs the same 0 ALGO self-send
+through the Python, TypeScript and Go SDKs' prepared cosigned flow, then closes
+out through apshell. It also sends an allowlisted Corridor payment through the
 SDK's bounded-base component, cosigner component, and shared assembly choreography,
 and proves a non-allowlisted recipient is rejected. The Corridor flow also
 proves that cosigner loss blocks spend while the account's listed key can still
 take it over, and a plus cosigned account's unlisted rekey waits on the cosigner
-node's rekey policy. By default the Python SDK comes from the local aplanesdk repo;
-with --release-install, Python comes from PyPI and TypeScript comes from npm.
+node's rekey policy. By default every SDK comes from the local aplanesdk repo
+(the host needs go and npm); with --release-install, Python comes from PyPI,
+TypeScript from npm and Go from the published module.
 EOF
 }
 
@@ -658,6 +664,7 @@ YAML
 
 configure_cosigner_policy() {
     [ -n "$COSIGNER_COMPONENT_KEY" ] || die "Witness Key ID is not set"
+    [ -n "$CLOSE_DESTINATION_ADDRESS" ] || die "close destination is not set"
     # A cosigner key without a document of its own follows the node default,
     # which rejects every request. Give the key its own document online once
     # it exists, exercising the apadmin policy verbs an operator uses along
@@ -670,6 +677,7 @@ set -euo pipefail
 
 key="$1"
 data="$2"
+close_to="$3"
 policy="$(mktemp -d)/$key.json"
 
 fail() {
@@ -703,7 +711,8 @@ cat > "$policy" <<JSON
   "transaction_types": {"*": "reject", "pay": "allow", "axfer": "allow"},
   "transfer_policy": {
     "routes": [
-      {"id": "docker_smoke_allow_all", "networks": ["*"], "sources": ["*"], "assets": ["*"], "destinations": ["*"]}
+      {"id": "docker_smoke_allow_all", "networks": ["*"], "sources": ["*"], "assets": ["*"], "destinations": ["*"]},
+      {"id": "docker_smoke_close", "networks": ["*"], "sources": ["*"], "assets": ["*"], "destinations": ["$close_to"], "allow_close": true}
     ]
   }
 }
@@ -726,7 +735,7 @@ expect '"key": "default"' "export without --key prints the node default" admin p
 expect '^policy unchanged$' "re-applying the active policy" admin policy apply --yes "$policy"
 
 # Removing the document returns the key to the deny-all default; the stdin
-# form of apply restores it for the guarded transactions that follow.
+# form of apply restores it for the cosigned transactions that follow.
 expect '^policy applied as generation ' "remove" admin policy remove --yes "$key"
 expect "^  $key +default" "status after remove" admin policy status
 out="$(admin policy apply --yes - < "$policy")" || fail "apply from stdin: command failed"
@@ -739,7 +748,7 @@ SCRIPT
     docker_exec "$COSIGNER_CONTAINER" chown "$TEST_USER:$TEST_USER" /tmp/cosigner-policy-smoke.sh
     docker_exec_as_tester "$COSIGNER_CONTAINER" ". /home/$TEST_USER/aplane/apenv.sh && \
         APSIGNER_PASSPHRASE='$TEST_PASSPHRASE' \
-        bash /tmp/cosigner-policy-smoke.sh '$COSIGNER_COMPONENT_KEY' /home/$TEST_USER/aplane/apsigner" \
+        bash /tmp/cosigner-policy-smoke.sh '$COSIGNER_COMPONENT_KEY' /home/$TEST_USER/aplane/apsigner '$CLOSE_DESTINATION_ADDRESS'" \
         || die "cosigner policy CLI checks failed"
 }
 
@@ -769,11 +778,16 @@ configure_signer_policy() {
     "close_on_no_route": "reject",
     "clawback_on_no_route": "reject",
     "routes": [
-      {"id": "docker_smoke_allow_all", "networks": ["*"], "sources": ["*"], "assets": ["*"], "destinations": ["*"]}
+      {"id": "docker_smoke_allow_all", "networks": ["*"], "sources": ["*"], "assets": ["*"], "destinations": ["*"]},
+      {"id": "docker_smoke_close", "networks": ["*"], "sources": ["*"], "assets": ["*"], "destinations": ["__CLOSE_TO__"], "allow_close": true}
     ]
   }
 }
 JSON
+    # A close route must name its destinations: the smoke's closes go to one
+    # LocalNet account.
+    [ -n "$CLOSE_DESTINATION_ADDRESS" ] || die "close destination is not set"
+    sed -i "s/__CLOSE_TO__/$CLOSE_DESTINATION_ADDRESS/" "$policy_file"
     docker cp "$policy_file" "$SIGNER_CONTAINER:/tmp/signer-policy.json"
     rm -f "$policy_file"
     docker_exec "$SIGNER_CONTAINER" chown "$TEST_USER:$TEST_USER" /tmp/signer-policy.json
@@ -1031,11 +1045,26 @@ install_python_sdk_client() {
 }
 
 install_typescript_sdk_client() {
-    [ "$RELEASE_INSTALL" = "1" ] || return 0
-
     local package="aplanesdk"
-    if [ -n "$SDK_VERSION" ]; then
-        package="aplanesdk@$SDK_VERSION"
+    if [ "$RELEASE_INSTALL" = "1" ]; then
+        if [ -n "$SDK_VERSION" ]; then
+            package="aplanesdk@$SDK_VERSION"
+        fi
+    else
+        # Build and pack the local SDK on the host; npm pack runs its prepack
+        # build. The container installs the tarball like a published package.
+        [ -n "$SDK_REPO" ] || die "SDK repo is not set"
+        command -v npm >/dev/null 2>&1 || die "npm not found on the host; local mode packs the TypeScript SDK"
+        local pack_dir tarball
+        pack_dir="$(mktemp -d)"
+        (cd "$SDK_REPO/typescript" && npm pack --pack-destination "$pack_dir" >/dev/null) \
+            || die "failed to build and pack the local TypeScript SDK"
+        tarball="$(ls "$pack_dir"/aplanesdk-*.tgz 2>/dev/null | head -n 1)"
+        [ -n "$tarball" ] || die "npm pack produced no aplanesdk tarball"
+        docker cp "$tarball" "$CLIENT_CONTAINER:/tmp/aplanesdk-typescript.tgz"
+        docker_exec "$CLIENT_CONTAINER" chown "$TEST_USER:$TEST_USER" /tmp/aplanesdk-typescript.tgz
+        rm -rf "$pack_dir"
+        package="/tmp/aplanesdk-typescript.tgz"
     fi
 
     docker_exec_as_tester "$CLIENT_CONTAINER" "rm -rf '$TS_SDK_DIR' && \
@@ -1043,6 +1072,160 @@ install_typescript_sdk_client() {
         cd '$TS_SDK_DIR' && \
         npm init -y >/dev/null && \
         npm install --no-audit --no-fund '$package' algosdk@^3.0.0"
+}
+
+# write_go_sdk_validator writes the Go SDK validation program into a new module
+# directory: the plain host's 0 ALGO self-send through the prepared cosigned flow.
+write_go_sdk_validator() {
+    local dir="$1"
+    cat > "$dir/main.go" <<'GO'
+package main
+
+import (
+	"context"
+	"encoding/hex"
+	"fmt"
+	"os"
+	"strings"
+	"time"
+
+	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
+	"github.com/algorand/go-algorand-sdk/v2/transaction"
+
+	aplane "github.com/aplane-algo/aplanesdk/go"
+)
+
+func requireEnv(name string) string {
+	value := strings.TrimSpace(os.Getenv(name))
+	if value == "" {
+		fmt.Fprintf(os.Stderr, "%s is required\n", name)
+		os.Exit(1)
+	}
+	return value
+}
+
+func main() {
+	primaryData := requireEnv("APCLIENT_DATA")
+	cosignerData := requireEnv("APLANE_COSIGNER_DATA")
+	account := requireEnv("APLANE_PLAIN_HOST_ADDRESS")
+	cosignerComponentKey := requireEnv("APLANE_COSIGNER_COMPONENT_KEY")
+	algodURL := requireEnv("APLANE_ALGOD_URL")
+	algodToken := strings.TrimSpace(os.Getenv("APLANE_ALGOD_TOKEN"))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	fail := func(step string, err error) {
+		fmt.Fprintf(os.Stderr, "Go SDK plain host validation: %s: %v\n", step, err)
+		os.Exit(1)
+	}
+
+	algodClient, err := algod.MakeClient(algodURL, algodToken)
+	if err != nil {
+		fail("algod client", err)
+	}
+	userClient, err := aplane.FromEnvWithContext(ctx, &aplane.FromEnvOptions{DataDir: primaryData, Timeout: 180})
+	if err != nil {
+		fail("connect to the signer", err)
+	}
+	defer userClient.Close()
+	cosignerClient, err := aplane.FromEnvWithContext(ctx, &aplane.FromEnvOptions{DataDir: cosignerData, Timeout: 180})
+	if err != nil {
+		fail("connect to the cosigner", err)
+	}
+	defer cosignerClient.Close()
+
+	prepared, err := userClient.PreparePayment(ctx, algodClient, aplane.PaymentPrepParams{
+		Sender:   account,
+		Receiver: account,
+		Amount:   0,
+		Note:     []byte("aplane go sdk plain host validate"),
+		Fee:      1000,
+	})
+	if err != nil {
+		fail("prepare payment", err)
+	}
+	result, err := aplane.SignPreparedGuardedGroupWithContext(ctx, aplane.PreparedGuardedGroupOptions{
+		UserClient:           userClient,
+		CosignerClient:       cosignerClient,
+		CosignerComponentKey: cosignerComponentKey,
+		PreparedGroup:        aplane.NewPreparedGroup(*prepared),
+	})
+	if err != nil {
+		fail("sign through the cosigned flow", err)
+	}
+	if len(result.SignedGroup) == 0 {
+		fail("sign through the cosigned flow", fmt.Errorf("empty signed group"))
+	}
+	fmt.Printf("Go SDK plain host validation group size: %d\n", len(result.SignedGroup))
+
+	var raw []byte
+	for _, signed := range result.SignedGroup {
+		decoded, err := hex.DecodeString(signed)
+		if err != nil {
+			fail("decode signed transaction", err)
+		}
+		raw = append(raw, decoded...)
+	}
+	txid, err := algodClient.SendRawTransaction(raw).Do(ctx)
+	if err != nil {
+		fail("submit", err)
+	}
+	if _, err := transaction.WaitForConfirmation(algodClient, txid, 10, ctx); err != nil {
+		fail("confirm", err)
+	}
+	fmt.Printf("Go SDK plain host validation submitted: %s\n", txid)
+}
+GO
+}
+
+# build_go_sdk_validator builds the Go SDK validation program on the host, as a
+# static Linux binary for the image's architecture, since the image has no Go
+# toolchain. Local mode builds against the local aplanesdk/go checkout; release
+# mode against the published module. It leaves GO_SDK_BIN empty when release
+# mode can't build it, and the Go check is skipped.
+build_go_sdk_validator() {
+    command -v go >/dev/null 2>&1 || die "go not found on the host; the Go SDK check builds its program there"
+    local dir
+    dir="$(mktemp -d)"
+    write_go_sdk_validator "$dir"
+    (cd "$dir" && go mod init aplane-docker-smoke/go-sdk-validate >/dev/null 2>&1) \
+        || die "failed to create the Go SDK validation module"
+    if [ "$RELEASE_INSTALL" = "1" ]; then
+        local version="${SDK_VERSION:-latest}"
+        case "$version" in
+            latest|v*) ;;
+            *) version="v$version" ;;
+        esac
+        if ! (cd "$dir" && go get "github.com/aplane-algo/aplanesdk/go@$version" >/dev/null 2>&1 && go mod tidy >/dev/null 2>&1); then
+            log "Skipping the Go SDK check: github.com/aplane-algo/aplanesdk/go@$version could not be fetched"
+            rm -rf "$dir"
+            return 0
+        fi
+    else
+        [ -n "$SDK_REPO" ] || die "SDK repo is not set"
+        (cd "$dir" && \
+            go mod edit -require=github.com/aplane-algo/aplanesdk/go@v0.0.0 \
+                -replace=github.com/aplane-algo/aplanesdk/go="$SDK_REPO/go" && \
+            go mod tidy >/dev/null) \
+            || die "failed to resolve the local Go SDK at $SDK_REPO/go"
+    fi
+    GO_SDK_BIN="$dir/go-sdk-validate"
+    if ! (cd "$dir" && CGO_ENABLED=0 GOOS=linux GOARCH="$ARCH" go build -trimpath -o "$GO_SDK_BIN" .); then
+        if [ "$RELEASE_INSTALL" = "1" ]; then
+            log "Skipping the Go SDK check: the published Go SDK predates the prepared cosigned flow"
+            GO_SDK_BIN=""
+            return 0
+        fi
+        die "failed to build the Go SDK validation program"
+    fi
+}
+
+install_go_sdk_client() {
+    [ -n "$GO_SDK_BIN" ] || return 0
+    docker cp "$GO_SDK_BIN" "$CLIENT_CONTAINER:$GO_SDK_CONTAINER_BIN"
+    docker_exec "$CLIENT_CONTAINER" chown "$TEST_USER:$TEST_USER" "$GO_SDK_CONTAINER_BIN"
+    docker_exec "$CLIENT_CONTAINER" chmod 755 "$GO_SDK_CONTAINER_BIN"
+    rm -rf "$(dirname "$GO_SDK_BIN")"
 }
 
 write_sdk_data_dir() {
@@ -1089,8 +1272,8 @@ configure_python_sdk_client_data() {
         "$cosigner_ssh_port"
 }
 
-run_python_sdk_guarded_validate() {
-    [ -n "$GUARDED_ADDRESS" ] || die "guarded address is not set"
+run_python_sdk_plain_host_validate() {
+    [ -n "$PLAIN_HOST_ADDRESS" ] || die "plain host address is not set"
     [ -n "$COSIGNER_COMPONENT_KEY" ] || die "Witness Key ID is not set"
 
     local py_file
@@ -1127,7 +1310,7 @@ def signed_group_b64(signed_hexes: list[str]) -> str:
 def main() -> int:
     primary_data = require_env("APCLIENT_DATA")
     cosigner_data = require_env("APLANE_COSIGNER_DATA")
-    guarded_address = require_env("APLANE_GUARDED_ADDRESS")
+    plain_host_address = require_env("APLANE_PLAIN_HOST_ADDRESS")
     cosigner_component_key = require_env("APLANE_COSIGNER_COMPONENT_KEY")
     algod_url = require_env("APLANE_ALGOD_URL")
     algod_token = os.environ.get("APLANE_ALGOD_TOKEN", "").strip()
@@ -1140,10 +1323,10 @@ def main() -> int:
     ) as cosigner_client:
         prepared = user_client.prepare_payment(
             algod_client,
-            sender=guarded_address,
-            receiver=guarded_address,
+            sender=plain_host_address,
+            receiver=plain_host_address,
             amount=0,
-            note=b"aplane python sdk guarded validate",
+            note=b"aplane python sdk plain host validate",
             fee=MIN_TXN_FEE,
         )
         result = sign_prepared_guarded_group(
@@ -1153,31 +1336,31 @@ def main() -> int:
             prepared_group=PreparedGroup([prepared]),
         )
         if not result.signed_group:
-            raise RuntimeError("SDK guarded signing returned an empty signed group")
-        print(f"Python SDK guarded validation group size: {len(result.signed_group)}")
+            raise RuntimeError("SDK cosigned signing returned an empty signed group")
+        print(f"Python SDK plain host validation group size: {len(result.signed_group)}")
 
         txid = send_raw_transaction(algod_client, signed_group_b64(result.signed_group))
         transaction.wait_for_confirmation(algod_client, txid, 10)
-        print(f"Python SDK guarded validation submitted: {txid}")
+        print(f"Python SDK plain host validation submitted: {txid}")
     return 0
 
 
 if __name__ == "__main__":
     sys.exit(main())
 PY
-    docker cp "$py_file" "$CLIENT_CONTAINER:/tmp/sdk-guarded-validate.py"
+    docker cp "$py_file" "$CLIENT_CONTAINER:/tmp/sdk-plain-host-validate.py"
     rm -f "$py_file"
-    docker_exec "$CLIENT_CONTAINER" chown "$TEST_USER:$TEST_USER" /tmp/sdk-guarded-validate.py
+    docker_exec "$CLIENT_CONTAINER" chown "$TEST_USER:$TEST_USER" /tmp/sdk-plain-host-validate.py
 
     docker_exec_as_tester "$CLIENT_CONTAINER" ". '$SDK_VENV/bin/activate' && \
         APCLIENT_DATA=/home/$TEST_USER/aplane/apclient-sdk-primary \
         APLANE_COSIGNER_DATA=/home/$TEST_USER/aplane/apclient-sdk-cosigner \
-        APLANE_GUARDED_ADDRESS='$GUARDED_ADDRESS' \
+        APLANE_PLAIN_HOST_ADDRESS='$PLAIN_HOST_ADDRESS' \
         APLANE_COSIGNER_COMPONENT_KEY='$COSIGNER_COMPONENT_KEY' \
         APLANE_ALGOD_URL='$ALGOD_URL' \
         APLANE_ALGOD_TOKEN='$ALGOD_TOKEN' \
         PYTHONUNBUFFERED=1 \
-        python /tmp/sdk-guarded-validate.py"
+        python /tmp/sdk-plain-host-validate.py"
 }
 
 run_python_sdk_corridor_validate() {
@@ -1315,9 +1498,8 @@ PY
         python /tmp/sdk-corridor-validate.py"
 }
 
-run_typescript_sdk_guarded_validate() {
-    [ "$RELEASE_INSTALL" = "1" ] || return 0
-    [ -n "$GUARDED_ADDRESS" ] || die "guarded address is not set"
+run_typescript_sdk_plain_host_validate() {
+    [ -n "$PLAIN_HOST_ADDRESS" ] || die "plain host address is not set"
     [ -n "$COSIGNER_COMPONENT_KEY" ] || die "Witness Key ID is not set"
 
     local js_file
@@ -1344,7 +1526,7 @@ function requireEnv(name) {
 async function main() {
   const primaryData = requireEnv("APCLIENT_DATA");
   const cosignerData = requireEnv("APLANE_COSIGNER_DATA");
-  const guardedAddress = requireEnv("APLANE_GUARDED_ADDRESS");
+  const plainHostAddress = requireEnv("APLANE_PLAIN_HOST_ADDRESS");
   const cosignerComponentKey = requireEnv("APLANE_COSIGNER_COMPONENT_KEY");
   const algodUrl = requireEnv("APLANE_ALGOD_URL");
   const algodToken = String(process.env.APLANE_ALGOD_TOKEN || "").trim();
@@ -1357,10 +1539,10 @@ async function main() {
   const cosignerClient = await SignerClient.fromEnv({ dataDir: cosignerData, timeout: 180 });
   try {
     const prepared = await userClient.preparePayment(algodClient, {
-      sender: guardedAddress,
-      receiver: guardedAddress,
+      sender: plainHostAddress,
+      receiver: plainHostAddress,
       amount: 0,
-      note: new TextEncoder().encode("aplane typescript sdk guarded validate"),
+      note: new TextEncoder().encode("aplane typescript sdk plain host validate"),
       fee: MIN_TXN_FEE,
     });
     const result = await signPreparedGuardedGroup({
@@ -1370,13 +1552,13 @@ async function main() {
       preparedGroup: { transactions: [prepared] },
     });
     if (!result.signedGroup || result.signedGroup.length === 0) {
-      throw new Error("SDK guarded signing returned an empty signed group");
+      throw new Error("SDK cosigned signing returned an empty signed group");
     }
-    console.log(`TypeScript SDK guarded validation group size: ${result.signedGroup.length}`);
+    console.log(`TypeScript SDK plain host validation group size: ${result.signedGroup.length}`);
 
     const txid = await sendRawTransaction(algodClient, concatenateSignedTxns(result.signedGroup));
     await algosdk.waitForConfirmation(algodClient, txid, 10);
-    console.log(`TypeScript SDK guarded validation submitted: ${txid}`);
+    console.log(`TypeScript SDK plain host validation submitted: ${txid}`);
   } finally {
     await cosignerClient.close();
     await userClient.close();
@@ -1391,19 +1573,31 @@ main().catch((err) => {
   process.exit(1);
 });
 JS
-    docker cp "$js_file" "$CLIENT_CONTAINER:$TS_SDK_DIR/sdk-guarded-validate.mjs"
+    docker cp "$js_file" "$CLIENT_CONTAINER:$TS_SDK_DIR/sdk-plain-host-validate.mjs"
     rm -f "$js_file"
-    docker_exec "$CLIENT_CONTAINER" chown "$TEST_USER:$TEST_USER" "$TS_SDK_DIR/sdk-guarded-validate.mjs"
+    docker_exec "$CLIENT_CONTAINER" chown "$TEST_USER:$TEST_USER" "$TS_SDK_DIR/sdk-plain-host-validate.mjs"
 
     docker_exec_as_tester "$CLIENT_CONTAINER" "cd '$TS_SDK_DIR' && \
         APCLIENT_DATA=/home/$TEST_USER/aplane/apclient-sdk-primary \
         APLANE_COSIGNER_DATA=/home/$TEST_USER/aplane/apclient-sdk-cosigner \
-        APLANE_GUARDED_ADDRESS='$GUARDED_ADDRESS' \
+        APLANE_PLAIN_HOST_ADDRESS='$PLAIN_HOST_ADDRESS' \
         APLANE_COSIGNER_COMPONENT_KEY='$COSIGNER_COMPONENT_KEY' \
         APLANE_ALGOD_URL='$ALGOD_URL' \
         APLANE_ALGOD_TOKEN='$ALGOD_TOKEN' \
         NODE_OPTIONS='--dns-result-order=ipv4first' \
-        node ./sdk-guarded-validate.mjs"
+        node ./sdk-plain-host-validate.mjs"
+}
+
+run_go_sdk_plain_host_validate() {
+    [ -n "$PLAIN_HOST_ADDRESS" ] || die "plain host address is not set"
+    [ -n "$COSIGNER_COMPONENT_KEY" ] || die "Witness Key ID is not set"
+    docker_exec_as_tester "$CLIENT_CONTAINER" "APCLIENT_DATA=/home/$TEST_USER/aplane/apclient-sdk-primary \
+        APLANE_COSIGNER_DATA=/home/$TEST_USER/aplane/apclient-sdk-cosigner \
+        APLANE_PLAIN_HOST_ADDRESS='$PLAIN_HOST_ADDRESS' \
+        APLANE_COSIGNER_COMPONENT_KEY='$COSIGNER_COMPONENT_KEY' \
+        APLANE_ALGOD_URL='$ALGOD_URL' \
+        APLANE_ALGOD_TOKEN='$ALGOD_TOKEN' \
+        '$GO_SDK_CONTAINER_BIN'"
 }
 
 generate_cosigner_component_key() {
@@ -1496,19 +1690,22 @@ enable_keytype() {
     printf '%s\n' "$out"
 }
 
-generate_guarded_key() {
+# generate_plain_host_key creates a cosigned plain host: the plain Falcon
+# LogicSig with the cosigner overlay, rekeyed by the spending key and the
+# cosigner together. It signs through the cosigned flow.
+generate_plain_host_key() {
     [ -n "$COSIGNER_COMPONENT_KEY" ] || die "Witness Key ID is not set"
 
-    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'connect\ngenerate aplane.falcon1024-cosigner1024.v1 cosigner=%s\n' '$COSIGNER_REFERENCE_NAME' > /tmp/generate-guarded.script"
+    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'connect\ngenerate aplane.falcon1024.v1 cosigner=%s rekey_authority=spending_key\n' '$COSIGNER_REFERENCE_NAME' > /tmp/generate-plain-host.script"
     local out
     if ! out="$(docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \
-        apshell -script /tmp/generate-guarded.script 2>&1")"; then
+        apshell -script /tmp/generate-plain-host.script 2>&1")"; then
         printf '%s\n' "$out" >&2
-        die "failed to generate guarded Falcon/Falcon cosigner account through client/signer flow"
+        die "failed to generate a cosigned plain host through client/signer flow"
     fi
     printf '%s\n' "$out"
-    GUARDED_ADDRESS="$(printf '%s\n' "$out" | awk '/Generated .* key:/ { print $NF; exit }')"
-    [ -n "$GUARDED_ADDRESS" ] || die "could not parse generated guarded address"
+    PLAIN_HOST_ADDRESS="$(printf '%s\n' "$out" | awk '/Generated .* key:/ { print $NF; exit }')"
+    [ -n "$PLAIN_HOST_ADDRESS" ] || die "could not parse generated plain host address"
 }
 
 resolve_corridor_addresses() {
@@ -1641,7 +1838,8 @@ allow_cosigner_rekey_edge() {
   "transaction_types": {"*": "reject", "pay": "allow", "axfer": "allow"},
   "transfer_policy": {
     "routes": [
-      {"id": "docker_smoke_allow_all", "networks": ["*"], "sources": ["*"], "assets": ["*"], "destinations": ["*"]}
+      {"id": "docker_smoke_allow_all", "networks": ["*"], "sources": ["*"], "assets": ["*"], "destinations": ["*"]},
+      {"id": "docker_smoke_close", "networks": ["*"], "sources": ["*"], "assets": ["*"], "destinations": ["$CLOSE_DESTINATION_ADDRESS"], "allow_close": true}
     ]
   },
   "rekey_policy": {
@@ -1765,12 +1963,12 @@ verify_falcon_funded() {
     verify_account_funded "$FALCON_ADDRESS" "Falcon"
 }
 
-fund_guarded_key() {
-    fund_account "$GUARDED_ADDRESS" "guarded"
+fund_plain_host_key() {
+    fund_account "$PLAIN_HOST_ADDRESS" "plain host"
 }
 
-verify_guarded_funded() {
-    verify_account_funded "$GUARDED_ADDRESS" "guarded"
+verify_plain_host_funded() {
+    verify_account_funded "$PLAIN_HOST_ADDRESS" "plain host"
 }
 
 fund_corridor_key() {
@@ -1796,19 +1994,44 @@ validate_falcon_self_send() {
         || die "Falcon validation output did not include success marker"
 }
 
-validate_guarded_self_send() {
-    [ -n "$GUARDED_ADDRESS" ] || die "guarded address is not set"
+validate_plain_host_self_send() {
+    [ -n "$PLAIN_HOST_ADDRESS" ] || die "plain host address is not set"
 
-    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'connect\nvalidate %s\n' '$GUARDED_ADDRESS' > /tmp/validate-guarded.script"
+    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'connect\nvalidate %s\n' '$PLAIN_HOST_ADDRESS' > /tmp/validate-plain-host.script"
     local out
     if ! out="$(docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \
-        apshell -script /tmp/validate-guarded.script 2>&1")"; then
+        apshell -script /tmp/validate-plain-host.script 2>&1")"; then
         printf '%s\n' "$out" >&2
-        die "guarded validation self-send failed"
+        die "plain host validation self-send failed"
     fi
     printf '%s\n' "$out"
     grep -Fq 'Validated successfully' <<<"$out" \
-        || die "guarded validation output did not include success marker"
+        || die "plain host validation output did not include success marker"
+}
+
+# close_plain_host closes the plain host out to a LocalNet account through
+# apshell: a CloseRemainderTo spend, which a plain host signs like any other,
+# with the cosigner. The account is then gone from the ledger.
+close_plain_host() {
+    [ -n "$PLAIN_HOST_ADDRESS" ] || die "plain host address is not set"
+    local destination="$CLOSE_DESTINATION_ADDRESS"
+    [ -n "$destination" ] || die "close destination is not set"
+
+    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'connect\nclose %s to %s\n' '$PLAIN_HOST_ADDRESS' '$destination' > /tmp/close-plain-host.script"
+    local out
+    if ! out="$(docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \
+        apshell -script /tmp/close-plain-host.script 2>&1")"; then
+        printf '%s\n' "$out" >&2
+        die "plain host close failed"
+    fi
+    printf '%s\n' "$out"
+    if grep -Fq 'Failed:' <<<"$out"; then
+        die "plain host close reported failure"
+    fi
+    local balance
+    balance="$(docker_exec "$ALGOD_CONTAINER" sh -lc "/node/bin/goal account balance -a '$PLAIN_HOST_ADDRESS' -d /algod/data 2>/dev/null | awk '{ print \$1; exit }'")"
+    [ "$balance" = "0" ] || die "plain host balance after close is ${balance:-unavailable}, want 0"
+    printf 'plain host %s closed to %s; balance %s\n' "$PLAIN_HOST_ADDRESS" "$destination" "$balance"
 }
 
 validate_corridor_allowed_send() {
@@ -1891,21 +2114,21 @@ PY")"; then
         || die "cosigner key deletion output did not include success marker"
 }
 
-validate_guarded_self_send_after_cosigner_delete_fails() {
-    [ -n "$GUARDED_ADDRESS" ] || die "guarded address is not set"
+validate_plain_host_self_send_after_cosigner_delete_fails() {
+    [ -n "$PLAIN_HOST_ADDRESS" ] || die "plain host address is not set"
 
-    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'connect\nvalidate %s\n' '$GUARDED_ADDRESS' > /tmp/validate-guarded-missing-cosigner.script"
+    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'connect\nvalidate %s\n' '$PLAIN_HOST_ADDRESS' > /tmp/validate-plain-host-missing-cosigner.script"
     local out
     out="$(docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \
-        apshell -script /tmp/validate-guarded-missing-cosigner.script 2>&1" || true)"
+        apshell -script /tmp/validate-plain-host-missing-cosigner.script 2>&1" || true)"
     printf '%s\n' "$out"
     if grep -Fq 'Validated successfully' <<<"$out"; then
-        die "guarded validation unexpectedly included success marker after cosigner key deletion"
+        die "plain host validation unexpectedly succeeded after cosigner key deletion"
     fi
     grep -Fq 'Failed:' <<<"$out" \
-        || die "guarded validation did not report a failed transaction after cosigner key deletion"
+        || die "plain host validation did not report a failed transaction after cosigner key deletion"
     grep -Fq 'no live cosigner route for Witness Key ID' <<<"$out" \
-        || die "guarded validation failure did not report missing cosigner key"
+        || die "plain host validation failure did not report the missing cosigner key"
 }
 
 verify_signer_reachable() {
@@ -1951,6 +2174,9 @@ main() {
         log "Building local release tarball"
     fi
     build_or_resolve_tarball
+
+    log "Building the Go SDK validation program on the host"
+    build_go_sdk_validator
 
     log "Building Ubuntu test image"
     build_image
@@ -2003,8 +2229,8 @@ main() {
     log "Adding cosigner endpoint from client container"
     create_client_cosigner_endpoint
 
-    log "Enabling the guarded LogicSig key type on signer"
-    enable_keytype aplane.falcon1024-cosigner1024.v1
+    log "Enabling the plain host key type (aplane.falcon1024.v1) on signer"
+    enable_keytype aplane.falcon1024.v1
 
     log "Starting signer-side approver for client enrollment"
     start_signer_apapprover
@@ -2024,7 +2250,10 @@ main() {
     log "Importing cosigner public reference through local IPC"
     enroll_cosigner_reference_to_signer
 
-    log "Checking apadmin policy verbs and applying the cosigner key's policy for guarded smoke transactions"
+    CLOSE_DESTINATION_ADDRESS="$(localnet_account_address 1)"
+    [ -n "$CLOSE_DESTINATION_ADDRESS" ] || die "could not resolve a LocalNet account to close to"
+
+    log "Checking apadmin policy verbs and applying the cosigner key's policy for cosigned smoke transactions"
     configure_cosigner_policy
 
     log "Applying an open transfer route on the signer for the Corridor smoke transactions"
@@ -2055,28 +2284,41 @@ main() {
         else
             log "Installing TypeScript SDK from npm (latest)"
         fi
-        install_typescript_sdk_client
+    else
+        log "Installing TypeScript SDK packed from $SDK_REPO/typescript"
+    fi
+    install_typescript_sdk_client
+    if [ -n "$GO_SDK_BIN" ]; then
+        log "Installing the Go SDK validation program"
+        install_go_sdk_client
     fi
 
     log "Configuring Python SDK client data directories"
     configure_python_sdk_client_data
 
-    log "Generating guarded Falcon/Falcon cosigner account through client/signer flow"
-    generate_guarded_key
+    log "Generating a cosigned plain host (aplane.falcon1024.v1) through client/signer flow"
+    generate_plain_host_key
 
-    log "Funding generated guarded account on $NETWORK_TOKEN"
-    fund_guarded_key
-    verify_guarded_funded
+    log "Funding generated plain host on $NETWORK_TOKEN"
+    fund_plain_host_key
+    verify_plain_host_funded
 
-    log "Validating generated guarded account with 0 ALGO self-send"
-    validate_guarded_self_send
+    log "Validating the plain host with a 0 ALGO self-send through apshell"
+    validate_plain_host_self_send
 
-    log "Validating generated guarded account through Python SDK"
-    run_python_sdk_guarded_validate
-    if [ "$RELEASE_INSTALL" = "1" ]; then
-        log "Validating generated guarded account through TypeScript SDK"
-        run_typescript_sdk_guarded_validate
+    log "Validating the plain host through the Python SDK"
+    run_python_sdk_plain_host_validate
+
+    log "Validating the plain host through the TypeScript SDK"
+    run_typescript_sdk_plain_host_validate
+
+    if [ -n "$GO_SDK_BIN" ]; then
+        log "Validating the plain host through the Go SDK"
+        run_go_sdk_plain_host_validate
     fi
+
+    log "Closing the plain host out through apshell"
+    close_plain_host
 
     log "Generating Falcon key through client/signer flow"
     generate_falcon_key
@@ -2137,6 +2379,11 @@ main() {
     log "Verifying a plus cosigned rekey along the edge confirms"
     verify_plus_cosigned_rekey_along_edge
 
+    log "Generating a cosigned plain host for the cosigner-loss checks"
+    generate_plain_host_key
+    fund_plain_host_key
+    verify_plain_host_funded
+
     log "Generating aplane.falcon1024-b.v1 account for the cosigner-loss checks"
     generate_general_bounded_key
 
@@ -2153,8 +2400,8 @@ main() {
     log "Deleting cosigner key from cosigner node"
     delete_cosigner_component_key
 
-    log "Verifying guarded validation fails after cosigner key deletion"
-    validate_guarded_self_send_after_cosigner_delete_fails
+    log "Verifying the plain host's spend fails after cosigner key deletion"
+    validate_plain_host_self_send_after_cosigner_delete_fails
 
     log "Verifying aplane.falcon1024-b.v1 spend fails after cosigner key deletion"
     with_general_bounded_account validate_corridor_send_after_cosigner_delete_fails
