@@ -715,8 +715,10 @@ func mustAdminGenerateKeyNoCleanup(t *testing.T, signerClient *signerclient.Clie
 	t.Helper()
 
 	var address string
-	if harness.IsLegacyLogicSigFixture(keyType) {
-		// Internal plain LogicSigs enter the test signer as existing credentials.
+	if harness.IsLegacyLogicSigFixture(keyType) && len(params) == 0 {
+		// A plain LogicSig with no overlays enters the test signer as an existing
+		// credential, so the type needn't be enabled; with overlays it is a plain
+		// host, generated like any other account once the type is enabled.
 		restored, err := harness.NewApAdminHarness(t, signerd.GetWorkDir()).RestoreLegacyLogicSig(keyType, nil)
 		if err != nil {
 			t.Fatalf("restore legacy %s fixture: %v", keyType, err)
