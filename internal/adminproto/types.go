@@ -35,19 +35,19 @@ type AdminSettings struct {
 	EndpointDisplayURL   string
 	Theme                string
 	// These restrict new aplane.falcon1024-b.v1 accounts only.
-	BoundaryRequireContained bool
-	BoundaryRequireCosigner  bool
+	RequireContained bool
+	RequireCosigner  bool
 }
 
 const (
-	AdminSettingUserAutoApprove          = "user_auto_approve"
-	AdminSettingBoundaryRequireContained = "boundary_require_contained"
-	AdminSettingBoundaryRequireCo        = "boundary_require_cosigner"
-	AdminSettingLockOnDisconnect         = "lock_on_disconnect"
-	AdminSettingPassphraseTimeout        = "passphrase_timeout"
-	AdminSettingTheme                    = "theme"
-	AdminSettingSSHListenAddress         = "ssh.listen_address"
-	AdminSettingEndpointAdvertiseURL     = "endpoint.advertise_url"
+	AdminSettingUserAutoApprove      = "user_auto_approve"
+	AdminSettingRequireContained     = "require_contained"
+	AdminSettingRequireCosigner      = "require_cosigner"
+	AdminSettingLockOnDisconnect     = "lock_on_disconnect"
+	AdminSettingPassphraseTimeout    = "passphrase_timeout"
+	AdminSettingTheme                = "theme"
+	AdminSettingSSHListenAddress     = "ssh.listen_address"
+	AdminSettingEndpointAdvertiseURL = "endpoint.advertise_url"
 )
 
 // SignerLockedNotification is the admin-domain notification emitted when the signer locks.

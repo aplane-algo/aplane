@@ -187,95 +187,33 @@ func TestGenerationResultIsNotAReceipt(t *testing.T) {
 	}
 }
 
-func inventoryOf(infos ...signerapi.KeyTypeInfo) func() ([]signerapi.KeyTypeInfo, error) {
-	return func() ([]signerapi.KeyTypeInfo, error) { return infos, nil }
-}
-
-// A template may declare a parameter called boundary or result, so apshell must not
-// take them from a type the signer doesn't report as per-key.
-func TestGenerateOptionsLeaveOtherTypesAlone(t *testing.T) {
-	for _, keyType := range []string{"test.custom-template.v1", "aplane.htlc.v1", "falcon1024"} {
-		params := map[string]string{GenerateOptionBoundaryFile: "42", GenerateOptionResultFile: "43", "other": "1"}
-		// An older signer omits the field, and has no per-key types to miss.
-		options, err := takeGenerateOptions(keyType, params, inventoryOf(signerapi.KeyTypeInfo{KeyType: keyType}))
-		if err != nil {
-			t.Fatalf("%s: %v", keyType, err)
-		}
-		if options != (GenerateOptions{}) {
-			t.Fatalf("%s: options = %+v", keyType, options)
-		}
-		if params[GenerateOptionBoundaryFile] != "42" || params[GenerateOptionResultFile] != "43" || len(params) != 3 {
-			t.Fatalf("%s: parameters were changed: %v", keyType, params)
-		}
+// apshell's own options are flags, so a parameter named boundary or result is a
+// signer parameter, sent on, and no lookup is needed to tell them apart.
+func TestSplitGenerateOptions(t *testing.T) {
+	options, rest, err := SplitGenerateOptions([]string{"recipients=A", "--boundary", "rules.yaml", "boundary=42", "--result=out.json"})
+	if err != nil {
+		t.Fatal(err)
 	}
-}
-
-func TestGenerateOptionsFollowTheInventoryNotAName(t *testing.T) {
-	for _, keyType := range []string{boundary.KeyTypeV1, "example.second-bounded.v1"} {
-		inventory := inventoryOf(signerapi.KeyTypeInfo{KeyType: keyType, PerKeyContract: true, BoundarySchema: boundary.SchemaV1})
-		params := map[string]string{GenerateOptionBoundaryFile: "rules.yaml", GenerateOptionResultFile: "out.json"}
-		options, err := takeGenerateOptions(keyType, params, inventory)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !options.HasBoundaryFile || options.BoundaryFile != "rules.yaml" || options.ResultFile != "out.json" {
-			t.Fatalf("%s: options = %+v", keyType, options)
-		}
-		if len(params) != 0 {
-			t.Fatalf("%s: options would reach the signer: %v", keyType, params)
-		}
-
-		params = map[string]string{GenerateOptionResultFile: "out.json", boundary.ParameterRecipients: "A"}
-		options, err = takeGenerateOptions(keyType, params, inventory)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if options.HasBoundaryFile || options.ResultFile != "out.json" || len(params) != 1 {
-			t.Fatalf("%s: options = %+v, params = %v", keyType, options, params)
-		}
+	if !options.HasBoundaryFile || options.BoundaryFile != "rules.yaml" || options.ResultFile != "out.json" {
+		t.Fatalf("options = %+v", options)
 	}
-}
-
-func TestGenerateOptionsCanonicalizeTheSelection(t *testing.T) {
-	params := map[string]string{GenerateOptionResultFile: "out.json"}
-	inventory := inventoryOf(signerapi.KeyTypeInfo{KeyType: "example.second-bounded.v1", PerKeyContract: true, BoundarySchema: boundary.SchemaV1})
-	options, err := takeGenerateOptions("  EXAMPLE.Second-Bounded.v1 ", params, inventory)
-	if err != nil || options.ResultFile != "out.json" {
-		t.Fatalf("options = %+v, err = %v", options, err)
+	if len(rest) != 2 || rest[0] != "recipients=A" || rest[1] != "boundary=42" {
+		t.Fatalf("rest = %v", rest)
 	}
-}
-
-// The bounded type's name is no longer enough, so a lookup that doesn't answer must
-// stop before either name is interpreted or forwarded.
-func TestFailedDiscoveryInterpretsNothing(t *testing.T) {
-	for name, inventory := range map[string]func() ([]signerapi.KeyTypeInfo, error){
-		"lookup failed":        func() ([]signerapi.KeyTypeInfo, error) { return nil, errors.New("signer unavailable") },
-		"empty inventory":      inventoryOf(),
-		"type not in the list": inventoryOf(signerapi.KeyTypeInfo{KeyType: "falcon1024"}),
+	options, rest, err = SplitGenerateOptions([]string{"other=1"})
+	if err != nil || options != (GenerateOptions{}) || len(rest) != 1 {
+		t.Fatalf("no flags: options = %+v, rest = %v, err = %v", options, rest, err)
+	}
+	for name, args := range map[string][]string{
+		"unknown flag":       {"--boundry=rules.yaml"},
+		"missing value":      {"--result"},
+		"empty value":        {"--boundary="},
+		"boundary twice":     {"--boundary=a", "--boundary=b"},
+		"result given twice": {"--result=a", "--result", "b"},
 	} {
-		t.Run(name, func(t *testing.T) {
-			params := map[string]string{GenerateOptionBoundaryFile: "rules.yaml", GenerateOptionResultFile: "out.json"}
-			options, err := takeGenerateOptions(boundary.KeyTypeV1, params, inventory)
-			if err == nil {
-				t.Fatal("takeGenerateOptions() error = nil")
-			}
-			if options != (GenerateOptions{}) || len(params) != 2 {
-				t.Fatalf("options = %+v, params = %v", options, params)
-			}
-		})
-	}
-}
-
-// Without either name there is nothing to tell apart, so ordinary generation gains no
-// dependency on a lookup.
-func TestGenerateWithoutOptionsNeedsNoLookup(t *testing.T) {
-	params := map[string]string{"other": "1"}
-	options, err := takeGenerateOptions("falcon1024", params, func() ([]signerapi.KeyTypeInfo, error) {
-		t.Fatal("looked up inventory with nothing to interpret")
-		return nil, nil
-	})
-	if err != nil || options != (GenerateOptions{}) || len(params) != 1 {
-		t.Fatalf("options = %+v, params = %v, err = %v", options, params, err)
+		if _, _, err := SplitGenerateOptions(args); err == nil {
+			t.Fatalf("%s: SplitGenerateOptions(%v) accepted it", name, args)
+		}
 	}
 }
 
@@ -286,5 +224,27 @@ func TestPreviewCarriesTheClassifiedKeyType(t *testing.T) {
 	}
 	if preview.KeyType != "example.second-bounded.v1" {
 		t.Fatalf("KeyType = %q", preview.KeyType)
+	}
+}
+
+func inventoryOf(infos ...signerapi.KeyTypeInfo) func() ([]signerapi.KeyTypeInfo, error) {
+	return func() ([]signerapi.KeyTypeInfo, error) { return infos, nil }
+}
+
+// A boundary file goes only to a type the signer says takes one, canonicalized; a
+// plain host, an unreported type or a failed lookup stops before the file is read.
+func TestCheckBoundaryKeyType(t *testing.T) {
+	bounded := signerapi.KeyTypeInfo{KeyType: "example.second-bounded.v1", PerKeyContract: true, BoundarySchema: boundary.SchemaV1}
+	if err := checkBoundaryKeyType("  EXAMPLE.Second-Bounded.v1 ", inventoryOf(bounded)); err != nil {
+		t.Fatal(err)
+	}
+	for name, inventory := range map[string]func() ([]signerapi.KeyTypeInfo, error){
+		"lookup failed":        func() ([]signerapi.KeyTypeInfo, error) { return nil, errors.New("signer unavailable") },
+		"type not in the list": inventoryOf(signerapi.KeyTypeInfo{KeyType: "falcon1024"}),
+		"plain host":           inventoryOf(signerapi.KeyTypeInfo{KeyType: "example.second-bounded.v1", PerKeyContract: true}),
+	} {
+		if err := checkBoundaryKeyType(bounded.KeyType, inventory); err == nil {
+			t.Fatalf("%s: checkBoundaryKeyType() accepted it", name)
+		}
 	}
 }

@@ -1737,7 +1737,7 @@ generate_general_bounded_key() {
     local boundary_file="/home/$TEST_USER/aplane/boundary.yaml"
     docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'schema: aplane.boundary.v1\nspend: [pay, axfer, asset_opt_in]\nrecipients:\n  - %s\nencoding: merkle\nrekey:\n  authority: %s\n  to:\n    - %s\ncosigner: %s\n%s\n' \
         '$CORRIDOR_ALLOWED_ADDRESS' '$authority' '$FALCON_ADDRESS' '$COSIGNER_COMPONENT_KEY' '$extra_line' > '$boundary_file'"
-    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'connect\ngenerate aplane.falcon1024-b.v1 boundary=%s\nkeys\n' \
+    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'connect\ngenerate aplane.falcon1024-b.v1 --boundary=%s\nkeys\n' \
         '$boundary_file' > /tmp/generate-general-bounded.script"
     local out
     if ! out="$(docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \

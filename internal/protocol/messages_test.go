@@ -150,7 +150,7 @@ func TestMessageTypeConstantsAreUnique(t *testing.T) {
 // (export_result) and key_details.mnemonic_exportable. 7.2 adds
 // prepare_generate_key and generate_key.expected_fingerprint. 7.3 adds the
 // review values for the general bounded key type. 8.0 renames the
-// boundary_require_admin_key setting to boundary_require_contained and replaces
+// boundary_require_admin_key setting to require_contained and replaces
 // prepare_generate_result.bounded.admin_operations with bounded.rekey. That is a
 // major change: a 7.x apadmin reads an account with no admin_operations as having
 // no rekey path, so it must be refused at authentication, not merely warned.

@@ -19,21 +19,20 @@ import (
 
 func (r *REPLState) cmdGenerate(args []string, _ interface{}) (command.Result, error) {
 	if len(args) < 1 {
-		return nil, fmt.Errorf("usage: generate <key_type> [param=value ...]")
+		return nil, fmt.Errorf("usage: generate <key_type> [param=value ...] [--boundary <file>] [--result <file>]")
 	}
 
 	keyType := args[0]
-	positional, params, err := cmdspec.ParseKeyValueArgs(args[1:])
+	options, rest, err := apshellapp.SplitGenerateOptions(args[1:])
+	if err != nil {
+		return nil, err
+	}
+	positional, params, err := cmdspec.ParseKeyValueArgs(rest)
 	if err != nil {
 		return nil, err
 	}
 	if len(positional) > 0 {
 		return nil, fmt.Errorf("invalid parameter %q (expected param=value)", positional[0])
-	}
-
-	options, err := r.app().TakeGenerateOptions(r.commandContext(), keyType, params)
-	if err != nil {
-		return nil, err
 	}
 
 	var result *apshellapp.GenerateKeyCommandResult
@@ -78,6 +77,9 @@ func (r *REPLState) cmdGenerate(args []string, _ interface{}) (command.Result, e
 // review is not an authorization: the signer checks every request regardless, so
 // unattended callers skip the prompt.
 func (r *REPLState) generateFromBoundary(keyType, path string) (*apshellapp.GenerateKeyCommandResult, bool, error) {
+	if err := r.app().CheckBoundaryKeyType(r.commandContext(), keyType); err != nil {
+		return nil, false, err
+	}
 	preview, err := r.app().PreviewBoundaryFile(keyType, path)
 	if err != nil {
 		return nil, false, err
@@ -100,6 +102,7 @@ func (r *REPLState) generateFromBoundary(keyType, path string) (*apshellapp.Gene
 // apadmin's review: the signer has not confirmed any of this yet.
 func renderBoundaryPreview(r *REPLState, preview *apshellapp.BoundaryPreview) {
 	r.println("Local summary. The signer has not confirmed this.")
+	r.printf("  Key type:   %s\n", keytypefmt.Display(preview.KeyType))
 	r.printf("  Transfers:  %s\n", strings.Join(preview.Transfers, ", "))
 	switch {
 	case preview.Recipients > 0:
@@ -163,6 +166,12 @@ func renderBoundaryPreview(r *REPLState, preview *apshellapp.BoundaryPreview) {
 func renderResolvedGeneration(r *REPLState, result *apshellapp.GenerateKeyCommandResult) {
 	if result.CosignerKeyID != "" {
 		r.printf("  Cosigner:       %s\n", result.CosignerKeyID)
+	}
+	if rekey := result.Parameters[boundary.ParameterRekeyAuthority]; rekey != "" {
+		r.printf("  Rekey:          %s\n", rekey)
+	}
+	if list := result.Parameters[boundary.ParameterRekeyTo]; list != "" {
+		r.printf("  Rekey-to:       %s\n", strings.ReplaceAll(list, ",", ", "))
 	}
 	if encoding := result.Parameters[boundary.ParameterListEncoding]; encoding != "" {
 		r.printf("  List encoding:  %s\n", encoding)

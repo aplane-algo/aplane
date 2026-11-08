@@ -503,6 +503,38 @@ func TestLoadStoredConfigRejectsDecommissionedField(t *testing.T) {
 	}
 }
 
+// The generation settings' earlier names are refused, not ignored, so a config
+// that still sets one doesn't silently lose its restriction.
+func TestLoadStoredConfigRejectsRetiredGenerationSettingNames(t *testing.T) {
+	for _, name := range []string{"boundary_require_admin_key", "boundary_require_contained", "boundary_require_cosigner"} {
+		root := t.TempDir()
+		path := ConfigPath(root)
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(name+": true\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := LoadStoredConfig(root); err == nil || !strings.Contains(err.Error(), name) {
+			t.Fatalf("%s: LoadStoredConfig() error = %v, want an unknown field", name, err)
+		}
+	}
+	root := t.TempDir()
+	if err := SaveStoredSetting(root, "require_contained", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := SaveStoredSetting(root, "require_cosigner", true); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadStoredConfig(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.RequireContained == nil || !*cfg.RequireContained || cfg.RequireCosigner == nil || !*cfg.RequireCosigner {
+		t.Fatalf("LoadStoredConfig() = %#v, want both settings", cfg)
+	}
+}
+
 func TestLoadAuthorizedKeysRejectsMalformedFile(t *testing.T) {
 	root := t.TempDir()
 	ir := New(Config{

@@ -1567,13 +1567,13 @@ create a new account, and it arrives with a release the operator chose to instal
 grammar fingerprint still lets a review detect that the definition changed before
 generation, and each account still records its shape.
 
-**Generation settings.** `boundary_require_contained` (new accounts must be contained:
+**Generation settings.** `require_contained` (new accounts must be contained:
 refuse every rekey, or every rekey but one to a listed address (`only_these`), and hold
 a recipient list, `boundedmeta.Metadata.Contained`, so a limits-only account never is,
 even with a cosigner, and neither is a `spending_key` or `plus_cosigned` one, which is
 only as strong as its two online keys; fees, capped per transaction only, are outside
 it) and
-`boundary_require_cosigner` in the product runtime config apply to this key type, and to
+`require_cosigner` in the product runtime config apply to this key type, and to
 the plain hosts, on every creation route, under the
 mutation lock, and generation rechecks them after a review. A plain host is never
 contained, since its spends are open, and the plain program has no cosigner, so either
@@ -1592,15 +1592,16 @@ for this type); a plain host, also per-key, reports none.
 `TestEveryBoundaryProviderSupportsTheBoundaryWorkflow` pins that every production type
 declaring the schema can run those flows; a per-key type without it, such as a plain
 host, takes its parameters directly (apadmin's parameter form, apshell's `generate`
-arguments), and apshell refuses `boundary=` for it. This classification only picks a
+arguments), and apshell refuses `--boundary` for it. This classification only picks a
 client flow: the signer still resolves the key type and applies the bounded support
 policy, so a misclassified request is refused rather than gaining anything.
 
 A failed lookup isn't an answer that a type is ordinary. apadmin shows an error and
 reloads instead of opening the plain form, because a compiled list can stand in before
-the signer's arrives. apshell stops before interpreting or forwarding `boundary=` or
-`result=`, and sends no generation request. A `generate` with neither option needs no
-lookup.
+the signer's arrives. apshell's `--boundary` reads the signer's key types before the
+file, and stops without a request if the lookup fails or the type has no
+`boundary_schema`. apshell's options are flags, so they never collide with a signer
+parameter, and no other `generate` needs the lookup.
 
 **Client and signer combinations.** No tagged signer through v0.49.0 has a per-key type,
 so a client can read a missing `per_key_contract` as "not per-key" there. Untagged builds
@@ -1625,7 +1626,7 @@ other result generates as entered. After generation the operator can save a
 `aplane.boundary-receipt.v1` receipt beside where apadmin runs. It names the saved
 address, documents the account, and cannot restore it.
 
-**apshell.** `generate aplane.falcon1024-b.v1 boundary=<file>` reads the file locally and
+**apshell.** `generate aplane.falcon1024-b.v1 --boundary <file>` reads the file locally and
 shows a summary labelled as local, because the guarantee is weaker than apadmin's
 review: the signer has not seen it, and a cosigner name stays unresolved until creation.
 The summary lists a rekey-to list's addresses and, on a cosigned account, says the
@@ -1634,7 +1635,7 @@ that authority, and apshell confirms the result
 against it, reporting an account it cannot confirm. The file's values are literal, so
 they skip this client's alias and set expansion. Results show the parameters the signer
 stored and the authority IDs it reports in `/keys`: apshell derives neither, because
-routing and identity stay daemon concerns. `result=<file>` saves that as
+routing and identity stay daemon concerns. `--result <file>` saves that as
 `aplane.generation-result.v1`, which deliberately has no fingerprints or digest. Only
 apadmin's IPC workflow can issue a full receipt. Interactive confirmation is not an
 authorization, and unattended callers skip it.

@@ -428,8 +428,8 @@ apply to it: the list is the owner's standing statement. An unlisted rekey under
 ### Creating an account from apshell
 
 ```
-generate aplane.falcon1024-b.v1 boundary=rules.yaml
-generate aplane.falcon1024-b.v1 boundary=rules.yaml result=account.json
+generate aplane.falcon1024-b.v1 --boundary rules.yaml
+generate aplane.falcon1024-b.v1 --boundary rules.yaml --result account.json
 generate aplane.falcon1024-b.v1 spend_effects=pay rekey_authority=spending_key recipients=ADDR1,ADDR2
 generate aplane.falcon1024-b.v1 spend_effects=pay rekey_authority=only_these recipients=ADDR1,ADDR2 rekey_to=COLD1
 generate aplane.falcon1024-b.v1 spend_effects=pay rekey_authority=plus_cosigned recipients=ADDR1,ADDR2 rekey_to=COLD1 cosigner=ops-cosigner
@@ -444,13 +444,13 @@ that reference before creation changes which cosigner is used. Prefer a Witness 
 it can only select that cosigner, and apshell checks the created account against it.
 After creation, apshell shows what the signer actually stored.
 
-`result=<file>` saves that as JSON. It is not a receipt: only apadmin's review can issue one,
+`--result <file>` saves that as JSON, for any key type. It is not a receipt: only apadmin's review can issue one,
 with fingerprints and a digest.
 
 ### Restricting new accounts
 
 `aplane.falcon1024-b.v1` cannot be turned off, but two settings in apadmin's Settings panel set
-a minimum for new accounts. `boundary_require_contained` requires new accounts to be
+a minimum for new accounts. `require_contained` requires new accounts to be
 contained: they must take only listed rekeys (`only_these`) and have a recipient list, so
 they can pay only listed recipients, and hand the account only to a listed key. A
 timelock with no list is not contained, because it pays anyone once unlocked, and neither
@@ -458,7 +458,7 @@ is a limits-only account, with or without a cosigner. A `spending_key` account i
 contained, with or without a cosigner, and neither is a `plus_cosigned` one: whoever
 holds its online keys can rekey it anywhere. Fees are outside that limit: each transaction's fee is capped at 10,000
 microAlgos, but a stolen spending key can still spend the balance on fees, one
-transaction at a time. `boundary_require_cosigner` refuses accounts without a cosigner. They apply on every route,
+transaction at a time. `require_cosigner` refuses accounts without a cosigner. They apply on every route,
 and to the plain hosts too: a plain host is never contained, and the plain program, with
 no cosigner, fails both. They do not affect existing accounts or imported templates.
 

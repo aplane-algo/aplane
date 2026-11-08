@@ -8,11 +8,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/boundary"
 	"github.com/aplane-algo/aplane/internal/engine"
+	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 	"github.com/aplane-algo/aplane/internal/witness"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 // BoundaryPreview is what a boundary file asks for, read on this machine. It is a
@@ -35,8 +38,33 @@ type BoundaryPreview struct {
 	CosignerIsKey bool
 }
 
-// PreviewBoundaryFile reads a boundary file and summarizes it locally. keyType is the
-// per-key type the caller classified from the signer's inventory.
+// CheckBoundaryKeyType confirms from the signer's inventory that keyType takes
+// boundary files, before the file is read or summarized. It is the only key type
+// read on this path: creation from literals fetches none.
+func (a *App) CheckBoundaryKeyType(ctx context.Context, keyType string) error {
+	return checkBoundaryKeyType(keyType, func() ([]signerapi.KeyTypeInfo, error) {
+		return a.eng.ListKeyTypes(ctx)
+	})
+}
+
+func checkBoundaryKeyType(keyType string, inventory func() ([]signerapi.KeyTypeInfo, error)) error {
+	keyTypes, err := inventory()
+	if err != nil {
+		return fmt.Errorf("read the signer's key types to check %s: %w", GenerateFlagBoundaryFile, err)
+	}
+	canonical := keytypecatalog.Canonicalize(keyType)
+	index := slices.IndexFunc(keyTypes, func(info signerapi.KeyTypeInfo) bool { return info.KeyType == canonical })
+	if index < 0 {
+		return fmt.Errorf("the signer does not report key type %q", canonical)
+	}
+	if keyTypes[index].BoundarySchema != boundary.SchemaV1 {
+		return fmt.Errorf("key type %s takes no boundary file; give its parameters directly", canonical)
+	}
+	return nil
+}
+
+// PreviewBoundaryFile reads a boundary file and summarizes it locally. keyType is a
+// type CheckBoundaryKeyType accepted.
 func (a *App) PreviewBoundaryFile(keyType, path string) (*BoundaryPreview, error) {
 	parameters, err := boundary.LoadFile(path)
 	if err != nil {

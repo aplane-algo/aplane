@@ -875,7 +875,7 @@ Parsing contracts:
 
 - bracketed address lists such as `[ A1 A2 ]` and `[A1 A2]` are accepted where a command already accepts address-list input,
 - `generate` parameter parsing is bracket-aware for `key=value` arguments,
-- for `aplane.falcon1024-b.v1` only, `generate` reads `boundary=<file>` and `result=<file>` itself and sends neither to the signer. That type's parameter list is closed and contains neither name, while any other type's parameters belong to the signer and may legally use them. A boundary file sets every parameter, so it cannot be combined with others,
+- `generate` reads its own flags, `--boundary <file>` and `--result <file>`, and sends neither to the signer; every `param=value` is the signer's. A boundary file sets every parameter, so it cannot be combined with others,
 - LogicSig `arg:name=value` parsing keeps the `arg:name=` split local to `internal/cmdspec/lsigarg.go` and uses the shared byte parser for the value side,
 - byte-oriented shell inputs support `hex:`, `b64:`, `text:`, and `0x...`; bare text is accepted only where command behavior allows it,
 - ASA-facing commands may parse shell input into semantic values (`AssetRef`, `AmountText`) before command execution, but this does not change user syntax,
@@ -978,18 +978,17 @@ and presentation system as built-in commands. See
 
 ### Generate Options
 
-`boundary=` and `result=` are apshell's own options, but a template can legally declare
-parameters with those names. So `App.TakeGenerateOptions` in `internal/apshellapp` takes
-them only for a key type the signer reports with `per_key_contract`, and leaves them as
-the signer's parameters for any other type. It never decides from the key type's name. A
-per-key type without `boundary_schema` `aplane.boundary.v1`, such as a plain host, refuses
-`boundary=` before any request: give its parameters directly.
+`--boundary` and `--result` are apshell's own flags. `App.SplitGenerateOptions` in
+`internal/apshellapp` takes them out of `generate`'s arguments, as `--flag file` or
+`--flag=file`, and refuses any other `--` argument, a missing or empty file, and a flag
+given twice. Every `param=value` is the signer's, so a template may declare a parameter
+called `boundary` or `result` and receive it, and no lookup is needed to tell them apart.
 
-A failed or incomplete lookup isn't an answer that the type is ordinary. If inventory can't
-be read, is empty, or omits the type, generation stops before either name is interpreted
-or forwarded, and no request is sent. A `generate` with neither option does no lookup, so
-ordinary generation gains no dependency on it. Boundary-file generation carries the
-classified type through its preview into `GenerateKeyFromLiterals`.
+`--boundary` alone reads the signer's key types (`App.CheckBoundaryKeyType`), before the
+file is read: a type without `boundary_schema` `aplane.boundary.v1`, such as a plain host,
+is refused, and so is a failed lookup or a type the signer doesn't report. That is the
+path's only lookup, since `GenerateKeyFromLiterals` fetches none. Generation without
+`--boundary` gains no dependency on it.
 
 This only picks a client flow. See "Client routing" in
 [ARCH_KEYTYPES.md](ARCH_KEYTYPES.md) for what the field does and doesn't promise.

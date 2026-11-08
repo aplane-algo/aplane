@@ -808,23 +808,23 @@ type DisplacedMsg struct {
 
 // AdminSettings holds the admin panel settings received from the server
 type AdminSettings struct {
-	UserAutoApprove          bool
-	BoundaryRequireContained bool
-	BoundaryRequireCosigner  bool
-	LockOnDisconnect         bool
-	PassphraseTimeout        string
-	PassphraseMethod         string
-	NodeRole                 string
-	SSHEnabled               bool
-	SSHListenAddress         string
-	SSHPort                  int
-	SSHFingerprint           string
-	SSHClients               int
-	SignerPort               int
-	TEALCompileNet           string
-	EndpointAdvertiseURL     string
-	EndpointDisplayURL       string
-	Theme                    string
+	UserAutoApprove      bool
+	RequireContained     bool
+	RequireCosigner      bool
+	LockOnDisconnect     bool
+	PassphraseTimeout    string
+	PassphraseMethod     string
+	NodeRole             string
+	SSHEnabled           bool
+	SSHListenAddress     string
+	SSHPort              int
+	SSHFingerprint       string
+	SSHClients           int
+	SignerPort           int
+	TEALCompileNet       string
+	EndpointAdvertiseURL string
+	EndpointDisplayURL   string
+	Theme                string
 }
 
 // AdminSettingsMsg is sent when admin settings are received

@@ -727,7 +727,7 @@ func TestBoundedGeneralThroughSigner(t *testing.T) {
 		if err := os.WriteFile(walkable, []byte("schema: aplane.boundary.v1\nspend: [pay]\nrekey: {authority: spending_key}\nunlock_round: 18446744073709551615\n"), 0o600); err != nil {
 			t.Fatalf("write boundary file: %v", err)
 		}
-		refusal, _ := apshell.RunWithInput(fmt.Sprintf("generate %s boundary=%s\ny\nquit\n", boundedaccount.KeyTypeV1, walkable))
+		refusal, _ := apshell.RunWithInput(fmt.Sprintf("generate %s --boundary=%s\ny\nquit\n", boundedaccount.KeyTypeV1, walkable))
 		if !strings.Contains(refusal, "an expert template can combine a timelock with rekey_authority=spending_key") || strings.Contains(refusal, "Generated ") {
 			t.Fatalf("a timelock with a spending-key rekey was not refused:\n%s", refusal)
 		}
@@ -737,7 +737,7 @@ func TestBoundedGeneralThroughSigner(t *testing.T) {
 		if err := os.WriteFile(refusedFile, []byte("schema: aplane.boundary.v1\nspend: [pay]\nrekey: {authority: refused}\nunlock_round: 18446744073709551615\n"), 0o600); err != nil {
 			t.Fatalf("write boundary file: %v", err)
 		}
-		refusal, _ = apshell.RunWithInput(fmt.Sprintf("generate %s boundary=%s\ny\nquit\n", boundedaccount.KeyTypeV1, refusedFile))
+		refusal, _ = apshell.RunWithInput(fmt.Sprintf("generate %s --boundary=%s\ny\nquit\n", boundedaccount.KeyTypeV1, refusedFile))
 		if !strings.Contains(refusal, "rekey.authority must be spending_key, only_these or plus_cosigned") || strings.Contains(refusal, "Generated ") {
 			t.Fatalf("a refused timelock was not refused:\n%s", refusal)
 		}
@@ -747,7 +747,7 @@ func TestBoundedGeneralThroughSigner(t *testing.T) {
 		if err := os.WriteFile(locked, []byte("schema: aplane.boundary.v1\nspend: [pay]\nrekey:\n  authority: only_these\n  to: ["+listedKey+"]\nunlock_round: 18446744073709551615\n"), 0o600); err != nil {
 			t.Fatalf("write boundary file: %v", err)
 		}
-		output, err := apshell.RunWithInput(fmt.Sprintf("generate %s boundary=%s\ny\nkeys\nquit\n", boundedaccount.KeyTypeV1, locked))
+		output, err := apshell.RunWithInput(fmt.Sprintf("generate %s --boundary=%s\ny\nkeys\nquit\n", boundedaccount.KeyTypeV1, locked))
 		if err != nil {
 			t.Fatalf("run apshell: %v\n%s", err, output)
 		}
@@ -797,7 +797,7 @@ func TestBoundedGeneralThroughSigner(t *testing.T) {
 		}
 		resultFile := filepath.Join(directory, "result.json")
 
-		declined, err := apshell.RunWithInput(fmt.Sprintf("generate %s boundary=%s\nn\nquit\n", boundedaccount.KeyTypeV1, path))
+		declined, err := apshell.RunWithInput(fmt.Sprintf("generate %s --boundary=%s\nn\nquit\n", boundedaccount.KeyTypeV1, path))
 		if err != nil {
 			t.Fatalf("run apshell: %v\n%s", err, declined)
 		}
@@ -805,7 +805,7 @@ func TestBoundedGeneralThroughSigner(t *testing.T) {
 			t.Fatalf("declining did not cancel:\n%s", declined)
 		}
 
-		output, err := apshell.RunWithInput(fmt.Sprintf("generate %s boundary=%s result=%s\ny\nkeys\nquit\n", boundedaccount.KeyTypeV1, path, resultFile))
+		output, err := apshell.RunWithInput(fmt.Sprintf("generate %s --boundary=%s --result=%s\ny\nkeys\nquit\n", boundedaccount.KeyTypeV1, path, resultFile))
 		if err != nil {
 			t.Fatalf("run apshell: %v\n%s", err, output)
 		}

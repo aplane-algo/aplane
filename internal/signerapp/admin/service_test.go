@@ -328,9 +328,9 @@ func TestUpdateAdminSettingRejectsInfrastructureNetworkSettings(t *testing.T) {
 	}
 }
 
-func TestBoundaryRequirementsAreSavedAndLoaded(t *testing.T) {
+func TestGenerationRequirementsAreSavedAndLoaded(t *testing.T) {
 	dataRoot := t.TempDir()
-	for _, key := range []string{adminproto.AdminSettingBoundaryRequireContained, adminproto.AdminSettingBoundaryRequireCo} {
+	for _, key := range []string{adminproto.AdminSettingRequireContained, adminproto.AdminSettingRequireCosigner} {
 		if err := productruntime.SaveStoredSetting(dataRoot, key, true); err != nil {
 			t.Fatal(err)
 		}
@@ -343,12 +343,12 @@ func TestBoundaryRequirementsAreSavedAndLoaded(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !effective.BoundaryRequireContained || !effective.BoundaryRequireCosigner {
+	if !effective.RequireContained || !effective.RequireCosigner {
 		t.Fatalf("effective config = %+v", effective)
 	}
 }
 
-func TestBoundaryRequirementSettingsTakeEffectAndPersist(t *testing.T) {
+func TestGenerationRequirementSettingsTakeEffectAndPersist(t *testing.T) {
 	svc, ir, deps := setupAdminService(t)
 	if err := os.WriteFile(filepath.Join(deps.dataDir, "config.yaml"), []byte("theme: auto\n"), 0o640); err != nil {
 		t.Fatal(err)
@@ -357,13 +357,13 @@ func TestBoundaryRequirementSettingsTakeEffectAndPersist(t *testing.T) {
 		key                     string
 		wantAdmin, wantCosigner bool
 	}{
-		{adminproto.AdminSettingBoundaryRequireContained, true, false},
-		{adminproto.AdminSettingBoundaryRequireCo, true, true},
+		{adminproto.AdminSettingRequireContained, true, false},
+		{adminproto.AdminSettingRequireCosigner, true, true},
 	} {
 		if err := svc.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{Key: test.key, Value: "true"}); err != nil {
 			t.Fatalf("UpdateAdminSetting(%s) error = %v", test.key, err)
 		}
-		admin, cosigner := ir.Config().BoundaryRequirements()
+		admin, cosigner := ir.Config().GenerationRequirements()
 		if admin != test.wantAdmin || cosigner != test.wantCosigner {
 			t.Fatalf("%s: requirements = %v, %v", test.key, admin, cosigner)
 		}
@@ -376,16 +376,16 @@ func TestBoundaryRequirementSettingsTakeEffectAndPersist(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !effective.BoundaryRequireContained || !effective.BoundaryRequireCosigner {
+	if !effective.RequireContained || !effective.RequireCosigner {
 		t.Fatalf("persisted config = %+v", effective)
 	}
-	ir.Config().SetBoundaryRequirements(true, false)
-	if settings := svc.BuildAdminSettings(); !settings.BoundaryRequireContained || settings.BoundaryRequireCosigner {
+	ir.Config().SetGenerationRequirements(true, false)
+	if settings := svc.BuildAdminSettings(); !settings.RequireContained || settings.RequireCosigner {
 		t.Fatalf("reported settings = %+v", settings)
 	}
 }
 
-func TestBoundaryRequirementRevertsWhenItCannotBeSaved(t *testing.T) {
+func TestGenerationRequirementRevertsWhenItCannotBeSaved(t *testing.T) {
 	svc, ir, deps := setupAdminService(t)
 	if err := os.WriteFile(filepath.Join(deps.dataDir, "config.yaml"), []byte("theme: auto\n"), 0o640); err != nil {
 		t.Fatal(err)
@@ -394,11 +394,11 @@ func TestBoundaryRequirementRevertsWhenItCannotBeSaved(t *testing.T) {
 	if err := os.MkdirAll(productruntime.ConfigPath(deps.dataDir), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	err := svc.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{Key: adminproto.AdminSettingBoundaryRequireContained, Value: "true"})
+	err := svc.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{Key: adminproto.AdminSettingRequireContained, Value: "true"})
 	if err == nil {
 		t.Fatal("the save did not fail")
 	}
-	if admin, _ := ir.Config().BoundaryRequirements(); admin {
+	if admin, _ := ir.Config().GenerationRequirements(); admin {
 		t.Fatal("a requirement stayed active after it could not be saved")
 	}
 }

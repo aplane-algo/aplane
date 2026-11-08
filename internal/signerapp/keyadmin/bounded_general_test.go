@@ -141,7 +141,7 @@ func TestGeneralProviderRejectsAChangedReview(t *testing.T) {
 	assertNoKeys(t, service)
 }
 
-func TestBoundaryRequirements(t *testing.T) {
+func TestGenerationRequirements(t *testing.T) {
 	ir, service := setupGeneralProvider(t)
 	publicKey, _ := importPrepareReference(t, ir, prepareTestReference, 0x61)
 	spendingKey := generalParams(boundedaccount.RekeySpendingKey)
@@ -175,13 +175,13 @@ func TestBoundaryRequirements(t *testing.T) {
 		rejected, accepted []map[string]string
 		want               string
 	}{
-		{"contained", true, false, []map[string]string{spendingKey, timelockOnly, limitsOnly, limitsCosigned, cosignedSpending, plusCosigned}, []map[string]string{refused, cosigned}, "boundary_require_contained"},
-		{"cosigner", false, true, []map[string]string{spendingKey, refused, limitsOnly}, []map[string]string{cosigned, limitsCosigned, cosignedSpending, plusCosigned}, "boundary_require_cosigner"},
+		{"contained", true, false, []map[string]string{spendingKey, timelockOnly, limitsOnly, limitsCosigned, cosignedSpending, plusCosigned}, []map[string]string{refused, cosigned}, "require_contained"},
+		{"cosigner", false, true, []map[string]string{spendingKey, refused, limitsOnly}, []map[string]string{cosigned, limitsCosigned, cosignedSpending, plusCosigned}, "require_cosigner"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			ir.Config().SetBoundaryRequirements(test.requireContained, test.requireCosigner)
-			t.Cleanup(func() { ir.Config().SetBoundaryRequirements(false, false) })
+			ir.Config().SetGenerationRequirements(test.requireContained, test.requireCosigner)
+			t.Cleanup(func() { ir.Config().SetGenerationRequirements(false, false) })
 			for _, params := range test.rejected {
 				if _, err := service.PrepareGenerateKey(boundedaccount.KeyTypeV1, params); err == nil || !strings.Contains(err.Message, test.want) {
 					t.Fatalf("PrepareGenerateKey() error = %#v", err)
@@ -220,26 +220,26 @@ func TestGeneralProviderRefusesASpendingKeyRekeyOnATimelock(t *testing.T) {
 	assertNoKeys(t, service)
 }
 
-func TestBoundaryRequirementIsRecheckedAfterReview(t *testing.T) {
+func TestGenerationRequirementIsRecheckedAfterReview(t *testing.T) {
 	ir, service := setupGeneralProvider(t)
 	prepared, err := service.PrepareGenerateKey(boundedaccount.KeyTypeV1, generalParams(boundedaccount.RekeySpendingKey))
 	if err != nil {
 		t.Fatalf("PrepareGenerateKey() error = %#v", err)
 	}
-	ir.Config().SetBoundaryRequirements(true, false)
-	t.Cleanup(func() { ir.Config().SetBoundaryRequirements(false, false) })
+	ir.Config().SetGenerationRequirements(true, false)
+	t.Cleanup(func() { ir.Config().SetGenerationRequirements(false, false) })
 	_, err = service.GenerateReviewedKey(context.Background(), boundedaccount.KeyTypeV1, prepared.Parameters,
 		ReviewedValues{Fingerprint: prepared.ReviewFingerprint, BoundaryDigest: prepared.BoundaryDigest}, nil)
-	if err == nil || !strings.Contains(err.Message, "boundary_require_contained") {
+	if err == nil || !strings.Contains(err.Message, "require_contained") {
 		t.Fatalf("GenerateReviewedKey() error = %#v", err)
 	}
 	assertNoKeys(t, service)
 }
 
-func TestBoundaryRequirementsDoNotReachExpertTemplates(t *testing.T) {
+func TestGenerationRequirementsDoNotReachExpertTemplates(t *testing.T) {
 	const keyType = "test.bounded-expert.v1"
 	ir, _, _ := setupPrepareTest(t, keyType, "bounded-expert")
-	ir.Config().SetBoundaryRequirements(true, true)
+	ir.Config().SetGenerationRequirements(true, true)
 	service := Service{Runtime: ir}
 	// This template refuses rekeys but is not the general type; the settings must not care.
 	if _, err := service.GenerateKey(context.Background(), keyType, map[string]string{cosignerrefs.ParamCosignerName: prepareTestReference}, nil); err != nil {
