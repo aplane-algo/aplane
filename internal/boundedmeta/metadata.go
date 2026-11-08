@@ -90,6 +90,12 @@ type CosignerAuthorization struct {
 // rekey: refused plus a rekey-to list, and stored that way.
 const RekeyOnlyThese = "only_these"
 
+// RekeyPlusCosigned names "these addresses, plus others with the cosigner": a
+// listed target takes the spending key alone, any other the spending key and the
+// cosigner. It is rekey: spending_key plus a rekey-to list on a cosigned account,
+// and stored that way.
+const RekeyPlusCosigned = "plus_cosigned"
+
 // RekeyListContractV1 identifies the rekey-to list overlay's contract: the
 // hiding tree in internal/rekeylist at its fixed depth.
 const RekeyListContractV1 = "rekey_list1"
@@ -234,11 +240,8 @@ func (metadata *Metadata) ValidateProfile() error {
 	if err := ValidateRekeySetting(metadata.Rekey); err != nil {
 		return err
 	}
-	if err := ValidateCosignerAuthorizationProfile(metadata.Cosigner); err != nil {
+	if err := ValidateCosignerAuthorizationProfile(metadata.Cosigner, metadata.Rekey); err != nil {
 		return err
-	}
-	if metadata.Cosigner != nil && metadata.Rekey != RekeyRefused {
-		return fmt.Errorf("bounded cosigner profiles do not support a %s rekey", metadata.Rekey)
 	}
 	if err := metadata.ValidateRekeyList(); err != nil {
 		return err
@@ -303,10 +306,10 @@ func equalCosignerAuthorization(a, b *CosignerAuthorization) bool {
 		slices.Equal(a.RequiredOn, b.RequiredOn)
 }
 
-// ValidateCosignerAuthorizationProfile checks definition-level cosigner fields.
-// Instance public-key fields are validated by Metadata.Validate after key
-// generation.
-func ValidateCosignerAuthorizationProfile(cosigner *CosignerAuthorization) error {
+// ValidateCosignerAuthorizationProfile checks definition-level cosigner fields
+// against the account's rekey setting. Instance public-key fields are validated
+// by Metadata.Validate after key generation.
+func ValidateCosignerAuthorizationProfile(cosigner *CosignerAuthorization, rekey RekeySetting) error {
 	if cosigner == nil {
 		return nil
 	}
@@ -319,10 +322,20 @@ func ValidateCosignerAuthorizationProfile(cosigner *CosignerAuthorization) error
 	if cosigner.SignatureMaxSize != CosignerSignatureMaxSizeV1 {
 		return fmt.Errorf("bounded cosigner signature_max_size %d invalid (expected %d)", cosigner.SignatureMaxSize, CosignerSignatureMaxSizeV1)
 	}
-	if len(cosigner.RequiredOn) != 1 || cosigner.RequiredOn[0] != PathSpend {
-		return fmt.Errorf("bounded cosigner required_on must be exactly [%s]", PathSpend)
+	if want := CosignerRequiredOn(rekey); !slices.Equal(cosigner.RequiredOn, want) {
+		return fmt.Errorf("bounded cosigner required_on must be exactly [%s] with rekey %s", strings.Join(want, ", "), rekey)
 	}
 	return nil
+}
+
+// CosignerRequiredOn is every path a cosigned account's cosigner signs: each
+// spend, and each rekey the spending key may make, which needs the cosigner
+// too. A listed rekey never asks the cosigner.
+func CosignerRequiredOn(rekey RekeySetting) []string {
+	if rekey == RekeySpendingKey {
+		return []string{PathSpend, PathSpendingRekey}
+	}
+	return []string{PathSpend}
 }
 
 func validateCosignerMetadata(cosigner *CosignerAuthorization) error {
@@ -471,9 +484,9 @@ func equalRekeyList(a, b *RekeyList) bool {
 }
 
 // ValidateRekeyList checks a rekey-to list record against the rest of the
-// profile. Phase 3 offers it only as "only these" (rekey: refused) and without
-// a cosigner: a listed rekey on a cosigned account needs a signing route that
-// skips the cosigner, which does not exist yet.
+// profile. Under rekey: refused the list is "only these"; under a spending-key
+// rekey it is "plus cosigned", which needs a cosigner, since without one the
+// spending key could already rekey anywhere and the list would add nothing.
 func (metadata *Metadata) ValidateRekeyList() error {
 	listProofs := 0
 	for _, arg := range metadata.DerivedArgs {
@@ -493,10 +506,8 @@ func (metadata *Metadata) ValidateRekeyList() error {
 		return fmt.Errorf("unsupported rekey-to list contract %q", list.Contract)
 	case list.Depth != rekeylist.Depth:
 		return fmt.Errorf("rekey-to list depth %d, want %d", list.Depth, rekeylist.Depth)
-	case metadata.Rekey != RekeyRefused:
-		return fmt.Errorf("a rekey-to list needs rekey %s (only these addresses)", RekeyRefused)
-	case metadata.Cosigner != nil:
-		return fmt.Errorf("a rekey-to list on a cosigned account is not supported")
+	case metadata.Rekey == RekeySpendingKey && metadata.Cosigner == nil:
+		return fmt.Errorf("a rekey-to list beside a spending-key rekey (%s) needs a cosigner", RekeyPlusCosigned)
 	case listProofs != 1:
 		return fmt.Errorf("a rekey-to list needs exactly one rekey-list proof argument, got %d", listProofs)
 	}

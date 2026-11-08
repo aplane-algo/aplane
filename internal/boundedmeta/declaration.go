@@ -14,7 +14,8 @@ type RekeySetting string
 const (
 	// RekeyRefused gives the account no rekey path.
 	RekeyRefused RekeySetting = "refused"
-	// RekeySpendingKey lets the spending key alone authorize a pure rekey.
+	// RekeySpendingKey lets the spending key authorize a pure rekey: alone, or
+	// with the cosigner on a cosigned account.
 	RekeySpendingKey RekeySetting = "spending_key"
 )
 
@@ -38,7 +39,9 @@ type PathDeclaration struct {
 	Layer3Policy string
 	Rekey        RekeySetting
 	// RekeyList is set when the account has a rekey-to list. Under rekey:
-	// refused that is "only these": a pure rekey may go to a listed address.
+	// refused that is "only these": a pure rekey may go to a listed address and
+	// nowhere else. Under a spending-key rekey it is "plus cosigned": a listed
+	// address takes the spending key alone, any other the cosigner too.
 	RekeyList bool
 	Cosigner  *CosignerOverlay
 }

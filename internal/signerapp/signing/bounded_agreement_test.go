@@ -69,6 +69,7 @@ const (
 	agRekeyLabel       = "__aplane_bounded1_rekey"
 	agSpendLabel       = "__aplane_bounded1_spend"
 	agAcceptLabel      = "__aplane_bounded1_accept"
+	agCosignerLabel    = "__aplane_bounded1_cosigner"
 	agListCombineLabel = "__aplane_bounded1_rekey_list_combine"
 	agListOrderedLabel = "__aplane_bounded1_rekey_list_ordered"
 )
@@ -1535,7 +1536,7 @@ var agMutants = []agMutant{
 		name:    "the cosigner verification always passes",
 		applies: func(a *agAccount) bool { return a.shape.Cosigner },
 		mutate: func(t *testing.T, a *agAccount) string {
-			return agReplace(t, a.teal, agSpendLabel, "falcon_verify\nassert\n", "pop\npop\npop\n")
+			return agReplace(t, a.teal, agCosignerLabel, "falcon_verify\nassert\n", "pop\npop\npop\n")
 		},
 	},
 	{

@@ -438,16 +438,17 @@ func TestTimelockPolicyCompiledBudgetMatrix(t *testing.T) {
 		spendFee                        uint64
 	}
 	// A timelock takes no spending-key rekey, so these are its two arrangements
-	// that refuse rekeys. Without a cosigner, the general type's timelock takes a
-	// rekey-to list instead, which this matrix does not measure.
+	// that refuse rekeys. The general type's timelock takes a rekey-to list
+	// instead, which this matrix does not measure. The cosigned rows grew by the
+	// cosigner check's callsub and retsub, and their fee with the program size.
 	refused, cosigned := "refused", "refused and cosigner"
 	want := map[string]budget{
 		composeddsa.Layer3PolicyTimelock + "/" + refused:                 {bytecode: 1889, spendArgs: 1423, spendGroup: 2, spendFee: 2000},
-		composeddsa.Layer3PolicyTimelock + "/" + cosigned:                {bytecode: 3734, spendArgs: 2846, spendGroup: 3, spendFee: 3075},
+		composeddsa.Layer3PolicyTimelock + "/" + cosigned:                {bytecode: 3741, spendArgs: 2846, spendGroup: 3, spendFee: 3076},
 		composeddsa.Layer3PolicyFixedAllowlistTimelock + "/" + refused:   {bytecode: 3110, spendArgs: 1423, spendGroup: 2, spendFee: 2112},
-		composeddsa.Layer3PolicyFixedAllowlistTimelock + "/" + cosigned:  {bytecode: 4952, spendArgs: 2846, spendGroup: 3, spendFee: 3197},
+		composeddsa.Layer3PolicyFixedAllowlistTimelock + "/" + cosigned:  {bytecode: 4959, spendArgs: 2846, spendGroup: 3, spendFee: 3198},
 		composeddsa.Layer3PolicyMerkleAllowlistTimelock + "/" + refused:  {bytecode: 2153, spendArgs: 1935, spendGroup: 2, spendFee: 2016},
-		composeddsa.Layer3PolicyMerkleAllowlistTimelock + "/" + cosigned: {bytecode: 3995, spendArgs: 3358, spendGroup: 4, spendFee: 4002},
+		composeddsa.Layer3PolicyMerkleAllowlistTimelock + "/" + cosigned: {bytecode: 3999, spendArgs: 3358, spendGroup: 4, spendFee: 4002},
 	}
 	for _, test := range timelockCases {
 		for _, arrangement := range []string{refused, cosigned} {

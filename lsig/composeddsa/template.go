@@ -276,11 +276,16 @@ func boundedProfileFromTemplate(spec *generictemplate.BoundedAuthorizationSpec) 
 	}
 	switch spec.Rekey {
 	case "":
-		return nil, fmt.Errorf("bounded.rekey is required: %s, %s or %s", boundedmeta.RekeyRefused, boundedmeta.RekeySpendingKey, BoundedRekeyOnlyThese)
+		return nil, fmt.Errorf("bounded.rekey is required: %s, %s, %s or %s", boundedmeta.RekeyRefused, boundedmeta.RekeySpendingKey, BoundedRekeyOnlyThese, BoundedRekeyPlusCosigned)
 	case BoundedRekeyOnlyThese:
 		// Only these addresses: no rekey except to an address on the list, which
 		// the framework adds as the rekey_to parameter.
 		profile.Rekey = boundedmeta.RekeyRefused
+		profile.RekeyList = &boundedmeta.RekeyList{Contract: boundedmeta.RekeyListContractV1, Depth: rekeylist.Depth}
+	case BoundedRekeyPlusCosigned:
+		// These addresses with the spending key alone, others with the cosigner
+		// too; the profile check refuses it without a cosigner.
+		profile.Rekey = boundedmeta.RekeySpendingKey
 		profile.RekeyList = &boundedmeta.RekeyList{Contract: boundedmeta.RekeyListContractV1, Depth: rekeylist.Depth}
 	default:
 		profile.Rekey = boundedmeta.RekeySetting(spec.Rekey)

@@ -130,16 +130,18 @@ func TestBoundedAuthorizationMetadataSnapshotsCosignerContract(t *testing.T) {
 		t.Fatalf("GenerateTEAL() error = %v", err)
 	}
 	assertOrderedMarkers(t, teal,
-		boundedSpendLabel+":",
-		"// Cosigner-authorized pure spend",
+		boundedCosignerLabel+":",
 		"pushbytes 0x41504c414e455f434f5349474e45525f5631\npushbytes 0x02\nconcat\ntxn TxID\nconcat\nsha512_256",
 		"arg 1\npushbytes 0x"+strings.Repeat("42", boundedmeta.CosignerPublicKeySizeV1)+"\nfalcon_verify\nassert",
+		"retsub",
+		boundedSpendLabel+":",
+		"callsub "+boundedCosignerLabel,
 		"b "+boundedLayer3Label,
 		boundedLayer3Label+":",
 		"// LAYER3_TEST_POLICY",
 	)
-	if strings.Index(teal, boundedRekeyLabel+":") >= strings.Index(teal, "// Cosigner-authorized pure spend") {
-		t.Fatalf("rekey path is not dispatched before the cosigner-only spend gate:\n%s", teal)
+	if strings.Index(teal, boundedRekeyLabel+":") >= strings.Index(teal, boundedCosignerLabel+":") {
+		t.Fatalf("rekey path is not dispatched before the cosigner check:\n%s", teal)
 	}
 	if _, err := provider.BuildArgs([]byte{1, 2, 3, 4}, nil); err == nil || !strings.Contains(err.Error(), boundedmeta.CosignerSignatureSlot) {
 		t.Fatalf("BuildArgs() error = %v, want required cosigner-slot rejection", err)
@@ -258,7 +260,11 @@ func TestBoundedSpendingRekeyAcceptsWithoutLayer3(t *testing.T) {
 	}
 }
 
-func TestBoundedCosignerRejectsSpendingKeyAuthorizedRekey(t *testing.T) {
+// A cosigned spending-key rekey needs the cosigner, named in the record, and
+// calls the same cosigner check the spend path does: the cosigner's key compiles
+// once.
+func TestBoundedCosignedRekeyCallsTheCosignerCheck(t *testing.T) {
+	cosignerKey := strings.Repeat("42", boundedmeta.CosignerPublicKeySizeV1)
 	profile := &BoundedAuthorizationProfile{
 		Contract: BoundedContract, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: 1_000,
 		Rekey: boundedmeta.RekeySpendingKey,
@@ -267,12 +273,33 @@ func TestBoundedCosignerRejectsSpendingKeyAuthorizedRekey(t *testing.T) {
 			SignatureMaxSize: boundedmeta.CosignerSignatureMaxSizeV1, RequiredOn: []string{boundedmeta.PathSpend},
 		},
 	}
-	provider := newBoundedTestProvider(profile)
-	_, err := provider.GenerateTEAL([]byte{1}, map[string]string{
-		BoundedCosignerPublicKeyParameter: strings.Repeat("42", boundedmeta.CosignerPublicKeySizeV1),
-	})
-	if err == nil || !strings.Contains(err.Error(), "do not support a spending_key rekey") {
-		t.Fatalf("GenerateTEAL() error = %v, want bounded-cosigner spending-rekey rejection", err)
+	params := map[string]string{BoundedCosignerPublicKeyParameter: cosignerKey}
+	if _, err := newBoundedTestProvider(profile).GenerateTEAL([]byte{1}, params); err == nil ||
+		!strings.Contains(err.Error(), "exactly [spend, spending_rekey] with rekey spending_key") {
+		t.Fatalf("a spend-only cosigner beside a spending-key rekey: error = %v", err)
+	}
+	profile.Cosigner.RequiredOn = boundedmeta.CosignerRequiredOn(boundedmeta.RekeySpendingKey)
+	teal, err := newBoundedTestProvider(profile).GenerateTEAL([]byte{1}, params)
+	if err != nil {
+		t.Fatalf("GenerateTEAL() error = %v", err)
+	}
+	rekey := strings.Index(teal, boundedRekeyLabel+":")
+	check := strings.Index(teal, boundedCosignerLabel+":")
+	spend := strings.Index(teal, boundedSpendLabel+":")
+	if rekey < 0 || check < rekey || spend < check {
+		t.Fatalf("rekey at %d, cosigner check at %d, spend at %d:\n%s", rekey, check, spend, teal)
+	}
+	if branch := teal[rekey:check]; !strings.HasSuffix(branch, "callsub "+boundedCosignerLabel+"\nb "+boundedAcceptLabel+"\n\n") {
+		t.Fatalf("the cosigned rekey does not call the cosigner check and accept:\n%s", branch)
+	}
+	if !strings.HasSuffix(teal[check:spend], "assert\nretsub\n\n") {
+		t.Fatalf("the cosigner check is not a subroutine:\n%s", teal[check:spend])
+	}
+	if !strings.HasPrefix(teal[spend:], boundedSpendLabel+":\ncallsub "+boundedCosignerLabel+"\n") {
+		t.Fatalf("the spend path does not call the cosigner check:\n%s", teal[spend:])
+	}
+	if n := strings.Count(teal, cosignerKey); n != 1 {
+		t.Fatalf("the cosigner key compiles %d times, want once", n)
 	}
 }
 

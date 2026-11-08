@@ -32,14 +32,16 @@ const (
 	goldenFirstShapeFingerprint = "1:8cf7fe450ac0fe0e548ae4e4a075d22035f167a8a27957d723a82d82ac93b0d7"
 	goldenFullShapeFingerprint  = "1:e15126819ade64513db6f8708fa9b0340f56d438e44d619605377fd53b1e6550"
 	goldenBoundaryDigest        = "774b41e54991edc7532ac1c0375d9415faf6767255b746ab95a0920b3fbe5209"
-	goldenRenderedPrograms      = "2d8c52c74a85d08bb9a93b8200b4acb1629b771cbeff986edc4784290565ac74"
-	goldenTimelockPrograms      = "5ceed3b915f60b3e46f6fba843520d4e9767508616823a1a77edf3f09138922f"
+	// The three program goldens below moved when the cosigner check became one
+	// subroutine every cosigned path calls; only the cosigned shapes changed.
+	goldenRenderedPrograms = "cf7868081ded3e0b5f433082c5a06d81d03f24b8c55e67e52c1db63362d8a1f6"
+	goldenTimelockPrograms = "77069fa6dfbed5d1c2a4b1967350a54f837decf0f20f98fc16f9f979e9e97456"
 	// Pins the 14 bounded2 spending-key shapes. It is no longer equal to main
 	// a2874c6e: bounded2 replaced bounded1 in place (contract label, rekey setting,
 	// profile domain), and timelocks no longer offer a spending-key rekey.
 	goldenSpendingKeyPrograms = "e505540200bde859f7d0adca8b99d3a5c4bfd3ee79859c56d1b00c5201030f15"
 	// Pins the 17 limits-only shapes: programs, fingerprints and digests.
-	goldenLimitsPrograms = "a9300aecac8042af437bb0f8fc086114668cbb9c5695c4e71f8490485b7514a3"
+	goldenLimitsPrograms = "28466f6bc1142e2edf90eae86119fd18f8f806bfe08eb4b85e0ed85ab4eb331a"
 )
 
 func newTestProvider(t *testing.T) *Provider {

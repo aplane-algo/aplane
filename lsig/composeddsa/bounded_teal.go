@@ -25,6 +25,13 @@ const (
 
 	boundedRekeyListCombineLabel = "__aplane_bounded1_rekey_list_combine"
 	boundedRekeyListOrderedLabel = "__aplane_bounded1_rekey_list_ordered"
+
+	// boundedCosignerLabel is the cosigner check, one subroutine every path the
+	// cosigner signs calls, so its key compiles once.
+	boundedCosignerLabel = "__aplane_bounded1_cosigner"
+	// boundedCosignedRekeyLabel is plus cosigned's cosigned branch, taken when
+	// the list proof slot is empty.
+	boundedCosignedRekeyLabel = "__aplane_bounded1_cosigned_rekey"
 )
 
 func (c *ComposedDSA) renderBoundedPrelude(publicKey []byte, params map[string]string, profile *BoundedAuthorizationProfile) (string, error) {
@@ -87,15 +94,37 @@ func (c *ComposedDSA) renderBoundedPrelude(publicKey []byte, params map[string]s
 			writeZeroAddressAssertion(&b, predicate.Field)
 		}
 	}
+	cosignedRekey := profile.Rekey == boundedmeta.RekeySpendingKey && profile.Cosigner != nil
 	switch {
+	case profile.RekeyList != nil && profile.Rekey == boundedmeta.RekeySpendingKey:
+		// Plus cosigned: a non-empty proof commits the rekey to the listed
+		// branch, which never falls through; an empty one takes the cosigner.
+		// The proof slot precedes the cosigner slot (the layout's source order),
+		// so it is present on a cosigned rekey even with trailing slots trimmed.
+		root, err := rekeyListRoot(params)
+		if err != nil {
+			return "", err
+		}
+		proofIndex := c.rekeyListProofIndex(metadata)
+		writePureRekey()
+		b.WriteString(fmt.Sprintf("arg %d\nlen\nbz %s\n", proofIndex, boundedCosignedRekeyLabel))
+		renderListedRekey(&b, proofIndex, root)
+		b.WriteString(boundedCosignedRekeyLabel + ":\n")
+		b.WriteString("callsub " + boundedCosignerLabel + "\n")
+		b.WriteString("b " + boundedAcceptLabel + "\n\n")
 	case profile.RekeyList != nil:
 		// Only these addresses: a pure rekey to a listed target, nothing else.
+		// The cosigner, if any, is not asked.
 		root, err := rekeyListRoot(params)
 		if err != nil {
 			return "", err
 		}
 		writePureRekey()
 		renderListedRekey(&b, c.rekeyListProofIndex(metadata), root)
+	case cosignedRekey:
+		writePureRekey()
+		b.WriteString("callsub " + boundedCosignerLabel + "\n")
+		b.WriteString("b " + boundedAcceptLabel + "\n\n")
 	case profile.Rekey == boundedmeta.RekeySpendingKey:
 		writePureRekey()
 		b.WriteString("b " + boundedAcceptLabel + "\n\n")
@@ -103,13 +132,21 @@ func (c *ComposedDSA) renderBoundedPrelude(publicKey []byte, params map[string]s
 		b.WriteString("err\n\n")
 	}
 
-	b.WriteString(boundedSpendLabel + ":\n")
+	// Every branch above ends in a jump or err, so nothing falls into the
+	// subroutine.
 	if profile.Cosigner != nil {
 		cosignerTEAL, err := c.renderCosignerAuthorization(publicKey, params, metadata)
 		if err != nil {
 			return "", err
 		}
+		b.WriteString(boundedCosignerLabel + ":\n")
 		b.WriteString(cosignerTEAL)
+		b.WriteString("retsub\n\n")
+	}
+
+	b.WriteString(boundedSpendLabel + ":\n")
+	if profile.Cosigner != nil {
+		b.WriteString("callsub " + boundedCosignerLabel + "\n")
 		b.WriteString("b " + boundedLayer3Label + "\n\n")
 		b.WriteString(boundedLayer3Label + ":\n")
 	}
@@ -144,7 +181,7 @@ func (c *ComposedDSA) renderCosignerAuthorization(publicKey []byte, params map[s
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf(`// Cosigner-authorized pure spend
+	return fmt.Sprintf(`// the cosigner's signature over its message for this transaction
 arg %d
 len
 pushint 0

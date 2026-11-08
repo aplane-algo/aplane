@@ -38,6 +38,9 @@ const (
 	// BoundedRekeyOnlyThese is the template's rekey value for a rekey-to list:
 	// rekey: refused, plus the list.
 	BoundedRekeyOnlyThese = boundedmeta.RekeyOnlyThese
+	// BoundedRekeyPlusCosigned is the template's rekey value for a rekey-to list
+	// beside cosigned rekeys: rekey: spending_key, plus the list, with a cosigner.
+	BoundedRekeyPlusCosigned = boundedmeta.RekeyPlusCosigned
 
 	boundedReservedNamePrefix  = "bounded_"
 	boundedReservedLabelPrefix = "__aplane_bounded1_"
@@ -104,13 +107,10 @@ func (profile *BoundedAuthorizationProfile) validate() error {
 	if err := boundedmeta.ValidateRekeySetting(profile.Rekey); err != nil {
 		return err
 	}
-	if profile.RekeyList != nil {
-		if profile.Rekey != boundedmeta.RekeyRefused {
-			return fmt.Errorf("a rekey-to list needs rekey %s", boundedmeta.RekeyRefused)
-		}
-		if profile.Cosigner != nil {
-			return fmt.Errorf("a rekey-to list on a cosigned account is not supported")
-		}
+	// Plus cosigned needs the cosigner: alone, the spending key already rekeys
+	// anywhere, so the list would add nothing.
+	if profile.RekeyList != nil && profile.Rekey == boundedmeta.RekeySpendingKey && profile.Cosigner == nil {
+		return fmt.Errorf("a rekey-to list beside a spending-key rekey (%s) needs a cosigner", boundedmeta.RekeyPlusCosigned)
 	}
 	// A listed address is a way out, so only a refused profile without a list
 	// must keep a transfer for what it holds.
@@ -119,15 +119,16 @@ func (profile *BoundedAuthorizationProfile) validate() error {
 			return err
 		}
 	}
-	if err := boundedmeta.ValidateCosignerAuthorizationProfile(profile.Cosigner); err != nil {
+	if err := boundedmeta.ValidateCosignerAuthorizationProfile(profile.Cosigner, profile.Rekey); err != nil {
 		return err
 	}
 	return nil
 }
 
 // validatedBoundedProfile canonicalizes a profile and checks it against its
-// metadata, which catches contradictions such as a cosigner beside a
-// spending-key rekey. CanonicalBoundedProfile encodes the result.
+// metadata, which catches contradictions such as a rekey-to list beside a
+// spending-key rekey without a cosigner. CanonicalBoundedProfile encodes the
+// result.
 func validatedBoundedProfile(profile *BoundedAuthorizationProfile, metadata *boundedmeta.Metadata) (*BoundedAuthorizationProfile, error) {
 	canonical, err := canonicalBoundedProfile(profile)
 	if err != nil {
@@ -480,7 +481,7 @@ func boundedArgumentLayout(layout SignatureArgLayout, profile *BoundedAuthorizat
 		slots = append(slots, boundedmeta.ArgumentSlot{
 			Index: len(slots), Name: boundedmeta.CosignerSignatureSlot, Source: boundedmeta.ArgSourceCosigner,
 			MaxSize: profile.Cosigner.SignatureMaxSize,
-			Paths:   boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgForbidden, ListedRekey: boundedmeta.ArgForbidden},
+			Paths:   boundedmeta.CosignerSlotPaths(profile.Cosigner),
 		})
 	}
 	return slots

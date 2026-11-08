@@ -5,6 +5,7 @@ package boundedmeta
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/aplane-algo/aplane/internal/rekeylist"
 )
@@ -215,8 +216,8 @@ func validateArgumentLayout(metadata *Metadata) error {
 		case ArgSourceCosigner:
 			cosignerSlots++
 			if slot.Name != CosignerSignatureSlot || metadata.Cosigner == nil || slot.MaxSize != metadata.Cosigner.SignatureMaxSize ||
-				slot.Paths.Spend != ArgRequired || slot.Paths.SpendingRekey != ArgForbidden || slot.Paths.ListedRekey != ArgForbidden {
-				return fmt.Errorf("bounded cosigner signature slot must be spend-only and match cosigner metadata")
+				slot.Paths != CosignerSlotPaths(metadata.Cosigner) {
+				return fmt.Errorf("bounded cosigner signature slot must be required on exactly the cosigner's required_on paths and match cosigner metadata")
 			}
 		}
 	}
@@ -234,6 +235,19 @@ func validateArgumentLayout(metadata *Metadata) error {
 		return fmt.Errorf("argument layout has %d cosigner slots, want %d", cosignerSlots, wantCosignerSlots)
 	}
 	return nil
+}
+
+// CosignerSlotPaths is the cosigner signature slot's path mask: required on
+// every path the cosigner signs, forbidden on the rest. The listed rekey is never
+// one of them.
+func CosignerSlotPaths(cosigner *CosignerAuthorization) ArgumentPathMask {
+	rule := func(path string) string {
+		if cosigner != nil && slices.Contains(cosigner.RequiredOn, path) {
+			return ArgRequired
+		}
+		return ArgForbidden
+	}
+	return ArgumentPathMask{Spend: rule(PathSpend), SpendingRekey: rule(PathSpendingRekey), ListedRekey: ArgForbidden}
 }
 
 // derivedArgSizes is each signer-derived argument kind's exact size.
