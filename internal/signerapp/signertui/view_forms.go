@@ -227,11 +227,31 @@ func (m Model) renderParameterModalForKeyType(keyType, buttonVerb, errorMsg stri
 	sb.WriteString(scrollMoreAboveLine(m.forms.generateParamScrollOffset))
 	sb.WriteString("\n")
 
-	// Render only the fields that fit the terminal.
+	// Render only the fields that fit the terminal. The last one shown also
+	// leaves room for what follows it: its blank line, a multi-line field's
+	// scroll hint, the more-below line, the button and its blank line, and any
+	// error.
 	startIdx := m.forms.generateParamScrollOffset
 	endIdx := min(startIdx+m.visibleParamModalFields(), len(params))
+	trailing := 1 + 1 + lipgloss.Height(buttonActiveStyle.Render("[ "+buttonVerb+" ]")) + 1
+	if errorMsg != "" {
+		trailing += lipgloss.Height(errorStyle.Render(errorMsg)) + 1
+	}
 	for i := startIdx; i < endIdx; i++ {
-		m.renderParamField(&sb, keyType, params[i], m.forms.generateFocus == i)
+		// A group's title comes before its first field, and above the first
+		// field shown, so a scrolled form still says which group it is in.
+		if title, starts := spec.sectionAt(i); title != "" && (starts || i == startIdx) {
+			sb.WriteString(subtitleStyle.Render("── " + title + " ──"))
+			sb.WriteString("\n")
+		}
+		reserve := 0
+		if i == endIdx-1 {
+			reserve = trailing
+			if isMultilineParamType(params[i].Type) {
+				reserve++
+			}
+		}
+		m.renderParamField(&sb, spec, keyType, params[i], m.forms.generateFocus == i, reserve)
 	}
 
 	sb.WriteString(scrollMoreBelowLine(len(params) - endIdx))
@@ -263,9 +283,14 @@ func (m Model) visibleParamModalFields() int {
 
 // renderParamField writes one parameter field: its label line, the input box,
 // and, for a scrolled multi-line field, how many lines are hidden.
-func (m Model) renderParamField(sb *strings.Builder, keyType string, paramDef lsigprovider.ParameterDef, focused bool) {
+func (m Model) renderParamField(sb *strings.Builder, spec *paramSpec, keyType string, paramDef lsigprovider.ParameterDef, focused bool, reserve int) {
 	isCosignerSelector := m.isCosignerSelectorParam(keyType, paramDef)
 	labelText, modeHint := m.paramFieldLabel(paramDef, focused, isCosignerSelector)
+	if spec != nil && spec.Overlay && isOverlayParameter(paramDef.Name) {
+		// The overlay controls are choices; "Require a cosigner" needs no
+		// "(optional)" after it.
+		labelText = paramDef.Label
+	}
 	if focused {
 		sb.WriteString("> " + labelText + ":")
 	} else {
@@ -276,10 +301,10 @@ func (m Model) renderParamField(sb *strings.Builder, keyType string, paramDef ls
 	}
 	sb.WriteString("\n")
 
-	fieldWidth := m.constrainParameterFieldWidth(m.paramFieldWidth(paramDef, isCosignerSelector))
-	fieldHeight := m.constrainParameterFieldHeight(getFieldHeightForType(paramDef.Type), sb.String())
+	fieldWidth := m.constrainParameterFieldWidth(m.paramFieldWidth(spec, paramDef, isCosignerSelector))
+	fieldHeight := m.constrainParameterFieldHeight(getFieldHeightForType(paramDef.Type), sb.String(), reserve)
 
-	lines := m.paramFieldLines(paramDef, focused, fieldWidth, isCosignerSelector)
+	lines := m.paramFieldLines(spec, paramDef, focused, fieldWidth, isCosignerSelector)
 	aboveCount, belowCount := 0, 0
 	if isMultilineParamType(paramDef.Type) {
 		lines, aboveCount, belowCount = m.scrollParamFieldLines(paramDef.Name, lines, fieldHeight)
@@ -334,10 +359,14 @@ func (m Model) paramFieldLabel(paramDef lsigprovider.ParameterDef, focused, isCo
 // paramFieldWidth is the unconstrained input box width: the type's width,
 // widened or narrowed for special fields, or the selected input mode's hex
 // length.
-func (m Model) paramFieldWidth(paramDef lsigprovider.ParameterDef, isCosignerSelector bool) int {
+func (m Model) paramFieldWidth(spec *paramSpec, paramDef lsigprovider.ParameterDef, isCosignerSelector bool) int {
 	fieldWidth := getFieldWidthForType(paramDef.Type, paramDef.MaxLength)
 	if len(paramDef.Options) > 0 {
-		fieldWidth = optionFieldWidth(paramDef.Options)
+		labels := make([]string, len(paramDef.Options))
+		for i, option := range paramDef.Options {
+			labels[i] = spec.optionLabel(paramDef.Name, option)
+		}
+		fieldWidth = optionFieldWidth(labels)
 	}
 	if isCosignerSelector {
 		fieldWidth = 50
@@ -353,14 +382,14 @@ func (m Model) paramFieldWidth(paramDef lsigprovider.ParameterDef, isCosignerSel
 
 // paramFieldLines is the field's content as lines: its value or placeholder,
 // or, while focused, its value with a cursor.
-func (m Model) paramFieldLines(paramDef lsigprovider.ParameterDef, focused bool, fieldWidth int, isCosignerSelector bool) []string {
+func (m Model) paramFieldLines(spec *paramSpec, paramDef lsigprovider.ParameterDef, focused bool, fieldWidth int, isCosignerSelector bool) []string {
 	if focused && m.forms.genericLSigParams != nil {
 		currentValue := m.forms.genericLSigParams[paramDef.Name]
-		if currentValue == "" && len(paramDef.Options) > 0 {
-			currentValue = defaultParamValue(paramDef)
+		if len(paramDef.Options) > 0 {
+			currentValue = spec.optionLabel(paramDef.Name, shownOption(paramDef, currentValue))
 		}
 		if isCosignerSelector {
-			currentValue = m.cosignerSelectionDisplay(currentValue)
+			currentValue = m.cosignerFieldDisplay(paramDef, currentValue)
 		}
 		lines := paramInputLines(currentValue)
 		lines[len(lines)-1] += "_"
@@ -371,16 +400,34 @@ func (m Model) paramFieldLines(paramDef lsigprovider.ParameterDef, focused bool,
 	if m.forms.genericLSigParams != nil {
 		value = m.forms.genericLSigParams[paramDef.Name]
 	}
-	if value == "" && len(paramDef.Options) > 0 {
-		value = defaultParamValue(paramDef)
+	if len(paramDef.Options) > 0 {
+		value = spec.optionLabel(paramDef.Name, shownOption(paramDef, value))
 	}
 	if value == "" {
 		value = getPlaceholderForType(paramDef.Type)
 	}
 	if isCosignerSelector {
-		value = m.cosignerSelectionDisplay(m.forms.genericLSigParams[paramDef.Name])
+		value = m.cosignerFieldDisplay(paramDef, m.forms.genericLSigParams[paramDef.Name])
 	}
 	return paramInputLines(value)
+}
+
+// shownOption is the option a choice field will send: its value, or its default
+// when the value is empty or no longer one of its options.
+func shownOption(paramDef lsigprovider.ParameterDef, value string) string {
+	if value == "" || indexOfOption(paramDef.Options, value) < 0 {
+		return defaultParamValue(paramDef)
+	}
+	return value
+}
+
+// cosignerFieldDisplay shows a cosigner selector's choice. An optional one left
+// empty means no cosigner, and says so.
+func (m Model) cosignerFieldDisplay(paramDef lsigprovider.ParameterDef, witnessKeyID string) string {
+	if witnessKeyID == "" && !paramDef.Required {
+		return "None (Enter to choose one)"
+	}
+	return m.cosignerSelectionDisplay(witnessKeyID)
 }
 
 // scrollParamFieldLines returns the window of a multi-line field's lines at
@@ -460,7 +507,9 @@ func (m Model) constrainParameterFieldWidth(width int) int {
 	return width
 }
 
-func (m Model) constrainParameterFieldHeight(height int, bodyBeforeField string) int {
+// constrainParameterFieldHeight fits a field between bodyBeforeField and reserve
+// lines after it.
+func (m Model) constrainParameterFieldHeight(height int, bodyBeforeField string, reserve int) int {
 	if height < 1 {
 		return 1
 	}
@@ -472,7 +521,7 @@ func (m Model) constrainParameterFieldHeight(height int, bodyBeforeField string)
 		maxBodyLines-- // reserve the shared panel viewport status row
 	}
 	usedLines := renderedLinesBeforeAppend(bodyBeforeField)
-	maxRenderedFieldLines := maxBodyLines - usedLines
+	maxRenderedFieldLines := maxBodyLines - usedLines - reserve
 	minRenderedFieldLines := inputActiveStyle.GetVerticalFrameSize() + 1
 	if maxRenderedFieldLines < minRenderedFieldLines {
 		maxRenderedFieldLines = minRenderedFieldLines

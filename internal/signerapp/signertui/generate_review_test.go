@@ -644,11 +644,11 @@ func TestPlainHostReviewFitsAndStatesWhatDecides(t *testing.T) {
 		}{
 			{boundary.RekeyRefused, false, true, "closes included, needs the cosigner"},
 			{boundary.RekeySpendingKey, false, true, "Spending key and cosigner"},
-			{boundary.RekeyRefused, true, true, "Only these 1 addresses"},
+			{boundary.RekeyRefused, true, true, "Only this address, spending key alone"},
 			{boundary.RekeySpendingKey, true, true, "others need the cosigner"},
 			{boundary.RekeyRefused, false, false, "spending key alone can spend or close everything"},
 			{boundary.RekeySpendingKey, false, false, "Spending key alone"},
-			{boundary.RekeyRefused, true, false, "Only these 1 addresses"},
+			{boundary.RekeyRefused, true, false, "Only this address, spending key alone"},
 		} {
 			t.Run(fmt.Sprintf("%s/%s/cosigned=%v", keyType, arrangement.want, arrangement.cosigned), func(t *testing.T) {
 				prepared := PrepareGenerateResultMessage{
@@ -689,6 +689,68 @@ func TestPlainHostReviewFitsAndStatesWhatDecides(t *testing.T) {
 					t.Errorf("review is wrong or scrolls at 80x24:\n%s", view)
 				}
 			})
+		}
+	}
+}
+
+// On a post-quantum account the details name a held classical target, ask the
+// operator to confirm targets this signer can't classify, and say the list is
+// an exit in a mesh and in the backup. A classical account gets the held flag
+// only. Statements, never refusals.
+func TestReviewDetailsNameClassicalTargetsAndTheProtection(t *testing.T) {
+	held := []KeyInfo{
+		{Address: "HELDED25519", KeyType: "ed25519"},
+		{Address: "HELDFALCON", KeyType: "aplane.falcon1024.v1"},
+		{Address: "HELDTEMPLATE", KeyType: "aplane.htlc.v1"},
+	}
+	prepared := preparedAccount(boundedmeta.Layer3PolicyFixedAllowlist, boundary.RekeyRefused, true, 1)
+	prepared.Bounded.RekeyList = true
+	prepared.Parameters[boundedmeta.RekeyListEntriesParameter] = "HELDED25519,HELDFALCON,HELDTEMPLATE,ELSEWHERE"
+	m := Model{viewState: ViewGenerateReviewDetails, width: 80, height: 400, forms: formsState{review: &prepared}, keylist: keyListState{keys: held}}
+	details := strings.Join(strings.Fields(strings.ReplaceAll(stripANSI(m.renderGenerateReviewDetails()), "║", " ")), " ")
+	for _, want := range []string{
+		"HELDED25519 held by this signer: a compromise of this signer can take the account through it; a classical key, so the account would be classical after a handover",
+		"HELDFALCON held by this signer: a compromise of this signer can take the account through it HELDTEMPLATE",
+		"HELDTEMPLATE held by this signer: a compromise of this signer can take the account through it; confirm it is a post-quantum key",
+		"ELSEWHERE not held by this signer: confirm it is a post-quantum key",
+		"in a mesh, each is an exit",
+		"The list is in the key's backup",
+		"Rekey protection: Independent of the online keys: rekeys go only to the listed addresses.",
+	} {
+		if !strings.Contains(details, want) {
+			t.Errorf("details lack %q:\n%s", want, details)
+		}
+	}
+
+	classical := prepared
+	classical.KeyType = "aplane.ed25519.v1"
+	classical.Bounded = &protocol.PreparedBoundedProfile{Contract: boundedmeta.PlainContract, Rekey: boundary.RekeySpendingKey, RekeyList: true, Layer3Policy: boundedmeta.Layer3PolicyNone, CosignerRequired: true}
+	m.forms.review = &classical
+	details = strings.Join(strings.Fields(strings.ReplaceAll(stripANSI(m.renderGenerateReviewDetails()), "║", " ")), " ")
+	if strings.Contains(details, "confirm it is a post-quantum key") || strings.Contains(details, "a classical key, so") {
+		t.Errorf("a classical account's targets are judged as post-quantum ones:\n%s", details)
+	}
+	if !strings.Contains(details, "As strong as its two online keys") {
+		t.Errorf("plus cosigned does not say it is as strong as its two online keys:\n%s", details)
+	}
+}
+
+func TestReviewRekeyProtectionNamesEachKind(t *testing.T) {
+	for _, test := range []struct {
+		rekey            string
+		listed, cosigned bool
+		want             string
+	}{
+		{boundary.RekeyRefused, false, false, "no key can rekey it"},
+		{boundary.RekeyRefused, true, false, "rekeys go only to the listed addresses"},
+		{boundary.RekeySpendingKey, true, true, "two online keys"},
+		{boundary.RekeySpendingKey, false, true, "two online keys"},
+		{boundary.RekeySpendingKey, false, false, "it alone can rekey it anywhere"},
+	} {
+		prepared := preparedAccount(boundedmeta.Layer3PolicyNone, test.rekey, test.cosigned, 0)
+		prepared.Bounded.RekeyList = test.listed
+		if got := reviewRekeyProtection(prepared); !strings.Contains(got, test.want) {
+			t.Errorf("%s listed=%v cosigned=%v: %q, want %q", test.rekey, test.listed, test.cosigned, got, test.want)
 		}
 	}
 }

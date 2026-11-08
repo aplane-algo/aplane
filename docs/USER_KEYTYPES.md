@@ -159,8 +159,8 @@ account needs no enabling: it is the Corridor preset of `aplane.falcon1024-b.v1`
 
 Before generating a cosigned account, choose **Export Cosigner Key** on the
 cosigner. On the primary signer, start **Generate account** in `apadmin`,
-select a plain host or `aplane.falcon1024-b.v1`, then open the **Cosigner**
-field and choose **Use key file...** or **Paste public JSON...**. Compare the complete Witness Key ID with the value
+select a plain host or `aplane.falcon1024-b.v1`, then open the **Require a
+cosigner** field and choose **Use key file...** or **Paste public JSON...**. Compare the complete Witness Key ID with the value
 shown on the cosigner and import; the form returns with that key selected. A
 key that is already imported is offered under its existing name rather than
 imported again. The UI submits the stable Witness Key ID and the signer
@@ -258,6 +258,20 @@ generate aplane.ed25519.v1 rekey_authority=only_these rekey_to=<address>
 generate aplane.falcon1024.v1
 ```
 
+In apadmin, **Generate account** on a plain host opens three choices:
+
+- **Require a cosigner (Falcon-1024)**: Enter opens the cosigner picker;
+  Backspace removes the choice. Left as **None**, the account has no cosigner.
+- **Add rekey-to addresses**: full addresses, one per line or comma-separated.
+- **Allow rekeys** (without a list): **No, never** or **Yes**, by the spending
+  key alone, or with the cosigner when there is one. With addresses in the list,
+  this becomes **Rekey-to option**: **Only these addresses**, or, with a
+  cosigner, **These, plus others with the cosigner**.
+
+The review that follows says what the choices add up to. apadmin always sends a
+rekey setting, so the plain program comes from apshell's `generate` with no
+parameters.
+
 With no parameters the type is the plain program: the spending-key check alone,
 the same program bounded and composed accounts are built on. A cosigned plain
 host signs through the cosigned flow, its cosigner asked for every spend and
@@ -295,14 +309,25 @@ Generate a key and choose `aplane.falcon1024-b.v1`, then a preset:
 "All transfer kinds" means `pay`, `axfer`, and `asset_opt_in`. For a narrower list, such as
 ALGO only, or for a limits-only account, use a boundary file.
 
+A preset's form shows its bounds first (recipients, or the unlock round), then the same
+three choices a plain host has: **Require a cosigner**, **Add rekey-to addresses**, and
+**Allow rekeys** or, with a list, **Rekey-to option**. The preset fills them in as the
+table says and you can change them: a cosigner and a rekey-to list the preset asks for
+are required, and the rekey choice offers only what this type takes, so there is no
+**No, never** (a grammar limit; an expert template can refuse every rekey). A Timelock
+always needs its list.
+
 Before generating, apadmin shows what the signer resolved, including the cosigner it will
 use. For an account with a rekey-to list, the Rekey row reads "Only these N addresses,
 spending key alone", and on a timelock it warns that a listed rekey is a way around the
 lock. A cosigned account that takes rekeys reads "Spending key and cosigner", or, with a
 list beside them, "These N, spending key alone; others need the cosigner". Press `d` for
-every parameter, fingerprint, and recipient; the details also list
-every rekey-to address and flag each one this signer holds, and whether that key is
-Ed25519.
+every parameter, fingerprint, and recipient; the details also say which kind of
+protection the rekey setting is (independent of the online keys, or only as strong as
+them), list every rekey-to address, flag each one this signer holds, and, on a
+post-quantum account, say which held targets are classical and ask you to confirm the
+rest are post-quantum, since an address doesn't reveal its key type. These are
+statements: nothing here refuses a choice.
 After generating, press `s` to save a receipt beside where apadmin was started. A receipt
 documents the account, including its rekey-to addresses. It cannot restore one: use
 encrypted backups for that. The chain never reveals a rekey-to list, so keep the receipt

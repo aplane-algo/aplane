@@ -856,6 +856,20 @@ steps use that value rather than a constant. A per-key type with no `boundary_sc
 such as a plain host, uses the parameter form. Nothing here depends on the key type's
 name.
 
+On a per-key type that offers a cosigner (`cosigner_component_key_type`) and declares
+`rekey_authority` (with options) and `rekey_to`, the parameter form is the overlay form
+(`overlay_form.go`): the type's bounds as one group (a preset's fields, or the type's
+own parameters without one), then three controls over `cosigner`, `rekey_to` and
+`rekey_authority`. The cosigner is the picker, optional unless a preset needs it, and
+Backspace clears it; its label names the algorithm of the cosigner key type. The rekey
+control offers the type's declared settings that fit: `refused` and `spending_key`
+without a list, `only_these` with one, and `plus_cosigned` with one and a cosigner. A
+setting the control no longer offers moves to its first. Empty fields are left out of
+the request, and a preset's fixed values never override a field the form shows, so the
+operator's rekey choice wins over the preset's. The raw cosigner key and list root are
+never fields. Nothing in the form refuses a combination the type declares; the review
+states what it means and the signer checks it.
+
 A compiled list stands in until the signer's list arrives, so a type can be selected before
 it can be classified. That isn't read as an ordinary type: the form shows an error and
 requests the list again instead of opening the plain form, because the plain form would

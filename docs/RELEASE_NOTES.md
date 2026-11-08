@@ -11,6 +11,20 @@ before it was renamed `enroll`.
 
 This release is install-fresh only.
 
+- apadmin's Generate form for a plain host or `aplane.falcon1024-b.v1` shows the overlay
+  choices: **Require a cosigner (Falcon-1024)**, optional unless a preset needs it and
+  cleared with Backspace; **Add rekey-to addresses**; and **Allow rekeys** (No, never, or
+  Yes, by the spending key, with the cosigner when there is one) or, with a list,
+  **Rekey-to option** (Only these addresses, or, with a cosigner, These, plus others
+  with the cosigner). On the general type the preset's bounds come first as one group;
+  the preset fills in the overlay choices and the operator can change them. Each type is
+  offered every setting it declares, and every field fits 80x24: a list field such as
+  recipients or rekey-to addresses no longer pushes a parameter form into the panel
+  scroller at that size.
+- apadmin's review details say which kind of protection the rekey setting is, and on a
+  post-quantum account name each held classical target and ask the operator to confirm
+  that the other listed targets are post-quantum. They say a listed key is an exit in a
+  mesh. These are statements, not refusals.
 - apshell's `generate` takes its own options as flags: `--boundary <file>` and
   `--result <file>` (or `--flag=file`) replace `boundary=` and `result=`. Every
   `param=value` now goes to the signer, so a template's own `boundary` or `result`

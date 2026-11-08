@@ -1612,12 +1612,23 @@ can have per-key types without reporting them, and they're unsupported.
 one definition behind the screen and sample boundary files; Load boundary file reads a
 file and sends its public values. Allowlist is `spending_key`; Locked Allowlist and
 Timelock are `only_these` and ask for `rekey_to`; Corridor is `only_these` with a
-cosigner and asks for `rekey_to` too.
+cosigner and asks for `rekey_to` too. A preset's form is the overlay form (see
+[ARCH_ADMIN.md](ARCH_ADMIN.md#choosing-a-generate-flow)): its bounds, then the cosigner,
+the rekey-to list and the rekey choice, which the preset fills in and the operator can
+change.
 Every parameterized request is prepared first. A bounded
 result goes to a review screen that keeps fingerprints and digests in a details view.
 For an account with a rekey-to list (`prepare_generate_result.bounded.rekey_list`,
 under `only_these` or `plus_cosigned`) it also names every address in the resolved
-`rekey_to` and flags those this signer holds. The Rekey row says which arrangement
+`rekey_to` and flags those this signer holds; on a post-quantum spending key (every
+`bounded2` account, and a plain host on a post-quantum base) it names the held targets
+whose key type is classical, and asks the operator to confirm the others, since an
+address doesn't reveal its key type. The details say which kind of protection the rekey
+setting is: a refused rekey and `only_these` are independent of the online keys, while
+`plus_cosigned` and a cosigned `spending_key` are only as strong as both online keys,
+and an uncosigned `spending_key` as the spending key. The account's own address can't
+be on the list at generation, since the spending key doesn't exist yet. These are
+statements, never refusals. The Rekey row says which arrangement
 applies: "Spending key and cosigner" for a cosigned rekey, and "These N, spending key
 alone; others need the cosigner" for `plus_cosigned`. Then
 generation sends the exact resolved values with `expected_fingerprint` and

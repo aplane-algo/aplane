@@ -413,7 +413,11 @@ func (m Model) handleGenerateParamsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.forms.boundaryPreset != nil {
 		escView = ViewBoundaryPreset
 	}
+	m = m.normalizeOverlayChoices(getKeyTypeByIndex(m.forms.generateKeyType))
 	m, cmd, errStr := m.handleParamModalKeys(msg, m.forms.generateKeyType, escView, ViewGenerating, submitFn)
+	if m.viewState == ViewGenerateParams {
+		m = m.normalizeOverlayChoices(getKeyTypeByIndex(m.forms.generateKeyType))
+	}
 	if errStr != "" || m.viewState == ViewGenerating || m.viewState == escView {
 		m.forms.generateError = errStr
 	}
@@ -544,7 +548,13 @@ func (m Model) handleCosignerSelectorKey(msg tea.KeyMsg, keyType string, param l
 	case "enter", " ":
 		next, errText := m.openCosignerPicker(keyType, param.Name)
 		return next, true, errText
-	case "left", "right", "<", ">", "backspace", "delete", "insert":
+	case "backspace", "delete":
+		// An optional cosigner, as on the overlay form, can be removed again.
+		if !param.Required && m.forms.genericLSigParams != nil {
+			m.forms.genericLSigParams[param.Name] = ""
+		}
+		return m, true, ""
+	case "left", "right", "<", ">", "insert":
 		return m, true, ""
 	}
 	if msg.Type == tea.KeyRunes {
@@ -632,9 +642,16 @@ func (m Model) submitParamModal(
 	if err := spec.Validate(transformedParams); err != nil {
 		return m, nil, err.Error()
 	}
+	if spec.Overlay {
+		transformedParams = dropEmptyParameters(transformedParams)
+	}
 	if preset := m.forms.boundaryPreset; preset != nil && keyType == m.forms.boundaryKeyType {
+		// A preset's choice the form shows, such as the overlay form's rekey
+		// setting, is the operator's to change, so only the rest are fixed.
 		for name, value := range preset.Fixed {
-			transformedParams[name] = value
+			if _, shown := paramNamed(spec.Params, name); !shown {
+				transformedParams[name] = value
+			}
 		}
 	}
 	m.forms.pendingGenerateParams = transformedParams

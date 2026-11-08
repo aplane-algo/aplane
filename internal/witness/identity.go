@@ -31,6 +31,16 @@ const (
 
 var idEncoding = base32.StdEncoding.WithPadding(base32.NoPadding)
 
+// AlgorithmName names a witness-key type's signature algorithm for display.
+func AlgorithmName(keyType string) (string, bool) {
+	switch keyType {
+	case Falcon1024V1:
+		return "Falcon-1024", true
+	default:
+		return "", false
+	}
+}
+
 // IsKeyType reports whether keyType is a supported witness-key type.
 func IsKeyType(keyType string) bool {
 	return keyType == Falcon1024V1
