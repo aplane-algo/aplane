@@ -4,6 +4,7 @@
 package txeffects_test
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"go/ast"
@@ -22,6 +23,35 @@ import (
 	"github.com/aplane-algo/aplane/internal/txeffects"
 )
 
+// protocolSurface is the contract-neutral protocol surface: what the SDK and the
+// AVM expose, with no judgment of it.
+type protocolSurface struct {
+	Schema               string   `json:"schema"`
+	GoAlgorandSDK        string   `json:"go_algorand_sdk"`
+	SDKTransactionFields []string `json:"sdk_transaction_fields"`
+	TransactionTypes     []struct {
+		Name string `json:"name"`
+		Wire string `json:"wire"`
+	} `json:"transaction_types"`
+	AVMTxnFields []string `json:"avm_txn_fields"`
+}
+
+// contractClassifications is one bounded contract's judgment of the surface.
+type contractClassifications struct {
+	Schema           string   `json:"schema"`
+	Contract         string   `json:"contract"`
+	TEALVersion      int      `json:"teal_version"`
+	Surface          string   `json:"surface"`
+	SpendEffects     []string `json:"spend_effects"`
+	TransactionTypes []struct {
+		Name           string `json:"name"`
+		Classification string `json:"classification"`
+	} `json:"transaction_types"`
+	Classifications map[string][]string `json:"classifications"`
+}
+
+// protocolInventory is the surface and bounded1's classifications of it, joined
+// for the comparisons below.
 type protocolInventory struct {
 	Schema               string                     `json:"schema"`
 	Contract             string                     `json:"contract"`
@@ -102,9 +132,6 @@ func compareManifestToInventory(manifest txeffects.ContractManifest, inventory p
 	if err := manifest.Validate(); err != nil {
 		return fmt.Errorf("manifest validation: %w", err)
 	}
-	if inventory.Schema != "aplane.bounded-protocol-inventory.v1" {
-		return fmt.Errorf("unexpected inventory schema %q", inventory.Schema)
-	}
 	if manifest.Contract != inventory.Contract || manifest.TEALVersion != inventory.TEALVersion {
 		return fmt.Errorf("manifest contract/version %s/%d differs from inventory %s/%d", manifest.Contract, manifest.TEALVersion, inventory.Contract, inventory.TEALVersion)
 	}
@@ -153,15 +180,65 @@ func compareManifestToInventory(manifest txeffects.ContractManifest, inventory p
 
 func readProtocolInventory(t *testing.T) protocolInventory {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join("..", "..", "docs", "BOUNDED1_PROTOCOL_INVENTORY.json"))
-	if err != nil {
-		t.Fatalf("read protocol inventory: %v", err)
+	surface := readProtocolSurface(t)
+	classes := readContractClassifications(t, "BOUNDED1_EFFECT_CLASSIFICATIONS.json")
+	inventory := protocolInventory{
+		Schema:               surface.Schema,
+		Contract:             classes.Contract,
+		TEALVersion:          classes.TEALVersion,
+		GoAlgorandSDK:        surface.GoAlgorandSDK,
+		SpendEffects:         classes.SpendEffects,
+		AVMTxnFields:         surface.AVMTxnFields,
+		Classifications:      classes.Classifications,
+		SDKTransactionFields: surface.SDKTransactionFields,
 	}
-	var inventory protocolInventory
-	if err := json.Unmarshal(data, &inventory); err != nil {
-		t.Fatalf("decode protocol inventory: %v", err)
+	if len(classes.TransactionTypes) != len(surface.TransactionTypes) {
+		t.Fatalf("bounded1 classifies %d transaction types, the surface lists %d", len(classes.TransactionTypes), len(surface.TransactionTypes))
+	}
+	for i, entry := range surface.TransactionTypes {
+		if classes.TransactionTypes[i].Name != entry.Name {
+			t.Fatalf("bounded1 transaction type %d is %q, the surface lists %q", i, classes.TransactionTypes[i].Name, entry.Name)
+		}
+		inventory.TransactionTypes = append(inventory.TransactionTypes, inventoryTransactionType{
+			Name: entry.Name, Wire: entry.Wire, Classification: classes.TransactionTypes[i].Classification,
+		})
 	}
 	return inventory
+}
+
+func readProtocolSurface(t *testing.T) protocolSurface {
+	t.Helper()
+	var surface protocolSurface
+	readInventoryFile(t, "PROTOCOL_EFFECT_INVENTORY.json", &surface)
+	if surface.Schema != "aplane.protocol-effect-inventory.v1" {
+		t.Fatalf("unexpected protocol surface schema %q", surface.Schema)
+	}
+	return surface
+}
+
+func readContractClassifications(t *testing.T, name string) contractClassifications {
+	t.Helper()
+	var classes contractClassifications
+	readInventoryFile(t, name, &classes)
+	if classes.Schema != "aplane.bounded-effect-classifications.v1" {
+		t.Fatalf("%s: unexpected classification schema %q", name, classes.Schema)
+	}
+	if classes.Surface != "PROTOCOL_EFFECT_INVENTORY.json" {
+		t.Fatalf("%s classifies surface %q", name, classes.Surface)
+	}
+	return classes
+}
+
+func readInventoryFile(t *testing.T, name string, out any) {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join("..", "..", "docs", name))
+	if err != nil {
+		t.Fatalf("read %s: %v", name, err)
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	if err := decoder.Decode(out); err != nil {
+		t.Fatalf("decode %s: %v", name, err)
+	}
 }
 
 func sdkTransactionTypes(t *testing.T) []string {

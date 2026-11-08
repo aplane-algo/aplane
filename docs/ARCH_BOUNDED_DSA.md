@@ -174,14 +174,28 @@ size and fee of the spend path.
 
 ## Effect Model
 
-The independent machine-readable inventory is
-[`BOUNDED1_PROTOCOL_INVENTORY.json`](BOUNDED1_PROTOCOL_INVENTORY.json). It is
-maintained independently of renderer/classifier code, must not be generated
-from the implementation manifest, and is pinned to
-go-algorand-sdk v2.11.2 pseudo-version `967fcacfacdf`, go-algorand reference
-`68e036affd9e`, and AVM v13.
+The independent machine-readable inventory has two parts.
+[`PROTOCOL_EFFECT_INVENTORY.json`](PROTOCOL_EFFECT_INVENTORY.json) is the
+contract-neutral protocol surface: the SDK transaction types and fields and the
+AVM transaction fields. [`BOUNDED1_EFFECT_CLASSIFICATIONS.json`](BOUNDED1_EFFECT_CLASSIFICATIONS.json)
+is bounded1's judgment of that surface: which types it admits, and which fields
+are danger predicates, spend policy, rekey normal form and so on. A later contract
+adds its own classification file against the same surface. Both are maintained
+independently of renderer/classifier code, must not be generated from the
+implementation manifest, and are pinned to go-algorand-sdk v2.11.2 pseudo-version
+`967fcacfacdf`, go-algorand reference `68e036affd9e`, and AVM v13.
 It separately freezes the flattened SDK transaction-field surface and parses
 the pinned SDK source in tests to detect newly introduced transaction types.
+
+`txeffects.ClassifyFor` decides a transaction's path from the account's path
+declaration (`boundedmeta.PathDeclaration`: spend effects, fee ceiling, Layer 3
+policy, rekey setting, cosigner) rather than from bounded1's fixed shapes. Every
+decision names its rule, and `TestClassifyForReachesAnExplicitRuleForEveryEffect`
+runs every declaration the general grammar produces against every transaction type
+of the surface, with every combination of rekey, close, asset-close and clawback
+fields, so no effect reaches a default branch (O12).
+`TestClassifyForAgreesWithTheSignerClassifier` pins that it decides exactly as the
+signer's classifier does today.
 
 The framework danger predicates are:
 
