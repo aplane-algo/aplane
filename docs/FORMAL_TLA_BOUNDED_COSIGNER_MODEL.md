@@ -1,17 +1,26 @@
 # Bounded Cosigner Machine-Checkable Model
 
 > Status: TLC checked over every abstract input combination; the recorded run
-> generated 66,304 distinct reachable states at depth 4 and found no
+> generated 265,984 distinct reachable states at depth 4 and found no
 > counterexamples for `Safety`. The normal configuration exhausts the model's
 > full finite state space, so no deep configuration exists for this module.
 
 This model checks the first-party client's stage order and the security-bearing
-final acceptance boundary of the `bounded-cosigner1` choreography. It
-complements the legacy guarded assembly model: first-party orchestration
-releases an ordinary bounded base signature, requests the cosigner only after
-signer policy and operator approval, and then uses the shared `/sign/assemble`
-route with the distinct `bounded-cosigner` target kind to derive and place the
-declared arguments.
+final acceptance boundary of the `cosigned1` choreography. It complements the
+legacy guarded assembly model: first-party orchestration releases an ordinary
+bounded base signature, requests the cosigner only after signer policy and
+operator approval, and then uses the shared `/sign/assemble` route with the
+distinct `bounded-cosigner` target kind to derive and place the declared
+arguments.
+
+A cosigned account's target takes one of three paths. A spend and a cosigned
+rekey (the account's declared spending-key rekey) need the cosigner. A listed
+rekey (a rekey to an address on the account's rekey-to list) needs the list's
+proof and never the cosigner: the list is the owner's standing statement. The
+signer's base component names the path, and the client asks the cosigner only
+when that path needs it. The client's choice is an input here (`askCosigner`),
+so a client that asks or skips wrongly is in the state space, and assembly,
+which decides the path again from the canonical transaction, must catch it.
 
 BS1 is an orchestration property, not a cosigner-endpoint authorization claim.
 The cosigner endpoint does not receive or verify the prior base component, and a
@@ -26,8 +35,8 @@ The spec lives at [formal/bounded_cosigner.tla](formal/bounded_cosigner.tla).
 | Invariant | Meaning | TLA+ predicate |
 |---|---|---|
 | BS1 | In the modeled first-party flow, user policy, approval, and base release precede the cosigner request | `BS1_UserFirst` |
-| BS2 | Retired: it covered the external-admin path, which no longer exists | none |
-| BS3 | Spend output requires a valid assembly receipt plus valid base and cosigner authorities | `BS3_SpendAuthoritiesVerified` |
+| BS2 | A listed rekey outputs with the receipt, the base signature and the list proof, and with no cosigner request | `BS2_ListedRekeyWithoutCosigner` |
+| BS3 | Spend and cosigned-rekey output require a valid assembly receipt plus valid base and cosigner authorities | `BS3_CosignedAuthoritiesVerified` |
 | BS4 | Exact target coverage and path-valid argument sources gate output | `BS4_DeclaredArgumentsOnly` |
 | BS5 | Passthrough and canonical transaction bytes remain bound | `BS5_CanonicalGroupBound` |
 | BS6 | Invalid or signer-gate-rejected paths cannot output | `BS6_InvalidNeverOutputs` |
@@ -35,17 +44,19 @@ The spec lives at [formal/bounded_cosigner.tla](formal/bounded_cosigner.tla).
 
 ## What TLC actually verifies
 
-`Init` enumerates every combination of path (`spend` or invalid),
-finalized-plan and classification outcomes, signer policy and approval
-decisions, assembly-receipt validity, signature validity, metadata stability,
-exact target coverage,
-argument-source/path-mask validity, derived-argument success, passthrough
+`Init` enumerates every combination of path (spend, cosigned rekey, listed
+rekey or invalid), finalized-plan and classification outcomes, signer policy
+and approval decisions, assembly-receipt validity, signature validity, whether
+the client asks the cosigner, the cosigner's policy, metadata stability, exact
+target coverage, argument-source/path-mask validity, derived-argument success
+(the Merkle proof on a spend, the list proof on a listed rekey), passthrough
 validity, and canonical-byte binding.
 
 TLC then explores the real stage order:
 
 ```text
 planned -> base_released -> cosigner_released -> output
+                         \------------------------^   (no cosigner asked)
        \-> rejected
 ```
 
@@ -71,7 +82,12 @@ or generated TEAL.
 
 - Allowing `CosignerStep` from `planned` violates `BS1_UserFirst`.
 - Removing the receipt conjunct or either signature conjunct from
-  `AssembleStep` violates `BS3_SpendAuthoritiesVerified`.
+  `AssembleStep` violates `BS3_CosignedAuthoritiesVerified`.
+- Removing `AssembleStep`'s refusal of a cosigner on a listed rekey, or its
+  list-proof conjunct, violates `BS2_ListedRekeyWithoutCosigner`; removing its
+  cosigner conjunct on a cosigned path violates
+  `BS3_CosignedAuthoritiesVerified`. Each of the three was run on 2026-11-08
+  and violates `Safety`.
 - Removing source-layout, coverage, or byte-binding conjuncts violates BS4 or
   BS5.
 - Setting output on a failed branch violates BS6 or BS7.
@@ -95,12 +111,12 @@ The checked model passes its standard exhaustive run.
   the metadata-hash and runtime-argument binding checked concretely by
   `TestBoundedAssemblyReceiptBindsRuntimeAndMetadata`.
 - The external-admin branch (the signer's admin partial plus offline completion)
-  was removed with the admin key; BS2 covered it and is retired. A bounded account
-  with a cosigner refuses rekeys, so the choreography carries spends only. The
-  rekey-to list exists, but only on accounts without a cosigner, whose listed
-  rekeys go through ordinary `/sign` and never reach this choreography. A
-  listed-rekey branch is expected to take BS2's place when a cosigned account
-  can carry a list.
+  was removed with the admin key; BS2 now covers the listed-rekey branch in its
+  place. An uncosigned account's listed rekey goes through ordinary `/sign` and
+  never reaches this choreography.
+- The cosigner node does not know a target's path; it applies its own policy
+  (`reject_rekey`, `rekey_policy`) to whatever it is asked. `cosignerPolicy`
+  abstracts that verdict for every path.
 - Liveness is not claimed. Cosigner and approval availability fail closed; the
   model is concerned with what may be released, not eventual completion.
 

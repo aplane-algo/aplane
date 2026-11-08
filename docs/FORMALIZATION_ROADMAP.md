@@ -15,7 +15,7 @@ contracts; these models cover narrower security-critical transitions.
 | `session_ownership.tla` | scalar pending/active admin ownership |
 | `guarded_assembly.tla` | guarded component assembly |
 | `plugin_signing.tla` | plugin signing trust boundary |
-| `bounded_cosigner.tla` | bounded-cosigner composition |
+| `bounded_cosigner.tla` | cosigned1 composition: spends, cosigned rekeys and listed rekeys |
 | `store_root_commit.tla` | atomic generation/key-authority commit, exact-input promotion, crash classification, and quarantine |
 | `enrollment_queue.tla` | client enrollment registry and queue under the applied-vs-durable publication rule |
 | `recovery_binding.tla` | which generation the runtime binds, serves, and maintains after a failed post-commit reload |

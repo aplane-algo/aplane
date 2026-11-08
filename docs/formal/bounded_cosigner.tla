@@ -1,19 +1,29 @@
 ---------------------- MODULE bounded_cosigner ----------------------
 (*
-Machine-checkable model for the bounded-cosigner1 planning and assembly
-choreography implemented by internal/engine/guarded/submit.go and
+Machine-checkable model for the cosigned1 planning and assembly choreography
+implemented by internal/engine/guarded/submit.go and
 internal/signerapp/signing/bounded_cosigner.go.
+
+A cosigned account's target takes one of three paths: a spend and a declared
+(cosigned) rekey need the spending key and the cosigner; a listed rekey needs
+the spending key and the rekey-to list's proof, and never the cosigner. The
+signer's base component names the path, and the client asks the cosigner only
+when that path needs it; but the client may also ask or skip wrongly, so its
+choice is an input here, and assembly decides the path again.
 
 The model checks the security-bearing order and final acceptance boundary:
 
   BS1 : a cosigner request can occur only after finalized classification,
         signer policy, operator approval, and base-component release.
-  BS2 : retired with the external-admin path, which no longer exists; the
-        number is kept so the others keep theirs.
-  BS3 : spend output requires a valid assembly receipt plus valid base and
-        cosigner signatures.
+  BS2 : a listed rekey outputs only with the assembly receipt, the base
+        signature and a valid list proof, and with no cosigner request. (The
+        number once covered the external-admin path; this branch takes its
+        place.)
+  BS3 : spend and cosigned-rekey output require a valid assembly receipt plus
+        valid base and cosigner signatures and cosigner policy.
   BS4 : output requires exact target coverage and a path-valid argument-source
-        layout; spend additionally requires successful derived arguments.
+        layout; spend and listed rekey additionally require successful derived
+        arguments (the Merkle proof, and the list proof).
   BS5 : output preserves passthrough entries and exact canonical bytes.
   BS6 : invalid or rejected paths never produce output.
   BS7 : output is atomic: failure at any stage produces no partial result.
@@ -34,7 +44,11 @@ EXTENDS TLC
 ----------------------------------------------------------------------------
 (* Inputs and state *)
 
-Path == {"spend", "invalid"}
+Path == {"spend", "cosigned_rekey", "listed_rekey", "invalid"}
+
+(* The paths the cosigned flow carries, and those the cosigner signs. *)
+AdmittedPath == {"spend", "cosigned_rekey", "listed_rekey"}
+CosignedPath == {"spend", "cosigned_rekey"}
 
 Input == [
     path         : Path,
@@ -45,6 +59,7 @@ Input == [
     approval     : BOOLEAN,
     receipt      : BOOLEAN,
     baseSig      : BOOLEAN,
+    askCosigner  : BOOLEAN,
     cosignerPolicy : BOOLEAN,
     cosignerSig    : BOOLEAN,
     coverage     : BOOLEAN,
@@ -90,42 +105,50 @@ Init ==
 ----------------------------------------------------------------------------
 (* Choreography *)
 
-(* POST /sign/component (bounded-base) for spend. An invalid shape and every
-   failed signer-domain gate reject before release. *)
+(* POST /sign/component (bounded-base) for an admitted path. An invalid shape
+   and every failed signer-domain gate reject before release. *)
 BaseStep ==
     /\ stage = "planned"
-    /\ baseReleased' = (input.path = "spend" /\ BaseGate(input))
-    /\ stage' = IF input.path = "spend" /\ BaseGate(input) THEN "base_released" ELSE "rejected"
+    /\ baseReleased' = (input.path \in AdmittedPath /\ BaseGate(input))
+    /\ stage' = IF input.path \in AdmittedPath /\ BaseGate(input) THEN "base_released" ELSE "rejected"
     /\ cosignerRequested' = FALSE
     /\ cosignerReleased' = FALSE
     /\ output' = FALSE
     /\ UNCHANGED input
 
-(* The client may request the cosigner only after successful user-side release. *)
+(* The client may request the cosigner only after successful user-side release.
+   It asks when the component's path needs the cosigner; askCosigner lets it ask
+   or skip wrongly, which assembly must catch. The cosigner judges the target by
+   its own policy and does not know the path. *)
 CosignerStep ==
     /\ stage = "base_released"
-    /\ input.path = "spend"
+    /\ input.askCosigner
     /\ cosignerRequested' = TRUE
     /\ cosignerReleased' = input.cosignerPolicy
     /\ stage' = IF input.cosignerPolicy THEN "cosigner_released" ELSE "rejected"
     /\ UNCHANGED <<input, baseReleased, output>>
 
-(* POST /sign/assemble revalidates metadata, verifies the Falcon-signed
-   assembly receipt against the bounded spending public key before accepting
-   the base or cosigner component, then checks exact target coverage, both
-   signatures, source/path masks, derived arguments, passthrough binding,
-   and canonical transaction bytes before returning one atomic group. *)
+(* POST /sign/assemble revalidates metadata, classifies the canonical
+   transaction against the stored contract again, verifies the Falcon-signed
+   assembly receipt against the bounded spending public key, and then checks
+   exact target coverage, the base signature, the cosigner signature where the
+   path needs one and its absence where it does not, source/path masks,
+   derived arguments, passthrough binding, and canonical transaction bytes
+   before returning one atomic group. A client that skipped the cosigner
+   assembles from base_released. *)
 AssembleStep ==
-    /\ stage = "cosigner_released"
+    /\ \/ stage = "cosigner_released"
+       \/ stage = "base_released" /\ ~input.askCosigner
     /\ LET success ==
-            /\ input.path = "spend"
+            /\ input.path \in AdmittedPath
             /\ input.metadata
             /\ input.receipt
             /\ input.baseSig
-            /\ input.cosignerSig
+            /\ (input.path \in CosignedPath => cosignerReleased /\ input.cosignerSig)
+            /\ (input.path = "listed_rekey" => ~cosignerReleased)
             /\ input.coverage
             /\ input.sourceLayout
-            /\ input.derived
+            /\ (input.path \in {"spend", "listed_rekey"} => input.derived)
             /\ input.passthrough
             /\ input.bytes
        IN
@@ -150,12 +173,20 @@ TypeOK ==
 
 BS1_UserFirst ==
     cosignerRequested =>
-        /\ input.path = "spend"
+        /\ input.path \in AdmittedPath
         /\ baseReleased
         /\ BaseGate(input)
 
-BS3_SpendAuthoritiesVerified ==
-    (output /\ input.path = "spend") =>
+BS2_ListedRekeyWithoutCosigner ==
+    (output /\ input.path = "listed_rekey") =>
+        /\ baseReleased
+        /\ ~cosignerRequested
+        /\ input.receipt
+        /\ input.baseSig
+        /\ input.derived
+
+BS3_CosignedAuthoritiesVerified ==
+    (output /\ input.path \in CosignedPath) =>
         /\ baseReleased
         /\ cosignerRequested
         /\ cosignerReleased
@@ -168,7 +199,7 @@ BS4_DeclaredArgumentsOnly ==
     output =>
         /\ input.coverage
         /\ input.sourceLayout
-        /\ (input.path = "spend" => input.derived)
+        /\ (input.path \in {"spend", "listed_rekey"} => input.derived)
 
 BS5_CanonicalGroupBound ==
     output =>
@@ -181,12 +212,13 @@ BS6_InvalidNeverOutputs ==
 BS7_AtomicOutput ==
     /\ output => stage = "output"
     /\ stage = "rejected" => ~output
-    /\ stage = "output" => input.path = "spend"
+    /\ stage = "output" => input.path \in AdmittedPath
 
 Safety ==
     /\ TypeOK
     /\ BS1_UserFirst
-    /\ BS3_SpendAuthoritiesVerified
+    /\ BS2_ListedRekeyWithoutCosigner
+    /\ BS3_CosignedAuthoritiesVerified
     /\ BS4_DeclaredArgumentsOnly
     /\ BS5_CanonicalGroupBound
     /\ BS6_InvalidNeverOutputs
