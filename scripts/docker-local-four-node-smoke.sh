@@ -2131,6 +2131,8 @@ main() {
 
     log "Allowing the plus cosigned rekey edge on the cosigner node"
     allow_cosigner_rekey_edge
+    # The admin session displaced the cosigner's approval session, which locks it.
+    start_cosigner_apapprover
 
     log "Verifying a plus cosigned rekey along the edge confirms"
     verify_plus_cosigned_rekey_along_edge
