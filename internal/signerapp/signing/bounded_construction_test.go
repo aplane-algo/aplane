@@ -27,14 +27,14 @@ const (
 
 func TestBoundedSpendingConstructionResolvesFromTheDurableBase(t *testing.T) {
 	for _, workflow := range []boundedSigningWorkflow{boundedWorkflowCosigner} {
-		construction, ok := boundedSpendingConstruction(boundedmeta.ContractV1, plainFalcon1024LsigKeyType, workflow)
+		construction, ok := boundedSpendingConstruction(boundedmeta.Contract, plainFalcon1024LsigKeyType, workflow)
 		if !ok || construction.ID() != sigconstruction.Falcon1024().ID() {
 			t.Fatalf("workflow %d on Falcon = %q, %v", workflow, construction.ID(), ok)
 		}
 		for name, refused := range map[string][2]string{
-			"Ed25519":           {boundedmeta.ContractV1, plainEd25519LsigKeyType},
-			"no base":           {boundedmeta.ContractV1, ""},
-			"witness as a base": {boundedmeta.ContractV1, witness.Falcon1024V1},
+			"Ed25519":           {boundedmeta.Contract, plainEd25519LsigKeyType},
+			"no base":           {boundedmeta.Contract, ""},
+			"witness as a base": {boundedmeta.Contract, witness.Falcon1024V1},
 			"unknown contract":  {"bounded-unknown", plainFalcon1024LsigKeyType},
 		} {
 			if _, ok := boundedSpendingConstruction(refused[0], refused[1], workflow); ok {
@@ -42,7 +42,7 @@ func TestBoundedSpendingConstructionResolvesFromTheDurableBase(t *testing.T) {
 			}
 		}
 	}
-	if _, ok := boundedSpendingConstruction(boundedmeta.ContractV1, plainFalcon1024LsigKeyType, 0); ok {
+	if _, ok := boundedSpendingConstruction(boundedmeta.Contract, plainFalcon1024LsigKeyType, 0); ok {
 		t.Fatal("an unnamed workflow has a construction")
 	}
 }
@@ -67,12 +67,12 @@ func TestBoundedGenerationAdmitsOnlySignableWorkflows(t *testing.T) {
 	}
 	profiles := []struct {
 		name      string
-		rekey     []composeddsa.AdminOperationSpec
+		rekey     boundedmeta.RekeySetting
 		cosigner  *boundedmeta.CosignerAuthorization
 		workflows []boundedSigningWorkflow
 	}{
-		// A cosigner profile can't take a spending-key rekey, so this one has none.
-		{"cosigner", nil, cosigner, []boundedSigningWorkflow{boundedWorkflowCosigner}},
+		// A cosigner profile can't take a spending-key rekey, so this one refuses rekeys.
+		{"cosigner", boundedmeta.RekeyRefused, cosigner, []boundedSigningWorkflow{boundedWorkflowCosigner}},
 	}
 
 	for _, base := range bases {
@@ -87,11 +87,11 @@ func TestBoundedGenerationAdmitsOnlySignableWorkflows(t *testing.T) {
 					KeyType: "test.admission-cross-check.v1", BaseKeyType: base.keyType, FamilyName: base.family,
 					Version: 1, Ops: base.ops, TEALSuffix: "int 1\nassert",
 					Bounded: &composeddsa.BoundedAuthorizationProfile{
-						Contract:        composeddsa.BoundedContractV1,
-						SpendEffects:    []txeffects.SpendEffect{txeffects.SpendEffectPay},
-						MaxFee:          10_000,
-						AdminOperations: profile.rekey,
-						Cosigner:        profileCosigner,
+						Contract:     composeddsa.BoundedContract,
+						SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay},
+						MaxFee:       10_000,
+						Rekey:        profile.rekey,
+						Cosigner:     profileCosigner,
 					},
 				})
 				// A profile takes only the keys its authorities declare.
@@ -111,7 +111,7 @@ func TestBoundedGenerationAdmitsOnlySignableWorkflows(t *testing.T) {
 					return
 				}
 				for _, workflow := range profile.workflows {
-					if _, ok := boundedSpendingConstruction(boundedmeta.ContractV1, base.keyType, workflow); !ok {
+					if _, ok := boundedSpendingConstruction(boundedmeta.Contract, base.keyType, workflow); !ok {
 						t.Errorf("generation admits %s on %s, but signing has no construction for workflow %d", profile.name, base.keyType, workflow)
 					}
 				}

@@ -78,10 +78,10 @@ func validateBoundedRuntimeArgs(encoded map[string]string, metadata *boundedmeta
 	for name := range decoded {
 		slot, ok := slots[name]
 		if !ok {
-			return nil, badRequest(fmt.Sprintf("bounded1 caller argument %q is not a declared runtime slot", name))
+			return nil, badRequest(fmt.Sprintf("bounded caller argument %q is not a declared runtime slot", name))
 		}
 		if boundedSlotRule(slot, path) == boundedmeta.ArgForbidden {
-			return nil, badRequest(fmt.Sprintf("bounded1 runtime argument %q is forbidden on %s", name, path))
+			return nil, badRequest(fmt.Sprintf("bounded runtime argument %q is forbidden on %s", name, path))
 		}
 	}
 	for _, arg := range metadata.RuntimeArgs {
@@ -89,16 +89,16 @@ func validateBoundedRuntimeArgs(encoded map[string]string, metadata *boundedmeta
 		value, present := decoded[arg.Name]
 		rule := boundedSlotRule(slot, path)
 		if rule == boundedmeta.ArgRequired && (!present || len(value) == 0) {
-			return nil, badRequest(fmt.Sprintf("missing required bounded1 runtime argument %q", arg.Name))
+			return nil, badRequest(fmt.Sprintf("missing required bounded runtime argument %q", arg.Name))
 		}
 		if !present {
 			continue
 		}
 		if arg.ByteLength > 0 && len(value) != arg.ByteLength {
-			return nil, badRequest(fmt.Sprintf("bounded1 runtime argument %q must be %d bytes, got %d", arg.Name, arg.ByteLength, len(value)))
+			return nil, badRequest(fmt.Sprintf("bounded runtime argument %q must be %d bytes, got %d", arg.Name, arg.ByteLength, len(value)))
 		}
 		if len(value) > arg.MaxSize {
-			return nil, badRequest(fmt.Sprintf("bounded1 runtime argument %q exceeds %d-byte maximum", arg.Name, arg.MaxSize))
+			return nil, badRequest(fmt.Sprintf("bounded runtime argument %q exceeds %d-byte maximum", arg.Name, arg.MaxSize))
 		}
 	}
 	return decoded, nil
@@ -164,7 +164,7 @@ func planHasBoundedCosignerSpend(plan *PlanResult) bool {
 	return false
 }
 
-func planHasBoundedAdminOperation(plan *PlanResult) bool {
+func planHasBoundedRekey(plan *PlanResult) bool {
 	if plan == nil {
 		return false
 	}

@@ -95,8 +95,8 @@ func newProvider(definition Definition) (*Provider, error) {
 	}
 	provider := &Provider{definition: definition, params: creationParameters(), byShape: make(map[string]*shapeDefinition)}
 	for _, shape := range definition.Shapes {
-		// shapeSpec gives any rekey value but spending_key no rekey operation, so an
-		// unknown value must fail here rather than compile as refused.
+		// shapeSpec passes the rekey value straight to the template spec, so an
+		// unknown value fails here, before anything is compiled.
 		if shape.Rekey != RekeySpendingKey && shape.Rekey != RekeyRefused {
 			return nil, fmt.Errorf("bounded definition %s.%s: shape %s has unknown rekey authority %q", definition.Publisher, definition.Family, shape.Descriptor(), shape.Rekey)
 		}
@@ -128,20 +128,13 @@ func shapeSpec(definition Definition, shape Shape) *composeddsa.TemplateSpec {
 		spend[i] = string(effect)
 	}
 	bounded := &generictemplate.BoundedAuthorizationSpec{
-		Contract:     composeddsa.BoundedContractV1,
+		Contract:     composeddsa.BoundedContract,
 		SpendEffects: spend,
 		MaxFee:       &maxFee,
 		Layer3:       &generictemplate.TransactionLayer3Spec{Policy: shape.Policy()},
 	}
-	// A shape that refuses rekeys declares no rekey operation, so its program has
-	// no rekey path at all.
-	if shape.Rekey == RekeySpendingKey {
-		bounded.AdminOperations = []generictemplate.TransactionAdminOperation{{
-			Kind:          string(composeddsa.AdminOperationRekey),
-			Authorization: shape.Rekey,
-			PolicyGate:    shape.PolicyGate(),
-		}}
-	}
+	// A shape that refuses rekeys has no rekey path in its program at all.
+	bounded.Rekey = shape.Rekey
 	if shape.Cosigner {
 		bounded.Cosigner = &generictemplate.BoundedCosignerSpec{
 			Contract:   boundedmeta.CosignerContractV1,
@@ -335,19 +328,9 @@ func shapeFromMetadata(metadata *boundedmeta.Metadata) (Shape, error) {
 	if err != nil {
 		return Shape{}, err
 	}
-	// No rekey operation is a shape that refuses rekeys; one is a spending-key rekey.
-	shape := Shape{Spend: spend, Rekey: RekeyRefused, Cosigner: metadata.Cosigner != nil}
-	gate := boundedmeta.PolicyGateNone
-	switch len(metadata.AdminOperations) {
-	case 0:
-	case 1:
-		operation := metadata.AdminOperations[0]
-		if operation.Authorization != RekeySpendingKey {
-			return Shape{}, fmt.Errorf("stored account has rekey authority %q", operation.Authorization)
-		}
-		shape.Rekey, gate = operation.Authorization, operation.PolicyGate
-	default:
-		return Shape{}, fmt.Errorf("stored account has %d administrative operations", len(metadata.AdminOperations))
+	shape := Shape{Spend: spend, Rekey: string(metadata.Rekey), Cosigner: metadata.Cosigner != nil}
+	if shape.Rekey != RekeySpendingKey && shape.Rekey != RekeyRefused {
+		return Shape{}, fmt.Errorf("stored account has rekey setting %q", metadata.Rekey)
 	}
 	switch metadata.Layer3Policy {
 	case composeddsa.Layer3PolicyFixedAllowlist:
@@ -362,9 +345,6 @@ func shapeFromMetadata(metadata *boundedmeta.Metadata) (Shape, error) {
 		shape.Encoding, shape.Timelock = EncodingMerkle, true
 	default:
 		return Shape{}, fmt.Errorf("stored account has policy %q", metadata.Layer3Policy)
-	}
-	if gate != shape.PolicyGate() {
-		return Shape{}, fmt.Errorf("stored account has policy gate %q", gate)
 	}
 	return shape, nil
 }
@@ -503,14 +483,15 @@ func checkResources(metadata *boundedmeta.Metadata, opcodes lsigresource.OpcodeP
 		name   string
 		opcode uint64
 	}
-	// Every account has the spend path, and each stored operation adds its own. An
-	// operation this type does not offer has no path to solve, so it fails here.
+	// Every account has the spend path, and a spending-key rekey adds its own. A
+	// setting this type does not offer has no path to solve, so it fails here.
 	paths := []path{{boundedmeta.PathSpend, opcodes.Spend}}
-	for _, operation := range metadata.AdminOperations {
-		if operation.Kind != boundedmeta.AdminOperationRekey || operation.Authorization != boundedmeta.AdminAuthorizationSpend {
-			return fmt.Errorf("no resource path for a %s operation with %s authority", operation.Kind, operation.Authorization)
-		}
+	switch metadata.Rekey {
+	case boundedmeta.RekeyRefused:
+	case boundedmeta.RekeySpendingKey:
 		paths = append(paths, path{boundedmeta.PathSpendingRekey, opcodes.SpendingRekey})
+	default:
+		return fmt.Errorf("no resource path for rekey setting %q", metadata.Rekey)
 	}
 	for _, path := range paths {
 		plan, err := lsigresource.Solve(consensus, lsigresource.PlanInput{

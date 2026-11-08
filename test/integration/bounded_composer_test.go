@@ -53,7 +53,7 @@ func TestBoundedComposerCompiledBudgetMatrix(t *testing.T) {
 	}{
 		{
 			name:       "rekey-disabled-pay",
-			profile:    boundedIntegrationProfile([]txeffects.SpendEffect{txeffects.SpendEffectPay}),
+			profile:    boundedIntegrationProfile([]txeffects.SpendEffect{txeffects.SpendEffectPay}, boundedmeta.RekeyRefused),
 			bytecode:   1906,
 			spendArgs:  1423,
 			spendGroup: 2,
@@ -64,7 +64,7 @@ func TestBoundedComposerCompiledBudgetMatrix(t *testing.T) {
 			name: "spending-key-rekey-pay-axfer",
 			profile: boundedIntegrationProfile(
 				[]txeffects.SpendEffect{txeffects.SpendEffectPay, txeffects.SpendEffectAxfer},
-				composeddsa.AdminOperationSpec{Kind: composeddsa.AdminOperationRekey, Authorization: composeddsa.AdminAuthorizationSpendingKey, PolicyGate: composeddsa.AdminPolicyGateNone},
+				boundedmeta.RekeySpendingKey,
 			),
 			bytecode: 1950, spendArgs: 1423, spendGroup: 2, spendFee: 2000,
 			address: "UNXBYLJQS3WTPIR63PKNDHZHXLMGAHPBCWIRRZXXQ3SGEEYEMG7NH2BB74",
@@ -182,8 +182,8 @@ func TestBoundedComposerExecutionAgreementLocalnet(t *testing.T) {
 				return corridorAssetTransferTxn(t, mustSuggestedParams(t, network), account.address, account.address, 0, assetID, "bounded-asset-opt-in")
 			},
 		},
-		{name: "fee at profile ceiling", mutate: func(txn *types.Transaction) { txn.Fee = types.MicroAlgos(composeddsa.BoundedMaxFeeV1) }, wantShape: txeffects.ShapePureSpend, wantAccept: true},
-		{name: "fee above profile", mutate: func(txn *types.Transaction) { txn.Fee = types.MicroAlgos(composeddsa.BoundedMaxFeeV1 + 1) }, wantShape: txeffects.ShapePureSpend},
+		{name: "fee at profile ceiling", mutate: func(txn *types.Transaction) { txn.Fee = types.MicroAlgos(composeddsa.BoundedMaxFee) }, wantShape: txeffects.ShapePureSpend, wantAccept: true},
+		{name: "fee above profile", mutate: func(txn *types.Transaction) { txn.Fee = types.MicroAlgos(composeddsa.BoundedMaxFee + 1) }, wantShape: txeffects.ShapePureSpend},
 		{name: "close remainder", mutate: func(txn *types.Transaction) { txn.CloseRemainderTo = other.Address }, wantShape: txeffects.ShapeDeniedEffect},
 		{name: "asset close", build: func() types.Transaction { return assetTxn("bounded-agreement-asset-close") }, mutate: func(txn *types.Transaction) { txn.AssetCloseTo = other.Address }, wantShape: txeffects.ShapeDeniedEffect},
 		{name: "clawback", build: func() types.Transaction { return assetTxn("bounded-agreement-clawback") }, mutate: func(txn *types.Transaction) { txn.AssetSender = other.Address }, wantShape: txeffects.ShapeDeniedEffect},
@@ -242,7 +242,7 @@ func TestBoundedComposerExecutionAgreementLocalnet(t *testing.T) {
 			}
 			classifierAccept := classification.Shape == txeffects.ShapePureSpend ||
 				classification.Shape == txeffects.ShapePureRekey
-			classifierAccept = classifierAccept && uint64(txn.Fee) <= composeddsa.BoundedMaxFeeV1
+			classifierAccept = classifierAccept && uint64(txn.Fee) <= composeddsa.BoundedMaxFee
 			if classification.Shape == txeffects.ShapePureSpend {
 				switch txn.Type {
 				case types.PaymentTx:
@@ -359,8 +359,8 @@ type boundedExecutionAccount struct {
 	metadata           *boundedmeta.Metadata
 }
 
-// newBoundedExecutionAccount's spending key may also rekey the account, with no
-// Layer 3 gate.
+// newBoundedExecutionAccount's spending key may also rekey the account. A rekey
+// never reaches Layer 3.
 func newBoundedExecutionAccount(t *testing.T, network *harness.TestnetConfig, recipient string) boundedExecutionAccount {
 	t.Helper()
 	ops := signerops.New(nil)
@@ -370,7 +370,7 @@ func newBoundedExecutionAccount(t *testing.T, network *harness.TestnetConfig, re
 	}
 	profile := boundedIntegrationProfile(
 		[]txeffects.SpendEffect{txeffects.SpendEffectPay, txeffects.SpendEffectAxfer, txeffects.SpendEffectAssetOptIn},
-		composeddsa.AdminOperationSpec{Kind: composeddsa.AdminOperationRekey, Authorization: composeddsa.AdminAuthorizationSpendingKey, PolicyGate: composeddsa.AdminPolicyGateNone},
+		boundedmeta.RekeySpendingKey,
 	)
 	provider := newFixedAllowlistIntegrationProvider(profile)
 	provider.SetAlgodClient(network.Client)
@@ -410,7 +410,7 @@ func (account boundedExecutionAccount) signedGroup(t *testing.T, targetTxn types
 func (account boundedExecutionAccount) signedGroupWithLayer3Args(t *testing.T, targetTxn types.Transaction, layer3Args [][]byte) ([]types.SignedTxn, string) {
 	t.Helper()
 	minFee := uint64(1_000)
-	if targetTxn.Fee > 0 && uint64(targetTxn.Fee) < composeddsa.BoundedMaxFeeV1+1 {
+	if targetTxn.Fee > 0 && uint64(targetTxn.Fee) < composeddsa.BoundedMaxFee+1 {
 		minFee = uint64(targetTxn.Fee)
 	}
 	minimumGroupFee := types.MicroAlgos(boundedExecutionGroupSize * 1_000)
@@ -493,10 +493,10 @@ func newFixedAllowlistIntegrationProvider(profile *composeddsa.BoundedAuthorizat
 	})
 }
 
-func boundedIntegrationProfile(allowed []txeffects.SpendEffect, operations ...composeddsa.AdminOperationSpec) *composeddsa.BoundedAuthorizationProfile {
+func boundedIntegrationProfile(allowed []txeffects.SpendEffect, rekey boundedmeta.RekeySetting) *composeddsa.BoundedAuthorizationProfile {
 	return &composeddsa.BoundedAuthorizationProfile{
-		Contract: composeddsa.BoundedContractV1, SpendEffects: allowed,
-		MaxFee: composeddsa.BoundedMaxFeeV1, AdminOperations: operations,
+		Contract: composeddsa.BoundedContract, SpendEffects: allowed,
+		MaxFee: composeddsa.BoundedMaxFee, Rekey: rekey,
 	}
 }
 

@@ -97,8 +97,8 @@ func compositeBase(construction sigconstruction.Construction) composeddsa.BaseRe
 	}
 }
 
-// compositeTemplate returns a bounded template on the fixture base. An extra block
-// such as a rekey operation or a cosigner goes inside bounded.
+// compositeTemplate returns a bounded template on the fixture base. An extra block,
+// the rekey setting and any cosigner, goes inside bounded.
 func compositeTemplate(extra string) string {
 	return `
 schema_version: 2
@@ -111,7 +111,7 @@ version: 1
 display_name: Construction Fixture
 max_opcode_cost: 20000
 bounded:
-  contract: bounded1
+  contract: bounded2
   spend_effects: [pay]
   max_fee: 10000
 ` + extra + `
@@ -122,11 +122,9 @@ teal: |
 }
 
 const (
-	spendingKeyRekeyYAML = `  admin_operations:
-    - kind: rekey
-      authorization: spending_key
-      policy_gate: none`
-	cosignerYAML = `  cosigner:
+	spendingKeyRekeyYAML = `  rekey: spending_key`
+	cosignerYAML         = `  rekey: refused
+  cosigner:
     contract: cosigner1
     required_on: [spend]`
 )
@@ -234,7 +232,7 @@ func TestCompositeArgumentsAreAssembledFromEverySlot(t *testing.T) {
 }
 
 // The cosigner gate reads its slot from the layout, so a base of several slots has
-// to move it. Its key and signature are still Falcon under bounded1.
+// to move it. Its key and signature are still Falcon under the bounded contract.
 func TestAuthorityGatesFollowEveryBaseSlot(t *testing.T) {
 	construction := compositeConstruction(t, sigconstruction.PrimitiveFalcon1024, sigconstruction.PrimitiveEd25519)
 	key, _ := syntheticKey(construction)
@@ -329,7 +327,7 @@ func TestFixturePolicyBelongsToOneComposer(t *testing.T) {
 	if _, err := permitted.GenerateTEAL(key, params); err != nil {
 		t.Fatalf("GenerateTEAL() with fixture support error = %v", err)
 	}
-	if composeddsa.ProductionSupportsBase(composeddsa.BoundedContractV1, fixtureBaseKeyType) {
+	if composeddsa.ProductionSupportsBase(composeddsa.BoundedContract, fixtureBaseKeyType) {
 		t.Fatal("a fixture base reached the production policy")
 	}
 }
@@ -356,8 +354,8 @@ func TestEveryProductionBaseResolvesToASupportedConstruction(t *testing.T) {
 		if got := registration.Ops.PublicKeySize(); got != construction.PublicKeySize() {
 			t.Fatalf("%q public key size = %d, construction says %d", base, got, construction.PublicKeySize())
 		}
-		if !composeddsa.ProductionSupportsBase(composeddsa.BoundedContractV1, base) {
-			t.Fatalf("registered base %q has no %s support policy", base, composeddsa.BoundedContractV1)
+		if !composeddsa.ProductionSupportsBase(composeddsa.BoundedContract, base) {
+			t.Fatalf("registered base %q has no %s support policy", base, composeddsa.BoundedContract)
 		}
 		if composeddsa.ProductionSupportsBase("bounded-unknown", base) {
 			t.Fatalf("base %q has support under a contract nothing reviewed", base)

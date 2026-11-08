@@ -684,11 +684,9 @@ func ProtocolPrepareGenerateResultMessage(id string, result adminproto.PrepareGe
 			Contract:         profile.Contract,
 			SpendEffects:     profile.SpendEffects,
 			MaxFee:           profile.MaxFee,
+			Rekey:            profile.Rekey,
 			Layer3Policy:     profile.Layer3Policy,
 			CosignerRequired: profile.CosignerRequired,
-		}
-		for _, operation := range profile.AdminOperations {
-			message.Bounded.AdminOperations = append(message.Bounded.AdminOperations, protocol.PreparedAdminOperation(operation))
 		}
 	}
 	return message

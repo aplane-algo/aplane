@@ -113,7 +113,8 @@ func renderBoundaryPreview(r *REPLState, preview *apshellapp.BoundaryPreview) {
 	case preview.Rekey == boundary.RekeyRefused:
 		r.println("  Rekey:      refused; the account can never be rekeyed")
 	case preview.UnlockRound != "":
-		r.println("  Rekey:      spending key alone, after the unlock round")
+		// The signer refuses this combination; say so before the request is sent.
+		r.println("  Rekey:      spending key, which a timelock refuses; the signer will reject this")
 	default:
 		r.println("  Rekey:      spending key alone, which can rekey out of this boundary")
 	}

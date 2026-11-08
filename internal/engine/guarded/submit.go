@@ -627,7 +627,7 @@ func applyForeignAuthorizationHint(request *signerapi.SignRequest, cache SignerC
 
 func conservativeLogicSigResourceUsage(profile lsigresource.Profile) *signerapi.LogicSigResourceUsage {
 	var argumentBytes, opcodeCost uint64
-	paths := []*lsigresource.PathProfile{profile.Default, profile.Spend, profile.SpendingRekey, profile.AdminRekey}
+	paths := []*lsigresource.PathProfile{profile.Default, profile.Spend, profile.SpendingRekey}
 	for _, path := range paths {
 		if path == nil {
 			continue

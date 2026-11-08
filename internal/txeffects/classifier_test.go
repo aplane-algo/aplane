@@ -11,7 +11,7 @@ import (
 )
 
 func TestBounded1ManifestValidAndDefensive(t *testing.T) {
-	manifest := Bounded1Manifest()
+	manifest := BoundedManifest()
 	if err := manifest.Validate(); err != nil {
 		t.Fatalf("Validate() error = %v", err)
 	}
@@ -20,7 +20,7 @@ func TestBounded1ManifestValidAndDefensive(t *testing.T) {
 	manifest.Predicates[0].Field = FieldAssetSender
 	manifest.KnownDeniedTypes[0] = types.PaymentTx
 
-	fresh := Bounded1Manifest()
+	fresh := BoundedManifest()
 	if fresh.SpendEffects[0] != SpendEffectPay {
 		t.Fatal("spend effects share mutable backing storage")
 	}
@@ -44,7 +44,7 @@ func TestManifestRejectsUnknownContractVocabulary(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			manifest := Bounded1Manifest()
+			manifest := BoundedManifest()
 			test.mutate(&manifest)
 			if err := manifest.Validate(); err == nil {
 				t.Fatal("Validate() accepted unknown contract vocabulary")

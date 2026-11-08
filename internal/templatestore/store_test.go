@@ -604,7 +604,6 @@ func TestLogicSigOpcodeProfileDefaultsAndOverrides(t *testing.T) {
 		want := lsigresource.BoundedOpcodeProfile(
 			lsigresource.SingleTransactionOpcodeCeiling,
 			lsigresource.SingleTransactionOpcodeCeiling,
-			lsigresource.SingleTransactionOpcodeCeiling,
 		)
 		if got := spec.LogicSigOpcodeProfile(true); got != want {
 			t.Fatalf("LogicSigOpcodeProfile() = %#v, want %#v", got, want)

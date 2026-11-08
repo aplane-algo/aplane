@@ -82,11 +82,8 @@ func grammarFingerprint(definitions []*shapeDefinition) string {
 
 // boundaryDigest compares two accounts' resolved policy and external authorities.
 // It excludes the spending key, so equal digests do not mean equal accounts, and
-// it replaces no signing transcript. A cosigner
-// key is a behavior parameter and is covered by the behavior encoding.
-//
-// The last field once bound an admin key. No shape has one now; the field stays,
-// always empty, so every remaining shape keeps the digest it had.
+// it replaces no signing transcript. A cosigner key is a behavior parameter and is
+// covered by the behavior encoding.
 func boundaryDigest(definition *shapeDefinition, parameters map[string]string) (string, error) {
 	composer := definition.composer
 	profile, err := composeddsa.CanonicalBoundedProfile(composer.BoundedAuthorizationProfile(), composer.BoundedAuthorizationMetadata())
@@ -104,7 +101,6 @@ func boundaryDigest(definition *shapeDefinition, parameters map[string]string) (
 	encoded = boundedmeta.AppendField(encoded, []byte(lsigprovider.FingerprintBasePrimitive(composer.BaseKeyType())))
 	encoded = boundedmeta.AppendField(encoded, profile)
 	encoded = boundedmeta.AppendField(encoded, behavior)
-	encoded = boundedmeta.AppendField(encoded, nil)
 	sum := sha512.Sum512_256(encoded)
 	return hex.EncodeToString(sum[:]), nil
 }

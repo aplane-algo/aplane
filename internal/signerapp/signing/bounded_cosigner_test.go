@@ -43,7 +43,7 @@ func TestValidateBoundedComponentPlanRequiresCosignerSpend(t *testing.T) {
 	if _, err := validateBoundedComponentPlan(request, plan); err == nil {
 		t.Fatal("validateBoundedComponentPlan(rekey) error = nil")
 	}
-	plan.BoundedItems[0] = &boundedPlanItem{Path: boundedPathPureSpend, Metadata: testBoundedMetadata(t, "")}
+	plan.BoundedItems[0] = &boundedPlanItem{Path: boundedPathPureSpend, Metadata: testBoundedMetadata(t, boundedmeta.RekeyRefused)}
 	if _, err := validateBoundedComponentPlan(request, plan); err == nil {
 		t.Fatal("validateBoundedComponentPlan(non-cosigner) error = nil")
 	}
@@ -185,9 +185,10 @@ func boundedCosignerTestMetadata(t *testing.T, cosignerPublicKey []byte) *bounde
 		t.Fatal(err)
 	}
 	metadata := &boundedmeta.Metadata{
-		Contract:               boundedmeta.ContractV1,
+		Contract:               boundedmeta.Contract,
 		BaseSignatureArgLayout: boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{boundedmeta.CosignerSignatureMaxSizeV1}},
 		SpendEffects:           []string{boundedmeta.SpendEffectPay}, MaxFee: 10_000,
+		Rekey:        boundedmeta.RekeyRefused,
 		Layer3Policy: boundedmeta.Layer3PolicyCustom,
 		Cosigner: &boundedmeta.CosignerAuthorization{
 			Contract: boundedmeta.CosignerContractV1, ComponentKeyType: witness.Falcon1024V1,
@@ -195,8 +196,8 @@ func boundedCosignerTestMetadata(t *testing.T, cosignerPublicKey []byte) *bounde
 			SignatureMaxSize: boundedmeta.CosignerSignatureMaxSizeV1, RequiredOn: []string{boundedmeta.PathSpend},
 		},
 		ArgumentLayout: []boundedmeta.ArgumentSlot{
-			{Index: 0, Name: "base_signature_0", Source: boundedmeta.ArgSourceBaseSignature, MaxSize: boundedmeta.CosignerSignatureMaxSizeV1, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgRequired, AdminRekey: boundedmeta.ArgRequired}},
-			{Index: 1, Name: boundedmeta.CosignerSignatureSlot, Source: boundedmeta.ArgSourceCosigner, MaxSize: boundedmeta.CosignerSignatureMaxSizeV1, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgForbidden, AdminRekey: boundedmeta.ArgForbidden}},
+			{Index: 0, Name: "base_signature_0", Source: boundedmeta.ArgSourceBaseSignature, MaxSize: boundedmeta.CosignerSignatureMaxSizeV1, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgRequired}},
+			{Index: 1, Name: boundedmeta.CosignerSignatureSlot, Source: boundedmeta.ArgSourceCosigner, MaxSize: boundedmeta.CosignerSignatureMaxSizeV1, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgForbidden}},
 		},
 	}
 	if err := metadata.Validate(); err != nil {
@@ -240,18 +241,18 @@ func TestBoundedSpendingProofRequiresSupportedConstruction(t *testing.T) {
 				proof     [][]byte
 				want      bool
 			}{
-				"Falcon":            {"aplane.falcon1024.v1", boundedmeta.ContractV1, falconLayout, falconPublicKey, message, [][]byte{falconSignature}, true},
-				"wrong message":     {"aplane.falcon1024.v1", boundedmeta.ContractV1, falconLayout, falconPublicKey, []byte("other"), [][]byte{falconSignature}, false},
-				"no proof":          {"aplane.falcon1024.v1", boundedmeta.ContractV1, falconLayout, falconPublicKey, message, nil, false},
-				"two proof slots":   {"aplane.falcon1024.v1", boundedmeta.ContractV1, falconLayout, falconPublicKey, message, [][]byte{falconSignature, falconSignature}, false},
-				"valid on Ed25519":  {"aplane.ed25519.v1", boundedmeta.ContractV1, layoutOf(sigconstruction.Ed25519()), edPublicKey, message, [][]byte{edSignature}, false},
+				"Falcon":            {"aplane.falcon1024.v1", boundedmeta.Contract, falconLayout, falconPublicKey, message, [][]byte{falconSignature}, true},
+				"wrong message":     {"aplane.falcon1024.v1", boundedmeta.Contract, falconLayout, falconPublicKey, []byte("other"), [][]byte{falconSignature}, false},
+				"no proof":          {"aplane.falcon1024.v1", boundedmeta.Contract, falconLayout, falconPublicKey, message, nil, false},
+				"two proof slots":   {"aplane.falcon1024.v1", boundedmeta.Contract, falconLayout, falconPublicKey, message, [][]byte{falconSignature, falconSignature}, false},
+				"valid on Ed25519":  {"aplane.ed25519.v1", boundedmeta.Contract, layoutOf(sigconstruction.Ed25519()), edPublicKey, message, [][]byte{edSignature}, false},
 				"unknown contract":  {"aplane.falcon1024.v1", "bounded-unknown", falconLayout, falconPublicKey, message, [][]byte{falconSignature}, false},
-				"witness as a base": {witness.Falcon1024V1, boundedmeta.ContractV1, falconLayout, falconPublicKey, message, [][]byte{falconSignature}, false},
+				"witness as a base": {witness.Falcon1024V1, boundedmeta.Contract, falconLayout, falconPublicKey, message, [][]byte{falconSignature}, false},
 				// Stored metadata that disagrees with the construction is refused, even
 				// with a valid signature, rather than trusted on either side.
-				"stored max size differs":   {"aplane.falcon1024.v1", boundedmeta.ContractV1, boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{1280}}, falconPublicKey, message, [][]byte{falconSignature}, false},
-				"stored slot count differs": {"aplane.falcon1024.v1", boundedmeta.ContractV1, boundedmeta.SignatureArgLayout{Count: 2, MaxSizes: []int{1423, 1423}}, falconPublicKey, message, [][]byte{falconSignature}, false},
-				"no stored layout":          {"aplane.falcon1024.v1", boundedmeta.ContractV1, boundedmeta.SignatureArgLayout{}, falconPublicKey, message, [][]byte{falconSignature}, false},
+				"stored max size differs":   {"aplane.falcon1024.v1", boundedmeta.Contract, boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{1280}}, falconPublicKey, message, [][]byte{falconSignature}, false},
+				"stored slot count differs": {"aplane.falcon1024.v1", boundedmeta.Contract, boundedmeta.SignatureArgLayout{Count: 2, MaxSizes: []int{1423, 1423}}, falconPublicKey, message, [][]byte{falconSignature}, false},
+				"no stored layout":          {"aplane.falcon1024.v1", boundedmeta.Contract, boundedmeta.SignatureArgLayout{}, falconPublicKey, message, [][]byte{falconSignature}, false},
 			} {
 				keyMaterial := &coresigning.KeyMaterial{BaseKeyType: test.base, PublicKey: test.publicKey, BoundedAuthorization: &boundedmeta.Metadata{Contract: test.contract, BaseSignatureArgLayout: test.layout}}
 				if got := boundedSpendingProofVerifies(keyMaterial, workflow, test.message, test.proof...); got != test.want {

@@ -16,7 +16,10 @@ import (
 )
 
 const (
-	ContractV1                  = "bounded1"
+	// Contract is the bounded account contract. "bounded2" is a working name: it
+	// replaced bounded1 in place, with a rekey setting where bounded1 had
+	// administrative operations.
+	Contract                    = "bounded2"
 	Layer3PolicyCustom          = "custom"
 	Layer3PolicyFixedAllowlist  = "fixed_allowlist"
 	Layer3PolicyMerkleAllowlist = "merkle_allowlist"
@@ -24,10 +27,6 @@ const (
 	// Plain "custom" would hide that the allowlist is framework-enforced.
 	Layer3PolicyFixedAllowlistCustom  = "fixed_allowlist_custom"
 	Layer3PolicyMerkleAllowlistCustom = "merkle_allowlist_custom"
-	AdminOperationRekey               = "rekey"
-	AdminAuthorizationSpend           = "spending_key"
-	PolicyGateNone                    = "none"
-	PolicyGateLayer3                  = "layer3"
 	SpendEffectPay                    = "pay"
 	SpendEffectAxfer                  = "axfer"
 	SpendEffectAssetOptIn             = "asset_opt_in"
@@ -53,13 +52,6 @@ const (
 type SignatureArgLayout struct {
 	Count    int   `json:"count"`
 	MaxSizes []int `json:"max_sizes"`
-}
-
-// AdminOperation records one frozen bounded operation and its authority.
-type AdminOperation struct {
-	Kind          string `json:"kind"`
-	Authorization string `json:"authorization"`
-	PolicyGate    string `json:"policy_gate"`
 }
 
 // RuntimeArg is the durable Layer-3 runtime-argument definition. Its slot and
@@ -93,7 +85,7 @@ type Metadata struct {
 	BaseSignatureArgLayout SignatureArgLayout     `json:"base_signature_arg_layout"`
 	SpendEffects           []string               `json:"spend_effects"`
 	MaxFee                 uint64                 `json:"max_fee"`
-	AdminOperations        []AdminOperation       `json:"admin_operations"`
+	Rekey                  RekeySetting           `json:"rekey"`
 	Cosigner               *CosignerAuthorization `json:"cosigner,omitempty"`
 	RuntimeArgs            []RuntimeArg           `json:"runtime_args"`
 	DerivedArgs            []DerivedArg           `json:"derived_args"`
@@ -109,7 +101,6 @@ func Clone(metadata *Metadata) *Metadata {
 	cloned := *metadata
 	cloned.BaseSignatureArgLayout.MaxSizes = slices.Clone(metadata.BaseSignatureArgLayout.MaxSizes)
 	cloned.SpendEffects = slices.Clone(metadata.SpendEffects)
-	cloned.AdminOperations = slices.Clone(metadata.AdminOperations)
 	if metadata.Cosigner != nil {
 		cosigner := *metadata.Cosigner
 		cosigner.RequiredOn = slices.Clone(metadata.Cosigner.RequiredOn)
@@ -123,9 +114,6 @@ func Clone(metadata *Metadata) *Metadata {
 	}
 	if cloned.SpendEffects == nil {
 		cloned.SpendEffects = []string{}
-	}
-	if cloned.AdminOperations == nil {
-		cloned.AdminOperations = []AdminOperation{}
 	}
 	if cloned.RuntimeArgs == nil {
 		cloned.RuntimeArgs = []RuntimeArg{}
@@ -151,7 +139,7 @@ func (metadata *Metadata) Equal(other *Metadata) bool {
 		slices.Equal(metadata.BaseSignatureArgLayout.MaxSizes, other.BaseSignatureArgLayout.MaxSizes) &&
 		slices.Equal(metadata.SpendEffects, other.SpendEffects) &&
 		metadata.MaxFee == other.MaxFee &&
-		slices.Equal(metadata.AdminOperations, other.AdminOperations) &&
+		metadata.Rekey == other.Rekey &&
 		equalCosignerAuthorization(metadata.Cosigner, other.Cosigner) &&
 		slices.Equal(metadata.RuntimeArgs, other.RuntimeArgs) &&
 		slices.Equal(metadata.DerivedArgs, other.DerivedArgs) &&
@@ -159,7 +147,7 @@ func (metadata *Metadata) Equal(other *Metadata) bool {
 		metadata.Layer3Policy == other.Layer3Policy
 }
 
-// Validate checks the durable bounded1 vocabulary without consulting an
+// Validate checks the durable bounded vocabulary without consulting an
 // installed provider or template.
 func (metadata *Metadata) Validate() error {
 	if err := metadata.ValidateProfile(); err != nil {
@@ -178,34 +166,30 @@ func (metadata *Metadata) ValidateProfile() error {
 	if metadata == nil {
 		return fmt.Errorf("bounded authorization metadata is nil")
 	}
-	if metadata.Contract != ContractV1 {
+	if metadata.Contract != Contract {
 		return fmt.Errorf("unsupported bounded authorization contract %q", metadata.Contract)
 	}
 	if metadata.MaxFee > MaximumProfileFee {
-		return fmt.Errorf("max_fee %d exceeds bounded1 ceiling %d", metadata.MaxFee, MaximumProfileFee)
+		return fmt.Errorf("max_fee %d exceeds %s ceiling %d", metadata.MaxFee, Contract, MaximumProfileFee)
 	}
 	switch metadata.Layer3Policy {
 	case Layer3PolicyCustom, Layer3PolicyFixedAllowlist, Layer3PolicyMerkleAllowlist,
 		Layer3PolicyFixedAllowlistCustom, Layer3PolicyMerkleAllowlistCustom,
 		Layer3PolicyTimelock, Layer3PolicyFixedAllowlistTimelock, Layer3PolicyMerkleAllowlistTimelock:
 	default:
-		return fmt.Errorf("unsupported bounded1 layer3_policy %q", metadata.Layer3Policy)
+		return fmt.Errorf("unsupported %s layer3_policy %q", Contract, metadata.Layer3Policy)
 	}
 	if err := ValidateSpendEffects(metadata.SpendEffects); err != nil {
 		return err
 	}
-	if err := ValidateAdminOperations(metadata.AdminOperations); err != nil {
+	if err := ValidateRekeySetting(metadata.Rekey); err != nil {
 		return err
 	}
 	if err := ValidateCosignerAuthorizationProfile(metadata.Cosigner); err != nil {
 		return err
 	}
-	if metadata.Cosigner != nil {
-		for _, operation := range metadata.AdminOperations {
-			if operation.Authorization == AdminAuthorizationSpend {
-				return fmt.Errorf("bounded cosigner profiles do not support spending-key-authorized %s", operation.Kind)
-			}
-		}
+	if metadata.Cosigner != nil && metadata.Rekey != RekeyRefused {
+		return fmt.Errorf("bounded cosigner profiles do not support a %s rekey", metadata.Rekey)
 	}
 	if err := ValidateSignatureLayout(metadata.BaseSignatureArgLayout); err != nil {
 		return err
@@ -286,12 +270,12 @@ func validateCosignerMetadata(cosigner *CosignerAuthorization) error {
 	return nil
 }
 
-// ValidateSpendEffects enforces the frozen bounded1 spend-effect rules: at
+// ValidateSpendEffects enforces the bounded spend-effect rules: at
 // least one entry, known effects only, no duplicates. Both storage and
 // generation consume this single rule set.
 func ValidateSpendEffects(spendEffects []string) error {
 	if len(spendEffects) == 0 {
-		return fmt.Errorf("bounded1 requires at least one spend effect")
+		return fmt.Errorf("a bounded account requires at least one spend effect")
 	}
 	seen := make(map[string]struct{}, len(spendEffects))
 	for _, effect := range spendEffects {
@@ -306,41 +290,19 @@ func ValidateSpendEffects(spendEffects []string) error {
 	return nil
 }
 
-// ValidateAdminOperations enforces the frozen bounded1 admin-operation rules:
-// rekey is the only kind, the spending key is the only authorization, no
-// duplicate kinds.
-func ValidateAdminOperations(operations []AdminOperation) error {
-	seen := make(map[string]struct{}, len(operations))
-	for _, operation := range operations {
-		if operation.Kind != AdminOperationRekey {
-			return fmt.Errorf("unsupported admin operation %q", operation.Kind)
-		}
-		if operation.Authorization != AdminAuthorizationSpend {
-			return fmt.Errorf("unsupported authorization %q for admin operation %q", operation.Authorization, operation.Kind)
-		}
-		if operation.PolicyGate != PolicyGateNone && operation.PolicyGate != PolicyGateLayer3 {
-			return fmt.Errorf("unsupported policy gate %q for admin operation %q", operation.PolicyGate, operation.Kind)
-		}
-		if _, exists := seen[operation.Kind]; exists {
-			return fmt.Errorf("duplicate admin operation %q", operation.Kind)
-		}
-		seen[operation.Kind] = struct{}{}
+// ValidateRekeySetting accepts the rekey settings a bounded account may declare.
+func ValidateRekeySetting(setting RekeySetting) error {
+	switch setting {
+	case RekeyRefused, RekeySpendingKey:
+		return nil
+	default:
+		return fmt.Errorf("unsupported rekey setting %q", setting)
 	}
-	return nil
 }
 
-// RefusesRekeys reports whether the contract has no rekey operation, so no rekey
-// path at all.
+// RefusesRekeys reports whether the account has no rekey path at all.
 func (metadata *Metadata) RefusesRekeys() bool {
-	if metadata == nil {
-		return false
-	}
-	for _, operation := range metadata.AdminOperations {
-		if operation.Kind == AdminOperationRekey {
-			return false
-		}
-	}
-	return true
+	return metadata != nil && metadata.Rekey == RekeyRefused
 }
 
 // IsRecipientListPolicy reports whether a Layer 3 policy limits spending to a

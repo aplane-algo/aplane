@@ -5,8 +5,6 @@ package composeddsa
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -252,13 +250,10 @@ version: 1
 display_name: Template Bounded
 max_opcode_cost: 20000
 bounded:
-  contract: bounded1
+  contract: bounded2
   spend_effects: [axfer, pay]
   max_fee: 10000
-  admin_operations:
-    - kind: rekey
-      authorization: spending_key
-      policy_gate: none
+  rekey: spending_key
   runtime_args:
     - name: preimage
       type: bytes
@@ -276,7 +271,7 @@ teal: |
 		t.Fatalf("NewProviderFromTemplateSpec() error = %v", err)
 	}
 	profile := provider.BoundedAuthorizationProfile()
-	if profile == nil || profile.Contract != BoundedContractV1 || profile.MaxFee != 10_000 {
+	if profile == nil || profile.Contract != BoundedContract || profile.MaxFee != 10_000 || profile.Rekey != boundedmeta.RekeySpendingKey {
 		t.Fatalf("BoundedAuthorizationProfile() = %#v", profile)
 	}
 	if got := provider.CreationParams(); len(got) != 0 {
@@ -311,13 +306,10 @@ family: author-reserved
 version: 1
 display_name: Author Reserved
 bounded:
-  contract: bounded1
+  contract: bounded2
   spend_effects: [pay]
   max_fee: 10000
-  admin_operations:
-    - kind: rekey
-      authorization: spending_key
-      policy_gate: none
+  rekey: spending_key
 parameters:
   - name: bounded_example_key
     type: bytes
@@ -367,13 +359,13 @@ teal: int 1
 		},
 		{
 			name: "unknown nested bounded field",
-			yaml: "schema_version: 2\nbounded:\n  contract: bounded1\n  mystery: true\n",
+			yaml: "schema_version: 2\nbounded:\n  contract: bounded2\n  mystery: true\n",
 			want: "field mystery not found",
 		},
 		{
-			name: "unknown nested admin field",
-			yaml: "schema_version: 2\nbounded:\n  admin_operations:\n    - kind: rekey\n      mystery: true\n",
-			want: "field mystery not found",
+			name: "administrative operations rejected",
+			yaml: "schema_version: 2\nbounded:\n  admin_operations:\n    - kind: rekey\n",
+			want: "field admin_operations not found",
 		},
 		{
 			name: "unknown nested cosigner field",
@@ -382,7 +374,7 @@ teal: int 1
 		},
 		{
 			name: "duplicate nested field",
-			yaml: "schema_version: 2\nbounded:\n  contract: bounded1\n  contract: bounded1\n",
+			yaml: "schema_version: 2\nbounded:\n  contract: bounded2\n  contract: bounded2\n",
 			want: "duplicate field",
 		},
 		{
@@ -397,7 +389,7 @@ teal: int 1
 		},
 		{
 			name: "merge key rejected",
-			yaml: "schema_version: 2\nbounded:\n  <<: {contract: bounded1}\n",
+			yaml: "schema_version: 2\nbounded:\n  <<: {contract: bounded2}\n",
 			want: "merge keys are not supported",
 		},
 	}
@@ -434,9 +426,10 @@ version: 1
 display_name: Bounded Cosigner Test
 max_opcode_cost: 20000
 bounded:
-  contract: bounded1
+  contract: bounded2
   spend_effects: [pay]
   max_fee: 10000
+  rekey: refused
   cosigner:
     contract: cosigner1
     required_on: [spend]
@@ -456,7 +449,7 @@ teal: |
 		t.Fatalf("CreationParams() = %#v, want injected cosigner public key", params)
 	}
 	metadata := provider.BoundedAuthorizationMetadata()
-	if metadata == nil || metadata.Cosigner == nil || metadata.Cosigner.Contract != boundedmeta.CosignerContractV1 {
+	if metadata == nil || metadata.Cosigner == nil || metadata.Cosigner.Contract != boundedmeta.CosignerContractV1 || metadata.Rekey != boundedmeta.RekeyRefused {
 		t.Fatalf("BoundedAuthorizationMetadata() = %#v", metadata)
 	}
 	if got := metadata.ArgumentLayout; len(got) != 2 || got[1].Source != boundedmeta.ArgSourceCosigner || got[1].Paths.Spend != boundedmeta.ArgRequired {
@@ -483,9 +476,10 @@ family: invalid-bounded-cosigner
 version: 1
 display_name: Invalid Bounded Cosigner
 bounded:
-  contract: bounded1
+  contract: bounded2
   spend_effects: [pay]
   max_fee: 10000
+  rekey: refused
   cosigner:
     contract: %s
     required_on: [%s]
@@ -518,6 +512,7 @@ func TestComposedSchemaV2RejectsInvalidBoundedArgumentContracts(t *testing.T) {
 	registerTemplateTestBase(t, baseKeyType)
 	tests := []struct {
 		name       string
+		rekey      string
 		bounded    string
 		topLevel   string
 		parameters string
@@ -529,10 +524,29 @@ func TestComposedSchemaV2RejectsInvalidBoundedArgumentContracts(t *testing.T) {
 			topLevel: "runtime_args:\n  - name: preimage\n    type: bytes\n    required: true\n",
 			want:     "must be declared inside bounded",
 		},
+		// A rekey never reaches Layer 3, so no runtime argument can be required on
+		// it, even when the spending key may rekey.
 		{
-			name:    "runtime rekey mask mismatch",
-			bounded: "  admin_operations:\n    - kind: rekey\n      authorization: spending_key\n      policy_gate: layer3\n  runtime_args:\n    - name: preimage\n      type: bytes\n      max_size: 64\n      required_on: [spend]\n",
-			want:    "rekey requirement does not match",
+			name:    "runtime argument required on rekey",
+			rekey:   "spending_key",
+			bounded: "  runtime_args:\n    - name: preimage\n      type: bytes\n      max_size: 64\n      required_on: [spend, rekey]\n",
+			want:    "must have required_on [spend]: a rekey never reaches Layer 3",
+		},
+		{
+			name:    "runtime argument required only on rekey",
+			rekey:   "spending_key",
+			bounded: "  runtime_args:\n    - name: preimage\n      type: bytes\n      max_size: 64\n      required_on: [rekey]\n",
+			want:    "must have required_on [spend]",
+		},
+		{
+			name:    "runtime argument required on no path",
+			bounded: "  runtime_args:\n    - name: preimage\n      type: bytes\n      max_size: 64\n      required_on: []\n",
+			want:    "must have required_on [spend]",
+		},
+		{
+			name:    "runtime argument required on spend twice",
+			bounded: "  runtime_args:\n    - name: preimage\n      type: bytes\n      max_size: 64\n      required_on: [spend, spend]\n",
+			want:    "must have required_on [spend]",
 		},
 		{
 			name:       "derived source type",
@@ -543,6 +557,10 @@ func TestComposedSchemaV2RejectsInvalidBoundedArgumentContracts(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			rekey := tt.rekey
+			if rekey == "" {
+				rekey = "refused"
+			}
 			spec, err := ParseTemplateSpec([]byte(fmt.Sprintf(`schema_version: 2
 template_type: composed
 base_key_type: %s
@@ -552,14 +570,15 @@ family: bounded-args
 version: 1
 display_name: Bounded Args
 bounded:
-  contract: bounded1
+  contract: bounded2
   spend_effects: [pay]
   max_fee: 10000
+  rekey: %s
 %s%s%s
 teal: |
   int 1
   assert
-`, baseKeyType, tt.bounded, tt.parameters, tt.topLevel)))
+`, baseKeyType, rekey, tt.bounded, tt.parameters, tt.topLevel)))
 			if err == nil {
 				err = ValidateTemplateSpec(spec)
 			}
@@ -589,9 +608,9 @@ family: missing-max-fee
 version: 1
 display_name: Missing Max Fee
 bounded:
-  contract: bounded1
+  contract: bounded2
   spend_effects: [pay]
-  admin_operations: []
+  rekey: refused
 teal: int 1
 `))
 	if err != nil {
@@ -599,6 +618,84 @@ teal: int 1
 	}
 	if err := ValidateTemplateSpec(spec); err == nil || !strings.Contains(err.Error(), "bounded.max_fee is required") {
 		t.Fatalf("ValidateTemplateSpec() error = %v, want explicit max_fee rejection", err)
+	}
+}
+
+// A bounded template states its rekey setting. The administrative operations
+// that bounded1 had in its place are not read as either setting.
+func TestComposedSchemaV2RequiresRekeySetting(t *testing.T) {
+	baseKeyType := "test.template-rekey-setting-base.v1"
+	registerBaseForTest(t, BaseRegistration{
+		BaseKeyType:       baseKeyType,
+		FamilyName:        "template-rekey-setting-base",
+		Version:           1,
+		Ops:               boundedTestOps{},
+		NewAddressDeriver: func(string) addressderive.Deriver { return testDeriver{} },
+	})
+	template := func(block string) string {
+		return fmt.Sprintf(`
+schema_version: 2
+template_type: composed
+base_key_type: %s
+template_mode: strict
+publisher: test
+family: rekey-setting
+version: 1
+display_name: Rekey Setting
+max_opcode_cost: 20000
+bounded:
+  contract: bounded2
+  spend_effects: [pay]
+  max_fee: 10000
+%steal: |
+  int 1
+  assert
+`, baseKeyType, block)
+	}
+	for _, rekey := range []boundedmeta.RekeySetting{boundedmeta.RekeyRefused, boundedmeta.RekeySpendingKey} {
+		spec, err := ParseTemplateSpec([]byte(template("  rekey: " + string(rekey) + "\n")))
+		if err != nil {
+			t.Fatalf("ParseTemplateSpec(%s) error = %v", rekey, err)
+		}
+		provider, err := NewProviderFromTemplateSpec(spec)
+		if err != nil {
+			t.Fatalf("NewProviderFromTemplateSpec(%s) error = %v", rekey, err)
+		}
+		if got := provider.BoundedAuthorizationProfile().Rekey; got != rekey {
+			t.Fatalf("profile rekey = %q, want %q", got, rekey)
+		}
+		if got := provider.BoundedAuthorizationMetadata().Rekey; got != rekey {
+			t.Fatalf("metadata rekey = %q, want %q", got, rekey)
+		}
+	}
+	for _, tt := range []struct {
+		name, block, want string
+	}{
+		{name: "no rekey", block: "", want: "bounded.rekey is required: refused or spending_key"},
+		{name: "empty rekey", block: "  rekey: \"\"\n", want: "bounded.rekey is required"},
+		{name: "unknown rekey", block: "  rekey: admin_key\n", want: `unsupported rekey setting "admin_key"`},
+		{name: "old gate value", block: "  rekey: layer3\n", want: `unsupported rekey setting "layer3"`},
+		{
+			name:  "administrative operations instead of rekey",
+			block: "  admin_operations:\n    - kind: rekey\n      authorization: spending_key\n      policy_gate: layer3\n",
+			want:  "field admin_operations not found",
+		},
+		{
+			name:  "administrative operations beside rekey",
+			block: "  rekey: spending_key\n  admin_operations:\n    - kind: rekey\n      authorization: spending_key\n      policy_gate: none\n",
+			want:  "field admin_operations not found",
+		},
+		{name: "empty administrative operations", block: "  rekey: refused\n  admin_operations: []\n", want: "field admin_operations not found"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			spec, err := ParseTemplateSpec([]byte(template(tt.block)))
+			if err == nil {
+				err = ValidateTemplateSpec(spec)
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("error = %v, want %q", err, tt.want)
+			}
+		})
 	}
 }
 
@@ -741,35 +838,6 @@ teal: |
 	}
 }
 
-func TestBundledComposedTemplatesValidate(t *testing.T) {
-	registerTemplateTestBase(t, "aplane.falcon1024.v1")
-	registerTemplateTestBase(t, "aplane.ed25519.v1")
-
-	paths := []string{
-		"library/retired/aplane.falcon1024-timelock.v1.yaml",
-		"library/retired/aplane.falcon1024-allowlist.v1.yaml",
-		"library/retired/aplane.falcon1024-allowlist.v2.yaml",
-	}
-	for _, path := range paths {
-		t.Run(filepath.Base(path), func(t *testing.T) {
-			data, err := os.ReadFile(filepath.Join("..", "..", path))
-			if err != nil {
-				t.Fatalf("ReadFile(%s) error = %v", path, err)
-			}
-			spec, err := ParseTemplateSpec(data)
-			if err != nil {
-				t.Fatalf("ParseTemplateSpec(%s) error = %v", path, err)
-			}
-			if err := ValidateTemplateSpec(spec); err != nil {
-				t.Fatalf("ValidateTemplateSpec(%s) error = %v", path, err)
-			}
-			if spec.SchemaVersion != CurrentTemplateSchemaVersion || spec.Bounded == nil {
-				t.Fatalf("%s must remain a schema-v%d bounded template", path, CurrentTemplateSchemaVersion)
-			}
-		})
-	}
-}
-
 func TestSemanticFingerprintIncludesBaseKeyType(t *testing.T) {
 	for _, keyType := range []string{"fingerprint-a-v1", "fingerprint-b-v1"} {
 		registerBaseForTest(t, BaseRegistration{
@@ -804,6 +872,45 @@ teal: |
 	}
 	if a == b {
 		t.Fatal("SemanticFingerprint() did not include base_key_type")
+	}
+}
+
+// A comment is not part of a template's definition, so one above schema_version
+// moves neither the fingerprint nor the program.
+func TestTemplateCommentDoesNotMoveTheFingerprint(t *testing.T) {
+	registerBaseForTest(t, BaseRegistration{
+		BaseKeyType: "aplane.falcon1024.v1", FamilyName: "falcon1024", Version: 1,
+		Ops: falconBoundaryTestOps{}, NewAddressDeriver: func(string) addressderive.Deriver { return testDeriver{} },
+	})
+	plain := []byte(FixedAllowlistFixtureYAML)
+	commented := []byte("# DEPRECATED: a note for operators.\n# It is not part of the definition.\n" + FixedAllowlistFixtureYAML)
+	want, err := SemanticFingerprint(plain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := SemanticFingerprint(commented); err != nil || got != want {
+		t.Fatalf("SemanticFingerprint(commented) = %q, %v, want %q", got, err, want)
+	}
+	programs := make([]string, 0, 2)
+	for _, data := range [][]byte{plain, commented} {
+		spec, err := ParseTemplateSpec(data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		provider, err := NewProviderFromTemplateSpec(spec)
+		if err != nil {
+			t.Fatal(err)
+		}
+		teal, err := provider.GenerateTEAL(make([]byte, provider.ops.PublicKeySize()), map[string]string{
+			"recipients": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		programs = append(programs, teal)
+	}
+	if programs[0] != programs[1] {
+		t.Fatal("a comment changed the program")
 	}
 }
 

@@ -34,7 +34,7 @@ const (
 	EncodingMerkle = "merkle"
 
 	// RekeySpendingKey lets the spending key rekey the account. RekeyRefused gives
-	// the account no rekey path at all; the stored contract has no rekey operation.
-	RekeySpendingKey = boundedmeta.AdminAuthorizationSpend
-	RekeyRefused     = "refused"
+	// the account no rekey path at all.
+	RekeySpendingKey = string(boundedmeta.RekeySpendingKey)
+	RekeyRefused     = string(boundedmeta.RekeyRefused)
 )

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
@@ -649,7 +650,7 @@ func TestPlanGroupRejectsBoundedFeeCeilingAfterDummyPooling(t *testing.T) {
 	}
 
 	authAddr := types.Address{1}.String()
-	metadata := testBoundedMetadata(t, "")
+	metadata := testBoundedMetadata(t, boundedmeta.RekeyRefused)
 	metadata.MaxFee = 1_000
 	deps := stubPlannerDeps{
 		keyTypes: map[string]string{authAddr: "aplane.falcon1024-b.v1"},
@@ -663,7 +664,6 @@ func TestPlanGroupRejectsBoundedFeeCeilingAfterDummyPooling(t *testing.T) {
 				ProgramBytes:  2_500,
 				Spend:         &lsigresource.PathProfile{MaxOpcodeCost: 1},
 				SpendingRekey: &lsigresource.PathProfile{MaxOpcodeCost: 1},
-				AdminRekey:    &lsigresource.PathProfile{MaxOpcodeCost: 1},
 			},
 		}},
 	}

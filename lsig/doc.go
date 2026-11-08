@@ -25,7 +25,7 @@
 //
 //   - an entry point: clientreg, signerreg;
 //   - template infrastructure: composeddsa (runtime TEAL composer and the
-//     composed YAML template parser, including the bounded1 renderer),
+//     composed YAML template parser, including the bounded renderer),
 //     generictemplate (generic YAML templates), dsafamily (the registration
 //     descriptor a DSA family fills in);
 //   - a DSA family: falcon1024, ed25519lsig, falcon1024_guarded. Each
@@ -51,7 +51,7 @@
 //
 // # Where the bounded contract lives
 //
-// bounded1 is owned by neutral packages under internal/: boundedmeta (durable
+// The bounded contract is owned by neutral packages under internal/: boundedmeta (durable
 // metadata, canonical vocabulary, validation) and txeffects (transaction-effect
 // classification).
 // composeddsa holds only its program renderer and template-level profile

@@ -20,8 +20,8 @@ import (
 )
 
 const (
-	authorFixedProfileHex  = "0000001941504c414e455f424f554e4445445f50524f46494c455f563100000008626f756e6465643100000003000000037061790000000561786665720000000c61737365745f6f70745f696e0000000000002710000000010000000572656b65790000000c7370656e64696e675f6b6579000000066c6179657233000000000000001666697865645f616c6c6f776c6973745f637573746f6d000000010000058f000000000000000100000008707265696d616765000000056279746573000000010000000000000040000000020000000000000010626173655f7369676e61747572655f300000000e626173655f7369676e61747572650000058f0000000872657175697265640000000872657175697265640000000872657175697265640000000100000008707265696d6167650000000772756e74696d650000004000000008726571756972656400000008726571756972656400000009666f7262696464656e"
-	authorMerkleProfileHex = "0000001941504c414e455f424f554e4445445f50524f46494c455f563100000008626f756e6465643100000003000000037061790000000561786665720000000c61737365745f6f70745f696e0000000000002710000000010000000572656b65790000000c7370656e64696e675f6b6579000000066c617965723300000000000000176d65726b6c655f616c6c6f776c6973745f637573746f6d000000010000058f000000010000000c6d65726b6c655f70726f6f66000000166d65726b6c655f616c6c6f776c6973745f70726f6f660000000a726563697069656e7473000002000000000100000008707265696d616765000000056279746573000000010000000000000040000000030000000000000010626173655f7369676e61747572655f300000000e626173655f7369676e61747572650000058f000000087265717569726564000000087265717569726564000000087265717569726564000000010000000c6d65726b6c655f70726f6f66000000076465726976656400000200000000086f7074696f6e616c00000009666f7262696464656e00000009666f7262696464656e0000000200000008707265696d6167650000000772756e74696d650000004000000008726571756972656400000008726571756972656400000009666f7262696464656e"
+	authorFixedProfileHex  = "0000001941504c414e455f424f554e4445445f50524f46494c455f563200000008626f756e6465643200000003000000037061790000000561786665720000000c61737365745f6f70745f696e00000000000027100000000c7370656e64696e675f6b6579000000000000001666697865645f616c6c6f776c6973745f637573746f6d000000010000058f000000000000000100000008707265696d616765000000056279746573000000010000000000000040000000020000000000000010626173655f7369676e61747572655f300000000e626173655f7369676e61747572650000058f0000000872657175697265640000000872657175697265640000000100000008707265696d6167650000000772756e74696d650000004000000008726571756972656400000009666f7262696464656e"
+	authorMerkleProfileHex = "0000001941504c414e455f424f554e4445445f50524f46494c455f563200000008626f756e6465643200000003000000037061790000000561786665720000000c61737365745f6f70745f696e00000000000027100000000c7370656e64696e675f6b657900000000000000176d65726b6c655f616c6c6f776c6973745f637573746f6d000000010000058f000000010000000c6d65726b6c655f70726f6f66000000166d65726b6c655f616c6c6f776c6973745f70726f6f660000000a726563697069656e7473000002000000000100000008707265696d616765000000056279746573000000010000000000000040000000030000000000000010626173655f7369676e61747572655f300000000e626173655f7369676e61747572650000058f000000087265717569726564000000087265717569726564000000010000000c6d65726b6c655f70726f6f66000000076465726976656400000200000000086f7074696f6e616c00000009666f7262696464656e0000000200000008707265696d6167650000000772756e74696d650000004000000008726571756972656400000009666f7262696464656e"
 )
 
 type authorAllowlistCase struct {
@@ -44,10 +44,10 @@ var authorAllowlistCases = []authorAllowlistCase{
 		maxItems:   composeddsa.BoundedInlineListMax,
 		preimageAt: 1,
 		profileHex: authorFixedProfileHex,
-		length:     357,
+		length:     310,
 		slots: []string{
-			"|0|base_signature_0|base_signature|1423|required|required|required|",
-			"|1|preimage|runtime|64|required|required|forbidden|",
+			"|0|base_signature_0|base_signature|1423|required|required|",
+			"|1|preimage|runtime|64|required|forbidden|",
 		},
 	},
 	{
@@ -63,17 +63,18 @@ var authorAllowlistCases = []authorAllowlistCase{
       max_size: 512`,
 		preimageAt: 2,
 		profileHex: authorMerkleProfileHex,
-		length:     491,
+		length:     431,
 		slots: []string{
-			"|0|base_signature_0|base_signature|1423|required|required|required|",
-			"|1|merkle_proof|derived|512|optional|forbidden|forbidden|",
-			"|2|preimage|runtime|64|required|required|forbidden|",
+			"|0|base_signature_0|base_signature|1423|required|required|",
+			"|1|merkle_proof|derived|512|optional|forbidden|",
+			"|2|preimage|runtime|64|required|forbidden|",
 		},
 	},
 }
 
-// authorAllowlistYAML is an allowlist plus a preimage rule, with the rekey gated
-// through Layer 3 so the vector covers a runtime argument on both paths.
+// authorAllowlistYAML is an allowlist plus a preimage rule, with a spending-key
+// rekey. A rekey never reaches Layer 3, so the vector covers a runtime argument
+// required on spend and forbidden on the rekey path.
 func authorAllowlistYAML(test authorAllowlistCase) string {
 	return fmt.Sprintf(`schema_version: 2
 derivation_version: 3
@@ -87,13 +88,10 @@ display_name: "Author Allowlist"
 max_opcode_cost: 20000
 
 bounded:
-  contract: bounded1
+  contract: bounded2
   spend_effects: [pay, axfer, asset_opt_in]
   max_fee: 10000
-  admin_operations:
-    - kind: rekey
-      authorization: spending_key
-      policy_gate: layer3
+  rekey: spending_key
   layer3:
     policy: %s
     recipients_parameter: recipients%s
@@ -101,7 +99,7 @@ bounded:
     - name: preimage
       type: bytes
       max_size: 64
-      required_on: [spend, rekey]
+      required_on: [spend]
 
 parameters:
   - name: recipients
@@ -163,6 +161,7 @@ func TestAllowlistWithAuthorTEALGoldenVectors(t *testing.T) {
 		t.Fatalf("read ARCH_BOUNDED_DSA.md: %v", err)
 	}
 	doc := strings.NewReplacer(" ", "", "\t", "", "\r", "", "\n", "", "`", "").Replace(string(data))
+	rows := documentedSlotRows(string(data))
 	for _, test := range authorAllowlistCases {
 		t.Run(test.name, func(t *testing.T) {
 			provider := authorAllowlistProvider(t, authorAllowlistYAML(test))
@@ -189,12 +188,26 @@ func TestAllowlistWithAuthorTEALGoldenVectors(t *testing.T) {
 				}
 			}
 			for _, row := range test.slots {
-				if !strings.Contains(doc, row) {
+				if !rows[row] {
 					t.Errorf("ARCH_BOUNDED_DSA.md does not document slot row %q", row)
 				}
 			}
 		})
 	}
+}
+
+// documentedSlotRows returns each table row of the document with its spacing and
+// code spans removed, so a slot row must match a whole row and not part of a
+// longer one.
+func documentedSlotRows(doc string) map[string]bool {
+	rows := make(map[string]bool)
+	normalize := strings.NewReplacer(" ", "", "\t", "", "\r", "", "`", "")
+	for _, line := range strings.Split(doc, "\n") {
+		if row := normalize.Replace(line); strings.HasPrefix(row, "|") {
+			rows[row] = true
+		}
+	}
+	return rows
 }
 
 func TestFrameworkAllowlistRunsBeforeAuthorTEAL(t *testing.T) {
@@ -221,6 +234,13 @@ func TestFrameworkAllowlistRunsBeforeAuthorTEAL(t *testing.T) {
 			}
 			if strings.Contains(teal[doneAt:authorAt], "bnz") || strings.Contains(teal[doneAt:authorAt], "\nb ") {
 				t.Fatalf("code between the list and author TEAL can branch away:\n%s", teal[doneAt:authorAt])
+			}
+			// The spending-key rekey accepts before the spend path, so neither the
+			// list nor the author TEAL sees it.
+			rekeyAt, spendAt := strings.Index(teal, "__aplane_bounded1_rekey:"), strings.Index(teal, "__aplane_bounded1_spend:")
+			if rekeyAt < 0 || spendAt < rekeyAt || !strings.HasSuffix(teal[rekeyAt:spendAt], "b __aplane_bounded1_accept\n\n") ||
+				strings.Index(teal, "// === framework-owned") < spendAt || authorAt < spendAt {
+				t.Fatalf("spending-key rekey does not accept before the list and author TEAL:\n%s", teal)
 			}
 		})
 	}

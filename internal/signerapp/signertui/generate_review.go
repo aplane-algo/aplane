@@ -160,21 +160,14 @@ func isCustomPolicy(policy string) bool {
 // reviewRekey states who can rekey the account and what that means, because the
 // escape path is the most consequential choice on the screen.
 func reviewRekey(review PrepareGenerateResultMessage) (label, consequence string) {
-	profile := review.Bounded
-	if len(profile.AdminOperations) == 0 {
+	switch boundedmeta.RekeySetting(review.Bounded.Rekey) {
+	case boundedmeta.RekeyRefused:
 		return "None", "No rekey path. Losing a required authority cannot be repaired."
+	case boundedmeta.RekeySpendingKey:
+		return "Spending key alone", "That key can rekey out of this boundary."
+	default:
+		return "Unknown authority " + review.Bounded.Rekey, "This client cannot describe that rekey path."
 	}
-	operation := profile.AdminOperations[0]
-	if operation.Authorization != boundedmeta.AdminAuthorizationSpend {
-		return "Unknown authority " + operation.Authorization, "This client cannot describe that rekey path."
-	}
-	if operation.PolicyGate == boundedmeta.PolicyGateLayer3 {
-		if isTimelockPolicy(profile.Layer3Policy) {
-			return "Spending key, after the unlock round", "That key can then rekey out of this boundary."
-		}
-		return "Spending key, if the policy allows", "Rekey must pass the same policy as a spend."
-	}
-	return "Spending key alone", "That key can rekey out of this boundary."
 }
 
 // reviewRecipients describes who the account can pay, decided by its policy and never

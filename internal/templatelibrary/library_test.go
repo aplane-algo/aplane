@@ -10,6 +10,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -24,6 +25,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/templatestore"
+	"github.com/aplane-algo/aplane/library/templates"
 	"github.com/aplane-algo/aplane/lsig/falcon1024"
 	"github.com/aplane-algo/aplane/lsig/generictemplate"
 )
@@ -138,10 +140,7 @@ teal: |
 	}
 }
 
-func TestInstallComposedSchemaV2BoundedTemplate(t *testing.T) {
-	falcon.RegisterClient()
-	paths := newLibraryTestPaths(t)
-	data := []byte(`schema_version: 2
+const testBoundedTemplateYAML = `schema_version: 2
 template_type: composed
 base_key_type: aplane.falcon1024.v1
 template_mode: strict
@@ -153,14 +152,19 @@ description: Test bounded template
 derivation_version: 3
 max_opcode_cost: 20000
 bounded:
-  contract: bounded1
+  contract: bounded2
   spend_effects: [pay, axfer]
   max_fee: 2000
-  admin_operations: []
+  rekey: refused
 teal: |
   int 1
   return
-`)
+`
+
+func TestInstallComposedSchemaV2BoundedTemplate(t *testing.T) {
+	falcon.RegisterClient()
+	paths := newLibraryTestPaths(t)
+	data := []byte(testBoundedTemplateYAML)
 	parsed, err := ParseYAML("bounded.yaml", data)
 	if err != nil {
 		t.Fatalf("ParseYAML() error = %v", err)
@@ -182,6 +186,59 @@ teal: |
 	}
 	if reparsed.KeyType != parsed.KeyType {
 		t.Fatalf("stored key type = %q, want %q", reparsed.KeyType, parsed.KeyType)
+	}
+}
+
+// A bounded1 template does not import: the contract, its administrative
+// operations, and a missing rekey setting are each refused.
+func TestParseYAMLRefusesBounded1Template(t *testing.T) {
+	falcon.RegisterClient()
+	for _, test := range []struct {
+		name, old, new, want string
+	}{
+		{name: "bounded1 contract", old: "contract: bounded2", new: "contract: bounded1", want: `unsupported bounded authorization contract "bounded1"`},
+		{name: "administrative operations", old: "rekey: refused", new: "admin_operations: []", want: "field admin_operations not found"},
+		{name: "missing rekey", old: "  rekey: refused\n", new: "", want: "bounded.rekey is required"},
+		{name: "unknown rekey", old: "rekey: refused", new: "rekey: admin_key", want: `unsupported rekey setting "admin_key"`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			data := strings.Replace(testBoundedTemplateYAML, test.old, test.new, 1)
+			if data == testBoundedTemplateYAML {
+				t.Fatalf("fixture does not contain %q", test.old)
+			}
+			if _, err := ParseYAML("bounded.yaml", []byte(data)); err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("ParseYAML() error = %v, want %q", err, test.want)
+			}
+		})
+	}
+}
+
+// The default library ships no retired template: each file parses as a current
+// template, and none is one of the templates retired with bounded1.
+func TestShippedLibraryHoldsNoRetiredTemplate(t *testing.T) {
+	falcon.RegisterClient()
+	retired := []string{"aplane.falcon1024-allowlist.v1", "aplane.falcon1024-allowlist.v2", "aplane.falcon1024-timelock.v1"}
+	entries, err := templates.FS.ReadDir(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	shipped := 0
+	for _, entry := range entries {
+		data, err := templates.ReadFile(entry.Name())
+		if err != nil {
+			t.Fatal(err)
+		}
+		parsed, err := ParseYAML(entry.Name(), data)
+		if err != nil {
+			t.Fatalf("shipped template %s does not parse: %v", entry.Name(), err)
+		}
+		if slices.Contains(retired, parsed.KeyType) {
+			t.Fatalf("shipped template %s is the retired %s", entry.Name(), parsed.KeyType)
+		}
+		shipped++
+	}
+	if shipped == 0 {
+		t.Fatal("the default library ships no template")
 	}
 }
 

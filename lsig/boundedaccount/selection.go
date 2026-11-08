@@ -79,8 +79,9 @@ func selectShape(params map[string]string, defs []lsigprovider.ParameterDef) (*s
 		return nil, fmt.Errorf("a cosigner requires %s=%s", ParameterRekeyAuthority, RekeyRefused)
 	case rekey == RekeyRefused && refusedSpendError(spend) != nil:
 		return nil, refusedSpendError(spend)
-	case timelock && rekey == RekeySpendingKey && !slices.Contains(spend, txeffects.SpendEffectPay):
-		return nil, fmt.Errorf("a timelock with %s=%s requires pay in %s", ParameterRekeyAuthority, RekeySpendingKey, ParameterSpendEffects)
+	case timelock && rekey == RekeySpendingKey:
+		// No host rule gates a rekey, so a spending-key rekey would leave the lock early.
+		return nil, fmt.Errorf("a timelock requires %s=%s: a spending-key rekey would leave the lock before the unlock round", ParameterRekeyAuthority, RekeyRefused)
 	}
 
 	values := map[string]string{

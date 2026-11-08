@@ -1,6 +1,6 @@
 {
   "schema": "aplane.bounded-effect-classifications.v1",
-  "contract": "bounded1",
+  "contract": "bounded2",
   "teal_version": 13,
   "surface": "PROTOCOL_EFFECT_INVENTORY.json",
   "spend_effects": [

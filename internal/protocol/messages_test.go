@@ -847,6 +847,33 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 			},
 		},
 		{
+			// The bounded profile carries one rekey setting, never bounded1's
+			// administrative operations.
+			name: "prepare_generate_result",
+			msg: PrepareGenerateResultMessage{
+				BaseMessage: BaseMessage{Type: MsgTypePrepareGenerateResult, ID: "prepare-1"},
+				Success:     true,
+				KeyType:     "aplane.falcon1024-b.v1",
+				Bounded: &PreparedBoundedProfile{
+					Contract: "bounded2", SpendEffects: []string{"pay"}, MaxFee: 2_000,
+					Rekey: "refused", Layer3Policy: "timelock",
+				},
+			},
+			wantMap: map[string]any{
+				"type":     MsgTypePrepareGenerateResult,
+				"id":       "prepare-1",
+				"success":  true,
+				"key_type": "aplane.falcon1024-b.v1",
+				"bounded": map[string]any{
+					"contract":      "bounded2",
+					"spend_effects": []any{"pay"},
+					"max_fee":       float64(2_000),
+					"rekey":         "refused",
+					"layer3_policy": "timelock",
+				},
+			},
+		},
+		{
 			name: "update_admin_setting_result",
 			msg: UpdateAdminSettingResultMessage{
 				BaseMessage: BaseMessage{Type: MsgTypeUpdateAdminSettingResult, ID: "setting-1"},

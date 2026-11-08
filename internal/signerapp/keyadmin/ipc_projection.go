@@ -49,15 +49,9 @@ func ProjectPrepareGenerateIPC(prepared *PreparedGeneration, err *Error) adminpr
 			Contract:         metadata.Contract,
 			SpendEffects:     metadata.SpendEffects,
 			MaxFee:           metadata.MaxFee,
+			Rekey:            string(metadata.Rekey),
 			Layer3Policy:     metadata.Layer3Policy,
 			CosignerRequired: metadata.Cosigner != nil,
-		}
-		for _, operation := range metadata.AdminOperations {
-			profile.AdminOperations = append(profile.AdminOperations, adminproto.PreparedAdminOperation{
-				Kind:          operation.Kind,
-				Authorization: operation.Authorization,
-				PolicyGate:    operation.PolicyGate,
-			})
 		}
 		result.Bounded = profile
 	}

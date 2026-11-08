@@ -84,7 +84,6 @@ func frozenBoundedTestService(t *testing.T, programBytes uint64) (*Service, stri
 			MaxOpcodeCost: 1,
 		},
 		SpendingRekey: &lsigresource.PathProfile{ArgumentBytes: uint64(boundedmeta.CosignerSignatureMaxSizeV1), MaxOpcodeCost: 1},
-		AdminRekey:    &lsigresource.PathProfile{ArgumentBytes: uint64(boundedmeta.CosignerSignatureMaxSizeV1), MaxOpcodeCost: 1},
 	}
 	planner := NewPlanner(stubPlannerDeps{
 		keyTypes: map[string]string{authorizer: "aplane.test-bounded-cosigner.v1"},

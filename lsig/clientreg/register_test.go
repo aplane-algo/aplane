@@ -52,17 +52,17 @@ func TestCanonicalCompiledLogicSigInventory(t *testing.T) {
 	}
 }
 
+// The retired bounded templates were deleted with bounded1, so the HTLC is the
+// only bundled template and nothing ships under library/retired.
 func TestCanonicalBundledTemplateInventory(t *testing.T) {
+	if _, err := os.Stat(filepath.Join("..", "..", "library", "retired")); !os.IsNotExist(err) {
+		t.Fatalf("library/retired exists or cannot be checked: %v", err)
+	}
 	for _, test := range []struct {
 		dir  string
 		want []string
 	}{
 		{dir: "templates", want: []string{"aplane.htlc.v1.yaml"}},
-		{dir: "retired", want: []string{
-			"aplane.falcon1024-allowlist.v1.yaml",
-			"aplane.falcon1024-allowlist.v2.yaml",
-			"aplane.falcon1024-timelock.v1.yaml",
-		}},
 	} {
 		entries, err := os.ReadDir(filepath.Join("..", "..", "library", test.dir))
 		if err != nil {
@@ -94,9 +94,6 @@ func TestRegisterClientLeavesLibraryTemplatesOptional(t *testing.T) {
 
 	for _, keyType := range []string{
 		"aplane.htlc.v1",
-		"aplane.falcon1024-allowlist.v1",
-		"aplane.falcon1024-allowlist.v2",
-		"aplane.falcon1024-timelock.v1",
 	} {
 		if lsigprovider.Has(keyType) {
 			t.Fatalf("RegisterClient() registered %s; it should remain an optional template", keyType)
@@ -147,35 +144,103 @@ func containsKeyType(types []string, want string) bool {
 	return false
 }
 
-// TestBundledComposedTemplatesBindTxIDBeforeSuffix pins the cross-component
-// invariant that the bundled aplane.falcon1024-* composed templates rely on
-// for rekey/close binding: when the registered aplane.falcon1024.v1 base
-// is composed with each bundled template, the produced TEAL emits
-// `txn TxID` in the verifier section, follows it with `assert`, and only
-// then runs the user suffix. This catches regressions in either the base
-// (e.g., switching to a non-txid signature scheme) or the composer wrap
-// (moving user TEAL above the assert), both of which would silently break
-// the rekey-guard property the templates depend on for transaction-shape
-// safety.
-func TestBundledComposedTemplatesBindTxIDBeforeSuffix(t *testing.T) {
+// composedFixtureTemplate is a bounded template on the registered Falcon base.
+// policy is the bounded block's tail after the rekey setting; tail follows bounded.
+func composedFixtureTemplate(family, policy, tail string) string {
+	return `schema_version: 2
+derivation_version: 3
+template_type: composed
+base_key_type: aplane.falcon1024.v1
+template_mode: strict
+publisher: test
+family: ` + family + `
+version: 1
+display_name: "Composed Fixture"
+max_opcode_cost: 20000
+
+bounded:
+  contract: bounded2
+  spend_effects: [pay, axfer, asset_opt_in]
+  max_fee: 10000
+  rekey: refused
+` + policy + `
+` + tail
+}
+
+// TestComposedTemplatesBindTxIDBeforeSuffix pins the cross-component
+// invariant that composed templates on the Falcon base rely on for rekey/close
+// binding: when the registered aplane.falcon1024.v1 base is composed with a
+// template, the produced TEAL emits `txn TxID` in the verifier section, follows
+// it with `assert`, and only then runs the Layer 3 suffix, whether the author or
+// the framework wrote it. This catches regressions in either the base (e.g.,
+// switching to a non-txid signature scheme) or the composer wrap (moving the
+// suffix above the assert), both of which would silently break the rekey-guard
+// property templates depend on for transaction-shape safety.
+func TestComposedTemplatesBindTxIDBeforeSuffix(t *testing.T) {
 	RegisterClient()
 
+	recipientsParameter := `parameters:
+  - name: recipients
+    type: address[]
+    required: true
+    min_items: 1
+    max_items: 30
+`
 	cases := []struct {
-		file         string
-		suffixMarker string // a substring unique to that template's user suffix
+		name         string
+		yaml         string
+		params       map[string]string
+		suffixMarker string // a substring unique to that template's suffix
 	}{
-		{"aplane.falcon1024-timelock.v1.yaml", "FirstValid"},
-		{"aplane.falcon1024-allowlist.v1.yaml", "framework-owned fixed allowlist"},
-		{"aplane.falcon1024-allowlist.v2.yaml", "Allowlist v2"},
+		{
+			name: "author timelock",
+			yaml: composedFixtureTemplate("author-timelock-fixture", "", `parameters:
+  - name: unlock_round
+    type: uint64
+    required: true
+    min: 1
+
+template_variables:
+  - name: unlock_round
+    source: parameter
+    parameter: unlock_round
+    type: uint64
+    constant: int
+
+teal: |
+  // Timelock check: FirstValid >= unlock_round
+  txn FirstValid
+  $unlock_round
+  >=
+  assert
+`),
+			params:       map[string]string{"unlock_round": "1"},
+			suffixMarker: "FirstValid",
+		},
+		{
+			name:         "fixed allowlist",
+			yaml:         composedFixtureTemplate("fixed-allowlist-fixture", "  layer3:\n    policy: fixed_allowlist\n    recipients_parameter: recipients", recipientsParameter),
+			params:       map[string]string{"recipients": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ"},
+			suffixMarker: "framework-owned fixed allowlist",
+		},
+		{
+			name: "merkle allowlist",
+			yaml: composedFixtureTemplate("merkle-allowlist-fixture", `  layer3:
+    policy: merkle_allowlist
+    recipients_parameter: recipients
+  derived_args:
+    - name: merkle_proof
+      kind: merkle_allowlist_proof
+      parameter: recipients
+      max_size: 512`, strings.Replace(recipientsParameter, "max_items: 30", "max_items: 65536", 1)),
+			params:       map[string]string{"recipients": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ"},
+			suffixMarker: "framework-owned Merkle allowlist",
+		},
 	}
 
 	for _, c := range cases {
-		t.Run(c.file, func(t *testing.T) {
-			data, err := os.ReadFile(filepath.Join("..", "..", "library", "retired", c.file))
-			if err != nil {
-				t.Fatalf("ReadFile: %v", err)
-			}
-			spec, err := composeddsa.ParseTemplateSpec(data)
+		t.Run(c.name, func(t *testing.T) {
+			spec, err := composeddsa.ParseTemplateSpec([]byte(c.yaml))
 			if err != nil {
 				t.Fatalf("ParseTemplateSpec: %v", err)
 			}
@@ -187,9 +252,7 @@ func TestBundledComposedTemplatesBindTxIDBeforeSuffix(t *testing.T) {
 			// Use a dummy public key. GenerateTEAL only embeds it in the
 			// verifier; correctness of the produced signature is not in
 			// scope here, only the wrap shape.
-			pubKey := bundledTemplateTestPublicKey(c.file)
-			params := bundledTemplateTestParams(c.file)
-			teal, err := provider.GenerateTEAL(pubKey, params)
+			teal, err := provider.GenerateTEAL(make([]byte, family.PublicKeySize), c.params)
 			if err != nil {
 				t.Fatalf("GenerateTEAL: %v", err)
 			}
@@ -208,44 +271,13 @@ func TestBundledComposedTemplatesBindTxIDBeforeSuffix(t *testing.T) {
 			}
 
 			between := teal[txidIdx:suffixIdx]
-			verifyOp := bundledTemplateTestVerifyOp(c.file)
-			if !strings.Contains(between, verifyOp) {
-				t.Fatalf("verifier section must include %q between txid and suffix:\n%s", verifyOp, between)
+			if !strings.Contains(between, "falcon_verify") {
+				t.Fatalf("verifier section must include %q between txid and suffix:\n%s", "falcon_verify", between)
 			}
 			if !strings.Contains(between, "assert") {
 				t.Fatalf("`assert` must appear between verifier output and user suffix:\n%s", between)
 			}
 		})
-	}
-}
-
-func bundledTemplateTestPublicKey(file string) []byte {
-	return make([]byte, family.PublicKeySize)
-}
-
-func bundledTemplateTestVerifyOp(file string) string {
-	return "falcon_verify"
-}
-
-// bundledTemplateTestParams returns the minimum parameters needed to
-// successfully render each bundled composed template's TEAL. Values are
-// shape-correct placeholders; this test does not exercise their semantics.
-func bundledTemplateTestParams(file string) map[string]string {
-	switch file {
-	case "aplane.falcon1024-allowlist.v2.yaml":
-		return map[string]string{
-			"recipients": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ",
-		}
-	case "aplane.falcon1024-timelock.v1.yaml":
-		return map[string]string{
-			"unlock_round": "1",
-		}
-	case "aplane.falcon1024-allowlist.v1.yaml":
-		return map[string]string{
-			"recipients": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ",
-		}
-	default:
-		return nil
 	}
 }
 

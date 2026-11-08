@@ -9,10 +9,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -21,13 +19,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	"github.com/aplane-algo/aplane/internal/signing"
 	utilkeys "github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/transport"
-	"github.com/aplane-algo/aplane/library/retired"
 	"github.com/aplane-algo/aplane/library/templates"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 	"github.com/aplane-algo/aplane/test/integration/harness"
@@ -93,14 +91,18 @@ func mustImportTemplateViaApadmin(t *testing.T, signerDataDir string, apadmin *h
 func syncTemplateLibraryFile(t *testing.T, signerDataDir, filename string) string {
 	t.Helper()
 
-	// An existing account's template may be retired from the default library.
 	data, err := templates.ReadFile(filename)
-	if errors.Is(err, fs.ErrNotExist) {
-		data, err = retired.ReadFile(filename)
-	}
 	if err != nil {
 		t.Fatalf("failed to read template %s: %v", filename, err)
 	}
+	return writeTemplateLibraryFile(t, signerDataDir, filename, data)
+}
+
+// writeTemplateLibraryFile places a template in the signer's library directory,
+// where an import or a restored key finds it.
+func writeTemplateLibraryFile(t *testing.T, signerDataDir, filename string, data []byte) string {
+	t.Helper()
+
 	paths := utilkeys.NewPaths(signerDataDir)
 	if err := os.MkdirAll(paths.TemplateLibraryDir(), 0o755); err != nil {
 		t.Fatalf("failed to create signer-data library dir: %v", err)
@@ -117,9 +119,54 @@ func installHTLCTemplate(t *testing.T, signerDataDir string) {
 	installTemplateLibraryFile(t, signerDataDir, "aplane.htlc.v1.yaml", "HTLC")
 }
 
-func installFalconAllowlistTemplate(t *testing.T, signerDataDir string) {
+// boundedAllowlistTemplateKeyType names boundedAllowlistTemplateYAML. No bounded
+// template is bundled any more, so a test that needs a user-loaded bounded
+// composed template brings this one.
+var boundedAllowlistTemplateKeyType = integrationTemplateKeyType("falcon1024-allowlist")
+
+// boundedAllowlistTemplateYAML is an inline Falcon allowlist with a
+// spending-key rekey, the shape of the deleted aplane.falcon1024-allowlist.v1.
+func boundedAllowlistTemplateYAML() string {
+	return fmt.Sprintf(`schema_version: 2
+derivation_version: 3
+template_type: composed
+base_key_type: aplane.falcon1024.v1
+template_mode: generated
+publisher: %s
+family: falcon1024-allowlist
+version: 1
+display_name: "Test Falcon-1024 Allowlist"
+description: "Falcon-1024 signature restricted to a fixed set of receiver addresses"
+max_opcode_cost: 20000
+
+bounded:
+  contract: %s
+  spend_effects: [pay, axfer, asset_opt_in]
+  max_fee: 10000
+  rekey: %s
+  layer3:
+    policy: fixed_allowlist
+    recipients_parameter: recipients
+
+parameters:
+  - name: recipients
+    type: address[]
+    required: true
+    min_items: 1
+    max_items: 30
+    label: "Allowlisted Addresses"
+    description: "Comma-separated Algorand addresses that may receive funds from this Falcon LogicSig"
+`, integrationTemplatePublisher, boundedmeta.Contract, boundedmeta.RekeySpendingKey)
+}
+
+// installBoundedAllowlistTemplate imports boundedAllowlistTemplateYAML from the
+// signer's library directory and returns its key type.
+func installBoundedAllowlistTemplate(t *testing.T, signerDataDir string) string {
 	t.Helper()
-	installTemplateLibraryFile(t, signerDataDir, "aplane.falcon1024-allowlist.v1.yaml", "Falcon allowlist")
+
+	templatePath := writeTemplateLibraryFile(t, signerDataDir, boundedAllowlistTemplateKeyType+".yaml", []byte(boundedAllowlistTemplateYAML()))
+	mustImportTemplateViaApadmin(t, signerDataDir, harness.NewApAdminHarness(t, signerDataDir), templatePath, "bounded allowlist")
+	return boundedAllowlistTemplateKeyType
 }
 
 func TestSignerRejectsWhenLocked(t *testing.T) {

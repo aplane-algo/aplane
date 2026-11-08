@@ -127,8 +127,8 @@ func TestEveryPerKeyProviderSupportsTheBoundaryWorkflow(t *testing.T) {
 			if got := strings.Join(metadata.SpendEffects, ","); got != preset.Fixed[boundary.ParameterSpendEffects] {
 				t.Errorf("%s: preset %s spends %q", provider.KeyType(), preset.Name, got)
 			}
-			if got, want := len(metadata.AdminOperations) == 0, preset.Fixed[boundary.ParameterRekeyAuthority] == boundary.RekeyRefused; got != want {
-				t.Errorf("%s: preset %s refuses rekeys = %v, want %v", provider.KeyType(), preset.Name, got, want)
+			if got, want := string(metadata.Rekey), preset.Fixed[boundary.ParameterRekeyAuthority]; got != want {
+				t.Errorf("%s: preset %s rekey = %q, want %q", provider.KeyType(), preset.Name, got, want)
 			}
 			if got, want := metadata.Cosigner != nil, slices.Contains(preset.Fields, boundary.ParameterCosigner); got != want {
 				t.Errorf("%s: preset %s cosigner = %v, want %v", provider.KeyType(), preset.Name, got, want)

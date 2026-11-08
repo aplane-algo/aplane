@@ -38,10 +38,7 @@ type PathDeclaration struct {
 	Cosigner     *CosignerOverlay
 }
 
-// Declaration projects stored bounded1 metadata onto its path declaration. A
-// Layer 3 gate on a spending-key rekey is not part of the declaration: the
-// program enforces it, and a declaration answers only which path a transaction
-// takes.
+// Declaration projects stored bounded metadata onto its path declaration.
 func (metadata *Metadata) Declaration() (PathDeclaration, error) {
 	if metadata == nil {
 		return PathDeclaration{}, fmt.Errorf("bounded authorization metadata is nil")
@@ -52,16 +49,10 @@ func (metadata *Metadata) Declaration() (PathDeclaration, error) {
 		SpendEffects: slices.Clone(metadata.SpendEffects),
 		MaxFee:       &maxFee,
 		Layer3Policy: metadata.Layer3Policy,
-		Rekey:        RekeyRefused,
+		Rekey:        metadata.Rekey,
 	}
-	for _, operation := range metadata.AdminOperations {
-		if operation.Kind != AdminOperationRekey {
-			return PathDeclaration{}, fmt.Errorf("unsupported bounded operation %q", operation.Kind)
-		}
-		if operation.Authorization != AdminAuthorizationSpend {
-			return PathDeclaration{}, fmt.Errorf("unsupported rekey authorization %q", operation.Authorization)
-		}
-		declaration.Rekey = RekeySpendingKey
+	if err := ValidateRekeySetting(metadata.Rekey); err != nil {
+		return PathDeclaration{}, err
 	}
 	if metadata.Cosigner != nil {
 		declaration.Cosigner = &CosignerOverlay{

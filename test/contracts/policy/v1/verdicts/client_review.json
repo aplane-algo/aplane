@@ -397,10 +397,10 @@
           "amount": 5
         }
       ],
-      "forced_review": "bounded_admin_operation_requires_review",
+      "forced_review": "bounded_rekey_requires_review",
       "expect": {
         "outcome": "review",
-        "rule_id": "bounded_admin_operation_requires_review"
+        "rule_id": "bounded_rekey_requires_review"
       }
     },
     {
@@ -421,10 +421,10 @@
           "amount": 5
         }
       ],
-      "forced_review": "bounded_admin_operation_requires_review",
+      "forced_review": "bounded_rekey_requires_review",
       "expect": {
         "outcome": "review",
-        "rule_id": "bounded_admin_operation_requires_review"
+        "rule_id": "bounded_rekey_requires_review"
       }
     },
     {

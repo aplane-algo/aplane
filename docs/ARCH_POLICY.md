@@ -593,7 +593,7 @@ Non-routing rule IDs:
   `review_unknown_genesis_hash` for `limits.*.review_above`
 - `always_review_warnings`
 - `auto_approve_self_noop_transfer`
-- `bounded_admin_operation_requires_review`
+- `bounded_rekey_requires_review`
 
 Routing rule IDs:
 
@@ -662,7 +662,7 @@ envelope or raise its `max_fee`.
 
 Every transaction classified onto a bounded1 admin-operation path (a
 spending-key rekey) triggers the stable client-signing Always Review rule
-`bounded_admin_operation_requires_review`. The rule runs after hard
+`bounded_rekey_requires_review`. The rule runs after hard
 rejection and before every Always Approve or Operator Default path. It therefore
 defeats `auto_approve_self_noop_transfer` and warning configuration;
 `user_auto_approve:true` satisfies it without a prompt.

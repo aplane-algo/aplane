@@ -278,9 +278,9 @@ func newCorridorExecutionAccount(t *testing.T, provider *boundedaccount.Provider
 		recipientStrings[i] = recipient.String()
 	}
 	account := newGeneralAccount(t, provider, corridorShape(), recipientStrings, 0)
-	if account.metadata.Layer3Policy != boundedmeta.Layer3PolicyMerkleAllowlist || account.metadata.Cosigner == nil || len(account.metadata.AdminOperations) != 0 {
-		t.Fatalf("account is not a Corridor: layer3_policy=%q cosigner=%v admin_operations=%v",
-			account.metadata.Layer3Policy, account.metadata.Cosigner != nil, account.metadata.AdminOperations)
+	if account.metadata.Layer3Policy != boundedmeta.Layer3PolicyMerkleAllowlist || account.metadata.Cosigner == nil || account.metadata.Rekey != boundedmeta.RekeyRefused {
+		t.Fatalf("account is not a Corridor: layer3_policy=%q cosigner=%v rekey=%q",
+			account.metadata.Layer3Policy, account.metadata.Cosigner != nil, account.metadata.Rekey)
 	}
 	return account
 }

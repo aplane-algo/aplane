@@ -10,9 +10,10 @@ import (
 
 func TestDeclarationProjectsTheStoredContract(t *testing.T) {
 	metadata := &Metadata{
-		Contract:     ContractV1,
+		Contract:     Contract,
 		SpendEffects: []string{SpendEffectPay, SpendEffectAxfer},
 		MaxFee:       5_000,
+		Rekey:        RekeyRefused,
 		Layer3Policy: Layer3PolicyFixedAllowlist,
 		Cosigner:     &CosignerAuthorization{ComponentKeyType: CosignerComponentKeyTypeV1, RequiredOn: []string{PathSpend}},
 	}
@@ -34,18 +35,18 @@ func TestDeclarationProjectsTheStoredContract(t *testing.T) {
 	}
 
 	metadata.Cosigner = nil
-	metadata.AdminOperations = []AdminOperation{{Kind: AdminOperationRekey, Authorization: AdminAuthorizationSpend, PolicyGate: PolicyGateLayer3}}
+	metadata.Rekey = RekeySpendingKey
 	spending, err := metadata.Declaration()
 	if err != nil || spending.Rekey != RekeySpendingKey || spending.Cosigner != nil {
 		t.Fatalf("spending-key declaration = %+v, %v", spending, err)
 	}
 
-	for name, operation := range map[string]AdminOperation{
-		"unknown kind":          {Kind: "freeze", Authorization: AdminAuthorizationSpend},
-		"unknown authorization": {Kind: AdminOperationRekey, Authorization: "admin_key"},
+	for name, setting := range map[string]RekeySetting{
+		"missing setting": "",
+		"unknown setting": "admin_key",
 	} {
-		metadata.AdminOperations = []AdminOperation{operation}
-		if _, err := metadata.Declaration(); err == nil || !strings.Contains(err.Error(), "unsupported") {
+		metadata.Rekey = setting
+		if _, err := metadata.Declaration(); err == nil || !strings.Contains(err.Error(), "unsupported rekey setting") {
 			t.Fatalf("%s: Declaration() error = %v", name, err)
 		}
 	}

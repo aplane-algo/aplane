@@ -59,7 +59,9 @@ func (rule timelockRule) keyType() string {
 	return "test.timelock-rule-" + rule.name + ".v1"
 }
 
-func (rule timelockRule) yaml(gate string) string {
+// yaml refuses rekeys: a rekey never reaches Layer 3, so a spending-key rekey
+// would leave the lock before the unlock round.
+func (rule timelockRule) yaml() string {
 	recipientsParameter, recipients := "", ""
 	if rule.hasList() {
 		recipientsParameter = "\n    recipients_parameter: recipients"
@@ -82,13 +84,10 @@ display_name: "Timelock Rule %s"
 max_opcode_cost: 20000
 
 bounded:
-  contract: bounded1
+  contract: %s
   spend_effects: [pay, axfer, asset_opt_in]
   max_fee: 10000
-  admin_operations:
-    - kind: rekey
-      authorization: %s
-      policy_gate: %s
+  rekey: %s
   layer3:
     policy: %s
     unlock_round_parameter: unlock_round%s%s
@@ -98,7 +97,7 @@ parameters:
     type: uint64
     required: true
     min: 1
-%s`, rule.name, rule.name, boundedmeta.AdminAuthorizationSpend, gate, rule.policy, recipientsParameter, rule.derived, recipients)
+%s`, rule.name, rule.name, boundedmeta.Contract, boundedmeta.RekeyRefused, rule.policy, recipientsParameter, rule.derived, recipients)
 }
 
 type timelockAccount struct {
@@ -107,10 +106,10 @@ type timelockAccount struct {
 	recipients string
 }
 
-func newTimelockAccount(t *testing.T, network *harness.TestnetConfig, rule timelockRule, gate string, unlockRound uint64, recipients ...string) timelockAccount {
+func newTimelockAccount(t *testing.T, network *harness.TestnetConfig, rule timelockRule, unlockRound uint64, recipients ...string) timelockAccount {
 	t.Helper()
 	falcon1024.RegisterClient()
-	spec, err := composeddsa.ParseTemplateSpec([]byte(rule.yaml(gate)))
+	spec, err := composeddsa.ParseTemplateSpec([]byte(rule.yaml()))
 	if err != nil {
 		t.Fatalf("parse template: %v", err)
 	}
@@ -137,8 +136,8 @@ func newTimelockAccount(t *testing.T, network *harness.TestnetConfig, rule timel
 	if err != nil {
 		t.Fatalf("build metadata: %v", err)
 	}
-	if metadata.Layer3Policy != rule.policy {
-		t.Fatalf("layer3_policy = %q, want %q", metadata.Layer3Policy, rule.policy)
+	if metadata.Layer3Policy != rule.policy || !metadata.RefusesRekeys() {
+		t.Fatalf("layer3_policy = %q, rekey = %q; want %q, refused", metadata.Layer3Policy, metadata.Rekey, rule.policy)
 	}
 	return timelockAccount{
 		boundedExecutionAccount: boundedExecutionAccount{
@@ -223,7 +222,9 @@ func timelockNetwork(t *testing.T) (*harness.TestnetConfig, *harness.FundTestAcc
 }
 
 // These transactions go straight to the network, so each rejection is the
-// program's, not the signer refusing to build the request.
+// program's, not the signer refusing to build the request. A rekey carries only
+// the spending signature: the account has no rekey path, so it fails on either
+// side of the unlock round.
 func TestBoundedTimelockPoliciesOnChainLocalnet(t *testing.T) {
 	network, funder, unlockRound := timelockNetwork(t)
 	before, at, after := unlockRound-1, unlockRound, unlockRound+1
@@ -232,7 +233,7 @@ func TestBoundedTimelockPoliciesOnChainLocalnet(t *testing.T) {
 		t.Run(rule.name, func(t *testing.T) {
 			allowed := funder.GetAddress()
 			second := algocrypto.GenerateAccount().Address.String()
-			account := newTimelockAccount(t, network, rule, boundedmeta.PolicyGateLayer3, unlockRound, allowed, second)
+			account := newTimelockAccount(t, network, rule, unlockRound, allowed, second)
 			if err := funder.FundMicroAlgosAndWait(account.address, 2_000_000); err != nil {
 				t.Fatalf("fund account: %v", err)
 			}
@@ -250,14 +251,14 @@ func TestBoundedTimelockPoliciesOnChainLocalnet(t *testing.T) {
 			}{
 				{name: "allowed recipient one round early", txn: account.payment(t, network, allowed, "a", before), args: account.args(t, allowed)},
 				{name: "self recipient one round early", txn: account.payment(t, network, account.address, "b", before), args: account.args(t, "")},
-				{name: "gated rekey one round early", txn: account.rekey(t, network, "c", before), args: account.args(t, "")},
+				{name: "rekey one round early", txn: account.rekey(t, network, "c", before)},
 				{name: "allowed recipient at the unlock round", txn: account.payment(t, network, allowed, "d", at), args: account.args(t, allowed), accept: true},
 				{name: "allowed recipient after the unlock round", txn: account.payment(t, network, allowed, "e", after), args: account.args(t, allowed), accept: true},
 				{name: "self recipient at the unlock round", txn: account.payment(t, network, account.address, "f", at), args: account.args(t, ""), accept: true},
 				{name: "outsider after the unlock round", txn: account.payment(t, network, outsider, "g", after), args: account.args(t, allowed), accept: !rule.hasList()},
 				{name: "allowed recipient without proof", txn: account.payment(t, network, allowed, "h", after), args: account.args(t, ""), merkle: true},
-				// Last, because it moves the account away from this program.
-				{name: "gated rekey at the unlock round", txn: account.rekey(t, network, "i", at), args: account.args(t, ""), accept: true},
+				{name: "rekey at the unlock round", txn: account.rekey(t, network, "i", at)},
+				{name: "rekey after the unlock round", txn: account.rekey(t, network, "j", after)},
 			} {
 				if test.merkle && !rule.merkle() {
 					continue
@@ -270,33 +271,9 @@ func TestBoundedTimelockPoliciesOnChainLocalnet(t *testing.T) {
 	}
 }
 
-// A rekey that does not reach Layer 3 is not delayed by the timelock. Review
-// screens must say so, and this is what makes that statement true.
-func TestBoundedTimelockDoesNotDelayUngatedRekeyLocalnet(t *testing.T) {
-	network, funder, unlockRound := timelockNetwork(t)
-	locked := unlockRound + 1_000_000
-	current := unlockRound
-
-	for _, rule := range timelockRules {
-		t.Run(rule.name+"/spending key", func(t *testing.T) {
-			allowed := funder.GetAddress()
-			second := algocrypto.GenerateAccount().Address.String()
-			account := newTimelockAccount(t, network, rule, boundedmeta.PolicyGateNone, locked, allowed, second)
-			if err := funder.FundMicroAlgosAndWait(account.address, 2_000_000); err != nil {
-				t.Fatalf("fund account: %v", err)
-			}
-			t.Run("spend is locked", func(t *testing.T) {
-				account.submit(t, network, account.payment(t, network, allowed, "a", current), account.args(t, allowed), false)
-			})
-			t.Run("rekey proceeds while locked", func(t *testing.T) {
-				account.submit(t, network, account.rekey(t, network, "c", current), account.args(t, ""), true)
-			})
-		})
-	}
-}
-
 // This is the same rule through the signer: it fills the Merkle slot itself, and
-// stored metadata must survive a rescan. A locked account must move no funds.
+// stored metadata must survive a rescan. A locked account must move no funds, and
+// an unlocked one still cannot be rekeyed.
 func TestBoundedTimelockThroughSigner(t *testing.T) {
 	if os.Getenv("TEST_FUNDING_MNEMONIC") == "" {
 		t.Skip("TEST_FUNDING_MNEMONIC not set, skipping funding-backed test")
@@ -326,7 +303,7 @@ func TestBoundedTimelockThroughSigner(t *testing.T) {
 	t.Cleanup(installer.Cleanup)
 	for _, rule := range timelockRules {
 		templatePath := filepath.Join(paths.TemplateLibraryDir(), rule.keyType()+".yaml")
-		yaml := rule.yaml(boundedmeta.PolicyGateLayer3)
+		yaml := rule.yaml()
 		if err := os.WriteFile(templatePath, []byte(yaml), 0o644); err != nil {
 			t.Fatalf("write template: %v", err)
 		}
@@ -404,6 +381,8 @@ func TestBoundedTimelockThroughSigner(t *testing.T) {
 			if received := balance(allowed); received != 300_000 {
 				t.Fatalf("recipient holds %d, want 300000", received)
 			}
+			// Reaching the unlock round opens a spend path, not a rekey path.
+			assertSignerRefusesRekey(t, apshell, network, open, algocrypto.GenerateAccount().Address.String())
 		})
 	}
 

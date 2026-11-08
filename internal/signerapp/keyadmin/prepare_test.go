@@ -43,9 +43,10 @@ version: 1
 display_name: Prepare Test
 max_opcode_cost: 20000
 bounded:
-  contract: bounded1
+  contract: bounded2
   spend_effects: [pay]
   max_fee: 10000
+  rekey: refused
   cosigner:
     contract: cosigner1
     required_on: [spend]
@@ -264,16 +265,14 @@ func TestProjectPrepareGenerateIPC(t *testing.T) {
 		KeyType: "test.projected.v1", Parameters: map[string]string{"recipients": "A"}, Fingerprint: "1:abc",
 		CosignerKeyID: "COSIGNER",
 		Bounded: &boundedmeta.Metadata{
-			Contract: boundedmeta.ContractV1, SpendEffects: []string{"pay"}, MaxFee: 10_000,
+			Contract: boundedmeta.Contract, SpendEffects: []string{"pay"}, MaxFee: 10_000,
 			Layer3Policy: boundedmeta.Layer3PolicyMerkleAllowlist,
 			Cosigner:     &boundedmeta.CosignerAuthorization{ComponentKeyType: witness.Falcon1024V1},
-			AdminOperations: []boundedmeta.AdminOperation{{
-				Kind: boundedmeta.AdminOperationRekey, Authorization: boundedmeta.AdminAuthorizationSpend, PolicyGate: boundedmeta.PolicyGateNone,
-			}},
+			Rekey:        boundedmeta.RekeyRefused,
 		},
 	}, nil)
 	if !result.Success || result.Bounded == nil || !result.Bounded.CosignerRequired || result.Bounded.MaxFee != 10_000 ||
-		len(result.Bounded.AdminOperations) != 1 || result.Bounded.AdminOperations[0].Authorization != boundedmeta.AdminAuthorizationSpend ||
+		result.Bounded.Contract != boundedmeta.Contract || result.Bounded.Rekey != string(boundedmeta.RekeyRefused) ||
 		result.Bounded.Layer3Policy != boundedmeta.Layer3PolicyMerkleAllowlist || result.CosignerKeyID != "COSIGNER" {
 		t.Fatalf("result = %+v", result)
 	}

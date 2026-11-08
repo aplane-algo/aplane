@@ -30,8 +30,8 @@ type boundedSupportKey struct {
 // completes (internal/signerapp/signing/bounded_construction.go), and this policy
 // must stay within that table.
 var boundedSupportPolicy = map[boundedSupportKey]boundedWorkflowSupport{
-	{BoundedContractV1, sigconstruction.Falcon1024().ID()}: {cosigner: true},
-	{BoundedContractV1, sigconstruction.Ed25519().ID()}:    {},
+	{BoundedContract, sigconstruction.Falcon1024().ID()}: {cosigner: true},
+	{BoundedContract, sigconstruction.Ed25519().ID()}:    {},
 }
 
 // boundedGenerationPolicy answers the support question for one composer.

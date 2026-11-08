@@ -307,20 +307,54 @@ func loadLibraryGenericTemplateForTest(t *testing.T, filename string) ([]byte, *
 	return data, spec
 }
 
-func registerLibraryFalconTemplateForTest(t *testing.T, filename string) {
+// falconAllowlistTemplateKeyType is the key type of falconAllowlistTemplateYAML.
+const falconAllowlistTemplateKeyType = "test.falcon1024-allowlist.v1"
+
+// falconAllowlistTemplateYAML is a composed Falcon template with a fixed recipient
+// list. No bundled template is composed, so the generate tests carry their own.
+const falconAllowlistTemplateYAML = `
+schema_version: 2
+derivation_version: 3
+template_type: composed
+base_key_type: aplane.falcon1024.v1
+template_mode: generated
+publisher: test
+family: falcon1024-allowlist
+version: 1
+display_name: "Falcon-1024 Allowlist"
+description: "Falcon-1024 signature restricted to a fixed set of receiver addresses"
+max_opcode_cost: 20000
+
+bounded:
+  contract: bounded2
+  spend_effects: [pay, axfer, asset_opt_in]
+  max_fee: 10000
+  rekey: spending_key
+  layer3:
+    policy: fixed_allowlist
+    recipients_parameter: recipients
+
+parameters:
+  - name: recipients
+    type: address[]
+    required: true
+    min_items: 1
+    max_items: 30
+    label: "Allowlisted Addresses"
+    description: "Comma-separated Algorand addresses that may receive funds from this Falcon LogicSig"
+    placeholder: "ADDR1, ADDR2, ADDR3"
+`
+
+func registerComposedFalconTemplateForTest(t *testing.T, yaml string) {
 	t.Helper()
 	RegisterProviders()
 
-	data, err := os.ReadFile(filepath.Join("..", "..", "..", "library", "retired", filename))
+	spec, err := composeddsa.ParseTemplateSpec([]byte(yaml))
 	if err != nil {
-		t.Fatalf("read template library file %s: %v", filename, err)
-	}
-	spec, err := composeddsa.ParseTemplateSpec(data)
-	if err != nil {
-		t.Fatalf("parse template library file %s: %v", filename, err)
+		t.Fatalf("parse composed template: %v", err)
 	}
 	if err := composeddsa.ValidateTemplateSpec(spec); err != nil {
-		t.Fatalf("validate template library file %s: %v", filename, err)
+		t.Fatalf("validate composed template: %v", err)
 	}
 	keytypecatalog.Register(keytypecatalog.Entry{
 		KeyType:      spec.KeyType(),
@@ -329,7 +363,7 @@ func registerLibraryFalconTemplateForTest(t *testing.T, filename string) {
 	})
 	provider, err := composeddsa.NewProviderFromTemplateSpec(spec)
 	if err != nil {
-		t.Fatalf("create provider from %s: %v", filename, err)
+		t.Fatalf("create provider from %s: %v", spec.KeyType(), err)
 	}
 	if logicsigdsa.RegisterIfAbsent(provider) {
 		base, ok := composeddsa.LookupBase(spec.BaseKeyType)
@@ -447,7 +481,7 @@ func TestAdminGenerateEd25519IsImmediatelyVisibleInKeyCache(t *testing.T) {
 }
 
 func TestAdminGenerateFalconAllowlistIsImmediatelyVisibleInKeyCache(t *testing.T) {
-	registerLibraryFalconTemplateForTest(t, "aplane.falcon1024-allowlist.v1.yaml")
+	registerComposedFalconTemplateForTest(t, falconAllowlistTemplateYAML)
 
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
@@ -456,7 +490,7 @@ func TestAdminGenerateFalconAllowlistIsImmediatelyVisibleInKeyCache(t *testing.T
 	defer algodCleanup()
 
 	reqBody, _ := json.Marshal(AdminGenerateRequest{
-		KeyType: "aplane.falcon1024-allowlist.v1",
+		KeyType: falconAllowlistTemplateKeyType,
 		Parameters: map[string]string{
 			"recipients": "M75L3PBI5EFTOXBQ6QLRQMQ3VIHBBTPP6SWOLT3WTZN4XF7DBL5662BBRM",
 		},
@@ -865,7 +899,7 @@ func TestAdminGenerateHTLCInvalidParams(t *testing.T) {
 }
 
 func TestAdminGenerateFalconAllowlistInvalidParams(t *testing.T) {
-	registerLibraryFalconTemplateForTest(t, "aplane.falcon1024-allowlist.v1.yaml")
+	registerComposedFalconTemplateForTest(t, falconAllowlistTemplateYAML)
 
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
@@ -874,7 +908,7 @@ func TestAdminGenerateFalconAllowlistInvalidParams(t *testing.T) {
 	defer algodCleanup()
 
 	reqBody, _ := json.Marshal(AdminGenerateRequest{
-		KeyType: "aplane.falcon1024-allowlist.v1",
+		KeyType: falconAllowlistTemplateKeyType,
 		Parameters: map[string]string{
 			"recipient": "M75L3PBI5EFTOXBQ6QLRQMQ3VIHBBTPP6SWOLT3WTZN4XF7DBL5662BBRM",
 		},

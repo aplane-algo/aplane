@@ -15,12 +15,12 @@ import (
 
 func TestMetadataValidateRejectsInvalidContracts(t *testing.T) {
 	base := Metadata{
-		Contract:               ContractV1,
+		Contract:               Contract,
 		BaseSignatureArgLayout: SignatureArgLayout{Count: 1, MaxSizes: []int{64}},
 		ArgumentLayout:         BaseArgumentLayout(SignatureArgLayout{Count: 1, MaxSizes: []int{64}}),
 		SpendEffects:           []string{"pay"},
 		MaxFee:                 1_000,
-		AdminOperations:        []AdminOperation{},
+		Rekey:                  RekeyRefused,
 		Layer3Policy:           Layer3PolicyCustom,
 	}
 	tests := []struct {
@@ -35,12 +35,8 @@ func TestMetadataValidateRejectsInvalidContracts(t *testing.T) {
 		{name: "fee ceiling", mutate: func(m *Metadata) { m.MaxFee = MaximumProfileFee + 1 }, want: "exceeds"},
 		{name: "unknown Layer-3 policy", mutate: func(m *Metadata) { m.Layer3Policy = "open" }, want: "layer3_policy"},
 		{name: "Merkle policy without proof", mutate: func(m *Metadata) { m.Layer3Policy = Layer3PolicyMerkleAllowlist }, want: "exactly one"},
-		{name: "missing policy gate", mutate: func(m *Metadata) {
-			m.AdminOperations = []AdminOperation{{Kind: AdminOperationRekey, Authorization: AdminAuthorizationSpend}}
-		}, want: "unsupported policy gate"},
-		{name: "admin key authorization", mutate: func(m *Metadata) {
-			m.AdminOperations = []AdminOperation{{Kind: AdminOperationRekey, Authorization: "admin_key", PolicyGate: PolicyGateNone}}
-		}, want: "unsupported authorization"},
+		{name: "missing rekey setting", mutate: func(m *Metadata) { m.Rekey = "" }, want: `unsupported rekey setting ""`},
+		{name: "unknown rekey setting", mutate: func(m *Metadata) { m.Rekey = "admin_key" }, want: `unsupported rekey setting "admin_key"`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -61,19 +57,19 @@ func TestMetadataValidateCombinedLayer3Policies(t *testing.T) {
 		for _, arg := range derived {
 			slots = append(slots, ArgumentSlot{
 				Index: len(slots), Name: arg.Name, Source: ArgSourceDerived, MaxSize: arg.MaxSize,
-				Paths: ArgumentPathMask{Spend: ArgOptional, SpendingRekey: ArgForbidden, AdminRekey: ArgForbidden},
+				Paths: ArgumentPathMask{Spend: ArgOptional, SpendingRekey: ArgForbidden},
 			})
 		}
 		return &Metadata{
-			Contract: ContractV1, BaseSignatureArgLayout: layout, ArgumentLayout: slots,
-			SpendEffects: []string{"pay"}, MaxFee: 1_000, Layer3Policy: policy, DerivedArgs: derived,
+			Contract: Contract, BaseSignatureArgLayout: layout, ArgumentLayout: slots,
+			SpendEffects: []string{"pay"}, MaxFee: 1_000, Rekey: RekeyRefused, Layer3Policy: policy, DerivedArgs: derived,
 		}
 	}
 	withRuntimeArg := func(input *Metadata) *Metadata {
 		input.RuntimeArgs = []RuntimeArg{{Name: "extra", Type: "bytes", Required: true, MaxSize: 8}}
 		input.ArgumentLayout = append(input.ArgumentLayout, ArgumentSlot{
 			Index: len(input.ArgumentLayout), Name: "extra", Source: ArgSourceRuntime, MaxSize: 8,
-			Paths: ArgumentPathMask{Spend: ArgRequired, SpendingRekey: ArgForbidden, AdminRekey: ArgForbidden},
+			Paths: ArgumentPathMask{Spend: ArgRequired, SpendingRekey: ArgForbidden},
 		})
 		return input
 	}
@@ -86,7 +82,7 @@ func TestMetadataValidateCombinedLayer3Policies(t *testing.T) {
 		{name: "merkle", input: metadata(Layer3PolicyMerkleAllowlistCustom, proof)},
 		{name: "fixed takes no proof", input: metadata(Layer3PolicyFixedAllowlistCustom, proof), wantErr: "must not declare derived arguments"},
 		{name: "merkle needs a proof", input: metadata(Layer3PolicyMerkleAllowlistCustom), wantErr: "requires exactly one derived"},
-		{name: "vocabulary stays closed", input: metadata("timelock_custom"), wantErr: "unsupported bounded1 layer3_policy"},
+		{name: "vocabulary stays closed", input: metadata("timelock_custom"), wantErr: "unsupported bounded2 layer3_policy"},
 		{name: "timelock", input: metadata(Layer3PolicyTimelock)},
 		{name: "fixed timelock", input: metadata(Layer3PolicyFixedAllowlistTimelock)},
 		{name: "merkle timelock", input: metadata(Layer3PolicyMerkleAllowlistTimelock, proof)},
@@ -115,20 +111,18 @@ func TestMetadataValidateCombinedLayer3Policies(t *testing.T) {
 
 func TestMetadataArgumentLayoutPathSizes(t *testing.T) {
 	metadata := &Metadata{
-		Contract:               ContractV1,
+		Contract:               Contract,
 		BaseSignatureArgLayout: SignatureArgLayout{Count: 1, MaxSizes: []int{64}},
 		SpendEffects:           []string{SpendEffectPay},
 		MaxFee:                 2_000,
-		AdminOperations: []AdminOperation{{
-			Kind: AdminOperationRekey, Authorization: AdminAuthorizationSpend, PolicyGate: PolicyGateNone,
-		}},
-		DerivedArgs:  []DerivedArg{{Name: "proof", Kind: DerivedArgMerkleProof, Parameter: "recipients", MaxSize: MerkleProofSize}},
-		RuntimeArgs:  []RuntimeArg{{Name: "preimage", Type: "bytes", Required: true, ByteLength: 32, MaxSize: 32}},
-		Layer3Policy: Layer3PolicyCustom,
+		Rekey:                  RekeySpendingKey,
+		DerivedArgs:            []DerivedArg{{Name: "proof", Kind: DerivedArgMerkleProof, Parameter: "recipients", MaxSize: MerkleProofSize}},
+		RuntimeArgs:            []RuntimeArg{{Name: "preimage", Type: "bytes", Required: true, ByteLength: 32, MaxSize: 32}},
+		Layer3Policy:           Layer3PolicyCustom,
 		ArgumentLayout: []ArgumentSlot{
-			{Index: 0, Name: "base_signature_0", Source: ArgSourceBaseSignature, MaxSize: 64, Paths: ArgumentPathMask{Spend: ArgRequired, SpendingRekey: ArgRequired, AdminRekey: ArgRequired}},
-			{Index: 1, Name: "proof", Source: ArgSourceDerived, MaxSize: MerkleProofSize, Paths: ArgumentPathMask{Spend: ArgOptional, SpendingRekey: ArgForbidden, AdminRekey: ArgForbidden}},
-			{Index: 2, Name: "preimage", Source: ArgSourceRuntime, MaxSize: 32, Paths: ArgumentPathMask{Spend: ArgRequired, SpendingRekey: ArgForbidden, AdminRekey: ArgForbidden}},
+			{Index: 0, Name: "base_signature_0", Source: ArgSourceBaseSignature, MaxSize: 64, Paths: ArgumentPathMask{Spend: ArgRequired, SpendingRekey: ArgRequired}},
+			{Index: 1, Name: "proof", Source: ArgSourceDerived, MaxSize: MerkleProofSize, Paths: ArgumentPathMask{Spend: ArgOptional, SpendingRekey: ArgForbidden}},
+			{Index: 2, Name: "preimage", Source: ArgSourceRuntime, MaxSize: 32, Paths: ArgumentPathMask{Spend: ArgRequired, SpendingRekey: ArgForbidden}},
 		},
 	}
 	if err := metadata.ValidateProfile(); err != nil {
@@ -140,8 +134,9 @@ func TestMetadataArgumentLayoutPathSizes(t *testing.T) {
 	if got, want := metadata.ArgumentBytesForPath(PathSpendingRekey), 64; got != want {
 		t.Fatalf("spending-rekey argument bytes = %d, want %d", got, want)
 	}
-	if got, want := metadata.ArgumentBytesForPath(PathAdminRekey), 64; got != want {
-		t.Fatalf("admin-rekey argument bytes = %d, want %d", got, want)
+	// bounded1's admin_rekey path is gone: it names no path, so it has no bytes.
+	if got := metadata.ArgumentBytesForPath("admin_rekey"); got != 0 {
+		t.Fatalf("admin_rekey argument bytes = %d, want 0", got)
 	}
 }
 
@@ -152,10 +147,11 @@ func TestMetadataValidateCosignerAuthorization(t *testing.T) {
 		t.Fatalf("witness.ID() error = %v", err)
 	}
 	metadata := &Metadata{
-		Contract:               ContractV1,
+		Contract:               Contract,
 		BaseSignatureArgLayout: SignatureArgLayout{Count: 1, MaxSizes: []int{1280}},
 		SpendEffects:           []string{SpendEffectPay},
 		MaxFee:                 1_000,
+		Rekey:                  RekeyRefused,
 		Layer3Policy:           Layer3PolicyCustom,
 		Cosigner: &CosignerAuthorization{
 			Contract: CosignerContractV1, ComponentKeyType: CosignerComponentKeyTypeV1,
@@ -163,8 +159,8 @@ func TestMetadataValidateCosignerAuthorization(t *testing.T) {
 			SignatureMaxSize: CosignerSignatureMaxSizeV1, RequiredOn: []string{PathSpend},
 		},
 		ArgumentLayout: []ArgumentSlot{
-			{Index: 0, Name: "base_signature_0", Source: ArgSourceBaseSignature, MaxSize: 1280, Paths: ArgumentPathMask{Spend: ArgRequired, SpendingRekey: ArgRequired, AdminRekey: ArgRequired}},
-			{Index: 1, Name: CosignerSignatureSlot, Source: ArgSourceCosigner, MaxSize: CosignerSignatureMaxSizeV1, Paths: ArgumentPathMask{Spend: ArgRequired, SpendingRekey: ArgForbidden, AdminRekey: ArgForbidden}},
+			{Index: 0, Name: "base_signature_0", Source: ArgSourceBaseSignature, MaxSize: 1280, Paths: ArgumentPathMask{Spend: ArgRequired, SpendingRekey: ArgRequired}},
+			{Index: 1, Name: CosignerSignatureSlot, Source: ArgSourceCosigner, MaxSize: CosignerSignatureMaxSizeV1, Paths: ArgumentPathMask{Spend: ArgRequired, SpendingRekey: ArgForbidden}},
 		},
 	}
 	if err := metadata.Validate(); err != nil {
@@ -181,7 +177,7 @@ func TestMetadataValidateCosignerAuthorization(t *testing.T) {
 	if !metadata.Equal(cloned) || cloned.Cosigner == metadata.Cosigner {
 		t.Fatalf("Clone() did not deep-copy cosigner metadata: %#v", cloned.Cosigner)
 	}
-	cloned.Cosigner.RequiredOn[0] = PathAdminRekey
+	cloned.Cosigner.RequiredOn[0] = PathSpendingRekey
 	if metadata.Equal(cloned) {
 		t.Fatal("cosigner RequiredOn change not detected")
 	}
@@ -197,10 +193,8 @@ func TestMetadataValidateCosignerAuthorization(t *testing.T) {
 		t.Fatalf("ValidateProfile() error = %v, want path rejection", err)
 	}
 	spendingRekey := Clone(metadata)
-	spendingRekey.AdminOperations = []AdminOperation{{
-		Kind: AdminOperationRekey, Authorization: AdminAuthorizationSpend, PolicyGate: PolicyGateLayer3,
-	}}
-	if err := spendingRekey.ValidateProfile(); err == nil || !strings.Contains(err.Error(), "do not support spending-key-authorized rekey") {
+	spendingRekey.Rekey = RekeySpendingKey
+	if err := spendingRekey.ValidateProfile(); err == nil || !strings.Contains(err.Error(), "bounded cosigner profiles do not support a spending_key rekey") {
 		t.Fatalf("ValidateProfile() error = %v, want bounded-cosigner spending-rekey rejection", err)
 	}
 }
@@ -208,12 +202,12 @@ func TestMetadataValidateCosignerAuthorization(t *testing.T) {
 func TestMetadataEqual(t *testing.T) {
 	base := func() *Metadata {
 		return &Metadata{
-			Contract:               ContractV1,
+			Contract:               Contract,
 			BaseSignatureArgLayout: SignatureArgLayout{Count: 1, MaxSizes: []int{1280}},
 			ArgumentLayout:         BaseArgumentLayout(SignatureArgLayout{Count: 1, MaxSizes: []int{1280}}),
 			SpendEffects:           []string{"pay"},
 			MaxFee:                 5000,
-			AdminOperations:        []AdminOperation{{Kind: AdminOperationRekey, Authorization: AdminAuthorizationSpend, PolicyGate: PolicyGateNone}},
+			Rekey:                  RekeySpendingKey,
 			Layer3Policy:           Layer3PolicyCustom,
 		}
 	}
@@ -237,9 +231,9 @@ func TestMetadataEqual(t *testing.T) {
 		t.Fatal("MaxFee change not detected")
 	}
 	changed = base()
-	changed.AdminOperations[0].PolicyGate = PolicyGateLayer3
+	changed.Rekey = RekeyRefused
 	if base().Equal(changed) {
-		t.Fatal("AdminOperations change not detected")
+		t.Fatal("Rekey change not detected")
 	}
 	changed = base()
 	changed.ArgumentLayout[0].Paths.Spend = ArgForbidden

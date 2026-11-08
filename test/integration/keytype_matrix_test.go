@@ -8,7 +8,6 @@ import (
 	"context"
 	stded25519 "crypto/ed25519"
 	"crypto/sha256"
-	"embed"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -24,9 +23,8 @@ import (
 	txsigning "github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/transport"
 	"github.com/aplane-algo/aplane/internal/txnutil"
-	"github.com/aplane-algo/aplane/library/retired"
 	"github.com/aplane-algo/aplane/library/templates"
-	"github.com/aplane-algo/aplane/lsig/composeddsa"
+	"github.com/aplane-algo/aplane/lsig/boundedaccount"
 	edlsigv1 "github.com/aplane-algo/aplane/lsig/ed25519lsig/v1"
 	falcon "github.com/aplane-algo/aplane/lsig/falcon1024"
 	falconlsigv1 "github.com/aplane-algo/aplane/lsig/falcon1024/v1"
@@ -174,21 +172,37 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 				firstValid: baseRound,
 			},
 		},
+		// The general bounded type, in the shapes the deleted allowlist v1, allowlist
+		// v2 and timelock templates had. A timelock now refuses rekeys.
 		{
-			keyType: "aplane.falcon1024-allowlist.v1",
-			params:  map[string]string{"recipients": matrixMaximumRecipients(funder.GetAddress())},
+			keyType: boundedaccount.KeyTypeV1,
+			params: map[string]string{
+				boundedaccount.ParameterSpendEffects:   matrixAllTransfers,
+				boundedaccount.ParameterRekeyAuthority: boundedaccount.RekeySpendingKey,
+				boundedaccount.ParameterListEncoding:   boundedaccount.EncodingInline,
+				boundedaccount.ParameterRecipients:     matrixMaximumRecipients(funder.GetAddress()),
+			},
 			negative: includedKeyTypeNegative{
 				name:     "non-allowlisted receiver",
 				receiver: integrationBurnAddress,
 			},
 		},
 		{
-			keyType: "aplane.falcon1024-allowlist.v2",
-			params:  map[string]string{"recipients": matrixMaximumRecipients(funder.GetAddress())},
+			keyType: boundedaccount.KeyTypeV1,
+			params: map[string]string{
+				boundedaccount.ParameterSpendEffects:   matrixAllTransfers,
+				boundedaccount.ParameterRekeyAuthority: boundedaccount.RekeySpendingKey,
+				boundedaccount.ParameterListEncoding:   boundedaccount.EncodingMerkle,
+				boundedaccount.ParameterRecipients:     matrixMaximumRecipients(funder.GetAddress()),
+			},
 		},
 		{
-			keyType:            "aplane.falcon1024-timelock.v1",
-			params:             map[string]string{"unlock_round": fmt.Sprintf("%d", timelockRound)},
+			keyType: boundedaccount.KeyTypeV1,
+			params: map[string]string{
+				boundedaccount.ParameterSpendEffects:   matrixAllTransfers,
+				boundedaccount.ParameterRekeyAuthority: boundedaccount.RekeyRefused,
+				boundedaccount.ParameterUnlockRound:    fmt.Sprintf("%d", timelockRound),
+			},
 			positiveFirstValid: timelockRound,
 			negative: includedKeyTypeNegative{
 				name:       "before unlock round",
@@ -222,16 +236,18 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 			}
 
 			// Prepare every recovery authority before putting funds at risk. Bounded
-			// accounts reject CloseRemainderTo by contract, so they first rekey to
-			// this test-owned Ed25519 authority and are then closed normally.
+			// accounts reject CloseRemainderTo by contract, so one with a spending-key
+			// rekey first rekeys to this test-owned Ed25519 authority and is then
+			// closed normally. One that refuses rekeys can never close.
 			cleanupPlans := prepareMatrixRekeyCleanups(
 				t, signerd.GetURL(), fundingAddress, batch, sp, approvalClient, cleanupAuthority,
 			)
-			cleanupReserves := matrixCleanupReserves(cleanupPlans)
+			cleanupReserves := matrixCleanupReserves(batch, cleanupPlans)
 
 			// Prepare and sign the exact settlement group before putting funds at
 			// risk. Close-capable accounts close directly; bounded accounts retain
-			// only the minimum balance plus their already-finalized rekey fee.
+			// only the minimum balance, plus their already-finalized rekey fee when
+			// they have one.
 			signTxns := make([]matrixSignTxn, 0, len(batch))
 			for _, account := range batch {
 				signTxns = append(signTxns, account.positiveSignTxn(
@@ -307,25 +323,20 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 func assertBundledOpcodeValidationInventory(t *testing.T) {
 	t.Helper()
 	validated := map[string]struct{}{
-		"aplane.falcon1024-allowlist.v1.yaml": {},
-		"aplane.falcon1024-allowlist.v2.yaml": {},
-		"aplane.falcon1024-timelock.v1.yaml":  {},
-		"aplane.htlc.v1.yaml":                 {},
+		"aplane.htlc.v1.yaml": {},
 	}
 	seen := make(map[string]struct{}, len(validated))
-	for _, source := range []embed.FS{templates.FS, retired.FS} {
-		entries, err := source.ReadDir(".")
-		if err != nil {
-			t.Fatalf("list bundled LogicSig templates: %v", err)
+	entries, err := templates.FS.ReadDir(".")
+	if err != nil {
+		t.Fatalf("list bundled LogicSig templates: %v", err)
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".yaml") {
+			continue
 		}
-		for _, entry := range entries {
-			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".yaml") {
-				continue
-			}
-			seen[entry.Name()] = struct{}{}
-			if _, ok := validated[entry.Name()]; !ok {
-				t.Errorf("bundled template %s has no opcode-ceiling integration vector", entry.Name())
-			}
+		seen[entry.Name()] = struct{}{}
+		if _, ok := validated[entry.Name()]; !ok {
+			t.Errorf("bundled template %s has no opcode-ceiling integration vector", entry.Name())
 		}
 	}
 	for name := range validated {
@@ -355,7 +366,7 @@ func prepareMatrixRekeyCleanups(
 	t.Helper()
 	plans := make([]matrixRekeyCleanupPlan, 0)
 	for _, account := range accounts {
-		if matrixSupportsSpendingRekey(account.keyType) {
+		if matrixSupportsSpendingRekey(account) {
 			plans = append(plans, prepareMatrixSpendingRekeyCleanup(
 				t, signerURL, fundingAddress, account, sp, approvalClient, cleanupAuthority,
 			))
@@ -408,7 +419,7 @@ func prepareMatrixSpendingRekeyCleanup(
 
 // awaitMatrixSigning waits for a sign request posted in the background. The
 // shared test env runs with User Auto-Approve, which satisfies the rekey
-// warning review and the bounded admin-operation review without a prompt, so
+// warning review and the bounded rekey review without a prompt, so
 // normally no IPC sign request appears. If one does (auto-approve off), it is
 // approved so the helper works either way.
 func awaitMatrixSigning(t *testing.T, done <-chan struct{}, approvalClient *transport.IPCClient, what string) {
@@ -468,15 +479,19 @@ func validateMatrixRekeyOpcodeCeilings(
 	}
 }
 
-func matrixSupportsSpendingRekey(keyType string) bool {
-	switch keyType {
-	case "aplane.falcon1024-allowlist.v1",
-		"aplane.falcon1024-allowlist.v2",
-		"aplane.falcon1024-timelock.v1":
-		return true
-	default:
-		return false
-	}
+// matrixAllTransfers is every spend effect the general bounded type offers.
+const matrixAllTransfers = "pay,axfer,asset_opt_in"
+
+func matrixSupportsSpendingRekey(account includedKeyTypeAccount) bool {
+	return account.keyType == boundedaccount.KeyTypeV1 &&
+		account.params[boundedaccount.ParameterRekeyAuthority] == boundedaccount.RekeySpendingKey
+}
+
+// matrixRefusesRekey reports a bounded account with no rekey path, which can
+// therefore neither close nor be recovered.
+func matrixRefusesRekey(account includedKeyTypeAccount) bool {
+	return account.keyType == boundedaccount.KeyTypeV1 &&
+		account.params[boundedaccount.ParameterRekeyAuthority] == boundedaccount.RekeyRefused
 }
 
 type includedKeyTypeCase struct {
@@ -866,8 +881,16 @@ func waitForMatrixFundingVisibility(
 	t.Fatalf("matrix funding did not become consistently visible within 30s: %s", lastIssue)
 }
 
-func matrixCleanupReserves(plans []matrixRekeyCleanupPlan) map[string]uint64 {
-	reserves := make(map[string]uint64, len(plans))
+// matrixCleanupReserves is what each bounded account keeps after settlement. One
+// that refuses rekeys keeps its minimum balance for good: 0.1 ALGO per run on a
+// public network.
+func matrixCleanupReserves(accounts []includedKeyTypeAccount, plans []matrixRekeyCleanupPlan) map[string]uint64 {
+	reserves := make(map[string]uint64, len(accounts))
+	for _, account := range accounts {
+		if matrixRefusesRekey(account) {
+			reserves[account.address] = matrixBaseMinimumBalance
+		}
+	}
 	for _, plan := range plans {
 		reserves[plan.account.address] = matrixBaseMinimumBalance + plan.targetFee
 	}
@@ -1092,20 +1115,15 @@ func matrixDeclaredOpcodeProfile(t *testing.T, keyType string) lsigresource.Opco
 			t.Fatal(err)
 		}
 		return generictemplate.NewYAMLTemplate(spec).LogicSigOpcodeProfile()
-	default:
-		data, err := retired.ReadFile(keyType + ".yaml")
-		if err != nil {
-			t.Fatal(err)
-		}
-		spec, err := composeddsa.ParseTemplateSpec(data)
-		if err != nil {
-			t.Fatal(err)
-		}
-		provider, err := composeddsa.NewProviderFromTemplateSpec(spec)
+	case boundedaccount.KeyTypeV1:
+		provider, err := boundedaccount.NewProvider()
 		if err != nil {
 			t.Fatal(err)
 		}
 		return provider.LogicSigOpcodeProfile()
+	default:
+		t.Fatalf("no declared opcode profile for %s", keyType)
+		return lsigresource.OpcodeProfile{}
 	}
 }
 
@@ -1185,9 +1203,6 @@ func installAllBundledTemplates(t *testing.T, signerDataDir string) {
 	apadmin := harness.NewApAdminHarness(t, signerDataDir)
 	templateFiles := []string{
 		"aplane.htlc.v1.yaml",
-		"aplane.falcon1024-allowlist.v1.yaml",
-		"aplane.falcon1024-allowlist.v2.yaml",
-		"aplane.falcon1024-timelock.v1.yaml",
 	}
 	templatePaths := make([]string, 0, len(templateFiles))
 	for _, file := range templateFiles {

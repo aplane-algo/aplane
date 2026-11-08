@@ -56,7 +56,7 @@ func TestFalconBoundedReplacementNarrowsGovernedFGCorpus(t *testing.T) {
 		{name: "unsupported app call", build: func() types.Transaction { txn := basePayment(); txn.Type = types.ApplicationCallTx; return txn }, legacy: true},
 		{name: "fee above ceiling", build: func() types.Transaction {
 			txn := basePayment()
-			txn.Fee = types.MicroAlgos(composeddsa.BoundedMaxFeeV1 + 1)
+			txn.Fee = types.MicroAlgos(composeddsa.BoundedMaxFee + 1)
 			return txn
 		}, legacy: true},
 		{name: "pure rekey without admin proof", build: func() types.Transaction {
@@ -118,7 +118,7 @@ func legacyGovernedFGAllows(txn types.Transaction, allowed types.Address, adminP
 }
 
 func boundedLockedAllowlistAllows(txn types.Transaction, allowed types.Address) bool {
-	if uint64(txn.Fee) > composeddsa.BoundedMaxFeeV1 {
+	if uint64(txn.Fee) > composeddsa.BoundedMaxFee {
 		return false
 	}
 	switch txeffects.Classify(txn).Shape {

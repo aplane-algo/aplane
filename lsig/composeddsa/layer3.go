@@ -18,12 +18,12 @@ import (
 )
 
 const (
-	// Layer3PolicyFixedAllowlist is the framework-owned bounded1 spending
+	// Layer3PolicyFixedAllowlist is the framework-owned bounded spending
 	// policy. It compiles all membership checks inline and uses no runtime
 	// witness or signer-generated argument.
 	Layer3PolicyFixedAllowlist = "fixed_allowlist"
 
-	// Layer3PolicyMerkleAllowlist is the framework-owned bounded1 spending
+	// Layer3PolicyMerkleAllowlist is the framework-owned bounded spending
 	// policy for large recipient sets. Membership is proven by a fixed-size,
 	// signer-derived Merkle witness.
 	Layer3PolicyMerkleAllowlist = "merkle_allowlist"
@@ -127,10 +127,15 @@ func validateLayer3Policy(policy *Layer3Policy, params []lsigprovider.ParameterD
 		return fmt.Errorf("unsupported policy %q", policy.Policy)
 	}
 	if profile == nil {
-		return fmt.Errorf("framework-owned Layer-3 policy requires bounded1")
+		return fmt.Errorf("framework-owned Layer-3 policy requires a bounded profile")
 	}
 	if rules.timelock && hasAuthorTEAL {
 		return fmt.Errorf("policy %q does not accept author TEAL", policy.Policy)
+	}
+	// No host rule gates a rekey, so a spending-key rekey would leave the lock
+	// before the unlock round.
+	if rules.timelock && profile.Rekey == boundedmeta.RekeySpendingKey {
+		return fmt.Errorf("policy %q requires rekey: %s: a spending-key rekey would leave the lock before the unlock round", policy.Policy, boundedmeta.RekeyRefused)
 	}
 
 	used := make(map[string]struct{}, 2)
@@ -162,9 +167,6 @@ func validateLayer3Policy(policy *Layer3Policy, params []lsigprovider.ParameterD
 		}
 	}
 
-	if boundedRekeyUsesLayer3(profile) && !profileAllowsSpendEffect(profile, txeffects.SpendEffectPay) {
-		return fmt.Errorf("%s Layer-3-gated rekey requires pay in spend_effects", policy.Policy)
-	}
 	return nil
 }
 
@@ -263,8 +265,7 @@ func (c *ComposedDSA) renderLayer3Policy(params map[string]string, profile *Boun
 }
 
 // renderTimelock emits a check that falls through, so a combined policy reaches
-// its recipient check only after the unlock round. A Layer-3-gated rekey reaches
-// it too, and a rekey with policy_gate none skips it.
+// its recipient check only after the unlock round. A rekey never reaches it.
 func (c *ComposedDSA) renderTimelock(params map[string]string) (string, error) {
 	unlockRound, err := strconv.ParseUint(strings.TrimSpace(params[c.layer3.UnlockRoundParameter]), 10, 64)
 	if err != nil {

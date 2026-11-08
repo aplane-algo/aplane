@@ -171,6 +171,27 @@ func TestBoundaryRequirements(t *testing.T) {
 	}
 }
 
+// No host rule holds a rekey until the unlock round, so a timelock a spending key
+// could rekey out of is refused before review and before anything is created.
+func TestGeneralProviderRefusesASpendingKeyRekeyOnATimelock(t *testing.T) {
+	_, service := setupGeneralProvider(t)
+	timelockOnly := generalParams(boundedaccount.RekeySpendingKey)
+	delete(timelockOnly, boundedaccount.ParameterRecipients)
+	timelockOnly[boundedaccount.ParameterUnlockRound] = "100"
+	listAndTimelock := generalParams(boundedaccount.RekeySpendingKey)
+	listAndTimelock[boundedaccount.ParameterUnlockRound] = "100"
+	for name, params := range map[string]map[string]string{"timelock": timelockOnly, "allowlist and timelock": listAndTimelock} {
+		const want = "a timelock requires " + boundedaccount.ParameterRekeyAuthority + "=" + boundedaccount.RekeyRefused
+		if _, err := service.PrepareGenerateKey(boundedaccount.KeyTypeV1, params); err == nil || !strings.Contains(err.Message, want) {
+			t.Fatalf("%s: PrepareGenerateKey() error = %#v", name, err)
+		}
+		if _, err := service.GenerateKey(context.Background(), boundedaccount.KeyTypeV1, params, nil); err == nil || !strings.Contains(err.Message, want) {
+			t.Fatalf("%s: GenerateKey() error = %#v", name, err)
+		}
+	}
+	assertNoKeys(t, service)
+}
+
 func TestBoundaryRequirementIsRecheckedAfterReview(t *testing.T) {
 	ir, service := setupGeneralProvider(t)
 	prepared, err := service.PrepareGenerateKey(boundedaccount.KeyTypeV1, generalParams(boundedaccount.RekeySpendingKey))

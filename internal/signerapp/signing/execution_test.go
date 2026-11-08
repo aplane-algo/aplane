@@ -790,14 +790,14 @@ func TestExecutorAssembleBoundedSpendingRekeyUsesExactBaseArgs(t *testing.T) {
 		types.Address{1}.String(),
 		types.Address{1}.String(),
 		nil,
-		&boundedPlanItem{Path: boundedPathSpendingKeyRekey, Metadata: testBoundedMetadata(t, boundedmeta.AdminAuthorizationSpend)},
+		&boundedPlanItem{Path: boundedPathSpendingKeyRekey, Metadata: testBoundedMetadata(t, boundedmeta.RekeySpendingKey)},
 		&coresigning.KeyMaterial{
 			Type:                   keyType,
 			Category:               keys.CategoryDSALsig,
 			BaseKeyType:            baseKeyType,
 			Bytecode:               append([]byte(nil), testApprovalProgram...),
 			SigningMetadataVersion: keys.BoundedSigningMetadataVersion,
-			BoundedAuthorization:   testBoundedMetadata(t, boundedmeta.AdminAuthorizationSpend),
+			BoundedAuthorization:   testBoundedMetadata(t, boundedmeta.RekeySpendingKey),
 		},
 		signature,
 		keyType,
@@ -818,7 +818,7 @@ func TestResolveBoundedPlanItemsRejectsUndeclaredCallerArgs(t *testing.T) {
 	snapshot := PlannerRuntimeSnapshot{
 		KeyMetadata: map[string]PlannerKeyMetadata{authAddr: {
 			PublicKeyHex:         "aabb",
-			BoundedAuthorization: testBoundedMetadata(t, boundedmeta.AdminAuthorizationSpend),
+			BoundedAuthorization: testBoundedMetadata(t, boundedmeta.RekeySpendingKey),
 		}},
 	}
 	requests := []signerapi.SignRequest{{
@@ -835,11 +835,11 @@ func TestResolveBoundedPlanItemsRejectsUndeclaredCallerArgs(t *testing.T) {
 
 func TestResolveBoundedPlanItemsAcceptsDeclaredRuntimeArgs(t *testing.T) {
 	authAddr := types.Address{1}.String()
-	metadata := testBoundedMetadata(t, "")
+	metadata := testBoundedMetadata(t, boundedmeta.RekeyRefused)
 	metadata.RuntimeArgs = []boundedmeta.RuntimeArg{{Name: "preimage", Type: "bytes", Required: true, ByteLength: 2, MaxSize: 2}}
 	metadata.ArgumentLayout = append(metadata.ArgumentLayout, boundedmeta.ArgumentSlot{
 		Index: 1, Name: "preimage", Source: boundedmeta.ArgSourceRuntime, MaxSize: 2,
-		Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgForbidden, AdminRekey: boundedmeta.ArgForbidden},
+		Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgForbidden},
 	})
 	if err := metadata.Validate(); err != nil {
 		t.Fatalf("runtime metadata invalid: %v", err)
@@ -882,7 +882,7 @@ func TestAssembleBoundedArgsPreservesInteriorEmptySlots(t *testing.T) {
 // TestVerifyBoundedPlanIntegrity pins the executor's single bounded recheck:
 // the loaded key must still match the planned classification.
 func TestVerifyBoundedPlanIntegrity(t *testing.T) {
-	metadata := testBoundedMetadata(t, boundedmeta.AdminAuthorizationSpend)
+	metadata := testBoundedMetadata(t, boundedmeta.RekeySpendingKey)
 	item := &boundedPlanItem{Path: boundedPathSpendingKeyRekey, Metadata: boundedmeta.Clone(metadata)}
 	loaded := &coresigning.KeyMaterial{
 		SigningMetadataVersion: keys.BoundedSigningMetadataVersion,
@@ -919,6 +919,15 @@ func TestVerifyBoundedPlanIntegrity(t *testing.T) {
 	}
 	if err := verifyBoundedPlanIntegrity(item, changed); err == nil || err.Kind != ErrorInternal {
 		t.Fatalf("metadata drift: error = %#v, want internal", err)
+	}
+
+	rekeyChanged := boundedmeta.Clone(metadata)
+	rekeyChanged.Rekey = boundedmeta.RekeyRefused
+	if err := verifyBoundedPlanIntegrity(item, &coresigning.KeyMaterial{
+		SigningMetadataVersion: keys.BoundedSigningMetadataVersion,
+		BoundedAuthorization:   rekeyChanged,
+	}); err == nil || err.Kind != ErrorInternal {
+		t.Fatalf("rekey setting drift: error = %#v, want internal", err)
 	}
 }
 

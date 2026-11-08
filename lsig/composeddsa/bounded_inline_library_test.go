@@ -12,31 +12,27 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
-	"github.com/aplane-algo/aplane/library/retired"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	falcon1024 "github.com/aplane-algo/aplane/lsig/falcon1024"
 	falconfamily "github.com/aplane-algo/aplane/lsig/falcon1024/family"
 )
 
-func TestBundledBoundedInlineAllowlistGoldens(t *testing.T) {
+func TestBoundedInlineAllowlistGoldens(t *testing.T) {
 	falcon1024.RegisterClient()
 	recipient := types.Address{1}.String()
 	tests := []struct {
 		name            string
+		yaml            string
 		publicKey       []byte
 		wantFingerprint string
 		wantTEALSHA256  string
 	}{
-		{name: "aplane.falcon1024-allowlist.v1.yaml", publicKey: bytes.Repeat([]byte{0x21}, falconfamily.PublicKeySize), wantFingerprint: "1:114700c2374515c6b6c9d82e2afe8968e84b77b76a05a3981847f2f35b7a9844", wantTEALSHA256: "b08fa7a01a034c6e2a73597b5d42e006cc668c62869bec9daaa73fee0dccf4b0"},
+		{name: "fixed allowlist", yaml: composeddsa.FixedAllowlistFixtureYAML, publicKey: bytes.Repeat([]byte{0x21}, falconfamily.PublicKeySize), wantFingerprint: "1:ad7ec8b7a9cf35ac87647c14694f462b296018c0a18f8bae646e6628da554f93", wantTEALSHA256: "f848a80eaf26dd0844f67ac4a345e4b0ff23f1709e6017ffe1677cd704c61b51"},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			data, err := retired.ReadFile(test.name)
-			if err != nil {
-				t.Fatal(err)
-			}
-			spec, err := composeddsa.ParseTemplateSpec(data)
+			spec, err := composeddsa.ParseTemplateSpec([]byte(test.yaml))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -45,7 +41,7 @@ func TestBundledBoundedInlineAllowlistGoldens(t *testing.T) {
 				t.Fatal(err)
 			}
 			metadata := provider.BoundedAuthorizationMetadata()
-			if spec.SchemaVersion != 2 || metadata == nil || metadata.Contract != boundedmeta.ContractV1 || metadata.MaxFee != 10_000 || metadata.Layer3Policy != boundedmeta.Layer3PolicyFixedAllowlist || len(metadata.ArgumentLayout) != 1 {
+			if spec.SchemaVersion != 2 || metadata == nil || metadata.Contract != boundedmeta.Contract || metadata.Rekey != boundedmeta.RekeySpendingKey || metadata.MaxFee != 10_000 || metadata.Layer3Policy != boundedmeta.Layer3PolicyFixedAllowlist || len(metadata.ArgumentLayout) != 1 {
 				t.Fatalf("bounded inline metadata = %#v", metadata)
 			}
 			teal, err := provider.GenerateTEAL(test.publicKey, map[string]string{"recipients": recipient})

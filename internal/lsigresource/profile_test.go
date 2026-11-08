@@ -23,8 +23,12 @@ func TestProfileRequiresExplicitSelectedPath(t *testing.T) {
 	if usage != (Usage{ProgramBytes: 100, ArgumentBytes: 1_423, MaxOpcodeCost: 1_750}) {
 		t.Fatalf("spend usage = %#v", usage)
 	}
-	if _, err := profile.UsageForPath(PathAdminRekey); !errors.Is(err, ErrInvalidUsage) {
-		t.Fatalf("missing admin path error = %v", err)
+	if _, err := profile.UsageForPath(PathSpendingRekey); !errors.Is(err, ErrInvalidUsage) {
+		t.Fatalf("missing spending-rekey path error = %v", err)
+	}
+	// The value bounded1's admin_rekey path used is no path now.
+	if _, err := profile.UsageForPath(PathSpendingRekey + 1); !errors.Is(err, ErrInvalidUsage) {
+		t.Fatalf("unknown path error = %v", err)
 	}
 	defaultUsage, err := profile.UsageForPath(PathDefault)
 	if err != nil {
@@ -66,7 +70,7 @@ func TestOpcodeProfileRequiresClosedPathShape(t *testing.T) {
 	if err := DefaultOpcodeProfile(1_900).Validate(false); err != nil {
 		t.Fatalf("default profile: %v", err)
 	}
-	if err := BoundedOpcodeProfile(1_700, 1_800, 3_400).Validate(true); err != nil {
+	if err := BoundedOpcodeProfile(1_700, 1_800).Validate(true); err != nil {
 		t.Fatalf("bounded profile: %v", err)
 	}
 	tests := []struct {
@@ -76,7 +80,8 @@ func TestOpcodeProfileRequiresClosedPathShape(t *testing.T) {
 	}{
 		{name: "missing default"},
 		{name: "mixed vocabulary", profile: OpcodeProfile{Default: 1, Spend: 1}},
-		{name: "incomplete bounded", profile: OpcodeProfile{Spend: 1, SpendingRekey: 1}, bounded: true},
+		{name: "incomplete bounded", profile: OpcodeProfile{Spend: 1}, bounded: true},
+		{name: "bounded without spend", profile: OpcodeProfile{SpendingRekey: 1}, bounded: true},
 		{name: "over maximum", profile: OpcodeProfile{Default: MaximumDeclaredOpcodeCost + 1}},
 	}
 	for _, test := range tests {

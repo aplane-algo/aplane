@@ -72,17 +72,17 @@ type inventoryTransactionType struct {
 
 func TestIndependentInventoryMatchesManifest(t *testing.T) {
 	inventory := readProtocolInventory(t)
-	if err := compareManifestToInventory(txeffects.Bounded1Manifest(), inventory); err != nil {
+	if err := compareManifestToInventory(txeffects.BoundedManifest(), inventory); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func TestIndependentInventoryDetectsEveryRemovedDangerPredicate(t *testing.T) {
 	inventory := readProtocolInventory(t)
-	manifest := txeffects.Bounded1Manifest()
+	manifest := txeffects.BoundedManifest()
 	for i, predicate := range manifest.Predicates {
 		t.Run(string(predicate.Field), func(t *testing.T) {
-			mutated := txeffects.Bounded1Manifest()
+			mutated := txeffects.BoundedManifest()
 			mutated.Predicates = append(mutated.Predicates[:i], mutated.Predicates[i+1:]...)
 			if err := compareManifestToInventory(mutated, inventory); err == nil {
 				t.Fatal("inventory comparison accepted a removed danger predicate")
@@ -181,7 +181,7 @@ func compareManifestToInventory(manifest txeffects.ContractManifest, inventory p
 func readProtocolInventory(t *testing.T) protocolInventory {
 	t.Helper()
 	surface := readProtocolSurface(t)
-	classes := readContractClassifications(t, "BOUNDED1_EFFECT_CLASSIFICATIONS.json")
+	classes := readContractClassifications(t, "BOUNDED_EFFECT_CLASSIFICATIONS.json")
 	inventory := protocolInventory{
 		Schema:               surface.Schema,
 		Contract:             classes.Contract,
@@ -193,11 +193,11 @@ func readProtocolInventory(t *testing.T) protocolInventory {
 		SDKTransactionFields: surface.SDKTransactionFields,
 	}
 	if len(classes.TransactionTypes) != len(surface.TransactionTypes) {
-		t.Fatalf("bounded1 classifies %d transaction types, the surface lists %d", len(classes.TransactionTypes), len(surface.TransactionTypes))
+		t.Fatalf("the bounded contract classifies %d transaction types, the surface lists %d", len(classes.TransactionTypes), len(surface.TransactionTypes))
 	}
 	for i, entry := range surface.TransactionTypes {
 		if classes.TransactionTypes[i].Name != entry.Name {
-			t.Fatalf("bounded1 transaction type %d is %q, the surface lists %q", i, classes.TransactionTypes[i].Name, entry.Name)
+			t.Fatalf("bounded transaction type %d is %q, the surface lists %q", i, classes.TransactionTypes[i].Name, entry.Name)
 		}
 		inventory.TransactionTypes = append(inventory.TransactionTypes, inventoryTransactionType{
 			Name: entry.Name, Wire: entry.Wire, Classification: classes.TransactionTypes[i].Classification,

@@ -539,7 +539,7 @@ func (c *ComposedDSA) GenerateTEAL(publicKey []byte, params map[string]string) (
 	if boundedProfile != nil {
 		prelude, err := c.renderBoundedPrelude(publicKey, normalizedParams, boundedProfile)
 		if err != nil {
-			return "", fmt.Errorf("failed to render bounded1 envelope: %w", err)
+			return "", fmt.Errorf("failed to render bounded envelope: %w", err)
 		}
 		b.WriteString(prelude)
 	}

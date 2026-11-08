@@ -75,14 +75,15 @@ func TestPreviewRecognizesAStableWitnessKeyID(t *testing.T) {
 
 func TestPreviewOfATimelockWithNoList(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "boundary.yaml")
-	if err := os.WriteFile(path, []byte("schema: aplane.boundary.v1\nspend: [pay]\nrekey: {authority: spending_key}\nunlock_round: 50000000\n"), 0o600); err != nil {
+	// A timelock refuses rekeys: a spending-key rekey would leave the lock early.
+	if err := os.WriteFile(path, []byte("schema: aplane.boundary.v1\nspend: [pay]\nrekey: {authority: refused}\nunlock_round: 50000000\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	preview, err := (&App{}).PreviewBoundaryFile(boundary.KeyTypeV1, path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if preview.Recipients != 0 || preview.ListDigest != "" || preview.UnlockRound != "50000000" {
+	if preview.Recipients != 0 || preview.ListDigest != "" || preview.UnlockRound != "50000000" || preview.Rekey != boundary.RekeyRefused {
 		t.Fatalf("preview = %+v", preview)
 	}
 	if _, present := preview.Parameters[boundary.ParameterRecipients]; present {

@@ -205,7 +205,7 @@ func verifyBoundedPlanIntegrity(item *boundedPlanItem, keyMaterial *coresigning.
 		return internal("key lost bounded metadata after planning; retry the request")
 	}
 	if keyMaterial.SigningMetadataVersion != keys.BoundedSigningMetadataVersion {
-		return internal(fmt.Sprintf("bounded1 key requires signing metadata version %d", keys.BoundedSigningMetadataVersion))
+		return internal(fmt.Sprintf("bounded key requires signing metadata version %d", keys.BoundedSigningMetadataVersion))
 	}
 	if !item.Metadata.Equal(metadata) {
 		return internal("bounded metadata changed after planning; retry the request")

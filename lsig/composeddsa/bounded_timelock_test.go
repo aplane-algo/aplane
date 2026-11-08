@@ -25,9 +25,9 @@ import (
 )
 
 const (
-	timelockProfileHex       = "0000001941504c414e455f424f554e4445445f50524f46494c455f563100000008626f756e6465643100000003000000037061790000000561786665720000000c61737365745f6f70745f696e0000000000002710000000010000000572656b65790000000c7370656e64696e675f6b6579000000066c6179657233000000000000000874696d656c6f636b000000010000058f0000000000000000000000010000000000000010626173655f7369676e61747572655f300000000e626173655f7369676e61747572650000058f000000087265717569726564000000087265717569726564000000087265717569726564"
-	fixedTimelockProfileHex  = "0000001941504c414e455f424f554e4445445f50524f46494c455f563100000008626f756e6465643100000003000000037061790000000561786665720000000c61737365745f6f70745f696e0000000000002710000000010000000572656b65790000000c7370656e64696e675f6b6579000000066c6179657233000000000000001866697865645f616c6c6f776c6973745f74696d656c6f636b000000010000058f0000000000000000000000010000000000000010626173655f7369676e61747572655f300000000e626173655f7369676e61747572650000058f000000087265717569726564000000087265717569726564000000087265717569726564"
-	merkleTimelockProfileHex = "0000001941504c414e455f424f554e4445445f50524f46494c455f563100000008626f756e6465643100000003000000037061790000000561786665720000000c61737365745f6f70745f696e0000000000002710000000010000000572656b65790000000c7370656e64696e675f6b6579000000066c617965723300000000000000196d65726b6c655f616c6c6f776c6973745f74696d656c6f636b000000010000058f000000010000000c6d65726b6c655f70726f6f66000000166d65726b6c655f616c6c6f776c6973745f70726f6f660000000a726563697069656e74730000020000000000000000020000000000000010626173655f7369676e61747572655f300000000e626173655f7369676e61747572650000058f000000087265717569726564000000087265717569726564000000087265717569726564000000010000000c6d65726b6c655f70726f6f66000000076465726976656400000200000000086f7074696f6e616c00000009666f7262696464656e00000009666f7262696464656e"
+	timelockProfileHex       = "0000001941504c414e455f424f554e4445445f50524f46494c455f563200000008626f756e6465643200000003000000037061790000000561786665720000000c61737365745f6f70745f696e00000000000027100000000772656675736564000000000000000874696d656c6f636b000000010000058f0000000000000000000000010000000000000010626173655f7369676e61747572655f300000000e626173655f7369676e61747572650000058f000000087265717569726564000000087265717569726564"
+	fixedTimelockProfileHex  = "0000001941504c414e455f424f554e4445445f50524f46494c455f563200000008626f756e6465643200000003000000037061790000000561786665720000000c61737365745f6f70745f696e00000000000027100000000772656675736564000000000000001866697865645f616c6c6f776c6973745f74696d656c6f636b000000010000058f0000000000000000000000010000000000000010626173655f7369676e61747572655f300000000e626173655f7369676e61747572650000058f000000087265717569726564000000087265717569726564"
+	merkleTimelockProfileHex = "0000001941504c414e455f424f554e4445445f50524f46494c455f563200000008626f756e6465643200000003000000037061790000000561786665720000000c61737365745f6f70745f696e0000000000002710000000077265667573656400000000000000196d65726b6c655f616c6c6f776c6973745f74696d656c6f636b000000010000058f000000010000000c6d65726b6c655f70726f6f66000000166d65726b6c655f616c6c6f776c6973745f70726f6f660000000a726563697069656e74730000020000000000000000020000000000000010626173655f7369676e61747572655f300000000e626173655f7369676e61747572650000058f000000087265717569726564000000087265717569726564000000010000000c6d65726b6c655f70726f6f66000000076465726976656400000200000000086f7074696f6e616c00000009666f7262696464656e"
 
 	timelockParameterYAML = `  - name: unlock_round
     type: uint64
@@ -44,14 +44,10 @@ const (
     contract: cosigner1
     required_on: [spend]
 `
-	timelockGatedRekeyYAML = `  admin_operations:
-    - kind: rekey
-      authorization: spending_key
-      policy_gate: layer3
-`
-	timelockRefusedRekeyYAML = "  admin_operations: []\n"
-	testUnlockRound          = "50000000"
-	timelockBlock            = "// === framework-owned timelock ===\ntxn FirstValid\npushint 50000000\n>=\nassert\n\n"
+	timelockRefusedRekeyYAML     = "  rekey: refused\n"
+	timelockSpendingKeyRekeyYAML = "  rekey: spending_key\n"
+	testUnlockRound              = "50000000"
+	timelockBlock                = "// === framework-owned timelock ===\ntxn FirstValid\npushint 50000000\n>=\nassert\n\n"
 )
 
 type timelockCase struct {
@@ -68,16 +64,16 @@ var timelockCases = []timelockCase{
 	{
 		policy:     composeddsa.Layer3PolicyTimelock,
 		profileHex: timelockProfileHex,
-		length:     242,
-		slots:      []string{"|0|base_signature_0|base_signature|1423|required|required|required|"},
+		length:     202,
+		slots:      []string{"|0|base_signature_0|base_signature|1423|required|required|"},
 	},
 	{
 		policy:     composeddsa.Layer3PolicyFixedAllowlistTimelock,
 		plain:      composeddsa.Layer3PolicyFixedAllowlist,
 		maxItems:   composeddsa.BoundedInlineListMax,
 		profileHex: fixedTimelockProfileHex,
-		length:     258,
-		slots:      []string{"|0|base_signature_0|base_signature|1423|required|required|required|"},
+		length:     218,
+		slots:      []string{"|0|base_signature_0|base_signature|1423|required|required|"},
 	},
 	{
 		policy:     composeddsa.Layer3PolicyMerkleAllowlistTimelock,
@@ -85,10 +81,10 @@ var timelockCases = []timelockCase{
 		maxItems:   65536,
 		derived:    timelockDerivedYAML,
 		profileHex: merkleTimelockProfileHex,
-		length:     392,
+		length:     339,
 		slots: []string{
-			"|0|base_signature_0|base_signature|1423|required|required|required|",
-			"|1|merkle_proof|derived|512|optional|forbidden|forbidden|",
+			"|0|base_signature_0|base_signature|1423|required|required|",
+			"|1|merkle_proof|derived|512|optional|forbidden|",
 		},
 	},
 }
@@ -97,8 +93,8 @@ func (test timelockCase) hasList() bool {
 	return test.maxItems != 0
 }
 
-// yaml takes the admin_operations block and an optional cosigner block.
-func (test timelockCase) yaml(operations, cosigner string) string {
+// yaml takes the rekey setting and an optional cosigner block.
+func (test timelockCase) yaml(rekey, cosigner string) string {
 	recipientsParameter, recipients := "", ""
 	if test.hasList() {
 		recipientsParameter = "\n    recipients_parameter: recipients"
@@ -121,7 +117,7 @@ display_name: "Timelock Rules"
 max_opcode_cost: 20000
 
 bounded:
-  contract: bounded1
+  contract: bounded2
   spend_effects: [pay, axfer, asset_opt_in]
   max_fee: 10000
 %s%s  layer3:
@@ -129,13 +125,13 @@ bounded:
     unlock_round_parameter: unlock_round%s%s
 
 parameters:
-%s%s`, operations, cosigner, test.policy, recipientsParameter, test.derived, timelockParameterYAML, recipients)
+%s%s`, rekey, cosigner, test.policy, recipientsParameter, test.derived, timelockParameterYAML, recipients)
 }
 
-// defaultYAML uses a Layer-3-gated spending-key rekey, so the default program
-// covers every path the timelock applies to.
+// defaultYAML refuses rekeys, the only setting a timelock policy accepts: no host
+// rule gates a rekey, so a spending-key rekey would leave the lock early.
 func (test timelockCase) defaultYAML() string {
-	return test.yaml(timelockGatedRekeyYAML, "")
+	return test.yaml(timelockRefusedRekeyYAML, "")
 }
 
 func (test timelockCase) params(extra map[string]string) map[string]string {
@@ -158,6 +154,7 @@ func TestTimelockPolicyGoldenVectors(t *testing.T) {
 		t.Fatalf("read ARCH_BOUNDED_DSA.md: %v", err)
 	}
 	doc := strings.NewReplacer(" ", "", "\t", "", "\r", "", "\n", "", "`", "").Replace(string(data))
+	rows := documentedSlotRows(string(data))
 	for _, test := range timelockCases {
 		t.Run(test.policy, func(t *testing.T) {
 			provider := authorAllowlistProvider(t, test.defaultYAML())
@@ -184,7 +181,7 @@ func TestTimelockPolicyGoldenVectors(t *testing.T) {
 				}
 			}
 			for _, row := range test.slots {
-				if !strings.Contains(doc, row) {
+				if !rows[row] {
 					t.Errorf("ARCH_BOUNDED_DSA.md does not document slot row %q", row)
 				}
 			}
@@ -232,9 +229,9 @@ func TestTimelockPolicyAddsOnlyTheTimelockToTheAllowlist(t *testing.T) {
 	}
 }
 
-// A Layer-3-gated spending-key rekey reaches the recipient dispatch, which only
-// has a branch for an effect the profile admits. Every subset containing pay
-// therefore works on that route, and all seven work when rekeys are refused.
+// A timelock refuses rekeys, and with no rekey path every one of the seven spend
+// subsets compiles. A spending-key rekey is refused for each of them: pay no
+// longer makes it acceptable, because no host rule gates a rekey.
 func TestTimelockPolicySpendSubsets(t *testing.T) {
 	publicKey := bytes.Repeat([]byte{0x21}, falconfamily.PublicKeySize)
 	subsets := []string{"pay", "axfer", "asset_opt_in", "pay, axfer", "pay, asset_opt_in", "axfer, asset_opt_in", "pay, axfer, asset_opt_in"}
@@ -246,14 +243,9 @@ func TestTimelockPolicySpendSubsets(t *testing.T) {
 				if _, err := authorAllowlistProvider(t, refused).GenerateTEAL(publicKey, test.params(nil)); err != nil {
 					t.Fatalf("refused-rekey GenerateTEAL() error = %v", err)
 				}
-				gated := strings.Replace(test.defaultYAML(), "spend_effects: [pay, axfer, asset_opt_in]", effects, 1)
-				err := timelockGenerateError(gated, test.params(nil))
-				if strings.Contains(subset, "pay") {
-					if err != nil {
-						t.Fatalf("gated rekey error = %v", err)
-					}
-				} else if err == nil || !strings.Contains(err.Error(), "requires pay in spend_effects") {
-					t.Fatalf("gated rekey error = %v, want the pay requirement", err)
+				spendingKey := strings.Replace(test.yaml(timelockSpendingKeyRekeyYAML, ""), "spend_effects: [pay, axfer, asset_opt_in]", effects, 1)
+				if err := timelockGenerateError(spendingKey, test.params(nil)); err == nil || !strings.Contains(err.Error(), "requires rekey: refused") {
+					t.Fatalf("spending-key rekey error = %v, want the refused-rekey requirement", err)
 				}
 			})
 		}
@@ -301,7 +293,7 @@ func TestTimelockPolicyRejections(t *testing.T) {
 		{name: "combined policy needs recipients", yaml: replace(fixed, "\n    recipients_parameter: recipients", ""), want: "recipients_parameter is required"},
 		{name: "plain allowlist has no unlock round", yaml: replace(fixed, "policy: fixed_allowlist_timelock", "policy: fixed_allowlist"), want: "does not use unlock_round_parameter"},
 		{name: "extra parameter is unused", yaml: fixed.defaultYAML() + "  - name: extra\n    type: uint64\n    required: true\n", want: "is not used by framework policy"},
-		{name: "runtime argument has no reader", yaml: replace(bare, "\nparameters:\n", "  runtime_args:\n    - name: extra\n      type: bytes\n      max_size: 8\n      required_on: [spend, rekey]\n\nparameters:\n"), want: "has no author TEAL"},
+		{name: "runtime argument has no reader", yaml: replace(bare, "\nparameters:\n", "  runtime_args:\n    - name: extra\n      type: bytes\n      max_size: 8\n      required_on: [spend]\n\nparameters:\n"), want: "has no author TEAL"},
 		{name: "bare timelock takes no derived argument", yaml: replace(bare, "\n\nparameters:\n", timelockDerivedYAML+"\n\nparameters:\n"), want: "requires address[] parameter"},
 		{name: "fixed timelock takes no derived argument", yaml: replace(fixed, "\n\nparameters:\n", timelockDerivedYAML+"\n\nparameters:\n"), want: "does not accept derived arguments"},
 		{name: "merkle timelock needs its proof", yaml: replace(merkle, timelockDerivedYAML, ""), want: "requires exactly one derived Merkle proof argument"},
@@ -314,6 +306,19 @@ func TestTimelockPolicyRejections(t *testing.T) {
 			params map[string]string
 			want   string
 		}{name: test.policy + " takes no author TEAL", yaml: test.defaultYAML() + authorTEAL, want: "does not accept author TEAL"})
+		// An expert template is held to the same rule as the general type: no host
+		// rule gates a rekey, so a spending-key rekey would leave the lock early.
+		cases = append(cases, struct {
+			name   string
+			yaml   string
+			params map[string]string
+			want   string
+		}{
+			name:   test.policy + " refuses a spending-key rekey",
+			yaml:   test.yaml(timelockSpendingKeyRekeyYAML, ""),
+			params: test.params(nil),
+			want:   fmt.Sprintf("policy %q requires rekey: refused: a spending-key rekey would leave the lock before the unlock round", test.policy),
+		})
 	}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
@@ -417,20 +422,18 @@ func TestTimelockPolicyCompiledBudgetMatrix(t *testing.T) {
 		bytecode, spendArgs, spendGroup int
 		spendFee                        uint64
 	}
-	spending, refused, cosigned := "spending key", "refused", "refused and cosigner"
+	// A timelock refuses rekeys, so the two refused arrangements are all there are.
+	refused, cosigned := "refused", "refused and cosigner"
 	want := map[string]budget{
-		composeddsa.Layer3PolicyTimelock + "/" + spending:                {bytecode: 1932, spendArgs: 1423, spendGroup: 2, spendFee: 2000},
 		composeddsa.Layer3PolicyTimelock + "/" + refused:                 {bytecode: 1889, spendArgs: 1423, spendGroup: 2, spendFee: 2000},
 		composeddsa.Layer3PolicyTimelock + "/" + cosigned:                {bytecode: 3734, spendArgs: 2846, spendGroup: 3, spendFee: 3075},
-		composeddsa.Layer3PolicyFixedAllowlistTimelock + "/" + spending:  {bytecode: 3153, spendArgs: 1423, spendGroup: 2, spendFee: 2116},
 		composeddsa.Layer3PolicyFixedAllowlistTimelock + "/" + refused:   {bytecode: 3110, spendArgs: 1423, spendGroup: 2, spendFee: 2112},
 		composeddsa.Layer3PolicyFixedAllowlistTimelock + "/" + cosigned:  {bytecode: 4952, spendArgs: 2846, spendGroup: 3, spendFee: 3197},
-		composeddsa.Layer3PolicyMerkleAllowlistTimelock + "/" + spending: {bytecode: 2196, spendArgs: 1935, spendGroup: 2, spendFee: 2021},
 		composeddsa.Layer3PolicyMerkleAllowlistTimelock + "/" + refused:  {bytecode: 2153, spendArgs: 1935, spendGroup: 2, spendFee: 2016},
 		composeddsa.Layer3PolicyMerkleAllowlistTimelock + "/" + cosigned: {bytecode: 3995, spendArgs: 3358, spendGroup: 4, spendFee: 4002},
 	}
 	for _, test := range timelockCases {
-		for _, arrangement := range []string{spending, refused, cosigned} {
+		for _, arrangement := range []string{refused, cosigned} {
 			name := test.policy + "/" + arrangement
 			t.Run(name, func(t *testing.T) {
 				params := map[string]string{"unlock_round": "18446744073709551615"}
@@ -439,15 +442,12 @@ func TestTimelockPolicyCompiledBudgetMatrix(t *testing.T) {
 				} else if test.hasList() {
 					params["recipients"] = recipients[0]
 				}
-				yaml := test.defaultYAML()
-				if arrangement != spending {
-					cosigner := ""
-					if arrangement == cosigned {
-						cosigner = timelockCosignerYAML
-						params[composeddsa.BoundedCosignerPublicKeyParameter] = cosignerKey
-					}
-					yaml = test.yaml(timelockRefusedRekeyYAML, cosigner)
+				cosigner := ""
+				if arrangement == cosigned {
+					cosigner = timelockCosignerYAML
+					params[composeddsa.BoundedCosignerPublicKeyParameter] = cosignerKey
 				}
+				yaml := test.yaml(timelockRefusedRekeyYAML, cosigner)
 				bytecode, metadata := compileTimelockProgram(t, client, authorAllowlistProvider(t, yaml), publicKey, params)
 				got := budget{bytecode: len(bytecode), spendArgs: metadata.ArgumentBytesForPath(boundedmeta.PathSpend)}
 				spendPlan := solveV42BundledPath(t, consensus, len(bytecode), got.spendArgs)

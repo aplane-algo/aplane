@@ -292,8 +292,8 @@ func (s *Service) approveGroupWithPlanContext(ctx context.Context, req signerapi
 		KnownAddresses:       s.knownAddresses(plan),
 		ProtocolRekeyTargets: protocolRekeyTargetsForPlan(plan),
 		ForcedReviewRuleID: func() string {
-			if planHasBoundedAdminOperation(plan) {
-				return policy.BoundedAdminOperationRequiresReviewRuleID
+			if planHasBoundedRekey(plan) {
+				return policy.BoundedRekeyRequiresReviewRuleID
 			}
 			return ""
 		}(),

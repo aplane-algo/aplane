@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/boundary"
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/merkleallowlist"
 	"github.com/aplane-algo/aplane/internal/txeffects"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
@@ -83,16 +82,6 @@ func (s Shape) Policy() string {
 	}
 }
 
-// PolicyGate says whether Layer 3 also constrains rekey. A spending-key rekey
-// waits for the unlock round like a spend, or a timelock could be walked out of at
-// any time. A shape that refuses rekeys has no rekey for Layer 3 to judge.
-func (s Shape) PolicyGate() string {
-	if s.Timelock && s.Rekey == RekeySpendingKey {
-		return boundedmeta.PolicyGateLayer3
-	}
-	return boundedmeta.PolicyGateNone
-}
-
 // Descriptor labels the shape in its fingerprints, so it names everything that
 // tells two shapes apart. Its format is frozen by the fingerprint goldens.
 func (s Shape) Descriptor() string {
@@ -104,17 +93,17 @@ func (s Shape) Descriptor() string {
 	if s.Cosigner {
 		cosigner = "required"
 	}
-	return fmt.Sprintf("spend=%s;policy=%s;rekey=%s/%s;cosigner=%s",
-		strings.Join(spend, ","), s.Policy(), s.Rekey, s.PolicyGate(), cosigner)
+	return fmt.Sprintf("spend=%s;policy=%s;rekey=%s;cosigner=%s",
+		strings.Join(spend, ","), s.Policy(), s.Rekey, cosigner)
 }
 
 // Shapes enumerates every shape the grammar can select, in a stable order. Allowlist
 // shapes come first, so this order extends rather than reshuffles.
 //
-// A cosigned shape refuses rekeys, because bounded1 forbids a spending-key rekey
-// beside a cosigner. A shape that refuses rekeys must leave a way out for what it
-// holds (refusedSpendError). A spending-key rekey on a timelock is gated by Layer 3,
-// which judges it as a payment, so it needs pay.
+// A cosigned shape refuses rekeys: a cosigned rekey arrives with the cosigner
+// overlay. A timelock refuses rekeys too, because no host rule gates a rekey, so a
+// spending-key rekey could leave the lock at any time. A shape that refuses rekeys
+// must leave a way out for what it holds (refusedSpendError).
 func Shapes() []Shape {
 	type family struct {
 		rekey    string
@@ -134,7 +123,7 @@ func Shapes() []Shape {
 				if f.rekey == RekeyRefused && refusedSpendError(spend) != nil {
 					continue
 				}
-				if timelock && f.rekey == RekeySpendingKey && !slices.Contains(spend, txeffects.SpendEffectPay) {
+				if timelock && f.rekey == RekeySpendingKey {
 					continue
 				}
 				shapes = append(shapes, Shape{Spend: spend, Encoding: encoding, Rekey: f.rekey, Cosigner: f.cosigner, Timelock: timelock})

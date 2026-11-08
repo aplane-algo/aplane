@@ -12,19 +12,14 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
-	"github.com/aplane-algo/aplane/library/retired"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	falcon1024 "github.com/aplane-algo/aplane/lsig/falcon1024"
 	falconfamily "github.com/aplane-algo/aplane/lsig/falcon1024/family"
 )
 
-func TestBundledBoundedMerkleAllowlistGolden(t *testing.T) {
+func TestBoundedMerkleAllowlistGolden(t *testing.T) {
 	falcon1024.RegisterClient()
-	data, err := retired.ReadFile("aplane.falcon1024-allowlist.v2.yaml")
-	if err != nil {
-		t.Fatal(err)
-	}
-	spec, err := composeddsa.ParseTemplateSpec(data)
+	spec, err := composeddsa.ParseTemplateSpec([]byte(composeddsa.MerkleAllowlistFixtureYAML))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -33,7 +28,7 @@ func TestBundledBoundedMerkleAllowlistGolden(t *testing.T) {
 		t.Fatal(err)
 	}
 	metadata := provider.BoundedAuthorizationMetadata()
-	if spec.SchemaVersion != 2 || metadata == nil || len(metadata.DerivedArgs) != 1 || len(metadata.ArgumentLayout) != 2 {
+	if spec.SchemaVersion != 2 || metadata == nil || metadata.Rekey != boundedmeta.RekeySpendingKey || len(metadata.DerivedArgs) != 1 || len(metadata.ArgumentLayout) != 2 {
 		t.Fatalf("bounded Merkle metadata = %#v", metadata)
 	}
 	slot := metadata.ArgumentLayout[1]
@@ -48,7 +43,7 @@ func TestBundledBoundedMerkleAllowlistGolden(t *testing.T) {
 	hash := sha256.Sum256([]byte(teal))
 	gotHash := hex.EncodeToString(hash[:])
 	gotFingerprint := provider.CompatibilityFingerprint()
-	if gotFingerprint != "1:a15c0fc3d02cd80e37a022d8fb59cf06d61ffd60ac3205e196747a60dad39629" || gotHash != "86647d4db3512458f08bff9f7fbe342d8f31c84a53324b89b8870bf4c4b3fe87" {
+	if gotFingerprint != "1:dd1836989fdf67daaa5ae012dfae85738cc76d2eab8259e3a01220b0dd853f0f" || gotHash != "54f477a2a1c161f3680731c8dcfabaa26ed514e7a21486019073df182ee8553c" {
 		t.Errorf("goldens: fingerprint %q; TEAL SHA-256 %q", gotFingerprint, gotHash)
 	}
 }

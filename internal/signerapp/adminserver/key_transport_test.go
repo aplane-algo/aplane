@@ -249,8 +249,7 @@ func TestPrepareGenerateKeyOverIPC(t *testing.T) {
 	svc.prepareGenerateResult = adminproto.PrepareGenerateKeyResult{
 		Success: true, KeyType: "test.bounded.v1", Fingerprint: "1:abc", CosignerKeyID: "COSIGNER",
 		Bounded: &adminproto.PreparedBoundedProfile{
-			Contract: "bounded1", SpendEffects: []string{"pay"}, MaxFee: 10_000, Layer3Policy: "merkle_allowlist", CosignerRequired: true,
-			AdminOperations: []adminproto.PreparedAdminOperation{{Kind: "rekey", Authorization: "spending_key", PolicyGate: "none"}},
+			Contract: "bounded2", SpendEffects: []string{"pay"}, MaxFee: 10_000, Rekey: "refused", Layer3Policy: "merkle_allowlist", CosignerRequired: true,
 		},
 	}
 	session.HandlePrepareGenerateKey(&protocol.PrepareGenerateKeyMessage{
@@ -266,8 +265,8 @@ func TestPrepareGenerateKeyOverIPC(t *testing.T) {
 	if !msg.Success || msg.Type != protocol.MsgTypePrepareGenerateResult || msg.ID != "prepare-ipc" || msg.Fingerprint != "1:abc" || msg.CosignerKeyID != "COSIGNER" {
 		t.Fatalf("response = %+v", msg)
 	}
-	if msg.Bounded == nil || !msg.Bounded.CosignerRequired || len(msg.Bounded.AdminOperations) != 1 ||
-		msg.Bounded.AdminOperations[0].PolicyGate != "none" || msg.Bounded.Layer3Policy != "merkle_allowlist" {
+	if msg.Bounded == nil || !msg.Bounded.CosignerRequired || msg.Bounded.Contract != "bounded2" ||
+		msg.Bounded.Rekey != "refused" || msg.Bounded.Layer3Policy != "merkle_allowlist" {
 		t.Fatalf("bounded = %+v", msg.Bounded)
 	}
 }

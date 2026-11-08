@@ -477,12 +477,10 @@ func TestBuildKeyTypesServesRuntimeBoundedMetadata(t *testing.T) {
 	lsigprovider.Register(restTestDSAProvider{
 		keyType: keyType,
 		bounded: &composeddsa.BoundedAuthorizationProfile{
-			Contract:     composeddsa.BoundedContractV1,
+			Contract:     composeddsa.BoundedContract,
 			SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectAxfer, txeffects.SpendEffectPay},
 			MaxFee:       2_000,
-			AdminOperations: []composeddsa.AdminOperationSpec{{
-				Kind: composeddsa.AdminOperationRekey, Authorization: composeddsa.AdminAuthorizationSpendingKey, PolicyGate: composeddsa.AdminPolicyGateNone,
-			}},
+			Rekey:        boundedmeta.RekeySpendingKey,
 		},
 	})
 
@@ -495,21 +493,22 @@ func TestBuildKeyTypesServesRuntimeBoundedMetadata(t *testing.T) {
 		t.Fatalf("bounded inventory = %#v", info)
 	}
 	bounded := info.BoundedAuthorization
-	if bounded.Contract != composeddsa.BoundedContractV1 || bounded.MaxFee != 2_000 || len(bounded.DerivedArgs) != 0 || bounded.Layer3Policy != boundedmeta.Layer3PolicyCustom {
+	if bounded.Contract != composeddsa.BoundedContract || bounded.MaxFee != 2_000 || len(bounded.DerivedArgs) != 0 || bounded.Layer3Policy != boundedmeta.Layer3PolicyCustom {
 		t.Fatalf("bounded_authorization = %#v", bounded)
 	}
 	if got := strings.Join(bounded.SpendEffects, ","); got != "pay,axfer" {
 		t.Fatalf("spend_effects = %q", got)
 	}
-	if len(bounded.AdminOperations) != 1 || bounded.AdminOperations[0].Authorization != string(composeddsa.AdminAuthorizationSpendingKey) {
-		t.Fatalf("admin_operations = %#v", bounded.AdminOperations)
+	if bounded.Rekey != string(boundedmeta.RekeySpendingKey) {
+		t.Fatalf("rekey = %q", bounded.Rekey)
 	}
 }
 
 func TestBuildKeyTypesServesBoundedCosignerMetadata(t *testing.T) {
 	const keyType = "test.rest-bounded-cosigner.v1"
 	profile := &composeddsa.BoundedAuthorizationProfile{
-		Contract: composeddsa.BoundedContractV1, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: 2_000,
+		Contract: composeddsa.BoundedContract, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: 2_000,
+		Rekey: boundedmeta.RekeyRefused,
 		Cosigner: &boundedmeta.CosignerAuthorization{
 			Contract: boundedmeta.CosignerContractV1, ComponentKeyType: boundedmeta.CosignerComponentKeyTypeV1,
 			SignatureMaxSize: boundedmeta.CosignerSignatureMaxSizeV1, RequiredOn: []string{boundedmeta.PathSpend},
@@ -534,11 +533,12 @@ func TestBuildKeyTypesServesBoundedCosignerMetadata(t *testing.T) {
 
 func TestBoundedInfoFromStoredIncludesInstanceMetadata(t *testing.T) {
 	metadata := &boundedmeta.Metadata{
-		Contract:               boundedmeta.ContractV1,
+		Contract:               boundedmeta.Contract,
 		BaseSignatureArgLayout: boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{1280}},
 		ArgumentLayout:         boundedmeta.BaseArgumentLayout(boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{1280}}),
 		SpendEffects:           []string{"pay"},
 		MaxFee:                 1_000,
+		Rekey:                  boundedmeta.RekeyRefused,
 		Layer3Policy:           boundedmeta.Layer3PolicyCustom,
 		Cosigner: &boundedmeta.CosignerAuthorization{
 			Contract: boundedmeta.CosignerContractV1, ComponentKeyType: boundedmeta.CosignerComponentKeyTypeV1,
@@ -548,7 +548,7 @@ func TestBoundedInfoFromStoredIncludesInstanceMetadata(t *testing.T) {
 	}
 	info := boundedInfo(metadata)
 	if info.Cosigner == nil || info.Cosigner.ComponentKeyID != "COSIGNER" || info.Cosigner.PublicKeyHex != metadata.Cosigner.PublicKeyHex ||
-		info.Layer3Policy != boundedmeta.Layer3PolicyCustom || len(info.AdminOperations) != 0 {
+		info.Layer3Policy != boundedmeta.Layer3PolicyCustom || info.Rekey != string(boundedmeta.RekeyRefused) {
 		t.Fatalf("boundedInfo() = %#v", info)
 	}
 }
@@ -762,7 +762,8 @@ func TestServiceKeyTypesUsesCosignerReferenceForBoundedProvider(t *testing.T) {
 
 	const keyType = "test.rest-reference-bounded-cosigner.v1"
 	lsigprovider.Register(restTestDSAProvider{keyType: keyType, bounded: &composeddsa.BoundedAuthorizationProfile{
-		Contract: composeddsa.BoundedContractV1, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: 1_000,
+		Contract: composeddsa.BoundedContract, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: 1_000,
+		Rekey: boundedmeta.RekeyRefused,
 		Cosigner: &boundedmeta.CosignerAuthorization{
 			Contract: boundedmeta.CosignerContractV1, ComponentKeyType: witness.Falcon1024V1,
 			SignatureMaxSize: boundedmeta.CosignerSignatureMaxSizeV1, RequiredOn: []string{boundedmeta.PathSpend},
@@ -1107,7 +1108,6 @@ func (p restTestDSAProvider) LogicSigOpcodeProfile() lsigresource.OpcodeProfile 
 		return lsigresource.BoundedOpcodeProfile(
 			lsigresource.SingleTransactionOpcodeCeiling,
 			lsigresource.SingleTransactionOpcodeCeiling,
-			lsigresource.SingleTransactionOpcodeCeiling,
 		)
 	}
 	return lsigresource.DefaultOpcodeProfile(lsigresource.SingleTransactionOpcodeCeiling)
@@ -1139,7 +1139,7 @@ func (p restTestDSAProvider) BoundedAuthorizationMetadata() *boundedmeta.Metadat
 		metadata.ArgumentLayout = append(metadata.ArgumentLayout, boundedmeta.ArgumentSlot{
 			Index: 1, Name: boundedmeta.CosignerSignatureSlot, Source: boundedmeta.ArgSourceCosigner,
 			MaxSize: boundedmeta.CosignerSignatureMaxSizeV1,
-			Paths:   boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgForbidden, AdminRekey: boundedmeta.ArgForbidden},
+			Paths:   boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgForbidden},
 		})
 	}
 	for _, spendType := range p.bounded.SpendEffects {
@@ -1148,11 +1148,7 @@ func (p restTestDSAProvider) BoundedAuthorizationMetadata() *boundedmeta.Metadat
 	sort.Slice(metadata.SpendEffects, func(i, j int) bool {
 		return metadata.SpendEffects[i] == string(txeffects.SpendEffectPay)
 	})
-	for _, operation := range p.bounded.AdminOperations {
-		metadata.AdminOperations = append(metadata.AdminOperations, boundedmeta.AdminOperation{
-			Kind: string(operation.Kind), Authorization: string(operation.Authorization), PolicyGate: string(operation.PolicyGate),
-		})
-	}
+	metadata.Rekey = p.bounded.Rekey
 	return metadata
 }
 

@@ -29,7 +29,7 @@ const (
 // within this table, or it would create accounts the signer cannot complete;
 // TestBoundedGenerationAdmitsOnlySignableWorkflows pins that.
 var boundedSigningConstructions = map[string]map[boundedSigningWorkflow][]sigconstruction.ConstructionID{
-	boundedmeta.ContractV1: {
+	boundedmeta.Contract: {
 		boundedWorkflowCosigner: {sigconstruction.Falcon1024().ID()},
 	},
 }

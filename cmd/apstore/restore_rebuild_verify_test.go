@@ -21,6 +21,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/storepaths"
+	"github.com/aplane-algo/aplane/internal/templatelibrary"
 	"github.com/aplane-algo/aplane/internal/templatestore"
 )
 
@@ -491,6 +492,52 @@ func TestRestoreKeyDoesNotInstallShippedLibraryGenericTemplateWithoutBundle(t *t
 	}
 }
 
+// libraryComposedTimelockYAML is a composed bounded template for the library
+// directory: a FirstValid timelock in author TEAL that refuses rekeys.
+const libraryComposedTimelockYAML = `schema_version: 2
+derivation_version: 3
+template_type: composed
+base_key_type: aplane.falcon1024.v1
+template_mode: strict
+publisher: test
+family: falcon1024-timelock
+version: 1
+display_name: "Falcon-1024 Timelock"
+description: "Falcon-1024 signature gated by round-based timelock"
+max_opcode_cost: 20000
+
+bounded:
+  contract: bounded2
+  spend_effects: [pay, axfer, asset_opt_in]
+  max_fee: 10000
+  rekey: refused
+
+parameters:
+  - name: unlock_round
+    label: "Unlock Round"
+    description: "Round number after which funds can be withdrawn"
+    type: uint64
+    required: true
+    max_length: 20
+    min: 1
+    example: "50000000"
+    placeholder: "Enter unlock round number"
+
+template_variables:
+  - name: unlock_round
+    source: parameter
+    parameter: unlock_round
+    type: uint64
+    constant: int
+
+teal: |
+  // Timelock check: FirstValid >= unlock_round
+  txn FirstValid
+  $unlock_round
+  >=
+  assert
+`
+
 func TestRestoreKeyDoesNotInstallShippedLibraryComposedTemplateWithoutBundle(t *testing.T) {
 	RegisterProviders()
 
@@ -498,19 +545,20 @@ func TestRestoreKeyDoesNotInstallShippedLibraryComposedTemplateWithoutBundle(t *
 	genstoretest.MintFirst(t, keystorePaths())
 	backupDir := t.TempDir()
 	masterKey := bytes32(0x8e)
-	keyType := "aplane.falcon1024-timelock.v1"
+	keyType := "test.falcon1024-timelock.v1"
 	bytecode := saltedLogicSigBytecodeForTest()
 	address := logicSigAddressForTestForBytes(t, bytecode)
 
-	templateYAML, err := os.ReadFile(filepath.Join("..", "..", "library", "retired", "aplane.falcon1024-timelock.v1.yaml"))
-	if err != nil {
-		t.Fatalf("ReadFile(aplane.falcon1024-timelock.v1.yaml) error = %v", err)
+	// The library file must be a template the library accepts, or the test
+	// would pass for the wrong reason.
+	if parsed, err := templatelibrary.ParseYAML("library.yaml", []byte(libraryComposedTimelockYAML)); err != nil || parsed.KeyType != keyType {
+		t.Fatalf("ParseYAML(library template) = %+v, %v; want %s", parsed, err, keyType)
 	}
 	if err := os.MkdirAll(keystorePaths().TemplateLibraryDir(), 0o755); err != nil {
 		t.Fatalf("MkdirAll(TemplateLibraryDir) error = %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(keystorePaths().TemplateLibraryDir(), "aplane.falcon1024-timelock.v1.yaml"), templateYAML, 0o644); err != nil {
-		t.Fatalf("WriteFile(aplane.falcon1024-timelock.v1.yaml) error = %v", err)
+	if err := os.WriteFile(filepath.Join(keystorePaths().TemplateLibraryDir(), "test.falcon1024-timelock.v1.yaml"), []byte(libraryComposedTimelockYAML), 0o644); err != nil {
+		t.Fatalf("WriteFile(test.falcon1024-timelock.v1.yaml) error = %v", err)
 	}
 
 	keyJSON := canonicalDSALSigKeyJSONForApstore(t, keyType, "aplane.falcon1024.v1", bytecode)

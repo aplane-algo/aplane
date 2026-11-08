@@ -34,10 +34,10 @@ version: 1
 display_name: Bounded Cosigner Compiler Test
 max_opcode_cost: 20000
 bounded:
-  contract: bounded1
+  contract: bounded2
   spend_effects: [pay, axfer, asset_opt_in]
   max_fee: 10000
-  admin_operations: []
+  rekey: refused
   cosigner:
     contract: cosigner1
     required_on: [spend]
@@ -81,9 +81,10 @@ teal: |
 	// auto-salt contract finishSaltedTEAL appends no counter-byte trailer, so
 	// the emitted TEAL loses exactly the trailing comment and `bytecblock 0x00`.
 	// It moved again when the contract-admin key was removed: this profile now
-	// refuses rekeys instead of carrying an admin-key rekey path.
+	// refuses rekeys instead of carrying an admin-key rekey path. It moved once
+	// more when bounded2 replaced bounded1, which renamed the envelope comment.
 	hash := sha256.Sum256([]byte(teal))
-	if got, want := hex.EncodeToString(hash[:]), "21270d2a914c231964964c399e97cdd62b53fc767b9aae3c829a03ec9320f1d5"; got != want {
+	if got, want := hex.EncodeToString(hash[:]), "338a115a7e3c672e93539844cc202c74ae2469a541e8c4f88c95178a0e6346d8"; got != want {
 		t.Fatalf("TEAL SHA-256 = %s, want %s", got, want)
 	}
 	// Pin the deployed compiler output separately from the source hash so
