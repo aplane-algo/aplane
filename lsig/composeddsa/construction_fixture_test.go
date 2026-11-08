@@ -212,6 +212,45 @@ func TestCompositeBaseRequiresEveryComponentInOrder(t *testing.T) {
 	}
 }
 
+// S5: admission is a generation decision only. A template whose base the support
+// policy stops admitting must still validate, keep its fingerprint and build its
+// metadata, because store load, unlock and existing accounts reach those; only a
+// new account is refused. Narrowing the policy must never strand a credential.
+func TestAdmissionStaysOutOfLoadAndFingerprint(t *testing.T) {
+	construction := compositeConstruction(t, sigconstruction.PrimitiveEd25519, sigconstruction.PrimitiveFalcon1024)
+	key, _ := syntheticKey(construction)
+	for name, extra := range map[string]string{"refused": "  rekey: refused", "spending key": spendingKeyRekeyYAML} {
+		t.Run(name, func(t *testing.T) {
+			admitted := compositeProvider(t, construction, extra, composeddsa.FixtureSupport{})
+			refused := compositeProvider(t, construction, extra, composeddsa.FixtureSupport{RefuseGeneration: true})
+			if refused.CompatibilityFingerprint() != admitted.CompatibilityFingerprint() {
+				t.Fatal("the support policy changed the template fingerprint")
+			}
+			params := map[string]string{}
+			admittedTEAL, err := admitted.GenerateTEAL(key, params)
+			if err != nil {
+				t.Fatalf("admitted GenerateTEAL() error = %v", err)
+			}
+			if _, err := refused.GenerateTEAL(key, params); err == nil || !strings.Contains(err.Error(), "cannot be generated") {
+				t.Fatalf("refused GenerateTEAL() error = %v", err)
+			}
+			// An existing account's metadata is rebuilt from its bytecode, which no
+			// admission decision may block.
+			want, err := admitted.BuildBoundedAuthorizationMetadata(key, params, []byte(admittedTEAL))
+			if err != nil {
+				t.Fatalf("admitted metadata: %v", err)
+			}
+			got, err := refused.BuildBoundedAuthorizationMetadata(key, params, []byte(admittedTEAL))
+			if err != nil {
+				t.Fatalf("refused metadata: %v", err)
+			}
+			if !got.Equal(want) {
+				t.Fatalf("metadata differs under a refusing policy:\n%+v\n%+v", got, want)
+			}
+		})
+	}
+}
+
 func TestCompositeArgumentsAreAssembledFromEverySlot(t *testing.T) {
 	construction := compositeConstruction(t, sigconstruction.PrimitiveEd25519, sigconstruction.PrimitiveFalcon1024)
 	provider := compositeProvider(t, construction, spendingKeyRekeyYAML, composeddsa.FixtureSupport{})

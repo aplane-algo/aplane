@@ -1,22 +1,30 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-// Package avmsim is a small interpreter for the TEAL subset the rotating stage
-// verifiers use, so a test can run the real verifier source offline and
-// compare it with the Go primitive. It models the AVM's stack, scratch space,
-// subroutines and the 4096-byte value limit, and refuses any opcode it does
-// not know: a verifier edit that reaches for a new opcode fails the test
-// until the interpreter learns it, which keeps the interpreter honest instead
-// of silently skipping what it cannot run. It is not an AVM: costs, groups
-// and most transaction fields are out of scope.
+// Package avmsim is test support only: a small interpreter for the TEAL subset
+// APlane's own programs use, so a test can run the real program source offline.
+// The rotating stage tests run their verifiers in it against the Go primitive,
+// and the bounded agreement test runs every rendered bounded program in it
+// against the signer's planner. No production code may import it.
+//
+// It models the AVM's stack, scratch space, subroutines and the 4096-byte value
+// limit, and refuses any opcode, field or literal form it does not know: a
+// program edit that reaches for something new fails the test until the
+// interpreter learns it, which keeps the interpreter honest instead of
+// silently skipping or zero-filling what it cannot run. It is not an AVM:
+// costs, groups and the signature opcodes are out of scope, and a test
+// supplies the transaction fields the program reads and hooks for the
+// signature opcodes.
 package avmsim
 
 import (
 	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math/big"
 	"strconv"
 	"strings"
 )
@@ -25,6 +33,8 @@ const (
 	avmMaxBytes = 4096
 	avmMaxStack = 1000
 	avmMaxSteps = 20_000_000
+	// avmMaxByteMath is the longest operand the byte-math opcodes (b<) accept.
+	avmMaxByteMath = 64
 )
 
 // Value is one stack value.
@@ -37,19 +47,31 @@ type Value struct {
 // Bytes returns a byte value's contents, or nil for an integer.
 func (v Value) Bytes() []byte { return v.bytes }
 
-func avmUint(u uint64) Value  { return Value{uint: u} }
-func avmBytes(b []byte) Value { return Value{bytes: b, isBytes: true} }
+// Uint returns an integer value's contents, or zero for a byte value.
+func (v Value) Uint() uint64 { return v.uint }
+
+// U builds an integer value, for a transaction field.
+func U(u uint64) Value { return Value{uint: u} }
+
+// B builds a byte value, for a transaction field.
+func B(b []byte) Value { return Value{bytes: b, isBytes: true} }
 
 type avmInstr struct {
 	op   string
 	args []string
+	// literal is a pushbytes or pushint immediate decoded once at assembly, or
+	// literalErr why it could not be; Run reports that error when it reaches the
+	// instruction, so a bad literal on a path never run stays harmless.
+	literal    Value
+	literalErr error
 }
 
-// Txn is the transaction the program sees.
-type Txn struct {
-	TxID, Sender, RekeyTo, CloseRemainderTo []byte
-	FirstValid, LastValid                   uint64
-}
+// Txn is the transaction the program sees, by AVM field name (TxID, Sender,
+// TypeEnum, ...). A field the program reads that the map lacks is an
+// UnsupportedError, never a zero value: a test states every field it means
+// the program to see, including the zero values the AVM reports for fields of
+// another transaction type.
+type Txn map[string]Value
 
 // Hooks run the signature opcodes the interpreter does not implement. A
 // hook receives the data, signature and key and returns whether it verifies.
@@ -61,11 +83,15 @@ type Hooks struct {
 	Equal func(a, b Value)
 }
 
+// Program is assembled TEAL source.
 type Program struct {
 	code   []avmInstr
 	labels map[string]int
 }
 
+// Assemble reads TEAL source: one instruction or label per line, // comments
+// and the #pragma line ignored. It checks labels for duplicates only; every
+// other problem surfaces when Run reaches it.
 func Assemble(src string) (*Program, error) {
 	p := &Program{labels: map[string]int{}}
 	for n, line := range strings.Split(src, "\n") {
@@ -84,12 +110,42 @@ func Assemble(src string) (*Program, error) {
 			p.labels[label] = len(p.code)
 			continue
 		}
-		p.code = append(p.code, avmInstr{op: fields[0], args: fields[1:]})
+		in := avmInstr{op: fields[0], args: fields[1:]}
+		in.literal, in.literalErr = decodeLiteral(in)
+		p.code = append(p.code, in)
 	}
 	return p, nil
 }
 
-// ErrReject reports a program that failed an assert or returned false.
+// decodeLiteral decodes a pushbytes or pushint immediate. Only 0x hexadecimal
+// byte literals and decimal or 0x integer literals are understood; named
+// constants (NoOp, Pay, ...), base64 and string literals are not.
+func decodeLiteral(in avmInstr) (Value, error) {
+	switch in.op {
+	case "pushint", "int":
+		if len(in.args) != 1 {
+			return Value{}, unsupportedf("%s with %d immediates", in.op, len(in.args))
+		}
+		u, err := strconv.ParseUint(in.args[0], 0, 64)
+		if err != nil {
+			return Value{}, unsupportedf("%s literal %q", in.op, in.args[0])
+		}
+		return U(u), nil
+	case "pushbytes":
+		if len(in.args) != 1 || !strings.HasPrefix(in.args[0], "0x") {
+			return Value{}, unsupportedf("pushbytes literal %q (only 0x hexadecimal is understood)", strings.Join(in.args, " "))
+		}
+		b, err := hex.DecodeString(strings.TrimPrefix(in.args[0], "0x"))
+		if err != nil {
+			return Value{}, unsupportedf("pushbytes literal %q: %v", in.args[0], err)
+		}
+		return B(b), nil
+	}
+	return Value{}, nil
+}
+
+// ErrReject reports a program that ended without approving: it fell off the
+// end without exactly one nonzero integer on the stack.
 var ErrReject = errors.New("program rejected")
 
 // UnsupportedError reports something the interpreter cannot model: an
@@ -105,13 +161,15 @@ func unsupportedf(format string, a ...any) error {
 	return &UnsupportedError{msg: fmt.Sprintf(format, a...)}
 }
 
-// Run executes the program and reports whether it approves. A runtime fault
-// (type error, overflow, out-of-range slice, oversized value) is an error,
-// as it is on the AVM, and means the transaction is rejected too.
+// Run executes the program and reports whether it approves. A failed assert,
+// err, or a zero return rejects with a nil error. A runtime fault (type error,
+// overflow, out-of-range slice or argument, oversized value) is an error, as
+// it is on the AVM, and means the transaction is rejected too.
 func (p *Program) Run(txn Txn, args [][]byte, hooks Hooks) (bool, error) {
 	var (
-		stack   []Value
-		scratch [256]Value
+		stack = make([]Value, 0, 32)
+		// scratch is allocated on first use: most programs never touch it.
+		scratch *[256]Value
 		calls   []int
 		pc      int
 		steps   int
@@ -175,41 +233,25 @@ func (p *Program) Run(txn Txn, args [][]byte, hooks Hooks) (bool, error) {
 		in := p.code[pc]
 		var err error
 		switch in.op {
-		case "txn", "global", "callsub", "b", "bz":
+		case "txn", "global", "callsub", "b", "bz", "bnz":
 			if len(in.args) != 1 {
 				return fail(unsupportedf("%s with %d immediates", in.op, len(in.args)))
 			}
 		}
 		switch in.op {
-		case "pushint":
-			if len(in.args) != 1 {
-				err = unsupportedf("pushint with %d immediates", len(in.args))
-				break
+		case "pushint", "int", "pushbytes":
+			// Pushed byte literals are shared across runs; no opcode writes a
+			// value in place, so sharing them is safe.
+			if err = in.literalErr; err == nil {
+				err = push(in.literal)
 			}
-			// Only decimal and 0x-prefixed literals are understood; named
-			// constants (NoOp, Pay, ...) and other formats are not.
-			u, perr := strconv.ParseUint(in.args[0], 0, 64)
-			if perr != nil {
-				err = unsupportedf("pushint literal %q", in.args[0])
-				break
-			}
-			err = push(avmUint(u))
-		case "pushbytes":
-			if len(in.args) != 1 || !strings.HasPrefix(in.args[0], "0x") {
-				err = unsupportedf("pushbytes literal %q (only 0x hexadecimal is understood)", strings.Join(in.args, " "))
-				break
-			}
-			b, perr := hex.DecodeString(strings.TrimPrefix(in.args[0], "0x"))
-			if perr != nil {
-				err = unsupportedf("pushbytes literal %q: %v", in.args[0], perr)
-				break
-			}
-			err = push(avmBytes(b))
 		case "load":
 			var n int
 			if n, err = imm(0); err == nil {
 				if n > 255 {
 					err = errors.New("scratch slot out of range")
+				} else if scratch == nil {
+					err = push(Value{})
 				} else {
 					err = push(scratch[n])
 				}
@@ -218,17 +260,27 @@ func (p *Program) Run(txn Txn, args [][]byte, hooks Hooks) (bool, error) {
 			var n int
 			var v Value
 			if n, err = imm(0); err == nil {
-				if v, err = pop(); err == nil {
+				if n > 255 {
+					err = errors.New("scratch slot out of range")
+				} else if v, err = pop(); err == nil {
+					if scratch == nil {
+						scratch = new([256]Value)
+					}
 					scratch[n] = v
 				}
 			}
 		case "txn":
-			err = push(txnField(txn, in.args[0]))
+			v, ok := txn[in.args[0]]
+			if !ok {
+				err = unsupportedf("txn field %s not supplied", in.args[0])
+			} else {
+				err = push(v)
+			}
 		case "global":
 			if in.args[0] != "ZeroAddress" {
 				err = unsupportedf("global %s", in.args[0])
 			} else {
-				err = push(avmBytes(make([]byte, 32)))
+				err = push(B(make([]byte, 32)))
 			}
 		case "arg":
 			var n int
@@ -236,7 +288,7 @@ func (p *Program) Run(txn Txn, args [][]byte, hooks Hooks) (bool, error) {
 				if n >= len(args) {
 					err = errors.New("arg index out of range")
 				} else {
-					err = push(avmBytes(args[n]))
+					err = push(B(args[n]))
 				}
 			}
 		case "assert":
@@ -244,15 +296,17 @@ func (p *Program) Run(txn Txn, args [][]byte, hooks Hooks) (bool, error) {
 			if u, err = popUint(); err == nil && u == 0 {
 				return false, nil
 			}
+		case "err":
+			return false, nil
 		case "return":
 			var u uint64
 			u, err = popUint()
 			return err == nil && u != 0, err
 		case "b":
 			err = jump(in.args[0])
-		case "bz":
+		case "bz", "bnz":
 			var u uint64
-			if u, err = popUint(); err == nil && u == 0 {
+			if u, err = popUint(); err == nil && (u == 0) == (in.op == "bz") {
 				err = jump(in.args[0])
 			}
 		case "switch":
@@ -270,6 +324,23 @@ func (p *Program) Run(txn Txn, args [][]byte, hooks Hooks) (bool, error) {
 				pc = calls[len(calls)-1]
 				calls = calls[:len(calls)-1]
 			}
+		case "dup":
+			if len(stack) == 0 {
+				err = errors.New("stack underflow")
+			} else {
+				err = push(stack[len(stack)-1])
+			}
+		case "dup2":
+			if len(stack) < 2 {
+				err = errors.New("stack underflow")
+			} else {
+				a, b := stack[len(stack)-2], stack[len(stack)-1]
+				if err = push(a); err == nil {
+					err = push(b)
+				}
+			}
+		case "pop":
+			_, err = pop()
 		case "swap":
 			var a, b Value
 			if b, err = pop(); err == nil {
@@ -294,14 +365,19 @@ func (p *Program) Run(txn Txn, args [][]byte, hooks Hooks) (bool, error) {
 					}
 				}
 			}
-		case "+", "-", "*", "/", "&", "<", "<=", "shl", "shr":
+		case "!":
+			var u uint64
+			if u, err = popUint(); err == nil {
+				err = push(U(boolUint(u == 0)))
+			}
+		case "+", "-", "*", "/", "&", "<", "<=", ">", ">=", "&&", "||", "shl", "shr":
 			var a, b uint64
 			if b, err = popUint(); err == nil {
 				if a, err = popUint(); err == nil {
 					var r uint64
 					r, err = uintOp(in.op, a, b)
 					if err == nil {
-						err = push(avmUint(r))
+						err = push(U(r))
 					}
 				}
 			}
@@ -319,14 +395,25 @@ func (p *Program) Run(txn Txn, args [][]byte, hooks Hooks) (bool, error) {
 						if a.isBytes {
 							eq = string(a.bytes) == string(b.bytes)
 						}
-						err = push(avmUint(boolUint(eq == (in.op == "=="))))
+						err = push(U(boolUint(eq == (in.op == "=="))))
+					}
+				}
+			}
+		case "b<":
+			var a, b []byte
+			if b, err = popBytes(); err == nil {
+				if a, err = popBytes(); err == nil {
+					if len(a) > avmMaxByteMath || len(b) > avmMaxByteMath {
+						err = fmt.Errorf("b< operand longer than %d bytes", avmMaxByteMath)
+					} else {
+						err = push(U(boolUint(new(big.Int).SetBytes(a).Cmp(new(big.Int).SetBytes(b)) < 0)))
 					}
 				}
 			}
 		case "itob":
 			var u uint64
 			if u, err = popUint(); err == nil {
-				err = push(avmBytes(binary.BigEndian.AppendUint64(nil, u)))
+				err = push(B(binary.BigEndian.AppendUint64(nil, u)))
 			}
 		case "btoi":
 			var b []byte
@@ -338,19 +425,25 @@ func (p *Program) Run(txn Txn, args [][]byte, hooks Hooks) (bool, error) {
 					for _, c := range b {
 						u = u<<8 | uint64(c)
 					}
-					err = push(avmUint(u))
+					err = push(U(u))
 				}
 			}
 		case "len":
 			var b []byte
 			if b, err = popBytes(); err == nil {
-				err = push(avmUint(uint64(len(b))))
+				err = push(U(uint64(len(b))))
 			}
 		case "sha256":
 			var b []byte
 			if b, err = popBytes(); err == nil {
 				sum := sha256.Sum256(b)
-				err = push(avmBytes(sum[:]))
+				err = push(B(sum[:]))
+			}
+		case "sha512_256":
+			var b []byte
+			if b, err = popBytes(); err == nil {
+				sum := sha512.Sum512_256(b)
+				err = push(B(sum[:]))
 			}
 		case "concat":
 			var a, b []byte
@@ -359,7 +452,7 @@ func (p *Program) Run(txn Txn, args [][]byte, hooks Hooks) (bool, error) {
 					if len(a)+len(b) > avmMaxBytes {
 						err = errors.New("concat result exceeds 4096 bytes")
 					} else {
-						err = push(avmBytes(append(append(make([]byte, 0, len(a)+len(b)), a...), b...)))
+						err = push(B(append(append(make([]byte, 0, len(a)+len(b)), a...), b...)))
 					}
 				}
 			}
@@ -369,7 +462,7 @@ func (p *Program) Run(txn Txn, args [][]byte, hooks Hooks) (bool, error) {
 				if n > avmMaxBytes {
 					err = errors.New("bzero exceeds 4096 bytes")
 				} else {
-					err = push(avmBytes(make([]byte, n)))
+					err = push(B(make([]byte, n)))
 				}
 			}
 		case "extract":
@@ -403,7 +496,7 @@ func (p *Program) Run(txn Txn, args [][]byte, hooks Hooks) (bool, error) {
 						} else {
 							out := append([]byte(nil), a...)
 							copy(out[s:], b)
-							err = push(avmBytes(out))
+							err = push(B(out))
 						}
 					}
 				}
@@ -416,7 +509,7 @@ func (p *Program) Run(txn Txn, args [][]byte, hooks Hooks) (bool, error) {
 					if i >= uint64(len(a)) {
 						err = errors.New("getbyte index out of range")
 					} else {
-						err = push(avmUint(uint64(a[i])))
+						err = push(U(uint64(a[i])))
 					}
 				}
 			}
@@ -431,7 +524,7 @@ func (p *Program) Run(txn Txn, args [][]byte, hooks Hooks) (bool, error) {
 						} else {
 							out := append([]byte(nil), a...)
 							out[i] = byte(v)
-							err = push(avmBytes(out))
+							err = push(B(out))
 						}
 					}
 				}
@@ -448,7 +541,7 @@ func (p *Program) Run(txn Txn, args [][]byte, hooks Hooks) (bool, error) {
 						if verify == nil {
 							err = unsupportedf("no hook for %s", in.op)
 						} else {
-							err = push(avmUint(boolUint(verify(data, sig, key))))
+							err = push(U(boolUint(verify(data, sig, key))))
 						}
 					}
 				}
@@ -485,7 +578,7 @@ func pushExtract(push func(Value) error, a []byte, s, l uint64, toEnd bool) erro
 	if end > uint64(len(a)) || end < s {
 		return errors.New("extract out of range")
 	}
-	return push(avmBytes(append([]byte(nil), a[s:end]...)))
+	return push(B(append([]byte(nil), a[s:end]...)))
 }
 
 func uintOp(op string, a, b uint64) (uint64, error) {
@@ -516,6 +609,14 @@ func uintOp(op string, a, b uint64) (uint64, error) {
 		return boolUint(a < b), nil
 	case "<=":
 		return boolUint(a <= b), nil
+	case ">":
+		return boolUint(a > b), nil
+	case ">=":
+		return boolUint(a >= b), nil
+	case "&&":
+		return boolUint(a != 0 && b != 0), nil
+	case "||":
+		return boolUint(a != 0 || b != 0), nil
 	case "shl", "shr":
 		if b >= 64 {
 			return 0, fmt.Errorf("%s by %d", op, b)
@@ -526,23 +627,4 @@ func uintOp(op string, a, b uint64) (uint64, error) {
 		return a >> b, nil
 	}
 	return 0, unsupportedf("operator %s", op)
-}
-
-func txnField(txn Txn, field string) Value {
-	switch field {
-	case "TxID":
-		return avmBytes(txn.TxID)
-	case "Sender":
-		return avmBytes(txn.Sender)
-	case "RekeyTo":
-		return avmBytes(txn.RekeyTo)
-	case "CloseRemainderTo":
-		return avmBytes(txn.CloseRemainderTo)
-	case "FirstValid":
-		return avmUint(txn.FirstValid)
-	case "LastValid":
-		return avmUint(txn.LastValid)
-	}
-	// An unknown field panics the test run rather than reading as zero.
-	panic("avmSim: unsupported txn field " + field)
 }
