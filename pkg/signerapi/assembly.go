@@ -9,7 +9,6 @@ import "fmt"
 type AssemblyTargetKind string
 
 const (
-	AssemblyTargetKindGuarded         AssemblyTargetKind = "guarded"
 	AssemblyTargetKindBoundedCosigner AssemblyTargetKind = "bounded-cosigner"
 )
 
@@ -22,25 +21,21 @@ type AssemblyRequest struct {
 	Passthrough   []AssemblyPassthroughItem `json:"passthrough,omitempty"`
 }
 
-// AssemblyTarget carries flow-specific authorization material for one frozen
-// group position. Fields for the other kind are rejected rather than ignored.
+// AssemblyTarget carries the authorization material for one frozen group
+// position.
 type AssemblyTarget struct {
 	TargetIndex int                `json:"target_index"`
 	Kind        AssemblyTargetKind `json:"kind"`
 	AuthAddress string             `json:"auth_address"`
-
-	UserSignature       string   `json:"user_signature,omitempty"`
-	UserSourceRequestID string   `json:"user_source_request_id,omitempty"`
-	GuardedRuntimeArgs  []string `json:"guarded_runtime_args,omitempty"`
 
 	BaseSignatures      []string          `json:"base_signatures,omitempty"`
 	BoundedRuntimeArgs  map[string]string `json:"bounded_runtime_args,omitempty"`
 	AssemblyReceipt     string            `json:"assembly_receipt,omitempty"`
 	BaseSourceRequestID string            `json:"base_source_request_id,omitempty"`
 
-	// CosignerSignature is required on a guarded target and on every
-	// bounded-cosigner target except a listed rekey, which takes none; assembly
-	// classifies the transaction to decide.
+	// CosignerSignature is required on every bounded-cosigner target except a
+	// listed rekey, which takes none; assembly classifies the transaction to
+	// decide.
 	CosignerSignature       string `json:"cosigner_signature,omitempty"`
 	CosignerSourceRequestID string `json:"cosigner_source_request_id,omitempty"`
 }
@@ -106,31 +101,15 @@ func (t AssemblyTarget) validate() error {
 		return fmt.Errorf("cosigner_source_request_id: %w", err)
 	}
 	switch t.Kind {
-	case AssemblyTargetKindGuarded:
-		if t.CosignerSignature == "" {
-			return fmt.Errorf("cosigner_signature is required for guarded target")
-		}
-		if t.UserSignature == "" {
-			return fmt.Errorf("user_signature is required for guarded target")
-		}
-		if len(t.BaseSignatures) != 0 || len(t.BoundedRuntimeArgs) != 0 || t.AssemblyReceipt != "" || t.BaseSourceRequestID != "" {
-			return fmt.Errorf("bounded authorization material is forbidden for guarded target")
-		}
-		if err := validateOptionalSourceRequestID(t.UserSourceRequestID); err != nil {
-			return fmt.Errorf("user_source_request_id: %w", err)
-		}
 	case AssemblyTargetKindBoundedCosigner:
 		if len(t.BaseSignatures) == 0 || t.AssemblyReceipt == "" {
 			return fmt.Errorf("base_signatures and assembly_receipt are required for bounded-cosigner target")
-		}
-		if t.UserSignature != "" || t.UserSourceRequestID != "" || len(t.GuardedRuntimeArgs) != 0 {
-			return fmt.Errorf("guarded authorization material is forbidden for bounded-cosigner target")
 		}
 		if err := validateOptionalSourceRequestID(t.BaseSourceRequestID); err != nil {
 			return fmt.Errorf("base_source_request_id: %w", err)
 		}
 	default:
-		return fmt.Errorf("kind must be %q or %q", AssemblyTargetKindGuarded, AssemblyTargetKindBoundedCosigner)
+		return fmt.Errorf("kind must be %q", AssemblyTargetKindBoundedCosigner)
 	}
 	return nil
 }

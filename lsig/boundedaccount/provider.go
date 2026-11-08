@@ -423,10 +423,6 @@ func (p *Provider) MnemonicScheme() string { return p.identity.MnemonicScheme() 
 // MnemonicWordCount returns the base's word count.
 func (p *Provider) MnemonicWordCount() int { return p.identity.MnemonicWordCount() }
 
-// SupportsMnemonicImport is false: a LogicSig account recovers from its encrypted
-// credential or backup, never from a mnemonic.
-func (p *Provider) SupportsMnemonicImport() bool { return false }
-
 // CreationParams returns the static vocabulary.
 func (p *Provider) CreationParams() []lsigprovider.ParameterDef { return p.params }
 
@@ -600,7 +596,6 @@ var (
 	_ logicsigdsa.TEALGenerator          = (*Provider)(nil)
 	_ lsigprovider.LSigProvider          = (*Provider)(nil)
 	_ lsigprovider.SigningProvider       = (*Provider)(nil)
-	_ lsigprovider.MnemonicProvider      = (*Provider)(nil)
 	_ lsigprovider.AlgodConfigurable     = (*Provider)(nil)
 	_ lsigprovider.InstanceResolver      = (*Provider)(nil)
 	_ lsigprovider.OpcodeProfileProvider = (*Provider)(nil)

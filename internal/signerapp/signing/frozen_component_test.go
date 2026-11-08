@@ -195,7 +195,6 @@ func TestFrozenComponentDummyPartitionIsSemanticForEveryKind(t *testing.T) {
 	}
 
 	for _, kind := range []signerapi.ComponentTargetKind{
-		signerapi.ComponentTargetKindUser,
 		signerapi.ComponentTargetKindCosigner,
 		signerapi.ComponentTargetKindBoundedBase,
 	} {

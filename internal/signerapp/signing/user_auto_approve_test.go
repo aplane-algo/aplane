@@ -42,7 +42,7 @@ func TestUserAutoApproveReviewAndRejectAcrossSigningPaths(t *testing.T) {
 		{name: "rejected_route", policyJSON: `{"transfer_policy":{"on_no_route":"reject","routes":[]}}`, reject: true},
 	}
 	for _, tc := range tests {
-		for _, path := range []string{"single", "group", "component"} {
+		for _, path := range []string{"single", "group"} {
 			for _, auto := range []bool{false, true} {
 				mode := "manual"
 				if auto {
@@ -81,10 +81,8 @@ func TestUserAutoApproveReviewAndRejectAcrossSigningPaths(t *testing.T) {
 							switch path {
 							case "single":
 								return approval.requestSingleTxnApprovalWithContext(ctx, "", signerapi.SignRequest{}, txns, txns, 0, 0, 0, rule, nil)
-							case "group":
-								return approval.requestGroupApprovalWithContext(ctx, signerapi.GroupSignRequest{}, &PlanResult{}, "", 0, 0, txns, rule)
 							default:
-								return approval.requestComponentApprovalWithContext(ctx, &ComponentSignPlan{}, txns, "", 0, 0, rule)
+								return approval.requestGroupApprovalWithContext(ctx, signerapi.GroupSignRequest{}, &PlanResult{}, "", 0, 0, txns, rule)
 							}
 						},
 					}, nil)

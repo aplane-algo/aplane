@@ -337,7 +337,7 @@ func TestIPCActivateKeyTypeEnablesCompiledProvider(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
-	keyType := "aplane.falcon1024-cosigner1024.v1"
+	keyType := "aplane.falcon1024.v1"
 	recorder := &ipcJSONRecorderConn{}
 	ir := server.productRuntime()
 	ipcServer := &IPCServer{signer: server}
@@ -376,7 +376,7 @@ func TestIPCDeactivateKeyTypeDisablesUnusedCompiledProvider(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
-	keyType := "aplane.falcon1024-cosigner1024.v1"
+	keyType := "aplane.falcon1024.v1"
 	ir := server.productRuntime()
 	if _, err := templatelibrary.ActivateCompiledProvider(mustActiveKeyPaths(t, server), keyType); err != nil {
 		t.Fatalf("ActivateCompiledProvider() error = %v", err)
@@ -420,7 +420,7 @@ func TestIPCDeactivateKeyTypeRejectsProviderInUse(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
-	keyType := "aplane.falcon1024-cosigner1024.v1"
+	keyType := "aplane.falcon1024.v1"
 	ir := server.productRuntime()
 	if _, err := templatelibrary.ActivateCompiledProvider(mustActiveKeyPaths(t, server), keyType); err != nil {
 		t.Fatalf("ActivateCompiledProvider() error = %v", err)

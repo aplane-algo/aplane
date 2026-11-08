@@ -24,10 +24,10 @@ func TestComponentRequestValidateKindsAndClosedPartition(t *testing.T) {
 		wantErr string
 	}{
 		{name: "bounded base", request: validBounded},
-		{name: "user", request: ComponentRequest{
+		{name: "the retired user kind", request: ComponentRequest{
 			GroupBytesHex: []string{"5458aa"},
-			Targets:       []ComponentTarget{{TargetIndex: 0, Kind: ComponentTargetKindUser, AuthAddress: "USER"}},
-		}},
+			Targets:       []ComponentTarget{{TargetIndex: 0, Kind: "user", AuthAddress: "USER"}},
+		}, wantErr: "unsupported component kind"},
 		{name: "cosigner", request: ComponentRequest{
 			GroupBytesHex: []string{"5458aa"},
 			Targets:       []ComponentTarget{{TargetIndex: 0, Kind: ComponentTargetKindCosigner, ComponentKey: "COSIGNER"}},
@@ -35,7 +35,7 @@ func TestComponentRequestValidateKindsAndClosedPartition(t *testing.T) {
 		{name: "mixed kinds fail closed", request: ComponentRequest{
 			GroupBytesHex: []string{"5458aa", "5458bb"},
 			Targets: []ComponentTarget{
-				{TargetIndex: 0, Kind: ComponentTargetKindUser, AuthAddress: "USER"},
+				{TargetIndex: 0, Kind: ComponentTargetKindCosigner, ComponentKey: "COSIGNER"},
 				{TargetIndex: 1, Kind: ComponentTargetKindBoundedBase, AuthAddress: "BOUNDED"},
 			},
 		}, wantErr: "mixed component target kinds"},

@@ -8,12 +8,10 @@ package tui
 import (
 	"fmt"
 	"regexp"
-	"sort"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
 	"github.com/aplane-algo/aplane/internal/keytypeux"
 	"github.com/aplane-algo/aplane/internal/witness"
 )
@@ -42,10 +40,6 @@ func truncateLongHex(line string, maxLen int) string {
 }
 
 func buildDetailsParameterLines(keyType string, parameters map[string]string) []string {
-	if keytypes.IsGuardedAccountKeyType(keyType) {
-		return buildGuardedDetailsParameterLines(parameters)
-	}
-
 	var lines []string
 	if spec := getParamSpecForKeyType(keyType); spec != nil {
 		for _, paramDef := range spec.Params {
@@ -59,27 +53,6 @@ func buildDetailsParameterLines(keyType string, parameters map[string]string) []
 
 	for key, value := range parameters {
 		lines = append(lines, fmt.Sprintf("%s: %s", key, value), "")
-	}
-	return trimTrailingBlankLines(lines)
-}
-
-func buildGuardedDetailsParameterLines(parameters map[string]string) []string {
-	var lines []string
-	if value, ok := parameters["Cosigner"]; ok {
-		lines = append(lines, formatParameterDisplayLines("Cosigner", "", value)...)
-		lines = append(lines, "")
-	}
-
-	keys := make([]string, 0, len(parameters))
-	for key := range parameters {
-		if key == "Cosigner" || key == keytypes.ParameterCosignerPublicKey {
-			continue
-		}
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	for _, key := range keys {
-		lines = append(lines, fmt.Sprintf("%s: %s", key, parameters[key]), "")
 	}
 	return trimTrailingBlankLines(lines)
 }

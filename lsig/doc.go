@@ -27,8 +27,9 @@
 //   - template infrastructure: composeddsa (runtime TEAL composer and the
 //     composed YAML template parser, including the bounded renderer),
 //     generictemplate (generic YAML templates), dsafamily (the registration
-//     descriptor a DSA family fills in);
-//   - a DSA family: falcon1024, ed25519lsig, falcon1024_guarded. Each
+//     descriptor a DSA family fills in), plainhost (the overlays a family's
+//     plain provider takes as a plain host);
+//   - a DSA family: falcon1024, ed25519lsig. Each
 //     registers an lsigprovider that assembles a LogicSig from stored
 //     bytecode and signature arguments for ordinary /sign;
 //   - a rotating type: rotatingtriplexmss,

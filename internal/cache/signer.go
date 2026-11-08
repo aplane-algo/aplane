@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
@@ -127,7 +126,7 @@ func (cache *SignerCache) SetLogicSigResourceProfile(address string, profile lsi
 }
 
 // SigningFlowForAddress returns the signing choreography label the signer
-// inventory reported for an address (e.g. "cosigner1"). Empty means the
+// inventory reported for an address (e.g. "cosigned1"). Empty means the
 // ordinary /sign path.
 func (cache *SignerCache) SigningFlowForAddress(address string) string {
 	if cache.SigningFlows == nil {
@@ -147,31 +146,6 @@ func (cache *SignerCache) SetSigningFlowForAddress(address, flow string) {
 		return
 	}
 	cache.SigningFlows[address] = flow
-}
-
-// GuardedSigningMetadataNeedsRefresh reports whether a cached signer row uses
-// a built-in guarded key type but lacks the runtime flow metadata current
-// signer inventory should publish. This is a cache freshness heuristic only:
-// clients still route guarded signing from signing_flow, not from key_type.
-func (cache *SignerCache) GuardedSigningMetadataNeedsRefresh(address string) bool {
-	keyType := cache.GetKeyType(address)
-	if !keytypes.IsGuardedAccountKeyType(keyType) {
-		return false
-	}
-	flow := cache.SigningFlowForAddress(address)
-	if flow == "" {
-		return true
-	}
-	if flow != signerapi.SigningFlowCosigner1 {
-		return false
-	}
-	if _, ok := cache.CosignerComponentKeyTypeForAddress(address); !ok {
-		return true
-	}
-	if _, ok := cache.CosignerPublicKeyForAddress(address); !ok {
-		return true
-	}
-	return false
 }
 
 // CosignerComponentKeyTypeForAddress returns the cosigner component key type the

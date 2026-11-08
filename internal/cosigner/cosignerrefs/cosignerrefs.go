@@ -2,7 +2,7 @@
 // Copyright (C) 2026 APlane Project LLC
 
 // Package cosignerrefs stores product-store public cosigner references used when
-// generating guarded account keys.
+// generating cosigned accounts.
 package cosignerrefs
 
 import (
@@ -222,17 +222,6 @@ func Delete(paths storepaths.Paths, name string) (bool, error) {
 		return false, fmt.Errorf("failed to remove cosigner reference %s: %w", name, err)
 	}
 	return true, nil
-}
-
-func ResolveCreationParams(paths storepaths.Paths, keyType string, params map[string]string) (map[string]string, error) {
-	if !keytypes.IsGuardedAccountKeyType(keyType) {
-		return params, nil
-	}
-	wantKeyType, ok := keytypes.CosignerComponentKeyTypeForGuardedAccount(keyType)
-	if !ok {
-		return nil, fmt.Errorf("key type %q is not a guarded account key type", keyType)
-	}
-	return ResolveCreationParamsForComponent(paths, keyType, wantKeyType, params)
 }
 
 // ResolveCreationParamsForComponent resolves the signer-facing cosigner selector

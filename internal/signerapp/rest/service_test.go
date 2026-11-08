@@ -18,7 +18,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/algorithm"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/cosigner/cosignerrefs"
-	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"github.com/aplane-algo/aplane/internal/genericlsig"
@@ -277,9 +276,10 @@ func TestServiceAssembleDelegates(t *testing.T) {
 		GroupBytesHex: []string{"5458aa"},
 		Targets: []signerapi.AssemblyTarget{{
 			TargetIndex:       0,
-			Kind:              signerapi.AssemblyTargetKindGuarded,
+			Kind:              signerapi.AssemblyTargetKindBoundedCosigner,
 			AuthAddress:       "ADDR",
-			UserSignature:     "aa",
+			BaseSignatures:    []string{"aa"},
+			AssemblyReceipt:   "cc",
 			CosignerSignature: "bb",
 		}},
 	}
@@ -442,27 +442,10 @@ func TestBuildKeyTypesServesSigningFlowMetadata(t *testing.T) {
 	infos := Service{}.buildKeyTypes([]string{
 		"ed25519",
 		witness.Falcon1024V1,
-		keytypes.GuardedFalcon1024Cosigner1024V1,
 	}, nil)
 	byType := make(map[string]signerapi.KeyTypeInfo, len(infos))
 	for _, info := range infos {
 		byType[info.KeyType] = info
-	}
-
-	guarded := map[string]string{
-		keytypes.GuardedFalcon1024Cosigner1024V1: witness.Falcon1024V1,
-	}
-	for keyType, wantComponent := range guarded {
-		info, ok := byType[keyType]
-		if !ok {
-			t.Fatalf("buildKeyTypes() missing %s", keyType)
-		}
-		if info.SigningFlow != signerapi.SigningFlowCosigner1 {
-			t.Fatalf("%s signing_flow = %q, want %q", keyType, info.SigningFlow, signerapi.SigningFlowCosigner1)
-		}
-		if info.CosignerComponentKeyType != wantComponent {
-			t.Fatalf("%s cosigner_component_key_type = %q, want %q", keyType, info.CosignerComponentKeyType, wantComponent)
-		}
 	}
 	for _, keyType := range []string{"ed25519", witness.Falcon1024V1} {
 		info := byType[keyType]
@@ -550,33 +533,6 @@ func TestBoundedInfoFromStoredIncludesInstanceMetadata(t *testing.T) {
 	if info.Cosigner == nil || info.Cosigner.ComponentKeyID != "COSIGNER" || info.Cosigner.PublicKeyHex != metadata.Cosigner.PublicKeyHex ||
 		info.Layer3Policy != boundedmeta.Layer3PolicyCustom || info.Rekey != string(boundedmeta.RekeyRefused) {
 		t.Fatalf("boundedInfo() = %#v", info)
-	}
-}
-
-func TestGuardedAccountParametersProjection(t *testing.T) {
-	const cosignerPublicKey = "d6fb74e10151ac3b0eaa7431b9b92c772c2a4a600c10b88cfd30169ea1ab4d0a"
-
-	got := guardedAccountParameters(keytypes.GuardedFalcon1024Cosigner1024V1, map[string]string{
-		keytypes.ParameterCosignerPublicKey: cosignerPublicKey,
-		"unrelated":                         "not-projected",
-	})
-	if got[keytypes.ParameterCosignerPublicKey] != cosignerPublicKey {
-		t.Fatalf("guardedAccountParameters() = %#v, want cosigner public key", got)
-	}
-	if _, ok := got["unrelated"]; ok {
-		t.Fatalf("guardedAccountParameters() projected unrelated parameter: %#v", got)
-	}
-
-	got[keytypes.ParameterCosignerPublicKey] = "mutated"
-	again := guardedAccountParameters(keytypes.GuardedFalcon1024Cosigner1024V1, map[string]string{
-		keytypes.ParameterCosignerPublicKey: cosignerPublicKey,
-	})
-	if again[keytypes.ParameterCosignerPublicKey] != cosignerPublicKey {
-		t.Fatalf("guardedAccountParameters() reused mutable map: %#v", again)
-	}
-
-	if empty := guardedAccountParameters(keytypes.GuardedFalcon1024Cosigner1024V1, nil); empty != nil {
-		t.Fatalf("guardedAccountParameters(nil) = %#v, want nil", empty)
 	}
 }
 
@@ -704,8 +660,18 @@ func TestServiceKeyTypesForRuntimeUsesCosignerReferenceOptions(t *testing.T) {
 	if err := os.WriteFile(ir.KeyPaths().CosignerRefPath("corrupt"), []byte(`{"schema":"wrong"}`), 0o600); err != nil {
 		t.Fatalf("WriteFile(corrupt cosigner reference) error = %v", err)
 	}
+	// A fixed-contract cosigned template: its cosigner key becomes a selector.
+	const keyType = "test.rest-reference-options.v1"
+	lsigprovider.Register(restTestDSAProvider{keyType: keyType, bounded: &composeddsa.BoundedAuthorizationProfile{
+		Contract: composeddsa.BoundedContract, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: new(uint64(1_000)),
+		Rekey: boundedmeta.RekeyRefused,
+		Cosigner: &boundedmeta.CosignerAuthorization{
+			Contract: boundedmeta.CosignerContractV1, ComponentKeyType: witness.Falcon1024V1,
+			SignatureMaxSize: boundedmeta.CosignerSignatureMaxSizeV1, RequiredOn: []string{boundedmeta.PathSpend},
+		},
+	}})
 	if err := keytypestate.Put(ir.KeyPaths(), keytypestate.Record{
-		KeyType: keytypes.GuardedFalcon1024Cosigner1024V1,
+		KeyType: keyType,
 		Source:  keytypestate.SourceCompiled,
 		State:   keytypestate.StateEnabled,
 	}); err != nil {
@@ -718,7 +684,7 @@ func TestServiceKeyTypesForRuntimeUsesCosignerReferenceOptions(t *testing.T) {
 	}
 	var params []signerapi.CreationParamInfo
 	for _, info := range resp.KeyTypes {
-		if info.KeyType == keytypes.GuardedFalcon1024Cosigner1024V1 {
+		if info.KeyType == keyType {
 			params = info.CreationParams
 			break
 		}
@@ -797,7 +763,7 @@ func TestServiceKeyTypesUsesCosignerReferenceForBoundedProvider(t *testing.T) {
 
 func TestServiceKeyTypesIncludesActivatedCompiledProvider(t *testing.T) {
 	ir := setupProductRuntime(t, false)
-	const keyType = "aplane.falcon1024-cosigner1024.v1"
+	const keyType = "aplane.falcon1024.v1"
 	if err := keytypestate.Put(ir.KeyPaths(), keytypestate.Record{
 		KeyType: keyType,
 		Source:  keytypestate.SourceCompiled,
@@ -921,7 +887,7 @@ func TestServiceKeyTypesForRuntimeLifecycleMatrix(t *testing.T) {
 	tests := []matrixCase{
 		{
 			name:    "library-only compiled provider is hidden",
-			keyType: "aplane.falcon1024-cosigner1024.v1",
+			keyType: "aplane.falcon1024.v1",
 			setup: func(t *testing.T, paths storepaths.Paths) *productruntime.Runtime {
 				t.Helper()
 				return restMatrixRuntime(paths)
@@ -929,11 +895,11 @@ func TestServiceKeyTypesForRuntimeLifecycleMatrix(t *testing.T) {
 		},
 		{
 			name:    "activated compiled provider is visible",
-			keyType: "aplane.falcon1024-cosigner1024.v1",
+			keyType: "aplane.falcon1024.v1",
 			setup: func(t *testing.T, paths storepaths.Paths) *productruntime.Runtime {
 				t.Helper()
 				if err := keytypestate.Put(paths, keytypestate.Record{
-					KeyType: "aplane.falcon1024-cosigner1024.v1",
+					KeyType: "aplane.falcon1024.v1",
 					Source:  keytypestate.SourceCompiled,
 					State:   keytypestate.StateEnabled,
 				}); err != nil {
@@ -1254,9 +1220,9 @@ func TestServiceNodeRoleGatesEndpointRoles(t *testing.T) {
 	if _, err := (Service{}).Plan(cosignerOnly, signerapi.GroupSignRequest{}); err == nil || err.HTTPStatus() != 403 || !strings.Contains(err.Message, "planning") {
 		t.Fatalf("Plan(cosigner node) error = %#v, want forbidden node role error", err)
 	}
-	userReq := signerapi.ComponentRequest{GroupBytesHex: []string{"5458"}, Targets: []signerapi.ComponentTarget{{TargetIndex: 0, Kind: signerapi.ComponentTargetKindUser, AuthAddress: "ADDR"}}}
-	if _, err := (Service{}).SignComponents(context.Background(), cosignerOnly, userReq); err == nil || err.HTTPStatus() != 403 || !strings.Contains(err.Message, "account component signing") {
-		t.Fatalf("SignComponents(user kind in cosigner node) error = %#v, want forbidden node role error", err)
+	baseReq := signerapi.ComponentRequest{GroupBytesHex: []string{"5458"}, Targets: []signerapi.ComponentTarget{{TargetIndex: 0, Kind: signerapi.ComponentTargetKindBoundedBase, AuthAddress: "ADDR"}}}
+	if _, err := (Service{}).SignComponents(context.Background(), cosignerOnly, baseReq); err == nil || err.HTTPStatus() != 403 || !strings.Contains(err.Message, "account component signing") {
+		t.Fatalf("SignComponents(bounded-base kind in cosigner node) error = %#v, want forbidden node role error", err)
 	}
 	if _, err := (Service{}).Assemble(context.Background(), cosignerOnly, signerapi.AssemblyRequest{}); err == nil || err.HTTPStatus() != 403 || !strings.Contains(err.Message, "guarded assembly") {
 		t.Fatalf("Assemble(cosigner node) error = %#v, want forbidden node role error", err)

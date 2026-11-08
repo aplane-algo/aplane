@@ -101,8 +101,8 @@ func TestCapabilityDetection(t *testing.T) {
 		t.Error("aplane.falcon1024.v1 should implement SigningProvider metadata")
 	}
 
-	if _, ok := p.(lsigprovider.MnemonicProvider); !ok {
-		t.Error("aplane.falcon1024.v1 should implement MnemonicProvider metadata")
+	if _, ok := p.(interface{ SupportsMnemonicImport() bool }); ok {
+		t.Error("aplane.falcon1024.v1 should not offer mnemonic import: it is native-only")
 	}
 }
 

@@ -16,7 +16,6 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/cosigner/cosignerrefs"
-	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
 	"github.com/aplane-algo/aplane/internal/genericlsig"
 	"github.com/aplane-algo/aplane/internal/keyclass"
 	"github.com/aplane-algo/aplane/internal/keygen"
@@ -134,13 +133,7 @@ func (s Service) resolveCreation(keyType string, params map[string]string) (*res
 	if rotatingkey.IsRotatingKeyType(keyType) {
 		params = s.resolveRotatingNetwork(params)
 	}
-	if keytypes.IsGuardedAccountKeyType(keyType) {
-		resolved, err := cosignerrefs.ResolveCreationParams(ir.KeyPaths(), keyType, params)
-		if err != nil {
-			return nil, &Error{Kind: ErrorInvalidInput, Message: err.Error()}
-		}
-		params = resolved
-	} else if provider := lsigprovider.Get(keyType); provider != nil {
+	if provider := lsigprovider.Get(keyType); provider != nil {
 		if component, ok := lsigprovider.CosignerComponentKeyType(provider, params); ok {
 			resolved, err := cosignerrefs.ResolveCreationParamsForComponent(ir.KeyPaths(), keyType, component, params)
 			if err != nil {

@@ -195,10 +195,10 @@ func TestCorridorLogicSigExecutionMatrixLocalnet(t *testing.T) {
 		})
 		submitCorridorGroupExpectFailure(t, testnet, rawGroup)
 	})
-	t.Run("user-role cosigner signature fails", func(t *testing.T) {
+	t.Run("a cosigner signature under another role byte fails", func(t *testing.T) {
 		txn := corridorPaymentTxn(t, mustSuggestedParams(t, testnet), transferAccount.address, transferAccount.address, 0, "corridor-deny-wrong-role")
 		rawGroup, _ := transferAccount.signGroup(t, txn, nil, func(txid types.Digest, args [][]byte) [][]byte {
-			args[cosignerSlot] = transferAccount.signComponent(t, message.RoleUser, txid, transferAccount.cosignerPrivateKey)
+			args[cosignerSlot] = transferAccount.signComponent(t, message.Role(0x01), txid, transferAccount.cosignerPrivateKey)
 			return args
 		})
 		submitCorridorGroupExpectFailure(t, testnet, rawGroup)

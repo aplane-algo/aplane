@@ -13,8 +13,6 @@ import (
 	ed25519lsigsignerreg "github.com/aplane-algo/aplane/lsig/ed25519lsig/signerreg"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
 	falconsignerreg "github.com/aplane-algo/aplane/lsig/falcon1024/signerreg"
-	falcon1024guarded "github.com/aplane-algo/aplane/lsig/falcon1024_guarded"
-	guardedsignerreg "github.com/aplane-algo/aplane/lsig/falcon1024_guarded/signerreg"
 	rotatingslhsignerreg "github.com/aplane-algo/aplane/lsig/rotatingtripleslhdsa/signerreg"
 	rotatingwotscsignerreg "github.com/aplane-algo/aplane/lsig/rotatingtriplewotsc/signerreg"
 	rotatingxmsssignerreg "github.com/aplane-algo/aplane/lsig/rotatingtriplexmss/signerreg"
@@ -34,11 +32,6 @@ func RegisterSigner() {
 			// dedicated cosigned type it replaces was.
 			Availability: keytypecatalog.AvailabilityLibrary,
 		}, falconsignerreg.RegisterSigner)
-		registerCompiledSigner(keytypecatalog.Entry{
-			KeyType:      falcon1024guarded.KeyTypeV1,
-			Family:       falcon1024guarded.FamilyName,
-			Availability: keytypecatalog.AvailabilityLibrary,
-		}, guardedsignerreg.RegisterSigner)
 		registerCompiledSigner(keytypecatalog.Entry{
 			KeyType:      ed25519lsig.KeyTypeV1,
 			Family:       ed25519lsig.FamilyName,

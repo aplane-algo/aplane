@@ -575,9 +575,6 @@ func TestComposerSeesOnlyItsDeclaredParameters(t *testing.T) {
 
 func TestProviderHasNoMnemonicImportOrRuntimeArguments(t *testing.T) {
 	provider := newTestProvider(t)
-	if provider.SupportsMnemonicImport() {
-		t.Fatal("LogicSig account must not support mnemonic import")
-	}
 	if len(provider.RuntimeArgs()) != 0 {
 		t.Fatal("this grammar has no runtime arguments")
 	}

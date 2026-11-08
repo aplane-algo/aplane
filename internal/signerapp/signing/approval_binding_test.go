@@ -9,7 +9,6 @@ import (
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
-	"github.com/aplane-algo/aplane/internal/cosigner/canonical"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
@@ -118,34 +117,5 @@ func TestApprovalDigestIgnoresLsigArgumentOrder(t *testing.T) {
 	req.Requests[0].LsigArgs = map[string]string{}
 	if approvalDigest(req, plan) != none {
 		t.Fatal("an empty argument map binds differently from no arguments")
-	}
-}
-
-func TestComponentApprovalDigestCoversWhatIsSigned(t *testing.T) {
-	fixture := func() *ComponentSignPlan {
-		return &ComponentSignPlan{
-			ComponentKey: "COMPONENT-KEY",
-			Group:        &canonical.Group{GroupHash: [32]byte{1}, Entries: []canonical.Txn{{Raw: []byte("TX-a")}, {Raw: []byte("TX-b")}}},
-			Targets:      []ComponentSignTarget{{TargetIndex: 0, Sender: "S", TxID: [32]byte{2}, Message: [32]byte{3}}},
-		}
-	}
-	base := componentApprovalDigest(fixture())
-	for name, change := range map[string]func(*ComponentSignPlan){
-		"group bytes":   func(p *ComponentSignPlan) { p.Group.Entries[1].Raw = []byte("TX-c") },
-		"group hash":    func(p *ComponentSignPlan) { p.Group.GroupHash[0] = 9 },
-		"signing key":   func(p *ComponentSignPlan) { p.ComponentKey = "OTHER" },
-		"target slot":   func(p *ComponentSignPlan) { p.Targets[0].TargetIndex = 1 },
-		"target msg":    func(p *ComponentSignPlan) { p.Targets[0].Message[0] = 7 },
-		"extra target":  func(p *ComponentSignPlan) { p.Targets = append(p.Targets, ComponentSignTarget{TargetIndex: 1}) },
-		"target sender": func(p *ComponentSignPlan) { p.Targets[0].Sender = "T" },
-	} {
-		plan := fixture()
-		change(plan)
-		if componentApprovalDigest(plan) == base {
-			t.Errorf("%s changed but the component approval digest did not", name)
-		}
-	}
-	if componentApprovalDigest(fixture()) != base {
-		t.Fatal("component approval digest is not deterministic")
 	}
 }

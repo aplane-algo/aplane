@@ -10,7 +10,6 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/witness"
 )
@@ -33,28 +32,6 @@ func TestBuildDetailsParameterLinesFormatsAddressList(t *testing.T) {
 	want := []string{"Recipients:", "  ADDR1", "  ADDR2", "  ADDR3"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("buildDetailsParameterLines() = %#v, want %#v", got, want)
-	}
-}
-
-func TestBuildDetailsParameterLinesGuardedShowsCosignerSelector(t *testing.T) {
-	defer setServerKeyTypes(nil)
-	setServerKeyTypes([]protocol.KeyTypeInfo{{
-		KeyType:     keytypes.GuardedFalcon1024Cosigner1024V1,
-		DisplayName: "Falcon Cosigner",
-		CreationParams: []protocol.TemplateParamInfo{{
-			Name:  keytypes.ParameterCosignerPublicKey,
-			Label: "Cosigner public key",
-			Type:  "bytes",
-		}},
-	}})
-
-	got := buildDetailsParameterLines(keytypes.GuardedFalcon1024Cosigner1024V1, map[string]string{
-		"Cosigner":                          "75OU3CR55IDLKDFEZSFWLIRGE2I5Q337D3NTKAEHJ6K7FGYON5AA",
-		keytypes.ParameterCosignerPublicKey: "aabbccdd",
-	})
-	want := []string{"Cosigner: 75OU3CR55IDLKDFEZSFWLIRGE2I5Q337D3NTKAEHJ6K7FGYON5AA"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("buildDetailsParameterLines(guarded) = %#v, want %#v", got, want)
 	}
 }
 

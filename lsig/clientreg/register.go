@@ -17,7 +17,6 @@ import (
 	"github.com/aplane-algo/aplane/lsig/ed25519lsig"
 	falcon "github.com/aplane-algo/aplane/lsig/falcon1024"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
-	falcon1024guarded "github.com/aplane-algo/aplane/lsig/falcon1024_guarded"
 )
 
 const boundedAccountFamily = "aplane.falcon1024-b"
@@ -43,11 +42,6 @@ func RegisterClient() {
 			// dedicated cosigned type it replaces was.
 			Availability: keytypecatalog.AvailabilityLibrary,
 		}, falcon.RegisterClient)
-		registerCompiledProvider(keytypecatalog.Entry{
-			KeyType:      falcon1024guarded.KeyTypeV1,
-			Family:       falcon1024guarded.FamilyName,
-			Availability: keytypecatalog.AvailabilityLibrary,
-		}, falcon1024guarded.RegisterClient)
 		registerCompiledProvider(keytypecatalog.Entry{
 			KeyType:      ed25519lsig.KeyTypeV1,
 			Family:       ed25519lsig.FamilyName,

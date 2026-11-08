@@ -9,7 +9,10 @@
 // Interface hierarchy:
 //   - LSigProvider: Base interface for all providers (identity, display, parameters)
 //   - SigningProvider: Extends LSigProvider with signature metadata and derivation
-//   - MnemonicProvider: Extends SigningProvider with mnemonic metadata
+//
+// No LogicSig type takes a user-entered mnemonic: an account recovers from its
+// encrypted credential or backup. Mnemonic import is for native key types only
+// (keymgmt.SupportsMnemonicImport).
 //
 // The Category() method returns either "generic_lsig" or "dsa_lsig" to indicate
 // whether the provider requires cryptographic key material.
@@ -81,22 +84,4 @@ type SigningProvider interface {
 	//   - Hybrid (falcon-aplane.htlc.v1): params contains unlock_round, recipients, etc.
 	// Returns: (lsigBytecode, algorandAddress, error)
 	DeriveLsig(ctx context.Context, publicKey []byte, params map[string]string) (lsigBytecode []byte, address string, err error)
-}
-
-// MnemonicProvider extends SigningProvider with mnemonic metadata. Mnemonic
-// generation/export execution is handled by the signer-side mnemonic registry.
-// SupportsMnemonicImport is separate from MnemonicWordCount because some key
-// types can derive from mnemonic material internally but should not accept
-// user-entered mnemonics.
-type MnemonicProvider interface {
-	SigningProvider
-
-	// MnemonicScheme returns the mnemonic scheme (e.g., "bip39", "algorand").
-	MnemonicScheme() string
-
-	// MnemonicWordCount returns the expected number of words in the mnemonic.
-	MnemonicWordCount() int
-
-	// SupportsMnemonicImport returns true when user-entered mnemonic import is supported.
-	SupportsMnemonicImport() bool
 }

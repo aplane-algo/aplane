@@ -38,7 +38,7 @@ import (
 )
 
 type guardedSimulationCapture struct {
-	userRoleCalls     atomic.Int32
+	baseCalls         atomic.Int32
 	cosignerRoleCalls atomic.Int32
 	assembleCalls     atomic.Int32
 	signerSimulateHit atomic.Int32
@@ -128,10 +128,8 @@ func newGuardedExecutableTestHandler(t *testing.T, publicKeyHex string, capture 
 			return
 		}
 		switch req.TargetKind() {
-		case signerapi.ComponentTargetKindUser:
-			capture.userRoleCalls.Add(1)
-			capture.record("user")
 		case signerapi.ComponentTargetKindBoundedBase:
+			capture.baseCalls.Add(1)
 			capture.record("base")
 			resp := signerapi.ComponentResponse{RequestID: req.RequestID}
 			for _, target := range req.Targets {
@@ -295,11 +293,11 @@ func TestSignAndSubmitGroupSimulateUsesExecutableGuardedFlow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SignAndSubmitGroup(simulate) error = %v", err)
 	}
-	if capture.userRoleCalls.Load() != 1 || capture.cosignerRoleCalls.Load() != 1 {
-		t.Fatalf("component calls user/cosigner = %d/%d, want 1/1", capture.userRoleCalls.Load(), capture.cosignerRoleCalls.Load())
+	if capture.baseCalls.Load() != 1 || capture.cosignerRoleCalls.Load() != 1 {
+		t.Fatalf("component calls base/cosigner = %d/%d, want 1/1", capture.baseCalls.Load(), capture.cosignerRoleCalls.Load())
 	}
-	if got := strings.Join(capture.eventSnapshot(), ","); got != "user,keys,cosigner,assemble" {
-		t.Fatalf("guarded event order = %s, want user,keys,cosigner,assemble", got)
+	if got := strings.Join(capture.eventSnapshot(), ","); got != "base,keys,cosigner,assemble" {
+		t.Fatalf("cosigned event order = %s, want base,keys,cosigner,assemble", got)
 	}
 	if capture.assembleCalls.Load() != 1 {
 		t.Fatalf("/sign/assemble calls = %d, want 1", capture.assembleCalls.Load())
@@ -318,8 +316,8 @@ func TestSignAndSubmitGroupSimulateUsesExecutableGuardedFlow(t *testing.T) {
 	}
 
 	assembly, assembledHex := capture.snapshot()
-	if len(assembly.Targets) != 1 || assembly.Targets[0].UserSignature == "" || assembly.Targets[0].CosignerSignature == "" {
-		t.Fatalf("assembly targets = %#v, want executable user+cosigner signatures", assembly.Targets)
+	if len(assembly.Targets) != 1 || len(assembly.Targets[0].BaseSignatures) == 0 || assembly.Targets[0].CosignerSignature == "" {
+		t.Fatalf("assembly targets = %#v, want executable base+cosigner signatures", assembly.Targets)
 	}
 	if len(assembledHex) != len(simulateReq.TxnGroups[0].Txns) {
 		t.Fatalf("assembled/simulated lengths = %d/%d", len(assembledHex), len(simulateReq.TxnGroups[0].Txns))
@@ -455,8 +453,8 @@ func TestMixedGroupsFinishUserSideBeforeCosigner(t *testing.T) {
 		rejectSign bool
 		wantEvents string
 	}{
-		{name: "cosigner1", wantEvents: "user,sign,keys,cosigner,assemble"},
-		{name: "cosigner1 sign rejected", rejectSign: true, wantEvents: "user,sign"},
+		{name: "plain host", wantEvents: "base,sign,keys,cosigner,assemble"},
+		{name: "plain host sign rejected", rejectSign: true, wantEvents: "base,sign"},
 		{name: "cosigned1", bounded: true, wantEvents: "base,sign,keys,cosigner,assemble"},
 		{name: "cosigned1 sign rejected", bounded: true, rejectSign: true, wantEvents: "base,sign"},
 	} {
@@ -595,8 +593,8 @@ func TestSignAndSubmitGroupSimulateReportsFailure(t *testing.T) {
 	if !errors.Is(err, signing.ErrSimulationFailed) {
 		t.Fatalf("SignAndSubmitGroup(simulate) error = %v, want ErrSimulationFailed", err)
 	}
-	if capture.userRoleCalls.Load() != 1 || capture.assembleCalls.Load() != 1 {
-		t.Fatalf("user/assemble calls = %d/%d, want 1/1", capture.userRoleCalls.Load(), capture.assembleCalls.Load())
+	if capture.baseCalls.Load() != 1 || capture.assembleCalls.Load() != 1 {
+		t.Fatalf("base/assemble calls = %d/%d, want 1/1", capture.baseCalls.Load(), capture.assembleCalls.Load())
 	}
 	if !strings.Contains(out.String(), "logic eval error") {
 		t.Fatalf("output = %q, want failure report", out.String())
@@ -622,7 +620,7 @@ func TestSignAndSubmitGroupRejectsNilAlgodBeforeComponentSigning(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "algod client not configured") {
 		t.Fatalf("SignAndSubmitGroup(nil algod) error = %v, want algod configuration error", err)
 	}
-	if capture.userRoleCalls.Load() != 0 || capture.cosignerRoleCalls.Load() != 0 || capture.assembleCalls.Load() != 0 {
-		t.Fatalf("signer calls user/cosigner/assemble = %d/%d/%d, want 0/0/0", capture.userRoleCalls.Load(), capture.cosignerRoleCalls.Load(), capture.assembleCalls.Load())
+	if capture.baseCalls.Load() != 0 || capture.cosignerRoleCalls.Load() != 0 || capture.assembleCalls.Load() != 0 {
+		t.Fatalf("signer calls base/cosigner/assemble = %d/%d/%d, want 0/0/0", capture.baseCalls.Load(), capture.cosignerRoleCalls.Load(), capture.assembleCalls.Load())
 	}
 }

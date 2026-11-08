@@ -68,7 +68,7 @@ func TestComponentRequestRefusesRotatingAccount(t *testing.T) {
 	}}}
 	req := signerapi.ComponentRequest{
 		GroupBytesHex: []string{"deadbeef"},
-		Targets:       []signerapi.ComponentTarget{{TargetIndex: 0, Kind: signerapi.ComponentTargetKindUser, AuthAddress: rotating}},
+		Targets:       []signerapi.ComponentTarget{{TargetIndex: 0, Kind: signerapi.ComponentTargetKindBoundedBase, AuthAddress: rotating}},
 	}
 	requireRotatingRefusal(t, svc.rejectRotatingComponentRequest(req), "transaction 1:")
 }

@@ -94,7 +94,7 @@ func (s *Signer) InspectRoutes(ctx context.Context, keys []signerapi.KeyInfo) Ro
 			continue
 		}
 		row := AccountRouteObservation{Address: key.Address, Routes: []string{}, State: AccountRouteInvalidMetadata}
-		if route != flowRouteGuarded && route != flowRouteBoundedCosigner {
+		if route != flowRouteBoundedCosigner {
 			row.Error = "unsupported signing flow: " + key.SigningFlow
 			result.Accounts = append(result.Accounts, row)
 			continue

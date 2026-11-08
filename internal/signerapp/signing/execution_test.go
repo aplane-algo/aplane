@@ -11,7 +11,6 @@ import (
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
-	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
@@ -206,8 +205,7 @@ func TestExecutorRejectsCosignerKeyTypesBeforeSessionLoad(t *testing.T) {
 		name    string
 		keyType string
 	}{
-		{name: "Falcon guarded Falcon cosigner", keyType: keytypes.GuardedFalcon1024Cosigner1024V1},
-		{name: "falcon guarded falcon cosigner", keyType: keytypes.GuardedFalcon1024Cosigner1024V1},
+		{name: "Falcon witness key", keyType: witness.Falcon1024V1},
 	}
 
 	for _, tt := range tests {
@@ -234,8 +232,8 @@ func TestExecutorRejectsCosignerKeyTypesBeforeSessionLoad(t *testing.T) {
 			if err.Kind != ErrorBadRequest {
 				t.Fatalf("error kind = %q, want %q", err.Kind, ErrorBadRequest)
 			}
-			if !strings.Contains(err.Message, guardedAccountSignRejectMessage) {
-				t.Fatalf("error message = %q, want %q", err.Message, guardedAccountSignRejectMessage)
+			if !strings.Contains(err.Message, cosignerComponentSignRejectMessage) {
+				t.Fatalf("error message = %q, want %q", err.Message, cosignerComponentSignRejectMessage)
 			}
 		})
 	}
@@ -249,8 +247,6 @@ func TestExecutorSignCryptoKeyRejectsCosignerKeyTypesBeforeProviderLookup(t *tes
 	}{
 		{name: "ed25519 component", keyType: witness.Falcon1024V1, want: cosignerComponentSignRejectMessage},
 		{name: "falcon component", keyType: witness.Falcon1024V1, want: cosignerComponentSignRejectMessage},
-		{name: "guarded Falcon cosigner", keyType: keytypes.GuardedFalcon1024Cosigner1024V1, want: guardedAccountSignRejectMessage},
-		{name: "guarded falcon cosigner", keyType: keytypes.GuardedFalcon1024Cosigner1024V1, want: guardedAccountSignRejectMessage},
 	}
 
 	for _, tt := range tests {

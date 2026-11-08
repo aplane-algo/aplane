@@ -17,8 +17,6 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/cache"
-	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
-	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
@@ -58,12 +56,13 @@ func TestRefreshSubmitSigningStateDiscoversGuardedAuthorizer(t *testing.T) {
 				KeyType: "ed25519",
 			}, {
 				Address:                  guarded,
-				KeyType:                  keytypes.GuardedFalcon1024Cosigner1024V1,
-				SigningFlow:              signerapi.SigningFlowCosigner1,
+				KeyType:                  "aplane.falcon1024.v1",
+				SigningFlow:              signerapi.SigningFlowCosigned1,
 				CosignerComponentKeyType: witness.Falcon1024V1,
 				LogicSigResources:        testPublicLogicSigProfile(1_500),
-				Parameters: map[string]string{
-					keytypes.ParameterCosignerPublicKey: cosignerHex,
+				BoundedAuthorization: &signerapi.BoundedAuthorizationInfo{
+					Contract: signerapi.BoundedContractPlain1,
+					Cosigner: &signerapi.BoundedCosignerAuthorizationInfo{PublicKeyHex: cosignerHex},
 				},
 			}},
 		}, req), nil
@@ -86,8 +85,8 @@ func TestRefreshSubmitSigningStateDiscoversGuardedAuthorizer(t *testing.T) {
 	if auth, ok := eng.AuthCache.GetAuthAddress(sender); !ok || auth != guarded {
 		t.Fatalf("auth cache for sender = %q/%v, want %s/true", auth, ok, guarded)
 	}
-	if got := eng.signerCacheKeyType(guarded); got != keytypes.GuardedFalcon1024Cosigner1024V1 {
-		t.Fatalf("signer cache key type for guarded authorizer = %q, want guarded", got)
+	if got := eng.signerCacheKeyType(guarded); got != "aplane.falcon1024.v1" {
+		t.Fatalf("signer cache key type for cosigned authorizer = %q, want the plain host", got)
 	}
 	if got, ok := eng.signerCacheCosignerPublicKey(guarded); !ok || got != cosignerHex {
 		t.Fatalf("cosigner public key for guarded authorizer = %q/%v, want %s/true", got, ok, cosignerHex)
@@ -97,60 +96,6 @@ func TestRefreshSubmitSigningStateDiscoversGuardedAuthorizer(t *testing.T) {
 	}
 	if profile, ok := eng.signerCacheLogicSigResourceProfile(guarded); !ok || profile.ProgramBytes != 1_500 {
 		t.Fatalf("LogicSig resources for guarded authorizer = %+v/%v, want structured profile", profile, ok)
-	}
-	if !eng.guardedSigner().HasGuardedEffectiveSigner([]types.Transaction{txn}) {
-		t.Fatal("hasGuardedEffectiveSigner() after refresh = false, want true")
-	}
-}
-
-func TestRefreshSubmitSigningStateRefreshesGuardedKeyMissingFlowMetadata(t *testing.T) {
-	sender := testAddress(1).String()
-	cosignerHex := testCosignerPublicKeyHex(0xd6)
-
-	staleSignerCache := cache.NewSignerCache()
-	staleSignerCache.AddAddress(sender, keytypes.GuardedFalcon1024Cosigner1024V1)
-	staleSignerCache.SetLogicSigResourceProfile(sender, lsigresource.Profile{ProgramBytes: 1_500, Default: &lsigresource.PathProfile{MaxOpcodeCost: 1}})
-
-	refreshes := 0
-	eng := newConnectedEngineForKeyMgmtTestWithSignerCache(t, staleSignerCache, func(req *http.Request) (*http.Response, error) {
-		if req.Method != http.MethodGet || req.URL.Path != "/keys" {
-			t.Fatalf("unexpected request: %s %s", req.Method, req.URL.Path)
-		}
-		refreshes++
-		return keyMgmtJSONResponse(t, http.StatusOK, signerapi.KeysResponse{
-			Count: 1,
-			Keys: []signerapi.KeyInfo{{
-				Address:                  sender,
-				KeyType:                  keytypes.GuardedFalcon1024Cosigner1024V1,
-				SigningFlow:              signerapi.SigningFlowCosigner1,
-				CosignerComponentKeyType: witness.Falcon1024V1,
-				LogicSigResources:        testPublicLogicSigProfile(1_500),
-				Parameters: map[string]string{
-					keytypes.ParameterCosignerPublicKey: cosignerHex,
-				},
-			}},
-		}, req), nil
-	})
-	eng.AuthCache = cache.NewAuthAddressCacheForStore(eng.CacheStore)
-	eng.AuthCache.AuthAddresses[sender] = ""
-
-	txn := testPreparedTxn(t, testAddress(1), testAddress(2), "guarded", nil).Transaction
-	if eng.guardedSigner().HasGuardedEffectiveSigner([]types.Transaction{txn}) {
-		t.Fatal("hasGuardedEffectiveSigner() before refresh = true, want false with missing flow metadata")
-	}
-
-	if err := eng.refreshSubmitSigningState(context.Background(), []types.Transaction{txn}); err != nil {
-		t.Fatalf("refreshSubmitSigningState() error = %v", err)
-	}
-
-	if refreshes != 1 {
-		t.Fatalf("/keys refreshes = %d, want 1", refreshes)
-	}
-	if got := eng.signerCacheSigningFlow(sender); got != signerapi.SigningFlowCosigner1 {
-		t.Fatalf("signing flow = %q, want %q", got, signerapi.SigningFlowCosigner1)
-	}
-	if got, ok := eng.signerCacheCosignerPublicKey(sender); !ok || got != cosignerHex {
-		t.Fatalf("cosigner public key = %q/%v, want %s/true", got, ok, cosignerHex)
 	}
 	if !eng.guardedSigner().HasGuardedEffectiveSigner([]types.Transaction{txn}) {
 		t.Fatal("hasGuardedEffectiveSigner() after refresh = false, want true")
@@ -180,12 +125,13 @@ func TestRefreshSubmitSigningStateDoesNotRefreshCachedAuthAddress(t *testing.T) 
 				KeyType: "ed25519",
 			}, {
 				Address:                  guarded,
-				KeyType:                  keytypes.GuardedFalcon1024Cosigner1024V1,
-				SigningFlow:              signerapi.SigningFlowCosigner1,
+				KeyType:                  "aplane.falcon1024.v1",
+				SigningFlow:              signerapi.SigningFlowCosigned1,
 				CosignerComponentKeyType: witness.Falcon1024V1,
 				LogicSigResources:        testPublicLogicSigProfile(1_500),
-				Parameters: map[string]string{
-					keytypes.ParameterCosignerPublicKey: cosignerHex,
+				BoundedAuthorization: &signerapi.BoundedAuthorizationInfo{
+					Contract: signerapi.BoundedContractPlain1,
+					Cosigner: &signerapi.BoundedCosignerAuthorizationInfo{PublicKeyHex: cosignerHex},
 				},
 			}},
 		}, req), nil

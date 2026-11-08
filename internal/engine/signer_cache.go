@@ -207,12 +207,6 @@ func (e *Core) signerCacheSigningFlow(address string) string {
 	return e.SignerCache.SigningFlowForAddress(address)
 }
 
-func (e *Core) signerCacheGuardedSigningMetadataNeedsRefresh(address string) bool {
-	e.signerCacheMu.RLock()
-	defer e.signerCacheMu.RUnlock()
-	return e.SignerCache.GuardedSigningMetadataNeedsRefresh(address)
-}
-
 func (e *Core) signerCacheCosignerComponentKeyType(address string) (string, bool) {
 	e.signerCacheMu.RLock()
 	defer e.signerCacheMu.RUnlock()

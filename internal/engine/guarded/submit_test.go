@@ -25,7 +25,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/clientsign"
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/cosigner/canonical"
-	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
 	"github.com/aplane-algo/aplane/internal/cosigner/message"
 	"github.com/aplane-algo/aplane/internal/engine/connect"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
@@ -95,7 +94,7 @@ func TestGuardedTargetsUseEffectiveSigner(t *testing.T) {
 func TestGuardedTargetsNormalizeFalconCosignerPublicKey(t *testing.T) {
 	sender := testAddress(1).String()
 	cosignerHex := testFalconCosignerPublicKeyHex(0xd6)
-	s, _ := newGuardedTestSignerForKeyType(t, sender, keytypes.GuardedFalcon1024Cosigner1024V1, 1500, "0X"+strings.ToUpper(cosignerHex))
+	s, _ := newGuardedTestSigner(t, sender, 1500, "0X"+strings.ToUpper(cosignerHex))
 	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "guarded")
 
 	if !s.HasGuardedEffectiveSigner([]types.Transaction{txn}) {
@@ -354,8 +353,8 @@ func TestComponentRequestForIndicesDeclaresPlannerDummySuffix(t *testing.T) {
 		[]string{"TX00", "TX11", "TX22"},
 		2,
 		[]int{0},
-		signerapi.ComponentTargetKindUser,
-		"AUTH",
+		signerapi.ComponentTargetKindCosigner,
+		"COMPONENT",
 		[]*signerapi.AppCallInfo{{Mode: "abi", Method: "do(uint64)void"}, {Mode: "raw"}},
 	)
 	if len(request.Targets) != 1 || request.Targets[0].TargetIndex != 0 {
@@ -568,22 +567,17 @@ func newTestSigner(t *testing.T, build func(c *cache.SignerCache)) (*Signer, *ca
 	return s, &signerCache
 }
 
+// newGuardedTestSigner holds one cosigned plain host, with the signing-flow
+// metadata the daemon serves for it.
 func newGuardedTestSigner(t *testing.T, sender string, programBytes int, cosignerPublicKey string) (*Signer, *cache.SignerCache) {
 	t.Helper()
-	return newGuardedTestSignerForKeyType(t, sender, keytypes.GuardedFalcon1024Cosigner1024V1, programBytes, cosignerPublicKey)
-}
-
-func newGuardedTestSignerForKeyType(t *testing.T, sender, keyType string, programBytes int, cosignerPublicKey string) (*Signer, *cache.SignerCache) {
-	t.Helper()
 	return newTestSigner(t, func(signerCache *cache.SignerCache) {
-		signerCache.AddAddress(sender, keyType)
-		// Mirror the signing-flow metadata the daemon serves for guarded keys.
-		if componentType, ok := keytypes.CosignerComponentKeyTypeForGuardedAccount(keyType); ok {
-			signerCache.SetSigningFlowForAddress(sender, signerapi.SigningFlowCosigner1)
-			signerCache.SetCosignerComponentKeyTypeForAddress(sender, componentType)
-		}
+		signerCache.AddAddress(sender, "aplane.falcon1024.v1")
+		signerCache.SetSigningFlowForAddress(sender, signerapi.SigningFlowCosigned1)
+		signerCache.SetCosignerComponentKeyTypeForAddress(sender, witness.Falcon1024V1)
+		signerCache.SetBoundedContractForAddress(sender, signerapi.BoundedContractPlain1)
 		if programBytes > 0 {
-			setTestLogicSigResources(signerCache, sender, programBytes)
+			setTestCosignedResources(signerCache, sender, programBytes)
 		}
 		if cosignerPublicKey != "" {
 			signerCache.SetCosignerPublicKeyForAddress(sender, cosignerPublicKey)
@@ -643,7 +637,8 @@ func guardedTargetForTest(account, cosignerHex string) guardedTarget {
 		Account:                  account,
 		CosignerComponentKeyType: witness.Falcon1024V1,
 		CosignerPublicKey:        cosignerHex,
-		Route:                    flowRouteGuarded,
+		Route:                    flowRouteBoundedCosigner,
+		BoundedPath:              signerapi.ComponentPathSpend,
 	}
 }
 

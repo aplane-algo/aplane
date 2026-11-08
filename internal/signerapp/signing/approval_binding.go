@@ -116,33 +116,3 @@ func checkApprovalBinding(req signerapi.GroupSignRequest, plan *PlanResult) *Ser
 	}
 	return nil
 }
-
-// componentApprovalDigest hashes what a user-component approval covers: the
-// frozen group's exact bytes, the key that signs, and every target's slot,
-// transaction ID, and signed message.
-func componentApprovalDigest(plan *ComponentSignPlan) [32]byte {
-	h := sha256.New()
-	writeField := func(b []byte) {
-		var n [8]byte
-		binary.BigEndian.PutUint64(n[:], uint64(len(b)))
-		h.Write(n[:])
-		h.Write(b)
-	}
-	writeField([]byte("aplane.component-approval-binding.v1"))
-	writeField([]byte(plan.ComponentKey))
-	if plan.Group != nil {
-		writeField(plan.Group.GroupHash[:])
-		for _, entry := range plan.Group.Entries {
-			writeField(entry.Raw)
-		}
-	}
-	for _, target := range plan.Targets {
-		writeField(binary.BigEndian.AppendUint64(nil, uint64(target.TargetIndex)))
-		writeField([]byte(target.Sender))
-		writeField(target.TxID[:])
-		writeField(target.Message[:])
-	}
-	var out [32]byte
-	copy(out[:], h.Sum(nil))
-	return out
-}

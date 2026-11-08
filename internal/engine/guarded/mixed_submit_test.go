@@ -19,7 +19,6 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/cache"
 	"github.com/aplane-algo/aplane/internal/clientsign"
-	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	"github.com/aplane-algo/aplane/internal/signing"
@@ -34,11 +33,11 @@ func TestRequestNonGuardedSignaturesShapesModesAndExtracts(t *testing.T) {
 	cosignerHex := testCosignerPublicKeyHex(0xd6)
 
 	s := newMixedTestSigner(t, func(c *cache.SignerCache) {
-		c.AddAddress(guarded, keytypes.GuardedFalcon1024Cosigner1024V1)
-		setTestLogicSigResources(c, guarded, 1500)
+		c.AddAddress(guarded, "aplane.falcon1024.v1")
+		setTestCosignedResources(c, guarded, 1500)
 		c.SetLogicSigResourceProfile(guarded, lsigresource.Profile{
 			ProgramBytes: 77,
-			Default:      &lsigresource.PathProfile{ArgumentBytes: 1_423, MaxOpcodeCost: 1_700},
+			Spend:        &lsigresource.PathProfile{ArgumentBytes: 1_423, MaxOpcodeCost: 1_700},
 		})
 		c.SetCosignerPublicKeyForAddress(guarded, cosignerHex)
 		c.AddAddress(nonGuarded, "ed25519")
@@ -107,8 +106,8 @@ func TestBuildBoundedComponentRequestsDeclaresForeignNativeFalcon(t *testing.T) 
 	nativeFalcon := testAddress(2).String()
 	cosignerHex := testCosignerPublicKeyHex(0xd6)
 	s := newMixedTestSigner(t, func(c *cache.SignerCache) {
-		c.AddAddress(guarded, keytypes.GuardedFalcon1024Cosigner1024V1)
-		setTestLogicSigResources(c, guarded, 1_500)
+		c.AddAddress(guarded, "aplane.falcon1024.v1")
+		setTestCosignedResources(c, guarded, 1_500)
 		c.SetCosignerPublicKeyForAddress(guarded, cosignerHex)
 		c.AddAddress(nativeFalcon, "falcon1024")
 	})
@@ -143,8 +142,8 @@ func TestRequestNonGuardedSignaturesUsesGuardedAuthorizerResources(t *testing.T)
 	cosignerHex := testCosignerPublicKeyHex(0xd6)
 
 	s := newMixedTestSigner(t, func(c *cache.SignerCache) {
-		c.AddAddress(guardedAuthorizer, keytypes.GuardedFalcon1024Cosigner1024V1)
-		setTestLogicSigResources(c, guardedAuthorizer, 1500)
+		c.AddAddress(guardedAuthorizer, "aplane.falcon1024.v1")
+		setTestCosignedResources(c, guardedAuthorizer, 1500)
 		c.SetCosignerPublicKeyForAddress(guardedAuthorizer, cosignerHex)
 		c.AddAddress(nonGuarded, "ed25519")
 	})
@@ -168,7 +167,8 @@ func TestRequestNonGuardedSignaturesUsesGuardedAuthorizerResources(t *testing.T)
 			Account:                  guardedAuthorizer,
 			CosignerComponentKeyType: witness.Falcon1024V1,
 			CosignerPublicKey:        cosignerHex,
-			Route:                    flowRouteGuarded,
+			Route:                    flowRouteBoundedCosigner,
+			BoundedPath:              signerapi.ComponentPathSpend,
 		}},
 		clientsign.SubmitOptions{},
 	)
@@ -258,8 +258,8 @@ func TestRequestNonGuardedSignaturesAllGuardedMakesNoSignerCall(t *testing.T) {
 	cosignerHex := testCosignerPublicKeyHex(0xd6)
 
 	s := newMixedTestSigner(t, func(c *cache.SignerCache) {
-		c.AddAddress(guarded, keytypes.GuardedFalcon1024Cosigner1024V1)
-		setTestLogicSigResources(c, guarded, 1500)
+		c.AddAddress(guarded, "aplane.falcon1024.v1")
+		setTestCosignedResources(c, guarded, 1500)
 		c.SetCosignerPublicKeyForAddress(guarded, cosignerHex)
 	})
 
@@ -299,8 +299,8 @@ func TestRequestNonGuardedSignaturesRejectsMissingSignature(t *testing.T) {
 	cosignerHex := testCosignerPublicKeyHex(0xd6)
 
 	s := newMixedTestSigner(t, func(c *cache.SignerCache) {
-		c.AddAddress(guarded, keytypes.GuardedFalcon1024Cosigner1024V1)
-		setTestLogicSigResources(c, guarded, 1500)
+		c.AddAddress(guarded, "aplane.falcon1024.v1")
+		setTestCosignedResources(c, guarded, 1500)
 		c.SetCosignerPublicKeyForAddress(guarded, cosignerHex)
 		c.AddAddress(nonGuarded, "ed25519")
 	})
@@ -395,4 +395,15 @@ func newUserSignerSignTestServer(t *testing.T, captured *capturedSignRequest) *h
 		_ = json.NewEncoder(w).Encode(resp)
 	})
 	return httptest.NewServer(mux)
+}
+
+// setTestCosignedResources gives a cosigned account the resource profile the
+// daemon serves for it: per path, with no default.
+func setTestCosignedResources(signerCache *cache.SignerCache, address string, programBytes int) {
+	signerCache.SetLogicSigResourceProfile(address, lsigresource.Profile{
+		ProgramBytes:  uint64(programBytes),
+		Spend:         &lsigresource.PathProfile{MaxOpcodeCost: 1},
+		SpendingRekey: &lsigresource.PathProfile{MaxOpcodeCost: 1},
+		ListedRekey:   &lsigresource.PathProfile{MaxOpcodeCost: 1},
+	})
 }

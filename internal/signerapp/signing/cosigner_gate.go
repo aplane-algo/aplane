@@ -4,24 +4,19 @@
 package signing
 
 import (
-	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
 	"github.com/aplane-algo/aplane/internal/witness"
 )
 
-const (
-	cosignerComponentSignRejectMessage = "cosigner keys require /sign/component"
-	guardedAccountSignRejectMessage    = "this key type requires the guarded signing flow: use POST /sign/component then POST /sign/assemble"
-)
+const cosignerComponentSignRejectMessage = "cosigner keys require /sign/component"
 
+// cosignerSignRejectMessage refuses ordinary /sign for a witness key, which
+// signs only cosigner components. A cosigned account is refused by its stored
+// metadata (execution.go), not by its key type.
 func cosignerSignRejectMessage(keyType string) (string, bool) {
-	switch {
-	case witness.IsKeyType(keyType):
+	if witness.IsKeyType(keyType) {
 		return cosignerComponentSignRejectMessage, true
-	case keytypes.IsGuardedAccountKeyType(keyType):
-		return guardedAccountSignRejectMessage, true
-	default:
-		return "", false
 	}
+	return "", false
 }
 
 func rejectCosignerSignKeyType(keyType string) *ServiceError {

@@ -354,16 +354,10 @@ type StatusResponse struct {
 	Rotating []RotatingAccountStatus `json:"rotating,omitempty"`
 }
 
-// SigningFlowCosigner1 names the cosigner co-signed component signing
-// choreography: canonical TX-prefixed group transport, role-tagged component
-// messages, exactly one user plus one cosigner component signature per target,
-// Witness Key ID selectors, and assembly via /sign/assemble with arg 0 = user
-// signature and arg 1 = cosigner signature. The label is frozen: any change to
-// that choreography mints a new label (cosigner2, ...), and unrelated future
-// mechanisms get their own label family. Clients route on this field and must
-// fail fast on flow labels they do not implement; an empty signing_flow means
-// the ordinary /sign path.
-const SigningFlowCosigner1 = "cosigner1"
+// Signing flow labels name a frozen client choreography: any change to one mints
+// a new label, and unrelated mechanisms get their own label family. Clients route
+// on signing_flow and must fail fast on labels they do not implement; an empty
+// signing_flow means the ordinary /sign path.
 
 // SigningFlowBounded1 names the transaction-aware LogicSig choreography. The
 // signer remains authoritative for classification and assembly; clients use
@@ -476,7 +470,7 @@ type KeyTypeInfo struct {
 	MnemonicWordCount        int                       `json:"mnemonic_word_count"`
 	MnemonicImport           bool                      `json:"mnemonic_import"`
 	MnemonicScheme           string                    `json:"mnemonic_scheme"`
-	SigningFlow              string                    `json:"signing_flow,omitempty"`                // signing choreography label (for example "cosigner1" or "cosigned1"); empty = plain /sign
+	SigningFlow              string                    `json:"signing_flow,omitempty"`                // signing choreography label (for example "cosigned1" or "rotating1"); empty = plain /sign
 	CosignerComponentKeyType string                    `json:"cosigner_component_key_type,omitempty"` // cosigner component key type for cosigner-backed signing flows
 	BoundedAuthorization     *BoundedAuthorizationInfo `json:"bounded_authorization,omitempty"`
 	// PerKeyContract means each account selects its own contract at generation,
@@ -552,7 +546,7 @@ type KeyInfo struct {
 	PublicKeyHex             string                    `json:"public_key_hex"`
 	KeyType                  string                    `json:"key_type"`
 	AuthorizationKind        string                    `json:"authorization_kind,omitempty"`
-	SigningFlow              string                    `json:"signing_flow,omitempty"`                // signing choreography label (for example "cosigner1" or "cosigned1"); empty = plain /sign
+	SigningFlow              string                    `json:"signing_flow,omitempty"`                // signing choreography label (for example "cosigned1" or "rotating1"); empty = plain /sign
 	CosignerComponentKeyType string                    `json:"cosigner_component_key_type,omitempty"` // cosigner component key type for cosigner-backed signing flows
 	BoundedAuthorization     *BoundedAuthorizationInfo `json:"bounded_authorization,omitempty"`
 	LogicSigResources        *LogicSigResourceProfile  `json:"logic_sig_resources,omitempty"`

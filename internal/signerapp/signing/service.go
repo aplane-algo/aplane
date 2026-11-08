@@ -136,36 +136,6 @@ func (s *Service) signComponentWithSession(ctx context.Context, req componentPla
 		return nil, lockedError()
 	}
 	switch plan.Role {
-	case ComponentSignRoleUser:
-		if session == nil {
-			return nil, internal("key session is nil")
-		}
-		if err := s.preflightGuardedAccountKeyMetadata(plan.ComponentKey); err != nil {
-			return nil, err
-		}
-		// The same known-network gate as /sign planning, before any policy.
-		if err := validateKnownNetwork(componentPlanTxns(plan), s.genesisHashResolver()); err != nil {
-			return nil, err
-		}
-		approvedDigest := componentApprovalDigest(plan)
-		reviewRuleID, gateErr := s.gateUserComponentSigning(ctx, plan)
-		if gateErr != nil {
-			return nil, gateErr
-		}
-		release, leaseErr := s.beforeExecute()
-		if leaseErr != nil {
-			return nil, leaseErr
-		}
-		defer release()
-		if componentApprovalDigest(plan) != approvedDigest {
-			return nil, internal("refusing to sign: the component request changed after it was approved")
-		}
-		result, signErr := signPreparedUserComponents(ctx, plan, session)
-		if signErr != nil {
-			return nil, signErr
-		}
-		s.logUserComponentApproved(plan, reviewRuleID)
-		return result, nil
 	case ComponentSignRoleCosigner:
 		if err := s.evaluateCosignerComponentPolicy(plan); err != nil {
 			return nil, err

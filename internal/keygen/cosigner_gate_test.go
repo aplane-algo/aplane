@@ -5,11 +5,11 @@ package keygen
 
 import (
 	"context"
-	"github.com/aplane-algo/aplane/internal/crypto"
 	"strings"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
+	"github.com/aplane-algo/aplane/internal/crypto"
+
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/witness"
 )
@@ -41,7 +41,6 @@ func TestGetGeneratorRequiresExactCosignerKeyTypeRegistration(t *testing.T) {
 
 	tests := []string{
 		witness.Falcon1024V1,
-		keytypes.GuardedFalcon1024Cosigner1024V1,
 	}
 	for _, keyType := range tests {
 		t.Run(keyType, func(t *testing.T) {

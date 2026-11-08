@@ -167,9 +167,10 @@ func TestConnectionStateClientWrappersCallSignerEndpoints(t *testing.T) {
 		GroupBytesHex: []string{"5458aa"},
 		Targets: []signerapi.AssemblyTarget{{
 			TargetIndex:       0,
-			Kind:              signerapi.AssemblyTargetKindGuarded,
+			Kind:              signerapi.AssemblyTargetKindBoundedCosigner,
 			AuthAddress:       "ADDR1",
-			UserSignature:     "aabb",
+			BaseSignatures:    []string{"aabb"},
+			AssemblyReceipt:   "ccdd",
 			CosignerSignature: "bbcc",
 		}},
 	})

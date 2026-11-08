@@ -12,28 +12,15 @@ import (
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/cosigner/canonical"
-	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
-	"github.com/aplane-algo/aplane/internal/cosigner/message"
-	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keystore"
-	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/sigconstruction"
 	sigverify "github.com/aplane-algo/aplane/internal/sigconstruction/verify"
-	"github.com/aplane-algo/aplane/internal/witness"
-	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 
 	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
-
-// ComponentPacker is a BEHAVE-axis capability hook
-// (see docs/ARCH_KEYTYPES.md): assembly resolves the provider for a key type,
-// then type-asserts it to ask it to behave — no switch on key type.
-type ComponentPacker interface {
-	PackComponentSignatures(userSignature, cosignerSignature []byte) ([]byte, error)
-}
 
 func assembleDecoded(ctx context.Context, req signerapi.AssemblyRequest, group *canonical.Group, session componentKeyGetter) (*AssemblyResult, *ServiceError) {
 	if ctx == nil {
@@ -61,8 +48,6 @@ func assembleDecoded(ctx context.Context, req signerapi.AssemblyRequest, group *
 		var signedTxnHex string
 		var err *ServiceError
 		switch target.Kind {
-		case signerapi.AssemblyTargetKindGuarded:
-			signedTxnHex, err = assembleGuardedTarget(ctx, target, group.Entries[target.TargetIndex], session)
 		case signerapi.AssemblyTargetKindBoundedCosigner:
 			signedTxnHex, err = assembleBoundedTarget(ctx, target, group.Entries[target.TargetIndex], session)
 		default:
@@ -87,121 +72,6 @@ func assembleDecoded(ctx context.Context, req signerapi.AssemblyRequest, group *
 	}, nil
 }
 
-func assembleGuardedTarget(ctx context.Context, target signerapi.AssemblyTarget, entry canonical.Txn, session componentKeyGetter) (string, *ServiceError) {
-	keyMaterial, err := loadGuardedAccountKeyMaterial(ctx, session, target.AuthAddress)
-	if err != nil {
-		return "", err
-	}
-	defer zeroLoadedKeyMaterial(keyMaterial)
-
-	if keyMaterial.SigningMetadataVersion == 0 {
-		return "", missingLogicSigSigningMetadata(keyMaterial.Type)
-	}
-	if len(keyMaterial.Bytecode) == 0 {
-		return "", internal("loaded guarded account key is missing LogicSig bytecode")
-	}
-	if len(keyMaterial.PublicKey) != family.PublicKeySize {
-		return "", internal(fmt.Sprintf("loaded guarded account key has public key length %d", len(keyMaterial.PublicKey)))
-	}
-	cosignerComponentKeyType, ok := keytypes.CosignerComponentKeyTypeForGuardedAccount(keyMaterial.Type)
-	if !ok {
-		return "", internal(fmt.Sprintf("loaded guarded account key type %s has no cosigner key type", keyMaterial.Type))
-	}
-	cosignerPublicKey, err := guardedAccountCosignerPublicKey(keyMaterial.Parameters, cosignerComponentKeyType)
-	if err != nil {
-		return "", err
-	}
-
-	userSignature, err := decodeAssemblySignatureHex(target.UserSignature, "user_signature")
-	if err != nil {
-		return "", err
-	}
-	defer crypto.ZeroBytes(userSignature)
-	cosignerSignature, err := decodeAssemblySignatureHex(target.CosignerSignature, "cosigner_signature")
-	if err != nil {
-		return "", err
-	}
-	defer crypto.ZeroBytes(cosignerSignature)
-
-	userMessage := message.ComponentMessage(message.RoleUser, entry.TxID)
-	if verifyErr := sigverify.Verify(sigconstruction.Falcon1024(), keyMaterial.PublicKey, userMessage[:], userSignature); verifyErr != nil {
-		return "", badRequest(fmt.Sprintf("target index %d user_signature invalid: %v", target.TargetIndex, verifyErr))
-	}
-	cosignerMessage := message.ComponentMessage(message.RoleCosigner, entry.TxID)
-	if verifyErr := verifyCosignerAssemblySignature(cosignerComponentKeyType, cosignerPublicKey, cosignerMessage[:], cosignerSignature); verifyErr != nil {
-		return "", badRequest(fmt.Sprintf("target index %d cosigner_signature invalid: %v", target.TargetIndex, verifyErr))
-	}
-
-	signatureProvider := lsigprovider.Get(keyMaterial.Type)
-	if signatureProvider == nil {
-		return "", internal(fmt.Sprintf("provider not found for guarded account key type %s", keyMaterial.Type))
-	}
-	packer, ok := signatureProvider.(ComponentPacker)
-	if !ok {
-		return "", internal(fmt.Sprintf("provider for guarded account key type %s cannot pack component signatures", keyMaterial.Type))
-	}
-	packedSignature, packErr := packer.PackComponentSignatures(userSignature, cosignerSignature)
-	if packErr != nil {
-		return "", badRequest(fmt.Sprintf("target index %d signatures invalid: %v", target.TargetIndex, packErr))
-	}
-	defer crypto.ZeroBytes(packedSignature)
-
-	signatureArgs, buildErr := signatureProvider.BuildArgs(packedSignature, nil)
-	if buildErr != nil {
-		return "", badRequest(fmt.Sprintf("target index %d signatures invalid: %v", target.TargetIndex, buildErr))
-	}
-	runtimeArgs, err := orderedAssemblyRuntimeArgs(target, keyMaterial.SigningArgs)
-	if err != nil {
-		return "", err
-	}
-
-	lsigArgs := make([][]byte, 0, len(signatureArgs)+len(runtimeArgs))
-	lsigArgs = append(lsigArgs, signatureArgs...)
-	lsigArgs = append(lsigArgs, runtimeArgs...)
-	lsigAcct := algocrypto.LogicSigAccount{
-		Lsig: types.LogicSig{
-			Logic: keyMaterial.Bytecode,
-			Args:  lsigArgs,
-		},
-	}
-	lsigAddress, addressErr := lsigAcct.Address()
-	if addressErr != nil {
-		return "", internal(fmt.Sprintf("failed to derive guarded LogicSig address: %v", addressErr))
-	}
-	if lsigAddress.String() != target.AuthAddress {
-		return "", internal(fmt.Sprintf("loaded guarded account bytecode address %s does not match key %s", lsigAddress.String(), target.AuthAddress))
-	}
-
-	_, signedTxnBytes, signErr := algocrypto.SignLogicSigAccountTransaction(lsigAcct, entry.Txn)
-	if signErr != nil {
-		return "", internal(fmt.Sprintf("failed to assemble guarded LogicSig transaction: %v", signErr))
-	}
-	if err := validateAssembledGuardedTarget(target, entry, signedTxnBytes); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(signedTxnBytes), nil
-}
-
-func validateAssembledGuardedTarget(target signerapi.AssemblyTarget, entry canonical.Txn, signedTxnBytes []byte) *ServiceError {
-	var stxn types.SignedTxn
-	if err := msgpack.Decode(signedTxnBytes, &stxn); err != nil {
-		return internal(fmt.Sprintf("failed to decode assembled guarded transaction: %v", err))
-	}
-	txID := algocrypto.TransactionID(stxn.Txn)
-	if !bytes.Equal(txID, entry.TxID[:]) {
-		return internal(fmt.Sprintf("assembled guarded transaction at index %d does not match canonical transaction", target.TargetIndex))
-	}
-	if entry.Txn.Sender.String() != target.AuthAddress && stxn.AuthAddr.String() != target.AuthAddress {
-		return internal(fmt.Sprintf(
-			"assembled guarded transaction at index %d auth address %q does not match guarded_account %q",
-			target.TargetIndex,
-			stxn.AuthAddr.String(),
-			target.AuthAddress,
-		))
-	}
-	return nil
-}
-
 func validateGuardedPassthrough(ctx context.Context, passthrough signerapi.AssemblyPassthroughItem, entry canonical.Txn, session componentKeyGetter) (string, *ServiceError) {
 	signedTxnBytes, err := decodeAssemblySignatureHex(passthrough.SignedTxnHex, "signed_txn_hex")
 	if err != nil {
@@ -216,10 +86,10 @@ func validateGuardedPassthrough(ctx context.Context, passthrough signerapi.Assem
 	if !bytes.Equal(txID[:], entry.TxID[:]) {
 		return "", badRequest(fmt.Sprintf("passthrough index %d signed transaction does not match group transaction", passthrough.TargetIndex))
 	}
-	// A guarded account this signer holds must be authorized through the
-	// component+assembly flow (user + cosigner signatures), never slipped in as a
-	// passthrough that bypasses that verification. Reject if the passthrough's
-	// effective signer is a locally-held guarded account.
+	// A cosigned account this signer holds must be authorized through the
+	// component and assembly flow (spending key and cosigner), never slipped in
+	// as a passthrough that bypasses that verification. Reject if the
+	// passthrough's effective signer is a locally held cosigned account.
 	if err := rejectLocalGuardedPassthrough(ctx, stxn, passthrough.TargetIndex, session); err != nil {
 		return "", err
 	}
@@ -241,7 +111,7 @@ func validateGuardedPassthrough(ctx context.Context, passthrough signerapi.Assem
 }
 
 // rejectLocalGuardedPassthrough rejects a passthrough whose effective signer
-// (sender, or AuthAddr when rekeyed) is a guarded account this signer holds:
+// (sender, or AuthAddr when rekeyed) is a cosigned account this signer holds:
 // such an account must be authorized through component signing and assembly,
 // not forwarded as an already-signed passthrough. Accounts this signer does
 // not hold (the common passthrough case) are left alone.
@@ -259,7 +129,7 @@ func rejectLocalGuardedPassthrough(ctx context.Context, stxn types.SignedTxn, ta
 		if err != nil {
 			// Only a genuine not-found means this is a foreign passthrough. Any
 			// other error (locked session, decrypt/storage failure) must fail
-			// closed: treating it as "not held" would let a guarded account slip
+			// closed: treating it as "not held" would let a cosigned account slip
 			// through as passthrough during exactly the conditions this check
 			// guards against.
 			if errors.Is(err, keystore.ErrKeyNotFound) {
@@ -270,10 +140,9 @@ func rejectLocalGuardedPassthrough(ctx context.Context, stxn types.SignedTxn, ta
 		if km == nil {
 			continue // not held by this signer — a legitimate foreign passthrough
 		}
-		isGuarded := keytypes.IsGuardedAccountKeyType(km.Type)
-		isBoundedCosigner := km.BoundedAuthorization != nil && km.BoundedAuthorization.Cosigner != nil
+		cosigned := km.BoundedAuthorization != nil && km.BoundedAuthorization.Cosigner != nil
 		zeroLoadedKeyMaterial(km)
-		if isGuarded || isBoundedCosigner {
+		if cosigned {
 			return badRequest(fmt.Sprintf("passthrough index %d requires component assembly and cannot be supplied as passthrough", targetIndex))
 		}
 	}
@@ -305,53 +174,6 @@ func verifyCosignerAssemblySignature(componentKeyType string, publicKey, msg, si
 		return fmt.Errorf("key type %q is not a cosigner key type", componentKeyType)
 	}
 	return sigverify.Verify(construction, publicKey, msg, signature)
-}
-
-func guardedAccountCosignerPublicKey(parameters map[string]string, componentKeyType string) ([]byte, *ServiceError) {
-	if parameters == nil {
-		return nil, internal("loaded guarded account key is missing creation parameters")
-	}
-	value := parameters[keytypes.ParameterCosignerPublicKey]
-	if strings.TrimSpace(value) == "" {
-		return nil, internal("loaded guarded account key is missing cosigner_public_key parameter")
-	}
-	publicKeySize, ok := witness.PublicKeySize(componentKeyType)
-	if !ok {
-		return nil, internal(fmt.Sprintf("key type %q is not a cosigner key type", componentKeyType))
-	}
-	publicKey, err := decodeHexBytes(value, publicKeySize, keytypes.ParameterCosignerPublicKey)
-	if err != nil {
-		return nil, internal(err.Error())
-	}
-	return publicKey, nil
-}
-
-func orderedAssemblyRuntimeArgs(target signerapi.AssemblyTarget, signingArgs []lsigprovider.RuntimeArgDef) ([][]byte, *ServiceError) {
-	if len(target.GuardedRuntimeArgs) != len(signingArgs) {
-		return nil, badRequest(fmt.Sprintf(
-			"target index %d runtime_args length %d does not match stored signing arg count %d",
-			target.TargetIndex,
-			len(target.GuardedRuntimeArgs),
-			len(signingArgs),
-		))
-	}
-	if len(signingArgs) == 0 {
-		return nil, nil
-	}
-
-	decodedArgs := make(map[string][]byte, len(signingArgs))
-	for i, hexValue := range target.GuardedRuntimeArgs {
-		value, err := decodeHexBytes(hexValue, -1, fmt.Sprintf("runtime_args[%d]", i))
-		if err != nil {
-			return nil, badRequest(fmt.Sprintf("target index %d %v", target.TargetIndex, err))
-		}
-		decodedArgs[signingArgs[i].Name] = value
-	}
-	ordered, err := lsigprovider.ValidateAndOrderArgs(signingArgs, decodedArgs)
-	if err != nil {
-		return nil, badRequest(fmt.Sprintf("target index %d runtime_args invalid: %v", target.TargetIndex, err))
-	}
-	return ordered, nil
 }
 
 func decodeAssemblySignatureHex(value, field string) ([]byte, *ServiceError) {

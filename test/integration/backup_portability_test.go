@@ -83,15 +83,16 @@ func TestBackupPortabilityFirstMilestone(t *testing.T) {
 		{
 			// Signing this account needs a live cosigner, so the case stops at
 			// the restored inventory entry.
-			name: "library guarded account enabled only on the source",
+			name: "library plain host enabled only on the source",
 			prepareSource: func(t *testing.T, _ string, _ *harness.ApAdminHarness) (string, map[string]string) {
 				cosignerPublicKey, cosignerPrivateKey, err := signerops.New(nil).GenerateKeypair(randomFalconSeed(t))
 				if err != nil {
 					t.Fatalf("generate cosigner key: %v", err)
 				}
 				apcrypto.ZeroBytes(cosignerPrivateKey)
-				return keytypes.GuardedFalcon1024Cosigner1024V1, map[string]string{
+				return "aplane.falcon1024.v1", map[string]string{
 					keytypes.ParameterCosignerPublicKey: hex.EncodeToString(cosignerPublicKey),
+					"rekey_authority":                   "spending_key",
 				}
 			},
 			activateOnSource: true,

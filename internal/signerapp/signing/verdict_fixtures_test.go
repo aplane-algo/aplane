@@ -60,9 +60,8 @@ type verdictCase struct {
 	Name string `json:"name"`
 	// Surface is the signing path: "sign" (/sign: planner output through the
 	// approval gates, with Always Approve), "gates" (the shared gate sequence
-	// as rotating and bounded cosigner signing drive it), "component_user"
-	// (guarded user-role /sign/component) or "cosigner" (cosigner
-	// /sign/component).
+	// as rotating and bounded cosigner signing drive it) or "cosigner"
+	// (cosigner /sign/component).
 	Surface string `json:"surface"`
 	// Base is the document each policy fragment is merged onto: "minimal"
 	// (policytest.Minimal, the default) or "shipped" (the role's shipped
@@ -205,10 +204,8 @@ func runVerdictCase(t *testing.T, c *verdictCase) verdictWant {
 		return c.runSign(t, group)
 	case "gates":
 		return c.runGates(t, group)
-	case "component_user":
-		return c.runComponent(t, group, ComponentSignRoleUser)
 	case "cosigner":
-		return c.runComponent(t, group, ComponentSignRoleCosigner)
+		return c.runCosignerComponent(t, group)
 	default:
 		t.Fatalf("unknown surface %q", c.Surface)
 		return verdictWant{}
@@ -385,13 +382,10 @@ func (c *verdictCase) runGates(t *testing.T, group []types.Transaction) verdictW
 	return rec.outcome(ruleID, err, "policy engine rejected request: ")
 }
 
-func (c *verdictCase) runComponent(t *testing.T, group []types.Transaction, role ComponentSignRole) verdictWant {
+func (c *verdictCase) runCosignerComponent(t *testing.T, group []types.Transaction) verdictWant {
 	t.Helper()
 	rec := &verdictRecorder{}
-	nodeRole := noderole.RoleSigner
-	if role == ComponentSignRoleCosigner {
-		nodeRole = noderole.RoleCosigner
-	}
+	nodeRole := noderole.RoleCosigner
 	componentKey := c.selector(t, c.ComponentKey)
 	hexes := make([]string, len(group))
 	for i, txn := range group {
@@ -399,7 +393,7 @@ func (c *verdictCase) runComponent(t *testing.T, group []types.Transaction, role
 	}
 	plan, err := prepareComponentSigning(componentPlanRequest{
 		RequestID:     c.Name,
-		Role:          role,
+		Role:          ComponentSignRoleCosigner,
 		ComponentKey:  componentKey,
 		GroupBytesHex: hexes,
 		TargetIndices: c.Targets,
@@ -415,15 +409,11 @@ func (c *verdictCase) runComponent(t *testing.T, group []types.Transaction, role
 		PolicyFor:                     c.policyResolver(t, nodeRole),
 		HoldsCosignerKey:              holdsAllCosignerKeys,
 	}
-	if role == ComponentSignRoleCosigner {
-		signErr := svc.evaluateCosignerComponentPolicy(plan)
-		if signErr == nil {
-			return verdictWant{Outcome: "approve"}
-		}
-		return rec.outcome("", signErr, "cosigner policy rejected request: ")
+	signErr := svc.evaluateCosignerComponentPolicy(plan)
+	if signErr == nil {
+		return verdictWant{Outcome: "approve"}
 	}
-	ruleID, signErr := svc.gateUserComponentSigning(context.Background(), plan)
-	return rec.outcome(ruleID, signErr, "policy engine rejected request: ")
+	return rec.outcome("", signErr, "cosigner policy rejected request: ")
 }
 
 func (c *verdictCase) requestCount(group []types.Transaction) int {

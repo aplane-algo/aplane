@@ -9,12 +9,13 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
-	"github.com/aplane-algo/aplane/internal/racetest"
 	"os"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/aplane-algo/aplane/internal/racetest"
 
 	"github.com/aplane-algo/aplane/internal/crypto/rotatinghybrid"
 	"github.com/aplane-algo/aplane/internal/fsutil"

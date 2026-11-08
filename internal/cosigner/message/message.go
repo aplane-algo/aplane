@@ -13,24 +13,19 @@ const DomainTagV1 = "APLANE_COSIGNER_V1"
 
 type Role byte
 
-const (
-	RoleUser     Role = 0x01
-	RoleCosigner Role = 0x02
-)
+// RoleCosigner is the role byte every cosigned program compiles into the
+// cosigner's message. 0x01 named the retired user role and is never reused.
+const RoleCosigner Role = 0x02
 
 func (r Role) Valid() bool {
-	return r == RoleUser || r == RoleCosigner
+	return r == RoleCosigner
 }
 
 func (r Role) String() string {
-	switch r {
-	case RoleUser:
-		return "user"
-	case RoleCosigner:
+	if r == RoleCosigner {
 		return "cosigner"
-	default:
-		return fmt.Sprintf("unknown(%d)", byte(r))
 	}
+	return fmt.Sprintf("unknown(%d)", byte(r))
 }
 
 // ComponentMessage returns SHA512/256("APLANE_COSIGNER_V1" || role || txid).

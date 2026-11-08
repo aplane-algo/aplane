@@ -8,7 +8,6 @@ import (
 	"fmt"
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
-	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/witness"
 )
@@ -75,12 +74,12 @@ func (s Service) PrepareGenerateKey(keyType string, params map[string]string) (*
 // resolveAuthorityIDs names the external keys the account would depend on, so a
 // reviewer compares identities rather than 1,793-byte public keys.
 func (p *PreparedGeneration) resolveAuthorityIDs() error {
-	component, ok := keytypes.CosignerComponentKeyTypeForGuardedAccount(p.KeyType)
-	if p.Bounded != nil && p.Bounded.Cosigner != nil {
-		component, ok = p.Bounded.Cosigner.ComponentKeyType, true
+	if p.Bounded == nil || p.Bounded.Cosigner == nil {
+		return nil
 	}
+	component := p.Bounded.Cosigner.ComponentKeyType
 	value := p.Parameters[boundedmeta.CosignerPublicKeyParameter]
-	if !ok || value == "" {
+	if value == "" {
 		return nil
 	}
 	publicKey, err := hex.DecodeString(value)

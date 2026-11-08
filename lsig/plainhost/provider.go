@@ -59,7 +59,7 @@ type Plain interface {
 	logicsigdsa.LogicSigDSA
 	logicsigdsa.TEALGenerator
 	logicsigdsa.SaltedDeriver
-	lsigprovider.MnemonicProvider
+	lsigprovider.SigningProvider
 	lsigprovider.AlgodConfigurable
 	lsigprovider.OpcodeProfileProvider
 }

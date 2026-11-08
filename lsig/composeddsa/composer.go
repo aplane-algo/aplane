@@ -256,10 +256,6 @@ func (c *ComposedDSA) MnemonicWordCount() int {
 	return c.ops.MnemonicWordCount()
 }
 
-func (c *ComposedDSA) SupportsMnemonicImport() bool {
-	return false
-}
-
 // CreationParams returns the parameter definitions for this provider.
 func (c *ComposedDSA) CreationParams() []lsigprovider.ParameterDef {
 	return c.params
@@ -804,6 +800,5 @@ var (
 	_ logicsigdsa.SaltedDeriver      = (*ComposedDSA)(nil)
 	_ lsigprovider.LSigProvider      = (*ComposedDSA)(nil)
 	_ lsigprovider.SigningProvider   = (*ComposedDSA)(nil)
-	_ lsigprovider.MnemonicProvider  = (*ComposedDSA)(nil)
 	_ lsigprovider.AlgodConfigurable = (*ComposedDSA)(nil)
 )
