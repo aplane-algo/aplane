@@ -109,7 +109,7 @@ func TestLimitsOnlyRequestsFailClosed(t *testing.T) {
 		{"any refusing every rekey", func(p map[string]string) {
 			p[ParameterRekeyAuthority] = RekeyRefused
 			p[composeddsa.BoundedCosignerPublicKeyParameter] = testCosignerKey
-		}, "rekey_authority=refused is not offered"},
+		}, "rekey_authority=refused is not one of this type's shapes"},
 		{"any with only_these and no rekey-to list", func(p map[string]string) { p[ParameterRekeyAuthority] = RekeyOnlyThese },
 			"rekey_authority=only_these needs the addresses"},
 		{"any with plus_cosigned and no cosigner", func(p map[string]string) {

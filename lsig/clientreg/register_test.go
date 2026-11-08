@@ -280,8 +280,8 @@ teal: |
 }
 
 // The plain LogicSig types stay the composable bases every bounded account
-// names, and are plain hosts: opt-in through the library, and created only with
-// a cosigner, which the signer checks when it resolves the request.
+// names, and are plain hosts: opt-in through the library, with or without
+// overlays.
 func TestPlainHostsRemainComposableAndAreOptIn(t *testing.T) {
 	RegisterClient()
 	for _, keyType := range []string{"aplane.falcon1024.v1", "aplane.ed25519.v1"} {
@@ -299,8 +299,8 @@ func TestPlainHostsRemainComposableAndAreOptIn(t *testing.T) {
 				t.Fatalf("%s exposed user mnemonic import", keyType)
 			}
 			instance, err := lsigprovider.ResolveInstance(lsigprovider.Get(keyType), nil)
-			if err != nil || instance.Unavailable == "" {
-				t.Fatalf("%s without overlays: instance %+v, %v; want unavailable", keyType, instance, err)
+			if err != nil || instance.Bounded != nil {
+				t.Fatalf("%s without overlays: instance %+v, %v; want the plain program", keyType, instance, err)
 			}
 		})
 	}

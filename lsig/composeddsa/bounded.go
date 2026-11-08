@@ -119,9 +119,6 @@ func (profile *BoundedAuthorizationProfile) validate() error {
 		if len(spendEffects) != 0 {
 			return fmt.Errorf("%s declares no spend effects: every transaction that doesn't rekey is a spend", PlainContract)
 		}
-		if profile.Cosigner == nil {
-			return fmt.Errorf("a %s account needs a cosigner", PlainContract)
-		}
 	default:
 		return fmt.Errorf("unsupported bounded authorization contract %q", profile.Contract)
 	}
@@ -132,13 +129,6 @@ func (profile *BoundedAuthorizationProfile) validate() error {
 	// anywhere, so the list would add nothing.
 	if profile.RekeyList != nil && profile.Rekey == boundedmeta.RekeySpendingKey && profile.Cosigner == nil {
 		return fmt.Errorf("a rekey-to list beside a spending-key rekey (%s) needs a cosigner", boundedmeta.RekeyPlusCosigned)
-	}
-	// A listed address is a way out, so only a refused profile without a list
-	// must keep a transfer for what it holds. Every plain spend is open.
-	if profile.Contract == BoundedContract && profile.Rekey == boundedmeta.RekeyRefused && profile.RekeyList == nil {
-		if err := boundedmeta.ValidateRefusedExit(spendEffects); err != nil {
-			return err
-		}
 	}
 	if err := boundedmeta.ValidateCosignerAuthorizationProfile(profile.Cosigner, profile.Rekey); err != nil {
 		return err

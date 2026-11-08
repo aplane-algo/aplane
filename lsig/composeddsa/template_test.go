@@ -686,9 +686,6 @@ bounded:
 			want:  "field admin_operations not found",
 		},
 		{name: "empty administrative operations", block: "  rekey: refused\n  admin_operations: []\n", want: "field admin_operations not found"},
-		// An expert template is held to the contract's rule, not only the general grammar.
-		{name: "refused without pay", spend: "[axfer]", block: "  rekey: refused\n", want: "needs pay in spend_effects"},
-		{name: "refused opt-in without axfer", spend: "[pay, asset_opt_in]", block: "  rekey: refused\n", want: "needs axfer in spend_effects"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			yaml := template(tt.block)

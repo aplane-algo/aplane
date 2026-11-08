@@ -179,11 +179,11 @@ func TestRestrictedAccountsNeverReadAsUnrestricted(t *testing.T) {
 }
 
 func TestParameterNamesDoNotInventAList(t *testing.T) {
-	row, note := reviewRecipients(boundedmeta.Contract, boundedmeta.Layer3PolicyCustom, []string{"A", "B"})
+	row, note := reviewRecipients(boundedmeta.Contract, boundedmeta.Layer3PolicyCustom, false, []string{"A", "B"})
 	if !strings.Contains(row, "Custom policy") || strings.Contains(row, "inline") || note != "" {
 		t.Fatalf("row = %q, note = %q", row, note)
 	}
-	row, _ = reviewRecipients(boundedmeta.Contract, boundedmeta.Layer3PolicyTimelock, nil)
+	row, _ = reviewRecipients(boundedmeta.Contract, boundedmeta.Layer3PolicyTimelock, false, nil)
 	if !strings.Contains(row, "any, once unlocked") {
 		t.Fatalf("row = %q", row)
 	}
@@ -632,21 +632,25 @@ func TestDetailsShowAnUnlistedRekeyToAsAParameter(t *testing.T) {
 	}
 }
 
-// A plain host's review says it has no host rules, that its cosigner decides,
+// A plain host's review says it has no host rules, who decides what it signs,
 // and on Ed25519 that the spending key is classical. Each arrangement fits 80x24.
 func TestPlainHostReviewFitsAndStatesWhatDecides(t *testing.T) {
 	for _, keyType := range []string{"aplane.falcon1024.v1", "aplane.ed25519.v1"} {
 		for _, arrangement := range []struct {
-			rekey string
-			list  bool
-			want  string
+			rekey    string
+			list     bool
+			cosigned bool
+			want     string
 		}{
-			{boundary.RekeyRefused, false, "closes included, needs the cosigner"},
-			{boundary.RekeySpendingKey, false, "Spending key and cosigner"},
-			{boundary.RekeyRefused, true, "Only these 1 addresses"},
-			{boundary.RekeySpendingKey, true, "others need the cosigner"},
+			{boundary.RekeyRefused, false, true, "closes included, needs the cosigner"},
+			{boundary.RekeySpendingKey, false, true, "Spending key and cosigner"},
+			{boundary.RekeyRefused, true, true, "Only these 1 addresses"},
+			{boundary.RekeySpendingKey, true, true, "others need the cosigner"},
+			{boundary.RekeyRefused, false, false, "spending key alone can spend or close everything"},
+			{boundary.RekeySpendingKey, false, false, "Spending key alone"},
+			{boundary.RekeyRefused, true, false, "Only these 1 addresses"},
 		} {
-			t.Run(keyType+"/"+arrangement.want, func(t *testing.T) {
+			t.Run(fmt.Sprintf("%s/%s/cosigned=%v", keyType, arrangement.want, arrangement.cosigned), func(t *testing.T) {
 				prepared := PrepareGenerateResultMessage{
 					Success:           true,
 					KeyType:           keyType,
@@ -654,26 +658,30 @@ func TestPlainHostReviewFitsAndStatesWhatDecides(t *testing.T) {
 					Fingerprint:       "1:" + strings.Repeat("c", 64),
 					ReviewFingerprint: "1:" + strings.Repeat("d", 64),
 					BoundaryDigest:    strings.Repeat("e", 64),
-					CosignerKeyID:     strings.Repeat("c3d4", 16),
 					Bounded: &protocol.PreparedBoundedProfile{
 						Contract:         boundedmeta.PlainContract,
 						Rekey:            arrangement.rekey,
 						RekeyList:        arrangement.list,
 						Layer3Policy:     boundedmeta.Layer3PolicyNone,
-						CosignerRequired: true,
+						CosignerRequired: arrangement.cosigned,
 					},
 				}
 				if arrangement.list {
 					prepared.Parameters[boundedmeta.RekeyListEntriesParameter] = fmt.Sprintf("TARGET%052d", 1)
 				}
+				decides := "spending key alone decides"
+				if arrangement.cosigned {
+					prepared.CosignerKeyID = strings.Repeat("c3d4", 16)
+					decides = "cosigner's policy decides"
+				}
 				m := Model{viewState: ViewGenerateReview, width: 80, height: 23, standalone: true, forms: formsState{review: &prepared}}
 				view := m.renderGenerateReview()
-				wants := []string{"GENERATE", "Any transaction, no fee limit", "cosigner's policy decides", arrangement.want}
+				wants := []string{"GENERATE", "Any transaction, no fee limit", decides, arrangement.want}
 				if strings.Contains(keyType, "ed25519") {
 					wants = append(wants, "classical")
 				}
 				for _, want := range wants {
-					if !strings.Contains(strings.Join(strings.Fields(view), " "), want) {
+					if !strings.Contains(strings.Join(strings.Fields(strings.ReplaceAll(view, "║", " ")), " "), want) {
 						t.Errorf("review lacks %q:\n%s", want, view)
 					}
 				}

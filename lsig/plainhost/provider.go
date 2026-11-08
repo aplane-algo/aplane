@@ -2,13 +2,14 @@
 // Copyright (C) 2026 APlane Project LLC
 
 // Package plainhost makes a plain LogicSig key type a host for the account
-// overlays. With a cosigner, and optionally a rekey-to list, the key type
-// renders the plain1 contract over its own base: the spending key and the
-// overlays, with no fee ceiling and no transaction-type list. With no parameters
-// it is the plain program it always was: the composition base every bounded and
-// composed account names, and the program of restored plain keys. That program
-// is never created as an account (see Unavailable).
+// overlays. With a rekey setting, and optionally a cosigner and a rekey-to list,
+// the key type renders the plain1 contract over its own base: the spending key
+// and the overlays, with no fee ceiling and no transaction-type list. With no
+// parameters it is the plain program it always was: the composition base every
+// bounded and composed account names, an account of its own, and the program of
+// restored plain keys.
 //
+// Every arrangement is offered; which one suits an account is the user's choice.
 // It depends on no signature family, so each family wraps its own plain provider.
 package plainhost
 
@@ -16,6 +17,7 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"slices"
 	"strings"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
@@ -48,10 +50,29 @@ const (
 	opcodeCost = lsigresource.SingleTransactionOpcodeCeiling
 )
 
-// RekeyAuthorities is the plain host's grammar, in order: every arrangement is
-// cosigned, with each rekey setting. A plain host's spends are unrestricted, so
-// refusing rekeys traps nothing; a close still empties it, with the cosigner.
+// RekeyAuthorities is every rekey setting a plain host takes, in order.
 var RekeyAuthorities = []string{RekeyRefused, RekeySpendingKey, RekeyOnlyThese, RekeyPlusCosigned}
+
+// Arrangement is one overlay arrangement: a rekey setting, with or without a
+// cosigner. Plus cosigned always has one: without it the spending key alone
+// rekeys anywhere, which is spending_key.
+type Arrangement struct {
+	Rekey    string
+	Cosigner bool
+}
+
+// Arrangements is the plain host's grammar, in order: each rekey setting
+// without and then with a cosigner.
+func Arrangements() []Arrangement {
+	var arrangements []Arrangement
+	for _, rekey := range RekeyAuthorities {
+		if rekey != RekeyPlusCosigned {
+			arrangements = append(arrangements, Arrangement{Rekey: rekey})
+		}
+		arrangements = append(arrangements, Arrangement{Rekey: rekey, Cosigner: true})
+	}
+	return arrangements
+}
 
 // Plain is the plain provider a host wraps. Its methods answer for the plain
 // program; Provider overrides the ones that depend on the parameters.
@@ -72,9 +93,9 @@ type Base struct {
 	SaltStyle lsigsalt.Style
 }
 
-// arrangement is one rekey setting's composer and provenance.
+// arrangement is one overlay arrangement's composer and provenance.
 type arrangement struct {
-	rekey       string
+	Arrangement
 	composer    *composeddsa.ComposedDSA
 	fingerprint string
 }
@@ -84,7 +105,7 @@ type arrangement struct {
 type Provider struct {
 	Plain
 	params            []lsigprovider.ParameterDef
-	byRekey           map[string]*arrangement
+	byArrangement     map[Arrangement]*arrangement
 	ordered           []*arrangement
 	grammar           string
 	cosignerComponent string
@@ -97,16 +118,18 @@ func Wrap(plain Plain, base Base) (*Provider, error) {
 	if plain == nil || base.Ops == nil {
 		return nil, fmt.Errorf("plain host needs a plain provider and its base operations")
 	}
-	provider := &Provider{Plain: plain, params: creationParameters(), byRekey: make(map[string]*arrangement)}
-	for _, rekey := range RekeyAuthorities {
-		composer, err := newComposer(plain, base, rekey)
+	provider := &Provider{Plain: plain, params: creationParameters(), byArrangement: make(map[Arrangement]*arrangement)}
+	for _, selected := range Arrangements() {
+		composer, err := newComposer(plain, base, selected)
 		if err != nil {
-			return nil, fmt.Errorf("plain host %s, %s=%s: %w", plain.KeyType(), ParameterRekeyAuthority, rekey, err)
+			return nil, fmt.Errorf("plain host %s, %s: %w", plain.KeyType(), descriptor(selected), err)
 		}
-		built := &arrangement{rekey: rekey, composer: composer, fingerprint: arrangementFingerprint(rekey, composer)}
-		provider.byRekey[rekey] = built
+		built := &arrangement{Arrangement: selected, composer: composer, fingerprint: arrangementFingerprint(selected, composer)}
+		provider.byArrangement[selected] = built
 		provider.ordered = append(provider.ordered, built)
-		provider.cosignerComponent = composer.BoundedAuthorizationMetadata().Cosigner.ComponentKeyType
+		if selected.Cosigner {
+			provider.cosignerComponent = composer.BoundedAuthorizationMetadata().Cosigner.ComponentKeyType
+		}
 	}
 	provider.grammar = grammarFingerprint(plain.KeyType(), provider.ordered)
 	return provider, nil
@@ -122,7 +145,8 @@ func MustWrap(plain Plain, base Base) *Provider {
 	return provider
 }
 
-func newComposer(plain Plain, base Base, rekey string) (*composeddsa.ComposedDSA, error) {
+func newComposer(plain Plain, base Base, selected Arrangement) (*composeddsa.ComposedDSA, error) {
+	rekey := selected.Rekey
 	setting := boundedmeta.RekeyRefused
 	if rekey == RekeySpendingKey || rekey == RekeyPlusCosigned {
 		setting = boundedmeta.RekeySpendingKey
@@ -130,12 +154,14 @@ func newComposer(plain Plain, base Base, rekey string) (*composeddsa.ComposedDSA
 	profile := &composeddsa.BoundedAuthorizationProfile{
 		Contract: composeddsa.PlainContract,
 		Rekey:    setting,
-		Cosigner: &boundedmeta.CosignerAuthorization{
+	}
+	if selected.Cosigner {
+		profile.Cosigner = &boundedmeta.CosignerAuthorization{
 			Contract:         boundedmeta.CosignerContractV1,
 			ComponentKeyType: boundedmeta.CosignerComponentKeyTypeV1,
 			SignatureMaxSize: boundedmeta.CosignerSignatureMaxSizeV1,
 			RequiredOn:       boundedmeta.CosignerRequiredOn(setting),
-		},
+		}
 	}
 	if rekey == RekeyOnlyThese || rekey == RekeyPlusCosigned {
 		profile.RekeyList = &boundedmeta.RekeyList{Contract: boundedmeta.RekeyListContractV1, Depth: rekeylist.Depth}
@@ -154,15 +180,15 @@ func newComposer(plain Plain, base Base, rekey string) (*composeddsa.ComposedDSA
 		Layer3:        &composeddsa.Layer3Policy{Policy: composeddsa.Layer3PolicyNone},
 	})
 	metadata := composer.BoundedAuthorizationMetadata()
-	if metadata == nil || metadata.Cosigner == nil {
+	if metadata == nil || (metadata.Cosigner != nil) != selected.Cosigner {
 		return nil, fmt.Errorf("the overlay program has no valid contract")
 	}
 	return composer, nil
 }
 
 // creationParameters is the vocabulary. Every parameter is optional here, since
-// no parameters select the plain program; an overlay request must give a
-// cosigner and a rekey authority, which resolve checks.
+// no parameters select the plain program; an overlay request must give a rekey
+// authority, which resolve checks.
 func creationParameters() []lsigprovider.ParameterDef {
 	cosigner := composeddsa.BoundedCosignerParameterDef()
 	cosigner.Required = false
@@ -217,21 +243,26 @@ func (p *Provider) resolve(params map[string]string) (*arrangement, map[string]s
 		return nil, nil, err
 	}
 	rekey := normalized[ParameterRekeyAuthority]
-	selected, ok := p.byRekey[rekey]
-	if !ok {
+	if !slices.Contains(RekeyAuthorities, rekey) {
 		return nil, nil, fmt.Errorf("%s must be %s", ParameterRekeyAuthority, strings.Join(RekeyAuthorities, ", "))
 	}
 	cosigner := normalized[composeddsa.BoundedCosignerPublicKeyParameter]
-	if cosigner == "" {
-		return nil, nil, fmt.Errorf("a plain host needs a cosigner: give %s=<cosigner reference or Witness Key ID>", ParameterCosigner)
+	if _, present := params[composeddsa.BoundedCosignerPublicKeyParameter]; present && cosigner == "" {
+		return nil, nil, fmt.Errorf("%s is empty", composeddsa.BoundedCosignerPublicKeyParameter)
+	}
+	selected, ok := p.byArrangement[Arrangement{Rekey: rekey, Cosigner: cosigner != ""}]
+	if !ok {
+		// Only plus cosigned without a cosigner: it would mean spending_key.
+		return nil, nil, fmt.Errorf("%s=%s needs a cosigner; without one it is %s=%s",
+			ParameterRekeyAuthority, rekey, ParameterRekeyAuthority, RekeySpendingKey)
 	}
 	rekeyTo, err := canonicalRekeyTo(params, normalized, rekey)
 	if err != nil {
 		return nil, nil, err
 	}
-	values := map[string]string{
-		ParameterRekeyAuthority:                       rekey,
-		composeddsa.BoundedCosignerPublicKeyParameter: cosigner,
+	values := map[string]string{ParameterRekeyAuthority: rekey}
+	if cosigner != "" {
+		values[composeddsa.BoundedCosignerPublicKeyParameter] = cosigner
 	}
 	if rekeyTo != "" {
 		values[ParameterRekeyTo] = rekeyTo
@@ -289,12 +320,6 @@ func (p *Provider) resolveGenerated(params map[string]string) (*arrangement, map
 	return selected, composer, nil
 }
 
-// unavailable is why the plain program is not created as an account.
-func (p *Provider) unavailable() string {
-	return fmt.Sprintf("%s creates an account only with a cosigner: give %s=<cosigner reference or Witness Key ID> and %s=%s",
-		p.KeyType(), ParameterCosigner, ParameterRekeyAuthority, strings.Join(RekeyAuthorities, "|"))
-}
-
 // BaseKeyType is the plain key type itself: an overlay program verifies the
 // same spending key the plain program does.
 func (p *Provider) BaseKeyType() string { return p.KeyType() }
@@ -315,24 +340,27 @@ func (p *Provider) ValidateCreationParams(params map[string]string) error {
 	return selected.composer.ValidateCreationParams(composerValues(selected, values))
 }
 
-// CosignerComponentKeyType names the cosigner every overlay program needs, so
-// a cosigner reference is resolved before an instance is selected.
+// CosignerComponentKeyType names the cosigner a request asks for, so a cosigner
+// reference is resolved before an instance is selected. A cosigner is optional,
+// so a request naming none returns false.
 func (p *Provider) CosignerComponentKeyType(params map[string]string) (string, bool) {
-	if !hasOverlays(params) {
+	_, hasName := params[ParameterCosigner]
+	_, hasKey := params[composeddsa.BoundedCosignerPublicKeyParameter]
+	if !hasName && !hasKey {
 		return "", false
 	}
 	return p.cosignerComponent, true
 }
 
 // ResolveInstance selects the arrangement for resolved parameters. No parameters
-// select the plain program, which no account is created as.
+// select the plain program, which has no overlay contract.
 func (p *Provider) ResolveInstance(params map[string]string) (*lsigprovider.Instance, error) {
 	if !hasOverlays(params) {
 		values, err := lsigprovider.NormalizeCreationParams(params, nil)
 		if err != nil {
 			return nil, err
 		}
-		return &lsigprovider.Instance{Values: values, Unavailable: p.unavailable()}, nil
+		return &lsigprovider.Instance{Values: values}, nil
 	}
 	selected, values, err := p.resolve(params)
 	if err != nil {
@@ -372,9 +400,10 @@ func (p *Provider) StoredFingerprint(_ map[string]string, metadata *boundedmeta.
 	case metadata.RekeyList != nil:
 		rekey = RekeyOnlyThese
 	}
-	selected, ok := p.byRekey[rekey]
+	stored := Arrangement{Rekey: rekey, Cosigner: metadata.Cosigner != nil}
+	selected, ok := p.byArrangement[stored]
 	if !ok {
-		return "", fmt.Errorf("unsupported plain host arrangement %s", rekey)
+		return "", fmt.Errorf("unsupported plain host arrangement %s", descriptor(stored))
 	}
 	return selected.fingerprint, nil
 }

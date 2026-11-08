@@ -30,11 +30,6 @@ type Instance struct {
 	// BoundaryDigest compares the resolved policy and external authorities of
 	// two accounts. It is empty for a type that does not define one.
 	BoundaryDigest string
-	// Unavailable says why these parameters select no account the type creates,
-	// and is empty when they select one. A plain host's program without
-	// overlays is the composition base and the program of restored plain keys,
-	// so key generation can derive it, but no account is created as one.
-	Unavailable string
 }
 
 // InstanceResolver is implemented by providers whose contract varies by key.

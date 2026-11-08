@@ -5,6 +5,7 @@ package plainhost_test
 
 import (
 	"bytes"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -54,18 +55,22 @@ func testRekeyTo() string {
 }
 
 func request(rekey string) map[string]string {
-	params := map[string]string{
-		plainhost.ParameterRekeyAuthority:             rekey,
-		composeddsa.BoundedCosignerPublicKeyParameter: testCosigner,
+	return requestFor(plainhost.Arrangement{Rekey: rekey, Cosigner: true})
+}
+
+func requestFor(arrangement plainhost.Arrangement) map[string]string {
+	params := map[string]string{plainhost.ParameterRekeyAuthority: arrangement.Rekey}
+	if arrangement.Cosigner {
+		params[composeddsa.BoundedCosignerPublicKeyParameter] = testCosigner
 	}
-	if rekey == plainhost.RekeyOnlyThese || rekey == plainhost.RekeyPlusCosigned {
+	if arrangement.Rekey == plainhost.RekeyOnlyThese || arrangement.Rekey == plainhost.RekeyPlusCosigned {
 		params[plainhost.ParameterRekeyTo] = testRekeyTo()
 	}
 	return params
 }
 
-// With no parameters the key type is the plain program it was, and no account
-// is created as one.
+// With no parameters the key type is the plain program it was, with no overlay
+// contract; it can be created as an account like any other.
 func TestNoParametersIsThePlainProgram(t *testing.T) {
 	for _, b := range bases(t) {
 		t.Run(b.name, func(t *testing.T) {
@@ -73,7 +78,7 @@ func TestNoParametersIsThePlainProgram(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if instance.Bounded != nil || instance.Fingerprint != "" || !strings.Contains(instance.Unavailable, "only with a cosigner") {
+			if instance.Bounded != nil || instance.Fingerprint != "" {
 				t.Fatalf("instance = %+v", instance)
 			}
 			got, err := b.provider.GenerateTEAL(b.spendingKey, nil)
@@ -101,25 +106,29 @@ func TestNoParametersIsThePlainProgram(t *testing.T) {
 	}
 }
 
-// Every arrangement is cosigned, renders plain1 with no envelope, and records a
-// fingerprint its stored metadata leads back to.
+// Every arrangement, with or without a cosigner, renders plain1 with no envelope
+// and records a fingerprint its stored metadata leads back to.
 func TestEveryArrangementResolvesToPlain1(t *testing.T) {
+	if got := len(plainhost.Arrangements()); got != 7 {
+		t.Fatalf("%d arrangements, want 7: four rekey settings with a cosigner, three without", got)
+	}
 	for _, b := range bases(t) {
 		t.Run(b.name, func(t *testing.T) {
 			seen := map[string]bool{}
-			for _, rekey := range plainhost.RekeyAuthorities {
-				params := request(rekey)
+			for _, arrangement := range plainhost.Arrangements() {
+				rekey := fmt.Sprintf("%s/cosigner=%v", arrangement.Rekey, arrangement.Cosigner)
+				params := requestFor(arrangement)
 				instance, err := b.provider.ResolveInstance(params)
 				if err != nil {
 					t.Fatalf("%s: %v", rekey, err)
 				}
 				metadata := instance.Bounded
-				if instance.Unavailable != "" || metadata == nil || metadata.Contract != boundedmeta.PlainContract ||
-					metadata.MaxFee != nil || metadata.Cosigner == nil || metadata.Layer3Policy != boundedmeta.Layer3PolicyNone {
+				if metadata == nil || metadata.Contract != boundedmeta.PlainContract || metadata.MaxFee != nil ||
+					(metadata.Cosigner != nil) != arrangement.Cosigner || metadata.Layer3Policy != boundedmeta.Layer3PolicyNone {
 					t.Fatalf("%s: instance = %+v", rekey, instance)
 				}
-				wantList := rekey == plainhost.RekeyOnlyThese || rekey == plainhost.RekeyPlusCosigned
-				wantSpendingKey := rekey == plainhost.RekeySpendingKey || rekey == plainhost.RekeyPlusCosigned
+				wantList := arrangement.Rekey == plainhost.RekeyOnlyThese || arrangement.Rekey == plainhost.RekeyPlusCosigned
+				wantSpendingKey := arrangement.Rekey == plainhost.RekeySpendingKey || arrangement.Rekey == plainhost.RekeyPlusCosigned
 				if (metadata.RekeyList != nil) != wantList || (metadata.Rekey == boundedmeta.RekeySpendingKey) != wantSpendingKey {
 					t.Fatalf("%s: rekey %s, list %v", rekey, metadata.Rekey, metadata.RekeyList)
 				}
@@ -127,7 +136,7 @@ func TestEveryArrangementResolvesToPlain1(t *testing.T) {
 					t.Fatalf("%s: fingerprints %+v", rekey, instance)
 				}
 				seen[instance.Fingerprint] = true
-				if component, ok := b.provider.CosignerComponentKeyType(params); !ok || component != boundedmeta.CosignerComponentKeyTypeV1 {
+				if component, ok := b.provider.CosignerComponentKeyType(params); ok != arrangement.Cosigner || (ok && component != boundedmeta.CosignerComponentKeyTypeV1) {
 					t.Fatalf("%s: cosigner component %q, %v", rekey, component, ok)
 				}
 
@@ -166,7 +175,8 @@ func TestOverlayRequestsFailClosed(t *testing.T) {
 		params map[string]string
 		want   string
 	}{
-		{"no cosigner", map[string]string{plainhost.ParameterRekeyAuthority: plainhost.RekeySpendingKey}, "needs a cosigner"},
+		{"plus cosigned without a cosigner", map[string]string{plainhost.ParameterRekeyAuthority: plainhost.RekeyPlusCosigned, plainhost.ParameterRekeyTo: testRekeyTo()}, "without one it is rekey_authority=spending_key"},
+		{"an empty cosigner key", map[string]string{plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused, composeddsa.BoundedCosignerPublicKeyParameter: ""}, "is empty"},
 		{"no rekey authority", map[string]string{composeddsa.BoundedCosignerPublicKeyParameter: testCosigner}, "rekey_authority must be"},
 		{"unknown rekey authority", map[string]string{plainhost.ParameterRekeyAuthority: "admin_key", composeddsa.BoundedCosignerPublicKeyParameter: testCosigner}, "rekey_authority"},
 		{"a list without only_these", func() map[string]string {
@@ -256,8 +266,8 @@ func TestBoundedOpcodeProfileIsSeparate(t *testing.T) {
 // declared by a revision; these goldens make that review unavoidable.
 func TestPlainHostGrammarGoldens(t *testing.T) {
 	want := map[string]string{
-		"falcon":  "1:37c246de02a1749a2e9c5b2b16d4e976cc5231bfeefe6680a5266103a9a4e723",
-		"ed25519": "1:e152101f83929aa4c193ffcbde92df60c3cb92c7f574e222ebc13fccc800fb71",
+		"falcon":  "1:eb7ab41b5d6236a5c76df5737b621c59e53c786718fa281ef238552cf9f48dd2",
+		"ed25519": "1:fca5bc914b1cc80e3dbd57df6acfdaff84005b793181c4a1906b4e1b83491de4",
 	}
 	for _, b := range bases(t) {
 		if got := b.provider.GrammarFingerprint(); got != want[b.name] {

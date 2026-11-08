@@ -249,20 +249,11 @@ func (metadata *Metadata) ValidateProfile() error {
 	if err := metadata.ValidateRekeyList(); err != nil {
 		return err
 	}
-	// A listed address is a way out, so only a refused account without a list
-	// must leave a transfer for what it holds. A plain host's every spend is
-	// open, closes included.
-	if metadata.Contract == Contract && metadata.Rekey == RekeyRefused && metadata.RekeyList == nil {
-		if err := ValidateRefusedExit(metadata.SpendEffects); err != nil {
-			return err
-		}
-	}
-	// No host rule gates a rekey, so a spending-key rekey would leave a timelock
-	// before its unlock round. Generation refuses it earlier with a policy-specific
-	// message; this keeps stored metadata to the same contract.
-	if metadata.Rekey == RekeySpendingKey && isTimelockPolicy(metadata.Layer3Policy) {
-		return fmt.Errorf("%s requires rekey %s: a spending-key rekey would leave the lock before the unlock round", metadata.Layer3Policy, RekeyRefused)
-	}
+	// Durable validation checks structure only. Whether a combination is wise
+	// (a refused account that can't send what it holds, a timelock the
+	// spending key can rekey out of) is the user's choice; a check for it
+	// belongs at generation, never here, so accounts created without it keep
+	// loading.
 	if err := ValidateSignatureLayout(metadata.BaseSignatureArgLayout); err != nil {
 		return err
 	}
@@ -319,9 +310,7 @@ func (metadata *Metadata) validateBoundedHost() error {
 }
 
 // validatePlainHost checks that a plain host states no host rule: no fee
-// ceiling, no spend-effect list, no Layer 3. It always has a cosigner, since
-// without one it would be a native key with LogicSig fees, and neither list
-// option is offered on an account whose spends are unrestricted.
+// ceiling, no spend-effect list, no Layer 3. Its overlays are optional.
 func (metadata *Metadata) validatePlainHost() error {
 	if metadata.MaxFee != nil {
 		return fmt.Errorf("%s has no fee ceiling: max_fee must be absent", PlainContract)
@@ -331,9 +320,6 @@ func (metadata *Metadata) validatePlainHost() error {
 	}
 	if metadata.Layer3Policy != Layer3PolicyNone {
 		return fmt.Errorf("%s requires layer3_policy %s, got %q", PlainContract, Layer3PolicyNone, metadata.Layer3Policy)
-	}
-	if metadata.Cosigner == nil {
-		return fmt.Errorf("a %s account needs a cosigner", PlainContract)
 	}
 	return nil
 }
@@ -443,28 +429,6 @@ func ValidateRekeySetting(setting RekeySetting) error {
 	default:
 		return fmt.Errorf("unsupported rekey setting %q", setting)
 	}
-}
-
-// ValidateRefusedExit reports why an account that refuses rekeys could trap what it
-// holds. With no rekey path and no close, a transfer is the only way anything
-// leaves: pay for its ALGO, and axfer for any asset it can opt into. It still
-// keeps its minimum balance, since it can never close.
-func ValidateRefusedExit(spendEffects []string) error {
-	switch {
-	case !slices.Contains(spendEffects, SpendEffectPay):
-		return fmt.Errorf("a bounded account that refuses rekeys needs pay in spend_effects, or its ALGO could never leave")
-	case slices.Contains(spendEffects, SpendEffectAssetOptIn) && !slices.Contains(spendEffects, SpendEffectAxfer):
-		return fmt.Errorf("a bounded account that refuses rekeys and opts into assets needs axfer in spend_effects, or an asset could never leave")
-	}
-	return nil
-}
-
-func isTimelockPolicy(policy string) bool {
-	switch policy {
-	case Layer3PolicyTimelock, Layer3PolicyFixedAllowlistTimelock, Layer3PolicyMerkleAllowlistTimelock:
-		return true
-	}
-	return false
 }
 
 // RefusesRekeys reports whether the account's rekey setting is refused: it has no

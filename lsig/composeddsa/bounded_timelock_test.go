@@ -229,38 +229,21 @@ func TestTimelockPolicyAddsOnlyTheTimelockToTheAllowlist(t *testing.T) {
 	}
 }
 
-// A timelock refuses rekeys, and with no rekey path every one of the seven spend
-// subsets compiles. A spending-key rekey is refused for each of them: pay no
-// longer makes it acceptable, because no host rule gates a rekey.
-// A timelock refuses rekeys, and an account that refuses rekeys must keep a
-// transfer for what it holds, so a timelock template is limited to the subsets
-// with pay, and with axfer whenever it can opt in. The others would trap funds.
+// Every one of the seven spend subsets compiles on a timelock, with rekeys
+// refused or taken by the spending key: whether an account can send what it
+// holds, or leave the lock early, is the template author's choice.
 func TestTimelockPolicySpendSubsets(t *testing.T) {
 	publicKey := bytes.Repeat([]byte{0x21}, falconfamily.PublicKeySize)
-	subsets := map[string]string{
-		"pay": "", "pay, axfer": "", "pay, axfer, asset_opt_in": "",
-		"axfer":               "needs pay in spend_effects",
-		"asset_opt_in":        "needs pay in spend_effects",
-		"axfer, asset_opt_in": "needs pay in spend_effects",
-		"pay, asset_opt_in":   "needs axfer in spend_effects",
-	}
+	subsets := []string{"pay", "pay, axfer", "pay, axfer, asset_opt_in", "axfer", "asset_opt_in", "axfer, asset_opt_in", "pay, asset_opt_in"}
 	for _, test := range timelockCases {
-		for subset, trapped := range subsets {
+		for _, subset := range subsets {
 			t.Run(test.policy+"/"+subset, func(t *testing.T) {
 				effects := "spend_effects: [" + subset + "]"
-				refused := strings.Replace(test.yaml(timelockRefusedRekeyYAML, ""), "spend_effects: [pay, axfer, asset_opt_in]", effects, 1)
-				if trapped != "" {
-					if err := timelockGenerateError(refused, test.params(nil)); err == nil || !strings.Contains(err.Error(), trapped) {
-						t.Fatalf("refused-rekey error = %v, want %q", err, trapped)
+				for name, rekey := range map[string]string{"refused": timelockRefusedRekeyYAML, "spending key": timelockSpendingKeyRekeyYAML} {
+					yaml := strings.Replace(test.yaml(rekey, ""), "spend_effects: [pay, axfer, asset_opt_in]", effects, 1)
+					if _, err := authorAllowlistProvider(t, yaml).GenerateTEAL(publicKey, test.params(nil)); err != nil {
+						t.Fatalf("%s rekey: GenerateTEAL() error = %v", name, err)
 					}
-					return
-				}
-				if _, err := authorAllowlistProvider(t, refused).GenerateTEAL(publicKey, test.params(nil)); err != nil {
-					t.Fatalf("refused-rekey GenerateTEAL() error = %v", err)
-				}
-				spendingKey := strings.Replace(test.yaml(timelockSpendingKeyRekeyYAML, ""), "spend_effects: [pay, axfer, asset_opt_in]", effects, 1)
-				if err := timelockGenerateError(spendingKey, test.params(nil)); err == nil || !strings.Contains(err.Error(), "can't take rekey: spending_key") {
-					t.Fatalf("spending-key rekey error = %v, want the refused-rekey requirement", err)
 				}
 			})
 		}
@@ -321,19 +304,6 @@ func TestTimelockPolicyRejections(t *testing.T) {
 			params map[string]string
 			want   string
 		}{name: test.policy + " takes no author TEAL", yaml: test.defaultYAML() + authorTEAL, want: "does not accept author TEAL"})
-		// An expert template is held to the same rule as the general type: no host
-		// rule gates a rekey, so a spending-key rekey would leave the lock early.
-		cases = append(cases, struct {
-			name   string
-			yaml   string
-			params map[string]string
-			want   string
-		}{
-			name:   test.policy + " refuses a spending-key rekey",
-			yaml:   test.yaml(timelockSpendingKeyRekeyYAML, ""),
-			params: test.params(nil),
-			want:   fmt.Sprintf("policy %q can't take rekey: spending_key: a spending-key rekey would leave the lock before the unlock round; use rekey: only_these, or refused", test.policy),
-		})
 	}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {

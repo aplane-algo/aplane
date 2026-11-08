@@ -199,8 +199,8 @@ func TestBoundaryRequirements(t *testing.T) {
 	}
 }
 
-// No host rule holds a rekey until the unlock round, so a timelock a spending key
-// could rekey out of is refused before review and before anything is created.
+// The general type's timelock shapes take only a rekey-to list, so it refuses a
+// timelock with a spending-key rekey, which an expert template can express.
 func TestGeneralProviderRefusesASpendingKeyRekeyOnATimelock(t *testing.T) {
 	_, service := setupGeneralProvider(t)
 	timelockOnly := generalParams(boundedaccount.RekeySpendingKey)
@@ -209,7 +209,7 @@ func TestGeneralProviderRefusesASpendingKeyRekeyOnATimelock(t *testing.T) {
 	listAndTimelock := generalParams(boundedaccount.RekeySpendingKey)
 	listAndTimelock[boundedaccount.ParameterUnlockRound] = "100"
 	for name, params := range map[string]map[string]string{"timelock": timelockOnly, "allowlist and timelock": listAndTimelock} {
-		const want = "a timelock can't take " + boundedaccount.ParameterRekeyAuthority + "=" + boundedaccount.RekeySpendingKey
+		const want = "an expert template can combine a timelock with " + boundedaccount.ParameterRekeyAuthority + "=" + boundedaccount.RekeySpendingKey
 		if _, err := service.PrepareGenerateKey(boundedaccount.KeyTypeV1, params); err == nil || !strings.Contains(err.Message, want) {
 			t.Fatalf("%s: PrepareGenerateKey() error = %#v", name, err)
 		}
@@ -332,40 +332,25 @@ func TestGeneralProviderGeneratesAnOnlyTheseAccount(t *testing.T) {
 	}
 }
 
-// A witness key never signs as an account, so the native address of an
-// imported cosigner reference can't be listed.
-func TestRekeyListRefusesACosignerReferenceAddress(t *testing.T) {
+// The list may name any address, even one that can never act on the account,
+// such as a cosigner reference's or the account's own cosigner's native address:
+// which addresses to list is the user's choice.
+func TestRekeyListTakesAnyAddress(t *testing.T) {
 	ir, service := setupGeneralProvider(t)
-	publicKey, _ := importPrepareReference(t, ir, prepareTestReference, 0x61)
-	_, witnessAddress, err := nativefalcon.CanonicalAddress(publicKey)
+	referenceKey, _ := importPrepareReference(t, ir, prepareTestReference, 0x61)
+	_, referenceAddress, err := nativefalcon.CanonicalAddress(referenceKey)
 	if err != nil {
 		t.Fatal(err)
 	}
-	params := generalParams(boundedaccount.RekeyOnlyThese)
-	params[boundedaccount.ParameterRekeyTo] = listedTarget.String() + "," + witnessAddress.String()
-	if _, err := service.PrepareGenerateKey(boundedaccount.KeyTypeV1, params); err == nil || !strings.Contains(err.Message, "a witness key never signs as an account") {
-		t.Fatalf("PrepareGenerateKey() error = %#v", err)
-	}
-	if _, err := service.GenerateKey(context.Background(), boundedaccount.KeyTypeV1, params, nil); err == nil || !strings.Contains(err.Message, "a witness key never signs as an account") {
-		t.Fatalf("GenerateKey() error = %#v", err)
-	}
-	assertNoKeys(t, service)
-}
-
-// The account's own cosigner, given as a public key rather than a reference, is
-// a witness key too, so its native address can't be listed either.
-func TestRekeyListRefusesTheAccountsOwnCosignerAddress(t *testing.T) {
-	_, service := setupGeneralProvider(t)
-	publicKey := bytes.Repeat([]byte{0x62}, boundedmeta.CosignerPublicKeySizeV1)
-	_, witnessAddress, err := nativefalcon.CanonicalAddress(publicKey)
+	ownCosigner := bytes.Repeat([]byte{0x62}, boundedmeta.CosignerPublicKeySizeV1)
+	_, ownCosignerAddress, err := nativefalcon.CanonicalAddress(ownCosigner)
 	if err != nil {
 		t.Fatal(err)
 	}
 	params := generalParams(boundedaccount.RekeyPlusCosigned)
-	params[composeddsa.BoundedCosignerPublicKeyParameter] = hex.EncodeToString(publicKey)
-	params[boundedaccount.ParameterRekeyTo] = listedTarget.String() + "," + witnessAddress.String()
-	if _, err := service.PrepareGenerateKey(boundedaccount.KeyTypeV1, params); err == nil || !strings.Contains(err.Message, "the address of this account's cosigner") {
+	params[composeddsa.BoundedCosignerPublicKeyParameter] = hex.EncodeToString(ownCosigner)
+	params[boundedaccount.ParameterRekeyTo] = listedTarget.String() + "," + referenceAddress.String() + "," + ownCosignerAddress.String()
+	if _, err := service.PrepareGenerateKey(boundedaccount.KeyTypeV1, params); err != nil {
 		t.Fatalf("PrepareGenerateKey() error = %#v", err)
 	}
-	assertNoKeys(t, service)
 }

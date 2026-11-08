@@ -94,7 +94,6 @@ func TestPlainHostRefusesHostRules(t *testing.T) {
 		{name: "spend effects", mutate: func(p *BoundedAuthorizationProfile) {
 			p.SpendEffects = []txeffects.SpendEffect{txeffects.SpendEffectPay}
 		}, layer3: none, want: "declares no spend effects"},
-		{name: "no cosigner", mutate: func(p *BoundedAuthorizationProfile) { p.Cosigner = nil }, layer3: none, want: "needs a cosigner"},
 		{name: "author TEAL", suffix: "int 1\nassert", layer3: none, want: "no author TEAL"},
 		{name: "a recipient list", layer3: &Layer3Policy{Policy: Layer3PolicyFixedAllowlist, RecipientsParameter: "recipients"}, want: "layer3 policy none"},
 		{name: "no Layer 3", want: "layer3 policy none"},
@@ -132,4 +131,19 @@ func TestCanonicalPlainProfileGolden(t *testing.T) {
 	if got := hex.EncodeToString(encoded); got != want {
 		t.Fatalf("canonical plain profile = %s, want %s", got, want)
 	}
+}
+
+// A plain host's cosigner is optional: without one its spends need the spending
+// key alone, and nothing calls the cosigner subroutine.
+func TestPlainHostWithoutACosigner(t *testing.T) {
+	profile := plainTestProfile(boundedmeta.RekeySpendingKey)
+	profile.Cosigner = nil
+	teal, err := newPlainTestProvider(profile, "", &Layer3Policy{Policy: Layer3PolicyNone}).GenerateTEAL([]byte{0x01}, map[string]string{})
+	if err != nil {
+		t.Fatalf("GenerateTEAL() error = %v", err)
+	}
+	if strings.Contains(teal, boundedCosignerLabel) {
+		t.Fatalf("a plain host without a cosigner calls the cosigner:\n%s", teal)
+	}
+	assertOrderedMarkers(t, teal, "bnz "+boundedRekeyLabel, boundedRekeyLabel+":", boundedSpendLabel+":", boundedAcceptLabel+":")
 }

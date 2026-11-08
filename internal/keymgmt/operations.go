@@ -196,14 +196,6 @@ func GenerateKeyWithActivatedContext(ctx context.Context, paths storepaths.Paths
 	if !isKeyTypeInList(keyType, validTypes) {
 		return nil, fmt.Errorf("invalid key type: %s (must be one of: %s)", keyType, strings.Join(validTypes, ", "))
 	}
-	// A plain host's program without overlays is never created as an account.
-	// The signer refuses it when it resolves the request; this refuses it here
-	// too. Any other resolution error is the generator's to report.
-	if provider := lsigprovider.Get(keyType); provider != nil {
-		if instance, err := lsigprovider.ResolveInstance(provider, params); err == nil && instance.Unavailable != "" {
-			return nil, fmt.Errorf("%w: %s", keygen.ErrInvalidParams, instance.Unavailable)
-		}
-	}
 
 	generator, err := keygen.GetGenerator(keyType)
 	if err != nil {

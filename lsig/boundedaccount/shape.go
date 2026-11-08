@@ -133,12 +133,11 @@ func (s Shape) Descriptor() string {
 // allowlists, then timelocks, then limits-only shapes. Each family is appended
 // after the last, so this order extends rather than reshuffles.
 //
-// Every shape has a way out: a spending-key rekey (with the cosigner on a
-// cosigned shape), a rekey-to list, or both (plus cosigned). The grammar never
-// offers an account that refuses every rekey. A timelock takes only a rekey-to
-// list, because no host rule gates a rekey: a spending-key rekey, cosigned or not,
-// could leave the lock at any time. A list is a way around the lock too, which
-// the review names.
+// The grammar is a subset of what the contract allows: every shape has a way
+// out (a spending-key rekey, with the cosigner on a cosigned shape, a rekey-to
+// list, or both), and a timelock takes only a rekey-to list, since a
+// spending-key rekey could leave the lock early. An expert template can express
+// the other combinations; the contract and durable validation accept them.
 func Shapes() []Shape {
 	type family struct {
 		rekey    string

@@ -12,9 +12,11 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/txeffects"
 	"github.com/aplane-algo/aplane/lsig/boundedaccount"
 	falcon "github.com/aplane-algo/aplane/lsig/falcon1024"
+	"github.com/aplane-algo/aplane/lsig/plainhost"
 )
 
 // refusalRules and allowRules are every rule ClassifyFor may report. A rule outside
@@ -76,30 +78,34 @@ func grammarDeclarations(t *testing.T) map[string]boundedmeta.PathDeclaration {
 	return declarations
 }
 
-// plainDeclarations is every plain host arrangement: always cosigned, with each
-// rekey setting.
-func plainDeclarations() map[string]boundedmeta.PathDeclaration {
+// plainDeclarations is every plain host arrangement, read from the registered
+// plain Falcon host's resolved metadata: each rekey setting, with and without a
+// cosigner.
+func plainDeclarations(t *testing.T) map[string]boundedmeta.PathDeclaration {
+	t.Helper()
+	falcon.RegisterClient()
+	resolver, ok := lsigprovider.Get("aplane.falcon1024.v1").(lsigprovider.InstanceResolver)
+	if !ok {
+		t.Fatal("aplane.falcon1024.v1 is not a plain host")
+	}
 	declarations := make(map[string]boundedmeta.PathDeclaration)
-	for _, arrangement := range []struct {
-		name  string
-		rekey boundedmeta.RekeySetting
-		list  bool
-	}{
-		{"refused", boundedmeta.RekeyRefused, false},
-		{"cosigned rekey", boundedmeta.RekeySpendingKey, false},
-		{"only these", boundedmeta.RekeyRefused, true},
-		{"plus cosigned", boundedmeta.RekeySpendingKey, true},
-	} {
-		declarations["plain "+arrangement.name] = boundedmeta.PathDeclaration{
-			Contract:     boundedmeta.PlainContract,
-			Layer3Policy: boundedmeta.Layer3PolicyNone,
-			Rekey:        arrangement.rekey,
-			RekeyList:    arrangement.list,
-			Cosigner: &boundedmeta.CosignerOverlay{
-				ComponentKeyType: boundedmeta.CosignerComponentKeyTypeV1,
-				RequiredOn:       boundedmeta.CosignerRequiredOn(arrangement.rekey),
-			},
+	for _, arrangement := range plainhost.Arrangements() {
+		params := map[string]string{plainhost.ParameterRekeyAuthority: arrangement.Rekey}
+		if arrangement.Cosigner {
+			params[boundedmeta.CosignerPublicKeyParameter] = strings.Repeat("41", boundedmeta.CosignerPublicKeySizeV1)
 		}
+		if arrangement.Rekey == plainhost.RekeyOnlyThese || arrangement.Rekey == plainhost.RekeyPlusCosigned {
+			params[plainhost.ParameterRekeyTo] = types.Address{3}.String()
+		}
+		instance, err := resolver.ResolveInstance(params)
+		if err != nil {
+			t.Fatalf("%+v: %v", arrangement, err)
+		}
+		declaration, err := instance.Bounded.Declaration()
+		if err != nil {
+			t.Fatalf("%+v: %v", arrangement, err)
+		}
+		declarations[fmt.Sprintf("plain %s cosigner=%v", arrangement.Rekey, arrangement.Cosigner)] = declaration
 	}
 	return declarations
 }
@@ -174,7 +180,7 @@ func TestClassifyForReachesAnExplicitRuleForEveryEffect(t *testing.T) {
 			break
 		}
 	}
-	maps.Copy(declarations, plainDeclarations())
+	maps.Copy(declarations, plainDeclarations(t))
 	corpus := surfaceCorpus(t)
 	reached := make(map[txeffects.Rule]bool)
 	for descriptor, declaration := range declarations {
@@ -257,7 +263,7 @@ func TestClassifyForRefusesAnInvalidDeclaration(t *testing.T) {
 // A plain host's spend may carry a close or clawback, but a rekey still passes
 // only as a pure rekey.
 func TestClassifyForPlainHost(t *testing.T) {
-	declaration := plainDeclarations()["plain plus cosigned"]
+	declaration := plainDeclarations(t)["plain plus_cosigned cosigner=true"]
 	var sender, other types.Address
 	sender[0], other[0] = 1, 2
 	closing := types.Transaction{Type: types.PaymentTx}

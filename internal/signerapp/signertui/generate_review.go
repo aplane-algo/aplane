@@ -195,9 +195,12 @@ func reviewRekey(review PrepareGenerateResultMessage) (label, consequence string
 	}
 	switch setting {
 	case boundedmeta.RekeyRefused:
-		if plain {
+		if plain && cosigned {
 			// A plain host can always close out, with the cosigner.
 			return "None", "No rekey path. Every spend, closes included, needs the cosigner."
+		}
+		if plain {
+			return "None", "No rekey path. The spending key alone can spend or close everything."
 		}
 		return "None", "No rekey path. Losing a required authority cannot be repaired."
 	case boundedmeta.RekeySpendingKey:
@@ -215,10 +218,12 @@ func reviewRekey(review PrepareGenerateResultMessage) (label, consequence string
 // called recipients to code the framework does not check. Overstating what an account
 // can pay is the mistake to avoid, so only the policies with no list say "any". A
 // policy this client does not know claims neither: it is named, with the details.
-func reviewRecipients(contract, policy string, recipients []string) (row, note string) {
+func reviewRecipients(contract, policy string, cosigned bool, recipients []string) (row, note string) {
 	switch {
-	case contract == boundedmeta.PlainContract:
+	case contract == boundedmeta.PlainContract && cosigned:
 		return reviewRow("Recipients", "any; the cosigner's policy decides what it signs"), ""
+	case contract == boundedmeta.PlainContract:
+		return reviewRow("Recipients", "any; the spending key alone decides"), ""
 	case policy == boundedmeta.Layer3PolicyCustom:
 		return reviewRow("Policy", "Custom policy, from the template author's code"), ""
 	case policy == boundedmeta.Layer3PolicyTimelock:
@@ -265,7 +270,7 @@ func (m Model) renderGenerateReview() string {
 	sb.WriteString("\n\n")
 	sb.WriteString(reviewRow("Key type", displayKeyType(review.KeyType)+", fixed once created"))
 	sb.WriteString(reviewRow("Transfers", transfersLabel(profile)))
-	row, note := reviewRecipients(profile.Contract, profile.Layer3Policy, recipientList(review.Parameters))
+	row, note := reviewRecipients(profile.Contract, profile.Layer3Policy, profile.CosignerRequired, recipientList(review.Parameters))
 	// An Ed25519 plain host's spending key is classical; say so where it is chosen.
 	if profile.Contract == boundedmeta.PlainContract && strings.Contains(review.KeyType, "ed25519") {
 		note = strings.TrimSpace(note + " The Ed25519 spending key is classical, not post-quantum.")

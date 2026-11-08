@@ -621,9 +621,10 @@ func TestServiceGenerateKeyGenericPassesThroughSuccessAndErrors(t *testing.T) {
 	}
 }
 
-// A plain host never creates the plain program, enabled or not, and never takes
-// a mnemonic: an enabled one refuses the import, a disabled one the key type.
-func TestServicePlainHostsRefuseThePlainProgramAndMnemonics(t *testing.T) {
+// An enabled plain host creates the plain program; a disabled one refuses the
+// key type. Neither takes a mnemonic.
+func TestServicePlainHostsCreateOnlyOnceEnabledAndTakeNoMnemonic(t *testing.T) {
+	configureFalconCompileMock(t)
 	for _, keyType := range []string{"aplane.falcon1024.v1", "aplane.ed25519.v1"} {
 		t.Run(keyType, func(t *testing.T) {
 			ir := setupProductRuntime(t)
@@ -636,15 +637,23 @@ func TestServicePlainHostsRefuseThePlainProgramAndMnemonics(t *testing.T) {
 				if err := keytypestate.Put(ir.KeyPaths(), keytypestate.Record{KeyType: keyType, Source: keytypestate.SourceCompiled, State: state}); err != nil {
 					t.Fatal(err)
 				}
-				if result, err := svc.GenerateKey(context.Background(), keyType, nil, nil); result != nil || err == nil || err.Kind != ErrorInvalidInput || !strings.Contains(err.Message, "only with a cosigner") {
-					t.Fatalf("GenerateKey(%s, %s) = %v, %v", keyType, state, result, err)
+				result, err := svc.GenerateKey(context.Background(), keyType, nil, nil)
+				switch state {
+				case keytypestate.StateEnabled:
+					if err != nil || result == nil {
+						t.Fatalf("GenerateKey(%s, enabled) = %v, %v", keyType, result, err)
+					}
+				default:
+					if result != nil || err == nil || !strings.Contains(err.Message, "not enabled on this node") {
+						t.Fatalf("GenerateKey(%s, disabled) = %v, %v", keyType, result, err)
+					}
 				}
 				if result, err := svc.ImportKey(context.Background(), keyType, "invalid phrase", nil); result != nil || err == nil || err.Kind != ErrorInvalidInput || !strings.Contains(err.Message, importRefusal) {
 					t.Fatalf("ImportKey(%s, %s) = %v, %v", keyType, state, result, err)
 				}
 			}
-			if len(audit.generated) != 0 || len(audit.imported) != 0 {
-				t.Fatal("refused creation was audited as successful")
+			if len(audit.generated) != 1 || len(audit.imported) != 0 {
+				t.Fatalf("audited %d generated and %d imported keys, want one generated", len(audit.generated), len(audit.imported))
 			}
 		})
 	}

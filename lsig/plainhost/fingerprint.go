@@ -29,13 +29,17 @@ const (
 	boundaryDigestDomainV1 = "APLANE_PLAIN_BOUNDARY_V1"
 )
 
-// descriptor names an arrangement in fingerprints: always cosigned.
-func descriptor(rekey string) string {
-	return "cosigner/" + ParameterRekeyAuthority + "=" + rekey
+// descriptor names an arrangement in fingerprints.
+func descriptor(selected Arrangement) string {
+	name := ParameterRekeyAuthority + "=" + selected.Rekey
+	if selected.Cosigner {
+		name = "cosigner/" + name
+	}
+	return name
 }
 
 // arrangementFingerprint is one arrangement's provenance, binding it alone.
-func arrangementFingerprint(rekey string, composer *composeddsa.ComposedDSA) string {
+func arrangementFingerprint(selected Arrangement, composer *composeddsa.ComposedDSA) string {
 	return lsigprovider.HashCompatibilitySpec(struct {
 		Schema           string `json:"schema"`
 		Arrangement      string `json:"arrangement"`
@@ -43,7 +47,7 @@ func arrangementFingerprint(rekey string, composer *composeddsa.ComposedDSA) str
 		ResolverRevision int    `json:"resolver_revision"`
 		RendererRevision int    `json:"renderer_revision"`
 		Definition       string `json:"definition"`
-	}{SchemaV1, descriptor(rekey), composer.CompatibilityFingerprint(), resolverRevision, rendererRevision, composer.KeyType()})
+	}{SchemaV1, descriptor(selected), composer.CompatibilityFingerprint(), resolverRevision, rendererRevision, composer.KeyType()})
 }
 
 // grammarFingerprint identifies every arrangement a key type offers, in order,
@@ -55,7 +59,7 @@ func grammarFingerprint(keyType string, arrangements []*arrangement) string {
 	}
 	entries := make([]entry, len(arrangements))
 	for i, selected := range arrangements {
-		entries[i] = entry{descriptor(selected.rekey), selected.fingerprint}
+		entries[i] = entry{descriptor(selected.Arrangement), selected.fingerprint}
 	}
 	return lsigprovider.HashCompatibilitySpec(struct {
 		Schema       string  `json:"schema"`
@@ -66,7 +70,7 @@ func grammarFingerprint(keyType string, arrangements []*arrangement) string {
 }
 
 // boundaryDigest compares two accounts' resolved contract and external
-// authorities, the cosigner and the rekey-to list. It excludes the spending
+// authorities, the cosigner and the rekey-to list, when it has them. It excludes the spending
 // key, so equal digests do not mean equal accounts.
 func boundaryDigest(selected *arrangement, parameters map[string]string) (string, error) {
 	composer := selected.composer

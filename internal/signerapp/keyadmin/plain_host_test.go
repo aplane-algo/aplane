@@ -6,7 +6,6 @@ package keyadmin
 import (
 	"context"
 	"encoding/hex"
-	"strings"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
@@ -31,26 +30,36 @@ func setupPlainHost(t *testing.T) (*productruntime.Runtime, Service, []byte) {
 	return ir, Service{Runtime: ir}, publicKey
 }
 
-// A plain host is created only with a cosigner. Without one the request selects
-// the plain program, which is the composition base and never an account.
-func TestPlainHostNeedsACosigner(t *testing.T) {
-	_, service, _ := setupPlainHost(t)
-	for name, params := range map[string]map[string]string{
-		"no parameters": nil,
-		"no cosigner":   {plainhost.ParameterRekeyAuthority: plainhost.RekeySpendingKey},
-	} {
-		t.Run(name, func(t *testing.T) {
-			_, prepareErr := service.PrepareGenerateKey(plainHostKeyType, params)
-			if prepareErr == nil || prepareErr.Kind != ErrorInvalidInput || !strings.Contains(prepareErr.Message, "cosigner") {
-				t.Fatalf("PrepareGenerateKey() error = %#v", prepareErr)
-			}
-			_, generateErr := service.GenerateKey(context.Background(), plainHostKeyType, params, nil)
-			if generateErr == nil || generateErr.Message != prepareErr.Message {
-				t.Fatalf("GenerateKey() error = %#v, want the same as preparation %#v", generateErr, prepareErr)
-			}
-		})
+// A plain host creates what the request asks for: the plain program with no
+// parameters, or plain1 with any overlays, a cosigner included or not.
+func TestPlainHostCreatesWhatTheRequestAsks(t *testing.T) {
+	ir, service, _ := setupPlainHost(t)
+	plain, err := service.GenerateKey(context.Background(), plainHostKeyType, nil, nil)
+	if err != nil {
+		t.Fatalf("GenerateKey(no parameters) error = %#v", err)
 	}
-	assertNoKeys(t, service)
+	if summary := ir.KeyStore().GetSigningSummary()[plain.Address]; summary.BoundedAuthorization != nil {
+		t.Fatalf("the plain program has an overlay contract: %+v", summary.BoundedAuthorization)
+	}
+	prepared, prepareErr := service.PrepareGenerateKey(plainHostKeyType, map[string]string{
+		plainhost.ParameterRekeyAuthority: plainhost.RekeyOnlyThese,
+		plainhost.ParameterRekeyTo:        listedTarget.String(),
+	})
+	if prepareErr != nil {
+		t.Fatalf("PrepareGenerateKey(only these, no cosigner) error = %#v", prepareErr)
+	}
+	if bounded := prepared.Bounded; bounded == nil || bounded.Contract != boundedmeta.PlainContract || bounded.Cosigner != nil || bounded.RekeyList == nil {
+		t.Fatalf("prepared contract = %+v", bounded)
+	}
+	listed, err := service.GenerateReviewedKey(context.Background(), plainHostKeyType, prepared.Parameters,
+		ReviewedValues{Fingerprint: prepared.ReviewFingerprint, BoundaryDigest: prepared.BoundaryDigest}, nil)
+	if err != nil {
+		t.Fatalf("GenerateReviewedKey() error = %#v", err)
+	}
+	metadata := ir.KeyStore().GetSigningSummary()[listed.Address].BoundedAuthorization
+	if metadata == nil || metadata.Contract != boundedmeta.PlainContract || metadata.Cosigner != nil || metadata.RekeyList == nil {
+		t.Fatalf("stored contract = %+v", metadata)
+	}
 }
 
 func TestPlainHostGeneratesFromAReview(t *testing.T) {
