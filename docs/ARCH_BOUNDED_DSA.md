@@ -37,6 +37,12 @@ listed rekey never asks the cosigner.
 | `only_these` | yes | spending key + cosigner | spending key; target on the list; the cosigner is not asked |
 | `plus_cosigned` | yes | spending key + cosigner | spending key alone to a listed target, or spending key + cosigner to any target the cosigner's policy allows |
 
+The table is what the program requires. A cosigned rekey must also pass this
+signer's own `rekeys` setting before the cosigner is asked: under the default
+`reject_foreign_rekey`, a target this signer doesn't hold and the account doesn't
+list is refused, so a cosigned rekey to an outside address needs `allow_rekeys`
+on the account's own policy.
+
 `plus_cosigned` without a cosigner is refused: the spending key could already
 rekey anywhere, so the list would add nothing. Only `refused` and `only_these`
 bound where authority can go independently of the online keys. A cosigned
@@ -896,7 +902,12 @@ structured selected-path LogicSig resource profile, with `spend`,
 `spending_rekey`, and `listed_rekey` cells. An account with a rekey-to list
 carries `bounded_authorization.rekey_list` with its `contract` and `depth`, and in
 `/keys` its `root`; the entries are never projected, so a client cannot tell
-whether a target is listed before it asks. Clients route:
+whether a target is listed before it asks. Asking does tell it: the signer
+refuses an unlisted target under *only these* by name, and under *plus
+cosigned* a listed and an unlisted target plan different paths, both before any
+approval. The list hides its entries from the chain and from inventory, not from
+an enrolled client of the account's own signer, which can already ask for the
+rekey. Clients route:
 
 - a pure spend or rekey of an account without a cosigner to ordinary `/sign`,
   rekeys with forced review; the signer refuses an unlisted target with

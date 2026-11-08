@@ -106,8 +106,9 @@ fails on chain, unless the account takes cosigned rekeys.
 A boundary file can also give a cosigned account a cosigned rekey: the spending
 key and the cosigner together, to any target the cosigner's policy allows, alone
 (`spending_key`) or beside a rekey-to list (`plus_cosigned`). The cosigner's
-`rekey_policy` then decides where such a rekey may go. A listed rekey never asks
-the cosigner, so its policy cannot stop one.
+`rekey_policy` then decides where such a rekey may go, after the user signer's
+own `rekeys` setting, which by default refuses a target it doesn't hold. A listed
+rekey never asks the cosigner, so its policy cannot stop one.
 
 Inline recipient lists support up to 30 addresses. The Merkle profiles support
 up to 65,536 recipients, committing to the list through a fixed root. The

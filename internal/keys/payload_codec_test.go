@@ -353,6 +353,39 @@ func TestParsePayloadRejectsInvalidBoundedMetadata(t *testing.T) {
 	}
 }
 
+// A rekey-to list's root is compiled from the parameters and its entries are
+// rebuilt on every listed rekey, so a record whose parameters disagree with its
+// metadata is refused when it loads, not after an operator approves a rekey.
+func TestParsePayloadChecksTheRekeyToListParameters(t *testing.T) {
+	bytecodeHex := hex.EncodeToString(canonicalOffCurveBytecode(t))
+	root := strings.Repeat("ab", 32)
+	entry := "AEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAKE3PRHE"
+	base := `{"format_version":1,"category":"dsa_lsig","key_type":"test.bounded.v1","public_key":"01","private_key":"02","lsig_bytecode":"` + bytecodeHex +
+		`","salt_counter":0,"signing_metadata_version":2,"base_key_type":"test.base.v1","parameters":{"bounded_rekey_to_root":"` + root + `","rekey_to":"` + entry +
+		`"},"bounded_authorization":{"contract":"bounded2","base_signature_arg_layout":{"count":1,"max_sizes":[4]},"spend_effects":["axfer"],"max_fee":1000,"rekey":"refused","rekey_list":{"contract":"rekey_list1","depth":4,"root":"` + root +
+		`"},"runtime_args":[],"derived_args":[{"name":"rekey_list_proof","kind":"rekey_list_proof","parameter":"rekey_to","max_size":160}],"argument_layout":[{"index":0,"name":"base_signature_0","source":"base_signature","max_size":4,"paths":{"spend":"required","spending_rekey":"required","listed_rekey":"required"}},{"index":1,"name":"rekey_list_proof","source":"derived","max_size":160,"paths":{"spend":"forbidden","spending_rekey":"forbidden","listed_rekey":"required"}}],"layer3_policy":"custom"},"created_at":"2026-07-10T12:34:56Z"}`
+	if payload, err := ParsePayload([]byte(base)); err != nil {
+		t.Fatalf("ParsePayload(base) error = %v", err)
+	} else {
+		payload.ZeroSecrets()
+	}
+	for name, test := range map[string]struct{ data, want string }{
+		"another root in the parameters": {strings.Replace(base, `"bounded_rekey_to_root":"`+root, `"bounded_rekey_to_root":"`+strings.Repeat("cd", 32), 1), "rekey-to list root does not match"},
+		"no root in the parameters":      {strings.Replace(base, `"bounded_rekey_to_root":"`+root+`",`, ``, 1), "rekey-to list root does not match"},
+		"unreadable entries":             {strings.Replace(base, `"rekey_to":"`+entry, `"rekey_to":"NOTANADDRESS`, 1), "invalid parameters.rekey_to"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			payload, err := ParsePayload([]byte(test.data))
+			if payload != nil {
+				payload.ZeroSecrets()
+			}
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("ParsePayload() error = %v, want %q", err, test.want)
+			}
+		})
+	}
+}
+
 func TestParsePayloadRejectsNonCanonicalJSON(t *testing.T) {
 	bytecodeHex := hex.EncodeToString(canonicalOffCurveBytecode(t))
 	base := `{"format_version":1,"category":"generic_lsig","key_type":"test.generic.v1","lsig_bytecode":"` + bytecodeHex + `","salt_counter":0,"signing_metadata_version":1,"created_at":"2026-07-10T12:34:56Z"}`

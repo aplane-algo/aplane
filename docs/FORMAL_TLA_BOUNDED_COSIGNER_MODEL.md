@@ -1,7 +1,7 @@
 # Bounded Cosigner Machine-Checkable Model
 
 > Status: TLC checked over every abstract input combination; the recorded run
-> generated 265,984 distinct reachable states at depth 4 and found no
+> generated 531,968 distinct reachable states at depth 4 and found no
 > counterexamples for `Safety`. The normal configuration exhausts the model's
 > full finite state space, so no deep configuration exists for this module.
 
@@ -18,9 +18,14 @@ rekey (the account's declared spending-key rekey) need the cosigner. A listed
 rekey (a rekey to an address on the account's rekey-to list) needs the list's
 proof and never the cosigner: the list is the owner's standing statement. The
 signer's base component names the path, and the client asks the cosigner only
-when that path needs it. The client's choice is an input here (`askCosigner`),
-so a client that asks or skips wrongly is in the state space, and assembly,
-which decides the path again from the canonical transaction, must catch it.
+when that path needs it. The client's choices are inputs here: whether it asks the
+cosigner (`askCosigner`) and whether it presents a signature it holds
+(`presentCosigner`). A client that asks, skips, or drops wrongly is in the state
+space, and assembly, which decides the path again from the canonical
+transaction, must catch it. Assembly sees only what is presented: it cannot tell
+whether a client asked the cosigner about a listed rekey and dropped the
+answer. That the first-party client never asks is a client property, pinned by
+`TestBoundedCosignerSimulateUsesUserFirstChoreography`.
 
 BS1 is an orchestration property, not a cosigner-endpoint authorization claim.
 The cosigner endpoint does not receive or verify the prior base component, and a
@@ -35,7 +40,7 @@ The spec lives at [formal/bounded_cosigner.tla](formal/bounded_cosigner.tla).
 | Invariant | Meaning | TLA+ predicate |
 |---|---|---|
 | BS1 | In the modeled first-party flow, user policy, approval, and base release precede the cosigner request | `BS1_UserFirst` |
-| BS2 | A listed rekey outputs with the receipt, the base signature and the list proof, and with no cosigner request | `BS2_ListedRekeyWithoutCosigner` |
+| BS2 | A listed rekey outputs with the receipt, the base signature and the list proof, and with no cosigner signature presented | `BS2_ListedRekeyWithoutCosigner` |
 | BS3 | Spend and cosigned-rekey output require a valid assembly receipt plus valid base and cosigner authorities | `BS3_CosignedAuthoritiesVerified` |
 | BS4 | Exact target coverage and path-valid argument sources gate output | `BS4_DeclaredArgumentsOnly` |
 | BS5 | Passthrough and canonical transaction bytes remain bound | `BS5_CanonicalGroupBound` |
@@ -47,7 +52,7 @@ The spec lives at [formal/bounded_cosigner.tla](formal/bounded_cosigner.tla).
 `Init` enumerates every combination of path (spend, cosigned rekey, listed
 rekey or invalid), finalized-plan and classification outcomes, signer policy
 and approval decisions, assembly-receipt validity, signature validity, whether
-the client asks the cosigner, the cosigner's policy, metadata stability, exact
+the client asks the cosigner and presents its signature, the cosigner's policy, metadata stability, exact
 target coverage, argument-source/path-mask validity, derived-argument success
 (the Merkle proof on a spend, the list proof on a listed rekey), passthrough
 validity, and canonical-byte binding.
@@ -83,11 +88,11 @@ or generated TEAL.
 - Allowing `CosignerStep` from `planned` violates `BS1_UserFirst`.
 - Removing the receipt conjunct or either signature conjunct from
   `AssembleStep` violates `BS3_CosignedAuthoritiesVerified`.
-- Removing `AssembleStep`'s refusal of a cosigner on a listed rekey, or its
-  list-proof conjunct, violates `BS2_ListedRekeyWithoutCosigner`; removing its
-  cosigner conjunct on a cosigned path violates
-  `BS3_CosignedAuthoritiesVerified`. Each of the three was run on 2026-11-08
-  and violates `Safety`.
+- Removing `AssembleStep`'s refusal of a presented cosigner signature on a
+  listed rekey, or its list-proof conjunct, violates
+  `BS2_ListedRekeyWithoutCosigner`; removing its cosigner conjunct on a cosigned
+  path violates `BS3_CosignedAuthoritiesVerified`. Each of the three was run on
+  2026-11-08 and violates `Safety`.
 - Removing source-layout, coverage, or byte-binding conjuncts violates BS4 or
   BS5.
 - Setting output on a failed branch violates BS6 or BS7.

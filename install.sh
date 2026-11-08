@@ -1357,6 +1357,12 @@ install_template_library() {
     fi
 
     mkdir -p "$dest"
+    # Earlier releases also installed a retired directory beside templates.
+    # This release can no longer parse those, so an upgraded node drops them.
+    if [ -n "$data_dir" ] && [ -d "$library_root/retired" ]; then
+        rm -rf -- "$library_root/retired"
+        echo "Removed retired templates from $library_root/retired."
+    fi
     for file in "$src"/*; do
         [ -f "$file" ] || continue
         case "$(basename "$file")" in

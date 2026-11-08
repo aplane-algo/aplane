@@ -16,7 +16,6 @@ package rekeylist
 import (
 	"bytes"
 	"crypto/hmac"
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
@@ -101,15 +100,6 @@ func FromSpendingKey(privateKey []byte, entries []types.Address) (*List, error) 
 		}
 	}()
 	return New(seed[:], entries)
-}
-
-// NewSeed returns a fresh random seed.
-func NewSeed() ([SeedSize]byte, error) {
-	var seed [SeedSize]byte
-	if _, err := rand.Read(seed[:]); err != nil {
-		return seed, fmt.Errorf("rekey list seed: %w", err)
-	}
-	return seed, nil
 }
 
 // New builds the tree for entries under seed. Entries must be distinct,

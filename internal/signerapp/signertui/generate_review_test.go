@@ -453,7 +453,7 @@ func TestCosignedRekeySummariesFitAt80x24(t *testing.T) {
 		list                bool
 		label, note         string
 	}{
-		{"cosigned spending key", boundedmeta.Layer3PolicyMerkleAllowlist, boundary.RekeySpendingKey, false, "Spending key and cosigner", "cosigner's policy allows"},
+		{"cosigned spending key", boundedmeta.Layer3PolicyMerkleAllowlist, boundary.RekeySpendingKey, false, "Spending key and cosigner", "both nodes' policies allow"},
 		{"cosigned only these", boundedmeta.Layer3PolicyMerkleAllowlist, boundary.RekeyRefused, true, "Only these 2 addresses, spending key alone", "at any time"},
 		{"cosigned only these timelock", boundedmeta.Layer3PolicyMerkleAllowlistTimelock, boundary.RekeyRefused, true, "Only these 2 addresses, spending key alone", "way around the lock"},
 		{"plus cosigned", boundedmeta.Layer3PolicyMerkleAllowlist, boundary.RekeySpendingKey, true, "These 2, spending key alone; others need the cosigner", "needs both online keys"},

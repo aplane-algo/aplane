@@ -4,6 +4,7 @@
 package keyadmin
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"maps"
@@ -347,6 +348,24 @@ func TestRekeyListRefusesACosignerReferenceAddress(t *testing.T) {
 	}
 	if _, err := service.GenerateKey(context.Background(), boundedaccount.KeyTypeV1, params, nil); err == nil || !strings.Contains(err.Message, "a witness key never signs as an account") {
 		t.Fatalf("GenerateKey() error = %#v", err)
+	}
+	assertNoKeys(t, service)
+}
+
+// The account's own cosigner, given as a public key rather than a reference, is
+// a witness key too, so its native address can't be listed either.
+func TestRekeyListRefusesTheAccountsOwnCosignerAddress(t *testing.T) {
+	_, service := setupGeneralProvider(t)
+	publicKey := bytes.Repeat([]byte{0x62}, boundedmeta.CosignerPublicKeySizeV1)
+	_, witnessAddress, err := nativefalcon.CanonicalAddress(publicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	params := generalParams(boundedaccount.RekeyPlusCosigned)
+	params[composeddsa.BoundedCosignerPublicKeyParameter] = hex.EncodeToString(publicKey)
+	params[boundedaccount.ParameterRekeyTo] = listedTarget.String() + "," + witnessAddress.String()
+	if _, err := service.PrepareGenerateKey(boundedaccount.KeyTypeV1, params); err == nil || !strings.Contains(err.Message, "the address of this account's cosigner") {
+		t.Fatalf("PrepareGenerateKey() error = %#v", err)
 	}
 	assertNoKeys(t, service)
 }

@@ -145,6 +145,20 @@ func TestOnlyTheseRules(t *testing.T) {
 	}
 }
 
+// The program's root and the stored one follow one canonicality rule, so an
+// upper-case root can't be compiled while the metadata would refuse it.
+func TestRekeyListRootMustBeCanonicalHex(t *testing.T) {
+	provider := onlyTheseProvider(t)
+	prepared, err := provider.PrepareRekeyList(rekeyListPrivateKey, map[string]string{composeddsa.BoundedRekeyToParameter: rekeyListEntriesParam})
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared[boundedmeta.RekeyListRootParameter] = strings.ToUpper(prepared[boundedmeta.RekeyListRootParameter])
+	if _, err := provider.GenerateTEAL(rekeyListSpendingKey, prepared); err == nil || !strings.Contains(err.Error(), "lowercase hex") {
+		t.Fatalf("GenerateTEAL() with an upper-case root: error = %v", err)
+	}
+}
+
 func TestRekeyListRootComesOnlyFromGeneration(t *testing.T) {
 	provider := onlyTheseProvider(t)
 	request := map[string]string{composeddsa.BoundedRekeyToParameter: rekeyListEntriesParam}

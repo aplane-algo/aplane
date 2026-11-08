@@ -253,12 +253,7 @@ func BuildApprovalDescription(req signerapi.GroupSignRequest, plan *PlanResult, 
 		}
 		txReq := req.Requests[i]
 		b.WriteString(describeTxnForApproval(txn, txReq, generateTxnDescriptionFromTxn))
-		if i < len(plan.BoundedItems) && plan.BoundedItems[i] != nil && plan.BoundedItems[i].Path != boundedPathPureSpend {
-			item := plan.BoundedItems[i]
-			b.WriteString("\n  Bounded authorization operation: REKEY")
-			b.WriteString("\n  Authorization: " + boundedAuthorizationLabel(item))
-			b.WriteString(fmt.Sprintf("\n  Profile maximum fee: %d microAlgos", item.Metadata.MaxFee))
-		}
+		b.WriteString(boundedRekeyApprovalLines(boundedItemAt(plan, i)))
 		if i == 0 && plan.Rotating != nil {
 			b.WriteString(plan.Rotating.describe())
 		}
@@ -275,6 +270,29 @@ func approvalTransactionNumbers(indices []int) []int {
 		numbers[i] = index + 1
 	}
 	return numbers
+}
+
+// boundedItemAt is a plan's bounded item for position i, or nil.
+func boundedItemAt(plan *PlanResult, i int) *boundedPlanItem {
+	if plan == nil || i < 0 || i >= len(plan.BoundedItems) {
+		return nil
+	}
+	return plan.BoundedItems[i]
+}
+
+// boundedRekeyApprovalLines names a bounded rekey's authorization for the
+// operator: the group and the single-request prompts both carry it. It is
+// empty for anything but a bounded rekey.
+func boundedRekeyApprovalLines(item *boundedPlanItem) string {
+	if item == nil || item.Path == boundedPathPureSpend {
+		return ""
+	}
+	lines := "\n  Bounded authorization operation: REKEY" +
+		"\n  Authorization: " + boundedAuthorizationLabel(item)
+	if item.Metadata != nil {
+		lines += fmt.Sprintf("\n  Profile maximum fee: %d microAlgos", item.Metadata.MaxFee)
+	}
+	return lines
 }
 
 // boundedAuthorizationLabel names who authorizes a bounded rekey: on a cosigned
@@ -367,7 +385,9 @@ func policyRejection(violations []policy.LintViolation, console Console) *Servic
 // i; an empty string or a short slice resolves to the node default.
 // knownAddresses is the signer-local address set used to distinguish local
 // rekeys from foreign rekeys. A position whose policy cannot be resolved
-// fails closed.
+// fails closed. It evaluates as if no account had a rekey-to list, so a listed
+// rekey reads as foreign here; the signer's own gates (runApprovalGates) give
+// each position its account's list.
 func EvaluateAutoRejectionRules(allTxns []types.Transaction, requestCount int, passthroughIndices, foreignIndices map[int]bool, policyFor PolicyResolver, authKeys []string, knownAddresses map[string]bool, console Console) *ServiceError {
 	violations, err := policyeval.Deny(policyeval.Input{
 		Group:          allTxns,
@@ -499,9 +519,14 @@ func (s *ApprovalService) RequestSingleTxnApprovalWithContext(ctx context.Contex
 	return s.requestSingleTxnApprovalWithContext(ctx, "", txReq, allTxns, txns, dummiesNeeded, firstValid, lastValid, "", nil)
 }
 
-// requestSingleTxnApprovalWithContext prompts for one request. listed is that
-// account's rekey-to list, so the warning names a listed handover as one.
-func (s *ApprovalService) requestSingleTxnApprovalWithContext(ctx context.Context, suppliedRequestID string, txReq signerapi.SignRequest, allTxns, txns []types.Transaction, dummiesNeeded int, firstValid, lastValid uint64, forceReviewRuleID string, listed map[string]bool) *ServiceError {
+// requestSingleTxnApprovalWithContext prompts for one request. bounded is its
+// bounded plan item, or nil: a bounded rekey's prompt names who authorizes it,
+// and the account's rekey-to list lets the warning name a listed handover as one.
+func (s *ApprovalService) requestSingleTxnApprovalWithContext(ctx context.Context, suppliedRequestID string, txReq signerapi.SignRequest, allTxns, txns []types.Transaction, dummiesNeeded int, firstValid, lastValid uint64, forceReviewRuleID string, bounded *boundedPlanItem) *ServiceError {
+	var listed map[string]bool
+	if bounded != nil {
+		listed = bounded.ListedRekeyTargets
+	}
 	console := consoleOf(s.Console)
 	txnApproved := false
 	approvalReason := ""
@@ -544,6 +569,7 @@ func (s *ApprovalService) requestSingleTxnApprovalWithContext(ctx context.Contex
 		txnDesc += "[MODIFIED: Fee adjusted for dummy transactions]\n"
 	}
 	txnDesc += describeTxnForApproval(allTxns[0], txReq, s.GenerateTxnDescriptionFromTxn)
+	txnDesc += boundedRekeyApprovalLines(bounded)
 
 	violations := approvalpolicy.CheckDecodedTxnWarningsIn(allTxns[0], approvalpolicy.Context{
 		KnownAddresses: s.KnownAddresses(), ListedRekeyTargets: listed,

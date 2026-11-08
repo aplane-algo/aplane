@@ -14,7 +14,8 @@ import (
 // after hard rejection passes and before policy auto-approval. User Auto-Approve
 // satisfies these review requirements without an operator prompt.
 // A signer-controlled position whose policy cannot be resolved forces review,
-// which is the closed outcome this phase can produce.
+// which is the closed outcome this phase can produce. Like
+// EvaluateAutoRejectionRules it sees no rekey-to lists; the signer's gates do.
 func EvaluateAlwaysReviewRules(txns []types.Transaction, requestCount int, passthroughIndices, foreignIndices map[int]bool, policyFor PolicyResolver, authKeys []string, knownAddresses map[string]bool) (ruleID string, review bool) {
 	return evaluateAlwaysReviewRules(txns, requestCount, passthroughIndices, foreignIndices, policyFor, authKeys, approvalpolicy.Context{KnownAddresses: knownAddresses})
 }

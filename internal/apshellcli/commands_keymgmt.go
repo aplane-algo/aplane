@@ -143,7 +143,7 @@ func renderBoundaryPreview(r *REPLState, preview *apshellapp.BoundaryPreview) {
 		// The signer refuses this combination; say so before the request is sent.
 		r.println("  Rekey:      spending key, which a timelock refuses; the signer will reject this")
 	case cosigned:
-		r.println("  Rekey:      spending key and cosigner together, to targets the cosigner's policy allows")
+		r.println("  Rekey:      spending key and cosigner together, to targets both nodes' policies allow")
 	default:
 		r.println("  Rekey:      spending key alone, which can rekey out of this boundary")
 	}

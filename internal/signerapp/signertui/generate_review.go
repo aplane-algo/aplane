@@ -196,7 +196,7 @@ func reviewRekey(review PrepareGenerateResultMessage) (label, consequence string
 		return "None", "No rekey path. Losing a required authority cannot be repaired."
 	case boundedmeta.RekeySpendingKey:
 		if cosigned {
-			return "Spending key and cosigner", "Together they can rekey out of this boundary, to any target the cosigner's policy allows."
+			return "Spending key and cosigner", "Together they can rekey out of this boundary, to a target both nodes' policies allow."
 		}
 		return "Spending key alone", "That key can rekey out of this boundary."
 	default:

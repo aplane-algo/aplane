@@ -183,22 +183,39 @@ func TestListedRekeyIsForcedToReview(t *testing.T) {
 // handover as the group prompt does, not warn that control is lost.
 func TestSingleApprovalNamesAListedHandover(t *testing.T) {
 	var got []signerapproval.Violation
+	var description string
 	svc := &ApprovalService{
 		HasClient:                     func() bool { return true },
 		GenerateTxnDescriptionFromTxn: func(types.Transaction) string { return "txn" },
 		KnownAddresses:                func() map[string]bool { return nil },
-		RequestSigningApproval: func(_, _, _, _ string, _, _ uint64, violations []signerapproval.Violation, _ time.Duration) (bool, error) {
-			got = violations
+		RequestSigningApproval: func(_, _, _, text string, _, _ uint64, violations []signerapproval.Violation, _ time.Duration) (bool, error) {
+			got, description = violations, text
 			return true, nil
 		},
 	}
 	rekey := listTestRekey(listTestTarget)
-	listed := map[string]bool{listTestTarget.String(): true}
+	item := &boundedPlanItem{
+		Path: boundedPathListedRekey, Metadata: testBoundedMetadata(t, boundedmeta.RekeyRefused),
+		ListedRekeyTargets: map[string]bool{listTestTarget.String(): true},
+	}
 	if err := svc.requestSingleTxnApprovalWithContext(context.Background(), "", signerapi.SignRequest{AuthAddress: "ACCOUNT"},
-		[]types.Transaction{rekey}, []types.Transaction{rekey}, 0, 0, 0, policy.BoundedRekeyRequiresReviewRuleID, listed); err != nil {
+		[]types.Transaction{rekey}, []types.Transaction{rekey}, 0, 0, 0, policy.BoundedRekeyRequiresReviewRuleID, item); err != nil {
 		t.Fatal(err)
 	}
 	if len(got) != 1 || !strings.Contains(got[0].Message, "rekey-to list") || !strings.Contains(got[0].Message, "LEAVES THIS SIGNER'S CUSTODY") {
 		t.Fatalf("single prompt warnings = %+v", got)
+	}
+	// A lone rekey is the usual case, so its prompt names the authorization too.
+	if !strings.Contains(description, "Bounded authorization operation: REKEY") ||
+		!strings.Contains(description, "Authorization: spending key only, to an address on the account's rekey-to list") {
+		t.Fatalf("single prompt = %q, want the bounded rekey's authorization", description)
+	}
+	cosigned := &boundedPlanItem{Path: boundedPathSpendingKeyRekey, Metadata: boundedCosignerTestMetadata(t, bytes.Repeat([]byte{0x41}, boundedmeta.CosignerPublicKeySizeV1))}
+	if err := svc.requestSingleTxnApprovalWithContext(context.Background(), "", signerapi.SignRequest{AuthAddress: "ACCOUNT"},
+		[]types.Transaction{rekey}, []types.Transaction{rekey}, 0, 0, 0, policy.BoundedRekeyRequiresReviewRuleID, cosigned); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(description, "Authorization: spending key and cosigner") {
+		t.Fatalf("single prompt for a cosigned rekey = %q", description)
 	}
 }

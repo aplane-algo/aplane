@@ -431,7 +431,9 @@ Review these points before funding an account:
 
 - A spending-key rekey can leave the boundary at any time, to any address. On a cosigned
   account it needs the cosigner too, and the cosigner's `rekey_policy` picks the targets,
-  but the two keys together can still leave. A listed rekey can leave at any time too,
+  but the two keys together can still leave. This signer's `rekeys` setting applies first:
+  under the default `reject_foreign_rekey`, a cosigned rekey to an address it doesn't hold
+  needs `allow_rekeys` in the account's policy. A listed rekey can leave at any time too,
   but only to a listed address, and on a timelock that includes before the unlock round.
 - An `only_these` account can change its authority only by a handover to a listed
   address. A lost cosigner stops every spend and cosigned rekey, but not a listed rekey.

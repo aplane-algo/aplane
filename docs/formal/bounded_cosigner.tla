@@ -8,17 +8,20 @@ A cosigned account's target takes one of three paths: a spend and a declared
 (cosigned) rekey need the spending key and the cosigner; a listed rekey needs
 the spending key and the rekey-to list's proof, and never the cosigner. The
 signer's base component names the path, and the client asks the cosigner only
-when that path needs it; but the client may also ask or skip wrongly, so its
-choice is an input here, and assembly decides the path again.
+when that path needs it; but the client may also ask or skip wrongly, and may
+present or drop a cosigner signature it holds, so both choices are inputs here,
+and assembly decides the path again.
 
 The model checks the security-bearing order and final acceptance boundary:
 
   BS1 : a cosigner request can occur only after finalized classification,
         signer policy, operator approval, and base-component release.
   BS2 : a listed rekey outputs only with the assembly receipt, the base
-        signature and a valid list proof, and with no cosigner request. (The
-        number once covered the external-admin path; this branch takes its
-        place.)
+        signature and a valid list proof, and with no cosigner signature
+        presented at assembly. Assembly cannot see whether the client asked
+        the cosigner; that the first-party client never asks for a listed rekey
+        is a client property, tested in Go. (The number once covered the
+        external-admin path; this branch takes its place.)
   BS3 : spend and cosigned-rekey output require a valid assembly receipt plus
         valid base and cosigner signatures and cosigner policy.
   BS4 : output requires exact target coverage and a path-valid argument-source
@@ -60,6 +63,7 @@ Input == [
     receipt      : BOOLEAN,
     baseSig      : BOOLEAN,
     askCosigner  : BOOLEAN,
+    presentCosigner : BOOLEAN,
     cosignerPolicy : BOOLEAN,
     cosignerSig    : BOOLEAN,
     coverage     : BOOLEAN,
@@ -128,6 +132,10 @@ CosignerStep ==
     /\ stage' = IF input.cosignerPolicy THEN "cosigner_released" ELSE "rejected"
     /\ UNCHANGED <<input, baseReleased, output>>
 
+(* The cosigner signature reaches assembly only when the cosigner released one
+   and the client sends it. *)
+Presented == cosignerReleased /\ input.presentCosigner
+
 (* POST /sign/assemble revalidates metadata, classifies the canonical
    transaction against the stored contract again, verifies the Falcon-signed
    assembly receipt against the bounded spending public key, and then checks
@@ -144,8 +152,8 @@ AssembleStep ==
             /\ input.metadata
             /\ input.receipt
             /\ input.baseSig
-            /\ (input.path \in CosignedPath => cosignerReleased /\ input.cosignerSig)
-            /\ (input.path = "listed_rekey" => ~cosignerReleased)
+            /\ (input.path \in CosignedPath => Presented /\ input.cosignerSig)
+            /\ (input.path = "listed_rekey" => ~Presented)
             /\ input.coverage
             /\ input.sourceLayout
             /\ (input.path \in {"spend", "listed_rekey"} => input.derived)
@@ -180,7 +188,7 @@ BS1_UserFirst ==
 BS2_ListedRekeyWithoutCosigner ==
     (output /\ input.path = "listed_rekey") =>
         /\ baseReleased
-        /\ ~cosignerRequested
+        /\ ~Presented
         /\ input.receipt
         /\ input.baseSig
         /\ input.derived
@@ -189,7 +197,7 @@ BS3_CosignedAuthoritiesVerified ==
     (output /\ input.path \in CosignedPath) =>
         /\ baseReleased
         /\ cosignerRequested
-        /\ cosignerReleased
+        /\ Presented
         /\ input.receipt
         /\ input.baseSig
         /\ input.cosignerSig
