@@ -49,8 +49,12 @@ func selectShape(params map[string]string, defs []lsigprovider.ParameterDef) (*s
 		return nil, err
 	}
 	rekey := normalized[ParameterRekeyAuthority]
-	if rekey != RekeySpendingKey && rekey != RekeyRefused {
-		return nil, fmt.Errorf("%s must be %s or %s", ParameterRekeyAuthority, RekeySpendingKey, RekeyRefused)
+	if rekey != RekeySpendingKey && rekey != RekeyOnlyThese && rekey != RekeyRefused {
+		return nil, fmt.Errorf("%s must be %s, %s or %s", ParameterRekeyAuthority, RekeySpendingKey, RekeyOnlyThese, RekeyRefused)
+	}
+	rekeyTo, err := canonicalRekeyTo(params, normalized, rekey)
+	if err != nil {
+		return nil, err
 	}
 	unlockRound, err := canonicalUnlockRound(params)
 	if err != nil {
@@ -93,13 +97,18 @@ func selectShape(params map[string]string, defs []lsigprovider.ParameterDef) (*s
 		return nil, fmt.Errorf("%s is empty", composeddsa.BoundedCosignerPublicKeyParameter)
 	}
 	switch {
-	case rekey == RekeySpendingKey && cosigner != "":
+	case rekey != RekeyRefused && cosigner != "":
+		// A cosigned account can't take a listed rekey yet, so it refuses rekeys.
 		return nil, fmt.Errorf("a cosigner requires %s=%s", ParameterRekeyAuthority, RekeyRefused)
+	case rekey == RekeyRefused && cosigner == "":
+		return nil, fmt.Errorf("%s=%s needs a cosigner; without one, use %s=%s with the addresses the account may be rekeyed to in %s",
+			ParameterRekeyAuthority, RekeyRefused, ParameterRekeyAuthority, RekeyOnlyThese, ParameterRekeyTo)
 	case rekey == RekeyRefused && refusedSpendError(spend) != nil:
 		return nil, refusedSpendError(spend)
 	case timelock && rekey == RekeySpendingKey:
 		// No host rule gates a rekey, so a spending-key rekey would leave the lock early.
-		return nil, fmt.Errorf("a timelock requires %s=%s: a spending-key rekey would leave the lock before the unlock round", ParameterRekeyAuthority, RekeyRefused)
+		return nil, fmt.Errorf("a timelock can't take %s=%s: a spending-key rekey would leave the lock before the unlock round; use %s=%s, or %s with a cosigner",
+			ParameterRekeyAuthority, RekeySpendingKey, ParameterRekeyAuthority, RekeyOnlyThese, RekeyRefused)
 	}
 
 	values := map[string]string{
@@ -118,6 +127,9 @@ func selectShape(params map[string]string, defs []lsigprovider.ParameterDef) (*s
 	if anyRecipient {
 		values[ParameterRecipientScope] = RecipientScopeAny
 	}
+	if rekeyTo != "" {
+		values[ParameterRekeyTo] = rekeyTo
+	}
 	if cosigner != "" {
 		values[composeddsa.BoundedCosignerPublicKeyParameter] = cosigner
 	}
@@ -128,6 +140,30 @@ func selectShape(params map[string]string, defs []lsigprovider.ParameterDef) (*s
 		},
 		values: values,
 	}, nil
+}
+
+// canonicalRekeyTo returns the rekey-to list in canonical order, or "" for an
+// account without one. Only only_these takes a list, and it must have one.
+func canonicalRekeyTo(params, normalized map[string]string, rekey string) (string, error) {
+	_, present := params[ParameterRekeyTo]
+	if rekey != RekeyOnlyThese {
+		if present {
+			return "", fmt.Errorf("%s needs %s=%s", ParameterRekeyTo, ParameterRekeyAuthority, RekeyOnlyThese)
+		}
+		return "", nil
+	}
+	if strings.TrimSpace(normalized[ParameterRekeyTo]) == "" {
+		return "", fmt.Errorf("%s=%s needs the addresses the account may be rekeyed to in %s", ParameterRekeyAuthority, RekeyOnlyThese, ParameterRekeyTo)
+	}
+	entries, err := composeddsa.RekeyListEntries(normalized)
+	if err != nil {
+		return "", err
+	}
+	addresses := make([]string, len(entries))
+	for i, entry := range entries {
+		addresses[i] = entry.String()
+	}
+	return strings.Join(addresses, ","), nil
 }
 
 // canonicalRecipientScope returns "" when the request names no scope. It reads

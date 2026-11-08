@@ -32,11 +32,12 @@ const (
 	// BoundedCosignerPublicKeyParameter is injected for cosigner-enabled profiles.
 	BoundedCosignerPublicKeyParameter = boundedmeta.CosignerPublicKeyParameter
 	// BoundedRekeyToParameter carries a rekey-to list's entries. The framework
-	// injects it for a profile with a list.
+	// injects it for a profile with a list; a template that declares it must
+	// match the injected definition exactly.
 	BoundedRekeyToParameter = boundedmeta.RekeyListEntriesParameter
 	// BoundedRekeyOnlyThese is the template's rekey value for a rekey-to list:
 	// rekey: refused, plus the list.
-	BoundedRekeyOnlyThese = "only_these"
+	BoundedRekeyOnlyThese = boundedmeta.RekeyOnlyThese
 
 	boundedReservedNamePrefix  = "bounded_"
 	boundedReservedLabelPrefix = "__aplane_bounded1_"

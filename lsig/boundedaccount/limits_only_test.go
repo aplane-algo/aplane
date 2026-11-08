@@ -20,9 +20,9 @@ import (
 // limitsOnlyShapes are the appended shapes. Index order is frozen by the goldens.
 func limitsOnlyShapes(t *testing.T) []Shape {
 	t.Helper()
-	shapes := Shapes()[44:]
-	if len(shapes) != 13 {
-		t.Fatalf("%d limits-only shapes, want 13", len(shapes))
+	shapes := Shapes()[64:]
+	if len(shapes) != 17 {
+		t.Fatalf("%d limits-only shapes, want 17", len(shapes))
 	}
 	return shapes
 }
@@ -92,7 +92,8 @@ func TestLimitsOnlyRequestsFailClosed(t *testing.T) {
 		{"listed scope and no list", func(p map[string]string) { p[ParameterRecipientScope] = RecipientScopeListed }, "recipients is required"},
 		{"listed scope with only a timelock", func(p map[string]string) {
 			p[ParameterRecipientScope] = RecipientScopeListed
-			p[ParameterRekeyAuthority] = RekeyRefused
+			p[ParameterRekeyAuthority] = RekeyOnlyThese
+			p[ParameterRekeyTo] = testRekeyTo
 			p[ParameterUnlockRound] = "5"
 		}, "recipients is required"},
 		{"empty scope", func(p map[string]string) { p[ParameterRecipientScope] = "" }, "recipient_scope must be"},
@@ -101,7 +102,8 @@ func TestLimitsOnlyRequestsFailClosed(t *testing.T) {
 		{"any with an empty list", func(p map[string]string) { p[ParameterRecipients] = "" }, "takes no recipients"},
 		{"any with an encoding", func(p map[string]string) { p[ParameterListEncoding] = EncodingInline }, "no list to encode"},
 		{"any with a timelock", func(p map[string]string) {
-			p[ParameterRekeyAuthority] = RekeyRefused
+			p[ParameterRekeyAuthority] = RekeyOnlyThese
+			p[ParameterRekeyTo] = testRekeyTo
 			p[ParameterUnlockRound] = "5"
 		}, "does not combine"},
 		{"any with a cosigner and a spending-key rekey", func(p map[string]string) {
@@ -109,12 +111,23 @@ func TestLimitsOnlyRequestsFailClosed(t *testing.T) {
 		}, "a cosigner requires rekey_authority=refused"},
 		{"any refusing rekeys without pay", func(p map[string]string) {
 			p[ParameterRekeyAuthority] = RekeyRefused
+			p[composeddsa.BoundedCosignerPublicKeyParameter] = testCosignerKey
 			p[ParameterSpendEffects] = "axfer"
 		}, "needs pay in spend_effects"},
 		{"any refusing rekeys, opting in without axfer", func(p map[string]string) {
 			p[ParameterRekeyAuthority] = RekeyRefused
+			p[composeddsa.BoundedCosignerPublicKeyParameter] = testCosignerKey
 			p[ParameterSpendEffects] = "pay,asset_opt_in"
 		}, "needs axfer in spend_effects"},
+		{"any refusing rekeys without a cosigner", func(p map[string]string) { p[ParameterRekeyAuthority] = RekeyRefused },
+			"rekey_authority=refused needs a cosigner"},
+		{"any with only_these and no rekey-to list", func(p map[string]string) { p[ParameterRekeyAuthority] = RekeyOnlyThese },
+			"rekey_authority=only_these needs the addresses"},
+		{"any with a cosigner and only_these", func(p map[string]string) {
+			p[ParameterRekeyAuthority] = RekeyOnlyThese
+			p[ParameterRekeyTo] = testRekeyTo
+			p[composeddsa.BoundedCosignerPublicKeyParameter] = testCosignerKey
+		}, "a cosigner requires rekey_authority=refused"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			params := base()
@@ -131,7 +144,7 @@ func TestLimitsOnlyRequestsFailClosed(t *testing.T) {
 func TestLimitsOnlyFingerprintsAreDistinct(t *testing.T) {
 	provider := newTestProvider(t)
 	earlier := make(map[string]string)
-	for _, definition := range provider.ordered[:44] {
+	for _, definition := range provider.ordered[:64] {
 		earlier[definition.fingerprint] = definition.shape.Descriptor()
 	}
 	for _, shape := range limitsOnlyShapes(t) {
@@ -187,7 +200,7 @@ func TestLimitsOnlyProgramIsTheEnvelopeAlone(t *testing.T) {
 		if shape.Cosigner {
 			params[composeddsa.BoundedCosignerPublicKeyParameter] = cosigner
 		}
-		teal, err := provider.GenerateTEAL(spending, params)
+		teal, err := provider.GenerateTEAL(spending, withRoot(t, provider, params))
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -26,9 +26,11 @@ type BoundaryPreview struct {
 	ListDigest string
 	Encoding   string
 	// AnyRecipient is a limits-only request: no list and no timelock.
-	AnyRecipient  bool
-	UnlockRound   string
-	Rekey         string
+	AnyRecipient bool
+	UnlockRound  string
+	Rekey        string
+	// RekeyTo is the rekey-to list, with rekey authority only_these.
+	RekeyTo       []string
 	Cosigner      string
 	CosignerIsKey bool
 }
@@ -48,6 +50,9 @@ func (a *App) PreviewBoundaryFile(keyType, path string) (*BoundaryPreview, error
 		Rekey:        parameters[boundary.ParameterRekeyAuthority],
 		Cosigner:     parameters[boundary.ParameterCosigner],
 		AnyRecipient: parameters[boundary.ParameterRecipientScope] == boundary.RecipientScopeAny,
+	}
+	if list := parameters[boundary.ParameterRekeyTo]; list != "" {
+		preview.RekeyTo = strings.Split(list, ",")
 	}
 	if list := parameters[boundary.ParameterRecipients]; list != "" {
 		preview.Recipients = len(strings.Split(list, ","))

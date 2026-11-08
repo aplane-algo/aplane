@@ -113,6 +113,15 @@ func renderBoundaryPreview(r *REPLState, preview *apshellapp.BoundaryPreview) {
 		r.printf("  Unlocks at: round %s, on the network this signer uses\n", preview.UnlockRound)
 	}
 	switch {
+	case preview.Rekey == boundary.RekeyOnlyThese:
+		r.printf("  Rekey:      only to these %d addresses, with the spending key alone:\n", len(preview.RekeyTo))
+		for _, target := range preview.RekeyTo {
+			r.printf("              %s\n", target)
+		}
+		r.println("              Each can take the account over, at any time the spending key chooses.")
+		if preview.UnlockRound != "" {
+			r.println("              That is a way around the unlock round.")
+		}
 	case preview.Rekey == boundary.RekeyRefused:
 		r.println("  Rekey:      refused; the account can never be rekeyed")
 	case preview.UnlockRound != "":

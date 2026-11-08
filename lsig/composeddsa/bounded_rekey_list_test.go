@@ -108,6 +108,18 @@ func TestOnlyTheseRules(t *testing.T) {
 	if _, err := noneComposer(assetsOnly); err != nil {
 		t.Fatalf("an assets-only list account was refused: %v", err)
 	}
+	mismatched := onlyTheseTemplateYAML + "\nparameters:\n  - name: rekey_to\n    type: address[]\n    required: true\n    min_items: 1\n    max_items: 3\n"
+	// Like the cosigner key, the injected contract is enforced when the account
+	// is generated.
+	ownList, err := noneComposer(mismatched)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ownList.GenerateTEAL(rekeyListSpendingKey, map[string]string{
+		composeddsa.BoundedRekeyToParameter: rekeyListListedA.String(), boundedmeta.RekeyListRootParameter: strings.Repeat("00", 32),
+	}); err == nil || !strings.Contains(err.Error(), "framework-injected contract") {
+		t.Fatalf("a template's own rekey_to: error = %v", err)
+	}
 	cosigned := strings.Replace(onlyTheseTemplateYAML, "  rekey: only_these\n", "  rekey: only_these\n  cosigner:\n    contract: cosigner1\n    required_on: [spend]\n", 1)
 	if _, err := noneComposer(cosigned); err == nil || !strings.Contains(err.Error(), "cosigned account is not supported") {
 		t.Fatalf("a cosigned list account: error = %v", err)
@@ -224,4 +236,49 @@ func TestOnlyTheseProgramAdmitsOnlyListedRekeys(t *testing.T) {
 func rekeyListTag(key, data []byte) []byte {
 	sum := sha256.Sum256(append(append([]byte("rekey-list-test/"), key...), data...))
 	return sum[:]
+}
+
+// A framework policy with no author TEAL accounts for every parameter it is
+// given; the injected rekey_to is the envelope's, not Layer 3's, so it must not
+// count as unused.
+func TestOnlyTheseWithAFrameworkPolicy(t *testing.T) {
+	const yaml = `schema_version: 2
+derivation_version: 3
+template_type: composed
+base_key_type: aplane.falcon1024.v1
+template_mode: strict
+publisher: test
+family: only-these-allowlist
+version: 1
+display_name: "Only These Allowlist"
+max_opcode_cost: 20000
+
+bounded:
+  contract: bounded2
+  spend_effects: [pay]
+  max_fee: 10000
+  rekey: only_these
+  layer3:
+    policy: fixed_allowlist
+    recipients_parameter: recipients
+
+parameters:
+  - name: recipients
+    type: address[]
+    required: true
+    min_items: 1
+    max_items: 30
+`
+	provider := authorAllowlistProvider(t, yaml)
+	if provider.BoundedAuthorizationMetadata() == nil {
+		t.Fatal("the framework-policy list account has no metadata")
+	}
+	request := map[string]string{"recipients": rekeyListListedB.String(), composeddsa.BoundedRekeyToParameter: rekeyListListedA.String()}
+	prepared, err := provider.PrepareRekeyList(rekeyListPrivateKey, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.GenerateTEAL(rekeyListSpendingKey, prepared); err != nil {
+		t.Fatalf("GenerateTEAL() error = %v", err)
+	}
 }

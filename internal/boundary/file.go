@@ -29,6 +29,8 @@ type File struct {
 	Encoding       *string `yaml:"encoding"`
 	Rekey          *struct {
 		Authority string `yaml:"authority"`
+		// To is the rekey-to list, with authority only_these.
+		To []string `yaml:"to"`
 	} `yaml:"rekey"`
 	Cosigner *string `yaml:"cosigner"`
 	// UnlockRound is text so that a uint64 survives, and may be written as a number.
@@ -87,8 +89,17 @@ func ParseFile(data []byte) (*File, error) {
 	if file.Rekey == nil {
 		return nil, fmt.Errorf("boundary file: rekey is required")
 	}
-	if file.Rekey.Authority != RekeySpendingKey && file.Rekey.Authority != RekeyRefused {
-		return nil, fmt.Errorf("boundary file: rekey.authority must be %s or %s", RekeySpendingKey, RekeyRefused)
+	switch file.Rekey.Authority {
+	case RekeyOnlyThese:
+		if len(file.Rekey.To) == 0 {
+			return nil, fmt.Errorf("boundary file: rekey.authority %s needs the addresses in rekey.to", RekeyOnlyThese)
+		}
+	case RekeySpendingKey, RekeyRefused:
+		if file.Rekey.To != nil {
+			return nil, fmt.Errorf("boundary file: rekey.to needs rekey.authority %s", RekeyOnlyThese)
+		}
+	default:
+		return nil, fmt.Errorf("boundary file: rekey.authority must be %s, %s or %s", RekeySpendingKey, RekeyOnlyThese, RekeyRefused)
 	}
 	if file.Cosigner != nil && strings.TrimSpace(*file.Cosigner) == "" {
 		return nil, fmt.Errorf("boundary file: cosigner is empty")
@@ -106,6 +117,9 @@ func (f *File) CreationParameters() map[string]string {
 	params := map[string]string{
 		ParameterSpendEffects:   strings.Join(f.Spend, ","),
 		ParameterRekeyAuthority: f.Rekey.Authority,
+	}
+	if f.Rekey.To != nil {
+		params[ParameterRekeyTo] = strings.Join(f.Rekey.To, ",")
 	}
 	if f.Recipients != nil {
 		params[ParameterRecipients] = strings.Join(f.Recipients, ",")

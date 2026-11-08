@@ -83,6 +83,7 @@ func TestEveryPerKeyProviderSupportsTheBoundaryWorkflow(t *testing.T) {
 	field := map[string][2]string{
 		boundary.ParameterRecipients:  {boundary.ParameterRecipients, recipient},
 		boundary.ParameterUnlockRound: {boundary.ParameterUnlockRound, "100"},
+		boundary.ParameterRekeyTo:     {boundary.ParameterRekeyTo, types.Address{2}.String()},
 		boundary.ParameterCosigner:    {boundedmeta.CosignerPublicKeyParameter, cosignerKey},
 	}
 
@@ -127,7 +128,12 @@ func TestEveryPerKeyProviderSupportsTheBoundaryWorkflow(t *testing.T) {
 			if got := strings.Join(metadata.SpendEffects, ","); got != preset.Fixed[boundary.ParameterSpendEffects] {
 				t.Errorf("%s: preset %s spends %q", provider.KeyType(), preset.Name, got)
 			}
-			if got, want := string(metadata.Rekey), preset.Fixed[boundary.ParameterRekeyAuthority]; got != want {
+			// "Only these" is stored as rekey refused plus the rekey-to list.
+			got := string(metadata.Rekey)
+			if metadata.RekeyList != nil && metadata.Rekey == boundedmeta.RekeyRefused {
+				got = boundary.RekeyOnlyThese
+			}
+			if want := preset.Fixed[boundary.ParameterRekeyAuthority]; got != want {
 				t.Errorf("%s: preset %s rekey = %q, want %q", provider.KeyType(), preset.Name, got, want)
 			}
 			if got, want := metadata.Cosigner != nil, slices.Contains(preset.Fields, boundary.ParameterCosigner); got != want {

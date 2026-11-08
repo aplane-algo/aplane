@@ -483,9 +483,9 @@ func TestPresetAsksOnlyForWhatItLeavesOpen(t *testing.T) {
 		want   []string
 	}{
 		{0, []string{"recipients"}},
-		{1, []string{"recipients"}},
+		{1, []string{"recipients", boundary.ParameterRekeyTo}},
 		{2, []string{"recipients", boundary.ParameterCosigner}},
-		{3, []string{boundary.ParameterUnlockRound}},
+		{3, []string{boundary.ParameterUnlockRound, boundary.ParameterRekeyTo}},
 	} {
 		preset := boundary.Presets()[test.preset]
 		m := Model{forms: formsState{boundaryKeyType: boundary.KeyTypeV1, boundaryPreset: &preset}}

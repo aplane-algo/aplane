@@ -15,6 +15,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
+	"github.com/aplane-algo/aplane/internal/rekeylist"
 	txsigning "github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	"github.com/aplane-algo/aplane/lsig/generictemplate"
@@ -97,8 +98,10 @@ func newProvider(definition Definition) (*Provider, error) {
 	for _, shape := range definition.Shapes {
 		// shapeSpec passes the rekey value straight to the template spec, so an
 		// unknown value fails here, before anything is compiled.
-		if err := boundedmeta.ValidateRekeySetting(boundedmeta.RekeySetting(shape.Rekey)); err != nil {
-			return nil, fmt.Errorf("bounded definition %s.%s: shape %s has unknown rekey authority: %w", definition.Publisher, definition.Family, shape.Descriptor(), err)
+		if shape.Rekey != RekeyOnlyThese {
+			if err := boundedmeta.ValidateRekeySetting(boundedmeta.RekeySetting(shape.Rekey)); err != nil {
+				return nil, fmt.Errorf("bounded definition %s.%s: shape %s has unknown rekey authority: %w", definition.Publisher, definition.Family, shape.Descriptor(), err)
+			}
 		}
 		composer, err := composeddsa.NewProviderFromTemplateSpec(shapeSpec(definition, shape))
 		if err != nil {
@@ -235,10 +238,17 @@ func creationParameters() []lsigprovider.ParameterDef {
 		{
 			Name:        ParameterRekeyAuthority,
 			Label:       "Rekey Authority",
-			Description: "Who can rekey the account: the spending key alone, or no one (refused).",
+			Description: "How the account can be rekeyed: by the spending key to any address, by the spending key only to an address on its rekey-to list (only_these), or not at all (refused, with a cosigner only).",
 			Type:        "string",
 			Required:    true,
-			Options:     []string{RekeySpendingKey, RekeyRefused},
+			Options:     []string{RekeySpendingKey, RekeyOnlyThese, RekeyRefused},
+		},
+		{
+			Name:        ParameterRekeyTo,
+			Label:       "Rekey-To Addresses",
+			Description: "With only_these: the 1 to 16 addresses the account may be rekeyed to. Each can take the account over.",
+			Type:        "address[]",
+			MaxItems:    rekeylist.MaxEntries,
 		},
 		{
 			Name:        ParameterListEncoding,
@@ -338,6 +348,14 @@ func shapeFromMetadata(metadata *boundedmeta.Metadata) (Shape, error) {
 	shape := Shape{Spend: spend, Rekey: string(metadata.Rekey), Cosigner: metadata.Cosigner != nil}
 	if err := boundedmeta.ValidateRekeySetting(metadata.Rekey); err != nil {
 		return Shape{}, fmt.Errorf("stored account: %w", err)
+	}
+	if metadata.RekeyList != nil {
+		// "Only these" is refused plus the list; a list beside any other rekey
+		// setting is not a contract this type offers.
+		if metadata.Rekey != boundedmeta.RekeyRefused {
+			return Shape{}, fmt.Errorf("stored account has a rekey-to list beside rekey setting %q", metadata.Rekey)
+		}
+		shape.Rekey = RekeyOnlyThese
 	}
 	switch metadata.Layer3Policy {
 	case composeddsa.Layer3PolicyFixedAllowlist:

@@ -279,7 +279,7 @@ func boundedProfileFromTemplate(spec *generictemplate.BoundedAuthorizationSpec) 
 		return nil, fmt.Errorf("bounded.rekey is required: %s, %s or %s", boundedmeta.RekeyRefused, boundedmeta.RekeySpendingKey, BoundedRekeyOnlyThese)
 	case BoundedRekeyOnlyThese:
 		// Only these addresses: no rekey except to an address on the list, which
-		// the framework adds as the bounded_rekey_to parameter.
+		// the framework adds as the rekey_to parameter.
 		profile.Rekey = boundedmeta.RekeyRefused
 		profile.RekeyList = &boundedmeta.RekeyList{Contract: boundedmeta.RekeyListContractV1, Depth: rekeylist.Depth}
 	default:

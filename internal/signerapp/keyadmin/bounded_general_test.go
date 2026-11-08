@@ -12,10 +12,12 @@ import (
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
+	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/cosigner/cosignerrefs"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keymgmt"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
+	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
 	"github.com/aplane-algo/aplane/lsig/boundedaccount"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 )
@@ -28,6 +30,13 @@ func setupGeneralProvider(t *testing.T) (*productruntime.Runtime, Service) {
 	return ir, Service{Runtime: ir}
 }
 
+// listedTarget is the address an only_these test account may be rekeyed to.
+var listedTarget = func() types.Address {
+	var target types.Address
+	target[0], target[31] = 0x51, 1
+	return target
+}()
+
 func generalParams(rekey string) map[string]string {
 	var recipient types.Address
 	recipient[31] = 7
@@ -35,6 +44,9 @@ func generalParams(rekey string) map[string]string {
 		boundedaccount.ParameterSpendEffects:   "pay,axfer,asset_opt_in",
 		boundedaccount.ParameterRekeyAuthority: rekey,
 		boundedaccount.ParameterRecipients:     recipient.String(),
+	}
+	if rekey == boundedaccount.RekeyOnlyThese {
+		params[boundedaccount.ParameterRekeyTo] = listedTarget.String()
 	}
 	return params
 }
@@ -98,7 +110,7 @@ func TestGeneralProviderGeneratesFromAReview(t *testing.T) {
 
 func TestGeneralProviderRejectsAChangedReview(t *testing.T) {
 	_, service := setupGeneralProvider(t)
-	params := generalParams(boundedaccount.RekeyRefused)
+	params := generalParams(boundedaccount.RekeyOnlyThese)
 	prepared, err := service.PrepareGenerateKey(boundedaccount.KeyTypeV1, params)
 	if err != nil {
 		t.Fatalf("PrepareGenerateKey() error = %#v", err)
@@ -132,19 +144,21 @@ func TestBoundaryRequirements(t *testing.T) {
 	ir, service := setupGeneralProvider(t)
 	publicKey, _ := importPrepareReference(t, ir, prepareTestReference, 0x61)
 	spendingKey := generalParams(boundedaccount.RekeySpendingKey)
-	refused := generalParams(boundedaccount.RekeyRefused)
+	refused := generalParams(boundedaccount.RekeyOnlyThese)
 	cosigned := generalParams(boundedaccount.RekeyRefused)
 	cosigned[composeddsa.BoundedCosignerPublicKeyParameter] = hex.EncodeToString(publicKey)
 	// Refusing rekeys is not containment on its own: a timelock with no list
 	// pays anyone once it opens.
-	timelockOnly := generalParams(boundedaccount.RekeyRefused)
+	timelockOnly := generalParams(boundedaccount.RekeyOnlyThese)
 	delete(timelockOnly, boundedaccount.ParameterRecipients)
 	timelockOnly[boundedaccount.ParameterUnlockRound] = "100"
 	// Nor is a cosigner: a limits-only account pays anyone the cosigner signs for.
-	limitsOnly := generalParams(boundedaccount.RekeyRefused)
+	limitsOnly := generalParams(boundedaccount.RekeyOnlyThese)
 	delete(limitsOnly, boundedaccount.ParameterRecipients)
 	limitsOnly[boundedaccount.ParameterRecipientScope] = boundedaccount.RecipientScopeAny
-	limitsCosigned := maps.Clone(limitsOnly)
+	limitsCosigned := generalParams(boundedaccount.RekeyRefused)
+	delete(limitsCosigned, boundedaccount.ParameterRecipients)
+	limitsCosigned[boundedaccount.ParameterRecipientScope] = boundedaccount.RecipientScopeAny
 	limitsCosigned[composeddsa.BoundedCosignerPublicKeyParameter] = hex.EncodeToString(publicKey)
 
 	tests := []struct {
@@ -188,7 +202,7 @@ func TestGeneralProviderRefusesASpendingKeyRekeyOnATimelock(t *testing.T) {
 	listAndTimelock := generalParams(boundedaccount.RekeySpendingKey)
 	listAndTimelock[boundedaccount.ParameterUnlockRound] = "100"
 	for name, params := range map[string]map[string]string{"timelock": timelockOnly, "allowlist and timelock": listAndTimelock} {
-		const want = "a timelock requires " + boundedaccount.ParameterRekeyAuthority + "=" + boundedaccount.RekeyRefused
+		const want = "a timelock can't take " + boundedaccount.ParameterRekeyAuthority + "=" + boundedaccount.RekeySpendingKey
 		if _, err := service.PrepareGenerateKey(boundedaccount.KeyTypeV1, params); err == nil || !strings.Contains(err.Message, want) {
 			t.Fatalf("%s: PrepareGenerateKey() error = %#v", name, err)
 		}
@@ -230,7 +244,7 @@ func TestCosignerReferenceResolvesBeforeTheShapeIsChosen(t *testing.T) {
 	ir, service := setupGeneralProvider(t)
 	publicKey, keyID := importPrepareReference(t, ir, prepareTestReference, 0x61)
 	params := generalParams(boundedaccount.RekeyRefused)
-	params[cosignerrefs.ParamCosignerName] = prepareTestReference
+	params[cosignerrefs.ParamCosignerName] = prepareTestReference // a cosigned account refuses rekeys
 	prepared, err := service.PrepareGenerateKey(boundedaccount.KeyTypeV1, params)
 	if err != nil {
 		t.Fatalf("PrepareGenerateKey() error = %#v", err)
@@ -250,4 +264,83 @@ func TestCosignerReferenceResolvesBeforeTheShapeIsChosen(t *testing.T) {
 	if _, err := service.PrepareGenerateKey(boundedaccount.KeyTypeV1, params); err == nil {
 		t.Fatal("an explicitly empty reference selected an account with no cosigner")
 	}
+}
+
+// An "only these" account through review and generation: the review binds the
+// listed addresses, generation adds the root from the new spending key, and the
+// stored account carries both.
+func TestGeneralProviderGeneratesAnOnlyTheseAccount(t *testing.T) {
+	ir, service := setupGeneralProvider(t)
+	params := generalParams(boundedaccount.RekeyOnlyThese)
+	prepared, err := service.PrepareGenerateKey(boundedaccount.KeyTypeV1, params)
+	if err != nil {
+		t.Fatalf("PrepareGenerateKey() error = %#v", err)
+	}
+	if prepared.Bounded == nil || prepared.Bounded.RekeyList == nil || prepared.Bounded.RekeyList.RootHex != "" {
+		t.Fatalf("prepared bounded profile = %+v", prepared.Bounded)
+	}
+	if _, present := prepared.Parameters[boundedmeta.RekeyListRootParameter]; present {
+		t.Fatal("a review carries a root")
+	}
+	changed := maps.Clone(prepared.Parameters)
+	var other types.Address
+	other[0], other[31] = 0x52, 1
+	changed[boundedaccount.ParameterRekeyTo] = other.String()
+	if _, err := service.GenerateReviewedKey(context.Background(), boundedaccount.KeyTypeV1, changed,
+		ReviewedValues{Fingerprint: prepared.ReviewFingerprint, BoundaryDigest: prepared.BoundaryDigest}, nil); err == nil ||
+		!strings.Contains(err.Message, "changed after this request was reviewed") {
+		t.Fatalf("a substituted rekey-to address: GenerateReviewedKey() error = %#v", err)
+	}
+	assertNoKeys(t, service)
+
+	result, err := service.GenerateReviewedKey(context.Background(), boundedaccount.KeyTypeV1, prepared.Parameters,
+		ReviewedValues{Fingerprint: prepared.ReviewFingerprint, BoundaryDigest: prepared.BoundaryDigest}, nil)
+	if err != nil {
+		t.Fatalf("GenerateReviewedKey() error = %#v", err)
+	}
+	details, detailsErr := service.GetKeyDetails(result.Address)
+	if detailsErr != nil || details.PolicyLabel != "Allowlist · rekey to listed only" {
+		t.Fatalf("details = %+v, %#v", details, detailsErr)
+	}
+	snapshot, _ := ir.KeySnapshot()
+	readErr := ir.WithKeyring(func(mk *crypto.Keyring) error {
+		info, err := keymgmt.DetectKeyInfoFromFileWithKeyring(snapshot[result.Address], mk)
+		if err != nil {
+			return err
+		}
+		root := info.Parameters[boundedmeta.RekeyListRootParameter]
+		if len(root) != 64 || info.BoundedAuthorization.RekeyList == nil || info.BoundedAuthorization.RekeyList.RootHex != root {
+			t.Fatalf("stored root %q, metadata %+v", root, info.BoundedAuthorization.RekeyList)
+		}
+		if info.Parameters[boundedaccount.ParameterRekeyTo] != listedTarget.String() {
+			t.Fatalf("stored entries = %q", info.Parameters[boundedaccount.ParameterRekeyTo])
+		}
+		if info.TemplateFingerprint != prepared.Fingerprint {
+			t.Fatalf("stored fingerprint %s, reviewed %s", info.TemplateFingerprint, prepared.Fingerprint)
+		}
+		return nil
+	})
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+}
+
+// A witness key never signs as an account, so the native address of an
+// imported cosigner reference can't be listed.
+func TestRekeyListRefusesACosignerReferenceAddress(t *testing.T) {
+	ir, service := setupGeneralProvider(t)
+	publicKey, _ := importPrepareReference(t, ir, prepareTestReference, 0x61)
+	_, witnessAddress, err := nativefalcon.CanonicalAddress(publicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	params := generalParams(boundedaccount.RekeyOnlyThese)
+	params[boundedaccount.ParameterRekeyTo] = listedTarget.String() + "," + witnessAddress.String()
+	if _, err := service.PrepareGenerateKey(boundedaccount.KeyTypeV1, params); err == nil || !strings.Contains(err.Message, "a witness key never signs as an account") {
+		t.Fatalf("PrepareGenerateKey() error = %#v", err)
+	}
+	if _, err := service.GenerateKey(context.Background(), boundedaccount.KeyTypeV1, params, nil); err == nil || !strings.Contains(err.Message, "a witness key never signs as an account") {
+		t.Fatalf("GenerateKey() error = %#v", err)
+	}
+	assertNoKeys(t, service)
 }

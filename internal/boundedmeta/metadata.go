@@ -85,15 +85,22 @@ type CosignerAuthorization struct {
 	RequiredOn       []string `json:"required_on"`
 }
 
+// RekeyOnlyThese names "only these addresses" where an account is declared: a
+// template's rekey value, and the general type's rekey authority. It is
+// rekey: refused plus a rekey-to list, and stored that way.
+const RekeyOnlyThese = "only_these"
+
 // RekeyListContractV1 identifies the rekey-to list overlay's contract: the
 // hiding tree in internal/rekeylist at its fixed depth.
 const RekeyListContractV1 = "rekey_list1"
 
-// Reserved creation parameters of a rekey-to list. The framework injects the
-// entries parameter; the generator fills in the root, which it computes from
-// the entries and a seed derived from the spending key.
+// Creation parameters of a rekey-to list. The framework injects the entries
+// parameter, which the general bounded type also takes by the same name, so a
+// stored account's parameters hold its entries under the name its list proof
+// reads. The generator fills in the root, which it computes from the entries
+// and a seed derived from the spending key; that name is reserved.
 const (
-	RekeyListEntriesParameter = "bounded_rekey_to"
+	RekeyListEntriesParameter = "rekey_to"
 	RekeyListRootParameter    = "bounded_rekey_to_root"
 )
 

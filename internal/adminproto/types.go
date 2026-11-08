@@ -623,6 +623,7 @@ type PreparedBoundedProfile struct {
 	SpendEffects     []string
 	MaxFee           uint64
 	Rekey            string
+	RekeyList        bool
 	Layer3Policy     string
 	CosignerRequired bool
 }

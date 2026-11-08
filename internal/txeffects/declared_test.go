@@ -55,6 +55,9 @@ func grammarDeclarations(t *testing.T) map[string]boundedmeta.PathDeclaration {
 		if shape.AnyRecipient {
 			params[boundedaccount.ParameterRecipientScope] = boundedaccount.RecipientScopeAny
 		}
+		if shape.Rekey == boundedaccount.RekeyOnlyThese {
+			params[boundedaccount.ParameterRekeyTo] = types.Address{3}.String()
+		}
 		if shape.Cosigner {
 			params[boundedmeta.CosignerPublicKeyParameter] = strings.Repeat("41", boundedmeta.CosignerPublicKeySizeV1)
 		}
@@ -132,14 +135,6 @@ func surfaceCorpus(t *testing.T) map[string]types.Transaction {
 // is only ever what the declaration states.
 func TestClassifyForReachesAnExplicitRuleForEveryEffect(t *testing.T) {
 	declarations := grammarDeclarations(t)
-	// Every refused, uncosigned declaration also stands for its "only these"
-	// form: the same account with a rekey-to list.
-	for descriptor, declaration := range declarations {
-		if declaration.Rekey == boundedmeta.RekeyRefused && declaration.Cosigner == nil && !declaration.RekeyList {
-			declaration.RekeyList = true
-			declarations[descriptor+";rekey_list"] = declaration
-		}
-	}
 	corpus := surfaceCorpus(t)
 	reached := make(map[txeffects.Rule]bool)
 	for descriptor, declaration := range declarations {

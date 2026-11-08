@@ -404,12 +404,19 @@ func (c *ComposedDSA) validateFrameworkLayer3Arguments() error {
 	return nil
 }
 
+// paramsWithoutCosignerKey is the parameters a Layer 3 policy accounts for:
+// every one but those the framework injects for the envelope's own checks, the
+// cosigner key and a rekey-to list's entries.
 func (c *ComposedDSA) paramsWithoutCosignerKey() []lsigprovider.ParameterDef {
 	params := make([]lsigprovider.ParameterDef, 0, len(c.params))
 	for _, param := range c.params {
-		if param.Name != BoundedCosignerPublicKeyParameter {
-			params = append(params, param)
+		if param.Name == BoundedCosignerPublicKeyParameter {
+			continue
 		}
+		if param.Name == BoundedRekeyToParameter && c.bounded != nil && c.bounded.RekeyList != nil {
+			continue
+		}
+		params = append(params, param)
 	}
 	return params
 }
