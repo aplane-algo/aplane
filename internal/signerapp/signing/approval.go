@@ -277,9 +277,15 @@ func approvalTransactionNumbers(indices []int) []int {
 	return numbers
 }
 
+// boundedAuthorizationLabel names who authorizes a bounded rekey: on a cosigned
+// account a declared rekey needs the cosigner too, while a listed rekey never
+// asks it.
 func boundedAuthorizationLabel(item *boundedPlanItem) string {
 	switch item.Path {
 	case boundedPathSpendingKeyRekey:
+		if item.Metadata != nil && item.Metadata.Cosigner != nil {
+			return "spending key and cosigner"
+		}
 		return "spending key only"
 	case boundedPathListedRekey:
 		return "spending key only, to an address on the account's rekey-to list"

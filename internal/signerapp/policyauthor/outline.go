@@ -222,7 +222,9 @@ func (o *outliner) build() {
 		guard("reject_clawback", "Reject clawbacks", "always deny"),
 	}
 	if cosigner {
-		guards = append(guards, guard("reject_rekey", "Reject every rekey", "always deny; when no, rekey_policy decides"))
+		// A listed rekey never asks the cosigner, so this judges every rekey
+		// the cosigner is asked to sign, not every rekey of the account.
+		guards = append(guards, guard("reject_rekey", "Reject every rekey", "always deny one asked of this key; when no, rekey_policy decides"))
 	} else {
 		guards = append([]fieldSpec{{
 			name: "rekeys", label: "Rekeys", note: "always deny: all, to keys this node does not hold, or none",
