@@ -44,7 +44,7 @@ func pressEnterOnGenerateForm(t *testing.T, index int) (Model, tea.Cmd) {
 
 func TestPerKeyInventoryRoutesAnyTypeToPresets(t *testing.T) {
 	for _, keyType := range []string{boundary.KeyTypeV1, secondPerKeyType} {
-		withInventory(t, protocol.KeyTypeInfo{KeyType: keyType, PerKeyContract: true})
+		withInventory(t, protocol.KeyTypeInfo{KeyType: keyType, PerKeyContract: true, BoundarySchema: boundary.SchemaV1})
 		got, _ := pressEnterOnGenerateForm(t, 0)
 		if got.viewState != ViewBoundaryPreset || got.forms.boundaryKeyType != keyType {
 			t.Fatalf("%s: view = %v, classified = %q", keyType, got.viewState, got.forms.boundaryKeyType)
@@ -119,7 +119,7 @@ func TestPresetValuesReachOnlyTheClassifiedType(t *testing.T) {
 
 func TestChoosingAPresetOpensTheClassifiedTypesForm(t *testing.T) {
 	preset := boundary.Presets()[0]
-	info := protocol.KeyTypeInfo{KeyType: secondPerKeyType, PerKeyContract: true}
+	info := protocol.KeyTypeInfo{KeyType: secondPerKeyType, PerKeyContract: true, BoundarySchema: boundary.SchemaV1}
 	for _, name := range preset.Fields {
 		info.CreationParams = append(info.CreationParams, protocol.TemplateParamInfo{Name: name, Label: name, Type: "string"})
 	}

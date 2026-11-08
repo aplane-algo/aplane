@@ -28,13 +28,14 @@ import (
 
 // Exercise real encrypted restore and signature verification through production
 // registration. Neither a standalone type's enablement nor its creation template
-// should be required to recover the saved signing authority.
-func TestInternalProviderRestoresAndSignsExistingCredentials(t *testing.T) {
+// should be required to recover the saved signing authority: a plain program's
+// key restores and signs on a node that never enabled the plain host.
+func TestPlainProgramRestoresAndSignsExistingCredentials(t *testing.T) {
 	lsigsignerreg.RegisterSigner()
 	for _, base := range []string{"aplane.falcon1024.v1", "aplane.ed25519.v1"} {
 		t.Run(base, func(t *testing.T) {
-			if !keytypecatalog.IsInternalOnly(base) {
-				t.Fatal("fixture must exercise an internal provider")
+			if keytypecatalog.IsDefaultEnabled(base) {
+				t.Fatal("fixture must exercise a type this node has not enabled")
 			}
 			var pub, priv []byte
 			if base == "aplane.falcon1024.v1" {

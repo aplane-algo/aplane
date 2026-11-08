@@ -337,13 +337,13 @@ func (m Model) handleGenerateFormKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// A compiled list can stand in until the signer's arrives, so a selected type
 		// may not be classified yet. Missing inventory isn't an answer that the type
 		// is ordinary: the plain form would create the wrong request for a per-key one.
-		perKey, known := keyTypeIsPerKey(keyType)
+		takesBoundary, known := keyTypeTakesBoundary(keyType)
 		if !known {
 			m.forms.generateError = generateKeyTypesNotLoaded
 			return m, tea.Batch(m.waitForMessageCmd(), m.sendListKeyTypesCmd())
 		}
 		m = m.endBoundaryFlow()
-		if perKey {
+		if takesBoundary {
 			m.forms.generateError = ""
 			m.forms.boundaryKeyType = keyType
 			m.forms.boundaryPresetIndex = 0

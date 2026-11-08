@@ -969,6 +969,7 @@ func protocolKeyTypes(items []signerapi.KeyTypeInfo) []protocol.KeyTypeInfo {
 			MnemonicScheme:           item.MnemonicScheme,
 			CosignerComponentKeyType: item.CosignerComponentKeyType,
 			PerKeyContract:           item.PerKeyContract,
+			BoundarySchema:           item.BoundarySchema,
 			CreationParams:           protocolCreationParams(item.CreationParams),
 			RuntimeArgs:              protocolRuntimeArgs(item.RuntimeArgs),
 		}

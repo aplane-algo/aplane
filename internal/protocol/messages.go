@@ -1099,6 +1099,7 @@ type KeyTypeInfo struct {
 	MnemonicScheme           string              `json:"mnemonic_scheme"`
 	CosignerComponentKeyType string              `json:"cosigner_component_key_type,omitempty"`
 	PerKeyContract           bool                `json:"per_key_contract,omitempty"`
+	BoundarySchema           string              `json:"boundary_schema,omitempty"`
 	CreationParams           []TemplateParamInfo `json:"creation_params"`
 	RuntimeArgs              []TemplateArgInfo   `json:"runtime_args"`
 }

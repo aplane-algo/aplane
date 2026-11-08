@@ -58,7 +58,7 @@ func TestReloadedListKeepsTheChosenType(t *testing.T) {
 
 	// Build the signer's list so the old position names a different, valid type.
 	// Other tests register types too, so the compiled position isn't fixed.
-	signerList := []protocol.KeyTypeInfo{{KeyType: boundary.KeyTypeV1, PerKeyContract: true}}
+	signerList := []protocol.KeyTypeInfo{{KeyType: boundary.KeyTypeV1, PerKeyContract: true, BoundarySchema: boundary.SchemaV1}}
 	if chosen == 0 {
 		signerList = append(signerList, protocol.KeyTypeInfo{KeyType: "ed25519"})
 	}
@@ -130,7 +130,7 @@ func TestPresetFlowSurvivesAReorderedList(t *testing.T) {
 	boundedaccount.RegisterClient()
 	withInventory(t,
 		protocol.KeyTypeInfo{KeyType: "ed25519"},
-		protocol.KeyTypeInfo{KeyType: boundary.KeyTypeV1, PerKeyContract: true},
+		protocol.KeyTypeInfo{KeyType: boundary.KeyTypeV1, PerKeyContract: true, BoundarySchema: boundary.SchemaV1},
 	)
 	start := generateIndexOf(t, boundary.KeyTypeV1)
 	preset := boundary.Presets()[0]
@@ -145,7 +145,7 @@ func TestPresetFlowSurvivesAReorderedList(t *testing.T) {
 	m = receiveKeyTypes(t, m,
 		protocol.KeyTypeInfo{KeyType: "aplane.aaa-earlier.v1"},
 		protocol.KeyTypeInfo{KeyType: "ed25519"},
-		protocol.KeyTypeInfo{KeyType: boundary.KeyTypeV1, PerKeyContract: true},
+		protocol.KeyTypeInfo{KeyType: boundary.KeyTypeV1, PerKeyContract: true, BoundarySchema: boundary.SchemaV1},
 	)
 	if at := getKeyTypeByIndex(start); at == boundary.KeyTypeV1 {
 		t.Fatal("the refresh didn't move the type, so this test proves nothing")
@@ -169,7 +169,7 @@ func TestFinishedPresetLeavesTheNextFlowAlone(t *testing.T) {
 	boundedaccount.RegisterClient()
 	const plain = "example.params.v1"
 	inventory := []protocol.KeyTypeInfo{
-		{KeyType: boundary.KeyTypeV1, PerKeyContract: true},
+		{KeyType: boundary.KeyTypeV1, PerKeyContract: true, BoundarySchema: boundary.SchemaV1},
 		{KeyType: plain, CreationParams: []protocol.TemplateParamInfo{{Name: "limit", Label: "Limit", Type: "uint64", Required: true}}},
 	}
 	withInventory(t, inventory...)
@@ -214,7 +214,7 @@ func TestManagerGenerationIgnoresAnEarlierPreset(t *testing.T) {
 	boundedaccount.RegisterClient()
 	const guarded = "guarded.v1"
 	inventory := []protocol.KeyTypeInfo{
-		{KeyType: boundary.KeyTypeV1, PerKeyContract: true},
+		{KeyType: boundary.KeyTypeV1, PerKeyContract: true, BoundarySchema: boundary.SchemaV1},
 		{KeyType: guarded, CosignerComponentKeyType: "witness.v1", CreationParams: []protocol.TemplateParamInfo{
 			{Name: "cosigner", Label: "Cosigner", Type: "select", Required: true},
 		}},

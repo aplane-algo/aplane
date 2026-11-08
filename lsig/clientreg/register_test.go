@@ -26,8 +26,9 @@ func TestCanonicalCompiledLogicSigInventory(t *testing.T) {
 	RegisterClient()
 
 	// The general bounded type is the one LogicSig type enabled by default. The
-	// protocol-native types are too, but they register outside lsig. Plain LogicSig
-	// bases are internal; the other compiled types are opt-in through the library.
+	// protocol-native types are too, but they register outside lsig. The plain
+	// LogicSig types are plain hosts, and they and the other compiled types are
+	// opt-in through the library.
 	defaultEnabled := catalogKeyTypes(keytypecatalog.DefaultEnabled())
 	if !reflect.DeepEqual(defaultEnabled, []string{boundary.KeyTypeV1}) {
 		t.Fatalf("default-enabled compiled LogicSig inventory = %v, want %s only", defaultEnabled, boundary.KeyTypeV1)
@@ -35,7 +36,9 @@ func TestCanonicalCompiledLogicSigInventory(t *testing.T) {
 
 	libraryVisible := catalogKeyTypes(keytypecatalog.LibraryVisible())
 	wantLibraryVisible := []string{
+		"aplane.ed25519.v1",
 		"aplane.falcon1024-cosigner1024.v1",
+		"aplane.falcon1024.v1",
 		"aplane.rotating-triple-slhdsa.v1",
 		"aplane.rotating-triple-wotsc.v1",
 		"aplane.rotating-triple-xmss.v1",
@@ -281,18 +284,28 @@ teal: |
 	}
 }
 
-func TestInternalProvidersRemainComposableButCannotBeActivated(t *testing.T) {
+// The plain LogicSig types stay the composable bases every bounded account
+// names, and are plain hosts: opt-in through the library, and created only with
+// a cosigner, which the signer checks when it resolves the request.
+func TestPlainHostsRemainComposableAndAreOptIn(t *testing.T) {
 	RegisterClient()
 	for _, keyType := range []string{"aplane.falcon1024.v1", "aplane.ed25519.v1"} {
 		t.Run(keyType, func(t *testing.T) {
-			if !keytypecatalog.IsInternalOnly(keyType) || !lsigprovider.Has(keyType) || !composeddsa.IsBaseRegistered(keyType) {
-				t.Fatalf("%s must stay registered as an internal composable base", keyType)
+			if !keytypecatalog.IsLibraryVisible(keyType) || !lsigprovider.Has(keyType) || !composeddsa.IsBaseRegistered(keyType) {
+				t.Fatalf("%s must stay registered as a composable base and be library-visible", keyType)
 			}
-			if containsKeyType(keymgmt.GetValidKeyTypesWithActivated([]string{keyType}), keyType) {
-				t.Fatalf("stale activation exposed %s for standalone generation", keyType)
+			if containsKeyType(keymgmt.GetValidKeyTypesWithActivated(nil), keyType) {
+				t.Fatalf("%s is enabled without activation", keyType)
+			}
+			if !containsKeyType(keymgmt.GetValidKeyTypesWithActivated([]string{keyType}), keyType) {
+				t.Fatalf("activation does not enable %s", keyType)
 			}
 			if keymgmt.SupportsMnemonicImport(keyType) {
 				t.Fatalf("%s exposed user mnemonic import", keyType)
+			}
+			instance, err := lsigprovider.ResolveInstance(lsigprovider.Get(keyType), nil)
+			if err != nil || instance.Unavailable == "" {
+				t.Fatalf("%s without overlays: instance %+v, %v; want unavailable", keyType, instance, err)
 			}
 		})
 	}

@@ -158,6 +158,9 @@ func (s Service) resolveCreation(keyType string, params map[string]string) (*res
 		if err != nil {
 			return nil, &Error{Kind: ErrorInvalidInput, Message: err.Error()}
 		}
+		if resolved.Unavailable != "" {
+			return nil, &Error{Kind: ErrorInvalidInput, Message: resolved.Unavailable}
+		}
 		instance = resolved
 		params = instance.Values
 		if instance.Bounded != nil && instance.Bounded.Cosigner != nil {

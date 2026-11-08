@@ -52,6 +52,7 @@ import (
 	dsafamilyreg "github.com/aplane-algo/aplane/lsig/dsafamily/signerreg"
 	falconfamily "github.com/aplane-algo/aplane/lsig/falcon1024/family"
 	"github.com/aplane-algo/aplane/lsig/generictemplate"
+	"github.com/aplane-algo/aplane/lsig/plainhost"
 	lsigsignerreg "github.com/aplane-algo/aplane/lsig/signerreg"
 )
 
@@ -650,20 +651,25 @@ func TestServiceGenerateKeyGenericPassesThroughSuccessAndErrors(t *testing.T) {
 	}
 }
 
-func TestServiceInternalKeyTypesRejectCreationDespiteStoredEnablement(t *testing.T) {
+// A plain host never creates the plain program, enabled or not, and never takes
+// a mnemonic: an enabled one refuses the import, a disabled one the key type.
+func TestServicePlainHostsRefuseThePlainProgramAndMnemonics(t *testing.T) {
 	for _, keyType := range []string{"aplane.falcon1024.v1", "aplane.ed25519.v1"} {
 		t.Run(keyType, func(t *testing.T) {
 			ir := setupProductRuntime(t)
 			audit := &auditRecorder{}
 			svc := Service{Runtime: ir, AuditLog: audit}
-			for _, state := range []keytypestate.State{keytypestate.StateEnabled, keytypestate.StateDisabled} {
+			for state, importRefusal := range map[keytypestate.State]string{
+				keytypestate.StateEnabled:  "mnemonic import not supported",
+				keytypestate.StateDisabled: "not enabled on this node",
+			} {
 				if err := keytypestate.Put(ir.KeyPaths(), keytypestate.Record{KeyType: keyType, Source: keytypestate.SourceCompiled, State: state}); err != nil {
 					t.Fatal(err)
 				}
-				if result, err := svc.GenerateKey(context.Background(), keyType, nil, nil); result != nil || err == nil || err.Kind != ErrorInvalidInput || !strings.Contains(err.Message, "internal-only") {
+				if result, err := svc.GenerateKey(context.Background(), keyType, nil, nil); result != nil || err == nil || err.Kind != ErrorInvalidInput || !strings.Contains(err.Message, "only with a cosigner") {
 					t.Fatalf("GenerateKey(%s, %s) = %v, %v", keyType, state, result, err)
 				}
-				if result, err := svc.ImportKey(context.Background(), keyType, "invalid phrase", nil); result != nil || err == nil || err.Kind != ErrorInvalidInput || !strings.Contains(err.Message, "internal-only") {
+				if result, err := svc.ImportKey(context.Background(), keyType, "invalid phrase", nil); result != nil || err == nil || err.Kind != ErrorInvalidInput || !strings.Contains(err.Message, importRefusal) {
 					t.Fatalf("ImportKey(%s, %s) = %v, %v", keyType, state, result, err)
 				}
 			}
@@ -1113,16 +1119,17 @@ func (a *auditRecorder) LogKeyExported(_ context.Context, address, keyType, outc
 // Only the protocol-native key types are enabled by default. A new runtime
 // refuses to generate or import the internal LogicSig Falcon type; native
 // creation stays available and an unknown key type is still just invalid.
-func TestServiceRefusesInternalTypeAndKeepsNativeDefaults(t *testing.T) {
+func TestServiceRefusesTheDisabledPlainHostAndKeepsNativeDefaults(t *testing.T) {
 	configureFalconCompileMock(t)
 	nativefalconreg.RegisterSigner()
 
 	ir := setupProductRuntime(t)
 	svc := Service{AuditLog: &auditRecorder{}, Runtime: ir}
-	const want = "key type aplane.falcon1024.v1 is internal-only"
+	const want = "key type aplane.falcon1024.v1 is not enabled on this node"
 	mnemonic := "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art"
 
-	if _, err := svc.GenerateKey(context.Background(), "aplane.falcon1024.v1", nil, nil); err == nil || err.Kind != ErrorInvalidInput || !strings.Contains(err.Message, want) {
+	cosigned := map[string]string{plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused, boundedmeta.CosignerPublicKeyParameter: strings.Repeat("41", boundedmeta.CosignerPublicKeySizeV1)}
+	if _, err := svc.GenerateKey(context.Background(), "aplane.falcon1024.v1", cosigned, nil); err == nil || err.Kind != ErrorInvalidInput || !strings.Contains(err.Message, want) {
 		t.Fatalf("GenerateKey(aplane.falcon1024.v1) before enabling = %#v, want %q", err, want)
 	}
 	if _, err := svc.ImportKey(context.Background(), "aplane.falcon1024.v1", mnemonic, nil); err == nil || err.Kind != ErrorInvalidInput || !strings.Contains(err.Message, want) {

@@ -380,6 +380,9 @@ func shapeFromMetadata(metadata *boundedmeta.Metadata) (Shape, error) {
 	return shape, nil
 }
 
+// BoundarySchema names the boundary file grammar this type's requests take.
+func (p *Provider) BoundarySchema() string { return BoundarySchemaV1 }
+
 // GrammarFingerprint identifies the whole grammar a review was made against.
 func (p *Provider) GrammarFingerprint() string { return p.grammar }
 

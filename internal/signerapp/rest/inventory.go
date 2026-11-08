@@ -299,6 +299,9 @@ func (s Service) buildKeyTypes(validTypes []string, enabledGeneric []string) []s
 			if resolver, ok := provider.(lsigprovider.InstanceResolver); ok {
 				info.PerKeyContract = true
 				info.CosignerComponentKeyType, _ = resolver.CosignerComponentKeyType(map[string]string{cosignerrefs.ParamCosignerName: ""})
+				if grammar, ok := provider.(boundaryGrammarProvider); ok {
+					info.BoundarySchema = grammar.BoundarySchema()
+				}
 			}
 
 			for _, p := range provider.CreationParams() {
@@ -401,6 +404,12 @@ func (s Service) buildKeyTypes(validTypes []string, enabledGeneric []string) []s
 	}
 
 	return keyTypes
+}
+
+// boundaryGrammarProvider is a per-key type whose requests a boundary file
+// grammar describes.
+type boundaryGrammarProvider interface {
+	BoundarySchema() string
 }
 
 type boundedInventoryProvider interface {

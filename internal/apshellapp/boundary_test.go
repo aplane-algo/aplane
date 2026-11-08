@@ -212,7 +212,7 @@ func TestGenerateOptionsLeaveOtherTypesAlone(t *testing.T) {
 
 func TestGenerateOptionsFollowTheInventoryNotAName(t *testing.T) {
 	for _, keyType := range []string{boundary.KeyTypeV1, "example.second-bounded.v1"} {
-		inventory := inventoryOf(signerapi.KeyTypeInfo{KeyType: keyType, PerKeyContract: true})
+		inventory := inventoryOf(signerapi.KeyTypeInfo{KeyType: keyType, PerKeyContract: true, BoundarySchema: boundary.SchemaV1})
 		params := map[string]string{GenerateOptionBoundaryFile: "rules.yaml", GenerateOptionResultFile: "out.json"}
 		options, err := takeGenerateOptions(keyType, params, inventory)
 		if err != nil {
@@ -238,7 +238,7 @@ func TestGenerateOptionsFollowTheInventoryNotAName(t *testing.T) {
 
 func TestGenerateOptionsCanonicalizeTheSelection(t *testing.T) {
 	params := map[string]string{GenerateOptionResultFile: "out.json"}
-	inventory := inventoryOf(signerapi.KeyTypeInfo{KeyType: "example.second-bounded.v1", PerKeyContract: true})
+	inventory := inventoryOf(signerapi.KeyTypeInfo{KeyType: "example.second-bounded.v1", PerKeyContract: true, BoundarySchema: boundary.SchemaV1})
 	options, err := takeGenerateOptions("  EXAMPLE.Second-Bounded.v1 ", params, inventory)
 	if err != nil || options.ResultFile != "out.json" {
 		t.Fatalf("options = %+v, err = %v", options, err)

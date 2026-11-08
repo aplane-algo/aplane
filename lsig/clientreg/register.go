@@ -37,9 +37,11 @@ var (
 func RegisterClient() {
 	registerClientOnce.Do(func() {
 		registerCompiledProvider(keytypecatalog.Entry{
-			KeyType:      "aplane.falcon1024.v1",
-			Family:       family.Name,
-			Availability: keytypecatalog.AvailabilityInternalOnly,
+			KeyType: "aplane.falcon1024.v1",
+			Family:  family.Name,
+			// A plain host, created with a cosigner once enabled, as the
+			// dedicated cosigned type it replaces was.
+			Availability: keytypecatalog.AvailabilityLibrary,
 		}, falcon.RegisterClient)
 		registerCompiledProvider(keytypecatalog.Entry{
 			KeyType:      falcon1024guarded.KeyTypeV1,
@@ -49,7 +51,7 @@ func RegisterClient() {
 		registerCompiledProvider(keytypecatalog.Entry{
 			KeyType:      ed25519lsig.KeyTypeV1,
 			Family:       ed25519lsig.FamilyName,
-			Availability: keytypecatalog.AvailabilityInternalOnly,
+			Availability: keytypecatalog.AvailabilityLibrary,
 		}, ed25519lsig.RegisterClient)
 		registerCompiledProvider(keytypecatalog.Entry{
 			KeyType:      boundedaccount.KeyTypeV1,

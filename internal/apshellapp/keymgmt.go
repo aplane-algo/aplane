@@ -9,6 +9,7 @@ import (
 	"slices"
 
 	"github.com/aplane-algo/aplane/internal/appresult"
+	"github.com/aplane-algo/aplane/internal/boundary"
 	"github.com/aplane-algo/aplane/internal/engine"
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
@@ -65,6 +66,11 @@ func takeGenerateOptions(keyType string, params map[string]string, inventory fun
 	}
 	if !keyTypes[index].PerKeyContract {
 		return GenerateOptions{}, nil
+	}
+	// A per-key type whose requests no boundary grammar describes, such as a
+	// plain host, takes its parameters directly.
+	if hasBoundaryFile && keyTypes[index].BoundarySchema != boundary.SchemaV1 {
+		return GenerateOptions{}, fmt.Errorf("key type %s takes no boundary file; give its parameters directly", canonical)
 	}
 	delete(params, GenerateOptionBoundaryFile)
 	delete(params, GenerateOptionResultFile)

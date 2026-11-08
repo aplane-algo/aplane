@@ -72,11 +72,11 @@ func TestPerKeyTypeKeepsItsCosignerOptional(t *testing.T) {
 	}
 }
 
-// per_key_contract means a contract varies by account, and clients take it to mean the
-// boundary workflow works. This pins that assumption across every production provider,
-// including those not enabled by default. A new per-key provider that can't use the
-// workflow must fail here and get narrower discovery, not an exclusion.
-func TestEveryPerKeyProviderSupportsTheBoundaryWorkflow(t *testing.T) {
+// boundary_schema names the grammar a per-key type takes, and clients take it to mean
+// the boundary workflow works. This pins that across every production provider that
+// declares it, including those not enabled by default. A per-key type that declares
+// none, such as a plain host, takes its parameters directly and is checked apart.
+func TestEveryBoundaryProviderSupportsTheBoundaryWorkflow(t *testing.T) {
 	lsigsignerreg.RegisterSigner()
 	cosignerKey := strings.Repeat("41", boundedmeta.CosignerPublicKeySizeV1)
 	recipient := types.Address{1}.String()
@@ -95,6 +95,12 @@ func TestEveryPerKeyProviderSupportsTheBoundaryWorkflow(t *testing.T) {
 		}
 		if !infos[0].PerKeyContract {
 			continue
+		}
+		if infos[0].BoundarySchema == "" {
+			continue
+		}
+		if infos[0].BoundarySchema != boundary.SchemaV1 {
+			t.Fatalf("%s declares boundary schema %q", provider.KeyType(), infos[0].BoundarySchema)
 		}
 		perKey++
 		for _, param := range infos[0].CreationParams {
@@ -142,6 +148,6 @@ func TestEveryPerKeyProviderSupportsTheBoundaryWorkflow(t *testing.T) {
 		}
 	}
 	if perKey == 0 {
-		t.Fatal("no production provider reports per_key_contract")
+		t.Fatal("no production provider declares the boundary schema")
 	}
 }

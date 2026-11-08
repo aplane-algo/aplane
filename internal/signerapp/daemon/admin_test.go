@@ -410,7 +410,8 @@ func TestAdminGenerateEd25519(t *testing.T) {
 	}
 }
 
-func TestAdminGenerateRejectsInternalProviders(t *testing.T) {
+// The plain program is never created as an account, enabled or not.
+func TestAdminGenerateRejectsThePlainProgram(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 	for _, keyType := range []string{"aplane.falcon1024.v1", "aplane.ed25519.v1"} {
@@ -421,7 +422,7 @@ func TestAdminGenerateRejectsInternalProviders(t *testing.T) {
 			reqBody, _ := json.Marshal(AdminGenerateRequest{KeyType: keyType})
 			w := httptest.NewRecorder()
 			server.handleAdminGenerate(w, requestWithIdentity(http.MethodPost, "/admin/generate", reqBody))
-			if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "internal-only") {
+			if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "only with a cosigner") {
 				t.Fatalf("generate %s (stale=%v) = %d %s", keyType, stale, w.Code, w.Body.String())
 			}
 		}

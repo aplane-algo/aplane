@@ -472,7 +472,12 @@ type KeyTypeInfo struct {
 	BoundedAuthorization     *BoundedAuthorizationInfo `json:"bounded_authorization,omitempty"`
 	// PerKeyContract means each account selects its own contract at generation,
 	// so this type has no fixed signing flow or bounded profile. Route by /keys.
-	PerKeyContract bool                `json:"per_key_contract,omitempty"`
+	PerKeyContract bool `json:"per_key_contract,omitempty"`
+	// BoundarySchema names the boundary file grammar a per-key type's requests
+	// take (aplane.boundary.v1 for the general bounded type), and is empty for
+	// a type that takes none, such as a plain host, whose few parameters are
+	// given directly.
+	BoundarySchema string              `json:"boundary_schema,omitempty"`
 	CreationParams []CreationParamInfo `json:"creation_params"`
 	RuntimeArgs    []RuntimeArgInfo    `json:"runtime_args"`
 }
