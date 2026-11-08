@@ -170,7 +170,7 @@ func TestOutlineForACosignerDocument(t *testing.T) {
 			t.Fatal("a cosigner outline has miss actions")
 		}
 		for _, f := range s.Fields {
-			if f.Pointer == "/always_review_warnings" || f.Pointer == "/reject_foreign_rekey" {
+			if f.Pointer == "/always_review_warnings" || f.Pointer == "/rekeys" {
 				t.Fatalf("a cosigner outline shows signer field %s", f.Pointer)
 			}
 		}

@@ -35,7 +35,7 @@ func Minimal(role noderole.Role, key string) map[string]any {
 		base["transfer_policy"] = map[string]any{"routes": []any{}}
 		return base
 	}
-	base["reject_foreign_rekey"] = true
+	base["rekeys"] = string(policy.RekeysRejectForeign)
 	base["always_review_warnings"] = false
 	base["auto_approve_self_noop_transfer"] = false
 	base["transaction_types"] = map[string]any{"*": "allow"}

@@ -41,7 +41,7 @@ func TestDiffPolicyComparesAcrossKeys(t *testing.T) {
 func TestDiffPolicySettingsAndLimits(t *testing.T) {
 	current := mustSignerDoc(t, DefaultKey, `{"reject_clawback":true,"max_fee_microalgos":"2000",
 		"limits":{"testnet":{"algo":{"reject_above":"50000000"},"asa:7":{"review_above":"10"}}}}`)
-	next := mustSignerDoc(t, DefaultKey, `{"reject_foreign_rekey":false,"auto_approve_self_noop_transfer":true,
+	next := mustSignerDoc(t, DefaultKey, `{"rekeys": "allow_rekeys","auto_approve_self_noop_transfer":true,
 		"limits":{"testnet":{"algo":{"reject_above":"100000000","review_above":"1000000"}}}}`)
 	assertChanges(t, DiffPolicyV1(current, next),
 		"loosened /auto_approve_self_noop_transfer: false → true",
@@ -50,7 +50,7 @@ func TestDiffPolicySettingsAndLimits(t *testing.T) {
 		"loosened /limits/testnet/asa:7/review_above: 10 base units → none",
 		"loosened /max_fee_microalgos: 0.002 ALGO → no cap",
 		"loosened /reject_clawback: true → false",
-		"loosened /reject_foreign_rekey: true → false",
+		"loosened /rekeys: reject_foreign_rekey → allow_rekeys",
 	)
 }
 

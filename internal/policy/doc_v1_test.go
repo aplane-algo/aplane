@@ -73,7 +73,7 @@ func TestDecodePolicyV1ReportsJSONPointer(t *testing.T) {
 		{"cosigner wildcard allow", cosigner(`"transaction_types":{"*":"allow"}`), testWitnessKeyIDV1, noderole.RoleCosigner, "/transaction_types/*", "only pay and axfer"},
 		{"cosigner omitted wildcard still rejects non-transfer allow", cosigner(`"transaction_types":{"pay":"allow","appl":"allow"}`), testWitnessKeyIDV1, noderole.RoleCosigner, "/transaction_types/appl", "only pay and axfer"},
 		{"cosigner review field", cosigner(`"always_review_warnings":true`), testWitnessKeyIDV1, noderole.RoleCosigner, "/always_review_warnings", "not accepted in a cosigner document"},
-		{"cosigner foreign rekey field", cosigner(`"reject_foreign_rekey":true`), testWitnessKeyIDV1, noderole.RoleCosigner, "/reject_foreign_rekey", "not accepted in a cosigner document"},
+		{"cosigner rekeys field", cosigner(`"rekeys": "reject_foreign_rekey"`), testWitnessKeyIDV1, noderole.RoleCosigner, "/rekeys", "not accepted in a cosigner document"},
 		{"cosigner route miss field", cosigner(`"transfer_policy":{"on_no_route":"reject"}`), testWitnessKeyIDV1, noderole.RoleCosigner, "/transfer_policy/on_no_route", "not accepted in a cosigner document"},
 		{"cosigner review threshold", cosigner(`"limits":{"testnet":{"algo":{"review_above":"1"}}}`), testWitnessKeyIDV1, noderole.RoleCosigner, "/limits/testnet/algo/review_above", "cannot produce review verdicts"},
 		{"signer rekey policy", signer(`"rekey_policy":{"allowed":[]}`), DefaultKey, noderole.RoleSigner, "/rekey_policy", "not accepted in a signer document"},
@@ -171,7 +171,7 @@ func TestEmbeddedDefaultsDecodeAndCompile(t *testing.T) {
 			t.Fatalf("%s default compiled role %q", role, cfg.Role)
 		}
 		if role == noderole.RoleSigner {
-			if cfg.VerdictForType(types.ApplicationCallTx) != TransactionTypeAllow || !cfg.RejectForeignRekey || !cfg.AlwaysReviewWarnings {
+			if cfg.VerdictForType(types.ApplicationCallTx) != TransactionTypeAllow || cfg.Rekeys != RekeysRejectForeign || !cfg.AlwaysReviewWarnings {
 				t.Fatalf("signer default = %+v", cfg)
 			}
 			if cfg.TransferPolicy.OnNoRoute != TransferOnNoRouteOperatorDefault || len(cfg.TransferPolicy.Routes) != 1 || cfg.TransferPolicy.Routes[0].ID != SelfTransferRouteID {
@@ -316,7 +316,7 @@ func TestCosignerPolicyV1Verdicts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Compile() error = %v", err)
 	}
-	if cfg.RejectForeignRekey || cfg.AlwaysReviewWarnings || cfg.AutoApproveSelfNoOpTransfer || cfg.TransferPolicy.OnNoRoute != TransferOnNoRouteReject {
+	if cfg.Rekeys != "" || cfg.AlwaysReviewWarnings || cfg.AutoApproveSelfNoOpTransfer || cfg.TransferPolicy.OnNoRoute != TransferOnNoRouteReject {
 		t.Fatalf("cosigner compile carried signer-only settings: %+v", cfg)
 	}
 	want := map[string]string{

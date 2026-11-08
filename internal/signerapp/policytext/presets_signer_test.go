@@ -108,7 +108,7 @@ func TestSignerPresetsDecodeOnceFilled(t *testing.T) {
 func TestSignerPresetsShareTheirGuards(t *testing.T) {
 	for _, preset := range Presets(noderole.RoleSigner) {
 		cfg := signerPresetConfig(t, preset.Name)
-		if !cfg.RejectForeignRekey || !cfg.RejectCloseRemainder || !cfg.RejectAssetClose || !cfg.RejectClawback ||
+		if cfg.Rekeys != policy.RekeysRejectForeign || !cfg.RejectCloseRemainder || !cfg.RejectAssetClose || !cfg.RejectClawback ||
 			!cfg.AlwaysReviewWarnings || cfg.AutoApproveSelfNoOpTransfer || cfg.MaxFeeMicroAlgos != signerPresetFeeCap {
 			t.Errorf("%s: guards %+v", preset.Name, cfg)
 		}

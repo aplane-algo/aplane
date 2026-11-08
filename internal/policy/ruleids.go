@@ -7,6 +7,7 @@ import "fmt"
 
 const (
 	RejectForeignRekeyRuleID     = "reject_foreign_rekey"
+	RejectAllRekeysRuleID        = "reject_all_rekeys"
 	RejectCloseRemainderRuleID   = "reject_close_remainder"
 	RejectAssetCloseRuleID       = "reject_asset_close"
 	RejectClawbackRuleID         = "reject_clawback"

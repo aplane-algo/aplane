@@ -15,8 +15,8 @@ import (
 
 func TestDefaultConfig(t *testing.T) {
 	cfg := DefaultConfig()
-	if !cfg.RejectForeignRekey {
-		t.Fatal("RejectForeignRekey = false, want true")
+	if cfg.Rekeys != RekeysRejectForeign {
+		t.Fatalf("Rekeys = %q, want %q", cfg.Rekeys, RekeysRejectForeign)
 	}
 	if cfg.RejectCloseRemainder {
 		t.Fatal("RejectCloseRemainder = true, want false")
@@ -87,7 +87,7 @@ func TestCheckTxnPolicyLints(t *testing.T) {
 	}{
 		{
 			name:       "reject rekey",
-			cfg:        &Config{TransactionTypes: allowAllTypes(), RejectForeignRekey: true},
+			cfg:        &Config{TransactionTypes: allowAllTypes(), Rekeys: RekeysRejectForeign},
 			txn:        types.Transaction{Header: types.Header{RekeyTo: nonZeroAddr}},
 			wantRuleID: "reject_foreign_rekey",
 		},
@@ -154,7 +154,7 @@ func TestCheckTxnPolicyLintsAllowsLocalRekeyTarget(t *testing.T) {
 
 	got := CheckTxnPolicyLints(
 		txn,
-		&Config{TransactionTypes: allowAllTypes(), RejectForeignRekey: true},
+		&Config{TransactionTypes: allowAllTypes(), Rekeys: RekeysRejectForeign},
 		map[string]bool{localAddr.String(): true},
 	)
 	if len(got) != 0 {
@@ -168,7 +168,7 @@ func TestCheckTxnPolicyLintsRejectsForeignRekeyTarget(t *testing.T) {
 
 	got := CheckTxnPolicyLints(
 		txn,
-		&Config{TransactionTypes: allowAllTypes(), RejectForeignRekey: true},
+		&Config{TransactionTypes: allowAllTypes(), Rekeys: RekeysRejectForeign},
 		map[string]bool{},
 	)
 	if len(got) != 1 {

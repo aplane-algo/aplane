@@ -227,7 +227,8 @@ Always Deny rules are hard safety guards. Current deny sources include:
   rule id, and it is evaluated before every policy document rule,
 - `transaction_types` entries with verdict `reject` (rule id
   `transaction_type:<type>`), the first policy document rule evaluated,
-- `reject_foreign_rekey`,
+- `rekeys` (`reject_all_rekeys` or `reject_foreign_rekey`; a protocol rekey is
+  never rejected),
 - `reject_close_remainder`,
 - `reject_asset_close`,
 - `reject_clawback`,

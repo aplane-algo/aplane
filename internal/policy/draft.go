@@ -93,7 +93,7 @@ const (
 var canonicalFieldOrder = map[canonicalContext][]string{
 	ctxRoot: {
 		"format", "role", "key", "description",
-		"reject_foreign_rekey", "reject_close_remainder", "reject_asset_close",
+		"rekeys", "reject_close_remainder", "reject_asset_close",
 		"reject_clawback", "reject_rekey", "always_review_warnings",
 		"auto_approve_self_noop_transfer", "max_fee_microalgos",
 		"transaction_types", "limits", "address_sets", "asset_sets",

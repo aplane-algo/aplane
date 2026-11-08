@@ -3,7 +3,7 @@
   "role": "signer",
   "key": "default",
   "description": "Self-transfers only: any account this key signs for may send any asset to itself (ASA opt-ins, self-payments).",
-  "reject_foreign_rekey": true,
+  "rekeys": "reject_foreign_rekey",
   "reject_close_remainder": true,
   "reject_asset_close": true,
   "reject_clawback": true,

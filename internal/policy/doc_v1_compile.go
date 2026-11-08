@@ -19,7 +19,7 @@ func (d *PolicyV1) Compile(defaults *Config) (*Config, error) {
 		cfg = defaults.Clone()
 	}
 	cfg.Role = d.Role
-	cfg.RejectForeignRekey = d.RejectForeignRekey
+	cfg.Rekeys = d.Rekeys
 	cfg.RejectRekey = d.RejectRekey
 	cfg.RejectCloseRemainder = d.RejectCloseRemainder
 	cfg.RejectAssetClose = d.RejectAssetClose

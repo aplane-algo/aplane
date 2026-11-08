@@ -224,7 +224,11 @@ func (o *outliner) build() {
 	if cosigner {
 		guards = append(guards, guard("reject_rekey", "Reject every rekey", "always deny; when no, rekey_policy decides"))
 	} else {
-		guards = append([]fieldSpec{guard("reject_foreign_rekey", "Reject rekeys to keys this node does not hold", "always deny")}, guards...)
+		guards = append([]fieldSpec{{
+			name: "rekeys", label: "Rekeys", note: "always deny: all, to keys this node does not hold, or none",
+			required: true, edit: EditChoice,
+			choices: []string{string(policy.RekeysRejectAll), string(policy.RekeysRejectForeign), string(policy.RekeysAllow)},
+		}}, guards...)
 		guards = append(guards,
 			guard("always_review_warnings", "Send warnings to review", "always review"),
 			guard("auto_approve_self_noop_transfer", "Self no-op auto-approval", "always approve, after deny and review rules"),

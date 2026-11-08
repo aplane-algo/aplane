@@ -675,7 +675,7 @@ unknown field is rejected. Amounts are decimal strings in base units.
 | `role` | both | string | Required; `signer` or `cosigner`, matching the node |
 | `key` | both | string | Required; `default`, or the key the file governs (a signing address or a Witness Key ID), matching the file name |
 | `description` | both | string | Notes for reviewers |
-| `reject_foreign_rekey` | signer | bool | Reject txns with non-zero `RekeyTo` when the rekey target is not held by this node |
+| `rekeys` | signer | string | `reject_all_rekeys`, `reject_foreign_rekey` (default), or `allow_rekeys`: reject every rekey, a rekey whose target this node does not hold, or none. What passes goes on to review and User Auto-Approve |
 | `reject_rekey` | cosigner | bool | Coarse deny-all switch for non-zero `RekeyTo`; with `false`, a rekey still fails unless `rekey_policy.allowed` authorizes the sender-to-target edge |
 | `reject_close_remainder` | both | bool | Reject payment txns with non-zero `CloseRemainderTo` |
 | `reject_asset_close` | both | bool | Reject ASA transfer txns with non-zero `AssetCloseTo` |
@@ -713,7 +713,7 @@ default. The shipped signer default is:
   "format": "aplane.policy.v1",
   "role": "signer",
   "key": "default",
-  "reject_foreign_rekey": true,
+  "rekeys": "reject_foreign_rekey",
   "reject_close_remainder": false,
   "reject_asset_close": false,
   "reject_clawback": false,
@@ -770,7 +770,7 @@ A signer default with review and reject ceilings:
   "format": "aplane.policy.v1",
   "role": "signer",
   "key": "default",
-  "reject_foreign_rekey": true,
+  "rekeys": "reject_foreign_rekey",
   "reject_close_remainder": true,
   "reject_asset_close": false,
   "reject_clawback": false,
@@ -895,7 +895,7 @@ network maps because ASA IDs are network-local.
   "format": "aplane.policy.v1",
   "role": "signer",
   "key": "default",
-  "reject_foreign_rekey": true,
+  "rekeys": "reject_foreign_rekey",
   "reject_close_remainder": false,
   "reject_asset_close": false,
   "reject_clawback": false,
@@ -1005,7 +1005,7 @@ application calls:
   "role": "signer",
   "key": "SIGNINGADDRESS...",
   "description": "Needs a tight fee cap; app calls are reviewed.",
-  "reject_foreign_rekey": true,
+  "rekeys": "reject_foreign_rekey",
   "reject_close_remainder": false,
   "reject_asset_close": true,
   "reject_clawback": false,

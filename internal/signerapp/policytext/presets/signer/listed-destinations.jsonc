@@ -3,7 +3,7 @@
   "role": "signer",
   "key": "default",
   "description": "Listed destinations: payments and asset transfers only to the addresses in @destinations. An ASA opt-in is a transfer to the sender, so it passes only if the sender is listed.",
-  "reject_foreign_rekey": true,
+  "rekeys": "reject_foreign_rekey",
   "reject_close_remainder": true,
   "reject_asset_close": true,
   "reject_clawback": true,

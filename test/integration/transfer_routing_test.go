@@ -334,7 +334,7 @@ func randomTransferRoutingAddress() string {
 
 func transferRoutingIntegrationPolicy(network string, addr transferRoutingTestAddresses) string {
 	return policytest.MustDocument(noderole.RoleSigner, policy.DefaultKey, fmt.Sprintf(`{
-  "reject_foreign_rekey": false,
+  "rekeys": "allow_rekeys",
   "reject_close_remainder": false,
   "reject_asset_close": false,
   "reject_clawback": false,

@@ -128,3 +128,48 @@ func TestOutcomeWords(t *testing.T) {
 		t.Fatal(`ParseOutcome("sign") succeeded`)
 	}
 }
+
+// The rekeys setting only rejects. A rejection outranks every review and
+// approval; what it lets through is decided by the rest of policy, so an
+// allowed rekey still meets the rekey warning's review.
+func TestEvaluateRekeysSetting(t *testing.T) {
+	open := `"transfer_policy": {"on_no_route": "operator_default"}`
+	held, unheld, protocol := types.Address{8}, types.Address{9}, types.Address{7}
+	rekey := func(target types.Address) types.Transaction {
+		tx := pay(1, 1, 0)
+		tx.RekeyTo = target
+		return tx
+	}
+	for _, tc := range []struct {
+		name    string
+		rekeys  policy.SignerRekeys
+		target  types.Address
+		forced  string
+		outcome Outcome
+		ruleID  string
+	}{
+		{"reject all, held target", policy.RekeysRejectAll, held, "", Reject, ""},
+		{"reject all beats a forced review", policy.RekeysRejectAll, held, "forced", Reject, ""},
+		{"reject all spares the signer's own rotation", policy.RekeysRejectAll, protocol, "", Default, ""},
+		{"reject foreign, held target", policy.RekeysRejectForeign, held, "", Review, policy.AlwaysReviewWarningsRuleID},
+		{"reject foreign, unheld target", policy.RekeysRejectForeign, unheld, "", Reject, ""},
+		{"allow, unheld target reaches review", policy.RekeysAllow, unheld, "", Review, policy.AlwaysReviewWarningsRuleID},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sparse := `{"rekeys": "` + string(tc.rekeys) + `", "always_review_warnings": true, ` + open + `}`
+			verdict, err := Evaluate(Input{
+				Group:                []types.Transaction{rekey(tc.target)},
+				Slots:                []Slot{{Index: 0, Policy: signerPolicy(t, sparse)}},
+				KnownAddresses:       map[string]bool{held.String(): true, protocol.String(): true},
+				ProtocolRekeyTargets: map[string]bool{protocol.String(): true},
+				ForcedReviewRuleID:   tc.forced,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if verdict.Outcome != tc.outcome || verdict.RuleID != tc.ruleID {
+				t.Fatalf("verdict = %+v, want outcome %d rule %q", verdict, tc.outcome, tc.ruleID)
+			}
+		})
+	}
+}

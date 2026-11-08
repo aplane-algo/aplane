@@ -7,6 +7,19 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## Rekey-to lists and the signer's rekey setting
+
+This release is install-fresh only.
+
+- Signer policy documents replace the boolean `reject_foreign_rekey` with one setting,
+  `rekeys`, which takes `reject_all_rekeys`, `reject_foreign_rekey` (the default, as before)
+  or `allow_rekeys`. It only rejects: a rekey it lets through still meets the rekey warning,
+  review rules and operator approval, and User Auto-Approve can approve it, as today.
+  `allow_rekeys` turns the rejection off. The signer's own rotation rekeys are never
+  rejected, so a rotating account keeps spending under `reject_all_rekeys`. A document with
+  `reject_foreign_rekey` is refused; write `"rekeys": "reject_foreign_rekey"`. Cosigner
+  documents are unchanged.
+
 ## Bounded accounts move to the bounded2 contract
 
 This release is install-fresh only.

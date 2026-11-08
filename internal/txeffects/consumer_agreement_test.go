@@ -26,7 +26,7 @@ func TestWarningAndLintConsumersObserveManifestDangerFields(t *testing.T) {
 		{
 			name: "rekey", effect: txeffects.EffectRekey, warningField: "RekeyTo",
 			txn:    types.Transaction{Header: types.Header{RekeyTo: target}},
-			config: &policy.Config{TransactionTypes: policytest.AllowAllTypes(), RejectForeignRekey: true},
+			config: &policy.Config{TransactionTypes: policytest.AllowAllTypes(), Rekeys: policy.RekeysRejectForeign},
 		},
 		{
 			name: "close", effect: txeffects.EffectClose, warningField: "CloseRemainderTo",

@@ -69,7 +69,7 @@ shipped default for the node role. On a signer node that is:
   "format": "aplane.policy.v1",
   "role": "signer",
   "key": "default",
-  "reject_foreign_rekey": true,
+  "rekeys": "reject_foreign_rekey",
   "reject_close_remainder": false,
   "reject_asset_close": false,
   "reject_clawback": false,
@@ -891,7 +891,7 @@ in base units, and ASA IDs are written `asa:<id>`.
 | `role` | both | yes | `"signer"` or `"cosigner"`; must match the node. |
 | `key` | both | yes | `"default"` for the node default, or the key the file governs: a signing address on a signer node, a Witness Key ID on a cosigner node. Must match the file name. |
 | `description` | both | no | Notes for reviewers. |
-| `reject_foreign_rekey` | signer | yes | Reject txns whose non-zero `RekeyTo` target is not held by this node. |
+| `rekeys` | signer | yes | How the signer treats a txn with a non-zero `RekeyTo`: `reject_all_rekeys` rejects it; `reject_foreign_rekey` rejects it unless this node holds the target (the shipped default); `allow_rekeys` rejects nothing. This setting only rejects: a rekey it lets through still meets the rekey warning, review rules and operator approval, and User Auto-Approve can approve it. A rejection outranks all of those. The signer's own rotation rekeys are never rejected. |
 | `reject_rekey` | cosigner | yes | Coarse deny-all switch for txns with non-zero `RekeyTo`. With `false`, a rekey still fails unless `rekey_policy` allows the edge. |
 | `reject_close_remainder` | both | yes | Reject payment txns with non-zero `CloseRemainderTo`. |
 | `reject_asset_close` | both | yes | Reject ASA transfer txns with non-zero `AssetCloseTo`. |
@@ -981,7 +981,7 @@ Edit the scalar settings at the top level, next to `key`:
 
 ```json
   "description": "Treasury key",
-  "reject_foreign_rekey": true,
+  "rekeys": "reject_foreign_rekey",
   "reject_close_remainder": true,
   "reject_asset_close": false,
   "reject_clawback": true,
@@ -1148,7 +1148,7 @@ How to read this:
   "role": "signer",
   "key": "CEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI7JH2AYM",
   "description": "Treasury key",
-  "reject_foreign_rekey": true,
+  "rekeys": "reject_foreign_rekey",
   "reject_close_remainder": true,
   "reject_asset_close": false,
   "reject_clawback": true,
@@ -1273,7 +1273,7 @@ caps fees at 1 ALGO:
   "format": "aplane.policy.v1",
   "role": "signer",
   "key": "default",
-  "reject_foreign_rekey": true,
+  "rekeys": "reject_foreign_rekey",
   "reject_close_remainder": true,
   "reject_asset_close": false,
   "reject_clawback": false,
@@ -1365,7 +1365,7 @@ without a file of its own:
   "format": "aplane.policy.v1",
   "role": "signer",
   "key": "default",
-  "reject_foreign_rekey": true,
+  "rekeys": "reject_foreign_rekey",
   "reject_close_remainder": false,
   "reject_asset_close": false,
   "reject_clawback": false,
@@ -1466,7 +1466,7 @@ Before relying on a policy:
 | Signer refuses to load policy | A sidecar is missing or does not match its document, a document does not decode, or the generation has no `default.json`. |
 | `apply` fails with `policy_snapshot_changed` | Something the review saw changed before the apply committed: another apply, an ASA set change, or a network mapping change. Check the current state with `apadmin policy status` and apply again to review the node as it is now. |
 | `check` rejects a file with "missing required field" | Key files and defaults are complete documents; start from `apadmin policy template --key K` rather than a fragment. |
-| `check` rejects a file with "is not accepted in a cosigner document" | The file carries a signer-only field (`reject_foreign_rekey`, `always_review_warnings`, `auto_approve_self_noop_transfer`, the `*_on_no_route` family, `review_above`, or a `review` type verdict). |
+| `check` rejects a file with "is not accepted in a cosigner document" | The file carries a signer-only field (`rekeys`, `always_review_warnings`, `auto_approve_self_noop_transfer`, the `*_on_no_route` family, `review_above`, or a `review` type verdict). |
 | `export --key K` fails with `policy_document_not_found` | The key has no policy of its own; it follows the default, which `export` without `--key` returns. |
 | `check`, `diff` or `apply` fails with `policy_export_stale` | The files come from an export the node has moved on from: its policy, ASA set or network map changed since. Export again with `export --all` into a new directory and copy your edited files into it, or run `diff --no-node-context FILE` to review against the live node and `apply --no-node-context FILE` when the diff shows only your edits (in the TUI, load a copy from outside the export). See [Exporting the whole policy](#exporting-the-whole-policy). |
 | `appolicy` refuses `--signer-data` | appolicy no longer reads a signer's data directory. Export with `apadmin policy export --all DIR` and open the files in `DIR`. |

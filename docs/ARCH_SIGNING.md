@@ -898,7 +898,7 @@ in the embedded signer default a fresh store starts from.
 |---------|--------|-----------------|-------------|
 | `user_auto_approve` | `identities/default/config.yaml` | `false` | Sign non-rejected requests without TUI confirmation, including policy review requirements. |
 | `transaction_types` | policy document (default or the key's own file) | `{"*": "allow"}` | Per-type verdict evaluated before every other rule: `reject` is a hard rejection, `review` forces operator review, `allow` continues to the rules below; `*` covers every type not named. |
-| `reject_foreign_rekey` | policy document (default or the key's own file) | `true` | Reject txns whose non-zero `RekeyTo` target is not held by the current signer before approval. |
+| `rekeys` | policy document (default or the key's own file) | `reject_foreign_rekey` | The signer's rekey rejection, before approval: `reject_all_rekeys` rejects every non-zero `RekeyTo`, `reject_foreign_rekey` one whose target the current signer does not hold, `allow_rekeys` none. What passes goes on to review and `user_auto_approve`. The signer's own rotation rekeys are never rejected. |
 | `reject_close_remainder` | policy document (default or the key's own file) | `false` | Reject txns with non-zero `CloseRemainderTo` before approval. |
 | `reject_asset_close` | policy document (default or the key's own file) | `false` | Reject txns with non-zero `AssetCloseTo` before approval. |
 | `reject_clawback` | policy document (default or the key's own file) | `false` | Reject ASA clawback txns using `AssetSender` before approval. |
@@ -1457,7 +1457,7 @@ evaluates and the operator sees. Preserving the user's intent across
 prepare and sign is the client's job (first-party clients verify the
 prepared group against the transaction they sent, below). It then runs the
 ordinary policy gates and operator approval; the rotation target counts as
-the signer's own address, so `reject_foreign_rekey` does not apply to it. After approval, under the
+the signer's own address and a protocol rekey, so no `rekeys` value rejects it. After approval, under the
 account's lock, it reads the chain again and refuses unless the authorizer
 is still stage `n` (`rotating_stage_changed` otherwise: nothing was signed),
 `first_valid` is at most 2 rounds ahead of the round read, and at least 10

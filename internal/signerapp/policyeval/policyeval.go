@@ -66,7 +66,7 @@ type Input struct {
 	// Slots are the judged positions, in index order.
 	Slots []Slot
 	// KnownAddresses are the accounts this node holds keys for. Only rekeys
-	// read it: reject_foreign_rekey and the rekey warning.
+	// read it: the rekeys setting's reject_foreign_rekey and the rekey warning.
 	KnownAddresses map[string]bool
 	// ProtocolRekeyTargets are rekeys the signer issued itself (a rotation's
 	// next stage); they are not warnings.
@@ -196,7 +196,9 @@ func Deny(in Input) ([]policy.LintViolation, error) {
 			return nil, ErrPolicyNotLoaded
 		}
 		txn := in.Group[slot.Index]
-		found := policy.CheckTxnPolicyLints(txn, slot.Policy, in.KnownAddresses)
+		found := policy.CheckTxnPolicyLintsIn(txn, slot.Policy, policy.LintContext{
+			KnownAddresses: in.KnownAddresses, ProtocolRekeyTargets: in.ProtocolRekeyTargets,
+		})
 		found = append(found, policy.CheckTxnTransferRoutingPolicyLints(txn, slot.Policy)...)
 		for i := range found {
 			found[i].TxnIndex = slot.Index

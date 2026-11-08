@@ -5,14 +5,15 @@ package daemon
 
 import (
 	"context"
-	"github.com/aplane-algo/aplane/internal/crypto"
-	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/noderole"
@@ -439,7 +440,7 @@ func TestApplyPolicy_PersistsUploadedBytesAndReloads(t *testing.T) {
 	if !current.Success {
 		t.Fatalf("GetPolicy() = %+v", current)
 	}
-	uploaded := policytest.Signer(t, policy.DefaultKey, `{"reject_foreign_rekey": false, "max_fee_microalgos": "4321", "always_review_warnings": true}`)
+	uploaded := policytest.Signer(t, policy.DefaultKey, `{"rekeys": "allow_rekeys", "max_fee_microalgos": "4321", "always_review_warnings": true}`)
 	result := svc.adminApp().ApplyPolicy(adminproto.ApplyPolicyRequest{
 		Documents:               []adminproto.PolicyDocument{{Key: policy.DefaultKey, Document: uploaded}},
 		ExpectedPolicySetSHA256: current.PolicySetSHA256,
@@ -465,7 +466,7 @@ func TestApplyPolicy_PersistsUploadedBytesAndReloads(t *testing.T) {
 		t.Fatal("PolicyFor() = nil")
 		return
 	}
-	if got.RejectForeignRekey || got.MaxFeeMicroAlgos != 4321 || !got.AlwaysReviewWarnings {
+	if got.Rekeys != policy.RekeysAllow || got.MaxFeeMicroAlgos != 4321 || !got.AlwaysReviewWarnings {
 		t.Fatalf("PolicyFor() = %+v, want the uploaded settings", got)
 	}
 	assertPolicySidecarVerifies(t, ir)
@@ -492,7 +493,7 @@ func TestApplyPolicy_RejectsInvalidPolicyWithoutOverwrite(t *testing.T) {
 		t.Fatal("expected default product runtime")
 	}
 
-	baseline := policytest.Signer(t, policy.DefaultKey, `{"reject_foreign_rekey":false,"max_fee_microalgos":"4321"}`)
+	baseline := policytest.Signer(t, policy.DefaultKey, `{"rekeys": "allow_rekeys","max_fee_microalgos":"4321"}`)
 	if result := applySignerPolicyDoc(t, server, baseline); !result.Success {
 		t.Fatalf("ApplyPolicy(baseline) = %+v", result)
 	}
@@ -509,7 +510,7 @@ func TestApplyPolicy_RejectsInvalidPolicyWithoutOverwrite(t *testing.T) {
 	if string(onDisk) != baseline {
 		t.Fatalf("policy.json changed to %q, want baseline %q", string(onDisk), baseline)
 	}
-	if got := ir.NodePolicy().PolicyFor(""); got == nil || got.MaxFeeMicroAlgos != 4321 || got.RejectForeignRekey {
+	if got := ir.NodePolicy().PolicyFor(""); got == nil || got.MaxFeeMicroAlgos != 4321 || got.Rekeys != policy.RekeysAllow {
 		t.Fatalf("PolicyFor() = %+v, want unchanged baseline", got)
 	}
 	assertPolicySidecarVerifies(t, ir)

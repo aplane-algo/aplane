@@ -218,7 +218,7 @@ func TestReadDocumentsStripsCommentsBeforeTheNode(t *testing.T) {
 	// A comment inside a token does not assemble one: the stripped text is
 	// not a JSON object, so no key can be read from it and it is refused
 	// exactly as the blanked text the TUI checks would be.
-	split := "{\"key\": \"default\", \"reject_foreign_rekey\": fa/* note */lse}"
+	split := "{\"key\": \"default\", \"reject_clawback\": fa/* note */lse}"
 	if doc, err := DocumentFromText("default.json", split); err == nil || !strings.Contains(err.Error(), `"key" field`) {
 		t.Fatalf("a token split by a comment was accepted: doc %+v err %v", doc, err)
 	}

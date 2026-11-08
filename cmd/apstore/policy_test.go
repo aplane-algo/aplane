@@ -47,7 +47,7 @@ func TestCmdPolicyCheckAcceptsValidTransferRoutingPolicy(t *testing.T) {
 func TestCmdPolicySignRepairsDirectEdit(t *testing.T) {
 	withPolicyCommandStore(t, func(root string, passphrase []byte) {
 		policyPath := activePolicyPathForTest(t, root, passphrase)
-		policyBytes := []byte(policytest.Signer(t, policy.DefaultKey, `{"reject_foreign_rekey": false}`))
+		policyBytes := []byte(policytest.Signer(t, policy.DefaultKey, `{"rekeys": "allow_rekeys"}`))
 		if err := os.WriteFile(policyPath, policyBytes, 0o600); err != nil {
 			t.Fatalf("WriteFile(policy) error = %v", err)
 		}

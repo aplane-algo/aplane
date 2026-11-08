@@ -9,6 +9,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/asaset"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/txeffects"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
@@ -42,10 +43,26 @@ func JoinLintViolations(vs []LintViolation) string {
 	return strings.Join(parts, "; ")
 }
 
+// LintContext is what the hard transaction rules know about this signer.
+type LintContext struct {
+	// KnownAddresses are the addresses this signer identity holds. Nil treats
+	// every rekey target as foreign.
+	KnownAddresses map[string]bool
+	// ProtocolRekeyTargets are rekeys the signer issued itself (a rotation's
+	// next stage). The rekey setting never rejects them, or reject_all_rekeys
+	// would stop a rotating account from spending.
+	ProtocolRekeyTargets map[string]bool
+}
+
 // CheckTxnPolicyLints evaluates hard transaction-level policy rules with
 // signer-local key awareness. knownAddresses is the set of addresses held by
 // the current signer identity; nil treats every rekey target as foreign.
 func CheckTxnPolicyLints(txn types.Transaction, cfg *Config, knownAddresses map[string]bool) []LintViolation {
+	return CheckTxnPolicyLintsIn(txn, cfg, LintContext{KnownAddresses: knownAddresses})
+}
+
+// CheckTxnPolicyLintsIn is CheckTxnPolicyLints with a full LintContext.
+func CheckTxnPolicyLintsIn(txn types.Transaction, cfg *Config, ctx LintContext) []LintViolation {
 	if cfg == nil {
 		return nil
 	}
@@ -64,13 +81,8 @@ func CheckTxnPolicyLints(txn types.Transaction, cfg *Config, knownAddresses map[
 	var violations []LintViolation
 	facts := txeffects.Inspect(txn)
 
-	if cfg.RejectForeignRekey && facts.Has(txeffects.EffectRekey) && !knownAddresses[txn.RekeyTo.String()] {
-		violations = append(violations, LintViolation{
-			RuleID:   RejectForeignRekeyRuleID,
-			Scope:    "txn",
-			TxnIndex: -1,
-			Message:  "foreign rekey transactions are rejected by policy",
-		})
+	if violation, ok := rekeyViolation(txn, facts, cfg, ctx); ok {
+		violations = append(violations, violation)
 	}
 
 	if cfg.RejectCloseRemainder && facts.Has(txeffects.EffectClose) {
@@ -133,4 +145,32 @@ func networkFromGenesisHash(genesisHash types.Digest, resolver apconfig.GenesisH
 		return ""
 	}
 	return network
+}
+
+// rekeyViolation applies the signer's rekey setting. It only rejects; what it
+// lets through goes on to the rest of policy. The cosigner role judges rekeys
+// with its own rules, and the signer's own protocol rekeys are never rejected.
+func rekeyViolation(txn types.Transaction, facts txeffects.Facts, cfg *Config, ctx LintContext) (LintViolation, bool) {
+	target := txn.RekeyTo.String()
+	if !facts.Has(txeffects.EffectRekey) || cfg.Role == noderole.RoleCosigner || ctx.ProtocolRekeyTargets[target] {
+		return LintViolation{}, false
+	}
+	switch cfg.Rekeys {
+	case RekeysAllow:
+		return LintViolation{}, false
+	case RekeysRejectForeign:
+		if ctx.KnownAddresses[target] {
+			return LintViolation{}, false
+		}
+		return LintViolation{
+			RuleID: RejectForeignRekeyRuleID, Scope: "txn", TxnIndex: -1,
+			Message: "foreign rekey transactions are rejected by policy",
+		}, true
+	default:
+		// reject_all_rekeys, or a Config never given a setting.
+		return LintViolation{
+			RuleID: RejectAllRekeysRuleID, Scope: "txn", TxnIndex: -1,
+			Message: "rekey transactions are rejected by policy (rekeys: reject_all_rekeys)",
+		}, true
+	}
 }

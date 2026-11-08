@@ -25,7 +25,7 @@
         "max_fee_microalgos",
         "transaction_types",
         "transfer_policy",
-        "reject_foreign_rekey",
+        "rekeys",
         "always_review_warnings",
         "auto_approve_self_noop_transfer"
       ],
@@ -50,9 +50,13 @@
         "description": {
           "$ref": "#/$defs/description"
         },
-        "reject_foreign_rekey": {
-          "type": "boolean",
-          "description": "Reject a non-zero RekeyTo whose target this signer does not hold."
+        "rekeys": {
+          "enum": [
+            "reject_all_rekeys",
+            "reject_foreign_rekey",
+            "allow_rekeys"
+          ],
+          "description": "The signer's rejection rule for a non-zero RekeyTo: reject_all_rekeys rejects every rekey, reject_foreign_rekey rejects one whose target this signer does not hold, allow_rekeys rejects none. What it lets through goes on to review and user_auto_approve. The signer's own rotation rekeys are never rejected."
         },
         "reject_close_remainder": {
           "type": "boolean",

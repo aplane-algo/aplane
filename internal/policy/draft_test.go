@@ -283,7 +283,7 @@ func TestCanonicalOrderWithEveryField(t *testing.T) {
 			keys = append(keys, strings.TrimLeft(line[:i], ` "`))
 		}
 	}
-	want := `format role key description reject_foreign_rekey reject_close_remainder reject_asset_close ` +
+	want := `format role key description rekeys reject_close_remainder reject_asset_close ` +
 		`reject_clawback reject_rekey always_review_warnings auto_approve_self_noop_transfer max_fee_microalgos ` +
 		`transaction_types limits mainnet algo review_above reject_above address_sets asset_sets ` +
 		`transfer_policy on_no_route close_on_no_route clawback_on_no_route blocked_destinations routes ` +
