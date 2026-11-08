@@ -71,10 +71,9 @@ IPC-only; the node has no SSH admin channel.
 Native recovery phrases can also be explicitly displayed through local AP Admin.
 Encrypted backups remain the recovery method for other credential classes.
 
-Mnemonic import, export, and recovery are reserved for native accounts. Plain
-`aplane.falcon1024.v1` and `aplane.ed25519.v1` are internal-only and refuse
-standalone creation and mnemonic import, including on stores with old enabled
-records. Their existing keys still restore from encrypted backups. See
+Mnemonic import, export, and recovery are reserved for native accounts. The
+plain hosts `aplane.falcon1024.v1` and `aplane.ed25519.v1`, like every LogicSig
+type, refuse mnemonic import; their keys restore from encrypted backups. See
 [the native-only policy](ARCH_KEYTYPES.md#mnemonic-backup-and-recovery).
 
 ---

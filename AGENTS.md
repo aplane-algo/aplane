@@ -86,8 +86,8 @@ For a current ownership map and source-of-truth files, prefer `docs/ARCH_OVERVIE
   - `signerops/`: Signer-side signing operations
   - `signerreg/`: Signer registration
 - `lsig/ed25519lsig/`: Ed25519 LogicSig DSA family (base key type `aplane.ed25519.v1`)
-- `lsig/falcon1024_guarded/`: Guarded DSA provider for the Falcon/Falcon `aplane.falcon1024-cosigner1024.v1` key type
-- `lsig/composeddsa/`: Runtime-compiled LogicSig composer for DSA-based schemes (guarded/composed signing)
+- `lsig/plainhost/`: The plain host: wraps `aplane.falcon1024.v1` and `aplane.ed25519.v1` with the overlay arrangements (`plain1`: an optional cosigner and rekey-to list, no host rules)
+- `lsig/composeddsa/`: Runtime-compiled LogicSig composer for DSA-based schemes (bounded and plain hosts, overlays, composed templates)
 - `lsig/dsafamily/`: Shared DSA family registration descriptors and key generator
 - `lsig/generictemplate/`: YAML-backed provider for generic LogicSigs
 - `lsig/boundedaccount/`: General bounded key type `aplane.falcon1024-b.v1`: shapes and provider; its family-neutral grammar, presets, and receipt are in `internal/boundary/`

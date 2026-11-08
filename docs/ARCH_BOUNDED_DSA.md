@@ -8,6 +8,11 @@ metadata, inventory projection, framework-owned Layer 3 policies, static
 Layer-3 argument layout, the rekey-to list, and the cosigner's rekeys (cosigned
 rekeys, and listed rekeys on a cosigned account) are implemented.
 
+It also freezes `plain1`, the plain host's contract, which shares `bounded2`'s
+durable record, overlays, argument layout and planner and differs only in what
+the host allows: see [The plain1 contract](#the-plain1-contract). Everything
+else in this document describes `bounded2` unless it names `plain1`.
+
 Canonical encodings and golden vectors from development builds are not a
 compatibility contract; keys derived from them must be recreated. The encodings
 and vectors in this document are the `bounded2` compatibility baseline.
@@ -65,12 +70,14 @@ declare any row.
    followed by author TEAL runs only for an admitted pure spend.
 
 No host rule gates a rekey. The rekey path accepts or rejects before any
-Layer 3 or author code runs, so no Layer 3 policy applies to a rekey. The
-framework timelock policies therefore require `rekey: refused`: a
-spending-key rekey, cosigned or not, would leave the lock before the unlock
-round. A timelock may carry a rekey-to list (`only_these`), but a listed rekey
-is accepted before the unlock round too, so the lock holds only while the
-holders of the listed keys cooperate. The cosigner check is the only check
+Layer 3 or author code runs, so no Layer 3 policy applies to a rekey. A
+framework timelock policy beside `rekey: spending_key` therefore holds only
+while the spending key declines to rekey: a spending-key rekey, cosigned or
+not, leaves the lock before the unlock round. Templates may declare it; the
+general type's timelock shapes take only `only_these`. A timelock may carry a
+rekey-to list (`only_these`), but a listed rekey is accepted before the unlock
+round too, so the lock holds only while the holders of the listed keys
+cooperate. The cosigner check is the only check
 outside the rekey path that a rekey can reach, and only a cosigned rekey
 reaches it.
 
@@ -128,17 +135,17 @@ complete value-spending policy.
 | Online cosigner endpoints | `POST /plan`, `POST /sign/component`, `POST /sign/assemble` |
 | Bundled composed templates | none; the general type `aplane.falcon1024-b.v1` offers the allowlist, timelock and limits-only shapes |
 
-`bounded2` is the only bounded-authorization contract and has no protocol
-aliases. Flow labels version the client/server choreography, not the contract,
+`bounded2` is the only contract a bounded host or template declares (a plain host
+declares `plain1`), and neither has protocol aliases. Flow labels version the client/server choreography, not the contract,
 so a `bounded2` account without a cosigner still advertises `bounded1`. A cosigned
 account advertises `cosigned1`, which replaced `bounded-cosigner1` when the flow
 began to carry rekeys: a client that knows only the spend-only choreography then
 refuses a cosigned key instead of asking the cosigner to sign a listed rekey.
 
 Generation also refuses a workflow the spending base can't complete. The
-bounded cosigner flow needs a Falcon-1024 spending key, so a cosigner on another
-base is refused, as is any bounded profile on a base the support policy doesn't
-list. The policy is keyed by
+cosigner flow needs a Falcon-1024 spending key on `bounded2`, and a Falcon-1024
+or Ed25519 one on `plain1`, so a cosigner on another base is refused, as is any
+bounded profile on a base the support policy doesn't list. The policy is keyed by
 the base's signature construction from `internal/sigconstruction`, so a registered
 base with no construction is refused too. This is an admission decision for new
 accounts, separate from structural validity, and it runs only from `GenerateTEAL`. `ValidateTemplateSpec` and `validateBoundedConfig` stay
@@ -154,7 +161,7 @@ account must keep signing, so the signer keeps its own table of the spending
 constructions each workflow completes
 (`internal/signerapp/signing/bounded_construction.go`). It resolves an account's
 construction from its durable contract and `base_key_type`. The cosigner flow
-completes Falcon-1024 only. A valid signature on any other base is refused where it
+completes Falcon-1024 on `bounded2`, and Falcon-1024 and Ed25519 on `plain1`. A valid signature on any other base is refused where it
 always was, before an assembly it couldn't finish. Admission must stay within
 the signer's table, or it would create accounts the signer can't complete;
 `TestBoundedGenerationAdmitsOnlySignableWorkflows` checks that. Verification itself
@@ -234,8 +241,9 @@ The independent machine-readable inventory has two parts.
 contract-neutral protocol surface: the SDK transaction types and fields and the
 AVM transaction fields. [`BOUNDED_EFFECT_CLASSIFICATIONS.json`](BOUNDED_EFFECT_CLASSIFICATIONS.json)
 is `bounded2`'s judgment of that surface: which types it admits, and which fields
-are danger predicates, spend policy, rekey normal form and so on. A later contract
-adds its own classification file against the same surface. Both are maintained
+are danger predicates, spend policy, rekey normal form and so on.
+[`PLAIN_EFFECT_CLASSIFICATIONS.json`](PLAIN_EFFECT_CLASSIFICATIONS.json) is
+`plain1`'s, against the same surface; a later contract adds its own. Both are maintained
 independently of renderer/classifier code, must not be generated from the
 implementation manifest, and are pinned to go-algorand-sdk v2.11.2 pseudo-version
 `967fcacfacdf`, go-algorand reference `68e036affd9e`, and AVM v13.
@@ -257,7 +265,8 @@ decision names its rule:
 
 | Rule | Path | When |
 |---|---|---|
-| `fee_ceiling` | refused | `Fee` exceeds the declared ceiling |
+| `fee_ceiling` | refused | `Fee` exceeds the declared ceiling (`bounded2`; `plain1` declares none) |
+| `open_spend` | spend | on `plain1`, any transaction without `RekeyTo`: every type, closes, asset closes and clawback included |
 | `spend_allowed` | spend | a pure spend of a declared effect |
 | `spend_not_declared` | refused | a pure spend of an effect the account does not declare |
 | `rekey_allowed` | spending rekey | a pure rekey under `rekey: spending_key`, with or without a list |
@@ -278,7 +287,9 @@ A refusal names the contract, for example "bounded2 account permanently disables
 rekey". `TestClassifyForReachesAnExplicitRuleForEveryEffect` runs every
 declaration the general grammar produces against every transaction type of the
 surface, with every combination of rekey, close, asset-close and clawback fields,
-and requires an explicit allow or refuse rule for each, never a default branch.
+and requires an explicit allow or refuse rule for each, never a default branch. It
+runs the plain host's declarations too, and requires `open_spend` for exactly the
+transactions without `RekeyTo`.
 
 The framework danger predicates are:
 
@@ -376,6 +387,57 @@ profile keeps a stolen spending key in the envelope only while the cosigner
 holds: with both keys, or the cosigner node's policy, an attacker can rekey
 anywhere.
 
+## The plain1 contract
+
+`plain1` is the plain host's contract, which the plain types `aplane.falcon1024.v1`
+and `aplane.ed25519.v1` render when they are given overlay parameters (see
+[plain hosts](ARCH_KEYTYPES.md#plain-hosts)). It is stored in the same
+`bounded_authorization` record as `bounded2` (`signing_metadata_version: 2`), so the
+cosigner and rekey-to list overlays, the static argument layout, the planner and
+assembly work unchanged. It differs only in what the host allows:
+
+| Property | `plain1` value |
+|---|---|
+| Contract identifier | `plain1` |
+| Spending bases | Falcon-1024 and Ed25519; an Ed25519 spending key is classical |
+| TEAL version | 13 |
+| Spend | every transaction without `RekeyTo`, of any type, closes, asset closes and clawback included (`open_spend`) |
+| Spend effects | none declared: `spend_effects` is empty |
+| Fee ceiling | none: `max_fee` is absent |
+| Layer 3 | `none`, with no author TEAL |
+| Rekey setting | as `bounded2`: `refused` or `spending_key`, either with a rekey-to list (`only_these`, `plus_cosigned`) |
+| Cosigner | optional; `plus_cosigned` needs one |
+| Templates | cannot declare `plain1` |
+| Flow labels | `bounded1` without a cosigner; `cosigned1` with a cosigner |
+
+The program has no envelope. After the spending-key check it dispatches on
+`RekeyTo`: a transaction that doesn't rekey goes straight to the spend path, which
+calls the cosigner subroutine on a cosigned account and accepts. A rekey takes the
+same rekey body as on `bounded2` (see [Pure rekey](#pure-rekey)), so it passes only
+in pure rekey normal form, without a fee bound, on the paths the rekey setting
+gives. A rekey still can't carry a close, an asset close or a clawback, and
+`refused` without a list refuses every rekey but leaves closes, so the spending key
+can still empty the account.
+
+Without a cosigner the spending key alone decides every spend. With one, the
+cosigner's policy is the only restriction on spends, so the cosigner sees every
+transaction type and effect; `PLAIN_EFFECT_CLASSIFICATIONS.json` lists the fields it
+judges under `cosigner_policy`.
+
+Durable validation requires `max_fee` absent, an empty spend-effect list and
+`layer3_policy: none` on `plain1`, and refuses an unknown contract;
+`txeffects.ClassifyFor` does too rather than treating it as `bounded2`. The
+classifier's plain manifest (`txeffects.PlainManifest`) and the independent
+classification file have different owners, like `bounded2`'s;
+`TestIndependentPlainInventoryMatchesManifest`,
+`TestIndependentPlainInventoryDetectsEveryRemovedEntry` and
+`TestIndependentPlainInventoryClassifiesEveryAVMField` compare them.
+
+With no parameters a plain type renders the plain program instead: the spending-key
+check alone, with no bounded record (`signing_metadata_version: 1`). It is the
+composition base every bounded account names, the program of restored plain keys,
+and an account of its own once the type is enabled.
+
 ## Canonical Encoding
 
 All hashes in this section use SHA-512/256. `u32(x)` and `u64(x)` are unsigned
@@ -390,10 +452,10 @@ encodings enter the [general boundary digest](#general-boundary-digest).
 ```text
 canonical_bounded_profile =
   field("APLANE_BOUNDED_PROFILE_V2") ||
-  field("bounded2") ||
+  field(contract) ||
   u32(count(spend_effects)) ||
     field(effect_0) || ... || field(effect_n) ||
-  u64(max_fee) ||
+  u64(max_fee) ||                      (bounded2 only)
   field(rekey) ||
   u32(rekey_list_present) ||
     if present: field("rekey_list1") || u32(4) ||
@@ -408,10 +470,14 @@ canonical_bounded_profile =
   u32(count(argument_layout)) || canonical_argument_slots
 ```
 
-Spend effects use frozen order `pay`, `axfer`, `asset_opt_in`. Duplicates are
-invalid. Empty spend sets are invalid. `asset_opt_in` is the zero-amount
+`contract` is `bounded2` or `plain1`. Spend effects use frozen order `pay`, `axfer`,
+`asset_opt_in`. Duplicates are invalid. On `bounded2` empty spend sets are invalid;
+on `plain1` the set is always empty. `asset_opt_in` is the zero-amount
 self-receiver asset-transfer form and is authorized independently from `axfer`.
-`max_fee` must be present and no greater than 10,000. `rekey` is the text
+On `bounded2` `max_fee` must be present and no greater than 10,000. A `plain1`
+profile has no fee field: the contract name leads the encoding, so it omits
+`u64(max_fee)` rather than writing a placeholder, and `bounded2`'s encoding and
+golden vectors are unchanged. `rekey` is the text
 `refused` or `spending_key`; an *only these* account encodes `refused` and sets the
 list marker, and a *plus cosigned* account encodes `spending_key` and sets it. The
 Layer 3 identity, argument declarations, maximum
@@ -642,12 +708,15 @@ parameters:
 ```
 
 `rekey: refused` gives the program no rekey path. A refused profile without a
-list can neither close nor be rekeyed, so it must keep a transfer for what it
-holds: `spend_effects` includes `pay`, and `axfer` whenever it includes
-`asset_opt_in`. The profile check and durable metadata validation both enforce
-this (`boundedmeta.ValidateRefusedExit`), with or without a cosigner, and durable
-validation also refuses a timelock policy beside `rekey: spending_key`. The
-general type never offers a refused profile without a list.
+list can neither close nor be rekeyed, so only a transfer moves what it holds:
+without `pay` in `spend_effects` its ALGO can never leave, and with
+`asset_opt_in` but no `axfer` an asset it opts into can never leave. That is the
+author's choice. Neither the profile check nor durable metadata validation
+refuses it, and durable validation also accepts a timelock policy beside
+`rekey: spending_key`: durable validation checks structure only, so a check
+for a combination's wisdom, if one returns, belongs at generation, where
+accounts created without it keep loading. The general type never offers a
+refused profile without a list.
 
 A cosigner's `required_on` must name every path the cosigner signs: `[spend]`
 beside `rekey: refused` or `only_these`, and `[spend, spending_rekey]` beside
@@ -662,8 +731,8 @@ addresses); an author parameter of that name must match the injected contract. I
 also appends the derived argument `rekey_list_proof` (kind `rekey_list_proof`, bound
 to `rekey_to`, 160 bytes) after any Layer 3 derived argument, so a runtime argument
 moves one slot later than it would without the list; a template cannot declare that
-kind itself. The rule above that a refused profile keep a transfer does not apply:
-a listed address is a way out, so any spend subset is valid. A cosigner beside
+kind itself. A listed address is a way out, so a spend subset without a transfer
+still leaves the account an exit. A cosigner beside
 `only_these` is not asked for a listed rekey.
 
 `rekey: plus_cosigned` is `spending_key` plus the same list, and is stored that
@@ -712,10 +781,11 @@ use. A round compiles the same way on every network but means a different time o
 and it does not bind the program to one network.
 
 The timelock also applies to self-receivers, which the recipient check would otherwise
-admit. Every timelock policy requires `rekey: refused` or `only_these`, because a
-spending-key rekey would leave the lock before the unlock round. Under `only_these` a
-listed rekey is accepted before the unlock round, so the lock binds only while the
-listed keys' holders cooperate.
+admit. A timelock policy takes any rekey setting, but under `rekey: spending_key` or
+`plus_cosigned` the spending key can rekey out before the unlock round, cosigned or
+not, so the lock binds only while it declines; the general type's timelock shapes take
+only `only_these`. Under `only_these` a listed rekey is accepted before the unlock
+round, so the lock binds only while the listed keys' holders cooperate.
 
 Timelock policies reject author TEAL, parameters they do not read, and runtime arguments.
 An author who needs a list and custom time conditions uses a plain allowlist and writes
@@ -932,11 +1002,9 @@ node decides a cosigned rekey as it decides any rekey, by its `reject_rekey`,
 
 Ordinary `/sign` rejects every target of a cosigned account
 (`bounded_cosigner_required`), a listed rekey included, because only the cosigned
-flow carries that account. First-party clients do not support combining `cosigner1` and
-`cosigned1` targets in one group because their assembly contracts differ;
-this is a client orchestration limit, not a signer-side whole-group flow
-invariant. Signer-side classification remains authoritative for each target it
-signs or assembles. Unknown flow labels fail closed.
+flow carries that account. Signer-side classification remains authoritative for
+each target it signs or assembles. Unknown flow labels fail closed, the retired
+`cosigner1` flow label among them.
 Every bounded rekey, spending-key, cosigned or listed, on either flow, triggers the
 stable unconditional `bounded_rekey_requires_review` rule before
 policy self-no-op autoapproval, regardless of warning configuration. User
@@ -968,6 +1036,11 @@ shape rather than the whole grammar, so an unrelated new rule leaves it unchange
 It is a comparison value. It does not assert that two accounts have the same address,
 and it replaces no signing transcript. It is
 defined only for this key type: custom Layer 3 code is not bound by it.
+
+A plain host has its own digest of the same form, with domain
+`APLANE_PLAIN_BOUNDARY_V1`, its request schema `aplane.plain-host.v1`, and the selected
+arrangement's fingerprint in place of the shape's. `TestPlainHostGrammarGoldens` in
+`lsig/plainhost` pins the grammar fingerprint of each base.
 
 ### Golden vector 3: general boundary digest
 

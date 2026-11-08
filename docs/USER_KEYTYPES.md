@@ -18,18 +18,19 @@ authorities:
 | Account authorization type | Meaning | Examples |
 |---|---|---|
 | **Native** | Protocol account signature without a LogicSig. | `ed25519`, `falcon1024` |
-| **DSA LogicSig** | A LogicSig verifies digital signatures and may add transaction policy. | `aplane.falcon1024.v1`, bounded allowlists, guarded accounts |
+| **DSA LogicSig** | A LogicSig verifies digital signatures and may add transaction policy. | `aplane.falcon1024.v1`, bounded allowlists, cosigned accounts |
 | **Generic LogicSig** | TEAL-only account with no DSA private key. | `aplane.htlc.v1` |
 
-DSA LogicSigs may use a **plain** signature-only program, a **bounded** policy,
-an expert-mode **custom** schema-v1 composed policy, or a dedicated compiled
-provider policy. Cosigner guarding is an additional authority, not a DSA policy
+DSA LogicSigs may use a **plain** signature-only program, a **plain host**
+(the spending key and the overlays, no host rules), a **bounded** policy, an
+expert-mode **custom** schema-v1 composed policy, or a dedicated compiled
+provider policy. The cosigner is an additional authority, not a DSA policy
 category. The Corridor preset of the general bounded type composes this
 cosigner authority under the bounded contract; it is not a dedicated policy.
 
 | Auxiliary authority type | Meaning |
 |---|---|
-| **Cosigner witness key** | A signer-managed, non-account witness used through `/sign/component` and assembled into a guarded transaction. |
+| **Cosigner witness key** | A signer-managed, non-account witness used through `/sign/component` and assembled into a cosigned account's transaction. |
 
 A cosigner witness key has type `aplane.witness-falcon1024.v1`. Its `.cos`
 record uses durable category `witness` and can sign only the cosigner component
@@ -41,17 +42,16 @@ APlane has two optional key type paths:
 
 | Kind | Example | Where definition lives | How to enable |
 |---|---|---|---|
-| Compiled provider | `aplane.falcon1024-cosigner1024.v1` | Go code in the current binary | `apadmin keytype enable` or apadmin KeyType Library |
+| Compiled provider | `aplane.falcon1024.v1` (plain host) | Go code in the current binary | `apadmin keytype enable` or apadmin KeyType Library |
 | YAML template | `aplane.htlc.v1` | Plaintext library YAML, then encrypted product-local `.template` after import | `apadmin template import` or apadmin KeyType Library |
 
 The protocol-native key types, `ed25519` and `falcon1024`, and the general bounded
 key type `aplane.falcon1024-b.v1` are default-enabled on signer nodes; they are available
 without extra steps.
-Plain LogicSig providers `aplane.falcon1024.v1` and `aplane.ed25519.v1` are
-internal-only. They support templates and existing accounts, but cannot be
-enabled, generated as standalone accounts, or imported from mnemonics.
-Other compiled account providers, such as the guarded and rotating types, are
-library-visible and require product-local enablement. Existing and restored
+The plain LogicSig types `aplane.falcon1024.v1` and `aplane.ed25519.v1` are
+plain hosts (see [Plain hosts](#plain-hosts)). They are library-visible and,
+like the rotating types, require product-local enablement; neither takes
+mnemonic import. Existing and restored
 keys remain visible and signable whether or not their type permits creation.
 
 YAML templates are different: a library YAML file is only an install source. It
@@ -91,8 +91,8 @@ apadmin -d $APSIGNER_DATA template list
 apadmin -d $APSIGNER_DATA template show example.my_escrow.v1 --show-sensitive-template
 apadmin -d $APSIGNER_DATA template import library/templates/aplane.htlc.v1.yaml
 apadmin -d $APSIGNER_DATA template remove example.my_escrow.v1
-apadmin -d $APSIGNER_DATA keytype enable aplane.falcon1024-cosigner1024.v1
-apadmin -d $APSIGNER_DATA keytype disable aplane.falcon1024-cosigner1024.v1
+apadmin -d $APSIGNER_DATA keytype enable aplane.falcon1024.v1
+apadmin -d $APSIGNER_DATA keytype disable aplane.falcon1024.v1
 ```
 
 In `apadmin`, the KeyType Library presents both library-visible compiled
@@ -128,9 +128,8 @@ higher protocol fee; APlane presents and applies the required fee adjustment
 before approval.
 
 Use encrypted backups for every LogicSig account. Mnemonic import, export,
-and recovery are reserved for native accounts. The two plain LogicSig
-providers are internal-only; old enablement records do not restore mnemonic
-import eligibility. See [mnemonic backup and recovery](ARCH_KEYTYPES.md#mnemonic-backup-and-recovery).
+and recovery are reserved for native accounts; no LogicSig type takes a
+mnemonic. See [mnemonic backup and recovery](ARCH_KEYTYPES.md#mnemonic-backup-and-recovery).
 
 All bundled APlane LogicSig types are kept off the Ed25519 curve by the TEAL
 v13 assembler's salt rule. Provider-backed types compile through algod and
@@ -152,17 +151,16 @@ and require product-local enablement. On cosigner nodes,
 Enable a library-visible compiled provider:
 
 ```bash
-apadmin -d $APSIGNER_DATA keytype enable aplane.falcon1024-cosigner1024.v1
+apadmin -d $APSIGNER_DATA keytype enable aplane.falcon1024.v1
 ```
 
-This enables the guarded Falcon account type. A Corridor account needs no
-enabling: it is the Corridor preset of `aplane.falcon1024-b.v1`.
+This enables the plain Falcon host; see [Plain Hosts](#plain-hosts). A Corridor
+account needs no enabling: it is the Corridor preset of `aplane.falcon1024-b.v1`.
 
-Before generating a guarded or bounded-cosigner account, choose **Export
-Cosigner Key** on the cosigner. On the primary signer, start **Generate
-account** in `apadmin`, select the guarded key type or `aplane.falcon1024-b.v1`, then
-open the **Cosigner** field and choose **Use key file...** or **Paste public
-JSON...**. Compare the complete Witness Key ID with the value
+Before generating a cosigned account, choose **Export Cosigner Key** on the
+cosigner. On the primary signer, start **Generate account** in `apadmin`,
+select a plain host or `aplane.falcon1024-b.v1`, then open the **Cosigner**
+field and choose **Use key file...** or **Paste public JSON...**. Compare the complete Witness Key ID with the value
 shown on the cosigner and import; the form returns with that key selected. A
 key that is already imported is offered under its existing name rather than
 imported again. The UI submits the stable Witness Key ID and the signer
@@ -199,16 +197,16 @@ client stores the connection, not the key: another key on the same cosigner
 needs no client change.
 
 Connect apshell to the primary signer and run `cosigner status` to inspect the
-guarded account's cosigner route. apadmin uses local IPC and never reads or
+cosigned account's cosigner route. apadmin uses local IPC and never reads or
 writes the client endpoint registry or SSH identity.
 
 For scripting, batch import/export, and separate endpoint/enrollment operations,
 see [the cosigner command reference](USER_COMMANDS.md#apadmin-cosigner) and
 [advanced manual endpoint configuration](USER_COMMANDS.md#advanced-manual-endpoint-configuration-and-discovery).
 
-`aplane.ed25519.v1` is an internal LogicSig base. Native `ed25519` remains
-available for ordinary account creation and mnemonic import. The internal base
-needs no enablement when used by an enabled composed template.
+`aplane.ed25519.v1` is also a LogicSig base. Native `ed25519` remains
+available for ordinary account creation and mnemonic import. A base needs no
+enablement when used by an enabled composed template.
 
 Enabling writes or updates:
 
@@ -220,7 +218,7 @@ with:
 
 ```json
 {
-  "key_type": "aplane.falcon1024-cosigner1024.v1",
+  "key_type": "aplane.falcon1024.v1",
   "source": "compiled",
   "state": "enabled",
   "fingerprint": "1:<behavior-only sha256 hex>",
@@ -231,7 +229,7 @@ with:
 Disable a library-visible compiled provider:
 
 ```bash
-apadmin -d $APSIGNER_DATA keytype disable aplane.falcon1024-cosigner1024.v1
+apadmin -d $APSIGNER_DATA keytype disable aplane.falcon1024.v1
 ```
 
 Disabling removes the product enablement record after checking that no
@@ -239,6 +237,39 @@ existing keys use that key type.
 
 `keytype enable` can also re-enable an already-installed disabled YAML template.
 It does not import a new YAML source; use `template import` for that.
+
+## Plain Hosts
+
+`aplane.falcon1024.v1` and `aplane.ed25519.v1` are plain hosts: a spending key
+and the overlays you choose, with no on-chain fee ceiling and no transaction-type
+list. Every transaction that doesn't rekey is a spend, of any type, closes and
+clawback included. Enable the type first (`apadmin keytype enable`), then
+generate it with any of these, or with no parameters at all:
+
+| Parameter | Values |
+|---|---|
+| `rekey_authority` | `refused` (never rekeyed), `spending_key` (with the cosigner too on a cosigned account), `only_these` (only to a listed address, with the spending key alone), or `plus_cosigned` (a listed address with the spending key alone, any other with the cosigner) |
+| `cosigner` | optional: a cosigner reference name or Witness Key ID; `plus_cosigned` needs one |
+| `rekey_to` | with `only_these` or `plus_cosigned`: the 1 to 16 addresses the account may be rekeyed to |
+
+```text
+generate aplane.falcon1024.v1 cosigner=<witness-key-id> rekey_authority=spending_key
+generate aplane.ed25519.v1 rekey_authority=only_these rekey_to=<address>
+generate aplane.falcon1024.v1
+```
+
+With no parameters the type is the plain program: the spending-key check alone,
+the same program bounded and composed accounts are built on. A cosigned plain
+host signs through the cosigned flow, its cosigner asked for every spend and
+cosigned rekey, and the cosigner's policy is what restricts what it signs. One
+without a cosigner signs through ordinary `/sign`, by the spending key alone.
+The Ed25519 plain host's spending key is classical, not post-quantum; the
+apadmin review says so.
+
+Which arrangement suits an account is your choice: APlane offers every one,
+including those that protect little, such as a plain host whose only overlay
+is a rekey-to list (the address is pinned to listed keys, but the spending key
+alone can spend or close everything).
 
 ## Bounded Accounts
 
@@ -309,10 +340,12 @@ These addresses are illustrations, not funding destinations.
 | `rekey.to` | Required with `only_these` and `plus_cosigned`, and refused with `spending_key`. 1 to 16 distinct nonzero addresses, written literally. See [Rekey-to lists](#rekey-to-lists). |
 | `cosigner` | Optional. A cosigner reference name on the signer, or a Witness Key ID. `plus_cosigned` needs one. |
 
-Every account has a way out besides its transfers: a rekey-to list, a spending-key rekey,
-or both. `unlock_round` takes only `only_these`, with or without a cosigner: the unlock
-round holds back spends only, so a spending-key rekey, cosigned or not, could leave the
-lock early.
+Every shape of the general type has a way out besides its transfers: a rekey-to list, a
+spending-key rekey, or both. `unlock_round` takes only `only_these`, with or without a
+cosigner: the unlock round holds back spends only, so a spending-key rekey, cosigned or
+not, could leave the lock early. These are the general type's shapes, not rules of the
+contract: an expert template can declare a refused account, or a timelock with a
+spending-key rekey.
 
 ```yaml
 schema: aplane.boundary.v1
@@ -372,9 +405,10 @@ both can rekey it anywhere, out of its recipient list.
   address it goes to. The salts come from the spending key, so the list is in every
   backup of the key and can't be used without it. apadmin's review and receipt, and the
   parameters apshell's `generate` returns, do show the addresses.
-- **Generation refuses addresses that could never act on the account**: one of this
-  signer's rotating accounts, whose address authorizes only itself, and the address of
-  an imported cosigner reference, since a cosigner key never signs as an account.
+- **Any address can be listed, so check the list.** Generation no longer refuses an
+  address that could never act on the account, such as one of this signer's rotating
+  accounts, whose address authorizes only itself, or a cosigner key's native address,
+  since a cosigner key never signs as an account. Such an entry is a dead branch.
 - **The list can't change.** A mistaken list can't be repaired: move the funds out
   while the account can still spend.
 
@@ -915,7 +949,7 @@ fingerprint is treated as benign (re-pinned), not a conflict.
 Refresh the enablement record:
 
 ```bash
-apadmin -d $APSIGNER_DATA keytype enable aplane.falcon1024-cosigner1024.v1
+apadmin -d $APSIGNER_DATA keytype enable aplane.falcon1024.v1
 ```
 
 This updates the state-record fingerprint. It does not rewrite existing key

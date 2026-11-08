@@ -177,9 +177,8 @@ signature algorithm.
 | Flow | What must happen |
 |---|---|
 | Ordinary, empty label | `/sign` produces native signatures or assembles the held LogicSig's bytecode and arguments. Native keys, DSA-backed LogicSigs, and generic LogicSigs have different cryptographic behavior within this path. |
-| `cosigner1` | A guarded account requires both the user signer's component and a cosigner's component over the planned transaction. Assembly verifies and combines them. |
-| `bounded1` | The account's program enforces the compiled `bounded2` transaction envelope. A spending-key rekey, or a rekey to an address on the account's rekey-to list, when the account declares one, uses the ordinary signing path. |
-| `cosigned1` | A bounded program additionally requires a cosigner for spending and for a cosigned rekey. A rekey to an address on the account's rekey-to list takes the spending key alone; the client asks the cosigner for every other target. Plain `/sign` refuses these accounts. |
+| `bounded1` | An account with the overlays but no cosigner: a bounded host's program enforces the compiled `bounded2` transaction envelope, a plain host's (`plain1`) only its rekey setting. A spending-key rekey, or a rekey to an address on the account's rekey-to list, when the account declares one, uses the ordinary signing path. |
+| `cosigned1` | A cosigned account, on a bounded or plain host: the program additionally requires a cosigner for spending and for a cosigned rekey. A rekey to an address on the account's rekey-to list takes the spending key alone; the client asks the cosigner for every other target. Plain `/sign` refuses these accounts. |
 | `rotating1` | Each accepted spend also hands authorization to the next deterministically derived stage. Preparation and signing use dedicated rotating endpoints. |
 
 For guarded signing, the client first obtains a canonical group from `/plan`.
@@ -635,8 +634,8 @@ aplane/
 │   ├── falcon1024/                # Falcon-1024 DSA provider
 │   │   ├── derivation/, family/, keygen/, keys/, signerops/, signerreg/
 │   │   └── v1/                    # v1 standard provider, ops, composer, reference vectors
-│   ├── falcon1024_guarded/        # Guarded Falcon-1024 (user + cosigner) LogicSig provider
-│   ├── ed25519lsig/               # Ed25519 LogicSig DSA base for composed templates
+│   ├── plainhost/                 # Plain host: the plain LogicSig types with optional overlays (plain1)
+│   ├── ed25519lsig/               # Ed25519 LogicSig DSA base and plain host
 │   ├── composeddsa/               # Generic ComposedDSA composer
 │   ├── dsafamily/                 # Client-safe DSA family registration descriptors
 │   ├── signerreg/                 # Built-in signer-side LogicSig provider registration
@@ -1907,10 +1906,11 @@ trust boundaries, guarded authorizer semantics, endpoint routing model, and
 implementation map live in [ARCH_GUARDED.md](ARCH_GUARDED.md).
 
 Guarded signing is APlane's two-party LogicSig authorization path for
-accounts whose LogicSig bytecode requires both:
+cosigned accounts, on a plain host (`plain1`) or a bounded host (`bounded2`),
+whose LogicSig bytecode requires both:
 
-- a user component signature produced by the user signer that owns the
-  guarded-account key file, and
+- a spending signature, released as a bounded-base component by the user
+  signer that owns the account's key file, and
 - a cosigner component signature produced by a separate cosigner signer that
   owns a cosigner key and evaluates the cosigner policy that governs that key
   (its own document, or the node default).
@@ -1958,7 +1958,8 @@ is `identities/default/generations/<gen-id>/keys/`, selected by the store root.
 There is no root-level credential namespace or compatibility fallback.
 The full cosigner public key remains the verifier key embedded in guarded
 account LogicSig bytecode. `internal/witness` owns identity and custodian/domain
-capabilities; `internal/cosigner/keytypes` owns guarded-account role mapping.
+capabilities; whether an account is cosigned is read from its durable bounded
+metadata, not its key type.
 
 ### Runtime Flow
 
@@ -1969,16 +1970,14 @@ consume frozen canonical group bytes. The old bounded-specific component and
 assembly routes are retired and return 404. The invariants that survive that
 migration are owned by [ARCH_GUARDED.md](ARCH_GUARDED.md).
 
-The current guarded choreography is named `cosigner1`. Signer `/keys` and
-`/keytypes` inventory label guarded keys with `signing_flow: cosigner1` and
+The cosigned choreography is named `cosigned1`. Signer `/keys` inventory
+labels cosigned accounts with `signing_flow: cosigned1` and
 `cosigner_component_key_type`; clients route on the flow label, treat key-type
 and component-key-type strings as opaque, and fail fast on flow labels they do
-not implement. The `cosigner1` label is frozen: any choreography change mints a
-new label, and unrelated future mechanisms get their own label family.
-For cache compatibility, a client may treat a cached built-in guarded key type
-that lacks `signing_flow` or cosigner metadata as stale and refresh `/keys`
-before route selection; the refreshed `signing_flow` remains the routing
-authority.
+not implement, the retired `cosigner1` included. The `cosigned1` label is
+frozen: any choreography change mints a new label, and unrelated future
+mechanisms get their own label family. The refreshed `signing_flow` is the
+routing authority.
 
 ### Endpoint Routing
 
@@ -1999,13 +1998,12 @@ the embedded public key and verified component signature remain authoritative.
 Primary implementation ownership:
 
 - `pkg/signerapi`: component-signing and assembly DTOs plus fixtures.
-- `internal/cosigner/message`: role-separated component message construction.
+- `internal/cosigner/message`: cosigner-role component message construction.
 - `internal/cosigner/canonical`: canonical group decoding and group hashing.
 - `internal/sigconstruction/verify`: component signature verification primitives
   (signer-side only; client binaries must not link them).
-- `internal/cosigner/keytypes`: the guarded-account key type and its mapping
-  to the cosigner witness component key type; Witness Key ID derivation and
-  validation live in `internal/witness`.
+- `internal/cosigner/keytypes`: the durable `cosigner_public_key` parameter
+  name; Witness Key ID derivation and validation live in `internal/witness`.
 - `internal/signerapp/signing`: signer-side component signing, cosigner policy
   evaluation, and assembly.
 - `internal/signerapp/rest`: REST service methods for component signing and
@@ -2192,10 +2190,9 @@ These caches are not interchangeable:
   poller; it relies on startup connection and serialized command execution
   instead. The signer cache carries the signer-advertised key type, structured
   LogicSig program/argument/opcode resource profiles, signing argument schema,
-  guarded `signing_flow`, cosigner component key type, and embedded cosigner
-  public key. Guarded key-type checks
-  in the cache layer are compatibility freshness heuristics only; client
-  signing route selection remains driven by `signing_flow`,
+  `signing_flow`, cosigner component key type, embedded cosigner public key,
+  and each bounded account's contract and fee ceiling (none on a plain host).
+  Client signing route selection is driven by `signing_flow`,
 - auth cache depends on network state and signer/alias information,
 - alias and set caches are local operator state,
 - ASA cache persistence lives in `internal/cache`, but most callers should not bypass `internal/asa` for display or conversion logic.
@@ -2405,7 +2402,7 @@ Product-level boundaries:
 | Store/Backup Admin | `internal/signerapp/storeadmin/service.go`, `internal/signerapp/backupadmin/*.go`, `internal/backup/*.go` |
 | Store Ownership / Permissions | `internal/storeperm/*.go`, `internal/fsutil/perms.go`, `internal/fsutil/durable.go`, `internal/adminipc/path.go`, `cmd/apstore/permissions.go`, `docs/ARCH_STORE.md` |
 | Store Integration Harness | `test/storeintegration/*.go`, `internal/storepass/capacity_test.go`, `internal/testcheckpoint/*.go`, `Makefile` (`store-lifecycle-test`, `store-capacity-test`, `store-crash-test`, `store-release-drill`) |
-| LSig Providers / Resource Planning | `lsig/clientreg/register.go`, `lsig/signerreg/register.go`, `internal/lsigresource/consensus.go`, `internal/lsigresource/solver.go`, `internal/signerapp/signing/planner_runtime.go`, `internal/signerapp/signing/native_pq_fee.go`, `internal/signing/dummy_transactions.go`, `internal/lsigprovider/provider.go`, `internal/signingargs/types.go`, `internal/lsigsalt/salt.go`, `lsig/falcon1024/v1/standard.go`, `lsig/falcon1024_guarded/provider.go`, `lsig/falcon1024_guarded/register.go`, `lsig/ed25519lsig/register.go`, `lsig/ed25519lsig/signerreg/register.go`, `lsig/falcon1024/signerops/ops.go`, `lsig/dsafamily/register.go`, `lsig/generictemplate/provider.go`, `lsig/composeddsa/composer.go`, `lsig/composeddsa/layer3.go`, `lsig/boundedaccount/provider.go`, `internal/boundedmeta/metadata.go`, `internal/merkleallowlist/allowlist.go`, `internal/tealtemplate/legacy_list.go`, `internal/tealtemplate/template.go` |
+| LSig Providers / Resource Planning | `lsig/clientreg/register.go`, `lsig/signerreg/register.go`, `internal/lsigresource/consensus.go`, `internal/lsigresource/solver.go`, `internal/signerapp/signing/planner_runtime.go`, `internal/signerapp/signing/native_pq_fee.go`, `internal/signing/dummy_transactions.go`, `internal/lsigprovider/provider.go`, `internal/signingargs/types.go`, `internal/lsigsalt/salt.go`, `lsig/falcon1024/v1/standard.go`, `lsig/plainhost/provider.go`, `lsig/ed25519lsig/register.go`, `lsig/ed25519lsig/signerreg/register.go`, `lsig/falcon1024/signerops/ops.go`, `lsig/dsafamily/register.go`, `lsig/generictemplate/provider.go`, `lsig/composeddsa/composer.go`, `lsig/composeddsa/layer3.go`, `lsig/boundedaccount/provider.go`, `internal/boundedmeta/metadata.go`, `internal/merkleallowlist/allowlist.go`, `internal/tealtemplate/legacy_list.go`, `internal/tealtemplate/template.go` |
 | Protocol | `internal/protocol/messages.go`, `internal/signerapp/svcerr/svcerr.go`, `internal/signerapp/adminserver/dispatch.go`, `internal/signerapp/adminserver/displacement.go`, `internal/adminproto/stream_conn.go` |
 | Config | `internal/config/config.go`, `internal/serverconfig/serverconfig.go`, `internal/config/networkid.go`, `internal/config/genesishash.go` |
 | LocalNet Setup | `cmd/aplocalnet/main.go`, `internal/aplocalnet/setup.go`, `plugins/algokit-localnet/algokit-localnet.go`, `plugins/algokit-localnet/manifest.json` |

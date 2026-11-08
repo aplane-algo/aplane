@@ -53,6 +53,21 @@ func TestRetiredKeyTypeProductsDoNotReturn(t *testing.T) {
 		"lsig/" + "falcon1024_ed25519",
 		"lsig/" + "ecdsak1",
 		"cosigner_" + "ed25519",
+		// The dedicated cosigned account type and its cosigner1 flow, replaced by
+		// the plain host. The string cosigner1 alone stays: it is the cosigner
+		// overlay's contract label.
+		"aplane." + "falcon1024-cosigner1024" + ".v1",
+		"lsig/" + "falcon1024_guarded",
+		"SigningFlow" + "Cosigner1",
+		"ComponentTargetKind" + "User",
+		"AssemblyTargetKind" + "Guarded",
+		"message." + "RoleUser",
+		"SignGuarded" + "Group",
+		"sign_guarded" + "_group",
+		"GuardedSigningMetadata" + "NeedsRefresh",
+		"keys_response" + "_guarded",
+		// Mnemonic import is native-only.
+		"Mnemonic" + "Provider",
 	}
 	// The installers name a retired binary only to delete it from an upgraded or
 	// uninstalled machine, or to find it still running before they do. Only those

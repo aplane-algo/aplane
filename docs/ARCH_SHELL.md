@@ -276,15 +276,17 @@ narrow read-only signer-cache view. `guarded.go` owns that wiring and re-exports
 the discovery types and error sentinels used by existing engine callers. The
 dependency and exported-surface boundaries are pinned by `test/arch`.
 
-The same isolated package dispatches explicit inventory flow labels. `cosigner1`
-uses user/cosigner component signing plus guarded assembly; `cosigned1`
+The same isolated package dispatches explicit inventory flow labels. `cosigned1`
 uses user-first bounded component release, cosigner-role component signing, and
-bounded assembly, for spends and rekeys. Each bounded-base component names its
+bounded assembly, for spends and rekeys, on a plain or bounded host. Each bounded-base component names its
 path; the client asks the cosigner for every target but a `listed_rekey` one,
 sends no cosigner request when no target needs one, and budgets each cosigned
 position in a mixed group on its component's path. It rejects unknown labels,
-`bounded-cosigner1` among them, and groups that mix those two choreographies. Bounded profiles without an online cosigner advertise `bounded1`
-and continue through ordinary signing.
+`bounded-cosigner1` and the retired `cosigner1` among them. Accounts with the
+overlays but no online cosigner advertise `bounded1` and continue through
+ordinary signing. A plain host has no fee ceiling: the client caches each
+account's contract and checks a planned fee only against a bounded host's
+`max_fee`.
 
 Submission and confirmation diagnostics are returned on typed result values as
 `Output` strings and structured warnings. Shell rendering lives in
@@ -979,7 +981,9 @@ and presentation system as built-in commands. See
 `boundary=` and `result=` are apshell's own options, but a template can legally declare
 parameters with those names. So `App.TakeGenerateOptions` in `internal/apshellapp` takes
 them only for a key type the signer reports with `per_key_contract`, and leaves them as
-the signer's parameters for any other type. It never decides from the key type's name.
+the signer's parameters for any other type. It never decides from the key type's name. A
+per-key type without `boundary_schema` `aplane.boundary.v1`, such as a plain host, refuses
+`boundary=` before any request: give its parameters directly.
 
 A failed or incomplete lookup isn't an answer that the type is ordinary. If inventory can't
 be read, is empty, or omits the type, generation stops before either name is interpreted

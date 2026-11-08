@@ -640,11 +640,11 @@ defer apadmin.Cleanup()  // Deletes all generated keys
 // Key management
 addr, err := apadmin.GenerateKey("seed")                    // Restore a legacy Falcon LogicSig fixture; seed is ignored
 addr, err := apadmin.GenerateKeyWithType("ed25519")         // Specific native type
-addr, err := apadmin.RestoreLegacyLogicSig("aplane.ed25519.v1", nil) // Existing internal-provider account
+addr, err := apadmin.RestoreLegacyLogicSig("aplane.ed25519.v1", nil) // Existing plain-program account, restored without enabling the type
 addr, err := apadmin.ImportKey(mnemonic)               // From mnemonic
 res, err := apadmin.ExportKey(addr)                    // Native recovery phrase over IPC; zero res.Mnemonic
 err := apadmin.DeleteKey(addr)                         // Delete one
-err := apadmin.ActivateKeyType("aplane.falcon1024-cosigner1024.v1") // Enable library-visible compiled key type
+err := apadmin.ActivateKeyType("aplane.falcon1024.v1")              // Enable a library-visible compiled key type (the plain host)
 _, err := apadmin.CreateBackup("export-passphrase")    // Signer-managed backup
 
 // Unlock management

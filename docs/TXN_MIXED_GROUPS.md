@@ -38,13 +38,12 @@ path. A listed rekey (`listed_rekey`) needs no cosigner signature, so the client
 asks the cosigner only for the other targets, and sends no cosigner request when
 every target is a listed rekey. In the intermediate `/sign` request each
 bounded-cosigner target's `lsig_resources` hint comes from its component's
-path. One group can hold cosigner1 targets or cosigned1 targets, not both;
-apshell rejects a group that mixes them.
+path.
 
-Ordinary `/sign` still rejects guarded account key types. A guarded authorizer
+Ordinary `/sign` rejects every cosigned account. A cosigned authorizer
 therefore never becomes a one-party `AuthAddress` request: it goes through
-component signing and assembly, and assembly verifies `AuthAddr` is the guarded
-account when the decoded sender differs.
+component signing and assembly, and assembly verifies `AuthAddr` is the
+cosigned account when the decoded sender differs.
 
 The remaining limitation is policy scope. Component messages bind role and
 target transaction ID; cosigner policy is transaction-fact based and does not

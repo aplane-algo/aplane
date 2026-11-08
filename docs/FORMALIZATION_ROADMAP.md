@@ -460,8 +460,8 @@ publishes rotating stage hints after a successful mutation; both extend the
 already listed rotating stage-table recovery candidate rather than adding a
 new one.
 
-2026-11-08, account overlays phase 5: the dedicated cosigned account
-(`aplane.falcon1024-cosigner1024.v1`, flow `cosigner1`) retired, and
+2026-11-08, account overlays phase 5: the dedicated cosigned account type
+(flow `cosigner1`) retired, and
 `guarded_assembly.tla` with it, along with its cfg, its metrics row and both
 companions (`FORMAL_TLA_GUARDED_ASSEMBLY_MODEL.md` and the English
 `FORMAL_GUARDED_SIGNING_MODEL.md`). A8, the one assembly check the cosigned

@@ -7,6 +7,85 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## Plain hosts replace the dedicated cosigned account
+
+This release is install-fresh only.
+
+- `aplane.falcon1024.v1` and `aplane.ed25519.v1` are now plain hosts: LogicSig
+  accounts on the new `plain1` contract, which has no host rules. Every transaction
+  that doesn't rekey is a spend, of any type, closes and clawback included, and there
+  is no fee ceiling. A rekey still passes only as a pure rekey, on the paths the rekey
+  setting gives. Both types move from internal-only to the library, opt-in: enable one
+  before generating.
+- A plain host takes the general type's request vocabulary: `cosigner`,
+  `rekey_authority` and `rekey_to`. It has seven arrangements per base: `refused`,
+  `spending_key` and `only_these`, each with or without a cosigner, and
+  `plus_cosigned`, which needs one. With no parameters it is the plain program, the
+  composition base every bounded account names and the program of restored plain
+  keys, and it can now be created as an account too. Each arrangement has a
+  fingerprint, each base a grammar fingerprint, and each request a boundary digest.
+- A cosigned plain host signs through `cosigned1`, and its cosigner's policy is the
+  only restriction on its spends besides the spending key. One without a cosigner signs
+  through ordinary `/sign` (`bounded1`). The cosigned flow completes Ed25519 spending
+  keys on `plain1`; `bounded2` stays Falcon-only. The Ed25519 plain host is classical.
+- apadmin's review says a plain host has no fee limit or transfer list, that the
+  cosigner's policy decides what it signs, that a refused rekey still leaves closes,
+  without a cosigner that the spending key alone decides, and on Ed25519 that the
+  spending key is classical. Every arrangement fits 80x24. Account labels read "Plain
+  host". apshell creates one through the generic `generate`.
+- The dedicated cosigned account type `aplane.falcon1024-cosigner1024.v1` is gone, with
+  `lsig/falcon1024_guarded` and the `cosigner1` flow: the `user` component kind and
+  role (role byte `0x01` is retired and never reused), the user component's approval
+  gate, the `guarded` assembly target kind with its user signature and runtime-argument
+  fields, and the client's `cosigner1` route and "cannot mix" check. `cosigner1` is now
+  an unknown flow, so a leftover account fails closed, as a rekey target too. The string
+  `cosigner1` stays as the cosigner overlay's contract label. A cosigned plain host
+  replaces the dedicated type.
+- `bounded_authorization.contract` is `bounded2` or `plain1`, and `max_fee` is optional
+  in the durable record, the wire and the admin protocol: required on `bounded2`,
+  absent on `plain1`. `/keys` reports `spend_effects: []` on a plain host. The client
+  caches each account's contract beside its fee ceiling, and refuses an account whose
+  contract is missing or unknown, or a bounded host without its ceiling, before any
+  request. `txeffects.ClassifyFor` refuses an unknown contract instead of treating it
+  as bounded.
+- Key types gain `boundary_schema`, the boundary file grammar a per-key type's requests
+  take: `aplane.boundary.v1` on the general type, absent on a plain host.
+  `per_key_contract` no longer implies the boundary workflow: apadmin opens the boundary
+  presets, and apshell accepts `boundary=`, only when `boundary_schema` is set.
+- `docs/PLAIN_EFFECT_CLASSIFICATIONS.json` is `plain1`'s independent judgment of the
+  protocol surface, compared with the plain manifest by the inventory tests. The
+  classifier sends a plain host's transaction without `RekeyTo` to the spend path by a
+  new rule, `open_spend`. `bounded2`'s canonical encoding and golden vectors are
+  unchanged; `plain1`'s profile has no fee field. Templates can't declare `plain1`.
+- Mnemonic import is native-only: the LogicSig mnemonic provider hook is gone, and every
+  LogicSig type refuses import.
+- Product restrictions are lifted, so users get the configuration they ask for; a
+  warning layer comes later. Durable validation and the composer no longer refuse a
+  refused account without `pay`, or one that opts into assets without `axfer`, and they
+  accept a timelock with a spending-key rekey, so expert templates may declare either.
+  A rekey-to list may name any address, including the account's own cosigner's or a
+  rotating account's. The general type keeps its 147 shapes until bounds become an
+  overlay; its refusals of a bare refused rekey and of a timelock with a spending-key
+  rekey now read as grammar limits and point to expert templates.
+- Contract fixtures: `keys_response_guarded.json` becomes `keys_response_plain_host.json`
+  (a `plain1` account without `max_fee`), the mixed assembly request's guarded target
+  becomes a listed rekey, and the per-key keytypes fixture carries `boundary_schema`.
+  The admin protocol stays at 8.0, which is still unreleased.
+- `guarded_assembly.tla` retires with its companions. A8 is now
+  `A8_PassthroughTxidBound` in `bounded_cosigner.tla`, and the surviving properties move
+  to its section of `FORMAL_TRACEABILITY.md`.
+- The O4 harness covers all seven plain arrangements on both bases, 161 shapes over the
+  same corpus. LocalNet tests cover every plain arrangement on chain, plain hosts
+  through the signer, and a bounded mesh: native members rekeyed to allowlist programs
+  that name each other. The Docker four-node smoke takes a cosigned plain host through
+  its real cosigner node via apshell and all three SDKs (Go as a host-built static
+  binary, TypeScript from a locally packed tarball, and Python), closes it out, and
+  checks that its spend fails once the cosigner key is deleted.
+- The SDKs follow: `max_fee` is optional and checked only on `bounded2`, key types carry
+  `boundary_schema`, and the `cosigner1` flow and the explicit-group API
+  (`SignGuardedGroup`, `sign_guarded_group`, `signGuardedGroup` and their simulate
+  twins) are removed; the prepared cosigned helpers remain.
+
 ## Cosigned bounded accounts can be rekeyed
 
 This release is install-fresh only.

@@ -33,7 +33,7 @@ The cryptographic subsystem is split across these packages:
 |---|---|
 | Native signing | `internal/signing`, `internal/signing/ed25519`, `internal/signing/falcon1024` |
 | LogicSig provider interfaces, registry, and salting | `internal/lsigprovider`, `internal/logicsigdsa`, `internal/genericlsig`, `internal/lsigsalt` |
-| Built-in LogicSig families | `lsig/`, especially `lsig/falcon1024`, `lsig/ed25519lsig`, `lsig/falcon1024_guarded`, `lsig/composeddsa`, `lsig/generictemplate`, `lsig/rotatingtriplewotsc`, `lsig/rotatingtriplexmss`, `lsig/rotatingtripleslhdsa`, `lsig/rotatingfamily` |
+| Built-in LogicSig families | `lsig/`, especially `lsig/falcon1024`, `lsig/ed25519lsig`, `lsig/plainhost`, `lsig/composeddsa`, `lsig/generictemplate`, `lsig/rotatingtriplewotsc`, `lsig/rotatingtriplexmss`, `lsig/rotatingtripleslhdsa`, `lsig/rotatingfamily` |
 | Algorithm metadata, keygen, mnemonics | `internal/algorithm`, `internal/keygen`, `internal/mnemonic` |
 | Key-type visibility and state | `internal/keytypecatalog`, `internal/keytypestate` |
 | Encrypted key/template persistence | `internal/crypto`, `internal/keys`, `internal/keystore`, `internal/templatestore`, `internal/templatelibrary` |
@@ -69,8 +69,8 @@ This split is a hard dependency boundary, not only a startup preference:
   Falcon signer registration.
 - `internal/logicsigdsa.LogicSigDSA` is metadata and derivation only; it does
   not expose `GenerateKeypair` or `Sign`.
-- `internal/lsigprovider.SigningProvider` and `MnemonicProvider` expose
-  compatibility-bearing metadata, not signer execution.
+- `internal/lsigprovider.SigningProvider` exposes compatibility-bearing
+  metadata, not signer execution.
 - LogicSig private-key execution is wired through explicit signer-side handles
   such as `internal/signing.LogicSigSignerOps`,
   `lsig/dsafamily/signerreg.LogicSigKeygenOps`, and provider `signerops`
@@ -118,8 +118,9 @@ Built-in and bundled key types include:
 
 - native `ed25519`
 - native `falcon1024` (top-level protocol `PQsig`, 25-word recovery)
-- plain DSA LogicSigs `aplane.falcon1024.v1` and `aplane.ed25519.v1`
-- the Falcon-only dedicated cosigner account `aplane.falcon1024-cosigner1024.v1`
+- plain DSA LogicSigs `aplane.falcon1024.v1` and `aplane.ed25519.v1`, which are
+  also plain hosts: with a rekey setting and optional cosigner and rekey-to
+  list they render `plain1`, which replaced the dedicated cosigned account
 - the Falcon witness key `aplane.witness-falcon1024.v1`, held by a cosigner
 - the generic `aplane.htlc.v1` template
 - the general bounded key type `aplane.falcon1024-b.v1`
@@ -166,9 +167,8 @@ Built-in LogicSig DSA providers live under `lsig/`. The compiled providers are:
 
 | Key type | Registered family | Availability |
 |---|---|---|
-| `aplane.falcon1024.v1` | `aplane.falcon1024` | internal-only |
-| `aplane.falcon1024-cosigner1024.v1` | `aplane.falcon1024-cosigner1024` | library-visible |
-| `aplane.ed25519.v1` | `aplane.ed25519` | internal-only |
+| `aplane.falcon1024.v1` | `aplane.falcon1024` | library-visible (plain host) |
+| `aplane.ed25519.v1` | `aplane.ed25519` | library-visible (plain host) |
 
 These providers implement the unified `internal/lsigprovider.SigningProvider`
 surface. `internal/logicsigdsa` is the DSA-oriented filtered view over
@@ -323,7 +323,6 @@ It defines:
 
 - `LSigProvider` for shared identity/display/parameter metadata
 - `SigningProvider` for LogicSig DSA signature metadata and derivation
-- `MnemonicProvider` for DSA mnemonic metadata
 
 `internal/logicsigdsa` and `internal/genericlsig` are not separate registries.
 They are filtered views into `internal/lsigprovider`.
@@ -366,17 +365,17 @@ Visibility states recorded by `internal/keytypecatalog`:
 
 - `default_enabled`: visible to the product runtime, subject to node-role gates
 - `library`: compiled capability exists but needs product-store enablement
-- `internal_only`: registered for composition, existing-key signing and restore; no standalone creation or enablement
+- `internal_only`: registered for composition, existing-key signing and restore; no standalone creation or enablement (no shipped provider uses it since the plain LogicSig types became plain hosts)
 - `disabled`: compiled in source, not exposed by the owning runtime path
 
 Product-store key type enable/disable metadata is owned by
 `internal/keytypestate`. State records live under
 the selected generation's `keytypes/<key_type>.json` via
 `internal/storepaths.GenPaths.KeyTypeRecord()`. They make compiled
-library-visible providers such as `aplane.falcon1024-cosigner1024.v1` available
+library-visible providers such as the plain host `aplane.falcon1024.v1` available
 to the product runtime for key type discovery and
 generation when `source:"compiled"` and `state:"enabled"`. Mnemonic import is
-gated separately by the provider's explicit mnemonic-import capability.
+native-only (`keymgmt.SupportsMnemonicImport`); no LogicSig type takes it.
 Installed YAML templates use the same record with `source:"yaml_generic"` or
 `source:"yaml_composed"` and store the encrypted template body in the adjacent
 selected-generation `keytypes/<key_type>.template` file.

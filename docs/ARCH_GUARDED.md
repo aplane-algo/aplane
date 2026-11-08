@@ -1,21 +1,30 @@
 # Guarded Signing
 
-> Guarded signing: the cosigner subsystem that makes a guarded account need
+> Guarded signing: the cosigner subsystem that makes a cosigned account need
 > both a user signer and a cosigner signer, and Corridor v1, the bounded preset
 > built on it.
 
 This document describes APlane's cosigner subsystem: node roles, cosigner keys,
-guarded accounts, endpoint discovery, guarded transaction orchestration, and
-the trust boundaries between a user signer and a cosigner signer. It also
-describes [Corridor v1](#corridor-v1), the preset of the general bounded key type
-that composes cosigner authorization into `bounded2`.
+cosigned accounts, endpoint discovery, cosigned transaction orchestration, and
+the trust boundaries between a user signer and a cosigner signer. A cosigned
+account is a LogicSig account with the cosigner overlay, on either host: a plain
+host (`plain1`, the plain key types `aplane.falcon1024.v1` and
+`aplane.ed25519.v1`) or a bounded host (`bounded2`, the general type
+`aplane.falcon1024-b.v1` or an expert template). It also describes
+[Corridor v1](#corridor-v1), the preset of the general bounded key type that
+composes cosigner authorization into `bounded2`.
+
+"Guarded" is this document's historical name for the cosigned flow; a later
+naming pass renames it. The dedicated cosigned account type and its `cosigner1`
+flow were retired in phase 5 of the account overlays: the plain host with a
+cosigner replaces it.
 
 The component message, the cosigner key file, and the public cosigner
 reference library are specified in this document. For exact HTTP wire shapes
 and SDK fixtures, see [ARCH_SIGNING.md](ARCH_SIGNING.md#http-api-contract); for the endpoint
 registry file, see [ARCH_DATA_MODEL.md](ARCH_DATA_MODEL.md#endpoint-registry).
 For cosigner policy verdict semantics, see [ARCH_POLICY.md](ARCH_POLICY.md).
-The `bounded2` authorization contract is
+The `bounded2` and `plain1` authorization contracts are
 in [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md), key type axes are in
 [ARCH_KEYTYPES.md](ARCH_KEYTYPES.md), and the machine-checked
 bounded-cosigner choreography is in
@@ -27,12 +36,11 @@ bounded-cosigner choreography is in
 - [Roles And Boundaries](#roles-and-boundaries)
 - [Key Model](#key-model)
 - [Component-Flow Unification Invariants](#component-flow-unification-invariants)
-- [Signer-Domain Gating Of User Components](#signer-domain-gating-of-user-components)
+- [Signer-Domain Gating Of Base Components](#signer-domain-gating-of-base-components)
 - [Component Message](#component-message)
 - [Public Cosigner References](#public-cosigner-references)
 - [Endpoint Routing](#endpoint-routing)
-- [Guarded Transaction Flow](#guarded-transaction-flow)
-- [Bounded-Cosigner Transaction Flow](#bounded-cosigner-transaction-flow)
+- [Cosigned Transaction Flow](#cosigned-transaction-flow)
 - [Guarded Simulation](#guarded-simulation)
 - [Assembly Invariants](#assembly-invariants)
 - [Cosigner Policy](#cosigner-policy)
@@ -48,7 +56,7 @@ bounded-cosigner choreography is in
 Cosigner is a first-class signing architecture, not a policy flag on ordinary
 signing. It creates a two-party LogicSig authorization path:
 
-- the user signer proves control of the guarded account key and applies
+- the user signer proves control of the account's spending key and applies
   signer-domain policy and operator approval, and
 - the cosigner signer authorizes the transaction facts under cosigner policy.
 
@@ -63,8 +71,8 @@ Every signer data root has one root `node.yaml` role:
 
 | Role | May hold | Must not hold |
 |---|---|---|
-| `signer` | ordinary account keys and guarded account keys | signer-custodied witness private keys |
-| `cosigner` | witness private keys serving the cosigner role and cosigner-domain policy | ordinary account keys or guarded account keys |
+| `signer` | ordinary and cosigned account keys | signer-custodied witness private keys |
+| `cosigner` | witness private keys serving the cosigner role and cosigner-domain policy | any spending key, cosigned accounts included |
 
 There is no supported `dual` role. Development or production co-location uses
 separate data roots and separate `apsigner` processes. Same-host co-location
@@ -106,56 +114,57 @@ fields retain the name `component_key`. The ID is txid-shaped but is not an
 Algorand address.
 
 The raw cosigner public key is the verifier embedded in a
-guarded account's LogicSig bytecode. The selector is a stable lookup handle;
+cosigned account's LogicSig bytecode. The selector is a stable lookup handle;
 the public key is the cryptographic verifier.
 
-### Guarded Account Keys
+### Cosigned Accounts
 
-Guarded account keys are account-signing LogicSig keys held by a signer node.
-They name both the account DSA and the required cosigner DSA.
+A cosigned account is an account-signing LogicSig key held by a signer node
+whose durable bounded metadata carries the cosigner overlay: the cosigner
+contract `cosigner1`, the component key type, the resolved cosigner public key
+and its Witness Key ID, and the paths it signs (`required_on`). The same public
+key is compiled into the program. Generation may accept a public cosigner
+reference by Witness Key ID, but the durable key stores the resolved public key.
+The overlay is the same on both hosts:
 
-Current guarded account key types:
+- **Plain host** (`plain1`): `aplane.falcon1024.v1` or `aplane.ed25519.v1`
+  created with `cosigner=` and a rekey setting. Its program checks signatures
+  and the overlays only: every transaction without `RekeyTo` is a spend,
+  closes and clawback included, and there is no fee ceiling, so the cosigner's
+  policy is what restricts what gets signed. The Ed25519 spending key is
+  classical.
+- **Bounded host** (`bounded2`): the general type `aplane.falcon1024-b.v1`, or
+  an expert template, with its on-chain limits and the cosigner.
 
-- `aplane.falcon1024-cosigner1024.v1`
+A [Corridor](#corridor-v1) account is a bounded host: `aplane.falcon1024-b.v1`
+with a framework Merkle recipient policy, the cosigner, and a rekey-to list
+(*only these*). Every cosigned account advertises `signing_flow: cosigned1` and
+is discovered from metadata, never from a key-type switch.
 
-A guarded account key file stores the resolved cosigner public key and embeds
-that same public key in its LogicSig bytecode. Generation may accept a public
-Cosigner reference by Witness Key ID, but the durable guarded key stores the
-resolved public key.
+The stored `base_key_type` names the spending construction used for the base
+component's key material and signature packing. It does not make the base
+provider responsible for overlay metadata, creation parameters, TEAL, cosigner
+reference resolution, or final LogicSig argument assembly.
 
-A Corridor account is not a dedicated guarded key-type class. It is an
-`aplane.falcon1024-b.v1` account whose durable metadata combines the
-`bounded2` authorization contract, the `cosigner1` spend gate, a framework
-Merkle recipient policy, and a rekey-to list (`rekey: refused` plus the list,
-*only these*). It therefore advertises `signing_flow: cosigned1`, not
-`cosigner1`, and is discovered from metadata rather than a key-type switch. See
-[Corridor v1](#corridor-v1).
+Cosigned accounts and cosigner keys are never signed through raw `/sign`:
 
-Guarded account identity is the guarded account `key_type`, not the base
-signature construction. The stored `base_key_type` names the construction used
-for the user component key material and signature packing. It
-does not make the base provider responsible for guarded metadata, creation
-parameters, TEAL, cosigner reference resolution, or final LogicSig argument
-assembly.
+- a cosigned account's spends, cosigned rekeys and listed rekeys use `/plan`,
+  `/sign/component` with a bounded-base target and (except for a listed rekey)
+  a cosigner target, then `/sign/assemble` for source-aware final assembly;
+- cosigner keys use `/sign/component` with `kind:"cosigner"`;
+- ordinary `/sign` rejects cosigner key types and every plan with a cosigned
+  account, listed rekeys included.
 
-Dedicated guarded accounts and cosigner keys are never signed through raw
-`/sign`:
+An account with the overlays but no cosigner (a plain host or bounded account
+without one) signs through ordinary `/sign` (`signing_flow: bounded1`), and the
+plain program with no overlays signs there as any LogicSig does.
 
-- guarded account keys use `/sign/component` with `kind:"user"`, then
-  `/sign/assemble`,
-- cosigner keys use `/sign/component` with `kind:"cosigner"`,
-- ordinary `/sign` rejects all guarded account key types and cosigner key types.
-
-Every transaction of a cosigner-enabled bounded account is also rejected by
-ordinary `/sign`, listed rekeys included. Spends, cosigned rekeys and listed
-rekeys use `/plan`, `/sign/component` with bounded-base and (except for a listed
-rekey) cosigner targets, and `/sign/assemble` for source-aware final assembly.
-
-This preserves the two-party invariant: a guarded account requires both a user
-component signature and a cosigner component signature. The endpoint split is
-also a contract statement: `/sign` returns only submittable signed
-transactions produced by keys this signer can complete alone, while the
-component/assembly surface handles partial, multi-party authorization.
+This preserves the two-party invariant: a cosigned account requires both a
+spending signature and, on every path but a listed rekey, a cosigner component
+signature. The endpoint split is also a contract statement: `/sign` returns
+only submittable signed transactions produced by keys this signer can complete
+alone, while the component/assembly surface handles partial, multi-party
+authorization.
 
 ## Component-Flow Unification Invariants
 
@@ -182,19 +191,18 @@ classification is bidirectional: a declared dummy must be canonical, and a
 canonical signer-added dummy suffix cannot be relabeled as caller-supplied
 original positions to alter policy or approval semantics.
 
-Assembly authorization remains flow-specific behind the shared request:
-guarded targets carry user and cosigner signatures; bounded-cosigner targets carry
-base signatures, a cosigner signature (none on a listed rekey), and an assembly
-receipt. No shared route may allow either target kind to use the other's weaker
-material.
+Assembly authorization is source-aware behind the shared request: a
+bounded-cosigner target carries base signatures, a cosigner signature (none on a
+listed rekey), and an assembly receipt, and the signer decides the path again
+before accepting any of them.
 
-## Signer-Domain Gating Of User Components
+## Signer-Domain Gating Of Base Components
 
-Guarded signing has two independent authorization gates, one per party:
+Cosigned signing has two independent authorization gates, one per party:
 
-- the **user signer** gates user-role component signing with the same
+- the **user signer** gates bounded-base component signing with the same
   signer-domain machinery as ordinary `/sign`: hard policy rejection,
-  always-review rules, and blocking operator approval. The guarded account is
+  always-review rules, and blocking operator approval. The cosigned account is
   the per-target policy key (its own policy document, or the signer's node
   default), and every
   non-target position in the canonical group is evaluated as a foreign leg, so
@@ -205,54 +213,58 @@ Guarded signing has two independent authorization gates, one per party:
   deterministic cosigner policy domain: allow signs, everything else rejects,
   and there is no operator prompt.
 
-The user component signature therefore expresses both proof of control and a
+The base component therefore expresses both proof of control and a
 signer-domain authorization decision; the cosigner signature expresses the
 cosigner-domain policy decision. Neither gate replaces the other: a permissive
 signer policy still cannot move funds the cosigner policy refuses, and a
-compromised client credential cannot drive guarded sends past the signer's
+compromised client credential cannot drive cosigned sends past the signer's
 review rules or operator approval.
 
 First-party client choreography is user-first: it completes the user-side gate
-and obtains the user or bounded base component before requesting a cosigner
+and obtains the bounded base component before requesting a cosigner
 component. This avoids cosigner work and ordinary first-party audit events for
 transactions the user signer rejects, and it gives submission and simulation
 the same predictable operator flow.
 
-The cosigner endpoint does not receive or verify the prior user component. A
+The cosigner endpoint does not receive or verify the prior base component. A
 client that calls cosigner-role `/sign/component` directly can ask the cosigner to
 evaluate the transaction first. The resulting cosigner component is not spending
 authority by itself: final assembly and the on-chain program still require the
-matching user or base spending signature and all account/program checks.
+matching base spending signature and all account/program checks.
 
-The guarded key is validated against signer inventory metadata — no key
+The cosigned key is validated against signer inventory metadata — no key
 decryption — before the gates run, so a rejected request or an operator prompt
 never triggers a private-key operation and approval never precedes a
 key-not-found rejection. The key is decrypted only after the gates pass, under
 the final execution gate, so shutdown or lock transitions cannot
 complete while component key material is in use. In a mixed group the
-operator may be prompted twice — once for the guarded component request and
-once for the ordinary `/sign` legs; both prompts render the full group
-context. The `auto_approve_self_noop_transfer` rule never fires for guarded
+operator may be prompted twice — once for the bounded-base component request
+and once for the ordinary `/sign` legs; both prompts render the full group
+context. The `auto_approve_self_noop_transfer` rule never fires for cosigned
 groups because they are always pre-grouped, matching `/sign` semantics for
 pre-grouped requests.
 
 ## Component Message
 
-User and cosigner component signatures sign the same transaction identity with
-different role separation:
+The cosigner component signature signs the transaction identity under a role
+byte:
 
 ```text
 SHA512_256("APLANE_COSIGNER_V1" || role_byte || txid)
 ```
 
-`role_byte` is `0x01` for the user role and `0x02` for the cosigner role.
-`txid` is the canonical 32-byte transaction ID for the frozen group entry.
+`role_byte` is `0x02`, the cosigner role, and is compiled into every cosigned
+program. `0x01` was the retired user role of the dedicated cosigned account and
+is never reused. `txid` is the canonical 32-byte transaction ID for the frozen
+group entry. The spending key signs the raw TxID, as every bounded and plain
+host program verifies it, not a component message.
 
 The message deliberately does not contain a separate sender or authorizer
 field. Sender and `AuthAddr` consistency are verified from the canonical
-transaction bytes during assembly, which requires the guarded LogicSig address,
-and `AuthAddr` when needed, to equal the requested guarded account. The cosigner policy decision is scoped to the
-transaction facts, not to which guarded key acted as authorizer.
+transaction bytes during assembly, which requires the account's LogicSig
+address, and `AuthAddr` when needed, to equal the requested cosigned account.
+The cosigner policy decision is scoped to the transaction facts, not to which
+cosigned account acted as authorizer.
 
 Owned primitives:
 
@@ -270,8 +282,8 @@ verification path.
 
 ## Public Cosigner References
 
-Signer nodes need public cosigner metadata to generate guarded accounts, but they
-do not need cosigner private keys.
+Signer nodes need public cosigner metadata to generate cosigned accounts, but
+they do not need cosigner private keys.
 
 The signer-side cosigner reference catalog is populated by explicit operator
 handoff: `apadmin cosigner export` on the cosigner node followed by `apadmin cosigner
@@ -330,7 +342,7 @@ accounts that need other cosigners, is reported without failing it.
 
 Reference aliases are security-bearing generation inputs: resolving
 `cosigner=<name>` selects the witness public key embedded into a newly generated
-guarded account. Manual import and removal therefore require an unlocked
+cosigned account. Manual import and removal therefore require an unlocked
 product runtime in addition to `cosigners.manage`. Re-importing the identical authority
 is idempotent. Rebinding an existing name to another Witness Key ID is rejected;
 replacement requires an explicit audited remove followed by import.
@@ -343,7 +355,7 @@ identities/default/cosigners/
 
 They contain public metadata only: Witness Key ID, key type, cosigner public key
 hex, and import time. They are not endpoint ownership proofs and do not
-authorize a future transaction. The guarded account's embedded public key is
+authorize a future transaction. The cosigned account's embedded public key is
 the trust input that matters after generation.
 
 ### Cosigner Key File
@@ -375,8 +387,8 @@ field(key_type) || field(canonical_public_key_bytes)))`. It resembles an
 Algorand transaction ID and is not a valid Algorand address. Role-specific
 wire and cosigner-reference records retain the field name `component_key`.
 `public_key_hex` is the raw component
-public key encoded in hex; it is the value embedded into guarded-account
-LogicSig bytecode and supplied as `cosigner_public_key` during guarded account
+public key encoded in hex; it is the value embedded into cosigned-account
+LogicSig bytecode and supplied as `cosigner_public_key` during cosigned account
 generation. The envelope makes no endpoint, policy, ownership, freshness, or
 trust claim.
 
@@ -441,8 +453,8 @@ Human list output leads with the operator-assigned reference name and a compact
 retains the complete ID.
 
 The library is a generation convenience and trust-input inventory for the user
-signer. When generating a dedicated guarded account or a cosigner-enabled bounded
-template, callers may provide
+signer. When generating a cosigned account (a plain host, the general type or a
+cosigner-enabled template), callers may provide
 `cosigner=<witness-key-id>` instead of `cosigner_public_key=<hex>`.
 `cosigner=<name>` is also accepted as a compatibility input. The signer resolves the
 Witness Key ID or name to `public_key_hex`, verifies that the reference key type
@@ -454,14 +466,15 @@ complete bounded metadata; later signing reads those, not the shape definition.
 
 Product `/keytypes` metadata may expose imported references as a
 creation parameter named `cosigner` with `type:"select"` and `options[]`
-containing Witness Key IDs whose cosigner key type matches the guarded
-account key type. This is UI metadata for generation clients such as `apadmin`;
+containing Witness Key IDs whose cosigner key type matches the type's
+cosigner key type. A per-key type (`per_key_contract`), whose cosigner is
+optional, is not given the selector. This is UI metadata for generation clients such as `apadmin`;
 the durable key file still stores the resolved `cosigner_public_key`; other
 provider-specific creation parameters remain exposed normally.
 
 The `apadmin` TUI also receives the optional `cosigner_component_key_type` in
 its internal admin key-type projection and joins it with
-`list_cosigner_references`. Guarded generation displays aliases but submits the
+`list_cosigner_references`. Cosigned generation displays aliases but submits the
 canonical Witness Key ID. A sole compatible authority may be preselected;
 multiple authorities require an explicit picker choice. When none exists, the
 TUI opens an in-flow public-envelope enrollment review instead of exposing a
@@ -499,14 +512,13 @@ Endpoint records carry connection metadata only: the `ssh://` URL and the SSH
 identity and known-hosts paths. No record names the node's REST port;
 the node's SSH server forwards every channel to its own listener.
 
-Runtime guarded-send routing works like this:
+Runtime cosigned-send routing works like this:
 
-1. Signer inventory labels a dedicated guarded account with
-   `signing_flow: cosigner1`, or a cosigner-enabled bounded account with
-   `signing_flow: cosigned1`. Both expose their
-   `cosigner_component_key_type` and required cosigner public key. The client routes
-   on the flow label (key-type strings are opaque to the client) and fails fast
-   on flow labels it does not implement.
+1. Signer inventory labels a cosigned account with `signing_flow: cosigned1`,
+   and exposes its `cosigner_component_key_type` and required cosigner public
+   key. The client routes on the flow label (key-type strings are opaque to the
+   client) and fails fast on flow labels it does not implement, the retired
+   `cosigner1` included.
 2. The client queries authenticated `/keys` on the configured cosigner endpoints
    with bounded parallelism and validates each advertised Witness Key ID.
 3. The client builds an operation-scoped route snapshot and requires exactly
@@ -517,7 +529,7 @@ Runtime guarded-send routing works like this:
 Endpoint import and `/keys` discovery are routing metadata. They do not prove
 ownership. If an endpoint is wrong or stale, assembly or on-chain LogicSig
 verification fails unless that endpoint controls the embedded cosigner private
-key. Deleting an advertised cosigner key causes guarded signing to fail before
+key. Deleting an advertised cosigner key causes cosigned signing to fail before
 submission with a missing-advertised-key error.
 
 Use `apshell endpoints add` for guided setup of one cosigner connection. Use
@@ -525,49 +537,27 @@ Use `apshell endpoints add` for guided setup of one cosigner connection. Use
 requirements, including unmatched witnesses. It shares the signing resolver's
 bounded sweep and uniqueness rules, closes all probe connections, and does not
 persist inventories or routes. Missing primary-signer inventory is explicitly
-unavailable, not an empty list of guarded accounts. Route availability is not
+unavailable, not an empty list of cosigned accounts. Route availability is not
 a policy verdict or proof of private-key possession.
 `apshell endpoints discover-cosigners` remains the advanced inventory diagnostic.
 Signer-side apadmin displays public reference metadata only; it does not
 probe endpoints or persist route associations.
 
-## Guarded Transaction Flow
+## Cosigned Transaction Flow
 
-The client uses guarded orchestration when any transaction's effective signer
-is a guarded account. The effective signer is the sender unless the sender is
-rekeyed, in which case it is the resolved `AuthAddr`.
+The client uses cosigned orchestration when any transaction's effective signer
+is a cosigned account. The effective signer is the sender unless the sender is
+rekeyed, in which case it is the resolved `AuthAddr`. Supported cases include:
 
-Supported guarded cases include:
+- a cosigned account as `txn.Sender`,
+- a standard account rekeyed to a cosigned account, where `txn.Sender` is the
+  standard account and `AuthAddr` is the cosigned account,
+- mixed groups containing cosigned and non-cosigned signer-controlled positions.
 
-- guarded account as `txn.Sender`,
-- standard account rekeyed to a guarded account, where `txn.Sender` is the
-  standard account and `AuthAddr` is the guarded account,
-- mixed groups containing guarded and non-guarded signer-controlled positions.
-
-The submit flow is:
-
-1. Resolve effective signers.
-2. Classify guarded and non-guarded target positions.
-3. Send the draft group to the user signer's `/plan`, which fixes dummy
-   transactions, fees, and group ID before any signature is requested.
-4. Request user-role component signatures from the primary signer for guarded
-   targets. This runs the signer-domain gates and may block on operator
-   approval.
-5. If the group contains non-guarded signer positions, request ordinary `/sign`
-   signatures over the same canonical bytes; a rejection stops the flow before
-   the cosigner sees the group.
-6. Request cosigner-role component signatures from the routed cosigner endpoint
-   for guarded targets.
-7. Call `/sign/assemble` on the user signer to verify components, pack LogicSig
-   arguments, verify passthrough bytes, and return signed transaction bytes.
-8. Route the exact assembled group to algod submission or client-side
-   simulation.
-
-## Bounded-Cosigner Transaction Flow
-
-For `cosigned1`, the first-party client uses a distinct user-first
-choreography. It carries a cosigned bounded account's spends, its cosigned
-rekeys (spending key and cosigner) and its listed rekeys (spending key alone):
+The flow is `cosigned1`, a user-first choreography. It carries a cosigned
+account's spends (on a plain host, any transaction that doesn't rekey, closes
+and clawback included), its cosigned rekeys (spending key and cosigner) and its
+listed rekeys (spending key alone):
 
 1. Resolve the bounded target from `signing_flow` and durable inventory.
 2. Send the draft group to `/plan`, then pass the exact frozen group plus its
@@ -578,7 +568,7 @@ rekeys (spending key and cosigner) and its listed rekeys (spending key alone):
    changing the bytes. It returns base signature args, runtime args, an
    assembly receipt bound to those bytes, and `path`: `spend`,
    `spending_rekey` or `listed_rekey`, the path it classified.
-3. Sign any non-guarded context positions through ordinary `/sign`; the
+3. Sign any non-cosigned context positions through ordinary `/sign`; the
    cosigner is asked only after the user side is complete. Each cosigned
    position in that request is budgeted on its component's path.
 4. Route those exact frozen transactions to the cosigner endpoint and request a
@@ -599,62 +589,50 @@ The `path` mark is a routing hint. A client that skips the cosigner on a path
 that needs it, or asks it on a listed rekey, gets no group from assembly, so a
 wrong mark can stall a request but never weaken it.
 
-The first-party client does not ask the cosigner first. It still rejects a group
-that mixes `cosigner1` and `cosigned1` targets. The wire contracts are now
-shared, but the account signer does not yet implement the required multi-gate,
-all-target preflight that releases no component unless both guarded-user and
-bounded-base authorization complete. The guard remains fail-closed until that
-atomicity rule is implemented and tested end to end. This is a client
-orchestration constraint, not a cosigner-endpoint or signer-side whole-group
-security check.
-Signer endpoints validate the targets they sign or assemble; they do not infer
-the flow of foreign group positions. Non-target positions are carried as exact
-passthrough signed bytes in the final assembly request.
+The first-party client does not ask the cosigner first. Signer endpoints
+validate the targets they sign or assemble; they do not infer the flow of
+foreign group positions. Non-target positions are carried as exact passthrough
+signed bytes in the final assembly request.
+
+A plain host has no fee ceiling, so the client checks a planned fee against an
+account's ceiling only on a bounded host (`bounded2`, `max_fee` present); it
+caches each account's contract from `/keys` and fails closed on one it doesn't
+know.
 
 ## Guarded Simulation
 
-Guarded simulation follows the complete flow above. The user signer runs
-ordinary policy and operator approval before releasing user component
-signatures; the cosigner runs its ordinary deterministic policy; local
-non-guarded positions use `/sign`; and the final group is produced by
+Cosigned simulation follows the complete flow above. The user signer runs
+ordinary policy and operator approval before releasing base components; the
+cosigner runs its ordinary deterministic policy; local non-cosigned positions
+use `/sign`; and the final group is produced by
 `/sign/assemble`. Only after assembly and frozen-byte verification does the
 client send the exact executable group to its configured algod simulation
 endpoint instead of the submission endpoint.
 
 There is no simulation claim at any signer boundary. Apsigner cannot know how
 the client will route released signatures, and the client holds a submittable
-guarded group until its validity window expires. Headless simulation therefore
+cosigned group until its validity window expires. Headless simulation therefore
 requires the same user auto-approval configuration as headless submission;
 otherwise a connected admin client must approve it.
 
 All component signatures and ordinary signatures are over the same frozen
-group. This matters for mixed groups: guarded targets, non-guarded originals,
+group. This matters for mixed groups: cosigned targets, non-cosigned originals,
 and resource-dummy transactions must all agree on transaction bytes, group ID,
 selected-path LogicSig resources, and aggregate fee.
 
 ## Assembly Invariants
 
-Assembly is the main server-side backstop for cosigner signing. Dedicated guarded
-assembly verifies:
-
-- the requested guarded key is a local guarded account key,
-- the user component signature verifies for role `user` and the target txid,
-- the cosigner component signature verifies for role `cosigner` and the target
-  txid against the cosigner public key embedded in the guarded account key,
-- packed LogicSig arguments match the guarded template's expected layout,
-- the resulting LogicSig address equals the guarded account,
-- passthrough signed bytes match the canonical transaction IDs,
-- when `txn.Sender != guarded_account`, the signed transaction carries
-  `AuthAddr == guarded_account`.
-
-These checks are safety-relevant. Supporting guarded authorizers is not a
-loosening of the two-party invariant; it replaces a sender-equality shortcut
-with explicit authorizer semantics.
-
-Bounded-cosigner assembly additionally verifies the spending-key assembly
-receipt, equality of planned and loaded durable metadata, the frozen base
-argument layout, the cosigner slot and path mask, every runtime and derived
-argument source, and the final bounded LogicSig address. It classifies each
+Assembly is the main server-side backstop for cosigner signing. It verifies the
+spending-key assembly receipt, the base signature, the cosigner component
+signature for role `cosigner` and the target txid against the cosigner public
+key in the account's durable metadata, equality of planned and loaded durable
+metadata, the frozen base argument layout, the cosigner slot and path mask,
+every runtime and derived argument source, and the final LogicSig address; when
+`txn.Sender != account`, the signed transaction must carry
+`AuthAddr == account`. Passthrough signed bytes are kept only when their decoded
+txid matches the canonical entry, a signature is present, and the effective
+signer is not a cosigned account this signer holds, which must be assembled
+instead (A8, machine-checked in `bounded_cosigner.tla`). It classifies each
 target's path again from the canonical transaction and stored metadata, through
 the planner's function, and requires a cosigner signature on `spend` and
 `spending_rekey` and refuses one on `listed_rekey`; the component's `path` mark
@@ -684,8 +662,8 @@ the only cosigner-specific rule ID is `cosigner_policy:reject_rekey`; every
 other verdict uses the common rule IDs in
 [ARCH_POLICY.md](ARCH_POLICY.md).
 
-A key's document governs a virtual account set: every account whose guarded
-key was composed with that cosigner key, on any signer that holds the key's
+A key's document governs a virtual account set: every account whose program
+was composed with that cosigner key, on any signer that holds the key's
 public reference. The cosigner does not hold those accounts and cannot
 enumerate them; it learns of one when a request names it. The document's
 route `sources` are therefore the operator's only control over membership:
@@ -698,11 +676,12 @@ authorization:
 - unmatched requests reject,
 - manual review and operator default are not valid cosigner outcomes.
 
-The cosigner does not decide whether the user signer is allowed to use a guarded
-key. It decides whether the target transaction facts are allowed under cosigner
-policy. Current cosigner policy is transaction-focused and DSA-agnostic: it
-examines decoded transaction details and transfer movements, not which DSA
-mechanism produced the user component signature.
+The cosigner does not decide whether the user signer is allowed to use a
+cosigned account. It decides whether the target transaction facts are allowed
+under cosigner policy. Current cosigner policy is transaction-focused and
+DSA-agnostic: it examines decoded transaction details and transfer movements,
+not which DSA mechanism produced the spending signature. On a plain host, which
+has no on-chain limits, it is the policy that restricts what the account signs.
 
 Cosigner transfer policy is a positive authorization surface. Supported target
 movements include direct transfers that policy routing can evaluate. Target
@@ -710,11 +689,9 @@ shapes that cannot be represented as supported cosigner movements fail closed.
 `reject_rekey:true` rejects every rekey the cosigner is asked to sign. If it is
 false, a non-zero `RekeyTo` is authorized only when the transaction is a pure
 0 ALGO self-payment and `rekey_policy.allowed` contains a matching
-sender-to-target edge. Missing `rekey_policy` still fails closed. For a dedicated
-`cosigner1` account every rekey asks the cosigner, so `reject_rekey:true` stops
-them all.
+sender-to-target edge. Missing `rekey_policy` still fails closed.
 
-A cosigned bounded account asks the cosigner for every spend and every cosigned
+A cosigned account asks the cosigner for every spend and every cosigned
 rekey (`rekey: spending_key`, or an unlisted target under `plus_cosigned`): such
 a rekey reaches the cosigner node as any rekey does, and `reject_rekey`, the
 `rekey_policy` edge and the pure-shape check decide. A listed rekey takes the
@@ -728,7 +705,7 @@ schema constraints, route behavior, and reject/review/approve mapping.
 
 ## Guarded Authorizers
 
-A guarded account can be the effective signer for another account rekeyed to
+A cosigned account can be the effective signer for another account rekeyed to
 it. In that case:
 
 ```text
@@ -737,10 +714,10 @@ AuthAddr = G
 LogicSig address = G
 ```
 
-where `S` is the account whose funds move and `G` is the guarded account. The
+where `S` is the account whose funds move and `G` is the cosigned account. The
 transaction is still `S`'s transaction. Cosigner policy remains scoped to the
-transaction facts. Assembly verifies that the guarded LogicSig address and
-`AuthAddr` both equal `G`.
+transaction facts. Assembly verifies that the LogicSig address and `AuthAddr`
+both equal `G`.
 
 Current v1 semantics do not expose an authorizer field to cosigner policy and do
 not bind authorizer identity into the cosigner component message. That is
@@ -751,21 +728,22 @@ cryptographically.
 
 ## Mixed Groups
 
-Mixed guarded/non-guarded groups use one canonical group and preserve full
+Mixed cosigned/non-cosigned groups use one canonical group and preserve full
 approval context:
 
-- guarded targets receive user and cosigner component signatures,
-- non-guarded signer targets use ordinary `/sign`, which completes before the
+- cosigned targets receive a base component and, except on a listed rekey, a
+  cosigner component,
+- non-cosigned signer targets use ordinary `/sign`, which completes before the
   cosigner is asked, so the user-first choreography covers the whole group and
-  a rejected non-guarded position never reaches the cosigner,
+  a rejected non-cosigned position never reaches the cosigner,
 - resource-dummy transactions are included consistently for LogicSig argument
   and opcode capacity,
-- signer-side `/sign` sees the complete group context for non-guarded approval
+- signer-side `/sign` sees the complete group context for non-cosigned approval
   and policy,
-- `/sign/assemble` receives signed non-guarded entries as passthrough bytes.
+- `/sign/assemble` receives signed non-cosigned entries as passthrough bytes.
 
-The client supplies accurate selected-path `lsig_resources` for guarded
-positions when it calls ordinary `/sign` for the non-guarded subset. These
+The client supplies accurate selected-path `lsig_resources` for cosigned
+positions when it calls ordinary `/sign` for the non-cosigned subset. These
 values come from signer inventory, not client estimates. The signer keeps its
 normal consensus resource computation as an independent backstop. A mis-sized
 client group fails early with a clear immutable-group rejection rather than
@@ -776,19 +754,19 @@ later as an opaque algod evaluation failure.
 Cosigner failures are fail-closed:
 
 - signer-domain policy rejection, always-review denial, operator denial, or a
-  missing admin client fail user-role component signing before any private-key
-  operation,
+  missing admin client fail bounded-base component signing before any
+  private-key operation,
 - there is no client-declared simulate mode on any signer endpoint; simulation
   follows the ordinary approval path,
 - locked or unreachable cosigner endpoints cannot produce component signatures,
 - failed endpoint authentication, trust, or inventory validation contributes
   no route from that endpoint,
 - duplicate usable live routes for a required witness fail the operation,
-- deleted cosigner keys stop being advertised by `/keys` and guarded signing
+- deleted cosigner keys stop being advertised by `/keys` and cosigned signing
   fails before cosigner signing,
 - missing cosigner signatures fail assembly, and so does a cosigner signature
   on a bounded listed rekey, which takes none,
-- mismatched user or cosigner signatures fail assembly,
+- mismatched spending or cosigner signatures fail assembly,
 - stale endpoint routing cannot pass assembly or on-chain LogicSig verification
   without the embedded cosigner private key,
 - unsupported cosigner policy outcomes fail closed.
@@ -805,7 +783,7 @@ Runtime routing performs a bounded probe of every configured cosigner endpoint
 before selecting an operation-scoped route. It cannot stop at the first match,
 because later live endpoints might advertise the same witness and make the
 route ambiguous. The sweep uses the configured concurrency and per-endpoint
-limits under a 30-second total deadline, so guarded-signing discovery latency
+limits under a 30-second total deadline, so cosigned-signing discovery latency
 can include the slowest probe needed to complete that sweep. Non-fatal endpoint
 failures are reported after the sweep even when the remaining live inventory
 uniquely resolves every required witness.
@@ -990,32 +968,30 @@ Primary packages and files:
 - `pkg/signerapi`: HTTP DTOs for component signing, assembly, and key inventory.
 - `internal/witness`: witness key-type identifiers, Witness Key ID derivation,
   public identity validation, keypair validation, and custodian capabilities.
-- `internal/cosigner/keytypes`: guarded-account key-type mapping and cosigner
-  enrollment requirements.
-- `internal/cosigner/message`: role-separated component messages.
+- `internal/cosigner/keytypes`: the durable `cosigner_public_key` parameter name.
+- `internal/cosigner/message`: the cosigner-role component message.
 - `internal/cosigner/canonical`: canonical group decoding and group hashing.
 - `internal/sigconstruction/verify`: component signature verification (signer-side
   only).
 - `internal/cosigner/cosignerrefs`: public cosigner reference catalog.
 - `internal/signerapp/signing`: frozen component validation, bounded
   authorization reconstruction, cosigner policy
-  evaluation, signer-domain approval gates for user components (`gate.go`,
-  `component_gate.go`), user/cosigner component signing, assembly, and `/sign`
-  rejection gates.
+  evaluation, signer-domain approval gates (`gate.go`), bounded-base and
+  cosigner component signing, assembly, and `/sign` rejection gates.
 - `internal/signerapp/rest`: REST service methods backing `/sign/component`,
   `/sign/assemble`, `/keys`, and `/keytypes`.
 - `internal/signerapp/daemon`: HTTP runtime (`http_runtime.go`) that registers
   these routes on the signer mux and dispatches them to the `rest` service
   methods.
-- `internal/engine/guarded`: guarded and bounded-cosigner transaction
+- `internal/engine/guarded`: cosigned (`cosigned1`) transaction
   orchestration and cosigner endpoint resolution; `internal/engine` composes
   that owner into the client runtime.
 - `internal/config`: endpoint registry parsing (`schema_version` 2 only; retired
   `signer_port`/`local_port`/`token_file` fields are dropped on load).
 - `internal/apshellapp`: endpoint commands and read-only cosigner discovery.
-- `lsig/falcon1024_guarded`: guarded LogicSig provider and template behavior.
-- `lsig/composeddsa`: optional bounded cosigner composition and framework-owned
-  fixed/Merkle Layer-3 policies.
+- `lsig/plainhost`: the plain host, the plain key types with optional overlays.
+- `lsig/composeddsa`: the cosigner and rekey-to list overlays on both hosts,
+  and framework-owned fixed/Merkle Layer-3 policies.
 - `lsig/boundedaccount` and `internal/boundary`: the general bounded key type and
   its Corridor preset.
 - `internal/apadminapp/catalog.go`: public cosigner export/import/list/show/remove

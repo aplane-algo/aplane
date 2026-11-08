@@ -30,10 +30,11 @@ LogicSigs use complete encrypted credentials or backups. Do not add LogicSig
 mnemonic recovery to new designs. Internal seed derivation is separate and
 remains supported.
 
-Plain Falcon and Ed25519 LogicSig providers are internal-only. Keep them
-registered for composition, signing, and encrypted restore; do not expose them
-as standalone creation choices or let old enablement records grant access.
-See [internal providers](ARCH_KEYTYPES.md#internal-providers).
+The plain Falcon and Ed25519 LogicSig providers are plain hosts (`lsig/plainhost`):
+the composition base every bounded account names, and, once enabled, accounts
+of their own, with or without overlays. Keep their no-parameter program
+byte-identical: it is the base and the program of restored plain keys.
+See [plain hosts](ARCH_KEYTYPES.md#plain-hosts).
 
 ## Signature Constructions
 
@@ -55,8 +56,8 @@ Do not edit shipped library templates or Go providers just to satisfy a user's
 custom policy. Shipped templates, compiled providers, and installed template key
 types are compatibility boundaries. Changing the behavior of an existing key
 type such as `aplane.htlc.v1` or `aplane.falcon1024-b.v1` can break existing
-keys and backups. The guarded cosigner provider
-(`aplane.falcon1024-cosigner1024.v1`) is Go-defined. `aplane.htlc.v1` is the only
+keys and backups. The plain hosts (`aplane.falcon1024.v1`, `aplane.ed25519.v1`)
+and the general bounded type are Go-defined. `aplane.htlc.v1` is the only
 bundled YAML template.
 
 Installing a user-loaded template with `apadmin template import` requires the
@@ -168,12 +169,15 @@ For bounded (`bounded2`) work, read
   spending key and a signer-built list proof authorize a pure rekey to a listed
   address), or `plus_cosigned` (`spending_key` plus the list, cosigner
   required: a listed target takes the spending key alone, any other the spending
-  key and the cosigner); a timelock policy requires `refused` or `only_these`;
+  key and the cosigner); a timelock policy takes any of them, but beside
+  `spending_key` or `plus_cosigned` the spending key can rekey out before the
+  unlock round;
 - a cosigner's `required_on` is `[spend]`, or `[spend, spending_rekey]` with
   `spending_key` or `plus_cosigned`; the cosigner slot is required on exactly
   those paths and forbidden on `listed_rekey`, which never asks the cosigner;
-- the refused-exit rule (`pay` in `spend_effects`, and `axfer` with
-  `asset_opt_in`) applies only to `refused` without a list;
+- no framework rule makes a `refused` profile without a list keep a transfer
+  (`pay`, and `axfer` beside `asset_opt_in`); a template that drops one can
+  strand what the account holds, so review that choice;
 - `max_fee` is explicit, compiled, and at most 10,000 microAlgos;
 - caller runtime args can never supply the cosigner signature or a
   signer-derived argument;
@@ -187,8 +191,9 @@ For bounded (`bounded2`) work, read
   build the `listed_rekey` proof;
 - `/keys` and `/keytypes` advertise `signing_flow: bounded1` or
   `cosigned1` from durable metadata; every client must dispatch empty,
-  `cosigner1`, `bounded1`, `cosigned1`, and `rotating1` explicitly
-  and reject unknown flows, `bounded-cosigner1` among them;
+  `bounded1`, `cosigned1`, and `rotating1` explicitly
+  and reject unknown flows, `bounded-cosigner1` and the retired `cosigner1`
+  among them;
 - the signer classifies each bounded target through `txeffects.ClassifyFor`
   against the path declaration projected from stored metadata, and every
   decision names a rule;
@@ -365,10 +370,10 @@ Files under top-level `library/templates/` are library entries, not active
 runtime definitions by presence alone. New stores install no templates; every
 template requires an authenticated import or KeyType Library install, and
 every creatable LogicSig key type (compiled or template) except the general
-bounded `aplane.falcon1024-b.v1` is opt-in. The plain
-`aplane.falcon1024.v1` and `aplane.ed25519.v1` providers are internal-only and
-cannot be enabled. Only the protocol-native `ed25519` and `falcon1024` and the
-general bounded `aplane.falcon1024-b.v1` are enabled by default.
+bounded `aplane.falcon1024-b.v1` is opt-in, the plain hosts
+`aplane.falcon1024.v1` and `aplane.ed25519.v1` included. Only the
+protocol-native `ed25519` and `falcon1024` and the general bounded
+`aplane.falcon1024-b.v1` are enabled by default.
 
 For the full disable/remove mechanics (state record transitions, archive
 locations, in-use guard, and reload behavior), see
