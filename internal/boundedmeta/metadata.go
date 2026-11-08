@@ -388,7 +388,8 @@ func isTimelockPolicy(policy string) bool {
 	return false
 }
 
-// RefusesRekeys reports whether the account has no rekey path at all.
+// RefusesRekeys reports whether the account's rekey setting is refused: it has no
+// rekey path, or, with a rekey-to list, only a pure rekey to a listed address.
 func (metadata *Metadata) RefusesRekeys() bool {
 	return metadata != nil && metadata.Rekey == RekeyRefused
 }
@@ -411,9 +412,12 @@ func (metadata *Metadata) HasRecipientList() bool {
 	return metadata != nil && IsRecipientListPolicy(metadata.Layer3Policy)
 }
 
-// Contained reports whether the account can pay only listed recipients: it refuses
-// rekeys and Layer 3 holds a recipient list. Fees are outside that: each is capped
-// per transaction, but repeated transactions can still spend the balance on fees.
+// Contained reports whether the spending key alone can move value only to
+// addresses the account lists: it refuses rekeys, or takes only listed ones, and
+// Layer 3 holds a recipient list. A listed rekey hands the whole account to a
+// listed address, whose key the boundary no longer binds. Fees are outside that:
+// each is capped per transaction, but repeated transactions can still spend the
+// balance on fees.
 func (metadata *Metadata) Contained() bool {
 	return metadata.RefusesRekeys() && metadata.HasRecipientList()
 }

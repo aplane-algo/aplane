@@ -320,7 +320,7 @@ func (s Service) checkBoundaryRequirements(instance *lsigprovider.Instance) *Err
 	}
 	requireContained, requireCosigner := s.Runtime.Config().BoundaryRequirements()
 	if requireContained && !instance.Bounded.Contained() {
-		return &Error{Kind: ErrorInvalidInput, Message: "this signer requires bounded accounts to refuse rekeys and pay only listed recipients (boundary_require_contained)"}
+		return &Error{Kind: ErrorInvalidInput, Message: "this signer requires bounded accounts to pay only listed recipients and to refuse rekeys or take only listed ones (boundary_require_contained)"}
 	}
 	if requireCosigner && instance.Bounded.Cosigner == nil {
 		return &Error{Kind: ErrorInvalidInput, Message: "this signer requires bounded accounts to have a cosigner (boundary_require_cosigner)"}

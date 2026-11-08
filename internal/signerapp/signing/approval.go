@@ -447,8 +447,7 @@ func (s *ApprovalService) requestGroupApprovalWithContext(ctx context.Context, r
 
 	violations := approvalpolicy.CheckGroupWarningsIn(txns, approvalpolicy.Context{
 		KnownAddresses: s.groupKnownAddresses(plan), ProtocolRekeyTargets: protocolRekeyTargetsForPlan(plan),
-		ListedRekeyTargets: allListedRekeyTargets(plan),
-	})
+	}, listedRekeyTargetsForPlan(plan))
 	approved, err := s.requestSigningApproval(
 		ctx,
 

@@ -437,7 +437,9 @@ func TestTimelockPolicyCompiledBudgetMatrix(t *testing.T) {
 		bytecode, spendArgs, spendGroup int
 		spendFee                        uint64
 	}
-	// A timelock refuses rekeys, so the two refused arrangements are all there are.
+	// A timelock takes no spending-key rekey, so these are its two arrangements
+	// that refuse rekeys. Without a cosigner, the general type's timelock takes a
+	// rekey-to list instead, which this matrix does not measure.
 	refused, cosigned := "refused", "refused and cosigner"
 	want := map[string]budget{
 		composeddsa.Layer3PolicyTimelock + "/" + refused:                 {bytecode: 1889, spendArgs: 1423, spendGroup: 2, spendFee: 2000},

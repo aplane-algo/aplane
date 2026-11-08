@@ -13,8 +13,8 @@ type SignerRekeys string
 const (
 	// RekeysRejectAll rejects every rekey.
 	RekeysRejectAll SignerRekeys = "reject_all_rekeys"
-	// RekeysRejectForeign rejects a rekey unless this node holds the target.
-	// It is the default.
+	// RekeysRejectForeign rejects a rekey unless this node holds the target or
+	// it is on the signing account's rekey-to list. It is the default.
 	RekeysRejectForeign SignerRekeys = "reject_foreign_rekey"
 	// RekeysAllow rejects nothing.
 	RekeysAllow SignerRekeys = "allow_rekeys"

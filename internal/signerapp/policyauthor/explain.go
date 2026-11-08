@@ -117,7 +117,7 @@ func (e *explainer) guards() {
 	case policy.RekeysRejectAll:
 		rejects = append(rejects, "every rekey")
 	case policy.RekeysRejectForeign:
-		rejects = append(rejects, "rekeys to an address this node does not hold")
+		rejects = append(rejects, "rekeys to an address this node does not hold and the account does not list")
 	}
 	if d.RejectRekey {
 		rejects = append(rejects, "every rekey")

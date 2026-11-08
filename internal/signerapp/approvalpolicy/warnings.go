@@ -59,14 +59,19 @@ func CheckTxnWarnings(txnBytesHex string, knownAddresses map[string]bool) []sign
 // CheckGroupWarnings analyzes each transaction in a group for dangerous
 // fields. Returns aggregated warnings prefixed with the transaction index.
 func CheckGroupWarnings(txns []types.Transaction, knownAddresses map[string]bool) []signerapproval.Violation {
-	return CheckGroupWarningsIn(txns, Context{KnownAddresses: knownAddresses})
+	return CheckGroupWarningsIn(txns, Context{KnownAddresses: knownAddresses}, nil)
 }
 
-// CheckGroupWarningsIn is CheckGroupWarnings with a full Context.
-func CheckGroupWarningsIn(txns []types.Transaction, ctx Context) []signerapproval.Violation {
+// CheckGroupWarningsIn is CheckGroupWarnings with a full Context. A rekey-to
+// list belongs to one account, so listed gives each position its own, by index,
+// in place of ctx.ListedRekeyTargets: another position's rekey to the same
+// address is not a listed handover.
+func CheckGroupWarningsIn(txns []types.Transaction, ctx Context, listed map[int]map[string]bool) []signerapproval.Violation {
 	var all []signerapproval.Violation
 	for i, txn := range txns {
-		for _, v := range CheckDecodedTxnWarningsIn(txn, ctx) {
+		txnCtx := ctx
+		txnCtx.ListedRekeyTargets = listed[i]
+		for _, v := range CheckDecodedTxnWarningsIn(txn, txnCtx) {
 			v.Field = fmt.Sprintf("Tx %d/%d: %s", i+1, len(txns), v.Field)
 			all = append(all, v)
 		}

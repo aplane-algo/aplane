@@ -232,15 +232,3 @@ func listedRekeyTargetsForPlan(plan *PlanResult) map[int]map[string]bool {
 	}
 	return listed
 }
-
-// allListedRekeyTargets is every rekey-to list in the plan, for the approval
-// warning, which names a handover to a listed address.
-func allListedRekeyTargets(plan *PlanResult) map[string]bool {
-	all := map[string]bool{}
-	for _, targets := range listedRekeyTargetsForPlan(plan) {
-		for target := range targets {
-			all[target] = true
-		}
-	}
-	return all
-}
