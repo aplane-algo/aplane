@@ -11,8 +11,9 @@
 # guarded transaction-signing flows, and corridor allowlist enforcement. It
 # also validates the guarded account
 # and bounded-cosigner Corridor with SDK intent prep plus component signing.
-# A general aplane.falcon1024-b.v1 account with the Corridor rules goes through the
-# same checks, created from a boundary file with no key type setup.
+# A general aplane.falcon1024-b.v1 account with the Corridor preset's rules goes
+# through the same spend checks, created from a boundary file with no key type setup.
+# It refuses rekeys, so once its cosigner is gone it can neither spend nor be rekeyed.
 # Local mode uses the local Python SDK checkout; release mode uses the Python
 # package from PyPI and the TypeScript package from npm.
 
@@ -1585,12 +1586,11 @@ generate_corridor_key() {
 generate_general_bounded_key() {
     local extra_line="${1:-}"
     [ -n "$COSIGNER_COMPONENT_KEY" ] || die "Witness Key ID is not set"
-    [ -n "$CORRIDOR_ADMIN_KEY" ] || die "Corridor admin artifact is not set"
     [ -n "$CORRIDOR_ALLOWED_ADDRESS" ] || die "corridor allowed address is not set"
 
     local boundary_file="/home/$TEST_USER/aplane/boundary.yaml"
-    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'schema: aplane.boundary.v1\nspend: [pay, axfer, asset_opt_in]\nrecipients:\n  - %s\nencoding: merkle\nrekey:\n  authority: admin_key\n  admin_key: %s\ncosigner: %s\n%s\n' \
-        '$CORRIDOR_ALLOWED_ADDRESS' '$CORRIDOR_ADMIN_KEY.json' '$COSIGNER_COMPONENT_KEY' '$extra_line' > '$boundary_file'"
+    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'schema: aplane.boundary.v1\nspend: [pay, axfer, asset_opt_in]\nrecipients:\n  - %s\nencoding: merkle\nrekey:\n  authority: refused\ncosigner: %s\n%s\n' \
+        '$CORRIDOR_ALLOWED_ADDRESS' '$COSIGNER_COMPONENT_KEY' '$extra_line' > '$boundary_file'"
     docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'connect\ngenerate aplane.falcon1024-b.v1 boundary=%s\nkeys\n' \
         '$boundary_file' > /tmp/generate-general-bounded.script"
     local out
@@ -1606,6 +1606,27 @@ generate_general_bounded_key() {
         || die "aplane.falcon1024-b.v1 result did not report the requested cosigner"
     grep -Fq 'Merkle allowlist' <<<"$out" \
         || die "keys did not describe the aplane.falcon1024-b.v1 account"
+    grep -Fq 'no rekey' <<<"$out" \
+        || die "keys did not report that the aplane.falcon1024-b.v1 account refuses rekeys"
+}
+
+# A general account that refuses rekeys has no admin to fall back on: the signer
+# refuses its rekey before anything reaches the network.
+verify_general_bounded_rekey_refused() {
+    [ -n "$GENERAL_BOUNDED_ADDRESS" ] || die "aplane.falcon1024-b.v1 address is not set"
+    [ -n "$FALCON_ADDRESS" ] || die "Falcon rekey target is not set"
+
+    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'connect\nrekey %s to %s\n' \
+        '$GENERAL_BOUNDED_ADDRESS' '$FALCON_ADDRESS' > /tmp/rekey-general-bounded.script"
+    local out
+    out="$(docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \
+        apshell -script /tmp/rekey-general-bounded.script 2>&1")" || true
+    printf '%s\n' "$out"
+    grep -Fq 'permanently disables rekey' <<<"$out" \
+        || die "the signer did not refuse a rekey of an aplane.falcon1024-b.v1 account that refuses rekeys"
+    if grep -Fq 'Transaction confirmed' <<<"$out"; then
+        die "an aplane.falcon1024-b.v1 account that refuses rekeys was rekeyed"
+    fi
 }
 
 # Run the Corridor checks against the general account. Same rules, same results.
@@ -2125,8 +2146,8 @@ main() {
     log "Verifying aplane.falcon1024-b.v1 spend fails after cosigner key deletion"
     with_general_bounded_account validate_corridor_send_after_cosigner_delete_fails
 
-    log "Rekeying aplane.falcon1024-b.v1 through its external admin while cosigner is unavailable"
-    with_general_bounded_account rekey_corridor_without_cosigner
+    log "Verifying the signer refuses to rekey aplane.falcon1024-b.v1"
+    verify_general_bounded_rekey_refused
 
     log "Shutting down nodes"
     shutdown_nodes

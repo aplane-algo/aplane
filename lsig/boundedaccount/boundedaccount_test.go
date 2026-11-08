@@ -27,12 +27,14 @@ import (
 )
 
 const (
-	goldenGrammarFingerprint    = "1:455b626f2b38e5b85495373114ed8bf546fe18200d1ade9a7dbd8bfa05d4f507"
+	goldenGrammarFingerprint    = "1:8cbf9a84e86774011a56b18b5cf1b2108385c58f4bae7309948f5947be2f1a00"
 	goldenFirstShapeFingerprint = "1:20b80a76bb50a40555910a6d75dd5ea4db729c765627250eaab534f5443d0287"
 	goldenFullShapeFingerprint  = "1:0f98cccfa0a7769946e94e6d40954e50de6a14751c0f7268a02cdf6fa0252be9"
 	goldenBoundaryDigest        = "94ed73af648eb35f51ec8122cbb9cd6d6cdfc378f8536afe448cd3309fe49544"
-	goldenRenderedPrograms      = "7eead1e261d7f58a7bbc483bbaa01b2d073a9e0585a362900eb49fcdbb0fe301"
-	goldenTimelockPrograms      = "80ac502e8ae68a19efb0583fd8b4067f830776d1fb0c6ec6007b029625c7636a"
+	goldenRenderedPrograms      = "53384ae287533135ac6a2ba69d1f151d431be76989c3a65a325f42765cefdf3f"
+	goldenTimelockPrograms      = "7e2e09bc12eb0210b9a5e86f2d0a17e6c429e922e977695671240d9fd2aeeafc"
+	// Computed on main a2874c6e, before the admin key was removed from the grammar.
+	goldenSpendingKeyPrograms = "3dd52536c4315c88013acce60a863b061339d8ece559d5c21d0df32b53840beb"
 )
 
 func newTestProvider(t *testing.T) *Provider {
@@ -84,22 +86,23 @@ func requestFor(shape Shape, recipients string) map[string]string {
 }
 
 // The expected set is written out here rather than derived from the code that
-// produces it. A shape that refuses rekeys needs pay, so it has the 4 spend subsets
-// with pay. Allowlists are 2 encodings x (spending key x 7 subsets, plus 2 refused
-// arrangements x 4), which is 30. Timelocks add 3 policies x 3 rekey arrangements
-// x 4 subsets with pay, which is 36.
+// produces it. A shape that refuses rekeys needs pay, and axfer if it can opt in, so
+// it has 3 spend subsets: pay, pay+axfer, and all three. Allowlists are 2 encodings
+// x (spending key x 7 subsets, plus 2 refused arrangements x 3), which is 26.
+// Timelocks add 3 policies x (spending key x 4 subsets with pay, plus 2 refused
+// arrangements x 3), which is 30.
 func TestShapesEnumerateTheGrammar(t *testing.T) {
 	shapes := Shapes()
-	if len(shapes) != 66 {
-		t.Fatalf("Shapes() = %d, want 66", len(shapes))
+	if len(shapes) != 56 {
+		t.Fatalf("Shapes() = %d, want 56", len(shapes))
 	}
 	policies := make(map[string]int)
 	for _, shape := range shapes {
 		policies[shape.Policy()]++
 	}
 	for policy, want := range map[string]int{
-		composeddsa.Layer3PolicyFixedAllowlist: 15, composeddsa.Layer3PolicyMerkleAllowlist: 15,
-		composeddsa.Layer3PolicyTimelock: 12, composeddsa.Layer3PolicyFixedAllowlistTimelock: 12, composeddsa.Layer3PolicyMerkleAllowlistTimelock: 12,
+		composeddsa.Layer3PolicyFixedAllowlist: 13, composeddsa.Layer3PolicyMerkleAllowlist: 13,
+		composeddsa.Layer3PolicyTimelock: 10, composeddsa.Layer3PolicyFixedAllowlistTimelock: 10, composeddsa.Layer3PolicyMerkleAllowlistTimelock: 10,
 	} {
 		if policies[policy] != want {
 			t.Errorf("%s has %d shapes, want %d", policy, policies[policy], want)
@@ -113,8 +116,11 @@ func TestShapesEnumerateTheGrammar(t *testing.T) {
 		if shape.Rekey == RekeyRefused && !slices.Contains(shape.Spend, txeffects.SpendEffectPay) {
 			t.Errorf("%s refuses rekeys without pay, so its ALGO could never leave", shape.Descriptor())
 		}
+		if shape.Rekey == RekeyRefused && slices.Contains(shape.Spend, txeffects.SpendEffectAssetOptIn) && !slices.Contains(shape.Spend, txeffects.SpendEffectAxfer) {
+			t.Errorf("%s refuses rekeys and opts in without axfer, so an asset could never leave", shape.Descriptor())
+		}
 	}
-	shapes = shapes[:30]
+	shapes = shapes[:26]
 	families := make(map[string]int)
 	subsets := make(map[string]int)
 	seen := make(map[string]bool)
@@ -127,16 +133,16 @@ func TestShapesEnumerateTheGrammar(t *testing.T) {
 		subsets[joinSpend(shape.Spend)]++
 	}
 	for family, want := range map[string]int{
-		"inline/spending_key/false": 7, "inline/refused/false": 4, "inline/refused/true": 4,
-		"merkle/spending_key/false": 7, "merkle/refused/false": 4, "merkle/refused/true": 4,
+		"inline/spending_key/false": 7, "inline/refused/false": 3, "inline/refused/true": 3,
+		"merkle/spending_key/false": 7, "merkle/refused/false": 3, "merkle/refused/true": 3,
 	} {
 		if families[family] != want {
 			t.Errorf("family %s has %d shapes, want %d", family, families[family], want)
 		}
 	}
 	for subset, want := range map[string]int{
-		"pay": 6, "pay,axfer": 6, "pay,asset_opt_in": 6, "pay,axfer,asset_opt_in": 6,
-		"axfer": 2, "asset_opt_in": 2, "axfer,asset_opt_in": 2,
+		"pay": 6, "pay,axfer": 6, "pay,axfer,asset_opt_in": 6,
+		"pay,asset_opt_in": 2, "axfer": 2, "asset_opt_in": 2, "axfer,asset_opt_in": 2,
 	} {
 		if subsets[subset] != want {
 			t.Errorf("subset %s has %d shapes, want %d", subset, subsets[subset], want)
@@ -220,6 +226,7 @@ func TestInvalidRequestsFailClosed(t *testing.T) {
 			p[ParameterSpendEffects] = "axfer"
 		}, "requires pay"},
 		{"refused without pay", refusedShape, func(p map[string]string) { p[ParameterSpendEffects] = "axfer,asset_opt_in" }, "refused requires pay"},
+		{"refused opt-in without axfer", refusedShape, func(p map[string]string) { p[ParameterSpendEffects] = "pay,asset_opt_in" }, "with asset_opt_in requires axfer"},
 		{"cosigned without pay", refusedShape, func(p map[string]string) {
 			p[ParameterSpendEffects] = "axfer"
 			p[composeddsa.BoundedCosignerPublicKeyParameter] = testCosignerKey
@@ -578,21 +585,26 @@ func generalGoldenKeys() (spending []byte, cosigner string) {
 //     expected to send operators through Approve current grammar.
 //   - a shape fingerprint changed with no intended behavior change: existing
 //     accounts of that shape would report a provenance conflict. Do not ship that.
+//   - the spending-key shapes changed: so did accounts every release has made.
+//     Do not ship that either.
 func TestGeneralFingerprintGoldens(t *testing.T) {
 	provider := newTestProvider(t)
 	spending, cosigner := generalGoldenKeys()
 
 	allowlists := sha256.New()
 	rendered := allowlists
-	// The first 30 are the allowlist shapes. Their golden must not move when the
+	// The first 26 are the allowlist shapes. Their golden must not move when the
 	// grammar grows: that is the guarantee existing accounts rely on. (It moved once,
 	// on purpose, in an install-fresh release that replaced the admin-key families
-	// with refused ones and dropped refused shapes without pay; the spending-key
-	// shapes' programs and fingerprints did not move.)
+	// with refused ones and dropped refused shapes that could trap ALGO or assets;
+	// goldenSpendingKeyPrograms pins that the spending-key shapes did not move.)
 	shapes := Shapes()
 	appended := sha256.New()
+	// The spending-key shapes alone, with each one's fingerprint and digest. They are
+	// the shapes every release has offered, so this golden holds across grammar edits.
+	spendingKey := sha256.New()
 	for index, shape := range shapes {
-		if index >= 30 {
+		if index >= 26 {
 			rendered = appended
 		}
 		params := requestFor(shape, testAddress(1)+","+testAddress(2))
@@ -604,6 +616,16 @@ func TestGeneralFingerprintGoldens(t *testing.T) {
 			t.Fatal(err)
 		}
 		if _, err := fmt.Fprintf(rendered, "%s\n%d\n%s\n", shape.Descriptor(), len(teal), teal); err != nil {
+			t.Fatal(err)
+		}
+		if shape.Rekey != RekeySpendingKey {
+			continue
+		}
+		resolved, err := provider.ResolveInstance(params)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := fmt.Fprintf(spendingKey, "%s\n%s\n%s\n%d\n%s\n", shape.Descriptor(), resolved.Fingerprint, resolved.BoundaryDigest, len(teal), teal); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -619,6 +641,7 @@ func TestGeneralFingerprintGoldens(t *testing.T) {
 		{"boundary digest", instance.BoundaryDigest, goldenBoundaryDigest},
 		{"allowlist programs", hex.EncodeToString(allowlists.Sum(nil)), goldenRenderedPrograms},
 		{"timelock programs", hex.EncodeToString(appended.Sum(nil)), goldenTimelockPrograms},
+		{"spending-key shapes", hex.EncodeToString(spendingKey.Sum(nil)), goldenSpendingKeyPrograms},
 	} {
 		if golden.got != golden.want {
 			t.Errorf("%s = %s, want %s", golden.name, golden.got, golden.want)
@@ -656,6 +679,12 @@ func TestResourceBackstopRefusesWhatCannotRun(t *testing.T) {
 	lowCeiling.MaxFee = 1_000
 	if err := checkResources(lowCeiling, opcodes, 3_000); err == nil || !strings.Contains(err.Error(), "above the account's ceiling") {
 		t.Fatalf("checkResources(low ceiling) error = %v", err)
+	}
+	// An operation this type does not offer has no path to solve.
+	adminRekey := boundedmeta.Clone(instance.Bounded)
+	adminRekey.AdminOperations[0].Authorization = boundedmeta.AdminAuthorizationAdmin
+	if err := checkResources(adminRekey, opcodes, 3_000); err == nil || !strings.Contains(err.Error(), "no resource path") {
+		t.Fatalf("checkResources(admin rekey) error = %v", err)
 	}
 }
 

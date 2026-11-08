@@ -112,9 +112,9 @@ func (s Shape) Descriptor() string {
 // shapes come first, so this order extends rather than reshuffles.
 //
 // A cosigned shape refuses rekeys, because bounded1 forbids a spending-key rekey
-// beside a cosigner. A shape that refuses rekeys needs pay: with no rekey path and
-// no close, pay is the only way its ALGO can ever leave. A spending-key rekey on a
-// timelock is gated by Layer 3, which judges it as a payment, so it needs pay too.
+// beside a cosigner. A shape that refuses rekeys must leave a way out for what it
+// holds (refusedSpendError). A spending-key rekey on a timelock is gated by Layer 3,
+// which judges it as a payment, so it needs pay.
 func Shapes() []Shape {
 	type family struct {
 		rekey    string
@@ -131,11 +131,10 @@ func Shapes() []Shape {
 						spend = append(spend, effect)
 					}
 				}
-				hasPay := slices.Contains(spend, txeffects.SpendEffectPay)
-				if f.rekey == RekeyRefused && !hasPay {
+				if f.rekey == RekeyRefused && refusedSpendError(spend) != nil {
 					continue
 				}
-				if timelock && f.rekey == RekeySpendingKey && !hasPay {
+				if timelock && f.rekey == RekeySpendingKey && !slices.Contains(spend, txeffects.SpendEffectPay) {
 					continue
 				}
 				shapes = append(shapes, Shape{Spend: spend, Encoding: encoding, Rekey: f.rekey, Cosigner: f.cosigner, Timelock: timelock})
@@ -149,4 +148,18 @@ func Shapes() []Shape {
 		forEachShape(encoding, true)
 	}
 	return shapes
+}
+
+// refusedSpendError reports why a shape that refuses rekeys could trap what it
+// holds. With no rekey path and no close, a transfer is the only way out: pay for
+// its ALGO, and axfer for any asset it can opt into. An account that never closes
+// keeps its minimum balance regardless.
+func refusedSpendError(spend []txeffects.SpendEffect) error {
+	switch {
+	case !slices.Contains(spend, txeffects.SpendEffectPay):
+		return fmt.Errorf("%s=%s requires pay in %s", ParameterRekeyAuthority, RekeyRefused, ParameterSpendEffects)
+	case slices.Contains(spend, txeffects.SpendEffectAssetOptIn) && !slices.Contains(spend, txeffects.SpendEffectAxfer):
+		return fmt.Errorf("%s=%s with asset_opt_in requires axfer in %s", ParameterRekeyAuthority, RekeyRefused, ParameterSpendEffects)
+	}
+	return nil
 }

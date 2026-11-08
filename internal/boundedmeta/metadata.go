@@ -346,18 +346,25 @@ func ValidateAdminOperations(operations []AdminOperation) error {
 	return nil
 }
 
-// RefusesRekeys reports whether the contract has no rekey path at all.
+// RefusesRekeys reports whether the contract has no rekey operation, so no rekey
+// path at all.
 func (metadata *Metadata) RefusesRekeys() bool {
-	return metadata != nil && len(metadata.AdminOperations) == 0
-}
-
-// HasRecipientList reports whether Layer 3 limits spending to a recipient list,
-// alone or followed by a timelock or author TEAL.
-func (metadata *Metadata) HasRecipientList() bool {
 	if metadata == nil {
 		return false
 	}
-	switch metadata.Layer3Policy {
+	for _, operation := range metadata.AdminOperations {
+		if operation.Kind == AdminOperationRekey {
+			return false
+		}
+	}
+	return true
+}
+
+// IsRecipientListPolicy reports whether a Layer 3 policy limits spending to a
+// framework-enforced recipient list, alone or followed by a timelock or author
+// TEAL. A policy it does not name is not a list.
+func IsRecipientListPolicy(policy string) bool {
+	switch policy {
 	case Layer3PolicyFixedAllowlist, Layer3PolicyMerkleAllowlist,
 		Layer3PolicyFixedAllowlistCustom, Layer3PolicyMerkleAllowlistCustom,
 		Layer3PolicyFixedAllowlistTimelock, Layer3PolicyMerkleAllowlistTimelock:
@@ -366,8 +373,14 @@ func (metadata *Metadata) HasRecipientList() bool {
 	return false
 }
 
-// Contained reports whether value can leave the account only to listed
-// recipients: it refuses rekeys and Layer 3 holds a recipient list.
+// HasRecipientList reports whether Layer 3 limits spending to a recipient list.
+func (metadata *Metadata) HasRecipientList() bool {
+	return metadata != nil && IsRecipientListPolicy(metadata.Layer3Policy)
+}
+
+// Contained reports whether the account can pay only listed recipients: it refuses
+// rekeys and Layer 3 holds a recipient list. Fees are outside that: each is capped
+// per transaction, but repeated transactions can still spend the balance on fees.
 func (metadata *Metadata) Contained() bool {
 	return metadata.RefusesRekeys() && metadata.HasRecipientList()
 }

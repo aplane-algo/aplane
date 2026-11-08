@@ -77,9 +77,8 @@ func selectShape(params map[string]string, defs []lsigprovider.ParameterDef) (*s
 	switch {
 	case rekey == RekeySpendingKey && cosigner != "":
 		return nil, fmt.Errorf("a cosigner requires %s=%s", ParameterRekeyAuthority, RekeyRefused)
-	case rekey == RekeyRefused && !slices.Contains(spend, txeffects.SpendEffectPay):
-		// With no rekey path and no close, pay is the only way ALGO can leave.
-		return nil, fmt.Errorf("%s=%s requires pay in %s", ParameterRekeyAuthority, RekeyRefused, ParameterSpendEffects)
+	case rekey == RekeyRefused && refusedSpendError(spend) != nil:
+		return nil, refusedSpendError(spend)
 	case timelock && rekey == RekeySpendingKey && !slices.Contains(spend, txeffects.SpendEffectPay):
 		return nil, fmt.Errorf("a timelock with %s=%s requires pay in %s", ParameterRekeyAuthority, RekeySpendingKey, ParameterSpendEffects)
 	}

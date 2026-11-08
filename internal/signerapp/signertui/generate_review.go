@@ -141,15 +141,6 @@ func isMerklePolicy(policy string) bool {
 	return false
 }
 
-// isListPolicy reports whether the framework enforces a recipient list.
-func isListPolicy(policy string) bool {
-	switch policy {
-	case boundedmeta.Layer3PolicyCustom, boundedmeta.Layer3PolicyTimelock:
-		return false
-	}
-	return true
-}
-
 func isTimelockPolicy(policy string) bool {
 	switch policy {
 	case boundedmeta.Layer3PolicyTimelock, boundedmeta.Layer3PolicyFixedAllowlistTimelock, boundedmeta.Layer3PolicyMerkleAllowlistTimelock:
@@ -193,13 +184,16 @@ func reviewRekey(review PrepareGenerateResultMessage) (label, consequence string
 // reviewRecipients describes who the account can pay, decided by its policy and never
 // by a parameter's name: a template can call its list anything, or give a parameter
 // called recipients to code the framework does not check. Overstating what an account
-// can pay is the mistake to avoid, so only the policy with no list says "any".
+// can pay is the mistake to avoid, so only the policy with no list says "any". A
+// policy this client does not know claims neither: it is named, with the details.
 func reviewRecipients(policy string, recipients []string) (row, note string) {
-	if !isListPolicy(policy) {
-		if isCustomPolicy(policy) {
-			return reviewRow("Policy", "Custom policy, from the template author's code"), ""
-		}
+	switch {
+	case policy == boundedmeta.Layer3PolicyCustom:
+		return reviewRow("Policy", "Custom policy, from the template author's code"), ""
+	case policy == boundedmeta.Layer3PolicyTimelock:
 		return reviewRow("Recipients", "any, once unlocked"), ""
+	case !boundedmeta.IsRecipientListPolicy(policy):
+		return reviewRow("Policy", fmt.Sprintf("%s, see details", policy)), ""
 	}
 	encoding := "inline"
 	note = "The whole list is public once the program is published."

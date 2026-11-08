@@ -300,8 +300,10 @@ These addresses are illustrations, not funding destinations.
 | `rekey.authority` | Required. `spending_key` (the spending key alone can rekey) or `refused` (the account can never be rekeyed). |
 | `cosigner` | Optional. A cosigner reference name on the signer, or a Witness Key ID. A cosigner needs `refused`. |
 
-With `refused`, `spend` must include `pay`: the account can neither close nor be rekeyed,
-so a payment is the only way its ALGO can leave. With `unlock_round` and `spending_key`,
+With `refused`, the account can neither close nor be rekeyed, so a transfer is the only
+way anything leaves it. `spend` must include `pay`, and `asset_opt_in` needs `axfer`, so
+no ALGO or asset is trapped. The account still keeps its minimum balance forever: 0.1
+ALGO, plus 0.1 ALGO for each asset it opts into. With `unlock_round` and `spending_key`,
 `spend` must include `pay` too.
 
 Unknown fields, duplicate keys, YAML aliases, and non-string values are refused, and the
@@ -333,9 +335,11 @@ with fingerprints and a digest.
 
 `aplane.falcon1024-b.v1` cannot be turned off, but two settings in apadmin's Settings panel set
 a minimum for new accounts. `boundary_require_contained` requires new accounts to be
-contained: they must refuse rekeys and have a recipient list, so value can leave only to
-listed recipients. A timelock with no list is not contained, because it pays anyone once
-unlocked. `boundary_require_cosigner` refuses accounts without a cosigner. They apply on every route,
+contained: they must refuse rekeys and have a recipient list, so they can pay only listed
+recipients. A timelock with no list is not contained, because it pays anyone once
+unlocked. Fees are outside that limit: each transaction's fee is capped at 10,000
+microAlgos, but a stolen spending key can still spend the balance on fees, one
+transaction at a time. `boundary_require_cosigner` refuses accounts without a cosigner. They apply on every route,
 and they do not affect existing accounts or imported templates.
 
 Review these points before funding an account:

@@ -399,16 +399,20 @@ func TestBoundedGeneralResourceMatrix(t *testing.T) {
 				recipients = append(recipients, algocrypto.GenerateAccount().Address.String())
 			}
 			account := newGeneralAccount(t, provider, shape, recipients, generalPassedUnlockRound)
+			// Everything that can fail runs before funding, so the cleanup that
+			// returns the funds is registered as soon as there are funds to return.
+			var proof []byte
+			if shape.Encoding == boundedaccount.EncodingMerkle {
+				proof = account.proofFor(t, funderAddress)
+			}
 			if err := funder.FundMicroAlgosAndWait(account.address, 500_000); err != nil {
 				t.Fatalf("fund account: %v", err)
 			}
 			cleanup := algocrypto.GenerateAccount()
 			refused := shape.Rekey == boundedaccount.RekeyRefused
-			var proof []byte
-			if shape.Encoding == boundedaccount.EncodingMerkle {
-				proof = account.proofFor(t, funderAddress)
-			}
 			t.Cleanup(func() {
+				// A refused account can never close, so its minimum balance stays
+				// behind: 0.1 ALGO per refused family on a public network.
 				if refused {
 					sweepRefusedAccount(t, network, account, funder.GetAddress(), proof)
 					return
@@ -537,6 +541,21 @@ func TestBoundedGeneralThroughSigner(t *testing.T) {
 			}
 			if received.Amount != 300_000 {
 				t.Fatalf("recipient holds %d, want 300000", received.Amount)
+			}
+			if !test.refused {
+				return
+			}
+			// The signer refuses the rekey itself, before anything reaches the chain.
+			output, err = apshell.RunWithInput(fmt.Sprintf("rekey %s to %s\nquit\n", account, outsider))
+			if !strings.Contains(output, "permanently disables rekey") || strings.Contains(strings.ToLower(output), "rekey transaction submitted:") {
+				t.Fatalf("a refused account's rekey was not refused by the signer: %v\n%s", err, output)
+			}
+			info, err := network.Client.AccountInformation(account).Do(context.Background())
+			if err != nil {
+				t.Fatalf("read account: %v", err)
+			}
+			if info.AuthAddr != "" {
+				t.Fatalf("a refused account was rekeyed to %s", info.AuthAddr)
 			}
 		})
 	}

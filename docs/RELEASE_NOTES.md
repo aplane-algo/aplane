@@ -18,14 +18,16 @@ This release is install-fresh only.
 - The Locked Allowlist and Corridor presets now refuse rekeys. Their accounts can never
   be rekeyed, where the retired templates allowed an `aprekey` ceremony.
 - A cosigner needs `refused`.
-- An account that refuses rekeys must include `pay` in its transfer kinds. It can neither
-  close nor be rekeyed, so without `pay` its ALGO could never leave.
-- The type now has 66 shapes instead of 96. Spending-key shapes compile to the same
+- An account that refuses rekeys can neither close nor be rekeyed, so it must be able to
+  transfer what it holds: its transfer kinds must include `pay`, and `asset_opt_in` needs
+  `axfer`. It keeps its minimum balance forever.
+- The type now has 56 shapes instead of 96. Spending-key shapes compile to the same
   programs with the same fingerprints and boundary digests. A review prepared before the
   upgrade is refused as changed; prepare it again.
 - `boundary_require_admin_key` is now `boundary_require_contained`, shown in apadmin as
   "Bounded: require containment". A contained account refuses rekeys and has a recipient
-  list, so a timelock with no list does not qualify. The runtime config is read strictly,
+  list, so a timelock with no list does not qualify. Fees are capped per transaction, not
+  in total, so containment does not stop a stolen key from burning the balance on fees. The runtime config is read strictly,
   so a config that still sets `boundary_require_admin_key` fails to load. The admin
   protocol is now 7.4.
 - Expert templates and `aprekey` are unchanged in this release.

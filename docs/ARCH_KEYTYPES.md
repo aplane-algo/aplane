@@ -1535,13 +1535,14 @@ these accounts with no setup, and it does not appear in the KeyType Library.
 A shape is a spend subset, a recipient rule, a rekey arrangement, and optionally a
 timelock. The arrangements are spending-key rekey, rekeys refused, and cosigner with
 rekeys refused; a cosigner comes with rekeys refused, because bounded1 forbids a
-spending-key rekey beside a cosigner. A shape that refuses rekeys needs `pay`: it can
-neither close nor be rekeyed, so a payment is the only way its ALGO can leave. Allowlists
-are 2 encodings x (7 subsets with spending-key rekey, plus 4 subsets with `pay` for each
-refused arrangement), which is 30 shapes. Timelocks add three policies, with an inline
-list, a Merkle list, or no list. Each has the 4 subsets with `pay` for each of the three
-arrangements, because a gated spending-key rekey is judged as a payment and needs `pay`
-too. That is 36 more, 66 in all. A shape that refuses rekeys declares no rekey
+spending-key rekey beside a cosigner. A shape that refuses rekeys can neither close nor
+be rekeyed, so it must leave a transfer for everything it can hold: it needs `pay`, and
+`asset_opt_in` needs `axfer`. That leaves it three subsets: `pay`, `pay,axfer`, and all
+three. Allowlists are 2 encodings x (7 subsets with spending-key rekey, plus 3 for each
+refused arrangement), which is 26 shapes. Timelocks add three policies, with an inline
+list, a Merkle list, or no list. Each has the 4 subsets with `pay` for spending-key
+rekey, because a gated rekey is judged as a payment and needs `pay`, and 3 for each
+refused arrangement. That is 30 more, 56 in all. A shape that refuses rekeys declares no rekey
 operation, so its program has no rekey path. `Shapes()` is the single enumeration, and new shapes
 go after the existing ones. Each shape is an ordinary schema-v2
 template spec with no author TEAL, so it passes every check an imported template passes.
@@ -1578,7 +1579,8 @@ grammar fingerprint still lets a review detect that the definition changed befor
 generation, and each account still records its shape.
 
 **Generation settings.** `boundary_require_contained` (new accounts must be contained:
-refuse rekeys and hold a recipient list, `boundedmeta.Metadata.Contained`) and
+refuse rekeys and hold a recipient list, `boundedmeta.Metadata.Contained`; fees, capped
+per transaction only, are outside it) and
 `boundary_require_cosigner` in the product runtime config apply to this key type on every
 creation route, under the
 mutation lock, and generation rechecks them after a review. They do not reach existing

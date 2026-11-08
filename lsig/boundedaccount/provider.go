@@ -87,6 +87,8 @@ func NewProvider() (*Provider, error) {
 // because the grammar must not offer a shape that errors on first use. A shape can
 // build and still be refused at generation: that is the support policy's decision,
 // which this construction must not take, since inventory and durable load reach it.
+// composeddsa's bounded_generation_support_test.go pins that the policy runs only
+// from GenerateTEAL.
 func newProvider(definition Definition) (*Provider, error) {
 	if len(definition.Shapes) == 0 {
 		return nil, fmt.Errorf("bounded definition %s.%s has no shapes", definition.Publisher, definition.Family)
@@ -501,9 +503,13 @@ func checkResources(metadata *boundedmeta.Metadata, opcodes lsigresource.OpcodeP
 		name   string
 		opcode uint64
 	}
-	// A shape that refuses rekeys has only the spend path to fit.
+	// Every account has the spend path, and each stored operation adds its own. An
+	// operation this type does not offer has no path to solve, so it fails here.
 	paths := []path{{boundedmeta.PathSpend, opcodes.Spend}}
-	if !metadata.RefusesRekeys() {
+	for _, operation := range metadata.AdminOperations {
+		if operation.Kind != boundedmeta.AdminOperationRekey || operation.Authorization != boundedmeta.AdminAuthorizationSpend {
+			return fmt.Errorf("no resource path for a %s operation with %s authority", operation.Kind, operation.Authorization)
+		}
 		paths = append(paths, path{boundedmeta.PathSpendingRekey, opcodes.SpendingRekey})
 	}
 	for _, path := range paths {
