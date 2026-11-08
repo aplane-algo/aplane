@@ -49,7 +49,7 @@ func (s Service) PrepareGenerateKey(keyType string, params map[string]string) (*
 	if err := checkGenerationAllowed(activeKeyPaths, creation.keyType); err != nil {
 		return nil, err
 	}
-	if err := s.checkBoundaryRequirements(creation.instance); err != nil {
+	if err := s.checkBoundaryRequirements(creation); err != nil {
 		return nil, err
 	}
 

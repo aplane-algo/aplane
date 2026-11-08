@@ -1184,7 +1184,15 @@ GO
 # mode against the published module. It leaves GO_SDK_BIN empty when release
 # mode can't build it, and the Go check is skipped.
 build_go_sdk_validator() {
-    command -v go >/dev/null 2>&1 || die "go not found on the host; the Go SDK check builds its program there"
+    GO_SDK_BIN=""
+    if ! command -v go >/dev/null 2>&1; then
+        # Release mode tests published packages and may run where no Go toolchain is.
+        if [ "$RELEASE_INSTALL" = "1" ]; then
+            log "Skipping the Go SDK check: go not found on the host"
+            return 0
+        fi
+        die "go not found on the host; the Go SDK check builds its program there"
+    fi
     local dir
     dir="$(mktemp -d)"
     write_go_sdk_validator "$dir"
@@ -1199,6 +1207,7 @@ build_go_sdk_validator() {
         if ! (cd "$dir" && go get "github.com/aplane-algo/aplanesdk/go@$version" >/dev/null 2>&1 && go mod tidy >/dev/null 2>&1); then
             log "Skipping the Go SDK check: github.com/aplane-algo/aplanesdk/go@$version could not be fetched"
             rm -rf "$dir"
+            GO_SDK_BIN=""
             return 0
         fi
     else

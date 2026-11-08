@@ -1573,10 +1573,11 @@ a recipient list, `boundedmeta.Metadata.Contained`, so a limits-only account nev
 even with a cosigner, and neither is a `spending_key` or `plus_cosigned` one, which is
 only as strong as its two online keys; fees, capped per transaction only, are outside
 it) and
-`boundary_require_cosigner` in the product runtime config apply to this key type on every
-creation route, under the
-mutation lock, and generation rechecks them after a review. They do not reach existing
-accounts or expert templates. Both are writable admin settings, shown in apadmin's
+`boundary_require_cosigner` in the product runtime config apply to this key type, and to
+the plain hosts, on every creation route, under the
+mutation lock, and generation rechecks them after a review. A plain host is never
+contained, since its spends are open, and the plain program has no cosigner, so either
+setting refuses it. They do not reach existing accounts or expert templates. Both are writable admin settings, shown in apadmin's
 Settings panel on signer nodes.
 
 **Discovery.** `/keytypes` reports `per_key_contract: true` for a type with an

@@ -277,19 +277,12 @@ func validateCanonicalMetadata(profile *BoundedAuthorizationProfile, metadata *b
 	for i, effect := range profile.SpendEffects {
 		spendEffects[i] = string(effect)
 	}
-	if metadata.Contract != profile.Contract || !equalMaxFee(metadata.MaxFee, profile.MaxFee) ||
+	if metadata.Contract != profile.Contract || !boundedmeta.EqualMaxFee(metadata.MaxFee, profile.MaxFee) ||
 		!slices.Equal(metadata.SpendEffects, spendEffects) || metadata.Rekey != profile.Rekey ||
 		!equalCosignerProfile(metadata.Cosigner, profile.Cosigner) {
 		return fmt.Errorf("bounded profile metadata does not match the authorization profile")
 	}
 	return nil
-}
-
-func equalMaxFee(a, b *uint64) bool {
-	if a == nil || b == nil {
-		return a == b
-	}
-	return *a == *b
 }
 
 func equalCosignerProfile(a, b *boundedmeta.CosignerAuthorization) bool {

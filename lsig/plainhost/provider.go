@@ -194,6 +194,12 @@ func creationParameters() []lsigprovider.ParameterDef {
 	cosigner.Required = false
 	return []lsigprovider.ParameterDef{
 		{
+			Name:        ParameterCosigner,
+			Label:       "Cosigner",
+			Description: "A cosigner reference name or Witness Key ID, which the signer resolves to its public key. Leave empty for no cosigner.",
+			Type:        "string",
+		},
+		{
 			Name:        ParameterRekeyAuthority,
 			Label:       "Rekey Authority",
 			Description: "How the account can be rekeyed: never (refused); by the spending key and the cosigner together (spending_key); by the spending key alone, only to an address on its rekey-to list (only_these); or by the spending key alone to a listed address and with the cosigner to any other (plus_cosigned).",
@@ -211,9 +217,20 @@ func creationParameters() []lsigprovider.ParameterDef {
 	}
 }
 
-// hasOverlays reports whether a request asks for an overlay program. Any overlay
-// parameter does, even an empty one, so a mistyped request is refused rather
-// than taken as the plain program.
+// present drops parameters whose value is empty: a form sends every field, and
+// an empty one is unset, as creation-parameter normalization treats it.
+func present(params map[string]string) map[string]string {
+	out := make(map[string]string, len(params))
+	for name, value := range params {
+		if strings.TrimSpace(value) != "" {
+			out[name] = value
+		}
+	}
+	return out
+}
+
+// hasOverlays reports whether a request asks for an overlay program: any overlay
+// parameter with a value does.
 func hasOverlays(params map[string]string) bool {
 	for _, name := range []string{ParameterCosigner, ParameterRekeyAuthority, ParameterRekeyTo,
 		composeddsa.BoundedCosignerPublicKeyParameter, boundedmeta.RekeyListRootParameter} {
@@ -224,7 +241,17 @@ func hasOverlays(params map[string]string) bool {
 	return false
 }
 
-// resolve selects the arrangement and the canonical values for an overlay request.
+// checkPlainProgram refuses any parameter on a request for the plain program, so
+// a misspelled overlay parameter is an error rather than a weaker account.
+func checkPlainProgram(params map[string]string) error {
+	for name := range params {
+		return fmt.Errorf("unknown parameter %q", name)
+	}
+	return nil
+}
+
+// resolve selects the arrangement and the canonical values for an overlay
+// request, given without its empty parameters.
 func (p *Provider) resolve(params map[string]string) (*arrangement, map[string]string, error) {
 	known := make(map[string]bool, len(p.params))
 	for _, def := range p.params {
@@ -247,9 +274,6 @@ func (p *Provider) resolve(params map[string]string) (*arrangement, map[string]s
 		return nil, nil, fmt.Errorf("%s must be %s", ParameterRekeyAuthority, strings.Join(RekeyAuthorities, ", "))
 	}
 	cosigner := normalized[composeddsa.BoundedCosignerPublicKeyParameter]
-	if _, present := params[composeddsa.BoundedCosignerPublicKeyParameter]; present && cosigner == "" {
-		return nil, nil, fmt.Errorf("%s is empty", composeddsa.BoundedCosignerPublicKeyParameter)
-	}
 	selected, ok := p.byArrangement[Arrangement{Rekey: rekey, Cosigner: cosigner != ""}]
 	if !ok {
 		// Only plus cosigned without a cosigner: it would mean spending_key.
@@ -310,7 +334,7 @@ func composerValues(selected *arrangement, values map[string]string) map[string]
 // resolveGenerated resolves an overlay request and returns the composer's
 // values, with the rekey-to list's root added when generation made one.
 func (p *Provider) resolveGenerated(params map[string]string) (*arrangement, map[string]string, error) {
-	request, generated := composeddsa.SplitGeneratedParams(params)
+	request, generated := composeddsa.SplitGeneratedParams(present(params))
 	selected, values, err := p.resolve(request)
 	if err != nil {
 		return nil, nil, err
@@ -330,7 +354,11 @@ func (p *Provider) CreationParams() []lsigprovider.ParameterDef { return p.param
 // ValidateCreationParams checks an overlay request; no parameters is the plain
 // program, which the plain provider validates.
 func (p *Provider) ValidateCreationParams(params map[string]string) error {
+	params = present(params)
 	if !hasOverlays(params) {
+		if err := checkPlainProgram(params); err != nil {
+			return err
+		}
 		return p.Plain.ValidateCreationParams(params)
 	}
 	selected, values, err := p.resolve(params)
@@ -355,12 +383,12 @@ func (p *Provider) CosignerComponentKeyType(params map[string]string) (string, b
 // ResolveInstance selects the arrangement for resolved parameters. No parameters
 // select the plain program, which has no overlay contract.
 func (p *Provider) ResolveInstance(params map[string]string) (*lsigprovider.Instance, error) {
+	params = present(params)
 	if !hasOverlays(params) {
-		values, err := lsigprovider.NormalizeCreationParams(params, nil)
-		if err != nil {
+		if err := checkPlainProgram(params); err != nil {
 			return nil, err
 		}
-		return &lsigprovider.Instance{Values: values}, nil
+		return &lsigprovider.Instance{Values: map[string]string{}}, nil
 	}
 	selected, values, err := p.resolve(params)
 	if err != nil {
@@ -413,7 +441,7 @@ func (p *Provider) GrammarFingerprint() string { return p.grammar }
 
 // GenerateTEAL renders the selected program.
 func (p *Provider) GenerateTEAL(publicKey []byte, params map[string]string) (string, error) {
-	if !hasOverlays(params) {
+	if !hasOverlays(present(params)) {
 		return p.Plain.GenerateTEAL(publicKey, params)
 	}
 	selected, values, err := p.resolveGenerated(params)
@@ -425,7 +453,7 @@ func (p *Provider) GenerateTEAL(publicKey []byte, params map[string]string) (str
 
 // DeriveLsig derives the selected program and its address.
 func (p *Provider) DeriveLsig(ctx context.Context, publicKey []byte, params map[string]string) ([]byte, string, error) {
-	if !hasOverlays(params) {
+	if !hasOverlays(present(params)) {
 		return p.Plain.DeriveLsig(ctx, publicKey, params)
 	}
 	selected, values, err := p.resolveGenerated(params)
@@ -437,7 +465,7 @@ func (p *Provider) DeriveLsig(ctx context.Context, publicKey []byte, params map[
 
 // DeriveLsigWithSalt derives the selected program with its salt metadata.
 func (p *Provider) DeriveLsigWithSalt(ctx context.Context, publicKey []byte, params map[string]string) (lsigsalt.FindResult, error) {
-	if !hasOverlays(params) {
+	if !hasOverlays(present(params)) {
 		return p.Plain.DeriveLsigWithSalt(ctx, publicKey, params)
 	}
 	selected, values, err := p.resolveGenerated(params)
@@ -450,10 +478,10 @@ func (p *Provider) DeriveLsigWithSalt(ctx context.Context, publicKey []byte, par
 // PrepareRekeyList adds the rekey-to list's root once the spending key exists.
 // Any other request is unchanged.
 func (p *Provider) PrepareRekeyList(privateKey []byte, params map[string]string) (map[string]string, error) {
-	if !hasOverlays(params) {
+	if !hasOverlays(present(params)) {
 		return params, nil
 	}
-	selected, values, err := p.resolve(params)
+	selected, values, err := p.resolve(present(params))
 	if err != nil {
 		return nil, err
 	}
@@ -474,7 +502,7 @@ func (p *Provider) PrepareRekeyList(privateKey []byte, params map[string]string)
 // contract and refuses one the network could not run, before the key is
 // persisted. The plain program has none.
 func (p *Provider) BuildBoundedAuthorizationMetadata(publicKey []byte, params map[string]string, bytecode []byte) (*boundedmeta.Metadata, error) {
-	if !hasOverlays(params) {
+	if !hasOverlays(present(params)) {
 		return nil, nil
 	}
 	selected, values, err := p.resolveGenerated(params)

@@ -459,7 +459,8 @@ contained, with or without a cosigner, and neither is a `plus_cosigned` one: who
 holds its online keys can rekey it anywhere. Fees are outside that limit: each transaction's fee is capped at 10,000
 microAlgos, but a stolen spending key can still spend the balance on fees, one
 transaction at a time. `boundary_require_cosigner` refuses accounts without a cosigner. They apply on every route,
-and they do not affect existing accounts or imported templates.
+and to the plain hosts too: a plain host is never contained, and the plain program, with
+no cosigner, fails both. They do not affect existing accounts or imported templates.
 
 Review these points before funding an account:
 

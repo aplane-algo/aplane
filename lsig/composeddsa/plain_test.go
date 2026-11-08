@@ -142,8 +142,9 @@ func TestPlainHostWithoutACosigner(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateTEAL() error = %v", err)
 	}
-	if strings.Contains(teal, boundedCosignerLabel) {
-		t.Fatalf("a plain host without a cosigner calls the cosigner:\n%s", teal)
+	if strings.Contains(teal, boundedCosignerLabel) || strings.Contains(teal, "the cosigner signed") ||
+		!strings.Contains(teal, "the spending key alone signed this spend") {
+		t.Fatalf("a plain host without a cosigner calls or claims the cosigner:\n%s", teal)
 	}
 	assertOrderedMarkers(t, teal, "bnz "+boundedRekeyLabel, boundedRekeyLabel+":", boundedSpendLabel+":", boundedAcceptLabel+":")
 }

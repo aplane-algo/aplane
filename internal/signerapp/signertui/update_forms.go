@@ -619,8 +619,9 @@ func (m Model) submitParamModal(
 	submitView ViewState,
 	submitFn func(keyType string, params map[string]string, id string) tea.Cmd,
 ) (Model, tea.Cmd, string) {
+	// An optional cosigner, as on a plain host, may be left empty.
 	for _, param := range spec.Params {
-		if m.isCosignerSelectorParam(keyType, param) && strings.TrimSpace(m.forms.genericLSigParams[param.Name]) == "" {
+		if param.Required && m.isCosignerSelectorParam(keyType, param) && strings.TrimSpace(m.forms.genericLSigParams[param.Name]) == "" {
 			return m, nil, "Choose a cosigner before continuing"
 		}
 	}

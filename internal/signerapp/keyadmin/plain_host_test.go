@@ -6,6 +6,7 @@ package keyadmin
 import (
 	"context"
 	"encoding/hex"
+	"strings"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
@@ -100,4 +101,33 @@ func TestPlainHostGeneratesFromAReview(t *testing.T) {
 	if summary.LogicSigResources == nil || summary.LogicSigResources.Spend == nil || summary.LogicSigResources.ListedRekey == nil {
 		t.Fatalf("stored resources = %+v", summary.LogicSigResources)
 	}
+}
+
+// The boundary requirements govern the plain hosts too, the plain program
+// included: it has no cosigner and contains nothing.
+func TestBoundaryRequirementsGovernPlainHosts(t *testing.T) {
+	ir, service, _ := setupPlainHost(t)
+	cosigned := map[string]string{cosignerrefs.ParamCosignerName: prepareTestReference, plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused}
+	uncosigned := map[string]string{plainhost.ParameterRekeyAuthority: plainhost.RekeyOnlyThese, plainhost.ParameterRekeyTo: listedTarget.String()}
+
+	ir.Config().SetBoundaryRequirements(false, true)
+	t.Cleanup(func() { ir.Config().SetBoundaryRequirements(false, false) })
+	for name, params := range map[string]map[string]string{"the plain program": nil, "an uncosigned plain host": uncosigned} {
+		if _, err := service.PrepareGenerateKey(plainHostKeyType, params); err == nil || !strings.Contains(err.Message, "boundary_require_cosigner") {
+			t.Fatalf("%s: PrepareGenerateKey() error = %#v", name, err)
+		}
+		if _, err := service.GenerateKey(context.Background(), plainHostKeyType, params, nil); err == nil || !strings.Contains(err.Message, "boundary_require_cosigner") {
+			t.Fatalf("%s: GenerateKey() error = %#v", name, err)
+		}
+	}
+	if _, err := service.PrepareGenerateKey(plainHostKeyType, cosigned); err != nil {
+		t.Fatalf("a cosigned plain host: PrepareGenerateKey() error = %#v", err)
+	}
+
+	// Every plain host spends anywhere, so none is contained.
+	ir.Config().SetBoundaryRequirements(true, false)
+	if _, err := service.PrepareGenerateKey(plainHostKeyType, cosigned); err == nil || !strings.Contains(err.Message, "boundary_require_contained") {
+		t.Fatalf("contained: PrepareGenerateKey() error = %#v", err)
+	}
+	assertNoKeys(t, service)
 }

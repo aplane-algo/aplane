@@ -480,9 +480,12 @@ func TestPlainHostArrangementsOnChainLocalnet(t *testing.T) {
 // and on Ed25519, signs through the cosigned flow and asks the cosigner; one
 // without a cosigner and the plain program sign through /sign and never ask it.
 // Each pays and then closes out.
-func TestPlainHostThroughSigner(t *testing.T) {
-	n := newCosignedNode(t)
+// activatePlainHosts enables both plain host types on the node's signer, as an
+// operator does before generating one.
+func activatePlainHosts(t *testing.T, n *cosignedNode) {
+	t.Helper()
 	ipc := mustConnectIPCClient(t, n.signerd.GetWorkDir())
+	defer ipc.Close()
 	for _, keyType := range []string{plainFalconKeyType, plainEd25519KeyType} {
 		response, err := ipc.SendAndReceive(protocol.ActivateKeyTypeMessage{
 			BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeActivateKeyType, ID: fmt.Sprintf("activate-%d", time.Now().UnixNano())},
@@ -496,7 +499,77 @@ func TestPlainHostThroughSigner(t *testing.T) {
 			t.Fatalf("activate %s: %+v, %v", keyType, result, err)
 		}
 	}
-	ipc.Close()
+}
+
+// generatePlainHost generates and funds a plain host through the signer and
+// waits until the signer serves it.
+func generatePlainHost(t *testing.T, n *cosignedNode, keyType string, params map[string]string) string {
+	t.Helper()
+	resp, err := n.client.AdminGenerate(keyType, params)
+	if err != nil || resp.Address == "" {
+		t.Fatalf("generate: %+v, %v", resp, err)
+	}
+	if !waitForKey(t, n.signerd.GetURL(), resp.Address, 10*time.Second) {
+		t.Fatalf("signer did not reload %s", resp.Address)
+	}
+	if err := n.funder.FundMicroAlgosAndWait(resp.Address, 1_000_000); err != nil {
+		t.Fatalf("fund %s: %v", resp.Address, err)
+	}
+	return resp.Address
+}
+
+// A cosigned plain host and an ordinary signer-held LogicSig account sign in one
+// atomic group: the cosigned flow plans the budget over both LogicSigs, asks
+// the cosigner for the plain host's position only, signs the other position
+// through /sign over the frozen bytes, assembles, and the group confirms.
+func TestPlainHostMixedGroupThroughSigner(t *testing.T) {
+	n := newCosignedNode(t)
+	activatePlainHosts(t, n)
+	cosigned := generatePlainHost(t, n, plainFalconKeyType, map[string]string{
+		cosignerrefs.ParamCosignerName: cosignedReferenceName, plainhost.ParameterRekeyAuthority: plainhost.RekeySpendingKey,
+	})
+	ordinary := generatePlainHost(t, n, plainFalconKeyType, nil)
+	if err := n.eng.EnsureSignerCache(context.Background()); err != nil {
+		t.Fatalf("refresh signer cache: %v", err)
+	}
+	sp, err := n.network.GetSuggestedParams()
+	if err != nil {
+		t.Fatalf("suggested params: %v", err)
+	}
+	first, err := transaction.MakePaymentTxn(cosigned, ordinary, 10_000, []byte("mixed-cosigned"), "", sp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := transaction.MakePaymentTxn(ordinary, cosigned, 20_000, []byte("mixed-ordinary"), "", sp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := n.cosignerCalls.Load()
+	result, err := n.eng.SignAndSubmitTransactions(context.Background(), []types.Transaction{first, second}, true)
+	if err != nil {
+		output := ""
+		if result != nil {
+			output = result.Output
+		}
+		t.Fatalf("mixed group: %v\n%s", err, output)
+	}
+	if !result.Confirmed || len(result.TxIDs) < 2 {
+		t.Fatalf("mixed group: confirmed %v with %d txids", result.Confirmed, len(result.TxIDs))
+	}
+	if asked := n.cosignerCalls.Load() - before; asked != 1 {
+		t.Fatalf("the cosigner was asked %d times, want once for the plain host's position", asked)
+	}
+	for _, address := range []string{cosigned, ordinary} {
+		info, err := n.network.Client.AccountInformation(address).Do(context.Background())
+		if err != nil || info.Amount == 1_000_000 {
+			t.Fatalf("%s holds %d after the group, %v", address, info.Amount, err)
+		}
+	}
+}
+
+func TestPlainHostThroughSigner(t *testing.T) {
+	n := newCosignedNode(t)
+	activatePlainHosts(t, n)
 
 	for _, tc := range []struct {
 		name     string

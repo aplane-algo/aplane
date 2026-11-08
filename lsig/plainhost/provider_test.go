@@ -176,7 +176,7 @@ func TestOverlayRequestsFailClosed(t *testing.T) {
 		want   string
 	}{
 		{"plus cosigned without a cosigner", map[string]string{plainhost.ParameterRekeyAuthority: plainhost.RekeyPlusCosigned, plainhost.ParameterRekeyTo: testRekeyTo()}, "without one it is rekey_authority=spending_key"},
-		{"an empty cosigner key", map[string]string{plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused, composeddsa.BoundedCosignerPublicKeyParameter: ""}, "is empty"},
+		{"a misspelled overlay parameter", map[string]string{"rekey_authorty": plainhost.RekeyOnlyThese, "rekey_too": testRekeyTo()}, "unknown parameter"},
 		{"no rekey authority", map[string]string{composeddsa.BoundedCosignerPublicKeyParameter: testCosigner}, "rekey_authority must be"},
 		{"unknown rekey authority", map[string]string{plainhost.ParameterRekeyAuthority: "admin_key", composeddsa.BoundedCosignerPublicKeyParameter: testCosigner}, "rekey_authority"},
 		{"a list without only_these", func() map[string]string {
@@ -273,5 +273,33 @@ func TestPlainHostGrammarGoldens(t *testing.T) {
 		if got := b.provider.GrammarFingerprint(); got != want[b.name] {
 			t.Errorf("%s grammar fingerprint = %s, want %s", b.name, got, want[b.name])
 		}
+	}
+}
+
+// A form sends every field, so an empty value is unset: a refused or
+// spending-key plain host comes from a request whose rekey_to and cosigner are
+// empty, and an all-empty request is the plain program.
+func TestEmptyParametersAreUnset(t *testing.T) {
+	provider := bases(t)[0].provider
+	form := map[string]string{
+		plainhost.ParameterRekeyAuthority:             plainhost.RekeyRefused,
+		plainhost.ParameterRekeyTo:                    "",
+		plainhost.ParameterCosigner:                   "",
+		composeddsa.BoundedCosignerPublicKeyParameter: " ",
+	}
+	instance, err := provider.ResolveInstance(form)
+	if err != nil || instance.Bounded == nil || instance.Bounded.Cosigner != nil || instance.Bounded.RekeyList != nil {
+		t.Fatalf("instance = %+v, %v", instance, err)
+	}
+	if err := provider.ValidateCreationParams(form); err != nil {
+		t.Fatalf("ValidateCreationParams() error = %v", err)
+	}
+	empty := map[string]string{plainhost.ParameterRekeyAuthority: "", plainhost.ParameterRekeyTo: ""}
+	instance, err = provider.ResolveInstance(empty)
+	if err != nil || instance.Bounded != nil {
+		t.Fatalf("all-empty request: instance = %+v, %v; want the plain program", instance, err)
+	}
+	if err := provider.ValidateCreationParams(map[string]string{"recipients": "X"}); err == nil {
+		t.Fatal("the plain program accepted a parameter")
 	}
 }

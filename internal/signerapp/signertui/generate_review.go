@@ -13,6 +13,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/boundary"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/protocol"
+	"github.com/aplane-algo/aplane/internal/sigconstruction"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -271,9 +272,10 @@ func (m Model) renderGenerateReview() string {
 	sb.WriteString(reviewRow("Key type", displayKeyType(review.KeyType)+", fixed once created"))
 	sb.WriteString(reviewRow("Transfers", transfersLabel(profile)))
 	row, note := reviewRecipients(profile.Contract, profile.Layer3Policy, profile.CosignerRequired, recipientList(review.Parameters))
-	// An Ed25519 plain host's spending key is classical; say so where it is chosen.
-	if profile.Contract == boundedmeta.PlainContract && strings.Contains(review.KeyType, "ed25519") {
-		note = strings.TrimSpace(note + " The Ed25519 spending key is classical, not post-quantum.")
+	// A plain host on a classical base, such as Ed25519, has a classical spending
+	// key; say so where it is chosen.
+	if construction, ok := sigconstruction.ForBaseKeyType(review.KeyType); profile.Contract == boundedmeta.PlainContract && ok && !construction.PostQuantum() {
+		note = strings.TrimSpace(note + " The " + displayKeyType(review.KeyType) + " spending key is classical, not post-quantum.")
 	}
 	sb.WriteString(row)
 	rekey, consequence := reviewRekey(*review)

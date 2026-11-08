@@ -111,6 +111,9 @@ type resolvedCreation struct {
 	keyType  string
 	params   map[string]string
 	instance *lsigprovider.Instance
+	// perKey is set for a type whose contract varies by account (the general
+	// type and the plain hosts), which the boundary requirements govern.
+	perKey bool
 }
 
 // resolveCreation runs the checks generation and preparation share, so a
@@ -141,7 +144,9 @@ func (s Service) resolveCreation(keyType string, params map[string]string) (*res
 	}
 
 	var instance *lsigprovider.Instance
+	perKey := false
 	if provider := lsigprovider.Get(keyType); provider != nil {
+		_, perKey = provider.(lsigprovider.InstanceResolver)
 		// Canonicalize at the admin boundary so persisted params and API responses
 		// are stable; lower layers also normalize defensively.
 		resolved, err := lsigprovider.ResolveInstance(provider, params)
@@ -156,7 +161,7 @@ func (s Service) resolveCreation(keyType string, params map[string]string) (*res
 			}
 		}
 	}
-	return &resolvedCreation{keyType: keyType, params: params, instance: instance}, nil
+	return &resolvedCreation{keyType: keyType, params: params, instance: instance, perKey: perKey}, nil
 }
 
 // ReviewedValues are what PrepareGenerateKey returned for the request an operator
@@ -202,7 +207,7 @@ func (s Service) GenerateReviewedKey(ctx context.Context, keyType string, params
 	if err := checkGenerationAllowed(activeKeyPaths, keyType); err != nil {
 		return nil, err
 	}
-	if err := s.checkBoundaryRequirements(creation.instance); err != nil {
+	if err := s.checkBoundaryRequirements(creation); err != nil {
 		return nil, err
 	}
 	if err := checkReviewedValues(keyType, params, reviewed); err != nil {
@@ -297,19 +302,25 @@ func checkReviewedValues(keyType string, params map[string]string, reviewed Revi
 	return nil
 }
 
-// checkBoundaryRequirements applies the general provider's generation settings.
-// Only an instance with a boundary digest comes from that provider, so expert
-// templates and every other type pass through.
-func (s Service) checkBoundaryRequirements(instance *lsigprovider.Instance) *Error {
-	if instance == nil || instance.BoundaryDigest == "" {
+// checkBoundaryRequirements applies the signer's generation settings to every
+// per-key type, the general type and the plain hosts: an account whose
+// parameters choose its contract. The plain program has no overlay contract, so
+// it is neither contained nor cosigned. Expert templates, whose program the
+// operator installed, and every other type pass through.
+func (s Service) checkBoundaryRequirements(creation *resolvedCreation) *Error {
+	if creation == nil || !creation.perKey {
 		return nil
 	}
-	requireContained, requireCosigner := s.Runtime.Config().BoundaryRequirements()
-	if requireContained && !instance.Bounded.Contained() {
-		return &Error{Kind: ErrorInvalidInput, Message: "this signer requires bounded accounts to pay only listed recipients and to refuse rekeys or take only listed ones (boundary_require_contained)"}
+	var metadata *boundedmeta.Metadata
+	if creation.instance != nil {
+		metadata = creation.instance.Bounded
 	}
-	if requireCosigner && instance.Bounded.Cosigner == nil {
-		return &Error{Kind: ErrorInvalidInput, Message: "this signer requires bounded accounts to have a cosigner (boundary_require_cosigner)"}
+	requireContained, requireCosigner := s.Runtime.Config().BoundaryRequirements()
+	if requireContained && (metadata == nil || !metadata.Contained()) {
+		return &Error{Kind: ErrorInvalidInput, Message: "this signer requires new accounts to pay only listed recipients and to refuse rekeys or take only listed ones (boundary_require_contained)"}
+	}
+	if requireCosigner && (metadata == nil || metadata.Cosigner == nil) {
+		return &Error{Kind: ErrorInvalidInput, Message: "this signer requires new accounts to have a cosigner (boundary_require_cosigner)"}
 	}
 	return nil
 }

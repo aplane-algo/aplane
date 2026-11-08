@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/witness"
 	tea "github.com/charmbracelet/bubbletea"
@@ -516,5 +517,43 @@ func TestCosignerExportResultPointsAtSetupFlow(t *testing.T) {
 	}
 	if strings.Contains(rendered, "cosigner add") {
 		t.Fatalf("export result still names the former command:\n%s", rendered)
+	}
+}
+
+// A plain host's cosigner is optional: the picker fills its reference field,
+// never the raw public-key field, and the form submits without one.
+func TestPlainHostCosignerIsAnOptionalReference(t *testing.T) {
+	defer setServerKeyTypes(nil)
+	setServerKeyTypes([]protocol.KeyTypeInfo{{
+		KeyType:                  "aplane.falcon1024.v1",
+		DisplayName:              "Falcon-1024",
+		CosignerComponentKeyType: "witness.v1",
+		PerKeyContract:           true,
+		CreationParams: []protocol.TemplateParamInfo{
+			{Name: "rekey_authority", Label: "Rekey Authority", Type: "string", Options: []string{"refused", "spending_key", "only_these", "plus_cosigned"}},
+			{Name: "rekey_to", Label: "Rekey-To Addresses", Type: "address[]"},
+			{Name: "cosigner", Label: "Cosigner", Type: "string"},
+			{Name: "cosigner_public_key", Label: "Cosigner Public Key", Type: "bytes"},
+		},
+	}})
+	m := Model{}
+	for _, param := range []lsigprovider.ParameterDef{{Name: "cosigner"}, {Name: "cosigner_public_key"}} {
+		if got, want := m.isCosignerSelectorParam("aplane.falcon1024.v1", param), param.Name == "cosigner"; got != want {
+			t.Fatalf("isCosignerSelectorParam(%s) = %v, want %v", param.Name, got, want)
+		}
+	}
+	m = Model{
+		viewState: ViewGenerateParams,
+		forms: formsState{
+			generateKeyType:       0,
+			generateFocus:         4,
+			genericLSigParams:     map[string]string{"rekey_authority": "", "rekey_to": "", "cosigner": "", "cosigner_public_key": ""},
+			genericLSigParamOrder: []string{"rekey_authority", "rekey_to", "cosigner", "cosigner_public_key"},
+		},
+		cosigner: cosignerState{loaded: true},
+	}
+	next, _ := m.handleGenerateParamsKeys(tea.KeyMsg{Type: tea.KeyEnter})
+	if got := next.(Model); got.forms.generateError == "Choose a cosigner before continuing" {
+		t.Fatal("an optional cosigner was required")
 	}
 }

@@ -86,6 +86,18 @@ func newConstruction(definition Definition, profiles map[PrimitiveID]*primitiveP
 // ID returns the construction's identifier.
 func (c Construction) ID() ConstructionID { return c.id }
 
+// PostQuantum reports whether any component's primitive resists a quantum
+// adversary, so a forgery needs a break of a post-quantum scheme. A construction
+// of classical primitives only is classical.
+func (c Construction) PostQuantum() bool {
+	for _, part := range c.components {
+		if part.profile.postQuantum {
+			return true
+		}
+	}
+	return false
+}
+
 // Layout returns the construction's argument layout: its components' layouts,
 // concatenated in order.
 func (c Construction) Layout() ArgLayout { return c.layout }

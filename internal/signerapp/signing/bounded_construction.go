@@ -20,7 +20,8 @@ const (
 
 // boundedSigningConstructions lists, for each durable contract and workflow, the
 // spending constructions this signer's code completes: the receipt and component
-// choreography for a cosigner, Falcon-only today.
+// choreography for a cosigner, on Falcon for a bounded host and on Falcon or
+// Ed25519 for a plain host.
 //
 // This is a fact about the signing implementation, so it is kept apart from the
 // generation admission policy in composeddsa. Admission decides which accounts

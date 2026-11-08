@@ -23,8 +23,8 @@ const (
 	Contract = "bounded2"
 	// PlainContract is the plain host: the spending key and its overlays, with
 	// no host rules. Every transaction that doesn't rekey is a spend, of any
-	// type, closes and clawback included, and there is no fee ceiling. It
-	// always has a cosigner, whose policy restricts what gets signed.
+	// type, closes and clawback included, and there is no fee ceiling. A
+	// cosigner, when it has one, is the only restriction on what gets signed.
 	PlainContract               = "plain1"
 	Layer3PolicyCustom          = "custom"
 	Layer3PolicyFixedAllowlist  = "fixed_allowlist"
@@ -192,7 +192,7 @@ func (metadata *Metadata) Equal(other *Metadata) bool {
 		metadata.BaseSignatureArgLayout.Count == other.BaseSignatureArgLayout.Count &&
 		slices.Equal(metadata.BaseSignatureArgLayout.MaxSizes, other.BaseSignatureArgLayout.MaxSizes) &&
 		slices.Equal(metadata.SpendEffects, other.SpendEffects) &&
-		equalFeeCeiling(metadata.MaxFee, other.MaxFee) &&
+		EqualMaxFee(metadata.MaxFee, other.MaxFee) &&
 		metadata.Rekey == other.Rekey &&
 		equalCosignerAuthorization(metadata.Cosigner, other.Cosigner) &&
 		equalRekeyList(metadata.RekeyList, other.RekeyList) &&
@@ -332,7 +332,9 @@ func CloneMaxFee(fee *uint64) *uint64 {
 	return new(*fee)
 }
 
-func equalFeeCeiling(a, b *uint64) bool {
+// EqualMaxFee reports whether two fee ceilings are the same: both absent, or
+// both present and equal.
+func EqualMaxFee(a, b *uint64) bool {
 	if a == nil || b == nil {
 		return a == b
 	}
