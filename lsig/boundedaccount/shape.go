@@ -36,9 +36,10 @@ const (
 	EncodingInline = boundary.EncodingInline
 	EncodingMerkle = boundary.EncodingMerkle
 
-	RekeySpendingKey = boundary.RekeySpendingKey
-	RekeyOnlyThese   = boundary.RekeyOnlyThese
-	RekeyRefused     = boundary.RekeyRefused
+	RekeySpendingKey  = boundary.RekeySpendingKey
+	RekeyOnlyThese    = boundary.RekeyOnlyThese
+	RekeyPlusCosigned = boundary.RekeyPlusCosigned
+	RekeyRefused      = boundary.RekeyRefused
 
 	ParameterRekeyTo = boundary.ParameterRekeyTo
 
@@ -75,6 +76,24 @@ type Shape struct {
 	// so the envelope's fee ceiling and transfer kinds are the whole rule. It is
 	// an explicit field, not an empty Encoding, so no zero value selects it.
 	AnyRecipient bool
+}
+
+// HasRekeyList reports whether the shape takes a rekey-to list.
+func (s Shape) HasRekeyList() bool {
+	return s.Rekey == RekeyOnlyThese || s.Rekey == RekeyPlusCosigned
+}
+
+// rekeySetting is the contract's rekey setting under the shape's option: only
+// these is refused plus the list, plus cosigned a spending-key rekey plus the list.
+func (s Shape) rekeySetting() boundedmeta.RekeySetting {
+	switch s.Rekey {
+	case RekeyOnlyThese:
+		return boundedmeta.RekeyRefused
+	case RekeyPlusCosigned:
+		return boundedmeta.RekeySpendingKey
+	default:
+		return boundedmeta.RekeySetting(s.Rekey)
+	}
 }
 
 // Policy names the shape's framework Layer 3 policy.
@@ -114,20 +133,21 @@ func (s Shape) Descriptor() string {
 // allowlists, then timelocks, then limits-only shapes. Each family is appended
 // after the last, so this order extends rather than reshuffles.
 //
-// A cosigned shape refuses rekeys: a cosigned rekey arrives with the cosigner
-// overlay. A timelock takes no spending-key rekey, because no host rule gates a
-// rekey, so it could leave the lock at any time; it can use a rekey-to list, which
-// is a way around the lock the review names. A shape that refuses rekeys with no
-// list must leave a way out for what it holds (refusedSpendError); a list is one.
+// Every shape has a way out: a spending-key rekey (with the cosigner on a
+// cosigned shape), a rekey-to list, or both (plus cosigned). The grammar never
+// offers an account that refuses every rekey. A timelock takes only a rekey-to
+// list, because no host rule gates a rekey: a spending-key rekey, cosigned or not,
+// could leave the lock at any time. A list is a way around the lock too, which
+// the review names.
 func Shapes() []Shape {
 	type family struct {
 		rekey    string
 		cosigner bool
 	}
-	// Refusing rekeys takes a rekey-to list ("only these"), except with a
-	// cosigner: a cosigned account can't take a listed rekey yet, so its rekeys
-	// are refused outright.
-	families := []family{{RekeySpendingKey, false}, {RekeyOnlyThese, false}, {RekeyRefused, true}}
+	families := []family{
+		{RekeySpendingKey, false}, {RekeyOnlyThese, false},
+		{RekeySpendingKey, true}, {RekeyOnlyThese, true}, {RekeyPlusCosigned, true},
+	}
 	var shapes []Shape
 	forEachShape := func(encoding string, timelock, anyRecipient bool) {
 		for _, f := range families {
@@ -138,10 +158,7 @@ func Shapes() []Shape {
 						spend = append(spend, effect)
 					}
 				}
-				if f.rekey == RekeyRefused && refusedSpendError(spend) != nil {
-					continue
-				}
-				if timelock && f.rekey == RekeySpendingKey {
+				if timelock && f.rekey != RekeyOnlyThese {
 					continue
 				}
 				shapes = append(shapes, Shape{
@@ -159,18 +176,4 @@ func Shapes() []Shape {
 	}
 	forEachShape("", false, true)
 	return shapes
-}
-
-// refusedSpendError reports why a shape that refuses rekeys could trap what it
-// holds. The rule is the contract's (boundedmeta.ValidateRefusedExit); the grammar
-// applies it to choose its shapes and to explain a refused request.
-func refusedSpendError(spend []txeffects.SpendEffect) error {
-	effects := make([]string, len(spend))
-	for i, effect := range spend {
-		effects[i] = string(effect)
-	}
-	if err := boundedmeta.ValidateRefusedExit(effects); err != nil {
-		return fmt.Errorf("%s=%s: %w", ParameterRekeyAuthority, RekeyRefused, err)
-	}
-	return nil
 }

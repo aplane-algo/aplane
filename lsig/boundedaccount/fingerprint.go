@@ -54,7 +54,7 @@ func shapeFingerprint(shape Shape, composer *composeddsa.ComposedDSA) string {
 	}
 	// Omitted for a shape without a list, so their fingerprints don't carry it.
 	listRevision := 0
-	if shape.Rekey == RekeyOnlyThese {
+	if shape.HasRekeyList() {
 		listRevision = listRendererRevision
 	}
 	return lsigprovider.HashCompatibilitySpec(struct {

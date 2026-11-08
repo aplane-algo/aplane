@@ -20,9 +20,9 @@ import (
 // limitsOnlyShapes are the appended shapes. Index order is frozen by the goldens.
 func limitsOnlyShapes(t *testing.T) []Shape {
 	t.Helper()
-	shapes := Shapes()[64:]
-	if len(shapes) != 17 {
-		t.Fatalf("%d limits-only shapes, want 17", len(shapes))
+	shapes := Shapes()[112:]
+	if len(shapes) != 35 {
+		t.Fatalf("%d limits-only shapes, want 35", len(shapes))
 	}
 	return shapes
 }
@@ -106,28 +106,16 @@ func TestLimitsOnlyRequestsFailClosed(t *testing.T) {
 			p[ParameterRekeyTo] = testRekeyTo
 			p[ParameterUnlockRound] = "5"
 		}, "does not combine"},
-		{"any with a cosigner and a spending-key rekey", func(p map[string]string) {
-			p[composeddsa.BoundedCosignerPublicKeyParameter] = testCosignerKey
-		}, "a cosigner requires rekey_authority=refused"},
-		{"any refusing rekeys without pay", func(p map[string]string) {
+		{"any refusing every rekey", func(p map[string]string) {
 			p[ParameterRekeyAuthority] = RekeyRefused
 			p[composeddsa.BoundedCosignerPublicKeyParameter] = testCosignerKey
-			p[ParameterSpendEffects] = "axfer"
-		}, "needs pay in spend_effects"},
-		{"any refusing rekeys, opting in without axfer", func(p map[string]string) {
-			p[ParameterRekeyAuthority] = RekeyRefused
-			p[composeddsa.BoundedCosignerPublicKeyParameter] = testCosignerKey
-			p[ParameterSpendEffects] = "pay,asset_opt_in"
-		}, "needs axfer in spend_effects"},
-		{"any refusing rekeys without a cosigner", func(p map[string]string) { p[ParameterRekeyAuthority] = RekeyRefused },
-			"rekey_authority=refused needs a cosigner"},
+		}, "rekey_authority=refused is not offered"},
 		{"any with only_these and no rekey-to list", func(p map[string]string) { p[ParameterRekeyAuthority] = RekeyOnlyThese },
 			"rekey_authority=only_these needs the addresses"},
-		{"any with a cosigner and only_these", func(p map[string]string) {
-			p[ParameterRekeyAuthority] = RekeyOnlyThese
+		{"any with plus_cosigned and no cosigner", func(p map[string]string) {
+			p[ParameterRekeyAuthority] = RekeyPlusCosigned
 			p[ParameterRekeyTo] = testRekeyTo
-			p[composeddsa.BoundedCosignerPublicKeyParameter] = testCosignerKey
-		}, "a cosigner requires rekey_authority=refused"},
+		}, "rekey_authority=plus_cosigned needs a cosigner"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			params := base()
@@ -144,7 +132,7 @@ func TestLimitsOnlyRequestsFailClosed(t *testing.T) {
 func TestLimitsOnlyFingerprintsAreDistinct(t *testing.T) {
 	provider := newTestProvider(t)
 	earlier := make(map[string]string)
-	for _, definition := range provider.ordered[:64] {
+	for _, definition := range provider.ordered[:112] {
 		earlier[definition.fingerprint] = definition.shape.Descriptor()
 	}
 	for _, shape := range limitsOnlyShapes(t) {

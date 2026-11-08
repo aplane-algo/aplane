@@ -57,6 +57,12 @@ func resolveBoundedPlanItems(snapshot PlannerRuntimeSnapshot, req []signerapi.Si
 		if listErr != nil {
 			return nil, withTransactionIndex(i, listErr)
 		}
+		// Under plus cosigned the list is the owner's standing statement: a listed
+		// target always takes the listed path, with the spending key alone, and
+		// only another target asks the cosigner.
+		if path == boundedPathSpendingKeyRekey && listed[txns[i].RekeyTo.String()] {
+			path = boundedPathListedRekey
+		}
 		// The program takes a listed rekey only to a listed target, so the signer
 		// refuses any other rekey here instead of building a transaction the
 		// chain would reject.

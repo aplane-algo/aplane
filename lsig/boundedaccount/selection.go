@@ -49,8 +49,14 @@ func selectShape(params map[string]string, defs []lsigprovider.ParameterDef) (*s
 		return nil, err
 	}
 	rekey := normalized[ParameterRekeyAuthority]
-	if rekey != RekeySpendingKey && rekey != RekeyOnlyThese && rekey != RekeyRefused {
-		return nil, fmt.Errorf("%s must be %s, %s or %s", ParameterRekeyAuthority, RekeySpendingKey, RekeyOnlyThese, RekeyRefused)
+	switch rekey {
+	case RekeySpendingKey, RekeyOnlyThese, RekeyPlusCosigned:
+	case RekeyRefused:
+		// An account that refuses every rekey has no way out but its transfers.
+		return nil, fmt.Errorf("%s=%s is not offered: use %s=%s with the addresses the account may be rekeyed to in %s",
+			ParameterRekeyAuthority, RekeyRefused, ParameterRekeyAuthority, RekeyOnlyThese, ParameterRekeyTo)
+	default:
+		return nil, fmt.Errorf("%s must be %s, %s or %s", ParameterRekeyAuthority, RekeySpendingKey, RekeyOnlyThese, RekeyPlusCosigned)
 	}
 	rekeyTo, err := canonicalRekeyTo(params, normalized, rekey)
 	if err != nil {
@@ -97,18 +103,16 @@ func selectShape(params map[string]string, defs []lsigprovider.ParameterDef) (*s
 		return nil, fmt.Errorf("%s is empty", composeddsa.BoundedCosignerPublicKeyParameter)
 	}
 	switch {
-	case rekey != RekeyRefused && cosigner != "":
-		// A cosigned account can't take a listed rekey yet, so it refuses rekeys.
-		return nil, fmt.Errorf("a cosigner requires %s=%s", ParameterRekeyAuthority, RekeyRefused)
-	case rekey == RekeyRefused && cosigner == "":
-		return nil, fmt.Errorf("%s=%s needs a cosigner; without one, use %s=%s with the addresses the account may be rekeyed to in %s",
-			ParameterRekeyAuthority, RekeyRefused, ParameterRekeyAuthority, RekeyOnlyThese, ParameterRekeyTo)
-	case rekey == RekeyRefused && refusedSpendError(spend) != nil:
-		return nil, refusedSpendError(spend)
-	case timelock && rekey == RekeySpendingKey:
-		// No host rule gates a rekey, so a spending-key rekey would leave the lock early.
-		return nil, fmt.Errorf("a timelock can't take %s=%s: a spending-key rekey would leave the lock before the unlock round; use %s=%s, or %s with a cosigner",
-			ParameterRekeyAuthority, RekeySpendingKey, ParameterRekeyAuthority, RekeyOnlyThese, RekeyRefused)
+	case rekey == RekeyPlusCosigned && cosigner == "":
+		// Without a cosigner the spending key would rekey anywhere, so the list
+		// would add nothing.
+		return nil, fmt.Errorf("%s=%s needs a cosigner; without one, use %s=%s or %s",
+			ParameterRekeyAuthority, RekeyPlusCosigned, ParameterRekeyAuthority, RekeyOnlyThese, RekeySpendingKey)
+	case timelock && rekey != RekeyOnlyThese:
+		// No host rule gates a rekey, so a spending-key rekey, cosigned or not,
+		// would leave the lock early.
+		return nil, fmt.Errorf("a timelock can't take %s=%s: a spending-key rekey would leave the lock before the unlock round; use %s=%s",
+			ParameterRekeyAuthority, rekey, ParameterRekeyAuthority, RekeyOnlyThese)
 	}
 
 	values := map[string]string{
@@ -143,17 +147,17 @@ func selectShape(params map[string]string, defs []lsigprovider.ParameterDef) (*s
 }
 
 // canonicalRekeyTo returns the rekey-to list in canonical order, or "" for an
-// account without one. Only only_these takes a list, and it must have one.
+// account without one. only_these and plus_cosigned take a list, and must have one.
 func canonicalRekeyTo(params, normalized map[string]string, rekey string) (string, error) {
 	_, present := params[ParameterRekeyTo]
-	if rekey != RekeyOnlyThese {
+	if rekey != RekeyOnlyThese && rekey != RekeyPlusCosigned {
 		if present {
-			return "", fmt.Errorf("%s needs %s=%s", ParameterRekeyTo, ParameterRekeyAuthority, RekeyOnlyThese)
+			return "", fmt.Errorf("%s needs %s=%s or %s", ParameterRekeyTo, ParameterRekeyAuthority, RekeyOnlyThese, RekeyPlusCosigned)
 		}
 		return "", nil
 	}
 	if strings.TrimSpace(normalized[ParameterRekeyTo]) == "" {
-		return "", fmt.Errorf("%s=%s needs the addresses the account may be rekeyed to in %s", ParameterRekeyAuthority, RekeyOnlyThese, ParameterRekeyTo)
+		return "", fmt.Errorf("%s=%s needs the addresses the account may be rekeyed to in %s", ParameterRekeyAuthority, rekey, ParameterRekeyTo)
 	}
 	entries, err := composeddsa.RekeyListEntries(normalized)
 	if err != nil {

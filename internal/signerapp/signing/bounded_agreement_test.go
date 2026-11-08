@@ -70,6 +70,7 @@ const (
 	agSpendLabel       = "__aplane_bounded1_spend"
 	agAcceptLabel      = "__aplane_bounded1_accept"
 	agCosignerLabel    = "__aplane_bounded1_cosigner"
+	agCosignedLabel    = "__aplane_bounded1_cosigned_rekey"
 	agListCombineLabel = "__aplane_bounded1_rekey_list_combine"
 	agListOrderedLabel = "__aplane_bounded1_rekey_list_ordered"
 )
@@ -377,8 +378,44 @@ type agPlan struct {
 	path    boundedPath
 	// required marks, by slot index, the slots the signer fills on this path.
 	required []bool
+	// absent marks, by slot index, the slots that must be empty for the program
+	// to take this path: under plus cosigned, a non-empty list proof commits the
+	// rekey to the listed branch, so the cosigned path needs it empty.
+	absent []bool
+	// alt is a second argument set the program admits for the same transaction,
+	// from the shape rather than the planner: under plus cosigned a listed target
+	// may also take the cosigned path, with the cosigner and no proof. The signer
+	// never sends it, since it needs one more signature.
+	alt *agNeed
 	// assembled is the signer's own argument vector, when admitted.
 	assembled [][]byte
+}
+
+// agNeed is one argument set a path takes: the slots it needs valid, and the
+// slots it needs empty.
+type agNeed struct {
+	required, absent []bool
+}
+
+// satisfiedBy reports whether an argument set meets the need.
+func (n agNeed) satisfiedBy(states []agState) bool {
+	for s, state := range states {
+		if n.required[s] && state != agValid {
+			return false
+		}
+		if n.absent != nil && n.absent[s] && state != agAbsent {
+			return false
+		}
+	}
+	return true
+}
+
+// wants is the plan's verdict on an argument set.
+func (p *agPlan) wants(states []agState) bool {
+	if !p.admit {
+		return false
+	}
+	return agNeed{required: p.required, absent: p.absent}.satisfiedBy(states) || (p.alt != nil && p.alt.satisfiedBy(states))
 }
 
 type agAccount struct {
@@ -425,7 +462,7 @@ func agParams(shape boundedaccount.Shape) map[string]string {
 	if shape.Cosigner {
 		params[composeddsa.BoundedCosignerPublicKeyParameter] = hex.EncodeToString(agCosignerKey)
 	}
-	if shape.Rekey == boundedaccount.RekeyOnlyThese {
+	if shape.HasRekeyList() {
 		params[boundedaccount.ParameterRekeyTo] = agRekeyTo
 	}
 	return params
@@ -540,7 +577,7 @@ func agBuildAccount(provider *boundedaccount.Provider, list *agList, shape bound
 			}
 		}
 	}
-	if (shape.Rekey == boundedaccount.RekeyOnlyThese) != (metadata.RekeyList != nil) {
+	if shape.HasRekeyList() != (metadata.RekeyList != nil) {
 		return nil, fmt.Errorf("%s: rekey %s with rekey-to list metadata %+v", name, shape.Rekey, metadata.RekeyList)
 	}
 	if metadata.RekeyList != nil {
@@ -640,7 +677,9 @@ func (a *agAccount) agRekeyRule(tx *agTxn) string {
 		return "host: not a pure rekey"
 	}
 	switch a.shape.Rekey {
-	case boundedaccount.RekeySpendingKey:
+	case boundedaccount.RekeySpendingKey, boundedaccount.RekeyPlusCosigned:
+		// Plus cosigned takes a listed target with its proof and any target with
+		// the cosigner; the plan says which arguments.
 		return ""
 	case boundedaccount.RekeyOnlyThese:
 		if a.rekeyListed[tx.txn.RekeyTo] {
@@ -734,6 +773,20 @@ func (a *agAccount) plan(tx *agTxn, derivedMemo map[string]agDerived) (agPlan, e
 		return agPlan{}, fmt.Errorf("the signer's assembly failed: %s", assembleErr.Message)
 	}
 	plan.assembled = assembled
+	if a.shape.Rekey == boundedaccount.RekeyPlusCosigned {
+		emptyProof := make([]bool, len(a.slots))
+		emptyProof[a.listProofIndex] = true
+		switch path {
+		case boundedPathSpendingKeyRekey:
+			plan.absent = emptyProof
+		case boundedPathListedRekey:
+			alt := agNeed{required: make([]bool, len(a.slots)), absent: emptyProof}
+			for _, slot := range a.slots {
+				alt.required[slot.Index] = slot.role == agRoleBase || slot.role == agRoleCosigner
+			}
+			plan.alt = &alt
+		}
+	}
 	return plan, nil
 }
 
@@ -932,13 +985,10 @@ func agCompare(t *testing.T, a *agAccount, program *avmsim.Program, corpus []*ag
 		for {
 			states := make([]agState, len(a.slots))
 			args := make([][]byte, len(a.slots))
-			want := plan.admit
 			for s := range a.slots {
 				states[s], args[s] = options[s][choice[s]], values[s][choice[s]]
-				if plan.admit && plan.required[s] && states[s] != agValid {
-					want = false
-				}
 			}
+			want := plan.wants(states)
 			forms := [][][]byte{args}
 			if trimmed := agTrim(args); len(trimmed) != len(args) {
 				forms = append(forms, trimmed)
@@ -1033,18 +1083,25 @@ func TestBoundedPlannerAgreesWithProgram(t *testing.T) {
 						t.Error(r.String(a))
 					}
 				}
-				// Refused has no rekey path, and "only these" no path but a pure
-				// rekey to a listed target with that target's proof: no argument
+				// Refused has no rekey path, "only these" no path but a pure rekey
+				// to a listed target with that target's proof, and plus cosigned
+				// that or a pure rekey with the cosigner and no proof: no argument
 				// set opens another, whatever the planner says.
 				if r.got && !r.tx.txn.RekeyTo.IsZero() {
 					var why string
+					cosignerIndex := slices.IndexFunc(a.slots, func(slot agSlot) bool { return slot.role == agRoleCosigner })
 					switch {
 					case a.shape.Rekey == boundedaccount.RekeyRefused:
 						why = "a shape that refuses rekeys accepts a rekey"
-					case a.shape.Rekey == boundedaccount.RekeyOnlyThese && a.agRekeyRule(r.tx) != "":
+					case a.shape.HasRekeyList() && a.agRekeyRule(r.tx) != "":
 						why = "a list shape accepts a rekey its rule refuses: " + a.agRekeyRule(r.tx)
 					case a.shape.Rekey == boundedaccount.RekeyOnlyThese && r.states[a.listProofIndex] != agValid:
 						why = "a list shape accepts a rekey without the target's proof"
+					case a.shape.Rekey == boundedaccount.RekeyPlusCosigned && r.states[a.listProofIndex] != agValid &&
+						(r.states[a.listProofIndex] != agAbsent || r.states[cosignerIndex] != agValid):
+						why = "plus cosigned accepts a rekey with neither the target's proof nor the cosigner"
+					case a.shape.Rekey == boundedaccount.RekeySpendingKey && a.shape.Cosigner && r.states[cosignerIndex] != agValid:
+						why = "a cosigned spending-key rekey is accepted without the cosigner"
 					}
 					if why != "" {
 						if rekeysAccepted++; rekeysAccepted <= agReportLimit {
@@ -1067,7 +1124,7 @@ func TestBoundedPlannerAgreesWithProgram(t *testing.T) {
 			if admitted == 0 {
 				t.Errorf("%s: the planner admits no corpus transaction", a.name)
 			}
-			if a.shape.Rekey == boundedaccount.RekeyOnlyThese && (!listedAdmitted[agRekeyListedA] || !listedAdmitted[agRekeyListedB]) {
+			if a.shape.HasRekeyList() && (!listedAdmitted[agRekeyListedA] || !listedAdmitted[agRekeyListedB]) {
 				t.Errorf("%s: the planner admits a listed rekey to %d of the 2 listed targets", a.name, len(listedAdmitted))
 			}
 			mu.Lock()
@@ -1219,14 +1276,22 @@ func agCheckRekeyFirst(a *agAccount) error {
 		"CloseRemainderTo": true, "AssetCloseTo": true, "AssetSender": true,
 	}
 	listed := a.metadata.RekeyList != nil
+	// A cosigned spending-key rekey calls the cosigner check; under plus cosigned
+	// only its cosigned branch does, taken when the proof slot is empty.
+	cosignedRekey := a.metadata.Cosigner != nil && slices.Contains(a.metadata.Cosigner.RequiredOn, boundedmeta.PathSpendingRekey)
 	var proofArg, root string
 	if listed {
 		proofArg, root = fmt.Sprint(a.listProofIndex), "0x"+a.metadata.RekeyList.RootHex
 	}
-	readsRekeyTo, readsProof, comparesRoot := false, false, false
+	readsRekeyTo, readsProof, comparesRoot, callsCosigner := false, false, false, false
 	var subroutines []string
+	cosignedBranch := ""
 	for _, l := range body[:len(body)-1] {
 		switch {
+		case cosignedRekey && l.op == "callsub" && len(l.args) == 1 && l.args[0] == agCosignerLabel:
+			callsCosigner = true
+		case listed && cosignedRekey && l.op == "bz" && len(l.args) == 1 && cosignedBranch == "" && readsProof:
+			cosignedBranch = l.args[0]
 		case l.op == "txn" && len(l.args) == 1 && normalForm[l.args[0]]:
 			readsRekeyTo = readsRekeyTo || l.args[0] == "RekeyTo"
 		case l.op == "global" && len(l.args) == 1 && l.args[0] == "ZeroAddress":
@@ -1248,6 +1313,26 @@ func agCheckRekeyFirst(a *agAccount) error {
 	if listed && (!readsProof || !comparesRoot) {
 		return fmt.Errorf("the listed rekey branch does not check its proof (arg %s) against the stored root", proofArg)
 	}
+	switch {
+	case listed && callsCosigner:
+		return fmt.Errorf("the listed rekey branch asks for the cosigner")
+	case cosignedRekey && !listed && !callsCosigner:
+		return fmt.Errorf("the cosigned rekey branch does not call the cosigner check")
+	case cosignedRekey && listed && cosignedBranch == "":
+		return fmt.Errorf("plus cosigned's rekey branch has no cosigned branch on an empty proof")
+	}
+	if cosignedBranch != "" {
+		// The cosigned branch calls the cosigner check and accepts, nothing else.
+		branch, ok := agBody(lines, cosignedBranch)
+		if !ok || len(branch) != 2 || branch[0].String() != "callsub "+agCosignerLabel || branch[1].String() != last.String() {
+			return fmt.Errorf("plus cosigned's cosigned branch %s is %q, want the cosigner check and %q", cosignedBranch, branch, last)
+		}
+	}
+	if callsCosigner || cosignedBranch != "" {
+		if err := agCheckCosignerSubroutine(a, lines); err != nil {
+			return err
+		}
+	}
 	for _, label := range subroutines {
 		if err := agCheckListSubroutine(lines, label); err != nil {
 			return err
@@ -1261,6 +1346,44 @@ func agCheckRekeyFirst(a *agAccount) error {
 		return fmt.Errorf("the rekey branch ends at %s, which does not accept", last.args[0])
 	}
 	return nil
+}
+
+// agCheckCosignerSubroutine checks that the cosigner check a rekey calls reads only
+// the cosigner's slot and the transaction ID, verifies the cosigner's key, and
+// returns: straight-line code with no host rule in it.
+func agCheckCosignerSubroutine(a *agAccount, lines []agLine) error {
+	start := slices.IndexFunc(lines, func(l agLine) bool { return l.label == agCosignerLabel })
+	if start < 0 {
+		return fmt.Errorf("the rekey calls %s, which is not in the program", agCosignerLabel)
+	}
+	cosignerArg := ""
+	for _, slot := range a.slots {
+		if slot.role == agRoleCosigner {
+			cosignerArg = fmt.Sprint(slot.Index)
+		}
+	}
+	key := "0x" + hex.EncodeToString(a.cosignerKey)
+	verifies := false
+	for _, l := range lines[start+1:] {
+		switch {
+		case l.label != "":
+			return fmt.Errorf("the cosigner check runs into label %s", l.label)
+		case l.op == "retsub":
+			if !verifies {
+				return fmt.Errorf("the cosigner check does not verify the cosigner's key")
+			}
+			return nil
+		case l.op == "arg" && len(l.args) == 1 && l.args[0] == cosignerArg:
+		case l.op == "txn" && len(l.args) == 1 && l.args[0] == "TxID":
+		case l.op == "pushbytes" && len(l.args) == 1:
+			verifies = verifies || l.args[0] == key
+		case l.op == "falcon_verify" || l.op == "len" || l.op == "pushint" || l.op == ">" || l.op == "<=" ||
+			l.op == "assert" || l.op == "concat" || l.op == "sha512_256":
+		default:
+			return fmt.Errorf("the cosigner check runs %q, which reads more than the cosigner's signature", l)
+		}
+	}
+	return fmt.Errorf("the cosigner check does not return")
 }
 
 // agCheckListSubroutine checks that a subroutine the listed rekey calls only folds
@@ -1319,8 +1442,10 @@ func TestBoundedRekeyFirstCheckRefusesOtherLayouts(t *testing.T) {
 		t.Fatalf("no Merkle shape with rekey %s and cosigner %v", rekey, cosigner)
 		return nil
 	}
-	spending, refused := find(boundedaccount.RekeySpendingKey, false), find(boundedaccount.RekeyRefused, true)
+	spending, cosignedListed := find(boundedaccount.RekeySpendingKey, false), find(boundedaccount.RekeyOnlyThese, true)
 	listed := find(boundedaccount.RekeyOnlyThese, false)
+	cosigned, plus := find(boundedaccount.RekeySpendingKey, true), find(boundedaccount.RekeyPlusCosigned, true)
+	cosignerArg := fmt.Sprint(len(cosigned.slots) - 1)
 	// Each listed-rekey edit below adds exactly one instruction the check must
 	// refuse; the rest are ones a listed rekey may run.
 	rekeyEntry := func(code string) func(string) string {
@@ -1339,11 +1464,11 @@ func TestBoundedRekeyFirstCheckRefusesOtherLayouts(t *testing.T) {
 		ok     bool
 	}{
 		{"a salt push and pop first", spending, func(teal string) string { return prepend(teal, "pushbytes 0x00\npop\n") }, true},
-		{"an argument read before the spending check", refused, func(teal string) string { return prepend(teal, "arg 1\npop\n") }, false},
+		{"an argument read before the spending check", cosignedListed, func(teal string) string { return prepend(teal, "arg 1\npop\n") }, false},
 		{"the fee gate after the dispatch", spending, func(teal string) string {
 			return agReplace(t, agReplace(t, teal, "", fee, ""), "", dispatch, dispatch+fee)
 		}, false},
-		{"a host rule before the dispatch", refused, func(teal string) string {
+		{"a host rule before the dispatch", cosignedListed, func(teal string) string {
 			return agReplace(t, teal, "", dispatch, "txn Receiver\npop\n"+dispatch)
 		}, false},
 		{"the rekey branch reads an argument", spending, func(teal string) string {
@@ -1352,8 +1477,27 @@ func TestBoundedRekeyFirstCheckRefusesOtherLayouts(t *testing.T) {
 		{"the rekey branch runs a host rule", spending, func(teal string) string {
 			return agReplace(t, teal, "", agRekeyLabel+":\n", agRekeyLabel+":\ntxn FirstValid\npushint 1\n>=\nassert\n")
 		}, false},
-		{"the refused rekey branch does more than err", refused, func(teal string) string {
-			return agReplace(t, teal, agRekeyLabel, "err\n", "txn Fee\npop\nerr\n")
+		{"a cosigned listed rekey asks for the cosigner", cosignedListed, func(teal string) string {
+			return agReplace(t, teal, agRekeyLabel, "b "+agAcceptLabel+"\n", "callsub "+agCosignerLabel+"\nb "+agAcceptLabel+"\n")
+		}, false},
+		{"the cosigned rekey skips the cosigner", cosigned, func(teal string) string {
+			return agReplace(t, teal, agRekeyLabel, "callsub "+agCosignerLabel+"\n", "")
+		}, false},
+		{"the cosigned rekey reads another argument", cosigned, rekeyEntry("arg " + cosignerArg + "\npop\n"), false},
+		{"the cosigner check runs a host rule", cosigned, func(teal string) string {
+			return agReplace(t, teal, "", agCosignerLabel+":\n", agCosignerLabel+":\ntxn Receiver\npop\n")
+		}, false},
+		{"the cosigner check reads the spending signature", cosigned, func(teal string) string {
+			return agReplace(t, teal, "", agCosignerLabel+":\n", agCosignerLabel+":\narg 0\npop\n")
+		}, false},
+		{"plus cosigned's listed branch asks for the cosigner", plus, func(teal string) string {
+			return agReplace(t, teal, agRekeyLabel, "b "+agAcceptLabel+"\n", "callsub "+agCosignerLabel+"\nb "+agAcceptLabel+"\n")
+		}, false},
+		{"plus cosigned's cosigned branch skips the cosigner", plus, func(teal string) string {
+			return agReplace(t, teal, agCosignedLabel, "callsub "+agCosignerLabel+"\n", "")
+		}, false},
+		{"plus cosigned has no cosigned branch", plus, func(teal string) string {
+			return agReplace(t, teal, agRekeyLabel, "bz "+agCosignedLabel+"\n", "pop\n")
 		}, false},
 		{"a listed shape's salt push and pop first", listed, func(teal string) string { return prepend(teal, "pushbytes 0x00\npop\n") }, true},
 		{"the listed rekey reads another argument", listed, rekeyEntry("arg 0\nlen\npushint 0\n!=\nassert\n"), false},
@@ -1433,7 +1577,7 @@ type agMutant struct {
 	rejects bool
 }
 
-func agHasRekeyList(a *agAccount) bool { return a.shape.Rekey == boundedaccount.RekeyOnlyThese }
+func agHasRekeyList(a *agAccount) bool { return a.shape.HasRekeyList() }
 
 // agListBody replaces the listed rekey's list check, from its proof's length check
 // through its branch to accept, leaving the pure-rekey normal form before it.
@@ -1452,6 +1596,21 @@ func agListBody(t *testing.T, a *agAccount, replacement string) string {
 	}
 	to += from + len(accept)
 	return a.teal[:start] + section[:from] + replacement + section[to:] + a.teal[end:]
+}
+
+// agListCheck is the listed rekey's check after its length assertion, up to but not
+// including its branch to accept.
+func agListCheck(t *testing.T, a *agAccount) string {
+	t.Helper()
+	start, end := agSection(t, a.teal, agRekeyLabel)
+	section := a.teal[start:end]
+	length := fmt.Sprintf("arg %d\nlen\npushint 160\n==\nassert\n", a.listProofIndex)
+	from := strings.Index(section, length)
+	to := strings.Index(section, "b "+agAcceptLabel+"\n")
+	if from < 0 || to < from {
+		t.Fatalf("mutant marker: the listed rekey's check not found in %s", agRekeyLabel)
+	}
+	return section[from+len(length) : to]
 }
 
 func agHasEffect(a *agAccount, effect txeffects.SpendEffect) bool {
@@ -1492,10 +1651,8 @@ func agListReachable(a *agAccount) bool {
 // carries each non-pure rekey to a listed target with that target's proof.
 func agRekeyNormalFormMutant(field, assertion string) agMutant {
 	return agMutant{
-		name: "the rekey branch drops its " + field + " check",
-		applies: func(a *agAccount) bool {
-			return a.shape.Rekey == boundedaccount.RekeySpendingKey || a.shape.Rekey == boundedaccount.RekeyOnlyThese
-		},
+		name:    "the rekey branch drops its " + field + " check",
+		applies: func(*agAccount) bool { return true },
 		mutate: func(t *testing.T, a *agAccount) string {
 			return agReplace(t, a.teal, agRekeyLabel, assertion, "")
 		},
@@ -1504,20 +1661,38 @@ func agRekeyNormalFormMutant(field, assertion string) agMutant {
 
 var agMutants = []agMutant{
 	{
-		name:    "the refused rekey branch accepts",
-		applies: func(a *agAccount) bool { return a.shape.Rekey == boundedaccount.RekeyRefused },
+		name:    "the cosigned rekey skips the cosigner",
+		applies: func(a *agAccount) bool { return a.shape.Rekey == boundedaccount.RekeySpendingKey && a.shape.Cosigner },
 		mutate: func(t *testing.T, a *agAccount) string {
-			return agReplace(t, a.teal, agRekeyLabel, "err\n", "b "+agAcceptLabel+"\n")
+			return agReplace(t, a.teal, agRekeyLabel, "callsub "+agCosignerLabel+"\n", "")
 		},
 	},
 	{
-		// On a spending-key shape this also sends pure rekeys to the spend path,
-		// which refuses them unless pay is a spend effect, so it would not be a
-		// pure weakening there; the normal-form mutants cover those shapes.
-		name:    "a refused shape's rekey falls through to the spend path",
-		applies: func(a *agAccount) bool { return a.shape.Rekey == boundedaccount.RekeyRefused },
+		name:    "plus cosigned's empty proof skips the cosigner",
+		applies: func(a *agAccount) bool { return a.shape.Rekey == boundedaccount.RekeyPlusCosigned },
 		mutate: func(t *testing.T, a *agAccount) string {
-			return agReplace(t, a.teal, "", "txn RekeyTo\nglobal ZeroAddress\n!=\nbnz "+agRekeyLabel+"\n", "")
+			return agReplace(t, a.teal, agCosignedLabel, "callsub "+agCosignerLabel+"\n", "")
+		},
+	},
+	{
+		// A proof that fails its root now falls through to the cosigner, so a
+		// garbage proof beside the cosigner's signature passes.
+		name:    "plus cosigned's failed proof falls through to the cosigner",
+		applies: func(a *agAccount) bool { return a.shape.Rekey == boundedaccount.RekeyPlusCosigned },
+		mutate: func(t *testing.T, a *agAccount) string {
+			return agReplace(t, a.teal, agRekeyLabel, "pushbytes 0x"+a.metadata.RekeyList.RootHex+"\n==\nassert\n",
+				"pushbytes 0x"+a.metadata.RekeyList.RootHex+"\n==\nbz "+agCosignedLabel+"\n")
+		},
+	},
+	{
+		// The list is outside cosigner policy: a listed rekey that also needs the
+		// cosigner refuses what the owner listed.
+		name:    "the listed rekey asks for the cosigner",
+		applies: func(a *agAccount) bool { return a.shape.HasRekeyList() && a.shape.Cosigner },
+		rejects: true,
+		mutate: func(t *testing.T, a *agAccount) string {
+			return agListBody(t, a, fmt.Sprintf("arg %d\nlen\npushint 160\n==\nassert\n", a.listProofIndex)+
+				agListCheck(t, a)+"callsub "+agCosignerLabel+"\nb "+agAcceptLabel+"\n")
 		},
 	},
 	{

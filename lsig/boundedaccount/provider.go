@@ -99,7 +99,7 @@ func newProvider(definition Definition) (*Provider, error) {
 	for _, shape := range definition.Shapes {
 		// shapeSpec passes the rekey value straight to the template spec, so an
 		// unknown value fails here, before anything is compiled.
-		if shape.Rekey != RekeyOnlyThese {
+		if shape.Rekey != RekeyOnlyThese && shape.Rekey != RekeyPlusCosigned {
 			if err := boundedmeta.ValidateRekeySetting(boundedmeta.RekeySetting(shape.Rekey)); err != nil {
 				return nil, fmt.Errorf("bounded definition %s.%s: shape %s has unknown rekey authority: %w", definition.Publisher, definition.Family, shape.Descriptor(), err)
 			}
@@ -137,12 +137,13 @@ func shapeSpec(definition Definition, shape Shape) *composeddsa.TemplateSpec {
 		MaxFee:       &maxFee,
 		Layer3:       &generictemplate.TransactionLayer3Spec{Policy: shape.Policy()},
 	}
-	// A shape that refuses rekeys has no rekey path in its program at all.
 	bounded.Rekey = shape.Rekey
 	if shape.Cosigner {
+		// The cosigner signs every spend, and every rekey the spending key
+		// declares; a listed rekey never asks it.
 		bounded.Cosigner = &generictemplate.BoundedCosignerSpec{
 			Contract:   boundedmeta.CosignerContractV1,
-			RequiredOn: []string{boundedmeta.PathSpend},
+			RequiredOn: boundedmeta.CosignerRequiredOn(shape.rekeySetting()),
 		}
 	}
 	var parameters []generictemplate.ParameterSpec
@@ -239,15 +240,15 @@ func creationParameters() []lsigprovider.ParameterDef {
 		{
 			Name:        ParameterRekeyAuthority,
 			Label:       "Rekey Authority",
-			Description: "How the account can be rekeyed: by the spending key to any address, by the spending key only to an address on its rekey-to list (only_these), or not at all (refused, with a cosigner only).",
+			Description: "How the account can be rekeyed: by the spending key to any address, with the cosigner too on a cosigned account (spending_key); by the spending key alone only to an address on its rekey-to list (only_these); or, on a cosigned account, by the spending key alone to a listed address and with the cosigner to any other (plus_cosigned).",
 			Type:        "string",
 			Required:    true,
-			Options:     []string{RekeySpendingKey, RekeyOnlyThese, RekeyRefused},
+			Options:     []string{RekeySpendingKey, RekeyOnlyThese, RekeyPlusCosigned},
 		},
 		{
 			Name:        ParameterRekeyTo,
 			Label:       "Rekey-To Addresses",
-			Description: "With only_these: the 1 to 16 addresses the account may be rekeyed to. Each can take the account over.",
+			Description: "With only_these or plus_cosigned: the 1 to 16 addresses the spending key alone may rekey the account to. Each can take the account over.",
 			Type:        "address[]",
 			MaxItems:    rekeylist.MaxEntries,
 		},
@@ -351,12 +352,14 @@ func shapeFromMetadata(metadata *boundedmeta.Metadata) (Shape, error) {
 		return Shape{}, fmt.Errorf("stored account: %w", err)
 	}
 	if metadata.RekeyList != nil {
-		// "Only these" is refused plus the list; a list beside any other rekey
-		// setting is not a contract this type offers.
-		if metadata.Rekey != boundedmeta.RekeyRefused {
-			return Shape{}, fmt.Errorf("stored account has a rekey-to list beside rekey setting %q", metadata.Rekey)
+		// "Only these" is refused plus the list, "plus cosigned" a spending-key
+		// rekey plus the list on a cosigned account.
+		switch metadata.Rekey {
+		case boundedmeta.RekeyRefused:
+			shape.Rekey = RekeyOnlyThese
+		case boundedmeta.RekeySpendingKey:
+			shape.Rekey = RekeyPlusCosigned
 		}
-		shape.Rekey = RekeyOnlyThese
 	}
 	switch metadata.Layer3Policy {
 	case composeddsa.Layer3PolicyFixedAllowlist:
@@ -545,18 +548,19 @@ func checkResources(metadata *boundedmeta.Metadata, opcodes lsigresource.OpcodeP
 		name   string
 		opcode uint64
 	}
-	// Every account has the spend path, and a spending-key rekey adds its own. A
-	// setting this type does not offer has no path to solve, so it fails here.
+	// Every account has the spend path; a spending-key rekey and a rekey-to list
+	// each add their own, and plus cosigned has both. A setting this type does
+	// not offer has no path to solve, so it fails here.
 	paths := []path{{boundedmeta.PathSpend, opcodes.Spend}}
 	switch metadata.Rekey {
 	case boundedmeta.RekeyRefused:
-		if metadata.RekeyList != nil {
-			paths = append(paths, path{boundedmeta.PathListedRekey, opcodes.ListedRekey})
-		}
 	case boundedmeta.RekeySpendingKey:
 		paths = append(paths, path{boundedmeta.PathSpendingRekey, opcodes.SpendingRekey})
 	default:
 		return fmt.Errorf("no resource path for rekey setting %q", metadata.Rekey)
+	}
+	if metadata.RekeyList != nil {
+		paths = append(paths, path{boundedmeta.PathListedRekey, opcodes.ListedRekey})
 	}
 	for _, path := range paths {
 		plan, err := lsigresource.Solve(consensus, lsigresource.PlanInput{

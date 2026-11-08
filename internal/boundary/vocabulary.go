@@ -31,7 +31,7 @@ const (
 	// kinds, with no recipient list and no timelock.
 	ParameterRecipientScope = "recipient_scope"
 	// ParameterRekeyTo is a rekey-to list's addresses, required with
-	// rekey_authority=only_these and refused otherwise.
+	// rekey_authority=only_these or plus_cosigned and refused otherwise.
 	ParameterRekeyTo = boundedmeta.RekeyListEntriesParameter
 	// ParameterCosigner is the signer-side reference selector. It is resolved to
 	// a public key before an instance is selected.
@@ -44,11 +44,15 @@ const (
 	RecipientScopeListed = "listed"
 	RecipientScopeAny    = "any"
 
-	// RekeySpendingKey lets the spending key rekey the account. RekeyOnlyThese
-	// lets it rekey the account only to an address on its rekey-to list.
-	// RekeyRefused gives the account no rekey path at all; the general type offers
-	// it only with a cosigner, until a cosigned account can take a listed rekey.
-	RekeySpendingKey = string(boundedmeta.RekeySpendingKey)
-	RekeyOnlyThese   = boundedmeta.RekeyOnlyThese
-	RekeyRefused     = string(boundedmeta.RekeyRefused)
+	// RekeySpendingKey lets the spending key rekey the account, with the cosigner
+	// on a cosigned account. RekeyOnlyThese lets the spending key alone rekey it
+	// only to an address on its rekey-to list. RekeyPlusCosigned, on a cosigned
+	// account, lets the spending key alone rekey it to a listed address and, with
+	// the cosigner, to any other. RekeyRefused gives an account no rekey path at
+	// all; the general type never offers it, since such an account has no way out
+	// but its transfers.
+	RekeySpendingKey  = string(boundedmeta.RekeySpendingKey)
+	RekeyOnlyThese    = boundedmeta.RekeyOnlyThese
+	RekeyPlusCosigned = boundedmeta.RekeyPlusCosigned
+	RekeyRefused      = string(boundedmeta.RekeyRefused)
 )
