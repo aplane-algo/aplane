@@ -282,3 +282,46 @@ parameters:
 		t.Fatalf("GenerateTEAL() error = %v", err)
 	}
 }
+
+// The program commits only to the list's salted root, so no author TEAL may read
+// the entries: not a strict variable, which would compile their unsalted Merkle
+// root, nor a generated template's substitution or range.
+func TestAuthorTEALCannotReadTheRekeyToList(t *testing.T) {
+	// A template may declare the injected parameter itself, so it can name it.
+	declared := strings.Replace(onlyTheseTemplateYAML, "template_variables: []\n", `parameters:
+  - name: rekey_to
+    type: address[]
+    required: true
+    min_items: 1
+    max_items: 16
+template_variables: []
+`, 1)
+	strictVariable := strings.Replace(declared, "template_variables: []\n", `template_variables:
+  - name: listed
+    source: parameter
+    parameter: rekey_to
+    type: address[]
+    constant: byte
+`, 1)
+	strictVariable = strings.Replace(strictVariable, "  pushint 1\n  assert\n", "  $listed\n  pop\n  pushint 1\n  assert\n", 1)
+	generated := strings.Replace(declared, "template_mode: strict", "template_mode: generated", 1)
+	generated = strings.Replace(generated, "template_variables: []\n", "", 1)
+	substituted := strings.Replace(generated, "  pushint 1\n  assert\n", "  txn Receiver\n  addr @rekey_to\n  ==\n  assert\n", 1)
+	ranged := strings.Replace(generated, "  pushint 1\n  assert\n", "  {{range @rekey_to}}\n  txn Receiver\n  addr {{.}}\n  ==\n  assert\n  {{end}}\n", 1)
+	params := map[string]string{composeddsa.BoundedRekeyToParameter: rekeyListEntriesParam, boundedmeta.RekeyListRootParameter: strings.Repeat("00", 32)}
+	for name, yaml := range map[string]string{"strict variable": strictVariable, "substitution": substituted, "range": ranged} {
+		t.Run(name, func(t *testing.T) {
+			composer, err := noneComposer(yaml)
+			if err == nil {
+				var teal string
+				teal, err = composer.GenerateTEAL(rekeyListSpendingKey, params)
+				if err == nil && (strings.Contains(teal, rekeyListListedA.String()) || strings.Contains(teal, rekeyListListedB.String())) {
+					t.Fatal("the program carries a listed address")
+				}
+			}
+			if err == nil || !strings.Contains(err.Error(), "private rekey-to list") {
+				t.Fatalf("error = %v, want a refusal naming the private list", err)
+			}
+		})
+	}
+}

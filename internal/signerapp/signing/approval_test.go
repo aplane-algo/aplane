@@ -6,12 +6,10 @@ package signing
 import (
 	"bytes"
 	"context"
-	"encoding/hex"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/appspec"
@@ -430,9 +428,6 @@ func TestRequestSingleTxnApprovalPassesWarningViolationsAndCanApprove(t *testing
 		HasClient:                     func() bool { return true },
 		GenerateTxnDescriptionFromTxn: func(txn types.Transaction) string { return "txn" },
 		KnownAddresses:                func() map[string]bool { return nil },
-		EncodeTxnToHex: func(txn types.Transaction) string {
-			return hex.EncodeToString(msgpack.Encode(txn))
-		},
 		RequestSigningApproval: func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
 			gotViolations = violations
 			return true, nil
@@ -476,7 +471,6 @@ func TestRequestSingleTxnApprovalUsesConfiguredWaitAndAuditsTimeout(t *testing.T
 		HasClient:                     func() bool { return true },
 		GenerateTxnDescriptionFromTxn: func(txn types.Transaction) string { return "txn" },
 		KnownAddresses:                func() map[string]bool { return nil },
-		EncodeTxnToHex:                func(txn types.Transaction) string { return hex.EncodeToString(msgpack.Encode(txn)) },
 		RequestSigningApprovalResponse: func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (signerapproval.SignResponse, error) {
 			gotTimeout = timeout
 			return signerapproval.SignResponse{}, signerapproval.ErrApprovalTimeout
@@ -518,7 +512,6 @@ func TestRequestSingleTxnApprovalAuditsForcedReviewRuleOnReject(t *testing.T) {
 		HasClient:                     func() bool { return true },
 		GenerateTxnDescriptionFromTxn: func(txn types.Transaction) string { return "txn" },
 		KnownAddresses:                func() map[string]bool { return nil },
-		EncodeTxnToHex:                func(txn types.Transaction) string { return hex.EncodeToString(msgpack.Encode(txn)) },
 		RequestSigningApprovalResponse: func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (signerapproval.SignResponse, error) {
 			return signerapproval.SignResponse{ID: requestID, Approved: false}, nil
 		},
@@ -539,6 +532,7 @@ func TestRequestSingleTxnApprovalAuditsForcedReviewRuleOnReject(t *testing.T) {
 		0,
 		0,
 		policy.ReviewAlgoPaymentExceededRuleID,
+		nil,
 	)
 	if err == nil {
 		t.Fatal("requestSingleTxnApprovalWithContext() error = nil, want operator rejection")
@@ -609,7 +603,6 @@ func TestRequestSingleTxnApprovalUsesSuppliedRequestID(t *testing.T) {
 		HasClient:                     func() bool { return true },
 		GenerateTxnDescriptionFromTxn: func(txn types.Transaction) string { return "txn" },
 		KnownAddresses:                func() map[string]bool { return nil },
-		EncodeTxnToHex:                func(txn types.Transaction) string { return hex.EncodeToString(msgpack.Encode(txn)) },
 		RequestSigningApproval: func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
 			gotRequestID = requestID
 			return true, nil
@@ -632,6 +625,7 @@ func TestRequestSingleTxnApprovalUsesSuppliedRequestID(t *testing.T) {
 		0,
 		0,
 		"",
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("requestSingleTxnApprovalWithContext() error = %v, want nil", err)

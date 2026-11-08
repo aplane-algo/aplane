@@ -197,6 +197,13 @@ func (metadata *Metadata) Validate() error {
 	if err := validateCosignerMetadata(metadata.Cosigner); err != nil {
 		return err
 	}
+	// The signer compares the list it rebuilds with this root before every
+	// listed rekey, so a stored list without one is corrupt.
+	if metadata.RekeyList != nil {
+		if _, err := DecodeCanonicalHex("rekey-to list root", metadata.RekeyList.RootHex, 32, 32); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -494,9 +501,8 @@ func (metadata *Metadata) ValidateRekeyList() error {
 		return fmt.Errorf("a rekey-to list needs exactly one rekey-list proof argument, got %d", listProofs)
 	}
 	if list.RootHex != "" {
-		root, err := hex.DecodeString(list.RootHex)
-		if err != nil || len(root) != 32 {
-			return fmt.Errorf("rekey-to list root must be 32 bytes of hex")
+		if _, err := DecodeCanonicalHex("rekey-to list root", list.RootHex, 32, 32); err != nil {
+			return err
 		}
 	}
 	return nil

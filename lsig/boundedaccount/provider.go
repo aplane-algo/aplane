@@ -6,6 +6,7 @@ package boundedaccount
 import (
 	"context"
 	"fmt"
+	"maps"
 	"strings"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
@@ -478,10 +479,7 @@ func (p *Provider) PrepareRekeyList(privateKey []byte, params map[string]string)
 	if !ok {
 		return params, nil
 	}
-	out := make(map[string]string, len(params)+1)
-	for name, value := range params {
-		out[name] = value
-	}
+	out := maps.Clone(params)
 	out[boundedmeta.RekeyListRootParameter] = root
 	return out, nil
 }
@@ -490,24 +488,13 @@ func (p *Provider) PrepareRekeyList(privateKey []byte, params map[string]string)
 // the composer's values, with the root key generation added when there is one.
 // The root is not a creation parameter, so the shape is resolved without it.
 func (p *Provider) resolveGenerated(params map[string]string) (*shapeDefinition, map[string]string, error) {
-	root, hasRoot := params[boundedmeta.RekeyListRootParameter]
-	request := params
-	if hasRoot {
-		request = make(map[string]string, len(params))
-		for name, value := range params {
-			if name != boundedmeta.RekeyListRootParameter {
-				request[name] = value
-			}
-		}
-	}
+	request, generated := composeddsa.SplitGeneratedParams(params)
 	definition, values, err := p.resolve(request)
 	if err != nil {
 		return nil, nil, err
 	}
 	composer := composerValues(definition, values)
-	if hasRoot {
-		composer[boundedmeta.RekeyListRootParameter] = root
-	}
+	maps.Copy(composer, generated)
 	return definition, composer, nil
 }
 

@@ -68,6 +68,8 @@ var exemptFunctions = map[string]string{
 	"ValidateKeyPair":        "validates caller-owned key material without retaining it",
 	"validateExactPayload":   "validates caller-owned payload material without retaining it",
 	"validateRegisteredPair": "delegates validation of caller-owned key material",
+	"PrepareRekeyList":       "reads caller-owned key material to derive a rekey-to list's root; rekeylist zeroes the seed and list",
+	"RekeyListFor":           "returns a rekey-to list the caller zeroes; the key stays caller-owned",
 }
 
 type finding struct {

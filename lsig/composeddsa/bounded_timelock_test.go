@@ -259,7 +259,7 @@ func TestTimelockPolicySpendSubsets(t *testing.T) {
 					t.Fatalf("refused-rekey GenerateTEAL() error = %v", err)
 				}
 				spendingKey := strings.Replace(test.yaml(timelockSpendingKeyRekeyYAML, ""), "spend_effects: [pay, axfer, asset_opt_in]", effects, 1)
-				if err := timelockGenerateError(spendingKey, test.params(nil)); err == nil || !strings.Contains(err.Error(), "requires rekey: refused") {
+				if err := timelockGenerateError(spendingKey, test.params(nil)); err == nil || !strings.Contains(err.Error(), "can't take rekey: spending_key") {
 					t.Fatalf("spending-key rekey error = %v, want the refused-rekey requirement", err)
 				}
 			})
@@ -332,7 +332,7 @@ func TestTimelockPolicyRejections(t *testing.T) {
 			name:   test.policy + " refuses a spending-key rekey",
 			yaml:   test.yaml(timelockSpendingKeyRekeyYAML, ""),
 			params: test.params(nil),
-			want:   fmt.Sprintf("policy %q requires rekey: refused: a spending-key rekey would leave the lock before the unlock round", test.policy),
+			want:   fmt.Sprintf("policy %q can't take rekey: spending_key: a spending-key rekey would leave the lock before the unlock round; use rekey: only_these, or refused", test.policy),
 		})
 	}
 	for _, test := range cases {

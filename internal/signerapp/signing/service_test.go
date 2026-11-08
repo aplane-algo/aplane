@@ -763,9 +763,6 @@ func TestSignGroupWithPlanAlwaysReviewWarningsPromptsWithoutUserAutoApprove(t *t
 			KnownAddresses: func() map[string]bool {
 				return nil
 			},
-			EncodeTxnToHex: func(txn types.Transaction) string {
-				return hex.EncodeToString(msgpack.Encode(txn))
-			},
 			RequestSigningApproval: func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
 				approvalCalled = true
 				gotViolations = violations
@@ -829,9 +826,6 @@ func TestSignGroupWithPlanDoesNotReevaluatePolicyAfterApproval(t *testing.T) {
 			GenerateTxnDescriptionFromTxn: func(txn types.Transaction) string { return "txn" },
 			HasClient:                     func() bool { return true },
 			KnownAddresses:                func() map[string]bool { return nil },
-			EncodeTxnToHex: func(txn types.Transaction) string {
-				return hex.EncodeToString(msgpack.Encode(txn))
-			},
 			RequestSigningApproval: func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
 				approvalCalled = true
 				service.PolicyFor = fixedPolicy(&policy.Config{TransactionTypes: policytest.AllowAllTypes(), Rekeys: policy.RekeysRejectForeign})
@@ -911,9 +905,6 @@ func TestSignGroupWithPlanTransferRoutingReviewPromptsWithoutUserAutoApprove(t *
 			GenerateTxnDescriptionFromTxn: func(txn types.Transaction) string { return "txn" },
 			HasClient:                     func() bool { return true },
 			KnownAddresses:                func() map[string]bool { return nil },
-			EncodeTxnToHex: func(txn types.Transaction) string {
-				return hex.EncodeToString(msgpack.Encode(txn))
-			},
 			RequestSigningApproval: func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
 				approvalCalled = true
 				gotViolations = violations
@@ -1554,7 +1545,6 @@ func TestSignGroupWithPlanUsesSingleTxnApprovalForServerAddedDummies(t *testing.
 			HasClient:                     func() bool { return true },
 			KnownAddresses:                func() map[string]bool { return nil },
 			GenerateTxnDescriptionFromTxn: func(txn types.Transaction) string { return "txn" },
-			EncodeTxnToHex:                func(txn types.Transaction) string { return "deadbeef" },
 			RequestSigningApproval: func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
 				gotDescription = description
 				gotFirstValid = firstValid

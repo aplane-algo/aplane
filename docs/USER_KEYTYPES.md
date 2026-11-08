@@ -272,7 +272,8 @@ every rekey-to address and flag each one this signer holds, and whether that key
 Ed25519.
 After generating, press `s` to save a receipt beside where apadmin was started. A receipt
 documents the account, including its rekey-to addresses. It cannot restore one: use
-encrypted backups for that.
+encrypted backups for that. The chain never reveals a rekey-to list, so keep the receipt
+of an account with one as private as the list.
 
 ### Boundary files
 

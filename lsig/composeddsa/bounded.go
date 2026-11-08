@@ -585,7 +585,13 @@ func validateBoundedReservedNames(profile *BoundedAuthorizationProfile, params [
 			return fmt.Errorf("runtime arg name %q uses reserved bounded_ prefix", arg.Name)
 		}
 	}
+	// The rekey-to list is private: the program commits only to its root, so no
+	// author TEAL may read the entries.
+	listPrivate := func(name string) bool { return profile.RekeyList != nil && name == BoundedRekeyToParameter }
 	for _, variable := range templateVars {
+		if listPrivate(variable.Name) || listPrivate(variable.Parameter) {
+			return fmt.Errorf("template variable %q would compile the private rekey-to list into the program", variable.Name)
+		}
 		if isBoundedCosignerReservedName(variable.Name) || isBoundedCosignerReservedName(variable.Parameter) {
 			return fmt.Errorf("template variable %q uses reserved cosigner namespace", variable.Name)
 		}
@@ -606,6 +612,9 @@ func validateBoundedReservedNames(profile *BoundedAuthorizationProfile, params [
 			}
 			if strings.HasPrefix(strings.TrimPrefix(token, "@"), boundedReservedNamePrefix) {
 				return fmt.Errorf("author TEAL uses reserved bounded identifier %q", token)
+			}
+			if listPrivate(strings.Trim(token, "{}.@")) {
+				return fmt.Errorf("author TEAL reads %q, which would compile the private rekey-to list into the program", token)
 			}
 		}
 	}

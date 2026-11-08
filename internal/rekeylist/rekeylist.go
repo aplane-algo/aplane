@@ -57,6 +57,9 @@ type List struct {
 // SeedFromSpendingKey derives an account's list seed from its spending private
 // key, so the seed is in every backup the key is in and is never stored or sent
 // on its own. The list's privacy then rests on the spending key staying secret.
+// The key's bytes, as the key file stores them, are part of the list contract: a
+// payload format that re-encodes the private key must keep handing over the same
+// bytes, or every existing account's root stops matching.
 func SeedFromSpendingKey(privateKey []byte) ([SeedSize]byte, error) {
 	var seed [SeedSize]byte
 	if len(privateKey) == 0 {
@@ -64,7 +67,7 @@ func SeedFromSpendingKey(privateKey []byte) ([SeedSize]byte, error) {
 	}
 	mac := hmac.New(sha256.New, privateKey)
 	mac.Write([]byte(seedLabel))
-	copy(seed[:], mac.Sum(nil))
+	mac.Sum(seed[:0])
 	return seed, nil
 }
 
@@ -184,6 +187,7 @@ func (l *List) Proof(address types.Address) ([]byte, bool) {
 	salt := l.salt(i)
 	proof := make([]byte, 0, ProofSize)
 	proof = append(proof, salt[:]...)
+	clear(salt[:])
 	for level := 0; level < Depth; level++ {
 		sibling := l.levels[level][i^1]
 		proof = append(proof, sibling[:]...)
@@ -242,7 +246,7 @@ func (l *List) derive(label string, i int) [sha256.Size]byte {
 	mac.Write([]byte(label))
 	mac.Write(binary.BigEndian.AppendUint32(nil, uint32(i)))
 	var out [sha256.Size]byte
-	copy(out[:], mac.Sum(nil))
+	mac.Sum(out[:0])
 	return out
 }
 
@@ -251,7 +255,9 @@ func leaf(salt [sha256.Size]byte, address types.Address) [sha256.Size]byte {
 	data = append(data, LeafPrefix)
 	data = append(data, salt[:]...)
 	data = append(data, address[:]...)
-	return sha256.Sum256(data)
+	sum := sha256.Sum256(data)
+	clear(data)
+	return sum
 }
 
 func node(a, b [sha256.Size]byte) [sha256.Size]byte {

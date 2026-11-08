@@ -57,7 +57,6 @@ type ApprovalService struct {
 	RequestSigningApprovalResponse        RequestSigningApprovalResponseFunc
 	RequestSigningApprovalContext         RequestSigningApprovalContextFunc
 	RequestSigningApprovalResponseContext RequestSigningApprovalResponseContextFunc
-	EncodeTxnToHex                        func(txn types.Transaction) string
 }
 
 func (s *ApprovalService) userAutoApprove() bool {
@@ -487,14 +486,16 @@ func (s *ApprovalService) requestGroupApprovalWithContext(ctx context.Context, r
 }
 
 func (s *ApprovalService) RequestSingleTxnApproval(txReq signerapi.SignRequest, allTxns, txns []types.Transaction, dummiesNeeded int, firstValid, lastValid uint64) *ServiceError {
-	return s.requestSingleTxnApprovalWithContext(context.Background(), "", txReq, allTxns, txns, dummiesNeeded, firstValid, lastValid, "")
+	return s.requestSingleTxnApprovalWithContext(context.Background(), "", txReq, allTxns, txns, dummiesNeeded, firstValid, lastValid, "", nil)
 }
 
 func (s *ApprovalService) RequestSingleTxnApprovalWithContext(ctx context.Context, txReq signerapi.SignRequest, allTxns, txns []types.Transaction, dummiesNeeded int, firstValid, lastValid uint64) *ServiceError {
-	return s.requestSingleTxnApprovalWithContext(ctx, "", txReq, allTxns, txns, dummiesNeeded, firstValid, lastValid, "")
+	return s.requestSingleTxnApprovalWithContext(ctx, "", txReq, allTxns, txns, dummiesNeeded, firstValid, lastValid, "", nil)
 }
 
-func (s *ApprovalService) requestSingleTxnApprovalWithContext(ctx context.Context, suppliedRequestID string, txReq signerapi.SignRequest, allTxns, txns []types.Transaction, dummiesNeeded int, firstValid, lastValid uint64, forceReviewRuleID string) *ServiceError {
+// requestSingleTxnApprovalWithContext prompts for one request. listed is that
+// account's rekey-to list, so the warning names a listed handover as one.
+func (s *ApprovalService) requestSingleTxnApprovalWithContext(ctx context.Context, suppliedRequestID string, txReq signerapi.SignRequest, allTxns, txns []types.Transaction, dummiesNeeded int, firstValid, lastValid uint64, forceReviewRuleID string, listed map[string]bool) *ServiceError {
 	console := consoleOf(s.Console)
 	txnApproved := false
 	approvalReason := ""
@@ -538,8 +539,9 @@ func (s *ApprovalService) requestSingleTxnApprovalWithContext(ctx context.Contex
 	}
 	txnDesc += describeTxnForApproval(allTxns[0], txReq, s.GenerateTxnDescriptionFromTxn)
 
-	modifiedTxnHex := s.EncodeTxnToHex(allTxns[0])
-	violations := approvalpolicy.CheckTxnWarnings(modifiedTxnHex, s.KnownAddresses())
+	violations := approvalpolicy.CheckDecodedTxnWarningsIn(allTxns[0], approvalpolicy.Context{
+		KnownAddresses: s.KnownAddresses(), ListedRekeyTargets: listed,
+	})
 	txnDesc = appendViolationHighlights(txnDesc, violations)
 
 	approved, err := s.requestSigningApproval(

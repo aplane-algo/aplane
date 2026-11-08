@@ -6,6 +6,7 @@ package composeddsa
 import (
 	"encoding/hex"
 	"fmt"
+	"maps"
 	"strings"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
@@ -67,20 +68,17 @@ func rekeyListRoot(params map[string]string) ([]byte, error) {
 	return root, nil
 }
 
-// splitRekeyListRoot separates the generator's root from the creation
-// parameters, which are validated without it.
-func splitRekeyListRoot(params map[string]string) (map[string]string, map[string]string) {
+// SplitGeneratedParams separates the parameters key generation adds (the
+// rekey-to list's root) from the creation parameters, which are validated
+// without them. It is the one place that decides which names are generated.
+func SplitGeneratedParams(params map[string]string) (request, generated map[string]string) {
 	value, ok := params[boundedmeta.RekeyListRootParameter]
 	if !ok {
 		return params, nil
 	}
-	rest := make(map[string]string, len(params))
-	for name, v := range params {
-		if name != boundedmeta.RekeyListRootParameter {
-			rest[name] = v
-		}
-	}
-	return rest, map[string]string{boundedmeta.RekeyListRootParameter: value}
+	request = maps.Clone(params)
+	delete(request, boundedmeta.RekeyListRootParameter)
+	return request, map[string]string{boundedmeta.RekeyListRootParameter: value}
 }
 
 // PrepareRekeyList returns params with the rekey-to list's root added. The
@@ -98,10 +96,7 @@ func (c *ComposedDSA) PrepareRekeyList(privateKey []byte, params map[string]stri
 	if err != nil {
 		return nil, err
 	}
-	prepared := make(map[string]string, len(params)+1)
-	for name, value := range params {
-		prepared[name] = value
-	}
+	prepared := maps.Clone(params)
 	prepared[boundedmeta.RekeyListRootParameter] = hex.EncodeToString(root[:])
 	return prepared, nil
 }

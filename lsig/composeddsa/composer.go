@@ -9,7 +9,9 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"maps"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 
@@ -465,7 +467,7 @@ func (c *ComposedDSA) GenerateTEAL(publicKey []byte, params map[string]string) (
 		return "", err
 	}
 	// The rekey-to list's root is the generator's, not a creation parameter.
-	params, generated := splitRekeyListRoot(params)
+	params, generated := SplitGeneratedParams(params)
 	normalizedParams, err := lsigprovider.NormalizeCreationParams(params, c.params)
 	if err != nil {
 		return "", err
@@ -488,6 +490,17 @@ func (c *ComposedDSA) GenerateTEAL(publicKey []byte, params map[string]string) (
 		return "", fmt.Errorf("invalid TEAL version: %d", version)
 	}
 
+	// Author TEAL never sees a rekey-to list's entries, which only its root may
+	// reveal; validateBoundedReservedNames refuses a reference with a reason.
+	authorParams, authorDefs := normalizedParams, c.params
+	if boundedProfile != nil && boundedProfile.RekeyList != nil {
+		authorParams = maps.Clone(normalizedParams)
+		delete(authorParams, BoundedRekeyToParameter)
+		authorDefs = slices.DeleteFunc(slices.Clone(c.params), func(p lsigprovider.ParameterDef) bool {
+			return p.Name == BoundedRekeyToParameter
+		})
+	}
+
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf("#pragma version %d\n\n", version))
 
@@ -504,7 +517,7 @@ func (c *ComposedDSA) GenerateTEAL(publicKey []byte, params map[string]string) (
 		}
 		switch mode {
 		case generictemplate.TemplateModeStrict:
-			strictSuffix, err = tealtemplate.RenderStrictFragment(c.tealSuffix, normalizedParams, c.templateVars)
+			strictSuffix, err = tealtemplate.RenderStrictFragment(c.tealSuffix, authorParams, c.templateVars)
 			if err != nil {
 				return "", fmt.Errorf("failed to render strict template suffix: %w", err)
 			}
@@ -576,17 +589,17 @@ func (c *ComposedDSA) GenerateTEAL(publicKey []byte, params map[string]string) (
 			b.WriteString("\n\n")
 		case generictemplate.TemplateModeLegacy, generictemplate.TemplateModeGenerated:
 			// Optional user-supplied suffix with @variable substitution.
-			paramDefs := make([]tealtemplate.ParamDef, len(c.params))
-			for i, p := range c.params {
+			paramDefs := make([]tealtemplate.ParamDef, len(authorDefs))
+			for i, p := range authorDefs {
 				paramDefs[i] = tealtemplate.ParamDef{Name: p.Name, Type: composedTemplateParamType(p.Type)}
 			}
 
-			expanded, err := tealtemplate.ExpandLists(c.tealSuffix, normalizedParams, paramDefs)
+			expanded, err := tealtemplate.ExpandLists(c.tealSuffix, authorParams, paramDefs)
 			if err != nil {
 				return "", fmt.Errorf("failed to expand list templates: %w", err)
 			}
 
-			substituted, err := tealtemplate.SubstituteVariables(expanded, normalizedParams, paramDefs)
+			substituted, err := tealtemplate.SubstituteVariables(expanded, authorParams, paramDefs)
 			if err != nil {
 				return "", fmt.Errorf("failed to substitute variables: %w", err)
 			}

@@ -582,3 +582,15 @@ func useRegistryKeyTypes(t *testing.T) {
 	t.Cleanup(func() { setServerKeyTypes(nil) })
 	setServerKeyTypes(nil)
 }
+
+// A template without a rekey-to list may name a parameter rekey_to. It is shown
+// as that template's parameter, never as addresses that can take the account.
+func TestDetailsShowAnUnlistedRekeyToAsAParameter(t *testing.T) {
+	prepared := preparedAccount(boundedmeta.Layer3PolicyCustom, boundary.RekeySpendingKey, false, 0)
+	prepared.Parameters[boundedmeta.RekeyListEntriesParameter] = "beneficiary-note"
+	m := Model{viewState: ViewGenerateReviewDetails, width: 80, height: 400, forms: formsState{review: &prepared}}
+	details := m.renderGenerateReviewDetails()
+	if strings.Contains(details, "Rekey-to addresses") || !strings.Contains(details, "beneficiary-note") {
+		t.Fatalf("details:\n%s", details)
+	}
+}

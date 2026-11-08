@@ -146,7 +146,7 @@ func validateLayer3Policy(policy *Layer3Policy, params []lsigprovider.ParameterD
 	// No host rule gates a rekey, so a spending-key rekey would leave the lock
 	// before the unlock round.
 	if rules.timelock && profile.Rekey == boundedmeta.RekeySpendingKey {
-		return fmt.Errorf("policy %q requires rekey: %s: a spending-key rekey would leave the lock before the unlock round", policy.Policy, boundedmeta.RekeyRefused)
+		return fmt.Errorf("policy %q can't take rekey: %s: a spending-key rekey would leave the lock before the unlock round; use rekey: %s, or %s", policy.Policy, boundedmeta.RekeySpendingKey, BoundedRekeyOnlyThese, boundedmeta.RekeyRefused)
 	}
 
 	used := make(map[string]struct{}, 2)

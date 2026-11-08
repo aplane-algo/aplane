@@ -294,7 +294,10 @@ func TestMetadataValidateRekeyList(t *testing.T) {
 		{"spending-key rekey", func(m *Metadata) { m.Rekey = RekeySpendingKey }, "needs rekey refused"},
 		{"unknown contract", func(m *Metadata) { m.RekeyList.Contract = "rekey_list2" }, "unsupported rekey-to list contract"},
 		{"other depth", func(m *Metadata) { m.RekeyList.Depth = 16 }, "depth 16, want 4"},
-		{"bad root", func(m *Metadata) { m.RekeyList.RootHex = "ab" }, "32 bytes of hex"},
+		{"bad root", func(m *Metadata) { m.RekeyList.RootHex = "ab" }, "expected 32 bytes"},
+		{"upper-case root", func(m *Metadata) { m.RekeyList.RootHex = strings.Repeat("AB", 32) }, "lowercase hex"},
+		// A stored account's root is what every listed rekey is checked against.
+		{"stored without a root", func(m *Metadata) { m.RekeyList.RootHex = "" }, "rekey-to list root must be non-empty"},
 		{"no proof", func(m *Metadata) { m.DerivedArgs = nil; m.ArgumentLayout = m.ArgumentLayout[:1] }, "exactly one rekey-list proof"},
 		{"proof over another parameter", func(m *Metadata) { m.DerivedArgs[0].Parameter = "recipients" }, "needs the rekey-to list"},
 		{"proof without a list", func(m *Metadata) { m.RekeyList = nil }, "needs the rekey-to list"},

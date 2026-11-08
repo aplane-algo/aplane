@@ -125,8 +125,13 @@ func spendEffectsLabel(effects []string) string {
 	return strings.Join(labels, ", ")
 }
 
-func rekeyToList(parameters map[string]string) []string {
-	value := strings.TrimSpace(parameters[boundedmeta.RekeyListEntriesParameter])
+// rekeyToList is an only-these account's rekey-to list. A template without a
+// list may have a parameter of the same name, which is not one.
+func rekeyToList(review PrepareGenerateResultMessage) []string {
+	if review.Bounded == nil || !review.Bounded.RekeyList {
+		return nil
+	}
+	value := strings.TrimSpace(review.Parameters[boundedmeta.RekeyListEntriesParameter])
 	if value == "" {
 		return nil
 	}
@@ -173,7 +178,7 @@ func reviewRekey(review PrepareGenerateResultMessage) (label, consequence string
 		if isTimelockPolicy(review.Bounded.Layer3Policy) {
 			consequence += " That is a way around the lock."
 		}
-		return fmt.Sprintf("Only these %d addresses, spending key alone", len(rekeyToList(review.Parameters))), consequence
+		return fmt.Sprintf("Only these %d addresses, spending key alone", len(rekeyToList(review))), consequence
 	}
 	switch boundedmeta.RekeySetting(review.Bounded.Rekey) {
 	case boundedmeta.RekeyRefused:
@@ -295,7 +300,7 @@ func (m Model) renderGenerateReviewDetails() string {
 	} else {
 		field("Template fingerprint", review.ReviewFingerprint)
 	}
-	for _, name := range reviewDetailParameters(review.Parameters) {
+	for _, name := range reviewDetailParameters(*review) {
 		field(name, wrapLongValue(review.Parameters[name]))
 	}
 	if recipients := recipientList(review.Parameters); len(recipients) > 0 {
@@ -304,7 +309,7 @@ func (m Model) renderGenerateReviewDetails() string {
 			sb.WriteString("  " + recipient + "\n")
 		}
 	}
-	if targets := rekeyToList(review.Parameters); len(targets) > 0 {
+	if targets := rekeyToList(*review); len(targets) > 0 {
 		sb.WriteString(fmt.Sprintf("Rekey-to addresses (%d):\n", len(targets)))
 		for _, target := range targets {
 			sb.WriteString("  " + target + "\n")
@@ -350,11 +355,15 @@ func (m Model) settleGenerateReview(result GenerateResultMsg) Model {
 // shown, sorted so the screen is stable. Custom templates name their own, so this
 // lists what is there rather than what is expected. The cosigner key is left out
 // because its Witness Key ID above identifies it.
-func reviewDetailParameters(parameters map[string]string) []string {
-	names := make([]string, 0, len(parameters))
-	for name := range parameters {
-		switch name {
-		case recipientsParameter, boundedmeta.CosignerPublicKeyParameter, boundedmeta.RekeyListEntriesParameter:
+func reviewDetailParameters(review PrepareGenerateResultMessage) []string {
+	names := make([]string, 0, len(review.Parameters))
+	listed := rekeyToList(review) != nil
+	for name := range review.Parameters {
+		switch {
+		case name == recipientsParameter, name == boundedmeta.CosignerPublicKeyParameter:
+			continue
+		case name == boundedmeta.RekeyListEntriesParameter && listed:
+			// Shown below as the rekey-to list.
 			continue
 		}
 		names = append(names, name)

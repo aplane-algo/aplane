@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/rekeylist"
+	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 	"github.com/aplane-algo/aplane/internal/signerapp/approvalpolicy"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyeval"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
@@ -174,5 +176,29 @@ func TestListedRekeyIsForcedToReview(t *testing.T) {
 	}, nil)
 	if gateErr != nil || ruleID != policy.BoundedRekeyRequiresReviewRuleID || prompted != ruleID {
 		t.Fatalf("gates = %q, %v; prompted %q", ruleID, gateErr, prompted)
+	}
+}
+
+// A listed rekey is usually one request, so the single prompt must name the
+// handover as the group prompt does, not warn that control is lost.
+func TestSingleApprovalNamesAListedHandover(t *testing.T) {
+	var got []signerapproval.Violation
+	svc := &ApprovalService{
+		HasClient:                     func() bool { return true },
+		GenerateTxnDescriptionFromTxn: func(types.Transaction) string { return "txn" },
+		KnownAddresses:                func() map[string]bool { return nil },
+		RequestSigningApproval: func(_, _, _, _ string, _, _ uint64, violations []signerapproval.Violation, _ time.Duration) (bool, error) {
+			got = violations
+			return true, nil
+		},
+	}
+	rekey := listTestRekey(listTestTarget)
+	listed := map[string]bool{listTestTarget.String(): true}
+	if err := svc.requestSingleTxnApprovalWithContext(context.Background(), "", signerapi.SignRequest{AuthAddress: "ACCOUNT"},
+		[]types.Transaction{rekey}, []types.Transaction{rekey}, 0, 0, 0, policy.BoundedRekeyRequiresReviewRuleID, listed); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || !strings.Contains(got[0].Message, "rekey-to list") || !strings.Contains(got[0].Message, "LEAVES THIS SIGNER'S CUSTODY") {
+		t.Fatalf("single prompt warnings = %+v", got)
 	}
 }
