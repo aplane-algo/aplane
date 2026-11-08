@@ -54,11 +54,10 @@ tree.
 Do not edit shipped library templates or Go providers just to satisfy a user's
 custom policy. Shipped templates, compiled providers, and installed template key
 types are compatibility boundaries. Changing the behavior of an existing key
-type such as `aplane.htlc.v1`, `aplane.falcon1024-allowlist.v1`, or
-`aplane.falcon1024-b.v1` can break existing keys and backups. The
-guarded cosigner provider (`aplane.falcon1024-cosigner1024.v1`) is Go-defined.
-`aplane.falcon1024-allowlist.v2` and `aplane.falcon1024-timelock.v1` are retired,
-versioned YAML templates that still ship, and remain compatibility boundaries.
+type such as `aplane.htlc.v1` or `aplane.falcon1024-b.v1` can break existing
+keys and backups. The guarded cosigner provider
+(`aplane.falcon1024-cosigner1024.v1`) is Go-defined. `aplane.htlc.v1` is the only
+bundled YAML template.
 
 Installing a user-loaded template with `apadmin template import` requires the
 product-store passphrase through an authenticated daemon admin session. An AI
@@ -149,18 +148,20 @@ definitions or the fingerprint formula:
 
 ## Explicit Safety Decisions
 
-For bounded1 work, read
+For bounded (`bounded2`) work, read
 [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md) and preserve these additional invariants:
 
 - base DSA authentication executes on every accepted path;
 - composer-owned fee, type, and danger-field checks execute before author
   Layer 3;
-- admitted pure `pay`/`axfer` spends can reach author Layer 3; a spending-key
-  rekey reaches it only when the profile explicitly selects `policy_gate: layer3`;
-- rekey detection precedes transaction-type dispatch and accepts only the
-  frozen pure-rekey normal form;
-- a bounded1 rekey is authorized by the spending key alone, and a profile may
-  declare no rekey operation at all;
+- the program checks the spending signature, then the fee ceiling, then
+  dispatches on `RekeyTo`, before any Layer 3, cosigner, or author code; the
+  rekey branch accepts only the frozen pure-rekey normal form or rejects;
+- only admitted pure `pay`/`axfer` spends reach Layer 3; no host rule gates a
+  rekey;
+- `bounded.rekey` is `refused` (no rekey path) or `spending_key` (the spending
+  key alone authorizes a pure rekey); a cosigner or a timelock policy requires
+  `refused`;
 - `max_fee` is explicit, compiled, and at most 10,000 microAlgos;
 - caller runtime args can never supply the cosigner signature or a
   signer-derived argument;
@@ -172,6 +173,9 @@ For bounded1 work, read
   `bounded-cosigner1` from durable metadata; every client must dispatch empty,
   `cosigner1`, `bounded1`, `bounded-cosigner1`, and `rotating1` explicitly
   and reject unknown flows;
+- the signer classifies each bounded target through `txeffects.ClassifyFor`
+  against the path declaration projected from stored metadata, and every
+  decision names a rule;
 - the implementation manifest and independent protocol inventory remain
   separate completeness controls; and
 - schema v1 rejects `bounded`, while schema v2 rejects unknown and duplicate

@@ -102,7 +102,7 @@ Key type strings are canonical compatibility identifiers, not display labels.
 Except for the native `ed25519` and `falcon1024` key types, APlane-defined LogicSig/template and
 compiled-provider key types use `publisher.family.vN`, such as
 `aplane.falcon1024.v1`, `aplane.htlc.v1`, or
-`aplane.falcon1024-allowlist.v1`. Human CLI/TUI surfaces, storage, protocol,
+`aplane.falcon1024-b.v1`. Human CLI/TUI surfaces, storage, protocol,
 provider registration, migration code, and SDK-facing fields use the full
 canonical identifier.
 
@@ -123,8 +123,6 @@ Built-in and bundled key types include:
 - the Falcon witness key `aplane.witness-falcon1024.v1`, held by a cosigner
 - the generic `aplane.htlc.v1` template
 - the general bounded key type `aplane.falcon1024-b.v1`
-- retired bounded Falcon templates: `aplane.falcon1024-allowlist.v1`,
-  `aplane.falcon1024-allowlist.v2`, and `aplane.falcon1024-timelock.v1`
 - the rotating accounts `aplane.rotating-triple-xmss.v1`,
   `aplane.rotating-triple-slhdsa.v1` and `aplane.rotating-triple-wotsc.v1`
   (library-visible, signer-only)
@@ -407,7 +405,6 @@ Optional YAML templates have a source-library lifecycle:
 - install and test setup flows copy those plaintext YAML files into the signer data root at
   `<APSIGNER_DATA>/library/templates/`,
 - `internal/storepaths.Paths.TemplateLibraryDir()` is the source of truth for the signer-data library path,
-- retired templates follow the same path under `library/retired/`, outside the library listing,
 - library YAML files are reference material only; they are not active key types by being present on disk,
 - `apadmin` browses the signer-data library over the admin IPC protocol,
 - installing a library template parses and encrypts the YAML into the product template store under

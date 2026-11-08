@@ -1,7 +1,8 @@
 # Building Transfer Networks with Bounded Accounts
 
 > Scope: This whitepaper explains bounded accounts and their use in transfer
-> networks, using APlane's current `bounded1` profiles. It is an
+> networks, using the presets of APlane's general bounded type, which
+> implement the `bounded2` contract. It is an
 > architectural explanation, not an implementation specification. Exact
 > behavior is defined in [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md) and
 > [KEYTYPE_CAPABILITIES.md](KEYTYPE_CAPABILITIES.md); the Corridor profile is
@@ -36,20 +37,21 @@ supplies the authorization program and its required signatures and proofs.
 The network checks that the program corresponds to the account's current
 authority and accepts the transaction only if the program succeeds.
 
-The current bundled bounded templates use Falcon-1024 spending signatures.
+APlane's general bounded type uses Falcon-1024 spending signatures.
 Falcon supplies authentication; the LogicSig program supplies the transaction
 restrictions. Native Falcon authorization alone does not provide those bounds.
 
-The `bounded1` framework checks three things:
+The `bounded2` contract checks three things:
 
 1. **Authentication.** The base spending signature is required on every path.
 2. **Transaction shape.** Only explicitly supported transaction forms are
    admitted, with a fee ceiling and checks for close, clawback, and rekey effects.
-3. **Spending conditions.** An admitted spend must satisfy the selected
-   template's rules, such as destination membership or a timelock. Additional
-   signatures are required where the template specifies them.
+   A rekey is accepted or rejected here and never reaches the next step.
+3. **Spending conditions.** An admitted spend must satisfy the account's
+   rules, such as destination membership or a timelock. Additional
+   signatures are required where the account specifies them.
 
-The bundled profiles admit ALGO payments, ordinary Algorand Standard Asset
+The presets admit ALGO payments, ordinary Algorand Standard Asset
 (ASA) transfers, and asset opt-ins, subject to their individual conditions.
 They reject ALGO close-out, ASA close-out, clawback execution, application
 calls, asset configuration or freeze operations, key registration, and other
@@ -57,9 +59,11 @@ unsupported transaction types. A transaction combining rekeying and spending
 is also rejected.
 
 Rekeying has its own narrow form: a zero-ALGO payment to the sender itself,
-with a nonzero rekey target and no close or clawback effects. It must satisfy
-the profile's rekey authorization. The compiled fee ceiling applies to both
-spending and rekeying; the current bundled templates set it to 10,000 microAlgos
+with a nonzero rekey target and no close or clawback effects. An account either
+refuses rekeys or lets the spending key alone authorize this form; its spending
+conditions, such as a recipient list or an unlock round, do not apply to a
+rekey. The compiled fee ceiling applies to both
+spending and rekeying; the general bounded type sets it to 10,000 microAlgos
 (0.01 ALGO) per protected transaction. This is a ceiling, not a fixed fee or
 a guarantee that every path is viable under every network fee schedule.
 
@@ -70,18 +74,23 @@ Rekeying changes that authority rather than editing the existing program.
 
 ## 3. Choosing the account's rules
 
-APlane ships several bounded profiles: three bundled templates and the presets
-of the general bounded type `aplane.falcon1024-b.v1`. An allowlist is one
-possible policy; bounded accounts also include profiles without destination
-restrictions.
+APlane ships its bounded profiles as presets of the general bounded type
+`aplane.falcon1024-b.v1`. A boundary file selects any other shape the type
+offers, such as an ALGO-only account or a timelock with a recipient list. An
+allowlist is one possible policy; bounded accounts also include profiles
+without destination restrictions: a timelock with no list, and a limits-only
+account (`recipient_scope: any`), which only the fee ceiling and transfer kinds
+bound.
 
-| Key type | Spending conditions | Pure rekey authorization |
+| Preset | Spending conditions | Pure rekey authorization |
 |---|---|---|
-| `aplane.falcon1024-allowlist.v1` | Self or an inline recipient list | Spending key alone |
-| `aplane.falcon1024-allowlist.v2` | Self or membership in a Merkle recipient list | Spending key alone |
-| `aplane.falcon1024-timelock.v1` | Transaction's first valid round must reach the configured unlock round | Spending key, subject to the same round condition |
-| `aplane.falcon1024-b.v1`, Locked Allowlist preset | Self or a recipient list | None: the account can never be rekeyed |
-| `aplane.falcon1024-b.v1`, Corridor preset | Self or membership in a Merkle recipient list, plus a Falcon cosigner signature for every spend | None |
+| Allowlist | Self or a recipient list | Spending key alone |
+| Locked Allowlist | Self or a recipient list | None: the account can never be rekeyed |
+| Corridor | Self or membership in a Merkle recipient list, plus a Falcon cosigner signature for every spend | None |
+| Timelock | Transaction's first valid round must reach the configured unlock round | None |
+
+A timelock always refuses rekeys: the unlock round is a spending condition, so
+a rekey would not wait for it.
 
 Inline recipient lists support up to 30 addresses. The Merkle profiles support
 up to 65,536 recipients, committing to the list through a fixed root. The
@@ -91,8 +100,8 @@ cannot change the root embedded in the existing program.
 
 For a network intended to contain spending-key theft, Locked Allowlist or
 Corridor supplies an essential additional property: the spending key cannot
-remove the bounds, because nothing can. Allowlist v1 and v2 do not provide
-that. Their spending key can authorize a pure rekey to a different authority
+remove the bounds, because nothing can. The Allowlist preset does not provide
+that. Its spending key can authorize a pure rekey to a different authority
 and then spend under that authority's rules. The price of refusing rekeys is
 that a mistake in the account's rules, or a lost cosigner, cannot be repaired.
 
@@ -152,7 +161,7 @@ Rekeying provides that mechanism while preserving the account address, so
 counterparties do not need a replacement address. The current program decides
 which signatures and conditions are required to authorize the change.
 
-For allowlist v1 and v2, the spending key can rekey the account straight to a
+For the Allowlist preset, the spending key can rekey the account straight to a
 replacement program. An account that refuses rekeys cannot change its
 destinations at all: replacing it means moving its funds, while it can still
 spend, to a new account built with the new rules, and retiring the old
@@ -160,8 +169,8 @@ address.
 
 ## 6. Spending and cosigning authority
 
-The spending key authorizes ordinary use of the account and, for allowlist v1,
-v2 and the timelock, a pure rekey as well. Corridor adds a cosigner whose
+The spending key authorizes ordinary use of the account and, for the
+Allowlist preset, a pure rekey as well. Corridor adds a cosigner whose
 signature is required for every spend. A Corridor account refuses rekeys, so
 it cannot leave a failed cosigner: if the cosigner is lost for good, the
 account can no longer spend. The cosigner key and the spending key should be
@@ -191,7 +200,7 @@ cannot lose value:
 
 - An attacker with sufficient spending authorization may make repeated
   permitted transfers, including transfers toward an approved exit. The
-  bundled profiles do not limit assets or amounts on-chain.
+  presets do not limit assets or amounts on-chain.
 - Fees are outflows too. The fee ceiling limits each protected transaction,
   not the total fees payable over the account's lifetime.
 - The program checks transactions authorized by this account. Asset-level
@@ -220,4 +229,4 @@ The useful design choice is the complete set of rules: which transfers are
 allowed, who must approve them, and who can authorize replacing those rules.
 A network intended to contain spending-key compromise needs all three to be
 specified, including controlled exits and administrative transitions. No
-stateful application is required to enforce the bundled account bounds.
+stateful application is required to enforce these account bounds.

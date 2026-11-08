@@ -7,6 +7,41 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## Bounded accounts move to the bounded2 contract
+
+This release is install-fresh only.
+
+- The bounded contract is now `bounded2`. An account states one rekey setting,
+  `refused` or `spending_key`, in place of bounded1's `admin_operations` with a
+  `policy_gate`. `/keys`, `/keytypes` and apadmin's `prepare_generate_result` carry
+  `rekey` instead of `admin_operations`, and no longer publish an `admin_rekey` path in
+  resource profiles or argument layouts. Signing flow names stay `bounded1` and
+  `bounded-cosigner1`.
+- No account rule gates a rekey any more: the program checks the spending signature and
+  the fee ceiling, then accepts or refuses a rekey before any recipient, timelock or
+  cosigner rule. So a timelock now refuses rekeys, in the general type and in templates.
+  The Timelock preset can never be rekeyed.
+- Templates declare `rekey: refused` or `rekey: spending_key` in their `bounded` block.
+  `admin_operations` and `policy_gate` are refused, and a runtime argument can only be
+  required on spend.
+- The general type has 57 shapes. Every program, fingerprint and boundary digest has
+  changed.
+- New limits-only accounts: a boundary file (or request) with `recipient_scope: any` makes
+  an account with no recipient list and no timelock, so only its transfer kinds and fee
+  ceiling apply. It must be asked for: a missing list is still an error. `any` can't be
+  combined with `recipients`, `encoding` or `unlock_round`. Its stored Layer 3 policy is
+  `none`, which templates can't declare, and it is never contained. There is no preset
+  for it.
+- The last retired templates (`aplane.falcon1024-allowlist.v1`, `.v2` and
+  `aplane.falcon1024-timelock.v1`) are deleted, and so is `library/retired`.
+- The signer decides a bounded transaction's path from the account's declared contract
+  and names the rule it applied. Refusals name the contract, for example "bounded2
+  account permanently disables rekey".
+- The review rule `bounded_admin_operation_requires_review` is now
+  `bounded_rekey_requires_review`.
+- The SDKs follow: `rekey` replaces `admin_operations`, and the `admin_rekey` resource
+  path and path-mask field are gone.
+
 ## The contract-admin key is gone
 
 This release is install-fresh only.

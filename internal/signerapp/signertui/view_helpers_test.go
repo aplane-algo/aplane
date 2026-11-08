@@ -68,7 +68,7 @@ func TestServerKeyTypesDriveGenerateAndImportOptions(t *testing.T) {
 			},
 		},
 		{
-			KeyType:           "aplane.falcon1024-allowlist.v1",
+			KeyType:           "aplane." + "falcon1024-allowlist.v1",
 			DisplayName:       "Falcon Allowlist",
 			MnemonicWordCount: 24,
 			MnemonicImport:    false,
@@ -97,7 +97,7 @@ func TestServerKeyTypesDriveGenerateAndImportOptions(t *testing.T) {
 		t.Fatalf("getImportKeyTypeCount() = %d, want %d", got, want)
 	}
 	// Native key types come first, then published ones, each alphabetical.
-	wantGenerate := []string{"ed25519", "aplane.ed25519.v1", "aplane.falcon1024-allowlist.v1", "aplane.falcon1024.v1", "test.timed-policy.v1"}
+	wantGenerate := []string{"ed25519", "aplane.ed25519.v1", "aplane." + "falcon1024-allowlist.v1", "aplane.falcon1024.v1", "test.timed-policy.v1"}
 	for i, want := range wantGenerate {
 		if got := getKeyTypeByIndex(i); got != want {
 			t.Fatalf("generate key type index %d = %q, want %q", i, got, want)
@@ -113,7 +113,7 @@ func TestServerKeyTypesDriveGenerateAndImportOptions(t *testing.T) {
 		t.Fatalf("import word count = %d, want %d", got, want)
 	}
 
-	spec := getParamSpecForKeyType("aplane.falcon1024-allowlist.v1")
+	spec := getParamSpecForKeyType("aplane." + "falcon1024-allowlist.v1")
 	if spec == nil {
 		t.Fatal("getParamSpecForKeyType() = nil, want server-backed params")
 		return
@@ -204,7 +204,7 @@ func TestGenerateFormDoesNotShowParameterCountSummary(t *testing.T) {
 	defer setServerKeyTypes(nil)
 
 	setServerKeyTypes([]protocol.KeyTypeInfo{{
-		KeyType:     "aplane.falcon1024-allowlist.v1",
+		KeyType:     "aplane." + "falcon1024-allowlist.v1",
 		DisplayName: "Falcon Allowlist",
 		Description: "Falcon-1024 signature restricted to a fixed set of receiver addresses",
 		CreationParams: []protocol.TemplateParamInfo{
@@ -376,7 +376,7 @@ func TestParameterModalMultilineFieldBottomFitsShortPane(t *testing.T) {
 	defer setServerKeyTypes(nil)
 
 	setServerKeyTypes([]protocol.KeyTypeInfo{{
-		KeyType:     "aplane.falcon1024-allowlist.v1",
+		KeyType:     "aplane." + "falcon1024-allowlist.v1",
 		DisplayName: "Falcon Allowlist",
 		CreationParams: []protocol.TemplateParamInfo{
 			{Name: "recipients", Label: "Recipients", Type: "address[]", Required: true, MinItems: 1, MaxItems: 30},

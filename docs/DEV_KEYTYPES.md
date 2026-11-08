@@ -40,10 +40,11 @@ provenance, not to reconstruct missing signing metadata. Template provenance
 conflicts or absence may warn in inventory but do not by themselves invalidate
 a current-format key.
 
-Bounded1 is the framework-enforced execution contract used by every bundled
-composed DSA template. Read [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md) before
-changing schema-v2 composed templates, transaction-effect classification,
-argument slots, or the `bounded1` / `bounded-cosigner1` signing flows.
+`bounded2` is the framework-enforced execution contract of every schema-v2
+composed DSA template and every `aplane.falcon1024-b.v1` shape. Read
+[ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md) before changing schema-v2 composed
+templates, transaction-effect classification, argument slots, or the `bounded1` /
+`bounded-cosigner1` signing flows.
 
 ## Key Type Source Model
 
@@ -195,8 +196,7 @@ base provider through its normal installation flow. The creation template
 is not required for restoring or signing a key with complete durable metadata.
 
 Shipped YAML template sources live under the top-level `library/templates/`
-directory, with retired ones under `library/retired/`,
-and are installed into the product namespace before use. Source-tree
+directory and are installed into the product namespace before use. Source-tree
 YAML files are install sources only; the runtime form is the encrypted
 `.template` file plus key type state record. New stores install none of them.
 
@@ -206,7 +206,7 @@ Go-defined key types:
 |---|---|---|---|---|
 | `ed25519` | Native signing key | Go-defined | default-enabled | `internal/signing/ed25519`, `internal/keygen/ed25519.go` |
 | `falcon1024` | Protocol-native PQ signing key | Go-defined | default-enabled on signer nodes | `internal/signing/falcon1024` |
-| `aplane.falcon1024-b.v1` | General bounded account, one of 56 shapes selected per key | Go-defined | default-enabled on signer nodes | `lsig/boundedaccount`, `internal/boundary` |
+| `aplane.falcon1024-b.v1` | General bounded account, one of 57 shapes selected per key | Go-defined | default-enabled on signer nodes | `lsig/boundedaccount`, `internal/boundary` |
 | `aplane.falcon1024.v1` | DSA LogicSig provider | Go-defined | internal-only | `lsig/falcon1024/v1/standard.go` |
 | `aplane.witness-falcon1024.v1` | Witness key held by a cosigner | Go-defined | default-enabled on cosigner nodes | `internal/witness`, `lsig/falcon1024/keygen/witness.go` |
 | `aplane.falcon1024-cosigner1024.v1` | Guarded-account DSA LogicSig provider | Go-defined | library-visible | `lsig/falcon1024_guarded` |
@@ -269,15 +269,10 @@ Bundled YAML templates, if installed:
 | Library key type | Behavior category | Install command | Runtime storage |
 |---|---|---|---|
 | `aplane.htlc.v1` | Generic LogicSig template | `apadmin template import library/templates/aplane.htlc.v1.yaml` | selected generation `keytypes/aplane.htlc.v1.{json,template}` |
-| `aplane.falcon1024-allowlist.v1` | Bounded1 composed DSA template | `apadmin template import library/retired/aplane.falcon1024-allowlist.v1.yaml` | selected generation `keytypes/aplane.falcon1024-allowlist.v1.{json,template}` |
-| `aplane.falcon1024-allowlist.v2` | Bounded1 composed DSA template | `apadmin template import library/retired/aplane.falcon1024-allowlist.v2.yaml` | selected generation `keytypes/aplane.falcon1024-allowlist.v2.{json,template}` |
-| `aplane.falcon1024-timelock.v1` | Bounded1 composed DSA template | `apadmin template import library/retired/aplane.falcon1024-timelock.v1.yaml` | selected generation `keytypes/aplane.falcon1024-timelock.v1.{json,template}` |
 
-Everything but `aplane.htlc.v1` is retired: it sits in `library/retired/`, outside
-the library listing, so an operator can repair an existing account. New accounts
-use a preset of `aplane.falcon1024-b.v1`. A retired file carries a top-of-file `#`
-comment, never one inside `teal`, which would change its fingerprint. Tests and
-golden vectors for existing accounts read `library/retired/`.
+`aplane.htlc.v1` is the only bundled template. Allowlist and timelock accounts use a
+preset of `aplane.falcon1024-b.v1`. Composed-template tests use inline fixtures, such
+as those in `lsig/composeddsa/bounded_fixtures_test.go`.
 
 These template files are install sources, not product built-ins. They do not
 appear in `apshell keytypes` or the `apadmin` generate view until installed and
@@ -405,14 +400,16 @@ Reference implementations: `lsig/falcon1024/` and `lsig/ed25519lsig/`.
 ### D. Composed DSA Template
 
 Examples:
-- `aplane.falcon1024-allowlist.v1`, whose allowlist comes from a framework policy
-- `aplane.falcon1024-timelock.v1`, whose rule is author TEAL
+- a template whose allowlist comes from a framework policy, as in the
+  [framework-policy example](#bounded-schema-schema_version-2) below
+- a template whose rule is author TEAL, such as a custom timelock
 
 Characteristics:
 - DSA base plus additional constraints
 - Layer 3 is a framework policy with no TEAL, an author TEAL suffix that creation
   params feed, or a framework allowlist followed by author TEAL
-- declared in YAML; every shipped composed policy is a template
+- declared in YAML; every composed policy is a template spec, including each
+  `aplane.falcon1024-b.v1` shape, which is built in Go
 
 Typical code areas:
 - `lsig/composeddsa/`
@@ -471,8 +468,8 @@ Typical code areas:
 - `lsig/rotatingfamily/` (what they share: `signerreg` registers a key
   type from its descriptor and provides the generator, `stagesign` the
   stage's Ed25519 and Falcon-1024 half, `stageprog` the stage program's salt
-  search and strict parse, `rotatingtest` the contract suite, and `avmsim` the
-  offline AVM interpreter for verifier tests)
+  search and strict parse, and `rotatingtest` the contract suite; verifier tests
+  run in the offline AVM interpreter `internal/avmsim`)
 
 These are protocol-level key types, not templates. A new rotating stage
 scheme is a new key type on the same flow:
@@ -641,7 +638,7 @@ signing.
    rendering function, and signature packing. Add its verifier to
    `internal/sigconstruction/verify/verify.go`. The catalog is linked into clients, so it can
    hold no signing code or Falcon library. A new opcode can also mean a new contract:
-   `bounded1` freezes TEAL 13.
+   `bounded2` freezes TEAL 13.
 2. **Construction.** Add its `Definition` to `internal/sigconstruction/construction.go` and
    map the base key type in `baseConstructions`. Component order sets argument positions and
    encoding, so it's frozen once shipped. No component is primary.
@@ -756,7 +753,7 @@ unique key generation or signing behavior. A **shared-ops fallback** is allowed
 only when multiple key types share the same private-key operation and only the
 LogicSig derivation/TEAL differs: in that case, multiple keys may resolve to one
 entry in the ops map instead of each registering its own. For example, Falcon
-composed templates such as `aplane.falcon1024-allowlist.v1` may resolve through
+composed templates such as an imported `example.falcon1024-allowlist.v1` may resolve through
 the shared-ops fallback to the `aplane.falcon1024.v1` ops entry because they
 share key generation and signing with it; the template changes params and TEAL,
 not the private-key algorithm.
@@ -853,7 +850,7 @@ should still avoid hand-written constant blocks in TEAL source.
 
 ### Bounded schema (`schema_version: 2`)
 
-Every bundled composed template uses schema v2, which adds a required `bounded` block
+A bounded composed template uses schema v2, which adds a required `bounded` block
 to the fields above. [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md#yaml-contract) is the
 authoritative contract. This lists every field, so it is a reference and not one valid
 template: for example, `cosigner` cannot be combined with a spending-key rekey.
@@ -867,14 +864,11 @@ template_mode: generated     # strict | generated; legacy is not allowed
 # ...publisher, family, version, display_name, max_opcode_cost as above
 
 bounded:
-  contract: bounded1
+  contract: bounded2
   spend_effects: [pay, axfer, asset_opt_in]  # non-empty subset
   max_fee: 10000             # required; at most 10000
-  admin_operations:          # empty list: no rekey path
-    - kind: rekey
-      authorization: spending_key  # the only authorization
-      policy_gate: none          # none | layer3
-  cosigner:                  # optional; Falcon base only
+  rekey: spending_key        # required: refused (no rekey path) | spending_key
+  cosigner:                  # optional; Falcon base only; needs rekey: refused
     contract: cosigner1
     required_on: [spend]
   layer3:                    # optional; required without teal, may be used with it
@@ -890,7 +884,7 @@ bounded:
     - name: preimage
       type: bytes            # bytes | string | uint64
       max_size: 64
-      required_on: [spend]   # add rekey when the rekey uses policy_gate: layer3
+      required_on: [spend]   # exactly [spend]: a rekey never reaches Layer 3
 ```
 
 The rules that most often surprise authors:
@@ -904,24 +898,25 @@ The rules that most often surprise authors:
   `max_items` is at most 30 for the fixed policies and 65,536 for the Merkle policies.
 - The timelock policies require `FirstValid >= unlock_round`. `unlock_round_parameter`
   must name a required `uint64` parameter with `min: 1`. Bare `timelock` takes no
-  `recipients_parameter`.
+  `recipients_parameter`. Every timelock policy requires `rekey: refused`.
 - Timelock policies reject `teal`. For a list plus custom time conditions, use a plain
   allowlist and write the conditions in the TEAL.
 - With no `teal`, extra parameters and `runtime_args` are rejected, because nothing
   would read them.
 - The cosigner parameters are injected by the framework and cannot be declared.
   `bounded_` and `__aplane_bounded1_` are reserved.
-- A cosigner cannot be combined with a spending-key rekey.
+- `bounded.rekey` is required. A cosigner requires `rekey: refused`.
 - Author TEAL reads `arg 1` onward, in the static slot order: base signatures, derived
   arguments, runtime arguments, cosigner signature. A runtime argument
   beside a Merkle proof is therefore `arg 2`.
-- `policy_gate` decides what a spending-key rekey checks: `layer3` applies the list, the
-  timelock, and the author rule, and `none` skips them all.
+- No Layer 3 rule applies to a rekey: a spending-key rekey checks the spending
+  signature, the fee ceiling and the pure rekey form only, never the list, the
+  timelock or the author rule. An author-TEAL time condition therefore holds a rekey
+  back only with `rekey: refused`.
 - Author TEAL cannot use `return`.
 
-A framework-policy template has no `teal` at all. This is the complete
-`aplane.falcon1024-allowlist.v1` definition, less display text and its retirement
-comment:
+A framework-policy template has no `teal` at all. This is a complete one, less
+display text:
 
 ```yaml
 schema_version: 2
@@ -929,20 +924,17 @@ derivation_version: 3
 template_type: composed
 base_key_type: aplane.falcon1024.v1
 template_mode: generated
-publisher: aplane
+publisher: example
 family: falcon1024-allowlist
 version: 1
 display_name: "Falcon-1024 Allowlist"
 max_opcode_cost: 20000
 
 bounded:
-  contract: bounded1
+  contract: bounded2
   spend_effects: [pay, axfer, asset_opt_in]
   max_fee: 10000
-  admin_operations:
-    - kind: rekey
-      authorization: spending_key
-      policy_gate: none
+  rekey: spending_key
   layer3:
     policy: fixed_allowlist
     recipients_parameter: recipients
@@ -955,7 +947,47 @@ parameters:
     max_items: 30
 ```
 
-`aplane.falcon1024-timelock.v1` is the shortest author-TEAL example.
+A short author-TEAL example is a custom timelock. It refuses rekeys, so nothing
+leaves the account before the unlock round:
+
+```yaml
+schema_version: 2
+derivation_version: 3
+template_type: composed
+base_key_type: aplane.falcon1024.v1
+template_mode: strict
+publisher: example
+family: custom-timelock
+version: 1
+display_name: "Custom Timelock"
+max_opcode_cost: 20000
+
+bounded:
+  contract: bounded2
+  spend_effects: [pay, axfer, asset_opt_in]
+  max_fee: 10000
+  rekey: refused
+
+parameters:
+  - name: unlock_round
+    type: uint64
+    required: true
+    max_length: 20
+    min: 1
+
+template_variables:
+  - name: unlock_round
+    source: parameter
+    parameter: unlock_round
+    type: uint64
+    constant: int
+
+teal: |
+  txn FirstValid
+  $unlock_round
+  >=
+  assert
+```
 
 ## TEAL Security Patterns
 

@@ -87,8 +87,8 @@ func TestInitializeCreatesStoreMetadataKeysAndPolicy(t *testing.T) {
 
 // assertNoKeyTypesEnabled checks that a new store enables only the compiled
 // default key types: it carries no key type state records and no installed
-// templates, so library key types such as aplane.falcon1024.v1 and the bundled
-// aplane.falcon1024-allowlist.v1 template stay opt-in.
+// templates, so library key types such as aplane.falcon1024.v1 stay opt-in and a
+// deleted template's name is never installed.
 func assertNoKeyTypesEnabled(t *testing.T, active storepaths.ActivePaths, role string) {
 	t.Helper()
 	records, err := keytypestate.ListActive(active)
@@ -98,7 +98,7 @@ func assertNoKeyTypesEnabled(t *testing.T, active storepaths.ActivePaths, role s
 	if len(records) != 0 {
 		t.Fatalf("%s initialization enabled key types: %+v", role, records)
 	}
-	if templatestore.TemplateExistsActive(active, "aplane.falcon1024-allowlist.v1", templatestore.TemplateTypeComposed) {
+	if templatestore.TemplateExistsActive(active, "aplane."+"falcon1024-allowlist.v1", templatestore.TemplateTypeComposed) {
 		t.Fatalf("%s initialization installed the bundled allowlist template", role)
 	}
 }

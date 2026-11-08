@@ -10,7 +10,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
-func TestBounded1ManifestValidAndDefensive(t *testing.T) {
+func TestBoundedManifestValidAndDefensive(t *testing.T) {
 	manifest := BoundedManifest()
 	if err := manifest.Validate(); err != nil {
 		t.Fatalf("Validate() error = %v", err)

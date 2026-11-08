@@ -191,9 +191,6 @@ role.
 | `aplane.falcon1024.v1` | dsa_lsig | internal-only; composition and existing accounts |
 | `aplane.ed25519.v1` | Ed25519 dsa_lsig | internal-only; composition and existing accounts |
 | `aplane.falcon1024-b.v1` | bounded dsa_lsig (allowlist, timelock, Corridor presets) | default-enabled on signer nodes |
-| `aplane.falcon1024-allowlist.v1` | dsa_lsig (composed) | retired template; existing accounts only |
-| `aplane.falcon1024-allowlist.v2` | bounded dsa_lsig (Merkle allowlist) | retired template; existing accounts only |
-| `aplane.falcon1024-timelock.v1` | dsa_lsig (composed) | retired template; existing accounts only |
 | `aplane.htlc.v1` | generic_lsig | optional template |
 | `aplane.falcon1024-cosigner1024.v1` | guarded dsa_lsig | library-visible |
 | `aplane.rotating-triple-xmss.v1` | rotating LogicSig | library-visible |
@@ -235,15 +232,12 @@ compatible manual-salt records retain it.
 
 ### Restricted variants (the safety is in the program)
 
-New restricted accounts use `aplane.falcon1024-b.v1`. The allowlist and timelock
-templates below are retired, and existing accounts keep working.
-
-- `aplane.falcon1024-allowlist.v1` — bounded pay/asset-transfer receivers must
-  be self or allowlisted; close, clawback, and non-transfer types are rejected.
-- `aplane.falcon1024-allowlist.v2` — the bounded allowlist using a
-  signer-generated Merkle proof for non-self spend destinations.
-- `aplane.falcon1024-timelock.v1` — bounded Falcon transfer and pure-rekey
-  paths gated by `FirstValid >= unlock_round`.
+- `aplane.falcon1024-b.v1` — the general bounded account. Its presets are an
+  allowlist (pay and asset-transfer receivers must be self or listed, with a
+  signer-generated Merkle proof for a long list), a locked allowlist that
+  refuses rekeys, Corridor, and a timelock (`FirstValid >= unlock_round` before
+  any spend; it refuses rekeys). Close, clawback, and non-transfer types are
+  rejected. A rekey, when allowed, needs the spending key alone.
 - `aplane.htlc.v1` — ALGO only and all-or-nothing: `close` to the recipient with the
   preimage before timeout, or to the refund address after.
 
@@ -257,8 +251,8 @@ refuses rekeys, so if the cosigner is lost, its funds cannot be recovered.
 
 Recipient-constrained accounts can compose into **graphs** — a directed edge
 A→B exists wherever B is in A's recipient set — so operators can build chains,
-hubs, or closed meshes. `aplane.falcon1024-allowlist.v1` is a simpler fixed-list
-template, not a Corridor account.
+hubs, or closed meshes. The Allowlist and Locked Allowlist presets are simpler
+recipient lists with no cosigner.
 
 You create one by **applying a corridor LogicSig to a regular account**: rekey an
 ordinary account so the Corridor program becomes its effective signer (then run

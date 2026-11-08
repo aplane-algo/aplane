@@ -178,7 +178,7 @@ signature algorithm.
 |---|---|
 | Ordinary, empty label | `/sign` produces native signatures or assembles the held LogicSig's bytecode and arguments. Native keys, DSA-backed LogicSigs, and generic LogicSigs have different cryptographic behavior within this path. |
 | `cosigner1` | A guarded account requires both the user signer's component and a cosigner's component over the planned transaction. Assembly verifies and combines them. |
-| `bounded1` | The account's program enforces a compiled transaction envelope. A spending-key rekey, when the account declares one, uses the ordinary signing path. |
+| `bounded1` | The account's program enforces the compiled `bounded2` transaction envelope. A spending-key rekey, when the account declares one, uses the ordinary signing path. |
 | `bounded-cosigner1` | A bounded program additionally requires a cosigner for spending. These accounts refuse rekeys. |
 | `rotating1` | Each accepted spend also hands authorization to the next deterministically derived stage. Preparation and signing use dedicated rotating endpoints. |
 
@@ -196,10 +196,11 @@ storage and interfaces, but does not by itself create independent trust.
 Independence depends on who controls the machines and credentials. See
 [ARCH_GUARDED.md](ARCH_GUARDED.md).
 
-Bounded programs restrict the admitted transaction effects, fee ceiling, and
-administrative operations before applying their spending policy. A template's
-additional policy can narrow the admitted spend set. The only rekey authority is
-the spending key, and an account may declare no rekey operation at all.
+Bounded programs restrict the admitted transaction effects and fee ceiling,
+and settle any rekey before applying their spending policy. A template's
+additional policy can narrow the admitted spend set but never applies to a
+rekey. An account's rekey setting is `spending_key`, under which the spending
+key alone authorizes a pure rekey, or `refused`.
 [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md) defines the envelope.
 
 A rotating account retains its account address while changing its authorizing
@@ -646,7 +647,6 @@ aplane/
 │   └── generictemplate/           # YAML-backed generic template provider
 │
 ├── library/templates/             # Optional plaintext KeyType Library YAML sources
-├── library/retired/               # Retired templates, kept to repair existing accounts
 ├── pkg/signerapi/                 # Public signer HTTP DTO source of truth used by external SDKs
 ├── pkg/policyschema/              # Public v1 policy JSON schema
 └── examples/
@@ -952,7 +952,7 @@ bundled plugin targets), `.github/workflows/release.yml`,
 `scripts/docker-systemd-smoke.sh`,
 `scripts/docker-local-four-node-smoke.sh`,
 `plugins/algokit-localnet/`, `bootstrap-install.sh`, `install.sh`,
-`uninstall.sh`, `installer/`, `library/templates/`, and `library/retired/`. Full release archives
+`uninstall.sh`, `installer/`, and `library/templates/`. Full release archives
 include installer helpers, template libraries, and staged plugin runtime
 payloads at `plugins.available/algokit-localnet`;
 client-only archives include `apshell`/`apshell.exe`, client config templates,
@@ -1111,8 +1111,6 @@ The signer data root may also contain `library/templates/*.yaml`, a plaintext
 KeyType Library source copied from release or installer artifacts. Files there
 are reference material until an authenticated admin installs a YAML template or
 enables a library-visible compiled provider for the product runtime.
-`library/retired/*.yaml` sits beside it, outside the listing, to repair existing
-accounts.
 
 Key-class role is process/data-root scoped, not identity scoped. An initialized
 signer data directory has a root `node.yaml` with exactly one role:
@@ -1883,8 +1881,9 @@ See [ARCH_STORE.md](ARCH_STORE.md#signing-authority) for the signing authority c
 
 ## Bounded Authorization Contracts
 
-The `bounded1` authorization envelope, its fee ceiling and Layer 3 gate, and the
-single finalized-transaction classification boundary are specified in
+The `bounded2` authorization envelope, its fee ceiling and rekey setting, the path
+declaration it is classified against, and the single finalized-transaction
+classification boundary are specified in
 [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md).
 
 The general bounded key type is `aplane.falcon1024-b.v1`. Its Corridor preset
@@ -1892,12 +1891,13 @@ composes the framework Merkle policy with a cosigner spend gate and refuses reke
 schema, and normal forms are in [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md).
 
 Package ownership: `internal/boundedmeta` owns the durable non-secret bounded
-metadata vocabulary and canonical encodings; `lsig/composeddsa` owns profile
+metadata vocabulary, the path declaration projected from it, and canonical encodings; `lsig/composeddsa` owns profile
 compilation, TEAL rendering, and the bounded support policy; `lsig/boundedaccount` owns the general bounded key type, its compiled definition,
 and its shapes; `internal/boundary` owns that type's family-neutral grammar, presets, and
 receipt; `internal/sigconstruction` owns the signature construction catalog;
-`internal/txeffects` owns the frozen effect-classification manifest and the
-single finalized-transaction `Classify`/`Inspect` boundary. Signer-side
+`internal/txeffects` owns the frozen effect-classification manifest, the
+single finalized-transaction `Classify`/`Inspect` boundary, and `ClassifyFor`,
+which decides a transaction's path against a path declaration. Signer-side
 planning/execution live in `internal/signerapp/signing`.
 
 ## Guarded Signing And Cosigner Nodes

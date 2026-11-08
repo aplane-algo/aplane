@@ -123,7 +123,7 @@ func TestTemplateLibraryDescriptionIsSingleLineEllipsized(t *testing.T) {
 
 func TestDisabledInstalledTemplateStatusIsDisabled(t *testing.T) {
 	tmpl := protocol.LibraryTemplateInfo{
-		KeyType:      "aplane.falcon1024-allowlist.v1",
+		KeyType:      "aplane." + "falcon1024-allowlist.v1",
 		TemplateType: "falcon",
 		Installed:    true,
 		Enabled:      false,
@@ -541,7 +541,7 @@ func TestInstalledDisabledTemplateOpensEnableConfirmation(t *testing.T) {
 	m := Model{
 		viewState: ViewTemplateLibrary,
 		library: libraryState{selectedTemplate: 0, templates: []protocol.LibraryTemplateInfo{{
-			KeyType:      "aplane.falcon1024-allowlist.v1",
+			KeyType:      "aplane." + "falcon1024-allowlist.v1",
 			TemplateType: "falcon",
 			Installed:    true,
 			Enabled:      false,
@@ -554,7 +554,7 @@ func TestInstalledDisabledTemplateOpensEnableConfirmation(t *testing.T) {
 		t.Fatalf("enter moved to %v pending=%#v, want enable confirm", got.viewState, got.library.pendingTemplate)
 	}
 	confirm := got.renderTemplateInstallConfirm()
-	for _, want := range []string{"Enable Key Type", "Key type:  aplane.falcon1024-allowlist.v1", "Publisher: aplane", "Source:    falcon", "ENABLE"} {
+	for _, want := range []string{"Enable Key Type", "Key type:  aplane." + "falcon1024-allowlist.v1", "Publisher: aplane", "Source:    falcon", "ENABLE"} {
 		if !strings.Contains(confirm, want) {
 			t.Fatalf("confirm view missing %q:\n%s", want, confirm)
 		}

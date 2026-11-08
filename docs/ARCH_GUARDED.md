@@ -8,14 +8,14 @@ This document describes APlane's cosigner subsystem: node roles, cosigner keys,
 guarded accounts, endpoint discovery, guarded transaction orchestration, and
 the trust boundaries between a user signer and a cosigner signer. It also
 describes [Corridor v1](#corridor-v1), the preset of the general bounded key type
-that composes cosigner authorization into `bounded1`.
+that composes cosigner authorization into `bounded2`.
 
 The component message, the cosigner key file, and the public cosigner
 reference library are specified in this document. For exact HTTP wire shapes
 and SDK fixtures, see [ARCH_SIGNING.md](ARCH_SIGNING.md#http-api-contract); for the endpoint
 registry file, see [ARCH_DATA_MODEL.md](ARCH_DATA_MODEL.md#endpoint-registry).
 For cosigner policy verdict semantics, see [ARCH_POLICY.md](ARCH_POLICY.md).
-The `bounded1` authorization contract is
+The `bounded2` authorization contract is
 in [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md), key type axes are in
 [ARCH_KEYTYPES.md](ARCH_KEYTYPES.md), and the machine-checked
 bounded-cosigner choreography is in
@@ -125,8 +125,8 @@ resolved public key.
 
 A Corridor account is not a dedicated guarded key-type class. It is an
 `aplane.falcon1024-b.v1` account whose durable metadata combines the
-`bounded1` authorization contract, the `cosigner1` spend gate, and a framework
-Merkle recipient policy, and declares no rekey operation. It therefore advertises
+`bounded2` authorization contract, the `cosigner1` spend gate, and a framework
+Merkle recipient policy, and declares `rekey: refused`. It therefore advertises
 `signing_flow: bounded-cosigner1`, not `cosigner1`, and is discovered from metadata
 rather than a key-type switch. See [Corridor v1](#corridor-v1).
 
@@ -803,7 +803,7 @@ individually.
 ## Corridor v1
 
 Corridor is the preset of the general bounded key type `aplane.falcon1024-b.v1`
-that composes cosigner authorization into `bounded1`. It is a shape of that
+that composes cosigner authorization into `bounded2`. It is a shape of that
 compiled provider, not a separate key type, authorization-contract identifier,
 key category, or special transaction classifier.
 
@@ -814,19 +814,19 @@ The dimensions are independent:
 | Full key type | `aplane.falcon1024-b.v1` |
 | Account form | DSA LogicSig |
 | Base signing primitive | `aplane.falcon1024.v1` |
-| Authorization contract | `bounded1` |
+| Authorization contract | `bounded2` |
 | Layer-3 policy | framework-owned `merkle_allowlist` |
 | Spend auxiliary authority | `cosigner1`, Falcon witness, required on spend |
-| Rekey authority | none: rekeys refused |
+| Rekey setting | `refused` |
 | Advertised signing flow | `bounded-cosigner1` |
 
 Changing one dimension does not reinterpret the others. In particular,
-`bounded1` is the on-chain envelope and durable metadata vocabulary, while
+`bounded2` is the on-chain envelope and durable metadata vocabulary, while
 `bounded-cosigner1` is the client/server choreography used to obtain a complete
 spend signature.
 
 The Corridor shape's canonical profile and behavior parameters are frozen in
-[bounded1 Golden vector 3](ARCH_BOUNDED_DSA.md#golden-vector-3-general-boundary-digest).
+[Golden vector 3](ARCH_BOUNDED_DSA.md#golden-vector-3-general-boundary-digest).
 
 ### Accepted Transactions
 
@@ -845,12 +845,12 @@ TxID message.
 
 Root construction, recipient canonicalization, duplicate rejection, padding,
 node hashing, and proof order are frozen by the
-[bounded1 Merkle allowlist compatibility contract](ARCH_BOUNDED_DSA.md#merkle-allowlist-compatibility-contract).
+[bounded Merkle allowlist compatibility contract](ARCH_BOUNDED_DSA.md#merkle-allowlist-compatibility-contract).
 
 Corridor rejects every rekey, close remainder, asset close, clawback,
 unsupported transaction types, missing or malformed proofs, missing cosigner
-authorization, and arguments supplied from the wrong source. It declares no
-rekey operation, so its program has no rekey path.
+authorization, and arguments supplied from the wrong source. It declares
+`rekey: refused`, so its program has no rekey path.
 
 ### Custody And Generation
 
@@ -924,9 +924,8 @@ every transaction authorized by Corridor.
 
 Corridor stores one resource profile over its final compiler-auto-salted
 bytecode. Inventory materializes maximum argument bytes and reviewed opcode
-ceilings for all three bounded path cells (spend, spending-key rekey, and the
-unused `admin_rekey` cell kept for encoding stability); a resource cell does not
-authorize a path. Corridor admits only spend. Under
+ceilings for both bounded path cells (spend and spending-key rekey); a resource
+cell does not authorize a path. Corridor admits only spend. Under
 v42, argument/opcode capacity determines the minimum group size; bytecode above
 the final group's free program pool contributes to the aggregate fee instead
 of manufacturing extra dummies.

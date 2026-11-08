@@ -53,10 +53,10 @@ func TestCanonicalCompiledLogicSigInventory(t *testing.T) {
 }
 
 // The retired bounded templates were deleted with bounded1, so the HTLC is the
-// only bundled template and nothing ships under library/retired.
+// only bundled template and no retired-template directory ships beside it.
 func TestCanonicalBundledTemplateInventory(t *testing.T) {
 	if _, err := os.Stat(filepath.Join("..", "..", "library", "retired")); !os.IsNotExist(err) {
-		t.Fatalf("library/retired exists or cannot be checked: %v", err)
+		t.Fatalf("a retired-template directory exists or cannot be checked: %v", err)
 	}
 	for _, test := range []struct {
 		dir  string

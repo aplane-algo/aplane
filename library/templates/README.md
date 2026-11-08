@@ -9,9 +9,7 @@ them. After importing a template, unlock or reload `apsigner` before using the
 new key type.
 
 For an allowlist, timelock, or Corridor account, use a preset of
-`aplane.falcon1024-b.v1`. It needs no import. The templates those presets replaced
-are in [`library/retired/`](../retired/README.md), kept to repair existing
-accounts.
+`aplane.falcon1024-b.v1`. It needs no import.
 
 ## Install
 
@@ -47,9 +45,8 @@ apadmin template import library/templates/aplane.htlc.v1.yaml
 
 ### Merkle allowlist proof format
 
-The Merkle encoding of `aplane.falcon1024-b.v1` and the retired
-`aplane.falcon1024-allowlist.v2` template store the public
-recipient allowlist in the encrypted key file and commit the LogicSig TEAL to a
+The Merkle encoding of `aplane.falcon1024-b.v1` stores the public
+recipient allowlist in the encrypted key file and commits the LogicSig TEAL to a
 fixed-depth 16 Merkle tree derived from that list:
 
 1. Decode each allowlisted Algorand address to its 32-byte public key.
@@ -102,18 +99,19 @@ policies. The base signature binds every transaction field, but the author TEAL
 must still reject any intentionally signed effect it does not want to permit.
 
 **Bounded composed templates** (`schema_version: 2`) place the composer-owned
-bounded1 envelope between base verification and Layer 3. That envelope admits
-only declared pure payment, pure asset transfer, asset opt-in, and pure rekey
-paths; it rejects close, clawback, hybrids, and non-transfer types. Layer 3 can
-narrow those paths but cannot broaden them. All APlane-bundled composed
-templates use this form. Runtime and signer-derived arguments must be declared
-inside `bounded`, and the resulting static slot layout is durable key metadata.
+`bounded2` envelope between base verification and Layer 3. That envelope admits
+only declared pure payment, pure asset transfer, and asset opt-in paths, plus a
+pure rekey when the template declares `rekey: spending_key`; it rejects close,
+clawback, hybrids, and non-transfer types. A rekey is accepted or rejected
+before Layer 3 runs. Layer 3 can narrow the spend paths but cannot broaden
+them, and it never applies to a rekey. Runtime and signer-derived arguments
+must be declared inside `bounded`, and the resulting static slot layout is
+durable key metadata.
 
 The composed wrap order is locked in by
-`TestComposerVerifierAssertsBeforeUserSuffix` (in `lsig/composeddsa/`) and
-`TestBundledComposedTemplatesBindTxIDBeforeSuffix` (in `lsig/`). Any
-refactor that changes that wrap will fail those tests before a silent
-rekey-guard regression can ship.
+`TestComposerVerifierAssertsBeforeUserSuffix` (in `lsig/composeddsa/`). Any
+refactor that changes that wrap will fail it before a silent rekey-guard
+regression can ship.
 
 ### Summary
 
@@ -121,4 +119,4 @@ rekey-guard regression can ship.
 |---|---|---|
 | Generic (`template_type: generic`) | Required | Required (zero, or allowlisted per template semantics) |
 | Custom composed (schema v1) | Author decision; all fields are signature-bound | Author decision |
-| Bounded composed (schema v2) | Pure rekey only when declared | Always zero in bounded1 |
+| Bounded composed (schema v2) | Pure rekey only with `rekey: spending_key` | Always zero in `bounded2` |

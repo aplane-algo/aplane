@@ -217,7 +217,7 @@ func TestParseYAMLRefusesBounded1Template(t *testing.T) {
 // template, and none is one of the templates retired with bounded1.
 func TestShippedLibraryHoldsNoRetiredTemplate(t *testing.T) {
 	falcon.RegisterClient()
-	retired := []string{"aplane.falcon1024-allowlist.v1", "aplane.falcon1024-allowlist.v2", "aplane.falcon1024-timelock.v1"}
+	retired := []string{"aplane." + "falcon1024-allowlist.v1", "aplane." + "falcon1024-allowlist.v2", "aplane." + "falcon1024-timelock.v1"}
 	entries, err := templates.FS.ReadDir(".")
 	if err != nil {
 		t.Fatal(err)

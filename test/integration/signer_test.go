@@ -125,7 +125,7 @@ func installHTLCTemplate(t *testing.T, signerDataDir string) {
 var boundedAllowlistTemplateKeyType = integrationTemplateKeyType("falcon1024-allowlist")
 
 // boundedAllowlistTemplateYAML is an inline Falcon allowlist with a
-// spending-key rekey, the shape of the deleted aplane.falcon1024-allowlist.v1.
+// spending-key rekey, the shape of the deleted allowlist v1 template.
 func boundedAllowlistTemplateYAML() string {
 	return fmt.Sprintf(`schema_version: 2
 derivation_version: 3

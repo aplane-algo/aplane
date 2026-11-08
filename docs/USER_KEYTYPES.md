@@ -21,11 +21,11 @@ authorities:
 | **DSA LogicSig** | A LogicSig verifies digital signatures and may add transaction policy. | `aplane.falcon1024.v1`, bounded allowlists, guarded accounts |
 | **Generic LogicSig** | TEAL-only account with no DSA private key. | `aplane.htlc.v1` |
 
-DSA LogicSigs may use a **plain** signature-only program, a **bounded1** policy,
+DSA LogicSigs may use a **plain** signature-only program, a **bounded** policy,
 an expert-mode **custom** schema-v1 composed policy, or a dedicated compiled
 provider policy. Cosigner guarding is an additional authority, not a DSA policy
 category. The Corridor preset of the general bounded type composes this
-cosigner authority under bounded1; it is not a dedicated policy.
+cosigner authority under the bounded contract; it is not a dedicated policy.
 
 | Auxiliary authority type | Meaning |
 |---|---|
@@ -243,8 +243,9 @@ It does not import a new YAML source; use `template import` for that.
 ## Bounded Accounts
 
 `aplane.falcon1024-b.v1` is a Falcon-1024 account limited to a fixed list of recipients, a
-time before which it cannot spend, or both. It needs no setup: choose the rules when you
-generate the account. The rules are compiled
+time before which it cannot spend, or both. A limits-only account has neither: it can pay
+anyone, and only its transfer kinds and per-transaction fee limit apply. It needs no setup:
+choose the rules when you generate the account. The rules are compiled
 into the account's program, so they cannot change afterwards, and editing a file later
 does nothing to an existing account.
 
@@ -257,11 +258,11 @@ Generate a key and choose `aplane.falcon1024-b.v1`, then a preset:
 | Allowlist | All transfer kinds; the spending key alone can rekey; automatic list encoding | Recipients |
 | Locked Allowlist | All transfer kinds; it can never be rekeyed; automatic list encoding | Recipients |
 | Corridor | All transfer kinds; a cosigner on every spend; Merkle list; it can never be rekeyed | Recipients, cosigner |
-| Timelock | All transfer kinds; the spending key alone can rekey, after the unlock round; no recipient list | Unlock round |
+| Timelock | All transfer kinds; nothing can be spent before the unlock round; it can never be rekeyed; no recipient list | Unlock round |
 | Load boundary file | Whatever the file says | The file |
 
 "All transfer kinds" means `pay`, `axfer`, and `asset_opt_in`. For a narrower list, such as
-ALGO only, use a boundary file.
+ALGO only, or for a limits-only account, use a boundary file.
 
 Before generating, apadmin shows what the signer resolved, including the cosigner it will
 use. Press `d` for every parameter, fingerprint, and recipient.
@@ -290,7 +291,8 @@ These addresses are illustrations, not funding destinations.
 |---|---|
 | `schema` | Required. Must be `aplane.boundary.v1`. |
 | `spend` | Required. Any of `pay`, `axfer`, `asset_opt_in`. |
-| `recipients` | Required unless `unlock_round` is set. 1 to 65,536 distinct nonzero addresses, written literally: aliases and sets are not expanded. |
+| `recipients` | Required unless `unlock_round` or `recipient_scope: any` is set. 1 to 65,536 distinct nonzero addresses, written literally: aliases and sets are not expanded. |
+| `recipient_scope` | Optional. `listed` (the default) needs a list or an unlock round. `any` makes a limits-only account: no list, and it can't be combined with `recipients`, `encoding`, or `unlock_round`. Leaving out the list never means `any`: you must write it. |
 | `encoding` | Optional, and needs a list. `auto` (the default) is inline through 10 recipients and Merkle above that. `inline` accepts at most 30. |
 | `unlock_round` | Optional. The first round the account can spend. With no list, the account can pay anyone once unlocked. |
 | `rekey.authority` | Required. `spending_key` (the spending key alone can rekey) or `refused` (the account can never be rekeyed). |
@@ -299,8 +301,13 @@ These addresses are illustrations, not funding destinations.
 With `refused`, the account can neither close nor be rekeyed, so a transfer is the only
 way anything leaves it. `spend` must include `pay`, and `asset_opt_in` needs `axfer`, so
 no ALGO or asset is trapped. The account still keeps its minimum balance forever: 0.1
-ALGO, plus 0.1 ALGO for each asset it opts into. With `unlock_round` and `spending_key`,
-`spend` must include `pay` too.
+ALGO, plus 0.1 ALGO for each asset it opts into. `unlock_round` needs `refused`: the
+unlock round holds back spends only, so a spending-key rekey could leave the lock early.
+
+A limits-only account limits how it spends, not to whom: whoever holds its spending key
+(and its cosigner, if it has one) can send everything it holds to any address, one
+transaction at a time. It still can't close, clawback, or pay more than 10,000 microAlgos
+in fees per transaction.
 
 Unknown fields, duplicate keys, YAML aliases, and non-string values are refused, and the
 file has no way to carry TEAL, a template, or a fee.
@@ -333,14 +340,15 @@ with fingerprints and a digest.
 a minimum for new accounts. `boundary_require_contained` requires new accounts to be
 contained: they must refuse rekeys and have a recipient list, so they can pay only listed
 recipients. A timelock with no list is not contained, because it pays anyone once
-unlocked. Fees are outside that limit: each transaction's fee is capped at 10,000
+unlocked, and neither is a limits-only account, with or without a cosigner. Fees are outside that limit: each transaction's fee is capped at 10,000
 microAlgos, but a stolen spending key can still spend the balance on fees, one
 transaction at a time. `boundary_require_cosigner` refuses accounts without a cosigner. They apply on every route,
 and they do not affect existing accounts or imported templates.
 
 Review these points before funding an account:
 
-- Spending-key rekey can leave the boundary. With an unlock round, it waits for that round.
+- Spending-key rekey can leave the boundary at any time. A timelock refuses rekeys, so it
+  cannot be left before its unlock round.
 - An account that refuses rekeys can never change its authority. A lost cosigner, a
   mistaken recipient list or a mistaken unlock round cannot be repaired: move the funds
   out while the account can still spend, and create a new one.
@@ -663,33 +671,8 @@ Import encrypts the YAML into the product keystore and enables the key type
 for the signer.
 
 New stores install no template. For an allowlist, timelock, or Corridor account,
-use a [preset of `aplane.falcon1024-b.v1`](#bounded-accounts).
-
-### Retired templates
-
-Three templates have left the default library in favor of those presets:
-
-| Template | Replacement preset |
-|---|---|
-| `aplane.falcon1024-allowlist.v1` | Allowlist |
-| `aplane.falcon1024-allowlist.v2` | Allowlist |
-| `aplane.falcon1024-timelock.v1` | Timelock |
-
-Each template and its preset let the spending key alone rekey the account.
-
-Existing accounts are unaffected: an installed template keeps working and stays
-in the KeyType Library, where its stored YAML can still be viewed. An upgraded
-signer may also keep listing the old library files, because the installer does
-not delete them.
-
-The files stay available to repair an account, under
-`<APSIGNER_DATA>/library/retired/`:
-
-```bash
-apadmin -d $APSIGNER_DATA template import $APSIGNER_DATA/library/retired/aplane.falcon1024-allowlist.v2.yaml
-```
-
-Re-importing matches an installed copy.
+use a [preset of `aplane.falcon1024-b.v1`](#bounded-accounts). The only bundled
+template is `aplane.htlc.v1`.
 
 Generated provider-backed LogicSig keys store the final compiler-auto-salted
 off-curve bytecode and its derivation marker in the `.key` file (rotating

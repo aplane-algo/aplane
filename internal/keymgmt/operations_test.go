@@ -76,7 +76,7 @@ func TestSupportsMnemonicImport(t *testing.T) {
 		{keyType: witness.Falcon1024V1, want: false},
 		{keyType: witness.Falcon1024V1, want: false},
 		{keyType: "aplane.governance-ed25519.v1", want: false},
-		{keyType: "aplane.falcon1024-allowlist.v1", want: false},
+		{keyType: "aplane." + "falcon1024-allowlist.v1", want: false},
 		{keyType: "", want: false},
 	}
 

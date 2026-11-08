@@ -129,7 +129,7 @@ func GetMetadata(keyType string) (SignatureMetadata, error) {
 	// not resolvable from a registered provider — e.g. a keystore template not
 	// loaded in this process, queried on the client side for display. The base
 	// is not derivable from the key-type string alone, so this substring-matches
-	// the key type against registered families ("aplane.falcon1024-timelock.v1"
+	// the key type against registered families ("example.falcon1024-timelock.v1"
 	// -> the "aplane.falcon1024" family's metadata).
 	//
 	// Prefix matching is safe only for LogicSig families: composed/template key

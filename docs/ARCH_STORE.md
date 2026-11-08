@@ -36,7 +36,6 @@ routing, client enrollment, or approval prompts.
   install/                  # root-owned installer metadata (release.json, service-principal.json)
   library/
     templates/*.yaml        # plaintext KeyType Library YAML sources
-    retired/*.yaml          # retired templates, outside the library listing
   backups/default/
     *.tar.gz                # restorable managed/imported backup archives
     .import-*.part          # unpublished bounded upload residue
@@ -980,10 +979,6 @@ There are two plaintext library locations with the same relative layout:
 - repository and release artifacts carry template YAML sources under top-level `library/templates/`,
 - signer installations may carry a copy under `<APSIGNER_DATA>/library/templates/`.
 
-Retired templates sit beside it under `library/retired/`, in the repository, release artifacts, and
-`<APSIGNER_DATA>/library/retired/`. That directory is outside the library listing. Its files are kept so an
-operator can re-import a template an existing account still needs.
-
 The signer-data path is defined by `internal/storepaths.Paths.TemplateLibraryDir()`. Release installers,
 installer re-runs, and test setup flows may refresh this directory from the repository or packaged copy. Files in this
 directory are reference material and are not active key types by themselves.
@@ -995,15 +990,10 @@ The bundled templates are:
 | Template | Location | Purpose |
 |----------|----------|---------|
 | `aplane.htlc.v1` | `library/templates/` | Hash time-locked contract |
-| `aplane.falcon1024-timelock.v1` | `library/retired/` | Falcon-1024 signature gated by round-based timelock |
-| `aplane.falcon1024-allowlist.v1` | `library/retired/` | Falcon-1024 signature restricted to a fixed set of receiver addresses |
-| `aplane.falcon1024-allowlist.v2` | `library/retired/` | Falcon-1024 allowlist using a fixed-depth Merkle root with signer-generated proofs |
 
-None is installed by default. Only `library/templates/` is offered by the library. Retirement moves a source
-file and nothing else: schema v2 still parses, installed copies keep validating and generating, and the store is
-not touched. A top-of-file comment marks each retired file; it sits outside the template definition, so
-fingerprints and addresses do not move. Installers do not delete older copies from
-`<APSIGNER_DATA>/library/templates/`, so an upgraded signer keeps listing them.
+None is installed by default. Allowlist and timelock accounts use a preset of the general bounded type
+`aplane.falcon1024-b.v1`, which needs no template. Installers copy into
+`<APSIGNER_DATA>/library/templates/` and never delete from it.
 
 `apadmin` presents this mixed source as the KeyType Library. It lists the signer-data library over the
 admin protocol and also includes installed product-store templates that no longer have a matching plaintext
@@ -1357,14 +1347,14 @@ bounded keys require version 2. LogicSig key payloads include:
 Bounded signing-metadata version 2 additionally requires the canonical
 `bounded_authorization` object:
 
-- `contract`: `bounded1`
+- `contract`: `bounded2`
 - `base_signature_arg_layout`: exact base arg count and per-position maximums
-- `spend_effects`, `max_fee`, and typed `admin_operations`; every operation
-  explicitly carries `policy_gate: none|layer3`, and the only authorization is
-  `spending_key`; an account that refuses rekeys stores no operation
+- `spend_effects`, `max_fee`, and `rekey`: `refused` (no rekey path) or
+  `spending_key` (the spending key alone authorizes a pure rekey); a cosigner
+  requires `refused`
 - `runtime_args` and `derived_args`: canonical declarations, possibly empty
-- `argument_layout`: complete ordered slots with source, maximum, and all path
-  masks; the `admin_rekey` mask is unused and stays for encoding stability
+- `argument_layout`: complete ordered slots with source, maximum, and the
+  `spend` and `spending_rekey` path masks
 - `layer3_policy`: exactly `custom`, `fixed_allowlist`, `merkle_allowlist`,
   `fixed_allowlist_custom`, `merkle_allowlist_custom`, `timelock`,
   `fixed_allowlist_timelock`, or `merkle_allowlist_timelock`
