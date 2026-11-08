@@ -521,3 +521,31 @@ func TestAssembleBoundedTargetCarriesPlainHostSpends(t *testing.T) {
 		})
 	}
 }
+
+// A2: plain /sign refuses any plan with a cosigned account, a plain host's or a
+// bounded host's, before signing anything; an account without a cosigner is
+// signed there.
+func TestPlainSignRefusesACosignedAccount(t *testing.T) {
+	cosignerKey := bytes.Repeat([]byte{0x47}, boundedmeta.CosignerPublicKeySizeV1)
+	bounded := boundedCosignerTestMetadata(t, cosignerKey)
+	plain := boundedmeta.Clone(bounded)
+	plain.Contract, plain.SpendEffects, plain.MaxFee, plain.Layer3Policy = boundedmeta.PlainContract, nil, nil, boundedmeta.Layer3PolicyNone
+	uncosigned := boundedmeta.Clone(plain)
+	uncosigned.Cosigner = nil
+	for name, test := range map[string]struct {
+		metadata *boundedmeta.Metadata
+		refused  bool
+	}{
+		"cosigned bounded host":         {bounded, true},
+		"cosigned plain host":           {plain, true},
+		"plain host without a cosigner": {uncosigned, false},
+	} {
+		plan := &PlanResult{BoundedItems: []*boundedPlanItem{nil, {Metadata: test.metadata, Path: boundedPathPureSpend}}}
+		if got := planHasCosignedBoundedTarget(plan); got != test.refused {
+			t.Fatalf("%s: planHasCosignedBoundedTarget() = %v, want %v", name, got, test.refused)
+		}
+	}
+	if err := boundedCosignerRequired(); err.Code() != signerapi.ErrCodeBoundedCosignerRequired {
+		t.Fatalf("refusal code = %q", err.Code())
+	}
+}

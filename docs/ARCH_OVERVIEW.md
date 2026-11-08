@@ -2486,7 +2486,7 @@ The repo uses:
   `docs/formal/metrics.json`. It covers `sign_boundary`,
   `policy_precedence`, `composition`, `approval_coordinator`,
   `approval_composition`, `session_ownership`,
-  `guarded_assembly`, `bounded_cosigner`, `plugin_signing`,
+  `bounded_cosigner`, `plugin_signing`,
   `store_root_commit`, `enrollment_queue`, and `recovery_binding`, plus
   liveness configurations for `approval_coordinator` and expected-failure
   negative controls (outgoing-seal pinning for `store_root_commit`, durable

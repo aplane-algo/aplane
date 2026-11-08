@@ -41,8 +41,8 @@ Two surviving plugin group modes plus the shared trust machinery:
   (`/sign`), and the results are merged and submitted.
 
 Out of scope: the plugin process protocol itself (JSON-RPC, sandboxing,
-manifests — `docs/ARCH_PLUGINS.md`), guarded-account component assembly
-([FORMAL_GUARDED_SIGNING_MODEL.md](FORMAL_GUARDED_SIGNING_MODEL.md)), and the
+manifests — `docs/ARCH_PLUGINS.md`), cosigned-account component assembly
+([FORMAL_TLA_BOUNDED_COSIGNER_MODEL.md](FORMAL_TLA_BOUNDED_COSIGNER_MODEL.md)), and the
 generic passthrough machinery already modeled in
 [FORMAL_TXN_PLANNING_MODEL.md](FORMAL_TXN_PLANNING_MODEL.md) (I7/I8).
 

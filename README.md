@@ -228,13 +228,11 @@ All documentation is in the [`docs/`](docs/) directory.
 - [FORMAL_TLA_POLICY_PRECEDENCE_MODEL.md](docs/FORMAL_TLA_POLICY_PRECEDENCE_MODEL.md) - Second machine-checkable TLA+ artifact (policy precedence, including real I9)
 - [FORMAL_TLA_COMPOSITION_MODEL.md](docs/FORMAL_TLA_COMPOSITION_MODEL.md) - Third machine-checkable TLA+ artifact (joins sign boundary + policy precedence)
 - [FORMAL_TLA_SESSION_OWNERSHIP_MODEL.md](docs/FORMAL_TLA_SESSION_OWNERSHIP_MODEL.md) - Machine-checked single-admin ownership and displacement model
-- [FORMAL_TLA_BOUNDED_COSIGNER_MODEL.md](docs/FORMAL_TLA_BOUNDED_COSIGNER_MODEL.md) - Machine-checked bounded-cosigner choreography model
+- [FORMAL_TLA_BOUNDED_COSIGNER_MODEL.md](docs/FORMAL_TLA_BOUNDED_COSIGNER_MODEL.md) - Machine-checked cosigned-account choreography model, with the cosigned flow's other properties
 - [FORMAL_TLA_PLUGIN_SIGNING_MODEL.md](docs/FORMAL_TLA_PLUGIN_SIGNING_MODEL.md) - Machine-checked plugin signing model
-- [FORMAL_GUARDED_SIGNING_MODEL.md](docs/FORMAL_GUARDED_SIGNING_MODEL.md) - Precise guarded signing model
 - [FORMAL_PLUGIN_SIGNING_MODEL.md](docs/FORMAL_PLUGIN_SIGNING_MODEL.md) - Precise plugin signing model
 - [FORMAL_TLA_APPROVAL_COORDINATOR_MODEL.md](docs/FORMAL_TLA_APPROVAL_COORDINATOR_MODEL.md) - Machine-checked approval coordinator model
 - [FORMAL_TLA_APPROVAL_COMPOSITION_MODEL.md](docs/FORMAL_TLA_APPROVAL_COMPOSITION_MODEL.md) - Machine-checked approval-aware composition model
-- [FORMAL_TLA_GUARDED_ASSEMBLY_MODEL.md](docs/FORMAL_TLA_GUARDED_ASSEMBLY_MODEL.md) - Machine-checked guarded assembly verification model
 - [FORMAL_TLA_ENROLLMENT_QUEUE_MODEL.md](docs/FORMAL_TLA_ENROLLMENT_QUEUE_MODEL.md) - Machine-checked client enrollment queue model
 - [FORMAL_TLA_STORE_ROOT_COMMIT_MODEL.md](docs/FORMAL_TLA_STORE_ROOT_COMMIT_MODEL.md) - Machine-checked atomic store-root commit model
 - [FORMAL_TLA_RECOVERY_BINDING_MODEL.md](docs/FORMAL_TLA_RECOVERY_BINDING_MODEL.md) - Machine-checked recovery binding model

@@ -13,9 +13,8 @@ contracts; these models cover narrower security-critical transitions.
 | `approval_coordinator.tla` | delivery, cancellation, timeout, fail-all, displacement, and progress |
 | `approval_composition.tla` | approval outcome to signer output |
 | `session_ownership.tla` | scalar pending/active admin ownership |
-| `guarded_assembly.tla` | guarded component assembly |
 | `plugin_signing.tla` | plugin signing trust boundary |
-| `bounded_cosigner.tla` | cosigned1 composition: spends, cosigned rekeys and listed rekeys |
+| `bounded_cosigner.tla` | cosigned1 composition: spends, cosigned rekeys and listed rekeys, and passthrough binding (A8), on a bounded or a plain host |
 | `store_root_commit.tla` | atomic generation/key-authority commit, exact-input promotion, crash classification, and quarantine |
 | `enrollment_queue.tla` | client enrollment registry and queue under the applied-vs-durable publication rule |
 | `recovery_binding.tla` | which generation the runtime binds, serves, and maintains after a failed post-commit reload |
@@ -460,3 +459,21 @@ sparse and recover a live stage without rebuilding history, and restore
 publishes rotating stage hints after a successful mutation; both extend the
 already listed rotating stage-table recovery candidate rather than adding a
 new one.
+
+2026-11-08, account overlays phase 5: the dedicated cosigned account
+(`aplane.falcon1024-cosigner1024.v1`, flow `cosigner1`) retired, and
+`guarded_assembly.tla` with it, along with its cfg, its metrics row and both
+companions (`FORMAL_TLA_GUARDED_ASSEMBLY_MODEL.md` and the English
+`FORMAL_GUARDED_SIGNING_MODEL.md`). A8, the one assembly check the cosigned
+flow keeps, moved into `bounded_cosigner.tla` as `A8_PassthroughTxidBound`:
+the abstract `passthrough` input became the code's three checks (decoded
+txid, signature present, no locally held cosigned signer). TLC: 2,127,872
+distinct states, depth 4; dropping any one of the three conjuncts violates
+`Safety`. A1, A3, A6, A7 and A14 described the dedicated account's user
+component and its assembly and retired with it. A2, A4, A5, A9-A13 and A15
+moved to the Bounded Cosigner section of `FORMAL_TRACEABILITY.md`, their prose
+to the bounded cosigner companion; A2 now covers cosigned accounts on a plain
+or bounded host, with a new test (`TestPlainSignRefusesACosignedAccount`). The
+plain host (`plain1`) and the lifted product restrictions change no model: the
+cosigned flow's paths and gates are the same on either host, which differs only
+in which transactions classify onto the spend path, abstracted as `classified`.

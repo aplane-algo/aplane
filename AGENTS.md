@@ -265,8 +265,7 @@ so a PR that changes modeled code keeps the correspondence itself.
 | `internal/genstore/` (commit, root commit, reconcile, quarantine), `internal/storepass/rotate.go`, `internal/crypto/store_root.go` | `store_root_commit.tla` |
 | store-commit callers (`internal/signerapp/admin/`, `backupadmin/`), `internal/signerapp/templates/reload.go`, `internal/keystore/file.go`, `daemon/admin_services.go` | `recovery_binding.tla` |
 | `internal/signerapp/enrollqueue/`, `enrollment/service.go`, `productruntime/runtime.go` (registry and queue publication), `daemon/server.go` (approve/reject/import) | `enrollment_queue.tla` |
-| `internal/signerapp/signing/component_assemble.go`, `component_sign.go` | `guarded_assembly.tla` |
-| `internal/signerapp/signing/bounded_cosigner.go`, `internal/engine/guarded/submit.go` | `bounded_cosigner.tla` |
+| `internal/signerapp/signing/bounded_cosigner.go`, `component_assemble.go` (passthrough), `internal/engine/guarded/submit.go` | `bounded_cosigner.tla` |
 | `internal/engine/plugin_*.go`, `internal/apshellcli/external_plugins.go`, `plugin_group_review.go`, `internal/apshellapp/submission.go` | `plugin_signing.tla` |
 | `internal/signerapp/signing/planner.go`, `execution.go`, `service.go`, `gate.go`, `internal/signerapp/policyeval/`, `pkg/signerapi/` | `sign_boundary.tla`, `policy_precedence.tla`, `composition.tla` |
 | `internal/signerapp/signing/rotating_release.go`, `rotating_flow.go` (leaf choice), `rotating_tables.go` | `rotating_leaf_release.tla` |
