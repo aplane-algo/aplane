@@ -42,19 +42,14 @@ func rekeyListProofArg() boundedmeta.DerivedArg {
 
 // RekeyListEntries parses a rekey-to list's entries from creation parameters.
 func RekeyListEntries(params map[string]string) ([]types.Address, error) {
-	value := strings.TrimSpace(params[BoundedRekeyToParameter])
-	if value == "" {
+	if strings.TrimSpace(params[BoundedRekeyToParameter]) == "" {
 		return nil, fmt.Errorf("%s is required", BoundedRekeyToParameter)
 	}
-	var entries []types.Address
-	for _, item := range strings.Split(value, ",") {
-		address, err := types.DecodeAddress(strings.TrimSpace(item))
-		if err != nil {
-			return nil, fmt.Errorf("%s: invalid address %q: %w", BoundedRekeyToParameter, item, err)
-		}
-		entries = append(entries, address)
+	entries, err := rekeylist.ParseEntries(params[BoundedRekeyToParameter])
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", BoundedRekeyToParameter, err)
 	}
-	return rekeylist.Canonical(entries)
+	return entries, nil
 }
 
 // rekeyListRoot reads the root the generator added. A request can never carry
@@ -118,16 +113,7 @@ func RekeyListFor(privateKey []byte, params map[string]string) (*rekeylist.List,
 	if err != nil {
 		return nil, err
 	}
-	seed, err := rekeylist.SeedFromSpendingKey(privateKey)
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		for i := range seed {
-			seed[i] = 0
-		}
-	}()
-	return rekeylist.New(seed[:], entries)
+	return rekeylist.FromSpendingKey(privateKey, entries)
 }
 
 // RekeyListRootFor computes the root an account's program commits to.

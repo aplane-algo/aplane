@@ -55,6 +55,8 @@ type Slot struct {
 	// Policy governs a signer slot; nil means no policy is loaded for it.
 	// Passthrough and foreign slots have none.
 	Policy *policy.Config
+	// ListedRekeyTargets is the signing account's rekey-to list, if it has one.
+	ListedRekeyTargets map[string]bool
 }
 
 // Input is everything a verdict depends on.
@@ -198,6 +200,7 @@ func Deny(in Input) ([]policy.LintViolation, error) {
 		txn := in.Group[slot.Index]
 		found := policy.CheckTxnPolicyLintsIn(txn, slot.Policy, policy.LintContext{
 			KnownAddresses: in.KnownAddresses, ProtocolRekeyTargets: in.ProtocolRekeyTargets,
+			ListedRekeyTargets: slot.ListedRekeyTargets,
 		})
 		found = append(found, policy.CheckTxnTransferRoutingPolicyLints(txn, slot.Policy)...)
 		for i := range found {
@@ -246,7 +249,9 @@ func reviewRule(in Input) (string, bool) {
 		if violations := policy.CheckTxnTransferRoutingReviewPolicyLints(txn, cfg); len(violations) > 0 {
 			return violations[0].RuleID, true
 		}
-		if cfg.AlwaysReviewWarnings && len(approvalpolicy.CheckDecodedTxnWarningsIn(txn, warnCtx)) > 0 {
+		slotCtx := warnCtx
+		slotCtx.ListedRekeyTargets = slot.ListedRekeyTargets
+		if cfg.AlwaysReviewWarnings && len(approvalpolicy.CheckDecodedTxnWarningsIn(txn, slotCtx)) > 0 {
 			return policy.AlwaysReviewWarningsRuleID, true
 		}
 	}

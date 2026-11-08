@@ -25,7 +25,7 @@ func EvaluateAlwaysReviewRules(txns []types.Transaction, requestCount int, passt
 func evaluateAlwaysReviewRules(txns []types.Transaction, requestCount int, passthroughIndices, foreignIndices map[int]bool, policyFor PolicyResolver, authKeys []string, warnCtx approvalpolicy.Context) (ruleID string, review bool) {
 	return policyeval.ReviewRule(policyeval.Input{
 		Group:                txns,
-		Slots:                clientSlots(txns, requestCount, passthroughIndices, foreignIndices, policyFor, authKeys),
+		Slots:                clientSlots(txns, requestCount, passthroughIndices, foreignIndices, policyFor, authKeys, nil),
 		KnownAddresses:       warnCtx.KnownAddresses,
 		ProtocolRekeyTargets: warnCtx.ProtocolRekeyTargets,
 	})

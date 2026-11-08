@@ -52,6 +52,10 @@ type LintContext struct {
 	// next stage). The rekey setting never rejects them, or reject_all_rekeys
 	// would stop a rotating account from spending.
 	ProtocolRekeyTargets map[string]bool
+	// ListedRekeyTargets are the signing account's own rekey-to list: the
+	// owner's standing statement that these targets may take the account, so
+	// reject_foreign_rekey counts them as declared.
+	ListedRekeyTargets map[string]bool
 }
 
 // CheckTxnPolicyLints evaluates hard transaction-level policy rules with
@@ -159,7 +163,7 @@ func rekeyViolation(txn types.Transaction, facts txeffects.Facts, cfg *Config, c
 	case RekeysAllow:
 		return LintViolation{}, false
 	case RekeysRejectForeign:
-		if ctx.KnownAddresses[target] {
+		if ctx.KnownAddresses[target] || ctx.ListedRekeyTargets[target] {
 			return LintViolation{}, false
 		}
 		return LintViolation{

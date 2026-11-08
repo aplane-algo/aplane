@@ -16,6 +16,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/merkleallowlist"
+	"github.com/aplane-algo/aplane/internal/rekeylist"
 	"github.com/aplane-algo/aplane/internal/rotatingkey"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
 	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
@@ -501,10 +502,16 @@ func (e *Executor) assembleBoundedLogicSig(txn types.Transaction, authAddr, txnS
 
 func boundedDerivedArgs(txn types.Transaction, keyMaterial *coresigning.KeyMaterial, metadata *boundedmeta.Metadata, path boundedPath) ([][]byte, *ServiceError) {
 	values := make([][]byte, len(metadata.DerivedArgs))
+	if path == boundedPathListedRekey {
+		return listedRekeyDerivedArgs(txn, keyMaterial, metadata, values)
+	}
 	if path != boundedPathPureSpend {
 		return values, nil
 	}
 	for i, arg := range metadata.DerivedArgs {
+		if arg.Kind == boundedmeta.DerivedArgRekeyListProof {
+			continue
+		}
 		if arg.Kind != boundedmeta.DerivedArgMerkleProof {
 			return nil, internal(fmt.Sprintf("unsupported bounded derived argument kind %q", arg.Kind))
 		}
@@ -594,4 +601,40 @@ func isGenericKeyMaterial(keyMaterial *coresigning.KeyMaterial) bool {
 		return false
 	}
 	return keys.IsGenericKey(keyMaterial.Category)
+}
+
+// listedRekeyDerivedArgs fills the list proof for a listed rekey. The proof's
+// salt comes from a seed derived from the spending private key, so only the
+// account's own signer can build it; the recipient proofs stay empty, since no
+// rekey reaches Layer 3.
+func listedRekeyDerivedArgs(txn types.Transaction, keyMaterial *coresigning.KeyMaterial, metadata *boundedmeta.Metadata, values [][]byte) ([][]byte, *ServiceError) {
+	lsigKey, ok := keyMaterial.Value.(*coresigning.LsigKeyMaterial)
+	if !ok || len(lsigKey.PrivateKey) == 0 {
+		return nil, internal("bounded listed rekey needs the spending private key")
+	}
+	for i, arg := range metadata.DerivedArgs {
+		if arg.Kind != boundedmeta.DerivedArgRekeyListProof {
+			continue
+		}
+		entries, err := rekeylist.ParseEntries(keyMaterial.Parameters[arg.Parameter])
+		if err != nil {
+			return nil, internal(fmt.Sprintf("stored rekey-to list is invalid: %v", err))
+		}
+		list, err := rekeylist.FromSpendingKey(lsigKey.PrivateKey, entries)
+		if err != nil {
+			return nil, internal(fmt.Sprintf("rebuild rekey-to list: %v", err))
+		}
+		root := list.Root()
+		proof, listed := list.Proof(txn.RekeyTo)
+		list.Zero()
+		// The proof is good only against the root the program compiled.
+		if metadata.RekeyList == nil || metadata.RekeyList.RootHex != hex.EncodeToString(root[:]) {
+			return nil, internal("the rebuilt rekey-to list does not match the account's stored root")
+		}
+		if !listed {
+			return nil, &ServiceError{Kind: ErrorBoundedRekeyNotListed, Message: fmt.Sprintf("%s is not on this account's rekey-to list", txn.RekeyTo)}
+		}
+		values[i] = proof
+	}
+	return values, nil
 }

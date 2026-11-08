@@ -19,6 +19,7 @@ const (
 	ErrorUnavailable             = svcerr.KindUnavailable
 	ErrorInternal                = svcerr.KindInternal
 	ErrorBoundedCosignerRequired = svcerr.KindBoundedCosignerRequired
+	ErrorBoundedRekeyNotListed   = svcerr.KindBoundedRekeyNotListed
 	ErrorRotatingSigningRequired = svcerr.KindRotatingSigningRequired
 	ErrorRotatingStageUnproven   = svcerr.KindRotatingStageUnproven
 	ErrorRotatingStageChanged    = svcerr.KindRotatingStageChanged

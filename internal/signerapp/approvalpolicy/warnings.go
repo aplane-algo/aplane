@@ -33,6 +33,9 @@ type Context struct {
 	// next stage. A rekey to one of them is the protocol working, not a
 	// dangerous field, and produces no finding.
 	ProtocolRekeyTargets map[string]bool
+	// ListedRekeyTargets are addresses on a signing account's rekey-to list. A
+	// rekey to one is still a finding: it hands the account over.
+	ListedRekeyTargets map[string]bool
 }
 
 // CheckTxnWarnings analyzes a transaction for dangerous fields that should be
@@ -86,9 +89,15 @@ func CheckDecodedTxnWarningsIn(txn types.Transaction, ctx Context) []signerappro
 	if facts.Has(txeffects.EffectRekey) && !ctx.ProtocolRekeyTargets[txn.RekeyTo.String()] {
 		rekeyTarget := txn.RekeyTo.String()
 		msg := "This transaction will transfer signing authority to another address."
-		if ctx.KnownAddresses[rekeyTarget] {
+		if ctx.ListedRekeyTargets[rekeyTarget] {
+			msg = "This transaction hands the account to an address on its rekey-to list."
+		}
+		switch {
+		case ctx.KnownAddresses[rekeyTarget]:
 			msg += "\n   You possess the keys for the new address."
-		} else {
+		case ctx.ListedRekeyTargets[rekeyTarget]:
+			msg += "\n   >>> THIS SIGNER DOES NOT HOLD IT: THE ACCOUNT LEAVES THIS SIGNER'S CUSTODY <<<"
+		default:
 			msg += "\n   >>> YOU WILL LOSE CONTROL OF THIS ACCOUNT <<<"
 		}
 		violations = append(violations, signerapproval.Violation{

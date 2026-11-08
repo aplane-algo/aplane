@@ -282,6 +282,8 @@ func boundedAuthorizationLabel(item *boundedPlanItem) string {
 	switch item.Path {
 	case boundedPathSpendingKeyRekey:
 		return "spending key only"
+	case boundedPathListedRekey:
+		return "spending key only, to an address on the account's rekey-to list"
 	default:
 		return "unknown"
 	}
@@ -306,7 +308,7 @@ func resolvePolicy(policyFor PolicyResolver, authKeys []string, i int) *policy.C
 
 // clientSlots returns the positions client signing judges, AllTxns[:requestCount],
 // with each signer position's policy resolved through authKeys.
-func clientSlots(allTxns []types.Transaction, requestCount int, passthroughIndices, foreignIndices map[int]bool, policyFor PolicyResolver, authKeys []string) []policyeval.Slot {
+func clientSlots(allTxns []types.Transaction, requestCount int, passthroughIndices, foreignIndices map[int]bool, policyFor PolicyResolver, authKeys []string, listed map[int]map[string]bool) []policyeval.Slot {
 	limit := requestCount
 	if limit > len(allTxns) {
 		limit = len(allTxns)
@@ -319,7 +321,7 @@ func clientSlots(allTxns []types.Transaction, requestCount int, passthroughIndic
 		case foreignIndices[i]:
 			slots = append(slots, policyeval.Slot{Index: i, Class: policyeval.SlotForeign})
 		default:
-			slots = append(slots, policyeval.Slot{Index: i, Class: policyeval.SlotSigner, Policy: resolvePolicy(policyFor, authKeys, i)})
+			slots = append(slots, policyeval.Slot{Index: i, Class: policyeval.SlotSigner, Policy: resolvePolicy(policyFor, authKeys, i), ListedRekeyTargets: listed[i]})
 		}
 	}
 	return slots
@@ -364,7 +366,7 @@ func policyRejection(violations []policy.LintViolation, console Console) *Servic
 func EvaluateAutoRejectionRules(allTxns []types.Transaction, requestCount int, passthroughIndices, foreignIndices map[int]bool, policyFor PolicyResolver, authKeys []string, knownAddresses map[string]bool, console Console) *ServiceError {
 	violations, err := policyeval.Deny(policyeval.Input{
 		Group:          allTxns,
-		Slots:          clientSlots(allTxns, requestCount, passthroughIndices, foreignIndices, policyFor, authKeys),
+		Slots:          clientSlots(allTxns, requestCount, passthroughIndices, foreignIndices, policyFor, authKeys, nil),
 		KnownAddresses: knownAddresses,
 	})
 	if err != nil {
@@ -443,7 +445,10 @@ func (s *ApprovalService) requestGroupApprovalWithContext(ctx context.Context, r
 	displaySender := fmt.Sprintf("GROUP(%d txns)", len(txns))
 	groupAuthAddr := groupApprovalAddress(req)
 
-	violations := approvalpolicy.CheckGroupWarningsIn(txns, approvalpolicy.Context{KnownAddresses: s.groupKnownAddresses(plan), ProtocolRekeyTargets: protocolRekeyTargetsForPlan(plan)})
+	violations := approvalpolicy.CheckGroupWarningsIn(txns, approvalpolicy.Context{
+		KnownAddresses: s.groupKnownAddresses(plan), ProtocolRekeyTargets: protocolRekeyTargetsForPlan(plan),
+		ListedRekeyTargets: allListedRekeyTargets(plan),
+	})
 	approved, err := s.requestSigningApproval(
 		ctx,
 

@@ -173,3 +173,24 @@ func TestEvaluateRekeysSetting(t *testing.T) {
 		})
 	}
 }
+
+// A slot's listed targets are its own: another position's list doesn't make a
+// rekey there declared.
+func TestEvaluateListedTargetsArePerSlot(t *testing.T) {
+	open := `"transfer_policy": {"on_no_route": "operator_default"}`
+	listed := types.Address{8}
+	rekey := pay(1, 1, 0)
+	rekey.RekeyTo = listed
+	foreignPolicy := signerPolicy(t, `{"rekeys": "reject_foreign_rekey", `+open+`}`)
+	targets := map[string]bool{listed.String(): true}
+	verdict, err := Evaluate(Input{
+		Group: []types.Transaction{rekey, rekey},
+		Slots: []Slot{{Index: 0, Policy: foreignPolicy, ListedRekeyTargets: targets}, {Index: 1, Policy: foreignPolicy}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if verdict.Outcome != Reject || len(verdict.Violations) != 1 || verdict.Violations[0].TxnIndex != 1 {
+		t.Fatalf("verdict = %+v, want only position 1 rejected", verdict)
+	}
+}

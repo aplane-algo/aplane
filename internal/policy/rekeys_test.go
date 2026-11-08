@@ -102,3 +102,23 @@ func TestRekeysSettingDiffRanksStrictness(t *testing.T) {
 	assertChanges(t, DiffPolicyV1(doc(RekeysRejectAll), doc(RekeysRejectForeign)), "loosened /rekeys: reject_all_rekeys → reject_foreign_rekey")
 	assertChanges(t, DiffPolicyV1(doc(RekeysRejectForeign), doc(RekeysRejectForeign)))
 }
+
+// O8: an account's own rekey-to list is the owner's standing statement, so
+// reject_foreign_rekey counts its targets as declared. reject_all_rekeys still
+// rejects them: it rejects every rekey.
+func TestListedRekeyTargetsCountAsDeclared(t *testing.T) {
+	listed := types.Address{4}
+	ctx := LintContext{ListedRekeyTargets: map[string]bool{listed.String(): true}}
+	txn := types.Transaction{Type: types.PaymentTx, Header: types.Header{RekeyTo: listed}}
+	foreign := &Config{Role: noderole.RoleSigner, TransactionTypes: allowAllTypes(), Rekeys: RekeysRejectForeign}
+	if got := CheckTxnPolicyLintsIn(txn, foreign, ctx); len(got) != 0 {
+		t.Fatalf("reject_foreign_rekey refused a listed target: %+v", got)
+	}
+	if got := CheckTxnPolicyLintsIn(txn, foreign, LintContext{}); len(got) != 1 || got[0].RuleID != RejectForeignRekeyRuleID {
+		t.Fatalf("without its list, the target is foreign: %+v", got)
+	}
+	all := &Config{Role: noderole.RoleSigner, TransactionTypes: allowAllTypes(), Rekeys: RekeysRejectAll}
+	if got := CheckTxnPolicyLintsIn(txn, all, ctx); len(got) != 1 || got[0].RuleID != RejectAllRekeysRuleID {
+		t.Fatalf("reject_all_rekeys let a listed rekey through: %+v", got)
+	}
+}

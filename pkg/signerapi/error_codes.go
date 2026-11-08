@@ -33,6 +33,10 @@ const (
 	// ErrCodeBoundedCosignerRequired directs cosigner-gated bounded spends to the
 	// bounded component and assembly flow.
 	ErrCodeBoundedCosignerRequired = "bounded_cosigner_required"
+	// ErrCodeBoundedRekeyTargetNotListed refuses a rekey on an account whose
+	// rekey-to list does not hold the target: under "only these", every other
+	// rekey is refused, so the signer says so before anything reaches the chain.
+	ErrCodeBoundedRekeyTargetNotListed = "bounded_rekey_target_not_listed"
 	// ErrCodeRotatingSigningRequired directs rotating accounts to the rotating
 	// prepare and sign flow.
 	ErrCodeRotatingSigningRequired = "rotating_signing_required"

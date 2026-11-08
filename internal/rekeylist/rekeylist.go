@@ -21,6 +21,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
@@ -65,6 +66,38 @@ func SeedFromSpendingKey(privateKey []byte) ([SeedSize]byte, error) {
 	mac.Write([]byte(seedLabel))
 	copy(seed[:], mac.Sum(nil))
 	return seed, nil
+}
+
+// ParseEntries reads a comma-separated list of addresses, as an account's
+// creation parameters store it, and returns it in canonical order.
+func ParseEntries(value string) ([]types.Address, error) {
+	if strings.TrimSpace(value) == "" {
+		return nil, fmt.Errorf("a rekey-to list needs at least one address")
+	}
+	var entries []types.Address
+	for _, item := range strings.Split(value, ",") {
+		address, err := types.DecodeAddress(strings.TrimSpace(item))
+		if err != nil {
+			return nil, fmt.Errorf("invalid address %q: %w", item, err)
+		}
+		entries = append(entries, address)
+	}
+	return Canonical(entries)
+}
+
+// FromSpendingKey rebuilds an account's list from its spending private key and
+// its entries. The caller zeroes the result.
+func FromSpendingKey(privateKey []byte, entries []types.Address) (*List, error) {
+	seed, err := SeedFromSpendingKey(privateKey)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		for i := range seed {
+			seed[i] = 0
+		}
+	}()
+	return New(seed[:], entries)
 }
 
 // NewSeed returns a fresh random seed.
