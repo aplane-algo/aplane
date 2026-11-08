@@ -19,6 +19,53 @@ This release is install-fresh only.
   rejected, so a rotating account keeps spending under `reject_all_rekeys`. A document with
   `reject_foreign_rekey` is refused; write `"rekeys": "reject_foreign_rekey"`. Cosigner
   documents are unchanged.
+- Bounded accounts without a cosigner can have a rekey-to list ("only these addresses"):
+  `rekey_authority=only_these` with `rekey_to`, 1 to 16 distinct nonzero addresses. The
+  spending key alone can then rekey the account only to a listed address, and the program
+  refuses every other rekey. The list compiles to a salted Merkle root that reveals nothing
+  about its entries. The signer keeps the entries in the key file and derives the salts from
+  the spending key, so a backup of the key carries everything, and `/keys` never shows the
+  entries.
+- A listed address can take the account over whenever the spending key chooses. List keys
+  you hold apart from the spending key. For a post-quantum account, list a native
+  `falcon1024` account: an Ed25519 key puts the account on a classical key after a handover.
+  Generation refuses an entry that could never act on the account: one of this signer's
+  rotating accounts, or the address of an imported cosigner reference.
+- `refused` without a cosigner is no longer offered: use `only_these`. Corridor stays
+  `refused` with a cosigner, because a cosigned account can't have a list yet. The Locked
+  Allowlist and Timelock presets are now `only_these` and ask for the rekey-to addresses;
+  Allowlist is unchanged. On a timelock a listed rekey is a way around the lock: no rule
+  holds a rekey back until the unlock round, so the lock holds only while the holders of the
+  listed keys cooperate. apadmin's review and apshell's summary say so.
+- Boundary files take `rekey: {authority: only_these, to: [...]}`. `rekey.to` needs
+  `only_these`, and `only_these` needs `rekey.to`. An `only_these` account with a recipient
+  list counts as contained for `boundary_require_contained`.
+- The general type has 81 shapes: 34 allowlists, 30 timelocks and 17 limits-only. Every
+  shape fingerprint, boundary digest and bounded template fingerprint has changed, because
+  every bounded profile now encodes a list marker and a `listed_rekey` rule for each argument
+  slot. The spending-key and cosigned shapes keep their programs. A review prepared before
+  the upgrade is refused as changed; prepare it again.
+- Templates can declare `bounded.rekey: only_these`. The framework adds the `rekey_to`
+  parameter and a 160-byte list-proof argument after any Merkle proof, so a runtime argument
+  moves one slot later. The rule that a `refused` template must allow `pay`, and `axfer` with
+  `asset_opt_in`, now applies only without a list.
+- A rekey on an "only these" account takes the new `listed_rekey` path through ordinary
+  `/sign`, and the signer builds the list proof. A target that isn't on the list is refused
+  before anything is signed, with the new error code `bounded_rekey_target_not_listed` (HTTP
+  400). Every listed rekey needs review (`bounded_rekey_requires_review`), which User
+  Auto-Approve satisfies and the self no-op rule never does. Under `reject_foreign_rekey` a
+  target on the signing account's own list counts as declared; `reject_all_rekeys` still
+  rejects it. The approval says the transaction hands the account to an address on its
+  rekey-to list and, when this signer doesn't hold that address, that the account leaves
+  this signer's custody.
+- `/keys` and `/keytypes` carry `bounded_authorization.rekey_list` (`contract` `rekey_list1`,
+  `depth`, and in `/keys` the account's `root`). Resource profiles gain a `listed_rekey`
+  cell, which clients from this release require, and argument layouts a `listed_rekey` rule.
+  Account labels say "rekey to listed only".
+- apadmin's `prepare_generate_result.bounded` gains `rekey_list`. The admin protocol stays at
+  8.0, which is still unreleased.
+- The SDKs follow: the `listed_rekey` resource path and path-mask field, the `rekey_list`
+  record, path selection for a rekey on an "only these" account, and the new error code.
 
 ## Bounded accounts move to the bounded2 contract
 
@@ -186,7 +233,8 @@ names below are no longer read.
   from `library/templates/`, so an upgraded signer keeps listing them.
 - apadmin's KeyType Library can now view the stored YAML of an installed template that has
   no library file.
-- See [USER_KEYTYPES.md](USER_KEYTYPES.md#retired-templates).
+- A later release deletes these templates and `library/retired/`; see
+  [Bounded accounts move to the bounded2 contract](#bounded-accounts-move-to-the-bounded2-contract).
 
 ## Bounded templates can use framework timelock policies
 

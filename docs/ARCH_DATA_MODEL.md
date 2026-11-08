@@ -409,7 +409,11 @@ rules live in [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md). From a data-model pers
   `bounded-cosigner1` with a cosigner.
 - The stored `rekey` setting is `refused` or `spending_key`. The spending key is
   signer-managed (`.key`). A spending-key rekey goes through ordinary `/sign`; an
-  account that declares `rekey: refused` has no rekey path.
+  account that declares `rekey: refused` has no rekey path unless it also carries a
+  rekey-to list (`rekey_list`: contract, depth, root), whose listed rekeys go through
+  ordinary `/sign` too. The list's entries are the stored `rekey_to` creation
+  parameter, never projected to `/keys`; its salts derive from the spending key, so
+  the key file and its backups are the only copy of what it needs.
 - The signer classifies each target against the account's path declaration,
   projected from that metadata (`boundedmeta.PathDeclaration`).
 
@@ -689,8 +693,9 @@ are rejected.
   `bounded_max_fees` (the bounded authorization `max_fee` per address).
   Each LogicSig resource profile keeps final compiled program bytes separate
   from path-specific maximum argument bytes and reviewed opcode-cost ceilings.
-  Bounded profiles expose exactly the spend and spending-rekey paths from the
-  durable argument layout. No combined program-plus-arguments scalar is stored.
+  Bounded profiles expose exactly the spend, spending-rekey, and listed-rekey
+  paths from the durable argument layout. No combined program-plus-arguments
+  scalar is stored.
   Covered APlane-owned declarations are exercised by the integration
   opcode-ceiling gate: production-generated final bytecode and maximum-input
   accepted paths are simulated by the same algod selected by the signer fixture's
@@ -979,7 +984,9 @@ keys.
    spends (`bounded_cosigner_required`), and rotating accounts
    (`rotating_signing_required`).
 4. Signer canonicalizes group and computes mutations (bounded planning
-   classifies effects after fee pooling).
+   classifies effects after fee pooling, and refuses a rekey to an address
+   that is not on the account's rekey-to list with
+   `bounded_rekey_target_not_listed`).
 5. Signer evaluates policy for signer-controlled slots.
 6. Signer either rejects, auto-approves, or requests operator approval.
 7. Signer signs/assembles finalized slots.

@@ -261,9 +261,9 @@ is displayed on that path, so transaction types the approval screen cannot
 show (state proof, heartbeat) sign as well; reject them by type for a key an
 agent drives if it must never issue them. Within Always Deny and Always Review, the `transaction_types` verdict is
 evaluated first: a rejected type never reaches the other rules, and the
-rejection names the type. A spending-key rekey of a bounded account always needs
-review (rule id `bounded_rekey_requires_review`), ahead of every approval rule;
-User Auto-Approve satisfies it.
+rejection names the type. A spending-key or listed rekey of a bounded account
+always needs review (rule id `bounded_rekey_requires_review`), ahead of every
+approval rule; User Auto-Approve satisfies it.
 
 The policy for a request is resolved per signing key from one snapshot taken
 when the request's signing service is built: the key's own file if it has one,
@@ -761,7 +761,9 @@ appolicy test policy/               # re-run the saved cases in policy/.appolicy
   asset's raw units), and optionally `--asset`, `--network` (default
   `testnet`), `--fee` (default 1000), `--close-to`, `--clawback-from` and
   `--rekey-to`. A rekey is foreign unless you add `--rekey-held` to say the
-  node holds the target's key. `--json` prints the result as JSON. It exits 0
+  node holds the target's key; `reject_foreign_rekey` treats a target on the
+  signing account's rekey-to list the same way, so try a listed target with
+  `--rekey-held`. `--json` prints the result as JSON. It exits 0
   whatever the verdict and 2 for bad input.
 
   The answer is the document's, not the node's, and it lists what it
@@ -891,7 +893,7 @@ in base units, and ASA IDs are written `asa:<id>`.
 | `role` | both | yes | `"signer"` or `"cosigner"`; must match the node. |
 | `key` | both | yes | `"default"` for the node default, or the key the file governs: a signing address on a signer node, a Witness Key ID on a cosigner node. Must match the file name. |
 | `description` | both | no | Notes for reviewers. |
-| `rekeys` | signer | yes | How the signer treats a txn with a non-zero `RekeyTo`: `reject_all_rekeys` rejects it; `reject_foreign_rekey` rejects it unless this node holds the target (the shipped default); `allow_rekeys` rejects nothing. This setting only rejects: a rekey it lets through still meets the rekey warning, review rules and operator approval, and User Auto-Approve can approve it. A rejection outranks all of those. The signer's own rotation rekeys are never rejected. |
+| `rekeys` | signer | yes | How the signer treats a txn with a non-zero `RekeyTo`: `reject_all_rekeys` rejects it; `reject_foreign_rekey` rejects it unless this node holds the target or the target is on the signing account's own [rekey-to list](USER_KEYTYPES.md#rekey-to-lists) (the shipped default); `allow_rekeys` rejects nothing. This setting only rejects: a rekey it lets through still meets the rekey warning, review rules and operator approval, and User Auto-Approve can approve it. A rejection outranks all of those. The signer's own rotation rekeys are never rejected. |
 | `reject_rekey` | cosigner | yes | Coarse deny-all switch for txns with non-zero `RekeyTo`. With `false`, a rekey still fails unless `rekey_policy` allows the edge. |
 | `reject_close_remainder` | both | yes | Reject payment txns with non-zero `CloseRemainderTo`. |
 | `reject_asset_close` | both | yes | Reject ASA transfer txns with non-zero `AssetCloseTo`. |

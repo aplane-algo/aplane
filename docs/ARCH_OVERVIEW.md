@@ -178,7 +178,7 @@ signature algorithm.
 |---|---|
 | Ordinary, empty label | `/sign` produces native signatures or assembles the held LogicSig's bytecode and arguments. Native keys, DSA-backed LogicSigs, and generic LogicSigs have different cryptographic behavior within this path. |
 | `cosigner1` | A guarded account requires both the user signer's component and a cosigner's component over the planned transaction. Assembly verifies and combines them. |
-| `bounded1` | The account's program enforces the compiled `bounded2` transaction envelope. A spending-key rekey, when the account declares one, uses the ordinary signing path. |
+| `bounded1` | The account's program enforces the compiled `bounded2` transaction envelope. A spending-key rekey, or a rekey to an address on the account's rekey-to list, when the account declares one, uses the ordinary signing path. |
 | `bounded-cosigner1` | A bounded program additionally requires a cosigner for spending. These accounts refuse rekeys. |
 | `rotating1` | Each accepted spend also hands authorization to the next deterministically derived stage. Preparation and signing use dedicated rotating endpoints. |
 

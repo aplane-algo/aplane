@@ -1149,7 +1149,7 @@ key is rejected during reload rather than published as a signable key.
 | DSA LogicSig key valid | Payload has private DSA material, stored LogicSig bytecode, a valid derivation record, `signing_metadata_version`, `base_key_type`, and valid signing metadata. | Yes on signer nodes when the base signing provider is registered. | Restores from stored metadata; composed template is not required. |
 | Generic LogicSig key valid | Payload has stored LogicSig bytecode, a valid derivation record, `signing_metadata_version`, and stored signing args. | Yes on signer nodes. | Restores from stored metadata; template is not required. |
 | Cosigner key valid | Payload category/type is a cosigner key and Witness Key ID is canonical. | Only through cosigner-role component signing on cosigner nodes; normal `/sign` and spending paths reject it. | Restores as a cosigner key on cosigner nodes, regenerating the public sidecar; never as a spending account. |
-| Bounded account key valid | DSA LogicSig key with signing-metadata version 2 and a valid `bounded_authorization`. | Pure spends and spending-key rekeys use signer-held authority, with a cosigner signature on spends when the account has one. | Restores from durable bounded metadata. |
+| Bounded account key valid | DSA LogicSig key with signing-metadata version 2 and a valid `bounded_authorization`. | Pure spends, spending-key rekeys, and listed rekeys use signer-held authority, with a cosigner signature on spends when the account has one. | Restores from durable bounded metadata. |
 | Guarded account key valid | DSA LogicSig key whose bytecode embeds the cosigner public key. | Only on signer nodes through guarded orchestration: user component signature, cosigner component signature, local assembly. | Restores from stored bytecode and metadata. |
 | LogicSig derivation invalid | Payload has bytecode but an unknown or inconsistent derivation record; for example, a manual-counter key omits `salt_counter`, or an `algod_v13_auto_salt` key includes one or stores pre-v13 bytecode. | No; scan/verify/restore reject. | Restore rejects. |
 | LogicSig on-curve address | Stored LogicSig bytecode derives an on-curve address. | No; scan/verify/restore reject. | Restore rejects. |
@@ -1349,15 +1349,21 @@ Bounded signing-metadata version 2 additionally requires the canonical
 
 - `contract`: `bounded2`
 - `base_signature_arg_layout`: exact base arg count and per-position maximums
-- `spend_effects`, `max_fee`, and `rekey`: `refused` (no rekey path) or
-  `spending_key` (the spending key alone authorizes a pure rekey); a cosigner
-  requires `refused`
-- `runtime_args` and `derived_args`: canonical declarations, possibly empty
+- `spend_effects`, `max_fee`, and `rekey`: `refused` (no rekey path, except to a
+  listed address when `rekey_list` is set) or `spending_key` (the spending key
+  alone authorizes a pure rekey); a cosigner requires `refused`
+- optional `rekey_list`: `contract` (`rekey_list1`), `depth` (4), and the
+  account's `root`; only beside `rekey: refused` and without a cosigner. Its
+  entries are the stored `rekey_to` creation parameter, and its salts derive from
+  the spending key, so the key file carries everything a listed rekey needs
+- `runtime_args` and `derived_args`: canonical declarations, possibly empty;
+  derived kinds are `merkle_allowlist_proof` (512 bytes) and `rekey_list_proof`
+  (160 bytes, exactly one with a `rekey_list`)
 - `argument_layout`: complete ordered slots with source, maximum, and the
-  `spend` and `spending_rekey` path masks
+  `spend`, `spending_rekey`, and `listed_rekey` path masks
 - `layer3_policy`: exactly `custom`, `fixed_allowlist`, `merkle_allowlist`,
   `fixed_allowlist_custom`, `merkle_allowlist_custom`, `timelock`,
-  `fixed_allowlist_timelock`, or `merkle_allowlist_timelock`
+  `fixed_allowlist_timelock`, `merkle_allowlist_timelock`, or `none`
 - optional `cosigner`: contract, witness key type, resolved public key and Witness
   Key ID, maximum signature size, and exact `[spend]` path; its argument slot
   source is `cosigner`

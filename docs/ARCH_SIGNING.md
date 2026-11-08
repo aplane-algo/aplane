@@ -898,7 +898,7 @@ in the embedded signer default a fresh store starts from.
 |---------|--------|-----------------|-------------|
 | `user_auto_approve` | `identities/default/config.yaml` | `false` | Sign non-rejected requests without TUI confirmation, including policy review requirements. |
 | `transaction_types` | policy document (default or the key's own file) | `{"*": "allow"}` | Per-type verdict evaluated before every other rule: `reject` is a hard rejection, `review` forces operator review, `allow` continues to the rules below; `*` covers every type not named. |
-| `rekeys` | policy document (default or the key's own file) | `reject_foreign_rekey` | The signer's rekey rejection, before approval: `reject_all_rekeys` rejects every non-zero `RekeyTo`, `reject_foreign_rekey` one whose target the current signer does not hold, `allow_rekeys` none. What passes goes on to review and `user_auto_approve`. The signer's own rotation rekeys are never rejected. |
+| `rekeys` | policy document (default or the key's own file) | `reject_foreign_rekey` | The signer's rekey rejection, before approval: `reject_all_rekeys` rejects every non-zero `RekeyTo`, `reject_foreign_rekey` one whose target the current signer does not hold and that is not on the signing account's own rekey-to list, `allow_rekeys` none. What passes goes on to review and `user_auto_approve`. The signer's own rotation rekeys are never rejected. |
 | `reject_close_remainder` | policy document (default or the key's own file) | `false` | Reject txns with non-zero `CloseRemainderTo` before approval. |
 | `reject_asset_close` | policy document (default or the key's own file) | `false` | Reject txns with non-zero `AssetCloseTo` before approval. |
 | `reject_clawback` | policy document (default or the key's own file) | `false` | Reject ASA clawback txns using `AssetSender` before approval. |
@@ -933,7 +933,8 @@ is built, then uses:
   under `always_review_warnings` these force review on the signer's own legs,
   and a warning on a passthrough or foreign leg forces review regardless; a
   rotating account's rekey to the next stage the signer derived itself is a
-  protocol rekey and is not a finding,
+  protocol rekey and is not a finding, and a rekey to an address on the
+  account's own rekey-to list is still one, named as a handover,
 - human approval or `user_auto_approve:true` for requests that are not auto-rejected or explicitly policy-approved, including matched review rules.
 
 | Request Type | Warning / Review Surface | Human Approval |
@@ -1065,10 +1066,20 @@ declares no rekey operation, so this flow carries spends only.
 | **Runtime args** | No | No | Optional for composed DSA | Optional |
 | **Authorization** | Signature verification | Protocol verifies `PQsig` | TEAL verifies sig | TEAL logic only |
 
-Bounded LogicSig DSA is the transaction-aware case: pure spends and
-spending-key rekeys use their declared base, derived, and runtime argument
-slots. A cosigner-enabled bounded spend adds the cosigner slot after the
-Layer-3 slots and uses the user-first bounded component choreography above.
+Bounded LogicSig DSA is the transaction-aware case: pure spends,
+spending-key rekeys, and listed rekeys use their declared base, derived, and
+runtime argument slots. A cosigner-enabled bounded spend adds the cosigner slot
+after the Layer-3 slots and uses the user-first bounded component choreography
+above.
+
+A pure rekey on an account with a rekey-to list takes the `listed_rekey` path,
+sized from that path's resource profile. The planner checks the target against
+the account's stored `rekey_to` entries and refuses one that isn't listed with
+`bounded_rekey_target_not_listed` before anything is signed. The executor
+rebuilds the list from the spending private key and the stored entries, requires
+its root to equal the stored `rekey_list.root`, and places the target's 160-byte
+proof in the list-proof slot; recipient proofs stay empty. The tree is specified
+in [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md#rekey-to-list-compatibility-contract).
 
 ---
 
@@ -1152,6 +1163,7 @@ The stable wire-contract `code` values that SDK clients branch on are defined in
 | `cache_refresh` | store mutated but the signer key cache failed to refresh | `500` |
 | `internal` | unexpected server-side failure | `500` |
 | `bounded_cosigner_required` | cosigner-gated bounded spend sent to ordinary `/sign` | `400` |
+| `bounded_rekey_target_not_listed` | a rekey on a bounded account with a rekey-to list, to an address not on the list; nothing was signed | `400` |
 | `rotating_signing_required` | rotating account sent to `/plan`, `/sign` or `/sign/component` | `400` |
 | `rotating_stage_unproven` | the signer has not yet found the rotating account's live stage; its background scan continues and a retry usually succeeds | `409` |
 | `rotating_stage_changed` | the account's authorizer moved between prepare and sign; nothing was signed, rebuild and prepare again | `409` |
@@ -1307,8 +1319,10 @@ See [Mode Selection](#mode-selection) for the foreign/passthrough/sign distincti
   appended dummy transaction and its embedded LogicSig authorization. Any
   unreported field change, malformed report, or non-canonical dummy fails
   closed on the client.
-- Bounded pure spends and spending-key-authorized rekeys return complete
-  base-argument LogicSigs from `/sign` only when no cosigner is required.
+- Bounded pure spends, spending-key-authorized rekeys, and listed rekeys return
+  complete LogicSigs from `/sign` only when no cosigner is required. A rekey on
+  an account with a rekey-to list to an address not on it is rejected with
+  `code:"bounded_rekey_target_not_listed"`.
 - Cosigner-enabled bounded spends are rejected with
   `code:"bounded_cosigner_required"`; they must use the `bounded-cosigner1`
   choreography below.
@@ -1697,13 +1711,18 @@ warning does not establish that no leaf was reused.
   `bounded-cosigner1`.
   It contains `contract` (`bounded2`), `base_signature_arg_layout`,
   `spend_effects`, `max_fee`, `rekey` (`refused` or `spending_key`),
-  `cosigner` (for `bounded-cosigner1`), `runtime_args`,
+  optional `rekey_list` (`contract` `rekey_list1`, `depth`, and `root`: with
+  `rekey: refused`, a pure rekey may go to a listed address; the entries are
+  never published), `cosigner` (for `bounded-cosigner1`), `runtime_args`,
   `derived_args`, the path-specific
-  `argument_layout`, and `layer3_policy`. This is routing and assembly
+  `argument_layout` (each slot with `spend`, `spending_rekey`, and
+  `listed_rekey` rules), and `layer3_policy`. This is routing and assembly
   metadata, not permission; signer
   classification and stored bytecode remain authoritative.
 - optional `logic_sig_resources`, containing final compiled program bytes and
-  path-specific argument-byte and maximum-opcode-cost ceilings
+  path-specific argument-byte and maximum-opcode-cost ceilings; a bounded row
+  has `spend`, `spending_rekey`, and `listed_rekey` cells, and a pure rekey on
+  an account with `rekey_list` is sized from `listed_rekey`
 - optional `is_generic_lsig`
 - optional `is_witness_key` and `is_spending_account`: cosigner-key rows use
   `address` as the Witness Key ID, not as an Algorand spending address.
@@ -1991,6 +2010,12 @@ Cross-SDK compatibility-bearing behavior:
   SDK-side preflight checks. Prepared groups preserve caller/apshell-equivalent
   transaction ordering before handoff to `/plan`, `/sign`, or the
   guarded component flow.
+- For a bounded account, SDKs select the resource path from inventory: `spend`
+  for a pure spend, `spending_rekey` for a pure rekey under
+  `rekey: spending_key`, and `listed_rekey` for a pure rekey on an account with
+  `rekey_list`. They parse `rekey_list` and the `listed_rekey` path-mask field,
+  and classify `bounded_rekey_target_not_listed` as a request error
+  (`test/contracts/signerapi/error_code_classifications.json`).
 - For equivalent normalized typed transaction intents, SDK prep should converge
   with apshell's core prep behavior for transaction fields, suggested params,
   flat-fee handling, auth-address semantics, LogicSig runtime args, app-call
