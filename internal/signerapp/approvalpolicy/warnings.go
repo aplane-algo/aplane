@@ -6,10 +6,8 @@
 package approvalpolicy
 
 import (
-	"encoding/hex"
 	"fmt"
 
-	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/asaset"
@@ -36,24 +34,6 @@ type Context struct {
 	// ListedRekeyTargets are addresses on a signing account's rekey-to list. A
 	// rekey to one is still a finding: it hands the account over.
 	ListedRekeyTargets map[string]bool
-}
-
-// CheckTxnWarnings analyzes a transaction for dangerous fields that should be
-// shown to the operator. These are warnings only: the operator can still
-// approve. knownAddresses is the set of addresses we have signing authority
-// for; if the RekeyTo target is in this set, the "lose control" warning is
-// suppressed.
-func CheckTxnWarnings(txnBytesHex string, knownAddresses map[string]bool) []signerapproval.Violation {
-	if txnBytesHex == "" {
-		return nil
-	}
-
-	txn, err := DecodeTxnFromHex(txnBytesHex)
-	if err != nil {
-		return nil
-	}
-
-	return CheckDecodedTxnWarnings(txn, knownAddresses)
 }
 
 // CheckGroupWarnings analyzes each transaction in a group for dangerous
@@ -222,29 +202,4 @@ func assetRoleAddress(addr types.Address) string {
 		return "(cleared)"
 	}
 	return addr.String()
-}
-
-// DecodeTxnFromHex decodes a transaction from hex-encoded bytes. It handles
-// both raw msgpack and "TX" prefixed formats.
-func DecodeTxnFromHex(txnBytesHex string) (types.Transaction, error) {
-	var txn types.Transaction
-
-	if txnBytesHex == "" {
-		return txn, fmt.Errorf("empty transaction bytes")
-	}
-
-	txnBytes, err := hex.DecodeString(txnBytesHex)
-	if err != nil {
-		return txn, fmt.Errorf("failed to decode hex: %w", err)
-	}
-
-	if len(txnBytes) > 2 && txnBytes[0] == 'T' && txnBytes[1] == 'X' {
-		txnBytes = txnBytes[2:]
-	}
-
-	if err := msgpack.Decode(txnBytes, &txn); err != nil {
-		return txn, fmt.Errorf("failed to decode msgpack: %w", err)
-	}
-
-	return txn, nil
 }
