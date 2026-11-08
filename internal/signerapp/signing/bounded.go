@@ -6,7 +6,6 @@ package signing
 import (
 	"encoding/hex"
 	"fmt"
-	"strings"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
@@ -116,6 +115,9 @@ func boundedSlotRule(slot boundedmeta.ArgumentSlot, path boundedPath) string {
 	}
 }
 
+// classifyBoundedPath decides which path the account's path declaration admits a
+// transaction on. The declaration comes from the stored metadata, so the signer
+// makes the decision txeffects.ClassifyFor makes for the account's contract.
 func classifyBoundedPath(txn types.Transaction, metadata *boundedmeta.Metadata) (boundedPath, *ServiceError) {
 	if metadata == nil {
 		return "", internal("bounded authorization metadata is missing")
@@ -123,67 +125,24 @@ func classifyBoundedPath(txn types.Transaction, metadata *boundedmeta.Metadata) 
 	if err := metadata.Validate(); err != nil {
 		return "", internal(fmt.Sprintf("invalid stored bounded authorization metadata: %v", err))
 	}
-	if uint64(txn.Fee) > metadata.MaxFee {
-		return "", badRequest(fmt.Sprintf("bounded1 fee %d exceeds account maximum %d", txn.Fee, metadata.MaxFee))
+	declaration, err := metadata.Declaration()
+	if err != nil {
+		return "", internal(fmt.Sprintf("invalid stored bounded declaration: %v", err))
 	}
-
-	classification := txeffects.Classify(txn)
-	switch classification.Shape {
-	case txeffects.ShapePureSpend:
-		if !boundedSpendEffectAllowed(metadata, classification.SpendEffect) {
-			return "", badRequest(fmt.Sprintf("bounded1 account does not allow spend effect %q", classification.SpendEffect))
-		}
+	decision, err := txeffects.ClassifyFor(txn, declaration)
+	if err != nil {
+		return "", internal(fmt.Sprintf("classify bounded transaction: %v", err))
+	}
+	switch decision.Path {
+	case txeffects.PathSpend:
 		return boundedPathPureSpend, nil
-	case txeffects.ShapePureRekey:
-		authorization, ok := boundedRekeyAuthorization(metadata)
-		if !ok {
-			return "", badRequest("bounded1 account permanently disables rekey")
-		}
-		switch authorization {
-		case boundedmeta.AdminAuthorizationSpend:
-			return boundedPathSpendingKeyRekey, nil
-		default:
-			return "", internal(fmt.Sprintf("invalid stored rekey authorization %q", authorization))
-		}
-	case txeffects.ShapeHybrid:
-		return "", badRequest(fmt.Sprintf("bounded1 rejects hybrid transaction effects: %s", boundedEffectNames(classification.Facts)))
-	case txeffects.ShapeDeniedEffect:
-		return "", badRequest(fmt.Sprintf("bounded1 rejects transaction effects: %s", boundedEffectNames(classification.Facts)))
-	case txeffects.ShapeDeniedType:
-		return "", badRequest(fmt.Sprintf("bounded1 rejects transaction type %q", txn.Type))
+	case txeffects.PathSpendingRekey:
+		return boundedPathSpendingKeyRekey, nil
+	case txeffects.PathRefused:
+		return "", badRequest(decision.Reason)
 	default:
-		return "", internal(fmt.Sprintf("unknown bounded1 classification %q", classification.Shape))
+		return "", internal(fmt.Sprintf("unknown bounded path %q", decision.Path))
 	}
-}
-
-func boundedSpendEffectAllowed(metadata *boundedmeta.Metadata, effect txeffects.SpendEffect) bool {
-	for _, allowed := range metadata.SpendEffects {
-		if allowed == string(effect) {
-			return true
-		}
-	}
-	return false
-}
-
-func boundedRekeyAuthorization(metadata *boundedmeta.Metadata) (string, bool) {
-	for _, operation := range metadata.AdminOperations {
-		if operation.Kind == boundedmeta.AdminOperationRekey {
-			return operation.Authorization, true
-		}
-	}
-	return "", false
-}
-
-func boundedEffectNames(facts txeffects.Facts) string {
-	effects := facts.Effects()
-	if len(effects) == 0 {
-		return "none"
-	}
-	names := make([]string, len(effects))
-	for i, effect := range effects {
-		names[i] = string(effect)
-	}
-	return strings.Join(names, ", ")
 }
 
 func withTransactionIndex(index int, err *ServiceError) *ServiceError {
