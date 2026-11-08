@@ -70,7 +70,7 @@ func TestInspectRoutesRetainsUnmatchedAndInvalidRequirements(t *testing.T) {
 	}}
 	keys := []signerapi.KeyInfo{
 		{Address: "a", SigningFlow: signerapi.SigningFlowCosigner1, CosignerComponentKeyType: "test.v1", Parameters: map[string]string{"cosigner_public_key": "aa"}},
-		{Address: "b", SigningFlow: signerapi.SigningFlowBoundedCosigner1, CosignerComponentKeyType: "test.v1", BoundedAuthorization: &signerapi.BoundedAuthorizationInfo{Cosigner: &signerapi.BoundedCosignerAuthorizationInfo{PublicKeyHex: "bb"}}},
+		{Address: "b", SigningFlow: signerapi.SigningFlowCosigned1, CosignerComponentKeyType: "test.v1", BoundedAuthorization: &signerapi.BoundedAuthorizationInfo{Cosigner: &signerapi.BoundedCosignerAuthorizationInfo{PublicKeyHex: "bb"}}},
 		{Address: "c", SigningFlow: signerapi.SigningFlowCosigner1},
 		{Address: "d", SigningFlow: "future-flow"},
 		{Address: "plain"},

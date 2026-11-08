@@ -167,7 +167,7 @@ func TestBoundedCosignerTargetsAndComponentRequestShape(t *testing.T) {
 	cosignerHex := testCosignerPublicKeyHex(0xd6)
 	s, sc := newTestSigner(t, func(c *cache.SignerCache) {
 		c.AddAddress(bounded, "test.bounded-cosigner.v1")
-		c.SetSigningFlowForAddress(bounded, signerapi.SigningFlowBoundedCosigner1)
+		c.SetSigningFlowForAddress(bounded, signerapi.SigningFlowCosigned1)
 		c.SetCosignerComponentKeyTypeForAddress(bounded, witness.Falcon1024V1)
 		c.SetCosignerPublicKeyForAddress(bounded, cosignerHex)
 		c.SetBoundedMaxFeeForAddress(bounded, 10_000)
@@ -198,7 +198,7 @@ func TestBoundedCosignerTargetsAndComponentRequestShape(t *testing.T) {
 	if mode, _ := requests[1].Mode(); mode != signerapi.RequestModeForeign || requests[1].LsigResources == nil || requests[1].LsigResources.ProgramBytes != 1700 {
 		t.Fatalf("plain context request = %#v", requests[1])
 	}
-	if sc.SigningFlowForAddress(bounded) != signerapi.SigningFlowBoundedCosigner1 || !s.HasGuardedEffectiveSigner(txns) {
+	if sc.SigningFlowForAddress(bounded) != signerapi.SigningFlowCosigned1 || !s.HasGuardedEffectiveSigner(txns) {
 		t.Fatal("bounded-cosigner flow did not enter guarded orchestration")
 	}
 }
@@ -208,7 +208,7 @@ func TestBuildBoundedComponentRequestsRejectsKnownLogicSigWithoutResources(t *te
 	foreign := testAddress(2).String()
 	s, _ := newTestSigner(t, func(c *cache.SignerCache) {
 		c.AddAddress(bounded, "test.bounded-cosigner.v1")
-		c.SetSigningFlowForAddress(bounded, signerapi.SigningFlowBoundedCosigner1)
+		c.SetSigningFlowForAddress(bounded, signerapi.SigningFlowCosigned1)
 		c.SetCosignerComponentKeyTypeForAddress(bounded, witness.Falcon1024V1)
 		c.SetCosignerPublicKeyForAddress(bounded, testCosignerPublicKeyHex(0xd6))
 		c.SetBoundedMaxFeeForAddress(bounded, 10_000)

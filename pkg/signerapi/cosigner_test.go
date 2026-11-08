@@ -108,3 +108,31 @@ func TestComponentResponseValidateForRequestRejectsOutOfGroupIndex(t *testing.T)
 		t.Fatalf("ValidateForRequest() error = %v, want out-of-group rejection", err)
 	}
 }
+
+// A bounded-base component names the path the signer classified, from the closed
+// set; the client skips the cosigner on a listed rekey only.
+func TestComponentResponseNamesTheBoundedPath(t *testing.T) {
+	component := Component{
+		TargetIndex: 0, Kind: ComponentTargetKindBoundedBase, AuthAddress: "BOUNDED",
+		BaseSignatures: []string{"aa"}, AssemblyReceipt: "bb", SignatureScheme: "aplane.falcon1024.v1",
+	}
+	for path, needsCosigner := range map[string]bool{ComponentPathSpend: true, ComponentPathSpendingRekey: true, ComponentPathListedRekey: false} {
+		component.Path = path
+		if err := (ComponentResponse{RequestID: "request-1", Components: []Component{component}}).Validate(); err != nil {
+			t.Fatalf("path %s: Validate() error = %v", path, err)
+		}
+		if component.NeedsCosigner() != needsCosigner {
+			t.Fatalf("path %s: NeedsCosigner() = %v", path, !needsCosigner)
+		}
+	}
+	for _, path := range []string{"", "admin_rekey"} {
+		component.Path = path
+		if err := (ComponentResponse{RequestID: "request-1", Components: []Component{component}}).Validate(); err == nil || !strings.Contains(err.Error(), "unknown bounded path") {
+			t.Fatalf("path %q: Validate() error = %v", path, err)
+		}
+	}
+	cosigner := Component{TargetIndex: 0, Kind: ComponentTargetKindCosigner, Signature: "aa", SignatureScheme: "aplane.witness-falcon1024.v1", Path: ComponentPathSpend}
+	if err := (ComponentResponse{RequestID: "request-1", Components: []Component{cosigner}}).Validate(); err == nil {
+		t.Fatal("a cosigner component with a path validated")
+	}
+}

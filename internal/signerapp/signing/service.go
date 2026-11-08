@@ -94,7 +94,7 @@ func (s *Service) SignGroupWithContext(ctx context.Context, req signerapi.GroupS
 	if err != nil {
 		return nil, err
 	}
-	if planHasBoundedCosignerSpend(plan) {
+	if planHasCosignedBoundedTarget(plan) {
 		return nil, boundedCosignerRequired()
 	}
 	return s.signGroupWithPlanContext(ctx, req, session, plan)

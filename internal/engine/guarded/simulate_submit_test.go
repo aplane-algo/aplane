@@ -137,6 +137,7 @@ func newGuardedExecutableTestHandler(t *testing.T, publicKeyHex string, capture 
 				resp.Components = append(resp.Components, signerapi.Component{
 					TargetIndex: target.TargetIndex, Kind: target.Kind, AuthAddress: target.AuthAddress,
 					BaseSignatures: []string{"aa"}, AssemblyReceipt: "bb", SignatureScheme: "aplane.falcon1024.v1",
+					Path: signerapi.ComponentPathSpend,
 				})
 			}
 			_ = json.NewEncoder(w).Encode(resp)
@@ -336,7 +337,21 @@ func TestSignAndSubmitGroupSimulateUsesExecutableGuardedFlow(t *testing.T) {
 	}
 }
 
+// The cosigner is asked for every target whose component needs it, after the
+// user side, and never for a listed rekey, which assembles without its signature.
 func TestBoundedCosignerSimulateUsesUserFirstChoreography(t *testing.T) {
+	for _, tc := range []struct {
+		path, events string
+	}{
+		{signerapi.ComponentPathSpend, "base,keys,cosigner,assemble"},
+		{signerapi.ComponentPathSpendingRekey, "base,keys,cosigner,assemble"},
+		{signerapi.ComponentPathListedRekey, "base,assemble"},
+	} {
+		t.Run(tc.path, func(t *testing.T) { testBoundedCosignerChoreography(t, tc.path, tc.events) })
+	}
+}
+
+func testBoundedCosignerChoreography(t *testing.T, path, wantEvents string) {
 	publicKey, _ := testFalconCosignerKeypair(t, 0x72)
 	cosignerHex := hex.EncodeToString(publicKey)
 	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "bounded-cosigner")
@@ -376,7 +391,7 @@ func TestBoundedCosignerSimulateUsesUserFirstChoreography(t *testing.T) {
 		}
 		if req.TargetKind() == signerapi.ComponentTargetKindBoundedBase {
 			appendEvent("base")
-			_ = json.NewEncoder(w).Encode(signerapi.ComponentResponse{RequestID: req.RequestID, Components: []signerapi.Component{{TargetIndex: 0, Kind: signerapi.ComponentTargetKindBoundedBase, AuthAddress: txn.Sender.String(), BaseSignatures: []string{"aa"}, AssemblyReceipt: "bb", SignatureScheme: "aplane.falcon1024.v1"}}})
+			_ = json.NewEncoder(w).Encode(signerapi.ComponentResponse{RequestID: req.RequestID, Components: []signerapi.Component{{TargetIndex: 0, Kind: signerapi.ComponentTargetKindBoundedBase, AuthAddress: txn.Sender.String(), BaseSignatures: []string{"aa"}, AssemblyReceipt: "bb", SignatureScheme: "aplane.falcon1024.v1", Path: path}}})
 			return
 		}
 		appendEvent("cosigner")
@@ -389,6 +404,9 @@ func TestBoundedCosignerSimulateUsesUserFirstChoreography(t *testing.T) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		if got := req.Targets[0].CosignerSignature != ""; got != (path != signerapi.ComponentPathListedRekey) {
+			t.Errorf("%s assembly carries a cosigner signature = %v", path, got)
+		}
 		signed := hex.EncodeToString(msgpack.Encode(types.SignedTxn{Txn: txn}))
 		_ = json.NewEncoder(w).Encode(signerapi.AssemblyResponse{RequestID: req.RequestID, SignedGroup: []string{signed}})
 	})
@@ -400,7 +418,7 @@ func TestBoundedCosignerSimulateUsesUserFirstChoreography(t *testing.T) {
 	s, _ := newTestSigner(t, func(c *cache.SignerCache) {
 		account := txn.Sender.String()
 		c.AddAddress(account, "test.bounded-cosigner.v1")
-		c.SetSigningFlowForAddress(account, signerapi.SigningFlowBoundedCosigner1)
+		c.SetSigningFlowForAddress(account, signerapi.SigningFlowCosigned1)
 		c.SetCosignerComponentKeyTypeForAddress(account, witness.Falcon1024V1)
 		c.SetCosignerPublicKeyForAddress(account, cosignerHex)
 		c.SetBoundedMaxFeeForAddress(account, 10_000)
@@ -408,6 +426,7 @@ func TestBoundedCosignerSimulateUsesUserFirstChoreography(t *testing.T) {
 			ProgramBytes:  4_000,
 			Spend:         &lsigresource.PathProfile{MaxOpcodeCost: 20_000},
 			SpendingRekey: &lsigresource.PathProfile{MaxOpcodeCost: 20_000},
+			ListedRekey:   &lsigresource.PathProfile{MaxOpcodeCost: 20_000},
 		})
 	})
 	s.conn.SignerClient = signerclient.NewSignerClient(server.URL)
@@ -418,8 +437,8 @@ func TestBoundedCosignerSimulateUsesUserFirstChoreography(t *testing.T) {
 	}
 	mu.Lock()
 	defer mu.Unlock()
-	if strings.Join(events, ",") != "base,keys,cosigner,assemble" {
-		t.Fatalf("bounded-cosigner event order = %v, want base, keys, cosigner, assemble", events)
+	if strings.Join(events, ",") != wantEvents {
+		t.Fatalf("cosigned event order = %v, want %s", events, wantEvents)
 	}
 }
 
@@ -436,8 +455,8 @@ func TestMixedGroupsFinishUserSideBeforeCosigner(t *testing.T) {
 	}{
 		{name: "cosigner1", wantEvents: "user,sign,keys,cosigner,assemble"},
 		{name: "cosigner1 sign rejected", rejectSign: true, wantEvents: "user,sign"},
-		{name: "bounded-cosigner1", bounded: true, wantEvents: "base,sign,keys,cosigner,assemble"},
-		{name: "bounded-cosigner1 sign rejected", bounded: true, rejectSign: true, wantEvents: "base,sign"},
+		{name: "cosigned1", bounded: true, wantEvents: "base,sign,keys,cosigner,assemble"},
+		{name: "cosigned1 sign rejected", bounded: true, rejectSign: true, wantEvents: "base,sign"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			publicKey, _ := testFalconCosignerKeypair(t, 0x73)
@@ -467,7 +486,7 @@ func TestMixedGroupsFinishUserSideBeforeCosigner(t *testing.T) {
 			if tc.bounded {
 				s, _ = newTestSigner(t, func(c *cache.SignerCache) {
 					c.AddAddress(guarded, "test.bounded-cosigner.v1")
-					c.SetSigningFlowForAddress(guarded, signerapi.SigningFlowBoundedCosigner1)
+					c.SetSigningFlowForAddress(guarded, signerapi.SigningFlowCosigned1)
 					c.SetCosignerComponentKeyTypeForAddress(guarded, witness.Falcon1024V1)
 					c.SetCosignerPublicKeyForAddress(guarded, cosignerHex)
 					c.SetBoundedMaxFeeForAddress(guarded, 10_000)
@@ -521,7 +540,7 @@ func TestBoundedCosignerRejectsPlannedFeeBeforeReleasingComponents(t *testing.T)
 	s, _ := newTestSigner(t, func(c *cache.SignerCache) {
 		account := txn.Sender.String()
 		c.AddAddress(account, "test.bounded-cosigner.v1")
-		c.SetSigningFlowForAddress(account, signerapi.SigningFlowBoundedCosigner1)
+		c.SetSigningFlowForAddress(account, signerapi.SigningFlowCosigned1)
 		c.SetCosignerComponentKeyTypeForAddress(account, witness.Falcon1024V1)
 		c.SetCosignerPublicKeyForAddress(account, cosignerHex)
 		c.SetBoundedMaxFeeForAddress(account, uint64(txn.Fee)-1)

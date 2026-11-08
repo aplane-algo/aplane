@@ -49,26 +49,9 @@ func resolveBoundedPlanItems(snapshot PlannerRuntimeSnapshot, req []signerapi.Si
 		if i >= len(txns) {
 			return nil, internal("bounded plan transaction index is out of bounds")
 		}
-		path, err := classifyBoundedPath(txns[i], metadata)
+		path, listed, err := boundedAccountPath(txns[i], metadata, snapshot.KeyMetadata[request.AuthAddress].Parameters)
 		if err != nil {
 			return nil, withTransactionIndex(i, err)
-		}
-		listed, listErr := listedRekeyTargets(metadata, snapshot.KeyMetadata[request.AuthAddress].Parameters)
-		if listErr != nil {
-			return nil, withTransactionIndex(i, listErr)
-		}
-		// Under plus cosigned the list is the owner's standing statement: a listed
-		// target always takes the listed path, with the spending key alone, and
-		// only another target asks the cosigner.
-		if path == boundedPathSpendingKeyRekey && listed[txns[i].RekeyTo.String()] {
-			path = boundedPathListedRekey
-		}
-		// The program takes a listed rekey only to a listed target, so the signer
-		// refuses any other rekey here instead of building a transaction the
-		// chain would reject.
-		if path == boundedPathListedRekey && !listed[txns[i].RekeyTo.String()] {
-			return nil, &ServiceError{Kind: ErrorBoundedRekeyNotListed, Message: fmt.Sprintf(
-				"transaction %d: %s is not on this account's rekey-to list, and the account refuses every other rekey", i+1, txns[i].RekeyTo)}
 		}
 		runtimeArgs, argErr := validateBoundedRuntimeArgs(request.LsigArgs, metadata, path)
 		if argErr != nil {
@@ -158,6 +141,35 @@ func listedRekeyTargets(metadata *boundedmeta.Metadata, parameters map[string]st
 	return listed, nil
 }
 
+// boundedAccountPath is the path the signer signs a transaction on, and the
+// account's rekey-to list: the declaration's path, with a listed target moved to
+// the listed path. The planner and assembly both decide through it, so a
+// component and its assembly can't disagree about whether the cosigner signs.
+func boundedAccountPath(txn types.Transaction, metadata *boundedmeta.Metadata, parameters map[string]string) (boundedPath, map[string]bool, *ServiceError) {
+	path, err := classifyBoundedPath(txn, metadata)
+	if err != nil {
+		return "", nil, err
+	}
+	listed, err := listedRekeyTargets(metadata, parameters)
+	if err != nil {
+		return "", nil, err
+	}
+	// Under plus cosigned the list is the owner's standing statement: a listed
+	// target always takes the listed path, with the spending key alone, and only
+	// another target asks the cosigner.
+	if path == boundedPathSpendingKeyRekey && listed[txn.RekeyTo.String()] {
+		path = boundedPathListedRekey
+	}
+	// The program takes a listed rekey only to a listed target, so the signer
+	// refuses any other rekey here instead of building a transaction the chain
+	// would reject.
+	if path == boundedPathListedRekey && !listed[txn.RekeyTo.String()] {
+		return "", nil, &ServiceError{Kind: ErrorBoundedRekeyNotListed, Message: fmt.Sprintf(
+			"%s is not on this account's rekey-to list, and the account refuses every other rekey", txn.RekeyTo)}
+	}
+	return path, listed, nil
+}
+
 // classifyBoundedPath decides which path the account's path declaration admits a
 // transaction on. The declaration comes from the stored metadata, so the signer
 // makes the decision txeffects.ClassifyFor makes for the account's contract.
@@ -197,12 +209,15 @@ func withTransactionIndex(index int, err *ServiceError) *ServiceError {
 	return &ServiceError{Kind: err.Kind, Message: fmt.Sprintf("transaction %d: %s", index+1, err.Message)}
 }
 
-func planHasBoundedCosignerSpend(plan *PlanResult) bool {
+// planHasCosignedBoundedTarget reports whether any bounded position belongs to a
+// cosigned account, which signs only through the cosigned flow, even on a listed
+// rekey that needs no cosigner component.
+func planHasCosignedBoundedTarget(plan *PlanResult) bool {
 	if plan == nil {
 		return false
 	}
 	for _, item := range plan.BoundedItems {
-		if item != nil && item.Path == boundedPathPureSpend && item.Metadata != nil && item.Metadata.Cosigner != nil {
+		if item != nil && item.Metadata != nil && item.Metadata.Cosigner != nil {
 			return true
 		}
 	}

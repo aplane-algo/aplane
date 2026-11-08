@@ -520,7 +520,7 @@ func TestBuildKeyTypesServesBoundedCosignerMetadata(t *testing.T) {
 		t.Fatalf("buildKeyTypes() returned %d rows", len(infos))
 	}
 	info := infos[0]
-	if info.SigningFlow != signerapi.SigningFlowBoundedCosigner1 || info.CosignerComponentKeyType != witness.Falcon1024V1 {
+	if info.SigningFlow != signerapi.SigningFlowCosigned1 || info.CosignerComponentKeyType != witness.Falcon1024V1 {
 		t.Fatalf("bounded cosigner routing = %#v", info)
 	}
 	if info.BoundedAuthorization == nil || info.BoundedAuthorization.Cosigner == nil {
@@ -783,7 +783,7 @@ func TestServiceKeyTypesUsesCosignerReferenceForBoundedProvider(t *testing.T) {
 		if info.KeyType != keyType {
 			continue
 		}
-		if info.SigningFlow != signerapi.SigningFlowBoundedCosigner1 || len(info.CreationParams) != 1 {
+		if info.SigningFlow != signerapi.SigningFlowCosigned1 || len(info.CreationParams) != 1 {
 			t.Fatalf("bounded cosigner key type = %#v", info)
 		}
 		param := info.CreationParams[0]

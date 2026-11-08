@@ -32,6 +32,9 @@ type guardedTarget struct {
 	CosignerPublicKey        string
 	Route                    flowRoute
 	BoundedMaxFee            uint64
+	// BoundedPath is the path the signer's base component named for a cosigned
+	// target, once components are in: what the position is budgeted on.
+	BoundedPath string
 }
 
 type cosignerRequestKey struct {
@@ -64,7 +67,7 @@ func routeForSigningFlow(flow string) flowRoute {
 		return flowRoutePlain
 	case signerapi.SigningFlowCosigner1:
 		return flowRouteGuarded
-	case signerapi.SigningFlowBoundedCosigner1:
+	case signerapi.SigningFlowCosigned1:
 		return flowRouteBoundedCosigner
 	default:
 		return flowRouteUnknown
@@ -133,7 +136,7 @@ func (s *Signer) SignAndSubmitGroup(txns []types.Transaction, opts clientsign.Su
 		}
 	}
 	if hasBoundedCosigner && hasCosigner {
-		return nil, nil, fmt.Errorf("cannot mix cosigner1 and bounded-cosigner1 targets in one group")
+		return nil, nil, fmt.Errorf("cannot mix cosigner1 and cosigned1 targets in one group")
 	}
 	targetsByIndex := make(map[int]guardedTarget, len(targets))
 	for _, target := range targets {
@@ -202,8 +205,10 @@ func (s *Signer) signAndSubmitCosignerGroup(txns []types.Transaction, targets []
 	return s.assembleAndSubmit(group, assemblyTargets, passthrough, opts, w)
 }
 
-// signAndSubmitBoundedCosignerGroup runs the bounded-cosigner1 choreography:
-// the user signer's bounded base components, then the cosigner's.
+// signAndSubmitBoundedCosignerGroup runs the cosigned1 choreography: the user
+// signer's base components, then the cosigner's for each target whose path needs
+// one. A listed rekey takes none: the signer's component says so, and assembly
+// checks it again.
 func (s *Signer) signAndSubmitBoundedCosignerGroup(txns []types.Transaction, targets []guardedTarget, targetsByIndex map[int]guardedTarget, opts clientsign.SubmitOptions, w io.Writer) ([]string, []types.Transaction, error) {
 	requests, err := s.buildBoundedComponentRequests(txns, targetsByIndex, opts)
 	if err != nil {
@@ -220,31 +225,53 @@ func (s *Signer) signAndSubmitBoundedCosignerGroup(txns []types.Transaction, tar
 	if err != nil {
 		return nil, nil, err
 	}
+	for i, target := range targets {
+		target.BoundedPath = components[target.Index].Path
+		targets[i], targetsByIndex[target.Index] = target, target
+	}
 
 	passthrough, err := s.signContextPositions(opts.Ctx, group, targetsByIndex, opts, w)
 	if err != nil {
 		return nil, nil, err
 	}
+	cosigned := make([]guardedTarget, 0, len(targets))
+	for _, target := range targets {
+		if components[target.Index].NeedsCosigner() {
+			cosigned = append(cosigned, target)
+		}
+	}
 	// The user side is complete, including any non-guarded positions. Only
-	// now may the client disclose the frozen group to the cosigner endpoint.
-	cosignerSignatures, cosignerRequestIDs, err := s.requestCosignerComponentSignatures(opts.Ctx, group.BytesHex, group.OriginalCount, targets, opts.AppCallInfo)
-	if err != nil {
-		return nil, nil, err
+	// now may the client disclose the frozen group to the cosigner endpoint,
+	// and only for the targets that need it.
+	var cosignerSignatures map[int]string
+	var cosignerRequestIDs map[cosignerRequestKey]string
+	if len(cosigned) > 0 {
+		cosignerSignatures, cosignerRequestIDs, err = s.requestCosignerComponentSignatures(opts.Ctx, group.BytesHex, group.OriginalCount, cosigned, opts.AppCallInfo)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+	if skipped := len(targets) - len(cosigned); skipped > 0 {
+		_, _ = fmt.Fprintf(w, "[GUARDED] %d listed rekey(s) need no cosigner\n", skipped)
 	}
 
 	assemblyTargets := make([]signerapi.AssemblyTarget, 0, len(targets))
 	for _, target := range targets {
 		component := components[target.Index]
-		cosignerSignature, ok := cosignerSignatures[target.Index]
-		if !ok {
-			return nil, nil, fmt.Errorf("cosigner endpoint returned no signature for target index %d", target.Index)
-		}
-		assemblyTargets = append(assemblyTargets, signerapi.AssemblyTarget{
+		assemblyTarget := signerapi.AssemblyTarget{
 			TargetIndex: target.Index, Kind: signerapi.AssemblyTargetKindBoundedCosigner, AuthAddress: target.Account,
 			BaseSignatures: component.BaseSignatures, BoundedRuntimeArgs: component.RuntimeArgs,
 			AssemblyReceipt: component.AssemblyReceipt, BaseSourceRequestID: baseRequestID,
-			CosignerSignature: cosignerSignature, CosignerSourceRequestID: cosignerRequestIDs[target.requestKey()],
-		})
+		}
+		if component.NeedsCosigner() {
+			cosignerSignature, ok := cosignerSignatures[target.Index]
+			if !ok {
+				return nil, nil, fmt.Errorf("cosigner endpoint returned no signature for target index %d", target.Index)
+			}
+			assemblyTarget.CosignerSignature = cosignerSignature
+			assemblyTarget.CosignerSourceRequestID = cosignerRequestIDs[target.requestKey()]
+		}
+		assemblyTargets = append(assemblyTargets, assemblyTarget)
 	}
 	return s.assembleAndSubmit(group, assemblyTargets, passthrough, opts, w)
 }
@@ -542,7 +569,7 @@ func (s *Signer) buildGroupSignRequests(plannedTxns []types.Transaction, groupBy
 				return nil, nil, fmt.Errorf("guarded target %d sender %s does not match transaction sender %s", i, target.Sender, sender)
 			}
 			signRequests[i] = signerapi.SignRequest{TxnBytesHex: groupBytesHex[i]}
-			path, err := guardedLogicSigResourcePath(target.Route)
+			path, err := guardedLogicSigResourcePath(target)
 			if err != nil {
 				return nil, nil, fmt.Errorf("guarded target %d: %w", i, err)
 			}
@@ -561,17 +588,25 @@ func (s *Signer) buildGroupSignRequests(plannedTxns []types.Transaction, groupBy
 	return signRequests, nonGuarded, nil
 }
 
-func guardedLogicSigResourcePath(route flowRoute) (lsigresource.AuthorizationPath, error) {
-	switch route {
+func guardedLogicSigResourcePath(target guardedTarget) (lsigresource.AuthorizationPath, error) {
+	switch target.Route {
 	case flowRouteGuarded:
 		return lsigresource.PathDefault, nil
 	case flowRouteBoundedCosigner:
-		// Bounded component preparation admits only the pure-spend path. Carry
-		// that exact path into the later mixed-group /sign call rather than
-		// replacing it with the maximum across unrelated rekey paths.
-		return lsigresource.PathSpend, nil
+		// Carry the exact path the signer's base component named into the later
+		// mixed-group /sign call, rather than the maximum across unrelated paths.
+		switch target.BoundedPath {
+		case signerapi.ComponentPathSpend:
+			return lsigresource.PathSpend, nil
+		case signerapi.ComponentPathSpendingRekey:
+			return lsigresource.PathSpendingRekey, nil
+		case signerapi.ComponentPathListedRekey:
+			return lsigresource.PathListedRekey, nil
+		default:
+			return 0, fmt.Errorf("cosigned target has no base component path yet")
+		}
 	default:
-		return 0, fmt.Errorf("guarded target has unsupported flow route %d", route)
+		return 0, fmt.Errorf("guarded target has unsupported flow route %d", target.Route)
 	}
 }
 

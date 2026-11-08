@@ -57,6 +57,25 @@ type Component struct {
 	BaseSignatures  []string            `json:"base_signatures,omitempty"`
 	RuntimeArgs     map[string]string   `json:"runtime_args,omitempty"`
 	AssemblyReceipt string              `json:"assembly_receipt,omitempty"`
+	// Path is the path the signer classified a bounded-base target on: spend,
+	// spending_rekey or listed_rekey. A listed rekey takes no cosigner
+	// component; the client asks the cosigner for every other path. It routes
+	// the request only: assembly classifies the transaction again.
+	Path string `json:"path,omitempty"`
+}
+
+// Bounded-base component paths, the names argument path masks and resource
+// profiles use.
+const (
+	ComponentPathSpend         = "spend"
+	ComponentPathSpendingRekey = "spending_rekey"
+	ComponentPathListedRekey   = "listed_rekey"
+)
+
+// NeedsCosigner reports whether a bounded-base component's path takes a cosigner
+// component. A path this package does not name fails validation first.
+func (c Component) NeedsCosigner() bool {
+	return c.Path != ComponentPathListedRekey
 }
 
 type ComponentResponse struct {
@@ -194,12 +213,17 @@ func (r ComponentResponse) Validate() error {
 		seen[component.TargetIndex] = true
 		switch component.Kind {
 		case ComponentTargetKindUser, ComponentTargetKindCosigner:
-			if component.Signature == "" || component.SignatureScheme == "" || len(component.BaseSignatures) != 0 || component.AssemblyReceipt != "" {
+			if component.Signature == "" || component.SignatureScheme == "" || len(component.BaseSignatures) != 0 || component.AssemblyReceipt != "" || component.Path != "" {
 				return fmt.Errorf("component %d has invalid signature material", i+1)
 			}
 		case ComponentTargetKindBoundedBase:
 			if component.AuthAddress == "" || len(component.BaseSignatures) == 0 || component.AssemblyReceipt == "" || component.SignatureScheme == "" || component.Signature != "" {
 				return fmt.Errorf("component %d has invalid bounded-base material", i+1)
+			}
+			switch component.Path {
+			case ComponentPathSpend, ComponentPathSpendingRekey, ComponentPathListedRekey:
+			default:
+				return fmt.Errorf("component %d has unknown bounded path %q", i+1, component.Path)
 			}
 		default:
 			return fmt.Errorf("component %d has unsupported kind %q", i+1, component.Kind)
