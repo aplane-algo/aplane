@@ -27,6 +27,10 @@ const (
 	ParameterRecipients     = boundary.ParameterRecipients
 	ParameterUnlockRound    = boundary.ParameterUnlockRound
 	ParameterCosigner       = boundary.ParameterCosigner
+	ParameterRecipientScope = boundary.ParameterRecipientScope
+
+	RecipientScopeListed = boundary.RecipientScopeListed
+	RecipientScopeAny    = boundary.RecipientScopeAny
 
 	EncodingAuto   = boundary.EncodingAuto
 	EncodingInline = boundary.EncodingInline
@@ -64,11 +68,17 @@ type Shape struct {
 	Cosigner bool
 	// Timelock requires an unlock round before anything can be spent.
 	Timelock bool
+	// AnyRecipient is the limits-only shape: no recipient list and no timelock,
+	// so the envelope's fee ceiling and transfer kinds are the whole rule. It is
+	// an explicit field, not an empty Encoding, so no zero value selects it.
+	AnyRecipient bool
 }
 
 // Policy names the shape's framework Layer 3 policy.
 func (s Shape) Policy() string {
 	switch {
+	case s.AnyRecipient:
+		return composeddsa.Layer3PolicyNone
 	case s.Timelock && s.Encoding == EncodingMerkle:
 		return composeddsa.Layer3PolicyMerkleAllowlistTimelock
 	case s.Timelock && s.Encoding == EncodingInline:
@@ -97,8 +107,9 @@ func (s Shape) Descriptor() string {
 		strings.Join(spend, ","), s.Policy(), s.Rekey, cosigner)
 }
 
-// Shapes enumerates every shape the grammar can select, in a stable order. Allowlist
-// shapes come first, so this order extends rather than reshuffles.
+// Shapes enumerates every shape the grammar can select, in a stable order:
+// allowlists, then timelocks, then limits-only shapes. Each family is appended
+// after the last, so this order extends rather than reshuffles.
 //
 // A cosigned shape refuses rekeys: a cosigned rekey arrives with the cosigner
 // overlay. A timelock refuses rekeys too, because no host rule gates a rekey, so a
@@ -111,7 +122,7 @@ func Shapes() []Shape {
 	}
 	families := []family{{RekeySpendingKey, false}, {RekeyRefused, false}, {RekeyRefused, true}}
 	var shapes []Shape
-	forEachShape := func(encoding string, timelock bool) {
+	forEachShape := func(encoding string, timelock, anyRecipient bool) {
 		for _, f := range families {
 			for mask := 1; mask < 1<<len(spendEffectOrder); mask++ {
 				var spend []txeffects.SpendEffect
@@ -126,16 +137,20 @@ func Shapes() []Shape {
 				if timelock && f.rekey == RekeySpendingKey {
 					continue
 				}
-				shapes = append(shapes, Shape{Spend: spend, Encoding: encoding, Rekey: f.rekey, Cosigner: f.cosigner, Timelock: timelock})
+				shapes = append(shapes, Shape{
+					Spend: spend, Encoding: encoding, Rekey: f.rekey, Cosigner: f.cosigner,
+					Timelock: timelock, AnyRecipient: anyRecipient,
+				})
 			}
 		}
 	}
 	for _, encoding := range []string{EncodingInline, EncodingMerkle} {
-		forEachShape(encoding, false)
+		forEachShape(encoding, false, false)
 	}
 	for _, encoding := range []string{"", EncodingInline, EncodingMerkle} {
-		forEachShape(encoding, true)
+		forEachShape(encoding, true, false)
 	}
+	forEachShape("", false, true)
 	return shapes
 }
 

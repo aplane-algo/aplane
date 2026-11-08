@@ -46,6 +46,9 @@ func generalRequest(shape boundedaccount.Shape, recipients []string, unlockRound
 	if shape.Timelock {
 		params[boundedaccount.ParameterUnlockRound] = strconv.FormatUint(unlockRound, 10)
 	}
+	if shape.AnyRecipient {
+		params[boundedaccount.ParameterRecipientScope] = boundedaccount.RecipientScopeAny
+	}
 	if shape.Cosigner {
 		params[composeddsa.BoundedCosignerPublicKeyParameter] = hex.EncodeToString(cosignerKey)
 	}
@@ -250,6 +253,22 @@ func TestBoundedGeneralShapeMatrixOnChainLocalnet(t *testing.T) {
 						args[slot] = []byte{}
 						return args
 					})
+				})
+			}
+			if shape.AnyRecipient {
+				// With no list, the envelope is the whole rule. Every accepted case here
+				// pays exactly the ceiling, ten transactions at 1,000, so one microAlgo
+				// more per transaction must be refused.
+				t.Run("payment above the fee ceiling", func(t *testing.T) {
+					txn := payment(outside.String(), "n")
+					txn.Fee = 1_001
+					expect(false, txn, nil, nil)
+				})
+				t.Run("key registration", func(t *testing.T) {
+					txn := payment(account.address, "o")
+					txn.Type = types.KeyRegistrationTx
+					txn.PaymentTxnFields = types.PaymentTxnFields{}
+					expect(false, txn, nil, nil)
 				})
 			}
 			if shape.Timelock {

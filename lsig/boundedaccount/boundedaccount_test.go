@@ -27,7 +27,7 @@ import (
 )
 
 const (
-	goldenGrammarFingerprint    = "1:093e721a1dfa588387c10c851f34f3468192697b302205a7ed81fc00358109ba"
+	goldenGrammarFingerprint    = "1:a21097e040d893d3d7dc60b9cf6b22cb62417b8579cad38ed48f94dc5137afe3"
 	goldenFirstShapeFingerprint = "1:dde35ec01de8a905f1263fd8fc246545540bd950aa54994aac356e1951e2df6f"
 	goldenFullShapeFingerprint  = "1:95234d16fc17e23394a79dc62245d0c2eebf5a5a0be10fe12f14d9e2296e566b"
 	goldenBoundaryDigest        = "8d6f9de0e52dac9cc01a9b896311890cd7940cd202718ccda74ba7b86bbfa82e"
@@ -37,6 +37,8 @@ const (
 	// a2874c6e: bounded2 replaced bounded1 in place (contract label, rekey setting,
 	// profile domain), and timelocks no longer offer a spending-key rekey.
 	goldenSpendingKeyPrograms = "65c08e46dbed601d2d87921d6521b480967e877df14655473198981ff018c534"
+	// Pins the 13 limits-only shapes: programs, fingerprints and digests.
+	goldenLimitsPrograms = "e79627c026582c1cb19293b9706cfc7ca99bccb6261ea39039bf6a970f87980c"
 )
 
 func newTestProvider(t *testing.T) *Provider {
@@ -81,6 +83,9 @@ func requestFor(shape Shape, recipients string) map[string]string {
 	if shape.Timelock {
 		params[ParameterUnlockRound] = "50000000"
 	}
+	if shape.AnyRecipient {
+		params[ParameterRecipientScope] = RecipientScopeAny
+	}
 	if shape.Cosigner {
 		params[composeddsa.BoundedCosignerPublicKeyParameter] = testCosignerKey
 	}
@@ -92,11 +97,12 @@ func requestFor(shape Shape, recipients string) map[string]string {
 // it has 3 spend subsets: pay, pay+axfer, and all three. Allowlists are 2 encodings
 // x (spending key x 7 subsets, plus 2 refused arrangements x 3), which is 26.
 // A timelock refuses rekeys, so timelocks add 3 policies x 2 refused arrangements
-// x 3 subsets, which is 18.
+// x 3 subsets, which is 18. Limits-only shapes add one policy with the allowlists'
+// arrangements, 7 + 3 + 3 = 13, for 57 in all.
 func TestShapesEnumerateTheGrammar(t *testing.T) {
 	shapes := Shapes()
-	if len(shapes) != 44 {
-		t.Fatalf("Shapes() = %d, want 44", len(shapes))
+	if len(shapes) != 57 {
+		t.Fatalf("Shapes() = %d, want 57", len(shapes))
 	}
 	policies := make(map[string]int)
 	for _, shape := range shapes {
@@ -105,6 +111,7 @@ func TestShapesEnumerateTheGrammar(t *testing.T) {
 	for policy, want := range map[string]int{
 		composeddsa.Layer3PolicyFixedAllowlist: 13, composeddsa.Layer3PolicyMerkleAllowlist: 13,
 		composeddsa.Layer3PolicyTimelock: 6, composeddsa.Layer3PolicyFixedAllowlistTimelock: 6, composeddsa.Layer3PolicyMerkleAllowlistTimelock: 6,
+		composeddsa.Layer3PolicyNone: 13,
 	} {
 		if policies[policy] != want {
 			t.Errorf("%s has %d shapes, want %d", policy, policies[policy], want)
@@ -128,10 +135,10 @@ func TestShapesEnumerateTheGrammar(t *testing.T) {
 		}
 		seen[shape.Descriptor()] = true
 	}
-	allowlists, timelocks := shapes[:26], shapes[26:]
-	for _, shape := range allowlists {
-		if shape.Timelock {
-			t.Fatalf("timelock %s comes before the allowlist shapes end", shape.Descriptor())
+	allowlists, timelocks, limits := shapes[:26], shapes[26:44], shapes[44:]
+	for index, shape := range shapes {
+		if shape.Timelock != (index >= 26 && index < 44) || shape.AnyRecipient != (index >= 44) {
+			t.Fatalf("shape %d %s is out of its family's place", index, shape.Descriptor())
 		}
 	}
 	families := make(map[string]int)
@@ -177,6 +184,18 @@ func TestShapesEnumerateTheGrammar(t *testing.T) {
 	if len(subsets) != 3 {
 		t.Errorf("timelock subsets = %v, want only the three a refused shape allows", subsets)
 	}
+	families = make(map[string]int)
+	for _, shape := range limits {
+		if shape.Encoding != "" {
+			t.Errorf("limits-only %s has a list encoding", shape.Descriptor())
+		}
+		families[shape.Rekey+"/"+strconv.FormatBool(shape.Cosigner)]++
+	}
+	for family, want := range map[string]int{"spending_key/false": 7, "refused/false": 3, "refused/true": 3} {
+		if families[family] != want {
+			t.Errorf("limits-only family %s has %d shapes, want %d", family, families[family], want)
+		}
+	}
 }
 
 // The descriptor names the rekey setting alone: the contract has no Layer 3 gate
@@ -190,6 +209,8 @@ func TestShapeDescriptorFormat(t *testing.T) {
 			"spend=pay,axfer,asset_opt_in;policy=fixed_allowlist;rekey=spending_key;cosigner=none"},
 		{Shape{Spend: []txeffects.SpendEffect{txeffects.SpendEffectPay}, Encoding: EncodingMerkle, Rekey: RekeyRefused, Cosigner: true, Timelock: true},
 			"spend=pay;policy=merkle_allowlist_timelock;rekey=refused;cosigner=required"},
+		{Shape{Spend: []txeffects.SpendEffect{txeffects.SpendEffectPay}, Rekey: RekeySpendingKey, AnyRecipient: true},
+			"spend=pay;policy=none;rekey=spending_key;cosigner=none"},
 	} {
 		if got := test.shape.Descriptor(); got != test.want {
 			t.Errorf("Descriptor() = %q, want %q", got, test.want)
@@ -380,7 +401,7 @@ func TestComposerSeesOnlyItsDeclaredParameters(t *testing.T) {
 	for _, shape := range Shapes() {
 		definition := provider.byShape[shape.Descriptor()]
 		values := composerValues(definition, requestFor(shape, testRecipients(2)))
-		for _, selector := range []string{ParameterSpendEffects, ParameterRekeyAuthority, ParameterListEncoding} {
+		for _, selector := range []string{ParameterSpendEffects, ParameterRekeyAuthority, ParameterListEncoding, ParameterRecipientScope} {
 			if _, ok := values[selector]; ok {
 				t.Fatalf("%s reached the composer", selector)
 			}
@@ -659,8 +680,14 @@ func TestGeneralFingerprintGoldens(t *testing.T) {
 	// The spending-key shapes alone, with each one's fingerprint and digest. Every
 	// bounded2 release offers them, so this golden holds across grammar edits.
 	spendingKey := sha256.New()
+	// Limits-only shapes, with fingerprints and digests. They are appended last,
+	// so the earlier goldens hold without them.
+	limits := sha256.New()
 	for index, shape := range shapes {
-		if index >= 26 {
+		switch {
+		case index >= 44:
+			rendered = limits
+		case index >= 26:
 			rendered = appended
 		}
 		params := requestFor(shape, testAddress(1)+","+testAddress(2))
@@ -674,14 +701,18 @@ func TestGeneralFingerprintGoldens(t *testing.T) {
 		if _, err := fmt.Fprintf(rendered, "%s\n%d\n%s\n", shape.Descriptor(), len(teal), teal); err != nil {
 			t.Fatal(err)
 		}
-		if shape.Rekey != RekeySpendingKey {
+		pinned := spendingKey
+		switch {
+		case shape.AnyRecipient:
+			pinned = limits
+		case shape.Rekey != RekeySpendingKey:
 			continue
 		}
 		resolved, err := provider.ResolveInstance(params)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := fmt.Fprintf(spendingKey, "%s\n%s\n%s\n%d\n%s\n", shape.Descriptor(), resolved.Fingerprint, resolved.BoundaryDigest, len(teal), teal); err != nil {
+		if _, err := fmt.Fprintf(pinned, "%s\n%s\n%s\n%d\n%s\n", shape.Descriptor(), resolved.Fingerprint, resolved.BoundaryDigest, len(teal), teal); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -698,6 +729,7 @@ func TestGeneralFingerprintGoldens(t *testing.T) {
 		{"allowlist programs", hex.EncodeToString(allowlists.Sum(nil)), goldenRenderedPrograms},
 		{"timelock programs", hex.EncodeToString(appended.Sum(nil)), goldenTimelockPrograms},
 		{"spending-key shapes", hex.EncodeToString(spendingKey.Sum(nil)), goldenSpendingKeyPrograms},
+		{"limits-only shapes", hex.EncodeToString(limits.Sum(nil)), goldenLimitsPrograms},
 	} {
 		if golden.got != golden.want {
 			t.Errorf("%s = %s, want %s", golden.name, golden.got, golden.want)

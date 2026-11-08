@@ -47,6 +47,11 @@ const (
 	Layer3PolicyMerkleAllowlistTimelock = "merkle_allowlist_timelock"
 )
 
+// Layer3PolicyNone compiles no Layer 3: the envelope's transfer kinds and fee
+// ceiling, and the spending signature, are the whole spending rule. It reads no
+// parameter and takes no author TEAL.
+const Layer3PolicyNone = "none"
+
 // SignatureArgLayout is the durable maximum shape of the spending signature
 // args emitted before any Layer-3 or cosigner args.
 type SignatureArgLayout struct {
@@ -175,7 +180,8 @@ func (metadata *Metadata) ValidateProfile() error {
 	switch metadata.Layer3Policy {
 	case Layer3PolicyCustom, Layer3PolicyFixedAllowlist, Layer3PolicyMerkleAllowlist,
 		Layer3PolicyFixedAllowlistCustom, Layer3PolicyMerkleAllowlistCustom,
-		Layer3PolicyTimelock, Layer3PolicyFixedAllowlistTimelock, Layer3PolicyMerkleAllowlistTimelock:
+		Layer3PolicyTimelock, Layer3PolicyFixedAllowlistTimelock, Layer3PolicyMerkleAllowlistTimelock,
+		Layer3PolicyNone:
 	default:
 		return fmt.Errorf("unsupported %s layer3_policy %q", Contract, metadata.Layer3Policy)
 	}
@@ -199,7 +205,7 @@ func (metadata *Metadata) ValidateProfile() error {
 	}
 	switch metadata.Layer3Policy {
 	case Layer3PolicyFixedAllowlist, Layer3PolicyFixedAllowlistCustom,
-		Layer3PolicyTimelock, Layer3PolicyFixedAllowlistTimelock:
+		Layer3PolicyTimelock, Layer3PolicyFixedAllowlistTimelock, Layer3PolicyNone:
 		if len(metadata.DerivedArgs) != 0 {
 			return fmt.Errorf("%s must not declare derived arguments", metadata.Layer3Policy)
 		}
@@ -209,7 +215,8 @@ func (metadata *Metadata) ValidateProfile() error {
 		}
 	}
 	switch metadata.Layer3Policy {
-	case Layer3PolicyTimelock, Layer3PolicyFixedAllowlistTimelock, Layer3PolicyMerkleAllowlistTimelock:
+	case Layer3PolicyTimelock, Layer3PolicyFixedAllowlistTimelock, Layer3PolicyMerkleAllowlistTimelock,
+		Layer3PolicyNone:
 		// These take no author TEAL, so nothing could read a runtime argument.
 		if len(metadata.RuntimeArgs) != 0 {
 			return fmt.Errorf("%s must not declare runtime arguments", metadata.Layer3Policy)

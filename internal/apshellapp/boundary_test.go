@@ -91,6 +91,23 @@ func TestPreviewOfATimelockWithNoList(t *testing.T) {
 	}
 }
 
+func TestPreviewOfALimitsOnlyAccount(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "boundary.yaml")
+	if err := os.WriteFile(path, []byte("schema: aplane.boundary.v1\nspend: [pay]\nrekey: {authority: spending_key}\nrecipient_scope: any\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	preview, err := (&App{}).PreviewBoundaryFile(boundary.KeyTypeV1, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !preview.AnyRecipient || preview.Recipients != 0 || preview.UnlockRound != "" {
+		t.Fatalf("preview = %+v", preview)
+	}
+	if preview.Parameters[boundary.ParameterRecipientScope] != boundary.RecipientScopeAny {
+		t.Fatalf("the scope must reach the signer: %v", preview.Parameters)
+	}
+}
+
 func TestPreviewRejectsAnInvalidFile(t *testing.T) {
 	if _, err := (&App{}).PreviewBoundaryFile(boundary.KeyTypeV1, writeBoundary(t, "teal: \"int 1\"\n")); err == nil {
 		t.Fatal("a file carrying TEAL was accepted")

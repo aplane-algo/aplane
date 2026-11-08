@@ -356,6 +356,9 @@ func agParams(shape boundedaccount.Shape) map[string]string {
 	if shape.Timelock {
 		params[boundedaccount.ParameterUnlockRound] = fmt.Sprint(agUnlockRound)
 	}
+	if shape.AnyRecipient {
+		params[boundedaccount.ParameterRecipientScope] = boundedaccount.RecipientScopeAny
+	}
 	if shape.Cosigner {
 		params[composeddsa.BoundedCosignerPublicKeyParameter] = hex.EncodeToString(agCosignerKey)
 	}

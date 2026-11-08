@@ -27,9 +27,18 @@ const CurrentTemplateSchemaVersion = 2
 // ValidateTemplateSpec.
 type TemplateSpec = generictemplate.TemplateSpec
 
-// ParseTemplateSpec parses YAML data into a composed template spec.
+// ParseTemplateSpec parses YAML data into a composed template spec. A template
+// can't declare the `none` Layer 3 policy: the general type offers that account,
+// selected by recipient_scope=any, and a second route would duplicate it.
 func ParseTemplateSpec(data []byte) (*TemplateSpec, error) {
-	return generictemplate.ParseTemplateSpec(data)
+	spec, err := generictemplate.ParseTemplateSpec(data)
+	if err != nil {
+		return nil, err
+	}
+	if spec.Bounded != nil && spec.Bounded.Layer3 != nil && spec.Bounded.Layer3.Policy == Layer3PolicyNone {
+		return nil, fmt.Errorf("bounded.layer3 policy %q is offered only by the general bounded type, with recipient_scope=any", Layer3PolicyNone)
+	}
+	return spec, nil
 }
 
 // templateBaseRules answers the questions a template asks about its base.

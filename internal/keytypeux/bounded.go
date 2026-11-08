@@ -19,6 +19,7 @@ var boundedPolicyLabels = map[string]string{
 	boundedmeta.Layer3PolicyFixedAllowlistTimelock:  "Allowlist timelock",
 	boundedmeta.Layer3PolicyMerkleAllowlistTimelock: "Merkle allowlist timelock",
 	boundedmeta.Layer3PolicyCustom:                  "Custom policy",
+	boundedmeta.Layer3PolicyNone:                    "Limits only",
 }
 
 // BoundedLabel describes a bounded account from its stored contract, such as

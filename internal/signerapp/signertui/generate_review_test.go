@@ -189,6 +189,28 @@ func TestParameterNamesDoNotInventAList(t *testing.T) {
 	}
 }
 
+// A limits-only account pays anyone, and the review says what still bounds it.
+func TestLimitsOnlyReviewSaysAnyRecipient(t *testing.T) {
+	for _, cosigner := range []bool{false, true} {
+		rekey := boundary.RekeySpendingKey
+		if cosigner {
+			rekey = boundary.RekeyRefused
+		}
+		prepared := preparedAccount(boundedmeta.Layer3PolicyNone, rekey, cosigner, 0)
+		prepared.Parameters = map[string]string{boundary.ParameterRecipientScope: boundary.RecipientScopeAny}
+		m := Model{viewState: ViewGenerateReview, width: 80, height: 23, standalone: true, forms: formsState{review: &prepared}}
+		view := m.renderGenerateReview()
+		for _, want := range []string{"Recipients: any; only the fee limit and transfer kinds apply", "fee limit 10000", "GENERATE"} {
+			if !strings.Contains(view, want) {
+				t.Errorf("review lacks %q:\n%s", want, view)
+			}
+		}
+		if strings.Contains(view, "once unlocked") || strings.Contains(view, "Unlocks at") || strings.Contains(view, "Panel lines") {
+			t.Errorf("limits-only review is wrong or scrolls at 80x24:\n%s", view)
+		}
+	}
+}
+
 func TestCustomPolicyIsLabelledAsCustom(t *testing.T) {
 	prepared := preparedAccount(boundedmeta.Layer3PolicyCustom, boundary.RekeySpendingKey, false, 0)
 	m := Model{viewState: ViewGenerateReview, width: 80, height: 23, standalone: true, forms: formsState{review: &prepared}}

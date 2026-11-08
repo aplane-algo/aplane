@@ -101,9 +101,12 @@ func (r *REPLState) generateFromBoundary(keyType, path string) (*apshellapp.Gene
 func renderBoundaryPreview(r *REPLState, preview *apshellapp.BoundaryPreview) {
 	r.println("Local summary. The signer has not confirmed this.")
 	r.printf("  Transfers:  %s\n", strings.Join(preview.Transfers, ", "))
-	if preview.Recipients > 0 {
+	switch {
+	case preview.Recipients > 0:
 		r.printf("  Recipients: %d, encoding %s, list %s\n", preview.Recipients, preview.Encoding, preview.ListDigest[:12])
-	} else {
+	case preview.AnyRecipient:
+		r.println("  Recipients: any; only the fee limit and transfer kinds apply")
+	default:
 		r.println("  Recipients: any, once unlocked")
 	}
 	if preview.UnlockRound != "" {

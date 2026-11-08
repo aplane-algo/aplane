@@ -214,9 +214,16 @@ func creationParameters() []lsigprovider.ParameterDef {
 		{
 			Name:        ParameterRecipients,
 			Label:       "Allowed Recipients",
-			Description: "Addresses that may receive payments or asset transfers. Optional only with an unlock round.",
+			Description: "Addresses that may receive payments or asset transfers. Optional only with an unlock round; absent with recipient scope any.",
 			Type:        "address[]",
 			MaxItems:    RecipientsMax,
+		},
+		{
+			Name:        ParameterRecipientScope,
+			Label:       "Recipient Scope",
+			Description: "listed (default) limits transfers to the recipient list; any keeps only the fee ceiling and transfer kinds.",
+			Type:        "string",
+			Options:     []string{RecipientScopeListed, RecipientScopeAny},
 		},
 		{
 			Name:        ParameterUnlockRound,
@@ -343,6 +350,8 @@ func shapeFromMetadata(metadata *boundedmeta.Metadata) (Shape, error) {
 		shape.Encoding, shape.Timelock = EncodingInline, true
 	case composeddsa.Layer3PolicyMerkleAllowlistTimelock:
 		shape.Encoding, shape.Timelock = EncodingMerkle, true
+	case composeddsa.Layer3PolicyNone:
+		shape.AnyRecipient = true
 	default:
 		return Shape{}, fmt.Errorf("stored account has policy %q", metadata.Layer3Policy)
 	}

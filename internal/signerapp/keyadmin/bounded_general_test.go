@@ -6,6 +6,7 @@ package keyadmin
 import (
 	"context"
 	"encoding/hex"
+	"maps"
 	"strings"
 	"testing"
 
@@ -139,6 +140,12 @@ func TestBoundaryRequirements(t *testing.T) {
 	timelockOnly := generalParams(boundedaccount.RekeyRefused)
 	delete(timelockOnly, boundedaccount.ParameterRecipients)
 	timelockOnly[boundedaccount.ParameterUnlockRound] = "100"
+	// Nor is a cosigner: a limits-only account pays anyone the cosigner signs for.
+	limitsOnly := generalParams(boundedaccount.RekeyRefused)
+	delete(limitsOnly, boundedaccount.ParameterRecipients)
+	limitsOnly[boundedaccount.ParameterRecipientScope] = boundedaccount.RecipientScopeAny
+	limitsCosigned := maps.Clone(limitsOnly)
+	limitsCosigned[composeddsa.BoundedCosignerPublicKeyParameter] = hex.EncodeToString(publicKey)
 
 	tests := []struct {
 		name               string
@@ -147,8 +154,8 @@ func TestBoundaryRequirements(t *testing.T) {
 		rejected, accepted []map[string]string
 		want               string
 	}{
-		{"contained", true, false, []map[string]string{spendingKey, timelockOnly}, []map[string]string{refused, cosigned}, "boundary_require_contained"},
-		{"cosigner", false, true, []map[string]string{spendingKey, refused}, []map[string]string{cosigned}, "boundary_require_cosigner"},
+		{"contained", true, false, []map[string]string{spendingKey, timelockOnly, limitsOnly, limitsCosigned}, []map[string]string{refused, cosigned}, "boundary_require_contained"},
+		{"cosigner", false, true, []map[string]string{spendingKey, refused, limitsOnly}, []map[string]string{cosigned, limitsCosigned}, "boundary_require_cosigner"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

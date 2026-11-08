@@ -51,6 +51,9 @@ func grammarDeclarations(t *testing.T) map[string]boundedmeta.PathDeclaration {
 		if shape.Timelock {
 			params[boundedaccount.ParameterUnlockRound] = "5"
 		}
+		if shape.AnyRecipient {
+			params[boundedaccount.ParameterRecipientScope] = boundedaccount.RecipientScopeAny
+		}
 		if shape.Cosigner {
 			params[boundedmeta.CosignerPublicKeyParameter] = strings.Repeat("41", boundedmeta.CosignerPublicKeySizeV1)
 		}

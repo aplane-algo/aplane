@@ -57,9 +57,27 @@ func selectShape(params map[string]string, defs []lsigprovider.ParameterDef) (*s
 		return nil, err
 	}
 	timelock := unlockRound != ""
+	scope, err := canonicalRecipientScope(params)
+	if err != nil {
+		return nil, err
+	}
+	anyRecipient := scope == RecipientScopeAny
 	var recipients []string
 	encoding := ""
-	if _, present := params[ParameterRecipients]; present || !timelock {
+	if anyRecipient {
+		// Limits-only: the request asked for no list, so it may not carry one,
+		// and a timelock already admits any recipient once it unlocks.
+		if _, present := params[ParameterRecipients]; present {
+			return nil, fmt.Errorf("%s=%s takes no %s", ParameterRecipientScope, RecipientScopeAny, ParameterRecipients)
+		}
+		if _, present := params[ParameterListEncoding]; present {
+			return nil, fmt.Errorf("%s has no list to encode", ParameterListEncoding)
+		}
+		if timelock {
+			return nil, fmt.Errorf("%s=%s does not combine with %s; a timelock alone admits any recipient once it unlocks",
+				ParameterRecipientScope, RecipientScopeAny, ParameterUnlockRound)
+		}
+	} else if _, present := params[ParameterRecipients]; present || !timelock || scope == RecipientScopeListed {
 		if recipients, err = canonicalRecipients(normalized[ParameterRecipients]); err != nil {
 			return nil, err
 		}
@@ -95,13 +113,36 @@ func selectShape(params map[string]string, defs []lsigprovider.ParameterDef) (*s
 	if timelock {
 		values[ParameterUnlockRound] = unlockRound
 	}
+	// Only "any" is persisted: "listed" is the default, so the values of every
+	// earlier shape stay as they were.
+	if anyRecipient {
+		values[ParameterRecipientScope] = RecipientScopeAny
+	}
 	if cosigner != "" {
 		values[composeddsa.BoundedCosignerPublicKeyParameter] = cosigner
 	}
 	return &selection{
-		shape:  Shape{Spend: spend, Encoding: encoding, Rekey: rekey, Cosigner: cosigner != "", Timelock: timelock},
+		shape: Shape{
+			Spend: spend, Encoding: encoding, Rekey: rekey, Cosigner: cosigner != "",
+			Timelock: timelock, AnyRecipient: anyRecipient,
+		},
 		values: values,
 	}, nil
+}
+
+// canonicalRecipientScope returns "" when the request names no scope. It reads
+// the original request: an explicitly empty value is an error, not the default.
+func canonicalRecipientScope(params map[string]string) (string, error) {
+	scope, present := params[ParameterRecipientScope]
+	if !present {
+		return "", nil
+	}
+	switch scope {
+	case RecipientScopeAny, RecipientScopeListed:
+		return scope, nil
+	default:
+		return "", fmt.Errorf("%s must be %s or %s", ParameterRecipientScope, RecipientScopeListed, RecipientScopeAny)
+	}
 }
 
 // canonicalUnlockRound returns "" when the request has no timelock. Zero is refused

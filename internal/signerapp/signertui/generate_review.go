@@ -173,7 +173,7 @@ func reviewRekey(review PrepareGenerateResultMessage) (label, consequence string
 // reviewRecipients describes who the account can pay, decided by its policy and never
 // by a parameter's name: a template can call its list anything, or give a parameter
 // called recipients to code the framework does not check. Overstating what an account
-// can pay is the mistake to avoid, so only the policy with no list says "any". A
+// can pay is the mistake to avoid, so only the policies with no list say "any". A
 // policy this client does not know claims neither: it is named, with the details.
 func reviewRecipients(policy string, recipients []string) (row, note string) {
 	switch {
@@ -181,6 +181,8 @@ func reviewRecipients(policy string, recipients []string) (row, note string) {
 		return reviewRow("Policy", "Custom policy, from the template author's code"), ""
 	case policy == boundedmeta.Layer3PolicyTimelock:
 		return reviewRow("Recipients", "any, once unlocked"), ""
+	case policy == boundedmeta.Layer3PolicyNone:
+		return reviewRow("Recipients", "any; only the fee limit and transfer kinds apply"), ""
 	case !boundedmeta.IsRecipientListPolicy(policy):
 		return reviewRow("Policy", fmt.Sprintf("%s, see details", policy)), ""
 	}

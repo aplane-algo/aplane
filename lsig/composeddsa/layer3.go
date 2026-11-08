@@ -40,6 +40,10 @@ const (
 	// recipient check.
 	Layer3PolicyMerkleAllowlistTimelock = "merkle_allowlist_timelock"
 
+	// Layer3PolicyNone compiles no Layer 3: the bounded envelope and the spending
+	// signature are the whole spending rule. Only the general type offers it.
+	Layer3PolicyNone = boundedmeta.Layer3PolicyNone
+
 	// BoundedInlineListMax is the audited maximum for each framework-owned
 	// inline membership list.
 	BoundedInlineListMax = 30
@@ -83,6 +87,8 @@ func rulesForLayer3Policy(policy string) (layer3PolicyRules, bool) {
 		return layer3PolicyRules{inlineList: true, timelock: true}, true
 	case Layer3PolicyMerkleAllowlistTimelock:
 		return layer3PolicyRules{merkleList: true, timelock: true}, true
+	case Layer3PolicyNone:
+		return layer3PolicyRules{}, true
 	}
 	return layer3PolicyRules{}, false
 }
@@ -131,6 +137,11 @@ func validateLayer3Policy(policy *Layer3Policy, params []lsigprovider.ParameterD
 	}
 	if rules.timelock && hasAuthorTEAL {
 		return fmt.Errorf("policy %q does not accept author TEAL", policy.Policy)
+	}
+	// Author TEAL with no framework policy is "custom"; a second name for the same
+	// program would let a review call a restricted account unrestricted.
+	if policy.Policy == Layer3PolicyNone && hasAuthorTEAL {
+		return fmt.Errorf("policy %q does not accept author TEAL; omit bounded.layer3 for custom TEAL", policy.Policy)
 	}
 	// No host rule gates a rekey, so a spending-key rekey would leave the lock
 	// before the unlock round.
@@ -237,6 +248,10 @@ func (c *ComposedDSA) renderLayer3Policy(params map[string]string, profile *Boun
 	rules, ok := rulesForLayer3Policy(c.layer3.Policy)
 	if !ok {
 		return "", fmt.Errorf("unsupported Layer-3 policy %q", c.layer3.Policy)
+	}
+	if c.layer3.Policy == Layer3PolicyNone {
+		// A comment only: the spend falls through to the accept block.
+		return "// === no framework Layer 3: the envelope bounds every spend ===\n", nil
 	}
 
 	var b strings.Builder
