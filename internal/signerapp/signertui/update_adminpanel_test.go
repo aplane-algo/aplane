@@ -40,7 +40,7 @@ func TestAdminRowsGroupEditableSettingsFirst(t *testing.T) {
 		"Lock-on-disconnect",
 		"Passphrase timeout",
 		"Color theme",
-		"Bounded: require admin key",
+		"Bounded: require containment",
 		"Bounded: require cosigner",
 	}
 	for i, want := range wantLabels {

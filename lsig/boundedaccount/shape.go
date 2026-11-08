@@ -34,7 +34,7 @@ const (
 	EncodingMerkle = boundary.EncodingMerkle
 
 	RekeySpendingKey = boundary.RekeySpendingKey
-	RekeyAdminKey    = boundary.RekeyAdminKey
+	RekeyRefused     = boundary.RekeyRefused
 
 	// AutoInlineMax is the largest list auto encodes inline. It is part of the
 	// grammar's meaning, so changing it changes the grammar fingerprint.
@@ -85,7 +85,7 @@ func (s Shape) Policy() string {
 
 // PolicyGate says whether Layer 3 also constrains rekey. A spending-key rekey
 // waits for the unlock round like a spend, or a timelock could be walked out of at
-// any time. An admin rekey is the recovery path, so it stays available.
+// any time. A shape that refuses rekeys has no rekey for Layer 3 to judge.
 func (s Shape) PolicyGate() string {
 	if s.Timelock && s.Rekey == RekeySpendingKey {
 		return boundedmeta.PolicyGateLayer3
@@ -111,15 +111,16 @@ func (s Shape) Descriptor() string {
 // Shapes enumerates every shape the grammar can select, in a stable order. Allowlist
 // shapes come first, so this order extends rather than reshuffles.
 //
-// A cosigner requires admin-key rekey, because rekey is mandatory in this grammar and
-// bounded1 forbids spending-key rekey with a cosigner. A spending-key rekey on a
-// timelock is gated by Layer 3, which judges it as a payment, so it needs pay.
+// A cosigned shape refuses rekeys, because bounded1 forbids a spending-key rekey
+// beside a cosigner. A shape that refuses rekeys needs pay: with no rekey path and
+// no close, pay is the only way its ALGO can ever leave. A spending-key rekey on a
+// timelock is gated by Layer 3, which judges it as a payment, so it needs pay too.
 func Shapes() []Shape {
 	type family struct {
 		rekey    string
 		cosigner bool
 	}
-	families := []family{{RekeySpendingKey, false}, {RekeyAdminKey, false}, {RekeyAdminKey, true}}
+	families := []family{{RekeySpendingKey, false}, {RekeyRefused, false}, {RekeyRefused, true}}
 	var shapes []Shape
 	forEachShape := func(encoding string, timelock bool) {
 		for _, f := range families {
@@ -130,7 +131,11 @@ func Shapes() []Shape {
 						spend = append(spend, effect)
 					}
 				}
-				if timelock && f.rekey == RekeySpendingKey && !slices.Contains(spend, txeffects.SpendEffectPay) {
+				hasPay := slices.Contains(spend, txeffects.SpendEffectPay)
+				if f.rekey == RekeyRefused && !hasPay {
+					continue
+				}
+				if timelock && f.rekey == RekeySpendingKey && !hasPay {
 					continue
 				}
 				shapes = append(shapes, Shape{Spend: spend, Encoding: encoding, Rekey: f.rekey, Cosigner: f.cosigner, Timelock: timelock})

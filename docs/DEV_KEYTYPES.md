@@ -211,7 +211,7 @@ Go-defined key types:
 |---|---|---|---|---|
 | `ed25519` | Native signing key | Go-defined | default-enabled | `internal/signing/ed25519`, `internal/keygen/ed25519.go` |
 | `falcon1024` | Protocol-native PQ signing key | Go-defined | default-enabled on signer nodes | `internal/signing/falcon1024` |
-| `aplane.falcon1024-b.v1` | General bounded account, one of 96 shapes selected per key | Go-defined | default-enabled on signer nodes | `lsig/boundedaccount`, `internal/boundary` |
+| `aplane.falcon1024-b.v1` | General bounded account, one of 66 shapes selected per key | Go-defined | default-enabled on signer nodes | `lsig/boundedaccount`, `internal/boundary` |
 | `aplane.falcon1024.v1` | DSA LogicSig provider | Go-defined | internal-only | `lsig/falcon1024/v1/standard.go` |
 | `aplane.witness-falcon1024.v1` | Witness key (cosigner custody or external contract-admin custody) | Go-defined | default-enabled on cosigner nodes | `internal/witness`, `lsig/falcon1024/keygen/witness.go` |
 | `aplane.falcon1024-cosigner1024.v1` | Guarded-account DSA LogicSig provider | Go-defined | library-visible | `lsig/falcon1024_guarded` |

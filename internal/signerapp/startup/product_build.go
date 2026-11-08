@@ -111,7 +111,7 @@ func BuildProductRuntime(opts ProductBuildOptions, hooks ProductBuildHooks) (*pr
 		},
 	})
 
-	ir.Config().SetBoundaryRequirements(effectiveCfg.BoundaryRequireAdminKey, effectiveCfg.BoundaryRequireCosigner)
+	ir.Config().SetBoundaryRequirements(effectiveCfg.BoundaryRequireContained, effectiveCfg.BoundaryRequireCosigner)
 	WireReloadFunc(ir, opts, hooks)
 	WireApprovalCoordinator(ir, hooks)
 	return ir, nil

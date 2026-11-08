@@ -4,11 +4,8 @@
 package boundary
 
 import (
-	"fmt"
 	"slices"
 	"strings"
-
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
 )
 
 const allTransfers = "pay,axfer,asset_opt_in"
@@ -42,24 +39,24 @@ func Presets() []Preset {
 		{
 			Name:        "locked-allowlist",
 			Title:       "Locked Allowlist",
-			Description: "Pays only listed recipients. Rekey also needs a contract admin.",
+			Description: "Pays only listed recipients. It can never be rekeyed.",
 			Fixed: map[string]string{
 				ParameterSpendEffects:   allTransfers,
-				ParameterRekeyAuthority: RekeyAdminKey,
+				ParameterRekeyAuthority: RekeyRefused,
 				ParameterListEncoding:   EncodingAuto,
 			},
-			Fields: []string{ParameterRecipients, boundedmeta.AdminPublicKeyParameter},
+			Fields: []string{ParameterRecipients},
 		},
 		{
 			Name:        "corridor",
 			Title:       "Corridor",
-			Description: "A Merkle list, admin-key rekey, and a cosigner on every spend.",
+			Description: "A Merkle list and a cosigner on every spend. It can never be rekeyed.",
 			Fixed: map[string]string{
 				ParameterSpendEffects:   allTransfers,
-				ParameterRekeyAuthority: RekeyAdminKey,
+				ParameterRekeyAuthority: RekeyRefused,
 				ParameterListEncoding:   EncodingMerkle,
 			},
-			Fields: []string{ParameterRecipients, boundedmeta.AdminPublicKeyParameter, ParameterCosigner},
+			Fields: []string{ParameterRecipients, ParameterCosigner},
 		},
 		{
 			Name:        "timelock",
@@ -77,7 +74,6 @@ func Presets() []Preset {
 // SampleValues are what an operator supplies to a preset.
 type SampleValues struct {
 	Recipients  []string
-	AdminKey    string // path to a public .adm.json envelope
 	Cosigner    string
 	UnlockRound string
 }
@@ -96,9 +92,6 @@ func (p Preset) SampleBoundaryFile(values SampleValues) string {
 		sb.WriteString("encoding: " + p.Fixed[ParameterListEncoding] + "\n")
 	}
 	sb.WriteString("rekey:\n  authority: " + p.Fixed[ParameterRekeyAuthority] + "\n")
-	if p.Fixed[ParameterRekeyAuthority] == RekeyAdminKey {
-		sb.WriteString(fmt.Sprintf("  admin_key: %s\n", values.AdminKey))
-	}
 	if slices.Contains(p.Fields, ParameterCosigner) {
 		sb.WriteString("cosigner: " + values.Cosigner + "\n")
 	}

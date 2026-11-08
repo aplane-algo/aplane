@@ -259,16 +259,16 @@ Generate a key and choose `aplane.falcon1024-b.v1`, then a preset:
 | Preset | What it sets | You supply |
 |---|---|---|
 | Allowlist | All transfer kinds; the spending key alone can rekey; automatic list encoding | Recipients |
-| Locked Allowlist | All transfer kinds; rekey also needs a contract admin; automatic list encoding | Recipients, admin `.adm.json` file |
-| Corridor | All transfer kinds; contract-admin rekey; a cosigner on every spend; Merkle list | Recipients, admin `.adm.json` file, cosigner |
+| Locked Allowlist | All transfer kinds; it can never be rekeyed; automatic list encoding | Recipients |
+| Corridor | All transfer kinds; a cosigner on every spend; Merkle list; it can never be rekeyed | Recipients, cosigner |
 | Timelock | All transfer kinds; the spending key alone can rekey, after the unlock round; no recipient list | Unlock round |
 | Load boundary file | Whatever the file says | The file |
 
 "All transfer kinds" means `pay`, `axfer`, and `asset_opt_in`. For a narrower list, such as
 ALGO only, use a boundary file.
 
-Before generating, apadmin shows what the signer resolved, including the contract admin
-and cosigner it will use. Press `d` for every parameter, fingerprint, and recipient.
+Before generating, apadmin shows what the signer resolved, including the cosigner it will
+use. Press `d` for every parameter, fingerprint, and recipient.
 After generating, press `s` to save a receipt beside where apadmin was started. A receipt
 documents the account. It cannot restore one: use encrypted backups for that.
 
@@ -284,8 +284,7 @@ recipients:
   - CEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI7JH2AYM
 encoding: auto
 rekey:
-  authority: admin_key
-  admin_key: ./bounded-admin/operations.adm.json
+  authority: refused
 cosigner: ops-cosigner
 ```
 
@@ -298,11 +297,12 @@ These addresses are illustrations, not funding destinations.
 | `recipients` | Required unless `unlock_round` is set. 1 to 65,536 distinct nonzero addresses, written literally: aliases and sets are not expanded. |
 | `encoding` | Optional, and needs a list. `auto` (the default) is inline through 10 recipients and Merkle above that. `inline` accepts at most 30. |
 | `unlock_round` | Optional. The first round the account can spend. With no list, the account can pay anyone once unlocked. |
-| `rekey.authority` | Required. `spending_key` or `admin_key`. |
-| `rekey.admin_key` | The public `.adm.json` file, relative to the boundary file's real location. It must be a regular file with that name, not a symbolic link. Required only with `admin_key`. |
-| `cosigner` | Optional. A cosigner reference name on the signer, or a Witness Key ID. A cosigner needs `admin_key`. |
+| `rekey.authority` | Required. `spending_key` (the spending key alone can rekey) or `refused` (the account can never be rekeyed). |
+| `cosigner` | Optional. A cosigner reference name on the signer, or a Witness Key ID. A cosigner needs `refused`. |
 
-With `unlock_round` and `spending_key`, `spend` must include `pay`.
+With `refused`, `spend` must include `pay`: the account can neither close nor be rekeyed,
+so a payment is the only way its ALGO can leave. With `unlock_round` and `spending_key`,
+`spend` must include `pay` too.
 
 Unknown fields, duplicate keys, YAML aliases, and non-string values are refused, and the
 file has no way to carry TEAL, a template, or a fee.
@@ -332,16 +332,18 @@ with fingerprints and a digest.
 ### Restricting new accounts
 
 `aplane.falcon1024-b.v1` cannot be turned off, but two settings in apadmin's Settings panel set
-a minimum for new accounts. `boundary_require_admin_key` refuses spending-key rekey, and
-`boundary_require_cosigner` refuses accounts without a cosigner. They apply on every route,
+a minimum for new accounts. `boundary_require_contained` requires new accounts to be
+contained: they must refuse rekeys and have a recipient list, so value can leave only to
+listed recipients. A timelock with no list is not contained, because it pays anyone once
+unlocked. `boundary_require_cosigner` refuses accounts without a cosigner. They apply on every route,
 and they do not affect existing accounts or imported templates.
 
 Review these points before funding an account:
 
 - Spending-key rekey can leave the boundary. With an unlock round, it waits for that round.
-- Admin rekey still needs the spending signature, and it bypasses the allowlist, any
-  cosigner, and the unlock round. Without that path, a mistaken unlock round could not
-  be recovered from early.
+- An account that refuses rekeys can never change its authority. A lost cosigner, a
+  mistaken recipient list or a mistaken unlock round cannot be repaired: move the funds
+  out while the account can still spend, and create a new one.
 - An unlock round means a different time on each network. It does not tie the program to
   one network.
 - These rules limit recipients and transfer kinds. They do not limit amounts or spending
@@ -732,13 +734,17 @@ use a [preset of `aplane.falcon1024-b.v1`](#bounded-accounts).
 
 Five templates have left the default library in favor of those presets:
 
-| Template | Replacement preset |
-|---|---|
-| `aplane.falcon1024-allowlist.v1` | Allowlist |
-| `aplane.falcon1024-allowlist.v2` | Allowlist |
-| `aplane.falcon1024-allowlist-lock.v1` | Locked Allowlist |
-| `aplane.corridor.v1` | Corridor |
-| `aplane.falcon1024-timelock.v1` | Timelock |
+| Template | Replacement preset | Rekey: template, preset |
+|---|---|---|
+| `aplane.falcon1024-allowlist.v1` | Allowlist | spending key, spending key |
+| `aplane.falcon1024-allowlist.v2` | Allowlist | spending key, spending key |
+| `aplane.falcon1024-allowlist-lock.v1` | Locked Allowlist | admin key, refused |
+| `aplane.corridor.v1` | Corridor | admin key, refused |
+| `aplane.falcon1024-timelock.v1` | Timelock | spending key, spending key |
+
+No preset has an admin-key rekey, so a Locked Allowlist or Corridor account made
+from a preset can never be rekeyed, where the template's account could be rekeyed
+through an `aprekey` ceremony.
 
 Existing accounts are unaffected: an installed template keeps working and stays
 in the KeyType Library, where its stored YAML can still be viewed. An upgraded

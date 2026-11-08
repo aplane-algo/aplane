@@ -457,8 +457,8 @@ func TestPresetAsksOnlyForWhatItLeavesOpen(t *testing.T) {
 		want   []string
 	}{
 		{0, []string{"recipients"}},
-		{1, []string{"recipients", boundedmeta.AdminPublicKeyParameter}},
-		{2, []string{"recipients", boundedmeta.AdminPublicKeyParameter, boundary.ParameterCosigner}},
+		{1, []string{"recipients"}},
+		{2, []string{"recipients", boundary.ParameterCosigner}},
 		{3, []string{boundary.ParameterUnlockRound}},
 	} {
 		preset := boundary.Presets()[test.preset]

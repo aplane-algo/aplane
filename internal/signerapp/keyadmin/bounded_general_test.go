@@ -4,7 +4,6 @@
 package keyadmin
 
 import (
-	"bytes"
 	"context"
 	"encoding/hex"
 	"strings"
@@ -35,9 +34,6 @@ func generalParams(rekey string) map[string]string {
 		boundedaccount.ParameterSpendEffects:   "pay,axfer,asset_opt_in",
 		boundedaccount.ParameterRekeyAuthority: rekey,
 		boundedaccount.ParameterRecipients:     recipient.String(),
-	}
-	if rekey == boundedaccount.RekeyAdminKey {
-		params[composeddsa.BoundedAdminPublicKeyParameter] = hex.EncodeToString(bytes.Repeat([]byte{0x71}, composeddsa.BoundedAdminPublicKeySize))
 	}
 	return params
 }
@@ -101,7 +97,7 @@ func TestGeneralProviderGeneratesFromAReview(t *testing.T) {
 
 func TestGeneralProviderRejectsAChangedReview(t *testing.T) {
 	_, service := setupGeneralProvider(t)
-	params := generalParams(boundedaccount.RekeyAdminKey)
+	params := generalParams(boundedaccount.RekeyRefused)
 	prepared, err := service.PrepareGenerateKey(boundedaccount.KeyTypeV1, params)
 	if err != nil {
 		t.Fatalf("PrepareGenerateKey() error = %#v", err)
@@ -120,11 +116,13 @@ func TestGeneralProviderRejectsAChangedReview(t *testing.T) {
 	for key, value := range prepared.Parameters {
 		changed[key] = value
 	}
-	changed[composeddsa.BoundedAdminPublicKeyParameter] = hex.EncodeToString(bytes.Repeat([]byte{0x72}, composeddsa.BoundedAdminPublicKeySize))
+	var other types.Address
+	other[31] = 8
+	changed[boundedaccount.ParameterRecipients] = other.String()
 	_, err = service.GenerateReviewedKey(context.Background(), boundedaccount.KeyTypeV1, changed,
 		ReviewedValues{Fingerprint: prepared.ReviewFingerprint, BoundaryDigest: prepared.BoundaryDigest}, nil)
 	if err == nil || !strings.Contains(err.Message, "changed after this request was reviewed") {
-		t.Fatalf("substituted admin key: GenerateReviewedKey() error = %#v", err)
+		t.Fatalf("substituted recipient: GenerateReviewedKey() error = %#v", err)
 	}
 	assertNoKeys(t, service)
 }
@@ -133,23 +131,28 @@ func TestBoundaryRequirements(t *testing.T) {
 	ir, service := setupGeneralProvider(t)
 	publicKey, _ := importPrepareReference(t, ir, prepareTestReference, 0x61)
 	spendingKey := generalParams(boundedaccount.RekeySpendingKey)
-	adminKey := generalParams(boundedaccount.RekeyAdminKey)
-	cosigned := generalParams(boundedaccount.RekeyAdminKey)
+	refused := generalParams(boundedaccount.RekeyRefused)
+	cosigned := generalParams(boundedaccount.RekeyRefused)
 	cosigned[composeddsa.BoundedCosignerPublicKeyParameter] = hex.EncodeToString(publicKey)
+	// Refusing rekeys is not containment on its own: a timelock with no list
+	// pays anyone once it opens.
+	timelockOnly := generalParams(boundedaccount.RekeyRefused)
+	delete(timelockOnly, boundedaccount.ParameterRecipients)
+	timelockOnly[boundedaccount.ParameterUnlockRound] = "100"
 
 	tests := []struct {
 		name               string
-		requireAdmin       bool
+		requireContained   bool
 		requireCosigner    bool
 		rejected, accepted []map[string]string
 		want               string
 	}{
-		{"admin key", true, false, []map[string]string{spendingKey}, []map[string]string{adminKey, cosigned}, "boundary_require_admin_key"},
-		{"cosigner", false, true, []map[string]string{spendingKey, adminKey}, []map[string]string{cosigned}, "boundary_require_cosigner"},
+		{"contained", true, false, []map[string]string{spendingKey, timelockOnly}, []map[string]string{refused, cosigned}, "boundary_require_contained"},
+		{"cosigner", false, true, []map[string]string{spendingKey, refused}, []map[string]string{cosigned}, "boundary_require_cosigner"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			ir.Config().SetBoundaryRequirements(test.requireAdmin, test.requireCosigner)
+			ir.Config().SetBoundaryRequirements(test.requireContained, test.requireCosigner)
 			t.Cleanup(func() { ir.Config().SetBoundaryRequirements(false, false) })
 			for _, params := range test.rejected {
 				if _, err := service.PrepareGenerateKey(boundedaccount.KeyTypeV1, params); err == nil || !strings.Contains(err.Message, test.want) {
@@ -178,7 +181,7 @@ func TestBoundaryRequirementIsRecheckedAfterReview(t *testing.T) {
 	t.Cleanup(func() { ir.Config().SetBoundaryRequirements(false, false) })
 	_, err = service.GenerateReviewedKey(context.Background(), boundedaccount.KeyTypeV1, prepared.Parameters,
 		ReviewedValues{Fingerprint: prepared.ReviewFingerprint, BoundaryDigest: prepared.BoundaryDigest}, nil)
-	if err == nil || !strings.Contains(err.Message, "boundary_require_admin_key") {
+	if err == nil || !strings.Contains(err.Message, "boundary_require_contained") {
 		t.Fatalf("GenerateReviewedKey() error = %#v", err)
 	}
 	assertNoKeys(t, service)
@@ -189,7 +192,7 @@ func TestBoundaryRequirementsDoNotReachExpertTemplates(t *testing.T) {
 	ir, _, _ := setupPrepareTest(t, keyType, "bounded-expert")
 	ir.Config().SetBoundaryRequirements(true, true)
 	service := Service{Runtime: ir}
-	// This template has neither an admin key nor rekey; the settings must not care.
+	// This template refuses rekeys but is not the general type; the settings must not care.
 	if _, err := service.GenerateKey(context.Background(), keyType, map[string]string{cosignerrefs.ParamCosignerName: prepareTestReference}, nil); err != nil {
 		t.Fatalf("GenerateKey() error = %#v", err)
 	}
@@ -198,7 +201,7 @@ func TestBoundaryRequirementsDoNotReachExpertTemplates(t *testing.T) {
 func TestCosignerReferenceResolvesBeforeTheShapeIsChosen(t *testing.T) {
 	ir, service := setupGeneralProvider(t)
 	publicKey, keyID := importPrepareReference(t, ir, prepareTestReference, 0x61)
-	params := generalParams(boundedaccount.RekeyAdminKey)
+	params := generalParams(boundedaccount.RekeyRefused)
 	params[cosignerrefs.ParamCosignerName] = prepareTestReference
 	prepared, err := service.PrepareGenerateKey(boundedaccount.KeyTypeV1, params)
 	if err != nil {

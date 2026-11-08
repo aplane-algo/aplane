@@ -7,10 +7,10 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -21,19 +21,18 @@ import (
 	"github.com/aplane-algo/aplane/internal/boundary"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/txeffects"
-	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	"github.com/aplane-algo/aplane/lsig/ed25519lsig"
 	falcon "github.com/aplane-algo/aplane/lsig/falcon1024"
 )
 
 const (
-	goldenGrammarFingerprint    = "1:6849f3503d4c228c80ed8fc16da800bb9bd50b638fb046266152c597c983f4cd"
+	goldenGrammarFingerprint    = "1:455b626f2b38e5b85495373114ed8bf546fe18200d1ade9a7dbd8bfa05d4f507"
 	goldenFirstShapeFingerprint = "1:20b80a76bb50a40555910a6d75dd5ea4db729c765627250eaab534f5443d0287"
-	goldenFullShapeFingerprint  = "1:10022265dd8eee15de61a4d0828f74835a4f7a549184983adce608acc6922cb0"
-	goldenBoundaryDigest        = "e92a67f3c4e8ed9330593c657bde8d84dc034f32fc8fae02d04f00568df31da7"
-	goldenRenderedPrograms      = "fd62969d1fd5248808f9b574e4be3a611e1c7b01c1faa9dfe950839563e0f195"
-	goldenTimelockPrograms      = "ccfc86ea8e24606187c36a1c75073993dc43bfebef2f235e5b0ca2395198058b"
+	goldenFullShapeFingerprint  = "1:0f98cccfa0a7769946e94e6d40954e50de6a14751c0f7268a02cdf6fa0252be9"
+	goldenBoundaryDigest        = "94ed73af648eb35f51ec8122cbb9cd6d6cdfc378f8536afe448cd3309fe49544"
+	goldenRenderedPrograms      = "7eead1e261d7f58a7bbc483bbaa01b2d073a9e0585a362900eb49fcdbb0fe301"
+	goldenTimelockPrograms      = "80ac502e8ae68a19efb0583fd8b4067f830776d1fb0c6ec6007b029625c7636a"
 )
 
 func newTestProvider(t *testing.T) *Provider {
@@ -62,7 +61,6 @@ func testRecipients(count int) string {
 }
 
 var (
-	testAdminKey    = hex.EncodeToString(bytes.Repeat([]byte{0x31}, composeddsa.BoundedAdminPublicKeySize))
 	testCosignerKey = hex.EncodeToString(bytes.Repeat([]byte{0x41}, boundedmeta.CosignerPublicKeySizeV1))
 	testSpendingKey = bytes.Repeat([]byte{0x21}, 1793)
 )
@@ -79,9 +77,6 @@ func requestFor(shape Shape, recipients string) map[string]string {
 	if shape.Timelock {
 		params[ParameterUnlockRound] = "50000000"
 	}
-	if shape.Rekey == RekeyAdminKey {
-		params[composeddsa.BoundedAdminPublicKeyParameter] = testAdminKey
-	}
 	if shape.Cosigner {
 		params[composeddsa.BoundedCosignerPublicKeyParameter] = testCosignerKey
 	}
@@ -89,21 +84,22 @@ func requestFor(shape Shape, recipients string) map[string]string {
 }
 
 // The expected set is written out here rather than derived from the code that
-// produces it. Allowlists are 2 encodings x 3 authority arrangements x 7 spend
-// subsets, which is 42. Timelocks add 3 policies x (spending key x 4 subsets with
-// pay, plus 2 admin arrangements x 7 subsets), which is 54.
+// produces it. A shape that refuses rekeys needs pay, so it has the 4 spend subsets
+// with pay. Allowlists are 2 encodings x (spending key x 7 subsets, plus 2 refused
+// arrangements x 4), which is 30. Timelocks add 3 policies x 3 rekey arrangements
+// x 4 subsets with pay, which is 36.
 func TestShapesEnumerateTheGrammar(t *testing.T) {
 	shapes := Shapes()
-	if len(shapes) != 96 {
-		t.Fatalf("Shapes() = %d, want 96", len(shapes))
+	if len(shapes) != 66 {
+		t.Fatalf("Shapes() = %d, want 66", len(shapes))
 	}
 	policies := make(map[string]int)
 	for _, shape := range shapes {
 		policies[shape.Policy()]++
 	}
 	for policy, want := range map[string]int{
-		composeddsa.Layer3PolicyFixedAllowlist: 21, composeddsa.Layer3PolicyMerkleAllowlist: 21,
-		composeddsa.Layer3PolicyTimelock: 18, composeddsa.Layer3PolicyFixedAllowlistTimelock: 18, composeddsa.Layer3PolicyMerkleAllowlistTimelock: 18,
+		composeddsa.Layer3PolicyFixedAllowlist: 15, composeddsa.Layer3PolicyMerkleAllowlist: 15,
+		composeddsa.Layer3PolicyTimelock: 12, composeddsa.Layer3PolicyFixedAllowlistTimelock: 12, composeddsa.Layer3PolicyMerkleAllowlistTimelock: 12,
 	} {
 		if policies[policy] != want {
 			t.Errorf("%s has %d shapes, want %d", policy, policies[policy], want)
@@ -114,8 +110,11 @@ func TestShapesEnumerateTheGrammar(t *testing.T) {
 		if gated != (shape.Timelock && shape.Rekey == RekeySpendingKey) {
 			t.Errorf("%s has gate %s", shape.Descriptor(), shape.PolicyGate())
 		}
+		if shape.Rekey == RekeyRefused && !slices.Contains(shape.Spend, txeffects.SpendEffectPay) {
+			t.Errorf("%s refuses rekeys without pay, so its ALGO could never leave", shape.Descriptor())
+		}
 	}
-	shapes = shapes[:42]
+	shapes = shapes[:30]
 	families := make(map[string]int)
 	subsets := make(map[string]int)
 	seen := make(map[string]bool)
@@ -127,19 +126,20 @@ func TestShapesEnumerateTheGrammar(t *testing.T) {
 		families[shape.Encoding+"/"+shape.Rekey+"/"+strconv.FormatBool(shape.Cosigner)]++
 		subsets[joinSpend(shape.Spend)]++
 	}
-	for _, family := range []string{
-		"inline/spending_key/false", "inline/admin_key/false", "inline/admin_key/true",
-		"merkle/spending_key/false", "merkle/admin_key/false", "merkle/admin_key/true",
+	for family, want := range map[string]int{
+		"inline/spending_key/false": 7, "inline/refused/false": 4, "inline/refused/true": 4,
+		"merkle/spending_key/false": 7, "merkle/refused/false": 4, "merkle/refused/true": 4,
 	} {
-		if families[family] != 7 {
-			t.Errorf("family %s has %d shapes, want 7", family, families[family])
+		if families[family] != want {
+			t.Errorf("family %s has %d shapes, want %d", family, families[family], want)
 		}
 	}
-	for _, subset := range []string{
-		"pay", "axfer", "asset_opt_in", "pay,axfer", "pay,asset_opt_in", "axfer,asset_opt_in", "pay,axfer,asset_opt_in",
+	for subset, want := range map[string]int{
+		"pay": 6, "pay,axfer": 6, "pay,asset_opt_in": 6, "pay,axfer,asset_opt_in": 6,
+		"axfer": 2, "asset_opt_in": 2, "axfer,asset_opt_in": 2,
 	} {
-		if subsets[subset] != 6 {
-			t.Errorf("subset %s has %d shapes, want 6", subset, subsets[subset])
+		if subsets[subset] != want {
+			t.Errorf("subset %s has %d shapes, want %d", subset, subsets[subset], want)
 		}
 	}
 }
@@ -192,7 +192,7 @@ func TestEveryShapeResolvesAndAgreesWithItsMetadata(t *testing.T) {
 func TestInvalidRequestsFailClosed(t *testing.T) {
 	provider := newTestProvider(t)
 	allSpend := Shape{Spend: spendEffectOrder, Encoding: EncodingAuto, Rekey: RekeySpendingKey}
-	admin := Shape{Spend: spendEffectOrder, Encoding: EncodingAuto, Rekey: RekeyAdminKey}
+	refusedShape := Shape{Spend: spendEffectOrder, Encoding: EncodingAuto, Rekey: RekeyRefused}
 	zero := types.Address{}.String()
 	tests := []struct {
 		name   string
@@ -219,6 +219,11 @@ func TestInvalidRequestsFailClosed(t *testing.T) {
 			p[ParameterUnlockRound] = "5"
 			p[ParameterSpendEffects] = "axfer"
 		}, "requires pay"},
+		{"refused without pay", refusedShape, func(p map[string]string) { p[ParameterSpendEffects] = "axfer,asset_opt_in" }, "refused requires pay"},
+		{"cosigned without pay", refusedShape, func(p map[string]string) {
+			p[ParameterSpendEffects] = "axfer"
+			p[composeddsa.BoundedCosignerPublicKeyParameter] = testCosignerKey
+		}, "refused requires pay"},
 		{"empty list with a timelock", allSpend, func(p map[string]string) {
 			p[ParameterUnlockRound] = "5"
 			p[ParameterRecipients] = ""
@@ -233,17 +238,15 @@ func TestInvalidRequestsFailClosed(t *testing.T) {
 			p[ParameterRecipients] = testRecipients(InlineMax + 1)
 		}, "inline encoding accepts at most 30"},
 		{"too many recipients", allSpend, func(p map[string]string) { p[ParameterRecipients] = testRecipients(RecipientsMax + 1) }, "maximum is 65536"},
-		{"admin rekey without key", admin, func(p map[string]string) { delete(p, composeddsa.BoundedAdminPublicKeyParameter) }, "requires bounded_admin_public_key"},
-		{"unused admin key", allSpend, func(p map[string]string) { p[composeddsa.BoundedAdminPublicKeyParameter] = testAdminKey }, "does not use"},
-		{"cosigner without admin", allSpend, func(p map[string]string) { p[composeddsa.BoundedCosignerPublicKeyParameter] = testCosignerKey }, "requires rekey_authority=admin_key"},
-		{"empty cosigner key", admin, func(p map[string]string) { p[composeddsa.BoundedCosignerPublicKeyParameter] = "" }, "is empty"},
-		{"unresolved cosigner", admin, func(p map[string]string) { p[ParameterCosigner] = "ops" }, "not resolved"},
-		{"empty cosigner name", admin, func(p map[string]string) { p[ParameterCosigner] = "" }, "not resolved"},
-		{"same authority", admin, func(p map[string]string) {
-			p[composeddsa.BoundedAdminPublicKeyParameter] = testCosignerKey
-			p[composeddsa.BoundedCosignerPublicKeyParameter] = testCosignerKey
-		}, "must differ"},
-		{"short admin key", admin, func(p map[string]string) { p[composeddsa.BoundedAdminPublicKeyParameter] = "abcd" }, "bounded_admin_public_key"},
+		// The admin key is gone: its parameter and its rekey authority are refused.
+		{"admin key parameter", allSpend, func(p map[string]string) {
+			p["bounded_admin_public_key"] = hex.EncodeToString(bytes.Repeat([]byte{0x31}, 1793))
+		}, "unknown parameter"},
+		{"admin rekey authority", allSpend, func(p map[string]string) { p[ParameterRekeyAuthority] = "admin_key" }, "rekey_authority must be"},
+		{"cosigner with spending-key rekey", allSpend, func(p map[string]string) { p[composeddsa.BoundedCosignerPublicKeyParameter] = testCosignerKey }, "requires rekey_authority=refused"},
+		{"empty cosigner key", refusedShape, func(p map[string]string) { p[composeddsa.BoundedCosignerPublicKeyParameter] = "" }, "is empty"},
+		{"unresolved cosigner", refusedShape, func(p map[string]string) { p[ParameterCosigner] = "ops" }, "not resolved"},
+		{"empty cosigner name", refusedShape, func(p map[string]string) { p[ParameterCosigner] = "" }, "not resolved"},
 		{"teal", allSpend, func(p map[string]string) { p["teal"] = "int 1" }, "unknown parameter"},
 		{"template", allSpend, func(p map[string]string) { p["template"] = "x" }, "unknown parameter"},
 		{"max fee", allSpend, func(p map[string]string) { p["max_fee"] = "1" }, "unknown parameter"},
@@ -342,7 +345,7 @@ func TestProviderHasNoMnemonicImportOrRuntimeArguments(t *testing.T) {
 
 func TestBoundaryDigestBindsWhatItCompares(t *testing.T) {
 	provider := newTestProvider(t)
-	shape := Shape{Spend: spendEffectOrder, Encoding: EncodingInline, Rekey: RekeyAdminKey, Cosigner: true}
+	shape := Shape{Spend: spendEffectOrder, Encoding: EncodingInline, Rekey: RekeyRefused, Cosigner: true}
 	digest := func(t *testing.T, mutate func(map[string]string)) string {
 		t.Helper()
 		params := requestFor(shape, testRecipients(3))
@@ -355,9 +358,6 @@ func TestBoundaryDigestBindsWhatItCompares(t *testing.T) {
 	}
 	base := digest(t, func(map[string]string) {})
 	for name, mutate := range map[string]func(map[string]string){
-		"admin key": func(p map[string]string) {
-			p[composeddsa.BoundedAdminPublicKeyParameter] = hex.EncodeToString(bytes.Repeat([]byte{0x32}, composeddsa.BoundedAdminPublicKeySize))
-		},
 		"cosigner key": func(p map[string]string) {
 			p[composeddsa.BoundedCosignerPublicKeyParameter] = hex.EncodeToString(bytes.Repeat([]byte{0x42}, boundedmeta.CosignerPublicKeySizeV1))
 		},
@@ -383,7 +383,7 @@ func TestFingerprintScopes(t *testing.T) {
 		t.Fatal("grammar and shape fingerprints must differ")
 	}
 	full := grammarFingerprint(provider.ordered)
-	if smaller := grammarFingerprint(provider.ordered[:41]); smaller == full {
+	if smaller := grammarFingerprint(provider.ordered[:len(provider.ordered)-1]); smaller == full {
 		t.Fatal("a removed shape did not change the grammar fingerprint")
 	}
 	swapped := append([]*shapeDefinition(nil), provider.ordered...)
@@ -427,33 +427,13 @@ func writeBoundaryFile(t *testing.T, directory, body string) string {
 
 func TestBoundaryFileReachesTheSameInstanceAsDirectParameters(t *testing.T) {
 	provider := newTestProvider(t)
-	directory := t.TempDir()
-	id, err := witness.ID(witness.Falcon1024V1, mustHex(t, testAdminKey))
-	if err != nil {
-		t.Fatal(err)
-	}
-	reference, err := witness.NewPublicReference(witness.Falcon1024V1, id, testAdminKey)
-	if err != nil {
-		t.Fatal(err)
-	}
-	data, err := json.Marshal(reference)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(filepath.Join(directory, "admin"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(directory, "admin", "ops.adm.json"), data, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	path := writeBoundaryFile(t, directory, `schema: aplane.boundary.v1
+	path := writeBoundaryFile(t, t.TempDir(), `schema: aplane.boundary.v1
 spend: [pay, axfer, asset_opt_in]
 recipients:
   - `+testAddress(2)+`
   - `+testAddress(1)+`
 rekey:
-  authority: admin_key
-  admin_key: ./admin/ops.adm.json
+  authority: refused
 `)
 	params, err := boundary.LoadFile(path)
 	if err != nil {
@@ -464,7 +444,7 @@ rekey:
 		t.Fatal(err)
 	}
 	direct, err := provider.ResolveInstance(requestFor(
-		Shape{Spend: spendEffectOrder, Encoding: EncodingInline, Rekey: RekeyAdminKey},
+		Shape{Spend: spendEffectOrder, Encoding: EncodingInline, Rekey: RekeyRefused},
 		testAddress(1)+","+testAddress(2)))
 	if err != nil {
 		t.Fatal(err)
@@ -472,15 +452,6 @@ rekey:
 	if fromFile.BoundaryDigest != direct.BoundaryDigest || fromFile.Fingerprint != direct.Fingerprint {
 		t.Fatal("file and direct parameters resolved differently")
 	}
-}
-
-func mustHex(t *testing.T, value string) []byte {
-	t.Helper()
-	decoded, err := hex.DecodeString(value)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return decoded
 }
 
 func TestBoundaryFileLeavesCosignerNameForTheSigner(t *testing.T) {
@@ -493,10 +464,7 @@ cosigner: ops-cosigner
 	if err != nil {
 		t.Fatal(err)
 	}
-	params, err := file.CreationParameters(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
+	params := file.CreationParameters()
 	if params[ParameterCosigner] != "ops-cosigner" {
 		t.Fatalf("cosigner = %q", params[ParameterCosigner])
 	}
@@ -507,6 +475,9 @@ func TestBoundaryFileRejections(t *testing.T) {
 	valid := "schema: aplane.boundary.v1\nspend: [pay]\nrecipients: [" + recipient + "]\nrekey: {authority: spending_key}\n"
 	if _, err := boundary.ParseFile([]byte(valid)); err != nil {
 		t.Fatalf("valid file rejected: %v", err)
+	}
+	if _, err := boundary.ParseFile([]byte(strings.Replace(valid, "spending_key", "refused", 1))); err != nil {
+		t.Fatalf("refused rekey rejected: %v", err)
 	}
 	tests := []struct {
 		name string
@@ -520,8 +491,8 @@ func TestBoundaryFileRejections(t *testing.T) {
 		{"no recipients or timelock", strings.Replace(valid, "recipients: ["+recipient+"]\n", "", 1), "recipients is required"},
 		{"no rekey", strings.Replace(valid, "rekey: {authority: spending_key}\n", "", 1), "rekey is required"},
 		{"bad authority", strings.Replace(valid, "spending_key", "nobody", 1), "rekey.authority must be"},
-		{"admin path with spending key", strings.Replace(valid, "{authority: spending_key}", "{authority: spending_key, admin_key: a.adm.json}", 1), "not used"},
-		{"admin key without path", strings.Replace(valid, "spending_key", "admin_key", 1), "requires rekey.admin_key"},
+		{"admin authority", strings.Replace(valid, "spending_key", "admin_key", 1), "rekey.authority must be"},
+		{"admin key field", strings.Replace(valid, "{authority: spending_key}", "{authority: refused, admin_key: a.adm.json}", 1), "not found"},
 		{"unknown field", valid + "expires: \"5\"\n", "not found"},
 		{"empty unlock round", valid + "unlock_round: \"\"\n", "unlock_round is empty"},
 		{"null unlock round", valid + "unlock_round:\n", "must be a string"},
@@ -555,158 +526,6 @@ func TestBoundaryFileRejections(t *testing.T) {
 	}
 	if _, err := boundary.ParseFile(bytes.Repeat([]byte{' '}, boundary.MaxFileBytes+1)); err == nil {
 		t.Fatal("accepted an oversized file")
-	}
-}
-
-func TestAdminWitnessMustBeAPublicFalconReference(t *testing.T) {
-	directory := t.TempDir()
-	if err := os.WriteFile(filepath.Join(directory, "private.adm"), []byte("not a reference"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	file := writeBoundaryFile(t, directory, `schema: aplane.boundary.v1
-spend: [pay]
-recipients: [`+testAddress(1)+`]
-rekey: {authority: admin_key, admin_key: private.adm}
-`)
-	if _, err := boundary.LoadFile(file); err == nil || !strings.Contains(err.Error(), "admin witness") {
-		t.Fatalf("LoadBoundaryFile error = %v", err)
-	}
-}
-
-func TestAdminKeyMustUseTheAdminReferenceName(t *testing.T) {
-	directory := t.TempDir()
-	for _, name := range []string{"spend.cos.json", "old.wit.json", "plain.json"} {
-		t.Run(name, func(t *testing.T) {
-			if err := os.WriteFile(filepath.Join(directory, name), []byte("{}"), 0o600); err != nil {
-				t.Fatal(err)
-			}
-			file := writeBoundaryFile(t, directory, `schema: aplane.boundary.v1
-spend: [pay]
-recipients: [`+testAddress(1)+`]
-rekey: {authority: admin_key, admin_key: `+name+`}
-`)
-			if _, err := boundary.LoadFile(file); err == nil || !strings.Contains(err.Error(), ".adm.json") {
-				t.Fatalf("LoadFile(%s) error = %v, want .adm.json rejection", name, err)
-			}
-		})
-	}
-}
-
-func TestAdminKeyPathFollowsTheKernelNotTheSpelling(t *testing.T) {
-	reference := func(b byte) ([]byte, string) {
-		t.Helper()
-		publicKey := bytes.Repeat([]byte{b}, witness.Falcon1024PublicKeySize)
-		id, err := witness.ID(witness.Falcon1024V1, publicKey)
-		if err != nil {
-			t.Fatal(err)
-		}
-		public, err := witness.NewPublicReference(witness.Falcon1024V1, id, hex.EncodeToString(publicKey))
-		if err != nil {
-			t.Fatal(err)
-		}
-		data, err := witness.MarshalPublicReference(public)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return data, id
-	}
-	root, err := filepath.EvalSymlinks(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	work := filepath.Join(root, "work")
-	sub := filepath.Join(root, "elsewhere", "sub")
-	other := filepath.Join(root, "other", "deep")
-	for _, directory := range []string{work, sub, other} {
-		if err := os.MkdirAll(directory, 0o700); err != nil {
-			t.Fatal(err)
-		}
-	}
-	link := filepath.Join(work, "link")
-	if err := os.Symlink(sub, link); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Symlink(other, filepath.Join(sub, "inner")); err != nil {
-		t.Fatal(err)
-	}
-	wantData, wantID := reference(0x11)
-	wrongData, _ := reference(0x22)
-	for path, data := range map[string][]byte{
-		filepath.Join(root, "elsewhere", "ops.adm.json"): wantData,
-		filepath.Join(root, "other", "ops.adm.json"):     wantData,
-		filepath.Join(work, "ops.adm.json"):              wrongData,
-		filepath.Join(sub, "ops.adm.json"):               wrongData,
-	} {
-		if err := os.WriteFile(path, data, 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	for name, test := range map[string]struct{ location, spelled, adminKey string }{
-		"boundary file through a link": {
-			filepath.Join(sub, "boundary.yaml"), link + "/boundary.yaml", "../ops.adm.json",
-		},
-		"admin key through a link": {
-			filepath.Join(sub, "boundary.yaml"), link + "/boundary.yaml", "inner/../ops.adm.json",
-		},
-		"boundary path with parent through a link": {
-			filepath.Join(root, "other", "boundary.yaml"), link + "/inner/../boundary.yaml", "ops.adm.json",
-		},
-	} {
-		t.Run(name, func(t *testing.T) {
-			body := `schema: aplane.boundary.v1
-spend: [pay]
-recipients: [` + testAddress(1) + `]
-rekey: {authority: admin_key, admin_key: ` + test.adminKey + `}
-`
-			if err := os.WriteFile(test.location, []byte(body), 0o600); err != nil {
-				t.Fatal(err)
-			}
-			params, err := boundary.LoadFile(test.spelled)
-			if err != nil {
-				t.Fatalf("LoadFile() error = %v", err)
-			}
-			id, err := boundary.AdminKeyID(params)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if id != wantID {
-				t.Fatalf("admin key ID = %s, want the file the kernel resolves (%s)", id, wantID)
-			}
-		})
-	}
-}
-
-func TestAdminKeyFileReadIsBounded(t *testing.T) {
-	directory, err := filepath.EvalSymlinks(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	target := filepath.Join(directory, "target.adm.json")
-	if err := os.WriteFile(target, []byte("{}"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Symlink(target, filepath.Join(directory, "link.adm.json")); err != nil {
-		t.Fatal(err)
-	}
-	if err := syscall.Mkfifo(filepath.Join(directory, "pipe.adm.json"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	oversized := bytes.Repeat([]byte{'x'}, witness.MaxPublicReferenceBytes+1)
-	if err := os.WriteFile(filepath.Join(directory, "large.adm.json"), oversized, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	for _, name := range []string{"link.adm.json", "pipe.adm.json", "large.adm.json"} {
-		t.Run(name, func(t *testing.T) {
-			file := writeBoundaryFile(t, directory, `schema: aplane.boundary.v1
-spend: [pay]
-recipients: [`+testAddress(1)+`]
-rekey: {authority: admin_key, admin_key: `+name+`}
-`)
-			want := "read admin witness " + filepath.Join(directory, name)
-			if _, err := boundary.LoadFile(file); err == nil || !strings.Contains(err.Error(), want) {
-				t.Fatalf("LoadFile(%s) error = %v, want %q", name, err, want)
-			}
-		})
 	}
 }
 
@@ -744,9 +563,8 @@ rekey: {authority: spending_key}
 	}
 }
 
-func generalGoldenKeys() (spending []byte, admin, cosigner string) {
+func generalGoldenKeys() (spending []byte, cosigner string) {
 	return bytes.Repeat([]byte{0x21}, 1793),
-		hex.EncodeToString(bytes.Repeat([]byte{0x31}, composeddsa.BoundedAdminPublicKeySize)),
 		hex.EncodeToString(bytes.Repeat([]byte{0x41}, boundedmeta.CosignerPublicKeySizeV1))
 }
 
@@ -762,22 +580,22 @@ func generalGoldenKeys() (spending []byte, admin, cosigner string) {
 //     accounts of that shape would report a provenance conflict. Do not ship that.
 func TestGeneralFingerprintGoldens(t *testing.T) {
 	provider := newTestProvider(t)
-	spending, admin, cosigner := generalGoldenKeys()
+	spending, cosigner := generalGoldenKeys()
 
 	allowlists := sha256.New()
 	rendered := allowlists
-	// The first 42 are the shapes that shipped first. Their golden must not move when
-	// the grammar grows: that is the guarantee existing accounts rely on.
+	// The first 30 are the allowlist shapes. Their golden must not move when the
+	// grammar grows: that is the guarantee existing accounts rely on. (It moved once,
+	// on purpose, in an install-fresh release that replaced the admin-key families
+	// with refused ones and dropped refused shapes without pay; the spending-key
+	// shapes' programs and fingerprints did not move.)
 	shapes := Shapes()
 	appended := sha256.New()
 	for index, shape := range shapes {
-		if index >= 42 {
+		if index >= 30 {
 			rendered = appended
 		}
 		params := requestFor(shape, testAddress(1)+","+testAddress(2))
-		if shape.Rekey == RekeyAdminKey {
-			params[composeddsa.BoundedAdminPublicKeyParameter] = admin
-		}
 		if shape.Cosigner {
 			params[composeddsa.BoundedCosignerPublicKeyParameter] = cosigner
 		}
@@ -789,7 +607,7 @@ func TestGeneralFingerprintGoldens(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	full := Shape{Spend: spendEffectOrder, Encoding: EncodingMerkle, Rekey: RekeyAdminKey, Cosigner: true}
+	full := Shape{Spend: spendEffectOrder, Encoding: EncodingMerkle, Rekey: RekeyRefused, Cosigner: true}
 	instance, err := provider.ResolveInstance(requestFor(full, testAddress(1)+","+testAddress(2)))
 	if err != nil {
 		t.Fatal(err)
@@ -866,21 +684,6 @@ func TestRecipientListDigestSeparatesLists(t *testing.T) {
 func TestPresetAndItsFileResolveTheSame(t *testing.T) {
 	provider := newTestProvider(t)
 	directory := t.TempDir()
-	id, err := witness.ID(witness.Falcon1024V1, mustHex(t, testAdminKey))
-	if err != nil {
-		t.Fatal(err)
-	}
-	reference, err := witness.NewPublicReference(witness.Falcon1024V1, id, testAdminKey)
-	if err != nil {
-		t.Fatal(err)
-	}
-	data, err := json.Marshal(reference)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(directory, "ops.adm.json"), data, 0o600); err != nil {
-		t.Fatal(err)
-	}
 	recipients := []string{testAddress(2), testAddress(1)}
 	for _, preset := range boundary.Presets() {
 		t.Run(preset.Name, func(t *testing.T) {
@@ -895,14 +698,12 @@ func TestPresetAndItsFileResolveTheSame(t *testing.T) {
 					form[field] = strings.Join(recipients, ",")
 				case ParameterUnlockRound:
 					form[field] = "50000000"
-				case composeddsa.BoundedAdminPublicKeyParameter:
-					form[field] = testAdminKey
 				case ParameterCosigner:
 					hasCosigner = true
 				}
 			}
 			path := writeBoundaryFile(t, directory, preset.SampleBoundaryFile(boundary.SampleValues{
-				Recipients: recipients, AdminKey: "ops.adm.json", Cosigner: "ops-cosigner", UnlockRound: "50000000",
+				Recipients: recipients, Cosigner: "ops-cosigner", UnlockRound: "50000000",
 			}))
 			fromFile, err := boundary.LoadFile(path)
 			if err != nil {
@@ -939,8 +740,8 @@ func TestPresetChoicesAreFrozen(t *testing.T) {
 		fields                []string
 	}{
 		{"allowlist", RekeySpendingKey, EncodingAuto, []string{ParameterRecipients}},
-		{"locked-allowlist", RekeyAdminKey, EncodingAuto, []string{ParameterRecipients, composeddsa.BoundedAdminPublicKeyParameter}},
-		{"corridor", RekeyAdminKey, EncodingMerkle, []string{ParameterRecipients, composeddsa.BoundedAdminPublicKeyParameter, ParameterCosigner}},
+		{"locked-allowlist", RekeyRefused, EncodingAuto, []string{ParameterRecipients}},
+		{"corridor", RekeyRefused, EncodingMerkle, []string{ParameterRecipients, ParameterCosigner}},
 		{"timelock", RekeySpendingKey, "", []string{ParameterUnlockRound}},
 	} {
 		index := -1
@@ -975,10 +776,7 @@ func TestUnlockRoundMayBeWrittenAsANumberOrText(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", written, err)
 		}
-		params, err := file.CreationParameters(t.TempDir())
-		if err != nil {
-			t.Fatal(err)
-		}
+		params := file.CreationParameters()
 		if params[ParameterUnlockRound] != "18446744073709551615" {
 			t.Fatalf("%s became %q", written, params[ParameterUnlockRound])
 		}
@@ -991,11 +789,7 @@ func TestTimelockNeedsNoRecipientList(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	params, err := file.CreationParameters(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	instance, err := provider.ResolveInstance(params)
+	instance, err := provider.ResolveInstance(file.CreationParameters())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1012,7 +806,7 @@ func TestTimelockNeedsNoRecipientList(t *testing.T) {
 
 func TestBoundaryDigestBindsTheUnlockRound(t *testing.T) {
 	provider := newTestProvider(t)
-	shape := Shape{Spend: spendEffectOrder, Encoding: EncodingInline, Rekey: RekeyAdminKey, Timelock: true}
+	shape := Shape{Spend: spendEffectOrder, Encoding: EncodingInline, Rekey: RekeyRefused, Timelock: true}
 	digest := func(round string) string {
 		params := requestFor(shape, testRecipients(2))
 		params[ParameterUnlockRound] = round
@@ -1037,7 +831,6 @@ func TestStoredFingerprintRefusesAMismatchedGate(t *testing.T) {
 	}{
 		{Shape{Spend: spendEffectOrder, Rekey: RekeySpendingKey, Timelock: true}, boundedmeta.PolicyGateNone},
 		{Shape{Spend: spendEffectOrder, Encoding: EncodingInline, Rekey: RekeySpendingKey}, boundedmeta.PolicyGateLayer3},
-		{Shape{Spend: spendEffectOrder, Rekey: RekeyAdminKey, Timelock: true}, boundedmeta.PolicyGateLayer3},
 	} {
 		instance, err := provider.ResolveInstance(requestFor(test.shape, testRecipients(2)))
 		if err != nil {
@@ -1048,6 +841,22 @@ func TestStoredFingerprintRefusesAMismatchedGate(t *testing.T) {
 		if _, err := provider.StoredFingerprint(nil, stored); err == nil {
 			t.Fatalf("%s accepted gate %s", test.shape.Descriptor(), test.gate)
 		}
+	}
+	// A refused shape stores no rekey operation. One that claims an admin-key rekey
+	// describes a contract the grammar can no longer produce.
+	refused, err := provider.ResolveInstance(requestFor(Shape{Spend: spendEffectOrder, Rekey: RekeyRefused, Timelock: true}, testRecipients(2)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(refused.Bounded.AdminOperations) != 0 {
+		t.Fatalf("a refused shape stored %d rekey operations", len(refused.Bounded.AdminOperations))
+	}
+	stored := boundedmeta.Clone(refused.Bounded)
+	stored.AdminOperations = []boundedmeta.AdminOperation{{
+		Kind: boundedmeta.AdminOperationRekey, Authorization: boundedmeta.AdminAuthorizationAdmin, PolicyGate: boundedmeta.PolicyGateNone,
+	}}
+	if _, err := provider.StoredFingerprint(nil, stored); err == nil {
+		t.Fatal("a stored admin-key rekey was accepted as a grammar shape")
 	}
 }
 
@@ -1149,34 +958,22 @@ func TestDefinitionOffersOnlyItsShapes(t *testing.T) {
 	if _, err := newProvider(secondDefinition()); err == nil {
 		t.Fatal("newProvider() accepted a definition with no shapes")
 	}
+	// A rekey value the provider does not know must not compile as refused.
+	for _, rekey := range []string{"admin_key", "none", ""} {
+		unknown := spendingKeyShape()
+		unknown.Rekey = rekey
+		if _, err := newProvider(secondDefinition(unknown)); err == nil || !strings.Contains(err.Error(), "unknown rekey authority") {
+			t.Fatalf("rekey %q: newProvider() error = %v", rekey, err)
+		}
+	}
 }
 
-// A definition can list a shape, but listing it grants nothing. The admin shape builds,
-// so inventory and durable load keep working, and generation applies the policy.
+// A definition can list a shape, but listing it grants nothing: a cosigner shape on a
+// base whose template rule refuses a cosigner does not build.
 func TestDefinitionCannotAuthorizeWhatThePolicyRefuses(t *testing.T) {
 	ed25519lsig.RegisterClient()
-	shape := spendingKeyShape()
-	shape.Rekey = RekeyAdminKey
-	provider, err := newProvider(secondDefinition(shape))
-	if err != nil {
-		t.Fatalf("newProvider() error = %v", err)
-	}
-	params := map[string]string{
-		ParameterSpendEffects:                      "pay",
-		ParameterRekeyAuthority:                    RekeyAdminKey,
-		ParameterListEncoding:                      EncodingInline,
-		ParameterRecipients:                        types.Address{1}.String(),
-		composeddsa.BoundedAdminPublicKeyParameter: hex.EncodeToString(bytes.Repeat([]byte{0x31}, composeddsa.BoundedAdminPublicKeySize)),
-	}
-	if _, err := provider.ResolveInstance(params); err != nil {
-		t.Fatalf("ResolveInstance() error = %v", err)
-	}
-	if _, err := provider.GenerateTEAL(bytes.Repeat([]byte{0x21}, 32), params); err == nil || !strings.Contains(err.Error(), "does not support") {
-		t.Fatalf("GenerateTEAL() error = %v", err)
-	}
-
 	cosigned := spendingKeyShape()
-	cosigned.Rekey, cosigned.Cosigner = RekeyAdminKey, true
+	cosigned.Rekey, cosigned.Cosigner = RekeyRefused, true
 	if _, err := newProvider(secondDefinition(cosigned)); err == nil {
 		t.Fatal("newProvider() built a cosigner shape on a base the template rule refuses")
 	}

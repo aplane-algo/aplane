@@ -346,6 +346,32 @@ func ValidateAdminOperations(operations []AdminOperation) error {
 	return nil
 }
 
+// RefusesRekeys reports whether the contract has no rekey path at all.
+func (metadata *Metadata) RefusesRekeys() bool {
+	return metadata != nil && len(metadata.AdminOperations) == 0
+}
+
+// HasRecipientList reports whether Layer 3 limits spending to a recipient list,
+// alone or followed by a timelock or author TEAL.
+func (metadata *Metadata) HasRecipientList() bool {
+	if metadata == nil {
+		return false
+	}
+	switch metadata.Layer3Policy {
+	case Layer3PolicyFixedAllowlist, Layer3PolicyMerkleAllowlist,
+		Layer3PolicyFixedAllowlistCustom, Layer3PolicyMerkleAllowlistCustom,
+		Layer3PolicyFixedAllowlistTimelock, Layer3PolicyMerkleAllowlistTimelock:
+		return true
+	}
+	return false
+}
+
+// Contained reports whether value can leave the account only to listed
+// recipients: it refuses rekeys and Layer 3 holds a recipient list.
+func (metadata *Metadata) Contained() bool {
+	return metadata.RefusesRekeys() && metadata.HasRecipientList()
+}
+
 // RequiresAdminKey reports whether any stored operation uses the external
 // Falcon contract-admin authority.
 func (metadata *Metadata) RequiresAdminKey() bool {

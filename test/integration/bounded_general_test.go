@@ -30,7 +30,7 @@ import (
 	"github.com/aplane-algo/aplane/test/integration/harness"
 )
 
-func generalRequest(shape boundedaccount.Shape, recipients []string, unlockRound uint64, adminKey, cosignerKey []byte) map[string]string {
+func generalRequest(shape boundedaccount.Shape, recipients []string, unlockRound uint64, cosignerKey []byte) map[string]string {
 	spend := make([]string, len(shape.Spend))
 	for i, effect := range shape.Spend {
 		spend[i] = string(effect)
@@ -45,9 +45,6 @@ func generalRequest(shape boundedaccount.Shape, recipients []string, unlockRound
 	}
 	if shape.Timelock {
 		params[boundedaccount.ParameterUnlockRound] = strconv.FormatUint(unlockRound, 10)
-	}
-	if shape.Rekey == boundedaccount.RekeyAdminKey {
-		params[composeddsa.BoundedAdminPublicKeyParameter] = hex.EncodeToString(adminKey)
 	}
 	if shape.Cosigner {
 		params[composeddsa.BoundedCosignerPublicKeyParameter] = hex.EncodeToString(cosignerKey)
@@ -66,11 +63,7 @@ func newGeneralAccount(t *testing.T, provider *boundedaccount.Provider, shape bo
 	if err != nil {
 		t.Fatalf("generate cosigner key: %v", err)
 	}
-	adminPublic, adminPrivate, err := ops.GenerateKeypair(randomFalconSeed(t))
-	if err != nil {
-		t.Fatalf("generate admin key: %v", err)
-	}
-	params := generalRequest(shape, recipients, unlockRound, adminPublic, cosignerPublic)
+	params := generalRequest(shape, recipients, unlockRound, cosignerPublic)
 	instance, err := provider.ResolveInstance(params)
 	if err != nil {
 		t.Fatalf("resolve instance: %v", err)
@@ -89,7 +82,6 @@ func newGeneralAccount(t *testing.T, provider *boundedaccount.Provider, shape bo
 		recipientsParam:    instance.Values[boundedaccount.ParameterRecipients],
 		userPrivateKey:     spendingPrivate,
 		cosignerPrivateKey: cosignerPrivate,
-		adminPrivateKey:    adminPrivate,
 		metadata:           metadata,
 	}
 }
@@ -159,10 +151,6 @@ func TestBoundedGeneralShapeMatrixOnChainLocalnet(t *testing.T) {
 				t.Fatalf("fund account: %v", err)
 			}
 			rekeyTarget := algocrypto.GenerateAccount()
-			t.Cleanup(func() {
-				bestEffortCloseBoundedAsset(t, network, account.address, funder.GetAddress(), assetID, rekeyTarget.PrivateKey)
-				bestEffortCloseRekeyedAccount(t, network, account.address, funder.GetAddress(), rekeyTarget.PrivateKey)
-			})
 
 			mayPay := slices.Contains(shape.Spend, txeffects.SpendEffectPay)
 			mayTransfer := slices.Contains(shape.Spend, txeffects.SpendEffectAxfer)
@@ -175,6 +163,19 @@ func TestBoundedGeneralShapeMatrixOnChainLocalnet(t *testing.T) {
 				}
 				return account.proofFor(t, to)
 			}
+			t.Cleanup(func() {
+				if shape.Rekey == boundedaccount.RekeyRefused {
+					// A listed recipient's own cleanup returns the sweep to the funder.
+					to, toProof := funder.GetAddress(), []byte(nil)
+					if hasList {
+						to, toProof = allowed.String(), proof(allowed)
+					}
+					sweepRefusedAccount(t, network, account, to, toProof)
+					return
+				}
+				bestEffortCloseBoundedAsset(t, network, account.address, funder.GetAddress(), assetID, rekeyTarget.PrivateKey)
+				bestEffortCloseRekeyedAccount(t, network, account.address, funder.GetAddress(), rekeyTarget.PrivateKey)
+			})
 			expect := func(accepted bool, txn types.Transaction, proofBytes []byte, mutate func(types.Digest, [][]byte) [][]byte) {
 				t.Helper()
 				raw, txid := account.signGroup(t, txn, proofBytes, mutate)
@@ -277,18 +278,9 @@ func TestBoundedGeneralShapeMatrixOnChainLocalnet(t *testing.T) {
 				txn.Amount = 1
 				expect(false, txn, nil, nil)
 			})
-			if shape.Rekey == boundedaccount.RekeyAdminKey {
-				t.Run("rekey without the admin key", func(t *testing.T) { expect(false, rekey("l"), nil, nil) })
-				t.Run("rekey with the admin key", func(t *testing.T) {
-					txn := rekey("m")
-					if shape.Timelock {
-						// Admin rekey is the recovery path, so the timelock must not delay it.
-						txn = early(txn)
-					}
-					expect(true, txn, nil, func(txid types.Digest, args [][]byte) [][]byte {
-						return account.adminRekeyArgs(t, args[0], txid)
-					})
-				})
+			if shape.Rekey == boundedaccount.RekeyRefused {
+				// No rekey path exists, so a pure rekey with a valid spending signature fails.
+				t.Run("rekey is refused", func(t *testing.T) { expect(false, rekey("l"), nil, nil) })
 			} else {
 				if shape.Timelock {
 					t.Run("rekey with the spending key one round early", func(t *testing.T) { expect(false, early(rekey("l")), nil, nil) })
@@ -299,11 +291,35 @@ func TestBoundedGeneralShapeMatrixOnChainLocalnet(t *testing.T) {
 			if err != nil {
 				t.Fatalf("read account: %v", err)
 			}
-			if info.AuthAddr != rekeyTarget.Address.String() {
-				t.Fatalf("auth address = %q, want %q", info.AuthAddr, rekeyTarget.Address)
+			wantAuth := rekeyTarget.Address.String()
+			if shape.Rekey == boundedaccount.RekeyRefused {
+				wantAuth = ""
+			}
+			if info.AuthAddr != wantAuth {
+				t.Fatalf("auth address = %q, want %q", info.AuthAddr, wantAuth)
 			}
 		})
 	}
+}
+
+// sweepRefusedAccount pays a refused account's spare ALGO to a recipient it may pay.
+// It can neither close nor be rekeyed, so its minimum balance stays. Every refused
+// shape has pay, so a failed sweep is a real refusal, not a cleanup miss.
+func sweepRefusedAccount(t *testing.T, network *harness.TestnetConfig, account corridorExecutionAccount, to string, proof []byte) {
+	t.Helper()
+	info, err := network.Client.AccountInformation(account.address).Do(context.Background())
+	if err != nil {
+		t.Fatalf("read %s: %v", account.address, err)
+	}
+	txn := corridorPaymentTxn(t, mustSuggestedParams(t, network), account.address, to, 0, "general-refused-sweep")
+	// signedGroup charges this account the whole group's fees.
+	fee := uint64(corridorExecutionGroupSize) * uint64(txn.Fee)
+	if info.Amount <= info.MinBalance+fee {
+		return
+	}
+	txn.Amount = types.MicroAlgos(info.Amount - info.MinBalance - fee)
+	raw, txid := account.signGroup(t, txn, proof, nil)
+	submitCorridorGroupExpectSuccess(t, network, raw, txid)
 }
 
 // generalPassedUnlockRound has been reached on any network, so an account using it
@@ -387,42 +403,41 @@ func TestBoundedGeneralResourceMatrix(t *testing.T) {
 				t.Fatalf("fund account: %v", err)
 			}
 			cleanup := algocrypto.GenerateAccount()
-			t.Cleanup(func() {
-				if shape.Rekey == boundedaccount.RekeyAdminKey {
-					bestEffortCorridorAdminRekey(t, network, account, cleanup.Address)
-				} else {
-					txn := corridorPaymentTxn(t, mustSuggestedParams(t, network), account.address, account.address, 0, "general-cleanup-rekey")
-					txn.RekeyTo = cleanup.Address
-					raw, txid := account.signGroup(t, txn, nil, nil)
-					submitCorridorGroupExpectSuccess(t, network, raw, txid)
-				}
-				bestEffortCloseRekeyedAccount(t, network, account.address, funder.GetAddress(), cleanup.PrivateKey)
-			})
+			refused := shape.Rekey == boundedaccount.RekeyRefused
 			var proof []byte
 			if shape.Encoding == boundedaccount.EncodingMerkle {
 				proof = account.proofFor(t, funderAddress)
 			}
+			t.Cleanup(func() {
+				if refused {
+					sweepRefusedAccount(t, network, account, funder.GetAddress(), proof)
+					return
+				}
+				txn := corridorPaymentTxn(t, mustSuggestedParams(t, network), account.address, account.address, 0, "general-cleanup-rekey")
+				txn.RekeyTo = cleanup.Address
+				raw, txid := account.signGroup(t, txn, nil, nil)
+				submitCorridorGroupExpectSuccess(t, network, raw, txid)
+				bestEffortCloseRekeyedAccount(t, network, account.address, funder.GetAddress(), cleanup.PrivateKey)
+			})
 			sp := mustSuggestedParams(t, network)
 			spend, _ := account.signedGroup(t, corridorPaymentTxn(t, sp, account.address, funder.GetAddress(), 0, "general-opcode-spend"), proof, nil)
-			rekeyTxn := corridorPaymentTxn(t, sp, account.address, account.address, 0, "general-opcode-rekey")
-			rekeyTxn.RekeyTo = cleanup.Address
-			path := lsigresource.PathSpendingRekey
-			var mutate func(types.Digest, [][]byte) [][]byte
-			if shape.Rekey == boundedaccount.RekeyAdminKey {
-				path = lsigresource.PathAdminRekey
-				mutate = func(txid types.Digest, args [][]byte) [][]byte { return account.adminRekeyArgs(t, args[0], txid) }
+			paths := []lsigresource.AuthorizationPath{lsigresource.PathSpend}
+			vectors := []harness.OpcodeCeilingVector{{Name: "maximum-spend", Path: lsigresource.PathSpend, SignedTxns: spend, LSigIndex: 0}}
+			// A refused shape has no rekey path to measure.
+			if !refused {
+				rekeyTxn := corridorPaymentTxn(t, sp, account.address, account.address, 0, "general-opcode-rekey")
+				rekeyTxn.RekeyTo = cleanup.Address
+				rekey, _ := account.signedGroup(t, rekeyTxn, nil, nil)
+				paths = append(paths, lsigresource.PathSpendingRekey)
+				vectors = append(vectors, harness.OpcodeCeilingVector{Name: "maximum-rekey", Path: lsigresource.PathSpendingRekey, SignedTxns: rekey, LSigIndex: 0})
 			}
-			rekey, _ := account.signedGroup(t, rekeyTxn, nil, mutate)
 			report, err := harness.ValidateDeclaredOpcodeCeiling(context.Background(), compiler, harness.OpcodeCeilingValidation{
 				Name:          shape.Descriptor(),
 				FinalProgram:  account.bytecode,
 				Profile:       provider.LogicSigOpcodeProfile(),
 				Bounded:       true,
-				RequiredPaths: []lsigresource.AuthorizationPath{lsigresource.PathSpend, path},
-				Vectors: []harness.OpcodeCeilingVector{
-					{Name: "maximum-spend", Path: lsigresource.PathSpend, SignedTxns: spend, LSigIndex: 0},
-					{Name: "maximum-rekey", Path: path, SignedTxns: rekey, LSigIndex: 0},
-				},
+				RequiredPaths: paths,
+				Vectors:       vectors,
 			})
 			if err != nil {
 				t.Fatalf("validate opcode ceilings: %v", err)
@@ -470,20 +485,16 @@ func TestBoundedGeneralThroughSigner(t *testing.T) {
 			boundedaccount.ParameterRecipients:     strings.Join(recipients, ","),
 		}
 	}
-	adminPublicKey, _, err := signerops.New(nil).GenerateKeypair(randomFalconSeed(t))
-	if err != nil {
-		t.Fatalf("generate admin key: %v", err)
-	}
 	accounts := make(map[string]string)
 	for _, test := range []struct {
 		name       string
 		recipients int
 		policy     string
-		adminKey   bool
+		refused    bool
 	}{
 		{name: "inline", recipients: 2, policy: composeddsa.Layer3PolicyFixedAllowlist},
 		{name: "auto chooses merkle above ten", recipients: 11, policy: composeddsa.Layer3PolicyMerkleAllowlist},
-		{name: "admin key rekey", recipients: 2, policy: composeddsa.Layer3PolicyFixedAllowlist, adminKey: true},
+		{name: "rekeys refused", recipients: 2, policy: composeddsa.Layer3PolicyFixedAllowlist, refused: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			allowed := algocrypto.GenerateAccount().Address.String()
@@ -495,9 +506,8 @@ func TestBoundedGeneralThroughSigner(t *testing.T) {
 				recipients = append(recipients, algocrypto.GenerateAccount().Address.String())
 			}
 			params := request(recipients...)
-			if test.adminKey {
-				params[boundedaccount.ParameterRekeyAuthority] = boundedaccount.RekeyAdminKey
-				params[composeddsa.BoundedAdminPublicKeyParameter] = hex.EncodeToString(adminPublicKey)
+			if test.refused {
+				params[boundedaccount.ParameterRekeyAuthority] = boundedaccount.RekeyRefused
 			}
 			account := mustAdminGenerateKeyNoCleanup(t, client, signerd, boundedaccount.KeyTypeV1, params)
 			if err := funder.FundMicroAlgosAndWait(account, 2_000_000); err != nil {

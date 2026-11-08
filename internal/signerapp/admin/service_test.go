@@ -330,7 +330,7 @@ func TestUpdateAdminSettingRejectsInfrastructureNetworkSettings(t *testing.T) {
 
 func TestBoundaryRequirementsAreSavedAndLoaded(t *testing.T) {
 	dataRoot := t.TempDir()
-	for _, key := range []string{adminproto.AdminSettingBoundaryRequireAdmin, adminproto.AdminSettingBoundaryRequireCo} {
+	for _, key := range []string{adminproto.AdminSettingBoundaryRequireContained, adminproto.AdminSettingBoundaryRequireCo} {
 		if err := productruntime.SaveStoredSetting(dataRoot, key, true); err != nil {
 			t.Fatal(err)
 		}
@@ -343,7 +343,7 @@ func TestBoundaryRequirementsAreSavedAndLoaded(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !effective.BoundaryRequireAdminKey || !effective.BoundaryRequireCosigner {
+	if !effective.BoundaryRequireContained || !effective.BoundaryRequireCosigner {
 		t.Fatalf("effective config = %+v", effective)
 	}
 }
@@ -357,7 +357,7 @@ func TestBoundaryRequirementSettingsTakeEffectAndPersist(t *testing.T) {
 		key                     string
 		wantAdmin, wantCosigner bool
 	}{
-		{adminproto.AdminSettingBoundaryRequireAdmin, true, false},
+		{adminproto.AdminSettingBoundaryRequireContained, true, false},
 		{adminproto.AdminSettingBoundaryRequireCo, true, true},
 	} {
 		if err := svc.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{Key: test.key, Value: "true"}); err != nil {
@@ -376,11 +376,11 @@ func TestBoundaryRequirementSettingsTakeEffectAndPersist(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !effective.BoundaryRequireAdminKey || !effective.BoundaryRequireCosigner {
+	if !effective.BoundaryRequireContained || !effective.BoundaryRequireCosigner {
 		t.Fatalf("persisted config = %+v", effective)
 	}
 	ir.Config().SetBoundaryRequirements(true, false)
-	if settings := svc.BuildAdminSettings(); !settings.BoundaryRequireAdminKey || settings.BoundaryRequireCosigner {
+	if settings := svc.BuildAdminSettings(); !settings.BoundaryRequireContained || settings.BoundaryRequireCosigner {
 		t.Fatalf("reported settings = %+v", settings)
 	}
 }
@@ -394,7 +394,7 @@ func TestBoundaryRequirementRevertsWhenItCannotBeSaved(t *testing.T) {
 	if err := os.MkdirAll(productruntime.ConfigPath(deps.dataDir), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	err := svc.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{Key: adminproto.AdminSettingBoundaryRequireAdmin, Value: "true"})
+	err := svc.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{Key: adminproto.AdminSettingBoundaryRequireContained, Value: "true"})
 	if err == nil {
 		t.Fatal("the save did not fail")
 	}

@@ -133,17 +133,6 @@ func TestRequestedCosignerMustBeConfirmed(t *testing.T) {
 	}
 }
 
-func TestPreviewIdentifiesTheAdminKey(t *testing.T) {
-	id, publicKey := witnessIDFor(t, 0x71)
-	got, err := boundary.AdminKeyID(map[string]string{boundedmeta.AdminPublicKeyParameter: publicKey})
-	if err != nil || got != id {
-		t.Fatalf("AdminKeyID() = %q, %v, want %s", got, err, id)
-	}
-	if got, err := boundary.AdminKeyID(nil); err != nil || got != "" {
-		t.Fatalf("no admin key = %q, %v", got, err)
-	}
-}
-
 // The file must not pass for a daemon-issued receipt, so it has no such fields.
 func TestGenerationResultIsNotAReceipt(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "result.json")

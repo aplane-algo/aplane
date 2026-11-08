@@ -27,7 +27,6 @@ type BoundaryPreview struct {
 	Encoding      string
 	UnlockRound   string
 	Rekey         string
-	AdminKeyID    string
 	Cosigner      string
 	CosignerIsKey bool
 }
@@ -54,9 +53,6 @@ func (a *App) PreviewBoundaryFile(keyType, path string) (*BoundaryPreview, error
 		if preview.Encoding == "" {
 			preview.Encoding = boundary.EncodingAuto
 		}
-	}
-	if preview.AdminKeyID, err = boundary.AdminKeyID(parameters); err != nil {
-		return nil, fmt.Errorf("identify contract admin key: %w", err)
 	}
 	if preview.Cosigner != "" {
 		if normalized, err := witness.NormalizeID(preview.Cosigner); err == nil {
