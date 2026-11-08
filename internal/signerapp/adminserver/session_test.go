@@ -738,7 +738,7 @@ func TestSessionAuthenticateBindsProductRuntime(t *testing.T) {
 func TestSessionAuthenticateRejectsUnknownFieldBeforePassphrase(t *testing.T) {
 	ir := productruntime.New(productruntime.Config{})
 
-	authMsg := []byte(`{"kind":"request","type":"auth","passphrase":"secret","unexpected_selector":"bob","protocol_version":{"major":7,"minor":0}}`)
+	authMsg := []byte(`{"kind":"request","type":"auth","passphrase":"secret","unexpected_selector":"bob","protocol_version":{"major":8,"minor":0}}`)
 
 	conn := &queueConn{reads: [][]byte{authMsg}}
 	svc := &stubServices{
@@ -799,7 +799,7 @@ func TestSessionAuthenticateRejectsOldVersionBeforeUnknownField(t *testing.T) {
 	if err := json.Unmarshal(conn.writes[1], &result); err != nil {
 		t.Fatal(err)
 	}
-	if result.Success || result.Code != protocol.ErrCodeInvalidAuthMessage || result.Error != "admin protocol major version mismatch: client=4 server=7" {
+	if result.Success || result.Code != protocol.ErrCodeInvalidAuthMessage || result.Error != "admin protocol major version mismatch: client=4 server=8" {
 		t.Fatalf("auth result = %+v, want version-first rejection", result)
 	}
 }

@@ -92,11 +92,12 @@ Transport notes:
   same-UID local mode may use `<data_dir>/aplane.sock`, and custom private
   managed stores require an explicit IPC path so an unreadable selected root
   cannot silently retarget a client to the singleton system signer,
-- the current admin protocol version is 7.4 (7.4 renames the writable admin setting
-  `boundary_require_admin_key` to `boundary_require_contained`; a 7.3 client's update of
-  the old key is refused as unknown; 7.4 also removes `admin_key_id` from
-  `prepare_generate_result` and replaces `prepare_generate_result.bounded.admin_operations`
-  with `bounded.rekey`; 7.3 adds `review_fingerprint` and
+- the current admin protocol version is 8.0 (8.0 renames the writable admin setting
+  `boundary_require_admin_key` to `boundary_require_contained`, removes `admin_key_id` from
+  `prepare_generate_result`, and replaces `prepare_generate_result.bounded.admin_operations`
+  with `bounded.rekey`; a 7.x apadmin would read an account with no `admin_operations` as
+  having no rekey path, so it is refused at authentication rather than shown a wrong review;
+  7.3 adds `review_fingerprint` and
   `boundary_digest` to `prepare_generate_result`, an optional
   `generate_key.expected_boundary_digest`, `per_key_contract` to key types, and the two
   `boundary_require_*` admin settings; 7.2 adds `prepare_generate_key`

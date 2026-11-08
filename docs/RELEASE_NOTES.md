@@ -2,7 +2,7 @@
 
 Entries are newest first and include pre-release development history. Older
 token, setup-file, and protocol-v5 entries describe behavior superseded by the
-enrolled-key model and current admin protocol v7.0; they are not current setup
+enrolled-key model and current admin protocol v8.0; they are not current setup
 instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
@@ -41,6 +41,9 @@ This release is install-fresh only.
   `bounded_rekey_requires_review`.
 - The SDKs follow: `rekey` replaces `admin_operations`, and the `admin_rekey` resource
   path and path-mask field are gone.
+- The admin protocol is now 8.0, which folds in the unreleased 7.4 changes. A 7.x
+  apadmin would read an account with no `admin_operations` as having no rekey path, so
+  it is refused at authentication instead.
 
 ## The contract-admin key is gone
 
