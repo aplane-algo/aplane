@@ -31,7 +31,8 @@ type guardedTarget struct {
 	CosignerComponentKeyType string
 	CosignerPublicKey        string
 	Route                    flowRoute
-	BoundedMaxFee            uint64
+	// BoundedMaxFee is a bounded host's fee ceiling, nil on a plain host.
+	BoundedMaxFee *uint64
 	// BoundedPath is the path the signer's base component named for a cosigned
 	// target, once components are in: what the position is budgeted on.
 	BoundedPath string
@@ -535,8 +536,11 @@ func validateBoundedTargetFees(planned []types.Transaction, targets []guardedTar
 		if target.Index < 0 || target.Index >= len(planned) {
 			return fmt.Errorf("bounded target index %d is outside planned group", target.Index)
 		}
-		if fee := uint64(planned[target.Index].Fee); fee > target.BoundedMaxFee {
-			return fmt.Errorf("bounded target %d fee %d exceeds advertised max_fee %d", target.Index, fee, target.BoundedMaxFee)
+		if target.BoundedMaxFee == nil {
+			continue
+		}
+		if fee := uint64(planned[target.Index].Fee); fee > *target.BoundedMaxFee {
+			return fmt.Errorf("bounded target %d fee %d exceeds advertised max_fee %d", target.Index, fee, *target.BoundedMaxFee)
 		}
 	}
 	return nil
@@ -743,12 +747,11 @@ func (s *Signer) guardedTargets(txns []types.Transaction) ([]guardedTarget, erro
 		if err != nil {
 			return nil, fmt.Errorf("guarded account %s has invalid cosigner_public_key metadata: %w", account, err)
 		}
-		var boundedMaxFee uint64
+		var boundedMaxFee *uint64
 		if route == flowRouteBoundedCosigner {
-			var found bool
-			boundedMaxFee, found = s.cache.BoundedMaxFee(account)
-			if !found {
-				return nil, fmt.Errorf("bounded account %s is missing max_fee metadata; run keys refresh", account)
+			var err error
+			if boundedMaxFee, err = s.boundedFeeCeiling(account); err != nil {
+				return nil, err
 			}
 		}
 		targets = append(targets, guardedTarget{
@@ -762,6 +765,28 @@ func (s *Signer) guardedTargets(txns []types.Transaction) ([]guardedTarget, erro
 		})
 	}
 	return targets, nil
+}
+
+// boundedFeeCeiling is a cosigned account's on-chain fee ceiling: a bounded
+// host has one, a plain host has none. Missing metadata, or a contract this
+// client doesn't know, fails closed.
+func (s *Signer) boundedFeeCeiling(account string) (*uint64, error) {
+	contract, found := s.cache.BoundedContract(account)
+	if !found {
+		return nil, fmt.Errorf("bounded account %s is missing contract metadata; run keys refresh", account)
+	}
+	switch contract {
+	case signerapi.BoundedContractBounded2:
+		maxFee, found := s.cache.BoundedMaxFee(account)
+		if !found {
+			return nil, fmt.Errorf("bounded account %s is missing max_fee metadata; run keys refresh", account)
+		}
+		return &maxFee, nil
+	case signerapi.BoundedContractPlain1:
+		return nil, nil
+	default:
+		return nil, fmt.Errorf("bounded account %s has contract %q, which this client does not support; upgrade the client", account, contract)
+	}
 }
 
 func (t guardedTarget) requestKey() cosignerRequestKey {

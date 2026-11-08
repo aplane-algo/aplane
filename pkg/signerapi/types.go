@@ -435,9 +435,18 @@ type BoundedCosignerAuthorizationInfo struct {
 	RequiredOn       []string `json:"required_on"`
 }
 
+// The bounded authorization contracts a client signs for.
+const (
+	BoundedContractBounded2 = "bounded2"
+	BoundedContractPlain1   = "plain1"
+)
+
 // BoundedAuthorizationInfo is the public, non-secret bounded capability
 // projection shared by /keytypes and /keys. Instance-only fields are omitted
 // from /keytypes until a concrete LogicSig has been generated.
+//
+// Contract is BoundedContractBounded2 for a bounded host, which has a fee
+// ceiling, or BoundedContractPlain1 for a plain host, which has none.
 type BoundedAuthorizationInfo struct {
 	Contract               string                    `json:"contract"`
 	BaseSignatureArgLayout BoundedSignatureArgLayout `json:"base_signature_arg_layout"`

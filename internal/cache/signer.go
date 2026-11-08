@@ -24,6 +24,7 @@ func NewSignerCache() SignerCache {
 		CosignerComponentKeyTypes: make(map[string]string),
 		CosignerPublicKeys:        make(map[string]string),
 		BoundedMaxFees:            make(map[string]uint64),
+		BoundedContracts:          make(map[string]string),
 	}
 	return cache
 }
@@ -76,6 +77,7 @@ func (cache *SignerCache) RemoveAddress(address string) {
 	delete(cache.CosignerComponentKeyTypes, address)
 	delete(cache.CosignerPublicKeys, address)
 	delete(cache.BoundedMaxFees, address)
+	delete(cache.BoundedContracts, address)
 }
 
 // Count returns the number of addresses in the cache
@@ -235,6 +237,29 @@ func (cache *SignerCache) SetBoundedMaxFeeForAddress(address string, maxFee uint
 		cache.BoundedMaxFees = make(map[string]uint64)
 	}
 	cache.BoundedMaxFees[address] = maxFee
+}
+
+// BoundedContractForAddress returns the bounded authorization contract the
+// signer inventory reported for an account: bounded2 for a bounded host, which
+// has a fee ceiling, or plain1 for a plain host, which has none.
+func (cache *SignerCache) BoundedContractForAddress(address string) (string, bool) {
+	if cache.BoundedContracts == nil {
+		return "", false
+	}
+	value, ok := cache.BoundedContracts[address]
+	return value, ok && value != ""
+}
+
+// SetBoundedContractForAddress stores or clears an account's bounded contract.
+func (cache *SignerCache) SetBoundedContractForAddress(address, contract string) {
+	if cache.BoundedContracts == nil {
+		cache.BoundedContracts = make(map[string]string)
+	}
+	if contract == "" {
+		delete(cache.BoundedContracts, address)
+		return
+	}
+	cache.BoundedContracts[address] = contract
 }
 
 // GetSigningArgs returns the key-file signing args schema for a LogicSig address.

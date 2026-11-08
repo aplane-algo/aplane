@@ -280,8 +280,16 @@ func TestPopulateSignerCacheReadsBoundedCosignerMetadata(t *testing.T) {
 		SigningFlow:              signerapi.SigningFlowCosigned1,
 		CosignerComponentKeyType: "aplane.witness-falcon1024.v1",
 		BoundedAuthorization: &signerapi.BoundedAuthorizationInfo{
+			Contract: "bounded2",
 			MaxFee:   new(uint64(10_000)),
 			Cosigner: &signerapi.BoundedCosignerAuthorizationInfo{PublicKeyHex: "abcd"},
+		},
+	}, {
+		Address: "PLAIN", KeyType: "aplane.falcon1024.v1",
+		SigningFlow: signerapi.SigningFlowCosigned1,
+		BoundedAuthorization: &signerapi.BoundedAuthorizationInfo{
+			Contract: "plain1",
+			Cosigner: &signerapi.BoundedCosignerAuthorizationInfo{PublicKeyHex: "ef01"},
 		},
 	}}); err != nil {
 		t.Fatalf("PopulateSignerCache() error = %v", err)
@@ -294,6 +302,16 @@ func TestPopulateSignerCacheReadsBoundedCosignerMetadata(t *testing.T) {
 	}
 	if got, ok := state.SignerCache.BoundedMaxFeeForAddress("BOUNDED"); !ok || got != 10_000 {
 		t.Fatalf("bounded max fee = %d/%v", got, ok)
+	}
+	if got, ok := state.SignerCache.BoundedContractForAddress("BOUNDED"); !ok || got != "bounded2" {
+		t.Fatalf("bounded contract = %q/%v", got, ok)
+	}
+	// A plain host records its contract and no ceiling, not a zero one.
+	if got, ok := state.SignerCache.BoundedContractForAddress("PLAIN"); !ok || got != "plain1" {
+		t.Fatalf("plain host contract = %q/%v", got, ok)
+	}
+	if got, ok := state.SignerCache.BoundedMaxFeeForAddress("PLAIN"); ok {
+		t.Fatalf("plain host max fee = %d, want none", got)
 	}
 }
 

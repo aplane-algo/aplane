@@ -9,7 +9,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"github.com/aplane-algo/aplane/internal/sshtunnel/sshtest"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -17,6 +16,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+
+	"github.com/aplane-algo/aplane/internal/sshtunnel/sshtest"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/common/models"
@@ -421,6 +422,7 @@ func testBoundedCosignerChoreography(t *testing.T, path, wantEvents string) {
 		c.SetSigningFlowForAddress(account, signerapi.SigningFlowCosigned1)
 		c.SetCosignerComponentKeyTypeForAddress(account, witness.Falcon1024V1)
 		c.SetCosignerPublicKeyForAddress(account, cosignerHex)
+		c.SetBoundedContractForAddress(account, signerapi.BoundedContractBounded2)
 		c.SetBoundedMaxFeeForAddress(account, 10_000)
 		c.SetLogicSigResourceProfile(account, lsigresource.Profile{
 			ProgramBytes:  4_000,
@@ -489,6 +491,7 @@ func TestMixedGroupsFinishUserSideBeforeCosigner(t *testing.T) {
 					c.SetSigningFlowForAddress(guarded, signerapi.SigningFlowCosigned1)
 					c.SetCosignerComponentKeyTypeForAddress(guarded, witness.Falcon1024V1)
 					c.SetCosignerPublicKeyForAddress(guarded, cosignerHex)
+					c.SetBoundedContractForAddress(guarded, signerapi.BoundedContractBounded2)
 					c.SetBoundedMaxFeeForAddress(guarded, 10_000)
 					c.SetLogicSigResourceProfile(guarded, lsigresource.Profile{
 						ProgramBytes: 4_000,
@@ -543,6 +546,7 @@ func TestBoundedCosignerRejectsPlannedFeeBeforeReleasingComponents(t *testing.T)
 		c.SetSigningFlowForAddress(account, signerapi.SigningFlowCosigned1)
 		c.SetCosignerComponentKeyTypeForAddress(account, witness.Falcon1024V1)
 		c.SetCosignerPublicKeyForAddress(account, cosignerHex)
+		c.SetBoundedContractForAddress(account, signerapi.BoundedContractBounded2)
 		c.SetBoundedMaxFeeForAddress(account, uint64(txn.Fee)-1)
 		c.SetLogicSigResourceProfile(account, lsigresource.Profile{
 			ProgramBytes: 1,

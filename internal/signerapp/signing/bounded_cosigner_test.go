@@ -372,13 +372,17 @@ func TestBoundedSpendingProofRequiresSupportedConstruction(t *testing.T) {
 				proof     [][]byte
 				want      bool
 			}{
-				"Falcon":            {"aplane.falcon1024.v1", boundedmeta.Contract, falconLayout, falconPublicKey, message, [][]byte{falconSignature}, true},
-				"wrong message":     {"aplane.falcon1024.v1", boundedmeta.Contract, falconLayout, falconPublicKey, []byte("other"), [][]byte{falconSignature}, false},
-				"no proof":          {"aplane.falcon1024.v1", boundedmeta.Contract, falconLayout, falconPublicKey, message, nil, false},
-				"two proof slots":   {"aplane.falcon1024.v1", boundedmeta.Contract, falconLayout, falconPublicKey, message, [][]byte{falconSignature, falconSignature}, false},
-				"valid on Ed25519":  {"aplane.ed25519.v1", boundedmeta.Contract, layoutOf(sigconstruction.Ed25519()), edPublicKey, message, [][]byte{edSignature}, false},
-				"unknown contract":  {"aplane.falcon1024.v1", "bounded-unknown", falconLayout, falconPublicKey, message, [][]byte{falconSignature}, false},
-				"witness as a base": {witness.Falcon1024V1, boundedmeta.Contract, falconLayout, falconPublicKey, message, [][]byte{falconSignature}, false},
+				"Falcon":           {"aplane.falcon1024.v1", boundedmeta.Contract, falconLayout, falconPublicKey, message, [][]byte{falconSignature}, true},
+				"wrong message":    {"aplane.falcon1024.v1", boundedmeta.Contract, falconLayout, falconPublicKey, []byte("other"), [][]byte{falconSignature}, false},
+				"no proof":         {"aplane.falcon1024.v1", boundedmeta.Contract, falconLayout, falconPublicKey, message, nil, false},
+				"two proof slots":  {"aplane.falcon1024.v1", boundedmeta.Contract, falconLayout, falconPublicKey, message, [][]byte{falconSignature, falconSignature}, false},
+				"valid on Ed25519": {"aplane.ed25519.v1", boundedmeta.Contract, layoutOf(sigconstruction.Ed25519()), edPublicKey, message, [][]byte{edSignature}, false},
+				// A plain host is cosigned on either base.
+				"plain host on Falcon":      {"aplane.falcon1024.v1", boundedmeta.PlainContract, falconLayout, falconPublicKey, message, [][]byte{falconSignature}, true},
+				"plain host on Ed25519":     {"aplane.ed25519.v1", boundedmeta.PlainContract, layoutOf(sigconstruction.Ed25519()), edPublicKey, message, [][]byte{edSignature}, true},
+				"plain host, wrong message": {"aplane.ed25519.v1", boundedmeta.PlainContract, layoutOf(sigconstruction.Ed25519()), edPublicKey, []byte("other"), [][]byte{edSignature}, false},
+				"unknown contract":          {"aplane.falcon1024.v1", "bounded-unknown", falconLayout, falconPublicKey, message, [][]byte{falconSignature}, false},
+				"witness as a base":         {witness.Falcon1024V1, boundedmeta.Contract, falconLayout, falconPublicKey, message, [][]byte{falconSignature}, false},
 				// Stored metadata that disagrees with the construction is refused, even
 				// with a valid signature, rather than trusted on either side.
 				"stored max size differs":   {"aplane.falcon1024.v1", boundedmeta.Contract, boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{1280}}, falconPublicKey, message, [][]byte{falconSignature}, false},
@@ -428,5 +432,92 @@ func TestBoundedCosignerRequiredEmitsContractedCode(t *testing.T) {
 	}
 	if err.HTTPStatus() != 400 {
 		t.Fatalf("HTTPStatus() = %d, want 400", err.HTTPStatus())
+	}
+}
+
+// A plain host's spends carry what the dedicated cosigned account's did: a close,
+// an app call, any type. Assembly takes each down the spend path, with both
+// signatures, and the program, not the client, decides that.
+func TestAssembleBoundedTargetCarriesPlainHostSpends(t *testing.T) {
+	spendingPublicKey, spendingPrivateKey := testFalconComponentKeypair(t, 0x64)
+	cosignerPublicKey, cosignerPrivateKey := testFalconComponentKeypair(t, 0x65)
+	bytecode := []byte{0x06, 0x20, 0x01, 0x01, 0x22, 0x44, 0x57}
+	account := logicSigAddressForTest(t, bytecode)
+	metadata := boundedCosignerTestMetadata(t, cosignerPublicKey)
+	metadata.Contract, metadata.SpendEffects, metadata.MaxFee = boundedmeta.PlainContract, nil, nil
+	metadata.Layer3Policy = boundedmeta.Layer3PolicyNone
+	if err := metadata.Validate(); err != nil {
+		t.Fatal(err)
+	}
+
+	closing := paymentTransaction(t, account, types.Address{0x66}.String(), 7)
+	closing.CloseRemainderTo, closing.Fee = types.Address{0x66}, 50_000
+	sender, err := types.DecodeAddress(account)
+	if err != nil {
+		t.Fatal(err)
+	}
+	appCall := types.Transaction{Type: types.ApplicationCallTx}
+	appCall.Sender, appCall.ApplicationID, appCall.Fee = sender, 7, 1_000
+	appCall.FirstValid, appCall.LastValid, appCall.GenesisHash = closing.FirstValid, closing.LastValid, closing.GenesisHash
+
+	for name, txn := range map[string]types.Transaction{"close": closing, "app call": appCall} {
+		t.Run(name, func(t *testing.T) {
+			group, err := canonical.DecodeGroupHex([]string{txnutil.EncodeWithPrefixHex(txn)})
+			if err != nil {
+				t.Fatal(err)
+			}
+			txID := group.Entries[0].TxID
+			baseSignature, err := signerops.New(nil).Sign(spendingPrivateKey, txID[:])
+			if err != nil {
+				t.Fatal(err)
+			}
+			receiptMessage, err := boundedAssemblyReceiptMessage(account, txID[:], metadata, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			receipt, err := signerops.New(nil).Sign(spendingPrivateKey, receiptMessage[:])
+			if err != nil {
+				t.Fatal(err)
+			}
+			cosignerMessage := message.ComponentMessage(message.RoleCosigner, txID)
+			cosignerSignature, err := signerops.New(nil).Sign(cosignerPrivateKey, cosignerMessage[:])
+			if err != nil {
+				t.Fatal(err)
+			}
+			keyMaterial := func() *coresigning.KeyMaterial {
+				return &coresigning.KeyMaterial{
+					Type: "aplane.falcon1024.v1", Category: keys.CategoryDSALsig,
+					BaseKeyType: "aplane.falcon1024.v1", PublicKey: append([]byte(nil), spendingPublicKey...),
+					Bytecode: append([]byte(nil), bytecode...), BoundedAuthorization: boundedmeta.Clone(metadata),
+					SigningMetadataVersion: keys.BoundedSigningMetadataVersion,
+				}
+			}
+			target := signerapi.AssemblyTarget{
+				TargetIndex: 0, Kind: signerapi.AssemblyTargetKindBoundedCosigner, AuthAddress: account,
+				BaseSignatures:  []string{hex.EncodeToString(baseSignature)},
+				AssemblyReceipt: hex.EncodeToString(receipt), CosignerSignature: hex.EncodeToString(cosignerSignature),
+			}
+			signedHex, svcErr := assembleBoundedTarget(context.Background(), target, group.Entries[0], &componentKeyTestSession{key: keyMaterial()})
+			if svcErr != nil {
+				t.Fatalf("assembleBoundedTarget() error = %v", svcErr)
+			}
+			signedBytes, err := hex.DecodeString(signedHex)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var signed types.SignedTxn
+			if err := msgpack.Decode(signedBytes, &signed); err != nil {
+				t.Fatal(err)
+			}
+			if len(signed.Lsig.Args) != 2 || !bytes.Equal(signed.Lsig.Args[1], cosignerSignature) {
+				t.Fatalf("assembled args = %#v", signed.Lsig.Args)
+			}
+			// Without the cosigner's signature the spend is refused.
+			missing := target
+			missing.CosignerSignature = ""
+			if _, svcErr := assembleBoundedTarget(context.Background(), missing, group.Entries[0], &componentKeyTestSession{key: keyMaterial()}); svcErr == nil {
+				t.Fatal("assembleBoundedTarget() without the cosigner signature succeeded")
+			}
+		})
 	}
 }

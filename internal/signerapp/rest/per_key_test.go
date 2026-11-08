@@ -21,6 +21,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/lsig/boundedaccount"
 	lsigsignerreg "github.com/aplane-algo/aplane/lsig/signerreg"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 // A per-key type has no contract of its own to report, and its cosigner is
@@ -149,5 +150,12 @@ func TestEveryBoundaryProviderSupportsTheBoundaryWorkflow(t *testing.T) {
 	}
 	if perKey == 0 {
 		t.Fatal("no production provider declares the boundary schema")
+	}
+}
+
+// The wire's contract names are the durable record's.
+func TestWireBoundedContractsMatchTheRecord(t *testing.T) {
+	if signerapi.BoundedContractBounded2 != boundedmeta.Contract || signerapi.BoundedContractPlain1 != boundedmeta.PlainContract {
+		t.Fatalf("wire contracts %q, %q; record %q, %q", signerapi.BoundedContractBounded2, signerapi.BoundedContractPlain1, boundedmeta.Contract, boundedmeta.PlainContract)
 	}
 }

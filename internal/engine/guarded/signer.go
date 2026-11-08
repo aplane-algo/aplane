@@ -44,6 +44,9 @@ type SignerCacheView interface {
 	// CosignerPublicKey returns the cosigner public key embedded in a guarded
 	// account's LogicSig, as advertised in inventory.
 	CosignerPublicKey(address string) (string, bool)
+	// BoundedContract returns the advertised bounded authorization contract:
+	// bounded2 has a fee ceiling, plain1 has none.
+	BoundedContract(address string) (string, bool)
 	// BoundedMaxFee returns the advertised on-chain fee ceiling for a bounded
 	// account.
 	BoundedMaxFee(address string) (uint64, bool)
