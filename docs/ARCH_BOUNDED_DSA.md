@@ -90,7 +90,10 @@ base with no construction is refused too. This is an admission decision for new
 accounts, separate from structural validity, and it runs only from `GenerateTEAL`. `ValidateTemplateSpec` and `validateBoundedConfig` stay
 structural, because installed templates reach both on load: an error there changes
 the template's compatibility fingerprint, which makes it a content defect, and that
-sends unlock to recovery mode and blocks store commits.
+sends unlock to recovery mode and blocks store commits. Two tests pin this:
+`TestAdmissionStaysOutOfLoadAndFingerprint` on the composer, and
+`TestInstalledTemplateOutsideGenerationSupportKeepsTheStoreUsable` on a real store,
+with a template on a base the policy doesn't list.
 
 Signing sites don't read that policy. Admission can narrow over time, and an existing
 account must keep signing, so the signer keeps its own table of the spending
