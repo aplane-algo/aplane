@@ -45,6 +45,16 @@ func TestBoundedSpendingConstructionResolvesFromTheDurableBase(t *testing.T) {
 	if _, ok := boundedSpendingConstruction(boundedmeta.Contract, plainFalcon1024LsigKeyType, 0); ok {
 		t.Fatal("an unnamed workflow has a construction")
 	}
+	// The plain host's cosigned flow completes both of its bases.
+	for keyType, want := range map[string]sigconstruction.ConstructionID{
+		plainFalcon1024LsigKeyType: sigconstruction.Falcon1024().ID(),
+		plainEd25519LsigKeyType:    sigconstruction.Ed25519().ID(),
+	} {
+		construction, ok := boundedSpendingConstruction(boundedmeta.PlainContract, keyType, boundedWorkflowCosigner)
+		if !ok || construction.ID() != want {
+			t.Fatalf("plain host on %s = %q, %v", keyType, construction.ID(), ok)
+		}
+	}
 }
 
 // Generation admission must stay within what signing completes, or it would create
@@ -67,12 +77,13 @@ func TestBoundedGenerationAdmitsOnlySignableWorkflows(t *testing.T) {
 	}
 	profiles := []struct {
 		name      string
+		contract  string
 		rekey     boundedmeta.RekeySetting
 		cosigner  *boundedmeta.CosignerAuthorization
 		workflows []boundedSigningWorkflow
 	}{
-		// A cosigner profile can't take a spending-key rekey, so this one refuses rekeys.
-		{"cosigner", boundedmeta.RekeyRefused, cosigner, []boundedSigningWorkflow{boundedWorkflowCosigner}},
+		{"cosigner", boundedmeta.Contract, boundedmeta.RekeyRefused, cosigner, []boundedSigningWorkflow{boundedWorkflowCosigner}},
+		{"plain host", boundedmeta.PlainContract, boundedmeta.RekeyRefused, cosigner, []boundedSigningWorkflow{boundedWorkflowCosigner}},
 	}
 
 	for _, base := range bases {
@@ -83,17 +94,23 @@ func TestBoundedGenerationAdmitsOnlySignableWorkflows(t *testing.T) {
 					copied := *profile.cosigner
 					profileCosigner = &copied
 				}
-				composer := composeddsa.NewComposedDSA(composeddsa.Config{
+				config := composeddsa.Config{
 					KeyType: "test.admission-cross-check.v1", BaseKeyType: base.keyType, FamilyName: base.family,
 					Version: 1, Ops: base.ops, TEALSuffix: "int 1\nassert",
 					Bounded: &composeddsa.BoundedAuthorizationProfile{
-						Contract:     composeddsa.BoundedContract,
+						Contract:     profile.contract,
 						SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay},
-						MaxFee:       10_000,
+						MaxFee:       new(uint64(10_000)),
 						Rekey:        profile.rekey,
 						Cosigner:     profileCosigner,
 					},
-				})
+				}
+				if profile.contract == boundedmeta.PlainContract {
+					config.TEALSuffix = ""
+					config.Bounded.SpendEffects, config.Bounded.MaxFee = nil, nil
+					config.Layer3 = &composeddsa.Layer3Policy{Policy: composeddsa.Layer3PolicyNone}
+				}
+				composer := composeddsa.NewComposedDSA(config)
 				// A profile takes only the keys its authorities declare.
 				params := map[string]string{}
 				if profile.cosigner != nil {
@@ -101,17 +118,18 @@ func TestBoundedGenerationAdmitsOnlySignableWorkflows(t *testing.T) {
 				}
 				spendingKey := bytes.Repeat([]byte{0x22}, base.publicKeySize)
 				_, err := composer.GenerateTEAL(spendingKey, params)
-				if base.keyType == plainFalcon1024LsigKeyType && err != nil {
-					// Falcon is admitted for every profile, so a refusal here means the
-					// fixture is broken and the check below would prove nothing.
-					t.Fatalf("GenerateTEAL() on Falcon error = %v", err)
+				// Falcon is admitted for every profile, and the plain host on both
+				// bases, so a refusal there means the fixture is broken and the
+				// check below would prove nothing.
+				if (base.keyType == plainFalcon1024LsigKeyType || profile.contract == boundedmeta.PlainContract) && err != nil {
+					t.Fatalf("GenerateTEAL() on %s error = %v", base.keyType, err)
 				}
 				if err != nil {
 					t.Logf("generation refuses it: %v", err)
 					return
 				}
 				for _, workflow := range profile.workflows {
-					if _, ok := boundedSpendingConstruction(boundedmeta.Contract, base.keyType, workflow); !ok {
+					if _, ok := boundedSpendingConstruction(profile.contract, base.keyType, workflow); !ok {
 						t.Errorf("generation admits %s on %s, but signing has no construction for workflow %d", profile.name, base.keyType, workflow)
 					}
 				}

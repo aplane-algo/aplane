@@ -32,6 +32,10 @@ type boundedSupportKey struct {
 var boundedSupportPolicy = map[boundedSupportKey]boundedWorkflowSupport{
 	{BoundedContract, sigconstruction.Falcon1024().ID()}: {cosigner: true},
 	{BoundedContract, sigconstruction.Ed25519().ID()}:    {},
+	// A plain host is always cosigned. Its Ed25519 spending key is classical,
+	// which the review says.
+	{PlainContract, sigconstruction.Falcon1024().ID()}: {cosigner: true},
+	{PlainContract, sigconstruction.Ed25519().ID()}:    {cosigner: true},
 }
 
 // boundedGenerationPolicy answers the support question for one composer.

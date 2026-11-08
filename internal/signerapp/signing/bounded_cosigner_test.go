@@ -110,7 +110,7 @@ func TestBoundedAssemblyReceiptBindsRuntimeAndMetadata(t *testing.T) {
 		t.Fatal("receipt did not bind runtime arguments")
 	}
 	changedMetadata := boundedmeta.Clone(metadata)
-	changedMetadata.MaxFee++
+	changedMetadata.MaxFee = new(*changedMetadata.MaxFee + 1)
 	changedProfile, _ := boundedAssemblyReceiptMessage("ACCOUNT", txID, changedMetadata, map[string][]byte{"preimage": {1}})
 	if first == changedProfile {
 		t.Fatal("receipt did not bind durable metadata")
@@ -318,7 +318,7 @@ func boundedCosignerTestMetadata(t *testing.T, cosignerPublicKey []byte) *bounde
 	metadata := &boundedmeta.Metadata{
 		Contract:               boundedmeta.Contract,
 		BaseSignatureArgLayout: boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{boundedmeta.CosignerSignatureMaxSizeV1}},
-		SpendEffects:           []string{boundedmeta.SpendEffectPay}, MaxFee: 10_000,
+		SpendEffects:           []string{boundedmeta.SpendEffectPay}, MaxFee: new(uint64(10_000)),
 		Rekey:        boundedmeta.RekeyRefused,
 		Layer3Policy: boundedmeta.Layer3PolicyCustom,
 		Cosigner: &boundedmeta.CosignerAuthorization{

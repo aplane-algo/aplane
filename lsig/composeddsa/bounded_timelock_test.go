@@ -473,8 +473,8 @@ func TestTimelockPolicyCompiledBudgetMatrix(t *testing.T) {
 				if got != want[name] {
 					t.Errorf("budget = %#v", got)
 				}
-				if got.spendFee > metadata.MaxFee {
-					t.Fatalf("path fee exceeds bounded maximum %d: %#v", metadata.MaxFee, got)
+				if got.spendFee > *metadata.MaxFee {
+					t.Fatalf("path fee exceeds bounded maximum %d: %#v", *metadata.MaxFee, got)
 				}
 			})
 		}

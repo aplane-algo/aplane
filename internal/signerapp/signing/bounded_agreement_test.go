@@ -1248,7 +1248,7 @@ func agCheckRekeyFirst(a *agAccount) error {
 	if err := expect("the spending signature is asserted", "assert"); err != nil {
 		return err
 	}
-	if err := expect("the fee gate follows", "txn Fee", fmt.Sprintf("pushint %d", a.metadata.MaxFee), "<=", "assert"); err != nil {
+	if err := expect("the fee gate follows", "txn Fee", fmt.Sprintf("pushint %d", *a.metadata.MaxFee), "<=", "assert"); err != nil {
 		return err
 	}
 	if err := expect("the RekeyTo dispatch follows", "txn RekeyTo", "global ZeroAddress", "!="); err != nil {
@@ -1699,7 +1699,7 @@ var agMutants = []agMutant{
 		name:    "the fee assert is removed",
 		applies: func(*agAccount) bool { return true },
 		mutate: func(t *testing.T, a *agAccount) string {
-			return agReplace(t, a.teal, "", fmt.Sprintf("txn Fee\npushint %d\n<=\nassert\n", a.metadata.MaxFee), "")
+			return agReplace(t, a.teal, "", fmt.Sprintf("txn Fee\npushint %d\n<=\nassert\n", *a.metadata.MaxFee), "")
 		},
 	},
 	agRekeyNormalFormMutant("amount", "txn Amount\npushint 0\n==\nassert\n"),

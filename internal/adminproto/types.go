@@ -621,7 +621,7 @@ type PrepareGenerateKeyRequest struct {
 type PreparedBoundedProfile struct {
 	Contract         string
 	SpendEffects     []string
-	MaxFee           uint64
+	MaxFee           *uint64 // nil for a plain host, which has no fee ceiling
 	Rekey            string
 	RekeyList        bool
 	Layer3Policy     string

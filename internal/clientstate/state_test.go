@@ -280,7 +280,7 @@ func TestPopulateSignerCacheReadsBoundedCosignerMetadata(t *testing.T) {
 		SigningFlow:              signerapi.SigningFlowCosigned1,
 		CosignerComponentKeyType: "aplane.witness-falcon1024.v1",
 		BoundedAuthorization: &signerapi.BoundedAuthorizationInfo{
-			MaxFee:   10_000,
+			MaxFee:   new(uint64(10_000)),
 			Cosigner: &signerapi.BoundedCosignerAuthorizationInfo{PublicKeyHex: "abcd"},
 		},
 	}}); err != nil {

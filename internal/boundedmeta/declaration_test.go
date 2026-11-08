@@ -12,7 +12,7 @@ func TestDeclarationProjectsTheStoredContract(t *testing.T) {
 	metadata := &Metadata{
 		Contract:     Contract,
 		SpendEffects: []string{SpendEffectPay, SpendEffectAxfer},
-		MaxFee:       5_000,
+		MaxFee:       new(uint64(5_000)),
 		Rekey:        RekeyRefused,
 		Layer3Policy: Layer3PolicyFixedAllowlist,
 		Cosigner:     &CosignerAuthorization{ComponentKeyType: CosignerComponentKeyTypeV1, RequiredOn: []string{PathSpend}},

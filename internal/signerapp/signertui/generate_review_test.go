@@ -35,7 +35,7 @@ func preparedAccount(policy, rekey string, cosigner bool, recipients int) Prepar
 		BoundaryDigest:    strings.Repeat("e", 64),
 		Bounded: &protocol.PreparedBoundedProfile{
 			SpendEffects:     []string{"pay", "axfer", "asset_opt_in"},
-			MaxFee:           10_000,
+			MaxFee:           new(uint64(10_000)),
 			Rekey:            rekey,
 			Layer3Policy:     policy,
 			CosignerRequired: cosigner,

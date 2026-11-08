@@ -43,9 +43,10 @@ func authorizationBudgets(requests []signerapi.SignRequest, snapshot PlannerRunt
 			budgets[i].pqScheme = request.PQScheme
 		default:
 			budgets[i].mutable = true
-			if i < len(boundedItems) && boundedItems[i] != nil && boundedItems[i].Metadata != nil {
+			// A plain host has no fee ceiling, so its fee is unconstrained.
+			if i < len(boundedItems) && boundedItems[i] != nil && boundedItems[i].Metadata != nil && boundedItems[i].Metadata.MaxFee != nil {
 				budgets[i].maxFeeConstrained = true
-				budgets[i].maxFee = boundedItems[i].Metadata.MaxFee
+				budgets[i].maxFee = *boundedItems[i].Metadata.MaxFee
 			}
 			if snapshot.KeyTypes[request.AuthAddress] == nativefalcon.KeyType {
 				budgets[i].pqScheme = nativefalcon.Scheme

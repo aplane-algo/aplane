@@ -113,6 +113,117 @@ func TestIndependentInventoryClassifiesEveryAVMField(t *testing.T) {
 	}
 }
 
+// The plain host classifies the same surface in its own file, and its manifest
+// must say what that file says: every type a spend, no type denied, and the
+// effects a spend may carry.
+func TestIndependentPlainInventoryMatchesManifest(t *testing.T) {
+	surface := readProtocolSurface(t)
+	classes := readContractClassifications(t, "PLAIN_EFFECT_CLASSIFICATIONS.json")
+	if err := comparePlainManifestToInventory(txeffects.PlainManifest(), surface, classes); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestIndependentPlainInventoryDetectsEveryRemovedEntry(t *testing.T) {
+	surface := readProtocolSurface(t)
+	classes := readContractClassifications(t, "PLAIN_EFFECT_CLASSIFICATIONS.json")
+	manifest := txeffects.PlainManifest()
+	for i, txType := range manifest.SpendTypes {
+		t.Run("type "+string(txType), func(t *testing.T) {
+			mutated := txeffects.PlainManifest()
+			mutated.SpendTypes = append(mutated.SpendTypes[:i], mutated.SpendTypes[i+1:]...)
+			if err := comparePlainManifestToInventory(mutated, surface, classes); err == nil {
+				t.Fatal("inventory comparison accepted a removed spend type")
+			}
+		})
+	}
+	for i, effect := range manifest.SpendEffects {
+		t.Run("effect "+string(effect), func(t *testing.T) {
+			mutated := txeffects.PlainManifest()
+			mutated.SpendEffects = append(mutated.SpendEffects[:i], mutated.SpendEffects[i+1:]...)
+			if err := comparePlainManifestToInventory(mutated, surface, classes); err == nil {
+				t.Fatal("inventory comparison accepted a removed spend effect")
+			}
+		})
+	}
+}
+
+func TestIndependentPlainInventoryClassifiesEveryAVMField(t *testing.T) {
+	surface := readProtocolSurface(t)
+	classes := readContractClassifications(t, "PLAIN_EFFECT_CLASSIFICATIONS.json")
+	known := stringSet(surface.AVMTxnFields)
+	classified := make(map[string]int)
+	for class, fields := range classes.Classifications {
+		if len(fields) == 0 {
+			t.Fatalf("classification %q is empty", class)
+		}
+		for _, field := range fields {
+			if _, ok := known[field]; !ok {
+				t.Errorf("classification %q contains unknown AVM field %q", class, field)
+			}
+			classified[field]++
+		}
+	}
+	for _, field := range surface.AVMTxnFields {
+		if classified[field] == 0 {
+			t.Errorf("AVM field %q has no classification", field)
+		}
+	}
+}
+
+// plainEffectFields maps the effects a plain spend may carry to the fields that
+// carry them, from the bounded danger predicates the two contracts share.
+var plainEffectFields = map[txeffects.EffectKind]string{
+	txeffects.EffectClose:      "CloseRemainderTo",
+	txeffects.EffectAssetClose: "AssetCloseTo",
+	txeffects.EffectClawback:   "AssetSender",
+}
+
+func comparePlainManifestToInventory(manifest txeffects.PlainContractManifest, surface protocolSurface, classes contractClassifications) error {
+	if err := manifest.Validate(); err != nil {
+		return fmt.Errorf("manifest validation: %w", err)
+	}
+	if manifest.Contract != classes.Contract || manifest.TEALVersion != classes.TEALVersion {
+		return fmt.Errorf("manifest contract/version %s/%d differs from inventory %s/%d", manifest.Contract, manifest.TEALVersion, classes.Contract, classes.TEALVersion)
+	}
+	if len(classes.SpendEffects) != 0 {
+		return fmt.Errorf("a plain host declares no spend effects, the inventory lists %v", classes.SpendEffects)
+	}
+	if len(classes.TransactionTypes) != len(surface.TransactionTypes) {
+		return fmt.Errorf("the plain contract classifies %d transaction types, the surface lists %d", len(classes.TransactionTypes), len(surface.TransactionTypes))
+	}
+	var inventorySpend []string
+	for i, entry := range surface.TransactionTypes {
+		if classes.TransactionTypes[i].Name != entry.Name {
+			return fmt.Errorf("plain transaction type %d is %q, the surface lists %q", i, classes.TransactionTypes[i].Name, entry.Name)
+		}
+		switch classes.TransactionTypes[i].Classification {
+		case "spend", "spend_or_rekey":
+			inventorySpend = append(inventorySpend, entry.Wire)
+		default:
+			return fmt.Errorf("plain transaction type %q has classification %q; a plain host denies no type", entry.Name, classes.TransactionTypes[i].Classification)
+		}
+	}
+	if diff := stringSetDiff(txTypeStrings(manifest.SpendTypes), inventorySpend); diff != "" {
+		return fmt.Errorf("spend type mismatch: %s", diff)
+	}
+	manifestFields := make([]string, 0, len(manifest.SpendEffects))
+	for _, effect := range manifest.SpendEffects {
+		field, ok := plainEffectFields[effect]
+		if !ok {
+			return fmt.Errorf("spend effect %q has no field", effect)
+		}
+		manifestFields = append(manifestFields, field)
+	}
+	if diff := stringSetDiff(manifestFields, classes.Classifications["spend_carried_effect"]); diff != "" {
+		return fmt.Errorf("spend effect mismatch: %s", diff)
+	}
+	if diff := stringSetDiff([]string{"RekeyTo"}, classes.Classifications["framework_rekey_dispatch"]); diff != "" {
+		return fmt.Errorf("rekey dispatch mismatch: %s", diff)
+	}
+	return nil
+}
+
 func TestIndependentInventoryMatchesPinnedSDKSurface(t *testing.T) {
 	inventory := readProtocolInventory(t)
 	const pinnedSDK = "github.com/algorand/go-algorand-sdk/v2 v2.11.2-0.20260731180711-967fcacfacdf"

@@ -87,6 +87,91 @@ var boundedManifest = mustValidManifest(ContractManifest{
 	},
 })
 
+// PlainContractManifest is the plain host's judgment of the protocol surface. A
+// plain host has no host rules, but it states that rather than inheriting it by
+// omission: every transaction type it signs as a spend, and every effect a spend
+// may carry, is listed, so a type the protocol adds is unclassified until a
+// reviewer lists it here and in the plain classification file.
+type PlainContractManifest struct {
+	Contract    string
+	TEALVersion int
+	// SpendTypes is every transaction type that is a spend when it doesn't rekey.
+	SpendTypes []types.TxType
+	// SpendEffects is every authority-bearing effect a spend may carry: closes and
+	// clawback. A rekey is never one; it takes the rekey paths.
+	SpendEffects []EffectKind
+}
+
+// plainManifest lists the surface's transaction types in its order. The empty
+// type is listed because the program doesn't read the type; the protocol
+// refuses such a transaction before any program runs.
+var plainManifest = mustValidPlainManifest(PlainContractManifest{
+	Contract:    boundedmeta.PlainContract,
+	TEALVersion: 13,
+	SpendTypes: []types.TxType{
+		"",
+		types.PaymentTx,
+		types.KeyRegistrationTx,
+		types.AssetConfigTx,
+		types.AssetTransferTx,
+		types.AssetFreezeTx,
+		types.ApplicationCallTx,
+		types.StateProofTx,
+		types.HeartbeatTx,
+	},
+	SpendEffects: []EffectKind{EffectClose, EffectAssetClose, EffectClawback},
+})
+
+func mustValidPlainManifest(manifest PlainContractManifest) PlainContractManifest {
+	if err := manifest.Validate(); err != nil {
+		panic(fmt.Sprintf("invalid built-in plain manifest: %v", err))
+	}
+	return manifest
+}
+
+// PlainManifest returns a defensive copy of the plain host's manifest.
+func PlainManifest() PlainContractManifest {
+	manifest := plainManifest
+	manifest.SpendTypes = append([]types.TxType(nil), plainManifest.SpendTypes...)
+	manifest.SpendEffects = append([]EffectKind(nil), plainManifest.SpendEffects...)
+	return manifest
+}
+
+// Validate checks the plain manifest's structural invariants: no duplicates,
+// known effects only, and never a rekey among a spend's effects.
+func (manifest PlainContractManifest) Validate() error {
+	if manifest.Contract == "" {
+		return fmt.Errorf("contract is required")
+	}
+	if manifest.TEALVersion <= 0 {
+		return fmt.Errorf("TEAL version must be positive")
+	}
+	if len(manifest.SpendTypes) == 0 {
+		return fmt.Errorf("at least one spend type is required")
+	}
+	seenTypes := make(map[types.TxType]struct{}, len(manifest.SpendTypes))
+	for _, txType := range manifest.SpendTypes {
+		if _, exists := seenTypes[txType]; exists {
+			return fmt.Errorf("transaction type %q is duplicated", txType)
+		}
+		seenTypes[txType] = struct{}{}
+	}
+	seenEffects := make(map[EffectKind]struct{}, len(manifest.SpendEffects))
+	for _, effect := range manifest.SpendEffects {
+		if _, ok := bitForEffect(effect); !ok {
+			return fmt.Errorf("unknown effect %q", effect)
+		}
+		if effect == EffectRekey {
+			return fmt.Errorf("a rekey is never a spend effect")
+		}
+		if _, exists := seenEffects[effect]; exists {
+			return fmt.Errorf("effect %q is duplicated", effect)
+		}
+		seenEffects[effect] = struct{}{}
+	}
+	return nil
+}
+
 func mustValidManifest(manifest ContractManifest) ContractManifest {
 	if err := manifest.Validate(); err != nil {
 		panic(fmt.Sprintf("invalid built-in bounded manifest: %v", err))

@@ -651,7 +651,7 @@ func TestPlanGroupRejectsBoundedFeeCeilingAfterDummyPooling(t *testing.T) {
 
 	authAddr := types.Address{1}.String()
 	metadata := testBoundedMetadata(t, boundedmeta.RekeyRefused)
-	metadata.MaxFee = 1_000
+	metadata.MaxFee = new(uint64(1_000))
 	deps := stubPlannerDeps{
 		keyTypes: map[string]string{authAddr: "aplane.falcon1024-b.v1"},
 		// The v42 program surcharge needs a signer-side fee increase, but the

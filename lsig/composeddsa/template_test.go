@@ -271,7 +271,7 @@ teal: |
 		t.Fatalf("NewProviderFromTemplateSpec() error = %v", err)
 	}
 	profile := provider.BoundedAuthorizationProfile()
-	if profile == nil || profile.Contract != BoundedContract || profile.MaxFee != 10_000 || profile.Rekey != boundedmeta.RekeySpendingKey {
+	if profile == nil || profile.Contract != BoundedContract || profile.MaxFee == nil || *profile.MaxFee != 10_000 || profile.Rekey != boundedmeta.RekeySpendingKey {
 		t.Fatalf("BoundedAuthorizationProfile() = %#v", profile)
 	}
 	if got := provider.CreationParams(); len(got) != 0 {

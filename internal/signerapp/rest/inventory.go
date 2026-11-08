@@ -425,7 +425,7 @@ func boundedInfo(metadata *boundedmeta.Metadata) *signerapi.BoundedAuthorization
 			MaxSizes: append([]int(nil), metadata.BaseSignatureArgLayout.MaxSizes...),
 		},
 		SpendEffects: append([]string(nil), metadata.SpendEffects...),
-		MaxFee:       metadata.MaxFee,
+		MaxFee:       boundedmeta.CloneMaxFee(metadata.MaxFee),
 		Layer3Policy: metadata.Layer3Policy,
 	}
 	if metadata.Cosigner != nil {

@@ -32,6 +32,9 @@ var boundedSigningConstructions = map[string]map[boundedSigningWorkflow][]sigcon
 	boundedmeta.Contract: {
 		boundedWorkflowCosigner: {sigconstruction.Falcon1024().ID()},
 	},
+	boundedmeta.PlainContract: {
+		boundedWorkflowCosigner: {sigconstruction.Falcon1024().ID(), sigconstruction.Ed25519().ID()},
+	},
 }
 
 // boundedSpendingConstruction resolves an existing account's spending construction

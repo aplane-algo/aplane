@@ -575,8 +575,8 @@ func checkResources(metadata *boundedmeta.Metadata, opcodes lsigresource.OpcodeP
 		if err != nil {
 			return fmt.Errorf("%s path does not fit the network's resource limits: %w", path.name, err)
 		}
-		if fee := planFee(plan, consensus.MinTxnFee); fee > metadata.MaxFee {
-			return fmt.Errorf("%s path needs a fee of %d, above the account's ceiling of %d", path.name, fee, metadata.MaxFee)
+		if fee := planFee(plan, consensus.MinTxnFee); metadata.MaxFee != nil && fee > *metadata.MaxFee {
+			return fmt.Errorf("%s path needs a fee of %d, above the account's ceiling of %d", path.name, fee, *metadata.MaxFee)
 		}
 	}
 	return nil

@@ -48,7 +48,7 @@ func listTestAccount(t *testing.T) (*boundedmeta.Metadata, map[string]string) {
 	})
 	metadata := &boundedmeta.Metadata{
 		Contract: boundedmeta.Contract, BaseSignatureArgLayout: layout, ArgumentLayout: slots,
-		SpendEffects: []string{"pay"}, MaxFee: 5_000, Rekey: boundedmeta.RekeyRefused, Layer3Policy: boundedmeta.Layer3PolicyCustom,
+		SpendEffects: []string{"pay"}, MaxFee: new(uint64(5_000)), Rekey: boundedmeta.RekeyRefused, Layer3Policy: boundedmeta.Layer3PolicyCustom,
 		RekeyList: &boundedmeta.RekeyList{Contract: boundedmeta.RekeyListContractV1, Depth: rekeylist.Depth, RootHex: hex.EncodeToString(root[:])},
 		DerivedArgs: []boundedmeta.DerivedArg{{
 			Name: "rekey_list_proof", Kind: boundedmeta.DerivedArgRekeyListProof,

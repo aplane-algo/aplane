@@ -912,7 +912,7 @@ func TestVerifyBoundedPlanIntegrity(t *testing.T) {
 	}
 
 	drifted := boundedmeta.Clone(metadata)
-	drifted.MaxFee--
+	drifted.MaxFee = new(*drifted.MaxFee - 1)
 	changed := &coresigning.KeyMaterial{
 		SigningMetadataVersion: keys.BoundedSigningMetadataVersion,
 		BoundedAuthorization:   drifted,

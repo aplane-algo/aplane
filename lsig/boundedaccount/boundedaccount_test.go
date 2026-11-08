@@ -262,8 +262,8 @@ func TestEveryShapeResolvesAndAgreesWithItsMetadata(t *testing.T) {
 			if fromMetadata.Descriptor() != shape.Descriptor() {
 				t.Fatalf("metadata selects %s", fromMetadata.Descriptor())
 			}
-			if instance.Bounded.MaxFee != MaxFee {
-				t.Fatalf("MaxFee = %d", instance.Bounded.MaxFee)
+			if instance.Bounded.MaxFee == nil || *instance.Bounded.MaxFee != MaxFee {
+				t.Fatalf("MaxFee = %v", instance.Bounded.MaxFee)
 			}
 			if (instance.Bounded.Cosigner != nil) != shape.Cosigner {
 				t.Fatalf("cosigner metadata = %v", instance.Bounded.Cosigner)
@@ -1078,7 +1078,7 @@ func TestResourceBackstopRefusesWhatCannotRun(t *testing.T) {
 		t.Fatal("accepted a program that cannot fit a group")
 	}
 	lowCeiling := boundedmeta.Clone(instance.Bounded)
-	lowCeiling.MaxFee = 1_000
+	lowCeiling.MaxFee = new(uint64(1_000))
 	if err := checkResources(lowCeiling, opcodes, 3_000); err == nil || !strings.Contains(err.Error(), "above the account's ceiling") {
 		t.Fatalf("checkResources(low ceiling) error = %v", err)
 	}

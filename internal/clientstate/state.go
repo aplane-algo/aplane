@@ -179,8 +179,8 @@ func (s *State) PopulateSignerCache(keys []signerapi.KeyInfo) error {
 		if cosignerPublicKey != "" {
 			s.SignerCache.SetCosignerPublicKeyForAddress(keyInfo.Address, cosignerPublicKey)
 		}
-		if keyInfo.BoundedAuthorization != nil {
-			s.SignerCache.SetBoundedMaxFeeForAddress(keyInfo.Address, keyInfo.BoundedAuthorization.MaxFee)
+		if keyInfo.BoundedAuthorization != nil && keyInfo.BoundedAuthorization.MaxFee != nil {
+			s.SignerCache.SetBoundedMaxFeeForAddress(keyInfo.Address, *keyInfo.BoundedAuthorization.MaxFee)
 		}
 		if len(keyInfo.SigningArgs) > 0 {
 			signingArgs := make([]cache.SigningArgInfo, len(keyInfo.SigningArgs))

@@ -27,6 +27,8 @@ import (
 const (
 	// BoundedContract is the bounded-authorization contract.
 	BoundedContract = boundedmeta.Contract
+	// PlainContract is the plain host: signatures and overlays, no host rules.
+	PlainContract = boundedmeta.PlainContract
 	// BoundedMaxFee is the largest fee a bounded profile may compile.
 	BoundedMaxFee uint64 = boundedmeta.MaximumProfileFee
 	// BoundedCosignerPublicKeyParameter is injected for cosigner-enabled profiles.
@@ -50,12 +52,15 @@ const (
 )
 
 // BoundedAuthorizationProfile defines the bounded envelope compiled around
-// a composed DSA spending policy.
+// a composed DSA spending policy. Under the plain contract there is no
+// envelope: no spend effects and no fee ceiling, only the rekey dispatch and
+// the overlays.
 type BoundedAuthorizationProfile struct {
 	Contract     string
 	SpendEffects []txeffects.SpendEffect
-	MaxFee       uint64
-	Rekey        boundedmeta.RekeySetting
+	// MaxFee is the bounded host's fee ceiling, nil on a plain host.
+	MaxFee *uint64
+	Rekey  boundedmeta.RekeySetting
 	// RekeyList is the template-level rekey-to list record; the root is filled
 	// in at generation.
 	RekeyList *boundedmeta.RekeyList
@@ -71,6 +76,7 @@ func cloneBoundedProfile(profile *BoundedAuthorizationProfile) *BoundedAuthoriza
 		return nil
 	}
 	cloned := *profile
+	cloned.MaxFee = boundedmeta.CloneMaxFee(profile.MaxFee)
 	cloned.SpendEffects = append([]txeffects.SpendEffect(nil), profile.SpendEffects...)
 	if profile.Cosigner != nil {
 		cosigner := *profile.Cosigner
@@ -91,18 +97,33 @@ func (profile *BoundedAuthorizationProfile) validate() error {
 	if profile == nil {
 		return nil
 	}
-	if profile.Contract != BoundedContract {
-		return fmt.Errorf("unsupported bounded authorization contract %q", profile.Contract)
-	}
-	if profile.MaxFee > BoundedMaxFee {
-		return fmt.Errorf("max_fee %d exceeds %s ceiling %d", profile.MaxFee, BoundedContract, BoundedMaxFee)
-	}
 	spendEffects := make([]string, len(profile.SpendEffects))
 	for i, effect := range profile.SpendEffects {
 		spendEffects[i] = string(effect)
 	}
-	if err := boundedmeta.ValidateSpendEffects(spendEffects); err != nil {
-		return err
+	switch profile.Contract {
+	case BoundedContract:
+		if profile.MaxFee == nil {
+			return fmt.Errorf("%s requires max_fee", BoundedContract)
+		}
+		if *profile.MaxFee > BoundedMaxFee {
+			return fmt.Errorf("max_fee %d exceeds %s ceiling %d", *profile.MaxFee, BoundedContract, BoundedMaxFee)
+		}
+		if err := boundedmeta.ValidateSpendEffects(spendEffects); err != nil {
+			return err
+		}
+	case PlainContract:
+		if profile.MaxFee != nil {
+			return fmt.Errorf("%s has no fee ceiling: max_fee must be absent", PlainContract)
+		}
+		if len(spendEffects) != 0 {
+			return fmt.Errorf("%s declares no spend effects: every transaction that doesn't rekey is a spend", PlainContract)
+		}
+		if profile.Cosigner == nil {
+			return fmt.Errorf("a %s account needs a cosigner", PlainContract)
+		}
+	default:
+		return fmt.Errorf("unsupported bounded authorization contract %q", profile.Contract)
 	}
 	if err := boundedmeta.ValidateRekeySetting(profile.Rekey); err != nil {
 		return err
@@ -113,8 +134,8 @@ func (profile *BoundedAuthorizationProfile) validate() error {
 		return fmt.Errorf("a rekey-to list beside a spending-key rekey (%s) needs a cosigner", boundedmeta.RekeyPlusCosigned)
 	}
 	// A listed address is a way out, so only a refused profile without a list
-	// must keep a transfer for what it holds.
-	if profile.Rekey == boundedmeta.RekeyRefused && profile.RekeyList == nil {
+	// must keep a transfer for what it holds. Every plain spend is open.
+	if profile.Contract == BoundedContract && profile.Rekey == boundedmeta.RekeyRefused && profile.RekeyList == nil {
 		if err := boundedmeta.ValidateRefusedExit(spendEffects); err != nil {
 			return err
 		}
@@ -194,7 +215,11 @@ func CanonicalBoundedProfile(profile *BoundedAuthorizationProfile, metadata *bou
 	for _, effect := range canonical.SpendEffects {
 		encoded = boundedmeta.AppendField(encoded, []byte(effect))
 	}
-	encoded = boundedmeta.AppendUint64(encoded, canonical.MaxFee)
+	// The contract name leads the encoding, so a plain host's has no fee field
+	// rather than a placeholder, and a bounded host's encoding is unchanged.
+	if canonical.MaxFee != nil {
+		encoded = boundedmeta.AppendUint64(encoded, *canonical.MaxFee)
+	}
 	encoded = boundedmeta.AppendField(encoded, []byte(canonical.Rekey))
 	// The list's contract and depth, never its root: the root is an instance
 	// value, and the review digest binds the entries it comes from instead.
@@ -262,12 +287,19 @@ func validateCanonicalMetadata(profile *BoundedAuthorizationProfile, metadata *b
 	for i, effect := range profile.SpendEffects {
 		spendEffects[i] = string(effect)
 	}
-	if metadata.Contract != profile.Contract || metadata.MaxFee != profile.MaxFee ||
+	if metadata.Contract != profile.Contract || !equalMaxFee(metadata.MaxFee, profile.MaxFee) ||
 		!slices.Equal(metadata.SpendEffects, spendEffects) || metadata.Rekey != profile.Rekey ||
 		!equalCosignerProfile(metadata.Cosigner, profile.Cosigner) {
 		return fmt.Errorf("bounded profile metadata does not match the authorization profile")
 	}
 	return nil
+}
+
+func equalMaxFee(a, b *uint64) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
 }
 
 func equalCosignerProfile(a, b *boundedmeta.CosignerAuthorization) bool {
@@ -427,7 +459,7 @@ func (c *ComposedDSA) boundedAuthorizationMetadataBase() (*boundedmeta.Metadata,
 			Count:    layout.Count,
 			MaxSizes: append([]int(nil), layout.MaxSizes...),
 		},
-		MaxFee:       profile.MaxFee,
+		MaxFee:       boundedmeta.CloneMaxFee(profile.MaxFee),
 		Layer3Policy: c.Layer3PolicyName(),
 		RuntimeArgs:  append([]boundedmeta.RuntimeArg(nil), c.boundedRuntimeArgs...),
 		DerivedArgs:  append([]boundedmeta.DerivedArg(nil), c.derivedArgs...),
@@ -507,7 +539,13 @@ func (c *ComposedDSA) validateBoundedConfig() (*BoundedAuthorizationProfile, Sig
 	if profile == nil {
 		return nil, SignatureArgLayout{}, nil
 	}
-	if c.layer3 == nil && strings.TrimSpace(c.tealSuffix) == "" {
+	switch {
+	case profile.Contract == PlainContract:
+		// A plain host has no spending rule: Layer 3 is none, and no author TEAL.
+		if c.layer3 == nil || c.layer3.Policy != Layer3PolicyNone || c.hasAuthorTEAL() {
+			return nil, SignatureArgLayout{}, fmt.Errorf("a %s profile takes layer3 policy %s and no author TEAL", PlainContract, Layer3PolicyNone)
+		}
+	case c.layer3 == nil && strings.TrimSpace(c.tealSuffix) == "":
 		return nil, SignatureArgLayout{}, fmt.Errorf("a bounded profile requires a Layer-3 spending policy suffix")
 	}
 	if err := c.validateFrameworkLayer3Arguments(); err != nil {
@@ -516,8 +554,12 @@ func (c *ComposedDSA) validateBoundedConfig() (*BoundedAuthorizationProfile, Sig
 	if err := validateLayer3Policy(c.layer3, c.paramsWithoutCosignerKey(), profile, c.hasAuthorTEAL()); err != nil {
 		return nil, SignatureArgLayout{}, fmt.Errorf("invalid bounded Layer-3 policy: %w", err)
 	}
-	if c.ops.TEALVersion() != txeffects.BoundedManifest().TEALVersion {
-		return nil, SignatureArgLayout{}, fmt.Errorf("a bounded profile requires TEAL version %d, base emits version %d", txeffects.BoundedManifest().TEALVersion, c.ops.TEALVersion())
+	tealVersion := txeffects.BoundedManifest().TEALVersion
+	if profile.Contract == PlainContract {
+		tealVersion = txeffects.PlainManifest().TEALVersion
+	}
+	if c.ops.TEALVersion() != tealVersion {
+		return nil, SignatureArgLayout{}, fmt.Errorf("a %s profile requires TEAL version %d, base emits version %d", profile.Contract, tealVersion, c.ops.TEALVersion())
 	}
 	if len(c.runtimeArgs) != len(c.boundedRuntimeArgs) {
 		return nil, SignatureArgLayout{}, fmt.Errorf("bounded runtime arguments must use the bounded argument contract")

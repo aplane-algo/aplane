@@ -858,7 +858,7 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 				Success:     true,
 				KeyType:     "aplane.falcon1024-b.v1",
 				Bounded: &PreparedBoundedProfile{
-					Contract: "bounded2", SpendEffects: []string{"pay"}, MaxFee: 2_000,
+					Contract: "bounded2", SpendEffects: []string{"pay"}, MaxFee: new(uint64(2_000)),
 					Rekey: "refused", Layer3Policy: "timelock",
 				},
 			},

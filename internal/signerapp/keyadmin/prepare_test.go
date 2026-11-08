@@ -265,13 +265,13 @@ func TestProjectPrepareGenerateIPC(t *testing.T) {
 		KeyType: "test.projected.v1", Parameters: map[string]string{"recipients": "A"}, Fingerprint: "1:abc",
 		CosignerKeyID: "COSIGNER",
 		Bounded: &boundedmeta.Metadata{
-			Contract: boundedmeta.Contract, SpendEffects: []string{"pay"}, MaxFee: 10_000,
+			Contract: boundedmeta.Contract, SpendEffects: []string{"pay"}, MaxFee: new(uint64(10_000)),
 			Layer3Policy: boundedmeta.Layer3PolicyMerkleAllowlist,
 			Cosigner:     &boundedmeta.CosignerAuthorization{ComponentKeyType: witness.Falcon1024V1},
 			Rekey:        boundedmeta.RekeyRefused,
 		},
 	}, nil)
-	if !result.Success || result.Bounded == nil || !result.Bounded.CosignerRequired || result.Bounded.MaxFee != 10_000 ||
+	if !result.Success || result.Bounded == nil || !result.Bounded.CosignerRequired || result.Bounded.MaxFee == nil || *result.Bounded.MaxFee != 10_000 ||
 		result.Bounded.Contract != boundedmeta.Contract || result.Bounded.Rekey != string(boundedmeta.RekeyRefused) ||
 		result.Bounded.Layer3Policy != boundedmeta.Layer3PolicyMerkleAllowlist || result.CosignerKeyID != "COSIGNER" {
 		t.Fatalf("result = %+v", result)

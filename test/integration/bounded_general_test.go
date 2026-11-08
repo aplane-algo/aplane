@@ -549,8 +549,8 @@ func TestBoundedGeneralResourceMatrix(t *testing.T) {
 			rekeyTo[i] = algocrypto.GenerateAccount().Address.String()
 		}
 		account := newGeneralAccount(t, provider, shape, recipients, generalPassedUnlockRound, rekeyTo)
-		if account.metadata.MaxFee != boundedaccount.MaxFee {
-			t.Fatalf("%s MaxFee = %d", shape.Descriptor(), account.metadata.MaxFee)
+		if account.metadata.MaxFee == nil || *account.metadata.MaxFee != boundedaccount.MaxFee {
+			t.Fatalf("%s MaxFee = %v", shape.Descriptor(), account.metadata.MaxFee)
 		}
 		t.Logf("%s: %d program bytes", shape.Descriptor(), len(account.bytecode))
 	}

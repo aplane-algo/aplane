@@ -442,7 +442,9 @@ type BoundedAuthorizationInfo struct {
 	Contract               string                    `json:"contract"`
 	BaseSignatureArgLayout BoundedSignatureArgLayout `json:"base_signature_arg_layout"`
 	SpendEffects           []string                  `json:"spend_effects"`
-	MaxFee                 uint64                    `json:"max_fee"`
+	// MaxFee is the bounded host's fee ceiling. A plain host (contract plain1)
+	// has none, and the field is absent.
+	MaxFee *uint64 `json:"max_fee,omitempty"`
 	// Rekey is refused or spending_key. With RekeyList, refused is "only these":
 	// a rekey may go to a listed address.
 	Rekey          string                            `json:"rekey"`

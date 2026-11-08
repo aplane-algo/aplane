@@ -99,8 +99,8 @@ func TestBoundedComposerCompiledBudgetMatrix(t *testing.T) {
 					test.bytecode, test.spendArgs, test.spendGroup, test.spendFee, test.address,
 				)
 			}
-			if spendFee > test.profile.MaxFee {
-				t.Fatalf("required v42 fee exceeds compiled max_fee %d: spend=%d", test.profile.MaxFee, spendFee)
+			if spendFee > *test.profile.MaxFee {
+				t.Fatalf("required v42 fee exceeds compiled max_fee %d: spend=%d", *test.profile.MaxFee, spendFee)
 			}
 		})
 	}
@@ -496,7 +496,7 @@ func newFixedAllowlistIntegrationProvider(profile *composeddsa.BoundedAuthorizat
 func boundedIntegrationProfile(allowed []txeffects.SpendEffect, rekey boundedmeta.RekeySetting) *composeddsa.BoundedAuthorizationProfile {
 	return &composeddsa.BoundedAuthorizationProfile{
 		Contract: composeddsa.BoundedContract, SpendEffects: allowed,
-		MaxFee: composeddsa.BoundedMaxFee, Rekey: rekey,
+		MaxFee: new(uint64(composeddsa.BoundedMaxFee)), Rekey: rekey,
 	}
 }
 

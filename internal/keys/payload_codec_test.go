@@ -175,7 +175,7 @@ func TestBoundedPayloadMetadataRoundTrip(t *testing.T) {
 		},
 		ArgumentLayout: boundedmeta.BaseArgumentLayout(boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{4}}),
 		SpendEffects:   []string{"pay", "axfer"},
-		MaxFee:         1_000,
+		MaxFee:         new(uint64(1_000)),
 		Rekey:          boundedmeta.RekeySpendingKey,
 		Layer3Policy:   boundedmeta.Layer3PolicyCustom,
 	}
@@ -245,7 +245,7 @@ func TestBoundedCombinedLayer3PolicyPayloadRoundTrip(t *testing.T) {
 			}
 			if err := payload.SetBoundedAuthorization(&boundedmeta.Metadata{
 				Contract: boundedmeta.Contract, BaseSignatureArgLayout: layout, ArgumentLayout: slots,
-				SpendEffects: []string{"pay"}, MaxFee: 1_000, Rekey: boundedmeta.RekeyRefused, DerivedArgs: test.derived, Layer3Policy: test.policy,
+				SpendEffects: []string{"pay"}, MaxFee: new(uint64(1_000)), Rekey: boundedmeta.RekeyRefused, DerivedArgs: test.derived, Layer3Policy: test.policy,
 			}); err != nil {
 				t.Fatalf("SetBoundedAuthorization() error = %v", err)
 			}
@@ -283,7 +283,7 @@ func TestBoundedCosignerPayloadMetadataRoundTrip(t *testing.T) {
 	payloadWithOpcodeProfile(t, payload, true)
 	metadata := &boundedmeta.Metadata{
 		Contract: boundedmeta.Contract, BaseSignatureArgLayout: boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{4}},
-		SpendEffects: []string{boundedmeta.SpendEffectPay}, MaxFee: 1_000, Rekey: boundedmeta.RekeyRefused, Layer3Policy: boundedmeta.Layer3PolicyCustom,
+		SpendEffects: []string{boundedmeta.SpendEffectPay}, MaxFee: new(uint64(1_000)), Rekey: boundedmeta.RekeyRefused, Layer3Policy: boundedmeta.Layer3PolicyCustom,
 		Cosigner: &boundedmeta.CosignerAuthorization{
 			Contract: boundedmeta.CosignerContractV1, ComponentKeyType: boundedmeta.CosignerComponentKeyTypeV1,
 			PublicKeyHex: hex.EncodeToString(cosignerPublicKey), ComponentKeyID: componentKeyID,

@@ -12,6 +12,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/boundary"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/protocol"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -256,7 +257,7 @@ func (m Model) renderGenerateReview() string {
 	sb.WriteString(titleStyle.Render("Review New Account"))
 	sb.WriteString("\n\n")
 	sb.WriteString(reviewRow("Key type", displayKeyType(review.KeyType)+", fixed once created"))
-	sb.WriteString(reviewRow("Transfers", fmt.Sprintf("%s, fee limit %d", spendEffectsLabel(profile.SpendEffects), profile.MaxFee)))
+	sb.WriteString(reviewRow("Transfers", transfersLabel(profile)))
 	row, note := reviewRecipients(profile.Layer3Policy, recipientList(review.Parameters))
 	sb.WriteString(row)
 	rekey, consequence := reviewRekey(*review)
@@ -455,4 +456,13 @@ func (m Model) rekeyTargetNote(address string) string {
 		return note
 	}
 	return ""
+}
+
+// transfersLabel names what the account may spend and its fee limit. A plain
+// host has neither rule: every transaction that doesn't rekey is a spend.
+func transfersLabel(profile *protocol.PreparedBoundedProfile) string {
+	if profile.MaxFee == nil {
+		return "Any transaction, no fee limit"
+	}
+	return fmt.Sprintf("%s, fee limit %d", spendEffectsLabel(profile.SpendEffects), *profile.MaxFee)
 }

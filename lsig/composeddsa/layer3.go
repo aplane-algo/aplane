@@ -251,6 +251,9 @@ func (c *ComposedDSA) renderLayer3Policy(params map[string]string, profile *Boun
 	}
 	if c.layer3.Policy == Layer3PolicyNone {
 		// A comment only: the spend falls through to the accept block.
+		if profile != nil && profile.Contract == PlainContract {
+			return "// === plain host: no host rules; the cosigner signed this spend ===\n", nil
+		}
 		return "// === no framework Layer 3: the envelope bounds every spend ===\n", nil
 	}
 
