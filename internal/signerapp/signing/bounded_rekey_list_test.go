@@ -5,6 +5,7 @@ package signing
 
 import (
 	"bytes"
+	"context"
 	"encoding/hex"
 	"strings"
 	"testing"
@@ -13,8 +14,10 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
+	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/rekeylist"
 	"github.com/aplane-algo/aplane/internal/signerapp/approvalpolicy"
+	"github.com/aplane-algo/aplane/internal/signerapp/policyeval"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
@@ -125,5 +128,51 @@ func TestListedRekeyWarningNamesTheHandover(t *testing.T) {
 	})
 	if len(held) != 1 || !strings.Contains(held[0].Message, "You possess the keys") {
 		t.Fatalf("held listed target warning = %+v", held)
+	}
+}
+
+// A listed rekey is a bounded rekey, so the signer forces its review: the self
+// no-op rule, which would approve the same 0-ALGO self-payment without one,
+// never approves it.
+func TestListedRekeyIsForcedToReview(t *testing.T) {
+	metadata, params := listTestAccount(t)
+	snapshot := PlannerRuntimeSnapshot{KeyMetadata: map[string]PlannerKeyMetadata{
+		"ACCOUNT": {PublicKeyHex: "01", BaseKeyType: "aplane.falcon1024.v1", Parameters: params, BoundedAuthorization: metadata},
+	}}
+	items, err := resolveBoundedPlanItems(snapshot, []signerapi.SignRequest{{AuthAddress: "ACCOUNT"}}, []types.Transaction{listTestRekey(listTestTarget)}, nil, nil)
+	if err != nil {
+		t.Fatalf("listed target: %+v", err)
+	}
+	if !planHasBoundedRekey(&PlanResult{BoundedItems: items}) {
+		t.Fatal("a listed rekey is not forced to review")
+	}
+
+	rekey := listTestRekey(listTestTarget)
+	cfg := policy.DefaultConfig()
+	cfg.AutoApproveSelfNoOpTransfer = true
+	cfg.Rekeys = policy.RekeysAllow
+	plan := &policyeval.PlanFacts{RequestCount: 1, AuthAddressPresent: true}
+	if rule, approved := policyeval.ApprovalRule(policyeval.Input{
+		Group: []types.Transaction{rekey},
+		Slots: []policyeval.Slot{{Index: 0, Policy: cfg, ListedRekeyTargets: items[0].ListedRekeyTargets}},
+		Plan:  plan,
+	}); approved {
+		t.Fatalf("ApprovalRule() approved a listed rekey by %q", rule)
+	}
+	svc := &Service{PolicyFor: fixedPolicy(cfg)}
+	prompted := ""
+	ruleID, gateErr := svc.runApprovalGates(context.Background(), gateInput{
+		AllTxns:            []types.Transaction{rekey},
+		EvalCount:          1,
+		ListedRekeyTargets: map[int]map[string]bool{0: items[0].ListedRekeyTargets},
+		ForcedReviewRuleID: policy.BoundedRekeyRequiresReviewRuleID,
+		Plan:               plan,
+		RequestOperatorApproval: func(_ context.Context, rule string) *ServiceError {
+			prompted = rule
+			return nil
+		},
+	}, nil)
+	if gateErr != nil || ruleID != policy.BoundedRekeyRequiresReviewRuleID || prompted != ruleID {
+		t.Fatalf("gates = %q, %v; prompted %q", ruleID, gateErr, prompted)
 	}
 }

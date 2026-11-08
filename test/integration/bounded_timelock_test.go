@@ -382,7 +382,8 @@ func TestBoundedTimelockThroughSigner(t *testing.T) {
 				t.Fatalf("recipient holds %d, want 300000", received)
 			}
 			// Reaching the unlock round opens a spend path, not a rekey path.
-			assertSignerRefusesRekey(t, apshell, network, open, algocrypto.GenerateAccount().Address.String())
+			assertSignerRefusesRekey(t, apshell, network, open, algocrypto.GenerateAccount().Address.String(),
+				boundedmeta.Contract+" account permanently disables rekey")
 		})
 	}
 

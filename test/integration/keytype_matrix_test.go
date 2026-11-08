@@ -173,7 +173,8 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 			},
 		},
 		// The general bounded type, in the shapes the deleted allowlist v1, allowlist
-		// v2 and timelock templates had. A timelock now refuses rekeys.
+		// v2 and timelock templates had. A timelock's only rekey is to a listed
+		// address, here the cleanup authority.
 		{
 			keyType: boundedaccount.KeyTypeV1,
 			params: map[string]string{
@@ -200,7 +201,8 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 			keyType: boundedaccount.KeyTypeV1,
 			params: map[string]string{
 				boundedaccount.ParameterSpendEffects:   matrixAllTransfers,
-				boundedaccount.ParameterRekeyAuthority: boundedaccount.RekeyRefused,
+				boundedaccount.ParameterRekeyAuthority: boundedaccount.RekeyOnlyThese,
+				boundedaccount.ParameterRekeyTo:        cleanupAuthority.Address.String(),
 				boundedaccount.ParameterUnlockRound:    fmt.Sprintf("%d", timelockRound),
 			},
 			positiveFirstValid: timelockRound,
@@ -236,9 +238,9 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 			}
 
 			// Prepare every recovery authority before putting funds at risk. Bounded
-			// accounts reject CloseRemainderTo by contract, so one with a spending-key
-			// rekey first rekeys to this test-owned Ed25519 authority and is then
-			// closed normally. One that refuses rekeys can never close.
+			// accounts reject CloseRemainderTo by contract, so each first rekeys to
+			// this test-owned Ed25519 authority, with the spending key or as a listed
+			// rekey, and is then closed normally.
 			cleanupPlans := prepareMatrixRekeyCleanups(
 				t, signerd.GetURL(), fundingAddress, batch, sp, approvalClient, cleanupAuthority,
 			)
@@ -366,8 +368,8 @@ func prepareMatrixRekeyCleanups(
 	t.Helper()
 	plans := make([]matrixRekeyCleanupPlan, 0)
 	for _, account := range accounts {
-		if matrixSupportsSpendingRekey(account) {
-			plans = append(plans, prepareMatrixSpendingRekeyCleanup(
+		if matrixSupportsRekeyCleanup(account) {
+			plans = append(plans, prepareMatrixRekeyCleanup(
 				t, signerURL, fundingAddress, account, sp, approvalClient, cleanupAuthority,
 			))
 		}
@@ -375,7 +377,7 @@ func prepareMatrixRekeyCleanups(
 	return plans
 }
 
-func prepareMatrixSpendingRekeyCleanup(
+func prepareMatrixRekeyCleanup(
 	t *testing.T,
 	signerURL string,
 	fundingAddress string,
@@ -389,6 +391,10 @@ func prepareMatrixSpendingRekeyCleanup(
 		t, sp, account.address, account.address, "keytype-matrix-spending-rekey", "", account.positiveFirstValid,
 	)
 	txn.RekeyTo = cleanupAuthority.Address
+	path := lsigresource.PathSpendingRekey
+	if account.params[boundedaccount.ParameterRekeyAuthority] == boundedaccount.RekeyOnlyThese {
+		path = lsigresource.PathListedRekey
+	}
 	req := matrixSignRequest(t, sp, fundingAddress, []matrixSignTxn{{authAddress: account.address, txn: txn}})
 
 	var status int
@@ -398,22 +404,22 @@ func prepareMatrixSpendingRekeyCleanup(
 		defer close(done)
 		status, body = postSignRequest(t, signerURL, req)
 	}()
-	awaitMatrixSigning(t, done, approvalClient, "spending-key rekey")
+	awaitMatrixSigning(t, done, approvalClient, "cleanup rekey")
 	if status != http.StatusOK {
-		t.Fatalf("expected spending-key rekey signing to succeed, got %d: %s", status, string(body))
+		t.Fatalf("expected cleanup rekey signing to succeed, got %d: %s", status, string(body))
 	}
 	var signResp signerapi.GroupSignResponse
 	if err := json.Unmarshal(body, &signResp); err != nil {
-		t.Fatalf("parse spending-key rekey sign response: %v", err)
+		t.Fatalf("parse cleanup rekey sign response: %v", err)
 	}
 	if signResp.Error != "" {
-		t.Fatalf("unexpected spending-key rekey sign error: %s", signResp.Error)
+		t.Fatalf("unexpected cleanup rekey sign error: %s", signResp.Error)
 	}
 	assertMatrixPlannerDummies(t, signResp, len(req.Requests), 0)
 	target := decodeSignedTxnHex(t, signResp.Signed[0])
 	return matrixRekeyCleanupPlan{
 		account: account, signedHexes: signResp.Signed, targetFee: uint64(target.Txn.Fee),
-		path: lsigresource.PathSpendingRekey, cleanupPrivateKey: cleanupAuthority.PrivateKey,
+		path: path, cleanupPrivateKey: cleanupAuthority.PrivateKey,
 	}
 }
 
@@ -455,8 +461,10 @@ func validateMatrixRekeyOpcodeCeilings(
 	t.Helper()
 	for _, plan := range plans {
 		plan := plan
-		pathName := "spending-rekey"
-		vectorName := "maximum-spending-key-rekey"
+		pathName, vectorName := "spending-rekey", "maximum-spending-key-rekey"
+		if plan.path == lsigresource.PathListedRekey {
+			pathName, vectorName = "listed-rekey", "maximum-listed-rekey"
+		}
 		t.Run(plan.account.keyType+"/opcode/"+pathName, func(t *testing.T) {
 			signed := make([]types.SignedTxn, len(plan.signedHexes))
 			for i, encoded := range plan.signedHexes {
@@ -482,16 +490,18 @@ func validateMatrixRekeyOpcodeCeilings(
 // matrixAllTransfers is every spend effect the general bounded type offers.
 const matrixAllTransfers = "pay,axfer,asset_opt_in"
 
-func matrixSupportsSpendingRekey(account includedKeyTypeAccount) bool {
-	return account.keyType == boundedaccount.KeyTypeV1 &&
-		account.params[boundedaccount.ParameterRekeyAuthority] == boundedaccount.RekeySpendingKey
-}
-
-// matrixRefusesRekey reports a bounded account with no rekey path, which can
-// therefore neither close nor be recovered.
-func matrixRefusesRekey(account includedKeyTypeAccount) bool {
-	return account.keyType == boundedaccount.KeyTypeV1 &&
-		account.params[boundedaccount.ParameterRekeyAuthority] == boundedaccount.RekeyRefused
+// matrixSupportsRekeyCleanup reports a bounded account that can be rekeyed to
+// the cleanup authority: with the spending key, or as a listed rekey.
+func matrixSupportsRekeyCleanup(account includedKeyTypeAccount) bool {
+	if account.keyType != boundedaccount.KeyTypeV1 {
+		return false
+	}
+	switch account.params[boundedaccount.ParameterRekeyAuthority] {
+	case boundedaccount.RekeySpendingKey, boundedaccount.RekeyOnlyThese:
+		return true
+	default:
+		return false
+	}
 }
 
 type includedKeyTypeCase struct {
@@ -881,16 +891,10 @@ func waitForMatrixFundingVisibility(
 	t.Fatalf("matrix funding did not become consistently visible within 30s: %s", lastIssue)
 }
 
-// matrixCleanupReserves is what each bounded account keeps after settlement. One
-// that refuses rekeys keeps its minimum balance for good: 0.1 ALGO per run on a
-// public network.
+// matrixCleanupReserves is what each bounded account keeps after settlement: its
+// minimum balance and its already-signed cleanup rekey's fee.
 func matrixCleanupReserves(accounts []includedKeyTypeAccount, plans []matrixRekeyCleanupPlan) map[string]uint64 {
 	reserves := make(map[string]uint64, len(accounts))
-	for _, account := range accounts {
-		if matrixRefusesRekey(account) {
-			reserves[account.address] = matrixBaseMinimumBalance
-		}
-	}
 	for _, plan := range plans {
 		reserves[plan.account.address] = matrixBaseMinimumBalance + plan.targetFee
 	}
