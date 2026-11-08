@@ -139,7 +139,7 @@ java -jar tla2tools.jar -config docs/formal/bounded_cosigner.cfg \
   [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md), and
   [ARCH_GUARDED.md](ARCH_GUARDED.md).
 - Legacy guarded assembly: [FORMAL_TLA_GUARDED_ASSEMBLY_MODEL.md](FORMAL_TLA_GUARDED_ASSEMBLY_MODEL.md).
-- Traceability: BS1 and BS3-BS7 in [FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md).
+- Traceability: BS1-BS7 in [FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md).
 - Concrete tests: `internal/signerapp/signing/bounded_cosigner_test.go`,
   `internal/engine/guarded/submit_test.go`, and
   `internal/engine/guarded/simulate_submit_test.go`.

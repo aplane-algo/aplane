@@ -22,14 +22,17 @@ the profile matrix explored below:
   a signer-derived proof for a generation-time recipient;
 - every spend requires the Falcon spending signature and a required Falcon
   cosigner signature;
-- the account refuses every rekey, so it cannot leave a lost cosigner;
+- the account can be rekeyed only to an address on its rekey-to list, fixed at
+  creation, with the spending key alone; the cosigner is not asked, so a listed
+  key can still take over an account whose cosigner is lost;
 - close, clawback, hybrid rekey-and-spend, and unsupported transaction forms
   are rejected; decommissioning is spending the balance to a listed recipient,
-  and the account keeps its minimum balance;
+  which leaves the minimum balance, or handing the account to a listed key;
 - the optional amount/window bounds, optional or Ed25519 guard, direct close,
   and escape-hatch variants discussed below are not Corridor v1 features;
-- there is no rekey authority, so the M-of-N governance arrangement
-  recommended below is not supported;
+- there is no governance rekey key: a new program is reached only through a
+  handover to a listed key, so the M-of-N governance arrangement recommended
+  below is not supported as such;
 - the cosigner decides from its policy document and the transaction group
   alone; it does not consult off-chain state or external services.
 

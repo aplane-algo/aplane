@@ -31,11 +31,15 @@ entries, guarded targets are `foreign` entries with accurate selected-path
 resulting signed ordinary originals and dummies are then passed through to
 assembly.
 
-A bounded-cosigner target (`bounded-cosigner1` signing flow) follows its own
+A bounded-cosigner target (`cosigned1` signing flow) follows its own
 choreography over the same frozen group: the user signer issues the bounded
-base components first, then the cosigner signs. One group can hold cosigner1
-targets or bounded-cosigner1 targets, not both; apshell rejects a group that
-mixes them.
+base components first, then the cosigner signs. Each base component names its
+path. A listed rekey (`listed_rekey`) needs no cosigner signature, so the client
+asks the cosigner only for the other targets, and sends no cosigner request when
+every target is a listed rekey. In the intermediate `/sign` request each
+bounded-cosigner target's `lsig_resources` hint comes from its component's
+path. One group can hold cosigner1 targets or cosigned1 targets, not both;
+apshell rejects a group that mixes them.
 
 Ordinary `/sign` still rejects guarded account key types. A guarded authorizer
 therefore never becomes a one-party `AuthAddress` request: it goes through

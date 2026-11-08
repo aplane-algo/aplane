@@ -61,7 +61,8 @@ fixed-depth 16 Merkle tree derived from that list:
 
 The caller does not supply this proof. Self transfers and ASA opt-ins are
 allowed without a proof. Corridor additionally requires its cosigner signature
-on every spend.
+on every spend, and takes a rekey only to an address on its rekey-to list, with
+the spending key alone.
 
 ## Authoring rules: rekey and close-remainder
 
@@ -101,8 +102,11 @@ must still reject any intentionally signed effect it does not want to permit.
 **Bounded composed templates** (`schema_version: 2`) place the composer-owned
 `bounded2` envelope between base verification and Layer 3. That envelope admits
 only declared pure payment, pure asset transfer, and asset opt-in paths, plus a
-pure rekey when the template declares `rekey: spending_key`, or a pure rekey to a
-listed address when it declares `rekey: only_these`; it rejects close,
+pure rekey when the template declares `rekey: spending_key` (with the cosigner's
+signature when it has a cosigner), a pure rekey to a listed address when it
+declares `rekey: only_these`, or either when it declares `rekey: plus_cosigned`,
+which needs a cosigner: a listed address with the spending key alone, any other
+with the cosigner too. It rejects close,
 clawback, hybrids, and non-transfer types. A rekey is accepted or rejected
 before Layer 3 runs. Layer 3 can narrow the spend paths but cannot broaden
 them, and it never applies to a rekey. Runtime and signer-derived arguments
@@ -120,4 +124,4 @@ regression can ship.
 |---|---|---|
 | Generic (`template_type: generic`) | Required | Required (zero, or allowlisted per template semantics) |
 | Custom composed (schema v1) | Author decision; all fields are signature-bound | Author decision |
-| Bounded composed (schema v2) | Pure rekey only with `rekey: spending_key`, or to a listed address with `rekey: only_these` | Always zero in `bounded2` |
+| Bounded composed (schema v2) | Pure rekey only with `rekey: spending_key`, to a listed address with `rekey: only_these`, or either with `rekey: plus_cosigned` | Always zero in `bounded2` |

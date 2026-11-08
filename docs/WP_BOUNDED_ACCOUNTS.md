@@ -59,11 +59,13 @@ unsupported transaction types. A transaction combining rekeying and spending
 is also rejected.
 
 Rekeying has its own narrow form: a zero-ALGO payment to the sender itself,
-with a nonzero rekey target and no close or clawback effects. An account
-refuses rekeys, lets the spending key alone authorize this form to any target,
-or lets it authorize this form only to a target on the account's rekey-to list,
-fixed when the account is created; its spending conditions, such as a recipient
-list or an unlock round, do not apply to a rekey. The compiled fee ceiling applies to both
+with a nonzero rekey target and no close or clawback effects. Depending on the
+account, the spending key authorizes this form to any target (with the cosigner
+too, on a cosigned account), or alone, only to a target on the account's
+rekey-to list, fixed when the account is created. A cosigned account may have
+both: a listed target with the spending key alone, any other with the cosigner
+too. Its spending conditions, such as a recipient list or an unlock round, do
+not apply to a rekey. The compiled fee ceiling applies to both
 spending and rekeying; the general bounded type sets it to 10,000 microAlgos
 (0.01 ALGO) per protected transaction. This is a ceiling, not a fixed fee or
 a guarantee that every path is viable under every network fee schedule.
@@ -87,18 +89,25 @@ bound.
 |---|---|---|
 | Allowlist | Self or a recipient list | Spending key alone, to any address |
 | Locked Allowlist | Self or a recipient list | Spending key alone, only to an address on the rekey-to list |
-| Corridor | Self or membership in a Merkle recipient list, plus a Falcon cosigner signature for every spend | None: the account can never be rekeyed |
+| Corridor | Self or membership in a Merkle recipient list, plus a Falcon cosigner signature for every spend | Spending key alone, only to an address on the rekey-to list; the cosigner is not asked |
 | Timelock | Transaction's first valid round must reach the configured unlock round | Spending key alone, only to an address on the rekey-to list |
 
-A timelock never lets the spending key rekey to any address: the unlock round is
-a spending condition, so a rekey would not wait for it. That applies to a listed
+A timelock never lets the spending key rekey to any address, with or without a
+cosigner: the unlock round is a spending condition, so a rekey would not wait
+for it. That applies to a listed
 rekey too, so a timelock's rekey-to list is a way around the lock, and the lock
 holds only while the holders of the listed keys cooperate.
 
 The rekey-to list holds up to 16 addresses and is compiled into the program as a
 salted Merkle root that reveals nothing about its entries. The signer keeps the
 entries and builds the proof a listed rekey needs; a rekey to any other address
-fails on chain.
+fails on chain, unless the account takes cosigned rekeys.
+
+A boundary file can also give a cosigned account a cosigned rekey: the spending
+key and the cosigner together, to any target the cosigner's policy allows, alone
+(`spending_key`) or beside a rekey-to list (`plus_cosigned`). The cosigner's
+`rekey_policy` then decides where such a rekey may go. A listed rekey never asks
+the cosigner, so its policy cannot stop one.
 
 Inline recipient lists support up to 30 addresses. The Merkle profiles support
 up to 65,536 recipients, committing to the list through a fixed root. The
@@ -108,14 +117,16 @@ cannot change the root embedded in the existing program.
 
 For a network intended to contain spending-key theft, Locked Allowlist or
 Corridor supplies an essential additional property: the spending key cannot
-remove the bounds on its own. Corridor can never be rekeyed. Locked Allowlist
-can be rekeyed only to a listed address, so a stolen spending key can at most
-hand the account to a key the owner chose in advance, and gains control only if
-it holds that key too. The Allowlist preset does not provide that. Its spending
-key can authorize a pure rekey to a different authority and then spend under
-that authority's rules. The price of refusing rekeys is that a mistake in the
-account's rules, or a lost cosigner, cannot be repaired; a rekey-to list
-leaves one way out, a handover to a listed key.
+remove the bounds on its own. Both can be rekeyed only to a listed address, so a
+stolen spending key can at most hand the account to a key the owner chose in
+advance, and gains control only if it holds that key too. The Allowlist preset
+does not provide that. Its spending key can authorize a pure rekey to a
+different authority and then spend under that authority's rules. Neither does
+a cosigned account that takes cosigned rekeys: the spending key and the
+cosigner together can rekey it anywhere. The price of refusing every other
+rekey is that a mistake in the account's rules cannot be repaired in place; the
+rekey-to list leaves one way out, a handover to a listed key, which also takes a
+Corridor account away from a lost cosigner.
 
 ## 4. Building a network with stable addresses
 
@@ -174,9 +185,11 @@ counterparties do not need a replacement address. The current program decides
 which signatures and conditions are required to authorize the change.
 
 For the Allowlist preset, the spending key can rekey the account straight to a
-replacement program. A Locked Allowlist or Timelock account can be rekeyed only
-to an address on its rekey-to list; the listed key can then rekey it onward to a
-replacement program, keeping the address. An account that refuses rekeys cannot
+replacement program, and a cosigned account that takes cosigned rekeys can do
+the same with the cosigner's signature. A Locked Allowlist, Corridor or Timelock
+account can be rekeyed only to an address on its rekey-to list; the listed key
+can then rekey it onward to a replacement program, keeping the address. An
+account with no rekey path, which only an expert template can declare, cannot
 change its destinations at all: replacing it means moving its funds, while it
 can still spend, to a new account built with the new rules, and retiring the old
 address.
@@ -185,16 +198,18 @@ address.
 
 The spending key authorizes ordinary use of the account and a pure rekey as
 well: to any address for the Allowlist preset, and only to a listed address for
-Locked Allowlist and Timelock. Corridor adds a cosigner whose
-signature is required for every spend. A Corridor account refuses rekeys, so
-it cannot leave a failed cosigner: if the cosigner is lost for good, the
-account can no longer spend. The cosigner key and the spending key should be
-distinct and separately managed.
+Locked Allowlist, Corridor and Timelock. Corridor adds a cosigner whose
+signature is required for every spend, but not for a listed rekey: if the
+cosigner is lost for good, the account can no longer spend, but the spending
+key can still hand it to a listed key. The cosigner key and the spending key
+should be distinct and separately managed.
 
 Rekey authority can remove the restrictions entirely. That is why the
-containment claim for Corridor rests on refusing rekeys, and for Locked
-Allowlist on refusing every rekey but one to a listed address, not on how well
-some rekey key is guarded. A listed key does become part of the security model:
+containment claim for Locked Allowlist and Corridor rests on refusing every
+rekey but one to a listed address, not on how well some rekey key is guarded. A
+cosigned account that takes cosigned rekeys makes no such claim: it is only as
+strong as the spending key and the cosigner together, since both keys, or a
+cosigner node whose policy is compromised, can rekey it anywhere. A listed key does become part of the security model:
 whoever holds it can take the account over once the spending key hands it on, so
 list only keys kept apart from the spending key. For a post-quantum account, a
 listed key should be post-quantum too, such as a native Falcon-1024 account; an
@@ -212,9 +227,9 @@ on-chain guarantee if the relevant private keys are compromised.
 While the bounded program remains the account's authority, every transaction
 authorized through it must meet its checks. For Locked Allowlist or Corridor,
 a stolen spending key cannot redirect an ordinary transfer outside the allowed
-recipients or replace the program with one of its own choosing: Locked
-Allowlist's program can be left only for a listed key. Corridor additionally
-requires the cosigner's participation in every spend.
+recipients or replace the program with one of its own choosing: either
+program can be left only for a listed key. Corridor additionally requires the
+cosigner's participation in every spend.
 
 That is a specific containment property, not a guarantee that the account
 cannot lose value:

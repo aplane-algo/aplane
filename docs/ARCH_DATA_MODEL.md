@@ -367,8 +367,9 @@ guarded flow: user `/sign/component`, cosigner `/sign/component`, user
 52-character txid-shaped Witness Key ID and are not Algorand spending accounts.
 
 Bounded keys with durable `bounded_authorization.cosigner` use the distinct
-`bounded-cosigner1` flow, for example a Corridor `aplane.falcon1024-b.v1` account. Their spend
-path uses `/plan`, kind-tagged `/sign/component`, and `/sign/assemble`.
+`cosigned1` flow, for example a Corridor `aplane.falcon1024-b.v1` account. Their
+spends and rekeys use `/plan`, kind-tagged `/sign/component`, and
+`/sign/assemble`; a listed rekey skips the cosigner component.
 
 Decrypted key payloads are parsed through `internal/keys.ParsePayload` and
 written through `internal/keys.MarshalPayload`. The v1 payload vocabulary is
@@ -399,19 +400,21 @@ and `/keytypes` generation metadata uses `runtime_args`.
 ### Bounded Authorization
 
 `bounded2` is the bounded authorization contract, used by both the `bounded1` and
-`bounded-cosigner1` signing choreographies. Normative field inventory, encodings, and custody
+`cosigned1` signing choreographies. Normative field inventory, encodings, and custody
 rules live in [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md). From a data-model perspective:
 
 - Durable non-secret capability is stored on the account key as
   `bounded_authorization` (signing metadata version 2), owned by
   `internal/boundedmeta` and assembled by `lsig/composeddsa` at generation.
 - Inventory advertises `signing_flow: bounded1` without a cosigner or
-  `bounded-cosigner1` with a cosigner.
+  `cosigned1` with a cosigner.
 - The stored `rekey` setting is `refused` or `spending_key`. The spending key is
-  signer-managed (`.key`). A spending-key rekey goes through ordinary `/sign`; an
-  account that declares `rekey: refused` has no rekey path unless it also carries a
-  rekey-to list (`rekey_list`: contract, depth, root), whose listed rekeys go through
-  ordinary `/sign` too. The list's entries are the stored `rekey_to` creation
+  signer-managed (`.key`). An account that declares `rekey: refused` has no rekey
+  path unless it also carries a rekey-to list (`rekey_list`: contract, depth,
+  root), *only these*; `spending_key` plus a list on a cosigned account is *plus
+  cosigned*. Without a cosigner, spending-key and listed rekeys go through ordinary
+  `/sign`; with one, every rekey goes through `cosigned1`, and the cosigner
+  record's `required_on` names `spending_rekey` beside `rekey: spending_key`. The list's entries are the stored `rekey_to` creation
   parameter, never projected to `/keys`; its salts derive from the spending key, so
   the key file and its backups are the only copy of what it needs.
 - The signer classifies each target against the account's path declaration,
@@ -872,7 +875,7 @@ Primary projections:
 HTTP authentication resolves the connection's enrolled client key to a
 `client:<fingerprint>` principal, and handlers use the process-owned product
 runtime. Clients route signing on inventory `signing_flow`
-labels (`cosigner1`, `bounded1`, `bounded-cosigner1`, `rotating1`, or empty for
+labels (`cosigner1`, `bounded1`, `cosigned1`, `rotating1`, or empty for
 plain `/sign`) and must fail closed on unknown labels.
 
 ### Admin Protocol
@@ -980,13 +983,13 @@ keys.
    `/sign/rotating/prepare` and `/sign/rotating/sign`; ordinary targets use
    `/plan` or `/sign`.
 3. Signer validates request shape and transaction network. Plain `/sign`
-   rejects guarded-account and witness key types, cosigner-gated bounded
-   spends (`bounded_cosigner_required`), and rotating accounts
+   rejects guarded-account and witness key types, every transaction of a
+   cosigner-enabled bounded account (`bounded_cosigner_required`), and rotating accounts
    (`rotating_signing_required`).
 4. Signer canonicalizes group and computes mutations (bounded planning
    classifies effects after fee pooling, and refuses a rekey to an address
-   that is not on the account's rekey-to list with
-   `bounded_rekey_target_not_listed`).
+   that is not on the rekey-to list of an account that takes no other rekey,
+   with `bounded_rekey_target_not_listed`).
 5. Signer evaluates policy for signer-controlled slots.
 6. Signer either rejects, auto-approves, or requests operator approval.
 7. Signer signs/assembles finalized slots.
@@ -1142,7 +1145,7 @@ These decisions are part of the current data model and contract surface:
 | Cosigner routing is operation-scoped runtime state. | Clients query authenticated `/keys` for each guarded or bounded-cosigner operation; no cosigner-key inventory is persisted in `endpoints.yaml`. |
 | `cosigners/<name>.json` records are public generation references. | They help the TUI select a cosigner public key but do not prove endpoint ownership or signer custody. |
 | Guarded account key files store the resolved embedded public key. | Endpoint alias, reference name, and route selection are client/runtime concerns, not sign-time authority for the key. |
-| Inventory `signing_flow` labels are frozen routing tokens. | Clients implement empty, `cosigner1`, `bounded1`, `bounded-cosigner1`, and `rotating1` and fail closed on unknown labels. |
+| Inventory `signing_flow` labels are frozen routing tokens. | Clients implement empty, `cosigner1`, `bounded1`, `cosigned1`, and `rotating1` and fail closed on unknown labels. A choreography change mints a new label (`cosigned1` replaced `bounded-cosigner1`), so an old client refuses the key. |
 | Live `/sign` responds with `GroupSignResponse`. | There is no separate signerapi `SignResponse` DTO. |
 | Recovery material is released only by explicit local native-key export. | `export_key` requires local IPC, authorization, an unlocked healthy store and fresh passphrase verification; only native Ed25519/Falcon are eligible. Generate results still omit mnemonics. |
 | `internal/signerapp/signing` uses SDK DTOs at the service boundary. | It is not a duplicate durable authority; request DTO changes belong in `pkg/signerapi` with fixtures. |
@@ -1274,7 +1277,7 @@ and [ARCH_ADMIN.md](ARCH_ADMIN.md#admin-protocol-contract).
 | DSA LogicSig key | signing authority | `.key` category `dsa_lsig` | address, bytecode, private signing key, signing args | `internal/keys`, `internal/signerapp/signing`, `lsig/*` | Stored bytecode and `signing_args` are sign-time authority. |
 | Generic LogicSig key | signing authority | `.key` category `generic_lsig` | address, bytecode, runtime arg schema | `internal/keys`, `lsig/generictemplate` | TEAL-only key stores no private signing key; address derives from bytecode. |
 | Guarded account key | signing/assembly authority | `.key` category `dsa_lsig`, key type `aplane.falcon1024-cosigner1024.v1` | local user-role key plus embedded cosigner public key | `lsig/falcon1024_guarded`, `internal/signerapp/signing` | `/sign` rejects; inventory uses `signing_flow: cosigner1`; user-role `/sign/component` and `/sign/assemble` use stored bytecode/params. |
-| Bounded-cosigner account key | signing/assembly authority | `.key` category `dsa_lsig`, bounded metadata with `cosigner` (for example a Corridor `aplane.falcon1024-b.v1` account) | local base key, bytecode, bounded metadata, embedded cosigner public key | `lsig/composeddsa`, `internal/boundedmeta`, `internal/signerapp/signing` | `/sign` rejects cosigner-gated spend; inventory uses `signing_flow: bounded-cosigner1`; bounded component and assembly endpoints consume stored metadata. |
+| Bounded-cosigner account key | signing/assembly authority | `.key` category `dsa_lsig`, bounded metadata with `cosigner` (for example a Corridor `aplane.falcon1024-b.v1` account) | local base key, bytecode, bounded metadata, embedded cosigner public key | `lsig/composeddsa`, `internal/boundedmeta`, `internal/signerapp/signing` | `/sign` rejects every transaction of the account; inventory uses `signing_flow: cosigned1`; bounded component and assembly endpoints consume stored metadata. |
 | Bounded account key metadata | signing authority metadata | key payload `bounded_authorization` at `signing_metadata_version: 2` | inventory `bounded_authorization` / path sizing | `internal/boundedmeta`, `lsig/composeddsa`, `internal/keys`, `internal/signerapp/signing` | Required for bounded (`bounded2`) DSA keys. |
 | Cosigner witness key | component-sign authority | `.cos` category `witness`, key type `aplane.witness-*` | raw cosigner-role witness key | `internal/keygen`, `internal/signing`, `internal/signerapp/signing` | Selected by Witness Key ID; `/sign` rejects; cosigner-role `/sign/component` only; not a spending account. |
 | Witness Key ID | public selector | 52-character uppercase base32 SHA-512/256 of canonical length-prefixed domain, key type, and public key bytes | cosigner key row `address`, public reference `witness_key_id`, and cosigner `component_key` fields | `internal/witness` | Txid-shaped but not a valid Algorand address; rejected where an Algorand address is required. |
@@ -1282,7 +1285,7 @@ and [ARCH_ADMIN.md](ARCH_ADMIN.md#admin-protocol-contract).
 | Key creation parameters | provenance/generation input | key payload `parameters` | `/keys` `parameters`, key details | `internal/keys`, `internal/keymgmt` | Canonical payload parser rejects duplicate object members, unknown fields, and noncanonical aliases. |
 | LogicSig bytecode | signing authority | key payload `lsig_bytecode` | LogicSig address and signing assembly | `internal/keys`, `internal/signerapp/signing` | Bytecode must derive an off-curve address. |
 | Signing args | signing authority | key payload `signing_args` | `internal/signingargs.Info`, `/keys` `signing_args` | `internal/signingargs`, `internal/keys` | Per-key snapshot; distinct from `/keytypes` runtime args. |
-| Signing flow label | wire/runtime routing projection | inventory `signing_flow` on `/keys` and `/keytypes` | client route selection (`cosigner1`, `bounded1`, `bounded-cosigner1`, `rotating1`, or empty) | `pkg/signerapi`, `internal/signerapp/rest`, clients | Frozen labels; unknown flows fail closed; empty means ordinary `/sign`. |
+| Signing flow label | wire/runtime routing projection | inventory `signing_flow` on `/keys` and `/keytypes` | client route selection (`cosigner1`, `bounded1`, `cosigned1`, `rotating1`, or empty) | `pkg/signerapi`, `internal/signerapp/rest`, clients | Frozen labels; unknown flows fail closed; empty means ordinary `/sign`. |
 | LogicSig derivation record | signing authority metadata | key payload `lsig_derivation` and compatibility-only `salt_counter` | stored final-bytecode derivation contract | `internal/lsigsalt`, `internal/keys` | Current `algod_v13_auto_salt` keys require final TEAL v13+ bytecode and forbid `salt_counter`; compatible manual-counter keys require it. Unknown or internally inconsistent derivation records reject scan/restore/signing. |
 | Base key type | signing authority metadata | key payload `base_key_type` | base provider lookup for DSA keys | `internal/keys`, `internal/signerapp/signing` | Required for composed/DSA signing that needs base provider ops. |
 | Template fingerprint | provenance | key payload `template_fingerprint` | inventory provenance status/note | `internal/lsigprovider`, `internal/keys` | Behavior-only and versioned (`<n>:` prefix); identifier-independent (base key types projected to stable `base_primitive` tokens); provenance only, conflicts do not block signing; cross-version or malformed comparisons are "not comparable" (benign, not a conflict). |

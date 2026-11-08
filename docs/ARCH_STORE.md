@@ -1351,9 +1351,10 @@ Bounded signing-metadata version 2 additionally requires the canonical
 - `base_signature_arg_layout`: exact base arg count and per-position maximums
 - `spend_effects`, `max_fee`, and `rekey`: `refused` (no rekey path, except to a
   listed address when `rekey_list` is set) or `spending_key` (the spending key
-  alone authorizes a pure rekey); a cosigner requires `refused`
+  authorizes a pure rekey: alone, or with the cosigner on a cosigned account)
 - optional `rekey_list`: `contract` (`rekey_list1`), `depth` (4), and the
-  account's `root`; only beside `rekey: refused` and without a cosigner. Its
+  account's `root`; beside `rekey: refused` (*only these*), or beside
+  `rekey: spending_key` with a cosigner (*plus cosigned*). Its
   entries are the stored `rekey_to` creation parameter, and its salts derive from
   the spending key, so the key file carries everything a listed rekey needs
 - `runtime_args` and `derived_args`: canonical declarations, possibly empty;
@@ -1365,8 +1366,9 @@ Bounded signing-metadata version 2 additionally requires the canonical
   `fixed_allowlist_custom`, `merkle_allowlist_custom`, `timelock`,
   `fixed_allowlist_timelock`, `merkle_allowlist_timelock`, or `none`
 - optional `cosigner`: contract, witness key type, resolved public key and Witness
-  Key ID, maximum signature size, and exact `[spend]` path; its argument slot
-  source is `cosigner`
+  Key ID, maximum signature size, and `required_on`, exactly `[spend]`, or
+  `[spend, spending_rekey]` beside `rekey: spending_key`; its argument slot source
+  is `cosigner`, required on those paths and forbidden on `listed_rekey`
 - the final stored bytecode plus `argument_layout` and the durable opcode
   profile are the independent sources for program, argument, and opcode budgets
 

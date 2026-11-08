@@ -232,8 +232,8 @@ Policy fields by domain:
 |-------|--------|---------|
 | `transaction_types` `reject` | common | Reject every transaction of that type; evaluated first and suppresses the other transaction guards; transfer-routing deny verdicts for the same transaction may still be listed alongside it |
 | `rekeys` | signer | The signer's rejection rule for a non-zero `RekeyTo`: `reject_all_rekeys`, `reject_foreign_rekey` (the default: reject a target the product signer runtime does not hold, unless it is on the signing account's own rekey-to list), or `allow_rekeys` |
-| `reject_rekey` | cosigner | Coarse deny-all switch for transactions with non-zero `RekeyTo` |
-| `rekey_policy` | cosigner | Allow-list for pure 0 ALGO self-payment rekeys by sender and rekey target |
+| `reject_rekey` | cosigner | Reject every transaction with non-zero `RekeyTo` the cosigner is asked to sign; a listed rekey on a bounded account never asks it |
+| `rekey_policy` | cosigner | Allow-list for pure 0 ALGO self-payment rekeys by sender and rekey target; on a bounded account it picks cosigned-rekey targets only |
 | `reject_close_remainder` | common | Reject payment transactions with non-zero `CloseRemainderTo` |
 | `reject_asset_close` | common | Reject ASA transfers with non-zero `AssetCloseTo` |
 | `reject_clawback` | common | Reject ASA clawback transactions using `AssetSender` |
@@ -260,13 +260,21 @@ outranks all of those. None of the three rejects the signer's own protocol
 rekeys (a rotation's next stage), so a rotating account keeps spending under
 `reject_all_rekeys`. A `Config` never given a value rejects every rekey. A held rotating account is never an acceptable target: the signer
 refuses that rekey before policy runs, whatever the policy says (see
-[ARCH_SIGNING.md](ARCH_SIGNING.md)). `reject_rekey` is the cosigner coarse-deny analog and ignores key
-ownership: when true, any non-zero `RekeyTo` rejects. When it is false, the
-cosigner still fails closed unless `rekey_policy.allowed` authorizes the exact
-sender-to-target edge and the target transaction is a pure 0 ALGO
-self-payment with no close remainder.
-This cosigner-domain rekey surface applies to dedicated `cosigner1` guarded
-accounts. A Corridor v1 account refuses rekeys, so cosigner policy never sees one.
+[ARCH_SIGNING.md](ARCH_SIGNING.md)). `reject_rekey` is the cosigner analog and ignores key
+ownership: when true, it rejects every rekey the cosigner is asked to sign. When
+it is false, the cosigner still fails closed unless `rekey_policy.allowed`
+authorizes the exact sender-to-target edge and the target transaction is a pure
+0 ALGO self-payment with no close remainder.
+
+This cosigner-domain rekey surface sees every rekey of a dedicated `cosigner1`
+guarded account, and every cosigned rekey of a bounded account: a spending-key
+rekey on a cosigned account, or an unlisted target under *plus cosigned*. A
+listed rekey takes the spending key alone and never asks the cosigner, so on an
+account with a rekey-to list `reject_rekey: true` does not stop a rekey to a
+listed address, and `rekey_policy` picks only cosigned-rekey targets. The list is
+the owner's standing statement, compiled into the account's program. A Corridor
+v1 account takes only listed rekeys, so its cosigner never sees a rekey. To stop
+listed rekeys, use the signer's `rekeys: reject_all_rekeys`.
 
 Network-scoped rules derive transaction network identity from `GenesisHash`,
 not `GenesisID`.
@@ -672,23 +680,31 @@ reject a transaction admitted by the LogicSig but can never widen the compiled
 envelope or raise its `max_fee`.
 
 Every transaction classified onto a bounded rekey path, spending-key
-(`spending_rekey`) or listed (`listed_rekey`), triggers the stable
-client-signing Always Review rule
-`bounded_rekey_requires_review`. The rule runs after hard
+(`spending_rekey`, cosigned or not) or listed (`listed_rekey`), triggers the
+stable client-signing Always Review rule
+`bounded_rekey_requires_review`, on ordinary `/sign` and on the `cosigned1`
+bounded-base component step alike. The rule runs after hard
 rejection and before every Always Approve or Operator Default path. It therefore
 defeats `auto_approve_self_noop_transfer` and warning configuration;
 `user_auto_approve:true` satisfies it without a prompt.
 A client intent to simulate is not an exception because apsigner releases the
 same executable signatures and receives no simulation designation.
 
-A rekey on an account with a rekey-to list to an address not on it never reaches
+A rekey on an *only these* account to an address not on its list never reaches
 policy: the planner refuses it with `bounded_rekey_target_not_listed`, because the
-program would reject it. A listed rekey does reach policy, where
+program would reject it. Under *plus cosigned* such a target is a cosigned rekey
+instead. A listed rekey does reach policy, where
 `reject_foreign_rekey` counts its target as declared (see
 [Always Deny](#always-deny)) and `reject_all_rekeys`
 rejects it. It remains a warning finding: the warning says the transaction hands
 the account to an address on its rekey-to list and, when this signer does not hold
 that address, that the account leaves this signer's custody.
+
+Policy decides on two nodes for a cosigned rekey. Signer policy and approval gate
+the spending key's base component as for any rekey; the cosigner node then
+applies `reject_rekey`, the `rekey_policy` edge and the pure shape before its key
+signs. A listed rekey is decided by signer policy and approval alone: the
+cosigner is never asked.
 
 The approval description names the operation, sender, rekey target,
 transaction fee and compiled ceiling, and authorization mode; a listed rekey's mode
@@ -867,8 +883,9 @@ Cosigner semantics:
 - `rekey_policy` is the positive authorization surface for non-zero `RekeyTo`
   transactions when `reject_rekey` is false. It authorizes only pure
   0 ALGO self-payment rekeys whose sender and target match an allowed edge.
-  Bounded-cosigner v1 does not invoke cosigner policy for rekeys; its cosigner slot
-  is spend-only and forbidden on administrative paths.
+  On a cosigned bounded account it sees cosigned rekeys only: a listed rekey
+  never asks the cosigner, so neither `rekey_policy` nor `reject_rekey` applies
+  to it.
 
 A signer document's `transfer_policy` that contains review-producing behavior
 (`on_no_route: review`, `review_above`, and similar fields) is valid for client
@@ -932,7 +949,7 @@ absent is an error, and an optional field that is absent means none.
 | `reject_close_remainder` | bool | required | required | Reject ALGO close-outs |
 | `reject_asset_close` | bool | required | required | Reject ASA close-outs |
 | `reject_clawback` | bool | required | required | Reject ASA clawbacks |
-| `reject_rekey` | bool | rejected | required | Reject every rekey; when false, `rekey_policy` decides |
+| `reject_rekey` | bool | rejected | required | Reject every rekey the cosigner is asked to sign; when false, `rekey_policy` decides |
 | `always_review_warnings` | bool | required | rejected | Send warning findings to operator review |
 | `auto_approve_self_noop_transfer` | bool | required | rejected | Auto-approve a constrained self no-op transfer |
 | `max_fee_microalgos` | amount | required | required | Reject a higher transaction fee; `"0"` is no cap |

@@ -7,6 +7,79 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## Cosigned bounded accounts can be rekeyed
+
+This release is install-fresh only.
+
+- A bounded account with a cosigner can now take rekeys. `aplane.falcon1024-b.v1`
+  offers five rekey arrangements, each with all seven spend subsets: the spending
+  key; only these; the spending key with a cosigner, a cosigned rekey that needs the
+  spending key and the cosigner, whose `rekey_policy` picks the targets; only these
+  with a cosigner, where a listed rekey takes the spending key alone and the cosigner
+  is not asked; and the new plus cosigned, which needs a cosigner: a listed target
+  takes the spending key alone, and any other target the spending key and the
+  cosigner. A timelock takes only `only_these`, with or without a cosigner, because a
+  cosigned rekey would leave the lock early too.
+- `rekey_authority=refused` is no longer offered, with or without a cosigner, so
+  every account has a way out besides its transfers. The request is refused with a
+  pointer to `only_these`. The general type has 147 shapes: 70 allowlists, 42
+  timelocks and 35 limits-only.
+- Requests take `rekey_authority=plus_cosigned` with `rekey_to`, which needs
+  `cosigner`, and `rekey_authority=spending_key` with a cosigner. Boundary files take
+  `rekey: {authority: plus_cosigned, to: [...]}`. `rekey.authority` accepts
+  `spending_key`, `only_these` and `plus_cosigned`; `refused` is refused.
+- Corridor is now a cosigner plus only these, and asks for its rekey-to list: "A
+  Merkle list and a cosigner on every spend. It can be rekeyed only to an address on
+  its rekey-to list, with the spending key alone." A Corridor account whose cosigner
+  is gone can no longer spend, but its listed key can still take it over.
+- Plus cosigned is stored as `rekey: spending_key` plus `rekey_list`, only these as
+  `rekey: refused` plus `rekey_list`. A cosigner's `required_on` is `[spend]`, or
+  `[spend, spending_rekey]` when the account takes a spending-key rekey, and the
+  cosigner slot is required on exactly those paths and forbidden on `listed_rekey`.
+  Templates can declare `bounded.rekey: plus_cosigned`, which needs a cosigner, and
+  must write `required_on: [spend, spending_rekey]` beside a spending-key rekey.
+  `rekey: refused`, with or without a cosigner, stays available to templates under
+  the rule that it keep a transfer.
+- The cosigner check is now one subroutine that the spend path and a cosigned rekey
+  both call, so the cosigner key compiles once, and every cosigned program changes
+  with it, templates' included. The cosigned shapes are new and the grammar
+  fingerprint has changed, so a review prepared before the upgrade is refused as
+  changed; prepare it again. Shapes without a cosigner keep their programs. Under
+  plus cosigned a non-empty list proof commits a rekey to the listed branch, which
+  never falls through to the cosigner. Golden vector 3 in `ARCH_BOUNDED_DSA.md` now
+  uses the plus cosigned shape.
+- `boundary_require_contained` still accepts only refused or only these accounts with
+  a recipient list. A spending-key account with a cosigner, and a plus cosigned one,
+  are only as strong as their two online keys.
+- The cosigned flow is now `cosigned1`, replacing `bounded-cosigner1`, so a client
+  that knows only the old flow refuses a cosigned key instead of asking the cosigner
+  to sign a listed rekey. It carries spends, cosigned rekeys and listed rekeys. Each
+  bounded-base component in the `/sign/component` response names its `path`
+  (`spend`, `spending_rekey` or `listed_rekey`). The client asks the cosigner for
+  every target but a listed rekey, sends no cosigner request when no target needs
+  one, and budgets a cosigned position in a mixed group on its component's path.
+- `cosigner_signature` is optional on a `bounded-cosigner` assembly target and still
+  required on a `guarded` one. `/sign/assemble` classifies the transaction again
+  against stored metadata, through the planner's function, requires the cosigner
+  signature on `spend` and `spending_rekey`, and refuses one on `listed_rekey`. A
+  wrong mark can stall a request, never weaken it. Plain `/sign` still refuses every
+  cosigned account with `bounded_cosigner_required`.
+- The cosigner node is unchanged. A cosigned rekey reaches it as any rekey does, and
+  `reject_rekey`, the `rekey_policy` edge and the pure shape decide. A listed rekey
+  never reaches it, so on an account with a rekey-to list `reject_rekey: true` no
+  longer stops every rekey: a rekey to a listed address goes through. The signer's
+  `rekeys: reject_all_rekeys` still rejects it.
+- apadmin's review reads "Spending key and cosigner" for a cosigned rekey and "These
+  N, spending key alone; others need the cosigner" for plus cosigned. Account labels
+  say "cosigned rekey" and "rekey to listed, or cosigned". apshell's summary names the
+  cosigned arrangements and says the cosigner is not asked for a listed address.
+  `prepare_generate_result.bounded.rekey_list` is also set for plus cosigned. The admin
+  protocol stays at 8.0, which is still unreleased.
+- The SDKs follow: they route `cosigned1`, read the component `path`, skip the
+  cosigner on a listed rekey, and assemble without its signature.
+- `bounded_cosigner.tla` now models spends, cosigned rekeys and listed rekeys, and
+  BS2 covers the listed rekey.
+
 ## Rekey-to lists and the signer's rekey setting
 
 This release is install-fresh only.
