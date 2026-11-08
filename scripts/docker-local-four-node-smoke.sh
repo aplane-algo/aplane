@@ -11,8 +11,11 @@
 # guarded transaction-signing flows, and corridor allowlist enforcement. It
 # also validates the guarded account with SDK intent prep plus component signing.
 # A general aplane.falcon1024-b.v1 account with the Corridor preset's rules, created
-# from a boundary file with no key type setup, carries the bounded-cosigner checks.
-# It refuses rekeys, so once its cosigner is gone it can neither spend nor be rekeyed.
+# from a boundary file with no key type setup, carries the cosigned checks. It can
+# be rekeyed only to its listed address, with the spending key alone, so once its
+# cosigner is gone it can't spend but its listed key still takes it over. A plus
+# cosigned account's other rekeys go to the real cosigner node, whose policy
+# refuses them until it allows the rekey edge.
 # Local mode uses the local Python SDK checkout; release mode uses the Python
 # package from PyPI and the TypeScript package from npm.
 
@@ -47,6 +50,8 @@ RELEASE_CACHE_DIR=""
 LOCALNET_GENESIS_HASH=""
 NETWORK_TOKEN="localnet"
 FALCON_ADDRESS=""
+ED25519_ADDRESS=""
+PLUS_COSIGNED_ADDRESS=""
 COSIGNER_COMPONENT_KEY=""
 COSIGNER_REFERENCE_NAME="docker-cosigner"
 GUARDED_ADDRESS=""
@@ -91,8 +96,9 @@ submits the same guarded 0 ALGO self-send with SDK preparation and guarded
 signing helpers. It also sends an allowlisted Corridor payment through the
 SDK's bounded-base component, cosigner component, and shared assembly choreography,
 and proves a non-allowlisted recipient is rejected. The Corridor flow also
-proves that cosigner loss blocks spend while its external admin can still rekey
-the account. By default the Python SDK comes from the local aplanesdk repo;
+proves that cosigner loss blocks spend while the account's listed key can still
+take it over, and a plus cosigned account's unlisted rekey waits on the cosigner
+node's rekey policy. By default the Python SDK comes from the local aplanesdk repo;
 with --release-install, Python comes from PyPI and TypeScript comes from npm.
 EOF
 }
@@ -1513,15 +1519,18 @@ resolve_corridor_addresses() {
     [ "$CORRIDOR_ALLOWED_ADDRESS" != "$CORRIDOR_BLOCKED_ADDRESS" ] || die "corridor allowed and blocked addresses resolved to the same account"
 }
 
-# Takes an optional extra boundary line, such as an unlock round.
+# Takes an optional extra boundary line, such as an unlock round, and a rekey
+# authority, only_these by default. The rekey-to list is the Falcon key.
 generate_general_bounded_key() {
     local extra_line="${1:-}"
+    local authority="${2:-only_these}"
     [ -n "$COSIGNER_COMPONENT_KEY" ] || die "Witness Key ID is not set"
     [ -n "$CORRIDOR_ALLOWED_ADDRESS" ] || die "corridor allowed address is not set"
+    [ -n "$FALCON_ADDRESS" ] || die "Falcon rekey-to address is not set"
 
     local boundary_file="/home/$TEST_USER/aplane/boundary.yaml"
-    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'schema: aplane.boundary.v1\nspend: [pay, axfer, asset_opt_in]\nrecipients:\n  - %s\nencoding: merkle\nrekey:\n  authority: refused\ncosigner: %s\n%s\n' \
-        '$CORRIDOR_ALLOWED_ADDRESS' '$COSIGNER_COMPONENT_KEY' '$extra_line' > '$boundary_file'"
+    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'schema: aplane.boundary.v1\nspend: [pay, axfer, asset_opt_in]\nrecipients:\n  - %s\nencoding: merkle\nrekey:\n  authority: %s\n  to:\n    - %s\ncosigner: %s\n%s\n' \
+        '$CORRIDOR_ALLOWED_ADDRESS' '$authority' '$FALCON_ADDRESS' '$COSIGNER_COMPONENT_KEY' '$extra_line' > '$boundary_file'"
     docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'connect\ngenerate aplane.falcon1024-b.v1 boundary=%s\nkeys\n' \
         '$boundary_file' > /tmp/generate-general-bounded.script"
     local out
@@ -1537,27 +1546,144 @@ generate_general_bounded_key() {
         || die "aplane.falcon1024-b.v1 result did not report the requested cosigner"
     grep -Fq 'Merkle allowlist' <<<"$out" \
         || die "keys did not describe the aplane.falcon1024-b.v1 account"
-    grep -Fq 'no rekey' <<<"$out" \
-        || die "keys did not report that the aplane.falcon1024-b.v1 account refuses rekeys"
+    local label='rekey to listed only'
+    if [ "$authority" = plus_cosigned ]; then
+        label='rekey to listed, or cosigned'
+    fi
+    grep -Fq "$label" <<<"$out" \
+        || die "keys did not describe the aplane.falcon1024-b.v1 account's rekey as '$label'"
 }
 
-# A general account that refuses rekeys has no admin to fall back on: the signer
-# refuses its rekey before anything reaches the network.
-verify_general_bounded_rekey_refused() {
-    [ -n "$GENERAL_BOUNDED_ADDRESS" ] || die "aplane.falcon1024-b.v1 address is not set"
-    [ -n "$FALCON_ADDRESS" ] || die "Falcon rekey target is not set"
+# run_apshell_rekey rekeys an account through apshell and prints the output. It
+# never fails on its own: the callers decide what the output must say.
+run_apshell_rekey() {
+    local account="$1" target="$2" script="$3"
+    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'connect\nrekey %s to %s\n' '$account' '$target' > /tmp/$script.script"
+    docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \
+        apshell -script /tmp/$script.script 2>&1" || true
+}
 
-    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'connect\nrekey %s to %s\n' \
-        '$GENERAL_BOUNDED_ADDRESS' '$FALCON_ADDRESS' > /tmp/rekey-general-bounded.script"
+# account_auth_address prints an account's authorizer, empty when it signs for itself.
+account_auth_address() {
+    local address="$1"
+    docker_exec_as_tester "$CLIENT_CONTAINER" "curl -fsS -H 'X-Algo-API-Token: $ALGOD_TOKEN' '$ALGOD_URL/v2/accounts/$address?exclude=all'" \
+        | tr -d ' \n' | grep -o '"auth-addr":"[A-Z2-7]*"' | cut -d'"' -f4 || true
+}
+
+# wait_for_auth_address waits for an account's authorizer to become target.
+wait_for_auth_address() {
+    local address="$1" target="$2" what="$3" auth i
+    for i in $(seq 1 20); do
+        auth="$(account_auth_address "$address")"
+        [ "$auth" = "$target" ] && return 0
+        sleep 1
+    done
+    die "$what: authorizer is '${auth:-none}', want $target"
+}
+
+# An unlisted rekey is refused at the signer before anything reaches the network
+# or the cosigner: the account takes no rekey but to its listed address.
+verify_general_bounded_unlisted_rekey_refused() {
+    [ -n "$GENERAL_BOUNDED_ADDRESS" ] || die "aplane.falcon1024-b.v1 address is not set"
+    [ -n "$CORRIDOR_BLOCKED_ADDRESS" ] || die "unlisted rekey target is not set"
     local out
-    out="$(docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \
-        apshell -script /tmp/rekey-general-bounded.script 2>&1")" || true
+    out="$(run_apshell_rekey "$GENERAL_BOUNDED_ADDRESS" "$CORRIDOR_BLOCKED_ADDRESS" rekey-general-unlisted)"
     printf '%s\n' "$out"
-    grep -Fq 'permanently disables rekey' <<<"$out" \
-        || die "the signer did not refuse a rekey of an aplane.falcon1024-b.v1 account that refuses rekeys"
-    if grep -Fq 'Transaction confirmed' <<<"$out"; then
-        die "an aplane.falcon1024-b.v1 account that refuses rekeys was rekeyed"
+    grep -Fq "is not on this account's rekey-to list" <<<"$out" \
+        || die "the signer did not refuse an unlisted rekey of an aplane.falcon1024-b.v1 account"
+    [ -z "$(account_auth_address "$GENERAL_BOUNDED_ADDRESS")" ] \
+        || die "an aplane.falcon1024-b.v1 account was rekeyed to an unlisted address"
+}
+
+# The listed rekey takes the spending key alone, so the listed key still takes
+# the account over after its cosigner is gone.
+verify_general_bounded_listed_rekey_without_cosigner() {
+    [ -n "$GENERAL_BOUNDED_ADDRESS" ] || die "aplane.falcon1024-b.v1 address is not set"
+    [ -n "$FALCON_ADDRESS" ] || die "Falcon listed key is not set"
+    local out
+    out="$(run_apshell_rekey "$GENERAL_BOUNDED_ADDRESS" "$FALCON_ADDRESS" rekey-general-listed)"
+    printf '%s\n' "$out"
+    grep -Fqi 'transaction submitted' <<<"$out" \
+        || die "the listed rekey of an aplane.falcon1024-b.v1 account was not submitted after cosigner deletion"
+    wait_for_auth_address "$GENERAL_BOUNDED_ADDRESS" "$FALCON_ADDRESS" "listed rekey without the cosigner"
+}
+
+# A plus cosigned account's unlisted rekey goes to the cosigner node, whose
+# policy rejects every rekey until it allows this one.
+verify_plus_cosigned_rekey_refused_by_cosigner() {
+    [ -n "$PLUS_COSIGNED_ADDRESS" ] || die "plus cosigned address is not set"
+    [ -n "$ED25519_ADDRESS" ] || die "cosigned rekey target is not set"
+    local out
+    out="$(run_apshell_rekey "$PLUS_COSIGNED_ADDRESS" "$ED25519_ADDRESS" rekey-plus-refused)"
+    printf '%s\n' "$out"
+    grep -Fq 'cosigner policy rejected request' <<<"$out" \
+        || die "the cosigner node did not refuse a plus cosigned rekey under reject_rekey"
+    [ -z "$(account_auth_address "$PLUS_COSIGNED_ADDRESS")" ] \
+        || die "a plus cosigned account was rekeyed against the cosigner's policy"
+}
+
+# allow_cosigner_rekey_edge replaces the cosigner key's document with one that
+# allows exactly the plus cosigned account's rekey to the Ed25519 key.
+allow_cosigner_rekey_edge() {
+    [ -n "$COSIGNER_COMPONENT_KEY" ] || die "Witness Key ID is not set"
+    local policy_file out
+    policy_file="$(mktemp)"
+    cat > "$policy_file" <<JSON
+{
+  "format": "aplane.policy.v1",
+  "role": "cosigner",
+  "key": "$COSIGNER_COMPONENT_KEY",
+  "reject_close_remainder": false,
+  "reject_asset_close": false,
+  "reject_clawback": false,
+  "reject_rekey": false,
+  "max_fee_microalgos": "0",
+  "transaction_types": {"*": "reject", "pay": "allow", "axfer": "allow"},
+  "transfer_policy": {
+    "routes": [
+      {"id": "docker_smoke_allow_all", "networks": ["*"], "sources": ["*"], "assets": ["*"], "destinations": ["*"]}
+    ]
+  },
+  "rekey_policy": {
+    "allowed": [
+      {"sender": "$PLUS_COSIGNED_ADDRESS", "targets": ["$ED25519_ADDRESS"]}
+    ]
+  }
+}
+JSON
+    docker cp "$policy_file" "$COSIGNER_CONTAINER:/tmp/cosigner-rekey-edge.json"
+    rm -f "$policy_file"
+    docker_exec "$COSIGNER_CONTAINER" chown "$TEST_USER:$TEST_USER" /tmp/cosigner-rekey-edge.json
+    if ! out="$(docker_exec_as_tester "$COSIGNER_CONTAINER" ". /home/$TEST_USER/aplane/apenv.sh && \
+        APSIGNER_PASSPHRASE='$TEST_PASSPHRASE' \
+        apadmin -d /home/$TEST_USER/aplane/apsigner policy apply --yes /tmp/cosigner-rekey-edge.json 2>&1")"; then
+        printf '%s\n' "$out" >&2
+        die "cosigner rekey edge apply failed"
     fi
+    printf '%s\n' "$out"
+}
+
+# Along the allowed edge the cosigner signs, and the rekey confirms.
+verify_plus_cosigned_rekey_along_edge() {
+    local out
+    out="$(run_apshell_rekey "$PLUS_COSIGNED_ADDRESS" "$ED25519_ADDRESS" rekey-plus-edge)"
+    printf '%s\n' "$out"
+    grep -Fqi 'transaction submitted' <<<"$out" \
+        || die "a plus cosigned rekey along the cosigner's rekey edge was not submitted"
+    wait_for_auth_address "$PLUS_COSIGNED_ADDRESS" "$ED25519_ADDRESS" "cosigned rekey along the edge"
+}
+
+generate_ed25519_key() {
+    local out
+    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'connect\ngenerate ed25519\n' > /tmp/generate-ed25519.script"
+    if ! out="$(docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \
+        apshell -script /tmp/generate-ed25519.script 2>&1")"; then
+        printf '%s\n' "$out" >&2
+        die "failed to generate Ed25519 key through client/signer flow"
+    fi
+    printf '%s\n' "$out"
+    ED25519_ADDRESS="$(printf '%s\n' "$out" | awk '/Generated .* key:/ { print $NF; exit }')"
+    [ -n "$ED25519_ADDRESS" ] || die "could not parse generated Ed25519 address"
 }
 
 # Run the Corridor checks against the general account. Same rules, same results.
@@ -1952,6 +2078,19 @@ main() {
         run_typescript_sdk_guarded_validate
     fi
 
+    log "Generating Falcon key through client/signer flow"
+    generate_falcon_key
+
+    log "Funding generated Falcon key on $NETWORK_TOKEN"
+    fund_falcon_key
+    verify_falcon_funded
+
+    log "Validating generated Falcon key with 0 ALGO self-send"
+    validate_falcon_self_send
+
+    log "Generating Ed25519 key as a cosigned rekey target"
+    generate_ed25519_key
+
     log "Resolving Corridor recipient accounts on $NETWORK_TOKEN"
     resolve_corridor_addresses
 
@@ -1981,22 +2120,27 @@ main() {
     log "Verifying aplane.falcon1024-b.v1 timelock allowlisted recipient succeeds"
     with_general_bounded_account validate_corridor_allowed_send
 
+    log "Generating plus cosigned aplane.falcon1024-b.v1 account"
+    generate_general_bounded_key "" plus_cosigned
+    PLUS_COSIGNED_ADDRESS="$GENERAL_BOUNDED_ADDRESS"
+    with_general_bounded_account fund_corridor_key
+    with_general_bounded_account verify_corridor_funded
+
+    log "Verifying the cosigner node refuses a plus cosigned rekey under reject_rekey"
+    verify_plus_cosigned_rekey_refused_by_cosigner
+
+    log "Allowing the plus cosigned rekey edge on the cosigner node"
+    allow_cosigner_rekey_edge
+
+    log "Verifying a plus cosigned rekey along the edge confirms"
+    verify_plus_cosigned_rekey_along_edge
+
     log "Generating aplane.falcon1024-b.v1 account for the cosigner-loss checks"
     generate_general_bounded_key
 
     log "Funding generated aplane.falcon1024-b.v1 account on $NETWORK_TOKEN"
     with_general_bounded_account fund_corridor_key
     with_general_bounded_account verify_corridor_funded
-
-    log "Generating Falcon key through client/signer flow"
-    generate_falcon_key
-
-    log "Funding generated Falcon key on $NETWORK_TOKEN"
-    fund_falcon_key
-    verify_falcon_funded
-
-    log "Validating generated Falcon key with 0 ALGO self-send"
-    validate_falcon_self_send
 
     log "Verifying client can reach signer with its enrolled key"
     verify_signer_reachable
@@ -2013,8 +2157,11 @@ main() {
     log "Verifying aplane.falcon1024-b.v1 spend fails after cosigner key deletion"
     with_general_bounded_account validate_corridor_send_after_cosigner_delete_fails
 
-    log "Verifying the signer refuses to rekey aplane.falcon1024-b.v1"
-    verify_general_bounded_rekey_refused
+    log "Verifying the signer refuses an unlisted rekey of aplane.falcon1024-b.v1"
+    verify_general_bounded_unlisted_rekey_refused
+
+    log "Verifying the listed key takes aplane.falcon1024-b.v1 over without the cosigner"
+    verify_general_bounded_listed_rekey_without_cosigner
 
     log "Shutting down nodes"
     shutdown_nodes
