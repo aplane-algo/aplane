@@ -507,10 +507,12 @@ func TestEmptyBoundsValuesAreUnset(t *testing.T) {
 		{name: "empty unlock round", base: listed, mutate: func(p map[string]string) { p[plainhost.ParameterUnlockRound] = "" }, want: inline},
 		{name: "empty encoding", base: listed, mutate: func(p map[string]string) { p[plainhost.ParameterListEncoding] = "" }, want: inline},
 		{name: "empty recipient scope", base: listed, mutate: func(p map[string]string) { p[plainhost.ParameterRecipientScope] = "" }, want: inline},
+		// An empty cosigner is refused, never read as no cosigner: that would
+		// create a weaker account than the request named.
 		{name: "empty cosigner key", base: cosignedOnlyThese, mutate: func(p map[string]string) { p[composeddsa.BoundedCosignerPublicKeyParameter] = "" },
-			want: plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingInline, Rekey: plainhost.RekeyOnlyThese}},
+			wantErr: "cosigner_public_key is empty"},
 		{name: "empty cosigner name", base: cosignedOnlyThese, mutate: func(p map[string]string) { p[plainhost.ParameterCosigner] = "" },
-			want: plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingInline, Rekey: plainhost.RekeyOnlyThese, Cosigner: true}},
+			wantErr: "cosigner is empty"},
 		{name: "empty rekey_to with a spending-key rekey", base: listed, mutate: func(p map[string]string) { p[plainhost.ParameterRekeyTo] = "" }, want: inline},
 		{name: "empty list with scope any", base: limits, mutate: func(p map[string]string) { p[plainhost.ParameterRecipients] = "" }, want: limits},
 		{name: "empty list with a timelock", base: listed, mutate: func(p map[string]string) {

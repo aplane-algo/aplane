@@ -866,7 +866,10 @@ On a per-key type that offers a cosigner (`cosigner_component_key_type`) and dec
 (`overlay_form.go`): the bounds as one group first (a preset's fields, every bounds
 field under Custom bounds, none under No bounds), then three controls over `cosigner`,
 `rekey_to` and `rekey_authority`: Require a cosigner, Add rekey-to addresses, and Allow
-rekeys (Rekey-to option once the list has addresses). The cosigner is the picker,
+rekeys (Rekey-to option once the list has addresses). The form the Cosigners manager
+opens, with no preset, has no bounds. An optional bounds choice (the recipient scope
+and the list encoding under Custom bounds) starts as "Not set" and is left out of the
+request until the operator picks one. The cosigner is the picker,
 optional unless a preset needs it, and Backspace clears it; its label names the
 algorithm of the cosigner key type. The rekey control offers the type's declared
 settings that fit: `refused` ("No, never") and `spending_key` ("Yes, spending key

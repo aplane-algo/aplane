@@ -191,8 +191,8 @@ func boundedFingerprintProjection(profile *BoundedAuthorizationProfile, metadata
 	return boundedFingerprint{CanonicalProfileHex: hex.EncodeToString(encoded)}
 }
 
-// CanonicalBoundedProfile encodes a profile using the bounded binary contract, which template fingerprints and the general type's boundary digest
-// hash.
+// CanonicalBoundedProfile encodes a profile using the bounded binary contract,
+// which template fingerprints and the plain hosts' boundary digest hash.
 func CanonicalBoundedProfile(profile *BoundedAuthorizationProfile, metadata *boundedmeta.Metadata) ([]byte, error) {
 	canonical, err := validatedBoundedProfile(profile, metadata)
 	if err != nil {

@@ -38,8 +38,7 @@ This release is install-fresh only.
 - Both plain hosts report `boundary_schema` `aplane.boundary.v1`. One grammar fingerprint
   per base covers every arrangement and shape, and the boundary digest is
   `APLANE_HOST_BOUNDARY_V1` under schema `aplane.boundary.v1`; the plain host's own
-  `aplane.plain-host.v1` name is gone. Empty request values are unset on every request,
-  bounded ones included.
+  `aplane.plain-host.v1` name is gone.
 - Boundary files apply to the plain type they are used with (`generate
   aplane.falcon1024.v1 --boundary rules.yaml`, apadmin's Load boundary file). A file may
   leave out `spend`: it then describes an overlays-only `plain1` account and can't name
@@ -48,8 +47,15 @@ This release is install-fresh only.
 - apadmin's Generate on a plain type opens the preset screen: **No bounds**, the presets,
   **Custom bounds** (every bounds field in the overlay form, without a file) and **Load
   boundary file**. It lists titles, with the selected row's description, so every row
-  fits 80x24. A bounded form's rekey control offers "No, never" too. The Corridor v1
-  profile is the Corridor preset of `aplane.falcon1024.v1`.
+  fits 80x24. A bounded form's rekey control offers "No, never" too, and Custom bounds
+  leaves the recipient scope and list encoding unset until chosen. The review names an
+  Ed25519 account's classical spending key with bounds too, and says a timelock can be
+  left by any rekey path it has. The Corridor v1 profile is the Corridor preset of
+  `aplane.falcon1024.v1`.
+- A request that names a cosigner but gives an empty value is refused rather than read
+  as no cosigner; any other empty value is unset. The bounded shapes are built on first
+  use, so a process that never selects one, such as a client, doesn't build them at
+  start.
 - The O4 agreement harness runs every shape of both bases and every arrangement (about
   600 programs) against its corpus. The general type's names are on `test/arch`'s
   retired list.

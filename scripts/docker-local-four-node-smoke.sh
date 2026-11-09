@@ -1782,9 +1782,9 @@ verify_general_bounded_unlisted_rekey_refused() {
     out="$(run_apshell_rekey "$GENERAL_BOUNDED_ADDRESS" "$CORRIDOR_BLOCKED_ADDRESS" rekey-general-unlisted)"
     printf '%s\n' "$out"
     grep -Fq "is not on this account's rekey-to list" <<<"$out" \
-        || die "the signer did not refuse an unlisted rekey of an bounded aplane.falcon1024.v1 account"
+        || die "the signer did not refuse an unlisted rekey of a bounded aplane.falcon1024.v1 account"
     [ -z "$(account_auth_address "$GENERAL_BOUNDED_ADDRESS")" ] \
-        || die "an bounded aplane.falcon1024.v1 account was rekeyed to an unlisted address"
+        || die "a bounded aplane.falcon1024.v1 account was rekeyed to an unlisted address"
 }
 
 # The listed rekey takes the spending key alone, so the listed key still takes
@@ -1796,7 +1796,7 @@ verify_general_bounded_listed_rekey_without_cosigner() {
     out="$(run_apshell_rekey "$GENERAL_BOUNDED_ADDRESS" "$FALCON_ADDRESS" rekey-general-listed)"
     printf '%s\n' "$out"
     grep -Fqi 'transaction submitted' <<<"$out" \
-        || die "the listed rekey of an bounded aplane.falcon1024.v1 account was not submitted after cosigner deletion"
+        || die "the listed rekey of a bounded aplane.falcon1024.v1 account was not submitted after cosigner deletion"
     wait_for_auth_address "$GENERAL_BOUNDED_ADDRESS" "$FALCON_ADDRESS" "listed rekey without the cosigner"
 }
 

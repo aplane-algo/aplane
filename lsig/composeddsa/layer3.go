@@ -41,7 +41,8 @@ const (
 	Layer3PolicyMerkleAllowlistTimelock = "merkle_allowlist_timelock"
 
 	// Layer3PolicyNone compiles no Layer 3: the bounded envelope and the spending
-	// signature are the whole spending rule. Only the general type offers it.
+	// signature are the whole spending rule. Only the plain hosts' bounds offer
+	// it, with recipient_scope=any.
 	Layer3PolicyNone = boundedmeta.Layer3PolicyNone
 
 	// BoundedInlineListMax is the audited maximum for each framework-owned

@@ -71,8 +71,8 @@ func GetValidKeyTypesWithActivated(activated []string) []string {
 		}
 	}
 
-	// Sort: standard algorithms first, then LogicSig DSAs grouped by family
-	// with fewer segments first (e.g., aplane.falcon1024.v1 before aplane.falcon1024.v1.beta).
+	// Sort: standard algorithms first, then LogicSig DSAs grouped by family,
+	// a name with fewer segments before a longer one in the same family.
 	sort.Slice(types, func(i, j int) bool {
 		li := logicsigdsa.IsLogicSigType(types[i])
 		lj := logicsigdsa.IsLogicSigType(types[j])

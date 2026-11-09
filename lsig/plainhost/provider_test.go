@@ -283,10 +283,8 @@ func TestPlainHostGrammarGoldens(t *testing.T) {
 func TestEmptyParametersAreUnset(t *testing.T) {
 	provider := bases(t)[0].provider
 	form := map[string]string{
-		plainhost.ParameterRekeyAuthority:             plainhost.RekeyRefused,
-		plainhost.ParameterRekeyTo:                    "",
-		plainhost.ParameterCosigner:                   "",
-		composeddsa.BoundedCosignerPublicKeyParameter: " ",
+		plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused,
+		plainhost.ParameterRekeyTo:        "",
 	}
 	instance, err := provider.ResolveInstance(form)
 	if err != nil || instance.Bounded == nil || instance.Bounded.Cosigner != nil || instance.Bounded.RekeyList != nil {
@@ -302,5 +300,34 @@ func TestEmptyParametersAreUnset(t *testing.T) {
 	}
 	if err := provider.ValidateCreationParams(map[string]string{"recipients": "X"}); err == nil {
 		t.Fatal("the plain program accepted a parameter")
+	}
+	// An empty cosigner is refused rather than read as none, on every entry point.
+	for _, name := range []string{plainhost.ParameterCosigner, composeddsa.BoundedCosignerPublicKeyParameter} {
+		named := map[string]string{plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused, name: " "}
+		if _, err := provider.ResolveInstance(named); err == nil || !strings.Contains(err.Error(), name+" is empty") {
+			t.Fatalf("ResolveInstance(empty %s) error = %v", name, err)
+		}
+		if err := provider.ValidateCreationParams(named); err == nil {
+			t.Fatalf("ValidateCreationParams accepted an empty %s", name)
+		}
+		if _, err := provider.GenerateTEAL(make([]byte, 32), named); err == nil {
+			t.Fatalf("GenerateTEAL accepted an empty %s", name)
+		}
+	}
+}
+
+// Building every shape costs more than a process start should, so a host builds
+// them on first use, and a request without bounds doesn't need them.
+func TestShapesAreBuiltOnFirstUse(t *testing.T) {
+	for _, b := range bases(t) {
+		if b.provider.ShapesBuiltForTest() {
+			t.Fatalf("%s built its shapes at registration", b.name)
+		}
+		if err := b.provider.ValidateCreationParams(request(plainhost.RekeyRefused)); err != nil || b.provider.ShapesBuiltForTest() {
+			t.Fatalf("%s: an overlays-only check built the shapes (err %v)", b.name, err)
+		}
+		if b.provider.GrammarFingerprint() == "" || !b.provider.ShapesBuiltForTest() {
+			t.Fatalf("%s: the grammar fingerprint did not build the shapes", b.name)
+		}
 	}
 }

@@ -13,8 +13,8 @@ import (
 	"github.com/aplane-algo/aplane/lsig/generictemplate"
 )
 
-// The overlay choices. On a key type that takes the overlays (the plain hosts and
-// the general bounded type), Generate shows the type's bounds as one block, then
+// The overlay choices. On a key type that takes the overlays (the plain hosts),
+// Generate shows the bounds a preset screen choice asks for as one block, then
 // three controls over its cosigner, rekey_to and rekey_authority parameters:
 //
 //   - Require a cosigner: the cosigner picker, labelled with the cosigner's
@@ -143,11 +143,14 @@ func (m Model) overlaySpec(keyType string, spec *paramSpec, preset *boundary.Pre
 				bounds = append(bounds, def)
 			}
 		}
-	} else {
-		for _, def := range spec.Params {
-			if !isOverlayParameter(def.Name) {
-				bounds = append(bounds, def)
-			}
+	}
+	// Without a preset (the Cosigners manager opens the form directly) the form
+	// has no bounds, as No bounds does. An optional bounds choice, which only
+	// Custom bounds offers, can be left unset: its first option is "".
+	for i, def := range bounds {
+		if !def.Required && len(def.Options) > 0 {
+			bounds[i].Options = append([]string{""}, def.Options...)
+			bounds[i].Default = ""
 		}
 	}
 
@@ -197,8 +200,11 @@ func (m Model) overlaySpec(keyType string, spec *paramSpec, preset *boundary.Pre
 			return generictemplate.ValidateParameterValues(normalized, params)
 		},
 		OptionLabel: func(name, value string) string {
-			if name == overlayRekey {
+			switch {
+			case name == overlayRekey:
 				return overlayRekeyLabel(value, cosigned)
+			case value == "":
+				return "Not set"
 			}
 			return value
 		},

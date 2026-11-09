@@ -435,3 +435,67 @@ func TestImportedCosignerFillsTheOverlayForm(t *testing.T) {
 		}
 	}
 }
+
+// Custom bounds leaves an optional choice unset until the operator picks one,
+// so a limits-only account and a timelock with no list can be made without a
+// file; and the Cosigners manager's form, which has no preset, has no bounds.
+func TestCustomBoundsLeavesChoicesUnsetAndTheManagerFormHasNone(t *testing.T) {
+	overlayInventory(t)
+	for name, test := range map[string]struct {
+		values  map[string]string
+		absent  []string
+		present map[string]string
+	}{
+		"limits-only": {
+			values:  map[string]string{boundary.ParameterSpendEffects: "pay", boundary.ParameterRecipientScope: boundary.RecipientScopeAny, overlayRekey: boundary.RekeyRefused},
+			absent:  []string{boundary.ParameterListEncoding, boundary.ParameterRecipients, boundary.ParameterUnlockRound},
+			present: map[string]string{boundary.ParameterRecipientScope: boundary.RecipientScopeAny},
+		},
+		"a timelock with no list": {
+			values: map[string]string{boundary.ParameterSpendEffects: "pay", boundary.ParameterUnlockRound: "100", overlayRekey: boundary.RekeySpendingKey},
+			absent: []string{boundary.ParameterListEncoding, boundary.ParameterRecipients, boundary.ParameterRecipientScope},
+		},
+	} {
+		m := overlayForm(t, plainEd25519KeyType, customBounds)
+		for field, value := range test.values {
+			m.forms.genericLSigParams[field] = value
+		}
+		spec := m.formSpec(t)
+		scope, _ := paramNamed(spec.Params, boundary.ParameterRecipientScope)
+		if scope.Options[0] != "" || spec.optionLabel(scope.Name, "") != "Not set" {
+			t.Fatalf("%s: recipient scope offers %v", name, scope.Options)
+		}
+		m.forms.generateFocus = len(spec.Params)
+		next, _ := m.handleGenerateParamsKeys(tea.KeyMsg{Type: tea.KeyEnter})
+		got := next.(Model)
+		if got.viewState != ViewGenerating {
+			t.Fatalf("%s: view = %v, error = %q", name, got.viewState, got.forms.generateError)
+		}
+		for _, field := range test.absent {
+			if _, ok := got.forms.pendingGenerateParams[field]; ok {
+				t.Errorf("%s: sent %s: %v", name, field, got.forms.pendingGenerateParams)
+			}
+		}
+		for field, value := range test.present {
+			if got.forms.pendingGenerateParams[field] != value {
+				t.Errorf("%s: %s = %q", name, field, got.forms.pendingGenerateParams[field])
+			}
+		}
+	}
+
+	// The manager opens the form with a cosigner and no preset.
+	m := Model{viewState: ViewGenerateParams, cosigner: cosignerState{loaded: true}}
+	index, _ := keyTypeIndex(plainFalconKeyType, getKeyTypeCount(), getKeyTypeByIndex)
+	m.forms.generateKeyType = index
+	m = m.initGenericLSigParamsForKeyType(plainFalconKeyType)
+	m.forms.genericLSigParams[overlayCosigner] = "WITNESS"
+	spec := m.formSpec(t)
+	if got := paramNames(spec.Params); !slices.Equal(got, []string{overlayCosigner, overlayList, overlayRekey}) {
+		t.Fatalf("manager form fields = %v, want the overlays alone", got)
+	}
+	m.forms.generateFocus = len(spec.Params)
+	next, _ := m.handleGenerateParamsKeys(tea.KeyMsg{Type: tea.KeyEnter})
+	if sent := next.(Model).forms.pendingGenerateParams; fmt.Sprint(sent) != fmt.Sprint(map[string]string{overlayCosigner: "WITNESS", overlayRekey: boundary.RekeyRefused}) {
+		t.Fatalf("manager form sent %v", sent)
+	}
+}

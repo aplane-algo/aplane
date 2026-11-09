@@ -778,3 +778,41 @@ func TestReviewRekeyProtectionNamesEachKind(t *testing.T) {
 		}
 	}
 }
+
+// An Ed25519 account's review says the spending key is classical with bounds
+// too, and a timelock says a rekey is a way around it on every rekey path.
+func TestBoundedReviewNamesTheClassicalKeyAndTheLockBypass(t *testing.T) {
+	ed := preparedAccount(boundedmeta.Layer3PolicyFixedAllowlist, boundary.RekeySpendingKey, true, 1)
+	ed.KeyType = "aplane.ed25519.v1"
+	ed.Bounded.Contract = boundedmeta.Contract
+	for name, test := range map[string]struct {
+		review PrepareGenerateResultMessage
+		want   string
+	}{
+		"Ed25519 with bounds": {ed, "spending key is classical"},
+		"timelock, spending key": {func() PrepareGenerateResultMessage {
+			p := preparedAccount(boundedmeta.Layer3PolicyTimelock, boundary.RekeySpendingKey, false, 0)
+			p.Parameters[unlockRoundParameter] = "100"
+			return p
+		}(), "way around the lock"},
+		"timelock, cosigned spending key": {func() PrepareGenerateResultMessage {
+			p := preparedAccount(boundedmeta.Layer3PolicyTimelock, boundary.RekeySpendingKey, true, 0)
+			p.Parameters[unlockRoundParameter] = "100"
+			return p
+		}(), "way around the lock"},
+		"timelock, plus cosigned": {func() PrepareGenerateResultMessage {
+			p := preparedAccount(boundedmeta.Layer3PolicyFixedAllowlistTimelock, boundary.RekeySpendingKey, true, 1)
+			p.Bounded.RekeyList = true
+			p.Parameters[boundedmeta.RekeyListEntriesParameter] = "TARGET"
+			p.Parameters[unlockRoundParameter] = "100"
+			return p
+		}(), "way around the lock"},
+	} {
+		review := test.review
+		m := Model{viewState: ViewGenerateReview, width: 80, height: 23, standalone: true, forms: formsState{review: &review}}
+		view := strings.Join(strings.Fields(strings.ReplaceAll(stripANSI(m.renderGenerateReview()), "║", " ")), " ")
+		if !strings.Contains(view, test.want) || !strings.Contains(view, "GENERATE") {
+			t.Errorf("%s: review lacks %q or scrolls:\n%s", name, test.want, view)
+		}
+	}
+}

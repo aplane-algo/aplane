@@ -291,8 +291,8 @@ The plain program is the same program composed accounts are built on. A cosigned
 account without bounds signs through the cosigned flow, its cosigner asked for
 every spend and cosigned rekey, and the cosigner's policy is what restricts what
 it signs. One without a cosigner signs through ordinary `/sign`, by the spending
-key alone. The Ed25519 plain host's spending key is classical, not post-quantum;
-the apadmin review says so.
+key alone. The Ed25519 plain host's spending key is classical, not post-quantum,
+with or without bounds; the apadmin review says so.
 
 Which arrangement suits an account is your choice: APlane offers every one,
 including those that protect little, such as an account whose only overlay

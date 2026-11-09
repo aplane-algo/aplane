@@ -22,6 +22,7 @@ import (
 	"maps"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
 
@@ -110,26 +111,38 @@ type program struct {
 // composers.
 type Provider struct {
 	Plain
+	base              Base
 	params            []lsigprovider.ParameterDef
 	byArrangement     map[Arrangement]*program
-	byShape           map[string]*program
-	ordered           []*program
-	grammar           string
+	arrangements      []*program
 	cosignerComponent string
+
+	// The bounded shapes, and the grammar fingerprint that covers them, are
+	// built once, on first use: there are hundreds, and a process that never
+	// selects or reviews one, such as a client, shouldn't pay for them at start.
+	shapesOnce sync.Once
+	shapesErr  error
+	byShape    map[string]*program
+	ordered    []*program
+	grammar    string
+
+	algodMu sync.Mutex
+	algod   *algod.Client
 }
 
-// Wrap builds a plain key type's arrangements and shapes. It fails if any cannot
-// be built, because the grammar must not offer a program that errors on first
-// use. Generation admission still decides per base at GenerateTEAL.
+// Wrap builds a plain key type's arrangements, and the shapes on first use. A
+// program that can't be built fails its first use; the tests build every shape
+// of every production base, so none ships. Generation admission still decides
+// per base at GenerateTEAL.
 func Wrap(plain Plain, base Base) (*Provider, error) {
 	if plain == nil || base.Ops == nil {
 		return nil, fmt.Errorf("plain host needs a plain provider and its base operations")
 	}
 	provider := &Provider{
 		Plain:         plain,
+		base:          base,
 		params:        creationParameters(),
 		byArrangement: make(map[Arrangement]*program),
-		byShape:       make(map[string]*program),
 	}
 	for _, selected := range Arrangements() {
 		composer, err := newComposer(plain, base, selected)
@@ -138,22 +151,40 @@ func Wrap(plain Plain, base Base) (*Provider, error) {
 		}
 		built := &program{descriptor: descriptor(selected), composer: composer, fingerprint: arrangementFingerprint(selected, composer)}
 		provider.byArrangement[selected] = built
-		provider.ordered = append(provider.ordered, built)
+		provider.arrangements = append(provider.arrangements, built)
 		if selected.Cosigner {
 			provider.cosignerComponent = composer.BoundedAuthorizationMetadata().Cosigner.ComponentKeyType
 		}
 	}
-	for _, shape := range Shapes() {
-		composer, err := newShapeComposer(plain, base, shape)
-		if err != nil {
-			return nil, fmt.Errorf("plain host %s, shape %s: %w", plain.KeyType(), shape.Descriptor(), err)
-		}
-		built := &program{descriptor: shape.Descriptor(), composer: composer, fingerprint: shapeFingerprint(shape, composer)}
-		provider.byShape[shape.Descriptor()] = built
-		provider.ordered = append(provider.ordered, built)
-	}
-	provider.grammar = grammarFingerprint(plain.KeyType(), provider.ordered)
 	return provider, nil
+}
+
+// loadShapes builds every bounded shape and the grammar fingerprint, once.
+func (p *Provider) loadShapes() error {
+	p.shapesOnce.Do(func() {
+		byShape := make(map[string]*program)
+		ordered := append([]*program(nil), p.arrangements...)
+		for _, shape := range Shapes() {
+			composer, err := newShapeComposer(p.Plain, p.base, shape)
+			if err != nil {
+				p.shapesErr = fmt.Errorf("plain host %s, shape %s: %w", p.KeyType(), shape.Descriptor(), err)
+				return
+			}
+			built := &program{descriptor: shape.Descriptor(), composer: composer, fingerprint: shapeFingerprint(shape, composer)}
+			byShape[shape.Descriptor()] = built
+			ordered = append(ordered, built)
+		}
+		p.algodMu.Lock()
+		defer p.algodMu.Unlock()
+		if p.algod != nil {
+			for _, built := range byShape {
+				built.composer.SetAlgodClient(p.algod)
+			}
+		}
+		p.byShape, p.ordered = byShape, ordered
+		p.grammar = grammarFingerprint(p.KeyType(), ordered)
+	})
+	return p.shapesErr
 }
 
 // MustWrap is Wrap for registration, where a plain host that can't be built is a
@@ -259,7 +290,7 @@ func creationParameters() []lsigprovider.ParameterDef {
 			Label:       "Rekey Authority",
 			Description: "How the account can be rekeyed: never (refused); by the spending key, with the cosigner too on a cosigned account (spending_key); by the spending key alone, only to an address on its rekey-to list (only_these); or by the spending key alone to a listed address and with the cosigner to any other (plus_cosigned).",
 			Type:        "string",
-			Options:     RekeyAuthorities,
+			Options:     slices.Clone(RekeyAuthorities),
 		},
 		{
 			Name:        ParameterRekeyTo,
@@ -272,21 +303,28 @@ func creationParameters() []lsigprovider.ParameterDef {
 	}
 }
 
-// present drops parameters whose value is empty: a form sends every field, and
-// an empty one is unset, as creation-parameter normalization treats it.
-func present(params map[string]string) map[string]string {
+// present drops parameters whose value is empty, as creation-parameter
+// normalization treats them: an empty list or option is unset. An empty cosigner
+// is refused instead: a request that names one but gives no value is ambiguous,
+// and reading it as no cosigner would create a weaker account than asked for.
+func present(params map[string]string) (map[string]string, error) {
 	out := make(map[string]string, len(params))
 	for name, value := range params {
 		if strings.TrimSpace(value) != "" {
 			out[name] = value
+			continue
+		}
+		if name == ParameterCosigner || name == composeddsa.BoundedCosignerPublicKeyParameter {
+			return nil, fmt.Errorf("%s is empty; leave it out for no cosigner", name)
 		}
 	}
-	return out
+	return out, nil
 }
 
-// hasOverlays reports whether a request asks for a program other than the plain
-// one: any overlay or bounds parameter with a value does.
-func hasOverlays(params map[string]string) bool {
+// hasContract reports whether a request asks for a program other than the plain
+// one, a plain1 or bounded2 contract: any overlay or bounds parameter with a
+// value does.
+func hasContract(params map[string]string) bool {
 	for _, name := range []string{ParameterCosigner, ParameterRekeyAuthority, ParameterRekeyTo,
 		composeddsa.BoundedCosignerPublicKeyParameter, boundedmeta.RekeyListRootParameter} {
 		if _, ok := params[name]; ok {
@@ -312,6 +350,9 @@ func (p *Provider) resolve(params map[string]string) (*program, map[string]strin
 	if hasBounds(params) {
 		selected, err := selectShape(params, p.params)
 		if err != nil {
+			return nil, nil, err
+		}
+		if err := p.loadShapes(); err != nil {
 			return nil, nil, err
 		}
 		shape, ok := p.byShape[selected.shape.Descriptor()]
@@ -369,7 +410,11 @@ func composerValues(selected *program, values map[string]string) map[string]stri
 // the rekey-to list's root added when generation made one. The root is not a
 // creation parameter, so the program is resolved without it.
 func (p *Provider) resolveGenerated(params map[string]string) (*program, map[string]string, error) {
-	request, generated := composeddsa.SplitGeneratedParams(present(params))
+	params, err := present(params)
+	if err != nil {
+		return nil, nil, err
+	}
+	request, generated := composeddsa.SplitGeneratedParams(params)
 	selected, values, err := p.resolve(request)
 	if err != nil {
 		return nil, nil, err
@@ -392,8 +437,11 @@ func (p *Provider) CreationParams() []lsigprovider.ParameterDef { return p.param
 // ValidateCreationParams checks a request; no parameters is the plain program,
 // which the plain provider validates.
 func (p *Provider) ValidateCreationParams(params map[string]string) error {
-	params = present(params)
-	if !hasOverlays(params) {
+	params, err := present(params)
+	if err != nil {
+		return err
+	}
+	if !hasContract(params) {
 		if err := checkPlainProgram(params); err != nil {
 			return err
 		}
@@ -421,8 +469,11 @@ func (p *Provider) CosignerComponentKeyType(params map[string]string) (string, b
 // ResolveInstance selects the program for resolved parameters. No parameters
 // select the plain program, which has no contract.
 func (p *Provider) ResolveInstance(params map[string]string) (*lsigprovider.Instance, error) {
-	params = present(params)
-	if !hasOverlays(params) {
+	params, err := present(params)
+	if err != nil {
+		return nil, err
+	}
+	if !hasContract(params) {
 		if err := checkPlainProgram(params); err != nil {
 			return nil, err
 		}
@@ -430,6 +481,10 @@ func (p *Provider) ResolveInstance(params map[string]string) (*lsigprovider.Inst
 	}
 	selected, values, err := p.resolve(params)
 	if err != nil {
+		return nil, err
+	}
+	// The review fingerprint is the whole grammar's.
+	if err := p.loadShapes(); err != nil {
 		return nil, err
 	}
 	composer := selected.composer
@@ -468,6 +523,9 @@ func (p *Provider) StoredFingerprint(_ map[string]string, metadata *boundedmeta.
 	case boundedmeta.Contract:
 		shape, err := shapeFromMetadata(metadata)
 		if err != nil {
+			return "", err
+		}
+		if err := p.loadShapes(); err != nil {
 			return "", err
 		}
 		selected, ok := p.byShape[shape.Descriptor()]
@@ -525,11 +583,20 @@ func shapeFromMetadata(metadata *boundedmeta.Metadata) (Shape, error) {
 }
 
 // GrammarFingerprint identifies the arrangements and shapes an operator approves.
-func (p *Provider) GrammarFingerprint() string { return p.grammar }
+// A grammar whose shapes can't be built has no fingerprint, so a review against
+// it never matches.
+func (p *Provider) GrammarFingerprint() string {
+	if err := p.loadShapes(); err != nil {
+		return ""
+	}
+	return p.grammar
+}
 
 // GenerateTEAL renders the selected program.
 func (p *Provider) GenerateTEAL(publicKey []byte, params map[string]string) (string, error) {
-	if !hasOverlays(present(params)) {
+	if request, err := present(params); err != nil {
+		return "", err
+	} else if !hasContract(request) {
 		return p.Plain.GenerateTEAL(publicKey, params)
 	}
 	selected, values, err := p.resolveGenerated(params)
@@ -541,7 +608,9 @@ func (p *Provider) GenerateTEAL(publicKey []byte, params map[string]string) (str
 
 // DeriveLsig derives the selected program and its address.
 func (p *Provider) DeriveLsig(ctx context.Context, publicKey []byte, params map[string]string) ([]byte, string, error) {
-	if !hasOverlays(present(params)) {
+	if request, err := present(params); err != nil {
+		return nil, "", err
+	} else if !hasContract(request) {
 		return p.Plain.DeriveLsig(ctx, publicKey, params)
 	}
 	selected, values, err := p.resolveGenerated(params)
@@ -553,7 +622,9 @@ func (p *Provider) DeriveLsig(ctx context.Context, publicKey []byte, params map[
 
 // DeriveLsigWithSalt derives the selected program with its salt metadata.
 func (p *Provider) DeriveLsigWithSalt(ctx context.Context, publicKey []byte, params map[string]string) (lsigsalt.FindResult, error) {
-	if !hasOverlays(present(params)) {
+	if request, err := present(params); err != nil {
+		return lsigsalt.FindResult{}, err
+	} else if !hasContract(request) {
 		return p.Plain.DeriveLsigWithSalt(ctx, publicKey, params)
 	}
 	selected, values, err := p.resolveGenerated(params)
@@ -566,10 +637,14 @@ func (p *Provider) DeriveLsigWithSalt(ctx context.Context, publicKey []byte, par
 // PrepareRekeyList adds the rekey-to list's root once the spending key exists.
 // Any other request is unchanged.
 func (p *Provider) PrepareRekeyList(privateKey []byte, params map[string]string) (map[string]string, error) {
-	if !hasOverlays(present(params)) {
+	request, err := present(params)
+	if err != nil {
+		return nil, err
+	}
+	if !hasContract(request) {
 		return params, nil
 	}
-	selected, values, err := p.resolve(present(params))
+	selected, values, err := p.resolve(request)
 	if err != nil {
 		return nil, err
 	}
@@ -590,7 +665,9 @@ func (p *Provider) PrepareRekeyList(privateKey []byte, params map[string]string)
 // refuses one the network could not run within its fee ceiling, before the key
 // is persisted. The plain program has none.
 func (p *Provider) BuildBoundedAuthorizationMetadata(publicKey []byte, params map[string]string, bytecode []byte) (*boundedmeta.Metadata, error) {
-	if !hasOverlays(present(params)) {
+	if request, err := present(params); err != nil {
+		return nil, err
+	} else if !hasContract(request) {
 		return nil, nil
 	}
 	selected, values, err := p.resolveGenerated(params)
@@ -616,7 +693,14 @@ func (p *Provider) BoundedLogicSigOpcodeProfile() lsigresource.OpcodeProfile {
 // arrangement and shape.
 func (p *Provider) SetAlgodClient(client *algod.Client) {
 	p.Plain.SetAlgodClient(client)
-	for _, selected := range p.ordered {
+	for _, selected := range p.arrangements {
+		selected.composer.SetAlgodClient(client)
+	}
+	// Shapes built later take the client then.
+	p.algodMu.Lock()
+	defer p.algodMu.Unlock()
+	p.algod = client
+	for _, selected := range p.byShape {
 		selected.composer.SetAlgodClient(client)
 	}
 }
