@@ -27,9 +27,18 @@ const CurrentTemplateSchemaVersion = 2
 // ValidateTemplateSpec.
 type TemplateSpec = generictemplate.TemplateSpec
 
-// ParseTemplateSpec parses YAML data into a composed template spec.
+// ParseTemplateSpec parses YAML data into a composed template spec. A template
+// can't declare the `none` Layer 3 policy: the general type offers that account,
+// selected by recipient_scope=any, and a second route would duplicate it.
 func ParseTemplateSpec(data []byte) (*TemplateSpec, error) {
-	return generictemplate.ParseTemplateSpec(data)
+	spec, err := generictemplate.ParseTemplateSpec(data)
+	if err != nil {
+		return nil, err
+	}
+	if spec.Bounded != nil && spec.Bounded.Layer3 != nil && spec.Bounded.Layer3.Policy == Layer3PolicyNone {
+		return nil, fmt.Errorf("bounded.layer3 policy %q is offered only by the general bounded type, with recipient_scope=any", Layer3PolicyNone)
+	}
+	return spec, nil
 }
 
 // templateBaseRules answers the questions a template asks about its base.
@@ -166,12 +175,6 @@ func validateBoundedArguments(spec *generictemplate.BoundedAuthorizationSpec, pa
 	for _, parameter := range parameters {
 		parameterTypes[parameter.Name] = parameter.Type
 	}
-	rekeyUsesLayer3 := false
-	for _, operation := range spec.AdminOperations {
-		if operation.Kind == boundedmeta.AdminOperationRekey && operation.Authorization == boundedmeta.AdminAuthorizationSpend && operation.PolicyGate == boundedmeta.PolicyGateLayer3 {
-			rekeyUsesLayer3 = true
-		}
-	}
 	for _, arg := range spec.RuntimeArgs {
 		if isBoundedCosignerReservedName(arg.Name) {
 			return fmt.Errorf("bounded.runtime_args argument name %q uses reserved cosigner namespace", arg.Name)
@@ -186,28 +189,9 @@ func validateBoundedArguments(spec *generictemplate.BoundedAuthorizationSpec, pa
 			return fmt.Errorf("bounded argument name %q is duplicated", arg.Name)
 		}
 		seen[arg.Name] = struct{}{}
-		requiredSpend, requiredRekey := false, false
-		for _, path := range arg.RequiredOn {
-			switch path {
-			case boundedmeta.PathSpend:
-				if requiredSpend {
-					return fmt.Errorf("bounded.runtime_args argument %q duplicates required_on %q", arg.Name, path)
-				}
-				requiredSpend = true
-			case "rekey":
-				if requiredRekey {
-					return fmt.Errorf("bounded.runtime_args argument %q duplicates required_on %q", arg.Name, path)
-				}
-				requiredRekey = true
-			default:
-				return fmt.Errorf("bounded.runtime_args argument %q has unsupported required_on path %q", arg.Name, path)
-			}
-		}
-		if !requiredSpend {
-			return fmt.Errorf("bounded.runtime_args argument %q must be required on spend", arg.Name)
-		}
-		if requiredRekey != rekeyUsesLayer3 {
-			return fmt.Errorf("bounded.runtime_args argument %q rekey requirement does not match the Layer-3 policy gate", arg.Name)
+		// A rekey never reaches Layer 3, so a runtime argument is spend-only.
+		if len(arg.RequiredOn) != 1 || arg.RequiredOn[0] != boundedmeta.PathSpend {
+			return fmt.Errorf("bounded.runtime_args argument %q must have required_on [%s]: a rekey never reaches Layer 3", arg.Name, boundedmeta.PathSpend)
 		}
 	}
 	for _, arg := range spec.DerivedArgs {
@@ -289,13 +273,10 @@ func boundedProfileFromTemplate(spec *generictemplate.BoundedAuthorizationSpec) 
 			return nil, fmt.Errorf("bounded.spend_effects contains unsupported effect %q", effect)
 		}
 	}
-	for _, operation := range spec.AdminOperations {
-		profile.AdminOperations = append(profile.AdminOperations, AdminOperationSpec{
-			Kind:          AdminOperationKind(operation.Kind),
-			Authorization: AdminOperationAuthorization(operation.Authorization),
-			PolicyGate:    AdminPolicyGate(operation.PolicyGate),
-		})
+	if spec.Rekey == "" {
+		return nil, fmt.Errorf("bounded.rekey is required: %s or %s", boundedmeta.RekeyRefused, boundedmeta.RekeySpendingKey)
 	}
+	profile.Rekey = boundedmeta.RekeySetting(spec.Rekey)
 	canonical, err := canonicalBoundedProfile(profile)
 	if err != nil {
 		return nil, fmt.Errorf("invalid bounded profile: %w", err)

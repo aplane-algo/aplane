@@ -1336,7 +1336,7 @@ lock_on_disconnect: false
 This is the same setting shown in `apadmin` as `User Auto-Approve`. Set it to
 `true` to sign non-rejected requests without an operator approval prompt,
 including requests matching warning, transaction-type, routing, or bounded
-admin-operation review rules. No connected apadmin is required for signing.
+rekey review rules. No connected apadmin is required for signing.
 Hard policy rejections, authentication, key unlock, and signing validation
 still apply. Use rejection rules in `default.json` or per-key policies to
 set limits for unattended agents.

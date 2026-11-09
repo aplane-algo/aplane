@@ -149,11 +149,14 @@ func TestMessageTypeConstantsAreUnique(t *testing.T) {
 // against, which a 6.x client does not send. 7.1 adds native mnemonic export
 // (export_result) and key_details.mnemonic_exportable. 7.2 adds
 // prepare_generate_key and generate_key.expected_fingerprint. 7.3 adds the
-// review values for the general bounded key type. 7.4 renames the
-// boundary_require_admin_key setting to boundary_require_contained.
-func TestCurrentAdminProtocolVersionIsV7(t *testing.T) {
-	if got := CurrentAdminProtocolVersion(); got != (ProtocolVersion{Major: 7, Minor: 4}) {
-		t.Fatalf("CurrentAdminProtocolVersion() = %+v, want 7.4", got)
+// review values for the general bounded key type. 8.0 renames the
+// boundary_require_admin_key setting to boundary_require_contained and replaces
+// prepare_generate_result.bounded.admin_operations with bounded.rekey. That is a
+// major change: a 7.x apadmin reads an account with no admin_operations as having
+// no rekey path, so it must be refused at authentication, not merely warned.
+func TestCurrentAdminProtocolVersionIsV8(t *testing.T) {
+	if got := CurrentAdminProtocolVersion(); got != (ProtocolVersion{Major: 8, Minor: 0}) {
+		t.Fatalf("CurrentAdminProtocolVersion() = %+v, want 8.0", got)
 	}
 }
 
@@ -843,6 +846,33 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 						"template_provenance_status": "conflict",
 						"template_provenance_note":   "changed",
 					},
+				},
+			},
+		},
+		{
+			// The bounded profile carries one rekey setting, never bounded1's
+			// administrative operations.
+			name: "prepare_generate_result",
+			msg: PrepareGenerateResultMessage{
+				BaseMessage: BaseMessage{Type: MsgTypePrepareGenerateResult, ID: "prepare-1"},
+				Success:     true,
+				KeyType:     "aplane.falcon1024-b.v1",
+				Bounded: &PreparedBoundedProfile{
+					Contract: "bounded2", SpendEffects: []string{"pay"}, MaxFee: 2_000,
+					Rekey: "refused", Layer3Policy: "timelock",
+				},
+			},
+			wantMap: map[string]any{
+				"type":     MsgTypePrepareGenerateResult,
+				"id":       "prepare-1",
+				"success":  true,
+				"key_type": "aplane.falcon1024-b.v1",
+				"bounded": map[string]any{
+					"contract":      "bounded2",
+					"spend_effects": []any{"pay"},
+					"max_fee":       float64(2_000),
+					"rekey":         "refused",
+					"layer3_policy": "timelock",
 				},
 			},
 		},

@@ -1695,9 +1695,9 @@ warning does not establish that no leaf was reused.
   this key's `signing_flow` (for `cosigner1` or `bounded-cosigner1`)
 - optional `bounded_authorization`: present for `signing_flow: bounded1` and
   `bounded-cosigner1`.
-  It contains `contract`, `base_signature_arg_layout`,
-  `spend_effects`, `max_fee`, `admin_operations` (including each operation's
-  `policy_gate`), `cosigner` (for `bounded-cosigner1`), `runtime_args`,
+  It contains `contract` (`bounded2`), `base_signature_arg_layout`,
+  `spend_effects`, `max_fee`, `rekey` (`refused` or `spending_key`),
+  `cosigner` (for `bounded-cosigner1`), `runtime_args`,
   `derived_args`, the path-specific
   `argument_layout`, and `layer3_policy`. This is routing and assembly
   metadata, not permission; signer
@@ -1720,9 +1720,9 @@ warning does not establish that no leaf was reused.
   account LogicSig bytecode. Its key family and size are determined by the
   guarded account `key_type`. SDK consumers must treat this as signer-owned
   metadata, not as proof of remote cosigner endpoint ownership.
-  Bounded rows expose only the reviewed public parameter projection used by
-  the bundled profiles (`recipients`, `unlock_round`, and framework
-  cosigner/admin public keys). Newly stored bounded parameters are
+  Bounded rows expose only the reviewed public parameter projection
+  (`recipients`, `unlock_round`, and the framework-injected
+  `cosigner_public_key`). Newly stored bounded parameters are
   omitted until explicitly classified as public; `/keys` never defaults to
   exposing the complete stored creation-parameter map.
 - optional `template_provenance_status`, `template_provenance_note`; these are

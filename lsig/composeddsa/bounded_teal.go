@@ -29,15 +29,14 @@ func (c *ComposedDSA) renderBoundedPrelude(publicKey []byte, params map[string]s
 	if err != nil {
 		return "", err
 	}
-	// The encoding itself isn't needed here, but producing it validates the profile
-	// against its metadata, which is the render-time guard for contradictions such as a
-	// cosigner beside a spending-key rekey.
-	if _, err := CanonicalBoundedProfile(profile, metadata); err != nil {
+	// The render-time guard for contradictions such as a cosigner beside a
+	// spending-key rekey.
+	if _, err := validatedBoundedProfile(profile, metadata); err != nil {
 		return "", err
 	}
 
 	var b strings.Builder
-	b.WriteString("// === bounded1 transaction envelope ===\n")
+	b.WriteString("// === bounded transaction envelope ===\n")
 	b.WriteString("txn Fee\n")
 	b.WriteString(fmt.Sprintf("pushint %d\n", profile.MaxFee))
 	b.WriteString("<=\nassert\n\n")
@@ -45,7 +44,7 @@ func (c *ComposedDSA) renderBoundedPrelude(publicKey []byte, params map[string]s
 	b.WriteString("txn RekeyTo\nglobal ZeroAddress\n!=\n")
 	b.WriteString("bnz " + boundedRekeyLabel + "\n\n")
 
-	manifest := txeffects.Bounded1Manifest()
+	manifest := txeffects.BoundedManifest()
 	for _, predicate := range manifest.Predicates {
 		if predicate.Effect == txeffects.EffectRekey {
 			continue
@@ -70,9 +69,10 @@ func (c *ComposedDSA) renderBoundedPrelude(publicKey []byte, params map[string]s
 	b.WriteString(boundedOptInLabel + ":\n")
 	writeSpendEffectDecision(&b, profileAllowsSpendEffect(profile, txeffects.SpendEffectAssetOptIn))
 
+	// No host rule gates a rekey: the rekey path ends here, before the spend
+	// path's Layer 3 and cosigner checks.
 	b.WriteString(boundedRekeyLabel + ":\n")
-	operation, enabled := findAdminOperation(profile, AdminOperationRekey)
-	if !enabled {
+	if profile.Rekey != boundedmeta.RekeySpendingKey {
 		b.WriteString("err\n\n")
 	} else {
 		b.WriteString("txn TypeEnum\npushint 1\n==\nassert\n")
@@ -85,14 +85,7 @@ func (c *ComposedDSA) renderBoundedPrelude(publicKey []byte, params map[string]s
 			}
 			writeZeroAddressAssertion(&b, predicate.Field)
 		}
-		if operation.PolicyGate == AdminPolicyGateLayer3 {
-			if profile.Cosigner != nil {
-				return "", fmt.Errorf("cosigner-enabled bounded profiles cannot gate rekey through Layer 3")
-			}
-			b.WriteString("b " + boundedSpendLabel + "\n\n")
-		} else {
-			b.WriteString("b " + boundedAcceptLabel + "\n\n")
-		}
+		b.WriteString("b " + boundedAcceptLabel + "\n\n")
 	}
 
 	b.WriteString(boundedSpendLabel + ":\n")
@@ -162,15 +155,6 @@ func writeSpendEffectDecision(b *strings.Builder, allowed bool) {
 func writeZeroAddressAssertion(b *strings.Builder, field txeffects.TxField) {
 	b.WriteString("txn " + string(field) + "\n")
 	b.WriteString("global ZeroAddress\n==\nassert\n")
-}
-
-func findAdminOperation(profile *BoundedAuthorizationProfile, kind AdminOperationKind) (AdminOperationSpec, bool) {
-	for _, operation := range profile.AdminOperations {
-		if operation.Kind == kind {
-			return operation, true
-		}
-	}
-	return AdminOperationSpec{}, false
 }
 
 func renderBoundedAccept() string {

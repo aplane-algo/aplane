@@ -408,7 +408,6 @@ func TestBoundedCosignerSimulateUsesUserFirstChoreography(t *testing.T) {
 			ProgramBytes:  4_000,
 			Spend:         &lsigresource.PathProfile{MaxOpcodeCost: 20_000},
 			SpendingRekey: &lsigresource.PathProfile{MaxOpcodeCost: 20_000},
-			AdminRekey:    &lsigresource.PathProfile{MaxOpcodeCost: 20_000},
 		})
 	})
 	s.conn.SignerClient = signerclient.NewSignerClient(server.URL)

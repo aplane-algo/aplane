@@ -8,6 +8,9 @@ import "slices"
 // FixtureSupport is the support a fixture composer claims for itself.
 type FixtureSupport struct {
 	Cosigner bool
+	// RefuseGeneration makes the policy refuse every new account, as a narrowed
+	// production policy would for a base it stops supporting.
+	RefuseGeneration bool
 }
 
 // NewFixtureProvider composes spec on a base that is never registered. The policy
@@ -25,7 +28,7 @@ func NewFixtureProvider(spec *TemplateSpec, base BaseRegistration, support Fixtu
 		return nil, err
 	}
 	provider.generationPolicy = func(_, baseKeyType string) (boundedWorkflowSupport, bool) {
-		if baseKeyType != base.BaseKeyType {
+		if baseKeyType != base.BaseKeyType || support.RefuseGeneration {
 			return boundedWorkflowSupport{}, false
 		}
 		return boundedWorkflowSupport{cosigner: support.Cosigner}, true

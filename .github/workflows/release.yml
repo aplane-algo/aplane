@@ -227,7 +227,7 @@ jobs:
           for arch in amd64 arm64; do
             archive="aplane_${VERSION}_linux_${arch}.tar.gz"
             rm -rf dist/staging
-            mkdir -p dist/staging/aplane/{bin,installer/scripts,library/templates,library/retired,plugins.available}
+            mkdir -p dist/staging/aplane/{bin,installer/scripts,library/templates,plugins.available}
             cp bin/${arch}/apshell bin/${arch}/apsigner bin/${arch}/apadmin \
                bin/${arch}/apconsole \
                bin/${arch}/apapprover bin/${arch}/apstore bin/${arch}/appass \
@@ -242,7 +242,6 @@ jobs:
                dist/staging/aplane/installer/
             cp installer/scripts/systemd-setup.sh installer/scripts/aplane-env-audit.sh installer/scripts/config-mcp.sh dist/staging/aplane/installer/scripts/
             cp library/templates/README.md library/templates/*.yaml dist/staging/aplane/library/templates/
-            cp library/retired/README.md library/retired/*.yaml dist/staging/aplane/library/retired/
             scripts/stage-bundled-plugins.sh --os linux --arch "${arch}" dist/staging/aplane/plugins.available
             cp install.sh uninstall.sh dist/staging/aplane/
             write_release_metadata dist/staging/aplane
@@ -270,7 +269,7 @@ jobs:
           for arch in amd64 arm64; do
             archive="aplane_${VERSION}_darwin_${arch}.tar.gz"
             rm -rf dist/staging
-            mkdir -p dist/staging/aplane/{bin,installer/scripts,library/templates,library/retired,plugins.available}
+            mkdir -p dist/staging/aplane/{bin,installer/scripts,library/templates,plugins.available}
             cp bin/darwin-${arch}/apshell bin/darwin-${arch}/apsigner \
                bin/darwin-${arch}/apadmin bin/darwin-${arch}/apconsole \
                bin/darwin-${arch}/apapprover \
@@ -281,7 +280,6 @@ jobs:
                bin/darwin-${arch}/appolicy \
                bin/darwin-${arch}/applugin-checksum dist/staging/aplane/bin/
             cp library/templates/README.md library/templates/*.yaml dist/staging/aplane/library/templates/
-            cp library/retired/README.md library/retired/*.yaml dist/staging/aplane/library/retired/
             cp installer/scripts/aplane-env-audit.sh installer/scripts/config-mcp.sh dist/staging/aplane/installer/scripts/
             scripts/stage-bundled-plugins.sh --os darwin --arch "${arch}" dist/staging/aplane/plugins.available
             cp install.sh uninstall.sh dist/staging/aplane/

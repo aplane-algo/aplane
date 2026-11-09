@@ -18,7 +18,6 @@ const (
 	PathDefault AuthorizationPath = iota + 1
 	PathSpend
 	PathSpendingRekey
-	PathAdminRekey
 )
 
 // MaximumDeclaredOpcodeCost is the largest path ceiling accepted in durable
@@ -32,7 +31,6 @@ type OpcodeProfile struct {
 	Default       uint64 `json:"default,omitempty"`
 	Spend         uint64 `json:"spend,omitempty"`
 	SpendingRekey uint64 `json:"spending_rekey,omitempty"`
-	AdminRekey    uint64 `json:"admin_rekey,omitempty"`
 }
 
 // DefaultOpcodeProfile returns the closed profile for a non-bounded LogicSig.
@@ -41,8 +39,8 @@ func DefaultOpcodeProfile(maxCost uint64) OpcodeProfile {
 }
 
 // BoundedOpcodeProfile returns the closed profile for bounded authorization.
-func BoundedOpcodeProfile(spend, spendingRekey, adminRekey uint64) OpcodeProfile {
-	return OpcodeProfile{Spend: spend, SpendingRekey: spendingRekey, AdminRekey: adminRekey}
+func BoundedOpcodeProfile(spend, spendingRekey uint64) OpcodeProfile {
+	return OpcodeProfile{Spend: spend, SpendingRekey: spendingRekey}
 }
 
 // Validate checks that exactly the expected path vocabulary is populated.
@@ -65,10 +63,7 @@ func (p OpcodeProfile) Validate(bounded bool) error {
 	if err := check("spend", p.Spend, bounded); err != nil {
 		return err
 	}
-	if err := check("spending_rekey", p.SpendingRekey, bounded); err != nil {
-		return err
-	}
-	return check("admin_rekey", p.AdminRekey, bounded)
+	return check("spending_rekey", p.SpendingRekey, bounded)
 }
 
 // PathProfile is the maximum resource use of one reachable authorization path.
@@ -86,11 +81,10 @@ type Profile struct {
 	Default       *PathProfile `json:"default,omitempty"`
 	Spend         *PathProfile `json:"spend,omitempty"`
 	SpendingRekey *PathProfile `json:"spending_rekey,omitempty"`
-	AdminRekey    *PathProfile `json:"admin_rekey,omitempty"`
 }
 
 // Materialize combines derived program/argument sizes with the durable opcode
-// ceilings. Bounded path arguments must contain all three closed paths.
+// ceilings. Bounded path arguments must contain both closed paths.
 func Materialize(programBytes uint64, defaultArgs *uint64, boundedArgs map[AuthorizationPath]uint64, opcodes OpcodeProfile) (Profile, error) {
 	bounded := defaultArgs == nil
 	if err := opcodes.Validate(bounded); err != nil {
@@ -103,13 +97,11 @@ func Materialize(programBytes uint64, defaultArgs *uint64, boundedArgs map[Autho
 	}
 	spend, spendOK := boundedArgs[PathSpend]
 	spendingRekey, spendingRekeyOK := boundedArgs[PathSpendingRekey]
-	adminRekey, adminRekeyOK := boundedArgs[PathAdminRekey]
-	if !spendOK || !spendingRekeyOK || !adminRekeyOK {
+	if !spendOK || !spendingRekeyOK {
 		return Profile{}, fmt.Errorf("%w: bounded argument profile is incomplete", ErrInvalidUsage)
 	}
 	profile.Spend = &PathProfile{ArgumentBytes: spend, MaxOpcodeCost: opcodes.Spend}
 	profile.SpendingRekey = &PathProfile{ArgumentBytes: spendingRekey, MaxOpcodeCost: opcodes.SpendingRekey}
-	profile.AdminRekey = &PathProfile{ArgumentBytes: adminRekey, MaxOpcodeCost: opcodes.AdminRekey}
 	return profile, nil
 }
 
@@ -126,8 +118,6 @@ func (p Profile) UsageForPath(path AuthorizationPath) (Usage, error) {
 		selected = p.Spend
 	case PathSpendingRekey:
 		selected = p.SpendingRekey
-	case PathAdminRekey:
-		selected = p.AdminRekey
 	default:
 		return Usage{}, fmt.Errorf("%w: unknown authorization path %d", ErrInvalidUsage, path)
 	}
@@ -151,7 +141,6 @@ func (p Profile) Clone() Profile {
 		Default:       clonePathProfile(p.Default),
 		Spend:         clonePathProfile(p.Spend),
 		SpendingRekey: clonePathProfile(p.SpendingRekey),
-		AdminRekey:    clonePathProfile(p.AdminRekey),
 	}
 }
 

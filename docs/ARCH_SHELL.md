@@ -280,8 +280,8 @@ The same isolated package dispatches explicit inventory flow labels. `cosigner1`
 uses user/cosigner component signing plus guarded assembly; `bounded-cosigner1`
 uses user-first bounded component release, cosigner-role component signing, and
 bounded assembly. It rejects unknown labels and groups that mix those two
-choreographies. `bounded1` profiles without an online cosigner continue through
-ordinary signing.
+choreographies. Bounded profiles without an online cosigner advertise `bounded1`
+and continue through ordinary signing.
 
 Submission and confirmation diagnostics are returned on typed result values as
 `Output` strings and structured warnings. Shell rendering lives in

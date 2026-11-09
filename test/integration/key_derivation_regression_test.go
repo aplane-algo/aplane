@@ -50,7 +50,6 @@ func TestKeyDerivationRegression(t *testing.T) {
 
 	signerd := harness.NewSignerHarness(t)
 	installHTLCTemplate(t, signerd.GetWorkDir())
-	installFalconAllowlistTemplate(t, signerd.GetWorkDir())
 
 	if err := signerd.Start(); err != nil {
 		t.Fatalf("failed to start signer: %v", err)

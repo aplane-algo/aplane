@@ -101,9 +101,12 @@ func (r *REPLState) generateFromBoundary(keyType, path string) (*apshellapp.Gene
 func renderBoundaryPreview(r *REPLState, preview *apshellapp.BoundaryPreview) {
 	r.println("Local summary. The signer has not confirmed this.")
 	r.printf("  Transfers:  %s\n", strings.Join(preview.Transfers, ", "))
-	if preview.Recipients > 0 {
+	switch {
+	case preview.Recipients > 0:
 		r.printf("  Recipients: %d, encoding %s, list %s\n", preview.Recipients, preview.Encoding, preview.ListDigest[:12])
-	} else {
+	case preview.AnyRecipient:
+		r.println("  Recipients: any; only the fee limit and transfer kinds apply")
+	default:
 		r.println("  Recipients: any, once unlocked")
 	}
 	if preview.UnlockRound != "" {
@@ -113,7 +116,8 @@ func renderBoundaryPreview(r *REPLState, preview *apshellapp.BoundaryPreview) {
 	case preview.Rekey == boundary.RekeyRefused:
 		r.println("  Rekey:      refused; the account can never be rekeyed")
 	case preview.UnlockRound != "":
-		r.println("  Rekey:      spending key alone, after the unlock round")
+		// The signer refuses this combination; say so before the request is sent.
+		r.println("  Rekey:      spending key, which a timelock refuses; the signer will reject this")
 	default:
 		r.println("  Rekey:      spending key alone, which can rekey out of this boundary")
 	}

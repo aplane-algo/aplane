@@ -1,26 +1,66 @@
-# DEPRECATED: retired from the default library. New accounts should use
-# the Allowlist preset of aplane.falcon1024-b.v1.
-# This file is kept to repair existing accounts. See library/retired/README.md.
-schema_version: 2
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 APlane Project LLC
+
+package composeddsa
+
+// These template fixtures serve the bounded renderer tests in both test packages.
+// They began as the retired library templates, which bounded2 deleted. Each keeps
+// that YAML except for its identity, the contract and its rekey setting, so a
+// renderer change still shows up against a realistic template.
+
+// FixedAllowlistFixtureYAML uses the framework fixed_allowlist policy, in
+// generated mode, with up to 30 recipients and a spending-key rekey.
+const FixedAllowlistFixtureYAML = `schema_version: 2
+derivation_version: 3
+template_type: composed
+base_key_type: aplane.falcon1024.v1
+template_mode: generated
+publisher: test
+family: fixed-allowlist-fixture
+version: 1
+display_name: "Fixed Allowlist Fixture"
+description: "Falcon-1024 signature restricted to a fixed set of receiver addresses"
+max_opcode_cost: 20000
+
+bounded:
+  contract: bounded2
+  spend_effects: [pay, axfer, asset_opt_in]
+  max_fee: 10000
+  rekey: spending_key
+  layer3:
+    policy: fixed_allowlist
+    recipients_parameter: recipients
+
+parameters:
+  - name: recipients
+    type: address[]
+    required: true
+    min_items: 1
+    max_items: 30
+    label: "Allowlisted Addresses"
+    description: "Comma-separated Algorand addresses that may receive funds from this Falcon LogicSig"
+    placeholder: "ADDR1, ADDR2, ADDR3"
+`
+
+// MerkleAllowlistFixtureYAML is a strict template whose author TEAL checks a
+// signer-derived Merkle proof against a root compiled from the recipients.
+const MerkleAllowlistFixtureYAML = `schema_version: 2
 derivation_version: 3
 template_type: composed
 base_key_type: aplane.falcon1024.v1
 template_mode: strict
-publisher: aplane
-family: falcon1024-allowlist
-version: 2
-display_name: "Falcon-1024 Allowlist v2"
+publisher: test
+family: merkle-allowlist-fixture
+version: 1
+display_name: "Merkle Allowlist Fixture"
 description: "Allowlist implementation based on a fixed-depth Merkle root with signer-generated 512-byte proofs."
 max_opcode_cost: 20000
 
 bounded:
-  contract: bounded1
+  contract: bounded2
   spend_effects: [pay, axfer, asset_opt_in]
   max_fee: 10000
-  admin_operations:
-    - kind: rekey
-      authorization: spending_key
-      policy_gate: none
+  rekey: spending_key
   derived_args:
     - name: merkle_proof
       kind: merkle_allowlist_proof
@@ -205,3 +245,51 @@ teal: |
   retsub
 
   end_checks:
+`
+
+// CustomTimelockFixtureYAML is a strict template whose author TEAL is a round
+// timelock. It refuses rekeys: a spending-key rekey never reaches Layer 3, so it
+// could leave the account before the unlock round.
+const CustomTimelockFixtureYAML = `schema_version: 2
+derivation_version: 3
+template_type: composed
+base_key_type: aplane.falcon1024.v1
+template_mode: strict
+publisher: test
+family: custom-timelock-fixture
+version: 1
+display_name: "Custom Timelock Fixture"
+description: "Falcon-1024 signature gated by round-based timelock"
+max_opcode_cost: 20000
+
+bounded:
+  contract: bounded2
+  spend_effects: [pay, axfer, asset_opt_in]
+  max_fee: 10000
+  rekey: refused
+
+parameters:
+  - name: unlock_round
+    label: "Unlock Round"
+    description: "Round number after which funds can be withdrawn"
+    type: uint64
+    required: true
+    max_length: 20
+    min: 1
+    example: "50000000"
+    placeholder: "Enter unlock round number"
+
+template_variables:
+  - name: unlock_round
+    source: parameter
+    parameter: unlock_round
+    type: uint64
+    constant: int
+
+teal: |
+  // Timelock check: FirstValid >= unlock_round
+  txn FirstValid
+  $unlock_round
+  >=
+  assert
+`

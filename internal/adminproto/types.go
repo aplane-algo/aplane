@@ -617,19 +617,12 @@ type PrepareGenerateKeyRequest struct {
 	Parameters map[string]string
 }
 
-// PreparedAdminOperation is one administrative operation of a prepared account.
-type PreparedAdminOperation struct {
-	Kind          string
-	Authorization string
-	PolicyGate    string
-}
-
 // PreparedBoundedProfile is the bounded contract of a prepared account.
 type PreparedBoundedProfile struct {
 	Contract         string
 	SpendEffects     []string
 	MaxFee           uint64
-	AdminOperations  []PreparedAdminOperation
+	Rekey            string
 	Layer3Policy     string
 	CosignerRequired bool
 }

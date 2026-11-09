@@ -8,7 +8,6 @@ package boundedaccount
 
 import (
 	"fmt"
-	"slices"
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/boundary"
@@ -28,6 +27,10 @@ const (
 	ParameterRecipients     = boundary.ParameterRecipients
 	ParameterUnlockRound    = boundary.ParameterUnlockRound
 	ParameterCosigner       = boundary.ParameterCosigner
+	ParameterRecipientScope = boundary.ParameterRecipientScope
+
+	RecipientScopeListed = boundary.RecipientScopeListed
+	RecipientScopeAny    = boundary.RecipientScopeAny
 
 	EncodingAuto   = boundary.EncodingAuto
 	EncodingInline = boundary.EncodingInline
@@ -65,11 +68,17 @@ type Shape struct {
 	Cosigner bool
 	// Timelock requires an unlock round before anything can be spent.
 	Timelock bool
+	// AnyRecipient is the limits-only shape: no recipient list and no timelock,
+	// so the envelope's fee ceiling and transfer kinds are the whole rule. It is
+	// an explicit field, not an empty Encoding, so no zero value selects it.
+	AnyRecipient bool
 }
 
 // Policy names the shape's framework Layer 3 policy.
 func (s Shape) Policy() string {
 	switch {
+	case s.AnyRecipient:
+		return composeddsa.Layer3PolicyNone
 	case s.Timelock && s.Encoding == EncodingMerkle:
 		return composeddsa.Layer3PolicyMerkleAllowlistTimelock
 	case s.Timelock && s.Encoding == EncodingInline:
@@ -83,16 +92,6 @@ func (s Shape) Policy() string {
 	}
 }
 
-// PolicyGate says whether Layer 3 also constrains rekey. A spending-key rekey
-// waits for the unlock round like a spend, or a timelock could be walked out of at
-// any time. A shape that refuses rekeys has no rekey for Layer 3 to judge.
-func (s Shape) PolicyGate() string {
-	if s.Timelock && s.Rekey == RekeySpendingKey {
-		return boundedmeta.PolicyGateLayer3
-	}
-	return boundedmeta.PolicyGateNone
-}
-
 // Descriptor labels the shape in its fingerprints, so it names everything that
 // tells two shapes apart. Its format is frozen by the fingerprint goldens.
 func (s Shape) Descriptor() string {
@@ -104,17 +103,18 @@ func (s Shape) Descriptor() string {
 	if s.Cosigner {
 		cosigner = "required"
 	}
-	return fmt.Sprintf("spend=%s;policy=%s;rekey=%s/%s;cosigner=%s",
-		strings.Join(spend, ","), s.Policy(), s.Rekey, s.PolicyGate(), cosigner)
+	return fmt.Sprintf("spend=%s;policy=%s;rekey=%s;cosigner=%s",
+		strings.Join(spend, ","), s.Policy(), s.Rekey, cosigner)
 }
 
-// Shapes enumerates every shape the grammar can select, in a stable order. Allowlist
-// shapes come first, so this order extends rather than reshuffles.
+// Shapes enumerates every shape the grammar can select, in a stable order:
+// allowlists, then timelocks, then limits-only shapes. Each family is appended
+// after the last, so this order extends rather than reshuffles.
 //
-// A cosigned shape refuses rekeys, because bounded1 forbids a spending-key rekey
-// beside a cosigner. A shape that refuses rekeys must leave a way out for what it
-// holds (refusedSpendError). A spending-key rekey on a timelock is gated by Layer 3,
-// which judges it as a payment, so it needs pay.
+// A cosigned shape refuses rekeys: a cosigned rekey arrives with the cosigner
+// overlay. A timelock refuses rekeys too, because no host rule gates a rekey, so a
+// spending-key rekey could leave the lock at any time. A shape that refuses rekeys
+// must leave a way out for what it holds (refusedSpendError).
 func Shapes() []Shape {
 	type family struct {
 		rekey    string
@@ -122,7 +122,7 @@ func Shapes() []Shape {
 	}
 	families := []family{{RekeySpendingKey, false}, {RekeyRefused, false}, {RekeyRefused, true}}
 	var shapes []Shape
-	forEachShape := func(encoding string, timelock bool) {
+	forEachShape := func(encoding string, timelock, anyRecipient bool) {
 		for _, f := range families {
 			for mask := 1; mask < 1<<len(spendEffectOrder); mask++ {
 				var spend []txeffects.SpendEffect
@@ -134,32 +134,36 @@ func Shapes() []Shape {
 				if f.rekey == RekeyRefused && refusedSpendError(spend) != nil {
 					continue
 				}
-				if timelock && f.rekey == RekeySpendingKey && !slices.Contains(spend, txeffects.SpendEffectPay) {
+				if timelock && f.rekey == RekeySpendingKey {
 					continue
 				}
-				shapes = append(shapes, Shape{Spend: spend, Encoding: encoding, Rekey: f.rekey, Cosigner: f.cosigner, Timelock: timelock})
+				shapes = append(shapes, Shape{
+					Spend: spend, Encoding: encoding, Rekey: f.rekey, Cosigner: f.cosigner,
+					Timelock: timelock, AnyRecipient: anyRecipient,
+				})
 			}
 		}
 	}
 	for _, encoding := range []string{EncodingInline, EncodingMerkle} {
-		forEachShape(encoding, false)
+		forEachShape(encoding, false, false)
 	}
 	for _, encoding := range []string{"", EncodingInline, EncodingMerkle} {
-		forEachShape(encoding, true)
+		forEachShape(encoding, true, false)
 	}
+	forEachShape("", false, true)
 	return shapes
 }
 
 // refusedSpendError reports why a shape that refuses rekeys could trap what it
-// holds. With no rekey path and no close, a transfer is the only way out: pay for
-// its ALGO, and axfer for any asset it can opt into. An account that never closes
-// keeps its minimum balance regardless.
+// holds. The rule is the contract's (boundedmeta.ValidateRefusedExit); the grammar
+// applies it to choose its shapes and to explain a refused request.
 func refusedSpendError(spend []txeffects.SpendEffect) error {
-	switch {
-	case !slices.Contains(spend, txeffects.SpendEffectPay):
-		return fmt.Errorf("%s=%s requires pay in %s", ParameterRekeyAuthority, RekeyRefused, ParameterSpendEffects)
-	case slices.Contains(spend, txeffects.SpendEffectAssetOptIn) && !slices.Contains(spend, txeffects.SpendEffectAxfer):
-		return fmt.Errorf("%s=%s with asset_opt_in requires axfer in %s", ParameterRekeyAuthority, RekeyRefused, ParameterSpendEffects)
+	effects := make([]string, len(spend))
+	for i, effect := range spend {
+		effects[i] = string(effect)
+	}
+	if err := boundedmeta.ValidateRefusedExit(effects); err != nil {
+		return fmt.Errorf("%s=%s: %w", ParameterRekeyAuthority, RekeyRefused, err)
 	}
 	return nil
 }

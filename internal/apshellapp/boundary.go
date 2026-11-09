@@ -19,12 +19,14 @@ import (
 // local summary and not a review: the signer has not seen it, so a cosigner name
 // here is only a name until the signer resolves it during creation.
 type BoundaryPreview struct {
-	KeyType       string
-	Parameters    map[string]string
-	Transfers     []string
-	Recipients    int
-	ListDigest    string
-	Encoding      string
+	KeyType    string
+	Parameters map[string]string
+	Transfers  []string
+	Recipients int
+	ListDigest string
+	Encoding   string
+	// AnyRecipient is a limits-only request: no list and no timelock.
+	AnyRecipient  bool
 	UnlockRound   string
 	Rekey         string
 	Cosigner      string
@@ -39,12 +41,13 @@ func (a *App) PreviewBoundaryFile(keyType, path string) (*BoundaryPreview, error
 		return nil, err
 	}
 	preview := &BoundaryPreview{
-		KeyType:     keyType,
-		Parameters:  parameters,
-		Transfers:   strings.Split(parameters[boundary.ParameterSpendEffects], ","),
-		UnlockRound: parameters[boundary.ParameterUnlockRound],
-		Rekey:       parameters[boundary.ParameterRekeyAuthority],
-		Cosigner:    parameters[boundary.ParameterCosigner],
+		KeyType:      keyType,
+		Parameters:   parameters,
+		Transfers:    strings.Split(parameters[boundary.ParameterSpendEffects], ","),
+		UnlockRound:  parameters[boundary.ParameterUnlockRound],
+		Rekey:        parameters[boundary.ParameterRekeyAuthority],
+		Cosigner:     parameters[boundary.ParameterCosigner],
+		AnyRecipient: parameters[boundary.ParameterRecipientScope] == boundary.RecipientScopeAny,
 	}
 	if list := parameters[boundary.ParameterRecipients]; list != "" {
 		preview.Recipients = len(strings.Split(list, ","))

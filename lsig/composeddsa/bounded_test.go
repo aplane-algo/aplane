@@ -86,26 +86,27 @@ func TestCanonicalBoundedBehaviorParametersEncodesAbsentOptionalScalar(t *testin
 
 func TestCanonicalBoundedCosignerProfileGolden(t *testing.T) {
 	profile := &BoundedAuthorizationProfile{
-		Contract: BoundedContractV1, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: 1_000,
+		Contract: BoundedContract, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: 1_000,
+		Rekey: boundedmeta.RekeyRefused,
 		Cosigner: &boundedmeta.CosignerAuthorization{
 			Contract: boundedmeta.CosignerContractV1, ComponentKeyType: boundedmeta.CosignerComponentKeyTypeV1,
 			SignatureMaxSize: boundedmeta.CosignerSignatureMaxSizeV1, RequiredOn: []string{boundedmeta.PathSpend},
 		},
 	}
 	metadata := &boundedmeta.Metadata{
-		Contract: BoundedContractV1, BaseSignatureArgLayout: SignatureArgLayout{Count: 1, MaxSizes: []int{4}},
-		SpendEffects: []string{boundedmeta.SpendEffectPay}, MaxFee: 1_000, Layer3Policy: boundedmeta.Layer3PolicyCustom,
-		Cosigner: profile.Cosigner,
+		Contract: BoundedContract, BaseSignatureArgLayout: SignatureArgLayout{Count: 1, MaxSizes: []int{4}},
+		SpendEffects: []string{boundedmeta.SpendEffectPay}, MaxFee: 1_000, Rekey: boundedmeta.RekeyRefused,
+		Layer3Policy: boundedmeta.Layer3PolicyCustom, Cosigner: profile.Cosigner,
 		ArgumentLayout: []boundedmeta.ArgumentSlot{
-			{Index: 0, Name: "base_signature_0", Source: boundedmeta.ArgSourceBaseSignature, MaxSize: 4, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgRequired, AdminRekey: boundedmeta.ArgRequired}},
-			{Index: 1, Name: boundedmeta.CosignerSignatureSlot, Source: boundedmeta.ArgSourceCosigner, MaxSize: boundedmeta.CosignerSignatureMaxSizeV1, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgForbidden, AdminRekey: boundedmeta.ArgForbidden}},
+			{Index: 0, Name: "base_signature_0", Source: boundedmeta.ArgSourceBaseSignature, MaxSize: 4, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgRequired}},
+			{Index: 1, Name: boundedmeta.CosignerSignatureSlot, Source: boundedmeta.ArgSourceCosigner, MaxSize: boundedmeta.CosignerSignatureMaxSizeV1, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgForbidden}},
 		},
 	}
 	encoded, err := CanonicalBoundedProfile(profile, metadata)
 	if err != nil {
 		t.Fatalf("CanonicalBoundedProfile() error = %v", err)
 	}
-	const want = "0000001941504c414e455f424f554e4445445f50524f46494c455f563100000008626f756e64656431000000010000000370617900000000000003e8000000000000000100000009636f7369676e6572310000001c61706c616e652e7769746e6573732d66616c636f6e313032342e76310000058f00000001000000057370656e6400000006637573746f6d00000001000000040000000000000000000000020000000000000010626173655f7369676e61747572655f300000000e626173655f7369676e6174757265000000040000000872657175697265640000000872657175697265640000000872657175697265640000000100000012636f7369676e65725f7369676e617475726500000008636f7369676e65720000058f00000008726571756972656400000009666f7262696464656e00000009666f7262696464656e"
+	const want = "0000001941504c414e455f424f554e4445445f50524f46494c455f563200000008626f756e64656432000000010000000370617900000000000003e800000007726566757365640000000100000009636f7369676e6572310000001c61706c616e652e7769746e6573732d66616c636f6e313032342e76310000058f00000001000000057370656e6400000006637573746f6d00000001000000040000000000000000000000020000000000000010626173655f7369676e61747572655f300000000e626173655f7369676e6174757265000000040000000872657175697265640000000872657175697265640000000100000012636f7369676e65725f7369676e617475726500000008636f7369676e65720000058f00000008726571756972656400000009666f7262696464656e"
 	if got := hex.EncodeToString(encoded); got != want {
 		t.Fatalf("canonical cosigner profile = %s, want %s", got, want)
 	}
@@ -113,7 +114,8 @@ func TestCanonicalBoundedCosignerProfileGolden(t *testing.T) {
 
 func TestBoundedAuthorizationMetadataSnapshotsCosignerContract(t *testing.T) {
 	profile := &BoundedAuthorizationProfile{
-		Contract: BoundedContractV1, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: 1_000,
+		Contract: BoundedContract, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: 1_000,
+		Rekey: boundedmeta.RekeyRefused,
 		Cosigner: &boundedmeta.CosignerAuthorization{
 			Contract: boundedmeta.CosignerContractV1, ComponentKeyType: boundedmeta.CosignerComponentKeyTypeV1,
 			SignatureMaxSize: boundedmeta.CosignerSignatureMaxSizeV1, RequiredOn: []string{boundedmeta.PathSpend},
@@ -173,12 +175,10 @@ func TestBoundedAuthorizationMetadataSnapshotsCosignerContract(t *testing.T) {
 
 func TestBoundedComposerEmitsOrderedEnvelope(t *testing.T) {
 	provider := newBoundedTestProvider(&BoundedAuthorizationProfile{
-		Contract:     BoundedContractV1,
+		Contract:     BoundedContract,
 		SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectAxfer, txeffects.SpendEffectPay},
 		MaxFee:       7_000,
-		AdminOperations: []AdminOperationSpec{{
-			Kind: AdminOperationRekey, Authorization: AdminAuthorizationSpendingKey, PolicyGate: AdminPolicyGateNone,
-		}},
+		Rekey:        boundedmeta.RekeySpendingKey,
 	})
 	teal, err := provider.GenerateTEAL([]byte{1}, nil)
 	if err != nil {
@@ -187,7 +187,7 @@ func TestBoundedComposerEmitsOrderedEnvelope(t *testing.T) {
 
 	assertOrderedMarkers(t, teal,
 		"// BOUNDED_TEST_VERIFIER",
-		"// === bounded1 transaction envelope ===",
+		"// === bounded transaction envelope ===",
 		"txn Fee\npushint 7000\n<=\nassert",
 		"txn RekeyTo\nglobal ZeroAddress\n!=\nbnz "+boundedRekeyLabel,
 		boundedRekeyLabel+":",
@@ -210,7 +210,8 @@ func TestBoundedComposerEmitsOrderedEnvelope(t *testing.T) {
 
 func TestBoundedDisabledRekeyCompilesToErr(t *testing.T) {
 	provider := newBoundedTestProvider(&BoundedAuthorizationProfile{
-		Contract: BoundedContractV1, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: 1_000,
+		Contract: BoundedContract, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: 1_000,
+		Rekey: boundedmeta.RekeyRefused,
 	})
 	teal, err := provider.GenerateTEAL([]byte{1}, nil)
 	if err != nil {
@@ -225,12 +226,12 @@ func TestBoundedDisabledRekeyCompilesToErr(t *testing.T) {
 	}
 }
 
-func TestBoundedSpendingRekeyCanRequireLayer3(t *testing.T) {
+// No host rule gates a rekey: a spending-key rekey checks its normal form and
+// accepts, and the spend path's Layer 3 policy never sees it.
+func TestBoundedSpendingRekeyAcceptsWithoutLayer3(t *testing.T) {
 	provider := newBoundedTestProvider(&BoundedAuthorizationProfile{
-		Contract: BoundedContractV1, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: 1_000,
-		AdminOperations: []AdminOperationSpec{{
-			Kind: AdminOperationRekey, Authorization: AdminAuthorizationSpendingKey, PolicyGate: AdminPolicyGateLayer3,
-		}},
+		Contract: BoundedContract, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: 1_000,
+		Rekey: boundedmeta.RekeySpendingKey,
 	})
 	teal, err := provider.GenerateTEAL([]byte{1}, nil)
 	if err != nil {
@@ -238,17 +239,29 @@ func TestBoundedSpendingRekeyCanRequireLayer3(t *testing.T) {
 	}
 	rekey := strings.Index(teal, boundedRekeyLabel+":")
 	spend := strings.Index(teal, boundedSpendLabel+":")
-	if rekey < 0 || spend < 0 || rekey >= spend || !strings.Contains(teal[rekey:spend], "b "+boundedSpendLabel) {
-		t.Fatalf("Layer-3-gated rekey does not branch through spending policy:\n%s", teal)
+	policy := strings.Index(teal, "// LAYER3_TEST_POLICY")
+	if rekey < 0 || spend < 0 || rekey >= spend || policy < spend {
+		t.Fatalf("rekey path at %d, spend path at %d, Layer 3 at %d:\n%s", rekey, spend, policy, teal)
+	}
+	branch := teal[rekey:spend]
+	if !strings.HasPrefix(branch, boundedRekeyLabel+":\ntxn TypeEnum\npushint 1\n==\nassert\n") ||
+		!strings.HasSuffix(branch, "b "+boundedAcceptLabel+"\n\n") {
+		t.Fatalf("spending-key rekey does not check a pure payment and accept:\n%s", branch)
+	}
+	for _, field := range []string{"CloseRemainderTo", "AssetCloseTo", "AssetSender"} {
+		if !strings.Contains(branch, "txn "+field+"\nglobal ZeroAddress\n==\nassert") {
+			t.Fatalf("spending-key rekey does not require a zero %s:\n%s", field, branch)
+		}
+	}
+	if strings.Contains(branch, boundedSpendLabel) || strings.Contains(branch, boundedLayer3Label) || strings.Contains(branch, "LAYER3_TEST_POLICY") {
+		t.Fatalf("spending-key rekey reaches the spend path:\n%s", branch)
 	}
 }
 
 func TestBoundedCosignerRejectsSpendingKeyAuthorizedRekey(t *testing.T) {
 	profile := &BoundedAuthorizationProfile{
-		Contract: BoundedContractV1, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: 1_000,
-		AdminOperations: []AdminOperationSpec{{
-			Kind: AdminOperationRekey, Authorization: AdminAuthorizationSpendingKey, PolicyGate: AdminPolicyGateLayer3,
-		}},
+		Contract: BoundedContract, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: 1_000,
+		Rekey: boundedmeta.RekeySpendingKey,
 		Cosigner: &boundedmeta.CosignerAuthorization{
 			Contract: boundedmeta.CosignerContractV1, ComponentKeyType: boundedmeta.CosignerComponentKeyTypeV1,
 			SignatureMaxSize: boundedmeta.CosignerSignatureMaxSizeV1, RequiredOn: []string{boundedmeta.PathSpend},
@@ -258,14 +271,15 @@ func TestBoundedCosignerRejectsSpendingKeyAuthorizedRekey(t *testing.T) {
 	_, err := provider.GenerateTEAL([]byte{1}, map[string]string{
 		BoundedCosignerPublicKeyParameter: strings.Repeat("42", boundedmeta.CosignerPublicKeySizeV1),
 	})
-	if err == nil || !strings.Contains(err.Error(), "do not support spending-key-authorized rekey") {
+	if err == nil || !strings.Contains(err.Error(), "do not support a spending_key rekey") {
 		t.Fatalf("GenerateTEAL() error = %v, want bounded-cosigner spending-rekey rejection", err)
 	}
 }
 
 func TestBoundedRejectsInvalidProfilesAndCapabilities(t *testing.T) {
 	valid := &BoundedAuthorizationProfile{
-		Contract: BoundedContractV1, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: 1_000,
+		Contract: BoundedContract, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: 1_000,
+		Rekey: boundedmeta.RekeyRefused,
 	}
 	tests := []struct {
 		name string
@@ -276,10 +290,10 @@ func TestBoundedRejectsInvalidProfilesAndCapabilities(t *testing.T) {
 			name: "fee above ceiling",
 			make: func() *ComposedDSA {
 				profile := cloneBoundedProfile(valid)
-				profile.MaxFee = BoundedMaxFeeV1 + 1
+				profile.MaxFee = BoundedMaxFee + 1
 				return newBoundedTestProvider(profile)
 			},
-			want: "exceeds bounded1 ceiling",
+			want: "exceeds " + BoundedContract + " ceiling",
 		},
 		{
 			name: "denied spend effect",
@@ -291,13 +305,22 @@ func TestBoundedRejectsInvalidProfilesAndCapabilities(t *testing.T) {
 			want: "unsupported spend effect",
 		},
 		{
-			name: "missing admin policy gate",
+			name: "missing rekey setting",
 			make: func() *ComposedDSA {
 				profile := cloneBoundedProfile(valid)
-				profile.AdminOperations = []AdminOperationSpec{{Kind: AdminOperationRekey, Authorization: AdminAuthorizationSpendingKey}}
+				profile.Rekey = ""
 				return newBoundedTestProvider(profile)
 			},
-			want: "unsupported policy gate",
+			want: `unsupported rekey setting ""`,
+		},
+		{
+			name: "unknown rekey setting",
+			make: func() *ComposedDSA {
+				profile := cloneBoundedProfile(valid)
+				profile.Rekey = "admin_key"
+				return newBoundedTestProvider(profile)
+			},
+			want: `unsupported rekey setting "admin_key"`,
 		},
 		{
 			name: "runtime args",
@@ -340,7 +363,8 @@ func TestBoundedRejectsInvalidProfilesAndCapabilities(t *testing.T) {
 
 func TestBoundedFingerprintCanonicalizesProfileOrder(t *testing.T) {
 	profileA := &BoundedAuthorizationProfile{
-		Contract: BoundedContractV1, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectAxfer, txeffects.SpendEffectPay}, MaxFee: 1_000,
+		Contract: BoundedContract, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectAxfer, txeffects.SpendEffectPay}, MaxFee: 1_000,
+		Rekey: boundedmeta.RekeyRefused,
 	}
 	profileB := cloneBoundedProfile(profileA)
 	profileB.SpendEffects = []txeffects.SpendEffect{txeffects.SpendEffectPay, txeffects.SpendEffectAxfer}
@@ -351,11 +375,17 @@ func TestBoundedFingerprintCanonicalizesProfileOrder(t *testing.T) {
 	if newBoundedTestProvider(profileA).CompatibilityFingerprint() == newBoundedTestProvider(profileB).CompatibilityFingerprint() {
 		t.Fatal("max_fee did not change fingerprint")
 	}
+	profileC := cloneBoundedProfile(profileA)
+	profileC.Rekey = boundedmeta.RekeySpendingKey
+	if newBoundedTestProvider(profileA).CompatibilityFingerprint() == newBoundedTestProvider(profileC).CompatibilityFingerprint() {
+		t.Fatal("rekey setting did not change fingerprint")
+	}
 }
 
 func TestBoundedBuildArgsEnforcesStaticLayout(t *testing.T) {
 	provider := newBoundedTestProvider(&BoundedAuthorizationProfile{
-		Contract: BoundedContractV1, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: 1_000,
+		Contract: BoundedContract, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: 1_000,
+		Rekey: boundedmeta.RekeyRefused,
 	})
 	if _, err := provider.BuildArgs([]byte{1, 2, 3, 4}, nil); err != nil {
 		t.Fatalf("BuildArgs(valid) error = %v", err)
@@ -388,7 +418,8 @@ func TestBoundedBuildArgsPreservesDerivedSlotBeforeRuntimeArg(t *testing.T) {
 			Parameter: "recipients", MaxSize: boundedmeta.MerkleProofSize,
 		}},
 		Bounded: &BoundedAuthorizationProfile{
-			Contract: BoundedContractV1, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: 1_000,
+			Contract: BoundedContract, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: 1_000,
+			Rekey: boundedmeta.RekeyRefused,
 		},
 	})
 
@@ -414,12 +445,10 @@ func TestBoundedDefaultsHaveOneProgramAndBehaviorEncoding(t *testing.T) {
 			Name: "limit", Type: "uint64", Default: "100",
 		}},
 		Bounded: &BoundedAuthorizationProfile{
-			Contract:     BoundedContractV1,
+			Contract:     BoundedContract,
 			SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay},
 			MaxFee:       1_000,
-			AdminOperations: []AdminOperationSpec{{
-				Kind: AdminOperationRekey, Authorization: AdminAuthorizationSpendingKey, PolicyGate: AdminPolicyGateNone,
-			}},
+			Rekey:        boundedmeta.RekeySpendingKey,
 		},
 	})
 	inputs := []map[string]string{

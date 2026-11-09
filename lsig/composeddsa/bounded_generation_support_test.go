@@ -31,13 +31,10 @@ version: 1
 display_name: Ed25519 Bounded Fixture
 max_opcode_cost: 20000
 bounded:
-  contract: bounded1
+  contract: bounded2
   spend_effects: [pay]
   max_fee: 10000
-  admin_operations:
-    - kind: rekey
-      authorization: spending_key
-      policy_gate: none
+  rekey: spending_key
 teal: |
   int 1
   assert
@@ -56,10 +53,10 @@ version: 1
 display_name: Falcon Cosigner Fixture
 max_opcode_cost: 20000
 bounded:
-  contract: bounded1
+  contract: bounded2
   spend_effects: [pay]
   max_fee: 10000
-  admin_operations: []
+  rekey: refused
   cosigner:
     contract: cosigner1
     required_on: [spend]
@@ -89,7 +86,7 @@ func ed25519BoundedProvider(t *testing.T) *composeddsa.ComposedDSA {
 // to reach the generation check.
 func TestGenerationRefusesCosignerOnUnsupportedBase(t *testing.T) {
 	profile := *ed25519BoundedProvider(t).BoundedAuthorizationProfile()
-	profile.AdminOperations = nil
+	profile.Rekey = boundedmeta.RekeyRefused
 	profile.Cosigner = &boundedmeta.CosignerAuthorization{}
 	direct := composeddsa.NewComposedDSA(composeddsa.Config{
 		KeyType: "test.direct-unsupported-cosigner.v1", BaseKeyType: "aplane.ed25519.v1", FamilyName: "aplane.ed25519",
@@ -135,7 +132,7 @@ func TestGenerationRefusesUnknownBoundedBase(t *testing.T) {
 // Ed25519 signature, and signing would later check the account against Falcon.
 func TestGenerationRefusesOpsThatDisagreeWithTheBaseName(t *testing.T) {
 	profile := *ed25519BoundedProvider(t).BoundedAuthorizationProfile()
-	profile.AdminOperations = nil
+	profile.Rekey = boundedmeta.RekeyRefused
 	direct := composeddsa.NewComposedDSA(composeddsa.Config{
 		KeyType: "test.direct-mismatched-ops.v1", BaseKeyType: "aplane.falcon1024.v1", FamilyName: "aplane.falcon1024",
 		Version: 1, Ops: ed25519v1.NewOps(), TEALSuffix: "int 1\nassert", Bounded: &profile,

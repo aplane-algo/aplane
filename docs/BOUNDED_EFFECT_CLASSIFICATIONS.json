@@ -1,0 +1,151 @@
+{
+  "schema": "aplane.bounded-effect-classifications.v1",
+  "contract": "bounded2",
+  "teal_version": 13,
+  "surface": "PROTOCOL_EFFECT_INVENTORY.json",
+  "spend_effects": [
+    "pay",
+    "axfer",
+    "asset_opt_in"
+  ],
+  "transaction_types": [
+    {
+      "name": "unknown",
+      "classification": "denied"
+    },
+    {
+      "name": "pay",
+      "classification": "spend_or_rekey"
+    },
+    {
+      "name": "keyreg",
+      "classification": "denied"
+    },
+    {
+      "name": "acfg",
+      "classification": "denied"
+    },
+    {
+      "name": "axfer",
+      "classification": "spend"
+    },
+    {
+      "name": "afrz",
+      "classification": "denied"
+    },
+    {
+      "name": "appl",
+      "classification": "denied"
+    },
+    {
+      "name": "stpf",
+      "classification": "denied"
+    },
+    {
+      "name": "hb",
+      "classification": "denied"
+    }
+  ],
+  "classifications": {
+    "framework_danger_predicate": [
+      "RekeyTo",
+      "CloseRemainderTo",
+      "AssetCloseTo",
+      "AssetSender"
+    ],
+    "framework_fee_bound": [
+      "Fee"
+    ],
+    "framework_type_dispatch": [
+      "Type",
+      "TypeEnum"
+    ],
+    "spend_policy": [
+      "Receiver",
+      "Amount",
+      "XferAsset",
+      "AssetAmount",
+      "AssetReceiver"
+    ],
+    "rekey_normal_form": [
+      "Sender",
+      "TypeEnum",
+      "Receiver",
+      "Amount",
+      "RekeyTo",
+      "CloseRemainderTo",
+      "AssetCloseTo",
+      "AssetSender",
+      "Fee"
+    ],
+    "validity_or_replay": [
+      "FirstValid",
+      "FirstValidTime",
+      "LastValid",
+      "Note",
+      "Lease",
+      "TxID"
+    ],
+    "group_context": [
+      "GroupIndex"
+    ],
+    "known_denied_type_only": [
+      "VotePK",
+      "SelectionPK",
+      "VoteFirst",
+      "VoteLast",
+      "VoteKeyDilution",
+      "ApplicationID",
+      "OnCompletion",
+      "ApplicationArgs",
+      "NumAppArgs",
+      "Accounts",
+      "NumAccounts",
+      "ApprovalProgram",
+      "ClearStateProgram",
+      "ConfigAsset",
+      "ConfigAssetTotal",
+      "ConfigAssetDecimals",
+      "ConfigAssetDefaultFrozen",
+      "ConfigAssetUnitName",
+      "ConfigAssetName",
+      "ConfigAssetURL",
+      "ConfigAssetMetadataHash",
+      "ConfigAssetManager",
+      "ConfigAssetReserve",
+      "ConfigAssetFreeze",
+      "ConfigAssetClawback",
+      "FreezeAsset",
+      "FreezeAssetAccount",
+      "FreezeAssetFrozen",
+      "Assets",
+      "NumAssets",
+      "Applications",
+      "NumApplications",
+      "GlobalNumUint",
+      "GlobalNumByteSlice",
+      "LocalNumUint",
+      "LocalNumByteSlice",
+      "ExtraProgramPages",
+      "Nonparticipation",
+      "StateProofPK",
+      "ApprovalProgramPages",
+      "NumApprovalProgramPages",
+      "ClearStateProgramPages",
+      "NumClearStateProgramPages",
+      "RejectVersion"
+    ],
+    "logic_sig_inapplicable_effect": [
+      "Logs",
+      "NumLogs",
+      "CreatedAssetID",
+      "CreatedApplicationID",
+      "LastLog"
+    ]
+  },
+  "review_rules": [
+    "Every avm_txn_fields entry of the surface must occur in at least one classification.",
+    "Every manifest danger predicate must occur in framework_danger_predicate.",
+    "Every transaction type of the surface must be either admitted or denied."
+  ]
+}

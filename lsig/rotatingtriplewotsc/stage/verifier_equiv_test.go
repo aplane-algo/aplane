@@ -13,8 +13,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/avmsim"
 	"github.com/aplane-algo/aplane/internal/crypto/wotsc"
-	"github.com/aplane-algo/aplane/lsig/rotatingfamily/avmsim"
 )
 
 const (
@@ -67,11 +67,11 @@ func (r *verifierRig) assemble(source string) {
 
 func defaultTxn(txid []byte) avmsim.Txn {
 	return avmsim.Txn{
-		TxID:       txid,
-		Sender:     bytes.Repeat([]byte{1}, 32),
-		RekeyTo:    bytes.Repeat([]byte{2}, 32),
-		FirstValid: 1000, LastValid: 1100,
-		CloseRemainderTo: make([]byte, 32),
+		"TxID":       avmsim.B(txid),
+		"Sender":     avmsim.B(bytes.Repeat([]byte{1}, 32)),
+		"RekeyTo":    avmsim.B(bytes.Repeat([]byte{2}, 32)),
+		"FirstValid": avmsim.U(1000), "LastValid": avmsim.U(1100),
+		"CloseRemainderTo": avmsim.B(make([]byte, 32)),
 	}
 }
 
@@ -249,20 +249,20 @@ func TestVerifierGuards(t *testing.T) {
 	if !r.teal(txid, sig) {
 		t.Fatal("valid signature rejected")
 	}
-	for name, mutate := range map[string]func(*avmsim.Txn){
-		"no rekey":        func(x *avmsim.Txn) { x.RekeyTo = make([]byte, 32) },
-		"rekey to sender": func(x *avmsim.Txn) { x.RekeyTo = x.Sender },
-		"close-out":       func(x *avmsim.Txn) { x.CloseRemainderTo = bytes.Repeat([]byte{3}, 32) },
-		"window of 101":   func(x *avmsim.Txn) { x.LastValid = x.FirstValid + MaxValidityWindow + 1 },
+	for name, mutate := range map[string]func(avmsim.Txn){
+		"no rekey":        func(x avmsim.Txn) { x["RekeyTo"] = avmsim.B(make([]byte, 32)) },
+		"rekey to sender": func(x avmsim.Txn) { x["RekeyTo"] = x["Sender"] },
+		"close-out":       func(x avmsim.Txn) { x["CloseRemainderTo"] = avmsim.B(bytes.Repeat([]byte{3}, 32)) },
+		"window of 101":   func(x avmsim.Txn) { x["LastValid"] = avmsim.U(x["FirstValid"].Uint() + MaxValidityWindow + 1) },
 	} {
 		txn := defaultTxn(txid)
-		mutate(&txn)
+		mutate(txn)
 		if r.runTxn(txn, sig) {
 			t.Fatalf("%s accepted", name)
 		}
 	}
 	window := defaultTxn(txid)
-	window.LastValid = window.FirstValid + MaxValidityWindow
+	window["LastValid"] = avmsim.U(window["FirstValid"].Uint() + MaxValidityWindow)
 	if !r.runTxn(window, sig) {
 		t.Fatal("a window of exactly 100 was refused")
 	}

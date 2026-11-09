@@ -11,8 +11,8 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/avmsim"
 	"github.com/aplane-algo/aplane/internal/crypto/slhdsa"
-	"github.com/aplane-algo/aplane/lsig/rotatingfamily/avmsim"
 )
 
 // verifierRig runs a hypertree shape's TEAL verifier in the interpreter
@@ -74,11 +74,11 @@ func (r *verifierRig) tealArgs(txid []byte, slhArgs [][]byte) bool {
 	r.t.Helper()
 	args := append(slices.Clone(slhArgs), []byte("ed25519 signature"), []byte("falcon signature"))
 	ok, err := r.prog.Run(avmsim.Txn{
-		TxID:       txid,
-		Sender:     bytes.Repeat([]byte{1}, 32),
-		RekeyTo:    bytes.Repeat([]byte{2}, 32),
-		FirstValid: 1000, LastValid: 1100,
-		CloseRemainderTo: make([]byte, 32),
+		"TxID":       avmsim.B(txid),
+		"Sender":     avmsim.B(bytes.Repeat([]byte{1}, 32)),
+		"RekeyTo":    avmsim.B(bytes.Repeat([]byte{2}, 32)),
+		"FirstValid": avmsim.U(1000), "LastValid": avmsim.U(1100),
+		"CloseRemainderTo": avmsim.B(make([]byte, 32)),
 	}, args, avmsim.Hooks{
 		Ed25519: func(_, _, _ []byte) bool { r.hooked++; return true },
 		Falcon:  func(_, _, _ []byte) bool { r.hooked++; return true },

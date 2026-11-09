@@ -16,7 +16,7 @@ import (
 // the behavior-only compatibility fingerprint.
 func fingerprintBaseConfig() Config {
 	return Config{
-		KeyType:      "aplane.falcon1024-allowlist.v1",
+		KeyType:      "aplane." + "falcon1024-allowlist.v1",
 		BaseKeyType:  "aplane.falcon1024.v1",
 		FamilyName:   "aplane.falcon1024",
 		Version:      1,

@@ -23,8 +23,11 @@ type File struct {
 	Schema     string   `yaml:"schema"`
 	Spend      []string `yaml:"spend"`
 	Recipients []string `yaml:"recipients"`
-	Encoding   *string  `yaml:"encoding"`
-	Rekey      *struct {
+	// RecipientScope "any" asks for no recipient list. It is a separate field so
+	// that a missing list is still an error rather than an open account.
+	RecipientScope *string `yaml:"recipient_scope"`
+	Encoding       *string `yaml:"encoding"`
+	Rekey          *struct {
 		Authority string `yaml:"authority"`
 	} `yaml:"rekey"`
 	Cosigner *string `yaml:"cosigner"`
@@ -53,8 +56,30 @@ func ParseFile(data []byte) (*File, error) {
 	if file.UnlockRound != nil && strings.TrimSpace(*file.UnlockRound) == "" {
 		return nil, fmt.Errorf("boundary file: unlock_round is empty")
 	}
-	if len(file.Recipients) == 0 && (file.Recipients != nil || file.UnlockRound == nil) {
-		return nil, fmt.Errorf("boundary file: recipients is required unless the file sets unlock_round")
+	anyRecipient, listed := false, false
+	if file.RecipientScope != nil {
+		switch *file.RecipientScope {
+		case RecipientScopeAny:
+			anyRecipient = true
+		case RecipientScopeListed:
+			listed = true
+		default:
+			return nil, fmt.Errorf("boundary file: recipient_scope must be %s or %s", RecipientScopeListed, RecipientScopeAny)
+		}
+	}
+	if anyRecipient && file.Recipients != nil {
+		return nil, fmt.Errorf("boundary file: recipient_scope %s takes no recipients", RecipientScopeAny)
+	}
+	// An explicit listed scope asks for a list, even beside an unlock round, as
+	// the provider reads it.
+	if listed && len(file.Recipients) == 0 {
+		return nil, fmt.Errorf("boundary file: recipient_scope %s needs recipients", RecipientScopeListed)
+	}
+	if anyRecipient && file.UnlockRound != nil {
+		return nil, fmt.Errorf("boundary file: recipient_scope %s does not combine with unlock_round", RecipientScopeAny)
+	}
+	if !anyRecipient && len(file.Recipients) == 0 && (file.Recipients != nil || file.UnlockRound == nil) {
+		return nil, fmt.Errorf("boundary file: recipients is required unless the file sets unlock_round or recipient_scope: %s", RecipientScopeAny)
 	}
 	if file.Recipients == nil && file.Encoding != nil {
 		return nil, fmt.Errorf("boundary file: encoding needs a recipient list")
@@ -87,6 +112,9 @@ func (f *File) CreationParameters() map[string]string {
 	}
 	if f.UnlockRound != nil {
 		params[ParameterUnlockRound] = *f.UnlockRound
+	}
+	if f.RecipientScope != nil {
+		params[ParameterRecipientScope] = *f.RecipientScope
 	}
 	if f.Encoding != nil {
 		params[ParameterListEncoding] = *f.Encoding

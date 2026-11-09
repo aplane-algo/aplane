@@ -25,6 +25,11 @@ const (
 	// ParameterUnlockRound is the first round the account can spend. A round
 	// compiles the same way everywhere but means a different time on each network.
 	ParameterUnlockRound = "unlock_round"
+	// ParameterRecipientScope selects whether the account has a recipient rule.
+	// Absent means listed, so leaving out a list still fails closed; "any" must be
+	// asked for, and selects a limits-only account: the fee ceiling and transfer
+	// kinds, with no recipient list and no timelock.
+	ParameterRecipientScope = "recipient_scope"
 	// ParameterCosigner is the signer-side reference selector. It is resolved to
 	// a public key before an instance is selected.
 	ParameterCosigner = "cosigner"
@@ -33,8 +38,11 @@ const (
 	EncodingInline = "inline"
 	EncodingMerkle = "merkle"
 
+	RecipientScopeListed = "listed"
+	RecipientScopeAny    = "any"
+
 	// RekeySpendingKey lets the spending key rekey the account. RekeyRefused gives
-	// the account no rekey path at all; the stored contract has no rekey operation.
-	RekeySpendingKey = boundedmeta.AdminAuthorizationSpend
-	RekeyRefused     = "refused"
+	// the account no rekey path at all.
+	RekeySpendingKey = string(boundedmeta.RekeySpendingKey)
+	RekeyRefused     = string(boundedmeta.RekeyRefused)
 )

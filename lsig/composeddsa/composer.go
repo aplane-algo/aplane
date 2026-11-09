@@ -77,7 +77,7 @@ type BoundedCapableDSAOps interface {
 // Config holds configuration for creating a ComposedDSA.
 type Config struct {
 	// Identity
-	KeyType     string // e.g., "aplane.falcon1024-timelock.v1"
+	KeyType     string // e.g., "example.falcon1024-timelock.v1"
 	BaseKeyType string // e.g., "aplane.falcon1024.v1"
 	FamilyName  string // qualified registry family, e.g. "aplane.falcon1024"
 	Version     int
@@ -539,7 +539,7 @@ func (c *ComposedDSA) GenerateTEAL(publicKey []byte, params map[string]string) (
 	if boundedProfile != nil {
 		prelude, err := c.renderBoundedPrelude(publicKey, normalizedParams, boundedProfile)
 		if err != nil {
-			return "", fmt.Errorf("failed to render bounded1 envelope: %w", err)
+			return "", fmt.Errorf("failed to render bounded envelope: %w", err)
 		}
 		b.WriteString(prelude)
 	}

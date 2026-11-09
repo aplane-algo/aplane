@@ -8,7 +8,6 @@ import "fmt"
 const (
 	PathSpend         = "spend"
 	PathSpendingRekey = "spending_rekey"
-	PathAdminRekey    = "admin_rekey"
 
 	ArgSourceBaseSignature = "base_signature"
 	ArgSourceDerived       = "derived"
@@ -23,11 +22,10 @@ const (
 	MerkleProofSize       = 512
 )
 
-// ArgumentPathMask freezes one slot's use on every bounded1 path.
+// ArgumentPathMask freezes one slot's use on every bounded path.
 type ArgumentPathMask struct {
 	Spend         string `json:"spend"`
 	SpendingRekey string `json:"spending_rekey"`
-	AdminRekey    string `json:"admin_rekey"`
 }
 
 // ArgumentSlot is one position in the final LogicSig argument array.
@@ -55,7 +53,7 @@ func BaseArgumentLayout(layout SignatureArgLayout) []ArgumentSlot {
 	for i, maxSize := range layout.MaxSizes {
 		slots = append(slots, ArgumentSlot{
 			Index: i, Name: fmt.Sprintf("base_signature_%d", i), Source: ArgSourceBaseSignature, MaxSize: maxSize,
-			Paths: ArgumentPathMask{Spend: ArgRequired, SpendingRekey: ArgRequired, AdminRekey: ArgRequired},
+			Paths: ArgumentPathMask{Spend: ArgRequired, SpendingRekey: ArgRequired},
 		})
 	}
 	return slots
@@ -64,7 +62,7 @@ func BaseArgumentLayout(layout SignatureArgLayout) []ArgumentSlot {
 // ArgumentBytesForPath returns the maximum aggregate LogicSig argument bytes
 // for one bounded authorization path. Program bytes are deliberately excluded.
 func (metadata *Metadata) ArgumentBytesForPath(path string) int {
-	if metadata == nil || (path != PathSpend && path != PathSpendingRekey && path != PathAdminRekey) {
+	if metadata == nil || (path != PathSpend && path != PathSpendingRekey) {
 		return 0
 	}
 	size := 0
@@ -82,8 +80,6 @@ func slotRequirement(paths ArgumentPathMask, path string) string {
 		return paths.Spend
 	case PathSpendingRekey:
 		return paths.SpendingRekey
-	case PathAdminRekey:
-		return paths.AdminRekey
 	default:
 		return ""
 	}
@@ -91,7 +87,7 @@ func slotRequirement(paths ArgumentPathMask, path string) string {
 
 func validateArgumentLayout(metadata *Metadata) error {
 	if len(metadata.ArgumentLayout) == 0 {
-		return fmt.Errorf("bounded1 argument_layout must not be empty")
+		return fmt.Errorf("bounded argument_layout must not be empty")
 	}
 	sourceOrder := map[string]int{
 		ArgSourceBaseSignature: 0,
@@ -150,7 +146,6 @@ func validateArgumentLayout(metadata *Metadata) error {
 		}{
 			{path: PathSpend, rule: slot.Paths.Spend},
 			{path: PathSpendingRekey, rule: slot.Paths.SpendingRekey},
-			{path: PathAdminRekey, rule: slot.Paths.AdminRekey},
 		} {
 			path, rule := pathRule.path, pathRule.rule
 			if rule != ArgRequired && rule != ArgOptional && rule != ArgForbidden {
@@ -159,7 +154,7 @@ func validateArgumentLayout(metadata *Metadata) error {
 		}
 		switch slot.Source {
 		case ArgSourceBaseSignature:
-			if slot.Paths.Spend != ArgRequired || slot.Paths.SpendingRekey != ArgRequired || slot.Paths.AdminRekey != ArgRequired {
+			if slot.Paths.Spend != ArgRequired || slot.Paths.SpendingRekey != ArgRequired {
 				return fmt.Errorf("base signature slot %d must be required on every path", i)
 			}
 			if baseCount >= len(metadata.BaseSignatureArgLayout.MaxSizes) || slot.MaxSize != metadata.BaseSignatureArgLayout.MaxSizes[baseCount] {
@@ -189,7 +184,7 @@ func validateArgumentLayout(metadata *Metadata) error {
 		case ArgSourceCosigner:
 			cosignerSlots++
 			if slot.Name != CosignerSignatureSlot || metadata.Cosigner == nil || slot.MaxSize != metadata.Cosigner.SignatureMaxSize ||
-				slot.Paths.Spend != ArgRequired || slot.Paths.SpendingRekey != ArgForbidden || slot.Paths.AdminRekey != ArgForbidden {
+				slot.Paths.Spend != ArgRequired || slot.Paths.SpendingRekey != ArgForbidden {
 				return fmt.Errorf("bounded cosigner signature slot must be spend-only and match cosigner metadata")
 			}
 		}

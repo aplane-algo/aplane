@@ -73,14 +73,15 @@ type TemplateSpec struct {
 // v2 bounded-authorization profile. MaxFee is a pointer so omission cannot
 // be confused with an explicit zero ceiling.
 type BoundedAuthorizationSpec struct {
-	Contract        string                      `yaml:"contract"`
-	SpendEffects    []string                    `yaml:"spend_effects"`
-	MaxFee          *uint64                     `yaml:"max_fee"`
-	AdminOperations []TransactionAdminOperation `yaml:"admin_operations"`
-	Cosigner        *BoundedCosignerSpec        `yaml:"cosigner"`
-	Layer3          *TransactionLayer3Spec      `yaml:"layer3"`
-	RuntimeArgs     []BoundedRuntimeArgSpec     `yaml:"runtime_args"`
-	DerivedArgs     []BoundedDerivedArgSpec     `yaml:"derived_args"`
+	Contract     string   `yaml:"contract"`
+	SpendEffects []string `yaml:"spend_effects"`
+	MaxFee       *uint64  `yaml:"max_fee"`
+	// Rekey is refused or spending_key.
+	Rekey       string                  `yaml:"rekey"`
+	Cosigner    *BoundedCosignerSpec    `yaml:"cosigner"`
+	Layer3      *TransactionLayer3Spec  `yaml:"layer3"`
+	RuntimeArgs []BoundedRuntimeArgSpec `yaml:"runtime_args"`
+	DerivedArgs []BoundedDerivedArgSpec `yaml:"derived_args"`
 }
 
 // BoundedCosignerSpec enables the frozen cosigner1 spend authorization gate.
@@ -103,8 +104,8 @@ type BoundedRuntimeArgSpec struct {
 	RequiredOn  []string `yaml:"required_on"`
 }
 
-// BoundedDerivedArgSpec declares signer-generated Layer-3 data. Bounded1 has
-// one closed kind: a Merkle allowlist proof derived from an address parameter.
+// BoundedDerivedArgSpec declares signer-generated Layer-3 data. There is one
+// closed kind: a Merkle allowlist proof derived from an address parameter.
 type BoundedDerivedArgSpec struct {
 	Name      string `yaml:"name"`
 	Kind      string `yaml:"kind"`
@@ -119,13 +120,6 @@ type TransactionLayer3Spec struct {
 	Policy               string `yaml:"policy"`
 	RecipientsParameter  string `yaml:"recipients_parameter"`
 	UnlockRoundParameter string `yaml:"unlock_round_parameter"`
-}
-
-// TransactionAdminOperation is one operation in a schema-v2 bounded profile.
-type TransactionAdminOperation struct {
-	Kind          string `yaml:"kind"`
-	Authorization string `yaml:"authorization"`
-	PolicyGate    string `yaml:"policy_gate"`
 }
 
 // templateSpecV1 deliberately has no bounded field. Keeping a separate typed

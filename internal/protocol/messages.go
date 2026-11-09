@@ -16,8 +16,8 @@ const (
 )
 
 const (
-	AdminProtocolVersionMajor = 7
-	AdminProtocolVersionMinor = 4
+	AdminProtocolVersionMajor = 8
+	AdminProtocolVersionMinor = 0
 )
 
 // ProtocolVersion is the admin IPC protocol version shape surfaced during
@@ -759,21 +759,14 @@ type PrepareGenerateKeyMessage struct {
 	Parameters map[string]string `json:"parameters,omitempty"`
 }
 
-// PreparedAdminOperation is one administrative operation of a prepared account.
-type PreparedAdminOperation struct {
-	Kind          string `json:"kind"`
-	Authorization string `json:"authorization"`
-	PolicyGate    string `json:"policy_gate"`
-}
-
 // PreparedBoundedProfile is the bounded contract of a prepared account.
 type PreparedBoundedProfile struct {
-	Contract         string                   `json:"contract"`
-	SpendEffects     []string                 `json:"spend_effects"`
-	MaxFee           uint64                   `json:"max_fee"`
-	AdminOperations  []PreparedAdminOperation `json:"admin_operations"`
-	Layer3Policy     string                   `json:"layer3_policy"`
-	CosignerRequired bool                     `json:"cosigner_required,omitempty"`
+	Contract         string   `json:"contract"`
+	SpendEffects     []string `json:"spend_effects"`
+	MaxFee           uint64   `json:"max_fee"`
+	Rekey            string   `json:"rekey"`
+	Layer3Policy     string   `json:"layer3_policy"`
+	CosignerRequired bool     `json:"cosigner_required,omitempty"`
 }
 
 // PrepareGenerateResultMessage describes the account a request would create. It

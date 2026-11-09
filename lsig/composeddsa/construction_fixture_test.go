@@ -97,8 +97,8 @@ func compositeBase(construction sigconstruction.Construction) composeddsa.BaseRe
 	}
 }
 
-// compositeTemplate returns a bounded template on the fixture base. An extra block
-// such as a rekey operation or a cosigner goes inside bounded.
+// compositeTemplate returns a bounded template on the fixture base. An extra block,
+// the rekey setting and any cosigner, goes inside bounded.
 func compositeTemplate(extra string) string {
 	return `
 schema_version: 2
@@ -111,7 +111,7 @@ version: 1
 display_name: Construction Fixture
 max_opcode_cost: 20000
 bounded:
-  contract: bounded1
+  contract: bounded2
   spend_effects: [pay]
   max_fee: 10000
 ` + extra + `
@@ -122,11 +122,9 @@ teal: |
 }
 
 const (
-	spendingKeyRekeyYAML = `  admin_operations:
-    - kind: rekey
-      authorization: spending_key
-      policy_gate: none`
-	cosignerYAML = `  cosigner:
+	spendingKeyRekeyYAML = `  rekey: spending_key`
+	cosignerYAML         = `  rekey: refused
+  cosigner:
     contract: cosigner1
     required_on: [spend]`
 )
@@ -214,6 +212,45 @@ func TestCompositeBaseRequiresEveryComponentInOrder(t *testing.T) {
 	}
 }
 
+// S5: admission is a generation decision only. A template whose base the support
+// policy stops admitting must still validate, keep its fingerprint and build its
+// metadata, because store load, unlock and existing accounts reach those; only a
+// new account is refused. Narrowing the policy must never strand a credential.
+func TestAdmissionStaysOutOfLoadAndFingerprint(t *testing.T) {
+	construction := compositeConstruction(t, sigconstruction.PrimitiveEd25519, sigconstruction.PrimitiveFalcon1024)
+	key, _ := syntheticKey(construction)
+	for name, extra := range map[string]string{"refused": "  rekey: refused", "spending key": spendingKeyRekeyYAML} {
+		t.Run(name, func(t *testing.T) {
+			admitted := compositeProvider(t, construction, extra, composeddsa.FixtureSupport{})
+			refused := compositeProvider(t, construction, extra, composeddsa.FixtureSupport{RefuseGeneration: true})
+			if refused.CompatibilityFingerprint() != admitted.CompatibilityFingerprint() {
+				t.Fatal("the support policy changed the template fingerprint")
+			}
+			params := map[string]string{}
+			admittedTEAL, err := admitted.GenerateTEAL(key, params)
+			if err != nil {
+				t.Fatalf("admitted GenerateTEAL() error = %v", err)
+			}
+			if _, err := refused.GenerateTEAL(key, params); err == nil || !strings.Contains(err.Error(), "cannot be generated") {
+				t.Fatalf("refused GenerateTEAL() error = %v", err)
+			}
+			// An existing account's metadata is rebuilt from its bytecode, which no
+			// admission decision may block.
+			want, err := admitted.BuildBoundedAuthorizationMetadata(key, params, []byte(admittedTEAL))
+			if err != nil {
+				t.Fatalf("admitted metadata: %v", err)
+			}
+			got, err := refused.BuildBoundedAuthorizationMetadata(key, params, []byte(admittedTEAL))
+			if err != nil {
+				t.Fatalf("refused metadata: %v", err)
+			}
+			if !got.Equal(want) {
+				t.Fatalf("metadata differs under a refusing policy:\n%+v\n%+v", got, want)
+			}
+		})
+	}
+}
+
 func TestCompositeArgumentsAreAssembledFromEverySlot(t *testing.T) {
 	construction := compositeConstruction(t, sigconstruction.PrimitiveEd25519, sigconstruction.PrimitiveFalcon1024)
 	provider := compositeProvider(t, construction, spendingKeyRekeyYAML, composeddsa.FixtureSupport{})
@@ -234,7 +271,7 @@ func TestCompositeArgumentsAreAssembledFromEverySlot(t *testing.T) {
 }
 
 // The cosigner gate reads its slot from the layout, so a base of several slots has
-// to move it. Its key and signature are still Falcon under bounded1.
+// to move it. Its key and signature are still Falcon under the bounded contract.
 func TestAuthorityGatesFollowEveryBaseSlot(t *testing.T) {
 	construction := compositeConstruction(t, sigconstruction.PrimitiveFalcon1024, sigconstruction.PrimitiveEd25519)
 	key, _ := syntheticKey(construction)
@@ -329,7 +366,7 @@ func TestFixturePolicyBelongsToOneComposer(t *testing.T) {
 	if _, err := permitted.GenerateTEAL(key, params); err != nil {
 		t.Fatalf("GenerateTEAL() with fixture support error = %v", err)
 	}
-	if composeddsa.ProductionSupportsBase(composeddsa.BoundedContractV1, fixtureBaseKeyType) {
+	if composeddsa.ProductionSupportsBase(composeddsa.BoundedContract, fixtureBaseKeyType) {
 		t.Fatal("a fixture base reached the production policy")
 	}
 }
@@ -356,8 +393,8 @@ func TestEveryProductionBaseResolvesToASupportedConstruction(t *testing.T) {
 		if got := registration.Ops.PublicKeySize(); got != construction.PublicKeySize() {
 			t.Fatalf("%q public key size = %d, construction says %d", base, got, construction.PublicKeySize())
 		}
-		if !composeddsa.ProductionSupportsBase(composeddsa.BoundedContractV1, base) {
-			t.Fatalf("registered base %q has no %s support policy", base, composeddsa.BoundedContractV1)
+		if !composeddsa.ProductionSupportsBase(composeddsa.BoundedContract, base) {
+			t.Fatalf("registered base %q has no %s support policy", base, composeddsa.BoundedContract)
 		}
 		if composeddsa.ProductionSupportsBase("bounded-unknown", base) {
 			t.Fatalf("base %q has support under a contract nothing reviewed", base)

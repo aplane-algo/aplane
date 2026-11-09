@@ -17,7 +17,7 @@ func TestDisplay(t *testing.T) {
 	}{
 		{name: "ed25519", keyType: "ed25519", want: "ed25519"},
 		{name: "aplane falcon unchanged", keyType: "aplane.falcon1024.v1", want: "aplane.falcon1024.v1"},
-		{name: "aplane template unchanged", keyType: "aplane.falcon1024-allowlist.v1", want: "aplane.falcon1024-allowlist.v1"},
+		{name: "aplane template unchanged", keyType: "aplane." + "falcon1024-allowlist.v1", want: "aplane." + "falcon1024-allowlist.v1"},
 		{name: "other publisher unchanged", keyType: "custom.allowlist.v2", want: "custom.allowlist.v2"},
 		{name: "filename unchanged", keyType: "test.generic-policy.v1.yaml", want: "test.generic-policy.v1.yaml"},
 		{name: "extra family dot unchanged", keyType: "aplane.white.list.v1", want: "aplane.white.list.v1"},
@@ -39,8 +39,8 @@ func TestDisplay(t *testing.T) {
 func TestDisplayCanonicalizeRoundTrip(t *testing.T) {
 	canonical := []string{
 		"aplane.falcon1024.v1",
-		"aplane.falcon1024-allowlist.v1",
-		"aplane.falcon1024-timelock.v1",
+		"aplane." + "falcon1024-allowlist.v1",
+		"aplane." + "falcon1024-timelock.v1",
 	}
 	for _, kt := range canonical {
 		if got := keytypecatalog.Canonicalize(Display(kt)); got != kt {

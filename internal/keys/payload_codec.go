@@ -849,7 +849,7 @@ func validateLogicSigFields(p *Payload) error {
 			}
 		}
 		if len(p.SigningArgs) != 0 {
-			return incompatibleKeyFormat("bounded1 forbids caller-supplied signing_args")
+			return incompatibleKeyFormat("a bounded account forbids caller-supplied signing_args")
 		}
 	}
 	address, err := logicSigAddressBytes(p.LogicSigBytecode)

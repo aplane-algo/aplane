@@ -12,8 +12,6 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"os"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -721,11 +719,7 @@ func TestFalconAllowlistTemplateUsesBoundedFixedAllowlist(t *testing.T) {
 		BaseKeyType: "aplane.falcon1024.v1", FamilyName: "falcon1024", Version: 1,
 		Ops: falconBoundaryTestOps{}, NewAddressDeriver: func(string) addressderive.Deriver { return testDeriver{} },
 	})
-	data, err := os.ReadFile(filepath.Join("..", "..", "library", "retired", "aplane.falcon1024-allowlist.v1.yaml"))
-	if err != nil {
-		t.Fatalf("ReadFile(aplane.falcon1024-allowlist.v1.yaml) error = %v", err)
-	}
-	spec, err := ParseTemplateSpec(data)
+	spec, err := ParseTemplateSpec([]byte(FixedAllowlistFixtureYAML))
 	if err != nil {
 		t.Fatalf("ParseTemplateSpec() error = %v", err)
 	}
@@ -765,55 +759,6 @@ func TestFalconAllowlistTemplateUsesBoundedFixedAllowlist(t *testing.T) {
 	}
 }
 
-func TestFalconTimelockOnlyAddsGatingPredicate(t *testing.T) {
-	tests := []struct {
-		name         string
-		file         string
-		required     []string
-		forbiddenTxn []string
-	}{
-		{
-			name: "timelock",
-			file: "aplane.falcon1024-timelock.v1.yaml",
-			required: []string{
-				"txn FirstValid\n$unlock_round\n>=",
-			},
-			forbiddenTxn: []string{
-				"txn TypeEnum",
-				"txn Receiver",
-				"txn CloseRemainderTo",
-				"txn RekeyTo",
-				"txn AssetReceiver",
-				"txn AssetCloseTo",
-				"txn AssetSender",
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			data, err := os.ReadFile(filepath.Join("..", "..", "library", "retired", tt.file))
-			if err != nil {
-				t.Fatalf("ReadFile(%s) error = %v", tt.file, err)
-			}
-			spec, err := ParseTemplateSpec(data)
-			if err != nil {
-				t.Fatalf("ParseTemplateSpec(%s) error = %v", tt.file, err)
-			}
-			for _, want := range tt.required {
-				if !strings.Contains(spec.TEAL, want) {
-					t.Fatalf("%s template missing %q:\n%s", tt.name, want, spec.TEAL)
-				}
-			}
-			for _, forbidden := range tt.forbiddenTxn {
-				if strings.Contains(spec.TEAL, forbidden) {
-					t.Fatalf("%s template should not add transaction policy %q:\n%s", tt.name, forbidden, spec.TEAL)
-				}
-			}
-		})
-	}
-}
-
 func TestFalconMerkleAllowlistTemplateRootProofContract(t *testing.T) {
 	registerBaseForTest(t, BaseRegistration{
 		BaseKeyType: "aplane.falcon1024.v1",
@@ -825,11 +770,7 @@ func TestFalconMerkleAllowlistTemplateRootProofContract(t *testing.T) {
 		},
 	})
 
-	data, err := os.ReadFile(filepath.Join("..", "..", "library", "retired", "aplane.falcon1024-allowlist.v2.yaml"))
-	if err != nil {
-		t.Fatalf("ReadFile(aplane.falcon1024-allowlist.v2.yaml) error = %v", err)
-	}
-	spec, err := ParseTemplateSpec(data)
+	spec, err := ParseTemplateSpec([]byte(MerkleAllowlistFixtureYAML))
 	if err != nil {
 		t.Fatalf("ParseTemplateSpec() error = %v", err)
 	}
@@ -933,11 +874,7 @@ func TestFalconAllowlistTemplateRendersMaxRecipientsWithinComposerBoundary(t *te
 		},
 	})
 
-	data, err := os.ReadFile(filepath.Join("..", "..", "library", "retired", "aplane.falcon1024-allowlist.v1.yaml"))
-	if err != nil {
-		t.Fatalf("ReadFile(aplane.falcon1024-allowlist.v1.yaml) error = %v", err)
-	}
-	spec, err := ParseTemplateSpec(data)
+	spec, err := ParseTemplateSpec([]byte(FixedAllowlistFixtureYAML))
 	if err != nil {
 		t.Fatalf("ParseTemplateSpec() error = %v", err)
 	}

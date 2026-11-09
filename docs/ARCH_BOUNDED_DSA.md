@@ -2,81 +2,84 @@
 
 ## Status
 
-This document freezes the `bounded1` contract. The composer envelope, classifier, strict
-composed schema v2, durable signing metadata, inventory projection,
-framework-owned fixed allowlist, and static Layer-3 argument layout are
-implemented.
+This document freezes the `bounded2` contract. The composer envelope, the path
+declaration and its classifier, strict composed schema v2, durable signing
+metadata, inventory projection, framework-owned Layer 3 policies, and static
+Layer-3 argument layout are implemented.
 
-This is the first supported release of `bounded1`. Canonical encodings and
-golden vectors that existed only in development branches before this release
-were not a compatibility contract; preview or LocalNet keys derived from those
-encodings must be recreated. The encodings and vectors in this document are
-the v1 compatibility baseline.
+Canonical encodings and golden vectors from development builds are not a
+compatibility contract; keys derived from them must be recreated. The encodings
+and vectors in this document are the `bounded2` compatibility baseline.
 
 ## Purpose and Authority
 
 A bounded authorization contract is a stateless LogicSig program that
 defines the complete transaction envelope accepted for an account. The base
-spending key authorizes every path. The only administrative operation is a
-pure rekey, which a profile may enable under the spending key or omit.
+spending key authorizes every path. An account's rekey setting is `refused`,
+which gives it no rekey path, or `spending_key`, which lets the spending key
+alone authorize a pure rekey.
 
-`bounded1` has three ordered regions:
+`bounded2` has three ordered regions:
 
 1. **Authentication:** the base DSA signature is required on every path.
-2. **Transaction envelope:** the composer enforces fee, transaction-type,
-   administrative-effect, and admin-operation normal-form constraints.
+2. **Transaction envelope:** the composer checks the fee ceiling, then
+   dispatches on `RekeyTo`. A rekey is accepted in pure rekey normal form when
+   the account declares `rekey: spending_key`, and rejected otherwise. Every
+   other transaction must have zero danger fields and an admitted spend type.
 3. **Layer 3 policy:** framework policy, author TEAL, or a framework allowlist
-   followed by author TEAL runs only for an admitted
-   pure spend, and for a spending-key rekey only when its operation declares
-   `policy_gate: layer3`.
+   followed by author TEAL runs only for an admitted pure spend.
 
-Cosigner-enabled bounded1 profiles are spend-gated profiles and may not declare
-a spending-key-authorized rekey. The combination would bypass the spend-only
-cosigner gate and is not routable through `bounded-cosigner1`; V1 rejects it
-during template, profile, and durable-metadata validation. A cosigner-enabled
-profile therefore declares no rekey operation, and its account can never be
-rekeyed. A lost or compromised cosigner cannot be escaped, and the program
-cannot be replaced; a later release adds a rekey-to list for this.
+No host rule gates a rekey. The rekey path accepts or rejects before any
+Layer 3, cosigner, or author code runs, so no Layer 3 policy applies to a
+rekey. The framework timelock policies therefore require `rekey: refused`: a
+spending-key rekey would leave the lock before the unlock round.
+
+Cosigner-enabled bounded profiles gate spends only and require
+`rekey: refused`. A spending-key rekey would bypass the spend-only cosigner gate
+and is not routable through `bounded-cosigner1`; template, profile, and
+durable-metadata validation reject it. A cosigner-enabled account can therefore
+never be rekeyed. A lost or compromised cosigner cannot be escaped, and the
+program cannot be replaced; a later release adds a rekey-to list for this.
 
 For profile `P`:
 
 ```text
-Envelope(P) = PureSpend(P) union enabled AdminOperation(P, kind)
+Envelope(P) = PureSpend(P) union PureRekey(P)
+  where PureRekey(P) is empty when P declares rekey: refused
 
 Accepted(P) =
   {tx in PureSpend(P) where SpendingPolicy(tx)}
-  union {tx in enabled AdminOperation(P, kind)
-         where operation authentication and its declared policy gate pass}
+  union {tx in PureRekey(P)}
 ```
 
 The guaranteed containment property is `Accepted(P) subset-of Envelope(P)`.
-Enabling an admin operation widens the envelope; only Layer 3 is monotone
-narrowing. The contract does not claim that an arbitrary custom Layer-3 policy
-is a complete value-spending policy.
+A spending-key rekey widens the envelope; only Layer 3 is monotone narrowing.
+The contract does not claim that an arbitrary custom Layer-3 policy is a
+complete value-spending policy.
 
-## Frozen V1 Decisions
+## Frozen Decisions
 
-| Property | `bounded1` value |
+| Property | `bounded2` value |
 |---|---|
-| Contract identifier | `bounded1` |
+| Contract identifier | `bounded2` |
 | Composed YAML schema | `schema_version: 2` |
 | TEAL version | 13 |
 | Spend effects | non-empty closed subset of `pay`, `axfer`, `asset_opt_in` |
-| Admin operations | `rekey` only, or none |
-| Admin authorization | `spending_key` only |
-| Admin policy gate | `none` or `layer3` |
+| Rekey setting | `refused` or `spending_key` |
+| Rekey and Layer 3 | a rekey never reaches Layer 3 or the cosigner check |
 | Maximum compiled `max_fee` | 10,000 microAlgos |
-| Layer-3 arguments | declared static runtime and signer-derived slots |
+| Layer-3 arguments | declared static runtime (spend only) and signer-derived slots |
 | Signer-derived primitive | fixed-depth Merkle allowlist proof (512 bytes) |
-| Framework Layer-3 policies | `fixed_allowlist`, `merkle_allowlist`, `timelock`, `fixed_allowlist_timelock`, `merkle_allowlist_timelock` |
+| Framework Layer-3 policies | `fixed_allowlist`, `merkle_allowlist`, `timelock`, `fixed_allowlist_timelock`, `merkle_allowlist_timelock`; `none` for the general type only |
 | Framework allowlist with author TEAL | `fixed_allowlist_custom`, `merkle_allowlist_custom` |
 | Inline recipient maximum | 30 entries |
 | Flow labels | `bounded1` without a cosigner; `bounded-cosigner1` with a spend cosigner |
 | Online cosigner endpoints | `POST /plan`, `POST /sign/component`, `POST /sign/assemble` |
-| Bundled composed templates | three schema-v2 profiles listed below |
+| Bundled composed templates | none; the general type `aplane.falcon1024-b.v1` offers the allowlist, timelock and limits-only shapes |
 
-`bounded1` is the only bounded-authorization contract and has no protocol
-aliases.
+`bounded2` is the only bounded-authorization contract and has no protocol
+aliases. Flow labels version the client/server choreography, not the contract,
+so a `bounded2` account still advertises `bounded1` or `bounded-cosigner1`.
 
 Generation also refuses a workflow the spending base can't complete. The
 bounded cosigner flow needs a Falcon-1024 spending key, so a cosigner on another
@@ -87,7 +90,10 @@ base with no construction is refused too. This is an admission decision for new
 accounts, separate from structural validity, and it runs only from `GenerateTEAL`. `ValidateTemplateSpec` and `validateBoundedConfig` stay
 structural, because installed templates reach both on load: an error there changes
 the template's compatibility fingerprint, which makes it a content defect, and that
-sends unlock to recovery mode and blocks store commits.
+sends unlock to recovery mode and blocks store commits. Two tests pin this:
+`TestAdmissionStaysOutOfLoadAndFingerprint` on the composer, and
+`TestInstalledTemplateOutsideGenerationSupportKeepsTheStoreUsable` on a real store,
+with a template on a base the policy doesn't list.
 
 Signing sites don't read that policy. Admission can narrow over time, and an existing
 account must keep signing, so the signer keeps its own table of the spending
@@ -107,16 +113,16 @@ it can't show that custody or seeds are independent.
 
 The 10,000 microAlgo ceiling supports the currently measured Falcon/Falcon
 fixed-list shape at a 1,000 microAlgo network minimum fee. It is an absolute
-v1 profile ceiling, not a promise of viability on networks with a higher
+profile ceiling, not a promise of viability on networks with a higher
 minimum fee. Group size and network-fee viability are path-specific. The
 planner resolves argument/opcode dummies and priced program bytes for the
 active consensus profile, then rejects a transaction path whose finalized fee
 exceeds the compiled ceiling.
 
 The composer baseline uses a real Falcon spending verifier and a controlled
-trivially true Layer-3 predicate. Every shipped Layer-3 policy adds its own
-final-bytecode and selected-path resource cells before the key type can be
-enabled. `TestBundledBoundedCompiledBudgetMatrix` compiles the shipped
+trivially true Layer-3 predicate. Every Layer-3 policy adds its own
+final-bytecode and selected-path resource cells before a key type that uses it
+can be enabled. `TestBoundedFixtureCompiledBudgetMatrix` compiles fixture
 templates with the pinned TEAL v13 toolchain, derives argument layouts from
 durable bounded metadata, applies the conservative reviewed opcode ceiling,
 and runs the production v42 resource solver.
@@ -128,32 +134,22 @@ through a legacy `ceil(program + args)` projection.
 
 Schema-v1 custom DSA policy is expert mode. Schema-v2 bounded templates may
 also use custom Layer 3 TEAL, but the framework still owns the effect envelope,
-fee ceiling, slot layout, and path routing. The bundled timelock and Merkle
-allowlist are bounded custom Layer 3 policies.
+fee ceiling, slot layout, and path routing.
 
-## Bundled Profiles
+## Compiled Budgets
 
-All bundled composed templates use schema v2 and the same closed bounded1
-effect surface:
+No bounded template is bundled. The general type `aplane.falcon1024-b.v1`
+(see [ARCH_KEYTYPES.md](ARCH_KEYTYPES.md)) offers the allowlist and timelock
+shapes. Compiler-backed maximum-path measurements for three fixture templates
+are frozen by `TestBoundedFixtureCompiledBudgetMatrix`:
 
-| Key type | Layer 3 | Pure rekey | Extra slot |
-|---|---|---|---|
-| `aplane.falcon1024-allowlist.v1` | inline fixed recipient allowlist | spending key; no Layer 3 gate | none |
-| `aplane.falcon1024-allowlist.v2` | fixed-depth Merkle recipient allowlist | spending key; no Layer 3 gate | optional signer-derived `merkle_proof` on spend |
-| `aplane.falcon1024-timelock.v1` | `FirstValid >= unlock_round` | spending key; Layer 3 required | none |
+| Fixture | Layer 3 | Rekey | Final bytecode | Spend args / v42 group / fee |
+|---|---|---|---:|---:|
+| Fixed allowlist | `fixed_allowlist`, 30 recipients | spending key | 3,142 | 1,423 / 2 / 2,115 |
+| Merkle allowlist | author TEAL with a signer-derived proof | spending key | 2,161 | 1,935 / 2 / 2,017 |
+| Custom timelock | author TEAL `FirstValid >= unlock_round` | refused | 1,894 | 1,423 / 2 / 2,000 |
 
 Every profile rejects close, clawback, hybrid rekey, and non-transfer types.
-The timelock intentionally prevents emergency spending-key rekey until its
-Layer 3 condition passes.
-
-Compiler-backed maximum-path measurements are frozen by
-`TestBundledBoundedCompiledBudgetMatrix`:
-
-| Key type | Final bytecode | Spend args / v42 group / fee |
-|---|---:|---:|
-| Falcon inline allowlist | 3,142 | 1,423 / 2 / 2,115 |
-| Falcon Merkle allowlist | 2,161 | 1,935 / 2 / 2,017 |
-| Falcon timelock | 1,934 | 1,423 / 2 / 2,000 |
 
 Fees are microAlgos at a 1,000-microAlgo minimum fee and include v42 program
 pricing. The table uses the conservative 20,000-opcode per-path ceiling; its
@@ -162,26 +158,63 @@ The planner rejects a selected path before releasing a signature when its
 finalized fee would exceed the profile ceiling.
 
 `TestTimelockPolicyCompiledBudgetMatrix` freezes the framework timelock policies on the
-same terms, with full inline lists and the largest unlock round. These are template
-compositions, not bundled profiles. Each row gives the final bytecode, then the group
-size and fee of the spend path.
+same terms, with full inline lists and the largest unlock round. A timelock refuses
+rekeys, so its two arrangements are rekeys refused, with or without a cosigner. Each
+row gives the final bytecode, then the group size and fee of the spend path.
 
-| Policy | Rekey authority | Final bytecode | Spend group / fee |
+| Policy | Arrangement | Final bytecode | Spend group / fee |
 |---|---|---:|---:|
-| `timelock` | spending key | 1,932 | 2 / 2,000 |
-| `fixed_allowlist_timelock` | spending key | 3,153 | 2 / 2,116 |
-| `merkle_allowlist_timelock` | spending key | 2,196 | 2 / 2,021 |
+| `timelock` | rekeys refused | 1,889 | 2 / 2,000 |
+| `timelock` | rekeys refused, cosigner | 3,734 | 3 / 3,075 |
+| `fixed_allowlist_timelock` | rekeys refused | 3,110 | 2 / 2,112 |
+| `fixed_allowlist_timelock` | rekeys refused, cosigner | 4,952 | 3 / 3,197 |
+| `merkle_allowlist_timelock` | rekeys refused | 2,153 | 2 / 2,016 |
+| `merkle_allowlist_timelock` | rekeys refused, cosigner | 3,995 | 4 / 4,002 |
 
 ## Effect Model
 
-The independent machine-readable inventory is
-[`BOUNDED1_PROTOCOL_INVENTORY.json`](BOUNDED1_PROTOCOL_INVENTORY.json). It is
-maintained independently of renderer/classifier code, must not be generated
-from the implementation manifest, and is pinned to
-go-algorand-sdk v2.11.2 pseudo-version `967fcacfacdf`, go-algorand reference
-`68e036affd9e`, and AVM v13.
-It separately freezes the flattened SDK transaction-field surface and parses
-the pinned SDK source in tests to detect newly introduced transaction types.
+The independent machine-readable inventory has two parts.
+[`PROTOCOL_EFFECT_INVENTORY.json`](PROTOCOL_EFFECT_INVENTORY.json) is the
+contract-neutral protocol surface: the SDK transaction types and fields and the
+AVM transaction fields. [`BOUNDED_EFFECT_CLASSIFICATIONS.json`](BOUNDED_EFFECT_CLASSIFICATIONS.json)
+is `bounded2`'s judgment of that surface: which types it admits, and which fields
+are danger predicates, spend policy, rekey normal form and so on. A later contract
+adds its own classification file against the same surface. Both are maintained
+independently of renderer/classifier code, must not be generated from the
+implementation manifest, and are pinned to go-algorand-sdk v2.11.2 pseudo-version
+`967fcacfacdf`, go-algorand reference `68e036affd9e`, and AVM v13.
+The surface separately freezes the flattened SDK transaction-field surface, and
+tests parse the pinned SDK source to detect newly introduced transaction types.
+
+### Path declaration
+
+An account's path declaration (`boundedmeta.PathDeclaration`) states what it
+allows: its spend effects, fee ceiling, Layer 3 policy, rekey setting, and
+cosigner. `Metadata.Declaration()` projects it from stored metadata, and the
+signer classifies every bounded target against it through
+`txeffects.ClassifyFor` (`classifyBoundedPath` in
+`internal/signerapp/signing/bounded.go`). An invalid declaration is an error, not
+a refusal.
+
+`ClassifyFor` checks the fee ceiling first, then the transaction's shape. Every
+decision names its rule:
+
+| Rule | Path | When |
+|---|---|---|
+| `fee_ceiling` | refused | `Fee` exceeds the declared ceiling |
+| `spend_allowed` | spend | a pure spend of a declared effect |
+| `spend_not_declared` | refused | a pure spend of an effect the account does not declare |
+| `rekey_allowed` | spending rekey | a pure rekey under `rekey: spending_key` |
+| `rekey_refused` | refused | a pure rekey under `rekey: refused` |
+| `hybrid_rekey` | refused | a nonzero `RekeyTo` on anything but a pure rekey |
+| `denied_effect` | refused | a close, asset close, or clawback |
+| `denied_type` | refused | any other transaction type than `pay` and `axfer` |
+
+A refusal names the contract, for example "bounded2 account permanently disables
+rekey". `TestClassifyForReachesAnExplicitRuleForEveryEffect` runs every
+declaration the general grammar produces against every transaction type of the
+surface, with every combination of rekey, close, asset-close and clawback fields,
+and requires an explicit allow or refuse rule for each, never a default branch.
 
 The framework danger predicates are:
 
@@ -192,7 +225,7 @@ The framework danger predicates are:
 | ASA position close | `AssetCloseTo != ZeroAddress` |
 | ASA clawback execution | `AssetSender != ZeroAddress` |
 
-`Fee` is a bounded outflow, not an admin effect, and is checked on every path.
+`Fee` is a bounded outflow, not an authority effect, and is checked on every path.
 Unknown transaction types reject because the program admits only explicit
 `pay` and `axfer` values. `keyreg`, `acfg`, `afrz`, `appl`, state proof, and
 heartbeat transactions are denied.
@@ -225,18 +258,21 @@ A pure rekey:
 - has `CloseRemainderTo`, `AssetCloseTo`, and `AssetSender` equal to
   `ZeroAddress`;
 - has `Fee <= max_fee`; and
-- satisfies the `spending_key` authorization and its declared policy gate.
+- belongs to an account that declares `rekey: spending_key`.
 
-A profile that declares no rekey operation has no rekey path, so every
-transaction with a nonzero `RekeyTo` rejects.
+No Layer 3 policy, author TEAL, or cosigner check applies to a pure rekey. A
+profile that declares `rekey: refused` has no rekey path, so every transaction
+with a nonzero `RekeyTo` rejects.
 
-Rekey detection runs before spend-type routing. Rekey-plus-transfer,
+The program checks the spending signature, then the fee ceiling, then dispatches
+on `RekeyTo`, before the other danger fields and spend-type routing. The rekey
+branch either asserts the pure rekey form and accepts, or rejects. Rekey-plus-transfer,
 rekey-plus-close, and every other hybrid reject. A group may contain separate
-normal-form transactions, but bounded1 guarantees only each protected
+normal-form transactions, but `bounded2` guarantees only each protected
 transaction's envelope, not group-wide semantic safety.
 
 Spending-key authorization preserves pure shape but does not contain theft of
-the spending key. A profile that declares no rekey operation keeps a stolen
+the spending key. A profile that declares `rekey: refused` keeps a stolen
 spending key inside the spend envelope.
 
 ## Canonical Encoding
@@ -252,14 +288,12 @@ encodings enter the [general boundary digest](#general-boundary-digest).
 
 ```text
 canonical_bounded_profile =
-  field("APLANE_BOUNDED_PROFILE_V1") ||
-  field("bounded1") ||
+  field("APLANE_BOUNDED_PROFILE_V2") ||
+  field("bounded2") ||
   u32(count(spend_effects)) ||
     field(effect_0) || ... || field(effect_n) ||
   u64(max_fee) ||
-  u32(count(admin_operations)) ||
-    field(operation_0.kind) || field(operation_0.authorization) ||
-    field(operation_0.policy_gate) || ... ||
+  field(rekey) ||
   u32(cosigner_present) ||
     if present: field("cosigner1") ||
       field("aplane.witness-falcon1024.v1") || u32(1423) ||
@@ -271,22 +305,20 @@ canonical_bounded_profile =
   u32(count(argument_layout)) || canonical_argument_slots
 ```
 
-Spend effects use frozen order `pay`, `axfer`, `asset_opt_in`; admin operations
-use frozen order `rekey`. Duplicates are invalid. Empty spend sets are invalid.
-`asset_opt_in` is the zero-amount self-receiver asset-transfer form and is
-authorized independently from `axfer`. `max_fee` must be present and no greater
-than 10,000. The Layer 3 identity, argument declarations, maximum sizes, frozen
-indexes, sources, and path masks are security-bearing and therefore part of
-the canonical profile. Each derived argument record is `field(name) ||
+Spend effects use frozen order `pay`, `axfer`, `asset_opt_in`. Duplicates are
+invalid. Empty spend sets are invalid. `asset_opt_in` is the zero-amount
+self-receiver asset-transfer form and is authorized independently from `axfer`.
+`max_fee` must be present and no greater than 10,000. `rekey` is the text
+`refused` or `spending_key`. The Layer 3 identity, argument declarations, maximum
+sizes, frozen indexes, sources, and path masks are security-bearing and therefore
+part of the canonical profile. Each derived argument record is `field(name) ||
 field(kind) || field(parameter) || u32(max_size)`; each runtime argument record
 is `field(name) || field(type) || u32(required) || u32(byte_length) ||
 u32(max_size)`; each argument slot record is `u32(index) || field(name) ||
-field(source) || u32(max_size)` followed by `field` of its spend,
-spending-rekey, and admin-rekey path rules. No authority uses the admin-rekey
-path; it stays in every slot record so that the encoding, and every existing
-fingerprint and digest, does not change. `cosigner_present` is exactly zero
-or one. The initial
-optional cosigner contract has the single ordered path list `[spend]`.
+field(source) || u32(max_size) || field(spend_rule) || field(spending_rekey_rule)`,
+where each rule is `required`, `optional`, or `forbidden`. `cosigner_present` is
+exactly zero or one. The optional cosigner contract has the single ordered path
+list `[spend]`.
 
 ### Canonical behavior parameters
 
@@ -335,58 +367,54 @@ accepts the base component or cosigner signature.
 ### Golden vector 1: allowlist with author TEAL
 
 These vectors freeze the two combined `layer3_policy` values. Both use a Falcon-1024
-base, `spend_effects: [pay, axfer, asset_opt_in]`, `max_fee: 10000`, one spending-key
-rekey with `policy_gate: layer3`, no cosigner, and a required 1-to-64-byte `preimage`
-runtime argument on spend and rekey. The Merkle vector adds the `merkle_proof` derived
+base, `spend_effects: [pay, axfer, asset_opt_in]`, `max_fee: 10000`, `rekey: spending_key`,
+no cosigner, and a 1-to-64-byte `preimage` runtime argument required on spend and
+forbidden on the rekey path. The Merkle vector adds the `merkle_proof` derived
 argument bound to `recipients`.
 
-| Index | Name | Source | Max bytes | Spend | Spending rekey | Admin rekey |
-|---:|---|---|---:|---|---|---|
-| 0 | `base_signature_0` | `base_signature` | 1423 | required | required | required |
-| 1 | `preimage` | `runtime` | 64 | required | required | forbidden |
+| Index | Name | Source | Max bytes | Spend | Spending rekey |
+|---:|---|---|---:|---|---|
+| 0 | `base_signature_0` | `base_signature` | 1423 | required | required |
+| 1 | `preimage` | `runtime` | 64 | required | forbidden |
 
 ```text
-author_fixed_canonical_bounded_profile_length: 357
+author_fixed_canonical_bounded_profile_length: 310
 author_fixed_canonical_bounded_profile_hex:
-  0000001941504c414e455f424f554e4445445f50524f46494c455f5631000000
-  08626f756e646564310000000300000003706179000000056178666572000000
-  0c61737365745f6f70745f696e0000000000002710000000010000000572656b
-  65790000000c7370656e64696e675f6b6579000000066c617965723300000000
-  0000001666697865645f616c6c6f776c6973745f637573746f6d000000010000
-  058f000000000000000100000008707265696d61676500000005627974657300
-  0000010000000000000040000000020000000000000010626173655f7369676e
-  61747572655f300000000e626173655f7369676e61747572650000058f000000
-  0872657175697265640000000872657175697265640000000872657175697265
-  640000000100000008707265696d6167650000000772756e74696d6500000040
-  00000008726571756972656400000008726571756972656400000009666f7262
-  696464656e
+  0000001941504c414e455f424f554e4445445f50524f46494c455f5632000000
+  08626f756e646564320000000300000003706179000000056178666572000000
+  0c61737365745f6f70745f696e00000000000027100000000c7370656e64696e
+  675f6b6579000000000000001666697865645f616c6c6f776c6973745f637573
+  746f6d000000010000058f000000000000000100000008707265696d61676500
+  0000056279746573000000010000000000000040000000020000000000000010
+  626173655f7369676e61747572655f300000000e626173655f7369676e617475
+  72650000058f0000000872657175697265640000000872657175697265640000
+  000100000008707265696d6167650000000772756e74696d6500000040000000
+  08726571756972656400000009666f7262696464656e
 ```
 
-| Index | Name | Source | Max bytes | Spend | Spending rekey | Admin rekey |
-|---:|---|---|---:|---|---|---|
-| 0 | `base_signature_0` | `base_signature` | 1423 | required | required | required |
-| 1 | `merkle_proof` | `derived` | 512 | optional | forbidden | forbidden |
-| 2 | `preimage` | `runtime` | 64 | required | required | forbidden |
+| Index | Name | Source | Max bytes | Spend | Spending rekey |
+|---:|---|---|---:|---|---|
+| 0 | `base_signature_0` | `base_signature` | 1423 | required | required |
+| 1 | `merkle_proof` | `derived` | 512 | optional | forbidden |
+| 2 | `preimage` | `runtime` | 64 | required | forbidden |
 
 ```text
-author_merkle_canonical_bounded_profile_length: 491
+author_merkle_canonical_bounded_profile_length: 431
 author_merkle_canonical_bounded_profile_hex:
-  0000001941504c414e455f424f554e4445445f50524f46494c455f5631000000
-  08626f756e646564310000000300000003706179000000056178666572000000
-  0c61737365745f6f70745f696e0000000000002710000000010000000572656b
-  65790000000c7370656e64696e675f6b6579000000066c617965723300000000
-  000000176d65726b6c655f616c6c6f776c6973745f637573746f6d0000000100
-  00058f000000010000000c6d65726b6c655f70726f6f66000000166d65726b6c
-  655f616c6c6f776c6973745f70726f6f660000000a726563697069656e747300
-  0002000000000100000008707265696d61676500000005627974657300000001
-  0000000000000040000000030000000000000010626173655f7369676e617475
-  72655f300000000e626173655f7369676e61747572650000058f000000087265
-  7175697265640000000872657175697265640000000872657175697265640000
-  00010000000c6d65726b6c655f70726f6f660000000764657269766564000002
-  00000000086f7074696f6e616c00000009666f7262696464656e00000009666f
-  7262696464656e0000000200000008707265696d6167650000000772756e7469
-  6d65000000400000000872657175697265640000000872657175697265640000
-  0009666f7262696464656e
+  0000001941504c414e455f424f554e4445445f50524f46494c455f5632000000
+  08626f756e646564320000000300000003706179000000056178666572000000
+  0c61737365745f6f70745f696e00000000000027100000000c7370656e64696e
+  675f6b657900000000000000176d65726b6c655f616c6c6f776c6973745f6375
+  73746f6d000000010000058f000000010000000c6d65726b6c655f70726f6f66
+  000000166d65726b6c655f616c6c6f776c6973745f70726f6f660000000a7265
+  63697069656e7473000002000000000100000008707265696d61676500000005
+  6279746573000000010000000000000040000000030000000000000010626173
+  655f7369676e61747572655f300000000e626173655f7369676e617475726500
+  00058f0000000872657175697265640000000872657175697265640000000100
+  00000c6d65726b6c655f70726f6f660000000764657269766564000002000000
+  00086f7074696f6e616c00000009666f7262696464656e000000020000000870
+  7265696d6167650000000772756e74696d650000004000000008726571756972
+  656400000009666f7262696464656e
 ```
 
 `TestAllowlistWithAuthorTEALGoldenVectors` is authoritative for every byte. The
@@ -396,60 +424,55 @@ encoder, so they do not simply restate the implementation's output.
 ### Golden vector 2: timelock policies
 
 These vectors freeze the three timelock `layer3_policy` values. Each uses a Falcon-1024
-base, `spend_effects: [pay, axfer, asset_opt_in]`, `max_fee: 10000`, one spending-key
-rekey with `policy_gate: layer3`, no cosigner, and no runtime arguments. The unlock round
-and recipients are behavior parameters, so they do not appear in the profile.
+base, `spend_effects: [pay, axfer, asset_opt_in]`, `max_fee: 10000`, `rekey: refused`,
+no cosigner, and no runtime arguments. The unlock round and recipients are behavior
+parameters, so they do not appear in the profile.
 `timelock` and `fixed_allowlist_timelock` have the single-slot layout. The Merkle vector
 adds the `merkle_proof` derived argument bound to `recipients`.
 
-| Index | Name | Source | Max bytes | Spend | Spending rekey | Admin rekey |
-|---:|---|---|---:|---|---|---|
-| 0 | `base_signature_0` | `base_signature` | 1423 | required | required | required |
-| 1 | `merkle_proof` | `derived` | 512 | optional | forbidden | forbidden |
+| Index | Name | Source | Max bytes | Spend | Spending rekey |
+|---:|---|---|---:|---|---|
+| 0 | `base_signature_0` | `base_signature` | 1423 | required | required |
+| 1 | `merkle_proof` | `derived` | 512 | optional | forbidden |
 
 ```text
-timelock_canonical_bounded_profile_length: 242
+timelock_canonical_bounded_profile_length: 202
 timelock_canonical_bounded_profile_hex:
-  0000001941504c414e455f424f554e4445445f50524f46494c455f5631000000
-  08626f756e646564310000000300000003706179000000056178666572000000
-  0c61737365745f6f70745f696e0000000000002710000000010000000572656b
-  65790000000c7370656e64696e675f6b6579000000066c617965723300000000
-  0000000874696d656c6f636b000000010000058f000000000000000000000001
-  0000000000000010626173655f7369676e61747572655f300000000e62617365
-  5f7369676e61747572650000058f000000087265717569726564000000087265
-  717569726564000000087265717569726564
+  0000001941504c414e455f424f554e4445445f50524f46494c455f5632000000
+  08626f756e646564320000000300000003706179000000056178666572000000
+  0c61737365745f6f70745f696e00000000000027100000000772656675736564
+  000000000000000874696d656c6f636b000000010000058f0000000000000000
+  000000010000000000000010626173655f7369676e61747572655f300000000e
+  626173655f7369676e61747572650000058f0000000872657175697265640000
+  00087265717569726564
 ```
 
 ```text
-fixed_allowlist_timelock_canonical_bounded_profile_length: 258
+fixed_allowlist_timelock_canonical_bounded_profile_length: 218
 fixed_allowlist_timelock_canonical_bounded_profile_hex:
-  0000001941504c414e455f424f554e4445445f50524f46494c455f5631000000
-  08626f756e646564310000000300000003706179000000056178666572000000
-  0c61737365745f6f70745f696e0000000000002710000000010000000572656b
-  65790000000c7370656e64696e675f6b6579000000066c617965723300000000
-  0000001866697865645f616c6c6f776c6973745f74696d656c6f636b00000001
-  0000058f0000000000000000000000010000000000000010626173655f736967
-  6e61747572655f300000000e626173655f7369676e61747572650000058f0000
-  0008726571756972656400000008726571756972656400000008726571756972
-  6564
+  0000001941504c414e455f424f554e4445445f50524f46494c455f5632000000
+  08626f756e646564320000000300000003706179000000056178666572000000
+  0c61737365745f6f70745f696e00000000000027100000000772656675736564
+  000000000000001866697865645f616c6c6f776c6973745f74696d656c6f636b
+  000000010000058f000000000000000000000001000000000000001062617365
+  5f7369676e61747572655f300000000e626173655f7369676e61747572650000
+  058f000000087265717569726564000000087265717569726564
 ```
 
 ```text
-merkle_allowlist_timelock_canonical_bounded_profile_length: 392
+merkle_allowlist_timelock_canonical_bounded_profile_length: 339
 merkle_allowlist_timelock_canonical_bounded_profile_hex:
-  0000001941504c414e455f424f554e4445445f50524f46494c455f5631000000
-  08626f756e646564310000000300000003706179000000056178666572000000
-  0c61737365745f6f70745f696e0000000000002710000000010000000572656b
-  65790000000c7370656e64696e675f6b6579000000066c617965723300000000
-  000000196d65726b6c655f616c6c6f776c6973745f74696d656c6f636b000000
-  010000058f000000010000000c6d65726b6c655f70726f6f66000000166d6572
-  6b6c655f616c6c6f776c6973745f70726f6f660000000a726563697069656e74
-  730000020000000000000000020000000000000010626173655f7369676e6174
-  7572655f300000000e626173655f7369676e61747572650000058f0000000872
-  6571756972656400000008726571756972656400000008726571756972656400
-  0000010000000c6d65726b6c655f70726f6f6600000007646572697665640000
-  0200000000086f7074696f6e616c00000009666f7262696464656e0000000966
-  6f7262696464656e
+  0000001941504c414e455f424f554e4445445f50524f46494c455f5632000000
+  08626f756e646564320000000300000003706179000000056178666572000000
+  0c61737365745f6f70745f696e00000000000027100000000772656675736564
+  00000000000000196d65726b6c655f616c6c6f776c6973745f74696d656c6f63
+  6b000000010000058f000000010000000c6d65726b6c655f70726f6f66000000
+  166d65726b6c655f616c6c6f776c6973745f70726f6f660000000a7265636970
+  69656e74730000020000000000000000020000000000000010626173655f7369
+  676e61747572655f300000000e626173655f7369676e61747572650000058f00
+  0000087265717569726564000000087265717569726564000000010000000c6d
+  65726b6c655f70726f6f66000000076465726976656400000200000000086f70
+  74696f6e616c00000009666f7262696464656e
 ```
 
 `TestTimelockPolicyGoldenVectors` is authoritative for every byte. The separate encoder
@@ -460,9 +483,12 @@ reproduced both author-TEAL vectors before computing these.
 Schema v1 describes the existing non-bounded composed layout and rejects a
 top-level `bounded` field. Schema v2 requires `bounded`. Every schema version
 uses strict known-field and duplicate-key rejection at every nested level.
+`bounded.rekey` is required and is `refused` or `spending_key`.
 `bounded.runtime_args` and `bounded.derived_args` declare the only permitted
-Layer 3 slots. V1 supports caller runtime values with explicit maximum/exact
-length contracts and the signer-derived `merkle_allowlist_proof` primitive.
+Layer 3 slots. Caller runtime values carry explicit maximum/exact length
+contracts, and every runtime argument declares `required_on: [spend]`, because
+a rekey never reaches Layer 3. The one signer-derived primitive is
+`merkle_allowlist_proof`.
 
 ```yaml
 schema_version: 2
@@ -470,19 +496,16 @@ derivation_version: 3
 template_type: composed
 template_mode: generated
 base_key_type: aplane.falcon1024.v1
-publisher: aplane
+publisher: example
 family: falcon1024-allowlist
 version: 1
 display_name: Falcon-1024 Allowlist
 
 bounded:
-  contract: bounded1
+  contract: bounded2
   spend_effects: [pay, axfer, asset_opt_in]
   max_fee: 10000
-  admin_operations:
-    - kind: rekey
-      authorization: spending_key
-      policy_gate: none
+  rekey: spending_key
   layer3:
     policy: fixed_allowlist
     recipients_parameter: recipients
@@ -495,8 +518,13 @@ parameters:
     max_items: 30
 ```
 
-An empty or omitted `admin_operations` declares no rekey operation, so the
-program has no rekey path.
+`rekey: refused` gives the program no rekey path. A cosigner requires
+`rekey: refused`. A refused profile can neither close nor be rekeyed, so it must
+keep a transfer for what it holds: `spend_effects` includes `pay`, and `axfer`
+whenever it includes `asset_opt_in`. The profile check and durable metadata
+validation both enforce this (`boundedmeta.ValidateRefusedExit`), for expert
+templates and the general type alike, and durable validation also refuses a
+timelock policy beside `rekey: spending_key`.
 
 `fixed_allowlist` is composer-owned. It
 handles every effect in `spend_effects`: `pay` constrains `Receiver`; `axfer`
@@ -508,9 +536,6 @@ Neither framework policy compiles an asset or amount check. One program is
 valid on every network, while an asset ID names an asset on one chain only and
 a base-unit amount means nothing across assets. Per-network asset and amount
 limits belong to signer policy.
-A spending-key rekey with `policy_gate: layer3` requires `pay` in
-`spend_effects`, because a pure rekey is payment-shaped and must enter the
-framework policy's payment branch.
 
 `merkle_allowlist` is also composer-owned and accepts only a required
 `address[]` recipients parameter with 1-65,536 entries. It requires exactly one
@@ -526,11 +551,9 @@ list: the existing containment rules forbid `return` and any reference to reserv
 bounded labels. Author parameters may sit beside the recipients parameter, and runtime
 arguments beside a Merkle proof, in the static slot order above. The template declares
 only the plain policy; durable metadata records `fixed_allowlist_custom` or
-`merkle_allowlist_custom`, which a template cannot declare directly. These values amend
-this contract under `bounded1` and signing metadata version 2: the encoding and
-authorization flows do not change. A policy gate of `layer3` applies the author rule to
-a spending-key rekey too, and a gate of `none` skips both. An allowlist with no `teal`
-rejects extra parameters and runtime arguments, because nothing would read them.
+`merkle_allowlist_custom`, which a template cannot declare directly. Neither the
+allowlist nor the author rule applies to a rekey. An allowlist with no `teal` rejects
+extra parameters and runtime arguments, because nothing would read them.
 
 `timelock` requires `FirstValid >= unlock_round` and reads no recipient list.
 `fixed_allowlist_timelock` and `merkle_allowlist_timelock` apply the same check, then
@@ -542,19 +565,27 @@ use. A round compiles the same way on every network but means a different time o
 and it does not bind the program to one network.
 
 The timelock also applies to self-receivers, which the recipient check would otherwise
-admit. It applies to a rekey only through a `policy_gate` of `layer3`, which requires
-`pay` in `spend_effects`. A spending-key rekey with a gate of `none` skips it, so it can
-move the account before the unlock round.
+admit. Every timelock policy requires `rekey: refused`, because a spending-key rekey
+would leave the lock before the unlock round.
 
 Timelock policies reject author TEAL, parameters they do not read, and runtime arguments.
 An author who needs a list and custom time conditions uses a plain allowlist and writes
-those conditions in the TEAL. These values amend this contract under `bounded1` and
-signing metadata version 2: the encoding and authorization flows do not change. Older
-binaries reject the new values.
+those conditions in the TEAL. Author TEAL never runs on a rekey, so such a condition
+holds a spending-key rekey back only if the template declares `rekey: refused`.
+
+`none` renders no Layer 3: after the envelope and the spending signature (and the
+cosigner check, when the profile has one) a spend goes straight to the accept block, so
+the fee ceiling, spend effects, and zero close and clawback fields are the whole
+spending rule. It reads no parameter and declares no derived or runtime argument, and it
+rejects author TEAL, which would make the program `custom` under a second name. Only the
+general type offers it, for its limits-only shapes: `composeddsa.ParseTemplateSpec`
+refuses a template that declares it, so every YAML route (the library, keystore
+registration, and the semantic fingerprint) does too. A `none` account has no recipient
+list, so it is never contained.
 
 ### Merkle Allowlist Compatibility Contract
 
-The `bounded1` Merkle root and proof bytes are compatibility-bearing. Given the
+The bounded Merkle root and proof bytes are compatibility-bearing. Given the
 `recipients` address list, implementations must use this exact algorithm:
 
 1. Decode every Algorand address to its raw 32-byte public key. The list must
@@ -598,9 +629,11 @@ composer-owned pure-spend boundary.
 
 The static slot order is base signatures, signer-derived Layer 3 arguments,
 caller runtime Layer 3 arguments, then an optional cosigner signature.
-Every slot stores an index, source, maximum size, and required/optional/
-forbidden rule for spend, spending-key rekey, and admin-rekey paths. No
-authority uses the admin-rekey path; it stays for encoding stability.
+Every slot stores an index, source, maximum size, and a required, optional, or
+forbidden rule for each of the two paths, spend and spending-key rekey. Base
+signature slots are required on both. Derived, runtime, and cosigner slots are
+forbidden on the rekey path, because a rekey never reaches Layer 3 or the
+cosigner check.
 
 Interior unused Layer 3 slots are explicit empty byte strings. Only unused
 trailing slots may be omitted. Callers may populate only declared runtime
@@ -612,11 +645,11 @@ The planner classifies before group sizing, finalizes fee pooling, then
 revalidates the finalized transactions at the single classification boundary.
 The executor consumes that plan, checks that loaded durable metadata still
 equals planned metadata, and assembles the declared slots without maintaining
-a second classifier. Hybrid effects, disabled operations, final fee violations,
+a second classifier. Hybrid effects, refused rekeys, final fee violations,
 metadata races, and invalid caller slots fail before signature release.
 Existing key signing is driven by durable key metadata, not an installed YAML
 definition. The metadata contract includes the bounded contract, base layout,
-profile, admin operation modes, `layer3_policy`, runtime and derived argument
+profile, rekey setting, `layer3_policy`, runtime and derived argument
 declarations, static argument layout, optional cosigner authorization, and the
 selected-path LogicSig argument and opcode ceilings. Program bytes come
 from the final stored bytecode.
@@ -625,8 +658,8 @@ Non-bounded LogicSig keys use `signing_metadata_version: 1`. Bounded keys use
 `signing_metadata_version: 2` and require the canonical
 `bounded_authorization` object. The closed `layer3_policy` value is `custom`,
 `fixed_allowlist`, `merkle_allowlist`, `fixed_allowlist_custom`,
-`merkle_allowlist_custom`, `timelock`, `fixed_allowlist_timelock`, or
-`merkle_allowlist_timelock`; declared runtime and derived arguments and their complete
+`merkle_allowlist_custom`, `timelock`, `fixed_allowlist_timelock`,
+`merkle_allowlist_timelock`, or `none`; declared runtime and derived arguments and their complete
 slot masks are persisted. Top-level `signing_args` are ignored for bounded
 keys. Scan, load, backup, and restore consume the stored object without
 consulting the installed template.
@@ -645,7 +678,7 @@ structured selected-path LogicSig resource profile. Clients route:
   `/plan`, kind-tagged signer and cosigner `/sign/component`, then signer
   `/sign/assemble` choreography;
 - spending-key rekey to ordinary `/sign` with forced review; and
-- malformed, hybrid, disabled, or unknown effects to local rejection.
+- malformed, hybrid, refused, or unknown effects to local rejection.
 
 Ordinary `/sign` rejects a cosigner-gated bounded spend because it cannot finish
 that flow alone. First-party clients do not support combining `cosigner1` and
@@ -653,8 +686,8 @@ that flow alone. First-party clients do not support combining `cosigner1` and
 this is a client orchestration limit, not a signer-side whole-group flow
 invariant. Signer-side classification remains authoritative for each target it
 signs or assembles. Unknown flow labels fail closed.
-Every bounded admin operation, which is a spending-key rekey, triggers the
-stable unconditional `bounded_admin_operation_requires_review` rule before
+Every bounded spending-key rekey triggers the
+stable unconditional `bounded_rekey_requires_review` rule before
 policy self-no-op autoapproval, regardless of warning configuration. User
 Auto-Approve satisfies this review requirement without a prompt. A client intent to simulate
 does not alter this requirement; apsigner sees an ordinary executable signing
@@ -671,16 +704,13 @@ SHA512/256(
   field(selected_shape_fingerprint) ||
   field(base_primitive) ||
   field(canonical_bounded_profile) ||
-  field(canonical_behavior_parameters) ||
-  field("")
+  field(canonical_behavior_parameters)
 )
 ```
 
-The last field is always empty. It is unused and stays so that every shape keeps
-its digest. A cosigner key is a behavior parameter, so it
-is covered there. The digest excludes the spending key, filenames, reference names,
-and labels, and it binds the selected shape rather than the whole grammar, so an
-unrelated new rule leaves it unchanged.
+A cosigner key is a behavior parameter, so it is covered there. The digest excludes
+the spending key, filenames, reference names, and labels, and it binds the selected
+shape rather than the whole grammar, so an unrelated new rule leaves it unchanged.
 
 It is a comparison value. It does not assert that two accounts have the same address,
 and it replaces no signing transcript. It is
@@ -699,16 +729,16 @@ provider's own configuration hash, which this document does not define byte for 
 
 ```text
 selected_shape_fingerprint:
-  1:0f98cccfa0a7769946e94e6d40954e50de6a14751c0f7268a02cdf6fa0252be9
+  1:95234d16fc17e23394a79dc62245d0c2eebf5a5a0be10fe12f14d9e2296e566b
 base_primitive: falcon1024-v1
-canonical_bounded_profile_length: 490
+canonical_bounded_profile_length: 459
 canonical_bounded_profile_sha512_256:
-  160183e56fc444014164ae5f541b87ccce8d598827a6e5f5054bb7b6625820c3
+  d6e5a8c00ec81d77ddd03ac27ffdde1e230dda2db8a85837b35956cd598c421c
 canonical_behavior_parameters_length: 1981
 canonical_behavior_parameters_sha512_256:
   3e37447008e20eab3259c3c109224f012ebd3bee4061db71b97298205665fdc9
 boundary_digest:
-  94ed73af648eb35f51ec8122cbb9cd6d6cdfc378f8536afe448cd3309fe49544
+  8d6f9de0e52dac9cc01a9b896311890cd7940cd202718ccda74ba7b86bbfa82e
 ```
 
 ## Versioning

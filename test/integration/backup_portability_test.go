@@ -143,13 +143,13 @@ func TestBackupPortabilityFirstMilestone(t *testing.T) {
 			},
 		},
 		{
-			name: "library composed template",
+			name: "user-loaded bounded composed template",
 			prepareSource: func(t *testing.T, sourceDataDir string, _ *harness.ApAdminHarness) (string, map[string]string) {
-				installFalconAllowlistTemplate(t, sourceDataDir)
-				return "aplane.falcon1024-allowlist.v1", map[string]string{"recipients": integrationBurnAddress}
+				keyType := installBoundedAllowlistTemplate(t, sourceDataDir)
+				return keyType, map[string]string{"recipients": integrationBurnAddress}
 			},
 			prepareDestination: func(t *testing.T, destDataDir string) {
-				syncTemplateLibraryFile(t, destDataDir, "aplane.falcon1024-allowlist.v1.yaml")
+				writeTemplateLibraryFile(t, destDataDir, boundedAllowlistTemplateKeyType+".yaml", []byte(boundedAllowlistTemplateYAML()))
 			},
 			buildSignRequest: func(t *testing.T, address string) signerapi.SignRequest {
 				return signerapi.SignRequest{

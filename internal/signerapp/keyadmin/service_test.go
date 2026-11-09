@@ -252,9 +252,10 @@ version: 1
 display_name: Bounded Cosigner Keyadmin Test
 max_opcode_cost: 20000
 bounded:
-  contract: bounded1
+  contract: bounded2
   spend_effects: [pay]
   max_fee: 10000
+  rekey: refused
   cosigner:
     contract: cosigner1
     required_on: [spend]

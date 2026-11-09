@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-// Package templates exposes the default KeyType Library YAML files. Templates
-// that have left the default library live in library/retired.
+// Package templates exposes the default KeyType Library YAML files.
 package templates
 
 import "embed"

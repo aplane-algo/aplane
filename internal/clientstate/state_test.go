@@ -238,7 +238,6 @@ func TestPopulateSignerCachePreservesExistingPointer(t *testing.T) {
 		LogicSigResources: &signerapi.LogicSigResourceProfile{
 			Spend:         &signerapi.LogicSigResourceUsage{ProgramBytes: 77, ArgumentBytes: 1_423, MaxOpcodeCost: 20_000},
 			SpendingRekey: &signerapi.LogicSigResourceUsage{ProgramBytes: 77, ArgumentBytes: 1_423, MaxOpcodeCost: 20_000},
-			AdminRekey:    &signerapi.LogicSigResourceUsage{ProgramBytes: 77, ArgumentBytes: 1_423, MaxOpcodeCost: 20_000},
 		},
 		Parameters: map[string]string{
 			"cosigner_public_key": "d6fb74e10151ac3b0eaa7431b9b92c772c2a4a600c10b88cfd30169ea1ab4d0a",
@@ -324,11 +323,23 @@ func TestPopulateSignerCacheRejectsInconsistentLogicSigProgramBytes(t *testing.T
 		LogicSigResources: &signerapi.LogicSigResourceProfile{
 			Spend:         &signerapi.LogicSigResourceUsage{ProgramBytes: 100, MaxOpcodeCost: 20_000},
 			SpendingRekey: &signerapi.LogicSigResourceUsage{ProgramBytes: 101, MaxOpcodeCost: 20_000},
-			AdminRekey:    &signerapi.LogicSigResourceUsage{ProgramBytes: 100, MaxOpcodeCost: 20_000},
 		},
 	}})
 	if err == nil || !strings.Contains(err.Error(), "does not match") {
 		t.Fatalf("PopulateSignerCache() error = %v, want inconsistent program_bytes", err)
+	}
+}
+
+func TestPopulateSignerCacheRequiresBothBoundedPaths(t *testing.T) {
+	state := New("testnet")
+	err := state.PopulateSignerCache([]signerapi.KeyInfo{{
+		Address: "BAD", KeyType: "test.bounded.v1",
+		LogicSigResources: &signerapi.LogicSigResourceProfile{
+			Spend: &signerapi.LogicSigResourceUsage{ProgramBytes: 100, MaxOpcodeCost: 20_000},
+		},
+	}})
+	if err == nil || !strings.Contains(err.Error(), "must contain spend and spending_rekey paths") {
+		t.Fatalf("PopulateSignerCache() error = %v, want missing spending_rekey path", err)
 	}
 }
 

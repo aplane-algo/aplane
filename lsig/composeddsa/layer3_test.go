@@ -77,9 +77,10 @@ version: 1
 display_name: Test
 description: Test
 bounded:
-  contract: bounded1
+  contract: bounded2
   spend_effects: [pay, axfer]
   max_fee: 10000
+  rekey: refused
   layer3:
     policy: fixed_allowlist
     recipients_parameter: recipients
@@ -154,22 +155,23 @@ func TestMerkleAllowlistPolicyRequiresClosedProofContract(t *testing.T) {
 	}
 }
 
-func TestFixedAllowlistPolicyRejectsLayer3GatedRekeyWithoutPay(t *testing.T) {
-	profile := &BoundedAuthorizationProfile{
-		Contract:     BoundedContractV1,
-		SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectAxfer},
-		MaxFee:       10_000,
-		AdminOperations: []AdminOperationSpec{{
-			Kind: AdminOperationRekey, Authorization: AdminAuthorizationSpendingKey, PolicyGate: AdminPolicyGateLayer3,
-		}},
-	}
+// A rekey never reaches Layer 3, so the allowlist asks nothing of the rekey
+// setting: a spending-key rekey needs no pay, which only the spend path reads.
+func TestFixedAllowlistPolicyAcceptsEitherRekeySettingWithoutPay(t *testing.T) {
 	policy := &Layer3Policy{Policy: Layer3PolicyFixedAllowlist, RecipientsParameter: "recipients"}
 	params := []lsigprovider.ParameterDef{{
 		Name: "recipients", Type: "address[]", Required: true, MinItems: 1, MaxItems: BoundedInlineListMax,
 	}}
-	err := validateLayer3Policy(policy, params, profile, false)
-	if err == nil || !strings.Contains(err.Error(), "requires pay in spend_effects") {
-		t.Fatalf("validateLayer3Policy() error = %v, want pay requirement", err)
+	for _, rekey := range []boundedmeta.RekeySetting{boundedmeta.RekeySpendingKey, boundedmeta.RekeyRefused} {
+		profile := &BoundedAuthorizationProfile{
+			Contract:     BoundedContract,
+			SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectAxfer},
+			MaxFee:       10_000,
+			Rekey:        rekey,
+		}
+		if err := validateLayer3Policy(policy, params, profile, false); err != nil {
+			t.Fatalf("validateLayer3Policy(rekey %s) error = %v", rekey, err)
+		}
 	}
 }
 
@@ -184,9 +186,10 @@ family: layer3
 version: 1
 display_name: Test
 bounded:
-  contract: bounded1
+  contract: bounded2
   spend_effects: [pay]
   max_fee: 1000
+  rekey: refused
   layer3:
     policy: fixed_allowlist
     recipients_parameter: recipients
@@ -214,7 +217,8 @@ func fixedAllowlistTestProvider() *ComposedDSA {
 
 func fixedAllowlistTestProfile() *BoundedAuthorizationProfile {
 	return &BoundedAuthorizationProfile{
-		Contract: BoundedContractV1, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay, txeffects.SpendEffectAxfer}, MaxFee: 10_000,
+		Contract: BoundedContract, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay, txeffects.SpendEffectAxfer}, MaxFee: 10_000,
+		Rekey: boundedmeta.RekeyRefused,
 	}
 }
 

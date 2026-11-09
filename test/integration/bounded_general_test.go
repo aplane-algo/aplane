@@ -46,6 +46,9 @@ func generalRequest(shape boundedaccount.Shape, recipients []string, unlockRound
 	if shape.Timelock {
 		params[boundedaccount.ParameterUnlockRound] = strconv.FormatUint(unlockRound, 10)
 	}
+	if shape.AnyRecipient {
+		params[boundedaccount.ParameterRecipientScope] = boundedaccount.RecipientScopeAny
+	}
 	if shape.Cosigner {
 		params[composeddsa.BoundedCosignerPublicKeyParameter] = hex.EncodeToString(cosignerKey)
 	}
@@ -136,6 +139,11 @@ func TestBoundedGeneralShapeMatrixOnChainLocalnet(t *testing.T) {
 
 	for _, shape := range boundedaccount.Shapes() {
 		t.Run(shape.Descriptor(), func(t *testing.T) {
+			// A spending-key rekey would leave a timelock before the unlock round, so
+			// every timelock refuses rekeys and is cleaned up by a sweep below.
+			if shape.Timelock && shape.Rekey != boundedaccount.RekeyRefused {
+				t.Fatalf("a timelock shape offers a %s rekey", shape.Rekey)
+			}
 			status, err := network.Client.Status().Do(context.Background())
 			if err != nil {
 				t.Fatalf("read status: %v", err)
@@ -247,6 +255,22 @@ func TestBoundedGeneralShapeMatrixOnChainLocalnet(t *testing.T) {
 					})
 				})
 			}
+			if shape.AnyRecipient {
+				// With no list, the envelope is the whole rule. Every accepted case here
+				// pays exactly the ceiling, ten transactions at 1,000, so one microAlgo
+				// more per transaction must be refused.
+				t.Run("payment above the fee ceiling", func(t *testing.T) {
+					txn := payment(outside.String(), "n")
+					txn.Fee = 1_001
+					expect(false, txn, nil, nil)
+				})
+				t.Run("key registration", func(t *testing.T) {
+					txn := payment(account.address, "o")
+					txn.Type = types.KeyRegistrationTx
+					txn.PaymentTxnFields = types.PaymentTxnFields{}
+					expect(false, txn, nil, nil)
+				})
+			}
 			if shape.Timelock {
 				t.Run("payment one round early", func(t *testing.T) { expect(false, early(payment(allowed.String(), "g2")), proof(allowed), nil) })
 				t.Run("payment to itself one round early", func(t *testing.T) { expect(false, early(payment(account.address, "g3")), nil, nil) })
@@ -281,10 +305,11 @@ func TestBoundedGeneralShapeMatrixOnChainLocalnet(t *testing.T) {
 			if shape.Rekey == boundedaccount.RekeyRefused {
 				// No rekey path exists, so a pure rekey with a valid spending signature fails.
 				t.Run("rekey is refused", func(t *testing.T) { expect(false, rekey("l"), nil, nil) })
-			} else {
 				if shape.Timelock {
-					t.Run("rekey with the spending key one round early", func(t *testing.T) { expect(false, early(rekey("l")), nil, nil) })
+					// The unlock round opens only the spend path.
+					t.Run("rekey one round early is refused", func(t *testing.T) { expect(false, early(rekey("l2")), nil, nil) })
 				}
+			} else {
 				t.Run("rekey with the spending key", func(t *testing.T) { expect(true, rekey("m"), nil, nil) })
 			}
 			info, err := network.Client.AccountInformation(account.address).Do(context.Background())
@@ -299,6 +324,23 @@ func TestBoundedGeneralShapeMatrixOnChainLocalnet(t *testing.T) {
 				t.Fatalf("auth address = %q, want %q", info.AuthAddr, wantAuth)
 			}
 		})
+	}
+}
+
+// assertSignerRefusesRekey asks apshell to rekey an account that refuses rekeys.
+// The signer's classifier refuses it, before anything reaches the chain.
+func assertSignerRefusesRekey(t *testing.T, apshell *harness.ApshellHarness, network *harness.TestnetConfig, account, to string) {
+	t.Helper()
+	output, err := apshell.RunWithInput(fmt.Sprintf("rekey %s to %s\nquit\n", account, to))
+	if !strings.Contains(output, boundedmeta.Contract+" account permanently disables rekey") || strings.Contains(strings.ToLower(output), "rekey transaction submitted:") {
+		t.Fatalf("a refused account's rekey was not refused by the signer: %v\n%s", err, output)
+	}
+	info, err := network.Client.AccountInformation(account).Do(context.Background())
+	if err != nil {
+		t.Fatalf("read account: %v", err)
+	}
+	if info.AuthAddr != "" {
+		t.Fatalf("a refused account was rekeyed to %s", info.AuthAddr)
 	}
 }
 
@@ -545,32 +587,31 @@ func TestBoundedGeneralThroughSigner(t *testing.T) {
 			if !test.refused {
 				return
 			}
-			// The signer refuses the rekey itself, before anything reaches the chain.
-			output, err = apshell.RunWithInput(fmt.Sprintf("rekey %s to %s\nquit\n", account, outsider))
-			if !strings.Contains(output, "permanently disables rekey") || strings.Contains(strings.ToLower(output), "rekey transaction submitted:") {
-				t.Fatalf("a refused account's rekey was not refused by the signer: %v\n%s", err, output)
-			}
-			info, err := network.Client.AccountInformation(account).Do(context.Background())
-			if err != nil {
-				t.Fatalf("read account: %v", err)
-			}
-			if info.AuthAddr != "" {
-				t.Fatalf("a refused account was rekeyed to %s", info.AuthAddr)
-			}
+			assertSignerRefusesRekey(t, apshell, network, account, outsider)
 		})
 	}
 
 	t.Run("apshell timelock boundary file", func(t *testing.T) {
 		directory := t.TempDir()
+		// A spending-key rekey would leave the lock early, so the signer refuses it.
+		walkable := filepath.Join(directory, "walkable.yaml")
+		if err := os.WriteFile(walkable, []byte("schema: aplane.boundary.v1\nspend: [pay]\nrekey: {authority: spending_key}\nunlock_round: 18446744073709551615\n"), 0o600); err != nil {
+			t.Fatalf("write boundary file: %v", err)
+		}
+		refusal, _ := apshell.RunWithInput(fmt.Sprintf("generate %s boundary=%s\ny\nquit\n", boundedaccount.KeyTypeV1, walkable))
+		if !strings.Contains(refusal, "a timelock requires rekey_authority=refused") || strings.Contains(refusal, "Generated ") {
+			t.Fatalf("a timelock with a spending-key rekey was not refused:\n%s", refusal)
+		}
+
 		locked := filepath.Join(directory, "locked.yaml")
-		if err := os.WriteFile(locked, []byte("schema: aplane.boundary.v1\nspend: [pay]\nrekey: {authority: spending_key}\nunlock_round: 18446744073709551615\n"), 0o600); err != nil {
+		if err := os.WriteFile(locked, []byte("schema: aplane.boundary.v1\nspend: [pay]\nrekey: {authority: refused}\nunlock_round: 18446744073709551615\n"), 0o600); err != nil {
 			t.Fatalf("write boundary file: %v", err)
 		}
 		output, err := apshell.RunWithInput(fmt.Sprintf("generate %s boundary=%s\ny\nkeys\nquit\n", boundedaccount.KeyTypeV1, locked))
 		if err != nil {
 			t.Fatalf("run apshell: %v\n%s", err, output)
 		}
-		for _, want := range []string{"Unlocks at: round 18446744073709551615", "Recipients: any, once unlocked", "Unlock round:   18446744073709551615", "Timelock · policy-gated rekey"} {
+		for _, want := range []string{"Unlocks at: round 18446744073709551615", "Recipients: any, once unlocked", "Rekey:      refused; the account can never be rekeyed", "Unlock round:   18446744073709551615", "Timelock · no rekey"} {
 			if !strings.Contains(output, want) {
 				t.Fatalf("output lacks %q:\n%s", want, output)
 			}

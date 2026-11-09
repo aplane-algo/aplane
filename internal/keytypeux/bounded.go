@@ -19,6 +19,7 @@ var boundedPolicyLabels = map[string]string{
 	boundedmeta.Layer3PolicyFixedAllowlistTimelock:  "Allowlist timelock",
 	boundedmeta.Layer3PolicyMerkleAllowlistTimelock: "Merkle allowlist timelock",
 	boundedmeta.Layer3PolicyCustom:                  "Custom policy",
+	boundedmeta.Layer3PolicyNone:                    "Limits only",
 }
 
 // BoundedLabel describes a bounded account from its stored contract, such as
@@ -29,14 +30,7 @@ func BoundedLabel(info *signerapi.BoundedAuthorizationInfo) string {
 	if info == nil {
 		return ""
 	}
-	var rekey *boundedmeta.AdminOperation
-	if len(info.AdminOperations) > 0 {
-		rekey = &boundedmeta.AdminOperation{
-			Authorization: info.AdminOperations[0].Authorization,
-			PolicyGate:    info.AdminOperations[0].PolicyGate,
-		}
-	}
-	return boundedLabel(info.Layer3Policy, rekey, info.Cosigner != nil)
+	return boundedLabel(info.Layer3Policy, boundedmeta.RekeySetting(info.Rekey), info.Cosigner != nil)
 }
 
 // BoundedMetadataLabel is BoundedLabel for a key's durable metadata.
@@ -44,14 +38,10 @@ func BoundedMetadataLabel(metadata *boundedmeta.Metadata) string {
 	if metadata == nil {
 		return ""
 	}
-	var rekey *boundedmeta.AdminOperation
-	if len(metadata.AdminOperations) > 0 {
-		rekey = &metadata.AdminOperations[0]
-	}
-	return boundedLabel(metadata.Layer3Policy, rekey, metadata.Cosigner != nil)
+	return boundedLabel(metadata.Layer3Policy, metadata.Rekey, metadata.Cosigner != nil)
 }
 
-func boundedLabel(layer3Policy string, rekey *boundedmeta.AdminOperation, cosigner bool) string {
+func boundedLabel(layer3Policy string, rekey boundedmeta.RekeySetting, cosigner bool) string {
 	policy, ok := boundedPolicyLabels[layer3Policy]
 	if !ok {
 		policy = "Policy " + layer3Policy
@@ -63,16 +53,16 @@ func boundedLabel(layer3Policy string, rekey *boundedmeta.AdminOperation, cosign
 	return strings.Join(parts, " · ")
 }
 
-func boundedRekeyLabel(rekey *boundedmeta.AdminOperation) string {
-	switch {
-	case rekey == nil:
+func boundedRekeyLabel(rekey boundedmeta.RekeySetting) string {
+	switch rekey {
+	case boundedmeta.RekeyRefused:
 		return "no rekey"
-	case rekey.Authorization != boundedmeta.AdminAuthorizationSpend:
-		// Not an authority this release offers: name it rather than guess.
-		return rekey.Authorization + " rekey"
-	case rekey.PolicyGate == boundedmeta.PolicyGateLayer3:
-		return "policy-gated rekey"
-	default:
+	case boundedmeta.RekeySpendingKey:
 		return "spending-key rekey"
+	case "":
+		return "rekey unknown"
+	default:
+		// Not a setting this release offers: name it rather than guess.
+		return string(rekey) + " rekey"
 	}
 }

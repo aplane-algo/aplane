@@ -61,10 +61,10 @@ func Presets() []Preset {
 		{
 			Name:        "timelock",
 			Title:       "Timelock",
-			Description: "Nothing can be spent or rekeyed until a chosen round.",
+			Description: "Nothing can be spent until a chosen round. It can never be rekeyed.",
 			Fixed: map[string]string{
 				ParameterSpendEffects:   allTransfers,
-				ParameterRekeyAuthority: RekeySpendingKey,
+				ParameterRekeyAuthority: RekeyRefused,
 			},
 			Fields: []string{ParameterUnlockRound},
 		},

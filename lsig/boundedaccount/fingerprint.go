@@ -23,7 +23,7 @@ import (
 const (
 	// grammarRevision covers the boundary grammar as a whole. It reaches only
 	// the grammar fingerprint, so no account's provenance depends on it.
-	grammarRevision = 2
+	grammarRevision = 3
 	// resolverRevision covers how selectShape turns a request into values.
 	resolverRevision = 1
 	// allowlistRendererRevision covers the framework allowlist renderers and the
@@ -32,6 +32,8 @@ const (
 	// timelockRendererRevision covers the same for shapes with a timelock. It is
 	// separate so a timelock change leaves allowlist accounts' provenance alone.
 	timelockRendererRevision = 1
+	// limitsRendererRevision covers the envelope alone, for limits-only shapes.
+	limitsRendererRevision = 1
 
 	boundaryDigestDomainV1 = "APLANE_GENERAL_BOUNDARY_V1"
 )
@@ -40,7 +42,10 @@ const (
 // rule added to the grammar leaves existing accounts' provenance unchanged.
 func shapeFingerprint(shape Shape, composer *composeddsa.ComposedDSA) string {
 	rendererRevision := allowlistRendererRevision
-	if shape.Timelock {
+	switch {
+	case shape.AnyRecipient:
+		rendererRevision = limitsRendererRevision
+	case shape.Timelock:
 		rendererRevision = timelockRendererRevision
 	}
 	return lsigprovider.HashCompatibilitySpec(struct {
@@ -82,11 +87,8 @@ func grammarFingerprint(definitions []*shapeDefinition) string {
 
 // boundaryDigest compares two accounts' resolved policy and external authorities.
 // It excludes the spending key, so equal digests do not mean equal accounts, and
-// it replaces no signing transcript. A cosigner
-// key is a behavior parameter and is covered by the behavior encoding.
-//
-// The last field once bound an admin key. No shape has one now; the field stays,
-// always empty, so every remaining shape keeps the digest it had.
+// it replaces no signing transcript. A cosigner key is a behavior parameter and is
+// covered by the behavior encoding.
 func boundaryDigest(definition *shapeDefinition, parameters map[string]string) (string, error) {
 	composer := definition.composer
 	profile, err := composeddsa.CanonicalBoundedProfile(composer.BoundedAuthorizationProfile(), composer.BoundedAuthorizationMetadata())
@@ -104,7 +106,6 @@ func boundaryDigest(definition *shapeDefinition, parameters map[string]string) (
 	encoded = boundedmeta.AppendField(encoded, []byte(lsigprovider.FingerprintBasePrimitive(composer.BaseKeyType())))
 	encoded = boundedmeta.AppendField(encoded, profile)
 	encoded = boundedmeta.AppendField(encoded, behavior)
-	encoded = boundedmeta.AppendField(encoded, nil)
 	sum := sha512.Sum512_256(encoded)
 	return hex.EncodeToString(sum[:]), nil
 }

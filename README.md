@@ -153,7 +153,8 @@ client settings remain in `config.yaml`. See
   Ed25519) and `aplane.rotating-triple-wotsc.v1` (Falcon-1024 + WOTS+C +
   Ed25519), a stable address whose stage program changes on every spend
 - **generic LogicSigs**: HTLCs and user-loaded custom TEAL
-- **bounded/composed LogicSigs**: allowlists, timelocks, and cosigner-gated Corridor
+- **bounded LogicSigs**: the general bounded type `aplane.falcon1024-b.v1`, with
+  allowlist, timelock, and cosigner-gated Corridor presets
 
 ### Automation & Integration
 - JavaScript scripting with full transaction API
@@ -210,7 +211,7 @@ All documentation is in the [`docs/`](docs/) directory.
 - [ARCH_CRYPTO.md](docs/ARCH_CRYPTO.md) - Cryptographic design
 - [ARCH_KEYTYPES.md](docs/ARCH_KEYTYPES.md) - Key type dimensions and resolution axes, key type identifiers, and LogicSig providers
 - [ARCH_GUARDED.md](docs/ARCH_GUARDED.md) - Guarded signing and cosigner nodes, and the Corridor v1 profile
-- [ARCH_BOUNDED_DSA.md](docs/ARCH_BOUNDED_DSA.md) - Bounded DSA contracts, effect inventory, and canonical encodings
+- [ARCH_BOUNDED_DSA.md](docs/ARCH_BOUNDED_DSA.md) - The `bounded2` contract: path declaration, effect inventory, and canonical encodings
 - [ARCH_NETWORKS.md](docs/ARCH_NETWORKS.md) - Network context tokens, genesis-hash mapping, and network-scoped policy behavior
 - [ARCH_SHELL.md](docs/ARCH_SHELL.md) - Client side: engine, REPL and parsing contracts, app interaction, and the MCP surface
 - [ARCH_PLUGINS.md](docs/ARCH_PLUGINS.md) - Plugin system architecture

@@ -8,7 +8,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -26,57 +25,28 @@ import (
 // durable storage vocabulary, so the two cannot drift: a contract revision
 // edits boundedmeta once and both sides follow at compile time.
 const (
-	// BoundedContractV1 is the frozen v1 bounded-authorization contract.
-	BoundedContractV1 = boundedmeta.ContractV1
-	// BoundedMaxFeeV1 is the largest fee a bounded1 profile may compile.
-	BoundedMaxFeeV1 uint64 = boundedmeta.MaximumProfileFee
+	// BoundedContract is the bounded-authorization contract.
+	BoundedContract = boundedmeta.Contract
+	// BoundedMaxFee is the largest fee a bounded profile may compile.
+	BoundedMaxFee uint64 = boundedmeta.MaximumProfileFee
 	// BoundedCosignerPublicKeyParameter is injected for cosigner-enabled profiles.
 	BoundedCosignerPublicKeyParameter = boundedmeta.CosignerPublicKeyParameter
 
 	boundedReservedNamePrefix  = "bounded_"
 	boundedReservedLabelPrefix = "__aplane_bounded1_"
 
-	boundedProfileDomainV1            = "APLANE_BOUNDED_PROFILE_V1"
+	boundedProfileDomain              = "APLANE_BOUNDED_PROFILE_V2"
 	boundedBehaviorParametersDomainV1 = "APLANE_BOUNDED_BEHAVIOR_PARAMETERS_V1"
 )
-
-// AdminOperationKind identifies a bounded administrative operation.
-type AdminOperationKind string
-
-const (
-	AdminOperationRekey AdminOperationKind = boundedmeta.AdminOperationRekey
-)
-
-// AdminOperationAuthorization selects the authority required by an operation.
-type AdminOperationAuthorization string
-
-const (
-	AdminAuthorizationSpendingKey AdminOperationAuthorization = boundedmeta.AdminAuthorizationSpend
-)
-
-// AdminPolicyGate selects whether Layer 3 also constrains an operation.
-type AdminPolicyGate string
-
-const (
-	AdminPolicyGateNone   AdminPolicyGate = boundedmeta.PolicyGateNone
-	AdminPolicyGateLayer3 AdminPolicyGate = boundedmeta.PolicyGateLayer3
-)
-
-// AdminOperationSpec enables one exact administrative normal form.
-type AdminOperationSpec struct {
-	Kind          AdminOperationKind
-	Authorization AdminOperationAuthorization
-	PolicyGate    AdminPolicyGate
-}
 
 // BoundedAuthorizationProfile defines the bounded envelope compiled around
 // a composed DSA spending policy.
 type BoundedAuthorizationProfile struct {
-	Contract        string
-	SpendEffects    []txeffects.SpendEffect
-	MaxFee          uint64
-	AdminOperations []AdminOperationSpec
-	Cosigner        *boundedmeta.CosignerAuthorization
+	Contract     string
+	SpendEffects []txeffects.SpendEffect
+	MaxFee       uint64
+	Rekey        boundedmeta.RekeySetting
+	Cosigner     *boundedmeta.CosignerAuthorization
 }
 
 type boundedFingerprint struct {
@@ -89,7 +59,6 @@ func cloneBoundedProfile(profile *BoundedAuthorizationProfile) *BoundedAuthoriza
 	}
 	cloned := *profile
 	cloned.SpendEffects = append([]txeffects.SpendEffect(nil), profile.SpendEffects...)
-	cloned.AdminOperations = append([]AdminOperationSpec(nil), profile.AdminOperations...)
 	if profile.Cosigner != nil {
 		cosigner := *profile.Cosigner
 		cosigner.RequiredOn = slices.Clone(profile.Cosigner.RequiredOn)
@@ -98,18 +67,18 @@ func cloneBoundedProfile(profile *BoundedAuthorizationProfile) *BoundedAuthoriza
 	return &cloned
 }
 
-// validate delegates the bounded1 rule set to boundedmeta so generation and
+// validate delegates the bounded rule set to boundedmeta so generation and
 // storage validation cannot diverge; only the contract/fee comparisons stay
 // local, expressed against the aliased shared constants.
 func (profile *BoundedAuthorizationProfile) validate() error {
 	if profile == nil {
 		return nil
 	}
-	if profile.Contract != BoundedContractV1 {
+	if profile.Contract != BoundedContract {
 		return fmt.Errorf("unsupported bounded authorization contract %q", profile.Contract)
 	}
-	if profile.MaxFee > BoundedMaxFeeV1 {
-		return fmt.Errorf("max_fee %d exceeds bounded1 ceiling %d", profile.MaxFee, BoundedMaxFeeV1)
+	if profile.MaxFee > BoundedMaxFee {
+		return fmt.Errorf("max_fee %d exceeds %s ceiling %d", profile.MaxFee, BoundedContract, BoundedMaxFee)
 	}
 	spendEffects := make([]string, len(profile.SpendEffects))
 	for i, effect := range profile.SpendEffects {
@@ -118,17 +87,35 @@ func (profile *BoundedAuthorizationProfile) validate() error {
 	if err := boundedmeta.ValidateSpendEffects(spendEffects); err != nil {
 		return err
 	}
-	operations := make([]boundedmeta.AdminOperation, len(profile.AdminOperations))
-	for i, operation := range profile.AdminOperations {
-		operations[i] = boundedmeta.AdminOperation{Kind: string(operation.Kind), Authorization: string(operation.Authorization), PolicyGate: string(operation.PolicyGate)}
-	}
-	if err := boundedmeta.ValidateAdminOperations(operations); err != nil {
+	if err := boundedmeta.ValidateRekeySetting(profile.Rekey); err != nil {
 		return err
+	}
+	if profile.Rekey == boundedmeta.RekeyRefused {
+		if err := boundedmeta.ValidateRefusedExit(spendEffects); err != nil {
+			return err
+		}
 	}
 	if err := boundedmeta.ValidateCosignerAuthorizationProfile(profile.Cosigner); err != nil {
 		return err
 	}
 	return nil
+}
+
+// validatedBoundedProfile canonicalizes a profile and checks it against its
+// metadata, which catches contradictions such as a cosigner beside a
+// spending-key rekey. CanonicalBoundedProfile encodes the result.
+func validatedBoundedProfile(profile *BoundedAuthorizationProfile, metadata *boundedmeta.Metadata) (*BoundedAuthorizationProfile, error) {
+	canonical, err := canonicalBoundedProfile(profile)
+	if err != nil {
+		return nil, err
+	}
+	if canonical == nil {
+		return nil, fmt.Errorf("bounded profile is required")
+	}
+	if err := validateCanonicalMetadata(canonical, metadata); err != nil {
+		return nil, err
+	}
+	return canonical, nil
 }
 
 func canonicalBoundedProfile(profile *BoundedAuthorizationProfile) (*BoundedAuthorizationProfile, error) {
@@ -140,9 +127,6 @@ func canonicalBoundedProfile(profile *BoundedAuthorizationProfile) (*BoundedAuth
 	}
 	canonical := cloneBoundedProfile(profile)
 	canonical.SpendEffects = canonicalSpendEffects(canonical.SpendEffects)
-	sort.Slice(canonical.AdminOperations, func(i, j int) bool {
-		return canonical.AdminOperations[i].Kind < canonical.AdminOperations[j].Kind
-	})
 	return canonical, nil
 }
 
@@ -152,7 +136,7 @@ func canonicalSpendEffects(effects []txeffects.SpendEffect) []txeffects.SpendEff
 		selected[effect] = struct{}{}
 	}
 	ordered := make([]txeffects.SpendEffect, 0, len(effects))
-	for _, effect := range txeffects.Bounded1Manifest().SpendEffects {
+	for _, effect := range txeffects.BoundedManifest().SpendEffects {
 		if _, ok := selected[effect]; ok {
 			ordered = append(ordered, effect)
 		}
@@ -171,34 +155,22 @@ func boundedFingerprintProjection(profile *BoundedAuthorizationProfile, metadata
 	return boundedFingerprint{CanonicalProfileHex: hex.EncodeToString(encoded)}
 }
 
-// CanonicalBoundedProfile encodes a profile using the frozen bounded1 binary
-// contract, which template fingerprints and the general type's boundary digest
+// CanonicalBoundedProfile encodes a profile using the bounded binary contract, which template fingerprints and the general type's boundary digest
 // hash.
 func CanonicalBoundedProfile(profile *BoundedAuthorizationProfile, metadata *boundedmeta.Metadata) ([]byte, error) {
-	canonical, err := canonicalBoundedProfile(profile)
+	canonical, err := validatedBoundedProfile(profile, metadata)
 	if err != nil {
 		return nil, err
 	}
-	if canonical == nil {
-		return nil, fmt.Errorf("bounded profile is required")
-	}
-	if err := validateCanonicalMetadata(canonical, metadata); err != nil {
-		return nil, err
-	}
 	var encoded []byte
-	encoded = boundedmeta.AppendField(encoded, []byte(boundedProfileDomainV1))
+	encoded = boundedmeta.AppendField(encoded, []byte(boundedProfileDomain))
 	encoded = boundedmeta.AppendField(encoded, []byte(canonical.Contract))
 	encoded = boundedmeta.AppendUint32(encoded, uint32(len(canonical.SpendEffects)))
 	for _, effect := range canonical.SpendEffects {
 		encoded = boundedmeta.AppendField(encoded, []byte(effect))
 	}
 	encoded = boundedmeta.AppendUint64(encoded, canonical.MaxFee)
-	encoded = boundedmeta.AppendUint32(encoded, uint32(len(canonical.AdminOperations)))
-	for _, operation := range canonical.AdminOperations {
-		encoded = boundedmeta.AppendField(encoded, []byte(operation.Kind))
-		encoded = boundedmeta.AppendField(encoded, []byte(operation.Authorization))
-		encoded = boundedmeta.AppendField(encoded, []byte(operation.PolicyGate))
-	}
+	encoded = boundedmeta.AppendField(encoded, []byte(canonical.Rekey))
 	if canonical.Cosigner == nil {
 		encoded = boundedmeta.AppendUint32(encoded, 0)
 	} else {
@@ -243,7 +215,6 @@ func CanonicalBoundedProfile(profile *BoundedAuthorizationProfile, metadata *bou
 		encoded = boundedmeta.AppendUint32(encoded, uint32(slot.MaxSize))
 		encoded = boundedmeta.AppendField(encoded, []byte(slot.Paths.Spend))
 		encoded = boundedmeta.AppendField(encoded, []byte(slot.Paths.SpendingRekey))
-		encoded = boundedmeta.AppendField(encoded, []byte(slot.Paths.AdminRekey))
 	}
 	return encoded, nil
 }
@@ -256,14 +227,8 @@ func validateCanonicalMetadata(profile *BoundedAuthorizationProfile, metadata *b
 	for i, effect := range profile.SpendEffects {
 		spendEffects[i] = string(effect)
 	}
-	operations := make([]boundedmeta.AdminOperation, len(profile.AdminOperations))
-	for i, operation := range profile.AdminOperations {
-		operations[i] = boundedmeta.AdminOperation{
-			Kind: string(operation.Kind), Authorization: string(operation.Authorization), PolicyGate: string(operation.PolicyGate),
-		}
-	}
 	if metadata.Contract != profile.Contract || metadata.MaxFee != profile.MaxFee ||
-		!slices.Equal(metadata.SpendEffects, spendEffects) || !slices.Equal(metadata.AdminOperations, operations) ||
+		!slices.Equal(metadata.SpendEffects, spendEffects) || metadata.Rekey != profile.Rekey ||
 		!equalCosignerProfile(metadata.Cosigner, profile.Cosigner) {
 		return fmt.Errorf("bounded profile metadata does not match the authorization profile")
 	}
@@ -433,13 +398,7 @@ func (c *ComposedDSA) boundedAuthorizationMetadataBase() (*boundedmeta.Metadata,
 	for _, effect := range profile.SpendEffects {
 		metadata.SpendEffects = append(metadata.SpendEffects, string(effect))
 	}
-	for _, operation := range profile.AdminOperations {
-		metadata.AdminOperations = append(metadata.AdminOperations, boundedmeta.AdminOperation{
-			Kind:          string(operation.Kind),
-			Authorization: string(operation.Authorization),
-			PolicyGate:    string(operation.PolicyGate),
-		})
-	}
+	metadata.Rekey = profile.Rekey
 	metadata.ArgumentLayout = boundedArgumentLayout(layout, profile, metadata.DerivedArgs, metadata.RuntimeArgs)
 	return metadata, nil
 }
@@ -449,43 +408,30 @@ func boundedArgumentLayout(layout SignatureArgLayout, profile *BoundedAuthorizat
 	for i, maxSize := range layout.MaxSizes {
 		slots = append(slots, boundedmeta.ArgumentSlot{
 			Index: i, Name: fmt.Sprintf("base_signature_%d", i), Source: boundedmeta.ArgSourceBaseSignature, MaxSize: maxSize,
-			Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgRequired, AdminRekey: boundedmeta.ArgRequired},
+			Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgRequired},
 		})
 	}
 	for _, arg := range derived {
 		slots = append(slots, boundedmeta.ArgumentSlot{
 			Index: len(slots), Name: arg.Name, Source: boundedmeta.ArgSourceDerived, MaxSize: arg.MaxSize,
-			Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgOptional, SpendingRekey: boundedmeta.ArgForbidden, AdminRekey: boundedmeta.ArgForbidden},
+			Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgOptional, SpendingRekey: boundedmeta.ArgForbidden},
 		})
 	}
-	rekeyGate := boundedRekeyUsesLayer3(profile)
+	// A rekey never reaches Layer 3, so its arguments are spend-only.
 	for _, arg := range runtime {
-		rekeyRule := boundedmeta.ArgForbidden
-		if rekeyGate {
-			rekeyRule = boundedmeta.ArgRequired
-		}
 		slots = append(slots, boundedmeta.ArgumentSlot{
 			Index: len(slots), Name: arg.Name, Source: boundedmeta.ArgSourceRuntime, MaxSize: arg.MaxSize,
-			Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: rekeyRule, AdminRekey: boundedmeta.ArgForbidden},
+			Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgForbidden},
 		})
 	}
 	if profile.Cosigner != nil {
 		slots = append(slots, boundedmeta.ArgumentSlot{
 			Index: len(slots), Name: boundedmeta.CosignerSignatureSlot, Source: boundedmeta.ArgSourceCosigner,
 			MaxSize: profile.Cosigner.SignatureMaxSize,
-			Paths:   boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgForbidden, AdminRekey: boundedmeta.ArgForbidden},
+			Paths:   boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgForbidden},
 		})
 	}
 	return slots
-}
-
-func boundedRekeyUsesLayer3(profile *BoundedAuthorizationProfile) bool {
-	for _, operation := range profile.AdminOperations {
-		if operation.Kind == AdminOperationRekey && operation.Authorization == AdminAuthorizationSpendingKey && operation.PolicyGate == AdminPolicyGateLayer3 {
-			return true
-		}
-	}
-	return false
 }
 
 func validateBuiltSignatureArgs(args [][]byte, layout SignatureArgLayout) error {
@@ -509,7 +455,7 @@ func (c *ComposedDSA) validateBoundedConfig() (*BoundedAuthorizationProfile, Sig
 		return nil, SignatureArgLayout{}, nil
 	}
 	if c.layer3 == nil && strings.TrimSpace(c.tealSuffix) == "" {
-		return nil, SignatureArgLayout{}, fmt.Errorf("bounded1 requires a Layer-3 spending policy suffix")
+		return nil, SignatureArgLayout{}, fmt.Errorf("a bounded profile requires a Layer-3 spending policy suffix")
 	}
 	if err := c.validateFrameworkLayer3Arguments(); err != nil {
 		return nil, SignatureArgLayout{}, fmt.Errorf("invalid bounded Layer-3 arguments: %w", err)
@@ -517,17 +463,17 @@ func (c *ComposedDSA) validateBoundedConfig() (*BoundedAuthorizationProfile, Sig
 	if err := validateLayer3Policy(c.layer3, c.paramsWithoutCosignerKey(), profile, c.hasAuthorTEAL()); err != nil {
 		return nil, SignatureArgLayout{}, fmt.Errorf("invalid bounded Layer-3 policy: %w", err)
 	}
-	if c.ops.TEALVersion() != txeffects.Bounded1Manifest().TEALVersion {
-		return nil, SignatureArgLayout{}, fmt.Errorf("bounded1 requires TEAL version %d, base emits version %d", txeffects.Bounded1Manifest().TEALVersion, c.ops.TEALVersion())
+	if c.ops.TEALVersion() != txeffects.BoundedManifest().TEALVersion {
+		return nil, SignatureArgLayout{}, fmt.Errorf("a bounded profile requires TEAL version %d, base emits version %d", txeffects.BoundedManifest().TEALVersion, c.ops.TEALVersion())
 	}
 	if len(c.runtimeArgs) != len(c.boundedRuntimeArgs) {
-		return nil, SignatureArgLayout{}, fmt.Errorf("bounded1 runtime arguments must use the bounded argument contract")
+		return nil, SignatureArgLayout{}, fmt.Errorf("bounded runtime arguments must use the bounded argument contract")
 	}
 	for i, arg := range c.runtimeArgs {
 		metadataArg := c.boundedRuntimeArgs[i]
 		if arg.Name != metadataArg.Name || arg.Type != metadataArg.Type || arg.Required != metadataArg.Required ||
 			arg.ByteLength != metadataArg.ByteLength || arg.MaxSize != metadataArg.MaxSize {
-			return nil, SignatureArgLayout{}, fmt.Errorf("bounded1 runtime argument %q does not match its metadata contract", arg.Name)
+			return nil, SignatureArgLayout{}, fmt.Errorf("bounded runtime argument %q does not match its metadata contract", arg.Name)
 		}
 	}
 	if err := validateBoundedReservedNames(profile, c.params, c.runtimeArgs, c.templateVars, c.tealSuffix); err != nil {

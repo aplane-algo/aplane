@@ -23,12 +23,11 @@ type LogicSigResourceUsage struct {
 
 // LogicSigResourceProfile publishes the closed paths available for one final
 // stored LogicSig program. Non-bounded keys use Default; bounded keys use the
-// three explicit bounded paths and never silently fall back to Default.
+// two explicit bounded paths and never silently fall back to Default.
 type LogicSigResourceProfile struct {
 	Default       *LogicSigResourceUsage `json:"default,omitempty"`
 	Spend         *LogicSigResourceUsage `json:"spend,omitempty"`
 	SpendingRekey *LogicSigResourceUsage `json:"spending_rekey,omitempty"`
-	AdminRekey    *LogicSigResourceUsage `json:"admin_rekey,omitempty"`
 }
 
 func (r LogicSigResourceUsage) validate() error {
@@ -372,7 +371,7 @@ const SigningFlowBounded1 = "bounded1"
 
 // SigningFlowBoundedCosigner1 names the combined bounded spend choreography:
 // signer-owned bounded base component release, cosigner-role component signing,
-// and source-aware bounded assembly. A bounded1 account with a cosigner refuses
+// and source-aware bounded assembly. A bounded account with a cosigner refuses
 // rekeys, so this flow carries spends only.
 const SigningFlowBoundedCosigner1 = "bounded-cosigner1"
 
@@ -390,13 +389,6 @@ type BoundedSignatureArgLayout struct {
 	MaxSizes []int `json:"max_sizes"`
 }
 
-// BoundedAdminOperationInfo describes one enabled administrative operation.
-type BoundedAdminOperationInfo struct {
-	Kind          string `json:"kind"`
-	Authorization string `json:"authorization"`
-	PolicyGate    string `json:"policy_gate"`
-}
-
 type BoundedDerivedArgInfo struct {
 	Name      string `json:"name"`
 	Kind      string `json:"kind"`
@@ -407,7 +399,6 @@ type BoundedDerivedArgInfo struct {
 type BoundedArgumentPathMask struct {
 	Spend         string `json:"spend"`
 	SpendingRekey string `json:"spending_rekey"`
-	AdminRekey    string `json:"admin_rekey"`
 }
 
 type BoundedArgumentSlotInfo struct {
@@ -433,16 +424,17 @@ type BoundedCosignerAuthorizationInfo struct {
 // projection shared by /keytypes and /keys. Instance-only fields are omitted
 // from /keytypes until a concrete LogicSig has been generated.
 type BoundedAuthorizationInfo struct {
-	Contract               string                            `json:"contract"`
-	BaseSignatureArgLayout BoundedSignatureArgLayout         `json:"base_signature_arg_layout"`
-	SpendEffects           []string                          `json:"spend_effects"`
-	MaxFee                 uint64                            `json:"max_fee"`
-	AdminOperations        []BoundedAdminOperationInfo       `json:"admin_operations"`
-	Cosigner               *BoundedCosignerAuthorizationInfo `json:"cosigner,omitempty"`
-	RuntimeArgs            []RuntimeArgInfo                  `json:"runtime_args"`
-	DerivedArgs            []BoundedDerivedArgInfo           `json:"derived_args"`
-	ArgumentLayout         []BoundedArgumentSlotInfo         `json:"argument_layout"`
-	Layer3Policy           string                            `json:"layer3_policy"`
+	Contract               string                    `json:"contract"`
+	BaseSignatureArgLayout BoundedSignatureArgLayout `json:"base_signature_arg_layout"`
+	SpendEffects           []string                  `json:"spend_effects"`
+	MaxFee                 uint64                    `json:"max_fee"`
+	// Rekey is refused or spending_key.
+	Rekey          string                            `json:"rekey"`
+	Cosigner       *BoundedCosignerAuthorizationInfo `json:"cosigner,omitempty"`
+	RuntimeArgs    []RuntimeArgInfo                  `json:"runtime_args"`
+	DerivedArgs    []BoundedDerivedArgInfo           `json:"derived_args"`
+	ArgumentLayout []BoundedArgumentSlotInfo         `json:"argument_layout"`
+	Layer3Policy   string                            `json:"layer3_policy"`
 }
 
 // KeyTypeInfo describes an available key type from the /keytypes endpoint.

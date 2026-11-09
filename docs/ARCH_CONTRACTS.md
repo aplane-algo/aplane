@@ -33,7 +33,7 @@
 | Authentication, SSH, client enrollment, revocation | [ARCH_SECURITY.md](ARCH_SECURITY.md#ssh-tunnel-transport-layer) |
 | Audit log | [ARCH_SECURITY.md](ARCH_SECURITY.md#audit-logger) |
 | Cosigner component message and canonicalization, cosigner key file, public key reference library | [ARCH_GUARDED.md](ARCH_GUARDED.md) |
-| `bounded1` authorization, canonical encodings, and inventory | [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md) |
+| `bounded2` authorization, path declaration, canonical encodings, and inventory | [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md) |
 | General bounded key type (`aplane.falcon1024-b.v1`): boundary file (`aplane.boundary.v1`), account receipt (`aplane.boundary-receipt.v1`), boundary digest | [ARCH_KEYTYPES.md](ARCH_KEYTYPES.md#the-general-bounded-key-type), [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md#general-boundary-digest); source `internal/boundary` |
 | Rotating key types: frozen sizes, stage programs, derivation | [KEYTYPE_ROTATING_TRIPLE_HYBRID.md](KEYTYPE_ROTATING_TRIPLE_HYBRID.md), [ARCH_CRYPTO.md](ARCH_CRYPTO.md#rotating-slh-dsa-triple), [ARCH_SIGNING.md](ARCH_SIGNING.md#rotating-accounts-rotating1) for the `rotating1` flow; source `internal/rotatingkey/rotatingkey.go`, `lsig/rotatingfamily/` |
 | Key type identifiers | [ARCH_KEYTYPES.md](ARCH_KEYTYPES.md#key-type-identifier-contract) |

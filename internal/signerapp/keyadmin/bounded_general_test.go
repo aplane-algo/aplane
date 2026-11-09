@@ -6,6 +6,7 @@ package keyadmin
 import (
 	"context"
 	"encoding/hex"
+	"maps"
 	"strings"
 	"testing"
 
@@ -139,6 +140,12 @@ func TestBoundaryRequirements(t *testing.T) {
 	timelockOnly := generalParams(boundedaccount.RekeyRefused)
 	delete(timelockOnly, boundedaccount.ParameterRecipients)
 	timelockOnly[boundedaccount.ParameterUnlockRound] = "100"
+	// Nor is a cosigner: a limits-only account pays anyone the cosigner signs for.
+	limitsOnly := generalParams(boundedaccount.RekeyRefused)
+	delete(limitsOnly, boundedaccount.ParameterRecipients)
+	limitsOnly[boundedaccount.ParameterRecipientScope] = boundedaccount.RecipientScopeAny
+	limitsCosigned := maps.Clone(limitsOnly)
+	limitsCosigned[composeddsa.BoundedCosignerPublicKeyParameter] = hex.EncodeToString(publicKey)
 
 	tests := []struct {
 		name               string
@@ -147,8 +154,8 @@ func TestBoundaryRequirements(t *testing.T) {
 		rejected, accepted []map[string]string
 		want               string
 	}{
-		{"contained", true, false, []map[string]string{spendingKey, timelockOnly}, []map[string]string{refused, cosigned}, "boundary_require_contained"},
-		{"cosigner", false, true, []map[string]string{spendingKey, refused}, []map[string]string{cosigned}, "boundary_require_cosigner"},
+		{"contained", true, false, []map[string]string{spendingKey, timelockOnly, limitsOnly, limitsCosigned}, []map[string]string{refused, cosigned}, "boundary_require_contained"},
+		{"cosigner", false, true, []map[string]string{spendingKey, refused, limitsOnly}, []map[string]string{cosigned, limitsCosigned}, "boundary_require_cosigner"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -169,6 +176,27 @@ func TestBoundaryRequirements(t *testing.T) {
 			}
 		})
 	}
+}
+
+// No host rule holds a rekey until the unlock round, so a timelock a spending key
+// could rekey out of is refused before review and before anything is created.
+func TestGeneralProviderRefusesASpendingKeyRekeyOnATimelock(t *testing.T) {
+	_, service := setupGeneralProvider(t)
+	timelockOnly := generalParams(boundedaccount.RekeySpendingKey)
+	delete(timelockOnly, boundedaccount.ParameterRecipients)
+	timelockOnly[boundedaccount.ParameterUnlockRound] = "100"
+	listAndTimelock := generalParams(boundedaccount.RekeySpendingKey)
+	listAndTimelock[boundedaccount.ParameterUnlockRound] = "100"
+	for name, params := range map[string]map[string]string{"timelock": timelockOnly, "allowlist and timelock": listAndTimelock} {
+		const want = "a timelock requires " + boundedaccount.ParameterRekeyAuthority + "=" + boundedaccount.RekeyRefused
+		if _, err := service.PrepareGenerateKey(boundedaccount.KeyTypeV1, params); err == nil || !strings.Contains(err.Message, want) {
+			t.Fatalf("%s: PrepareGenerateKey() error = %#v", name, err)
+		}
+		if _, err := service.GenerateKey(context.Background(), boundedaccount.KeyTypeV1, params, nil); err == nil || !strings.Contains(err.Message, want) {
+			t.Fatalf("%s: GenerateKey() error = %#v", name, err)
+		}
+	}
+	assertNoKeys(t, service)
 }
 
 func TestBoundaryRequirementIsRecheckedAfterReview(t *testing.T) {

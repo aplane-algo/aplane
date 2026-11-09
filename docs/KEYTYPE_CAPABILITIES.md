@@ -34,17 +34,11 @@ included as normal user-account operations.
 | `aplane.falcon1024.v1` | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
 | `aplane.ed25519.v1` | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
 | `aplane.falcon1024-b.v1` | C | N | C | C | N | N | N | N | N | N | C |
-| `aplane.falcon1024-allowlist.v1` | C | N | C | Y | N | N | N | N | N | N | C |
-| `aplane.falcon1024-allowlist.v2` | C | N | C | Y | N | N | N | N | N | N | C |
-| `aplane.falcon1024-timelock.v1` | C | N | C | C | N | N | N | N | N | N | C |
 | `aplane.falcon1024-cosigner1024.v1` | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
 | `aplane.htlc.v1` | C | C | N | N | N | N | N | N | N | N | N |
 | `aplane.rotating-triple-xmss.v1` | C | N | C | C | C | C | C | C | C | C | C |
 | `aplane.rotating-triple-slhdsa.v1` | C | N | C | C | C | C | C | C | C | C | C |
 | `aplane.rotating-triple-wotsc.v1` | C | N | C | C | C | C | C | C | C | C | C |
-
-The allowlist and timelock templates are retired from the default library in favor of
-the presets of `aplane.falcon1024-b.v1`. Their rows still describe existing accounts.
 
 ## Capability Columns
 
@@ -70,24 +64,14 @@ the presets of `aplane.falcon1024-b.v1`. Their rows still describe existing acco
 - `aplane.falcon1024-b.v1` is the general bounded type. Each account's shape decides
   which of `pay`, `axfer`, and `asset_opt_in` it admits, whether a recipient list
   (inline or Merkle) limits non-self destinations, whether spending waits for an
-  unlock round, and whether a cosigner signs every spend. It rejects close,
-  clawback, and all non-transfer transaction types. Rekey is either the bounded1
-  pure self-payment form authorized by the spending key, or refused: such an
-  account, including every Corridor account, has no rekey path.
-- `aplane.falcon1024-allowlist.v1` is a bounded1 template. It admits only pure
-  payments and pure asset transfers to self or an inline allowlisted recipient,
-  plus asset opt-in. It rejects
-  close, clawback, and all non-transfer transaction types. Rekey is allowed
-  only as the bounded1 pure self-payment form authorized by the spending key;
-  the allowlist does not gate that rekey path.
-- `aplane.falcon1024-timelock.v1` admits the same bounded transfer effects only
-  when `FirstValid >= unlock_round`; the round condition also gates pure
-  spending-key rekey. Close, clawback, and non-transfer types are rejected.
-- `aplane.falcon1024-allowlist.v2` is the bounded Merkle allowlist. Non-self
-  payment and asset-transfer destinations require a signer-generated 512-byte
-  fixed-depth proof against the root derived from the key-file recipient list.
-  Self-send, asset opt-in, and pure spending-key rekey require no proof. Close,
-  clawback, and non-transfer types are rejected.
+  unlock round, and whether a cosigner signs every spend. A limits-only account has
+  neither a list nor an unlock round, so any destination is a `Y`. It rejects close,
+  clawback, and all non-transfer transaction types. Rekey is either the `bounded2`
+  pure self-payment form authorized by the spending key, which no recipient list,
+  unlock round, or cosigner gates, or refused: such an account, including every
+  timelock and every Corridor account, has no rekey path. A Merkle list needs a
+  signer-generated 512-byte proof for a non-self destination; self-send and asset
+  opt-in need none.
 - `aplane.rotating-triple-wotsc.v1` admits any transaction type, but every transaction must rekey to an address other
   than the sender, must not close out ALGO, and must have a validity window
   of at most 100 rounds; that is the condition behind every `C`. The signer

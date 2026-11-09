@@ -126,7 +126,6 @@ func publicLogicSigResourceProfile(profile *lsigresource.Profile) *signerapi.Log
 		Default:       usage(profile.Default),
 		Spend:         usage(profile.Spend),
 		SpendingRekey: usage(profile.SpendingRekey),
-		AdminRekey:    usage(profile.AdminRekey),
 	}
 }
 
@@ -451,7 +450,7 @@ func boundedInfo(metadata *boundedmeta.Metadata) *signerapi.BoundedAuthorization
 		info.ArgumentLayout = append(info.ArgumentLayout, signerapi.BoundedArgumentSlotInfo{
 			Index: slot.Index, Name: slot.Name, Source: slot.Source, MaxSize: slot.MaxSize,
 			Paths: signerapi.BoundedArgumentPathMask{
-				Spend: slot.Paths.Spend, SpendingRekey: slot.Paths.SpendingRekey, AdminRekey: slot.Paths.AdminRekey,
+				Spend: slot.Paths.Spend, SpendingRekey: slot.Paths.SpendingRekey,
 			},
 		})
 	}
@@ -464,14 +463,7 @@ func boundedInfo(metadata *boundedmeta.Metadata) *signerapi.BoundedAuthorization
 	if info.ArgumentLayout == nil {
 		info.ArgumentLayout = []signerapi.BoundedArgumentSlotInfo{}
 	}
-	for _, operation := range metadata.AdminOperations {
-		info.AdminOperations = append(info.AdminOperations, signerapi.BoundedAdminOperationInfo{
-			Kind: operation.Kind, Authorization: operation.Authorization, PolicyGate: operation.PolicyGate,
-		})
-	}
-	if info.AdminOperations == nil {
-		info.AdminOperations = []signerapi.BoundedAdminOperationInfo{}
-	}
+	info.Rekey = string(metadata.Rekey)
 	return info
 }
 

@@ -38,9 +38,9 @@ func TestScanBoundedResourcesUsesPathMasks(t *testing.T) {
 	t.Parallel()
 
 	metadata := &boundedmeta.Metadata{ArgumentLayout: []boundedmeta.ArgumentSlot{
-		{MaxSize: 1_423, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgRequired, AdminRekey: boundedmeta.ArgRequired}},
-		{MaxSize: 512, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgOptional, SpendingRekey: boundedmeta.ArgForbidden, AdminRekey: boundedmeta.ArgForbidden}},
-		{MaxSize: 1_423, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgForbidden, SpendingRekey: boundedmeta.ArgForbidden, AdminRekey: boundedmeta.ArgRequired}},
+		{MaxSize: 1_423, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgRequired}},
+		{MaxSize: 512, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgOptional, SpendingRekey: boundedmeta.ArgForbidden}},
+		{MaxSize: 1_423, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgForbidden, SpendingRekey: boundedmeta.ArgRequired}},
 	}}
 	profile, err := scanLogicSigResources(&Payload{
 		Category:             CategoryDSALsig,
@@ -49,13 +49,12 @@ func TestScanBoundedResourcesUsesPathMasks(t *testing.T) {
 		LogicSigOpcodeProfile: lsigresource.BoundedOpcodeProfile(
 			lsigresource.SingleTransactionOpcodeCeiling,
 			lsigresource.SingleTransactionOpcodeCeiling,
-			lsigresource.SingleTransactionOpcodeCeiling,
 		),
 	}, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if profile.Spend == nil || profile.AdminRekey == nil || profile.Spend.ArgumentBytes != 1_935 || profile.AdminRekey.ArgumentBytes != 2_846 {
+	if profile.Spend == nil || profile.SpendingRekey == nil || profile.Spend.ArgumentBytes != 1_935 || profile.SpendingRekey.ArgumentBytes != 2_846 {
 		t.Fatalf("bounded profile = %#v", profile)
 	}
 	if _, err := profile.UsageForPath(lsigresource.PathSpend); err != nil {

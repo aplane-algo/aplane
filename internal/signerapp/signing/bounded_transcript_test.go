@@ -37,7 +37,7 @@ func TestBoundedTranscriptsAreRoleSeparated(t *testing.T) {
 	for i := range txID {
 		txID[i] = byte(i + 1)
 	}
-	metadata := &boundedmeta.Metadata{Contract: boundedmeta.ContractV1, BaseSignatureArgLayout: layoutOf(sigconstruction.Falcon1024())}
+	metadata := &boundedmeta.Metadata{Contract: boundedmeta.Contract, BaseSignatureArgLayout: layoutOf(sigconstruction.Falcon1024())}
 	receipt, err := boundedAssemblyReceiptMessage("ACCOUNT", txID[:], metadata, nil)
 	if err != nil {
 		t.Fatal(err)

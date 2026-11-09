@@ -348,7 +348,7 @@ Durable signing metadata includes:
 - `signing_metadata_version` (version 1 non-bounded; version 2 bounded),
 - `base_key_type` for composed DSA keys,
 - stored signing-argument schema in JSON field `signing_args`,
-- optional `bounded_authorization` for bounded1 DSA keys (metadata version 2),
+- optional `bounded_authorization` for bounded (`bounded2`) DSA keys (metadata version 2),
 - optional `template_fingerprint`, which for `aplane.falcon1024-b.v1` is the selected
   shape's fingerprint rather than the type-wide grammar fingerprint,
 - `pq_scheme` and `pq_address_salt` for native PQ keys,
@@ -398,7 +398,7 @@ and `/keytypes` generation metadata uses `runtime_args`.
 
 ### Bounded Authorization
 
-Bounded1 is an authorization contract used by both `bounded1` and
+`bounded2` is the bounded authorization contract, used by both the `bounded1` and
 `bounded-cosigner1` signing choreographies. Normative field inventory, encodings, and custody
 rules live in [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md). From a data-model perspective:
 
@@ -407,8 +407,11 @@ rules live in [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md). From a data-model pers
   `internal/boundedmeta` and assembled by `lsig/composeddsa` at generation.
 - Inventory advertises `signing_flow: bounded1` without a cosigner or
   `bounded-cosigner1` with a cosigner.
-- The spending key is signer-managed (`.key`). A spending-key rekey goes through
-  ordinary `/sign`; an account that declares no rekey operation has no rekey path.
+- The stored `rekey` setting is `refused` or `spending_key`. The spending key is
+  signer-managed (`.key`). A spending-key rekey goes through ordinary `/sign`; an
+  account that declares `rekey: refused` has no rekey path.
+- The signer classifies each target against the account's path declaration,
+  projected from that metadata (`boundedmeta.PathDeclaration`).
 
 ### Key Types And Templates
 
@@ -686,9 +689,8 @@ are rejected.
   `bounded_max_fees` (the bounded authorization `max_fee` per address).
   Each LogicSig resource profile keeps final compiled program bytes separate
   from path-specific maximum argument bytes and reviewed opcode-cost ceilings.
-  Bounded profiles expose spend and spending-rekey paths from the durable
-  argument layout. The `admin_rekey` path is unused and stays only so the
-  encoding does not change. No combined program-plus-arguments scalar is stored.
+  Bounded profiles expose exactly the spend and spending-rekey paths from the
+  durable argument layout. No combined program-plus-arguments scalar is stored.
   Covered APlane-owned declarations are exercised by the integration
   opcode-ceiling gate: production-generated final bytecode and maximum-input
   accepted paths are simulated by the same algod selected by the signer fixture's
@@ -1266,7 +1268,7 @@ and [ARCH_ADMIN.md](ARCH_ADMIN.md#admin-protocol-contract).
 | Generic LogicSig key | signing authority | `.key` category `generic_lsig` | address, bytecode, runtime arg schema | `internal/keys`, `lsig/generictemplate` | TEAL-only key stores no private signing key; address derives from bytecode. |
 | Guarded account key | signing/assembly authority | `.key` category `dsa_lsig`, key type `aplane.falcon1024-cosigner1024.v1` | local user-role key plus embedded cosigner public key | `lsig/falcon1024_guarded`, `internal/signerapp/signing` | `/sign` rejects; inventory uses `signing_flow: cosigner1`; user-role `/sign/component` and `/sign/assemble` use stored bytecode/params. |
 | Bounded-cosigner account key | signing/assembly authority | `.key` category `dsa_lsig`, bounded metadata with `cosigner` (for example a Corridor `aplane.falcon1024-b.v1` account) | local base key, bytecode, bounded metadata, embedded cosigner public key | `lsig/composeddsa`, `internal/boundedmeta`, `internal/signerapp/signing` | `/sign` rejects cosigner-gated spend; inventory uses `signing_flow: bounded-cosigner1`; bounded component and assembly endpoints consume stored metadata. |
-| Bounded account key metadata | signing authority metadata | key payload `bounded_authorization` at `signing_metadata_version: 2` | inventory `bounded_authorization` / path sizing | `internal/boundedmeta`, `lsig/composeddsa`, `internal/keys`, `internal/signerapp/signing` | Required for bounded1 DSA keys. |
+| Bounded account key metadata | signing authority metadata | key payload `bounded_authorization` at `signing_metadata_version: 2` | inventory `bounded_authorization` / path sizing | `internal/boundedmeta`, `lsig/composeddsa`, `internal/keys`, `internal/signerapp/signing` | Required for bounded (`bounded2`) DSA keys. |
 | Cosigner witness key | component-sign authority | `.cos` category `witness`, key type `aplane.witness-*` | raw cosigner-role witness key | `internal/keygen`, `internal/signing`, `internal/signerapp/signing` | Selected by Witness Key ID; `/sign` rejects; cosigner-role `/sign/component` only; not a spending account. |
 | Witness Key ID | public selector | 52-character uppercase base32 SHA-512/256 of canonical length-prefixed domain, key type, and public key bytes | cosigner key row `address`, public reference `witness_key_id`, and cosigner `component_key` fields | `internal/witness` | Txid-shaped but not a valid Algorand address; rejected where an Algorand address is required. |
 | Cosigner public metadata sidecar | public metadata | `keys/<witness_key_id>.cos.json` | `apadmin cosigner export` source | `internal/keys`, `internal/cosigner/cosignerrefs` | Witness Key ID/key type/public key consistency verified; no private material. |

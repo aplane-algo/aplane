@@ -17,13 +17,12 @@ import (
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	txsigning "github.com/aplane-algo/aplane/internal/signing"
-	"github.com/aplane-algo/aplane/library/retired"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	falcon1024 "github.com/aplane-algo/aplane/lsig/falcon1024"
 	falconfamily "github.com/aplane-algo/aplane/lsig/falcon1024/family"
 )
 
-func TestBundledBoundedCompiledBudgetMatrix(t *testing.T) {
+func TestBoundedFixtureCompiledBudgetMatrix(t *testing.T) {
 	falcon1024.RegisterClient()
 	client, err := algod.MakeClient(algo.ResolveTEALCompileAlgodURL(), "")
 	if err != nil {
@@ -37,6 +36,7 @@ func TestBundledBoundedCompiledBudgetMatrix(t *testing.T) {
 	}
 	tests := []struct {
 		name       string
+		yaml       string
 		publicKey  []byte
 		parameters map[string]string
 		bytecode   int
@@ -44,9 +44,9 @@ func TestBundledBoundedCompiledBudgetMatrix(t *testing.T) {
 		spendGroup int
 		spendFee   uint64
 	}{
-		{name: "aplane.falcon1024-allowlist.v1.yaml", publicKey: bytes.Repeat([]byte{0x21}, falconfamily.PublicKeySize), parameters: map[string]string{"recipients": strings.Join(recipients, ",")}, bytecode: 3142, spendArgs: 1423, spendGroup: 2, spendFee: 2115},
-		{name: "aplane.falcon1024-allowlist.v2.yaml", publicKey: bytes.Repeat([]byte{0x21}, falconfamily.PublicKeySize), parameters: map[string]string{"recipients": recipients[0]}, bytecode: 2161, spendArgs: 1935, spendGroup: 2, spendFee: 2017},
-		{name: "aplane.falcon1024-timelock.v1.yaml", publicKey: bytes.Repeat([]byte{0x21}, falconfamily.PublicKeySize), parameters: map[string]string{"unlock_round": "18446744073709551615"}, bytecode: 1934, spendArgs: 1423, spendGroup: 2, spendFee: 2000},
+		{name: "fixed allowlist", yaml: composeddsa.FixedAllowlistFixtureYAML, publicKey: bytes.Repeat([]byte{0x21}, falconfamily.PublicKeySize), parameters: map[string]string{"recipients": strings.Join(recipients, ",")}, bytecode: 3142, spendArgs: 1423, spendGroup: 2, spendFee: 2115},
+		{name: "merkle allowlist", yaml: composeddsa.MerkleAllowlistFixtureYAML, publicKey: bytes.Repeat([]byte{0x21}, falconfamily.PublicKeySize), parameters: map[string]string{"recipients": recipients[0]}, bytecode: 2161, spendArgs: 1935, spendGroup: 2, spendFee: 2017},
+		{name: "custom timelock", yaml: composeddsa.CustomTimelockFixtureYAML, publicKey: bytes.Repeat([]byte{0x21}, falconfamily.PublicKeySize), parameters: map[string]string{"unlock_round": "18446744073709551615"}, bytecode: 1894, spendArgs: 1423, spendGroup: 2, spendFee: 2000},
 	}
 	profile, err := lsigresource.CurrentConsensus()
 	if err != nil {
@@ -55,11 +55,7 @@ func TestBundledBoundedCompiledBudgetMatrix(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			data, err := retired.ReadFile(test.name)
-			if err != nil {
-				t.Fatal(err)
-			}
-			spec, err := composeddsa.ParseTemplateSpec(data)
+			spec, err := composeddsa.ParseTemplateSpec([]byte(test.yaml))
 			if err != nil {
 				t.Fatal(err)
 			}

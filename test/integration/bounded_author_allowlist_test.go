@@ -60,8 +60,8 @@ func (encoding authorAllowlistEncoding) keyType() string {
 	return "test.author-allowlist-" + encoding.name + ".v1"
 }
 
-// yaml is a framework allowlist plus a preimage rule, with a Layer-3-gated
-// spending-key rekey so one template covers every path the rule applies to.
+// yaml is a framework allowlist plus a preimage rule, with a spending-key rekey.
+// The rule applies to spends only: a rekey never reaches Layer 3.
 func (encoding authorAllowlistEncoding) yaml() string {
 	return fmt.Sprintf(`schema_version: 2
 derivation_version: 3
@@ -75,13 +75,10 @@ display_name: "Author Allowlist %s"
 max_opcode_cost: 20000
 
 bounded:
-  contract: bounded1
+  contract: %s
   spend_effects: [pay, axfer, asset_opt_in]
   max_fee: 10000
-  admin_operations:
-    - kind: rekey
-      authorization: spending_key
-      policy_gate: layer3
+  rekey: %s
   layer3:
     policy: %s
     recipients_parameter: recipients%s
@@ -89,7 +86,7 @@ bounded:
     - name: preimage
       type: bytes
       max_size: 64
-      required_on: [spend, rekey]
+      required_on: [spend]
 
 parameters:
   - name: recipients
@@ -115,7 +112,7 @@ teal: |
   $hash
   ==
   assert
-`, encoding.name, encoding.name, encoding.policy, encoding.derivedArg, encoding.maxItems, encoding.preimageAt)
+`, encoding.name, encoding.name, boundedmeta.Contract, boundedmeta.RekeySpendingKey, encoding.policy, encoding.derivedArg, encoding.maxItems, encoding.preimageAt)
 }
 
 func authorAllowlistHash() string {
@@ -188,8 +185,9 @@ func TestBoundedAllowlistAuthorTEALOnChainLocalnet(t *testing.T) {
 				{name: "self recipient and right preimage", txn: payment(account.address, "d"), args: args(right, ""), accept: true},
 				{name: "self recipient and wrong preimage", txn: payment(account.address, "e"), args: args(wrong, "")},
 				{name: "allowed recipient without proof", txn: payment(allowed, "f"), args: args(right, ""), merkle: true},
-				{name: "gated rekey and wrong preimage", txn: rekey("g"), args: args(wrong, "")},
-				{name: "gated rekey and right preimage", txn: rekey("h"), args: args(right, ""), accept: true},
+				// The rekey path never reads the preimage slot, so it passes with the
+				// spending signature alone. Last, because it moves the account away.
+				{name: "rekey without the preimage", txn: rekey("g"), accept: true},
 			} {
 				if test.merkle && encoding.stored != boundedmeta.Layer3PolicyMerkleAllowlistCustom {
 					continue

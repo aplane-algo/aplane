@@ -16,22 +16,16 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
-func testBoundedMetadata(t *testing.T, authorization string) *boundedmeta.Metadata {
+func testBoundedMetadata(t *testing.T, rekey boundedmeta.RekeySetting) *boundedmeta.Metadata {
 	t.Helper()
 	metadata := &boundedmeta.Metadata{
-		Contract:               boundedmeta.ContractV1,
+		Contract:               boundedmeta.Contract,
 		BaseSignatureArgLayout: boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{1280}},
 		ArgumentLayout:         boundedmeta.BaseArgumentLayout(boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{1280}}),
 		SpendEffects:           []string{"pay", "axfer"},
 		MaxFee:                 5_000,
+		Rekey:                  rekey,
 		Layer3Policy:           boundedmeta.Layer3PolicyCustom,
-	}
-	if authorization != "" {
-		metadata.AdminOperations = []boundedmeta.AdminOperation{{
-			Kind:          boundedmeta.AdminOperationRekey,
-			Authorization: authorization,
-			PolicyGate:    boundedmeta.PolicyGateNone,
-		}}
 	}
 	if err := metadata.Validate(); err != nil {
 		t.Fatalf("test metadata invalid: %v", err)
@@ -66,11 +60,13 @@ func testBoundedAssetOptIn() types.Transaction {
 }
 
 func TestClassifyBoundedPath(t *testing.T) {
-	spendingRekey := testBoundedMetadata(t, boundedmeta.AdminAuthorizationSpend)
-	noRekey := testBoundedMetadata(t, "")
-	assetOptIn := testBoundedMetadata(t, "")
+	spendingRekey := testBoundedMetadata(t, boundedmeta.RekeySpendingKey)
+	noRekey := testBoundedMetadata(t, boundedmeta.RekeyRefused)
+	// A refused account must keep pay, so the single-effect profiles have a
+	// spending-key rekey; the rekey setting plays no part in a spend decision.
+	assetOptIn := testBoundedMetadata(t, boundedmeta.RekeySpendingKey)
 	assetOptIn.SpendEffects = []string{boundedmeta.SpendEffectAssetOptIn}
-	assetTransferOnly := testBoundedMetadata(t, "")
+	assetTransferOnly := testBoundedMetadata(t, boundedmeta.RekeySpendingKey)
 	assetTransferOnly.SpendEffects = []string{boundedmeta.SpendEffectAxfer}
 
 	tests := []struct {
@@ -82,17 +78,17 @@ func TestClassifyBoundedPath(t *testing.T) {
 	}{
 		{name: "pure payment", txn: testBoundedPayment(), metadata: spendingRekey, wantPath: boundedPathPureSpend},
 		{name: "asset opt-in", txn: testBoundedAssetOptIn(), metadata: assetOptIn, wantPath: boundedPathPureSpend},
-		{name: "asset opt-in denied by transfer-only profile", txn: testBoundedAssetOptIn(), metadata: assetTransferOnly, wantErr: "does not allow spend effect \"asset_opt_in\""},
+		{name: "asset opt-in denied by transfer-only profile", txn: testBoundedAssetOptIn(), metadata: assetTransferOnly, wantErr: "bounded2 account does not allow spend effect \"asset_opt_in\""},
 		{name: "spending key rekey", txn: testBoundedRekey(), metadata: spendingRekey, wantPath: boundedPathSpendingKeyRekey},
-		{name: "rekey disabled", txn: testBoundedRekey(), metadata: noRekey, wantErr: "permanently disables rekey"},
-		{name: "fee over profile", txn: func() types.Transaction { txn := testBoundedPayment(); txn.Fee = 5_001; return txn }(), metadata: spendingRekey, wantErr: "fee 5001 exceeds"},
-		{name: "hybrid rekey transfer", txn: func() types.Transaction { txn := testBoundedRekey(); txn.Amount = 1; return txn }(), metadata: spendingRekey, wantErr: "hybrid transaction effects: rekey"},
+		{name: "rekey disabled", txn: testBoundedRekey(), metadata: noRekey, wantErr: "bounded2 account permanently disables rekey"},
+		{name: "fee over profile", txn: func() types.Transaction { txn := testBoundedPayment(); txn.Fee = 5_001; return txn }(), metadata: spendingRekey, wantErr: "bounded2 fee 5001 exceeds account maximum 5000"},
+		{name: "hybrid rekey transfer", txn: func() types.Transaction { txn := testBoundedRekey(); txn.Amount = 1; return txn }(), metadata: spendingRekey, wantErr: "bounded2 rejects hybrid transaction effects: rekey"},
 		{name: "close effect", txn: func() types.Transaction {
 			txn := testBoundedPayment()
 			txn.CloseRemainderTo = types.Address{8}
 			return txn
-		}(), metadata: spendingRekey, wantErr: "transaction effects: close"},
-		{name: "denied type", txn: types.Transaction{Type: types.ApplicationCallTx, Header: types.Header{Fee: 1_000}}, metadata: spendingRekey, wantErr: "transaction type"},
+		}(), metadata: spendingRekey, wantErr: "bounded2 rejects transaction effects: close"},
+		{name: "denied type", txn: types.Transaction{Type: types.ApplicationCallTx, Header: types.Header{Fee: 1_000}}, metadata: spendingRekey, wantErr: "bounded2 rejects transaction type"},
 	}
 
 	for _, tt := range tests {
@@ -113,7 +109,7 @@ func TestClassifyBoundedPath(t *testing.T) {
 
 func TestRunApprovalGatesForcedBoundedReviewPrecedesAutoApproval(t *testing.T) {
 	// A self no-op the policy would auto-approve still prompts under the
-	// signer's forced bounded-admin review.
+	// signer's forced bounded rekey review.
 	selfPay := types.Transaction{Type: types.PaymentTx, Header: types.Header{Sender: types.Address{1}, Fee: 1000}, PaymentTxnFields: types.PaymentTxnFields{Receiver: types.Address{1}}}
 	cfg := policy.DefaultConfig()
 	cfg.AutoApproveSelfNoOpTransfer = true
@@ -132,7 +128,7 @@ func TestRunApprovalGatesForcedBoundedReviewPrecedesAutoApproval(t *testing.T) {
 	ruleID, err := svc.runApprovalGates(context.Background(), gateInput{
 		AllTxns:            []types.Transaction{selfPay},
 		EvalCount:          1,
-		ForcedReviewRuleID: policy.BoundedAdminOperationRequiresReviewRuleID,
+		ForcedReviewRuleID: policy.BoundedRekeyRequiresReviewRuleID,
 		Plan:               plan,
 		RequestOperatorApproval: func(_ context.Context, ruleID string) *ServiceError {
 			promptCalls++
@@ -146,13 +142,13 @@ func TestRunApprovalGatesForcedBoundedReviewPrecedesAutoApproval(t *testing.T) {
 	if promptCalls != 1 {
 		t.Fatalf("prompt calls = %d, want 1", promptCalls)
 	}
-	if ruleID != policy.BoundedAdminOperationRequiresReviewRuleID || forcedRule != ruleID {
+	if ruleID != policy.BoundedRekeyRequiresReviewRuleID || forcedRule != ruleID {
 		t.Fatalf("rule IDs = returned %q prompted %q", ruleID, forcedRule)
 	}
 }
 
 func TestBuildApprovalDescriptionNamesBoundedRekeyAuthority(t *testing.T) {
-	metadata := testBoundedMetadata(t, boundedmeta.AdminAuthorizationSpend)
+	metadata := testBoundedMetadata(t, boundedmeta.RekeySpendingKey)
 	txn := testBoundedRekey()
 	description, _, _ := BuildApprovalDescription(
 		signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{AuthAddress: txn.Sender.String()}}},

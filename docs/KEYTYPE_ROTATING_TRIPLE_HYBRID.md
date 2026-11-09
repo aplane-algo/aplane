@@ -1157,7 +1157,7 @@ are stubbed in the offline TEAL runs, and run for real in the on-chain ones.
 | SLH-DSA construction against the NIST ACVP vectors on the standard shape; rescaled golden vectors; digest split and leaf-index coverage; tampering and cross-shape rejection | `internal/crypto/slhdsa/slhdsa_test.go` |
 | SLH-DSA stage build, parse, salt, offsets, argument literals pinned to the parameter set, and cost ceiling | `lsig/rotatingtripleslhdsa/stage/program_test.go`, `template_dump_test.go` |
 | SLH-DSA derivation golden vectors, signing, verification and argument layout | `lsig/rotatingtripleslhdsa/signerops/keys_test.go`, `signerreg/register_test.go` |
-| SLH-DSA TEAL verifier run offline in a test interpreter against `slhdsa.Verify` on both program shapes: valid signatures (eight messages on the rescaled shape, one on the full-height shape), a bit flipped at the start of every 16-byte node of the first signature on both shapes, other message, other key, wrong lengths, exchanged layers, and the full-width final root comparison | `lsig/rotatingtripleslhdsa/stage/verifier_equiv_test.go`, `lsig/rotatingfamily/avmsim` |
+| SLH-DSA TEAL verifier run offline in a test interpreter against `slhdsa.Verify` on both program shapes: valid signatures (eight messages on the rescaled shape, one on the full-height shape), a bit flipped at the start of every 16-byte node of the first signature on both shapes, other message, other key, wrong lengths, exchanged layers, and the full-width final root comparison | `lsig/rotatingtripleslhdsa/stage/verifier_equiv_test.go`, `internal/avmsim` |
 | SLH-DSA on-chain acceptance and rejection, cost model against node traces on both program shapes, six-transaction group | `test/integration/rotating_slhdsa_onchain_test.go` |
 | SLH-DSA preparation ceilings, bounded discovery, post-sign chain recheck, restored releases without leaf history; lifecycle benchmark | `internal/signerapp/signing/rotating_slhdsa_test.go`, `rotating_slhdsa_bench_test.go` |
 | XMSS stage build, parse, salt, offsets and cost | `lsig/rotatingtriplexmss/stage/program_test.go`, `template_dump_test.go` |
@@ -1168,7 +1168,7 @@ are stubbed in the offline TEAL runs, and run for real in the on-chain ones.
 | XMSS vectors from an independent oracle (`tools/xmssoracle`), RFC reference vector, 32 bounded signatures (10 with searched randomizer) | `internal/crypto/xmss/` |
 | XMSS checksum boundaries (511/525, 512/555) and exhaustive step counts | `internal/crypto/xmss/`, `lsig/rotatingtriplexmss/stage/` tests |
 | WOTS+C vectors from a second implementation (`tools/wotscoracle`), signing, rejection and the grinding limit | `internal/crypto/wotsc/wotsc_test.go` |
-| WOTS+C TEAL verifier run offline against the primitive: every leaf, every flipped byte, wrong digit sums and mutated verifiers | `lsig/rotatingtriplewotsc/stage/verifier_equiv_test.go`, `lsig/rotatingfamily/avmsim` |
+| WOTS+C TEAL verifier run offline against the primitive: every leaf, every flipped byte, wrong digit sums and mutated verifiers | `lsig/rotatingtriplewotsc/stage/verifier_equiv_test.go`, `internal/avmsim` |
 | Shared HKDF derivation | `internal/crypto/rotatinghybrid/derive_test.go` |
 | XMSS on-chain acceptance, cost model at the step ceiling, tree rollover, five-transaction group | `test/integration/rotating_xmss_onchain_test.go` |
 | WOTS+C on-chain acceptance, constant cost, three-transaction group | `test/integration/rotating_wotsc_onchain_test.go` |

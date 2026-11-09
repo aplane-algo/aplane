@@ -6,6 +6,7 @@ package arch_test
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -43,9 +44,26 @@ func TestRetiredKeyTypeProductsDoNotReturn(t *testing.T) {
 		".adm" + ".json",
 		"aplane." + "falcon1024-allowlist-lock" + ".v1",
 		"aplane." + "corridor" + ".v1",
+		"aplane." + "falcon1024-allowlist" + ".v1",
+		"aplane." + "falcon1024-allowlist" + ".v2",
+		"aplane." + "falcon1024-timelock" + ".v1",
+		"library/" + "retired",
+		"bounded_admin_" + "operation_requires_review",
+		"Bounded1" + "Manifest",
 		"lsig/" + "falcon1024_ed25519",
 		"lsig/" + "ecdsak1",
 		"cosigner_" + "ed25519",
+	}
+	// The installers name a retired binary only to delete it from an upgraded or
+	// uninstalled machine, or to find it still running before they do. Only those
+	// lines are exempt, so installing it again would still be caught.
+	removesRetired := map[string][]string{
+		"../../install.sh":   {"ap" + "rekey"},
+		"../../uninstall.sh": {"ap" + "rekey"},
+	}
+	removalLine := func(line string) bool {
+		line = strings.TrimSpace(line)
+		return strings.HasPrefix(line, "rm -f ") || strings.HasPrefix(line, "for name in ")
 	}
 	textExtensions := map[string]bool{
 		".go": true, ".md": true, ".yaml": true, ".yml": true,
@@ -78,7 +96,17 @@ func TestRetiredKeyTypeProductsDoNotReturn(t *testing.T) {
 		}
 		lower := strings.ToLower(string(content))
 		for _, token := range retired {
-			if strings.Contains(lower, strings.ToLower(token)) {
+			scanned := lower
+			if slices.Contains(removesRetired[filepath.ToSlash(path)], token) {
+				var kept []string
+				for _, line := range strings.Split(lower, "\n") {
+					if !removalLine(line) {
+						kept = append(kept, line)
+					}
+				}
+				scanned = strings.Join(kept, "\n")
+			}
+			if strings.Contains(scanned, strings.ToLower(token)) {
 				t.Errorf("%s contains retired key-type product vocabulary %q", path, token)
 			}
 		}

@@ -9,6 +9,8 @@ import (
 	"fmt"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
+
+	"github.com/aplane-algo/aplane/internal/boundedmeta"
 )
 
 // EffectKind identifies an authority-bearing transaction effect.
@@ -21,7 +23,7 @@ const (
 	EffectClawback   EffectKind = "clawback"
 )
 
-// SpendEffect identifies one bounded1 spend normal form.
+// SpendEffect identifies one bounded spend normal form.
 type SpendEffect string
 
 const (
@@ -64,8 +66,8 @@ type ContractManifest struct {
 	KnownDeniedTypes []types.TxType
 }
 
-var bounded1Manifest = mustValidManifest(ContractManifest{
-	Contract:     "bounded1",
+var boundedManifest = mustValidManifest(ContractManifest{
+	Contract:     boundedmeta.Contract,
 	TEALVersion:  13,
 	SpendEffects: []SpendEffect{SpendEffectPay, SpendEffectAxfer, SpendEffectAssetOptIn},
 	Predicates: []FieldPredicate{
@@ -87,14 +89,14 @@ var bounded1Manifest = mustValidManifest(ContractManifest{
 
 func mustValidManifest(manifest ContractManifest) ContractManifest {
 	if err := manifest.Validate(); err != nil {
-		panic(fmt.Sprintf("invalid built-in bounded1 manifest: %v", err))
+		panic(fmt.Sprintf("invalid built-in bounded manifest: %v", err))
 	}
 	return manifest
 }
 
-// Bounded1Manifest returns a defensive copy of the frozen bounded1 manifest.
-func Bounded1Manifest() ContractManifest {
-	return cloneManifest(bounded1Manifest)
+// BoundedManifest returns a defensive copy of the bounded contract manifest.
+func BoundedManifest() ContractManifest {
+	return cloneManifest(boundedManifest)
 }
 
 func cloneManifest(manifest ContractManifest) ContractManifest {

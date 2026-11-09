@@ -3,9 +3,9 @@
 # User LogicSig Guidelines
 
 > **TL;DR**
-> - The LogicSigs bundled with APlane (Falcon timelock, Falcon inline and
->   Merkle allowlists, the general bounded account, HTLC, and the
->   signer-gated DSA providers) are safe to fund and use as documented.
+> - The LogicSigs bundled with APlane (the general bounded account with its
+>   allowlist and timelock shapes, HTLC, and the signer-gated DSA providers)
+>   are safe to fund and use as documented.
 > - Anything you compile yourself — your own TEAL, your own YAML template, or
 >   an externally-supplied LogicSig — needs to pass the full review checklist
 >   below before you fund the account.
@@ -245,8 +245,10 @@ transaction IDs in the same period unless the lease or another explicit
 mechanism enforces mutual exclusion.
 
 A bounded template can use the framework `timelock`, `fixed_allowlist_timelock`, or
-`merkle_allowlist_timelock` policy instead of writing this check. A rekey that does not
-pass through Layer 3, one whose `policy_gate` is `none`, is not delayed by it.
+`merkle_allowlist_timelock` policy instead of writing this check. No rekey passes through
+Layer 3, so a time check delays spends only. The framework timelock policies therefore
+require `rekey: refused`, and an author-TEAL time check holds a rekey back only on an
+account that refuses rekeys.
 
 ### 10. Group Semantics
 
@@ -733,8 +735,9 @@ When designing or reviewing a LogicSig TEAL policy:
 ## Bundled LogicSigs In APlane
 
 APlane bundles both signer-gated LogicSig providers and template library
-entries. New signer stores enable none of them: compiled providers need
-enabling and bundled templates need explicit import. Users should understand the
+entries. New signer stores enable none of them except the general bounded
+account `aplane.falcon1024-b.v1`: other compiled providers need enabling and
+bundled templates need explicit import. Users should understand the
 security model of each one before funding or relying on it.
 
 ### Signer-Gated Compiled Providers
@@ -839,15 +842,20 @@ lives in signer approval and local signer policy.
 #### `aplane.falcon1024-b.v1`
 
 `aplane.falcon1024-b.v1` is the default-enabled general bounded account, with
-Falcon-1024 spending and a `bounded1` program chosen from a fixed set of shapes.
+Falcon-1024 spending and a `bounded2` program chosen from a fixed set of shapes.
 The composer-owned envelope admits only pure payments, pure asset transfers,
 independently authorized asset opt-ins, or a pure self-payment rekey, caps the
 protected transaction fee, and denies close and clawback effects before Layer 3.
-A rekey needs only the spending signature, or the account refuses rekeys and its
-program has no rekey path.
+A rekey needs only the spending signature and never reaches Layer 3, or the account
+refuses rekeys and its program has no rekey path.
 
 Its framework recipient list constrains `Receiver`/`AssetReceiver`, inline or
-as a Merkle root, and an optional unlock round delays spending. Asset and amount
+as a Merkle root, and an optional unlock round delays spending. For a Merkle list,
+the signer generates the 512-byte proof for a non-self receiver; callers do not
+pass it (see the
+[Merkle compatibility contract](ARCH_BOUNDED_DSA.md#merkle-allowlist-compatibility-contract)).
+A timelock refuses rekeys, because a spending-key rekey would leave the lock
+before the unlock round. Asset and amount
 limits stay in signer policy, because one program is valid on every network and
 asset IDs are network-local. See
 [USER_KEYTYPES.md](USER_KEYTYPES.md#bounded-accounts) and
@@ -855,7 +863,7 @@ asset IDs are network-local. See
 
 A bounded cosigner gate needs an account that refuses rekeys. A spending-key
 rekey would bypass the spend-only cosigner authority and has no
-`bounded-cosigner1` signing route, so V1 validation rejects the combination.
+`bounded-cosigner1` signing route, so validation rejects the combination.
 Such an account can neither close nor be rekeyed, so its funds cannot be
 recovered if the cosigner is lost.
 
@@ -880,10 +888,8 @@ These ship as plaintext YAML install sources. New signer stores do not
 install them automatically. Enable one through apadmin's KeyType Library or
 explicitly import its YAML into the product store before generating accounts.
 
-`aplane.htlc.v1` is in the default library. The allowlist and timelock
-templates below are retired: they are kept under `library/retired/` to repair
-existing accounts, and new accounts should use a preset of `aplane.falcon1024-b.v1`.
-Their sections still describe what those accounts do.
+`aplane.htlc.v1` is the only template in the library. Allowlist and timelock
+accounts use a preset of `aplane.falcon1024-b.v1`.
 
 #### Generic Templates
 
@@ -928,62 +934,6 @@ demonstration. A phrase can be guessed, though, and whoever guesses it can claim
 For a swap, use an atomic group on one chain; an HTLC is for swaps across chains.
 Use a random 32-byte secret for those: Bitcoin HTLCs normally require exactly 32
 bytes, and nothing here enforces that for you.
-
-#### Falcon-Backed Composed Templates
-
-These are signer-gated templates built by combining Falcon signature
-verification with a bounded schema-v2 policy. Their YAML uses
-`template_type: composed`, `base_key_type: aplane.falcon1024.v1`, and a
-`bounded` block. The composer rejects close, clawback, non-transfer transaction
-types, mixed-effect rekeys, and fees above the declared ceiling before running
-the template's Layer 3 condition.
-
-##### `aplane.falcon1024-timelock.v1`
-
-- bounded Falcon payments, asset transfers, and asset opt-in
-- `FirstValid >= unlock_round` required for spend and pure spending-key rekey
-
-The account cannot be rekeyed before the unlock round, including as an
-emergency response to spending-key compromise. This preserves the timelock as
-an authority condition.
-
-The program is not bound to a network, and `unlock_round` means a different time on
-each one, so the account could be unlocked on one network and locked on another.
-Fund the address on one network only.
-
-##### `aplane.falcon1024-allowlist.v2`
-
-- bounded Falcon payments and asset transfers with a Merkle recipient allowlist
-- asset opt-in and pure spending-key rekey remain available without a proof
-
-This template stores the public receiver allowlist in the encrypted key file
-and commits the LogicSig to a fixed-depth Merkle root derived from that list.
-Duplicate public keys are rejected. The root is built from the remaining
-address public keys sorted ascending, with leaves `sha256(0x00 || pubkey)`,
-padding to 65,536 leaves with `sha256(0x00)`, and internal nodes
-`sha256(0x01 || min(left,right) || max(left,right))`. For a non-self
-destination, the signer generates the 512-byte proof as sixteen 32-byte
-siblings ordered from the leaf upward and appends it to the LogicSig arguments;
-callers do not pass `arg:proof`. Child hashes are sorted at each level, so the
-proof contains no direction bits. See the normative
-[Merkle compatibility contract](ARCH_BOUNDED_DSA.md#merkle-allowlist-compatibility-contract).
-
-Payment and asset receivers may be the sender itself without a proof. The
-bounded envelope rejects payment close, asset close, clawback, all non-transfer
-transaction types, and rekey combined with another effect. Pure rekey uses the
-spending key and does not run the Merkle proof policy.
-
-##### `aplane.falcon1024-allowlist.v1`
-
-- bounded Falcon payments and asset transfers with an inline recipient allowlist
-- asset opt-in and pure spending-key rekey remain available
-
-This template can be a good fit when users want both signer-side approval and
-an on-chain allowlist constraint. The bundled template accepts 1-30 recipient
-addresses. Payment and asset receivers must be the sender or allowlisted. The
-bounded envelope rejects payment close, asset close, clawback, all non-transfer
-transaction types, and rekey combined with another effect. Pure rekey uses the
-spending key and does not run the allowlist policy.
 
 ## How To Use Bundled LogicSigs Safely
 

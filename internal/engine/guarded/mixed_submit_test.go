@@ -201,8 +201,7 @@ func TestBuildGroupSignRequestsUsesSelectedBoundedSpendResources(t *testing.T) {
 		c.SetLogicSigResourceProfile(guarded, lsigresource.Profile{
 			ProgramBytes:  2_500,
 			Spend:         &lsigresource.PathProfile{ArgumentBytes: 1_423, MaxOpcodeCost: 1_700},
-			SpendingRekey: &lsigresource.PathProfile{ArgumentBytes: 1_423, MaxOpcodeCost: 22_000},
-			AdminRekey:    &lsigresource.PathProfile{ArgumentBytes: 2_846, MaxOpcodeCost: 45_000},
+			SpendingRekey: &lsigresource.PathProfile{ArgumentBytes: 2_846, MaxOpcodeCost: 45_000},
 		})
 		c.AddAddress(nonGuarded, "ed25519")
 	})

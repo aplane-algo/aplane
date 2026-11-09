@@ -18,7 +18,7 @@ const (
 	effectClawbackBit
 )
 
-// Shape is the bounded1 classification of a finalized transaction before fee
+// Shape is the bounded classification of a finalized transaction before fee
 // and profile-specific spending-policy evaluation.
 type Shape string
 
@@ -45,8 +45,8 @@ func (facts Facts) Has(effect EffectKind) bool {
 
 // Effects returns detected effects in frozen manifest order.
 func (facts Facts) Effects() []EffectKind {
-	effects := make([]EffectKind, 0, len(bounded1Manifest.Predicates))
-	for _, predicate := range bounded1Manifest.Predicates {
+	effects := make([]EffectKind, 0, len(boundedManifest.Predicates))
+	for _, predicate := range boundedManifest.Predicates {
 		if facts.Has(predicate.Effect) {
 			effects = append(effects, predicate.Effect)
 		}
@@ -54,17 +54,17 @@ func (facts Facts) Effects() []EffectKind {
 	return effects
 }
 
-// Classification combines neutral facts with the bounded1 shape decision.
+// Classification combines neutral facts with the bounded shape decision.
 type Classification struct {
 	Facts       Facts
 	Shape       Shape
 	SpendEffect SpendEffect
 }
 
-// Inspect returns neutral facts using the frozen bounded1 danger manifest.
+// Inspect returns neutral facts using the bounded danger manifest.
 func Inspect(txn types.Transaction) Facts {
 	facts := Facts{TransactionType: txn.Type, Fee: txn.Fee}
-	for _, predicate := range bounded1Manifest.Predicates {
+	for _, predicate := range boundedManifest.Predicates {
 		if mustMatch(txn, predicate) {
 			facts.effects |= mustEffectBit(predicate.Effect)
 		}
@@ -72,7 +72,7 @@ func Inspect(txn types.Transaction) Facts {
 	return facts
 }
 
-// Classify returns the bounded1 transaction shape. Fee bounds and configured
+// Classify returns the bounded transaction shape. Fee bounds and configured
 // Layer-3 spending policy are intentionally evaluated by later consumers.
 func Classify(txn types.Transaction) Classification {
 	facts := Inspect(txn)
@@ -113,7 +113,7 @@ func Classify(txn types.Transaction) Classification {
 
 func mustMatch(txn types.Transaction, predicate FieldPredicate) bool {
 	if predicate.Test != TestAddressNonZero {
-		panic(fmt.Sprintf("unsupported bounded1 predicate test %q", predicate.Test))
+		panic(fmt.Sprintf("unsupported bounded predicate test %q", predicate.Test))
 	}
 	switch predicate.Field {
 	case FieldRekeyTo:
@@ -125,7 +125,7 @@ func mustMatch(txn types.Transaction, predicate FieldPredicate) bool {
 	case FieldAssetSender:
 		return !txn.AssetSender.IsZero()
 	default:
-		panic(fmt.Sprintf("unsupported bounded1 predicate field %q", predicate.Field))
+		panic(fmt.Sprintf("unsupported bounded predicate field %q", predicate.Field))
 	}
 }
 
@@ -147,7 +147,7 @@ func bitForEffect(effect EffectKind) (effectSet, bool) {
 func mustEffectBit(effect EffectKind) effectSet {
 	bit, ok := bitForEffect(effect)
 	if !ok {
-		panic(fmt.Sprintf("unsupported bounded1 effect %q", effect))
+		panic(fmt.Sprintf("unsupported bounded effect %q", effect))
 	}
 	return bit
 }
