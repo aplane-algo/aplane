@@ -46,7 +46,7 @@ bounded-base `/sign/component` requests: a cosigned account's base component
 runs the same hard rejection, always-review, and operator approval sequence,
 with the cosigned account as the per-target policy key and non-target group
 positions evaluated as foreign context. Cosigner-role `/sign/component` requests use the
-cosigner domain (see [ARCH_GUARDED.md](ARCH_GUARDED.md)).
+cosigner domain (see [ARCH_COSIGNED.md](ARCH_COSIGNED.md)).
 
 Both domains are written in one v1 JSON document format, `aplane.policy.v1`,
 specified in [The Boundary](#the-boundary) through
@@ -293,7 +293,7 @@ transactions that name no asset, such as a cosigner rekey (a 0 ALGO
 self-payment), so that no signing path has to prove it cannot carry an asset
 reference. Rules that do not depend on the network, such as `rekey_policy` and
 the transaction-type verdicts, take no network input. `/sign`,
-bounded-cosigner, and guarded user-component requests
+bounded-cosigner, and cosigned user-component requests
 are refused with a bad request (400) before policy; a cosigner has no operator,
 so cosigner component requests are refused as an audited policy rejection
 (`unknown_genesis_hash`, 403). Rotating-account spends are not looked up in the
@@ -1566,7 +1566,7 @@ requires the admin authorization action `identity.restore`.
 Signing outcome audit records carry a policy rule in `policy_rule_id` only
 for some outcomes:
 
-- Client-signing and guarded user-component Always Deny records are
+- Client-signing and cosigned user-component Always Deny records are
   `SIGN_REJECTED` with the rule IDs only in the `reason` text; `policy_rule_id`
   is set on cosigner policy rejections and on records for review-forced
   prompts.
@@ -1583,8 +1583,8 @@ policy decision:
 - `[POLICY] Txn auto-approved (<rule_id>)` when an Always Approve rule
   matches.
 - `[POLICY] Group/Txn requires manual review (<rule_id>)` when an Always Review
-  rule forces a prompt, or `[POLICY] Guarded component request requires manual
-  review (<rule_id>)` for a guarded user-component request.
+  rule forces a prompt, or `[POLICY] Cosigned component request requires manual
+  review (<rule_id>)` for a cosigned user-component request.
 - `[USER AUTO-APPROVE] ...` when User Auto-Approve approves without prompting;
   a satisfied review requirement is also printed with its rule ID.
 
@@ -1596,7 +1596,7 @@ policy rule in `policy_rule_id` when applicable. Cosigner policy rejections
 are rate limited; suppressed records are summarized by
 `COSIGNER_REJECTIONS_SUPPRESSED` (see
 [ARCH_SECURITY.md](ARCH_SECURITY.md#audit-logger)). The
-architecture overview is in [ARCH_GUARDED.md](ARCH_GUARDED.md);
+architecture overview is in [ARCH_COSIGNED.md](ARCH_COSIGNED.md);
 compatibility-bearing audit details live in
 [ARCH_SECURITY.md](ARCH_SECURITY.md#audit-logger).
 

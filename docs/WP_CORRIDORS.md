@@ -5,7 +5,7 @@
 > Status: This whitepaper preserves exploratory design framing, including
 > variants that are not shipped. Normative words below apply to that proposed
 > model, not to the current product contract.
-> See [ARCH_GUARDED.md](ARCH_GUARDED.md) (including [Corridor v1](ARCH_GUARDED.md#corridor-v1)),
+> See [ARCH_COSIGNED.md](ARCH_COSIGNED.md) (including [Corridor v1](ARCH_COSIGNED.md#corridor-v1)),
 > [USER_KEYTYPES.md](USER_KEYTYPES.md), and
 > [KEYTYPE_CAPABILITIES.md](KEYTYPE_CAPABILITIES.md) for current behavior and
 > supported key types.
@@ -37,7 +37,7 @@ the profile matrix explored below:
   alone; it does not consult off-chain state or external services.
 
 The frozen wire, program, metadata, custody, and choreography contract is in
-[ARCH_GUARDED.md](ARCH_GUARDED.md#corridor-v1) and
+[ARCH_COSIGNED.md](ARCH_COSIGNED.md#corridor-v1) and
 [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md). The remainder of this paper should
 be read as broader product/design rationale and possible future variants.
 
@@ -150,7 +150,7 @@ An **account**, as the term is used throughout this document, is an
 Algorand account whose effective signer is a corridor
 program: a small, stateless program that the ledger evaluates on every
 transaction, composing three predicates — Falcon holder authorization, the
-corridor, and (for guarded accounts) the gate requirement — plus a
+corridor, and (for cosigned accounts) the gate requirement — plus a
 governance rekey branch for corridor construction. Each account has exactly
 one corridor: one origin (the account itself) and one or more destinations.
 Where this document uses the plural "corridors," it means corridors across
@@ -167,7 +167,7 @@ semantics:
   of the program, so corridor construction replaces the program under a
   stable address. This is the recommended formation for any account whose
   corridor is expected to evolve, and it uses APlane's existing
-  guarded-authorizer support.
+  cosigned-authorizer support.
 
 ### 2.2 Keys and guard variants
 
@@ -206,7 +206,7 @@ The configuration composes into the standard account profiles:
 |---|---|
 | Immutable leaf | literal corridor, ungated, no governance key |
 | Governed account | corridor + governance key |
-| Guarded governed account | corridor + gate + governance key |
+| Cosigned governed account | corridor + gate + governance key |
 
 ## 3. Authorization Model
 
@@ -227,7 +227,7 @@ account's corridor, and key compromise is bounded to corridor destinations*
 
 ### 3.2 Gate attestation (the guard admits)
 
-For guarded accounts, the program additionally requires the guard's
+For cosigned accounts, the program additionally requires the guard's
 signature, bound to the same transaction ID but role-separated from the
 holder's: a holder signature can never open a gate, and a guard signature
 can never initiate a spend. The guard signs — opens the gate — only after
@@ -240,7 +240,7 @@ is out of scope for v1.
 
 The program branches on the transaction's rekey field before any transfer
 logic. A transaction that does not rekey takes the transfer path: corridor
-evaluation (§4) and, for guarded accounts, the gate (§3.2). A transaction
+evaluation (§4) and, for cosigned accounts, the gate (§3.2). A transaction
 that rekeys takes the construction path: it must be a zero-amount
 self-payment with all close fields zero, carrying a Falcon signature from
 the governance key. Accounts compiled without a governance key reject all
@@ -252,7 +252,7 @@ Construction is never routed through transfer-gate rules, so topology
 governance has no liveness dependency on the transfer guard. Guards gate
 traffic; they do not supervise construction. Deployments that want
 two-party construction control should make the governance key an M-of-N
-arrangement at the key-management layer (or a second guarded account acting
+arrangement at the key-management layer (or a second cosigned account acting
 as construction signer) rather than overloading the transfer guard.
 
 The governance key MUST be distinct from the spend key, SHOULD be M-of-N,
@@ -322,7 +322,7 @@ organization, using separate node roles, data roots, keys, and policy
 documents. The cosigner is therefore an internal control and policy-enforcement
 point, not third-party attestation. It still provides key separation and
 fail-closed gate enforcement: the cosigner key cannot spend, and the holder key
-alone cannot pass guarded traffic. It does not protect against a fully
+alone cannot pass cosigned traffic. It does not protect against a fully
 compromised or malicious operator that can command both roles.
 
 
@@ -357,13 +357,13 @@ to a LogicSig differing in its destination set. Properties:
 
 Any set of legs can be bound into one Algorand atomic group with no
 application involved. A two-hop transfer A→B→C groups A's leg (A's holder
-signature + A's gate if guarded) with B's leg (B's holder signature + B's
-gate if guarded); the group succeeds or fails as a unit, so B never holds
+signature + A's gate if cosigned) with B's leg (B's holder signature + B's
+gate if cosigned); the group succeeds or fails as a unit, so B never holds
 funds between hops. Grouping is a delivery-guarantee option, not a security
 requirement: with Falcon authorization on every account, an intermediary's
 float cannot be moved by anyone but its key holder, and never outside its
-corridors. APlane's guarded orchestration assembles such groups, collecting
-holder and guard signatures per guarded position; mixed guarded/ungated
+corridors. APlane's cosigned orchestration assembles such groups, collecting
+holder and guard signatures per cosigned position; mixed cosigned/ungated
 groups are supported by the same flow.
 
 ### 6.4 Verifiability
@@ -384,7 +384,7 @@ clawback-enabled assets, no account-controlled value leaves an account except
 through a transaction that (a) carries a valid Falcon signature from the
 account's spend key bound to that exact transaction — the holder initiated it;
 (b) travels the corridor — the receiver, including any close target, is in the
-compiled destination set; and (c) for guarded accounts, passes an open gate — a
+compiled destination set; and (c) for cosigned accounts, passes an open gate — a
 valid cosigner signature issued under fail-closed gate rules. The corridor
 program is the sole effective signer for account-authorized movement; there is
 no state to corrupt, no upgrade hook, and no administrative override of the
@@ -396,7 +396,7 @@ construction authority constructs corridors; it does not travel them.
 
 | Compromise / failure | Worst case | Bound |
 |---|---|---|
-| Spend (holder Falcon) key | Attacker initiates transfers | Corridor destinations only; on guarded accounts every transfer still needs an open gate, so rule-violating traffic is stopped at the gate — except an always-available escape hatch, which the holder key can use without a gate but only to push value to the fixed recovery corridor (§7.3) |
+| Spend (holder Falcon) key | Attacker initiates transfers | Corridor destinations only; on cosigned accounts every transfer still needs an open gate, so rule-violating traffic is stopped at the gate — except an always-available escape hatch, which the holder key can use without a gate but only to push value to the fixed recovery corridor (§7.3) |
 | Guard (cosigner) key | Attacker opens gates | **Opens gates, cannot construct corridors**: no spend occurs without the holder signature, and holder–guard collusion is still confined to the corridor |
 | Gate-rule tampering | Improper gate openings | Same bound as guard-key compromise; rule files are tamper-evident and edits are audited |
 | Governance key | Attacker rekeys the account to an arbitrary program | **Total for that account — this is the one power that constructs corridors.** Hence cold, M-of-N, distinct from the spend key, and absent entirely on immutable accounts |
@@ -468,9 +468,9 @@ this paper.
 | Wall | Absence of a destination | Any address not among the corridor's destinations. Impassable by every party, including all key holders. |
 | Construction | Governance rekey | Adding, removing, or reconfiguring corridor destinations by rekeying to a successor program. Deliberate, key-ceremonied, on-chain. |
 | Guard | Cosigner | A separate cosigner-role node holding a component key and deterministic gate policy. In v1, this is an internal control point operated by the same organization as the sending accounts, not third-party attestation. |
-| Guarded account | Guarded account (production term) | An account whose program requires both the holder's signature and the guard's co-signature. Two-party: the holder initiates, the guard admits, neither acts alone. |
+| Cosigned account | Cosigned account (production term) | An account whose program requires both the holder's signature and the guard's co-signature. Two-party: the holder initiates, the guard admits, neither acts alone. |
 | Gate | The cosigner's per-transaction admission decision | Opened only by a cosigner signature issued under matching allow policy. Shut by default: denied or unmatched transactions, unsupported shapes, and unreachable or locked cosigners all leave the gate shut. |
-| Gated corridor | An attested corridor | The corridor of a guarded account: structurally constructed AND per-transaction gated. |
+| Gated corridor | An attested corridor | The corridor of a cosigned account: structurally constructed AND per-transaction gated. |
 | Ungated corridor | A non-attested corridor | The corridor of an ungated account: structurally constructed, no guard posted. Used where structural bounds alone are the intended control. |
 | Gate rules | The cosigner's policy document | The deterministic, fail-closed policy under which the guard opens gates. |
 | Corridor map | The network graph | The emergent union of every account's corridor. Not stored anywhere. |
@@ -481,7 +481,7 @@ Two sentences carry the security model and recur throughout:
 1. **A compromised guard can open gates; it cannot construct corridors.**
    Cosigner compromise never expands where value can flow (§7.2).
 2. **The holder initiates; the guard admits.** Neither the spend key nor the
-   cosigner key alone moves value from a guarded account (§3).
+   cosigner key alone moves value from a cosigned account (§3).
 
 The substrate needs no metaphor — the ledger is Algorand, the signing
 infrastructure is APlane — and everything the system adds on top is named

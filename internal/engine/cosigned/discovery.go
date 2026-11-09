@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-package guarded
+package cosigned
 
 import (
 	"context"
@@ -51,7 +51,7 @@ var (
 	ErrCosignerDiscoveryConfig = errors.New("cosigner endpoint configuration invalid")
 
 	// errCosignerDiscoveryDuplicateRoute marks a required witness key advertised
-	// by more than one live cosigner endpoint. Guarded routing requires one
+	// by more than one live cosigner endpoint. Cosigned routing requires one
 	// unambiguous live endpoint per witness.
 	errCosignerDiscoveryDuplicateRoute = errors.New("duplicate live cosigner route")
 
@@ -317,7 +317,7 @@ func (s *Signer) probeConfiguredCosignerEndpoint(ctx context.Context, alias stri
 }
 
 // DiscoverCosignerComponentKeys queries one endpoint and returns
-// cosigner component public keys that can be mapped for guarded signing.
+// cosigner component public keys that can be mapped for cosigned signing.
 func (s *Signer) DiscoverCosignerComponentKeys(ctx context.Context, endpoint config.ClientEndpointConfig) ([]DiscoveredCosignerComponentKey, error) {
 	resolved, keys, err := s.probeConfiguredCosignerEndpoint(ctx, "requested endpoint", endpoint)
 	if resolved != nil {

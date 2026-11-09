@@ -92,8 +92,9 @@ Transport notes:
   same-UID local mode may use `<data_dir>/aplane.sock`, and custom private
   managed stores require an explicit IPC path so an unreadable selected root
   cannot silently retarget a client to the singleton system signer,
-- the current admin protocol version is 8.0 (8.0 renames the writable admin setting
-  `boundary_require_admin_key` to `boundary_require_contained`, removes `admin_key_id` from
+- the current admin protocol version is 8.0 (8.0 renames the writable admin settings
+  `boundary_require_admin_key` to `require_contained` and `boundary_require_cosigner` to
+  `require_cosigner`, removes `admin_key_id` from
   `prepare_generate_result`, replaces `prepare_generate_result.bounded.admin_operations`
   with `bounded.rekey`, and adds `bounded.rekey_list`; a 7.x apadmin would read an account
   with no `admin_operations` as having no rekey path, so it is refused at authentication
@@ -433,7 +434,7 @@ node, then generated with or without overlays; neither takes mnemonic import.
 - `remove_installed_template`: `key_type` -> `remove_installed_template_result`: `success`, optional `key_type`, `template_type`, `removed`, `code`, `error`; available through authenticated IPC admin sessions
 - `activate_key_type`: `key_type` -> `activate_key_type_result`: `success`, optional `key_type`, `already_exists`, `code`, `error`; this wire message activates compiled providers and enables installed YAML templates. The `apadmin` CLI exposes this as `keytype enable`. For installed YAML templates, `already_exists:true` means the template was already enabled.
 - `deactivate_key_type`: `key_type` -> `deactivate_key_type_result`: `success`, optional `key_type`, `removed`, `code`, `error`; this wire message deactivates compiled providers and disables installed YAML templates. The `apadmin` CLI exposes this as `keytype disable`. `removed:true` means the enabled/disabled state changed, and in-use rejection returns `code:"key_type_in_use"` when installed-template disable or compiled-provider disable is blocked.
-- `list_key_types` -> `key_types`: `key_types[]`, optional `code`, `error`; entries mirror the HTTP `/keytypes` schema except that they omit `signing_flow` and `bounded_authorization`; both surfaces carry optional `cosigner_component_key_type`, which `apadmin` uses to filter enrolled public cosigner references for guarded-account generation
+- `list_key_types` -> `key_types`: `key_types[]`, optional `code`, `error`; entries mirror the HTTP `/keytypes` schema except that they omit `signing_flow` and `bounded_authorization`; both surfaces carry optional `cosigner_component_key_type`, which `apadmin` uses to filter enrolled public cosigner references for cosigned-account generation
 
 #### Signing Approval and Client Enrollment
 
@@ -533,7 +534,7 @@ node, then generated with or without overlays; neither takes mnemonic import.
 
 #### Admin and Policy Settings
 
-- `admin_settings`: `user_auto_approve`, optional `boundary_require_contained` and `boundary_require_cosigner`, `lock_on_disconnect`, `passphrase_timeout`, `passphrase_method`, optional `node_role`, `ssh_enabled`, optional `ssh_listen_address`, optional `ssh_port`, `ssh_fingerprint`, `ssh_clients`, `signer_port`, `teal_compile_network`, optional `endpoint_advertise_url`, optional `endpoint_display_url`, `theme`
+- `admin_settings`: `user_auto_approve`, optional `require_contained` and `require_cosigner`, `lock_on_disconnect`, `passphrase_timeout`, `passphrase_method`, optional `node_role`, `ssh_enabled`, optional `ssh_listen_address`, optional `ssh_port`, `ssh_fingerprint`, `ssh_clients`, `signer_port`, `teal_compile_network`, optional `endpoint_advertise_url`, optional `endpoint_display_url`, `theme`
 - `update_admin_setting`: `key`, `value` (string-typed on wire)
 - `update_admin_setting_result`: `success`, `key`, optional `value`, `code`, `error`
 
@@ -674,7 +675,7 @@ Policy selection semantics:
 
 Cosigner-reference reads/exports require `cosigners.view`; imports/removals require
 `cosigners.manage`, an unlocked signer store, and emit mutation audit events. A
-reference alias selects the witness public key embedded during guarded-key
+reference alias selects the witness public key embedded during cosigned-key
 generation, so public visibility does not make catalog mutation
 security-neutral. Import is idempotent for an identical reference and rejects
 a name already bound to a different Witness Key ID; replacement requires an
@@ -705,7 +706,7 @@ Writable admin settings:
 - `user_auto_approve` (`User Auto-Approve`; approval switch). When on, it satisfies all signer review requirements without an operator prompt, including Always Review, and approves unmatched requests. Hard policy rejections and signer validation still apply. No connected approval client is required.
 - `lock_on_disconnect`
 - `passphrase_timeout`
-- `boundary_require_contained` and `boundary_require_cosigner`: restrict new
+- `require_contained` and `require_cosigner`: restrict new
   accounts of the per-key types only: `aplane.falcon1024-b.v1` and the plain
   hosts (`aplane.falcon1024.v1`, `aplane.ed25519.v1`), the plain program
   included
@@ -855,6 +856,20 @@ steps use that value rather than a constant. A per-key type with no `boundary_sc
 such as a plain host, uses the parameter form. Nothing here depends on the key type's
 name.
 
+On a per-key type that offers a cosigner (`cosigner_component_key_type`) and declares
+`rekey_authority` (with options) and `rekey_to`, the parameter form is the overlay form
+(`overlay_form.go`): the type's bounds as one group (a preset's fields, or the type's
+own parameters without one), then three controls over `cosigner`, `rekey_to` and
+`rekey_authority`. The cosigner is the picker, optional unless a preset needs it, and
+Backspace clears it; its label names the algorithm of the cosigner key type. The rekey
+control offers the type's declared settings that fit: `refused` and `spending_key`
+without a list, `only_these` with one, and `plus_cosigned` with one and a cosigner. A
+setting the control no longer offers moves to its first. Empty fields are left out of
+the request, and a preset's fixed values never override a field the form shows, so the
+operator's rekey choice wins over the preset's. The raw cosigner key and list root are
+never fields. Nothing in the form refuses a combination the type declares; the review
+states what it means and the signer checks it.
+
 A compiled list stands in until the signer's list arrives, so a type can be selected before
 it can be classified. That isn't read as an ordinary type: the form shows an error and
 requests the list again instead of opening the plain form, because the plain form would
@@ -927,7 +942,7 @@ they navigate or cycle only on choice fields and the submit button. Tab and the
 arrow keys always navigate. Parameter fields accept ASCII only and refuse other
 input with an error rather than rewriting it.
 
-The key type lists of the generate, import, and guarded-account forms fit the
+The key type lists of the generate, import, and cosigned-account forms fit the
 window: when a list is too long, it shows the rows around the selection between
 "more above" and "more below" lines (`fitSelectionList` in
 `internal/signerapp/signertui/selection_list.go`), so the selection, its
@@ -1008,7 +1023,7 @@ identifies the current screen. The enum has families for:
 - Generate / import flows (form, params, loading, display)
 - Signer-side public cosigner-reference management (`ViewCosignerReferences`,
   details, import, removal confirmation, and removal progress), the cosigner
-  picker for guarded generation (`ViewCosignerPicker`), cosigner generate-type
+  picker for cosigned generation (`ViewCosignerPicker`), cosigner generate-type
   selection (`ViewCosignerGenerateType`), and cosigner public export
   (`ViewCosignerExportPath`, `ViewCosignerExporting`, `ViewCosignerExportResult`,
   `ViewCosignerExportJSON`)
@@ -1149,7 +1164,7 @@ signer settings and status:
 - `lock_on_disconnect`
 - `passphrase_timeout`
 - Color theme
-- `boundary_require_contained` and `boundary_require_cosigner`, on signer nodes
+- `require_contained` and `require_cosigner`, on signer nodes
 - Admin transport, node role, passphrase unlock method, and TEAL compile network
 - A `Policies` row that opens the policies view
 - SSH enabled state, port, fingerprint, and connected-client count

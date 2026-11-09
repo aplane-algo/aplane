@@ -788,7 +788,7 @@ invoking a `presign-plan` callback. It performs the same check before broadcasti
 or simulating a `pregrouped-signed` group verbatim.
 
 APlane also checks apsigner's work in `presign-plan`, as it does for ordinary and
-guarded signing. The `/plan` result may only assign the group ID over the final
+cosigned signing. The `/plan` result may only assign the group ID over the final
 group, raise the fees the mutation report lists, and append the planner's canonical
 budget dummies; any other change to a slot is rejected before the plugin is called.
 The `/sign` result must sign exactly the planned transactions and return every
@@ -818,7 +818,7 @@ slots. Notably, the `presign-plan` budget mechanism keys on each slot's
 structured *LogicSig resources* (`programBytes`, `argumentBytes`, and
 `maxOpcodeCost`), not on any key-type label. It therefore serves the entire
 composed-LogicSig family uniformly, including schemes that already exist as
-APlane key types (Falcon multisig, allowlist, guarded, composed DSAs), with no
+APlane key types (Falcon multisig, allowlist, cosigned, composed DSAs), with no
 per-scheme code. If a plain key type later gains a
 native on-chain signature (so it no longer needs a LogicSig), it simply drops out of the
 budget-sizing path automatically; the flow does not change.

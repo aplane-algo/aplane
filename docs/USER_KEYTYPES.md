@@ -159,8 +159,8 @@ account needs no enabling: it is the Corridor preset of `aplane.falcon1024-b.v1`
 
 Before generating a cosigned account, choose **Export Cosigner Key** on the
 cosigner. On the primary signer, start **Generate account** in `apadmin`,
-select a plain host or `aplane.falcon1024-b.v1`, then open the **Cosigner**
-field and choose **Use key file...** or **Paste public JSON...**. Compare the complete Witness Key ID with the value
+select a plain host or `aplane.falcon1024-b.v1`, then open the **Require a
+cosigner** field and choose **Use key file...** or **Paste public JSON...**. Compare the complete Witness Key ID with the value
 shown on the cosigner and import; the form returns with that key selected. A
 key that is already imported is offered under its existing name rather than
 imported again. The UI submits the stable Witness Key ID and the signer
@@ -258,6 +258,20 @@ generate aplane.ed25519.v1 rekey_authority=only_these rekey_to=<address>
 generate aplane.falcon1024.v1
 ```
 
+In apadmin, **Generate account** on a plain host opens three choices:
+
+- **Require a cosigner (Falcon-1024)**: Enter opens the cosigner picker;
+  Backspace removes the choice. Left as **None**, the account has no cosigner.
+- **Add rekey-to addresses**: full addresses, one per line or comma-separated.
+- **Allow rekeys** (without a list): **No, never** or **Yes**, by the spending
+  key alone, or with the cosigner when there is one. With addresses in the list,
+  this becomes **Rekey-to option**: **Only these addresses**, or, with a
+  cosigner, **These, plus others with the cosigner**.
+
+The review that follows says what the choices add up to. apadmin always sends a
+rekey setting, so the plain program comes from apshell's `generate` with no
+parameters.
+
 With no parameters the type is the plain program: the spending-key check alone,
 the same program bounded and composed accounts are built on. A cosigned plain
 host signs through the cosigned flow, its cosigner asked for every spend and
@@ -295,14 +309,25 @@ Generate a key and choose `aplane.falcon1024-b.v1`, then a preset:
 "All transfer kinds" means `pay`, `axfer`, and `asset_opt_in`. For a narrower list, such as
 ALGO only, or for a limits-only account, use a boundary file.
 
+A preset's form shows its bounds first (recipients, or the unlock round), then the same
+three choices a plain host has: **Require a cosigner**, **Add rekey-to addresses**, and
+**Allow rekeys** or, with a list, **Rekey-to option**. The preset fills them in as the
+table says and you can change them: a cosigner and a rekey-to list the preset asks for
+are required, and the rekey choice offers only what this type takes, so there is no
+**No, never** (a grammar limit; an expert template can refuse every rekey). A Timelock
+always needs its list.
+
 Before generating, apadmin shows what the signer resolved, including the cosigner it will
 use. For an account with a rekey-to list, the Rekey row reads "Only these N addresses,
 spending key alone", and on a timelock it warns that a listed rekey is a way around the
 lock. A cosigned account that takes rekeys reads "Spending key and cosigner", or, with a
 list beside them, "These N, spending key alone; others need the cosigner". Press `d` for
-every parameter, fingerprint, and recipient; the details also list
-every rekey-to address and flag each one this signer holds, and whether that key is
-Ed25519.
+every parameter, fingerprint, and recipient; the details also say which kind of
+protection the rekey setting is (independent of the online keys, or only as strong as
+them), list every rekey-to address, flag each one this signer holds, and, on a
+post-quantum account, say which held targets are classical and ask you to confirm the
+rest are post-quantum, since an address doesn't reveal its key type. These are
+statements: nothing here refuses a choice.
 After generating, press `s` to save a receipt beside where apadmin was started. A receipt
 documents the account, including its rekey-to addresses. It cannot restore one: use
 encrypted backups for that. The chain never reveals a rekey-to list, so keep the receipt
@@ -428,8 +453,8 @@ apply to it: the list is the owner's standing statement. An unlisted rekey under
 ### Creating an account from apshell
 
 ```
-generate aplane.falcon1024-b.v1 boundary=rules.yaml
-generate aplane.falcon1024-b.v1 boundary=rules.yaml result=account.json
+generate aplane.falcon1024-b.v1 --boundary rules.yaml
+generate aplane.falcon1024-b.v1 --boundary rules.yaml --result account.json
 generate aplane.falcon1024-b.v1 spend_effects=pay rekey_authority=spending_key recipients=ADDR1,ADDR2
 generate aplane.falcon1024-b.v1 spend_effects=pay rekey_authority=only_these recipients=ADDR1,ADDR2 rekey_to=COLD1
 generate aplane.falcon1024-b.v1 spend_effects=pay rekey_authority=plus_cosigned recipients=ADDR1,ADDR2 rekey_to=COLD1 cosigner=ops-cosigner
@@ -444,13 +469,13 @@ that reference before creation changes which cosigner is used. Prefer a Witness 
 it can only select that cosigner, and apshell checks the created account against it.
 After creation, apshell shows what the signer actually stored.
 
-`result=<file>` saves that as JSON. It is not a receipt: only apadmin's review can issue one,
+`--result <file>` saves that as JSON, for any key type. It is not a receipt: only apadmin's review can issue one,
 with fingerprints and a digest.
 
 ### Restricting new accounts
 
 `aplane.falcon1024-b.v1` cannot be turned off, but two settings in apadmin's Settings panel set
-a minimum for new accounts. `boundary_require_contained` requires new accounts to be
+a minimum for new accounts. `require_contained` requires new accounts to be
 contained: they must take only listed rekeys (`only_these`) and have a recipient list, so
 they can pay only listed recipients, and hand the account only to a listed key. A
 timelock with no list is not contained, because it pays anyone once unlocked, and neither
@@ -458,7 +483,7 @@ is a limits-only account, with or without a cosigner. A `spending_key` account i
 contained, with or without a cosigner, and neither is a `plus_cosigned` one: whoever
 holds its online keys can rekey it anywhere. Fees are outside that limit: each transaction's fee is capped at 10,000
 microAlgos, but a stolen spending key can still spend the balance on fees, one
-transaction at a time. `boundary_require_cosigner` refuses accounts without a cosigner. They apply on every route,
+transaction at a time. `require_cosigner` refuses accounts without a cosigner. They apply on every route,
 and to the plain hosts too: a plain host is never contained, and the plain program, with
 no cosigner, fails both. They do not affect existing accounts or imported templates.
 

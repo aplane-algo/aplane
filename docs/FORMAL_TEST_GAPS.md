@@ -22,23 +22,23 @@ Order is by recommended write order for the remaining backlog.
 ## Pending Test Coverage
 
 **Model drift: signer-domain gating of user components and client-routed
-guarded simulation.**
-The retired guarded signing model (its surviving invariants are now in
+cosigned simulation.**
+The retired cosigned signing model (its surviving invariants are now in
 [FORMAL_TLA_BOUNDED_COSIGNER_MODEL.md](FORMAL_TLA_BOUNDED_COSIGNER_MODEL.md)) and the
-TLA+ sign-boundary and retired guarded-assembly models predate two behaviors that are now
+TLA+ sign-boundary and retired cosigned-assembly models predate two behaviors that are now
 implemented and unit-tested but not yet modeled:
 
 - user-role `/sign/component` runs the signer-domain approval gates (hard
   rejection, always-review, operator approval) before component signing
   (`internal/signerapp/signing/component_gate.go`),
-- guarded simulation runs ordinary user and cosigner component signing plus
+- cosigned simulation runs ordinary user and cosigner component signing plus
   `/sign/assemble`, then sends the released executable group from the client to
-  algod simulation (`internal/engine/guarded/submit.go`).
+  algod simulation (`internal/engine/cosigned/submit.go`).
 
 The models remain sound for what they cover (assembly invariants, two-party
 signature requirements); they under-approximate the gate sequence and the
-post-assembly client route. A future audit pass should extend the guarded
-signing model with the gate states and assert that every released guarded group
+post-assembly client route. A future audit pass should extend the cosigned
+signing model with the gate states and assert that every released cosigned group
 passed the same user gate regardless of whether the client submits or
 simulates it. This gap is limited to the legacy `cosigner1` choreography;
 `cosigned1` user-first ordering and assembly, for spends, cosigned rekeys and
@@ -135,7 +135,7 @@ source/path-mask assembly, canonical bytes, and atomic failure. Concrete effect 
 slot encodings, Merkle derivation, and TEAL remain verified by Go/compiler tests
 rather than abstracted as cryptographic or byte-level TLC claims.
 
-The guarded signing audit added the guarded signing model (retired in phase 5
+The cosigned signing audit added the cosigned signing model (retired in phase 5
 of the account overlays; its surviving invariants are in
 [FORMAL_TLA_BOUNDED_COSIGNER_MODEL.md](FORMAL_TLA_BOUNDED_COSIGNER_MODEL.md)) and
 closed the new A-series gaps in the same pass. The focused tests added for that
@@ -144,7 +144,7 @@ audit cover:
 - wrong user component signature rejection during `/sign/assemble`,
 - passthrough signed-transaction txid mismatch rejection during
   `/sign/assemble`,
-- direct `/sign` rejection for all guarded account key types,
+- direct `/sign` rejection for all cosigned account key types,
 - malformed component-sign response rejection before forwarding opaque signatures
   to signer assembly.
 

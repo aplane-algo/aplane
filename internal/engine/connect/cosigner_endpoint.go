@@ -16,7 +16,7 @@ import (
 )
 
 // SSH trust errors are re-exported at the engine transport boundary so
-// guarded orchestration can classify tunnel failures without depending on the
+// cosigned orchestration can classify tunnel failures without depending on the
 // SSH implementation package directly.
 var (
 	ErrSSHHostKeyMismatch = sshtunnel.ErrHostKeyMismatch

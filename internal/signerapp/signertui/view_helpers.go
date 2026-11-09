@@ -238,6 +238,40 @@ type paramSpec struct {
 	Description string
 	Params      []lsigprovider.ParameterDef
 	Validate    func(map[string]string) error
+	// Sections group the fields on screen, in order; none is one group.
+	Sections []paramSection
+	// OptionLabel names a choice field's value for the screen; nil shows the
+	// value itself.
+	OptionLabel func(name, value string) string
+	// Overlay marks the overlay choices form (overlay_form.go).
+	Overlay bool
+}
+
+// paramSection is a titled group of fields starting at Start.
+type paramSection struct {
+	Start int
+	Title string
+}
+
+// sectionAt is the title of the group field index belongs to, and whether the
+// group starts there.
+func (s *paramSpec) sectionAt(index int) (string, bool) {
+	title, starts := "", false
+	for _, section := range s.Sections {
+		if section.Start > index {
+			break
+		}
+		title, starts = section.Title, section.Start == index
+	}
+	return title, starts
+}
+
+// optionLabel names value for the screen.
+func (s *paramSpec) optionLabel(name, value string) string {
+	if s == nil || s.OptionLabel == nil {
+		return value
+	}
+	return s.OptionLabel(name, value)
 }
 
 func getParamSpecForKeyType(keyType string) *paramSpec {

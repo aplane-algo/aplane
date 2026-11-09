@@ -893,7 +893,7 @@ requires a cosigner signature only on bounded spend paths, applies a
 framework-owned Merkle recipient policy, and can be rekeyed only to an address on
 its rekey-to list, with the spending key alone. Its flow is `cosigned1`. See
 [KEYTYPE_CAPABILITIES.md](KEYTYPE_CAPABILITIES.md) for the per-operation matrix
-and [ARCH_GUARDED.md](ARCH_GUARDED.md#corridor-v1) for its complete contract.
+and [ARCH_COSIGNED.md](ARCH_COSIGNED.md#corridor-v1) for its complete contract.
 
 ### Template Library
 

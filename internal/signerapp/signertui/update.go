@@ -802,13 +802,17 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					continue
 				}
 				// A per-key type does not advertise the selector, because its
-				// cosigner is optional. The preset that asked for one is the field.
+				// cosigner is optional. The preset that asked for one is the field,
+				// and so is the overlay form's cosigner control, preset or not.
 				resumeEnrollment = m.forms.boundaryPreset != nil
 				for _, param := range info.CreationParams {
 					if param.Name == cosignerrefs.ParamCosignerName {
 						resumeEnrollment = true
 						break
 					}
+				}
+				if spec := m.paramSpecFor(info.KeyType); spec != nil && spec.Overlay {
+					resumeEnrollment = true
 				}
 				break
 			}

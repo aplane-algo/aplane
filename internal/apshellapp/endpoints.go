@@ -382,7 +382,7 @@ func (a *App) loadEndpointView() (config.ClientEndpointRegistry, error) {
 }
 
 // adoptConfig makes cfg the app's config and the engine's endpoint registry,
-// keeping alias resolution and guarded routing on one view of endpoints.yaml.
+// keeping alias resolution and cosigned routing on one view of endpoints.yaml.
 func (a *App) adoptConfig(cfg config.Config) {
 	a.Config = cfg
 	if a.eng != nil {

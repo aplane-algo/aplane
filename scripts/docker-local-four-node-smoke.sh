@@ -1144,7 +1144,7 @@ func main() {
 	if err != nil {
 		fail("prepare payment", err)
 	}
-	result, err := aplane.SignPreparedGuardedGroupWithContext(ctx, aplane.PreparedGuardedGroupOptions{
+	result, err := aplane.SignPreparedCosignedGroupWithContext(ctx, aplane.PreparedCosignedGroupOptions{
 		UserClient:           userClient,
 		CosignerClient:       cosignerClient,
 		CosignerComponentKey: cosignerComponentKey,
@@ -1299,7 +1299,7 @@ from aplanesdk import (
     PreparedGroup,
     SignerClient,
     send_raw_transaction,
-    sign_prepared_guarded_group,
+    sign_prepared_cosigned_group,
 )
 
 MIN_TXN_FEE = 1000
@@ -1338,7 +1338,7 @@ def main() -> int:
             note=b"aplane python sdk plain host validate",
             fee=MIN_TXN_FEE,
         )
-        result = sign_prepared_guarded_group(
+        result = sign_prepared_cosigned_group(
             user_client=user_client,
             cosigner_client=cosigner_client,
             cosigner_component_key=cosigner_component_key,
@@ -1519,7 +1519,7 @@ import {
   SignerClient,
   concatenateSignedTxns,
   sendRawTransaction,
-  signPreparedGuardedGroup,
+  signPreparedCosignedGroup,
 } from "aplanesdk";
 
 const MIN_TXN_FEE = 1000;
@@ -1554,7 +1554,7 @@ async function main() {
       note: new TextEncoder().encode("aplane typescript sdk plain host validate"),
       fee: MIN_TXN_FEE,
     });
-    const result = await signPreparedGuardedGroup({
+    const result = await signPreparedCosignedGroup({
       userClient,
       cosignerClient,
       cosignerComponentKey,
@@ -1737,7 +1737,7 @@ generate_general_bounded_key() {
     local boundary_file="/home/$TEST_USER/aplane/boundary.yaml"
     docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'schema: aplane.boundary.v1\nspend: [pay, axfer, asset_opt_in]\nrecipients:\n  - %s\nencoding: merkle\nrekey:\n  authority: %s\n  to:\n    - %s\ncosigner: %s\n%s\n' \
         '$CORRIDOR_ALLOWED_ADDRESS' '$authority' '$FALCON_ADDRESS' '$COSIGNER_COMPONENT_KEY' '$extra_line' > '$boundary_file'"
-    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'connect\ngenerate aplane.falcon1024-b.v1 boundary=%s\nkeys\n' \
+    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'connect\ngenerate aplane.falcon1024-b.v1 --boundary=%s\nkeys\n' \
         '$boundary_file' > /tmp/generate-general-bounded.script"
     local out
     if ! out="$(docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \

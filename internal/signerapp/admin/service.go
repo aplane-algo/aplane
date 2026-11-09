@@ -66,25 +66,25 @@ func (s Service) BuildAdminSettings() adminproto.AdminSettings {
 		lockOnDisconnect = false
 	}
 
-	requireContained, requireCosigner := icfg.BoundaryRequirements()
+	requireContained, requireCosigner := icfg.GenerationRequirements()
 	return adminproto.AdminSettings{
-		UserAutoApprove:          icfg.UserAutoApprove(),
-		BoundaryRequireContained: requireContained,
-		BoundaryRequireCosigner:  requireCosigner,
-		LockOnDisconnect:         lockOnDisconnect,
-		PassphraseTimeout:        timeoutStr,
-		PassphraseMethod:         passphraseMethod,
-		NodeRole:                 string(ir.NodeRole()),
-		SSHEnabled:               sshInfo.Enabled,
-		SSHListenAddress:         cfg.Endpoint.SSH.ListenAddress,
-		SSHPort:                  sshInfo.Port,
-		SSHFingerprint:           sshInfo.Fingerprint,
-		SSHClients:               sshInfo.Clients,
-		SignerPort:               cfg.Endpoint.SignerPort,
-		TEALCompileNet:           cfg.TEALCompileNetwork,
-		EndpointAdvertiseURL:     cfg.Endpoint.AdvertiseURL,
-		EndpointDisplayURL:       endpointDisplayURL(cfg, sshInfo),
-		Theme:                    s.Deps.Theme(),
+		UserAutoApprove:      icfg.UserAutoApprove(),
+		RequireContained:     requireContained,
+		RequireCosigner:      requireCosigner,
+		LockOnDisconnect:     lockOnDisconnect,
+		PassphraseTimeout:    timeoutStr,
+		PassphraseMethod:     passphraseMethod,
+		NodeRole:             string(ir.NodeRole()),
+		SSHEnabled:           sshInfo.Enabled,
+		SSHListenAddress:     cfg.Endpoint.SSH.ListenAddress,
+		SSHPort:              sshInfo.Port,
+		SSHFingerprint:       sshInfo.Fingerprint,
+		SSHClients:           sshInfo.Clients,
+		SignerPort:           cfg.Endpoint.SignerPort,
+		TEALCompileNet:       cfg.TEALCompileNetwork,
+		EndpointAdvertiseURL: cfg.Endpoint.AdvertiseURL,
+		EndpointDisplayURL:   endpointDisplayURL(cfg, sshInfo),
+		Theme:                s.Deps.Theme(),
 	}
 }
 
@@ -179,16 +179,16 @@ func (s Service) updateAdminSettingLocked(req adminproto.UpdateAdminSettingReque
 	oldUserAutoApprove := icfg.UserAutoApprove()
 	oldLockOnDisconnect := icfg.LockOnDisconnect()
 	oldSessionTimeout := icfg.SessionTimeout()
-	oldRequireContained, oldRequireCosigner := icfg.BoundaryRequirements()
+	oldRequireContained, oldRequireCosigner := icfg.GenerationRequirements()
 
 	switch req.Key {
-	case adminproto.AdminSettingBoundaryRequireContained:
+	case adminproto.AdminSettingRequireContained:
 		v := req.Value == "true"
-		icfg.SetBoundaryRequirements(v, oldRequireCosigner)
+		icfg.SetGenerationRequirements(v, oldRequireCosigner)
 		saveKey, saveValue = req.Key, v
-	case adminproto.AdminSettingBoundaryRequireCo:
+	case adminproto.AdminSettingRequireCosigner:
 		v := req.Value == "true"
-		icfg.SetBoundaryRequirements(oldRequireContained, v)
+		icfg.SetGenerationRequirements(oldRequireContained, v)
 		saveKey, saveValue = req.Key, v
 	case adminproto.AdminSettingUserAutoApprove:
 		v := req.Value == "true"
@@ -241,7 +241,7 @@ func (s Service) updateAdminSettingLocked(req adminproto.UpdateAdminSettingReque
 			icfg.SetUserAutoApprove(oldUserAutoApprove)
 			icfg.SetLockOnDisconnect(oldLockOnDisconnect)
 			icfg.SetSessionTimeout(oldSessionTimeout)
-			icfg.SetBoundaryRequirements(oldRequireContained, oldRequireCosigner)
+			icfg.SetGenerationRequirements(oldRequireContained, oldRequireCosigner)
 			err = fmt.Errorf("failed to save config.yaml: %w", saveErr)
 		}
 	}

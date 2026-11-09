@@ -13,9 +13,9 @@ import (
 	"testing"
 )
 
-// clientPackageDirs are client-side packages that must route guarded signing
+// clientPackageDirs are client-side packages that must route cosigned signing
 // on the runtime signing_flow metadata served by the daemon, never on the
-// compiled guarded key-type vocabulary. The compiled switches stay available
+// compiled cosigned key-type vocabulary. The compiled switches stay available
 // to signer-side code, which owns the keys it reports on.
 // Each directory is scanned with its subpackages.
 var clientPackageDirs = []string{
@@ -30,15 +30,15 @@ var clientPackageDirs = []string{
 	"../../internal/signerclient",
 }
 
-// forbiddenGuardedSwitches are the compiled key-type classification helpers
+// forbiddenCosignedSwitches are the compiled key-type classification helpers
 // that would silently re-couple clients to compiled key families. A client
 // using them cannot handle a cosigned key family it was not compiled with;
 // routing must come from signing_flow (see signerapi.SigningFlowCosigned1).
 // The first two named the retired dedicated cosigned type and stay listed so
 // they cannot return.
-var forbiddenGuardedSwitches = []string{
-	"IsGuardedAccountKeyType",
-	"CosignerComponentKeyTypeForGuardedAccount",
+var forbiddenCosignedSwitches = []string{
+	"IsCosignedAccountKeyType",
+	"CosignerComponentKeyTypeForCosignedAccount",
 	"ComponentPublicKeySize",
 	"IsCosignerComponentKeyType",
 	"witness.ID(",
@@ -62,9 +62,9 @@ func TestClientPackagesRouteOnSigningFlow(t *testing.T) {
 			if err != nil {
 				return err
 			}
-			for _, forbidden := range forbiddenGuardedSwitches {
+			for _, forbidden := range forbiddenCosignedSwitches {
 				if strings.Contains(string(content), forbidden) {
-					t.Errorf("%s uses compiled guarded key-type switch %s; client routing must use runtime signing_flow metadata", path, forbidden)
+					t.Errorf("%s uses compiled cosigned key-type switch %s; client routing must use runtime signing_flow metadata", path, forbidden)
 				}
 			}
 			return nil
@@ -85,8 +85,8 @@ func TestSigningFlowCharacterizationInventory(t *testing.T) {
 			"TestPrepareComponentSigningCanonicalizesTargetsAndMessages",
 			"TestSignComponentCosignerFailsClosedWithoutLoadedPolicyBeforeKeyLoad",
 			"TestSignComponentCosignerPolicyAllowsSigning",
-			"TestAssembleDecodedGuardedVerifiesAndBuildsSignedGroup",
-			"TestAssembleDecodedGuardedRejectsMismatchedPassthrough",
+			"TestAssembleDecodedCosignedVerifiesAndBuildsSignedGroup",
+			"TestAssembleDecodedCosignedRejectsMismatchedPassthrough",
 		},
 		"../../internal/signerapp/signing/bounded_cosigner_test.go": {
 			"TestValidateBoundedComponentPlanAdmitsOnlyCosignedPaths",

@@ -13,20 +13,20 @@ its transaction. When a group mixes LogicSig, native Falcon, Ed25519, or
 externally signed participants, the signer planner decides the final group
 shape and aggregate fee before any signature is produced.
 
-## Mixed Guarded/Non-Guarded Groups
+## Mixed Cosigned/Non-Cosigned Groups
 
-`apshell` also supports atomic groups that mix guarded targets with ordinary
-signer-managed senders. A guarded target may be a transaction whose sender is a
-guarded account, or a transaction whose sender resolves through the auth cache
-to a guarded effective signer/AuthAddr. If any original position has a guarded
-effective signer, the client uses the guarded orchestration path for the whole
+`apshell` also supports atomic groups that mix cosigned targets with ordinary
+signer-managed senders. A cosigned target may be a transaction whose sender is a
+cosigned account, or a transaction whose sender resolves through the auth cache
+to a cosigned effective signer/AuthAddr. If any original position has a cosigned
+effective signer, the client uses the cosigned orchestration path for the whole
 group, builds one canonical group, and signs every participant over those same
 frozen bytes.
 
-Guarded positions are signed through `/sign/component` plus `/sign/assemble`.
+Cosigned positions are signed through `/sign/component` plus `/sign/assemble`.
 Ordinary signer-managed originals are signed by an intermediate primary-signer
 `/sign` request over the full canonical group: ordinary originals are sign-mode
-entries, guarded targets are `foreign` entries with accurate selected-path
+entries, cosigned targets are `foreign` entries with accurate selected-path
 `lsig_resources` hints, and client-signed dummies are `foreign` context entries. The
 resulting signed ordinary originals and dummies are then passed through to
 assembly.

@@ -330,9 +330,8 @@ explicitly; it cannot inherit both contracts unchanged.
 ### Naming a combination
 
 Use **rotating-bounded** for rotation plus a bounded spending envelope and
-**rotating-cosigned** for rotation plus an additional spending authority. In
-APlane "guarded" usually means cosigner participation, so "rotating-guarded"
-does not name a distinct policy dimension without further definition.
+**rotating-cosigned** for rotation plus a cosigner, an additional spending
+authority.
 
 Matching words across layers (capability, authorization contract, key type,
 signing flow, implementation) do not make them interchangeable. A `bounded2`
@@ -494,7 +493,7 @@ Terminology:
   still named by its own `key_type` and `family` segment (e.g.
   `family: falcon1024-allowlist`).
 - `base_key_type` is not a universal owner or routing key. Account semantics,
-  creation parameters, TEAL bytecode, metadata, and guarded assembly remain
+  creation parameters, TEAL bytecode, metadata, and cosigned assembly remain
   owned by the full `key_type` unless a specific contract says otherwise.
   The general bounded type is the important example: its signing primitive is
   Falcon-1024, but its account semantics, overlays and assembly are the bounded
@@ -521,7 +520,7 @@ collapsed into one flat key-type hierarchy.
 | **Generic LogicSig** | TEAL predicates alone authorize the account; there is no DSA private key. | Encrypted signer `.key` containing final bytecode, parameters, derivation metadata, and signing metadata but no private signing material. |
 
 An account authorization type identifies the account-level mechanism. It does
-not by itself say whether the account is guarded or which transaction effects a
+not by itself say whether the account is cosigned or which transaction effects a
 LogicSig admits.
 
 ### DSA LogicSig policy forms
@@ -545,7 +544,7 @@ DSA LogicSig policy categories are:
 
 Schema-v1 custom policy remains a fully supported expert mode. "Expert" is a
 documentation description, not a feature gate, warning requirement, or reduced
-execution mode. Generic LogicSig templates are a separate category. Guarded
+execution mode. Generic LogicSig templates are a separate category. Cosigned
 signing is an orthogonal authority axis and may be combined with a DSA account
 model without becoming a policy category itself.
 
@@ -558,8 +557,8 @@ They participate in a specific account or operation contract:
 |---|---|---|
 | **Witness key** | Stored as a cosigner-managed `.cos` credential and used through `/sign/component`; its signature is assembled into a cosigned account's LogicSig, on a plain or bounded host. | Yes. `aplane.witness-falcon1024.v1`, durable category `witness`; never accepted as a spending account by ordinary `/sign`. |
 
-The current authority overlays are therefore **unguarded** and **cosigner
-guarded**.
+The current authority overlays are therefore **uncosigned** and **cosigner
+cosigned**.
 
 A witness key is a cosigner key. The program that embeds its public key names the
 account it serves, and the networked signer that holds it may produce only
@@ -1451,7 +1450,7 @@ authorization: generation repeats every check.
 | Step | Work | Owner |
 |---|---|---|
 | 1 | Check the key type is allowed for the node role | `keyclass.ValidateKeyTypeAllowedForNodeRole` |
-| 2 | Resolve rotating network names, and turn a `cosigner` reference into `cosigner_public_key` for guarded and cosigner-enabled bounded types | `lsigprovider.CosignerComponentKeyType`, `cosignerrefs` |
+| 2 | Resolve rotating network names, and turn a `cosigner` reference into `cosigner_public_key` for cosigned and cosigner-enabled bounded types | `lsigprovider.CosignerComponentKeyType`, `cosignerrefs` |
 | 3 | Select the instance the parameters ask for and canonicalize them, including sorting `address[]` values | `lsigprovider.ResolveInstance` |
 | 4 | Reject a cosigner key that collides with an existing authority | `validateVisibleCosignerAuthorityCollisions` |
 | 5 | Take the mutation lock and check the key type is enabled | `keytypestate.CanGenerate` |
@@ -1567,13 +1566,13 @@ create a new account, and it arrives with a release the operator chose to instal
 grammar fingerprint still lets a review detect that the definition changed before
 generation, and each account still records its shape.
 
-**Generation settings.** `boundary_require_contained` (new accounts must be contained:
+**Generation settings.** `require_contained` (new accounts must be contained:
 refuse every rekey, or every rekey but one to a listed address (`only_these`), and hold
 a recipient list, `boundedmeta.Metadata.Contained`, so a limits-only account never is,
 even with a cosigner, and neither is a `spending_key` or `plus_cosigned` one, which is
 only as strong as its two online keys; fees, capped per transaction only, are outside
 it) and
-`boundary_require_cosigner` in the product runtime config apply to this key type, and to
+`require_cosigner` in the product runtime config apply to this key type, and to
 the plain hosts, on every creation route, under the
 mutation lock, and generation rechecks them after a review. A plain host is never
 contained, since its spends are open, and the plain program has no cosigner, so either
@@ -1592,15 +1591,16 @@ for this type); a plain host, also per-key, reports none.
 `TestEveryBoundaryProviderSupportsTheBoundaryWorkflow` pins that every production type
 declaring the schema can run those flows; a per-key type without it, such as a plain
 host, takes its parameters directly (apadmin's parameter form, apshell's `generate`
-arguments), and apshell refuses `boundary=` for it. This classification only picks a
+arguments), and apshell refuses `--boundary` for it. This classification only picks a
 client flow: the signer still resolves the key type and applies the bounded support
 policy, so a misclassified request is refused rather than gaining anything.
 
 A failed lookup isn't an answer that a type is ordinary. apadmin shows an error and
 reloads instead of opening the plain form, because a compiled list can stand in before
-the signer's arrives. apshell stops before interpreting or forwarding `boundary=` or
-`result=`, and sends no generation request. A `generate` with neither option needs no
-lookup.
+the signer's arrives. apshell's `--boundary` reads the signer's key types before the
+file, and stops without a request if the lookup fails or the type has no
+`boundary_schema`. apshell's options are flags, so they never collide with a signer
+parameter, and no other `generate` needs the lookup.
 
 **Client and signer combinations.** No tagged signer through v0.49.0 has a per-key type,
 so a client can read a missing `per_key_contract` as "not per-key" there. Untagged builds
@@ -1611,12 +1611,25 @@ can have per-key types without reporting them, and they're unsupported.
 one definition behind the screen and sample boundary files; Load boundary file reads a
 file and sends its public values. Allowlist is `spending_key`; Locked Allowlist and
 Timelock are `only_these` and ask for `rekey_to`; Corridor is `only_these` with a
-cosigner and asks for `rekey_to` too.
+cosigner and asks for `rekey_to` too. A preset's form is the overlay form (see
+[ARCH_ADMIN.md](ARCH_ADMIN.md#choosing-a-generate-flow)): its bounds, then the cosigner,
+the rekey-to list and the rekey choice, which the preset fills in and the operator can
+change.
 Every parameterized request is prepared first. A bounded
 result goes to a review screen that keeps fingerprints and digests in a details view.
 For an account with a rekey-to list (`prepare_generate_result.bounded.rekey_list`,
 under `only_these` or `plus_cosigned`) it also names every address in the resolved
-`rekey_to` and flags those this signer holds. The Rekey row says which arrangement
+`rekey_to` and flags those this signer holds; on a post-quantum spending key (the
+general type, and a plain host on a post-quantum base; an expert template's base isn't
+in the inventory, and `bounded2` admits Ed25519, so its review makes no such claim and
+says so) it names the held targets
+whose key type is classical, and asks the operator to confirm the others, since an
+address doesn't reveal its key type. The details say which kind of protection the rekey
+setting is: a refused rekey and `only_these` are independent of the online keys, while
+`plus_cosigned` and a cosigned `spending_key` are only as strong as both online keys,
+and an uncosigned `spending_key` as the spending key. The account's own address can't
+be on the list at generation, since the spending key doesn't exist yet. These are
+statements, never refusals. The Rekey row says which arrangement
 applies: "Spending key and cosigner" for a cosigned rekey, and "These N, spending key
 alone; others need the cosigner" for `plus_cosigned`. Then
 generation sends the exact resolved values with `expected_fingerprint` and
@@ -1625,7 +1638,7 @@ other result generates as entered. After generation the operator can save a
 `aplane.boundary-receipt.v1` receipt beside where apadmin runs. It names the saved
 address, documents the account, and cannot restore it.
 
-**apshell.** `generate aplane.falcon1024-b.v1 boundary=<file>` reads the file locally and
+**apshell.** `generate aplane.falcon1024-b.v1 --boundary <file>` reads the file locally and
 shows a summary labelled as local, because the guarantee is weaker than apadmin's
 review: the signer has not seen it, and a cosigner name stays unresolved until creation.
 The summary lists a rekey-to list's addresses and, on a cosigned account, says the
@@ -1634,7 +1647,7 @@ that authority, and apshell confirms the result
 against it, reporting an account it cannot confirm. The file's values are literal, so
 they skip this client's alias and set expansion. Results show the parameters the signer
 stored and the authority IDs it reports in `/keys`: apshell derives neither, because
-routing and identity stay daemon concerns. `result=<file>` saves that as
+routing and identity stay daemon concerns. `--result <file>` saves that as
 `aplane.generation-result.v1`, which deliberately has no fingerprints or digest. Only
 apadmin's IPC workflow can issue a full receipt. Interactive confirmation is not an
 authorization, and unattended callers skip it.
@@ -1657,7 +1670,7 @@ policy says only that it is custom, because its conditions are the author's code
 - `docs/ARCH_POLICY.md` — signer and cosigner policy domains that gate signature
   release.
 - `docs/ARCH_NETWORKS.md` — network context and genesis-hash resolution.
-- `docs/ARCH_GUARDED.md` — the guarded/cosigner account choreography.
+- `docs/ARCH_COSIGNED.md` — the cosigned/cosigner account choreography.
 - `docs/DEV_KEYTYPES.md` — how to add a key type (where these axes become
   concrete decisions).
 - [ARCH_CRYPTO.md](ARCH_CRYPTO.md) - Full cryptographic subsystem documentation

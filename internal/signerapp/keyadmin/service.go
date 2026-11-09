@@ -207,7 +207,7 @@ func (s Service) GenerateReviewedKey(ctx context.Context, keyType string, params
 	if err := checkGenerationAllowed(activeKeyPaths, keyType); err != nil {
 		return nil, err
 	}
-	if err := s.checkBoundaryRequirements(creation); err != nil {
+	if err := s.checkGenerationRequirements(creation); err != nil {
 		return nil, err
 	}
 	if err := checkReviewedValues(keyType, params, reviewed); err != nil {
@@ -302,12 +302,12 @@ func checkReviewedValues(keyType string, params map[string]string, reviewed Revi
 	return nil
 }
 
-// checkBoundaryRequirements applies the signer's generation settings to every
+// checkGenerationRequirements applies the signer's generation settings to every
 // per-key type, the general type and the plain hosts: an account whose
 // parameters choose its contract. The plain program has no overlay contract, so
 // it is neither contained nor cosigned. Expert templates, whose program the
 // operator installed, and every other type pass through.
-func (s Service) checkBoundaryRequirements(creation *resolvedCreation) *Error {
+func (s Service) checkGenerationRequirements(creation *resolvedCreation) *Error {
 	if creation == nil || !creation.perKey {
 		return nil
 	}
@@ -315,12 +315,12 @@ func (s Service) checkBoundaryRequirements(creation *resolvedCreation) *Error {
 	if creation.instance != nil {
 		metadata = creation.instance.Bounded
 	}
-	requireContained, requireCosigner := s.Runtime.Config().BoundaryRequirements()
+	requireContained, requireCosigner := s.Runtime.Config().GenerationRequirements()
 	if requireContained && (metadata == nil || !metadata.Contained()) {
-		return &Error{Kind: ErrorInvalidInput, Message: "this signer requires new accounts to pay only listed recipients and to refuse rekeys or take only listed ones (boundary_require_contained)"}
+		return &Error{Kind: ErrorInvalidInput, Message: "this signer requires new accounts to pay only listed recipients and to refuse rekeys or take only listed ones (require_contained)"}
 	}
 	if requireCosigner && (metadata == nil || metadata.Cosigner == nil) {
-		return &Error{Kind: ErrorInvalidInput, Message: "this signer requires new accounts to have a cosigner (boundary_require_cosigner)"}
+		return &Error{Kind: ErrorInvalidInput, Message: "this signer requires new accounts to have a cosigner (require_cosigner)"}
 	}
 	return nil
 }

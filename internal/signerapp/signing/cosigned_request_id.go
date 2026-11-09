@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-func guardedRequestID(prefix, supplied string) string {
+func cosignedRequestID(prefix, supplied string) string {
 	if supplied != "" {
 		return supplied
 	}

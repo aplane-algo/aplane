@@ -763,9 +763,10 @@ cosigner's address:
    should use, taken from `endpoint.advertise_url` when it is configured.
 2. **On the primary signer:** choose a key type that takes a cosigner: the
    general bounded type (`aplane.falcon1024-b.v1`, enabled by default, with
-   the Corridor preset) or the guarded type, which must be enabled first.
-   In apadmin, **Generate account**, select that type, open the **Cosigner**
-   field, and choose **Use key file...** (or **Paste public
+   the Corridor preset) or a plain host (`aplane.falcon1024.v1` or
+   `aplane.ed25519.v1`), which must be enabled first. In apadmin, **Generate
+   account**, select that type, open **Require a cosigner (Falcon-1024)**, and
+   choose **Use key file...** (or **Paste public
    JSON...**). Compare the complete Witness Key ID with the cosigner, then
    import. The account form returns with the cosigner filled in and the other
    parameters kept. A key that is already imported is offered under its
@@ -911,7 +912,7 @@ one-line notice, and forwards its arguments unchanged.
 ### cosigner status
 
 Run `cosigner status` in apshell to inspect current cosigner connections and the
-primary signer's guarded-account requirements. It queries configured endpoints
+primary signer's cosigned-account requirements. It queries configured endpoints
 without changing client configuration, credentials, SSH trust, or cached keys.
 Unknown SSH hosts require separate interactive setup with `endpoints add`.
 
@@ -970,7 +971,7 @@ known-hosts flow.
 `endpoints discover-cosigners` is a read-only diagnostic. It queries configured
 cosigner endpoints over SSH with the client's enrolled key, validates the advertised
 Witness Key IDs, and prints live results. It does not update `endpoints.yaml`
-or the connected signer's generation catalog. Guarded and bounded-cosigner
+or the connected signer's generation catalog. Cosigned and bounded-cosigner
 operations perform this discovery automatically for the keys they require.
 
 **Examples:**
@@ -1026,7 +1027,7 @@ apshell prints.
 
 ### apadmin cosigner
 
-Manage public cosigner witness references used by guarded-account generation:
+Manage public cosigner witness references used by cosigned-account generation:
 
 ```text
 apadmin cosigner export <witness-key-id> [output-json]
@@ -1065,8 +1066,8 @@ passphrase separate fail before authentication.
 The interactive signer-side `apadmin` TUI provides the same public-reference
 catalog under `e: Cosigners`. It uses aliases for navigation, shows the complete
 grouped Witness Key ID on trust screens, and can start generation of a
-compatible guarded or bounded-cosigner account without exposing a raw Falcon
-public-key input. The account-generation **Cosigner** field also offers **Use
+compatible cosigned or bounded-cosigner account without exposing a raw Falcon
+public-key input. The account-generation **Require a cosigner** field also offers **Use
 key file...** and **Paste public JSON...**, which import a key in place and
 return to the form with it selected; a key that is already imported is offered
 under its existing name.
@@ -1169,20 +1170,21 @@ generate ed25519
 generate falcon1024
 generate aplane.htlc.v1 hash=SHA256_HEX recipient=ADDR1 refund_address=ADDR2 timeout_round=50000000
 generate aplane.falcon1024-b.v1 spend_effects=pay rekey_authority=spending_key recipients="@validators"   # address[] params resolve aliases and sets
-generate aplane.falcon1024-b.v1 boundary=rules.yaml result=account.json
+generate aplane.falcon1024-b.v1 --boundary rules.yaml --result account.json
 generate aplane.falcon1024.v1 cosigner=<witness-key-id> rekey_authority=spending_key   # a cosigned plain host (enable the type first)
 ```
 
 Run `keytypes` to see available key types and required generation parameters.
 Use the full key type shown by `keytypes`.
 For installing or activating optional key types, and for boundary files, see
-[USER_KEYTYPES.md](USER_KEYTYPES.md). `boundary=` and `result=` are apshell options for
-key types the signer reports as per-key. `boundary=` needs a type whose requests take
-the boundary grammar, which today means `aplane.falcon1024-b.v1`; a plain host
-(`aplane.falcon1024.v1`, `aplane.ed25519.v1`) is per-key but takes its parameters
-directly and refuses `boundary=`. For every other key type they are ordinary parameters. With either option, apshell reads the
-signer's key types first. If it can't, or the signer doesn't report the type, it stops and
-generates nothing.
+[USER_KEYTYPES.md](USER_KEYTYPES.md). `--boundary <file>` and `--result <file>` are
+apshell's own flags, written `--flag file` or `--flag=file`; every `param=value` goes to
+the signer. `--boundary` needs a type whose requests take the boundary grammar, which
+today means `aplane.falcon1024-b.v1`, and sets every parameter, so it takes no others. A
+plain host (`aplane.falcon1024.v1`, `aplane.ed25519.v1`) takes its parameters directly.
+With `--boundary`, apshell reads the signer's key types first; if it can't, or the type
+takes no boundary file, it stops and generates nothing. `--result` saves what the signer
+stored, for any key type. Any other `--` argument is refused.
 
 ---
 
@@ -1351,8 +1353,8 @@ App budget: 150 consumed / 700 added
 
 Execution traces require algod to support the simulate trace endpoint (AVM v9+). If the node does not support traces, the trace sections are omitted and all other sections still display normally.
 
-Guarded simulation follows the same user and cosigner component approval flow as
-guarded submission. Without user auto-approval, a connected admin client must
+Cosigned simulation follows the same user and cosigner component approval flow as
+cosigned submission. Without user auto-approval, a connected admin client must
 approve the request.
 
 ---

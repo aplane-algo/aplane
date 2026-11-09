@@ -234,8 +234,8 @@ func TestPolicyWorkflowImportsStayInOwningBoundaries(t *testing.T) {
 				if err != nil {
 					return err
 				}
-				allowed, guarded := rules[importPath]
-				if guarded && !allowed[dir] {
+				allowed, cosigned := rules[importPath]
+				if cosigned && !allowed[dir] {
 					t.Errorf("%s imports %s outside the policy workflow ownership allowlist", relative, importPath)
 				}
 			}

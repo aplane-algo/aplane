@@ -204,7 +204,7 @@ general bounded `aplane.falcon1024-b.v1` are enabled by default.
 
 All newly generated APlane LogicSig accounts are kept off the Ed25519 curve at
 generation time by the TEAL v13 compiler's auto-salting assembler. Straight
-Falcon, Ed25519 LogicSig, guarded cosigner, composed DSA, and explicit
+Falcon, Ed25519 LogicSig, cosigned cosigner, composed DSA, and explicit
 `derivation_version: 3` template paths compile through algod, accept the final
 compiler-produced bytecode only when the reported address matches it, and
 reject an on-curve result. The key file records

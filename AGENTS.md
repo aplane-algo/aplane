@@ -16,7 +16,7 @@ Before making architectural, protocol, storage, or refactor-sensitive changes, r
 - `docs/ARCH_SECURITY.md`: authentication, SSH transport, client enrollment, audit log, and the product authorization model
 - `docs/ARCH_CRYPTO.md`: cryptographic design
 - `docs/ARCH_KEYTYPES.md`: key type dimensions and resolution axes, key type identifiers, and LogicSig providers
-- `docs/ARCH_GUARDED.md`: guarded signing and cosigner nodes, and the Corridor v1 profile
+- `docs/ARCH_COSIGNED.md`: cosigned signing and cosigner nodes, and the Corridor v1 profile
 - `docs/ARCH_BOUNDED_DSA.md`: bounded DSA contracts, effect inventory, and canonical encodings
 - `docs/ARCH_NETWORKS.md`: network context tokens, genesis-hash mapping, and network-scoped policy behavior
 - `docs/ARCH_SHELL.md`: client side: engine, REPL and parsing contracts, app interaction, and the MCP surface
@@ -265,7 +265,7 @@ so a PR that changes modeled code keeps the correspondence itself.
 | `internal/genstore/` (commit, root commit, reconcile, quarantine), `internal/storepass/rotate.go`, `internal/crypto/store_root.go` | `store_root_commit.tla` |
 | store-commit callers (`internal/signerapp/admin/`, `backupadmin/`), `internal/signerapp/templates/reload.go`, `internal/keystore/file.go`, `daemon/admin_services.go` | `recovery_binding.tla` |
 | `internal/signerapp/enrollqueue/`, `enrollment/service.go`, `productruntime/runtime.go` (registry and queue publication), `daemon/server.go` (approve/reject/import) | `enrollment_queue.tla` |
-| `internal/signerapp/signing/bounded_cosigner.go`, `component_assemble.go` (passthrough), `internal/engine/guarded/submit.go` | `bounded_cosigner.tla` |
+| `internal/signerapp/signing/bounded_cosigner.go`, `component_assemble.go` (passthrough), `internal/engine/cosigned/submit.go` | `bounded_cosigner.tla` |
 | `internal/engine/plugin_*.go`, `internal/apshellcli/external_plugins.go`, `plugin_group_review.go`, `internal/apshellapp/submission.go` | `plugin_signing.tla` |
 | `internal/signerapp/signing/planner.go`, `execution.go`, `service.go`, `gate.go`, `internal/signerapp/policyeval/`, `pkg/signerapi/` | `sign_boundary.tla`, `policy_precedence.tla`, `composition.tla` |
 | `internal/signerapp/signing/rotating_release.go`, `rotating_flow.go` (leaf choice), `rotating_tables.go` | `rotating_leaf_release.tla` |
@@ -387,7 +387,7 @@ See `docs/ARCH_STORE.md` for the full on-disk layout and `docs/ARCH_CONTRACTS.md
 - `ARCH_SECURITY.md`: Authentication, SSH transport, client enrollment, audit log, and the product authorization model
 - `ARCH_CRYPTO.md`: Cryptographic design
 - `ARCH_KEYTYPES.md`: Key type dimensions and resolution axes, key type identifiers, and LogicSig providers
-- `ARCH_GUARDED.md`: Guarded signing and cosigner nodes, and the Corridor v1 profile
+- `ARCH_COSIGNED.md`: Cosigned signing and cosigner nodes, and the Corridor v1 profile
 - `ARCH_BOUNDED_DSA.md`: Bounded DSA contracts, effect inventory, and canonical encodings
 - `ARCH_NETWORKS.md`: Network context tokens, genesis-hash mapping, and network-scoped policy behavior
 - `ARCH_SHELL.md`: Client side: engine, REPL and parsing contracts, app interaction, and the MCP surface

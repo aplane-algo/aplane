@@ -14,12 +14,12 @@ import (
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
-// TestGuardedSignerCacheViewDelegation pins the engine→guarded cache-view
+// TestCosignedSignerCacheViewDelegation pins the engine→cosigned cache-view
 // wiring: each SignerCacheView method must surface the matching signer-cache
 // field. A transposed or mistargeted delegation here would only fail at
-// guarded submit time ("missing cosigner_component_key_type metadata" or wrong
+// cosigned submit time ("missing cosigner_component_key_type metadata" or wrong
 // dummy budgeting), so it is asserted directly.
-func TestGuardedSignerCacheViewDelegation(t *testing.T) {
+func TestCosignedSignerCacheViewDelegation(t *testing.T) {
 	addr := testAddress(1).String()
 	nativeFalconAddr := testAddress(2).String()
 	cosignerHex := testCosignerPublicKeyHex(0xd6)
@@ -39,7 +39,7 @@ func TestGuardedSignerCacheViewDelegation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewEngine() error = %v", err)
 	}
-	view := guardedSignerCacheView{eng.Core}
+	view := cosignedSignerCacheView{eng.Core}
 	if got, ok := view.AuthorizationKind(nativeFalconAddr); !ok || got != string(algorithm.AuthorizationNativePQ) {
 		t.Fatalf("AuthorizationKind(native Falcon) = %q/%v, want %s/true", got, ok, algorithm.AuthorizationNativePQ)
 	}

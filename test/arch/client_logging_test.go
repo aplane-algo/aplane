@@ -51,10 +51,10 @@ var scopedOutputPaths = []string{
 // a diagnostic here; log it. An entry that stops matching fails the test, so the
 // list shrinks as these writers become required.
 var directOutputExceptions = map[string]map[string]string{
-	"internal/engine/guarded/submit.go": {"os.Stdout": "result fallback when the caller passes no writer"},
-	"internal/signerclient/client.go":   {"os.Stdout": "progress fallback when the caller sets no ProgressOut"},
-	"internal/signing/ed25519.go":       {"os.Stdout": "result fallback when the caller passes no writer"},
-	"internal/signing/simulate.go":      {"os.Stdout": "result fallback when the caller passes no writer"},
+	"internal/engine/cosigned/submit.go": {"os.Stdout": "result fallback when the caller passes no writer"},
+	"internal/signerclient/client.go":    {"os.Stdout": "progress fallback when the caller sets no ProgressOut"},
+	"internal/signing/ed25519.go":        {"os.Stdout": "result fallback when the caller passes no writer"},
+	"internal/signing/simulate.go":       {"os.Stdout": "result fallback when the caller passes no writer"},
 }
 
 // loggingHosts install a handler. Each must call clientlog.Install in its main

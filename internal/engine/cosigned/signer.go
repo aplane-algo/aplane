@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-// Package guarded implements the client-side orchestration of APlane's
-// two-party guarded (cosigner) signing flow: building the canonical group,
-// collecting user and cosigner component signatures, requesting non-guarded
+// Package cosigned implements the client-side orchestration of APlane's
+// two-party cosigned (cosigner) signing flow: building the canonical group,
+// collecting user and cosigner component signatures, requesting non-cosigned
 // signatures over the frozen bytes, and assembling the final signed group.
 //
 // It is deliberately isolated from internal/engine so the safety-critical
-// guarded path has a small, checkable dependency surface (pinned by
+// cosigned path has a small, checkable dependency surface (pinned by
 // test/arch). It reaches client state only through the narrow SignerCacheView
 // and the concrete connection/cache/algod values passed in Deps; it must not
 // import internal/engine.
-package guarded
+package cosigned
 
 import (
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
@@ -27,21 +27,21 @@ const (
 	authorizationNativePQ = "native_pq"
 )
 
-// SignerCacheView is the read-only view of the signer key cache that guarded
+// SignerCacheView is the read-only view of the signer key cache that cosigned
 // orchestration needs: per-address signer-advertised metadata used to detect
-// guarded targets and size LogicSig budgets. It is implemented by the engine
+// cosigned targets and size LogicSig budgets. It is implemented by the engine
 // over its concurrency-guarded signer cache.
 type SignerCacheView interface {
 	// AuthorizationKind returns the cached authorization envelope and whether
 	// the address is present. A present address with an empty kind is invalid.
 	AuthorizationKind(address string) (string, bool)
 	// SigningFlow returns the signer-advertised signing_flow for an address,
-	// or "" if the address is not a guarded key.
+	// or "" if the address is not a cosigned key.
 	SigningFlow(address string) string
 	// CosignerComponentKeyType returns the cosigner component key type advertised
-	// for a guarded account.
+	// for a cosigned account.
 	CosignerComponentKeyType(address string) (string, bool)
-	// CosignerPublicKey returns the cosigner public key embedded in a guarded
+	// CosignerPublicKey returns the cosigner public key embedded in a cosigned
 	// account's LogicSig, as advertised in inventory.
 	CosignerPublicKey(address string) (string, bool)
 	// BoundedContract returns the advertised bounded authorization contract:
@@ -55,7 +55,7 @@ type SignerCacheView interface {
 	LogicSigResourceProfile(address string) (lsigresource.Profile, bool)
 }
 
-// Deps are the collaborators guarded orchestration needs from the client.
+// Deps are the collaborators cosigned orchestration needs from the client.
 type Deps struct {
 	Conn             *connect.ConnectionState
 	Algod            *algod.Client
@@ -65,7 +65,7 @@ type Deps struct {
 	HostKeyApproval  connect.HostKeyApproval
 }
 
-// Signer orchestrates the client side of guarded signing. Construct one per
+// Signer orchestrates the client side of cosigned signing. Construct one per
 // operation with New; it holds no mutable state of its own.
 type Signer struct {
 	conn             *connect.ConnectionState

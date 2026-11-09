@@ -9,7 +9,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/aplane-algo/aplane/internal/engine/guarded"
+	"github.com/aplane-algo/aplane/internal/engine/cosigned"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 
 	"github.com/algorand/go-algorand-sdk/v2/transaction"
@@ -51,7 +51,7 @@ func (e *Engine) PrepareRekey(ctx context.Context, params RekeyParams) (*Transac
 		case flow == signerapi.SigningFlowRotating1:
 			return nil, checkResult, fmt.Errorf("cannot rekey to %s: it is a rotating account, whose address authorizes only itself",
 				params.To)
-		case !guarded.CanAuthorizeOtherAccounts(flow):
+		case !cosigned.CanAuthorizeOtherAccounts(flow):
 			return nil, checkResult, fmt.Errorf("cannot rekey to %s: it uses signing flow %q, which this client cannot use as another account's authorizer",
 				params.To, flow)
 		}

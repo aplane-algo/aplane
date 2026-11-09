@@ -181,18 +181,26 @@ func reviewRekey(review PrepareGenerateResultMessage) (label, consequence string
 	plain := review.Bounded.Contract == boundedmeta.PlainContract
 	if review.Bounded.RekeyList {
 		count := len(rekeyToList(review))
-		consequence = "The spending key alone can hand the account to any of them, at any time."
+		these, them := fmt.Sprintf("these %d addresses", count), "any of them"
+		if count == 1 {
+			these, them = "this address", "it"
+		}
+		consequence = "The spending key alone can hand the account to " + them + ", at any time."
 		if setting == boundedmeta.RekeySpendingKey {
 			// Plus cosigned: the listed targets, and any other the cosigner allows.
-			return fmt.Sprintf("These %d, spending key alone; others need the cosigner", count),
-				"The spending key alone can hand the account to any of them. Any other rekey needs both online keys."
+			short := fmt.Sprintf("These %d", count)
+			if count == 1 {
+				short = "This one"
+			}
+			return short + ", spending key alone; others need the cosigner",
+				"The spending key alone can hand the account to " + them + ". Any other rekey needs both online keys."
 		}
 		// On a cosigned account the label's "spending key alone" says the cosigner
 		// is not asked; the screen has no room to say it twice.
 		if isTimelockPolicy(review.Bounded.Layer3Policy) {
 			consequence += " That is a way around the lock."
 		}
-		return fmt.Sprintf("Only these %d addresses, spending key alone", count), consequence
+		return "Only " + these + ", spending key alone", consequence
 	}
 	switch setting {
 	case boundedmeta.RekeyRefused:
@@ -325,6 +333,7 @@ func (m Model) renderGenerateReviewDetails() string {
 		sb.WriteString(label + ":\n  " + value + "\n")
 	}
 	field("Policy", review.Bounded.Layer3Policy)
+	field("Rekey protection", wrapText(reviewRekeyProtection(*review), 64))
 	field("Cosigner Witness Key ID", review.CosignerKeyID)
 	if review.BoundaryDigest != "" {
 		field("Grammar fingerprint", review.ReviewFingerprint)
@@ -343,17 +352,26 @@ func (m Model) renderGenerateReviewDetails() string {
 		}
 	}
 	if targets := rekeyToList(*review); len(targets) > 0 {
+		postQuantum, known := reviewSpendingKeyPostQuantum(*review)
 		sb.WriteString(fmt.Sprintf("Rekey-to addresses (%d):\n", len(targets)))
 		for _, target := range targets {
 			sb.WriteString("  " + target + "\n")
-			if note := m.rekeyTargetNote(target); note != "" {
-				sb.WriteString("    " + note + "\n")
+			if note := m.rekeyTargetNote(target, postQuantum && known); note != "" {
+				sb.WriteString(indentLines(wrapText(note, 64), "    ") + "\n")
 			}
 		}
+		cosigner := ""
+		if review.Bounded.CosignerRequired {
+			cosigner = ", without the cosigner and outside its policy"
+		}
+		unknown := ""
+		if !known {
+			unknown = " This client can't tell whether this key type's spending key is post-quantum; " +
+				"if it is, list only post-quantum keys, since an address doesn't reveal its key type."
+		}
 		sb.WriteString(wrapText("Each listed address can take the account over with the spending key alone, "+
-			"without the cosigner and outside any cosigner's policy. The list is in the key's backup and can't be used without it. "+
-			"For a post-quantum account, list only post-quantum keys: this signer can't tell an address's "+
-			"key type unless it holds it.", 68) + "\n")
+			"at any time"+cosigner+"; in a mesh, each is an exit. "+
+			"The list is in the key's backup and can't be used without it."+unknown, 68) + "\n")
 	}
 	return m.renderPopup(72, sb.String())
 }
@@ -461,19 +479,85 @@ func (m Model) saveGeneratedReceipt() Model {
 }
 
 // rekeyTargetNote flags a listed address this signer holds: a compromise of the
-// signer could then take the account through it.
-func (m Model) rekeyTargetNote(address string) string {
+// signer could then take the account through it. On a post-quantum account it
+// also says which held targets are classical, and asks the operator to confirm
+// the rest: an address alone doesn't reveal its key type.
+func (m Model) rekeyTargetNote(address string, postQuantum bool) string {
 	for _, key := range m.keylist.keys {
 		if key.Address != address {
 			continue
 		}
 		note := "held by this signer: a compromise of this signer can take the account through it"
-		if strings.Contains(strings.ToLower(key.KeyType), "ed25519") {
-			note += "; an Ed25519 key, so the account would be classical after a handover"
+		if !postQuantum {
+			return note
+		}
+		switch pq, known := keyTypePostQuantum(key.KeyType); {
+		case known && !pq:
+			note += "; a classical key, so the account would be classical after a handover"
+		case !known:
+			note += "; confirm it is a post-quantum key"
 		}
 		return note
 	}
+	if postQuantum {
+		return "not held by this signer: confirm it is a post-quantum key"
+	}
 	return ""
+}
+
+// keyTypePostQuantum classifies a held key's spending authority, where this
+// client knows it: the native types and the LogicSig bases, and the general
+// bounded type, whose base is Falcon-1024.
+func keyTypePostQuantum(keyType string) (postQuantum, known bool) {
+	if construction, ok := sigconstruction.ForBaseKeyType(keyType); ok {
+		return construction.PostQuantum(), true
+	}
+	switch strings.ToLower(strings.TrimSpace(keyType)) {
+	case "ed25519":
+		return false, true
+	case "falcon1024", boundary.KeyTypeV1:
+		return true, true
+	}
+	return false, false
+}
+
+// reviewSpendingKeyPostQuantum reports whether the new account's spending key
+// is post-quantum, where the key type tells this client: a plain host's base,
+// and the general type's Falcon-1024. The contract alone doesn't: an expert
+// template may put bounded2 on an Ed25519 base, and the inventory doesn't name
+// a template's base.
+func reviewSpendingKeyPostQuantum(review PrepareGenerateResultMessage) (postQuantum, known bool) {
+	return keyTypePostQuantum(review.KeyType)
+}
+
+// reviewRekeyProtection says which kind of protection the rekey setting is: only
+// a refused rekey and only these bound where authority can go independently of
+// the online keys.
+func reviewRekeyProtection(review PrepareGenerateResultMessage) string {
+	profile := review.Bounded
+	switch setting := boundedmeta.RekeySetting(profile.Rekey); {
+	case setting != boundedmeta.RekeyRefused && setting != boundedmeta.RekeySpendingKey:
+		return "This client cannot describe that rekey setting, so it claims no protection for it."
+	case profile.RekeyList && setting == boundedmeta.RekeyRefused:
+		return "Independent of the online keys: rekeys go only to the listed addresses."
+	case profile.RekeyList:
+		return "As strong as its two online keys: together they can rekey it anywhere their policies allow."
+	case setting == boundedmeta.RekeyRefused:
+		return "Independent of the online keys: no key can rekey it."
+	case profile.CosignerRequired:
+		return "As strong as its two online keys: together they can rekey it anywhere their policies allow."
+	default:
+		return "As strong as the spending key: it alone can rekey it anywhere."
+	}
+}
+
+// indentLines indents every line of text.
+func indentLines(text, prefix string) string {
+	lines := strings.Split(text, "\n")
+	for i, line := range lines {
+		lines[i] = prefix + line
+	}
+	return strings.Join(lines, "\n")
 }
 
 // transfersLabel names what the account may spend and its fee limit. A plain

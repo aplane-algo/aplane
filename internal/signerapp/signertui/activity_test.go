@@ -351,7 +351,7 @@ func TestConnectionBoundariesClearCosignerWorkflowState(t *testing.T) {
 				paramName:           "cosigner",
 				returnView:          ViewGenerateParams,
 				envelopeJSON:        "public-envelope",
-				pendingKeyType:      "guarded.v1",
+				pendingKeyType:      "cosigned.v1",
 				pendingWitnessID:    "old-id",
 				managerStatus:       "old status",
 				generateTypeIndices: []int{1},

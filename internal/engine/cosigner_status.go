@@ -8,14 +8,14 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/config"
-	"github.com/aplane-algo/aplane/internal/engine/guarded"
+	"github.com/aplane-algo/aplane/internal/engine/cosigned"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 // CosignerStatusResult retains unavailable account inventory separately from an
 // empty, successfully read inventory. Neither the inventory nor routes persist.
 type CosignerStatusResult struct {
-	guarded.RouteStatus
+	cosigned.RouteStatus
 	AccountInventory string `json:"account_inventory"`
 	InventoryError   string `json:"inventory_error,omitempty"`
 }
@@ -39,7 +39,7 @@ func (e *Engine) CosignerStatus(ctx context.Context, registry config.ClientEndpo
 			keys = inventory.Keys
 		}
 	}
-	inspector := guarded.New(guarded.Deps{Conn: e.Connection, EndpointRegistry: registry})
+	inspector := cosigned.New(cosigned.Deps{Conn: e.Connection, EndpointRegistry: registry})
 	result.RouteStatus = inspector.InspectRoutes(ctx, keys)
 	return result
 }

@@ -26,7 +26,7 @@ import (
 //   - shared client infrastructure via the embedded *Core (caches, network
 //     state, signer connection lifecycle, signer key cache)
 //   - domain command operations (payments, assets, apps, key management,
-//     guarded signing) defined as Engine methods
+//     cosigned signing) defined as Engine methods
 //
 // Callers should treat it as the single owner for apshell-side application
 // state, not as a transport-agnostic domain core.

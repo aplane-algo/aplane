@@ -178,7 +178,7 @@ func TestRenderEndpointsListOmitsCachedCosignerInventory(t *testing.T) {
 
 // TestEndpointAliasCommandsSeeEndpointsAddedElsewhere covers an endpoint that
 // another process adds after this shell started: once the shell has read the
-// registry, alias lookups and guarded routing must see the same endpoints.
+// registry, alias lookups and cosigned routing must see the same endpoints.
 func TestEndpointAliasCommandsSeeEndpointsAddedElsewhere(t *testing.T) {
 	dataDir := t.TempDir()
 	cfg := config.DefaultConfig()

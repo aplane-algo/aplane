@@ -280,7 +280,7 @@ func (m Model) renderCosignerReferences() string {
 	var body strings.Builder
 	body.WriteString(titleStyle.Render("Cosigner References"))
 	body.WriteString("\n")
-	body.WriteString(subtitleStyle.Render("Public witness authorities enrolled for guarded-account generation."))
+	body.WriteString(subtitleStyle.Render("Public witness authorities enrolled for cosigned-account generation."))
 	body.WriteString("\n\n")
 	if len(references) == 0 {
 		body.WriteString(wrapPlainText("No cosigner references enrolled. Press i to import a public envelope file or p to paste JSON.", m.tableWidth()) + "\n")
@@ -380,7 +380,7 @@ func (m Model) renderCosignerGenerateType() string {
 		return m.renderPopup(70, "Cosigner reference is no longer available")
 	}
 	keyTypes := getServerKeyTypes()
-	header := titleStyle.Render("Generate Guarded Account") + "\n\n" +
+	header := titleStyle.Render("Generate Cosigned Account") + "\n\n" +
 		"Cosigner: " + reference.Name + "  " + apadminapp.CompactWitnessKeyID(reference.ComponentKey) + "\n\n" +
 		"Choose a compatible account key type:\n\n"
 	var rows []string
@@ -408,7 +408,7 @@ func (m Model) renderCosignerRemoveConfirm() string {
 	var body strings.Builder
 	body.WriteString(warningStyle.Render("REMOVE COSIGNER REFERENCE"))
 	body.WriteString("\n\n")
-	body.WriteString("Remove alias " + reference.Name + " from guarded-account generation?\n\n")
+	body.WriteString("Remove alias " + reference.Name + " from cosigned-account generation?\n\n")
 	body.WriteString("Witness Key ID:\n")
 	body.WriteString(wrapPlainText(groupedWitnessKeyID(reference.ComponentKey), m.popupBodyWidth(80)))
 	body.WriteString("\n\n")

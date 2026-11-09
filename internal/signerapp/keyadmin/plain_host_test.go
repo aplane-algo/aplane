@@ -105,18 +105,18 @@ func TestPlainHostGeneratesFromAReview(t *testing.T) {
 
 // The boundary requirements govern the plain hosts too, the plain program
 // included: it has no cosigner and contains nothing.
-func TestBoundaryRequirementsGovernPlainHosts(t *testing.T) {
+func TestGenerationRequirementsGovernPlainHosts(t *testing.T) {
 	ir, service, _ := setupPlainHost(t)
 	cosigned := map[string]string{cosignerrefs.ParamCosignerName: prepareTestReference, plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused}
 	uncosigned := map[string]string{plainhost.ParameterRekeyAuthority: plainhost.RekeyOnlyThese, plainhost.ParameterRekeyTo: listedTarget.String()}
 
-	ir.Config().SetBoundaryRequirements(false, true)
-	t.Cleanup(func() { ir.Config().SetBoundaryRequirements(false, false) })
+	ir.Config().SetGenerationRequirements(false, true)
+	t.Cleanup(func() { ir.Config().SetGenerationRequirements(false, false) })
 	for name, params := range map[string]map[string]string{"the plain program": nil, "an uncosigned plain host": uncosigned} {
-		if _, err := service.PrepareGenerateKey(plainHostKeyType, params); err == nil || !strings.Contains(err.Message, "boundary_require_cosigner") {
+		if _, err := service.PrepareGenerateKey(plainHostKeyType, params); err == nil || !strings.Contains(err.Message, "require_cosigner") {
 			t.Fatalf("%s: PrepareGenerateKey() error = %#v", name, err)
 		}
-		if _, err := service.GenerateKey(context.Background(), plainHostKeyType, params, nil); err == nil || !strings.Contains(err.Message, "boundary_require_cosigner") {
+		if _, err := service.GenerateKey(context.Background(), plainHostKeyType, params, nil); err == nil || !strings.Contains(err.Message, "require_cosigner") {
 			t.Fatalf("%s: GenerateKey() error = %#v", name, err)
 		}
 	}
@@ -125,8 +125,8 @@ func TestBoundaryRequirementsGovernPlainHosts(t *testing.T) {
 	}
 
 	// Every plain host spends anywhere, so none is contained.
-	ir.Config().SetBoundaryRequirements(true, false)
-	if _, err := service.PrepareGenerateKey(plainHostKeyType, cosigned); err == nil || !strings.Contains(err.Message, "boundary_require_contained") {
+	ir.Config().SetGenerationRequirements(true, false)
+	if _, err := service.PrepareGenerateKey(plainHostKeyType, cosigned); err == nil || !strings.Contains(err.Message, "require_contained") {
 		t.Fatalf("contained: PrepareGenerateKey() error = %#v", err)
 	}
 	assertNoKeys(t, service)

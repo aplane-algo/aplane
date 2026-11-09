@@ -77,12 +77,12 @@ func TestEngineIsTransitivelyUIFree(t *testing.T) {
 	}
 }
 
-// guardedAllowedImports is the pinned dependency surface of the isolated
-// guarded (cosigner) signing package. The guarded flow is the most
+// cosignedAllowedImports is the pinned dependency surface of the isolated
+// cosigned (cosigner) signing package. The cosigned flow is the most
 // safety-critical client path, so its imports are kept small and reviewed:
 // adding an entry here should be a conscious decision, and the package must
 // never import internal/engine (the facade that embeds it).
-var guardedAllowedImports = map[string]bool{
+var cosignedAllowedImports = map[string]bool{
 	modulePrefix + "/internal/cache":              true,
 	modulePrefix + "/internal/clientsign":         true,
 	modulePrefix + "/internal/config":             true,
@@ -96,41 +96,41 @@ var guardedAllowedImports = map[string]bool{
 	modulePrefix + "/pkg/signerapi":               true,
 }
 
-// TestGuardedPackageStaysIsolated pins the guarded package's dependency
+// TestCosignedPackageStaysIsolated pins the cosigned package's dependency
 // boundary: it must not import internal/engine (no cycle back into the facade
 // that embeds it), and every in-module import must be on the reviewed
-// allowlist. This keeps the safety-critical guarded orchestration auditable in
+// allowlist. This keeps the safety-critical cosigned orchestration auditable in
 // isolation.
-func TestGuardedPackageStaysIsolated(t *testing.T) {
+func TestCosignedPackageStaysIsolated(t *testing.T) {
 	imports := moduleImports(t)
-	imps, ok := imports[modulePrefix+"/internal/engine/guarded"]
+	imps, ok := imports[modulePrefix+"/internal/engine/cosigned"]
 	if !ok {
-		t.Fatal("internal/engine/guarded not found in module package list")
+		t.Fatal("internal/engine/cosigned not found in module package list")
 	}
 	for _, imp := range imps {
 		if imp == modulePrefix+"/internal/engine" {
-			t.Errorf("internal/engine/guarded imports internal/engine: the guarded package must stay isolated from the engine facade that embeds it")
+			t.Errorf("internal/engine/cosigned imports internal/engine: the cosigned package must stay isolated from the engine facade that embeds it")
 			continue
 		}
-		if strings.HasPrefix(imp, modulePrefix+"/") && !guardedAllowedImports[imp] {
-			t.Errorf("internal/engine/guarded imports %s, which is not on the reviewed guardedAllowedImports allowlist; add it there deliberately if the dependency is intended", imp)
+		if strings.HasPrefix(imp, modulePrefix+"/") && !cosignedAllowedImports[imp] {
+			t.Errorf("internal/engine/cosigned imports %s, which is not on the reviewed cosignedAllowedImports allowlist; add it there deliberately if the dependency is intended", imp)
 		}
 	}
 }
 
-// TestGuardedAllowedImportsStayCurrent fails when an allowlist entry is no
-// longer imported by the guarded package, so the pinned dependency surface
+// TestCosignedAllowedImportsStayCurrent fails when an allowlist entry is no
+// longer imported by the cosigned package, so the pinned dependency surface
 // stays exact instead of accumulating pre-authorized-but-unused entries that
 // could be silently re-introduced later without review.
-func TestGuardedAllowedImportsStayCurrent(t *testing.T) {
+func TestCosignedAllowedImportsStayCurrent(t *testing.T) {
 	imports := moduleImports(t)
 	current := make(map[string]bool)
-	for _, imp := range imports[modulePrefix+"/internal/engine/guarded"] {
+	for _, imp := range imports[modulePrefix+"/internal/engine/cosigned"] {
 		current[imp] = true
 	}
-	for allowed := range guardedAllowedImports {
+	for allowed := range cosignedAllowedImports {
 		if !current[allowed] {
-			t.Errorf("internal/engine/guarded no longer imports %s; remove it from guardedAllowedImports", allowed)
+			t.Errorf("internal/engine/cosigned no longer imports %s; remove it from cosignedAllowedImports", allowed)
 		}
 	}
 }

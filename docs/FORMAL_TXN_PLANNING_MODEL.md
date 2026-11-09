@@ -436,7 +436,7 @@ of the client's intended route.
 ### CS2: Exact Signed Group Routing
 
 The algod simulation input is byte-for-byte the complete executable group
-returned by ordinary signing and, for guarded flows, ordinary assembly.
+returned by ordinary signing and, for cosigned flows, ordinary assembly.
 
 ```text
 ClientSimulate(snapshot, request, approval_result, algod) = result =>
@@ -500,7 +500,7 @@ This model does not prove:
 - filesystem reload ordering,
 - server shutdown and runtime destruction ordering,
 - backup/restore behavior,
-- additional compliance-cosigner semantics beyond the current guarded and
+- additional compliance-cosigner semantics beyond the current cosigned and
   bounded-cosigner flows.
 
 Those belong in separate models or assumptions.
@@ -524,7 +524,7 @@ Implementation areas that should remain aligned with this model:
   sets `rekey_to` to the next stage, a mutation outside the canonicalization
   set above that the response reports separately; not modeled)
 - `internal/clientsign/submit.go`
-- `internal/engine/guarded/submit.go`
+- `internal/engine/cosigned/submit.go`
 - `internal/signing/simulate.go`
 - `pkg/signerapi`
 - `internal/signerclient`
@@ -543,7 +543,7 @@ High-value test anchors:
 - client simulation calls ordinary `/sign` and never a signer simulation route,
 - client algod receives the exact returned signed group,
 - missing client algod rejects before any signature request,
-- guarded simulation uses ordinary component signing and assembly,
+- cosigned simulation uses ordinary component signing and assembly,
 - simulation failure does not submit or automatically sign again.
 
 ## Open Questions

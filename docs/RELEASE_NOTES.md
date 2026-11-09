@@ -7,6 +7,46 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## Choosing overlays
+
+This release is install-fresh only.
+
+- apadmin's Generate form for a plain host or `aplane.falcon1024-b.v1` shows the overlay
+  choices: **Require a cosigner (Falcon-1024)**, optional unless a preset needs it and
+  cleared with Backspace; **Add rekey-to addresses**; and **Allow rekeys** (No, never, or
+  Yes, by the spending key, with the cosigner when there is one) or, with a list,
+  **Rekey-to option** (Only these addresses, or, with a cosigner, These, plus others
+  with the cosigner). On the general type the preset's bounds come first as one group;
+  the preset fills in the overlay choices and the operator can change them. Each type is
+  offered every setting it declares, and every field fits 80x24: a list field such as
+  recipients or rekey-to addresses no longer pushes a parameter form into the panel
+  scroller at that size.
+- apadmin's review details say which kind of protection the rekey setting is, and on a
+  post-quantum account name each held classical target and ask the operator to confirm
+  that the other listed targets are post-quantum. They say a listed key is an exit in a
+  mesh. These are statements, not refusals.
+- "Guarded" is now "cosigned" everywhere it named a cosigned account: the client package
+  `internal/engine/guarded` is `internal/engine/cosigned`, `docs/ARCH_GUARDED.md` is
+  `docs/ARCH_COSIGNED.md` (the MCP docs tool names it `ARCH_COSIGNED`), apshell's
+  `[GUARDED]` progress lines read `[COSIGNED]`, and apadmin's "Generate Guarded Account"
+  reads "Generate Cosigned Account". The SDKs rename their public API with no aliases:
+  `SignPreparedGuardedGroup` and `SimulatePreparedGuardedGroup` become
+  `SignPreparedCosignedGroup` and `SimulatePreparedCosignedGroup` (Python
+  `sign_prepared_cosigned_group`, TypeScript `signPreparedCosignedGroup`, and their
+  simulate twins), and every `Guarded*` type becomes `Cosigned*`. No wire value changes:
+  the flow label stays `cosigned1`. The old name is on `test/arch`'s retired list.
+- apshell's `generate` takes its own options as flags: `--boundary <file>` and
+  `--result <file>` (or `--flag=file`) replace `boundary=` and `result=`. Every
+  `param=value` now goes to the signer, so a template's own `boundary` or `result`
+  parameter reaches it, and only `--boundary` reads the signer's key types, once. Any
+  other `--` argument is refused. `--result` works for every key type.
+- The generation setting `boundary_require_cosigner` is now `require_cosigner`, beside
+  `require_contained`, in the product runtime config and the admin settings, since both
+  govern the plain hosts too; apadmin shows them as "Require contained accounts" and
+  "Require cosigned accounts". A config that sets an old name fails to load.
+- apshell's boundary summary names the key type, its result names the rekey setting and
+  any rekey-to list, and `generate`'s help names the plain hosts' parameters.
+
 ## Plain hosts replace the dedicated cosigned account
 
 This release is install-fresh only.
@@ -127,7 +167,7 @@ This release is install-fresh only.
   plus cosigned a non-empty list proof commits a rekey to the listed branch, which
   never falls through to the cosigner. Golden vector 3 in `ARCH_BOUNDED_DSA.md` now
   uses the plus cosigned shape.
-- `boundary_require_contained` still accepts only refused or only these accounts with
+- `require_contained` still accepts only refused or only these accounts with
   a recipient list. A spending-key account with a cosigner, and a plus cosigned one,
   are only as strong as their two online keys.
 - The cosigned flow is now `cosigned1`, replacing `bounded-cosigner1`, so a client
@@ -191,7 +231,7 @@ This release is install-fresh only.
   listed keys cooperate. apadmin's review and apshell's summary say so.
 - Boundary files take `rekey: {authority: only_these, to: [...]}`. `rekey.to` needs
   `only_these`, and `only_these` needs `rekey.to`. An `only_these` account with a recipient
-  list counts as contained for `boundary_require_contained`.
+  list counts as contained for `require_contained`.
 - The general type has 81 shapes: 34 allowlists, 30 timelocks and 17 limits-only. Every
   shape fingerprint, boundary digest and bounded template fingerprint has changed, because
   every bounded profile now encodes a list marker and a `listed_rekey` rule for each argument
@@ -302,8 +342,8 @@ This release is install-fresh only.
 - The type now has 56 shapes instead of 96. Spending-key shapes compile to the same
   programs with the same fingerprints and boundary digests. A review prepared before the
   upgrade is refused as changed; prepare it again.
-- `boundary_require_admin_key` is now `boundary_require_contained`, shown in apadmin as
-  "Bounded: require containment". A contained account refuses rekeys and has a recipient
+- `boundary_require_admin_key` is now `require_contained`, shown in apadmin as
+  "Require contained accounts". A contained account refuses rekeys and has a recipient
   list, so a timelock with no list does not qualify. Fees are capped per transaction, not
   in total, so containment does not stop a stolen key from burning the balance on fees. The runtime config is read strictly,
   so a config that still sets `boundary_require_admin_key` fails to load. The admin

@@ -610,7 +610,7 @@ func TestSignComponentCosignerPolicyAllowsSigning(t *testing.T) {
 	}
 }
 
-func TestSigningServiceAssembleGuardedDispatchesAfterValidation(t *testing.T) {
+func TestSigningServiceAssembleCosignedDispatchesAfterValidation(t *testing.T) {
 	_, err := (&Service{}).AssembleWithContext(context.Background(), signerapi.AssemblyRequest{
 		RequestID:     "asm-1",
 		GroupBytesHex: []string{"5458aa"},
@@ -623,15 +623,15 @@ func TestSigningServiceAssembleGuardedDispatchesAfterValidation(t *testing.T) {
 		}},
 	}, nil)
 	if err == nil || err.Kind != ErrorBadRequest {
-		t.Fatalf("AssembleGuardedWithContext() error = %#v, want bad request", err)
+		t.Fatalf("AssembleCosignedWithContext() error = %#v, want bad request", err)
 	}
 	if !strings.Contains(err.Message, "decode transaction") {
-		t.Fatalf("AssembleGuardedWithContext() error = %q, want decode transaction", err.Message)
+		t.Fatalf("AssembleCosignedWithContext() error = %q, want decode transaction", err.Message)
 	}
 
 	_, err = (&Service{}).AssembleWithContext(context.Background(), signerapi.AssemblyRequest{}, nil)
 	if err == nil || err.Kind != ErrorBadRequest {
-		t.Fatalf("AssembleGuardedWithContext(invalid) error = %#v, want bad request", err)
+		t.Fatalf("AssembleCosignedWithContext(invalid) error = %#v, want bad request", err)
 	}
 }
 
@@ -698,7 +698,7 @@ func newCosignedAssemblyFixture(t *testing.T, fill byte, entry canonical.Txn, ta
 // Assembly builds a cosigned target from its stored program and both
 // signatures, binds it to the account that authorizes it (here an account
 // rekeyed to the cosigned one), and preserves a matching passthrough unchanged.
-func TestAssembleDecodedGuardedVerifiesAndBuildsSignedGroup(t *testing.T) {
+func TestAssembleDecodedCosignedVerifiesAndBuildsSignedGroup(t *testing.T) {
 	sender := types.Address{18}.String()
 	receiver := types.Address{19}.String()
 	txns := groupedPaymentTransactions(t, sender, receiver)
@@ -832,7 +832,7 @@ func mustDecodeAddress(t *testing.T, address string) []byte {
 	return decoded[:]
 }
 
-func TestAssembleDecodedGuardedGeneratesRequestIDWhenMissing(t *testing.T) {
+func TestAssembleDecodedCosignedGeneratesRequestIDWhenMissing(t *testing.T) {
 	txn := paymentTransaction(t, types.Address{17}.String(), types.Address{18}.String(), 7)
 	groupBytesHex := []string{txnutil.EncodeWithPrefixHex(txn)}
 	group, decodeErr := canonical.DecodeGroupHex(groupBytesHex)
@@ -856,7 +856,7 @@ func TestAssembleDecodedGuardedGeneratesRequestIDWhenMissing(t *testing.T) {
 	}
 }
 
-func TestAssembleDecodedGuardedRejectsMismatchedPassthrough(t *testing.T) {
+func TestAssembleDecodedCosignedRejectsMismatchedPassthrough(t *testing.T) {
 	sender := types.Address{21}.String()
 	txn := paymentTransaction(t, sender, types.Address{22}.String(), 16)
 	wrongTxn := paymentTransaction(t, sender, types.Address{23}.String(), 17)
@@ -1281,7 +1281,7 @@ func TestLoadCosignerComponentKeyRejectsMismatchedPublicPrivateKey(t *testing.T)
 	}
 }
 
-func TestValidateGuardedPassthroughRequiresSignatureAndCanonical(t *testing.T) {
+func TestValidateCosignedPassthroughRequiresSignatureAndCanonical(t *testing.T) {
 	sender := types.Address{1}.String()
 	receiver := types.Address{2}.String()
 	txn := paymentTransaction(t, sender, receiver, 1)
@@ -1296,13 +1296,13 @@ func TestValidateGuardedPassthroughRequiresSignatureAndCanonical(t *testing.T) {
 
 	// Unsigned passthrough is rejected even though its TxID matches.
 	unsigned := hex.EncodeToString(msgpack.Encode(types.SignedTxn{Txn: txn}))
-	if _, err := validateGuardedPassthrough(context.Background(), signerapi.AssemblyPassthroughItem{TargetIndex: 0, SignedTxnHex: unsigned}, entry, notHeld); err == nil {
+	if _, err := validateCosignedPassthrough(context.Background(), signerapi.AssemblyPassthroughItem{TargetIndex: 0, SignedTxnHex: unsigned}, entry, notHeld); err == nil {
 		t.Fatal("unsigned passthrough: expected rejection, got nil")
 	}
 
 	// A signed passthrough whose txn matches the canonical entry is accepted.
 	signed := hex.EncodeToString(msgpack.Encode(types.SignedTxn{Txn: txn, Sig: types.Signature{0x01}}))
-	if _, err := validateGuardedPassthrough(context.Background(), signerapi.AssemblyPassthroughItem{TargetIndex: 0, SignedTxnHex: signed}, entry, notHeld); err != nil {
+	if _, err := validateCosignedPassthrough(context.Background(), signerapi.AssemblyPassthroughItem{TargetIndex: 0, SignedTxnHex: signed}, entry, notHeld); err != nil {
 		t.Fatalf("signed passthrough: unexpected error %v", err)
 	}
 
@@ -1311,14 +1311,14 @@ func TestValidateGuardedPassthroughRequiresSignatureAndCanonical(t *testing.T) {
 	cosignedSession := &componentKeyTestSession{keysByAddr: map[string]*coresigning.KeyMaterial{
 		sender: {Type: "aplane.falcon1024.v1", BoundedAuthorization: &boundedmeta.Metadata{Cosigner: &boundedmeta.CosignerAuthorization{}}},
 	}}
-	if _, err := validateGuardedPassthrough(context.Background(), signerapi.AssemblyPassthroughItem{TargetIndex: 0, SignedTxnHex: signed}, entry, cosignedSession); err == nil {
+	if _, err := validateCosignedPassthrough(context.Background(), signerapi.AssemblyPassthroughItem{TargetIndex: 0, SignedTxnHex: signed}, entry, cosignedSession); err == nil {
 		t.Fatal("cosigned-account passthrough: expected rejection, got nil")
 	}
 
 	// A non-not-found keystore error (e.g. locked session, decrypt failure) must
 	// fail closed rather than be treated as a foreign passthrough.
 	erroringSession := &componentKeyTestSession{err: fmt.Errorf("session locked")}
-	if _, err := validateGuardedPassthrough(context.Background(), signerapi.AssemblyPassthroughItem{TargetIndex: 0, SignedTxnHex: signed}, entry, erroringSession); err == nil {
+	if _, err := validateCosignedPassthrough(context.Background(), signerapi.AssemblyPassthroughItem{TargetIndex: 0, SignedTxnHex: signed}, entry, erroringSession); err == nil {
 		t.Fatal("keystore error passthrough: expected fail-closed error, got nil")
 	}
 }

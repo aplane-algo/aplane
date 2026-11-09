@@ -243,7 +243,7 @@ endpoints discover-cosigners
 ```
 
 Discovery is a read-only connectivity diagnostic. To make the cosigner key
-available when generating guarded accounts, export it on the cosigner node with
+available when generating cosigned accounts, export it on the cosigner node with
 `apadmin cosigner export` and explicitly import it on the signer node with
 `apadmin cosigner import`. Signing operations resolve the matching endpoint from
 live authenticated `/keys` responses.
@@ -584,7 +584,7 @@ Note: SSH paths are relative to the data directory (`$APSIGNER_DATA`). The `.ssh
 - Relative paths in config are resolved from the data directory
 - apadmin and apapprover connect via the IPC socket
 - `user_auto_approve` is the `User Auto-Approve` runtime admin setting persisted with product config
-- `boundary_require_contained` and `boundary_require_cosigner` set a minimum for new `aplane.falcon1024-b.v1` and plain host accounts. See [USER_KEYTYPES.md](USER_KEYTYPES.md#restricting-new-accounts)
+- `require_contained` and `require_cosigner` set a minimum for new `aplane.falcon1024-b.v1` and plain host accounts. See [USER_KEYTYPES.md](USER_KEYTYPES.md#restricting-new-accounts)
 - signer safety guards live in the product-local v1 JSON policy documents
 - See [Headless Operation](#headless-operation) for unattended deployment
 

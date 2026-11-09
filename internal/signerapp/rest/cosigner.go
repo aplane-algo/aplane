@@ -38,7 +38,7 @@ func (s Service) Assemble(ctx context.Context, ir *productruntime.Runtime, req s
 	if preErr != nil {
 		return nil, preErr
 	}
-	if roleErr := requireAccountSigningRole(ir, "guarded assembly"); roleErr != nil {
+	if roleErr := requireAccountSigningRole(ir, "cosigned assembly"); roleErr != nil {
 		return nil, roleErr
 	}
 	if s.Deps.NewSigningService == nil {

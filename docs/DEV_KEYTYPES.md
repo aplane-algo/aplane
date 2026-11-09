@@ -88,7 +88,7 @@ Terminology:
   signatures. Every production base is a construction of one primitive; see
   "Signature constructions" in [ARCH_KEYTYPES.md](ARCH_KEYTYPES.md).
 - `base_key_type` is not the account owner or a universal route for metadata,
-  key generation, mnemonic import, TEAL, or guarded assembly. The full
+  key generation, mnemonic import, TEAL, or cosigned assembly. The full
   `key_type` owns those semantics unless a narrower contract explicitly
   delegates one operation.
 - `RoutingFamily()` on Go provider types (backed by a `FamilyName` field/constant)

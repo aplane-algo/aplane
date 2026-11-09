@@ -40,8 +40,8 @@ func TestAdminRowsGroupEditableSettingsFirst(t *testing.T) {
 		"Lock-on-disconnect",
 		"Passphrase timeout",
 		"Color theme",
-		"Bounded: require containment",
-		"Bounded: require cosigner",
+		"Require contained accounts",
+		"Require cosigned accounts",
 	}
 	for i, want := range wantLabels {
 		if rows[i].label != want {

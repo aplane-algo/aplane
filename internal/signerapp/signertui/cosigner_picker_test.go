@@ -64,8 +64,8 @@ func TestCosignerParamHasNoSilentDefaultWithMultipleAuthorities(t *testing.T) {
 func TestEmptyCosignerSelectionUsesFriendlyValidationMessage(t *testing.T) {
 	defer setServerKeyTypes(nil)
 	setServerKeyTypes([]protocol.KeyTypeInfo{{
-		KeyType:                  "guarded.v1",
-		DisplayName:              "Guarded",
+		KeyType:                  "cosigned.v1",
+		DisplayName:              "Cosigned",
 		CosignerComponentKeyType: "witness.v1",
 		CreationParams: []protocol.TemplateParamInfo{{
 			Name: "cosigner", Label: "Cosigner", Type: "select", Required: true,
@@ -99,8 +99,8 @@ func TestEmptyCosignerSelectionUsesFriendlyValidationMessage(t *testing.T) {
 func TestGenerateCosignerParamOpensFriendlyPickerAndSubmitsWitnessID(t *testing.T) {
 	defer setServerKeyTypes(nil)
 	setServerKeyTypes([]protocol.KeyTypeInfo{{
-		KeyType:                  "guarded.v1",
-		DisplayName:              "Guarded",
+		KeyType:                  "cosigned.v1",
+		DisplayName:              "Cosigned",
 		CosignerComponentKeyType: "witness.v1",
 		CreationParams: []protocol.TemplateParamInfo{{
 			Name: "cosigner", Type: "select", Required: true,
@@ -145,8 +145,8 @@ func TestGenerateCosignerParamOpensFriendlyPickerAndSubmitsWitnessID(t *testing.
 func TestRawCosignerPublicKeyInputStartsEnrollmentWhenNoReferenceExists(t *testing.T) {
 	defer setServerKeyTypes(nil)
 	setServerKeyTypes([]protocol.KeyTypeInfo{{
-		KeyType:                  "guarded.v1",
-		DisplayName:              "Guarded",
+		KeyType:                  "cosigned.v1",
+		DisplayName:              "Cosigned",
 		CosignerComponentKeyType: "witness.v1",
 		CreationParams: []protocol.TemplateParamInfo{{
 			Name: "cosigner_public_key", Type: "bytes", Required: true, MaxLength: 64,
@@ -178,7 +178,7 @@ func TestRawCosignerPublicKeyInputStartsEnrollmentWhenNoReferenceExists(t *testi
 func TestCosignerImportResultRefreshesMetadataAndSelectsImportedWitness(t *testing.T) {
 	defer setServerKeyTypes(nil)
 	setServerKeyTypes([]protocol.KeyTypeInfo{{
-		KeyType:                  "guarded.v1",
+		KeyType:                  "cosigned.v1",
 		CosignerComponentKeyType: "witness.v1",
 		CreationParams: []protocol.TemplateParamInfo{{
 			Name: "cosigner_public_key", Type: "bytes", Required: true, MaxLength: 64,
@@ -205,7 +205,7 @@ func TestCosignerImportResultRefreshesMetadataAndSelectsImportedWitness(t *testi
 		t.Fatal("public envelope remained in transient state after import")
 	}
 	next, _ = m.Update(KeyTypesMsg{KeyTypes: []protocol.KeyTypeInfo{{
-		KeyType:                  "guarded.v1",
+		KeyType:                  "cosigned.v1",
 		CosignerComponentKeyType: "witness.v1",
 		CreationParams: []protocol.TemplateParamInfo{{
 			Name: "cosigner_public_key", Type: "bytes", Required: true, MaxLength: 64,
@@ -217,7 +217,7 @@ func TestCosignerImportResultRefreshesMetadataAndSelectsImportedWitness(t *testi
 	}
 
 	next, _ = m.Update(KeyTypesMsg{KeyTypes: []protocol.KeyTypeInfo{{
-		KeyType:                  "guarded.v1",
+		KeyType:                  "cosigned.v1",
 		CosignerComponentKeyType: "witness.v1",
 		CreationParams: []protocol.TemplateParamInfo{{
 			Name: "cosigner", Type: "select", Required: true,
@@ -337,7 +337,7 @@ func testTUIEnrollmentReference(t *testing.T) witness.PublicReference {
 	return reference
 }
 
-func newGuardedGenerationModel(references ...CosignerReferenceInfo) Model {
+func newCosignedGenerationModel(references ...CosignerReferenceInfo) Model {
 	return Model{
 		width:     100,
 		height:    40,
@@ -352,11 +352,11 @@ func newGuardedGenerationModel(references ...CosignerReferenceInfo) Model {
 	}
 }
 
-func setGuardedGenerationKeyType(t *testing.T) {
+func setCosignedGenerationKeyType(t *testing.T) {
 	t.Helper()
 	setServerKeyTypes([]protocol.KeyTypeInfo{{
-		KeyType:                  "guarded.v1",
-		DisplayName:              "Guarded",
+		KeyType:                  "cosigned.v1",
+		DisplayName:              "Cosigned",
 		CosignerComponentKeyType: witness.Falcon1024V1,
 		CreationParams: []protocol.TemplateParamInfo{
 			{Name: "cosigner", Type: "select", Required: true},
@@ -382,8 +382,8 @@ func writeTUISetupFile(t *testing.T, reference witness.PublicReference) string {
 // The account-creation picker offers the setup file every time, not only when
 // no reference exists yet, so the Cosigners manager is never a required step.
 func TestCosignerPickerOffersSetupFileAndPasteAlongsideReferences(t *testing.T) {
-	setGuardedGenerationKeyType(t)
-	m := newGuardedGenerationModel(CosignerReferenceInfo{Name: "treasury", ComponentKey: testWitnessID1, KeyType: witness.Falcon1024V1})
+	setCosignedGenerationKeyType(t)
+	m := newCosignedGenerationModel(CosignerReferenceInfo{Name: "treasury", ComponentKey: testWitnessID1, KeyType: witness.Falcon1024V1})
 
 	next, _ := m.handleGenerateParamsKeys(tea.KeyMsg{Type: tea.KeyEnter})
 	m = next.(Model)
@@ -419,9 +419,9 @@ func TestCosignerPickerOffersSetupFileAndPasteAlongsideReferences(t *testing.T) 
 // A setup file whose key is already imported is reused under its existing
 // name. Nothing is sent to the signer and the other parameters are kept.
 func TestAccountCreationReusesAlreadyImportedSetupFileKey(t *testing.T) {
-	setGuardedGenerationKeyType(t)
+	setCosignedGenerationKeyType(t)
 	reference := testTUIEnrollmentReference(t)
-	m := newGuardedGenerationModel(
+	m := newCosignedGenerationModel(
 		CosignerReferenceInfo{Name: "zeta", ComponentKey: reference.WitnessKeyID, KeyType: reference.KeyType},
 		CosignerReferenceInfo{Name: "treasury", ComponentKey: reference.WitnessKeyID, KeyType: reference.KeyType},
 		CosignerReferenceInfo{Name: "unrelated", ComponentKey: testWitnessID1, KeyType: reference.KeyType},
@@ -463,9 +463,9 @@ func TestAccountCreationReusesAlreadyImportedSetupFileKey(t *testing.T) {
 // A new key from a setup file is still reviewed and imported; choosing the file
 // never generates the account by itself.
 func TestAccountCreationImportsNewSetupFileKeyWithReview(t *testing.T) {
-	setGuardedGenerationKeyType(t)
+	setCosignedGenerationKeyType(t)
 	reference := testTUIEnrollmentReference(t)
-	m := newGuardedGenerationModel(CosignerReferenceInfo{Name: "unrelated", ComponentKey: testWitnessID1, KeyType: reference.KeyType})
+	m := newCosignedGenerationModel(CosignerReferenceInfo{Name: "unrelated", ComponentKey: testWitnessID1, KeyType: reference.KeyType})
 	next, _ := m.handleGenerateParamsKeys(tea.KeyMsg{Type: tea.KeyEnter})
 	m = next.(Model).beginGenerationCosignerImport(false)
 	m.cosigner.importPath = writeTUISetupFile(t, reference)

@@ -82,7 +82,7 @@ The MCP server exposes these tools:
 | `mcp_reference` | Fetch the full shell command grammar (live `help`). |
 | `js_reference` | Fetch the JavaScript API reference. |
 | `mcp_manual` | Fetch this manual. |
-| `doc` | List the bundled deep-reference docs, or fetch one by name (e.g. `doc ARCH_GUARDED`). |
+| `doc` | List the bundled deep-reference docs, or fetch one by name (e.g. `doc ARCH_COSIGNED`). |
 | `jssave` | Persist a JS snippet to `scripts/` (or an absolute path). |
 | `jslist` | List saved scripts as `[{name, size, mtime}]`. |
 
@@ -266,7 +266,7 @@ ordinary account so the Corridor program becomes its effective signer (then run
 limited to its accepted transfer forms and recipient set; close, clawback, and
 hybrid rekey-and-spend forms are rejected.
 
-> Full detail: [ARCH_GUARDED.md](ARCH_GUARDED.md#corridor-v1) (the Corridor v1
+> Full detail: [ARCH_COSIGNED.md](ARCH_COSIGNED.md#corridor-v1) (the Corridor v1
 > contract) and [USER_KEYTYPES.md](USER_KEYTYPES.md) (generating and using it).
 
 ### Lifecycle
@@ -451,7 +451,7 @@ signing keys:
   before submission.
 
 > Full detail: [ARCH_POLICY.md](ARCH_POLICY.md), [USER_POLICY.md](USER_POLICY.md),
-> [ARCH_GUARDED.md](ARCH_GUARDED.md).
+> [ARCH_COSIGNED.md](ARCH_COSIGNED.md).
 
 ---
 
@@ -649,7 +649,7 @@ each MCP server instance uses its own:
 - [ARCH_OVERVIEW.md](ARCH_OVERVIEW.md) — system architecture and identity model
 - [ARCH_SIGNING.md](ARCH_SIGNING.md) — transaction/group/signing flow
 - [ARCH_POLICY.md](ARCH_POLICY.md) / [USER_POLICY.md](USER_POLICY.md) — policy and approval
-- [ARCH_GUARDED.md](ARCH_GUARDED.md) — cosigned (guarded) signing
+- [ARCH_COSIGNED.md](ARCH_COSIGNED.md) — cosigned signing
 - [USER_KEYTYPES.md](USER_KEYTYPES.md) / [KEYTYPE_CAPABILITIES.md](KEYTYPE_CAPABILITIES.md) — key types
 - [ARCH_PLUGINS.md](ARCH_PLUGINS.md) — plugins
 - [USER_QUICKSTART_LOCALNET.md](USER_QUICKSTART_LOCALNET.md) / [USER_QUICKSTART.md](USER_QUICKSTART.md) — getting started

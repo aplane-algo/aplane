@@ -57,17 +57,49 @@ func TestRetiredKeyTypeProductsDoNotReturn(t *testing.T) {
 		// the plain host. The string cosigner1 alone stays: it is the cosigner
 		// overlay's contract label.
 		"aplane." + "falcon1024-cosigner1024" + ".v1",
-		"lsig/" + "falcon1024_guarded",
 		"SigningFlow" + "Cosigner1",
 		"ComponentTargetKind" + "User",
-		"AssemblyTargetKind" + "Guarded",
 		"message." + "RoleUser",
+		"lsig/" + "falcon1024_guarded",
+		"AssemblyTargetKind" + "Guarded",
 		"SignGuarded" + "Group",
 		"sign_guarded" + "_group",
-		"GuardedSigningMetadata" + "NeedsRefresh",
+		"Guarded" + "SigningMetadata" + "NeedsRefresh",
 		"keys_response" + "_guarded",
+		// The same retired products under the name that replaced "guarded".
+		"lsig/" + "falcon1024_cosigned",
+		"AssemblyTargetKind" + "Cosigned",
+		"SignCosigned" + "Group",
+		"sign_cosigned" + "_group",
+		"CosignedSigningMetadata" + "NeedsRefresh",
+		"keys_response" + "_cosigned",
 		// Mnemonic import is native-only.
 		"Mnemonic" + "Provider",
+	}
+	// The naming pass: "guarded" became "cosigned" wherever it named a cosigned
+	// account. These are the package, ARCH doc, progress tag, public SDK names
+	// and identifiers it renamed; the word itself stays ordinary English.
+	namingPassTokens := []string{
+		"engine/" + "guarded",
+		"ARCH_" + "GUARDED",
+		"[" + "GUARDED]",
+		"Prepared" + "Guarded",
+		"prepared_" + "guarded",
+		"Guarded" + "Sign",
+		"Guarded" + "Cosigner",
+		"Guarded" + "Passthrough",
+		"Guarded" + "Simulation",
+		"guarded" + "Target",
+		"HasGuarded" + "EffectiveSigner",
+		"validateGuarded" + "Passthrough",
+		"guarded" + " account",
+		"guarded" + "-account",
+		"guarded" + " signing",
+	}
+	retired = append(retired, namingPassTokens...)
+	namingPass := map[string]bool{}
+	for _, token := range namingPassTokens {
+		namingPass[token] = true
 	}
 	// The installers name a retired binary only to delete it from an upgraded or
 	// uninstalled machine, or to find it still running before they do. Only those
@@ -84,6 +116,10 @@ func TestRetiredKeyTypeProductsDoNotReturn(t *testing.T) {
 		".go": true, ".md": true, ".yaml": true, ".yml": true,
 		".json": true, ".sh": true, ".service": true, ".toml": true,
 	}
+
+	// The formal roadmap's drift-review log is dated history too, written
+	// before the naming pass.
+	namingPassHistory := map[string]bool{"../../docs/FORMALIZATION_ROADMAP.md": true}
 
 	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
 		if err != nil {
@@ -112,6 +148,9 @@ func TestRetiredKeyTypeProductsDoNotReturn(t *testing.T) {
 		lower := strings.ToLower(string(content))
 		for _, token := range retired {
 			scanned := lower
+			if namingPass[token] && namingPassHistory[filepath.ToSlash(path)] {
+				continue
+			}
 			if slices.Contains(removesRetired[filepath.ToSlash(path)], token) {
 				var kept []string
 				for _, line := range strings.Split(lower, "\n") {

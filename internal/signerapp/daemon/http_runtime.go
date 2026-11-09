@@ -165,8 +165,8 @@ func logHTTPStartup(keyCount int, keysSnapshot map[string]string, port int) {
 	}
 	logInfof("Endpoints:")
 	logInfof("  POST   /sign                    - Sign transactions (handles groups, dummies, fee pooling)")
-	logInfof("  POST   /sign/component           - Produce guarded or bounded components")
-	logInfof("  POST   /sign/assemble            - Assemble guarded or bounded groups")
+	logInfof("  POST   /sign/component           - Produce cosigned or bounded components")
+	logInfof("  POST   /sign/assemble            - Assemble cosigned or bounded groups")
 	logInfof("  POST   /sign/cancel             - Cancel a pending sign approval request")
 	logInfof("  POST   /plan                    - Preview group building (no signing, no approval)")
 	logInfof("  GET    /status                  - Signer status and keyset revision")

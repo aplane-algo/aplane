@@ -149,7 +149,7 @@ func (cache *SignerCache) SetSigningFlowForAddress(address, flow string) {
 }
 
 // CosignerComponentKeyTypeForAddress returns the cosigner component key type the
-// signer inventory reported for a guarded account.
+// signer inventory reported for a cosigned account.
 func (cache *SignerCache) CosignerComponentKeyTypeForAddress(address string) (string, bool) {
 	if cache.CosignerComponentKeyTypes == nil {
 		return "", false
@@ -159,7 +159,7 @@ func (cache *SignerCache) CosignerComponentKeyTypeForAddress(address string) (st
 }
 
 // SetCosignerComponentKeyTypeForAddress stores or clears the cosigner component
-// key type for a guarded account.
+// key type for a cosigned account.
 func (cache *SignerCache) SetCosignerComponentKeyTypeForAddress(address, componentKeyType string) {
 	if cache.CosignerComponentKeyTypes == nil {
 		cache.CosignerComponentKeyTypes = make(map[string]string)
@@ -172,7 +172,7 @@ func (cache *SignerCache) SetCosignerComponentKeyTypeForAddress(address, compone
 }
 
 // CosignerPublicKeyForAddress returns the cosigner public key embedded in a
-// guarded account LogicSig, when signer inventory exposed it.
+// cosigned account LogicSig, when signer inventory exposed it.
 func (cache *SignerCache) CosignerPublicKeyForAddress(address string) (string, bool) {
 	if cache.CosignerPublicKeys == nil {
 		return "", false
@@ -182,7 +182,7 @@ func (cache *SignerCache) CosignerPublicKeyForAddress(address string) (string, b
 }
 
 // SetCosignerPublicKeyForAddress stores or clears the embedded cosigner public
-// key for a guarded account.
+// key for a cosigned account.
 func (cache *SignerCache) SetCosignerPublicKeyForAddress(address, publicKeyHex string) {
 	if cache.CosignerPublicKeys == nil {
 		cache.CosignerPublicKeys = make(map[string]string)

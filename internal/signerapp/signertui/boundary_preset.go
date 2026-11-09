@@ -13,12 +13,22 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// paramSpecFor is the parameter form for keyType. While a preset is active it shows
+// paramSpecFor is the parameter form for keyType: the overlay choices for a type
+// that takes them, otherwise its parameters. While a preset is active it shows
 // only what that preset leaves to the operator.
 func (m Model) paramSpecFor(keyType string) *paramSpec {
 	spec := getParamSpecForKeyType(keyType)
+	if spec == nil {
+		return nil
+	}
 	preset := m.forms.boundaryPreset
-	if spec == nil || preset == nil || keyType != m.forms.boundaryKeyType {
+	if preset != nil && keyType != m.forms.boundaryKeyType {
+		preset = nil
+	}
+	if overlay := m.overlaySpec(keyType, spec, preset); overlay != nil {
+		return overlay
+	}
+	if preset == nil {
 		return spec
 	}
 	params := make([]lsigprovider.ParameterDef, 0, len(preset.Fields))
