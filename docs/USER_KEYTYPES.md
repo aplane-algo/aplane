@@ -469,7 +469,7 @@ both can rekey it anywhere, out of its recipient list.
   list's members.
 - **Any address can be listed, so check the list.** Generation no longer refuses an
   address that could never act on the account, such as one of this signer's rotating
-  accounts, whose address authorizes only itself, or a cosigner key's native address,
+  accounts, whose address is a one-time stage key, or a cosigner key's native address,
   since a cosigner key never signs as an account. Such an entry is a dead branch.
 - **The list can't change.** A mistaken list can't be repaired: move the funds out
   while the account can still spend.

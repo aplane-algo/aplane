@@ -526,8 +526,8 @@ rekey <account> to <signer> [arg:name=value]  # Rekey account
 ```
 
 The target must sign for itself: the command queries the target on chain and
-refuses with `policy rejection: cannot rekey to <target> because it is itself
-rekeyed to <auth>` when the target's authority has been moved elsewhere.
+refuses with `cannot rekey to <target> because it is itself rekeyed to <auth>`
+when the target's authority has been moved elsewhere.
 Algorand does not follow that chain, so such a rekey would hand the account to
 a key the target no longer uses.
 

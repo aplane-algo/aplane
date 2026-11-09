@@ -59,7 +59,7 @@ func (s *Service) rejectCosignerComponentPolicy(plan *ComponentSignPlan, violati
 	if reason == "" {
 		reason = "cosigner policy rejected request"
 	}
-	s.logCosignerPolicyRejections(plan, reason, firstPolicyRuleID(violations))
+	s.logCosignerRejections(plan, "cosigner_policy_rejected: "+reason, firstPolicyRuleID(violations))
 	return forbidden("cosigner policy rejected request: " + reason)
 }
 
@@ -70,7 +70,9 @@ func firstPolicyRuleID(violations []policy.LintViolation) string {
 	return violations[0].RuleID
 }
 
-func (s *Service) logCosignerPolicyRejections(plan *ComponentSignPlan, reason, policyRuleID string) {
+// logCosignerRejections records a refused cosigner request for every target;
+// reason carries its own prefix (cosigner_policy_rejected, signer_invariant).
+func (s *Service) logCosignerRejections(plan *ComponentSignPlan, reason, policyRuleID string) {
 	rejectLogger, ok := s.AuditLog.(policyAuditLogger)
 	if !ok || rejectLogger == nil || plan == nil {
 		return
@@ -81,16 +83,16 @@ func (s *Service) logCosignerPolicyRejections(plan *ComponentSignPlan, reason, p
 			sender = plan.Group.Entries[target.TargetIndex].Txn.Sender.String()
 		}
 		if limited, ok := s.AuditLog.(AuditCosignerRejectLogger); ok && limited != nil {
-			limited.LogCosignerComponentRejected(plan.ComponentKey, sender, "cosigner_policy_rejected: "+reason, policyRuleID)
+			limited.LogCosignerComponentRejected(plan.ComponentKey, sender, reason, policyRuleID)
 			continue
 		}
 		if policyRuleID != "" {
 			if ruleLogger, ok := s.AuditLog.(AuditRejectPolicyRuleLogger); ok && ruleLogger != nil {
-				ruleLogger.LogSignRejectedWithPolicyRule(plan.ComponentKey, sender, "cosigner_policy_rejected: "+reason, policyRuleID)
+				ruleLogger.LogSignRejectedWithPolicyRule(plan.ComponentKey, sender, reason, policyRuleID)
 				continue
 			}
 		}
-		rejectLogger.LogSignRejected(plan.ComponentKey, sender, "cosigner_policy_rejected: "+reason)
+		rejectLogger.LogSignRejected(plan.ComponentKey, sender, reason)
 	}
 }
 

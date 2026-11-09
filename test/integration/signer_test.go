@@ -1575,7 +1575,7 @@ func TestRekeyRejectsTargetThatIsItselfRekeyed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("apshell rekey command failed unexpectedly: %v\noutput:\n%s", err, rekeyAOutput)
 	}
-	if !strings.Contains(rekeyAOutput, "policy rejection: cannot rekey to "+addrB+" because it is itself rekeyed to "+addrC) {
+	if !strings.Contains(rekeyAOutput, "cannot rekey to "+addrB+" because it is itself rekeyed to "+addrC) {
 		t.Fatalf("expected chained rekey rejection, got output:\n%s", rekeyAOutput)
 	}
 	if strings.Contains(strings.ToLower(rekeyAOutput), "rekey transaction submitted:") {

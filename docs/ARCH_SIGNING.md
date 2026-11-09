@@ -1381,12 +1381,20 @@ See [Mode Selection](#mode-selection) for the foreign/passthrough/sign distincti
 - A signed position that rekeys any other account to a rotating account this
   signer holds is rejected with `403` before policy runs, on every path that
   reaches the approval gates. A rotating account's address is its stage 0
-  program, which authorizes only the account itself: an account rekeyed to it
-  would be pinned to that one-time stage, outside the rotation. This is a
-  signer invariant, not a policy setting; the rotating flow's own rekeys go
-  to stage addresses and are unaffected. apshell's `rekey` refuses the same
-  target before building the transaction, and fails closed on any target
-  whose `signing_flow` it cannot route an authorizer through.
+  program, a one-time stage key: an account rekeyed to it would be stuck on
+  that stage, outside the rotation, and every signature would reuse that key.
+  This is a signer invariant, not a policy setting; the rotating flow's own
+  rekeys go to stage addresses and are unaffected. apshell's `rekey` refuses
+  the same target before building the transaction, and fails closed on any
+  target whose `signing_flow` it cannot route an authorizer through.
+- A `keyreg` with `Nonparticipation` set at a position this signer signs is
+  rejected with `403` before policy runs, on both node roles: on the signer
+  role in the approval gates (`/sign`, bounded components, rotating sign), and
+  on a cosigner before its policy (`/sign/component`). Going nonparticipating
+  can't be undone, and the account can never take part in consensus again, so
+  no policy can allow it; a `keyreg` `allow` covers online and offline
+  registrations only. Passthrough and foreign positions are not this signer's
+  signatures and are not judged (`internal/signerapp/signing/invariant_gate.go`).
 
 `/plan` response (`signerapi.GroupPlanResponse`):
 

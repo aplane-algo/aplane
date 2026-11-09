@@ -48,14 +48,19 @@ type gateInput struct {
 	RequestOperatorApproval func(ctx context.Context, forceReviewRuleID string) *ServiceError
 }
 
-// runApprovalGates runs the shared signer-domain gate sequence: the
-// rekey-to-rotating invariant, then the policy verdict (policyeval.Evaluate:
-// hard rejection, always-review rules, auto-approval rules), then the operator
-// approval fallback. It returns the matched always-review rule ID for approval
-// audit events ("" when none matched).
+// runApprovalGates runs the shared signer-domain gate sequence: the signer
+// invariants (no rekey to a rotating account, no nonparticipating keyreg),
+// then the policy verdict (policyeval.Evaluate: hard rejection, always-review
+// rules, auto-approval rules), then the operator approval fallback. It returns
+// the matched always-review rule ID for approval audit events ("" when none
+// matched).
 func (s *Service) runApprovalGates(ctx context.Context, in gateInput, console Console) (string, *ServiceError) {
 	console = consoleOf(console)
-	if err := s.rejectRekeyToRotating(in.AllTxns, in.EvalCount, in.PassthroughIndices, in.ForeignIndices); err != nil {
+	err := s.rejectRekeyToRotating(in.AllTxns, in.EvalCount, in.PassthroughIndices, in.ForeignIndices)
+	if err == nil {
+		err = rejectNonparticipation(in.AllTxns, signedPositions(in.EvalCount, len(in.AllTxns), in.PassthroughIndices, in.ForeignIndices))
+	}
+	if err != nil {
 		console.Printf("[SIGNER] Rejected: %s\n", err.Message)
 		console.Sync()
 		if in.LogRejection != nil {

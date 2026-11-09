@@ -243,7 +243,11 @@ Policy fields by domain:
 
 The transaction-type rule emits `transaction_type:<type>`, where `<type>` is
 the Algorand type string (`pay`, `axfer`, `acfg`, `afrz`, `keyreg`, `appl`,
-`stpf`, `hb`). The map's `*` entry decides every type it does not name. On a
+`stpf`, `hb`). The map's `*` entry decides every type it does not name. A
+`keyreg` verdict never covers a nonparticipating registration: the signer
+refuses one itself, before any policy runs, on both node roles (see
+[Request/Response Shapes](ARCH_SIGNING.md#requestresponse-shapes) in
+ARCH_SIGNING.md). On a
 cosigner node decode refuses `allow` for anything but `pay` and `axfer`, so
 every non-transfer type a cosigner is asked to attest is rejected here.
 

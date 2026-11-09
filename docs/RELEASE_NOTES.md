@@ -7,6 +7,21 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## A nonparticipating keyreg is refused
+
+- apsigner refuses a `keyreg` with nonparticipation at any position it signs, with 403,
+  before any policy runs: on the signer role (`/sign`, bounded components, rotating
+  sign) and on a cosigner (`/sign/component`). Going nonparticipating marks the account
+  as unable to participate, permanently, so no policy can allow it; a `keyreg` `allow`
+  covers online and offline registrations only. Passthrough and foreign positions are
+  not judged.
+- The SDKs no longer build one: the Go `Nonparticipation` field, the TypeScript
+  `nonParticipation` option and the Python `nonpart` keyword are gone.
+- Refusing a rekey to a rotating account now says why: its address is a one-time stage
+  key, so an account rekeyed to it would be stuck on that stage and every signature
+  would reuse that key. Refusing a rekey to an account that is itself rekeyed drops its
+  `policy rejection:` prefix, since no policy is involved.
+
 ## An alias can't redirect an address
 
 - An address always resolves as itself. Before, an alias named like a real address took

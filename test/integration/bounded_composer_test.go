@@ -190,10 +190,11 @@ func TestBoundedComposerExecutionAgreementLocalnet(t *testing.T) {
 		{
 			name: "denied keyreg type", wantShape: txeffects.ShapeDeniedType,
 			build: func() types.Transaction {
+				// An offline keyreg: the signer refuses a nonparticipating
+				// one itself, before the program could deny the type.
 				txn := baseTxn("bounded-agreement-denied-keyreg-type")
 				txn.Type = types.KeyRegistrationTx
 				txn.PaymentTxnFields = types.PaymentTxnFields{}
-				txn.Nonparticipation = true
 				return txn
 			},
 		},

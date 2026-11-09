@@ -445,7 +445,7 @@ func (a *App) Rekey(ctx context.Context, req RekeyRequest) (*RekeyCommandResult,
 	if err != nil {
 		check := rekeyCheckDetailsFromEngine(checkResult)
 		if check != nil && check.TargetIsRekeyed {
-			return nil, fmt.Errorf("policy rejection: cannot rekey to %s because it is itself rekeyed to %s", toAddress, check.TargetAuthAddr)
+			return nil, fmt.Errorf("cannot rekey to %s because it is itself rekeyed to %s", toAddress, check.TargetAuthAddr)
 		}
 		return nil, err
 	}

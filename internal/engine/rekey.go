@@ -42,14 +42,14 @@ func (e *Engine) PrepareRekey(ctx context.Context, params RekeyParams) (*Transac
 		IsUnrekey: params.From == params.To,
 	}
 
-	// A rotating account's address is its stage 0 program, which authorizes
-	// only the account itself; the signer refuses such a rekey, so refuse it
-	// here with the reason before building anything. Any other flow this
-	// client cannot route an authorizer through is refused as well.
+	// A rotating account's address is its stage 0 program, a one-time stage
+	// key; the signer refuses such a rekey, so refuse it here with the reason
+	// before building anything. Any other flow this client cannot route an
+	// authorizer through is refused as well.
 	if !checkResult.IsUnrekey {
 		switch flow := e.signerCacheSigningFlow(params.To); {
 		case flow == signerapi.SigningFlowRotating1:
-			return nil, checkResult, fmt.Errorf("cannot rekey to %s: it is a rotating account, whose address authorizes only itself",
+			return nil, checkResult, fmt.Errorf("cannot rekey to %s: it is a rotating account, and its address is a one-time stage key; an account rekeyed to it would be stuck on that stage, and every signature would reuse that key",
 				params.To)
 		case !cosigned.CanAuthorizeOtherAccounts(flow):
 			return nil, checkResult, fmt.Errorf("cannot rekey to %s: it uses signing flow %q, which this client cannot use as another account's authorizer",
@@ -67,7 +67,7 @@ func (e *Engine) PrepareRekey(ctx context.Context, params RekeyParams) (*Transac
 		if toAcctInfo.AuthAddr != "" && toAcctInfo.AuthAddr != params.To {
 			checkResult.TargetIsRekeyed = true
 			checkResult.TargetAuthAddr = toAcctInfo.AuthAddr
-			return nil, checkResult, fmt.Errorf("policy rejection: cannot rekey to %s because it is itself rekeyed to %s",
+			return nil, checkResult, fmt.Errorf("cannot rekey to %s because it is itself rekeyed to %s",
 				params.To, toAcctInfo.AuthAddr)
 		}
 	}

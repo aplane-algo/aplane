@@ -137,6 +137,12 @@ func (s *Service) signComponentWithSession(ctx context.Context, req componentPla
 	}
 	switch plan.Role {
 	case ComponentSignRoleCosigner:
+		// The signer invariant comes before the cosigner's policy, so no
+		// policy can allow what it refuses.
+		if err := rejectNonparticipation(componentPlanTxns(plan), componentTargetPositions(plan)); err != nil {
+			s.logCosignerRejections(plan, "signer_invariant: "+err.Message, "")
+			return nil, err
+		}
 		if err := s.evaluateCosignerComponentPolicy(plan); err != nil {
 			return nil, err
 		}
