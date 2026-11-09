@@ -48,25 +48,51 @@ func (s *Service) ValidateFrozenComponentContext(request signerapi.ComponentRequ
 		return nil, signerapi.GroupSignRequest{}, badRequest("frozen component original prefix is empty or invalid")
 	}
 	originals := allTxns[:evalCount]
+	// Every contextual position is foreign to this request's policy and
+	// signing: it is judged and signed later, on /sign. For sizing, a position
+	// that names one of this signer's own accounts is not foreign: its
+	// authorization is sized from the signer's records, as /plan sized it, so
+	// the two always agree on the dummy count.
 	foreign := make(map[int]bool, len(request.ContextualPositions))
+	sizingForeign := make(map[int]bool, len(request.ContextualPositions))
+	sizing := append([]signerapi.SignRequest(nil), req.Requests...)
 	for _, position := range request.ContextualPositions {
 		foreign[position.TargetIndex] = true
+		if position.AuthAddress == "" {
+			sizingForeign[position.TargetIndex] = true
+			continue
+		}
+		sizing[position.TargetIndex].AuthAddress = position.AuthAddress
+		sizing[position.TargetIndex].LsigArgs = position.LsigArgs
 	}
 
 	var snapshot PlannerRuntimeSnapshot
 	if s.Planner.Snapshot != nil {
 		snapshot = s.Planner.Snapshot()
 	}
-	if _, err := s.Planner.VerifySignableKeys(snapshot, req.Requests, map[int]bool{}, foreign); err != nil {
+	if _, err := s.Planner.VerifySignableKeys(snapshot, sizing, map[int]bool{}, sizingForeign); err != nil {
 		return nil, signerapi.GroupSignRequest{}, s.frozenComponentPlannerError(err)
 	}
-	boundedItems, err := resolveBoundedPlanItems(snapshot, req.Requests, originals, map[int]bool{}, foreign)
+	sizingItems, err := resolveBoundedPlanItems(snapshot, sizing, originals, map[int]bool{}, sizingForeign)
 	if err != nil {
 		return nil, signerapi.GroupSignRequest{}, s.frozenComponentPlannerError(err)
 	}
-	resourcePlan, lsigIndices, err := s.Planner.CalculateDummies(snapshot, req.Requests, originals, boundedItems, map[int]bool{}, foreign, nil, false, false)
+	resourcePlan, sizingLsigIndices, err := s.Planner.CalculateDummies(snapshot, sizing, originals, sizingItems, map[int]bool{}, sizingForeign, nil, false, false)
 	if err != nil {
 		return nil, signerapi.GroupSignRequest{}, s.frozenComponentPlannerError(err)
+	}
+	// The plan this request acts on covers only what it signs: the targets.
+	boundedItems := make([]*boundedPlanItem, len(sizingItems))
+	for i, item := range sizingItems {
+		if !foreign[i] {
+			boundedItems[i] = item
+		}
+	}
+	lsigIndices := make([]int, 0, len(sizingLsigIndices))
+	for _, index := range sizingLsigIndices {
+		if !foreign[index] {
+			lsigIndices = append(lsigIndices, index)
+		}
 	}
 	expectedDummies := int(resourcePlan.DummyCount)
 	if expectedDummies != len(request.DummyPositions) {
@@ -74,7 +100,7 @@ func (s *Service) ValidateFrozenComponentContext(request signerapi.ComponentRequ
 	}
 	dummyTxns := allTxns[evalCount:]
 
-	budgets, budgetErr := authorizationBudgets(req.Requests, snapshot, boundedItems, map[int]bool{}, foreign, nil)
+	budgets, budgetErr := authorizationBudgets(sizing, snapshot, sizingItems, map[int]bool{}, sizingForeign, nil)
 	if budgetErr != nil {
 		return nil, signerapi.GroupSignRequest{}, s.frozenComponentPlannerError(budgetErr)
 	}

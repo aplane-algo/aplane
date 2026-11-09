@@ -196,39 +196,13 @@ func TestBoundedCosignerTargetsAndComponentRequestShape(t *testing.T) {
 	if mode, _ := requests[0].Mode(); mode != signerapi.RequestModeSign || requests[0].AuthAddress != bounded || requests[0].LsigArgs["preimage"] != "aa" {
 		t.Fatalf("bounded request = %#v", requests[0])
 	}
-	if mode, _ := requests[1].Mode(); mode != signerapi.RequestModeForeign || requests[1].LsigResources == nil || requests[1].LsigResources.ProgramBytes != 1700 {
+	// The signer holds the plain account too, so it is sent as the signer's
+	// own, with no size hint.
+	if mode, _ := requests[1].Mode(); mode != signerapi.RequestModeSign || requests[1].LsigResources != nil {
 		t.Fatalf("plain context request = %#v", requests[1])
 	}
 	if sc.SigningFlowForAddress(bounded) != signerapi.SigningFlowCosigned1 || !s.HasCosignedEffectiveSigner(txns) {
 		t.Fatal("bounded-cosigner flow did not enter cosigned orchestration")
-	}
-}
-
-func TestBuildBoundedComponentRequestsRejectsKnownLogicSigWithoutResources(t *testing.T) {
-	bounded := testAddress(1).String()
-	foreign := testAddress(2).String()
-	s, _ := newTestSigner(t, func(c *cache.SignerCache) {
-		c.AddAddress(bounded, "test.bounded-cosigner.v1")
-		c.SetSigningFlowForAddress(bounded, signerapi.SigningFlowCosigned1)
-		c.SetCosignerComponentKeyTypeForAddress(bounded, witness.Falcon1024V1)
-		c.SetCosignerPublicKeyForAddress(bounded, testCosignerPublicKeyHex(0xd6))
-		c.SetBoundedContractForAddress(bounded, signerapi.BoundedContractBounded2)
-		c.SetBoundedMaxFeeForAddress(bounded, 10_000)
-		setTestLogicSigResources(c, bounded, 4_000)
-		c.AddAddress(foreign, "test.generic.v1")
-		c.SetGenericLsig(foreign, true)
-	})
-	txns := []types.Transaction{
-		testPaymentTxn(t, testAddress(1), testAddress(3), "bounded"),
-		testPaymentTxn(t, testAddress(2), testAddress(3), "foreign"),
-	}
-	targets, err := s.cosignedTargets(txns)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = s.buildBoundedComponentRequests(txns, map[int]cosignedTarget{0: targets[0]}, clientsign.SubmitOptions{})
-	if err == nil || !strings.Contains(err.Error(), "LogicSig resource profile") {
-		t.Fatalf("buildBoundedComponentRequests() error = %v, want missing LogicSig resource profile", err)
 	}
 }
 

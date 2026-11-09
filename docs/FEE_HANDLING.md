@@ -113,6 +113,11 @@ planning but are not mutated. Passthrough entries are immutable signed bytes.
 If no signer-controlled transaction can take the charge, or bounded fee
 ceilings leave too little room for it, planning fails.
 
+A cosigned group follows the same order. Every position of a cosigned group
+is signed by this signer, and the client sends each one as the signer's own,
+cosigned or not. So a native Falcon position in the group takes the charge
+ahead of the cosigned account, and each position's own `max_fee` is respected.
+
 ## Planning Twice
 
 The authorization charge depends only on the group's shape (its

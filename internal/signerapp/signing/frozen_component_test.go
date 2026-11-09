@@ -17,6 +17,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
+	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
 	"github.com/aplane-algo/aplane/internal/txnutil"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
@@ -68,6 +69,13 @@ func TestFrozenComponentReconstructionMatchesCanonicalPlan(t *testing.T) {
 
 func frozenBoundedTestService(t *testing.T, programBytes uint64) (*Service, string, types.Transaction) {
 	t.Helper()
+	return frozenBoundedTestServiceWith(t, programBytes, nil)
+}
+
+// frozenBoundedTestServiceWith also gives the signer the extra keys, by
+// address and key type.
+func frozenBoundedTestServiceWith(t *testing.T, programBytes uint64, extraKeyTypes map[string]string) (*Service, string, types.Transaction) {
+	t.Helper()
 	genesisHash := types.Digest{9}
 	resolver, err := apconfig.NewGenesisHashNetworkResolver(map[string]string{
 		base64.StdEncoding.EncodeToString(genesisHash[:]): "frozen_component_test",
@@ -85,8 +93,12 @@ func frozenBoundedTestService(t *testing.T, programBytes uint64) (*Service, stri
 		},
 		SpendingRekey: &lsigresource.PathProfile{ArgumentBytes: uint64(boundedmeta.CosignerSignatureMaxSizeV1), MaxOpcodeCost: 1},
 	}
+	keyTypes := map[string]string{authorizer: "aplane.test-bounded-cosigner.v1"}
+	for address, keyType := range extraKeyTypes {
+		keyTypes[address] = keyType
+	}
 	planner := NewPlanner(stubPlannerDeps{
-		keyTypes: map[string]string{authorizer: "aplane.test-bounded-cosigner.v1"},
+		keyTypes: keyTypes,
 		keyMetadata: map[string]PlannerKeyMetadata{authorizer: {
 			Category: "dsa_lsig", PublicKeyHex: "aabb",
 			BoundedAuthorization: metadata, LogicSigResources: profile,
@@ -297,5 +309,77 @@ func TestValidateFrozenComponentContextAuditsEveryOriginalPosition(t *testing.T)
 	entry := audit.entries[0]
 	if entry.authAddress != authorizer || entry.txnSender != txn.Sender.String() || entry.details != "frozen bounded transaction" {
 		t.Fatalf("sign-request audit entry = %#v, want frozen request attribution", entry)
+	}
+}
+
+// A contextual position that names one of the signer's own accounts is sized
+// from the signer's records, as /plan sized it, and it is where /plan put the
+// authorization charge. It stays out of what this request signs and judges
+// (audit #10, #19).
+func TestFrozenComponentSizesAHeldContextPositionFromSignerRecords(t *testing.T) {
+	falcon := types.Address{7}
+	service, authorizer, txn := frozenBoundedTestServiceWith(t, 4_500, map[string]string{falcon.String(): nativefalcon.KeyType})
+	falconTxn := types.Transaction{
+		Type:             types.PaymentTx,
+		Header:           types.Header{Sender: falcon, Fee: 1_000, FirstValid: 1, LastValid: 10, GenesisHash: txn.GenesisHash},
+		PaymentTxnFields: types.PaymentTxnFields{Receiver: types.Address{3}, Amount: 1},
+	}
+	planned, planErr := service.Planner.PlanGroup(signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{
+		{AuthAddress: authorizer, TxnBytesHex: txnutil.EncodeWithPrefixHex(txn)},
+		{AuthAddress: falcon.String(), TxnBytesHex: txnutil.EncodeWithPrefixHex(falconTxn)},
+	}})
+	if planErr != nil {
+		t.Fatal(planErr)
+	}
+	// /plan charges the held native Falcon position, not the bounded target.
+	if planned.AllTxns[0].Fee != 1_000 || planned.AllTxns[1].Fee < 3_000 {
+		t.Fatalf("planned fees = %d, %d; want the target at 1000 and the Falcon position carrying the charge",
+			planned.AllTxns[0].Fee, planned.AllTxns[1].Fee)
+	}
+
+	request := func(position signerapi.ComponentContextPosition) signerapi.ComponentRequest {
+		componentRequest := signerapi.ComponentRequest{
+			Targets: []signerapi.ComponentTarget{{
+				TargetIndex: 0, Kind: signerapi.ComponentTargetKindBoundedBase, AuthAddress: authorizer,
+			}},
+			ContextualPositions: []signerapi.ComponentContextPosition{position},
+		}
+		for i, plannedTxn := range planned.AllTxns {
+			componentRequest.GroupBytesHex = append(componentRequest.GroupBytesHex, txnutil.EncodeWithPrefixHex(plannedTxn))
+			if i > 1 {
+				componentRequest.DummyPositions = append(componentRequest.DummyPositions, signerapi.ComponentDummyPosition{TargetIndex: i})
+			}
+		}
+		return componentRequest
+	}
+
+	reconstructed, _, serviceErr := service.ValidateFrozenComponentContext(request(
+		signerapi.ComponentContextPosition{TargetIndex: 1, AuthAddress: falcon.String()}))
+	if serviceErr != nil {
+		t.Fatalf("ValidateFrozenComponentContext() error = %v", serviceErr)
+	}
+	if reconstructed.DummiesNeeded != planned.DummiesNeeded ||
+		!reflect.DeepEqual(reconstructed.LogicSigResourcePlan, planned.LogicSigResourcePlan) ||
+		reconstructed.FeeInfo.NativePQFeeContribution != planned.FeeInfo.NativePQFeeContribution {
+		t.Fatalf("frozen sizing drifted from /plan:\nplanned=%#v\nreconstructed=%#v", planned.LogicSigResourcePlan, reconstructed.LogicSigResourcePlan)
+	}
+	// Not signed or judged here: foreign to this request, with no plan item.
+	if !reconstructed.ForeignIndices[1] || reconstructed.BoundedItems[1] != nil || reconstructed.AuthKeyTypes[1] != "" {
+		t.Fatalf("held context position leaked into this request's signing plan: foreign=%v item=%v keyType=%q",
+			reconstructed.ForeignIndices[1], reconstructed.BoundedItems[1], reconstructed.AuthKeyTypes[1])
+	}
+	if !reflect.DeepEqual(reconstructed.LsigIndices, []int{0}) {
+		t.Fatalf("LsigIndices = %v, want only the target", reconstructed.LsigIndices)
+	}
+
+	// An address the signer doesn't hold can't be claimed as its own.
+	if _, _, err := service.ValidateFrozenComponentContext(request(
+		signerapi.ComponentContextPosition{TargetIndex: 1, AuthAddress: types.Address{8}.String()})); err == nil || !strings.Contains(err.Message, "no key found") {
+		t.Fatalf("unheld auth_address: err = %v, want the no-key refusal", err)
+	}
+	// A position the signer sizes takes no hint from the caller.
+	hinted := request(signerapi.ComponentContextPosition{TargetIndex: 1, AuthAddress: falcon.String(), PQScheme: signerapi.PQSchemeFalcon1024})
+	if _, _, err := service.ValidateFrozenComponentContext(hinted); err == nil || !strings.Contains(err.Message, "lsig_resources and pq_scheme are allowed only without auth_address") {
+		t.Fatalf("hinted held position: err = %v, want the hint refused", err)
 	}
 }

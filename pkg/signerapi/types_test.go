@@ -187,3 +187,48 @@ func TestAppCallMethodMustBePrintableASCII(t *testing.T) {
 		t.Fatalf("a printable method signature was refused: %v", err)
 	}
 }
+
+// A contextual position that names one of the signer's own accounts is a
+// bounded-base concept: the signer sizes it from its records, so it takes no
+// hint, and a cosigner request refuses the fields outright.
+func TestComponentRequestContextualPositionRules(t *testing.T) {
+	request := func(kind ComponentTargetKind, position ComponentContextPosition) ComponentRequest {
+		target := ComponentTarget{TargetIndex: 0, Kind: kind}
+		if kind == ComponentTargetKindBoundedBase {
+			target.AuthAddress = "BOUNDED"
+		} else {
+			target.ComponentKey = "witness-key"
+		}
+		position.TargetIndex = 1
+		return ComponentRequest{
+			GroupBytesHex:       []string{"5458a1", "5458a2"},
+			Targets:             []ComponentTarget{target},
+			ContextualPositions: []ComponentContextPosition{position},
+		}
+	}
+	hint := &LogicSigResourceUsage{ProgramBytes: 100, MaxOpcodeCost: 700}
+	for name, tc := range map[string]struct {
+		kind     ComponentTargetKind
+		position ComponentContextPosition
+		wantErr  string
+	}{
+		"held account":                  {ComponentTargetKindBoundedBase, ComponentContextPosition{AuthAddress: "HELD", LsigArgs: map[string]string{"a": "bb"}}, ""},
+		"another party, hinted":         {ComponentTargetKindBoundedBase, ComponentContextPosition{PQScheme: PQSchemeFalcon1024}, ""},
+		"another party, unhinted":       {ComponentTargetKindCosigner, ComponentContextPosition{}, ""},
+		"held account with pq hint":     {ComponentTargetKindBoundedBase, ComponentContextPosition{AuthAddress: "HELD", PQScheme: PQSchemeFalcon1024}, "lsig_resources and pq_scheme are allowed only without auth_address"},
+		"held account with size hint":   {ComponentTargetKindBoundedBase, ComponentContextPosition{AuthAddress: "HELD", LsigResources: hint}, "lsig_resources and pq_scheme are allowed only without auth_address"},
+		"lsig_args without account":     {ComponentTargetKindBoundedBase, ComponentContextPosition{LsigArgs: map[string]string{"a": "bb"}}, "lsig_args requires auth_address"},
+		"account on a cosigner request": {ComponentTargetKindCosigner, ComponentContextPosition{AuthAddress: "HELD"}, "allowed only on a bounded-base request"},
+	} {
+		err := request(tc.kind, tc.position).Validate()
+		if tc.wantErr == "" {
+			if err != nil {
+				t.Errorf("%s: unexpected error: %v", name, err)
+			}
+			continue
+		}
+		if err == nil || !strings.Contains(err.Error(), "contextual position 1: ") || !strings.Contains(err.Error(), tc.wantErr) {
+			t.Errorf("%s: err = %v, want %q", name, err, tc.wantErr)
+		}
+	}
+}

@@ -36,8 +36,16 @@ type ComponentTarget struct {
 	AppCallInfo  *AppCallInfo        `json:"app_call_info,omitempty"`
 }
 
+// ComponentContextPosition is an original position this request doesn't sign.
+// With AuthAddress it is one of the signer's own accounts: the signer sizes
+// its authorization from its own records, exactly as /plan did, and LsigArgs
+// carries what a bounded account needs to be classified. Without AuthAddress
+// it is another party's position, sized from the caller's LsigResources or
+// PQScheme hint. Either way it is not signed or judged by this request.
 type ComponentContextPosition struct {
 	TargetIndex   int                    `json:"target_index"`
+	AuthAddress   string                 `json:"auth_address,omitempty"`
+	LsigArgs      map[string]string      `json:"lsig_args,omitempty"`
 	LsigResources *LogicSigResourceUsage `json:"lsig_resources,omitempty"`
 	PQScheme      string                 `json:"pq_scheme,omitempty"`
 	AppCallInfo   *AppCallInfo           `json:"app_call_info,omitempty"`
@@ -136,7 +144,22 @@ func (r ComponentRequest) Validate() error {
 			return fmt.Errorf("contextual position %d: duplicate or overlapping target_index %d", i+1, position.TargetIndex)
 		}
 		covered[position.TargetIndex] = true
-		contextRequest := SignRequest{TxnBytesHex: "frozen", LsigResources: position.LsigResources, PQScheme: position.PQScheme, AppCallInfo: position.AppCallInfo}
+		// auth_address marks one of the signer's own accounts. Only a
+		// bounded-base request sizes the group, so only it reads the field;
+		// a cosigner request refuses it, as it refuses the field on a target.
+		if position.AuthAddress != "" || len(position.LsigArgs) != 0 {
+			if kind != ComponentTargetKindBoundedBase {
+				return fmt.Errorf("contextual position %d: auth_address and lsig_args are allowed only on a bounded-base request", i+1)
+			}
+			if position.AuthAddress == "" {
+				return fmt.Errorf("contextual position %d: lsig_args requires auth_address", i+1)
+			}
+			// The signer sizes its own account from its records.
+			if position.LsigResources != nil || position.PQScheme != "" {
+				return fmt.Errorf("contextual position %d: lsig_resources and pq_scheme are allowed only without auth_address", i+1)
+			}
+		}
+		contextRequest := SignRequest{TxnBytesHex: "frozen", AuthAddress: position.AuthAddress, LsigArgs: position.LsigArgs, LsigResources: position.LsigResources, PQScheme: position.PQScheme, AppCallInfo: position.AppCallInfo}
 		if err := contextRequest.Validate(); err != nil {
 			return fmt.Errorf("contextual position %d: %w", i+1, err)
 		}

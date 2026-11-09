@@ -486,9 +486,14 @@ func TestMixedGroupsFinishUserSideBeforeCosigner(t *testing.T) {
 			defer closeAlgod()
 
 			cosigned := txns[0].Sender.String()
-			s, _ := newCosignedTestSigner(t, cosigned, 1500, cosignerHex)
+			// The signer holds the ordinary position's key too: it signs that
+			// position through /sign.
+			ordinary := txns[1].Sender.String()
+			s, signerCache := newCosignedTestSigner(t, cosigned, 1500, cosignerHex)
+			signerCache.AddAddress(ordinary, "ed25519")
 			if tc.bounded {
 				s, _ = newTestSigner(t, func(c *cache.SignerCache) {
+					c.AddAddress(ordinary, "ed25519")
 					c.AddAddress(cosigned, "test.bounded-cosigner.v1")
 					c.SetSigningFlowForAddress(cosigned, signerapi.SigningFlowCosigned1)
 					c.SetCosignerComponentKeyTypeForAddress(cosigned, witness.Falcon1024V1)

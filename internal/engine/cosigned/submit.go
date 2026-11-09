@@ -236,7 +236,11 @@ func (s *Signer) planFrozenGroup(ctx context.Context, original []types.Transacti
 // and operator approval run for bounded targets, so every contextual position
 // carries the caller's app call description: the approval shows another
 // position's ABI method, as the cosigner's request does.
-func (s *Signer) requestBoundedBaseComponents(ctx context.Context, group frozenGroup, requests []signerapi.SignRequest, targets []cosignedTarget, targetsByIndex map[int]cosignedTarget, appCallInfo []*signerapi.AppCallInfo) (map[int]signerapi.Component, string, error) {
+// boundedBaseComponentRequest builds the /sign/component request over the
+// frozen group from the /plan requests. A non-target position names its
+// account, as it did on /plan, so the signer sizes it from the same records
+// and the two agree on the group's dummy count.
+func boundedBaseComponentRequest(group frozenGroup, requests []signerapi.SignRequest, targetsByIndex map[int]cosignedTarget, appCallInfo []*signerapi.AppCallInfo) signerapi.ComponentRequest {
 	componentReq := signerapi.ComponentRequest{GroupBytesHex: group.BytesHex}
 	for i, request := range requests {
 		if _, ok := targetsByIndex[i]; ok {
@@ -244,19 +248,24 @@ func (s *Signer) requestBoundedBaseComponents(ctx context.Context, group frozenG
 				TargetIndex: i, Kind: signerapi.ComponentTargetKindBoundedBase,
 				AuthAddress: request.AuthAddress, LsigArgs: request.LsigArgs, AppCallInfo: request.AppCallInfo,
 			})
-		} else {
-			position := signerapi.ComponentContextPosition{
-				TargetIndex: i, LsigResources: request.LsigResources, PQScheme: request.PQScheme, AppCallInfo: request.AppCallInfo,
-			}
-			if i < len(appCallInfo) && appCallInfo[i] != nil {
-				position.AppCallInfo = appCallInfo[i]
-			}
-			componentReq.ContextualPositions = append(componentReq.ContextualPositions, position)
+			continue
 		}
+		position := signerapi.ComponentContextPosition{
+			TargetIndex: i, AuthAddress: request.AuthAddress, LsigArgs: request.LsigArgs, AppCallInfo: request.AppCallInfo,
+		}
+		if i < len(appCallInfo) && appCallInfo[i] != nil {
+			position.AppCallInfo = appCallInfo[i]
+		}
+		componentReq.ContextualPositions = append(componentReq.ContextualPositions, position)
 	}
 	for i := group.OriginalCount; i < len(group.BytesHex); i++ {
 		componentReq.DummyPositions = append(componentReq.DummyPositions, signerapi.ComponentDummyPosition{TargetIndex: i})
 	}
+	return componentReq
+}
+
+func (s *Signer) requestBoundedBaseComponents(ctx context.Context, group frozenGroup, requests []signerapi.SignRequest, targets []cosignedTarget, targetsByIndex map[int]cosignedTarget, appCallInfo []*signerapi.AppCallInfo) (map[int]signerapi.Component, string, error) {
+	componentReq := boundedBaseComponentRequest(group, requests, targetsByIndex, appCallInfo)
 	componentResp, err := s.conn.RequestComponentsWithContext(ctx, componentReq)
 	if err != nil {
 		return nil, "", fmt.Errorf("bounded base component signing failed: %w", err)
@@ -362,11 +371,17 @@ func (s *Signer) buildBoundedComponentRequests(txns []types.Transaction, targets
 			requests[i] = signModeRequest(i, target.Account, target.Sender, txnHex, opts)
 			continue
 		}
+		// Every other position is signed through /sign over the frozen group,
+		// so the signer must hold its key. It is sent as the signer's own: the
+		// signer sizes it from its records and can put the group's
+		// authorization charge on it. A position the signer doesn't hold could
+		// never be signed here, so it is refused now, before anything is
+		// planned or approved.
 		effectiveSigner := s.authCache.ResolveEffectiveSigner(txn.Sender.String())
-		requests[i] = signerapi.SignRequest{TxnBytesHex: txnHex}
-		if err := applyForeignAuthorizationHint(&requests[i], s.cache, effectiveSigner); err != nil {
-			return nil, fmt.Errorf("prepare foreign transaction %d: %w", i+1, err)
+		if _, held := s.cache.AuthorizationKind(effectiveSigner); !held {
+			return nil, fmt.Errorf("transaction %d: the signer holds no key for %s; every position of a cosigned group must be signed by this signer (run keys refresh if the key is new)", i+1, effectiveSigner)
 		}
+		requests[i] = signModeRequest(i, effectiveSigner, txn.Sender.String(), txnHex, opts)
 	}
 	return requests, nil
 }
@@ -562,56 +577,6 @@ func applyForeignLogicSigPathHint(request *signerapi.SignRequest, cache SignerCa
 		MaxOpcodeCost: usage.MaxOpcodeCost,
 	}
 	return nil
-}
-
-func applyForeignAuthorizationHint(request *signerapi.SignRequest, cache SignerCacheView, address string) error {
-	if request == nil || cache == nil {
-		return fmt.Errorf("signer cache is unavailable")
-	}
-	kind, present := cache.AuthorizationKind(address)
-	if !present {
-		return nil
-	}
-	if kind == "" {
-		return fmt.Errorf("authorization metadata for %s is unavailable", address)
-	}
-	if kind == authorizationNativePQ {
-		request.PQScheme = signerapi.PQSchemeFalcon1024
-		return nil
-	}
-	if kind != authorizationLogicSig {
-		return nil
-	}
-	profile, ok := cache.LogicSigResourceProfile(address)
-	if !ok {
-		return fmt.Errorf("LogicSig resource profile for %s is unavailable", address)
-	}
-	usage := conservativeLogicSigResourceUsage(profile)
-	if usage == nil {
-		return fmt.Errorf("LogicSig resource profile for %s is invalid", address)
-	}
-	request.LsigResources = usage
-	return nil
-}
-
-func conservativeLogicSigResourceUsage(profile lsigresource.Profile) *signerapi.LogicSigResourceUsage {
-	var argumentBytes, opcodeCost uint64
-	paths := []*lsigresource.PathProfile{profile.Default, profile.Spend, profile.SpendingRekey, profile.ListedRekey}
-	for _, path := range paths {
-		if path == nil {
-			continue
-		}
-		argumentBytes = max(argumentBytes, path.ArgumentBytes)
-		opcodeCost = max(opcodeCost, path.MaxOpcodeCost)
-	}
-	if profile.ProgramBytes == 0 || opcodeCost == 0 {
-		return nil
-	}
-	return &signerapi.LogicSigResourceUsage{
-		ProgramBytes:  profile.ProgramBytes,
-		ArgumentBytes: argumentBytes,
-		MaxOpcodeCost: opcodeCost,
-	}
 }
 
 // requestNonCosignedSignatures signs the non-cosigned original positions of a
