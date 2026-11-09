@@ -27,12 +27,17 @@ const (
 
 func TestBoundedSpendingConstructionResolvesFromTheDurableBase(t *testing.T) {
 	for _, workflow := range []boundedSigningWorkflow{boundedWorkflowCosigner} {
-		construction, ok := boundedSpendingConstruction(boundedmeta.Contract, plainFalcon1024LsigKeyType, workflow)
-		if !ok || construction.ID() != sigconstruction.Falcon1024().ID() {
-			t.Fatalf("workflow %d on Falcon = %q, %v", workflow, construction.ID(), ok)
+		// A bounded host is cosigned on either base (account overlays phase 6.5).
+		for keyType, want := range map[string]sigconstruction.ConstructionID{
+			plainFalcon1024LsigKeyType: sigconstruction.Falcon1024().ID(),
+			plainEd25519LsigKeyType:    sigconstruction.Ed25519().ID(),
+		} {
+			construction, ok := boundedSpendingConstruction(boundedmeta.Contract, keyType, workflow)
+			if !ok || construction.ID() != want {
+				t.Fatalf("workflow %d on %s = %q, %v", workflow, keyType, construction.ID(), ok)
+			}
 		}
 		for name, refused := range map[string][2]string{
-			"Ed25519":           {boundedmeta.Contract, plainEd25519LsigKeyType},
 			"no base":           {boundedmeta.Contract, ""},
 			"witness as a base": {boundedmeta.Contract, witness.Falcon1024V1},
 			"unknown contract":  {"bounded-unknown", plainFalcon1024LsigKeyType},

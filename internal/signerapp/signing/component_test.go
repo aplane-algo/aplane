@@ -807,7 +807,7 @@ func TestAssembleDecodedRejectsALocallyHeldCosignedAccountAsPassthrough(t *testi
 	}
 	// A held account without a cosigner is an ordinary passthrough.
 	uncosigned := &componentKeyTestSession{keysByAddr: map[string]*coresigning.KeyMaterial{
-		cosigned: {Type: "aplane.falcon1024-b.v1", BoundedAuthorization: &boundedmeta.Metadata{Contract: boundedmeta.Contract}},
+		cosigned: {Type: "aplane.falcon1024.v1", BoundedAuthorization: &boundedmeta.Metadata{Contract: boundedmeta.Contract}},
 	}}
 	groupBytesHex := []string{txnutil.EncodeWithPrefixHex(txn)}
 	group, decodeErr := canonical.DecodeGroupHex(groupBytesHex)

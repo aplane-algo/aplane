@@ -190,7 +190,8 @@ func TestOverlayRequestsFailClosed(t *testing.T) {
 			return params
 		}(), "needs the addresses"},
 		{"an unresolved cosigner name", map[string]string{plainhost.ParameterCosigner: "corp", plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused}, "not resolved"},
-		{"a bounded host parameter", map[string]string{"spend_effects": "pay", plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused, composeddsa.BoundedCosignerPublicKeyParameter: testCosigner}, "unknown parameter"},
+		{"bounds without a recipient list", map[string]string{plainhost.ParameterSpendEffects: "pay", plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused, composeddsa.BoundedCosignerPublicKeyParameter: testCosigner}, "recipients is required"},
+		{"bounds without transfer kinds", map[string]string{plainhost.ParameterRecipientScope: plainhost.RecipientScopeAny, plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused}, "spend_effects is required"},
 		{"a generated root", map[string]string{boundedmeta.RekeyListRootParameter: strings.Repeat("ab", 32), plainhost.ParameterRekeyAuthority: plainhost.RekeyOnlyThese, composeddsa.BoundedCosignerPublicKeyParameter: testCosigner, plainhost.ParameterRekeyTo: withList[plainhost.ParameterRekeyTo]}, "unknown parameter"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -266,8 +267,8 @@ func TestBoundedOpcodeProfileIsSeparate(t *testing.T) {
 // declared by a revision; these goldens make that review unavoidable.
 func TestPlainHostGrammarGoldens(t *testing.T) {
 	want := map[string]string{
-		"falcon":  "1:eb7ab41b5d6236a5c76df5737b621c59e53c786718fa281ef238552cf9f48dd2",
-		"ed25519": "1:fca5bc914b1cc80e3dbd57df6acfdaff84005b793181c4a1906b4e1b83491de4",
+		"falcon":  "1:915d3bb95648d8019c9421ce5dbfa4e839587c51939c76908299a5c5f831c908",
+		"ed25519": "1:8ff6e4c05e4aa40a66de5858c9c703a04a8db8efb6116a6a35403b4f84b4fc84",
 	}
 	for _, b := range bases(t) {
 		if got := b.provider.GrammarFingerprint(); got != want[b.name] {

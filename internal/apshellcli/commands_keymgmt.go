@@ -103,8 +103,12 @@ func (r *REPLState) generateFromBoundary(keyType, path string) (*apshellapp.Gene
 func renderBoundaryPreview(r *REPLState, preview *apshellapp.BoundaryPreview) {
 	r.println("Local summary. The signer has not confirmed this.")
 	r.printf("  Key type:   %s\n", keytypefmt.Display(preview.KeyType))
-	r.printf("  Transfers:  %s\n", strings.Join(preview.Transfers, ", "))
+	if !preview.NoBounds {
+		r.printf("  Transfers:  %s\n", strings.Join(preview.Transfers, ", "))
+	}
 	switch {
+	case preview.NoBounds:
+		r.println("  Bounds:     none: no fee limit or transfer list; the spending key and the overlays decide")
 	case preview.Recipients > 0:
 		r.printf("  Recipients: %d, encoding %s, list %s\n", preview.Recipients, preview.Encoding, preview.ListDigest[:12])
 	case preview.AnyRecipient:
@@ -136,19 +140,20 @@ func renderBoundaryPreview(r *REPLState, preview *apshellapp.BoundaryPreview) {
 			r.println("              The cosigner is not asked for a listed address.")
 		}
 		if preview.UnlockRound != "" {
-			if preview.Rekey == boundary.RekeyPlusCosigned {
-				r.println("              A timelock refuses plus_cosigned; the signer will reject this")
-			} else {
-				r.println("              That is a way around the unlock round.")
-			}
+			// No host rule applies to a rekey, so the lock doesn't hold one back.
+			r.println("              That is a way around the unlock round.")
 		}
-	case preview.UnlockRound != "":
-		// The signer refuses this combination; say so before the request is sent.
-		r.println("  Rekey:      spending key, which a timelock refuses; the signer will reject this")
+	case preview.Rekey == boundary.RekeyRefused && preview.NoBounds:
+		r.println("  Rekey:      none; the account can never be rekeyed, but can still spend and close")
+	case preview.Rekey == boundary.RekeyRefused:
+		r.println("  Rekey:      none; the account can never be rekeyed, so it leaves only by what it may spend")
 	case cosigned:
 		r.println("  Rekey:      spending key and cosigner together, to targets both nodes' policies allow")
 	default:
-		r.println("  Rekey:      spending key alone, which can rekey out of this boundary")
+		r.println("  Rekey:      spending key alone, which can rekey the account anywhere")
+	}
+	if preview.UnlockRound != "" && preview.Rekey == boundary.RekeySpendingKey {
+		r.println("              A rekey doesn't wait for the unlock round: that is a way around the lock.")
 	}
 	switch {
 	case preview.Cosigner == "":

@@ -12,9 +12,9 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/txeffects"
-	"github.com/aplane-algo/aplane/lsig/boundedaccount"
 	falcon "github.com/aplane-algo/aplane/lsig/falcon1024"
 	"github.com/aplane-algo/aplane/lsig/plainhost"
 )
@@ -34,33 +34,33 @@ var (
 	}
 )
 
-// grammarDeclarations is every declaration the general bounded type produces,
-// read from each shape's resolved metadata.
+// grammarDeclarations is every declaration the plain host's bounded2 shapes
+// produce, read from each shape's resolved metadata.
 func grammarDeclarations(t *testing.T) map[string]boundedmeta.PathDeclaration {
 	t.Helper()
 	falcon.RegisterClient()
-	provider, err := boundedaccount.NewProvider()
-	if err != nil {
-		t.Fatal(err)
+	provider, ok := logicsigdsa.Get("aplane.falcon1024.v1").(*plainhost.Provider)
+	if !ok {
+		t.Fatal("the Falcon plain host is not registered")
 	}
 	declarations := make(map[string]boundedmeta.PathDeclaration)
-	for _, shape := range boundedaccount.Shapes() {
+	for _, shape := range plainhost.Shapes() {
 		params := map[string]string{
-			boundedaccount.ParameterSpendEffects:   joinSpend(shape.Spend),
-			boundedaccount.ParameterRekeyAuthority: shape.Rekey,
+			plainhost.ParameterSpendEffects:   joinSpend(shape.Spend),
+			plainhost.ParameterRekeyAuthority: shape.Rekey,
 		}
 		if shape.Encoding != "" {
-			params[boundedaccount.ParameterListEncoding] = shape.Encoding
-			params[boundedaccount.ParameterRecipients] = types.Address{1}.String() + "," + types.Address{2}.String()
+			params[plainhost.ParameterListEncoding] = shape.Encoding
+			params[plainhost.ParameterRecipients] = types.Address{1}.String() + "," + types.Address{2}.String()
 		}
 		if shape.Timelock {
-			params[boundedaccount.ParameterUnlockRound] = "5"
+			params[plainhost.ParameterUnlockRound] = "5"
 		}
 		if shape.AnyRecipient {
-			params[boundedaccount.ParameterRecipientScope] = boundedaccount.RecipientScopeAny
+			params[plainhost.ParameterRecipientScope] = plainhost.RecipientScopeAny
 		}
 		if shape.HasRekeyList() {
-			params[boundedaccount.ParameterRekeyTo] = types.Address{3}.String()
+			params[plainhost.ParameterRekeyTo] = types.Address{3}.String()
 		}
 		if shape.Cosigner {
 			params[boundedmeta.CosignerPublicKeyParameter] = strings.Repeat("41", boundedmeta.CosignerPublicKeySizeV1)

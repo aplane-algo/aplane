@@ -1,18 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-// Package boundary is the family-neutral vocabulary of the general bounded key
-// type: its boundary file grammar, presets, and receipt. Clients use it to build
-// and review requests. The provider that turns a request into a program lives in
-// lsig/boundedaccount.
+// Package boundary is the family-neutral vocabulary of the plain hosts' bounds
+// and overlays: the boundary file grammar, presets, and receipt. Clients use it
+// to build and review requests. The provider that turns a request into a program
+// lives in lsig/plainhost.
 package boundary
 
 import "github.com/aplane-algo/aplane/internal/boundedmeta"
 
 const (
-	// KeyTypeV1 is the general bounded key type.
-	KeyTypeV1 = "aplane.falcon1024-b.v1"
-
 	// SchemaV1 identifies the boundary file grammar.
 	SchemaV1 = "aplane.boundary.v1"
 
@@ -49,8 +46,7 @@ const (
 	// only to an address on its rekey-to list. RekeyPlusCosigned, on a cosigned
 	// account, lets the spending key alone rekey it to a listed address and, with
 	// the cosigner, to any other. RekeyRefused gives an account no rekey path at
-	// all; the general type never offers it, since such an account has no way out
-	// but its transfers.
+	// all: its only way out is what it may spend or close.
 	RekeySpendingKey  = string(boundedmeta.RekeySpendingKey)
 	RekeyOnlyThese    = boundedmeta.RekeyOnlyThese
 	RekeyPlusCosigned = boundedmeta.RekeyPlusCosigned

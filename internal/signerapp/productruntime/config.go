@@ -62,8 +62,8 @@ type StoredConfig struct {
 	PassphraseTimeout string `yaml:"passphrase_timeout,omitempty"`
 	ApprovalWait      string `yaml:"approval_wait,omitempty"`
 	Mode              string `yaml:"mode,omitempty"`
-	// These restrict new accounts of the per-key types (aplane.falcon1024-b.v1
-	// and the plain hosts) only. They do not reach existing accounts or
+	// These restrict new accounts of the per-key types, the plain hosts
+	// (aplane.falcon1024.v1, aplane.ed25519.v1), only. They do not reach existing accounts or
 	// separately enabled expert templates.
 	RequireContained *bool `yaml:"require_contained,omitempty"`
 	RequireCosigner  *bool `yaml:"require_cosigner,omitempty"`

@@ -2,15 +2,18 @@
 // Copyright (C) 2026 APlane Project LLC
 
 // Package plainhost makes a plain LogicSig key type a host for the account
-// overlays. With a rekey setting, and optionally a cosigner and a rekey-to list,
-// the key type renders the plain1 contract over its own base: the spending key
-// and the overlays, with no fee ceiling and no transaction-type list. With no
+// overlays and the bounds. With a rekey setting, and optionally a cosigner and a
+// rekey-to list, the key type renders the plain1 contract over its own base: the
+// spending key and the overlays, with no fee ceiling and no transaction-type
+// list. With bounds as well (transfer kinds, a recipient list, a timelock, or
+// limits only), it renders a bounded2 shape over the same base. With no
 // parameters it is the plain program it always was: the composition base every
-// bounded and composed account names, an account of its own, and the program of
-// restored plain keys.
+// composed account names, an account of its own, and the program of restored
+// plain keys.
 //
-// Every arrangement is offered; which one suits an account is the user's choice.
-// It depends on no signature family, so each family wraps its own plain provider.
+// Every arrangement and shape is offered; which one suits an account is the
+// user's choice. It depends on no signature family, so each family wraps its own
+// plain provider.
 package plainhost
 
 import (
@@ -33,8 +36,8 @@ import (
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 )
 
-// The request vocabulary is the general bounded type's, so a cosigner and a
-// rekey-to list are asked for the same way on both hosts.
+// The request vocabulary is the boundary file grammar's, so a file and a form
+// ask for the same account.
 const (
 	ParameterCosigner       = boundary.ParameterCosigner
 	ParameterRekeyAuthority = boundary.ParameterRekeyAuthority
@@ -85,51 +88,69 @@ type Plain interface {
 	lsigprovider.OpcodeProfileProvider
 }
 
-// Base is what an overlay program composes over: the base key type's signature
-// operations and its salt style. They must be the plain program's own, so a
-// plain host and a plain key on the same spending key differ only by overlays.
+// Base is what an overlay or bounded program composes over: the base key type's
+// signature operations and its salt style. They must be the plain program's own,
+// so an account and a plain key on the same spending key differ only by
+// overlays and bounds.
 type Base struct {
 	Ops       composeddsa.DSAOps
 	SaltStyle lsigsalt.Style
 }
 
-// arrangement is one overlay arrangement's composer and provenance.
-type arrangement struct {
-	Arrangement
+// program is one selectable composer, a plain1 arrangement or a bounded2 shape,
+// with its provenance.
+type program struct {
+	descriptor  string
 	composer    *composeddsa.ComposedDSA
 	fingerprint string
 }
 
-// Provider is a plain key type with the overlay arrangements. It holds no
-// per-account state: each request selects one of the shared composers.
+// Provider is a plain key type with the overlay arrangements and the bounded
+// shapes. It holds no per-account state: each request selects one of the shared
+// composers.
 type Provider struct {
 	Plain
 	params            []lsigprovider.ParameterDef
-	byArrangement     map[Arrangement]*arrangement
-	ordered           []*arrangement
+	byArrangement     map[Arrangement]*program
+	byShape           map[string]*program
+	ordered           []*program
 	grammar           string
 	cosignerComponent string
 }
 
-// Wrap builds a plain key type's overlay arrangements. It fails if any cannot be
-// built, because the grammar must not offer an arrangement that errors on first
+// Wrap builds a plain key type's arrangements and shapes. It fails if any cannot
+// be built, because the grammar must not offer a program that errors on first
 // use. Generation admission still decides per base at GenerateTEAL.
 func Wrap(plain Plain, base Base) (*Provider, error) {
 	if plain == nil || base.Ops == nil {
 		return nil, fmt.Errorf("plain host needs a plain provider and its base operations")
 	}
-	provider := &Provider{Plain: plain, params: creationParameters(), byArrangement: make(map[Arrangement]*arrangement)}
+	provider := &Provider{
+		Plain:         plain,
+		params:        creationParameters(),
+		byArrangement: make(map[Arrangement]*program),
+		byShape:       make(map[string]*program),
+	}
 	for _, selected := range Arrangements() {
 		composer, err := newComposer(plain, base, selected)
 		if err != nil {
 			return nil, fmt.Errorf("plain host %s, %s: %w", plain.KeyType(), descriptor(selected), err)
 		}
-		built := &arrangement{Arrangement: selected, composer: composer, fingerprint: arrangementFingerprint(selected, composer)}
+		built := &program{descriptor: descriptor(selected), composer: composer, fingerprint: arrangementFingerprint(selected, composer)}
 		provider.byArrangement[selected] = built
 		provider.ordered = append(provider.ordered, built)
 		if selected.Cosigner {
 			provider.cosignerComponent = composer.BoundedAuthorizationMetadata().Cosigner.ComponentKeyType
 		}
+	}
+	for _, shape := range Shapes() {
+		composer, err := newShapeComposer(plain, base, shape)
+		if err != nil {
+			return nil, fmt.Errorf("plain host %s, shape %s: %w", plain.KeyType(), shape.Descriptor(), err)
+		}
+		built := &program{descriptor: shape.Descriptor(), composer: composer, fingerprint: shapeFingerprint(shape, composer)}
+		provider.byShape[shape.Descriptor()] = built
+		provider.ordered = append(provider.ordered, built)
 	}
 	provider.grammar = grammarFingerprint(plain.KeyType(), provider.ordered)
 	return provider, nil
@@ -147,10 +168,7 @@ func MustWrap(plain Plain, base Base) *Provider {
 
 func newComposer(plain Plain, base Base, selected Arrangement) (*composeddsa.ComposedDSA, error) {
 	rekey := selected.Rekey
-	setting := boundedmeta.RekeyRefused
-	if rekey == RekeySpendingKey || rekey == RekeyPlusCosigned {
-		setting = boundedmeta.RekeySpendingKey
-	}
+	setting := arrangementSetting(rekey)
 	profile := &composeddsa.BoundedAuthorizationProfile{
 		Contract: composeddsa.PlainContract,
 		Rekey:    setting,
@@ -186,13 +204,50 @@ func newComposer(plain Plain, base Base, selected Arrangement) (*composeddsa.Com
 	return composer, nil
 }
 
-// creationParameters is the vocabulary. Every parameter is optional here, since
-// no parameters select the plain program; an overlay request must give a rekey
-// authority, which resolve checks.
+// creationParameters is the vocabulary: the bounds, then the overlays. Every
+// parameter is optional here, since no parameters select the plain program; a
+// request with overlays or bounds must give a rekey authority, and one with
+// bounds the transfer kinds, which resolve checks.
 func creationParameters() []lsigprovider.ParameterDef {
 	cosigner := composeddsa.BoundedCosignerParameterDef()
 	cosigner.Required = false
+	minimumRound := uint64(1)
 	return []lsigprovider.ParameterDef{
+		{
+			Name:        ParameterSpendEffects,
+			Label:       "Transfer Kinds",
+			Description: "Bounds: comma-separated transfer kinds the account may make: pay, axfer, asset_opt_in. Any bounds parameter makes the account a bounded one, with a fee limit of 10,000 microAlgos per transaction.",
+			Type:        "string",
+			Example:     "pay,axfer,asset_opt_in",
+		},
+		{
+			Name:        ParameterRecipients,
+			Label:       "Allowed Recipients",
+			Description: "Bounds: addresses that may receive payments or asset transfers. Optional only with an unlock round; absent with recipient scope any.",
+			Type:        "address[]",
+			MaxItems:    RecipientsMax,
+		},
+		{
+			Name:        ParameterRecipientScope,
+			Label:       "Recipient Scope",
+			Description: "Bounds: listed (default) limits transfers to the recipient list; any keeps only the fee limit and transfer kinds.",
+			Type:        "string",
+			Options:     []string{RecipientScopeListed, RecipientScopeAny},
+		},
+		{
+			Name:        ParameterUnlockRound,
+			Label:       "Unlock Round",
+			Description: "Bounds: first round the account can spend, on the network it runs on.",
+			Type:        "uint64",
+			Min:         &minimumRound,
+		},
+		{
+			Name:        ParameterListEncoding,
+			Label:       "List Encoding",
+			Description: "Bounds: how the program holds the recipient list. Auto chooses inline through 10 recipients and Merkle above that.",
+			Type:        "string",
+			Options:     []string{EncodingAuto, EncodingInline, EncodingMerkle},
+		},
 		{
 			Name:        ParameterCosigner,
 			Label:       "Cosigner",
@@ -202,9 +257,9 @@ func creationParameters() []lsigprovider.ParameterDef {
 		{
 			Name:        ParameterRekeyAuthority,
 			Label:       "Rekey Authority",
-			Description: "How the account can be rekeyed: never (refused); by the spending key and the cosigner together (spending_key); by the spending key alone, only to an address on its rekey-to list (only_these); or by the spending key alone to a listed address and with the cosigner to any other (plus_cosigned).",
+			Description: "How the account can be rekeyed: never (refused); by the spending key, with the cosigner too on a cosigned account (spending_key); by the spending key alone, only to an address on its rekey-to list (only_these); or by the spending key alone to a listed address and with the cosigner to any other (plus_cosigned).",
 			Type:        "string",
-			Options:     []string{RekeyRefused, RekeySpendingKey, RekeyOnlyThese, RekeyPlusCosigned},
+			Options:     RekeyAuthorities,
 		},
 		{
 			Name:        ParameterRekeyTo,
@@ -229,8 +284,8 @@ func present(params map[string]string) map[string]string {
 	return out
 }
 
-// hasOverlays reports whether a request asks for an overlay program: any overlay
-// parameter with a value does.
+// hasOverlays reports whether a request asks for a program other than the plain
+// one: any overlay or bounds parameter with a value does.
 func hasOverlays(params map[string]string) bool {
 	for _, name := range []string{ParameterCosigner, ParameterRekeyAuthority, ParameterRekeyTo,
 		composeddsa.BoundedCosignerPublicKeyParameter, boundedmeta.RekeyListRootParameter} {
@@ -238,11 +293,11 @@ func hasOverlays(params map[string]string) bool {
 			return true
 		}
 	}
-	return false
+	return hasBounds(params)
 }
 
 // checkPlainProgram refuses any parameter on a request for the plain program, so
-// a misspelled overlay parameter is an error rather than a weaker account.
+// a misspelled parameter is an error rather than a weaker account.
 func checkPlainProgram(params map[string]string) error {
 	for name := range params {
 		return fmt.Errorf("unknown parameter %q", name)
@@ -250,20 +305,23 @@ func checkPlainProgram(params map[string]string) error {
 	return nil
 }
 
-// resolve selects the arrangement and the canonical values for an overlay
-// request, given without its empty parameters.
-func (p *Provider) resolve(params map[string]string) (*arrangement, map[string]string, error) {
-	known := make(map[string]bool, len(p.params))
-	for _, def := range p.params {
-		known[def.Name] = true
+// resolve selects the program and the canonical values for a request, given
+// without its empty parameters: a bounded2 shape when it has bounds, otherwise a
+// plain1 arrangement.
+func (p *Provider) resolve(params map[string]string) (*program, map[string]string, error) {
+	if hasBounds(params) {
+		selected, err := selectShape(params, p.params)
+		if err != nil {
+			return nil, nil, err
+		}
+		shape, ok := p.byShape[selected.shape.Descriptor()]
+		if !ok {
+			return nil, nil, fmt.Errorf("unsupported bounded shape %s", selected.shape.Descriptor())
+		}
+		return shape, selected.values, nil
 	}
-	for name := range params {
-		if name == ParameterCosigner {
-			return nil, nil, fmt.Errorf("cosigner reference was not resolved")
-		}
-		if !known[name] {
-			return nil, nil, fmt.Errorf("unknown parameter %q", name)
-		}
+	if err := checkKnown(params, p.params); err != nil {
+		return nil, nil, err
 	}
 	normalized, err := lsigprovider.NormalizeCreationParams(params, p.params)
 	if err != nil {
@@ -294,34 +352,10 @@ func (p *Provider) resolve(params map[string]string) (*arrangement, map[string]s
 	return selected, values, nil
 }
 
-// canonicalRekeyTo returns the rekey-to list in canonical order, or "" for an
-// arrangement without one. only_these and plus_cosigned take a list, and must
-// have one.
-func canonicalRekeyTo(params, normalized map[string]string, rekey string) (string, error) {
-	_, present := params[ParameterRekeyTo]
-	if rekey != RekeyOnlyThese && rekey != RekeyPlusCosigned {
-		if present {
-			return "", fmt.Errorf("%s needs %s=%s or %s", ParameterRekeyTo, ParameterRekeyAuthority, RekeyOnlyThese, RekeyPlusCosigned)
-		}
-		return "", nil
-	}
-	if strings.TrimSpace(normalized[ParameterRekeyTo]) == "" {
-		return "", fmt.Errorf("%s=%s needs the addresses the account may be rekeyed to in %s", ParameterRekeyAuthority, rekey, ParameterRekeyTo)
-	}
-	entries, err := composeddsa.RekeyListEntries(normalized)
-	if err != nil {
-		return "", err
-	}
-	addresses := make([]string, len(entries))
-	for i, entry := range entries {
-		addresses[i] = entry.String()
-	}
-	return strings.Join(addresses, ","), nil
-}
-
-// composerValues keeps only the parameters an arrangement's composer declares:
-// the rekey authority selects the composer and isn't one of them.
-func composerValues(selected *arrangement, values map[string]string) map[string]string {
+// composerValues keeps only the parameters a program's composer declares: the
+// selectors (rekey authority, transfer kinds, list encoding, scope) choose the
+// composer and aren't its parameters.
+func composerValues(selected *program, values map[string]string) map[string]string {
 	declared := make(map[string]string)
 	for _, def := range selected.composer.CreationParams() {
 		if value, ok := values[def.Name]; ok {
@@ -331,9 +365,10 @@ func composerValues(selected *arrangement, values map[string]string) map[string]
 	return declared
 }
 
-// resolveGenerated resolves an overlay request and returns the composer's
-// values, with the rekey-to list's root added when generation made one.
-func (p *Provider) resolveGenerated(params map[string]string) (*arrangement, map[string]string, error) {
+// resolveGenerated resolves a request and returns the composer's values, with
+// the rekey-to list's root added when generation made one. The root is not a
+// creation parameter, so the program is resolved without it.
+func (p *Provider) resolveGenerated(params map[string]string) (*program, map[string]string, error) {
 	request, generated := composeddsa.SplitGeneratedParams(present(params))
 	selected, values, err := p.resolve(request)
 	if err != nil {
@@ -344,15 +379,18 @@ func (p *Provider) resolveGenerated(params map[string]string) (*arrangement, map
 	return selected, composer, nil
 }
 
-// BaseKeyType is the plain key type itself: an overlay program verifies the
-// same spending key the plain program does.
+// BaseKeyType is the plain key type itself: every program verifies the same
+// spending key the plain program does.
 func (p *Provider) BaseKeyType() string { return p.KeyType() }
 
-// CreationParams returns the overlay vocabulary.
+// BoundarySchema names the boundary file grammar this type's requests take.
+func (p *Provider) BoundarySchema() string { return boundary.SchemaV1 }
+
+// CreationParams returns the vocabulary.
 func (p *Provider) CreationParams() []lsigprovider.ParameterDef { return p.params }
 
-// ValidateCreationParams checks an overlay request; no parameters is the plain
-// program, which the plain provider validates.
+// ValidateCreationParams checks a request; no parameters is the plain program,
+// which the plain provider validates.
 func (p *Provider) ValidateCreationParams(params map[string]string) error {
 	params = present(params)
 	if !hasOverlays(params) {
@@ -380,8 +418,8 @@ func (p *Provider) CosignerComponentKeyType(params map[string]string) (string, b
 	return p.cosignerComponent, true
 }
 
-// ResolveInstance selects the arrangement for resolved parameters. No parameters
-// select the plain program, which has no overlay contract.
+// ResolveInstance selects the program for resolved parameters. No parameters
+// select the plain program, which has no contract.
 func (p *Provider) ResolveInstance(params map[string]string) (*lsigprovider.Instance, error) {
 	params = present(params)
 	if !hasOverlays(params) {
@@ -413,30 +451,80 @@ func (p *Provider) ResolveInstance(params map[string]string) (*lsigprovider.Inst
 	}, nil
 }
 
-// StoredFingerprint returns the current fingerprint of a stored plain host's
-// arrangement, read from its durable metadata alone.
+// StoredFingerprint returns the current fingerprint of a stored account's
+// program, read from its durable metadata alone.
 func (p *Provider) StoredFingerprint(_ map[string]string, metadata *boundedmeta.Metadata) (string, error) {
-	if metadata == nil || metadata.Contract != boundedmeta.PlainContract {
-		return "", fmt.Errorf("stored account is not a plain host")
+	if metadata == nil {
+		return "", fmt.Errorf("stored account has no overlay contract")
 	}
-	rekey := RekeyRefused
-	switch {
-	case metadata.Rekey == boundedmeta.RekeySpendingKey && metadata.RekeyList != nil:
-		rekey = RekeyPlusCosigned
-	case metadata.Rekey == boundedmeta.RekeySpendingKey:
-		rekey = RekeySpendingKey
-	case metadata.RekeyList != nil:
-		rekey = RekeyOnlyThese
+	switch metadata.Contract {
+	case boundedmeta.PlainContract:
+		stored := Arrangement{Rekey: storedRekey(metadata), Cosigner: metadata.Cosigner != nil}
+		selected, ok := p.byArrangement[stored]
+		if !ok {
+			return "", fmt.Errorf("unsupported plain host arrangement %s", descriptor(stored))
+		}
+		return selected.fingerprint, nil
+	case boundedmeta.Contract:
+		shape, err := shapeFromMetadata(metadata)
+		if err != nil {
+			return "", err
+		}
+		selected, ok := p.byShape[shape.Descriptor()]
+		if !ok {
+			return "", fmt.Errorf("unsupported bounded shape %s", shape.Descriptor())
+		}
+		return selected.fingerprint, nil
+	default:
+		return "", fmt.Errorf("stored account has contract %q", metadata.Contract)
 	}
-	stored := Arrangement{Rekey: rekey, Cosigner: metadata.Cosigner != nil}
-	selected, ok := p.byArrangement[stored]
-	if !ok {
-		return "", fmt.Errorf("unsupported plain host arrangement %s", descriptor(stored))
-	}
-	return selected.fingerprint, nil
 }
 
-// GrammarFingerprint identifies the arrangements an operator approves.
+// storedRekey is a stored account's rekey option: only these is refused plus the
+// list, plus cosigned a spending-key rekey plus the list.
+func storedRekey(metadata *boundedmeta.Metadata) string {
+	switch {
+	case metadata.Rekey == boundedmeta.RekeySpendingKey && metadata.RekeyList != nil:
+		return RekeyPlusCosigned
+	case metadata.Rekey == boundedmeta.RekeySpendingKey:
+		return RekeySpendingKey
+	case metadata.RekeyList != nil:
+		return RekeyOnlyThese
+	default:
+		return RekeyRefused
+	}
+}
+
+// shapeFromMetadata reads a stored bounded account's shape.
+func shapeFromMetadata(metadata *boundedmeta.Metadata) (Shape, error) {
+	spend, err := canonicalSpend(strings.Join(metadata.SpendEffects, ","))
+	if err != nil {
+		return Shape{}, err
+	}
+	if err := boundedmeta.ValidateRekeySetting(metadata.Rekey); err != nil {
+		return Shape{}, fmt.Errorf("stored account: %w", err)
+	}
+	shape := Shape{Spend: spend, Rekey: storedRekey(metadata), Cosigner: metadata.Cosigner != nil}
+	switch metadata.Layer3Policy {
+	case composeddsa.Layer3PolicyFixedAllowlist:
+		shape.Encoding = EncodingInline
+	case composeddsa.Layer3PolicyMerkleAllowlist:
+		shape.Encoding = EncodingMerkle
+	case composeddsa.Layer3PolicyTimelock:
+		shape.Timelock = true
+	case composeddsa.Layer3PolicyFixedAllowlistTimelock:
+		shape.Encoding, shape.Timelock = EncodingInline, true
+	case composeddsa.Layer3PolicyMerkleAllowlistTimelock:
+		shape.Encoding, shape.Timelock = EncodingMerkle, true
+	case composeddsa.Layer3PolicyNone:
+		shape.AnyRecipient = true
+	default:
+		return Shape{}, fmt.Errorf("stored account has policy %q", metadata.Layer3Policy)
+	}
+	return shape, nil
+}
+
+// GrammarFingerprint identifies the arrangements and shapes an operator approves.
 func (p *Provider) GrammarFingerprint() string { return p.grammar }
 
 // GenerateTEAL renders the selected program.
@@ -498,9 +586,9 @@ func (p *Provider) PrepareRekeyList(privateKey []byte, params map[string]string)
 	return out, nil
 }
 
-// BuildBoundedAuthorizationMetadata snapshots an overlay program's signing
-// contract and refuses one the network could not run, before the key is
-// persisted. The plain program has none.
+// BuildBoundedAuthorizationMetadata snapshots a program's signing contract and
+// refuses one the network could not run within its fee ceiling, before the key
+// is persisted. The plain program has none.
 func (p *Provider) BuildBoundedAuthorizationMetadata(publicKey []byte, params map[string]string, bytecode []byte) (*boundedmeta.Metadata, error) {
 	if !hasOverlays(present(params)) {
 		return nil, nil
@@ -519,13 +607,13 @@ func (p *Provider) BuildBoundedAuthorizationMetadata(publicKey []byte, params ma
 	return metadata, nil
 }
 
-// BoundedLogicSigOpcodeProfile is every overlay program's path ceilings.
+// BoundedLogicSigOpcodeProfile is every program's path ceilings.
 func (p *Provider) BoundedLogicSigOpcodeProfile() lsigresource.OpcodeProfile {
 	return lsigresource.BoundedOpcodeProfile(opcodeCost, opcodeCost, opcodeCost)
 }
 
 // SetAlgodClient configures TEAL compilation for the plain program and every
-// arrangement.
+// arrangement and shape.
 func (p *Provider) SetAlgodClient(client *algod.Client) {
 	p.Plain.SetAlgodClient(client)
 	for _, selected := range p.ordered {
@@ -533,9 +621,10 @@ func (p *Provider) SetAlgodClient(client *algod.Client) {
 	}
 }
 
-// checkResources is a generation backstop: each path the arrangement has must
-// fit one transaction's resources. A plain host has no fee ceiling to check.
-// Signing still checks the selected path against the actual network rules.
+// checkResources is a generation backstop, not a promise about future networks:
+// each path the program has must fit one transaction's resources, and within a
+// bounded account's fee ceiling. Signing still checks the selected path against
+// the actual network rules.
 func checkResources(metadata *boundedmeta.Metadata, opcodes lsigresource.OpcodeProfile, programBytes int) error {
 	consensus, err := lsigresource.CurrentConsensus()
 	if err != nil {
@@ -546,14 +635,18 @@ func checkResources(metadata *boundedmeta.Metadata, opcodes lsigresource.OpcodeP
 		opcode uint64
 	}
 	paths := []path{{boundedmeta.PathSpend, opcodes.Spend}}
-	if metadata.Rekey == boundedmeta.RekeySpendingKey {
+	switch metadata.Rekey {
+	case boundedmeta.RekeyRefused:
+	case boundedmeta.RekeySpendingKey:
 		paths = append(paths, path{boundedmeta.PathSpendingRekey, opcodes.SpendingRekey})
+	default:
+		return fmt.Errorf("no resource path for rekey setting %q", metadata.Rekey)
 	}
 	if metadata.RekeyList != nil {
 		paths = append(paths, path{boundedmeta.PathListedRekey, opcodes.ListedRekey})
 	}
 	for _, path := range paths {
-		if _, err := lsigresource.Solve(consensus, lsigresource.PlanInput{
+		plan, err := lsigresource.Solve(consensus, lsigresource.PlanInput{
 			TransactionCount: 1,
 			LogicSigs: []lsigresource.Usage{{
 				ProgramBytes:  uint64(programBytes),
@@ -561,11 +654,23 @@ func checkResources(metadata *boundedmeta.Metadata, opcodes lsigresource.OpcodeP
 				MaxOpcodeCost: path.opcode,
 			}},
 			Dummy: lsigresource.Usage{ProgramBytes: uint64(len(txsigning.EmbeddedDummyTealTok)), MaxOpcodeCost: 1},
-		}); err != nil {
+		})
+		if err != nil {
 			return fmt.Errorf("%s path does not fit the network's resource limits: %w", path.name, err)
+		}
+		if fee := planFee(plan, consensus.MinTxnFee); metadata.MaxFee != nil && fee > *metadata.MaxFee {
+			return fmt.Errorf("%s path needs a fee of %d, above the account's ceiling of %d", path.name, fee, *metadata.MaxFee)
 		}
 	}
 	return nil
+}
+
+// planFee is the plan's total fee, rounded up. Group size and the program fee
+// factor are both small, so the product cannot overflow.
+func planFee(plan lsigresource.Plan, minFee uint64) uint64 {
+	const factorScale = 1_000_000
+	usage := plan.GroupSize*factorScale + plan.ProgramFeeFactorUsage
+	return (minFee*usage + factorScale - 1) / factorScale
 }
 
 // Compile-time interface checks.

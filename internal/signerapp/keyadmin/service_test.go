@@ -623,9 +623,21 @@ func TestServiceGenerateKeyGenericPassesThroughSuccessAndErrors(t *testing.T) {
 
 // An enabled plain host creates the plain program; a disabled one refuses the
 // key type. Neither takes a mnemonic.
+// The Ed25519 plain host is opt-in; the Falcon one is enabled by default, and
+// neither takes a mnemonic.
 func TestServicePlainHostsCreateOnlyOnceEnabledAndTakeNoMnemonic(t *testing.T) {
 	configureFalconCompileMock(t)
-	for _, keyType := range []string{"aplane.falcon1024.v1", "aplane.ed25519.v1"} {
+	t.Run("aplane.falcon1024.v1 by default", func(t *testing.T) {
+		ir := setupProductRuntime(t)
+		svc := Service{Runtime: ir, AuditLog: &auditRecorder{}}
+		if result, err := svc.GenerateKey(context.Background(), "aplane.falcon1024.v1", nil, nil); err != nil || result == nil {
+			t.Fatalf("GenerateKey(aplane.falcon1024.v1) = %v, %v", result, err)
+		}
+		if result, err := svc.ImportKey(context.Background(), "aplane.falcon1024.v1", "invalid phrase", nil); result != nil || err == nil || !strings.Contains(err.Message, "mnemonic import not supported") {
+			t.Fatalf("ImportKey(aplane.falcon1024.v1) = %v, %v", result, err)
+		}
+	})
+	for _, keyType := range []string{"aplane.ed25519.v1"} {
 		t.Run(keyType, func(t *testing.T) {
 			ir := setupProductRuntime(t)
 			audit := &auditRecorder{}
@@ -985,15 +997,18 @@ func TestServiceRefusesTheDisabledPlainHostAndKeepsNativeDefaults(t *testing.T) 
 
 	ir := setupProductRuntime(t)
 	svc := Service{AuditLog: &auditRecorder{}, Runtime: ir}
-	const want = "key type aplane.falcon1024.v1 is not enabled on this node"
+	const want = "key type aplane.ed25519.v1 is not enabled on this node"
 	mnemonic := "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art"
 
 	cosigned := map[string]string{plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused, boundedmeta.CosignerPublicKeyParameter: strings.Repeat("41", boundedmeta.CosignerPublicKeySizeV1)}
-	if _, err := svc.GenerateKey(context.Background(), "aplane.falcon1024.v1", cosigned, nil); err == nil || err.Kind != ErrorInvalidInput || !strings.Contains(err.Message, want) {
-		t.Fatalf("GenerateKey(aplane.falcon1024.v1) before enabling = %#v, want %q", err, want)
+	if _, err := svc.GenerateKey(context.Background(), "aplane.ed25519.v1", cosigned, nil); err == nil || err.Kind != ErrorInvalidInput || !strings.Contains(err.Message, want) {
+		t.Fatalf("GenerateKey(aplane.ed25519.v1) before enabling = %#v, want %q", err, want)
 	}
-	if _, err := svc.ImportKey(context.Background(), "aplane.falcon1024.v1", mnemonic, nil); err == nil || err.Kind != ErrorInvalidInput || !strings.Contains(err.Message, want) {
-		t.Fatalf("ImportKey(aplane.falcon1024.v1) before enabling = %#v, want %q", err, want)
+	if _, err := svc.ImportKey(context.Background(), "aplane.ed25519.v1", mnemonic, nil); err == nil || err.Kind != ErrorInvalidInput || !strings.Contains(err.Message, want) {
+		t.Fatalf("ImportKey(aplane.ed25519.v1) before enabling = %#v, want %q", err, want)
+	}
+	if result, err := svc.GenerateKey(context.Background(), "aplane.falcon1024.v1", cosigned, nil); err != nil || result.Address == "" {
+		t.Fatalf("GenerateKey(aplane.falcon1024.v1) on a new runtime = %+v, %#v; want the Falcon plain host enabled by default", result, err)
 	}
 	if _, err := svc.GenerateKey(context.Background(), "example.unknown.v1", nil, nil); err == nil || err.Message != "invalid key type: example.unknown.v1" {
 		t.Fatalf("GenerateKey(unknown) = %#v, want the invalid key type refusal", err)

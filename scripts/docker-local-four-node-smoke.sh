@@ -11,7 +11,7 @@
 # and corridor allowlist enforcement. A plain host (aplane.falcon1024.v1 with a
 # cosigner) signs a 0 ALGO self-send through apshell and through the Python,
 # TypeScript and Go SDKs, each with its real cosigner node, and then closes out.
-# A general aplane.falcon1024-b.v1 account with the Corridor preset's rules, created
+# A bounded aplane.falcon1024.v1 account with the Corridor preset's rules, created
 # from a boundary file with no key type setup, carries the cosigned checks. It can
 # be rekeyed only to its listed address, with the spending key alone, so once its
 # cosigner is gone it can't spend but its listed key still takes it over. A plus
@@ -94,7 +94,7 @@ The client runs a client-only install plus apadmin, points endpoints.yaml at the
 signer container DNS name, adds the cosigner endpoint through apshell, enrolls
 the client key at both nodes, generates a cosigner key through the cosigner endpoint,
 then exports and imports the public cosigner reference with local IPC apadmin,
-enables the plain host (aplane.falcon1024.v1), and verifies apshell can create,
+uses the default-enabled plain host (aplane.falcon1024.v1), and verifies apshell can create,
 fund, and validate a cosigned plain host, Corridor, and native Falcon accounts
 against the selected network. The plain host signs the same 0 ALGO self-send
 through the Python, TypeScript and Go SDKs' prepared cosigned flow, then closes
@@ -1685,20 +1685,6 @@ verify_guided_cosigner_setup() {
     fi
 }
 
-# Only the protocol-native key types are enabled by default. Call this before the
-# signer's approval session starts: apadmin takes the admin session, and the signer
-# locks when it exits.
-enable_keytype() {
-    local keytype="$1"
-    local out
-    if ! out="$(docker_exec_as_tester "$SIGNER_CONTAINER" ". /home/$TEST_USER/aplane/apenv.sh && \
-        APSIGNER_PASSPHRASE='$TEST_PASSPHRASE' apadmin keytype enable $keytype 2>&1")"; then
-        printf '%s\n' "$out" >&2
-        die "failed to enable key type $keytype on signer"
-    fi
-    printf '%s\n' "$out"
-}
-
 # generate_plain_host_key creates a cosigned plain host: the plain Falcon
 # LogicSig with the cosigner overlay, rekeyed by the spending key and the
 # cosigner together. It signs through the cosigned flow.
@@ -1737,27 +1723,27 @@ generate_general_bounded_key() {
     local boundary_file="/home/$TEST_USER/aplane/boundary.yaml"
     docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'schema: aplane.boundary.v1\nspend: [pay, axfer, asset_opt_in]\nrecipients:\n  - %s\nencoding: merkle\nrekey:\n  authority: %s\n  to:\n    - %s\ncosigner: %s\n%s\n' \
         '$CORRIDOR_ALLOWED_ADDRESS' '$authority' '$FALCON_ADDRESS' '$COSIGNER_COMPONENT_KEY' '$extra_line' > '$boundary_file'"
-    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'connect\ngenerate aplane.falcon1024-b.v1 --boundary=%s\nkeys\n' \
+    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'connect\ngenerate aplane.falcon1024.v1 --boundary=%s\nkeys\n' \
         '$boundary_file' > /tmp/generate-general-bounded.script"
     local out
     if ! out="$(docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \
         apshell -script /tmp/generate-general-bounded.script 2>&1")"; then
         printf '%s\n' "$out" >&2
-        die "failed to generate aplane.falcon1024-b.v1 account from a boundary file"
+        die "failed to generate bounded aplane.falcon1024.v1 account from a boundary file"
     fi
     printf '%s\n' "$out"
     GENERAL_BOUNDED_ADDRESS="$(printf '%s\n' "$out" | awk '/Generated .* key:/ { print $NF; exit }')"
-    [ -n "$GENERAL_BOUNDED_ADDRESS" ] || die "could not parse generated aplane.falcon1024-b.v1 address"
+    [ -n "$GENERAL_BOUNDED_ADDRESS" ] || die "could not parse generated bounded aplane.falcon1024.v1 address"
     grep -Fq "Cosigner:       $COSIGNER_COMPONENT_KEY" <<<"$out" \
-        || die "aplane.falcon1024-b.v1 result did not report the requested cosigner"
+        || die "bounded aplane.falcon1024.v1 result did not report the requested cosigner"
     grep -Fq 'Merkle allowlist' <<<"$out" \
-        || die "keys did not describe the aplane.falcon1024-b.v1 account"
+        || die "keys did not describe the bounded aplane.falcon1024.v1 account"
     local label='rekey to listed only'
     if [ "$authority" = plus_cosigned ]; then
         label='rekey to listed, or cosigned'
     fi
     grep -Fq "$label" <<<"$out" \
-        || die "keys did not describe the aplane.falcon1024-b.v1 account's rekey as '$label'"
+        || die "keys did not describe the bounded aplane.falcon1024.v1 account's rekey as '$label'"
 }
 
 # run_apshell_rekey rekeys an account through apshell and prints the output. It
@@ -1790,27 +1776,27 @@ wait_for_auth_address() {
 # An unlisted rekey is refused at the signer before anything reaches the network
 # or the cosigner: the account takes no rekey but to its listed address.
 verify_general_bounded_unlisted_rekey_refused() {
-    [ -n "$GENERAL_BOUNDED_ADDRESS" ] || die "aplane.falcon1024-b.v1 address is not set"
+    [ -n "$GENERAL_BOUNDED_ADDRESS" ] || die "bounded aplane.falcon1024.v1 address is not set"
     [ -n "$CORRIDOR_BLOCKED_ADDRESS" ] || die "unlisted rekey target is not set"
     local out
     out="$(run_apshell_rekey "$GENERAL_BOUNDED_ADDRESS" "$CORRIDOR_BLOCKED_ADDRESS" rekey-general-unlisted)"
     printf '%s\n' "$out"
     grep -Fq "is not on this account's rekey-to list" <<<"$out" \
-        || die "the signer did not refuse an unlisted rekey of an aplane.falcon1024-b.v1 account"
+        || die "the signer did not refuse an unlisted rekey of an bounded aplane.falcon1024.v1 account"
     [ -z "$(account_auth_address "$GENERAL_BOUNDED_ADDRESS")" ] \
-        || die "an aplane.falcon1024-b.v1 account was rekeyed to an unlisted address"
+        || die "an bounded aplane.falcon1024.v1 account was rekeyed to an unlisted address"
 }
 
 # The listed rekey takes the spending key alone, so the listed key still takes
 # the account over after its cosigner is gone.
 verify_general_bounded_listed_rekey_without_cosigner() {
-    [ -n "$GENERAL_BOUNDED_ADDRESS" ] || die "aplane.falcon1024-b.v1 address is not set"
+    [ -n "$GENERAL_BOUNDED_ADDRESS" ] || die "bounded aplane.falcon1024.v1 address is not set"
     [ -n "$FALCON_ADDRESS" ] || die "Falcon listed key is not set"
     local out
     out="$(run_apshell_rekey "$GENERAL_BOUNDED_ADDRESS" "$FALCON_ADDRESS" rekey-general-listed)"
     printf '%s\n' "$out"
     grep -Fqi 'transaction submitted' <<<"$out" \
-        || die "the listed rekey of an aplane.falcon1024-b.v1 account was not submitted after cosigner deletion"
+        || die "the listed rekey of an bounded aplane.falcon1024.v1 account was not submitted after cosigner deletion"
     wait_for_auth_address "$GENERAL_BOUNDED_ADDRESS" "$FALCON_ADDRESS" "listed rekey without the cosigner"
 }
 
@@ -2238,8 +2224,8 @@ main() {
     log "Adding cosigner endpoint from client container"
     create_client_cosigner_endpoint
 
-    log "Enabling the plain host key type (aplane.falcon1024.v1) on signer"
-    enable_keytype aplane.falcon1024.v1
+    # The Falcon plain host carries the bounds and the overlays and is enabled
+    # by default, so it needs no key type setup.
 
     log "Starting signer-side approver for client enrollment"
     start_signer_apapprover
@@ -2345,33 +2331,33 @@ main() {
     log "Resolving Corridor recipient accounts on $NETWORK_TOKEN"
     resolve_corridor_addresses
 
-    log "Generating aplane.falcon1024-b.v1 account from a boundary file"
+    log "Generating bounded aplane.falcon1024.v1 account from a boundary file"
     generate_general_bounded_key
 
-    log "Funding generated aplane.falcon1024-b.v1 account on $NETWORK_TOKEN"
+    log "Funding generated bounded aplane.falcon1024.v1 account on $NETWORK_TOKEN"
     with_general_bounded_account fund_corridor_key
     with_general_bounded_account verify_corridor_funded
 
-    log "Validating bounded-cosigner aplane.falcon1024-b.v1 through Python SDK"
+    log "Validating bounded-cosigner bounded aplane.falcon1024.v1 through Python SDK"
     with_general_bounded_account run_python_sdk_corridor_validate
 
-    log "Verifying aplane.falcon1024-b.v1 allowlisted recipient succeeds"
+    log "Verifying bounded aplane.falcon1024.v1 allowlisted recipient succeeds"
     with_general_bounded_account validate_corridor_allowed_send
 
-    log "Verifying aplane.falcon1024-b.v1 non-allowlisted recipient fails"
+    log "Verifying bounded aplane.falcon1024.v1 non-allowlisted recipient fails"
     with_general_bounded_account validate_corridor_blocked_send_fails
 
-    log "Generating aplane.falcon1024-b.v1 timelock account with a passed unlock round"
+    log "Generating bounded aplane.falcon1024.v1 timelock account with a passed unlock round"
     generate_general_bounded_key "unlock_round: 1"
 
-    log "Funding generated aplane.falcon1024-b.v1 timelock account on $NETWORK_TOKEN"
+    log "Funding generated bounded aplane.falcon1024.v1 timelock account on $NETWORK_TOKEN"
     with_general_bounded_account fund_corridor_key
     with_general_bounded_account verify_corridor_funded
 
-    log "Verifying aplane.falcon1024-b.v1 timelock allowlisted recipient succeeds"
+    log "Verifying bounded aplane.falcon1024.v1 timelock allowlisted recipient succeeds"
     with_general_bounded_account validate_corridor_allowed_send
 
-    log "Generating plus cosigned aplane.falcon1024-b.v1 account"
+    log "Generating plus cosigned bounded aplane.falcon1024.v1 account"
     generate_general_bounded_key "" plus_cosigned
     PLUS_COSIGNED_ADDRESS="$GENERAL_BOUNDED_ADDRESS"
     with_general_bounded_account fund_corridor_key
@@ -2393,10 +2379,10 @@ main() {
     fund_plain_host_key
     verify_plain_host_funded
 
-    log "Generating aplane.falcon1024-b.v1 account for the cosigner-loss checks"
+    log "Generating bounded aplane.falcon1024.v1 account for the cosigner-loss checks"
     generate_general_bounded_key
 
-    log "Funding generated aplane.falcon1024-b.v1 account on $NETWORK_TOKEN"
+    log "Funding generated bounded aplane.falcon1024.v1 account on $NETWORK_TOKEN"
     with_general_bounded_account fund_corridor_key
     with_general_bounded_account verify_corridor_funded
 
@@ -2412,13 +2398,13 @@ main() {
     log "Verifying the plain host's spend fails after cosigner key deletion"
     validate_plain_host_self_send_after_cosigner_delete_fails
 
-    log "Verifying aplane.falcon1024-b.v1 spend fails after cosigner key deletion"
+    log "Verifying bounded aplane.falcon1024.v1 spend fails after cosigner key deletion"
     with_general_bounded_account validate_corridor_send_after_cosigner_delete_fails
 
-    log "Verifying the signer refuses an unlisted rekey of aplane.falcon1024-b.v1"
+    log "Verifying the signer refuses an unlisted rekey of aplane.falcon1024.v1"
     verify_general_bounded_unlisted_rekey_refused
 
-    log "Verifying the listed key takes aplane.falcon1024-b.v1 over without the cosigner"
+    log "Verifying the listed key takes aplane.falcon1024.v1 over without the cosigner"
     verify_general_bounded_listed_rekey_without_cosigner
 
     log "Shutting down nodes"

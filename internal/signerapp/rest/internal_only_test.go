@@ -4,6 +4,7 @@
 package rest
 
 import (
+	"github.com/aplane-algo/aplane/internal/boundary"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/keytypestate"
@@ -26,18 +27,23 @@ func TestKeyTypesListsAPlainHostOnceEnabled(t *testing.T) {
 		}
 		return infos
 	}
-	for _, keyType := range []string{"aplane.falcon1024.v1", "aplane.ed25519.v1"} {
-		if _, ok := listed()[keyType]; ok {
-			t.Fatalf("%s listed before it was enabled", keyType)
-		}
-		if err := keytypestate.Put(ir.KeyPaths(), keytypestate.Record{KeyType: keyType, Source: keytypestate.SourceCompiled, State: keytypestate.StateEnabled}); err != nil {
-			t.Fatal(err)
-		}
-		info, ok := listed()[keyType]
-		if !ok || !info.PerKeyContract || info.BoundarySchema != "" || info.CosignerComponentKeyType == "" || info.MnemonicImport {
+	// The Falcon plain host is default-enabled; the Ed25519 one is opt-in.
+	plainHost := func(keyType string, info signerapi.KeyTypeInfo, ok bool) {
+		t.Helper()
+		if !ok || !info.PerKeyContract || info.BoundarySchema != boundary.SchemaV1 || info.CosignerComponentKeyType == "" || info.MnemonicImport {
 			t.Fatalf("%s = %+v, %v", keyType, info, ok)
 		}
 	}
+	info, ok := listed()["aplane.falcon1024.v1"]
+	plainHost("aplane.falcon1024.v1", info, ok)
+	if _, ok := listed()["aplane.ed25519.v1"]; ok {
+		t.Fatal("aplane.ed25519.v1 listed before it was enabled")
+	}
+	if err := keytypestate.Put(ir.KeyPaths(), keytypestate.Record{KeyType: "aplane.ed25519.v1", Source: keytypestate.SourceCompiled, State: keytypestate.StateEnabled}); err != nil {
+		t.Fatal(err)
+	}
+	info, ok = listed()["aplane.ed25519.v1"]
+	plainHost("aplane.ed25519.v1", info, ok)
 }
 
 func TestKeysKeepsExistingInternalProviderAccounts(t *testing.T) {

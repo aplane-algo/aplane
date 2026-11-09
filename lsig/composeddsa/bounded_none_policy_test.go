@@ -106,7 +106,7 @@ func TestNonePolicyComposerRejections(t *testing.T) {
 // Only the general type offers a limits-only account: every route by which a
 // template file reaches the composer refuses the policy.
 func TestNonePolicyIsRefusedInTemplateFiles(t *testing.T) {
-	const want = "offered only by the general bounded type"
+	const want = "offered only by the plain hosts' bounds"
 	if _, err := composeddsa.ParseTemplateSpec([]byte(noneTemplateYAML)); err == nil || !strings.Contains(err.Error(), want) {
 		t.Fatalf("ParseTemplateSpec error = %v, want %q", err, want)
 	}

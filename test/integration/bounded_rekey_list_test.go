@@ -17,7 +17,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/rotatingkey"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
-	"github.com/aplane-algo/aplane/lsig/boundedaccount"
+	"github.com/aplane-algo/aplane/lsig/plainhost"
 	"github.com/aplane-algo/aplane/test/integration/harness"
 )
 
@@ -75,15 +75,15 @@ func (n *onlyTheseNode) key(t *testing.T, keyType string, params map[string]stri
 	return address
 }
 
-// onlyThese generates allowlist-lock as the general type offers it: payments to
-// the funder only, and a rekey only to a listed address.
+// onlyThese generates allowlist-lock as the Falcon plain host's bounds offer it:
+// payments to the funder only, and a rekey only to a listed address.
 func (n *onlyTheseNode) onlyThese(t *testing.T, rekeyTo ...string) string {
 	t.Helper()
-	return n.key(t, boundedaccount.KeyTypeV1, map[string]string{
-		boundedaccount.ParameterSpendEffects:   "pay",
-		boundedaccount.ParameterRecipients:     n.funder.GetAddress(),
-		boundedaccount.ParameterRekeyAuthority: boundedaccount.RekeyOnlyThese,
-		boundedaccount.ParameterRekeyTo:        strings.Join(rekeyTo, ","),
+	return n.key(t, plainFalconKeyType, map[string]string{
+		plainhost.ParameterSpendEffects:   "pay",
+		plainhost.ParameterRecipients:     n.funder.GetAddress(),
+		plainhost.ParameterRekeyAuthority: plainhost.RekeyOnlyThese,
+		plainhost.ParameterRekeyTo:        strings.Join(rekeyTo, ","),
 	}, 1_000_000)
 }
 
@@ -122,10 +122,10 @@ func (n *onlyTheseNode) send(t *testing.T, account, to string) {
 	}
 }
 
-// Allowlist-lock's guarantee as the general type's only-these account: the
-// signer refuses an unlisted rekey, and a listed one confirms with the spending
-// key alone. A post-quantum account hands over to a native Falcon key, which
-// then signs for it, including its onward rekey.
+// Allowlist-lock's guarantee as a bounded only-these account: the signer refuses
+// an unlisted rekey, and a listed one confirms with the spending key alone. A
+// post-quantum account hands over to a native Falcon key, which then signs for
+// it, including its onward rekey.
 func TestBoundedOnlyTheseHandoverThroughSigner(t *testing.T) {
 	n := newOnlyTheseNode(t, true)
 	// The test environment's default allows every rekey; the shipped default is
@@ -164,10 +164,10 @@ func TestRejectForeignRekeyTakesListedTargets(t *testing.T) {
 	bestEffortCloseRekeyedAccount(t, n.network, listed, n.funder.GetAddress(), unheld.PrivateKey)
 
 	// With no list, the same unheld target is foreign.
-	spending := n.key(t, boundedaccount.KeyTypeV1, map[string]string{
-		boundedaccount.ParameterSpendEffects:   "pay",
-		boundedaccount.ParameterRecipients:     n.funder.GetAddress(),
-		boundedaccount.ParameterRekeyAuthority: boundedaccount.RekeySpendingKey,
+	spending := n.key(t, plainFalconKeyType, map[string]string{
+		plainhost.ParameterSpendEffects:   "pay",
+		plainhost.ParameterRecipients:     n.funder.GetAddress(),
+		plainhost.ParameterRekeyAuthority: plainhost.RekeySpendingKey,
 	}, 1_000_000)
 	assertSignerRefusesRekey(t, n.apshell, n.network, spending, unheld.Address.String(), policy.RejectForeignRekeyRuleID)
 }
@@ -236,11 +236,11 @@ func TestRekeyReachesReviewWithoutUserAutoApprove(t *testing.T) {
 		t.Fatalf("load funding account: %v", err)
 	}
 	unheld := algocrypto.GenerateAccount().Address.String()
-	listed := mustAdminGenerateKeyNoCleanup(t, client, n.signerd, boundedaccount.KeyTypeV1, map[string]string{
-		boundedaccount.ParameterSpendEffects:   "pay",
-		boundedaccount.ParameterRecipients:     funder.GetAddress(),
-		boundedaccount.ParameterRekeyAuthority: boundedaccount.RekeyOnlyThese,
-		boundedaccount.ParameterRekeyTo:        unheld,
+	listed := mustAdminGenerateKeyNoCleanup(t, client, n.signerd, plainFalconKeyType, map[string]string{
+		plainhost.ParameterSpendEffects:   "pay",
+		plainhost.ParameterRecipients:     funder.GetAddress(),
+		plainhost.ParameterRekeyAuthority: plainhost.RekeyOnlyThese,
+		plainhost.ParameterRekeyTo:        unheld,
 	})
 	if err := funder.FundMicroAlgosAndWait(listed, 1_000_000); err != nil {
 		t.Fatalf("fund %s: %v", listed, err)

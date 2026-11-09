@@ -65,8 +65,31 @@ func (m Model) paramSpecFor(keyType string) *paramSpec {
 	}
 }
 
-// boundaryPresetRows is the presets plus the file route.
-func boundaryPresetRows() int { return len(boundary.Presets()) + 1 }
+// The two choices the preset screen offers beside the presets: no bounds at
+// all, and every bounds field without a file.
+var (
+	noBoundsPreset = boundary.Preset{
+		Name:        "no-bounds",
+		Title:       "No bounds",
+		Description: "The spending key and the overlays you choose: no fee limit and no transfer list.",
+	}
+	customBoundsPreset = boundary.Preset{
+		Name:        "custom-bounds",
+		Title:       "Custom bounds",
+		Description: "Every bounds field, without a file: transfer kinds, recipients, scope, unlock round, encoding.",
+		Fields: []string{boundary.ParameterSpendEffects, boundary.ParameterRecipients, boundary.ParameterRecipientScope,
+			boundary.ParameterUnlockRound, boundary.ParameterListEncoding},
+	}
+)
+
+// boundaryPresetChoices is what the preset screen lists before the file route:
+// no bounds, the presets, and custom bounds.
+func boundaryPresetChoices() []boundary.Preset {
+	return append(append([]boundary.Preset{noBoundsPreset}, boundary.Presets()...), customBoundsPreset)
+}
+
+// boundaryPresetRows is the choices plus the file route.
+func boundaryPresetRows() int { return len(boundaryPresetChoices()) + 1 }
 
 func (m Model) handleBoundaryPresetKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
@@ -94,7 +117,7 @@ func (m Model) handleBoundaryPresetKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return m.submitBoundaryFile()
 		}
-		preset := boundary.Presets()[m.forms.boundaryPresetIndex]
+		preset := boundaryPresetChoices()[m.forms.boundaryPresetIndex]
 		m.forms.boundaryPreset = &preset
 		m.forms.boundaryFileRequest = false
 		m = m.initGenericLSigParamsForKeyType(m.forms.boundaryKeyType)
@@ -105,7 +128,7 @@ func (m Model) handleBoundaryPresetKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) boundaryFileRowSelected() bool {
-	return m.forms.boundaryPresetIndex == len(boundary.Presets())
+	return m.forms.boundaryPresetIndex == len(boundaryPresetChoices())
 }
 
 // submitBoundaryFile sends the file's public values for review. A cosigner name
@@ -126,27 +149,30 @@ func (m Model) submitBoundaryFile() (tea.Model, tea.Cmd) {
 
 func (m Model) renderBoundaryPreset() string {
 	var sb strings.Builder
-	sb.WriteString(titleStyle.Render("New Bounded Account"))
+	sb.WriteString(titleStyle.Render("New " + displayKeyType(m.forms.boundaryKeyType) + " Account"))
 	sb.WriteString("\n\n")
+	// Titles only, with the selected row's description under it, so every
+	// choice fits 80x24.
 	row := func(index int, title, description string) {
-		if index == m.forms.boundaryPresetIndex {
-			sb.WriteString(selectedStyle.Render("> " + title))
-		} else {
+		if index != m.forms.boundaryPresetIndex {
 			sb.WriteString(normalStyle.Render("  " + title))
+			sb.WriteString("\n")
+			return
 		}
-		sb.WriteString("\n    ")
-		sb.WriteString(subtitleStyle.Render(description))
+		sb.WriteString(selectedStyle.Render("> " + title))
+		sb.WriteString("\n")
+		sb.WriteString(subtitleStyle.Render(indentLines(wrapText(description, 62), "    ")))
 		sb.WriteString("\n")
 	}
-	presets := boundary.Presets()
-	for i, preset := range presets {
+	choices := boundaryPresetChoices()
+	for i, preset := range choices {
 		row(i, preset.Title, preset.Description)
 	}
-	file := "Rules from a boundary file, for narrower transfer lists."
+	file := "Rules from a boundary file, with or without bounds."
 	if m.forms.boundaryFile != "" {
 		file = middleEllipsize(m.forms.boundaryFile, 60)
 	}
-	row(len(presets), "Load boundary file", file)
+	row(len(choices), "Load boundary file", file)
 	if m.forms.generateError != "" {
 		sb.WriteString("\n")
 		sb.WriteString(errorStyle.Render(wrapText(m.forms.generateError, 64)))

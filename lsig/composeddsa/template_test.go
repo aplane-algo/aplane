@@ -492,7 +492,7 @@ teal: |
 	}{
 		{name: "contract", baseKeyType: "aplane.falcon1024.v1", contract: "cosigner2", requiredOn: "spend", want: "unsupported bounded cosigner contract"},
 		{name: "path", baseKeyType: "aplane.falcon1024.v1", contract: "cosigner1", requiredOn: "spending_rekey", want: "exactly [spend]"},
-		{name: "base", baseKeyType: "test.non-falcon-bounded-cosigner.v1", contract: "cosigner1", requiredOn: "spend", want: "requires base_key_type"},
+		{name: "base", baseKeyType: "test.non-falcon-bounded-cosigner.v1", contract: "cosigner1", requiredOn: "spend", want: "is not reviewed for base_key_type"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

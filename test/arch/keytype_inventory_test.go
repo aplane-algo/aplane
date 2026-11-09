@@ -75,6 +75,11 @@ func TestRetiredKeyTypeProductsDoNotReturn(t *testing.T) {
 		"keys_response" + "_cosigned",
 		// Mnemonic import is native-only.
 		"Mnemonic" + "Provider",
+		// The general bounded type: bounds are an overlay of the plain hosts
+		// (account overlays phase 6.5).
+		"aplane." + "falcon1024-b" + ".v1",
+		"lsig/" + "boundedaccount",
+		"boundedaccount" + ".",
 	}
 	// The naming pass: "guarded" became "cosigned" wherever it named a cosigned
 	// account. These are the package, ARCH doc, progress tag, public SDK names

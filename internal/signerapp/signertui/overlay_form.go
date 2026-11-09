@@ -129,13 +129,17 @@ func (m Model) overlaySpec(keyType string, spec *paramSpec, preset *boundary.Pre
 	var bounds []lsigprovider.ParameterDef
 	if preset != nil {
 		title, description = preset.Title, preset.Description
+		// Custom bounds offers every bounds field as the type declares it; the
+		// transfer kinds are what make it a bounded account, so they are
+		// required. A preset asks for each of its fields.
+		custom := preset.Name == customBoundsPreset.Name
 		for _, field := range preset.Fields {
 			if isOverlayParameter(field) {
 				needs[field] = true
 				continue
 			}
 			if def, ok := paramNamed(spec.Params, field); ok {
-				def.Required = true
+				def.Required = !custom || field == boundary.ParameterSpendEffects
 				bounds = append(bounds, def)
 			}
 		}

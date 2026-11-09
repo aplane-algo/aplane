@@ -19,14 +19,19 @@ import (
 	"github.com/aplane-algo/aplane/internal/keymgmt"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
-	"github.com/aplane-algo/aplane/lsig/boundedaccount"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
+	falcon "github.com/aplane-algo/aplane/lsig/falcon1024"
+	"github.com/aplane-algo/aplane/lsig/plainhost"
 )
+
+// boundedHostKeyType is the Falcon plain host, which takes bounds as well as
+// the overlays.
+const boundedHostKeyType = "aplane.falcon1024.v1"
 
 func setupGeneralProvider(t *testing.T) (*productruntime.Runtime, Service) {
 	t.Helper()
 	configureFalconCompileMock(t)
-	boundedaccount.RegisterClient()
+	falcon.RegisterClient()
 	ir := setupProductRuntime(t)
 	return ir, Service{Runtime: ir}
 }
@@ -42,20 +47,20 @@ func generalParams(rekey string) map[string]string {
 	var recipient types.Address
 	recipient[31] = 7
 	params := map[string]string{
-		boundedaccount.ParameterSpendEffects:   "pay,axfer,asset_opt_in",
-		boundedaccount.ParameterRekeyAuthority: rekey,
-		boundedaccount.ParameterRecipients:     recipient.String(),
+		plainhost.ParameterSpendEffects:   "pay,axfer,asset_opt_in",
+		plainhost.ParameterRekeyAuthority: rekey,
+		plainhost.ParameterRecipients:     recipient.String(),
 	}
-	if rekey == boundedaccount.RekeyOnlyThese || rekey == boundedaccount.RekeyPlusCosigned {
-		params[boundedaccount.ParameterRekeyTo] = listedTarget.String()
+	if rekey == plainhost.RekeyOnlyThese || rekey == plainhost.RekeyPlusCosigned {
+		params[plainhost.ParameterRekeyTo] = listedTarget.String()
 	}
 	return params
 }
 
 func TestGeneralProviderGeneratesFromAReview(t *testing.T) {
 	ir, service := setupGeneralProvider(t)
-	params := generalParams(boundedaccount.RekeySpendingKey)
-	prepared, err := service.PrepareGenerateKey(boundedaccount.KeyTypeV1, params)
+	params := generalParams(plainhost.RekeySpendingKey)
+	prepared, err := service.PrepareGenerateKey(boundedHostKeyType, params)
 	if err != nil {
 		t.Fatalf("PrepareGenerateKey() error = %#v", err)
 	}
@@ -65,17 +70,17 @@ func TestGeneralProviderGeneratesFromAReview(t *testing.T) {
 	if prepared.BoundaryDigest == "" {
 		t.Fatal("prepared request has no boundary digest")
 	}
-	if prepared.Parameters[boundedaccount.ParameterListEncoding] != boundedaccount.EncodingInline {
+	if prepared.Parameters[plainhost.ParameterListEncoding] != plainhost.EncodingInline {
 		t.Fatalf("auto encoding was not resolved: %v", prepared.Parameters)
 	}
 	assertNoKeys(t, service)
 
-	result, err := service.GenerateReviewedKey(context.Background(), boundedaccount.KeyTypeV1, prepared.Parameters,
+	result, err := service.GenerateReviewedKey(context.Background(), boundedHostKeyType, prepared.Parameters,
 		ReviewedValues{Fingerprint: prepared.ReviewFingerprint, BoundaryDigest: prepared.BoundaryDigest}, nil)
 	if err != nil {
 		t.Fatalf("GenerateReviewedKey() error = %#v", err)
 	}
-	if result.Parameters[boundedaccount.ParameterRekeyAuthority] != boundedaccount.RekeySpendingKey {
+	if result.Parameters[plainhost.ParameterRekeyAuthority] != plainhost.RekeySpendingKey {
 		t.Fatalf("result parameters = %v", result.Parameters)
 	}
 	details, detailsErr := service.GetKeyDetails(result.Address)
@@ -111,8 +116,8 @@ func TestGeneralProviderGeneratesFromAReview(t *testing.T) {
 
 func TestGeneralProviderRejectsAChangedReview(t *testing.T) {
 	_, service := setupGeneralProvider(t)
-	params := generalParams(boundedaccount.RekeyOnlyThese)
-	prepared, err := service.PrepareGenerateKey(boundedaccount.KeyTypeV1, params)
+	params := generalParams(plainhost.RekeyOnlyThese)
+	prepared, err := service.PrepareGenerateKey(boundedHostKeyType, params)
 	if err != nil {
 		t.Fatalf("PrepareGenerateKey() error = %#v", err)
 	}
@@ -121,7 +126,7 @@ func TestGeneralProviderRejectsAChangedReview(t *testing.T) {
 		"grammar": {Fingerprint: "1:" + stale, BoundaryDigest: prepared.BoundaryDigest},
 		"digest":  {Fingerprint: prepared.ReviewFingerprint, BoundaryDigest: stale},
 	} {
-		_, err := service.GenerateReviewedKey(context.Background(), boundedaccount.KeyTypeV1, prepared.Parameters, reviewed, nil)
+		_, err := service.GenerateReviewedKey(context.Background(), boundedHostKeyType, prepared.Parameters, reviewed, nil)
 		if err == nil || !strings.Contains(err.Message, "changed after this request was reviewed") {
 			t.Fatalf("%s: GenerateReviewedKey() error = %#v", name, err)
 		}
@@ -132,8 +137,8 @@ func TestGeneralProviderRejectsAChangedReview(t *testing.T) {
 	}
 	var other types.Address
 	other[31] = 8
-	changed[boundedaccount.ParameterRecipients] = other.String()
-	_, err = service.GenerateReviewedKey(context.Background(), boundedaccount.KeyTypeV1, changed,
+	changed[plainhost.ParameterRecipients] = other.String()
+	_, err = service.GenerateReviewedKey(context.Background(), boundedHostKeyType, changed,
 		ReviewedValues{Fingerprint: prepared.ReviewFingerprint, BoundaryDigest: prepared.BoundaryDigest}, nil)
 	if err == nil || !strings.Contains(err.Message, "changed after this request was reviewed") {
 		t.Fatalf("substituted recipient: GenerateReviewedKey() error = %#v", err)
@@ -144,28 +149,28 @@ func TestGeneralProviderRejectsAChangedReview(t *testing.T) {
 func TestGenerationRequirements(t *testing.T) {
 	ir, service := setupGeneralProvider(t)
 	publicKey, _ := importPrepareReference(t, ir, prepareTestReference, 0x61)
-	spendingKey := generalParams(boundedaccount.RekeySpendingKey)
-	refused := generalParams(boundedaccount.RekeyOnlyThese)
-	cosigned := generalParams(boundedaccount.RekeyOnlyThese)
+	spendingKey := generalParams(plainhost.RekeySpendingKey)
+	refused := generalParams(plainhost.RekeyOnlyThese)
+	cosigned := generalParams(plainhost.RekeyOnlyThese)
 	cosigned[composeddsa.BoundedCosignerPublicKeyParameter] = hex.EncodeToString(publicKey)
 	// Cosigned rekeys are not containment either: two online keys can rekey the
 	// account anywhere the cosigner's policy allows.
-	cosignedSpending := generalParams(boundedaccount.RekeySpendingKey)
+	cosignedSpending := generalParams(plainhost.RekeySpendingKey)
 	cosignedSpending[composeddsa.BoundedCosignerPublicKeyParameter] = hex.EncodeToString(publicKey)
-	plusCosigned := generalParams(boundedaccount.RekeyPlusCosigned)
+	plusCosigned := generalParams(plainhost.RekeyPlusCosigned)
 	plusCosigned[composeddsa.BoundedCosignerPublicKeyParameter] = hex.EncodeToString(publicKey)
 	// Refusing rekeys is not containment on its own: a timelock with no list
 	// pays anyone once it opens.
-	timelockOnly := generalParams(boundedaccount.RekeyOnlyThese)
-	delete(timelockOnly, boundedaccount.ParameterRecipients)
-	timelockOnly[boundedaccount.ParameterUnlockRound] = "100"
+	timelockOnly := generalParams(plainhost.RekeyOnlyThese)
+	delete(timelockOnly, plainhost.ParameterRecipients)
+	timelockOnly[plainhost.ParameterUnlockRound] = "100"
 	// Nor is a cosigner: a limits-only account pays anyone the cosigner signs for.
-	limitsOnly := generalParams(boundedaccount.RekeyOnlyThese)
-	delete(limitsOnly, boundedaccount.ParameterRecipients)
-	limitsOnly[boundedaccount.ParameterRecipientScope] = boundedaccount.RecipientScopeAny
-	limitsCosigned := generalParams(boundedaccount.RekeyOnlyThese)
-	delete(limitsCosigned, boundedaccount.ParameterRecipients)
-	limitsCosigned[boundedaccount.ParameterRecipientScope] = boundedaccount.RecipientScopeAny
+	limitsOnly := generalParams(plainhost.RekeyOnlyThese)
+	delete(limitsOnly, plainhost.ParameterRecipients)
+	limitsOnly[plainhost.ParameterRecipientScope] = plainhost.RecipientScopeAny
+	limitsCosigned := generalParams(plainhost.RekeyOnlyThese)
+	delete(limitsCosigned, plainhost.ParameterRecipients)
+	limitsCosigned[plainhost.ParameterRecipientScope] = plainhost.RecipientScopeAny
 	limitsCosigned[composeddsa.BoundedCosignerPublicKeyParameter] = hex.EncodeToString(publicKey)
 
 	tests := []struct {
@@ -183,15 +188,15 @@ func TestGenerationRequirements(t *testing.T) {
 			ir.Config().SetGenerationRequirements(test.requireContained, test.requireCosigner)
 			t.Cleanup(func() { ir.Config().SetGenerationRequirements(false, false) })
 			for _, params := range test.rejected {
-				if _, err := service.PrepareGenerateKey(boundedaccount.KeyTypeV1, params); err == nil || !strings.Contains(err.Message, test.want) {
+				if _, err := service.PrepareGenerateKey(boundedHostKeyType, params); err == nil || !strings.Contains(err.Message, test.want) {
 					t.Fatalf("PrepareGenerateKey() error = %#v", err)
 				}
-				if _, err := service.GenerateKey(context.Background(), boundedaccount.KeyTypeV1, params, nil); err == nil || !strings.Contains(err.Message, test.want) {
+				if _, err := service.GenerateKey(context.Background(), boundedHostKeyType, params, nil); err == nil || !strings.Contains(err.Message, test.want) {
 					t.Fatalf("GenerateKey() error = %#v", err)
 				}
 			}
 			for _, params := range test.accepted {
-				if _, err := service.PrepareGenerateKey(boundedaccount.KeyTypeV1, params); err != nil {
+				if _, err := service.PrepareGenerateKey(boundedHostKeyType, params); err != nil {
 					t.Fatalf("PrepareGenerateKey() error = %#v", err)
 				}
 			}
@@ -201,34 +206,38 @@ func TestGenerationRequirements(t *testing.T) {
 
 // The general type's timelock shapes take only a rekey-to list, so it refuses a
 // timelock with a spending-key rekey, which an expert template can express.
-func TestGeneralProviderRefusesASpendingKeyRekeyOnATimelock(t *testing.T) {
+// A timelock with a spending-key rekey was a grammar limit of the retired
+// general type; under the ninth amendment it is an account like any other.
+func TestBoundsTakeASpendingKeyRekeyOnATimelock(t *testing.T) {
 	_, service := setupGeneralProvider(t)
-	timelockOnly := generalParams(boundedaccount.RekeySpendingKey)
-	delete(timelockOnly, boundedaccount.ParameterRecipients)
-	timelockOnly[boundedaccount.ParameterUnlockRound] = "100"
-	listAndTimelock := generalParams(boundedaccount.RekeySpendingKey)
-	listAndTimelock[boundedaccount.ParameterUnlockRound] = "100"
+	timelockOnly := generalParams(plainhost.RekeySpendingKey)
+	delete(timelockOnly, plainhost.ParameterRecipients)
+	timelockOnly[plainhost.ParameterUnlockRound] = "100"
+	listAndTimelock := generalParams(plainhost.RekeySpendingKey)
+	listAndTimelock[plainhost.ParameterUnlockRound] = "100"
 	for name, params := range map[string]map[string]string{"timelock": timelockOnly, "allowlist and timelock": listAndTimelock} {
-		const want = "an expert template can combine a timelock with " + boundedaccount.ParameterRekeyAuthority + "=" + boundedaccount.RekeySpendingKey
-		if _, err := service.PrepareGenerateKey(boundedaccount.KeyTypeV1, params); err == nil || !strings.Contains(err.Message, want) {
+		prepared, err := service.PrepareGenerateKey(boundedHostKeyType, params)
+		if err != nil {
 			t.Fatalf("%s: PrepareGenerateKey() error = %#v", name, err)
 		}
-		if _, err := service.GenerateKey(context.Background(), boundedaccount.KeyTypeV1, params, nil); err == nil || !strings.Contains(err.Message, want) {
+		if prepared.Bounded == nil || prepared.Bounded.Rekey != boundedmeta.RekeySpendingKey {
+			t.Fatalf("%s: prepared = %+v", name, prepared.Bounded)
+		}
+		if _, err := service.GenerateKey(context.Background(), boundedHostKeyType, params, nil); err != nil {
 			t.Fatalf("%s: GenerateKey() error = %#v", name, err)
 		}
 	}
-	assertNoKeys(t, service)
 }
 
 func TestGenerationRequirementIsRecheckedAfterReview(t *testing.T) {
 	ir, service := setupGeneralProvider(t)
-	prepared, err := service.PrepareGenerateKey(boundedaccount.KeyTypeV1, generalParams(boundedaccount.RekeySpendingKey))
+	prepared, err := service.PrepareGenerateKey(boundedHostKeyType, generalParams(plainhost.RekeySpendingKey))
 	if err != nil {
 		t.Fatalf("PrepareGenerateKey() error = %#v", err)
 	}
 	ir.Config().SetGenerationRequirements(true, false)
 	t.Cleanup(func() { ir.Config().SetGenerationRequirements(false, false) })
-	_, err = service.GenerateReviewedKey(context.Background(), boundedaccount.KeyTypeV1, prepared.Parameters,
+	_, err = service.GenerateReviewedKey(context.Background(), boundedHostKeyType, prepared.Parameters,
 		ReviewedValues{Fingerprint: prepared.ReviewFingerprint, BoundaryDigest: prepared.BoundaryDigest}, nil)
 	if err == nil || !strings.Contains(err.Message, "require_contained") {
 		t.Fatalf("GenerateReviewedKey() error = %#v", err)
@@ -250,9 +259,9 @@ func TestGenerationRequirementsDoNotReachExpertTemplates(t *testing.T) {
 func TestCosignerReferenceResolvesBeforeTheShapeIsChosen(t *testing.T) {
 	ir, service := setupGeneralProvider(t)
 	publicKey, keyID := importPrepareReference(t, ir, prepareTestReference, 0x61)
-	params := generalParams(boundedaccount.RekeyPlusCosigned)
+	params := generalParams(plainhost.RekeyPlusCosigned)
 	params[cosignerrefs.ParamCosignerName] = prepareTestReference // plus cosigned needs the cosigner
-	prepared, err := service.PrepareGenerateKey(boundedaccount.KeyTypeV1, params)
+	prepared, err := service.PrepareGenerateKey(boundedHostKeyType, params)
 	if err != nil {
 		t.Fatalf("PrepareGenerateKey() error = %#v", err)
 	}
@@ -264,11 +273,11 @@ func TestCosignerReferenceResolvesBeforeTheShapeIsChosen(t *testing.T) {
 	}
 
 	params[cosignerrefs.ParamCosignerName] = "missing"
-	if _, err := service.PrepareGenerateKey(boundedaccount.KeyTypeV1, params); err == nil {
+	if _, err := service.PrepareGenerateKey(boundedHostKeyType, params); err == nil {
 		t.Fatal("an unknown reference fell through")
 	}
 	params[cosignerrefs.ParamCosignerName] = ""
-	if _, err := service.PrepareGenerateKey(boundedaccount.KeyTypeV1, params); err == nil {
+	if _, err := service.PrepareGenerateKey(boundedHostKeyType, params); err == nil {
 		t.Fatal("an explicitly empty reference selected an account with no cosigner")
 	}
 }
@@ -278,8 +287,8 @@ func TestCosignerReferenceResolvesBeforeTheShapeIsChosen(t *testing.T) {
 // stored account carries both.
 func TestGeneralProviderGeneratesAnOnlyTheseAccount(t *testing.T) {
 	ir, service := setupGeneralProvider(t)
-	params := generalParams(boundedaccount.RekeyOnlyThese)
-	prepared, err := service.PrepareGenerateKey(boundedaccount.KeyTypeV1, params)
+	params := generalParams(plainhost.RekeyOnlyThese)
+	prepared, err := service.PrepareGenerateKey(boundedHostKeyType, params)
 	if err != nil {
 		t.Fatalf("PrepareGenerateKey() error = %#v", err)
 	}
@@ -292,15 +301,15 @@ func TestGeneralProviderGeneratesAnOnlyTheseAccount(t *testing.T) {
 	changed := maps.Clone(prepared.Parameters)
 	var other types.Address
 	other[0], other[31] = 0x52, 1
-	changed[boundedaccount.ParameterRekeyTo] = other.String()
-	if _, err := service.GenerateReviewedKey(context.Background(), boundedaccount.KeyTypeV1, changed,
+	changed[plainhost.ParameterRekeyTo] = other.String()
+	if _, err := service.GenerateReviewedKey(context.Background(), boundedHostKeyType, changed,
 		ReviewedValues{Fingerprint: prepared.ReviewFingerprint, BoundaryDigest: prepared.BoundaryDigest}, nil); err == nil ||
 		!strings.Contains(err.Message, "changed after this request was reviewed") {
 		t.Fatalf("a substituted rekey-to address: GenerateReviewedKey() error = %#v", err)
 	}
 	assertNoKeys(t, service)
 
-	result, err := service.GenerateReviewedKey(context.Background(), boundedaccount.KeyTypeV1, prepared.Parameters,
+	result, err := service.GenerateReviewedKey(context.Background(), boundedHostKeyType, prepared.Parameters,
 		ReviewedValues{Fingerprint: prepared.ReviewFingerprint, BoundaryDigest: prepared.BoundaryDigest}, nil)
 	if err != nil {
 		t.Fatalf("GenerateReviewedKey() error = %#v", err)
@@ -319,8 +328,8 @@ func TestGeneralProviderGeneratesAnOnlyTheseAccount(t *testing.T) {
 		if len(root) != 64 || info.BoundedAuthorization.RekeyList == nil || info.BoundedAuthorization.RekeyList.RootHex != root {
 			t.Fatalf("stored root %q, metadata %+v", root, info.BoundedAuthorization.RekeyList)
 		}
-		if info.Parameters[boundedaccount.ParameterRekeyTo] != listedTarget.String() {
-			t.Fatalf("stored entries = %q", info.Parameters[boundedaccount.ParameterRekeyTo])
+		if info.Parameters[plainhost.ParameterRekeyTo] != listedTarget.String() {
+			t.Fatalf("stored entries = %q", info.Parameters[plainhost.ParameterRekeyTo])
 		}
 		if info.TemplateFingerprint != prepared.Fingerprint {
 			t.Fatalf("stored fingerprint %s, reviewed %s", info.TemplateFingerprint, prepared.Fingerprint)
@@ -347,10 +356,10 @@ func TestRekeyListTakesAnyAddress(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	params := generalParams(boundedaccount.RekeyPlusCosigned)
+	params := generalParams(plainhost.RekeyPlusCosigned)
 	params[composeddsa.BoundedCosignerPublicKeyParameter] = hex.EncodeToString(ownCosigner)
-	params[boundedaccount.ParameterRekeyTo] = listedTarget.String() + "," + referenceAddress.String() + "," + ownCosignerAddress.String()
-	if _, err := service.PrepareGenerateKey(boundedaccount.KeyTypeV1, params); err != nil {
+	params[plainhost.ParameterRekeyTo] = listedTarget.String() + "," + referenceAddress.String() + "," + ownCosignerAddress.String()
+	if _, err := service.PrepareGenerateKey(boundedHostKeyType, params); err != nil {
 		t.Fatalf("PrepareGenerateKey() error = %#v", err)
 	}
 }

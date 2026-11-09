@@ -5,9 +5,9 @@ package signing
 
 // The O4 agreement harness (account overlays design, invariant O4). Three places
 // classify a bounded transaction: the rendered program, the argument layout's path
-// masks, and this package's planner. For every shape of the general bounded type,
-// and every arrangement of the plain host on both of its bases (Falcon-1024 and
-// Ed25519), the harness renders the real program, runs it in an offline interpreter on every
+// masks, and this package's planner. For every bounded2 shape and every plain1
+// arrangement of the plain host, on both of its bases (Falcon-1024 and Ed25519),
+// the harness renders the real program, runs it in an offline interpreter on every
 // transaction in a corpus under every combination of supplied, wrong and absent
 // arguments, and requires the program to accept exactly when:
 //
@@ -53,7 +53,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/rekeylist"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/txeffects"
-	"github.com/aplane-algo/aplane/lsig/boundedaccount"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	ed25519v1 "github.com/aplane-algo/aplane/lsig/ed25519lsig/v1"
 	falcon1024 "github.com/aplane-algo/aplane/lsig/falcon1024"
@@ -267,7 +266,7 @@ func agCorpus() ([]*agTxn, error) {
 				if pureOnly[rekeyTo] && (!pureBase || danger != 0) {
 					continue
 				}
-				for _, fee := range []uint64{1_000, boundedaccount.MaxFee, boundedaccount.MaxFee + 1} {
+				for _, fee := range []uint64{1_000, plainhost.MaxFee, plainhost.MaxFee + 1} {
 					for _, firstValid := range []uint64{agUnlockRound - 1, agUnlockRound} {
 						txn := b.txn
 						txn.Sender = agSender
@@ -428,9 +427,10 @@ func (p *agPlan) wants(states []agState) bool {
 }
 
 type agAccount struct {
-	// shape is the general type's shape. A plain host has none of its own: its
-	// shape carries only the rekey setting and the cosigner, and plain is set.
-	shape       boundedaccount.Shape
+	// shape is the account's bounded2 shape. A plain1 arrangement has none of its
+	// own: its shape carries only the rekey setting and the cosigner, and plain
+	// is set.
+	shape       plainhost.Shape
 	plain       bool
 	name        string
 	spendingKey []byte
@@ -453,30 +453,30 @@ type agAccount struct {
 	plans          []agPlan
 }
 
-func agParams(shape boundedaccount.Shape) map[string]string {
+func agParams(shape plainhost.Shape) map[string]string {
 	spend := make([]string, len(shape.Spend))
 	for i, effect := range shape.Spend {
 		spend[i] = string(effect)
 	}
 	params := map[string]string{
-		boundedaccount.ParameterSpendEffects:   strings.Join(spend, ","),
-		boundedaccount.ParameterRekeyAuthority: shape.Rekey,
+		plainhost.ParameterSpendEffects:   strings.Join(spend, ","),
+		plainhost.ParameterRekeyAuthority: shape.Rekey,
 	}
 	if shape.Encoding != "" {
-		params[boundedaccount.ParameterRecipients] = agRecipients
-		params[boundedaccount.ParameterListEncoding] = shape.Encoding
+		params[plainhost.ParameterRecipients] = agRecipients
+		params[plainhost.ParameterListEncoding] = shape.Encoding
 	}
 	if shape.Timelock {
-		params[boundedaccount.ParameterUnlockRound] = fmt.Sprint(agUnlockRound)
+		params[plainhost.ParameterUnlockRound] = fmt.Sprint(agUnlockRound)
 	}
 	if shape.AnyRecipient {
-		params[boundedaccount.ParameterRecipientScope] = boundedaccount.RecipientScopeAny
+		params[plainhost.ParameterRecipientScope] = plainhost.RecipientScopeAny
 	}
 	if shape.Cosigner {
 		params[composeddsa.BoundedCosignerPublicKeyParameter] = hex.EncodeToString(agCosignerKey)
 	}
 	if shape.HasRekeyList() {
-		params[boundedaccount.ParameterRekeyTo] = agRekeyTo
+		params[plainhost.ParameterRekeyTo] = agRekeyTo
 	}
 	return params
 }
@@ -528,7 +528,7 @@ func (list *agList) proofs(stored string) (map[types.Address][]byte, error) {
 }
 
 // agHost is what the harness needs of a key type that builds a bounded program:
-// the general type and the plain host both have it.
+// the plain host, on either base.
 type agHost interface {
 	ResolveInstance(map[string]string) (*lsigprovider.Instance, error)
 	PrepareRekeyList([]byte, map[string]string) (map[string]string, error)
@@ -538,18 +538,18 @@ type agHost interface {
 	BaseKeyType() string
 }
 
-// agSpec is one account the harness builds: a general-type shape, or a plain host
-// arrangement on one base.
+// agSpec is one account the harness builds: a plain host's bounded2 shape or its
+// plain1 arrangement, on one base.
 type agSpec struct {
-	shape       boundedaccount.Shape
+	shape       plainhost.Shape
 	name        string
 	params      map[string]string
 	plain       bool
 	spendingKey []byte
 }
 
-func agGeneralSpec(shape boundedaccount.Shape) agSpec {
-	return agSpec{shape: shape, name: shape.Descriptor(), params: agParams(shape), spendingKey: agSpendingKey}
+func agShapeSpec(base string, spendingKey []byte, shape plainhost.Shape) agSpec {
+	return agSpec{shape: shape, name: base + " " + shape.Descriptor(), params: agParams(shape), spendingKey: spendingKey}
 }
 
 // agPlainSpec is a plain host arrangement. Its shape holds only what the shared
@@ -564,7 +564,7 @@ func agPlainSpec(base string, spendingKey []byte, arrangement plainhost.Arrangem
 		params[plainhost.ParameterRekeyTo] = agRekeyTo
 	}
 	return agSpec{
-		shape:       boundedaccount.Shape{Rekey: arrangement.Rekey, Cosigner: arrangement.Cosigner},
+		shape:       plainhost.Shape{Rekey: arrangement.Rekey, Cosigner: arrangement.Cosigner},
 		name:        fmt.Sprintf("plain %s rekey=%s cosigner=%v", base, arrangement.Rekey, arrangement.Cosigner),
 		params:      params,
 		plain:       true,
@@ -636,8 +636,8 @@ func agBuildAccount(provider agHost, list *agList, spec agSpec, corpus []*agTxn)
 		for _, listed := range []types.Address{agListedA, agListedB} {
 			a.listed[listed] = true
 		}
-		if shape.Encoding == boundedaccount.EncodingMerkle {
-			if a.proofs, err = list.proofs(params[boundedaccount.ParameterRecipients]); err != nil {
+		if shape.Encoding == plainhost.EncodingMerkle {
+			if a.proofs, err = list.proofs(params[plainhost.ParameterRecipients]); err != nil {
 				return nil, err
 			}
 		}
@@ -649,8 +649,8 @@ func agBuildAccount(provider agHost, list *agList, spec agSpec, corpus []*agTxn)
 		// The account must hold the harness's list under the harness's key: the
 		// planner rebuilds it from both, and the program compiled its root.
 		switch {
-		case params[boundedaccount.ParameterRekeyTo] != agRekeyTo:
-			return nil, fmt.Errorf("%s: stored rekey-to list %q is not the harness's %q", name, params[boundedaccount.ParameterRekeyTo], agRekeyTo)
+		case params[plainhost.ParameterRekeyTo] != agRekeyTo:
+			return nil, fmt.Errorf("%s: stored rekey-to list %q is not the harness's %q", name, params[plainhost.ParameterRekeyTo], agRekeyTo)
 		case params[boundedmeta.RekeyListRootParameter] != list.rekeyRoot || metadata.RekeyList.RootHex != list.rekeyRoot:
 			return nil, fmt.Errorf("%s: stored rekey-to list root %s (metadata %s) is not the harness's %s",
 				name, params[boundedmeta.RekeyListRootParameter], metadata.RekeyList.RootHex, list.rekeyRoot)
@@ -747,11 +747,11 @@ func (a *agAccount) agRekeyRule(tx *agTxn) string {
 		return "host: not a pure rekey"
 	}
 	switch a.shape.Rekey {
-	case boundedaccount.RekeySpendingKey, boundedaccount.RekeyPlusCosigned:
+	case plainhost.RekeySpendingKey, plainhost.RekeyPlusCosigned:
 		// Plus cosigned takes a listed target with its proof and any target with
 		// the cosigner; the plan says which arguments.
 		return ""
-	case boundedaccount.RekeyOnlyThese:
+	case plainhost.RekeyOnlyThese:
 		if a.rekeyListed[tx.txn.RekeyTo] {
 			return ""
 		}
@@ -762,7 +762,7 @@ func (a *agAccount) agRekeyRule(tx *agTxn) string {
 
 // feeWithinCeiling is the bounded host's fee ceiling; a plain host has none.
 func (a *agAccount) feeWithinCeiling(tx *agTxn) bool {
-	return a.plain || uint64(tx.txn.Fee) <= boundedaccount.MaxFee
+	return a.plain || uint64(tx.txn.Fee) <= plainhost.MaxFee
 }
 
 // agRequests is the one request the planner sees for each corpus transaction.
@@ -848,7 +848,7 @@ func (a *agAccount) plan(tx *agTxn, derivedMemo map[string]agDerived) (agPlan, e
 		return agPlan{}, fmt.Errorf("the signer's assembly failed: %s", assembleErr.Message)
 	}
 	plan.assembled = assembled
-	if a.shape.Rekey == boundedaccount.RekeyPlusCosigned {
+	if a.shape.Rekey == plainhost.RekeyPlusCosigned {
 		emptyProof := make([]bool, len(a.slots))
 		emptyProof[a.listProofIndex] = true
 		switch path {
@@ -949,11 +949,6 @@ func agLoad(t *testing.T) ([]*agTxn, []*agAccount) {
 	t.Helper()
 	agFixture.once.Do(func() {
 		falcon1024.RegisterClient()
-		provider, err := boundedaccount.NewProvider()
-		if err != nil {
-			agFixture.err = err
-			return
-		}
 		corpus, err := agCorpus()
 		if err != nil {
 			agFixture.err = err
@@ -979,8 +974,10 @@ func agLoad(t *testing.T) ([]*agTxn, []*agAccount) {
 			spec agSpec
 		}
 		var builds []build
-		for _, shape := range boundedaccount.Shapes() {
-			builds = append(builds, build{provider, agGeneralSpec(shape)})
+		for _, shape := range plainhost.Shapes() {
+			builds = append(builds,
+				build{falconPlain, agShapeSpec("falcon1024", agSpendingKey, shape)},
+				build{ed25519Plain, agShapeSpec("ed25519", agEd25519SpendingKey, shape)})
 		}
 		for _, arrangement := range plainhost.Arrangements() {
 			builds = append(builds,
@@ -1134,7 +1131,7 @@ func TestBoundedPlannerAgreesWithProgram(t *testing.T) {
 				// ways, and it names the refusal of a target off the list.
 				if !tx.txn.RekeyTo.IsZero() {
 					reason := a.agRekeyRule(tx)
-					unlisted := a.shape.Rekey == boundedaccount.RekeyOnlyThese && agPureRekey(tx.txn) &&
+					unlisted := a.shape.Rekey == plainhost.RekeyOnlyThese && agPureRekey(tx.txn) &&
 						a.feeWithinCeiling(tx) && !a.rekeyListed[tx.txn.RekeyTo]
 					switch {
 					case plan.planned != (reason == ""):
@@ -1192,16 +1189,16 @@ func TestBoundedPlannerAgreesWithProgram(t *testing.T) {
 					var why string
 					cosignerIndex := slices.IndexFunc(a.slots, func(slot agSlot) bool { return slot.role == agRoleCosigner })
 					switch {
-					case a.shape.Rekey == boundedaccount.RekeyRefused:
+					case a.shape.Rekey == plainhost.RekeyRefused:
 						why = "a shape that refuses rekeys accepts a rekey"
 					case a.shape.HasRekeyList() && a.agRekeyRule(r.tx) != "":
 						why = "a list shape accepts a rekey its rule refuses: " + a.agRekeyRule(r.tx)
-					case a.shape.Rekey == boundedaccount.RekeyOnlyThese && r.states[a.listProofIndex] != agValid:
+					case a.shape.Rekey == plainhost.RekeyOnlyThese && r.states[a.listProofIndex] != agValid:
 						why = "a list shape accepts a rekey without the target's proof"
-					case a.shape.Rekey == boundedaccount.RekeyPlusCosigned && r.states[a.listProofIndex] != agValid &&
+					case a.shape.Rekey == plainhost.RekeyPlusCosigned && r.states[a.listProofIndex] != agValid &&
 						(r.states[a.listProofIndex] != agAbsent || r.states[cosignerIndex] != agValid):
 						why = "plus cosigned accepts a rekey with neither the target's proof nor the cosigner"
-					case a.shape.Rekey == boundedaccount.RekeySpendingKey && a.shape.Cosigner && r.states[cosignerIndex] != agValid:
+					case a.shape.Rekey == plainhost.RekeySpendingKey && a.shape.Cosigner && r.states[cosignerIndex] != agValid:
 						why = "a cosigned spending-key rekey is accepted without the cosigner"
 					}
 					if why != "" {
@@ -1372,7 +1369,7 @@ func agCheckRekeyFirst(a *agAccount) error {
 		return fmt.Errorf("the rekey branch %s has no straight-line body", rekeyLabel)
 	}
 	last := body[len(body)-1]
-	if a.shape.Rekey == boundedaccount.RekeyRefused && !a.shape.HasRekeyList() {
+	if a.shape.Rekey == plainhost.RekeyRefused && !a.shape.HasRekeyList() {
 		if len(body) != 1 || last.op != "err" {
 			return fmt.Errorf("a refused rekey branch is %q, want err alone", body)
 		}
@@ -1544,7 +1541,7 @@ func TestBoundedRekeyFirstCheckRefusesOtherLayouts(t *testing.T) {
 	_, accounts := agLoad(t)
 	find := func(rekey string, cosigner bool) *agAccount {
 		for _, a := range accounts {
-			if a.shape.Rekey == rekey && a.shape.Cosigner == cosigner && a.shape.Encoding == boundedaccount.EncodingMerkle {
+			if a.shape.Rekey == rekey && a.shape.Cosigner == cosigner && a.shape.Encoding == plainhost.EncodingMerkle {
 				return a
 			}
 		}
@@ -1562,16 +1559,16 @@ func TestBoundedRekeyFirstCheckRefusesOtherLayouts(t *testing.T) {
 	}
 	plain := findPlain("plain falcon1024 rekey=spending_key cosigner=true")
 	plainEd25519 := findPlain("plain ed25519 rekey=only_these cosigner=false")
-	spending, cosignedListed := find(boundedaccount.RekeySpendingKey, false), find(boundedaccount.RekeyOnlyThese, true)
-	listed := find(boundedaccount.RekeyOnlyThese, false)
-	cosigned, plus := find(boundedaccount.RekeySpendingKey, true), find(boundedaccount.RekeyPlusCosigned, true)
+	spending, cosignedListed := find(plainhost.RekeySpendingKey, false), find(plainhost.RekeyOnlyThese, true)
+	listed := find(plainhost.RekeyOnlyThese, false)
+	cosigned, plus := find(plainhost.RekeySpendingKey, true), find(plainhost.RekeyPlusCosigned, true)
 	cosignerArg := fmt.Sprint(len(cosigned.slots) - 1)
 	// Each listed-rekey edit below adds exactly one instruction the check must
 	// refuse; the rest are ones a listed rekey may run.
 	rekeyEntry := func(code string) func(string) string {
 		return func(teal string) string { return agReplace(t, teal, "", agRekeyLabel+":\n", agRekeyLabel+":\n"+code) }
 	}
-	fee := fmt.Sprintf("txn Fee\npushint %d\n<=\nassert\n", boundedaccount.MaxFee)
+	fee := fmt.Sprintf("txn Fee\npushint %d\n<=\nassert\n", plainhost.MaxFee)
 	dispatch := "txn RekeyTo\nglobal ZeroAddress\n!=\nbnz " + agRekeyLabel + "\n"
 	prepend := func(teal, code string) string {
 		pragma, rest, _ := strings.Cut(teal, "\n")
@@ -1718,7 +1715,7 @@ func agHasRekeyList(a *agAccount) bool { return a.shape.HasRekeyList() }
 // agRekeyAccepts reports whether some rekey can pass: every shape but one that
 // refuses rekeys without a list, which only a plain host has.
 func agRekeyAccepts(a *agAccount) bool {
-	return a.shape.Rekey != boundedaccount.RekeyRefused || a.shape.HasRekeyList()
+	return a.shape.Rekey != plainhost.RekeyRefused || a.shape.HasRekeyList()
 }
 
 // agPureRekeyForm is the rekey branch's pure-rekey normal form as the renderer
@@ -1814,14 +1811,14 @@ func agRekeyNormalFormMutant(field, assertion string) agMutant {
 var agMutants = []agMutant{
 	{
 		name:    "the cosigned rekey skips the cosigner",
-		applies: func(a *agAccount) bool { return a.shape.Rekey == boundedaccount.RekeySpendingKey && a.shape.Cosigner },
+		applies: func(a *agAccount) bool { return a.shape.Rekey == plainhost.RekeySpendingKey && a.shape.Cosigner },
 		mutate: func(t *testing.T, a *agAccount) string {
 			return agReplace(t, a.teal, agRekeyLabel, "callsub "+agCosignerLabel+"\n", "")
 		},
 	},
 	{
 		name:    "plus cosigned's empty proof skips the cosigner",
-		applies: func(a *agAccount) bool { return a.shape.Rekey == boundedaccount.RekeyPlusCosigned },
+		applies: func(a *agAccount) bool { return a.shape.Rekey == plainhost.RekeyPlusCosigned },
 		mutate: func(t *testing.T, a *agAccount) string {
 			return agReplace(t, a.teal, agCosignedLabel, "callsub "+agCosignerLabel+"\n", "")
 		},
@@ -1830,7 +1827,7 @@ var agMutants = []agMutant{
 		// A proof that fails its root now falls through to the cosigner, so a
 		// garbage proof beside the cosigner's signature passes.
 		name:    "plus cosigned's failed proof falls through to the cosigner",
-		applies: func(a *agAccount) bool { return a.shape.Rekey == boundedaccount.RekeyPlusCosigned },
+		applies: func(a *agAccount) bool { return a.shape.Rekey == plainhost.RekeyPlusCosigned },
 		mutate: func(t *testing.T, a *agAccount) string {
 			return agReplace(t, a.teal, agRekeyLabel, "pushbytes 0x"+a.metadata.RekeyList.RootHex+"\n==\nassert\n",
 				"pushbytes 0x"+a.metadata.RekeyList.RootHex+"\n==\nbz "+agCosignedLabel+"\n")
@@ -1910,7 +1907,7 @@ var agMutants = []agMutant{
 		applies: agListReachable,
 		mutate: func(t *testing.T, a *agAccount) string {
 			call := "callsub __aplane_bounded1_layer3_recipient_allowed\nassert\n"
-			if a.shape.Encoding == boundedaccount.EncodingMerkle {
+			if a.shape.Encoding == plainhost.EncodingMerkle {
 				call = "callsub __aplane_bounded1_merkle_verify\nassert\n"
 			}
 			return agReplace(t, a.teal, "", call, "pop\n")
@@ -1919,10 +1916,10 @@ var agMutants = []agMutant{
 	{
 		name: "the Merkle root comparison is dropped",
 		applies: func(a *agAccount) bool {
-			return a.shape.Encoding == boundedaccount.EncodingMerkle && agListReachable(a)
+			return a.shape.Encoding == plainhost.EncodingMerkle && agListReachable(a)
 		},
 		mutate: func(t *testing.T, a *agAccount) string {
-			root, err := merkleallowlist.RootHexFromRecipientsParam(a.keyMaterial.Parameters[boundedaccount.ParameterRecipients])
+			root, err := merkleallowlist.RootHexFromRecipientsParam(a.keyMaterial.Parameters[plainhost.ParameterRecipients])
 			if err != nil {
 				t.Fatal(err)
 			}

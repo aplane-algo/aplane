@@ -477,9 +477,8 @@ type KeyTypeInfo struct {
 	// so this type has no fixed signing flow or bounded profile. Route by /keys.
 	PerKeyContract bool `json:"per_key_contract,omitempty"`
 	// BoundarySchema names the boundary file grammar a per-key type's requests
-	// take (aplane.boundary.v1 for the general bounded type), and is empty for
-	// a type that takes none, such as a plain host, whose few parameters are
-	// given directly.
+	// take (aplane.boundary.v1 for the plain hosts, which take bounds and
+	// overlays), and is empty for a type that takes none.
 	BoundarySchema string              `json:"boundary_schema,omitempty"`
 	CreationParams []CreationParamInfo `json:"creation_params"`
 	RuntimeArgs    []RuntimeArgInfo    `json:"runtime_args"`

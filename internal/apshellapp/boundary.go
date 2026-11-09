@@ -24,6 +24,8 @@ import (
 type BoundaryPreview struct {
 	KeyType    string
 	Parameters map[string]string
+	// NoBounds is a file without spend: the overlays alone, a plain1 account.
+	NoBounds   bool
 	Transfers  []string
 	Recipients int
 	ListDigest string
@@ -70,14 +72,18 @@ func (a *App) PreviewBoundaryFile(keyType, path string) (*BoundaryPreview, error
 	if err != nil {
 		return nil, err
 	}
+	_, bounded := parameters[boundary.ParameterSpendEffects]
 	preview := &BoundaryPreview{
 		KeyType:      keyType,
 		Parameters:   parameters,
-		Transfers:    strings.Split(parameters[boundary.ParameterSpendEffects], ","),
+		NoBounds:     !bounded,
 		UnlockRound:  parameters[boundary.ParameterUnlockRound],
 		Rekey:        parameters[boundary.ParameterRekeyAuthority],
 		Cosigner:     parameters[boundary.ParameterCosigner],
 		AnyRecipient: parameters[boundary.ParameterRecipientScope] == boundary.RecipientScopeAny,
+	}
+	if bounded {
+		preview.Transfers = strings.Split(parameters[boundary.ParameterSpendEffects], ",")
 	}
 	if list := parameters[boundary.ParameterRekeyTo]; list != "" {
 		preview.RekeyTo = strings.Split(list, ",")

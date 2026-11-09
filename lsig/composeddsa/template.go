@@ -29,15 +29,15 @@ const CurrentTemplateSchemaVersion = 2
 type TemplateSpec = generictemplate.TemplateSpec
 
 // ParseTemplateSpec parses YAML data into a composed template spec. A template
-// can't declare the `none` Layer 3 policy: the general type offers that account,
-// selected by recipient_scope=any, and a second route would duplicate it.
+// can't declare the `none` Layer 3 policy: the plain hosts' bounds offer that
+// account, selected by recipient_scope=any, and a second route would duplicate it.
 func ParseTemplateSpec(data []byte) (*TemplateSpec, error) {
 	spec, err := generictemplate.ParseTemplateSpec(data)
 	if err != nil {
 		return nil, err
 	}
 	if spec.Bounded != nil && spec.Bounded.Layer3 != nil && spec.Bounded.Layer3.Policy == Layer3PolicyNone {
-		return nil, fmt.Errorf("bounded.layer3 policy %q is offered only by the general bounded type, with recipient_scope=any", Layer3PolicyNone)
+		return nil, fmt.Errorf("bounded.layer3 policy %q is offered only by the plain hosts' bounds, with recipient_scope=any", Layer3PolicyNone)
 	}
 	return spec, nil
 }
@@ -50,7 +50,15 @@ type templateBaseRules struct {
 
 var productionTemplateBaseRules = templateBaseRules{
 	registered:     IsBaseRegistered,
-	allowsCosigner: func(baseKeyType string) bool { return baseKeyType == "aplane.falcon1024.v1" },
+	allowsCosigner: boundedContractAllowsCosigner,
+}
+
+// boundedContractAllowsCosigner reports whether the generation support policy
+// admits a cosigner on a bounded2 account over baseKeyType. The policy is the
+// one record of which bases the cosigner workflow is reviewed for.
+func boundedContractAllowsCosigner(baseKeyType string) bool {
+	support, ok := productionBoundedGenerationPolicy(BoundedContract, baseKeyType)
+	return ok && support.cosigner
 }
 
 // ValidateTemplateSpec validates required fields and composed-base consistency.
@@ -88,7 +96,7 @@ func validateTemplateSpec(spec *TemplateSpec, rules templateBaseRules) error {
 			return err
 		}
 		if spec.Bounded.Cosigner != nil && !rules.allowsCosigner(spec.BaseKeyType) {
-			return fmt.Errorf("bounded.cosigner requires base_key_type %q", "aplane.falcon1024.v1")
+			return fmt.Errorf("bounded.cosigner is not reviewed for base_key_type %q", spec.BaseKeyType)
 		}
 		if len(spec.RuntimeArgs) != 0 {
 			return fmt.Errorf("composed schema_version 2 runtime_args must be declared inside bounded")
@@ -129,13 +137,34 @@ func NewProviderFromTemplateSpec(spec *TemplateSpec) (*ComposedDSA, error) {
 	if !ok {
 		return nil, fmt.Errorf("base_key_type %q is not registered as composable", spec.BaseKeyType)
 	}
-	return newProviderFromBase(spec, base)
+	return newProviderFromBase(spec, base, mustTemplateSaltStyle(spec.DerivationVersion))
+}
+
+// NewHostProviderFromTemplateSpec composes spec as one of its base key type's
+// own programs, as a plain host's bounds are: under the base's identity (spec
+// names the base as its key type) and the base's salt style, so it and the plain
+// program on the same spending key differ only by the bounded profile. spec gets
+// every template check. The base is given rather than looked up, because a host
+// builds its programs while it registers, before the base is in the registry.
+// Installed templates never reach this: each has an identity of its own.
+func NewHostProviderFromTemplateSpec(spec *TemplateSpec, base BaseRegistration, saltStyle lsigsalt.Style) (*ComposedDSA, error) {
+	if spec == nil || spec.KeyType() != base.BaseKeyType || spec.BaseKeyType != base.BaseKeyType {
+		return nil, fmt.Errorf("a host program must name its base %q as its key type and base", base.BaseKeyType)
+	}
+	rules := templateBaseRules{
+		registered:     func(baseKeyType string) bool { return baseKeyType == base.BaseKeyType },
+		allowsCosigner: boundedContractAllowsCosigner,
+	}
+	if err := validateTemplateSpec(spec, rules); err != nil {
+		return nil, err
+	}
+	return newProviderFromBase(spec, base, saltStyle)
 }
 
 // newProviderFromBase composes a validated spec on a resolved base. It does not
 // consult the base registry, so tests can compose on a base production never
 // registers.
-func newProviderFromBase(spec *TemplateSpec, base BaseRegistration) (*ComposedDSA, error) {
+func newProviderFromBase(spec *TemplateSpec, base BaseRegistration, saltStyle lsigsalt.Style) (*ComposedDSA, error) {
 	bounded, err := boundedProfileFromTemplate(spec.Bounded)
 	if err != nil {
 		return nil, err
@@ -154,7 +183,7 @@ func newProviderFromBase(spec *TemplateSpec, base BaseRegistration) (*ComposedDS
 		Description:        spec.Description,
 		Ops:                base.Ops,
 		TEALSuffix:         strings.TrimSpace(spec.TEAL),
-		SaltStyle:          mustTemplateSaltStyle(spec.DerivationVersion),
+		SaltStyle:          saltStyle,
 		TemplateMode:       generictemplate.EffectiveTemplateMode(spec),
 		TemplateVars:       spec.TemplateVariables,
 		Params:             generictemplate.ParameterSpecToParameterDefs(spec.Parameters),

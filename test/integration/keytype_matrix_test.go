@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerclient"
@@ -24,11 +25,11 @@ import (
 	"github.com/aplane-algo/aplane/internal/transport"
 	"github.com/aplane-algo/aplane/internal/txnutil"
 	"github.com/aplane-algo/aplane/library/templates"
-	"github.com/aplane-algo/aplane/lsig/boundedaccount"
 	edlsigv1 "github.com/aplane-algo/aplane/lsig/ed25519lsig/v1"
 	falcon "github.com/aplane-algo/aplane/lsig/falcon1024"
 	falconlsigv1 "github.com/aplane-algo/aplane/lsig/falcon1024/v1"
 	"github.com/aplane-algo/aplane/lsig/generictemplate"
+	"github.com/aplane-algo/aplane/lsig/plainhost"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 	"github.com/aplane-algo/aplane/test/integration/harness"
 
@@ -172,16 +173,16 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 				firstValid: baseRound,
 			},
 		},
-		// The general bounded type, in the shapes the deleted allowlist v1, allowlist
-		// v2 and timelock templates had. A timelock's only rekey is to a listed
-		// address, here the cleanup authority.
+		// The Falcon plain host's bounds, in the shapes the deleted allowlist v1,
+		// allowlist v2 and timelock templates had. The timelock's rekey is to a
+		// listed address, here the cleanup authority.
 		{
-			keyType: boundedaccount.KeyTypeV1,
+			keyType: plainFalconKeyType,
 			params: map[string]string{
-				boundedaccount.ParameterSpendEffects:   matrixAllTransfers,
-				boundedaccount.ParameterRekeyAuthority: boundedaccount.RekeySpendingKey,
-				boundedaccount.ParameterListEncoding:   boundedaccount.EncodingInline,
-				boundedaccount.ParameterRecipients:     matrixMaximumRecipients(funder.GetAddress()),
+				plainhost.ParameterSpendEffects:   matrixAllTransfers,
+				plainhost.ParameterRekeyAuthority: plainhost.RekeySpendingKey,
+				plainhost.ParameterListEncoding:   plainhost.EncodingInline,
+				plainhost.ParameterRecipients:     matrixMaximumRecipients(funder.GetAddress()),
 			},
 			negative: includedKeyTypeNegative{
 				name:     "non-allowlisted receiver",
@@ -189,21 +190,21 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 			},
 		},
 		{
-			keyType: boundedaccount.KeyTypeV1,
+			keyType: plainFalconKeyType,
 			params: map[string]string{
-				boundedaccount.ParameterSpendEffects:   matrixAllTransfers,
-				boundedaccount.ParameterRekeyAuthority: boundedaccount.RekeySpendingKey,
-				boundedaccount.ParameterListEncoding:   boundedaccount.EncodingMerkle,
-				boundedaccount.ParameterRecipients:     matrixMaximumRecipients(funder.GetAddress()),
+				plainhost.ParameterSpendEffects:   matrixAllTransfers,
+				plainhost.ParameterRekeyAuthority: plainhost.RekeySpendingKey,
+				plainhost.ParameterListEncoding:   plainhost.EncodingMerkle,
+				plainhost.ParameterRecipients:     matrixMaximumRecipients(funder.GetAddress()),
 			},
 		},
 		{
-			keyType: boundedaccount.KeyTypeV1,
+			keyType: plainFalconKeyType,
 			params: map[string]string{
-				boundedaccount.ParameterSpendEffects:   matrixAllTransfers,
-				boundedaccount.ParameterRekeyAuthority: boundedaccount.RekeyOnlyThese,
-				boundedaccount.ParameterRekeyTo:        cleanupAuthority.Address.String(),
-				boundedaccount.ParameterUnlockRound:    fmt.Sprintf("%d", timelockRound),
+				plainhost.ParameterSpendEffects:   matrixAllTransfers,
+				plainhost.ParameterRekeyAuthority: plainhost.RekeyOnlyThese,
+				plainhost.ParameterRekeyTo:        cleanupAuthority.Address.String(),
+				plainhost.ParameterUnlockRound:    fmt.Sprintf("%d", timelockRound),
 			},
 			positiveFirstValid: timelockRound,
 			negative: includedKeyTypeNegative{
@@ -392,7 +393,7 @@ func prepareMatrixRekeyCleanup(
 	)
 	txn.RekeyTo = cleanupAuthority.Address
 	path := lsigresource.PathSpendingRekey
-	if account.params[boundedaccount.ParameterRekeyAuthority] == boundedaccount.RekeyOnlyThese {
+	if account.params[plainhost.ParameterRekeyAuthority] == plainhost.RekeyOnlyThese {
 		path = lsigresource.PathListedRekey
 	}
 	req := matrixSignRequest(t, sp, fundingAddress, []matrixSignTxn{{authAddress: account.address, txn: txn}})
@@ -470,7 +471,7 @@ func validateMatrixRekeyOpcodeCeilings(
 			for i, encoded := range plan.signedHexes {
 				signed[i] = decodeSignedTxnHex(t, encoded)
 			}
-			profile := matrixDeclaredOpcodeProfile(t, plan.account.keyType)
+			profile := matrixDeclaredOpcodeProfile(t, plan.account.includedKeyTypeCase)
 			report, err := harness.ValidateDeclaredOpcodeCeiling(context.Background(), client, harness.OpcodeCeilingValidation{
 				Name: plan.account.keyType, FinalProgram: signed[0].Lsig.Logic, Profile: profile,
 				Bounded: true, Round: simulationRound, RequiredPaths: []lsigresource.AuthorizationPath{plan.path},
@@ -487,17 +488,17 @@ func validateMatrixRekeyOpcodeCeilings(
 	}
 }
 
-// matrixAllTransfers is every spend effect the general bounded type offers.
+// matrixAllTransfers is every spend effect a plain host's bounds offer.
 const matrixAllTransfers = "pay,axfer,asset_opt_in"
 
 // matrixSupportsRekeyCleanup reports a bounded account that can be rekeyed to
 // the cleanup authority: with the spending key, or as a listed rekey.
 func matrixSupportsRekeyCleanup(account includedKeyTypeAccount) bool {
-	if account.keyType != boundedaccount.KeyTypeV1 {
+	if !account.boundedPlainHost() {
 		return false
 	}
-	switch account.params[boundedaccount.ParameterRekeyAuthority] {
-	case boundedaccount.RekeySpendingKey, boundedaccount.RekeyOnlyThese:
+	switch account.params[plainhost.ParameterRekeyAuthority] {
+	case plainhost.RekeySpendingKey, plainhost.RekeyOnlyThese:
 		return true
 	default:
 		return false
@@ -512,6 +513,12 @@ type includedKeyTypeCase struct {
 	positiveFirstValid uint64
 	positiveLastValid  uint64
 	negative           includedKeyTypeNegative
+}
+
+// boundedPlainHost reports a Falcon plain host with bounds: a bounded2 account,
+// where the same key type without parameters is the plain program.
+func (c includedKeyTypeCase) boundedPlainHost() bool {
+	return c.keyType == plainFalconKeyType && len(c.params) > 0
 }
 
 func matrixOpcodeSimulationRound(t *testing.T, stateRound uint64, signed []types.SignedTxn) uint64 {
@@ -1068,7 +1075,7 @@ func validateMatrixOpcodeCeilings(
 		if len(signed[i].Lsig.Logic) == 0 {
 			continue
 		}
-		profile := matrixDeclaredOpcodeProfile(t, account.keyType)
+		profile := matrixDeclaredOpcodeProfile(t, account.includedKeyTypeCase)
 		bounded := profile.Default == 0
 		path := lsigresource.PathDefault
 		if bounded {
@@ -1100,10 +1107,18 @@ func validateMatrixOpcodeCeilings(
 	}
 }
 
-func matrixDeclaredOpcodeProfile(t *testing.T, keyType string) lsigresource.OpcodeProfile {
+func matrixDeclaredOpcodeProfile(t *testing.T, account includedKeyTypeCase) lsigresource.OpcodeProfile {
 	t.Helper()
 	falcon.RegisterClient()
 
+	keyType := account.keyType
+	if account.boundedPlainHost() {
+		provider, ok := lsigprovider.Get(keyType).(*plainhost.Provider)
+		if !ok {
+			t.Fatalf("%s is not a plain host", keyType)
+		}
+		return provider.BoundedLogicSigOpcodeProfile()
+	}
 	switch keyType {
 	case "aplane.ed25519.v1":
 		return edlsigv1.NewProvider().LogicSigOpcodeProfile()
@@ -1119,12 +1134,6 @@ func matrixDeclaredOpcodeProfile(t *testing.T, keyType string) lsigresource.Opco
 			t.Fatal(err)
 		}
 		return generictemplate.NewYAMLTemplate(spec).LogicSigOpcodeProfile()
-	case boundedaccount.KeyTypeV1:
-		provider, err := boundedaccount.NewProvider()
-		if err != nil {
-			t.Fatal(err)
-		}
-		return provider.LogicSigOpcodeProfile()
 	default:
 		t.Fatalf("no declared opcode profile for %s", keyType)
 		return lsigresource.OpcodeProfile{}

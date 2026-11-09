@@ -506,8 +506,8 @@ func (m Model) rekeyTargetNote(address string, postQuantum bool) string {
 }
 
 // keyTypePostQuantum classifies a held key's spending authority, where this
-// client knows it: the native types and the LogicSig bases, and the general
-// bounded type, whose base is Falcon-1024.
+// client knows it: the native types and the LogicSig bases, which host every
+// overlay and bound.
 func keyTypePostQuantum(keyType string) (postQuantum, known bool) {
 	if construction, ok := sigconstruction.ForBaseKeyType(keyType); ok {
 		return construction.PostQuantum(), true
@@ -515,15 +515,15 @@ func keyTypePostQuantum(keyType string) (postQuantum, known bool) {
 	switch strings.ToLower(strings.TrimSpace(keyType)) {
 	case "ed25519":
 		return false, true
-	case "falcon1024", boundary.KeyTypeV1:
+	case "falcon1024":
 		return true, true
 	}
 	return false, false
 }
 
 // reviewSpendingKeyPostQuantum reports whether the new account's spending key
-// is post-quantum, where the key type tells this client: a plain host's base,
-// and the general type's Falcon-1024. The contract alone doesn't: an expert
+// is post-quantum, where the key type tells this client: a plain host's base.
+// The contract alone doesn't: an expert
 // template may put bounded2 on an Ed25519 base, and the inventory doesn't name
 // a template's base.
 func reviewSpendingKeyPostQuantum(review PrepareGenerateResultMessage) (postQuantum, known bool) {

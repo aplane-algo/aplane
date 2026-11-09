@@ -16,7 +16,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/boundary"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/protocol"
-	"github.com/aplane-algo/aplane/lsig/boundedaccount"
+	falcon "github.com/aplane-algo/aplane/lsig/falcon1024"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -28,7 +28,7 @@ func preparedAccount(policy, rekey string, cosigner bool, recipients int) Prepar
 	}
 	prepared := PrepareGenerateResultMessage{
 		Success:           true,
-		KeyType:           boundary.KeyTypeV1,
+		KeyType:           boundedHostKeyType,
 		Parameters:        map[string]string{recipientsParameter: strings.Join(list, ",")},
 		Fingerprint:       "1:" + strings.Repeat("c", 64),
 		ReviewFingerprint: "1:" + strings.Repeat("d", 64),
@@ -298,7 +298,7 @@ func TestReceiptNamesTheSavedAccountAndNeverOverwrites(t *testing.T) {
 	if err := json.Unmarshal(data, &receipt); err != nil {
 		t.Fatal(err)
 	}
-	if receipt.Schema != boundary.ReceiptSchemaV1 || receipt.Address != "ADDRESS" || receipt.KeyType != boundary.KeyTypeV1 ||
+	if receipt.Schema != boundary.ReceiptSchemaV1 || receipt.Address != "ADDRESS" || receipt.KeyType != boundedHostKeyType ||
 		receipt.GrammarFingerprint != prepared.ReviewFingerprint || receipt.ShapeFingerprint != prepared.Fingerprint ||
 		receipt.BoundaryDigest != prepared.BoundaryDigest || receipt.CosignerKeyID != prepared.CosignerKeyID {
 		t.Fatalf("receipt = %+v", receipt)
@@ -499,20 +499,28 @@ func TestRekeySummaryNamesRefusedAndUnknownAuthorities(t *testing.T) {
 }
 
 func TestBoundaryPresetScreenFitsAt80x24(t *testing.T) {
-	m := Model{viewState: ViewBoundaryPreset, width: 80, height: 24}
-	view := m.renderBoundaryPreset()
-	for _, want := range []string{"Allowlist", "Locked Allowlist", "Corridor", "Timelock", "Load boundary file"} {
-		if !strings.Contains(view, want) {
-			t.Errorf("preset screen lacks %q:\n%s", want, view)
+	for index := 0; index < boundaryPresetRows(); index++ {
+		m := Model{viewState: ViewBoundaryPreset, width: 80, height: 24, standalone: true, connectionState: ConnectionConnected,
+			forms: formsState{boundaryKeyType: boundedHostKeyType, boundaryPresetIndex: index}}
+		m = sizedForTest(t, m, MinWidth, MinHeight)
+		view := stripANSI(assertFitsWindow(t, m))
+		for _, want := range []string{"No bounds", "Allowlist", "Locked Allowlist", "Corridor", "Timelock", "Custom bounds", "Load boundary file"} {
+			if !strings.Contains(view, want) {
+				t.Errorf("row %d: preset screen lacks %q:\n%s", index, want, view)
+			}
 		}
-	}
-	if strings.Contains(view, "Panel lines") {
-		t.Errorf("preset screen scrolls at 80x24:\n%s", view)
+		if strings.Contains(view, "Panel lines") {
+			t.Errorf("row %d: preset screen scrolls at 80x24:\n%s", index, view)
+		}
+		// Only the selected row's description is shown.
+		if index == 0 && (!strings.Contains(view, "no fee limit") || strings.Contains(view, "Pays only listed")) {
+			t.Errorf("row 0 shows the wrong description:\n%s", view)
+		}
 	}
 }
 
 func TestPresetAsksOnlyForWhatItLeavesOpen(t *testing.T) {
-	boundedaccount.RegisterClient()
+	falcon.RegisterClient()
 	useRegistryKeyTypes(t)
 	for _, test := range []struct {
 		preset int
@@ -524,8 +532,8 @@ func TestPresetAsksOnlyForWhatItLeavesOpen(t *testing.T) {
 		{3, []string{boundary.ParameterUnlockRound, boundary.ParameterRekeyTo}},
 	} {
 		preset := boundary.Presets()[test.preset]
-		m := Model{forms: formsState{boundaryKeyType: boundary.KeyTypeV1, boundaryPreset: &preset}}
-		spec := m.paramSpecFor(boundary.KeyTypeV1)
+		m := Model{forms: formsState{boundaryKeyType: boundedHostKeyType, boundaryPreset: &preset}}
+		spec := m.paramSpecFor(boundedHostKeyType)
 		if spec == nil {
 			t.Fatal("no form")
 		}
@@ -543,13 +551,13 @@ func TestPresetAsksOnlyForWhatItLeavesOpen(t *testing.T) {
 }
 
 func TestPresetSubmissionCarriesItsFixedChoices(t *testing.T) {
-	boundedaccount.RegisterClient()
+	falcon.RegisterClient()
 	useRegistryKeyTypes(t)
 	preset := boundary.Presets()[0]
-	m := Model{viewState: ViewGenerateParams, forms: formsState{boundaryKeyType: boundary.KeyTypeV1, boundaryPreset: &preset}}
-	m = m.initGenericLSigParamsForKeyType(boundary.KeyTypeV1)
+	m := Model{viewState: ViewGenerateParams, forms: formsState{boundaryKeyType: boundedHostKeyType, boundaryPreset: &preset}}
+	m = m.initGenericLSigParamsForKeyType(boundedHostKeyType)
 	m.forms.genericLSigParams[boundary.ParameterRecipients] = types.Address{31: 7}.String()
-	got, _, errText := m.submitParamModal(boundary.KeyTypeV1, m.paramSpecFor(boundary.KeyTypeV1), ViewGenerating,
+	got, _, errText := m.submitParamModal(boundedHostKeyType, m.paramSpecFor(boundedHostKeyType), ViewGenerating,
 		func(string, map[string]string, string) tea.Cmd { return nil })
 	if errText != "" {
 		t.Fatal(errText)
@@ -564,17 +572,17 @@ func TestPresetSubmissionCarriesItsFixedChoices(t *testing.T) {
 // Importing a reference from the form must finish the field and keep what the
 // operator already typed.
 func TestImportedCosignerFillsThePresetField(t *testing.T) {
-	boundedaccount.RegisterClient()
+	falcon.RegisterClient()
 	useRegistryKeyTypes(t)
 	preset := boundary.Presets()[2]
-	m := Model{viewState: ViewGenerateParams, forms: formsState{boundaryKeyType: boundary.KeyTypeV1, boundaryPreset: &preset}}
-	m = m.initGenericLSigParamsForKeyType(boundary.KeyTypeV1)
+	m := Model{viewState: ViewGenerateParams, forms: formsState{boundaryKeyType: boundedHostKeyType, boundaryPreset: &preset}}
+	m = m.initGenericLSigParamsForKeyType(boundedHostKeyType)
 	m.forms.genericLSigParams[boundary.ParameterRecipients] = "typed"
-	m.cosigner.pendingKeyType = boundary.KeyTypeV1
+	m.cosigner.pendingKeyType = boundedHostKeyType
 	m.cosigner.pendingWitnessID = "WITNESS"
 
 	next, _ := m.Update(KeyTypesMsg{KeyTypes: []protocol.KeyTypeInfo{{
-		KeyType:        boundary.KeyTypeV1,
+		KeyType:        boundedHostKeyType,
 		PerKeyContract: true,
 		BoundarySchema: boundary.SchemaV1,
 		CreationParams: []protocol.TemplateParamInfo{{Name: boundary.ParameterRecipients, Type: "address[]", Required: true}},
@@ -604,7 +612,7 @@ func TestBoundaryFileBrowserStartsWhereApadminRuns(t *testing.T) {
 
 func TestBoundaryFileFailureStaysOnTheFileRow(t *testing.T) {
 	m := Model{viewState: ViewBoundaryPreset, forms: formsState{boundaryFile: filepath.Join(t.TempDir(), "missing.yaml")}}
-	m.forms.boundaryPresetIndex = len(boundary.Presets())
+	m.forms.boundaryPresetIndex = boundaryPresetRows() - 1
 	next, _ := m.handleBoundaryPresetKeys(tea.KeyMsg{Type: tea.KeyEnter})
 	got := next.(Model)
 	if got.viewState != ViewBoundaryPreset || got.forms.generateError == "" {

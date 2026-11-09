@@ -52,8 +52,25 @@ func ParseFile(data []byte) (*File, error) {
 	if file.Schema != SchemaV1 {
 		return nil, fmt.Errorf("boundary file: schema must be %s", SchemaV1)
 	}
+	// Without spend the file has no bounds: it describes the overlays alone, a
+	// plain1 account, so it can't name what only bounds take.
 	if len(file.Spend) == 0 {
-		return nil, fmt.Errorf("boundary file: spend is required")
+		if file.Spend != nil {
+			return nil, fmt.Errorf("boundary file: spend is empty; leave it out for an account without bounds")
+		}
+		for _, field := range []struct {
+			name string
+			set  bool
+		}{
+			{"recipients", file.Recipients != nil},
+			{"recipient_scope", file.RecipientScope != nil},
+			{"encoding", file.Encoding != nil},
+			{"unlock_round", file.UnlockRound != nil},
+		} {
+			if field.set {
+				return nil, fmt.Errorf("boundary file: %s needs spend, the transfer kinds the account may make", field.name)
+			}
+		}
 	}
 	if file.UnlockRound != nil && strings.TrimSpace(*file.UnlockRound) == "" {
 		return nil, fmt.Errorf("boundary file: unlock_round is empty")
@@ -80,7 +97,7 @@ func ParseFile(data []byte) (*File, error) {
 	if anyRecipient && file.UnlockRound != nil {
 		return nil, fmt.Errorf("boundary file: recipient_scope %s does not combine with unlock_round", RecipientScopeAny)
 	}
-	if !anyRecipient && len(file.Recipients) == 0 && (file.Recipients != nil || file.UnlockRound == nil) {
+	if len(file.Spend) != 0 && !anyRecipient && len(file.Recipients) == 0 && (file.Recipients != nil || file.UnlockRound == nil) {
 		return nil, fmt.Errorf("boundary file: recipients is required unless the file sets unlock_round or recipient_scope: %s", RecipientScopeAny)
 	}
 	if file.Recipients == nil && file.Encoding != nil {
@@ -94,12 +111,12 @@ func ParseFile(data []byte) (*File, error) {
 		if len(file.Rekey.To) == 0 {
 			return nil, fmt.Errorf("boundary file: rekey.authority %s needs the addresses in rekey.to", file.Rekey.Authority)
 		}
-	case RekeySpendingKey:
+	case RekeyRefused, RekeySpendingKey:
 		if file.Rekey.To != nil {
 			return nil, fmt.Errorf("boundary file: rekey.to needs rekey.authority %s or %s", RekeyOnlyThese, RekeyPlusCosigned)
 		}
 	default:
-		return nil, fmt.Errorf("boundary file: rekey.authority must be %s, %s or %s", RekeySpendingKey, RekeyOnlyThese, RekeyPlusCosigned)
+		return nil, fmt.Errorf("boundary file: rekey.authority must be %s, %s, %s or %s", RekeyRefused, RekeySpendingKey, RekeyOnlyThese, RekeyPlusCosigned)
 	}
 	if file.Cosigner != nil && strings.TrimSpace(*file.Cosigner) == "" {
 		return nil, fmt.Errorf("boundary file: cosigner is empty")
@@ -114,9 +131,9 @@ func ParseFile(data []byte) (*File, error) {
 // public values, never the original YAML, and leaves a cosigner name for the
 // signer's reference catalog to resolve.
 func (f *File) CreationParameters() map[string]string {
-	params := map[string]string{
-		ParameterSpendEffects:   strings.Join(f.Spend, ","),
-		ParameterRekeyAuthority: f.Rekey.Authority,
+	params := map[string]string{ParameterRekeyAuthority: f.Rekey.Authority}
+	if len(f.Spend) != 0 {
+		params[ParameterSpendEffects] = strings.Join(f.Spend, ",")
 	}
 	if f.Rekey.To != nil {
 		params[ParameterRekeyTo] = strings.Join(f.Rekey.To, ",")

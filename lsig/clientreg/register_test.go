@@ -11,7 +11,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/boundary"
 	"github.com/aplane-algo/aplane/internal/keymgmt"
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
@@ -23,19 +22,19 @@ import (
 func TestCanonicalCompiledLogicSigInventory(t *testing.T) {
 	RegisterClient()
 
-	// The general bounded type is the one LogicSig type enabled by default. The
-	// protocol-native types are too, but they register outside lsig. The plain
-	// LogicSig types are plain hosts, and they and the other compiled types are
-	// opt-in through the library.
+	// The Falcon plain host, which carries the bounds and the overlays, is the
+	// one LogicSig type enabled by default, as the general bounded type it
+	// replaces was. The protocol-native types are too, but they register outside
+	// lsig. The Ed25519 plain host and the other compiled types are opt-in
+	// through the library.
 	defaultEnabled := catalogKeyTypes(keytypecatalog.DefaultEnabled())
-	if !reflect.DeepEqual(defaultEnabled, []string{boundary.KeyTypeV1}) {
-		t.Fatalf("default-enabled compiled LogicSig inventory = %v, want %s only", defaultEnabled, boundary.KeyTypeV1)
+	if !reflect.DeepEqual(defaultEnabled, []string{"aplane.falcon1024.v1"}) {
+		t.Fatalf("default-enabled compiled LogicSig inventory = %v, want aplane.falcon1024.v1 only", defaultEnabled)
 	}
 
 	libraryVisible := catalogKeyTypes(keytypecatalog.LibraryVisible())
 	wantLibraryVisible := []string{
 		"aplane.ed25519.v1",
-		"aplane.falcon1024.v1",
 		"aplane.rotating-triple-slhdsa.v1",
 		"aplane.rotating-triple-wotsc.v1",
 		"aplane.rotating-triple-xmss.v1",
@@ -106,7 +105,6 @@ func TestRegisterClientMarksLibraryVisible(t *testing.T) {
 	RegisterClient()
 
 	libraryGatedKeyTypes := []string{
-		"aplane.falcon1024.v1",
 		"aplane.ed25519.v1",
 	}
 
@@ -279,18 +277,22 @@ teal: |
 	}
 }
 
-// The plain LogicSig types stay the composable bases every bounded account
-// names, and are plain hosts: opt-in through the library, with or without
-// overlays.
+// The plain LogicSig types stay the composable bases every composed account
+// names, and are plain hosts, with or without overlays and bounds: the Falcon
+// one is enabled by default, the Ed25519 one opt-in through the library.
 func TestPlainHostsRemainComposableAndAreOptIn(t *testing.T) {
 	RegisterClient()
 	for _, keyType := range []string{"aplane.falcon1024.v1", "aplane.ed25519.v1"} {
 		t.Run(keyType, func(t *testing.T) {
-			if !keytypecatalog.IsLibraryVisible(keyType) || !lsigprovider.Has(keyType) || !composeddsa.IsBaseRegistered(keyType) {
-				t.Fatalf("%s must stay registered as a composable base and be library-visible", keyType)
+			if !lsigprovider.Has(keyType) || !composeddsa.IsBaseRegistered(keyType) {
+				t.Fatalf("%s must stay registered as a composable base", keyType)
 			}
-			if containsKeyType(keymgmt.GetValidKeyTypesWithActivated(nil), keyType) {
-				t.Fatalf("%s is enabled without activation", keyType)
+			byDefault := keyType == "aplane.falcon1024.v1"
+			if keytypecatalog.IsDefaultEnabled(keyType) != byDefault || keytypecatalog.IsLibraryVisible(keyType) == byDefault {
+				t.Fatalf("%s: default-enabled %v, library-visible %v", keyType, keytypecatalog.IsDefaultEnabled(keyType), keytypecatalog.IsLibraryVisible(keyType))
+			}
+			if containsKeyType(keymgmt.GetValidKeyTypesWithActivated(nil), keyType) != byDefault {
+				t.Fatalf("%s enabled without activation = %v, want %v", keyType, !byDefault, byDefault)
 			}
 			if !containsKeyType(keymgmt.GetValidKeyTypesWithActivated([]string{keyType}), keyType) {
 				t.Fatalf("activation does not enable %s", keyType)
