@@ -1,17 +1,17 @@
 # Bounded Cosigner Machine-Checkable Model
 
 > Status: TLC checked over every abstract input combination; the recorded run
-> generated 531,968 distinct reachable states at depth 4 and found no
+> generated 2,127,872 distinct reachable states at depth 4 and found no
 > counterexamples for `Safety`. The normal configuration exhausts the model's
 > full finite state space, so no deep configuration exists for this module.
 
 This model checks the first-party client's stage order and the security-bearing
-final acceptance boundary of the `cosigned1` choreography. It complements the
-legacy cosigned assembly model: first-party orchestration releases an ordinary
-bounded base signature, requests the cosigner only after signer policy and
-operator approval, and then uses the shared `/sign/assemble` route with the
-distinct `bounded-cosigner` target kind to derive and place the declared
-arguments.
+final acceptance boundary of the `cosigned1` choreography, and the passthrough
+binding (A8) it took over from the retired cosigned assembly model. First-party
+orchestration releases an ordinary bounded base signature, requests the
+cosigner only after signer policy and operator approval, and then uses the
+shared `/sign/assemble` route with the distinct `bounded-cosigner` target kind
+to derive and place the declared arguments.
 
 A cosigned account's target takes one of three paths. A spend and a cosigned
 rekey (the account's declared spending-key rekey) need the cosigner. A listed
@@ -119,11 +119,12 @@ The checked model passes its standard exhaustive run.
   derived/runtime, and cosigner sources plus their path masks. The Go
   implementation and compiler tests verify the concrete order and slot sizes.
 - The bounded assembly receipt is an abstract boolean. The code mints a
-  Falcon-signed receipt during spend signing and verifies it against the
-  bounded spending public key during assembly, before accepting the base or
-  cosigner component; `receipt` abstracts that whole verification, including
-  the metadata-hash and runtime-argument binding checked concretely by
-  `TestBoundedAssemblyReceiptBindsRuntimeAndMetadata`.
+  receipt signed by the spending key (the account's base, Falcon or Ed25519)
+  when it releases the base component on any of the three paths, and verifies
+  it against the spending public key during assembly, before checking the
+  cosigner signature or placing any argument; `receipt` abstracts that whole
+  verification, including the metadata-hash and runtime-argument binding
+  checked concretely by `TestBoundedAssemblyReceiptBindsRuntimeAndMetadata`.
 - The external-admin branch (the signer's admin partial plus offline completion)
   was removed with the admin key; BS2 now covers the listed-rekey branch in its
   place. An uncosigned account's listed rekey goes through ordinary `/sign` and

@@ -500,8 +500,8 @@ This model does not prove:
 - filesystem reload ordering,
 - server shutdown and runtime destruction ordering,
 - backup/restore behavior,
-- additional compliance-cosigner semantics beyond the current cosigned and
-  bounded-cosigner flows.
+- additional compliance-cosigner semantics beyond the current cosigned flow
+  (`cosigned1`, on a bounded or a plain host).
 
 Those belong in separate models or assumptions.
 

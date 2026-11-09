@@ -148,11 +148,12 @@ CosignerStep ==
 Presented == cosignerReleased /\ input.presentCosigner
 
 (* POST /sign/assemble revalidates metadata, classifies the canonical
-   transaction against the stored contract again, verifies the Falcon-signed
-   assembly receipt against the bounded spending public key, and then checks
-   exact target coverage, the base signature, the cosigner signature where the
-   path needs one and its absence where it does not, source/path masks,
-   derived arguments, passthrough binding (validateCosignedPassthrough: the
+   transaction against the stored contract again, verifies the assembly
+   receipt, signed by the spending key (Falcon or Ed25519), against the
+   bounded spending public key, and then checks exact target coverage, the
+   base signature, the cosigner signature where the path needs one and its
+   absence where it does not, source/path masks, derived arguments,
+   passthrough binding (validateCosignedPassthrough: the
    decoded txid, a signature, and no locally held cosigned signer), and
    canonical transaction bytes before returning one atomic group. A client
    that skipped the cosigner assembles from base_released. *)

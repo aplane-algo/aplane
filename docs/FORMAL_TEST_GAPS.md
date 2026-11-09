@@ -21,33 +21,6 @@ Order is by recommended write order for the remaining backlog.
 
 ## Pending Test Coverage
 
-**Model drift: signer-domain gating of user components and client-routed
-cosigned simulation.**
-The retired cosigned signing model (its surviving invariants are now in
-[FORMAL_TLA_BOUNDED_COSIGNER_MODEL.md](FORMAL_TLA_BOUNDED_COSIGNER_MODEL.md)) and the
-TLA+ sign-boundary and retired cosigned-assembly models predate two behaviors that are now
-implemented and unit-tested but not yet modeled:
-
-- user-role `/sign/component` runs the signer-domain approval gates (hard
-  rejection, always-review, operator approval) before component signing
-  (`internal/signerapp/signing/component_gate.go`),
-- cosigned simulation runs ordinary user and cosigner component signing plus
-  `/sign/assemble`, then sends the released executable group from the client to
-  algod simulation (`internal/engine/cosigned/submit.go`).
-
-The models remain sound for what they cover (assembly invariants, two-party
-signature requirements); they under-approximate the gate sequence and the
-post-assembly client route. A future audit pass should extend the cosigned
-signing model with the gate states and assert that every released cosigned group
-passed the same user gate regardless of whether the client submits or
-simulates it. This gap is limited to the legacy `cosigner1` choreography;
-`cosigned1` user-first ordering and assembly, for spends, cosigned rekeys and
-listed rekeys, are covered by
-[formal/bounded_cosigner.tla](formal/bounded_cosigner.tla). Its simulation route is
-covered by the concrete Go test
-`TestBoundedCosignerSimulateUsesUserFirstChoreography`; the TLA+ model does not
-represent client submission or simulation transport.
-
 **Model drift: SSH authentication boundary.**
 Normal SSH connections authenticate possession of a supported enrolled public
 key under username `aplane`. API connections carry its verified fingerprint,
@@ -135,13 +108,24 @@ source/path-mask assembly, canonical bytes, and atomic failure. Concrete effect 
 slot encodings, Merkle derivation, and TEAL remain verified by Go/compiler tests
 rather than abstracted as cryptographic or byte-level TLC claims.
 
+The former drift entry on signer-domain gating of user components and the
+client-routed simulation of the `cosigner1` choreography closed by retirement:
+phase 5 of the account overlays removed the user component role, its approval
+gate (`internal/signerapp/signing/component_gate.go`) and `cosigner1`
+(`23550e0d`). The `cosigned1` user-first ordering and assembly, for spends,
+cosigned rekeys and listed rekeys, are covered by
+[formal/bounded_cosigner.tla](formal/bounded_cosigner.tla), and its simulation
+route by `TestBoundedCosignerSimulateUsesUserFirstChoreography`; the TLA+ model
+does not represent client submission or simulation transport.
+
 The cosigned signing audit added the cosigned signing model (retired in phase 5
 of the account overlays; its surviving invariants are in
 [FORMAL_TLA_BOUNDED_COSIGNER_MODEL.md](FORMAL_TLA_BOUNDED_COSIGNER_MODEL.md)) and
 closed the new A-series gaps in the same pass. The focused tests added for that
 audit cover:
 
-- wrong user component signature rejection during `/sign/assemble`,
+- wrong user component signature rejection during `/sign/assemble` (retired
+  with the user component in phase 5),
 - passthrough signed-transaction txid mismatch rejection during
   `/sign/assemble`,
 - direct `/sign` rejection for all cosigned account key types,
