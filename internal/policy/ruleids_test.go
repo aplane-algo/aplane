@@ -8,6 +8,7 @@ import "testing"
 func TestStablePolicyRuleIDs(t *testing.T) {
 	ruleIDs := map[string]string{
 		"RejectForeignRekeyRuleID":                RejectForeignRekeyRuleID,
+		"RejectAllRekeysRuleID":                   RejectAllRekeysRuleID,
 		"RejectCloseRemainderRuleID":              RejectCloseRemainderRuleID,
 		"RejectAssetCloseRuleID":                  RejectAssetCloseRuleID,
 		"RejectClawbackRuleID":                    RejectClawbackRuleID,
@@ -32,6 +33,7 @@ func TestStablePolicyRuleIDs(t *testing.T) {
 	}
 	want := map[string]string{
 		"RejectForeignRekeyRuleID":                "reject_foreign_rekey",
+		"RejectAllRekeysRuleID":                   "reject_all_rekeys",
 		"RejectCloseRemainderRuleID":              "reject_close_remainder",
 		"RejectAssetCloseRuleID":                  "reject_asset_close",
 		"RejectClawbackRuleID":                    "reject_clawback",

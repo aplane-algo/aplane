@@ -522,6 +522,7 @@ func profileFromBoundedMetadata(programBytes uint64, metadata *boundedmeta.Metad
 	arguments := map[lsigresource.AuthorizationPath]uint64{
 		lsigresource.PathSpend:         uint64(metadata.ArgumentBytesForPath(boundedmeta.PathSpend)),
 		lsigresource.PathSpendingRekey: uint64(metadata.ArgumentBytesForPath(boundedmeta.PathSpendingRekey)),
+		lsigresource.PathListedRekey:   uint64(metadata.ArgumentBytesForPath(boundedmeta.PathListedRekey)),
 	}
 	profile, err := lsigresource.Materialize(programBytes, nil, arguments, opcodes)
 	if err != nil {

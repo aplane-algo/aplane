@@ -76,7 +76,7 @@ type BoundedAuthorizationSpec struct {
 	Contract     string   `yaml:"contract"`
 	SpendEffects []string `yaml:"spend_effects"`
 	MaxFee       *uint64  `yaml:"max_fee"`
-	// Rekey is refused or spending_key.
+	// Rekey is refused, spending_key, or only_these (refused with a rekey-to list).
 	Rekey       string                  `yaml:"rekey"`
 	Cosigner    *BoundedCosignerSpec    `yaml:"cosigner"`
 	Layer3      *TransactionLayer3Spec  `yaml:"layer3"`

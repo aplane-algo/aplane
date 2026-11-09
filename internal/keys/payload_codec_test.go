@@ -143,6 +143,7 @@ func payloadWithOpcodeProfile(t *testing.T, payload *Payload, bounded bool) *Pay
 		profile = lsigresource.BoundedOpcodeProfile(
 			lsigresource.SingleTransactionOpcodeCeiling,
 			lsigresource.SingleTransactionOpcodeCeiling,
+			lsigresource.SingleTransactionOpcodeCeiling,
 		)
 	}
 	if err := payload.SetLogicSigOpcodeProfile(profile, bounded); err != nil {
@@ -239,7 +240,7 @@ func TestBoundedCombinedLayer3PolicyPayloadRoundTrip(t *testing.T) {
 			for _, arg := range test.derived {
 				slots = append(slots, boundedmeta.ArgumentSlot{
 					Index: len(slots), Name: arg.Name, Source: boundedmeta.ArgSourceDerived, MaxSize: arg.MaxSize,
-					Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgOptional, SpendingRekey: boundedmeta.ArgForbidden},
+					Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgOptional, SpendingRekey: boundedmeta.ArgForbidden, ListedRekey: boundedmeta.ArgForbidden},
 				})
 			}
 			if err := payload.SetBoundedAuthorization(&boundedmeta.Metadata{
@@ -289,8 +290,8 @@ func TestBoundedCosignerPayloadMetadataRoundTrip(t *testing.T) {
 			SignatureMaxSize: boundedmeta.CosignerSignatureMaxSizeV1, RequiredOn: []string{boundedmeta.PathSpend},
 		},
 		ArgumentLayout: []boundedmeta.ArgumentSlot{
-			{Index: 0, Name: "base_signature_0", Source: boundedmeta.ArgSourceBaseSignature, MaxSize: 4, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgRequired}},
-			{Index: 1, Name: boundedmeta.CosignerSignatureSlot, Source: boundedmeta.ArgSourceCosigner, MaxSize: boundedmeta.CosignerSignatureMaxSizeV1, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgForbidden}},
+			{Index: 0, Name: "base_signature_0", Source: boundedmeta.ArgSourceBaseSignature, MaxSize: 4, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgRequired, ListedRekey: boundedmeta.ArgRequired}},
+			{Index: 1, Name: boundedmeta.CosignerSignatureSlot, Source: boundedmeta.ArgSourceCosigner, MaxSize: boundedmeta.CosignerSignatureMaxSizeV1, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgForbidden, ListedRekey: boundedmeta.ArgForbidden}},
 		},
 	}
 	if err := payload.SetBoundedAuthorization(metadata); err != nil {
@@ -319,7 +320,7 @@ func TestBoundedCosignerPayloadMetadataRoundTrip(t *testing.T) {
 func TestParsePayloadRejectsInvalidBoundedMetadata(t *testing.T) {
 	bytecodeHex := hex.EncodeToString(canonicalOffCurveBytecode(t))
 	base := `{"format_version":1}`
-	base = strings.TrimSuffix(base, `}`) + `,"category":"dsa_lsig","key_type":"test.bounded.v1","public_key":"01","private_key":"02","lsig_bytecode":"` + bytecodeHex + `","salt_counter":0,"signing_metadata_version":2,"base_key_type":"test.base.v1","bounded_authorization":{"contract":"bounded2","base_signature_arg_layout":{"count":1,"max_sizes":[4]},"spend_effects":["pay"],"max_fee":1000,"rekey":"refused","runtime_args":[],"derived_args":[],"argument_layout":[{"index":0,"name":"base_signature_0","source":"base_signature","max_size":4,"paths":{"spend":"required","spending_rekey":"required"}}],"layer3_policy":"custom"},"created_at":"2026-07-10T12:34:56Z"}`
+	base = strings.TrimSuffix(base, `}`) + `,"category":"dsa_lsig","key_type":"test.bounded.v1","public_key":"01","private_key":"02","lsig_bytecode":"` + bytecodeHex + `","salt_counter":0,"signing_metadata_version":2,"base_key_type":"test.base.v1","bounded_authorization":{"contract":"bounded2","base_signature_arg_layout":{"count":1,"max_sizes":[4]},"spend_effects":["pay"],"max_fee":1000,"rekey":"refused","runtime_args":[],"derived_args":[],"argument_layout":[{"index":0,"name":"base_signature_0","source":"base_signature","max_size":4,"paths":{"spend":"required","spending_rekey":"required","listed_rekey":"required"}}],"layer3_policy":"custom"},"created_at":"2026-07-10T12:34:56Z"}`
 	if payload, err := ParsePayload([]byte(base)); err != nil {
 		t.Fatalf("ParsePayload(base) error = %v", err)
 	} else {
@@ -335,7 +336,7 @@ func TestParsePayloadRejectsInvalidBoundedMetadata(t *testing.T) {
 		{name: "duplicate nested field", data: strings.Replace(base, `"contract":"bounded2"`, `"contract":"bounded2","contract":"bounded2"`, 1), want: `duplicate object member "contract"`},
 		{name: "bounded1 contract", data: strings.Replace(base, `"contract":"bounded2"`, `"contract":"bounded1"`, 1), want: `unsupported bounded authorization contract "bounded1"`},
 		{name: "bounded1 admin operations", data: strings.Replace(base, `"rekey":"refused"`, `"admin_operations":[]`, 1), want: "unknown field"},
-		{name: "bounded1 admin_rekey path", data: strings.Replace(base, `"spending_rekey":"required"}`, `"spending_rekey":"required","admin_rekey":"required"}`, 1), want: "unknown field"},
+		{name: "bounded1 admin_rekey path", data: strings.Replace(base, `"listed_rekey":"required"}`, `"listed_rekey":"required","admin_rekey":"required"}`, 1), want: "unknown field"},
 		{name: "unknown rekey setting", data: strings.Replace(base, `"rekey":"refused"`, `"rekey":"admin_key"`, 1), want: `unsupported rekey setting "admin_key"`},
 		{name: "wrong metadata version", data: strings.Replace(base, `"signing_metadata_version":2`, `"signing_metadata_version":1`, 1), want: "requires signing_metadata_version 2"},
 	}

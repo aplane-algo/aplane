@@ -27,6 +27,7 @@ func TestBoundedLabel(t *testing.T) {
 		{"allowlist plus custom", &signerapi.BoundedAuthorizationInfo{Layer3Policy: boundedmeta.Layer3PolicyMerkleAllowlistCustom, Rekey: spending}, "Merkle allowlist plus custom policy · spending-key rekey"},
 		{"timelock refuses rekeys", &signerapi.BoundedAuthorizationInfo{Layer3Policy: boundedmeta.Layer3PolicyFixedAllowlistTimelock, Rekey: refused}, "Allowlist timelock · no rekey"},
 		{"limits only", &signerapi.BoundedAuthorizationInfo{Layer3Policy: boundedmeta.Layer3PolicyNone, Rekey: refused, Cosigner: cosigner}, "Limits only · no rekey · cosigner"},
+		{"only these", &signerapi.BoundedAuthorizationInfo{Layer3Policy: boundedmeta.Layer3PolicyFixedAllowlist, Rekey: refused, RekeyList: &signerapi.BoundedRekeyListInfo{Contract: boundedmeta.RekeyListContractV1, Depth: 4}}, "Allowlist · rekey to listed only"},
 		{"unknown policy stays honest", &signerapi.BoundedAuthorizationInfo{Layer3Policy: "future_rule", Rekey: refused}, "Policy future_rule · no rekey"},
 	} {
 		t.Run(test.name, func(t *testing.T) {

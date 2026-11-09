@@ -30,6 +30,12 @@ type baseKeyTypeProvider interface {
 	BaseKeyType() string
 }
 
+// rekeyListPreparer adds a rekey-to list's root to generation parameters once
+// the spending key exists.
+type rekeyListPreparer interface {
+	PrepareRekeyList(privateKey []byte, params map[string]string) (map[string]string, error)
+}
+
 type boundedAuthorizationMetadataProvider interface {
 	BuildBoundedAuthorizationMetadata(publicKey []byte, params map[string]string, bytecode []byte) (*boundedmeta.Metadata, error)
 }
@@ -121,6 +127,16 @@ func (g *LogicSigGenerator) generateKey(ctx context.Context, paths storepaths.Pa
 	}
 	defer crypto.ZeroBytes(priv)
 
+	// A rekey-to list's root depends on the new spending key, so it is added
+	// now, before the program is rendered. The request's own parameters still
+	// decide the account's provenance.
+	requestParams := params
+	if preparer, ok := dsa.(rekeyListPreparer); ok {
+		if params, err = preparer.PrepareRekeyList(priv, params); err != nil {
+			return nil, fmt.Errorf("failed to prepare the rekey-to list: %w", err)
+		}
+	}
+
 	// Derive LogicSig, off-curve salt metadata, and address.
 	derived, err := deriveSaltedLogicSig(ctx, dsa, pub, params)
 	if err != nil {
@@ -152,7 +168,7 @@ func (g *LogicSigGenerator) generateKey(ctx context.Context, paths storepaths.Pa
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve LogicSig opcode profile: %w", err)
 	}
-	templateFingerprint, err := lsigprovider.CreationFingerprint(keyType, params)
+	templateFingerprint, err := lsigprovider.CreationFingerprint(keyType, requestParams)
 	if err != nil {
 		return nil, err
 	}

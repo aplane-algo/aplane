@@ -231,7 +231,7 @@ Policy fields by domain:
 | Field | Domain | Meaning |
 |-------|--------|---------|
 | `transaction_types` `reject` | common | Reject every transaction of that type; evaluated first and suppresses the other transaction guards; transfer-routing deny verdicts for the same transaction may still be listed alongside it |
-| `reject_foreign_rekey` | signer | Reject transactions whose non-zero `RekeyTo` target is not held by the product signer runtime |
+| `rekeys` | signer | The signer's rejection rule for a non-zero `RekeyTo`: `reject_all_rekeys`, `reject_foreign_rekey` (the default: reject a target the product signer runtime does not hold, unless it is on the signing account's own rekey-to list), or `allow_rekeys` |
 | `reject_rekey` | cosigner | Coarse deny-all switch for transactions with non-zero `RekeyTo` |
 | `rekey_policy` | cosigner | Allow-list for pure 0 ALGO self-payment rekeys by sender and rekey target |
 | `reject_close_remainder` | common | Reject payment transactions with non-zero `CloseRemainderTo` |
@@ -247,9 +247,18 @@ the Algorand type string (`pay`, `axfer`, `acfg`, `afrz`, `keyreg`, `appl`,
 cosigner node decode refuses `allow` for anything but `pay` and `axfer`, so
 every non-transfer type a cosigner is asked to attest is rejected here.
 
-`reject_foreign_rekey` evaluates the rekey target against the set of addresses
-held by the current signer, which is meaningful only when the signer owns the
-sender. A held rotating account is never an acceptable target: the signer
+`rekeys` only rejects. `reject_all_rekeys` rejects every rekey, a listed one
+included; `reject_foreign_rekey` evaluates the rekey target against the set of
+addresses held by the current signer, which is meaningful only when the signer
+owns the sender, and counts the signing account's own rekey-to list as declared
+targets: the list is the owner's standing statement that those addresses may take
+the account. Each position counts only its own account's list, never another
+position's. `allow_rekeys` rejects none. What it lets through goes on through the
+rest of policy as any transaction does: the rekey warning, review rules,
+operator approval, and User Auto-Approve, which can approve it. A rejection
+outranks all of those. None of the three rejects the signer's own protocol
+rekeys (a rotation's next stage), so a rotating account keeps spending under
+`reject_all_rekeys`. A `Config` never given a value rejects every rekey. A held rotating account is never an acceptable target: the signer
 refuses that rekey before policy runs, whatever the policy says (see
 [ARCH_SIGNING.md](ARCH_SIGNING.md)). `reject_rekey` is the cosigner coarse-deny analog and ignores key
 ownership: when true, any non-zero `RekeyTo` rejects. When it is false, the
@@ -584,8 +593,10 @@ context.
 Non-routing rule IDs:
 
 - `transaction_type:<type>` for a `transaction_types` `reject` or `review`
-- `reject_foreign_rekey`, `reject_close_remainder`, `reject_asset_close`, and
-  `reject_clawback`: each reject flag emits its field name
+- `reject_all_rekeys` or `reject_foreign_rekey`, the `rekeys` value that
+  rejected
+- `reject_close_remainder`, `reject_asset_close`, and `reject_clawback`: each
+  reject flag emits its field name
 - `max_fee_exceeded` for `max_fee_microalgos`
 - `max_algo_payment_exceeded`, `max_asa_amount_exceeded`, and
   `unknown_genesis_hash` for `limits.*.reject_above`
@@ -660,8 +671,9 @@ The `bounded2` on-chain envelope is independent of signer policy. Signer policy 
 reject a transaction admitted by the LogicSig but can never widen the compiled
 envelope or raise its `max_fee`.
 
-Every transaction classified onto a bounded spending-key rekey path
-triggers the stable client-signing Always Review rule
+Every transaction classified onto a bounded rekey path, spending-key
+(`spending_rekey`) or listed (`listed_rekey`), triggers the stable
+client-signing Always Review rule
 `bounded_rekey_requires_review`. The rule runs after hard
 rejection and before every Always Approve or Operator Default path. It therefore
 defeats `auto_approve_self_noop_transfer` and warning configuration;
@@ -669,8 +681,18 @@ defeats `auto_approve_self_noop_transfer` and warning configuration;
 A client intent to simulate is not an exception because apsigner releases the
 same executable signatures and receives no simulation designation.
 
+A rekey on an account with a rekey-to list to an address not on it never reaches
+policy: the planner refuses it with `bounded_rekey_target_not_listed`, because the
+program would reject it. A listed rekey does reach policy, where
+`reject_foreign_rekey` counts its target as declared (see
+[Always Deny](#always-deny)) and `reject_all_rekeys`
+rejects it. It remains a warning finding: the warning says the transaction hands
+the account to an address on its rekey-to list and, when this signer does not hold
+that address, that the account leaves this signer's custody.
+
 The approval description names the operation, sender, rekey target,
-transaction fee and compiled ceiling, and authorization mode. See
+transaction fee and compiled ceiling, and authorization mode; a listed rekey's mode
+is "spending key only, to an address on the account's rekey-to list". See
 [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md).
 
 ## Rotating Account Interaction
@@ -679,7 +701,8 @@ A rotating account (`signing_flow: rotating1`) rekeys on every spend. The
 rotation target is the signer's own next stage, derived from the account's
 seed but never stored as a key file. For that request only, the signer adds
 the target to the held-address set, so `reject_foreign_rekey` treats it as
-the signer's own address, and marks it as a protocol rekey: the signer set
+the signer's own address, and marks it as a protocol rekey, which no
+`rekeys` value rejects: the signer set
 the `RekeyTo` itself and proved it derives from the seed before approval
 ran, so warning analysis reports no finding for it and
 `always_review_warnings` does not match on it. A rotating spend therefore
@@ -774,7 +797,7 @@ A signer document:
   "format": "aplane.policy.v1",
   "role": "signer",
   "key": "default",
-  "reject_foreign_rekey": true,
+  "rekeys": "reject_foreign_rekey",
   "reject_close_remainder": false,
   "reject_asset_close": false,
   "reject_clawback": false,
@@ -825,7 +848,7 @@ required/optional/rejected column per role are in
 Client-signing semantics:
 
 - Some fields are valid only in a signer document because their semantics
-  reference "this signer owns the account" (`reject_foreign_rekey`,
+  reference "this signer owns the account" (`rekeys`,
   `auto_approve_self_noop_transfer`) or their verdict only makes sense with an
   operator above the signer (`always_review_warnings`, `review_above`
   thresholds, `on_no_route: review`, `transaction_types` `review`).
@@ -833,7 +856,7 @@ Client-signing semantics:
 Cosigner semantics:
 
 - `reject_rekey` and `rekey_policy` are valid only in a cosigner document.
-- `reject_foreign_rekey`, `always_review_warnings`,
+- `rekeys`, `always_review_warnings`,
   `auto_approve_self_noop_transfer`, `review_above`, and the three route-miss
   actions do not exist there.
 - `transaction_types` may `allow` only `pay` and `axfer`; `*` and every
@@ -905,7 +928,7 @@ absent is an error, and an optional field that is absent means none.
 | `role` | `"signer"` \| `"cosigner"` | required | required | Node role the document is for; must equal the node's |
 | `key` | `"default"` or selector | required | required | The document this is: the node default, or one key's own; must equal the file name |
 | `description` | string, at most 1024 characters | optional | optional | Notes for reviewers |
-| `reject_foreign_rekey` | bool | required | rejected | Reject a rekey to an address this signer does not hold |
+| `rekeys` | `"reject_all_rekeys"` \| `"reject_foreign_rekey"` \| `"allow_rekeys"` | required | rejected | Reject every rekey, a rekey to an address this signer does not hold and the signing account does not list, or none |
 | `reject_close_remainder` | bool | required | required | Reject ALGO close-outs |
 | `reject_asset_close` | bool | required | required | Reject ASA close-outs |
 | `reject_clawback` | bool | required | required | Reject ASA clawbacks |
@@ -1073,7 +1096,8 @@ The shipped signer default rejects a foreign rekey, sends warning-level
 findings to review, routes self-transfers and opt-ins, and leaves every other
 transfer and every non-transfer type to the operator default, so a fresh
 signer key behaves like most signers: it signs under `user_auto_approve: true`
-and prompts under `false`. A foreign rekey is always rejected. Review rules
+and prompts under `false`. A foreign rekey is always rejected
+(`rekeys: reject_foreign_rekey`). Review rules
 for rekey, close-out, clawback, app update or delete, asset reconfigure, asset
 freeze, or high fee are satisfied automatically when User Auto-Approve is on.
 
@@ -1082,7 +1106,7 @@ freeze, or high fee are satisfied automatically when User Auto-Approve is on.
   "format": "aplane.policy.v1",
   "role": "signer",
   "key": "default",
-  "reject_foreign_rekey": true,
+  "rekeys": "reject_foreign_rekey",
   "reject_close_remainder": false,
   "reject_asset_close": false,
   "reject_clawback": false,
@@ -1439,7 +1463,7 @@ Signer presets are a stricter start than the shipped signer default:
 | `transfers-only` | `pay` and `axfer` to any address |
 
 Each sets `transaction_types` `"*": "reject"` (required on a signer),
-`reject_foreign_rekey`, the three `reject_*` flags, `always_review_warnings`,
+`rekeys: reject_foreign_rekey`, the three `reject_*` flags, `always_review_warnings`,
 `auto_approve_self_noop_transfer: false`, `reject` for all three routing
 misses, and routes over `"*"` networks, sources and assets with no close or
 clawback allowance. The fee cap is 80000 microAlgos: the fee goes to the

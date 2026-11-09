@@ -10,6 +10,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/rekeylist"
 	"github.com/aplane-algo/aplane/internal/txeffects"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
@@ -19,6 +20,9 @@ type boundedPath string
 const (
 	boundedPathPureSpend        boundedPath = "pure_spend"
 	boundedPathSpendingKeyRekey boundedPath = "spending_key_rekey"
+	// boundedPathListedRekey is a pure rekey to an address on the account's
+	// rekey-to list, signed by the spending key with a list proof.
+	boundedPathListedRekey boundedPath = "listed_rekey"
 )
 
 type boundedPlanItem struct {
@@ -27,6 +31,9 @@ type boundedPlanItem struct {
 	BaseKeyType       string
 	SpendingPublicKey []byte
 	RuntimeArgs       map[string][]byte
+	// ListedRekeyTargets is the account's rekey-to list, when it has one.
+	// reject_foreign_rekey counts these targets as declared.
+	ListedRekeyTargets map[string]bool
 }
 
 func resolveBoundedPlanItems(snapshot PlannerRuntimeSnapshot, req []signerapi.SignRequest, txns []types.Transaction, passthroughIndices, foreignIndices map[int]bool) ([]*boundedPlanItem, *ServiceError) {
@@ -46,6 +53,17 @@ func resolveBoundedPlanItems(snapshot PlannerRuntimeSnapshot, req []signerapi.Si
 		if err != nil {
 			return nil, withTransactionIndex(i, err)
 		}
+		listed, listErr := listedRekeyTargets(metadata, snapshot.KeyMetadata[request.AuthAddress].Parameters)
+		if listErr != nil {
+			return nil, withTransactionIndex(i, listErr)
+		}
+		// The program takes a listed rekey only to a listed target, so the signer
+		// refuses any other rekey here instead of building a transaction the
+		// chain would reject.
+		if path == boundedPathListedRekey && !listed[txns[i].RekeyTo.String()] {
+			return nil, &ServiceError{Kind: ErrorBoundedRekeyNotListed, Message: fmt.Sprintf(
+				"transaction %d: %s is not on this account's rekey-to list, and the account refuses every other rekey", i+1, txns[i].RekeyTo)}
+		}
 		runtimeArgs, argErr := validateBoundedRuntimeArgs(request.LsigArgs, metadata, path)
 		if argErr != nil {
 			return nil, withTransactionIndex(i, argErr)
@@ -58,7 +76,7 @@ func resolveBoundedPlanItems(snapshot PlannerRuntimeSnapshot, req []signerapi.Si
 		// the item references its metadata directly instead of cloning again.
 		items[i] = &boundedPlanItem{
 			Path: path, Metadata: metadata, BaseKeyType: snapshot.KeyMetadata[request.AuthAddress].BaseKeyType,
-			SpendingPublicKey: spendingPublicKey, RuntimeArgs: runtimeArgs,
+			SpendingPublicKey: spendingPublicKey, RuntimeArgs: runtimeArgs, ListedRekeyTargets: listed,
 		}
 	}
 	return items, nil
@@ -110,9 +128,28 @@ func boundedSlotRule(slot boundedmeta.ArgumentSlot, path boundedPath) string {
 		return slot.Paths.Spend
 	case boundedPathSpendingKeyRekey:
 		return slot.Paths.SpendingRekey
+	case boundedPathListedRekey:
+		return slot.Paths.ListedRekey
 	default:
 		return ""
 	}
+}
+
+// listedRekeyTargets reads an account's rekey-to list from its stored
+// parameters, or returns nil for an account without one.
+func listedRekeyTargets(metadata *boundedmeta.Metadata, parameters map[string]string) (map[string]bool, *ServiceError) {
+	if metadata == nil || metadata.RekeyList == nil {
+		return nil, nil
+	}
+	entries, err := rekeylist.ParseEntries(parameters[boundedmeta.RekeyListEntriesParameter])
+	if err != nil {
+		return nil, internal(fmt.Sprintf("stored rekey-to list is invalid: %v", err))
+	}
+	listed := make(map[string]bool, len(entries))
+	for _, entry := range entries {
+		listed[entry.String()] = true
+	}
+	return listed, nil
 }
 
 // classifyBoundedPath decides which path the account's path declaration admits a
@@ -138,6 +175,8 @@ func classifyBoundedPath(txn types.Transaction, metadata *boundedmeta.Metadata) 
 		return boundedPathPureSpend, nil
 	case txeffects.PathSpendingRekey:
 		return boundedPathSpendingKeyRekey, nil
+	case txeffects.PathListedRekey:
+		return boundedPathListedRekey, nil
 	case txeffects.PathRefused:
 		return "", badRequest(decision.Reason)
 	default:
@@ -174,4 +213,22 @@ func planHasBoundedRekey(plan *PlanResult) bool {
 		}
 	}
 	return false
+}
+
+// listedRekeyTargetsForPlan is each bounded position's rekey-to list, by index.
+func listedRekeyTargetsForPlan(plan *PlanResult) map[int]map[string]bool {
+	if plan == nil {
+		return nil
+	}
+	var listed map[int]map[string]bool
+	for i, item := range plan.BoundedItems {
+		if item == nil || item.ListedRekeyTargets == nil {
+			continue
+		}
+		if listed == nil {
+			listed = make(map[int]map[string]bool)
+		}
+		listed[i] = item.ListedRekeyTargets
+	}
+	return listed
 }

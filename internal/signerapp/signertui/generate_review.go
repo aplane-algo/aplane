@@ -125,6 +125,19 @@ func spendEffectsLabel(effects []string) string {
 	return strings.Join(labels, ", ")
 }
 
+// rekeyToList is an only-these account's rekey-to list. A template without a
+// list may have a parameter of the same name, which is not one.
+func rekeyToList(review PrepareGenerateResultMessage) []string {
+	if review.Bounded == nil || !review.Bounded.RekeyList {
+		return nil
+	}
+	value := strings.TrimSpace(review.Parameters[boundedmeta.RekeyListEntriesParameter])
+	if value == "" {
+		return nil
+	}
+	return strings.Split(value, ",")
+}
+
 func recipientList(parameters map[string]string) []string {
 	value := strings.TrimSpace(parameters[recipientsParameter])
 	if value == "" {
@@ -160,6 +173,13 @@ func isCustomPolicy(policy string) bool {
 // reviewRekey states who can rekey the account and what that means, because the
 // escape path is the most consequential choice on the screen.
 func reviewRekey(review PrepareGenerateResultMessage) (label, consequence string) {
+	if review.Bounded.RekeyList {
+		consequence = "The spending key alone can hand the account to any of them, at any time."
+		if isTimelockPolicy(review.Bounded.Layer3Policy) {
+			consequence += " That is a way around the lock."
+		}
+		return fmt.Sprintf("Only these %d addresses, spending key alone", len(rekeyToList(review))), consequence
+	}
 	switch boundedmeta.RekeySetting(review.Bounded.Rekey) {
 	case boundedmeta.RekeyRefused:
 		return "None", "No rekey path. Losing a required authority cannot be repaired."
@@ -280,7 +300,7 @@ func (m Model) renderGenerateReviewDetails() string {
 	} else {
 		field("Template fingerprint", review.ReviewFingerprint)
 	}
-	for _, name := range reviewDetailParameters(review.Parameters) {
+	for _, name := range reviewDetailParameters(*review) {
 		field(name, wrapLongValue(review.Parameters[name]))
 	}
 	if recipients := recipientList(review.Parameters); len(recipients) > 0 {
@@ -288,6 +308,19 @@ func (m Model) renderGenerateReviewDetails() string {
 		for _, recipient := range recipients {
 			sb.WriteString("  " + recipient + "\n")
 		}
+	}
+	if targets := rekeyToList(*review); len(targets) > 0 {
+		sb.WriteString(fmt.Sprintf("Rekey-to addresses (%d):\n", len(targets)))
+		for _, target := range targets {
+			sb.WriteString("  " + target + "\n")
+			if note := m.rekeyTargetNote(target); note != "" {
+				sb.WriteString("    " + note + "\n")
+			}
+		}
+		sb.WriteString(wrapText("Each listed address can take the account over, without the cosigner and "+
+			"outside any cosigner's policy. The list is in the key's backup and can't be used without it. "+
+			"For a post-quantum account, list only post-quantum keys: this signer can't tell an address's "+
+			"key type unless it holds it.", 68) + "\n")
 	}
 	return m.renderPopup(72, sb.String())
 }
@@ -322,11 +355,15 @@ func (m Model) settleGenerateReview(result GenerateResultMsg) Model {
 // shown, sorted so the screen is stable. Custom templates name their own, so this
 // lists what is there rather than what is expected. The cosigner key is left out
 // because its Witness Key ID above identifies it.
-func reviewDetailParameters(parameters map[string]string) []string {
-	names := make([]string, 0, len(parameters))
-	for name := range parameters {
-		switch name {
-		case recipientsParameter, boundedmeta.CosignerPublicKeyParameter:
+func reviewDetailParameters(review PrepareGenerateResultMessage) []string {
+	names := make([]string, 0, len(review.Parameters))
+	listed := rekeyToList(review) != nil
+	for name := range review.Parameters {
+		switch {
+		case name == recipientsParameter, name == boundedmeta.CosignerPublicKeyParameter:
+			continue
+		case name == boundedmeta.RekeyListEntriesParameter && listed:
+			// Shown below as the rekey-to list.
 			continue
 		}
 		names = append(names, name)
@@ -388,4 +425,20 @@ func (m Model) saveGeneratedReceipt() Model {
 	m.forms.receiptError = ""
 	m.forms.receiptPath = path
 	return m
+}
+
+// rekeyTargetNote flags a listed address this signer holds: a compromise of the
+// signer could then take the account through it.
+func (m Model) rekeyTargetNote(address string) string {
+	for _, key := range m.keylist.keys {
+		if key.Address != address {
+			continue
+		}
+		note := "held by this signer: a compromise of this signer can take the account through it"
+		if strings.Contains(strings.ToLower(key.KeyType), "ed25519") {
+			note += "; an Ed25519 key, so the account would be classical after a handover"
+		}
+		return note
+	}
+	return ""
 }

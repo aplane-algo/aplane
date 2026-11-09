@@ -207,7 +207,7 @@ func internalLogicSigResourceProfile(profile *signerapi.LogicSigResourceProfile)
 	}
 	hasDefault := profile.Default != nil
 	boundedPaths := 0
-	for _, usage := range []*signerapi.LogicSigResourceUsage{profile.Spend, profile.SpendingRekey} {
+	for _, usage := range []*signerapi.LogicSigResourceUsage{profile.Spend, profile.SpendingRekey, profile.ListedRekey} {
 		if usage != nil {
 			boundedPaths++
 		}
@@ -215,8 +215,8 @@ func internalLogicSigResourceProfile(profile *signerapi.LogicSigResourceProfile)
 	if hasDefault && boundedPaths != 0 {
 		return lsigresource.Profile{}, fmt.Errorf("default and bounded authorization paths cannot be mixed")
 	}
-	if !hasDefault && boundedPaths != 2 {
-		return lsigresource.Profile{}, fmt.Errorf("bounded resource profile must contain spend and spending_rekey paths")
+	if !hasDefault && boundedPaths != 3 {
+		return lsigresource.Profile{}, fmt.Errorf("bounded resource profile must contain spend, spending_rekey and listed_rekey paths")
 	}
 
 	var programBytes uint64
@@ -247,6 +247,7 @@ func internalLogicSigResourceProfile(profile *signerapi.LogicSigResourceProfile)
 		Default:       path("default", profile.Default),
 		Spend:         path("spend", profile.Spend),
 		SpendingRekey: path("spending_rekey", profile.SpendingRekey),
+		ListedRekey:   path("listed_rekey", profile.ListedRekey),
 	}
 	if conversionErr != nil {
 		return lsigresource.Profile{}, conversionErr

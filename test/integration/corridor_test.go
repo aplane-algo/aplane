@@ -17,6 +17,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/cosigner/message"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/merkleallowlist"
+	"github.com/aplane-algo/aplane/internal/rekeylist"
 	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/txeffects"
 	"github.com/aplane-algo/aplane/lsig/boundedaccount"
@@ -254,6 +255,9 @@ type corridorExecutionAccount struct {
 	userPrivateKey     []byte
 	cosignerPrivateKey []byte
 	metadata           *boundedmeta.Metadata
+	// rekeyList is an only-these account's rekey-to list, rebuilt from its
+	// spending key as the signer does.
+	rekeyList *rekeylist.List
 }
 
 // corridorShape is the general bounded type's Corridor preset
@@ -277,7 +281,7 @@ func newCorridorExecutionAccount(t *testing.T, provider *boundedaccount.Provider
 	for i, recipient := range recipients {
 		recipientStrings[i] = recipient.String()
 	}
-	account := newGeneralAccount(t, provider, corridorShape(), recipientStrings, 0)
+	account := newGeneralAccount(t, provider, corridorShape(), recipientStrings, 0, nil)
 	if account.metadata.Layer3Policy != boundedmeta.Layer3PolicyMerkleAllowlist || account.metadata.Cosigner == nil || account.metadata.Rekey != boundedmeta.RekeyRefused {
 		t.Fatalf("account is not a Corridor: layer3_policy=%q cosigner=%v rekey=%q",
 			account.metadata.Layer3Policy, account.metadata.Cosigner != nil, account.metadata.Rekey)
@@ -348,7 +352,7 @@ func (a corridorExecutionAccount) signedGroup(t *testing.T, targetTxn types.Tran
 		t.Fatalf("failed to sign corridor base message: %v", err)
 	}
 	cosignerSignature := a.signComponent(t, message.RoleCosigner, txid, a.cosignerPrivateKey)
-	args := a.spendArgs(t, userSignature, proof, cosignerSignature)
+	args := a.spendArgs(t, userSignature, proof, a.listProof(targetTxn.RekeyTo), cosignerSignature)
 	if mutateArgs != nil {
 		args = mutateArgs(txid, args)
 	}
@@ -396,15 +400,55 @@ func (a corridorExecutionAccount) argumentIndex(t *testing.T, source string) int
 	return -1
 }
 
-func (a corridorExecutionAccount) spendArgs(t *testing.T, baseSignature, proof, cosignerSignature []byte) [][]byte {
+// listProof is a rekey target's list proof, or nil when the target is not listed.
+func (a corridorExecutionAccount) listProof(target types.Address) []byte {
+	if a.rekeyList == nil || target.IsZero() {
+		return nil
+	}
+	proof, listed := a.rekeyList.Proof(target)
+	if !listed {
+		return nil
+	}
+	return proof
+}
+
+// listProofIndex is the argument slot carrying a listed rekey's proof.
+func (a corridorExecutionAccount) listProofIndex(t *testing.T) int {
+	t.Helper()
+	return a.derivedIndex(t, boundedmeta.DerivedArgRekeyListProof)
+}
+
+func (a corridorExecutionAccount) derivedIndex(t *testing.T, kind string) int {
+	t.Helper()
+	if a.metadata == nil {
+		t.Fatal("bounded metadata is missing")
+	}
+	for _, arg := range a.metadata.DerivedArgs {
+		if arg.Kind != kind {
+			continue
+		}
+		for _, slot := range a.metadata.ArgumentLayout {
+			if slot.Source == boundedmeta.ArgSourceDerived && slot.Name == arg.Name {
+				return slot.Index
+			}
+		}
+	}
+	t.Fatalf("argument layout has no %q slot", kind)
+	return -1
+}
+
+func (a corridorExecutionAccount) spendArgs(t *testing.T, baseSignature, proof, listProof, cosignerSignature []byte) [][]byte {
 	t.Helper()
 	if a.metadata == nil {
 		t.Fatal("Corridor bounded metadata is missing")
 	}
+	derivedKinds := make(map[string]string, len(a.metadata.DerivedArgs))
+	for _, arg := range a.metadata.DerivedArgs {
+		derivedKinds[arg.Name] = arg.Kind
+	}
 	args := make([][]byte, len(a.metadata.ArgumentLayout))
-	baseIndex, derivedIndex := 0, 0
+	baseIndex := 0
 	baseValues := [][]byte{baseSignature}
-	derivedValues := [][]byte{proof}
 	for _, slot := range a.metadata.ArgumentLayout {
 		var value []byte
 		switch slot.Source {
@@ -415,11 +459,14 @@ func (a corridorExecutionAccount) spendArgs(t *testing.T, baseSignature, proof, 
 			value = baseValues[baseIndex]
 			baseIndex++
 		case boundedmeta.ArgSourceDerived:
-			if derivedIndex >= len(derivedValues) {
+			switch derivedKinds[slot.Name] {
+			case boundedmeta.DerivedArgMerkleProof:
+				value = proof
+			case boundedmeta.DerivedArgRekeyListProof:
+				value = listProof
+			default:
 				t.Fatalf("Corridor derived slot %q has no test value", slot.Name)
 			}
-			value = derivedValues[derivedIndex]
-			derivedIndex++
 		case boundedmeta.ArgSourceCosigner:
 			value = cosignerSignature
 		default:

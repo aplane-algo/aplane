@@ -206,7 +206,7 @@ Go-defined key types:
 |---|---|---|---|---|
 | `ed25519` | Native signing key | Go-defined | default-enabled | `internal/signing/ed25519`, `internal/keygen/ed25519.go` |
 | `falcon1024` | Protocol-native PQ signing key | Go-defined | default-enabled on signer nodes | `internal/signing/falcon1024` |
-| `aplane.falcon1024-b.v1` | General bounded account, one of 57 shapes selected per key | Go-defined | default-enabled on signer nodes | `lsig/boundedaccount`, `internal/boundary` |
+| `aplane.falcon1024-b.v1` | General bounded account, one of 81 shapes selected per key | Go-defined | default-enabled on signer nodes | `lsig/boundedaccount`, `internal/boundary` |
 | `aplane.falcon1024.v1` | DSA LogicSig provider | Go-defined | internal-only | `lsig/falcon1024/v1/standard.go` |
 | `aplane.witness-falcon1024.v1` | Witness key held by a cosigner | Go-defined | default-enabled on cosigner nodes | `internal/witness`, `lsig/falcon1024/keygen/witness.go` |
 | `aplane.falcon1024-cosigner1024.v1` | Guarded-account DSA LogicSig provider | Go-defined | library-visible | `lsig/falcon1024_guarded` |
@@ -704,7 +704,7 @@ stores to recovery.
 definition and its Falcon base, so a second type needs its own registration there. It then
 reaches clients through `per_key_contract` with no client code. First check
 `TestEveryPerKeyProviderSupportsTheBoundaryWorkflow`, which requires every per-key type to
-resolve every preset. A definition without the refused or cosigner shapes fails it, and the
+resolve every preset. A definition without the `only_these` or cosigner shapes fails it, and the
 fix is narrower discovery and client routing, not an exclusion from the test.
 
 ## Provider Interfaces
@@ -867,8 +867,8 @@ bounded:
   contract: bounded2
   spend_effects: [pay, axfer, asset_opt_in]  # non-empty subset
   max_fee: 10000             # required; at most 10000
-  rekey: spending_key        # required: refused (no rekey path) | spending_key
-  cosigner:                  # optional; Falcon base only; needs rekey: refused
+  rekey: spending_key        # required: refused (no rekey path) | spending_key | only_these (refused plus a rekey-to list)
+  cosigner:                  # optional; Falcon base only; needs rekey: refused, not only_these
     contract: cosigner1
     required_on: [spend]
   layer3:                    # optional; required without teal, may be used with it
@@ -898,24 +898,33 @@ The rules that most often surprise authors:
   `max_items` is at most 30 for the fixed policies and 65,536 for the Merkle policies.
 - The timelock policies require `FirstValid >= unlock_round`. `unlock_round_parameter`
   must name a required `uint64` parameter with `min: 1`. Bare `timelock` takes no
-  `recipients_parameter`. Every timelock policy requires `rekey: refused`.
+  `recipients_parameter`. Every timelock policy requires `rekey: refused` or
+  `only_these`.
 - Timelock policies reject `teal`. For a list plus custom time conditions, use a plain
   allowlist and write the conditions in the TEAL.
 - With no `teal`, extra parameters and `runtime_args` are rejected, because nothing
   would read them.
 - The cosigner parameters are injected by the framework and cannot be declared.
   `bounded_` and `__aplane_bounded1_` are reserved.
-- `bounded.rekey` is required. A cosigner requires `rekey: refused`. With
-  `rekey: refused`, `spend_effects` must include `pay`, and `axfer` if it includes
-  `asset_opt_in`: the account can neither close nor be rekeyed, so a transfer is the
-  only way anything leaves it.
+- With `rekey: only_these` the framework injects the `rekey_to` parameter (1 to 16
+  addresses) and the `rekey_list_proof` derived argument. A template can't declare that
+  derived argument, and a `rekey_to` it declares must match the injected one. The signer
+  builds the proof. See the
+  [rekey-to list contract](ARCH_BOUNDED_DSA.md#rekey-to-list-compatibility-contract).
+- `bounded.rekey` is required. A cosigner requires `rekey: refused`, not
+  `only_these`. With `rekey: refused`, `spend_effects` must include `pay`, and `axfer`
+  if it includes `asset_opt_in`: the account can neither close nor be rekeyed, so a
+  transfer is the only way anything leaves it. `only_these` has no such rule, because a
+  listed address is a way out.
 - Author TEAL reads `arg 1` onward, in the static slot order: base signatures, derived
   arguments, runtime arguments, cosigner signature. A runtime argument
-  beside a Merkle proof is therefore `arg 2`.
-- No Layer 3 rule applies to a rekey: a spending-key rekey checks the spending
-  signature, the fee ceiling and the pure rekey form only, never the list, the
-  timelock or the author rule. An author-TEAL time condition therefore holds a rekey
-  back only with `rekey: refused`.
+  beside a Merkle proof is therefore `arg 2`. Under `only_these` the list proof is the
+  last derived argument, so that runtime argument is `arg 3`.
+- No Layer 3 rule applies to a rekey: a spending-key or listed rekey checks the
+  spending signature, the fee ceiling and the pure rekey form only (and, listed, the
+  list proof), never the recipient list, the timelock or the author rule. An
+  author-TEAL time condition therefore holds a rekey back only with `rekey: refused`;
+  under `only_these` a listed rekey still passes.
 - Author TEAL cannot use `return`.
 
 A framework-policy template has no `teal` at all. This is a complete one, less

@@ -94,9 +94,10 @@ Transport notes:
   cannot silently retarget a client to the singleton system signer,
 - the current admin protocol version is 8.0 (8.0 renames the writable admin setting
   `boundary_require_admin_key` to `boundary_require_contained`, removes `admin_key_id` from
-  `prepare_generate_result`, and replaces `prepare_generate_result.bounded.admin_operations`
-  with `bounded.rekey`; a 7.x apadmin would read an account with no `admin_operations` as
-  having no rekey path, so it is refused at authentication rather than shown a wrong review;
+  `prepare_generate_result`, replaces `prepare_generate_result.bounded.admin_operations`
+  with `bounded.rekey`, and adds `bounded.rekey_list`; a 7.x apadmin would read an account
+  with no `admin_operations` as having no rekey path, so it is refused at authentication
+  rather than shown a wrong review;
   7.3 adds `review_fingerprint` and
   `boundary_digest` to `prepare_generate_result`, an optional
   `generate_key.expected_boundary_digest`, `per_key_contract` to key types, and the two
@@ -394,7 +395,7 @@ interlocks.
 
 #### Key Management
 
-- `prepare_generate_key`: `key_type`, optional `parameters` -> `prepare_generate_result`: `success`, optional `key_type`, `parameters`, `fingerprint`, `review_fingerprint`, `boundary_digest`, `bounded`, `cosigner_key_id`, `code`, `error`. Local IPC only, under `keys.generate`. It runs generation's checks and reports the resolved request so apadmin can review it. It creates no key, changes no store state, and has no address, because the spending key does not exist yet. A reference name resolves to its public key in `parameters`, and `bounded` carries `contract`, `spend_effects`, `max_fee`, `rekey` (`refused` or `spending_key`), `layer3_policy`, and `cosigner_required`
+- `prepare_generate_key`: `key_type`, optional `parameters` -> `prepare_generate_result`: `success`, optional `key_type`, `parameters`, `fingerprint`, `review_fingerprint`, `boundary_digest`, `bounded`, `cosigner_key_id`, `code`, `error`. Local IPC only, under `keys.generate`. It runs generation's checks and reports the resolved request so apadmin can review it. It creates no key, changes no store state, and has no address, because the spending key does not exist yet. A reference name resolves to its public key in `parameters`, and `bounded` carries `contract`, `spend_effects`, `max_fee`, `rekey` (`refused` or `spending_key`), optional `rekey_list` (true for *only these*: `rekey` is `refused` except to an address on the account's rekey-to list, whose entries are `parameters.rekey_to`; there is no root yet, because it depends on the spending key), `layer3_policy`, and `cosigner_required`
 - `generate_key`: `key_type`, optional `name`, optional `expected_fingerprint`, optional `expected_boundary_digest`, optional `parameters`; accepted over IPC, but generated recovery material is not returned over the admin protocol. the rotating key types (such as `aplane.rotating-triple-wotsc.v1`) require the parameter `network` (a network the signer knows, or a base64 genesis hash)
 - `generate_result`: `success`, optional `address`, `key_type`, `parameters`, `code`, `error`; `mnemonic` and `word_count` fields remain in the schema but are omitted by signer responses
 - `delete_key`: `address` -> `delete_result`: `success`, optional `code`, `error`
@@ -855,6 +856,13 @@ A compiled list stands in until the signer's list arrives, so a type can be sele
 it can be classified. That isn't read as an ordinary type: the form shows an error and
 requests the list again instead of opening the plain form, because the plain form would
 build the wrong request for a per-key type.
+
+The review (`generate_review.go`) reads `prepare_generate_result.bounded`. With
+`rekey_list` set, its Rekey row names the number of listed addresses and says the
+spending key alone can hand the account to any of them, adding that this is a way
+around the lock on a timelock policy. The details list every `rekey_to` address and
+flag those in this signer's key list, and Ed25519 ones among them, and say the list is
+in the key's backup. See [ARCH_KEYTYPES.md](ARCH_KEYTYPES.md#the-general-bounded-key-type).
 
 ### Model / View / Update
 

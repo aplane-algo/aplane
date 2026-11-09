@@ -30,6 +30,9 @@ const (
 	// asked for, and selects a limits-only account: the fee ceiling and transfer
 	// kinds, with no recipient list and no timelock.
 	ParameterRecipientScope = "recipient_scope"
+	// ParameterRekeyTo is a rekey-to list's addresses, required with
+	// rekey_authority=only_these and refused otherwise.
+	ParameterRekeyTo = boundedmeta.RekeyListEntriesParameter
 	// ParameterCosigner is the signer-side reference selector. It is resolved to
 	// a public key before an instance is selected.
 	ParameterCosigner = "cosigner"
@@ -41,8 +44,11 @@ const (
 	RecipientScopeListed = "listed"
 	RecipientScopeAny    = "any"
 
-	// RekeySpendingKey lets the spending key rekey the account. RekeyRefused gives
-	// the account no rekey path at all.
+	// RekeySpendingKey lets the spending key rekey the account. RekeyOnlyThese
+	// lets it rekey the account only to an address on its rekey-to list.
+	// RekeyRefused gives the account no rekey path at all; the general type offers
+	// it only with a cosigner, until a cosigned account can take a listed rekey.
 	RekeySpendingKey = string(boundedmeta.RekeySpendingKey)
+	RekeyOnlyThese   = boundedmeta.RekeyOnlyThese
 	RekeyRefused     = string(boundedmeta.RekeyRefused)
 )

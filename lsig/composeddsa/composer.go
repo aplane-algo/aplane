@@ -9,7 +9,9 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"maps"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 
@@ -155,6 +157,9 @@ func NewComposedDSA(cfg Config) *ComposedDSA {
 	}
 	if bounded != nil && bounded.Cosigner != nil && !hasParameter(params, BoundedCosignerPublicKeyParameter) {
 		params = append(params, boundedCosignerPublicKeyParameterDef())
+	}
+	if bounded != nil && bounded.RekeyList != nil && !hasParameter(params, BoundedRekeyToParameter) {
+		params = append(params, rekeyListEntriesParameterDef())
 	}
 	return &ComposedDSA{
 		keyType:            cfg.KeyType,
@@ -461,6 +466,8 @@ func (c *ComposedDSA) GenerateTEAL(publicKey []byte, params map[string]string) (
 	if err := c.checkBoundedGenerationSupport(); err != nil {
 		return "", err
 	}
+	// The rekey-to list's root is the generator's, not a creation parameter.
+	params, generated := SplitGeneratedParams(params)
 	normalizedParams, err := lsigprovider.NormalizeCreationParams(params, c.params)
 	if err != nil {
 		return "", err
@@ -483,6 +490,17 @@ func (c *ComposedDSA) GenerateTEAL(publicKey []byte, params map[string]string) (
 		return "", fmt.Errorf("invalid TEAL version: %d", version)
 	}
 
+	// Author TEAL never sees a rekey-to list's entries, which only its root may
+	// reveal; validateBoundedReservedNames refuses a reference with a reason.
+	authorParams, authorDefs := normalizedParams, c.params
+	if boundedProfile != nil && boundedProfile.RekeyList != nil {
+		authorParams = maps.Clone(normalizedParams)
+		delete(authorParams, BoundedRekeyToParameter)
+		authorDefs = slices.DeleteFunc(slices.Clone(c.params), func(p lsigprovider.ParameterDef) bool {
+			return p.Name == BoundedRekeyToParameter
+		})
+	}
+
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf("#pragma version %d\n\n", version))
 
@@ -499,7 +517,7 @@ func (c *ComposedDSA) GenerateTEAL(publicKey []byte, params map[string]string) (
 		}
 		switch mode {
 		case generictemplate.TemplateModeStrict:
-			strictSuffix, err = tealtemplate.RenderStrictFragment(c.tealSuffix, normalizedParams, c.templateVars)
+			strictSuffix, err = tealtemplate.RenderStrictFragment(c.tealSuffix, authorParams, c.templateVars)
 			if err != nil {
 				return "", fmt.Errorf("failed to render strict template suffix: %w", err)
 			}
@@ -537,7 +555,17 @@ func (c *ComposedDSA) GenerateTEAL(publicKey []byte, params map[string]string) (
 
 	b.WriteString("assert\n\n")
 	if boundedProfile != nil {
-		prelude, err := c.renderBoundedPrelude(publicKey, normalizedParams, boundedProfile)
+		preludeParams := normalizedParams
+		if generated != nil {
+			preludeParams = make(map[string]string, len(normalizedParams)+len(generated))
+			for name, value := range normalizedParams {
+				preludeParams[name] = value
+			}
+			for name, value := range generated {
+				preludeParams[name] = value
+			}
+		}
+		prelude, err := c.renderBoundedPrelude(publicKey, preludeParams, boundedProfile)
 		if err != nil {
 			return "", fmt.Errorf("failed to render bounded envelope: %w", err)
 		}
@@ -561,17 +589,17 @@ func (c *ComposedDSA) GenerateTEAL(publicKey []byte, params map[string]string) (
 			b.WriteString("\n\n")
 		case generictemplate.TemplateModeLegacy, generictemplate.TemplateModeGenerated:
 			// Optional user-supplied suffix with @variable substitution.
-			paramDefs := make([]tealtemplate.ParamDef, len(c.params))
-			for i, p := range c.params {
+			paramDefs := make([]tealtemplate.ParamDef, len(authorDefs))
+			for i, p := range authorDefs {
 				paramDefs[i] = tealtemplate.ParamDef{Name: p.Name, Type: composedTemplateParamType(p.Type)}
 			}
 
-			expanded, err := tealtemplate.ExpandLists(c.tealSuffix, normalizedParams, paramDefs)
+			expanded, err := tealtemplate.ExpandLists(c.tealSuffix, authorParams, paramDefs)
 			if err != nil {
 				return "", fmt.Errorf("failed to expand list templates: %w", err)
 			}
 
-			substituted, err := tealtemplate.SubstituteVariables(expanded, normalizedParams, paramDefs)
+			substituted, err := tealtemplate.SubstituteVariables(expanded, authorParams, paramDefs)
 			if err != nil {
 				return "", fmt.Errorf("failed to substitute variables: %w", err)
 			}

@@ -18,6 +18,10 @@ const (
 	PathDefault AuthorizationPath = iota + 1
 	PathSpend
 	PathSpendingRekey
+	// PathListedRekey is a pure rekey to an address on the account's rekey-to
+	// list. Every bounded profile carries it, as it carries the spending-key
+	// rekey, whether or not this account can take it.
+	PathListedRekey
 )
 
 // MaximumDeclaredOpcodeCost is the largest path ceiling accepted in durable
@@ -31,6 +35,7 @@ type OpcodeProfile struct {
 	Default       uint64 `json:"default,omitempty"`
 	Spend         uint64 `json:"spend,omitempty"`
 	SpendingRekey uint64 `json:"spending_rekey,omitempty"`
+	ListedRekey   uint64 `json:"listed_rekey,omitempty"`
 }
 
 // DefaultOpcodeProfile returns the closed profile for a non-bounded LogicSig.
@@ -39,8 +44,8 @@ func DefaultOpcodeProfile(maxCost uint64) OpcodeProfile {
 }
 
 // BoundedOpcodeProfile returns the closed profile for bounded authorization.
-func BoundedOpcodeProfile(spend, spendingRekey uint64) OpcodeProfile {
-	return OpcodeProfile{Spend: spend, SpendingRekey: spendingRekey}
+func BoundedOpcodeProfile(spend, spendingRekey, listedRekey uint64) OpcodeProfile {
+	return OpcodeProfile{Spend: spend, SpendingRekey: spendingRekey, ListedRekey: listedRekey}
 }
 
 // Validate checks that exactly the expected path vocabulary is populated.
@@ -63,7 +68,10 @@ func (p OpcodeProfile) Validate(bounded bool) error {
 	if err := check("spend", p.Spend, bounded); err != nil {
 		return err
 	}
-	return check("spending_rekey", p.SpendingRekey, bounded)
+	if err := check("spending_rekey", p.SpendingRekey, bounded); err != nil {
+		return err
+	}
+	return check("listed_rekey", p.ListedRekey, bounded)
 }
 
 // PathProfile is the maximum resource use of one reachable authorization path.
@@ -81,6 +89,7 @@ type Profile struct {
 	Default       *PathProfile `json:"default,omitempty"`
 	Spend         *PathProfile `json:"spend,omitempty"`
 	SpendingRekey *PathProfile `json:"spending_rekey,omitempty"`
+	ListedRekey   *PathProfile `json:"listed_rekey,omitempty"`
 }
 
 // Materialize combines derived program/argument sizes with the durable opcode
@@ -97,11 +106,13 @@ func Materialize(programBytes uint64, defaultArgs *uint64, boundedArgs map[Autho
 	}
 	spend, spendOK := boundedArgs[PathSpend]
 	spendingRekey, spendingRekeyOK := boundedArgs[PathSpendingRekey]
-	if !spendOK || !spendingRekeyOK {
+	listedRekey, listedRekeyOK := boundedArgs[PathListedRekey]
+	if !spendOK || !spendingRekeyOK || !listedRekeyOK {
 		return Profile{}, fmt.Errorf("%w: bounded argument profile is incomplete", ErrInvalidUsage)
 	}
 	profile.Spend = &PathProfile{ArgumentBytes: spend, MaxOpcodeCost: opcodes.Spend}
 	profile.SpendingRekey = &PathProfile{ArgumentBytes: spendingRekey, MaxOpcodeCost: opcodes.SpendingRekey}
+	profile.ListedRekey = &PathProfile{ArgumentBytes: listedRekey, MaxOpcodeCost: opcodes.ListedRekey}
 	return profile, nil
 }
 
@@ -118,6 +129,8 @@ func (p Profile) UsageForPath(path AuthorizationPath) (Usage, error) {
 		selected = p.Spend
 	case PathSpendingRekey:
 		selected = p.SpendingRekey
+	case PathListedRekey:
+		selected = p.ListedRekey
 	default:
 		return Usage{}, fmt.Errorf("%w: unknown authorization path %d", ErrInvalidUsage, path)
 	}
@@ -141,6 +154,7 @@ func (p Profile) Clone() Profile {
 		Default:       clonePathProfile(p.Default),
 		Spend:         clonePathProfile(p.Spend),
 		SpendingRekey: clonePathProfile(p.SpendingRekey),
+		ListedRekey:   clonePathProfile(p.ListedRekey),
 	}
 }
 

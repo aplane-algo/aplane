@@ -37,7 +37,10 @@ type PathDeclaration struct {
 	MaxFee       *uint64
 	Layer3Policy string
 	Rekey        RekeySetting
-	Cosigner     *CosignerOverlay
+	// RekeyList is set when the account has a rekey-to list. Under rekey:
+	// refused that is "only these": a pure rekey may go to a listed address.
+	RekeyList bool
+	Cosigner  *CosignerOverlay
 }
 
 // Declaration projects stored bounded metadata onto its path declaration.
@@ -52,6 +55,7 @@ func (metadata *Metadata) Declaration() (PathDeclaration, error) {
 		MaxFee:       &maxFee,
 		Layer3Policy: metadata.Layer3Policy,
 		Rekey:        metadata.Rekey,
+		RekeyList:    metadata.RekeyList != nil,
 	}
 	if err := ValidateRekeySetting(metadata.Rekey); err != nil {
 		return PathDeclaration{}, err

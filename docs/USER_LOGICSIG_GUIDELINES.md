@@ -247,8 +247,10 @@ mechanism enforces mutual exclusion.
 A bounded template can use the framework `timelock`, `fixed_allowlist_timelock`, or
 `merkle_allowlist_timelock` policy instead of writing this check. No rekey passes through
 Layer 3, so a time check delays spends only. The framework timelock policies therefore
-require `rekey: refused`, and an author-TEAL time check holds a rekey back only on an
-account that refuses rekeys.
+require `rekey: refused` or `only_these`, and an author-TEAL time check holds a rekey back
+only on an account that refuses rekeys. Under `only_these` a rekey to a listed address is
+accepted before the unlock round, so the lock holds only while the listed keys' holders
+cooperate.
 
 ### 10. Group Semantics
 
@@ -846,16 +848,19 @@ Falcon-1024 spending and a `bounded2` program chosen from a fixed set of shapes.
 The composer-owned envelope admits only pure payments, pure asset transfers,
 independently authorized asset opt-ins, or a pure self-payment rekey, caps the
 protected transaction fee, and denies close and clawback effects before Layer 3.
-A rekey needs only the spending signature and never reaches Layer 3, or the account
-refuses rekeys and its program has no rekey path.
+A rekey needs only the spending signature and never reaches Layer 3. With
+`rekey_authority=only_these` it also needs a signer-built proof that the target is on
+the account's rekey-to list, fixed at creation; with `refused` (cosigned accounts only)
+the program has no rekey path.
 
 Its framework recipient list constrains `Receiver`/`AssetReceiver`, inline or
 as a Merkle root, and an optional unlock round delays spending. For a Merkle list,
 the signer generates the 512-byte proof for a non-self receiver; callers do not
 pass it (see the
 [Merkle compatibility contract](ARCH_BOUNDED_DSA.md#merkle-allowlist-compatibility-contract)).
-A timelock refuses rekeys, because a spending-key rekey would leave the lock
-before the unlock round. Asset and amount
+A timelock takes no spending-key rekey, because it would leave the lock before
+the unlock round; it uses `only_these`, whose listed rekey is a way around the
+lock, or `refused` with a cosigner. Asset and amount
 limits stay in signer policy, because one program is valid on every network and
 asset IDs are network-local. See
 [USER_KEYTYPES.md](USER_KEYTYPES.md#bounded-accounts) and
@@ -863,7 +868,8 @@ asset IDs are network-local. See
 
 A bounded cosigner gate needs an account that refuses rekeys. A spending-key
 rekey would bypass the spend-only cosigner authority and has no
-`bounded-cosigner1` signing route, so validation rejects the combination.
+`bounded-cosigner1` signing route, so validation rejects the combination. A
+rekey-to list isn't offered beside a cosigner yet either.
 Such an account can neither close nor be rekeyed, so its funds cannot be
 recovered if the cosigner is lost.
 

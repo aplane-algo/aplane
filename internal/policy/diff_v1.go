@@ -64,7 +64,6 @@ func DiffPolicyV1Labelled(current, next *PolicyV1, label AssetLabel) []PolicyCha
 		cur, nxt       bool
 		strictWhenTrue bool
 	}{
-		{"reject_foreign_rekey", current.RejectForeignRekey, next.RejectForeignRekey, true},
 		{"reject_close_remainder", current.RejectCloseRemainder, next.RejectCloseRemainder, true},
 		{"reject_asset_close", current.RejectAssetClose, next.RejectAssetClose, true},
 		{"reject_clawback", current.RejectClawback, next.RejectClawback, true},
@@ -74,6 +73,7 @@ func DiffPolicyV1Labelled(current, next *PolicyV1, label AssetLabel) []PolicyCha
 	} {
 		d.boolSetting("/"+f.name, f.cur, f.nxt, f.strictWhenTrue)
 	}
+	d.rekeys("/rekeys", current.Rekeys, next.Rekeys)
 	d.feeCap("/max_fee_microalgos", current.MaxFeeMicroAlgos, next.MaxFeeMicroAlgos)
 	d.transactionTypes(current.TransactionTypes, next.TransactionTypes)
 	d.limits("/limits", current.Limits, next.Limits)
@@ -118,6 +118,19 @@ func (d *policyDiff) boolSetting(path string, current, next, strictWhenTrue bool
 		effect = PolicyChangeTightened
 	}
 	d.add(path, effect, "%t → %t", current, next)
+}
+
+// rekeys reports a change to the signer's rekey rejection. A cosigner document
+// has none, so both sides are empty and nothing is reported.
+func (d *policyDiff) rekeys(path string, current, next SignerRekeys) {
+	if current == next {
+		return
+	}
+	effect := PolicyChangeLoosened
+	if rekeysStrictness(next) > rekeysStrictness(current) {
+		effect = PolicyChangeTightened
+	}
+	d.add(path, effect, "%s → %s", current, next)
 }
 
 // feeCap reports a fee cap change. A cap of zero is enforced as no cap.

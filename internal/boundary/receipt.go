@@ -16,8 +16,10 @@ import (
 const ReceiptSchemaV1 = "aplane.boundary-receipt.v1"
 
 // Receipt documents an account after generation, with every reference resolved.
-// It is public review information: it does not reconstruct the account, which
-// recovers from its encrypted credential or a backup.
+// It holds no key material, so it does not reconstruct the account, which
+// recovers from its encrypted credential or a backup. Its parameters do include
+// a rekey-to list's addresses, which the chain never reveals, so a receipt for an
+// account with one is private.
 type Receipt struct {
 	Schema             string            `json:"schema"`
 	Address            string            `json:"address"`

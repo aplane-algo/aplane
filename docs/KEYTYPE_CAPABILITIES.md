@@ -66,10 +66,12 @@ included as normal user-account operations.
   (inline or Merkle) limits non-self destinations, whether spending waits for an
   unlock round, and whether a cosigner signs every spend. A limits-only account has
   neither a list nor an unlock round, so any destination is a `Y`. It rejects close,
-  clawback, and all non-transfer transaction types. Rekey is either the `bounded2`
-  pure self-payment form authorized by the spending key, which no recipient list,
-  unlock round, or cosigner gates, or refused: such an account, including every
-  timelock and every Corridor account, has no rekey path. A Merkle list needs a
+  clawback, and all non-transfer transaction types. Rekey is the `bounded2` pure
+  self-payment form authorized by the spending key, which no recipient list,
+  unlock round, or cosigner gates: to any address (`spending_key`, never on a
+  timelock), only to an address on the account's rekey-to list (`only_these`,
+  with a signer-built list proof), or refused: a refused account, which is every
+  Corridor account, has no rekey path. A Merkle list needs a
   signer-generated 512-byte proof for a non-self destination; self-send and asset
   opt-in need none.
 - `aplane.rotating-triple-wotsc.v1` admits any transaction type, but every transaction must rekey to an address other

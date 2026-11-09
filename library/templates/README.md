@@ -101,7 +101,8 @@ must still reject any intentionally signed effect it does not want to permit.
 **Bounded composed templates** (`schema_version: 2`) place the composer-owned
 `bounded2` envelope between base verification and Layer 3. That envelope admits
 only declared pure payment, pure asset transfer, and asset opt-in paths, plus a
-pure rekey when the template declares `rekey: spending_key`; it rejects close,
+pure rekey when the template declares `rekey: spending_key`, or a pure rekey to a
+listed address when it declares `rekey: only_these`; it rejects close,
 clawback, hybrids, and non-transfer types. A rekey is accepted or rejected
 before Layer 3 runs. Layer 3 can narrow the spend paths but cannot broaden
 them, and it never applies to a rekey. Runtime and signer-derived arguments
@@ -119,4 +120,4 @@ regression can ship.
 |---|---|---|
 | Generic (`template_type: generic`) | Required | Required (zero, or allowlisted per template semantics) |
 | Custom composed (schema v1) | Author decision; all fields are signature-bound | Author decision |
-| Bounded composed (schema v2) | Pure rekey only with `rekey: spending_key` | Always zero in `bounded2` |
+| Bounded composed (schema v2) | Pure rekey only with `rekey: spending_key`, or to a listed address with `rekey: only_these` | Always zero in `bounded2` |

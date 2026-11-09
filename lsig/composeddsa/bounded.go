@@ -31,6 +31,13 @@ const (
 	BoundedMaxFee uint64 = boundedmeta.MaximumProfileFee
 	// BoundedCosignerPublicKeyParameter is injected for cosigner-enabled profiles.
 	BoundedCosignerPublicKeyParameter = boundedmeta.CosignerPublicKeyParameter
+	// BoundedRekeyToParameter carries a rekey-to list's entries. The framework
+	// injects it for a profile with a list; a template that declares it must
+	// match the injected definition exactly.
+	BoundedRekeyToParameter = boundedmeta.RekeyListEntriesParameter
+	// BoundedRekeyOnlyThese is the template's rekey value for a rekey-to list:
+	// rekey: refused, plus the list.
+	BoundedRekeyOnlyThese = boundedmeta.RekeyOnlyThese
 
 	boundedReservedNamePrefix  = "bounded_"
 	boundedReservedLabelPrefix = "__aplane_bounded1_"
@@ -46,7 +53,10 @@ type BoundedAuthorizationProfile struct {
 	SpendEffects []txeffects.SpendEffect
 	MaxFee       uint64
 	Rekey        boundedmeta.RekeySetting
-	Cosigner     *boundedmeta.CosignerAuthorization
+	// RekeyList is the template-level rekey-to list record; the root is filled
+	// in at generation.
+	RekeyList *boundedmeta.RekeyList
+	Cosigner  *boundedmeta.CosignerAuthorization
 }
 
 type boundedFingerprint struct {
@@ -63,6 +73,10 @@ func cloneBoundedProfile(profile *BoundedAuthorizationProfile) *BoundedAuthoriza
 		cosigner := *profile.Cosigner
 		cosigner.RequiredOn = slices.Clone(profile.Cosigner.RequiredOn)
 		cloned.Cosigner = &cosigner
+	}
+	if profile.RekeyList != nil {
+		list := *profile.RekeyList
+		cloned.RekeyList = &list
 	}
 	return &cloned
 }
@@ -90,7 +104,17 @@ func (profile *BoundedAuthorizationProfile) validate() error {
 	if err := boundedmeta.ValidateRekeySetting(profile.Rekey); err != nil {
 		return err
 	}
-	if profile.Rekey == boundedmeta.RekeyRefused {
+	if profile.RekeyList != nil {
+		if profile.Rekey != boundedmeta.RekeyRefused {
+			return fmt.Errorf("a rekey-to list needs rekey %s", boundedmeta.RekeyRefused)
+		}
+		if profile.Cosigner != nil {
+			return fmt.Errorf("a rekey-to list on a cosigned account is not supported")
+		}
+	}
+	// A listed address is a way out, so only a refused profile without a list
+	// must keep a transfer for what it holds.
+	if profile.Rekey == boundedmeta.RekeyRefused && profile.RekeyList == nil {
 		if err := boundedmeta.ValidateRefusedExit(spendEffects); err != nil {
 			return err
 		}
@@ -171,6 +195,15 @@ func CanonicalBoundedProfile(profile *BoundedAuthorizationProfile, metadata *bou
 	}
 	encoded = boundedmeta.AppendUint64(encoded, canonical.MaxFee)
 	encoded = boundedmeta.AppendField(encoded, []byte(canonical.Rekey))
+	// The list's contract and depth, never its root: the root is an instance
+	// value, and the review digest binds the entries it comes from instead.
+	if canonical.RekeyList == nil {
+		encoded = boundedmeta.AppendUint32(encoded, 0)
+	} else {
+		encoded = boundedmeta.AppendUint32(encoded, 1)
+		encoded = boundedmeta.AppendField(encoded, []byte(canonical.RekeyList.Contract))
+		encoded = boundedmeta.AppendUint32(encoded, uint32(canonical.RekeyList.Depth))
+	}
 	if canonical.Cosigner == nil {
 		encoded = boundedmeta.AppendUint32(encoded, 0)
 	} else {
@@ -215,6 +248,7 @@ func CanonicalBoundedProfile(profile *BoundedAuthorizationProfile, metadata *bou
 		encoded = boundedmeta.AppendUint32(encoded, uint32(slot.MaxSize))
 		encoded = boundedmeta.AppendField(encoded, []byte(slot.Paths.Spend))
 		encoded = boundedmeta.AppendField(encoded, []byte(slot.Paths.SpendingRekey))
+		encoded = boundedmeta.AppendField(encoded, []byte(slot.Paths.ListedRekey))
 	}
 	return encoded, nil
 }
@@ -323,6 +357,13 @@ func (c *ComposedDSA) BuildBoundedAuthorizationMetadata(publicKey []byte, params
 		metadata.Cosigner.PublicKeyHex = hex.EncodeToString(cosignerPublicKey)
 		metadata.Cosigner.ComponentKeyID = componentKeyID
 	}
+	if profile.RekeyList != nil {
+		root, err := rekeyListRoot(params)
+		if err != nil {
+			return nil, err
+		}
+		metadata.RekeyList.RootHex = hex.EncodeToString(root)
+	}
 
 	if err := metadata.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid generated bounded metadata: %w", err)
@@ -390,6 +431,12 @@ func (c *ComposedDSA) boundedAuthorizationMetadataBase() (*boundedmeta.Metadata,
 		RuntimeArgs:  append([]boundedmeta.RuntimeArg(nil), c.boundedRuntimeArgs...),
 		DerivedArgs:  append([]boundedmeta.DerivedArg(nil), c.derivedArgs...),
 	}
+	if profile.RekeyList != nil {
+		list := *profile.RekeyList
+		metadata.RekeyList = &list
+		// After Layer 3's derived arguments, so their indexes don't move.
+		metadata.DerivedArgs = append(metadata.DerivedArgs, rekeyListProofArg())
+	}
 	if profile.Cosigner != nil {
 		cosigner := *profile.Cosigner
 		cosigner.RequiredOn = slices.Clone(profile.Cosigner.RequiredOn)
@@ -408,27 +455,32 @@ func boundedArgumentLayout(layout SignatureArgLayout, profile *BoundedAuthorizat
 	for i, maxSize := range layout.MaxSizes {
 		slots = append(slots, boundedmeta.ArgumentSlot{
 			Index: i, Name: fmt.Sprintf("base_signature_%d", i), Source: boundedmeta.ArgSourceBaseSignature, MaxSize: maxSize,
-			Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgRequired},
+			Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgRequired, ListedRekey: boundedmeta.ArgRequired},
 		})
 	}
 	for _, arg := range derived {
+		// A recipient proof serves Layer 3, which no rekey reaches; a list proof
+		// serves the listed rekey alone.
+		paths := boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgOptional, SpendingRekey: boundedmeta.ArgForbidden, ListedRekey: boundedmeta.ArgForbidden}
+		if arg.Kind == boundedmeta.DerivedArgRekeyListProof {
+			paths = boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgForbidden, SpendingRekey: boundedmeta.ArgForbidden, ListedRekey: boundedmeta.ArgRequired}
+		}
 		slots = append(slots, boundedmeta.ArgumentSlot{
-			Index: len(slots), Name: arg.Name, Source: boundedmeta.ArgSourceDerived, MaxSize: arg.MaxSize,
-			Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgOptional, SpendingRekey: boundedmeta.ArgForbidden},
+			Index: len(slots), Name: arg.Name, Source: boundedmeta.ArgSourceDerived, MaxSize: arg.MaxSize, Paths: paths,
 		})
 	}
 	// A rekey never reaches Layer 3, so its arguments are spend-only.
 	for _, arg := range runtime {
 		slots = append(slots, boundedmeta.ArgumentSlot{
 			Index: len(slots), Name: arg.Name, Source: boundedmeta.ArgSourceRuntime, MaxSize: arg.MaxSize,
-			Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgForbidden},
+			Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgForbidden, ListedRekey: boundedmeta.ArgForbidden},
 		})
 	}
 	if profile.Cosigner != nil {
 		slots = append(slots, boundedmeta.ArgumentSlot{
 			Index: len(slots), Name: boundedmeta.CosignerSignatureSlot, Source: boundedmeta.ArgSourceCosigner,
 			MaxSize: profile.Cosigner.SignatureMaxSize,
-			Paths:   boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgForbidden},
+			Paths:   boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgForbidden, ListedRekey: boundedmeta.ArgForbidden},
 		})
 	}
 	return slots
@@ -513,6 +565,13 @@ func validateBoundedReservedNames(profile *BoundedAuthorizationProfile, params [
 			}
 			continue
 		}
+		if param.Name == BoundedRekeyToParameter && profile.RekeyList != nil {
+			want := rekeyListEntriesParameterDef()
+			if param.Type != want.Type || !param.Required || param.MinItems != want.MinItems || param.MaxItems != want.MaxItems {
+				return fmt.Errorf("parameter %q does not match the framework-injected contract", param.Name)
+			}
+			continue
+		}
 		if !strings.HasPrefix(param.Name, boundedReservedNamePrefix) {
 			continue
 		}
@@ -526,7 +585,13 @@ func validateBoundedReservedNames(profile *BoundedAuthorizationProfile, params [
 			return fmt.Errorf("runtime arg name %q uses reserved bounded_ prefix", arg.Name)
 		}
 	}
+	// The rekey-to list is private: the program commits only to its root, so no
+	// author TEAL may read the entries.
+	listPrivate := func(name string) bool { return profile.RekeyList != nil && name == BoundedRekeyToParameter }
 	for _, variable := range templateVars {
+		if listPrivate(variable.Name) || listPrivate(variable.Parameter) {
+			return fmt.Errorf("template variable %q would compile the private rekey-to list into the program", variable.Name)
+		}
 		if isBoundedCosignerReservedName(variable.Name) || isBoundedCosignerReservedName(variable.Parameter) {
 			return fmt.Errorf("template variable %q uses reserved cosigner namespace", variable.Name)
 		}
@@ -547,6 +612,9 @@ func validateBoundedReservedNames(profile *BoundedAuthorizationProfile, params [
 			}
 			if strings.HasPrefix(strings.TrimPrefix(token, "@"), boundedReservedNamePrefix) {
 				return fmt.Errorf("author TEAL uses reserved bounded identifier %q", token)
+			}
+			if listPrivate(strings.Trim(token, "{}.@")) {
+				return fmt.Errorf("author TEAL reads %q, which would compile the private rekey-to list into the program", token)
 			}
 		}
 	}

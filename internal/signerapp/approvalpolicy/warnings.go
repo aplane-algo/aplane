@@ -6,10 +6,8 @@
 package approvalpolicy
 
 import (
-	"encoding/hex"
 	"fmt"
 
-	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/asaset"
@@ -33,37 +31,27 @@ type Context struct {
 	// next stage. A rekey to one of them is the protocol working, not a
 	// dangerous field, and produces no finding.
 	ProtocolRekeyTargets map[string]bool
-}
-
-// CheckTxnWarnings analyzes a transaction for dangerous fields that should be
-// shown to the operator. These are warnings only: the operator can still
-// approve. knownAddresses is the set of addresses we have signing authority
-// for; if the RekeyTo target is in this set, the "lose control" warning is
-// suppressed.
-func CheckTxnWarnings(txnBytesHex string, knownAddresses map[string]bool) []signerapproval.Violation {
-	if txnBytesHex == "" {
-		return nil
-	}
-
-	txn, err := DecodeTxnFromHex(txnBytesHex)
-	if err != nil {
-		return nil
-	}
-
-	return CheckDecodedTxnWarnings(txn, knownAddresses)
+	// ListedRekeyTargets are addresses on a signing account's rekey-to list. A
+	// rekey to one is still a finding: it hands the account over.
+	ListedRekeyTargets map[string]bool
 }
 
 // CheckGroupWarnings analyzes each transaction in a group for dangerous
 // fields. Returns aggregated warnings prefixed with the transaction index.
 func CheckGroupWarnings(txns []types.Transaction, knownAddresses map[string]bool) []signerapproval.Violation {
-	return CheckGroupWarningsIn(txns, Context{KnownAddresses: knownAddresses})
+	return CheckGroupWarningsIn(txns, Context{KnownAddresses: knownAddresses}, nil)
 }
 
-// CheckGroupWarningsIn is CheckGroupWarnings with a full Context.
-func CheckGroupWarningsIn(txns []types.Transaction, ctx Context) []signerapproval.Violation {
+// CheckGroupWarningsIn is CheckGroupWarnings with a full Context. A rekey-to
+// list belongs to one account, so listed gives each position its own, by index,
+// in place of ctx.ListedRekeyTargets: another position's rekey to the same
+// address is not a listed handover.
+func CheckGroupWarningsIn(txns []types.Transaction, ctx Context, listed map[int]map[string]bool) []signerapproval.Violation {
 	var all []signerapproval.Violation
 	for i, txn := range txns {
-		for _, v := range CheckDecodedTxnWarningsIn(txn, ctx) {
+		txnCtx := ctx
+		txnCtx.ListedRekeyTargets = listed[i]
+		for _, v := range CheckDecodedTxnWarningsIn(txn, txnCtx) {
 			v.Field = fmt.Sprintf("Tx %d/%d: %s", i+1, len(txns), v.Field)
 			all = append(all, v)
 		}
@@ -86,9 +74,15 @@ func CheckDecodedTxnWarningsIn(txn types.Transaction, ctx Context) []signerappro
 	if facts.Has(txeffects.EffectRekey) && !ctx.ProtocolRekeyTargets[txn.RekeyTo.String()] {
 		rekeyTarget := txn.RekeyTo.String()
 		msg := "This transaction will transfer signing authority to another address."
-		if ctx.KnownAddresses[rekeyTarget] {
+		if ctx.ListedRekeyTargets[rekeyTarget] {
+			msg = "This transaction hands the account to an address on its rekey-to list."
+		}
+		switch {
+		case ctx.KnownAddresses[rekeyTarget]:
 			msg += "\n   You possess the keys for the new address."
-		} else {
+		case ctx.ListedRekeyTargets[rekeyTarget]:
+			msg += "\n   >>> THIS SIGNER DOES NOT HOLD IT: THE ACCOUNT LEAVES THIS SIGNER'S CUSTODY <<<"
+		default:
 			msg += "\n   >>> YOU WILL LOSE CONTROL OF THIS ACCOUNT <<<"
 		}
 		violations = append(violations, signerapproval.Violation{
@@ -208,29 +202,4 @@ func assetRoleAddress(addr types.Address) string {
 		return "(cleared)"
 	}
 	return addr.String()
-}
-
-// DecodeTxnFromHex decodes a transaction from hex-encoded bytes. It handles
-// both raw msgpack and "TX" prefixed formats.
-func DecodeTxnFromHex(txnBytesHex string) (types.Transaction, error) {
-	var txn types.Transaction
-
-	if txnBytesHex == "" {
-		return txn, fmt.Errorf("empty transaction bytes")
-	}
-
-	txnBytes, err := hex.DecodeString(txnBytesHex)
-	if err != nil {
-		return txn, fmt.Errorf("failed to decode hex: %w", err)
-	}
-
-	if len(txnBytes) > 2 && txnBytes[0] == 'T' && txnBytes[1] == 'X' {
-		txnBytes = txnBytes[2:]
-	}
-
-	if err := msgpack.Decode(txnBytes, &txn); err != nil {
-		return txn, fmt.Errorf("failed to decode msgpack: %w", err)
-	}
-
-	return txn, nil
 }

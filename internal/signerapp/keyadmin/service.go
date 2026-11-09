@@ -5,11 +5,13 @@ package keyadmin
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/aplane-algo/aplane/internal/crypto"
 	"os"
 	"strings"
+
+	"github.com/aplane-algo/aplane/internal/crypto"
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/cosigner/cosignerrefs"
@@ -26,6 +28,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	"github.com/aplane-algo/aplane/internal/signerapp/storemut"
 	"github.com/aplane-algo/aplane/internal/signerapp/svcerr"
+	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/witness"
 
@@ -158,6 +161,11 @@ func (s Service) resolveCreation(keyType string, params map[string]string) (*res
 		params = instance.Values
 		if instance.Bounded != nil && instance.Bounded.Cosigner != nil {
 			if err := validateVisibleCosignerAuthorityCollisions(ir, params[boundedmeta.CosignerPublicKeyParameter]); err != nil {
+				return nil, &Error{Kind: ErrorInvalidInput, Message: err.Error()}
+			}
+		}
+		if instance.Bounded != nil && instance.Bounded.RekeyList != nil {
+			if err := validateRekeyListTargets(ir, params[boundedmeta.RekeyListEntriesParameter]); err != nil {
 				return nil, &Error{Kind: ErrorInvalidInput, Message: err.Error()}
 			}
 		}
@@ -312,7 +320,7 @@ func (s Service) checkBoundaryRequirements(instance *lsigprovider.Instance) *Err
 	}
 	requireContained, requireCosigner := s.Runtime.Config().BoundaryRequirements()
 	if requireContained && !instance.Bounded.Contained() {
-		return &Error{Kind: ErrorInvalidInput, Message: "this signer requires bounded accounts to refuse rekeys and pay only listed recipients (boundary_require_contained)"}
+		return &Error{Kind: ErrorInvalidInput, Message: "this signer requires bounded accounts to pay only listed recipients and to refuse rekeys or take only listed ones (boundary_require_contained)"}
 	}
 	if requireCosigner && instance.Bounded.Cosigner == nil {
 		return &Error{Kind: ErrorInvalidInput, Message: "this signer requires bounded accounts to have a cosigner (boundary_require_cosigner)"}
@@ -349,6 +357,46 @@ func (s Service) resolveRotatingNetwork(params map[string]string) map[string]str
 	}
 	resolved[rotatingkey.RotatingNetworkParameter] = hash
 	return resolved
+}
+
+// validateRekeyListTargets refuses listed addresses this signer knows could
+// never act on the account: its own rotating accounts, whose address authorizes
+// only itself, and the native address of an imported cosigner reference, since a
+// witness key never signs as an account. Generation can refuse only what this
+// signer knows; a cosigner reference's LogicSig addresses depend on a program
+// and are not derived here.
+func validateRekeyListTargets(ir *productruntime.Runtime, entries string) error {
+	if ir == nil || strings.TrimSpace(entries) == "" {
+		return nil
+	}
+	var keyTypes map[string]string
+	if ir.KeyStore() != nil {
+		keyTypes = ir.KeyStore().GetKeyTypes()
+	}
+	witnessAddresses := map[string]string{}
+	refs, err := cosignerrefs.List(ir.KeyPaths())
+	if err != nil {
+		return fmt.Errorf("read cosigner references: %w", err)
+	}
+	for _, ref := range refs {
+		publicKey, err := hex.DecodeString(ref.PublicKeyHex)
+		if err != nil {
+			continue
+		}
+		if _, address, err := nativefalcon.CanonicalAddress(publicKey); err == nil {
+			witnessAddresses[address.String()] = ref.Name
+		}
+	}
+	for _, entry := range strings.Split(entries, ",") {
+		entry = strings.TrimSpace(entry)
+		if rotatingkey.IsRotatingKeyType(keyTypes[entry]) {
+			return fmt.Errorf("%s lists %s, one of this signer's rotating accounts, whose address authorizes only itself", boundedmeta.RekeyListEntriesParameter, entry)
+		}
+		if name, ok := witnessAddresses[entry]; ok {
+			return fmt.Errorf("%s lists %s, the address of cosigner reference %q; a witness key never signs as an account", boundedmeta.RekeyListEntriesParameter, entry, name)
+		}
+	}
+	return nil
 }
 
 func validateVisibleCosignerAuthorityCollisions(ir *productruntime.Runtime, cosignerPublicKeyHex string) error {

@@ -234,10 +234,13 @@ compatible manual-salt records retain it.
 
 - `aplane.falcon1024-b.v1` — the general bounded account. Its presets are an
   allowlist (pay and asset-transfer receivers must be self or listed, with a
-  signer-generated Merkle proof for a long list), a locked allowlist that
-  refuses rekeys, Corridor, and a timelock (`FirstValid >= unlock_round` before
-  any spend; it refuses rekeys). Close, clawback, and non-transfer types are
-  rejected. A rekey, when allowed, needs the spending key alone.
+  signer-generated Merkle proof for a long list), a locked allowlist that can be
+  rekeyed only to an address on its rekey-to list, Corridor, and a timelock
+  (`FirstValid >= unlock_round` before any spend; it can be rekeyed only to a
+  listed address, which is a way around the lock). Close, clawback, and
+  non-transfer types are rejected. A rekey, when allowed, needs the spending key
+  alone; a rekey to an address not on the list fails with
+  `bounded_rekey_target_not_listed`.
 - `aplane.htlc.v1` — ALGO only and all-or-nothing: `close` to the recipient with the
   preimage before timeout, or to the refund address after.
 

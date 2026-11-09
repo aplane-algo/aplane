@@ -126,6 +126,7 @@ func publicLogicSigResourceProfile(profile *lsigresource.Profile) *signerapi.Log
 		Default:       usage(profile.Default),
 		Spend:         usage(profile.Spend),
 		SpendingRekey: usage(profile.SpendingRekey),
+		ListedRekey:   usage(profile.ListedRekey),
 	}
 }
 
@@ -435,6 +436,11 @@ func boundedInfo(metadata *boundedmeta.Metadata) *signerapi.BoundedAuthorization
 			RequiredOn:       append([]string(nil), metadata.Cosigner.RequiredOn...),
 		}
 	}
+	if metadata.RekeyList != nil {
+		info.RekeyList = &signerapi.BoundedRekeyListInfo{
+			Contract: metadata.RekeyList.Contract, Depth: metadata.RekeyList.Depth, RootHex: metadata.RekeyList.RootHex,
+		}
+	}
 	for _, arg := range metadata.DerivedArgs {
 		info.DerivedArgs = append(info.DerivedArgs, signerapi.BoundedDerivedArgInfo{
 			Name: arg.Name, Kind: arg.Kind, Parameter: arg.Parameter, MaxSize: arg.MaxSize,
@@ -450,7 +456,7 @@ func boundedInfo(metadata *boundedmeta.Metadata) *signerapi.BoundedAuthorization
 		info.ArgumentLayout = append(info.ArgumentLayout, signerapi.BoundedArgumentSlotInfo{
 			Index: slot.Index, Name: slot.Name, Source: slot.Source, MaxSize: slot.MaxSize,
 			Paths: signerapi.BoundedArgumentPathMask{
-				Spend: slot.Paths.Spend, SpendingRekey: slot.Paths.SpendingRekey,
+				Spend: slot.Paths.Spend, SpendingRekey: slot.Paths.SpendingRekey, ListedRekey: slot.Paths.ListedRekey,
 			},
 		})
 	}

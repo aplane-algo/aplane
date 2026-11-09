@@ -23,7 +23,7 @@ import (
 const (
 	// grammarRevision covers the boundary grammar as a whole. It reaches only
 	// the grammar fingerprint, so no account's provenance depends on it.
-	grammarRevision = 3
+	grammarRevision = 4
 	// resolverRevision covers how selectShape turns a request into values.
 	resolverRevision = 1
 	// allowlistRendererRevision covers the framework allowlist renderers and the
@@ -34,6 +34,10 @@ const (
 	timelockRendererRevision = 1
 	// limitsRendererRevision covers the envelope alone, for limits-only shapes.
 	limitsRendererRevision = 1
+	// listRendererRevision covers the listed-rekey path, for shapes with a
+	// rekey-to list. Only those shapes hash it, so a change to it leaves every
+	// account without a list alone.
+	listRendererRevision = 1
 
 	boundaryDigestDomainV1 = "APLANE_GENERAL_BOUNDARY_V1"
 )
@@ -48,18 +52,25 @@ func shapeFingerprint(shape Shape, composer *composeddsa.ComposedDSA) string {
 	case shape.Timelock:
 		rendererRevision = timelockRendererRevision
 	}
+	// Omitted for a shape without a list, so their fingerprints don't carry it.
+	listRevision := 0
+	if shape.Rekey == RekeyOnlyThese {
+		listRevision = listRendererRevision
+	}
 	return lsigprovider.HashCompatibilitySpec(struct {
-		Descriptor        string `json:"descriptor"`
-		Composed          string `json:"composed_fingerprint"`
-		ResolverRevision  int    `json:"resolver_revision"`
-		RendererRevision  int    `json:"renderer_revision"`
-		DefinitionVersion string `json:"definition"`
+		Descriptor           string `json:"descriptor"`
+		Composed             string `json:"composed_fingerprint"`
+		ResolverRevision     int    `json:"resolver_revision"`
+		RendererRevision     int    `json:"renderer_revision"`
+		ListRendererRevision int    `json:"list_renderer_revision,omitempty"`
+		DefinitionVersion    string `json:"definition"`
 	}{
-		Descriptor:        shape.Descriptor(),
-		Composed:          composer.CompatibilityFingerprint(),
-		ResolverRevision:  resolverRevision,
-		RendererRevision:  rendererRevision,
-		DefinitionVersion: composer.KeyType(),
+		Descriptor:           shape.Descriptor(),
+		Composed:             composer.CompatibilityFingerprint(),
+		ResolverRevision:     resolverRevision,
+		RendererRevision:     rendererRevision,
+		ListRendererRevision: listRevision,
+		DefinitionVersion:    composer.KeyType(),
 	})
 }
 

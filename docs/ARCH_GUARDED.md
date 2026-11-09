@@ -873,7 +873,8 @@ Both keys are required for the life of the account:
 - a stolen spending key cannot spend without the cosigner and cannot rekey the
   account;
 - a lost cosigner key cannot be replaced, because the account refuses rekeys,
-  so its funds cannot move again (a later phase adds a rekey-to list for this);
+  so its funds cannot move again (the rekey-to list is not yet offered beside a
+  cosigner);
 - a lost spending key cannot be recovered.
 
 Operators must therefore back up the spending key and the cosigner key as
@@ -924,8 +925,8 @@ every transaction authorized by Corridor.
 
 Corridor stores one resource profile over its final compiler-auto-salted
 bytecode. Inventory materializes maximum argument bytes and reviewed opcode
-ceilings for both bounded path cells (spend and spending-key rekey); a resource
-cell does not authorize a path. Corridor admits only spend. Under
+ceilings for every bounded path cell (spend, spending-key rekey, and listed
+rekey); a resource cell does not authorize a path. Corridor admits only spend. Under
 v42, argument/opcode capacity determines the minimum group size; bytecode above
 the final group's free program pool contributes to the aggregate fee instead
 of manufacturing extra dummies.

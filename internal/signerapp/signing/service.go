@@ -291,6 +291,7 @@ func (s *Service) approveGroupWithPlanContext(ctx context.Context, req signerapi
 		AuthKeys:             authPolicyKeysFromRequest(req, plan),
 		KnownAddresses:       s.knownAddresses(plan),
 		ProtocolRekeyTargets: protocolRekeyTargetsForPlan(plan),
+		ListedRekeyTargets:   listedRekeyTargetsForPlan(plan),
 		ForcedReviewRuleID: func() string {
 			if planHasBoundedRekey(plan) {
 				return policy.BoundedRekeyRequiresReviewRuleID
@@ -308,7 +309,8 @@ func (s *Service) approveGroupWithPlanContext(ctx context.Context, req signerapi
 			if isGroup || plan.Rotating != nil {
 				return s.Approval.requestGroupApprovalWithContext(ctx, req, plan, groupDesc, firstValid, lastValid, txns, forceReviewRuleID)
 			}
-			return s.Approval.requestSingleTxnApprovalWithContext(ctx, req.RequestID, req.Requests[0], allTxns, txns, plan.DummiesNeeded, firstValid, lastValid, forceReviewRuleID)
+			return s.Approval.requestSingleTxnApprovalWithContext(ctx, req.RequestID, req.Requests[0], allTxns, txns, plan.DummiesNeeded, firstValid, lastValid, forceReviewRuleID,
+				listedRekeyTargetsForPlan(plan)[0])
 		},
 	}, console)
 	if gateErr != nil {

@@ -26,6 +26,7 @@ var (
 	allowRules = map[txeffects.Rule]txeffects.Path{
 		txeffects.RuleSpendAllowed: txeffects.PathSpend,
 		txeffects.RuleRekeyAllowed: txeffects.PathSpendingRekey,
+		txeffects.RuleRekeyListed:  txeffects.PathListedRekey,
 	}
 )
 
@@ -53,6 +54,9 @@ func grammarDeclarations(t *testing.T) map[string]boundedmeta.PathDeclaration {
 		}
 		if shape.AnyRecipient {
 			params[boundedaccount.ParameterRecipientScope] = boundedaccount.RecipientScopeAny
+		}
+		if shape.Rekey == boundedaccount.RekeyOnlyThese {
+			params[boundedaccount.ParameterRekeyTo] = types.Address{3}.String()
 		}
 		if shape.Cosigner {
 			params[boundedmeta.CosignerPublicKeyParameter] = strings.Repeat("41", boundedmeta.CosignerPublicKeySizeV1)
@@ -157,6 +161,10 @@ func TestClassifyForReachesAnExplicitRuleForEveryEffect(t *testing.T) {
 			case txeffects.PathSpendingRekey:
 				if declaration.Rekey != boundedmeta.RekeySpendingKey || txn.Type != types.PaymentTx || txn.Amount != 0 || txn.Receiver != txn.Sender {
 					t.Fatalf("%s / %s: allowed a rekey the declaration refuses", descriptor, name)
+				}
+			case txeffects.PathListedRekey:
+				if !declaration.RekeyList || txn.Type != types.PaymentTx || txn.Amount != 0 || txn.Receiver != txn.Sender || len(decision.Facts.Effects()) != 1 {
+					t.Fatalf("%s / %s: sent a rekey that is not pure to the listed path", descriptor, name)
 				}
 			}
 		}

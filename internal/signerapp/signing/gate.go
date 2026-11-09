@@ -32,6 +32,8 @@ type gateInput struct {
 	// ProtocolRekeyTargets are rekeys the signer issued itself (a rotation's
 	// next stage); warning review does not count them.
 	ProtocolRekeyTargets map[string]bool
+	// ListedRekeyTargets is each position's account rekey-to list, by index.
+	ListedRekeyTargets map[int]map[string]bool
 	// ForcedReviewRuleID is a signer-owned unconditional review gate evaluated
 	// before policy autoapproval. User Auto-Approve satisfies it without a prompt.
 	// It does not depend on policy settings.
@@ -63,7 +65,7 @@ func (s *Service) runApprovalGates(ctx context.Context, in gateInput, console Co
 	}
 	verdict, evalErr := policyeval.Evaluate(policyeval.Input{
 		Group:                in.AllTxns,
-		Slots:                clientSlots(in.AllTxns, in.EvalCount, in.PassthroughIndices, in.ForeignIndices, s.policyFor, in.AuthKeys),
+		Slots:                clientSlots(in.AllTxns, in.EvalCount, in.PassthroughIndices, in.ForeignIndices, s.policyFor, in.AuthKeys, in.ListedRekeyTargets),
 		KnownAddresses:       in.KnownAddresses,
 		ProtocolRekeyTargets: in.ProtocolRekeyTargets,
 		ForcedReviewRuleID:   in.ForcedReviewRuleID,

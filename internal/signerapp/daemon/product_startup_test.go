@@ -4,13 +4,14 @@
 package daemon
 
 import (
-	"github.com/aplane-algo/aplane/internal/serverconfig"
-	"github.com/aplane-algo/aplane/internal/signerapp/storevalidate"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/aplane-algo/aplane/internal/serverconfig"
+	"github.com/aplane-algo/aplane/internal/signerapp/storevalidate"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/asaset"
@@ -290,7 +291,7 @@ func TestBuildProductRuntimeLoadsStoredPolicy(t *testing.T) {
 		t.Fatal(err)
 	}
 	maxFee := uint64(1234)
-	document := []byte(policytest.Signer(t, policy.DefaultKey, `{"reject_foreign_rekey":false,"max_fee_microalgos":"1234",`+
+	document := []byte(policytest.Signer(t, policy.DefaultKey, `{"rekeys": "allow_rekeys","max_fee_microalgos":"1234",`+
 		`"limits":{"testnet":{"asa:31566704":{"reject_above":"77"}}}}`))
 	masterKey := testKeyringForStore(t, server.keyPaths, passphrase)
 	active, err := genstore.ResolveStoreRootWithKeyring(server.keyPaths, masterKey)
@@ -321,8 +322,8 @@ func TestBuildProductRuntimeLoadsStoredPolicy(t *testing.T) {
 		t.Fatal("PolicyFor() = nil")
 		return
 	}
-	if pol.RejectForeignRekey {
-		t.Fatal("RejectForeignRekey = true, want false from stored policy")
+	if pol.Rekeys != policy.RekeysAllow {
+		t.Fatalf("Rekeys = %q, want allow_rekeys from stored policy", pol.Rekeys)
 	}
 	if got := pol.MaxFeeMicroAlgos; got != maxFee {
 		t.Fatalf("MaxFeeMicroAlgos = %d, want %d", got, maxFee)

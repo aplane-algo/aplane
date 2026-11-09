@@ -234,7 +234,7 @@ func TestProtocolRekeyTargetIsNotAFinding(t *testing.T) {
 		if v := CheckDecodedTxnWarningsIn(txn, ctx); len(v) != 0 {
 			t.Fatalf("expected no findings, got %+v", v)
 		}
-		if v := CheckGroupWarningsIn([]types.Transaction{txn}, ctx); len(v) != 0 {
+		if v := CheckGroupWarningsIn([]types.Transaction{txn}, ctx, nil); len(v) != 0 {
 			t.Fatalf("expected no group findings, got %+v", v)
 		}
 	})
@@ -267,4 +267,22 @@ func TestProtocolRekeyTargetIsNotAFinding(t *testing.T) {
 			t.Fatalf("expected the held-address rekey finding, got %+v", v)
 		}
 	})
+}
+
+// A rekey-to list is one account's: in a group, a rekey on another position to
+// an address on it still warns that control is lost.
+func TestGroupWarningsScopeEachListToItsPosition(t *testing.T) {
+	target := types.Address{0xC1}
+	rekey := types.Transaction{Header: types.Header{RekeyTo: target}}
+	listed := map[int]map[string]bool{0: {target.String(): true}}
+	violations := CheckGroupWarningsIn([]types.Transaction{rekey, rekey}, Context{}, listed)
+	if len(violations) != 2 {
+		t.Fatalf("violations = %+v", violations)
+	}
+	if !strings.Contains(violations[0].Message, "rekey-to list") || !strings.Contains(violations[0].Message, "LEAVES THIS SIGNER'S CUSTODY") {
+		t.Fatalf("the listed position's warning = %q", violations[0].Message)
+	}
+	if strings.Contains(violations[1].Message, "rekey-to list") || !strings.Contains(violations[1].Message, "YOU WILL LOSE CONTROL") {
+		t.Fatalf("another position's warning = %q", violations[1].Message)
+	}
 }

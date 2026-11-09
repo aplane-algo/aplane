@@ -32,7 +32,7 @@ const (
 	unsupportedTemplateKeyType = "test.unsupported-base-fixture.v1"
 	// The stored record carries the fingerprint, so a changed one reads as an
 	// external edit. Generation support must never reach it.
-	unsupportedTemplateFingerprint = "1:2dc6b0364df8b2eb4df2d26a7bfb9df687a9aa86294d307452c7b616d34e3cab"
+	unsupportedTemplateFingerprint = "1:830f3656cbdb79b0b46ca7c7644df26fa62d6a91fbe851ed15d39b5e0c74febf"
 	unsupportedTemplateYAML        = `
 schema_version: 2
 template_type: composed

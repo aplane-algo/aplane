@@ -113,8 +113,11 @@ func (e *explainer) guards() {
 	if d.RejectClawback {
 		rejects = append(rejects, "clawbacks")
 	}
-	if d.RejectForeignRekey {
-		rejects = append(rejects, "rekeys to an address this node does not hold")
+	switch d.Rekeys {
+	case policy.RekeysRejectAll:
+		rejects = append(rejects, "every rekey")
+	case policy.RekeysRejectForeign:
+		rejects = append(rejects, "rekeys to an address this node does not hold and the account does not list")
 	}
 	if d.RejectRekey {
 		rejects = append(rejects, "every rekey")

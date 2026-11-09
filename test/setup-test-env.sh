@@ -327,7 +327,7 @@ APSIGNER_PASSPHRASE="$TEST_PASSPHRASE" \
   "format": "aplane.policy.v1",
   "role": "signer",
   "key": "default",
-  "reject_foreign_rekey": false,
+  "rekeys": "allow_rekeys",
   "reject_close_remainder": false,
   "reject_asset_close": false,
   "reject_clawback": false,

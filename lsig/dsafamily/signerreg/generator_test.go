@@ -171,6 +171,7 @@ func (*boundedGeneratorTestDSA) LogicSigOpcodeProfile() lsigresource.OpcodeProfi
 	return lsigresource.BoundedOpcodeProfile(
 		lsigresource.SingleTransactionOpcodeCeiling,
 		lsigresource.SingleTransactionOpcodeCeiling,
+		lsigresource.SingleTransactionOpcodeCeiling,
 	)
 }
 func (*boundedGeneratorTestDSA) BuildBoundedAuthorizationMetadata(_ []byte, _ map[string]string, bytecode []byte) (*boundedmeta.Metadata, error) {

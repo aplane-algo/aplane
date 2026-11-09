@@ -685,6 +685,7 @@ func ProtocolPrepareGenerateResultMessage(id string, result adminproto.PrepareGe
 			SpendEffects:     profile.SpendEffects,
 			MaxFee:           profile.MaxFee,
 			Rekey:            profile.Rekey,
+			RekeyList:        profile.RekeyList,
 			Layer3Policy:     profile.Layer3Policy,
 			CosignerRequired: profile.CosignerRequired,
 		}

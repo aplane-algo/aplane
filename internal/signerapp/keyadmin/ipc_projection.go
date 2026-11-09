@@ -50,6 +50,7 @@ func ProjectPrepareGenerateIPC(prepared *PreparedGeneration, err *Error) adminpr
 			SpendEffects:     metadata.SpendEffects,
 			MaxFee:           metadata.MaxFee,
 			Rekey:            string(metadata.Rekey),
+			RekeyList:        metadata.RekeyList != nil,
 			Layer3Policy:     metadata.Layer3Policy,
 			CosignerRequired: metadata.Cosigner != nil,
 		}

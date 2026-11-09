@@ -839,7 +839,7 @@ func TestResolveBoundedPlanItemsAcceptsDeclaredRuntimeArgs(t *testing.T) {
 	metadata.RuntimeArgs = []boundedmeta.RuntimeArg{{Name: "preimage", Type: "bytes", Required: true, ByteLength: 2, MaxSize: 2}}
 	metadata.ArgumentLayout = append(metadata.ArgumentLayout, boundedmeta.ArgumentSlot{
 		Index: 1, Name: "preimage", Source: boundedmeta.ArgSourceRuntime, MaxSize: 2,
-		Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgForbidden},
+		Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgForbidden, ListedRekey: boundedmeta.ArgForbidden},
 	})
 	if err := metadata.Validate(); err != nil {
 		t.Fatalf("runtime metadata invalid: %v", err)

@@ -27,6 +27,7 @@ const (
 	KindCacheRefresh            Kind = signerapi.ErrCodeCacheRefresh
 	KindInternal                Kind = signerapi.ErrCodeInternal
 	KindBoundedCosignerRequired Kind = signerapi.ErrCodeBoundedCosignerRequired
+	KindBoundedRekeyNotListed   Kind = signerapi.ErrCodeBoundedRekeyTargetNotListed
 	KindRotatingSigningRequired Kind = signerapi.ErrCodeRotatingSigningRequired
 	KindRotatingStageUnproven   Kind = signerapi.ErrCodeRotatingStageUnproven
 	KindRotatingStageChanged    Kind = signerapi.ErrCodeRotatingStageChanged
@@ -35,7 +36,7 @@ const (
 // HTTPStatus maps a kind to its HTTP status. Unknown kinds map to 500.
 func (k Kind) HTTPStatus() int {
 	switch k {
-	case KindBadRequest, KindBoundedCosignerRequired, KindRotatingSigningRequired:
+	case KindBadRequest, KindBoundedCosignerRequired, KindBoundedRekeyNotListed, KindRotatingSigningRequired:
 		return http.StatusBadRequest
 	case KindRotatingStageUnproven, KindRotatingStageChanged:
 		return http.StatusConflict

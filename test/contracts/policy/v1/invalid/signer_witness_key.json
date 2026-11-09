@@ -2,7 +2,7 @@
   "format": "aplane.policy.v1",
   "role": "signer",
   "key": "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ",
-  "reject_foreign_rekey": true,
+  "rekeys": "reject_foreign_rekey",
   "reject_close_remainder": false,
   "reject_asset_close": false,
   "reject_clawback": false,

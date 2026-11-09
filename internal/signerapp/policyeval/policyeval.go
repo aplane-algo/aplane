@@ -55,6 +55,8 @@ type Slot struct {
 	// Policy governs a signer slot; nil means no policy is loaded for it.
 	// Passthrough and foreign slots have none.
 	Policy *policy.Config
+	// ListedRekeyTargets is the signing account's rekey-to list, if it has one.
+	ListedRekeyTargets map[string]bool
 }
 
 // Input is everything a verdict depends on.
@@ -66,7 +68,7 @@ type Input struct {
 	// Slots are the judged positions, in index order.
 	Slots []Slot
 	// KnownAddresses are the accounts this node holds keys for. Only rekeys
-	// read it: reject_foreign_rekey and the rekey warning.
+	// read it: the rekeys setting's reject_foreign_rekey and the rekey warning.
 	KnownAddresses map[string]bool
 	// ProtocolRekeyTargets are rekeys the signer issued itself (a rotation's
 	// next stage); they are not warnings.
@@ -196,7 +198,10 @@ func Deny(in Input) ([]policy.LintViolation, error) {
 			return nil, ErrPolicyNotLoaded
 		}
 		txn := in.Group[slot.Index]
-		found := policy.CheckTxnPolicyLints(txn, slot.Policy, in.KnownAddresses)
+		found := policy.CheckTxnPolicyLintsIn(txn, slot.Policy, policy.LintContext{
+			KnownAddresses: in.KnownAddresses, ProtocolRekeyTargets: in.ProtocolRekeyTargets,
+			ListedRekeyTargets: slot.ListedRekeyTargets,
+		})
 		found = append(found, policy.CheckTxnTransferRoutingPolicyLints(txn, slot.Policy)...)
 		for i := range found {
 			found[i].TxnIndex = slot.Index
@@ -244,7 +249,9 @@ func reviewRule(in Input) (string, bool) {
 		if violations := policy.CheckTxnTransferRoutingReviewPolicyLints(txn, cfg); len(violations) > 0 {
 			return violations[0].RuleID, true
 		}
-		if cfg.AlwaysReviewWarnings && len(approvalpolicy.CheckDecodedTxnWarningsIn(txn, warnCtx)) > 0 {
+		slotCtx := warnCtx
+		slotCtx.ListedRekeyTargets = slot.ListedRekeyTargets
+		if cfg.AlwaysReviewWarnings && len(approvalpolicy.CheckDecodedTxnWarningsIn(txn, slotCtx)) > 0 {
 			return policy.AlwaysReviewWarningsRuleID, true
 		}
 	}

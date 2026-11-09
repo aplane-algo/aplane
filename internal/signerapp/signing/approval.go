@@ -57,7 +57,6 @@ type ApprovalService struct {
 	RequestSigningApprovalResponse        RequestSigningApprovalResponseFunc
 	RequestSigningApprovalContext         RequestSigningApprovalContextFunc
 	RequestSigningApprovalResponseContext RequestSigningApprovalResponseContextFunc
-	EncodeTxnToHex                        func(txn types.Transaction) string
 }
 
 func (s *ApprovalService) userAutoApprove() bool {
@@ -282,6 +281,8 @@ func boundedAuthorizationLabel(item *boundedPlanItem) string {
 	switch item.Path {
 	case boundedPathSpendingKeyRekey:
 		return "spending key only"
+	case boundedPathListedRekey:
+		return "spending key only, to an address on the account's rekey-to list"
 	default:
 		return "unknown"
 	}
@@ -306,7 +307,7 @@ func resolvePolicy(policyFor PolicyResolver, authKeys []string, i int) *policy.C
 
 // clientSlots returns the positions client signing judges, AllTxns[:requestCount],
 // with each signer position's policy resolved through authKeys.
-func clientSlots(allTxns []types.Transaction, requestCount int, passthroughIndices, foreignIndices map[int]bool, policyFor PolicyResolver, authKeys []string) []policyeval.Slot {
+func clientSlots(allTxns []types.Transaction, requestCount int, passthroughIndices, foreignIndices map[int]bool, policyFor PolicyResolver, authKeys []string, listed map[int]map[string]bool) []policyeval.Slot {
 	limit := requestCount
 	if limit > len(allTxns) {
 		limit = len(allTxns)
@@ -319,7 +320,7 @@ func clientSlots(allTxns []types.Transaction, requestCount int, passthroughIndic
 		case foreignIndices[i]:
 			slots = append(slots, policyeval.Slot{Index: i, Class: policyeval.SlotForeign})
 		default:
-			slots = append(slots, policyeval.Slot{Index: i, Class: policyeval.SlotSigner, Policy: resolvePolicy(policyFor, authKeys, i)})
+			slots = append(slots, policyeval.Slot{Index: i, Class: policyeval.SlotSigner, Policy: resolvePolicy(policyFor, authKeys, i), ListedRekeyTargets: listed[i]})
 		}
 	}
 	return slots
@@ -364,7 +365,7 @@ func policyRejection(violations []policy.LintViolation, console Console) *Servic
 func EvaluateAutoRejectionRules(allTxns []types.Transaction, requestCount int, passthroughIndices, foreignIndices map[int]bool, policyFor PolicyResolver, authKeys []string, knownAddresses map[string]bool, console Console) *ServiceError {
 	violations, err := policyeval.Deny(policyeval.Input{
 		Group:          allTxns,
-		Slots:          clientSlots(allTxns, requestCount, passthroughIndices, foreignIndices, policyFor, authKeys),
+		Slots:          clientSlots(allTxns, requestCount, passthroughIndices, foreignIndices, policyFor, authKeys, nil),
 		KnownAddresses: knownAddresses,
 	})
 	if err != nil {
@@ -443,7 +444,9 @@ func (s *ApprovalService) requestGroupApprovalWithContext(ctx context.Context, r
 	displaySender := fmt.Sprintf("GROUP(%d txns)", len(txns))
 	groupAuthAddr := groupApprovalAddress(req)
 
-	violations := approvalpolicy.CheckGroupWarningsIn(txns, approvalpolicy.Context{KnownAddresses: s.groupKnownAddresses(plan), ProtocolRekeyTargets: protocolRekeyTargetsForPlan(plan)})
+	violations := approvalpolicy.CheckGroupWarningsIn(txns, approvalpolicy.Context{
+		KnownAddresses: s.groupKnownAddresses(plan), ProtocolRekeyTargets: protocolRekeyTargetsForPlan(plan),
+	}, listedRekeyTargetsForPlan(plan))
 	approved, err := s.requestSigningApproval(
 		ctx,
 
@@ -483,14 +486,16 @@ func (s *ApprovalService) requestGroupApprovalWithContext(ctx context.Context, r
 }
 
 func (s *ApprovalService) RequestSingleTxnApproval(txReq signerapi.SignRequest, allTxns, txns []types.Transaction, dummiesNeeded int, firstValid, lastValid uint64) *ServiceError {
-	return s.requestSingleTxnApprovalWithContext(context.Background(), "", txReq, allTxns, txns, dummiesNeeded, firstValid, lastValid, "")
+	return s.requestSingleTxnApprovalWithContext(context.Background(), "", txReq, allTxns, txns, dummiesNeeded, firstValid, lastValid, "", nil)
 }
 
 func (s *ApprovalService) RequestSingleTxnApprovalWithContext(ctx context.Context, txReq signerapi.SignRequest, allTxns, txns []types.Transaction, dummiesNeeded int, firstValid, lastValid uint64) *ServiceError {
-	return s.requestSingleTxnApprovalWithContext(ctx, "", txReq, allTxns, txns, dummiesNeeded, firstValid, lastValid, "")
+	return s.requestSingleTxnApprovalWithContext(ctx, "", txReq, allTxns, txns, dummiesNeeded, firstValid, lastValid, "", nil)
 }
 
-func (s *ApprovalService) requestSingleTxnApprovalWithContext(ctx context.Context, suppliedRequestID string, txReq signerapi.SignRequest, allTxns, txns []types.Transaction, dummiesNeeded int, firstValid, lastValid uint64, forceReviewRuleID string) *ServiceError {
+// requestSingleTxnApprovalWithContext prompts for one request. listed is that
+// account's rekey-to list, so the warning names a listed handover as one.
+func (s *ApprovalService) requestSingleTxnApprovalWithContext(ctx context.Context, suppliedRequestID string, txReq signerapi.SignRequest, allTxns, txns []types.Transaction, dummiesNeeded int, firstValid, lastValid uint64, forceReviewRuleID string, listed map[string]bool) *ServiceError {
 	console := consoleOf(s.Console)
 	txnApproved := false
 	approvalReason := ""
@@ -534,8 +539,9 @@ func (s *ApprovalService) requestSingleTxnApprovalWithContext(ctx context.Contex
 	}
 	txnDesc += describeTxnForApproval(allTxns[0], txReq, s.GenerateTxnDescriptionFromTxn)
 
-	modifiedTxnHex := s.EncodeTxnToHex(allTxns[0])
-	violations := approvalpolicy.CheckTxnWarnings(modifiedTxnHex, s.KnownAddresses())
+	violations := approvalpolicy.CheckDecodedTxnWarningsIn(allTxns[0], approvalpolicy.Context{
+		KnownAddresses: s.KnownAddresses(), ListedRekeyTargets: listed,
+	})
 	txnDesc = appendViolationHighlights(txnDesc, violations)
 
 	approved, err := s.requestSigningApproval(

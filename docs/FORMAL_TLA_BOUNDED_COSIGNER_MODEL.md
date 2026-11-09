@@ -96,9 +96,11 @@ The checked model passes its standard exhaustive run.
   `TestBoundedAssemblyReceiptBindsRuntimeAndMetadata`.
 - The external-admin branch (the signer's admin partial plus offline completion)
   was removed with the admin key; BS2 covered it and is retired. A bounded account
-  with a cosigner refuses rekeys, so the choreography carries spends only. A
-  listed-rekey branch is expected to take BS2's place when the rekey-to list
-  arrives.
+  with a cosigner refuses rekeys, so the choreography carries spends only. The
+  rekey-to list exists, but only on accounts without a cosigner, whose listed
+  rekeys go through ordinary `/sign` and never reach this choreography. A
+  listed-rekey branch is expected to take BS2's place when a cosigned account
+  can carry a list.
 - Liveness is not claimed. Cosigner and approval availability fail closed; the
   model is concerned with what may be released, not eventual completion.
 

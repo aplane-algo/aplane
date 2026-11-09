@@ -39,13 +39,13 @@ func Presets() []Preset {
 		{
 			Name:        "locked-allowlist",
 			Title:       "Locked Allowlist",
-			Description: "Pays only listed recipients. It can never be rekeyed.",
+			Description: "Pays only listed recipients. It can be rekeyed only to an address on its rekey-to list.",
 			Fixed: map[string]string{
 				ParameterSpendEffects:   allTransfers,
-				ParameterRekeyAuthority: RekeyRefused,
+				ParameterRekeyAuthority: RekeyOnlyThese,
 				ParameterListEncoding:   EncodingAuto,
 			},
-			Fields: []string{ParameterRecipients},
+			Fields: []string{ParameterRecipients, ParameterRekeyTo},
 		},
 		{
 			Name:        "corridor",
@@ -61,12 +61,12 @@ func Presets() []Preset {
 		{
 			Name:        "timelock",
 			Title:       "Timelock",
-			Description: "Nothing can be spent until a chosen round. It can never be rekeyed.",
+			Description: "Nothing can be spent until a chosen round. It can be rekeyed only to an address on its rekey-to list, which is a way around the lock.",
 			Fixed: map[string]string{
 				ParameterSpendEffects:   allTransfers,
-				ParameterRekeyAuthority: RekeyRefused,
+				ParameterRekeyAuthority: RekeyOnlyThese,
 			},
-			Fields: []string{ParameterUnlockRound},
+			Fields: []string{ParameterUnlockRound, ParameterRekeyTo},
 		},
 	}
 }
@@ -76,6 +76,7 @@ type SampleValues struct {
 	Recipients  []string
 	Cosigner    string
 	UnlockRound string
+	RekeyTo     []string
 }
 
 // SampleBoundaryFile renders the preset as a boundary file with the operator's
@@ -92,6 +93,12 @@ func (p Preset) SampleBoundaryFile(values SampleValues) string {
 		sb.WriteString("encoding: " + p.Fixed[ParameterListEncoding] + "\n")
 	}
 	sb.WriteString("rekey:\n  authority: " + p.Fixed[ParameterRekeyAuthority] + "\n")
+	if slices.Contains(p.Fields, ParameterRekeyTo) {
+		sb.WriteString("  to:\n")
+		for _, target := range values.RekeyTo {
+			sb.WriteString("    - " + target + "\n")
+		}
+	}
 	if slices.Contains(p.Fields, ParameterCosigner) {
 		sb.WriteString("cosigner: " + values.Cosigner + "\n")
 	}

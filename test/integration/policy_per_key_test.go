@@ -137,7 +137,7 @@ func TestPerKeyPolicyDefaultAndOwnDocument(t *testing.T) {
 
 	// The key's own document: one route, every miss rejected.
 	own := policytest.Signer(t, n.address, fmt.Sprintf(`{
-  "reject_foreign_rekey": false,
+  "rekeys": "allow_rekeys",
   "transfer_policy": {"on_no_route": "reject", "routes": [
     {"id": "to_dest", "networks": [%q], "sources": ["*"], "assets": ["algo"], "destinations": [%q]}
   ]}

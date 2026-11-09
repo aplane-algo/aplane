@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -22,7 +21,6 @@ import (
 	"time"
 
 	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
-	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	apconfig "github.com/aplane-algo/aplane/internal/config"
@@ -250,7 +248,6 @@ func (r *verdictRecorder) approvalService(known map[string]bool) *ApprovalServic
 		GenerateTxnDescriptionFromTxn: func(types.Transaction) string { return "txn" },
 		KnownAddresses:                func() map[string]bool { return known },
 		HasClient:                     func() bool { return true },
-		EncodeTxnToHex:                func(txn types.Transaction) string { return hex.EncodeToString(msgpack.Encode(txn)) },
 		RequestSigningApprovalContext: func(context.Context, string, string, string, string, uint64, uint64, []signerapproval.Violation, time.Duration) (bool, error) {
 			r.mu.Lock()
 			defer r.mu.Unlock()

@@ -22,6 +22,9 @@ const (
 	boundedPayLabel    = "__aplane_bounded1_effect_pay"
 	boundedAxferLabel  = "__aplane_bounded1_effect_axfer"
 	boundedOptInLabel  = "__aplane_bounded1_effect_asset_opt_in"
+
+	boundedRekeyListCombineLabel = "__aplane_bounded1_rekey_list_combine"
+	boundedRekeyListOrderedLabel = "__aplane_bounded1_rekey_list_ordered"
 )
 
 func (c *ComposedDSA) renderBoundedPrelude(publicKey []byte, params map[string]string, profile *BoundedAuthorizationProfile) (string, error) {
@@ -72,9 +75,7 @@ func (c *ComposedDSA) renderBoundedPrelude(publicKey []byte, params map[string]s
 	// No host rule gates a rekey: the rekey path ends here, before the spend
 	// path's Layer 3 and cosigner checks.
 	b.WriteString(boundedRekeyLabel + ":\n")
-	if profile.Rekey != boundedmeta.RekeySpendingKey {
-		b.WriteString("err\n\n")
-	} else {
+	writePureRekey := func() {
 		b.WriteString("txn TypeEnum\npushint 1\n==\nassert\n")
 		b.WriteString("txn Amount\npushint 0\n==\nassert\n")
 		b.WriteString("txn Receiver\ntxn Sender\n==\nassert\n")
@@ -85,7 +86,21 @@ func (c *ComposedDSA) renderBoundedPrelude(publicKey []byte, params map[string]s
 			}
 			writeZeroAddressAssertion(&b, predicate.Field)
 		}
+	}
+	switch {
+	case profile.RekeyList != nil:
+		// Only these addresses: a pure rekey to a listed target, nothing else.
+		root, err := rekeyListRoot(params)
+		if err != nil {
+			return "", err
+		}
+		writePureRekey()
+		renderListedRekey(&b, c.rekeyListProofIndex(metadata), root)
+	case profile.Rekey == boundedmeta.RekeySpendingKey:
+		writePureRekey()
 		b.WriteString("b " + boundedAcceptLabel + "\n\n")
+	default:
+		b.WriteString("err\n\n")
 	}
 
 	b.WriteString(boundedSpendLabel + ":\n")
@@ -159,4 +174,14 @@ func writeZeroAddressAssertion(b *strings.Builder, field txeffects.TxField) {
 
 func renderBoundedAccept() string {
 	return "\nb " + boundedAcceptLabel + "\n\n" + boundedAcceptLabel + ":\npushint 1\nreturn\n"
+}
+
+// rekeyListProofIndex is the list proof's argument slot.
+func (c *ComposedDSA) rekeyListProofIndex(metadata *boundedmeta.Metadata) int {
+	for _, slot := range metadata.ArgumentLayout {
+		if slot.Source == boundedmeta.ArgSourceDerived && slot.Name == rekeyListProofSlot {
+			return slot.Index
+		}
+	}
+	return -1
 }

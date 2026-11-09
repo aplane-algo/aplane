@@ -64,7 +64,7 @@ func TestMetadataValidateCombinedLayer3Policies(t *testing.T) {
 		for _, arg := range derived {
 			slots = append(slots, ArgumentSlot{
 				Index: len(slots), Name: arg.Name, Source: ArgSourceDerived, MaxSize: arg.MaxSize,
-				Paths: ArgumentPathMask{Spend: ArgOptional, SpendingRekey: ArgForbidden},
+				Paths: ArgumentPathMask{Spend: ArgOptional, SpendingRekey: ArgForbidden, ListedRekey: ArgForbidden},
 			})
 		}
 		return &Metadata{
@@ -76,7 +76,7 @@ func TestMetadataValidateCombinedLayer3Policies(t *testing.T) {
 		input.RuntimeArgs = []RuntimeArg{{Name: "extra", Type: "bytes", Required: true, MaxSize: 8}}
 		input.ArgumentLayout = append(input.ArgumentLayout, ArgumentSlot{
 			Index: len(input.ArgumentLayout), Name: "extra", Source: ArgSourceRuntime, MaxSize: 8,
-			Paths: ArgumentPathMask{Spend: ArgRequired, SpendingRekey: ArgForbidden},
+			Paths: ArgumentPathMask{Spend: ArgRequired, SpendingRekey: ArgForbidden, ListedRekey: ArgForbidden},
 		})
 		return input
 	}
@@ -127,9 +127,9 @@ func TestMetadataArgumentLayoutPathSizes(t *testing.T) {
 		RuntimeArgs:            []RuntimeArg{{Name: "preimage", Type: "bytes", Required: true, ByteLength: 32, MaxSize: 32}},
 		Layer3Policy:           Layer3PolicyCustom,
 		ArgumentLayout: []ArgumentSlot{
-			{Index: 0, Name: "base_signature_0", Source: ArgSourceBaseSignature, MaxSize: 64, Paths: ArgumentPathMask{Spend: ArgRequired, SpendingRekey: ArgRequired}},
-			{Index: 1, Name: "proof", Source: ArgSourceDerived, MaxSize: MerkleProofSize, Paths: ArgumentPathMask{Spend: ArgOptional, SpendingRekey: ArgForbidden}},
-			{Index: 2, Name: "preimage", Source: ArgSourceRuntime, MaxSize: 32, Paths: ArgumentPathMask{Spend: ArgRequired, SpendingRekey: ArgForbidden}},
+			{Index: 0, Name: "base_signature_0", Source: ArgSourceBaseSignature, MaxSize: 64, Paths: ArgumentPathMask{Spend: ArgRequired, SpendingRekey: ArgRequired, ListedRekey: ArgRequired}},
+			{Index: 1, Name: "proof", Source: ArgSourceDerived, MaxSize: MerkleProofSize, Paths: ArgumentPathMask{Spend: ArgOptional, SpendingRekey: ArgForbidden, ListedRekey: ArgForbidden}},
+			{Index: 2, Name: "preimage", Source: ArgSourceRuntime, MaxSize: 32, Paths: ArgumentPathMask{Spend: ArgRequired, SpendingRekey: ArgForbidden, ListedRekey: ArgForbidden}},
 		},
 	}
 	if err := metadata.ValidateProfile(); err != nil {
@@ -166,8 +166,8 @@ func TestMetadataValidateCosignerAuthorization(t *testing.T) {
 			SignatureMaxSize: CosignerSignatureMaxSizeV1, RequiredOn: []string{PathSpend},
 		},
 		ArgumentLayout: []ArgumentSlot{
-			{Index: 0, Name: "base_signature_0", Source: ArgSourceBaseSignature, MaxSize: 1280, Paths: ArgumentPathMask{Spend: ArgRequired, SpendingRekey: ArgRequired}},
-			{Index: 1, Name: CosignerSignatureSlot, Source: ArgSourceCosigner, MaxSize: CosignerSignatureMaxSizeV1, Paths: ArgumentPathMask{Spend: ArgRequired, SpendingRekey: ArgForbidden}},
+			{Index: 0, Name: "base_signature_0", Source: ArgSourceBaseSignature, MaxSize: 1280, Paths: ArgumentPathMask{Spend: ArgRequired, SpendingRekey: ArgRequired, ListedRekey: ArgRequired}},
+			{Index: 1, Name: CosignerSignatureSlot, Source: ArgSourceCosigner, MaxSize: CosignerSignatureMaxSizeV1, Paths: ArgumentPathMask{Spend: ArgRequired, SpendingRekey: ArgForbidden, ListedRekey: ArgForbidden}},
 		},
 	}
 	if err := metadata.Validate(); err != nil {
@@ -259,7 +259,70 @@ func TestMetadataEqual(t *testing.T) {
 // TestMetadataEqualCoversAllFields forces Equal to be updated when the
 // Metadata struct grows a field: bump the count only alongside Equal.
 func TestMetadataEqualCoversAllFields(t *testing.T) {
-	if n := reflect.TypeOf(Metadata{}).NumField(); n != 10 {
+	if n := reflect.TypeOf(Metadata{}).NumField(); n != 11 {
 		t.Fatalf("Metadata has %d fields; update Equal and this count together", n)
+	}
+}
+
+func listMetadata() *Metadata {
+	layout := SignatureArgLayout{Count: 1, MaxSizes: []int{64}}
+	slots := BaseArgumentLayout(layout)
+	slots = append(slots, ArgumentSlot{
+		Index: 1, Name: "rekey_list_proof", Source: ArgSourceDerived, MaxSize: RekeyListProofSize,
+		Paths: ArgumentPathMask{Spend: ArgForbidden, SpendingRekey: ArgForbidden, ListedRekey: ArgRequired},
+	})
+	return &Metadata{
+		Contract: Contract, BaseSignatureArgLayout: layout, ArgumentLayout: slots,
+		SpendEffects: []string{"axfer"}, MaxFee: 1_000, Rekey: RekeyRefused, Layer3Policy: Layer3PolicyCustom,
+		RekeyList:   &RekeyList{Contract: RekeyListContractV1, Depth: 4, RootHex: strings.Repeat("ab", 32)},
+		DerivedArgs: []DerivedArg{{Name: "rekey_list_proof", Kind: DerivedArgRekeyListProof, Parameter: RekeyListEntriesParameter, MaxSize: RekeyListProofSize}},
+	}
+}
+
+// A listed address is a way out, so "only these" needs no pay to hold assets.
+// The list must be refused-rekey, uncosigned, at the contract's depth, with its
+// one proof slot used on the listed rekey alone.
+func TestMetadataValidateRekeyList(t *testing.T) {
+	if err := listMetadata().Validate(); err != nil {
+		t.Fatalf("valid list metadata: %v", err)
+	}
+	for _, test := range []struct {
+		name   string
+		mutate func(*Metadata)
+		want   string
+	}{
+		{"spending-key rekey", func(m *Metadata) { m.Rekey = RekeySpendingKey }, "needs rekey refused"},
+		{"unknown contract", func(m *Metadata) { m.RekeyList.Contract = "rekey_list2" }, "unsupported rekey-to list contract"},
+		{"other depth", func(m *Metadata) { m.RekeyList.Depth = 16 }, "depth 16, want 4"},
+		{"bad root", func(m *Metadata) { m.RekeyList.RootHex = "ab" }, "expected 32 bytes"},
+		{"upper-case root", func(m *Metadata) { m.RekeyList.RootHex = strings.Repeat("AB", 32) }, "lowercase hex"},
+		// A stored account's root is what every listed rekey is checked against.
+		{"stored without a root", func(m *Metadata) { m.RekeyList.RootHex = "" }, "rekey-to list root must be non-empty"},
+		{"no proof", func(m *Metadata) { m.DerivedArgs = nil; m.ArgumentLayout = m.ArgumentLayout[:1] }, "exactly one rekey-list proof"},
+		{"proof over another parameter", func(m *Metadata) { m.DerivedArgs[0].Parameter = "recipients" }, "needs the rekey-to list"},
+		{"proof without a list", func(m *Metadata) { m.RekeyList = nil }, "needs the rekey-to list"},
+		{"proof on the spend path", func(m *Metadata) { m.ArgumentLayout[1].Paths.Spend = ArgOptional }, "path rules"},
+		{"base signature skips the listed rekey", func(m *Metadata) { m.ArgumentLayout[0].Paths.ListedRekey = ArgForbidden }, "required on every path"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			metadata := listMetadata()
+			test.mutate(metadata)
+			if err := metadata.Validate(); err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("Validate() error = %v, want %q", err, test.want)
+			}
+		})
+	}
+	// Without its list, the same account would trap its ALGO, and is refused.
+	bare := listMetadata()
+	bare.RekeyList, bare.DerivedArgs, bare.ArgumentLayout = nil, nil, bare.ArgumentLayout[:1]
+	if err := bare.Validate(); err == nil || !strings.Contains(err.Error(), "needs pay") {
+		t.Fatalf("a bare refused assets-only account: error = %v", err)
+	}
+	if !listMetadata().Equal(listMetadata()) || listMetadata().Equal(bare) {
+		t.Fatal("Equal ignores the rekey-to list")
+	}
+	declaration, err := listMetadata().Declaration()
+	if err != nil || !declaration.RekeyList {
+		t.Fatalf("declaration %+v, %v", declaration, err)
 	}
 }

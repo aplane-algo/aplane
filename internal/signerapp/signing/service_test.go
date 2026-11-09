@@ -70,8 +70,8 @@ func TestEvaluateAutoRejectionRulesStampsTxnIndexes(t *testing.T) {
 	}
 
 	err := EvaluateAutoRejectionRules(txns, len(txns), nil, nil, fixedPolicy(&policy.Config{TransactionTypes: policytest.AllowAllTypes(),
-		RejectForeignRekey: true,
-		MaxFeeMicroAlgos:   1,
+		Rekeys:           policy.RekeysRejectForeign,
+		MaxFeeMicroAlgos: 1,
 	}), nil, nil, nil)
 
 	if err == nil {
@@ -92,7 +92,7 @@ func TestEvaluateAutoRejectionRulesSkipsForeignAndDummyTransactions(t *testing.T
 	}
 
 	err := EvaluateAutoRejectionRules(txns, 2, nil, map[int]bool{0: true}, fixedPolicy(&policy.Config{TransactionTypes: policytest.AllowAllTypes(),
-		RejectForeignRekey: true,
+		Rekeys: policy.RekeysRejectForeign,
 	}), nil, nil, nil)
 
 	if err != nil {
@@ -107,7 +107,7 @@ func TestEvaluateAutoRejectionRulesAllowsRekeyToLocalAddress(t *testing.T) {
 	}
 
 	err := EvaluateAutoRejectionRules(txns, len(txns), nil, nil, fixedPolicy(&policy.Config{TransactionTypes: policytest.AllowAllTypes(),
-		RejectForeignRekey: true,
+		Rekeys: policy.RekeysRejectForeign,
 	}), nil, map[string]bool{localAddr.String(): true}, nil)
 
 	if err != nil {
@@ -429,7 +429,7 @@ func TestSignGroupLogsPolicyRejectionToAudit(t *testing.T) {
 		},
 		GenerateTxnDescriptionFromTxn: func(txn types.Transaction) string { return "txn" },
 		PolicyFor: fixedPolicy(&policy.Config{TransactionTypes: policytest.AllowAllTypes(),
-			RejectForeignRekey: true,
+			Rekeys: policy.RekeysRejectForeign,
 		}),
 	}
 
@@ -546,7 +546,7 @@ func TestSignGroupWithPlanUserAutoApproveStillRejectsPolicyViolation(t *testing.
 		Executor:                      &Executor{},
 		GenerateTxnDescriptionFromTxn: func(txn types.Transaction) string { return "txn" },
 		IsUnlocked:                    func() bool { return true },
-		PolicyFor:                     fixedPolicy(&policy.Config{TransactionTypes: policytest.AllowAllTypes(), RejectForeignRekey: true}),
+		PolicyFor:                     fixedPolicy(&policy.Config{TransactionTypes: policytest.AllowAllTypes(), Rekeys: policy.RekeysRejectForeign}),
 	}
 
 	req := signerapi.GroupSignRequest{
@@ -763,9 +763,6 @@ func TestSignGroupWithPlanAlwaysReviewWarningsPromptsWithoutUserAutoApprove(t *t
 			KnownAddresses: func() map[string]bool {
 				return nil
 			},
-			EncodeTxnToHex: func(txn types.Transaction) string {
-				return hex.EncodeToString(msgpack.Encode(txn))
-			},
 			RequestSigningApproval: func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
 				approvalCalled = true
 				gotViolations = violations
@@ -829,12 +826,9 @@ func TestSignGroupWithPlanDoesNotReevaluatePolicyAfterApproval(t *testing.T) {
 			GenerateTxnDescriptionFromTxn: func(txn types.Transaction) string { return "txn" },
 			HasClient:                     func() bool { return true },
 			KnownAddresses:                func() map[string]bool { return nil },
-			EncodeTxnToHex: func(txn types.Transaction) string {
-				return hex.EncodeToString(msgpack.Encode(txn))
-			},
 			RequestSigningApproval: func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
 				approvalCalled = true
-				service.PolicyFor = fixedPolicy(&policy.Config{TransactionTypes: policytest.AllowAllTypes(), RejectForeignRekey: true})
+				service.PolicyFor = fixedPolicy(&policy.Config{TransactionTypes: policytest.AllowAllTypes(), Rekeys: policy.RekeysRejectForeign})
 				return true, nil
 			},
 		},
@@ -845,7 +839,7 @@ func TestSignGroupWithPlanDoesNotReevaluatePolicyAfterApproval(t *testing.T) {
 			beforeExecuteCalled = true
 			return nil, unavailable("after approval")
 		},
-		PolicyFor: fixedPolicy(&policy.Config{TransactionTypes: policytest.AllowAllTypes(), AlwaysReviewWarnings: true}),
+		PolicyFor: fixedPolicy(&policy.Config{TransactionTypes: policytest.AllowAllTypes(), Rekeys: policy.RekeysAllow, AlwaysReviewWarnings: true}),
 	}
 
 	txn := types.Transaction{
@@ -911,9 +905,6 @@ func TestSignGroupWithPlanTransferRoutingReviewPromptsWithoutUserAutoApprove(t *
 			GenerateTxnDescriptionFromTxn: func(txn types.Transaction) string { return "txn" },
 			HasClient:                     func() bool { return true },
 			KnownAddresses:                func() map[string]bool { return nil },
-			EncodeTxnToHex: func(txn types.Transaction) string {
-				return hex.EncodeToString(msgpack.Encode(txn))
-			},
 			RequestSigningApproval: func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
 				approvalCalled = true
 				gotViolations = violations
@@ -1554,7 +1545,6 @@ func TestSignGroupWithPlanUsesSingleTxnApprovalForServerAddedDummies(t *testing.
 			HasClient:                     func() bool { return true },
 			KnownAddresses:                func() map[string]bool { return nil },
 			GenerateTxnDescriptionFromTxn: func(txn types.Transaction) string { return "txn" },
-			EncodeTxnToHex:                func(txn types.Transaction) string { return "deadbeef" },
 			RequestSigningApproval: func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
 				gotDescription = description
 				gotFirstValid = firstValid

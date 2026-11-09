@@ -492,7 +492,7 @@ func TestPolicyHardRejectSkipsApprovalAndReturnsForbidden(t *testing.T) {
 
 	policyClient := mustConnectIPCClient(t, signerd.GetWorkDir())
 	defer policyClient.Close()
-	mustReplaceIPCPolicySetting(t, policyClient, "reject_foreign_rekey", true)
+	mustReplaceIPCPolicySetting(t, policyClient, "rekeys", "reject_foreign_rekey")
 
 	approvalClient := mustConnectIPCClient(t, signerd.GetWorkDir())
 	defer approvalClient.Close()

@@ -162,7 +162,7 @@ type PolicyV1 struct {
 	Routes               []RouteV1
 
 	// Signer only. A cosigner document rejects every route miss.
-	RejectForeignRekey          bool
+	Rekeys                      SignerRekeys
 	AlwaysReviewWarnings        bool
 	AutoApproveSelfNoOpTransfer bool
 	OnNoRoute                   TransferOnNoRoute
@@ -262,6 +262,19 @@ func DecodePolicyV1(data []byte, key string, role noderole.Role) (*PolicyV1, err
 		return nil, err
 	}
 
+	if !signer {
+		if err := rejectRoleField(r, "rekeys", role); err != nil {
+			return nil, err
+		}
+	} else {
+		n, err := r.required("rekeys")
+		if err != nil {
+			return nil, err
+		}
+		if doc.Rekeys, err = decodeRekeys(n); err != nil {
+			return nil, err
+		}
+	}
 	// Scalars: required on both roles, required on one role and rejected on
 	// the other.
 	for _, f := range []struct {
@@ -269,7 +282,6 @@ func DecodePolicyV1(data []byte, key string, role noderole.Role) (*PolicyV1, err
 		dst  *bool
 		on   bool // accepted (and required) on this node role
 	}{
-		{"reject_foreign_rekey", &doc.RejectForeignRekey, signer},
 		{"reject_close_remainder", &doc.RejectCloseRemainder, true},
 		{"reject_asset_close", &doc.RejectAssetClose, true},
 		{"reject_clawback", &doc.RejectClawback, true},
@@ -386,6 +398,18 @@ func rejectRoleField(r *jsonObjectReader, name string, role noderole.Role) error
 		return docErrorf(n.pointer, "%s is not accepted in a %s document", name, role)
 	}
 	return nil
+}
+
+func decodeRekeys(n *jsonNode) (SignerRekeys, error) {
+	raw, err := jsonString(n)
+	if err != nil {
+		return "", err
+	}
+	setting := SignerRekeys(raw)
+	if !setting.Valid() {
+		return "", docErrorf(n.pointer, "must be one of %s, %s, %s", RekeysRejectAll, RekeysRejectForeign, RekeysAllow)
+	}
+	return setting, nil
 }
 
 func decodeRouteMissAction(n *jsonNode) (TransferOnNoRoute, error) {

@@ -14,8 +14,11 @@ import (
 // default, or one key's own policy. A key is governed by exactly one Config;
 // there is no inheritance between documents.
 type Config struct {
-	Role                        noderole.Role
-	RejectForeignRekey          bool
+	Role noderole.Role
+	// Rekeys is the signer role's rekey rejection. A value that is not one of
+	// the three settings rejects every rekey, so a Config never given one fails
+	// closed. The cosigner role ignores it.
+	Rekeys                      SignerRekeys
 	RejectRekey                 bool
 	RejectCloseRemainder        bool
 	RejectAssetClose            bool
@@ -51,7 +54,7 @@ func DefaultConfig() *Config {
 func DefaultConfigWithGenesisHashResolver(resolver apconfig.GenesisHashNetworkResolver) *Config {
 	return &Config{
 		Role:                 noderole.RoleSigner,
-		RejectForeignRekey:   true,
+		Rekeys:               RekeysRejectForeign,
 		RejectCloseRemainder: false,
 		RejectAssetClose:     false,
 		RejectClawback:       false,

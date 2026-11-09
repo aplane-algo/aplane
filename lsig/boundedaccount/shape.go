@@ -37,7 +37,10 @@ const (
 	EncodingMerkle = boundary.EncodingMerkle
 
 	RekeySpendingKey = boundary.RekeySpendingKey
+	RekeyOnlyThese   = boundary.RekeyOnlyThese
 	RekeyRefused     = boundary.RekeyRefused
+
+	ParameterRekeyTo = boundary.ParameterRekeyTo
 
 	// AutoInlineMax is the largest list auto encodes inline. It is part of the
 	// grammar's meaning, so changing it changes the grammar fingerprint.
@@ -112,15 +115,19 @@ func (s Shape) Descriptor() string {
 // after the last, so this order extends rather than reshuffles.
 //
 // A cosigned shape refuses rekeys: a cosigned rekey arrives with the cosigner
-// overlay. A timelock refuses rekeys too, because no host rule gates a rekey, so a
-// spending-key rekey could leave the lock at any time. A shape that refuses rekeys
-// must leave a way out for what it holds (refusedSpendError).
+// overlay. A timelock takes no spending-key rekey, because no host rule gates a
+// rekey, so it could leave the lock at any time; it can use a rekey-to list, which
+// is a way around the lock the review names. A shape that refuses rekeys with no
+// list must leave a way out for what it holds (refusedSpendError); a list is one.
 func Shapes() []Shape {
 	type family struct {
 		rekey    string
 		cosigner bool
 	}
-	families := []family{{RekeySpendingKey, false}, {RekeyRefused, false}, {RekeyRefused, true}}
+	// Refusing rekeys takes a rekey-to list ("only these"), except with a
+	// cosigner: a cosigned account can't take a listed rekey yet, so its rekeys
+	// are refused outright.
+	families := []family{{RekeySpendingKey, false}, {RekeyOnlyThese, false}, {RekeyRefused, true}}
 	var shapes []Shape
 	forEachShape := func(encoding string, timelock, anyRecipient bool) {
 		for _, f := range families {

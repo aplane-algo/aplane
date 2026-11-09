@@ -761,12 +761,15 @@ type PrepareGenerateKeyMessage struct {
 
 // PreparedBoundedProfile is the bounded contract of a prepared account.
 type PreparedBoundedProfile struct {
-	Contract         string   `json:"contract"`
-	SpendEffects     []string `json:"spend_effects"`
-	MaxFee           uint64   `json:"max_fee"`
-	Rekey            string   `json:"rekey"`
-	Layer3Policy     string   `json:"layer3_policy"`
-	CosignerRequired bool     `json:"cosigner_required,omitempty"`
+	Contract     string   `json:"contract"`
+	SpendEffects []string `json:"spend_effects"`
+	MaxFee       uint64   `json:"max_fee"`
+	Rekey        string   `json:"rekey"`
+	// RekeyList is set for "only these": rekey refused except to an address on
+	// the account's rekey-to list, which the request's rekey_to parameter holds.
+	RekeyList        bool   `json:"rekey_list,omitempty"`
+	Layer3Policy     string `json:"layer3_policy"`
+	CosignerRequired bool   `json:"cosigner_required,omitempty"`
 }
 
 // PrepareGenerateResultMessage describes the account a request would create. It

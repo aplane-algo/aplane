@@ -98,7 +98,7 @@ func TestPolicyIntegrityDirectEditRejectsAndReallowsAlgoPayment(t *testing.T) {
 // integration suite runs under: nothing rejected, every route miss left to
 // the operator default.
 const permissiveIntegrationFragment = `{
-  "reject_foreign_rekey": false,
+  "rekeys": "allow_rekeys",
   "transfer_policy": {"on_no_route": "operator_default", "close_on_no_route": "operator_default", "clawback_on_no_route": "operator_default"}
 }`
 
@@ -106,7 +106,7 @@ func restrictiveAlgoPaymentPolicy(network string) string {
 	// reject_above "0" keeps the 0-ALGO validation path open while rejecting
 	// every nonzero payment.
 	return policytest.MustDocument(noderole.RoleSigner, policy.DefaultKey, fmt.Sprintf(`{
-  "reject_foreign_rekey": false,
+  "rekeys": "allow_rekeys",
   "transfer_policy": {"on_no_route": "operator_default", "close_on_no_route": "operator_default", "clawback_on_no_route": "operator_default"},
   "limits": {%q: {"algo": {"reject_above": "0"}}}
 }`, network))

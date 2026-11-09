@@ -6,6 +6,7 @@ package boundedaccount
 import (
 	"context"
 	"fmt"
+	"maps"
 	"strings"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
@@ -15,6 +16,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
+	"github.com/aplane-algo/aplane/internal/rekeylist"
 	txsigning "github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	"github.com/aplane-algo/aplane/lsig/generictemplate"
@@ -97,8 +99,10 @@ func newProvider(definition Definition) (*Provider, error) {
 	for _, shape := range definition.Shapes {
 		// shapeSpec passes the rekey value straight to the template spec, so an
 		// unknown value fails here, before anything is compiled.
-		if err := boundedmeta.ValidateRekeySetting(boundedmeta.RekeySetting(shape.Rekey)); err != nil {
-			return nil, fmt.Errorf("bounded definition %s.%s: shape %s has unknown rekey authority: %w", definition.Publisher, definition.Family, shape.Descriptor(), err)
+		if shape.Rekey != RekeyOnlyThese {
+			if err := boundedmeta.ValidateRekeySetting(boundedmeta.RekeySetting(shape.Rekey)); err != nil {
+				return nil, fmt.Errorf("bounded definition %s.%s: shape %s has unknown rekey authority: %w", definition.Publisher, definition.Family, shape.Descriptor(), err)
+			}
 		}
 		composer, err := composeddsa.NewProviderFromTemplateSpec(shapeSpec(definition, shape))
 		if err != nil {
@@ -235,10 +239,17 @@ func creationParameters() []lsigprovider.ParameterDef {
 		{
 			Name:        ParameterRekeyAuthority,
 			Label:       "Rekey Authority",
-			Description: "Who can rekey the account: the spending key alone, or no one (refused).",
+			Description: "How the account can be rekeyed: by the spending key to any address, by the spending key only to an address on its rekey-to list (only_these), or not at all (refused, with a cosigner only).",
 			Type:        "string",
 			Required:    true,
-			Options:     []string{RekeySpendingKey, RekeyRefused},
+			Options:     []string{RekeySpendingKey, RekeyOnlyThese, RekeyRefused},
+		},
+		{
+			Name:        ParameterRekeyTo,
+			Label:       "Rekey-To Addresses",
+			Description: "With only_these: the 1 to 16 addresses the account may be rekeyed to. Each can take the account over.",
+			Type:        "address[]",
+			MaxItems:    rekeylist.MaxEntries,
 		},
 		{
 			Name:        ParameterListEncoding,
@@ -339,6 +350,14 @@ func shapeFromMetadata(metadata *boundedmeta.Metadata) (Shape, error) {
 	if err := boundedmeta.ValidateRekeySetting(metadata.Rekey); err != nil {
 		return Shape{}, fmt.Errorf("stored account: %w", err)
 	}
+	if metadata.RekeyList != nil {
+		// "Only these" is refused plus the list; a list beside any other rekey
+		// setting is not a contract this type offers.
+		if metadata.Rekey != boundedmeta.RekeyRefused {
+			return Shape{}, fmt.Errorf("stored account has a rekey-to list beside rekey setting %q", metadata.Rekey)
+		}
+		shape.Rekey = RekeyOnlyThese
+	}
 	switch metadata.Layer3Policy {
 	case composeddsa.Layer3PolicyFixedAllowlist:
 		shape.Encoding = EncodingInline
@@ -438,40 +457,74 @@ func (p *Provider) ValidateCreationParams(params map[string]string) error {
 
 // GenerateTEAL renders the selected shape's program.
 func (p *Provider) GenerateTEAL(publicKey []byte, params map[string]string) (string, error) {
-	definition, values, err := p.resolve(params)
+	definition, values, err := p.resolveGenerated(params)
 	if err != nil {
 		return "", err
 	}
-	return definition.composer.GenerateTEAL(publicKey, composerValues(definition, values))
+	return definition.composer.GenerateTEAL(publicKey, values)
+}
+
+// PrepareRekeyList adds the rekey-to list's root once the spending key exists,
+// through the selected shape's composer. A shape without a list is unchanged.
+func (p *Provider) PrepareRekeyList(privateKey []byte, params map[string]string) (map[string]string, error) {
+	definition, values, err := p.resolve(params)
+	if err != nil {
+		return nil, err
+	}
+	prepared, err := definition.composer.PrepareRekeyList(privateKey, composerValues(definition, values))
+	if err != nil {
+		return nil, err
+	}
+	root, ok := prepared[boundedmeta.RekeyListRootParameter]
+	if !ok {
+		return params, nil
+	}
+	out := maps.Clone(params)
+	out[boundedmeta.RekeyListRootParameter] = root
+	return out, nil
+}
+
+// resolveGenerated resolves the shape from a request's parameters and returns
+// the composer's values, with the root key generation added when there is one.
+// The root is not a creation parameter, so the shape is resolved without it.
+func (p *Provider) resolveGenerated(params map[string]string) (*shapeDefinition, map[string]string, error) {
+	request, generated := composeddsa.SplitGeneratedParams(params)
+	definition, values, err := p.resolve(request)
+	if err != nil {
+		return nil, nil, err
+	}
+	composer := composerValues(definition, values)
+	maps.Copy(composer, generated)
+	return definition, composer, nil
 }
 
 // DeriveLsig derives the selected shape's program and address.
 func (p *Provider) DeriveLsig(ctx context.Context, publicKey []byte, params map[string]string) ([]byte, string, error) {
-	definition, values, err := p.resolve(params)
+	definition, values, err := p.resolveGenerated(params)
 	if err != nil {
 		return nil, "", err
 	}
-	return definition.composer.DeriveLsig(ctx, publicKey, composerValues(definition, values))
+	return definition.composer.DeriveLsig(ctx, publicKey, values)
 }
 
 // DeriveLsigWithSalt derives the selected shape's program with salt metadata.
 func (p *Provider) DeriveLsigWithSalt(ctx context.Context, publicKey []byte, params map[string]string) (lsigsalt.FindResult, error) {
-	definition, values, err := p.resolve(params)
+	definition, values, err := p.resolveGenerated(params)
 	if err != nil {
 		return lsigsalt.FindResult{}, err
 	}
-	return definition.composer.DeriveLsigWithSalt(ctx, publicKey, composerValues(definition, values))
+	return definition.composer.DeriveLsigWithSalt(ctx, publicKey, values)
 }
 
 // BuildBoundedAuthorizationMetadata snapshots the account's signing contract and
 // refuses a program the network could not run within its fee ceiling, before the
 // key is persisted.
 func (p *Provider) BuildBoundedAuthorizationMetadata(publicKey []byte, params map[string]string, bytecode []byte) (*boundedmeta.Metadata, error) {
-	definition, values, err := p.resolve(params)
+	definition, values, err := p.resolveGenerated(params)
 	if err != nil {
 		return nil, err
 	}
-	metadata, err := definition.composer.BuildBoundedAuthorizationMetadata(publicKey, composerValues(definition, values), bytecode)
+	metadata, err := definition.composer.BuildBoundedAuthorizationMetadata(publicKey, values, bytecode)
 	if err != nil {
 		return nil, err
 	}
@@ -497,6 +550,9 @@ func checkResources(metadata *boundedmeta.Metadata, opcodes lsigresource.OpcodeP
 	paths := []path{{boundedmeta.PathSpend, opcodes.Spend}}
 	switch metadata.Rekey {
 	case boundedmeta.RekeyRefused:
+		if metadata.RekeyList != nil {
+			paths = append(paths, path{boundedmeta.PathListedRekey, opcodes.ListedRekey})
+		}
 	case boundedmeta.RekeySpendingKey:
 		paths = append(paths, path{boundedmeta.PathSpendingRekey, opcodes.SpendingRekey})
 	default:

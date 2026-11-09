@@ -150,7 +150,7 @@ func (s *BaseTemplateSpec) LogicSigOpcodeProfile(bounded bool) lsigresource.Opco
 		maxCost = *s.MaxOpcodeCost
 	}
 	if bounded {
-		return lsigresource.BoundedOpcodeProfile(maxCost, maxCost)
+		return lsigresource.BoundedOpcodeProfile(maxCost, maxCost, maxCost)
 	}
 	return lsigresource.DefaultOpcodeProfile(maxCost)
 }
