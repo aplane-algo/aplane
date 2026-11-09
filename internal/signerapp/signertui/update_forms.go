@@ -413,11 +413,7 @@ func (m Model) handleGenerateParamsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.forms.boundaryPreset != nil {
 		escView = ViewBoundaryPreset
 	}
-	m = m.normalizeOverlayChoices(getKeyTypeByIndex(m.forms.generateKeyType))
 	m, cmd, errStr := m.handleParamModalKeys(msg, m.forms.generateKeyType, escView, ViewGenerating, submitFn)
-	if m.viewState == ViewGenerateParams {
-		m = m.normalizeOverlayChoices(getKeyTypeByIndex(m.forms.generateKeyType))
-	}
 	if errStr != "" || m.viewState == ViewGenerating || m.viewState == escView {
 		m.forms.generateError = errStr
 	}
@@ -695,19 +691,33 @@ func (m Model) initGenericLSigParams(keyTypeIndex int) Model {
 }
 
 func (m Model) initGenericLSigParamsForKeyType(keyType string) Model {
+	// The form is built from empty values, never from an earlier form's.
+	previous := m.forms.genericLSigParams
+	m.forms.genericLSigParams = make(map[string]string)
 	spec := m.paramSpecFor(keyType)
 	if spec == nil {
+		m.forms.genericLSigParams = previous
 		return m
 	}
 
 	params := spec.Params
-	m.forms.genericLSigParams = make(map[string]string)
 	m.forms.genericLSigParamOrder = make([]string, len(params))
 	m.forms.genericLSigParamModes = make(map[string]int)
 	m.forms.genericLSigParamScroll = make(map[string]int)
+	preset := m.forms.boundaryPreset
+	if preset != nil && keyType != m.forms.boundaryKeyType {
+		preset = nil
+	}
 	for i, p := range params {
 		m.forms.genericLSigParamOrder[i] = p.Name
 		m.forms.genericLSigParams[p.Name] = defaultParamValue(p)
+		// A preset's choice the form shows, such as the overlay form's rekey
+		// setting, starts as the preset made it.
+		if preset != nil {
+			if value, ok := preset.Fixed[p.Name]; ok {
+				m.forms.genericLSigParams[p.Name] = value
+			}
+		}
 		m.forms.genericLSigParamModes[p.Name] = 0 // Default to first input mode
 		m.forms.genericLSigParamScroll[p.Name] = 0
 	}
@@ -866,12 +876,10 @@ func (m Model) cycleCurrentParamOption(params []lsigprovider.ParameterDef, delta
 	if len(paramDef.Options) == 0 {
 		return m
 	}
-	current := indexOfOption(paramDef.Options, m.forms.genericLSigParams[paramDef.Name])
-	if current < 0 {
-		current = 0
-	} else {
-		current = (current + delta + len(paramDef.Options)) % len(paramDef.Options)
-	}
+	// Step from the option on screen, which a stored value the field no longer
+	// offers is not.
+	current := max(indexOfOption(paramDef.Options, shownOption(paramDef, m.forms.genericLSigParams[paramDef.Name])), 0)
+	current = (current + delta + len(paramDef.Options)) % len(paramDef.Options)
 	m.forms.genericLSigParams[paramDef.Name] = paramDef.Options[current]
 	return m
 }
@@ -1082,8 +1090,9 @@ func (m Model) applyInputModeTransforms(params []lsigprovider.ParameterDef) (map
 
 	for _, paramDef := range params {
 		value := m.forms.genericLSigParams[paramDef.Name]
-		if value == "" && len(paramDef.Options) > 0 {
-			value = defaultParamValue(paramDef)
+		if len(paramDef.Options) > 0 {
+			// What the field shows is what is sent.
+			value = shownOption(paramDef, value)
 		}
 		if paramDef.Type == "address[]" {
 			var err error

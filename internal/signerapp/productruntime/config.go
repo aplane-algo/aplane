@@ -82,14 +82,14 @@ func NewRuntimeConfig(userAutoApprove, lockOnDisconnect bool, sessionTimeout, ap
 	}
 }
 
-// SetGenerationRequirements sets the general-provider generation requirements.
+// SetGenerationRequirements sets the per-key types' generation requirements.
 func (c *RuntimeConfig) SetGenerationRequirements(contained, cosigner bool) {
 	c.mu.Lock()
 	c.requireContained, c.requireCosigner = contained, cosigner
 	c.mu.Unlock()
 }
 
-// GenerationRequirements returns the general-provider generation requirements.
+// GenerationRequirements returns the per-key types' generation requirements.
 func (c *RuntimeConfig) GenerationRequirements() (contained, cosigner bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()

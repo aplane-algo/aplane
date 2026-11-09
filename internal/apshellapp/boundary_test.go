@@ -210,6 +210,7 @@ func TestSplitGenerateOptions(t *testing.T) {
 		"empty value":        {"--boundary="},
 		"boundary twice":     {"--boundary=a", "--boundary=b"},
 		"result given twice": {"--result=a", "--result", "b"},
+		"flag as a value":    {"--result", "--boundary=corridor.yaml"},
 	} {
 		if _, _, err := SplitGenerateOptions(args); err == nil {
 			t.Fatalf("%s: SplitGenerateOptions(%v) accepted it", name, args)

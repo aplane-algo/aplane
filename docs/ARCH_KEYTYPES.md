@@ -330,9 +330,8 @@ explicitly; it cannot inherit both contracts unchanged.
 ### Naming a combination
 
 Use **rotating-bounded** for rotation plus a bounded spending envelope and
-**rotating-cosigned** for rotation plus an additional spending authority. In
-APlane "cosigned" usually means cosigner participation, so "rotating-cosigned"
-does not name a distinct policy dimension without further definition.
+**rotating-cosigned** for rotation plus a cosigner, an additional spending
+authority.
 
 Matching words across layers (capability, authorization contract, key type,
 signing flow, implementation) do not make them interchangeable. A `bounded2`
@@ -1620,8 +1619,10 @@ Every parameterized request is prepared first. A bounded
 result goes to a review screen that keeps fingerprints and digests in a details view.
 For an account with a rekey-to list (`prepare_generate_result.bounded.rekey_list`,
 under `only_these` or `plus_cosigned`) it also names every address in the resolved
-`rekey_to` and flags those this signer holds; on a post-quantum spending key (every
-`bounded2` account, and a plain host on a post-quantum base) it names the held targets
+`rekey_to` and flags those this signer holds; on a post-quantum spending key (the
+general type, and a plain host on a post-quantum base; an expert template's base isn't
+in the inventory, and `bounded2` admits Ed25519, so its review makes no such claim and
+says so) it names the held targets
 whose key type is classical, and asks the operator to confirm the others, since an
 address doesn't reveal its key type. The details say which kind of protection the rekey
 setting is: a refused rekey and `only_these` are independent of the online keys, while

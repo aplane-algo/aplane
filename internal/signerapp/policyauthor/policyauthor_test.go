@@ -243,7 +243,7 @@ func TestOpenWorkspaceKeepsAFileWithNoValidRole(t *testing.T) {
 	}
 }
 
-func TestDiskStateAndCosignedWrite(t *testing.T) {
+func TestDiskStateAndGuardedWrite(t *testing.T) {
 	dir := t.TempDir()
 	original := fixture(t, "signer_default.json")
 	path := writeFile(t, dir, "default.json", original)

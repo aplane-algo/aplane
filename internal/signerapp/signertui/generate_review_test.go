@@ -733,6 +733,20 @@ func TestReviewDetailsNameClassicalTargetsAndTheProtection(t *testing.T) {
 	if !strings.Contains(details, "As strong as its two online keys") {
 		t.Errorf("plus cosigned does not say it is as strong as its two online keys:\n%s", details)
 	}
+
+	// An expert template's base isn't in the inventory, and bounded2 admits an
+	// Ed25519 base, so the review makes no post-quantum claim about its targets.
+	template := prepared
+	template.KeyType = "example.bounded-ed25519.v1"
+	template.Bounded = &protocol.PreparedBoundedProfile{Contract: boundedmeta.Contract, Rekey: boundary.RekeyRefused, RekeyList: true, Layer3Policy: boundedmeta.Layer3PolicyFixedAllowlist}
+	m.forms.review = &template
+	details = strings.Join(strings.Fields(strings.ReplaceAll(stripANSI(m.renderGenerateReviewDetails()), "║", " ")), " ")
+	if strings.Contains(details, "confirm it is a post-quantum key") || strings.Contains(details, "a classical key, so") {
+		t.Errorf("an unknown base's targets are judged as a post-quantum account's:\n%s", details)
+	}
+	if !strings.Contains(details, "can't tell whether this key type's spending key is post-quantum") {
+		t.Errorf("an unknown base is not named as unknown:\n%s", details)
+	}
 }
 
 func TestReviewRekeyProtectionNamesEachKind(t *testing.T) {
@@ -746,6 +760,8 @@ func TestReviewRekeyProtectionNamesEachKind(t *testing.T) {
 		{boundary.RekeySpendingKey, true, true, "two online keys"},
 		{boundary.RekeySpendingKey, false, true, "two online keys"},
 		{boundary.RekeySpendingKey, false, false, "it alone can rekey it anywhere"},
+		{"some_future_setting", false, false, "claims no protection"},
+		{"some_future_setting", true, true, "claims no protection"},
 	} {
 		prepared := preparedAccount(boundedmeta.Layer3PolicyNone, test.rekey, test.cosigned, 0)
 		prepared.Bounded.RekeyList = test.listed

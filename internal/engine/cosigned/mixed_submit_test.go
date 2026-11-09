@@ -333,7 +333,7 @@ func newMixedTestSigner(t *testing.T, build func(c *cache.SignerCache)) *Signer 
 }
 
 // capturedSignRequest records the GroupSignRequest a mock user signer received.
-// req is mutex-cosigned so -race sees the handler write happen-before the test
+// req is mutex-guarded so -race sees the handler write happen-before the test
 // read; emptyAll is set before the server starts and read-only thereafter.
 type capturedSignRequest struct {
 	mu       sync.Mutex

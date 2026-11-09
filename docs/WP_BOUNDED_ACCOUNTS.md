@@ -208,7 +208,7 @@ should be distinct and separately managed.
 
 Rekey authority can remove the restrictions entirely. That is why the
 containment claim for Locked Allowlist and Corridor rests on refusing every
-rekey but one to a listed address, not on how well some rekey key is protected. A
+rekey but one to a listed address, not on how well some rekey key is guarded. A
 cosigned account that takes cosigned rekeys makes no such claim: it is only as
 strong as the spending key and the cosigner together, since both keys, or a
 cosigner node whose policy is compromised, can rekey it anywhere. A listed key does become part of the security model:

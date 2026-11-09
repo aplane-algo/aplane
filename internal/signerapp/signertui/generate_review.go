@@ -352,11 +352,11 @@ func (m Model) renderGenerateReviewDetails() string {
 		}
 	}
 	if targets := rekeyToList(*review); len(targets) > 0 {
-		postQuantum := reviewSpendingKeyPostQuantum(*review)
+		postQuantum, known := reviewSpendingKeyPostQuantum(*review)
 		sb.WriteString(fmt.Sprintf("Rekey-to addresses (%d):\n", len(targets)))
 		for _, target := range targets {
 			sb.WriteString("  " + target + "\n")
-			if note := m.rekeyTargetNote(target, postQuantum); note != "" {
+			if note := m.rekeyTargetNote(target, postQuantum && known); note != "" {
 				sb.WriteString(indentLines(wrapText(note, 64), "    ") + "\n")
 			}
 		}
@@ -364,9 +364,14 @@ func (m Model) renderGenerateReviewDetails() string {
 		if review.Bounded.CosignerRequired {
 			cosigner = ", without the cosigner and outside its policy"
 		}
+		unknown := ""
+		if !known {
+			unknown = " This client can't tell whether this key type's spending key is post-quantum; " +
+				"if it is, list only post-quantum keys, since an address doesn't reveal its key type."
+		}
 		sb.WriteString(wrapText("Each listed address can take the account over with the spending key alone, "+
 			"at any time"+cosigner+"; in a mesh, each is an exit. "+
-			"The list is in the key's backup and can't be used without it.", 68) + "\n")
+			"The list is in the key's backup and can't be used without it."+unknown, 68) + "\n")
 	}
 	return m.renderPopup(72, sb.String())
 }
@@ -517,13 +522,12 @@ func keyTypePostQuantum(keyType string) (postQuantum, known bool) {
 }
 
 // reviewSpendingKeyPostQuantum reports whether the new account's spending key
-// is post-quantum: bounded2 is Falcon-only, and a plain host's base decides.
-func reviewSpendingKeyPostQuantum(review PrepareGenerateResultMessage) bool {
-	if review.Bounded != nil && review.Bounded.Contract == boundedmeta.Contract {
-		return true
-	}
-	pq, known := keyTypePostQuantum(review.KeyType)
-	return known && pq
+// is post-quantum, where the key type tells this client: a plain host's base,
+// and the general type's Falcon-1024. The contract alone doesn't: an expert
+// template may put bounded2 on an Ed25519 base, and the inventory doesn't name
+// a template's base.
+func reviewSpendingKeyPostQuantum(review PrepareGenerateResultMessage) (postQuantum, known bool) {
+	return keyTypePostQuantum(review.KeyType)
 }
 
 // reviewRekeyProtection says which kind of protection the rekey setting is: only
@@ -531,12 +535,14 @@ func reviewSpendingKeyPostQuantum(review PrepareGenerateResultMessage) bool {
 // the online keys.
 func reviewRekeyProtection(review PrepareGenerateResultMessage) string {
 	profile := review.Bounded
-	switch {
-	case profile.RekeyList && boundedmeta.RekeySetting(profile.Rekey) == boundedmeta.RekeyRefused:
+	switch setting := boundedmeta.RekeySetting(profile.Rekey); {
+	case setting != boundedmeta.RekeyRefused && setting != boundedmeta.RekeySpendingKey:
+		return "This client cannot describe that rekey setting, so it claims no protection for it."
+	case profile.RekeyList && setting == boundedmeta.RekeyRefused:
 		return "Independent of the online keys: rekeys go only to the listed addresses."
 	case profile.RekeyList:
 		return "As strong as its two online keys: together they can rekey it anywhere their policies allow."
-	case boundedmeta.RekeySetting(profile.Rekey) == boundedmeta.RekeyRefused:
+	case setting == boundedmeta.RekeyRefused:
 		return "Independent of the online keys: no key can rekey it."
 	case profile.CosignerRequired:
 		return "As strong as its two online keys: together they can rekey it anywhere their policies allow."

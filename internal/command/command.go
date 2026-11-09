@@ -56,9 +56,9 @@ type AutomationPolicy struct {
 // StructuredAutomation permits non-interactive execution.
 var StructuredAutomation = AutomationPolicy{Disposition: AutomationStructured}
 
-// CosignedStructuredAutomation permits non-interactive execution when guard
+// GuardedStructuredAutomation permits non-interactive execution when guard
 // accepts the command arguments.
-func CosignedStructuredAutomation(guard func([]string) error) AutomationPolicy {
+func GuardedStructuredAutomation(guard func([]string) error) AutomationPolicy {
 	return AutomationPolicy{Disposition: AutomationStructured, Guard: guard}
 }
 

@@ -1161,7 +1161,8 @@ type GetAdminSettingsMessage struct {
 type AdminSettingsMessage struct {
 	BaseMessage
 	UserAutoApprove bool `json:"user_auto_approve"`
-	// These restrict new aplane.falcon1024-b.v1 accounts only.
+	// These restrict new accounts of the per-key types (aplane.falcon1024-b.v1
+	// and the plain hosts) only.
 	RequireContained     bool   `json:"require_contained,omitempty"`
 	RequireCosigner      bool   `json:"require_cosigner,omitempty"`
 	LockOnDisconnect     bool   `json:"lock_on_disconnect"`

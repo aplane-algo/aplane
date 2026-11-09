@@ -32,7 +32,7 @@ var (
 	ErrCosignerDiscoveryConfig          = cosigned.ErrCosignerDiscoveryConfig
 )
 
-// cosignedSignerCacheView adapts the engine's concurrency-cosigned signer key
+// cosignedSignerCacheView adapts the engine's concurrency-guarded signer key
 // cache to the cosigned package's read-only SignerCacheView.
 type cosignedSignerCacheView struct{ core *Core }
 

@@ -2306,7 +2306,7 @@ is in [ARCH_STORE.md](ARCH_STORE.md#keys-and-key-types).
 6. IPC messages are line-delimited JSON with typed message contracts.
 7. `/sign` and `/plan` share canonical group-shaping rules.
 8. Plugins are process-isolated with no direct keystore access.
-9. Offline keystore mutations (`apstore`) are protected by the store lock, not transport-specific liveness probes.
+9. Offline keystore mutations (`apstore`) are guarded by the store lock, not transport-specific liveness probes.
 10. Durable signer state is rooted at `identities/default/`; request and
     runtime models do not expose a runtime selector.
 11. Product UI/docs are single-operator and single-signing-identity.

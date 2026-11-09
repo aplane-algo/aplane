@@ -30,7 +30,7 @@ const (
 // SignerCacheView is the read-only view of the signer key cache that cosigned
 // orchestration needs: per-address signer-advertised metadata used to detect
 // cosigned targets and size LogicSig budgets. It is implemented by the engine
-// over its concurrency-cosigned signer cache.
+// over its concurrency-guarded signer cache.
 type SignerCacheView interface {
 	// AuthorizationKind returns the cached authorization envelope and whether
 	// the address is present. A present address with an empty kind is invalid.

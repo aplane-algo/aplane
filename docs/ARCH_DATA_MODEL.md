@@ -981,7 +981,7 @@ keys.
 
 1. Client prepares transaction bytes and metadata.
 2. Client classifies effective signers from inventory (`signing_flow` and key
-   type). Cosigned targets use the cosigned (cosigned) lifecycle below; rotating accounts use
+   type). Cosigned targets use the cosigned lifecycle below; rotating accounts use
    `/sign/rotating/prepare` and `/sign/rotating/sign`; ordinary targets use
    `/plan` or `/sign`.
 3. Signer validates request shape and transaction network. Plain `/sign`

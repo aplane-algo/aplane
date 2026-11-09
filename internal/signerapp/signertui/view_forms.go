@@ -235,7 +235,8 @@ func (m Model) renderParameterModalForKeyType(keyType, buttonVerb, errorMsg stri
 	endIdx := min(startIdx+m.visibleParamModalFields(), len(params))
 	trailing := 1 + 1 + lipgloss.Height(buttonActiveStyle.Render("[ "+buttonVerb+" ]")) + 1
 	if errorMsg != "" {
-		trailing += lipgloss.Height(errorStyle.Render(errorMsg)) + 1
+		// As the popup wraps it, which a long refusal from the signer needs.
+		trailing += lipgloss.Height(lipgloss.NewStyle().Width(m.popupBodyWidth(80)).Render(errorMsg)) + 1
 	}
 	for i := startIdx; i < endIdx; i++ {
 		// A group's title comes before its first field, and above the first
@@ -287,9 +288,12 @@ func (m Model) renderParamField(sb *strings.Builder, spec *paramSpec, keyType st
 	isCosignerSelector := m.isCosignerSelectorParam(keyType, paramDef)
 	labelText, modeHint := m.paramFieldLabel(paramDef, focused, isCosignerSelector)
 	if spec != nil && spec.Overlay && isOverlayParameter(paramDef.Name) {
-		// The overlay controls are choices; "Require a cosigner" needs no
-		// "(optional)" after it.
+		// The overlay controls are choices, so "Require a cosigner" needs no
+		// "(optional)"; one a preset needs says so instead.
 		labelText = paramDef.Label
+		if paramDef.Required && paramDef.Name != overlayRekey {
+			labelText += " (required)"
+		}
 	}
 	if focused {
 		sb.WriteString("> " + labelText + ":")

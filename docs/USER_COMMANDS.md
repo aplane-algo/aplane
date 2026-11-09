@@ -763,9 +763,10 @@ cosigner's address:
    should use, taken from `endpoint.advertise_url` when it is configured.
 2. **On the primary signer:** choose a key type that takes a cosigner: the
    general bounded type (`aplane.falcon1024-b.v1`, enabled by default, with
-   the Corridor preset) or the cosigned type, which must be enabled first.
-   In apadmin, **Generate account**, select that type, open the **Cosigner**
-   field, and choose **Use key file...** (or **Paste public
+   the Corridor preset) or a plain host (`aplane.falcon1024.v1` or
+   `aplane.ed25519.v1`), which must be enabled first. In apadmin, **Generate
+   account**, select that type, open **Require a cosigner (Falcon-1024)**, and
+   choose **Use key file...** (or **Paste public
    JSON...**). Compare the complete Witness Key ID with the cosigner, then
    import. The account form returns with the cosigner filled in and the other
    parameters kept. A key that is already imported is offered under its
@@ -1066,7 +1067,7 @@ The interactive signer-side `apadmin` TUI provides the same public-reference
 catalog under `e: Cosigners`. It uses aliases for navigation, shows the complete
 grouped Witness Key ID on trust screens, and can start generation of a
 compatible cosigned or bounded-cosigner account without exposing a raw Falcon
-public-key input. The account-generation **Cosigner** field also offers **Use
+public-key input. The account-generation **Require a cosigner** field also offers **Use
 key file...** and **Paste public JSON...**, which import a key in place and
 return to the form with it selected; a key that is already imported is offered
 under its existing name.

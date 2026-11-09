@@ -34,7 +34,8 @@ type AdminSettings struct {
 	EndpointAdvertiseURL string
 	EndpointDisplayURL   string
 	Theme                string
-	// These restrict new aplane.falcon1024-b.v1 accounts only.
+	// These restrict new accounts of the per-key types (aplane.falcon1024-b.v1
+	// and the plain hosts) only.
 	RequireContained bool
 	RequireCosigner  bool
 }

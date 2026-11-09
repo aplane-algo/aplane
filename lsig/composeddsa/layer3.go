@@ -304,7 +304,7 @@ func (c *ComposedDSA) renderFixedAllowlist(params map[string]string, profile *Bo
 
 	// The self-recipient branches keep their own labels ahead of the jump to
 	// done. The label names predate the removal of the amount and asset checks
-	// they once cosigned; the TEAL text and its branch offsets are frozen by the
+	// they once guarded; the TEAL text and its branch offsets are frozen by the
 	// allowlist goldens, and the offsets decide fixed-list account addresses.
 	if profileAllowsSpendEffect(profile, txeffects.SpendEffectPay) {
 		b.WriteString("__aplane_bounded1_layer3_pay:\n")

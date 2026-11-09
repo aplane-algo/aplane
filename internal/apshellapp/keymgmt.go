@@ -50,7 +50,9 @@ func SplitGenerateOptions(args []string) (GenerateOptions, []string, error) {
 			return GenerateOptions{}, nil, fmt.Errorf("unknown flag %s (generate takes %s and %s)", name, GenerateFlagBoundaryFile, GenerateFlagResultFile)
 		}
 		if !hasValue {
-			if i+1 >= len(args) {
+			// The next argument is the file, unless it is another flag: one
+			// flag never swallows the next.
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
 				return GenerateOptions{}, nil, fmt.Errorf("%s needs a file", name)
 			}
 			i++

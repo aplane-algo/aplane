@@ -649,7 +649,7 @@ each MCP server instance uses its own:
 - [ARCH_OVERVIEW.md](ARCH_OVERVIEW.md) — system architecture and identity model
 - [ARCH_SIGNING.md](ARCH_SIGNING.md) — transaction/group/signing flow
 - [ARCH_POLICY.md](ARCH_POLICY.md) / [USER_POLICY.md](USER_POLICY.md) — policy and approval
-- [ARCH_COSIGNED.md](ARCH_COSIGNED.md) — cosigned (cosigned) signing
+- [ARCH_COSIGNED.md](ARCH_COSIGNED.md) — cosigned signing
 - [USER_KEYTYPES.md](USER_KEYTYPES.md) / [KEYTYPE_CAPABILITIES.md](KEYTYPE_CAPABILITIES.md) — key types
 - [ARCH_PLUGINS.md](ARCH_PLUGINS.md) — plugins
 - [USER_QUICKSTART_LOCALNET.md](USER_QUICKSTART_LOCALNET.md) / [USER_QUICKSTART.md](USER_QUICKSTART.md) — getting started

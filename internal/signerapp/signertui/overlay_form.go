@@ -26,7 +26,9 @@ import (
 //
 // Every combination the type declares is offered, and nothing here refuses or
 // gates a choice: the review states what the account can do, and the signer
-// checks the request.
+// checks the request. The stored rekey value is the operator's (or the
+// preset's) last choice; while the control doesn't offer it, the control shows
+// and sends its first option instead, and the choice returns when it fits again.
 const (
 	overlayCosigner = boundary.ParameterCosigner
 	overlayList     = boundary.ParameterRekeyTo
@@ -147,7 +149,8 @@ func (m Model) overlaySpec(keyType string, spec *paramSpec, preset *boundary.Pre
 
 	values := m.forms.genericLSigParams
 	cosigned := strings.TrimSpace(values[overlayCosigner]) != ""
-	listed := strings.TrimSpace(values[overlayList]) != ""
+	// A preset that needs a list shows the list's options from the start.
+	listed := strings.TrimSpace(values[overlayList]) != "" || needs[overlayList]
 
 	cosigner := lsigprovider.ParameterDef{
 		Name:        overlayCosigner,
@@ -196,27 +199,6 @@ func (m Model) overlaySpec(keyType string, spec *paramSpec, preset *boundary.Pre
 			return value
 		},
 	}
-}
-
-// normalizeOverlayChoices keeps the rekey control on a setting it offers. Adding
-// or clearing the list, or clearing the cosigner, changes what it offers, and a
-// setting it no longer offers moves to its first.
-func (m Model) normalizeOverlayChoices(keyType string) Model {
-	if m.forms.genericLSigParams == nil {
-		return m
-	}
-	spec := m.paramSpecFor(keyType)
-	if spec == nil || !spec.Overlay {
-		return m
-	}
-	rekey, ok := paramNamed(spec.Params, overlayRekey)
-	if !ok || len(rekey.Options) == 0 {
-		return m
-	}
-	if indexOfOption(rekey.Options, m.forms.genericLSigParams[overlayRekey]) < 0 {
-		m.forms.genericLSigParams[overlayRekey] = rekey.Options[0]
-	}
-	return m
 }
 
 // dropEmptyParameters leaves out the fields left empty: an overlay form sends
