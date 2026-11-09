@@ -8,7 +8,8 @@
 //
 // What happens after the verdict (User Auto-Approve, the operator prompt,
 // reviewability, audit and console output) and refusals made before policy
-// (an unknown network, a rekey to a rotating account) stay with the caller.
+// (an unknown network, a rekey to a rotating account, a nonparticipating
+// keyreg) stay with the caller.
 package policyeval
 
 import (

@@ -42,28 +42,28 @@ func (s *Service) rejectRotatingComponentRequest(req signerapi.ComponentRequest)
 
 // rejectRekeyToRotating refuses a signed position that rekeys another account
 // to a rotating account this signer holds. A rotating account's address is
-// its stage 0 program, a one-time authority the rotating flow spends and
-// retires on the account's own first spend; an account rekeyed to it would be
-// pinned to that stage, outside any rotation, and every signature for it
-// would reuse a stage. The rotating flow's own rekeys go to a stage address
-// and pass. This is a signer invariant, not a policy setting.
-func (s *Service) rejectRekeyToRotating(txns []types.Transaction, evalCount int, passthroughIndices, foreignIndices map[int]bool) *ServiceError {
+// its stage 0 program, a one-time stage key the rotating flow spends and
+// retires on the account's own first spend. An account rekeyed to it would be
+// stuck on that stage, outside any rotation, and every signature for it would
+// reuse that one-time key. The rotating flow's own rekeys go to a stage
+// address and pass. This is a signer invariant, not a policy setting. signed
+// lists the zero-based positions this signer signs (signerPositions).
+func (s *Service) rejectRekeyToRotating(txns []types.Transaction, signed []int) *ServiceError {
 	if s.Planner == nil || s.Planner.Snapshot == nil {
 		return nil
 	}
 	keyTypes := s.Planner.Snapshot().KeyTypes
-	limit := evalCount
-	if limit > len(txns) {
-		limit = len(txns)
-	}
-	for i := 0; i < limit; i++ {
+	for _, i := range signed {
+		if i < 0 || i >= len(txns) {
+			return positionOutsideGroup(i, len(txns))
+		}
 		txn := txns[i]
-		if passthroughIndices[i] || foreignIndices[i] || txn.RekeyTo.IsZero() || txn.RekeyTo == txn.Sender {
+		if txn.RekeyTo.IsZero() || txn.RekeyTo == txn.Sender {
 			continue
 		}
 		target := txn.RekeyTo.String()
 		if rotatingkey.IsRotatingKeyType(keyTypes[target]) {
-			return forbidden(fmt.Sprintf("transaction %d: cannot rekey to %s: it is a rotating account, whose address authorizes only itself", i+1, target))
+			return withTransactionIndex(i, forbidden(rotatingkey.RekeyTargetRefusal(target)))
 		}
 	}
 	return nil

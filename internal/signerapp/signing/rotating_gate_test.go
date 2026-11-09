@@ -87,21 +87,45 @@ func TestRejectRekeyToRotatingAccount(t *testing.T) {
 	rekey := func(sender, to types.Address) types.Transaction {
 		return types.Transaction{Header: types.Header{Sender: sender, RekeyTo: to}}
 	}
-	none := map[int]bool{}
-
-	err := svc.rejectRekeyToRotating([]types.Transaction{rekey(plain, other), rekey(plain, rotating)}, 2, none, none)
-	if err == nil || err.HTTPStatus() != 403 || !strings.HasPrefix(err.Message, "transaction 2:") || !strings.Contains(err.Message, rotating.String()) {
-		t.Fatalf("rekey to a rotating account: err = %v", err)
+	err := svc.rejectRekeyToRotating([]types.Transaction{rekey(plain, other), rekey(plain, rotating)}, []int{0, 1})
+	if want := "transaction 2: " + rotatingkey.RekeyTargetRefusal(rotating.String()); err == nil || err.HTTPStatus() != 403 || err.Message != want {
+		t.Fatalf("rekey to a rotating account: err = %v, want 403 %q", err, want)
 	}
-	if err := svc.rejectRekeyToRotating([]types.Transaction{rekey(plain, rotating)}, 1, none, map[int]bool{0: true}); err != nil {
-		t.Fatalf("foreign position was judged: %v", err)
+	// Positions this signer doesn't sign are not judged.
+	if err := svc.rejectRekeyToRotating([]types.Transaction{rekey(plain, rotating)}, nil); err != nil {
+		t.Fatalf("an unsigned position was judged: %v", err)
 	}
 	// The rotating flow's own spend rekeys the account to its next stage.
-	if err := svc.rejectRekeyToRotating([]types.Transaction{rekey(rotating, stage)}, 1, none, none); err != nil {
+	if err := svc.rejectRekeyToRotating([]types.Transaction{rekey(rotating, stage)}, []int{0}); err != nil {
 		t.Fatalf("rotation to a stage address refused: %v", err)
 	}
-	if err := svc.rejectRekeyToRotating([]types.Transaction{rekey(plain, other), {Header: types.Header{Sender: plain}}}, 2, none, none); err != nil {
+	if err := svc.rejectRekeyToRotating([]types.Transaction{rekey(plain, other), {Header: types.Header{Sender: plain}}}, []int{0, 1}); err != nil {
 		t.Fatalf("ordinary rekey refused: %v", err)
+	}
+}
+
+// A foreign or passthrough position isn't this signer's signature, so the
+// gate sequence doesn't refuse its rekey to a rotating account.
+func TestApprovalGatesSkipRotatingRekeyAtUnsignedPositions(t *testing.T) {
+	sender := types.Address{1}
+	rotating := types.Address{2}
+	svc := &Service{Planner: &Planner{Snapshot: func() PlannerRuntimeSnapshot {
+		return PlannerRuntimeSnapshot{KeyTypes: map[string]string{rotating.String(): rotatingkey.RotatingTripleWotscV1}}
+	}}}
+	rekey := types.Transaction{Header: types.Header{Sender: sender, RekeyTo: rotating}}
+	for name, in := range map[string]gateInput{
+		"foreign":     {ForeignIndices: map[int]bool{0: true}},
+		"passthrough": {PassthroughIndices: map[int]bool{0: true}},
+	} {
+		in.AllTxns = []types.Transaction{rekey}
+		in.EvalCount = 1
+		// No policy is loaded and the slot is not this signer's, so the policy
+		// gate passes it and the operator default decides.
+		in.RequestOperatorApproval = func(context.Context, string) *ServiceError { return forbidden("reached the operator") }
+		_, err := svc.runApprovalGates(context.Background(), in, nil)
+		if err == nil || err.Message != "reached the operator" {
+			t.Fatalf("%s: err = %v, want it past the signer invariants", name, err)
+		}
 	}
 }
 
@@ -125,7 +149,7 @@ func TestApprovalGatesRefuseRekeyToRotatingBeforePolicy(t *testing.T) {
 	if err == nil || err.HTTPStatus() != 403 || !strings.Contains(err.Message, "rotating account") {
 		t.Fatalf("err = %v, want the rekey-to-rotating refusal", err)
 	}
-	if logged == "" {
-		t.Fatal("rejection was not logged")
+	if want := auditSignerInvariant + err.Message; logged != want {
+		t.Fatalf("logged = %q, want %q: a signer invariant is audited as one on the signer role too", logged, want)
 	}
 }

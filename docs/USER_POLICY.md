@@ -1032,6 +1032,10 @@ rejected by `*` before any other rule runs; the rejection is reported as
 prompts when User Auto-Approve is off; with it on, review is satisfied automatically. Keep `*` in the map; it is
 required.
 
+A `keyreg` verdict, `allow` included, covers online and offline registrations
+only. The signer refuses a nonparticipating `keyreg` itself, whatever the
+policy says: it marks the account as unable to participate, permanently.
+
 ### 4. Add document-level limits
 
 ```json

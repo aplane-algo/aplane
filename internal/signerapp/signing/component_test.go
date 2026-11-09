@@ -329,14 +329,14 @@ func TestCosignerComponentPolicyIsSelectedByComponentKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("prepareComponentSigning() error = %v", err)
 	}
-	if signErr := svc.evaluateCosignerComponentPolicy(plan); signErr != nil {
-		t.Fatalf("evaluateCosignerComponentPolicy() error = %v", signErr)
+	if signErr := svc.runCosignerGates(plan); signErr != nil {
+		t.Fatalf("runCosignerGates() error = %v", signErr)
 	}
 
 	plan.ComponentKey = firstKey
-	signErr := svc.evaluateCosignerComponentPolicy(plan)
+	signErr := svc.runCosignerGates(plan)
 	if signErr == nil || !strings.Contains(signErr.Message, policy.TransferRoutingRouteMissRuleID) {
-		t.Fatalf("evaluateCosignerComponentPolicy(first key) error = %#v, want route miss", signErr)
+		t.Fatalf("runCosignerGates(first key) error = %#v, want route miss", signErr)
 	}
 }
 

@@ -162,7 +162,7 @@ generation records say what committed. Offline `apadmin policy rescue` and
 |-------|-------------|
 | `SIGN_REQUEST` | Transaction submitted for signing |
 | `SIGN_APPROVED` | Transaction signed successfully by the signer (not emitted for passthrough or foreign entries) |
-| `SIGN_REJECTED` | Transaction rejected by policy or operator |
+| `SIGN_REJECTED` | Transaction rejected. A refusal before the operator names its source in the reason: `signer_invariant:` (a refusal no policy can allow, such as a nonparticipating `keyreg` or a rekey to a rotating account, on either node role), `policy_engine_rejected:` (the signer's policy) or `cosigner_policy_rejected:` (a cosigner's policy). Other reasons record the operator's decision |
 | `SIGN_FAILED` | Signing failed due to a technical error (key not found, assembly error, etc.) |
 | `ROTATING_RELEASE` | A rotating-account signature was released; retained records rebuild release and leaf-use history after unlock |
 | `ROTATING_RECOVERY` | A rotating-account recovery action or outcome was recorded |
@@ -173,7 +173,7 @@ generation records say what committed. Offline `apadmin policy rescue` and
 |-------|-------------|
 | `AUTH_FAILED` | Authentication attempt failed; `remote_addr` identifies the client |
 | `AUTH_FAILURES_SUPPRESSED` | Unauthenticated failures beyond the rate limit (a burst of 20, then one per 6 seconds) were counted instead of logged individually; `suppressed_count` is the number |
-| `COSIGNER_REJECTIONS_SUPPRESSED` | Cosigner policy rejections beyond the same rate limit were counted instead of logged individually; `suppressed_count` is the number. Cosigner signatures are always logged individually |
+| `COSIGNER_REJECTIONS_SUPPRESSED` | Cosigner rejections (policy rejections and signer-invariant refusals) beyond the same rate limit were counted instead of logged individually; `suppressed_count` is the number. Cosigner signatures are always logged individually |
 | `AUTHORIZATION_DENIED` | Authenticated admin principal lacked authorization for the requested action/resource |
 
 ### Sessions
