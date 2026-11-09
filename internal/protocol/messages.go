@@ -763,8 +763,9 @@ type PrepareGenerateKeyMessage struct {
 type PreparedBoundedProfile struct {
 	Contract     string   `json:"contract"`
 	SpendEffects []string `json:"spend_effects"`
-	MaxFee       uint64   `json:"max_fee"`
-	Rekey        string   `json:"rekey"`
+	// MaxFee is absent for a plain host, which has no fee ceiling.
+	MaxFee *uint64 `json:"max_fee,omitempty"`
+	Rekey  string  `json:"rekey"`
 	// RekeyList is set when the account has a rekey-to list, which the request's
 	// rekey_to parameter holds: "only these" under rekey refused, "plus cosigned"
 	// under a spending-key rekey on a cosigned account.
@@ -1098,6 +1099,7 @@ type KeyTypeInfo struct {
 	MnemonicScheme           string              `json:"mnemonic_scheme"`
 	CosignerComponentKeyType string              `json:"cosigner_component_key_type,omitempty"`
 	PerKeyContract           bool                `json:"per_key_contract,omitempty"`
+	BoundarySchema           string              `json:"boundary_schema,omitempty"`
 	CreationParams           []TemplateParamInfo `json:"creation_params"`
 	RuntimeArgs              []TemplateArgInfo   `json:"runtime_args"`
 }

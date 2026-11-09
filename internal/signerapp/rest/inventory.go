@@ -63,11 +63,6 @@ func (s Service) BuildKeyInfoList(ir *productruntime.Runtime) []signerapi.KeyInf
 			keyInfo.IsWitnessKey = true
 			keyInfo.IsSpendingAccount = &spending
 		}
-		if keytypes.IsGuardedAccountKeyType(keyType) {
-			keyInfo.SigningFlow = signerapi.SigningFlowCosigner1
-			keyInfo.CosignerComponentKeyType, _ = keytypes.CosignerComponentKeyTypeForGuardedAccount(keyType)
-			keyInfo.Parameters = guardedAccountParameters(keyType, summary.Parameters)
-		}
 		if rotatingkey.IsRotatingKeyType(keyType) {
 			// Stage keys never leave the signer; only the account address does.
 			keyInfo.PublicKeyHex = ""
@@ -128,17 +123,6 @@ func publicLogicSigResourceProfile(profile *lsigresource.Profile) *signerapi.Log
 		SpendingRekey: usage(profile.SpendingRekey),
 		ListedRekey:   usage(profile.ListedRekey),
 	}
-}
-
-func guardedAccountParameters(_ string, parameters map[string]string) map[string]string {
-	cosignerPublicKey := parameters[keytypes.ParameterCosignerPublicKey]
-	if cosignerPublicKey == "" {
-		return nil
-	}
-	out := map[string]string{
-		keytypes.ParameterCosignerPublicKey: cosignerPublicKey,
-	}
-	return out
 }
 
 // boundedInventoryParameterNames is the explicit public projection of current
@@ -264,10 +248,6 @@ func (s Service) buildKeyTypes(validTypes []string, enabledGeneric []string) []s
 			keyTypes = append(keyTypes, rotatingKeyTypeInfo(info, s.networkNames()))
 			continue
 		}
-		if componentType, ok := keytypes.CosignerComponentKeyTypeForGuardedAccount(keyType); ok {
-			info.SigningFlow = signerapi.SigningFlowCosigner1
-			info.CosignerComponentKeyType = componentType
-		}
 
 		meta, err := algorithm.GetMetadata(keyType)
 		if err == nil {
@@ -299,6 +279,9 @@ func (s Service) buildKeyTypes(validTypes []string, enabledGeneric []string) []s
 			if resolver, ok := provider.(lsigprovider.InstanceResolver); ok {
 				info.PerKeyContract = true
 				info.CosignerComponentKeyType, _ = resolver.CosignerComponentKeyType(map[string]string{cosignerrefs.ParamCosignerName: ""})
+				if grammar, ok := provider.(boundaryGrammarProvider); ok {
+					info.BoundarySchema = grammar.BoundarySchema()
+				}
 			}
 
 			for _, p := range provider.CreationParams() {
@@ -403,6 +386,12 @@ func (s Service) buildKeyTypes(validTypes []string, enabledGeneric []string) []s
 	return keyTypes
 }
 
+// boundaryGrammarProvider is a per-key type whose requests a boundary file
+// grammar describes.
+type boundaryGrammarProvider interface {
+	BoundarySchema() string
+}
+
 type boundedInventoryProvider interface {
 	BoundedAuthorizationMetadata() *boundedmeta.Metadata
 }
@@ -424,8 +413,8 @@ func boundedInfo(metadata *boundedmeta.Metadata) *signerapi.BoundedAuthorization
 			Count:    metadata.BaseSignatureArgLayout.Count,
 			MaxSizes: append([]int(nil), metadata.BaseSignatureArgLayout.MaxSizes...),
 		},
-		SpendEffects: append([]string(nil), metadata.SpendEffects...),
-		MaxFee:       metadata.MaxFee,
+		SpendEffects: append([]string{}, metadata.SpendEffects...), // [] on a plain host, never null
+		MaxFee:       boundedmeta.CloneMaxFee(metadata.MaxFee),
 		Layer3Policy: metadata.Layer3Policy,
 	}
 	if metadata.Cosigner != nil {

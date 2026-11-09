@@ -13,11 +13,12 @@ import (
 )
 
 // ComponentSignRole is an internal gate/message role derived from the public
-// component target kind. It is not part of the HTTP request surface.
+// component target kind. It is not part of the HTTP request surface. The cosigner
+// is the only role a component is signed in; a cosigned account's spending key
+// releases its base component through the bounded flow.
 type ComponentSignRole string
 
 const (
-	ComponentSignRoleUser     ComponentSignRole = "user"
 	ComponentSignRoleCosigner ComponentSignRole = "cosigner"
 )
 
@@ -88,14 +89,8 @@ func prepareComponentSigning(req componentPlanRequest) (*ComponentSignPlan, *Ser
 }
 
 func (r componentPlanRequest) validate() error {
-	switch r.Role {
-	case ComponentSignRoleUser:
-		if r.ComponentKey == "" {
-			return fmt.Errorf("component_key is required for user role")
-		}
-	case ComponentSignRoleCosigner:
-	default:
-		return fmt.Errorf("role must be %q or %q", ComponentSignRoleUser, ComponentSignRoleCosigner)
+	if r.Role != ComponentSignRoleCosigner {
+		return fmt.Errorf("role must be %q", ComponentSignRoleCosigner)
 	}
 	if len(r.GroupBytesHex) == 0 {
 		return fmt.Errorf("group_bytes_hex is empty")
@@ -117,12 +112,8 @@ func (r componentPlanRequest) validate() error {
 }
 
 func componentMessageRole(role ComponentSignRole) (message.Role, error) {
-	switch role {
-	case ComponentSignRoleUser:
-		return message.RoleUser, nil
-	case ComponentSignRoleCosigner:
-		return message.RoleCosigner, nil
-	default:
-		return 0, fmt.Errorf("role must be %q or %q", ComponentSignRoleUser, ComponentSignRoleCosigner)
+	if role != ComponentSignRoleCosigner {
+		return 0, fmt.Errorf("role must be %q", ComponentSignRoleCosigner)
 	}
+	return message.RoleCosigner, nil
 }

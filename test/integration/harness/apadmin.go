@@ -279,7 +279,7 @@ func (v *ApAdminHarness) GenerateKeyWithType(keyType string) (string, error) {
 
 // GenerateKeyWithTypeAndParams generates a key of the specified type with
 // creation parameters over the admin IPC protocol. This is required for key
-// types that need generation inputs, such as a guarded account that embeds a
+// types that need generation inputs, such as a plain host that embeds a
 // cosigner_public_key. Returns the generated address and tracks it for cleanup.
 func (v *ApAdminHarness) GenerateKeyWithTypeAndParams(keyType string, params map[string]string) (string, error) {
 	response, err := v.ipcRequest(protocol.GenerateKeyMessage{

@@ -86,7 +86,7 @@ func TestCanonicalBoundedBehaviorParametersEncodesAbsentOptionalScalar(t *testin
 
 func TestCanonicalBoundedCosignerProfileGolden(t *testing.T) {
 	profile := &BoundedAuthorizationProfile{
-		Contract: BoundedContract, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: 1_000,
+		Contract: BoundedContract, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: new(uint64(1_000)),
 		Rekey: boundedmeta.RekeyRefused,
 		Cosigner: &boundedmeta.CosignerAuthorization{
 			Contract: boundedmeta.CosignerContractV1, ComponentKeyType: boundedmeta.CosignerComponentKeyTypeV1,
@@ -95,7 +95,7 @@ func TestCanonicalBoundedCosignerProfileGolden(t *testing.T) {
 	}
 	metadata := &boundedmeta.Metadata{
 		Contract: BoundedContract, BaseSignatureArgLayout: SignatureArgLayout{Count: 1, MaxSizes: []int{4}},
-		SpendEffects: []string{boundedmeta.SpendEffectPay}, MaxFee: 1_000, Rekey: boundedmeta.RekeyRefused,
+		SpendEffects: []string{boundedmeta.SpendEffectPay}, MaxFee: new(uint64(1_000)), Rekey: boundedmeta.RekeyRefused,
 		Layer3Policy: boundedmeta.Layer3PolicyCustom, Cosigner: profile.Cosigner,
 		ArgumentLayout: []boundedmeta.ArgumentSlot{
 			{Index: 0, Name: "base_signature_0", Source: boundedmeta.ArgSourceBaseSignature, MaxSize: 4, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgRequired, ListedRekey: boundedmeta.ArgRequired}},
@@ -114,7 +114,7 @@ func TestCanonicalBoundedCosignerProfileGolden(t *testing.T) {
 
 func TestBoundedAuthorizationMetadataSnapshotsCosignerContract(t *testing.T) {
 	profile := &BoundedAuthorizationProfile{
-		Contract: BoundedContract, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: 1_000,
+		Contract: BoundedContract, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: new(uint64(1_000)),
 		Rekey: boundedmeta.RekeyRefused,
 		Cosigner: &boundedmeta.CosignerAuthorization{
 			Contract: boundedmeta.CosignerContractV1, ComponentKeyType: boundedmeta.CosignerComponentKeyTypeV1,
@@ -179,7 +179,7 @@ func TestBoundedComposerEmitsOrderedEnvelope(t *testing.T) {
 	provider := newBoundedTestProvider(&BoundedAuthorizationProfile{
 		Contract:     BoundedContract,
 		SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectAxfer, txeffects.SpendEffectPay},
-		MaxFee:       7_000,
+		MaxFee:       new(uint64(7_000)),
 		Rekey:        boundedmeta.RekeySpendingKey,
 	})
 	teal, err := provider.GenerateTEAL([]byte{1}, nil)
@@ -212,7 +212,7 @@ func TestBoundedComposerEmitsOrderedEnvelope(t *testing.T) {
 
 func TestBoundedDisabledRekeyCompilesToErr(t *testing.T) {
 	provider := newBoundedTestProvider(&BoundedAuthorizationProfile{
-		Contract: BoundedContract, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: 1_000,
+		Contract: BoundedContract, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: new(uint64(1_000)),
 		Rekey: boundedmeta.RekeyRefused,
 	})
 	teal, err := provider.GenerateTEAL([]byte{1}, nil)
@@ -232,7 +232,7 @@ func TestBoundedDisabledRekeyCompilesToErr(t *testing.T) {
 // accepts, and the spend path's Layer 3 policy never sees it.
 func TestBoundedSpendingRekeyAcceptsWithoutLayer3(t *testing.T) {
 	provider := newBoundedTestProvider(&BoundedAuthorizationProfile{
-		Contract: BoundedContract, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: 1_000,
+		Contract: BoundedContract, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: new(uint64(1_000)),
 		Rekey: boundedmeta.RekeySpendingKey,
 	})
 	teal, err := provider.GenerateTEAL([]byte{1}, nil)
@@ -266,7 +266,7 @@ func TestBoundedSpendingRekeyAcceptsWithoutLayer3(t *testing.T) {
 func TestBoundedCosignedRekeyCallsTheCosignerCheck(t *testing.T) {
 	cosignerKey := strings.Repeat("42", boundedmeta.CosignerPublicKeySizeV1)
 	profile := &BoundedAuthorizationProfile{
-		Contract: BoundedContract, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: 1_000,
+		Contract: BoundedContract, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: new(uint64(1_000)),
 		Rekey: boundedmeta.RekeySpendingKey,
 		Cosigner: &boundedmeta.CosignerAuthorization{
 			Contract: boundedmeta.CosignerContractV1, ComponentKeyType: boundedmeta.CosignerComponentKeyTypeV1,
@@ -305,7 +305,7 @@ func TestBoundedCosignedRekeyCallsTheCosignerCheck(t *testing.T) {
 
 func TestBoundedRejectsInvalidProfilesAndCapabilities(t *testing.T) {
 	valid := &BoundedAuthorizationProfile{
-		Contract: BoundedContract, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: 1_000,
+		Contract: BoundedContract, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: new(uint64(1_000)),
 		Rekey: boundedmeta.RekeyRefused,
 	}
 	tests := []struct {
@@ -317,7 +317,7 @@ func TestBoundedRejectsInvalidProfilesAndCapabilities(t *testing.T) {
 			name: "fee above ceiling",
 			make: func() *ComposedDSA {
 				profile := cloneBoundedProfile(valid)
-				profile.MaxFee = BoundedMaxFee + 1
+				profile.MaxFee = new(uint64(BoundedMaxFee + 1))
 				return newBoundedTestProvider(profile)
 			},
 			want: "exceeds " + BoundedContract + " ceiling",
@@ -390,7 +390,7 @@ func TestBoundedRejectsInvalidProfilesAndCapabilities(t *testing.T) {
 
 func TestBoundedFingerprintCanonicalizesProfileOrder(t *testing.T) {
 	profileA := &BoundedAuthorizationProfile{
-		Contract: BoundedContract, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectAxfer, txeffects.SpendEffectPay}, MaxFee: 1_000,
+		Contract: BoundedContract, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectAxfer, txeffects.SpendEffectPay}, MaxFee: new(uint64(1_000)),
 		Rekey: boundedmeta.RekeyRefused,
 	}
 	profileB := cloneBoundedProfile(profileA)
@@ -398,7 +398,7 @@ func TestBoundedFingerprintCanonicalizesProfileOrder(t *testing.T) {
 	if got, want := newBoundedTestProvider(profileA).CompatibilityFingerprint(), newBoundedTestProvider(profileB).CompatibilityFingerprint(); got != want {
 		t.Fatalf("profile order changed fingerprint: %s != %s", got, want)
 	}
-	profileB.MaxFee++
+	profileB.MaxFee = new(*profileB.MaxFee + 1)
 	if newBoundedTestProvider(profileA).CompatibilityFingerprint() == newBoundedTestProvider(profileB).CompatibilityFingerprint() {
 		t.Fatal("max_fee did not change fingerprint")
 	}
@@ -411,7 +411,7 @@ func TestBoundedFingerprintCanonicalizesProfileOrder(t *testing.T) {
 
 func TestBoundedBuildArgsEnforcesStaticLayout(t *testing.T) {
 	provider := newBoundedTestProvider(&BoundedAuthorizationProfile{
-		Contract: BoundedContract, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: 1_000,
+		Contract: BoundedContract, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: new(uint64(1_000)),
 		Rekey: boundedmeta.RekeyRefused,
 	})
 	if _, err := provider.BuildArgs([]byte{1, 2, 3, 4}, nil); err != nil {
@@ -445,7 +445,7 @@ func TestBoundedBuildArgsPreservesDerivedSlotBeforeRuntimeArg(t *testing.T) {
 			Parameter: "recipients", MaxSize: boundedmeta.MerkleProofSize,
 		}},
 		Bounded: &BoundedAuthorizationProfile{
-			Contract: BoundedContract, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: 1_000,
+			Contract: BoundedContract, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: new(uint64(1_000)),
 			Rekey: boundedmeta.RekeyRefused,
 		},
 	})
@@ -474,7 +474,7 @@ func TestBoundedDefaultsHaveOneProgramAndBehaviorEncoding(t *testing.T) {
 		Bounded: &BoundedAuthorizationProfile{
 			Contract:     BoundedContract,
 			SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay},
-			MaxFee:       1_000,
+			MaxFee:       new(uint64(1_000)),
 			Rekey:        boundedmeta.RekeySpendingKey,
 		},
 	})

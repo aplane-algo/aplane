@@ -337,13 +337,13 @@ func (m Model) handleGenerateFormKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// A compiled list can stand in until the signer's arrives, so a selected type
 		// may not be classified yet. Missing inventory isn't an answer that the type
 		// is ordinary: the plain form would create the wrong request for a per-key one.
-		perKey, known := keyTypeIsPerKey(keyType)
+		takesBoundary, known := keyTypeTakesBoundary(keyType)
 		if !known {
 			m.forms.generateError = generateKeyTypesNotLoaded
 			return m, tea.Batch(m.waitForMessageCmd(), m.sendListKeyTypesCmd())
 		}
 		m = m.endBoundaryFlow()
-		if perKey {
+		if takesBoundary {
 			m.forms.generateError = ""
 			m.forms.boundaryKeyType = keyType
 			m.forms.boundaryPresetIndex = 0
@@ -619,8 +619,9 @@ func (m Model) submitParamModal(
 	submitView ViewState,
 	submitFn func(keyType string, params map[string]string, id string) tea.Cmd,
 ) (Model, tea.Cmd, string) {
+	// An optional cosigner, as on a plain host, may be left empty.
 	for _, param := range spec.Params {
-		if m.isCosignerSelectorParam(keyType, param) && strings.TrimSpace(m.forms.genericLSigParams[param.Name]) == "" {
+		if param.Required && m.isCosignerSelectorParam(keyType, param) && strings.TrimSpace(m.forms.genericLSigParams[param.Name]) == "" {
 			return m, nil, "Choose a cosigner before continuing"
 		}
 	}

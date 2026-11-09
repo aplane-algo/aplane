@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
@@ -24,6 +23,7 @@ func NewSignerCache() SignerCache {
 		CosignerComponentKeyTypes: make(map[string]string),
 		CosignerPublicKeys:        make(map[string]string),
 		BoundedMaxFees:            make(map[string]uint64),
+		BoundedContracts:          make(map[string]string),
 	}
 	return cache
 }
@@ -76,6 +76,7 @@ func (cache *SignerCache) RemoveAddress(address string) {
 	delete(cache.CosignerComponentKeyTypes, address)
 	delete(cache.CosignerPublicKeys, address)
 	delete(cache.BoundedMaxFees, address)
+	delete(cache.BoundedContracts, address)
 }
 
 // Count returns the number of addresses in the cache
@@ -125,7 +126,7 @@ func (cache *SignerCache) SetLogicSigResourceProfile(address string, profile lsi
 }
 
 // SigningFlowForAddress returns the signing choreography label the signer
-// inventory reported for an address (e.g. "cosigner1"). Empty means the
+// inventory reported for an address (e.g. "cosigned1"). Empty means the
 // ordinary /sign path.
 func (cache *SignerCache) SigningFlowForAddress(address string) string {
 	if cache.SigningFlows == nil {
@@ -145,31 +146,6 @@ func (cache *SignerCache) SetSigningFlowForAddress(address, flow string) {
 		return
 	}
 	cache.SigningFlows[address] = flow
-}
-
-// GuardedSigningMetadataNeedsRefresh reports whether a cached signer row uses
-// a built-in guarded key type but lacks the runtime flow metadata current
-// signer inventory should publish. This is a cache freshness heuristic only:
-// clients still route guarded signing from signing_flow, not from key_type.
-func (cache *SignerCache) GuardedSigningMetadataNeedsRefresh(address string) bool {
-	keyType := cache.GetKeyType(address)
-	if !keytypes.IsGuardedAccountKeyType(keyType) {
-		return false
-	}
-	flow := cache.SigningFlowForAddress(address)
-	if flow == "" {
-		return true
-	}
-	if flow != signerapi.SigningFlowCosigner1 {
-		return false
-	}
-	if _, ok := cache.CosignerComponentKeyTypeForAddress(address); !ok {
-		return true
-	}
-	if _, ok := cache.CosignerPublicKeyForAddress(address); !ok {
-		return true
-	}
-	return false
 }
 
 // CosignerComponentKeyTypeForAddress returns the cosigner component key type the
@@ -235,6 +211,29 @@ func (cache *SignerCache) SetBoundedMaxFeeForAddress(address string, maxFee uint
 		cache.BoundedMaxFees = make(map[string]uint64)
 	}
 	cache.BoundedMaxFees[address] = maxFee
+}
+
+// BoundedContractForAddress returns the bounded authorization contract the
+// signer inventory reported for an account: bounded2 for a bounded host, which
+// has a fee ceiling, or plain1 for a plain host, which has none.
+func (cache *SignerCache) BoundedContractForAddress(address string) (string, bool) {
+	if cache.BoundedContracts == nil {
+		return "", false
+	}
+	value, ok := cache.BoundedContracts[address]
+	return value, ok && value != ""
+}
+
+// SetBoundedContractForAddress stores or clears an account's bounded contract.
+func (cache *SignerCache) SetBoundedContractForAddress(address, contract string) {
+	if cache.BoundedContracts == nil {
+		cache.BoundedContracts = make(map[string]string)
+	}
+	if contract == "" {
+		delete(cache.BoundedContracts, address)
+		return
+	}
+	cache.BoundedContracts[address] = contract
 }
 
 // GetSigningArgs returns the key-file signing args schema for a LogicSig address.

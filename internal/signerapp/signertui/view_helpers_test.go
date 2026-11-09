@@ -269,8 +269,8 @@ func TestParameterModalFieldsFitPopupWidth(t *testing.T) {
 func TestParameterModalFocusedSelectShowsDefaultOption(t *testing.T) {
 	defer setServerKeyTypes(nil)
 	setServerKeyTypes([]protocol.KeyTypeInfo{{
-		KeyType:     "aplane.falcon1024-cosigner1024.v1",
-		DisplayName: "Falcon-1024 / Falcon-1024 Cosigner",
+		KeyType:     "aplane.falcon1024.v1",
+		DisplayName: "Falcon-1024 plain host",
 		CreationParams: []protocol.TemplateParamInfo{{
 			Name:    "cosigner",
 			Label:   "Cosigner",
@@ -286,7 +286,7 @@ func TestParameterModalFocusedSelectShowsDefaultOption(t *testing.T) {
 		forms:  formsState{generateFocus: 0, genericLSigParams: map[string]string{"cosigner": ""}, genericLSigParamModes: map[string]int{"cosigner": 0}, genericLSigParamScroll: map[string]int{"cosigner": 0}},
 	}
 
-	rendered := m.renderParameterModalForKeyType("aplane.falcon1024-cosigner1024.v1", "GENERATE", "")
+	rendered := m.renderParameterModalForKeyType("aplane.falcon1024.v1", "GENERATE", "")
 	if !strings.Contains(stripANSI(rendered), "test1_") {
 		t.Fatalf("focused select did not render default option:\n%s", stripANSI(rendered))
 	}

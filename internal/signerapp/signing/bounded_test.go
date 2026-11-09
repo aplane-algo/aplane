@@ -24,7 +24,7 @@ func testBoundedMetadata(t *testing.T, rekey boundedmeta.RekeySetting) *boundedm
 		BaseSignatureArgLayout: boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{1280}},
 		ArgumentLayout:         boundedmeta.BaseArgumentLayout(boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{1280}}),
 		SpendEffects:           []string{"pay", "axfer"},
-		MaxFee:                 5_000,
+		MaxFee:                 new(uint64(5_000)),
 		Rekey:                  rekey,
 		Layer3Policy:           boundedmeta.Layer3PolicyCustom,
 	}

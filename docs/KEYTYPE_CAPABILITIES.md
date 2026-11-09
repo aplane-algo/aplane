@@ -6,9 +6,9 @@ at the key-type or LogicSig layer.
 Assume DSA signatures and cosigner signatures, if applicable, have been produced
 and verify successfully. For example, `Y` for `aplane.falcon1024.v1` means the
 operation is allowed by the key type after the Falcon signature verifies over
-the transaction ID; it does not mean an unsigned transaction can pass. For
-guarded cosigner key types, the table describes the on-chain guarded-account
-LogicSig after both the user and cosigner component signatures are present.
+the transaction ID; it does not mean an unsigned transaction can pass. For a
+cosigned account, the table describes the program after both the spending and
+the cosigner signatures are present.
 Composed templates add their own suffix checks after base DSA verification.
 Generic TEAL-only templates have no base DSA gate, so their entries describe
 the TEAL policy directly.
@@ -31,10 +31,9 @@ included as normal user-account operations.
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | `ed25519` | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
 | `falcon1024` | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
-| `aplane.falcon1024.v1` | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
-| `aplane.ed25519.v1` | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
+| `aplane.falcon1024.v1`, `aplane.ed25519.v1`, no parameters | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
+| `aplane.falcon1024.v1`, `aplane.ed25519.v1`, plain host (`plain1`) | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | C |
 | `aplane.falcon1024-b.v1` | C | N | C | C | N | N | N | N | N | N | C |
-| `aplane.falcon1024-cosigner1024.v1` | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
 | `aplane.htlc.v1` | C | C | N | N | N | N | N | N | N | N | N |
 | `aplane.rotating-triple-xmss.v1` | C | N | C | C | C | C | C | C | C | C | C |
 | `aplane.rotating-triple-slhdsa.v1` | C | N | C | C | C | C | C | C | C | C | C |
@@ -58,9 +57,19 @@ included as normal user-account operations.
 
 ## Condition Notes
 
-- `ed25519`, native `falcon1024`, `aplane.falcon1024.v1`, and `aplane.ed25519.v1` do not restrict
-  transaction type or special transaction fields at the key-type layer. Local
-  signer policy remains the safety boundary.
+- `ed25519`, native `falcon1024`, and the plain programs of `aplane.falcon1024.v1` and
+  `aplane.ed25519.v1` (no parameters) do not restrict transaction type or special
+  transaction fields at the key-type layer. Local signer policy remains the safety
+  boundary.
+- A plain host (`aplane.falcon1024.v1` or `aplane.ed25519.v1` with a rekey setting,
+  contract `plain1`) admits every transaction that doesn't rekey, of any type, closes and
+  clawback included, with no fee ceiling. Rekey is the pure self-payment form only, on
+  the paths its setting gives: none (`refused`), the spending key (with the cosigner on a
+  cosigned account), a listed address (`only_these`), or both (`plus_cosigned`). On a
+  cosigned plain host the cosigner signs every spend and cosigned rekey, and its policy
+  is what restricts them: current cosigner authorization requires transfer-route
+  coverage or an explicitly allowed pure rekey edge, so other non-transfer targets
+  reject.
 - `aplane.falcon1024-b.v1` is the general bounded type. Each account's shape decides
   which of `pay`, `axfer`, and `asset_opt_in` it admits, whether a recipient list
   (inline or Merkle) limits non-self destinations, whether spending waits for an
@@ -68,8 +77,8 @@ included as normal user-account operations.
   neither a list nor an unlock round, so any destination is a `Y`. It rejects close,
   clawback, and all non-transfer transaction types. Rekey is the `bounded2` pure
   self-payment form authorized by the spending key, which no recipient list or
-  unlock round gates: to any address (`spending_key`, never on a timelock; on a
-  cosigned account the cosigner must sign too), only to an address on the
+  unlock round gates: to any address (`spending_key`, never on one of the type's
+  timelock shapes; on a cosigned account the cosigner must sign too), only to an address on the
   account's rekey-to list (`only_these`, with a signer-built list proof and no
   cosigner, which is every Corridor account), or both (`plus_cosigned`, cosigned
   accounts only: a listed target with the spending key alone, any other with the
@@ -87,14 +96,6 @@ included as normal user-account operations.
   the signer satisfies by choosing the leaf. See
   [KEYTYPE_ROTATING_TRIPLE_HYBRID.md](KEYTYPE_ROTATING_TRIPLE_HYBRID.md) for the
   full specification of the rotating key types.
-- `aplane.falcon1024-cosigner1024.v1` requires guarded signing assembly.
-  Once both the user and cosigner component signatures verify, the on-chain
-  guarded-account LogicSig does not restrict transaction type or special
-  transaction fields. The cosigner policy that decides whether to issue the
-  cosigner component signature is separate from this table: current cosigner
-  authorization requires transfer-route coverage or an explicitly allowed pure
-  rekey edge. Other non-transfer targets reject, and rekeys without a matching
-  `rekey_policy.allowed` edge reject.
 - `aplane.htlc.v1` admits only an ALGO payment that closes the account: to the
   configured recipient with the configured preimage, in a transaction that expires
   before timeout, or to the configured refund address after timeout.

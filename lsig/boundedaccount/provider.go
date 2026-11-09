@@ -380,6 +380,9 @@ func shapeFromMetadata(metadata *boundedmeta.Metadata) (Shape, error) {
 	return shape, nil
 }
 
+// BoundarySchema names the boundary file grammar this type's requests take.
+func (p *Provider) BoundarySchema() string { return BoundarySchemaV1 }
+
 // GrammarFingerprint identifies the whole grammar a review was made against.
 func (p *Provider) GrammarFingerprint() string { return p.grammar }
 
@@ -419,10 +422,6 @@ func (p *Provider) MnemonicScheme() string { return p.identity.MnemonicScheme() 
 
 // MnemonicWordCount returns the base's word count.
 func (p *Provider) MnemonicWordCount() int { return p.identity.MnemonicWordCount() }
-
-// SupportsMnemonicImport is false: a LogicSig account recovers from its encrypted
-// credential or backup, never from a mnemonic.
-func (p *Provider) SupportsMnemonicImport() bool { return false }
 
 // CreationParams returns the static vocabulary.
 func (p *Provider) CreationParams() []lsigprovider.ParameterDef { return p.params }
@@ -575,8 +574,8 @@ func checkResources(metadata *boundedmeta.Metadata, opcodes lsigresource.OpcodeP
 		if err != nil {
 			return fmt.Errorf("%s path does not fit the network's resource limits: %w", path.name, err)
 		}
-		if fee := planFee(plan, consensus.MinTxnFee); fee > metadata.MaxFee {
-			return fmt.Errorf("%s path needs a fee of %d, above the account's ceiling of %d", path.name, fee, metadata.MaxFee)
+		if fee := planFee(plan, consensus.MinTxnFee); metadata.MaxFee != nil && fee > *metadata.MaxFee {
+			return fmt.Errorf("%s path needs a fee of %d, above the account's ceiling of %d", path.name, fee, *metadata.MaxFee)
 		}
 	}
 	return nil
@@ -597,7 +596,6 @@ var (
 	_ logicsigdsa.TEALGenerator          = (*Provider)(nil)
 	_ lsigprovider.LSigProvider          = (*Provider)(nil)
 	_ lsigprovider.SigningProvider       = (*Provider)(nil)
-	_ lsigprovider.MnemonicProvider      = (*Provider)(nil)
 	_ lsigprovider.AlgodConfigurable     = (*Provider)(nil)
 	_ lsigprovider.InstanceResolver      = (*Provider)(nil)
 	_ lsigprovider.OpcodeProfileProvider = (*Provider)(nil)

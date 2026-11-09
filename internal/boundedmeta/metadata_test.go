@@ -6,6 +6,7 @@ package boundedmeta
 import (
 	"bytes"
 	"encoding/hex"
+	"encoding/json"
 	"reflect"
 	"strings"
 	"testing"
@@ -19,7 +20,7 @@ func TestMetadataValidateRejectsInvalidContracts(t *testing.T) {
 		BaseSignatureArgLayout: SignatureArgLayout{Count: 1, MaxSizes: []int{64}},
 		ArgumentLayout:         BaseArgumentLayout(SignatureArgLayout{Count: 1, MaxSizes: []int{64}}),
 		SpendEffects:           []string{"pay"},
-		MaxFee:                 1_000,
+		MaxFee:                 new(uint64(1_000)),
 		Rekey:                  RekeyRefused,
 		Layer3Policy:           Layer3PolicyCustom,
 	}
@@ -32,18 +33,11 @@ func TestMetadataValidateRejectsInvalidContracts(t *testing.T) {
 		{name: "runtime args", mutate: func(m *Metadata) { m.RuntimeArgs = []RuntimeArg{{Name: "proof"}} }, want: "invalid runtime arg"},
 		{name: "unknown spend", mutate: func(m *Metadata) { m.SpendEffects = []string{"appl"} }, want: "unsupported spend effect"},
 		{name: "duplicate spend", mutate: func(m *Metadata) { m.SpendEffects = []string{"pay", "pay"} }, want: "duplicate spend effect"},
-		{name: "fee ceiling", mutate: func(m *Metadata) { m.MaxFee = MaximumProfileFee + 1 }, want: "exceeds"},
+		{name: "fee ceiling", mutate: func(m *Metadata) { m.MaxFee = new(uint64(MaximumProfileFee + 1)) }, want: "exceeds"},
 		{name: "unknown Layer-3 policy", mutate: func(m *Metadata) { m.Layer3Policy = "open" }, want: "layer3_policy"},
 		{name: "Merkle policy without proof", mutate: func(m *Metadata) { m.Layer3Policy = Layer3PolicyMerkleAllowlist }, want: "exactly one"},
 		{name: "missing rekey setting", mutate: func(m *Metadata) { m.Rekey = "" }, want: `unsupported rekey setting ""`},
 		{name: "unknown rekey setting", mutate: func(m *Metadata) { m.Rekey = "admin_key" }, want: `unsupported rekey setting "admin_key"`},
-		// An account that refuses rekeys can't close either, so a transfer is the only way out.
-		{name: "refused without pay", mutate: func(m *Metadata) { m.SpendEffects = []string{"axfer"} }, want: "needs pay in spend_effects"},
-		{name: "refused opt-in without axfer", mutate: func(m *Metadata) { m.SpendEffects = []string{"pay", "asset_opt_in"} }, want: "needs axfer in spend_effects"},
-		// No host rule gates a rekey, so this would leave the lock before the unlock round.
-		{name: "timelock with a spending-key rekey", mutate: func(m *Metadata) {
-			m.Layer3Policy, m.Rekey = Layer3PolicyTimelock, RekeySpendingKey
-		}, want: "timelock requires rekey refused"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -51,6 +45,35 @@ func TestMetadataValidateRejectsInvalidContracts(t *testing.T) {
 			tt.mutate(metadata)
 			if err := metadata.Validate(); err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("Validate() error = %v, want %q", err, tt.want)
+			}
+		})
+	}
+}
+
+// Durable validation checks structure only. A combination that may not be wise
+// is the user's to choose, and must load: a refused account that can never send
+// its ALGO or an asset it opts into, or a timelock the spending key can rekey
+// out of before the unlock round.
+func TestMetadataValidateAcceptsTheUsersChoice(t *testing.T) {
+	base := Metadata{
+		Contract:               Contract,
+		BaseSignatureArgLayout: SignatureArgLayout{Count: 1, MaxSizes: []int{64}},
+		ArgumentLayout:         BaseArgumentLayout(SignatureArgLayout{Count: 1, MaxSizes: []int{64}}),
+		SpendEffects:           []string{"pay"},
+		MaxFee:                 new(uint64(1_000)),
+		Rekey:                  RekeyRefused,
+		Layer3Policy:           Layer3PolicyCustom,
+	}
+	for name, mutate := range map[string]func(*Metadata){
+		"refused without pay":                func(m *Metadata) { m.SpendEffects = []string{"axfer"} },
+		"refused opt-in without axfer":       func(m *Metadata) { m.SpendEffects = []string{"pay", "asset_opt_in"} },
+		"timelock with a spending-key rekey": func(m *Metadata) { m.Layer3Policy, m.Rekey = Layer3PolicyTimelock, RekeySpendingKey },
+	} {
+		t.Run(name, func(t *testing.T) {
+			metadata := Clone(&base)
+			mutate(metadata)
+			if err := metadata.Validate(); err != nil {
+				t.Fatalf("Validate() error = %v", err)
 			}
 		})
 	}
@@ -69,7 +92,7 @@ func TestMetadataValidateCombinedLayer3Policies(t *testing.T) {
 		}
 		return &Metadata{
 			Contract: Contract, BaseSignatureArgLayout: layout, ArgumentLayout: slots,
-			SpendEffects: []string{"pay"}, MaxFee: 1_000, Rekey: RekeyRefused, Layer3Policy: policy, DerivedArgs: derived,
+			SpendEffects: []string{"pay"}, MaxFee: new(uint64(1_000)), Rekey: RekeyRefused, Layer3Policy: policy, DerivedArgs: derived,
 		}
 	}
 	withRuntimeArg := func(input *Metadata) *Metadata {
@@ -121,7 +144,7 @@ func TestMetadataArgumentLayoutPathSizes(t *testing.T) {
 		Contract:               Contract,
 		BaseSignatureArgLayout: SignatureArgLayout{Count: 1, MaxSizes: []int{64}},
 		SpendEffects:           []string{SpendEffectPay},
-		MaxFee:                 2_000,
+		MaxFee:                 new(uint64(2_000)),
 		Rekey:                  RekeySpendingKey,
 		DerivedArgs:            []DerivedArg{{Name: "proof", Kind: DerivedArgMerkleProof, Parameter: "recipients", MaxSize: MerkleProofSize}},
 		RuntimeArgs:            []RuntimeArg{{Name: "preimage", Type: "bytes", Required: true, ByteLength: 32, MaxSize: 32}},
@@ -157,7 +180,7 @@ func TestMetadataValidateCosignerAuthorization(t *testing.T) {
 		Contract:               Contract,
 		BaseSignatureArgLayout: SignatureArgLayout{Count: 1, MaxSizes: []int{1280}},
 		SpendEffects:           []string{SpendEffectPay},
-		MaxFee:                 1_000,
+		MaxFee:                 new(uint64(1_000)),
 		Rekey:                  RekeyRefused,
 		Layer3Policy:           Layer3PolicyCustom,
 		Cosigner: &CosignerAuthorization{
@@ -226,7 +249,7 @@ func TestMetadataEqual(t *testing.T) {
 			BaseSignatureArgLayout: SignatureArgLayout{Count: 1, MaxSizes: []int{1280}},
 			ArgumentLayout:         BaseArgumentLayout(SignatureArgLayout{Count: 1, MaxSizes: []int{1280}}),
 			SpendEffects:           []string{"pay"},
-			MaxFee:                 5000,
+			MaxFee:                 new(uint64(5000)),
 			Rekey:                  RekeySpendingKey,
 			Layer3Policy:           Layer3PolicyCustom,
 		}
@@ -246,7 +269,7 @@ func TestMetadataEqual(t *testing.T) {
 	}
 
 	changed := base()
-	changed.MaxFee = 4999
+	changed.MaxFee = new(uint64(4999))
 	if base().Equal(changed) {
 		t.Fatal("MaxFee change not detected")
 	}
@@ -286,7 +309,7 @@ func listMetadata() *Metadata {
 	})
 	return &Metadata{
 		Contract: Contract, BaseSignatureArgLayout: layout, ArgumentLayout: slots,
-		SpendEffects: []string{"axfer"}, MaxFee: 1_000, Rekey: RekeyRefused, Layer3Policy: Layer3PolicyCustom,
+		SpendEffects: []string{"axfer"}, MaxFee: new(uint64(1_000)), Rekey: RekeyRefused, Layer3Policy: Layer3PolicyCustom,
 		RekeyList:   &RekeyList{Contract: RekeyListContractV1, Depth: 4, RootHex: strings.Repeat("ab", 32)},
 		DerivedArgs: []DerivedArg{{Name: "rekey_list_proof", Kind: DerivedArgRekeyListProof, Parameter: RekeyListEntriesParameter, MaxSize: RekeyListProofSize}},
 	}
@@ -327,10 +350,11 @@ func TestMetadataValidateRekeyList(t *testing.T) {
 			}
 		})
 	}
-	// Without its list, the same account would trap its ALGO, and is refused.
+	// Without its list the same account can never send its ALGO; that is the
+	// user's choice, and it validates.
 	bare := listMetadata()
 	bare.RekeyList, bare.DerivedArgs, bare.ArgumentLayout = nil, nil, bare.ArgumentLayout[:1]
-	if err := bare.Validate(); err == nil || !strings.Contains(err.Error(), "needs pay") {
+	if err := bare.Validate(); err != nil {
 		t.Fatalf("a bare refused assets-only account: error = %v", err)
 	}
 	if !listMetadata().Equal(listMetadata()) || listMetadata().Equal(bare) {
@@ -399,5 +423,77 @@ func TestMetadataValidateCosignedRekeyLists(t *testing.T) {
 	plus.Cosigner.RequiredOn = []string{PathSpend}
 	if err := plus.Validate(); err == nil || !strings.Contains(err.Error(), "exactly [spend, spending_rekey]") {
 		t.Fatalf("plus cosigned with a spend-only cosigner: error = %v", err)
+	}
+}
+
+// A plain host states no host rule: no fee ceiling, no spend effects, Layer 3
+// none. Its overlays are optional.
+func TestMetadataValidatePlainHost(t *testing.T) {
+	publicKey := bytes.Repeat([]byte{0x6b}, CosignerPublicKeySizeV1)
+	componentKeyID, err := witness.ID(CosignerComponentKeyTypeV1, publicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plain := func() *Metadata {
+		return &Metadata{
+			Contract:               PlainContract,
+			BaseSignatureArgLayout: SignatureArgLayout{Count: 1, MaxSizes: []int{1280}},
+			Rekey:                  RekeyRefused,
+			Layer3Policy:           Layer3PolicyNone,
+			Cosigner: &CosignerAuthorization{
+				Contract: CosignerContractV1, ComponentKeyType: CosignerComponentKeyTypeV1,
+				PublicKeyHex: hex.EncodeToString(publicKey), ComponentKeyID: componentKeyID,
+				SignatureMaxSize: CosignerSignatureMaxSizeV1, RequiredOn: []string{PathSpend},
+			},
+			ArgumentLayout: []ArgumentSlot{
+				{Index: 0, Name: "base_signature_0", Source: ArgSourceBaseSignature, MaxSize: 1280, Paths: ArgumentPathMask{Spend: ArgRequired, SpendingRekey: ArgRequired, ListedRekey: ArgRequired}},
+				{Index: 1, Name: CosignerSignatureSlot, Source: ArgSourceCosigner, MaxSize: CosignerSignatureMaxSizeV1, Paths: ArgumentPathMask{Spend: ArgRequired, SpendingRekey: ArgForbidden, ListedRekey: ArgForbidden}},
+			},
+		}
+	}
+	if err := plain().Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+	for _, tc := range []struct {
+		name   string
+		mutate func(*Metadata)
+		want   string
+	}{
+		{"fee ceiling", func(m *Metadata) { m.MaxFee = new(uint64(1_000)) }, "max_fee must be absent"},
+		{"zero fee ceiling", func(m *Metadata) { m.MaxFee = new(uint64(0)) }, "max_fee must be absent"},
+		{"spend effects", func(m *Metadata) { m.SpendEffects = []string{SpendEffectPay} }, "declares no spend effects"},
+		{"Layer 3", func(m *Metadata) { m.Layer3Policy = Layer3PolicyCustom }, "requires layer3_policy none"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			metadata := plain()
+			tc.mutate(metadata)
+			if err := metadata.ValidateProfile(); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("ValidateProfile() error = %v, want %q", err, tc.want)
+			}
+		})
+	}
+
+	// The fee ceiling round-trips as absent, never as zero.
+	encoded, err := json.Marshal(plain())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), "max_fee") {
+		t.Fatalf("plain metadata encodes a fee ceiling: %s", encoded)
+	}
+	bounded := plain()
+	bounded.Contract = Contract
+	if err := bounded.ValidateProfile(); err == nil || !strings.Contains(err.Error(), "bounded2 requires max_fee") {
+		t.Fatalf("bounded without a fee ceiling: ValidateProfile() error = %v", err)
+	}
+	// The cosigner is optional.
+	uncosigned := plain()
+	uncosigned.Cosigner, uncosigned.ArgumentLayout = nil, uncosigned.ArgumentLayout[:1]
+	if err := uncosigned.Validate(); err != nil {
+		t.Fatalf("a plain host without a cosigner: Validate() error = %v", err)
+	}
+	declaration, err := plain().Declaration()
+	if err != nil || declaration.Contract != PlainContract || declaration.MaxFee != nil || len(declaration.SpendEffects) != 0 {
+		t.Fatalf("Declaration() = %+v, %v", declaration, err)
 	}
 }

@@ -247,12 +247,16 @@ func boundedProfileFromTemplate(spec *generictemplate.BoundedAuthorizationSpec) 
 	if spec == nil {
 		return nil, nil
 	}
+	// The plain host is the plain providers' alone: a template is a bounded host.
+	if spec.Contract == PlainContract {
+		return nil, fmt.Errorf("bounded.contract %s is the plain host's, which templates don't declare", PlainContract)
+	}
 	if spec.MaxFee == nil {
 		return nil, fmt.Errorf("bounded.max_fee is required")
 	}
 	profile := &BoundedAuthorizationProfile{
 		Contract: spec.Contract,
-		MaxFee:   *spec.MaxFee,
+		MaxFee:   new(*spec.MaxFee),
 	}
 	if spec.Cosigner != nil {
 		profile.Cosigner = &boundedmeta.CosignerAuthorization{

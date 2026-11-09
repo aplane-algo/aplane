@@ -46,38 +46,48 @@ func (c *ComposedDSA) renderBoundedPrelude(publicKey []byte, params map[string]s
 	}
 
 	var b strings.Builder
-	b.WriteString("// === bounded transaction envelope ===\n")
-	b.WriteString("txn Fee\n")
-	b.WriteString(fmt.Sprintf("pushint %d\n", profile.MaxFee))
-	b.WriteString("<=\nassert\n\n")
-
-	b.WriteString("txn RekeyTo\nglobal ZeroAddress\n!=\n")
-	b.WriteString("bnz " + boundedRekeyLabel + "\n\n")
-
 	manifest := txeffects.BoundedManifest()
-	for _, predicate := range manifest.Predicates {
-		if predicate.Effect == txeffects.EffectRekey {
-			continue
+	if profile.Contract == PlainContract {
+		// A plain host has no envelope: no fee ceiling and no transaction-type
+		// list. A transaction that doesn't rekey goes straight to the spend path,
+		// where the cosigner signs it.
+		b.WriteString("// === plain host: rekey dispatch ===\n")
+		b.WriteString("txn RekeyTo\nglobal ZeroAddress\n!=\n")
+		b.WriteString("bnz " + boundedRekeyLabel + "\n")
+		b.WriteString("b " + boundedSpendLabel + "\n\n")
+	} else {
+		b.WriteString("// === bounded transaction envelope ===\n")
+		b.WriteString("txn Fee\n")
+		b.WriteString(fmt.Sprintf("pushint %d\n", *profile.MaxFee))
+		b.WriteString("<=\nassert\n\n")
+
+		b.WriteString("txn RekeyTo\nglobal ZeroAddress\n!=\n")
+		b.WriteString("bnz " + boundedRekeyLabel + "\n\n")
+
+		for _, predicate := range manifest.Predicates {
+			if predicate.Effect == txeffects.EffectRekey {
+				continue
+			}
+			writeZeroAddressAssertion(&b, predicate.Field)
 		}
-		writeZeroAddressAssertion(&b, predicate.Field)
+		b.WriteString("\n")
+
+		b.WriteString("txn TypeEnum\npushint 1\n==\nbnz " + boundedPayLabel + "\n")
+		b.WriteString("txn TypeEnum\npushint 4\n==\nbnz " + boundedAxferLabel + "\n")
+		b.WriteString("err\n\n")
+
+		b.WriteString(boundedPayLabel + ":\n")
+		writeSpendEffectDecision(&b, profileAllowsSpendEffect(profile, txeffects.SpendEffectPay))
+
+		b.WriteString(boundedAxferLabel + ":\n")
+		b.WriteString("txn AssetAmount\npushint 0\n==\n")
+		b.WriteString("txn AssetReceiver\ntxn Sender\n==\n&&\n")
+		b.WriteString("bnz " + boundedOptInLabel + "\n")
+		writeSpendEffectDecision(&b, profileAllowsSpendEffect(profile, txeffects.SpendEffectAxfer))
+
+		b.WriteString(boundedOptInLabel + ":\n")
+		writeSpendEffectDecision(&b, profileAllowsSpendEffect(profile, txeffects.SpendEffectAssetOptIn))
 	}
-	b.WriteString("\n")
-
-	b.WriteString("txn TypeEnum\npushint 1\n==\nbnz " + boundedPayLabel + "\n")
-	b.WriteString("txn TypeEnum\npushint 4\n==\nbnz " + boundedAxferLabel + "\n")
-	b.WriteString("err\n\n")
-
-	b.WriteString(boundedPayLabel + ":\n")
-	writeSpendEffectDecision(&b, profileAllowsSpendEffect(profile, txeffects.SpendEffectPay))
-
-	b.WriteString(boundedAxferLabel + ":\n")
-	b.WriteString("txn AssetAmount\npushint 0\n==\n")
-	b.WriteString("txn AssetReceiver\ntxn Sender\n==\n&&\n")
-	b.WriteString("bnz " + boundedOptInLabel + "\n")
-	writeSpendEffectDecision(&b, profileAllowsSpendEffect(profile, txeffects.SpendEffectAxfer))
-
-	b.WriteString(boundedOptInLabel + ":\n")
-	writeSpendEffectDecision(&b, profileAllowsSpendEffect(profile, txeffects.SpendEffectAssetOptIn))
 
 	// No host rule gates a rekey: the rekey path ends here, before the spend
 	// path's Layer 3 and cosigner checks.

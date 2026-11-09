@@ -5,13 +5,11 @@ package keyadmin
 
 import (
 	"context"
-	"encoding/hex"
 	"fmt"
-	"github.com/aplane-algo/aplane/internal/crypto"
 	"maps"
-	"strings"
 
-	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
+	"github.com/aplane-algo/aplane/internal/crypto"
+
 	"github.com/aplane-algo/aplane/internal/keyclass"
 	"github.com/aplane-algo/aplane/internal/keymgmt"
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
@@ -78,7 +76,7 @@ func (s Service) GetKeyDetails(address string) (*KeyDetailsResult, *Error) {
 		if witness.IsKeyType(info.Type) {
 			result.PublicKeyHex = info.PublicKeyHex
 		}
-		result.Parameters = keyDetailsParameters(info.Type, info.Parameters)
+		result.Parameters = maps.Clone(info.Parameters)
 		result.TemplateProvenanceStatus, result.TemplateProvenanceNote = lsigprovider.CompareAccountProvenance(info.Type, info.TemplateFingerprint, info.Parameters, info.BoundedAuthorization)
 		result.PolicyLabel = keytypeux.BoundedMetadataLabel(info.BoundedAuthorization)
 		if result.DisplayTEAL, err = keymgmt.GetDisplayTEALWithKeyring(keyFile, mk); err != nil {
@@ -91,44 +89,6 @@ func (s Service) GetKeyDetails(address string) (*KeyDetailsResult, *Error) {
 	}
 
 	return result, nil
-}
-
-const keyDetailsCosignerLabel = "Cosigner"
-
-func keyDetailsParameters(keyType string, parameters map[string]string) map[string]string {
-	if !keytypes.IsGuardedAccountKeyType(keyType) {
-		return maps.Clone(parameters)
-	}
-
-	projected := make(map[string]string)
-	for key, value := range parameters {
-		if key == keytypes.ParameterCosignerPublicKey {
-			continue
-		}
-		projected[key] = value
-	}
-
-	componentKey, err := cosignerComponentSelectorForDetails(keyType, parameters[keytypes.ParameterCosignerPublicKey])
-	if err != nil {
-		projected[keyDetailsCosignerLabel] = fmt.Sprintf("invalid cosigner public key (%v)", err)
-		return projected
-	}
-	projected[keyDetailsCosignerLabel] = componentKey
-	return projected
-}
-
-func cosignerComponentSelectorForDetails(keyType, publicKeyHex string) (string, error) {
-	componentKeyType, ok := keytypes.CosignerComponentKeyTypeForGuardedAccount(keyType)
-	if !ok {
-		return "", fmt.Errorf("unknown guarded account key type %q", keyType)
-	}
-	value := strings.TrimSpace(publicKeyHex)
-	value = strings.TrimPrefix(strings.TrimPrefix(value, "0x"), "0X")
-	publicKey, err := hex.DecodeString(value)
-	if err != nil {
-		return "", err
-	}
-	return witness.ID(componentKeyType, publicKey)
 }
 
 func (s Service) ImportKey(ctx context.Context, keyType, mnemonic string, params map[string]string) (*keymgmt.ImportResult, *Error) {

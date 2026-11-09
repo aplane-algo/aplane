@@ -12,6 +12,7 @@ import (
 	"sync"
 
 	"github.com/aplane-algo/aplane/internal/algorithm"
+	"github.com/aplane-algo/aplane/internal/boundary"
 	"github.com/aplane-algo/aplane/internal/genericlsig"
 	"github.com/aplane-algo/aplane/internal/keymgmt"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
@@ -116,11 +117,13 @@ func generateKeyTypeIDs() []string {
 	return compiledGenerateKeyTypes()
 }
 
-// keyTypeIsPerKey classifies a key type from the signer's inventory. known is false
-// when inventory doesn't hold the type, which says nothing about what it is.
-func keyTypeIsPerKey(keyType string) (perKey, known bool) {
+// keyTypeTakesBoundary reports whether a key type's requests take the boundary
+// grammar, from the signer's inventory. A per-key type that takes none, such as a
+// plain host, uses the parameter form. known is false when inventory doesn't hold
+// the type, which says nothing about what it is.
+func keyTypeTakesBoundary(keyType string) (takesBoundary, known bool) {
 	info, known := findServerKeyType(keyType)
-	return info.PerKeyContract, known
+	return info.PerKeyContract && info.BoundarySchema == boundary.SchemaV1, known
 }
 
 // importKeyTypeIDs is the mnemonic import list's key types in display order.

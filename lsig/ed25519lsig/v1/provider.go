@@ -64,7 +64,6 @@ func (p *Ed25519LsigV1) DisplayColor() string                        { return fa
 func (p *Ed25519LsigV1) CryptoSignatureSize() int                    { return family.MaxSignatureSize }
 func (p *Ed25519LsigV1) MnemonicScheme() string                      { return family.MnemonicScheme }
 func (p *Ed25519LsigV1) MnemonicWordCount() int                      { return family.MnemonicWordCount }
-func (p *Ed25519LsigV1) SupportsMnemonicImport() bool                { return false }
 func (p *Ed25519LsigV1) CreationParams() []lsigprovider.ParameterDef { return nil }
 func (p *Ed25519LsigV1) ValidateCreationParams(map[string]string) error {
 	return nil
@@ -97,7 +96,6 @@ var (
 	_ logicsigdsa.SaltedDeriver          = (*Ed25519LsigV1)(nil)
 	_ lsigprovider.LSigProvider          = (*Ed25519LsigV1)(nil)
 	_ lsigprovider.SigningProvider       = (*Ed25519LsigV1)(nil)
-	_ lsigprovider.MnemonicProvider      = (*Ed25519LsigV1)(nil)
 	_ lsigprovider.AlgodConfigurable     = (*Ed25519LsigV1)(nil)
 	_ lsigprovider.OpcodeProfileProvider = (*Ed25519LsigV1)(nil)
 )

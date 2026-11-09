@@ -11,7 +11,6 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
-	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
@@ -385,7 +384,7 @@ func TestVerifySignableKeysRejectsWitnessKeyTypes(t *testing.T) {
 	}
 }
 
-func TestVerifySignableKeysAllowsGuardedAccountPlanning(t *testing.T) {
+func TestVerifySignableKeysAllowsCosignedAccountPlanning(t *testing.T) {
 	addr := types.Address{1}.String()
 	requests := []signerapi.SignRequest{{
 		AuthAddress: addr,
@@ -393,12 +392,12 @@ func TestVerifySignableKeysAllowsGuardedAccountPlanning(t *testing.T) {
 	}}
 	snapshot := PlannerRuntimeSnapshot{
 		KeyFiles: map[string]string{addr: "keys/" + addr + ".key"},
-		KeyTypes: map[string]string{addr: keytypes.GuardedFalcon1024Cosigner1024V1},
+		KeyTypes: map[string]string{addr: "aplane.falcon1024.v1"},
 	}
 
 	count, err := verifySignableKeys(nil, snapshot, requests, map[int]bool{}, map[int]bool{})
 	if err != nil {
-		t.Fatalf("verifySignableKeys() error = %v, want guarded planning to succeed", err)
+		t.Fatalf("verifySignableKeys() error = %v, want cosigned planning to succeed", err)
 	}
 	if count != 1 {
 		t.Fatalf("verifySignableKeys() count = %d, want 1", count)
@@ -651,7 +650,7 @@ func TestPlanGroupRejectsBoundedFeeCeilingAfterDummyPooling(t *testing.T) {
 
 	authAddr := types.Address{1}.String()
 	metadata := testBoundedMetadata(t, boundedmeta.RekeyRefused)
-	metadata.MaxFee = 1_000
+	metadata.MaxFee = new(uint64(1_000))
 	deps := stubPlannerDeps{
 		keyTypes: map[string]string{authAddr: "aplane.falcon1024-b.v1"},
 		// The v42 program surcharge needs a signer-side fee increase, but the

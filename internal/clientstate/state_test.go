@@ -233,7 +233,7 @@ func TestPopulateSignerCachePreservesExistingPointer(t *testing.T) {
 
 	if err := state.PopulateSignerCache([]signerapi.KeyInfo{{
 		Address:                  "ADDR1",
-		KeyType:                  "aplane.falcon1024-cosigner1024.v1",
+		KeyType:                  "aplane.falcon1024.v1",
 		CosignerComponentKeyType: "aplane.witness-falcon1024.v1",
 		LogicSigResources: &signerapi.LogicSigResourceProfile{
 			Spend:         &signerapi.LogicSigResourceUsage{ProgramBytes: 77, ArgumentBytes: 1_423, MaxOpcodeCost: 20_000},
@@ -249,7 +249,7 @@ func TestPopulateSignerCachePreservesExistingPointer(t *testing.T) {
 	if &state.SignerCache != original {
 		t.Fatal("PopulateSignerCache replaced SignerCache storage; existing completer pointers would go stale")
 	}
-	if got := original.GetKeyType("ADDR1"); got != "aplane.falcon1024-cosigner1024.v1" {
+	if got := original.GetKeyType("ADDR1"); got != "aplane.falcon1024.v1" {
 		t.Fatalf("original pointer key type = %q, want guarded key type", got)
 	}
 	if got, ok := original.CosignerPublicKeyForAddress("ADDR1"); !ok || got != "d6fb74e10151ac3b0eaa7431b9b92c772c2a4a600c10b88cfd30169ea1ab4d0a" {
@@ -280,8 +280,16 @@ func TestPopulateSignerCacheReadsBoundedCosignerMetadata(t *testing.T) {
 		SigningFlow:              signerapi.SigningFlowCosigned1,
 		CosignerComponentKeyType: "aplane.witness-falcon1024.v1",
 		BoundedAuthorization: &signerapi.BoundedAuthorizationInfo{
-			MaxFee:   10_000,
+			Contract: "bounded2",
+			MaxFee:   new(uint64(10_000)),
 			Cosigner: &signerapi.BoundedCosignerAuthorizationInfo{PublicKeyHex: "abcd"},
+		},
+	}, {
+		Address: "PLAIN", KeyType: "aplane.falcon1024.v1",
+		SigningFlow: signerapi.SigningFlowCosigned1,
+		BoundedAuthorization: &signerapi.BoundedAuthorizationInfo{
+			Contract: "plain1",
+			Cosigner: &signerapi.BoundedCosignerAuthorizationInfo{PublicKeyHex: "ef01"},
 		},
 	}}); err != nil {
 		t.Fatalf("PopulateSignerCache() error = %v", err)
@@ -294,6 +302,16 @@ func TestPopulateSignerCacheReadsBoundedCosignerMetadata(t *testing.T) {
 	}
 	if got, ok := state.SignerCache.BoundedMaxFeeForAddress("BOUNDED"); !ok || got != 10_000 {
 		t.Fatalf("bounded max fee = %d/%v", got, ok)
+	}
+	if got, ok := state.SignerCache.BoundedContractForAddress("BOUNDED"); !ok || got != "bounded2" {
+		t.Fatalf("bounded contract = %q/%v", got, ok)
+	}
+	// A plain host records its contract and no ceiling, not a zero one.
+	if got, ok := state.SignerCache.BoundedContractForAddress("PLAIN"); !ok || got != "plain1" {
+		t.Fatalf("plain host contract = %q/%v", got, ok)
+	}
+	if got, ok := state.SignerCache.BoundedMaxFeeForAddress("PLAIN"); ok {
+		t.Fatalf("plain host max fee = %d, want none", got)
 	}
 }
 

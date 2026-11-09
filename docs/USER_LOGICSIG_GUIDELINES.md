@@ -880,13 +880,13 @@ over. An expert template that declares `rekey: refused` with a cosigner and no l
 can neither close nor be rekeyed, so its funds cannot be recovered if the cosigner
 is lost.
 
-#### Guarded Cosigner Provider
+#### Plain Host With A Cosigner
 
-APlane ships the Go-defined, library-visible guarded cosigner account provider
-`aplane.falcon1024-cosigner1024.v1`. It requires the guarded signing assembly
-flow (a user component signature plus a cosigner component signature). Its
-on-chain LogicSig does not restrict transaction shape once both signatures
-verify, so cosigner policy is the spending boundary.
+A plain host with a cosigner (`aplane.falcon1024.v1` or `aplane.ed25519.v1`,
+contract `plain1`) signs through the cosigned flow: a base component and a
+cosigner component on every spend and cosigned rekey. Its program does not
+restrict transaction shape once both signatures verify, so cosigner policy is
+the spending boundary. It replaced the dedicated cosigned account type.
 
 The Corridor preset of `aplane.falcon1024-b.v1` is instead a bounded account. It
 requires a cosigner signature only on bounded spend paths, applies a

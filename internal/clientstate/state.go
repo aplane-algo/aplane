@@ -155,6 +155,7 @@ func (s *State) PopulateSignerCache(keys []signerapi.KeyInfo) error {
 	s.SignerCache.CosignerComponentKeyTypes = make(map[string]string)
 	s.SignerCache.CosignerPublicKeys = make(map[string]string)
 	s.SignerCache.BoundedMaxFees = make(map[string]uint64)
+	s.SignerCache.BoundedContracts = make(map[string]string)
 	s.SignerCache.Locked = false
 	s.SignerCache.BindStore(s.CacheStore)
 	for _, keyInfo := range keys {
@@ -180,7 +181,11 @@ func (s *State) PopulateSignerCache(keys []signerapi.KeyInfo) error {
 			s.SignerCache.SetCosignerPublicKeyForAddress(keyInfo.Address, cosignerPublicKey)
 		}
 		if keyInfo.BoundedAuthorization != nil {
-			s.SignerCache.SetBoundedMaxFeeForAddress(keyInfo.Address, keyInfo.BoundedAuthorization.MaxFee)
+			// A plain host has no fee ceiling; its contract says so.
+			s.SignerCache.SetBoundedContractForAddress(keyInfo.Address, keyInfo.BoundedAuthorization.Contract)
+			if keyInfo.BoundedAuthorization.MaxFee != nil {
+				s.SignerCache.SetBoundedMaxFeeForAddress(keyInfo.Address, *keyInfo.BoundedAuthorization.MaxFee)
+			}
 		}
 		if len(keyInfo.SigningArgs) > 0 {
 			signingArgs := make([]cache.SigningArgInfo, len(keyInfo.SigningArgs))

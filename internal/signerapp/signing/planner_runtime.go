@@ -295,10 +295,10 @@ func verifySignableKeys(console Console, snapshot PlannerRuntimeSnapshot, reques
 		if keyType == "" {
 			return 0, internal(fmt.Sprintf("transaction %d: missing key type metadata for auth address %s", i+1, txReq.AuthAddress))
 		}
-		// Planning is a prerequisite of guarded signing: /plan freezes the
-		// group before /sign/component and /sign/assemble run. Guarded account
-		// keys are therefore valid planning authorities even though the ordinary
-		// /sign executor rejects them. Witness keys are not transaction
+		// Planning is a prerequisite of cosigned signing: /plan freezes the
+		// group before /sign/component and /sign/assemble run. Cosigned
+		// accounts are therefore valid planning authorities even though the
+		// ordinary /sign executor rejects them. Witness keys are not transaction
 		// authorities at all and remain invalid here.
 		if witness.IsKeyType(keyType) {
 			return 0, badRequest(fmt.Sprintf("transaction %d: %s", i+1, cosignerComponentSignRejectMessage))

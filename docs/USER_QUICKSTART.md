@@ -173,14 +173,16 @@ templates, open the signer admin pane, press `s` for settings, then press `k`
 for key types. The KeyType Library lets you enable compiled providers and
 templates for the product store.
 
-To try a guarded account, first set up a separate cosigner node and generate its
+To try a cosigned account, first set up a separate cosigner node and generate its
 `aplane.witness-falcon1024.v1` key. Choose **Export Cosigner Key**; the file
 holds the public key only, and the result screen shows the address to give
-clients. In the primary signer's KeyType Library, enable
-`aplane.falcon1024-cosigner1024.v1`. Start **Generate account**, select that
-key type, open the **Cosigner** field, and choose **Use key file...** (or
-**Paste public JSON...**). Compare the full Witness Key ID before importing,
-then finish generating the account.
+clients. In the primary signer's KeyType Library, enable the plain host
+`aplane.falcon1024.v1`. Start **Generate account**, select that key type, set
+`rekey_authority` (for example `spending_key`), open the **Cosigner** field,
+and choose **Use key file...** (or **Paste public JSON...**). Compare the full
+Witness Key ID before importing, then review and generate the account. The
+Corridor preset of the default-enabled `aplane.falcon1024-b.v1` is a cosigned
+account too, with on-chain limits.
 
 In apshell, run `endpoints add <cosigner-url>`, for example
 `endpoints add ssh://cosigner.example:1127`. Accept the suggested connection
@@ -189,12 +191,12 @@ and the **Client Access Request** in cosigner-side apadmin before approving.
 The command configures the client route and requests access; if enrollment is
 pending, approve it and rerun the command. It then confirms the node is a
 cosigner and reports the keys it advertises. With apshell connected to the primary signer, run
-`cosigner status` to inspect the guarded account's current cosigner route before
+`cosigner status` to inspect the cosigned account's current cosigner route before
 funding or rekeying. Route availability does not establish transaction-policy
 or on-chain validity.
 
 A new cosigner's default policy rejects every signing request. Before using
-the guarded account, configure an explicit cosigner policy for the intended
+the cosigned account, configure an explicit cosigner policy for the intended
 transactions, including a fee limit. See [USER_POLICY.md](USER_POLICY.md) for
 cosigner policies and [USER_KEYTYPES.md](USER_KEYTYPES.md) for account setup.
 

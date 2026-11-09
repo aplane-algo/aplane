@@ -41,7 +41,7 @@ func TestBoundedInlineAllowlistGoldens(t *testing.T) {
 				t.Fatal(err)
 			}
 			metadata := provider.BoundedAuthorizationMetadata()
-			if spec.SchemaVersion != 2 || metadata == nil || metadata.Contract != boundedmeta.Contract || metadata.Rekey != boundedmeta.RekeySpendingKey || metadata.MaxFee != 10_000 || metadata.Layer3Policy != boundedmeta.Layer3PolicyFixedAllowlist || len(metadata.ArgumentLayout) != 1 {
+			if spec.SchemaVersion != 2 || metadata == nil || metadata.Contract != boundedmeta.Contract || metadata.Rekey != boundedmeta.RekeySpendingKey || metadata.MaxFee == nil || *metadata.MaxFee != 10_000 || metadata.Layer3Policy != boundedmeta.Layer3PolicyFixedAllowlist || len(metadata.ArgumentLayout) != 1 {
 				t.Fatalf("bounded inline metadata = %#v", metadata)
 			}
 			teal, err := provider.GenerateTEAL(test.publicKey, map[string]string{"recipients": recipient})

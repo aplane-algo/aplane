@@ -14,13 +14,13 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
-	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/policy/policytest"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 	signingutil "github.com/aplane-algo/aplane/internal/signing"
+	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
@@ -515,7 +515,7 @@ func TestOrdinarySignRejectsGuardedKeyBeforeApproval(t *testing.T) {
 	}}}
 	plan := &PlanResult{
 		AllTxns:        []types.Transaction{{}},
-		AuthKeyTypes:   []string{keytypes.GuardedFalcon1024Cosigner1024V1},
+		AuthKeyTypes:   []string{witness.Falcon1024V1},
 		ForeignIndices: map[int]bool{},
 	}
 
@@ -523,11 +523,11 @@ func TestOrdinarySignRejectsGuardedKeyBeforeApproval(t *testing.T) {
 	if result != nil {
 		t.Fatalf("signGroupWithPlanContext() result = %#v, want nil", result)
 	}
-	if err == nil || err.Kind != ErrorBadRequest || !strings.Contains(err.Message, guardedAccountSignRejectMessage) {
-		t.Fatalf("signGroupWithPlanContext() error = %#v, want guarded-flow rejection", err)
+	if err == nil || err.Kind != ErrorBadRequest || !strings.Contains(err.Message, cosignerComponentSignRejectMessage) {
+		t.Fatalf("signGroupWithPlanContext() error = %#v, want witness-key rejection", err)
 	}
 	if approvalCalled {
-		t.Fatal("ordinary /sign reached approval for a guarded key")
+		t.Fatal("ordinary /sign reached approval for a witness key")
 	}
 }
 

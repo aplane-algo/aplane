@@ -30,18 +30,13 @@
     "depth": 8
   },
   {
-    "spec": "guarded_assembly",
-    "distinct_states": 270920,
-    "depth": 1
-  },
-  {
     "spec": "plugin_signing",
     "distinct_states": 3852,
     "depth": 1
   },
   {
     "spec": "bounded_cosigner",
-    "distinct_states": 531968,
+    "distinct_states": 2127872,
     "depth": 4
   },
   {

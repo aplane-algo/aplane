@@ -7,22 +7,35 @@ import (
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/keytypestate"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
-func TestKeyTypesHidesInternalProvidersWithStaleEnablement(t *testing.T) {
+// A plain host is listed only once enabled, as a per-key type that names its
+// cosigner and takes no boundary file.
+func TestKeyTypesListsAPlainHostOnceEnabled(t *testing.T) {
 	ir := setupProductRuntime(t, false)
+	listed := func() map[string]signerapi.KeyTypeInfo {
+		t.Helper()
+		resp, err := (Service{}).KeyTypes(ir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		infos := map[string]signerapi.KeyTypeInfo{}
+		for _, info := range resp.KeyTypes {
+			infos[info.KeyType] = info
+		}
+		return infos
+	}
 	for _, keyType := range []string{"aplane.falcon1024.v1", "aplane.ed25519.v1"} {
+		if _, ok := listed()[keyType]; ok {
+			t.Fatalf("%s listed before it was enabled", keyType)
+		}
 		if err := keytypestate.Put(ir.KeyPaths(), keytypestate.Record{KeyType: keyType, Source: keytypestate.SourceCompiled, State: keytypestate.StateEnabled}); err != nil {
 			t.Fatal(err)
 		}
-	}
-	resp, err := (Service{}).KeyTypes(ir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, info := range resp.KeyTypes {
-		if info.KeyType == "aplane.falcon1024.v1" || info.KeyType == "aplane.ed25519.v1" {
-			t.Fatalf("internal provider %s exposed for generation", info.KeyType)
+		info, ok := listed()[keyType]
+		if !ok || !info.PerKeyContract || info.BoundarySchema != "" || info.CosignerComponentKeyType == "" || info.MnemonicImport {
+			t.Fatalf("%s = %+v, %v", keyType, info, ok)
 		}
 	}
 }

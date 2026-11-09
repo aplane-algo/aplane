@@ -11,9 +11,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/cosigner/canonical"
-	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
 	"github.com/aplane-algo/aplane/internal/cosigner/message"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
@@ -27,7 +27,6 @@ import (
 	falconfamily "github.com/aplane-algo/aplane/lsig/falcon1024/family"
 	falconkeygen "github.com/aplane-algo/aplane/lsig/falcon1024/keygen"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
-	falcon1024guarded "github.com/aplane-algo/aplane/lsig/falcon1024_guarded"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 
 	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
@@ -36,23 +35,16 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
-func init() {
-	falcon1024guarded.RegisterClient()
-}
-
-var (
-	_ ComponentPacker = (*falcon1024guarded.Provider)(nil)
-)
-
 func TestPrepareComponentSigningCanonicalizesTargetsAndMessages(t *testing.T) {
 	sender := types.Address{1}.String()
 	receiver := types.Address{2}.String()
 	txns := groupedPaymentTransactions(t, sender, receiver)
 
+	componentKey := testFalconComponentSelector(t, 0xab)
 	req := componentPlanRequest{
 		RequestID:     "cli-component-1",
-		Role:          ComponentSignRoleUser,
-		ComponentKey:  sender,
+		Role:          ComponentSignRoleCosigner,
+		ComponentKey:  componentKey,
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txns[0]), txnutil.EncodeWithPrefixHex(txns[1])},
 		TargetIndices: []int{1, 0},
 	}
@@ -61,11 +53,11 @@ func TestPrepareComponentSigningCanonicalizesTargetsAndMessages(t *testing.T) {
 	if err != nil {
 		t.Fatalf("prepareComponentSigning() error = %v", err)
 	}
-	if plan.RequestID != req.RequestID || plan.ComponentKey != sender {
-		t.Fatalf("plan request metadata = %#v, want request_id %q component_key %q", plan, req.RequestID, sender)
+	if plan.RequestID != req.RequestID || plan.ComponentKey != componentKey {
+		t.Fatalf("plan request metadata = %#v, want request_id %q component_key %q", plan, req.RequestID, componentKey)
 	}
-	if plan.MessageRole != message.RoleUser {
-		t.Fatalf("MessageRole = %v, want user", plan.MessageRole)
+	if plan.MessageRole != message.RoleCosigner {
+		t.Fatalf("MessageRole = %v, want cosigner", plan.MessageRole)
 	}
 	if len(plan.Targets) != 2 {
 		t.Fatalf("Targets len = %d, want 2", len(plan.Targets))
@@ -77,7 +69,7 @@ func TestPrepareComponentSigningCanonicalizesTargetsAndMessages(t *testing.T) {
 		if target.Sender != sender {
 			t.Fatalf("Targets[%d].Sender = %q, want %q", i, target.Sender, sender)
 		}
-		wantMsg := message.ComponentMessage(message.RoleUser, plan.Group.Entries[i].TxID)
+		wantMsg := message.ComponentMessage(message.RoleCosigner, plan.Group.Entries[i].TxID)
 		if !bytes.Equal(target.Message[:], wantMsg[:]) {
 			t.Fatalf("Targets[%d].Message = %x, want %x", i, target.Message, wantMsg)
 		}
@@ -93,8 +85,8 @@ func TestPrepareComponentSigningGeneratesRequestIDWhenMissing(t *testing.T) {
 	txn := paymentTransaction(t, sender, receiver, 7)
 
 	plan, err := prepareComponentSigning(componentPlanRequest{
-		Role:          ComponentSignRoleUser,
-		ComponentKey:  sender,
+		Role:          ComponentSignRoleCosigner,
+		ComponentKey:  testFalconComponentSelector(t, 0xab),
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
 		TargetIndices: []int{0},
 	})
@@ -125,9 +117,11 @@ func TestPrepareComponentSigningUsesCosignerRoleDomain(t *testing.T) {
 	if plan.MessageRole != message.RoleCosigner {
 		t.Fatalf("MessageRole = %v, want cosigner", plan.MessageRole)
 	}
-	userMsg := message.ComponentMessage(message.RoleUser, plan.Group.Entries[0].TxID)
-	if bytes.Equal(plan.Targets[0].Message[:], userMsg[:]) {
-		t.Fatal("cosigner component message matched user-role message")
+	// The cosigner signs a domain-tagged message, never the TxID the spending
+	// key signs.
+	txID := plan.Group.Entries[0].TxID
+	if bytes.Equal(plan.Targets[0].Message[:], txID[:]) {
+		t.Fatal("cosigner component message is the TxID")
 	}
 }
 
@@ -165,16 +159,17 @@ func TestPrepareComponentSigningRejectsDivergentGroup(t *testing.T) {
 }
 
 func TestPrepareComponentSigningRejectsInvalidRequestShape(t *testing.T) {
+	// The retired user role is no role at all.
 	_, err := prepareComponentSigning(componentPlanRequest{
-		Role:          ComponentSignRoleUser,
+		Role:          ComponentSignRole("user"),
 		GroupBytesHex: []string{"5458aa"},
 		TargetIndices: []int{0},
 	})
 	if err == nil || err.Kind != ErrorBadRequest {
 		t.Fatalf("prepareComponentSigning() error = %v, want bad request", err)
 	}
-	if !strings.Contains(err.Message, "component_key is required") {
-		t.Fatalf("prepareComponentSigning() error = %q, want missing component_key", err.Message)
+	if !strings.Contains(err.Message, "role must be") {
+		t.Fatalf("prepareComponentSigning() error = %q, want unsupported role", err.Message)
 	}
 }
 
@@ -194,7 +189,7 @@ func TestSigningServiceSignComponentDispatchesAfterValidation(t *testing.T) {
 	}
 
 	_, err = (&Service{}).signComponentWithContext(context.Background(), componentPlanRequest{
-		Role:          ComponentSignRoleUser,
+		Role:          ComponentSignRole("user"),
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
 		TargetIndices: []int{0},
 	}, nil)
@@ -615,140 +610,15 @@ func TestSignComponentCosignerPolicyAllowsSigning(t *testing.T) {
 	}
 }
 
-func TestSignPreparedUserComponentsSignsGuardedAccountMessages(t *testing.T) {
-	baseKeyType := uniqueSigningTestFamily("test.user-component-signing.v1")
-	provider := &componentUserTestProvider{family: baseKeyType}
-	coresigning.Register(provider)
-
-	sender := types.Address{13}.String()
-	receiver := types.Address{14}.String()
-	txns := groupedPaymentTransactions(t, sender, receiver)
-	plan, err := prepareComponentSigning(componentPlanRequest{
-		RequestID:     "cmp-user",
-		Role:          ComponentSignRoleUser,
-		ComponentKey:  sender,
-		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txns[0]), txnutil.EncodeWithPrefixHex(txns[1])},
-		TargetIndices: []int{0, 1},
-	})
-	if err != nil {
-		t.Fatalf("prepareComponentSigning() error = %v", err)
-	}
-
-	keyMaterial := &coresigning.KeyMaterial{
-		Type:        keytypes.GuardedFalcon1024Cosigner1024V1,
-		Category:    keys.CategoryDSALsig,
-		BaseKeyType: baseKeyType,
-		Bytecode:    []byte{0x01, 0x02, 0x03},
-		Value:       []byte{0xaa, 0xbb, 0xcc},
-	}
-	session := &componentKeyTestSession{key: keyMaterial}
-
-	result, signErr := signPreparedUserComponents(context.Background(), plan, session)
-	if signErr != nil {
-		t.Fatalf("signPreparedUserComponents() error = %v", signErr)
-	}
-	if session.calls != 1 || session.gotAddress != sender {
-		t.Fatalf("session calls = %d address %q, want one call for %q", session.calls, session.gotAddress, sender)
-	}
-	if result.RequestID != plan.RequestID || result.ComponentKey != sender {
-		t.Fatalf("result metadata = %#v, want request_id %q component_key %q", result, plan.RequestID, sender)
-	}
-	if len(result.Signatures) != len(plan.Targets) {
-		t.Fatalf("Signatures len = %d, want %d", len(result.Signatures), len(plan.Targets))
-	}
-	if len(provider.messages) != len(plan.Targets) {
-		t.Fatalf("provider messages len = %d, want %d", len(provider.messages), len(plan.Targets))
-	}
-	for i, sig := range result.Signatures {
-		if sig.TargetIndex != plan.Targets[i].TargetIndex {
-			t.Fatalf("signature %d target index = %d, want %d", i, sig.TargetIndex, plan.Targets[i].TargetIndex)
-		}
-		if sig.SignatureScheme != baseKeyType {
-			t.Fatalf("signature scheme = %q, want %s", sig.SignatureScheme, baseKeyType)
-		}
-		if !bytes.Equal(provider.messages[i], plan.Targets[i].Message[:]) {
-			t.Fatalf("provider message %d = %x, want %x", i, provider.messages[i], plan.Targets[i].Message)
-		}
-		gotSignature, err := hex.DecodeString(sig.Signature)
-		if err != nil {
-			t.Fatalf("DecodeString(signature) error = %v", err)
-		}
-		if !bytes.Equal(gotSignature, provider.signatures[i]) {
-			t.Fatalf("signature %d = %x, want provider signature %x", i, gotSignature, provider.signatures[i])
-		}
-	}
-	if keyMaterial.Type != "" || keyMaterial.Value != nil || keyMaterial.Bytecode != nil {
-		t.Fatalf("key material was not zeroed after signing: %#v", keyMaterial)
-	}
-}
-
-func TestSignPreparedUserComponentsSignsGuardedAuthorizerMessages(t *testing.T) {
-	baseKeyType := uniqueSigningTestFamily("test.user-component-authorizer-signing.v1")
-	provider := &componentUserTestProvider{family: baseKeyType}
-	coresigning.Register(provider)
-
-	sender := types.Address{15}.String()
-	receiver := types.Address{16}.String()
-	componentKey := types.Address{17}.String()
-	txn := paymentTransaction(t, sender, receiver, 13)
-	plan, err := prepareComponentSigning(componentPlanRequest{
-		RequestID:     "cmp-user-mismatch",
-		Role:          ComponentSignRoleUser,
-		ComponentKey:  componentKey,
-		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
-		TargetIndices: []int{0},
-	})
-	if err != nil {
-		t.Fatalf("prepareComponentSigning() error = %v", err)
-	}
-	if plan.Targets[0].Sender != sender {
-		t.Fatalf("prepared target sender = %q, want %q", plan.Targets[0].Sender, sender)
-	}
-
-	keyMaterial := &coresigning.KeyMaterial{
-		Type:        keytypes.GuardedFalcon1024Cosigner1024V1,
-		Category:    keys.CategoryDSALsig,
-		BaseKeyType: baseKeyType,
-		Bytecode:    []byte{0x01, 0x02, 0x04},
-		Value:       []byte{0xdd, 0xee, 0xff},
-	}
-	session := &componentKeyTestSession{key: keyMaterial}
-
-	result, signErr := signPreparedUserComponents(context.Background(), plan, session)
-	if signErr != nil {
-		t.Fatalf("signPreparedUserComponents() error = %v", signErr)
-	}
-	if session.calls != 1 || session.gotAddress != componentKey {
-		t.Fatalf("session calls = %d address %q, want one call for %q", session.calls, session.gotAddress, componentKey)
-	}
-	if result.RequestID != plan.RequestID || result.ComponentKey != componentKey {
-		t.Fatalf("result metadata = %#v, want request_id %q component_key %q", result, plan.RequestID, componentKey)
-	}
-	if len(result.Signatures) != 1 || len(provider.messages) != 1 {
-		t.Fatalf("signatures = %d provider messages = %d, want one each", len(result.Signatures), len(provider.messages))
-	}
-	if result.Signatures[0].TargetIndex != 0 {
-		t.Fatalf("signature target index = %d, want 0", result.Signatures[0].TargetIndex)
-	}
-	if result.Signatures[0].SignatureScheme != baseKeyType {
-		t.Fatalf("signature scheme = %q, want %s", result.Signatures[0].SignatureScheme, baseKeyType)
-	}
-	if !bytes.Equal(provider.messages[0], plan.Targets[0].Message[:]) {
-		t.Fatalf("provider message = %x, want %x", provider.messages[0], plan.Targets[0].Message)
-	}
-	if keyMaterial.Type != "" || keyMaterial.Value != nil || keyMaterial.Bytecode != nil {
-		t.Fatalf("key material was not zeroed after signing: %#v", keyMaterial)
-	}
-}
-
 func TestSigningServiceAssembleGuardedDispatchesAfterValidation(t *testing.T) {
 	_, err := (&Service{}).AssembleWithContext(context.Background(), signerapi.AssemblyRequest{
 		RequestID:     "asm-1",
 		GroupBytesHex: []string{"5458aa"},
-		Targets: []signerapi.AssemblyTarget{{Kind: signerapi.AssemblyTargetKindGuarded,
+		Targets: []signerapi.AssemblyTarget{{Kind: signerapi.AssemblyTargetKindBoundedCosigner,
 			TargetIndex:       0,
 			AuthAddress:       "ADDR",
-			UserSignature:     "aa",
+			BaseSignatures:    []string{"aa"},
+			AssemblyReceipt:   "cc",
 			CosignerSignature: "bb",
 		}},
 	}, nil)
@@ -765,15 +635,70 @@ func TestSigningServiceAssembleGuardedDispatchesAfterValidation(t *testing.T) {
 	}
 }
 
-func TestAssembleDecodedGuardedVerifiesAndBuildsSignedGroup(t *testing.T) {
-	cosignerPublicKey, cosignerPrivateKey := testFalconComponentKeypair(t, 0x52)
+// cosignedAssemblyFixture is a cosigned plain host this signer holds, and the
+// signatures that authorize its spend of txn: the spending key's base
+// signature and receipt, and the cosigner's component signature.
+type cosignedAssemblyFixture struct {
+	account           string
+	bytecode          []byte
+	keyMaterial       *coresigning.KeyMaterial
+	baseSignature     []byte
+	cosignerSignature []byte
+	target            signerapi.AssemblyTarget
+}
 
-	userPublicKey, userPrivateKey, err := signerops.New(nil).GenerateKeypair(bytes.Repeat([]byte{0x53}, 64))
-	if err != nil {
-		t.Fatalf("GenerateKeypair() error = %v", err)
+func newCosignedAssemblyFixture(t *testing.T, fill byte, entry canonical.Txn, targetIndex int) cosignedAssemblyFixture {
+	t.Helper()
+	spendingPublicKey, spendingPrivateKey := testFalconComponentKeypair(t, fill)
+	cosignerPublicKey, cosignerPrivateKey := testFalconComponentKeypair(t, fill+1)
+	bytecode := []byte{0x06, 0x20, 0x01, 0x01, 0x22, 0x12, fill}
+	account := logicSigAddressForTest(t, bytecode)
+	metadata := boundedCosignerTestMetadata(t, cosignerPublicKey)
+	metadata.Contract, metadata.SpendEffects, metadata.MaxFee = boundedmeta.PlainContract, nil, nil
+	metadata.Layer3Policy = boundedmeta.Layer3PolicyNone
+	if err := metadata.Validate(); err != nil {
+		t.Fatal(err)
 	}
-	bytecode := []byte{0x06, 0x20, 0x01, 0x01, 0x22, 0x12, 0x34}
-	guardedAccount := logicSigAddressForTest(t, bytecode)
+	baseSignature, err := signerops.New(nil).Sign(spendingPrivateKey, entry.TxID[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	receiptMessage, err := boundedAssemblyReceiptMessage(account, entry.TxID[:], metadata, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	receipt, err := signerops.New(nil).Sign(spendingPrivateKey, receiptMessage[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	cosignerMessage := message.ComponentMessage(message.RoleCosigner, entry.TxID)
+	cosignerSignature, err := signerops.New(nil).Sign(cosignerPrivateKey, cosignerMessage[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cosignedAssemblyFixture{
+		account:  account,
+		bytecode: bytecode,
+		keyMaterial: &coresigning.KeyMaterial{
+			Type: "aplane.falcon1024.v1", Category: keys.CategoryDSALsig,
+			BaseKeyType: "aplane.falcon1024.v1", PublicKey: append([]byte(nil), spendingPublicKey...),
+			Bytecode: append([]byte(nil), bytecode...), BoundedAuthorization: boundedmeta.Clone(metadata),
+			SigningMetadataVersion: keys.BoundedSigningMetadataVersion,
+		},
+		baseSignature:     baseSignature,
+		cosignerSignature: cosignerSignature,
+		target: signerapi.AssemblyTarget{
+			TargetIndex: targetIndex, Kind: signerapi.AssemblyTargetKindBoundedCosigner, AuthAddress: account,
+			BaseSignatures:  []string{hex.EncodeToString(baseSignature)},
+			AssemblyReceipt: hex.EncodeToString(receipt), CosignerSignature: hex.EncodeToString(cosignerSignature),
+		},
+	}
+}
+
+// Assembly builds a cosigned target from its stored program and both
+// signatures, binds it to the account that authorizes it (here an account
+// rekeyed to the cosigned one), and preserves a matching passthrough unchanged.
+func TestAssembleDecodedGuardedVerifiesAndBuildsSignedGroup(t *testing.T) {
 	sender := types.Address{18}.String()
 	receiver := types.Address{19}.String()
 	txns := groupedPaymentTransactions(t, sender, receiver)
@@ -782,42 +707,17 @@ func TestAssembleDecodedGuardedVerifiesAndBuildsSignedGroup(t *testing.T) {
 	if decodeErr != nil {
 		t.Fatalf("DecodeCanonicalGroupHex() error = %v", decodeErr)
 	}
-
-	userMsg := message.ComponentMessage(message.RoleUser, group.Entries[0].TxID)
-	userSignature, err := signerops.New(nil).Sign(userPrivateKey, userMsg[:])
-	if err != nil {
-		t.Fatalf("Sign(user) error = %v", err)
-	}
-	cosignerMsg := message.ComponentMessage(message.RoleCosigner, group.Entries[0].TxID)
-	cosignerSignature, err := signerops.New(nil).Sign(cosignerPrivateKey, cosignerMsg[:])
-	if err != nil {
-		t.Fatalf("Sign(cosigner) error = %v", err)
-	}
+	fixture := newCosignedAssemblyFixture(t, 0x52, group.Entries[0], 0)
 	passthroughBytes := msgpack.Encode(types.SignedTxn{Txn: txns[1], Sig: types.Signature{0x01}})
 
-	keyMaterial := &coresigning.KeyMaterial{
-		Type:                   keytypes.GuardedFalcon1024Cosigner1024V1,
-		Category:               keys.CategoryDSALsig,
-		BaseKeyType:            falcon1024guarded.BaseKeyType,
-		PublicKey:              append([]byte(nil), userPublicKey...),
-		Bytecode:               append([]byte(nil), bytecode...),
-		Parameters:             map[string]string{keytypes.ParameterCosignerPublicKey: hex.EncodeToString(cosignerPublicKey)},
-		SigningMetadataVersion: keys.CurrentSigningMetadataVersion,
-		Value:                  &coresigning.LsigKeyMaterial{PrivateKey: append([]byte(nil), userPrivateKey...)},
-	}
-	// Address-keyed: the guarded target resolves to its key, while the
-	// passthrough sender is not held by this signer (so the passthrough is not
-	// mistaken for a locally-held guarded account).
-	session := &componentKeyTestSession{keysByAddr: map[string]*coresigning.KeyMaterial{guardedAccount: keyMaterial}}
+	// Address-keyed: the cosigned target resolves to its key, while the
+	// passthrough sender is not held by this signer, so the passthrough is not
+	// mistaken for a locally held cosigned account.
+	session := &componentKeyTestSession{keysByAddr: map[string]*coresigning.KeyMaterial{fixture.account: fixture.keyMaterial}}
 	req := signerapi.AssemblyRequest{
 		RequestID:     "asm-live",
 		GroupBytesHex: groupBytesHex,
-		Targets: []signerapi.AssemblyTarget{{Kind: signerapi.AssemblyTargetKindGuarded,
-			TargetIndex:       0,
-			AuthAddress:       guardedAccount,
-			UserSignature:     hex.EncodeToString(userSignature),
-			CosignerSignature: hex.EncodeToString(cosignerSignature),
-		}},
+		Targets:       []signerapi.AssemblyTarget{fixture.target},
 		Passthrough: []signerapi.AssemblyPassthroughItem{{
 			TargetIndex:  1,
 			SignedTxnHex: hex.EncodeToString(passthroughBytes),
@@ -846,32 +746,90 @@ func TestAssembleDecodedGuardedVerifiesAndBuildsSignedGroup(t *testing.T) {
 	if err := msgpack.Decode(signedTargetBytes, &signedTarget); err != nil {
 		t.Fatalf("Decode(signed target) error = %v", err)
 	}
-	gotTxID := algocrypto.TransactionID(signedTarget.Txn)
-	wantTxID := algocrypto.TransactionID(txns[0])
-	if !bytes.Equal(gotTxID, wantTxID) {
+	if gotTxID, wantTxID := algocrypto.TransactionID(signedTarget.Txn), algocrypto.TransactionID(txns[0]); !bytes.Equal(gotTxID, wantTxID) {
 		t.Fatalf("signed target txid = %x, want %x", gotTxID, wantTxID)
 	}
 	if signedTarget.Txn.Sender.String() != sender {
 		t.Fatalf("signed target sender = %q, want %q", signedTarget.Txn.Sender.String(), sender)
 	}
-	if signedTarget.AuthAddr.String() != guardedAccount {
-		t.Fatalf("signed target auth address = %q, want guarded account %q", signedTarget.AuthAddr.String(), guardedAccount)
+	if signedTarget.AuthAddr.String() != fixture.account {
+		t.Fatalf("signed target auth address = %q, want cosigned account %q", signedTarget.AuthAddr.String(), fixture.account)
 	}
-	if !bytes.Equal(signedTarget.Lsig.Logic, bytecode) {
-		t.Fatalf("LogicSig bytecode = %x, want %x", signedTarget.Lsig.Logic, bytecode)
+	if !bytes.Equal(signedTarget.Lsig.Logic, fixture.bytecode) {
+		t.Fatalf("LogicSig bytecode = %x, want %x", signedTarget.Lsig.Logic, fixture.bytecode)
 	}
-	if len(signedTarget.Lsig.Args) != 2 {
-		t.Fatalf("LogicSig args len = %d, want 2", len(signedTarget.Lsig.Args))
+	if len(signedTarget.Lsig.Args) != 2 || !bytes.Equal(signedTarget.Lsig.Args[0], fixture.baseSignature) ||
+		!bytes.Equal(signedTarget.Lsig.Args[1], fixture.cosignerSignature) {
+		t.Fatalf("LogicSig args = %x, want the base and cosigner signatures", signedTarget.Lsig.Args)
 	}
-	if !bytes.Equal(signedTarget.Lsig.Args[0], userSignature) {
-		t.Fatalf("LogicSig arg 0 = %x, want user signature %x", signedTarget.Lsig.Args[0], userSignature)
+	if fixture.keyMaterial.Type != "" || fixture.keyMaterial.Bytecode != nil || fixture.keyMaterial.PublicKey != nil {
+		t.Fatalf("key material was not zeroed after assembly: %#v", fixture.keyMaterial)
 	}
-	if !bytes.Equal(signedTarget.Lsig.Args[1], cosignerSignature) {
-		t.Fatalf("LogicSig arg 1 = %x, want cosigner signature %x", signedTarget.Lsig.Args[1], cosignerSignature)
+}
+
+// A cosigned account this signer holds signs only through component signing and
+// assembly. Supplied as an already-signed passthrough, as its sender or as the
+// account a sender is rekeyed to, it is refused, so a passthrough can never
+// carry a cosigned account's transaction past the cosigner.
+func TestAssembleDecodedRejectsALocallyHeldCosignedAccountAsPassthrough(t *testing.T) {
+	cosigned := types.Address{31}.String()
+	rekeyed := types.Address{32}.String()
+	txn := paymentTransaction(t, cosigned, types.Address{33}.String(), 5)
+	rekeyedTxn := paymentTransaction(t, rekeyed, types.Address{33}.String(), 6)
+	held := func() *componentKeyTestSession {
+		return &componentKeyTestSession{keysByAddr: map[string]*coresigning.KeyMaterial{
+			cosigned: {Type: "aplane.falcon1024.v1", BoundedAuthorization: &boundedmeta.Metadata{
+				Contract: boundedmeta.PlainContract, Cosigner: &boundedmeta.CosignerAuthorization{Contract: boundedmeta.CosignerContractV1},
+			}},
+		}}
 	}
-	if keyMaterial.Type != "" || keyMaterial.Value != nil || keyMaterial.Bytecode != nil || keyMaterial.PublicKey != nil {
-		t.Fatalf("key material was not zeroed after assembly: %#v", keyMaterial)
+	var cosignedAddress types.Address
+	copy(cosignedAddress[:], mustDecodeAddress(t, cosigned))
+	for name, signed := range map[string]types.SignedTxn{
+		"as the sender":        {Txn: txn, Sig: types.Signature{0x01}},
+		"as the auth address":  {Txn: rekeyedTxn, AuthAddr: cosignedAddress, Sig: types.Signature{0x01}},
+		"as a LogicSig sender": {Txn: txn, Lsig: types.LogicSig{Logic: []byte{0x06, 0x81, 0x01}}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			groupBytesHex := []string{txnutil.EncodeWithPrefixHex(signed.Txn)}
+			group, decodeErr := canonical.DecodeGroupHex(groupBytesHex)
+			if decodeErr != nil {
+				t.Fatal(decodeErr)
+			}
+			result, err := assembleDecoded(context.Background(), signerapi.AssemblyRequest{
+				GroupBytesHex: groupBytesHex,
+				Passthrough:   []signerapi.AssemblyPassthroughItem{{TargetIndex: 0, SignedTxnHex: hex.EncodeToString(msgpack.Encode(signed))}},
+			}, group, held())
+			if result != nil || err == nil || err.Kind != ErrorBadRequest || !strings.Contains(err.Message, "requires component assembly") {
+				t.Fatalf("assembleDecoded() = %#v, %#v; want the cosigned passthrough refused", result, err)
+			}
+		})
 	}
+	// A held account without a cosigner is an ordinary passthrough.
+	uncosigned := &componentKeyTestSession{keysByAddr: map[string]*coresigning.KeyMaterial{
+		cosigned: {Type: "aplane.falcon1024-b.v1", BoundedAuthorization: &boundedmeta.Metadata{Contract: boundedmeta.Contract}},
+	}}
+	groupBytesHex := []string{txnutil.EncodeWithPrefixHex(txn)}
+	group, decodeErr := canonical.DecodeGroupHex(groupBytesHex)
+	if decodeErr != nil {
+		t.Fatal(decodeErr)
+	}
+	signed := hex.EncodeToString(msgpack.Encode(types.SignedTxn{Txn: txn, Sig: types.Signature{0x01}}))
+	if _, err := assembleDecoded(context.Background(), signerapi.AssemblyRequest{
+		GroupBytesHex: groupBytesHex,
+		Passthrough:   []signerapi.AssemblyPassthroughItem{{TargetIndex: 0, SignedTxnHex: signed}},
+	}, group, uncosigned); err != nil {
+		t.Fatalf("assembleDecoded(held account without a cosigner) error = %v", err)
+	}
+}
+
+func mustDecodeAddress(t *testing.T, address string) []byte {
+	t.Helper()
+	decoded, err := types.DecodeAddress(address)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return decoded[:]
 }
 
 func TestAssembleDecodedGuardedGeneratesRequestIDWhenMissing(t *testing.T) {
@@ -895,210 +853,6 @@ func TestAssembleDecodedGuardedGeneratesRequestIDWhenMissing(t *testing.T) {
 	}
 	if !strings.HasPrefix(result.RequestID, "asm-") {
 		t.Fatalf("RequestID = %q, want asm- prefix", result.RequestID)
-	}
-}
-
-func TestAssembleDecodedGuardedVerifiesFalconCosignerAndBuildsSignedGroup(t *testing.T) {
-	cosignerPublicKey, cosignerPrivateKey, err := signerops.New(nil).GenerateKeypair(bytes.Repeat([]byte{0x54}, 64))
-	if err != nil {
-		t.Fatalf("GenerateKeypair(cosigner) error = %v", err)
-	}
-	userPublicKey, userPrivateKey, err := signerops.New(nil).GenerateKeypair(bytes.Repeat([]byte{0x55}, 64))
-	if err != nil {
-		t.Fatalf("GenerateKeypair(user) error = %v", err)
-	}
-	bytecode := []byte{0x06, 0x20, 0x01, 0x01, 0x22, 0xab, 0xcd}
-	guardedAccount := logicSigAddressForTest(t, bytecode)
-	txn := paymentTransaction(t, guardedAccount, types.Address{19}.String(), 14)
-	groupBytesHex := []string{txnutil.EncodeWithPrefixHex(txn)}
-	group, decodeErr := canonical.DecodeGroupHex(groupBytesHex)
-	if decodeErr != nil {
-		t.Fatalf("DecodeCanonicalGroupHex() error = %v", decodeErr)
-	}
-
-	userMsg := message.ComponentMessage(message.RoleUser, group.Entries[0].TxID)
-	userSignature, err := signerops.New(nil).Sign(userPrivateKey, userMsg[:])
-	if err != nil {
-		t.Fatalf("Sign(user) error = %v", err)
-	}
-	cosignerMsg := message.ComponentMessage(message.RoleCosigner, group.Entries[0].TxID)
-	cosignerSignature, err := signerops.New(nil).Sign(cosignerPrivateKey, cosignerMsg[:])
-	if err != nil {
-		t.Fatalf("Sign(cosigner) error = %v", err)
-	}
-
-	keyMaterial := &coresigning.KeyMaterial{
-		Type:                   keytypes.GuardedFalcon1024Cosigner1024V1,
-		Category:               keys.CategoryDSALsig,
-		BaseKeyType:            falcon1024guarded.BaseKeyType,
-		PublicKey:              append([]byte(nil), userPublicKey...),
-		Bytecode:               append([]byte(nil), bytecode...),
-		Parameters:             map[string]string{keytypes.ParameterCosignerPublicKey: hex.EncodeToString(cosignerPublicKey)},
-		SigningMetadataVersion: keys.CurrentSigningMetadataVersion,
-		Value:                  &coresigning.LsigKeyMaterial{PrivateKey: append([]byte(nil), userPrivateKey...)},
-	}
-	session := &componentKeyTestSession{key: keyMaterial}
-
-	result, signErr := assembleDecoded(context.Background(), signerapi.AssemblyRequest{
-		RequestID:     "asm-falcon-cosigner",
-		GroupBytesHex: groupBytesHex,
-		Targets: []signerapi.AssemblyTarget{{Kind: signerapi.AssemblyTargetKindGuarded,
-			TargetIndex:       0,
-			AuthAddress:       guardedAccount,
-			UserSignature:     hex.EncodeToString(userSignature),
-			CosignerSignature: hex.EncodeToString(cosignerSignature),
-		}},
-	}, group, session)
-	if signErr != nil {
-		t.Fatalf("assembleDecoded() error = %v", signErr)
-	}
-	if len(result.SignedGroup) != 1 {
-		t.Fatalf("SignedGroup len = %d, want 1", len(result.SignedGroup))
-	}
-	signedTargetBytes, err := hex.DecodeString(result.SignedGroup[0])
-	if err != nil {
-		t.Fatalf("DecodeString(signed target) error = %v", err)
-	}
-	var signedTarget types.SignedTxn
-	if err := msgpack.Decode(signedTargetBytes, &signedTarget); err != nil {
-		t.Fatalf("Decode(signed target) error = %v", err)
-	}
-	if len(signedTarget.Lsig.Args) != 2 {
-		t.Fatalf("LogicSig args len = %d, want 2", len(signedTarget.Lsig.Args))
-	}
-	if !bytes.Equal(signedTarget.Lsig.Args[0], userSignature) {
-		t.Fatalf("LogicSig arg 0 = %x, want user signature %x", signedTarget.Lsig.Args[0], userSignature)
-	}
-	if !bytes.Equal(signedTarget.Lsig.Args[1], cosignerSignature) {
-		t.Fatalf("LogicSig arg 1 = %x, want cosigner signature %x", signedTarget.Lsig.Args[1], cosignerSignature)
-	}
-	if keyMaterial.Type != "" || keyMaterial.Value != nil || keyMaterial.Bytecode != nil || keyMaterial.PublicKey != nil {
-		t.Fatalf("key material was not zeroed after assembly: %#v", keyMaterial)
-	}
-}
-
-func TestAssembleDecodedGuardedRejectsWrongCosignerSignature(t *testing.T) {
-	cosignerPublicKey, _ := testFalconComponentKeypair(t, 0x54)
-	_, wrongPrivateKey := testFalconComponentKeypair(t, 0x55)
-
-	userPublicKey, userPrivateKey, err := signerops.New(nil).GenerateKeypair(bytes.Repeat([]byte{0x56}, 64))
-	if err != nil {
-		t.Fatalf("GenerateKeypair() error = %v", err)
-	}
-	bytecode := []byte{0x06, 0x20, 0x01, 0x01, 0x22, 0x56, 0x78}
-	guardedAccount := logicSigAddressForTest(t, bytecode)
-	txn := paymentTransaction(t, guardedAccount, types.Address{19}.String(), 14)
-	groupBytesHex := []string{txnutil.EncodeWithPrefixHex(txn)}
-	group, decodeErr := canonical.DecodeGroupHex(groupBytesHex)
-	if decodeErr != nil {
-		t.Fatalf("DecodeCanonicalGroupHex() error = %v", decodeErr)
-	}
-
-	userMsg := message.ComponentMessage(message.RoleUser, group.Entries[0].TxID)
-	userSignature, err := signerops.New(nil).Sign(userPrivateKey, userMsg[:])
-	if err != nil {
-		t.Fatalf("Sign(user) error = %v", err)
-	}
-	cosignerMsg := message.ComponentMessage(message.RoleCosigner, group.Entries[0].TxID)
-	wrongSignature, err := signerops.New(nil).Sign(wrongPrivateKey, cosignerMsg[:])
-	if err != nil {
-		t.Fatalf("Sign(wrong cosigner) error = %v", err)
-	}
-
-	keyMaterial := &coresigning.KeyMaterial{
-		Type:                   keytypes.GuardedFalcon1024Cosigner1024V1,
-		Category:               keys.CategoryDSALsig,
-		BaseKeyType:            falcon1024guarded.BaseKeyType,
-		PublicKey:              append([]byte(nil), userPublicKey...),
-		Bytecode:               append([]byte(nil), bytecode...),
-		Parameters:             map[string]string{keytypes.ParameterCosignerPublicKey: hex.EncodeToString(cosignerPublicKey)},
-		SigningMetadataVersion: keys.CurrentSigningMetadataVersion,
-		Value:                  &coresigning.LsigKeyMaterial{PrivateKey: append([]byte(nil), userPrivateKey...)},
-	}
-	session := &componentKeyTestSession{key: keyMaterial}
-
-	result, signErr := assembleDecoded(context.Background(), signerapi.AssemblyRequest{
-		RequestID:     "asm-bad-cosigner",
-		GroupBytesHex: groupBytesHex,
-		Targets: []signerapi.AssemblyTarget{{Kind: signerapi.AssemblyTargetKindGuarded,
-			TargetIndex:       0,
-			AuthAddress:       guardedAccount,
-			UserSignature:     hex.EncodeToString(userSignature),
-			CosignerSignature: hex.EncodeToString(wrongSignature),
-		}},
-	}, group, session)
-	if result != nil {
-		t.Fatalf("result = %#v, want nil", result)
-	}
-	if signErr == nil || signErr.Kind != ErrorBadRequest {
-		t.Fatalf("assembleDecoded() error = %#v, want bad request", signErr)
-	}
-	if !strings.Contains(signErr.Message, "cosigner_signature invalid") {
-		t.Fatalf("assembleDecoded() error = %q, want cosigner_signature invalid", signErr.Message)
-	}
-}
-
-func TestAssembleDecodedGuardedRejectsWrongUserSignature(t *testing.T) {
-	cosignerPublicKey, cosignerPrivateKey := testFalconComponentKeypair(t, 0x57)
-
-	userPublicKey, userPrivateKey, err := signerops.New(nil).GenerateKeypair(bytes.Repeat([]byte{0x58}, 64))
-	if err != nil {
-		t.Fatalf("GenerateKeypair(user) error = %v", err)
-	}
-	_, wrongUserPrivateKey, err := signerops.New(nil).GenerateKeypair(bytes.Repeat([]byte{0x59}, 64))
-	if err != nil {
-		t.Fatalf("GenerateKeypair(wrong user) error = %v", err)
-	}
-	bytecode := []byte{0x06, 0x20, 0x01, 0x01, 0x22, 0x9a, 0xbc}
-	guardedAccount := logicSigAddressForTest(t, bytecode)
-	txn := paymentTransaction(t, guardedAccount, types.Address{20}.String(), 15)
-	groupBytesHex := []string{txnutil.EncodeWithPrefixHex(txn)}
-	group, decodeErr := canonical.DecodeGroupHex(groupBytesHex)
-	if decodeErr != nil {
-		t.Fatalf("DecodeCanonicalGroupHex() error = %v", decodeErr)
-	}
-
-	userMsg := message.ComponentMessage(message.RoleUser, group.Entries[0].TxID)
-	wrongUserSignature, err := signerops.New(nil).Sign(wrongUserPrivateKey, userMsg[:])
-	if err != nil {
-		t.Fatalf("Sign(wrong user) error = %v", err)
-	}
-	cosignerMsg := message.ComponentMessage(message.RoleCosigner, group.Entries[0].TxID)
-	cosignerSignature, err := signerops.New(nil).Sign(cosignerPrivateKey, cosignerMsg[:])
-	if err != nil {
-		t.Fatalf("Sign(cosigner) error = %v", err)
-	}
-
-	keyMaterial := &coresigning.KeyMaterial{
-		Type:                   keytypes.GuardedFalcon1024Cosigner1024V1,
-		Category:               keys.CategoryDSALsig,
-		BaseKeyType:            falcon1024guarded.BaseKeyType,
-		PublicKey:              append([]byte(nil), userPublicKey...),
-		Bytecode:               append([]byte(nil), bytecode...),
-		Parameters:             map[string]string{keytypes.ParameterCosignerPublicKey: hex.EncodeToString(cosignerPublicKey)},
-		SigningMetadataVersion: keys.CurrentSigningMetadataVersion,
-		Value:                  &coresigning.LsigKeyMaterial{PrivateKey: append([]byte(nil), userPrivateKey...)},
-	}
-	session := &componentKeyTestSession{key: keyMaterial}
-
-	result, signErr := assembleDecoded(context.Background(), signerapi.AssemblyRequest{
-		RequestID:     "asm-bad-user",
-		GroupBytesHex: groupBytesHex,
-		Targets: []signerapi.AssemblyTarget{{Kind: signerapi.AssemblyTargetKindGuarded,
-			TargetIndex:       0,
-			AuthAddress:       guardedAccount,
-			UserSignature:     hex.EncodeToString(wrongUserSignature),
-			CosignerSignature: hex.EncodeToString(cosignerSignature),
-		}},
-	}, group, session)
-	if result != nil {
-		t.Fatalf("result = %#v, want nil", result)
-	}
-	if signErr == nil || signErr.Kind != ErrorBadRequest {
-		t.Fatalf("assembleDecoded() error = %#v, want bad request", signErr)
-	}
-	if !strings.Contains(signErr.Message, "user_signature invalid") {
-		t.Fatalf("assembleDecoded() error = %q, want user_signature invalid", signErr.Message)
 	}
 }
 
@@ -1251,14 +1005,17 @@ func TestSignPreparedCosignerComponentsRejectsUserRoleBeforeKeyLoad(t *testing.T
 	txn := paymentTransaction(t, sender, receiver, 11)
 	plan, err := prepareComponentSigning(componentPlanRequest{
 		RequestID:     "cmp-user",
-		Role:          ComponentSignRoleUser,
-		ComponentKey:  sender,
+		Role:          ComponentSignRoleCosigner,
+		ComponentKey:  testFalconComponentSelector(t, 0xab),
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
 		TargetIndices: []int{0},
 	})
 	if err != nil {
 		t.Fatalf("prepareComponentSigning() error = %v", err)
 	}
+	// 0x01 named the retired user role; a plan carrying it is refused before
+	// any key loads.
+	plan.MessageRole = message.Role(0x01)
 	session := &componentKeyTestSession{}
 
 	result, signErr := signPreparedCosignerComponents(context.Background(), plan, session)
@@ -1488,38 +1245,6 @@ func (s *componentKeyStore) Type() string {
 	return "test"
 }
 
-type componentUserTestProvider struct {
-	family     string
-	messages   [][]byte
-	signatures [][]byte
-}
-
-func (p *componentUserTestProvider) RoutingFamily() string {
-	return p.family
-}
-
-func (p *componentUserTestProvider) LoadKeyMaterial(_ coresigning.ProviderKey) (*coresigning.KeyMaterial, error) {
-	return nil, nil
-}
-
-func (p *componentUserTestProvider) SignMessage(_ *coresigning.KeyMaterial, msg []byte) ([]byte, error) {
-	msgCopy := append([]byte(nil), msg...)
-	signature := append([]byte("user-component-signature:"), msgCopy...)
-	p.messages = append(p.messages, msgCopy)
-	p.signatures = append(p.signatures, append([]byte(nil), signature...))
-	return signature, nil
-}
-
-func (p *componentUserTestProvider) ZeroKey(key *coresigning.KeyMaterial) {
-	if value, ok := key.Value.([]byte); ok {
-		for i := range value {
-			value[i] = 0
-		}
-	}
-	key.Type = ""
-	key.Value = nil
-}
-
 func TestLoadCosignerComponentKeyMapsMissingKey(t *testing.T) {
 	session := &componentKeyTestSession{err: keystore.ErrKeyNotFound}
 	_, _, err := loadCosignerComponentKey(context.Background(), session, testFalconComponentSelector(t, 0x22))
@@ -1581,13 +1306,13 @@ func TestValidateGuardedPassthroughRequiresSignatureAndCanonical(t *testing.T) {
 		t.Fatalf("signed passthrough: unexpected error %v", err)
 	}
 
-	// A passthrough whose sender is a locally-held guarded account is rejected:
+	// A passthrough whose sender is a locally held cosigned account is rejected:
 	// it must go through component assembly, not passthrough.
-	guardedSession := &componentKeyTestSession{keysByAddr: map[string]*coresigning.KeyMaterial{
-		sender: {Type: keytypes.GuardedFalcon1024Cosigner1024V1},
+	cosignedSession := &componentKeyTestSession{keysByAddr: map[string]*coresigning.KeyMaterial{
+		sender: {Type: "aplane.falcon1024.v1", BoundedAuthorization: &boundedmeta.Metadata{Cosigner: &boundedmeta.CosignerAuthorization{}}},
 	}}
-	if _, err := validateGuardedPassthrough(context.Background(), signerapi.AssemblyPassthroughItem{TargetIndex: 0, SignedTxnHex: signed}, entry, guardedSession); err == nil {
-		t.Fatal("guarded-account passthrough: expected rejection, got nil")
+	if _, err := validateGuardedPassthrough(context.Background(), signerapi.AssemblyPassthroughItem{TargetIndex: 0, SignedTxnHex: signed}, entry, cosignedSession); err == nil {
+		t.Fatal("cosigned-account passthrough: expected rejection, got nil")
 	}
 
 	// A non-not-found keystore error (e.g. locked session, decrypt failure) must

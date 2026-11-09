@@ -12,6 +12,8 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/boundary"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/protocol"
+	"github.com/aplane-algo/aplane/internal/sigconstruction"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -176,6 +178,7 @@ func isCustomPolicy(policy string) bool {
 func reviewRekey(review PrepareGenerateResultMessage) (label, consequence string) {
 	setting := boundedmeta.RekeySetting(review.Bounded.Rekey)
 	cosigned := review.Bounded.CosignerRequired
+	plain := review.Bounded.Contract == boundedmeta.PlainContract
 	if review.Bounded.RekeyList {
 		count := len(rekeyToList(review))
 		consequence = "The spending key alone can hand the account to any of them, at any time."
@@ -193,6 +196,13 @@ func reviewRekey(review PrepareGenerateResultMessage) (label, consequence string
 	}
 	switch setting {
 	case boundedmeta.RekeyRefused:
+		if plain && cosigned {
+			// A plain host can always close out, with the cosigner.
+			return "None", "No rekey path. Every spend, closes included, needs the cosigner."
+		}
+		if plain {
+			return "None", "No rekey path. The spending key alone can spend or close everything."
+		}
 		return "None", "No rekey path. Losing a required authority cannot be repaired."
 	case boundedmeta.RekeySpendingKey:
 		if cosigned {
@@ -209,8 +219,12 @@ func reviewRekey(review PrepareGenerateResultMessage) (label, consequence string
 // called recipients to code the framework does not check. Overstating what an account
 // can pay is the mistake to avoid, so only the policies with no list say "any". A
 // policy this client does not know claims neither: it is named, with the details.
-func reviewRecipients(policy string, recipients []string) (row, note string) {
+func reviewRecipients(contract, policy string, cosigned bool, recipients []string) (row, note string) {
 	switch {
+	case contract == boundedmeta.PlainContract && cosigned:
+		return reviewRow("Recipients", "any; the cosigner's policy decides what it signs"), ""
+	case contract == boundedmeta.PlainContract:
+		return reviewRow("Recipients", "any; the spending key alone decides"), ""
 	case policy == boundedmeta.Layer3PolicyCustom:
 		return reviewRow("Policy", "Custom policy, from the template author's code"), ""
 	case policy == boundedmeta.Layer3PolicyTimelock:
@@ -256,8 +270,13 @@ func (m Model) renderGenerateReview() string {
 	sb.WriteString(titleStyle.Render("Review New Account"))
 	sb.WriteString("\n\n")
 	sb.WriteString(reviewRow("Key type", displayKeyType(review.KeyType)+", fixed once created"))
-	sb.WriteString(reviewRow("Transfers", fmt.Sprintf("%s, fee limit %d", spendEffectsLabel(profile.SpendEffects), profile.MaxFee)))
-	row, note := reviewRecipients(profile.Layer3Policy, recipientList(review.Parameters))
+	sb.WriteString(reviewRow("Transfers", transfersLabel(profile)))
+	row, note := reviewRecipients(profile.Contract, profile.Layer3Policy, profile.CosignerRequired, recipientList(review.Parameters))
+	// A plain host on a classical base, such as Ed25519, has a classical spending
+	// key; say so where it is chosen.
+	if construction, ok := sigconstruction.ForBaseKeyType(review.KeyType); profile.Contract == boundedmeta.PlainContract && ok && !construction.PostQuantum() {
+		note = strings.TrimSpace(note + " The " + displayKeyType(review.KeyType) + " spending key is classical, not post-quantum.")
+	}
 	sb.WriteString(row)
 	rekey, consequence := reviewRekey(*review)
 	sb.WriteString(reviewRow("Rekey", rekey))
@@ -455,4 +474,13 @@ func (m Model) rekeyTargetNote(address string) string {
 		return note
 	}
 	return ""
+}
+
+// transfersLabel names what the account may spend and its fee limit. A plain
+// host has neither rule: every transaction that doesn't rekey is a spend.
+func transfersLabel(profile *protocol.PreparedBoundedProfile) string {
+	if profile.MaxFee == nil {
+		return "Any transaction, no fee limit"
+	}
+	return fmt.Sprintf("%s, fee limit %d", spendEffectsLabel(profile.SpendEffects), *profile.MaxFee)
 }

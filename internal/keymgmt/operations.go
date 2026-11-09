@@ -13,7 +13,6 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/algorithm"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
-	"github.com/aplane-algo/aplane/internal/cosigner/cosignerrefs"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/genstore"
@@ -128,16 +127,15 @@ func IsValidKeyTypeWithActivated(keyType string, activated []string) bool {
 // SupportsMnemonicImport reports whether user-entered mnemonic import is
 // enabled for a key type. This is intentionally narrower than "has mnemonic
 // material"; only externally recoverable wallet/tool protocols should return
-// true.
+// true. That is native key types only: a LogicSig account recovers from its
+// encrypted credential or backup, never from a mnemonic.
 func SupportsMnemonicImport(keyType string) bool {
 	keyType = strings.ToLower(strings.TrimSpace(keyType))
 	if keyType == "" || keytypecatalog.IsInternalOnly(keyType) {
 		return false
 	}
-
-	if provider := lsigprovider.Get(keyType); provider != nil {
-		mnemonicProvider, ok := provider.(lsigprovider.MnemonicProvider)
-		return ok && mnemonicProvider.SupportsMnemonicImport()
+	if lsigprovider.Get(keyType) != nil {
+		return false
 	}
 
 	meta, err := algorithm.GetMetadata(keyType)
@@ -197,11 +195,6 @@ func GenerateKeyWithActivatedContext(ctx context.Context, paths storepaths.Paths
 
 	if !isKeyTypeInList(keyType, validTypes) {
 		return nil, fmt.Errorf("invalid key type: %s (must be one of: %s)", keyType, strings.Join(validTypes, ", "))
-	}
-	var resolveErr error
-	params, resolveErr = cosignerrefs.ResolveCreationParams(paths, keyType, params)
-	if resolveErr != nil {
-		return nil, fmt.Errorf("%w: cosigner reference resolution failed: %v", keygen.ErrInvalidParams, resolveErr)
 	}
 
 	generator, err := keygen.GetGenerator(keyType)

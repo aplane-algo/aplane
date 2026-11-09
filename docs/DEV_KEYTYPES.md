@@ -130,9 +130,8 @@ validation; republish such a template with `derivation_version: 3`. Provider-own
 bare DSA versions use compiler auto-salting. Assignments are: omitted
 `derivation_version` means unsalted, and explicit `derivation_version: 3` means
 compiler-owned TEAL v13 auto-salting.
-The bundled `aplane.falcon1024.v1`, `aplane.ed25519.v1`, and dedicated guarded
-cosigner provider (`aplane.falcon1024-cosigner1024.v1`) all use the compiler-owned
-mode. User template TEAL cannot choose salt style, must remain relocatable,
+The bundled `aplane.falcon1024.v1` and `aplane.ed25519.v1` (plain programs and
+plain hosts) and the general bounded type all use the compiler-owned mode. User template TEAL cannot choose salt style, must remain relocatable,
 and must not depend on absolute constant-block layout or numeric `bytec`/`intc`
 indexes.
 
@@ -207,23 +206,21 @@ Go-defined key types:
 | `ed25519` | Native signing key | Go-defined | default-enabled | `internal/signing/ed25519`, `internal/keygen/ed25519.go` |
 | `falcon1024` | Protocol-native PQ signing key | Go-defined | default-enabled on signer nodes | `internal/signing/falcon1024` |
 | `aplane.falcon1024-b.v1` | General bounded account, one of 147 shapes selected per key | Go-defined | default-enabled on signer nodes | `lsig/boundedaccount`, `internal/boundary` |
-| `aplane.falcon1024.v1` | DSA LogicSig provider | Go-defined | internal-only | `lsig/falcon1024/v1/standard.go` |
+| `aplane.falcon1024.v1` | Plain host: the plain Falcon program, or `plain1` with overlays | Go-defined | library-visible | `lsig/falcon1024/v1/standard.go`, `lsig/plainhost` |
 | `aplane.witness-falcon1024.v1` | Witness key held by a cosigner | Go-defined | default-enabled on cosigner nodes | `internal/witness`, `lsig/falcon1024/keygen/witness.go` |
-| `aplane.falcon1024-cosigner1024.v1` | Guarded-account DSA LogicSig provider | Go-defined | library-visible | `lsig/falcon1024_guarded` |
-| `aplane.ed25519.v1` | DSA LogicSig provider | Go-defined | internal-only | `lsig/ed25519lsig` |
+| `aplane.ed25519.v1` | Plain host on Ed25519 | Go-defined | library-visible | `lsig/ed25519lsig`, `lsig/plainhost` |
 
 Compiled key types can be registered as binary capabilities without being
 default-visible for generation. Visibility is recorded in
 `internal/keytypecatalog`: only the protocol-native `ed25519` and `falcon1024`
 and the general bounded `aplane.falcon1024-b.v1` (signer nodes) and the witness key type `aplane.witness-falcon1024.v1`
 (cosigner nodes) are default-enabled. The plain `aplane.falcon1024.v1` and
-`aplane.ed25519.v1` providers are `internal_only`: registered for composition,
-signing, and encrypted restore, but never standalone creation or mnemonic
-import. The guarded provider remains library-visible and requires enablement.
-See [internal providers](ARCH_KEYTYPES.md#internal-providers).
+`aplane.ed25519.v1` providers are plain hosts, library-visible and enabled per
+node; with no parameters they are the composition base and the plain program,
+and with a rekey setting they render `plain1`. No LogicSig type takes mnemonic
+import. See [plain hosts](ARCH_KEYTYPES.md#plain-hosts).
 
-Product-store enablement records affect creation, not existing-key signing.
-An old enabled record cannot override internal-only availability. The current
+Product-store enablement records affect creation, not existing-key signing. The current
 public mnemonic-import types are native `ed25519` and `falcon1024`; internal
 seed handlers are separate from user-facing eligibility. Restore neither
 creates nor changes enablement records and does not need the creation template
@@ -702,9 +699,10 @@ stores to recovery.
 
 `RegisterClient` in `lsig/boundedaccount/register.go` registers only the production
 definition and its Falcon base, so a second type needs its own registration there. It then
-reaches clients through `per_key_contract` with no client code. First check
-`TestEveryPerKeyProviderSupportsTheBoundaryWorkflow`, which requires every per-key type to
-resolve every preset. A definition without the `only_these` or cosigner shapes fails it, and the
+reaches clients through `per_key_contract` and `boundary_schema` with no client code. First
+check `TestEveryBoundaryProviderSupportsTheBoundaryWorkflow`, which requires every type that
+declares a `boundary_schema` to resolve every preset; a per-key type without one, such as a
+plain host, is checked apart. A definition without the `only_these` or cosigner shapes fails it, and the
 fix is narrower discovery and client routing, not an exclusion from the test.
 
 ## Provider Interfaces
@@ -718,14 +716,15 @@ Summary:
 
 - `LSigProvider` — base interface for all LogicSig types (identity, params, args)
 - `SigningProvider` — extends LSigProvider with signature metadata and `DeriveLsig`
-- `MnemonicProvider` — extends SigningProvider with mnemonic metadata
 - `AlgodConfigurable` — implemented by any provider that needs runtime TEAL compilation
+- `InstanceResolver` — implemented by a provider whose contract varies by key (the
+  general bounded type and the plain hosts)
 
 Generic LogicSig templates implement `genericlsig.Template` (which extends
 `LSigProvider` with `GenerateTEAL` and `Compile`).
 
-DSA providers implement `SigningProvider` and typically `MnemonicProvider` and
-`AlgodConfigurable`.
+DSA providers implement `SigningProvider` and typically `AlgodConfigurable`.
+No LogicSig provider declares mnemonic import: it is native-only.
 
 ### Client/Signer Boundary For DSA Providers
 
@@ -864,7 +863,7 @@ template_mode: generated     # strict | generated; legacy is not allowed
 # ...publisher, family, version, display_name, max_opcode_cost as above
 
 bounded:
-  contract: bounded2
+  contract: bounded2         # templates can't declare plain1, the plain host's contract
   spend_effects: [pay, axfer, asset_opt_in]  # non-empty subset
   max_fee: 10000             # required; at most 10000
   rekey: spending_key        # required: refused (no rekey path) | spending_key | only_these (refused plus a rekey-to list) | plus_cosigned (spending_key plus a rekey-to list; needs a cosigner)
@@ -898,8 +897,9 @@ The rules that most often surprise authors:
   `max_items` is at most 30 for the fixed policies and 65,536 for the Merkle policies.
 - The timelock policies require `FirstValid >= unlock_round`. `unlock_round_parameter`
   must name a required `uint64` parameter with `min: 1`. Bare `timelock` takes no
-  `recipients_parameter`. Every timelock policy requires `rekey: refused` or
-  `only_these`.
+  `recipients_parameter`. A timelock policy takes any `bounded.rekey`, but beside
+  `spending_key` or `plus_cosigned` the spending key can rekey out before the unlock
+  round, so the lock binds only while it declines.
 - Timelock policies reject `teal`. For a list plus custom time conditions, use a plain
   allowlist and write the conditions in the TEAL.
 - With no `teal`, extra parameters and `runtime_args` are rejected, because nothing
@@ -916,10 +916,11 @@ The rules that most often surprise authors:
   `spending_key` or `plus_cosigned`, where a rekey needs the cosigner too; any other
   list is refused. A listed rekey never asks the cosigner. `plus_cosigned` needs a
   cosigner: without one, the spending key could already rekey anywhere.
-- With `rekey: refused` and no list, with or without a cosigner, `spend_effects` must
-  include `pay`, and `axfer` if it includes `asset_opt_in`: the account can neither
-  close nor be rekeyed, so a transfer is the only way anything leaves it. `only_these`
-  has no such rule, because a listed address is a way out.
+- With `rekey: refused` and no list the account can neither close nor be rekeyed, so a
+  transfer is the only way anything leaves it: without `pay` its ALGO is stuck, and with
+  `asset_opt_in` but no `axfer` an asset it opts into is. The framework does not refuse
+  such a profile; whether to keep a transfer is the author's choice. Under `only_these`
+  a listed address is a way out.
 - Author TEAL reads `arg 1` onward, in the static slot order: base signatures, derived
   arguments, runtime arguments, cosigner signature. A runtime argument
   beside a Merkle proof is therefore `arg 2`. Under `only_these` or `plus_cosigned` the

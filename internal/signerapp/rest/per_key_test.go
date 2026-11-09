@@ -21,6 +21,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/lsig/boundedaccount"
 	lsigsignerreg "github.com/aplane-algo/aplane/lsig/signerreg"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 // A per-key type has no contract of its own to report, and its cosigner is
@@ -72,11 +73,11 @@ func TestPerKeyTypeKeepsItsCosignerOptional(t *testing.T) {
 	}
 }
 
-// per_key_contract means a contract varies by account, and clients take it to mean the
-// boundary workflow works. This pins that assumption across every production provider,
-// including those not enabled by default. A new per-key provider that can't use the
-// workflow must fail here and get narrower discovery, not an exclusion.
-func TestEveryPerKeyProviderSupportsTheBoundaryWorkflow(t *testing.T) {
+// boundary_schema names the grammar a per-key type takes, and clients take it to mean
+// the boundary workflow works. This pins that across every production provider that
+// declares it, including those not enabled by default. A per-key type that declares
+// none, such as a plain host, takes its parameters directly and is checked apart.
+func TestEveryBoundaryProviderSupportsTheBoundaryWorkflow(t *testing.T) {
 	lsigsignerreg.RegisterSigner()
 	cosignerKey := strings.Repeat("41", boundedmeta.CosignerPublicKeySizeV1)
 	recipient := types.Address{1}.String()
@@ -95,6 +96,12 @@ func TestEveryPerKeyProviderSupportsTheBoundaryWorkflow(t *testing.T) {
 		}
 		if !infos[0].PerKeyContract {
 			continue
+		}
+		if infos[0].BoundarySchema == "" {
+			continue
+		}
+		if infos[0].BoundarySchema != boundary.SchemaV1 {
+			t.Fatalf("%s declares boundary schema %q", provider.KeyType(), infos[0].BoundarySchema)
 		}
 		perKey++
 		for _, param := range infos[0].CreationParams {
@@ -142,6 +149,13 @@ func TestEveryPerKeyProviderSupportsTheBoundaryWorkflow(t *testing.T) {
 		}
 	}
 	if perKey == 0 {
-		t.Fatal("no production provider reports per_key_contract")
+		t.Fatal("no production provider declares the boundary schema")
+	}
+}
+
+// The wire's contract names are the durable record's.
+func TestWireBoundedContractsMatchTheRecord(t *testing.T) {
+	if signerapi.BoundedContractBounded2 != boundedmeta.Contract || signerapi.BoundedContractPlain1 != boundedmeta.PlainContract {
+		t.Fatalf("wire contracts %q, %q; record %q, %q", signerapi.BoundedContractBounded2, signerapi.BoundedContractPlain1, boundedmeta.Contract, boundedmeta.PlainContract)
 	}
 }

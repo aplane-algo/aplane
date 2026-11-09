@@ -831,8 +831,8 @@ Valid roles are exactly `signer` and `cosigner`.
 
 | Node role | Allowed active key classes | Disallowed active key classes | Served signing paths |
 |---|---|---|---|
-| `signer` | Native signing keys, ordinary, bounded, and rotating LogicSig account keys, guarded account keys, and public cosigner references used for generation. | Cosigner component private keys. | Normal `/sign`, `/sign/rotating/prepare` and `/sign/rotating/sign`, user-role `/sign/component`, `/sign/assemble`. |
-| `cosigner` | Cosigner component private keys and their public sidecars. | Every account key class: native signing keys and ordinary, bounded, guarded, and rotating LogicSig account keys. | Cosigner-role `/sign/component`. |
+| `signer` | Native signing keys, ordinary, bounded, plain host (cosigned or not) and rotating LogicSig account keys, and public cosigner references used for generation. | Cosigner component private keys. | Normal `/sign`, `/sign/rotating/prepare` and `/sign/rotating/sign`, bounded-base `/sign/component`, `/sign/assemble`. |
+| `cosigner` | Cosigner component private keys and their public sidecars. | Every account key class: native signing keys and ordinary, bounded, plain host, cosigned and rotating LogicSig account keys. | Cosigner-role `/sign/component`. |
 
 Rules:
 
@@ -882,9 +882,9 @@ subject to the node role gate above.
 |---|---|---|---|---|
 | Unsupported by binary | No provider is registered in the current process. | No. | No, if signing needs that provider; native/DSA key types need registered support. | Install/run a binary that supports the key type. |
 | Role-forbidden key type | The node role does not allow this key class. | No, even if the provider is default-enabled or enabled. | No for active inventory; reload rejects role-conflicting active keys. | Use a data root initialized for the correct node role. |
-| Default-enabled account-signing provider | Provider/generator is registered and cataloged as default-enabled; no identity record required. These are the protocol-native `ed25519` and `falcon1024` and the general bounded `aplane.falcon1024-b.v1`; plain Falcon/Ed25519 LogicSig providers are internal-only; other selectable compiled LogicSig providers are library-visible. | Yes on signer nodes. | Yes on signer nodes, if the key file is valid and the transaction network supports its authorization kind. | None. |
+| Default-enabled account-signing provider | Provider/generator is registered and cataloged as default-enabled; no identity record required. These are the protocol-native `ed25519` and `falcon1024` and the general bounded `aplane.falcon1024-b.v1`; the plain Falcon/Ed25519 LogicSig types (plain hosts) and other selectable compiled LogicSig providers are library-visible. | Yes on signer nodes. | Yes on signer nodes, if the key file is valid and the transaction network supports its authorization kind. | None. |
 | Default-enabled cosigner key type | Raw cosigner-key generator/signing support is registered and cataloged as default-enabled. The current type is `aplane.witness-falcon1024.v1`. | Yes on cosigner nodes. | Component-signing only on cosigner nodes; never normal spending `/sign`. | None. |
-| Internal-only compiled provider | Binary catalog availability `internal_only`; any old state record is retained but cannot grant creation. | Never, including explicit enable/generate/import requests. | Yes for valid existing/restored keys; also usable as a composed base. | Use native accounts or an enabled composed type for new creation. |
+| Internal-only compiled provider | Binary catalog availability `internal_only` (no shipped provider uses it now that the plain LogicSig types are plain hosts); any old state record is retained but cannot grant creation. | Never, including explicit enable/generate/import requests. | Yes for valid existing/restored keys; also usable as a composed base. | Use native accounts or an enabled composed type for new creation. |
 | Library-visible compiled provider, inactive | Provider is registered and cataloged as library-visible; no identity `keytypes/<key_type>.json` record exists. | No. | Existing key may sign if the provider is registered, the key file is valid, and the node role allows it. | Enable from KeyType Library or `apadmin keytype enable`. |
 | Library-visible compiled provider, enabled and fingerprint consistent | `keytypes/<key_type>.json` has `source:"compiled"`, `state:"enabled"`, and matching fingerprint. | Yes when allowed by node role. | Yes, if the key file is valid and allowed by node role. | Disable, if no stored key uses it. |
 | Library-visible compiled provider, enabled but fingerprint inconsistent | State record exists, but the stored fingerprint does not match the provider fingerprint in the current binary. | No; reload ignores the conflicting activation record. | Existing key may sign if the provider is registered, the key file is valid, and node role allows it. | Refresh with `apadmin keytype enable <key_type>`. |
@@ -1150,7 +1150,7 @@ key is rejected during reload rather than published as a signable key.
 | Generic LogicSig key valid | Payload has stored LogicSig bytecode, a valid derivation record, `signing_metadata_version`, and stored signing args. | Yes on signer nodes. | Restores from stored metadata; template is not required. |
 | Cosigner key valid | Payload category/type is a cosigner key and Witness Key ID is canonical. | Only through cosigner-role component signing on cosigner nodes; normal `/sign` and spending paths reject it. | Restores as a cosigner key on cosigner nodes, regenerating the public sidecar; never as a spending account. |
 | Bounded account key valid | DSA LogicSig key with signing-metadata version 2 and a valid `bounded_authorization`. | Pure spends, spending-key rekeys, and listed rekeys use signer-held authority, with a cosigner signature on spends when the account has one. | Restores from durable bounded metadata. |
-| Guarded account key valid | DSA LogicSig key whose bytecode embeds the cosigner public key. | Only on signer nodes through guarded orchestration: user component signature, cosigner component signature, local assembly. | Restores from stored bytecode and metadata. |
+| Cosigned account key valid | DSA LogicSig key whose bounded metadata carries the cosigner overlay and whose bytecode embeds the cosigner public key (a plain or bounded host). | Only on signer nodes through the cosigned flow: bounded-base component, cosigner component (none for a listed rekey), local assembly. | Restores from stored bytecode and metadata. |
 | LogicSig derivation invalid | Payload has bytecode but an unknown or inconsistent derivation record; for example, a manual-counter key omits `salt_counter`, or an `algod_v13_auto_salt` key includes one or stores pre-v13 bytecode. | No; scan/verify/restore reject. | Restore rejects. |
 | LogicSig on-curve address | Stored LogicSig bytecode derives an on-curve address. | No; scan/verify/restore reject. | Restore rejects. |
 | LogicSig missing v1 signing metadata | Payload has bytecode but lacks `signing_metadata_version` where signing/restore would need durable metadata. | No. | Restore rejects instead of reconstructing from template. |
@@ -1315,10 +1315,11 @@ TEAL authorization, but its pre-release derivation moved in place to TEAL v13
 compiler auto-salting. Its seed derivation and stored key material are not
 interchangeable with native `falcon1024`.
 
-The [internal-only catalog rule](ARCH_KEYTYPES.md#internal-providers) blocks
-standalone generation and mnemonic import for plain `aplane.falcon1024.v1`
-and `aplane.ed25519.v1`, even with old enabled records. Their stored credentials,
-internal derivation, and encrypted backup/restore contracts are unchanged.
+Plain `aplane.falcon1024.v1` and `aplane.ed25519.v1` are
+[plain hosts](ARCH_KEYTYPES.md#plain-hosts): opt-in per node, with no mnemonic
+import. Their stored credentials, internal derivation, and encrypted
+backup/restore contracts are unchanged; a plain host with overlays also stores
+its `plain1` bounded metadata.
 
 This section uses **versioned signing-metadata keys** for key files that carry
 `signing_metadata_version >= 1`. Non-bounded LogicSig keys use version 1;
@@ -1347,9 +1348,10 @@ bounded keys require version 2. LogicSig key payloads include:
 Bounded signing-metadata version 2 additionally requires the canonical
 `bounded_authorization` object:
 
-- `contract`: `bounded2`
+- `contract`: `bounded2`, or `plain1` for a plain host
 - `base_signature_arg_layout`: exact base arg count and per-position maximums
-- `spend_effects`, `max_fee`, and `rekey`: `refused` (no rekey path, except to a
+- `spend_effects` (empty on `plain1`), `max_fee` (required on `bounded2`, absent
+  on `plain1`), and `rekey`: `refused` (no rekey path, except to a
   listed address when `rekey_list` is set) or `spending_key` (the spending key
   authorizes a pure rekey: alone, or with the cosigner on a cosigned account)
 - optional `rekey_list`: `contract` (`rekey_list1`), `depth` (4), and the
@@ -1799,7 +1801,7 @@ Lifecycle:
 11. Cosigner keys are component-signing keys, not spending accounts.
 12. Cosigner public sidecars are derived public metadata and must not
     be treated as independent signing authority.
-13. Guarded account keys use the guarded orchestration flow; normal `/sign`
+13. Cosigned account keys use the cosigned flow (`cosigned1`); normal `/sign`
     rejects them.
 14. Live backup restore validates the full selected credential set before one
     generation commit. It must not change the node default policy, templates, key-type state,

@@ -18,12 +18,27 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+// isCosignerSelectorParam reports whether the picker fills param. A type that
+// offers a cosigner reference field (a plain host does) is picked into that
+// field, which the signer resolves; its raw public-key field stays text, since
+// the picker's Witness Key ID is not a public key.
 func (m Model) isCosignerSelectorParam(keyType string, param lsigprovider.ParameterDef) bool {
 	info, ok := findServerKeyType(keyType)
 	if !ok || info.CosignerComponentKeyType == "" {
 		return false
 	}
-	return param.Name == cosignerrefs.ParamCosignerName || param.Name == keytypes.ParameterCosignerPublicKey
+	if param.Name == cosignerrefs.ParamCosignerName {
+		return true
+	}
+	if param.Name != keytypes.ParameterCosignerPublicKey {
+		return false
+	}
+	for _, other := range info.CreationParams {
+		if other.Name == cosignerrefs.ParamCosignerName {
+			return false
+		}
+	}
+	return true
 }
 
 func (m Model) compatibleCosignerChoices(componentKeyType string) []cosignerChoice {

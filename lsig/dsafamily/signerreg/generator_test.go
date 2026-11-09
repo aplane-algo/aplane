@@ -180,7 +180,7 @@ func (*boundedGeneratorTestDSA) BuildBoundedAuthorizationMetadata(_ []byte, _ ma
 		BaseSignatureArgLayout: boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{family.MaxSignatureSize}},
 		ArgumentLayout:         boundedmeta.BaseArgumentLayout(boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{family.MaxSignatureSize}}),
 		SpendEffects:           []string{"pay"},
-		MaxFee:                 1_000,
+		MaxFee:                 new(uint64(1_000)),
 		Rekey:                  boundedmeta.RekeyRefused,
 		RuntimeArgs:            []boundedmeta.RuntimeArg{},
 		Layer3Policy:           boundedmeta.Layer3PolicyCustom,

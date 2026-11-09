@@ -89,8 +89,8 @@ func TestBoundedFixtureCompiledBudgetMatrix(t *testing.T) {
 					len(bytecode), spendArgs, spendPlan.GroupSize, spendFee,
 				)
 			}
-			if spendFee > metadata.MaxFee {
-				t.Fatalf("v42 path fee exceeds bounded maximum %d: spend=%d", metadata.MaxFee, spendFee)
+			if spendFee > *metadata.MaxFee {
+				t.Fatalf("v42 path fee exceeds bounded maximum %d: spend=%d", *metadata.MaxFee, spendFee)
 			}
 		})
 	}

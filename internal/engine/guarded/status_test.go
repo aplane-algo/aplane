@@ -36,7 +36,7 @@ func TestInspectRoutesMatchesResolverAndClosesConnections(t *testing.T) {
 				}
 				return ep, []DiscoveredCosignerComponentKey{{KeyType: "test.v1", PublicKey: "aa", ComponentKey: "key"}}, nil
 			}
-			key := signerapi.KeyInfo{Address: "account", SigningFlow: signerapi.SigningFlowCosigner1, CosignerComponentKeyType: "test.v1", Parameters: map[string]string{"cosigner_public_key": "AA"}}
+			key := signerapi.KeyInfo{Address: "account", SigningFlow: signerapi.SigningFlowCosigned1, CosignerComponentKeyType: "test.v1", Parameters: map[string]string{"cosigner_public_key": "AA"}}
 			result := s.InspectRoutes(t.Context(), []signerapi.KeyInfo{key})
 			if len(result.Accounts) != 1 || result.Accounts[0].State != tc.want {
 				t.Fatalf("status = %+v", result)
@@ -69,9 +69,9 @@ func TestInspectRoutesRetainsUnmatchedAndInvalidRequirements(t *testing.T) {
 		return resolverTestEndpoint("a"), nil, nil
 	}}
 	keys := []signerapi.KeyInfo{
-		{Address: "a", SigningFlow: signerapi.SigningFlowCosigner1, CosignerComponentKeyType: "test.v1", Parameters: map[string]string{"cosigner_public_key": "aa"}},
+		{Address: "a", SigningFlow: signerapi.SigningFlowCosigned1, CosignerComponentKeyType: "test.v1", Parameters: map[string]string{"cosigner_public_key": "aa"}},
 		{Address: "b", SigningFlow: signerapi.SigningFlowCosigned1, CosignerComponentKeyType: "test.v1", BoundedAuthorization: &signerapi.BoundedAuthorizationInfo{Cosigner: &signerapi.BoundedCosignerAuthorizationInfo{PublicKeyHex: "bb"}}},
-		{Address: "c", SigningFlow: signerapi.SigningFlowCosigner1},
+		{Address: "c", SigningFlow: signerapi.SigningFlowCosigned1},
 		{Address: "d", SigningFlow: "future-flow"},
 		{Address: "plain"},
 	}
@@ -98,7 +98,7 @@ func TestInspectRoutesCancellationPreservesPartialObservations(t *testing.T) {
 		cancel()
 		return &resolvedCosignerEndpoint{cleanup: func() { closes.Add(1) }}, []DiscoveredCosignerComponentKey{{KeyType: "test.v1", PublicKey: "aa"}}, nil
 	}}
-	result := s.InspectRoutes(ctx, []signerapi.KeyInfo{{Address: "account", SigningFlow: signerapi.SigningFlowCosigner1, CosignerComponentKeyType: "test.v1", Parameters: map[string]string{"cosigner_public_key": "aa"}}})
+	result := s.InspectRoutes(ctx, []signerapi.KeyInfo{{Address: "account", SigningFlow: signerapi.SigningFlowCosigned1, CosignerComponentKeyType: "test.v1", Parameters: map[string]string{"cosigner_public_key": "aa"}}})
 	if len(result.Connections) != 1 || result.Accounts[0].State != "route check incomplete" || result.DiscoveryError != context.Canceled.Error() || closes.Load() != 1 {
 		t.Fatalf("result=%+v closes=%d", result, closes.Load())
 	}

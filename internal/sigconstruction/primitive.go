@@ -27,6 +27,8 @@ type argSlot struct {
 // primitiveProfile is everything a construction needs from one primitive. Verify
 // opcodes don't share a shape, so each primitive renders its own sequence.
 type primitiveProfile struct {
+	// postQuantum is whether the primitive resists a quantum adversary.
+	postQuantum   bool
 	publicKeySize int
 	slots         []argSlot
 	// render emits the verification after the message is on the stack, leaving
@@ -39,6 +41,7 @@ type primitiveProfile struct {
 // primitiveProfiles is the closed primitive catalog.
 var primitiveProfiles = map[PrimitiveID]*primitiveProfile{
 	PrimitiveFalcon1024: {
+		postQuantum:   true,
 		publicKeySize: falconparams.PublicKeySize,
 		slots:         []argSlot{{maxSize: falconparams.CompressedSignatureMaxSize}},
 		render: func(publicKey []byte, firstArg int) string {

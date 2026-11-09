@@ -94,31 +94,15 @@ Source: [FORMAL_SIGNING_AUTHORITY_MODEL.md](FORMAL_SIGNING_AUTHORITY_MODEL.md)
 | S12 | implemented | S12 | `internal/signerapp/signing/service.go::authPolicyKeysFromRequest` uses `txReq.AuthAddress` as the policy selector; `policyruntime.NodePolicy.PolicyFor` resolves it to the key's own document or the node default | `internal/signerapp/signing/always_review_test.go::TestEvaluateAlwaysReviewRulesResolvesPolicyPerKey`; `service_test.go::TestEvaluateAutoRejectionRulesResolvesPolicyPerKey` | |
 | S13 | implemented | Canonical Filename Binding; S13 | `internal/keys/managed_files.go` owns `CanonicalName = Selector || ExtensionForCategory`; scan rejects selector and category/extension mismatches; save, backup/restore, deletion, rotation, and watching consume the central classes | `internal/keys/managed_files_test.go`; `internal/keys/keys_test.go::TestScanKeysDirectoryWithKeyring`; `internal/keys/save_test.go::TestSavePayloadWritesWitnessPublicMetadata`; `internal/keys/managed_files_test.go::TestManagedCredentialDestinationRejectsContradictoryClass`; `test/arch/managed_credential_files_test.go` | Account authority is `.key`; cosigner witness authority is `.cos`. Accepted-selector collision invalidation remains a defensive fallback. |
 
-## Guarded Signing Model
-
-Source: [FORMAL_GUARDED_SIGNING_MODEL.md](FORMAL_GUARDED_SIGNING_MODEL.md)
-
-| ID | Status | Source § | Code anchor | Test anchor | Notes |
-|---|---|---|---|---|---|
-| A1 | implemented | A1 | `internal/cosigner/message/message.go`; `internal/signerapp/signing/component.go::prepareComponentSigning` | `internal/signerapp/signing/component_test.go::TestPrepareComponentSigningUsesCosignerRoleDomain`; `::TestAssembleDecodedGuardedRejectsWrongUserSignature` | Role byte separates user and cosigner signatures for the same target txid. Machine-checked in `guarded_assembly.tla` (`A1_RoleDomainSeparation`). |
-| A2 | implemented | A2 | `internal/signerapp/signing/cosigner_gate.go`; `internal/signerapp/signing/execution.go` | `internal/signerapp/signing/execution_test.go::TestExecutorRejectsCosignerKeyTypesBeforeSessionLoad`; `::TestExecutorSignCryptoKeyRejectsCosignerKeyTypesBeforeProviderLookup` | Covers witness keys and the dedicated guarded account key type; bounded-cosigner ordinary-sign rejection is tested separately. |
-| A3 | implemented | A3 | `internal/signerapp/signing/component_sign.go::signPreparedUserComponents`; `::loadGuardedAccountSigningKey` | `internal/signerapp/signing/component_test.go::TestSignPreparedUserComponentsSignsGuardedAccountMessages`; `::TestSignPreparedUserComponentsSignsGuardedAuthorizerMessages` | User component signing proves `target.auth_address` is a local guarded account key; sender may differ and is bound by assembly. |
-| A4 | implemented | A4 | `internal/signerapp/signing/service.go::signComponentWithContext` (entry: `unified_component.go::SignComponentsWithContext`); `internal/signerapp/signing/cosigner_policy.go`; `internal/signerapp/policyeval/cosigner.go`; `internal/policy` | `internal/signerapp/signing/component_test.go::TestSignComponentCosignerFailsClosedWithoutLoadedPolicyBeforeKeyLoad`; `::TestSignComponentCosignerKeyOnDenyAllDefaultRejectsEverything`; `::TestSignComponentCosignerRejectsNonTransferBeforeKeyLoad`; `::TestSignComponentCosignerRejectsRouteMissBeforeKeyLoad`; `::TestSignComponentCosignerRejectsInheritedReviewRouteMissBeforeKeyLoad`; `::TestSignComponentCosignerRejectsRekeyBeforeKeyLoad` | Cosigner policy is deterministic: no review and no operator default. Policies are selected per Witness Key ID through the request's policy snapshot (the key's own document, else the node default, which is deny-all as shipped; `TestCosignerComponentPolicyIsSelectedByComponentKey`); with no snapshot loaded the request fails closed before key load. That selection is a single lookup guard and stays a test-level contract by decision (2026-10-07 drift review), not a model extension. |
-| A5 | implemented | A5 | `internal/signerapp/signing/component_sign.go::loadCosignerComponentKey`; `internal/witness` | `internal/signerapp/signing/component_test.go::TestSignPreparedCosignerComponentsRejectsWrongKeyType`; `::TestLoadCosignerComponentKeyRejectsMismatchedPublicPrivateKey`; `::TestSignPreparedCosignerComponentsSignsFalcon1024Messages` | Witness Key ID, category, key type, and public/private pair must agree. |
-| A6 | implemented | A6 | `internal/signerapp/signing/component_assemble.go::assembleGuardedTarget` | `internal/signerapp/signing/component_test.go::TestAssembleDecodedGuardedRejectsWrongUserSignature`; `::TestAssembleDecodedGuardedVerifiesAndBuildsSignedGroup` | User signature is checked against the user public key stored in the local guarded account key. Machine-checked in `guarded_assembly.tla` (`A6_UserSignatureVerified`). |
-| A7 | implemented | A7 | `internal/signerapp/signing/component_assemble.go::assembleGuardedTarget` | `internal/signerapp/signing/component_test.go::TestAssembleDecodedGuardedRejectsWrongCosignerSignature`; `::TestAssembleDecodedGuardedVerifiesFalconCosignerAndBuildsSignedGroup` | Cosigner signature is checked against the cosigner public key embedded in local key metadata/bytecode, not endpoint metadata. Machine-checked in `guarded_assembly.tla` (`A7_CosignerSignatureVerified`). |
-| A8 | implemented | A8 | `internal/signerapp/signing/component_assemble.go::validateGuardedPassthrough` | `internal/signerapp/signing/component_test.go::TestAssembleDecodedGuardedRejectsMismatchedPassthrough`; `::TestAssembleDecodedGuardedVerifiesAndBuildsSignedGroup` | Passthrough bytes are preserved only when their decoded txid matches the canonical group entry. Machine-checked in `guarded_assembly.tla` (`A8_PassthroughTxidBound`). |
-| A9 | implemented | A9 | `internal/engine/guarded/discovery.go::resolveCosignerEndpoints` | `internal/engine/guarded/discovery_resolver_test.go::TestLiveCosignerResolverRemovesImplicitPrimarySignerFallback`; `::TestLiveCosignerResolverRejectsDuplicateAdvertisers`; `::TestLiveCosignerResolverHostKeyMismatchAbortsGlobalSearch` | `/keys` resolves an operation-scoped route only; every required key needs exactly one live configured endpoint, and there is no implicit primary-signer fallback. |
-| A10 | implemented | A10 | `internal/engine/guarded/submit.go::requestOneCosignerComponentSignatureSet`; `internal/cosigner/canonical` | `cmd/apshell/deps_test.go::TestClientDoesNotLinkFalcon` | Client collects and forwards component signatures without cryptographic verification; the deps test pins the client binary to exclude `internal/sigconstruction/verify` and the Falcon libraries. |
-| A11 | implemented | A11 | `internal/engine/guarded/submit.go::collectComponentSignatures`; `pkg/signerapi/cosigner.go` | `internal/engine/guarded/submit_test.go::TestCollectComponentSignaturesRejectsMalformedResponses` (`collectComponentSignatures` enforces exact coverage + scheme directly) | Client requires exact response coverage and expected scheme before forwarding signatures to assembly. |
-| A12 | implemented | A12 | `internal/engine/guarded/discovery.go`; `internal/apshellapp/endpoints.go` | `internal/engine/guarded/discovery_resolver_test.go::TestLiveCosignerResolverLimitsConcurrentProbes`; `::TestLiveCosignerResolverRejectsEndpointOverflowBeforeProbing`; `internal/apshellapp/endpoints_test.go::TestEndpointDiscoverCosignersIsReadOnly`; `::TestEndpointDiscoverCosignersRejectsDuplicatePublication` | Routing discovery is bounded and operation-scoped; the shell diagnostic is read-only. Endpoint-local failures contribute no route; duplicate required routes, unresolved coverage, incomplete sweeps and host-key mismatch fail the operation. |
-| A13 | implemented | A13 | `internal/keyclass/keyclass.go`; `internal/signerapp/keyadmin/service.go`; `internal/signerapp/templates/reload.go`; `internal/signerapp/rest/role.go` | `internal/keyclass/keyclass_test.go::TestNodeRoleAllowsKeyType`; `::TestValidateKeyTypesAllowedForNodeRoleReportsConflicts`; `internal/signerapp/keyadmin/service_test.go::TestServiceGenerateKeyRejectsKeyTypeDisallowedByNodeRole`; `::TestServiceImportKeyRejectsKeyTypeDisallowedByNodeRole`; `internal/signerapp/templates/reload_test.go::TestReloadNodeRoleValidationRejectsConflictingInventoryBeforePublish`; `internal/signerapp/rest/service_test.go::TestServiceNodeRoleGatesEndpointRoles` | Node role gates generation/import, REST role dispatch, and reload-time publication. |
-| A14 | implemented | A14 | `internal/signerapp/signing/component_assemble.go::assembleGuardedTarget`; `::validateAssembledGuardedTarget` | `internal/signerapp/signing/component_test.go::TestAssembleDecodedGuardedVerifiesAndBuildsSignedGroup` | Assembly verifies the assembled signed txn matches the canonical txid and carries `AuthAddr == guarded_account` when sender differs. Machine-checked in `guarded_assembly.tla` (`A14_AssembledTxnBound`). |
-| A15 | implemented | A15 | `internal/signerapp/rest/inventory.go::BuildKeyInfoList`; `::buildKeyTypes`; `internal/engine/guarded/submit.go::HasGuardedEffectiveSigner`; `::guardedTargets` | `internal/signerapp/rest/service_test.go::TestBuildKeyTypesServesSigningFlowMetadata`; `internal/engine/guarded/submit_test.go::TestGuardedTargetsRejectUnsupportedSigningFlow`; `test/arch/signingflow_test.go::TestClientPackagesRouteOnSigningFlow` | Daemon serves `signing_flow`/`cosigner_component_key_type` in inventory; clients route on the flow label, fail fast on unknown flows, and the arch test pins client packages off compiled guarded key-type switches. |
-
 ## Bounded Cosigner Model
 
 Source: [FORMAL_TLA_BOUNDED_COSIGNER_MODEL.md](FORMAL_TLA_BOUNDED_COSIGNER_MODEL.md)
+
+The A rows came from the guarded signing model, retired with the dedicated
+cosigned account in phase 5 of the account overlays; they describe code the
+cosigned flow keeps. A1, A3, A6, A7 and A14 described that account's user
+component and its assembly, and were retired with it; BS3 and BS5 cover what
+assembly checks in their place.
 
 | ID | Status | Source § | Code anchor | Test anchor | Notes |
 |---|---|---|---|---|---|
@@ -129,6 +113,16 @@ Source: [FORMAL_TLA_BOUNDED_COSIGNER_MODEL.md](FORMAL_TLA_BOUNDED_COSIGNER_MODEL
 | BS5 | implemented | BS5 | `internal/engine/guarded/submit.go::verifyAssembledAgainstFrozen`; `internal/signerapp/signing/service.go::AssembleWithContext`; `internal/signerapp/signing/bounded_cosigner.go::assembleBoundedTarget` | `internal/engine/guarded/submit_test.go::TestVerifyAssembledAgainstFrozen`; `internal/signerapp/signing/bounded_cosigner_test.go::TestBoundedAssemblyReceiptBindsRuntimeAndMetadata` | Receipt, passthrough, and final bytes bind the frozen plan. Machine-checked in `bounded_cosigner.tla` (`BS5_CanonicalGroupBound`). |
 | BS6 | implemented | BS6 | `internal/signerapp/signing/bounded_cosigner.go::validateBoundedComponentPlan`; ordinary-sign rejection in `internal/signerapp/signing/service.go` | `internal/signerapp/signing/bounded_cosigner_test.go::TestValidateBoundedComponentPlanAdmitsOnlyCosignedPaths` | Invalid shapes, and every path but a cosigned account's spend, cosigned rekey and listed rekey, cannot enter cosigned output. Machine-checked in `bounded_cosigner.tla` (`BS6_InvalidNeverOutputs`). |
 | BS7 | implemented | BS7 | `internal/signerapp/signing/service.go::AssembleWithContext`; `internal/signerapp/signing/bounded_cosigner.go::assembleBoundedTarget`; `internal/engine/guarded/submit.go::signAndSubmitBoundedCosignerGroup` | `internal/signerapp/signing/bounded_cosigner_test.go::TestAssembleBoundedTargetVerifiesBothAuthorities`; `internal/engine/guarded/simulate_submit_test.go::TestBoundedCosignerSimulateUsesUserFirstChoreography` | Every failed stage returns no signed group; only final assembly reaches submission/simulation. Machine-checked in `bounded_cosigner.tla` (`BS7_AtomicOutput`). |
+| A2 | implemented | A2 | `internal/signerapp/signing/cosigner_gate.go`; `internal/signerapp/signing/execution.go`; `internal/signerapp/signing/service.go::SignGroupWithContext` (`planHasCosignedBoundedTarget`) | `internal/signerapp/signing/execution_test.go::TestExecutorRejectsCosignerKeyTypesBeforeSessionLoad`; `::TestExecutorSignCryptoKeyRejectsCosignerKeyTypesBeforeProviderLookup`; `internal/signerapp/signing/bounded_cosigner_test.go::TestPlainSignRefusesACosignedAccount` | `/sign` refuses witness keys and any plan with a cosigned account, on a plain host or a bounded host; an account without a cosigner signs there. |
+| A4 | implemented | A4 | `internal/signerapp/signing/service.go::signComponentWithContext` (entry: `internal/signerapp/signing/unified_component.go::SignComponentsWithContext`); `internal/signerapp/signing/cosigner_policy.go`; `internal/signerapp/policyeval/cosigner.go`; `internal/policy` | `internal/signerapp/signing/component_test.go::TestSignComponentCosignerFailsClosedWithoutLoadedPolicyBeforeKeyLoad`; `::TestSignComponentCosignerKeyOnDenyAllDefaultRejectsEverything`; `::TestSignComponentCosignerRejectsNonTransferBeforeKeyLoad`; `::TestSignComponentCosignerRejectsRouteMissBeforeKeyLoad`; `::TestSignComponentCosignerRejectsInheritedReviewRouteMissBeforeKeyLoad`; `::TestSignComponentCosignerRejectsRekeyBeforeKeyLoad` | Cosigner policy is deterministic: no review and no operator default. Policies are selected per Witness Key ID through the request's policy snapshot (the key's own document, else the node default, which is deny-all as shipped; `TestCosignerComponentPolicyIsSelectedByComponentKey`); with no snapshot loaded the request fails closed before key load. That selection is a single lookup guard and stays a test-level contract by decision (2026-10-07 drift review), not a model extension. |
+| A5 | implemented | A5 | `internal/signerapp/signing/component_sign.go::loadCosignerComponentKey`; `internal/witness` | `internal/signerapp/signing/component_test.go::TestSignPreparedCosignerComponentsRejectsWrongKeyType`; `::TestLoadCosignerComponentKeyRejectsMismatchedPublicPrivateKey`; `::TestSignPreparedCosignerComponentsSignsFalcon1024Messages` | Witness Key ID, category, key type, and public/private pair must agree. |
+| A8 | implemented | A8 | `internal/signerapp/signing/component_assemble.go::validateGuardedPassthrough`; `::rejectLocalGuardedPassthrough` | `internal/signerapp/signing/component_test.go::TestAssembleDecodedGuardedRejectsMismatchedPassthrough`; `::TestAssembleDecodedGuardedVerifiesAndBuildsSignedGroup`; `::TestAssembleDecodedRejectsALocallyHeldCosignedAccountAsPassthrough`; `::TestValidateGuardedPassthroughRequiresSignatureAndCanonical` | Passthrough bytes are kept only when their decoded txid matches the canonical group entry, a signature is present, and the effective signer is not a cosigned account this signer holds. Machine-checked in `bounded_cosigner.tla` (`A8_PassthroughTxidBound`), moved from the retired `guarded_assembly.tla`. |
+| A9 | implemented | A9 | `internal/engine/guarded/discovery.go::resolveCosignerEndpoints` | `internal/engine/guarded/discovery_resolver_test.go::TestLiveCosignerResolverRemovesImplicitPrimarySignerFallback`; `::TestLiveCosignerResolverRejectsDuplicateAdvertisers`; `::TestLiveCosignerResolverHostKeyMismatchAbortsGlobalSearch` | `/keys` resolves an operation-scoped route only; every required key needs exactly one live configured endpoint, and there is no implicit primary-signer fallback. |
+| A10 | implemented | A10 | `internal/engine/guarded/submit.go::requestOneCosignerComponentSignatureSet`; `internal/cosigner/canonical` | `cmd/apshell/deps_test.go::TestClientDoesNotLinkFalcon` | Client collects and forwards component signatures without cryptographic verification; the deps test pins the client binary to exclude `internal/sigconstruction/verify` and the Falcon libraries. |
+| A11 | implemented | A11 | `internal/engine/guarded/submit.go::collectComponentSignatures`; `pkg/signerapi/cosigner.go` | `internal/engine/guarded/submit_test.go::TestCollectComponentSignaturesRejectsMalformedResponses` (`collectComponentSignatures` enforces exact coverage + scheme directly) | Client requires exact response coverage and expected scheme before forwarding signatures to assembly. |
+| A12 | implemented | A12 | `internal/engine/guarded/discovery.go`; `internal/apshellapp/endpoints.go` | `internal/engine/guarded/discovery_resolver_test.go::TestLiveCosignerResolverLimitsConcurrentProbes`; `::TestLiveCosignerResolverRejectsEndpointOverflowBeforeProbing`; `internal/apshellapp/endpoints_test.go::TestEndpointDiscoverCosignersIsReadOnly`; `::TestEndpointDiscoverCosignersRejectsDuplicatePublication` | Routing discovery is bounded and operation-scoped; the shell diagnostic is read-only. Endpoint-local failures contribute no route; duplicate required routes, unresolved coverage, incomplete sweeps and host-key mismatch fail the operation. |
+| A13 | implemented | A13 | `internal/keyclass/keyclass.go`; `internal/signerapp/keyadmin/service.go`; `internal/signerapp/templates/reload.go`; `internal/signerapp/rest/role.go` | `internal/keyclass/keyclass_test.go::TestNodeRoleAllowsKeyType`; `::TestValidateKeyTypesAllowedForNodeRoleReportsConflicts`; `internal/signerapp/keyadmin/service_test.go::TestServiceGenerateKeyRejectsKeyTypeDisallowedByNodeRole`; `::TestServiceImportKeyRejectsKeyTypeDisallowedByNodeRole`; `internal/signerapp/templates/reload_test.go::TestReloadNodeRoleValidationRejectsConflictingInventoryBeforePublish`; `internal/signerapp/rest/service_test.go::TestServiceNodeRoleGatesEndpointRoles` | Node role gates generation/import, REST role dispatch, and reload-time publication: a cosigner node refuses spending keys, cosigned accounts included. |
+| A15 | implemented | A15 | `internal/signerapp/rest/inventory.go::BuildKeyInfoList`; `::buildKeyTypes`; `internal/engine/guarded/submit.go::HasGuardedEffectiveSigner`; `::guardedTargets` | `internal/signerapp/rest/service_test.go::TestBuildKeyTypesServesSigningFlowMetadata`; `internal/engine/guarded/submit_test.go::TestGuardedTargetsRejectUnsupportedSigningFlow`; `test/arch/signingflow_test.go::TestClientPackagesRouteOnSigningFlow` | Daemon serves `signing_flow`/`cosigner_component_key_type` in inventory; clients route on the flow label (`cosigned1` for a cosigned account), fail fast on unknown flows, `cosigner1` included since phase 5, and the arch test pins client packages off compiled guarded key-type switches. |
 
 ## Approval Coordinator Model
 
@@ -376,31 +370,6 @@ cleared at confirm time) under the fixed condition still satisfies SO2 but
 over-locks the identity under the incoming replacement, which is why the fix
 changed both the condition and the ordering.
 
-### Guarded assembly module
-
-[formal/guarded_assembly.tla](formal/guarded_assembly.tla) (see
-[FORMAL_TLA_GUARDED_ASSEMBLY_MODEL.md](FORMAL_TLA_GUARDED_ASSEMBLY_MODEL.md))
-machine-checks the assembly-verification core of the guarded signing model:
-a one-shot enumeration (sign_boundary style) over presented component
-signatures (right/wrong key, role domain, txid binding) and passthrough
-bytes, with the decision procedure transcribing
-`internal/signerapp/signing/component_assemble.go`. TLC checked under
-`MaxEntries = 2`, generating 270,920 distinct states, depth 1, no
-counterexamples.
-
-| Invariant | TLA+ predicate |
-|---|---|
-| A1 (role domain separation) | `A1_RoleDomainSeparation` |
-| A6 (user signature verified) | `A6_UserSignatureVerified` |
-| A7 (cosigner signature verified) | `A7_CosignerSignatureVerified` |
-| A8 (passthrough txid binding) | `A8_PassthroughTxidBound` |
-| A14 (assembled txn binding) | `A14_AssembledTxnBound` |
-| abort-on-first-failure | `NoPartialOutput` |
-
-Validated by mutation tests: dropping the role check from `Verifies`
-(cross-role replay) and dropping the passthrough txid comparison each
-violate `Safety` in an initial state.
-
 ### Bounded cosigner module
 
 [formal/bounded_cosigner.tla](formal/bounded_cosigner.tla) (see
@@ -409,7 +378,8 @@ machine-checks the combined planning and assembly choreography. It is a
 depth-4 transition system covering user-side base release, the later cosigner
 request/release, and final bounded assembly, over three paths (spend, cosigned
 rekey and listed rekey) and a client that may ask or skip the cosigner wrongly,
-and present or drop a cosigner signature it holds. TLC generated 531,968
+and present or drop a cosigner signature it holds, with the passthrough checks
+moved from the retired guarded assembly model. TLC generated 2,127,872
 distinct states with no counterexamples. Target
 count is intentionally absent: the predicates are group-wide, so a
 target-count field only duplicated states without adding coverage.
@@ -423,11 +393,14 @@ target-count field only duplicated states without adding coverage.
 | BS5 (canonical group bound) | `BS5_CanonicalGroupBound` |
 | BS6 (invalid path cannot output) | `BS6_InvalidNeverOutputs` |
 | BS7 (atomic output) | `BS7_AtomicOutput` |
+| A8 (passthrough txid binding) | `A8_PassthroughTxidBound` |
 
 The named invariants are constructed to expose early cosigner routing, omitted
 signature verification, a listed rekey assembled with the cosigner or without
 its proof, a cosigned path assembled without the cosigner, omitted
-source/coverage/byte checks, and partial output as counterexamples.
+source/coverage/byte checks, a passthrough kept with another entry's txid,
+without a signature or for a locally held cosigned account, and partial
+output as counterexamples.
 
 ### Plugin signing module
 
@@ -528,17 +501,17 @@ The following invariants have no TLA+ representation yet:
   (filename↔address binding with collision fallback) is the sole
   revisit-candidate, and only if the key-file scan ever gains a
   winner-picking rule instead of skip-and-warn.
-- A2-A5, A9-A13, A15 (guarded signing: component-sign-time checks, endpoint
-  routing, client shape checks, identity mode). A1/A6/A7/A8/A14 are
-  machine-checked in `guarded_assembly.tla`. The separate bounded-cosigner
-  planning and assembly path is machine-checked in `bounded_cosigner.tla`.
+- A2, A4, A5, A9-A13, A15 (the cosigned flow's component-sign-time checks,
+  endpoint routing, client shape checks and node roles). A8 and the cosigned
+  planning and assembly path are machine-checked in `bounded_cosigner.tla`.
+  A1, A3, A6, A7 and A14 retired with the dedicated cosigned account.
 - AP1-AP3 (approval coordinator) are modeled by construction rather than as
   predicates; AP4-AP7 are machine-checked in `approval_coordinator.tla`.
 
 With the signing-authority surface resolved by decision, the remaining
 candidates are the M3 backlog English models (LogicSig budget and
-template/bytecode generation) and a legacy guarded cosigner
-component-sign-time module (A3-A5) if one is ever needed.
+template/bytecode generation) and a cosigner component-sign-time module (A4,
+A5) if one is ever needed.
 
 ## Update Workflow
 

@@ -9,12 +9,13 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"github.com/aplane-algo/aplane/internal/sshtunnel/sshtest"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync/atomic"
 	"testing"
+
+	"github.com/aplane-algo/aplane/internal/sshtunnel/sshtest"
 
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/transaction"
@@ -24,7 +25,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/clientsign"
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/cosigner/canonical"
-	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
 	"github.com/aplane-algo/aplane/internal/cosigner/message"
 	"github.com/aplane-algo/aplane/internal/engine/connect"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
@@ -94,7 +94,7 @@ func TestGuardedTargetsUseEffectiveSigner(t *testing.T) {
 func TestGuardedTargetsNormalizeFalconCosignerPublicKey(t *testing.T) {
 	sender := testAddress(1).String()
 	cosignerHex := testFalconCosignerPublicKeyHex(0xd6)
-	s, _ := newGuardedTestSignerForKeyType(t, sender, keytypes.GuardedFalcon1024Cosigner1024V1, 1500, "0X"+strings.ToUpper(cosignerHex))
+	s, _ := newGuardedTestSigner(t, sender, 1500, "0X"+strings.ToUpper(cosignerHex))
 	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "guarded")
 
 	if !s.HasGuardedEffectiveSigner([]types.Transaction{txn}) {
@@ -170,6 +170,7 @@ func TestBoundedCosignerTargetsAndComponentRequestShape(t *testing.T) {
 		c.SetSigningFlowForAddress(bounded, signerapi.SigningFlowCosigned1)
 		c.SetCosignerComponentKeyTypeForAddress(bounded, witness.Falcon1024V1)
 		c.SetCosignerPublicKeyForAddress(bounded, cosignerHex)
+		c.SetBoundedContractForAddress(bounded, signerapi.BoundedContractBounded2)
 		c.SetBoundedMaxFeeForAddress(bounded, 10_000)
 		setTestLogicSigResources(c, bounded, 4000)
 		c.AddAddress(plain, "aplane.falcon1024.v1")
@@ -183,8 +184,8 @@ func TestBoundedCosignerTargetsAndComponentRequestShape(t *testing.T) {
 	if err != nil || len(targets) != 1 || targets[0].Route != flowRouteBoundedCosigner {
 		t.Fatalf("guardedTargets() = %#v, %v", targets, err)
 	}
-	if targets[0].BoundedMaxFee != 10_000 {
-		t.Fatalf("bounded max fee = %d, want 10000", targets[0].BoundedMaxFee)
+	if targets[0].BoundedMaxFee == nil || *targets[0].BoundedMaxFee != 10_000 {
+		t.Fatalf("bounded max fee = %v, want 10000", targets[0].BoundedMaxFee)
 	}
 	requests, err := s.buildBoundedComponentRequests(txns, map[int]guardedTarget{0: targets[0]}, clientsign.SubmitOptions{
 		LsigArgsMap: []map[string][]byte{{"preimage": {0xaa}}, nil},
@@ -211,6 +212,7 @@ func TestBuildBoundedComponentRequestsRejectsKnownLogicSigWithoutResources(t *te
 		c.SetSigningFlowForAddress(bounded, signerapi.SigningFlowCosigned1)
 		c.SetCosignerComponentKeyTypeForAddress(bounded, witness.Falcon1024V1)
 		c.SetCosignerPublicKeyForAddress(bounded, testCosignerPublicKeyHex(0xd6))
+		c.SetBoundedContractForAddress(bounded, signerapi.BoundedContractBounded2)
 		c.SetBoundedMaxFeeForAddress(bounded, 10_000)
 		setTestLogicSigResources(c, bounded, 4_000)
 		c.AddAddress(foreign, "test.generic.v1")
@@ -351,8 +353,8 @@ func TestComponentRequestForIndicesDeclaresPlannerDummySuffix(t *testing.T) {
 		[]string{"TX00", "TX11", "TX22"},
 		2,
 		[]int{0},
-		signerapi.ComponentTargetKindUser,
-		"AUTH",
+		signerapi.ComponentTargetKindCosigner,
+		"COMPONENT",
 		[]*signerapi.AppCallInfo{{Mode: "abi", Method: "do(uint64)void"}, {Mode: "raw"}},
 	)
 	if len(request.Targets) != 1 || request.Targets[0].TargetIndex != 0 {
@@ -535,6 +537,9 @@ func (v testCacheView) CosignerComponentKeyType(address string) (string, bool) {
 func (v testCacheView) CosignerPublicKey(address string) (string, bool) {
 	return v.c.CosignerPublicKeyForAddress(address)
 }
+func (v testCacheView) BoundedContract(address string) (string, bool) {
+	return v.c.BoundedContractForAddress(address)
+}
 func (v testCacheView) BoundedMaxFee(address string) (uint64, bool) {
 	return v.c.BoundedMaxFeeForAddress(address)
 }
@@ -562,22 +567,17 @@ func newTestSigner(t *testing.T, build func(c *cache.SignerCache)) (*Signer, *ca
 	return s, &signerCache
 }
 
+// newGuardedTestSigner holds one cosigned plain host, with the signing-flow
+// metadata the daemon serves for it.
 func newGuardedTestSigner(t *testing.T, sender string, programBytes int, cosignerPublicKey string) (*Signer, *cache.SignerCache) {
 	t.Helper()
-	return newGuardedTestSignerForKeyType(t, sender, keytypes.GuardedFalcon1024Cosigner1024V1, programBytes, cosignerPublicKey)
-}
-
-func newGuardedTestSignerForKeyType(t *testing.T, sender, keyType string, programBytes int, cosignerPublicKey string) (*Signer, *cache.SignerCache) {
-	t.Helper()
 	return newTestSigner(t, func(signerCache *cache.SignerCache) {
-		signerCache.AddAddress(sender, keyType)
-		// Mirror the signing-flow metadata the daemon serves for guarded keys.
-		if componentType, ok := keytypes.CosignerComponentKeyTypeForGuardedAccount(keyType); ok {
-			signerCache.SetSigningFlowForAddress(sender, signerapi.SigningFlowCosigner1)
-			signerCache.SetCosignerComponentKeyTypeForAddress(sender, componentType)
-		}
+		signerCache.AddAddress(sender, "aplane.falcon1024.v1")
+		signerCache.SetSigningFlowForAddress(sender, signerapi.SigningFlowCosigned1)
+		signerCache.SetCosignerComponentKeyTypeForAddress(sender, witness.Falcon1024V1)
+		signerCache.SetBoundedContractForAddress(sender, signerapi.BoundedContractPlain1)
 		if programBytes > 0 {
-			setTestLogicSigResources(signerCache, sender, programBytes)
+			setTestCosignedResources(signerCache, sender, programBytes)
 		}
 		if cosignerPublicKey != "" {
 			signerCache.SetCosignerPublicKeyForAddress(sender, cosignerPublicKey)
@@ -637,7 +637,8 @@ func guardedTargetForTest(account, cosignerHex string) guardedTarget {
 		Account:                  account,
 		CosignerComponentKeyType: witness.Falcon1024V1,
 		CosignerPublicKey:        cosignerHex,
-		Route:                    flowRouteGuarded,
+		Route:                    flowRouteBoundedCosigner,
+		BoundedPath:              signerapi.ComponentPathSpend,
 	}
 }
 
@@ -834,7 +835,7 @@ func TestValidatePlannedGroup(t *testing.T) {
 	t.Run("fee exceeds advertised ceiling", func(t *testing.T) {
 		if err := validateBoundedTargetFees(
 			[]types.Transaction{plannedOriginal},
-			[]guardedTarget{{Index: 0, BoundedMaxFee: uint64(plannedOriginal.Fee) - 1}},
+			[]guardedTarget{{Index: 0, BoundedMaxFee: new(uint64(plannedOriginal.Fee) - 1)}},
 		); err == nil || !strings.Contains(err.Error(), "exceeds advertised max_fee") {
 			t.Fatalf("error = %v, want max_fee rejection", err)
 		}
@@ -849,5 +850,55 @@ func suggestedParamsFromTxn(txn types.Transaction) types.SuggestedParams {
 		GenesisID:       txn.GenesisID,
 		GenesisHash:     txn.GenesisHash[:],
 		FlatFee:         true,
+	}
+}
+
+// A plain host has no fee ceiling, so any planned fee passes the client's check;
+// a bounded host keeps its ceiling, and an account whose contract is missing or
+// unknown fails closed before any request.
+func TestBoundedTargetsTakeTheirFeeCeilingFromTheContract(t *testing.T) {
+	account := testAddress(1).String()
+	setup := func(contract string, maxFee *uint64) *Signer {
+		s, _ := newTestSigner(t, func(c *cache.SignerCache) {
+			c.AddAddress(account, "aplane.falcon1024.v1")
+			c.SetSigningFlowForAddress(account, signerapi.SigningFlowCosigned1)
+			c.SetCosignerComponentKeyTypeForAddress(account, witness.Falcon1024V1)
+			c.SetCosignerPublicKeyForAddress(account, testCosignerPublicKeyHex(0xd6))
+			c.SetBoundedContractForAddress(account, contract)
+			if maxFee != nil {
+				c.SetBoundedMaxFeeForAddress(account, *maxFee)
+			}
+			setTestLogicSigResources(c, account, 4_000)
+		})
+		return s
+	}
+	closing := testPaymentTxn(t, testAddress(1), testAddress(3), "close")
+	closing.CloseRemainderTo = testAddress(3)
+	closing.Fee = 1_000_000
+
+	targets, err := setup(signerapi.BoundedContractPlain1, nil).guardedTargets([]types.Transaction{closing})
+	if err != nil || len(targets) != 1 || targets[0].BoundedMaxFee != nil {
+		t.Fatalf("plain host targets = %#v, %v", targets, err)
+	}
+	if err := validateBoundedTargetFees([]types.Transaction{closing}, targets); err != nil {
+		t.Fatalf("plain host fee check: %v", err)
+	}
+
+	targets, err = setup(signerapi.BoundedContractBounded2, new(uint64(10_000))).guardedTargets([]types.Transaction{closing})
+	if err != nil || len(targets) != 1 {
+		t.Fatalf("bounded host targets = %#v, %v", targets, err)
+	}
+	if err := validateBoundedTargetFees([]types.Transaction{closing}, targets); err == nil || !strings.Contains(err.Error(), "exceeds advertised max_fee") {
+		t.Fatalf("bounded host fee check: %v", err)
+	}
+
+	for name, s := range map[string]*Signer{
+		"no contract":                    setup("", nil),
+		"unknown contract":               setup("bounded3", new(uint64(1))),
+		"bounded host without a ceiling": setup(signerapi.BoundedContractBounded2, nil),
+	} {
+		if _, err := s.guardedTargets([]types.Transaction{closing}); err == nil {
+			t.Fatalf("%s: guardedTargets() accepted it", name)
+		}
 	}
 }

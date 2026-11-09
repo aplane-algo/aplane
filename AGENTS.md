@@ -86,8 +86,8 @@ For a current ownership map and source-of-truth files, prefer `docs/ARCH_OVERVIE
   - `signerops/`: Signer-side signing operations
   - `signerreg/`: Signer registration
 - `lsig/ed25519lsig/`: Ed25519 LogicSig DSA family (base key type `aplane.ed25519.v1`)
-- `lsig/falcon1024_guarded/`: Guarded DSA provider for the Falcon/Falcon `aplane.falcon1024-cosigner1024.v1` key type
-- `lsig/composeddsa/`: Runtime-compiled LogicSig composer for DSA-based schemes (guarded/composed signing)
+- `lsig/plainhost/`: The plain host: wraps `aplane.falcon1024.v1` and `aplane.ed25519.v1` with the overlay arrangements (`plain1`: an optional cosigner and rekey-to list, no host rules)
+- `lsig/composeddsa/`: Runtime-compiled LogicSig composer for DSA-based schemes (bounded and plain hosts, overlays, composed templates)
 - `lsig/dsafamily/`: Shared DSA family registration descriptors and key generator
 - `lsig/generictemplate/`: YAML-backed provider for generic LogicSigs
 - `lsig/boundedaccount/`: General bounded key type `aplane.falcon1024-b.v1`: shapes and provider; its family-neutral grammar, presets, and receipt are in `internal/boundary/`
@@ -265,8 +265,7 @@ so a PR that changes modeled code keeps the correspondence itself.
 | `internal/genstore/` (commit, root commit, reconcile, quarantine), `internal/storepass/rotate.go`, `internal/crypto/store_root.go` | `store_root_commit.tla` |
 | store-commit callers (`internal/signerapp/admin/`, `backupadmin/`), `internal/signerapp/templates/reload.go`, `internal/keystore/file.go`, `daemon/admin_services.go` | `recovery_binding.tla` |
 | `internal/signerapp/enrollqueue/`, `enrollment/service.go`, `productruntime/runtime.go` (registry and queue publication), `daemon/server.go` (approve/reject/import) | `enrollment_queue.tla` |
-| `internal/signerapp/signing/component_assemble.go`, `component_sign.go` | `guarded_assembly.tla` |
-| `internal/signerapp/signing/bounded_cosigner.go`, `internal/engine/guarded/submit.go` | `bounded_cosigner.tla` |
+| `internal/signerapp/signing/bounded_cosigner.go`, `component_assemble.go` (passthrough), `internal/engine/guarded/submit.go` | `bounded_cosigner.tla` |
 | `internal/engine/plugin_*.go`, `internal/apshellcli/external_plugins.go`, `plugin_group_review.go`, `internal/apshellapp/submission.go` | `plugin_signing.tla` |
 | `internal/signerapp/signing/planner.go`, `execution.go`, `service.go`, `gate.go`, `internal/signerapp/policyeval/`, `pkg/signerapi/` | `sign_boundary.tla`, `policy_precedence.tla`, `composition.tla` |
 | `internal/signerapp/signing/rotating_release.go`, `rotating_flow.go` (leaf choice), `rotating_tables.go` | `rotating_leaf_release.tla` |

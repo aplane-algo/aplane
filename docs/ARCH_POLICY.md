@@ -42,10 +42,10 @@ This document covers two domains:
   review verdict.
 
 The client-signing domain applies to ordinary `/sign` requests and to
-user-role `/sign/component` requests: guarded user-component signing runs the
-same hard rejection, always-review, and operator approval sequence, with the
-guarded account as the per-target policy key and non-target group positions
-evaluated as foreign context. Cosigner-role `/sign/component` requests use the
+bounded-base `/sign/component` requests: a cosigned account's base component
+runs the same hard rejection, always-review, and operator approval sequence,
+with the cosigned account as the per-target policy key and non-target group
+positions evaluated as foreign context. Cosigner-role `/sign/component` requests use the
 cosigner domain (see [ARCH_GUARDED.md](ARCH_GUARDED.md)).
 
 Both domains are written in one v1 JSON document format, `aplane.policy.v1`,
@@ -74,16 +74,16 @@ no inheritance, no merge, and no per-field override between the two: a key's
 document replaces the default wholesale.
 
 On a signer node a key is an account the node holds, selected by its Algorand
-address; its document covers all signing by that account, including the user
-side of a guarded key. Membership changes with key generation, import, and
+address; its document covers all signing by that account, including the
+spending key's side of a cosigned account. Membership changes with key generation, import, and
 deletion, and per-account rules live either in the account's own document or
 in routes whose `sources` name the account. On a cosigner node a key is a
 cosigner key, selected by its Witness Key ID; its document covers component
-signing by that key for every account whose guarded key was composed with it.
+signing by that key for every cosigned account composed with it.
 That set is virtual: the node does not hold those accounts, cannot enumerate
 them, and learns of one when a `/sign/component` request names it, so the
 document's `sources` are the cosigner operator's only control over
-membership. A guarded account is in both a signer key's scope and a cosigner
+membership. A cosigned account is in both a signer key's scope and a cosigner
 key's scope, and both documents must allow a movement.
 
 Signer policy decides what `apsigner` may produce a signature for after
@@ -184,7 +184,7 @@ transaction sender:
 
 - ordinary `/sign` requests select by the request's `auth_address`, so a
   rekeyed account uses the policy of its auth address;
-- user-role `/sign/component` requests select by the guarded account;
+- bounded-base `/sign/component` requests select by the cosigned account;
 - cosigner-role `/sign/component` requests select by the `component_key`
   Witness Key ID. A key the node does not hold fails as a bad request
   (`Witness Key ID "<id>" not found`) before any policy evaluation. The held
@@ -266,9 +266,9 @@ it is false, the cosigner still fails closed unless `rekey_policy.allowed`
 authorizes the exact sender-to-target edge and the target transaction is a pure
 0 ALGO self-payment with no close remainder.
 
-This cosigner-domain rekey surface sees every rekey of a dedicated `cosigner1`
-guarded account, and every cosigned rekey of a bounded account: a spending-key
-rekey on a cosigned account, or an unlisted target under *plus cosigned*. A
+This cosigner-domain rekey surface sees every cosigned rekey of a cosigned
+account, on a plain or bounded host: a spending-key rekey on a cosigned account,
+or an unlisted target under *plus cosigned*. A
 listed rekey takes the spending key alone and never asks the cosigner, so on an
 account with a rekey-to list `reject_rekey: true` does not stop a rekey to a
 listed address, and `rekey_policy` picks only cosigned-rekey targets. The list is

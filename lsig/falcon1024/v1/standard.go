@@ -171,10 +171,6 @@ func (f *Falcon1024V1) RuntimeArgs() []lsigprovider.RuntimeArgDef {
 	return nil
 }
 
-func (f *Falcon1024V1) SupportsMnemonicImport() bool {
-	return false
-}
-
 // BuildArgs assembles the LogicSig Args array.
 // For pure Falcon-1024, args are: [signature].
 func (f *Falcon1024V1) BuildArgs(signature []byte, runtimeArgs map[string][]byte) ([][]byte, error) {
@@ -183,12 +179,11 @@ func (f *Falcon1024V1) BuildArgs(signature []byte, runtimeArgs map[string][]byte
 
 // Compile-time interface checks
 var (
-	_ logicsigdsa.LogicSigDSA       = (*Falcon1024V1)(nil)
-	_ logicsigdsa.TEALGenerator     = (*Falcon1024V1)(nil)
-	_ logicsigdsa.SaltedDeriver     = (*Falcon1024V1)(nil)
-	_ lsigprovider.LSigProvider     = (*Falcon1024V1)(nil)
-	_ lsigprovider.SigningProvider  = (*Falcon1024V1)(nil)
-	_ lsigprovider.MnemonicProvider = (*Falcon1024V1)(nil)
+	_ logicsigdsa.LogicSigDSA      = (*Falcon1024V1)(nil)
+	_ logicsigdsa.TEALGenerator    = (*Falcon1024V1)(nil)
+	_ logicsigdsa.SaltedDeriver    = (*Falcon1024V1)(nil)
+	_ lsigprovider.LSigProvider    = (*Falcon1024V1)(nil)
+	_ lsigprovider.SigningProvider = (*Falcon1024V1)(nil)
 )
 
 var registerLogicSigDSAOnce sync.Once

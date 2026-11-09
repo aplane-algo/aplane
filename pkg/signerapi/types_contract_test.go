@@ -152,7 +152,7 @@ func TestSignerAPIContractFixturesRoundTrip(t *testing.T) {
 		{"assembly_response.json", assertContractRoundTrip[AssemblyResponse]},
 		{"group_plan_response_mutated.json", assertContractRoundTrip[GroupPlanResponse]},
 		{"error_response.json", assertContractRoundTrip[ErrorResponse]},
-		{"keys_response_guarded.json", assertContractRoundTrip[KeysResponse]},
+		{"keys_response_plain_host.json", assertContractRoundTrip[KeysResponse]},
 		{"keys_response_bounded.json", assertContractRoundTrip[KeysResponse]},
 		{"keys_response_generic.json", assertContractRoundTrip[KeysResponse]},
 		{"keys_response_component.json", assertContractRoundTrip[KeysResponse]},

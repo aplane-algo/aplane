@@ -549,8 +549,8 @@ func TestBoundedGeneralResourceMatrix(t *testing.T) {
 			rekeyTo[i] = algocrypto.GenerateAccount().Address.String()
 		}
 		account := newGeneralAccount(t, provider, shape, recipients, generalPassedUnlockRound, rekeyTo)
-		if account.metadata.MaxFee != boundedaccount.MaxFee {
-			t.Fatalf("%s MaxFee = %d", shape.Descriptor(), account.metadata.MaxFee)
+		if account.metadata.MaxFee == nil || *account.metadata.MaxFee != boundedaccount.MaxFee {
+			t.Fatalf("%s MaxFee = %v", shape.Descriptor(), account.metadata.MaxFee)
 		}
 		t.Logf("%s: %d program bytes", shape.Descriptor(), len(account.bytecode))
 	}
@@ -722,13 +722,13 @@ func TestBoundedGeneralThroughSigner(t *testing.T) {
 
 	t.Run("apshell timelock boundary file", func(t *testing.T) {
 		directory := t.TempDir()
-		// A spending-key rekey would leave the lock early, so the signer refuses it.
+		// The general type's timelock shapes take only a rekey-to list.
 		walkable := filepath.Join(directory, "walkable.yaml")
 		if err := os.WriteFile(walkable, []byte("schema: aplane.boundary.v1\nspend: [pay]\nrekey: {authority: spending_key}\nunlock_round: 18446744073709551615\n"), 0o600); err != nil {
 			t.Fatalf("write boundary file: %v", err)
 		}
 		refusal, _ := apshell.RunWithInput(fmt.Sprintf("generate %s boundary=%s\ny\nquit\n", boundedaccount.KeyTypeV1, walkable))
-		if !strings.Contains(refusal, "a timelock can't take rekey_authority=spending_key") || strings.Contains(refusal, "Generated ") {
+		if !strings.Contains(refusal, "an expert template can combine a timelock with rekey_authority=spending_key") || strings.Contains(refusal, "Generated ") {
 			t.Fatalf("a timelock with a spending-key rekey was not refused:\n%s", refusal)
 		}
 

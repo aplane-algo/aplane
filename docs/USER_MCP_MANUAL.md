@@ -188,11 +188,10 @@ role.
 |---------|----------|----------------------|
 | `ed25519` | native | default-enabled |
 | `falcon1024` | native_pq | **default-enabled** (protocol-native post-quantum) |
-| `aplane.falcon1024.v1` | dsa_lsig | internal-only; composition and existing accounts |
-| `aplane.ed25519.v1` | Ed25519 dsa_lsig | internal-only; composition and existing accounts |
+| `aplane.falcon1024.v1` | dsa_lsig plain host (`plain1` with overlays; cosigned ones use `cosigned1`) | library-visible |
+| `aplane.ed25519.v1` | Ed25519 dsa_lsig plain host | library-visible |
 | `aplane.falcon1024-b.v1` | bounded dsa_lsig (allowlist, timelock, Corridor presets) | default-enabled on signer nodes |
 | `aplane.htlc.v1` | generic_lsig | optional template |
-| `aplane.falcon1024-cosigner1024.v1` | guarded dsa_lsig | library-visible |
 | `aplane.rotating-triple-xmss.v1` | rotating LogicSig | library-visible |
 | `aplane.rotating-triple-slhdsa.v1` | rotating LogicSig | library-visible |
 | `aplane.rotating-triple-wotsc.v1` | rotating LogicSig | library-visible |
@@ -281,9 +280,8 @@ hybrid rekey-and-spend forms are rejected.
 
 Mnemonic import is a local apadmin IPC operation, outside the shell/MCP surface.
 The [approved native-only policy](ARCH_KEYTYPES.md#mnemonic-backup-and-recovery)
-limits mnemonic import, export, and recovery to native accounts. Plain LogicSig
-providers are internal-only and cannot be enabled or generated directly. Use
-encrypted backups for all LogicSig accounts.
+limits mnemonic import, export, and recovery to native accounts. Use encrypted
+backups for all LogicSig accounts.
 
 > **Rekey refresh:** a confirmed rekey through the ordinary single-transaction
 > workflow refreshes the affected client
@@ -319,8 +317,8 @@ signer decides what to sign:
 |----------|---------|
 | `POST /sign` | `signed[]` — hex signed-txn blobs, 1:1 with positions |
 | `POST /plan` | `transactions[]` — TX-prefixed **unsigned** canonical txns (no signing, no approval) |
-| `POST /sign/component` | guarded or bounded component signatures over a frozen group |
-| `POST /sign/assemble` | final guarded or bounded signed group after component verification |
+| `POST /sign/component` | bounded-base and cosigner component signatures over a frozen group |
+| `POST /sign/assemble` | final cosigned signed group after component verification |
 | `POST /sign/cancel` | cancel a pending approval prompt by request ID |
 
 `plan()` in JS previews the planned group (dummies, fees, group ID) without
@@ -430,17 +428,19 @@ Runtime settings (`user_auto_approve`, `lock_on_disconnect`,
 - Wire-level auth outcomes: `401` (authentication), `403` (authorization,
   fail-closed).
 
-### Cosigner / guarded signing (when present)
+### Cosigner / cosigned signing (when present)
 
-Guarded account key types embed a cosigner's public key in their LogicSig, so a
-transaction needs **two** authorizations: the user signer proves control, and a
-separate **cosigner** signer authorizes the facts under cosigner policy. The client
-orchestrates this automatically when any effective signer is a guarded account —
-it never receives account signing keys:
+A cosigned account (a plain host such as `aplane.falcon1024.v1`, or a bounded
+account, generated with a `cosigner=`) embeds a cosigner's public key in its
+LogicSig, so a transaction needs **two** authorizations: the user signer proves
+control, and a separate **cosigner** signer authorizes the facts under cosigner
+policy. The client orchestrates this automatically when any effective signer is
+a cosigned account (`signing_flow` `cosigned1`) — it never receives account
+signing keys:
 
-- Guarded/cosigner keys are **never** signed via plain `/sign` (it rejects them).
-  They go through `/sign/component` (roles `user` and `cosigner`) and
-  `/sign/assemble`.
+- Cosigned accounts and cosigner keys are **never** signed via plain `/sign`
+  (it rejects them). They go through `/sign/component` (kinds `bounded-base`
+  and `cosigner`) and `/sign/assemble`.
 - Cosigner endpoints live in `endpoints.yaml` with `role: cosigner`. For each
   operation, the client queries authenticated `/keys` and routes to the one
   endpoint advertising the required embedded public key.
@@ -649,7 +649,7 @@ each MCP server instance uses its own:
 - [ARCH_OVERVIEW.md](ARCH_OVERVIEW.md) — system architecture and identity model
 - [ARCH_SIGNING.md](ARCH_SIGNING.md) — transaction/group/signing flow
 - [ARCH_POLICY.md](ARCH_POLICY.md) / [USER_POLICY.md](USER_POLICY.md) — policy and approval
-- [ARCH_GUARDED.md](ARCH_GUARDED.md) — guarded signing
+- [ARCH_GUARDED.md](ARCH_GUARDED.md) — cosigned (guarded) signing
 - [USER_KEYTYPES.md](USER_KEYTYPES.md) / [KEYTYPE_CAPABILITIES.md](KEYTYPE_CAPABILITIES.md) — key types
 - [ARCH_PLUGINS.md](ARCH_PLUGINS.md) — plugins
 - [USER_QUICKSTART_LOCALNET.md](USER_QUICKSTART_LOCALNET.md) / [USER_QUICKSTART.md](USER_QUICKSTART.md) — getting started

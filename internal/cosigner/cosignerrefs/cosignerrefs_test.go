@@ -190,11 +190,11 @@ func TestResolveCreationParamsUsesImportedReference(t *testing.T) {
 		t.Fatalf("Import() error = %v", err)
 	}
 
-	resolved, err := ResolveCreationParams(paths, keytypes.GuardedFalcon1024Cosigner1024V1, map[string]string{
+	resolved, err := ResolveCreationParamsForComponent(paths, "aplane.falcon1024.v1", witness.Falcon1024V1, map[string]string{
 		ParamCosignerName: "lab-cosigner",
 	})
 	if err != nil {
-		t.Fatalf("ResolveCreationParams() error = %v", err)
+		t.Fatalf("ResolveCreationParamsForComponent() error = %v", err)
 	}
 	if got := resolved[keytypes.ParameterCosignerPublicKey]; got != strings.Repeat("ab", falconfamily.PublicKeySize) {
 		t.Fatalf("cosigner_public_key = %q, want imported public key", got)
@@ -203,11 +203,11 @@ func TestResolveCreationParamsUsesImportedReference(t *testing.T) {
 		t.Fatalf("resolved params still contain %s: %#v", ParamCosignerName, resolved)
 	}
 
-	resolved, err = ResolveCreationParams(paths, keytypes.GuardedFalcon1024Cosigner1024V1, map[string]string{
+	resolved, err = ResolveCreationParamsForComponent(paths, "aplane.falcon1024.v1", witness.Falcon1024V1, map[string]string{
 		ParamCosignerName: componentKey,
 	})
 	if err != nil {
-		t.Fatalf("ResolveCreationParams(Witness Key ID) error = %v", err)
+		t.Fatalf("ResolveCreationParamsForComponent(Witness Key ID) error = %v", err)
 	}
 	if got := resolved[keytypes.ParameterCosignerPublicKey]; got != strings.Repeat("ab", falconfamily.PublicKeySize) {
 		t.Fatalf("Witness Key ID cosigner_public_key = %q, want imported public key", got)
@@ -239,15 +239,15 @@ func TestResolveCreationParamsForBoundedProvider(t *testing.T) {
 }
 
 func TestResolveCreationParamsRejectsConflictingInputs(t *testing.T) {
-	_, err := ResolveCreationParams(storepaths.NewPaths(t.TempDir()), keytypes.GuardedFalcon1024Cosigner1024V1, map[string]string{
+	_, err := ResolveCreationParamsForComponent(storepaths.NewPaths(t.TempDir()), "aplane.falcon1024.v1", witness.Falcon1024V1, map[string]string{
 		ParamCosignerName:                   "lab-cosigner",
 		keytypes.ParameterCosignerPublicKey: strings.Repeat("ab", falconfamily.PublicKeySize),
 	})
 	if err == nil {
-		t.Fatal("ResolveCreationParams() error = nil, want conflicting input rejection")
+		t.Fatal("ResolveCreationParamsForComponent() error = nil, want conflicting input rejection")
 	}
 	if !strings.Contains(err.Error(), "not both") {
-		t.Fatalf("ResolveCreationParams() error = %v, want not both", err)
+		t.Fatalf("ResolveCreationParamsForComponent() error = %v, want not both", err)
 	}
 }
 

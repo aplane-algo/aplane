@@ -26,10 +26,10 @@ Normative inputs:
 This model covers how an existing key file authorizes signing behavior after it
 has been created, imported, restored, or loaded by `apsigner`.
 
-Guarded account keys and cosigner keys are existing key files, but
-their request path is not ordinary `/sign`: direct signing rejects those key
-types and the component-signing plus assembly workflow is modeled separately in
-[FORMAL_GUARDED_SIGNING_MODEL.md](FORMAL_GUARDED_SIGNING_MODEL.md).
+Cosigned accounts and witness keys are existing key files, but their request
+path is not ordinary `/sign`: direct signing rejects them (A2) and the
+component-signing plus assembly workflow is modeled separately in
+[FORMAL_TLA_BOUNDED_COSIGNER_MODEL.md](FORMAL_TLA_BOUNDED_COSIGNER_MODEL.md).
 
 Rotating account keys are refused on ordinary `/sign`, `/plan`, and the
 component paths as well (`signing/rotating_gate.go::rejectRotatingKeyType`) and

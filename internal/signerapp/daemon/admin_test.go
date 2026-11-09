@@ -410,19 +410,25 @@ func TestAdminGenerateEd25519(t *testing.T) {
 	}
 }
 
-func TestAdminGenerateRejectsInternalProviders(t *testing.T) {
+// A plain host is opt-in: refused until it is enabled, then created as asked.
+func TestAdminGeneratePlainHostOnceEnabled(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
+	algodCleanup := configureMockAlgod(t, server)
+	defer algodCleanup()
 	for _, keyType := range []string{"aplane.falcon1024.v1", "aplane.ed25519.v1"} {
-		for _, stale := range []bool{false, true} {
-			if stale {
+		for _, enabled := range []bool{false, true} {
+			if enabled {
 				enableKeyTypeForTest(t, server, keyType)
 			}
 			reqBody, _ := json.Marshal(AdminGenerateRequest{KeyType: keyType})
 			w := httptest.NewRecorder()
 			server.handleAdminGenerate(w, requestWithIdentity(http.MethodPost, "/admin/generate", reqBody))
-			if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "internal-only") {
-				t.Fatalf("generate %s (stale=%v) = %d %s", keyType, stale, w.Code, w.Body.String())
+			switch {
+			case !enabled && (w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "not enabled on this node")):
+				t.Fatalf("generate %s before enabling = %d %s", keyType, w.Code, w.Body.String())
+			case enabled && w.Code != http.StatusOK:
+				t.Fatalf("generate %s once enabled = %d %s", keyType, w.Code, w.Body.String())
 			}
 		}
 	}

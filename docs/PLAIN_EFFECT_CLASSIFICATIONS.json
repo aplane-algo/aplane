@@ -1,0 +1,143 @@
+{
+  "schema": "aplane.bounded-effect-classifications.v1",
+  "contract": "plain1",
+  "teal_version": 13,
+  "surface": "PROTOCOL_EFFECT_INVENTORY.json",
+  "spend_effects": [],
+  "transaction_types": [
+    {
+      "name": "unknown",
+      "classification": "spend"
+    },
+    {
+      "name": "pay",
+      "classification": "spend_or_rekey"
+    },
+    {
+      "name": "keyreg",
+      "classification": "spend"
+    },
+    {
+      "name": "acfg",
+      "classification": "spend"
+    },
+    {
+      "name": "axfer",
+      "classification": "spend"
+    },
+    {
+      "name": "afrz",
+      "classification": "spend"
+    },
+    {
+      "name": "appl",
+      "classification": "spend"
+    },
+    {
+      "name": "stpf",
+      "classification": "spend"
+    },
+    {
+      "name": "hb",
+      "classification": "spend"
+    }
+  ],
+  "classifications": {
+    "framework_rekey_dispatch": [
+      "RekeyTo"
+    ],
+    "spend_carried_effect": [
+      "CloseRemainderTo",
+      "AssetCloseTo",
+      "AssetSender"
+    ],
+    "rekey_normal_form": [
+      "Sender",
+      "TypeEnum",
+      "Receiver",
+      "Amount",
+      "RekeyTo",
+      "CloseRemainderTo",
+      "AssetCloseTo",
+      "AssetSender"
+    ],
+    "cosigner_policy": [
+      "Fee",
+      "Type",
+      "TypeEnum",
+      "Receiver",
+      "Amount",
+      "XferAsset",
+      "AssetAmount",
+      "AssetReceiver",
+      "VotePK",
+      "SelectionPK",
+      "VoteFirst",
+      "VoteLast",
+      "VoteKeyDilution",
+      "ApplicationID",
+      "OnCompletion",
+      "ApplicationArgs",
+      "NumAppArgs",
+      "Accounts",
+      "NumAccounts",
+      "ApprovalProgram",
+      "ClearStateProgram",
+      "ConfigAsset",
+      "ConfigAssetTotal",
+      "ConfigAssetDecimals",
+      "ConfigAssetDefaultFrozen",
+      "ConfigAssetUnitName",
+      "ConfigAssetName",
+      "ConfigAssetURL",
+      "ConfigAssetMetadataHash",
+      "ConfigAssetManager",
+      "ConfigAssetReserve",
+      "ConfigAssetFreeze",
+      "ConfigAssetClawback",
+      "FreezeAsset",
+      "FreezeAssetAccount",
+      "FreezeAssetFrozen",
+      "Assets",
+      "NumAssets",
+      "Applications",
+      "NumApplications",
+      "GlobalNumUint",
+      "GlobalNumByteSlice",
+      "LocalNumUint",
+      "LocalNumByteSlice",
+      "ExtraProgramPages",
+      "Nonparticipation",
+      "StateProofPK",
+      "ApprovalProgramPages",
+      "NumApprovalProgramPages",
+      "ClearStateProgramPages",
+      "NumClearStateProgramPages",
+      "RejectVersion"
+    ],
+    "validity_or_replay": [
+      "FirstValid",
+      "FirstValidTime",
+      "LastValid",
+      "Note",
+      "Lease",
+      "TxID"
+    ],
+    "group_context": [
+      "GroupIndex"
+    ],
+    "logic_sig_inapplicable_effect": [
+      "Logs",
+      "NumLogs",
+      "CreatedAssetID",
+      "CreatedApplicationID",
+      "LastLog"
+    ]
+  },
+  "review_rules": [
+    "Every avm_txn_fields entry of the surface must occur in at least one classification.",
+    "A plain host has no host rules: every transaction type of the surface is a spend when it doesn't rekey, and none is denied.",
+    "Every effect a spend may carry occurs in spend_carried_effect; a rekey never does, and takes the rekey paths as a pure rekey only.",
+    "cosigner_policy lists the fields the program doesn't read: the cosigner's policy, and this signer's, judge them."
+  ]
+}

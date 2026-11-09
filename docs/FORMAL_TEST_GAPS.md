@@ -23,8 +23,9 @@ Order is by recommended write order for the remaining backlog.
 
 **Model drift: signer-domain gating of user components and client-routed
 guarded simulation.**
-[FORMAL_GUARDED_SIGNING_MODEL.md](FORMAL_GUARDED_SIGNING_MODEL.md) and the
-TLA+ sign-boundary/guarded-assembly models predate two behaviors that are now
+The retired guarded signing model (its surviving invariants are now in
+[FORMAL_TLA_BOUNDED_COSIGNER_MODEL.md](FORMAL_TLA_BOUNDED_COSIGNER_MODEL.md)) and the
+TLA+ sign-boundary and retired guarded-assembly models predate two behaviors that are now
 implemented and unit-tested but not yet modeled:
 
 - user-role `/sign/component` runs the signer-domain approval gates (hard
@@ -134,8 +135,9 @@ source/path-mask assembly, canonical bytes, and atomic failure. Concrete effect 
 slot encodings, Merkle derivation, and TEAL remain verified by Go/compiler tests
 rather than abstracted as cryptographic or byte-level TLC claims.
 
-The guarded signing audit added
-[FORMAL_GUARDED_SIGNING_MODEL.md](FORMAL_GUARDED_SIGNING_MODEL.md) and
+The guarded signing audit added the guarded signing model (retired in phase 5
+of the account overlays; its surviving invariants are in
+[FORMAL_TLA_BOUNDED_COSIGNER_MODEL.md](FORMAL_TLA_BOUNDED_COSIGNER_MODEL.md)) and
 closed the new A-series gaps in the same pass. The focused tests added for that
 audit cover:
 

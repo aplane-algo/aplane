@@ -262,8 +262,8 @@ func TestEveryShapeResolvesAndAgreesWithItsMetadata(t *testing.T) {
 			if fromMetadata.Descriptor() != shape.Descriptor() {
 				t.Fatalf("metadata selects %s", fromMetadata.Descriptor())
 			}
-			if instance.Bounded.MaxFee != MaxFee {
-				t.Fatalf("MaxFee = %d", instance.Bounded.MaxFee)
+			if instance.Bounded.MaxFee == nil || *instance.Bounded.MaxFee != MaxFee {
+				t.Fatalf("MaxFee = %v", instance.Bounded.MaxFee)
 			}
 			if (instance.Bounded.Cosigner != nil) != shape.Cosigner {
 				t.Fatalf("cosigner metadata = %v", instance.Bounded.Cosigner)
@@ -339,28 +339,28 @@ func TestInvalidRequestsFailClosed(t *testing.T) {
 		// No host rule gates a rekey, so a spending-key rekey could leave a timelock
 		// before its unlock round. Pay does not change that.
 		{"spending-key rekey on an allowlist timelock", allSpend, func(p map[string]string) { p[ParameterUnlockRound] = "5" },
-			"a timelock can't take rekey_authority=spending_key: a spending-key rekey would leave the lock before the unlock round; use rekey_authority=only_these"},
+			"this type's timelock shapes take only rekey_authority=only_these; an expert template can combine a timelock with rekey_authority=spending_key"},
 		// With a cosigner too: the cosigner's rekey_policy would become the lock.
 		{"cosigned spending-key rekey on a timelock", allSpend, func(p map[string]string) {
 			p[ParameterUnlockRound] = "5"
 			p[composeddsa.BoundedCosignerPublicKeyParameter] = testCosignerKey
-		}, "a timelock can't take rekey_authority=spending_key"},
+		}, "an expert template can combine a timelock with rekey_authority=spending_key"},
 		{"plus cosigned on a timelock", plusCosigned, func(p map[string]string) { p[ParameterUnlockRound] = "5" },
-			"a timelock can't take rekey_authority=plus_cosigned"},
+			"an expert template can combine a timelock with rekey_authority=plus_cosigned"},
 		{"spending-key rekey on a timelock", allSpend, func(p map[string]string) {
 			delete(p, ParameterRecipients)
 			delete(p, ParameterListEncoding)
 			p[ParameterUnlockRound] = "5"
-		}, "a timelock can't take rekey_authority=spending_key"},
+		}, "an expert template can combine a timelock with rekey_authority=spending_key"},
 		{"spending-key rekey on a timelock without pay", allSpend, func(p map[string]string) {
 			p[ParameterUnlockRound] = "5"
 			p[ParameterSpendEffects] = "axfer"
-		}, "a timelock can't take rekey_authority=spending_key"},
-		// Refusing every rekey is not offered, with a cosigner or without.
+		}, "an expert template can combine a timelock with rekey_authority=spending_key"},
+		// The grammar has no shape that refuses every rekey, with a cosigner or without.
 		{"refused with a cosigner", refusedShape, func(map[string]string) {},
-			"rekey_authority=refused is not offered: use rekey_authority=only_these with the addresses the account may be rekeyed to in rekey_to"},
+			"rekey_authority=refused is not one of this type's shapes: use rekey_authority=only_these with rekey_to, or an expert template with rekey: refused"},
 		{"refused without a cosigner", refusedShape, func(p map[string]string) { delete(p, composeddsa.BoundedCosignerPublicKeyParameter) },
-			"rekey_authority=refused is not offered"},
+			"rekey_authority=refused is not one of this type's shapes"},
 		{"plus cosigned without a cosigner", plusCosigned, func(p map[string]string) { delete(p, composeddsa.BoundedCosignerPublicKeyParameter) },
 			"rekey_authority=plus_cosigned needs a cosigner; without one, use rekey_authority=only_these or spending_key"},
 		{"plus_cosigned without rekey_to", plusCosigned, func(p map[string]string) { delete(p, ParameterRekeyTo) },
@@ -575,9 +575,6 @@ func TestComposerSeesOnlyItsDeclaredParameters(t *testing.T) {
 
 func TestProviderHasNoMnemonicImportOrRuntimeArguments(t *testing.T) {
 	provider := newTestProvider(t)
-	if provider.SupportsMnemonicImport() {
-		t.Fatal("LogicSig account must not support mnemonic import")
-	}
 	if len(provider.RuntimeArgs()) != 0 {
 		t.Fatal("this grammar has no runtime arguments")
 	}
@@ -1078,7 +1075,7 @@ func TestResourceBackstopRefusesWhatCannotRun(t *testing.T) {
 		t.Fatal("accepted a program that cannot fit a group")
 	}
 	lowCeiling := boundedmeta.Clone(instance.Bounded)
-	lowCeiling.MaxFee = 1_000
+	lowCeiling.MaxFee = new(uint64(1_000))
 	if err := checkResources(lowCeiling, opcodes, 3_000); err == nil || !strings.Contains(err.Error(), "above the account's ceiling") {
 		t.Fatalf("checkResources(low ceiling) error = %v", err)
 	}
@@ -1271,8 +1268,8 @@ func TestStoredFingerprintRefusesAMismatchedRekey(t *testing.T) {
 		t.Fatalf("a cosigned only_these timelock stored rekey %q, list %v", cosignedTimelock.Bounded.Rekey, cosignedTimelock.Bounded.RekeyList)
 	}
 	// A timelock with a spending-key rekey, cosigned or plus cosigned, is a
-	// contract the grammar doesn't produce: the rekey would leave the lock early.
-	// Neither is a cosigned timelock that refuses every rekey.
+	// contract the grammar doesn't produce, and so is a cosigned timelock that
+	// refuses every rekey; an expert template can produce them.
 	for name, mutate := range map[string]func(*boundedmeta.Metadata){
 		"plus cosigned":         func(m *boundedmeta.Metadata) { m.Rekey = boundedmeta.RekeySpendingKey },
 		"cosigned spending key": func(m *boundedmeta.Metadata) { m.Rekey, m.RekeyList = boundedmeta.RekeySpendingKey, nil },

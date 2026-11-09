@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
+	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"github.com/aplane-algo/aplane/internal/genstore"
@@ -27,7 +28,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/witness"
 	falconfamily "github.com/aplane-algo/aplane/lsig/falcon1024/family"
-	falcon1024guarded "github.com/aplane-algo/aplane/lsig/falcon1024_guarded"
 	lsigsignerreg "github.com/aplane-algo/aplane/lsig/signerreg"
 )
 
@@ -71,8 +71,6 @@ func TestSupportsMnemonicImport(t *testing.T) {
 		{keyType: "ed25519", want: true},
 		{keyType: "aplane.falcon1024.v1", want: false},
 		{keyType: "aplane.ed25519.v1", want: false},
-		{keyType: falcon1024guarded.KeyTypeV1, want: false},
-		{keyType: falcon1024guarded.KeyTypeV1, want: false},
 		{keyType: witness.Falcon1024V1, want: false},
 		{keyType: witness.Falcon1024V1, want: false},
 		{keyType: "aplane.governance-ed25519.v1", want: false},
@@ -92,7 +90,7 @@ func TestImportKeyRejectsValidButNonImportableType(t *testing.T) {
 	paths = genstoretest.MintFirst(t, paths)
 	paths = genstoretest.MintFirst(t, paths)
 
-	keyType := falcon1024guarded.KeyTypeV1
+	keyType := "aplane.falcon1024.v1"
 	_, err := ImportKeyWithActivatedContext(context.Background(), paths, keyType, "mnemonic words here", nil, nil, []string{keyType})
 	if err == nil || !strings.Contains(err.Error(), "mnemonic import not supported") {
 		t.Fatalf("ImportKeyWithActivatedContext(%s) error = %v, want mnemonic import unsupported", keyType, err)
@@ -134,7 +132,7 @@ func TestImportKeyRestoresCanonicalPathWhenExistingKeyIsNonCanonical(t *testing.
 }
 
 func TestValidKeyTypesIncludeIdentityActivatedLibraryProvider(t *testing.T) {
-	const keyType = falcon1024guarded.KeyTypeV1
+	const keyType = "aplane.falcon1024.v1"
 	if containsKeyType(GetValidKeyTypes(), keyType) {
 		t.Fatal("GetValidKeyTypes() included library-only provider without activation")
 	}
@@ -196,48 +194,9 @@ func TestValidKeyTypesExcludeExternalGovernancePrivateKeys(t *testing.T) {
 	}
 }
 
-func TestValidKeyTypesIncludeActivatedFalcon1024GuardedKey(t *testing.T) {
-	for _, keyType := range []string{
-		falcon1024guarded.KeyTypeV1,
-		falcon1024guarded.KeyTypeV1,
-	} {
-		t.Run(keyType, func(t *testing.T) {
-			if containsKeyType(GetValidKeyTypes(), keyType) {
-				t.Fatalf("GetValidKeyTypes() included library-only provider %s without activation", keyType)
-			}
-			if IsValidKeyType(keyType) {
-				t.Fatalf("IsValidKeyType() accepted library-only provider %s without activation", keyType)
-			}
-			if !containsKeyType(GetValidKeyTypesWithActivated([]string{keyType}), keyType) {
-				t.Fatalf("GetValidKeyTypesWithActivated() missing activated %s", keyType)
-			}
-			if !IsValidKeyTypeWithActivated(keyType, []string{keyType}) {
-				t.Fatalf("IsValidKeyTypeWithActivated() rejected activated %s", keyType)
-			}
-		})
-	}
-}
-
-func TestGenerateKeyFalcon1024GuardedRequiresCosignerPublicKey(t *testing.T) {
-	paths := storepaths.NewPaths(t.TempDir())
-	paths = genstoretest.MintFirst(t, paths)
-	paths = genstoretest.MintFirst(t, paths)
-	masterKey := []byte("0123456789abcdef0123456789abcdef")
-
-	for _, keyType := range []string{
-		falcon1024guarded.KeyTypeV1,
-		falcon1024guarded.KeyTypeV1,
-	} {
-		t.Run(keyType, func(t *testing.T) {
-			_, err := GenerateKeyWithActivatedContext(context.Background(), paths, keyType, cryptotest.Keyring(t, masterKey), nil, []string{keyType})
-			if err == nil || !strings.Contains(err.Error(), "missing required parameter: cosigner_public_key") {
-				t.Fatalf("GenerateKey(guarded missing params) error = %v, want missing cosigner_public_key", err)
-			}
-		})
-	}
-}
-
-func TestGenerateKeyFalcon1024GuardedPersistsSigningMetadata(t *testing.T) {
+// A plain host generated through keymgmt persists its plain1 signing metadata
+// beside the cosigner key it embeds.
+func TestGenerateKeyPlainHostPersistsSigningMetadata(t *testing.T) {
 	configureGuardedCompileMock(t)
 
 	tests := []struct {
@@ -245,7 +204,7 @@ func TestGenerateKeyFalcon1024GuardedPersistsSigningMetadata(t *testing.T) {
 		cosignerPublicKey string
 	}{
 		{
-			keyType:           falcon1024guarded.KeyTypeV1,
+			keyType:           "aplane.falcon1024.v1",
 			cosignerPublicKey: strings.Repeat("cd", falconfamily.PublicKeySize),
 		},
 	}
@@ -264,12 +223,13 @@ func TestGenerateKeyFalcon1024GuardedPersistsSigningMetadata(t *testing.T) {
 				tt.keyType,
 				cryptotest.Keyring(t, masterKey),
 				map[string]string{
-					falcon1024guarded.ParamCosignerPublicKey: tt.cosignerPublicKey,
+					keytypes.ParameterCosignerPublicKey: tt.cosignerPublicKey,
+					"rekey_authority":                   "spending_key",
 				},
 				[]string{tt.keyType},
 			)
 			if err != nil {
-				t.Fatalf("GenerateKey(guarded) error = %v", err)
+				t.Fatalf("GenerateKey(plain host) error = %v", err)
 			}
 			if result.KeyType != tt.keyType {
 				t.Fatalf("KeyType = %q, want %s", result.KeyType, tt.keyType)
@@ -278,7 +238,7 @@ func TestGenerateKeyFalcon1024GuardedPersistsSigningMetadata(t *testing.T) {
 				t.Fatal("Address is empty")
 			}
 			if result.IsWitnessKey {
-				t.Fatalf("guarded account marked as component: %#v", result)
+				t.Fatalf("plain host marked as component: %#v", result)
 			}
 
 			decrypted, err := keys.ReadDecryptedKeyJSONWithKeyring(result.KeyFile, cryptotest.Keyring(t, masterKey))
@@ -298,11 +258,14 @@ func TestGenerateKeyFalcon1024GuardedPersistsSigningMetadata(t *testing.T) {
 			if payload.KeyType != tt.keyType {
 				t.Fatalf("stored KeyType = %q, want %s", payload.KeyType, tt.keyType)
 			}
-			if payload.BaseKeyType != falcon1024guarded.BaseKeyType {
-				t.Fatalf("BaseKeyType = %q, want %s", payload.BaseKeyType, falcon1024guarded.BaseKeyType)
+			if payload.BaseKeyType != tt.keyType {
+				t.Fatalf("BaseKeyType = %q, want %s", payload.BaseKeyType, tt.keyType)
 			}
-			if payload.Parameters[falcon1024guarded.ParamCosignerPublicKey] != tt.cosignerPublicKey {
-				t.Fatalf("cosigner public key param = %q, want %q", payload.Parameters[falcon1024guarded.ParamCosignerPublicKey], tt.cosignerPublicKey)
+			if payload.Parameters[keytypes.ParameterCosignerPublicKey] != tt.cosignerPublicKey {
+				t.Fatalf("cosigner public key param = %q, want %q", payload.Parameters[keytypes.ParameterCosignerPublicKey], tt.cosignerPublicKey)
+			}
+			if payload.BoundedAuthorization == nil || payload.BoundedAuthorization.Contract != "plain1" || payload.BoundedAuthorization.Cosigner == nil {
+				t.Fatalf("BoundedAuthorization = %+v, want a cosigned plain1 contract", payload.BoundedAuthorization)
 			}
 			if len(payload.LogicSigBytecode) == 0 {
 				t.Fatal("LogicSigBytecode is empty")
@@ -310,8 +273,8 @@ func TestGenerateKeyFalcon1024GuardedPersistsSigningMetadata(t *testing.T) {
 			if payload.SaltCounter != nil || payload.LogicSigDerivation != keys.LogicSigDerivationAlgodV13AutoSalt {
 				t.Fatalf("derivation = %q salt counter = %v, want compiler auto-salt without counter", payload.LogicSigDerivation, payload.SaltCounter)
 			}
-			if payload.SigningMetadataVersion != keys.CurrentSigningMetadataVersion {
-				t.Fatalf("SigningMetadataVersion = %d, want %d", payload.SigningMetadataVersion, keys.CurrentSigningMetadataVersion)
+			if payload.SigningMetadataVersion != keys.BoundedSigningMetadataVersion {
+				t.Fatalf("SigningMetadataVersion = %d, want %d", payload.SigningMetadataVersion, keys.BoundedSigningMetadataVersion)
 			}
 			if payload.TemplateFingerprint == "" {
 				t.Fatal("TemplateFingerprint is empty")

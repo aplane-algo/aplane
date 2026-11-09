@@ -1283,9 +1283,9 @@ See [Mode Selection](#mode-selection) for the foreign/passthrough/sign distincti
 - Both endpoints accept the same per-entry modes; mixing passthrough and foreign in one request is invalid, and all-foreign requests are rejected on both endpoints.
 - `/plan` performs canonical group building only. It never touches keys and returns canonical unsigned transactions in `transactions[]`.
 - `/sign` performs canonical group building plus approval/signing.
-  Signer-controlled guarded account keys are rejected before approval because
-  they require the guarded component/assembly endpoints; `/plan` may admit
-  them to freeze those guarded workflows. Transaction-level hard policy is
+  Signer-controlled cosigned accounts are rejected before approval because
+  they require the component/assembly endpoints; `/plan` may admit them to
+  freeze those cosigned workflows. Transaction-level hard policy is
   applied only to signer-controlled slots; passthrough and foreign entries
   contribute to group consistency, approval context, warning analysis, and
   audit visibility.
@@ -1403,17 +1403,15 @@ material into another account, metadata instance, or runtime-argument set.
 
 `/sign/assemble` accepts `signerapi.AssemblyRequest`: optional `request_id`,
 the frozen group, discriminated `targets[]`, and optional `passthrough[]`.
-Guarded targets carry user and cosigner signatures; bounded-cosigner targets carry
-base signatures, runtime arguments, an assembly receipt, and a cosigner
+Every target is `bounded-cosigner` (the retired `guarded` kind is refused) and
+carries base signatures, runtime arguments, an assembly receipt, and a cosigner
 signature, which is optional on the wire: a listed rekey carries none.
-`cosigner_signature` stays required on a guarded target, and
 `cosigner_source_request_id` needs a `cosigner_signature`. Every position is
 covered exactly once. The response is
 `signerapi.AssemblyResponse` with `request_id` and aligned `signed_group[]`.
 
-Assembly keeps the authorization models distinct. Guarded targets are verified
-against their local guarded account key and both component signatures. Bounded
-targets reload durable metadata, classify the canonical transaction again
+Assembly verifies each bounded-cosigner target on its own terms. It reloads
+durable metadata, classify the canonical transaction again
 through the planner's function, verify the receipt and the base signature, and
 on `spend` and `spending_rekey` the cosigner signature, against the frozen TxID;
 a missing cosigner signature on those paths, or one on `listed_rekey`, is
@@ -1722,20 +1720,22 @@ warning does not establish that no leaf was reused.
   `ed25519`, `native_pq`, or `logic_sig`. It is derived from the durable key
   category and is authoritative for choosing the transaction authorization
   envelope. Witness rows omit it because they are not spending accounts.
-- optional `signing_flow`: explicit signing choreography label. `cosigner1`
-  selects legacy guarded component signing, `bounded1` selects bounded routing
-  without an online cosigner, `cosigned1` selects the user-first bounded
-  component/cosigner/assembly flow for a cosigned bounded account's spends and
-  rekeys, `rotating1` selects the rotating account
+- optional `signing_flow`: explicit signing choreography label. `bounded1`
+  selects bounded routing without an online cosigner (a bounded or plain host
+  without a cosigner), `cosigned1` selects the user-first bounded
+  component/cosigner/assembly flow for a cosigned account's spends and rekeys,
+  on a plain or bounded host, `rotating1` selects the rotating account
   prepare and sign flow, and empty means ordinary `/sign`. Clients
   dispatch these cases explicitly and fail closed on labels they do not
-  implement.
+  implement, the retired `cosigner1` included.
 - optional `cosigner_component_key_type`: the cosigner component key type used by
-  this key's `signing_flow` (for `cosigner1` or `cosigned1`)
+  this key's `signing_flow` (for `cosigned1`)
 - optional `bounded_authorization`: present for `signing_flow: bounded1` and
   `cosigned1`.
-  It contains `contract` (`bounded2`), `base_signature_arg_layout`,
-  `spend_effects`, `max_fee`, `rekey` (`refused` or `spending_key`),
+  It contains `contract` (`bounded2`, or `plain1` for a plain host),
+  `base_signature_arg_layout`, `spend_effects` (empty on `plain1`), `max_fee`
+  (present on `bounded2`, absent on `plain1`, which has no fee ceiling; clients
+  must not read a missing value as zero), `rekey` (`refused` or `spending_key`),
   optional `rekey_list` (`contract` `rekey_list1`, `depth`, and `root`: a pure
   rekey may go to a listed address with the spending key alone, under
   `rekey: refused` (*only these*) or, with a cosigner, `rekey: spending_key`
@@ -1762,11 +1762,11 @@ warning does not establish that no leaf was reused.
   signer enforces at sign time for that specific key. SDK consumers must treat
   an absent field the same as an empty list.
 - optional `parameters`: non-secret key creation parameters needed by clients
-  to orchestrate key-type-specific workflows. For guarded account rows this
+  to orchestrate key-type-specific workflows. For cosigned account rows this
   includes `cosigner_public_key`, the cosigner public key embedded in the
-  account LogicSig bytecode. Its key family and size are determined by the
-  guarded account `key_type`. SDK consumers must treat this as signer-owned
-  metadata, not as proof of remote cosigner endpoint ownership.
+  account LogicSig bytecode; its key family and size are those of the
+  account's `cosigner_component_key_type`. SDK consumers must treat this as
+  signer-owned metadata, not as proof of remote cosigner endpoint ownership.
   Bounded rows expose only the reviewed public parameter projection
   (`recipients`, `unlock_round`, and the framework-injected
   `cosigner_public_key`). Newly stored bounded parameters are
@@ -1849,6 +1849,12 @@ generation. It has no `signing_flow` or `bounded_authorization`, so clients rout
 accounts by `/keys`. Its optional cosigner stays a plain optional parameter: a
 reference never turns into a required selector with a default.
 
+`boundary_schema` names the boundary file grammar a per-key type's requests take:
+`aplane.boundary.v1` on the general bounded type. It is absent on a type whose
+requests no grammar describes, such as a plain host, whose few parameters are given
+directly. Clients offer boundary presets and boundary files only when it names a
+grammar they know, never from `per_key_contract` alone.
+
 `/keytypes` is a metadata contract. It describes enabled key types and their
 creation/runtime argument shapes for new key generation. The
 `runtime_args` here come from the live template/provider schema and are
@@ -1860,10 +1866,10 @@ has populated signer-side signing, keygen, mnemonic, or key-processor registries
 Client/signer provider-boundary refactors must preserve this schema and field
 meaning.
 
-The internal-only plain Falcon and Ed25519 LogicSig providers are excluded
-from `/keytypes`, even with old enabled records. Their existing accounts remain
-in `/keys`. The advertised LogicSig types report `mnemonic_import: false`.
-See [internal providers](ARCH_KEYTYPES.md#internal-providers).
+The plain Falcon and Ed25519 LogicSig types are plain hosts: library-visible,
+listed in `/keytypes` once enabled, as per-key types (`per_key_contract`) with no
+`boundary_schema`. The advertised LogicSig types report `mnemonic_import: false`.
+See [plain hosts](ARCH_KEYTYPES.md#plain-hosts).
 
 The `family` field carries the middle segment of the canonical
 `publisher.family.vN` identifier and is intended for display and grouping;
@@ -2063,13 +2069,13 @@ Cross-SDK compatibility-bearing behavior:
   signer-advertised structured LogicSig resource hints to `/plan`; validate the
   returned canonical group and mutation report; derive the
   target/context/dummy position partition; locally sign only the canonical
-  dummy suffix returned by `/plan`; obtain the required user, cosigner, or
-  bounded-base components, asking the cosigner for no `listed_rekey` target and
+  dummy suffix returned by `/plan`; obtain the required bounded-base and
+  cosigner components, asking the cosigner for no `listed_rekey` target and
   sending no cosigner request when no target needs one; call ordinary `/sign` for any non-guarded original
   positions; and call `/sign/assemble` with the frozen group and signed
   passthrough positions. Resource hints are planning inputs, not locally
   inserted transactions. Final guarded assembly remains signer-owned, and
-  submission or simulation uses the exact assembled group. User-role
+  submission or simulation uses the exact assembled group. Bounded-base
   `/sign/component` requests run the signer-domain approval gates and can block
   on operator approval, so SDK deadlines for them follow the same
   approval-aware rule as `/sign`, not the short cosigner-role component deadline.

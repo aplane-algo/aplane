@@ -52,9 +52,9 @@ func selectShape(params map[string]string, defs []lsigprovider.ParameterDef) (*s
 	switch rekey {
 	case RekeySpendingKey, RekeyOnlyThese, RekeyPlusCosigned:
 	case RekeyRefused:
-		// An account that refuses every rekey has no way out but its transfers.
-		return nil, fmt.Errorf("%s=%s is not offered: use %s=%s with the addresses the account may be rekeyed to in %s",
-			ParameterRekeyAuthority, RekeyRefused, ParameterRekeyAuthority, RekeyOnlyThese, ParameterRekeyTo)
+		// Not one of this grammar's shapes; an expert template can express it.
+		return nil, fmt.Errorf("%s=%s is not one of this type's shapes: use %s=%s with %s, or an expert template with rekey: %s",
+			ParameterRekeyAuthority, RekeyRefused, ParameterRekeyAuthority, RekeyOnlyThese, ParameterRekeyTo, RekeyRefused)
 	default:
 		return nil, fmt.Errorf("%s must be %s, %s or %s", ParameterRekeyAuthority, RekeySpendingKey, RekeyOnlyThese, RekeyPlusCosigned)
 	}
@@ -109,10 +109,9 @@ func selectShape(params map[string]string, defs []lsigprovider.ParameterDef) (*s
 		return nil, fmt.Errorf("%s=%s needs a cosigner; without one, use %s=%s or %s",
 			ParameterRekeyAuthority, RekeyPlusCosigned, ParameterRekeyAuthority, RekeyOnlyThese, RekeySpendingKey)
 	case timelock && rekey != RekeyOnlyThese:
-		// No host rule gates a rekey, so a spending-key rekey, cosigned or not,
-		// would leave the lock early.
-		return nil, fmt.Errorf("a timelock can't take %s=%s: a spending-key rekey would leave the lock before the unlock round; use %s=%s",
-			ParameterRekeyAuthority, rekey, ParameterRekeyAuthority, RekeyOnlyThese)
+		// Not one of this grammar's shapes; an expert template can express it.
+		return nil, fmt.Errorf("this type's timelock shapes take only %s=%s; an expert template can combine a timelock with %s=%s",
+			ParameterRekeyAuthority, RekeyOnlyThese, ParameterRekeyAuthority, rekey)
 	}
 
 	values := map[string]string{

@@ -17,20 +17,20 @@ Both node roles use the same document format and the same rules; they differ
 in what a key is and in what the role may express:
 
 - **On a signer node, a key is a signing address.** The default governs every
-  key the node holds, whatever its type, including the user side of a guarded
-  (cosigner-backed) key. Generating or importing a key adds it to the default's
+  key the node holds, whatever its type, including the spending key's side of a
+  cosigned (cosigner-backed) account. Generating or importing a key adds it to the default's
   set; nothing is written per key until you give the key a file of its own.
 - **On a cosigner node, a key is a cosigner witness, selected by its Witness
-  Key ID.** A cosigner key's policy governs every account whose guarded key was
-  composed with that witness. This set is virtual: the cosigner does not hold
+  Key ID.** A cosigner key's policy governs every cosigned account composed with
+  that witness. This set is virtual: the cosigner does not hold
   those accounts and cannot list them. Any signer holding the key's public
   reference can compose new accounts with it, and the cosigner learns of one
   when a request for it arrives. Routes with `sources: ["*"]` accept every such
   account; routes naming addresses or sets pin the document to accounts the
   operator has agreed to witness for.
 
-A guarded account is governed on both nodes at once, and a transfer must be
-allowed by both: the signer's policy for the user key and the cosigner's policy
+A cosigned account is governed on both nodes at once, and a transfer must be
+allowed by both: the signer's policy for the account and the cosigner's policy
 for the witness. The stricter document decides. The aPlane client asks the
 signer first, so a rejection reported as a signer error means the signer's
 policy said no and the cosigner was not consulted.
@@ -947,9 +947,9 @@ a flat `address_sets` entry such as `@corridor_accounts`. Network-specific
 address sets are not accepted for rekey policy. The target transaction must be
 a pure 0 ALGO self-payment with non-zero `RekeyTo` and no close remainder.
 
-`rekey_policy` applies to every rekey of a dedicated `cosigner1` guarded
-account, and to every cosigned rekey of a bounded account: a `spending_key`
-rekey on a cosigned account, or a target off the list under `plus_cosigned`.
+`rekey_policy` applies to every cosigned rekey of a cosigned account, on a
+plain or bounded host: a `spending_key` rekey on a cosigned account, or a target
+off the list under `plus_cosigned`.
 A listed rekey takes the spending key alone and never asks the cosigner, so on
 an account with a [rekey-to list](USER_KEYTYPES.md#rekey-to-lists)
 `"reject_rekey": true` doesn't stop a rekey to a listed address, and
@@ -1131,7 +1131,7 @@ How to read this:
   rekey the two differ: if account A is rekeyed to this key, this file
   governs A's transactions, and its routes must name A, not the key. On a
   cosigner node the document belongs to a Witness Key ID and its `sources`
-  are guarded account addresses; see
+  are cosigned account addresses; see
   [Cosigner Documents](USER_TRANSFER_ROUTING.md#cosigner-documents).
 - A route match lets the transfer continue through the other rules; it is
   not an approval. The document limits from step 4 and the warning review
@@ -1483,7 +1483,7 @@ Before relying on a policy:
 | A request is rejected with `transaction_type:<type>` | The governing document's `transaction_types` rejects that type, directly or through `*`. |
 | A transfer is rejected unexpectedly | `"on_no_route": "reject"`, a blocked destination, close/clawback denial, or a stricter matching route threshold. |
 | A route does not match an ASA | ASA IDs are network-local; check the transaction network and any `asset_sets` mapping. |
-| A route in a key file never matches | Its `sources` do not name the transaction's sender. The file governs what its key signs, but routes match the sender: the key's own address when it signs for itself, the original account's address when that account is rekeyed to the key, or a guarded account address on a cosigner node. |
+| A route in a key file never matches | Its `sources` do not name the transaction's sender. The file governs what its key signs, but routes match the sender: the key's own address when it signs for itself, the original account's address when that account is rekeyed to the key, or a cosigned account address on a cosigner node. |
 
 For implementation-level details, see [ARCH_POLICY.md](ARCH_POLICY.md). For
 network token rules, see [ARCH_NETWORKS.md](ARCH_NETWORKS.md).

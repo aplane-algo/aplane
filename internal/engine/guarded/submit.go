@@ -31,7 +31,8 @@ type guardedTarget struct {
 	CosignerComponentKeyType string
 	CosignerPublicKey        string
 	Route                    flowRoute
-	BoundedMaxFee            uint64
+	// BoundedMaxFee is a bounded host's fee ceiling, nil on a plain host.
+	BoundedMaxFee *uint64
 	// BoundedPath is the path the signer's base component named for a cosigned
 	// target, once components are in: what the position is budgeted on.
 	BoundedPath string
@@ -52,8 +53,8 @@ const (
 	// flowRoutePlain signs through the ordinary client path. Bounded1 belongs
 	// here: it has its own transaction-aware server-side path behind /sign.
 	flowRoutePlain flowRoute = iota
-	// flowRouteGuarded routes through cosigner component orchestration.
-	flowRouteGuarded
+	// flowRouteBoundedCosigner routes through the cosigned1 component
+	// orchestration.
 	flowRouteBoundedCosigner
 	// flowRouteUnknown fails closed: the client must be upgraded. Unknown
 	// labels still enter guarded routing so guardedTargets rejects them
@@ -65,8 +66,6 @@ func routeForSigningFlow(flow string) flowRoute {
 	switch flow {
 	case "", signerapi.SigningFlowBounded1:
 		return flowRoutePlain
-	case signerapi.SigningFlowCosigner1:
-		return flowRouteGuarded
 	case signerapi.SigningFlowCosigned1:
 		return flowRouteBoundedCosigner
 	default:
@@ -126,83 +125,11 @@ func (s *Signer) SignAndSubmitGroup(txns []types.Transaction, opts clientsign.Su
 	if len(targets) == 0 {
 		return nil, nil, fmt.Errorf("guarded signing selected with no guarded effective signers")
 	}
-	hasBoundedCosigner, hasCosigner := false, false
-	for _, target := range targets {
-		switch target.Route {
-		case flowRouteBoundedCosigner:
-			hasBoundedCosigner = true
-		case flowRouteGuarded:
-			hasCosigner = true
-		}
-	}
-	if hasBoundedCosigner && hasCosigner {
-		return nil, nil, fmt.Errorf("cannot mix cosigner1 and cosigned1 targets in one group")
-	}
 	targetsByIndex := make(map[int]guardedTarget, len(targets))
 	for _, target := range targets {
 		targetsByIndex[target.Index] = target
 	}
-	if hasBoundedCosigner {
-		return s.signAndSubmitBoundedCosignerGroup(txns, targets, targetsByIndex, opts, w)
-	}
-	return s.signAndSubmitCosignerGroup(txns, targets, targetsByIndex, opts, w)
-}
-
-// signAndSubmitCosignerGroup runs the cosigner1 choreography: the user
-// signer's component for each target, then the cosigner's.
-func (s *Signer) signAndSubmitCosignerGroup(txns []types.Transaction, targets []guardedTarget, targetsByIndex map[int]guardedTarget, opts clientsign.SubmitOptions, w io.Writer) ([]string, []types.Transaction, error) {
-	// Guarded positions are sign-mode here because /plan never signs or
-	// prompts; this lets the signer use its exact stored path profile instead
-	// of trusting a client approximation.
-	requests := make([]signerapi.SignRequest, len(txns))
-	for i, txn := range txns {
-		authorizer := s.authCache.ResolveEffectiveSigner(txn.Sender.String())
-		if target, ok := targetsByIndex[i]; ok {
-			authorizer = target.Account
-		}
-		requests[i] = signModeRequest(i, authorizer, txn.Sender.String(), txnutil.EncodeWithPrefixHex(txn), opts)
-	}
-	group, err := s.planFrozenGroup(opts.Ctx, txns, requests, w)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	userSignatures, userRequestIDs, err := s.requestUserComponentSignatures(opts.Ctx, group.BytesHex, group.OriginalCount, targets, opts.AppCallInfo)
-	if err != nil {
-		return nil, nil, err
-	}
-	passthrough, err := s.signContextPositions(opts.Ctx, group, targetsByIndex, opts, w)
-	if err != nil {
-		return nil, nil, err
-	}
-	// The user side is complete, including any non-guarded positions. Only
-	// now may the client disclose the frozen group to the cosigner endpoint.
-	cosignerSignatures, cosignerRequestIDs, err := s.requestCosignerComponentSignatures(opts.Ctx, group.BytesHex, group.OriginalCount, targets, opts.AppCallInfo)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	assemblyTargets := make([]signerapi.AssemblyTarget, 0, len(targets))
-	for _, target := range targets {
-		userSig, ok := userSignatures[target.Index]
-		if !ok {
-			return nil, nil, fmt.Errorf("user signer returned no signature for target index %d", target.Index)
-		}
-		cosignerSig, ok := cosignerSignatures[target.Index]
-		if !ok {
-			return nil, nil, fmt.Errorf("cosigner endpoint returned no signature for target index %d", target.Index)
-		}
-		assemblyTargets = append(assemblyTargets, signerapi.AssemblyTarget{
-			TargetIndex:             target.Index,
-			Kind:                    signerapi.AssemblyTargetKindGuarded,
-			AuthAddress:             target.Account,
-			UserSignature:           userSig,
-			UserSourceRequestID:     userRequestIDs[target.Account],
-			CosignerSignature:       cosignerSig,
-			CosignerSourceRequestID: cosignerRequestIDs[target.requestKey()],
-		})
-	}
-	return s.assembleAndSubmit(group, assemblyTargets, passthrough, opts, w)
+	return s.signAndSubmitBoundedCosignerGroup(txns, targets, targetsByIndex, opts, w)
 }
 
 // signAndSubmitBoundedCosignerGroup runs the cosigned1 choreography: the user
@@ -535,8 +462,11 @@ func validateBoundedTargetFees(planned []types.Transaction, targets []guardedTar
 		if target.Index < 0 || target.Index >= len(planned) {
 			return fmt.Errorf("bounded target index %d is outside planned group", target.Index)
 		}
-		if fee := uint64(planned[target.Index].Fee); fee > target.BoundedMaxFee {
-			return fmt.Errorf("bounded target %d fee %d exceeds advertised max_fee %d", target.Index, fee, target.BoundedMaxFee)
+		if target.BoundedMaxFee == nil {
+			continue
+		}
+		if fee := uint64(planned[target.Index].Fee); fee > *target.BoundedMaxFee {
+			return fmt.Errorf("bounded target %d fee %d exceeds advertised max_fee %d", target.Index, fee, *target.BoundedMaxFee)
 		}
 	}
 	return nil
@@ -590,8 +520,6 @@ func (s *Signer) buildGroupSignRequests(plannedTxns []types.Transaction, groupBy
 
 func guardedLogicSigResourcePath(target guardedTarget) (lsigresource.AuthorizationPath, error) {
 	switch target.Route {
-	case flowRouteGuarded:
-		return lsigresource.PathDefault, nil
 	case flowRouteBoundedCosigner:
 		// Carry the exact path the signer's base component named into the later
 		// mixed-group /sign call, rather than the maximum across unrelated paths.
@@ -727,7 +655,7 @@ func (s *Signer) guardedTargets(txns []types.Transaction) ([]guardedTarget, erro
 		switch route {
 		case flowRoutePlain:
 			continue
-		case flowRouteGuarded, flowRouteBoundedCosigner:
+		case flowRouteBoundedCosigner:
 		default:
 			return nil, fmt.Errorf("account %s requires signing flow %q, which this client does not support; upgrade the client", account, flow)
 		}
@@ -743,13 +671,9 @@ func (s *Signer) guardedTargets(txns []types.Transaction) ([]guardedTarget, erro
 		if err != nil {
 			return nil, fmt.Errorf("guarded account %s has invalid cosigner_public_key metadata: %w", account, err)
 		}
-		var boundedMaxFee uint64
-		if route == flowRouteBoundedCosigner {
-			var found bool
-			boundedMaxFee, found = s.cache.BoundedMaxFee(account)
-			if !found {
-				return nil, fmt.Errorf("bounded account %s is missing max_fee metadata; run keys refresh", account)
-			}
+		boundedMaxFee, err := s.boundedFeeCeiling(account)
+		if err != nil {
+			return nil, err
 		}
 		targets = append(targets, guardedTarget{
 			Index:                    i,
@@ -762,6 +686,28 @@ func (s *Signer) guardedTargets(txns []types.Transaction) ([]guardedTarget, erro
 		})
 	}
 	return targets, nil
+}
+
+// boundedFeeCeiling is a cosigned account's on-chain fee ceiling: a bounded
+// host has one, a plain host has none. Missing metadata, or a contract this
+// client doesn't know, fails closed.
+func (s *Signer) boundedFeeCeiling(account string) (*uint64, error) {
+	contract, found := s.cache.BoundedContract(account)
+	if !found {
+		return nil, fmt.Errorf("bounded account %s is missing contract metadata; run keys refresh", account)
+	}
+	switch contract {
+	case signerapi.BoundedContractBounded2:
+		maxFee, found := s.cache.BoundedMaxFee(account)
+		if !found {
+			return nil, fmt.Errorf("bounded account %s is missing max_fee metadata; run keys refresh", account)
+		}
+		return &maxFee, nil
+	case signerapi.BoundedContractPlain1:
+		return nil, nil
+	default:
+		return nil, fmt.Errorf("bounded account %s has contract %q, which this client does not support; upgrade the client", account, contract)
+	}
 }
 
 func (t guardedTarget) requestKey() cosignerRequestKey {
@@ -862,26 +808,6 @@ func validateGuardedDummies(dummyTxns []types.Transaction) error {
 	return nil
 }
 
-func (s *Signer) requestUserComponentSignatures(ctx context.Context, groupBytesHex []string, originalCount int, targets []guardedTarget, appCallInfo []*signerapi.AppCallInfo) (map[int]string, map[string]string, error) {
-	byAccount := make(map[string][]int)
-	for _, target := range targets {
-		byAccount[target.Account] = append(byAccount[target.Account], target.Index)
-	}
-	signatures := make(map[int]string, len(targets))
-	requestIDs := make(map[string]string, len(byAccount))
-	for account, indices := range byAccount {
-		resp, err := s.conn.RequestComponentsWithContext(ctx, componentRequestForIndices(groupBytesHex, originalCount, indices, signerapi.ComponentTargetKindUser, account, appCallInfo))
-		if err != nil {
-			return nil, nil, fmt.Errorf("user component signing failed for %s: %w", account, err)
-		}
-		if err := collectComponentSignatures(resp, indices, "", signatures); err != nil {
-			return nil, nil, fmt.Errorf("user component signing failed for %s: %w", account, err)
-		}
-		requestIDs[account] = resp.RequestID
-	}
-	return signatures, requestIDs, nil
-}
-
 func (s *Signer) requestCosignerComponentSignatures(ctx context.Context, groupBytesHex []string, originalCount int, targets []guardedTarget, appCallInfo []*signerapi.AppCallInfo) (map[int]string, map[cosignerRequestKey]string, error) {
 	byCosigner := make(map[cosignerRequestKey][]int)
 	for _, target := range targets {
@@ -937,12 +863,7 @@ func componentRequestForIndices(groupBytesHex []string, originalCount int, indic
 	request := signerapi.ComponentRequest{GroupBytesHex: groupBytesHex}
 	for _, index := range indices {
 		targetSet[index] = true
-		target := signerapi.ComponentTarget{TargetIndex: index, Kind: kind}
-		if kind == signerapi.ComponentTargetKindUser {
-			target.AuthAddress = key
-		} else {
-			target.ComponentKey = key
-		}
+		target := signerapi.ComponentTarget{TargetIndex: index, Kind: kind, ComponentKey: key}
 		if index < len(appCallInfo) {
 			target.AppCallInfo = appCallInfo[index]
 		}

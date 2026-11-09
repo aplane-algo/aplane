@@ -25,11 +25,13 @@ import (
 	"sync"
 
 	"github.com/aplane-algo/aplane/internal/addressderive"
+	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	"github.com/aplane-algo/aplane/lsig/dsafamily"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
 	falconkeys "github.com/aplane-algo/aplane/lsig/falcon1024/keys"
 	v1 "github.com/aplane-algo/aplane/lsig/falcon1024/v1"
+	"github.com/aplane-algo/aplane/lsig/plainhost"
 )
 
 var (
@@ -49,8 +51,13 @@ func RegisterClient() {
 			Family:   family.Name,
 			Metadata: &FalconMetadata{},
 			KeyTypes: []dsafamily.KeyType{{
-				KeyType:        "aplane.falcon1024.v1",
-				DSA:            &v1.Falcon1024V1{},
+				KeyType: "aplane.falcon1024.v1",
+				// The plain host: the plain program with no parameters, and
+				// plain1 with a cosigner and an optional rekey-to list.
+				DSA: plainhost.MustWrap(&v1.Falcon1024V1{}, plainhost.Base{
+					Ops:       v1.NewFalconOps(family.FalconBase),
+					SaltStyle: lsigsalt.StyleAlgodAutoSalt,
+				}),
 				AddressDeriver: falconkeys.GetFalconAddressDeriverForType("aplane.falcon1024.v1"),
 			}},
 			Extra: []func(){func() {

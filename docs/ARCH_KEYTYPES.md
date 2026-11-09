@@ -18,7 +18,7 @@ reference for one of the three axes (Resolve).
 ## Contents
 
 - [Protocol dimensions and terminology](#protocol-dimensions-and-terminology)
-- [Internal providers](#internal-providers)
+- [Plain hosts](#plain-hosts)
 - [Mnemonic backup and recovery](#mnemonic-backup-and-recovery)
 - [Designing a new combination](#designing-a-new-combination)
 - [Key type identifier contract](#key-type-identifier-contract)
@@ -40,13 +40,13 @@ another merely because two dimensions currently use the same string.
 | **Key type** | What durable kind of account or witness key is this? | `ed25519`, `aplane.falcon1024.v1`, `aplane.falcon1024-b.v1` | Stored `key_type`; provider/template definition |
 | **Account authorization type** | What protocol-level mechanism authorizes the account? | native signature, DSA LogicSig, generic LogicSig | Key category and stored key material |
 | **Authority lifecycle** | How does the account's authorizer evolve over time? | no mandatory rotation; mandatory per-spend rotation to the next stage (`rotating_lsig`) | Key category; for rotating types the `internal/rotatingkey` profile |
-| **Authorization contract** | Which reusable, versioned on-chain envelope and metadata vocabulary constrain this LogicSig? | `bounded2` | Template `bounded.contract` and durable `bounded_authorization.contract` |
+| **Authorization contract** | Which reusable, versioned on-chain envelope and metadata vocabulary constrain this LogicSig? | `bounded2` (bounded host), `plain1` (plain host) | Template `bounded.contract` and durable `bounded_authorization.contract` |
 | **Policy/profile** | What concrete behavior narrows the account contract? | fixed allowlist, Merkle recipient proof, timelock, Corridor composition | Full key-type provider/template plus behavior parameters |
 | **Base key type** | Which signature construction produces the account's DSA signature arguments? | `aplane.falcon1024.v1`, `aplane.ed25519.v1` | Stored `base_key_type` and composed provider definition |
 | **Auxiliary authority enrollment** | Which additional authority participates, for which role or operation, and under whose custody? | cosigner witness | Embedded public key, durable metadata, and custody-specific message contract |
-| **Signing flow** | Which versioned client/server protocol obtains a usable signature for this key? | empty ordinary flow, `bounded1`, `cosigner1`, `cosigned1`, `rotating1` | Signer-advertised `signing_flow` |
+| **Signing flow** | Which versioned client/server protocol obtains a usable signature for this key? | empty ordinary flow, `bounded1`, `cosigned1`, `rotating1` | Signer-advertised `signing_flow` |
 | **Endpoint choreography** | Which ordered calls implement the selected flow for this transaction path? | `/sign`; `/sign/component` then `/sign/assemble`; `/sign/rotating/prepare` then `/sign/rotating/sign` | Flow contract, transaction classification, and HTTP DTOs |
-| **Provider and routing family** | Which registered implementation performs keygen, derivation, signing, or assembly? | composed provider routed through `aplane.falcon1024`; dedicated guarded provider | Provider registry and `RoutingFamily()` |
+| **Provider and routing family** | Which registered implementation performs keygen, derivation, signing, or assembly? | composed provider routed through `aplane.falcon1024`; the plain host provider (`lsig/plainhost`) | Provider registry and `RoutingFamily()` |
 | **Principal authorization** | May the authenticated caller invoke this operation on the target identity/resource? | `sign.request`, `sign.component`, `sign.assemble` | Reserved product principal, closed action allowlist, and HTTP/admin enforcement point |
 | **Signer policy domain** | Which off-chain rules gate release of a signature that the key and on-chain program could produce? | client-signing policy, cosigner policy | Node role, the node's policy documents, and the selected policy key |
 | **Network context** | Which configured network and network-scoped policy apply to the transaction? | `mainnet`, `voi_mainnet`, `localnet` | Transaction `GenesisHash` resolved to a network context token |
@@ -107,18 +107,19 @@ determine whether the caller may invoke an APlane endpoint; signer or cosigner
 policy determines whether that permitted call may release a signature for the
 particular transaction.
 
-`bounded2` is the bounded authorization-contract identifier. Its signing-flow
-labels are `bounded1` for profiles that need no online cosigner and
-`cosigned1` for cosigner-enabled profiles. Flow labels version the
+`bounded2` (the bounded host) and `plain1` (the plain host) are the
+authorization-contract identifiers. Their signing-flow labels are `bounded1` for
+accounts that need no online cosigner and `cosigned1` for cosigned accounts. Flow labels version the
 choreography, not the contract, so they do not follow the contract's number.
 `cosigned1` replaced `bounded-cosigner1` when the cosigned flow began to carry
 rekeys, so a client that knows only the spend-only choreography refuses a
 cosigned key.
 The contract identifier selects canonical on-chain and durable metadata
-semantics; the flow label tells the client how to route a request. Likewise, `cosigner1` is a signing-flow label and
-an embedded bounded cosigner contract value, while `APLANE_COSIGNER_V1` is the
-cryptographic component-message domain used by that flow. Neither is a key
-type.
+semantics; the flow label tells the client how to route a request. Likewise,
+`cosigner1` is the embedded cosigner contract value, while `APLANE_COSIGNER_V1`
+is the cryptographic component-message domain the cosigned flow uses. Neither
+is a key type. (The retired dedicated cosigned account's signing-flow label was
+also `cosigner1`; clients now treat that label as unknown and fail closed.)
 
 ### How the dimensions compose
 
@@ -170,9 +171,10 @@ from the presence of a witness key alone.
 |---|---|---|---|---|---|
 | `ed25519` | Native | none | Ed25519, self-owned | none | empty flow; `/sign` |
 | `falcon1024` | Native PQ | none | protocol Falcon-1024 scheme `f1`, self-owned | none | empty flow; `/sign`; supported consensus v42 or v43; top-level `PQsig` |
-| `aplane.falcon1024.v1` | DSA LogicSig | plain DSA | Falcon-1024, self-owned | none | empty flow; `/sign` |
+| `aplane.falcon1024.v1`, no parameters | DSA LogicSig | plain DSA program | Falcon-1024, self-owned | none | empty flow; `/sign` |
+| `aplane.falcon1024.v1` or `aplane.ed25519.v1`, with a cosigner | DSA LogicSig | plain host `plain1`; any rekey setting | the type itself | signer-custodied Falcon cosigner on every spend and cosigned rekey | `cosigned1`; `/plan`, kind-tagged `/sign/component`, then `/sign/assemble` |
+| `aplane.falcon1024.v1` or `aplane.ed25519.v1`, overlays without a cosigner | DSA LogicSig | plain host `plain1`; rekey refused, spending key or only these | the type itself | none | `bounded1`; `/sign` |
 | `aplane.falcon1024-b.v1`, Allowlist preset | DSA LogicSig | bounded `bounded2`; framework recipient allowlist; spending-key rekey | `aplane.falcon1024.v1` | none | `bounded1`; spend and rekey through `/sign` |
-| `aplane.falcon1024-cosigner1024.v1` | DSA LogicSig | dedicated guarded verifier | `aplane.falcon1024.v1` | signer-custodied Falcon cosigner witness | `cosigner1`; user `/sign/component`, cosigner `/sign/component`, then `/sign/assemble` |
 | `aplane.falcon1024-b.v1`, Corridor preset | DSA LogicSig | bounded `bounded2`; framework Merkle recipient allowlist; rekey only to a listed address (*only these*) | `aplane.falcon1024.v1` | signer-custodied Falcon cosigner on spend, never on a listed rekey | `cosigned1`; `/plan`, kind-tagged `/sign/component`, then `/sign/assemble` |
 | `aplane.rotating-triple-xmss.v1` | DSA LogicSig (`rotating_lsig`) | dedicated compiled stage program; a new program per spend | Falcon-1024 and Ed25519 stage keys and an RFC 8391 XMSS tree shared by 1,024 stages, derived from one seed | none | `rotating1`; the signer also chooses the stage's one-time leaf |
 | `aplane.rotating-triple-slhdsa.v1` | DSA LogicSig (`rotating_lsig`) | dedicated compiled stage program; a new program per spend | Falcon-1024, two-layer SLH-DSA-SHA2-128 and Ed25519 per-stage keys derived from one seed | none | `rotating1`; stateless hash signing, no leaf allocation |
@@ -201,31 +203,42 @@ These versions may advance independently. A key type version must still pin the
 complete behavior it relies on, and compatibility-bearing changes commonly
 require advancing more than one dimension together.
 
-## Internal providers
+## Plain hosts
 
-The compiled catalog has an `internal_only` availability value for
-`aplane.falcon1024.v1` and `aplane.ed25519.v1`. Their providers remain registered
-for composition, stored-key signing, and encrypted restore. They do not appear
-in the KeyType Library, `/keytypes`, or creation/import menus and cannot be
-activated or used for standalone generation or mnemonic import. Use native
-`falcon1024` or `ed25519` for ordinary accounts.
+`aplane.falcon1024.v1` and `aplane.ed25519.v1` are plain hosts
+(`lsig/plainhost`, which wraps each family's plain provider). They are
+library-visible: opt-in per node through `apadmin keytype enable` or the KeyType
+Library, then created like any other key type.
 
-An existing enabled state record cannot override `internal_only`. Old records
-are not deleted or rewritten, and corrupt records still follow normal storage
-validation. Existing accounts remain visible in `/keys` and admin inventory.
-Expert templates can still name either provider as their `base_key_type` without
-enabling the base for standalone creation; the template's own enablement applies.
-This availability value is binary catalog metadata, not a new persisted state
-or a change to key payloads. It differs from `disabled`, which can withhold
-provider registration.
+- **With no parameters** a plain type is the plain program: the bare
+  spending-key check. It is the composition base every bounded and composed
+  account names as `base_key_type`, the program of restored plain keys, and an
+  account of its own. Expert templates name either type as their base without
+  enabling it for standalone creation; the template's own enablement applies.
+- **With a rekey setting** (`rekey_authority` `refused`, `spending_key`,
+  `only_these` or `plus_cosigned`), and optionally `cosigner=` and, for a list
+  option, `rekey_to=`, it renders the `plain1` contract: the spending key and
+  the overlays, no fee ceiling, no transaction-type list. There are seven
+  arrangements: each rekey setting with or without a cosigner, except
+  `plus_cosigned`, which needs one (without it the spending key alone rekeys
+  anywhere, which is `spending_key`). The grammar has a fingerprint, each
+  arrangement one, and a request a boundary digest, like the general type.
+
+A plain host's every transaction without `RekeyTo` is a spend: any type, closes
+and clawback included. A `RekeyTo` passes only as a pure rekey, on the paths the
+arrangement gives. A cosigned plain host signs through `cosigned1`, one without a
+cosigner through `/sign` (`bounded1`), and the plain program through `/sign`.
+The Ed25519 plain host's spending key is classical; apadmin's review says so.
+The plain host has no boundary file: `/keytypes` reports it `per_key_contract`
+without a `boundary_schema`, and apshell takes its parameters directly.
 
 ## Mnemonic backup and recovery
 
 **Native-only mnemonic policy:** user-facing mnemonic
 import, export, and recovery apply only to native account types, currently
 `ed25519` and `falcon1024`. No LogicSig type offers mnemonic recovery under this
-policy, including plain DSA, composed/bounded, guarded, rotating, and generic
-LogicSigs. Witness credentials continue to use encrypted backups too.
+policy, including plain DSA, plain hosts, composed/bounded, rotating, and
+generic LogicSigs. Witness credentials continue to use encrypted backups too.
 
 Recover LogicSig accounts from their complete encrypted credentials or managed
 backups. A private-key seed alone is not a complete account backup: program
@@ -234,9 +247,8 @@ accounts additionally retain their existing
 [recovery requirements](USER_STORE_MGMT.md#restoring-rotating-accounts),
 including stage and leaf-safety checks.
 
-Both plain LogicSig providers are internal-only, so public generation and
-mnemonic import reject them even with old enablement records. Other LogicSig
-providers already refuse mnemonic import. Mnemonic export is native-only and
+`keymgmt.SupportsMnemonicImport` is true only for native key types; no LogicSig
+provider declares mnemonic import. Mnemonic export is native-only and
 generation responses omit recovery phrases. Internal seed/mnemonic handlers
 remain available to derivation code; their presence is not public eligibility.
 Native Falcon export still requires retained recovery entropy; see
@@ -259,8 +271,8 @@ own explicit definition.
 
 | Rotating | Bounded | Cosigned | Status |
 |---|---|---|---|
-| No | No | No | **Implemented:** plain Falcon and Ed25519 LogicSigs |
-| No | No | Yes | **Implemented:** dedicated Falcon/Falcon guarded account |
+| No | No | No | **Implemented:** the plain Falcon and Ed25519 programs, and plain hosts without a cosigner |
+| No | No | Yes | **Implemented:** plain hosts (`plain1`) with a cosigner, on Falcon-1024 or Ed25519 |
 | No | Yes | No | **Implemented:** allowlist and timelock shapes of `aplane.falcon1024-b.v1` |
 | No | Yes | Yes | **Implemented:** the Corridor preset of `aplane.falcon1024-b.v1` |
 | Yes | No | No | **Implemented:** `aplane.rotating-triple-xmss.v1`, `aplane.rotating-triple-slhdsa.v1`, `aplane.rotating-triple-wotsc.v1` |
@@ -279,9 +291,10 @@ only to a listed address. Beside `spending_key` it is *plus cosigned*, offered o
 with a cosigner: a listed target takes the spending key alone, any other the
 spending key and the cosigner. On a cosigned account a spending-key rekey needs
 the cosigner too (a *cosigned rekey*), and a listed rekey never asks it. A
-timelock cannot take a spending-key rekey, cosigned or not: no host rule gates a
-rekey, so it would leave the lock early, and `boundedmeta` and the composer
-require `rekey: refused` there. A timelock may carry a rekey-to list.
+timelock may take a spending-key rekey: no host rule gates a rekey, so the
+spending key can then leave the lock before the unlock round. Durable
+validation, the composer and expert templates accept it; the general type's
+timelock shapes take only *only these*. A timelock may carry a rekey-to list.
 
 ### Authority belongs to operations
 
@@ -456,12 +469,12 @@ Canonical forms:
   Witness Key IDs, not spending accounts. The
   compatibility wire/storage field name for that selector remains
   `component_key`.
-- the dedicated guarded account key type
-  `aplane.falcon1024-cosigner1024.v1` names both its account DSA and cosigner DSA.
-  An `aplane.falcon1024-b.v1` Corridor account instead records `bounded2`, a
-  `cosigner1` spend gate, a rekey-to list, and the framework Merkle allowlist policy in its
-  durable `bounded_authorization` metadata. Clients must not infer those
-  dimensions from the key-type string.
+- a cosigned account records its cosigner in durable `bounded_authorization`
+  metadata, never in its key type: a plain host records `plain1` and the
+  `cosigner1` overlay, and an `aplane.falcon1024-b.v1` Corridor account records
+  `bounded2`, the `cosigner1` overlay, a rekey-to list, and the framework Merkle
+  allowlist policy. Clients must not infer those dimensions from the key-type
+  string.
 
 YAML templates declare `publisher`, `family`, and integer `version`; the
 computed key type is `publisher.family.v<version>`. Clients and tools must send
@@ -483,9 +496,9 @@ Terminology:
 - `base_key_type` is not a universal owner or routing key. Account semantics,
   creation parameters, TEAL bytecode, metadata, and guarded assembly remain
   owned by the full `key_type` unless a specific contract says otherwise.
-  Guarded account key types are the important example: their signing primitive
-  is Falcon-1024, but their account semantics and cosigner assembly are guarded
-  account semantics.
+  The general bounded type is the important example: its signing primitive is
+  Falcon-1024, but its account semantics, overlays and assembly are the bounded
+  contract's, recorded in its durable metadata.
 - `RoutingFamily()` on Go provider types is the registry routing key (see
   [Resolve](#resolve--key-type--implementation)), and `Family` / `FamilyName`
   registration fields are registry/display metadata. The family-keyed registry
@@ -522,12 +535,13 @@ enforced in both planning and TEAL. Its machine names are `bounded` and
 DSA LogicSig policy categories are:
 
 - **Plain DSA**: only the DSA verification program, with no composed policy.
+- **Plain host**: the DSA verification program with the overlays (`plain1`),
+  no host rules.
 - **Bounded DSA**: schema-v2 composed policy with a closed framework-enforced
   effect and argument contract.
 - **Custom DSA policy**: schema-v1 composed policy authored directly as TEAL.
 - **Dedicated compiled policy**: provider-owned LogicSig policy outside the
-  composed-template schema, such as the legacy
-  `aplane.falcon1024-cosigner1024.v1` guarded verifier.
+  composed-template schema, such as the rotating stage programs.
 
 Schema-v1 custom policy remains a fully supported expert mode. "Expert" is a
 documentation description, not a feature gate, warning requirement, or reduced
@@ -542,7 +556,7 @@ They participate in a specific account or operation contract:
 
 | Type | Custody and use | Signer key type? |
 |---|---|---|
-| **Witness key** | Stored as a cosigner-managed `.cos` credential and used through `/sign/component`; its signature is assembled into a guarded or bounded-cosigner LogicSig. | Yes. `aplane.witness-falcon1024.v1`, durable category `witness`; never accepted as a spending account by ordinary `/sign`. |
+| **Witness key** | Stored as a cosigner-managed `.cos` credential and used through `/sign/component`; its signature is assembled into a cosigned account's LogicSig, on a plain or bounded host. | Yes. `aplane.witness-falcon1024.v1`, durable category `witness`; never accepted as a spending account by ordinary `/sign`. |
 
 The current authority overlays are therefore **unguarded** and **cosigner
 guarded**.
@@ -556,9 +570,9 @@ Examples of the composed ontology:
 | Key type | Account authorization | Policy form | Additional authority |
 |---|---|---|---|
 | `ed25519` | Native | n/a | none |
-| `aplane.falcon1024.v1` | DSA LogicSig | Plain DSA | none |
+| `aplane.falcon1024.v1`, no parameters | DSA LogicSig | Plain DSA | none |
+| `aplane.falcon1024.v1` or `aplane.ed25519.v1`, cosigned | DSA LogicSig | Plain host (`plain1`) | signer-custodied Falcon witness enrolled as cosigner |
 | `aplane.falcon1024-b.v1`, Allowlist preset | DSA LogicSig | Bounded DSA (`bounded2`) with framework allowlist policy; spending-key rekey | none |
-| `aplane.falcon1024-cosigner1024.v1` | DSA LogicSig | dedicated compiled guarded verifier | signer-custodied Falcon witness enrolled as cosigner |
 | `aplane.falcon1024-b.v1`, Corridor preset | DSA LogicSig | Bounded DSA (`bounded2`) with framework Merkle policy; rekey only to a listed address | signer-custodied Falcon cosigner on spend |
 | `aplane.htlc.v1` | Generic LogicSig | generic TEAL policy | none |
 | `aplane.rotating-triple-xmss.v1` | DSA LogicSig (`rotating_lsig`) | dedicated compiled stage program (Falcon-1024, RFC 8391 XMSS-SHA2_16_256 and Ed25519, all required), a new program per spend; one XMSS tree per 1,024 stages, 64 leaves per stage | none; the signer reads the chain for the live stage (`rotating1` flow) |
@@ -571,10 +585,9 @@ Examples of the composed ontology:
 |----------|--------|----------|-------------|
 | `ed25519` | n/a | `ed25519` | Native Algorand Ed25519 account; not a LogicSig |
 | `falcon1024` | n/a | `native_pq` | Native protocol Falcon-1024 account (scheme `f1`, supported consensus v42 or v43); not a LogicSig |
-| `aplane.falcon1024.v1` | `aplane.falcon1024` | `dsa_lsig` | Internal-only Falcon signature provider; existing accounts remain supported |
-| `aplane.falcon1024-cosigner1024.v1` | `aplane.falcon1024-cosigner1024` | `dsa_lsig` | Library-visible guarded account: Falcon-1024 user + Falcon-1024 cosigner component signatures |
+| `aplane.falcon1024.v1` | `aplane.falcon1024` | `dsa_lsig` | Library-visible plain host: the plain Falcon program, or `plain1` with a rekey setting, an optional cosigner and an optional rekey-to list; the composition base of bounded accounts |
 | `aplane.falcon1024-b.v1` | `falcon1024-b` | `dsa_lsig` | Default-enabled general bounded type on signer nodes: each account is one of 147 `bounded2` shapes chosen from a closed grammar |
-| `aplane.ed25519.v1` | `aplane.ed25519` | `dsa_lsig` | Internal-only Ed25519 LogicSig DSA provider; distinct from native `ed25519` |
+| `aplane.ed25519.v1` | `aplane.ed25519` | `dsa_lsig` | Library-visible plain host on Ed25519 (classical), as `aplane.falcon1024.v1`; distinct from native `ed25519` |
 | `aplane.htlc.v1` | `htlc` | `generic_lsig` | Optional template library: hash time-locked ALGO payment |
 | `aplane.rotating-triple-xmss.v1` | `aplane.rotating-triple-xmss` | `rotating_lsig` | Library-visible rotating account: Falcon-1024 + RFC 8391 XMSS + Ed25519 stage program, `rotating1` flow; signer-side only (no client provider) |
 | `aplane.rotating-triple-slhdsa.v1` | `aplane.rotating-triple-slhdsa` | `rotating_lsig` | Library-visible rotating account: Falcon-1024 + two-layer SLH-DSA-SHA2-128 + Ed25519; `rotating1`, signer-side codec and cryptography |
@@ -583,14 +596,14 @@ Examples of the composed ontology:
 ## The three axes
 
 A "key type" (e.g. `aplane.falcon1024.v1`, `aplane.falcon1024-b.v1`,
-`aplane.falcon1024-cosigner1024.v1`) is asked three different *kinds* of
+`aplane.witness-falcon1024.v1`) is asked three different *kinds* of
 question, and each kind uses a different mechanism because each is callable from
 a different place.
 
 | Axis | Question it answers | Mechanism | Owner package(s) |
 |---|---|---|---|
 | **Resolve** | key type → its implementation | family-keyed registries + a `RoutingFamily` resolver | `internal/lsigprovider`, `internal/logicsigdsa` |
-| **Classify** | key type → category facts (is it a guarded account? which witness form? what key size? which signature construction?) | string switches and closed maps in neutral leaf packages | `internal/cosigner/keytypes`, `internal/witness`, `internal/rotatingkey`, `internal/sigconstruction` |
+| **Classify** | key type → category facts (which witness form? is it rotating? what key size? which signature construction?) | string switches and closed maps in neutral leaf packages | `internal/witness`, `internal/rotatingkey`, `internal/sigconstruction` |
 | **Behave** | do the operation (pack signatures, build assembly args, derive, sign, render verification) | provider-capability interfaces, queried from the resolved provider or composer ops | `internal/signerapp/signing`, `internal/lsigprovider`, `internal/logicsigdsa`, `lsig/composeddsa` (`DSAOps`) |
 
 **The governing rule:** *do not unify mechanisms across axes that have different
@@ -645,11 +658,9 @@ to the Falcon LogicSig base.
 ### Classify — key type → category facts
 
 **Mechanism:** pure string switches in neutral leaf packages. Witness form and
-identity live in `internal/witness`; guarded-account role mapping lives in
-`internal/cosigner/keytypes`. Examples:
+identity live in `internal/witness`. Whether an account is cosigned is not a
+key-type fact: it is read from the account's durable bounded metadata. Examples:
 
-- `IsGuardedAccountKeyType(keyType)`
-- `CosignerComponentKeyTypeForGuardedAccount(keyType)`
 - `witness.IsKeyType(keyType)`
 - `witness.PublicKeySize(keyType)` / `witness.PrivateKeySize(keyType)`
 - `sigconstruction.ForBaseKeyType(baseKeyType)` / `sigconstruction.ForWitnessKeyType(keyType)`:
@@ -677,28 +688,17 @@ Resolve already produced. The operation runs only where a concrete provider is i
 hand (signer-side, at derive/sign/assemble time), so a provider-method dispatch
 is the right shape here.
 
-- Core: `LSigProvider` / `SigningProvider` / `MnemonicProvider`
+- Core: `LSigProvider` / `SigningProvider`
   (`internal/lsigprovider/provider.go`), `LogicSigDSA`
   (`internal/logicsigdsa/dsa.go`).
-- Dedicated guarded-account assembly hook
-  (`internal/signerapp/signing/component_assemble.go`):
-  - `ComponentPacker.PackComponentSignatures(user, cosigner)` — pack the verified
-    component signatures into the opaque blob.
+- Optional capabilities a resolved provider is asked for, such as
+  `InstanceResolver` (a per-key contract), `BoundedOpcodeProfileProvider` (a
+  plain host's bounded path ceilings) or the generator's `PrepareRekeyList`.
 
-The assembler resolves the provider, then asks it to behave — no `switch` on key
-type:
-
-```go
-provider := lsigprovider.Get(keyMaterial.Type)        // Resolve
-packer, ok := provider.(ComponentPacker)              // Behave: capability query
-if !ok { /* fail closed */ }
-packed, _ := packer.PackComponentSignatures(u, s)     // Behave: call
-```
-
-Bounded-cosigner assembly does not use a key-type-specific capability hook. It
-reads the durable bounded argument-source contract and dispatches derived
-arguments by the closed `kind` vocabulary; Corridor's Merkle proof is therefore
-a `bounded2` behavior, not a Corridor provider method.
+Cosigned assembly does not use a key-type-specific capability hook. It reads the
+durable bounded argument-source contract and dispatches derived arguments by the
+closed `kind` vocabulary; Corridor's Merkle proof is therefore a `bounded2`
+behavior, not a Corridor provider method.
 
 Composer ops are the Behave side of signature constructions. `DSAOps.Construction()`
 (`lsig/composeddsa/composer.go`) names the construction the ops render. The composer
@@ -734,22 +734,17 @@ The axes cannot be unified because doing so would force call sites to depend on
 information they do not have.
 
 **1. Do not route by `BaseKeyType` instead of `RoutingFamily()`.** Resolve cannot
-key off the `BaseKeyType` edge because that breaks on
-guarded/cosigner accounts: a guarded provider's `BaseKeyType` is
-`aplane.falcon1024.v1`, but that is its *component-signing primitive*, not its
-routing authority — the guarded account owns its own keygen, mnemonic-handler
-registration, and metadata under its own family (this is internal handler
-routing only; dedicated guarded accounts still report
-`SupportsMnemonicImport() == false`, i.e. no user mnemonic import). Routing
-metadata by `BaseKeyType` would return Falcon's metadata (wrong signature size) for
-guarded keys. `BaseKeyType` cannot express the delegate-vs-self distinction;
+key off the `BaseKeyType` edge because `BaseKeyType` names a *signing
+primitive*, not a routing authority: a composed template's `BaseKeyType` is
+`aplane.falcon1024.v1`, but a provider that owns its own keygen and metadata
+under its own family would be routed to Falcon's metadata (the wrong signature
+size). `BaseKeyType` cannot express the delegate-vs-self distinction;
 `RoutingFamily()` can. **Route by `RoutingFamily()`.**
 
 **2. Do not classify by provider capability instead of string switches.** A
-provider declaration such as "I am a guarded account, my cosigner component is
-X" cannot serve every
+provider declaration such as "I am a witness key of size X" cannot serve every
 classification call site that has no provider: the client config, the keystore,
-the cache. Those run in binaries that may not register guarded providers at all.
+the cache. Those run in binaries that may not register those providers at all.
 Classification must answer from the string, in any binary. **Classify by string
 in the neutral leaf.**
 
@@ -796,7 +791,7 @@ axis, not a separate resolution mechanism.
 │                            │    │   ├── v1/composer.go   Falcon wrapper     │
 │ TEAL-only authorization,   │    │   └── register.go      Composed base reg  │
 │ no cryptographic keys      │    │                                           │
-│                            │    │ lsig/falcon1024_guarded/ Guarded cosigner   │
+│                            │    │ lsig/plainhost/          Plain host       │
 │                            │    │ lsig/ed25519lsig/        Ed25519 LSig     │
 │ Sources:                   │    │ lsig/composeddsa/                         │
 │   Optional library YAML    │    │   └── template.go      YAML compositions  │
@@ -885,8 +880,8 @@ signing helpers that the diagram omits) and gives a one-line role for each.
 | `internal/signing` | Resource-dummy construction/signing and common transaction helpers |
 | `lsig/composeddsa` | Generic runtime-compiled LogicSig composer used by DSA-backed composed templates, and parser/provider builder for composed DSA YAML templates |
 | `lsig/falcon1024` | Falcon-1024 DSA base provider; `v1/composer.go` is the Falcon-specific wrapper over `lsig/composeddsa` |
-| `lsig/ed25519lsig` | Library-visible Ed25519 LogicSig DSA provider |
-| `lsig/falcon1024_guarded` | Falcon/Falcon guarded-account DSA provider (`aplane.falcon1024-cosigner1024.v1`) |
+| `lsig/ed25519lsig` | Ed25519 LogicSig DSA provider, registered as a plain host |
+| `lsig/plainhost` | The plain host: wraps a family's plain provider with the overlay arrangements (`plain1`) |
 | `internal/witness` | Witness-key vocabulary and identity (key IDs, sizes, public references) |
 | `internal/falconparams` | Client-safe Falcon-1024 size constants shared by LogicSig, witness, and signer metadata |
 | `internal/boundedmeta` | Durable, non-secret bounded-authorization metadata stored with a LogicSig key |
@@ -910,7 +905,7 @@ signing helpers that the diagram omits) and gives a one-line role for each.
 | Category | Example Key Types | Has Keys | Signing |
 |----------|-------------------|----------|---------|
 | `generic_lsig` | `aplane.htlc.v1` after template import | No | TEAL-only authorization |
-| `dsa_lsig` | `aplane.falcon1024.v1`, `aplane.ed25519.v1`, bounded `aplane.falcon1024-b.v1`, guarded `aplane.falcon1024-cosigner1024.v1`; imported composed Falcon templates | Yes | Cryptographic signature |
+| `dsa_lsig` | plain hosts `aplane.falcon1024.v1` and `aplane.ed25519.v1`, bounded `aplane.falcon1024-b.v1`; imported composed Falcon templates | Yes | Cryptographic signature |
 | `rotating_lsig` | `aplane.rotating-triple-xmss.v1`, `aplane.rotating-triple-slhdsa.v1`, `aplane.rotating-triple-wotsc.v1` | Yes | Per-stage hybrid signatures through the `rotating1` flow; signer-side codec, not an `lsigprovider` provider |
 
 ### Interface hierarchy
@@ -939,19 +934,17 @@ LSigProvider (base interface - ALL providers implement this)
 SigningProvider (extends LSigProvider)
 ├── CryptoSignatureSize() int
 └── DeriveLsig(ctx, publicKey, params) (bytecode, address, error)
-          │
-          ▼
-MnemonicProvider (extends SigningProvider)
-├── MnemonicScheme() string         "bip39", "algorand"
-├── MnemonicWordCount() int         24, 25
-└── SupportsMnemonicImport() bool
 ```
+
+`LogicSigDSA` also carries `MnemonicScheme()` and `MnemonicWordCount()` for
+internal derivation. No LogicSig provider declares user mnemonic import: it is
+native-only.
 
 A provider whose contract varies by key also implements `InstanceResolver`:
 `CosignerComponentKeyType` runs before references are resolved, `ResolveInstance` selects
 the contract for a set of resolved parameters, and `StoredFingerprint` identifies a
-stored account's definition from its stored values alone. No shipped provider
-implements it yet. Callers use the package functions of the same names, which adapt
+stored account's definition from its stored values alone. The general bounded type
+and the plain hosts implement it. Callers use the package functions of the same names, which adapt
 every fixed provider, so they do not need to tell the two kinds apart.
 
 Private-key key generation, signing, and mnemonic conversion are deliberately
@@ -1021,14 +1014,14 @@ func Get(keyType string) LogicSigDSA {
 ```
 lsig/clientreg.RegisterClient()
     │
-    ├── keytypecatalog.Register(aplane.falcon1024.v1, internal_only)
+    ├── keytypecatalog.Register(aplane.falcon1024.v1, library)
     │   └── falcon.RegisterClient()
-    │       ├── v1.RegisterLogicSigDSA() → Falcon1024V1
-    │       └── ... (metadata, address derivation)
-    ├── keytypecatalog.Register(aplane.falcon1024-cosigner1024.v1, library)
-    │   └── falcon1024guarded.RegisterClient()
-    ├── keytypecatalog.Register(aplane.ed25519.v1, internal_only)
+    │       ├── plainhost.MustWrap(Falcon1024V1) → the plain host
+    │       └── ... (metadata, address derivation, composition base)
+    ├── keytypecatalog.Register(aplane.ed25519.v1, library)
     │   └── ed25519lsig.RegisterClient()
+    ├── keytypecatalog.Register(aplane.falcon1024-b.v1, default_enabled)
+    │   └── boundedaccount.RegisterClient()
     ├── keytypecatalog.Register(aplane.rotating-triple-xmss.v1, library)
     │   └── (no client provider)
     ├── keytypecatalog.Register(aplane.rotating-triple-slhdsa.v1, library)
@@ -1522,13 +1515,15 @@ with a cosigner (a cosigned rekey: the spending key and the cosigner, whose
 `rekey_policy` picks the targets); `only_these` with a cosigner (a listed rekey takes
 the spending key alone, and the cosigner is not asked); and `plus_cosigned`, which needs
 a cosigner (a listed target takes the spending key alone, any other the spending key and
-the cosigner). Every arrangement has a way out, so each takes all seven spend subsets,
-and the grammar never offers an account that refuses every rekey:
-`rekey_authority=refused` is refused, with a pointer to `only_these`. Allowlists are 2
+the cosigner). Every arrangement has a way out, so each takes all seven spend subsets.
+The grammar has no shape that refuses every rekey: `rekey_authority=refused` is
+refused as a grammar limit, pointing to `only_these` or an expert template with
+`rekey: refused`. Allowlists are 2
 encodings x 5 arrangements x 7 subsets, which is 70 shapes. Timelocks add three
-policies, with an inline list, a Merkle list, or no list. No host rule gates a rekey, so
-a timelock takes only `only_these`, with or without a cosigner: a spending-key rekey,
-cosigned or not, would leave the lock early. Each policy has 14 shapes, 42 more.
+policies, with an inline list, a Merkle list, or no list. The grammar's timelocks take
+only `only_these`, with or without a cosigner, since a spending-key rekey, cosigned or
+not, could leave the lock early; an expert template may combine a timelock with a
+spending-key rekey. Each policy has 14 shapes, 42 more.
 Limits-only shapes (`layer3_policy: none`, selected by `recipient_scope=any`) have no
 list and no timelock, so the envelope's fee ceiling and transfer kinds are the whole
 spending rule; they take the allowlists' five arrangements, 35 more, 147 in all. An
@@ -1545,10 +1540,10 @@ composer per shape and no per-account state.
 | Boundary file | `boundary.ParseFile` parses `aplane.boundary.v1` strictly: no unknown fields, duplicate keys, aliases, merge keys, extra documents, or non-string scalars. The grammar has no field that can carry TEAL, a template, a base key type, a fee, or runtime arguments. |
 | Requests | `selectShape` is the security gate, for file and direct requests alike. The client sends public values, never a path or the YAML, and a cosigner name stays a name for the signer to resolve. |
 | Stored parameters | Canonical values include the selectors `spend_effects`, `rekey_authority`, and `list_encoding`, with `auto` resolved, `recipient_scope` only when it is `any` (`listed` is the default, so earlier shapes' values are unchanged), and `rekey_to` in canonical address order for `only_these` and `plus_cosigned`. Generation adds the list's root as `bounded_rekey_to_root`, which no request can set and which does not select the shape. The generator resolves stored values a second time, so they must select the same shape. Only a shape's declared parameters reach its composer, because those enter the canonical behavior encoding. |
-| Rekey-to list | `rekey_authority=only_these` or `plus_cosigned` needs `rekey_to`, 1 to 16 distinct nonzero addresses, and `rekey_to` needs one of them. `plus_cosigned` needs `cosigner`; without one the spending key could already rekey anywhere. `only_these` and `spending_key` take a cosigner or not. `refused` is refused, with a pointer to `only_these`. Generation also refuses an entry this signer knows can never act on the account: one of its own rotating accounts, whose address authorizes only itself, or the native address of an imported cosigner reference, since a witness key never signs as an account. It refuses only what it knows: a reference's LogicSig addresses depend on a program and are not derived, and a held Ed25519 key is flagged in apadmin's review, not refused. The tree and its proof are in [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md#rekey-to-list-compatibility-contract). |
+| Rekey-to list | `rekey_authority=only_these` or `plus_cosigned` needs `rekey_to`, 1 to 16 distinct nonzero addresses, and `rekey_to` needs one of them. `plus_cosigned` needs `cosigner`; without one the spending key could already rekey anywhere. `only_these` and `spending_key` take a cosigner or not. `refused` is not one of the grammar's shapes and is refused with a pointer to `only_these`. Any address may be listed, even one that can never act on the account (one of this signer's rotating accounts, or a witness key's native address): which addresses to list is the user's choice, and apadmin's review flags a listed key this signer holds. The tree and its proof are in [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md#rekey-to-list-compatibility-contract). |
 | Encoding | `auto` is inline through 10 recipients and Merkle from 11. Explicit inline stops at 30. The list holds at most 65,536 distinct nonzero addresses. |
 | Recipient scope | Absent, a list is required unless the request sets `unlock_round`; an explicit `listed` always requires one, in the file and the request alike. Leaving the list out never opens an account. `any` must be asked for, and refuses `recipients` (even empty), `list_encoding`, and `unlock_round`: a timelock already admits any recipient once it unlocks. An empty or unknown scope is an error. The `none` policy is offered only here: an expert template that declares it is refused when parsed. |
-| Timelock | `unlock_round` must be positive. Recipients are optional only with one, and `encoding` needs a list. A timelock refuses every `rekey_authority` but `only_these`, with a pointer to it: no host rule gates a rekey, so a spending-key rekey, cosigned or not, would leave the lock before the unlock round. A listed rekey isn't held back either, so under `only_these` the lock holds only while the listed keys' holders cooperate, and the review says so. A round means a different time on each network, and it does not bind the program to one. |
+| Timelock | `unlock_round` must be positive. Recipients are optional only with one, and `encoding` needs a list. The grammar's timelock shapes take only `only_these`, and any other `rekey_authority` is refused as a grammar limit pointing to an expert template, which may take one: no host rule gates a rekey, so a spending-key rekey, cosigned or not, can leave the lock before the unlock round. A listed rekey isn't held back either, so under `only_these` the lock holds only while the listed keys' holders cooperate, and the review says so. A round means a different time on each network, and it does not bind the program to one. |
 | Fee and arguments | The compiled ceiling is 10,000 microAlgos, and there are no runtime arguments. Base is Falcon-1024. |
 | Resources | `BuildBoundedAuthorizationMetadata` solves the spend path, and each rekey path the shape has (`spending_rekey` for `spending_key`, `listed_rekey` for `only_these`, both for `plus_cosigned`), under the current consensus profile and refuses one that cannot run within the ceiling, before the key is saved. This is a backstop: signing still checks the actual network. |
 | Mnemonics | No mnemonic import. The account recovers from its encrypted credential or a backup. |
@@ -1578,24 +1573,28 @@ a recipient list, `boundedmeta.Metadata.Contained`, so a limits-only account nev
 even with a cosigner, and neither is a `spending_key` or `plus_cosigned` one, which is
 only as strong as its two online keys; fees, capped per transaction only, are outside
 it) and
-`boundary_require_cosigner` in the product runtime config apply to this key type on every
-creation route, under the
-mutation lock, and generation rechecks them after a review. They do not reach existing
-accounts or expert templates. Both are writable admin settings, shown in apadmin's
+`boundary_require_cosigner` in the product runtime config apply to this key type, and to
+the plain hosts, on every creation route, under the
+mutation lock, and generation rechecks them after a review. A plain host is never
+contained, since its spends are open, and the plain program has no cosigner, so either
+setting refuses it. They do not reach existing accounts or expert templates. Both are writable admin settings, shown in apadmin's
 Settings panel on signer nodes.
 
 **Discovery.** `/keytypes` reports `per_key_contract: true` for a type with an
 `InstanceResolver`, with no signing flow or bounded profile, because each account has its
 own. It still names the cosigner component type, but does not turn the cosigner field
-into a required selector: a cosigner is optional here.
+into a required selector: a cosigner is optional here. A per-key type whose requests a
+boundary file grammar describes also reports `boundary_schema` (`aplane.boundary.v1`
+for this type); a plain host, also per-key, reports none.
 
 **Client routing.** apadmin and apshell choose the preset and boundary-file flows from
-`per_key_contract`, never from a key type name. The field means the contract varies by
-account, and `TestEveryPerKeyProviderSupportsTheBoundaryWorkflow` pins the further
-assumption that every production per-key type can run those flows. A new per-key type
-that can't must fail that test and get narrower discovery. This classification only
-picks a client flow: the signer still resolves the key type and applies the bounded
-support policy, so a misclassified request is refused rather than gaining anything.
+`boundary_schema`, never from a key type name or from `per_key_contract` alone.
+`TestEveryBoundaryProviderSupportsTheBoundaryWorkflow` pins that every production type
+declaring the schema can run those flows; a per-key type without it, such as a plain
+host, takes its parameters directly (apadmin's parameter form, apshell's `generate`
+arguments), and apshell refuses `boundary=` for it. This classification only picks a
+client flow: the signer still resolves the key type and applies the bounded support
+policy, so a misclassified request is refused rather than gaining anything.
 
 A failed lookup isn't an answer that a type is ordinary. apadmin shows an error and
 reloads instead of opening the plain form, because a compiled list can stand in before

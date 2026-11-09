@@ -13,8 +13,10 @@ func TestCanAuthorizeOtherAccounts(t *testing.T) {
 	for flow, want := range map[string]bool{
 		"":                             true,
 		signerapi.SigningFlowBounded1:  true,
-		signerapi.SigningFlowCosigner1: true,
 		signerapi.SigningFlowCosigned1: true,
+		// The retired dedicated cosigned flow is unknown, so a leftover
+		// account fails closed as a rekey target.
+		"cosigner1":                    false,
 		signerapi.SigningFlowRotating1: false,
 		"rotating2":                    false,
 	} {

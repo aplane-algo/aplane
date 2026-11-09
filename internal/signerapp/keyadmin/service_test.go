@@ -6,7 +6,6 @@ package keyadmin
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -24,12 +23,9 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/cosigner/cosignerrefs"
-	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genericlsig"
 	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
-	internalkeygen "github.com/aplane-algo/aplane/internal/keygen"
-	"github.com/aplane-algo/aplane/internal/keymgmt"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
@@ -38,8 +34,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
-	mnemonicreg "github.com/aplane-algo/aplane/internal/mnemonic"
-	"github.com/aplane-algo/aplane/internal/mnemonic/bip39impl"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
@@ -49,9 +43,9 @@ import (
 	"github.com/aplane-algo/aplane/internal/templatestore"
 	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
-	dsafamilyreg "github.com/aplane-algo/aplane/lsig/dsafamily/signerreg"
 	falconfamily "github.com/aplane-algo/aplane/lsig/falcon1024/family"
 	"github.com/aplane-algo/aplane/lsig/generictemplate"
+	"github.com/aplane-algo/aplane/lsig/plainhost"
 	lsigsignerreg "github.com/aplane-algo/aplane/lsig/signerreg"
 )
 
@@ -307,29 +301,6 @@ teal: |
 	if summary.BoundedAuthorization == nil || summary.BoundedAuthorization.Cosigner == nil ||
 		summary.BoundedAuthorization.Cosigner.ComponentKeyID != componentKey {
 		t.Fatalf("stored bounded cosigner metadata = %#v", summary.BoundedAuthorization)
-	}
-}
-
-func TestKeyDetailsParametersProjectsGuardedCosignerSelector(t *testing.T) {
-	publicKey := bytes.Repeat([]byte{0xab}, witness.Falcon1024PublicKeySize)
-	componentKey, err := witness.ID(witness.Falcon1024V1, publicKey)
-	if err != nil {
-		t.Fatalf("witness.ID() error = %v", err)
-	}
-
-	got := keyDetailsParameters(keytypes.GuardedFalcon1024Cosigner1024V1, map[string]string{
-		keytypes.ParameterCosignerPublicKey: hex.EncodeToString(publicKey),
-		"other":                             "kept",
-	})
-
-	if got[keyDetailsCosignerLabel] != componentKey {
-		t.Fatalf("Cosigner = %q, want %q", got[keyDetailsCosignerLabel], componentKey)
-	}
-	if _, ok := got[keytypes.ParameterCosignerPublicKey]; ok {
-		t.Fatalf("projected parameters exposed raw cosigner public key: %#v", got)
-	}
-	if got["other"] != "kept" {
-		t.Fatalf("other parameter = %q, want kept", got["other"])
 	}
 }
 
@@ -650,25 +621,39 @@ func TestServiceGenerateKeyGenericPassesThroughSuccessAndErrors(t *testing.T) {
 	}
 }
 
-func TestServiceInternalKeyTypesRejectCreationDespiteStoredEnablement(t *testing.T) {
+// An enabled plain host creates the plain program; a disabled one refuses the
+// key type. Neither takes a mnemonic.
+func TestServicePlainHostsCreateOnlyOnceEnabledAndTakeNoMnemonic(t *testing.T) {
+	configureFalconCompileMock(t)
 	for _, keyType := range []string{"aplane.falcon1024.v1", "aplane.ed25519.v1"} {
 		t.Run(keyType, func(t *testing.T) {
 			ir := setupProductRuntime(t)
 			audit := &auditRecorder{}
 			svc := Service{Runtime: ir, AuditLog: audit}
-			for _, state := range []keytypestate.State{keytypestate.StateEnabled, keytypestate.StateDisabled} {
+			for state, importRefusal := range map[keytypestate.State]string{
+				keytypestate.StateEnabled:  "mnemonic import not supported",
+				keytypestate.StateDisabled: "not enabled on this node",
+			} {
 				if err := keytypestate.Put(ir.KeyPaths(), keytypestate.Record{KeyType: keyType, Source: keytypestate.SourceCompiled, State: state}); err != nil {
 					t.Fatal(err)
 				}
-				if result, err := svc.GenerateKey(context.Background(), keyType, nil, nil); result != nil || err == nil || err.Kind != ErrorInvalidInput || !strings.Contains(err.Message, "internal-only") {
-					t.Fatalf("GenerateKey(%s, %s) = %v, %v", keyType, state, result, err)
+				result, err := svc.GenerateKey(context.Background(), keyType, nil, nil)
+				switch state {
+				case keytypestate.StateEnabled:
+					if err != nil || result == nil {
+						t.Fatalf("GenerateKey(%s, enabled) = %v, %v", keyType, result, err)
+					}
+				default:
+					if result != nil || err == nil || !strings.Contains(err.Message, "not enabled on this node") {
+						t.Fatalf("GenerateKey(%s, disabled) = %v, %v", keyType, result, err)
+					}
 				}
-				if result, err := svc.ImportKey(context.Background(), keyType, "invalid phrase", nil); result != nil || err == nil || err.Kind != ErrorInvalidInput || !strings.Contains(err.Message, "internal-only") {
+				if result, err := svc.ImportKey(context.Background(), keyType, "invalid phrase", nil); result != nil || err == nil || err.Kind != ErrorInvalidInput || !strings.Contains(err.Message, importRefusal) {
 					t.Fatalf("ImportKey(%s, %s) = %v, %v", keyType, state, result, err)
 				}
 			}
-			if len(audit.generated) != 0 || len(audit.imported) != 0 {
-				t.Fatal("refused creation was audited as successful")
+			if len(audit.generated) != 1 || len(audit.imported) != 0 {
+				t.Fatalf("audited %d generated and %d imported keys, want one generated", len(audit.generated), len(audit.imported))
 			}
 		})
 	}
@@ -705,54 +690,7 @@ func TestServiceImportKeyLockedReturnsLockedError(t *testing.T) {
 	}
 }
 
-func TestServiceImportKeyCanonicalizesAddressListParams(t *testing.T) {
-	registerAddressListImportProvider(t)
-
-	ir := setupProductRuntime(t)
-	svc := Service{Runtime: ir}
-	mnemonic := "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art"
-
-	addr1 := "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ"
-	addr2 := "AEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEA5RCDXMI"
-	canonicalRecipients := addr1 + "," + addr2
-
-	first, err := svc.ImportKey(context.Background(), addressListImportKeyType, mnemonic, map[string]string{
-		"recipients": addr1 + "," + addr2,
-	})
-	if err != nil {
-		t.Fatalf("ImportKey(first) error = %#v", err)
-	}
-	second, err := svc.ImportKey(context.Background(), addressListImportKeyType, mnemonic, map[string]string{
-		"recipients": addr2 + "," + addr1,
-	})
-	if err != nil {
-		t.Fatalf("ImportKey(second) error = %#v", err)
-	}
-	if first.Address != second.Address {
-		t.Fatalf("reordered import address = %q, want %q", second.Address, first.Address)
-	}
-
-	var storedParams map[string]string
-	if err := ir.WithKeyring(func(mk *crypto.Keyring) error {
-		info, detectErr := keymgmt.DetectKeyInfoFromFileWithKeyring(second.KeyFile, mk)
-		if detectErr != nil {
-			return detectErr
-		}
-		storedParams = info.Parameters
-		return nil
-	}); err != nil {
-		t.Fatalf("DetectKeyInfoFromFileWithKeyring() error = %v", err)
-	}
-	if storedParams["recipients"] != canonicalRecipients {
-		t.Fatalf("stored recipients = %q, want %q", storedParams["recipients"], canonicalRecipients)
-	}
-}
-
-const (
-	addressListImportKeyType = "falcon1024-import-normalize-v1"
-	addressListImportFamily  = "falcon1024-import-normalize"
-	serviceGenericKeyType    = "test.generic-service-test.v1"
-)
+const serviceGenericKeyType = "test.generic-service-test.v1"
 
 func registerServiceGenericTemplate(t *testing.T) {
 	t.Helper()
@@ -861,78 +799,6 @@ func (m falconCompileMockTransport) RoundTrip(req *http.Request) (*http.Response
 		Request:    req,
 	}, nil
 }
-
-func registerAddressListImportProvider(t *testing.T) {
-	t.Helper()
-	keytypecatalog.Register(keytypecatalog.Entry{
-		KeyType:      addressListImportKeyType,
-		Family:       addressListImportFamily,
-		Availability: keytypecatalog.AvailabilityDefaultEnabled,
-	})
-	if logicsigdsa.Get(addressListImportKeyType) == nil {
-		logicsigdsa.Register(addressListImportProvider{})
-	}
-	if _, err := internalkeygen.GetGenerator(addressListImportKeyType); err != nil {
-		ops := addressListImportProvider{}
-		internalkeygen.Register(dsafamilyreg.NewLogicSigGenerator(addressListImportFamily, map[string]dsafamilyreg.LogicSigKeygenOps{
-			addressListImportFamily:  ops,
-			addressListImportKeyType: ops,
-		}))
-	}
-	mnemonicreg.Register(bip39impl.NewHandler(addressListImportFamily, falconfamily.MnemonicWordCount))
-}
-
-type addressListImportProvider struct{}
-
-func (addressListImportProvider) KeyType() string          { return addressListImportKeyType }
-func (addressListImportProvider) RoutingFamily() string    { return addressListImportFamily }
-func (addressListImportProvider) Version() int             { return 1 }
-func (addressListImportProvider) CryptoSignatureSize() int { return 0 }
-func (addressListImportProvider) MnemonicScheme() string   { return "bip39" }
-func (addressListImportProvider) MnemonicWordCount() int   { return 24 }
-func (addressListImportProvider) SupportsMnemonicImport() bool {
-	return true
-}
-func (addressListImportProvider) DisplayColor() string { return "" }
-func (addressListImportProvider) Category() string     { return lsigprovider.CategoryDSALsig }
-func (addressListImportProvider) DisplayName() string  { return "Import Normalize Test" }
-func (addressListImportProvider) Description() string  { return "Test provider" }
-func (addressListImportProvider) CreationParams() []lsigprovider.ParameterDef {
-	return []lsigprovider.ParameterDef{{
-		Name:     "recipients",
-		Type:     "address[]",
-		Required: true,
-		MinItems: 1,
-	}}
-}
-func (addressListImportProvider) ValidateCreationParams(map[string]string) error { return nil }
-func (addressListImportProvider) RuntimeArgs() []lsigprovider.RuntimeArgDef      { return nil }
-func (addressListImportProvider) LogicSigOpcodeProfile() lsigresource.OpcodeProfile {
-	return lsigresource.DefaultOpcodeProfile(lsigresource.SingleTransactionOpcodeCeiling)
-}
-func (addressListImportProvider) BuildArgs([]byte, map[string][]byte) ([][]byte, error) {
-	return nil, nil
-}
-func (addressListImportProvider) GenerateKeypair([]byte) ([]byte, []byte, error) {
-	return []byte("public"), []byte("private"), nil
-}
-func (addressListImportProvider) DeriveLsig(_ context.Context, _ []byte, params map[string]string) ([]byte, string, error) {
-	result, err := addressListImportProvider{}.DeriveLsigWithSalt(context.Background(), nil, params)
-	if err != nil {
-		return nil, "", err
-	}
-	return result.Bytecode, result.Address.String(), nil
-}
-func (addressListImportProvider) DeriveLsigWithSalt(_ context.Context, _ []byte, params map[string]string) (lsigsalt.FindResult, error) {
-	sum := sha256.Sum256([]byte(params["recipients"]))
-	bytecode := []byte{0x0c, 0x26, 0x01, 0x01, sum[0], 0x81, 0x01}
-	result, err := lsigsalt.FindOffCurve(bytecode, lsigsalt.BytecblockLocator)
-	if err != nil {
-		return lsigsalt.FindResult{}, err
-	}
-	return result, nil
-}
-func (addressListImportProvider) Sign([]byte, []byte) ([]byte, error) { return nil, nil }
 
 func logicSigAddressString(t *testing.T, bytecode []byte) string {
 	t.Helper()
@@ -1113,16 +979,17 @@ func (a *auditRecorder) LogKeyExported(_ context.Context, address, keyType, outc
 // Only the protocol-native key types are enabled by default. A new runtime
 // refuses to generate or import the internal LogicSig Falcon type; native
 // creation stays available and an unknown key type is still just invalid.
-func TestServiceRefusesInternalTypeAndKeepsNativeDefaults(t *testing.T) {
+func TestServiceRefusesTheDisabledPlainHostAndKeepsNativeDefaults(t *testing.T) {
 	configureFalconCompileMock(t)
 	nativefalconreg.RegisterSigner()
 
 	ir := setupProductRuntime(t)
 	svc := Service{AuditLog: &auditRecorder{}, Runtime: ir}
-	const want = "key type aplane.falcon1024.v1 is internal-only"
+	const want = "key type aplane.falcon1024.v1 is not enabled on this node"
 	mnemonic := "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art"
 
-	if _, err := svc.GenerateKey(context.Background(), "aplane.falcon1024.v1", nil, nil); err == nil || err.Kind != ErrorInvalidInput || !strings.Contains(err.Message, want) {
+	cosigned := map[string]string{plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused, boundedmeta.CosignerPublicKeyParameter: strings.Repeat("41", boundedmeta.CosignerPublicKeySizeV1)}
+	if _, err := svc.GenerateKey(context.Background(), "aplane.falcon1024.v1", cosigned, nil); err == nil || err.Kind != ErrorInvalidInput || !strings.Contains(err.Message, want) {
 		t.Fatalf("GenerateKey(aplane.falcon1024.v1) before enabling = %#v, want %q", err, want)
 	}
 	if _, err := svc.ImportKey(context.Background(), "aplane.falcon1024.v1", mnemonic, nil); err == nil || err.Kind != ErrorInvalidInput || !strings.Contains(err.Message, want) {

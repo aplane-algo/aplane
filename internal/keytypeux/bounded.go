@@ -30,7 +30,7 @@ func BoundedLabel(info *signerapi.BoundedAuthorizationInfo) string {
 	if info == nil {
 		return ""
 	}
-	return boundedLabel(info.Layer3Policy, boundedmeta.RekeySetting(info.Rekey), info.RekeyList != nil, info.Cosigner != nil)
+	return boundedLabel(info.Contract, info.Layer3Policy, boundedmeta.RekeySetting(info.Rekey), info.RekeyList != nil, info.Cosigner != nil)
 }
 
 // BoundedMetadataLabel is BoundedLabel for a key's durable metadata.
@@ -38,13 +38,17 @@ func BoundedMetadataLabel(metadata *boundedmeta.Metadata) string {
 	if metadata == nil {
 		return ""
 	}
-	return boundedLabel(metadata.Layer3Policy, metadata.Rekey, metadata.RekeyList != nil, metadata.Cosigner != nil)
+	return boundedLabel(metadata.Contract, metadata.Layer3Policy, metadata.Rekey, metadata.RekeyList != nil, metadata.Cosigner != nil)
 }
 
-func boundedLabel(layer3Policy string, rekey boundedmeta.RekeySetting, rekeyList, cosigner bool) string {
+func boundedLabel(contract, layer3Policy string, rekey boundedmeta.RekeySetting, rekeyList, cosigner bool) string {
 	policy, ok := boundedPolicyLabels[layer3Policy]
 	if !ok {
 		policy = "Policy " + layer3Policy
+	}
+	// A plain host has no host rules; the cosigner's policy decides what it signs.
+	if contract == boundedmeta.PlainContract {
+		policy = "Plain host"
 	}
 	rekeyLabel := boundedRekeyLabel(rekey)
 	switch {

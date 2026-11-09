@@ -113,7 +113,7 @@ func TestProductionConstructionsVerifyRawSignatures(t *testing.T) {
 	}
 }
 
-// Clients see these through "user_signature invalid: %v".
+// Clients see these through "cosigner_signature invalid: %v".
 func TestOneComponentErrorsKeepTheirText(t *testing.T) {
 	key := falconKey(t)
 	message := []byte("message")

@@ -9,11 +9,13 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/addressderive"
 	"github.com/aplane-algo/aplane/internal/algorithm"
+	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	"github.com/aplane-algo/aplane/lsig/dsafamily"
 	"github.com/aplane-algo/aplane/lsig/ed25519lsig/family"
 	ed25519keys "github.com/aplane-algo/aplane/lsig/ed25519lsig/keys"
 	v1 "github.com/aplane-algo/aplane/lsig/ed25519lsig/v1"
+	"github.com/aplane-algo/aplane/lsig/plainhost"
 )
 
 const (
@@ -45,8 +47,13 @@ func RegisterClient() {
 			Family:   FamilyName,
 			Metadata: metadata{},
 			KeyTypes: []dsafamily.KeyType{{
-				KeyType:        KeyTypeV1,
-				DSA:            v1.NewProvider(),
+				KeyType: KeyTypeV1,
+				// The plain host: the plain program with no parameters, and
+				// plain1 with a cosigner and an optional rekey-to list.
+				DSA: plainhost.MustWrap(v1.NewProvider(), plainhost.Base{
+					Ops:       v1.NewOps(),
+					SaltStyle: lsigsalt.StyleAlgodAutoSalt,
+				}),
 				AddressDeriver: ed25519keys.NewAddressDeriver(KeyTypeV1),
 			}},
 			Extra: []func(){func() {

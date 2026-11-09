@@ -31,9 +31,11 @@ var clientPackageDirs = []string{
 }
 
 // forbiddenGuardedSwitches are the compiled key-type classification helpers
-// that would silently re-couple clients to the built-in guarded families. A
-// client using them cannot handle a guarded key family it was not compiled
-// with; routing must come from signing_flow (see signerapi.SigningFlowCosigner1).
+// that would silently re-couple clients to compiled key families. A client
+// using them cannot handle a cosigned key family it was not compiled with;
+// routing must come from signing_flow (see signerapi.SigningFlowCosigned1).
+// The first two named the retired dedicated cosigned type and stay listed so
+// they cannot return.
 var forbiddenGuardedSwitches = []string{
 	"IsGuardedAccountKeyType",
 	"CosignerComponentKeyTypeForGuardedAccount",
@@ -42,9 +44,9 @@ var forbiddenGuardedSwitches = []string{
 	"witness.ID(",
 }
 
-// TestClientPackagesRouteOnSigningFlow pins the cosigner1 signing-flow
-// contract: client packages must not classify keys with the compiled guarded
-// key-type switches in production code. Test files are exempt because they
+// TestClientPackagesRouteOnSigningFlow pins the signing-flow contract: client
+// packages must not classify keys with compiled key-type switches in
+// production code. Test files are exempt because they
 // simulate the daemon side of the contract.
 func TestClientPackagesRouteOnSigningFlow(t *testing.T) {
 	for _, dir := range clientPackageDirs {
@@ -85,14 +87,6 @@ func TestSigningFlowCharacterizationInventory(t *testing.T) {
 			"TestSignComponentCosignerPolicyAllowsSigning",
 			"TestAssembleDecodedGuardedVerifiesAndBuildsSignedGroup",
 			"TestAssembleDecodedGuardedRejectsMismatchedPassthrough",
-		},
-		"../../internal/signerapp/signing/component_gate_test.go": {
-			"TestBuildComponentApprovalDescriptionPreservesABIMethod",
-			"TestGateUserComponentSigningExcludesFrozenDummySuffix",
-			"TestSignComponentUserRoleRejectedBySignerPolicy",
-			"TestSignComponentUserRoleOperatorApproves",
-			"TestSignComponentUserRoleUserAutoApproveSkipsPrompt",
-			"TestSignComponentUserRoleForeignRekeyReviewWithUserAutoApprove",
 		},
 		"../../internal/signerapp/signing/bounded_cosigner_test.go": {
 			"TestValidateBoundedComponentPlanAdmitsOnlyCosignedPaths",

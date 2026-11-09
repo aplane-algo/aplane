@@ -189,6 +189,12 @@ func (e *Core) signerCacheCosignerPublicKey(address string) (string, bool) {
 	return e.SignerCache.CosignerPublicKeyForAddress(address)
 }
 
+func (e *Core) signerCacheBoundedContract(address string) (string, bool) {
+	e.signerCacheMu.RLock()
+	defer e.signerCacheMu.RUnlock()
+	return e.SignerCache.BoundedContractForAddress(address)
+}
+
 func (e *Core) signerCacheBoundedMaxFee(address string) (uint64, bool) {
 	e.signerCacheMu.RLock()
 	defer e.signerCacheMu.RUnlock()
@@ -199,12 +205,6 @@ func (e *Core) signerCacheSigningFlow(address string) string {
 	e.signerCacheMu.RLock()
 	defer e.signerCacheMu.RUnlock()
 	return e.SignerCache.SigningFlowForAddress(address)
-}
-
-func (e *Core) signerCacheGuardedSigningMetadataNeedsRefresh(address string) bool {
-	e.signerCacheMu.RLock()
-	defer e.signerCacheMu.RUnlock()
-	return e.SignerCache.GuardedSigningMetadataNeedsRefresh(address)
 }
 
 func (e *Core) signerCacheCosignerComponentKeyType(address string) (string, bool) {

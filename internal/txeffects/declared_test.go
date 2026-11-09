@@ -5,15 +5,18 @@ package txeffects_test
 
 import (
 	"fmt"
+	"maps"
 	"strings"
 	"testing"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/txeffects"
 	"github.com/aplane-algo/aplane/lsig/boundedaccount"
 	falcon "github.com/aplane-algo/aplane/lsig/falcon1024"
+	"github.com/aplane-algo/aplane/lsig/plainhost"
 )
 
 // refusalRules and allowRules are every rule ClassifyFor may report. A rule outside
@@ -25,6 +28,7 @@ var (
 	}
 	allowRules = map[txeffects.Rule]txeffects.Path{
 		txeffects.RuleSpendAllowed: txeffects.PathSpend,
+		txeffects.RuleOpenSpend:    txeffects.PathSpend,
 		txeffects.RuleRekeyAllowed: txeffects.PathSpendingRekey,
 		txeffects.RuleRekeyListed:  txeffects.PathListedRekey,
 	}
@@ -70,6 +74,38 @@ func grammarDeclarations(t *testing.T) map[string]boundedmeta.PathDeclaration {
 			t.Fatalf("%s: %v", shape.Descriptor(), err)
 		}
 		declarations[shape.Descriptor()] = declaration
+	}
+	return declarations
+}
+
+// plainDeclarations is every plain host arrangement, read from the registered
+// plain Falcon host's resolved metadata: each rekey setting, with and without a
+// cosigner.
+func plainDeclarations(t *testing.T) map[string]boundedmeta.PathDeclaration {
+	t.Helper()
+	falcon.RegisterClient()
+	resolver, ok := lsigprovider.Get("aplane.falcon1024.v1").(lsigprovider.InstanceResolver)
+	if !ok {
+		t.Fatal("aplane.falcon1024.v1 is not a plain host")
+	}
+	declarations := make(map[string]boundedmeta.PathDeclaration)
+	for _, arrangement := range plainhost.Arrangements() {
+		params := map[string]string{plainhost.ParameterRekeyAuthority: arrangement.Rekey}
+		if arrangement.Cosigner {
+			params[boundedmeta.CosignerPublicKeyParameter] = strings.Repeat("41", boundedmeta.CosignerPublicKeySizeV1)
+		}
+		if arrangement.Rekey == plainhost.RekeyOnlyThese || arrangement.Rekey == plainhost.RekeyPlusCosigned {
+			params[plainhost.ParameterRekeyTo] = types.Address{3}.String()
+		}
+		instance, err := resolver.ResolveInstance(params)
+		if err != nil {
+			t.Fatalf("%+v: %v", arrangement, err)
+		}
+		declaration, err := instance.Bounded.Declaration()
+		if err != nil {
+			t.Fatalf("%+v: %v", arrangement, err)
+		}
+		declarations[fmt.Sprintf("plain %s cosigner=%v", arrangement.Rekey, arrangement.Cosigner)] = declaration
 	}
 	return declarations
 }
@@ -144,15 +180,25 @@ func TestClassifyForReachesAnExplicitRuleForEveryEffect(t *testing.T) {
 			break
 		}
 	}
+	maps.Copy(declarations, plainDeclarations(t))
 	corpus := surfaceCorpus(t)
 	reached := make(map[txeffects.Rule]bool)
 	for descriptor, declaration := range declarations {
+		plain := declaration.Contract == boundedmeta.PlainContract
 		for name, txn := range corpus {
 			decision, err := txeffects.ClassifyFor(txn, declaration)
 			if err != nil {
 				t.Fatalf("%s / %s: %v", descriptor, name, err)
 			}
 			reached[decision.Rule] = true
+			// A plain host has no host rules: every transaction that doesn't
+			// rekey is a spend, and nothing else is.
+			if plain && txn.RekeyTo.IsZero() != (decision.Rule == txeffects.RuleOpenSpend) {
+				t.Fatalf("%s / %s: rule %s on a plain host", descriptor, name, decision.Rule)
+			}
+			if !plain && decision.Rule == txeffects.RuleOpenSpend {
+				t.Fatalf("%s / %s: a bounded host took an open spend", descriptor, name)
+			}
 			if path, allowed := allowRules[decision.Rule]; allowed {
 				if decision.Path != path {
 					t.Fatalf("%s / %s: rule %s took path %s", descriptor, name, decision.Rule, decision.Path)
@@ -164,6 +210,9 @@ func TestClassifyForReachesAnExplicitRuleForEveryEffect(t *testing.T) {
 			}
 			switch decision.Path {
 			case txeffects.PathSpend:
+				if plain {
+					break
+				}
 				if !declaration.AllowsSpendEffect(string(decision.SpendEffect)) || len(decision.Facts.Effects()) != 0 {
 					t.Fatalf("%s / %s: allowed an undeclared spend %q", descriptor, name, decision.SpendEffect)
 				}
@@ -191,15 +240,68 @@ func TestClassifyForReachesAnExplicitRuleForEveryEffect(t *testing.T) {
 }
 
 func TestClassifyForRefusesAnInvalidDeclaration(t *testing.T) {
-	_, err := txeffects.ClassifyFor(types.Transaction{Type: types.PaymentTx}, boundedmeta.PathDeclaration{Rekey: "admin_key"})
-	if err == nil || !strings.Contains(err.Error(), "unsupported rekey setting") {
-		t.Fatalf("ClassifyFor() error = %v", err)
+	ceiling := uint64(1_000)
+	for _, tc := range []struct {
+		name        string
+		declaration boundedmeta.PathDeclaration
+		want        string
+	}{
+		{"rekey setting", boundedmeta.PathDeclaration{Contract: boundedmeta.Contract, Rekey: "admin_key"}, "unsupported rekey setting"},
+		{"contract", boundedmeta.PathDeclaration{Contract: "bounded1", Rekey: boundedmeta.RekeyRefused}, "unsupported bounded authorization contract"},
+		{"plain fee ceiling", boundedmeta.PathDeclaration{Contract: boundedmeta.PlainContract, MaxFee: &ceiling, Rekey: boundedmeta.RekeyRefused}, "no fee ceiling"},
+		{"plain spend effects", boundedmeta.PathDeclaration{Contract: boundedmeta.PlainContract, SpendEffects: []string{"pay"}, Rekey: boundedmeta.RekeyRefused}, "no fee ceiling or spend effects"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := txeffects.ClassifyFor(types.Transaction{Type: types.PaymentTx}, tc.declaration)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("ClassifyFor() error = %v, want %q", err, tc.want)
+			}
+		})
+	}
+}
+
+// A plain host's spend may carry a close or clawback, but a rekey still passes
+// only as a pure rekey.
+func TestClassifyForPlainHost(t *testing.T) {
+	declaration := plainDeclarations(t)["plain plus_cosigned cosigner=true"]
+	var sender, other types.Address
+	sender[0], other[0] = 1, 2
+	closing := types.Transaction{Type: types.PaymentTx}
+	closing.Sender, closing.Receiver, closing.CloseRemainderTo, closing.Fee = sender, other, other, 1_000_000
+	clawback := types.Transaction{Type: types.AssetTransferTx}
+	clawback.Sender, clawback.AssetSender, clawback.AssetReceiver = sender, other, sender
+	appCall := types.Transaction{Type: types.ApplicationCallTx}
+	appCall.Sender = sender
+	pureRekey := types.Transaction{Type: types.PaymentTx}
+	pureRekey.Sender, pureRekey.Receiver, pureRekey.RekeyTo = sender, sender, other
+	closingRekey := closing
+	closingRekey.RekeyTo = other
+	rekeyingAppCall := appCall
+	rekeyingAppCall.RekeyTo = other
+	for _, tc := range []struct {
+		name string
+		txn  types.Transaction
+		rule txeffects.Rule
+	}{
+		{"close with a high fee", closing, txeffects.RuleOpenSpend},
+		{"clawback", clawback, txeffects.RuleOpenSpend},
+		{"app call", appCall, txeffects.RuleOpenSpend},
+		{"pure rekey", pureRekey, txeffects.RuleRekeyAllowed},
+		{"rekey with a close", closingRekey, txeffects.RuleHybridRekey},
+		{"app call that rekeys", rekeyingAppCall, txeffects.RuleHybridRekey},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			decision, err := txeffects.ClassifyFor(tc.txn, declaration)
+			if err != nil || decision.Rule != tc.rule {
+				t.Fatalf("decision = %+v, %v; want rule %s", decision, err, tc.rule)
+			}
+		})
 	}
 }
 
 func TestClassifyForChecksTheFeeCeilingFirst(t *testing.T) {
 	ceiling := uint64(2_000)
-	declaration := boundedmeta.PathDeclaration{Contract: "bounded1", SpendEffects: []string{"pay"}, MaxFee: &ceiling, Rekey: boundedmeta.RekeySpendingKey}
+	declaration := boundedmeta.PathDeclaration{Contract: boundedmeta.Contract, SpendEffects: []string{"pay"}, MaxFee: &ceiling, Rekey: boundedmeta.RekeySpendingKey}
 	var sender types.Address
 	sender[0] = 1
 	txn := types.Transaction{Type: types.PaymentTx}

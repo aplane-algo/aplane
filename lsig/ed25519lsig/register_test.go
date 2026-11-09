@@ -26,14 +26,11 @@ func TestRegisterClientRegistersEd25519LogicSigBase(t *testing.T) {
 	if provider == nil {
 		t.Fatalf("lsigprovider.Get(%q) = nil", KeyTypeV1)
 	}
-	mnemonicProvider, ok := provider.(lsigprovider.MnemonicProvider)
-	if !ok {
-		t.Fatalf("provider %T does not implement MnemonicProvider", provider)
+	// Mnemonic import is native-only: no LogicSig provider offers it.
+	if _, ok := provider.(interface{ SupportsMnemonicImport() bool }); ok {
+		t.Fatalf("provider %T offers mnemonic import", provider)
 	}
-	if mnemonicProvider.SupportsMnemonicImport() {
-		t.Fatalf("provider %T must not offer mnemonic import", provider)
-	}
-	if got := mnemonicProvider.MnemonicScheme(); got != "algorand" {
+	if got := logicsigdsa.Get(KeyTypeV1).MnemonicScheme(); got != "algorand" {
 		t.Fatalf("MnemonicScheme() = %q, want algorand", got)
 	}
 }

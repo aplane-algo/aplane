@@ -8,18 +8,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
 	"github.com/aplane-algo/aplane/internal/witness"
 )
 
 func TestNodeRoleAllowsKeyType(t *testing.T) {
-	if !NodeRoleAllowsKeyType(noderole.RoleSigner, keytypes.GuardedFalcon1024Cosigner1024V1) {
-		t.Fatal("signer node rejected guarded account key")
-	}
-	if !NodeRoleAllowsKeyType(noderole.RoleSigner, keytypes.GuardedFalcon1024Cosigner1024V1) {
-		t.Fatal("signer node rejected Falcon-guarded account key")
+	if !NodeRoleAllowsKeyType(noderole.RoleSigner, "aplane.falcon1024.v1") {
+		t.Fatal("signer node rejected plain host account key")
 	}
 	if !NodeRoleAllowsKeyType(noderole.RoleSigner, "aplane.falcon1024-b.v1") {
 		t.Fatal("signer node rejected bounded account key")
@@ -45,8 +41,8 @@ func TestNodeRoleAllowsKeyType(t *testing.T) {
 	if !NodeRoleAllowsKeyType(noderole.RoleSigner, nativefalcon.KeyType) {
 		t.Fatal("signer node rejected native Falcon spending key")
 	}
-	if NodeRoleAllowsKeyType(noderole.RoleCosigner, keytypes.GuardedFalcon1024Cosigner1024V1) {
-		t.Fatal("cosigner node allowed guarded account key")
+	if NodeRoleAllowsKeyType(noderole.RoleCosigner, "aplane.falcon1024.v1") {
+		t.Fatal("cosigner node allowed plain host account key")
 	}
 	if NodeRoleAllowsKeyType(noderole.RoleCosigner, "aplane.falcon1024-b.v1") {
 		t.Fatal("cosigner node allowed bounded account key")

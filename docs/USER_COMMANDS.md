@@ -1170,14 +1170,17 @@ generate falcon1024
 generate aplane.htlc.v1 hash=SHA256_HEX recipient=ADDR1 refund_address=ADDR2 timeout_round=50000000
 generate aplane.falcon1024-b.v1 spend_effects=pay rekey_authority=spending_key recipients="@validators"   # address[] params resolve aliases and sets
 generate aplane.falcon1024-b.v1 boundary=rules.yaml result=account.json
+generate aplane.falcon1024.v1 cosigner=<witness-key-id> rekey_authority=spending_key   # a cosigned plain host (enable the type first)
 ```
 
 Run `keytypes` to see available key types and required generation parameters.
 Use the full key type shown by `keytypes`.
 For installing or activating optional key types, and for boundary files, see
 [USER_KEYTYPES.md](USER_KEYTYPES.md). `boundary=` and `result=` are apshell options for
-key types the signer reports as per-key, which today means `aplane.falcon1024-b.v1`. For
-every other key type they are ordinary parameters. With either option, apshell reads the
+key types the signer reports as per-key. `boundary=` needs a type whose requests take
+the boundary grammar, which today means `aplane.falcon1024-b.v1`; a plain host
+(`aplane.falcon1024.v1`, `aplane.ed25519.v1`) is per-key but takes its parameters
+directly and refuses `boundary=`. For every other key type they are ordinary parameters. With either option, apshell reads the
 signer's key types first. If it can't, or the signer doesn't report the type, it stops and
 generates nothing.
 

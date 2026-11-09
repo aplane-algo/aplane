@@ -54,8 +54,8 @@ Cosigner policy is a separate deterministic surface with the same document
 set (a node default plus per-key documents selected by Witness Key ID): no
 manual-review verdict and no operator default. This document defines the
 shared snapshot and policy-selection vocabulary; the cosigner-specific
-decision rules are modeled in
-[FORMAL_GUARDED_SIGNING_MODEL.md](FORMAL_GUARDED_SIGNING_MODEL.md).
+decision rules are A4 in
+[FORMAL_TLA_BOUNDED_COSIGNER_MODEL.md](FORMAL_TLA_BOUNDED_COSIGNER_MODEL.md).
 
 Client simulation obtains signatures through ordinary signing, so every policy
 tier and operator-approval rule applies exactly as it does for submission. The
@@ -327,7 +327,7 @@ Client-signing rules:
 Cosigner policy uses the same selection with the Witness Key ID as the
 selector and the cosigner node default as the fallback; the cosigner-role
 component-signing flow is modeled in
-[FORMAL_GUARDED_SIGNING_MODEL.md](FORMAL_GUARDED_SIGNING_MODEL.md).
+[FORMAL_TLA_BOUNDED_COSIGNER_MODEL.md](FORMAL_TLA_BOUNDED_COSIGNER_MODEL.md).
 
 ## Network Selection
 

@@ -7,6 +7,10 @@ internal/signerapp/signing/bounded_cosigner.go.
 A cosigned account's target takes one of three paths: a spend and a declared
 (cosigned) rekey need the spending key and the cosigner; a listed rekey needs
 the spending key and the rekey-to list's proof, and never the cosigner. The
+paths are the same on a bounded host (contract bounded2) and a plain host
+(plain1): the host decides which transactions classify onto which path, which
+this model abstracts as the classified input. An account without a cosigner
+signs through /sign, not this flow. The
 signer's base component names the path, and the client asks the cosigner only
 when that path needs it; but the client may also ask or skip wrongly, and may
 present or drop a cosigner signature it holds, so both choices are inputs here,
@@ -27,7 +31,12 @@ The model checks the security-bearing order and final acceptance boundary:
   BS4 : output requires exact target coverage and a path-valid argument-source
         layout; spend and listed rekey additionally require successful derived
         arguments (the Merkle proof, and the list proof).
-  BS5 : output preserves passthrough entries and exact canonical bytes.
+  BS5 : output preserves the exact canonical bytes.
+  A8  : passthrough bytes are kept only when their decoded transaction ID is
+        the canonical entry's, a signature is present, and the effective signer
+        is not a cosigned account this signer holds, which must be assembled
+        instead. (Moved here from the retired guarded_assembly model with the
+        dedicated cosigned account; the cosigned flow keeps the check.)
   BS6 : invalid or rejected paths never produce output.
   BS7 : output is atomic: failure at any stage produces no partial result.
 
@@ -36,9 +45,9 @@ derivation, and byte comparison are abstracted to booleans. The model checks
 that the implementation's gates consume those outcomes in the required order;
 it does not prove Falcon, msgpack, Merkle proofs, or TEAL semantics.
 
-Unlike the one-shot guarded_assembly model, this is a transition system. TLC
-explores the base-release, cosigner-release, and bounded assembly stages. Validation outcomes are group-wide: a false value means at
-least one target failed.
+This is a transition system. TLC explores the base-release, cosigner-release,
+and bounded assembly stages. Validation outcomes are group-wide: a false value
+means at least one target or passthrough entry failed.
 
 See FORMAL_TLA_BOUNDED_COSIGNER_MODEL.md for the prose companion.
 *)
@@ -69,7 +78,9 @@ Input == [
     coverage     : BOOLEAN,
     sourceLayout : BOOLEAN,
     derived      : BOOLEAN,
-    passthrough  : BOOLEAN,
+    ptTxid       : BOOLEAN,
+    ptHasSig     : BOOLEAN,
+    ptLocalCosigned : BOOLEAN,
     bytes        : BOOLEAN
 ]
 
@@ -141,9 +152,10 @@ Presented == cosignerReleased /\ input.presentCosigner
    assembly receipt against the bounded spending public key, and then checks
    exact target coverage, the base signature, the cosigner signature where the
    path needs one and its absence where it does not, source/path masks,
-   derived arguments, passthrough binding, and canonical transaction bytes
-   before returning one atomic group. A client that skipped the cosigner
-   assembles from base_released. *)
+   derived arguments, passthrough binding (validateGuardedPassthrough: the
+   decoded txid, a signature, and no locally held cosigned signer), and
+   canonical transaction bytes before returning one atomic group. A client
+   that skipped the cosigner assembles from base_released. *)
 AssembleStep ==
     /\ \/ stage = "cosigner_released"
        \/ stage = "base_released" /\ ~input.askCosigner
@@ -157,7 +169,9 @@ AssembleStep ==
             /\ input.coverage
             /\ input.sourceLayout
             /\ (input.path \in {"spend", "listed_rekey"} => input.derived)
-            /\ input.passthrough
+            /\ input.ptTxid
+            /\ input.ptHasSig
+            /\ ~input.ptLocalCosigned
             /\ input.bytes
        IN
             /\ output' = success
@@ -210,9 +224,13 @@ BS4_DeclaredArgumentsOnly ==
         /\ (input.path \in {"spend", "listed_rekey"} => input.derived)
 
 BS5_CanonicalGroupBound ==
+    output => input.bytes
+
+A8_PassthroughTxidBound ==
     output =>
-        /\ input.passthrough
-        /\ input.bytes
+        /\ input.ptTxid
+        /\ input.ptHasSig
+        /\ ~input.ptLocalCosigned
 
 BS6_InvalidNeverOutputs ==
     (input.path = "invalid" \/ ~BaseGate(input)) => ~output
@@ -229,6 +247,7 @@ Safety ==
     /\ BS3_CosignedAuthoritiesVerified
     /\ BS4_DeclaredArgumentsOnly
     /\ BS5_CanonicalGroupBound
+    /\ A8_PassthroughTxidBound
     /\ BS6_InvalidNeverOutputs
     /\ BS7_AtomicOutput
 

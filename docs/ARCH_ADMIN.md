@@ -97,7 +97,9 @@ Transport notes:
   `prepare_generate_result`, replaces `prepare_generate_result.bounded.admin_operations`
   with `bounded.rekey`, and adds `bounded.rekey_list`; a 7.x apadmin would read an account
   with no `admin_operations` as having no rekey path, so it is refused at authentication
-  rather than shown a wrong review;
+  rather than shown a wrong review; later 8.0 work, still unreleased, makes
+  `bounded.max_fee` optional (absent for a plain host, contract `plain1`) and adds
+  `boundary_schema` to key types;
   7.3 adds `review_fingerprint` and
   `boundary_digest` to `prepare_generate_result`, an optional
   `generate_key.expected_boundary_digest`, `per_key_contract` to key types, and the two
@@ -395,23 +397,20 @@ interlocks.
 
 #### Key Management
 
-- `prepare_generate_key`: `key_type`, optional `parameters` -> `prepare_generate_result`: `success`, optional `key_type`, `parameters`, `fingerprint`, `review_fingerprint`, `boundary_digest`, `bounded`, `cosigner_key_id`, `code`, `error`. Local IPC only, under `keys.generate`. It runs generation's checks and reports the resolved request so apadmin can review it. It creates no key, changes no store state, and has no address, because the spending key does not exist yet. A reference name resolves to its public key in `parameters`, and `bounded` carries `contract`, `spend_effects`, `max_fee`, `rekey` (`refused` or `spending_key`), optional `rekey_list` (true when the account has a rekey-to list, whose entries are `parameters.rekey_to`: *only these* under `rekey: refused`, a rekey only to a listed address; *plus cosigned* under `rekey: spending_key` with `cosigner_required`, a listed address with the spending key alone and any other with the cosigner too; there is no root yet, because it depends on the spending key), `layer3_policy`, and `cosigner_required`
+- `prepare_generate_key`: `key_type`, optional `parameters` -> `prepare_generate_result`: `success`, optional `key_type`, `parameters`, `fingerprint`, `review_fingerprint`, `boundary_digest`, `bounded`, `cosigner_key_id`, `code`, `error`. Local IPC only, under `keys.generate`. It runs generation's checks and reports the resolved request so apadmin can review it. It creates no key, changes no store state, and has no address, because the spending key does not exist yet. A reference name resolves to its public key in `parameters`, and `bounded` carries `contract` (`bounded2`, or `plain1` for a plain host), `spend_effects`, `max_fee` (absent for a plain host, which has no fee ceiling), `rekey` (`refused` or `spending_key`), optional `rekey_list` (true when the account has a rekey-to list, whose entries are `parameters.rekey_to`: *only these* under `rekey: refused`, a rekey only to a listed address; *plus cosigned* under `rekey: spending_key` with `cosigner_required`, a listed address with the spending key alone and any other with the cosigner too; there is no root yet, because it depends on the spending key), `layer3_policy`, and `cosigner_required`
 - `generate_key`: `key_type`, optional `name`, optional `expected_fingerprint`, optional `expected_boundary_digest`, optional `parameters`; accepted over IPC, but generated recovery material is not returned over the admin protocol. the rotating key types (such as `aplane.rotating-triple-wotsc.v1`) require the parameter `network` (a network the signer knows, or a base64 genesis hash)
 - `generate_result`: `success`, optional `address`, `key_type`, `parameters`, `code`, `error`; `mnemonic` and `word_count` fields remain in the schema but are omitted by signer responses
 - `delete_key`: `address` -> `delete_result`: `success`, optional `code`, `error`
 - `export_key`: `address`, `passphrase` -> `export_result`: `success`, `address`, `key_type`, `mnemonic`, `word_count`, optional `code` and `error`. Native `ed25519` and `falcon1024` only, on authenticated local IPC with an unlocked healthy store and fresh passphrase verification. Other transports return `authorization_denied`; other key classes return `forbidden`; native Falcon credentials without recovery entropy return `unavailable`. Successful responses contain 25 words. The signer sends a successful `export_result` while it still holds the key for use and audits `KEY_EXPORTED` with outcome `released` only once that write succeeded; a failed write is audited as a failure. Eligibility is projected as `key_details.mnemonic_exportable`, and apadmin key details offers `m` only for keys so marked; the phrase stays visible for two minutes from reveal and clears on dismissal, lock, or session end. This is an explicit export operation; generate responses still omit recovery material.
 - `import_key`: `key_type`, `mnemonic`, optional `parameters` -> `import_result`: `success`, optional `address`, `key_type`, `code`, `error`; accepted only over local IPC because it carries recovery material
 - `get_key_details`: `address` -> `key_details`: `success`, optional `address`, `key_type`, `parameters`, optional `public_key_hex`, `display_teal`, `mnemonic_exportable` (true for native Ed25519 keys and native Falcon keys that retain recovery entropy), `code`, `error`
-- `key_details.parameters` for guarded account keys projects the embedded cosigner verifier as `Cosigner: <Witness Key ID>` and does not expose the raw `cosigner_public_key` parameter
 - `key_details` may include optional `template_provenance_status` and `template_provenance_note`; these are informational, version-aware comparisons between the key's stored template fingerprint provenance and the registered local definition, and do not gate signing. The fingerprint is behavior-only and versioned, so only a same-version, different-hash pair is a `conflict`; a different-version or malformed comparison is `unavailable` (benign), never a `conflict`
 - `keys_list`: `keys`, where each key has `address`, `key_type`, optional `name`, optional `template_provenance_status`, optional `template_provenance_note`
 - `keys_changed`: `key_count`
 
-Mnemonic import permits native `ed25519` and `falcon1024`. The two plain
-LogicSig providers are [internal-only](ARCH_KEYTYPES.md#internal-providers):
-standalone generation, mnemonic import, and enablement reject them even when
-an old enabled record exists. Their existing accounts remain visible in
-`keys_list` and usable for signing and encrypted restore.
+Mnemonic import permits native `ed25519` and `falcon1024` only. The two plain
+LogicSig types are [plain hosts](ARCH_KEYTYPES.md#plain-hosts): enabled per
+node, then generated with or without overlays; neither takes mnemonic import.
 
 > **Boundary note — admin `keys_list` is not the HTTP key inventory.** The admin
 > transport entry is `protocol.AdminKeyInfo` (thin: address, key type, name,
@@ -636,7 +635,7 @@ ASA set result codes include `policy_unavailable`, `unknown_network`,
 Policy selection semantics:
 
 - every key is governed by exactly one document: its own `policies/<selector>.json` when it has one, otherwise the node default `default.json`; a key's own document replaces the default wholesale and inherits nothing (see [ARCH_POLICY.md](ARCH_POLICY.md#policy-selection))
-- normal signing selects the document by signing auth address, not by transaction sender, so rekeyed accounts use the auth address; user-role component signing selects by the guarded account; cosigner component signing selects by the request `component_key`
+- normal signing selects the document by signing auth address, not by transaction sender, so rekeyed accounts use the auth address; bounded-base component signing selects by the cosigned account; cosigner component signing selects by the request `component_key`
 - admin settings do not expose or mutate policy fields; documents change only through a whole-document `apply_policy`
 - documents placed by hand in a stopped store apply only after `apstore policy sign` and the next unlock
 
@@ -707,7 +706,9 @@ Writable admin settings:
 - `lock_on_disconnect`
 - `passphrase_timeout`
 - `boundary_require_contained` and `boundary_require_cosigner`: restrict new
-  `aplane.falcon1024-b.v1` accounts only
+  accounts of the per-key types only: `aplane.falcon1024-b.v1` and the plain
+  hosts (`aplane.falcon1024.v1`, `aplane.ed25519.v1`), the plain program
+  included
 - `theme`
 
 Node role is not a writable admin setting. It is initialized once in root
@@ -848,9 +849,11 @@ The implementation lives in `internal/signerapp/signertui/`.
 ### Choosing a generate flow
 
 The Generate form classifies the selected key type from the signer's inventory. A type
-with `per_key_contract` opens the preset screen, and the form records it in
-`boundaryKeyType`, so later preset and boundary-file steps use that value rather than a
-constant. Nothing here depends on the key type's name.
+with `per_key_contract` and `boundary_schema` `aplane.boundary.v1` opens the preset
+screen, and the form records it in `boundaryKeyType`, so later preset and boundary-file
+steps use that value rather than a constant. A per-key type with no `boundary_schema`,
+such as a plain host, uses the parameter form. Nothing here depends on the key type's
+name.
 
 A compiled list stands in until the signer's list arrives, so a type can be selected before
 it can be classified. That isn't read as an ordinary type: the form shows an error and

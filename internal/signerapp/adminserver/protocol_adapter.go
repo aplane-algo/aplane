@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
+	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
@@ -683,7 +684,7 @@ func ProtocolPrepareGenerateResultMessage(id string, result adminproto.PrepareGe
 		message.Bounded = &protocol.PreparedBoundedProfile{
 			Contract:         profile.Contract,
 			SpendEffects:     profile.SpendEffects,
-			MaxFee:           profile.MaxFee,
+			MaxFee:           boundedmeta.CloneMaxFee(profile.MaxFee),
 			Rekey:            profile.Rekey,
 			RekeyList:        profile.RekeyList,
 			Layer3Policy:     profile.Layer3Policy,
@@ -968,6 +969,7 @@ func protocolKeyTypes(items []signerapi.KeyTypeInfo) []protocol.KeyTypeInfo {
 			MnemonicScheme:           item.MnemonicScheme,
 			CosignerComponentKeyType: item.CosignerComponentKeyType,
 			PerKeyContract:           item.PerKeyContract,
+			BoundarySchema:           item.BoundarySchema,
 			CreationParams:           protocolCreationParams(item.CreationParams),
 			RuntimeArgs:              protocolRuntimeArgs(item.RuntimeArgs),
 		}

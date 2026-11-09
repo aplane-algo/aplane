@@ -33,8 +33,8 @@ type CosignerOverlay struct {
 type PathDeclaration struct {
 	Contract     string
 	SpendEffects []string
-	// MaxFee is nil when the account has no fee ceiling. Every bounded account
-	// has one today; the plain host will not.
+	// MaxFee is nil when the account has no fee ceiling: a bounded host has
+	// one, a plain host doesn't.
 	MaxFee       *uint64
 	Layer3Policy string
 	Rekey        RekeySetting
@@ -51,15 +51,14 @@ func (metadata *Metadata) Declaration() (PathDeclaration, error) {
 	if metadata == nil {
 		return PathDeclaration{}, fmt.Errorf("bounded authorization metadata is nil")
 	}
-	maxFee := metadata.MaxFee
 	declaration := PathDeclaration{
 		Contract:     metadata.Contract,
 		SpendEffects: slices.Clone(metadata.SpendEffects),
-		MaxFee:       &maxFee,
 		Layer3Policy: metadata.Layer3Policy,
 		Rekey:        metadata.Rekey,
 		RekeyList:    metadata.RekeyList != nil,
 	}
+	declaration.MaxFee = CloneMaxFee(metadata.MaxFee)
 	if err := ValidateRekeySetting(metadata.Rekey); err != nil {
 		return PathDeclaration{}, err
 	}

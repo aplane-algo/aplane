@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
+	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/keymgmt"
 	"github.com/aplane-algo/aplane/internal/protocol"
 )
@@ -48,7 +49,7 @@ func ProjectPrepareGenerateIPC(prepared *PreparedGeneration, err *Error) adminpr
 		profile := &adminproto.PreparedBoundedProfile{
 			Contract:         metadata.Contract,
 			SpendEffects:     metadata.SpendEffects,
-			MaxFee:           metadata.MaxFee,
+			MaxFee:           boundedmeta.CloneMaxFee(metadata.MaxFee),
 			Rekey:            string(metadata.Rekey),
 			RekeyList:        metadata.RekeyList != nil,
 			Layer3Policy:     metadata.Layer3Policy,

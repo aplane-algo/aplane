@@ -122,8 +122,8 @@ Clients should:
 
 **Protected Endpoints:**
 - `POST /sign` - Submit signing requests
-- `POST /sign/component` - Produce guarded or bounded, kind-tagged components
-- `POST /sign/assemble` - Assemble guarded or bounded-cosigner signed groups
+- `POST /sign/component` - Produce kind-tagged bounded-base and cosigner components
+- `POST /sign/assemble` - Assemble bounded-cosigner signed groups
 - `POST /sign/cancel` - Cancel a live synchronous signing request by request ID
 - `POST /sign/rotating/prepare` - Prepare a rotating-key signing stage
 - `POST /sign/rotating/sign` - Sign with a prepared rotating-key stage
@@ -934,8 +934,8 @@ makes action typos such as `keys.veiw` fail before allowlist matching.
 | `identity.restore` | List, import, preview, and directly restore managed credential archives, roll back the latest eligible restore, and reconcile product-store recovery state | `identity`, `backup`, `backup_upload` | Yes; recovery-mode inventory, repair, and resolution are allowed while signing remains blocked |
 | `identity.passphrase` | Rotate the identity keystore passphrase | `identity` | Yes |
 | `sign.request` | Request transaction signing, signing plan, or sign-request cancellation | `transaction` | Yes for signing/cancel |
-| `sign.component` | Request user, cosigner, or bounded-base authorization components over a frozen group | `transaction` | Yes |
-| `sign.assemble` | Assemble verified user and cosigner component signatures into signed guarded transactions | `transaction` | Yes |
+| `sign.component` | Request cosigner or bounded-base authorization components over a frozen group | `transaction` | Yes |
+| `sign.assemble` | Assemble verified bounded-base and cosigner component signatures into signed cosigned transactions | `transaction` | Yes |
 | `sign.approve` | Approve or reject signing request | `sign_request` | No |
 | `keys.view` | List keys or view key details | `keys`, `key` | Yes for key list/details |
 | `keys.generate` | Generate a key | `key` | Yes |

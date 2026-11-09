@@ -28,9 +28,13 @@ var ErrCacheTampered = errors.New("cache integrity check failed")
 var errNoCacheStore = errors.New("cache has no client data directory")
 
 const (
-	signedCacheEnvelopeVersion      = 1
-	cachePayloadSchemaVersion       = 1
-	signerCachePayloadSchemaVersion = 2
+	signedCacheEnvelopeVersion = 1
+	cachePayloadSchemaVersion  = 1
+	// signerCachePayloadSchemaVersion 3 adds bounded_contracts, which the
+	// cosigned flow needs to tell a plain host's absent fee ceiling from missing
+	// metadata. A cache of another version is discarded and refilled from the
+	// signer, so an upgraded client never fails on an older cache.
+	signerCachePayloadSchemaVersion = 3
 )
 
 type cachePayloadVersioner interface {

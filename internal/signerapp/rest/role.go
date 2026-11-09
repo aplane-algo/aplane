@@ -48,21 +48,6 @@ func requireComponentNodeRole(ir *productruntime.Runtime, role signersigning.Com
 				Message: fmt.Sprintf("unknown node role %q does not allow cosigner component signing", nodeRole),
 			}
 		}
-	case signersigning.ComponentSignRoleUser:
-		switch nodeRole {
-		case noderole.RoleSigner:
-			return nil
-		case noderole.RoleCosigner:
-			return &signersigning.ServiceError{
-				Kind:    signersigning.ErrorForbidden,
-				Message: fmt.Sprintf("node role %q does not allow user component signing", nodeRole),
-			}
-		default:
-			return &signersigning.ServiceError{
-				Kind:    signersigning.ErrorForbidden,
-				Message: fmt.Sprintf("unknown node role %q does not allow user component signing", nodeRole),
-			}
-		}
 	default:
 		return &signersigning.ServiceError{
 			Kind:    signersigning.ErrorBadRequest,
@@ -75,7 +60,7 @@ func requireComponentTargetNodeRole(ir *productruntime.Runtime, kind signerapi.C
 	if kind == signerapi.ComponentTargetKindCosigner {
 		return requireComponentNodeRole(ir, signersigning.ComponentSignRoleCosigner)
 	}
-	if kind == signerapi.ComponentTargetKindUser || kind == signerapi.ComponentTargetKindBoundedBase {
+	if kind == signerapi.ComponentTargetKindBoundedBase {
 		return requireAccountSigningRole(ir, "account component signing")
 	}
 	return &signersigning.ServiceError{Kind: signersigning.ErrorForbidden, Message: fmt.Sprintf("unsupported component target kind %q", kind)}

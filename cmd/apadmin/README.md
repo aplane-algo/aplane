@@ -67,7 +67,7 @@ Batch commands use the same local IPC transport as the TUI:
 ./apadmin restore apply aplane-backup-YYYYMMDD-HHMMSS.tar.gz
 ./apadmin changepass
 ./apadmin template list
-./apadmin keytype enable aplane.falcon1024-cosigner1024.v1
+./apadmin keytype enable aplane.falcon1024.v1
 ./apadmin cosigner list
 ./apadmin clients list
 ./apadmin clients approve SHA256:... --label laptop

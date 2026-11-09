@@ -143,11 +143,6 @@ func validateLayer3Policy(policy *Layer3Policy, params []lsigprovider.ParameterD
 	if policy.Policy == Layer3PolicyNone && hasAuthorTEAL {
 		return fmt.Errorf("policy %q does not accept author TEAL; omit bounded.layer3 for custom TEAL", policy.Policy)
 	}
-	// No host rule gates a rekey, so a spending-key rekey would leave the lock
-	// before the unlock round.
-	if rules.timelock && profile.Rekey == boundedmeta.RekeySpendingKey {
-		return fmt.Errorf("policy %q can't take rekey: %s: a spending-key rekey would leave the lock before the unlock round; use rekey: %s, or %s", policy.Policy, boundedmeta.RekeySpendingKey, BoundedRekeyOnlyThese, boundedmeta.RekeyRefused)
-	}
 
 	used := make(map[string]struct{}, 2)
 	if rules.hasList() {
@@ -251,6 +246,12 @@ func (c *ComposedDSA) renderLayer3Policy(params map[string]string, profile *Boun
 	}
 	if c.layer3.Policy == Layer3PolicyNone {
 		// A comment only: the spend falls through to the accept block.
+		if profile != nil && profile.Contract == PlainContract && profile.Cosigner != nil {
+			return "// === plain host: no host rules; the cosigner signed this spend ===\n", nil
+		}
+		if profile != nil && profile.Contract == PlainContract {
+			return "// === plain host: no host rules; the spending key alone signed this spend ===\n", nil
+		}
 		return "// === no framework Layer 3: the envelope bounds every spend ===\n", nil
 	}
 

@@ -42,12 +42,10 @@ func TestBoundedTranscriptsAreRoleSeparated(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	userComponent := message.ComponentMessage(message.RoleUser, txID)
 	cosignerComponent := message.ComponentMessage(message.RoleCosigner, txID)
 	transcripts := map[string][]byte{
 		"spend":              txID[:],
 		"assembly receipt":   receipt[:],
-		"user component":     userComponent[:],
 		"cosigner component": cosignerComponent[:],
 	}
 	seen := map[string]string{}

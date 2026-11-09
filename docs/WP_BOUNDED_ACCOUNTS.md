@@ -92,9 +92,10 @@ bound.
 | Corridor | Self or membership in a Merkle recipient list, plus a Falcon cosigner signature for every spend | Spending key alone, only to an address on the rekey-to list; the cosigner is not asked |
 | Timelock | Transaction's first valid round must reach the configured unlock round | Spending key alone, only to an address on the rekey-to list |
 
-A timelock never lets the spending key rekey to any address, with or without a
-cosigner: the unlock round is a spending condition, so a rekey would not wait
-for it. That applies to a listed
+The general type's timelock never lets the spending key rekey to any address,
+with or without a cosigner: the unlock round is a spending condition, so a rekey
+would not wait for it. An expert template may still combine a timelock with a
+spending-key rekey, which then holds only while the spending key declines. That applies to a listed
 rekey too, so a timelock's rekey-to list is a way around the lock, and the lock
 holds only while the holders of the listed keys cooperate.
 

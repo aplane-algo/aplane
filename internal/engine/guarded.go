@@ -56,6 +56,10 @@ func (v guardedSignerCacheView) CosignerPublicKey(address string) (string, bool)
 	return v.core.signerCacheCosignerPublicKey(address)
 }
 
+func (v guardedSignerCacheView) BoundedContract(address string) (string, bool) {
+	return v.core.signerCacheBoundedContract(address)
+}
+
 func (v guardedSignerCacheView) BoundedMaxFee(address string) (uint64, bool) {
 	return v.core.signerCacheBoundedMaxFee(address)
 }

@@ -289,8 +289,8 @@ func boundedRekeyApprovalLines(item *boundedPlanItem) string {
 	}
 	lines := "\n  Bounded authorization operation: REKEY" +
 		"\n  Authorization: " + boundedAuthorizationLabel(item)
-	if item.Metadata != nil {
-		lines += fmt.Sprintf("\n  Profile maximum fee: %d microAlgos", item.Metadata.MaxFee)
+	if item.Metadata != nil && item.Metadata.MaxFee != nil {
+		lines += fmt.Sprintf("\n  Profile maximum fee: %d microAlgos", *item.Metadata.MaxFee)
 	}
 	return lines
 }

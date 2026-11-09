@@ -20,7 +20,12 @@ const (
 	// Contract is the bounded account contract. "bounded2" is a working name: it
 	// replaced bounded1 in place, with a rekey setting where bounded1 had
 	// administrative operations.
-	Contract                    = "bounded2"
+	Contract = "bounded2"
+	// PlainContract is the plain host: the spending key and its overlays, with
+	// no host rules. Every transaction that doesn't rekey is a spend, of any
+	// type, closes and clawback included, and there is no fee ceiling. A
+	// cosigner, when it has one, is the only restriction on what gets signed.
+	PlainContract               = "plain1"
 	Layer3PolicyCustom          = "custom"
 	Layer3PolicyFixedAllowlist  = "fixed_allowlist"
 	Layer3PolicyMerkleAllowlist = "merkle_allowlist"
@@ -122,17 +127,19 @@ type RekeyList struct {
 
 // Metadata is the complete non-secret signing contract for one bounded key.
 type Metadata struct {
-	Contract               string                 `json:"contract"`
-	BaseSignatureArgLayout SignatureArgLayout     `json:"base_signature_arg_layout"`
-	SpendEffects           []string               `json:"spend_effects"`
-	MaxFee                 uint64                 `json:"max_fee"`
-	Rekey                  RekeySetting           `json:"rekey"`
-	Cosigner               *CosignerAuthorization `json:"cosigner,omitempty"`
-	RekeyList              *RekeyList             `json:"rekey_list,omitempty"`
-	RuntimeArgs            []RuntimeArg           `json:"runtime_args"`
-	DerivedArgs            []DerivedArg           `json:"derived_args"`
-	ArgumentLayout         []ArgumentSlot         `json:"argument_layout"`
-	Layer3Policy           string                 `json:"layer3_policy"`
+	Contract               string             `json:"contract"`
+	BaseSignatureArgLayout SignatureArgLayout `json:"base_signature_arg_layout"`
+	SpendEffects           []string           `json:"spend_effects"`
+	// MaxFee is the bounded host's fee ceiling. A plain host has none, and the
+	// field is absent rather than zero.
+	MaxFee         *uint64                `json:"max_fee,omitempty"`
+	Rekey          RekeySetting           `json:"rekey"`
+	Cosigner       *CosignerAuthorization `json:"cosigner,omitempty"`
+	RekeyList      *RekeyList             `json:"rekey_list,omitempty"`
+	RuntimeArgs    []RuntimeArg           `json:"runtime_args"`
+	DerivedArgs    []DerivedArg           `json:"derived_args"`
+	ArgumentLayout []ArgumentSlot         `json:"argument_layout"`
+	Layer3Policy   string                 `json:"layer3_policy"`
 }
 
 // Clone returns a deep copy suitable for crossing cache and API boundaries.
@@ -141,6 +148,7 @@ func Clone(metadata *Metadata) *Metadata {
 		return nil
 	}
 	cloned := *metadata
+	cloned.MaxFee = CloneMaxFee(metadata.MaxFee)
 	cloned.BaseSignatureArgLayout.MaxSizes = slices.Clone(metadata.BaseSignatureArgLayout.MaxSizes)
 	cloned.SpendEffects = slices.Clone(metadata.SpendEffects)
 	if metadata.Cosigner != nil {
@@ -184,7 +192,7 @@ func (metadata *Metadata) Equal(other *Metadata) bool {
 		metadata.BaseSignatureArgLayout.Count == other.BaseSignatureArgLayout.Count &&
 		slices.Equal(metadata.BaseSignatureArgLayout.MaxSizes, other.BaseSignatureArgLayout.MaxSizes) &&
 		slices.Equal(metadata.SpendEffects, other.SpendEffects) &&
-		metadata.MaxFee == other.MaxFee &&
+		EqualMaxFee(metadata.MaxFee, other.MaxFee) &&
 		metadata.Rekey == other.Rekey &&
 		equalCosignerAuthorization(metadata.Cosigner, other.Cosigner) &&
 		equalRekeyList(metadata.RekeyList, other.RekeyList) &&
@@ -220,22 +228,17 @@ func (metadata *Metadata) ValidateProfile() error {
 	if metadata == nil {
 		return fmt.Errorf("bounded authorization metadata is nil")
 	}
-	if metadata.Contract != Contract {
-		return fmt.Errorf("unsupported bounded authorization contract %q", metadata.Contract)
-	}
-	if metadata.MaxFee > MaximumProfileFee {
-		return fmt.Errorf("max_fee %d exceeds %s ceiling %d", metadata.MaxFee, Contract, MaximumProfileFee)
-	}
-	switch metadata.Layer3Policy {
-	case Layer3PolicyCustom, Layer3PolicyFixedAllowlist, Layer3PolicyMerkleAllowlist,
-		Layer3PolicyFixedAllowlistCustom, Layer3PolicyMerkleAllowlistCustom,
-		Layer3PolicyTimelock, Layer3PolicyFixedAllowlistTimelock, Layer3PolicyMerkleAllowlistTimelock,
-		Layer3PolicyNone:
+	switch metadata.Contract {
+	case Contract:
+		if err := metadata.validateBoundedHost(); err != nil {
+			return err
+		}
+	case PlainContract:
+		if err := metadata.validatePlainHost(); err != nil {
+			return err
+		}
 	default:
-		return fmt.Errorf("unsupported %s layer3_policy %q", Contract, metadata.Layer3Policy)
-	}
-	if err := ValidateSpendEffects(metadata.SpendEffects); err != nil {
-		return err
+		return fmt.Errorf("unsupported bounded authorization contract %q", metadata.Contract)
 	}
 	if err := ValidateRekeySetting(metadata.Rekey); err != nil {
 		return err
@@ -246,19 +249,11 @@ func (metadata *Metadata) ValidateProfile() error {
 	if err := metadata.ValidateRekeyList(); err != nil {
 		return err
 	}
-	// A listed address is a way out, so only a refused account without a list
-	// must leave a transfer for what it holds.
-	if metadata.Rekey == RekeyRefused && metadata.RekeyList == nil {
-		if err := ValidateRefusedExit(metadata.SpendEffects); err != nil {
-			return err
-		}
-	}
-	// No host rule gates a rekey, so a spending-key rekey would leave a timelock
-	// before its unlock round. Generation refuses it earlier with a policy-specific
-	// message; this keeps stored metadata to the same contract.
-	if metadata.Rekey == RekeySpendingKey && isTimelockPolicy(metadata.Layer3Policy) {
-		return fmt.Errorf("%s requires rekey %s: a spending-key rekey would leave the lock before the unlock round", metadata.Layer3Policy, RekeyRefused)
-	}
+	// Durable validation checks structure only. Whether a combination is wise
+	// (a refused account that can't send what it holds, a timelock the
+	// spending key can rekey out of) is the user's choice; a check for it
+	// belongs at generation, never here, so accounts created without it keep
+	// loading.
 	if err := ValidateSignatureLayout(metadata.BaseSignatureArgLayout); err != nil {
 		return err
 	}
@@ -292,6 +287,58 @@ func (metadata *Metadata) ValidateProfile() error {
 		}
 	}
 	return nil
+}
+
+// validateBoundedHost checks the bounded host's own rules: a fee ceiling within
+// the profile maximum, a known Layer 3 policy, and at least one spend effect.
+func (metadata *Metadata) validateBoundedHost() error {
+	if metadata.MaxFee == nil {
+		return fmt.Errorf("%s requires max_fee", Contract)
+	}
+	if *metadata.MaxFee > MaximumProfileFee {
+		return fmt.Errorf("max_fee %d exceeds %s ceiling %d", *metadata.MaxFee, Contract, MaximumProfileFee)
+	}
+	switch metadata.Layer3Policy {
+	case Layer3PolicyCustom, Layer3PolicyFixedAllowlist, Layer3PolicyMerkleAllowlist,
+		Layer3PolicyFixedAllowlistCustom, Layer3PolicyMerkleAllowlistCustom,
+		Layer3PolicyTimelock, Layer3PolicyFixedAllowlistTimelock, Layer3PolicyMerkleAllowlistTimelock,
+		Layer3PolicyNone:
+	default:
+		return fmt.Errorf("unsupported %s layer3_policy %q", Contract, metadata.Layer3Policy)
+	}
+	return ValidateSpendEffects(metadata.SpendEffects)
+}
+
+// validatePlainHost checks that a plain host states no host rule: no fee
+// ceiling, no spend-effect list, no Layer 3. Its overlays are optional.
+func (metadata *Metadata) validatePlainHost() error {
+	if metadata.MaxFee != nil {
+		return fmt.Errorf("%s has no fee ceiling: max_fee must be absent", PlainContract)
+	}
+	if len(metadata.SpendEffects) != 0 {
+		return fmt.Errorf("%s declares no spend effects: every transaction that doesn't rekey is a spend", PlainContract)
+	}
+	if metadata.Layer3Policy != Layer3PolicyNone {
+		return fmt.Errorf("%s requires layer3_policy %s, got %q", PlainContract, Layer3PolicyNone, metadata.Layer3Policy)
+	}
+	return nil
+}
+
+// CloneMaxFee copies a fee ceiling, so a projection never shares the stored one.
+func CloneMaxFee(fee *uint64) *uint64 {
+	if fee == nil {
+		return nil
+	}
+	return new(*fee)
+}
+
+// EqualMaxFee reports whether two fee ceilings are the same: both absent, or
+// both present and equal.
+func EqualMaxFee(a, b *uint64) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
 }
 
 func equalCosignerAuthorization(a, b *CosignerAuthorization) bool {
@@ -384,28 +431,6 @@ func ValidateRekeySetting(setting RekeySetting) error {
 	default:
 		return fmt.Errorf("unsupported rekey setting %q", setting)
 	}
-}
-
-// ValidateRefusedExit reports why an account that refuses rekeys could trap what it
-// holds. With no rekey path and no close, a transfer is the only way anything
-// leaves: pay for its ALGO, and axfer for any asset it can opt into. It still
-// keeps its minimum balance, since it can never close.
-func ValidateRefusedExit(spendEffects []string) error {
-	switch {
-	case !slices.Contains(spendEffects, SpendEffectPay):
-		return fmt.Errorf("a bounded account that refuses rekeys needs pay in spend_effects, or its ALGO could never leave")
-	case slices.Contains(spendEffects, SpendEffectAssetOptIn) && !slices.Contains(spendEffects, SpendEffectAxfer):
-		return fmt.Errorf("a bounded account that refuses rekeys and opts into assets needs axfer in spend_effects, or an asset could never leave")
-	}
-	return nil
-}
-
-func isTimelockPolicy(policy string) bool {
-	switch policy {
-	case Layer3PolicyTimelock, Layer3PolicyFixedAllowlistTimelock, Layer3PolicyMerkleAllowlistTimelock:
-		return true
-	}
-	return false
 }
 
 // RefusesRekeys reports whether the account's rekey setting is refused: it has no

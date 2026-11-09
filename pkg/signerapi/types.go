@@ -354,16 +354,10 @@ type StatusResponse struct {
 	Rotating []RotatingAccountStatus `json:"rotating,omitempty"`
 }
 
-// SigningFlowCosigner1 names the cosigner co-signed component signing
-// choreography: canonical TX-prefixed group transport, role-tagged component
-// messages, exactly one user plus one cosigner component signature per target,
-// Witness Key ID selectors, and assembly via /sign/assemble with arg 0 = user
-// signature and arg 1 = cosigner signature. The label is frozen: any change to
-// that choreography mints a new label (cosigner2, ...), and unrelated future
-// mechanisms get their own label family. Clients route on this field and must
-// fail fast on flow labels they do not implement; an empty signing_flow means
-// the ordinary /sign path.
-const SigningFlowCosigner1 = "cosigner1"
+// Signing flow labels name a frozen client choreography: any change to one mints
+// a new label, and unrelated mechanisms get their own label family. Clients route
+// on signing_flow and must fail fast on labels they do not implement; an empty
+// signing_flow means the ordinary /sign path.
 
 // SigningFlowBounded1 names the transaction-aware LogicSig choreography. The
 // signer remains authoritative for classification and assembly; clients use
@@ -435,14 +429,25 @@ type BoundedCosignerAuthorizationInfo struct {
 	RequiredOn       []string `json:"required_on"`
 }
 
+// The bounded authorization contracts a client signs for.
+const (
+	BoundedContractBounded2 = "bounded2"
+	BoundedContractPlain1   = "plain1"
+)
+
 // BoundedAuthorizationInfo is the public, non-secret bounded capability
 // projection shared by /keytypes and /keys. Instance-only fields are omitted
 // from /keytypes until a concrete LogicSig has been generated.
+//
+// Contract is BoundedContractBounded2 for a bounded host, which has a fee
+// ceiling, or BoundedContractPlain1 for a plain host, which has none.
 type BoundedAuthorizationInfo struct {
 	Contract               string                    `json:"contract"`
 	BaseSignatureArgLayout BoundedSignatureArgLayout `json:"base_signature_arg_layout"`
 	SpendEffects           []string                  `json:"spend_effects"`
-	MaxFee                 uint64                    `json:"max_fee"`
+	// MaxFee is the bounded host's fee ceiling. A plain host (contract plain1)
+	// has none, and the field is absent.
+	MaxFee *uint64 `json:"max_fee,omitempty"`
 	// Rekey is refused or spending_key. With RekeyList, refused is "only these":
 	// a rekey may go to a listed address.
 	Rekey          string                            `json:"rekey"`
@@ -465,12 +470,17 @@ type KeyTypeInfo struct {
 	MnemonicWordCount        int                       `json:"mnemonic_word_count"`
 	MnemonicImport           bool                      `json:"mnemonic_import"`
 	MnemonicScheme           string                    `json:"mnemonic_scheme"`
-	SigningFlow              string                    `json:"signing_flow,omitempty"`                // signing choreography label (for example "cosigner1" or "cosigned1"); empty = plain /sign
+	SigningFlow              string                    `json:"signing_flow,omitempty"`                // signing choreography label (for example "cosigned1" or "rotating1"); empty = plain /sign
 	CosignerComponentKeyType string                    `json:"cosigner_component_key_type,omitempty"` // cosigner component key type for cosigner-backed signing flows
 	BoundedAuthorization     *BoundedAuthorizationInfo `json:"bounded_authorization,omitempty"`
 	// PerKeyContract means each account selects its own contract at generation,
 	// so this type has no fixed signing flow or bounded profile. Route by /keys.
-	PerKeyContract bool                `json:"per_key_contract,omitempty"`
+	PerKeyContract bool `json:"per_key_contract,omitempty"`
+	// BoundarySchema names the boundary file grammar a per-key type's requests
+	// take (aplane.boundary.v1 for the general bounded type), and is empty for
+	// a type that takes none, such as a plain host, whose few parameters are
+	// given directly.
+	BoundarySchema string              `json:"boundary_schema,omitempty"`
 	CreationParams []CreationParamInfo `json:"creation_params"`
 	RuntimeArgs    []RuntimeArgInfo    `json:"runtime_args"`
 }
@@ -536,7 +546,7 @@ type KeyInfo struct {
 	PublicKeyHex             string                    `json:"public_key_hex"`
 	KeyType                  string                    `json:"key_type"`
 	AuthorizationKind        string                    `json:"authorization_kind,omitempty"`
-	SigningFlow              string                    `json:"signing_flow,omitempty"`                // signing choreography label (for example "cosigner1" or "cosigned1"); empty = plain /sign
+	SigningFlow              string                    `json:"signing_flow,omitempty"`                // signing choreography label (for example "cosigned1" or "rotating1"); empty = plain /sign
 	CosignerComponentKeyType string                    `json:"cosigner_component_key_type,omitempty"` // cosigner component key type for cosigner-backed signing flows
 	BoundedAuthorization     *BoundedAuthorizationInfo `json:"bounded_authorization,omitempty"`
 	LogicSigResources        *LogicSigResourceProfile  `json:"logic_sig_resources,omitempty"`

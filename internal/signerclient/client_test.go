@@ -39,7 +39,7 @@ func TestRequestComponentsRejectsInvalidRequestBeforeHTTP(t *testing.T) {
 	client := NewSignerClient("http://127.0.0.1:1")
 	_, err := client.RequestComponents(signerapi.ComponentRequest{
 		GroupBytesHex: []string{"5458aa"},
-		Targets:       []signerapi.ComponentTarget{{TargetIndex: 0, Kind: signerapi.ComponentTargetKindUser}},
+		Targets:       []signerapi.ComponentTarget{{TargetIndex: 0, Kind: signerapi.ComponentTargetKindBoundedBase}},
 	})
 	if err == nil || !strings.Contains(err.Error(), "invalid component request") {
 		t.Fatalf("RequestComponents() error = %v", err)
@@ -593,8 +593,9 @@ func TestRequestComponentsRejectsUnrequestedTargetKind(t *testing.T) {
 		return mockResponse(http.StatusOK, jsonBody(t, signerapi.ComponentResponse{
 			RequestID: got.RequestID,
 			Components: []signerapi.Component{{
-				TargetIndex: 0, Kind: signerapi.ComponentTargetKindUser,
-				Signature: "aa", SignatureScheme: "aplane.falcon1024.v1",
+				TargetIndex: 0, Kind: signerapi.ComponentTargetKindBoundedBase, AuthAddress: "ADDR",
+				BaseSignatures: []string{"aa"}, AssemblyReceipt: "bb", SignatureScheme: "aplane.falcon1024.v1",
+				Path: signerapi.ComponentPathSpend,
 			}},
 		})), nil
 	})
@@ -808,7 +809,7 @@ func TestRequestAssemblePostsToAssembleEndpoint(t *testing.T) {
 		if got.RequestID == "" {
 			t.Fatal("request_id was not populated")
 		}
-		if len(got.Targets) != 1 || got.Targets[0].Kind != signerapi.AssemblyTargetKindGuarded || got.Targets[0].AuthAddress != "ADDR1" {
+		if len(got.Targets) != 1 || got.Targets[0].Kind != signerapi.AssemblyTargetKindBoundedCosigner || got.Targets[0].AuthAddress != "ADDR1" {
 			t.Fatalf("assembly request targets = %+v, want ADDR1 target", got.Targets)
 		}
 		return mockResponse(http.StatusOK, jsonBody(t, signerapi.AssemblyResponse{
@@ -821,9 +822,10 @@ func TestRequestAssemblePostsToAssembleEndpoint(t *testing.T) {
 		GroupBytesHex: []string{"5458aa"},
 		Targets: []signerapi.AssemblyTarget{{
 			TargetIndex:       0,
-			Kind:              signerapi.AssemblyTargetKindGuarded,
+			Kind:              signerapi.AssemblyTargetKindBoundedCosigner,
 			AuthAddress:       "ADDR1",
-			UserSignature:     "aabb",
+			BaseSignatures:    []string{"aabb"},
+			AssemblyReceipt:   "ccdd",
 			CosignerSignature: "bbcc",
 		}},
 	})

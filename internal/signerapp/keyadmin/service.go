@@ -5,18 +5,15 @@ package keyadmin
 
 import (
 	"context"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/cosigner/cosignerrefs"
-	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
 	"github.com/aplane-algo/aplane/internal/genericlsig"
 	"github.com/aplane-algo/aplane/internal/keyclass"
 	"github.com/aplane-algo/aplane/internal/keygen"
@@ -29,7 +26,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	"github.com/aplane-algo/aplane/internal/signerapp/storemut"
 	"github.com/aplane-algo/aplane/internal/signerapp/svcerr"
-	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/witness"
 
@@ -115,6 +111,9 @@ type resolvedCreation struct {
 	keyType  string
 	params   map[string]string
 	instance *lsigprovider.Instance
+	// perKey is set for a type whose contract varies by account (the general
+	// type and the plain hosts), which the boundary requirements govern.
+	perKey bool
 }
 
 // resolveCreation runs the checks generation and preparation share, so a
@@ -134,13 +133,7 @@ func (s Service) resolveCreation(keyType string, params map[string]string) (*res
 	if rotatingkey.IsRotatingKeyType(keyType) {
 		params = s.resolveRotatingNetwork(params)
 	}
-	if keytypes.IsGuardedAccountKeyType(keyType) {
-		resolved, err := cosignerrefs.ResolveCreationParams(ir.KeyPaths(), keyType, params)
-		if err != nil {
-			return nil, &Error{Kind: ErrorInvalidInput, Message: err.Error()}
-		}
-		params = resolved
-	} else if provider := lsigprovider.Get(keyType); provider != nil {
+	if provider := lsigprovider.Get(keyType); provider != nil {
 		if component, ok := lsigprovider.CosignerComponentKeyType(provider, params); ok {
 			resolved, err := cosignerrefs.ResolveCreationParamsForComponent(ir.KeyPaths(), keyType, component, params)
 			if err != nil {
@@ -151,7 +144,9 @@ func (s Service) resolveCreation(keyType string, params map[string]string) (*res
 	}
 
 	var instance *lsigprovider.Instance
+	perKey := false
 	if provider := lsigprovider.Get(keyType); provider != nil {
+		_, perKey = provider.(lsigprovider.InstanceResolver)
 		// Canonicalize at the admin boundary so persisted params and API responses
 		// are stable; lower layers also normalize defensively.
 		resolved, err := lsigprovider.ResolveInstance(provider, params)
@@ -165,13 +160,8 @@ func (s Service) resolveCreation(keyType string, params map[string]string) (*res
 				return nil, &Error{Kind: ErrorInvalidInput, Message: err.Error()}
 			}
 		}
-		if instance.Bounded != nil && instance.Bounded.RekeyList != nil {
-			if err := validateRekeyListTargets(ir, params[boundedmeta.RekeyListEntriesParameter], params[boundedmeta.CosignerPublicKeyParameter]); err != nil {
-				return nil, &Error{Kind: ErrorInvalidInput, Message: err.Error()}
-			}
-		}
 	}
-	return &resolvedCreation{keyType: keyType, params: params, instance: instance}, nil
+	return &resolvedCreation{keyType: keyType, params: params, instance: instance, perKey: perKey}, nil
 }
 
 // ReviewedValues are what PrepareGenerateKey returned for the request an operator
@@ -217,7 +207,7 @@ func (s Service) GenerateReviewedKey(ctx context.Context, keyType string, params
 	if err := checkGenerationAllowed(activeKeyPaths, keyType); err != nil {
 		return nil, err
 	}
-	if err := s.checkBoundaryRequirements(creation.instance); err != nil {
+	if err := s.checkBoundaryRequirements(creation); err != nil {
 		return nil, err
 	}
 	if err := checkReviewedValues(keyType, params, reviewed); err != nil {
@@ -312,19 +302,25 @@ func checkReviewedValues(keyType string, params map[string]string, reviewed Revi
 	return nil
 }
 
-// checkBoundaryRequirements applies the general provider's generation settings.
-// Only an instance with a boundary digest comes from that provider, so expert
-// templates and every other type pass through.
-func (s Service) checkBoundaryRequirements(instance *lsigprovider.Instance) *Error {
-	if instance == nil || instance.BoundaryDigest == "" {
+// checkBoundaryRequirements applies the signer's generation settings to every
+// per-key type, the general type and the plain hosts: an account whose
+// parameters choose its contract. The plain program has no overlay contract, so
+// it is neither contained nor cosigned. Expert templates, whose program the
+// operator installed, and every other type pass through.
+func (s Service) checkBoundaryRequirements(creation *resolvedCreation) *Error {
+	if creation == nil || !creation.perKey {
 		return nil
 	}
-	requireContained, requireCosigner := s.Runtime.Config().BoundaryRequirements()
-	if requireContained && !instance.Bounded.Contained() {
-		return &Error{Kind: ErrorInvalidInput, Message: "this signer requires bounded accounts to pay only listed recipients and to refuse rekeys or take only listed ones (boundary_require_contained)"}
+	var metadata *boundedmeta.Metadata
+	if creation.instance != nil {
+		metadata = creation.instance.Bounded
 	}
-	if requireCosigner && instance.Bounded.Cosigner == nil {
-		return &Error{Kind: ErrorInvalidInput, Message: "this signer requires bounded accounts to have a cosigner (boundary_require_cosigner)"}
+	requireContained, requireCosigner := s.Runtime.Config().BoundaryRequirements()
+	if requireContained && (metadata == nil || !metadata.Contained()) {
+		return &Error{Kind: ErrorInvalidInput, Message: "this signer requires new accounts to pay only listed recipients and to refuse rekeys or take only listed ones (boundary_require_contained)"}
+	}
+	if requireCosigner && (metadata == nil || metadata.Cosigner == nil) {
+		return &Error{Kind: ErrorInvalidInput, Message: "this signer requires new accounts to have a cosigner (boundary_require_cosigner)"}
 	}
 	return nil
 }
@@ -358,51 +354,6 @@ func (s Service) resolveRotatingNetwork(params map[string]string) map[string]str
 	}
 	resolved[rotatingkey.RotatingNetworkParameter] = hash
 	return resolved
-}
-
-// validateRekeyListTargets refuses listed addresses this signer knows could
-// never act on the account: its own rotating accounts, whose address authorizes
-// only itself, and the native address of a cosigner key, imported as a reference
-// or given to this account as its own cosigner, since a witness key never signs
-// as an account. Generation can refuse only what this signer knows; a cosigner
-// key's LogicSig addresses depend on a program and are not derived here.
-func validateRekeyListTargets(ir *productruntime.Runtime, entries, accountCosigner string) error {
-	if ir == nil || strings.TrimSpace(entries) == "" {
-		return nil
-	}
-	var keyTypes map[string]string
-	if ir.KeyStore() != nil {
-		keyTypes = ir.KeyStore().GetKeyTypes()
-	}
-	witnessAddresses := map[string]string{}
-	refs, err := cosignerrefs.List(ir.KeyPaths())
-	if err != nil {
-		return fmt.Errorf("read cosigner references: %w", err)
-	}
-	for _, ref := range refs {
-		publicKey, err := hex.DecodeString(ref.PublicKeyHex)
-		if err != nil {
-			continue
-		}
-		if _, address, err := nativefalcon.CanonicalAddress(publicKey); err == nil {
-			witnessAddresses[address.String()] = "cosigner reference " + strconv.Quote(ref.Name)
-		}
-	}
-	if publicKey, err := hex.DecodeString(accountCosigner); err == nil && len(publicKey) > 0 {
-		if _, address, err := nativefalcon.CanonicalAddress(publicKey); err == nil {
-			witnessAddresses[address.String()] = "this account's cosigner"
-		}
-	}
-	for _, entry := range strings.Split(entries, ",") {
-		entry = strings.TrimSpace(entry)
-		if rotatingkey.IsRotatingKeyType(keyTypes[entry]) {
-			return fmt.Errorf("%s lists %s, one of this signer's rotating accounts, whose address authorizes only itself", boundedmeta.RekeyListEntriesParameter, entry)
-		}
-		if name, ok := witnessAddresses[entry]; ok {
-			return fmt.Errorf("%s lists %s, the address of %s; a witness key never signs as an account", boundedmeta.RekeyListEntriesParameter, entry, name)
-		}
-	}
-	return nil
 }
 
 func validateVisibleCosignerAuthorityCollisions(ir *productruntime.Runtime, cosignerPublicKeyHex string) error {

@@ -178,8 +178,8 @@ func TestHandleParamInput_AddressListPreservesAliasCase(t *testing.T) {
 func TestGenericSelectParamDefaultsAndCyclesOptions(t *testing.T) {
 	defer setServerKeyTypes(nil)
 	setServerKeyTypes([]protocol.KeyTypeInfo{{
-		KeyType:     "aplane.falcon1024-cosigner1024.v1",
-		DisplayName: "Falcon-1024 / Ed25519 Cosigner",
+		KeyType:     "aplane.falcon1024.v1",
+		DisplayName: "Falcon-1024 plain host",
 		CreationParams: []protocol.TemplateParamInfo{{
 			Name:    "environment",
 			Label:   "Environment",
@@ -190,7 +190,7 @@ func TestGenericSelectParamDefaultsAndCyclesOptions(t *testing.T) {
 	}})
 
 	m := Model{forms: formsState{generateKeyType: 0}}
-	m = m.initGenericLSigParamsForKeyType("aplane.falcon1024-cosigner1024.v1")
+	m = m.initGenericLSigParamsForKeyType("aplane.falcon1024.v1")
 	if got := m.forms.genericLSigParams["environment"]; got != "lab-cosigner" {
 		t.Fatalf("default environment = %q, want lab-cosigner", got)
 	}
