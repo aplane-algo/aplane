@@ -87,12 +87,19 @@ func NewProvider() (*Provider, error) {
 // because the grammar must not offer a shape that errors on first use. A shape can
 // build and still be refused at generation: that is the support policy's decision,
 // which this construction must not take, since inventory and durable load reach it.
+// composeddsa's bounded_generation_support_test.go pins that the policy runs only
+// from GenerateTEAL.
 func newProvider(definition Definition) (*Provider, error) {
 	if len(definition.Shapes) == 0 {
 		return nil, fmt.Errorf("bounded definition %s.%s has no shapes", definition.Publisher, definition.Family)
 	}
 	provider := &Provider{definition: definition, params: creationParameters(), byShape: make(map[string]*shapeDefinition)}
 	for _, shape := range definition.Shapes {
+		// shapeSpec gives any rekey value but spending_key no rekey operation, so an
+		// unknown value must fail here rather than compile as refused.
+		if shape.Rekey != RekeySpendingKey && shape.Rekey != RekeyRefused {
+			return nil, fmt.Errorf("bounded definition %s.%s: shape %s has unknown rekey authority %q", definition.Publisher, definition.Family, shape.Descriptor(), shape.Rekey)
+		}
 		composer, err := composeddsa.NewProviderFromTemplateSpec(shapeSpec(definition, shape))
 		if err != nil {
 			return nil, fmt.Errorf("build shape %s: %w", shape.Descriptor(), err)
@@ -124,12 +131,16 @@ func shapeSpec(definition Definition, shape Shape) *composeddsa.TemplateSpec {
 		Contract:     composeddsa.BoundedContractV1,
 		SpendEffects: spend,
 		MaxFee:       &maxFee,
-		AdminOperations: []generictemplate.TransactionAdminOperation{{
+		Layer3:       &generictemplate.TransactionLayer3Spec{Policy: shape.Policy()},
+	}
+	// A shape that refuses rekeys declares no rekey operation, so its program has
+	// no rekey path at all.
+	if shape.Rekey == RekeySpendingKey {
+		bounded.AdminOperations = []generictemplate.TransactionAdminOperation{{
 			Kind:          string(composeddsa.AdminOperationRekey),
 			Authorization: shape.Rekey,
 			PolicyGate:    shape.PolicyGate(),
-		}},
-		Layer3: &generictemplate.TransactionLayer3Spec{Policy: shape.Policy()},
+		}}
 	}
 	if shape.Cosigner {
 		bounded.Cosigner = &generictemplate.BoundedCosignerSpec{
@@ -192,11 +203,10 @@ func shapeSpec(definition Definition, shape Shape) *composeddsa.TemplateSpec {
 }
 
 // creationParameters is the static vocabulary. It describes every field a shape
-// might use, so the authority keys are optional here and required by selectShape
-// when the request selects a shape that uses them.
+// might use, so the cosigner key is optional here and required by selectShape when
+// the request selects a shape that uses it.
 func creationParameters() []lsigprovider.ParameterDef {
-	admin, cosigner := composeddsa.BoundedAuthorityParameterDefs()
-	admin.Required = false
+	_, cosigner := composeddsa.BoundedAuthorityParameterDefs()
 	cosigner.Required = false
 	minimumRound := uint64(1)
 	return []lsigprovider.ParameterDef{
@@ -225,10 +235,10 @@ func creationParameters() []lsigprovider.ParameterDef {
 		{
 			Name:        ParameterRekeyAuthority,
 			Label:       "Rekey Authority",
-			Description: "Who can rekey the account: the spending key alone, or the spending key with a contract admin.",
+			Description: "Who can rekey the account: the spending key alone, or no one (refused).",
 			Type:        "string",
 			Required:    true,
-			Options:     []string{RekeySpendingKey, RekeyAdminKey},
+			Options:     []string{RekeySpendingKey, RekeyRefused},
 		},
 		{
 			Name:        ParameterListEncoding,
@@ -237,7 +247,6 @@ func creationParameters() []lsigprovider.ParameterDef {
 			Type:        "string",
 			Options:     []string{EncodingAuto, EncodingInline, EncodingMerkle},
 		},
-		admin,
 		cosigner,
 	}
 }
@@ -326,11 +335,20 @@ func shapeFromMetadata(metadata *boundedmeta.Metadata) (Shape, error) {
 	if err != nil {
 		return Shape{}, err
 	}
-	if len(metadata.AdminOperations) != 1 {
+	// No rekey operation is a shape that refuses rekeys; one is a spending-key rekey.
+	shape := Shape{Spend: spend, Rekey: RekeyRefused, Cosigner: metadata.Cosigner != nil}
+	gate := boundedmeta.PolicyGateNone
+	switch len(metadata.AdminOperations) {
+	case 0:
+	case 1:
+		operation := metadata.AdminOperations[0]
+		if operation.Authorization != RekeySpendingKey {
+			return Shape{}, fmt.Errorf("stored account has rekey authority %q", operation.Authorization)
+		}
+		shape.Rekey, gate = operation.Authorization, operation.PolicyGate
+	default:
 		return Shape{}, fmt.Errorf("stored account has %d administrative operations", len(metadata.AdminOperations))
 	}
-	operation := metadata.AdminOperations[0]
-	shape := Shape{Spend: spend, Rekey: operation.Authorization, Cosigner: metadata.Cosigner != nil}
 	switch metadata.Layer3Policy {
 	case composeddsa.Layer3PolicyFixedAllowlist:
 		shape.Encoding = EncodingInline
@@ -345,8 +363,8 @@ func shapeFromMetadata(metadata *boundedmeta.Metadata) (Shape, error) {
 	default:
 		return Shape{}, fmt.Errorf("stored account has policy %q", metadata.Layer3Policy)
 	}
-	if operation.PolicyGate != shape.PolicyGate() {
-		return Shape{}, fmt.Errorf("stored account has policy gate %q", operation.PolicyGate)
+	if gate != shape.PolicyGate() {
+		return Shape{}, fmt.Errorf("stored account has policy gate %q", gate)
 	}
 	return shape, nil
 }
@@ -485,11 +503,16 @@ func checkResources(metadata *boundedmeta.Metadata, opcodes lsigresource.OpcodeP
 		name   string
 		opcode uint64
 	}
-	rekey := path{boundedmeta.PathSpendingRekey, opcodes.SpendingRekey}
-	if metadata.RequiresAdminKey() {
-		rekey = path{boundedmeta.PathAdminRekey, opcodes.AdminRekey}
+	// Every account has the spend path, and each stored operation adds its own. An
+	// operation this type does not offer has no path to solve, so it fails here.
+	paths := []path{{boundedmeta.PathSpend, opcodes.Spend}}
+	for _, operation := range metadata.AdminOperations {
+		if operation.Kind != boundedmeta.AdminOperationRekey || operation.Authorization != boundedmeta.AdminAuthorizationSpend {
+			return fmt.Errorf("no resource path for a %s operation with %s authority", operation.Kind, operation.Authorization)
+		}
+		paths = append(paths, path{boundedmeta.PathSpendingRekey, opcodes.SpendingRekey})
 	}
-	for _, path := range []path{{boundedmeta.PathSpend, opcodes.Spend}, rekey} {
+	for _, path := range paths {
 		plan, err := lsigresource.Solve(consensus, lsigresource.PlanInput{
 			TransactionCount: 1,
 			LogicSigs: []lsigresource.Usage{{

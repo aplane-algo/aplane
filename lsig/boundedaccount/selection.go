@@ -49,8 +49,8 @@ func selectShape(params map[string]string, defs []lsigprovider.ParameterDef) (*s
 		return nil, err
 	}
 	rekey := normalized[ParameterRekeyAuthority]
-	if rekey != RekeySpendingKey && rekey != RekeyAdminKey {
-		return nil, fmt.Errorf("%s must be %s or %s", ParameterRekeyAuthority, RekeySpendingKey, RekeyAdminKey)
+	if rekey != RekeySpendingKey && rekey != RekeyRefused {
+		return nil, fmt.Errorf("%s must be %s or %s", ParameterRekeyAuthority, RekeySpendingKey, RekeyRefused)
 	}
 	unlockRound, err := canonicalUnlockRound(params)
 	if err != nil {
@@ -70,20 +70,15 @@ func selectShape(params map[string]string, defs []lsigprovider.ParameterDef) (*s
 		return nil, fmt.Errorf("%s has no list to encode", ParameterListEncoding)
 	}
 
-	admin := normalized[composeddsa.BoundedAdminPublicKeyParameter]
 	cosigner := normalized[composeddsa.BoundedCosignerPublicKeyParameter]
 	if _, present := params[composeddsa.BoundedCosignerPublicKeyParameter]; present && cosigner == "" {
 		return nil, fmt.Errorf("%s is empty", composeddsa.BoundedCosignerPublicKeyParameter)
 	}
 	switch {
-	case rekey == RekeyAdminKey && admin == "":
-		return nil, fmt.Errorf("%s=%s requires %s", ParameterRekeyAuthority, RekeyAdminKey, composeddsa.BoundedAdminPublicKeyParameter)
-	case rekey == RekeySpendingKey && admin != "":
-		return nil, fmt.Errorf("%s=%s does not use %s", ParameterRekeyAuthority, RekeySpendingKey, composeddsa.BoundedAdminPublicKeyParameter)
 	case rekey == RekeySpendingKey && cosigner != "":
-		return nil, fmt.Errorf("a cosigner requires %s=%s", ParameterRekeyAuthority, RekeyAdminKey)
-	case admin != "" && admin == cosigner:
-		return nil, fmt.Errorf("bounded cosigner witness key must differ from the contract-admin key")
+		return nil, fmt.Errorf("a cosigner requires %s=%s", ParameterRekeyAuthority, RekeyRefused)
+	case rekey == RekeyRefused && refusedSpendError(spend) != nil:
+		return nil, refusedSpendError(spend)
 	case timelock && rekey == RekeySpendingKey && !slices.Contains(spend, txeffects.SpendEffectPay):
 		return nil, fmt.Errorf("a timelock with %s=%s requires pay in %s", ParameterRekeyAuthority, RekeySpendingKey, ParameterSpendEffects)
 	}
@@ -98,9 +93,6 @@ func selectShape(params map[string]string, defs []lsigprovider.ParameterDef) (*s
 	}
 	if timelock {
 		values[ParameterUnlockRound] = unlockRound
-	}
-	if admin != "" {
-		values[composeddsa.BoundedAdminPublicKeyParameter] = admin
 	}
 	if cosigner != "" {
 		values[composeddsa.BoundedCosignerPublicKeyParameter] = cosigner

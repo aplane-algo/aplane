@@ -346,6 +346,45 @@ func ValidateAdminOperations(operations []AdminOperation) error {
 	return nil
 }
 
+// RefusesRekeys reports whether the contract has no rekey operation, so no rekey
+// path at all.
+func (metadata *Metadata) RefusesRekeys() bool {
+	if metadata == nil {
+		return false
+	}
+	for _, operation := range metadata.AdminOperations {
+		if operation.Kind == AdminOperationRekey {
+			return false
+		}
+	}
+	return true
+}
+
+// IsRecipientListPolicy reports whether a Layer 3 policy limits spending to a
+// framework-enforced recipient list, alone or followed by a timelock or author
+// TEAL. A policy it does not name is not a list.
+func IsRecipientListPolicy(policy string) bool {
+	switch policy {
+	case Layer3PolicyFixedAllowlist, Layer3PolicyMerkleAllowlist,
+		Layer3PolicyFixedAllowlistCustom, Layer3PolicyMerkleAllowlistCustom,
+		Layer3PolicyFixedAllowlistTimelock, Layer3PolicyMerkleAllowlistTimelock:
+		return true
+	}
+	return false
+}
+
+// HasRecipientList reports whether Layer 3 limits spending to a recipient list.
+func (metadata *Metadata) HasRecipientList() bool {
+	return metadata != nil && IsRecipientListPolicy(metadata.Layer3Policy)
+}
+
+// Contained reports whether the account can pay only listed recipients: it refuses
+// rekeys and Layer 3 holds a recipient list. Fees are outside that: each is capped
+// per transaction, but repeated transactions can still spend the balance on fees.
+func (metadata *Metadata) Contained() bool {
+	return metadata.RefusesRekeys() && metadata.HasRecipientList()
+}
+
 // RequiresAdminKey reports whether any stored operation uses the external
 // Falcon contract-admin authority.
 func (metadata *Metadata) RequiresAdminKey() bool {

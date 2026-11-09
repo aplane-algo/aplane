@@ -20,7 +20,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/lsig/boundedaccount"
-	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	lsigsignerreg "github.com/aplane-algo/aplane/lsig/signerreg"
 )
 
@@ -79,14 +78,12 @@ func TestPerKeyTypeKeepsItsCosignerOptional(t *testing.T) {
 // workflow must fail here and get narrower discovery, not an exclusion.
 func TestEveryPerKeyProviderSupportsTheBoundaryWorkflow(t *testing.T) {
 	lsigsignerreg.RegisterSigner()
-	adminKey := strings.Repeat("31", composeddsa.BoundedAdminPublicKeySize)
 	cosignerKey := strings.Repeat("41", boundedmeta.CosignerPublicKeySizeV1)
 	recipient := types.Address{1}.String()
 	field := map[string][2]string{
-		boundary.ParameterRecipients:        {boundary.ParameterRecipients, recipient},
-		boundary.ParameterUnlockRound:       {boundary.ParameterUnlockRound, "100"},
-		boundedmeta.AdminPublicKeyParameter: {boundedmeta.AdminPublicKeyParameter, adminKey},
-		boundary.ParameterCosigner:          {boundedmeta.CosignerPublicKeyParameter, cosignerKey},
+		boundary.ParameterRecipients:  {boundary.ParameterRecipients, recipient},
+		boundary.ParameterUnlockRound: {boundary.ParameterUnlockRound, "100"},
+		boundary.ParameterCosigner:    {boundedmeta.CosignerPublicKeyParameter, cosignerKey},
 	}
 
 	perKey := 0
@@ -130,8 +127,8 @@ func TestEveryPerKeyProviderSupportsTheBoundaryWorkflow(t *testing.T) {
 			if got := strings.Join(metadata.SpendEffects, ","); got != preset.Fixed[boundary.ParameterSpendEffects] {
 				t.Errorf("%s: preset %s spends %q", provider.KeyType(), preset.Name, got)
 			}
-			if got, want := metadata.RequiresAdminKey(), preset.Fixed[boundary.ParameterRekeyAuthority] == boundary.RekeyAdminKey; got != want {
-				t.Errorf("%s: preset %s admin key = %v, want %v", provider.KeyType(), preset.Name, got, want)
+			if got, want := len(metadata.AdminOperations) == 0, preset.Fixed[boundary.ParameterRekeyAuthority] == boundary.RekeyRefused; got != want {
+				t.Errorf("%s: preset %s refuses rekeys = %v, want %v", provider.KeyType(), preset.Name, got, want)
 			}
 			if got, want := metadata.Cosigner != nil, slices.Contains(preset.Fields, boundary.ParameterCosigner); got != want {
 				t.Errorf("%s: preset %s cosigner = %v, want %v", provider.KeyType(), preset.Name, got, want)

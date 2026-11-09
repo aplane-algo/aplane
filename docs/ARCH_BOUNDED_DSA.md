@@ -1174,42 +1174,44 @@ SHA512/256(
   field(base_primitive) ||
   field(canonical_bounded_profile) ||
   field(canonical_behavior_parameters) ||
-  field(admin_public_key_or_empty)
+  field("")
 )
 ```
 
-The admin key is bound separately because the canonical behavior encoding omits it. A
-cosigner key is a behavior parameter, so it is covered there. The digest excludes the
-spending key, filenames, reference names, and labels, and it binds the selected shape
-rather than the whole grammar, so an unrelated new rule leaves it unchanged.
+The last field is always empty. It once bound an admin key, which the canonical
+behavior encoding omits; no general shape has one now, and the field stays so that
+every remaining shape kept its digest. A cosigner key is a behavior parameter, so it
+is covered there. The digest excludes the spending key, filenames, reference names,
+and labels, and it binds the selected shape rather than the whole grammar, so an
+unrelated new rule leaves it unchanged.
 
 It is a comparison value. It does not assert that two accounts have the same address,
 and it replaces neither `bounded_program_binding` nor any signing transcript. It is
 defined only for this key type: custom Layer 3 code is not bound by it.
 
-### Golden vector 4: general boundary digest
+### Golden vector 5: general boundary digest
 
 This vector uses the Corridor shape: all three transfer kinds, `merkle_allowlist`,
-admin-key rekey, and a cosigner. The two recipients are the addresses whose 32 raw bytes
-are all zero except `[1] = 1, [31] = 1` and `[1] = 2, [31] = 1`. The admin key is 1,793
-bytes of `0x31`, and the cosigner key is 1,793 bytes of `0x41`.
+rekeys refused, and a cosigner. The two recipients are the addresses whose 32 raw bytes
+are all zero except `[1] = 1, [31] = 1` and `[1] = 2, [31] = 1`. The cosigner key is
+1,793 bytes of `0x41`.
 
-An independent Python encoder reproduces this digest from the rules in this document.
-The shape fingerprint is an input to that check: it comes from the provider's own
-configuration hash, which this document does not define byte for byte.
+An independent Python encoder reproduces the profile and the digest from the rules in
+this document. The shape fingerprint is an input to that check: it comes from the
+provider's own configuration hash, which this document does not define byte for byte.
 
 ```text
 selected_shape_fingerprint:
-  1:10022265dd8eee15de61a4d0828f74835a4f7a549184983adce608acc6922cb0
+  1:0f98cccfa0a7769946e94e6d40954e50de6a14751c0f7268a02cdf6fa0252be9
 base_primitive: falcon1024-v1
-canonical_bounded_profile_length: 594
+canonical_bounded_profile_length: 490
 canonical_bounded_profile_sha512_256:
-  9e85d14d479ea8f7e15d8b8ec20477145f38ddd9a3c05d7167032dd83d1c6b3e
+  160183e56fc444014164ae5f541b87ccce8d598827a6e5f5054bb7b6625820c3
 canonical_behavior_parameters_length: 1981
 canonical_behavior_parameters_sha512_256:
   3e37447008e20eab3259c3c109224f012ebd3bee4061db71b97298205665fdc9
 boundary_digest:
-  e92a67f3c4e8ed9330593c657bde8d84dc034f32fc8fae02d04f00568df31da7
+  94ed73af648eb35f51ec8122cbb9cd6d6cdfc378f8536afe448cd3309fe49544
 ```
 
 ## Versioning

@@ -92,7 +92,9 @@ Transport notes:
   same-UID local mode may use `<data_dir>/aplane.sock`, and custom private
   managed stores require an explicit IPC path so an unreadable selected root
   cannot silently retarget a client to the singleton system signer,
-- the current admin protocol version is 7.3 (7.3 adds `review_fingerprint` and
+- the current admin protocol version is 7.4 (7.4 renames the writable admin setting
+  `boundary_require_admin_key` to `boundary_require_contained`; a 7.3 client's update of
+  the old key is refused as unknown; 7.3 adds `review_fingerprint` and
   `boundary_digest` to `prepare_generate_result`, an optional
   `generate_key.expected_boundary_digest`, `per_key_contract` to key types, and the two
   `boundary_require_*` admin settings; 7.2 adds `prepare_generate_key`
@@ -528,7 +530,7 @@ an old enabled record exists. Their existing accounts remain visible in
 
 #### Admin and Policy Settings
 
-- `admin_settings`: `user_auto_approve`, optional `boundary_require_admin_key` and `boundary_require_cosigner`, `lock_on_disconnect`, `passphrase_timeout`, `passphrase_method`, optional `node_role`, `ssh_enabled`, optional `ssh_listen_address`, optional `ssh_port`, `ssh_fingerprint`, `ssh_clients`, `signer_port`, `teal_compile_network`, optional `endpoint_advertise_url`, optional `endpoint_display_url`, `theme`
+- `admin_settings`: `user_auto_approve`, optional `boundary_require_contained` and `boundary_require_cosigner`, `lock_on_disconnect`, `passphrase_timeout`, `passphrase_method`, optional `node_role`, `ssh_enabled`, optional `ssh_listen_address`, optional `ssh_port`, `ssh_fingerprint`, `ssh_clients`, `signer_port`, `teal_compile_network`, optional `endpoint_advertise_url`, optional `endpoint_display_url`, `theme`
 - `update_admin_setting`: `key`, `value` (string-typed on wire)
 - `update_admin_setting_result`: `success`, `key`, optional `value`, `code`, `error`
 
@@ -700,7 +702,7 @@ Writable admin settings:
 - `user_auto_approve` (`User Auto-Approve`; approval switch). When on, it satisfies all signer review requirements without an operator prompt, including Always Review, and approves unmatched requests. Hard policy rejections and signer validation still apply. No connected approval client is required.
 - `lock_on_disconnect`
 - `passphrase_timeout`
-- `boundary_require_admin_key` and `boundary_require_cosigner`: restrict new
+- `boundary_require_contained` and `boundary_require_cosigner`: restrict new
   `aplane.falcon1024-b.v1` accounts only
 - `theme`
 
@@ -1135,7 +1137,7 @@ signer settings and status:
 - `lock_on_disconnect`
 - `passphrase_timeout`
 - Color theme
-- `boundary_require_admin_key` and `boundary_require_cosigner`, on signer nodes
+- `boundary_require_contained` and `boundary_require_cosigner`, on signer nodes
 - Admin transport, node role, passphrase unlock method, and TEAL compile network
 - A `Policies` row that opens the policies view
 - SSH enabled state, port, fingerprint, and connected-client count

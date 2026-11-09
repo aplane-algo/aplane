@@ -6,13 +6,10 @@ package boundary
 import (
 	"errors"
 	"fmt"
-	"path/filepath"
 	"strings"
 	"syscall"
 
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/fsutil"
-	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/lsig/generictemplate"
 )
 
@@ -21,15 +18,14 @@ import (
 const MaxFileBytes = 8 << 20
 
 // File is a parsed boundary file. It holds only what the file says: a
-// cosigner stays a name for the signer to resolve, and the admin key stays a path.
+// cosigner stays a name for the signer to resolve.
 type File struct {
 	Schema     string   `yaml:"schema"`
 	Spend      []string `yaml:"spend"`
 	Recipients []string `yaml:"recipients"`
 	Encoding   *string  `yaml:"encoding"`
 	Rekey      *struct {
-		Authority string  `yaml:"authority"`
-		AdminKey  *string `yaml:"admin_key"`
+		Authority string `yaml:"authority"`
 	} `yaml:"rekey"`
 	Cosigner *string `yaml:"cosigner"`
 	// UnlockRound is text so that a uint64 survives, and may be written as a number.
@@ -66,17 +62,8 @@ func ParseFile(data []byte) (*File, error) {
 	if file.Rekey == nil {
 		return nil, fmt.Errorf("boundary file: rekey is required")
 	}
-	switch file.Rekey.Authority {
-	case RekeySpendingKey:
-		if file.Rekey.AdminKey != nil {
-			return nil, fmt.Errorf("boundary file: rekey.admin_key is not used with authority %s", RekeySpendingKey)
-		}
-	case RekeyAdminKey:
-		if file.Rekey.AdminKey == nil || strings.TrimSpace(*file.Rekey.AdminKey) == "" {
-			return nil, fmt.Errorf("boundary file: authority %s requires rekey.admin_key", RekeyAdminKey)
-		}
-	default:
-		return nil, fmt.Errorf("boundary file: rekey.authority must be %s or %s", RekeySpendingKey, RekeyAdminKey)
+	if file.Rekey.Authority != RekeySpendingKey && file.Rekey.Authority != RekeyRefused {
+		return nil, fmt.Errorf("boundary file: rekey.authority must be %s or %s", RekeySpendingKey, RekeyRefused)
 	}
 	if file.Cosigner != nil && strings.TrimSpace(*file.Cosigner) == "" {
 		return nil, fmt.Errorf("boundary file: cosigner is empty")
@@ -88,9 +75,9 @@ func ParseFile(data []byte) (*File, error) {
 }
 
 // CreationParameters converts the file to flat creation parameters. It sends
-// public values, never a path or the original YAML, and leaves a cosigner name
-// for the signer's reference catalog to resolve.
-func (f *File) CreationParameters(directory string) (map[string]string, error) {
+// public values, never the original YAML, and leaves a cosigner name for the
+// signer's reference catalog to resolve.
+func (f *File) CreationParameters() map[string]string {
 	params := map[string]string{
 		ParameterSpendEffects:   strings.Join(f.Spend, ","),
 		ParameterRekeyAuthority: f.Rekey.Authority,
@@ -107,88 +94,23 @@ func (f *File) CreationParameters(directory string) (map[string]string, error) {
 	if f.Cosigner != nil {
 		params[ParameterCosigner] = *f.Cosigner
 	}
-	if f.Rekey.AdminKey != nil {
-		publicKey, err := readAdminPublicKey(directory, *f.Rekey.AdminKey)
-		if err != nil {
-			return nil, err
-		}
-		params[boundedmeta.AdminPublicKeyParameter] = publicKey
-	}
-	return params, nil
-}
-
-// AdminKeyID identifies the contract admin key in creation parameters, for a summary
-// made before the signer has seen them. The grammar accepts only a Falcon-1024
-// witness here, so this is not a guess at the key's type. It returns "" when the
-// parameters name no admin key.
-func AdminKeyID(params map[string]string) (string, error) {
-	value := params[boundedmeta.AdminPublicKeyParameter]
-	if value == "" {
-		return "", nil
-	}
-	publicKey, err := boundedmeta.ParseAdminPublicKey(value)
-	if err != nil {
-		return "", err
-	}
-	return witness.ID(witness.Falcon1024V1, publicKey)
+	return params
 }
 
 // LoadFile reads a boundary file and returns its creation parameters.
 func LoadFile(path string) (map[string]string, error) {
-	data, err := readLimited("boundary file", path, MaxFileBytes)
+	// Only a regular file is read: a FIFO or device could block or feed the
+	// caller, which runs on apadmin's UI path.
+	data, _, err := fsutil.ReadRegularFileLimited(path, MaxFileBytes)
+	if errors.Is(err, syscall.ELOOP) {
+		err = errors.New("a symbolic link is not accepted")
+	}
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("read boundary file %s: %w", path, err)
 	}
 	file, err := ParseFile(data)
 	if err != nil {
 		return nil, err
 	}
-	// Resolve first: filepath.Dir cleans ".." lexically, which can name a
-	// different directory from the one the kernel just opened through a symlink.
-	resolved, err := filepath.EvalSymlinks(path)
-	if err != nil {
-		return nil, fmt.Errorf("read boundary file %s: %w", path, err)
-	}
-	return file.CreationParameters(filepath.Dir(resolved))
-}
-
-// readLimited reads a bounded regular file. A FIFO or device could otherwise
-// block or feed the caller, which runs on apadmin's UI path.
-func readLimited(label, path string, limit int64) ([]byte, error) {
-	data, _, err := fsutil.ReadRegularFileLimited(path, limit)
-	if errors.Is(err, syscall.ELOOP) {
-		err = errors.New("a symbolic link is not accepted")
-	}
-	if err != nil {
-		return nil, fmt.Errorf("read %s %s: %w", label, path, err)
-	}
-	return data, nil
-}
-
-// readAdminPublicKey reads the public .adm.json envelope. A relative path is
-// resolved against the boundary file, so a file works from any directory. It is
-// appended without cleaning: filepath.Join would remove ".." lexically, and this
-// key is bound into the account, so the kernel must decide which file it names.
-// It applies the same checks as apadmin's admin reference field: the name, a
-// bounded read of a regular file, and the schema. A cosigner reference has the
-// same schema, so its name is the only thing here that tells them apart.
-func readAdminPublicKey(directory, path string) (string, error) {
-	if !strings.HasSuffix(path, witness.AdminPublicReferenceExtension) {
-		return "", fmt.Errorf("admin witness %s must be a %s file", path, witness.AdminPublicReferenceExtension)
-	}
-	if !filepath.IsAbs(path) {
-		path = directory + string(filepath.Separator) + path
-	}
-	data, err := readLimited("admin witness", path, witness.MaxPublicReferenceBytes)
-	if err != nil {
-		return "", err
-	}
-	reference, err := witness.ParsePublicReference(data)
-	if err != nil {
-		return "", fmt.Errorf("admin witness %s: %w", path, err)
-	}
-	if reference.KeyType != witness.Falcon1024V1 {
-		return "", fmt.Errorf("admin witness %s has key type %s, need %s", path, reference.KeyType, witness.Falcon1024V1)
-	}
-	return reference.PublicKeyHex, nil
+	return file.CreationParameters(), nil
 }

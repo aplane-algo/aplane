@@ -310,9 +310,9 @@ func (s Service) checkBoundaryRequirements(instance *lsigprovider.Instance) *Err
 	if instance == nil || instance.BoundaryDigest == "" {
 		return nil
 	}
-	requireAdminKey, requireCosigner := s.Runtime.Config().BoundaryRequirements()
-	if requireAdminKey && !instance.Bounded.RequiresAdminKey() {
-		return &Error{Kind: ErrorInvalidInput, Message: "this signer requires bounded accounts to use admin-key rekey (boundary_require_admin_key)"}
+	requireContained, requireCosigner := s.Runtime.Config().BoundaryRequirements()
+	if requireContained && !instance.Bounded.Contained() {
+		return &Error{Kind: ErrorInvalidInput, Message: "this signer requires bounded accounts to refuse rekeys and pay only listed recipients (boundary_require_contained)"}
 	}
 	if requireCosigner && instance.Bounded.Cosigner == nil {
 		return &Error{Kind: ErrorInvalidInput, Message: "this signer requires bounded accounts to have a cosigner (boundary_require_cosigner)"}

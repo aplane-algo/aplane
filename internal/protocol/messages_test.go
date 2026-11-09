@@ -149,10 +149,11 @@ func TestMessageTypeConstantsAreUnique(t *testing.T) {
 // against, which a 6.x client does not send. 7.1 adds native mnemonic export
 // (export_result) and key_details.mnemonic_exportable. 7.2 adds
 // prepare_generate_key and generate_key.expected_fingerprint. 7.3 adds the
-// review values for the general bounded key type.
+// review values for the general bounded key type. 7.4 renames the
+// boundary_require_admin_key setting to boundary_require_contained.
 func TestCurrentAdminProtocolVersionIsV7(t *testing.T) {
-	if got := CurrentAdminProtocolVersion(); got != (ProtocolVersion{Major: 7, Minor: 3}) {
-		t.Fatalf("CurrentAdminProtocolVersion() = %+v, want 7.3", got)
+	if got := CurrentAdminProtocolVersion(); got != (ProtocolVersion{Major: 7, Minor: 4}) {
+		t.Fatalf("CurrentAdminProtocolVersion() = %+v, want 7.4", got)
 	}
 }
 

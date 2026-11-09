@@ -17,7 +17,7 @@ const (
 
 const (
 	AdminProtocolVersionMajor = 7
-	AdminProtocolVersionMinor = 3
+	AdminProtocolVersionMinor = 4
 )
 
 // ProtocolVersion is the admin IPC protocol version shape surfaced during
@@ -1164,22 +1164,22 @@ type AdminSettingsMessage struct {
 	BaseMessage
 	UserAutoApprove bool `json:"user_auto_approve"`
 	// These restrict new aplane.falcon1024-b.v1 accounts only.
-	BoundaryRequireAdminKey bool   `json:"boundary_require_admin_key,omitempty"`
-	BoundaryRequireCosigner bool   `json:"boundary_require_cosigner,omitempty"`
-	LockOnDisconnect        bool   `json:"lock_on_disconnect"`
-	PassphraseTimeout       string `json:"passphrase_timeout"`
-	PassphraseMethod        string `json:"passphrase_method"`
-	NodeRole                string `json:"node_role,omitempty"`
-	SSHEnabled              bool   `json:"ssh_enabled"`
-	SSHListenAddress        string `json:"ssh_listen_address,omitempty"`
-	SSHPort                 int    `json:"ssh_port,omitempty"`
-	SSHFingerprint          string `json:"ssh_fingerprint,omitempty"`
-	SSHClients              int    `json:"ssh_clients"`
-	SignerPort              int    `json:"signer_port"`
-	TEALCompileNet          string `json:"teal_compile_network"`
-	EndpointAdvertiseURL    string `json:"endpoint_advertise_url,omitempty"`
-	EndpointDisplayURL      string `json:"endpoint_display_url,omitempty"`
-	Theme                   string `json:"theme"`
+	BoundaryRequireContained bool   `json:"boundary_require_contained,omitempty"`
+	BoundaryRequireCosigner  bool   `json:"boundary_require_cosigner,omitempty"`
+	LockOnDisconnect         bool   `json:"lock_on_disconnect"`
+	PassphraseTimeout        string `json:"passphrase_timeout"`
+	PassphraseMethod         string `json:"passphrase_method"`
+	NodeRole                 string `json:"node_role,omitempty"`
+	SSHEnabled               bool   `json:"ssh_enabled"`
+	SSHListenAddress         string `json:"ssh_listen_address,omitempty"`
+	SSHPort                  int    `json:"ssh_port,omitempty"`
+	SSHFingerprint           string `json:"ssh_fingerprint,omitempty"`
+	SSHClients               int    `json:"ssh_clients"`
+	SignerPort               int    `json:"signer_port"`
+	TEALCompileNet           string `json:"teal_compile_network"`
+	EndpointAdvertiseURL     string `json:"endpoint_advertise_url,omitempty"`
+	EndpointDisplayURL       string `json:"endpoint_display_url,omitempty"`
+	Theme                    string `json:"theme"`
 }
 
 // UpdateAdminSettingMessage requests a change to a single admin setting.

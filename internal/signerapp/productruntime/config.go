@@ -28,29 +28,29 @@ type RuntimeConfig struct {
 	sessionTimeout   time.Duration
 	approvalWait     time.Duration
 
-	boundaryRequireAdminKey bool
-	boundaryRequireCosigner bool
+	boundaryRequireContained bool
+	boundaryRequireCosigner  bool
 }
 
 // ConfigDefaults contains process-level defaults that the product overlay can
 // inherit at startup.
 type ConfigDefaults struct {
-	UserAutoApprove         bool
-	LockOnDisconnect        bool
-	SessionTimeout          time.Duration
-	ApprovalWait            time.Duration
-	BoundaryRequireAdminKey bool
-	BoundaryRequireCosigner bool
+	UserAutoApprove          bool
+	LockOnDisconnect         bool
+	SessionTimeout           time.Duration
+	ApprovalWait             time.Duration
+	BoundaryRequireContained bool
+	BoundaryRequireCosigner  bool
 }
 
 // EffectiveConfig contains the concrete product runtime settings.
 type EffectiveConfig struct {
-	UserAutoApprove         bool
-	LockOnDisconnect        bool
-	SessionTimeout          time.Duration
-	ApprovalWait            time.Duration
-	BoundaryRequireAdminKey bool
-	BoundaryRequireCosigner bool
+	UserAutoApprove          bool
+	LockOnDisconnect         bool
+	SessionTimeout           time.Duration
+	ApprovalWait             time.Duration
+	BoundaryRequireContained bool
+	BoundaryRequireCosigner  bool
 }
 
 // StoredConfig is the persisted product runtime configuration overlay.
@@ -64,8 +64,8 @@ type StoredConfig struct {
 	Mode              string `yaml:"mode,omitempty"`
 	// These restrict new aplane.falcon1024-b.v1 accounts only. They do not reach
 	// existing accounts or separately enabled expert templates.
-	BoundaryRequireAdminKey *bool `yaml:"boundary_require_admin_key,omitempty"`
-	BoundaryRequireCosigner *bool `yaml:"boundary_require_cosigner,omitempty"`
+	BoundaryRequireContained *bool `yaml:"boundary_require_contained,omitempty"`
+	BoundaryRequireCosigner  *bool `yaml:"boundary_require_cosigner,omitempty"`
 }
 
 // NewRuntimeConfig creates runtime settings from the process config.
@@ -82,17 +82,17 @@ func NewRuntimeConfig(userAutoApprove, lockOnDisconnect bool, sessionTimeout, ap
 }
 
 // SetBoundaryRequirements sets the general-provider generation requirements.
-func (c *RuntimeConfig) SetBoundaryRequirements(adminKey, cosigner bool) {
+func (c *RuntimeConfig) SetBoundaryRequirements(contained, cosigner bool) {
 	c.mu.Lock()
-	c.boundaryRequireAdminKey, c.boundaryRequireCosigner = adminKey, cosigner
+	c.boundaryRequireContained, c.boundaryRequireCosigner = contained, cosigner
 	c.mu.Unlock()
 }
 
 // BoundaryRequirements returns the general-provider generation requirements.
-func (c *RuntimeConfig) BoundaryRequirements() (adminKey, cosigner bool) {
+func (c *RuntimeConfig) BoundaryRequirements() (contained, cosigner bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.boundaryRequireAdminKey, c.boundaryRequireCosigner
+	return c.boundaryRequireContained, c.boundaryRequireCosigner
 }
 
 // UserAutoApprove returns whether non-rejected signing requests, review-rule
@@ -227,8 +227,8 @@ func (c *StoredConfig) Apply(defaults ConfigDefaults) (EffectiveConfig, error) {
 		effective.LockOnDisconnect = *c.LockOnDisconnect
 	}
 
-	if c.BoundaryRequireAdminKey != nil {
-		effective.BoundaryRequireAdminKey = *c.BoundaryRequireAdminKey
+	if c.BoundaryRequireContained != nil {
+		effective.BoundaryRequireContained = *c.BoundaryRequireContained
 	}
 	if c.BoundaryRequireCosigner != nil {
 		effective.BoundaryRequireCosigner = *c.BoundaryRequireCosigner

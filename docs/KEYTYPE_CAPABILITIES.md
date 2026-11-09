@@ -46,6 +46,8 @@ included as normal user-account operations.
 
 The allowlist, timelock, and Corridor templates are retired from the default library in
 favor of the presets of `aplane.falcon1024-b.v1`. Their rows still describe existing accounts.
+The Locked Allowlist and Corridor presets refuse rekeys, where the retired templates
+allowed an admin-key rekey.
 
 ## Capability Columns
 

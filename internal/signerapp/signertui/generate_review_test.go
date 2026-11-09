@@ -176,8 +176,14 @@ func TestRestrictedAccountsNeverReadAsUnrestricted(t *testing.T) {
 			if strings.Contains(view, "any, once unlocked") {
 				t.Fatalf("a restricted account reads as unrestricted:\n%s", view)
 			}
-			if !strings.Contains(view, "restricted") || !strings.Contains(view, "see details") {
-				t.Fatalf("review does not point to the list:\n%s", view)
+			// A policy this client does not know may pay anyone, so it is named
+			// rather than called restricted.
+			want := "restricted"
+			if !boundedmeta.IsRecipientListPolicy(policy) {
+				want = policy
+			}
+			if !strings.Contains(view, want) || !strings.Contains(view, "see details") {
+				t.Fatalf("review does not point to the details:\n%s", view)
 			}
 			if strings.Contains(view, "Panel lines") {
 				t.Fatalf("review scrolls at 80x24:\n%s", view)
@@ -457,8 +463,8 @@ func TestPresetAsksOnlyForWhatItLeavesOpen(t *testing.T) {
 		want   []string
 	}{
 		{0, []string{"recipients"}},
-		{1, []string{"recipients", boundedmeta.AdminPublicKeyParameter}},
-		{2, []string{"recipients", boundedmeta.AdminPublicKeyParameter, boundary.ParameterCosigner}},
+		{1, []string{"recipients"}},
+		{2, []string{"recipients", boundary.ParameterCosigner}},
 		{3, []string{boundary.ParameterUnlockRound}},
 	} {
 		preset := boundary.Presets()[test.preset]

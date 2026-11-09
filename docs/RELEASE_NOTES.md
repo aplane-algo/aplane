@@ -7,6 +7,31 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## General bounded accounts no longer use an admin key
+
+This release is install-fresh only.
+
+- `aplane.falcon1024-b.v1` offers two rekey authorities: `spending_key`, and the new
+  `refused`, which gives the account no rekey path. `admin_key` and
+  `bounded_admin_public_key` are refused, and a boundary file no longer takes
+  `rekey.admin_key`.
+- The Locked Allowlist and Corridor presets now refuse rekeys. Their accounts can never
+  be rekeyed, where the retired templates allowed an `aprekey` ceremony.
+- A cosigner needs `refused`.
+- An account that refuses rekeys can neither close nor be rekeyed, so it must be able to
+  transfer what it holds: its transfer kinds must include `pay`, and `asset_opt_in` needs
+  `axfer`. It keeps its minimum balance forever.
+- The type now has 56 shapes instead of 96. Spending-key shapes compile to the same
+  programs with the same fingerprints and boundary digests. A review prepared before the
+  upgrade is refused as changed; prepare it again.
+- `boundary_require_admin_key` is now `boundary_require_contained`, shown in apadmin as
+  "Bounded: require containment". A contained account refuses rekeys and has a recipient
+  list, so a timelock with no list does not qualify. Fees are capped per transaction, not
+  in total, so containment does not stop a stolen key from burning the balance on fees. The runtime config is read strictly,
+  so a config that still sets `boundary_require_admin_key` fails to load. The admin
+  protocol is now 7.4.
+- Expert templates and `aprekey` are unchanged in this release.
+
 ## apadmin can list and prune the deleted archive
 
 - `apadmin archive list` and `apadmin archive prune --confirm <deleted/path>...` now run.
