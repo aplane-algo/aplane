@@ -817,25 +817,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				break
 			}
 			if m.cosigner.pendingWitnessID != "" && m.cosigner.pendingKeyType != "" && resumeEnrollment {
-				oldParams := m.forms.genericLSigParams
-				m = m.initGenericLSigParamsForKeyType(m.cosigner.pendingKeyType)
-				for name, value := range oldParams {
-					if _, ok := m.forms.genericLSigParams[name]; ok {
-						m.forms.genericLSigParams[name] = value
-					}
-				}
-				if _, ok := m.forms.genericLSigParams[cosignerrefs.ParamCosignerName]; ok {
-					m.forms.genericLSigParams[cosignerrefs.ParamCosignerName] = m.cosigner.pendingWitnessID
-					for index, name := range m.forms.genericLSigParamOrder {
-						if name == cosignerrefs.ParamCosignerName {
-							m.forms.generateFocus = index
-							break
-						}
-					}
-				}
-				m.cosigner.pendingKeyType = ""
-				m.cosigner.pendingWitnessID = ""
-				m.cosigner.requiredKeyType = ""
+				m = m.resumeCosignerImport()
 			}
 		}
 		return m, m.waitForMessageCmd()

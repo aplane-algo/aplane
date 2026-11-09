@@ -51,6 +51,7 @@ type cosignedSimulationCapture struct {
 	assembly       signerapi.AssemblyRequest
 	assembledGroup []string
 	events         []string
+	baseRequest    signerapi.ComponentRequest
 }
 
 func (c *cosignedSimulationCapture) record(event string) {
@@ -131,6 +132,9 @@ func newCosignedExecutableTestHandler(t *testing.T, publicKeyHex string, capture
 		case signerapi.ComponentTargetKindBoundedBase:
 			capture.baseCalls.Add(1)
 			capture.record("base")
+			capture.mu.Lock()
+			capture.baseRequest = req
+			capture.mu.Unlock()
 			resp := signerapi.ComponentResponse{RequestID: req.RequestID}
 			for _, target := range req.Targets {
 				resp.Components = append(resp.Components, signerapi.Component{
@@ -501,12 +505,22 @@ func TestMixedGroupsFinishUserSideBeforeCosigner(t *testing.T) {
 			s.endpointRegistry = cosignerEndpointRegistry("local-cosigner", cosignedCosignerNode(t, handler))
 			s.algod = algodClient
 
-			_, _, err = s.SignAndSubmitGroup(txns, clientsign.SubmitOptions{Ctx: t.Context(), Simulate: true, Out: io.Discard})
+			// The ordinary position's app call description reaches the user
+			// signer's approval of the cosigned target, not only the cosigner.
+			appCallInfo := []*signerapi.AppCallInfo{nil, {Mode: "abi", Method: "do(uint64)void"}}
+			_, _, err = s.SignAndSubmitGroup(txns, clientsign.SubmitOptions{Ctx: t.Context(), Simulate: true, Out: io.Discard, AppCallInfo: appCallInfo})
 			if tc.rejectSign != (err != nil) {
 				t.Fatalf("SignAndSubmitGroup() error = %v, want error %v", err, tc.rejectSign)
 			}
 			if got := strings.Join(capture.eventSnapshot(), ","); got != tc.wantEvents {
 				t.Fatalf("event order = %s, want %s", got, tc.wantEvents)
+			}
+			capture.mu.Lock()
+			context := capture.baseRequest.ContextualPositions
+			capture.mu.Unlock()
+			if len(context) != 1 || context[0].TargetIndex != 1 || context[0].AppCallInfo == nil ||
+				context[0].AppCallInfo.Method != "do(uint64)void" {
+				t.Fatalf("base request contextual positions = %+v, want position 1 with its ABI method", context)
 			}
 		})
 	}

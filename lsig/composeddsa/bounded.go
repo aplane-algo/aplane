@@ -563,7 +563,7 @@ func (c *ComposedDSA) validateBoundedConfig() (*BoundedAuthorizationProfile, Sig
 			return nil, SignatureArgLayout{}, fmt.Errorf("bounded runtime argument %q does not match its metadata contract", arg.Name)
 		}
 	}
-	if err := validateBoundedReservedNames(profile, c.params, c.runtimeArgs, c.templateVars, c.tealSuffix); err != nil {
+	if err := validateBoundedReservedNames(profile, c.params, c.runtimeArgs, c.derivedArgs, c.templateVars, c.tealSuffix); err != nil {
 		return nil, SignatureArgLayout{}, err
 	}
 	layout, err := c.validatedSignatureArgLayout()
@@ -588,7 +588,7 @@ func layer3PolicyName(policy *Layer3Policy, hasAuthorTEAL bool) string {
 	return policy.Policy
 }
 
-func validateBoundedReservedNames(profile *BoundedAuthorizationProfile, params []lsigprovider.ParameterDef, runtimeArgs []lsigprovider.RuntimeArgDef, templateVars []tealtemplate.TemplateVariable, teal string) error {
+func validateBoundedReservedNames(profile *BoundedAuthorizationProfile, params []lsigprovider.ParameterDef, runtimeArgs []lsigprovider.RuntimeArgDef, derivedArgs []boundedmeta.DerivedArg, templateVars []tealtemplate.TemplateVariable, teal string) error {
 	for _, param := range params {
 		if isBoundedCosignerReservedName(param.Name) {
 			if param.Name != BoundedCosignerPublicKeyParameter || profile.Cosigner == nil {
@@ -601,7 +601,7 @@ func validateBoundedReservedNames(profile *BoundedAuthorizationProfile, params [
 			continue
 		}
 		if param.Name == BoundedRekeyToParameter && profile.RekeyList != nil {
-			want := rekeyListEntriesParameterDef()
+			want := rekeyListEntriesParameterDef(profile.Rekey)
 			if param.Type != want.Type || !param.Required || param.MinItems != want.MinItems || param.MaxItems != want.MaxItems {
 				return fmt.Errorf("parameter %q does not match the framework-injected contract", param.Name)
 			}
@@ -621,8 +621,16 @@ func validateBoundedReservedNames(profile *BoundedAuthorizationProfile, params [
 		}
 	}
 	// The rekey-to list is private: the program commits only to its root, so no
-	// author TEAL may read the entries.
+	// author TEAL may read the entries, and no derived argument may prove one: a
+	// recipient-tree proof is unsalted, so a spend would publish siblings anyone
+	// can test guessed addresses against. The framework's own list proof is
+	// salted and added after this check.
 	listPrivate := func(name string) bool { return profile.RekeyList != nil && name == BoundedRekeyToParameter }
+	for _, arg := range derivedArgs {
+		if listPrivate(arg.Parameter) {
+			return fmt.Errorf("derived argument %q would publish proofs over the private rekey-to list", arg.Name)
+		}
+	}
 	for _, variable := range templateVars {
 		if listPrivate(variable.Name) || listPrivate(variable.Parameter) {
 			return fmt.Errorf("template variable %q would compile the private rekey-to list into the program", variable.Name)

@@ -5,7 +5,6 @@ package keyadmin
 
 import (
 	"context"
-	"encoding/hex"
 	"fmt"
 	"maps"
 
@@ -93,27 +92,22 @@ func (s Service) GetKeyDetails(address string) (*KeyDetailsResult, *Error) {
 	return result, nil
 }
 
-// keyDetailsCosignerLabel names a cosigned account's cosigner in its details.
-const keyDetailsCosignerLabel = "Cosigner"
+// keyDetailsCosignerParameter carries a cosigned account's cosigner in its
+// details. It is the plain hosts' cosigner parameter, which takes a Witness Key
+// ID, so the details show the cosigner the way an operator names it.
+const keyDetailsCosignerParameter = "cosigner"
 
 // keyDetailsParameters shows a cosigned account's cosigner by its Witness Key ID,
 // the name an operator compares with the cosigner node, instead of the raw
-// public key, which identifies nothing at a glance.
+// public key, which identifies nothing at a glance. The ID is checked against
+// the public key when the key loads.
 func keyDetailsParameters(parameters map[string]string, metadata *boundedmeta.Metadata) map[string]string {
 	projected := maps.Clone(parameters)
-	if metadata == nil || metadata.Cosigner == nil {
+	if metadata == nil || metadata.Cosigner == nil || metadata.Cosigner.ComponentKeyID == "" {
 		return projected
 	}
 	delete(projected, boundedmeta.CosignerPublicKeyParameter)
-	publicKey, err := hex.DecodeString(metadata.Cosigner.PublicKeyHex)
-	if err == nil {
-		var id string
-		if id, err = witness.ID(metadata.Cosigner.ComponentKeyType, publicKey); err == nil {
-			projected[keyDetailsCosignerLabel] = id
-			return projected
-		}
-	}
-	projected[keyDetailsCosignerLabel] = fmt.Sprintf("invalid cosigner public key (%v)", err)
+	projected[keyDetailsCosignerParameter] = metadata.Cosigner.ComponentKeyID
 	return projected
 }
 

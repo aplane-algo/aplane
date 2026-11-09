@@ -62,7 +62,7 @@ func TestExplainCosignerDocument(t *testing.T) {
 	def := explainFixture(t, "cosigner_default.json", nil)
 	assertLines(t, def,
 		"Cosigner default document: governs every key that has no document of its own",
-		"Rekeys: every rekey is rejected",
+		"Rekeys: every rekey asked of this cosigner is rejected; a listed rekey never asks it",
 		"Routes: none",
 	)
 }

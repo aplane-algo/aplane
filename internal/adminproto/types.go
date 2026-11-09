@@ -634,6 +634,7 @@ type PreparedBoundedProfile struct {
 type PrepareGenerateKeyResult struct {
 	Success           bool
 	KeyType           string
+	BaseKeyType       string
 	Parameters        map[string]string
 	Fingerprint       string
 	ReviewFingerprint string

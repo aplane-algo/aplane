@@ -816,3 +816,19 @@ func TestBoundedReviewNamesTheClassicalKeyAndTheLockBypass(t *testing.T) {
 		}
 	}
 }
+
+// An expert template on the Ed25519 base gets the classical-key note too: the
+// signer names the template's base, which its key type does not.
+func TestTemplateReviewNamesAClassicalBase(t *testing.T) {
+	for base, classical := range map[string]bool{"aplane.ed25519.v1": true, "aplane.falcon1024.v1": false, "": false} {
+		prepared := preparedAccount(boundedmeta.Layer3PolicyFixedAllowlist, boundary.RekeyRefused, false, 1)
+		prepared.KeyType = "example.ed25519-allowlist.v1"
+		prepared.BaseKeyType = base
+		m := Model{viewState: ViewGenerateReview, width: 80, height: 24, forms: formsState{review: &prepared}}
+		view := stripANSI(m.renderGenerateReview())
+		text := strings.Join(strings.Fields(strings.ReplaceAll(view, "║", "")), " ")
+		if got := strings.Contains(text, "The spending key is classical."); got != classical {
+			t.Fatalf("base %q: classical note shown = %v, want %v:\n%s", base, got, classical, view)
+		}
+	}
+}

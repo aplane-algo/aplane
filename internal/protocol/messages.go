@@ -778,9 +778,13 @@ type PreparedBoundedProfile struct {
 // has no address, because the spending key does not exist yet.
 type PrepareGenerateResultMessage struct {
 	BaseMessage
-	Success    bool              `json:"success"`
-	KeyType    string            `json:"key_type,omitempty"`
-	Parameters map[string]string `json:"parameters,omitempty"`
+	Success bool   `json:"success"`
+	KeyType string `json:"key_type,omitempty"`
+	// BaseKeyType is the signature base of the spending key, when the key type
+	// composes over one (a plain host is its own base, a composed template
+	// names one), so a review can say whether that key is post-quantum.
+	BaseKeyType string            `json:"base_key_type,omitempty"`
+	Parameters  map[string]string `json:"parameters,omitempty"`
 	// Fingerprint is the provenance the account would record.
 	Fingerprint string `json:"fingerprint,omitempty"`
 	// ReviewFingerprint goes back as generate_key.expected_fingerprint.

@@ -1180,7 +1180,8 @@ Use the full key type shown by `keytypes`.
 For installing or activating optional key types, and for boundary files, see
 [USER_KEYTYPES.md](USER_KEYTYPES.md). `--boundary <file>` and `--result <file>` are
 apshell's own flags, written `--flag file` or `--flag=file`; every `param=value` goes to
-the signer. `--boundary` needs a type whose requests take the boundary grammar, which
+the signer. A flag never takes a `param=value` as its file, so a forgotten file name stops
+the command instead of dropping a parameter; write `--flag=file` for a file name with `=`. `--boundary` needs a type whose requests take the boundary grammar, which
 today means the plain hosts (`aplane.falcon1024.v1`, `aplane.ed25519.v1`), and sets every
 parameter, so it takes no others. Without it, a plain host takes the same bounds and
 overlay parameters directly; a file without `spend` asks for an account without bounds.

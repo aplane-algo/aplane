@@ -432,3 +432,30 @@ func TestHandleTEALFullDisplayPageKeysScrollByPage(t *testing.T) {
 		t.Fatalf("detailsScrollOffset after pgup = %d, want 0", next.details.scrollOffset)
 	}
 }
+
+// Key details name a cosigned account's cosigner by the Witness Key ID the
+// server projects under "cosigner": under the type's own label when it
+// declares that parameter (the plain hosts), and as Cosigner when it declares
+// only the public key (a composed template).
+func TestBuildDetailsParameterLinesShowsTheCosigner(t *testing.T) {
+	defer setServerKeyTypes(nil)
+	setServerKeyTypes([]protocol.KeyTypeInfo{
+		{KeyType: "plain-test-v1", CreationParams: []protocol.TemplateParamInfo{
+			{Name: "cosigner", Label: "Cosigner Reference", Type: "string"},
+			{Name: "rekey_authority", Label: "Rekey Authority", Type: "string"},
+		}},
+		{KeyType: "template-test-v1", CreationParams: []protocol.TemplateParamInfo{
+			{Name: "cosigner_public_key", Label: "Cosigner Public Key", Type: "string"},
+			{Name: "rekey_authority", Label: "Rekey Authority", Type: "string"},
+		}},
+	})
+	parameters := map[string]string{"cosigner": "WKID-1", "rekey_authority": "refused"}
+	for keyType, want := range map[string][]string{
+		"plain-test-v1":    {"Cosigner Reference: WKID-1", "", "Rekey Authority: refused"},
+		"template-test-v1": {"Cosigner: WKID-1", "", "Rekey Authority: refused"},
+	} {
+		if got := buildDetailsParameterLines(keyType, parameters); !reflect.DeepEqual(got, want) {
+			t.Fatalf("%s: buildDetailsParameterLines() = %#v, want %#v", keyType, got, want)
+		}
+	}
+}

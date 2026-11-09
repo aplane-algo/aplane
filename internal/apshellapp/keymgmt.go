@@ -50,10 +50,15 @@ func SplitGenerateOptions(args []string) (GenerateOptions, []string, error) {
 			return GenerateOptions{}, nil, fmt.Errorf("unknown flag %s (generate takes %s and %s)", name, GenerateFlagBoundaryFile, GenerateFlagResultFile)
 		}
 		if !hasValue {
-			// The next argument is the file, unless it is another flag: one
-			// flag never swallows the next.
+			// The next argument is the file, unless it is another flag or a
+			// parameter: a forgotten file name must not swallow a name=value,
+			// which would generate a weaker account than the one typed. A file
+			// whose name has "=" in it is given as --flag=FILE.
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
 				return GenerateOptions{}, nil, fmt.Errorf("%s needs a file", name)
+			}
+			if strings.Contains(args[i+1], "=") {
+				return GenerateOptions{}, nil, fmt.Errorf("%s needs a file, not the parameter %s (for a file name with \"=\", write %s=FILE)", name, args[i+1], name)
 			}
 			i++
 			value = args[i]

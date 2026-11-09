@@ -42,9 +42,9 @@ const (
 	timelockRendererRevision = 1
 	// limitsRendererRevision covers the envelope alone, for limits-only shapes.
 	limitsRendererRevision = 1
-	// listRendererRevision covers the listed-rekey path, for shapes with a
-	// rekey-to list. Only those shapes hash it, so a change to it leaves every
-	// account without a list alone.
+	// listRendererRevision covers the listed-rekey path, for shapes and
+	// arrangements with a rekey-to list. Only those hash it, so a change to it
+	// leaves every account without a list alone.
 	listRendererRevision = 1
 
 	boundaryDigestDomainV1 = "APLANE_HOST_BOUNDARY_V1"
@@ -61,14 +61,28 @@ func descriptor(selected Arrangement) string {
 
 // arrangementFingerprint is one arrangement's provenance, binding it alone.
 func arrangementFingerprint(selected Arrangement, composer *composeddsa.ComposedDSA) string {
+	// Omitted for an arrangement without a list, as for shapes.
+	listRevision := 0
+	if selected.HasRekeyList() {
+		listRevision = listRendererRevision
+	}
 	return lsigprovider.HashCompatibilitySpec(struct {
-		Schema           string `json:"schema"`
-		Arrangement      string `json:"arrangement"`
-		Composed         string `json:"composed_fingerprint"`
-		ResolverRevision int    `json:"resolver_revision"`
-		RendererRevision int    `json:"renderer_revision"`
-		Definition       string `json:"definition"`
-	}{boundary.SchemaV1, descriptor(selected), composer.CompatibilityFingerprint(), arrangementResolverRevision, arrangementRendererRevision, composer.KeyType()})
+		Schema               string `json:"schema"`
+		Arrangement          string `json:"arrangement"`
+		Composed             string `json:"composed_fingerprint"`
+		ResolverRevision     int    `json:"resolver_revision"`
+		RendererRevision     int    `json:"renderer_revision"`
+		ListRendererRevision int    `json:"list_renderer_revision,omitempty"`
+		Definition           string `json:"definition"`
+	}{
+		Schema:               boundary.SchemaV1,
+		Arrangement:          descriptor(selected),
+		Composed:             composer.CompatibilityFingerprint(),
+		ResolverRevision:     arrangementResolverRevision,
+		RendererRevision:     arrangementRendererRevision,
+		ListRendererRevision: listRevision,
+		Definition:           composer.KeyType(),
+	})
 }
 
 // shapeFingerprint is one shape's provenance. It binds that shape alone, so a

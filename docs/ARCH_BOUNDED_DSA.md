@@ -89,7 +89,8 @@ validation require exactly that list. Such an account signs through the
 `cosigned1` flow, which carries spends, cosigned rekeys and listed rekeys. A
 cosigned account that declares `rekey: refused` with no list can never be
 rekeyed: a lost or compromised cosigner cannot be escaped, and the program
-cannot be replaced. Only expert templates can declare one. Under `only_these`
+cannot be replaced. A plain host makes one with a cosigner and
+`rekey_authority=refused`, and an expert template can declare one. Under `only_these`
 or `plus_cosigned`, a listed key can still take the account after its cosigner
 is lost.
 

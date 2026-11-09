@@ -672,6 +672,7 @@ func ProtocolPrepareGenerateResultMessage(id string, result adminproto.PrepareGe
 		},
 		Success:           result.Success,
 		KeyType:           result.KeyType,
+		BaseKeyType:       result.BaseKeyType,
 		Parameters:        result.Parameters,
 		Fingerprint:       result.Fingerprint,
 		ReviewFingerprint: result.ReviewFingerprint,

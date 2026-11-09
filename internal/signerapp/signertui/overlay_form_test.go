@@ -499,3 +499,33 @@ func TestCustomBoundsLeavesChoicesUnsetAndTheManagerFormHasNone(t *testing.T) {
 		t.Fatalf("manager form sent %v", sent)
 	}
 }
+
+// A cosigner imported from the form comes back focused and in view: at 80x24 a
+// bounds preset scrolls, and a keystroke on a hidden field would act on what
+// the operator can't see.
+func TestImportedCosignerIsFocusedInView(t *testing.T) {
+	overlayInventory(t)
+	for preset := range boundary.Presets() {
+		m := sizedForTest(t, overlayForm(t, boundedHostKeyType, preset), MinWidth, MinHeight)
+		_, hasRecipients := m.forms.genericLSigParams[boundary.ParameterRecipients]
+		if hasRecipients {
+			m.forms.genericLSigParams[boundary.ParameterRecipients] = testAddress(1)
+		}
+		m.cosigner.pendingKeyType = boundedHostKeyType
+		m.cosigner.pendingWitnessID = "WITNESS"
+		m = m.resumeCosignerImport()
+		focus := m.forms.genericLSigParamOrder[m.forms.generateFocus]
+		if focus != overlayCosigner || m.forms.genericLSigParams[overlayCosigner] != "WITNESS" {
+			t.Fatalf("preset %d: focus %q, cosigner %q", preset, focus, m.forms.genericLSigParams[overlayCosigner])
+		}
+		if hasRecipients && m.forms.genericLSigParams[boundary.ParameterRecipients] != testAddress(1) {
+			t.Fatalf("preset %d: the typed recipients were lost", preset)
+		}
+		if offset := m.forms.generateParamScrollOffset; m.forms.generateFocus < offset || m.forms.generateFocus >= offset+m.getMaxVisibleParams() {
+			t.Fatalf("preset %d: focus %d is outside the visible rows from %d", preset, m.forms.generateFocus, offset)
+		}
+		if view := stripANSI(assertFitsWindow(t, m)); !strings.Contains(view, "Require a cosigner (Falcon-1024)") {
+			t.Fatalf("preset %d: the focused cosigner control is not on screen:\n%s", preset, view)
+		}
+	}
+}

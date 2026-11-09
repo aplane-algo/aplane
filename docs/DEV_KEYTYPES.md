@@ -910,7 +910,9 @@ The rules that most often surprise authors:
 - With `rekey: only_these` or `plus_cosigned` the framework injects the `rekey_to`
   parameter (1 to 16 addresses) and the `rekey_list_proof` derived argument. A template
   can't declare that derived argument, and a `rekey_to` it declares must match the
-  injected one. The signer builds the proof. See the
+  injected one. The list is private: no template variable, author TEAL or derived
+  argument may read `rekey_to`, since a recipient-tree proof over it is unsalted and
+  each spend would publish one. The signer builds the salted list proof. See the
   [rekey-to list contract](ARCH_BOUNDED_DSA.md#rekey-to-list-compatibility-contract).
 - `bounded.rekey` is required. A cosigner's `required_on` names every path it signs:
   `[spend]` with `refused` or `only_these`, and `[spend, spending_rekey]` with

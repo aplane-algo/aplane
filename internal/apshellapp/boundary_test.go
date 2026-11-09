@@ -203,6 +203,10 @@ func TestSplitGenerateOptions(t *testing.T) {
 	if len(rest) != 2 || rest[0] != "recipients=A" || rest[1] != "boundary=42" {
 		t.Fatalf("rest = %v", rest)
 	}
+	// A file whose name has "=" in it is given as --flag=FILE.
+	if options, _, err = SplitGenerateOptions([]string{"--result=out=1.json"}); err != nil || options.ResultFile != "out=1.json" {
+		t.Fatalf("--result=FILE with =: options = %+v, err = %v", options, err)
+	}
 	options, rest, err = SplitGenerateOptions([]string{"other=1"})
 	if err != nil || options != (GenerateOptions{}) || len(rest) != 1 {
 		t.Fatalf("no flags: options = %+v, rest = %v, err = %v", options, rest, err)
@@ -214,6 +218,9 @@ func TestSplitGenerateOptions(t *testing.T) {
 		"boundary twice":     {"--boundary=a", "--boundary=b"},
 		"result given twice": {"--result=a", "--result", "b"},
 		"flag as a value":    {"--result", "--boundary=corridor.yaml"},
+		// A forgotten file name must not swallow a parameter.
+		"parameter as a result file":   {"--result", "cosigner=ops", "rekey_authority=spending_key"},
+		"parameter as a boundary file": {"--boundary", "unlock_round=100"},
 	} {
 		if _, _, err := SplitGenerateOptions(args); err == nil {
 			t.Fatalf("%s: SplitGenerateOptions(%v) accepted it", name, args)

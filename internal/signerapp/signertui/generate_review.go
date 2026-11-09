@@ -284,7 +284,7 @@ func (m Model) renderGenerateReview() string {
 	row, note := reviewRecipients(profile.Contract, profile.Layer3Policy, profile.CosignerRequired, recipientList(review.Parameters))
 	// An account on a classical base, such as Ed25519, has a classical spending
 	// key, with or without bounds; say so where it is chosen.
-	if construction, ok := sigconstruction.ForBaseKeyType(review.KeyType); ok && !construction.PostQuantum() {
+	if postQuantum, known := reviewSpendingKeyPostQuantum(*review); known && !postQuantum {
 		note = strings.TrimSpace(note + " The spending key is classical.")
 	}
 	sb.WriteString(row)
@@ -524,11 +524,13 @@ func keyTypePostQuantum(keyType string) (postQuantum, known bool) {
 }
 
 // reviewSpendingKeyPostQuantum reports whether the new account's spending key
-// is post-quantum, where the key type tells this client: a plain host's base.
-// The contract alone doesn't: an expert
-// template may put bounded2 on an Ed25519 base, and the inventory doesn't name
-// a template's base.
+// is post-quantum. The signer names the base: a plain host is its own, and an
+// expert template may put bounded2 on an Ed25519 base. A signer that names none
+// leaves the key type, which tells this client only for a plain host.
 func reviewSpendingKeyPostQuantum(review PrepareGenerateResultMessage) (postQuantum, known bool) {
+	if review.BaseKeyType != "" {
+		return keyTypePostQuantum(review.BaseKeyType)
+	}
 	return keyTypePostQuantum(review.KeyType)
 }
 

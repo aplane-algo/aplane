@@ -159,7 +159,7 @@ func NewComposedDSA(cfg Config) *ComposedDSA {
 		params = append(params, boundedCosignerPublicKeyParameterDef())
 	}
 	if bounded != nil && bounded.RekeyList != nil && !hasParameter(params, BoundedRekeyToParameter) {
-		params = append(params, rekeyListEntriesParameterDef())
+		params = append(params, rekeyListEntriesParameterDef(bounded.Rekey))
 	}
 	return &ComposedDSA{
 		keyType:            cfg.KeyType,

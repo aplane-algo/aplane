@@ -84,6 +84,10 @@ func TestPlainHostGeneratesFromAReview(t *testing.T) {
 	if prepared.BoundaryDigest == "" || prepared.Fingerprint == prepared.ReviewFingerprint {
 		t.Fatalf("prepared provenance = %+v", prepared)
 	}
+	// A plain host is its own signature base; the review reads it from here.
+	if prepared.BaseKeyType != plainHostKeyType {
+		t.Fatalf("prepared base key type = %q, want %q", prepared.BaseKeyType, plainHostKeyType)
+	}
 	assertNoKeys(t, service)
 
 	result, genErr := service.GenerateReviewedKey(context.Background(), plainHostKeyType, prepared.Parameters,
@@ -147,13 +151,13 @@ func TestKeyDetailsNameTheCosignerByWitnessKeyID(t *testing.T) {
 		"rekey_authority":                      "refused",
 	}
 	metadata := &boundedmeta.Metadata{Cosigner: &boundedmeta.CosignerAuthorization{
-		ComponentKeyType: witness.Falcon1024V1, PublicKeyHex: hex.EncodeToString(publicKey),
+		ComponentKeyType: witness.Falcon1024V1, PublicKeyHex: hex.EncodeToString(publicKey), ComponentKeyID: id,
 	}}
 	got := keyDetailsParameters(parameters, metadata)
-	if got[keyDetailsCosignerLabel] != id || got[boundedmeta.CosignerPublicKeyParameter] != "" || got["rekey_authority"] != "refused" {
+	if got[keyDetailsCosignerParameter] != id || got[boundedmeta.CosignerPublicKeyParameter] != "" || got["rekey_authority"] != "refused" {
 		t.Fatalf("details = %v", got)
 	}
-	if plain := keyDetailsParameters(parameters, &boundedmeta.Metadata{}); plain[boundedmeta.CosignerPublicKeyParameter] == "" || plain[keyDetailsCosignerLabel] != "" {
+	if plain := keyDetailsParameters(parameters, &boundedmeta.Metadata{}); plain[boundedmeta.CosignerPublicKeyParameter] == "" || plain[keyDetailsCosignerParameter] != "" {
 		t.Fatalf("uncosigned details = %v", plain)
 	}
 	if parameters[boundedmeta.CosignerPublicKeyParameter] == "" {

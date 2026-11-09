@@ -15,6 +15,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/aplane-algo/aplane/internal/keytypeux"
+	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/witness"
 )
 
@@ -41,9 +42,20 @@ func truncateLongHex(line string, maxLen int) string {
 	})
 }
 
+// detailsCosignerParameter is where key details carry a cosigned account's
+// cosigner, by its Witness Key ID. The plain hosts declare it; a composed
+// template declares only the public key, which the details leave out.
+const detailsCosignerParameter = "cosigner"
+
 func buildDetailsParameterLines(keyType string, parameters map[string]string) []string {
 	var lines []string
 	if spec := getParamSpecForKeyType(keyType); spec != nil {
+		declared := slices.ContainsFunc(spec.Params, func(def lsigprovider.ParameterDef) bool {
+			return def.Name == detailsCosignerParameter
+		})
+		if id, ok := parameters[detailsCosignerParameter]; ok && !declared {
+			lines = append(lines, "Cosigner: "+id, "")
+		}
 		for _, paramDef := range spec.Params {
 			if value, ok := parameters[paramDef.Name]; ok {
 				lines = append(lines, formatParameterDisplayLines(paramDef.Label, paramDef.Type, value)...)

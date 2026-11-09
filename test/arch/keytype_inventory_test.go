@@ -106,11 +106,13 @@ func TestRetiredKeyTypeProductsDoNotReturn(t *testing.T) {
 	for _, token := range namingPassTokens {
 		namingPass[token] = true
 	}
-	// The installers name a retired binary only to delete it from an upgraded or
-	// uninstalled machine, or to find it still running before they do. Only those
-	// lines are exempt, so installing it again would still be caught.
+	// The installers name a retired binary or library template only to delete it
+	// from an upgraded or uninstalled machine, or to find a binary still running
+	// before they do. Only those lines are exempt, so installing one again would
+	// still be caught.
 	removesRetired := map[string][]string{
-		"../../install.sh":   {"ap" + "rekey"},
+		"../../install.sh": {"ap" + "rekey", "aplane." + "corridor.v1", "aplane." + "falcon1024-allowlist.v1",
+			"aplane." + "falcon1024-allowlist.v2", "aplane." + "falcon1024-timelock.v1"},
 		"../../uninstall.sh": {"ap" + "rekey"},
 	}
 	removalLine := func(line string) bool {

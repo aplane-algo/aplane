@@ -65,6 +65,11 @@ type Arrangement struct {
 	Cosigner bool
 }
 
+// HasRekeyList reports whether the arrangement takes a rekey-to list.
+func (a Arrangement) HasRekeyList() bool {
+	return a.Rekey == RekeyOnlyThese || a.Rekey == RekeyPlusCosigned
+}
+
 // Arrangements is the plain host's grammar, in order: each rekey setting
 // without and then with a cosigner.
 func Arrangements() []Arrangement {
@@ -341,6 +346,21 @@ func checkPlainProgram(params map[string]string) error {
 	return nil
 }
 
+// plainRequest reports whether a request is for the plain program. Every entry
+// point applies the same rule as validation: a request naming only parameters
+// no program reads is refused, so a caller that derives without validating
+// first can't get a weaker account than it asked for.
+func plainRequest(params map[string]string) (bool, error) {
+	request, err := present(params)
+	if err != nil {
+		return false, err
+	}
+	if hasContract(request) {
+		return false, nil
+	}
+	return true, checkPlainProgram(request)
+}
+
 // resolve selects the program and the canonical values for a request, given
 // without its empty parameters: a bounded2 shape when it has bounds, otherwise a
 // plain1 arrangement.
@@ -580,9 +600,9 @@ func (p *Provider) GrammarFingerprint() string {
 
 // GenerateTEAL renders the selected program.
 func (p *Provider) GenerateTEAL(publicKey []byte, params map[string]string) (string, error) {
-	if request, err := present(params); err != nil {
+	if plain, err := plainRequest(params); err != nil {
 		return "", err
-	} else if !hasContract(request) {
+	} else if plain {
 		return p.Plain.GenerateTEAL(publicKey, params)
 	}
 	selected, values, err := p.resolveGenerated(params)
@@ -594,9 +614,9 @@ func (p *Provider) GenerateTEAL(publicKey []byte, params map[string]string) (str
 
 // DeriveLsig derives the selected program and its address.
 func (p *Provider) DeriveLsig(ctx context.Context, publicKey []byte, params map[string]string) ([]byte, string, error) {
-	if request, err := present(params); err != nil {
+	if plain, err := plainRequest(params); err != nil {
 		return nil, "", err
-	} else if !hasContract(request) {
+	} else if plain {
 		return p.Plain.DeriveLsig(ctx, publicKey, params)
 	}
 	selected, values, err := p.resolveGenerated(params)
@@ -608,9 +628,9 @@ func (p *Provider) DeriveLsig(ctx context.Context, publicKey []byte, params map[
 
 // DeriveLsigWithSalt derives the selected program with its salt metadata.
 func (p *Provider) DeriveLsigWithSalt(ctx context.Context, publicKey []byte, params map[string]string) (lsigsalt.FindResult, error) {
-	if request, err := present(params); err != nil {
+	if plain, err := plainRequest(params); err != nil {
 		return lsigsalt.FindResult{}, err
-	} else if !hasContract(request) {
+	} else if plain {
 		return p.Plain.DeriveLsigWithSalt(ctx, publicKey, params)
 	}
 	selected, values, err := p.resolveGenerated(params)
@@ -623,12 +643,14 @@ func (p *Provider) DeriveLsigWithSalt(ctx context.Context, publicKey []byte, par
 // PrepareRekeyList adds the rekey-to list's root once the spending key exists.
 // Any other request is unchanged.
 func (p *Provider) PrepareRekeyList(privateKey []byte, params map[string]string) (map[string]string, error) {
+	if plain, err := plainRequest(params); err != nil {
+		return nil, err
+	} else if plain {
+		return params, nil
+	}
 	request, err := present(params)
 	if err != nil {
 		return nil, err
-	}
-	if !hasContract(request) {
-		return params, nil
 	}
 	selected, values, err := p.resolve(request)
 	if err != nil {
@@ -651,9 +673,9 @@ func (p *Provider) PrepareRekeyList(privateKey []byte, params map[string]string)
 // refuses one the network could not run within its fee ceiling, before the key
 // is persisted. The plain program has none.
 func (p *Provider) BuildBoundedAuthorizationMetadata(publicKey []byte, params map[string]string, bytecode []byte) (*boundedmeta.Metadata, error) {
-	if request, err := present(params); err != nil {
+	if plain, err := plainRequest(params); err != nil {
 		return nil, err
-	} else if !hasContract(request) {
+	} else if plain {
 		return nil, nil
 	}
 	selected, values, err := p.resolveGenerated(params)

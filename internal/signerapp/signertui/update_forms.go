@@ -725,6 +725,34 @@ func (m Model) initGenericLSigParamsForKeyType(keyType string) Model {
 	return m
 }
 
+// resumeCosignerImport refills the form after a cosigner imported from it: what
+// the operator typed stays, the cosigner field takes the import, and focus moves
+// to that field, scrolled into view, so the next keystroke acts on what the
+// operator sees.
+func (m Model) resumeCosignerImport() Model {
+	oldParams := m.forms.genericLSigParams
+	m = m.initGenericLSigParamsForKeyType(m.cosigner.pendingKeyType)
+	for name, value := range oldParams {
+		if _, ok := m.forms.genericLSigParams[name]; ok {
+			m.forms.genericLSigParams[name] = value
+		}
+	}
+	if _, ok := m.forms.genericLSigParams[cosignerrefs.ParamCosignerName]; ok {
+		m.forms.genericLSigParams[cosignerrefs.ParamCosignerName] = m.cosigner.pendingWitnessID
+		for index, name := range m.forms.genericLSigParamOrder {
+			if name == cosignerrefs.ParamCosignerName {
+				m.forms.generateFocus = index
+				m = m.ensureParamVisible(index, m.getMaxVisibleParams())
+				break
+			}
+		}
+	}
+	m.cosigner.pendingKeyType = ""
+	m.cosigner.pendingWitnessID = ""
+	m.cosigner.requiredKeyType = ""
+	return m
+}
+
 // ensureParamVisible adjusts scroll offset to ensure the focused parameter is visible.
 func (m Model) ensureParamVisible(paramIdx, maxVisibleParams int) Model {
 	if paramIdx < 0 {

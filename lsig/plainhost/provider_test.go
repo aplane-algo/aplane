@@ -5,6 +5,8 @@ package plainhost_test
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"strings"
 	"testing"
@@ -267,12 +269,55 @@ func TestBoundedOpcodeProfileIsSeparate(t *testing.T) {
 // declared by a revision; these goldens make that review unavoidable.
 func TestPlainHostGrammarGoldens(t *testing.T) {
 	want := map[string]string{
-		"falcon":  "1:915d3bb95648d8019c9421ce5dbfa4e839587c51939c76908299a5c5f831c908",
-		"ed25519": "1:8ff6e4c05e4aa40a66de5858c9c703a04a8db8efb6116a6a35403b4f84b4fc84",
+		"falcon":  "1:6828c644697fd088f3a54937bf08fef3cc584e6136216d08dd36d28dc7be02c9",
+		"ed25519": "1:67653b970886576b30a97cbd999408e7a8f83b70407334333a9c6896007c60e9",
 	}
 	for _, b := range bases(t) {
 		if got := b.provider.GrammarFingerprint(); got != want[b.name] {
 			t.Errorf("%s grammar fingerprint = %s, want %s", b.name, got, want[b.name])
+		}
+	}
+}
+
+// These values freeze what each plain1 arrangement renders and the provenance it
+// reports. A failure is a review obligation, not a fixture to refresh: a changed
+// program means arrangementRendererRevision (listRendererRevision for the
+// listed-rekey path, arrangementResolverRevision for request handling) must be
+// raised for the arrangements it touches; a changed fingerprint with no intended
+// behavior change would give existing accounts a provenance conflict.
+func TestArrangementGoldens(t *testing.T) {
+	want := map[string]struct{ programs, fingerprints string }{
+		"falcon": {
+			programs:     "644ffc120e9210f5b20eef7c0e0d2cac450027eb4c7e9025be5cffeba16a1c82",
+			fingerprints: "808c62e885ed2b74ac925f679114e2d4dcff18b2fe7a628177dd1ece776aa10b",
+		},
+		"ed25519": {
+			programs:     "8a7dd8014f1e120630d9c2988b7fbdd7caff757b1bda9c4da414073bbc5d15b4",
+			fingerprints: "543167f1c324a353b89f9d0d666a8bf0e987889ccab7afb2ae01d3064590f52e",
+		},
+	}
+	for _, b := range bases(t) {
+		programs, fingerprints := sha256.New(), sha256.New()
+		for _, arrangement := range plainhost.Arrangements() {
+			params := requestFor(arrangement)
+			teal, err := b.provider.GenerateTEAL(b.spendingKey, withRoot(t, b.provider, params))
+			if err != nil {
+				t.Fatalf("%s %+v: %v", b.name, arrangement, err)
+			}
+			resolved, err := b.provider.ResolveInstance(params)
+			if err != nil {
+				t.Fatalf("%s %+v: %v", b.name, arrangement, err)
+			}
+			if _, err := fmt.Fprintf(programs, "%+v\n%d\n%s\n", arrangement, len(teal), teal); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := fmt.Fprintf(fingerprints, "%+v\n%s\n%s\n", arrangement, resolved.Fingerprint, resolved.BoundaryDigest); err != nil {
+				t.Fatal(err)
+			}
+		}
+		got := struct{ programs, fingerprints string }{hex.EncodeToString(programs.Sum(nil)), hex.EncodeToString(fingerprints.Sum(nil))}
+		if got != want[b.name] {
+			t.Errorf("%s arrangements: programs %s, fingerprints %s; want %+v", b.name, got.programs, got.fingerprints, want[b.name])
 		}
 	}
 }
@@ -299,6 +344,35 @@ func TestEmptyParametersAreRefused(t *testing.T) {
 		}
 		if _, err := provider.GenerateTEAL(make([]byte, 32), named); err == nil {
 			t.Fatalf("GenerateTEAL accepted an empty %s", name)
+		}
+	}
+}
+
+// Every entry point refuses a request that names only parameters no program
+// reads, as validation does: deriving without validating first must not give
+// the plain program, which is weaker than any account the caller meant.
+func TestMisspelledParametersAreRefusedEverywhere(t *testing.T) {
+	for _, b := range bases(t) {
+		for _, params := range []map[string]string{{"rekey_authorty": plainhost.RekeyRefused}, {"cosigner_pubkey": testCosigner}} {
+			if _, err := b.provider.GenerateTEAL(b.spendingKey, params); err == nil || !strings.Contains(err.Error(), "unknown parameter") {
+				t.Fatalf("%s GenerateTEAL(%v) error = %v", b.name, params, err)
+			}
+			if _, _, err := b.provider.DeriveLsig(t.Context(), b.spendingKey, params); err == nil {
+				t.Fatalf("%s DeriveLsig(%v) accepted it", b.name, params)
+			}
+			if _, err := b.provider.DeriveLsigWithSalt(t.Context(), b.spendingKey, params); err == nil {
+				t.Fatalf("%s DeriveLsigWithSalt(%v) accepted it", b.name, params)
+			}
+			if _, err := b.provider.PrepareRekeyList(testListKey, params); err == nil {
+				t.Fatalf("%s PrepareRekeyList(%v) accepted it", b.name, params)
+			}
+			if _, err := b.provider.BuildBoundedAuthorizationMetadata(b.spendingKey, params, nil); err == nil {
+				t.Fatalf("%s BuildBoundedAuthorizationMetadata(%v) accepted it", b.name, params)
+			}
+		}
+		// No parameters is still the plain program.
+		if _, err := b.provider.GenerateTEAL(b.spendingKey, nil); err != nil {
+			t.Fatalf("%s plain program: %v", b.name, err)
 		}
 	}
 }

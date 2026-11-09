@@ -19,11 +19,19 @@ import (
 // rekeyListProofSlot names the derived argument carrying a listed rekey's proof.
 const rekeyListProofSlot = "rekey_list_proof"
 
-func rekeyListEntriesParameterDef() lsigprovider.ParameterDef {
+// rekeyListEntriesParameterDef is the injected rekey_to parameter. Its
+// description follows the rekey setting: only these refuses every other rekey,
+// and plus cosigned (rekey spending_key with a list) takes any other one with the
+// spending key and the cosigner.
+func rekeyListEntriesParameterDef(rekey boundedmeta.RekeySetting) lsigprovider.ParameterDef {
+	description := "Addresses the account may be rekeyed to with the spending key alone. Every other rekey is refused."
+	if rekey == boundedmeta.RekeySpendingKey {
+		description = "Addresses the account may be rekeyed to with the spending key alone. Any other rekey needs the spending key and the cosigner."
+	}
 	return lsigprovider.ParameterDef{
 		Name:        BoundedRekeyToParameter,
 		Label:       "Rekey-To Addresses",
-		Description: "Addresses the account may be rekeyed to with the spending key alone. Every other rekey is refused.",
+		Description: description,
 		Type:        "address[]",
 		Required:    true,
 		MinItems:    1,

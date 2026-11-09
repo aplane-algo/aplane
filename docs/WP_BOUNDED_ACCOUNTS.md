@@ -194,8 +194,8 @@ replacement program, and a cosigned account that takes cosigned rekeys can do
 the same with the cosigner's signature. A Locked Allowlist, Corridor or Timelock
 account can be rekeyed only to an address on its rekey-to list; the listed key
 can then rekey it onward to a replacement program, keeping the address. An
-account with no rekey path, which only an expert template can declare, cannot
-change its destinations at all: replacing it means moving its funds, while it
+account with no rekey path (`rekey_authority: refused`, or an expert template
+that declares `rekey: refused`) cannot change its destinations at all: replacing it means moving its funds, while it
 can still spend, to a new account built with the new rules, and retiring the old
 address.
 

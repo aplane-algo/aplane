@@ -522,3 +522,36 @@ func containsAll(haystack string, needles []string) bool {
 	}
 	return true
 }
+
+// The signer API's /keys contract fixtures are what the SDKs test against, so
+// each must be an inventory this client accepts: a fixture no signer would send
+// pins the SDKs to a shape they never meet.
+func TestSignerCacheAcceptsTheKeysContractFixtures(t *testing.T) {
+	const dir = "../../test/contracts/signerapi"
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := 0
+	for _, entry := range entries {
+		name := entry.Name()
+		if !strings.HasPrefix(name, "keys_response_") || !strings.HasSuffix(name, ".json") {
+			continue
+		}
+		found++
+		data, err := os.ReadFile(dir + "/" + name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var response signerapi.KeysResponse
+		if err := json.Unmarshal(data, &response); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if err := newTestState(t).PopulateSignerCache(response.Keys); err != nil {
+			t.Errorf("%s: PopulateSignerCache() error = %v", name, err)
+		}
+	}
+	if found == 0 {
+		t.Fatal("no /keys contract fixtures found")
+	}
+}
