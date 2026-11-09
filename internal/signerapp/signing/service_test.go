@@ -1451,7 +1451,7 @@ func TestSignGroupWithPlanReleasesBeforeExecuteGateAfterExecution(t *testing.T) 
 	}
 }
 
-func TestLogPolicyRejectionsSkipsPassthroughAndForeign(t *testing.T) {
+func TestLogSignRejectionsSkipsPassthroughAndForeign(t *testing.T) {
 	audit := &testAuditLogger{}
 	service := &Service{AuditLog: audit}
 	req := signerapi.GroupSignRequest{

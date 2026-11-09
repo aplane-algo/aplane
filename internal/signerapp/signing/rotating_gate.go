@@ -55,7 +55,7 @@ func (s *Service) rejectRekeyToRotating(txns []types.Transaction, signed []int) 
 	keyTypes := s.Planner.Snapshot().KeyTypes
 	for _, i := range signed {
 		if i < 0 || i >= len(txns) {
-			continue
+			return positionOutsideGroup(i, len(txns))
 		}
 		txn := txns[i]
 		if txn.RekeyTo.IsZero() || txn.RekeyTo == txn.Sender {

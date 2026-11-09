@@ -409,7 +409,7 @@ func (c *verdictCase) runCosignerComponent(t *testing.T, group []types.Transacti
 		PolicyFor:                     c.policyResolver(t, nodeRole),
 		HoldsCosignerKey:              holdsAllCosignerKeys,
 	}
-	signErr := svc.evaluateCosignerComponentPolicy(plan)
+	signErr := svc.runCosignerGates(plan)
 	if signErr == nil {
 		return verdictWant{Outcome: "approve"}
 	}

@@ -1231,9 +1231,10 @@ Denial behavior:
   failure, and on shutdown. A flood stays visible without rotating earlier
   entries out of the log. Authorization denials of an authenticated
   principal are not rate limited.
-- Cosigner policy rejections (`SIGN_REJECTED` for a cosigner component) are
-  rate limited the same way, with a separate budget and a
-  `COSIGNER_REJECTIONS_SUPPRESSED` summary. The caller is authenticated, but
+- Cosigner rejections (`SIGN_REJECTED` for a cosigner component: a policy
+  rejection, `cosigner_policy_rejected:`, or a signer-invariant refusal,
+  `signer_invariant:`) are rate limited the same way, with a separate budget
+  and a `COSIGNER_REJECTIONS_SUPPRESSED` summary. The caller is authenticated, but
   a compromised signer side enrolled at the cosigner can provoke
   rejections at will; without the limit it could rotate the record of what
   the cosigner signed out of the log. Cosigner signatures (`SIGN_APPROVED`)

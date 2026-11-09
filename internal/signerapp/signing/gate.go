@@ -67,12 +67,7 @@ type gateInput struct {
 func (s *Service) runApprovalGates(ctx context.Context, in gateInput, console Console) (string, *ServiceError) {
 	console = consoleOf(console)
 	slots := clientSlots(in.AllTxns, in.EvalCount, in.PassthroughIndices, in.ForeignIndices, s.policyFor, in.AuthKeys, in.ListedRekeyTargets)
-	signed := signerPositions(slots)
-	err := s.rejectRekeyToRotating(in.AllTxns, signed)
-	if err == nil {
-		err = rejectNonparticipation(in.AllTxns, signed)
-	}
-	if err != nil {
+	if err := s.rejectSignerInvariants(in.AllTxns, signerPositions(slots)); err != nil {
 		console.Printf("[SIGNER] Rejected: %s\n", err.Message)
 		console.Sync()
 		if in.LogRejection != nil {

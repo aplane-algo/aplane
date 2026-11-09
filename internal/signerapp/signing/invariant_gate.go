@@ -4,6 +4,8 @@
 package signing
 
 import (
+	"fmt"
+
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/signerapp/policyeval"
@@ -11,6 +13,24 @@ import (
 
 // nonparticipationRefusal is why a nonparticipating keyreg is refused.
 const nonparticipationRefusal = "a keyreg with nonparticipation is not supported: it permanently marks the account as unable to participate"
+
+// rejectSignerInvariants runs every signer invariant over the positions this
+// node signs. Both node roles call it before any policy verdict, so no policy
+// can allow what an invariant refuses, and an invariant added here holds on
+// both roles. On a cosigner, which holds no rotating accounts, the rotating
+// check finds nothing to refuse.
+func (s *Service) rejectSignerInvariants(txns []types.Transaction, signed []int) *ServiceError {
+	if err := s.rejectRekeyToRotating(txns, signed); err != nil {
+		return err
+	}
+	return rejectNonparticipation(txns, signed)
+}
+
+// positionOutsideGroup fails closed on a signed position the group doesn't
+// have. Callers derive positions from the group, so it is a bug, never input.
+func positionOutsideGroup(i, groupLen int) *ServiceError {
+	return internal(fmt.Sprintf("signed position %d is outside a group of %d", i, groupLen))
+}
 
 // rejectNonparticipation refuses a keyreg with Nonparticipation set at a
 // position this signer signs. Going nonparticipating can't be undone: the
@@ -22,7 +42,7 @@ const nonparticipationRefusal = "a keyreg with nonparticipation is not supported
 func rejectNonparticipation(txns []types.Transaction, signed []int) *ServiceError {
 	for _, i := range signed {
 		if i < 0 || i >= len(txns) {
-			continue
+			return positionOutsideGroup(i, len(txns))
 		}
 		if txn := txns[i]; txn.Type == types.KeyRegistrationTx && txn.Nonparticipation {
 			return withTransactionIndex(i, forbidden(nonparticipationRefusal))

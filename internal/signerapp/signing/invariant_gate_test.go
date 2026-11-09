@@ -171,3 +171,44 @@ func TestCosignerRefusesNonparticipationBeforePolicy(t *testing.T) {
 		t.Fatalf("audit = %#v, want one signer_invariant rejection", audit.limited)
 	}
 }
+
+// A request for a component key this cosigner doesn't hold is refused as such,
+// before the invariants run: no signer_invariant entry is written for a key
+// the caller made up.
+func TestCosignerChecksTheKeyBeforeTheInvariant(t *testing.T) {
+	componentKey := testFalconComponentSelector(t, 0xab)
+	txn := keyregTxn(types.Address{40}, false, true)
+	txn.FirstValid, txn.LastValid = 10, 20
+	txn.GenesisHash = testDigest(t, apconfig.AlgorandTestnetGenesisHash)
+	audit := &limitedCosignerAuditLogger{}
+	service := cosignerTestServiceFor(componentKey, wildcardCosignerPolicy(t))
+	service.HoldsCosignerKey = func(string) bool { return false }
+	service.AuditLog = audit
+
+	_, err := service.signComponentWithContext(context.Background(), componentPlanRequest{
+		RequestID:     "cmp-cosigner-unknown-key",
+		Role:          ComponentSignRoleCosigner,
+		ComponentKey:  componentKey,
+		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
+		TargetIndices: []int{0},
+	}, newComponentKeySession(&componentKeyStore{}))
+	if err == nil || err.HTTPStatus() != 400 || !strings.Contains(err.Message, "not found") {
+		t.Fatalf("err = %v, want 400 for a key this node doesn't hold", err)
+	}
+	if len(audit.limited) != 0 {
+		t.Fatalf("audit = %#v, want nothing audited for an unknown key", audit.limited)
+	}
+}
+
+// A signed position outside the group is a caller bug: the invariants fail
+// closed instead of skipping it.
+func TestSignerInvariantsFailClosedOnPositionOutsideGroup(t *testing.T) {
+	svc := &Service{}
+	txns := []types.Transaction{keyregTxn(types.Address{1}, true, false)}
+	if err := svc.rejectSignerInvariants(txns, []int{1}); err == nil || err.HTTPStatus() != 500 {
+		t.Fatalf("err = %v, want an internal error", err)
+	}
+	if err := svc.rejectSignerInvariants(txns, []int{0}); err != nil {
+		t.Fatalf("online keyreg refused: %v", err)
+	}
+}

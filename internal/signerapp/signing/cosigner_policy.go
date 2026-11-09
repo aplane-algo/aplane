@@ -14,11 +14,16 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
-// evaluateCosignerComponentPolicy applies the cosigner key's policy (its own
-// document, or the node default) to every target. A cosigner has no operator,
-// so every verdict is sign or reject: a review verdict, which the document
-// format cannot express on a cosigner node, is treated as a rejection.
-func (s *Service) evaluateCosignerComponentPolicy(plan *ComponentSignPlan) *ServiceError {
+// runCosignerGates is the cosigner's gate sequence for a component request.
+// It checks that this node holds the component key, then runs the signer
+// invariants over the targets, then applies the cosigner key's policy (its
+// own document, or the node default) to every target. The invariants come
+// after the key check, so a request for a key this node doesn't hold is
+// refused as such and never audited, and before the policy, so no policy can
+// allow what they refuse. A cosigner has no operator, so every verdict is sign
+// or reject: a review verdict, which the document format cannot express on a
+// cosigner node, is treated as a rejection.
+func (s *Service) runCosignerGates(plan *ComponentSignPlan) *ServiceError {
 	if plan == nil {
 		return internal("component sign plan is nil")
 	}
@@ -29,18 +34,24 @@ func (s *Service) evaluateCosignerComponentPolicy(plan *ComponentSignPlan) *Serv
 	if s.HoldsCosignerKey == nil || !s.HoldsCosignerKey(componentKey) {
 		return badRequest(fmt.Sprintf("Witness Key ID %q not found", componentKey))
 	}
+	group := componentPlanTxns(plan)
+	targets := componentTargetPositions(plan)
+	if err := s.rejectSignerInvariants(group, targets); err != nil {
+		s.logCosignerRejections(plan, auditSignerInvariant+err.Message, "")
+		return err
+	}
 	cfg := s.policyFor(componentKey)
 	if cfg == nil {
 		return internal("policy is not loaded")
 	}
 
-	slots := make([]policyeval.Slot, len(plan.Targets))
-	for i, target := range plan.Targets {
-		slots[i] = policyeval.Slot{Index: target.TargetIndex, Policy: cfg}
+	slots := make([]policyeval.Slot, len(targets))
+	for i, target := range targets {
+		slots[i] = policyeval.Slot{Index: target, Policy: cfg}
 	}
 	verdict, evalErr := policyeval.Evaluate(policyeval.Input{
 		Role:     policyeval.RoleCosigner,
-		Group:    componentPlanTxns(plan),
+		Group:    group,
 		Slots:    slots,
 		Networks: s.genesisHashResolver(),
 	})

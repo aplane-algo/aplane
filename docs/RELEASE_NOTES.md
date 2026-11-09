@@ -16,7 +16,13 @@ before it was renamed `enroll`.
   covers online and offline registrations only. Passthrough and foreign positions are
   not judged.
 - The SDKs no longer build one: the Go `Nonparticipation` field, the TypeScript
-  `nonParticipation` option and the Python `nonpart` keyword are gone.
+  `nonParticipation` option and the Python `nonpart` keyword are gone. SDK keyreg
+  prep takes an explicit `online` or `offline` mode, as apshell's `keyreg` does. An
+  online keyreg needs the state proof key, and it can ask for incentive eligibility,
+  which adds the 2 ALGO fee unless the account is already eligible.
+- A signer-invariant refusal is audited as `signer_invariant:` on both node roles. On
+  the signer role, a rekey to a rotating account used to be audited as
+  `policy_engine_rejected:`.
 - Refusing a rekey to a rotating account now says why: its address is a one-time stage
   key, so an account rekeyed to it would be stuck on that stage and every signature
   would reuse that key. Refusing a rekey to an account that is itself rekeyed drops its

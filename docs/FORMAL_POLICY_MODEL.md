@@ -227,10 +227,11 @@ Always Deny rules are hard safety guards. Current deny sources include:
   rule id, and it is evaluated before every policy document rule,
 - the signer invariant that refuses a nonparticipating `keyreg` at a position
   the signer signs (`signing/invariant_gate.go::rejectNonparticipation`, run
-  next in `runApprovalGates` and, on a cosigner, in
-  `service.go::signComponentWithSession` before
-  `evaluateCosignerComponentPolicy`); like the rotating invariant it has no
-  rule id and precedes every policy document rule, on both node roles,
+  next). Both invariants run through `rejectSignerInvariants`, on the signer
+  role in `runApprovalGates` and on a cosigner in
+  `cosigner_policy.go::runCosignerGates`, after the component key check and
+  before the cosigner's policy. Like the rotating invariant it has no rule id
+  and precedes every policy document rule, on both node roles,
 - `transaction_types` entries with verdict `reject` (rule id
   `transaction_type:<type>`), the first policy document rule evaluated,
 - `rekeys` (`reject_all_rekeys` or `reject_foreign_rekey`; a protocol rekey is

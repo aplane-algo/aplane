@@ -1390,7 +1390,10 @@ See [Mode Selection](#mode-selection) for the foreign/passthrough/sign distincti
 - A `keyreg` with `Nonparticipation` set at a position this signer signs is
   rejected with `403` before policy runs, on both node roles: on the signer
   role in the approval gates (`/sign`, bounded components, rotating sign), and
-  on a cosigner before its policy (`/sign/component`). Going nonparticipating
+  on a cosigner, after it confirms it holds the component key and before its
+  policy (`/sign/component`). Both roles run the same list of signer
+  invariants (`rejectSignerInvariants`) and audit a refusal as
+  `signer_invariant:`. Going nonparticipating
   can't be undone, and the account can never take part in consensus again, so
   no policy can allow it; a `keyreg` `allow` covers online and offline
   registrations only. Passthrough and foreign positions are not this signer's
