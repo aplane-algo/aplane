@@ -246,7 +246,8 @@ func (s *Signer) requestBoundedBaseComponents(ctx context.Context, group frozenG
 			})
 		} else {
 			position := signerapi.ComponentContextPosition{
-				TargetIndex: i, LsigResources: request.LsigResources, PQScheme: request.PQScheme, AppCallInfo: request.AppCallInfo,
+				TargetIndex: i, AuthAddress: request.AuthAddress, LsigArgs: request.LsigArgs,
+				LsigResources: request.LsigResources, PQScheme: request.PQScheme, AppCallInfo: request.AppCallInfo,
 			}
 			if i < len(appCallInfo) && appCallInfo[i] != nil {
 				position.AppCallInfo = appCallInfo[i]
@@ -362,11 +363,15 @@ func (s *Signer) buildBoundedComponentRequests(txns []types.Transaction, targets
 			requests[i] = signModeRequest(i, target.Account, target.Sender, txnHex, opts)
 			continue
 		}
+		// A position the signer holds is sent as its own, so the signer sizes
+		// it from its records and can put that position's authorization charge
+		// on it. Anything else is another party's and stays foreign.
 		effectiveSigner := s.authCache.ResolveEffectiveSigner(txn.Sender.String())
-		requests[i] = signerapi.SignRequest{TxnBytesHex: txnHex}
-		if err := applyForeignAuthorizationHint(&requests[i], s.cache, effectiveSigner); err != nil {
-			return nil, fmt.Errorf("prepare foreign transaction %d: %w", i+1, err)
+		if _, held := s.cache.AuthorizationKind(effectiveSigner); held {
+			requests[i] = signModeRequest(i, effectiveSigner, txn.Sender.String(), txnHex, opts)
+			continue
 		}
+		requests[i] = signerapi.SignRequest{TxnBytesHex: txnHex}
 	}
 	return requests, nil
 }
@@ -562,56 +567,6 @@ func applyForeignLogicSigPathHint(request *signerapi.SignRequest, cache SignerCa
 		MaxOpcodeCost: usage.MaxOpcodeCost,
 	}
 	return nil
-}
-
-func applyForeignAuthorizationHint(request *signerapi.SignRequest, cache SignerCacheView, address string) error {
-	if request == nil || cache == nil {
-		return fmt.Errorf("signer cache is unavailable")
-	}
-	kind, present := cache.AuthorizationKind(address)
-	if !present {
-		return nil
-	}
-	if kind == "" {
-		return fmt.Errorf("authorization metadata for %s is unavailable", address)
-	}
-	if kind == authorizationNativePQ {
-		request.PQScheme = signerapi.PQSchemeFalcon1024
-		return nil
-	}
-	if kind != authorizationLogicSig {
-		return nil
-	}
-	profile, ok := cache.LogicSigResourceProfile(address)
-	if !ok {
-		return fmt.Errorf("LogicSig resource profile for %s is unavailable", address)
-	}
-	usage := conservativeLogicSigResourceUsage(profile)
-	if usage == nil {
-		return fmt.Errorf("LogicSig resource profile for %s is invalid", address)
-	}
-	request.LsigResources = usage
-	return nil
-}
-
-func conservativeLogicSigResourceUsage(profile lsigresource.Profile) *signerapi.LogicSigResourceUsage {
-	var argumentBytes, opcodeCost uint64
-	paths := []*lsigresource.PathProfile{profile.Default, profile.Spend, profile.SpendingRekey, profile.ListedRekey}
-	for _, path := range paths {
-		if path == nil {
-			continue
-		}
-		argumentBytes = max(argumentBytes, path.ArgumentBytes)
-		opcodeCost = max(opcodeCost, path.MaxOpcodeCost)
-	}
-	if profile.ProgramBytes == 0 || opcodeCost == 0 {
-		return nil
-	}
-	return &signerapi.LogicSigResourceUsage{
-		ProgramBytes:  profile.ProgramBytes,
-		ArgumentBytes: argumentBytes,
-		MaxOpcodeCost: opcodeCost,
-	}
 }
 
 // requestNonCosignedSignatures signs the non-cosigned original positions of a

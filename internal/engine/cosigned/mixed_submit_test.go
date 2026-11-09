@@ -101,9 +101,13 @@ func TestRequestNonCosignedSignaturesShapesModesAndExtracts(t *testing.T) {
 	}
 }
 
-func TestBuildBoundedComponentRequestsDeclaresForeignNativeFalcon(t *testing.T) {
+// A position the signer holds goes to /plan as the signer's own, with no size
+// hint: the signer sizes it from its records and can put its authorization
+// charge on it (audit #10, #19).
+func TestBuildBoundedComponentRequestsSendsHeldPositionsAsTheSignersOwn(t *testing.T) {
 	cosigned := testAddress(1).String()
 	nativeFalcon := testAddress(2).String()
+	stranger := testAddress(3)
 	cosignerHex := testCosignerPublicKeyHex(0xd6)
 	s := newMixedTestSigner(t, func(c *cache.SignerCache) {
 		c.AddAddress(cosigned, "aplane.falcon1024.v1")
@@ -115,6 +119,7 @@ func TestBuildBoundedComponentRequestsDeclaresForeignNativeFalcon(t *testing.T) 
 	txns := []types.Transaction{
 		testPaymentTxn(t, testAddress(1), testAddress(5), "cosigned"),
 		testPaymentTxn(t, testAddress(2), testAddress(5), "native-falcon"),
+		testPaymentTxn(t, stranger, testAddress(5), "not-held"),
 	}
 	requests, err := s.buildBoundedComponentRequests(
 		txns,
@@ -124,14 +129,17 @@ func TestBuildBoundedComponentRequestsDeclaresForeignNativeFalcon(t *testing.T) 
 	if err != nil {
 		t.Fatalf("buildBoundedComponentRequests() error = %v", err)
 	}
-	if mode, _ := requests[1].Mode(); mode != signerapi.RequestModeForeign {
-		t.Fatalf("native Falcon request mode = %q, want foreign", mode)
+	held := requests[1]
+	if mode, _ := held.Mode(); mode != signerapi.RequestModeSign || held.AuthAddress != nativeFalcon {
+		t.Fatalf("held native Falcon request = %#v, want sign mode for %s", held, nativeFalcon)
 	}
-	if got := requests[1].PQScheme; got != signerapi.PQSchemeFalcon1024 {
-		t.Fatalf("native Falcon pq_scheme = %q, want %q", got, signerapi.PQSchemeFalcon1024)
+	if held.PQScheme != "" || held.LsigResources != nil {
+		t.Fatalf("held request carries a size hint: %#v", held)
 	}
-	if requests[1].LsigResources != nil {
-		t.Fatalf("native Falcon lsig_resources = %#v, want nil", requests[1].LsigResources)
+	// An account the signer doesn't hold is another party's: foreign, unhinted.
+	other := requests[2]
+	if mode, _ := other.Mode(); mode != signerapi.RequestModeForeign || other.PQScheme != "" || other.LsigResources != nil {
+		t.Fatalf("unheld request = %#v, want foreign with no hint", other)
 	}
 }
 

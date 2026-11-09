@@ -36,8 +36,16 @@ type ComponentTarget struct {
 	AppCallInfo  *AppCallInfo        `json:"app_call_info,omitempty"`
 }
 
+// ComponentContextPosition is an original position this request doesn't sign.
+// With AuthAddress it is one of the signer's own accounts: the signer sizes
+// its authorization from its own records, exactly as /plan did, and LsigArgs
+// carries what a bounded account needs to be classified. Without AuthAddress
+// it is another party's position, sized from the caller's LsigResources or
+// PQScheme hint. Either way it is not signed or judged by this request.
 type ComponentContextPosition struct {
 	TargetIndex   int                    `json:"target_index"`
+	AuthAddress   string                 `json:"auth_address,omitempty"`
+	LsigArgs      map[string]string      `json:"lsig_args,omitempty"`
 	LsigResources *LogicSigResourceUsage `json:"lsig_resources,omitempty"`
 	PQScheme      string                 `json:"pq_scheme,omitempty"`
 	AppCallInfo   *AppCallInfo           `json:"app_call_info,omitempty"`
@@ -136,9 +144,14 @@ func (r ComponentRequest) Validate() error {
 			return fmt.Errorf("contextual position %d: duplicate or overlapping target_index %d", i+1, position.TargetIndex)
 		}
 		covered[position.TargetIndex] = true
-		contextRequest := SignRequest{TxnBytesHex: "frozen", LsigResources: position.LsigResources, PQScheme: position.PQScheme, AppCallInfo: position.AppCallInfo}
+		// With auth_address this validates as the signer's own position, so a
+		// size hint is refused: the signer's records decide.
+		contextRequest := SignRequest{TxnBytesHex: "frozen", AuthAddress: position.AuthAddress, LsigArgs: position.LsigArgs, LsigResources: position.LsigResources, PQScheme: position.PQScheme, AppCallInfo: position.AppCallInfo}
 		if err := contextRequest.Validate(); err != nil {
 			return fmt.Errorf("contextual position %d: %w", i+1, err)
+		}
+		if position.AuthAddress == "" && len(position.LsigArgs) != 0 {
+			return fmt.Errorf("contextual position %d: lsig_args requires auth_address", i+1)
 		}
 	}
 	for index, ok := range covered {

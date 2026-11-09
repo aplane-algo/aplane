@@ -26,6 +26,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signing"
+	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
 	"github.com/aplane-algo/aplane/internal/txeffects"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	"github.com/aplane-algo/aplane/lsig/ed25519lsig"
@@ -561,6 +562,66 @@ func TestPlainHostMixedGroupThroughSigner(t *testing.T) {
 		if err != nil || info.Amount == 1_000_000 {
 			t.Fatalf("%s holds %d after the group, %v", address, info.Amount, err)
 		}
+	}
+}
+
+// A cosigned group follows the planner's ordinary rule for who pays the
+// signer's authorization charge: a native Falcon position the signer holds
+// takes it, ahead of any LogicSig account. The cosigned account's fee is not
+// raised. The Falcon position used to be sent to the planner as foreign, which
+// left the cosigned account as the only one that could pay (audit #10).
+func TestCosignedGroupChargesTheNativeFalconPosition(t *testing.T) {
+	// apshell registers the native Falcon client metadata at startup
+	// (internal/apshellcli/providers.go); this engine is built without it.
+	nativefalcon.RegisterClient()
+	n := newCosignedNode(t)
+	activatePlainHosts(t, n)
+	cosigned := generatePlainHost(t, n, plainFalconKeyType, map[string]string{
+		cosignerrefs.ParamCosignerName: cosignedReferenceName, plainhost.ParameterRekeyAuthority: plainhost.RekeySpendingKey,
+	})
+	falcon := generatePlainHost(t, n, nativefalcon.KeyType, nil)
+	if err := n.eng.EnsureSignerCache(context.Background()); err != nil {
+		t.Fatalf("refresh signer cache: %v", err)
+	}
+	sp, err := n.network.GetSuggestedParams()
+	if err != nil {
+		t.Fatalf("suggested params: %v", err)
+	}
+	first, err := transaction.MakePaymentTxn(cosigned, falcon, 10_000, []byte("cosigned-with-falcon"), "", sp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := transaction.MakePaymentTxn(falcon, cosigned, 20_000, []byte("falcon-with-cosigned"), "", sp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := n.eng.SignAndSubmitTransactions(context.Background(), []types.Transaction{first, second}, true)
+	if err != nil {
+		output := ""
+		if result != nil {
+			output = result.Output
+		}
+		t.Fatalf("cosigned group with a native Falcon position: %v\n%s", err, output)
+	}
+	if !result.Confirmed || len(result.TxIDs) < 2 {
+		t.Fatalf("group: confirmed %v with %d txids", result.Confirmed, len(result.TxIDs))
+	}
+	fees := make([]types.MicroAlgos, 2)
+	for i, want := range []string{cosigned, falcon} {
+		info, _, err := n.network.Client.PendingTransactionInformation(result.TxIDs[i]).Do(context.Background())
+		if err != nil {
+			t.Fatalf("read position %d: %v", i+1, err)
+		}
+		if got := info.Transaction.Txn.Sender.String(); got != want {
+			t.Fatalf("position %d sender = %s, want %s", i+1, got, want)
+		}
+		fees[i] = info.Transaction.Txn.Fee
+	}
+	if fees[0] != first.Fee {
+		t.Fatalf("cosigned position paid %d microAlgos, want its own %d: the charge belongs on the Falcon position", fees[0], first.Fee)
+	}
+	if fees[1] < second.Fee+2_000 {
+		t.Fatalf("native Falcon position paid %d microAlgos, want at least %d: its fee plus its Falcon contribution", fees[1], second.Fee+2_000)
 	}
 }
 

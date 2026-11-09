@@ -1419,9 +1419,23 @@ See [Mode Selection](#mode-selection) for the foreign/passthrough/sign distincti
 - `reason`
 
 `/sign/component` accepts `signerapi.ComponentRequest`: optional `request_id`,
-frozen TX-prefixed `group_bytes_hex[]`, discriminated `targets[]`, foreign-only
+frozen TX-prefixed `group_bytes_hex[]`, discriminated `targets[]`,
 `contextual_positions[]`, and a contiguous `dummy_positions[]` suffix. The
-three position sets form a closed partition. Target `kind` is `user`, `cosigner`,
+three position sets form a closed partition.
+
+A contextual position is one this request doesn't sign or judge; policy and the
+operator see it on the later `/sign`. It comes in two forms:
+
+- **Another party's position** carries no `auth_address`. The signer sizes its
+  authorization from the caller's `lsig_resources` or `pq_scheme` hint.
+- **One of the signer's own accounts** carries `auth_address`, and `lsig_args`
+  where a bounded account needs them to be classified. The signer sizes it from
+  its own records, exactly as `/plan` did, and refuses a hint on it. An
+  `auth_address` the signer doesn't hold is refused.
+
+The frozen group must carry exactly the dummies its resources require, so the
+client marks the same positions as the signer's own on `/plan` (in sign mode)
+and here. Target `kind` is `user`, `cosigner`,
 or `bounded-base`; kind-specific fields are rejected on other kinds.
 Dummy classification is semantic in both directions: every declared dummy must
 match the canonical signer-added suffix form, and a canonical dummy suffix may

@@ -7,6 +7,19 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## Cosigned groups charge the right account
+
+- In a group with a cosigned account, the signer's own non-cosigned positions are now
+  planned as its own, not as another party's. The authorization charge follows the same
+  payer order as an ordinary `/sign`: a native Falcon position takes it, ahead of any
+  LogicSig account. It used to land on the cosigned account, and a bounded account with
+  a tight fee ceiling could fail to plan a group that signs on the ordinary path.
+- Those positions are sized from the signer's records, on the path each one takes. The
+  client no longer sends a worst-case size for them, which could add a dummy
+  transaction the group didn't need.
+- `/sign/component` contextual positions take `auth_address` and `lsig_args` for a
+  position the signer holds. All three SDKs send them.
+
 ## A nonparticipating keyreg is refused
 
 - apsigner refuses a `keyreg` with nonparticipation at any position it signs, with 403,
