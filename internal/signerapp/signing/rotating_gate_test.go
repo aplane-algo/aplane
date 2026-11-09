@@ -71,6 +71,15 @@ func TestComponentRequestRefusesRotatingAccount(t *testing.T) {
 		Targets:       []signerapi.ComponentTarget{{TargetIndex: 0, Kind: signerapi.ComponentTargetKindBoundedBase, AuthAddress: rotating}},
 	}
 	requireRotatingRefusal(t, svc.rejectRotatingComponentRequest(req), "transaction 1:")
+
+	// A contextual position names its account outside the group request; a
+	// rotating account there is refused too.
+	context := signerapi.ComponentRequest{
+		GroupBytesHex:       []string{"deadbeef", "deadbeef"},
+		Targets:             []signerapi.ComponentTarget{{TargetIndex: 0, Kind: signerapi.ComponentTargetKindBoundedBase, AuthAddress: types.Address{9}.String()}},
+		ContextualPositions: []signerapi.ComponentContextPosition{{TargetIndex: 1, AuthAddress: rotating}},
+	}
+	requireRotatingRefusal(t, svc.rejectRotatingComponentRequest(context), "transaction 2:")
 }
 
 func TestRejectRekeyToRotatingAccount(t *testing.T) {

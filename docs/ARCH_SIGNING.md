@@ -1431,12 +1431,18 @@ operator see it on the later `/sign`. It comes in two forms:
 - **One of the signer's own accounts** carries `auth_address`, and `lsig_args`
   where a bounded account needs them to be classified. The signer sizes it from
   its own records, exactly as `/plan` did, and refuses a hint on it. An
-  `auth_address` the signer doesn't hold is refused.
+  `auth_address` the signer doesn't hold is refused, and so is a rotating
+  account. Only a `bounded-base` request sizes the group, so only it takes
+  these two fields; a `cosigner` request refuses them.
 
 The frozen group must carry exactly the dummies its resources require, so the
 client marks the same positions as the signer's own on `/plan` (in sign mode)
-and here. Target `kind` is `user`, `cosigner`,
-or `bounded-base`; kind-specific fields are rejected on other kinds.
+and here. apshell and the SDKs send every non-cosigned position this way: each
+is signed later through `/sign`, so the signer must hold its key, and a group
+with a position it doesn't hold is refused by the client before planning.
+
+Target `kind` is `cosigner` or `bounded-base`; kind-specific fields are
+rejected on other kinds.
 Dummy classification is semantic in both directions: every declared dummy must
 match the canonical signer-added suffix form, and a canonical dummy suffix may
 not be relabeled as caller-supplied original positions.
@@ -2125,8 +2131,9 @@ Cross-SDK compatibility-bearing behavior:
   `/plan` and `/sign`.
 - Cosigned prepared signing requires frozen canonical bytes before component
   signatures are requested. The normative SDK sequence is: classify cosigned
-  targets; construct intended original transactions; send those originals plus
-  signer-advertised structured LogicSig resource hints to `/plan`; validate the
+  targets; construct intended original transactions; send those originals to
+  `/plan`, every one in sign mode with its account's `auth_address` (the signer
+  sizes each from its own records, so no resource hint is sent); validate the
   returned canonical group and mutation report; derive the
   target/context/dummy position partition; locally sign only the canonical
   dummy suffix returned by `/plan`; obtain the required bounded-base and

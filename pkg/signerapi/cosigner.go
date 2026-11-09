@@ -144,14 +144,24 @@ func (r ComponentRequest) Validate() error {
 			return fmt.Errorf("contextual position %d: duplicate or overlapping target_index %d", i+1, position.TargetIndex)
 		}
 		covered[position.TargetIndex] = true
-		// With auth_address this validates as the signer's own position, so a
-		// size hint is refused: the signer's records decide.
+		// auth_address marks one of the signer's own accounts. Only a
+		// bounded-base request sizes the group, so only it reads the field;
+		// a cosigner request refuses it, as it refuses the field on a target.
+		if position.AuthAddress != "" || len(position.LsigArgs) != 0 {
+			if kind != ComponentTargetKindBoundedBase {
+				return fmt.Errorf("contextual position %d: auth_address and lsig_args are allowed only on a bounded-base request", i+1)
+			}
+			if position.AuthAddress == "" {
+				return fmt.Errorf("contextual position %d: lsig_args requires auth_address", i+1)
+			}
+			// The signer sizes its own account from its records.
+			if position.LsigResources != nil || position.PQScheme != "" {
+				return fmt.Errorf("contextual position %d: lsig_resources and pq_scheme are allowed only without auth_address", i+1)
+			}
+		}
 		contextRequest := SignRequest{TxnBytesHex: "frozen", AuthAddress: position.AuthAddress, LsigArgs: position.LsigArgs, LsigResources: position.LsigResources, PQScheme: position.PQScheme, AppCallInfo: position.AppCallInfo}
 		if err := contextRequest.Validate(); err != nil {
 			return fmt.Errorf("contextual position %d: %w", i+1, err)
-		}
-		if position.AuthAddress == "" && len(position.LsigArgs) != 0 {
-			return fmt.Errorf("contextual position %d: lsig_args requires auth_address", i+1)
 		}
 	}
 	for index, ok := range covered {

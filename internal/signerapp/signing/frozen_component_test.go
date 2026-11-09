@@ -379,7 +379,7 @@ func TestFrozenComponentSizesAHeldContextPositionFromSignerRecords(t *testing.T)
 	}
 	// A position the signer sizes takes no hint from the caller.
 	hinted := request(signerapi.ComponentContextPosition{TargetIndex: 1, AuthAddress: falcon.String(), PQScheme: signerapi.PQSchemeFalcon1024})
-	if _, _, err := service.ValidateFrozenComponentContext(hinted); err == nil || !strings.Contains(err.Message, "pq_scheme is allowed only for foreign") {
+	if _, _, err := service.ValidateFrozenComponentContext(hinted); err == nil || !strings.Contains(err.Message, "lsig_resources and pq_scheme are allowed only without auth_address") {
 		t.Fatalf("hinted held position: err = %v, want the hint refused", err)
 	}
 }

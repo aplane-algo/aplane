@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -101,9 +102,9 @@ func TestRequestNonCosignedSignaturesShapesModesAndExtracts(t *testing.T) {
 	}
 }
 
-// A position the signer holds goes to /plan as the signer's own, with no size
-// hint: the signer sizes it from its records and can put its authorization
-// charge on it (audit #10, #19).
+// A non-cosigned position goes to /plan and /sign/component as the signer's
+// own, with no size hint: the signer sizes it from its records and can put the
+// group's authorization charge on it (audit #10, #19).
 func TestBuildBoundedComponentRequestsSendsHeldPositionsAsTheSignersOwn(t *testing.T) {
 	cosigned := testAddress(1).String()
 	nativeFalcon := testAddress(2).String()
@@ -119,13 +120,9 @@ func TestBuildBoundedComponentRequestsSendsHeldPositionsAsTheSignersOwn(t *testi
 	txns := []types.Transaction{
 		testPaymentTxn(t, testAddress(1), testAddress(5), "cosigned"),
 		testPaymentTxn(t, testAddress(2), testAddress(5), "native-falcon"),
-		testPaymentTxn(t, stranger, testAddress(5), "not-held"),
 	}
-	requests, err := s.buildBoundedComponentRequests(
-		txns,
-		map[int]cosignedTarget{0: cosignedTargetForTest(cosigned, cosignerHex)},
-		clientsign.SubmitOptions{},
-	)
+	targets := map[int]cosignedTarget{0: cosignedTargetForTest(cosigned, cosignerHex)}
+	requests, err := s.buildBoundedComponentRequests(txns, targets, clientsign.SubmitOptions{})
 	if err != nil {
 		t.Fatalf("buildBoundedComponentRequests() error = %v", err)
 	}
@@ -136,10 +133,31 @@ func TestBuildBoundedComponentRequestsSendsHeldPositionsAsTheSignersOwn(t *testi
 	if held.PQScheme != "" || held.LsigResources != nil {
 		t.Fatalf("held request carries a size hint: %#v", held)
 	}
-	// An account the signer doesn't hold is another party's: foreign, unhinted.
-	other := requests[2]
-	if mode, _ := other.Mode(); mode != signerapi.RequestModeForeign || other.PQScheme != "" || other.LsigResources != nil {
-		t.Fatalf("unheld request = %#v, want foreign with no hint", other)
+
+	// /sign/component names the same account for that position, with no hint,
+	// so the signer sizes it as /plan did.
+	group := frozenGroup{BytesHex: []string{"a", "b", "dummy"}, OriginalCount: 2}
+	component := boundedBaseComponentRequest(group, requests, targets, []*signerapi.AppCallInfo{nil, {Mode: "raw"}})
+	if len(component.Targets) != 1 || component.Targets[0].TargetIndex != 0 || component.Targets[0].AuthAddress != cosigned {
+		t.Fatalf("component targets = %#v", component.Targets)
+	}
+	want := []signerapi.ComponentContextPosition{{TargetIndex: 1, AuthAddress: nativeFalcon, AppCallInfo: &signerapi.AppCallInfo{Mode: "raw"}}}
+	if !reflect.DeepEqual(component.ContextualPositions, want) {
+		t.Fatalf("contextual positions = %#v, want %#v", component.ContextualPositions, want)
+	}
+	if len(component.DummyPositions) != 1 || component.DummyPositions[0].TargetIndex != 2 {
+		t.Fatalf("dummy positions = %#v", component.DummyPositions)
+	}
+
+	// A position the signer doesn't hold could never be signed through /sign,
+	// so the group is refused before anything is planned or approved.
+	_, err = s.buildBoundedComponentRequests(
+		append(txns, testPaymentTxn(t, stranger, testAddress(5), "not-held")),
+		targets,
+		clientsign.SubmitOptions{},
+	)
+	if err == nil || !strings.Contains(err.Error(), "transaction 3: the signer holds no key for "+stranger.String()) {
+		t.Fatalf("unheld position: err = %v, want it refused up front", err)
 	}
 }
 

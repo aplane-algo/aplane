@@ -19,6 +19,9 @@ before it was renamed `enroll`.
   transaction the group didn't need.
 - `/sign/component` contextual positions take `auth_address` and `lsig_args` for a
   position the signer holds. All three SDKs send them.
+- apshell refuses a cosigned group that has a position the signer doesn't hold, before
+  planning. Such a group could never finish: it used to fail at the follow-up `/sign`,
+  after the operator had approved it.
 
 ## A nonparticipating keyreg is refused
 

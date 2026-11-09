@@ -563,8 +563,9 @@ listed rekeys (spending key alone):
 1. Resolve the bounded target from `signing_flow` and durable inventory.
 2. Send the draft group to `/plan`, then pass the exact frozen group plus its
    closed target/context/dummy position partition to `/sign/component` with
-   `kind:"bounded-base"`. A non-cosigned position whose key the signer holds
-   is sent as the signer's own in both requests: in sign mode on `/plan`, and
+   `kind:"bounded-base"`. Every non-cosigned position is sent as the
+   signer's own in both requests, since step 3 signs it through `/sign` (a
+   group with a position the signer doesn't hold is refused before planning): in sign mode on `/plan`, and
    as a contextual position with `auth_address` on `/sign/component`. The
    signer then sizes it from its own records and can put the group's
    authorization charge on it, by the same payer order as an ordinary `/sign`.

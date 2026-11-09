@@ -236,7 +236,11 @@ func (s *Signer) planFrozenGroup(ctx context.Context, original []types.Transacti
 // and operator approval run for bounded targets, so every contextual position
 // carries the caller's app call description: the approval shows another
 // position's ABI method, as the cosigner's request does.
-func (s *Signer) requestBoundedBaseComponents(ctx context.Context, group frozenGroup, requests []signerapi.SignRequest, targets []cosignedTarget, targetsByIndex map[int]cosignedTarget, appCallInfo []*signerapi.AppCallInfo) (map[int]signerapi.Component, string, error) {
+// boundedBaseComponentRequest builds the /sign/component request over the
+// frozen group from the /plan requests. A non-target position names its
+// account, as it did on /plan, so the signer sizes it from the same records
+// and the two agree on the group's dummy count.
+func boundedBaseComponentRequest(group frozenGroup, requests []signerapi.SignRequest, targetsByIndex map[int]cosignedTarget, appCallInfo []*signerapi.AppCallInfo) signerapi.ComponentRequest {
 	componentReq := signerapi.ComponentRequest{GroupBytesHex: group.BytesHex}
 	for i, request := range requests {
 		if _, ok := targetsByIndex[i]; ok {
@@ -244,20 +248,24 @@ func (s *Signer) requestBoundedBaseComponents(ctx context.Context, group frozenG
 				TargetIndex: i, Kind: signerapi.ComponentTargetKindBoundedBase,
 				AuthAddress: request.AuthAddress, LsigArgs: request.LsigArgs, AppCallInfo: request.AppCallInfo,
 			})
-		} else {
-			position := signerapi.ComponentContextPosition{
-				TargetIndex: i, AuthAddress: request.AuthAddress, LsigArgs: request.LsigArgs,
-				LsigResources: request.LsigResources, PQScheme: request.PQScheme, AppCallInfo: request.AppCallInfo,
-			}
-			if i < len(appCallInfo) && appCallInfo[i] != nil {
-				position.AppCallInfo = appCallInfo[i]
-			}
-			componentReq.ContextualPositions = append(componentReq.ContextualPositions, position)
+			continue
 		}
+		position := signerapi.ComponentContextPosition{
+			TargetIndex: i, AuthAddress: request.AuthAddress, LsigArgs: request.LsigArgs, AppCallInfo: request.AppCallInfo,
+		}
+		if i < len(appCallInfo) && appCallInfo[i] != nil {
+			position.AppCallInfo = appCallInfo[i]
+		}
+		componentReq.ContextualPositions = append(componentReq.ContextualPositions, position)
 	}
 	for i := group.OriginalCount; i < len(group.BytesHex); i++ {
 		componentReq.DummyPositions = append(componentReq.DummyPositions, signerapi.ComponentDummyPosition{TargetIndex: i})
 	}
+	return componentReq
+}
+
+func (s *Signer) requestBoundedBaseComponents(ctx context.Context, group frozenGroup, requests []signerapi.SignRequest, targets []cosignedTarget, targetsByIndex map[int]cosignedTarget, appCallInfo []*signerapi.AppCallInfo) (map[int]signerapi.Component, string, error) {
+	componentReq := boundedBaseComponentRequest(group, requests, targetsByIndex, appCallInfo)
 	componentResp, err := s.conn.RequestComponentsWithContext(ctx, componentReq)
 	if err != nil {
 		return nil, "", fmt.Errorf("bounded base component signing failed: %w", err)
@@ -363,15 +371,17 @@ func (s *Signer) buildBoundedComponentRequests(txns []types.Transaction, targets
 			requests[i] = signModeRequest(i, target.Account, target.Sender, txnHex, opts)
 			continue
 		}
-		// A position the signer holds is sent as its own, so the signer sizes
-		// it from its records and can put that position's authorization charge
-		// on it. Anything else is another party's and stays foreign.
+		// Every other position is signed through /sign over the frozen group,
+		// so the signer must hold its key. It is sent as the signer's own: the
+		// signer sizes it from its records and can put the group's
+		// authorization charge on it. A position the signer doesn't hold could
+		// never be signed here, so it is refused now, before anything is
+		// planned or approved.
 		effectiveSigner := s.authCache.ResolveEffectiveSigner(txn.Sender.String())
-		if _, held := s.cache.AuthorizationKind(effectiveSigner); held {
-			requests[i] = signModeRequest(i, effectiveSigner, txn.Sender.String(), txnHex, opts)
-			continue
+		if _, held := s.cache.AuthorizationKind(effectiveSigner); !held {
+			return nil, fmt.Errorf("transaction %d: the signer holds no key for %s; every position of a cosigned group must be signed by this signer (run keys refresh if the key is new)", i+1, effectiveSigner)
 		}
-		requests[i] = signerapi.SignRequest{TxnBytesHex: txnHex}
+		requests[i] = signModeRequest(i, effectiveSigner, txn.Sender.String(), txnHex, opts)
 	}
 	return requests, nil
 }

@@ -37,6 +37,12 @@ func (s *Service) rejectRotatingComponentRequest(req signerapi.ComponentRequest)
 			return err
 		}
 	}
+	// A contextual position names its account outside the group request.
+	for _, position := range req.ContextualPositions {
+		if err := rejectRotatingKeyType(position.TargetIndex, keyTypes[position.AuthAddress]); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
