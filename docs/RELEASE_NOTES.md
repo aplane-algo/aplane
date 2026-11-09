@@ -17,6 +17,21 @@ before it was renamed `enroll`.
 - An address-named alias already in the client cache is ignored, with a warning naming
   the address it pointed to, when the cache loads, and the next save drops it.
 
+## Approval prompts escape client and chain text
+
+- An approval prompt shows an asset's name, unit and URL, a transaction's genesis ID and
+  type, an ABI method label and the request's auth address with every non-printing
+  character escaped (`\x1b`, `\r`, `\n`, `\u202e`). Before, a client or an asset's issuer
+  could put terminal control sequences in them that cleared apapprover's screen or wrote
+  over lines already shown, so the operator approved something other than what was
+  signed. The signer escapes the prompt where it sends it, and apadmin and apapprover
+  escape it again where they receive it. The daemon's console copy is escaped too.
+- `app_call_info.method` must be printable ASCII, as every ABI method signature is.
+  `/sign`, `/plan`, `/sign/component` and `/sign/rotating/sign` refuse anything else
+  with 400.
+- ASA set unit names, and the asset names a policy preview shows, replace format
+  characters such as U+202E with `?`, as they already did control characters.
+
 ## Bounds are an overlay of the plain hosts
 
 This release is install-fresh only.

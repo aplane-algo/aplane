@@ -169,6 +169,27 @@ func TestDecodeNotificationSignRequest(t *testing.T) {
 	}
 }
 
+// apapprover prints a request with fmt.Printf, so it escapes the request
+// where it decodes it, even though the signer already did.
+func TestDecodeNotificationSignRequestEscapesText(t *testing.T) {
+	raw, err := protocol.MarshalAdminMessage(protocol.SignRequestMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeSignRequest, ID: "sign-1"},
+		Address:     "ADDR\x1b[2J",
+		Description: "Method: x\x1b[2J\r\n  To:   FRIEND",
+	})
+	if err != nil {
+		t.Fatalf("MarshalAdminMessage() error = %v", err)
+	}
+	decoded, _, err := decodeNotification(transport.Notification{Base: protocol.BaseMessage{Type: protocol.MsgTypeSignRequest}, Raw: raw})
+	if err != nil {
+		t.Fatalf("decodeNotification() error = %v", err)
+	}
+	req := decoded.request.signRequest
+	if req.Address != `ADDR\x1b[2J` || req.Description != "Method: x\\x1b[2J\\r\n  To:   FRIEND" {
+		t.Fatalf("decoded sign request was not escaped: %#v", req)
+	}
+}
+
 func TestDecodeNotificationSignRequestCanceled(t *testing.T) {
 	raw, err := protocol.MarshalAdminMessage(protocol.SignRequestCanceledMessage{
 		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeSignRequestCanceled, ID: "sign-1"},

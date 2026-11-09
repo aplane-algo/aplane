@@ -106,6 +106,9 @@ func (r ComponentRequest) Validate() error {
 			return fmt.Errorf("target %d: duplicate or overlapping target_index %d", i+1, target.TargetIndex)
 		}
 		covered[target.TargetIndex] = true
+		if err := target.AppCallInfo.validate(); err != nil {
+			return fmt.Errorf("target %d: %w", i+1, err)
+		}
 		if target.Kind != kind {
 			return fmt.Errorf("mixed component target kinds are not supported")
 		}
@@ -133,7 +136,7 @@ func (r ComponentRequest) Validate() error {
 			return fmt.Errorf("contextual position %d: duplicate or overlapping target_index %d", i+1, position.TargetIndex)
 		}
 		covered[position.TargetIndex] = true
-		contextRequest := SignRequest{TxnBytesHex: "frozen", LsigResources: position.LsigResources, PQScheme: position.PQScheme}
+		contextRequest := SignRequest{TxnBytesHex: "frozen", LsigResources: position.LsigResources, PQScheme: position.PQScheme, AppCallInfo: position.AppCallInfo}
 		if err := contextRequest.Validate(); err != nil {
 			return fmt.Errorf("contextual position %d: %w", i+1, err)
 		}

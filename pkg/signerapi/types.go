@@ -105,6 +105,22 @@ type AppCallInfo struct {
 	Method string `json:"method,omitempty"` // ABI method signature when available
 }
 
+// validate refuses a method label that is not printable ASCII. The label is
+// shown to the operator, and an ABI method signature is always printable
+// ASCII, so anything else (a newline, an escape sequence, a bidirectional
+// control) could only be there to change what the operator reads.
+func (i *AppCallInfo) validate() error {
+	if i == nil {
+		return nil
+	}
+	for k := 0; k < len(i.Method); k++ {
+		if c := i.Method[k]; c < 0x20 || c > 0x7e {
+			return fmt.Errorf("app_call_info.method must be printable ASCII; byte %d is 0x%02x", k, c)
+		}
+	}
+	return nil
+}
+
 // GroupSignRequest is the request payload for the /sign endpoint.
 // Contains an array of transactions to be signed as a group.
 type GroupSignRequest struct {
@@ -194,7 +210,7 @@ func (r SignRequest) Validate() error {
 			return fmt.Errorf("invalid lsig_resources: %w", err)
 		}
 	}
-	return nil
+	return r.AppCallInfo.validate()
 }
 
 // Validate checks that all contained requests use a supported request mode.

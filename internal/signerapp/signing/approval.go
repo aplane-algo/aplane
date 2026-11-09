@@ -17,6 +17,7 @@ import (
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 	"github.com/aplane-algo/aplane/internal/signerapp/approvalpolicy"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyeval"
+	"github.com/aplane-algo/aplane/internal/termsafe"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
@@ -70,7 +71,13 @@ type approvalResponseRecorder interface {
 	RecordApprovalResponse(response signerapproval.SignResponse)
 }
 
+// requestSigningApproval is the one way a signing prompt reaches the operator.
+// Much of what it shows comes from the client or from the chain: an asset's
+// name, an ABI method label, an auth address. Every string is escaped here, so
+// none of it can drive the operator's terminal or reorder what they read.
 func (s *ApprovalService) requestSigningApproval(ctx context.Context, requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
+	address, txnSender, description = termsafe.Line(address), termsafe.Line(txnSender), termsafe.Lines(description)
+	violations = operatorSafeViolations(violations)
 	var response signerapproval.SignResponse
 	var err error
 	if s.RequestSigningApprovalResponseContext != nil {
@@ -95,6 +102,20 @@ func (s *ApprovalService) requestSigningApproval(ctx context.Context, requestID,
 		recorder.RecordApprovalResponse(response)
 	}
 	return response.Approved, nil
+}
+
+// operatorSafeViolations is violations with every string escaped for the
+// operator's terminal.
+func operatorSafeViolations(violations []signerapproval.Violation) []signerapproval.Violation {
+	if len(violations) == 0 {
+		return violations
+	}
+	safe := make([]signerapproval.Violation, len(violations))
+	for i, v := range violations {
+		v.Field, v.Value, v.Message = termsafe.Line(v.Field), termsafe.Line(v.Value), termsafe.Lines(v.Message)
+		safe[i] = v
+	}
+	return safe
 }
 
 func (s *ApprovalService) approvalWait() time.Duration {
@@ -261,7 +282,8 @@ func BuildApprovalDescription(req signerapi.GroupSignRequest, plan *PlanResult, 
 	}
 
 	firstValid, lastValid = approvalWindow(allTxns)
-	return b.String(), firstValid, lastValid
+	// The daemon prints this to its console as well as prompting with it.
+	return termsafe.Lines(b.String()), firstValid, lastValid
 }
 
 func approvalTransactionNumbers(indices []int) []int {
@@ -649,7 +671,8 @@ func describeTxnForApproval(txn types.Transaction, txReq signerapi.SignRequest, 
 		return desc
 	}
 
-	return insertAppCallMetadata(desc, []string{"Mode: ABI", "Method: " + methodSig})
+	// The label is the client's: the selector check binds only its hash.
+	return insertAppCallMetadata(desc, []string{"Mode: ABI", "Method: " + termsafe.Line(methodSig)})
 }
 
 func appendViolationHighlights(desc string, violations []signerapproval.Violation) string {

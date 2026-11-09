@@ -701,3 +701,31 @@ func TestIPCClientReportsUndecodableMessage(t *testing.T) {
 		t.Fatalf("ErrorMsg = %#v, want the failed request's ID and a decode error", errMsg)
 	}
 }
+
+// apadmin shows a request's description in its signing view, so it escapes
+// the request where it decodes it, even though the signer already did.
+func TestSignRequestDecoderEscapesText(t *testing.T) {
+	raw, err := protocol.MarshalAdminMessage(SignRequestMessage{
+		BaseMessage: BaseMessage{Type: MsgTypeSignRequest, ID: "sign-1"},
+		Address:     "ADDR\x1b[2J",
+		TxnSender:   "SENDER\r",
+		Description: "Method: x\x1b[2J\r\n  To:   FRIEND",
+		Violations:  []protocol.PolicyViolation{{Field: "RekeyTo", Value: "V\x1b[1A", Severity: "warning", Message: "m"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := signerMessageDecoders[MsgTypeSignRequest](raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok := decoded.(SignRequestReceivedMsg)
+	if !ok {
+		t.Fatalf("decoded = %#v, want SignRequestReceivedMsg", decoded)
+	}
+	req := got.Request
+	if req.Address != `ADDR\x1b[2J` || req.TxnSender != `SENDER\r` ||
+		req.Description != "Method: x\\x1b[2J\\r\n  To:   FRIEND" || req.Violations[0].Value != `V\x1b[1A` {
+		t.Fatalf("decoded sign request was not escaped: %#v", req)
+	}
+}
