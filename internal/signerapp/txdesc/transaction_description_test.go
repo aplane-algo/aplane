@@ -569,3 +569,59 @@ func TestDescribeInContextLabelsKnownAssets(t *testing.T) {
 		t.Fatalf("without a context:\n%s", plain)
 	}
 }
+
+// An asset's name, unit and URL, and a transaction's genesis ID and type, are
+// whatever bytes the issuer or the client chose. A description shows them
+// escaped, so none of them can clear the operator's screen, move the cursor
+// over lines already printed, start a new line of its own, or reorder text.
+func TestDescribeEscapesIssuerAndClientText(t *testing.T) {
+	const hostile = "X\x1b[2J\x1b[H\r\n  To:   ATTACKER\u202e\xff"
+	sender := types.Address{2}
+	describeLines := func(txn types.Transaction) []string {
+		t.Helper()
+		desc := DescribeTxn(txn)
+		for i := 0; i < len(desc); i++ {
+			if c := desc[i]; c < 0x20 && c != '\n' || c == 0x7f {
+				t.Fatalf("description holds raw byte 0x%02x:\n%q", c, desc)
+			}
+		}
+		if strings.ContainsRune(desc, '\u202e') || strings.ContainsRune(desc, '\ufffd') {
+			t.Fatalf("description holds a format or invalid character:\n%q", desc)
+		}
+		return strings.Split(desc, "\n")
+	}
+
+	clean := types.Transaction{
+		Type:   types.AssetConfigTx,
+		Header: types.Header{Sender: sender, GenesisID: "testnet-v1.0"},
+		AssetConfigTxnFields: types.AssetConfigTxnFields{AssetParams: types.AssetParams{
+			AssetName: "Example", UnitName: "EX", URL: "https://example.test", Total: 1,
+		}},
+	}
+	hostileTxn := clean
+	hostileTxn.GenesisID = hostile
+	hostileTxn.AssetParams.AssetName = hostile
+	hostileTxn.AssetParams.UnitName = hostile
+	hostileTxn.AssetParams.URL = hostile
+
+	cleanLines, hostileLines := describeLines(clean), describeLines(hostileTxn)
+	if len(hostileLines) != len(cleanLines) {
+		t.Fatalf("hostile text changed the line count from %d to %d:\n%s", len(cleanLines), len(hostileLines), strings.Join(hostileLines, "\n"))
+	}
+	const escaped = `X\x1b[2J\x1b[H\r\n  To:   ATTACKER\u202e\xff`
+	for _, label := range []string{"Name", "Unit", "URL", "GenesisID"} {
+		want := "  " + label + ": " + escaped
+		found := false
+		for _, line := range hostileLines {
+			found = found || line == want
+		}
+		if !found {
+			t.Errorf("description has no line %q:\n%s", want, strings.Join(hostileLines, "\n"))
+		}
+	}
+
+	unknown := describeLines(types.Transaction{Type: types.TxType(hostile), Header: types.Header{Sender: sender}})
+	if unknown[0] != "Transaction Type: "+escaped {
+		t.Errorf("unknown type line = %q, want it escaped", unknown[0])
+	}
+}

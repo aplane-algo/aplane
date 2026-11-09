@@ -950,6 +950,30 @@ is built, then uses:
 - explicit auto-approval policy never bypasses hard-reject safety policy
 - warning analysis informs approval, but remains separate from the hard-reject layer
 
+### Approval Text Is Escaped
+
+Much of an approval prompt is text the signer did not write: an asset's name,
+unit and URL, a transaction's genesis ID, an ABI method label, an auth
+address from the request. A prompt that showed it as it is would let a
+client, or an asset's issuer, clear the operator's screen, move the cursor
+back over lines already printed, start a line of its own, or reorder text
+with a bidirectional control. So:
+
+- the transaction description (`internal/signerapp/txdesc`) escapes every
+  free-form string where it shows it, so none can start a line of its own,
+  and shows a note, an app argument or a box name quoted or as hex;
+- `requestSigningApproval` (`internal/signerapp/signing/approval.go`), the
+  one path by which a signing prompt reaches the operator, escapes the whole
+  prompt (description, addresses and policy warnings) with
+  `internal/termsafe`, keeping only newlines and tabs; the description the
+  daemon prints to its console is escaped the same way;
+- apadmin and apapprover escape a request again where they decode it
+  (`protocol.SignRequestMessage.TerminalSafe`), so a missed path on the
+  signer still can't reach the terminal.
+
+An escaped character is shown as its Go escape (`\x1b`, `\r`, `\u202e`), so
+the operator sees that it was there.
+
 ### Approval Waits and Cancellation
 
 Signing approval timeout is the product-runtime `approval_wait` value,
@@ -1267,10 +1291,16 @@ policy, and audit decisions use the sender decoded from `txn_bytes_hex`.
 `app_call_info` is approval-rendering metadata on the shared request DTO:
 
 - `mode`: `raw` or `abi`
-- `method`: ABI method signature when `mode:"abi"`
+- `method`: ABI method signature when `mode:"abi"`. It must be printable
+  ASCII (bytes 0x20 to 0x7e), as every ABI signature is; anything else is
+  refused with 400 on every request that carries `app_call_info` (`/sign`,
+  `/plan`, the component and rotating sign requests).
 
 `/sign` uses `app_call_info` to render application-call approval prompts.
-`/plan` accepts the same request DTO but does not perform approval or signing.
+The label is the client's claim: the signer shows it only when its selector
+matches the call's first argument, which binds the label's hash and nothing
+more. `/plan` accepts the same request DTO but does not perform approval or
+signing.
 
 `request_id` is optional and is used by `/sign` to correlate a live synchronous
 sign request with a later `/sign/cancel` request. If absent, external clients

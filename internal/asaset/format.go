@@ -39,11 +39,13 @@ func FormatUnits(amount, decimals uint64) string {
 	return strings.TrimSuffix(strings.TrimRight(fixed, "0"), ".")
 }
 
-// Printable is an issuer-chosen name with control characters replaced, so
-// it cannot drive the terminal it is shown on.
+// Printable is an issuer-chosen name with every non-printing character
+// replaced by '?': control characters, which could drive the terminal it is
+// shown on, and format characters such as U+202E, which reorder what the
+// operator reads. An invalid UTF-8 byte becomes U+FFFD.
 func Printable(name string) string {
 	return strings.Map(func(r rune) rune {
-		if unicode.IsControl(r) {
+		if !unicode.IsPrint(r) {
 			return '?'
 		}
 		return r

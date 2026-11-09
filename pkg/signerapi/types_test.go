@@ -141,3 +141,49 @@ func TestSignCancelStateValues(t *testing.T) {
 		t.Fatalf("SignCancelStateNotFound = %q, want not_found", SignCancelStateNotFound)
 	}
 }
+
+// The ABI method label is shown to the operator, and a method signature is
+// always printable ASCII, so every request that carries one refuses anything
+// else.
+func TestAppCallMethodMustBePrintableASCII(t *testing.T) {
+	const want = "app_call_info.method must be printable ASCII"
+	for _, method := range []string{"x\x1b[2J(uint64)void", "pay\n(uint64)void", "pay\r(uint64)void", "pay\u202e(uint64)void", "pay\x7f()void", "pay\xff()void"} {
+		info := &AppCallInfo{Mode: "abi", Method: method}
+		validate := map[string]func() error{
+			"sign": func() error {
+				return GroupSignRequest{Requests: []SignRequest{{AuthAddress: "A", TxnBytesHex: "5458aa", AppCallInfo: info}}}.Validate()
+			},
+			"foreign": func() error {
+				return GroupSignRequest{Requests: []SignRequest{
+					{AuthAddress: "A", TxnBytesHex: "5458aa"},
+					{TxnBytesHex: "5458bb", AppCallInfo: info},
+				}}.Validate()
+			},
+			"component target": func() error {
+				return ComponentRequest{GroupBytesHex: []string{"5458aa"}, Targets: []ComponentTarget{{
+					TargetIndex: 0, Kind: ComponentTargetKindCosigner, ComponentKey: "COSIGNER", AppCallInfo: info,
+				}}}.Validate()
+			},
+			"component contextual position": func() error {
+				return ComponentRequest{
+					GroupBytesHex:       []string{"5458aa", "5458bb"},
+					Targets:             []ComponentTarget{{TargetIndex: 0, Kind: ComponentTargetKindCosigner, ComponentKey: "COSIGNER"}},
+					ContextualPositions: []ComponentContextPosition{{TargetIndex: 1, AppCallInfo: info}},
+				}.Validate()
+			},
+			"rotating sign": func() error {
+				return RotatingSignRequest{Account: "A", Transactions: []string{"5458aa"}, AppCallInfo: info}.Validate()
+			},
+		}
+		for name, check := range validate {
+			if err := check(); err == nil || !strings.Contains(err.Error(), want) {
+				t.Errorf("%s with method %q: Validate() error = %v, want %q", name, method, err, want)
+			}
+		}
+	}
+
+	ok := &AppCallInfo{Mode: "abi", Method: "transfer(address,uint64,(byte[],string))bool"}
+	if err := (GroupSignRequest{Requests: []SignRequest{{AuthAddress: "A", TxnBytesHex: "5458aa", AppCallInfo: ok}}}).Validate(); err != nil {
+		t.Fatalf("a printable method signature was refused: %v", err)
+	}
+}

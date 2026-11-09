@@ -82,5 +82,5 @@ func (r RotatingSignRequest) Validate() error {
 	if len(r.Transactions) == 0 {
 		return fmt.Errorf("transactions are required")
 	}
-	return nil
+	return r.AppCallInfo.validate()
 }
