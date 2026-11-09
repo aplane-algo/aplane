@@ -7,7 +7,9 @@ package tui
 
 import (
 	"fmt"
+	"maps"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -51,8 +53,9 @@ func buildDetailsParameterLines(keyType string, parameters map[string]string) []
 		return trimTrailingBlankLines(lines)
 	}
 
-	for key, value := range parameters {
-		lines = append(lines, fmt.Sprintf("%s: %s", key, value), "")
+	// Sorted, so the lines and the scroll count keep their order between draws.
+	for _, key := range slices.Sorted(maps.Keys(parameters)) {
+		lines = append(lines, fmt.Sprintf("%s: %s", key, parameters[key]), "")
 	}
 	return trimTrailingBlankLines(lines)
 }

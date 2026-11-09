@@ -303,20 +303,18 @@ func creationParameters() []lsigprovider.ParameterDef {
 	}
 }
 
-// present drops parameters whose value is empty, as creation-parameter
-// normalization treats them: an empty list or option is unset. An empty cosigner
-// is refused instead: a request that names one but gives no value is ambiguous,
-// and reading it as no cosigner would create a weaker account than asked for.
+// present refuses a parameter given with an empty value. A request that names a
+// parameter but gives no value is ambiguous, and reading it as absent can create a
+// weaker account than asked for: an empty unlock round would drop the timelock,
+// an empty transfer list the bounds, an empty cosigner the cosigner. Leave a
+// parameter out to leave it unset; apadmin's form sends only what was chosen.
 func present(params map[string]string) (map[string]string, error) {
 	out := make(map[string]string, len(params))
 	for name, value := range params {
-		if strings.TrimSpace(value) != "" {
-			out[name] = value
-			continue
+		if strings.TrimSpace(value) == "" {
+			return nil, fmt.Errorf("%s is empty; leave it out to leave it unset", name)
 		}
-		if name == ParameterCosigner || name == composeddsa.BoundedCosignerPublicKeyParameter {
-			return nil, fmt.Errorf("%s is empty; leave it out for no cosigner", name)
-		}
+		out[name] = value
 	}
 	return out, nil
 }
@@ -368,28 +366,16 @@ func (p *Provider) resolve(params map[string]string) (*program, map[string]strin
 	if err != nil {
 		return nil, nil, err
 	}
-	rekey := normalized[ParameterRekeyAuthority]
-	if !slices.Contains(RekeyAuthorities, rekey) {
-		return nil, nil, fmt.Errorf("%s must be %s", ParameterRekeyAuthority, strings.Join(RekeyAuthorities, ", "))
-	}
-	cosigner := normalized[composeddsa.BoundedCosignerPublicKeyParameter]
-	selected, ok := p.byArrangement[Arrangement{Rekey: rekey, Cosigner: cosigner != ""}]
-	if !ok {
-		// Only plus cosigned without a cosigner: it would mean spending_key.
-		return nil, nil, fmt.Errorf("%s=%s needs a cosigner; without one it is %s=%s",
-			ParameterRekeyAuthority, rekey, ParameterRekeyAuthority, RekeySpendingKey)
-	}
-	rekeyTo, err := canonicalRekeyTo(params, normalized, rekey)
+	overlays, err := resolveOverlays(params, normalized)
 	if err != nil {
 		return nil, nil, err
 	}
-	values := map[string]string{ParameterRekeyAuthority: rekey}
-	if cosigner != "" {
-		values[composeddsa.BoundedCosignerPublicKeyParameter] = cosigner
+	selected, ok := p.byArrangement[overlays.arrangement]
+	if !ok {
+		return nil, nil, fmt.Errorf("unsupported plain host arrangement %s", descriptor(overlays.arrangement))
 	}
-	if rekeyTo != "" {
-		values[ParameterRekeyTo] = rekeyTo
-	}
+	values := map[string]string{}
+	overlays.addTo(values)
 	return selected, values, nil
 }
 

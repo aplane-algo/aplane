@@ -52,8 +52,9 @@ This release is install-fresh only.
   Ed25519 account's classical spending key with bounds too, and says a timelock can be
   left by any rekey path it has. The Corridor v1 profile is the Corridor preset of
   `aplane.falcon1024.v1`.
-- A request that names a cosigner but gives an empty value is refused rather than read
-  as no cosigner; any other empty value is unset. The bounded shapes are built on first
+- A parameter given with an empty value is refused rather than read as absent, so an
+  empty unlock round, transfer list or cosigner can't make a weaker account than the
+  request named; leave a parameter out to leave it unset. The bounded shapes are built on first
   use, so a process that never selects one, such as a client, doesn't build them at
   start.
 - The O4 agreement harness runs every shape of both bases and every arrangement (about

@@ -1094,6 +1094,10 @@ rebuilds the list from the spending private key and the stored entries, requires
 its root to equal the stored `rekey_list.root`, and places the target's 160-byte
 proof in the list-proof slot; recipient proofs stay empty. The tree is specified
 in [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md#rekey-to-list-compatibility-contract).
+The refusal, and under `plus_cosigned` the path a plan takes, tell an enrolled
+client whether a target is listed, before any approval: the hiding tree keeps the
+list from the chain, not from the signer's clients. This is a documented property,
+not an oversight; a client able to plan a rekey can find the list's members.
 
 ---
 

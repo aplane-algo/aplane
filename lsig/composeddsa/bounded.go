@@ -279,10 +279,19 @@ func validateCanonicalMetadata(profile *BoundedAuthorizationProfile, metadata *b
 	}
 	if metadata.Contract != profile.Contract || !boundedmeta.EqualMaxFee(metadata.MaxFee, profile.MaxFee) ||
 		!slices.Equal(metadata.SpendEffects, spendEffects) || metadata.Rekey != profile.Rekey ||
-		!equalCosignerProfile(metadata.Cosigner, profile.Cosigner) {
+		!equalCosignerProfile(metadata.Cosigner, profile.Cosigner) || !equalRekeyListProfile(metadata.RekeyList, profile.RekeyList) {
 		return fmt.Errorf("bounded profile metadata does not match the authorization profile")
 	}
 	return nil
+}
+
+// equalRekeyListProfile compares the list's definition; the root is the
+// instance's and only the metadata has it.
+func equalRekeyListProfile(a, b *boundedmeta.RekeyList) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return a.Contract == b.Contract && a.Depth == b.Depth
 }
 
 func equalCosignerProfile(a, b *boundedmeta.CosignerAuthorization) bool {

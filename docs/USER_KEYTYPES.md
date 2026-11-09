@@ -462,7 +462,11 @@ both can rekey it anywhere, out of its recipient list.
   nothing about the entries, `/keys` never shows them, and a listed rekey reveals only the
   address it goes to. The salts come from the spending key, so the list is in every
   backup of the key and can't be used without it. apadmin's review and receipt, and the
-  parameters apshell's `generate` returns, do show the addresses.
+  parameters apshell's `generate` returns, do show the addresses. The list is hidden
+  from the chain, not from this signer's enrolled clients: a client can learn whether
+  an address is listed by asking `/plan` for a rekey to it, which refuses an unlisted
+  target, or by attempting the rekey, so treat an enrolled client as able to find the
+  list's members.
 - **Any address can be listed, so check the list.** Generation no longer refuses an
   address that could never act on the account, such as one of this signer's rotating
   accounts, whose address authorizes only itself, or a cosigner key's native address,

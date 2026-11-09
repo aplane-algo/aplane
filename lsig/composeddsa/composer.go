@@ -553,13 +553,8 @@ func (c *ComposedDSA) GenerateTEAL(publicKey []byte, params map[string]string) (
 	if boundedProfile != nil {
 		preludeParams := normalizedParams
 		if generated != nil {
-			preludeParams = make(map[string]string, len(normalizedParams)+len(generated))
-			for name, value := range normalizedParams {
-				preludeParams[name] = value
-			}
-			for name, value := range generated {
-				preludeParams[name] = value
-			}
+			preludeParams = maps.Clone(normalizedParams)
+			maps.Copy(preludeParams, generated)
 		}
 		prelude, err := c.renderBoundedPrelude(publicKey, preludeParams, boundedProfile)
 		if err != nil {

@@ -485,91 +485,44 @@ func TestInvalidRequestsFailClosed(t *testing.T) {
 	}
 }
 
-// A form sends every field, so an empty bounds value is unset, as an empty
-// overlay value is. Where the general type refused an explicitly empty value,
-// the request now resolves as if the field were absent, and a requirement it
-// leaves unmet still refuses it.
-func TestEmptyBoundsValuesAreUnset(t *testing.T) {
+// A parameter given with an empty value is refused, never read as absent:
+// absence could make a weaker account than the request named (an empty unlock
+// round would drop the timelock, empty transfer kinds the bounds, an empty
+// cosigner the cosigner). Leave a parameter out to leave it unset.
+func TestEmptyValuesAreRefused(t *testing.T) {
 	provider := falconHost(t)
-	listed := plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingAuto, Rekey: plainhost.RekeySpendingKey}
-	onlyThese := plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingAuto, Rekey: plainhost.RekeyOnlyThese}
-	cosignedOnlyThese := plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingAuto, Rekey: plainhost.RekeyOnlyThese, Cosigner: true}
-	limits := plainhost.Shape{Spend: everyTransfer, Rekey: plainhost.RekeySpendingKey, AnyRecipient: true}
-	inline := plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingInline, Rekey: plainhost.RekeySpendingKey}
-	for _, test := range []struct {
-		name   string
-		base   plainhost.Shape
-		mutate func(map[string]string)
-		// want is the shape the request selects, or wantErr the refusal.
-		want    plainhost.Shape
-		wantErr string
-	}{
-		{name: "empty unlock round", base: listed, mutate: func(p map[string]string) { p[plainhost.ParameterUnlockRound] = "" }, want: inline},
-		{name: "empty encoding", base: listed, mutate: func(p map[string]string) { p[plainhost.ParameterListEncoding] = "" }, want: inline},
-		{name: "empty recipient scope", base: listed, mutate: func(p map[string]string) { p[plainhost.ParameterRecipientScope] = "" }, want: inline},
-		// An empty cosigner is refused, never read as no cosigner: that would
-		// create a weaker account than the request named.
-		{name: "empty cosigner key", base: cosignedOnlyThese, mutate: func(p map[string]string) { p[composeddsa.BoundedCosignerPublicKeyParameter] = "" },
-			wantErr: "cosigner_public_key is empty"},
-		{name: "empty cosigner name", base: cosignedOnlyThese, mutate: func(p map[string]string) { p[plainhost.ParameterCosigner] = "" },
-			wantErr: "cosigner is empty"},
-		{name: "empty rekey_to with a spending-key rekey", base: listed, mutate: func(p map[string]string) { p[plainhost.ParameterRekeyTo] = "" }, want: inline},
-		{name: "empty list with scope any", base: limits, mutate: func(p map[string]string) { p[plainhost.ParameterRecipients] = "" }, want: limits},
-		{name: "empty list with a timelock", base: listed, mutate: func(p map[string]string) {
-			delete(p, plainhost.ParameterListEncoding)
-			p[plainhost.ParameterRecipients] = ""
-			p[plainhost.ParameterUnlockRound] = "5"
-		}, want: plainhost.Shape{Spend: everyTransfer, Rekey: plainhost.RekeySpendingKey, Timelock: true}},
-		{name: "empty spend", base: listed, mutate: func(p map[string]string) { p[plainhost.ParameterSpendEffects] = "" }, wantErr: "spend_effects is required"},
-		{name: "only_these with an empty rekey_to", base: onlyThese, mutate: func(p map[string]string) { p[plainhost.ParameterRekeyTo] = "" },
-			wantErr: "rekey_authority=only_these needs the addresses"},
-		{name: "only_these with a blank rekey_to", base: onlyThese, mutate: func(p map[string]string) { p[plainhost.ParameterRekeyTo] = "  " },
-			wantErr: "rekey_authority=only_these needs the addresses"},
-		{name: "empty list", base: listed, mutate: func(p map[string]string) { p[plainhost.ParameterRecipients] = "" }, wantErr: "recipients is required"},
-		{name: "empty list with a timelock and an encoding", base: listed, mutate: func(p map[string]string) {
-			p[plainhost.ParameterRecipients] = ""
-			p[plainhost.ParameterUnlockRound] = "5"
-		}, wantErr: "no list to encode"},
-		{name: "empty scope with no list", base: limits, mutate: func(p map[string]string) { p[plainhost.ParameterRecipientScope] = "" }, wantErr: "recipients is required"},
+	cosigned := plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingAuto, Rekey: plainhost.RekeyOnlyThese, Cosigner: true}
+	for _, name := range []string{
+		plainhost.ParameterSpendEffects, plainhost.ParameterRecipients, plainhost.ParameterRecipientScope,
+		plainhost.ParameterUnlockRound, plainhost.ParameterListEncoding, plainhost.ParameterRekeyAuthority,
+		plainhost.ParameterRekeyTo, plainhost.ParameterCosigner, composeddsa.BoundedCosignerPublicKeyParameter,
 	} {
-		t.Run(test.name, func(t *testing.T) {
-			params := shapeRequest(test.base, testRecipients(2))
-			test.mutate(params)
-			instance, err := provider.ResolveInstance(params)
-			if test.wantErr != "" {
-				if err == nil || !strings.Contains(err.Error(), test.wantErr) {
-					t.Fatalf("ResolveInstance error = %v, want %q", err, test.wantErr)
-				}
-				return
+		for _, empty := range []string{"", "  "} {
+			params := shapeRequest(cosigned, testRecipients(2))
+			params[name] = empty
+			if _, err := provider.ResolveInstance(params); err == nil || !strings.Contains(err.Error(), name+" is empty") {
+				t.Fatalf("ResolveInstance(empty %s) error = %v", name, err)
 			}
-			if err != nil {
-				t.Fatal(err)
+			if err := provider.ValidateCreationParams(params); err == nil {
+				t.Fatalf("ValidateCreationParams accepted an empty %s", name)
 			}
-			if instance.Fingerprint != provider.ShapeFingerprintForTest(test.want) {
-				t.Fatalf("the request did not select %s: %+v", test.want.Descriptor(), instance.Bounded)
+			if _, err := provider.GenerateTEAL(make([]byte, 1793), params); err == nil {
+				t.Fatalf("GenerateTEAL accepted an empty %s", name)
 			}
-			for name, value := range instance.Values {
-				if strings.TrimSpace(value) == "" {
-					t.Fatalf("persisted values hold an empty %s", name)
-				}
-			}
-			if err := provider.ValidateCreationParams(params); err != nil {
-				t.Fatalf("ValidateCreationParams() error = %v", err)
-			}
-		})
+		}
 	}
-	// Every bounds field empty is no bounds: the overlays alone select plain1.
-	form := map[string]string{
-		plainhost.ParameterSpendEffects:   "",
-		plainhost.ParameterRecipients:     "",
-		plainhost.ParameterRecipientScope: "",
-		plainhost.ParameterUnlockRound:    "",
-		plainhost.ParameterListEncoding:   " ",
-		plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused,
-	}
-	instance, err := provider.ResolveInstance(form)
-	if err != nil || instance.Bounded == nil || instance.Bounded.Contract != boundedmeta.PlainContract {
-		t.Fatalf("a form with empty bounds: instance = %+v, %v; want plain1", instance, err)
+	// The fail-open cases the rule closes.
+	for name, params := range map[string]map[string]string{
+		"an empty unlock round beside a list": func() map[string]string {
+			p := shapeRequest(plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingAuto, Rekey: plainhost.RekeyRefused}, testRecipients(1))
+			p[plainhost.ParameterUnlockRound] = ""
+			return p
+		}(),
+		"empty transfer kinds": {plainhost.ParameterSpendEffects: "", plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused},
+	} {
+		if instance, err := provider.ResolveInstance(params); err == nil {
+			t.Fatalf("%s resolved to %+v", name, instance.Bounded)
+		}
 	}
 }
 
@@ -603,7 +556,6 @@ func TestRequestsCanonicalize(t *testing.T) {
 	first := resolveShape(t, provider, base, testAddress(1)+","+testAddress(2)+","+testAddress(3))
 	reordered := shapeRequest(base, testAddress(3)+", "+testAddress(1)+","+testAddress(2))
 	reordered[plainhost.ParameterSpendEffects] = "asset_opt_in, pay,axfer"
-	reordered[plainhost.ParameterUnlockRound] = ""
 	second, err := provider.ResolveInstance(reordered)
 	if err != nil {
 		t.Fatal(err)

@@ -5,9 +5,11 @@ package keyadmin
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"maps"
 
+	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/crypto"
 
 	"github.com/aplane-algo/aplane/internal/keyclass"
@@ -76,7 +78,7 @@ func (s Service) GetKeyDetails(address string) (*KeyDetailsResult, *Error) {
 		if witness.IsKeyType(info.Type) {
 			result.PublicKeyHex = info.PublicKeyHex
 		}
-		result.Parameters = maps.Clone(info.Parameters)
+		result.Parameters = keyDetailsParameters(info.Parameters, info.BoundedAuthorization)
 		result.TemplateProvenanceStatus, result.TemplateProvenanceNote = lsigprovider.CompareAccountProvenance(info.Type, info.TemplateFingerprint, info.Parameters, info.BoundedAuthorization)
 		result.PolicyLabel = keytypeux.BoundedMetadataLabel(info.BoundedAuthorization)
 		if result.DisplayTEAL, err = keymgmt.GetDisplayTEALWithKeyring(keyFile, mk); err != nil {
@@ -89,6 +91,30 @@ func (s Service) GetKeyDetails(address string) (*KeyDetailsResult, *Error) {
 	}
 
 	return result, nil
+}
+
+// keyDetailsCosignerLabel names a cosigned account's cosigner in its details.
+const keyDetailsCosignerLabel = "Cosigner"
+
+// keyDetailsParameters shows a cosigned account's cosigner by its Witness Key ID,
+// the name an operator compares with the cosigner node, instead of the raw
+// public key, which identifies nothing at a glance.
+func keyDetailsParameters(parameters map[string]string, metadata *boundedmeta.Metadata) map[string]string {
+	projected := maps.Clone(parameters)
+	if metadata == nil || metadata.Cosigner == nil {
+		return projected
+	}
+	delete(projected, boundedmeta.CosignerPublicKeyParameter)
+	publicKey, err := hex.DecodeString(metadata.Cosigner.PublicKeyHex)
+	if err == nil {
+		var id string
+		if id, err = witness.ID(metadata.Cosigner.ComponentKeyType, publicKey); err == nil {
+			projected[keyDetailsCosignerLabel] = id
+			return projected
+		}
+	}
+	projected[keyDetailsCosignerLabel] = fmt.Sprintf("invalid cosigner public key (%v)", err)
+	return projected
 }
 
 func (s Service) ImportKey(ctx context.Context, keyType, mnemonic string, params map[string]string) (*keymgmt.ImportResult, *Error) {

@@ -101,7 +101,7 @@ func TestLimitsOnlyRequestsFailClosed(t *testing.T) {
 	}{
 		{"no scope and no list", func(p map[string]string) { delete(p, plainhost.ParameterRecipientScope) }, "recipients is required"},
 		// An empty scope is unset, which is listed: it is not any.
-		{"empty scope", func(p map[string]string) { p[plainhost.ParameterRecipientScope] = "" }, "recipients is required"},
+		{"empty scope", func(p map[string]string) { p[plainhost.ParameterRecipientScope] = "" }, "recipient_scope is empty"},
 		{"listed scope and no list", func(p map[string]string) { p[plainhost.ParameterRecipientScope] = plainhost.RecipientScopeListed }, "recipients is required"},
 		{"listed scope with only a timelock", func(p map[string]string) {
 			p[plainhost.ParameterRecipientScope] = plainhost.RecipientScopeListed

@@ -28,9 +28,9 @@ func RegisterSigner() {
 		registerCompiledSigner(keytypecatalog.Entry{
 			KeyType: "aplane.falcon1024.v1",
 			Family:  family.Name,
-			// A plain host, created with a cosigner once enabled, as the
-			// dedicated cosigned type it replaces was.
-			Availability: keytypecatalog.AvailabilityLibrary,
+			// The Falcon plain host carries the bounds and the overlays and is
+			// enabled by default, as lsig/clientreg registers it.
+			Availability: keytypecatalog.AvailabilityDefaultEnabled,
 		}, falconsignerreg.RegisterSigner)
 		registerCompiledSigner(keytypecatalog.Entry{
 			KeyType:      ed25519lsig.KeyTypeV1,

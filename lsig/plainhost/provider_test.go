@@ -277,32 +277,19 @@ func TestPlainHostGrammarGoldens(t *testing.T) {
 	}
 }
 
-// A form sends every field, so an empty value is unset: a refused or
-// spending-key plain host comes from a request whose rekey_to and cosigner are
-// empty, and an all-empty request is the plain program.
-func TestEmptyParametersAreUnset(t *testing.T) {
+// No parameters is the plain program; a parameter with an empty value is
+// refused rather than read as absent, so a mistyped request never selects a
+// weaker program.
+func TestEmptyParametersAreRefused(t *testing.T) {
 	provider := bases(t)[0].provider
-	form := map[string]string{
-		plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused,
-		plainhost.ParameterRekeyTo:        "",
-	}
-	instance, err := provider.ResolveInstance(form)
-	if err != nil || instance.Bounded == nil || instance.Bounded.Cosigner != nil || instance.Bounded.RekeyList != nil {
-		t.Fatalf("instance = %+v, %v", instance, err)
-	}
-	if err := provider.ValidateCreationParams(form); err != nil {
-		t.Fatalf("ValidateCreationParams() error = %v", err)
-	}
-	empty := map[string]string{plainhost.ParameterRekeyAuthority: "", plainhost.ParameterRekeyTo: ""}
-	instance, err = provider.ResolveInstance(empty)
+	instance, err := provider.ResolveInstance(map[string]string{})
 	if err != nil || instance.Bounded != nil {
-		t.Fatalf("all-empty request: instance = %+v, %v; want the plain program", instance, err)
+		t.Fatalf("no parameters: instance = %+v, %v; want the plain program", instance, err)
 	}
 	if err := provider.ValidateCreationParams(map[string]string{"recipients": "X"}); err == nil {
 		t.Fatal("the plain program accepted a parameter")
 	}
-	// An empty cosigner is refused rather than read as none, on every entry point.
-	for _, name := range []string{plainhost.ParameterCosigner, composeddsa.BoundedCosignerPublicKeyParameter} {
+	for _, name := range []string{plainhost.ParameterRekeyTo, plainhost.ParameterCosigner, composeddsa.BoundedCosignerPublicKeyParameter, plainhost.ParameterRekeyAuthority} {
 		named := map[string]string{plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused, name: " "}
 		if _, err := provider.ResolveInstance(named); err == nil || !strings.Contains(err.Error(), name+" is empty") {
 			t.Fatalf("ResolveInstance(empty %s) error = %v", name, err)
