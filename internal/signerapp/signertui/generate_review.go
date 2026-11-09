@@ -179,6 +179,11 @@ func reviewRekey(review PrepareGenerateResultMessage) (label, consequence string
 	setting := boundedmeta.RekeySetting(review.Bounded.Rekey)
 	cosigned := review.Bounded.CosignerRequired
 	plain := review.Bounded.Contract == boundedmeta.PlainContract
+	// No host rule applies to a rekey, so a timelock doesn't hold one back.
+	lockBypass := ""
+	if isTimelockPolicy(review.Bounded.Layer3Policy) || review.Parameters[unlockRoundParameter] != "" {
+		lockBypass = " That is a way around the lock."
+	}
 	if review.Bounded.RekeyList {
 		count := len(rekeyToList(review))
 		these, them := fmt.Sprintf("these %d addresses", count), "any of them"
@@ -193,14 +198,11 @@ func reviewRekey(review PrepareGenerateResultMessage) (label, consequence string
 				short = "This one"
 			}
 			return short + ", spending key alone; others need the cosigner",
-				"The spending key alone can hand the account to " + them + ". Any other rekey needs both online keys."
+				"The spending key alone can hand the account to " + them + ". Any other rekey needs both online keys." + lockBypass
 		}
 		// On a cosigned account the label's "spending key alone" says the cosigner
 		// is not asked; the screen has no room to say it twice.
-		if isTimelockPolicy(review.Bounded.Layer3Policy) {
-			consequence += " That is a way around the lock."
-		}
-		return "Only " + these + ", spending key alone", consequence
+		return "Only " + these + ", spending key alone", consequence + lockBypass
 	}
 	switch setting {
 	case boundedmeta.RekeyRefused:
@@ -214,9 +216,9 @@ func reviewRekey(review PrepareGenerateResultMessage) (label, consequence string
 		return "None", "No rekey path. Losing a required authority cannot be repaired."
 	case boundedmeta.RekeySpendingKey:
 		if cosigned {
-			return "Spending key and cosigner", "Together they can rekey out of this boundary, to a target both nodes' policies allow."
+			return "Spending key and cosigner", "Together they can rekey out of this boundary, to a target both nodes' policies allow." + lockBypass
 		}
-		return "Spending key alone", "That key can rekey out of this boundary."
+		return "Spending key alone", "That key can rekey out of this boundary." + lockBypass
 	default:
 		return "Unknown authority " + review.Bounded.Rekey, "This client cannot describe that rekey path."
 	}
@@ -280,10 +282,10 @@ func (m Model) renderGenerateReview() string {
 	sb.WriteString(reviewRow("Key type", displayKeyType(review.KeyType)+", fixed once created"))
 	sb.WriteString(reviewRow("Transfers", transfersLabel(profile)))
 	row, note := reviewRecipients(profile.Contract, profile.Layer3Policy, profile.CosignerRequired, recipientList(review.Parameters))
-	// A plain host on a classical base, such as Ed25519, has a classical spending
-	// key; say so where it is chosen.
-	if construction, ok := sigconstruction.ForBaseKeyType(review.KeyType); profile.Contract == boundedmeta.PlainContract && ok && !construction.PostQuantum() {
-		note = strings.TrimSpace(note + " The " + displayKeyType(review.KeyType) + " spending key is classical, not post-quantum.")
+	// An account on a classical base, such as Ed25519, has a classical spending
+	// key, with or without bounds; say so where it is chosen.
+	if postQuantum, known := reviewSpendingKeyPostQuantum(*review); known && !postQuantum {
+		note = strings.TrimSpace(note + " The spending key is classical.")
 	}
 	sb.WriteString(row)
 	rekey, consequence := reviewRekey(*review)
@@ -506,8 +508,8 @@ func (m Model) rekeyTargetNote(address string, postQuantum bool) string {
 }
 
 // keyTypePostQuantum classifies a held key's spending authority, where this
-// client knows it: the native types and the LogicSig bases, and the general
-// bounded type, whose base is Falcon-1024.
+// client knows it: the native types and the LogicSig bases, which host every
+// overlay and bound.
 func keyTypePostQuantum(keyType string) (postQuantum, known bool) {
 	if construction, ok := sigconstruction.ForBaseKeyType(keyType); ok {
 		return construction.PostQuantum(), true
@@ -515,18 +517,20 @@ func keyTypePostQuantum(keyType string) (postQuantum, known bool) {
 	switch strings.ToLower(strings.TrimSpace(keyType)) {
 	case "ed25519":
 		return false, true
-	case "falcon1024", boundary.KeyTypeV1:
+	case "falcon1024":
 		return true, true
 	}
 	return false, false
 }
 
 // reviewSpendingKeyPostQuantum reports whether the new account's spending key
-// is post-quantum, where the key type tells this client: a plain host's base,
-// and the general type's Falcon-1024. The contract alone doesn't: an expert
-// template may put bounded2 on an Ed25519 base, and the inventory doesn't name
-// a template's base.
+// is post-quantum. The signer names the base: a plain host is its own, and an
+// expert template may put bounded2 on an Ed25519 base. A signer that names none
+// leaves the key type, which tells this client only for a plain host.
 func reviewSpendingKeyPostQuantum(review PrepareGenerateResultMessage) (postQuantum, known bool) {
+	if review.BaseKeyType != "" {
+		return keyTypePostQuantum(review.BaseKeyType)
+	}
 	return keyTypePostQuantum(review.KeyType)
 }
 

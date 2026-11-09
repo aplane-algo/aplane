@@ -1,8 +1,8 @@
 # Building Transfer Networks with Bounded Accounts
 
 > Scope: This whitepaper explains bounded accounts and their use in transfer
-> networks, using the presets of APlane's general bounded type, which
-> implement the `bounded2` contract. It is an
+> networks, using the presets of APlane's plain LogicSig key types, whose
+> bounds implement the `bounded2` contract. It is an
 > architectural explanation, not an implementation specification. Exact
 > behavior is defined in [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md) and
 > [KEYTYPE_CAPABILITIES.md](KEYTYPE_CAPABILITIES.md); the Corridor profile is
@@ -37,9 +37,11 @@ supplies the authorization program and its required signatures and proofs.
 The network checks that the program corresponds to the account's current
 authority and accepts the transaction only if the program succeeds.
 
-APlane's general bounded type uses Falcon-1024 spending signatures.
-Falcon supplies authentication; the LogicSig program supplies the transaction
-restrictions. Native Falcon authorization alone does not provide those bounds.
+APlane's bounded accounts are the bounds of its plain LogicSig key types:
+`aplane.falcon1024.v1`, which uses Falcon-1024 spending signatures, and
+`aplane.ed25519.v1`, which uses classical Ed25519 ones. The signature supplies
+authentication; the LogicSig program supplies the transaction restrictions.
+Native Falcon authorization alone does not provide those bounds.
 
 The `bounded2` contract checks three things:
 
@@ -66,7 +68,7 @@ rekey-to list, fixed when the account is created. A cosigned account may have
 both: a listed target with the spending key alone, any other with the cosigner
 too. Its spending conditions, such as a recipient list or an unlock round, do
 not apply to a rekey. The compiled fee ceiling applies to both
-spending and rekeying; the general bounded type sets it to 10,000 microAlgos
+spending and rekeying; every bounded account sets it to 10,000 microAlgos
 (0.01 ALGO) per protected transaction. This is a ceiling, not a fixed fee or
 a guarantee that every path is viable under every network fee schedule.
 
@@ -77,9 +79,10 @@ Rekeying changes that authority rather than editing the existing program.
 
 ## 3. Choosing the account's rules
 
-APlane ships its bounded profiles as presets of the general bounded type
-`aplane.falcon1024-b.v1`. A boundary file selects any other shape the type
-offers, such as an ALGO-only account or a timelock with a recipient list. An
+APlane ships its bounded profiles as presets of the plain key types, such as
+`aplane.falcon1024.v1`. Custom bounds or a boundary file selects any other
+shape the type offers, such as an ALGO-only account, a timelock with a recipient
+list, or an account that can never be rekeyed. An
 allowlist is one possible policy; bounded accounts also include profiles
 without destination restrictions: a timelock with no list, and a limits-only
 account (`recipient_scope: any`), which only the fee ceiling and transfer kinds
@@ -92,12 +95,12 @@ bound.
 | Corridor | Self or membership in a Merkle recipient list, plus a Falcon cosigner signature for every spend | Spending key alone, only to an address on the rekey-to list; the cosigner is not asked |
 | Timelock | Transaction's first valid round must reach the configured unlock round | Spending key alone, only to an address on the rekey-to list |
 
-The general type's timelock never lets the spending key rekey to any address,
-with or without a cosigner: the unlock round is a spending condition, so a rekey
-would not wait for it. An expert template may still combine a timelock with a
-spending-key rekey, which then holds only while the spending key declines. That applies to a listed
-rekey too, so a timelock's rekey-to list is a way around the lock, and the lock
-holds only while the holders of the listed keys cooperate.
+The unlock round is a spending condition, so a rekey does not wait for it. A
+timelock may take any rekey setting: beside a spending-key rekey, cosigned or
+not, the lock holds only while the spending key declines. That applies to a
+listed rekey too, so a timelock's rekey-to list is a way around the lock, and
+the lock holds only while the holders of the listed keys cooperate. Only a
+timelock that refuses every rekey holds until the unlock round.
 
 The rekey-to list holds up to 16 addresses and is compiled into the program as a
 salted Merkle root that reveals nothing about its entries. The signer keeps the
@@ -191,8 +194,8 @@ replacement program, and a cosigned account that takes cosigned rekeys can do
 the same with the cosigner's signature. A Locked Allowlist, Corridor or Timelock
 account can be rekeyed only to an address on its rekey-to list; the listed key
 can then rekey it onward to a replacement program, keeping the address. An
-account with no rekey path, which only an expert template can declare, cannot
-change its destinations at all: replacing it means moving its funds, while it
+account with no rekey path (`rekey_authority: refused`, or an expert template
+that declares `rekey: refused`) cannot change its destinations at all: replacing it means moving its funds, while it
 can still spend, to a new account built with the new rules, and retiring the old
 address.
 

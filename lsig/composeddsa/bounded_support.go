@@ -31,7 +31,10 @@ type boundedSupportKey struct {
 // must stay within that table.
 var boundedSupportPolicy = map[boundedSupportKey]boundedWorkflowSupport{
 	{BoundedContract, sigconstruction.Falcon1024().ID()}: {cosigner: true},
-	{BoundedContract, sigconstruction.Ed25519().ID()}:    {},
+	// Reviewed with the plain hosts' bounds (account overlays phase 6.5), as
+	// plain1 was in phase 5: an Ed25519 spending key is classical, which the
+	// review says.
+	{BoundedContract, sigconstruction.Ed25519().ID()}: {cosigner: true},
 	// A plain host may be cosigned on either base. Its Ed25519 spending key is
 	// classical, which the review says.
 	{PlainContract, sigconstruction.Falcon1024().ID()}: {cosigner: true},

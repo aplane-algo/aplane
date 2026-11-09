@@ -422,8 +422,17 @@ template_variables: []
 	generated = strings.Replace(generated, "template_variables: []\n", "", 1)
 	substituted := strings.Replace(generated, "  pushint 1\n  assert\n", "  txn Receiver\n  addr @rekey_to\n  ==\n  assert\n", 1)
 	ranged := strings.Replace(generated, "  pushint 1\n  assert\n", "  {{range @rekey_to}}\n  txn Receiver\n  addr {{.}}\n  ==\n  assert\n  {{end}}\n", 1)
+	// Nor may a derived argument prove an entry: each spend would publish an
+	// unsalted recipient-tree proof over the list.
+	derived := strings.Replace(declared, "  rekey: only_these\n", `  rekey: only_these
+  derived_args:
+    - name: listed_proof
+      kind: merkle_allowlist_proof
+      parameter: rekey_to
+      max_size: 512
+`, 1)
 	params := map[string]string{composeddsa.BoundedRekeyToParameter: rekeyListEntriesParam, boundedmeta.RekeyListRootParameter: strings.Repeat("00", 32)}
-	for name, yaml := range map[string]string{"strict variable": strictVariable, "substitution": substituted, "range": ranged} {
+	for name, yaml := range map[string]string{"strict variable": strictVariable, "substitution": substituted, "range": ranged, "derived argument": derived} {
 		t.Run(name, func(t *testing.T) {
 			composer, err := noneComposer(yaml)
 			if err == nil {
@@ -437,5 +446,26 @@ template_variables: []
 				t.Fatalf("error = %v, want a refusal naming the private list", err)
 			}
 		})
+	}
+}
+
+// The injected rekey_to says what the rest of the rekeys need: only these
+// refuses them, plus cosigned takes them with the spending key and the cosigner.
+func TestInjectedRekeyToDescribesTheOtherRekeys(t *testing.T) {
+	plusCosigned := strings.Replace(onlyTheseTemplateYAML, "  rekey: only_these\n",
+		"  rekey: plus_cosigned\n  cosigner:\n    contract: cosigner1\n    required_on: [spend, spending_rekey]\n", 1)
+	for yaml, want := range map[string]string{
+		onlyTheseTemplateYAML: "Every other rekey is refused.",
+		plusCosigned:          "Any other rekey needs the spending key and the cosigner.",
+	} {
+		var description string
+		for _, def := range authorAllowlistProvider(t, yaml).CreationParams() {
+			if def.Name == composeddsa.BoundedRekeyToParameter {
+				description = def.Description
+			}
+		}
+		if !strings.HasSuffix(description, want) {
+			t.Fatalf("rekey_to description = %q, want it to end %q", description, want)
+		}
 	}
 }

@@ -856,7 +856,7 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 			msg: PrepareGenerateResultMessage{
 				BaseMessage: BaseMessage{Type: MsgTypePrepareGenerateResult, ID: "prepare-1"},
 				Success:     true,
-				KeyType:     "aplane.falcon1024-b.v1",
+				KeyType:     "aplane.falcon1024.v1",
 				Bounded: &PreparedBoundedProfile{
 					Contract: "bounded2", SpendEffects: []string{"pay"}, MaxFee: new(uint64(2_000)),
 					Rekey: "refused", Layer3Policy: "timelock",
@@ -866,7 +866,7 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 				"type":     MsgTypePrepareGenerateResult,
 				"id":       "prepare-1",
 				"success":  true,
-				"key_type": "aplane.falcon1024-b.v1",
+				"key_type": "aplane.falcon1024.v1",
 				"bounded": map[string]any{
 					"contract":      "bounded2",
 					"spend_effects": []any{"pay"},

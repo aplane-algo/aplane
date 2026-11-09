@@ -227,7 +227,7 @@ func (o *outliner) build() {
 		guards = append(guards, guard("reject_rekey", "Reject every rekey", "always deny one asked of this key; when no, rekey_policy decides"))
 	} else {
 		guards = append([]fieldSpec{{
-			name: "rekeys", label: "Rekeys", note: "always deny: all, to keys this node does not hold, or none",
+			name: "rekeys", label: "Rekeys", note: "always deny: all but rotations, to unheld unlisted targets, or none",
 			required: true, edit: EditChoice,
 			choices: []string{string(policy.RekeysRejectAll), string(policy.RekeysRejectForeign), string(policy.RekeysAllow)},
 		}}, guards...)

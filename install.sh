@@ -1363,6 +1363,10 @@ install_template_library() {
         rm -rf -- "$library_root/retired"
         echo "Removed retired templates from $library_root/retired."
     fi
+    # v0.49.0's bounded templates are retired too: the plain hosts' bounds
+    # replace them, and this release can't parse them, so the KeyType Library
+    # would list them as invalid with no way to remove them.
+    rm -f -- "$dest/aplane.corridor.v1.yaml" "$dest/aplane.falcon1024-allowlist-alock.v1.yaml" "$dest/aplane.falcon1024-allowlist.v1.yaml" "$dest/aplane.falcon1024-allowlist.v2.yaml" "$dest/aplane.falcon1024-timelock.v1.yaml"
     for file in "$src"/*; do
         [ -f "$file" ] || continue
         case "$(basename "$file")" in
@@ -2205,6 +2209,9 @@ if [ "$LOCAL_MODE" = "1" ]; then
             echo "  $name → $SIGNER_BINDIR"
         fi
     done
+    # A retired binary an older build left in the source bin directory was
+    # copied with the rest; it is not part of this release.
+    rm -f "$CLIENT_BINDIR/aprekey" "$CLIENT_BINDIR/apbounded-admin" "$SIGNER_BINDIR/aprekey" "$SIGNER_BINDIR/apbounded-admin"
 
     MEMORY_LOCK_ENABLED=0
     if [ "$MEMORY_LOCK_REQUESTED" = "1" ]; then
@@ -2546,6 +2553,9 @@ for bin in "$BIN_SRC"/*; do
     esac
     echo "  $name"
 done
+# Retired binaries an earlier release installed here, or an older build left in
+# the source bin directory and the loop copied.
+rm -f "$BINDIR/aprekey" "$BINDIR/apbounded-admin"
 
 # Step 3: Bootstrap managed metadata, migrate the store, and install systemd files
 echo ""

@@ -372,11 +372,13 @@ func TestBoundedSpendingProofRequiresSupportedConstruction(t *testing.T) {
 				proof     [][]byte
 				want      bool
 			}{
-				"Falcon":           {"aplane.falcon1024.v1", boundedmeta.Contract, falconLayout, falconPublicKey, message, [][]byte{falconSignature}, true},
-				"wrong message":    {"aplane.falcon1024.v1", boundedmeta.Contract, falconLayout, falconPublicKey, []byte("other"), [][]byte{falconSignature}, false},
-				"no proof":         {"aplane.falcon1024.v1", boundedmeta.Contract, falconLayout, falconPublicKey, message, nil, false},
-				"two proof slots":  {"aplane.falcon1024.v1", boundedmeta.Contract, falconLayout, falconPublicKey, message, [][]byte{falconSignature, falconSignature}, false},
-				"valid on Ed25519": {"aplane.ed25519.v1", boundedmeta.Contract, layoutOf(sigconstruction.Ed25519()), edPublicKey, message, [][]byte{edSignature}, false},
+				"Falcon":          {"aplane.falcon1024.v1", boundedmeta.Contract, falconLayout, falconPublicKey, message, [][]byte{falconSignature}, true},
+				"wrong message":   {"aplane.falcon1024.v1", boundedmeta.Contract, falconLayout, falconPublicKey, []byte("other"), [][]byte{falconSignature}, false},
+				"no proof":        {"aplane.falcon1024.v1", boundedmeta.Contract, falconLayout, falconPublicKey, message, nil, false},
+				"two proof slots": {"aplane.falcon1024.v1", boundedmeta.Contract, falconLayout, falconPublicKey, message, [][]byte{falconSignature, falconSignature}, false},
+				// A bounded host is cosigned on either base too (phase 6.5).
+				"valid on Ed25519":       {"aplane.ed25519.v1", boundedmeta.Contract, layoutOf(sigconstruction.Ed25519()), edPublicKey, message, [][]byte{edSignature}, true},
+				"Ed25519, wrong message": {"aplane.ed25519.v1", boundedmeta.Contract, layoutOf(sigconstruction.Ed25519()), edPublicKey, []byte("other"), [][]byte{edSignature}, false},
 				// A plain host is cosigned on either base.
 				"plain host on Falcon":      {"aplane.falcon1024.v1", boundedmeta.PlainContract, falconLayout, falconPublicKey, message, [][]byte{falconSignature}, true},
 				"plain host on Ed25519":     {"aplane.ed25519.v1", boundedmeta.PlainContract, layoutOf(sigconstruction.Ed25519()), edPublicKey, message, [][]byte{edSignature}, true},

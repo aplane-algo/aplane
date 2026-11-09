@@ -82,8 +82,9 @@ func ed25519BoundedProvider(t *testing.T) *composeddsa.ComposedDSA {
 	return provider
 }
 
-// Template validation refuses this shape, so direct construction is the only way
-// to reach the generation check.
+// A policy that stops supporting a cosigner on a base refuses new accounts with
+// one at generation. Every production base supports a cosigner, so the policy is
+// narrowed for this composer alone.
 func TestGenerationRefusesCosignerOnUnsupportedBase(t *testing.T) {
 	profile := *ed25519BoundedProvider(t).BoundedAuthorizationProfile()
 	profile.Rekey = boundedmeta.RekeyRefused
@@ -92,6 +93,7 @@ func TestGenerationRefusesCosignerOnUnsupportedBase(t *testing.T) {
 		KeyType: "test.direct-unsupported-cosigner.v1", BaseKeyType: "aplane.ed25519.v1", FamilyName: "aplane.ed25519",
 		Version: 1, Ops: ed25519v1.NewOps(), TEALSuffix: "int 1\nassert", Bounded: &profile,
 	})
+	composeddsa.NarrowCosignerSupport(direct)
 	spendingKey := bytes.Repeat([]byte{0x22}, 32)
 
 	t.Run("template route", func(t *testing.T) {

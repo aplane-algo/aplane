@@ -5,6 +5,8 @@ package plainhost_test
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"strings"
 	"testing"
@@ -190,7 +192,8 @@ func TestOverlayRequestsFailClosed(t *testing.T) {
 			return params
 		}(), "needs the addresses"},
 		{"an unresolved cosigner name", map[string]string{plainhost.ParameterCosigner: "corp", plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused}, "not resolved"},
-		{"a bounded host parameter", map[string]string{"spend_effects": "pay", plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused, composeddsa.BoundedCosignerPublicKeyParameter: testCosigner}, "unknown parameter"},
+		{"bounds without a recipient list", map[string]string{plainhost.ParameterSpendEffects: "pay", plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused, composeddsa.BoundedCosignerPublicKeyParameter: testCosigner}, "recipients is required"},
+		{"bounds without transfer kinds", map[string]string{plainhost.ParameterRecipientScope: plainhost.RecipientScopeAny, plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused}, "spend_effects is required"},
 		{"a generated root", map[string]string{boundedmeta.RekeyListRootParameter: strings.Repeat("ab", 32), plainhost.ParameterRekeyAuthority: plainhost.RekeyOnlyThese, composeddsa.BoundedCosignerPublicKeyParameter: testCosigner, plainhost.ParameterRekeyTo: withList[plainhost.ParameterRekeyTo]}, "unknown parameter"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -266,8 +269,8 @@ func TestBoundedOpcodeProfileIsSeparate(t *testing.T) {
 // declared by a revision; these goldens make that review unavoidable.
 func TestPlainHostGrammarGoldens(t *testing.T) {
 	want := map[string]string{
-		"falcon":  "1:eb7ab41b5d6236a5c76df5737b621c59e53c786718fa281ef238552cf9f48dd2",
-		"ed25519": "1:fca5bc914b1cc80e3dbd57df6acfdaff84005b793181c4a1906b4e1b83491de4",
+		"falcon":  "1:6828c644697fd088f3a54937bf08fef3cc584e6136216d08dd36d28dc7be02c9",
+		"ed25519": "1:67653b970886576b30a97cbd999408e7a8f83b70407334333a9c6896007c60e9",
 	}
 	for _, b := range bases(t) {
 		if got := b.provider.GrammarFingerprint(); got != want[b.name] {
@@ -276,30 +279,116 @@ func TestPlainHostGrammarGoldens(t *testing.T) {
 	}
 }
 
-// A form sends every field, so an empty value is unset: a refused or
-// spending-key plain host comes from a request whose rekey_to and cosigner are
-// empty, and an all-empty request is the plain program.
-func TestEmptyParametersAreUnset(t *testing.T) {
+// These values freeze what each plain1 arrangement renders and the provenance it
+// reports. A failure is a review obligation, not a fixture to refresh: a changed
+// program means arrangementRendererRevision (listRendererRevision for the
+// listed-rekey path, arrangementResolverRevision for request handling) must be
+// raised for the arrangements it touches; a changed fingerprint with no intended
+// behavior change would give existing accounts a provenance conflict.
+func TestArrangementGoldens(t *testing.T) {
+	want := map[string]struct{ programs, fingerprints string }{
+		"falcon": {
+			programs:     "644ffc120e9210f5b20eef7c0e0d2cac450027eb4c7e9025be5cffeba16a1c82",
+			fingerprints: "808c62e885ed2b74ac925f679114e2d4dcff18b2fe7a628177dd1ece776aa10b",
+		},
+		"ed25519": {
+			programs:     "8a7dd8014f1e120630d9c2988b7fbdd7caff757b1bda9c4da414073bbc5d15b4",
+			fingerprints: "543167f1c324a353b89f9d0d666a8bf0e987889ccab7afb2ae01d3064590f52e",
+		},
+	}
+	for _, b := range bases(t) {
+		programs, fingerprints := sha256.New(), sha256.New()
+		for _, arrangement := range plainhost.Arrangements() {
+			params := requestFor(arrangement)
+			teal, err := b.provider.GenerateTEAL(b.spendingKey, withRoot(t, b.provider, params))
+			if err != nil {
+				t.Fatalf("%s %+v: %v", b.name, arrangement, err)
+			}
+			resolved, err := b.provider.ResolveInstance(params)
+			if err != nil {
+				t.Fatalf("%s %+v: %v", b.name, arrangement, err)
+			}
+			if _, err := fmt.Fprintf(programs, "%+v\n%d\n%s\n", arrangement, len(teal), teal); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := fmt.Fprintf(fingerprints, "%+v\n%s\n%s\n", arrangement, resolved.Fingerprint, resolved.BoundaryDigest); err != nil {
+				t.Fatal(err)
+			}
+		}
+		got := struct{ programs, fingerprints string }{hex.EncodeToString(programs.Sum(nil)), hex.EncodeToString(fingerprints.Sum(nil))}
+		if got != want[b.name] {
+			t.Errorf("%s arrangements: programs %s, fingerprints %s; want %+v", b.name, got.programs, got.fingerprints, want[b.name])
+		}
+	}
+}
+
+// No parameters is the plain program; a parameter with an empty value is
+// refused rather than read as absent, so a mistyped request never selects a
+// weaker program.
+func TestEmptyParametersAreRefused(t *testing.T) {
 	provider := bases(t)[0].provider
-	form := map[string]string{
-		plainhost.ParameterRekeyAuthority:             plainhost.RekeyRefused,
-		plainhost.ParameterRekeyTo:                    "",
-		plainhost.ParameterCosigner:                   "",
-		composeddsa.BoundedCosignerPublicKeyParameter: " ",
-	}
-	instance, err := provider.ResolveInstance(form)
-	if err != nil || instance.Bounded == nil || instance.Bounded.Cosigner != nil || instance.Bounded.RekeyList != nil {
-		t.Fatalf("instance = %+v, %v", instance, err)
-	}
-	if err := provider.ValidateCreationParams(form); err != nil {
-		t.Fatalf("ValidateCreationParams() error = %v", err)
-	}
-	empty := map[string]string{plainhost.ParameterRekeyAuthority: "", plainhost.ParameterRekeyTo: ""}
-	instance, err = provider.ResolveInstance(empty)
+	instance, err := provider.ResolveInstance(map[string]string{})
 	if err != nil || instance.Bounded != nil {
-		t.Fatalf("all-empty request: instance = %+v, %v; want the plain program", instance, err)
+		t.Fatalf("no parameters: instance = %+v, %v; want the plain program", instance, err)
 	}
 	if err := provider.ValidateCreationParams(map[string]string{"recipients": "X"}); err == nil {
 		t.Fatal("the plain program accepted a parameter")
+	}
+	for _, name := range []string{plainhost.ParameterRekeyTo, plainhost.ParameterCosigner, composeddsa.BoundedCosignerPublicKeyParameter, plainhost.ParameterRekeyAuthority} {
+		named := map[string]string{plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused, name: " "}
+		if _, err := provider.ResolveInstance(named); err == nil || !strings.Contains(err.Error(), name+" is empty") {
+			t.Fatalf("ResolveInstance(empty %s) error = %v", name, err)
+		}
+		if err := provider.ValidateCreationParams(named); err == nil {
+			t.Fatalf("ValidateCreationParams accepted an empty %s", name)
+		}
+		if _, err := provider.GenerateTEAL(make([]byte, 32), named); err == nil {
+			t.Fatalf("GenerateTEAL accepted an empty %s", name)
+		}
+	}
+}
+
+// Every entry point refuses a request that names only parameters no program
+// reads, as validation does: deriving without validating first must not give
+// the plain program, which is weaker than any account the caller meant.
+func TestMisspelledParametersAreRefusedEverywhere(t *testing.T) {
+	for _, b := range bases(t) {
+		for _, params := range []map[string]string{{"rekey_authorty": plainhost.RekeyRefused}, {"cosigner_pubkey": testCosigner}} {
+			if _, err := b.provider.GenerateTEAL(b.spendingKey, params); err == nil || !strings.Contains(err.Error(), "unknown parameter") {
+				t.Fatalf("%s GenerateTEAL(%v) error = %v", b.name, params, err)
+			}
+			if _, _, err := b.provider.DeriveLsig(t.Context(), b.spendingKey, params); err == nil {
+				t.Fatalf("%s DeriveLsig(%v) accepted it", b.name, params)
+			}
+			if _, err := b.provider.DeriveLsigWithSalt(t.Context(), b.spendingKey, params); err == nil {
+				t.Fatalf("%s DeriveLsigWithSalt(%v) accepted it", b.name, params)
+			}
+			if _, err := b.provider.PrepareRekeyList(testListKey, params); err == nil {
+				t.Fatalf("%s PrepareRekeyList(%v) accepted it", b.name, params)
+			}
+			if _, err := b.provider.BuildBoundedAuthorizationMetadata(b.spendingKey, params, nil); err == nil {
+				t.Fatalf("%s BuildBoundedAuthorizationMetadata(%v) accepted it", b.name, params)
+			}
+		}
+		// No parameters is still the plain program.
+		if _, err := b.provider.GenerateTEAL(b.spendingKey, nil); err != nil {
+			t.Fatalf("%s plain program: %v", b.name, err)
+		}
+	}
+}
+
+// Building every shape costs more than a process start should, so a host builds
+// them on first use, and a request without bounds doesn't need them.
+func TestShapesAreBuiltOnFirstUse(t *testing.T) {
+	for _, b := range bases(t) {
+		if b.provider.ShapesBuiltForTest() {
+			t.Fatalf("%s built its shapes at registration", b.name)
+		}
+		if err := b.provider.ValidateCreationParams(request(plainhost.RekeyRefused)); err != nil || b.provider.ShapesBuiltForTest() {
+			t.Fatalf("%s: an overlays-only check built the shapes (err %v)", b.name, err)
+		}
+		if b.provider.GrammarFingerprint() == "" || !b.provider.ShapesBuiltForTest() {
+			t.Fatalf("%s: the grammar fingerprint did not build the shapes", b.name)
+		}
 	}
 }

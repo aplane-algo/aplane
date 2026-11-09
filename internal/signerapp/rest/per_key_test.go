@@ -19,7 +19,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/witness"
-	"github.com/aplane-algo/aplane/lsig/boundedaccount"
+	falcon "github.com/aplane-algo/aplane/lsig/falcon1024"
 	lsigsignerreg "github.com/aplane-algo/aplane/lsig/signerreg"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
@@ -28,7 +28,7 @@ import (
 // optional, so a store with references must not turn the field into a required
 // selector with a default: that would add a cosigner to every account.
 func TestPerKeyTypeKeepsItsCosignerOptional(t *testing.T) {
-	boundedaccount.RegisterClient()
+	falcon.RegisterClient()
 	ir := setupProductRuntime(t, false)
 	publicKey := strings.Repeat("61", 1793)
 	raw, err := hex.DecodeString(publicKey)
@@ -51,7 +51,7 @@ func TestPerKeyTypeKeepsItsCosignerOptional(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	infos := Service{}.buildKeyTypes([]string{boundedaccount.KeyTypeV1}, nil)
+	infos := Service{}.buildKeyTypes([]string{"aplane.falcon1024.v1"}, nil)
 	applyCosignerReferenceParams(ir, infos)
 	if len(infos) != 1 {
 		t.Fatalf("buildKeyTypes() = %+v", infos)
@@ -64,7 +64,7 @@ func TestPerKeyTypeKeepsItsCosignerOptional(t *testing.T) {
 		t.Fatalf("cosigner component = %q", info.CosignerComponentKeyType)
 	}
 	for _, param := range info.CreationParams {
-		if param.Name == cosignerrefs.ParamCosignerName {
+		if param.Name == cosignerrefs.ParamCosignerName && (param.Required || param.Default != "" || len(param.Options) > 0) {
 			t.Fatalf("the cosigner became a selector: %+v", param)
 		}
 		if param.Name == keytypes.ParameterCosignerPublicKey && param.Required {

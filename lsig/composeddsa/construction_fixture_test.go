@@ -360,7 +360,7 @@ func TestFixturePolicyBelongsToOneComposer(t *testing.T) {
 	// A fixture's template rules and generation policy come from the same support,
 	// so a composer without cosigner support is refused when it is built.
 	permitted := compositeProvider(t, construction, cosignerYAML, composeddsa.FixtureSupport{Cosigner: true})
-	if _, err := composeddsa.NewFixtureProvider(parseCompositeTemplate(t, cosignerYAML), compositeBase(construction), composeddsa.FixtureSupport{}); err == nil || !strings.Contains(err.Error(), "bounded.cosigner requires") {
+	if _, err := composeddsa.NewFixtureProvider(parseCompositeTemplate(t, cosignerYAML), compositeBase(construction), composeddsa.FixtureSupport{}); err == nil || !strings.Contains(err.Error(), "bounded.cosigner is not reviewed") {
 		t.Fatalf("NewFixtureProvider() without fixture support error = %v", err)
 	}
 	if _, err := permitted.GenerateTEAL(key, params); err != nil {

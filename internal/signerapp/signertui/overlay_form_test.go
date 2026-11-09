@@ -22,6 +22,8 @@ import (
 const (
 	plainFalconKeyType  = "aplane.falcon1024.v1"
 	plainEd25519KeyType = "aplane.ed25519.v1"
+	// boundedHostKeyType is the plain host the bounded tests use.
+	boundedHostKeyType = plainFalconKeyType
 )
 
 // overlayInventory reports the overlay types as the signer does, with the
@@ -30,7 +32,7 @@ func overlayInventory(t *testing.T) []protocol.KeyTypeInfo {
 	t.Helper()
 	clientreg.RegisterClient()
 	var infos []protocol.KeyTypeInfo
-	for _, keyType := range []string{plainFalconKeyType, plainEd25519KeyType, boundary.KeyTypeV1} {
+	for _, keyType := range []string{plainFalconKeyType, plainEd25519KeyType} {
 		provider := lsigprovider.Get(keyType)
 		if provider == nil {
 			t.Fatalf("%s is not registered", keyType)
@@ -40,9 +42,7 @@ func overlayInventory(t *testing.T) []protocol.KeyTypeInfo {
 			DisplayName:              provider.DisplayName(),
 			CosignerComponentKeyType: witness.Falcon1024V1,
 			PerKeyContract:           true,
-		}
-		if keyType == boundary.KeyTypeV1 {
-			info.BoundarySchema = boundary.SchemaV1
+			BoundarySchema:           boundary.SchemaV1,
 		}
 		for _, def := range provider.CreationParams() {
 			info.CreationParams = append(info.CreationParams, protocol.TemplateParamInfo{
@@ -62,9 +62,15 @@ func testAddress(seed byte) string {
 	return types.Address{seed, 0x11, 0x22}.String()
 }
 
-// overlayForm opens Generate's form for keyType, through presetIndex on the
-// general type (-1 for none), as Enter on the key type list and the preset
-// screen does.
+// The preset screen's choices, as overlayForm takes them: an index into
+// boundary.Presets(), or one of these.
+const (
+	noBounds     = -1
+	customBounds = -2
+)
+
+// overlayForm opens Generate's form for keyType through a preset screen choice,
+// as Enter on the key type list and the preset screen does.
 func overlayForm(t *testing.T, keyType string, presetIndex int) Model {
 	t.Helper()
 	index, ok := keyTypeIndex(keyType, getKeyTypeCount(), getKeyTypeByIndex)
@@ -75,14 +81,19 @@ func overlayForm(t *testing.T, keyType string, presetIndex int) Model {
 	m.forms.generateKeyType = index
 	next, _ := m.handleGenerateFormKeys(tea.KeyMsg{Type: tea.KeyEnter})
 	m = next.(Model)
-	if presetIndex >= 0 {
-		if m.viewState != ViewBoundaryPreset {
-			t.Fatalf("%s: view = %v, want the preset screen", keyType, m.viewState)
-		}
-		m.forms.boundaryPresetIndex = presetIndex
-		next, _ = m.handleBoundaryPresetKeys(tea.KeyMsg{Type: tea.KeyEnter})
-		m = next.(Model)
+	if m.viewState != ViewBoundaryPreset {
+		t.Fatalf("%s: view = %v, want the preset screen", keyType, m.viewState)
 	}
+	switch presetIndex {
+	case noBounds:
+		m.forms.boundaryPresetIndex = 0
+	case customBounds:
+		m.forms.boundaryPresetIndex = len(boundary.Presets()) + 1
+	default:
+		m.forms.boundaryPresetIndex = presetIndex + 1
+	}
+	next, _ = m.handleBoundaryPresetKeys(tea.KeyMsg{Type: tea.KeyEnter})
+	m = next.(Model)
 	if m.viewState != ViewGenerateParams {
 		t.Fatalf("%s: view = %v, want the parameter form", keyType, m.viewState)
 	}
@@ -127,11 +138,14 @@ func TestOverlayFormPutsTheBoundsBeforeTheOverlays(t *testing.T) {
 		preset  int
 		bounds  []string
 	}{
-		{plainFalconKeyType, -1, nil},
-		{plainEd25519KeyType, -1, nil},
-		{boundary.KeyTypeV1, 0, []string{boundary.ParameterRecipients}},
-		{boundary.KeyTypeV1, 2, []string{boundary.ParameterRecipients}},
-		{boundary.KeyTypeV1, 3, []string{boundary.ParameterUnlockRound}},
+		{plainFalconKeyType, noBounds, nil},
+		{plainEd25519KeyType, noBounds, nil},
+		{boundedHostKeyType, 0, []string{boundary.ParameterRecipients}},
+		{boundedHostKeyType, 2, []string{boundary.ParameterRecipients}},
+		{boundedHostKeyType, 3, []string{boundary.ParameterUnlockRound}},
+		{plainEd25519KeyType, 3, []string{boundary.ParameterUnlockRound}},
+		{boundedHostKeyType, customBounds, customBoundsPreset.Fields},
+		{plainEd25519KeyType, customBounds, customBoundsPreset.Fields},
 	} {
 		spec := overlayForm(t, test.keyType, test.preset).formSpec(t)
 		want := append(append([]string(nil), test.bounds...), overlayCosigner, overlayList, overlayRekey)
@@ -158,15 +172,17 @@ func TestOverlayRekeyControlOffersWhatTheTypeDeclares(t *testing.T) {
 		listed, cosigned bool
 		want             []string
 	}{
-		{plainFalconKeyType, -1, false, false, []string{boundary.RekeyRefused, boundary.RekeySpendingKey}},
-		{plainFalconKeyType, -1, false, true, []string{boundary.RekeyRefused, boundary.RekeySpendingKey}},
-		{plainFalconKeyType, -1, true, false, []string{boundary.RekeyOnlyThese}},
-		{plainFalconKeyType, -1, true, true, []string{boundary.RekeyOnlyThese, boundary.RekeyPlusCosigned}},
-		{plainEd25519KeyType, -1, true, true, []string{boundary.RekeyOnlyThese, boundary.RekeyPlusCosigned}},
-		{boundary.KeyTypeV1, 0, false, false, []string{boundary.RekeySpendingKey}},
-		{boundary.KeyTypeV1, 0, false, true, []string{boundary.RekeySpendingKey}},
-		{boundary.KeyTypeV1, 0, true, false, []string{boundary.RekeyOnlyThese}},
-		{boundary.KeyTypeV1, 0, true, true, []string{boundary.RekeyOnlyThese, boundary.RekeyPlusCosigned}},
+		{plainFalconKeyType, noBounds, false, false, []string{boundary.RekeyRefused, boundary.RekeySpendingKey}},
+		{plainFalconKeyType, noBounds, false, true, []string{boundary.RekeyRefused, boundary.RekeySpendingKey}},
+		{plainFalconKeyType, noBounds, true, false, []string{boundary.RekeyOnlyThese}},
+		{plainFalconKeyType, noBounds, true, true, []string{boundary.RekeyOnlyThese, boundary.RekeyPlusCosigned}},
+		{plainEd25519KeyType, noBounds, true, true, []string{boundary.RekeyOnlyThese, boundary.RekeyPlusCosigned}},
+		// Bounds take every rekey setting too (ninth amendment).
+		{boundedHostKeyType, 0, false, false, []string{boundary.RekeyRefused, boundary.RekeySpendingKey}},
+		{boundedHostKeyType, 0, false, true, []string{boundary.RekeyRefused, boundary.RekeySpendingKey}},
+		{boundedHostKeyType, 0, true, false, []string{boundary.RekeyOnlyThese}},
+		{boundedHostKeyType, 0, true, true, []string{boundary.RekeyOnlyThese, boundary.RekeyPlusCosigned}},
+		{plainEd25519KeyType, customBounds, true, true, []string{boundary.RekeyOnlyThese, boundary.RekeyPlusCosigned}},
 	} {
 		m := overlayForm(t, test.keyType, test.preset)
 		if test.listed {
@@ -202,22 +218,22 @@ func TestOverlayFormSendsTheChoices(t *testing.T) {
 		want    map[string]string
 	}{
 		{
-			name: "plain, nothing chosen", keyType: plainFalconKeyType, preset: -1,
+			name: "plain, nothing chosen", keyType: plainFalconKeyType, preset: noBounds,
 			values: map[string]string{},
 			want:   map[string]string{overlayRekey: boundary.RekeyRefused},
 		},
 		{
-			name: "plain, spending key alone", keyType: plainEd25519KeyType, preset: -1,
+			name: "plain, spending key alone", keyType: plainEd25519KeyType, preset: noBounds,
 			values: map[string]string{overlayRekey: boundary.RekeySpendingKey},
 			want:   map[string]string{overlayRekey: boundary.RekeySpendingKey},
 		},
 		{
-			name: "plain, cosigned plus others", keyType: plainFalconKeyType, preset: -1,
+			name: "plain, cosigned plus others", keyType: plainFalconKeyType, preset: noBounds,
 			values: map[string]string{overlayCosigner: "WITNESS", overlayList: target, overlayRekey: boundary.RekeyPlusCosigned},
 			want:   map[string]string{overlayCosigner: "WITNESS", overlayList: target, overlayRekey: boundary.RekeyPlusCosigned},
 		},
 		{
-			name: "allowlist with a list", keyType: boundary.KeyTypeV1, preset: 0,
+			name: "allowlist with a list", keyType: boundedHostKeyType, preset: 0,
 			values: map[string]string{boundary.ParameterRecipients: recipient, overlayList: target, overlayRekey: boundary.RekeyOnlyThese},
 			want: map[string]string{
 				boundary.ParameterRecipients: recipient, overlayList: target, overlayRekey: boundary.RekeyOnlyThese,
@@ -225,10 +241,10 @@ func TestOverlayFormSendsTheChoices(t *testing.T) {
 			},
 		},
 		{
-			name: "corridor without a list falls back to the spending key", keyType: boundary.KeyTypeV1, preset: 0,
+			name: "an unoffered choice falls back to the first, no rekeys", keyType: boundedHostKeyType, preset: 0,
 			values: map[string]string{boundary.ParameterRecipients: recipient, overlayCosigner: "WITNESS", overlayRekey: boundary.RekeyOnlyThese},
 			want: map[string]string{
-				boundary.ParameterRecipients: recipient, overlayCosigner: "WITNESS", overlayRekey: boundary.RekeySpendingKey,
+				boundary.ParameterRecipients: recipient, overlayCosigner: "WITNESS", overlayRekey: boundary.RekeyRefused,
 				boundary.ParameterSpendEffects: "pay,axfer,asset_opt_in", boundary.ParameterListEncoding: boundary.EncodingAuto,
 			},
 		},
@@ -263,7 +279,7 @@ func (m Model) shownRekey(t *testing.T) string {
 // again. An optional cosigner can be removed.
 func TestOverlayRekeyFollowsTheListAndTheCosigner(t *testing.T) {
 	overlayInventory(t)
-	m := overlayForm(t, plainFalconKeyType, -1)
+	m := overlayForm(t, plainFalconKeyType, noBounds)
 	if got := m.shownRekey(t); got != boundary.RekeyRefused {
 		t.Fatalf("initial rekey = %q, want refused", got)
 	}
@@ -295,7 +311,7 @@ func TestOverlayRekeyFollowsTheListAndTheCosigner(t *testing.T) {
 	}
 
 	// A preset that needs a cosigner keeps it required.
-	corridor := overlayForm(t, boundary.KeyTypeV1, 2)
+	corridor := overlayForm(t, boundedHostKeyType, 2)
 	corridor.forms.genericLSigParams[overlayCosigner] = "WITNESS"
 	corridor = corridor.pressOnField(t, overlayCosigner, tea.KeyMsg{Type: tea.KeyBackspace})
 	if got := corridor.forms.genericLSigParams[overlayCosigner]; got != "WITNESS" {
@@ -309,7 +325,7 @@ func TestOverlayRekeyFollowsTheListAndTheCosigner(t *testing.T) {
 func TestOverlayFormStartsAsThePresetSays(t *testing.T) {
 	overlayInventory(t)
 	for index, preset := range boundary.Presets() {
-		m := overlayForm(t, boundary.KeyTypeV1, index)
+		m := overlayForm(t, boundedHostKeyType, index)
 		if got, want := m.shownRekey(t), preset.Fixed[boundary.ParameterRekeyAuthority]; got != want {
 			t.Errorf("%s: opens with rekey %q, want %q", preset.Name, got, want)
 		}
@@ -320,7 +336,7 @@ func TestOverlayFormStartsAsThePresetSays(t *testing.T) {
 		}
 	}
 
-	m := overlayForm(t, plainFalconKeyType, -1)
+	m := overlayForm(t, plainFalconKeyType, noBounds)
 	m.forms.genericLSigParams[overlayCosigner] = "WITNESS"
 	m.forms.genericLSigParams[overlayList] = testAddress(1)
 	m.forms.genericLSigParams[overlayRekey] = boundary.RekeyPlusCosigned
@@ -342,8 +358,9 @@ func TestOverlayFormFitsAt80x24(t *testing.T) {
 		keyType string
 		preset  int
 	}{
-		{plainFalconKeyType, -1}, {plainEd25519KeyType, -1},
-		{boundary.KeyTypeV1, 0}, {boundary.KeyTypeV1, 1}, {boundary.KeyTypeV1, 2}, {boundary.KeyTypeV1, 3},
+		{plainFalconKeyType, noBounds}, {plainEd25519KeyType, noBounds},
+		{boundedHostKeyType, 0}, {boundedHostKeyType, 1}, {boundedHostKeyType, 2}, {boundedHostKeyType, 3},
+		{plainEd25519KeyType, 2}, {boundedHostKeyType, customBounds}, {plainEd25519KeyType, customBounds},
 	} {
 		for _, a := range []arrangement{{false, false}, {true, false}, {false, true}, {true, true}} {
 			m := overlayForm(t, form.keyType, form.preset)
@@ -399,7 +416,7 @@ func TestOverlayFormFitsAt80x24(t *testing.T) {
 // operator had typed.
 func TestImportedCosignerFillsTheOverlayForm(t *testing.T) {
 	infos := overlayInventory(t)
-	for _, keyType := range []string{boundary.KeyTypeV1, plainFalconKeyType} {
+	for _, keyType := range []string{boundedHostKeyType, plainFalconKeyType} {
 		m := Model{viewState: ViewGenerateParams, cosigner: cosignerState{loaded: true}}
 		index, _ := keyTypeIndex(keyType, getKeyTypeCount(), getKeyTypeByIndex)
 		m.forms.generateKeyType = index
@@ -415,6 +432,100 @@ func TestImportedCosignerFillsTheOverlayForm(t *testing.T) {
 		}
 		if got.cosigner.pendingWitnessID != "" {
 			t.Fatalf("%s: the pending import was not consumed", keyType)
+		}
+	}
+}
+
+// Custom bounds leaves an optional choice unset until the operator picks one,
+// so a limits-only account and a timelock with no list can be made without a
+// file; and the Cosigners manager's form, which has no preset, has no bounds.
+func TestCustomBoundsLeavesChoicesUnsetAndTheManagerFormHasNone(t *testing.T) {
+	overlayInventory(t)
+	for name, test := range map[string]struct {
+		values  map[string]string
+		absent  []string
+		present map[string]string
+	}{
+		"limits-only": {
+			values:  map[string]string{boundary.ParameterSpendEffects: "pay", boundary.ParameterRecipientScope: boundary.RecipientScopeAny, overlayRekey: boundary.RekeyRefused},
+			absent:  []string{boundary.ParameterListEncoding, boundary.ParameterRecipients, boundary.ParameterUnlockRound},
+			present: map[string]string{boundary.ParameterRecipientScope: boundary.RecipientScopeAny},
+		},
+		"a timelock with no list": {
+			values: map[string]string{boundary.ParameterSpendEffects: "pay", boundary.ParameterUnlockRound: "100", overlayRekey: boundary.RekeySpendingKey},
+			absent: []string{boundary.ParameterListEncoding, boundary.ParameterRecipients, boundary.ParameterRecipientScope},
+		},
+	} {
+		m := overlayForm(t, plainEd25519KeyType, customBounds)
+		for field, value := range test.values {
+			m.forms.genericLSigParams[field] = value
+		}
+		spec := m.formSpec(t)
+		scope, _ := paramNamed(spec.Params, boundary.ParameterRecipientScope)
+		if scope.Options[0] != "" || spec.optionLabel(scope.Name, "") != "Not set" {
+			t.Fatalf("%s: recipient scope offers %v", name, scope.Options)
+		}
+		m.forms.generateFocus = len(spec.Params)
+		next, _ := m.handleGenerateParamsKeys(tea.KeyMsg{Type: tea.KeyEnter})
+		got := next.(Model)
+		if got.viewState != ViewGenerating {
+			t.Fatalf("%s: view = %v, error = %q", name, got.viewState, got.forms.generateError)
+		}
+		for _, field := range test.absent {
+			if _, ok := got.forms.pendingGenerateParams[field]; ok {
+				t.Errorf("%s: sent %s: %v", name, field, got.forms.pendingGenerateParams)
+			}
+		}
+		for field, value := range test.present {
+			if got.forms.pendingGenerateParams[field] != value {
+				t.Errorf("%s: %s = %q", name, field, got.forms.pendingGenerateParams[field])
+			}
+		}
+	}
+
+	// The manager opens the form with a cosigner and no preset.
+	m := Model{viewState: ViewGenerateParams, cosigner: cosignerState{loaded: true}}
+	index, _ := keyTypeIndex(plainFalconKeyType, getKeyTypeCount(), getKeyTypeByIndex)
+	m.forms.generateKeyType = index
+	m = m.initGenericLSigParamsForKeyType(plainFalconKeyType)
+	m.forms.genericLSigParams[overlayCosigner] = "WITNESS"
+	spec := m.formSpec(t)
+	if got := paramNames(spec.Params); !slices.Equal(got, []string{overlayCosigner, overlayList, overlayRekey}) {
+		t.Fatalf("manager form fields = %v, want the overlays alone", got)
+	}
+	m.forms.generateFocus = len(spec.Params)
+	next, _ := m.handleGenerateParamsKeys(tea.KeyMsg{Type: tea.KeyEnter})
+	if sent := next.(Model).forms.pendingGenerateParams; fmt.Sprint(sent) != fmt.Sprint(map[string]string{overlayCosigner: "WITNESS", overlayRekey: boundary.RekeyRefused}) {
+		t.Fatalf("manager form sent %v", sent)
+	}
+}
+
+// A cosigner imported from the form comes back focused and in view: at 80x24 a
+// bounds preset scrolls, and a keystroke on a hidden field would act on what
+// the operator can't see.
+func TestImportedCosignerIsFocusedInView(t *testing.T) {
+	overlayInventory(t)
+	for preset := range boundary.Presets() {
+		m := sizedForTest(t, overlayForm(t, boundedHostKeyType, preset), MinWidth, MinHeight)
+		_, hasRecipients := m.forms.genericLSigParams[boundary.ParameterRecipients]
+		if hasRecipients {
+			m.forms.genericLSigParams[boundary.ParameterRecipients] = testAddress(1)
+		}
+		m.cosigner.pendingKeyType = boundedHostKeyType
+		m.cosigner.pendingWitnessID = "WITNESS"
+		m = m.resumeCosignerImport()
+		focus := m.forms.genericLSigParamOrder[m.forms.generateFocus]
+		if focus != overlayCosigner || m.forms.genericLSigParams[overlayCosigner] != "WITNESS" {
+			t.Fatalf("preset %d: focus %q, cosigner %q", preset, focus, m.forms.genericLSigParams[overlayCosigner])
+		}
+		if hasRecipients && m.forms.genericLSigParams[boundary.ParameterRecipients] != testAddress(1) {
+			t.Fatalf("preset %d: the typed recipients were lost", preset)
+		}
+		if offset := m.forms.generateParamScrollOffset; m.forms.generateFocus < offset || m.forms.generateFocus >= offset+m.getMaxVisibleParams() {
+			t.Fatalf("preset %d: focus %d is outside the visible rows from %d", preset, m.forms.generateFocus, offset)
+		}
+		if view := stripANSI(assertFitsWindow(t, m)); !strings.Contains(view, "Require a cosigner (Falcon-1024)") {
+			t.Fatalf("preset %d: the focused cosigner control is not on screen:\n%s", preset, view)
 		}
 	}
 }

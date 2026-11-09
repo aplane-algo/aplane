@@ -634,7 +634,7 @@ aplane/
 │   ├── falcon1024/                # Falcon-1024 DSA provider
 │   │   ├── derivation/, family/, keygen/, keys/, signerops/, signerreg/
 │   │   └── v1/                    # v1 standard provider, ops, composer, reference vectors
-│   ├── plainhost/                 # Plain host: the plain LogicSig types with optional overlays (plain1)
+│   ├── plainhost/                 # Plain host: the plain LogicSig types with optional overlays (plain1) and bounds (bounded2)
 │   ├── ed25519lsig/               # Ed25519 LogicSig DSA base and plain host
 │   ├── composeddsa/               # Generic ComposedDSA composer
 │   ├── dsafamily/                 # Client-safe DSA family registration descriptors
@@ -676,7 +676,7 @@ behavior should live in `internal/apshellapp`, not in `cmd/apshell`.
 | UI | `cmd/apshell`, `cmd/apconsole`, `internal/apshellcli`, `internal/shellrepl`, `internal/signerapp/signertui`, `cmd/apadmin`, `cmd/appass`, `cmd/aplocalnet`, `internal/aplocalnet`, `cmd/apapprover`, `internal/command`, `internal/cmdspec`, `internal/cmdlog`, `internal/theme`, `internal/addressdisplay`, `internal/keytypeux` |
 | Engine | `internal/apshellapp`, `internal/apadminapp`, `internal/engine`, `internal/clientstate`, `internal/cache`, `internal/config`, `internal/engine/connect`, `internal/engine/cosigned`, `internal/clientsign`, `internal/appresult`, `internal/appinput`, `internal/appspec`, `internal/asa`, `internal/addressbook`, `internal/refname`, `internal/keymgmt`, `internal/partkeyparse`, `internal/txnutil`, `internal/algo` |
 | Signer App | `internal/bootstrap/signer`, `internal/signerapp/daemon`, `internal/signerapp/startup`, `internal/signerapp/runtime`, `internal/signerapp/productruntime`, `internal/signerapp/unlockconfig`, `internal/signerapp/signing`, `internal/signerapp/chainread`, `internal/signerapp/approval`, `internal/signerapp/templates`, `internal/signerapp/templateadmin`, `internal/signerapp/keyadmin`, `internal/signerapp/storeadmin`, `internal/signerapp/backupadmin`, `internal/signerapp/rest`, `internal/signerapp/admin`, `internal/signerapp/adminserver`, `internal/signerapp/svcerr`, `internal/signerapp/enrollment`, `internal/signerapp/enrollqueue`, `internal/signerapp/clientregistry`, `internal/signerapp/audit`, `internal/signerapp/filewatcher`, `internal/signerapp/ipcbind`, `internal/signerapp/txdesc`, `internal/signerapp/policycmd`, `internal/signerapp/policyreview`, `internal/signerapp/policytext`, `internal/signerapp/policyapply`, `internal/signerapp/policyruntime`, `internal/noderole`, `internal/policy`, `internal/integritysidecar`, `internal/signerapp/approvalpolicy`, `internal/signerapp/storevalidate` |
-| Provider | `internal/signing`, `internal/signing/falcon1024`, `internal/falconparams`, `internal/sigconstruction`, `internal/boundary`, `internal/lsigresource`, `lsig/`, `lsig/boundedaccount`, `lsig/rotatingfamily`, `lsig/rotatingtriplexmss`, `lsig/rotatingtripleslhdsa`, `lsig/rotatingtriplewotsc`, `internal/cosigner`, `internal/boundedmeta`, `internal/txeffects`, `internal/keyclass`, `internal/lsigprovider`, `internal/signingargs`, `internal/logicsigdsa`, `internal/genericlsig`, `internal/lsigsalt`, `internal/tealtemplate`, `internal/addressderive`, `internal/keytypecatalog`, `internal/keytypestate`, `internal/algorithm`, `internal/keygen`, `internal/mnemonic` |
+| Provider | `internal/signing`, `internal/signing/falcon1024`, `internal/falconparams`, `internal/sigconstruction`, `internal/boundary`, `internal/lsigresource`, `lsig/`, `lsig/plainhost`, `lsig/rotatingfamily`, `lsig/rotatingtriplexmss`, `lsig/rotatingtripleslhdsa`, `lsig/rotatingtriplewotsc`, `internal/cosigner`, `internal/boundedmeta`, `internal/txeffects`, `internal/keyclass`, `internal/lsigprovider`, `internal/signingargs`, `internal/logicsigdsa`, `internal/genericlsig`, `internal/lsigsalt`, `internal/tealtemplate`, `internal/addressderive`, `internal/keytypecatalog`, `internal/keytypestate`, `internal/algorithm`, `internal/keygen`, `internal/mnemonic` |
 | Storage/Crypto | `internal/crypto`, `internal/witness`, `internal/merkleallowlist`, `internal/keys`, `internal/keystore`, `internal/storepaths`, `internal/stagetable`, `internal/rotatingkey`, `internal/crypto/wotsc`, `internal/crypto/rotatinghybrid`, `internal/genstore`, `internal/storelock`, `internal/signerapp/storemut`, `internal/storeinit`, `internal/storepass`, `internal/serverconfig`, `internal/clientdata`, `internal/templatestore`, `internal/templatelibrary`, `internal/templatepolicy`, `internal/backup`, `internal/security`, `internal/fsutil` |
 | Integration | `internal/bootstrap/shell`, `internal/auth`, `internal/authz`, `internal/protocol`, `internal/adminproto`, `internal/transport`, `internal/sshtunnel`, `internal/clientenroll`, `internal/endpointrefs`, `internal/plugin`, `internal/scripting`, `internal/jsapi`, `pkg/signerapi`, `internal/signerclient`, `internal/checksum`, `internal/manifest`, `internal/productmode` |
 | Tooling | `analysis/`, `test/arch`, `test/contracts`, `test/fixtures`, `test/integration`, `test/storeintegration`, `test/registry`, `test/soak`, `internal/testcheckpoint`, `internal/docassets`, `internal/xregistry`, `internal/signerprobe`, `internal/version` |
@@ -1885,15 +1885,16 @@ declaration it is classified against, and the single finalized-transaction
 classification boundary are specified in
 [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md).
 
-The general bounded key type is `aplane.falcon1024-b.v1`. Its Corridor preset
-composes the framework Merkle policy with a cosigner spend gate and a rekey-to list: it can be rekeyed only to a listed address, with the spending key alone. A cosigned account can also take cosigned rekeys (the spending key and the cosigner). The normative field inventory, canonical encodings, vectors,
+Bounded accounts are the bounds of the plain hosts `aplane.falcon1024.v1` and
+`aplane.ed25519.v1`: a request with any bounds parameter selects one of their
+`bounded2` shapes. The Corridor preset of `aplane.falcon1024.v1` composes the framework Merkle policy with a cosigner spend gate and a rekey-to list: it can be rekeyed only to a listed address, with the spending key alone. A cosigned account can also take cosigned rekeys (the spending key and the cosigner). The normative field inventory, canonical encodings, vectors,
 schema, and normal forms are in [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md).
 
 Package ownership: `internal/boundedmeta` owns the durable non-secret bounded
 metadata vocabulary, the path declaration projected from it, and canonical encodings; `lsig/composeddsa` owns profile
-compilation, TEAL rendering, and the bounded support policy; `lsig/boundedaccount` owns the general bounded key type, its compiled definition,
-and its shapes; `internal/boundary` owns that type's family-neutral grammar, presets, and
-receipt; `internal/sigconstruction` owns the signature construction catalog;
+compilation, TEAL rendering, and the bounded support policy; `lsig/plainhost` owns the
+plain hosts, their overlay arrangements, and their bounded shapes; `internal/boundary` owns
+the family-neutral boundary file grammar, presets, and receipt; `internal/sigconstruction` owns the signature construction catalog;
 `internal/txeffects` owns the frozen effect-classification manifest, the
 single finalized-transaction `Classify`/`Inspect` boundary, and `ClassifyFor`,
 which decides a transaction's path against a path declaration. Signer-side
@@ -2191,7 +2192,7 @@ These caches are not interchangeable:
   instead. The signer cache carries the signer-advertised key type, structured
   LogicSig program/argument/opcode resource profiles, signing argument schema,
   `signing_flow`, cosigner component key type, embedded cosigner public key,
-  and each bounded account's contract and fee ceiling (none on a plain host).
+  and each bounded account's contract and fee ceiling (none on `plain1`).
   Client signing route selection is driven by `signing_flow`,
 - auth cache depends on network state and signer/alias information,
 - alias and set caches are local operator state,
@@ -2402,7 +2403,7 @@ Product-level boundaries:
 | Store/Backup Admin | `internal/signerapp/storeadmin/service.go`, `internal/signerapp/backupadmin/*.go`, `internal/backup/*.go` |
 | Store Ownership / Permissions | `internal/storeperm/*.go`, `internal/fsutil/perms.go`, `internal/fsutil/durable.go`, `internal/adminipc/path.go`, `cmd/apstore/permissions.go`, `docs/ARCH_STORE.md` |
 | Store Integration Harness | `test/storeintegration/*.go`, `internal/storepass/capacity_test.go`, `internal/testcheckpoint/*.go`, `Makefile` (`store-lifecycle-test`, `store-capacity-test`, `store-crash-test`, `store-release-drill`) |
-| LSig Providers / Resource Planning | `lsig/clientreg/register.go`, `lsig/signerreg/register.go`, `internal/lsigresource/consensus.go`, `internal/lsigresource/solver.go`, `internal/signerapp/signing/planner_runtime.go`, `internal/signerapp/signing/native_pq_fee.go`, `internal/signing/dummy_transactions.go`, `internal/lsigprovider/provider.go`, `internal/signingargs/types.go`, `internal/lsigsalt/salt.go`, `lsig/falcon1024/v1/standard.go`, `lsig/plainhost/provider.go`, `lsig/ed25519lsig/register.go`, `lsig/ed25519lsig/signerreg/register.go`, `lsig/falcon1024/signerops/ops.go`, `lsig/dsafamily/register.go`, `lsig/generictemplate/provider.go`, `lsig/composeddsa/composer.go`, `lsig/composeddsa/layer3.go`, `lsig/boundedaccount/provider.go`, `internal/boundedmeta/metadata.go`, `internal/merkleallowlist/allowlist.go`, `internal/tealtemplate/legacy_list.go`, `internal/tealtemplate/template.go` |
+| LSig Providers / Resource Planning | `lsig/clientreg/register.go`, `lsig/signerreg/register.go`, `internal/lsigresource/consensus.go`, `internal/lsigresource/solver.go`, `internal/signerapp/signing/planner_runtime.go`, `internal/signerapp/signing/native_pq_fee.go`, `internal/signing/dummy_transactions.go`, `internal/lsigprovider/provider.go`, `internal/signingargs/types.go`, `internal/lsigsalt/salt.go`, `lsig/falcon1024/v1/standard.go`, `lsig/plainhost/provider.go`, `lsig/ed25519lsig/register.go`, `lsig/ed25519lsig/signerreg/register.go`, `lsig/falcon1024/signerops/ops.go`, `lsig/dsafamily/register.go`, `lsig/generictemplate/provider.go`, `lsig/composeddsa/composer.go`, `lsig/composeddsa/layer3.go`, `lsig/plainhost/bounds.go`, `internal/boundedmeta/metadata.go`, `internal/merkleallowlist/allowlist.go`, `internal/tealtemplate/legacy_list.go`, `internal/tealtemplate/template.go` |
 | Protocol | `internal/protocol/messages.go`, `internal/signerapp/svcerr/svcerr.go`, `internal/signerapp/adminserver/dispatch.go`, `internal/signerapp/adminserver/displacement.go`, `internal/adminproto/stream_conn.go` |
 | Config | `internal/config/config.go`, `internal/serverconfig/serverconfig.go`, `internal/config/networkid.go`, `internal/config/genesishash.go` |
 | LocalNet Setup | `cmd/aplocalnet/main.go`, `internal/aplocalnet/setup.go`, `plugins/algokit-localnet/algokit-localnet.go`, `plugins/algokit-localnet/manifest.json` |

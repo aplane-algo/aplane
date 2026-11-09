@@ -34,7 +34,9 @@ func TestPlainProgramRestoresAndSignsExistingCredentials(t *testing.T) {
 	lsigsignerreg.RegisterSigner()
 	for _, base := range []string{"aplane.falcon1024.v1", "aplane.ed25519.v1"} {
 		t.Run(base, func(t *testing.T) {
-			if keytypecatalog.IsDefaultEnabled(base) {
+			// The Falcon plain host is enabled by default; restore depends on
+			// neither its enablement nor the Ed25519 one's.
+			if base == "aplane.ed25519.v1" && keytypecatalog.IsDefaultEnabled(base) {
 				t.Fatal("fixture must exercise a type this node has not enabled")
 			}
 			var pub, priv []byte

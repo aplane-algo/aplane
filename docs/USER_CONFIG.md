@@ -584,7 +584,7 @@ Note: SSH paths are relative to the data directory (`$APSIGNER_DATA`). The `.ssh
 - Relative paths in config are resolved from the data directory
 - apadmin and apapprover connect via the IPC socket
 - `user_auto_approve` is the `User Auto-Approve` runtime admin setting persisted with product config
-- `require_contained` and `require_cosigner` set a minimum for new `aplane.falcon1024-b.v1` and plain host accounts. See [USER_KEYTYPES.md](USER_KEYTYPES.md#restricting-new-accounts)
+- `require_contained` and `require_cosigner` set a minimum for new plain host accounts (`aplane.falcon1024.v1`, `aplane.ed25519.v1`). See [USER_KEYTYPES.md](USER_KEYTYPES.md#restricting-new-accounts)
 - signer safety guards live in the product-local v1 JSON policy documents
 - See [Headless Operation](#headless-operation) for unattended deployment
 

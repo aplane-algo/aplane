@@ -761,11 +761,11 @@ cosigner's address:
    endpoint or host trust. Use **SHOW JSON** to copy the document
    instead of saving a file. The result screen shows the address clients
    should use, taken from `endpoint.advertise_url` when it is configured.
-2. **On the primary signer:** choose a key type that takes a cosigner: the
-   general bounded type (`aplane.falcon1024-b.v1`, enabled by default, with
-   the Corridor preset) or a plain host (`aplane.falcon1024.v1` or
-   `aplane.ed25519.v1`), which must be enabled first. In apadmin, **Generate
-   account**, select that type, open **Require a cosigner (Falcon-1024)**, and
+2. **On the primary signer:** choose a key type that takes a cosigner: a
+   plain host, `aplane.falcon1024.v1` (enabled by default, with the Corridor
+   preset) or `aplane.ed25519.v1` (enable it first). In apadmin, **Generate
+   account**, select that type and a preset (or **No bounds**), open
+   **Require a cosigner (Falcon-1024)**, and
    choose **Use key file...** (or **Paste public
    JSON...**). Compare the complete Witness Key ID with the cosigner, then
    import. The account form returns with the cosigner filled in and the other
@@ -1169,9 +1169,10 @@ generate <key_type> [param=value ...]
 generate ed25519
 generate falcon1024
 generate aplane.htlc.v1 hash=SHA256_HEX recipient=ADDR1 refund_address=ADDR2 timeout_round=50000000
-generate aplane.falcon1024-b.v1 spend_effects=pay rekey_authority=spending_key recipients="@validators"   # address[] params resolve aliases and sets
-generate aplane.falcon1024-b.v1 --boundary rules.yaml --result account.json
-generate aplane.falcon1024.v1 cosigner=<witness-key-id> rekey_authority=spending_key   # a cosigned plain host (enable the type first)
+generate aplane.falcon1024.v1 spend_effects=pay rekey_authority=spending_key recipients="@validators"   # address[] params resolve aliases and sets
+generate aplane.falcon1024.v1 --boundary rules.yaml --result account.json
+generate aplane.falcon1024.v1 cosigner=<witness-key-id> rekey_authority=spending_key   # a cosigned account without bounds
+generate aplane.ed25519.v1 rekey_authority=only_these rekey_to=ADDR1   # enable aplane.ed25519.v1 first
 ```
 
 Run `keytypes` to see available key types and required generation parameters.
@@ -1179,9 +1180,11 @@ Use the full key type shown by `keytypes`.
 For installing or activating optional key types, and for boundary files, see
 [USER_KEYTYPES.md](USER_KEYTYPES.md). `--boundary <file>` and `--result <file>` are
 apshell's own flags, written `--flag file` or `--flag=file`; every `param=value` goes to
-the signer. `--boundary` needs a type whose requests take the boundary grammar, which
-today means `aplane.falcon1024-b.v1`, and sets every parameter, so it takes no others. A
-plain host (`aplane.falcon1024.v1`, `aplane.ed25519.v1`) takes its parameters directly.
+the signer. A flag never takes a `param=value` as its file, so a forgotten file name stops
+the command instead of dropping a parameter; write `--flag=file` for a file name with `=`. `--boundary` needs a type whose requests take the boundary grammar, which
+today means the plain hosts (`aplane.falcon1024.v1`, `aplane.ed25519.v1`), and sets every
+parameter, so it takes no others. Without it, a plain host takes the same bounds and
+overlay parameters directly; a file without `spend` asks for an account without bounds.
 With `--boundary`, apshell reads the signer's key types first; if it can't, or the type
 takes no boundary file, it stops and generates nothing. `--result` saves what the signer
 stored, for any key type. Any other `--` argument is refused.

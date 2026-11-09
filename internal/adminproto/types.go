@@ -34,8 +34,8 @@ type AdminSettings struct {
 	EndpointAdvertiseURL string
 	EndpointDisplayURL   string
 	Theme                string
-	// These restrict new accounts of the per-key types (aplane.falcon1024-b.v1
-	// and the plain hosts) only.
+	// These restrict new accounts of the per-key types, the plain hosts
+	// (aplane.falcon1024.v1, aplane.ed25519.v1), only.
 	RequireContained bool
 	RequireCosigner  bool
 }
@@ -634,6 +634,7 @@ type PreparedBoundedProfile struct {
 type PrepareGenerateKeyResult struct {
 	Success           bool
 	KeyType           string
+	BaseKeyType       string
 	Parameters        map[string]string
 	Fingerprint       string
 	ReviewFingerprint string

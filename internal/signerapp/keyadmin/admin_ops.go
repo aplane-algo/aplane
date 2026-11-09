@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"maps"
 
+	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/crypto"
 
 	"github.com/aplane-algo/aplane/internal/keyclass"
@@ -76,7 +77,7 @@ func (s Service) GetKeyDetails(address string) (*KeyDetailsResult, *Error) {
 		if witness.IsKeyType(info.Type) {
 			result.PublicKeyHex = info.PublicKeyHex
 		}
-		result.Parameters = maps.Clone(info.Parameters)
+		result.Parameters = keyDetailsParameters(info.Parameters, info.BoundedAuthorization)
 		result.TemplateProvenanceStatus, result.TemplateProvenanceNote = lsigprovider.CompareAccountProvenance(info.Type, info.TemplateFingerprint, info.Parameters, info.BoundedAuthorization)
 		result.PolicyLabel = keytypeux.BoundedMetadataLabel(info.BoundedAuthorization)
 		if result.DisplayTEAL, err = keymgmt.GetDisplayTEALWithKeyring(keyFile, mk); err != nil {
@@ -89,6 +90,25 @@ func (s Service) GetKeyDetails(address string) (*KeyDetailsResult, *Error) {
 	}
 
 	return result, nil
+}
+
+// keyDetailsCosignerParameter carries a cosigned account's cosigner in its
+// details. It is the plain hosts' cosigner parameter, which takes a Witness Key
+// ID, so the details show the cosigner the way an operator names it.
+const keyDetailsCosignerParameter = "cosigner"
+
+// keyDetailsParameters shows a cosigned account's cosigner by its Witness Key ID,
+// the name an operator compares with the cosigner node, instead of the raw
+// public key, which identifies nothing at a glance. The ID is checked against
+// the public key when the key loads.
+func keyDetailsParameters(parameters map[string]string, metadata *boundedmeta.Metadata) map[string]string {
+	projected := maps.Clone(parameters)
+	if metadata == nil || metadata.Cosigner == nil || metadata.Cosigner.ComponentKeyID == "" {
+		return projected
+	}
+	delete(projected, boundedmeta.CosignerPublicKeyParameter)
+	projected[keyDetailsCosignerParameter] = metadata.Cosigner.ComponentKeyID
+	return projected
 }
 
 func (s Service) ImportKey(ctx context.Context, keyType, mnemonic string, params map[string]string) (*keymgmt.ImportResult, *Error) {

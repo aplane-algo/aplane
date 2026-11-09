@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-package boundedaccount
+package plainhost
 
 import (
 	"fmt"
@@ -16,28 +16,20 @@ import (
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 )
 
-// selection is the shape and canonical values one request resolves to.
+// selection is the shape and canonical values one bounds request resolves to.
 type selection struct {
 	shape  Shape
 	values map[string]string
 }
 
-// selectShape is the security gate for creation requests. A boundary file is
-// only one way to reach it, so every rule a file must obey is checked here on
-// the flat parameters. Its output selects the same shape when resolved again,
-// because the generator resolves the persisted values a second time.
+// selectShape is the security gate for a bounds request, whose values are all
+// non-empty (present refuses an empty one). A boundary file is only one way to reach it, so every rule a file
+// must obey is checked here on the flat parameters. Its output selects the same
+// shape when resolved again, because the generator resolves the persisted values
+// a second time.
 func selectShape(params map[string]string, defs []lsigprovider.ParameterDef) (*selection, error) {
-	known := make(map[string]bool, len(defs))
-	for _, def := range defs {
-		known[def.Name] = true
-	}
-	for name := range params {
-		if name == ParameterCosigner {
-			return nil, fmt.Errorf("cosigner reference was not resolved")
-		}
-		if !known[name] {
-			return nil, fmt.Errorf("unknown parameter %q", name)
-		}
+	if err := checkKnown(params, defs); err != nil {
+		return nil, err
 	}
 	normalized, err := lsigprovider.NormalizeCreationParams(params, defs)
 	if err != nil {
@@ -48,17 +40,7 @@ func selectShape(params map[string]string, defs []lsigprovider.ParameterDef) (*s
 	if err != nil {
 		return nil, err
 	}
-	rekey := normalized[ParameterRekeyAuthority]
-	switch rekey {
-	case RekeySpendingKey, RekeyOnlyThese, RekeyPlusCosigned:
-	case RekeyRefused:
-		// Not one of this grammar's shapes; an expert template can express it.
-		return nil, fmt.Errorf("%s=%s is not one of this type's shapes: use %s=%s with %s, or an expert template with rekey: %s",
-			ParameterRekeyAuthority, RekeyRefused, ParameterRekeyAuthority, RekeyOnlyThese, ParameterRekeyTo, RekeyRefused)
-	default:
-		return nil, fmt.Errorf("%s must be %s, %s or %s", ParameterRekeyAuthority, RekeySpendingKey, RekeyOnlyThese, RekeyPlusCosigned)
-	}
-	rekeyTo, err := canonicalRekeyTo(params, normalized, rekey)
+	overlays, err := resolveOverlays(params, normalized)
 	if err != nil {
 		return nil, err
 	}
@@ -98,26 +80,8 @@ func selectShape(params map[string]string, defs []lsigprovider.ParameterDef) (*s
 		return nil, fmt.Errorf("%s has no list to encode", ParameterListEncoding)
 	}
 
-	cosigner := normalized[composeddsa.BoundedCosignerPublicKeyParameter]
-	if _, present := params[composeddsa.BoundedCosignerPublicKeyParameter]; present && cosigner == "" {
-		return nil, fmt.Errorf("%s is empty", composeddsa.BoundedCosignerPublicKeyParameter)
-	}
-	switch {
-	case rekey == RekeyPlusCosigned && cosigner == "":
-		// Without a cosigner the spending key would rekey anywhere, so the list
-		// would add nothing.
-		return nil, fmt.Errorf("%s=%s needs a cosigner; without one, use %s=%s or %s",
-			ParameterRekeyAuthority, RekeyPlusCosigned, ParameterRekeyAuthority, RekeyOnlyThese, RekeySpendingKey)
-	case timelock && rekey != RekeyOnlyThese:
-		// Not one of this grammar's shapes; an expert template can express it.
-		return nil, fmt.Errorf("this type's timelock shapes take only %s=%s; an expert template can combine a timelock with %s=%s",
-			ParameterRekeyAuthority, RekeyOnlyThese, ParameterRekeyAuthority, rekey)
-	}
-
-	values := map[string]string{
-		ParameterSpendEffects:   joinSpend(spend),
-		ParameterRekeyAuthority: rekey,
-	}
+	values := map[string]string{ParameterSpendEffects: joinSpend(spend)}
+	overlays.addTo(values)
 	if recipients != nil {
 		values[ParameterListEncoding] = encoding
 		values[ParameterRecipients] = strings.Join(recipients, ",")
@@ -125,24 +89,74 @@ func selectShape(params map[string]string, defs []lsigprovider.ParameterDef) (*s
 	if timelock {
 		values[ParameterUnlockRound] = unlockRound
 	}
-	// Only "any" is persisted: "listed" is the default, so the values of every
-	// earlier shape stay as they were.
+	// Only "any" is persisted: "listed" is the default.
 	if anyRecipient {
 		values[ParameterRecipientScope] = RecipientScopeAny
 	}
-	if rekeyTo != "" {
-		values[ParameterRekeyTo] = rekeyTo
-	}
-	if cosigner != "" {
-		values[composeddsa.BoundedCosignerPublicKeyParameter] = cosigner
-	}
 	return &selection{
 		shape: Shape{
-			Spend: spend, Encoding: encoding, Rekey: rekey, Cosigner: cosigner != "",
+			Spend: spend, Encoding: encoding, Rekey: overlays.arrangement.Rekey, Cosigner: overlays.arrangement.Cosigner,
 			Timelock: timelock, AnyRecipient: anyRecipient,
 		},
 		values: values,
 	}, nil
+}
+
+// overlays is a request's overlay choices, resolved the same way for a bounds
+// request and an overlays-only one.
+type overlays struct {
+	arrangement Arrangement
+	cosigner    string
+	rekeyTo     string
+}
+
+// resolveOverlays checks the rekey setting, the cosigner and the rekey-to list.
+// Plus cosigned needs a cosigner: without one the spending key would rekey
+// anywhere, so the list would add nothing, and that is spending_key.
+func resolveOverlays(params, normalized map[string]string) (overlays, error) {
+	rekey := normalized[ParameterRekeyAuthority]
+	if !slices.Contains(RekeyAuthorities, rekey) {
+		return overlays{}, fmt.Errorf("%s must be %s", ParameterRekeyAuthority, strings.Join(RekeyAuthorities, ", "))
+	}
+	cosigner := normalized[composeddsa.BoundedCosignerPublicKeyParameter]
+	if rekey == RekeyPlusCosigned && cosigner == "" {
+		return overlays{}, fmt.Errorf("%s=%s needs a cosigner; without one it is %s=%s",
+			ParameterRekeyAuthority, RekeyPlusCosigned, ParameterRekeyAuthority, RekeySpendingKey)
+	}
+	rekeyTo, err := canonicalRekeyTo(params, normalized, rekey)
+	if err != nil {
+		return overlays{}, err
+	}
+	return overlays{arrangement: Arrangement{Rekey: rekey, Cosigner: cosigner != ""}, cosigner: cosigner, rekeyTo: rekeyTo}, nil
+}
+
+// addTo writes the overlays' canonical values.
+func (o overlays) addTo(values map[string]string) {
+	values[ParameterRekeyAuthority] = o.arrangement.Rekey
+	if o.cosigner != "" {
+		values[composeddsa.BoundedCosignerPublicKeyParameter] = o.cosigner
+	}
+	if o.rekeyTo != "" {
+		values[ParameterRekeyTo] = o.rekeyTo
+	}
+}
+
+// checkKnown refuses a parameter the type doesn't declare, and a cosigner
+// reference the signer hasn't resolved to its key.
+func checkKnown(params map[string]string, defs []lsigprovider.ParameterDef) error {
+	known := make(map[string]bool, len(defs))
+	for _, def := range defs {
+		known[def.Name] = true
+	}
+	for name := range params {
+		if name == ParameterCosigner {
+			return fmt.Errorf("cosigner reference was not resolved")
+		}
+		if !known[name] {
+			return fmt.Errorf("unknown parameter %q", name)
+		}
+	}
+	return nil
 }
 
 // canonicalRekeyTo returns the rekey-to list in canonical order, or "" for an
@@ -169,8 +183,7 @@ func canonicalRekeyTo(params, normalized map[string]string, rekey string) (strin
 	return strings.Join(addresses, ","), nil
 }
 
-// canonicalRecipientScope returns "" when the request names no scope. It reads
-// the original request: an explicitly empty value is an error, not the default.
+// canonicalRecipientScope returns "" when the request names no scope.
 func canonicalRecipientScope(params map[string]string) (string, error) {
 	scope, present := params[ParameterRecipientScope]
 	if !present {
@@ -203,7 +216,7 @@ func canonicalUnlockRound(params map[string]string) (string, error) {
 
 func canonicalSpend(value string) ([]txeffects.SpendEffect, error) {
 	if strings.TrimSpace(value) == "" {
-		return nil, fmt.Errorf("%s is required", ParameterSpendEffects)
+		return nil, fmt.Errorf("%s is required with bounds", ParameterSpendEffects)
 	}
 	seen := make(map[txeffects.SpendEffect]bool)
 	for _, item := range strings.Split(value, ",") {
@@ -257,8 +270,7 @@ func canonicalRecipients(value string) ([]string, error) {
 	return recipients, nil
 }
 
-// selectEncoding reads the original request, because an explicitly empty value
-// is an error rather than a request for the default.
+// selectEncoding reads the request, where an absent encoding means auto.
 func selectEncoding(params map[string]string, count int) (string, error) {
 	encoding, present := params[ParameterListEncoding]
 	if !present {

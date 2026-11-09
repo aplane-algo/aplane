@@ -8,10 +8,10 @@ This document describes APlane's cosigner subsystem: node roles, cosigner keys,
 cosigned accounts, endpoint discovery, cosigned transaction orchestration, and
 the trust boundaries between a user signer and a cosigner signer. A cosigned
 account is a LogicSig account with the cosigner overlay, on either host: a plain
-host (`plain1`, the plain key types `aplane.falcon1024.v1` and
-`aplane.ed25519.v1`) or a bounded host (`bounded2`, the general type
-`aplane.falcon1024-b.v1` or an expert template). It also describes
-[Corridor v1](#corridor-v1), the preset of the general bounded key type that
+host (`plain1`: the plain key types `aplane.falcon1024.v1` and
+`aplane.ed25519.v1` with overlays only) or a bounded host (`bounded2`: the same
+plain key types with bounds, or an expert template). It also describes
+[Corridor v1](#corridor-v1), the Corridor preset of `aplane.falcon1024.v1`, which
 composes cosigner authorization into `bounded2`.
 
 "Cosigned" is this document's historical name for the cosigned flow; a later
@@ -128,15 +128,16 @@ reference by Witness Key ID, but the durable key stores the resolved public key.
 The overlay is the same on both hosts:
 
 - **Plain host** (`plain1`): `aplane.falcon1024.v1` or `aplane.ed25519.v1`
-  created with `cosigner=` and a rekey setting. Its program checks signatures
+  created with `cosigner=`, a rekey setting and no bounds. Its program checks signatures
   and the overlays only: every transaction without `RekeyTo` is a spend,
   closes and clawback included, and there is no fee ceiling, so the cosigner's
   policy is what restricts what gets signed. The Ed25519 spending key is
   classical.
-- **Bounded host** (`bounded2`): the general type `aplane.falcon1024-b.v1`, or
-  an expert template, with its on-chain limits and the cosigner.
+- **Bounded host** (`bounded2`): `aplane.falcon1024.v1` or `aplane.ed25519.v1`
+  created with bounds as well, or an expert template, with its on-chain limits
+  and the cosigner. The Ed25519 spending key is classical here too.
 
-A [Corridor](#corridor-v1) account is a bounded host: `aplane.falcon1024-b.v1`
+A [Corridor](#corridor-v1) account is a bounded host: `aplane.falcon1024.v1`
 with a framework Merkle recipient policy, the cosigner, and a rekey-to list
 (*only these*). Every cosigned account advertises `signing_flow: cosigned1` and
 is discovered from metadata, never from a key-type switch.
@@ -453,8 +454,8 @@ Human list output leads with the operator-assigned reference name and a compact
 retains the complete ID.
 
 The library is a generation convenience and trust-input inventory for the user
-signer. When generating a cosigned account (a plain host, the general type or a
-cosigner-enabled template), callers may provide
+signer. When generating a cosigned account (a plain host, with or without bounds,
+or a cosigner-enabled template), callers may provide
 `cosigner=<witness-key-id>` instead of `cosigner_public_key=<hex>`.
 `cosigner=<name>` is also accepted as a compatibility input. The signer resolves the
 Witness Key ID or name to `public_key_hex`, verifies that the reference key type
@@ -555,8 +556,8 @@ rekeyed, in which case it is the resolved `AuthAddr`. Supported cases include:
 - mixed groups containing cosigned and non-cosigned signer-controlled positions.
 
 The flow is `cosigned1`, a user-first choreography. It carries a cosigned
-account's spends (on a plain host, any transaction that doesn't rekey, closes
-and clawback included), its cosigned rekeys (spending key and cosigner) and its
+account's spends (on a `plain1` account, any transaction that doesn't rekey,
+closes and clawback included), its cosigned rekeys (spending key and cosigner) and its
 listed rekeys (spending key alone):
 
 1. Resolve the bounded target from `signing_flow` and durable inventory.
@@ -594,8 +595,8 @@ validate the targets they sign or assemble; they do not infer the flow of
 foreign group positions. Non-target positions are carried as exact passthrough
 signed bytes in the final assembly request.
 
-A plain host has no fee ceiling, so the client checks a planned fee against an
-account's ceiling only on a bounded host (`bounded2`, `max_fee` present); it
+A `plain1` account has no fee ceiling, so the client checks a planned fee against an
+account's ceiling only on a bounded one (`bounded2`, `max_fee` present); it
 caches each account's contract from `/keys` and fails closed on one it doesn't
 know.
 
@@ -680,8 +681,8 @@ The cosigner does not decide whether the user signer is allowed to use a
 cosigned account. It decides whether the target transaction facts are allowed
 under cosigner policy. Current cosigner policy is transaction-focused and
 DSA-agnostic: it examines decoded transaction details and transfer movements,
-not which DSA mechanism produced the spending signature. On a plain host, which
-has no on-chain limits, it is the policy that restricts what the account signs.
+not which DSA mechanism produced the spending signature. On a `plain1` account,
+which has no on-chain limits, it is the policy that restricts what the account signs.
 
 Cosigner transfer policy is a positive authorization surface. Supported target
 movements include direct transfers that policy routing can evaluate. Target
@@ -808,8 +809,8 @@ individually.
 
 ## Corridor v1
 
-Corridor is the preset of the general bounded key type `aplane.falcon1024-b.v1`
-that composes cosigner authorization into `bounded2`. It is a shape of that
+Corridor is the Corridor preset of the Falcon plain host `aplane.falcon1024.v1`,
+which composes cosigner authorization into `bounded2`. It is a shape of that
 compiled provider, not a separate key type, authorization-contract identifier,
 key category, or special transaction classifier.
 
@@ -817,9 +818,9 @@ The dimensions are independent:
 
 | Dimension | Corridor v1 value |
 |---|---|
-| Full key type | `aplane.falcon1024-b.v1` |
+| Full key type | `aplane.falcon1024.v1` |
 | Account form | DSA LogicSig |
-| Base signing primitive | `aplane.falcon1024.v1` |
+| Base signing primitive | `aplane.falcon1024.v1`, the key type itself |
 | Authorization contract | `bounded2` |
 | Layer-3 policy | framework-owned `merkle_allowlist` |
 | Spend auxiliary authority | `cosigner1`, Falcon witness, required on spend, never asked for a listed rekey |
@@ -832,7 +833,7 @@ Changing one dimension does not reinterpret the others. In particular,
 spend or listed-rekey signature.
 
 The canonical profile and behavior parameter encodings are frozen by
-[Golden vector 3](ARCH_BOUNDED_DSA.md#golden-vector-3-general-boundary-digest),
+[Golden vector 3](ARCH_BOUNDED_DSA.md#golden-vector-3-host-boundary-digest),
 which uses the *plus cosigned* shape with Corridor's recipient policy and
 cosigner. Corridor's profile differs from it only in encoding `rekey: refused`,
 `required_on: [spend]`, and a cosigner slot forbidden on `spending_rekey`.
@@ -880,8 +881,8 @@ resolved public parameters, bytecode, and complete signing-metadata version 2
 `bounded_authorization` object. Signing uses that stored authority rather than
 the shape definition.
 
-The general bounded key type is default-enabled, so every signer node can create a
-Corridor account without installing a template.
+`aplane.falcon1024.v1` is default-enabled, so every signer node can create a
+Corridor account without enabling a key type or installing a template.
 
 Both keys are required to spend:
 
@@ -989,11 +990,12 @@ Primary packages and files:
 - `internal/config`: endpoint registry parsing (`schema_version` 2 only; retired
   `signer_port`/`local_port`/`token_file` fields are dropped on load).
 - `internal/apshellapp`: endpoint commands and read-only cosigner discovery.
-- `lsig/plainhost`: the plain host, the plain key types with optional overlays.
+- `lsig/plainhost`: the plain host, the plain key types with optional overlays
+  and bounds, Corridor's shape among them.
 - `lsig/composeddsa`: the cosigner and rekey-to list overlays on both hosts,
   and framework-owned fixed/Merkle Layer-3 policies.
-- `lsig/boundedaccount` and `internal/boundary`: the general bounded key type and
-  its Corridor preset.
+- `internal/boundary`: the boundary file grammar, the presets (Corridor among
+  them) and the receipt.
 - `internal/apadminapp/catalog.go`: public cosigner export/import/list/show/remove
   workflows used by `apadmin`.
 - `internal/signerapp/policycmd`: live and rescue policy workflows through

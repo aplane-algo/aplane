@@ -763,7 +763,7 @@ func TestServiceKeyTypesUsesCosignerReferenceForBoundedProvider(t *testing.T) {
 
 func TestServiceKeyTypesIncludesActivatedCompiledProvider(t *testing.T) {
 	ir := setupProductRuntime(t, false)
-	const keyType = "aplane.falcon1024.v1"
+	const keyType = "aplane.ed25519.v1"
 	if err := keytypestate.Put(ir.KeyPaths(), keytypestate.Record{
 		KeyType: keyType,
 		Source:  keytypestate.SourceCompiled,
@@ -887,7 +887,7 @@ func TestServiceKeyTypesForRuntimeLifecycleMatrix(t *testing.T) {
 	tests := []matrixCase{
 		{
 			name:    "library-only compiled provider is hidden",
-			keyType: "aplane.falcon1024.v1",
+			keyType: "aplane.ed25519.v1",
 			setup: func(t *testing.T, paths storepaths.Paths) *productruntime.Runtime {
 				t.Helper()
 				return restMatrixRuntime(paths)
@@ -895,11 +895,11 @@ func TestServiceKeyTypesForRuntimeLifecycleMatrix(t *testing.T) {
 		},
 		{
 			name:    "activated compiled provider is visible",
-			keyType: "aplane.falcon1024.v1",
+			keyType: "aplane.ed25519.v1",
 			setup: func(t *testing.T, paths storepaths.Paths) *productruntime.Runtime {
 				t.Helper()
 				if err := keytypestate.Put(paths, keytypestate.Record{
-					KeyType: "aplane.falcon1024.v1",
+					KeyType: "aplane.ed25519.v1",
 					Source:  keytypestate.SourceCompiled,
 					State:   keytypestate.StateEnabled,
 				}); err != nil {

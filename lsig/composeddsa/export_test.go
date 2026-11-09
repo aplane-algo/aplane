@@ -23,7 +23,7 @@ func NewFixtureProvider(spec *TemplateSpec, base BaseRegistration, support Fixtu
 	if err := validateTemplateSpec(spec, rules); err != nil {
 		return nil, err
 	}
-	provider, err := newProviderFromBase(spec, base)
+	provider, err := newProviderFromBase(spec, base, mustTemplateSaltStyle(spec.DerivationVersion))
 	if err != nil {
 		return nil, err
 	}
@@ -52,4 +52,16 @@ func RegisteredBaseKeyTypes() []string {
 func ProductionSupportsBase(contract, baseKeyType string) bool {
 	_, ok := productionBoundedGenerationPolicy(contract, baseKeyType)
 	return ok
+}
+
+// NarrowCosignerSupport makes provider's generation policy refuse a cosigner on
+// its base, as a production policy that stops supporting one would. Every
+// production base supports a cosigner, so this is the only way to reach that
+// refusal.
+func NarrowCosignerSupport(provider *ComposedDSA) {
+	provider.generationPolicy = func(contract, baseKeyType string) (boundedWorkflowSupport, bool) {
+		support, ok := productionBoundedGenerationPolicy(contract, baseKeyType)
+		support.cosigner = false
+		return support, ok
+	}
 }

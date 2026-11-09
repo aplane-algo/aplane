@@ -8,9 +8,10 @@
 // reveals nothing about the list, even when it holds one address, and a proof
 // reveals only the entry it proves.
 //
-// Salts and padding derive from one per-account secret seed, so the account
-// stores the seed and the entries and nothing else. The seed and the entries
-// stay with the signer: never in the program, never on the client wire.
+// Salts and padding derive from one per-account secret seed, which the signer
+// derives from the account's spending key, so the account stores only the
+// entries and the root. The seed is never stored, and the entries stay with
+// the signer: never in the program, never on the client wire.
 package rekeylist
 
 import (
@@ -23,6 +24,8 @@ import (
 	"strings"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
+
+	"github.com/aplane-algo/aplane/internal/crypto"
 )
 
 const (
@@ -94,11 +97,7 @@ func FromSpendingKey(privateKey []byte, entries []types.Address) (*List, error) 
 	if err != nil {
 		return nil, err
 	}
-	defer func() {
-		for i := range seed {
-			seed[i] = 0
-		}
-	}()
+	defer crypto.ZeroBytes(seed[:])
 	return New(seed[:], entries)
 }
 

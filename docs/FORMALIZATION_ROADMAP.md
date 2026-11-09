@@ -477,3 +477,68 @@ or bounded host, with a new test (`TestPlainSignRefusesACosignedAccount`). The
 plain host (`plain1`) and the lifted product restrictions change no model: the
 cosigned flow's paths and gates are the same on either host, which differs only
 in which transactions classify onto the spend path, abstracted as `classified`.
+
+Drift review (2026-11-09, HEAD `b27b250e`): range `f6385272..b27b250e` (69
+commits, 63 non-merge: the account-overlays stack, phases 2 to 6.5, PRs
+#217-#224, and `key_use_lock.tla`). `make formal-test` (26 runs) and `make
+formal-test-deep` (10 runs) match their recorded outcomes and metrics; all
+twelve negative controls still fail on their named properties. The range did
+not touch the approval coordinator, store-root commit, enrollment queue,
+plugin signing, or rotating leaf-release code. Session ownership code
+(`ipc.go`, `session.go`, `displacement.go`, `manager.go`) is unchanged; the
+admin protocol major version moved to 8, rejected before the passphrase as
+before. `keystore/file.go`, `PublishSnapshot` and the planner snapshot gained
+only a `BaseKeyType` field, and `admin/service.go` renamed the generation
+settings, which write `config.yaml`, not the store root, so
+`recovery_binding.tla` holds. `ApprovalWait` wiring is unchanged.
+`key_use_lock.tla` landed in the range (`6e2b5d2e`) and holds against
+`KeyUseContext` (refuses while locked, under `keyUseMu`), `drainKeyUsers`
+(cancel, then wait), `performLockCleanup` (drain before the session clear),
+`SignRotatingWithContext` (lock generation captured, `releaseRefused` before
+the seed is used, seed closed and key use ended before the audit write, a
+final `releaseRefused`) and `ExportKey` (a context check on each side of the
+read, delivery inside the key use). `bounded_cosigner.tla` changed in the
+range with its bookkeeping (`5b44df67` admin key removed, `61c00b9c` and
+`74e8f042` cosigned and listed rekeys, `0a68bbcc` A8) and holds against the
+code after phases 6 and 6.5: the base gate runs `ValidateFrozenComponentContext`,
+`validateBoundedComponentPlan`, `approveGroupWithPlanContext` and
+`checkApprovalBinding` before `signBoundedBaseComponent`; the client asks the
+cosigner only after every base component and context position, and only for
+paths that need it; assembly decides the path again through
+`boundedAccountPath`, requires the receipt, the base signature and on a
+cosigned path the cosigner signature, refuses a presented cosigner signature
+on a listed rekey, and `validateCosignedPassthrough` keeps the three A8
+conjuncts; any failure returns no group. Phase 6.5's Ed25519 bounded2 account
+with a cosigner (`bounded_construction.go`, `composeddsa/bounded_support.go`)
+adds a base to the same flow, verified through the base's construction, which
+`receipt` and `baseSig` abstract. The sign boundary, policy precedence and
+composition models see removals only (the bounded admin route and
+`PrepareBoundedAdminWithContext` in `5b44df67`, the user component role and
+`cosigner1` in `23550e0d`); the three-way `rekeys` setting (`efd15370`, where
+an unset value rejects every rekey), the listed-rekey warning scope
+(`dfe5408d`) and `bounded_rekey_requires_review` (every bounded rekey,
+satisfied by user auto-approve) change members of the deny and review
+families, not their order. Anchor sweep: every cited file, named function and
+named test in `FORMAL_TRACEABILITY.md` exists. Fixed here: the bounded cosigner
+companion's status header still gave phase 4's 531,968 states (now 2,127,872,
+as `metrics.json` and its own body say), and it and a `bounded_cosigner.tla`
+comment described a Falcon-signed receipt minted during spend signing (it is
+signed by the account's base, Falcon or Ed25519, on all three paths since
+phase 5); the companion no longer calls the retired assembly model a
+complement; `FORMAL_TEST_GAPS.md`'s user-component gating entry, which cited
+the deleted `component_gate.go` and the retired `cosigner1` choreography,
+moved to the closed notes; `FORMAL_SIGNING_AUTHORITY_MODEL.md` no longer says
+no model covers the rotating flow; `FORMAL_TXN_PLANNING_MODEL.md` names the
+one cosigned flow. No divergence found.
+
+New-surface candidates: none needs a model. Recorded as out of model, each a
+single fail-closed check pinned by Go tests: a listed rekey on ordinary
+`/sign` (`c9ac91db`) is refused at classification before policy when its
+target is not listed, and at release the list is rebuilt from the spending key
+and its root compared again; the signer's completed-workflow table is kept
+apart from generation admission (`ba635f3a`) and refuses at release, through
+`boundedSpendingProofVerifies`, a base its workflow cannot complete; a key
+record whose rekey-to list root disagrees with its metadata is refused at
+load (`74e8f042`). apadmin's archive and generations discard routing
+(`c2386189`) reaches the existing RB1-anchored handlers and adds no daemon
+caller.

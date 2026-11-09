@@ -284,8 +284,8 @@ sends no cosigner request when no target needs one, and budgets each cosigned
 position in a mixed group on its component's path. It rejects unknown labels,
 `bounded-cosigner1` and the retired `cosigner1` among them. Accounts with the
 overlays but no online cosigner advertise `bounded1` and continue through
-ordinary signing. A plain host has no fee ceiling: the client caches each
-account's contract and checks a planned fee only against a bounded host's
+ordinary signing. A `plain1` account has no fee ceiling: the client caches each
+account's contract and checks a planned fee only against a `bounded2` account's
 `max_fee`.
 
 Submission and confirmation diagnostics are returned on typed result values as
@@ -985,8 +985,8 @@ given twice. Every `param=value` is the signer's, so a template may declare a pa
 called `boundary` or `result` and receive it, and no lookup is needed to tell them apart.
 
 `--boundary` alone reads the signer's key types (`App.CheckBoundaryKeyType`), before the
-file is read: a type without `boundary_schema` `aplane.boundary.v1`, such as a plain host,
-is refused, and so is a failed lookup or a type the signer doesn't report. That is the
+file is read: a type without `boundary_schema` `aplane.boundary.v1` is refused (the plain
+hosts report it), and so is a failed lookup or a type the signer doesn't report. That is the
 path's only lookup, since `GenerateKeyFromLiterals` fetches none. Generation without
 `--boundary` gains no dependency on it.
 

@@ -770,7 +770,8 @@ else
     DATA_DIR_ALREADY_ABSENT=1
 fi
 
-# Remove binaries
+# Remove binaries, and the retired ones an earlier release may have installed.
+rm -f "$BINDIR/aprekey" "$BINDIR/apbounded-admin"
 for binary in apsigner apshell apconsole apadmin apapprover apstore appolicy appass appass-file appass-systemd-creds approbe applugin-checksum; do
     binary_path="$BINDIR/$binary"
     if [ -e "$binary_path" ]; then

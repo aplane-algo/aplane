@@ -416,7 +416,14 @@ func TestAdminGeneratePlainHostOnceEnabled(t *testing.T) {
 	defer cleanup()
 	algodCleanup := configureMockAlgod(t, server)
 	defer algodCleanup()
-	for _, keyType := range []string{"aplane.falcon1024.v1", "aplane.ed25519.v1"} {
+	// The Falcon plain host is enabled by default; the Ed25519 one is opt-in.
+	reqBody, _ := json.Marshal(AdminGenerateRequest{KeyType: "aplane.falcon1024.v1"})
+	w := httptest.NewRecorder()
+	server.handleAdminGenerate(w, requestWithIdentity(http.MethodPost, "/admin/generate", reqBody))
+	if w.Code != http.StatusOK {
+		t.Fatalf("generate aplane.falcon1024.v1 by default = %d %s", w.Code, w.Body.String())
+	}
+	for _, keyType := range []string{"aplane.ed25519.v1"} {
 		for _, enabled := range []bool{false, true} {
 			if enabled {
 				enableKeyTypeForTest(t, server, keyType)

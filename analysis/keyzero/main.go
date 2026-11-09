@@ -37,6 +37,9 @@ var zeroPatterns = []*regexp.Regexp{
 var targetDirs = []string{
 	"internal/signing",
 	"internal/crypto",
+	// The rekey-to list's seed derives from the spending key; the lsig
+	// exemptions below rely on this package zeroing it.
+	"internal/rekeylist",
 	"lsig",
 }
 
@@ -70,6 +73,7 @@ var exemptFunctions = map[string]string{
 	"validateRegisteredPair": "delegates validation of caller-owned key material",
 	"PrepareRekeyList":       "reads caller-owned key material to derive a rekey-to list's root; rekeylist zeroes the seed and list",
 	"RekeyListFor":           "returns a rekey-to list the caller zeroes; the key stays caller-owned",
+	"SeedFromSpendingKey":    "returns the derived seed to the caller, who zeroes it; the key stays caller-owned",
 }
 
 type finding struct {

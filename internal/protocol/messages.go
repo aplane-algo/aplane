@@ -778,9 +778,13 @@ type PreparedBoundedProfile struct {
 // has no address, because the spending key does not exist yet.
 type PrepareGenerateResultMessage struct {
 	BaseMessage
-	Success    bool              `json:"success"`
-	KeyType    string            `json:"key_type,omitempty"`
-	Parameters map[string]string `json:"parameters,omitempty"`
+	Success bool   `json:"success"`
+	KeyType string `json:"key_type,omitempty"`
+	// BaseKeyType is the signature base of the spending key, when the key type
+	// composes over one (a plain host is its own base, a composed template
+	// names one), so a review can say whether that key is post-quantum.
+	BaseKeyType string            `json:"base_key_type,omitempty"`
+	Parameters  map[string]string `json:"parameters,omitempty"`
 	// Fingerprint is the provenance the account would record.
 	Fingerprint string `json:"fingerprint,omitempty"`
 	// ReviewFingerprint goes back as generate_key.expected_fingerprint.
@@ -1161,8 +1165,8 @@ type GetAdminSettingsMessage struct {
 type AdminSettingsMessage struct {
 	BaseMessage
 	UserAutoApprove bool `json:"user_auto_approve"`
-	// These restrict new accounts of the per-key types (aplane.falcon1024-b.v1
-	// and the plain hosts) only.
+	// These restrict new accounts of the per-key types, the plain hosts
+	// (aplane.falcon1024.v1, aplane.ed25519.v1), only.
 	RequireContained     bool   `json:"require_contained,omitempty"`
 	RequireCosigner      bool   `json:"require_cosigner,omitempty"`
 	LockOnDisconnect     bool   `json:"lock_on_disconnect"`

@@ -882,7 +882,7 @@ subject to the node role gate above.
 |---|---|---|---|---|
 | Unsupported by binary | No provider is registered in the current process. | No. | No, if signing needs that provider; native/DSA key types need registered support. | Install/run a binary that supports the key type. |
 | Role-forbidden key type | The node role does not allow this key class. | No, even if the provider is default-enabled or enabled. | No for active inventory; reload rejects role-conflicting active keys. | Use a data root initialized for the correct node role. |
-| Default-enabled account-signing provider | Provider/generator is registered and cataloged as default-enabled; no identity record required. These are the protocol-native `ed25519` and `falcon1024` and the general bounded `aplane.falcon1024-b.v1`; the plain Falcon/Ed25519 LogicSig types (plain hosts) and other selectable compiled LogicSig providers are library-visible. | Yes on signer nodes. | Yes on signer nodes, if the key file is valid and the transaction network supports its authorization kind. | None. |
+| Default-enabled account-signing provider | Provider/generator is registered and cataloged as default-enabled; no identity record required. These are the protocol-native `ed25519` and `falcon1024` and the Falcon plain host `aplane.falcon1024.v1`; the Ed25519 plain host `aplane.ed25519.v1` and other selectable compiled LogicSig providers are library-visible. | Yes on signer nodes. | Yes on signer nodes, if the key file is valid and the transaction network supports its authorization kind. | None. |
 | Default-enabled cosigner key type | Raw cosigner-key generator/signing support is registered and cataloged as default-enabled. The current type is `aplane.witness-falcon1024.v1`. | Yes on cosigner nodes. | Component-signing only on cosigner nodes; never normal spending `/sign`. | None. |
 | Internal-only compiled provider | Binary catalog availability `internal_only` (no shipped provider uses it now that the plain LogicSig types are plain hosts); any old state record is retained but cannot grant creation. | Never, including explicit enable/generate/import requests. | Yes for valid existing/restored keys; also usable as a composed base. | Use native accounts or an enabled composed type for new creation. |
 | Library-visible compiled provider, inactive | Provider is registered and cataloged as library-visible; no identity `keytypes/<key_type>.json` record exists. | No. | Existing key may sign if the provider is registered, the key file is valid, and the node role allows it. | Enable from KeyType Library or `apadmin keytype enable`. |
@@ -991,8 +991,8 @@ The bundled templates are:
 |----------|----------|---------|
 | `aplane.htlc.v1` | `library/templates/` | Hash time-locked contract |
 
-None is installed by default. Allowlist and timelock accounts use a preset of the general bounded type
-`aplane.falcon1024-b.v1`, which needs no template. Installers copy into
+None is installed by default. Allowlist and timelock accounts use the bounds of a plain host,
+such as a preset of `aplane.falcon1024.v1`, which needs no template. Installers copy into
 `<APSIGNER_DATA>/library/templates/` and never delete from it.
 
 `apadmin` presents this mixed source as the KeyType Library. It lists the signer-data library over the
@@ -1214,9 +1214,9 @@ entries omit the legacy `salt_counter`.
 
 Bounded account key files retain category `dsa_lsig`, base key type, stored
 bytecode, creation parameters, and signing metadata version 2. A bounded
-account's only rekey authority is its spending key, and it may declare no rekey
-operation at all. A general bounded account whose rekey authority is the
-spending key cannot have a cosigner.
+account's rekey paths are the ones its `bounded_authorization` declares: a
+spending-key rekey (with the cosigner on a cosigned account), a listed rekey to
+an address on its rekey-to list, or none at all (`refused`).
 
 Decrypted key payloads use canonical versioned JSON schemas owned by
 `internal/keys.ParsePayload` and `internal/keys.MarshalPayload`. Readers reject
@@ -1316,10 +1316,12 @@ compiler auto-salting. Its seed derivation and stored key material are not
 interchangeable with native `falcon1024`.
 
 Plain `aplane.falcon1024.v1` and `aplane.ed25519.v1` are
-[plain hosts](ARCH_KEYTYPES.md#plain-hosts): opt-in per node, with no mnemonic
+[plain hosts](ARCH_KEYTYPES.md#plain-hosts) (`aplane.falcon1024.v1`
+default-enabled, `aplane.ed25519.v1` opt-in per node), with no mnemonic
 import. Their stored credentials, internal derivation, and encrypted
-backup/restore contracts are unchanged; a plain host with overlays also stores
-its `plain1` bounded metadata.
+backup/restore contracts are unchanged; a plain host account with overlays also
+stores its `plain1` bounded metadata, and one with bounds its `bounded2`
+metadata.
 
 This section uses **versioned signing-metadata keys** for key files that carry
 `signing_metadata_version >= 1`. Non-bounded LogicSig keys use version 1;
@@ -1348,7 +1350,7 @@ bounded keys require version 2. LogicSig key payloads include:
 Bounded signing-metadata version 2 additionally requires the canonical
 `bounded_authorization` object:
 
-- `contract`: `bounded2`, or `plain1` for a plain host
+- `contract`: `bounded2`, or `plain1` for a plain host account without bounds
 - `base_signature_arg_layout`: exact base arg count and per-position maximums
 - `spend_effects` (empty on `plain1`), `max_fee` (required on `bounded2`, absent
   on `plain1`), and `rekey`: `refused` (no rekey path, except to a

@@ -13,13 +13,10 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 	"github.com/aplane-algo/aplane/internal/rotatingkey"
-	"github.com/aplane-algo/aplane/lsig/boundedaccount"
 	"github.com/aplane-algo/aplane/lsig/ed25519lsig"
 	falcon "github.com/aplane-algo/aplane/lsig/falcon1024"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
 )
-
-const boundedAccountFamily = "aplane.falcon1024-b"
 
 var (
 	registerClientOnce sync.Once
@@ -38,20 +35,16 @@ func RegisterClient() {
 		registerCompiledProvider(keytypecatalog.Entry{
 			KeyType: "aplane.falcon1024.v1",
 			Family:  family.Name,
-			// A plain host, created with a cosigner once enabled, as the
-			// dedicated cosigned type it replaces was.
-			Availability: keytypecatalog.AvailabilityLibrary,
+			// The Falcon plain host carries the bounds and the overlays, as the
+			// default-enabled general bounded type it replaces did (account
+			// overlays phase 6.5).
+			Availability: keytypecatalog.AvailabilityDefaultEnabled,
 		}, falcon.RegisterClient)
 		registerCompiledProvider(keytypecatalog.Entry{
 			KeyType:      ed25519lsig.KeyTypeV1,
 			Family:       ed25519lsig.FamilyName,
 			Availability: keytypecatalog.AvailabilityLibrary,
 		}, ed25519lsig.RegisterClient)
-		registerCompiledProvider(keytypecatalog.Entry{
-			KeyType:      boundedaccount.KeyTypeV1,
-			Family:       boundedAccountFamily,
-			Availability: keytypecatalog.AvailabilityDefaultEnabled,
-		}, boundedaccount.RegisterClient)
 		// The rotating accounts have no client-side provider; each entry only
 		// makes the key type opt-in. Signer binaries register its storage,
 		// stage cryptography and generator through lsig/signerreg.

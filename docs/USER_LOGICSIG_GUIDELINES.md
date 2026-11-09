@@ -3,9 +3,9 @@
 # User LogicSig Guidelines
 
 > **TL;DR**
-> - The LogicSigs bundled with APlane (the general bounded account with its
->   allowlist and timelock shapes, HTLC, and the signer-gated DSA providers)
->   are safe to fund and use as documented.
+> - The LogicSigs bundled with APlane (the plain hosts with their overlays and
+>   their bounded allowlist and timelock shapes, HTLC, and the other
+>   signer-gated DSA providers) are safe to fund and use as documented.
 > - Anything you compile yourself — your own TEAL, your own YAML template, or
 >   an externally-supplied LogicSig — needs to pass the full review checklist
 >   below before you fund the account.
@@ -737,9 +737,9 @@ When designing or reviewing a LogicSig TEAL policy:
 ## Bundled LogicSigs In APlane
 
 APlane bundles both signer-gated LogicSig providers and template library
-entries. New signer stores enable none of them except the general bounded
-account `aplane.falcon1024-b.v1`: other compiled providers need enabling and
-bundled templates need explicit import. Users should understand the
+entries. New signer stores enable none of them except the Falcon plain host
+`aplane.falcon1024.v1`, with its overlays and bounds: other compiled providers
+need enabling and bundled templates need explicit import. Users should understand the
 security model of each one before funding or relying on it.
 
 ### Signer-Gated Compiled Providers
@@ -750,19 +750,24 @@ and compiled through algod at derivation time.
 #### `aplane.falcon1024.v1`
 
 - pure Falcon-1024 LogicSig DSA
-- signer-gated
-- best understood as a signing primitive rather than a full TEAL spending
-  policy
+- default-enabled and signer-gated
+- with no parameters, best understood as a signing primitive rather than a full
+  TEAL spending policy
 
-This provider verifies a Falcon signature over the transaction. Transaction
-policy is expected to live primarily in signer approval and local signer policy.
+With no parameters this provider verifies a Falcon signature over the
+transaction. Transaction policy is expected to live primarily in signer approval
+and local signer policy. It is also a plain host: with overlays it renders
+`plain1` (see [Plain Host With A Cosigner](#plain-host-with-a-cosigner)), and
+with bounds a bounded account (see [Plain Host With Bounds](#plain-host-with-bounds)).
 
 #### `aplane.ed25519.v1`
 
 - Ed25519 LogicSig DSA
 - library-visible and signer-gated
-- best understood as a LogicSig signing primitive rather than a full TEAL
-  spending policy
+- with no parameters, best understood as a LogicSig signing primitive rather
+  than a full TEAL spending policy
+- a plain host with the same overlays and bounds as `aplane.falcon1024.v1`, on
+  a classical spending key
 
 This provider verifies an Ed25519 signature over the transaction inside a
 LogicSig. It is distinct from the native `ed25519` key type: native `ed25519`
@@ -841,29 +846,31 @@ through algod, using the TEAL v13 assembler's salt rule, and are cross-checked
 against the stock assembler in tests. Transaction policy beyond those checks
 lives in signer approval and local signer policy.
 
-#### `aplane.falcon1024-b.v1`
+#### Plain Host With Bounds
 
-`aplane.falcon1024-b.v1` is the default-enabled general bounded account, with
-Falcon-1024 spending and a `bounded2` program chosen from a fixed set of shapes.
-The composer-owned envelope admits only pure payments, pure asset transfers,
+A plain host with bounds (`aplane.falcon1024.v1` or `aplane.ed25519.v1` with any
+bounds parameter) is a bounded account: its spending key with a `bounded2`
+program chosen from a fixed set of shapes, one for each combination the contract
+allows. `aplane.falcon1024.v1` is default-enabled and spends with Falcon-1024;
+`aplane.ed25519.v1` spends with a classical Ed25519 key. The composer-owned envelope admits only pure payments, pure asset transfers,
 independently authorized asset opt-ins, or a pure self-payment rekey, caps the
 protected transaction fee, and denies close and clawback effects before Layer 3.
-A rekey never reaches Layer 3. Without a cosigner, a `spending_key` rekey needs only
+A rekey never reaches Layer 3. With `rekey_authority=refused` the account has no
+rekey path. Without a cosigner, a `spending_key` rekey needs only
 the spending signature; with one it needs the cosigner's signature too. With
 `rekey_authority=only_these` a rekey also needs a signer-built proof that the target is
 on the account's rekey-to list, fixed at creation, and never the cosigner. With
 `plus_cosigned` (cosigned accounts only) a listed target takes the spending signature
-and the proof, and any other target the spending signature and the cosigner's. The
-general type never offers an account with no rekey path.
+and the proof, and any other target the spending signature and the cosigner's.
 
 Its framework recipient list constrains `Receiver`/`AssetReceiver`, inline or
 as a Merkle root, and an optional unlock round delays spending. For a Merkle list,
 the signer generates the 512-byte proof for a non-self receiver; callers do not
 pass it (see the
 [Merkle compatibility contract](ARCH_BOUNDED_DSA.md#merkle-allowlist-compatibility-contract)).
-A timelock takes no spending-key rekey, cosigned or not, because it would leave
-the lock before the unlock round; it uses `only_these`, with or without a cosigner,
-whose listed rekey is a way around the lock. Asset and amount
+A timelock takes any rekey setting. A spending-key rekey, cosigned or not, can
+leave the lock before the unlock round, and under `only_these` a listed rekey is
+a way around the lock; only `refused` keeps the account inside it. Asset and amount
 limits stay in signer policy, because one program is valid on every network and
 asset IDs are network-local. See
 [USER_KEYTYPES.md](USER_KEYTYPES.md#bounded-accounts) and
@@ -873,22 +880,21 @@ A bounded cosigner signs every spend and every rekey the spending key declares
 (a cosigned rekey), and never a listed rekey. A cosigned `spending_key` or
 `plus_cosigned` account is only as strong as its two online keys: whoever holds the
 spending key and the cosigner, or controls the cosigner node's policy, can rekey it
-anywhere, out of its recipient list. Only `only_these` bounds where the account can
-go independently of those keys. A cosigned account whose cosigner is lost can no
-longer spend; under `only_these` or `plus_cosigned` its listed key can still take it
-over. An expert template that declares `rekey: refused` with a cosigner and no list
-can neither close nor be rekeyed, so its funds cannot be recovered if the cosigner
-is lost.
+anywhere, out of its recipient list. Only `refused` and `only_these` bound where the
+account can go independently of those keys. A cosigned account whose cosigner is lost
+can no longer spend; under `only_these` or `plus_cosigned` its listed key can still
+take it over. A `refused` account with a cosigner can neither close nor be rekeyed,
+so its funds cannot be recovered if the cosigner is lost.
 
 #### Plain Host With A Cosigner
 
-A plain host with a cosigner (`aplane.falcon1024.v1` or `aplane.ed25519.v1`,
-contract `plain1`) signs through the cosigned flow: a base component and a
+A plain host with a cosigner and no bounds (`aplane.falcon1024.v1` or
+`aplane.ed25519.v1`, contract `plain1`) signs through the cosigned flow: a base component and a
 cosigner component on every spend and cosigned rekey. Its program does not
 restrict transaction shape once both signatures verify, so cosigner policy is
 the spending boundary. It replaced the dedicated cosigned account type.
 
-The Corridor preset of `aplane.falcon1024-b.v1` is instead a bounded account. It
+The Corridor preset of `aplane.falcon1024.v1` is instead a bounded account. It
 requires a cosigner signature only on bounded spend paths, applies a
 framework-owned Merkle recipient policy, and can be rekeyed only to an address on
 its rekey-to list, with the spending key alone. Its flow is `cosigned1`. See
@@ -902,7 +908,8 @@ install them automatically. Enable one through apadmin's KeyType Library or
 explicitly import its YAML into the product store before generating accounts.
 
 `aplane.htlc.v1` is the only template in the library. Allowlist and timelock
-accounts use a preset of `aplane.falcon1024-b.v1`.
+accounts use the bounds of a plain host, such as a preset of
+`aplane.falcon1024.v1`.
 
 #### Generic Templates
 

@@ -4,6 +4,7 @@
 package keyadmin
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/cosigner/cosignerrefs"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
+	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/lsig/plainhost"
 )
 
@@ -82,6 +84,10 @@ func TestPlainHostGeneratesFromAReview(t *testing.T) {
 	if prepared.BoundaryDigest == "" || prepared.Fingerprint == prepared.ReviewFingerprint {
 		t.Fatalf("prepared provenance = %+v", prepared)
 	}
+	// A plain host is its own signature base; the review reads it from here.
+	if prepared.BaseKeyType != plainHostKeyType {
+		t.Fatalf("prepared base key type = %q, want %q", prepared.BaseKeyType, plainHostKeyType)
+	}
 	assertNoKeys(t, service)
 
 	result, genErr := service.GenerateReviewedKey(context.Background(), plainHostKeyType, prepared.Parameters,
@@ -130,4 +136,31 @@ func TestGenerationRequirementsGovernPlainHosts(t *testing.T) {
 		t.Fatalf("contained: PrepareGenerateKey() error = %#v", err)
 	}
 	assertNoKeys(t, service)
+}
+
+// Key details name a cosigned account's cosigner by its Witness Key ID, never
+// the raw public key; an account without a cosigner keeps its parameters.
+func TestKeyDetailsNameTheCosignerByWitnessKeyID(t *testing.T) {
+	publicKey := bytes.Repeat([]byte{0x61}, boundedmeta.CosignerPublicKeySizeV1)
+	id, err := witness.ID(witness.Falcon1024V1, publicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parameters := map[string]string{
+		boundedmeta.CosignerPublicKeyParameter: hex.EncodeToString(publicKey),
+		"rekey_authority":                      "refused",
+	}
+	metadata := &boundedmeta.Metadata{Cosigner: &boundedmeta.CosignerAuthorization{
+		ComponentKeyType: witness.Falcon1024V1, PublicKeyHex: hex.EncodeToString(publicKey), ComponentKeyID: id,
+	}}
+	got := keyDetailsParameters(parameters, metadata)
+	if got[keyDetailsCosignerParameter] != id || got[boundedmeta.CosignerPublicKeyParameter] != "" || got["rekey_authority"] != "refused" {
+		t.Fatalf("details = %v", got)
+	}
+	if plain := keyDetailsParameters(parameters, &boundedmeta.Metadata{}); plain[boundedmeta.CosignerPublicKeyParameter] == "" || plain[keyDetailsCosignerParameter] != "" {
+		t.Fatalf("uncosigned details = %v", plain)
+	}
+	if parameters[boundedmeta.CosignerPublicKeyParameter] == "" {
+		t.Fatal("the projection changed the account's own parameters")
+	}
 }

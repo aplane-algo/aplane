@@ -75,6 +75,11 @@ func TestRetiredKeyTypeProductsDoNotReturn(t *testing.T) {
 		"keys_response" + "_cosigned",
 		// Mnemonic import is native-only.
 		"Mnemonic" + "Provider",
+		// The general bounded type: bounds are an overlay of the plain hosts
+		// (account overlays phase 6.5).
+		"aplane." + "falcon1024-b" + ".v1",
+		"lsig/" + "boundedaccount",
+		"boundedaccount" + ".",
 	}
 	// The naming pass: "guarded" became "cosigned" wherever it named a cosigned
 	// account. These are the package, ARCH doc, progress tag, public SDK names
@@ -101,11 +106,13 @@ func TestRetiredKeyTypeProductsDoNotReturn(t *testing.T) {
 	for _, token := range namingPassTokens {
 		namingPass[token] = true
 	}
-	// The installers name a retired binary only to delete it from an upgraded or
-	// uninstalled machine, or to find it still running before they do. Only those
-	// lines are exempt, so installing it again would still be caught.
+	// The installers name a retired binary or library template only to delete it
+	// from an upgraded or uninstalled machine, or to find a binary still running
+	// before they do. Only those lines are exempt, so installing one again would
+	// still be caught.
 	removesRetired := map[string][]string{
-		"../../install.sh":   {"ap" + "rekey"},
+		"../../install.sh": {"ap" + "rekey", "aplane." + "corridor.v1", "aplane." + "falcon1024-allowlist.v1",
+			"aplane." + "falcon1024-allowlist.v2", "aplane." + "falcon1024-timelock.v1"},
 		"../../uninstall.sh": {"ap" + "rekey"},
 	}
 	removalLine := func(line string) bool {

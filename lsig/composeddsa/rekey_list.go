@@ -19,11 +19,19 @@ import (
 // rekeyListProofSlot names the derived argument carrying a listed rekey's proof.
 const rekeyListProofSlot = "rekey_list_proof"
 
-func rekeyListEntriesParameterDef() lsigprovider.ParameterDef {
+// rekeyListEntriesParameterDef is the injected rekey_to parameter. Its
+// description follows the rekey setting: only these refuses every other rekey,
+// and plus cosigned (rekey spending_key with a list) takes any other one with the
+// spending key and the cosigner.
+func rekeyListEntriesParameterDef(rekey boundedmeta.RekeySetting) lsigprovider.ParameterDef {
+	description := "Addresses the account may be rekeyed to with the spending key alone. Every other rekey is refused."
+	if rekey == boundedmeta.RekeySpendingKey {
+		description = "Addresses the account may be rekeyed to with the spending key alone. Any other rekey needs the spending key and the cosigner."
+	}
 	return lsigprovider.ParameterDef{
 		Name:        BoundedRekeyToParameter,
 		Label:       "Rekey-To Addresses",
-		Description: "Addresses the account may be rekeyed to with the spending key alone. Every other rekey is refused.",
+		Description: description,
 		Type:        "address[]",
 		Required:    true,
 		MinItems:    1,
@@ -124,16 +132,40 @@ func RekeyListRootFor(privateKey []byte, params map[string]string) ([32]byte, er
 
 // renderListedRekey checks that a pure rekey's target is on the list: the
 // proof's salt and the target make the leaf, each sibling is folded in as a
-// sorted pair, and the result must equal the root compiled here.
-func renderListedRekey(b *strings.Builder, proofIndex int, root []byte) {
+// sorted pair, and the result must equal the root compiled here. The fold is
+// the Merkle allowlist's, so a program whose Layer 3 already emits that
+// subroutine (shareCombine) calls it instead of carrying a second copy.
+func renderListedRekey(b *strings.Builder, proofIndex int, root []byte, shareCombine bool) {
+	combine := boundedRekeyListCombineLabel
+	if shareCombine {
+		combine = merkleCombineLabel
+	}
 	b.WriteString("// listed rekey: the target must be on the rekey-to list\n")
 	b.WriteString(fmt.Sprintf("arg %d\nlen\npushint %d\n==\nassert\n", proofIndex, rekeylist.ProofSize))
 	b.WriteString(fmt.Sprintf("pushbytes 0x%02x\narg %d\npushint 0\npushint 32\nextract3\nconcat\ntxn RekeyTo\nconcat\nsha256\n", rekeylist.LeafPrefix, proofIndex))
 	for offset := 32; offset < rekeylist.ProofSize; offset += 32 {
-		b.WriteString(fmt.Sprintf("arg %d\npushint %d\npushint 32\nextract3\ncallsub %s\n", proofIndex, offset, boundedRekeyListCombineLabel))
+		b.WriteString(fmt.Sprintf("arg %d\npushint %d\npushint 32\nextract3\ncallsub %s\n", proofIndex, offset, combine))
 	}
 	b.WriteString("pushbytes 0x" + hex.EncodeToString(root) + "\n==\nassert\n")
 	b.WriteString("b " + boundedAcceptLabel + "\n\n")
-	b.WriteString(boundedRekeyListCombineLabel + ":\ndup2\nb<\nbnz " + boundedRekeyListOrderedLabel + "\nswap\n" +
-		boundedRekeyListOrderedLabel + ":\nconcat\npushbytes 0x01\nswap\nconcat\nsha256\nretsub\n\n")
+	if !shareCombine {
+		writeSortedPairCombine(b, boundedRekeyListCombineLabel, boundedRekeyListOrderedLabel)
+	}
+}
+
+// writeSortedPairCombine emits the subroutine both trees fold a proof with:
+// the two hashes on the stack, smaller first, behind the 0x01 node prefix.
+func writeSortedPairCombine(b *strings.Builder, label, orderedLabel string) {
+	b.WriteString(label + ":\ndup2\nb<\nbnz " + orderedLabel + "\nswap\n" +
+		orderedLabel + ":\nconcat\npushbytes 0x01\nswap\nconcat\nsha256\nretsub\n\n")
+}
+
+// sharesMerkleCombine reports whether the program's Layer 3 emits the Merkle
+// allowlist's combine subroutine, which the listed rekey then calls.
+func (c *ComposedDSA) sharesMerkleCombine() bool {
+	if c.layer3 == nil {
+		return false
+	}
+	rules, ok := rulesForLayer3Policy(c.layer3.Policy)
+	return ok && rules.merkleList
 }

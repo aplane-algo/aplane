@@ -35,8 +35,10 @@ Rotating account keys are refused on ordinary `/sign`, `/plan`, and the
 component paths as well (`signing/rotating_gate.go::rejectRotatingKeyType`) and
 sign only through `/sign/rotating/prepare` and `/sign/rotating/sign`
 (`signing/rotating_flow.go::PrepareRotatingWithContext`,
-`SignRotatingWithContext`). That flow reuses the ordinary approval gates; no
-formal model covers it yet (2026-10-16 drift review).
+`SignRotatingWithContext`). That flow reuses the ordinary approval gates.
+`rotating_leaf_release.tla` models its one-time leaf choice and
+`key_use_lock.tla` its key-use window at lock; the rest of the flow
+(prepare-time `rekey_to`, stage proofs, timing) is unmodeled.
 
 It does not model:
 

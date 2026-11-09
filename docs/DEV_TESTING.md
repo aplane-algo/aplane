@@ -575,7 +575,7 @@ make soak-test-localnet APLANE_SOAK_DURATION=4h SOAK_GO_ARGS='-count=1 -timeout 
 | `TestPreparedGroupDepositFlow` | Build, sign, and submit prepared payment/app-call groups |
 | `TestJavaScriptTransactionFlows` | Exercise JavaScript transaction helpers against the signer |
 | `TestGenericAllowlistTemplateAllowsSendAndCloseToFundingAccount` | Install and spend with a generic template-backed LogicSig |
-| `TestIncludedKeyTypesSignInBatchedGroups` | Imports bundled templates, activates opt-in compiled key types, generates/funds accounts including allowlist and timelock shapes of `aplane.falcon1024-b.v1`, and signs positive/negative grouped transactions |
+| `TestIncludedKeyTypesSignInBatchedGroups` | Imports bundled templates, activates opt-in compiled key types, generates/funds accounts including allowlist and timelock shapes of the plain host `aplane.falcon1024.v1`, and signs positive/negative grouped transactions |
 | `TestSignerManagedBackupRoundTripViaApadminRestore` | Create a signer-managed backup, restore through `apadmin`, and verify restored keys remain usable |
 | `TestKeyDerivationRegression` | Pin known-answer addresses for supported Ed25519, DSA LogicSig, and template-backed LogicSig derivation paths |
 | `TestPassthroughMixedGroup` | Sign + passthrough in one group: server signs txn A, pre-signed txn B passes through unchanged |
@@ -644,7 +644,7 @@ addr, err := apadmin.RestoreLegacyLogicSig("aplane.ed25519.v1", nil) // Existing
 addr, err := apadmin.ImportKey(mnemonic)               // From mnemonic
 res, err := apadmin.ExportKey(addr)                    // Native recovery phrase over IPC; zero res.Mnemonic
 err := apadmin.DeleteKey(addr)                         // Delete one
-err := apadmin.ActivateKeyType("aplane.falcon1024.v1")              // Enable a library-visible compiled key type (the plain host)
+err := apadmin.ActivateKeyType("aplane.ed25519.v1")                 // Enable a library-visible compiled key type (the Ed25519 plain host)
 _, err := apadmin.CreateBackup("export-passphrase")    // Signer-managed backup
 
 // Unlock management

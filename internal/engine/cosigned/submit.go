@@ -148,7 +148,7 @@ func (s *Signer) signAndSubmitBoundedCosignerGroup(txns []types.Transaction, tar
 	if err := validateBoundedTargetFees(group.Txns, targets); err != nil {
 		return nil, nil, err
 	}
-	components, baseRequestID, err := s.requestBoundedBaseComponents(opts.Ctx, group, requests, targets, targetsByIndex)
+	components, baseRequestID, err := s.requestBoundedBaseComponents(opts.Ctx, group, requests, targets, targetsByIndex, opts.AppCallInfo)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -233,8 +233,10 @@ func (s *Signer) planFrozenGroup(ctx context.Context, original []types.Transacti
 
 // requestBoundedBaseComponents obtains the user signer's bounded base
 // component for every target over the frozen group. This is where user policy
-// and operator approval run for bounded targets.
-func (s *Signer) requestBoundedBaseComponents(ctx context.Context, group frozenGroup, requests []signerapi.SignRequest, targets []cosignedTarget, targetsByIndex map[int]cosignedTarget) (map[int]signerapi.Component, string, error) {
+// and operator approval run for bounded targets, so every contextual position
+// carries the caller's app call description: the approval shows another
+// position's ABI method, as the cosigner's request does.
+func (s *Signer) requestBoundedBaseComponents(ctx context.Context, group frozenGroup, requests []signerapi.SignRequest, targets []cosignedTarget, targetsByIndex map[int]cosignedTarget, appCallInfo []*signerapi.AppCallInfo) (map[int]signerapi.Component, string, error) {
 	componentReq := signerapi.ComponentRequest{GroupBytesHex: group.BytesHex}
 	for i, request := range requests {
 		if _, ok := targetsByIndex[i]; ok {
@@ -243,9 +245,13 @@ func (s *Signer) requestBoundedBaseComponents(ctx context.Context, group frozenG
 				AuthAddress: request.AuthAddress, LsigArgs: request.LsigArgs, AppCallInfo: request.AppCallInfo,
 			})
 		} else {
-			componentReq.ContextualPositions = append(componentReq.ContextualPositions, signerapi.ComponentContextPosition{
+			position := signerapi.ComponentContextPosition{
 				TargetIndex: i, LsigResources: request.LsigResources, PQScheme: request.PQScheme, AppCallInfo: request.AppCallInfo,
-			})
+			}
+			if i < len(appCallInfo) && appCallInfo[i] != nil {
+				position.AppCallInfo = appCallInfo[i]
+			}
+			componentReq.ContextualPositions = append(componentReq.ContextualPositions, position)
 		}
 	}
 	for i := group.OriginalCount; i < len(group.BytesHex); i++ {

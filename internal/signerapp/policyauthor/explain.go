@@ -115,12 +115,15 @@ func (e *explainer) guards() {
 	}
 	switch d.Rekeys {
 	case policy.RekeysRejectAll:
-		rejects = append(rejects, "every rekey")
+		// A rotating account's own stage rotation is a protocol rekey, not one
+		// this setting judges.
+		rejects = append(rejects, "every rekey except a rotating account's own rotation")
 	case policy.RekeysRejectForeign:
 		rejects = append(rejects, "rekeys to an address this node does not hold and the account does not list")
 	}
 	if d.RejectRekey {
-		rejects = append(rejects, "every rekey")
+		// A listed rekey on a cosigned account never asks the cosigner.
+		rejects = append(rejects, "every rekey asked of this cosigner")
 	}
 	if len(rejects) > 0 {
 		e.line("Always denied: %s", strings.Join(rejects, "; "))
@@ -209,9 +212,9 @@ func (e *explainer) rekeys() {
 	d := e.doc
 	switch {
 	case d.RejectRekey:
-		e.line("Rekeys: every rekey is rejected")
+		e.line("Rekeys: every rekey asked of this cosigner is rejected; a listed rekey never asks it")
 	case len(d.RekeyPolicy) == 0:
-		e.line("Rekeys: every rekey is rejected (rekey_policy allows no edges)")
+		e.line("Rekeys: every rekey asked of this cosigner is rejected (rekey_policy allows no edges); a listed rekey never asks it")
 	default:
 		e.line("Rekeys allowed only along these edges, each as a zero-amount self-payment:")
 		for _, r := range d.RekeyPolicy {

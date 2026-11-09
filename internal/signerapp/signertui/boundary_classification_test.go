@@ -20,7 +20,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/boundary"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	ed25519signerreg "github.com/aplane-algo/aplane/internal/signing/ed25519/signerreg"
-	"github.com/aplane-algo/aplane/lsig/boundedaccount"
+	falcon "github.com/aplane-algo/aplane/lsig/falcon1024"
 )
 
 const validBoundaryForTUI = "schema: aplane.boundary.v1\nspend: [pay]\nrecipients: [AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ]\nrekey: {authority: spending_key}\n"
@@ -43,7 +43,7 @@ func pressEnterOnGenerateForm(t *testing.T, index int) (Model, tea.Cmd) {
 }
 
 func TestPerKeyInventoryRoutesAnyTypeToPresets(t *testing.T) {
-	for _, keyType := range []string{boundary.KeyTypeV1, secondPerKeyType} {
+	for _, keyType := range []string{boundedHostKeyType, secondPerKeyType} {
 		withInventory(t, protocol.KeyTypeInfo{KeyType: keyType, PerKeyContract: true, BoundarySchema: boundary.SchemaV1})
 		got, _ := pressEnterOnGenerateForm(t, 0)
 		if got.viewState != ViewBoundaryPreset || got.forms.boundaryKeyType != keyType {
@@ -54,7 +54,7 @@ func TestPerKeyInventoryRoutesAnyTypeToPresets(t *testing.T) {
 
 // The name proves nothing: only the signer's answer picks the flow.
 func TestKnownBoundedNameWithoutTheFieldIsNotPerKey(t *testing.T) {
-	withInventory(t, protocol.KeyTypeInfo{KeyType: boundary.KeyTypeV1})
+	withInventory(t, protocol.KeyTypeInfo{KeyType: boundedHostKeyType})
 	got, _ := pressEnterOnGenerateForm(t, 0)
 	if got.viewState == ViewBoundaryPreset || got.forms.boundaryKeyType != "" {
 		t.Fatalf("view = %v, classified = %q", got.viewState, got.forms.boundaryKeyType)
@@ -85,26 +85,26 @@ func TestMissingInventoryIsNotAnOrdinaryType(t *testing.T) {
 }
 
 func TestPresetAppliesOnlyToTheClassifiedType(t *testing.T) {
-	boundedaccount.RegisterClient()
+	falcon.RegisterClient()
 	useRegistryKeyTypes(t)
 	preset := boundary.Presets()[0]
-	classified := Model{forms: formsState{boundaryKeyType: boundary.KeyTypeV1, boundaryPreset: &preset}}
-	if spec := classified.paramSpecFor(boundary.KeyTypeV1); spec == nil || spec.DisplayName != preset.Title {
+	classified := Model{forms: formsState{boundaryKeyType: boundedHostKeyType, boundaryPreset: &preset}}
+	if spec := classified.paramSpecFor(boundedHostKeyType); spec == nil || spec.DisplayName != preset.Title {
 		t.Fatalf("classified type did not get the preset: %+v", spec)
 	}
 	other := Model{forms: formsState{boundaryKeyType: secondPerKeyType, boundaryPreset: &preset}}
-	if spec := other.paramSpecFor(boundary.KeyTypeV1); spec == nil || spec.DisplayName == preset.Title {
+	if spec := other.paramSpecFor(boundedHostKeyType); spec == nil || spec.DisplayName == preset.Title {
 		t.Fatalf("the preset applied to a type it was not selected for: %+v", spec)
 	}
 }
 
 func TestPresetValuesReachOnlyTheClassifiedType(t *testing.T) {
-	boundedaccount.RegisterClient()
+	falcon.RegisterClient()
 	useRegistryKeyTypes(t)
 	preset := boundary.Presets()[0]
 	m := Model{viewState: ViewGenerateParams, forms: formsState{boundaryKeyType: secondPerKeyType, boundaryPreset: &preset}}
 	m.forms.genericLSigParams = map[string]string{}
-	got, _, errText := m.submitParamModal(boundary.KeyTypeV1, &paramSpec{Validate: func(map[string]string) error { return nil }}, ViewGenerating,
+	got, _, errText := m.submitParamModal(boundedHostKeyType, &paramSpec{Validate: func(map[string]string) error { return nil }}, ViewGenerating,
 		func(string, map[string]string, string) tea.Cmd { return nil })
 	if errText != "" {
 		t.Fatal(errText)
@@ -124,7 +124,8 @@ func TestChoosingAPresetOpensTheClassifiedTypesForm(t *testing.T) {
 		info.CreationParams = append(info.CreationParams, protocol.TemplateParamInfo{Name: name, Label: name, Type: "string"})
 	}
 	withInventory(t, info)
-	m := Model{viewState: ViewBoundaryPreset, forms: formsState{boundaryKeyType: secondPerKeyType}}
+	// Row 0 is No bounds; the first preset is the next row.
+	m := Model{viewState: ViewBoundaryPreset, forms: formsState{boundaryKeyType: secondPerKeyType, boundaryPresetIndex: 1}}
 	next, _ := m.handleBoundaryPresetKeys(tea.KeyMsg{Type: tea.KeyEnter})
 	got := next.(Model)
 	if got.viewState != ViewGenerateParams || !slices.Equal(got.forms.genericLSigParamOrder, preset.Fields) {

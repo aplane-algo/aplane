@@ -247,12 +247,12 @@ the cosigner's address. Complete them in this order:
    **Export Cosigner Key** from its success or key-details screen. The file
    is the public key only. The result screen shows the address clients should
    use, from the configured `endpoint.advertise_url`.
-2. On the primary signer, choose a key type that takes a cosigner: a plain
-   host (`aplane.falcon1024.v1`), enabled first through the KeyType Library,
-   or `aplane.falcon1024-b.v1`, whose Corridor preset is cosigned and which is
-   enabled by default. Start **Generate account** in `apadmin`, select that
-   type, open **Require a cosigner (Falcon-1024)**, and choose **Use key
-   file...**. Compare
+2. On the primary signer, choose a key type that takes a cosigner: the
+   plain host `aplane.falcon1024.v1`, which is enabled by default and whose
+   Corridor preset is cosigned, or `aplane.ed25519.v1`, enabled first through
+   the KeyType Library. Start **Generate account** in `apadmin`, select that
+   type and a preset (or **No bounds**), open **Require a cosigner
+   (Falcon-1024)**, and choose **Use key file...**. Compare
    the complete Witness Key ID with the value shown on the cosigner, import,
    and finish generating the account. A key that is
    already imported is offered under its existing name.

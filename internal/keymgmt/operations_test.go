@@ -132,7 +132,7 @@ func TestImportKeyRestoresCanonicalPathWhenExistingKeyIsNonCanonical(t *testing.
 }
 
 func TestValidKeyTypesIncludeIdentityActivatedLibraryProvider(t *testing.T) {
-	const keyType = "aplane.falcon1024.v1"
+	const keyType = "aplane.ed25519.v1"
 	if containsKeyType(GetValidKeyTypes(), keyType) {
 		t.Fatal("GetValidKeyTypes() included library-only provider without activation")
 	}

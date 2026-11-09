@@ -303,8 +303,8 @@ func checkReviewedValues(keyType string, params map[string]string, reviewed Revi
 }
 
 // checkGenerationRequirements applies the signer's generation settings to every
-// per-key type, the general type and the plain hosts: an account whose
-// parameters choose its contract. The plain program has no overlay contract, so
+// per-key type, the plain hosts: an account whose parameters choose its
+// contract. The plain program has no overlay contract, so
 // it is neither contained nor cosigned. Expert templates, whose program the
 // operator installed, and every other type pass through.
 func (s Service) checkGenerationRequirements(creation *resolvedCreation) *Error {

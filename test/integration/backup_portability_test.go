@@ -25,8 +25,8 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	utilkeys "github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/templatestore"
-	"github.com/aplane-algo/aplane/lsig/boundedaccount"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
+	"github.com/aplane-algo/aplane/lsig/plainhost"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 	"github.com/aplane-algo/aplane/test/integration/harness"
 )
@@ -44,7 +44,7 @@ func TestBackupPortabilityFirstMilestone(t *testing.T) {
 	}
 
 	// The burn address is the zero address, which a boundary refuses.
-	generalRecipient := algocrypto.GenerateAccount().Address.String()
+	boundsRecipient := algocrypto.GenerateAccount().Address.String()
 
 	cases := []struct {
 		name               string
@@ -81,8 +81,9 @@ func TestBackupPortabilityFirstMilestone(t *testing.T) {
 			},
 		},
 		{
-			// Signing this account needs a live cosigner, so the case stops at
-			// the restored inventory entry.
+			// The Ed25519 plain host is the library one: the Falcon host is
+			// enabled by default. Signing this account needs a live cosigner, so
+			// the case stops at the restored inventory entry.
 			name: "library plain host enabled only on the source",
 			prepareSource: func(t *testing.T, _ string, _ *harness.ApAdminHarness) (string, map[string]string) {
 				cosignerPublicKey, cosignerPrivateKey, err := signerops.New(nil).GenerateKeypair(randomFalconSeed(t))
@@ -90,7 +91,7 @@ func TestBackupPortabilityFirstMilestone(t *testing.T) {
 					t.Fatalf("generate cosigner key: %v", err)
 				}
 				apcrypto.ZeroBytes(cosignerPrivateKey)
-				return "aplane.falcon1024.v1", map[string]string{
+				return plainEd25519KeyType, map[string]string{
 					keytypes.ParameterCosignerPublicKey: hex.EncodeToString(cosignerPublicKey),
 					"rekey_authority":                   "spending_key",
 				}
@@ -128,18 +129,18 @@ func TestBackupPortabilityFirstMilestone(t *testing.T) {
 			},
 		},
 		{
-			name: "general bounded account",
+			name: "bounded plain host",
 			prepareSource: func(_ *testing.T, _ string, _ *harness.ApAdminHarness) (string, map[string]string) {
-				return boundedaccount.KeyTypeV1, map[string]string{
-					boundedaccount.ParameterSpendEffects:   "pay",
-					boundedaccount.ParameterRekeyAuthority: boundedaccount.RekeySpendingKey,
-					boundedaccount.ParameterRecipients:     generalRecipient,
+				return plainFalconKeyType, map[string]string{
+					plainhost.ParameterSpendEffects:   "pay",
+					plainhost.ParameterRekeyAuthority: plainhost.RekeySpendingKey,
+					plainhost.ParameterRecipients:     boundsRecipient,
 				}
 			},
 			buildSignRequest: func(t *testing.T, address string) signerapi.SignRequest {
 				return signerapi.SignRequest{
 					AuthAddress: address,
-					TxnBytesHex: mustUnsignedPaymentTxnHex(t, sp, address, generalRecipient, 0, "backup-portability"),
+					TxnBytesHex: mustUnsignedPaymentTxnHex(t, sp, address, boundsRecipient, 0, "backup-portability"),
 				}
 			},
 		},

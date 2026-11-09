@@ -24,56 +24,53 @@ import (
 	"github.com/aplane-algo/aplane/internal/rekeylist"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	"github.com/aplane-algo/aplane/internal/txeffects"
-	"github.com/aplane-algo/aplane/lsig/boundedaccount"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
-	falcon1024 "github.com/aplane-algo/aplane/lsig/falcon1024"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
+	"github.com/aplane-algo/aplane/lsig/plainhost"
 	"github.com/aplane-algo/aplane/test/integration/harness"
 )
 
-func generalRequest(shape boundedaccount.Shape, recipients []string, unlockRound uint64, cosignerKey []byte, rekeyTo []string) map[string]string {
+// boundsRequest is the plain host request for a bounded2 shape.
+func boundsRequest(shape plainhost.Shape, recipients []string, unlockRound uint64, cosignerKey []byte, rekeyTo []string) map[string]string {
 	spend := make([]string, len(shape.Spend))
 	for i, effect := range shape.Spend {
 		spend[i] = string(effect)
 	}
 	params := map[string]string{
-		boundedaccount.ParameterSpendEffects:   strings.Join(spend, ","),
-		boundedaccount.ParameterRekeyAuthority: shape.Rekey,
+		plainhost.ParameterSpendEffects:   strings.Join(spend, ","),
+		plainhost.ParameterRekeyAuthority: shape.Rekey,
 	}
 	if shape.Encoding != "" {
-		params[boundedaccount.ParameterListEncoding] = shape.Encoding
-		params[boundedaccount.ParameterRecipients] = strings.Join(recipients, ",")
+		params[plainhost.ParameterListEncoding] = shape.Encoding
+		params[plainhost.ParameterRecipients] = strings.Join(recipients, ",")
 	}
 	if shape.Timelock {
-		params[boundedaccount.ParameterUnlockRound] = strconv.FormatUint(unlockRound, 10)
+		params[plainhost.ParameterUnlockRound] = strconv.FormatUint(unlockRound, 10)
 	}
 	if shape.AnyRecipient {
-		params[boundedaccount.ParameterRecipientScope] = boundedaccount.RecipientScopeAny
+		params[plainhost.ParameterRecipientScope] = plainhost.RecipientScopeAny
 	}
 	if shape.Cosigner {
 		params[composeddsa.BoundedCosignerPublicKeyParameter] = hex.EncodeToString(cosignerKey)
 	}
 	if shape.HasRekeyList() {
-		params[boundedaccount.ParameterRekeyTo] = strings.Join(rekeyTo, ",")
+		params[plainhost.ParameterRekeyTo] = strings.Join(rekeyTo, ",")
 	}
 	return params
 }
 
-// newGeneralAccount generates an account as the signer does. A shape with a
-// rekey-to list (only these, plus cosigned) lists rekeyTo; key generation commits
-// to the list's root.
-func newGeneralAccount(t *testing.T, provider *boundedaccount.Provider, shape boundedaccount.Shape, recipients []string, unlockRound uint64, rekeyTo []string) corridorExecutionAccount {
+// newBoundsAccount generates a bounded2 account on the plain host's base as the
+// signer does, with a Falcon-1024 or Ed25519 spending key to match and a
+// Falcon-1024 cosigner. A shape with a rekey-to list (only these, plus cosigned)
+// lists rekeyTo; key generation commits to the list's root.
+func newBoundsAccount(t *testing.T, provider *plainhost.Provider, shape plainhost.Shape, recipients []string, unlockRound uint64, rekeyTo []string) corridorExecutionAccount {
 	t.Helper()
-	ops := signerops.New(nil)
-	spendingPublic, spendingPrivate, err := ops.GenerateKeypair(randomFalconSeed(t))
-	if err != nil {
-		t.Fatalf("generate spending key: %v", err)
-	}
-	cosignerPublic, cosignerPrivate, err := ops.GenerateKeypair(randomFalconSeed(t))
+	spendingPublic, spendingPrivate, edKey := newSpendingKey(t, provider.KeyType())
+	cosignerPublic, cosignerPrivate, err := signerops.New(nil).GenerateKeypair(randomFalconSeed(t))
 	if err != nil {
 		t.Fatalf("generate cosigner key: %v", err)
 	}
-	params := generalRequest(shape, recipients, unlockRound, cosignerPublic, rekeyTo)
+	params := boundsRequest(shape, recipients, unlockRound, cosignerPublic, rekeyTo)
 	instance, err := provider.ResolveInstance(params)
 	if err != nil {
 		t.Fatalf("resolve instance: %v", err)
@@ -90,11 +87,15 @@ func newGeneralAccount(t *testing.T, provider *boundedaccount.Provider, shape bo
 	if err != nil {
 		t.Fatalf("build metadata: %v", err)
 	}
+	if metadata == nil || metadata.Contract != boundedmeta.Contract {
+		t.Fatalf("%s metadata = %+v, want the bounded contract", shape.Descriptor(), metadata)
+	}
 	account := corridorExecutionAccount{
 		address:            derived.Address.String(),
 		bytecode:           derived.Bytecode,
-		recipientsParam:    instance.Values[boundedaccount.ParameterRecipients],
+		recipientsParam:    instance.Values[plainhost.ParameterRecipients],
 		userPrivateKey:     spendingPrivate,
+		edKey:              edKey,
 		cosignerPrivateKey: cosignerPrivate,
 		metadata:           metadata,
 	}
@@ -134,22 +135,40 @@ func handOver(t *testing.T, network *harness.TestnetConfig, account corridorExec
 	submitCorridorGroupExpectSuccess(t, network, raw, txid)
 }
 
-func newGeneralProvider(t *testing.T, network *harness.TestnetConfig) *boundedaccount.Provider {
+// drainBounded pays what a bounded account holds above its minimum balance to
+// to, as a spend its program admits. A refused account can be neither rekeyed
+// nor closed, so this is the only way its funds come back. It is best effort.
+func drainBounded(t *testing.T, network *harness.TestnetConfig, account corridorExecutionAccount, to string, proof []byte) {
 	t.Helper()
-	falcon1024.RegisterClient()
-	provider, err := boundedaccount.NewProvider()
+	info, err := network.Client.AccountInformation(account.address).Do(context.Background())
 	if err != nil {
-		t.Fatalf("build provider: %v", err)
+		t.Logf("cleanup: read %s: %v", account.address, err)
+		return
 	}
-	provider.SetAlgodClient(network.Client)
-	return provider
+	txn := corridorPaymentTxn(t, mustSuggestedParams(t, network), account.address, to, 0, "bounds-drain")
+	// signGroup puts the whole group's fee on this transaction.
+	fee := uint64(corridorExecutionGroupSize) * uint64(txn.Fee)
+	if info.Amount <= info.MinBalance+fee {
+		return
+	}
+	txn.Amount = types.MicroAlgos(info.Amount - info.MinBalance - fee)
+	raw, txid := account.signGroup(t, txn, proof, nil)
+	if _, err := network.Client.SendRawTransaction(raw).Do(context.Background()); err != nil {
+		t.Logf("cleanup: drain %s: %v", account.address, err)
+		return
+	}
+	if _, err := network.WaitForConfirmation(txid, 10); err != nil {
+		t.Logf("cleanup: drain %s did not confirm: %v", account.address, err)
+	}
 }
 
-// Every shape runs its own program on the network, so each rejection here is the
-// program's and each spend subset is exercised on its own, not only the largest
-// family. Accounts go straight to algod: the signer would refuse much of this
-// before the program ever saw it.
-func TestBoundedGeneralShapeMatrixOnChainLocalnet(t *testing.T) {
+// Every Falcon-1024 shape runs its own program on the network, so each rejection
+// here is the program's and each spend subset is exercised on its own, not only
+// the largest family. Ed25519 offers the same grammar; a sample runs on it, every
+// overlay arrangement over an inline list with every transfer kind, the cosigned
+// ones included. Accounts go straight to algod: the signer would refuse much of
+// this before the program ever saw it.
+func TestBoundsShapeMatrixOnChainLocalnet(t *testing.T) {
 	if harness.IntegrationNetwork() != harness.IntegrationNetworkLocalnet {
 		t.Skip("bounded LogicSig execution requires localnet")
 	}
@@ -161,7 +180,40 @@ func TestBoundedGeneralShapeMatrixOnChainLocalnet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load funding account: %v", err)
 	}
-	provider := newGeneralProvider(t, network)
+
+	// The grammar is every combination: each policy takes each overlay
+	// arrangement, so a refused rekey and a timelock with a spending-key or plus
+	// cosigned rekey are shapes like any other, and run below.
+	offered := make(map[string]map[plainhost.Arrangement]bool)
+	for _, shape := range plainhost.Shapes() {
+		if offered[shape.Policy()] == nil {
+			offered[shape.Policy()] = make(map[plainhost.Arrangement]bool)
+		}
+		offered[shape.Policy()][plainhost.Arrangement{Rekey: shape.Rekey, Cosigner: shape.Cosigner}] = true
+	}
+	for policy, arrangements := range offered {
+		for _, arrangement := range plainhost.Arrangements() {
+			if !arrangements[arrangement] {
+				t.Fatalf("policy %s does not offer rekey %s with cosigner %v", policy, arrangement.Rekey, arrangement.Cosigner)
+			}
+		}
+	}
+
+	type shapeCase struct {
+		provider *plainhost.Provider
+		shape    plainhost.Shape
+	}
+	var cases []shapeCase
+	falconProvider := plainHostProvider(t, network, plainFalconKeyType)
+	for _, shape := range plainhost.Shapes() {
+		cases = append(cases, shapeCase{falconProvider, shape})
+	}
+	edProvider := plainHostProvider(t, network, plainEd25519KeyType)
+	for _, shape := range plainhost.Shapes() {
+		if shape.Encoding == plainhost.EncodingInline && !shape.Timelock && len(shape.Spend) == 3 {
+			cases = append(cases, shapeCase{edProvider, shape})
+		}
+	}
 
 	allowedAccount := algocrypto.GenerateAccount()
 	allowed := allowedAccount.Address
@@ -185,14 +237,9 @@ func TestBoundedGeneralShapeMatrixOnChainLocalnet(t *testing.T) {
 		bestEffortCloseRekeyedAccount(t, network, allowed.String(), funder.GetAddress(), allowedAccount.PrivateKey)
 	})
 
-	for _, shape := range boundedaccount.Shapes() {
-		t.Run(shape.Descriptor(), func(t *testing.T) {
-			// A spending-key rekey would leave a timelock before the unlock round, so
-			// no timelock offers one. A listed rekey may leave it: the lock holds only
-			// while the listed keys' holders cooperate.
-			if shape.Timelock && shape.Rekey == boundedaccount.RekeySpendingKey {
-				t.Fatalf("a timelock shape offers a %s rekey", shape.Rekey)
-			}
+	for _, tc := range cases {
+		shape := tc.shape
+		t.Run(tc.provider.KeyType()+"/"+shape.Descriptor(), func(t *testing.T) {
 			status, err := network.Client.Status().Do(context.Background())
 			if err != nil {
 				t.Fatalf("read status: %v", err)
@@ -204,16 +251,17 @@ func TestBoundedGeneralShapeMatrixOnChainLocalnet(t *testing.T) {
 			// shape takes its own, because a transaction's life is limited in rounds.
 			unlockRound := status.LastRound
 			rekeyTarget := algocrypto.GenerateAccount()
-			account := newGeneralAccount(t, provider, shape, []string{allowed.String(), second.String()}, unlockRound,
+			account := newBoundsAccount(t, tc.provider, shape, []string{allowed.String(), second.String()}, unlockRound,
 				[]string{rekeyTarget.Address.String(), otherListed.String()})
 			if err := funder.FundMicroAlgosAndWait(account.address, 400_000); err != nil {
 				t.Fatalf("fund account: %v", err)
 			}
 
+			refused := shape.Rekey == plainhost.RekeyRefused
 			mayPay := slices.Contains(shape.Spend, txeffects.SpendEffectPay)
 			mayTransfer := slices.Contains(shape.Spend, txeffects.SpendEffectAxfer)
 			mayOptIn := slices.Contains(shape.Spend, txeffects.SpendEffectAssetOptIn)
-			merkle := shape.Encoding == boundedaccount.EncodingMerkle
+			merkle := shape.Encoding == plainhost.EncodingMerkle
 			hasList := shape.Encoding != ""
 			proof := func(to types.Address) []byte {
 				if !merkle {
@@ -222,9 +270,17 @@ func TestBoundedGeneralShapeMatrixOnChainLocalnet(t *testing.T) {
 				return account.proofFor(t, to)
 			}
 			t.Cleanup(func() {
-				// The rekey below hands every account to rekeyTarget, which every
-				// shape lists or a spending-key rekey reaches; if it never ran, the
-				// cleanup hands it over first.
+				if refused {
+					// Nothing can rekey or close a refused account, so what it may
+					// pay goes back by way of the listed recipient; the rest stays.
+					if mayPay {
+						drainBounded(t, network, account, allowed.String(), proof(allowed))
+					}
+					return
+				}
+				// The rekey below hands every other account to rekeyTarget, which
+				// every list shape lists and a spending-key rekey reaches; if it never
+				// ran, the cleanup hands it over first.
 				if info, err := network.Client.AccountInformation(account.address).Do(context.Background()); err == nil && info.AuthAddr == "" {
 					handOver(t, network, account, rekeyTarget.Address, "general-cleanup-handover")
 				}
@@ -401,19 +457,32 @@ func TestBoundedGeneralShapeMatrixOnChainLocalnet(t *testing.T) {
 				})
 			}
 			switch shape.Rekey {
-			case boundedaccount.RekeyOnlyThese:
+			case plainhost.RekeyRefused:
+				// Refused: no rekey at all. The spending key signs, and on a cosigned
+				// shape the cosigner too, and neither opens one.
+				t.Run("rekey refused", func(t *testing.T) { expect(false, rekey("l3"), nil, nil) })
+				if shape.Timelock {
+					t.Run("rekey refused one round early", func(t *testing.T) { expect(false, early(rekey("l3b")), nil, nil) })
+				}
+			case plainhost.RekeyOnlyThese:
 				// Only these: nothing but a listed target with its proof, and the
 				// cosigner opens nothing.
 				t.Run("rekey to an unlisted address", func(t *testing.T) { expect(false, rekeyTo(unlisted.Address, "l3"), nil, nil) })
 				t.Run("listed rekey without a proof", func(t *testing.T) { expect(false, rekey("l7"), nil, withProof(nil)) })
-			case boundedaccount.RekeyPlusCosigned:
+			case plainhost.RekeyPlusCosigned:
 				// Plus cosigned: an empty proof takes the cosigner's branch, to any
 				// address; without the cosigner it fails.
 				t.Run("rekey to an unlisted address without the cosigner", func(t *testing.T) {
 					expect(false, rekeyTo(unlisted.Address, "l3"), nil, withoutCosigner(nil))
 				})
 				t.Run("cosigned rekey to an unlisted address", func(t *testing.T) {
-					expect(true, rekeyTo(unlisted.Address, "p1"), nil, nil)
+					txn := rekeyTo(unlisted.Address, "p1")
+					if shape.Timelock {
+						// No host rule gates a rekey (O11), so the cosigned branch too
+						// leaves a timelock before the unlock round.
+						txn = early(txn)
+					}
+					expect(true, txn, nil, nil)
 				})
 				// The unlisted key holds the account now; it hands it back, so the
 				// listed rekey below starts from the account's own program.
@@ -426,20 +495,29 @@ func TestBoundedGeneralShapeMatrixOnChainLocalnet(t *testing.T) {
 						t.Fatalf("authorizer = %q after the hand-back", got)
 					}
 				})
-			case boundedaccount.RekeySpendingKey:
+			case plainhost.RekeySpendingKey:
 				if shape.Cosigner {
 					t.Run("rekey without the cosigner", func(t *testing.T) { expect(false, rekey("l10"), nil, withoutCosigner(nil)) })
 				}
 			}
 			// The account's last rekey hands it to rekeyTarget for the cleanup. A
 			// listed target takes the spending key alone, so its cosigner slot stays
-			// empty on a cosigned shape; a declared rekey needs the cosigner.
+			// empty on a cosigned shape; a declared rekey needs the cosigner. No host
+			// rule gates a rekey (O11), so on a timelock each way out is open before
+			// the unlock round.
+			wantAuth := rekeyTarget.Address.String()
 			switch {
+			case refused:
+				// Nothing hands it over: it stays with its own program.
+				wantAuth = ""
 			case shape.HasRekeyList() && shape.Timelock:
-				// No host rule gates a rekey (O11), so the list is a way out before the unlock.
 				t.Run("listed rekey one round early", func(t *testing.T) { expect(true, early(rekey("m")), nil, withoutCosigner(nil)) })
 			case shape.HasRekeyList():
 				t.Run("listed rekey with the spending key alone", func(t *testing.T) { expect(true, rekey("m"), nil, withoutCosigner(nil)) })
+			case shape.Timelock && shape.Cosigner:
+				t.Run("rekey with the spending key and the cosigner one round early", func(t *testing.T) { expect(true, early(rekey("m")), nil, nil) })
+			case shape.Timelock:
+				t.Run("rekey with the spending key one round early", func(t *testing.T) { expect(true, early(rekey("m")), nil, nil) })
 			case shape.Cosigner:
 				t.Run("rekey with the spending key and the cosigner", func(t *testing.T) { expect(true, rekey("m"), nil, nil) })
 			default:
@@ -449,7 +527,6 @@ func TestBoundedGeneralShapeMatrixOnChainLocalnet(t *testing.T) {
 			if err != nil {
 				t.Fatalf("read account: %v", err)
 			}
-			wantAuth := rekeyTarget.Address.String()
 			if info.AuthAddr != wantAuth {
 				t.Fatalf("auth address = %q, want %q", info.AuthAddr, wantAuth)
 			}
@@ -481,38 +558,39 @@ func authAddress(t *testing.T, network *harness.TestnetConfig, account string) s
 	return info.AuthAddr
 }
 
-// generalPassedUnlockRound has been reached on any network, so an account using it
+// boundsPassedUnlockRound has been reached on any network, so an account using it
 // can spend immediately and a test can measure its costliest paths.
-const generalPassedUnlockRound = 1
+const boundsPassedUnlockRound = 1
 
-// generalFamily is one list encoding and authority arrangement, with every
-// transfer kind enabled and the list at its largest for that encoding.
-type generalFamily struct {
-	shape      boundedaccount.Shape
+// boundsFamily is one policy and overlay arrangement, with every transfer kind
+// enabled and the list at its largest for that encoding.
+type boundsFamily struct {
+	shape      plainhost.Shape
 	recipients int
 }
 
-func generalFamilies() []generalFamily {
-	var families []generalFamily
-	for _, shape := range boundedaccount.Shapes() {
+func boundsFamilies() []boundsFamily {
+	var families []boundsFamily
+	for _, shape := range plainhost.Shapes() {
 		if len(shape.Spend) != 3 {
 			continue
 		}
 		recipients := 0
 		switch shape.Encoding {
-		case boundedaccount.EncodingInline:
-			recipients = boundedaccount.InlineMax
-		case boundedaccount.EncodingMerkle:
+		case plainhost.EncodingInline:
+			recipients = plainhost.InlineMax
+		case plainhost.EncodingMerkle:
 			recipients = 64
 		}
-		families = append(families, generalFamily{shape: shape, recipients: recipients})
+		families = append(families, boundsFamily{shape: shape, recipients: recipients})
 	}
 	return families
 }
 
 // BuildBoundedAuthorizationMetadata runs the generation backstop, so each account
-// here passed the production solver and fee ceiling at its list size. The
-// simulation then shows the declared opcode ceilings hold on the costliest path.
+// here, every Falcon-1024 plain host shape, passed the production solver and fee
+// ceiling at its list size. The simulation then shows the declared opcode
+// ceilings hold on the costliest path.
 func TestBoundedGeneralResourceMatrix(t *testing.T) {
 	network, err := harness.NewTestnetConfig()
 	if err != nil {
@@ -523,39 +601,34 @@ func TestBoundedGeneralResourceMatrix(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load funding account: %v", err)
 	}
-	falcon1024.RegisterClient()
-	provider, err := boundedaccount.NewProvider()
-	if err != nil {
-		t.Fatalf("build provider: %v", err)
-	}
+	provider := plainHostProvider(t, network, plainFalconKeyType)
 	provider.SetAlgodClient(compiler)
 
-	for _, shape := range boundedaccount.Shapes() {
-		count := 0
-		switch shape.Encoding {
-		case boundedaccount.EncodingInline:
-			count = boundedaccount.InlineMax
-		case boundedaccount.EncodingMerkle:
-			count = boundedaccount.RecipientsMax
+	// Each encoding's longest list, built once: every account has its own
+	// spending key, so the shapes can share their lists.
+	addresses := func(count int) []string {
+		list := make([]string, count)
+		for i := range list {
+			list[i] = algocrypto.GenerateAccount().Address.String()
 		}
-		recipients := make([]string, count)
-		for i := range recipients {
-			recipients[i] = algocrypto.GenerateAccount().Address.String()
-		}
-		// A list proof's size is fixed, so the list's length costs nothing; a full
-		// list shows generation still fits.
-		rekeyTo := make([]string, rekeylist.MaxEntries)
-		for i := range rekeyTo {
-			rekeyTo[i] = algocrypto.GenerateAccount().Address.String()
-		}
-		account := newGeneralAccount(t, provider, shape, recipients, generalPassedUnlockRound, rekeyTo)
-		if account.metadata.MaxFee == nil || *account.metadata.MaxFee != boundedaccount.MaxFee {
+		return list
+	}
+	longest := map[string][]string{
+		plainhost.EncodingInline: addresses(plainhost.InlineMax),
+		plainhost.EncodingMerkle: addresses(plainhost.RecipientsMax),
+	}
+	// A list proof's size is fixed, so the list's length costs nothing; a full
+	// list shows generation still fits.
+	fullRekeyTo := addresses(rekeylist.MaxEntries)
+	for _, shape := range plainhost.Shapes() {
+		account := newBoundsAccount(t, provider, shape, longest[shape.Encoding], boundsPassedUnlockRound, fullRekeyTo)
+		if account.metadata.MaxFee == nil || *account.metadata.MaxFee != plainhost.MaxFee {
 			t.Fatalf("%s MaxFee = %v", shape.Descriptor(), account.metadata.MaxFee)
 		}
 		t.Logf("%s: %d program bytes", shape.Descriptor(), len(account.bytecode))
 	}
 
-	for _, family := range generalFamilies() {
+	for _, family := range boundsFamilies() {
 		shape := family.shape
 		t.Run(shape.Descriptor(), func(t *testing.T) {
 			funderAddress := mustDecodeAddress(t, funder.GetAddress())
@@ -564,23 +637,30 @@ func TestBoundedGeneralResourceMatrix(t *testing.T) {
 				recipients = append(recipients, algocrypto.GenerateAccount().Address.String())
 			}
 			// A full list: every proof has the tree's fixed depth, so this is the
-			// costliest listed rekey as well as the cleanup's way out.
+			// costliest listed rekey as well as the cleanup's way out, on every
+			// shape but a refused one.
 			cleanup := algocrypto.GenerateAccount()
 			rekeyTo := []string{cleanup.Address.String()}
 			for len(rekeyTo) < rekeylist.MaxEntries {
 				rekeyTo = append(rekeyTo, algocrypto.GenerateAccount().Address.String())
 			}
-			account := newGeneralAccount(t, provider, shape, recipients, generalPassedUnlockRound, rekeyTo)
+			account := newBoundsAccount(t, provider, shape, recipients, boundsPassedUnlockRound, rekeyTo)
 			// Everything that can fail runs before funding, so the cleanup that
 			// returns the funds is registered as soon as there are funds to return.
 			var proof []byte
-			if shape.Encoding == boundedaccount.EncodingMerkle {
+			if shape.Encoding == plainhost.EncodingMerkle {
 				proof = account.proofFor(t, funderAddress)
 			}
 			if err := funder.FundMicroAlgosAndWait(account.address, 500_000); err != nil {
 				t.Fatalf("fund account: %v", err)
 			}
 			t.Cleanup(func() {
+				if shape.Rekey == plainhost.RekeyRefused {
+					// A refused account can't be rekeyed or closed; it pays back all
+					// but its minimum balance.
+					drainBounded(t, network, account, funder.GetAddress(), proof)
+					return
+				}
 				handOver(t, network, account, cleanup.Address, "general-cleanup-rekey")
 				bestEffortCloseRekeyedAccount(t, network, account.address, funder.GetAddress(), cleanup.PrivateKey)
 			})
@@ -588,9 +668,9 @@ func TestBoundedGeneralResourceMatrix(t *testing.T) {
 			spend, _ := account.signedGroup(t, corridorPaymentTxn(t, sp, account.address, funder.GetAddress(), 0, "general-opcode-spend"), proof, nil)
 			paths := []lsigresource.AuthorizationPath{lsigresource.PathSpend}
 			vectors := []harness.OpcodeCeilingVector{{Name: "maximum-spend", Path: lsigresource.PathSpend, SignedTxns: spend, LSigIndex: 0}}
-			// Every shape has a rekey path: the listed one to the cleanup key, and a
-			// declared one, with the cosigner on a cosigned shape, to any other
-			// address. Plus cosigned has both.
+			// Every shape but a refused one has a rekey path: the listed one to the
+			// cleanup key, or a declared one, with the cosigner on a cosigned shape,
+			// to any other address. Plus cosigned has both; refused has only the spend.
 			rekeyVector := func(target types.Address, path lsigresource.AuthorizationPath, name string) {
 				rekeyTxn := corridorPaymentTxn(t, sp, account.address, account.address, 0, "general-opcode-"+name)
 				rekeyTxn.RekeyTo = target
@@ -601,13 +681,13 @@ func TestBoundedGeneralResourceMatrix(t *testing.T) {
 			if shape.HasRekeyList() {
 				rekeyVector(cleanup.Address, lsigresource.PathListedRekey, "maximum-listed-rekey")
 			}
-			if shape.Rekey == boundedaccount.RekeySpendingKey || shape.Rekey == boundedaccount.RekeyPlusCosigned {
+			if shape.Rekey == plainhost.RekeySpendingKey || shape.Rekey == plainhost.RekeyPlusCosigned {
 				rekeyVector(algocrypto.GenerateAccount().Address, lsigresource.PathSpendingRekey, "maximum-rekey")
 			}
 			report, err := harness.ValidateDeclaredOpcodeCeiling(context.Background(), compiler, harness.OpcodeCeilingValidation{
 				Name:          shape.Descriptor(),
 				FinalProgram:  account.bytecode,
-				Profile:       provider.LogicSigOpcodeProfile(),
+				Profile:       provider.BoundedLogicSigOpcodeProfile(),
 				Bounded:       true,
 				RequiredPaths: paths,
 				Vectors:       vectors,
@@ -623,8 +703,9 @@ func TestBoundedGeneralResourceMatrix(t *testing.T) {
 }
 
 // This is the account as an operator gets it: with no setup, the signer generates
-// it, assembles its arguments, and rescans it after a restart.
-func TestBoundedGeneralThroughSigner(t *testing.T) {
+// a bounded Falcon plain host, enabled by default, assembles its arguments, and
+// rescans it after a restart.
+func TestBoundsThroughSigner(t *testing.T) {
 	if os.Getenv("TEST_FUNDING_MNEMONIC") == "" {
 		t.Skip("TEST_FUNDING_MNEMONIC not set, skipping funding-backed test")
 	}
@@ -653,9 +734,9 @@ func TestBoundedGeneralThroughSigner(t *testing.T) {
 
 	request := func(recipients ...string) map[string]string {
 		return map[string]string{
-			boundedaccount.ParameterSpendEffects:   "pay,axfer,asset_opt_in",
-			boundedaccount.ParameterRekeyAuthority: boundedaccount.RekeySpendingKey,
-			boundedaccount.ParameterRecipients:     strings.Join(recipients, ","),
+			plainhost.ParameterSpendEffects:   "pay,axfer,asset_opt_in",
+			plainhost.ParameterRekeyAuthority: plainhost.RekeySpendingKey,
+			plainhost.ParameterRecipients:     strings.Join(recipients, ","),
 		}
 	}
 	accounts := make(map[string]string)
@@ -680,10 +761,10 @@ func TestBoundedGeneralThroughSigner(t *testing.T) {
 			}
 			params := request(recipients...)
 			if test.onlyThese {
-				params[boundedaccount.ParameterRekeyAuthority] = boundedaccount.RekeyOnlyThese
-				params[boundedaccount.ParameterRekeyTo] = algocrypto.GenerateAccount().Address.String()
+				params[plainhost.ParameterRekeyAuthority] = plainhost.RekeyOnlyThese
+				params[plainhost.ParameterRekeyTo] = algocrypto.GenerateAccount().Address.String()
 			}
-			account := mustAdminGenerateKeyNoCleanup(t, client, signerd, boundedaccount.KeyTypeV1, params)
+			account := mustAdminGenerateKeyNoCleanup(t, client, signerd, plainFalconKeyType, params)
 			if err := funder.FundMicroAlgosAndWait(account, 2_000_000); err != nil {
 				t.Fatalf("fund account: %v", err)
 			}
@@ -722,35 +803,93 @@ func TestBoundedGeneralThroughSigner(t *testing.T) {
 
 	t.Run("apshell timelock boundary file", func(t *testing.T) {
 		directory := t.TempDir()
-		// The general type's timelock shapes take only a rekey-to list.
-		walkable := filepath.Join(directory, "walkable.yaml")
-		if err := os.WriteFile(walkable, []byte("schema: aplane.boundary.v1\nspend: [pay]\nrekey: {authority: spending_key}\nunlock_round: 18446744073709551615\n"), 0o600); err != nil {
-			t.Fatalf("write boundary file: %v", err)
+		// generate creates the account a boundary file describes through apshell,
+		// then lists the keys.
+		generate := func(t *testing.T, name, body string) (string, string) {
+			t.Helper()
+			path := filepath.Join(directory, name)
+			if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+				t.Fatalf("write boundary file: %v", err)
+			}
+			output, err := apshell.RunWithInput(fmt.Sprintf("generate %s --boundary=%s\ny\nkeys\nquit\n", plainFalconKeyType, path))
+			if err != nil {
+				t.Fatalf("run apshell: %v\n%s", err, output)
+			}
+			account := ""
+			for _, line := range strings.Split(output, "\n") {
+				if _, address, found := strings.Cut(line, plainFalconKeyType+" key: "); found {
+					account = strings.TrimSpace(address)
+				}
+			}
+			if account == "" {
+				t.Fatalf("no generated address:\n%s", output)
+			}
+			return account, output
 		}
-		refusal, _ := apshell.RunWithInput(fmt.Sprintf("generate %s --boundary=%s\ny\nquit\n", boundedaccount.KeyTypeV1, walkable))
-		if !strings.Contains(refusal, "an expert template can combine a timelock with rekey_authority=spending_key") || strings.Contains(refusal, "Generated ") {
-			t.Fatalf("a timelock with a spending-key rekey was not refused:\n%s", refusal)
+		// assertLocked funds an account and shows the timelock holds: a spend
+		// before the unlock round moves nothing.
+		assertLocked := func(t *testing.T, account string, funding uint64) {
+			t.Helper()
+			if err := funder.FundMicroAlgosAndWait(account, funding); err != nil {
+				t.Fatalf("fund account: %v", err)
+			}
+			before, err := network.Client.AccountInformation(account).Do(context.Background())
+			if err != nil {
+				t.Fatalf("read balance: %v", err)
+			}
+			refused, err := apshell.RunWithInput(fmt.Sprintf("send 0.01 algo from %s to %s\nquit\n", account, funder.GetAddress()))
+			if err != nil {
+				t.Fatalf("run apshell: %v\n%s", err, refused)
+			}
+			after, err := network.Client.AccountInformation(account).Do(context.Background())
+			if err != nil {
+				t.Fatalf("read balance: %v", err)
+			}
+			if after.Amount != before.Amount || strings.Contains(strings.ToLower(refused), "confirmed") {
+				t.Fatalf("a locked account spent: %d to %d\n%s", before.Amount, after.Amount, refused)
+			}
 		}
+		const never = "unlock_round: 18446744073709551615\n"
 
-		// No account refuses every rekey: a timelock's only way out is a listed rekey.
-		refusedFile := filepath.Join(directory, "refused.yaml")
-		if err := os.WriteFile(refusedFile, []byte("schema: aplane.boundary.v1\nspend: [pay]\nrekey: {authority: refused}\nunlock_round: 18446744073709551615\n"), 0o600); err != nil {
-			t.Fatalf("write boundary file: %v", err)
+		// A timelock takes every rekey setting. With a spending-key rekey the
+		// account leaves before the unlock round: no host rule applies to a rekey
+		// (O11), so the lock holds only while the spending key keeps it.
+		walkable, output := generate(t, "walkable.yaml", "schema: aplane.boundary.v1\nspend: [pay]\nrekey: {authority: spending_key}\n"+never)
+		for _, want := range []string{"Generated", "Unlock round:   18446744073709551615", "Rekey:          spending_key", "Timelock · spending-key rekey"} {
+			if !strings.Contains(output, want) {
+				t.Fatalf("output lacks %q:\n%s", want, output)
+			}
 		}
-		refusal, _ = apshell.RunWithInput(fmt.Sprintf("generate %s --boundary=%s\ny\nquit\n", boundedaccount.KeyTypeV1, refusedFile))
-		if !strings.Contains(refusal, "rekey.authority must be spending_key, only_these or plus_cosigned") || strings.Contains(refusal, "Generated ") {
-			t.Fatalf("a refused timelock was not refused:\n%s", refusal)
+		assertLocked(t, walkable, 500_000)
+		exit := algocrypto.GenerateAccount()
+		txid, err := apshell.RekeyAccount(walkable, exit.Address.String())
+		if err != nil {
+			t.Fatalf("rekey %s before its unlock round: %v", walkable, err)
 		}
+		if _, err := network.WaitForConfirmation(txid, 10); err != nil {
+			t.Fatalf("rekey %s did not confirm: %v", walkable, err)
+		}
+		if got := authAddress(t, network, walkable); got != exit.Address.String() {
+			t.Fatalf("%s authorizer = %q after the rekey, want %s", walkable, got, exit.Address)
+		}
+		bestEffortCloseRekeyedAccount(t, network, walkable, funder.GetAddress(), exit.PrivateKey)
+		accounts[walkable] = composeddsa.Layer3PolicyTimelock
+
+		// A refused rekey: before the unlock round nothing moves the account or
+		// what it holds.
+		refused, output := generate(t, "refused.yaml", "schema: aplane.boundary.v1\nspend: [pay]\nrekey: {authority: refused}\n"+never)
+		for _, want := range []string{"Generated", "Unlock round:   18446744073709551615", "Rekey:          refused", "Timelock · no rekey"} {
+			if !strings.Contains(output, want) {
+				t.Fatalf("output lacks %q:\n%s", want, output)
+			}
+		}
+		assertLocked(t, refused, 200_000)
+		assertSignerRefusesRekey(t, apshell, network, refused, algocrypto.GenerateAccount().Address.String(),
+			boundedmeta.Contract+" account permanently disables rekey")
+		accounts[refused] = composeddsa.Layer3PolicyTimelock
 
 		listedKey := algocrypto.GenerateAccount().Address.String()
-		locked := filepath.Join(directory, "locked.yaml")
-		if err := os.WriteFile(locked, []byte("schema: aplane.boundary.v1\nspend: [pay]\nrekey:\n  authority: only_these\n  to: ["+listedKey+"]\nunlock_round: 18446744073709551615\n"), 0o600); err != nil {
-			t.Fatalf("write boundary file: %v", err)
-		}
-		output, err := apshell.RunWithInput(fmt.Sprintf("generate %s --boundary=%s\ny\nkeys\nquit\n", boundedaccount.KeyTypeV1, locked))
-		if err != nil {
-			t.Fatalf("run apshell: %v\n%s", err, output)
-		}
+		locked, output := generate(t, "locked.yaml", "schema: aplane.boundary.v1\nspend: [pay]\nrekey:\n  authority: only_these\n  to: ["+listedKey+"]\n"+never)
 		for _, want := range []string{"Unlocks at: round 18446744073709551615", "Recipients: any, once unlocked",
 			"Rekey:      only to this address, with the spending key alone:", listedKey, "That is a way around the unlock round.",
 			"Unlock round:   18446744073709551615", "Timelock · rekey to listed only"} {
@@ -758,34 +897,8 @@ func TestBoundedGeneralThroughSigner(t *testing.T) {
 				t.Fatalf("output lacks %q:\n%s", want, output)
 			}
 		}
-		account := ""
-		for _, line := range strings.Split(output, "\n") {
-			if _, address, found := strings.Cut(line, boundedaccount.KeyTypeV1+" key: "); found {
-				account = strings.TrimSpace(address)
-			}
-		}
-		if account == "" {
-			t.Fatalf("no generated address:\n%s", output)
-		}
-		if err := funder.FundMicroAlgosAndWait(account, 500_000); err != nil {
-			t.Fatalf("fund account: %v", err)
-		}
-		before, err := network.Client.AccountInformation(account).Do(context.Background())
-		if err != nil {
-			t.Fatalf("read balance: %v", err)
-		}
-		refused, err := apshell.RunWithInput(fmt.Sprintf("send 0.1 algo from %s to %s\nquit\n", account, funder.GetAddress()))
-		if err != nil {
-			t.Fatalf("run apshell: %v\n%s", err, refused)
-		}
-		after, err := network.Client.AccountInformation(account).Do(context.Background())
-		if err != nil {
-			t.Fatalf("read balance: %v", err)
-		}
-		if after.Amount != before.Amount || strings.Contains(strings.ToLower(refused), "confirmed") {
-			t.Fatalf("a locked account spent: %d to %d\n%s", before.Amount, after.Amount, refused)
-		}
-		accounts[account] = composeddsa.Layer3PolicyTimelock
+		assertLocked(t, locked, 500_000)
+		accounts[locked] = composeddsa.Layer3PolicyTimelock
 	})
 
 	t.Run("apshell boundary file", func(t *testing.T) {
@@ -797,7 +910,7 @@ func TestBoundedGeneralThroughSigner(t *testing.T) {
 		}
 		resultFile := filepath.Join(directory, "result.json")
 
-		declined, err := apshell.RunWithInput(fmt.Sprintf("generate %s --boundary=%s\nn\nquit\n", boundedaccount.KeyTypeV1, path))
+		declined, err := apshell.RunWithInput(fmt.Sprintf("generate %s --boundary=%s\nn\nquit\n", plainFalconKeyType, path))
 		if err != nil {
 			t.Fatalf("run apshell: %v\n%s", err, declined)
 		}
@@ -805,7 +918,7 @@ func TestBoundedGeneralThroughSigner(t *testing.T) {
 			t.Fatalf("declining did not cancel:\n%s", declined)
 		}
 
-		output, err := apshell.RunWithInput(fmt.Sprintf("generate %s --boundary=%s --result=%s\ny\nkeys\nquit\n", boundedaccount.KeyTypeV1, path, resultFile))
+		output, err := apshell.RunWithInput(fmt.Sprintf("generate %s --boundary=%s --result=%s\ny\nkeys\nquit\n", plainFalconKeyType, path, resultFile))
 		if err != nil {
 			t.Fatalf("run apshell: %v\n%s", err, output)
 		}
@@ -825,7 +938,7 @@ func TestBoundedGeneralThroughSigner(t *testing.T) {
 		if err := json.Unmarshal(data, &saved); err != nil {
 			t.Fatalf("parse result file: %v", err)
 		}
-		if saved.Parameters[boundedaccount.ParameterRecipients] != recipient || saved.Parameters[boundedaccount.ParameterSpendEffects] != "pay" {
+		if saved.Parameters[plainhost.ParameterRecipients] != recipient || saved.Parameters[plainhost.ParameterSpendEffects] != "pay" {
 			t.Fatalf("saved parameters = %v", saved.Parameters)
 		}
 		accounts[saved.Address] = composeddsa.Layer3PolicyFixedAllowlist

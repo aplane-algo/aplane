@@ -14,8 +14,8 @@ import (
 	"github.com/aplane-algo/aplane/internal/boundary"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	ed25519signerreg "github.com/aplane-algo/aplane/internal/signing/ed25519/signerreg"
-	"github.com/aplane-algo/aplane/lsig/boundedaccount"
 	"github.com/aplane-algo/aplane/lsig/clientreg"
+	falcon "github.com/aplane-algo/aplane/lsig/falcon1024"
 )
 
 func generateIndexOf(t *testing.T, keyType string) int {
@@ -48,7 +48,7 @@ func TestReloadedListKeepsTheChosenType(t *testing.T) {
 	ed25519signerreg.RegisterSigner()
 	clientreg.RegisterClient()
 	useRegistryKeyTypes(t)
-	chosen := generateIndexOf(t, boundary.KeyTypeV1)
+	chosen := generateIndexOf(t, boundedHostKeyType)
 
 	m := Model{viewState: ViewGenerateForm, width: 80, height: 24, forms: formsState{generateKeyType: chosen}}
 	m, _ = pressGenerateKey(t, m, tea.KeyMsg{Type: tea.KeyEnter})
@@ -58,7 +58,7 @@ func TestReloadedListKeepsTheChosenType(t *testing.T) {
 
 	// Build the signer's list so the old position names a different, valid type.
 	// Other tests register types too, so the compiled position isn't fixed.
-	signerList := []protocol.KeyTypeInfo{{KeyType: boundary.KeyTypeV1, PerKeyContract: true, BoundarySchema: boundary.SchemaV1}}
+	signerList := []protocol.KeyTypeInfo{{KeyType: boundedHostKeyType, PerKeyContract: true, BoundarySchema: boundary.SchemaV1}}
 	if chosen == 0 {
 		signerList = append(signerList, protocol.KeyTypeInfo{KeyType: "ed25519"})
 	}
@@ -66,18 +66,18 @@ func TestReloadedListKeepsTheChosenType(t *testing.T) {
 		signerList = append(signerList, protocol.KeyTypeInfo{KeyType: fmt.Sprintf("zz.filler-%02d.v1", i)})
 	}
 	m = receiveKeyTypes(t, m, signerList...)
-	if at := getKeyTypeByIndex(chosen); at == "" || at == boundary.KeyTypeV1 {
+	if at := getKeyTypeByIndex(chosen); at == "" || at == boundedHostKeyType {
 		t.Fatalf("the old index names %q in the new list; this test needs it to name another type", at)
 	}
-	if got := getKeyTypeByIndex(m.forms.generateKeyType); got != boundary.KeyTypeV1 {
-		t.Fatalf("cursor names %q after the reload, want %s", got, boundary.KeyTypeV1)
+	if got := getKeyTypeByIndex(m.forms.generateKeyType); got != boundedHostKeyType {
+		t.Fatalf("cursor names %q after the reload, want %s", got, boundedHostKeyType)
 	}
 	if m.forms.generateError != "" {
 		t.Fatalf("error = %q after the list arrived, want it cleared", m.forms.generateError)
 	}
 
 	m, _ = pressGenerateKey(t, m, tea.KeyMsg{Type: tea.KeyEnter})
-	if m.viewState != ViewBoundaryPreset || m.forms.boundaryKeyType != boundary.KeyTypeV1 {
+	if m.viewState != ViewBoundaryPreset || m.forms.boundaryKeyType != boundedHostKeyType {
 		t.Fatalf("view = %v, classified = %q", m.viewState, m.forms.boundaryKeyType)
 	}
 }
@@ -127,34 +127,34 @@ func TestDroppedTypeAbandonsItsParameterForm(t *testing.T) {
 // The cosigner picker refreshes the list partway through the preset flow. The flow
 // stays on the type it started with even if the refresh moves that type's position.
 func TestPresetFlowSurvivesAReorderedList(t *testing.T) {
-	boundedaccount.RegisterClient()
+	falcon.RegisterClient()
 	withInventory(t,
 		protocol.KeyTypeInfo{KeyType: "ed25519"},
-		protocol.KeyTypeInfo{KeyType: boundary.KeyTypeV1, PerKeyContract: true, BoundarySchema: boundary.SchemaV1},
+		protocol.KeyTypeInfo{KeyType: boundedHostKeyType, PerKeyContract: true, BoundarySchema: boundary.SchemaV1},
 	)
-	start := generateIndexOf(t, boundary.KeyTypeV1)
+	start := generateIndexOf(t, boundedHostKeyType)
 	preset := boundary.Presets()[0]
 	// The cursor is left on another type: the flow's recorded type decides, so a
 	// cursor index that drifted (or was set by another view) can't redirect it.
 	m := Model{viewState: ViewGenerateParams, forms: formsState{
-		generateKeyType: generateIndexOf(t, "ed25519"), boundaryKeyType: boundary.KeyTypeV1, boundaryPreset: &preset,
+		generateKeyType: generateIndexOf(t, "ed25519"), boundaryKeyType: boundedHostKeyType, boundaryPreset: &preset,
 	}}
-	m = m.initGenericLSigParamsForKeyType(boundary.KeyTypeV1)
+	m = m.initGenericLSigParamsForKeyType(boundedHostKeyType)
 	fields := slices.Clone(m.forms.genericLSigParamOrder)
 
 	m = receiveKeyTypes(t, m,
 		protocol.KeyTypeInfo{KeyType: "aplane.aaa-earlier.v1"},
 		protocol.KeyTypeInfo{KeyType: "ed25519"},
-		protocol.KeyTypeInfo{KeyType: boundary.KeyTypeV1, PerKeyContract: true, BoundarySchema: boundary.SchemaV1},
+		protocol.KeyTypeInfo{KeyType: boundedHostKeyType, PerKeyContract: true, BoundarySchema: boundary.SchemaV1},
 	)
-	if at := getKeyTypeByIndex(start); at == boundary.KeyTypeV1 {
+	if at := getKeyTypeByIndex(start); at == boundedHostKeyType {
 		t.Fatal("the refresh didn't move the type, so this test proves nothing")
 	}
 	if m.viewState != ViewGenerateParams {
 		t.Fatalf("view = %v, want the preset's parameter form", m.viewState)
 	}
-	if got := getKeyTypeByIndex(m.forms.generateKeyType); got != boundary.KeyTypeV1 {
-		t.Fatalf("cursor names %q, want %s", got, boundary.KeyTypeV1)
+	if got := getKeyTypeByIndex(m.forms.generateKeyType); got != boundedHostKeyType {
+		t.Fatalf("cursor names %q, want %s", got, boundedHostKeyType)
 	}
 	if spec := m.paramSpecFor(getKeyTypeByIndex(m.forms.generateKeyType)); spec == nil || len(spec.Params) != len(fields) {
 		t.Fatalf("parameter form after the refresh = %v, want the preset's %v", spec, fields)
@@ -166,16 +166,16 @@ func TestPresetFlowSurvivesAReorderedList(t *testing.T) {
 // ordinary parameter form is open would otherwise switch the cursor back to the
 // earlier preset's type.
 func TestFinishedPresetLeavesTheNextFlowAlone(t *testing.T) {
-	boundedaccount.RegisterClient()
+	falcon.RegisterClient()
 	const plain = "example.params.v1"
 	inventory := []protocol.KeyTypeInfo{
-		{KeyType: boundary.KeyTypeV1, PerKeyContract: true, BoundarySchema: boundary.SchemaV1},
+		{KeyType: boundedHostKeyType, PerKeyContract: true, BoundarySchema: boundary.SchemaV1},
 		{KeyType: plain, CreationParams: []protocol.TemplateParamInfo{{Name: "limit", Label: "Limit", Type: "uint64", Required: true}}},
 	}
 	withInventory(t, inventory...)
 	enter := tea.KeyMsg{Type: tea.KeyEnter}
 
-	m := Model{viewState: ViewGenerateForm, width: 80, height: 24, forms: formsState{generateKeyType: generateIndexOf(t, boundary.KeyTypeV1)}}
+	m := Model{viewState: ViewGenerateForm, width: 80, height: 24, forms: formsState{generateKeyType: generateIndexOf(t, boundedHostKeyType)}}
 	m, _ = pressGenerateKey(t, m, enter)
 	next, _ := m.handleBoundaryPresetKeys(enter)
 	m = next.(Model)
@@ -184,7 +184,7 @@ func TestFinishedPresetLeavesTheNextFlowAlone(t *testing.T) {
 	}
 	// Review and signing are covered elsewhere; this test needs only the outcome.
 	m.viewState = ViewGenerating
-	m = updateModel(t, m, GenerateResultMsg{Success: true, Address: "ADDR", KeyType: boundary.KeyTypeV1})
+	m = updateModel(t, m, GenerateResultMsg{Success: true, Address: "ADDR", KeyType: boundedHostKeyType})
 	next, _ = m.handleGenerateDisplayKeys(enter)
 	m = next.(Model)
 	next, _ = m.handleKeyListKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
@@ -211,10 +211,10 @@ func TestFinishedPresetLeavesTheNextFlowAlone(t *testing.T) {
 // The cosigner manager opens a parameter form without passing through the Generate
 // form, so it starts its flow clean itself.
 func TestManagerGenerationIgnoresAnEarlierPreset(t *testing.T) {
-	boundedaccount.RegisterClient()
+	falcon.RegisterClient()
 	const cosigned = "cosigned.v1"
 	inventory := []protocol.KeyTypeInfo{
-		{KeyType: boundary.KeyTypeV1, PerKeyContract: true, BoundarySchema: boundary.SchemaV1},
+		{KeyType: boundedHostKeyType, PerKeyContract: true, BoundarySchema: boundary.SchemaV1},
 		{KeyType: cosigned, CosignerComponentKeyType: "witness.v1", CreationParams: []protocol.TemplateParamInfo{
 			{Name: "cosigner", Label: "Cosigner", Type: "select", Required: true},
 		}},
@@ -223,7 +223,7 @@ func TestManagerGenerationIgnoresAnEarlierPreset(t *testing.T) {
 	preset := boundary.Presets()[0]
 	m := Model{
 		viewState: ViewCosignerReferenceDetails,
-		forms:     formsState{boundaryKeyType: boundary.KeyTypeV1, boundaryPreset: &preset},
+		forms:     formsState{boundaryKeyType: boundedHostKeyType, boundaryPreset: &preset},
 		cosigner: cosignerState{references: []CosignerReferenceInfo{{
 			Name: "lab", ComponentKey: testWitnessID1, KeyType: "witness.v1",
 		}}},

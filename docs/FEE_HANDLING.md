@@ -106,7 +106,7 @@ contribution; this also lets an explicit native-PQ sponsor preserve a
 LogicSig's compiled fee ceiling. LogicSig participants identified by resource
 planning follow, then any remaining mutable slots. Any remainder is assigned
 deterministically. A bounded slot is never raised above its compiled
-`max_fee`; a plain host (`plain1`) has none.
+`max_fee`; a `plain1` account has none.
 
 Foreign unsigned entries with `lsig_resources` contribute to resource and fee
 planning but are not mutated. Passthrough entries are immutable signed bytes.

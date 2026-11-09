@@ -17,9 +17,6 @@ func TestNodeRoleAllowsKeyType(t *testing.T) {
 	if !NodeRoleAllowsKeyType(noderole.RoleSigner, "aplane.falcon1024.v1") {
 		t.Fatal("signer node rejected plain host account key")
 	}
-	if !NodeRoleAllowsKeyType(noderole.RoleSigner, "aplane.falcon1024-b.v1") {
-		t.Fatal("signer node rejected bounded account key")
-	}
 	if NodeRoleAllowsKeyType(noderole.RoleSigner, witness.Falcon1024V1) {
 		t.Fatal("signer node allowed Falcon cosigner key")
 	}
@@ -43,9 +40,6 @@ func TestNodeRoleAllowsKeyType(t *testing.T) {
 	}
 	if NodeRoleAllowsKeyType(noderole.RoleCosigner, "aplane.falcon1024.v1") {
 		t.Fatal("cosigner node allowed plain host account key")
-	}
-	if NodeRoleAllowsKeyType(noderole.RoleCosigner, "aplane.falcon1024-b.v1") {
-		t.Fatal("cosigner node allowed bounded account key")
 	}
 	if NodeRoleAllowsKeyType(noderole.Role("unknown"), "ed25519") {
 		t.Fatal("unknown node role allowed Ed25519 account key")

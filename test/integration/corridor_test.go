@@ -20,8 +20,8 @@ import (
 	"github.com/aplane-algo/aplane/internal/rekeylist"
 	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/txeffects"
-	"github.com/aplane-algo/aplane/lsig/boundedaccount"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
+	"github.com/aplane-algo/aplane/lsig/plainhost"
 	"github.com/aplane-algo/aplane/test/integration/harness"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/common/models"
@@ -45,7 +45,7 @@ func TestCorridorDeclaredOpcodeCeilings(t *testing.T) {
 		t.Fatalf("load funding account: %v", err)
 	}
 	funderAddress := mustDecodeAddress(t, funder.GetAddress())
-	provider := newGeneralProvider(t, network)
+	provider := plainHostProvider(t, network, plainFalconKeyType)
 	listed := algocrypto.GenerateAccount()
 	account := newCorridorExecutionAccount(t, provider, []types.Address{listed.Address}, funderAddress)
 	proof := account.proofFor(t, funderAddress)
@@ -67,7 +67,7 @@ func TestCorridorDeclaredOpcodeCeilings(t *testing.T) {
 	report, err := harness.ValidateDeclaredOpcodeCeiling(context.Background(), compileAlgod, harness.OpcodeCeilingValidation{
 		Name:          "Corridor " + corridorShape().Descriptor(),
 		FinalProgram:  account.bytecode,
-		Profile:       provider.LogicSigOpcodeProfile(),
+		Profile:       provider.BoundedLogicSigOpcodeProfile(),
 		Bounded:       true,
 		RequiredPaths: []lsigresource.AuthorizationPath{lsigresource.PathSpend, lsigresource.PathListedRekey},
 		Vectors: []harness.OpcodeCeilingVector{
@@ -101,7 +101,7 @@ func TestCorridorLogicSigExecutionMatrixLocalnet(t *testing.T) {
 	allowed := allowedAccount.Address
 	outside := algocrypto.GenerateAccount().Address
 	funderAddress := mustDecodeAddress(t, funder.GetAddress())
-	provider := newGeneralProvider(t, testnet)
+	provider := plainHostProvider(t, testnet, plainFalconKeyType)
 	// Each Corridor account lists a key the cleanup holds: the way out once the
 	// matrix is done.
 	transferExit := algocrypto.GenerateAccount()
@@ -271,10 +271,12 @@ func TestCorridorLogicSigExecutionMatrixLocalnet(t *testing.T) {
 }
 
 type corridorExecutionAccount struct {
-	address            string
-	bytecode           []byte
-	recipientsParam    string
+	address         string
+	bytecode        []byte
+	recipientsParam string
+	// userPrivateKey is the spending key: Falcon-1024 or, with edKey set, Ed25519.
 	userPrivateKey     []byte
+	edKey              stded25519.PrivateKey
 	cosignerPrivateKey []byte
 	metadata           *boundedmeta.Metadata
 	// rekeyList is an only-these account's rekey-to list, rebuilt from its
@@ -282,19 +284,19 @@ type corridorExecutionAccount struct {
 	rekeyList *rekeylist.List
 }
 
-// corridorShape is the general bounded type's Corridor preset
-// (internal/boundary/preset.go): every transfer kind, a Merkle list, a cosigner on
-// every spend, and a rekey only to a listed address, with the spending key alone.
-func corridorShape() boundedaccount.Shape {
-	return boundedaccount.Shape{
+// corridorShape is the plain host's Corridor preset (internal/boundary/preset.go):
+// every transfer kind, a Merkle list, a cosigner on every spend, and a rekey only
+// to a listed address, with the spending key alone.
+func corridorShape() plainhost.Shape {
+	return plainhost.Shape{
 		Spend:    []txeffects.SpendEffect{txeffects.SpendEffectPay, txeffects.SpendEffectAxfer, txeffects.SpendEffectAssetOptIn},
-		Encoding: boundedaccount.EncodingMerkle,
-		Rekey:    boundedaccount.RekeyOnlyThese,
+		Encoding: plainhost.EncodingMerkle,
+		Rekey:    plainhost.RekeyOnlyThese,
 		Cosigner: true,
 	}
 }
 
-func newCorridorExecutionAccount(t *testing.T, provider *boundedaccount.Provider, rekeyTo []types.Address, recipients ...types.Address) corridorExecutionAccount {
+func newCorridorExecutionAccount(t *testing.T, provider *plainhost.Provider, rekeyTo []types.Address, recipients ...types.Address) corridorExecutionAccount {
 	t.Helper()
 	if len(recipients) == 0 || len(rekeyTo) == 0 {
 		t.Fatal("corridor execution account requires a recipient and a rekey-to address")
@@ -307,7 +309,7 @@ func newCorridorExecutionAccount(t *testing.T, provider *boundedaccount.Provider
 	for i, target := range rekeyTo {
 		rekeyToStrings[i] = target.String()
 	}
-	account := newGeneralAccount(t, provider, corridorShape(), recipientStrings, 0, rekeyToStrings)
+	account := newBoundsAccount(t, provider, corridorShape(), recipientStrings, 0, rekeyToStrings)
 	if account.metadata.Layer3Policy != boundedmeta.Layer3PolicyMerkleAllowlist || account.metadata.Cosigner == nil ||
 		account.metadata.Rekey != boundedmeta.RekeyRefused || account.metadata.RekeyList == nil {
 		t.Fatalf("account is not a Corridor: layer3_policy=%q cosigner=%v rekey=%q list=%v",
@@ -374,10 +376,7 @@ func (a corridorExecutionAccount) signedGroup(t *testing.T, targetTxn types.Tran
 		t.Fatalf("corridor transaction ID length %d, want %d", len(txidBytes), len(txid))
 	}
 	copy(txid[:], txidBytes)
-	userSignature, err := signerops.New(nil).Sign(a.userPrivateKey, txid[:])
-	if err != nil {
-		t.Fatalf("failed to sign corridor base message: %v", err)
-	}
+	userSignature := a.signBase(t, txid[:])
 	cosignerSignature := a.signComponent(t, message.RoleCosigner, txid, a.cosignerPrivateKey)
 	args := a.spendArgs(t, userSignature, proof, a.listProof(targetTxn.RekeyTo), cosignerSignature)
 	if mutateArgs != nil {
@@ -411,6 +410,19 @@ func (a corridorExecutionAccount) signedGroup(t *testing.T, targetTxn types.Tran
 		group = append(group, dummy)
 	}
 	return group, algocrypto.GetTxID(targetTxn)
+}
+
+// signBase signs message with the spending key.
+func (a corridorExecutionAccount) signBase(t *testing.T, message []byte) []byte {
+	t.Helper()
+	if a.edKey != nil {
+		return stded25519.Sign(a.edKey, message)
+	}
+	signature, err := signerops.New(nil).Sign(a.userPrivateKey, message)
+	if err != nil {
+		t.Fatalf("sign spending message: %v", err)
+	}
+	return signature
 }
 
 func (a corridorExecutionAccount) argumentIndex(t *testing.T, source string) int {

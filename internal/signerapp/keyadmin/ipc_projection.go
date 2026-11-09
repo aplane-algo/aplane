@@ -39,6 +39,7 @@ func ProjectPrepareGenerateIPC(prepared *PreparedGeneration, err *Error) adminpr
 	result := adminproto.PrepareGenerateKeyResult{
 		Success:           true,
 		KeyType:           prepared.KeyType,
+		BaseKeyType:       prepared.BaseKeyType,
 		Parameters:        prepared.Parameters,
 		Fingerprint:       prepared.Fingerprint,
 		ReviewFingerprint: prepared.ReviewFingerprint,

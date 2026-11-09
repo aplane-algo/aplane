@@ -15,8 +15,12 @@ import (
 // PreparedGeneration describes the account a generation request would create.
 // It has no address: that depends on a spending key that does not exist yet.
 type PreparedGeneration struct {
-	KeyType    string
-	Parameters map[string]string
+	KeyType string
+	// BaseKeyType is the signature base the spending key uses, when the key
+	// type composes over one: the plain hosts are their own base, and a
+	// composed template names one. Empty for any other key type.
+	BaseKeyType string
+	Parameters  map[string]string
 	// Fingerprint is the provenance the account would record.
 	Fingerprint string
 	// ReviewFingerprint is what the operator approves here and generation checks.
@@ -57,6 +61,9 @@ func (s Service) PrepareGenerateKey(keyType string, params map[string]string) (*
 	if provider := lsigprovider.Get(creation.keyType); provider != nil {
 		if err := provider.ValidateCreationParams(creation.params); err != nil {
 			return nil, &Error{Kind: ErrorInvalidInput, Message: err.Error()}
+		}
+		if based, ok := provider.(interface{ BaseKeyType() string }); ok {
+			prepared.BaseKeyType = based.BaseKeyType()
 		}
 	}
 	if creation.instance != nil {

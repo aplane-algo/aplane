@@ -22,6 +22,9 @@ import (
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
+// boundaryHostKeyType is a plain host, which takes boundary files.
+const boundaryHostKeyType = "aplane.falcon1024.v1"
+
 func writeBoundary(t *testing.T, extra string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "boundary.yaml")
@@ -44,7 +47,7 @@ func witnessIDFor(t *testing.T, fill byte) (string, string) {
 }
 
 func TestPreviewSummarizesTheFileWithoutResolvingAnything(t *testing.T) {
-	preview, err := (&App{}).PreviewBoundaryFile(boundary.KeyTypeV1, writeBoundary(t, "cosigner: ops-cosigner\n"))
+	preview, err := (&App{}).PreviewBoundaryFile(boundaryHostKeyType, writeBoundary(t, "cosigner: ops-cosigner\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +67,7 @@ func TestPreviewSummarizesTheFileWithoutResolvingAnything(t *testing.T) {
 
 func TestPreviewRecognizesAStableWitnessKeyID(t *testing.T) {
 	id, _ := witnessIDFor(t, 0x61)
-	preview, err := (&App{}).PreviewBoundaryFile(boundary.KeyTypeV1, writeBoundary(t, "cosigner: "+id+"\n"))
+	preview, err := (&App{}).PreviewBoundaryFile(boundaryHostKeyType, writeBoundary(t, "cosigner: "+id+"\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +83,7 @@ func TestPreviewOfATimelockWithNoList(t *testing.T) {
 	if err := os.WriteFile(path, []byte("schema: aplane.boundary.v1\nspend: [pay]\nrekey: {authority: only_these, to: ["+target+"]}\nunlock_round: 50000000\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	preview, err := (&App{}).PreviewBoundaryFile(boundary.KeyTypeV1, path)
+	preview, err := (&App{}).PreviewBoundaryFile(boundaryHostKeyType, path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +100,7 @@ func TestPreviewOfALimitsOnlyAccount(t *testing.T) {
 	if err := os.WriteFile(path, []byte("schema: aplane.boundary.v1\nspend: [pay]\nrekey: {authority: spending_key}\nrecipient_scope: any\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	preview, err := (&App{}).PreviewBoundaryFile(boundary.KeyTypeV1, path)
+	preview, err := (&App{}).PreviewBoundaryFile(boundaryHostKeyType, path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,14 +113,14 @@ func TestPreviewOfALimitsOnlyAccount(t *testing.T) {
 }
 
 func TestPreviewRejectsAnInvalidFile(t *testing.T) {
-	if _, err := (&App{}).PreviewBoundaryFile(boundary.KeyTypeV1, writeBoundary(t, "teal: \"int 1\"\n")); err == nil {
+	if _, err := (&App{}).PreviewBoundaryFile(boundaryHostKeyType, writeBoundary(t, "teal: \"int 1\"\n")); err == nil {
 		t.Fatal("a file carrying TEAL was accepted")
 	}
 }
 
 func TestResultCarriesTheSignersAuthorityIDs(t *testing.T) {
 	result := generateResultFromEngine(&engine.GenerateKeyResult{
-		Address: "ADDRESS", KeyType: boundary.KeyTypeV1, CosignerKeyID: "COSIGNER",
+		Address: "ADDRESS", KeyType: boundaryHostKeyType, CosignerKeyID: "COSIGNER",
 	})
 	if result.CosignerKeyID != "COSIGNER" {
 		t.Fatalf("result = %+v", result)
@@ -155,7 +158,7 @@ func TestRequestedCosignerMustBeConfirmed(t *testing.T) {
 // The file must not pass for a daemon-issued receipt, so it has no such fields.
 func TestGenerationResultIsNotAReceipt(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "result.json")
-	result := &GenerateKeyCommandResult{Address: "ADDRESS", KeyType: boundary.KeyTypeV1, Parameters: map[string]string{"recipients": "A"}, CosignerKeyID: "COSIGNER"}
+	result := &GenerateKeyCommandResult{Address: "ADDRESS", KeyType: boundaryHostKeyType, Parameters: map[string]string{"recipients": "A"}, CosignerKeyID: "COSIGNER"}
 	if err := WriteGenerationResult(path, result); err != nil {
 		t.Fatal(err)
 	}
@@ -200,6 +203,10 @@ func TestSplitGenerateOptions(t *testing.T) {
 	if len(rest) != 2 || rest[0] != "recipients=A" || rest[1] != "boundary=42" {
 		t.Fatalf("rest = %v", rest)
 	}
+	// A file whose name has "=" in it is given as --flag=FILE.
+	if options, _, err = SplitGenerateOptions([]string{"--result=out=1.json"}); err != nil || options.ResultFile != "out=1.json" {
+		t.Fatalf("--result=FILE with =: options = %+v, err = %v", options, err)
+	}
 	options, rest, err = SplitGenerateOptions([]string{"other=1"})
 	if err != nil || options != (GenerateOptions{}) || len(rest) != 1 {
 		t.Fatalf("no flags: options = %+v, rest = %v, err = %v", options, rest, err)
@@ -211,6 +218,9 @@ func TestSplitGenerateOptions(t *testing.T) {
 		"boundary twice":     {"--boundary=a", "--boundary=b"},
 		"result given twice": {"--result=a", "--result", "b"},
 		"flag as a value":    {"--result", "--boundary=corridor.yaml"},
+		// A forgotten file name must not swallow a parameter.
+		"parameter as a result file":   {"--result", "cosigner=ops", "rekey_authority=spending_key"},
+		"parameter as a boundary file": {"--boundary", "unlock_round=100"},
 	} {
 		if _, _, err := SplitGenerateOptions(args); err == nil {
 			t.Fatalf("%s: SplitGenerateOptions(%v) accepted it", name, args)
@@ -246,6 +256,47 @@ func TestCheckBoundaryKeyType(t *testing.T) {
 	} {
 		if err := checkBoundaryKeyType(bounded.KeyType, inventory); err == nil {
 			t.Fatalf("%s: checkBoundaryKeyType() accepted it", name)
+		}
+	}
+}
+
+func writeBoundaryBody(t *testing.T, body string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "boundary.yaml")
+	if err := os.WriteFile(path, []byte("schema: aplane.boundary.v1\n"+body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// A file without spend has no bounds: it describes the overlays alone, a
+// plain1 account, and can't name what only bounds take.
+func TestBoundaryFileWithoutSpendIsOverlaysOnly(t *testing.T) {
+	target := types.Address{31: 9}.String()
+	preview, err := (&App{}).PreviewBoundaryFile(boundaryHostKeyType, writeBoundaryBody(t, "rekey: {authority: only_these, to: ["+target+"]}\ncosigner: ops-cosigner\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !preview.NoBounds || preview.Transfers != nil || preview.Rekey != boundary.RekeyOnlyThese || len(preview.RekeyTo) != 1 {
+		t.Fatalf("preview = %+v", preview)
+	}
+	if _, ok := preview.Parameters[boundary.ParameterSpendEffects]; ok {
+		t.Fatalf("an overlays-only file sent spend_effects: %v", preview.Parameters)
+	}
+	refused, err := (&App{}).PreviewBoundaryFile(boundaryHostKeyType, writeBoundaryBody(t, "rekey: {authority: refused}\n"))
+	if err != nil || !refused.NoBounds || refused.Rekey != boundary.RekeyRefused {
+		t.Fatalf("refused = %+v, %v", refused, err)
+	}
+	for name, body := range map[string]string{
+		"recipients without spend": "recipients: [" + target + "]\nrekey: {authority: spending_key}\n",
+		"a scope without spend":    "recipient_scope: any\nrekey: {authority: spending_key}\n",
+		"a timelock without spend": "unlock_round: 5\nrekey: {authority: spending_key}\n",
+		"an empty spend":           "spend: []\nrekey: {authority: spending_key}\n",
+		"no rekey":                 "cosigner: ops-cosigner\n",
+		"a list beside refused":    "rekey: {authority: refused, to: [" + target + "]}\n",
+	} {
+		if _, err := (&App{}).PreviewBoundaryFile(boundaryHostKeyType, writeBoundaryBody(t, body)); err == nil {
+			t.Errorf("%s: accepted", name)
 		}
 	}
 }

@@ -27,7 +27,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/txeffects"
-	"github.com/aplane-algo/aplane/lsig/boundedaccount"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	"github.com/aplane-algo/aplane/lsig/ed25519lsig"
 	falcon1024 "github.com/aplane-algo/aplane/lsig/falcon1024"
@@ -46,7 +45,6 @@ const (
 // generates one. Its spending key is Falcon-1024 or, with edKey set, Ed25519.
 type plainHostAccount struct {
 	corridorExecutionAccount
-	edKey stded25519.PrivateKey
 }
 
 func plainHostProvider(t *testing.T, network *harness.TestnetConfig, keyType string) *plainhost.Provider {
@@ -61,6 +59,24 @@ func plainHostProvider(t *testing.T, network *harness.TestnetConfig, keyType str
 	return provider
 }
 
+// newSpendingKey generates a plain host's spending key: Ed25519 on the Ed25519
+// host, returned as edKey too, and Falcon-1024 otherwise.
+func newSpendingKey(t *testing.T, keyType string) ([]byte, []byte, stded25519.PrivateKey) {
+	t.Helper()
+	if keyType == plainEd25519KeyType {
+		public, private, err := stded25519.GenerateKey(cryptorand.Reader)
+		if err != nil {
+			t.Fatalf("generate Ed25519 spending key: %v", err)
+		}
+		return public, private, private
+	}
+	public, private, err := signerops.New(nil).GenerateKeypair(randomFalconSeed(t))
+	if err != nil {
+		t.Fatalf("generate Falcon spending key: %v", err)
+	}
+	return public, private, nil
+}
+
 func listedArrangement(arrangement plainhost.Arrangement) bool {
 	return arrangement.Rekey == plainhost.RekeyOnlyThese || arrangement.Rekey == plainhost.RekeyPlusCosigned
 }
@@ -72,19 +88,8 @@ func newPlainHostAccount(t *testing.T, network *harness.TestnetConfig, keyType s
 	t.Helper()
 	provider := plainHostProvider(t, network, keyType)
 	var account plainHostAccount
-	var spendingPublic, spendingPrivate []byte
-	if keyType == plainEd25519KeyType {
-		public, private, err := stded25519.GenerateKey(cryptorand.Reader)
-		if err != nil {
-			t.Fatalf("generate Ed25519 spending key: %v", err)
-		}
-		spendingPublic, spendingPrivate, account.edKey = public, private, private
-	} else {
-		var err error
-		if spendingPublic, spendingPrivate, err = signerops.New(nil).GenerateKeypair(randomFalconSeed(t)); err != nil {
-			t.Fatalf("generate Falcon spending key: %v", err)
-		}
-	}
+	spendingPublic, spendingPrivate, edKey := newSpendingKey(t, keyType)
+	account.edKey = edKey
 	params := map[string]string{plainhost.ParameterRekeyAuthority: arrangement.Rekey}
 	if arrangement.Cosigner {
 		cosignerPublic, cosignerPrivate, err := signerops.New(nil).GenerateKeypair(randomFalconSeed(t))
@@ -132,18 +137,6 @@ func newPlainHostAccount(t *testing.T, network *harness.TestnetConfig, keyType s
 		account.rekeyList = list
 	}
 	return account
-}
-
-func (a plainHostAccount) signBase(t *testing.T, message []byte) []byte {
-	t.Helper()
-	if a.edKey != nil {
-		return stded25519.Sign(a.edKey, message)
-	}
-	signature, err := signerops.New(nil).Sign(a.userPrivateKey, message)
-	if err != nil {
-		t.Fatalf("sign spending message: %v", err)
-	}
-	return signature
 }
 
 // signGroup signs one transaction from the plain host in a budget group, as
@@ -476,29 +469,33 @@ func TestPlainHostArrangementsOnChainLocalnet(t *testing.T) {
 	}
 }
 
-// Plain hosts created and spent through the signer: a cosigned one, on Falcon
-// and on Ed25519, signs through the cosigned flow and asks the cosigner; one
-// without a cosigner and the plain program sign through /sign and never ask it.
-// Each pays and then closes out.
-// activatePlainHosts enables both plain host types on the node's signer, as an
-// operator does before generating one.
+// activatePlainHosts enables the opt-in plain host, Ed25519, on the node's
+// signer, as an operator does before generating one. The Falcon host is enabled
+// by default and takes no activation.
 func activatePlainHosts(t *testing.T, n *cosignedNode) {
+	t.Helper()
+	if result := activateKeyType(t, n, plainEd25519KeyType); !result.Success {
+		t.Fatalf("activate %s: %+v", plainEd25519KeyType, result)
+	}
+}
+
+// activateKeyType asks the node's signer to activate keyType and returns its answer.
+func activateKeyType(t *testing.T, n *cosignedNode, keyType string) protocol.ActivateKeyTypeResultMessage {
 	t.Helper()
 	ipc := mustConnectIPCClient(t, n.signerd.GetWorkDir())
 	defer ipc.Close()
-	for _, keyType := range []string{plainFalconKeyType, plainEd25519KeyType} {
-		response, err := ipc.SendAndReceive(protocol.ActivateKeyTypeMessage{
-			BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeActivateKeyType, ID: fmt.Sprintf("activate-%d", time.Now().UnixNano())},
-			KeyType:     keyType,
-		}, 30*time.Second)
-		if err != nil {
-			t.Fatalf("activate %s: %v", keyType, err)
-		}
-		var result protocol.ActivateKeyTypeResultMessage
-		if err := json.Unmarshal(response, &result); err != nil || !result.Success {
-			t.Fatalf("activate %s: %+v, %v", keyType, result, err)
-		}
+	response, err := ipc.SendAndReceive(protocol.ActivateKeyTypeMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeActivateKeyType, ID: fmt.Sprintf("activate-%d", time.Now().UnixNano())},
+		KeyType:     keyType,
+	}, 30*time.Second)
+	if err != nil {
+		t.Fatalf("activate %s: %v", keyType, err)
 	}
+	var result protocol.ActivateKeyTypeResultMessage
+	if err := json.Unmarshal(response, &result); err != nil {
+		t.Fatalf("activate %s: %v", keyType, err)
+	}
+	return result
 }
 
 // generatePlainHost generates and funds a plain host through the signer and
@@ -567,8 +564,31 @@ func TestPlainHostMixedGroupThroughSigner(t *testing.T) {
 	}
 }
 
+// Plain hosts created and spent through the signer: a cosigned one, on Falcon
+// and on Ed25519, signs through the cosigned flow and asks the cosigner; one
+// without a cosigner and the plain program sign through /sign and never ask it.
+// Each pays and then closes out.
 func TestPlainHostThroughSigner(t *testing.T) {
 	n := newCosignedNode(t)
+	// The Falcon host is enabled by default; it is not a library key type, so it
+	// can't be activated as one.
+	t.Run("the Falcon host is enabled by default", func(t *testing.T) {
+		result := activateKeyType(t, n, plainFalconKeyType)
+		if result.Success || !strings.Contains(result.Error, "is not library-visible") {
+			t.Fatalf("activate %s: %+v, want the not-library-visible refusal", plainFalconKeyType, result)
+		}
+		keyTypes, err := n.client.GetKeyTypes()
+		if err != nil {
+			t.Fatalf("list key types: %v", err)
+		}
+		enabled := false
+		for _, info := range keyTypes.KeyTypes {
+			enabled = enabled || info.KeyType == plainFalconKeyType
+		}
+		if !enabled {
+			t.Fatalf("%s is not enabled by default", plainFalconKeyType)
+		}
+	})
 	activatePlainHosts(t, n)
 
 	for _, tc := range []struct {
@@ -759,11 +779,11 @@ func TestBoundedMeshLocalnet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load funding account: %v", err)
 	}
-	provider := newGeneralProvider(t, network)
-	shape := boundedaccount.Shape{
+	provider := plainHostProvider(t, network, plainFalconKeyType)
+	shape := plainhost.Shape{
 		Spend:    []txeffects.SpendEffect{txeffects.SpendEffectPay},
-		Encoding: boundedaccount.EncodingInline,
-		Rekey:    boundedaccount.RekeyOnlyThese,
+		Encoding: plainhost.EncodingInline,
+		Rekey:    plainhost.RekeyOnlyThese,
 	}
 
 	hatch := algocrypto.GenerateAccount()
@@ -791,7 +811,7 @@ func TestBoundedMeshLocalnet(t *testing.T) {
 				allowed = append(allowed, other.address())
 			}
 		}
-		member.program = newGeneralAccount(t, provider, shape, allowed, 0, []string{member.listed.Address.String()})
+		member.program = newBoundsAccount(t, provider, shape, allowed, 0, []string{member.listed.Address.String()})
 		rekey := corridorPaymentTxn(t, mustSuggestedParams(t, network), member.address(), member.address(), 0, "mesh-join")
 		rekey.RekeyTo = mustDecodeAddress(t, member.program.address)
 		submitEd25519TxnExpectSuccess(t, network, member.key.PrivateKey, rekey)
@@ -847,7 +867,7 @@ func TestBoundedMeshLocalnet(t *testing.T) {
 		old := member.program
 		nextListed := algocrypto.GenerateAccount()
 		// The new program pays only the hatch.
-		next := newGeneralAccount(t, provider, shape, []string{hatch.Address.String()}, 0, []string{nextListed.Address.String()})
+		next := newBoundsAccount(t, provider, shape, []string{hatch.Address.String()}, 0, []string{nextListed.Address.String()})
 		meshHandOver(t, network, member.address(), old, member.listed, next.address)
 		if got := authAddress(t, network, member.address()); got != next.address {
 			t.Fatalf("authorizer = %q, want the new program %s", got, next.address)
