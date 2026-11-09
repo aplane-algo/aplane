@@ -71,7 +71,7 @@ func TestLockedSignerStatusFetchesKeyTypes(t *testing.T) {
 
 func TestTemplateLibraryColumnsAlignAtMinWidth(t *testing.T) {
 	entries := []protocol.LibraryTemplateInfo{
-		{KeyType: "aplane.falcon1024-allowlist-lock.v1", TemplateType: "composed", Installed: true, Enabled: true},
+		{KeyType: "aplane.falcon1024-allowlist-wide.v1", TemplateType: "composed", Installed: true, Enabled: true},
 		{KeyType: "aplane.htlc.v1", TemplateType: "generic", Installed: true},
 		{KeyType: "aplane.ed25519.v1", TemplateType: libraryTypeCompiledProvider},
 	}
@@ -191,7 +191,7 @@ func TestTemplateLibraryViewKeyOpensDetailsViewerForYAMLEntry(t *testing.T) {
 }
 
 func TestTemplateLibraryViewKeyShowsInstalledTemplateWithoutLibraryFile(t *testing.T) {
-	keyType := "aplane.corridor.v1"
+	keyType := "aplane.pathway1.v1"
 	m := Model{
 		viewState: ViewTemplateLibrary,
 		library: libraryState{selectedTemplate: 0, templates: []protocol.LibraryTemplateInfo{{
@@ -229,7 +229,7 @@ func TestInstalledTemplateReplyReachesTheDetailsView(t *testing.T) {
 	raw, err := json.Marshal(ShowInstalledTemplateResultMessage{
 		BaseMessage:  BaseMessage{Type: MsgTypeShowInstalledTemplateResult},
 		Success:      true,
-		KeyType:      "aplane.corridor.v1",
+		KeyType:      "aplane.pathway1.v1",
 		TemplateType: "composed",
 		TemplateYAML: []byte("schema_version: 2\n"),
 	})
@@ -245,7 +245,7 @@ func TestInstalledTemplateReplyReachesTheDetailsView(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, ok := decoded.(ShowLibraryTemplateResultMsg)
-	if !ok || !got.Success || got.KeyType != "aplane.corridor.v1" || string(got.TemplateYAML) != "schema_version: 2\n" {
+	if !ok || !got.Success || got.KeyType != "aplane.pathway1.v1" || string(got.TemplateYAML) != "schema_version: 2\n" {
 		t.Fatalf("decoded = %#v", decoded)
 	}
 }

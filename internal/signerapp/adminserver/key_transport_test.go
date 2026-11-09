@@ -250,7 +250,7 @@ func TestPrepareGenerateKeyOverIPC(t *testing.T) {
 		Success: true, KeyType: "test.bounded.v1", Fingerprint: "1:abc", CosignerKeyID: "COSIGNER",
 		Bounded: &adminproto.PreparedBoundedProfile{
 			Contract: "bounded1", SpendEffects: []string{"pay"}, MaxFee: 10_000, Layer3Policy: "merkle_allowlist", CosignerRequired: true,
-			AdminOperations: []adminproto.PreparedAdminOperation{{Kind: "rekey", Authorization: "admin_key", PolicyGate: "none"}},
+			AdminOperations: []adminproto.PreparedAdminOperation{{Kind: "rekey", Authorization: "spending_key", PolicyGate: "none"}},
 		},
 	}
 	session.HandlePrepareGenerateKey(&protocol.PrepareGenerateKeyMessage{

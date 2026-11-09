@@ -12,10 +12,10 @@ func TestWitnessCustodianCapabilities(t *testing.T) {
 		want      bool
 	}{
 		{CustodianNetworkedSigner, DomainCosignerComponent, true},
-		{CustodianNetworkedSigner, DomainBoundedAdmin, false},
-		{CustodianOfflineCeremony, DomainCosignerComponent, false},
-		{CustodianOfflineCeremony, DomainBoundedAdmin, true},
+		{CustodianNetworkedSigner, MessageDomain("unknown"), false},
 		{Custodian("unknown"), DomainCosignerComponent, false},
+		// The retired offline custodian is now just unknown.
+		{Custodian("offline_ceremony"), DomainCosignerComponent, false},
 	}
 	for _, test := range tests {
 		if got := Allows(test.custodian, test.domain); got != test.want {

@@ -16,13 +16,11 @@ type boundedSigningWorkflow int
 
 const (
 	boundedWorkflowCosigner boundedSigningWorkflow = iota + 1
-	boundedWorkflowExternalAdmin
 )
 
 // boundedSigningConstructions lists, for each durable contract and workflow, the
 // spending constructions this signer's code completes: the receipt and component
-// choreography for a cosigner, and the partial plus external completion for an
-// admin rekey. Both are Falcon-only today.
+// choreography for a cosigner, Falcon-only today.
 //
 // This is a fact about the signing implementation, so it is kept apart from the
 // generation admission policy in composeddsa. Admission decides which accounts
@@ -32,8 +30,7 @@ const (
 // TestBoundedGenerationAdmitsOnlySignableWorkflows pins that.
 var boundedSigningConstructions = map[string]map[boundedSigningWorkflow][]sigconstruction.ConstructionID{
 	boundedmeta.ContractV1: {
-		boundedWorkflowCosigner:      {sigconstruction.Falcon1024().ID()},
-		boundedWorkflowExternalAdmin: {sigconstruction.Falcon1024().ID()},
+		boundedWorkflowCosigner: {sigconstruction.Falcon1024().ID()},
 	},
 }
 

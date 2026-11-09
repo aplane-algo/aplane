@@ -372,55 +372,6 @@ func TestBytesParameterFieldUsesDeclaredHexLength(t *testing.T) {
 	}
 }
 
-func TestParameterModalShowsContractAdminReferencePath(t *testing.T) {
-	defer setServerKeyTypes(nil)
-
-	const suffix = "B6VKKS7RQNVGBTM2ZPE3ICM2W7DLBNM62JKE3UVV4D4KRY3ND7IQ.adm.json"
-	value := "/media/cold/" + strings.Repeat("directory/", 12) + suffix
-	setServerKeyTypes([]protocol.KeyTypeInfo{{
-		KeyType:     "aplane.falcon1024-allowlist-lock.v1",
-		DisplayName: "Falcon Bounded Allowlist",
-		CreationParams: []protocol.TemplateParamInfo{{
-			Name:      "bounded_admin_public_key",
-			Label:     "Contract Admin Public Key",
-			Type:      "bytes",
-			Required:  true,
-			MaxLength: 1793 * 2,
-		}},
-	}})
-
-	m := Model{
-		viewState:       ViewGenerateParams,
-		connectionState: ConnectionConnected,
-		width:           100,
-		height:          40,
-		forms: formsState{
-			generateFocus:     1,
-			genericLSigParams: map[string]string{"bounded_admin_public_key": value},
-		},
-	}
-
-	rendered := stripANSI(m.renderParameterModalForKeyType("aplane.falcon1024-allowlist-lock.v1", "GENERATE", ""))
-	if !strings.Contains(rendered, "Contract Admin Reference File (.adm.json)") || !strings.Contains(rendered, "...") || !strings.Contains(rendered, "D7IQ.adm.json") {
-		t.Fatalf("parameter modal does not show the public reference path:\n%s", rendered)
-	}
-	if strings.Contains(rendered, "PASTE KEY") || strings.Contains(rendered, "REPLACE KEY") {
-		t.Fatalf("parameter modal still shows the removed paste action:\n%s", rendered)
-	}
-	if strings.Contains(rendered, " #") || strings.Contains(rendered, " |") {
-		t.Fatalf("parameter modal still shows the removed scrollbar:\n%s", rendered)
-	}
-	if !firstRoundedBoxHasBottomBorder(rendered) {
-		t.Fatalf("reference path field clipped its bottom border:\n%s", rendered)
-	}
-
-	m.forms.generateFocus = 0
-	rendered = stripANSI(m.renderParameterModalForKeyType("aplane.falcon1024-allowlist-lock.v1", "GENERATE", ""))
-	if !strings.Contains(rendered, "D7IQ.adm.json_") {
-		t.Fatalf("editing reference path does not show its suffix:\n%s", rendered)
-	}
-}
-
 func TestParameterModalMultilineFieldBottomFitsShortPane(t *testing.T) {
 	defer setServerKeyTypes(nil)
 

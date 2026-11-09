@@ -122,7 +122,6 @@ Clients should:
 
 **Protected Endpoints:**
 - `POST /sign` - Submit signing requests
-- `POST /sign/bounded-admin` - Prepare an external contract-admin partial
 - `POST /sign/component` - Produce guarded or bounded, kind-tagged components
 - `POST /sign/assemble` - Assemble guarded or bounded-cosigner signed groups
 - `POST /sign/cancel` - Cancel a live synchronous signing request by request ID
@@ -137,10 +136,9 @@ Clients should:
 - `POST /admin/rotating/recover` - Start or cancel a rotating account's stage recovery
 
 **Request Size Limits:**
-- JSON POST endpoints (`/sign`, `/sign/bounded-admin`, `/sign/component`,
-  `/sign/assemble`, `/sign/cancel`, `/sign/rotating/prepare`,
-  `/sign/rotating/sign`, `/plan`, `/admin/generate`, and
-  `/admin/rotating/recover`) enforce a 5 MB request body limit
+- JSON POST endpoints (`/sign`, `/sign/component`, `/sign/assemble`,
+  `/sign/cancel`, `/sign/rotating/prepare`, `/sign/rotating/sign`, `/plan`,
+  `/admin/generate`, and `/admin/rotating/recover`) enforce a 5 MB request body limit
 - Oversized requests receive HTTP 413 (Payload Too Large)
 - All authentication error responses use JSON format (not text/plain)
 
@@ -998,8 +996,7 @@ response handling, client enrollment or revocation, or policy/settings changes.
 Enforced callsites:
 
 - `internal/signerapp/daemon/http_runtime.go` wraps HTTP `/sign`,
-  `/sign/component`, `/sign/assemble`, `/sign/bounded-admin`,
-  `/sign/rotating/prepare`, `/sign/rotating/sign`, `/sign/cancel`, `/plan`,
+  `/sign/component`, `/sign/assemble`, `/sign/rotating/prepare`, `/sign/rotating/sign`, `/sign/cancel`, `/plan`,
   `/status`, `/keys`, `/keytypes`, `/admin/generate`, and `/admin/keys` with
   `requireAuth`.
 - `internal/signerapp/daemon/http_auth.go` calls `Authorizer.Authorize` after
@@ -1444,7 +1441,6 @@ server.httpAuth = newProductAuthenticator(server.nodeFailState, productRuntime)
 
 // Handler registration with action and resource (internal/signerapp/daemon/http_runtime.go)
 mux.HandleFunc("/sign", server.requireAuth(auth.ActionSignRequest, auth.Resource{Type: "transaction"}, server.handleSign))
-mux.HandleFunc("/sign/bounded-admin", server.requireAuth(auth.ActionSignRequest, auth.Resource{Type: "transaction"}, server.handleBoundedAdmin))
 mux.HandleFunc("/sign/component", server.requireAuth(auth.ActionSignComponent, auth.Resource{Type: "transaction"}, server.handleSignComponent))
 mux.HandleFunc("/sign/assemble", server.requireAuth(auth.ActionSignAssemble, auth.Resource{Type: "transaction"}, server.handleSignAssemble))
 mux.HandleFunc("/sign/rotating/prepare", server.requireAuth(auth.ActionSignRequest, auth.Resource{Type: "transaction"}, server.handleRotatingPrepare))
@@ -1884,43 +1880,13 @@ esac
 
 Helpers that only support `read` should exit non-zero on `write`. The caller will fall back to displaying the passphrase for manual storage.
 
-### Bounded Authorization Contract Admin Witnesses
+### Bounded Authorization
 
 Bounded1 requires the base spending signature on every accepted transaction.
-When a profile authorizes `rekey` with `admin_key`, every pure rekey also
-requires a Falcon-1024 contract-admin signature over a domain-separated digest
-of the exact transaction ID and immutable bounded program binding. Composer-
-owned checks reject rekey-plus-transfer, close, clawback, unsupported types,
-and over-ceiling fees before either signing path.
-
-The contract-admin private key is a Falcon-1024 witness in standalone custody,
-never a signer or `apstore` key. Apsigner
-runs normal policy and review (satisfied by User Auto-Approve when enabled), loads only the spending key, and
-returns a typed partial through `/sign/bounded-admin`. `aprekey`
-independently validates the finalized group, stored bounded metadata, supplied
-program, and pure-rekey shape before producing the final LogicSig argument.
-Ordinary `/sign` rejects admin-key operations rather than returning an
-apparently complete transaction.
-
-Keeping the `.adm` artifact off the signer makes the account
-structurally unable to perform admin-key operations when external custody is
-unavailable. A compromised unlocked signer can still make policy-permitted
-spends and request a partial, but cannot complete the on-chain admin gate.
-
-The same witness key form is used for signer-custodied cosigner authority, but
-the custodian capabilities are disjoint: the networked signer produces only
-`APLANE_COSIGNER_V1` component-domain signatures, while the offline ceremony
-produces only `APLANE_BOUNDED_ADMIN_AUTH_V1` signatures. One keypair should
-serve one role for life. Known local collisions are rejected during account
-generation; out-of-band reuse remains an operator responsibility and
-invalidates the intended role-containment argument.
-
-Online `aprekey rekey` owns network and signer connectivity but delegates
-private-key use to the helper's signing path. For a stronger custody boundary,
-`prepare-rekey` writes a non-secret `.apbounded-admin-request` for transfer to an
-offline ceremony machine; `sign` returns a request-bound
-`.apbounded-admin-signature`; and `complete` rechecks the frozen request before
-submission. See [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md).
+Composer-owned checks reject rekey-plus-transfer, close, clawback, unsupported
+types, and over-ceiling fees before signing. The only rekey authority is the
+spending key, and an account may declare no rekey operation at all. See
+[ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md).
 
 ### Defense in Depth
 

@@ -43,7 +43,6 @@ const (
 	browseCosignerImportFile
 	browseCosignerExportFile
 	browseClientKeyFile
-	browseContractAdminReference
 	browseBackupExportDir
 	browseBackupImportFile
 	browseBoundaryFile
@@ -74,8 +73,6 @@ func fileBrowserSpecFor(target fileBrowserTarget) fileBrowserSpec {
 		return fileBrowserSpec{title: "Choose Where to Save", chooseDir: true}
 	case browseClientKeyFile:
 		return fileBrowserSpec{title: "Choose Client Public Key", suffixes: []string{".pub"}}
-	case browseContractAdminReference:
-		return fileBrowserSpec{title: "Choose Contract Admin Reference", suffixes: []string{witness.AdminPublicReferenceExtension}}
 	case browseBackupExportDir:
 		return fileBrowserSpec{title: "Choose Where to Export", chooseDir: true, fillDir: true}
 	case browseBoundaryFile:
@@ -104,8 +101,6 @@ type fileBrowserEntry struct {
 type fileBrowserState struct {
 	target fileBrowserTarget
 	origin ViewState
-	// param is the parameter a contract-admin reference fills.
-	param string
 	// name is the file or directory name a directory chooser keeps.
 	name string
 
@@ -132,8 +127,8 @@ func (m Model) fileBrowserOpen() bool {
 // openFileBrowser opens a browser for target at the directory current names,
 // or at the target's usual place when current names none. name is the
 // default for the name a directory chooser keeps.
-func (m Model) openFileBrowser(target fileBrowserTarget, current, param, name string) Model {
-	b := fileBrowserState{target: target, origin: m.viewState, param: param}
+func (m Model) openFileBrowser(target fileBrowserTarget, current, name string) Model {
+	b := fileBrowserState{target: target, origin: m.viewState}
 	spec := b.spec()
 	start, fieldName := fileBrowserStartFromField(current)
 	switch {
@@ -517,13 +512,6 @@ func (m Model) chooseFileBrowserPath(path string) Model {
 	case browseBoundaryFile:
 		m.forms.boundaryFile = path
 		m.forms.generateError = ""
-	case browseContractAdminReference:
-		if m.forms.genericLSigParams == nil {
-			m.forms.genericLSigParams = make(map[string]string)
-		}
-		m.forms.genericLSigParams[b.param] = path
-		m.forms.generateError = ""
-		m.forms.importError = ""
 	}
 	return m
 }

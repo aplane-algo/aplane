@@ -125,9 +125,8 @@ prefix via `txnutil.EncodeWithPrefix`, hex-encodes the result into
 `TxnBytesHex`, and attaches `AuthAddress`, `TxnSender`, and any generic
 LogicSig args. See `internal/clientsign/submit.go` for the standard
 sign-and-submit path. The other call sites are
-`internal/engine/plugin_presign.go` (plugin pre-sign planning),
-`internal/engine/guarded/submit.go` (guarded and bounded-cosigner groups), and
-`internal/engine/bounded_admin.go` (bounded-admin partial signing).
+`internal/engine/plugin_presign.go` (plugin pre-sign planning) and
+`internal/engine/guarded/submit.go` (guarded and bounded-cosigner groups).
 
 ### In Signer (server side)
 
@@ -204,7 +203,6 @@ group-ID assignment.
 - `internal/clientsign/submit.go` - client-side request construction
 - `internal/engine/plugin_presign.go` - plugin pre-sign request construction
 - `internal/engine/guarded/submit.go` - guarded and bounded-cosigner request construction
-- `internal/engine/bounded_admin.go` - bounded-admin partial request construction
 - `internal/txnutil/txn.go` - TX-prefixed transaction encoding helpers
 - `internal/signerapp/signing/planner.go` - request categorization and transaction decoding
 - `internal/signerapp/signing/execution.go` - key-type-specific message selection and assembly

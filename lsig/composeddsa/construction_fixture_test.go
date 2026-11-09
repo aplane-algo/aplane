@@ -98,7 +98,7 @@ func compositeBase(construction sigconstruction.Construction) composeddsa.BaseRe
 }
 
 // compositeTemplate returns a bounded template on the fixture base. An extra block
-// such as an admin operation or a cosigner goes inside bounded.
+// such as a rekey operation or a cosigner goes inside bounded.
 func compositeTemplate(extra string) string {
 	return `
 schema_version: 2
@@ -125,10 +125,6 @@ const (
 	spendingKeyRekeyYAML = `  admin_operations:
     - kind: rekey
       authorization: spending_key
-      policy_gate: none`
-	adminKeyRekeyYAML = `  admin_operations:
-    - kind: rekey
-      authorization: admin_key
       policy_gate: none`
 	cosignerYAML = `  cosigner:
     contract: cosigner1
@@ -237,8 +233,8 @@ func TestCompositeArgumentsAreAssembledFromEverySlot(t *testing.T) {
 	}
 }
 
-// The gates read their slot from the layout, so a base of several slots has to
-// move them. Their key and signature are still Falcon under bounded1.
+// The cosigner gate reads its slot from the layout, so a base of several slots has
+// to move it. Its key and signature are still Falcon under bounded1.
 func TestAuthorityGatesFollowEveryBaseSlot(t *testing.T) {
 	construction := compositeConstruction(t, sigconstruction.PrimitiveFalcon1024, sigconstruction.PrimitiveEd25519)
 	key, _ := syntheticKey(construction)
@@ -250,10 +246,9 @@ func TestAuthorityGatesFollowEveryBaseSlot(t *testing.T) {
 		heading   string
 	}{
 		"cosigner": {cosignerYAML, composeddsa.BoundedCosignerPublicKeyParameter, boundedmeta.ArgSourceCosigner, "// Cosigner-authorized pure spend"},
-		"admin":    {adminKeyRekeyYAML, composeddsa.BoundedAdminPublicKeyParameter, boundedmeta.ArgSourceAdmin, "// Contract-admin-authorized pure rekey"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			provider := compositeProvider(t, construction, test.extra, composeddsa.FixtureSupport{ExternalAdmin: true, Cosigner: true})
+			provider := compositeProvider(t, construction, test.extra, composeddsa.FixtureSupport{Cosigner: true})
 			params := map[string]string{test.parameter: hex.EncodeToString(falconKey)}
 			teal, err := provider.GenerateTEAL(key, params)
 			if err != nil {
@@ -323,15 +318,16 @@ func TestProductionRefusesFixtureIdentities(t *testing.T) {
 func TestFixturePolicyBelongsToOneComposer(t *testing.T) {
 	construction := compositeConstruction(t, sigconstruction.PrimitiveFalcon1024, sigconstruction.PrimitiveEd25519)
 	key, _ := syntheticKey(construction)
-	params := map[string]string{composeddsa.BoundedAdminPublicKeyParameter: hex.EncodeToString(bytes.Repeat([]byte{0x41}, composeddsa.BoundedAdminPublicKeySize))}
+	params := map[string]string{composeddsa.BoundedCosignerPublicKeyParameter: hex.EncodeToString(bytes.Repeat([]byte{0x41}, boundedmeta.CosignerPublicKeySizeV1))}
 
-	permitted := compositeProvider(t, construction, adminKeyRekeyYAML, composeddsa.FixtureSupport{ExternalAdmin: true})
-	refused := compositeProvider(t, construction, adminKeyRekeyYAML, composeddsa.FixtureSupport{})
+	// A fixture's template rules and generation policy come from the same support,
+	// so a composer without cosigner support is refused when it is built.
+	permitted := compositeProvider(t, construction, cosignerYAML, composeddsa.FixtureSupport{Cosigner: true})
+	if _, err := composeddsa.NewFixtureProvider(parseCompositeTemplate(t, cosignerYAML), compositeBase(construction), composeddsa.FixtureSupport{}); err == nil || !strings.Contains(err.Error(), "bounded.cosigner requires") {
+		t.Fatalf("NewFixtureProvider() without fixture support error = %v", err)
+	}
 	if _, err := permitted.GenerateTEAL(key, params); err != nil {
 		t.Fatalf("GenerateTEAL() with fixture support error = %v", err)
-	}
-	if _, err := refused.GenerateTEAL(key, params); err == nil || !strings.Contains(err.Error(), "does not support") {
-		t.Fatalf("GenerateTEAL() without fixture support error = %v", err)
 	}
 	if composeddsa.ProductionSupportsBase(composeddsa.BoundedContractV1, fixtureBaseKeyType) {
 		t.Fatal("a fixture base reached the production policy")
@@ -389,9 +385,8 @@ func TestWitnessKeyMustDifferFromEverySpendingComponent(t *testing.T) {
 				parameter string
 			}{
 				"cosigner": {cosignerYAML, composeddsa.BoundedCosignerPublicKeyParameter},
-				"admin":    {adminKeyRekeyYAML, composeddsa.BoundedAdminPublicKeyParameter},
 			} {
-				provider := compositeProvider(t, construction, test.extra, composeddsa.FixtureSupport{ExternalAdmin: true, Cosigner: true})
+				provider := compositeProvider(t, construction, test.extra, composeddsa.FixtureSupport{Cosigner: true})
 				_, err := provider.GenerateTEAL(key, map[string]string{test.parameter: hex.EncodeToString(reused)})
 				if err == nil || !strings.Contains(err.Error(), "must differ from the spending key") {
 					t.Fatalf("%s: GenerateTEAL() error = %v", role, err)

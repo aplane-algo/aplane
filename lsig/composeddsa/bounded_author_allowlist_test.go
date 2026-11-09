@@ -5,19 +5,14 @@ package composeddsa_test
 
 import (
 	"bytes"
-	"context"
-	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"os"
 	"strings"
 	"testing"
 
-	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
-	"github.com/aplane-algo/aplane/internal/algo"
-	boundedprogram "github.com/aplane-algo/aplane/internal/boundedadmin/program"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	falcon1024 "github.com/aplane-algo/aplane/lsig/falcon1024"
@@ -79,15 +74,7 @@ var authorAllowlistCases = []authorAllowlistCase{
 
 // authorAllowlistYAML is an allowlist plus a preimage rule, with the rekey gated
 // through Layer 3 so the vector covers a runtime argument on both paths.
-func authorAllowlistYAML(test authorAllowlistCase, admin string) string {
-	required := "[spend, rekey]"
-	gate := "layer3"
-	if admin == "admin_key" {
-		required = "[spend]"
-		gate = "none"
-	} else {
-		admin = "spending_key"
-	}
+func authorAllowlistYAML(test authorAllowlistCase) string {
 	return fmt.Sprintf(`schema_version: 2
 derivation_version: 3
 template_type: composed
@@ -105,8 +92,8 @@ bounded:
   max_fee: 10000
   admin_operations:
     - kind: rekey
-      authorization: %s
-      policy_gate: %s
+      authorization: spending_key
+      policy_gate: layer3
   layer3:
     policy: %s
     recipients_parameter: recipients%s
@@ -114,7 +101,7 @@ bounded:
     - name: preimage
       type: bytes
       max_size: 64
-      required_on: %s
+      required_on: [spend, rekey]
 
 parameters:
   - name: recipients
@@ -140,7 +127,7 @@ teal: |
   $hash
   ==
   assert
-`, test.name, admin, gate, test.policy, test.derived, required, test.maxItems, test.preimageAt)
+`, test.name, test.policy, test.derived, test.maxItems, test.preimageAt)
 }
 
 func authorAllowlistProvider(t *testing.T, yaml string) *composeddsa.ComposedDSA {
@@ -178,7 +165,7 @@ func TestAllowlistWithAuthorTEALGoldenVectors(t *testing.T) {
 	doc := strings.NewReplacer(" ", "", "\t", "", "\r", "", "\n", "", "`", "").Replace(string(data))
 	for _, test := range authorAllowlistCases {
 		t.Run(test.name, func(t *testing.T) {
-			provider := authorAllowlistProvider(t, authorAllowlistYAML(test, ""))
+			provider := authorAllowlistProvider(t, authorAllowlistYAML(test))
 			metadata := provider.BoundedAuthorizationMetadata()
 			if metadata == nil || metadata.Layer3Policy != test.stored {
 				t.Fatalf("metadata = %#v, want layer3_policy %q", metadata, test.stored)
@@ -213,7 +200,7 @@ func TestAllowlistWithAuthorTEALGoldenVectors(t *testing.T) {
 func TestFrameworkAllowlistRunsBeforeAuthorTEAL(t *testing.T) {
 	for _, test := range authorAllowlistCases {
 		t.Run(test.name, func(t *testing.T) {
-			provider := authorAllowlistProvider(t, authorAllowlistYAML(test, ""))
+			provider := authorAllowlistProvider(t, authorAllowlistYAML(test))
 			if got := provider.Layer3PolicyName(); got != test.stored {
 				t.Fatalf("Layer3PolicyName() = %q, want %q", got, test.stored)
 			}
@@ -260,47 +247,47 @@ func TestFrameworkPolicyCombinationRejections(t *testing.T) {
 	}{
 		{
 			name: "stored fixed value cannot be declared",
-			yaml: strings.Replace(authorAllowlistYAML(fixed, ""), "policy: fixed_allowlist", "policy: fixed_allowlist_custom", 1),
+			yaml: strings.Replace(authorAllowlistYAML(fixed), "policy: fixed_allowlist", "policy: fixed_allowlist_custom", 1),
 			want: "unsupported policy",
 		},
 		{
 			name: "stored merkle value cannot be declared",
-			yaml: strings.Replace(authorAllowlistYAML(merkle, ""), "policy: merkle_allowlist", "policy: merkle_allowlist_custom", 1),
+			yaml: strings.Replace(authorAllowlistYAML(merkle), "policy: merkle_allowlist", "policy: merkle_allowlist_custom", 1),
 			want: "unsupported policy",
 		},
 		{
 			name: "only the two allowlists take author TEAL",
-			yaml: strings.Replace(authorAllowlistYAML(fixed, ""), "policy: fixed_allowlist", "policy: timelock", 1),
+			yaml: strings.Replace(authorAllowlistYAML(fixed), "policy: fixed_allowlist", "policy: timelock", 1),
 			want: "does not accept author TEAL",
 		},
 		{
 			name: "extra parameter needs author TEAL",
-			yaml: withoutRuntimeArgs(withoutAuthorTEAL(authorAllowlistYAML(fixed, ""))),
+			yaml: withoutRuntimeArgs(withoutAuthorTEAL(authorAllowlistYAML(fixed))),
 			want: "is not used by framework policy",
 		},
 		{
 			name: "runtime argument needs author TEAL",
-			yaml: withoutHash(withoutAuthorTEAL(authorAllowlistYAML(fixed, ""))),
+			yaml: withoutHash(withoutAuthorTEAL(authorAllowlistYAML(fixed))),
 			want: "has no author TEAL",
 		},
 		{
 			name: "author TEAL cannot return",
-			yaml: strings.Replace(authorAllowlistYAML(fixed, ""), "  assert\n", "  assert\n  int 1\n  return\n", 1),
+			yaml: strings.Replace(authorAllowlistYAML(fixed), "  assert\n", "  assert\n  int 1\n  return\n", 1),
 			want: "must not contain return",
 		},
 		{
 			name: "author TEAL cannot jump to the accept block",
-			yaml: strings.Replace(authorAllowlistYAML(fixed, ""), "  assert\n", "  assert\n  b __aplane_bounded1_accept\n", 1),
+			yaml: strings.Replace(authorAllowlistYAML(fixed), "  assert\n", "  assert\n  b __aplane_bounded1_accept\n", 1),
 			want: "reserved bounded label",
 		},
 		{
 			name: "author TEAL cannot jump back into the list",
-			yaml: strings.Replace(authorAllowlistYAML(merkle, ""), "  assert\n", "  assert\n  b __aplane_bounded1_merkle_done\n", 1),
+			yaml: strings.Replace(authorAllowlistYAML(merkle), "  assert\n", "  assert\n  b __aplane_bounded1_merkle_done\n", 1),
 			want: "reserved bounded label",
 		},
 		{
 			name: "fixed allowlist still takes no derived argument",
-			yaml: strings.Replace(authorAllowlistYAML(fixed, ""), "  runtime_args:\n", strings.TrimPrefix(merkle.derived, "\n")+"\n  runtime_args:\n", 1),
+			yaml: strings.Replace(authorAllowlistYAML(fixed), "  runtime_args:\n", strings.TrimPrefix(merkle.derived, "\n")+"\n  runtime_args:\n", 1),
 			want: "does not accept derived arguments",
 		},
 	} {
@@ -325,51 +312,4 @@ func authorAllowlistError(yaml []byte) error {
 	}
 	_, err = provider.GenerateTEAL(bytes.Repeat([]byte{0x21}, falconfamily.PublicKeySize), authorAllowlistParams(nil))
 	return err
-}
-
-func TestExternalAdminValidatorAcceptsAllowlistWithAuthorTEAL(t *testing.T) {
-	client, err := algod.MakeClient(algo.ResolveTEALCompileAlgodURL(), "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	falcon1024.RegisterClient()
-	spendingKey := bytes.Repeat([]byte{0x21}, falconfamily.PublicKeySize)
-	adminKey := bytes.Repeat([]byte{0x31}, composeddsa.BoundedAdminPublicKeySize)
-	params := authorAllowlistParams(map[string]string{composeddsa.BoundedAdminPublicKeyParameter: hex.EncodeToString(adminKey)})
-	for _, test := range authorAllowlistCases {
-		t.Run(test.name, func(t *testing.T) {
-			provider := authorAllowlistProvider(t, authorAllowlistYAML(test, "admin_key"))
-			teal, err := provider.GenerateTEAL(spendingKey, params)
-			if err != nil {
-				t.Fatalf("GenerateTEAL() error = %v", err)
-			}
-			compiled, err := client.TealCompile([]byte(teal)).Do(context.Background())
-			if err != nil {
-				t.Fatalf("compile: %v", err)
-			}
-			bytecode, err := base64.StdEncoding.DecodeString(compiled.Result)
-			if err != nil {
-				t.Fatal(err)
-			}
-			metadata, err := provider.BuildBoundedAuthorizationMetadata(spendingKey, params, bytecode)
-			if err != nil {
-				t.Fatalf("BuildBoundedAuthorizationMetadata() error = %v", err)
-			}
-			binding, err := hex.DecodeString(metadata.ProgramBindingHex)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := boundedprogram.Validate(bytecode, boundedprogram.Expected{
-				SpendingPublicKey: spendingKey,
-				AdminPublicKey:    adminKey,
-				ProgramBinding:    binding,
-				BaseArgCount:      1,
-				AdminArgIndex:     test.preimageAt + 1,
-				MaxFee:            10_000,
-				SpendEffects:      []string{"pay", "axfer", "asset_opt_in"},
-			}); err != nil {
-				t.Fatalf("Validate() error = %v", err)
-			}
-		})
-	}
 }

@@ -445,11 +445,6 @@ func (m Model) handleParamModalKeys(
 			return next, nil, errText
 		}
 	}
-	if msg.String() == fileBrowserKey {
-		if param, ok := focusedParam(m.forms.generateFocus, params); ok && isContractAdminReferenceParam(param) {
-			return m.openFileBrowser(browseContractAdminReference, m.forms.genericLSigParams[param.Name], param.Name, ""), nil, ""
-		}
-	}
 	if input, ok := paramTextInput(msg, m.forms.generateFocus, params); ok {
 		return m.typeIntoCurrentParam(input, params)
 	}
@@ -760,9 +755,6 @@ func (m Model) appendToCurrentParam(input string, params []lsigprovider.Paramete
 
 	effectiveType := m.effectiveParamInputType(paramDef)
 	maxLen := getMaxInputLengthForType(effectiveType, paramDef.MaxLength)
-	if isContractAdminReferenceParam(paramDef) {
-		maxLen = 4096
-	}
 	lineMaxLen := 0
 	if effectiveType == "address[]" {
 		lineMaxLen = max(getFieldWidthForType(effectiveType, paramDef.MaxLength)-1, 1)
@@ -785,12 +777,8 @@ func (m Model) appendToCurrentParam(input string, params []lsigprovider.Paramete
 }
 
 // effectiveParamInputType is the type that governs what may be typed into a
-// field: the selected input mode's type overrides the declared type, and a
-// contract-admin reference is a free-text file path.
+// field: the selected input mode's type overrides the declared type.
 func (m Model) effectiveParamInputType(paramDef lsigprovider.ParameterDef) string {
-	if isContractAdminReferenceParam(paramDef) {
-		return "string"
-	}
 	if len(paramDef.InputModes) > 1 && m.forms.genericLSigParamModes != nil {
 		modeIdx := m.forms.genericLSigParamModes[paramDef.Name]
 		if modeIdx >= 0 && modeIdx < len(paramDef.InputModes) && paramDef.InputModes[modeIdx].InputType != "" {
@@ -1076,13 +1064,6 @@ func (m Model) applyInputModeTransforms(params []lsigprovider.ParameterDef) (map
 
 	for _, paramDef := range params {
 		value := m.forms.genericLSigParams[paramDef.Name]
-		if isContractAdminReferenceParam(paramDef) {
-			var err error
-			value, err = loadContractAdminPublicKey(value)
-			if err != nil {
-				return nil, err
-			}
-		}
 		if value == "" && len(paramDef.Options) > 0 {
 			value = defaultParamValue(paramDef)
 		}

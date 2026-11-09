@@ -14,23 +14,22 @@
 
 ## Current product boundary
 
-The shipped Corridor v1 profile is the optional schema-v2 template
-`aplane.corridor.v1`. It has one fixed combination of controls rather than the
-profile matrix explored below:
+The shipped Corridor profile is the Corridor preset of the general bounded type
+`aplane.falcon1024-b.v1`. It has one fixed combination of controls rather than
+the profile matrix explored below:
 
 - the program commits to a fixed-depth Merkle root; a non-self spend supplies
   a signer-derived proof for a generation-time recipient;
 - every spend requires the Falcon spending signature and a required Falcon
   cosigner signature;
-- pure rekey requires both the spending signature and a distinct offline
-  Falcon contract-admin signature, and does not contact the cosigner;
+- the account refuses every rekey, so it cannot leave a lost cosigner;
 - close, clawback, hybrid rekey-and-spend, and unsupported transaction forms
-  are rejected; decommissioning is rekey first, then close under the successor;
+  are rejected; decommissioning is spending the balance to a listed recipient,
+  and the account keeps its minimum balance;
 - the optional amount/window bounds, optional or Ed25519 guard, direct close,
   and escape-hatch variants discussed below are not Corridor v1 features;
-- rekey authority is one offline Falcon contract-admin key co-signing with the
-  spending key; the M-of-N governance arrangement recommended below is not
-  supported;
+- there is no rekey authority, so the M-of-N governance arrangement
+  recommended below is not supported;
 - the cosigner decides from its policy document and the transaction group
   alone; it does not consult off-chain state or external services.
 

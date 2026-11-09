@@ -17,7 +17,7 @@ Before making architectural, protocol, storage, or refactor-sensitive changes, r
 - `docs/ARCH_CRYPTO.md`: cryptographic design
 - `docs/ARCH_KEYTYPES.md`: key type dimensions and resolution axes, key type identifiers, and LogicSig providers
 - `docs/ARCH_GUARDED.md`: guarded signing and cosigner nodes, and the Corridor v1 profile
-- `docs/ARCH_BOUNDED_DSA.md`: bounded DSA contracts, effect inventory, canonical encodings, external contract-admin signing, and cold custody
+- `docs/ARCH_BOUNDED_DSA.md`: bounded DSA contracts, effect inventory, and canonical encodings
 - `docs/ARCH_NETWORKS.md`: network context tokens, genesis-hash mapping, and network-scoped policy behavior
 - `docs/ARCH_SHELL.md`: client side: engine, REPL and parsing contracts, app interaction, and the MCP surface
 - `docs/ARCH_PLUGINS.md`: plugin system architecture
@@ -37,7 +37,6 @@ Apshell is the other major component; it provides a shell-like interface to gene
 
 ### Binaries (`cmd/`)
 - `cmd/apshell/`: Interactive shell, scripting environment, plugin host, and MCP surface
-- `cmd/aprekey/`: External witness generation and bounded contract-admin rekey/unrekey ceremonies
 - `cmd/apsigner/`: Thin signing-daemon entrypoint for flags and provider registration; `internal/signerapp/daemon` owns the HTTP/IPC/SSH runtime
 - `cmd/apadmin/`: TUI and batch admin client over local IPC; owns all general
   live administration plus explicit offline policy rescue workflows
@@ -390,7 +389,7 @@ See `docs/ARCH_STORE.md` for the full on-disk layout and `docs/ARCH_CONTRACTS.md
 - `ARCH_CRYPTO.md`: Cryptographic design
 - `ARCH_KEYTYPES.md`: Key type dimensions and resolution axes, key type identifiers, and LogicSig providers
 - `ARCH_GUARDED.md`: Guarded signing and cosigner nodes, and the Corridor v1 profile
-- `ARCH_BOUNDED_DSA.md`: Bounded DSA contracts, effect inventory, canonical encodings, external contract-admin signing, and cold custody
+- `ARCH_BOUNDED_DSA.md`: Bounded DSA contracts, effect inventory, and canonical encodings
 - `ARCH_NETWORKS.md`: Network context tokens, genesis-hash mapping, and network-scoped policy behavior
 - `ARCH_SHELL.md`: Client side: engine, REPL and parsing contracts, app interaction, and the MCP surface
 - `ARCH_PLUGINS.md`: Plugin system architecture

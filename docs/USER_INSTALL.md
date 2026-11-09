@@ -9,7 +9,7 @@ APlane supports three install modes:
 | Mode | Command | Use Case |
 |------|---------|----------|
 | **Local** (default) | `./install.sh [--role signer\|cosigner] [path]` | Development, demos, multi-instance. Rootless by default, no systemd. |
-| **Client-only** | `./install.sh --client` | apshell and aprekey on Linux/macOS, connecting to a remote signer. |
+| **Client-only** | `./install.sh --client` | apshell on Linux/macOS, connecting to a remote signer. |
 | **Systemd** | `sudo ./install.sh --systemd [--role signer\|cosigner] [operator-root] [--bindir <path>] [--no-enable] [--no-start]` | systemd service for production servers. |
 
 **Requirements:** Linux with systemd for `--systemd` mode. Auto-unlock requires systemd 250+ (Ubuntu 24.04+, Debian 12+, RHEL/Rocky 9+, Fedora 36+). Local and bootstrap `--client` modes work on both Linux and macOS. Windows is client-only via the `aplane-client_<version>_windows_amd64.zip` release archive.
@@ -47,7 +47,7 @@ aliases.
 - [Local Install (Default)](#local-install-default)
 - [Install via curl Bootstrap](#install-via-curl-bootstrap)
 - [Upgrade Compatibility](#upgrade-compatibility)
-- [Client-Only Install (apshell and aprekey)](#client-only-install-apshell-and-aprekey)
+- [Client-Only Install (apshell)](#client-only-install-apshell)
 - [Install from Release Tarball](#install-from-release-tarball)
 - [Systemd Install](#systemd-install)
 - [Quick Start](#quick-start)
@@ -103,7 +103,7 @@ APLANE_INSTALL_ROOT=/path/to/my/aplane ./install.sh
 │       ├── .keystore
 │       └── .ssh/          # authorized_keys registry of enrolled client keys
 ├── apclient/              # Client data directory ($APCLIENT_DATA)
-│   ├── bin/               # apshell, aprekey, aplocalnet
+│   ├── bin/               # apshell, aplocalnet
 │   ├── config.yaml        # Client config (network and UI defaults)
 │   ├── endpoints.yaml     # Client endpoint registry
 │   ├── .mcp.json          # MCP client config for apshell --mcp
@@ -442,12 +442,11 @@ is missing, unreadable, or below the installer's supported upgrade floor.
 
 ---
 
-## Client-Only Install (apshell and aprekey)
+## Client-Only Install (apshell)
 
 If you only need client tools and will connect to a remote signer, use
-`--client`. On Linux and macOS this installs `apshell` and the external
-contract-admin helper `aprekey` under `~/aplane/apclient/` by default, with no root,
-systemd, or signer binaries.
+`--client`. On Linux and macOS this installs `apshell` under `~/aplane/apclient/`
+by default, with no root, systemd, or signer binaries.
 
 **Works on both Linux and macOS.** The bootstrap script auto-detects the OS and downloads the correct tarball. Windows users should use the `aplane-client_<version>_windows_amd64.zip` release archive, which contains `bin\apshell.exe`, `config.yaml`, `.ssh\`, and `README.txt`.
 
@@ -464,7 +463,6 @@ Or from an extracted release tarball:
 
 This installs:
 - `~/aplane/apclient/bin/apshell` — the transaction shell binary
-- `~/aplane/apclient/bin/aprekey` — external Falcon contract-admin artifact and bounded ceremony client (Linux and macOS)
 - `~/aplane/apclient/config.yaml` — client configuration (network and UI defaults)
 - `~/aplane/apclient/endpoints.yaml` — client endpoint registry; new installs start with a `primary` signer endpoint
 - `~/aplane/apclient/.mcp.json` — MCP client configuration for `apshell --mcp`

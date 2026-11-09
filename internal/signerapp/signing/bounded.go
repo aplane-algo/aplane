@@ -20,7 +20,6 @@ type boundedPath string
 const (
 	boundedPathPureSpend        boundedPath = "pure_spend"
 	boundedPathSpendingKeyRekey boundedPath = "spending_key_rekey"
-	boundedPathAdminKeyRekey    boundedPath = "admin_key_rekey"
 )
 
 type boundedPlanItem struct {
@@ -112,8 +111,6 @@ func boundedSlotRule(slot boundedmeta.ArgumentSlot, path boundedPath) string {
 		return slot.Paths.Spend
 	case boundedPathSpendingKeyRekey:
 		return slot.Paths.SpendingRekey
-	case boundedPathAdminKeyRekey:
-		return slot.Paths.AdminRekey
 	default:
 		return ""
 	}
@@ -145,8 +142,6 @@ func classifyBoundedPath(txn types.Transaction, metadata *boundedmeta.Metadata) 
 		switch authorization {
 		case boundedmeta.AdminAuthorizationSpend:
 			return boundedPathSpendingKeyRekey, nil
-		case boundedmeta.AdminAuthorizationAdmin:
-			return boundedPathAdminKeyRekey, nil
 		default:
 			return "", internal(fmt.Sprintf("invalid stored rekey authorization %q", authorization))
 		}
@@ -196,18 +191,6 @@ func withTransactionIndex(index int, err *ServiceError) *ServiceError {
 		return nil
 	}
 	return &ServiceError{Kind: err.Kind, Message: fmt.Sprintf("transaction %d: %s", index+1, err.Message)}
-}
-
-func planHasBoundedAdminKeyOperation(plan *PlanResult) bool {
-	if plan == nil {
-		return false
-	}
-	for _, item := range plan.BoundedItems {
-		if item != nil && item.Path == boundedPathAdminKeyRekey {
-			return true
-		}
-	}
-	return false
 }
 
 func planHasBoundedCosignerSpend(plan *PlanResult) bool {

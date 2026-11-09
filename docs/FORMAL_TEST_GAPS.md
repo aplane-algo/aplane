@@ -126,10 +126,10 @@ approval fail-all, and session-ownership contracts are covered by their Go
 race tests and AP/SO formal invariants.
 
 The former bounded DSA planning/argument-assembly drift entry is closed by
-[formal/bounded_cosigner.tla](formal/bounded_cosigner.tla): its BS1-BS7 transition
+[formal/bounded_cosigner.tla](formal/bounded_cosigner.tla): its BS1 and BS3-BS7 transition
 system covers finalized classification, signer gates, user-first cosigner
-routing, exact target coverage, source/path-mask assembly, canonical bytes,
-the external-admin bypass, and atomic failure. Concrete effect classification,
+routing, exact target coverage, source/path-mask assembly, canonical bytes, and
+atomic failure. Concrete effect classification,
 slot encodings, Merkle derivation, and TEAL remain verified by Go/compiler tests
 rather than abstracted as cryptographic or byte-level TLC claims.
 

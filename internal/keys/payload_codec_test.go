@@ -173,7 +173,7 @@ func TestBoundedPayloadMetadataRoundTrip(t *testing.T) {
 		BaseSignatureArgLayout: boundedmeta.SignatureArgLayout{
 			Count: 1, MaxSizes: []int{4},
 		},
-		ArgumentLayout:  boundedmeta.BaseArgumentLayout(boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{4}}, false),
+		ArgumentLayout:  boundedmeta.BaseArgumentLayout(boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{4}}),
 		SpendEffects:    []string{"pay", "axfer"},
 		MaxFee:          1_000,
 		AdminOperations: []boundedmeta.AdminOperation{{Kind: boundedmeta.AdminOperationRekey, Authorization: boundedmeta.AdminAuthorizationSpend, PolicyGate: boundedmeta.PolicyGateNone}},
@@ -236,7 +236,7 @@ func TestBoundedCombinedLayer3PolicyPayloadRoundTrip(t *testing.T) {
 			defer payload.ZeroSecrets()
 			payload.CreatedAt = canonicalTestTime
 			payloadWithOpcodeProfile(t, payload, true)
-			slots := boundedmeta.BaseArgumentLayout(layout, false)
+			slots := boundedmeta.BaseArgumentLayout(layout)
 			for _, arg := range test.derived {
 				slots = append(slots, boundedmeta.ArgumentSlot{
 					Index: len(slots), Name: arg.Name, Source: boundedmeta.ArgSourceDerived, MaxSize: arg.MaxSize,

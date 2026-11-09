@@ -11,7 +11,7 @@ import (
 )
 
 func TestBoundedLabel(t *testing.T) {
-	admin := []signerapi.BoundedAdminOperationInfo{{Kind: "rekey", Authorization: boundedmeta.AdminAuthorizationAdmin, PolicyGate: boundedmeta.PolicyGateNone}}
+	unknown := []signerapi.BoundedAdminOperationInfo{{Kind: "rekey", Authorization: "admin_key", PolicyGate: boundedmeta.PolicyGateNone}}
 	spending := []signerapi.BoundedAdminOperationInfo{{Kind: "rekey", Authorization: boundedmeta.AdminAuthorizationSpend, PolicyGate: boundedmeta.PolicyGateNone}}
 	gated := []signerapi.BoundedAdminOperationInfo{{Kind: "rekey", Authorization: boundedmeta.AdminAuthorizationSpend, PolicyGate: boundedmeta.PolicyGateLayer3}}
 	cosigner := &signerapi.BoundedCosignerAuthorizationInfo{}
@@ -21,7 +21,8 @@ func TestBoundedLabel(t *testing.T) {
 		want string
 	}{
 		{"not bounded", nil, ""},
-		{"merkle admin cosigner", &signerapi.BoundedAuthorizationInfo{Layer3Policy: boundedmeta.Layer3PolicyMerkleAllowlist, AdminOperations: admin, Cosigner: cosigner}, "Merkle allowlist · admin rekey · cosigner"},
+		{"merkle refused cosigner", &signerapi.BoundedAuthorizationInfo{Layer3Policy: boundedmeta.Layer3PolicyMerkleAllowlist, Cosigner: cosigner}, "Merkle allowlist · no rekey · cosigner"},
+		{"unknown authority stays honest", &signerapi.BoundedAuthorizationInfo{Layer3Policy: boundedmeta.Layer3PolicyMerkleAllowlist, AdminOperations: unknown}, "Merkle allowlist · admin_key rekey"},
 		{"inline spending", &signerapi.BoundedAuthorizationInfo{Layer3Policy: boundedmeta.Layer3PolicyFixedAllowlist, AdminOperations: spending}, "Allowlist · spending-key rekey"},
 		{"custom without rekey", &signerapi.BoundedAuthorizationInfo{Layer3Policy: boundedmeta.Layer3PolicyCustom}, "Custom policy · no rekey"},
 		{"allowlist plus custom", &signerapi.BoundedAuthorizationInfo{Layer3Policy: boundedmeta.Layer3PolicyMerkleAllowlistCustom, AdminOperations: spending}, "Merkle allowlist plus custom policy · spending-key rekey"},
@@ -39,12 +40,12 @@ func TestBoundedLabel(t *testing.T) {
 func TestBoundedLabelsAgreeAcrossSources(t *testing.T) {
 	metadata := &boundedmeta.Metadata{
 		Layer3Policy:    boundedmeta.Layer3PolicyMerkleAllowlist,
-		AdminOperations: []boundedmeta.AdminOperation{{Kind: "rekey", Authorization: boundedmeta.AdminAuthorizationAdmin, PolicyGate: boundedmeta.PolicyGateNone}},
+		AdminOperations: []boundedmeta.AdminOperation{{Kind: "rekey", Authorization: boundedmeta.AdminAuthorizationSpend, PolicyGate: boundedmeta.PolicyGateLayer3}},
 		Cosigner:        &boundedmeta.CosignerAuthorization{},
 	}
 	info := &signerapi.BoundedAuthorizationInfo{
 		Layer3Policy:    metadata.Layer3Policy,
-		AdminOperations: []signerapi.BoundedAdminOperationInfo{{Kind: "rekey", Authorization: boundedmeta.AdminAuthorizationAdmin, PolicyGate: boundedmeta.PolicyGateNone}},
+		AdminOperations: []signerapi.BoundedAdminOperationInfo{{Kind: "rekey", Authorization: boundedmeta.AdminAuthorizationSpend, PolicyGate: boundedmeta.PolicyGateLayer3}},
 		Cosigner:        &signerapi.BoundedCosignerAuthorizationInfo{},
 	}
 	if got, want := BoundedMetadataLabel(metadata), BoundedLabel(info); got != want {

@@ -175,3 +175,33 @@ func moduleImports(t *testing.T) map[string][]string {
 	}
 	return moduleImportsMap
 }
+
+// dependencyPath returns the first import chain from root to any of targets
+// found by a breadth-first walk of imports, or nil when none is reachable.
+func dependencyPath(imports map[string][]string, root string, targets ...string) []string {
+	target := make(map[string]bool, len(targets))
+	for _, pkg := range targets {
+		target[pkg] = true
+	}
+	type state struct {
+		pkg  string
+		path []string
+	}
+	queue := []state{{pkg: root, path: []string{root}}}
+	seen := map[string]bool{root: true}
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+		for _, imported := range imports[current.pkg] {
+			if target[imported] {
+				return append(current.path, imported)
+			}
+			if !strings.HasPrefix(imported, modulePrefix+"/") || seen[imported] {
+				continue
+			}
+			seen[imported] = true
+			queue = append(queue, state{pkg: imported, path: append(append([]string(nil), current.path...), imported)})
+		}
+	}
+	return nil
+}

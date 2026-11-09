@@ -179,8 +179,8 @@ Box names also accept `<app-id>:<name>`.
 | **Rotating LogicSig** | Falcon-1024, Ed25519, and XMSS, SLH-DSA, or WOTS+C authorize each stage | stage LogicSig arguments; each spend rekeys to the next stage |
 
 The two native account key types are not LogicSig-backed. Witness keys are
-auxiliary non-account keys; signer-custodied instances serve the cosigner
-component role, while standalone `.adm` instances may serve contract admin.
+auxiliary non-account keys that a cosigner holds for the cosigner component
+role.
 
 ### Key types (identifiers are `publisher.family.vN`)
 
@@ -190,17 +190,16 @@ component role, while standalone `.adm` instances may serve contract admin.
 | `falcon1024` | native_pq | **default-enabled** (protocol-native post-quantum) |
 | `aplane.falcon1024.v1` | dsa_lsig | internal-only; composition and existing accounts |
 | `aplane.ed25519.v1` | Ed25519 dsa_lsig | internal-only; composition and existing accounts |
+| `aplane.falcon1024-b.v1` | bounded dsa_lsig (allowlist, timelock, Corridor presets) | default-enabled on signer nodes |
 | `aplane.falcon1024-allowlist.v1` | dsa_lsig (composed) | retired template; existing accounts only |
 | `aplane.falcon1024-allowlist.v2` | bounded dsa_lsig (Merkle allowlist) | retired template; existing accounts only |
-| `aplane.falcon1024-allowlist-lock.v1` | bounded dsa_lsig (admin-protected rekey) | retired template; existing accounts only |
-| `aplane.corridor.v1` | bounded-cosigner dsa_lsig (Merkle spend corridor, admin-protected rekey) | retired template; existing accounts only |
 | `aplane.falcon1024-timelock.v1` | dsa_lsig (composed) | retired template; existing accounts only |
 | `aplane.htlc.v1` | generic_lsig | optional template |
 | `aplane.falcon1024-cosigner1024.v1` | guarded dsa_lsig | library-visible |
 | `aplane.rotating-triple-xmss.v1` | rotating LogicSig | library-visible |
 | `aplane.rotating-triple-slhdsa.v1` | rotating LogicSig | library-visible |
 | `aplane.rotating-triple-wotsc.v1` | rotating LogicSig | library-visible |
-| `aplane.witness-falcon1024.v1` | witness key | default-enabled on cosigner nodes (`.cos`); external `.adm` custody also supported |
+| `aplane.witness-falcon1024.v1` | witness key | default-enabled on cosigner nodes (`.cos`) |
 
 **Always call `keytypes` to see what the connected signer actually exposes** —
 availability is product-scoped. Visibility states: `default_enabled` (for the applicable node role), `library` (compiled in but needs an enabled state record in the product
@@ -243,8 +242,6 @@ templates below are retired, and existing accounts keep working.
   be self or allowlisted; close, clawback, and non-transfer types are rejected.
 - `aplane.falcon1024-allowlist.v2` — the bounded allowlist using a
   signer-generated Merkle proof for non-self spend destinations.
-- `aplane.falcon1024-allowlist-lock.v1` — the bounded fixed allowlist whose
-  pure rekey additionally requires an external Falcon admin signature.
 - `aplane.falcon1024-timelock.v1` — bounded Falcon transfer and pure-rekey
   paths gated by `FirstValid >= unlock_round`.
 - `aplane.htlc.v1` — ALGO only and all-or-nothing: `close` to the recipient with the
@@ -252,16 +249,16 @@ templates below are retired, and existing accounts keep working.
 
 ### Corridors
 
-A **Corridor v1** account uses the retired `aplane.corridor.v1` bounded-cosigner
-LogicSig profile. Its non-self payment and asset-transfer destinations must
-prove membership in the generation-time Merkle recipient set, and every spend
-also needs the enrolled cosigner's Falcon authorization. A distinct offline
-contract-admin witness co-authorizes pure rekey operations.
+A **Corridor v1** account is the Corridor preset of `aplane.falcon1024-b.v1`, a
+bounded-cosigner LogicSig profile. Its non-self payment and asset-transfer
+destinations must prove membership in the generation-time Merkle recipient set,
+and every spend also needs the enrolled cosigner's Falcon authorization. It
+refuses rekeys, so if the cosigner is lost, its funds cannot be recovered.
 
 Recipient-constrained accounts can compose into **graphs** — a directed edge
 A→B exists wherever B is in A's recipient set — so operators can build chains,
 hubs, or closed meshes. `aplane.falcon1024-allowlist.v1` is a simpler fixed-list
-template, not the Corridor v1 key type.
+template, not a Corridor account.
 
 You create one by **applying a corridor LogicSig to a regular account**: rekey an
 ordinary account so the Corridor program becomes its effective signer (then run
@@ -288,7 +285,7 @@ providers are internal-only and cannot be enabled or generated directly. Use
 encrypted backups for all LogicSig accounts.
 
 > **Rekey refresh:** a confirmed rekey through the ordinary single-transaction
-> workflow or bounded-admin completion refreshes the affected client
+> workflow refreshes the affected client
 > auth-cache entry automatically. Run `rekey refresh <addr>` after other
 > submission workflows, external changes, an unconfirmed submission, or a
 > reported refresh failure. See [USER_COMMANDS.md](USER_COMMANDS.md#rekeying-commands).
@@ -323,7 +320,6 @@ signer decides what to sign:
 | `POST /plan` | `transactions[]` — TX-prefixed **unsigned** canonical txns (no signing, no approval) |
 | `POST /sign/component` | guarded or bounded component signatures over a frozen group |
 | `POST /sign/assemble` | final guarded or bounded signed group after component verification |
-| `POST /sign/bounded-admin` | partial for an external contract-admin ceremony |
 | `POST /sign/cancel` | cancel a pending approval prompt by request ID |
 
 `plan()` in JS previews the planned group (dummies, fees, group ID) without

@@ -259,13 +259,6 @@ func (e *Executor) signCryptoKey(txn types.Transaction, authAddr, txnSender stri
 		defer zeroLoadedKeyMaterial(keyMaterial)
 		return nil, keyType, err
 	}
-	// Plan integrity was verified by the caller; the plan item's path is the
-	// authoritative classification. Admin-key rekeys never sign here.
-	if boundedItem != nil && boundedItem.Path == boundedPathAdminKeyRekey {
-		defer zeroLoadedKeyMaterial(keyMaterial)
-		return nil, keyType, boundedAdminRequired()
-	}
-
 	provider := coresigning.GetProviderForKey(keyType, keyMaterial.BaseKeyType)
 	defer zeroLoadedKeyMaterial(keyMaterial)
 	if provider == nil {
@@ -566,8 +559,6 @@ func assembleBoundedArgsWithCosigner(metadata *boundedmeta.Metadata, item *bound
 			value = item.RuntimeArgs[slot.Name]
 		case boundedmeta.ArgSourceCosigner:
 			value = cosignerSignature
-		case boundedmeta.ArgSourceAdmin:
-			value = nil
 		default:
 			return nil, internal(fmt.Sprintf("unsupported bounded argument source %q", slot.Source))
 		}

@@ -8,7 +8,8 @@ The model checks the security-bearing order and final acceptance boundary:
 
   BS1 : a cosigner request can occur only after finalized classification,
         signer policy, operator approval, and base-component release.
-  BS2 : the external-admin path never requests or consumes a cosigner.
+  BS2 : retired with the external-admin path, which no longer exists; the
+        number is kept so the others keep theirs.
   BS3 : spend output requires a valid assembly receipt plus valid base and
         cosigner signatures.
   BS4 : output requires exact target coverage and a path-valid argument-source
@@ -23,8 +24,7 @@ that the implementation's gates consume those outcomes in the required order;
 it does not prove Falcon, msgpack, Merkle proofs, or TEAL semantics.
 
 Unlike the one-shot guarded_assembly model, this is a transition system. TLC
-explores the base-release, cosigner-release, bounded assembly, and external-admin
-completion stages. Validation outcomes are group-wide: a false value means at
+explores the base-release, cosigner-release, and bounded assembly stages. Validation outcomes are group-wide: a false value means at
 least one target failed.
 
 See FORMAL_TLA_BOUNDED_COSIGNER_MODEL.md for the prose companion.
@@ -34,7 +34,7 @@ EXTENDS TLC
 ----------------------------------------------------------------------------
 (* Inputs and state *)
 
-Path == {"spend", "admin", "invalid"}
+Path == {"spend", "invalid"}
 
 Input == [
     path         : Path,
@@ -51,15 +51,13 @@ Input == [
     sourceLayout : BOOLEAN,
     derived      : BOOLEAN,
     passthrough  : BOOLEAN,
-    bytes        : BOOLEAN,
-    adminSig     : BOOLEAN
+    bytes        : BOOLEAN
 ]
 
 Stage == {
     "planned",
     "base_released",
     "cosigner_released",
-    "admin_partial",
     "output",
     "rejected"
 }
@@ -92,15 +90,12 @@ Init ==
 ----------------------------------------------------------------------------
 (* Choreography *)
 
-(* POST /sign/component (bounded-base) for spend, or /sign/bounded-admin for admin.
-   An invalid shape and every failed signer-domain gate reject before release. *)
+(* POST /sign/component (bounded-base) for spend. An invalid shape and every
+   failed signer-domain gate reject before release. *)
 BaseStep ==
     /\ stage = "planned"
-    /\ baseReleased' = (input.path \in {"spend", "admin"} /\ BaseGate(input))
-    /\ stage' =
-        IF input.path = "spend" /\ BaseGate(input) THEN "base_released"
-        ELSE IF input.path = "admin" /\ BaseGate(input) THEN "admin_partial"
-        ELSE "rejected"
+    /\ baseReleased' = (input.path = "spend" /\ BaseGate(input))
+    /\ stage' = IF input.path = "spend" /\ BaseGate(input) THEN "base_released" ELSE "rejected"
     /\ cosignerRequested' = FALSE
     /\ cosignerReleased' = FALSE
     /\ output' = FALSE
@@ -138,25 +133,7 @@ AssembleStep ==
             /\ stage' = IF success THEN "output" ELSE "rejected"
     /\ UNCHANGED <<input, baseReleased, cosignerRequested, cosignerReleased>>
 
-(* External completion consumes the base and admin authorities. It deliberately
-   bypasses cosigner policy, cosigner signature, and spend-only derivation. *)
-AdminCompleteStep ==
-    /\ stage = "admin_partial"
-    /\ LET success ==
-            /\ input.path = "admin"
-            /\ input.metadata
-            /\ input.baseSig
-            /\ input.adminSig
-            /\ input.coverage
-            /\ input.sourceLayout
-            /\ input.passthrough
-            /\ input.bytes
-       IN
-            /\ output' = success
-            /\ stage' = IF success THEN "output" ELSE "rejected"
-    /\ UNCHANGED <<input, baseReleased, cosignerRequested, cosignerReleased>>
-
-Next == BaseStep \/ CosignerStep \/ AssembleStep \/ AdminCompleteStep
+Next == BaseStep \/ CosignerStep \/ AssembleStep
 
 Spec == Init /\ [][Next]_vars
 
@@ -176,11 +153,6 @@ BS1_UserFirst ==
         /\ input.path = "spend"
         /\ baseReleased
         /\ BaseGate(input)
-
-BS2_AdminBypassesCosigner ==
-    input.path = "admin" =>
-        /\ ~cosignerRequested
-        /\ ~cosignerReleased
 
 BS3_SpendAuthoritiesVerified ==
     (output /\ input.path = "spend") =>
@@ -209,14 +181,11 @@ BS6_InvalidNeverOutputs ==
 BS7_AtomicOutput ==
     /\ output => stage = "output"
     /\ stage = "rejected" => ~output
-    /\ stage = "output" =>
-        \/ input.path = "spend"
-        \/ input.path = "admin" /\ input.adminSig /\ ~cosignerRequested
+    /\ stage = "output" => input.path = "spend"
 
 Safety ==
     /\ TypeOK
     /\ BS1_UserFirst
-    /\ BS2_AdminBypassesCosigner
     /\ BS3_SpendAuthoritiesVerified
     /\ BS4_DeclaredArgumentsOnly
     /\ BS5_CanonicalGroupBound

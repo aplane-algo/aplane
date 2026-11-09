@@ -424,8 +424,8 @@ FileName(f) != CanonicalName(Payload(f)) =>
 Canonical writers use the same function. Restore may replace an exact
 canonical destination only with `replace_existing:true` in the live restore
 request (`overwrite` is the internal persistence option) and always rejects a
-contradictory `.key`/`.cos` class for the same selector. `.adm`, `.adm.json`,
-and `.cos.json` are outside the managed-credential candidate set. Accepted duplicate selectors
+contradictory `.key`/`.cos` class for the same selector. `.cos.json` is outside
+the managed-credential candidate set. Accepted duplicate selectors
 remain a fatal collision fallback rather than selecting by directory order.
 
 Status: implemented. See

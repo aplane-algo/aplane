@@ -4,13 +4,8 @@
 package keymgmt
 
 import (
-	"bytes"
 	"context"
 	"encoding/base64"
-	"encoding/hex"
-	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
-	"github.com/aplane-algo/aplane/internal/genstore"
-	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"io"
 	"net/http"
 	"os"
@@ -19,9 +14,10 @@ import (
 	"testing"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
-	"github.com/aplane-algo/aplane/internal/cosigner/cosignerrefs"
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
+	"github.com/aplane-algo/aplane/internal/genstore"
+	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keys/keystest"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
@@ -34,54 +30,6 @@ import (
 	falcon1024guarded "github.com/aplane-algo/aplane/lsig/falcon1024_guarded"
 	lsigsignerreg "github.com/aplane-algo/aplane/lsig/signerreg"
 )
-
-func TestWitnessRoleCollisionChecks(t *testing.T) {
-	publicKey := bytes.Repeat([]byte{0x5a}, witness.Falcon1024PublicKeySize)
-	publicKeyHex := hex.EncodeToString(publicKey)
-	witnessKeyID, err := witness.ID(witness.Falcon1024V1, publicKey)
-	if err != nil {
-		t.Fatal(err)
-	}
-	references := []cosignerrefs.Record{{ComponentKey: witnessKeyID, PublicKeyHex: publicKeyHex}}
-	if err := rejectAdminWitnessKnownAsCosigner(publicKeyHex, references, nil); err == nil || !strings.Contains(err.Error(), "cosigner role") {
-		t.Fatalf("admin reference collision error = %v", err)
-	}
-	localWitnesses := map[string]keys.KeyScanInfo{
-		witnessKeyID: {KeyType: witness.Falcon1024V1, PublicKeyHex: publicKeyHex},
-	}
-	if err := rejectAdminWitnessKnownAsCosigner(publicKeyHex, nil, localWitnesses); err == nil || !strings.Contains(err.Error(), "cosigner custody") {
-		t.Fatalf("admin local-custody collision error = %v", err)
-	}
-	localSpendingKeys := map[string]keys.KeyScanInfo{
-		"ACCOUNT": {KeyType: "aplane.falcon1024.v1", PublicKeyHex: publicKeyHex},
-	}
-	if err := rejectAdminWitnessKnownAsCosigner(publicKeyHex, nil, localSpendingKeys); err != nil {
-		t.Fatalf("admin non-witness collision error = %v, want nil", err)
-	}
-	scanned := map[string]keys.KeyScanInfo{
-		"ACCOUNT": {BoundedAuthorization: &boundedmeta.Metadata{AdminPublicKeyHex: publicKeyHex}},
-	}
-	if err := rejectCosignerWitnessKnownAsAdmin(publicKeyHex, witnessKeyID, scanned); err == nil || !strings.Contains(err.Error(), "contract admin") {
-		t.Fatalf("cosigner collision error = %v", err)
-	}
-}
-
-func TestValidateKnownWitnessRoleExclusivityRejectsLocalWitness(t *testing.T) {
-	paths := storepaths.NewPaths(t.TempDir())
-	paths = genstoretest.MintFirst(t, paths)
-	masterKey := []byte("0123456789abcdef0123456789abcdef")
-
-	generated, err := GenerateKey(paths, witness.Falcon1024V1, cryptotest.Keyring(t, masterKey), nil)
-	if err != nil {
-		t.Fatalf("GenerateKey(witness) error = %v", err)
-	}
-	err = validateKnownWitnessRoleExclusivity(paths, "aplane.falcon1024-allowlist-lock.v1", map[string]string{
-		boundedmeta.AdminPublicKeyParameter: generated.PublicKeyHex,
-	}, cryptotest.Keyring(t, masterKey))
-	if err == nil || !strings.Contains(err.Error(), "cosigner custody") {
-		t.Fatalf("validateKnownWitnessRoleExclusivity() error = %v, want local cosigner-custody collision", err)
-	}
-}
 
 func init() {
 	lsigsignerreg.RegisterSigner()

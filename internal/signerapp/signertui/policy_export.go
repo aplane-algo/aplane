@@ -86,7 +86,7 @@ func (m Model) handlePolicyExportFormKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.startPolicyExport()
 	case fileBrowserKey:
 		name := filepath.Base(suggestedPolicyExportDir(time.Now()))
-		return m.openFileBrowser(browsePolicyExportDir, export.path, "", name), nil
+		return m.openFileBrowser(browsePolicyExportDir, export.path, name), nil
 	case "backspace", "delete":
 		export.path = trimLastRune(export.path)
 		export.err = ""

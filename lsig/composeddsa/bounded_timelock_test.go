@@ -18,7 +18,6 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/algo"
-	boundedprogram "github.com/aplane-algo/aplane/internal/boundedadmin/program"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
@@ -45,8 +44,14 @@ const (
     contract: cosigner1
     required_on: [spend]
 `
-	testUnlockRound = "50000000"
-	timelockBlock   = "// === framework-owned timelock ===\ntxn FirstValid\npushint 50000000\n>=\nassert\n\n"
+	timelockGatedRekeyYAML = `  admin_operations:
+    - kind: rekey
+      authorization: spending_key
+      policy_gate: layer3
+`
+	timelockRefusedRekeyYAML = "  admin_operations: []\n"
+	testUnlockRound          = "50000000"
+	timelockBlock            = "// === framework-owned timelock ===\ntxn FirstValid\npushint 50000000\n>=\nassert\n\n"
 )
 
 type timelockCase struct {
@@ -92,9 +97,8 @@ func (test timelockCase) hasList() bool {
 	return test.maxItems != 0
 }
 
-// yaml uses a Layer-3-gated spending-key rekey unless told otherwise, so the
-// default program covers every path the timelock applies to.
-func (test timelockCase) yaml(authorization, gate, cosigner string) string {
+// yaml takes the admin_operations block and an optional cosigner block.
+func (test timelockCase) yaml(operations, cosigner string) string {
 	recipientsParameter, recipients := "", ""
 	if test.hasList() {
 		recipientsParameter = "\n    recipients_parameter: recipients"
@@ -120,20 +124,18 @@ bounded:
   contract: bounded1
   spend_effects: [pay, axfer, asset_opt_in]
   max_fee: 10000
-  admin_operations:
-    - kind: rekey
-      authorization: %s
-      policy_gate: %s
-%s  layer3:
+%s%s  layer3:
     policy: %s
     unlock_round_parameter: unlock_round%s%s
 
 parameters:
-%s%s`, authorization, gate, cosigner, test.policy, recipientsParameter, test.derived, timelockParameterYAML, recipients)
+%s%s`, operations, cosigner, test.policy, recipientsParameter, test.derived, timelockParameterYAML, recipients)
 }
 
+// defaultYAML uses a Layer-3-gated spending-key rekey, so the default program
+// covers every path the timelock applies to.
 func (test timelockCase) defaultYAML() string {
-	return test.yaml(boundedmeta.AdminAuthorizationSpend, boundedmeta.PolicyGateLayer3, "")
+	return test.yaml(timelockGatedRekeyYAML, "")
 }
 
 func (test timelockCase) params(extra map[string]string) map[string]string {
@@ -232,19 +234,17 @@ func TestTimelockPolicyAddsOnlyTheTimelockToTheAllowlist(t *testing.T) {
 
 // A Layer-3-gated spending-key rekey reaches the recipient dispatch, which only
 // has a branch for an effect the profile admits. Every subset containing pay
-// therefore works on that route, and all seven work with an external admin key.
+// therefore works on that route, and all seven work when rekeys are refused.
 func TestTimelockPolicySpendSubsets(t *testing.T) {
 	publicKey := bytes.Repeat([]byte{0x21}, falconfamily.PublicKeySize)
-	adminKey := hex.EncodeToString(bytes.Repeat([]byte{0x31}, composeddsa.BoundedAdminPublicKeySize))
 	subsets := []string{"pay", "axfer", "asset_opt_in", "pay, axfer", "pay, asset_opt_in", "axfer, asset_opt_in", "pay, axfer, asset_opt_in"}
 	for _, test := range timelockCases {
 		for _, subset := range subsets {
 			t.Run(test.policy+"/"+subset, func(t *testing.T) {
 				effects := "spend_effects: [" + subset + "]"
-				admin := strings.Replace(test.yaml(boundedmeta.AdminAuthorizationAdmin, boundedmeta.PolicyGateNone, ""), "spend_effects: [pay, axfer, asset_opt_in]", effects, 1)
-				params := test.params(map[string]string{composeddsa.BoundedAdminPublicKeyParameter: adminKey})
-				if _, err := authorAllowlistProvider(t, admin).GenerateTEAL(publicKey, params); err != nil {
-					t.Fatalf("admin-key GenerateTEAL() error = %v", err)
+				refused := strings.Replace(test.yaml(timelockRefusedRekeyYAML, ""), "spend_effects: [pay, axfer, asset_opt_in]", effects, 1)
+				if _, err := authorAllowlistProvider(t, refused).GenerateTEAL(publicKey, test.params(nil)); err != nil {
+					t.Fatalf("refused-rekey GenerateTEAL() error = %v", err)
 				}
 				gated := strings.Replace(test.defaultYAML(), "spend_effects: [pay, axfer, asset_opt_in]", effects, 1)
 				err := timelockGenerateError(gated, test.params(nil))
@@ -372,37 +372,6 @@ func TestLayer3PolicyFingerprintEncoding(t *testing.T) {
 	}
 }
 
-func TestExternalAdminValidatorAcceptsTimelockPolicies(t *testing.T) {
-	client, err := algod.MakeClient(algo.ResolveTEALCompileAlgodURL(), "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	spendingKey := bytes.Repeat([]byte{0x21}, falconfamily.PublicKeySize)
-	adminKey := bytes.Repeat([]byte{0x31}, composeddsa.BoundedAdminPublicKeySize)
-	for _, test := range timelockCases {
-		t.Run(test.policy, func(t *testing.T) {
-			provider := authorAllowlistProvider(t, test.yaml(boundedmeta.AdminAuthorizationAdmin, boundedmeta.PolicyGateNone, ""))
-			params := test.params(map[string]string{composeddsa.BoundedAdminPublicKeyParameter: hex.EncodeToString(adminKey)})
-			bytecode, metadata := compileTimelockProgram(t, client, provider, spendingKey, params)
-			binding, err := hex.DecodeString(metadata.ProgramBindingHex)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := boundedprogram.Validate(bytecode, boundedprogram.Expected{
-				SpendingPublicKey: spendingKey,
-				AdminPublicKey:    adminKey,
-				ProgramBinding:    binding,
-				BaseArgCount:      1,
-				AdminArgIndex:     len(test.slots),
-				MaxFee:            10_000,
-				SpendEffects:      []string{"pay", "axfer", "asset_opt_in"},
-			}); err != nil {
-				t.Fatalf("Validate() error = %v", err)
-			}
-		})
-	}
-}
-
 func compileTimelockProgram(t *testing.T, client *algod.Client, provider *composeddsa.ComposedDSA, publicKey []byte, params map[string]string) ([]byte, *boundedmeta.Metadata) {
 	t.Helper()
 	teal, err := provider.GenerateTEAL(publicKey, params)
@@ -443,26 +412,25 @@ func TestTimelockPolicyCompiledBudgetMatrix(t *testing.T) {
 		recipients[i] = address.String()
 	}
 	publicKey := bytes.Repeat([]byte{0x21}, falconfamily.PublicKeySize)
-	adminKey := hex.EncodeToString(bytes.Repeat([]byte{0x31}, composeddsa.BoundedAdminPublicKeySize))
 	cosignerKey := hex.EncodeToString(bytes.Repeat([]byte{0x41}, boundedmeta.CosignerPublicKeySizeV1))
 	type budget struct {
-		bytecode, spendArgs, adminArgs, spendGroup, adminGroup int
-		spendFee, adminFee                                     uint64
+		bytecode, spendArgs, spendGroup int
+		spendFee                        uint64
 	}
-	spending, admin, cosigned := "spending key", "admin key", "admin key and cosigner"
+	spending, refused, cosigned := "spending key", "refused", "refused and cosigner"
 	want := map[string]budget{
 		composeddsa.Layer3PolicyTimelock + "/" + spending:                {bytecode: 1932, spendArgs: 1423, spendGroup: 2, spendFee: 2000},
-		composeddsa.Layer3PolicyTimelock + "/" + admin:                   {bytecode: 3837, spendArgs: 1423, adminArgs: 2846, spendGroup: 2, adminGroup: 3, spendFee: 2185, adminFee: 3085},
-		composeddsa.Layer3PolicyTimelock + "/" + cosigned:                {bytecode: 5680, spendArgs: 2846, adminArgs: 2846, spendGroup: 3, adminGroup: 3, spendFee: 3270, adminFee: 3270},
+		composeddsa.Layer3PolicyTimelock + "/" + refused:                 {bytecode: 1889, spendArgs: 1423, spendGroup: 2, spendFee: 2000},
+		composeddsa.Layer3PolicyTimelock + "/" + cosigned:                {bytecode: 3734, spendArgs: 2846, spendGroup: 3, spendFee: 3075},
 		composeddsa.Layer3PolicyFixedAllowlistTimelock + "/" + spending:  {bytecode: 3153, spendArgs: 1423, spendGroup: 2, spendFee: 2116},
-		composeddsa.Layer3PolicyFixedAllowlistTimelock + "/" + admin:     {bytecode: 5056, spendArgs: 1423, adminArgs: 2846, spendGroup: 2, adminGroup: 3, spendFee: 2307, adminFee: 3207},
-		composeddsa.Layer3PolicyFixedAllowlistTimelock + "/" + cosigned:  {bytecode: 6898, spendArgs: 2846, adminArgs: 2846, spendGroup: 3, adminGroup: 3, spendFee: 3391, adminFee: 3391},
+		composeddsa.Layer3PolicyFixedAllowlistTimelock + "/" + refused:   {bytecode: 3110, spendArgs: 1423, spendGroup: 2, spendFee: 2112},
+		composeddsa.Layer3PolicyFixedAllowlistTimelock + "/" + cosigned:  {bytecode: 4952, spendArgs: 2846, spendGroup: 3, spendFee: 3197},
 		composeddsa.Layer3PolicyMerkleAllowlistTimelock + "/" + spending: {bytecode: 2196, spendArgs: 1935, spendGroup: 2, spendFee: 2021},
-		composeddsa.Layer3PolicyMerkleAllowlistTimelock + "/" + admin:    {bytecode: 4096, spendArgs: 1935, adminArgs: 2846, spendGroup: 2, adminGroup: 3, spendFee: 2211, adminFee: 3111},
-		composeddsa.Layer3PolicyMerkleAllowlistTimelock + "/" + cosigned: {bytecode: 5938, spendArgs: 3358, adminArgs: 2846, spendGroup: 4, adminGroup: 3, spendFee: 4196, adminFee: 3295},
+		composeddsa.Layer3PolicyMerkleAllowlistTimelock + "/" + refused:  {bytecode: 2153, spendArgs: 1935, spendGroup: 2, spendFee: 2016},
+		composeddsa.Layer3PolicyMerkleAllowlistTimelock + "/" + cosigned: {bytecode: 3995, spendArgs: 3358, spendGroup: 4, spendFee: 4002},
 	}
 	for _, test := range timelockCases {
-		for _, arrangement := range []string{spending, admin, cosigned} {
+		for _, arrangement := range []string{spending, refused, cosigned} {
 			name := test.policy + "/" + arrangement
 			t.Run(name, func(t *testing.T) {
 				params := map[string]string{"unlock_round": "18446744073709551615"}
@@ -474,26 +442,20 @@ func TestTimelockPolicyCompiledBudgetMatrix(t *testing.T) {
 				yaml := test.defaultYAML()
 				if arrangement != spending {
 					cosigner := ""
-					params[composeddsa.BoundedAdminPublicKeyParameter] = adminKey
 					if arrangement == cosigned {
 						cosigner = timelockCosignerYAML
 						params[composeddsa.BoundedCosignerPublicKeyParameter] = cosignerKey
 					}
-					yaml = test.yaml(boundedmeta.AdminAuthorizationAdmin, boundedmeta.PolicyGateNone, cosigner)
+					yaml = test.yaml(timelockRefusedRekeyYAML, cosigner)
 				}
 				bytecode, metadata := compileTimelockProgram(t, client, authorAllowlistProvider(t, yaml), publicKey, params)
 				got := budget{bytecode: len(bytecode), spendArgs: metadata.ArgumentBytesForPath(boundedmeta.PathSpend)}
 				spendPlan := solveV42BundledPath(t, consensus, len(bytecode), got.spendArgs)
 				got.spendGroup, got.spendFee = int(spendPlan.GroupSize), v42BundledPathFee(spendPlan)
-				if metadata.RequiresAdminKey() {
-					got.adminArgs = metadata.ArgumentBytesForPath(boundedmeta.PathAdminRekey)
-					adminPlan := solveV42BundledPath(t, consensus, len(bytecode), got.adminArgs)
-					got.adminGroup, got.adminFee = int(adminPlan.GroupSize), v42BundledPathFee(adminPlan)
-				}
 				if got != want[name] {
 					t.Errorf("budget = %#v", got)
 				}
-				if got.spendFee > metadata.MaxFee || got.adminFee > metadata.MaxFee {
+				if got.spendFee > metadata.MaxFee {
 					t.Fatalf("path fee exceeds bounded maximum %d: %#v", metadata.MaxFee, got)
 				}
 			})

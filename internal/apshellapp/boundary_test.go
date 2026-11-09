@@ -98,9 +98,9 @@ func TestPreviewRejectsAnInvalidFile(t *testing.T) {
 
 func TestResultCarriesTheSignersAuthorityIDs(t *testing.T) {
 	result := generateResultFromEngine(&engine.GenerateKeyResult{
-		Address: "ADDRESS", KeyType: boundary.KeyTypeV1, AdminKeyID: "ADMIN", CosignerKeyID: "COSIGNER",
+		Address: "ADDRESS", KeyType: boundary.KeyTypeV1, CosignerKeyID: "COSIGNER",
 	})
-	if result.AdminKeyID != "ADMIN" || result.CosignerKeyID != "COSIGNER" {
+	if result.CosignerKeyID != "COSIGNER" {
 		t.Fatalf("result = %+v", result)
 	}
 }
@@ -136,7 +136,7 @@ func TestRequestedCosignerMustBeConfirmed(t *testing.T) {
 // The file must not pass for a daemon-issued receipt, so it has no such fields.
 func TestGenerationResultIsNotAReceipt(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "result.json")
-	result := &GenerateKeyCommandResult{Address: "ADDRESS", KeyType: boundary.KeyTypeV1, Parameters: map[string]string{"recipients": "A"}, AdminKeyID: "ADMIN"}
+	result := &GenerateKeyCommandResult{Address: "ADDRESS", KeyType: boundary.KeyTypeV1, Parameters: map[string]string{"recipients": "A"}, CosignerKeyID: "COSIGNER"}
 	if err := WriteGenerationResult(path, result); err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +148,7 @@ func TestGenerationResultIsNotAReceipt(t *testing.T) {
 	if err := json.Unmarshal(data, &fields); err != nil {
 		t.Fatal(err)
 	}
-	if fields["schema"] != GenerationResultSchemaV1 || fields["address"] != "ADDRESS" || fields["admin_key_id"] != "ADMIN" {
+	if fields["schema"] != GenerationResultSchemaV1 || fields["address"] != "ADDRESS" || fields["cosigner_key_id"] != "COSIGNER" {
 		t.Fatalf("fields = %v", fields)
 	}
 	for _, name := range []string{"boundary_digest", "grammar_fingerprint", "selected_shape_fingerprint"} {

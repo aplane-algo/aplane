@@ -1,7 +1,7 @@
 # Building Transfer Networks with Bounded Accounts
 
 > Scope: This whitepaper explains bounded accounts and their use in transfer
-> networks, using APlane's current bundled `bounded1` templates. It is an
+> networks, using APlane's current `bounded1` profiles. It is an
 > architectural explanation, not an implementation specification. Exact
 > behavior is defined in [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md) and
 > [KEYTYPE_CAPABILITIES.md](KEYTYPE_CAPABILITIES.md); the Corridor profile is
@@ -70,16 +70,18 @@ Rekeying changes that authority rather than editing the existing program.
 
 ## 3. Choosing the account's rules
 
-APlane ships several bounded profiles. An allowlist is one possible policy;
-bounded accounts also include profiles without destination restrictions.
+APlane ships several bounded profiles: three bundled templates and the presets
+of the general bounded type `aplane.falcon1024-b.v1`. An allowlist is one
+possible policy; bounded accounts also include profiles without destination
+restrictions.
 
 | Key type | Spending conditions | Pure rekey authorization |
 |---|---|---|
 | `aplane.falcon1024-allowlist.v1` | Self or an inline recipient list | Spending key alone |
 | `aplane.falcon1024-allowlist.v2` | Self or membership in a Merkle recipient list | Spending key alone |
-| `aplane.falcon1024-allowlist-lock.v1` | Self or an inline recipient list | Spending key plus a separate Falcon contract-admin key |
-| `aplane.corridor.v1` | Self or membership in a Merkle recipient list, plus a Falcon cosigner signature for every spend | Spending key plus a separate Falcon contract-admin key |
 | `aplane.falcon1024-timelock.v1` | Transaction's first valid round must reach the configured unlock round | Spending key, subject to the same round condition |
+| `aplane.falcon1024-b.v1`, Locked Allowlist preset | Self or a recipient list | None: the account can never be rekeyed |
+| `aplane.falcon1024-b.v1`, Corridor preset | Self or membership in a Merkle recipient list, plus a Falcon cosigner signature for every spend | None |
 
 Inline recipient lists support up to 30 addresses. The Merkle profiles support
 up to 65,536 recipients, committing to the list through a fixed root. The
@@ -87,11 +89,12 @@ signer stores the recipient list and derives a membership proof when needed;
 the on-chain program verifies that proof. Updating the stored list alone
 cannot change the root embedded in the existing program.
 
-For a network intended to contain spending-key theft, the rekey-locked
-allowlist or Corridor supplies an essential additional property: the spending
-key cannot remove the bounds by itself. Allowlist v1 and v2 do not provide
-that separation. Their spending key can authorize a pure rekey to a different
-authority and then spend under that authority's rules.
+For a network intended to contain spending-key theft, Locked Allowlist or
+Corridor supplies an essential additional property: the spending key cannot
+remove the bounds, because nothing can. Allowlist v1 and v2 do not provide
+that. Their spending key can authorize a pure rekey to a different authority
+and then spend under that authority's rules. The price of refusing rekeys is
+that a mistake in the account's rules, or a lost cosigner, cannot be repaired.
 
 ## 4. Building a network with stable addresses
 
@@ -107,7 +110,7 @@ To construct a network:
 
 1. Establish the stable account addresses that will be its nodes.
 2. Define each node's permitted recipients and other bounds. Choose who must
-   authorize spends and who must co-authorize changes to those bounds.
+   authorize spends and whether the bounds can ever change.
 3. Generate the corresponding bounded credentials and programs, using the
    stable node addresses in their recipient lists.
 4. Authorize each account's rekey to its chosen program using its current
@@ -149,44 +152,24 @@ Rekeying provides that mechanism while preserving the account address, so
 counterparties do not need a replacement address. The current program decides
 which signatures and conditions are required to authorize the change.
 
-The program and APlane's signer draw this line in different places. The
-program accepts any nonzero rekey target that the admin signature binds. The
-signer is narrower: for an admin-authorized rekey it requires a destination
-credential it holds and can validate, meaning a native Ed25519 or Falcon-1024
-key or a plain `aplane.ed25519.v1` or `aplane.falcon1024.v1` LogicSig. Another
-bounded program does not qualify as a replacement target in that workflow.
-Rekeying the bounded account to its own address names no new credential and
-keeps its bounds. An account that was merely rekeyed to the program is
-different: rekeying it to itself hands it back to its original key, which must
-pass the same destination checks.
+For allowlist v1 and v2, the spending key can rekey the account straight to a
+replacement program. An account that refuses rekeys cannot change its
+destinations at all: replacing it means moving its funds, while it can still
+spend, to a new account built with the new rules, and retiring the old
+address.
 
-Consequently, replacing an admin-locked allowlist currently requires an
-administrative transition through an eligible local credential, followed by
-an ordinary rekey to the replacement program under signer policy. The
-intermediate authority does not carry the old program's bounds. It is a
-controlled custody operation, not a one-step replacement of the allowlist. See
-[the admin-rekey contract](ARCH_BOUNDED_DSA.md#frozen-v1-decisions) for the
-precise destination checks and workflow.
+## 6. Spending and cosigning authority
 
-## 6. Spending, cosigning, and administrative authority
+The spending key authorizes ordinary use of the account and, for allowlist v1,
+v2 and the timelock, a pure rekey as well. Corridor adds a cosigner whose
+signature is required for every spend. A Corridor account refuses rekeys, so
+it cannot leave a failed cosigner: if the cosigner is lost for good, the
+account can no longer spend. The cosigner key and the spending key should be
+distinct and separately managed.
 
-The spending key authorizes ordinary use of the account. For the rekey-locked
-allowlist and Corridor, a separately custodied contract-admin key must also
-authorize a pure rekey. Both signatures are required: the admin key cannot
-spend alone, rekey alone, or recover an account whose spending key has been lost.
-
-Corridor separates the cosigner from that administrative authority. Its
-cosigner signature is required for spends and is absent from the admin-rekey
-path. With the spending and contract-admin keys, the account can therefore
-leave a failed cosigner without that cosigner's cooperation, through the
-supported administrative workflow. The contract-admin key and the cosigner
-key should be distinct and separately managed.
-
-Rekey authority can remove the restrictions entirely. The security claim for
-an admin-locked account therefore assumes the additional admin authority
-remains uncompromised and does not authorize an unsafe transition. Separating
-that authority makes possession of the spending key alone insufficient to
-replace the program.
+Rekey authority can remove the restrictions entirely. That is why the
+containment claim for Locked Allowlist and Corridor rests on refusing rekeys,
+not on how well some rekey key is guarded.
 
 APlane's JSON signer and cosigner policies provide another layer: they decide
 whether the software will issue the required signatures. They can impose
@@ -198,9 +181,9 @@ on-chain guarantee if the relevant private keys are compromised.
 ## 7. What containment does and does not mean
 
 While the bounded program remains the account's authority, every transaction
-authorized through it must meet its checks. For an admin-locked allowlist, a
-stolen spending key alone cannot redirect an ordinary transfer outside the
-allowed recipients or remove the program. Corridor additionally requires the
+authorized through it must meet its checks. For Locked Allowlist or Corridor,
+a stolen spending key cannot redirect an ordinary transfer outside the allowed
+recipients or remove the program. Corridor additionally requires the
 cosigner's participation in every spend.
 
 That is a specific containment property, not a guarantee that the account
@@ -221,8 +204,8 @@ cannot lose value:
   of their owners. An allowlisted recipient can be compromised or have its
   authority changed.
 
-The implementation and custody of the spending, cosigner, and admin keys
-remain part of the security model. Using stateless programs removes the need
+The implementation and custody of the spending and cosigner keys remain part
+of the security model. Using stateless programs removes the need
 to maintain application state for these bounds; it does not eliminate code
 defects or operational mistakes.
 

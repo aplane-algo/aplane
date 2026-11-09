@@ -195,7 +195,7 @@ func TestBoundedAllowlistAuthorTEALOnChainLocalnet(t *testing.T) {
 					continue
 				}
 				t.Run(test.name, func(t *testing.T) {
-					signed, txid := account.signedGroupWithLayer3Args(t, test.txn, false, test.args)
+					signed, txid := account.signedGroupWithLayer3Args(t, test.txn, test.args)
 					raw := make([]byte, 0)
 					for _, stxn := range signed {
 						raw = append(raw, msgpack.Encode(stxn)...)

@@ -207,8 +207,6 @@ func logicSigAuthorizationPath(path boundedPath) (lsigresource.AuthorizationPath
 		return lsigresource.PathSpend, nil
 	case boundedPathSpendingKeyRekey:
 		return lsigresource.PathSpendingRekey, nil
-	case boundedPathAdminKeyRekey:
-		return lsigresource.PathAdminRekey, nil
 	default:
 		return 0, fmt.Errorf("unknown bounded authorization path %q", path)
 	}

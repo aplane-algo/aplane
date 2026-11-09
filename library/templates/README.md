@@ -48,7 +48,7 @@ apadmin template import library/templates/aplane.htlc.v1.yaml
 ### Merkle allowlist proof format
 
 The Merkle encoding of `aplane.falcon1024-b.v1` and the retired
-`aplane.falcon1024-allowlist.v2` and `aplane.corridor.v1` templates store the public
+`aplane.falcon1024-allowlist.v2` template store the public
 recipient allowlist in the encrypted key file and commit the LogicSig TEAL to a
 fixed-depth 16 Merkle tree derived from that list:
 
@@ -64,7 +64,7 @@ fixed-depth 16 Merkle tree derived from that list:
 
 The caller does not supply this proof. Self transfers and ASA opt-ins are
 allowed without a proof. Corridor additionally requires its cosigner signature
-on every spend; its external-admin rekey forbids both proof and cosigner slots.
+on every spend.
 
 ## Authoring rules: rekey and close-remainder
 

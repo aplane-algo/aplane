@@ -191,9 +191,6 @@ func (m Model) parameterModalFooterText(keyType, verb string) string {
 			return ""
 		}
 	}
-	if param, ok := focusedParam(m.forms.generateFocus, spec.Params); ok && isContractAdminReferenceParam(param) {
-		return "Tab: Next | ctrl+o: Browse | Enter: " + verb + " | Esc: Back"
-	}
 	return "Tab: Next | </> Switch mode | Enter: " + verb + " | Esc: Back"
 }
 

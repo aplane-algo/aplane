@@ -19,8 +19,14 @@ import (
 	falconv1 "github.com/aplane-algo/aplane/lsig/falcon1024/v1"
 )
 
+// The plain LogicSig bases a bounded account can be composed over.
+const (
+	plainFalcon1024LsigKeyType = "aplane.falcon1024.v1"
+	plainEd25519LsigKeyType    = "aplane.ed25519.v1"
+)
+
 func TestBoundedSpendingConstructionResolvesFromTheDurableBase(t *testing.T) {
-	for _, workflow := range []boundedSigningWorkflow{boundedWorkflowCosigner, boundedWorkflowExternalAdmin} {
+	for _, workflow := range []boundedSigningWorkflow{boundedWorkflowCosigner} {
 		construction, ok := boundedSpendingConstruction(boundedmeta.ContractV1, plainFalcon1024LsigKeyType, workflow)
 		if !ok || construction.ID() != sigconstruction.Falcon1024().ID() {
 			t.Fatalf("workflow %d on Falcon = %q, %v", workflow, construction.ID(), ok)
@@ -55,9 +61,6 @@ func TestBoundedGenerationAdmitsOnlySignableWorkflows(t *testing.T) {
 		{plainFalcon1024LsigKeyType, "aplane.falcon1024", falconv1.NewFalconOps(falconfamily.FalconBase), falconfamily.PublicKeySize},
 		{plainEd25519LsigKeyType, "aplane.ed25519", ed25519v1.NewOps(), ed25519.PublicKeySize},
 	}
-	adminKeyRekey := composeddsa.AdminOperationSpec{
-		Kind: composeddsa.AdminOperationRekey, Authorization: composeddsa.AdminAuthorizationAdminKey, PolicyGate: composeddsa.AdminPolicyGateNone,
-	}
 	cosigner := &boundedmeta.CosignerAuthorization{
 		Contract: boundedmeta.CosignerContractV1, ComponentKeyType: boundedmeta.CosignerComponentKeyTypeV1,
 		SignatureMaxSize: boundedmeta.CosignerSignatureMaxSizeV1, RequiredOn: []string{boundedmeta.PathSpend},
@@ -68,10 +71,8 @@ func TestBoundedGenerationAdmitsOnlySignableWorkflows(t *testing.T) {
 		cosigner  *boundedmeta.CosignerAuthorization
 		workflows []boundedSigningWorkflow
 	}{
-		{"external admin", []composeddsa.AdminOperationSpec{adminKeyRekey}, nil, []boundedSigningWorkflow{boundedWorkflowExternalAdmin}},
 		// A cosigner profile can't take a spending-key rekey, so this one has none.
 		{"cosigner", nil, cosigner, []boundedSigningWorkflow{boundedWorkflowCosigner}},
-		{"cosigner and external admin", []composeddsa.AdminOperationSpec{adminKeyRekey}, cosigner, []boundedSigningWorkflow{boundedWorkflowCosigner, boundedWorkflowExternalAdmin}},
 	}
 
 	for _, base := range bases {
@@ -95,9 +96,6 @@ func TestBoundedGenerationAdmitsOnlySignableWorkflows(t *testing.T) {
 				})
 				// A profile takes only the keys its authorities declare.
 				params := map[string]string{}
-				if len(profile.rekey) > 0 {
-					params[composeddsa.BoundedAdminPublicKeyParameter] = hex.EncodeToString(bytes.Repeat([]byte{0x33}, composeddsa.BoundedAdminPublicKeySize))
-				}
 				if profile.cosigner != nil {
 					params[composeddsa.BoundedCosignerPublicKeyParameter] = hex.EncodeToString(bytes.Repeat([]byte{0x44}, boundedmeta.CosignerPublicKeySizeV1))
 				}

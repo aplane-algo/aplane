@@ -229,7 +229,7 @@ func profileAllowsSpendEffect(profile *BoundedAuthorizationProfile, wanted ...tx
 }
 
 func (c *ComposedDSA) renderLayer3Policy(params map[string]string, profile *BoundedAuthorizationProfile) (string, error) {
-	if err := validateLayer3Policy(c.layer3, c.paramsWithoutAdminKey(), profile, c.hasAuthorTEAL()); err != nil {
+	if err := validateLayer3Policy(c.layer3, c.paramsWithoutCosignerKey(), profile, c.hasAuthorTEAL()); err != nil {
 		return "", err
 	}
 	rules, ok := rulesForLayer3Policy(c.layer3.Policy)
@@ -388,10 +388,10 @@ func (c *ComposedDSA) validateFrameworkLayer3Arguments() error {
 	return nil
 }
 
-func (c *ComposedDSA) paramsWithoutAdminKey() []lsigprovider.ParameterDef {
+func (c *ComposedDSA) paramsWithoutCosignerKey() []lsigprovider.ParameterDef {
 	params := make([]lsigprovider.ParameterDef, 0, len(c.params))
 	for _, param := range c.params {
-		if param.Name != BoundedAdminPublicKeyParameter && param.Name != BoundedCosignerPublicKeyParameter {
+		if param.Name != BoundedCosignerPublicKeyParameter {
 			params = append(params, param)
 		}
 	}

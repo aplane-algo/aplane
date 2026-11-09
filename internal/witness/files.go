@@ -3,31 +3,11 @@
 
 package witness
 
-import "strings"
-
 // MaxPublicReferenceBytes bounds a public reference read from a file.
 const MaxPublicReferenceBytes = 16 * 1024
 
-// File extensions describe custody roles. Both roles share the witness key
-// form, identity, and public-reference schema, so the name is what keeps an
-// admin file and a cosigner file apart at a glance; it proves nothing about
-// custody. These constants carry no private-key capability, so signer and
-// client packages can use them.
-const (
-	// AdminArtifactExtension identifies an encrypted standalone admin key,
-	// owned by aprekey and never a signer store resident.
-	AdminArtifactExtension = ".adm"
-	// AdminPublicReferenceExtension identifies an admin key's public reference.
-	AdminPublicReferenceExtension = ".adm.json"
-	// CosignerPublicReferenceExtension identifies a cosigner key's public
-	// reference: the store sidecar beside its .cos credential and the export
-	// made from it.
-	CosignerPublicReferenceExtension = ".cos.json"
-)
-
-// IsAdminPublicReferenceName reports whether path carries the admin reference
-// name in any case, so a cosigner file can't take that name on a
-// case-insensitive filesystem.
-func IsAdminPublicReferenceName(path string) bool {
-	return strings.HasSuffix(strings.ToLower(path), AdminPublicReferenceExtension)
-}
+// CosignerPublicReferenceExtension identifies a cosigner key's public
+// reference: the store sidecar beside its .cos credential and the export made
+// from it. It carries no private-key capability, so signer and client packages
+// can use it.
+const CosignerPublicReferenceExtension = ".cos.json"

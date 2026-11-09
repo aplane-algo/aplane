@@ -62,7 +62,7 @@ func validateTemplateSpec(spec *TemplateSpec, rules templateBaseRules) error {
 		return fmt.Errorf("base_key_type %q is not registered as composable", spec.BaseKeyType)
 	}
 	for _, parameter := range spec.Parameters {
-		if parameter.Name == BoundedAdminPublicKeyParameter || isBoundedCosignerReservedName(parameter.Name) {
+		if isBoundedCosignerReservedName(parameter.Name) {
 			return fmt.Errorf("parameter %q is framework-injected or reserved and cannot be declared by the author", parameter.Name)
 		}
 	}

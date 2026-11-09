@@ -256,7 +256,7 @@ func BuildApprovalDescription(req signerapi.GroupSignRequest, plan *PlanResult, 
 		b.WriteString(describeTxnForApproval(txn, txReq, generateTxnDescriptionFromTxn))
 		if i < len(plan.BoundedItems) && plan.BoundedItems[i] != nil && plan.BoundedItems[i].Path != boundedPathPureSpend {
 			item := plan.BoundedItems[i]
-			b.WriteString("\n  Bounded authorization contract admin operation: REKEY")
+			b.WriteString("\n  Bounded authorization operation: REKEY")
 			b.WriteString("\n  Authorization: " + boundedAuthorizationLabel(item))
 			b.WriteString(fmt.Sprintf("\n  Profile maximum fee: %d microAlgos", item.Metadata.MaxFee))
 		}
@@ -282,8 +282,6 @@ func boundedAuthorizationLabel(item *boundedPlanItem) string {
 	switch item.Path {
 	case boundedPathSpendingKeyRekey:
 		return "spending key only"
-	case boundedPathAdminKeyRekey:
-		return "external contract admin key " + item.Metadata.AdminKeyID
 	default:
 		return "unknown"
 	}

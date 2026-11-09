@@ -87,9 +87,8 @@ Important vocabulary:
   `ed25519` or `aplane.falcon1024.v1`.
 - **Witness Key ID** means the 52-character uppercase base32 SHA-512/256 digest
   over canonical length-prefixed domain, key type, and public-key fields. It
-  identifies the same role-neutral public key form in hot cosigner custody or
-  standalone contract-admin custody; it is not an Algorand account address.
-  Cosigner-role wire/storage fields may call this value `component_key`.
+  identifies a cosigner witness key; it is not an Algorand account address.
+  Cosigner wire/storage fields may call this value `component_key`.
 
 ## System Boundaries
 
@@ -368,9 +367,8 @@ guarded flow: user `/sign/component`, cosigner `/sign/component`, user
 52-character txid-shaped Witness Key ID and are not Algorand spending accounts.
 
 Bounded keys with durable `bounded_authorization.cosigner` use the distinct
-`bounded-cosigner1` flow. Corridor v1 is the first such template. Their spend
-path uses `/plan`, kind-tagged `/sign/component`, and `/sign/assemble`; their
-admin path remains `/sign/bounded-admin`.
+`bounded-cosigner1` flow, for example a Corridor `aplane.falcon1024-b.v1` account. Their spend
+path uses `/plan`, kind-tagged `/sign/component`, and `/sign/assemble`.
 
 Decrypted key payloads are parsed through `internal/keys.ParsePayload` and
 written through `internal/keys.MarshalPayload`. The v1 payload vocabulary is
@@ -398,7 +396,7 @@ modeled by `internal/signingargs.Info`; key-file storage aliases that type as
 `/keys` projects it to the SDK-facing `signerapi.SigningArgInfo` DTO. Template
 and `/keytypes` generation metadata uses `runtime_args`.
 
-### Bounded Authorization And External Contract Admin
+### Bounded Authorization
 
 Bounded1 is an authorization contract used by both `bounded1` and
 `bounded-cosigner1` signing choreographies. Normative field inventory, encodings, and custody
@@ -408,20 +406,9 @@ rules live in [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md). From a data-model pers
   `bounded_authorization` (signing metadata version 2), owned by
   `internal/boundedmeta` and assembled by `lsig/composeddsa` at generation.
 - Inventory advertises `signing_flow: bounded1` without a cosigner or
-  `bounded-cosigner1` with a cosigner. Admin-key rekeys always route to
-  `POST /sign/bounded-admin` rather than ordinary runtime args or cosigner assembly.
-- The spending key remains signer-managed (`.key`). The Falcon contract-admin
-  private material is **not** a signer-managed credential: it lives in a
-  standalone encrypted `.adm` bundle (`aplane.witness-key-bundle.v1`) owned by
-  `aprekey` / `internal/witness/artifact`, optionally with a public
-  `.adm.json` sidecar.
-- Separated ceremonies use short-lived non-secret files
-  `.apbounded-admin-request` / `.apbounded-admin-signature` (schemas
-  `aplane.bounded-admin-request.v2` / `aplane.bounded-admin-signature.v1`)
-  owned by `internal/boundedadmin/protocol` and
-  `internal/apboundedadminapp`.
-- Signer and `apstore` must not import, decrypt, back up, or restore private
-  `.adm` artifacts as managed keys.
+  `bounded-cosigner1` with a cosigner.
+- The spending key is signer-managed (`.key`). A spending-key rekey goes through
+  ordinary `/sign`; an account that declares no rekey operation has no rekey path.
 
 ### Key Types And Templates
 
@@ -699,8 +686,9 @@ are rejected.
   `bounded_max_fees` (the bounded authorization `max_fee` per address).
   Each LogicSig resource profile keeps final compiled program bytes separate
   from path-specific maximum argument bytes and reviewed opcode-cost ceilings.
-  Bounded profiles expose spend, spending-rekey, and admin-rekey paths from the
-  durable argument layout; no combined program-plus-arguments scalar is stored.
+  Bounded profiles expose spend and spending-rekey paths from the durable
+  argument layout. The `admin_rekey` path is unused and stays only so the
+  encoding does not change. No combined program-plus-arguments scalar is stored.
   Covered APlane-owned declarations are exercised by the integration
   opcode-ceiling gate: production-generated final bytecode and maximum-input
   accepted paths are simulated by the same algod selected by the signer fixture's
@@ -855,7 +843,6 @@ Primary projections:
 
 - `GroupSignRequest`,
 - `SignRequest`,
-- `BoundedAdminRequest`, `BoundedAdminPartialResponse`, `BoundedAdminMetadata`,
 - `ComponentRequest`,
 - `ComponentResponse`,
 - `AssemblyRequest`,
@@ -982,23 +969,19 @@ keys.
 
 1. Client prepares transaction bytes and metadata.
 2. Client classifies effective signers from inventory (`signing_flow` and key
-   type). Guarded targets use the guarded lifecycle below; bounded admin-key
-   rekeys use `/sign/bounded-admin`; rotating accounts use
+   type). Guarded targets use the guarded lifecycle below; rotating accounts use
    `/sign/rotating/prepare` and `/sign/rotating/sign`; ordinary targets use
    `/plan` or `/sign`.
 3. Signer validates request shape and transaction network. Plain `/sign`
-   rejects guarded-account and witness key types, admin-key bounded
-   operations that require the bounded-admin path, cosigner-gated bounded
+   rejects guarded-account and witness key types, cosigner-gated bounded
    spends (`bounded_cosigner_required`), and rotating accounts
    (`rotating_signing_required`).
 4. Signer canonicalizes group and computes mutations (bounded planning
    classifies effects after fee pooling).
 5. Signer evaluates policy for signer-controlled slots.
 6. Signer either rejects, auto-approves, or requests operator approval.
-7. Signer signs/assembles finalized slots (bounded admin path returns a
-   partial plus authorization metadata, not a fully submittable group alone).
-8. Client routes returned signed bytes to algod submission or simulation,
-   completing a bounded ceremony when required.
+7. Signer signs/assembles finalized slots.
+8. Client routes returned signed bytes to algod submission or simulation.
 
 Live `/sign` cancellation is request-scoped runtime state only. There is no
 durable sign request table.
@@ -1090,8 +1073,6 @@ through `genstore.Mint`; no live signer store is being mutated.
 | Term keys | secret | unsealed from `store-root.enc` at unlock; cached only while unlocked; zeroed on lock |
 | `.key` account private material | secret | encrypted at rest; decrypted on demand |
 | `.cos` cosigner witness material | secret | encrypted at rest; usable only in the cosigner component-signing domain |
-| External `.adm` contract-admin private material | secret | standalone `aplane.witness-key-bundle.v1`; never signer-managed; not backed up by `apstore` |
-| Bounded ceremony request/signature files | short-lived signing authority | non-secret but bind network/partial; mode `0600`, no overwrite |
 | Installed `.template` files | sensitive policy material | encrypted in the product store |
 | `default.json`, `policies/*.json` | safety-critical | authenticated by HMAC sidecars; `aplane.policy.v1` documents whose `role` must match the node |
 | `release.json` | provenance metadata | public installer/release stamp; not signing, policy, or trust authority |
@@ -1152,7 +1133,6 @@ These decisions are part of the current data model and contract surface:
 | Cosigner routing is operation-scoped runtime state. | Clients query authenticated `/keys` for each guarded or bounded-cosigner operation; no cosigner-key inventory is persisted in `endpoints.yaml`. |
 | `cosigners/<name>.json` records are public generation references. | They help the TUI select a cosigner public key but do not prove endpoint ownership or signer custody. |
 | Guarded account key files store the resolved embedded public key. | Endpoint alias, reference name, and route selection are client/runtime concerns, not sign-time authority for the key. |
-| External `.adm` bundles are not signer-managed credentials. | Contract-admin private material stays in standalone custody (`aprekey`); signer and `apstore` never treat `.adm` as `.key`/`.cos`. |
 | Inventory `signing_flow` labels are frozen routing tokens. | Clients implement empty, `cosigner1`, `bounded1`, `bounded-cosigner1`, and `rotating1` and fail closed on unknown labels. |
 | Live `/sign` responds with `GroupSignResponse`. | There is no separate signerapi `SignResponse` DTO. |
 | Recovery material is released only by explicit local native-key export. | `export_key` requires local IPC, authorization, an unlocked healthy store and fresh passphrase verification; only native Ed25519/Falcon are eligible. Generate results still omit mnemonics. |
@@ -1285,11 +1265,10 @@ and [ARCH_ADMIN.md](ARCH_ADMIN.md#admin-protocol-contract).
 | DSA LogicSig key | signing authority | `.key` category `dsa_lsig` | address, bytecode, private signing key, signing args | `internal/keys`, `internal/signerapp/signing`, `lsig/*` | Stored bytecode and `signing_args` are sign-time authority. |
 | Generic LogicSig key | signing authority | `.key` category `generic_lsig` | address, bytecode, runtime arg schema | `internal/keys`, `lsig/generictemplate` | TEAL-only key stores no private signing key; address derives from bytecode. |
 | Guarded account key | signing/assembly authority | `.key` category `dsa_lsig`, key type `aplane.falcon1024-cosigner1024.v1` | local user-role key plus embedded cosigner public key | `lsig/falcon1024_guarded`, `internal/signerapp/signing` | `/sign` rejects; inventory uses `signing_flow: cosigner1`; user-role `/sign/component` and `/sign/assemble` use stored bytecode/params. |
-| Bounded-cosigner account key | signing/assembly authority | `.key` category `dsa_lsig`, bounded metadata with `cosigner` (for example `aplane.corridor.v1`) | local base key, bytecode, bounded metadata, embedded cosigner public key | `lsig/composeddsa`, `internal/boundedmeta`, `internal/signerapp/signing` | `/sign` rejects cosigner-gated spend; inventory uses `signing_flow: bounded-cosigner1`; bounded component and assembly endpoints consume stored metadata. |
-| Bounded account key metadata | signing authority metadata | key payload `bounded_authorization` at `signing_metadata_version: 2` | inventory `bounded_authorization` / path sizing | `internal/boundedmeta`, `lsig/composeddsa`, `internal/keys`, `internal/signerapp/signing` | Required for bounded1 DSA keys; ordinary `/sign` rejects admin-key operations that need `/sign/bounded-admin`. |
+| Bounded-cosigner account key | signing/assembly authority | `.key` category `dsa_lsig`, bounded metadata with `cosigner` (for example a Corridor `aplane.falcon1024-b.v1` account) | local base key, bytecode, bounded metadata, embedded cosigner public key | `lsig/composeddsa`, `internal/boundedmeta`, `internal/signerapp/signing` | `/sign` rejects cosigner-gated spend; inventory uses `signing_flow: bounded-cosigner1`; bounded component and assembly endpoints consume stored metadata. |
+| Bounded account key metadata | signing authority metadata | key payload `bounded_authorization` at `signing_metadata_version: 2` | inventory `bounded_authorization` / path sizing | `internal/boundedmeta`, `lsig/composeddsa`, `internal/keys`, `internal/signerapp/signing` | Required for bounded1 DSA keys. |
 | Cosigner witness key | component-sign authority | `.cos` category `witness`, key type `aplane.witness-*` | raw cosigner-role witness key | `internal/keygen`, `internal/signing`, `internal/signerapp/signing` | Selected by Witness Key ID; `/sign` rejects; cosigner-role `/sign/component` only; not a spending account. |
-| External contract-admin witness bundle | secret standalone custody | `<WITNESS_KEY_ID>.adm` schema `aplane.witness-key-bundle.v1` | `aprekey` generate/inspect/verify/sign | `internal/witness/artifact`, `cmd/aprekey` | Never a signer-managed `.key`/`.cos`; signer/`apstore` must not import, decrypt, back up, or restore private material. |
-| Witness Key ID | public selector | 52-character uppercase base32 SHA-512/256 of canonical length-prefixed domain, key type, and public key bytes | cosigner key row `address`, public reference `witness_key_id`, and role-specific `component_key` fields | `internal/witness` | Txid-shaped but not a valid Algorand address; rejected where an Algorand address is required. |
+| Witness Key ID | public selector | 52-character uppercase base32 SHA-512/256 of canonical length-prefixed domain, key type, and public key bytes | cosigner key row `address`, public reference `witness_key_id`, and cosigner `component_key` fields | `internal/witness` | Txid-shaped but not a valid Algorand address; rejected where an Algorand address is required. |
 | Cosigner public metadata sidecar | public metadata | `keys/<witness_key_id>.cos.json` | `apadmin cosigner export` source | `internal/keys`, `internal/cosigner/cosignerrefs` | Witness Key ID/key type/public key consistency verified; no private material. |
 | Key creation parameters | provenance/generation input | key payload `parameters` | `/keys` `parameters`, key details | `internal/keys`, `internal/keymgmt` | Canonical payload parser rejects duplicate object members, unknown fields, and noncanonical aliases. |
 | LogicSig bytecode | signing authority | key payload `lsig_bytecode` | LogicSig address and signing assembly | `internal/keys`, `internal/signerapp/signing` | Bytecode must derive an off-curve address. |
@@ -1387,7 +1366,6 @@ and [ARCH_ADMIN.md](ARCH_ADMIN.md#admin-protocol-contract).
 | Key info row | wire projection | loaded key metadata | `signerapi.KeyInfo` | `internal/signerapp/rest` | `is_witness_key`/`is_spending_account` disambiguate selectors from accounts; may carry `signing_flow`, `cosigner_component_key_type`, and `bounded_authorization`. |
 | Key types response | wire projection | enabled providers/templates and cosigner refs | `signerapi.KeyTypesResponse` | `internal/signerapp/rest` | Runtime args are generation metadata, not existing-key signing args; may carry `signing_flow`. |
 | Group sign request | wire request | client transaction bytes | `signerapi.GroupSignRequest` | `pkg/signerapi`, `internal/signerapp/signing` | Shared by `/sign` and `/plan`; all-foreign invalid. |
-| Bounded admin request/partial | wire request/projection | planned admin-key rekey group plus durable metadata | `signerapi.BoundedAdminRequest`, `BoundedAdminPartialResponse` | `pkg/signerapi`, `internal/signerapp/signing` | `POST /sign/bounded-admin`; not interchangeable with `GroupSignResponse`; external admin completion is out of band. |
 | Sign request entry | wire request row | caller-supplied txn/signed bytes | sign/passthrough/foreign entry | `pkg/signerapi`, signer planner | `txn_sender` is advisory display data only. |
 | Group plan response | wire projection | canonical planned group | `signerapi.GroupPlanResponse` | `internal/signerapp/rest`, `internal/signerapp/signing` | No key access; returns unsigned TX-prefixed transaction bytes. |
 | Group sign response | wire projection | finalized signed group | `signerapi.GroupSignResponse` | `internal/signerapp/rest`, `internal/signerapp/signing` | Signed array aligns to finalized group positions. |
@@ -1436,7 +1414,6 @@ and [ARCH_ADMIN.md](ARCH_ADMIN.md#admin-protocol-contract).
 | Component signature set | request-scoped wire data | `/sign/component` response | per-target signatures by target index | `internal/signerapp/signing`, `pkg/signerapi` | Each signature is bound to one target TxID and role. |
 | Guarded assembly target | request-scoped wire data | `/sign/assemble` request targets | LogicSig args packing plan | `internal/signerapp/signing` | User and cosigner signatures are verified before packed bytes are returned. |
 | Guarded send orchestration | long-lived client workflow | signer inventory plus endpoint registry plus requests | `/plan`, user component call (signer-domain gated), optional non-guarded `/sign`, cosigner call, assembly, then client algod submit or simulate | `internal/engine/guarded`, `internal/engine`, `internal/apshellapp` | Client holds no key material but does hold the final executable group; endpoint routing is not trust; guarded targets are classified by effective signer and may be direct senders or AuthAddr authorizers; mixed groups sign non-guarded originals over the same canonical bytes. |
-| Bounded admin ceremony orchestration | long-lived offline/online workflow | `/sign/bounded-admin` partial plus external `.adm` custody | request/signature files and final submit | `cmd/aprekey`, `internal/apboundedadminapp`, `internal/boundedadmin`, `internal/engine` | Online rekey/unrekey or prepare/sign/complete; signer never holds contract-admin private material. |
 
 ### Plugin, JavaScript, And MCP Models
 
@@ -1462,10 +1439,8 @@ and [ARCH_ADMIN.md](ARCH_ADMIN.md#admin-protocol-contract).
 | Element | Kind | Authority | Projection | Owner | Checks |
 |---|---|---|---|---|---|
 | Endpoint export envelope | public handoff | JSON `schema:"aplane.endpoint.v1"` | `apshell endpoints import` input | `internal/endpointrefs` (schema/parse/portable URL rules), `internal/apadminapp` (export), `internal/apshellapp` (import), `internal/serverconfig` (`advertise_url` validation), `internal/config` (registry written by import) | No alias, role, credential, known hosts, private key, or cosigner inventory; URL comes from `--url`, `--host`, or signer `endpoint.advertise_url`. |
-| Witness public reference | public handoff | JSON `schema:"aplane.witness-key-public.v1"` | cosigner key export; signer cosigner reference import or contract-admin enrollment | `internal/witness`, `internal/apadminapp`, `internal/signerapp/signertui`, `internal/cosigner/cosignerrefs` | Contains `key_type`, `witness_key_id`, and full `public_key_hex`; no custody, role, endpoint, or trust claim. The cosigner's address is handed to clients separately for `endpoints add`. |
+| Witness public reference | public handoff | JSON `schema:"aplane.witness-key-public.v1"` | cosigner key export; signer cosigner reference import | `internal/witness`, `internal/apadminapp`, `internal/signerapp/signertui`, `internal/cosigner/cosignerrefs` | Contains `key_type`, `witness_key_id`, and full `public_key_hex`; no custody, role, endpoint, or trust claim. The cosigner's address is handed to clients separately for `endpoints add`. |
 | Public cosigner reference record | public signer catalog | JSON `schema:"aplane.cosigner-public-key-ref.v2"` | generation select option | `internal/cosigner/cosignerrefs` | Stored under `cosigners/`; populated by explicit operator import. Only the v2 record is read. |
-| Bounded admin ceremony request | short-lived handoff | `*.apbounded-admin-request` schema `aplane.bounded-admin-request.v2` | offline `aprekey sign` input | `internal/boundedadmin/protocol`, `internal/apboundedadminapp`, `cmd/aprekey` | Strict JSON; size-bounded; request-hash binds partial, optional cosigner authorization, and network context; mode `0600`, no overwrite. |
-| Bounded admin ceremony signature | short-lived handoff | `*.apbounded-admin-signature` schema `aplane.bounded-admin-signature.v1` | networked `aprekey complete` input | `internal/boundedadmin/protocol`, `internal/apboundedadminapp`, `cmd/aprekey` | Binds `request_hash_hex`, contract admin key ID, and signature; mode `0600`, no overwrite. |
 
 ### Installer And Release Metadata
 
@@ -1515,9 +1490,7 @@ name a test inline:
   `test/integration/policy_per_key_test.go`.
 - Key payload parsing, scan, backup, and restore: `internal/keys`,
   `internal/backup/service_test.go`, `cmd/apstore/policy_test.go`.
-- Bounded metadata, ceremony, and external witness artifacts:
-  `internal/boundedmeta`, `internal/boundedadmin`, `internal/witness/artifact`,
-  `internal/apboundedadminapp`, `test/contracts/signerapi/bounded_*`.
+- Bounded metadata: `internal/boundedmeta`, `test/contracts/signerapi/bounded_*`.
 - Authorization vocabulary and product action allowlists:
   `internal/auth/authorizer.go`, `internal/authz/authorizer_test.go`.
 - Integration coverage for signer/client flows: `test/integration`.
@@ -1540,7 +1513,7 @@ name a test inline:
 | Signing-arg schema model | `internal/signingargs` |
 | Node role / key class gates | `internal/noderole`, `internal/keyclass` |
 | Cosigner key types/messages/references | `internal/cosigner`, `pkg/signerapi/cosigner.go`, [ARCH_GUARDED.md](ARCH_GUARDED.md) |
-| Bounded authorization / external admin | `internal/boundedmeta`, `lsig/composeddsa`, `internal/witness/artifact`, `internal/boundedadmin`, `internal/apboundedadminapp`, [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md) |
+| Bounded authorization | `internal/boundedmeta`, `lsig/composeddsa`, [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md) |
 | Key type state/catalog | `internal/keytypestate`, `internal/keytypecatalog` |
 | Template library/store | `internal/templatelibrary`, `internal/templatestore`, `internal/signerapp/templates` |
 | Signing flow | `internal/signerapp/signing`, [ARCH_SIGNING.md](ARCH_SIGNING.md) |

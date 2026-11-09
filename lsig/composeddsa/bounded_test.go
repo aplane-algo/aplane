@@ -6,9 +6,6 @@ package composeddsa
 import (
 	"bytes"
 	"encoding/hex"
-	"os"
-	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -45,35 +42,9 @@ func (boundedTestOps) SignatureArgLayout() SignatureArgLayout {
 	return SignatureArgLayout{Count: 1, MaxSizes: []int{4}}
 }
 
-func TestBoundedGoldenVector(t *testing.T) {
-	profile := &BoundedAuthorizationProfile{
-		Contract:     BoundedContractV1,
-		SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectAssetOptIn, txeffects.SpendEffectAxfer, txeffects.SpendEffectPay},
-		MaxFee:       10_000,
-		AdminOperations: []AdminOperationSpec{{
-			Kind: AdminOperationRekey, Authorization: AdminAuthorizationAdminKey, PolicyGate: AdminPolicyGateNone,
-		}},
-	}
-	profileMetadata := &boundedmeta.Metadata{
-		Contract:               BoundedContractV1,
-		BaseSignatureArgLayout: boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{4}},
-		SpendEffects:           []string{boundedmeta.SpendEffectPay, boundedmeta.SpendEffectAxfer, boundedmeta.SpendEffectAssetOptIn},
-		MaxFee:                 10_000,
-		AdminOperations: []boundedmeta.AdminOperation{{
-			Kind: boundedmeta.AdminOperationRekey, Authorization: boundedmeta.AdminAuthorizationAdmin, PolicyGate: boundedmeta.PolicyGateNone,
-		}},
-		Layer3Policy:   boundedmeta.Layer3PolicyCustom,
-		ArgumentLayout: boundedmeta.BaseArgumentLayout(SignatureArgLayout{Count: 1, MaxSizes: []int{4}}, true),
-	}
-	profileEncoding, err := CanonicalBoundedProfile(profile, profileMetadata)
-	if err != nil {
-		t.Fatalf("CanonicalBoundedProfile() error = %v", err)
-	}
-	const wantProfile = "0000001941504c414e455f424f554e4445445f50524f46494c455f563100000008626f756e6465643100000003000000037061790000000561786665720000000c61737365745f6f70745f696e0000000000002710000000010000000572656b65790000000961646d696e5f6b6579000000046e6f6e650000000000000006637573746f6d00000001000000040000000000000000000000020000000000000010626173655f7369676e61747572655f300000000e626173655f7369676e617475726500000004000000087265717569726564000000087265717569726564000000087265717569726564000000010000000f61646d696e5f7369676e61747572650000000561646d696e0000058f00000009666f7262696464656e00000009666f7262696464656e000000087265717569726564"
-	if got := hex.EncodeToString(profileEncoding); got != wantProfile {
-		t.Fatalf("canonical profile = %s, want %s", got, wantProfile)
-	}
-
+// The behavior-parameter encoding feeds the general boundary digest. These bytes
+// were frozen with the first bounded golden vector.
+func TestCanonicalBoundedBehaviorParametersGolden(t *testing.T) {
 	recipient := types.Address{}
 	for i := range recipient {
 		recipient[i] = 0x33
@@ -86,81 +57,6 @@ func TestBoundedGoldenVector(t *testing.T) {
 	const wantBehavior = "0000002541504c414e455f424f554e4445445f4245484156494f525f504152414d45544552535f5631000000010000000a726563697069656e747300000009616464726573735b5d0000002800000001000000203333333333333333333333333333333333333333333333333333333333333333"
 	if got := hex.EncodeToString(behaviorEncoding); got != wantBehavior {
 		t.Fatalf("canonical behavior parameters = %s, want %s", got, wantBehavior)
-	}
-
-	spendingPublicKey := bytes.Repeat([]byte{0x11}, BoundedAdminPublicKeySize)
-	adminPublicKey := bytes.Repeat([]byte{0x22}, BoundedAdminPublicKeySize)
-	keyID, err := witness.ID(witness.Falcon1024V1, adminPublicKey)
-	if err != nil {
-		t.Fatalf("witness.ID() error = %v", err)
-	}
-	const wantKeyID = "MM3VSIAUKJ2BT2JBNB7V3HX2YUP7SMLWRWGWDQPEGSZ4ZRK6SLVQ"
-	if keyID != wantKeyID {
-		t.Fatalf("admin key ID = %s, want %s", keyID, wantKeyID)
-	}
-
-	const fullKeyType = "aplane.falcon1024-allowlist-lock.v1"
-	binding := BoundedProgramBinding(
-		fullKeyType,
-		"aplane.falcon1024.v1",
-		12,
-		spendingPublicKey,
-		adminPublicKey,
-		profileEncoding,
-		behaviorEncoding,
-	)
-	const wantBinding = "d721742f981915ddf710de228678bffd0b932e8f58dd63c6852467a0bddb0b35"
-	if got := hex.EncodeToString(binding[:]); got != wantBinding {
-		t.Fatalf("program binding = %s, want %s", got, wantBinding)
-	}
-	message, err := BoundedAdminMessage(AdminOperationRekey, binding, bytes.Repeat([]byte{0x44}, 32))
-	if err != nil {
-		t.Fatalf("BoundedAdminMessage() error = %v", err)
-	}
-	const wantMessage = "5e46ffe51229497376e1a50e4bebbb9028e6ef0da8285ddd62cd5135efb6eb0b"
-	if got := hex.EncodeToString(message[:]); got != wantMessage {
-		t.Fatalf("admin message = %s, want %s", got, wantMessage)
-	}
-	assertBoundedGoldenVectorDocumentation(
-		t,
-		fullKeyType,
-		wantKeyID,
-		wantProfile,
-		wantBehavior,
-		wantBinding,
-		wantMessage,
-	)
-}
-
-func assertBoundedGoldenVectorDocumentation(
-	t *testing.T,
-	fullKeyType,
-	adminKeyID,
-	profile,
-	behavior,
-	binding,
-	message string,
-) {
-	t.Helper()
-	docPath := filepath.Join("..", "..", "docs", "ARCH_BOUNDED_DSA.md")
-	doc, err := os.ReadFile(docPath)
-	if err != nil {
-		t.Fatalf("read bounded architecture document: %v", err)
-	}
-	compactDoc := strings.Join(strings.Fields(string(doc)), "")
-	for label, value := range map[string]string{
-		"full_key_type":                        fullKeyType,
-		"canonical_bounded_profile_length":     strconv.Itoa(len(profile) / 2),
-		"canonical_bounded_profile_hex":        profile,
-		"canonical_behavior_parameters_length": strconv.Itoa(len(behavior) / 2),
-		"canonical_behavior_parameters_hex":    behavior,
-		"contract_admin_key_id":                adminKeyID,
-		"bounded_program_binding":              binding,
-		"admin_message":                        message,
-	} {
-		if !strings.Contains(compactDoc, label+":"+value) {
-			t.Fatalf("%s does not document golden %s %q", docPath, label, value)
-		}
 	}
 }
 
@@ -367,77 +263,6 @@ func TestBoundedCosignerRejectsSpendingKeyAuthorizedRekey(t *testing.T) {
 	}
 }
 
-func TestBoundedCosignerAdminKeyUsesSlotAfterCosigner(t *testing.T) {
-	profile := &BoundedAuthorizationProfile{
-		Contract: BoundedContractV1, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: 1_000,
-		AdminOperations: []AdminOperationSpec{{
-			Kind: AdminOperationRekey, Authorization: AdminAuthorizationAdminKey, PolicyGate: AdminPolicyGateNone,
-		}},
-		Cosigner: &boundedmeta.CosignerAuthorization{
-			Contract: boundedmeta.CosignerContractV1, ComponentKeyType: boundedmeta.CosignerComponentKeyTypeV1,
-			SignatureMaxSize: boundedmeta.CosignerSignatureMaxSizeV1, RequiredOn: []string{boundedmeta.PathSpend},
-		},
-	}
-	provider := newBoundedTestProvider(profile)
-	cosignerKey := strings.Repeat("42", boundedmeta.CosignerPublicKeySizeV1)
-	adminKey := strings.Repeat("24", BoundedAdminPublicKeySize)
-	teal, err := provider.GenerateTEAL([]byte{1}, map[string]string{
-		BoundedCosignerPublicKeyParameter: cosignerKey,
-		BoundedAdminPublicKeyParameter:    adminKey,
-	})
-	if err != nil {
-		t.Fatalf("GenerateTEAL() error = %v", err)
-	}
-	metadata := provider.BoundedAuthorizationMetadata()
-	if got := metadata.ArgumentLayout; len(got) != 3 || got[1].Source != boundedmeta.ArgSourceCosigner || got[2].Source != boundedmeta.ArgSourceAdmin {
-		t.Fatalf("ArgumentLayout = %#v, want base/cosigner/admin", got)
-	}
-	if !strings.Contains(teal, "arg 1\npushbytes 0x"+cosignerKey+"\nfalcon_verify") || !strings.Contains(teal, "arg 2\npushbytes 0x"+adminKey+"\nfalcon_verify") {
-		t.Fatalf("cosigner/admin verification does not use frozen slots:\n%s", teal)
-	}
-	if _, err := provider.GenerateTEAL([]byte{1}, map[string]string{
-		BoundedCosignerPublicKeyParameter: adminKey,
-		BoundedAdminPublicKeyParameter:    adminKey,
-	}); err == nil || !strings.Contains(err.Error(), "must differ from the contract-admin key") {
-		t.Fatalf("GenerateTEAL() collision error = %v", err)
-	}
-}
-
-func TestBoundedProfileRejectsLayer3GateForExternalAdmin(t *testing.T) {
-	profile := &BoundedAuthorizationProfile{
-		Contract: BoundedContractV1, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: 1_000,
-		AdminOperations: []AdminOperationSpec{{
-			Kind: AdminOperationRekey, Authorization: AdminAuthorizationAdminKey, PolicyGate: AdminPolicyGateLayer3,
-		}},
-	}
-	if err := profile.validate(); err == nil || !strings.Contains(err.Error(), "requires policy_gate") {
-		t.Fatalf("validate() error = %v, want external-admin gate rejection", err)
-	}
-}
-
-func TestBoundedAdminKeyUsesFirstArgAfterBaseLayout(t *testing.T) {
-	profile := &BoundedAuthorizationProfile{
-		Contract: BoundedContractV1, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: 1_000,
-		AdminOperations: []AdminOperationSpec{{Kind: AdminOperationRekey, Authorization: AdminAuthorizationAdminKey, PolicyGate: AdminPolicyGateNone}},
-	}
-	provider := newBoundedTestProvider(profile)
-	params := provider.CreationParams()
-	if len(params) != 1 || params[0].Name != BoundedAdminPublicKeyParameter || params[0].MaxLength != BoundedAdminPublicKeySize*2 {
-		t.Fatalf("CreationParams() = %#v, want injected Falcon admin public key", params)
-	}
-	adminHex := hex.EncodeToString(bytes.Repeat([]byte{0x22}, BoundedAdminPublicKeySize))
-	teal, err := provider.GenerateTEAL([]byte{1}, map[string]string{BoundedAdminPublicKeyParameter: adminHex})
-	if err != nil {
-		t.Fatalf("GenerateTEAL() error = %v", err)
-	}
-	if strings.Count(teal, "arg 1") != 3 {
-		t.Fatalf("admin authorization does not consistently use arg 1:\n%s", teal)
-	}
-	if !strings.Contains(teal, "falcon_verify\nassert") {
-		t.Fatalf("admin authorization omits Falcon verification:\n%s", teal)
-	}
-}
-
 func TestBoundedRejectsInvalidProfilesAndCapabilities(t *testing.T) {
 	valid := &BoundedAuthorizationProfile{
 		Contract: BoundedContractV1, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: 1_000,
@@ -576,39 +401,7 @@ func TestBoundedBuildArgsPreservesDerivedSlotBeforeRuntimeArg(t *testing.T) {
 	}
 }
 
-func TestBoundedAuthorizationMetadataSnapshotsAdminContract(t *testing.T) {
-	provider := newBoundedTestProvider(&BoundedAuthorizationProfile{
-		Contract:     BoundedContractV1,
-		SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay, txeffects.SpendEffectAxfer},
-		MaxFee:       2_000,
-		AdminOperations: []AdminOperationSpec{{
-			Kind: AdminOperationRekey, Authorization: AdminAuthorizationAdminKey, PolicyGate: AdminPolicyGateNone,
-		}},
-	})
-	adminPublicKey := bytes.Repeat([]byte{0x5a}, BoundedAdminPublicKeySize)
-	metadata, err := provider.BuildBoundedAuthorizationMetadata(
-		[]byte{0x01},
-		map[string]string{BoundedAdminPublicKeyParameter: hex.EncodeToString(adminPublicKey)},
-		bytes.Repeat([]byte{0x02}, 100),
-	)
-	if err != nil {
-		t.Fatalf("BoundedAuthorizationMetadata() error = %v", err)
-	}
-	if metadata.Contract != BoundedContractV1 || len(metadata.DerivedArgs) != 0 {
-		t.Fatalf("metadata = %#v", metadata)
-	}
-	if metadata.AdminKeyID == "" || len(metadata.ProgramBindingHex) != 64 {
-		t.Fatalf("admin metadata = %#v", metadata)
-	}
-	if got, want := metadata.ArgumentBytesForPath(boundedmeta.PathAdminRekey), 4+BoundedAdminSignatureMaxSize; got != want {
-		t.Fatalf("admin argument bytes = %d, want %d", got, want)
-	}
-	if got := len(metadata.ArgumentLayout); got != 2 || metadata.ArgumentLayout[1].Source != boundedmeta.ArgSourceAdmin {
-		t.Fatalf("ArgumentLayout = %#v", metadata.ArgumentLayout)
-	}
-}
-
-func TestBoundedDefaultsHaveOneProgramAndBinding(t *testing.T) {
+func TestBoundedDefaultsHaveOneProgramAndBehaviorEncoding(t *testing.T) {
 	provider := NewComposedDSA(Config{
 		KeyType:     "aplane.test-bounded-default.v1",
 		BaseKeyType: "aplane.falcon1024.v1",
@@ -625,38 +418,39 @@ func TestBoundedDefaultsHaveOneProgramAndBinding(t *testing.T) {
 			SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay},
 			MaxFee:       1_000,
 			AdminOperations: []AdminOperationSpec{{
-				Kind: AdminOperationRekey, Authorization: AdminAuthorizationAdminKey, PolicyGate: AdminPolicyGateNone,
+				Kind: AdminOperationRekey, Authorization: AdminAuthorizationSpendingKey, PolicyGate: AdminPolicyGateNone,
 			}},
 		},
 	})
-	adminPublicKey := bytes.Repeat([]byte{0x5a}, BoundedAdminPublicKeySize)
-	adminHex := hex.EncodeToString(adminPublicKey)
 	inputs := []map[string]string{
-		{BoundedAdminPublicKeyParameter: adminHex},
-		{BoundedAdminPublicKeyParameter: adminHex, "limit": ""},
-		{BoundedAdminPublicKeyParameter: adminHex, "limit": "100"},
+		{},
+		{"limit": ""},
+		{"limit": "100"},
 	}
 
-	var wantTEAL, wantBinding string
+	var wantTEAL, wantBehavior string
 	for i, params := range inputs {
 		teal, err := provider.GenerateTEAL([]byte{1}, params)
 		if err != nil {
 			t.Fatalf("GenerateTEAL(input %d) error = %v", i, err)
 		}
-		metadata, err := provider.BuildBoundedAuthorizationMetadata([]byte{1}, params, []byte{1, 2, 3})
-		if err != nil {
+		if _, err := provider.BuildBoundedAuthorizationMetadata([]byte{1}, params, []byte{1, 2, 3}); err != nil {
 			t.Fatalf("BuildBoundedAuthorizationMetadata(input %d) error = %v", i, err)
+		}
+		behavior, err := CanonicalBoundedBehaviorParameters(params, provider.CreationParams())
+		if err != nil {
+			t.Fatalf("CanonicalBoundedBehaviorParameters(input %d) error = %v", i, err)
 		}
 		if i == 0 {
 			wantTEAL = teal
-			wantBinding = metadata.ProgramBindingHex
+			wantBehavior = hex.EncodeToString(behavior)
 			continue
 		}
 		if teal != wantTEAL {
 			t.Fatalf("input %d generated different TEAL", i)
 		}
-		if metadata.ProgramBindingHex != wantBinding {
-			t.Fatalf("input %d binding = %s, want %s", i, metadata.ProgramBindingHex, wantBinding)
+		if got := hex.EncodeToString(behavior); got != wantBehavior {
+			t.Fatalf("input %d behavior encoding = %s, want %s", i, got, wantBehavior)
 		}
 	}
 }

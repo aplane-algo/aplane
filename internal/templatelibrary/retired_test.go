@@ -27,8 +27,8 @@ func retiredFiles(t *testing.T) []string {
 			names = append(names, entry.Name())
 		}
 	}
-	if len(names) != 5 {
-		t.Fatalf("retired templates = %v, want five", names)
+	if len(names) != 3 {
+		t.Fatalf("retired templates = %v, want three", names)
 	}
 	return names
 }
@@ -73,7 +73,7 @@ func TestRetiredTemplatesStayOutOfTheListingUntilInstalled(t *testing.T) {
 	if err := os.MkdirAll(retiredDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	name := "aplane.corridor.v1.yaml"
+	name := "aplane.falcon1024-timelock.v1.yaml"
 	data, err := retired.ReadFile(name)
 	if err != nil {
 		t.Fatal(err)
@@ -87,10 +87,10 @@ func TestRetiredTemplatesStayOutOfTheListingUntilInstalled(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if item := findLibraryItem(items, "aplane.corridor.v1"); item != nil {
+	if item := findLibraryItem(items, "aplane.falcon1024-timelock.v1"); item != nil {
 		t.Fatalf("retired file listed: %+v", *item)
 	}
-	if _, _, err := FindLibraryYAML(paths, TemplateRef{KeyType: "aplane.corridor.v1", TemplateType: templatestore.TemplateTypeComposed}); !os.IsNotExist(err) && !strings.Contains(err.Error(), "no entry") {
+	if _, _, err := FindLibraryYAML(paths, TemplateRef{KeyType: "aplane.falcon1024-timelock.v1", TemplateType: templatestore.TemplateTypeComposed}); !os.IsNotExist(err) && !strings.Contains(err.Error(), "no entry") {
 		t.Fatalf("FindLibraryYAML() error = %v, want no entry", err)
 	}
 
@@ -105,7 +105,7 @@ func TestRetiredTemplatesStayOutOfTheListingUntilInstalled(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	item := findLibraryItem(items, "aplane.corridor.v1")
+	item := findLibraryItem(items, "aplane.falcon1024-timelock.v1")
 	if item == nil || !item.Installed || !item.Enabled || item.SourcePath != "" {
 		t.Fatalf("installed retired template = %+v, want installed, enabled, and without a library source", item)
 	}

@@ -52,7 +52,6 @@ deploy apps from TEAL source or compiled AVM bytecode, execute grouped flows suc
 | **apapprover** | Optional approval-only admin client over local IPC |
 | **apstore** | Stopped-daemon keystore bootstrap, verification, pruning, permission maintenance, and rescue |
 | **appass** | Passphrase auto-unlock setup TUI |
-| **aprekey** | External contract-admin witness and bounded rekey/unrekey ceremonies |
 | **aplocalnet** | LocalNet algod/KMD and APlane client/signer configuration |
 
 ### SDKs
@@ -154,8 +153,7 @@ client settings remain in `config.yaml`. See
   Ed25519) and `aplane.rotating-triple-wotsc.v1` (Falcon-1024 + WOTS+C +
   Ed25519), a stable address whose stage program changes on every spend
 - **generic LogicSigs**: HTLCs and user-loaded custom TEAL
-- **bounded/composed LogicSigs**: allowlists, timelocks, cosigner-gated Corridor,
-  and external contract-admin rekey controls
+- **bounded/composed LogicSigs**: allowlists, timelocks, and cosigner-gated Corridor
 
 ### Automation & Integration
 - JavaScript scripting with full transaction API
@@ -212,7 +210,7 @@ All documentation is in the [`docs/`](docs/) directory.
 - [ARCH_CRYPTO.md](docs/ARCH_CRYPTO.md) - Cryptographic design
 - [ARCH_KEYTYPES.md](docs/ARCH_KEYTYPES.md) - Key type dimensions and resolution axes, key type identifiers, and LogicSig providers
 - [ARCH_GUARDED.md](docs/ARCH_GUARDED.md) - Guarded signing and cosigner nodes, and the Corridor v1 profile
-- [ARCH_BOUNDED_DSA.md](docs/ARCH_BOUNDED_DSA.md) - Bounded DSA contracts, effect inventory, canonical encodings, external contract-admin signing, and cold custody
+- [ARCH_BOUNDED_DSA.md](docs/ARCH_BOUNDED_DSA.md) - Bounded DSA contracts, effect inventory, and canonical encodings
 - [ARCH_NETWORKS.md](docs/ARCH_NETWORKS.md) - Network context tokens, genesis-hash mapping, and network-scoped policy behavior
 - [ARCH_SHELL.md](docs/ARCH_SHELL.md) - Client side: engine, REPL and parsing contracts, app interaction, and the MCP surface
 - [ARCH_PLUGINS.md](docs/ARCH_PLUGINS.md) - Plugin system architecture

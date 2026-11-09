@@ -13,8 +13,6 @@ func TestIsReloadCandidate(t *testing.T) {
 		{"account.key", true},
 		{"cosigner.cos", true},
 		{"policy.template", true},
-		{"external.adm", false},
-		{"external.adm.json", false},
 		{"cosigner.cos.json", false},
 		{"notes.json", false},
 	}

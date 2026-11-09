@@ -59,7 +59,7 @@ var directOutputExceptions = map[string]map[string]string{
 
 // loggingHosts install a handler. Each must call clientlog.Install in its main
 // package before anything can log.
-var loggingHosts = []string{"apadmin", "apapprover", "apconsole", "aprekey", "apshell"}
+var loggingHosts = []string{"apadmin", "apapprover", "apconsole", "apshell"}
 
 // binariesWithoutHandler link a logging source but have no handler, with the reason
 // that is acceptable. `make logging-reach-check` proves the first group can't emit

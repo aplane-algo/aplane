@@ -424,7 +424,6 @@ func keyInfoFromSigner(k signerapi.KeyInfo) KeyInfo {
 		PolicyLabel:              keytypeux.BoundedLabel(k.BoundedAuthorization),
 	}
 	if bounded := k.BoundedAuthorization; bounded != nil {
-		info.AdminKeyID = bounded.AdminKeyID
 		if bounded.Cosigner != nil {
 			info.CosignerKeyID = bounded.Cosigner.ComponentKeyID
 		}

@@ -120,7 +120,7 @@ func (m Model) handleBackupImportKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case fileBrowserKey:
 		imp.focus = importFocusPath
-		return m.openFileBrowser(browseBackupImportFile, imp.path, "", ""), nil
+		return m.openFileBrowser(browseBackupImportFile, imp.path, ""), nil
 	case "tab", "down":
 		imp.focus = (imp.focus + 1) % 3
 		return m, nil

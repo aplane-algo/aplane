@@ -262,19 +262,19 @@ func TestPrepareGenerateKeyAcceptsAStableWitnessKeyID(t *testing.T) {
 func TestProjectPrepareGenerateIPC(t *testing.T) {
 	result := ProjectPrepareGenerateIPC(&PreparedGeneration{
 		KeyType: "test.projected.v1", Parameters: map[string]string{"recipients": "A"}, Fingerprint: "1:abc",
-		AdminKeyID: "ADMIN", CosignerKeyID: "COSIGNER",
+		CosignerKeyID: "COSIGNER",
 		Bounded: &boundedmeta.Metadata{
 			Contract: boundedmeta.ContractV1, SpendEffects: []string{"pay"}, MaxFee: 10_000,
 			Layer3Policy: boundedmeta.Layer3PolicyMerkleAllowlist,
 			Cosigner:     &boundedmeta.CosignerAuthorization{ComponentKeyType: witness.Falcon1024V1},
 			AdminOperations: []boundedmeta.AdminOperation{{
-				Kind: boundedmeta.AdminOperationRekey, Authorization: boundedmeta.AdminAuthorizationAdmin, PolicyGate: boundedmeta.PolicyGateNone,
+				Kind: boundedmeta.AdminOperationRekey, Authorization: boundedmeta.AdminAuthorizationSpend, PolicyGate: boundedmeta.PolicyGateNone,
 			}},
 		},
 	}, nil)
 	if !result.Success || result.Bounded == nil || !result.Bounded.CosignerRequired || result.Bounded.MaxFee != 10_000 ||
-		len(result.Bounded.AdminOperations) != 1 || result.Bounded.AdminOperations[0].Authorization != boundedmeta.AdminAuthorizationAdmin ||
-		result.Bounded.Layer3Policy != boundedmeta.Layer3PolicyMerkleAllowlist || result.CosignerKeyID != "COSIGNER" || result.AdminKeyID != "ADMIN" {
+		len(result.Bounded.AdminOperations) != 1 || result.Bounded.AdminOperations[0].Authorization != boundedmeta.AdminAuthorizationSpend ||
+		result.Bounded.Layer3Policy != boundedmeta.Layer3PolicyMerkleAllowlist || result.CosignerKeyID != "COSIGNER" {
 		t.Fatalf("result = %+v", result)
 	}
 	failed := ProjectPrepareGenerateIPC(nil, &Error{Kind: ErrorInvalidInput, Message: "bad request"})

@@ -364,14 +364,6 @@ func validateVisibleCosignerAuthorityCollisions(ir *productruntime.Runtime, cosi
 			return fmt.Errorf("bounded cosigner public key collides with signer-managed key %s", selector)
 		}
 	}
-	for selector, summary := range ir.KeyStore().GetSigningSummary() {
-		if summary.BoundedAuthorization == nil {
-			continue
-		}
-		if strings.ToLower(strings.TrimSpace(summary.BoundedAuthorization.AdminPublicKeyHex)) == normalized {
-			return fmt.Errorf("bounded cosigner public key collides with contract-admin authority enrolled by %s", selector)
-		}
-	}
 	return nil
 }
 

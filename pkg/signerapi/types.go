@@ -284,72 +284,6 @@ type GroupSignResponse struct {
 	Error     string          `json:"error,omitempty"`
 }
 
-const (
-	BoundedAdminOperationRekey  = "rekey"
-	BoundedAdminPartialSchemaV1 = "aplane.bounded-admin-partial.v1"
-)
-
-// BoundedAdminRequest is the request payload for /sign/bounded-admin. V1 accepts
-// exactly one locally signable rekey target; the signer may append budget
-// dummies while finalizing the group.
-type BoundedAdminRequest struct {
-	RequestID string        `json:"request_id,omitempty"`
-	Operation string        `json:"operation"`
-	Requests  []SignRequest `json:"requests"`
-}
-
-// GroupSignRequest projects the bounded-admin request onto the shared group
-// planner contract.
-func (r BoundedAdminRequest) GroupSignRequest() GroupSignRequest {
-	return GroupSignRequest{RequestID: r.RequestID, Requests: r.Requests}
-}
-
-// Validate checks the frozen operation and shared group shape. Account-specific
-// constraints are validated after signer-owned bounded metadata is resolved.
-func (r BoundedAdminRequest) Validate() error {
-	if r.Operation != BoundedAdminOperationRekey {
-		return fmt.Errorf("unsupported bounded-admin operation %q", r.Operation)
-	}
-	return r.GroupSignRequest().Validate()
-}
-
-// BoundedAdminMetadata identifies the external authority, durable base layout,
-// and exact transcript that must complete a bounded-admin partial.
-type BoundedAdminMetadata struct {
-	ContractAdminKeyID     string                        `json:"contract_admin_key_id"`
-	PublicKeyHex           string                        `json:"public_key_hex"`
-	SpendingPublicKeyHex   string                        `json:"spending_public_key_hex"`
-	ProgramBindingHex      string                        `json:"program_binding_hex"`
-	TransactionID          string                        `json:"transaction_id"`
-	MessageHex             string                        `json:"message_hex"`
-	BaseSignatureArgCount  int                           `json:"base_signature_arg_count"`
-	AdminSignatureArgIndex int                           `json:"admin_signature_arg_index"`
-	SpendEffects           []string                      `json:"spend_effects"`
-	MaxFee                 uint64                        `json:"max_fee"`
-	Cosigner               *BoundedAdminCosignerMetadata `json:"cosigner,omitempty"`
-}
-
-// BoundedAdminCosignerMetadata lets an external contract-admin verifier prove
-// the framework-owned cosigner region while completing a rekey that bypasses it.
-type BoundedAdminCosignerMetadata struct {
-	ComponentKeyType  string `json:"component_key_type"`
-	PublicKeyHex      string `json:"public_key_hex"`
-	ComponentKeyID    string `json:"component_key_id"`
-	SignatureArgIndex int    `json:"signature_arg_index"`
-}
-
-// BoundedAdminPartialResponse is intentionally distinct from
-// GroupSignResponse: PartialSigned entries are not submission-ready.
-type BoundedAdminPartialResponse struct {
-	Schema        string               `json:"schema"`
-	Operation     string               `json:"operation"`
-	Transactions  []string             `json:"transactions"`
-	PartialSigned []string             `json:"partial_signed"`
-	TargetIndex   int                  `json:"target_index"`
-	Authorization BoundedAdminMetadata `json:"authorization"`
-	Mutations     *MutationReport      `json:"mutations,omitempty"`
-}
-
 // GroupPlanResponse is the response from the /plan endpoint.
 // Returns the planned group (unsigned transactions with dummies, adjusted fees, group IDs)
 // and a mutation report. No keys are touched, no approval flow is triggered.
@@ -438,8 +372,8 @@ const SigningFlowBounded1 = "bounded1"
 
 // SigningFlowBoundedCosigner1 names the combined bounded spend choreography:
 // signer-owned bounded base component release, cosigner-role component signing,
-// and source-aware bounded assembly. Contract-admin rekeys remain on the
-// bounded1 admin endpoint and do not contact the cosigner.
+// and source-aware bounded assembly. A bounded1 account with a cosigner refuses
+// rekeys, so this flow carries spends only.
 const SigningFlowBoundedCosigner1 = "bounded-cosigner1"
 
 // SigningFlowRotating1 names the rotating account choreography: the signer
@@ -509,8 +443,6 @@ type BoundedAuthorizationInfo struct {
 	DerivedArgs            []BoundedDerivedArgInfo           `json:"derived_args"`
 	ArgumentLayout         []BoundedArgumentSlotInfo         `json:"argument_layout"`
 	Layer3Policy           string                            `json:"layer3_policy"`
-	AdminKeyID             string                            `json:"admin_key_id,omitempty"`
-	ProgramBindingHex      string                            `json:"program_binding,omitempty"`
 }
 
 // KeyTypeInfo describes an available key type from the /keytypes endpoint.

@@ -13,41 +13,11 @@ import (
 	"github.com/aplane-algo/aplane/internal/witness"
 )
 
-func TestMetadataValidateAdminBinding(t *testing.T) {
-	publicKey := bytes.Repeat([]byte{0x5a}, FalconAdminPublicKeySize)
-	keyID, err := witness.ID(witness.Falcon1024V1, publicKey)
-	if err != nil {
-		t.Fatalf("witness.ID() error = %v", err)
-	}
-	metadata := &Metadata{
-		Contract:               ContractV1,
-		BaseSignatureArgLayout: SignatureArgLayout{Count: 1, MaxSizes: []int{1280}},
-		ArgumentLayout:         BaseArgumentLayout(SignatureArgLayout{Count: 1, MaxSizes: []int{1280}}, true),
-		SpendEffects:           []string{"pay", "axfer"},
-		MaxFee:                 1_000,
-		AdminOperations: []AdminOperation{{
-			Kind: AdminOperationRekey, Authorization: AdminAuthorizationAdmin, PolicyGate: PolicyGateNone,
-		}},
-		Layer3Policy:      Layer3PolicyCustom,
-		AdminPublicKeyHex: hex.EncodeToString(publicKey),
-		AdminKeyID:        keyID,
-		ProgramBindingHex: strings.Repeat("ab", ProgramBindingSize),
-	}
-	if err := metadata.Validate(); err != nil {
-		t.Fatalf("Validate() error = %v", err)
-	}
-
-	metadata.AdminKeyID = strings.Repeat("A", len(keyID))
-	if err := metadata.Validate(); err == nil || !strings.Contains(err.Error(), "does not match") {
-		t.Fatalf("Validate() error = %v, want key-ID mismatch", err)
-	}
-}
-
 func TestMetadataValidateRejectsInvalidContracts(t *testing.T) {
 	base := Metadata{
 		Contract:               ContractV1,
 		BaseSignatureArgLayout: SignatureArgLayout{Count: 1, MaxSizes: []int{64}},
-		ArgumentLayout:         BaseArgumentLayout(SignatureArgLayout{Count: 1, MaxSizes: []int{64}}, false),
+		ArgumentLayout:         BaseArgumentLayout(SignatureArgLayout{Count: 1, MaxSizes: []int{64}}),
 		SpendEffects:           []string{"pay"},
 		MaxFee:                 1_000,
 		AdminOperations:        []AdminOperation{},
@@ -68,9 +38,9 @@ func TestMetadataValidateRejectsInvalidContracts(t *testing.T) {
 		{name: "missing policy gate", mutate: func(m *Metadata) {
 			m.AdminOperations = []AdminOperation{{Kind: AdminOperationRekey, Authorization: AdminAuthorizationSpend}}
 		}, want: "unsupported policy gate"},
-		{name: "admin key Layer-3 gate", mutate: func(m *Metadata) {
-			m.AdminOperations = []AdminOperation{{Kind: AdminOperationRekey, Authorization: AdminAuthorizationAdmin, PolicyGate: PolicyGateLayer3}}
-		}, want: "requires policy_gate"},
+		{name: "admin key authorization", mutate: func(m *Metadata) {
+			m.AdminOperations = []AdminOperation{{Kind: AdminOperationRekey, Authorization: "admin_key", PolicyGate: PolicyGateNone}}
+		}, want: "unsupported authorization"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -87,7 +57,7 @@ func TestMetadataValidateCombinedLayer3Policies(t *testing.T) {
 	layout := SignatureArgLayout{Count: 1, MaxSizes: []int{64}}
 	proof := DerivedArg{Name: "merkle_proof", Kind: DerivedArgMerkleProof, Parameter: "recipients", MaxSize: MerkleProofSize}
 	metadata := func(policy string, derived ...DerivedArg) *Metadata {
-		slots := BaseArgumentLayout(layout, false)
+		slots := BaseArgumentLayout(layout)
 		for _, arg := range derived {
 			slots = append(slots, ArgumentSlot{
 				Index: len(slots), Name: arg.Name, Source: ArgSourceDerived, MaxSize: arg.MaxSize,
@@ -150,7 +120,7 @@ func TestMetadataArgumentLayoutPathSizes(t *testing.T) {
 		SpendEffects:           []string{SpendEffectPay},
 		MaxFee:                 2_000,
 		AdminOperations: []AdminOperation{{
-			Kind: AdminOperationRekey, Authorization: AdminAuthorizationAdmin, PolicyGate: PolicyGateNone,
+			Kind: AdminOperationRekey, Authorization: AdminAuthorizationSpend, PolicyGate: PolicyGateNone,
 		}},
 		DerivedArgs:  []DerivedArg{{Name: "proof", Kind: DerivedArgMerkleProof, Parameter: "recipients", MaxSize: MerkleProofSize}},
 		RuntimeArgs:  []RuntimeArg{{Name: "preimage", Type: "bytes", Required: true, ByteLength: 32, MaxSize: 32}},
@@ -159,7 +129,6 @@ func TestMetadataArgumentLayoutPathSizes(t *testing.T) {
 			{Index: 0, Name: "base_signature_0", Source: ArgSourceBaseSignature, MaxSize: 64, Paths: ArgumentPathMask{Spend: ArgRequired, SpendingRekey: ArgRequired, AdminRekey: ArgRequired}},
 			{Index: 1, Name: "proof", Source: ArgSourceDerived, MaxSize: MerkleProofSize, Paths: ArgumentPathMask{Spend: ArgOptional, SpendingRekey: ArgForbidden, AdminRekey: ArgForbidden}},
 			{Index: 2, Name: "preimage", Source: ArgSourceRuntime, MaxSize: 32, Paths: ArgumentPathMask{Spend: ArgRequired, SpendingRekey: ArgForbidden, AdminRekey: ArgForbidden}},
-			{Index: 3, Name: "admin_signature", Source: ArgSourceAdmin, MaxSize: FalconAdminSignatureSize, Paths: ArgumentPathMask{Spend: ArgForbidden, SpendingRekey: ArgForbidden, AdminRekey: ArgRequired}},
 		},
 	}
 	if err := metadata.ValidateProfile(); err != nil {
@@ -171,7 +140,7 @@ func TestMetadataArgumentLayoutPathSizes(t *testing.T) {
 	if got, want := metadata.ArgumentBytesForPath(PathSpendingRekey), 64; got != want {
 		t.Fatalf("spending-rekey argument bytes = %d, want %d", got, want)
 	}
-	if got, want := metadata.ArgumentBytesForPath(PathAdminRekey), 64+FalconAdminSignatureSize; got != want {
+	if got, want := metadata.ArgumentBytesForPath(PathAdminRekey), 64; got != want {
 		t.Fatalf("admin-rekey argument bytes = %d, want %d", got, want)
 	}
 }
@@ -241,7 +210,7 @@ func TestMetadataEqual(t *testing.T) {
 		return &Metadata{
 			Contract:               ContractV1,
 			BaseSignatureArgLayout: SignatureArgLayout{Count: 1, MaxSizes: []int{1280}},
-			ArgumentLayout:         BaseArgumentLayout(SignatureArgLayout{Count: 1, MaxSizes: []int{1280}}, false),
+			ArgumentLayout:         BaseArgumentLayout(SignatureArgLayout{Count: 1, MaxSizes: []int{1280}}),
 			SpendEffects:           []string{"pay"},
 			MaxFee:                 5000,
 			AdminOperations:        []AdminOperation{{Kind: AdminOperationRekey, Authorization: AdminAuthorizationSpend, PolicyGate: PolicyGateNone}},
@@ -268,7 +237,7 @@ func TestMetadataEqual(t *testing.T) {
 		t.Fatal("MaxFee change not detected")
 	}
 	changed = base()
-	changed.AdminOperations[0].Authorization = AdminAuthorizationAdmin
+	changed.AdminOperations[0].PolicyGate = PolicyGateLayer3
 	if base().Equal(changed) {
 		t.Fatal("AdminOperations change not detected")
 	}
@@ -289,7 +258,7 @@ func TestMetadataEqual(t *testing.T) {
 // TestMetadataEqualCoversAllFields forces Equal to be updated when the
 // Metadata struct grows a field: bump the count only alongside Equal.
 func TestMetadataEqualCoversAllFields(t *testing.T) {
-	if n := reflect.TypeOf(Metadata{}).NumField(); n != 13 {
+	if n := reflect.TypeOf(Metadata{}).NumField(); n != 10 {
 		t.Fatalf("Metadata has %d fields; update Equal and this count together", n)
 	}
 }

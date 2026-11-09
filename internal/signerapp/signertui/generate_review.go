@@ -165,12 +165,8 @@ func reviewRekey(review PrepareGenerateResultMessage) (label, consequence string
 		return "None", "No rekey path. Losing a required authority cannot be repaired."
 	}
 	operation := profile.AdminOperations[0]
-	if operation.Authorization == boundedmeta.AdminAuthorizationAdmin {
-		consequence := "Admin rekey bypasses the allowlist and any cosigner."
-		if isTimelockPolicy(profile.Layer3Policy) {
-			consequence = "Admin rekey bypasses these rules, even before the unlock round."
-		}
-		return "Spending key plus admin " + middleEllipsize(review.AdminKeyID, reviewIDWidth-29), consequence
+	if operation.Authorization != boundedmeta.AdminAuthorizationSpend {
+		return "Unknown authority " + operation.Authorization, "This client cannot describe that rekey path."
 	}
 	if operation.PolicyGate == boundedmeta.PolicyGateLayer3 {
 		if isTimelockPolicy(profile.Layer3Policy) {
@@ -281,7 +277,6 @@ func (m Model) renderGenerateReviewDetails() string {
 		sb.WriteString(label + ":\n  " + value + "\n")
 	}
 	field("Policy", review.Bounded.Layer3Policy)
-	field("Contract admin Witness Key ID", review.AdminKeyID)
 	field("Cosigner Witness Key ID", review.CosignerKeyID)
 	if review.BoundaryDigest != "" {
 		field("Grammar fingerprint", review.ReviewFingerprint)
@@ -320,7 +315,6 @@ func (m Model) settleGenerateReview(result GenerateResultMsg) Model {
 		Address:            result.Address,
 		KeyType:            result.KeyType,
 		Parameters:         review.Parameters,
-		AdminKeyID:         review.AdminKeyID,
 		CosignerKeyID:      review.CosignerKeyID,
 		GrammarFingerprint: review.ReviewFingerprint,
 		ShapeFingerprint:   review.Fingerprint,
@@ -331,13 +325,13 @@ func (m Model) settleGenerateReview(result GenerateResultMsg) Model {
 
 // reviewDetailParameters is every resolved parameter the details have not already
 // shown, sorted so the screen is stable. Custom templates name their own, so this
-// lists what is there rather than what is expected. The authority keys are left
-// out because their Witness Key IDs above identify them.
+// lists what is there rather than what is expected. The cosigner key is left out
+// because its Witness Key ID above identifies it.
 func reviewDetailParameters(parameters map[string]string) []string {
 	names := make([]string, 0, len(parameters))
 	for name := range parameters {
 		switch name {
-		case recipientsParameter, boundedmeta.AdminPublicKeyParameter, boundedmeta.CosignerPublicKeyParameter:
+		case recipientsParameter, boundedmeta.CosignerPublicKeyParameter:
 			continue
 		}
 		names = append(names, name)

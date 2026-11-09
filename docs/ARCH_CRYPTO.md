@@ -120,13 +120,11 @@ Built-in and bundled key types include:
 - native `falcon1024` (top-level protocol `PQsig`, 25-word recovery)
 - plain DSA LogicSigs `aplane.falcon1024.v1` and `aplane.ed25519.v1`
 - the Falcon-only dedicated cosigner account `aplane.falcon1024-cosigner1024.v1`
-- the Falcon witness key `aplane.witness-falcon1024.v1`, used under separate
-  cosigner and contract-admin custody capabilities
+- the Falcon witness key `aplane.witness-falcon1024.v1`, held by a cosigner
 - the generic `aplane.htlc.v1` template
-- bounded Falcon templates: `aplane.falcon1024-allowlist.v1`,
-  `aplane.falcon1024-allowlist.v2`, `aplane.falcon1024-timelock.v1`, and
-  `aplane.falcon1024-allowlist-lock.v1`, plus the bounded-cosigner
-  `aplane.corridor.v1`
+- the general bounded key type `aplane.falcon1024-b.v1`
+- retired bounded Falcon templates: `aplane.falcon1024-allowlist.v1`,
+  `aplane.falcon1024-allowlist.v2`, and `aplane.falcon1024-timelock.v1`
 - the rotating accounts `aplane.rotating-triple-xmss.v1`,
   `aplane.rotating-triple-slhdsa.v1` and `aplane.rotating-triple-wotsc.v1`
   (library-visible, signer-only)

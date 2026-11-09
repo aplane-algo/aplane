@@ -824,7 +824,7 @@ func TestResolveBoundedPlanItemsRejectsUndeclaredCallerArgs(t *testing.T) {
 	requests := []signerapi.SignRequest{{
 		AuthAddress: authAddr,
 		TxnBytesHex: "00",
-		LsigArgs:    map[string]string{"admin_signature": "00"},
+		LsigArgs:    map[string]string{"base_signature_0": "00"},
 	}}
 
 	_, err := resolveBoundedPlanItems(snapshot, requests, []types.Transaction{testBoundedPayment()}, map[int]bool{}, map[int]bool{})
@@ -867,7 +867,7 @@ func TestAssembleBoundedArgsPreservesInteriorEmptySlots(t *testing.T) {
 		{Index: 0, Name: "base_signature_0", Source: boundedmeta.ArgSourceBaseSignature, MaxSize: 4, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired}},
 		{Index: 1, Name: "proof", Source: boundedmeta.ArgSourceDerived, MaxSize: boundedmeta.MerkleProofSize, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgOptional}},
 		{Index: 2, Name: "preimage", Source: boundedmeta.ArgSourceRuntime, MaxSize: 4, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired}},
-		{Index: 3, Name: "admin_signature", Source: boundedmeta.ArgSourceAdmin, MaxSize: boundedmeta.FalconAdminSignatureSize, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgForbidden}},
+		{Index: 3, Name: "memo", Source: boundedmeta.ArgSourceRuntime, MaxSize: 4, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgOptional}},
 	}}
 	item := &boundedPlanItem{Path: boundedPathPureSpend, RuntimeArgs: map[string][]byte{"preimage": {0xaa}}}
 	args, err := assembleBoundedArgs(metadata, item, [][]byte{{0x99}}, [][]byte{nil})
@@ -875,7 +875,7 @@ func TestAssembleBoundedArgsPreservesInteriorEmptySlots(t *testing.T) {
 		t.Fatalf("assembleBoundedArgs() error = %v", err)
 	}
 	if len(args) != 3 || !bytes.Equal(args[0], []byte{0x99}) || args[1] == nil || len(args[1]) != 0 || !bytes.Equal(args[2], []byte{0xaa}) {
-		t.Fatalf("assembled args = %#v, want base/empty/runtime with trailing admin omitted", args)
+		t.Fatalf("assembled args = %#v, want base/empty/runtime with the trailing empty slot omitted", args)
 	}
 }
 
@@ -919,32 +919,6 @@ func TestVerifyBoundedPlanIntegrity(t *testing.T) {
 	}
 	if err := verifyBoundedPlanIntegrity(item, changed); err == nil || err.Kind != ErrorInternal {
 		t.Fatalf("metadata drift: error = %#v, want internal", err)
-	}
-}
-
-// TestExecutorSignCryptoKeyRejectsAdminRekeyFromPlanItem pins the executor's
-// defense-in-depth admin-path check, driven by the plan item rather than a
-// re-derived classification.
-func TestExecutorSignCryptoKeyRejectsAdminRekeyFromPlanItem(t *testing.T) {
-	metadata := testBoundedMetadata(t, boundedmeta.AdminAuthorizationAdmin)
-	item := &boundedPlanItem{Path: boundedPathAdminKeyRekey, Metadata: boundedmeta.Clone(metadata)}
-	keyMaterial := &coresigning.KeyMaterial{
-		Type:                   "test-bounded-admin-reject-v1",
-		Category:               keys.CategoryDSALsig,
-		SigningMetadataVersion: keys.BoundedSigningMetadataVersion,
-		BoundedAuthorization:   boundedmeta.Clone(metadata),
-	}
-
-	_, _, err := (&Executor{}).signCryptoKey(
-		testBoundedRekey(),
-		types.Address{1}.String(),
-		types.Address{1}.String(),
-		nil,
-		item,
-		keyMaterial,
-	)
-	if err == nil || err.Kind != ErrorBoundedAdminRequired {
-		t.Fatalf("signCryptoKey() error = %#v, want bounded_admin_required", err)
 	}
 }
 

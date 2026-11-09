@@ -644,7 +644,6 @@ type PrepareGenerateKeyResult struct {
 	ReviewFingerprint string
 	BoundaryDigest    string
 	Bounded           *PreparedBoundedProfile
-	AdminKeyID        string
 	CosignerKeyID     string
 	Code              string
 	Error             string

@@ -830,19 +830,6 @@ func validateLogicSigFields(p *Payload) error {
 		if err := p.BoundedAuthorization.Validate(); err != nil {
 			return incompatibleKeyFormat("invalid bounded_authorization: %v", err)
 		}
-		if p.BoundedAuthorization.RequiresAdminKey() {
-			parameterPublicKey, err := decodeCanonicalHex(boundedmeta.AdminPublicKeyParameter, p.Parameters[boundedmeta.AdminPublicKeyParameter])
-			if err != nil {
-				return err
-			}
-			metadataPublicKey, err := boundedmeta.ParseAdminPublicKey(p.BoundedAuthorization.AdminPublicKeyHex)
-			if err != nil {
-				return incompatibleKeyFormat("invalid bounded_authorization: %v", err)
-			}
-			if !bytes.Equal(parameterPublicKey, metadataPublicKey) {
-				return incompatibleKeyFormat("bounded_authorization admin public key does not match parameters.%s", boundedmeta.AdminPublicKeyParameter)
-			}
-		}
 		if p.BoundedAuthorization.Cosigner != nil {
 			parameterPublicKey, err := decodeCanonicalHex(boundedmeta.CosignerPublicKeyParameter, p.Parameters[boundedmeta.CosignerPublicKeyParameter])
 			if err != nil {

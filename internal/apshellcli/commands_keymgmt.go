@@ -70,7 +70,7 @@ func (r *REPLState) cmdGenerate(args []string, _ interface{}) (command.Result, e
 		})
 	}, generatedKeyProjection{
 		KeyType: result.KeyType, Address: result.Address, Parameters: result.Parameters,
-		AdminKeyID: result.AdminKeyID, CosignerKeyID: result.CosignerKeyID,
+		CosignerKeyID: result.CosignerKeyID,
 	})
 }
 
@@ -131,9 +131,6 @@ func renderBoundaryPreview(r *REPLState, preview *apshellapp.BoundaryPreview) {
 // renderResolvedGeneration shows what the signer actually created. It comes after
 // creation, so it is a record and not an approval.
 func renderResolvedGeneration(r *REPLState, result *apshellapp.GenerateKeyCommandResult) {
-	if result.AdminKeyID != "" {
-		r.printf("  Contract admin: %s\n", result.AdminKeyID)
-	}
 	if result.CosignerKeyID != "" {
 		r.printf("  Cosigner:       %s\n", result.CosignerKeyID)
 	}

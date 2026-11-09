@@ -675,7 +675,6 @@ func ProtocolPrepareGenerateResultMessage(id string, result adminproto.PrepareGe
 		Fingerprint:       result.Fingerprint,
 		ReviewFingerprint: result.ReviewFingerprint,
 		BoundaryDigest:    result.BoundaryDigest,
-		AdminKeyID:        result.AdminKeyID,
 		CosignerKeyID:     result.CosignerKeyID,
 		Code:              result.Code,
 		Error:             result.Error,

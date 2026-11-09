@@ -790,7 +790,6 @@ type PrepareGenerateResultMessage struct {
 	// BoundaryDigest goes back as generate_key.expected_boundary_digest.
 	BoundaryDigest string                  `json:"boundary_digest,omitempty"`
 	Bounded        *PreparedBoundedProfile `json:"bounded,omitempty"`
-	AdminKeyID     string                  `json:"admin_key_id,omitempty"`
 	CosignerKeyID  string                  `json:"cosigner_key_id,omitempty"`
 	Code           string                  `json:"code,omitempty"`
 	Error          string                  `json:"error,omitempty"`

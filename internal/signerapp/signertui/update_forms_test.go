@@ -4,14 +4,10 @@
 package tui
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"crypto/sha512"
 	"encoding/hex"
-	"encoding/json"
-	"os"
-	"path/filepath"
 	"reflect"
 	"sort"
 	"strings"
@@ -26,7 +22,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/protocol"
-	"github.com/aplane-algo/aplane/internal/witness"
 )
 
 func TestApplyInputModeTransforms_NormalizesAddressListParams(t *testing.T) {
@@ -235,72 +230,6 @@ func TestHandleParamInputBytesAcceptsDeclaredHexLength(t *testing.T) {
 	if got.forms.genericLSigParams["cosigner_public_key"] != strings.ToLower(input) {
 		t.Fatalf("bytes input exceeded max length: %q", got.forms.genericLSigParams["cosigner_public_key"])
 	}
-}
-
-func TestHandleContractAdminReferencePath(t *testing.T) {
-	defer setServerKeyTypes(nil)
-	path, publicKeyHex := writeContractAdminReference(t)
-	setServerKeyTypes([]protocol.KeyTypeInfo{{
-		KeyType:     "aplane.falcon1024-allowlist-lock.v1",
-		DisplayName: "Falcon Bounded Allowlist",
-		CreationParams: []protocol.TemplateParamInfo{{
-			Name:      "bounded_admin_public_key",
-			Label:     "Contract Admin Public Key",
-			Type:      "bytes",
-			MaxLength: witness.Falcon1024PublicKeySize * 2,
-		}},
-	}})
-	m := Model{
-		viewState: ViewGenerateParams,
-		forms: formsState{
-			generateKeyType:       0,
-			generateFocus:         0,
-			genericLSigParams:     map[string]string{"bounded_admin_public_key": ""},
-			genericLSigParamModes: map[string]int{"bounded_admin_public_key": 0},
-		},
-	}
-
-	got := applyParamKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(path), Paste: true})
-	if got.forms.genericLSigParams["bounded_admin_public_key"] != path {
-		t.Fatalf("reference path = %q, want %q", got.forms.genericLSigParams["bounded_admin_public_key"], path)
-	}
-	params, err := got.applyInputModeTransforms(getParamSpecForKeyType("aplane.falcon1024-allowlist-lock.v1").Params)
-	if err != nil {
-		t.Fatalf("applyInputModeTransforms() error = %v", err)
-	}
-	if params["bounded_admin_public_key"] != publicKeyHex {
-		t.Fatal("reference path did not resolve to the public key")
-	}
-	got = applyParamKey(t, got, tea.KeyMsg{Type: tea.KeyBackspace})
-	if got.forms.genericLSigParams["bounded_admin_public_key"] != path[:len(path)-1] {
-		t.Fatal("backspace did not edit the reference path")
-	}
-}
-
-func writeContractAdminReference(t *testing.T) (string, string) {
-	t.Helper()
-	publicKey := bytes.Repeat([]byte{0x42}, witness.Falcon1024PublicKeySize)
-	keyID, err := witness.ID(witness.Falcon1024V1, publicKey)
-	if err != nil {
-		t.Fatal(err)
-	}
-	reference, err := witness.NewPublicReference(witness.Falcon1024V1, keyID, hex.EncodeToString(publicKey))
-	if err != nil {
-		t.Fatal(err)
-	}
-	data, err := json.Marshal(reference)
-	if err != nil {
-		t.Fatal(err)
-	}
-	dir := filepath.Join(t.TempDir(), "public references")
-	if err := os.Mkdir(dir, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	path := filepath.Join(dir, keyID+".adm.json")
-	if err := os.WriteFile(path, data, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	return path, reference.PublicKeyHex
 }
 
 func TestHandleParamInput_AddressListCapsLineLength(t *testing.T) {
@@ -537,38 +466,6 @@ func TestHandleParamModalKeys_AddressListSpaceAndEnterStayInField(t *testing.T) 
 	}
 	if got, want := updated.forms.genericLSigParams["recipients"], "alice\nbob\n"; got != want {
 		t.Fatalf("recipients after enter = %q, want %q", got, want)
-	}
-}
-
-func TestHandleParamModalKeys_ContractAdminPathAllowsSpaces(t *testing.T) {
-	defer setServerKeyTypes(nil)
-	path, _ := writeContractAdminReference(t)
-	setServerKeyTypes([]protocol.KeyTypeInfo{{
-		KeyType:     "aplane.falcon1024-allowlist-lock.v1",
-		DisplayName: "Falcon Bounded Allowlist",
-		CreationParams: []protocol.TemplateParamInfo{{
-			Name:      "bounded_admin_public_key",
-			Type:      "bytes",
-			MaxLength: 1793 * 2,
-		}},
-	}})
-
-	m := Model{forms: formsState{
-		generateKeyType: 0,
-		generateFocus:   0,
-		genericLSigParams: map[string]string{
-			"bounded_admin_public_key": "",
-		},
-		genericLSigParamModes: map[string]int{
-			"bounded_admin_public_key": 0,
-		},
-	}}
-	updated := m
-	for _, r := range path {
-		updated = applyParamKey(t, updated, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
-	}
-	if got := updated.forms.genericLSigParams["bounded_admin_public_key"]; got != path {
-		t.Fatalf("reference path after typing = %q, want %q", got, path)
 	}
 }
 

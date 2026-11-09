@@ -67,7 +67,7 @@ func (e *Engine) generateResolvedKey(ctx context.Context, keyType string, params
 	}
 	for _, key := range keys {
 		if key.Address == resp.Address {
-			result.AdminKeyID, result.CosignerKeyID, result.InventoryRead = key.AdminKeyID, key.CosignerKeyID, true
+			result.CosignerKeyID, result.InventoryRead = key.CosignerKeyID, true
 			break
 		}
 	}

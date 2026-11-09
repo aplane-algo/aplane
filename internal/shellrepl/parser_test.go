@@ -677,6 +677,19 @@ func TestParseRekeyCommand(t *testing.T) {
 			},
 		},
 		{
+			// A dropped option would turn into a plain spending-key rekey.
+			name:      "rekey refuses an argument it does not take",
+			args:      []string{"alice", "to", "bob", "using", "contract-admin", "/keys/cold.adm"},
+			isUnrekey: false,
+			wantErr:   true,
+		},
+		{
+			name:      "unrekey refuses an argument it does not take",
+			args:      []string{"alice", "quickly"},
+			isUnrekey: true,
+			wantErr:   true,
+		},
+		{
 			name:      "rekey with nowait",
 			args:      []string{"alice", "to", "bob", "nowait"},
 			isUnrekey: false,
@@ -700,12 +713,6 @@ func TestParseRekeyCommand(t *testing.T) {
 					t.Error("UseFlatFee should be true when fee is set")
 				}
 			},
-		},
-		{
-			name:      "rekey rejects contract-admin artifact syntax",
-			args:      []string{"alice", "to", "bob", "using", "contract-admin", "/keys/cold.adm"},
-			isUnrekey: false,
-			wantErr:   true,
 		},
 		{
 			name:      "rekey with lsig arg",

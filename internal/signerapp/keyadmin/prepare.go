@@ -26,7 +26,6 @@ type PreparedGeneration struct {
 	BoundaryDigest string
 	// Bounded is the bounded contract, or nil for any other key type.
 	Bounded       *boundedmeta.Metadata
-	AdminKeyID    string
 	CosignerKeyID string
 }
 
@@ -76,15 +75,6 @@ func (s Service) PrepareGenerateKey(keyType string, params map[string]string) (*
 // resolveAuthorityIDs names the external keys the account would depend on, so a
 // reviewer compares identities rather than 1,793-byte public keys.
 func (p *PreparedGeneration) resolveAuthorityIDs() error {
-	if value := p.Parameters[boundedmeta.AdminPublicKeyParameter]; value != "" {
-		publicKey, err := boundedmeta.ParseAdminPublicKey(value)
-		if err != nil {
-			return fmt.Errorf("invalid %s: %w", boundedmeta.AdminPublicKeyParameter, err)
-		}
-		if p.AdminKeyID, err = witness.ID(witness.Falcon1024V1, publicKey); err != nil {
-			return fmt.Errorf("identify contract admin key: %w", err)
-		}
-	}
 	component, ok := keytypes.CosignerComponentKeyTypeForGuardedAccount(p.KeyType)
 	if p.Bounded != nil && p.Bounded.Cosigner != nil {
 		component, ok = p.Bounded.Cosigner.ComponentKeyType, true

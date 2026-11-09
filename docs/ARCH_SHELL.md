@@ -188,7 +188,6 @@ internal/engine/
 ├── asa.go                 # ASA-oriented engine entry points
 ├── assets.go              # ASA info, resolver-backed metadata access
 ├── atomic.go              # Atomic transaction group helpers
-├── bounded_admin.go       # Client-side bounded-admin request plumbing
 ├── cache.go               # Alias and set management
 ├── connect/               # Signer HTTP requests and SSH tunnel lifecycle state
 │   ├── client.go          # Signer client construction and request helpers
@@ -282,7 +281,7 @@ uses user/cosigner component signing plus guarded assembly; `bounded-cosigner1`
 uses user-first bounded component release, cosigner-role component signing, and
 bounded assembly. It rejects unknown labels and groups that mix those two
 choreographies. `bounded1` profiles without an online cosigner continue through
-ordinary signing or the bounded-admin path selected by transaction effects.
+ordinary signing.
 
 Submission and confirmation diagnostics are returned on typed result values as
 `Output` strings and structured warnings. Shell rendering lives in
@@ -1765,7 +1764,7 @@ hide it.
 | Host | Where logs go |
 |---|---|
 | `apshell` REPL | stderr, through readline while it runs so the prompt is redrawn |
-| `apshell --script`, `--mcp`, `aprekey`, `apapprover`, `apadmin` batch modes | stderr |
+| `apshell --script`, `--mcp`, `apapprover`, `apadmin` batch modes | stderr |
 | apconsole | `clientlog.Deferred`, pulled into the shell pane; written out on exit if the node has no shell |
 | `apadmin` TUI | `clientlog.Deferred`, written out on exit; lost notifications are shown live |
 | `appolicy`, `aplocalnet`, `applugin-checksum` | No handler, because they can't log (see [Enforcement](#enforcement)) |

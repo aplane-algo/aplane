@@ -9,10 +9,9 @@
 # SSH client enrollment, client reachability, shared LocalNet wiring, cosigner
 # endpoint enrollment, local IPC cosigner-reference import,
 # guarded transaction-signing flows, and corridor allowlist enforcement. It
-# also validates the guarded account
-# and bounded-cosigner Corridor with SDK intent prep plus component signing.
-# A general aplane.falcon1024-b.v1 account with the Corridor preset's rules goes
-# through the same spend checks, created from a boundary file with no key type setup.
+# also validates the guarded account with SDK intent prep plus component signing.
+# A general aplane.falcon1024-b.v1 account with the Corridor preset's rules, created
+# from a boundary file with no key type setup, carries the bounded-cosigner checks.
 # It refuses rekeys, so once its cosigner is gone it can neither spend nor be rekeyed.
 # Local mode uses the local Python SDK checkout; release mode uses the Python
 # package from PyPI and the TypeScript package from npm.
@@ -55,8 +54,6 @@ CORRIDOR_ADDRESS=""
 GENERAL_BOUNDED_ADDRESS=""
 CORRIDOR_ALLOWED_ADDRESS=""
 CORRIDOR_BLOCKED_ADDRESS=""
-CORRIDOR_ADMIN_KEY=""
-CORRIDOR_ADMIN_PUBLIC_KEY=""
 SDK_REPO="${APLANE_SDKS_REPO:-${APLANE_SDK_REPO:-}}"
 SDK_SOURCE_DIR=""
 SDK_CONTAINER_DIR="/home/$TEST_USER/src/aplanesdk-python"
@@ -1493,58 +1490,6 @@ enable_keytype() {
     printf '%s\n' "$out"
 }
 
-import_corridor_template() {
-    local out
-    if ! out="$(docker_exec_as_tester "$SIGNER_CONTAINER" ". /home/$TEST_USER/aplane/apenv.sh && \
-        APSIGNER_PASSPHRASE='$TEST_PASSPHRASE' apadmin template import \
-        /home/$TEST_USER/aplane/apsigner/library/retired/aplane.corridor.v1.yaml 2>&1")"; then
-        printf '%s\n' "$out" >&2
-        die "failed to import Corridor template on signer"
-    fi
-    printf '%s\n' "$out"
-}
-
-generate_corridor_admin_key() {
-    local admin_dir="/home/$TEST_USER/aplane/bounded-admin"
-    local exp_file out
-    docker_exec_as_tester "$CLIENT_CONTAINER" "mkdir -p '$admin_dir' && chmod 700 '$admin_dir'"
-
-    exp_file="$(mktemp)"
-    cat > "$exp_file" <<EXPECT_SCRIPT
-#!/usr/bin/env expect -f
-set timeout 180
-spawn bash -lc ". /home/$TEST_USER/aplane/apclient/apenv.sh && exec aprekey generate --out '$admin_dir'"
-expect {
-  "Bounded-admin key passphrase:" { send "$TEST_PASSPHRASE\r" }
-  timeout { exit 1 }
-}
-expect {
-  "Confirm bounded-admin key passphrase:" { send "$TEST_PASSPHRASE\r" }
-  timeout { exit 2 }
-}
-expect eof
-set result [wait]
-exit [lindex \$result 3]
-EXPECT_SCRIPT
-    docker cp "$exp_file" "$CLIENT_CONTAINER:/tmp/generate-corridor-admin.exp"
-    rm -f "$exp_file"
-    docker_exec "$CLIENT_CONTAINER" chmod 700 /tmp/generate-corridor-admin.exp
-    docker_exec "$CLIENT_CONTAINER" chown "$TEST_USER:$TEST_USER" /tmp/generate-corridor-admin.exp
-
-    if ! out="$(docker_exec_as_tester "$CLIENT_CONTAINER" "expect /tmp/generate-corridor-admin.exp 2>&1")"; then
-        printf '%s\n' "$out" >&2
-        die "failed to generate external Corridor admin key"
-    fi
-    printf '%s\n' "$out"
-
-    CORRIDOR_ADMIN_KEY="$(docker_exec_as_tester "$CLIENT_CONTAINER" "set -- '$admin_dir'/*.adm; \
-        [ \$# -eq 1 ] && [ -f \"\$1\" ] && printf '%s' \"\$1\"")"
-    [ -n "$CORRIDOR_ADMIN_KEY" ] || die "could not locate generated Corridor admin artifact"
-    CORRIDOR_ADMIN_PUBLIC_KEY="$(docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \
-        aprekey inspect '$CORRIDOR_ADMIN_KEY' | python3 -c 'import json,sys; print(json.load(sys.stdin)[\"public_key_hex\"])'")"
-    [ -n "$CORRIDOR_ADMIN_PUBLIC_KEY" ] || die "could not read generated Corridor admin public key"
-}
-
 generate_guarded_key() {
     [ -n "$COSIGNER_COMPONENT_KEY" ] || die "Witness Key ID is not set"
 
@@ -1560,26 +1505,12 @@ generate_guarded_key() {
     [ -n "$GUARDED_ADDRESS" ] || die "could not parse generated guarded address"
 }
 
-generate_corridor_key() {
-    [ -n "$COSIGNER_COMPONENT_KEY" ] || die "Witness Key ID is not set"
-    [ -n "$CORRIDOR_ADMIN_PUBLIC_KEY" ] || die "Corridor admin public key is not set"
+resolve_corridor_addresses() {
     CORRIDOR_ALLOWED_ADDRESS="$(localnet_account_address 1)"
     CORRIDOR_BLOCKED_ADDRESS="$(localnet_account_address 2)"
     [ -n "$CORRIDOR_ALLOWED_ADDRESS" ] || die "could not resolve corridor allowed account"
     [ -n "$CORRIDOR_BLOCKED_ADDRESS" ] || die "could not resolve corridor blocked account"
     [ "$CORRIDOR_ALLOWED_ADDRESS" != "$CORRIDOR_BLOCKED_ADDRESS" ] || die "corridor allowed and blocked addresses resolved to the same account"
-
-    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'connect\ngenerate aplane.corridor.v1 cosigner=%s bounded_admin_public_key=%s recipients=%s\n' \
-        '$COSIGNER_REFERENCE_NAME' '$CORRIDOR_ADMIN_PUBLIC_KEY' '$CORRIDOR_ALLOWED_ADDRESS' > /tmp/generate-corridor.script"
-    local out
-    if ! out="$(docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \
-        apshell -script /tmp/generate-corridor.script 2>&1")"; then
-        printf '%s\n' "$out" >&2
-        die "failed to generate corridor account through client/signer flow"
-    fi
-    printf '%s\n' "$out"
-    CORRIDOR_ADDRESS="$(printf '%s\n' "$out" | awk '/Generated .* key:/ { print $NF; exit }')"
-    [ -n "$CORRIDOR_ADDRESS" ] || die "could not parse generated corridor address"
 }
 
 # Takes an optional extra boundary line, such as an unlock round.
@@ -1811,45 +1742,6 @@ validate_corridor_send_after_cosigner_delete_fails() {
         || die "Corridor send failure did not report the missing cosigner key"
 }
 
-rekey_corridor_without_cosigner() {
-    [ -n "$CORRIDOR_ADDRESS" ] || die "Corridor address is not set"
-    [ -n "$FALCON_ADDRESS" ] || die "Falcon rekey target is not set"
-    [ -n "$CORRIDOR_ADMIN_KEY" ] || die "Corridor admin artifact is not set"
-
-    local exp_file out
-    exp_file="$(mktemp)"
-    cat > "$exp_file" <<EXPECT_SCRIPT
-#!/usr/bin/env expect -f
-set timeout 240
-spawn bash -lc ". /home/$TEST_USER/aplane/apclient/apenv.sh && exec aprekey rekey --client-data /home/$TEST_USER/aplane/apclient --network '$NETWORK_TOKEN' --key '$CORRIDOR_ADMIN_KEY' '$CORRIDOR_ADDRESS' to '$FALCON_ADDRESS'"
-expect {
-  -re {Authorize this rekey with the contract-admin key.*} { send "y\r" }
-  timeout { exit 1 }
-}
-expect {
-  "Bounded-admin key passphrase:" { send "$TEST_PASSPHRASE\r" }
-  timeout { exit 2 }
-}
-expect eof
-set result [wait]
-exit [lindex \$result 3]
-EXPECT_SCRIPT
-    docker cp "$exp_file" "$CLIENT_CONTAINER:/tmp/rekey-corridor.exp"
-    rm -f "$exp_file"
-    docker_exec "$CLIENT_CONTAINER" chmod 700 /tmp/rekey-corridor.exp
-    docker_exec "$CLIENT_CONTAINER" chown "$TEST_USER:$TEST_USER" /tmp/rekey-corridor.exp
-
-    if ! out="$(docker_exec_as_tester "$CLIENT_CONTAINER" "expect /tmp/rekey-corridor.exp 2>&1")"; then
-        printf '%s\n' "$out" >&2
-        die "external Corridor admin rekey failed while cosigner key was unavailable"
-    fi
-    printf '%s\n' "$out"
-    grep -Fq 'Governed rekey transaction submitted:' <<<"$out" \
-        || die "Corridor admin rekey output did not include submission marker"
-    grep -Fq 'Transaction confirmed' <<<"$out" \
-        || die "Corridor admin rekey did not confirm"
-}
-
 delete_cosigner_component_key() {
     [ -n "$COSIGNER_COMPONENT_KEY" ] || die "Witness Key ID is not set"
 
@@ -1988,9 +1880,6 @@ main() {
     log "Enabling the guarded LogicSig key type on signer"
     enable_keytype aplane.falcon1024-cosigner1024.v1
 
-    log "Importing optional Corridor template on signer"
-    import_corridor_template
-
     log "Starting signer-side approver for client enrollment"
     start_signer_apapprover
 
@@ -2046,9 +1935,6 @@ main() {
     log "Configuring Python SDK client data directories"
     configure_python_sdk_client_data
 
-    log "Generating external Corridor admin key on client"
-    generate_corridor_admin_key
-
     log "Generating guarded Falcon/Falcon cosigner account through client/signer flow"
     generate_guarded_key
 
@@ -2066,21 +1952,8 @@ main() {
         run_typescript_sdk_guarded_validate
     fi
 
-    log "Generating corridor account through client/signer flow"
-    generate_corridor_key
-
-    log "Funding generated corridor account on $NETWORK_TOKEN"
-    fund_corridor_key
-    verify_corridor_funded
-
-    log "Validating bounded-cosigner Corridor through Python SDK"
-    run_python_sdk_corridor_validate
-
-    log "Verifying corridor allowlisted recipient succeeds"
-    validate_corridor_allowed_send
-
-    log "Verifying corridor non-allowlisted recipient fails"
-    validate_corridor_blocked_send_fails
+    log "Resolving Corridor recipient accounts on $NETWORK_TOKEN"
+    resolve_corridor_addresses
 
     log "Generating aplane.falcon1024-b.v1 account from a boundary file"
     generate_general_bounded_key
@@ -2089,7 +1962,7 @@ main() {
     with_general_bounded_account fund_corridor_key
     with_general_bounded_account verify_corridor_funded
 
-    log "Validating aplane.falcon1024-b.v1 through Python SDK"
+    log "Validating bounded-cosigner aplane.falcon1024-b.v1 through Python SDK"
     with_general_bounded_account run_python_sdk_corridor_validate
 
     log "Verifying aplane.falcon1024-b.v1 allowlisted recipient succeeds"
@@ -2136,12 +2009,6 @@ main() {
 
     log "Verifying guarded validation fails after cosigner key deletion"
     validate_guarded_self_send_after_cosigner_delete_fails
-
-    log "Verifying Corridor spend fails after cosigner key deletion"
-    validate_corridor_send_after_cosigner_delete_fails
-
-    log "Rekeying Corridor through its external admin while cosigner is unavailable"
-    rekey_corridor_without_cosigner
 
     log "Verifying aplane.falcon1024-b.v1 spend fails after cosigner key deletion"
     with_general_bounded_account validate_corridor_send_after_cosigner_delete_fails

@@ -22,7 +22,7 @@ var boundedPolicyLabels = map[string]string{
 }
 
 // BoundedLabel describes a bounded account from its stored contract, such as
-// "Merkle allowlist · admin rekey · cosigner". A custom policy says only that it
+// "Merkle allowlist · no rekey · cosigner". A custom policy says only that it
 // is custom: its conditions are the author's code, and nothing here can state them.
 // It returns "" for an account with no bounded contract.
 func BoundedLabel(info *signerapi.BoundedAuthorizationInfo) string {
@@ -67,8 +67,9 @@ func boundedRekeyLabel(rekey *boundedmeta.AdminOperation) string {
 	switch {
 	case rekey == nil:
 		return "no rekey"
-	case rekey.Authorization == boundedmeta.AdminAuthorizationAdmin:
-		return "admin rekey"
+	case rekey.Authorization != boundedmeta.AdminAuthorizationSpend:
+		// Not an authority this release offers: name it rather than guess.
+		return rekey.Authorization + " rekey"
 	case rekey.PolicyGate == boundedmeta.PolicyGateLayer3:
 		return "policy-gated rekey"
 	default:

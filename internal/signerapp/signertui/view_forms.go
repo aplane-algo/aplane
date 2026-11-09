@@ -265,9 +265,7 @@ func (m Model) visibleParamModalFields() int {
 // and, for a scrolled multi-line field, how many lines are hidden.
 func (m Model) renderParamField(sb *strings.Builder, keyType string, paramDef lsigprovider.ParameterDef, focused bool) {
 	isCosignerSelector := m.isCosignerSelectorParam(keyType, paramDef)
-	isAdminReference := isContractAdminReferenceParam(paramDef)
-
-	labelText, modeHint := m.paramFieldLabel(paramDef, focused, isCosignerSelector, isAdminReference)
+	labelText, modeHint := m.paramFieldLabel(paramDef, focused, isCosignerSelector)
 	if focused {
 		sb.WriteString("> " + labelText + ":")
 	} else {
@@ -278,10 +276,10 @@ func (m Model) renderParamField(sb *strings.Builder, keyType string, paramDef ls
 	}
 	sb.WriteString("\n")
 
-	fieldWidth := m.constrainParameterFieldWidth(m.paramFieldWidth(paramDef, isCosignerSelector, isAdminReference))
+	fieldWidth := m.constrainParameterFieldWidth(m.paramFieldWidth(paramDef, isCosignerSelector))
 	fieldHeight := m.constrainParameterFieldHeight(getFieldHeightForType(paramDef.Type), sb.String())
 
-	lines := m.paramFieldLines(paramDef, focused, fieldWidth, isCosignerSelector, isAdminReference)
+	lines := m.paramFieldLines(paramDef, focused, fieldWidth, isCosignerSelector)
 	aboveCount, belowCount := 0, 0
 	if isMultilineParamType(paramDef.Type) {
 		lines, aboveCount, belowCount = m.scrollParamFieldLines(paramDef.Name, lines, fieldHeight)
@@ -309,11 +307,8 @@ func (m Model) renderParamField(sb *strings.Builder, keyType string, paramDef ls
 
 // paramFieldLabel returns a field's label, with its required marker, and the
 // key hint shown while it is focused.
-func (m Model) paramFieldLabel(paramDef lsigprovider.ParameterDef, focused, isCosignerSelector, isAdminReference bool) (string, string) {
+func (m Model) paramFieldLabel(paramDef lsigprovider.ParameterDef, focused, isCosignerSelector bool) (string, string) {
 	labelText := paramDef.Label
-	if isAdminReference {
-		labelText = "Contract Admin Reference File (.adm.json)"
-	}
 	var modeHint string
 	if len(paramDef.InputModes) > 1 {
 		modeIdx := 0
@@ -339,11 +334,8 @@ func (m Model) paramFieldLabel(paramDef lsigprovider.ParameterDef, focused, isCo
 // paramFieldWidth is the unconstrained input box width: the type's width,
 // widened or narrowed for special fields, or the selected input mode's hex
 // length.
-func (m Model) paramFieldWidth(paramDef lsigprovider.ParameterDef, isCosignerSelector, isAdminReference bool) int {
+func (m Model) paramFieldWidth(paramDef lsigprovider.ParameterDef, isCosignerSelector bool) int {
 	fieldWidth := getFieldWidthForType(paramDef.Type, paramDef.MaxLength)
-	if isAdminReference {
-		fieldWidth = 62
-	}
 	if len(paramDef.Options) > 0 {
 		fieldWidth = optionFieldWidth(paramDef.Options)
 	}
@@ -361,7 +353,7 @@ func (m Model) paramFieldWidth(paramDef lsigprovider.ParameterDef, isCosignerSel
 
 // paramFieldLines is the field's content as lines: its value or placeholder,
 // or, while focused, its value with a cursor.
-func (m Model) paramFieldLines(paramDef lsigprovider.ParameterDef, focused bool, fieldWidth int, isCosignerSelector, isAdminReference bool) []string {
+func (m Model) paramFieldLines(paramDef lsigprovider.ParameterDef, focused bool, fieldWidth int, isCosignerSelector bool) []string {
 	if focused && m.forms.genericLSigParams != nil {
 		currentValue := m.forms.genericLSigParams[paramDef.Name]
 		if currentValue == "" && len(paramDef.Options) > 0 {
@@ -369,12 +361,6 @@ func (m Model) paramFieldLines(paramDef lsigprovider.ParameterDef, focused bool,
 		}
 		if isCosignerSelector {
 			currentValue = m.cosignerSelectionDisplay(currentValue)
-		}
-		if isAdminReference {
-			currentValue = terminalSafe(currentValue)
-			if currentRunes := []rune(currentValue); len(currentRunes) >= fieldWidth {
-				currentValue = string(currentRunes[len(currentRunes)-fieldWidth+1:])
-			}
 		}
 		lines := paramInputLines(currentValue)
 		lines[len(lines)-1] += "_"
@@ -389,17 +375,10 @@ func (m Model) paramFieldLines(paramDef lsigprovider.ParameterDef, focused bool,
 		value = defaultParamValue(paramDef)
 	}
 	if value == "" {
-		if isAdminReference {
-			value = "Path to public .adm.json on this machine (ctrl+o to browse)"
-		} else {
-			value = getPlaceholderForType(paramDef.Type)
-		}
+		value = getPlaceholderForType(paramDef.Type)
 	}
 	if isCosignerSelector {
 		value = m.cosignerSelectionDisplay(m.forms.genericLSigParams[paramDef.Name])
-	}
-	if isAdminReference && !focused {
-		value = middleEllipsize(terminalSafe(value), fieldWidth)
 	}
 	return paramInputLines(value)
 }

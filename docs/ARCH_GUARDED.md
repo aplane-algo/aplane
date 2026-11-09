@@ -1,21 +1,21 @@
 # Guarded Signing
 
 > Guarded signing: the cosigner subsystem that makes a guarded account need
-> both a user signer and a cosigner signer, and Corridor v1, the bundled bounded
-> profile built on it.
+> both a user signer and a cosigner signer, and Corridor v1, the bounded preset
+> built on it.
 
 This document describes APlane's cosigner subsystem: node roles, cosigner keys,
 guarded accounts, endpoint discovery, guarded transaction orchestration, and
 the trust boundaries between a user signer and a cosigner signer. It also
-describes [Corridor v1](#corridor-v1), the first bundled profile that composes
-cosigner authorization into `bounded1`.
+describes [Corridor v1](#corridor-v1), the preset of the general bounded key type
+that composes cosigner authorization into `bounded1`.
 
 The component message, the cosigner key file, and the public cosigner
 reference library are specified in this document. For exact HTTP wire shapes
 and SDK fixtures, see [ARCH_SIGNING.md](ARCH_SIGNING.md#http-api-contract); for the endpoint
 registry file, see [ARCH_DATA_MODEL.md](ARCH_DATA_MODEL.md#endpoint-registry).
 For cosigner policy verdict semantics, see [ARCH_POLICY.md](ARCH_POLICY.md).
-The `bounded1` authorization contract and external contract-admin signing are
+The `bounded1` authorization contract is
 in [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md), key type axes are in
 [ARCH_KEYTYPES.md](ARCH_KEYTYPES.md), and the machine-checked
 bounded-cosigner choreography is in
@@ -59,15 +59,6 @@ transaction bytes.
 
 ## Roles And Boundaries
 
-Bounded contract administration is not a cosigner role. A bounded profile may
-independently declare a cosigner spend gate and an external contract-admin rekey
-authority. The former uses the `bounded-cosigner1` online flow and a
-signer-custodied `.cos` witness; the latter uses `/sign/bounded-admin`,
-`aprekey`, and a separately held `.adm` artifact without contacting a cosigner.
-Both authorities use the witness key form, but their custody and signature
-domains are disjoint. An individual keypair should never be enrolled in both
-roles.
-
 Every signer data root has one root `node.yaml` role:
 
 | Role | May hold | Must not hold |
@@ -93,9 +84,7 @@ Primary ownership:
 
 ## Key Model
 
-Cosigner uses a role-neutral witness key as its auxiliary signing authority. The
-same witness key form may be held externally for a bounded contract-admin
-role, but an individual keypair should serve only one role for its entire life.
+Cosigner uses a witness key as its auxiliary signing authority.
 
 ### Cosigner Keys And Witness Key IDs
 
@@ -105,16 +94,14 @@ Algorand accounts and cannot spend funds directly.
 Their canonical private record is
 the selected generation's `keys/<WitnessKeyID>.cos`. The `.cos` container uses the
 product store's current term key, bound to the credential's Witness Key ID, and a
-canonical `category: witness` payload. It is
-distinct from the independently encrypted external `.adm` artifact opened only
-by `aprekey`; signer scanning never opens `.adm` or `.adm.json` as private state.
+canonical `category: witness` payload.
 
 Current cosigner key types:
 
 - `aplane.witness-falcon1024.v1`
 
 They are selected by a 52-character uppercase **Witness Key ID** derived from
-the length-prefixed domain, key type, and cosigner public key. Role-specific wire
+the length-prefixed domain, key type, and cosigner public key. Cosigner wire
 fields retain the name `component_key`. The ID is txid-shaped but is not an
 Algorand address.
 
@@ -136,10 +123,10 @@ that same public key in its LogicSig bytecode. Generation may accept a public
 Cosigner reference by Witness Key ID, but the durable guarded key stores the
 resolved public key.
 
-`aplane.corridor.v1` is not a dedicated guarded key-type class. It is an
-optional schema-v2 composed template whose durable metadata combines the
-`bounded1` authorization contract, the `cosigner1` spend gate, a framework Merkle
-recipient policy, and an external-admin pure rekey. It therefore advertises
+A Corridor account is not a dedicated guarded key-type class. It is an
+`aplane.falcon1024-b.v1` account whose durable metadata combines the
+`bounded1` authorization contract, the `cosigner1` spend gate, and a framework
+Merkle recipient policy, and declares no rekey operation. It therefore advertises
 `signing_flow: bounded-cosigner1`, not `cosigner1`, and is discovered from metadata
 rather than a key-type switch. See [Corridor v1](#corridor-v1).
 
@@ -160,8 +147,7 @@ Dedicated guarded accounts and cosigner keys are never signed through raw
 
 Cosigner-enabled bounded spends are also rejected by ordinary `/sign`. They use
 `/plan`, `/sign/component` with bounded-base and cosigner targets, and
-`/sign/assemble` for source-aware final assembly. Their external-admin
-rekey path remains `/sign/bounded-admin` and never contacts the cosigner.
+`/sign/assemble` for source-aware final assembly. They refuse rekeys.
 
 This preserves the two-party invariant: a guarded account requires both a user
 component signature and a cosigner component signature. The endpoint split is
@@ -361,10 +347,7 @@ the trust input that matters after generation.
 
 `apadmin cosigner export <witness-key-id> [output-json]` and the apadmin TUI's
 **Export Cosigner Key** emit the canonical `aplane.witness-key-public.v1`
-document and nothing else. Export refuses an output name ending in `.adm.json`
-in any case, and `cosigner import` refuses such a path, because admin and
-cosigner references share a schema and the name is what tells them apart. The
-command reads the
+document and nothing else. The command reads the
 `keys/<witness-key-id>.cos.json` sidecar, verifies that `<witness-key-id>`
 equals the canonical Witness Key ID derived from the public key, and never reads
 or decrypts private key material. If the sidecar is missing or malformed,
@@ -463,9 +446,8 @@ Witness Key ID or name to `public_key_hex`, verifies that the reference key type
 matches the definition's required cosigner key type,
 rejects requests that provide both forms, and persists the resolved
 `cosigner_public_key` plus the template's other creation parameters in the key
-file. `aplane.corridor.v1`, for example, persists its public recipient list and
-complete bounded metadata; later signing does not require the YAML source to
-remain installed.
+file. A Corridor account, for example, persists its public recipient list and
+complete bounded metadata; later signing reads those, not the shape definition.
 
 Product `/keytypes` metadata may expose imported references as a
 creation parameter named `cosigner` with `type:"select"` and `options[]`
@@ -711,8 +693,8 @@ matching sender-to-target edge. Missing `rekey_policy` still fails closed.
 Bounded cosigner v1 deliberately gates spends only. Cosigner-enabled bounded
 profiles reject spending-key-authorized rekey at definition and durable
 metadata validation, because that path would bypass cosigner control and has no
-bounded-cosigner1 endpoint choreography. Their external-admin rekey path forbids
-the cosigner slot and does not evaluate cosigner rekey policy.
+bounded-cosigner1 endpoint choreography. They declare no rekey operation, so
+cosigner rekey policy never sees one.
 
 See [ARCH_POLICY.md](ARCH_POLICY.md) for the rule inventory, domain-specific
 schema constraints, route behavior, and reject/review/approve mapping.
@@ -820,25 +802,22 @@ individually.
 
 ## Corridor v1
 
-`aplane.corridor.v1` is the first bundled profile that composes optional cosigner
-authorization into `bounded1`. It is a schema-v2 template source at
-`library/retired/aplane.corridor.v1.yaml`, retired from the default library in
-favor of the Corridor preset of `aplane.falcon1024-b.v1`, which refuses rekeys where
-this template allows an admin-key rekey. It is not a compiled provider,
-authorization-contract identifier, key category, or special transaction
-classifier.
+Corridor is the preset of the general bounded key type `aplane.falcon1024-b.v1`
+that composes cosigner authorization into `bounded1`. It is a shape of that
+compiled provider, not a separate key type, authorization-contract identifier,
+key category, or special transaction classifier.
 
 The dimensions are independent:
 
 | Dimension | Corridor v1 value |
 |---|---|
-| Full key type | `aplane.corridor.v1` |
+| Full key type | `aplane.falcon1024-b.v1` |
 | Account form | DSA LogicSig |
 | Base signing primitive | `aplane.falcon1024.v1` |
 | Authorization contract | `bounded1` |
 | Layer-3 policy | framework-owned `merkle_allowlist` |
 | Spend auxiliary authority | `cosigner1`, Falcon witness, required on spend |
-| Rekey auxiliary authority | distinct offline Falcon contract-admin witness |
+| Rekey authority | none: rekeys refused |
 | Advertised signing flow | `bounded-cosigner1` |
 
 Changing one dimension does not reinterpret the others. In particular,
@@ -846,22 +825,8 @@ Changing one dimension does not reinterpret the others. In particular,
 `bounded-cosigner1` is the client/server choreography used to obtain a complete
 spend signature.
 
-### V1 Compatibility Ratification
-
-This schema-v2 bounded template is the first supported
-`aplane.corridor.v1`. Earlier development catalog entries used a compiled
-guarded provider with different TEAL, address derivation, and choreography;
-they were pre-release artifacts and do not define a durable Corridor
-compatibility contract. No account generated from that provider is supported
-as a production Corridor account. Developer or LocalNet instances must be
-discarded or decommissioned and recreated from this template. The key type,
-canonical program, metadata, and `bounded-cosigner1` flow documented here become
-the Corridor v1 compatibility baseline.
-
-The complete cosigner-bearing profile encoding, behavior parameters, Merkle
-root/proof, argument masks, program binding, and admin transcript are frozen
-together in
-[bounded1 Golden vector 2](ARCH_BOUNDED_DSA.md#golden-vector-2-corridor).
+The Corridor shape's canonical profile and behavior parameters are frozen in
+[bounded1 Golden vector 3](ARCH_BOUNDED_DSA.md#golden-vector-3-general-boundary-digest).
 
 ### Accepted Transactions
 
@@ -882,46 +847,37 @@ Root construction, recipient canonicalization, duplicate rejection, padding,
 node hashing, and proof order are frozen by the
 [bounded1 Merkle allowlist compatibility contract](ARCH_BOUNDED_DSA.md#merkle-allowlist-compatibility-contract).
 
-Corridor rejects close remainder, asset close, clawback, hybrid rekey+spend,
+Corridor rejects every rekey, close remainder, asset close, clawback,
 unsupported transaction types, missing or malformed proofs, missing cosigner
-authorization, and arguments supplied from the wrong source.
-
-The only administrative operation is the bounded pure-rekey normal form. It
-requires the spending signature plus the distinct external contract-admin
-signature. It does not require or permit a cosigner signature or Merkle proof.
-The admin witness is therefore a rekey co-authorizer, not an independent
-spending-key recovery key.
+authorization, and arguments supplied from the wrong source. It declares no
+rekey operation, so its program has no rekey path.
 
 ### Custody And Generation
 
-Generation resolves three distinct Falcon keypairs:
+Generation resolves two distinct Falcon keypairs:
 
-1. the signer-held spending key;
+1. the signer-held spending key; and
 2. the cosigner-node `.cos` witness selected by `cosigner` or supplied as
-   `cosigner_public_key`; and
-3. the offline `.adm` contract-admin witness represented by
-   `bounded_admin_public_key`.
+   `cosigner_public_key`.
 
-Visible collisions reject. The generated `.key` stores the resolved public
-parameters, bytecode, and complete signing-metadata version 2
+A cosigner key equal to the spending key rejects. The generated `.key` stores the
+resolved public parameters, bytecode, and complete signing-metadata version 2
 `bounded_authorization` object. Signing uses that stored authority rather than
-the installed template. Supported disable/remove operations refuse while a
-stored key still uses the template's key type.
+the shape definition.
 
-The repository YAML is an install source only. Fresh signer identities do not
-enable Corridor by default; operators import and enable it through the normal
-KeyType Library workflow before generation.
+The general bounded key type is default-enabled, so every signer node can create a
+Corridor account without installing a template.
 
-The custody consequences are asymmetric:
+Both keys are required for the life of the account:
 
-- a stolen spending key cannot rekey the account without the admin witness;
-- the spending key plus the admin witness can rekey away from an unavailable
-  or compromised cosigner or replace the current Corridor program;
-- the admin witness cannot recover an account after the spending key is lost.
+- a stolen spending key cannot spend without the cosigner and cannot rekey the
+  account;
+- a lost cosigner key cannot be replaced, because the account refuses rekeys,
+  so its funds cannot move again (a later phase adds a rekey-to list for this);
+- a lost spending key cannot be recovered.
 
-Operators must therefore back up the spending key and admin witness as distinct
-required authorities rather than treating the admin witness as a substitute
-for spending-key recovery.
+Operators must therefore back up the spending key and the cosigner key as
+distinct required authorities.
 
 ### Spend Choreography
 
@@ -949,7 +905,7 @@ authorizer binding.
 Ordinary `/sign` rejects Corridor spends.
 
 The cosigner component is transaction-scoped: it binds the cosigner role and TxID,
-not the Corridor account, authorizer, or program binding. Final assembly and
+not the Corridor account, authorizer, or program. Final assembly and
 the LogicSig perform those account/program checks. Reusing one cosigner key
 across Corridor accounts therefore creates a shared transaction-policy domain;
 per-authorizer cosigner policy would require a new component-message and LogicSig
@@ -957,34 +913,26 @@ version. See [Component Message](#component-message).
 
 ### Close And Decommission
 
-Corridor v1 has no direct close path. Decommissioning is deliberately a
-two-step governance action:
+Corridor v1 has no close path and no rekey path. Decommissioning means
+spending the balance to listed recipients; the account keeps its minimum
+balance forever.
 
-1. use the bounded contract-admin ceremony to pure-rekey the account to a
-   successor authorizer; then
-2. use that successor authorizer to close the ALGO account or asset positions.
-
-Step 1 requires both the existing spending key and the contract-admin witness.
-It can escape a failed cosigner or current policy, but it cannot recover a lost
-spending key.
-
-`CloseRemainderTo`, `AssetCloseTo`, and `AssetSender` remain zero on every
-transaction authorized by Corridor itself.
+`RekeyTo`, `CloseRemainderTo`, `AssetCloseTo`, and `AssetSender` remain zero on
+every transaction authorized by Corridor.
 
 ### Compiler And Resource Budget
 
 Corridor stores one resource profile over its final compiler-auto-salted
 bytecode. Inventory materializes maximum argument bytes and reviewed opcode
-ceilings for all three bounded path cells (spend, spending-key rekey, and
-contract-admin rekey); a resource cell does not authorize a path. Corridor
-admits spend and contract-admin rekey, not spending-key-only rekey. Under
+ceilings for all three bounded path cells (spend, spending-key rekey, and the
+unused `admin_rekey` cell kept for encoding stability); a resource cell does not
+authorize a path. Corridor admits only spend. Under
 v42, argument/opcode capacity determines the minimum group size; bytecode above
 the final group's free program pool contributes to the aggregate fee instead
 of manufacturing extra dummies.
 
-The pinned one-recipient compiler cell is approximately 5.9 KB of final
-bytecode. Its worst-case spend and admin argument layouts remain distinct and
-are derived from durable bounded metadata. The planner evaluates the selected
+Its worst-case spend argument layout is derived from durable bounded metadata.
+The planner evaluates the selected
 path, adds only required resource dummies, applies the v42 program surcharge,
 and rejects the finalized transaction if its fee exceeds the compiled 10,000
 microAlgo ceiling. Compiler golden values are toolchain-pinned; the stored
@@ -1023,8 +971,8 @@ Primary packages and files:
 - `lsig/falcon1024_guarded`: guarded LogicSig provider and template behavior.
 - `lsig/composeddsa`: optional bounded cosigner composition and framework-owned
   fixed/Merkle Layer-3 policies.
-- `library/retired/aplane.corridor.v1.yaml`: the retired Corridor profile source,
-  kept to repair existing accounts.
+- `lsig/boundedaccount` and `internal/boundary`: the general bounded key type and
+  its Corridor preset.
 - `internal/apadminapp/catalog.go`: public cosigner export/import/list/show/remove
   workflows used by `apadmin`.
 - `internal/signerapp/policycmd`: live and rescue policy workflows through
