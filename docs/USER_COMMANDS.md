@@ -528,6 +528,12 @@ rekeyed to <auth>` when the target's authority has been moved elsewhere.
 Algorand does not follow that chain, so such a rekey would hand the account to
 a key the target no longer uses.
 
+A bounded account's program decides which rekeys it takes (see
+[Rekey-to lists](USER_KEYTYPES.md#rekey-to-lists)). On a cosigned bounded account,
+a rekey to an address on the account's rekey-to list takes the spending key
+alone and never asks the cosigner; any other rekey the account allows asks the
+cosigner too, whose policy decides the target.
+
 **Options:**
 | Option | Description |
 |--------|-------------|
@@ -755,7 +761,9 @@ cosigner's address:
    endpoint or host trust. Use **SHOW JSON** to copy the document
    instead of saving a file. The result screen shows the address clients
    should use, taken from `endpoint.advertise_url` when it is configured.
-2. **On the primary signer:** enable the guarded or Corridor key type first.
+2. **On the primary signer:** choose a key type that takes a cosigner: the
+   general bounded type (`aplane.falcon1024-b.v1`, enabled by default, with
+   the Corridor preset) or the guarded type, which must be enabled first.
    In apadmin, **Generate account**, select that type, open the **Cosigner**
    field, and choose **Use key file...** (or **Paste public
    JSON...**). Compare the complete Witness Key ID with the cosigner, then

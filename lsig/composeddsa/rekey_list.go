@@ -61,9 +61,10 @@ func rekeyListRoot(params map[string]string) ([]byte, error) {
 	if !ok {
 		return nil, fmt.Errorf("the rekey-to list root is computed at key generation, and this program has none")
 	}
-	root, err := hex.DecodeString(value)
-	if err != nil || len(root) != 32 {
-		return nil, fmt.Errorf("%s must be 32 bytes of hex", boundedmeta.RekeyListRootParameter)
+	// The stored metadata holds the same root under the same canonicality rule.
+	root, err := boundedmeta.DecodeCanonicalHex(boundedmeta.RekeyListRootParameter, value, 32, 32)
+	if err != nil {
+		return nil, err
 	}
 	return root, nil
 }

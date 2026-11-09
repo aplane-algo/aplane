@@ -95,9 +95,10 @@ func TestSigningFlowCharacterizationInventory(t *testing.T) {
 			"TestSignComponentUserRoleForeignRekeyReviewWithUserAutoApprove",
 		},
 		"../../internal/signerapp/signing/bounded_cosigner_test.go": {
-			"TestValidateBoundedComponentPlanRequiresCosignerSpend",
+			"TestValidateBoundedComponentPlanAdmitsOnlyCosignedPaths",
 			"TestBoundedAssemblyReceiptBindsRuntimeAndMetadata",
 			"TestAssembleBoundedTargetVerifiesBothAuthorities",
+			"TestAssembleBoundedTargetFollowsThePathForTheCosigner",
 		},
 		"../../internal/signerapp/signing/frozen_component_test.go": {
 			"TestFrozenComponentReconstructionMatchesCanonicalPlan",

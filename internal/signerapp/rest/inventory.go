@@ -409,7 +409,7 @@ type boundedInventoryProvider interface {
 
 func boundedSigningFlow(metadata *boundedmeta.Metadata) string {
 	if metadata != nil && metadata.Cosigner != nil {
-		return signerapi.SigningFlowBoundedCosigner1
+		return signerapi.SigningFlowCosigned1
 	}
 	return signerapi.SigningFlowBounded1
 }

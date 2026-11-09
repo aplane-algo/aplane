@@ -261,9 +261,9 @@ is displayed on that path, so transaction types the approval screen cannot
 show (state proof, heartbeat) sign as well; reject them by type for a key an
 agent drives if it must never issue them. Within Always Deny and Always Review, the `transaction_types` verdict is
 evaluated first: a rejected type never reaches the other rules, and the
-rejection names the type. A spending-key or listed rekey of a bounded account
-always needs review (rule id `bounded_rekey_requires_review`), ahead of every
-approval rule; User Auto-Approve satisfies it.
+rejection names the type. A spending-key, cosigned or listed rekey of a bounded
+account always needs review (rule id `bounded_rekey_requires_review`), ahead of
+every approval rule; User Auto-Approve satisfies it.
 
 The policy for a request is resolved per signing key from one snapshot taken
 when the request's signing service is built: the key's own file if it has one,
@@ -894,7 +894,7 @@ in base units, and ASA IDs are written `asa:<id>`.
 | `key` | both | yes | `"default"` for the node default, or the key the file governs: a signing address on a signer node, a Witness Key ID on a cosigner node. Must match the file name. |
 | `description` | both | no | Notes for reviewers. |
 | `rekeys` | signer | yes | How the signer treats a txn with a non-zero `RekeyTo`: `reject_all_rekeys` rejects it; `reject_foreign_rekey` rejects it unless this node holds the target or the target is on the signing account's own [rekey-to list](USER_KEYTYPES.md#rekey-to-lists) (the shipped default); `allow_rekeys` rejects nothing. This setting only rejects: a rekey it lets through still meets the rekey warning, review rules and operator approval, and User Auto-Approve can approve it. A rejection outranks all of those. The signer's own rotation rekeys are never rejected. |
-| `reject_rekey` | cosigner | yes | Coarse deny-all switch for txns with non-zero `RekeyTo`. With `false`, a rekey still fails unless `rekey_policy` allows the edge. |
+| `reject_rekey` | cosigner | yes | Reject every txn with non-zero `RekeyTo` this cosigner is asked to sign. With `false`, a rekey still fails unless `rekey_policy` allows the edge. A bounded account's listed rekey never asks the cosigner, so this doesn't stop it. |
 | `reject_close_remainder` | both | yes | Reject payment txns with non-zero `CloseRemainderTo`. |
 | `reject_asset_close` | both | yes | Reject ASA transfer txns with non-zero `AssetCloseTo`. |
 | `reject_clawback` | both | yes | Reject ASA clawback txns using `AssetSender`. |
@@ -930,9 +930,9 @@ Limits are keyed by network, then by asset:
 
 Document-level and route-level limits are separate checks and both apply.
 
-For cosigner rekey authorization, set `"reject_rekey": true` for a coarse
-deny-all policy. To authorize a controlled rekey, set `"reject_rekey": false`
-and add `rekey_policy.allowed` entries:
+For cosigner rekey authorization, set `"reject_rekey": true` to refuse every
+rekey the cosigner is asked to sign. To authorize a controlled rekey, set
+`"reject_rekey": false` and add `rekey_policy.allowed` entries:
 
 ```json
 "rekey_policy": {
@@ -947,9 +947,16 @@ a flat `address_sets` entry such as `@corridor_accounts`. Network-specific
 address sets are not accepted for rekey policy. The target transaction must be
 a pure 0 ALGO self-payment with non-zero `RekeyTo` and no close remainder.
 
-`rekey_policy` applies to dedicated `cosigner1` guarded accounts. Corridor v1's
-cosigner is spend-only, and a Corridor account refuses rekeys, so it never asks
-the cosigner about one.
+`rekey_policy` applies to every rekey of a dedicated `cosigner1` guarded
+account, and to every cosigned rekey of a bounded account: a `spending_key`
+rekey on a cosigned account, or a target off the list under `plus_cosigned`.
+A listed rekey takes the spending key alone and never asks the cosigner, so on
+an account with a [rekey-to list](USER_KEYTYPES.md#rekey-to-lists)
+`"reject_rekey": true` doesn't stop a rekey to a listed address, and
+`rekey_policy` picks only the targets of cosigned rekeys. The list is the
+owner's standing statement, fixed in the account's program. A Corridor account
+takes only listed rekeys, so it never asks the cosigner about one. To stop
+listed rekeys, set the signer document's `rekeys` to `reject_all_rekeys`.
 
 ## Writing a key policy
 

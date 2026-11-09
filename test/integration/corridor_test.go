@@ -46,27 +46,33 @@ func TestCorridorDeclaredOpcodeCeilings(t *testing.T) {
 	}
 	funderAddress := mustDecodeAddress(t, funder.GetAddress())
 	provider := newGeneralProvider(t, network)
-	account := newCorridorExecutionAccount(t, provider, funderAddress)
+	listed := algocrypto.GenerateAccount()
+	account := newCorridorExecutionAccount(t, provider, []types.Address{listed.Address}, funderAddress)
 	proof := account.proofFor(t, funderAddress)
 	if err := funder.FundMicroAlgosAndWait(account.address, 500_000); err != nil {
 		t.Fatalf("fund Corridor opcode-validation account: %v", err)
 	}
-	// It can never close, so its minimum balance stays behind: 0.1 ALGO per run on
-	// a public network.
-	t.Cleanup(func() { sweepRefusedAccount(t, network, account, funder.GetAddress(), proof) })
+	t.Cleanup(func() {
+		handOver(t, network, account, listed.Address, "corridor-opcode-cleanup")
+		bestEffortCloseRekeyedAccount(t, network, account.address, funder.GetAddress(), listed.PrivateKey)
+	})
 
 	sp := mustSuggestedParams(t, network)
 	spendTxn := corridorPaymentTxn(t, sp, account.address, funder.GetAddress(), 0, "corridor-opcode-spend")
 	spendGroup, _ := account.signedGroup(t, spendTxn, proof, nil)
+	rekeyTxn := corridorPaymentTxn(t, sp, account.address, account.address, 0, "corridor-opcode-listed-rekey")
+	rekeyTxn.RekeyTo = listed.Address
+	rekeyGroup, _ := account.signedGroup(t, rekeyTxn, nil, nil)
 
 	report, err := harness.ValidateDeclaredOpcodeCeiling(context.Background(), compileAlgod, harness.OpcodeCeilingValidation{
 		Name:          "Corridor " + corridorShape().Descriptor(),
 		FinalProgram:  account.bytecode,
 		Profile:       provider.LogicSigOpcodeProfile(),
 		Bounded:       true,
-		RequiredPaths: []lsigresource.AuthorizationPath{lsigresource.PathSpend},
+		RequiredPaths: []lsigresource.AuthorizationPath{lsigresource.PathSpend, lsigresource.PathListedRekey},
 		Vectors: []harness.OpcodeCeilingVector{
 			{Name: "maximum-spend", Path: lsigresource.PathSpend, SignedTxns: spendGroup, LSigIndex: 0},
+			{Name: "maximum-listed-rekey", Path: lsigresource.PathListedRekey, SignedTxns: rekeyGroup, LSigIndex: 0},
 		},
 	})
 	if err != nil {
@@ -96,7 +102,10 @@ func TestCorridorLogicSigExecutionMatrixLocalnet(t *testing.T) {
 	outside := algocrypto.GenerateAccount().Address
 	funderAddress := mustDecodeAddress(t, funder.GetAddress())
 	provider := newGeneralProvider(t, testnet)
-	transferAccount := newCorridorExecutionAccount(t, provider, allowed, funderAddress)
+	// Each Corridor account lists a key the cleanup holds: the way out once the
+	// matrix is done.
+	transferExit := algocrypto.GenerateAccount()
+	transferAccount := newCorridorExecutionAccount(t, provider, []types.Address{transferExit.Address}, allowed, funderAddress)
 	funderProof := transferAccount.proofFor(t, funderAddress)
 	if err := funder.FundMicroAlgosAndWait(transferAccount.address, 500_000); err != nil {
 		t.Fatalf("failed to fund corridor transfer account %s: %v", transferAccount.address, err)
@@ -117,11 +126,13 @@ func TestCorridorLogicSigExecutionMatrixLocalnet(t *testing.T) {
 		bestEffortCloseBoundedAsset(t, testnet, allowed.String(), funder.GetAddress(), assetID, allowedAccount.PrivateKey)
 		bestEffortCloseRekeyedAccount(t, testnet, allowed.String(), funder.GetAddress(), allowedAccount.PrivateKey)
 	})
-	// A Corridor account can neither close nor be rekeyed. What it holds goes back
-	// to the funder, a listed recipient, and its minimum balance stays.
+	// A Corridor account closes only through its listed key: its asset goes back
+	// to the funder, a listed recipient, then the listed key takes it and closes it.
 	t.Cleanup(func() {
 		returnCorridorAsset(t, testnet, transferAccount, funder.GetAddress(), funderProof, assetID)
-		sweepRefusedAccount(t, testnet, transferAccount, funder.GetAddress(), funderProof)
+		handOver(t, testnet, transferAccount, transferExit.Address, "corridor-transfer-cleanup")
+		bestEffortCloseBoundedAsset(t, testnet, transferAccount.address, funder.GetAddress(), assetID, transferExit.PrivateKey)
+		bestEffortCloseRekeyedAccount(t, testnet, transferAccount.address, funder.GetAddress(), transferExit.PrivateKey)
 	})
 	sendAssetFromFunder(t, testnet, funder, transferAccount.address, assetID, 2)
 
@@ -203,12 +214,13 @@ func TestCorridorLogicSigExecutionMatrixLocalnet(t *testing.T) {
 	})
 
 	rekeyTarget := algocrypto.GenerateAccount()
-	rekeyAccount := newCorridorExecutionAccount(t, provider, allowed)
-	allowedProof := rekeyAccount.proofFor(t, allowed)
+	rekeyAccount := newCorridorExecutionAccount(t, provider, []types.Address{rekeyTarget.Address}, allowed)
 	if err := funder.FundMicroAlgosAndWait(rekeyAccount.address, 200_000); err != nil {
 		t.Fatalf("failed to fund corridor rekey account %s: %v", rekeyAccount.address, err)
 	}
-	t.Cleanup(func() { sweepRefusedAccount(t, testnet, rekeyAccount, allowed.String(), allowedProof) })
+	t.Cleanup(func() {
+		bestEffortCloseRekeyedAccount(t, testnet, rekeyAccount.address, funder.GetAddress(), rekeyTarget.PrivateKey)
+	})
 
 	t.Run("malformed rekey with nonzero amount fails", func(t *testing.T) {
 		txn := corridorPaymentTxn(t, mustSuggestedParams(t, testnet), rekeyAccount.address, rekeyAccount.address, 1, "corridor-deny-rekey-amount")
@@ -232,18 +244,28 @@ func TestCorridorLogicSigExecutionMatrixLocalnet(t *testing.T) {
 		submitCorridorGroupExpectFailure(t, testnet, rawGroup)
 	})
 
-	// No rekey path exists, so a well-formed rekey with both signatures fails too.
-	t.Run("pure rekey is refused", func(t *testing.T) {
-		txn := corridorPaymentTxn(t, mustSuggestedParams(t, testnet), rekeyAccount.address, rekeyAccount.address, 0, "corridor-allow-rekey")
-		txn.RekeyTo = rekeyTarget.Address
+	// Only a listed target takes a rekey: a well-formed rekey elsewhere fails with
+	// both signatures, since the cosigner opens no rekey path.
+	t.Run("pure rekey to an unlisted address is refused", func(t *testing.T) {
+		txn := corridorPaymentTxn(t, mustSuggestedParams(t, testnet), rekeyAccount.address, rekeyAccount.address, 0, "corridor-deny-unlisted-rekey")
+		txn.RekeyTo = algocrypto.GenerateAccount().Address
 		rawGroup, _ := rekeyAccount.signGroup(t, txn, nil, nil)
 		submitCorridorGroupExpectFailure(t, testnet, rawGroup)
-		accountInfo, err := testnet.Client.AccountInformation(rekeyAccount.address).Do(context.Background())
-		if err != nil {
-			t.Fatalf("read Corridor account: %v", err)
+		if got := authAddress(t, testnet, rekeyAccount.address); got != "" {
+			t.Fatalf("Corridor account was rekeyed to %s", got)
 		}
-		if accountInfo.AuthAddr != "" {
-			t.Fatalf("Corridor account was rekeyed to %s", accountInfo.AuthAddr)
+	})
+
+	// The listed rekey needs the spending key alone: no cosigner signature at all.
+	t.Run("listed rekey without the cosigner succeeds", func(t *testing.T) {
+		txn := corridorPaymentTxn(t, mustSuggestedParams(t, testnet), rekeyAccount.address, rekeyAccount.address, 0, "corridor-allow-listed-rekey")
+		txn.RekeyTo = rekeyTarget.Address
+		rawGroup, txid := rekeyAccount.signGroup(t, txn, nil, func(_ types.Digest, args [][]byte) [][]byte {
+			return withArg(args, rekeyAccount.argumentIndex(t, boundedmeta.ArgSourceCosigner), nil)
+		})
+		submitCorridorGroupExpectSuccess(t, testnet, rawGroup, txid)
+		if got := authAddress(t, testnet, rekeyAccount.address); got != rekeyTarget.Address.String() {
+			t.Fatalf("Corridor authorizer = %q, want %s", got, rekeyTarget.Address)
 		}
 	})
 }
@@ -262,29 +284,34 @@ type corridorExecutionAccount struct {
 
 // corridorShape is the general bounded type's Corridor preset
 // (internal/boundary/preset.go): every transfer kind, a Merkle list, a cosigner on
-// every spend, and no rekey path.
+// every spend, and a rekey only to a listed address, with the spending key alone.
 func corridorShape() boundedaccount.Shape {
 	return boundedaccount.Shape{
 		Spend:    []txeffects.SpendEffect{txeffects.SpendEffectPay, txeffects.SpendEffectAxfer, txeffects.SpendEffectAssetOptIn},
 		Encoding: boundedaccount.EncodingMerkle,
-		Rekey:    boundedaccount.RekeyRefused,
+		Rekey:    boundedaccount.RekeyOnlyThese,
 		Cosigner: true,
 	}
 }
 
-func newCorridorExecutionAccount(t *testing.T, provider *boundedaccount.Provider, recipients ...types.Address) corridorExecutionAccount {
+func newCorridorExecutionAccount(t *testing.T, provider *boundedaccount.Provider, rekeyTo []types.Address, recipients ...types.Address) corridorExecutionAccount {
 	t.Helper()
-	if len(recipients) == 0 {
-		t.Fatal("corridor execution account requires at least one recipient")
+	if len(recipients) == 0 || len(rekeyTo) == 0 {
+		t.Fatal("corridor execution account requires a recipient and a rekey-to address")
 	}
 	recipientStrings := make([]string, len(recipients))
 	for i, recipient := range recipients {
 		recipientStrings[i] = recipient.String()
 	}
-	account := newGeneralAccount(t, provider, corridorShape(), recipientStrings, 0, nil)
-	if account.metadata.Layer3Policy != boundedmeta.Layer3PolicyMerkleAllowlist || account.metadata.Cosigner == nil || account.metadata.Rekey != boundedmeta.RekeyRefused {
-		t.Fatalf("account is not a Corridor: layer3_policy=%q cosigner=%v rekey=%q",
-			account.metadata.Layer3Policy, account.metadata.Cosigner != nil, account.metadata.Rekey)
+	rekeyToStrings := make([]string, len(rekeyTo))
+	for i, target := range rekeyTo {
+		rekeyToStrings[i] = target.String()
+	}
+	account := newGeneralAccount(t, provider, corridorShape(), recipientStrings, 0, rekeyToStrings)
+	if account.metadata.Layer3Policy != boundedmeta.Layer3PolicyMerkleAllowlist || account.metadata.Cosigner == nil ||
+		account.metadata.Rekey != boundedmeta.RekeyRefused || account.metadata.RekeyList == nil {
+		t.Fatalf("account is not a Corridor: layer3_policy=%q cosigner=%v rekey=%q list=%v",
+			account.metadata.Layer3Policy, account.metadata.Cosigner != nil, account.metadata.Rekey, account.metadata.RekeyList != nil)
 	}
 	return account
 }

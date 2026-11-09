@@ -47,8 +47,14 @@ func boundedLabel(layer3Policy string, rekey boundedmeta.RekeySetting, rekeyList
 		policy = "Policy " + layer3Policy
 	}
 	rekeyLabel := boundedRekeyLabel(rekey)
-	if rekeyList && rekey == boundedmeta.RekeyRefused {
+	switch {
+	case rekeyList && rekey == boundedmeta.RekeyRefused:
 		rekeyLabel = "rekey to listed only"
+	case rekeyList && rekey == boundedmeta.RekeySpendingKey:
+		rekeyLabel = "rekey to listed, or cosigned"
+	case cosigner && rekey == boundedmeta.RekeySpendingKey:
+		// The spending key can't rekey a cosigned account alone.
+		rekeyLabel = "cosigned rekey"
 	}
 	parts := []string{policy, rekeyLabel}
 	if cosigner {

@@ -635,8 +635,11 @@ staticcheck:
 	@echo "✓ staticcheck clean"
 
 # CI race + coverage run; excludes integration packages from the coverage set.
+# Under the race detector with coverage, the signing package's shape agreement
+# sweep outgrows go test's default 10-minute package limit (about 14 minutes
+# locally once the bounds overlay lands), so the limit is raised.
 race-cover-test: compile-docassets
-	CGO_ENABLED=1 go test -race -coverprofile=coverage.out -covermode=atomic $$(go list ./... | grep -v '/test/integration' | grep -v '/node_modules/' | grep -v '^github.com/aplane-algo/aplane/temp/')
+	CGO_ENABLED=1 go test -race -timeout 45m -coverprofile=coverage.out -covermode=atomic $$(go list ./... | grep -v '/test/integration' | grep -v '/node_modules/' | grep -v '^github.com/aplane-algo/aplane/temp/')
 
 # Compile every package without producing artifacts.
 build-check:

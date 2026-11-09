@@ -50,13 +50,13 @@ func Presets() []Preset {
 		{
 			Name:        "corridor",
 			Title:       "Corridor",
-			Description: "A Merkle list and a cosigner on every spend. It can never be rekeyed.",
+			Description: "A Merkle list and a cosigner on every spend. It can be rekeyed only to an address on its rekey-to list, with the spending key alone.",
 			Fixed: map[string]string{
 				ParameterSpendEffects:   allTransfers,
-				ParameterRekeyAuthority: RekeyRefused,
+				ParameterRekeyAuthority: RekeyOnlyThese,
 				ParameterListEncoding:   EncodingMerkle,
 			},
-			Fields: []string{ParameterRecipients, ParameterCosigner},
+			Fields: []string{ParameterRecipients, ParameterRekeyTo, ParameterCosigner},
 		},
 		{
 			Name:        "timelock",

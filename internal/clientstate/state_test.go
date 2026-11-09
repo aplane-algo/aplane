@@ -277,7 +277,7 @@ func TestPopulateSignerCacheReadsBoundedCosignerMetadata(t *testing.T) {
 	state := New("testnet")
 	if err := state.PopulateSignerCache([]signerapi.KeyInfo{{
 		Address: "BOUNDED", KeyType: "aplane.custom-bounded-cosigner.v1",
-		SigningFlow:              signerapi.SigningFlowBoundedCosigner1,
+		SigningFlow:              signerapi.SigningFlowCosigned1,
 		CosignerComponentKeyType: "aplane.witness-falcon1024.v1",
 		BoundedAuthorization: &signerapi.BoundedAuthorizationInfo{
 			MaxFee:   10_000,
@@ -289,7 +289,7 @@ func TestPopulateSignerCacheReadsBoundedCosignerMetadata(t *testing.T) {
 	if got, ok := state.SignerCache.CosignerPublicKeyForAddress("BOUNDED"); !ok || got != "abcd" {
 		t.Fatalf("bounded cosigner public key = %q/%v", got, ok)
 	}
-	if got := state.SignerCache.SigningFlowForAddress("BOUNDED"); got != signerapi.SigningFlowBoundedCosigner1 {
+	if got := state.SignerCache.SigningFlowForAddress("BOUNDED"); got != signerapi.SigningFlowCosigned1 {
 		t.Fatalf("bounded cosigner flow = %q", got)
 	}
 	if got, ok := state.SignerCache.BoundedMaxFeeForAddress("BOUNDED"); !ok || got != 10_000 {

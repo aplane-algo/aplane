@@ -38,7 +38,10 @@ type AssemblyTarget struct {
 	AssemblyReceipt     string            `json:"assembly_receipt,omitempty"`
 	BaseSourceRequestID string            `json:"base_source_request_id,omitempty"`
 
-	CosignerSignature       string `json:"cosigner_signature"`
+	// CosignerSignature is required on a guarded target and on every
+	// bounded-cosigner target except a listed rekey, which takes none; assembly
+	// classifies the transaction to decide.
+	CosignerSignature       string `json:"cosigner_signature,omitempty"`
 	CosignerSourceRequestID string `json:"cosigner_source_request_id,omitempty"`
 }
 
@@ -96,14 +99,17 @@ func (t AssemblyTarget) validate() error {
 	if t.AuthAddress == "" {
 		return fmt.Errorf("auth_address is required")
 	}
-	if t.CosignerSignature == "" {
-		return fmt.Errorf("cosigner_signature is required")
+	if t.CosignerSignature == "" && t.CosignerSourceRequestID != "" {
+		return fmt.Errorf("cosigner_source_request_id needs a cosigner_signature")
 	}
 	if err := validateOptionalSourceRequestID(t.CosignerSourceRequestID); err != nil {
 		return fmt.Errorf("cosigner_source_request_id: %w", err)
 	}
 	switch t.Kind {
 	case AssemblyTargetKindGuarded:
+		if t.CosignerSignature == "" {
+			return fmt.Errorf("cosigner_signature is required for guarded target")
+		}
 		if t.UserSignature == "" {
 			return fmt.Errorf("user_signature is required for guarded target")
 		}

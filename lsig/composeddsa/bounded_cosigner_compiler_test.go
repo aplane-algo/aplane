@@ -82,14 +82,16 @@ teal: |
 	// the emitted TEAL loses exactly the trailing comment and `bytecblock 0x00`.
 	// It moved again when the contract-admin key was removed: this profile now
 	// refuses rekeys instead of carrying an admin-key rekey path. It moved once
-	// more when bounded2 replaced bounded1, which renamed the envelope comment.
+	// more when bounded2 replaced bounded1, which renamed the envelope comment,
+	// and again when the cosigner check became one subroutine every cosigned
+	// path calls.
 	hash := sha256.Sum256([]byte(teal))
-	if got, want := hex.EncodeToString(hash[:]), "338a115a7e3c672e93539844cc202c74ae2469a541e8c4f88c95178a0e6346d8"; got != want {
+	if got, want := hex.EncodeToString(hash[:]), "286a1655aea0ffee8c64dda26398f35e543a32139b7fa02dd8ab9c9766cbc054"; got != want {
 		t.Fatalf("TEAL SHA-256 = %s, want %s", got, want)
 	}
 	// Pin the deployed compiler output separately from the source hash so
 	// compiler-toolchain drift remains visible even when the TEAL is unchanged.
-	if got, want := len(bytecode), 3_722; got != want {
+	if got, want := len(bytecode), 3_726; got != want {
 		t.Fatalf("compiled bytecode size = %d, want %d; TEAL SHA-256 %x", got, want, hash)
 	}
 	if got, want := metadata.ArgumentBytesForPath(boundedmeta.PathSpend), 2_846; got != want {

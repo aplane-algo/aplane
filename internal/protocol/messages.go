@@ -765,8 +765,9 @@ type PreparedBoundedProfile struct {
 	SpendEffects []string `json:"spend_effects"`
 	MaxFee       uint64   `json:"max_fee"`
 	Rekey        string   `json:"rekey"`
-	// RekeyList is set for "only these": rekey refused except to an address on
-	// the account's rekey-to list, which the request's rekey_to parameter holds.
+	// RekeyList is set when the account has a rekey-to list, which the request's
+	// rekey_to parameter holds: "only these" under rekey refused, "plus cosigned"
+	// under a spending-key rekey on a cosigned account.
 	RekeyList        bool   `json:"rekey_list,omitempty"`
 	Layer3Policy     string `json:"layer3_policy"`
 	CosignerRequired bool   `json:"cosigner_required,omitempty"`

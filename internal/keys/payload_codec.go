@@ -19,6 +19,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
+	"github.com/aplane-algo/aplane/internal/rekeylist"
 	"github.com/aplane-algo/aplane/internal/rotatingkey"
 	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
 	cosignerwitness "github.com/aplane-algo/aplane/internal/witness"
@@ -846,6 +847,17 @@ func validateLogicSigFields(p *Payload) error {
 			}
 			if !bytes.Equal(parameterPublicKey, metadataPublicKey) {
 				return incompatibleKeyFormat("bounded_authorization cosigner public key does not match parameters.%s", boundedmeta.CosignerPublicKeyParameter)
+			}
+		}
+		// The program compiled the parameters' root, and every listed rekey
+		// rebuilds the list from the stored entries, so both must agree with the
+		// metadata now rather than fail after an operator approves a rekey.
+		if list := p.BoundedAuthorization.RekeyList; list != nil {
+			if p.Parameters[boundedmeta.RekeyListRootParameter] != list.RootHex {
+				return incompatibleKeyFormat("bounded_authorization rekey-to list root does not match parameters.%s", boundedmeta.RekeyListRootParameter)
+			}
+			if _, err := rekeylist.ParseEntries(p.Parameters[boundedmeta.RekeyListEntriesParameter]); err != nil {
+				return incompatibleKeyFormat("invalid parameters.%s: %v", boundedmeta.RekeyListEntriesParameter, err)
 			}
 		}
 		if len(p.SigningArgs) != 0 {

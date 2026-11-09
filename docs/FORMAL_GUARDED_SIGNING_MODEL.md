@@ -72,7 +72,7 @@ program requires two component signatures. The model observes:
 
 The current dedicated guarded account key type is
 `aplane.falcon1024-cosigner1024.v1`. Corridor v1 now uses the distinct
-`bounded-cosigner1` choreography and is outside this legacy guarded-assembly
+`cosigned1` choreography and is outside this legacy guarded-assembly
 model; its implementation tests cover its receipt and source-aware assembly
 contract.
 
@@ -159,7 +159,7 @@ consults the primary signer's key cache for the effective signer. Detection is
 flow-driven: signer inventory labels each guarded key with
 `signing_flow: cosigner1` plus its `cosigner_component_key_type`, and any
 effective signer with a non-empty signing flow routes through guarded
-orchestration, which supports `cosigner1` and `bounded-cosigner1` (the latter
+orchestration, which supports `cosigner1` and `cosigned1` (the latter
 outside this model) and rejects unknown labels before any signing request
 (A15). The client does not classify key-type strings itself.
 Mixed ordinary positions, direct guarded senders, and senders rekeyed to

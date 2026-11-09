@@ -122,12 +122,12 @@ Source: [FORMAL_TLA_BOUNDED_COSIGNER_MODEL.md](FORMAL_TLA_BOUNDED_COSIGNER_MODEL
 
 | ID | Status | Source § | Code anchor | Test anchor | Notes |
 |---|---|---|---|---|---|
-| BS1 | implemented | BS1 | `internal/engine/guarded/submit.go::signAndSubmitBoundedCosignerGroup`; `internal/signerapp/signing/bounded_cosigner.go::PrepareBoundedComponentWithContext` | `internal/engine/guarded/simulate_submit_test.go::TestBoundedCosignerSimulateUsesUserFirstChoreography`; `internal/signerapp/signing/bounded_cosigner_test.go::TestValidateBoundedComponentPlanRequiresCosignerSpend` | User policy and operator approval complete before the client requests a cosigner. Machine-checked in `bounded_cosigner.tla` (`BS1_UserFirst`). |
-| BS2 | retired | BS2 | none | none | Covered the external-admin completion path, removed with the admin key. The number is kept so BS3-BS7 keep theirs. |
-| BS3 | implemented | BS3 | `internal/signerapp/signing/bounded_cosigner.go::assembleBoundedTarget` | `internal/signerapp/signing/bounded_cosigner_test.go::TestAssembleBoundedTargetVerifiesBothAuthorities` | Spend assembly verifies the assembly receipt and both authorities against durable metadata. Machine-checked in `bounded_cosigner.tla` (`BS3_SpendAuthoritiesVerified`, including the receipt conjunct). |
+| BS1 | implemented | BS1 | `internal/engine/guarded/submit.go::signAndSubmitBoundedCosignerGroup`; `internal/signerapp/signing/bounded_cosigner.go::PrepareBoundedComponentWithContext` | `internal/engine/guarded/simulate_submit_test.go::TestBoundedCosignerSimulateUsesUserFirstChoreography`; `internal/signerapp/signing/bounded_cosigner_test.go::TestValidateBoundedComponentPlanAdmitsOnlyCosignedPaths` | User policy and operator approval complete before the client requests a cosigner, and the client asks it only for a path that needs it. Machine-checked in `bounded_cosigner.tla` (`BS1_UserFirst`). |
+| BS2 | implemented | BS2 | `internal/signerapp/signing/bounded_cosigner.go::assembleBoundedTarget`; `internal/signerapp/signing/bounded.go::boundedAccountPath`; `internal/engine/guarded/submit.go::signAndSubmitBoundedCosignerGroup` | `internal/signerapp/signing/bounded_cosigner_test.go::TestAssembleBoundedTargetFollowsThePathForTheCosigner`; `internal/engine/guarded/simulate_submit_test.go::TestBoundedCosignerSimulateUsesUserFirstChoreography` | A listed rekey on a cosigned account outputs with the receipt, the base signature and the list proof, and refuses a presented cosigner signature. That the first-party client never asks the cosigner for one is a client property, tested in Go, not something assembly can check. Assembly decides the path from the canonical transaction, as the planner does. Machine-checked in `bounded_cosigner.tla` (`BS2_ListedRekeyWithoutCosigner`). The number once covered the external-admin path, removed with the admin key. |
+| BS3 | implemented | BS3 | `internal/signerapp/signing/bounded_cosigner.go::assembleBoundedTarget` | `internal/signerapp/signing/bounded_cosigner_test.go::TestAssembleBoundedTargetVerifiesBothAuthorities`; `internal/signerapp/signing/bounded_cosigner_test.go::TestAssembleBoundedTargetFollowsThePathForTheCosigner` | Spend and cosigned-rekey assembly verify the assembly receipt and both authorities against durable metadata; a missing cosigner signature on either is refused. Machine-checked in `bounded_cosigner.tla` (`BS3_CosignedAuthoritiesVerified`, including the receipt conjunct). |
 | BS4 | implemented | BS4 | `internal/signerapp/signing/service.go::AssembleWithContext`; `internal/signerapp/signing/bounded_cosigner.go::assembleBoundedTarget`; bounded argument assembly in `internal/signerapp/signing/execution.go` | `internal/engine/guarded/submit_test.go::TestCollectComponentSignaturesRejectsMalformedResponses`; `internal/signerapp/signing/execution_test.go::TestAssembleBoundedArgsPreservesInteriorEmptySlots` | Exact target coverage and source/path masks gate assembly; derived inputs remain signer-owned. Machine-checked in `bounded_cosigner.tla` (`BS4_DeclaredArgumentsOnly`). |
 | BS5 | implemented | BS5 | `internal/engine/guarded/submit.go::verifyAssembledAgainstFrozen`; `internal/signerapp/signing/service.go::AssembleWithContext`; `internal/signerapp/signing/bounded_cosigner.go::assembleBoundedTarget` | `internal/engine/guarded/submit_test.go::TestVerifyAssembledAgainstFrozen`; `internal/signerapp/signing/bounded_cosigner_test.go::TestBoundedAssemblyReceiptBindsRuntimeAndMetadata` | Receipt, passthrough, and final bytes bind the frozen plan. Machine-checked in `bounded_cosigner.tla` (`BS5_CanonicalGroupBound`). |
-| BS6 | implemented | BS6 | `internal/signerapp/signing/bounded_cosigner.go::validateBoundedComponentPlan`; ordinary-sign rejection in `internal/signerapp/signing/service.go` | `internal/signerapp/signing/bounded_cosigner_test.go::TestValidateBoundedComponentPlanRequiresCosignerSpend` | Invalid and non-spend shapes cannot enter bounded-cosigner spend output. Machine-checked in `bounded_cosigner.tla` (`BS6_InvalidNeverOutputs`). |
+| BS6 | implemented | BS6 | `internal/signerapp/signing/bounded_cosigner.go::validateBoundedComponentPlan`; ordinary-sign rejection in `internal/signerapp/signing/service.go` | `internal/signerapp/signing/bounded_cosigner_test.go::TestValidateBoundedComponentPlanAdmitsOnlyCosignedPaths` | Invalid shapes, and every path but a cosigned account's spend, cosigned rekey and listed rekey, cannot enter cosigned output. Machine-checked in `bounded_cosigner.tla` (`BS6_InvalidNeverOutputs`). |
 | BS7 | implemented | BS7 | `internal/signerapp/signing/service.go::AssembleWithContext`; `internal/signerapp/signing/bounded_cosigner.go::assembleBoundedTarget`; `internal/engine/guarded/submit.go::signAndSubmitBoundedCosignerGroup` | `internal/signerapp/signing/bounded_cosigner_test.go::TestAssembleBoundedTargetVerifiesBothAuthorities`; `internal/engine/guarded/simulate_submit_test.go::TestBoundedCosignerSimulateUsesUserFirstChoreography` | Every failed stage returns no signed group; only final assembly reaches submission/simulation. Machine-checked in `bounded_cosigner.tla` (`BS7_AtomicOutput`). |
 
 ## Approval Coordinator Model
@@ -407,23 +407,27 @@ violate `Safety` in an initial state.
 [FORMAL_TLA_BOUNDED_COSIGNER_MODEL.md](FORMAL_TLA_BOUNDED_COSIGNER_MODEL.md))
 machine-checks the combined planning and assembly choreography. It is a
 depth-4 transition system covering user-side base release, the later cosigner
-request/release, and final bounded assembly. TLC generated 66,304 distinct states
-with no counterexamples. Target
+request/release, and final bounded assembly, over three paths (spend, cosigned
+rekey and listed rekey) and a client that may ask or skip the cosigner wrongly,
+and present or drop a cosigner signature it holds. TLC generated 531,968
+distinct states with no counterexamples. Target
 count is intentionally absent: the predicates are group-wide, so a
 target-count field only duplicated states without adding coverage.
 
 | Invariant | TLA+ predicate |
 |---|---|
 | BS1 (first-party user-first choreography) | `BS1_UserFirst` |
-| BS3 (both spend authorities verified) | `BS3_SpendAuthoritiesVerified` |
+| BS2 (listed rekey without the cosigner) | `BS2_ListedRekeyWithoutCosigner` |
+| BS3 (both authorities verified on cosigned paths) | `BS3_CosignedAuthoritiesVerified` |
 | BS4 (declared arguments only) | `BS4_DeclaredArgumentsOnly` |
 | BS5 (canonical group bound) | `BS5_CanonicalGroupBound` |
 | BS6 (invalid path cannot output) | `BS6_InvalidNeverOutputs` |
 | BS7 (atomic output) | `BS7_AtomicOutput` |
 
 The named invariants are constructed to expose early cosigner routing, omitted
-signature verification, omitted source/coverage/byte checks,
-and partial output as counterexamples.
+signature verification, a listed rekey assembled with the cosigner or without
+its proof, a cosigned path assembled without the cosigner, omitted
+source/coverage/byte checks, and partial output as counterexamples.
 
 ### Plugin signing module
 

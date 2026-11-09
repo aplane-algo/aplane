@@ -125,10 +125,11 @@ resolved public key.
 
 A Corridor account is not a dedicated guarded key-type class. It is an
 `aplane.falcon1024-b.v1` account whose durable metadata combines the
-`bounded2` authorization contract, the `cosigner1` spend gate, and a framework
-Merkle recipient policy, and declares `rekey: refused`. It therefore advertises
-`signing_flow: bounded-cosigner1`, not `cosigner1`, and is discovered from metadata
-rather than a key-type switch. See [Corridor v1](#corridor-v1).
+`bounded2` authorization contract, the `cosigner1` spend gate, a framework
+Merkle recipient policy, and a rekey-to list (`rekey: refused` plus the list,
+*only these*). It therefore advertises `signing_flow: cosigned1`, not
+`cosigner1`, and is discovered from metadata rather than a key-type switch. See
+[Corridor v1](#corridor-v1).
 
 Guarded account identity is the guarded account `key_type`, not the base
 signature construction. The stored `base_key_type` names the construction used
@@ -145,9 +146,10 @@ Dedicated guarded accounts and cosigner keys are never signed through raw
 - cosigner keys use `/sign/component` with `kind:"cosigner"`,
 - ordinary `/sign` rejects all guarded account key types and cosigner key types.
 
-Cosigner-enabled bounded spends are also rejected by ordinary `/sign`. They use
-`/plan`, `/sign/component` with bounded-base and cosigner targets, and
-`/sign/assemble` for source-aware final assembly. They refuse rekeys.
+Every transaction of a cosigner-enabled bounded account is also rejected by
+ordinary `/sign`, listed rekeys included. Spends, cosigned rekeys and listed
+rekeys use `/plan`, `/sign/component` with bounded-base and (except for a listed
+rekey) cosigner targets, and `/sign/assemble` for source-aware final assembly.
 
 This preserves the two-party invariant: a guarded account requires both a user
 component signature and a cosigner component signature. The endpoint split is
@@ -182,8 +184,9 @@ original positions to alter policy or approval semantics.
 
 Assembly authorization remains flow-specific behind the shared request:
 guarded targets carry user and cosigner signatures; bounded-cosigner targets carry
-base signatures, a cosigner signature, and an assembly receipt. No shared route
-may allow either target kind to use the other's weaker material.
+base signatures, a cosigner signature (none on a listed rekey), and an assembly
+receipt. No shared route may allow either target kind to use the other's weaker
+material.
 
 ## Signer-Domain Gating Of User Components
 
@@ -500,7 +503,7 @@ Runtime guarded-send routing works like this:
 
 1. Signer inventory labels a dedicated guarded account with
    `signing_flow: cosigner1`, or a cosigner-enabled bounded account with
-   `signing_flow: bounded-cosigner1`. Both expose their
+   `signing_flow: cosigned1`. Both expose their
    `cosigner_component_key_type` and required cosigner public key. The client routes
    on the flow label (key-type strings are opaque to the client) and fails fast
    on flow labels it does not implement.
@@ -562,8 +565,9 @@ The submit flow is:
 
 ## Bounded-Cosigner Transaction Flow
 
-For `bounded-cosigner1`, the first-party client uses a distinct user-first
-choreography:
+For `cosigned1`, the first-party client uses a distinct user-first
+choreography. It carries a cosigned bounded account's spends, its cosigned
+rekeys (spending key and cosigner) and its listed rekeys (spending key alone):
 
 1. Resolve the bounded target from `signing_flow` and durable inventory.
 2. Send the draft group to `/plan`, then pass the exact frozen group plus its
@@ -571,19 +575,32 @@ choreography:
    `kind:"bounded-base"`.
    The signer independently reconstructs the durable bounded authorization and
    validates grouping, resources, fees, policy, and operator approval without
-   changing the bytes. It returns base signature args, runtime args, and an
-   assembly receipt bound to those bytes.
+   changing the bytes. It returns base signature args, runtime args, an
+   assembly receipt bound to those bytes, and `path`: `spend`,
+   `spending_rekey` or `listed_rekey`, the path it classified.
 3. Sign any non-guarded context positions through ordinary `/sign`; the
-   cosigner is asked only after the user side is complete.
+   cosigner is asked only after the user side is complete. Each cosigned
+   position in that request is budgeted on its component's path.
 4. Route those exact frozen transactions to the cosigner endpoint and request a
-   cosigner-role `/sign/component` signature.
-5. Return the base component, receipt, cosigner signature, and exact group to the
-   user signer through `/sign/assemble` with `kind:"bounded-cosigner"`.
-6. The signer verifies all sources, derives declared Merkle proofs, constructs
-   the metadata-declared argument layout, and returns the executable group.
+   cosigner-role `/sign/component` signature for every target except a
+   `listed_rekey` one. When no target needs the cosigner, no cosigner request
+   is sent.
+5. Return the base component, receipt, cosigner signature (none for a listed
+   rekey), and exact group to the user signer through `/sign/assemble` with
+   `kind:"bounded-cosigner"`.
+6. The signer classifies each target again from the canonical transaction and
+   stored metadata, through the planner's function, and requires a cosigner
+   signature on `spend` and `spending_rekey` and refuses one on
+   `listed_rekey`. It verifies all sources, derives declared Merkle and list
+   proofs, constructs the metadata-declared argument layout, and returns the
+   executable group.
+
+The `path` mark is a routing hint. A client that skips the cosigner on a path
+that needs it, or asks it on a listed rekey, gets no group from assembly, so a
+wrong mark can stall a request but never weaken it.
 
 The first-party client does not ask the cosigner first. It still rejects a group
-that mixes `cosigner1` and `bounded-cosigner1` targets. The wire contracts are now
+that mixes `cosigner1` and `cosigned1` targets. The wire contracts are now
 shared, but the account signer does not yet implement the required multi-gate,
 all-target preflight that releases no component unless both guarded-user and
 bounded-base authorization complete. The guard remains fail-closed until that
@@ -637,9 +654,13 @@ with explicit authorizer semantics.
 Bounded-cosigner assembly additionally verifies the spending-key assembly
 receipt, equality of planned and loaded durable metadata, the frozen base
 argument layout, the cosigner slot and path mask, every runtime and derived
-argument source, and the final bounded LogicSig address. It derives Merkle
-proofs from stored public parameters; clients cannot supply a derived or cosigner
-slot through ordinary LogicSig arguments.
+argument source, and the final bounded LogicSig address. It classifies each
+target's path again from the canonical transaction and stored metadata, through
+the planner's function, and requires a cosigner signature on `spend` and
+`spending_rekey` and refuses one on `listed_rekey`; the component's `path` mark
+does not decide it. It derives Merkle and rekey-list proofs from stored
+parameters; clients cannot supply a derived or cosigner slot through ordinary
+LogicSig arguments.
 
 ## Cosigner Policy
 
@@ -686,15 +707,21 @@ mechanism produced the user component signature.
 Cosigner transfer policy is a positive authorization surface. Supported target
 movements include direct transfers that policy routing can evaluate. Target
 shapes that cannot be represented as supported cosigner movements fail closed.
-For dedicated `cosigner1` rekeys, `reject_rekey:true` is a coarse deny-all
-switch. If it is false, a non-zero `RekeyTo` is authorized only when the
-transaction is a pure 0 ALGO self-payment and `rekey_policy.allowed` contains a
-matching sender-to-target edge. Missing `rekey_policy` still fails closed.
-Bounded cosigner v1 deliberately gates spends only. Cosigner-enabled bounded
-profiles reject spending-key-authorized rekey at definition and durable
-metadata validation, because that path would bypass cosigner control and has no
-bounded-cosigner1 endpoint choreography. They declare no rekey operation, so
-cosigner rekey policy never sees one.
+`reject_rekey:true` rejects every rekey the cosigner is asked to sign. If it is
+false, a non-zero `RekeyTo` is authorized only when the transaction is a pure
+0 ALGO self-payment and `rekey_policy.allowed` contains a matching
+sender-to-target edge. Missing `rekey_policy` still fails closed. For a dedicated
+`cosigner1` account every rekey asks the cosigner, so `reject_rekey:true` stops
+them all.
+
+A cosigned bounded account asks the cosigner for every spend and every cosigned
+rekey (`rekey: spending_key`, or an unlisted target under `plus_cosigned`): such
+a rekey reaches the cosigner node as any rekey does, and `reject_rekey`, the
+`rekey_policy` edge and the pure-shape check decide. A listed rekey takes the
+spending key alone and never reaches the cosigner node, so on an account with a
+rekey-to list `reject_rekey:true` does not stop a rekey to a listed address, and
+`rekey_policy` picks only cosigned-rekey targets. The list is the owner's
+standing statement, fixed in the program.
 
 See [ARCH_POLICY.md](ARCH_POLICY.md) for the rule inventory, domain-specific
 schema constraints, route behavior, and reject/review/approve mapping.
@@ -759,7 +786,8 @@ Cosigner failures are fail-closed:
 - duplicate usable live routes for a required witness fail the operation,
 - deleted cosigner keys stop being advertised by `/keys` and guarded signing
   fails before cosigner signing,
-- missing cosigner signatures fail assembly,
+- missing cosigner signatures fail assembly, and so does a cosigner signature
+  on a bounded listed rekey, which takes none,
 - mismatched user or cosigner signatures fail assembly,
 - stale endpoint routing cannot pass assembly or on-chain LogicSig verification
   without the embedded cosigner private key,
@@ -816,17 +844,20 @@ The dimensions are independent:
 | Base signing primitive | `aplane.falcon1024.v1` |
 | Authorization contract | `bounded2` |
 | Layer-3 policy | framework-owned `merkle_allowlist` |
-| Spend auxiliary authority | `cosigner1`, Falcon witness, required on spend |
-| Rekey setting | `refused` |
-| Advertised signing flow | `bounded-cosigner1` |
+| Spend auxiliary authority | `cosigner1`, Falcon witness, required on spend, never asked for a listed rekey |
+| Rekey setting | `refused` plus a rekey-to list (*only these*) |
+| Advertised signing flow | `cosigned1` |
 
 Changing one dimension does not reinterpret the others. In particular,
 `bounded2` is the on-chain envelope and durable metadata vocabulary, while
-`bounded-cosigner1` is the client/server choreography used to obtain a complete
-spend signature.
+`cosigned1` is the client/server choreography used to obtain a complete
+spend or listed-rekey signature.
 
-The Corridor shape's canonical profile and behavior parameters are frozen in
-[Golden vector 3](ARCH_BOUNDED_DSA.md#golden-vector-3-general-boundary-digest).
+The canonical profile and behavior parameter encodings are frozen by
+[Golden vector 3](ARCH_BOUNDED_DSA.md#golden-vector-3-general-boundary-digest),
+which uses the *plus cosigned* shape with Corridor's recipient policy and
+cosigner. Corridor's profile differs from it only in encoding `rekey: refused`,
+`required_on: [spend]`, and a cosigner slot forbidden on `spending_rekey`.
 
 ### Accepted Transactions
 
@@ -847,10 +878,16 @@ Root construction, recipient canonicalization, duplicate rejection, padding,
 node hashing, and proof order are frozen by the
 [bounded Merkle allowlist compatibility contract](ARCH_BOUNDED_DSA.md#merkle-allowlist-compatibility-contract).
 
-Corridor rejects every rekey, close remainder, asset close, clawback,
+A pure rekey (a 0 ALGO payment to itself with no close fields) to an address on
+the account's rekey-to list is accepted with the spending signature and a valid
+160-byte list proof, without the cosigner; see the
+[rekey-to list compatibility contract](ARCH_BOUNDED_DSA.md#rekey-to-list-compatibility-contract).
+
+Corridor rejects every other rekey, close remainder, asset close, clawback,
 unsupported transaction types, missing or malformed proofs, missing cosigner
-authorization, and arguments supplied from the wrong source. It declares
-`rekey: refused`, so its program has no rekey path.
+authorization on a spend, and arguments supplied from the wrong source. It
+declares `rekey: refused` plus the list, so the listed rekey is its only rekey
+path.
 
 ### Custody And Generation
 
@@ -868,13 +905,14 @@ the shape definition.
 The general bounded key type is default-enabled, so every signer node can create a
 Corridor account without installing a template.
 
-Both keys are required for the life of the account:
+Both keys are required to spend:
 
-- a stolen spending key cannot spend without the cosigner and cannot rekey the
-  account;
-- a lost cosigner key cannot be replaced, because the account refuses rekeys,
-  so its funds cannot move again (the rekey-to list is not yet offered beside a
-  cosigner);
+- a stolen spending key cannot spend without the cosigner, and can rekey the
+  account only to a listed address, which gains it nothing unless it also holds
+  that address's key;
+- a lost cosigner key cannot be replaced, so the account can no longer spend,
+  but the spending key alone can still hand it to a listed key, which can then
+  move the funds;
 - a lost spending key cannot be recovered.
 
 Operators must therefore back up the spending key and the cosigner key as
@@ -903,7 +941,11 @@ verifies the base signature, receipt, cosigner signature, durable metadata,
 source/path masks, derived Merkle proof, frozen TxID, LogicSig address, and
 authorizer binding.
 
-Ordinary `/sign` rejects Corridor spends.
+A listed rekey takes the same flow without the cosigner call: the base
+component names `path: listed_rekey`, the client sends no cosigner request, and
+assembly takes no cosigner signature and adds the list proof. The cosigner node
+never sees it, so its `reject_rekey` does not apply. Ordinary `/sign` rejects
+every Corridor transaction, spends and listed rekeys alike.
 
 The cosigner component is transaction-scoped: it binds the cosigner role and TxID,
 not the Corridor account, authorizer, or program. Final assembly and
@@ -914,20 +956,23 @@ version. See [Component Message](#component-message).
 
 ### Close And Decommission
 
-Corridor v1 has no close path and no rekey path. Decommissioning means
-spending the balance to listed recipients; the account keeps its minimum
-balance forever.
+Corridor v1 has no close path, and its only rekey path is the listed rekey.
+Decommissioning means spending the balance to listed recipients, which leaves
+the minimum balance in the account, or handing the account to a listed key,
+which can then close it.
 
-`RekeyTo`, `CloseRemainderTo`, `AssetCloseTo`, and `AssetSender` remain zero on
-every transaction authorized by Corridor.
+`CloseRemainderTo`, `AssetCloseTo`, and `AssetSender` remain zero on every
+transaction authorized by Corridor, and `RekeyTo` is zero on every one but a
+listed rekey.
 
 ### Compiler And Resource Budget
 
 Corridor stores one resource profile over its final compiler-auto-salted
 bytecode. Inventory materializes maximum argument bytes and reviewed opcode
 ceilings for every bounded path cell (spend, spending-key rekey, and listed
-rekey); a resource cell does not authorize a path. Corridor admits only spend. Under
-v42, argument/opcode capacity determines the minimum group size; bytecode above
+rekey); a resource cell does not authorize a path. Corridor admits spend and
+listed rekey. Under v42, argument/opcode capacity determines the minimum group
+size; bytecode above
 the final group's free program pool contributes to the aggregate fee instead
 of manufacturing extra dummies.
 

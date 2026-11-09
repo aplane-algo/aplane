@@ -112,25 +112,38 @@ func renderBoundaryPreview(r *REPLState, preview *apshellapp.BoundaryPreview) {
 	if preview.UnlockRound != "" {
 		r.printf("  Unlocks at: round %s, on the network this signer uses\n", preview.UnlockRound)
 	}
+	cosigned := preview.Cosigner != ""
 	switch {
-	case preview.Rekey == boundary.RekeyOnlyThese:
-		if len(preview.RekeyTo) == 1 {
+	case preview.Rekey == boundary.RekeyOnlyThese || preview.Rekey == boundary.RekeyPlusCosigned:
+		switch {
+		case preview.Rekey == boundary.RekeyPlusCosigned && len(preview.RekeyTo) == 1:
+			r.println("  Rekey:      to this address with the spending key alone, or elsewhere with the cosigner:")
+		case preview.Rekey == boundary.RekeyPlusCosigned:
+			r.printf("  Rekey:      to these %d addresses with the spending key alone, or elsewhere with the cosigner:\n", len(preview.RekeyTo))
+		case len(preview.RekeyTo) == 1:
 			r.println("  Rekey:      only to this address, with the spending key alone:")
-		} else {
+		default:
 			r.printf("  Rekey:      only to these %d addresses, with the spending key alone:\n", len(preview.RekeyTo))
 		}
 		for _, target := range preview.RekeyTo {
 			r.printf("              %s\n", target)
 		}
 		r.println("              A listed address can take the account over whenever the spending key chooses.")
-		if preview.UnlockRound != "" {
-			r.println("              That is a way around the unlock round.")
+		if cosigned {
+			r.println("              The cosigner is not asked for a listed address.")
 		}
-	case preview.Rekey == boundary.RekeyRefused:
-		r.println("  Rekey:      refused; the account can never be rekeyed")
+		if preview.UnlockRound != "" {
+			if preview.Rekey == boundary.RekeyPlusCosigned {
+				r.println("              A timelock refuses plus_cosigned; the signer will reject this")
+			} else {
+				r.println("              That is a way around the unlock round.")
+			}
+		}
 	case preview.UnlockRound != "":
 		// The signer refuses this combination; say so before the request is sent.
 		r.println("  Rekey:      spending key, which a timelock refuses; the signer will reject this")
+	case cosigned:
+		r.println("  Rekey:      spending key and cosigner together, to targets both nodes' policies allow")
 	default:
 		r.println("  Rekey:      spending key alone, which can rekey out of this boundary")
 	}

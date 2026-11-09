@@ -238,8 +238,10 @@ compatible manual-salt records retain it.
   rekeyed only to an address on its rekey-to list, Corridor, and a timelock
   (`FirstValid >= unlock_round` before any spend; it can be rekeyed only to a
   listed address, which is a way around the lock). Close, clawback, and
-  non-transfer types are rejected. A rekey, when allowed, needs the spending key
-  alone; a rekey to an address not on the list fails with
+  non-transfer types are rejected. A rekey to a listed address needs the
+  spending key alone. Any other rekey, when allowed, needs the spending key, plus
+  the cosigner on a cosigned account. On an account that takes only listed
+  rekeys, a rekey to an address not on the list fails with
   `bounded_rekey_target_not_listed`.
 - `aplane.htlc.v1` — ALGO only and all-or-nothing: `close` to the recipient with the
   preimage before timeout, or to the refund address after.
@@ -249,8 +251,10 @@ compatible manual-salt records retain it.
 A **Corridor v1** account is the Corridor preset of `aplane.falcon1024-b.v1`, a
 bounded-cosigner LogicSig profile. Its non-self payment and asset-transfer
 destinations must prove membership in the generation-time Merkle recipient set,
-and every spend also needs the enrolled cosigner's Falcon authorization. It
-refuses rekeys, so if the cosigner is lost, its funds cannot be recovered.
+and every spend also needs the enrolled cosigner's Falcon authorization. It can
+be rekeyed only to an address on its rekey-to list, with the spending key alone
+and without the cosigner, so if the cosigner is lost, a listed key can still take
+the account over.
 
 Recipient-constrained accounts can compose into **graphs** — a directed edge
 A→B exists wherever B is in A's recipient set — so operators can build chains,

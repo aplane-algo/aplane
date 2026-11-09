@@ -125,8 +125,9 @@ func spendEffectsLabel(effects []string) string {
 	return strings.Join(labels, ", ")
 }
 
-// rekeyToList is an only-these account's rekey-to list. A template without a
-// list may have a parameter of the same name, which is not one.
+// rekeyToList is the account's rekey-to list, under only these or plus
+// cosigned. A template without a list may have a parameter of the same name,
+// which is not one.
 func rekeyToList(review PrepareGenerateResultMessage) []string {
 	if review.Bounded == nil || !review.Bounded.RekeyList {
 		return nil
@@ -173,17 +174,30 @@ func isCustomPolicy(policy string) bool {
 // reviewRekey states who can rekey the account and what that means, because the
 // escape path is the most consequential choice on the screen.
 func reviewRekey(review PrepareGenerateResultMessage) (label, consequence string) {
+	setting := boundedmeta.RekeySetting(review.Bounded.Rekey)
+	cosigned := review.Bounded.CosignerRequired
 	if review.Bounded.RekeyList {
+		count := len(rekeyToList(review))
 		consequence = "The spending key alone can hand the account to any of them, at any time."
+		if setting == boundedmeta.RekeySpendingKey {
+			// Plus cosigned: the listed targets, and any other the cosigner allows.
+			return fmt.Sprintf("These %d, spending key alone; others need the cosigner", count),
+				"The spending key alone can hand the account to any of them. Any other rekey needs both online keys."
+		}
+		// On a cosigned account the label's "spending key alone" says the cosigner
+		// is not asked; the screen has no room to say it twice.
 		if isTimelockPolicy(review.Bounded.Layer3Policy) {
 			consequence += " That is a way around the lock."
 		}
-		return fmt.Sprintf("Only these %d addresses, spending key alone", len(rekeyToList(review))), consequence
+		return fmt.Sprintf("Only these %d addresses, spending key alone", count), consequence
 	}
-	switch boundedmeta.RekeySetting(review.Bounded.Rekey) {
+	switch setting {
 	case boundedmeta.RekeyRefused:
 		return "None", "No rekey path. Losing a required authority cannot be repaired."
 	case boundedmeta.RekeySpendingKey:
+		if cosigned {
+			return "Spending key and cosigner", "Together they can rekey out of this boundary, to a target both nodes' policies allow."
+		}
 		return "Spending key alone", "That key can rekey out of this boundary."
 	default:
 		return "Unknown authority " + review.Bounded.Rekey, "This client cannot describe that rekey path."
@@ -317,8 +331,8 @@ func (m Model) renderGenerateReviewDetails() string {
 				sb.WriteString("    " + note + "\n")
 			}
 		}
-		sb.WriteString(wrapText("Each listed address can take the account over, without the cosigner and "+
-			"outside any cosigner's policy. The list is in the key's backup and can't be used without it. "+
+		sb.WriteString(wrapText("Each listed address can take the account over with the spending key alone, "+
+			"without the cosigner and outside any cosigner's policy. The list is in the key's backup and can't be used without it. "+
 			"For a post-quantum account, list only post-quantum keys: this signer can't tell an address's "+
 			"key type unless it holds it.", 68) + "\n")
 	}

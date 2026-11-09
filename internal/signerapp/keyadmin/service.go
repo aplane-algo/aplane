@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
@@ -165,7 +166,7 @@ func (s Service) resolveCreation(keyType string, params map[string]string) (*res
 			}
 		}
 		if instance.Bounded != nil && instance.Bounded.RekeyList != nil {
-			if err := validateRekeyListTargets(ir, params[boundedmeta.RekeyListEntriesParameter]); err != nil {
+			if err := validateRekeyListTargets(ir, params[boundedmeta.RekeyListEntriesParameter], params[boundedmeta.CosignerPublicKeyParameter]); err != nil {
 				return nil, &Error{Kind: ErrorInvalidInput, Message: err.Error()}
 			}
 		}
@@ -361,11 +362,11 @@ func (s Service) resolveRotatingNetwork(params map[string]string) map[string]str
 
 // validateRekeyListTargets refuses listed addresses this signer knows could
 // never act on the account: its own rotating accounts, whose address authorizes
-// only itself, and the native address of an imported cosigner reference, since a
-// witness key never signs as an account. Generation can refuse only what this
-// signer knows; a cosigner reference's LogicSig addresses depend on a program
-// and are not derived here.
-func validateRekeyListTargets(ir *productruntime.Runtime, entries string) error {
+// only itself, and the native address of a cosigner key, imported as a reference
+// or given to this account as its own cosigner, since a witness key never signs
+// as an account. Generation can refuse only what this signer knows; a cosigner
+// key's LogicSig addresses depend on a program and are not derived here.
+func validateRekeyListTargets(ir *productruntime.Runtime, entries, accountCosigner string) error {
 	if ir == nil || strings.TrimSpace(entries) == "" {
 		return nil
 	}
@@ -384,7 +385,12 @@ func validateRekeyListTargets(ir *productruntime.Runtime, entries string) error 
 			continue
 		}
 		if _, address, err := nativefalcon.CanonicalAddress(publicKey); err == nil {
-			witnessAddresses[address.String()] = ref.Name
+			witnessAddresses[address.String()] = "cosigner reference " + strconv.Quote(ref.Name)
+		}
+	}
+	if publicKey, err := hex.DecodeString(accountCosigner); err == nil && len(publicKey) > 0 {
+		if _, address, err := nativefalcon.CanonicalAddress(publicKey); err == nil {
+			witnessAddresses[address.String()] = "this account's cosigner"
 		}
 	}
 	for _, entry := range strings.Split(entries, ",") {
@@ -393,7 +399,7 @@ func validateRekeyListTargets(ir *productruntime.Runtime, entries string) error 
 			return fmt.Errorf("%s lists %s, one of this signer's rotating accounts, whose address authorizes only itself", boundedmeta.RekeyListEntriesParameter, entry)
 		}
 		if name, ok := witnessAddresses[entry]; ok {
-			return fmt.Errorf("%s lists %s, the address of cosigner reference %q; a witness key never signs as an account", boundedmeta.RekeyListEntriesParameter, entry, name)
+			return fmt.Errorf("%s lists %s, the address of %s; a witness key never signs as an account", boundedmeta.RekeyListEntriesParameter, entry, name)
 		}
 	}
 	return nil

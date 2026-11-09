@@ -14,6 +14,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/avmsim"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/cosigner/message"
 	"github.com/aplane-algo/aplane/internal/rekeylist"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	falconfamily "github.com/aplane-algo/aplane/lsig/falcon1024/family"
@@ -102,7 +103,7 @@ func TestOnlyTheseTemplateDeclaresTheListContract(t *testing.T) {
 }
 
 // A listed address is a way out, so "only these" doesn't need the transfers a
-// bare refused account must keep. It still can't sit beside a cosigner yet.
+// bare refused account must keep.
 func TestOnlyTheseRules(t *testing.T) {
 	assetsOnly := strings.Replace(onlyTheseTemplateYAML, "spend_effects: [pay, axfer, asset_opt_in]", "spend_effects: [axfer]", 1)
 	if _, err := noneComposer(assetsOnly); err != nil {
@@ -120,9 +121,41 @@ func TestOnlyTheseRules(t *testing.T) {
 	}); err == nil || !strings.Contains(err.Error(), "framework-injected contract") {
 		t.Fatalf("a template's own rekey_to: error = %v", err)
 	}
-	cosigned := strings.Replace(onlyTheseTemplateYAML, "  rekey: only_these\n", "  rekey: only_these\n  cosigner:\n    contract: cosigner1\n    required_on: [spend]\n", 1)
-	if _, err := noneComposer(cosigned); err == nil || !strings.Contains(err.Error(), "cosigned account is not supported") {
-		t.Fatalf("a cosigned list account: error = %v", err)
+	// Plus cosigned needs a cosigner, and names the cosigned rekey among the
+	// cosigner's paths; only these on a cosigned account keeps it on spends.
+	plusAlone := strings.Replace(onlyTheseTemplateYAML, "  rekey: only_these\n", "  rekey: plus_cosigned\n", 1)
+	if _, err := noneComposer(plusAlone); err == nil || !strings.Contains(err.Error(), "(plus_cosigned) needs a cosigner") {
+		t.Fatalf("plus cosigned without a cosigner: error = %v", err)
+	}
+	for _, test := range []struct{ rekey, requiredOn, want string }{
+		{"only_these", "[spend]", ""},
+		{"only_these", "[spend, spending_rekey]", "exactly [spend] with rekey refused"},
+		{"plus_cosigned", "[spend, spending_rekey]", ""},
+		{"plus_cosigned", "[spend]", "exactly [spend, spending_rekey] with rekey spending_key"},
+	} {
+		yaml := strings.Replace(onlyTheseTemplateYAML, "  rekey: only_these\n",
+			"  rekey: "+test.rekey+"\n  cosigner:\n    contract: cosigner1\n    required_on: "+test.requiredOn+"\n", 1)
+		_, err := noneComposer(yaml)
+		if test.want == "" && err != nil {
+			t.Fatalf("%s with cosigner required_on %s: %v", test.rekey, test.requiredOn, err)
+		}
+		if test.want != "" && (err == nil || !strings.Contains(err.Error(), test.want)) {
+			t.Fatalf("%s with cosigner required_on %s: error = %v, want %q", test.rekey, test.requiredOn, err, test.want)
+		}
+	}
+}
+
+// The program's root and the stored one follow one canonicality rule, so an
+// upper-case root can't be compiled while the metadata would refuse it.
+func TestRekeyListRootMustBeCanonicalHex(t *testing.T) {
+	provider := onlyTheseProvider(t)
+	prepared, err := provider.PrepareRekeyList(rekeyListPrivateKey, map[string]string{composeddsa.BoundedRekeyToParameter: rekeyListEntriesParam})
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared[boundedmeta.RekeyListRootParameter] = strings.ToUpper(prepared[boundedmeta.RekeyListRootParameter])
+	if _, err := provider.GenerateTEAL(rekeyListSpendingKey, prepared); err == nil || !strings.Contains(err.Error(), "lowercase hex") {
+		t.Fatalf("GenerateTEAL() with an upper-case root: error = %v", err)
 	}
 }
 
@@ -230,6 +263,87 @@ func TestOnlyTheseProgramAdmitsOnlyListedRekeys(t *testing.T) {
 	root := list.Root()
 	if strings.Count(teal, hex.EncodeToString(root[:])) != 1 {
 		t.Fatal("the program does not compile the list's root exactly once")
+	}
+}
+
+// Plus cosigned, run in the interpreter: a pure rekey with a proof must be to a
+// listed address and needs no cosigner; one without a proof needs the cosigner,
+// to any address. A proof, once sent, never falls through to the cosigner.
+func TestPlusCosignedProgramTakesTheListOrTheCosigner(t *testing.T) {
+	yaml := strings.Replace(onlyTheseTemplateYAML, "  rekey: only_these\n",
+		"  rekey: plus_cosigned\n  cosigner:\n    contract: cosigner1\n    required_on: [spend, spending_rekey]\n", 1)
+	provider := authorAllowlistProvider(t, yaml)
+	cosignerKey := bytes.Repeat([]byte{0x42}, boundedmeta.CosignerPublicKeySizeV1)
+	request := map[string]string{
+		composeddsa.BoundedRekeyToParameter:           rekeyListEntriesParam,
+		composeddsa.BoundedCosignerPublicKeyParameter: hex.EncodeToString(cosignerKey),
+	}
+	prepared, err := provider.PrepareRekeyList(rekeyListPrivateKey, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	teal, err := provider.GenerateTEAL(rekeyListSpendingKey, prepared)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := strings.Count(teal, hex.EncodeToString(cosignerKey)); n != 1 {
+		t.Fatalf("the cosigner key compiles %d times, want once", n)
+	}
+	metadata := provider.BoundedAuthorizationMetadata()
+	if metadata.Rekey != boundedmeta.RekeySpendingKey || metadata.RekeyList == nil || metadata.Cosigner == nil {
+		t.Fatalf("plus cosigned metadata = %+v", metadata)
+	}
+	program, err := avmsim.Assemble(teal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	list, err := composeddsa.RekeyListFor(rekeyListPrivateKey, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer list.Zero()
+	proofA, _ := list.Proof(rekeyListListedA)
+	hooks := avmsim.Hooks{Falcon: func(data, sig, key []byte) bool { return bytes.Equal(sig, rekeyListTag(key, data)) }}
+	txid := sha256.Sum256([]byte("plus cosigned"))
+	rekey := func(target types.Address) avmsim.Txn {
+		zero := avmsim.B(make([]byte, 32))
+		return avmsim.Txn{
+			"TxID": avmsim.B(txid[:]), "Sender": avmsim.B(rekeyListAccount[:]), "Fee": avmsim.U(1000),
+			"FirstValid": avmsim.U(1), "LastValid": avmsim.U(100), "TypeEnum": avmsim.U(1),
+			"RekeyTo": avmsim.B(bytes.Clone(target[:])), "Receiver": avmsim.B(rekeyListAccount[:]), "Amount": avmsim.U(0),
+			"CloseRemainderTo": zero, "AssetCloseTo": zero, "AssetSender": zero,
+			"XferAsset": avmsim.U(0), "AssetAmount": avmsim.U(0), "AssetReceiver": zero,
+		}
+	}
+	signature := rekeyListTag(rekeyListSpendingKey, txid[:])
+	cosignerMessage := message.ComponentMessage(message.RoleCosigner, txid)
+	cosigned := rekeyListTag(cosignerKey, cosignerMessage[:])
+	for _, test := range []struct {
+		name   string
+		target types.Address
+		args   [][]byte
+		accept bool
+	}{
+		{"listed address, its proof, no cosigner", rekeyListListedA, [][]byte{signature, proofA}, true},
+		{"unlisted address, the cosigner", rekeyListUnlisted, [][]byte{signature, {}, cosigned}, true},
+		{"listed address, the cosigner", rekeyListListedA, [][]byte{signature, {}, cosigned}, true},
+		{"unlisted address, no cosigner", rekeyListUnlisted, [][]byte{signature, {}, {}}, false},
+		{"unlisted address, a proof and the cosigner", rekeyListUnlisted, [][]byte{signature, proofA, cosigned}, false},
+		{"a bad proof beside the cosigner", rekeyListListedA, [][]byte{signature, proofA[:rekeylist.ProofSize-1], cosigned}, false},
+		{"the cosigner's signature over the transaction ID", rekeyListUnlisted, [][]byte{signature, {}, rekeyListTag(cosignerKey, txid[:])}, false},
+		// The proof slot precedes the cosigner's; a call without it can't reach
+		// either branch.
+		{"no proof slot", rekeyListUnlisted, [][]byte{signature}, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			accepted, err := program.Run(rekey(test.target), test.args, hooks)
+			if _, unsupported := err.(*avmsim.UnsupportedError); unsupported {
+				t.Fatal(err)
+			}
+			if accepted != test.accept {
+				t.Fatalf("accepted = %v (%v), want %v", accepted, err, test.accept)
+			}
+		})
 	}
 }
 

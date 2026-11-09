@@ -179,7 +179,7 @@ signature algorithm.
 | Ordinary, empty label | `/sign` produces native signatures or assembles the held LogicSig's bytecode and arguments. Native keys, DSA-backed LogicSigs, and generic LogicSigs have different cryptographic behavior within this path. |
 | `cosigner1` | A guarded account requires both the user signer's component and a cosigner's component over the planned transaction. Assembly verifies and combines them. |
 | `bounded1` | The account's program enforces the compiled `bounded2` transaction envelope. A spending-key rekey, or a rekey to an address on the account's rekey-to list, when the account declares one, uses the ordinary signing path. |
-| `bounded-cosigner1` | A bounded program additionally requires a cosigner for spending. These accounts refuse rekeys. |
+| `cosigned1` | A bounded program additionally requires a cosigner for spending and for a cosigned rekey. A rekey to an address on the account's rekey-to list takes the spending key alone; the client asks the cosigner for every other target. Plain `/sign` refuses these accounts. |
 | `rotating1` | Each accepted spend also hands authorization to the next deterministically derived stage. Preparation and signing use dedicated rotating endpoints. |
 
 For guarded signing, the client first obtains a canonical group from `/plan`.
@@ -414,8 +414,8 @@ metadata for app calls.
 Read [ARCH_GUARDED.md](ARCH_GUARDED.md) before changing cosigner node behavior,
 guarded account generation, cosigner keys, guarded transaction
 orchestration, endpoint-discovered cosigners, `/sign/component` /
-`/sign/assemble` behavior, or the canonical Corridor v1 bounded-cosigner
-profile.
+`/sign/assemble` behavior, the `cosigned1` flow, or the canonical Corridor v1
+bounded-cosigner profile.
 
 Read [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md) before changing composer-owned transaction
 authorization, bounded schema v2, effect
@@ -1887,7 +1887,7 @@ classification boundary are specified in
 [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md).
 
 The general bounded key type is `aplane.falcon1024-b.v1`. Its Corridor preset
-composes the framework Merkle policy with a cosigner spend gate and refuses rekeys. The normative field inventory, canonical encodings, vectors,
+composes the framework Merkle policy with a cosigner spend gate and a rekey-to list: it can be rekeyed only to a listed address, with the spending key alone. A cosigned account can also take cosigned rekeys (the spending key and the cosigner). The normative field inventory, canonical encodings, vectors,
 schema, and normal forms are in [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md).
 
 Package ownership: `internal/boundedmeta` owns the durable non-secret bounded

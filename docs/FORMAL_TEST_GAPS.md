@@ -40,7 +40,8 @@ post-assembly client route. A future audit pass should extend the guarded
 signing model with the gate states and assert that every released guarded group
 passed the same user gate regardless of whether the client submits or
 simulates it. This gap is limited to the legacy `cosigner1` choreography;
-`bounded-cosigner1` user-first ordering and assembly are covered by
+`cosigned1` user-first ordering and assembly, for spends, cosigned rekeys and
+listed rekeys, are covered by
 [formal/bounded_cosigner.tla](formal/bounded_cosigner.tla). Its simulation route is
 covered by the concrete Go test
 `TestBoundedCosignerSimulateUsesUserFirstChoreography`; the TLA+ model does not
@@ -126,10 +127,10 @@ approval fail-all, and session-ownership contracts are covered by their Go
 race tests and AP/SO formal invariants.
 
 The former bounded DSA planning/argument-assembly drift entry is closed by
-[formal/bounded_cosigner.tla](formal/bounded_cosigner.tla): its BS1 and BS3-BS7 transition
+[formal/bounded_cosigner.tla](formal/bounded_cosigner.tla): its BS1-BS7 transition
 system covers finalized classification, signer gates, user-first cosigner
-routing, exact target coverage, source/path-mask assembly, canonical bytes, and
-atomic failure. Concrete effect classification,
+routing, the listed rekey that skips the cosigner, exact target coverage,
+source/path-mask assembly, canonical bytes, and atomic failure. Concrete effect classification,
 slot encodings, Merkle derivation, and TEAL remain verified by Go/compiler tests
 rather than abstracted as cryptographic or byte-level TLC claims.
 

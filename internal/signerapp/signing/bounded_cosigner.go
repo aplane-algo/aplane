@@ -31,6 +31,22 @@ import (
 
 const boundedAssemblyReceiptDomain = "APLANE_BOUNDED_COSIGNER_ASSEMBLY_V1"
 
+// componentPaths names each path the cosigned flow carries, as its component
+// reports it. The planner has already refused every other transaction.
+var componentPaths = map[boundedPath]string{
+	boundedPathPureSpend:        signerapi.ComponentPathSpend,
+	boundedPathSpendingKeyRekey: signerapi.ComponentPathSpendingRekey,
+	boundedPathListedRekey:      signerapi.ComponentPathListedRekey,
+}
+
+// boundedPathNeedsCosigner reports whether the cosigner signs a cosigned
+// account's transaction on this path. It signs every spend and every declared
+// rekey; a listed rekey never asks it, since the list is the owner's standing
+// statement.
+func boundedPathNeedsCosigner(path boundedPath) bool {
+	return path != boundedPathListedRekey
+}
+
 func validateBoundedComponentPlan(req signerapi.ComponentRequest, plan *PlanResult) ([]int, *ServiceError) {
 	if plan == nil || len(plan.BoundedItems) < len(req.GroupSignRequest().Requests) {
 		return nil, internal("bounded component plan is incomplete")
@@ -45,8 +61,8 @@ func validateBoundedComponentPlan(req signerapi.ComponentRequest, plan *PlanResu
 		if item == nil || item.Metadata == nil || item.Metadata.Cosigner == nil {
 			return nil, badRequest(fmt.Sprintf("transaction %d is not a cosigner-enabled bounded account", i+1))
 		}
-		if item.Path != boundedPathPureSpend {
-			return nil, badRequest(fmt.Sprintf("transaction %d is not an admitted bounded spend", i+1))
+		if _, ok := componentPaths[item.Path]; !ok {
+			return nil, badRequest(fmt.Sprintf("transaction %d is not an admitted cosigned spend or rekey", i+1))
 		}
 		targets = append(targets, i)
 	}
@@ -128,8 +144,9 @@ func signBoundedBaseComponent(ctx context.Context, req signerapi.GroupSignReques
 	if integrityErr := verifyBoundedPlanIntegrity(item, keyMaterial); integrityErr != nil {
 		return signerapi.Component{}, integrityErr
 	}
-	if keyMaterial.BoundedAuthorization == nil || keyMaterial.BoundedAuthorization.Cosigner == nil || item.Path != boundedPathPureSpend {
-		return signerapi.Component{}, badRequest("loaded key does not authorize bounded-cosigner component signing")
+	componentPath, admitted := componentPaths[item.Path]
+	if keyMaterial.BoundedAuthorization == nil || keyMaterial.BoundedAuthorization.Cosigner == nil || !admitted {
+		return signerapi.Component{}, badRequest("loaded key does not authorize cosigned component signing")
 	}
 	provider := coresigning.GetProviderForKey(keyMaterial.Type, keyMaterial.BaseKeyType)
 	baseProvider := lsigprovider.Get(keyMaterial.BaseKeyType)
@@ -163,6 +180,7 @@ func signBoundedBaseComponent(ctx context.Context, req signerapi.GroupSignReques
 		TargetIndex: targetIndex, Kind: signerapi.ComponentTargetKindBoundedBase,
 		AuthAddress: account, RuntimeArgs: encodeRuntimeArgs(item.RuntimeArgs),
 		AssemblyReceipt: hex.EncodeToString(receipt), SignatureScheme: keyMaterial.BaseKeyType,
+		Path: componentPath,
 	}
 	for _, arg := range baseArgs {
 		component.BaseSignatures = append(component.BaseSignatures, hex.EncodeToString(arg))
@@ -227,12 +245,15 @@ func assembleBoundedTarget(ctx context.Context, target signerapi.AssemblyTarget,
 	if metadata == nil || metadata.Cosigner == nil {
 		return "", badRequest(fmt.Sprintf("target index %d is not a cosigner-enabled bounded account", target.TargetIndex))
 	}
-	path, classifyErr := classifyBoundedPath(entry.Txn, metadata)
+	// The path is decided again here, from the canonical transaction and the
+	// stored contract, so a client that skipped the cosigner on a target that
+	// needs it gets no transaction.
+	path, _, classifyErr := boundedAccountPath(entry.Txn, metadata, keyMaterial.Parameters)
 	if classifyErr != nil {
 		return "", withTransactionIndex(target.TargetIndex, classifyErr)
 	}
-	if path != boundedPathPureSpend {
-		return "", badRequest(fmt.Sprintf("target index %d is not an admitted bounded spend", target.TargetIndex))
+	if _, ok := componentPaths[path]; !ok {
+		return "", badRequest(fmt.Sprintf("target index %d is not an admitted cosigned spend or rekey", target.TargetIndex))
 	}
 	runtimeArgs, runtimeErr := validateBoundedRuntimeArgs(target.BoundedRuntimeArgs, metadata, path)
 	if runtimeErr != nil {
@@ -255,18 +276,29 @@ func assembleBoundedTarget(ctx context.Context, target signerapi.AssemblyTarget,
 	if receiptErr != nil || !boundedSpendingProofVerifies(keyMaterial, boundedWorkflowCosigner, receiptMessage[:], receipt) {
 		return "", badRequest(fmt.Sprintf("target index %d assembly receipt is invalid or stale", target.TargetIndex))
 	}
-	cosignerSignature, cosignerErr := decodeAssemblySignatureHex(target.CosignerSignature, "cosigner_signature")
-	if cosignerErr != nil {
-		return "", cosignerErr
-	}
-	defer crypto.ZeroBytes(cosignerSignature)
-	cosignerPublicKey, publicKeyErr := hex.DecodeString(metadata.Cosigner.PublicKeyHex)
-	if publicKeyErr != nil {
-		return "", internal("stored bounded cosigner public key is invalid")
-	}
-	cosignerMessage := message.ComponentMessage(message.RoleCosigner, entry.TxID)
-	if err := verifyCosignerAssemblySignature(metadata.Cosigner.ComponentKeyType, cosignerPublicKey, cosignerMessage[:], cosignerSignature); err != nil {
-		return "", badRequest(fmt.Sprintf("target index %d cosigner_signature invalid: %v", target.TargetIndex, err))
+	var cosignerSignature []byte
+	switch {
+	case !boundedPathNeedsCosigner(path):
+		// A listed rekey never asks the cosigner, so it carries no signature.
+		if target.CosignerSignature != "" {
+			return "", badRequest(fmt.Sprintf("target index %d is a listed rekey, which takes no cosigner_signature", target.TargetIndex))
+		}
+	case target.CosignerSignature == "":
+		return "", badRequest(fmt.Sprintf("target index %d needs a cosigner_signature on %s", target.TargetIndex, componentPaths[path]))
+	default:
+		var cosignerErr *ServiceError
+		if cosignerSignature, cosignerErr = decodeAssemblySignatureHex(target.CosignerSignature, "cosigner_signature"); cosignerErr != nil {
+			return "", cosignerErr
+		}
+		defer crypto.ZeroBytes(cosignerSignature)
+		cosignerPublicKey, publicKeyErr := hex.DecodeString(metadata.Cosigner.PublicKeyHex)
+		if publicKeyErr != nil {
+			return "", internal("stored bounded cosigner public key is invalid")
+		}
+		cosignerMessage := message.ComponentMessage(message.RoleCosigner, entry.TxID)
+		if err := verifyCosignerAssemblySignature(metadata.Cosigner.ComponentKeyType, cosignerPublicKey, cosignerMessage[:], cosignerSignature); err != nil {
+			return "", badRequest(fmt.Sprintf("target index %d cosigner_signature invalid: %v", target.TargetIndex, err))
+		}
 	}
 	item := &boundedPlanItem{Path: path, Metadata: metadata, RuntimeArgs: runtimeArgs, SpendingPublicKey: keyMaterial.PublicKey}
 	derivedArgs, deriveErr := boundedDerivedArgs(entry.Txn, keyMaterial, metadata, path)

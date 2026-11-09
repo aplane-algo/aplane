@@ -277,10 +277,13 @@ the discovery types and error sentinels used by existing engine callers. The
 dependency and exported-surface boundaries are pinned by `test/arch`.
 
 The same isolated package dispatches explicit inventory flow labels. `cosigner1`
-uses user/cosigner component signing plus guarded assembly; `bounded-cosigner1`
+uses user/cosigner component signing plus guarded assembly; `cosigned1`
 uses user-first bounded component release, cosigner-role component signing, and
-bounded assembly. It rejects unknown labels and groups that mix those two
-choreographies. Bounded profiles without an online cosigner advertise `bounded1`
+bounded assembly, for spends and rekeys. Each bounded-base component names its
+path; the client asks the cosigner for every target but a `listed_rekey` one,
+sends no cosigner request when no target needs one, and budgets each cosigned
+position in a mixed group on its component's path. It rejects unknown labels,
+`bounded-cosigner1` among them, and groups that mix those two choreographies. Bounded profiles without an online cosigner advertise `bounded1`
 and continue through ordinary signing.
 
 Submission and confirmation diagnostics are returned on typed result values as

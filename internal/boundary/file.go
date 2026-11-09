@@ -29,7 +29,7 @@ type File struct {
 	Encoding       *string `yaml:"encoding"`
 	Rekey          *struct {
 		Authority string `yaml:"authority"`
-		// To is the rekey-to list, with authority only_these.
+		// To is the rekey-to list, with authority only_these or plus_cosigned.
 		To []string `yaml:"to"`
 	} `yaml:"rekey"`
 	Cosigner *string `yaml:"cosigner"`
@@ -90,16 +90,16 @@ func ParseFile(data []byte) (*File, error) {
 		return nil, fmt.Errorf("boundary file: rekey is required")
 	}
 	switch file.Rekey.Authority {
-	case RekeyOnlyThese:
+	case RekeyOnlyThese, RekeyPlusCosigned:
 		if len(file.Rekey.To) == 0 {
-			return nil, fmt.Errorf("boundary file: rekey.authority %s needs the addresses in rekey.to", RekeyOnlyThese)
+			return nil, fmt.Errorf("boundary file: rekey.authority %s needs the addresses in rekey.to", file.Rekey.Authority)
 		}
-	case RekeySpendingKey, RekeyRefused:
+	case RekeySpendingKey:
 		if file.Rekey.To != nil {
-			return nil, fmt.Errorf("boundary file: rekey.to needs rekey.authority %s", RekeyOnlyThese)
+			return nil, fmt.Errorf("boundary file: rekey.to needs rekey.authority %s or %s", RekeyOnlyThese, RekeyPlusCosigned)
 		}
 	default:
-		return nil, fmt.Errorf("boundary file: rekey.authority must be %s, %s or %s", RekeySpendingKey, RekeyOnlyThese, RekeyRefused)
+		return nil, fmt.Errorf("boundary file: rekey.authority must be %s, %s or %s", RekeySpendingKey, RekeyOnlyThese, RekeyPlusCosigned)
 	}
 	if file.Cosigner != nil && strings.TrimSpace(*file.Cosigner) == "" {
 		return nil, fmt.Errorf("boundary file: cosigner is empty")

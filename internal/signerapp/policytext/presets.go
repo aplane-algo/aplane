@@ -21,7 +21,8 @@ import (
 // Signer presets give a stricter start than the shipped signer default,
 // which allows every transaction type and leaves routing misses to the
 // operator default. The two roles' presets share names but not meaning: a
-// cosigner refuses every rekey, a signer only rekeys to addresses it does
+// cosigner refuses every rekey it is asked to sign (a rekey to an account's
+// listed address never asks it), a signer only rekeys to addresses it does
 // not hold, and a signer's permitted transactions still follow User
 // Auto-Approve.
 //

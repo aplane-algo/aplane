@@ -282,7 +282,7 @@ func TestAuthorityGatesFollowEveryBaseSlot(t *testing.T) {
 		source    string
 		heading   string
 	}{
-		"cosigner": {cosignerYAML, composeddsa.BoundedCosignerPublicKeyParameter, boundedmeta.ArgSourceCosigner, "// Cosigner-authorized pure spend"},
+		"cosigner": {cosignerYAML, composeddsa.BoundedCosignerPublicKeyParameter, boundedmeta.ArgSourceCosigner, "__aplane_bounded1_cosigner:"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			provider := compositeProvider(t, construction, test.extra, composeddsa.FixtureSupport{Cosigner: true})

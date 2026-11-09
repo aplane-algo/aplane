@@ -4,6 +4,7 @@
 package signing
 
 import (
+	"bytes"
 	"context"
 	"strings"
 	"testing"
@@ -144,6 +145,30 @@ func TestRunApprovalGatesForcedBoundedReviewPrecedesAutoApproval(t *testing.T) {
 	}
 	if ruleID != policy.BoundedRekeyRequiresReviewRuleID || forcedRule != ruleID {
 		t.Fatalf("rule IDs = returned %q prompted %q", ruleID, forcedRule)
+	}
+}
+
+// A cosigned account's declared rekey needs the cosigner as well, and its
+// listed rekey takes the spending key alone; the approval text says which.
+func TestBuildApprovalDescriptionNamesTheCosignerOnACosignedRekey(t *testing.T) {
+	metadata := boundedCosignerTestMetadata(t, bytes.Repeat([]byte{0x41}, boundedmeta.CosignerPublicKeySizeV1))
+	txn := testBoundedRekey()
+	for path, want := range map[boundedPath]string{
+		boundedPathSpendingKeyRekey: "Authorization: spending key and cosigner",
+		boundedPathListedRekey:      "Authorization: spending key only, to an address on the account's rekey-to list",
+	} {
+		description, _, _ := BuildApprovalDescription(
+			signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{AuthAddress: txn.Sender.String()}}},
+			&PlanResult{
+				AllTxns: []types.Transaction{txn}, PassthroughIndices: map[int]bool{}, ForeignIndices: map[int]bool{},
+				BoundedItems: []*boundedPlanItem{{Path: path, Metadata: metadata}},
+			},
+			[]types.Transaction{txn},
+			func(types.Transaction) string { return "transaction" },
+		)
+		if !strings.Contains(description, want) {
+			t.Fatalf("%s approval description = %q, want containing %q", path, description, want)
+		}
 	}
 }
 

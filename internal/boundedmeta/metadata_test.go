@@ -196,13 +196,26 @@ func TestMetadataValidateCosignerAuthorization(t *testing.T) {
 	}
 	badPath := Clone(metadata)
 	badPath.Cosigner.RequiredOn = []string{PathSpendingRekey}
-	if err := badPath.ValidateProfile(); err == nil || !strings.Contains(err.Error(), "exactly [spend]") {
+	if err := badPath.ValidateProfile(); err == nil || !strings.Contains(err.Error(), "exactly [spend] with rekey refused") {
 		t.Fatalf("ValidateProfile() error = %v, want path rejection", err)
 	}
+	// A cosigned spending-key rekey needs the cosigner on that path too, in the
+	// record and in the slot's mask.
 	spendingRekey := Clone(metadata)
 	spendingRekey.Rekey = RekeySpendingKey
-	if err := spendingRekey.ValidateProfile(); err == nil || !strings.Contains(err.Error(), "bounded cosigner profiles do not support a spending_key rekey") {
-		t.Fatalf("ValidateProfile() error = %v, want bounded-cosigner spending-rekey rejection", err)
+	if err := spendingRekey.ValidateProfile(); err == nil || !strings.Contains(err.Error(), "exactly [spend, spending_rekey] with rekey spending_key") {
+		t.Fatalf("ValidateProfile() error = %v, want the cosigned rekey's required_on", err)
+	}
+	spendingRekey.Cosigner.RequiredOn = CosignerRequiredOn(RekeySpendingKey)
+	if err := spendingRekey.ValidateProfile(); err == nil || !strings.Contains(err.Error(), "cosigner's required_on paths") {
+		t.Fatalf("ValidateProfile() error = %v, want the cosigner slot's mask", err)
+	}
+	spendingRekey.ArgumentLayout[1].Paths = CosignerSlotPaths(spendingRekey.Cosigner)
+	if err := spendingRekey.Validate(); err != nil {
+		t.Fatalf("cosigned spending-key rekey: Validate() error = %v", err)
+	}
+	if got, want := spendingRekey.ArgumentBytesForPath(PathSpendingRekey), 1280+CosignerSignatureMaxSizeV1; got != want {
+		t.Fatalf("cosigned spending-rekey argument bytes = %d, want %d", got, want)
 	}
 }
 
@@ -280,8 +293,8 @@ func listMetadata() *Metadata {
 }
 
 // A listed address is a way out, so "only these" needs no pay to hold assets.
-// The list must be refused-rekey, uncosigned, at the contract's depth, with its
-// one proof slot used on the listed rekey alone.
+// The list must be at the contract's depth, with its one proof slot used on the
+// listed rekey alone.
 func TestMetadataValidateRekeyList(t *testing.T) {
 	if err := listMetadata().Validate(); err != nil {
 		t.Fatalf("valid list metadata: %v", err)
@@ -291,7 +304,9 @@ func TestMetadataValidateRekeyList(t *testing.T) {
 		mutate func(*Metadata)
 		want   string
 	}{
-		{"spending-key rekey", func(m *Metadata) { m.Rekey = RekeySpendingKey }, "needs rekey refused"},
+		// Plus cosigned needs the cosigner: alone, the spending key already rekeys
+		// anywhere.
+		{"spending-key rekey without a cosigner", func(m *Metadata) { m.Rekey = RekeySpendingKey }, "(plus_cosigned) needs a cosigner"},
 		{"unknown contract", func(m *Metadata) { m.RekeyList.Contract = "rekey_list2" }, "unsupported rekey-to list contract"},
 		{"other depth", func(m *Metadata) { m.RekeyList.Depth = 16 }, "depth 16, want 4"},
 		{"bad root", func(m *Metadata) { m.RekeyList.RootHex = "ab" }, "expected 32 bytes"},
@@ -324,5 +339,65 @@ func TestMetadataValidateRekeyList(t *testing.T) {
 	declaration, err := listMetadata().Declaration()
 	if err != nil || !declaration.RekeyList {
 		t.Fatalf("declaration %+v, %v", declaration, err)
+	}
+}
+
+// cosignedListMetadata is listMetadata with a cosigner, under the given rekey
+// setting: only these (refused) or plus cosigned (spending key).
+func cosignedListMetadata(t *testing.T, rekey RekeySetting) *Metadata {
+	t.Helper()
+	publicKey := bytes.Repeat([]byte{0x6b}, CosignerPublicKeySizeV1)
+	componentKeyID, err := witness.ID(CosignerComponentKeyTypeV1, publicKey)
+	if err != nil {
+		t.Fatalf("witness.ID() error = %v", err)
+	}
+	metadata := listMetadata()
+	metadata.Rekey = rekey
+	metadata.Cosigner = &CosignerAuthorization{
+		Contract: CosignerContractV1, ComponentKeyType: CosignerComponentKeyTypeV1,
+		PublicKeyHex: hex.EncodeToString(publicKey), ComponentKeyID: componentKeyID,
+		SignatureMaxSize: CosignerSignatureMaxSizeV1, RequiredOn: CosignerRequiredOn(rekey),
+	}
+	metadata.ArgumentLayout = append(metadata.ArgumentLayout, ArgumentSlot{
+		Index: 2, Name: CosignerSignatureSlot, Source: ArgSourceCosigner, MaxSize: CosignerSignatureMaxSizeV1,
+		Paths: CosignerSlotPaths(metadata.Cosigner),
+	})
+	return metadata
+}
+
+// A cosigned account takes a list both ways. Under only these the cosigner signs
+// spends alone; under plus cosigned it also signs every unlisted rekey. Neither
+// asks it for a listed rekey, so the proof and the cosigner never share a path.
+func TestMetadataValidateCosignedRekeyLists(t *testing.T) {
+	for _, test := range []struct {
+		rekey        RekeySetting
+		spendingRule string
+	}{
+		{RekeyRefused, ArgForbidden},
+		{RekeySpendingKey, ArgRequired},
+	} {
+		metadata := cosignedListMetadata(t, test.rekey)
+		if err := metadata.Validate(); err != nil {
+			t.Fatalf("rekey %s: Validate() error = %v", test.rekey, err)
+		}
+		cosignerSlot := metadata.ArgumentLayout[2]
+		if cosignerSlot.Paths.Spend != ArgRequired || cosignerSlot.Paths.SpendingRekey != test.spendingRule || cosignerSlot.Paths.ListedRekey != ArgForbidden {
+			t.Fatalf("rekey %s: cosigner mask %+v", test.rekey, cosignerSlot.Paths)
+		}
+		if got, want := metadata.ArgumentBytesForPath(PathListedRekey), 64+RekeyListProofSize; got != want {
+			t.Fatalf("rekey %s: listed-rekey bytes = %d, want %d (no cosigner)", test.rekey, got, want)
+		}
+		asked := cosignedListMetadata(t, test.rekey)
+		asked.ArgumentLayout[2].Paths.ListedRekey = ArgRequired
+		if err := asked.Validate(); err == nil || !strings.Contains(err.Error(), "required_on paths") {
+			t.Fatalf("rekey %s: a cosigner on the listed rekey: error = %v", test.rekey, err)
+		}
+	}
+	// The record names the cosigned rekey, so a plus-cosigned account that
+	// leaves it out is refused rather than read as only these.
+	plus := cosignedListMetadata(t, RekeySpendingKey)
+	plus.Cosigner.RequiredOn = []string{PathSpend}
+	if err := plus.Validate(); err == nil || !strings.Contains(err.Error(), "exactly [spend, spending_rekey]") {
+		t.Fatalf("plus cosigned with a spend-only cosigner: error = %v", err)
 	}
 }

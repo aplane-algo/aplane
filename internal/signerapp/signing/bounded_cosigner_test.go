@@ -20,6 +20,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/cosigner/message"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
+	"github.com/aplane-algo/aplane/internal/rekeylist"
 	"github.com/aplane-algo/aplane/internal/sigconstruction"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/txnutil"
@@ -28,24 +29,31 @@ import (
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
-func TestValidateBoundedComponentPlanRequiresCosignerSpend(t *testing.T) {
+// The cosigned flow carries a cosigned account's spends, its cosigned rekeys and
+// its listed rekeys; no other path and no uncosigned account.
+func TestValidateBoundedComponentPlanAdmitsOnlyCosignedPaths(t *testing.T) {
 	metadata := boundedCosignerTestMetadata(t, bytes.Repeat([]byte{0x41}, boundedmeta.CosignerPublicKeySizeV1))
 	request := signerapi.ComponentRequest{
 		GroupBytesHex: []string{"TX00"},
 		Targets:       []signerapi.ComponentTarget{{TargetIndex: 0, Kind: signerapi.ComponentTargetKindBoundedBase, AuthAddress: "ACCOUNT"}},
 	}
-	plan := &PlanResult{BoundedItems: []*boundedPlanItem{{Path: boundedPathPureSpend, Metadata: metadata}}}
-	indices, err := validateBoundedComponentPlan(request, plan)
-	if err != nil || len(indices) != 1 || indices[0] != 0 {
-		t.Fatalf("validateBoundedComponentPlan() = %v, %#v", err, indices)
+	for _, path := range []boundedPath{boundedPathPureSpend, boundedPathSpendingKeyRekey, boundedPathListedRekey} {
+		plan := &PlanResult{BoundedItems: []*boundedPlanItem{{Path: path, Metadata: metadata}}}
+		indices, err := validateBoundedComponentPlan(request, plan)
+		if err != nil || len(indices) != 1 || indices[0] != 0 {
+			t.Fatalf("validateBoundedComponentPlan(%s) = %v, %#v", path, err, indices)
+		}
 	}
-	plan.BoundedItems[0].Path = boundedPathSpendingKeyRekey
+	plan := &PlanResult{BoundedItems: []*boundedPlanItem{{Path: "admin_rekey", Metadata: metadata}}}
 	if _, err := validateBoundedComponentPlan(request, plan); err == nil {
-		t.Fatal("validateBoundedComponentPlan(rekey) error = nil")
+		t.Fatal("validateBoundedComponentPlan(unknown path) error = nil")
 	}
 	plan.BoundedItems[0] = &boundedPlanItem{Path: boundedPathPureSpend, Metadata: testBoundedMetadata(t, boundedmeta.RekeyRefused)}
 	if _, err := validateBoundedComponentPlan(request, plan); err == nil {
 		t.Fatal("validateBoundedComponentPlan(non-cosigner) error = nil")
+	}
+	if !boundedPathNeedsCosigner(boundedPathPureSpend) || !boundedPathNeedsCosigner(boundedPathSpendingKeyRekey) || boundedPathNeedsCosigner(boundedPathListedRekey) {
+		t.Fatal("the cosigner signs a listed rekey, or skips a spend or a declared rekey")
 	}
 }
 
@@ -175,6 +183,129 @@ func TestAssembleBoundedTargetVerifiesBothAuthorities(t *testing.T) {
 	}
 	if len(signed.Lsig.Args) != 2 || !bytes.Equal(signed.Lsig.Args[0], baseSignature) || !bytes.Equal(signed.Lsig.Args[1], cosignerSignature) {
 		t.Fatalf("assembled args = %#v", signed.Lsig.Args)
+	}
+}
+
+// Assembly decides whether the cosigner signs from the canonical transaction and
+// the stored contract, not from the client: a cosigned rekey and a spend need the
+// cosigner's signature, and a listed rekey refuses one.
+func TestAssembleBoundedTargetFollowsThePathForTheCosigner(t *testing.T) {
+	spendingPublicKey, spendingPrivateKey := testFalconComponentKeypair(t, 0x54)
+	cosignerPublicKey, cosignerPrivateKey := testFalconComponentKeypair(t, 0x55)
+	bytecode := []byte{0x06, 0x20, 0x01, 0x01, 0x22, 0x44, 0x56}
+	account := logicSigAddressForTest(t, bytecode)
+	listedTarget, otherTarget := types.Address{0x61}, types.Address{0x62}
+
+	cosignedRekey := boundedCosignerTestMetadata(t, cosignerPublicKey)
+	cosignedRekey.Rekey = boundedmeta.RekeySpendingKey
+	cosignedRekey.Cosigner.RequiredOn = boundedmeta.CosignerRequiredOn(boundedmeta.RekeySpendingKey)
+	cosignedRekey.ArgumentLayout[1].Paths = boundedmeta.CosignerSlotPaths(cosignedRekey.Cosigner)
+
+	// Only these on a cosigned account: the list proof sits between the base and
+	// cosigner slots, and the root comes from the spending private key.
+	list, err := rekeylist.FromSpendingKey(spendingPrivateKey, []types.Address{listedTarget})
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := list.Root()
+	list.Zero()
+	onlyThese := boundedCosignerTestMetadata(t, cosignerPublicKey)
+	onlyThese.SpendEffects = []string{boundedmeta.SpendEffectAxfer}
+	onlyThese.RekeyList = &boundedmeta.RekeyList{Contract: boundedmeta.RekeyListContractV1, Depth: rekeylist.Depth, RootHex: hex.EncodeToString(root[:])}
+	onlyThese.DerivedArgs = []boundedmeta.DerivedArg{{Name: "rekey_list_proof", Kind: boundedmeta.DerivedArgRekeyListProof, Parameter: boundedmeta.RekeyListEntriesParameter, MaxSize: rekeylist.ProofSize}}
+	cosignerSlot := onlyThese.ArgumentLayout[1]
+	cosignerSlot.Index = 2
+	onlyThese.ArgumentLayout = []boundedmeta.ArgumentSlot{onlyThese.ArgumentLayout[0], {
+		Index: 1, Name: "rekey_list_proof", Source: boundedmeta.ArgSourceDerived, MaxSize: rekeylist.ProofSize,
+		Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgForbidden, SpendingRekey: boundedmeta.ArgForbidden, ListedRekey: boundedmeta.ArgRequired},
+	}, cosignerSlot}
+	if err := onlyThese.Validate(); err != nil {
+		t.Fatal(err)
+	}
+
+	payment := func(receiver string, amount uint64) types.Transaction {
+		txn := paymentTransaction(t, account, receiver, amount)
+		txn.Fee = 1_000
+		return txn
+	}
+	rekey := func(to types.Address) types.Transaction {
+		txn := payment(account, 0)
+		txn.RekeyTo = to
+		return txn
+	}
+	for _, test := range []struct {
+		name     string
+		metadata *boundedmeta.Metadata
+		txn      types.Transaction
+		cosigner bool
+		want     string
+		args     int
+	}{
+		{"a cosigned rekey with the cosigner", cosignedRekey, rekey(otherTarget), true, "", 2},
+		{"a cosigned rekey without the cosigner", cosignedRekey, rekey(otherTarget), false, "needs a cosigner_signature on spending_rekey", 0},
+		{"a spend without the cosigner", cosignedRekey, payment(otherTarget.String(), 7), false, "needs a cosigner_signature on spend", 0},
+		{"a listed rekey alone", onlyThese, rekey(listedTarget), false, "", 2},
+		{"a listed rekey with the cosigner", onlyThese, rekey(listedTarget), true, "takes no cosigner_signature", 0},
+		{"an unlisted rekey", onlyThese, rekey(otherTarget), false, "not on this account's rekey-to list", 0},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			group, err := canonical.DecodeGroupHex([]string{txnutil.EncodeWithPrefixHex(test.txn)})
+			if err != nil {
+				t.Fatal(err)
+			}
+			txID := group.Entries[0].TxID
+			sign := func(key, message []byte) string {
+				signature, err := signerops.New(nil).Sign(key, message)
+				if err != nil {
+					t.Fatal(err)
+				}
+				return hex.EncodeToString(signature)
+			}
+			receiptMessage, err := boundedAssemblyReceiptMessage(account, txID[:], test.metadata, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			target := signerapi.AssemblyTarget{
+				TargetIndex: 0, Kind: signerapi.AssemblyTargetKindBoundedCosigner, AuthAddress: account,
+				BaseSignatures: []string{sign(spendingPrivateKey, txID[:])}, AssemblyReceipt: sign(spendingPrivateKey, receiptMessage[:]),
+			}
+			if test.cosigner {
+				cosignerMessage := message.ComponentMessage(message.RoleCosigner, txID)
+				target.CosignerSignature = sign(cosignerPrivateKey, cosignerMessage[:])
+			}
+			keyMaterial := &coresigning.KeyMaterial{
+				Type: "test.bounded-cosigner.v1", Category: keys.CategoryDSALsig,
+				BaseKeyType: "aplane.falcon1024.v1", PublicKey: append([]byte(nil), spendingPublicKey...),
+				Value:    &coresigning.LsigKeyMaterial{PrivateKey: append([]byte(nil), spendingPrivateKey...)},
+				Bytecode: append([]byte(nil), bytecode...), BoundedAuthorization: boundedmeta.Clone(test.metadata),
+				Parameters:             map[string]string{boundedmeta.RekeyListEntriesParameter: listedTarget.String()},
+				SigningMetadataVersion: keys.BoundedSigningMetadataVersion,
+			}
+			signedHex, svcErr := assembleBoundedTarget(context.Background(), target, group.Entries[0], &componentKeyTestSession{key: keyMaterial})
+			if test.want != "" {
+				if svcErr == nil || !strings.Contains(svcErr.Message, test.want) {
+					t.Fatalf("assembleBoundedTarget() error = %v, want %q", svcErr, test.want)
+				}
+				return
+			}
+			if svcErr != nil {
+				t.Fatalf("assembleBoundedTarget() error = %v", svcErr)
+			}
+			signedBytes, err := hex.DecodeString(signedHex)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var signed types.SignedTxn
+			if err := msgpack.Decode(signedBytes, &signed); err != nil {
+				t.Fatal(err)
+			}
+			if len(signed.Lsig.Args) != test.args {
+				t.Fatalf("assembled %d args, want %d", len(signed.Lsig.Args), test.args)
+			}
+			if test.metadata == onlyThese && len(signed.Lsig.Args[1]) != rekeylist.ProofSize {
+				t.Fatalf("the listed rekey's second argument is %d bytes, want the list proof", len(signed.Lsig.Args[1]))
+			}
+		})
 	}
 }
 

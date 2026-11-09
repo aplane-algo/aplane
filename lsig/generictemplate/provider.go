@@ -76,7 +76,8 @@ type BoundedAuthorizationSpec struct {
 	Contract     string   `yaml:"contract"`
 	SpendEffects []string `yaml:"spend_effects"`
 	MaxFee       *uint64  `yaml:"max_fee"`
-	// Rekey is refused, spending_key, or only_these (refused with a rekey-to list).
+	// Rekey is refused, spending_key, only_these (refused with a rekey-to list),
+	// or plus_cosigned (spending_key with a rekey-to list, which needs a cosigner).
 	Rekey       string                  `yaml:"rekey"`
 	Cosigner    *BoundedCosignerSpec    `yaml:"cosigner"`
 	Layer3      *TransactionLayer3Spec  `yaml:"layer3"`
@@ -84,9 +85,10 @@ type BoundedAuthorizationSpec struct {
 	DerivedArgs []BoundedDerivedArgSpec `yaml:"derived_args"`
 }
 
-// BoundedCosignerSpec enables the frozen cosigner1 spend authorization gate.
-// RequiredOn is deliberately a list even though v1 accepts only [spend], so a
-// future contract revision cannot silently reinterpret the existing shape.
+// BoundedCosignerSpec enables the cosigner overlay. RequiredOn names every path
+// the cosigner signs: [spend], plus spending_rekey when the account takes a
+// spending-key rekey, which then needs the cosigner too. A listed rekey never
+// asks the cosigner.
 type BoundedCosignerSpec struct {
 	Contract   string   `yaml:"contract"`
 	RequiredOn []string `yaml:"required_on"`

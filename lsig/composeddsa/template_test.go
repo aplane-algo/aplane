@@ -671,7 +671,7 @@ bounded:
 	for _, tt := range []struct {
 		name, spend, block, want string
 	}{
-		{name: "no rekey", block: "", want: "bounded.rekey is required: refused, spending_key or only_these"},
+		{name: "no rekey", block: "", want: "bounded.rekey is required: refused, spending_key, only_these or plus_cosigned"},
 		{name: "empty rekey", block: "  rekey: \"\"\n", want: "bounded.rekey is required"},
 		{name: "unknown rekey", block: "  rekey: admin_key\n", want: `unsupported rekey setting "admin_key"`},
 		{name: "old gate value", block: "  rekey: layer3\n", want: `unsupported rekey setting "layer3"`},

@@ -5,8 +5,8 @@
 This document freezes the `bounded2` contract. The composer envelope, the path
 declaration and its classifier, strict composed schema v2, durable signing
 metadata, inventory projection, framework-owned Layer 3 policies, static
-Layer-3 argument layout, and the rekey-to list for accounts without a cosigner
-are implemented.
+Layer-3 argument layout, the rekey-to list, and the cosigner's rekeys (cosigned
+rekeys, and listed rekeys on a cosigned account) are implemented.
 
 Canonical encodings and golden vectors from development builds are not a
 compatibility contract; keys derived from them must be recreated. The encodings
@@ -18,53 +18,91 @@ A bounded authorization contract is a stateless LogicSig program that
 defines the complete transaction envelope accepted for an account. The base
 spending key authorizes every path. An account's rekey setting is `refused`,
 which gives it no rekey path, or `spending_key`, which lets the spending key
-alone authorize a pure rekey. A refused account may also carry a
-[rekey-to list](#rekey-to-list-compatibility-contract), offered as *only these
-addresses* (`only_these`): a pure rekey may then go to a listed address, with the
-spending key and a list proof, and every other rekey is refused.
+authorize a pure rekey: alone, or with the cosigner on a cosigned account (a
+*cosigned rekey*). An account may also carry a
+[rekey-to list](#rekey-to-list-compatibility-contract). Beside `refused` it is
+offered as *only these addresses* (`only_these`): a pure rekey may then go to a
+listed address, with the spending key and a list proof, and every other rekey is
+refused. Beside `spending_key` on a cosigned account it is *these addresses, plus
+others with the cosigner* (`plus_cosigned`): a listed target takes the spending
+key and a list proof, and any other target the spending key and the cosigner. A
+listed rekey never asks the cosigner.
+
+| Rekey setting | Cosigner | Spend needs | Rekey needs |
+|---|---|---|---|
+| `refused` | no or yes | spending key, plus the cosigner if any | refused |
+| `spending_key` | no | spending key | spending key, any target |
+| `spending_key` | yes | spending key + cosigner | spending key + cosigner; the cosigner's `rekey_policy` picks targets |
+| `only_these` | no | spending key | spending key; target on the list |
+| `only_these` | yes | spending key + cosigner | spending key; target on the list; the cosigner is not asked |
+| `plus_cosigned` | yes | spending key + cosigner | spending key alone to a listed target, or spending key + cosigner to any target the cosigner's policy allows |
+
+The table is what the program requires. A cosigned rekey must also pass this
+signer's own `rekeys` setting before the cosigner is asked: under the default
+`reject_foreign_rekey`, a target this signer doesn't hold and the account doesn't
+list is refused, so a cosigned rekey to an outside address needs `allow_rekeys`
+on the account's own policy.
+
+`plus_cosigned` without a cosigner is refused: the spending key could already
+rekey anywhere, so the list would add nothing. Only `refused` and `only_these`
+bound where authority can go independently of the online keys. A cosigned
+`spending_key` account and a `plus_cosigned` one are exactly as strong as the
+spending key and the cosigner together: whoever holds both, or controls the
+cosigner node's policy, can rekey the account anywhere. The general type
+`aplane.falcon1024-b.v1` offers every row but `refused`; expert templates may
+declare any row.
 
 `bounded2` has three ordered regions:
 
 1. **Authentication:** the base DSA signature is required on every path.
 2. **Transaction envelope:** the composer checks the fee ceiling, then
    dispatches on `RekeyTo`. A rekey is accepted in pure rekey normal form when
-   the account declares `rekey: spending_key`, or when it has a rekey-to list and
-   the proof shows the target is on it, and rejected otherwise. Every other
-   transaction must have zero danger fields and an admitted spend type.
+   the account declares `rekey: spending_key` (with the cosigner's signature on a
+   cosigned account), or when it has a rekey-to list and the proof shows the
+   target is on it, and rejected otherwise. Every other transaction must have
+   zero danger fields and an admitted spend type.
 3. **Layer 3 policy:** framework policy, author TEAL, or a framework allowlist
    followed by author TEAL runs only for an admitted pure spend.
 
 No host rule gates a rekey. The rekey path accepts or rejects before any
-Layer 3, cosigner, or author code runs, so no Layer 3 policy applies to a
-rekey. The framework timelock policies therefore require `rekey: refused`: a
-spending-key rekey would leave the lock before the unlock round. A timelock may
-carry a rekey-to list, but a listed rekey is accepted before the unlock round
-too, so the lock holds only while the holders of the listed keys cooperate.
+Layer 3 or author code runs, so no Layer 3 policy applies to a rekey. The
+framework timelock policies therefore require `rekey: refused`: a
+spending-key rekey, cosigned or not, would leave the lock before the unlock
+round. A timelock may carry a rekey-to list (`only_these`), but a listed rekey
+is accepted before the unlock round too, so the lock holds only while the
+holders of the listed keys cooperate. The cosigner check is the only check
+outside the rekey path that a rekey can reach, and only a cosigned rekey
+reaches it.
 
-Cosigner-enabled bounded profiles gate spends only and require
-`rekey: refused` with no rekey-to list. A spending-key rekey would bypass the
-spend-only cosigner gate and is not routable through `bounded-cosigner1`;
-template, profile, and durable-metadata validation reject it. A listed rekey on
-a cosigned account would need a signing route that skips the cosigner, which
-does not exist yet, so validation rejects a list beside a cosigner too. A
-cosigner-enabled account can therefore never be rekeyed. A lost or compromised
-cosigner cannot be escaped, and the program cannot be replaced.
+On a cosigned account the cosigner signs every spend and every rekey the
+spending key declares (`spending_rekey`), and never a listed rekey. Its record's
+`required_on` is `[spend]`, or `[spend, spending_rekey]` when the account
+declares `rekey: spending_key`; template, profile, and durable-metadata
+validation require exactly that list. Such an account signs through the
+`cosigned1` flow, which carries spends, cosigned rekeys and listed rekeys. A
+cosigned account that declares `rekey: refused` with no list can never be
+rekeyed: a lost or compromised cosigner cannot be escaped, and the program
+cannot be replaced. Only expert templates can declare one. Under `only_these`
+or `plus_cosigned`, a listed key can still take the account after its cosigner
+is lost.
 
 For profile `P`:
 
 ```text
 Envelope(P) = PureSpend(P) union PureRekey(P)
   where PureRekey(P) is empty when P declares rekey: refused with no list,
-  and holds only rekeys whose RekeyTo is on the list when P has one
+  holds only rekeys whose RekeyTo is on the list under only_these,
+  and holds every pure rekey under spending_key, with or without a list
 
 Accepted(P) =
-  {tx in PureSpend(P) where SpendingPolicy(tx)}
-  union {tx in PureRekey(P)}
+  {tx in PureSpend(P) where SpendingPolicy(tx) and CosignerSigned(P, tx)}
+  union {tx in PureRekey(P) where RekeyTo is listed or CosignerSigned(P, tx)}
+  where CosignerSigned(P, tx) is true when P has no cosigner
 ```
 
 The guaranteed containment property is `Accepted(P) subset-of Envelope(P)`.
 A spending-key rekey widens the envelope to any authority, and a listed rekey
-to the listed addresses; only Layer 3 is monotone narrowing.
+to the listed addresses; only Layer 3 and the cosigner are monotone narrowing.
 The contract does not claim that an arbitrary custom Layer-3 policy is a
 complete value-spending policy.
 
@@ -76,22 +114,26 @@ complete value-spending policy.
 | Composed YAML schema | `schema_version: 2` |
 | TEAL version | 13 |
 | Spend effects | non-empty closed subset of `pay`, `axfer`, `asset_opt_in` |
-| Rekey setting | `refused` or `spending_key`; `refused` may carry a rekey-to list (`only_these`) |
-| Rekey-to list | contract `rekey_list1`: a salted hiding tree of depth 4, 1 to 16 addresses, without a cosigner only |
-| Rekey and Layer 3 | a rekey never reaches Layer 3 or the cosigner check |
+| Rekey setting | `refused` or `spending_key`; `refused` may carry a rekey-to list (`only_these`), and `spending_key` may on a cosigned account (`plus_cosigned`) |
+| Rekey-to list | contract `rekey_list1`: a salted hiding tree of depth 4, 1 to 16 addresses |
+| Rekey and Layer 3 | a rekey never reaches Layer 3; only a cosigned rekey reaches the cosigner check |
+| Cosigner paths | `required_on: [spend]`, or `[spend, spending_rekey]` beside `rekey: spending_key`; never `listed_rekey` |
 | Maximum compiled `max_fee` | 10,000 microAlgos |
 | Layer-3 arguments | declared static runtime (spend only) and signer-derived slots |
 | Signer-derived primitives | fixed-depth Merkle allowlist proof (512 bytes, spend); rekey-to list proof (160 bytes, listed rekey) |
 | Framework Layer-3 policies | `fixed_allowlist`, `merkle_allowlist`, `timelock`, `fixed_allowlist_timelock`, `merkle_allowlist_timelock`; `none` for the general type only |
 | Framework allowlist with author TEAL | `fixed_allowlist_custom`, `merkle_allowlist_custom` |
 | Inline recipient maximum | 30 entries |
-| Flow labels | `bounded1` without a cosigner; `bounded-cosigner1` with a spend cosigner |
+| Flow labels | `bounded1` without a cosigner; `cosigned1` with a cosigner |
 | Online cosigner endpoints | `POST /plan`, `POST /sign/component`, `POST /sign/assemble` |
 | Bundled composed templates | none; the general type `aplane.falcon1024-b.v1` offers the allowlist, timelock and limits-only shapes |
 
 `bounded2` is the only bounded-authorization contract and has no protocol
 aliases. Flow labels version the client/server choreography, not the contract,
-so a `bounded2` account still advertises `bounded1` or `bounded-cosigner1`.
+so a `bounded2` account without a cosigner still advertises `bounded1`. A cosigned
+account advertises `cosigned1`, which replaced `bounded-cosigner1` when the flow
+began to carry rekeys: a client that knows only the spend-only choreography then
+refuses a cosigned key instead of asking the cosigner to sign a listed rekey.
 
 Generation also refuses a workflow the spending base can't complete. The
 bounded cosigner flow needs a Falcon-1024 spending key, so a cosigner on another
@@ -172,16 +214,18 @@ finalized fee would exceed the profile ceiling.
 `TestTimelockPolicyCompiledBudgetMatrix` freezes the framework timelock policies on the
 same terms, with full inline lists and the largest unlock round. It measures rekeys
 refused, with or without a cosigner, and has no row for a rekey-to list. Each row gives
-the final bytecode, then the group size and fee of the spend path.
+the final bytecode, then the group size and fee of the spend path. The cosigned rows
+include the cosigner check's `callsub` and `retsub` (see
+[Pure rekey](#pure-rekey)).
 
 | Policy | Arrangement | Final bytecode | Spend group / fee |
 |---|---|---:|---:|
 | `timelock` | rekeys refused | 1,889 | 2 / 2,000 |
-| `timelock` | rekeys refused, cosigner | 3,734 | 3 / 3,075 |
+| `timelock` | rekeys refused, cosigner | 3,741 | 3 / 3,076 |
 | `fixed_allowlist_timelock` | rekeys refused | 3,110 | 2 / 2,112 |
-| `fixed_allowlist_timelock` | rekeys refused, cosigner | 4,952 | 3 / 3,197 |
+| `fixed_allowlist_timelock` | rekeys refused, cosigner | 4,959 | 3 / 3,198 |
 | `merkle_allowlist_timelock` | rekeys refused | 2,153 | 2 / 2,016 |
-| `merkle_allowlist_timelock` | rekeys refused, cosigner | 3,995 | 4 / 4,002 |
+| `merkle_allowlist_timelock` | rekeys refused, cosigner | 3,999 | 4 / 4,002 |
 
 ## Effect Model
 
@@ -216,7 +260,7 @@ decision names its rule:
 | `fee_ceiling` | refused | `Fee` exceeds the declared ceiling |
 | `spend_allowed` | spend | a pure spend of a declared effect |
 | `spend_not_declared` | refused | a pure spend of an effect the account does not declare |
-| `rekey_allowed` | spending rekey | a pure rekey under `rekey: spending_key` |
+| `rekey_allowed` | spending rekey | a pure rekey under `rekey: spending_key`, with or without a list |
 | `rekey_listed` | listed rekey | a pure rekey under `rekey: refused` on an account with a rekey-to list |
 | `rekey_refused` | refused | a pure rekey under `rekey: refused` with no list |
 | `hybrid_rekey` | refused | a nonzero `RekeyTo` on anything but a pure rekey |
@@ -226,6 +270,9 @@ decision names its rule:
 The declaration says only that a list exists. Whether a target is on it is the
 signer's to check, against the account's stored entries, when it plans the listed
 path (see [Signature Arguments and Durable Metadata](#signature-arguments-and-durable-metadata)).
+So under `plus_cosigned` the classifier sends every pure rekey to the spending
+rekey, and the signer moves a listed target to the listed rekey; an unlisted
+target stays on the cosigned path.
 
 A refusal names the contract, for example "bounded2 account permanently disables
 rekey". `TestClassifyForReachesAnExplicitRuleForEveryEffect` runs every
@@ -278,31 +325,56 @@ A pure rekey:
 - belongs to an account that declares `rekey: spending_key`, or has a rekey-to
   list that holds `RekeyTo`.
 
-No Layer 3 policy, author TEAL, or cosigner check applies to a pure rekey. A
-profile that declares `rekey: refused` with no list has no rekey path, so every
-transaction with a nonzero `RekeyTo` rejects.
+No Layer 3 policy or author TEAL applies to a pure rekey, and the cosigner check
+applies only to a cosigned rekey. A profile that declares `rekey: refused` with no
+list has no rekey path, so every transaction with a nonzero `RekeyTo` rejects.
 
 The program checks the spending signature, then the fee ceiling, then dispatches
 on `RekeyTo`, before the other danger fields and spend-type routing. The rekey
-branch has one of three bodies, chosen by the profile: under `spending_key` it
-asserts the pure rekey form and accepts; under a rekey-to list (the listed path) it
-asserts the pure rekey form, checks the list proof, and accepts; otherwise it
-rejects. Rekey-plus-transfer, rekey-plus-close, and every other hybrid reject. A
-group may contain separate normal-form transactions, but `bounded2` guarantees only
-each protected transaction's envelope, not group-wide semantic safety.
+branch has one body, chosen by the profile:
 
-The listed body reads the rekey-list proof argument and requires it to be exactly
+| Profile | Rekey body |
+|---|---|
+| `spending_key`, no cosigner | the pure rekey form, then accept |
+| `spending_key`, cosigner | the pure rekey form, `callsub` the cosigner check, then accept |
+| `only_these`, with or without a cosigner | the pure rekey form, the listed check, then accept |
+| `plus_cosigned` | the pure rekey form; if the list proof slot is non-empty, the listed check, then accept; otherwise `callsub` the cosigner check, then accept |
+| `refused`, no list | reject |
+
+Rekey-plus-transfer, rekey-plus-close, and every other hybrid reject. A group may
+contain separate normal-form transactions, but `bounded2` guarantees only each
+protected transaction's envelope, not group-wide semantic safety.
+
+The listed check reads the rekey-list proof argument and requires it to be exactly
 160 bytes. It forms the leaf `SHA256(0x02 || salt || RekeyTo)` from the proof's
 first 32 bytes, folds in the four 32-byte siblings that follow as sorted pairs
 (`SHA256(0x01 || min || max)`), and asserts that the result equals the root
-compiled into the program. Nothing else runs on that path. The tree is defined
-under [Rekey-To List Compatibility Contract](#rekey-to-list-compatibility-contract).
+compiled into the program. Nothing else runs on that path; on a cosigned account
+the cosigner is not asked. The tree is defined under
+[Rekey-To List Compatibility Contract](#rekey-to-list-compatibility-contract).
+
+Under `plus_cosigned` the program branches on which arguments were sent, because
+the AVM cannot count LogicSig arguments and a list can't be tested without its
+proof. A non-empty proof slot commits the rekey to the listed branch: the proof
+must verify, or the transaction is rejected, and it never falls through to the
+cosigner. Each branch checks everything it needs, so choosing a branch gains an
+attacker nothing. The layout's source order (base, derived, runtime, cosigner)
+puts the proof slot before the cosigner slot, so on a cosigned rekey the empty
+proof is an interior slot and is present even when trailing empty slots are
+trimmed; on a listed rekey the trimmed cosigner slot is never read.
+
+The cosigner check is rendered once, as the subroutine `__aplane_bounded1_cosigner`.
+The spend path calls it before Layer 3, and a cosigned rekey calls it from the
+rekey body, so the cosigner's public key compiles into the program once.
 
 Spending-key authorization preserves pure shape but does not contain theft of
 the spending key. A profile that declares `rekey: refused` keeps a stolen
 spending key inside the spend envelope. With a rekey-to list, a stolen spending
 key can also hand the account to a listed address, and gains control only if it
-holds that address's key too.
+holds that address's key too. A cosigned `spending_key` or `plus_cosigned`
+profile keeps a stolen spending key in the envelope only while the cosigner
+holds: with both keys, or the cosigner node's policy, an attacker can rekey
+anywhere.
 
 ## Canonical Encoding
 
@@ -328,7 +400,7 @@ canonical_bounded_profile =
   u32(cosigner_present) ||
     if present: field("cosigner1") ||
       field("aplane.witness-falcon1024.v1") || u32(1423) ||
-      u32(1) || field("spend") ||
+      u32(count(required_on)) || field(path_0) || ... ||
   field(layer3_policy) ||
   u32(base_signature_arg_count) || u32(base_arg_0_max) || ... ||
   u32(count(derived_args)) || canonical_derived_args ||
@@ -341,7 +413,8 @@ invalid. Empty spend sets are invalid. `asset_opt_in` is the zero-amount
 self-receiver asset-transfer form and is authorized independently from `axfer`.
 `max_fee` must be present and no greater than 10,000. `rekey` is the text
 `refused` or `spending_key`; an *only these* account encodes `refused` and sets the
-list marker. The Layer 3 identity, argument declarations, maximum
+list marker, and a *plus cosigned* account encodes `spending_key` and sets it. The
+Layer 3 identity, argument declarations, maximum
 sizes, frozen indexes, sources, and path masks are security-bearing and therefore
 part of the canonical profile. Each derived argument record is `field(name) ||
 field(kind) || field(parameter) || u32(max_size)`; each runtime argument record
@@ -354,7 +427,8 @@ take a listed rekey. `rekey_list_present` and `cosigner_present` are each exactl
 zero or one. The list record carries the contract and depth, never the root: the
 root depends on the spending key and is an instance value, so the review digest
 binds the list's entries instead, which are behavior parameters. The optional
-cosigner contract has the single ordered path list `[spend]`.
+cosigner contract carries its ordered `required_on` list: `[spend]`, or
+`[spend, spending_rekey]` beside `rekey: spending_key`.
 
 ### Canonical behavior parameters
 
@@ -380,13 +454,15 @@ Canonical scalar values are: address as raw 32 bytes; bytes as raw bytes;
 unsigned integer as `u64`; boolean as one byte `0x00` or `0x01`; and string as
 UTF-8. A missing or explicitly empty optional parameter has a zero-length
 `canonical_value`; this is distinct from an explicit numeric zero, false, or
-empty list. A list value is `u32(count) || field(element_0) || ...`. Nested or
+empty list. A list value is `u32(count) || field(element_0) || ...`; an `address[]`
+list is in ascending order of the addresses' base32 text, which is not always their
+byte order. Nested or
 new parameter types require a new encoding rule before use by bounded.
 
 ### Bounded-cosigner assembly receipt
 
-For `bounded-cosigner1`, the user signer also returns a Falcon-signed assembly
-receipt. With `field` as above, `metadata_json` equal to JSON encoding of the
+For `cosigned1`, the user signer also returns a Falcon-signed assembly
+receipt on every path, listed rekeys included. With `field` as above, `metadata_json` equal to JSON encoding of the
 normalized durable `bounded_authorization` structure, and runtime arguments
 sorted by name, its message is:
 
@@ -401,7 +477,8 @@ SHA512_256(
 ```
 
 Assembly verifies this receipt with the bounded spending public key before it
-accepts the base component or cosigner signature.
+accepts the base component or cosigner signature. The domain and message are
+the ones `bounded-cosigner1` used.
 
 ### Golden vector 1: allowlist with author TEAL
 
@@ -528,7 +605,8 @@ reproduced both author-TEAL vectors before computing these.
 Schema v1 describes the existing non-bounded composed layout and rejects a
 top-level `bounded` field. Schema v2 requires `bounded`. Every schema version
 uses strict known-field and duplicate-key rejection at every nested level.
-`bounded.rekey` is required and is `refused`, `spending_key`, or `only_these`.
+`bounded.rekey` is required and is `refused`, `spending_key`, `only_these`, or
+`plus_cosigned`.
 `bounded.runtime_args` and `bounded.derived_args` declare the only permitted
 Layer 3 slots. Caller runtime values carry explicit maximum/exact length
 contracts, and every runtime argument declares `required_on: [spend]`, because
@@ -563,13 +641,19 @@ parameters:
     max_items: 30
 ```
 
-`rekey: refused` gives the program no rekey path. A cosigner requires
-`rekey: refused`. A refused profile can neither close nor be rekeyed, so it must
-keep a transfer for what it holds: `spend_effects` includes `pay`, and `axfer`
-whenever it includes `asset_opt_in`. The profile check and durable metadata
-validation both enforce this (`boundedmeta.ValidateRefusedExit`), for expert
-templates and the general type alike, and durable validation also refuses a
-timelock policy beside `rekey: spending_key`.
+`rekey: refused` gives the program no rekey path. A refused profile without a
+list can neither close nor be rekeyed, so it must keep a transfer for what it
+holds: `spend_effects` includes `pay`, and `axfer` whenever it includes
+`asset_opt_in`. The profile check and durable metadata validation both enforce
+this (`boundedmeta.ValidateRefusedExit`), with or without a cosigner, and durable
+validation also refuses a timelock policy beside `rekey: spending_key`. The
+general type never offers a refused profile without a list.
+
+A cosigner's `required_on` must name every path the cosigner signs: `[spend]`
+beside `rekey: refused` or `only_these`, and `[spend, spending_rekey]` beside
+`rekey: spending_key` or `plus_cosigned`, where a cosigned rekey needs the
+cosigner too. The framework then requires the cosigner signature slot on exactly
+those paths and forbids it on `listed_rekey`.
 
 `rekey: only_these` is `refused` plus a rekey-to list, and is stored that way:
 `rekey: refused` and `rekey_list: {contract: rekey_list1, depth: 4}`. The framework
@@ -579,9 +663,15 @@ also appends the derived argument `rekey_list_proof` (kind `rekey_list_proof`, b
 to `rekey_to`, 160 bytes) after any Layer 3 derived argument, so a runtime argument
 moves one slot later than it would without the list; a template cannot declare that
 kind itself. The rule above that a refused profile keep a transfer does not apply:
-a listed address is a way out, so any spend subset is valid. `only_these` beside a
-cosigner is refused, and durable validation refuses a stored list beside any rekey
-setting but `refused`.
+a listed address is a way out, so any spend subset is valid. A cosigner beside
+`only_these` is not asked for a listed rekey.
+
+`rekey: plus_cosigned` is `spending_key` plus the same list, and is stored that
+way: `rekey: spending_key` and `rekey_list`. It needs a cosigner, whose
+`required_on` is `[spend, spending_rekey]`; without one the profile is refused,
+since the spending key could already rekey anywhere. The framework injects the
+same `rekey_to` parameter and `rekey_list_proof` argument. Durable validation
+refuses a stored list beside `rekey: spending_key` without a cosigner.
 
 `fixed_allowlist` is composer-owned. It
 handles every effect in `spend_effects`: `pay` constrains `Receiver`; `axfer`
@@ -680,7 +770,7 @@ proof.
 
 `cosigner_public_key` is injected by the framework. An author parameter or
 runtime argument named `cosigner` or starting with `cosigner_` rejects. Under
-`only_these`, `rekey_to` is the framework's too. User
+`only_these` or `plus_cosigned`, `rekey_to` is the framework's too. User
 parameters, variables, runtime args, and references using
 the `bounded_` prefix reject, which covers the generator's `bounded_rekey_to_root`.
 Author labels and executable references using
@@ -750,10 +840,12 @@ signature. Every slot stores an index, source, maximum size, and a required,
 optional, or forbidden rule for each of the three paths: spend, spending-key rekey
 (`spending_rekey`), and listed rekey (`listed_rekey`). Every bounded account carries
 all three, whether or not it can take a given rekey. Base signature slots are
-required on all three. Recipient-proof, runtime, and cosigner slots are forbidden
-on both rekey paths, because a rekey never reaches Layer 3 or the cosigner check.
-The rekey-list proof slot is required on `listed_rekey` and forbidden on the other
-two.
+required on all three. Recipient-proof and runtime slots are forbidden on both
+rekey paths, because a rekey never reaches Layer 3. The cosigner slot is required
+on exactly the paths its record's `required_on` names (`spend`, and
+`spending_rekey` beside `rekey: spending_key`) and forbidden on the rest, always
+including `listed_rekey`. The rekey-list proof slot is required on `listed_rekey`
+and forbidden on the other two, so it is empty on a cosigned rekey.
 
 Interior unused Layer 3 slots are explicit empty byte strings. Only unused
 trailing slots may be omitted. Callers may populate only declared runtime
@@ -763,10 +855,14 @@ signer-derived values.
 
 The planner classifies before group sizing, finalizes fee pooling, then
 revalidates the finalized transactions at the single classification boundary.
-For a pure rekey on an account with a rekey-to list it takes `listed_rekey`, sized
-from that path's resource profile, and refuses a target that is not on the stored
-list with `bounded_rekey_target_not_listed` (HTTP 400), before anything is signed,
-instead of building a transaction the program would reject. The executor consumes
+For a pure rekey under `only_these` it takes `listed_rekey`, sized from that
+path's resource profile, and refuses a target that is not on the stored list with
+`bounded_rekey_target_not_listed` (HTTP 400), before anything is signed, instead
+of building a transaction the program would reject. Under `plus_cosigned` it moves
+a listed target from `spending_rekey` to `listed_rekey`, and an unlisted target
+stays on the cosigned path. Cosigned assembly decides the path again through the
+same function (`boundedAccountPath`), so a component and its assembly cannot
+disagree about whether the cosigner signs. The executor consumes
 that plan, checks that loaded durable metadata still equals planned metadata, and
 assembles the declared slots without maintaining a second classifier. On the listed
 path it rebuilds the list from the spending private key it already holds and the
@@ -798,7 +894,7 @@ consulting the installed template.
 ## Routing and Approval
 
 `/keys` and `/keytypes` advertise `signing_flow: bounded1` for profiles without
-a cosigner and `signing_flow: bounded-cosigner1` for profiles whose durable
+a cosigner and `signing_flow: cosigned1` for profiles whose durable
 metadata contains `cosigner.contract: cosigner1`. Both expose the same typed
 `bounded_authorization` object. `/keytypes` exposes definition-level
 profile and base-layout capabilities. `/keys` additionally exposes the
@@ -806,24 +902,42 @@ structured selected-path LogicSig resource profile, with `spend`,
 `spending_rekey`, and `listed_rekey` cells. An account with a rekey-to list
 carries `bounded_authorization.rekey_list` with its `contract` and `depth`, and in
 `/keys` its `root`; the entries are never projected, so a client cannot tell
-whether a target is listed before it asks. Clients route:
+whether a target is listed before it asks. Asking does tell it: the signer
+refuses an unlisted target under *only these* by name, and under *plus
+cosigned* a listed and an unlisted target plan different paths, both before any
+approval. The list hides its entries from the chain and from inventory, not from
+an enrolled client of the account's own signer, which can already ask for the
+rekey. Clients route:
 
-- non-cosigner pure spend to ordinary `/sign`;
-- cosigner-gated pure spend through the first-party client's user-first
-  `/plan`, kind-tagged signer and cosigner `/sign/component`, then signer
-  `/sign/assemble` choreography;
-- spending-key rekey, and a pure rekey on an account with `rekey_list` (the
-  `listed_rekey` path), to ordinary `/sign` with forced review; the signer refuses
-  an unlisted target with `bounded_rekey_target_not_listed`; and
+- a pure spend or rekey of an account without a cosigner to ordinary `/sign`,
+  rekeys with forced review; the signer refuses an unlisted target with
+  `bounded_rekey_target_not_listed`;
+- every pure spend and pure rekey of a cosigned account through the first-party
+  client's user-first `/plan`, kind-tagged signer and cosigner `/sign/component`,
+  then signer `/sign/assemble` choreography (`cosigned1`); and
 - malformed, hybrid, refused, or unknown effects to local rejection.
 
-Ordinary `/sign` rejects a cosigner-gated bounded spend because it cannot finish
-that flow alone. First-party clients do not support combining `cosigner1` and
-`bounded-cosigner1` targets in one group because their assembly contracts differ;
+In `cosigned1`, each bounded-base component in the `/sign/component` response
+carries `path`: `spend`, `spending_rekey` or `listed_rekey`, the path the signer
+classified. The client asks the cosigner for every target except a
+`listed_rekey` one, sends no cosigner request when no target needs one, and
+budgets a cosigned position in a mixed group on its component's path. The mark
+routes the request only. `/sign/assemble` classifies the canonical transaction
+against stored metadata again, through the planner's function, then requires a
+cosigner signature on `spend` and `spending_rekey` and refuses one on
+`listed_rekey`, so `cosigner_signature` is optional on a `bounded-cosigner`
+assembly target. A wrong mark can stall a request, never weaken it. The cosigner
+node decides a cosigned rekey as it decides any rekey, by its `reject_rekey`,
+`rekey_policy` edge and pure-shape check; a listed rekey never reaches it.
+
+Ordinary `/sign` rejects every target of a cosigned account
+(`bounded_cosigner_required`), a listed rekey included, because only the cosigned
+flow carries that account. First-party clients do not support combining `cosigner1` and
+`cosigned1` targets in one group because their assembly contracts differ;
 this is a client orchestration limit, not a signer-side whole-group flow
 invariant. Signer-side classification remains authoritative for each target it
 signs or assembles. Unknown flow labels fail closed.
-Every bounded rekey, spending-key or listed, triggers the
+Every bounded rekey, spending-key, cosigned or listed, on either flow, triggers the
 stable unconditional `bounded_rekey_requires_review` rule before
 policy self-no-op autoapproval, regardless of warning configuration. User
 Auto-Approve satisfies this review requirement without a prompt. A client intent to simulate
@@ -857,27 +971,34 @@ defined only for this key type: custom Layer 3 code is not bound by it.
 
 ### Golden vector 3: general boundary digest
 
-This vector uses the Corridor shape: all three transfer kinds, `merkle_allowlist`,
-rekeys refused, and a cosigner. The two recipients are the addresses whose 32 raw bytes
-are all zero except `[1] = 1, [31] = 1` and `[1] = 2, [31] = 1`. The cosigner key is
-1,793 bytes of `0x41`.
+This vector uses the general type's fullest shape: all three transfer kinds,
+`merkle_allowlist`, a cosigner, and `plus_cosigned`. The two recipients are the
+addresses whose 32 raw bytes are all zero except `[1] = 1, [31] = 1` and
+`[1] = 2, [31] = 1`. The rekey-to list holds the two addresses whose 32 raw bytes are
+all zero except `[0] = 0x08, [31] = 2` and `[0] = 0xd0, [31] = 2`; their address texts
+start with `B` and `2`, so the behavior encoding lists the `0xd0` address first. The
+cosigner key is 1,793 bytes of `0x41`. The profile encodes `rekey: spending_key` with
+the list marker, the cosigner's `required_on` is `[spend, spending_rekey]`, and the
+argument layout is the base signature, the recipient proof, the rekey-list proof and
+the cosigner signature, which is required on `spend` and `spending_rekey`.
 
 An independent Python encoder reproduces the profile and the digest from the rules in
 this document. The shape fingerprint is an input to that check: it comes from the
 provider's own configuration hash, which this document does not define byte for byte.
+`TestGeneralFingerprintGoldens` pins the shape fingerprint and the digest.
 
 ```text
 selected_shape_fingerprint:
-  1:e15126819ade64513db6f8708fa9b0340f56d438e44d619605377fd53b1e6550
+  1:6ae03fad054024348ad540e4c5314d7f64b75e4aef0afc87383b3db8d92dd932
 base_primitive: falcon1024-v1
-canonical_bounded_profile_length: 501
+canonical_bounded_profile_length: 675
 canonical_bounded_profile_sha512_256:
-  c8d53bdae84a9a3d2c6efbe1eac33fb6ab0cb6fad28614b1353fcb00afc2249a
-canonical_behavior_parameters_length: 1981
+  da645191069b2b95194e56f1a36d64565858cab9b61b8316f5d0de95c78ccff6
+canonical_behavior_parameters_length: 2086
 canonical_behavior_parameters_sha512_256:
-  3e37447008e20eab3259c3c109224f012ebd3bee4061db71b97298205665fdc9
+  cb3b10a572a2489965265f16e59e0468f402cd484d237449efec48c2cbf2b62b
 boundary_digest:
-  774b41e54991edc7532ac1c0375d9415faf6767255b746ab95a0920b3fbe5209
+  a500c612b2ab2531b0b38687b9f03a3093b9280b1d7328285dad7cf2bc7773c7
 ```
 
 ## Versioning

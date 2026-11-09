@@ -55,7 +55,7 @@ func grammarDeclarations(t *testing.T) map[string]boundedmeta.PathDeclaration {
 		if shape.AnyRecipient {
 			params[boundedaccount.ParameterRecipientScope] = boundedaccount.RecipientScopeAny
 		}
-		if shape.Rekey == boundedaccount.RekeyOnlyThese {
+		if shape.HasRekeyList() {
 			params[boundedaccount.ParameterRekeyTo] = types.Address{3}.String()
 		}
 		if shape.Cosigner {
@@ -135,6 +135,15 @@ func surfaceCorpus(t *testing.T) map[string]types.Transaction {
 // is only ever what the declaration states.
 func TestClassifyForReachesAnExplicitRuleForEveryEffect(t *testing.T) {
 	declarations := grammarDeclarations(t)
+	// The general type never refuses every rekey, but an expert template may: its
+	// declaration is the grammar's with neither a spending-key rekey nor a list.
+	for descriptor, declaration := range declarations {
+		if declaration.Rekey == boundedmeta.RekeyRefused && declaration.RekeyList {
+			declaration.RekeyList = false
+			declarations["expert refused, from "+descriptor] = declaration
+			break
+		}
+	}
 	corpus := surfaceCorpus(t)
 	reached := make(map[txeffects.Rule]bool)
 	for descriptor, declaration := range declarations {

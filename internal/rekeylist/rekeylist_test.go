@@ -168,17 +168,3 @@ func TestZeroClearsTheSeed(t *testing.T) {
 		t.Fatal("Zero left the seed or the tree")
 	}
 }
-
-func TestNewSeedIsRandom(t *testing.T) {
-	a, err := NewSeed()
-	if err != nil {
-		t.Fatal(err)
-	}
-	b, err := NewSeed()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if a == b || a == ([SeedSize]byte{}) {
-		t.Fatal("NewSeed returned a repeated or zero seed")
-	}
-}

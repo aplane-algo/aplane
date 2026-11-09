@@ -11,12 +11,12 @@ import (
 
 func TestCanAuthorizeOtherAccounts(t *testing.T) {
 	for flow, want := range map[string]bool{
-		"":                                    true,
-		signerapi.SigningFlowBounded1:         true,
-		signerapi.SigningFlowCosigner1:        true,
-		signerapi.SigningFlowBoundedCosigner1: true,
-		signerapi.SigningFlowRotating1:        false,
-		"rotating2":                           false,
+		"":                             true,
+		signerapi.SigningFlowBounded1:  true,
+		signerapi.SigningFlowCosigner1: true,
+		signerapi.SigningFlowCosigned1: true,
+		signerapi.SigningFlowRotating1: false,
+		"rotating2":                    false,
 	} {
 		if got := CanAuthorizeOtherAccounts(flow); got != want {
 			t.Errorf("CanAuthorizeOtherAccounts(%q) = %v, want %v", flow, got, want)

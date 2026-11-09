@@ -25,7 +25,7 @@ func TestCosignerStatusObservesLiveRoutesWithoutMutation(t *testing.T) {
 	writeLiveCosignerEndpoint(t, dir, "cosigner", cosigner)
 	signer := newEndpointKeysServerHTTP(t, []signerapi.KeyInfo{
 		{Address: "guarded", SigningFlow: signerapi.SigningFlowCosigner1, CosignerComponentKeyType: witness.Falcon1024V1, Parameters: map[string]string{"cosigner_public_key": public}},
-		{Address: "bounded", SigningFlow: signerapi.SigningFlowBoundedCosigner1, CosignerComponentKeyType: witness.Falcon1024V1, BoundedAuthorization: &signerapi.BoundedAuthorizationInfo{Cosigner: &signerapi.BoundedCosignerAuthorizationInfo{PublicKeyHex: public}}},
+		{Address: "bounded", SigningFlow: signerapi.SigningFlowCosigned1, CosignerComponentKeyType: witness.Falcon1024V1, BoundedAuthorization: &signerapi.BoundedAuthorizationInfo{Cosigner: &signerapi.BoundedCosignerAuthorizationInfo{PublicKeyHex: public}}},
 	})
 	app := newEndpointTestApp(t, dir)
 	client := signerclient.NewSignerClient(signer.URL)

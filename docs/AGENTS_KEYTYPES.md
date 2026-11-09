@@ -155,16 +155,23 @@ For bounded (`bounded2`) work, read
 - composer-owned fee, type, and danger-field checks execute before author
   Layer 3;
 - the program checks the spending signature, then the fee ceiling, then
-  dispatches on `RekeyTo`, before any Layer 3, cosigner, or author code; the
-  rekey branch accepts only the frozen pure-rekey normal form (under a rekey-to
-  list, only with a valid list proof for `RekeyTo`) or rejects;
+  dispatches on `RekeyTo`, before any Layer 3 or author code; the rekey branch
+  accepts only the frozen pure-rekey normal form (under a rekey-to list, only
+  with a valid list proof for `RekeyTo`, or under `plus_cosigned` an empty proof
+  slot and the cosigner's signature; a cosigned `spending_key` rekey needs the
+  cosigner's signature too) or rejects;
 - only admitted pure `pay`/`axfer` spends reach Layer 3; no host rule gates a
   rekey;
 - `bounded.rekey` is `refused` (no rekey path), `spending_key` (the spending
-  key alone authorizes a pure rekey), or `only_these` (`refused` plus a
-  framework-injected rekey-to list: the spending key and a signer-built list
-  proof authorize a pure rekey to a listed address); a timelock policy requires
-  `refused` or `only_these`, and a cosigner requires `refused` with no list;
+  key authorizes a pure rekey: alone, or with the cosigner on a cosigned
+  account), `only_these` (`refused` plus a framework-injected rekey-to list: the
+  spending key and a signer-built list proof authorize a pure rekey to a listed
+  address), or `plus_cosigned` (`spending_key` plus the list, cosigner
+  required: a listed target takes the spending key alone, any other the spending
+  key and the cosigner); a timelock policy requires `refused` or `only_these`;
+- a cosigner's `required_on` is `[spend]`, or `[spend, spending_rekey]` with
+  `spending_key` or `plus_cosigned`; the cosigner slot is required on exactly
+  those paths and forbidden on `listed_rekey`, which never asks the cosigner;
 - the refused-exit rule (`pay` in `spend_effects`, and `axfer` with
   `asset_opt_in`) applies only to `refused` without a list;
 - `max_fee` is explicit, compiled, and at most 10,000 microAlgos;
@@ -179,9 +186,9 @@ For bounded (`bounded2`) work, read
   its salts derive from the spending key, so only the account's own signer can
   build the `listed_rekey` proof;
 - `/keys` and `/keytypes` advertise `signing_flow: bounded1` or
-  `bounded-cosigner1` from durable metadata; every client must dispatch empty,
-  `cosigner1`, `bounded1`, `bounded-cosigner1`, and `rotating1` explicitly
-  and reject unknown flows;
+  `cosigned1` from durable metadata; every client must dispatch empty,
+  `cosigner1`, `bounded1`, `cosigned1`, and `rotating1` explicitly
+  and reject unknown flows, `bounded-cosigner1` among them;
 - the signer classifies each bounded target through `txeffects.ClassifyFor`
   against the path declaration projected from stored metadata, and every
   decision names a rule;
@@ -387,11 +394,17 @@ Positive cases should show the intended transaction succeeds, for example:
 - close-out to an explicitly allowed close address
 - hashlock spend with the correct preimage
 - timelock spend after the allowed round
-- under `rekey: only_these`, a pure rekey to a listed address
+- under `rekey: only_these` or `plus_cosigned`, a pure rekey to a listed
+  address, with no cosigner signature on a cosigned account
+- under a cosigned `spending_key` or `plus_cosigned`, a pure rekey to another
+  address with the cosigner's signature
 
 Negative cases should show forbidden behavior fails, for example:
 
-- rekey attempt fails (under `only_these`, a rekey to an unlisted address)
+- rekey attempt fails (under `only_these`, a rekey to an unlisted address;
+  under a cosigned `spending_key`, a rekey without the cosigner's signature;
+  under `plus_cosigned`, a rekey to an unlisted address without the cosigner's
+  signature, or with a non-empty list proof that does not verify)
 - send to an unapproved receiver fails
 - close-out to an unapproved address fails
 - ASA close/clawback fails when not explicitly allowed

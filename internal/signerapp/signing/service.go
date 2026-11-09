@@ -94,7 +94,7 @@ func (s *Service) SignGroupWithContext(ctx context.Context, req signerapi.GroupS
 	if err != nil {
 		return nil, err
 	}
-	if planHasBoundedCosignerSpend(plan) {
+	if planHasCosignedBoundedTarget(plan) {
 		return nil, boundedCosignerRequired()
 	}
 	return s.signGroupWithPlanContext(ctx, req, session, plan)
@@ -310,7 +310,7 @@ func (s *Service) approveGroupWithPlanContext(ctx context.Context, req signerapi
 				return s.Approval.requestGroupApprovalWithContext(ctx, req, plan, groupDesc, firstValid, lastValid, txns, forceReviewRuleID)
 			}
 			return s.Approval.requestSingleTxnApprovalWithContext(ctx, req.RequestID, req.Requests[0], allTxns, txns, plan.DummiesNeeded, firstValid, lastValid, forceReviewRuleID,
-				listedRekeyTargetsForPlan(plan)[0])
+				boundedItemAt(plan, 0))
 		},
 	}, console)
 	if gateErr != nil {

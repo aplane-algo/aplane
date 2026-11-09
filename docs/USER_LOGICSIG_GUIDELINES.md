@@ -848,30 +848,37 @@ Falcon-1024 spending and a `bounded2` program chosen from a fixed set of shapes.
 The composer-owned envelope admits only pure payments, pure asset transfers,
 independently authorized asset opt-ins, or a pure self-payment rekey, caps the
 protected transaction fee, and denies close and clawback effects before Layer 3.
-A rekey needs only the spending signature and never reaches Layer 3. With
-`rekey_authority=only_these` it also needs a signer-built proof that the target is on
-the account's rekey-to list, fixed at creation; with `refused` (cosigned accounts only)
-the program has no rekey path.
+A rekey never reaches Layer 3. Without a cosigner, a `spending_key` rekey needs only
+the spending signature; with one it needs the cosigner's signature too. With
+`rekey_authority=only_these` a rekey also needs a signer-built proof that the target is
+on the account's rekey-to list, fixed at creation, and never the cosigner. With
+`plus_cosigned` (cosigned accounts only) a listed target takes the spending signature
+and the proof, and any other target the spending signature and the cosigner's. The
+general type never offers an account with no rekey path.
 
 Its framework recipient list constrains `Receiver`/`AssetReceiver`, inline or
 as a Merkle root, and an optional unlock round delays spending. For a Merkle list,
 the signer generates the 512-byte proof for a non-self receiver; callers do not
 pass it (see the
 [Merkle compatibility contract](ARCH_BOUNDED_DSA.md#merkle-allowlist-compatibility-contract)).
-A timelock takes no spending-key rekey, because it would leave the lock before
-the unlock round; it uses `only_these`, whose listed rekey is a way around the
-lock, or `refused` with a cosigner. Asset and amount
+A timelock takes no spending-key rekey, cosigned or not, because it would leave
+the lock before the unlock round; it uses `only_these`, with or without a cosigner,
+whose listed rekey is a way around the lock. Asset and amount
 limits stay in signer policy, because one program is valid on every network and
 asset IDs are network-local. See
 [USER_KEYTYPES.md](USER_KEYTYPES.md#bounded-accounts) and
 [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md).
 
-A bounded cosigner gate needs an account that refuses rekeys. A spending-key
-rekey would bypass the spend-only cosigner authority and has no
-`bounded-cosigner1` signing route, so validation rejects the combination. A
-rekey-to list isn't offered beside a cosigner yet either.
-Such an account can neither close nor be rekeyed, so its funds cannot be
-recovered if the cosigner is lost.
+A bounded cosigner signs every spend and every rekey the spending key declares
+(a cosigned rekey), and never a listed rekey. A cosigned `spending_key` or
+`plus_cosigned` account is only as strong as its two online keys: whoever holds the
+spending key and the cosigner, or controls the cosigner node's policy, can rekey it
+anywhere, out of its recipient list. Only `only_these` bounds where the account can
+go independently of those keys. A cosigned account whose cosigner is lost can no
+longer spend; under `only_these` or `plus_cosigned` its listed key can still take it
+over. An expert template that declares `rekey: refused` with a cosigner and no list
+can neither close nor be rekeyed, so its funds cannot be recovered if the cosigner
+is lost.
 
 #### Guarded Cosigner Provider
 
@@ -883,8 +890,8 @@ verify, so cosigner policy is the spending boundary.
 
 The Corridor preset of `aplane.falcon1024-b.v1` is instead a bounded account. It
 requires a cosigner signature only on bounded spend paths, applies a
-framework-owned Merkle recipient policy, and refuses rekeys. Its flow is
-`bounded-cosigner1`. See
+framework-owned Merkle recipient policy, and can be rekeyed only to an address on
+its rekey-to list, with the spending key alone. Its flow is `cosigned1`. See
 [KEYTYPE_CAPABILITIES.md](KEYTYPE_CAPABILITIES.md) for the per-operation matrix
 and [ARCH_GUARDED.md](ARCH_GUARDED.md#corridor-v1) for its complete contract.
 

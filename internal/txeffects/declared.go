@@ -31,10 +31,14 @@ const (
 	RuleFeeCeiling       Rule = "fee_ceiling"
 	RuleSpendAllowed     Rule = "spend_allowed"
 	RuleSpendNotDeclared Rule = "spend_not_declared"
-	RuleRekeyAllowed     Rule = "rekey_allowed"
-	// RuleRekeyListed sends a pure rekey to the listed path. Whether the target
-	// is on the list is the signer's to check against the stored list; a
-	// declaration carries only the list's root.
+	// RuleRekeyAllowed sends a pure rekey to the spending-key path, with the
+	// cosigner on a cosigned account. Under plus cosigned the signer moves a
+	// listed target to the listed path instead: membership is checked against
+	// the stored list, which a declaration doesn't carry.
+	RuleRekeyAllowed Rule = "rekey_allowed"
+	// RuleRekeyListed sends a pure rekey under only these to the listed path.
+	// Whether the target is on the list is the signer's to check against the
+	// stored list; a declaration carries only the list's root.
 	RuleRekeyListed  Rule = "rekey_listed"
 	RuleRekeyRefused Rule = "rekey_refused"
 	RuleHybridRekey  Rule = "hybrid_rekey"
@@ -78,7 +82,7 @@ func ClassifyFor(txn types.Transaction, declaration boundedmeta.PathDeclaration)
 		decision.Path, decision.Rule = PathSpend, RuleSpendAllowed
 		return decision, nil
 	case ShapePureRekey:
-		if declaration.RekeyList {
+		if declaration.Rekey == boundedmeta.RekeyRefused && declaration.RekeyList {
 			decision.Path, decision.Rule = PathListedRekey, RuleRekeyListed
 			return decision, nil
 		}

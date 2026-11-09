@@ -395,7 +395,7 @@ interlocks.
 
 #### Key Management
 
-- `prepare_generate_key`: `key_type`, optional `parameters` -> `prepare_generate_result`: `success`, optional `key_type`, `parameters`, `fingerprint`, `review_fingerprint`, `boundary_digest`, `bounded`, `cosigner_key_id`, `code`, `error`. Local IPC only, under `keys.generate`. It runs generation's checks and reports the resolved request so apadmin can review it. It creates no key, changes no store state, and has no address, because the spending key does not exist yet. A reference name resolves to its public key in `parameters`, and `bounded` carries `contract`, `spend_effects`, `max_fee`, `rekey` (`refused` or `spending_key`), optional `rekey_list` (true for *only these*: `rekey` is `refused` except to an address on the account's rekey-to list, whose entries are `parameters.rekey_to`; there is no root yet, because it depends on the spending key), `layer3_policy`, and `cosigner_required`
+- `prepare_generate_key`: `key_type`, optional `parameters` -> `prepare_generate_result`: `success`, optional `key_type`, `parameters`, `fingerprint`, `review_fingerprint`, `boundary_digest`, `bounded`, `cosigner_key_id`, `code`, `error`. Local IPC only, under `keys.generate`. It runs generation's checks and reports the resolved request so apadmin can review it. It creates no key, changes no store state, and has no address, because the spending key does not exist yet. A reference name resolves to its public key in `parameters`, and `bounded` carries `contract`, `spend_effects`, `max_fee`, `rekey` (`refused` or `spending_key`), optional `rekey_list` (true when the account has a rekey-to list, whose entries are `parameters.rekey_to`: *only these* under `rekey: refused`, a rekey only to a listed address; *plus cosigned* under `rekey: spending_key` with `cosigner_required`, a listed address with the spending key alone and any other with the cosigner too; there is no root yet, because it depends on the spending key), `layer3_policy`, and `cosigner_required`
 - `generate_key`: `key_type`, optional `name`, optional `expected_fingerprint`, optional `expected_boundary_digest`, optional `parameters`; accepted over IPC, but generated recovery material is not returned over the admin protocol. the rotating key types (such as `aplane.rotating-triple-wotsc.v1`) require the parameter `network` (a network the signer knows, or a base64 genesis hash)
 - `generate_result`: `success`, optional `address`, `key_type`, `parameters`, `code`, `error`; `mnemonic` and `word_count` fields remain in the schema but are omitted by signer responses
 - `delete_key`: `address` -> `delete_result`: `success`, optional `code`, `error`
@@ -860,7 +860,11 @@ build the wrong request for a per-key type.
 The review (`generate_review.go`) reads `prepare_generate_result.bounded`. With
 `rekey_list` set, its Rekey row names the number of listed addresses and says the
 spending key alone can hand the account to any of them, adding that this is a way
-around the lock on a timelock policy. The details list every `rekey_to` address and
+around the lock on a timelock policy. Under *plus cosigned* it reads "These N,
+spending key alone; others need the cosigner" and says any other rekey needs both
+online keys. A cosigned `spending_key` account reads "Spending key and cosigner":
+together they can rekey out of the boundary, to any target the cosigner's policy
+allows. The details list every `rekey_to` address and
 flag those in this signer's key list, and Ed25519 ones among them, and say the list is
 in the key's backup. See [ARCH_KEYTYPES.md](ARCH_KEYTYPES.md#the-general-bounded-key-type).
 

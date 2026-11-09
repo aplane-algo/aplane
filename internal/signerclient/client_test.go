@@ -556,7 +556,7 @@ func TestRequestUnifiedBoundedCosignerEndpoints(t *testing.T) {
 			}
 			return mockResponse(http.StatusOK, jsonBody(t, signerapi.ComponentResponse{
 				RequestID:  got.RequestID,
-				Components: []signerapi.Component{{TargetIndex: 0, Kind: signerapi.ComponentTargetKindBoundedBase, AuthAddress: "ADDR1", BaseSignatures: []string{"aa"}, AssemblyReceipt: "bb", SignatureScheme: "aplane.falcon1024.v1"}},
+				Components: []signerapi.Component{{TargetIndex: 0, Kind: signerapi.ComponentTargetKindBoundedBase, AuthAddress: "ADDR1", BaseSignatures: []string{"aa"}, AssemblyReceipt: "bb", SignatureScheme: "aplane.falcon1024.v1", Path: signerapi.ComponentPathSpend}},
 			})), nil
 		case "/sign/assemble":
 			var got signerapi.AssemblyRequest

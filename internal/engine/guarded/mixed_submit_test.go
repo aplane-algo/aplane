@@ -216,7 +216,7 @@ func TestBuildGroupSignRequestsUsesSelectedBoundedSpendResources(t *testing.T) {
 		len(txns),
 		map[int]guardedTarget{0: {
 			Index: 0, Sender: guarded, Account: guarded,
-			Route: flowRouteBoundedCosigner, CosignerPublicKey: cosignerHex,
+			Route: flowRouteBoundedCosigner, CosignerPublicKey: cosignerHex, BoundedPath: signerapi.ComponentPathSpend,
 		}},
 		clientsign.SubmitOptions{},
 	)
@@ -229,6 +229,24 @@ func TestBuildGroupSignRequestsUsesSelectedBoundedSpendResources(t *testing.T) {
 	got := requests[0].LsigResources
 	if got == nil || got.ProgramBytes != 2_500 || got.ArgumentBytes != 1_423 || got.MaxOpcodeCost != 1_700 {
 		t.Fatalf("bounded spend resources = %#v, want exact spend path", got)
+	}
+	// A cosigned rekey is budgeted on the path its base component named.
+	requests, _, err = s.buildGroupSignRequests(txns, encodeGroupHex(txns), len(txns),
+		map[int]guardedTarget{0: {
+			Index: 0, Sender: guarded, Account: guarded,
+			Route: flowRouteBoundedCosigner, CosignerPublicKey: cosignerHex, BoundedPath: signerapi.ComponentPathSpendingRekey,
+		}}, clientsign.SubmitOptions{})
+	if err != nil {
+		t.Fatalf("buildGroupSignRequests(rekey) error = %v", err)
+	}
+	if got := requests[0].LsigResources; got == nil || got.ArgumentBytes != 2_846 || got.MaxOpcodeCost != 45_000 {
+		t.Fatalf("cosigned rekey resources = %#v, want the spending-rekey path", got)
+	}
+	// Before its component arrives, a cosigned target has no path to budget.
+	if _, _, err := s.buildGroupSignRequests(txns, encodeGroupHex(txns), len(txns),
+		map[int]guardedTarget{0: {Index: 0, Sender: guarded, Account: guarded, Route: flowRouteBoundedCosigner, CosignerPublicKey: cosignerHex}},
+		clientsign.SubmitOptions{}); err == nil || !strings.Contains(err.Error(), "no base component path") {
+		t.Fatalf("buildGroupSignRequests(no path) error = %v", err)
 	}
 }
 

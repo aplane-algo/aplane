@@ -26,7 +26,7 @@ scope, see [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md).
 - [Policy and Approval](#policy-and-approval)
 - [Client Usage](#client-usage)
 - [How the Server Derives What to Sign](#how-the-server-derives-what-to-sign)
-- [Bounded-Cosigner Spend Flow](#bounded-cosigner-spend-flow)
+- [Bounded-Cosigner Flow](#bounded-cosigner-flow)
 - [Summary Table](#summary-table)
 - [HTTP API Contract](#http-api-contract) (compatibility-bearing)
   - [Endpoints](#endpoints)
@@ -1039,22 +1039,34 @@ They still route on advertised signing flows and resource metadata.
 
 ---
 
-## Bounded-Cosigner Spend Flow
+## Bounded-Cosigner Flow
 
-For inventory rows with `signing_flow: bounded-cosigner1`, the client must:
+For inventory rows with `signing_flow: cosigned1`, the client must:
 
 1. call `POST /plan` to freeze canonical bytes, dummies, fees, and group ID;
 2. call `POST /sign/component` with `kind:"bounded-base"` on the user signer, which validates the
-   group and applies signer policy/operator approval before returning base args
-   and the assembly receipt;
-3. finish any ordinary signer slots through `/sign`, then request the
-   cosigner-role signature over those exact finalized bytes with
-   `POST /sign/component`;
-4. call `POST /sign/assemble` on the user signer with both components;
+   group and applies signer policy/operator approval before returning base args,
+   the assembly receipt, and each target's `path` (`spend`, `spending_rekey`, or
+   `listed_rekey`);
+3. finish any ordinary signer slots through `/sign`, budgeting each cosigned
+   position on its component's path, then request the cosigner-role signature
+   over those exact finalized bytes with `POST /sign/component` for every target
+   whose path is not `listed_rekey`; when no target needs one, send no cosigner
+   request;
+4. call `POST /sign/assemble` on the user signer with the components, leaving
+   `cosigner_signature` empty on a listed rekey;
 5. submit or simulate the exact returned signed group.
 
-Ordinary `/sign` rejects these spends. A bounded account with a cosigner
-declares no rekey operation, so this flow carries spends only.
+The flow carries a cosigned account's spends, its cosigned rekeys (spending key
+and cosigner) and its listed rekeys (spending key alone). Ordinary `/sign`
+rejects every target of a cosigned account, listed rekeys included, with
+`bounded_cosigner_required`. The `path` mark routes the request only:
+`/sign/assemble` classifies the canonical transaction against stored metadata
+again, through the planner's function, and requires a cosigner signature on
+`spend` and `spending_rekey` and refuses one on `listed_rekey`. A wrong mark can
+stall a request, never weaken it. `cosigned1` replaced `bounded-cosigner1`,
+which carried spends only, so a client that knows only the old choreography
+refuses a cosigned key instead of asking the cosigner to sign a listed rekey.
 
 ## Summary Table
 
@@ -1068,13 +1080,15 @@ declares no rekey operation, so this flow carries spends only.
 
 Bounded LogicSig DSA is the transaction-aware case: pure spends,
 spending-key rekeys, and listed rekeys use their declared base, derived, and
-runtime argument slots. A cosigner-enabled bounded spend adds the cosigner slot
-after the Layer-3 slots and uses the user-first bounded component choreography
-above.
+runtime argument slots. A cosigner-enabled bounded spend or cosigned rekey adds
+the cosigner slot after the Layer-3 slots, and every transaction of a cosigned
+account uses the user-first bounded component choreography above.
 
-A pure rekey on an account with a rekey-to list takes the `listed_rekey` path,
-sized from that path's resource profile. The planner checks the target against
-the account's stored `rekey_to` entries and refuses one that isn't listed with
+A pure rekey under `only_these` takes the `listed_rekey` path, sized from that
+path's resource profile. Under `plus_cosigned` a pure rekey to a listed target
+takes `listed_rekey`, and one to any other target the cosigned `spending_rekey`.
+The planner checks the target against the account's stored `rekey_to` entries
+and refuses one that isn't listed, where the account takes no other rekey, with
 `bounded_rekey_target_not_listed` before anything is signed. The executor
 rebuilds the list from the spending private key and the stored entries, requires
 its root to equal the stored `rekey_list.root`, and places the target's 160-byte
@@ -1162,7 +1176,7 @@ The stable wire-contract `code` values that SDK clients branch on are defined in
 | `unavailable` | temporary inability to serve the request | `503` |
 | `cache_refresh` | store mutated but the signer key cache failed to refresh | `500` |
 | `internal` | unexpected server-side failure | `500` |
-| `bounded_cosigner_required` | cosigner-gated bounded spend sent to ordinary `/sign` | `400` |
+| `bounded_cosigner_required` | a cosigned bounded account's spend or rekey, listed rekeys included, sent to ordinary `/sign` | `400` |
 | `bounded_rekey_target_not_listed` | a rekey on a bounded account with a rekey-to list, to an address not on the list; nothing was signed | `400` |
 | `rotating_signing_required` | rotating account sent to `/plan`, `/sign` or `/sign/component` | `400` |
 | `rotating_stage_unproven` | the signer has not yet found the rotating account's live stage; its background scan continues and a retry usually succeeds | `409` |
@@ -1320,12 +1334,13 @@ See [Mode Selection](#mode-selection) for the foreign/passthrough/sign distincti
   unreported field change, malformed report, or non-canonical dummy fails
   closed on the client.
 - Bounded pure spends, spending-key-authorized rekeys, and listed rekeys return
-  complete LogicSigs from `/sign` only when no cosigner is required. A rekey on
-  an account with a rekey-to list to an address not on it is rejected with
-  `code:"bounded_rekey_target_not_listed"`.
-- Cosigner-enabled bounded spends are rejected with
-  `code:"bounded_cosigner_required"`; they must use the `bounded-cosigner1`
-  choreography below.
+  complete LogicSigs from `/sign` only when the account has no cosigner. A
+  rekey on an account that takes only listed rekeys, to an address not on its
+  list, is rejected with `code:"bounded_rekey_target_not_listed"`.
+- Every transaction of a cosigner-enabled bounded account, spends, cosigned
+  rekeys and listed rekeys alike, is rejected with
+  `code:"bounded_cosigner_required"`; it must use the `cosigned1` choreography
+  below.
 - Rotating accounts (`signing_flow: rotating1`) are rejected before approval
   with `code:"rotating_signing_required"` on `/plan`, `/sign` and
   `/sign/component`.
@@ -1375,8 +1390,11 @@ including resources, fees, runtime arguments, and the canonical dummy suffix.
 The response is `signerapi.ComponentResponse`, with `request_id` and
 kind-tagged `components[]`. User/cosigner components carry `signature`; bounded
 components carry `auth_address`, `base_signatures[]`, canonical `runtime_args`,
-and `assembly_receipt`. Every component carries `target_index`, `kind`, and
-`signature_scheme`.
+`assembly_receipt`, and `path`: `spend`, `spending_rekey`, or `listed_rekey`, the
+path the signer classified. A bounded component with any other `path`, or a
+user or cosigner component with one, fails validation. A client asks the
+cosigner for every bounded target except a `listed_rekey` one. Every component
+carries `target_index`, `kind`, and `signature_scheme`.
 
 The Falcon-signed bounded assembly receipt commits to the account, target TxID,
 normalized durable metadata, and sorted runtime arguments under
@@ -1387,14 +1405,20 @@ material into another account, metadata instance, or runtime-argument set.
 the frozen group, discriminated `targets[]`, and optional `passthrough[]`.
 Guarded targets carry user and cosigner signatures; bounded-cosigner targets carry
 base signatures, runtime arguments, an assembly receipt, and a cosigner
-signature. Every position is covered exactly once. The response is
+signature, which is optional on the wire: a listed rekey carries none.
+`cosigner_signature` stays required on a guarded target, and
+`cosigner_source_request_id` needs a `cosigner_signature`. Every position is
+covered exactly once. The response is
 `signerapi.AssemblyResponse` with `request_id` and aligned `signed_group[]`.
 
 Assembly keeps the authorization models distinct. Guarded targets are verified
 against their local guarded account key and both component signatures. Bounded
-targets reload durable metadata, verify receipt and both authorities against
-the frozen TxID, derive only declared signer-generated arguments, and check the
-LogicSig address and authorizer. Assembly request IDs are correlation-only and
+targets reload durable metadata, classify the canonical transaction again
+through the planner's function, verify the receipt and the base signature, and
+on `spend` and `spending_rekey` the cosigner signature, against the frozen TxID;
+a missing cosigner signature on those paths, or one on `listed_rekey`, is
+refused. They derive only declared signer-generated arguments, including the
+list proof on a listed rekey, and check the LogicSig address and authorizer. Assembly request IDs are correlation-only and
 are not cancelable through `/sign/cancel`.
 
 #### Rotating accounts (`rotating1`)
@@ -1700,20 +1724,24 @@ warning does not establish that no leaf was reused.
   envelope. Witness rows omit it because they are not spending accounts.
 - optional `signing_flow`: explicit signing choreography label. `cosigner1`
   selects legacy guarded component signing, `bounded1` selects bounded routing
-  without an online cosigner, `bounded-cosigner1` selects the user-first bounded
-  component/cosigner/assembly flow, `rotating1` selects the rotating account
+  without an online cosigner, `cosigned1` selects the user-first bounded
+  component/cosigner/assembly flow for a cosigned bounded account's spends and
+  rekeys, `rotating1` selects the rotating account
   prepare and sign flow, and empty means ordinary `/sign`. Clients
   dispatch these cases explicitly and fail closed on labels they do not
   implement.
 - optional `cosigner_component_key_type`: the cosigner component key type used by
-  this key's `signing_flow` (for `cosigner1` or `bounded-cosigner1`)
+  this key's `signing_flow` (for `cosigner1` or `cosigned1`)
 - optional `bounded_authorization`: present for `signing_flow: bounded1` and
-  `bounded-cosigner1`.
+  `cosigned1`.
   It contains `contract` (`bounded2`), `base_signature_arg_layout`,
   `spend_effects`, `max_fee`, `rekey` (`refused` or `spending_key`),
-  optional `rekey_list` (`contract` `rekey_list1`, `depth`, and `root`: with
-  `rekey: refused`, a pure rekey may go to a listed address; the entries are
-  never published), `cosigner` (for `bounded-cosigner1`), `runtime_args`,
+  optional `rekey_list` (`contract` `rekey_list1`, `depth`, and `root`: a pure
+  rekey may go to a listed address with the spending key alone, under
+  `rekey: refused` (*only these*) or, with a cosigner, `rekey: spending_key`
+  (*plus cosigned*); the entries are never published), `cosigner` (for
+  `cosigned1`; its `required_on` is `[spend]`, or `[spend, spending_rekey]`
+  beside `rekey: spending_key`), `runtime_args`,
   `derived_args`, the path-specific
   `argument_layout` (each slot with `spend`, `spending_rekey`, and
   `listed_rekey` rules), and `layer3_policy`. This is routing and assembly
@@ -1721,8 +1749,8 @@ warning does not establish that no leaf was reused.
   classification and stored bytecode remain authoritative.
 - optional `logic_sig_resources`, containing final compiled program bytes and
   path-specific argument-byte and maximum-opcode-cost ceilings; a bounded row
-  has `spend`, `spending_rekey`, and `listed_rekey` cells, and a pure rekey on
-  an account with `rekey_list` is sized from `listed_rekey`
+  has `spend`, `spending_rekey`, and `listed_rekey` cells, and a pure rekey to
+  a listed target is sized from `listed_rekey`
 - optional `is_generic_lsig`
 - optional `is_witness_key` and `is_spending_account`: cosigner-key rows use
   `address` as the Witness Key ID, not as an Algorand spending address.
@@ -2012,10 +2040,14 @@ Cross-SDK compatibility-bearing behavior:
   guarded component flow.
 - For a bounded account, SDKs select the resource path from inventory: `spend`
   for a pure spend, `spending_rekey` for a pure rekey under
-  `rekey: spending_key`, and `listed_rekey` for a pure rekey on an account with
-  `rekey_list`. They parse `rekey_list` and the `listed_rekey` path-mask field,
-  and classify `bounded_rekey_target_not_listed` as a request error
-  (`test/contracts/signerapi/error_code_classifications.json`).
+  `rekey: spending_key` without a list, and `listed_rekey` for a pure rekey under
+  `rekey: refused` with `rekey_list`. They parse `rekey_list` and the
+  `listed_rekey` path-mask field, and classify `bounded_rekey_target_not_listed`
+  as a request error
+  (`test/contracts/signerapi/error_code_classifications.json`). For a
+  `cosigned1` account they take the path from the bounded-base component's
+  `path` instead, since under *plus cosigned* only the signer knows whether a
+  target is listed.
 - For equivalent normalized typed transaction intents, SDK prep should converge
   with apshell's core prep behavior for transaction fields, suggested params,
   flat-fee handling, auth-address semantics, LogicSig runtime args, app-call
@@ -2032,7 +2064,8 @@ Cross-SDK compatibility-bearing behavior:
   returned canonical group and mutation report; derive the
   target/context/dummy position partition; locally sign only the canonical
   dummy suffix returned by `/plan`; obtain the required user, cosigner, or
-  bounded-base components; call ordinary `/sign` for any non-guarded original
+  bounded-base components, asking the cosigner for no `listed_rekey` target and
+  sending no cosigner request when no target needs one; call ordinary `/sign` for any non-guarded original
   positions; and call `/sign/assemble` with the frozen group and signed
   passthrough positions. Resource hints are planning inputs, not locally
   inserted transactions. Final guarded assembly remains signer-owned, and

@@ -444,6 +444,42 @@ func TestRekeySummaryStatesTheSpendingKeyAlone(t *testing.T) {
 	}
 }
 
+// A cosigned account's rekey row says who is asked: both keys for a declared
+// rekey, the spending key alone for a listed one. Each still fits at 80x24.
+func TestCosignedRekeySummariesFitAt80x24(t *testing.T) {
+	targets := []string{fmt.Sprintf("TARGET%052d", 1), fmt.Sprintf("TARGET%052d", 2)}
+	for _, test := range []struct {
+		name, policy, rekey string
+		list                bool
+		label, note         string
+	}{
+		{"cosigned spending key", boundedmeta.Layer3PolicyMerkleAllowlist, boundary.RekeySpendingKey, false, "Spending key and cosigner", "both nodes' policies allow"},
+		{"cosigned only these", boundedmeta.Layer3PolicyMerkleAllowlist, boundary.RekeyRefused, true, "Only these 2 addresses, spending key alone", "at any time"},
+		{"cosigned only these timelock", boundedmeta.Layer3PolicyMerkleAllowlistTimelock, boundary.RekeyRefused, true, "Only these 2 addresses, spending key alone", "way around the lock"},
+		{"plus cosigned", boundedmeta.Layer3PolicyMerkleAllowlist, boundary.RekeySpendingKey, true, "These 2, spending key alone; others need the cosigner", "needs both online keys"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			prepared := preparedAccount(test.policy, test.rekey, true, 11)
+			if test.list {
+				prepared.Bounded.RekeyList = true
+				prepared.Parameters[boundedmeta.RekeyListEntriesParameter] = strings.Join(targets, ",")
+			}
+			if isTimelockPolicy(test.policy) {
+				prepared.Parameters[unlockRoundParameter] = "50000000"
+			}
+			label, note := reviewRekey(prepared)
+			if label != test.label || !strings.Contains(note, test.note) {
+				t.Fatalf("rekey = %q, %q", label, note)
+			}
+			m := Model{viewState: ViewGenerateReview, width: 80, height: 23, standalone: true, forms: formsState{review: &prepared}}
+			view := m.renderGenerateReview()
+			if !strings.Contains(view, test.label) || !strings.Contains(view, "GENERATE") || strings.Contains(view, "Panel lines") {
+				t.Fatalf("review is wrong or scrolls at 80x24:\n%s", view)
+			}
+		})
+	}
+}
+
 // A refused account and an authority this client doesn't know must each say so,
 // never read as an ordinary spending-key rekey.
 func TestRekeySummaryNamesRefusedAndUnknownAuthorities(t *testing.T) {
@@ -484,7 +520,7 @@ func TestPresetAsksOnlyForWhatItLeavesOpen(t *testing.T) {
 	}{
 		{0, []string{"recipients"}},
 		{1, []string{"recipients", boundary.ParameterRekeyTo}},
-		{2, []string{"recipients", boundary.ParameterCosigner}},
+		{2, []string{"recipients", boundary.ParameterRekeyTo, boundary.ParameterCosigner}},
 		{3, []string{boundary.ParameterUnlockRound, boundary.ParameterRekeyTo}},
 	} {
 		preset := boundary.Presets()[test.preset]

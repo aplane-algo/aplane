@@ -4,6 +4,7 @@
 package keyadmin
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"maps"
@@ -45,7 +46,7 @@ func generalParams(rekey string) map[string]string {
 		boundedaccount.ParameterRekeyAuthority: rekey,
 		boundedaccount.ParameterRecipients:     recipient.String(),
 	}
-	if rekey == boundedaccount.RekeyOnlyThese {
+	if rekey == boundedaccount.RekeyOnlyThese || rekey == boundedaccount.RekeyPlusCosigned {
 		params[boundedaccount.ParameterRekeyTo] = listedTarget.String()
 	}
 	return params
@@ -145,8 +146,14 @@ func TestBoundaryRequirements(t *testing.T) {
 	publicKey, _ := importPrepareReference(t, ir, prepareTestReference, 0x61)
 	spendingKey := generalParams(boundedaccount.RekeySpendingKey)
 	refused := generalParams(boundedaccount.RekeyOnlyThese)
-	cosigned := generalParams(boundedaccount.RekeyRefused)
+	cosigned := generalParams(boundedaccount.RekeyOnlyThese)
 	cosigned[composeddsa.BoundedCosignerPublicKeyParameter] = hex.EncodeToString(publicKey)
+	// Cosigned rekeys are not containment either: two online keys can rekey the
+	// account anywhere the cosigner's policy allows.
+	cosignedSpending := generalParams(boundedaccount.RekeySpendingKey)
+	cosignedSpending[composeddsa.BoundedCosignerPublicKeyParameter] = hex.EncodeToString(publicKey)
+	plusCosigned := generalParams(boundedaccount.RekeyPlusCosigned)
+	plusCosigned[composeddsa.BoundedCosignerPublicKeyParameter] = hex.EncodeToString(publicKey)
 	// Refusing rekeys is not containment on its own: a timelock with no list
 	// pays anyone once it opens.
 	timelockOnly := generalParams(boundedaccount.RekeyOnlyThese)
@@ -156,7 +163,7 @@ func TestBoundaryRequirements(t *testing.T) {
 	limitsOnly := generalParams(boundedaccount.RekeyOnlyThese)
 	delete(limitsOnly, boundedaccount.ParameterRecipients)
 	limitsOnly[boundedaccount.ParameterRecipientScope] = boundedaccount.RecipientScopeAny
-	limitsCosigned := generalParams(boundedaccount.RekeyRefused)
+	limitsCosigned := generalParams(boundedaccount.RekeyOnlyThese)
 	delete(limitsCosigned, boundedaccount.ParameterRecipients)
 	limitsCosigned[boundedaccount.ParameterRecipientScope] = boundedaccount.RecipientScopeAny
 	limitsCosigned[composeddsa.BoundedCosignerPublicKeyParameter] = hex.EncodeToString(publicKey)
@@ -168,8 +175,8 @@ func TestBoundaryRequirements(t *testing.T) {
 		rejected, accepted []map[string]string
 		want               string
 	}{
-		{"contained", true, false, []map[string]string{spendingKey, timelockOnly, limitsOnly, limitsCosigned}, []map[string]string{refused, cosigned}, "boundary_require_contained"},
-		{"cosigner", false, true, []map[string]string{spendingKey, refused, limitsOnly}, []map[string]string{cosigned, limitsCosigned}, "boundary_require_cosigner"},
+		{"contained", true, false, []map[string]string{spendingKey, timelockOnly, limitsOnly, limitsCosigned, cosignedSpending, plusCosigned}, []map[string]string{refused, cosigned}, "boundary_require_contained"},
+		{"cosigner", false, true, []map[string]string{spendingKey, refused, limitsOnly}, []map[string]string{cosigned, limitsCosigned, cosignedSpending, plusCosigned}, "boundary_require_cosigner"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -243,8 +250,8 @@ func TestBoundaryRequirementsDoNotReachExpertTemplates(t *testing.T) {
 func TestCosignerReferenceResolvesBeforeTheShapeIsChosen(t *testing.T) {
 	ir, service := setupGeneralProvider(t)
 	publicKey, keyID := importPrepareReference(t, ir, prepareTestReference, 0x61)
-	params := generalParams(boundedaccount.RekeyRefused)
-	params[cosignerrefs.ParamCosignerName] = prepareTestReference // a cosigned account refuses rekeys
+	params := generalParams(boundedaccount.RekeyPlusCosigned)
+	params[cosignerrefs.ParamCosignerName] = prepareTestReference // plus cosigned needs the cosigner
 	prepared, err := service.PrepareGenerateKey(boundedaccount.KeyTypeV1, params)
 	if err != nil {
 		t.Fatalf("PrepareGenerateKey() error = %#v", err)
@@ -341,6 +348,24 @@ func TestRekeyListRefusesACosignerReferenceAddress(t *testing.T) {
 	}
 	if _, err := service.GenerateKey(context.Background(), boundedaccount.KeyTypeV1, params, nil); err == nil || !strings.Contains(err.Message, "a witness key never signs as an account") {
 		t.Fatalf("GenerateKey() error = %#v", err)
+	}
+	assertNoKeys(t, service)
+}
+
+// The account's own cosigner, given as a public key rather than a reference, is
+// a witness key too, so its native address can't be listed either.
+func TestRekeyListRefusesTheAccountsOwnCosignerAddress(t *testing.T) {
+	_, service := setupGeneralProvider(t)
+	publicKey := bytes.Repeat([]byte{0x62}, boundedmeta.CosignerPublicKeySizeV1)
+	_, witnessAddress, err := nativefalcon.CanonicalAddress(publicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	params := generalParams(boundedaccount.RekeyPlusCosigned)
+	params[composeddsa.BoundedCosignerPublicKeyParameter] = hex.EncodeToString(publicKey)
+	params[boundedaccount.ParameterRekeyTo] = listedTarget.String() + "," + witnessAddress.String()
+	if _, err := service.PrepareGenerateKey(boundedaccount.KeyTypeV1, params); err == nil || !strings.Contains(err.Message, "the address of this account's cosigner") {
+		t.Fatalf("PrepareGenerateKey() error = %#v", err)
 	}
 	assertNoKeys(t, service)
 }

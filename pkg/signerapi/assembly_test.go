@@ -31,6 +31,10 @@ func TestAssemblyRequestValidatesDiscriminatedTargetsAndCoverage(t *testing.T) {
 		{"guarded carries bounded material", func(r *AssemblyRequest) { r.Targets[0].AssemblyReceipt = "wrong" }, "bounded authorization material is forbidden"},
 		{"bounded carries guarded material", func(r *AssemblyRequest) { r.Targets[1].UserSignature = "wrong" }, "guarded authorization material is forbidden"},
 		{"unknown kind", func(r *AssemblyRequest) { r.Targets[0].Kind = "future" }, "kind must be"},
+		{"guarded without the cosigner", func(r *AssemblyRequest) { r.Targets[0].CosignerSignature = "" }, "cosigner_signature is required for guarded target"},
+		{"a cosigner request ID without its signature", func(r *AssemblyRequest) {
+			r.Targets[1].CosignerSignature, r.Targets[1].CosignerSourceRequestID = "", "cosigner-1"
+		}, "cosigner_source_request_id needs a cosigner_signature"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -42,6 +46,18 @@ func TestAssemblyRequestValidatesDiscriminatedTargetsAndCoverage(t *testing.T) {
 				t.Fatalf("Validate() error = %v, want %q", err, test.want)
 			}
 		})
+	}
+}
+
+// A listed rekey on a cosigned account carries no cosigner signature; whether a
+// bounded target needs one is assembly's to decide from the transaction.
+func TestAssemblyRequestLeavesTheCosignerToBoundedAssembly(t *testing.T) {
+	req := AssemblyRequest{
+		GroupBytesHex: []string{"5458aa"},
+		Targets:       []AssemblyTarget{{TargetIndex: 0, Kind: AssemblyTargetKindBoundedCosigner, AuthAddress: "BOUNDED", BaseSignatures: []string{"cc"}, AssemblyReceipt: "dd"}},
+	}
+	if err := req.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
 	}
 }
 
