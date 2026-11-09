@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/rotatingkey"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/common/models"
@@ -114,8 +115,9 @@ func TestPrepareRekey_RotatingTargetRefused(t *testing.T) {
 	if err == nil || result != nil {
 		t.Fatalf("rekey to a rotating account was prepared: result = %v, err = %v", result, err)
 	}
-	if !strings.Contains(err.Error(), "rotating account") {
-		t.Errorf("unexpected error: %v", err)
+	// apshell refuses with the signer's own reason.
+	if want := rotatingkey.RekeyTargetRefusal(target); err.Error() != want {
+		t.Errorf("error = %q, want %q", err, want)
 	}
 }
 

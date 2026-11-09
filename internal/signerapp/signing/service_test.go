@@ -1471,7 +1471,7 @@ func TestLogPolicyRejectionsSkipsPassthroughAndForeign(t *testing.T) {
 		{Header: types.Header{Sender: types.Address{3}}},
 	}
 
-	service.logPolicyRejections(req, plan, txns, "policy_engine_rejected: test")
+	service.logSignRejections(req, plan, txns, auditPolicyRejected+"test")
 	if len(audit.rejected) != 1 {
 		t.Fatalf("len(audit.rejected) = %d, want 1", len(audit.rejected))
 	}

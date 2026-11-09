@@ -4,9 +4,9 @@
 package signing
 
 import (
-	"fmt"
-
 	"github.com/algorand/go-algorand-sdk/v2/types"
+
+	"github.com/aplane-algo/aplane/internal/signerapp/policyeval"
 )
 
 // nonparticipationRefusal is why a nonparticipating keyreg is refused.
@@ -25,20 +25,20 @@ func rejectNonparticipation(txns []types.Transaction, signed []int) *ServiceErro
 			continue
 		}
 		if txn := txns[i]; txn.Type == types.KeyRegistrationTx && txn.Nonparticipation {
-			return forbidden(fmt.Sprintf("transaction %d: %s", i+1, nonparticipationRefusal))
+			return withTransactionIndex(i, forbidden(nonparticipationRefusal))
 		}
 	}
 	return nil
 }
 
-// signedPositions lists the client positions this signer signs on the signer
-// role: the first evalCount, less passthrough and foreign ones.
-func signedPositions(evalCount, groupLen int, passthroughIndices, foreignIndices map[int]bool) []int {
-	limit := min(evalCount, groupLen)
-	positions := make([]int, 0, limit)
-	for i := 0; i < limit; i++ {
-		if !passthroughIndices[i] && !foreignIndices[i] {
-			positions = append(positions, i)
+// signerPositions lists the positions clientSlots classifies as this
+// signer's signatures, so the signer invariants judge exactly the positions
+// policy judges.
+func signerPositions(slots []policyeval.Slot) []int {
+	positions := make([]int, 0, len(slots))
+	for _, slot := range slots {
+		if slot.Class == policyeval.SlotSigner {
+			positions = append(positions, slot.Index)
 		}
 	}
 	return positions

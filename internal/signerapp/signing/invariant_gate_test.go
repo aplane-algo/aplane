@@ -58,12 +58,15 @@ func TestRejectNonparticipation(t *testing.T) {
 			t.Fatalf("%s refused: %v", name, err)
 		}
 	}
-	none := map[int]bool{}
-	if got := signedPositions(3, 4, map[int]bool{1: true}, map[int]bool{2: true}); len(got) != 1 || got[0] != 0 {
-		t.Fatalf("signedPositions = %v, want [0]: passthrough, foreign and dummy positions are not signed here", got)
+	// The invariants judge exactly the positions policy judges as this
+	// signer's: not passthrough, foreign or dummy ones.
+	four := make([]types.Transaction, 4)
+	slots := clientSlots(four, 3, map[int]bool{1: true}, map[int]bool{2: true}, nil, nil, nil)
+	if got := signerPositions(slots); len(got) != 1 || got[0] != 0 {
+		t.Fatalf("signerPositions = %v, want [0]", got)
 	}
-	if got := signedPositions(2, 2, none, none); len(got) != 2 {
-		t.Fatalf("signedPositions = %v, want both positions", got)
+	if got := signerPositions(clientSlots(four[:2], 2, nil, nil, nil, nil, nil)); len(got) != 2 {
+		t.Fatalf("signerPositions = %v, want both positions", got)
 	}
 }
 
@@ -73,7 +76,9 @@ func TestRejectNonparticipation(t *testing.T) {
 func signKeyregForTest(t *testing.T, plan *PlanResult, req signerapi.GroupSignRequest) (*ServiceError, bool) {
 	t.Helper()
 	approvalCalled := false
+	audit := &testAuditLogger{}
 	service := &Service{
+		AuditLog: audit,
 		Approval: &ApprovalService{
 			UserAutoApprove:               userAutoApproveDefault(true),
 			GenerateTxnDescriptionFromTxn: func(types.Transaction) string { return "txn" },
@@ -92,6 +97,11 @@ func signKeyregForTest(t *testing.T, plan *PlanResult, req signerapi.GroupSignRe
 		PolicyFor: fixedPolicy(&policy.Config{TransactionTypes: policytest.AllowAllTypes()}),
 	}
 	_, err := service.signGroupWithPlanContext(context.Background(), req, nil, plan)
+	if err != nil && strings.Contains(err.Message, nonparticipationRefusal) {
+		if len(audit.rejected) == 0 || audit.rejected[0].reason != auditSignerInvariant+err.Message {
+			t.Fatalf("audit = %#v, want the refusal audited as %q", audit.rejected, auditSignerInvariant)
+		}
+	}
 	return err, approvalCalled
 }
 
@@ -157,7 +167,7 @@ func TestCosignerRefusesNonparticipationBeforePolicy(t *testing.T) {
 	if store.calls != 0 {
 		t.Fatalf("store calls = %d, want 0: the key loaded for a refused request", store.calls)
 	}
-	if len(audit.limited) != 1 || !strings.HasPrefix(audit.limited[0].reason, "signer_invariant: transaction 1: "+nonparticipationRefusal) {
+	if len(audit.limited) != 1 || audit.limited[0].reason != auditSignerInvariant+"transaction 1: "+nonparticipationRefusal {
 		t.Fatalf("audit = %#v, want one signer_invariant rejection", audit.limited)
 	}
 }

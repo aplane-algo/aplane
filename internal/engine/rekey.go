@@ -7,9 +7,11 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/aplane-algo/aplane/internal/engine/cosigned"
+	"github.com/aplane-algo/aplane/internal/rotatingkey"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 
 	"github.com/algorand/go-algorand-sdk/v2/transaction"
@@ -49,8 +51,7 @@ func (e *Engine) PrepareRekey(ctx context.Context, params RekeyParams) (*Transac
 	if !checkResult.IsUnrekey {
 		switch flow := e.signerCacheSigningFlow(params.To); {
 		case flow == signerapi.SigningFlowRotating1:
-			return nil, checkResult, fmt.Errorf("cannot rekey to %s: it is a rotating account, and its address is a one-time stage key; an account rekeyed to it would be stuck on that stage, and every signature would reuse that key",
-				params.To)
+			return nil, checkResult, errors.New(rotatingkey.RekeyTargetRefusal(params.To))
 		case !cosigned.CanAuthorizeOtherAccounts(flow):
 			return nil, checkResult, fmt.Errorf("cannot rekey to %s: it uses signing flow %q, which this client cannot use as another account's authorizer",
 				params.To, flow)

@@ -11,6 +11,14 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
+// Audit reason prefixes for a refused sign. A signer invariant is audited
+// the same way on both node roles.
+const (
+	auditSignerInvariant        = "signer_invariant: "
+	auditPolicyRejected         = "policy_engine_rejected: "
+	auditCosignerPolicyRejected = "cosigner_policy_rejected: "
+)
+
 // gateInput carries the facts the shared approval gate sequence needs. It is
 // deliberately independent of the /sign request and plan shapes so ordinary
 // group signing and cosigned user-component signing evaluate the same gates
@@ -41,7 +49,9 @@ type gateInput struct {
 	// Plan is what Always Approve reads from the planner. Nil means the
 	// surface has no auto-approval path.
 	Plan *policyeval.PlanFacts
-	// LogRejection records per-position audit events for a policy rejection.
+	// LogRejection records per-position audit events for a rejection. The
+	// reason carries its audit prefix (auditSignerInvariant,
+	// auditPolicyRejected).
 	LogRejection func(reason string)
 	// RequestOperatorApproval blocks on the surface's operator approval prompt.
 	// forceReviewRuleID is non-empty when an always-review rule matched.
@@ -56,21 +66,23 @@ type gateInput struct {
 // matched).
 func (s *Service) runApprovalGates(ctx context.Context, in gateInput, console Console) (string, *ServiceError) {
 	console = consoleOf(console)
-	err := s.rejectRekeyToRotating(in.AllTxns, in.EvalCount, in.PassthroughIndices, in.ForeignIndices)
+	slots := clientSlots(in.AllTxns, in.EvalCount, in.PassthroughIndices, in.ForeignIndices, s.policyFor, in.AuthKeys, in.ListedRekeyTargets)
+	signed := signerPositions(slots)
+	err := s.rejectRekeyToRotating(in.AllTxns, signed)
 	if err == nil {
-		err = rejectNonparticipation(in.AllTxns, signedPositions(in.EvalCount, len(in.AllTxns), in.PassthroughIndices, in.ForeignIndices))
+		err = rejectNonparticipation(in.AllTxns, signed)
 	}
 	if err != nil {
 		console.Printf("[SIGNER] Rejected: %s\n", err.Message)
 		console.Sync()
 		if in.LogRejection != nil {
-			in.LogRejection(err.Error())
+			in.LogRejection(auditSignerInvariant + err.Message)
 		}
 		return "", err
 	}
 	verdict, evalErr := policyeval.Evaluate(policyeval.Input{
 		Group:                in.AllTxns,
-		Slots:                clientSlots(in.AllTxns, in.EvalCount, in.PassthroughIndices, in.ForeignIndices, s.policyFor, in.AuthKeys, in.ListedRekeyTargets),
+		Slots:                slots,
 		KnownAddresses:       in.KnownAddresses,
 		ProtocolRekeyTargets: in.ProtocolRekeyTargets,
 		ForcedReviewRuleID:   in.ForcedReviewRuleID,
@@ -86,7 +98,7 @@ func (s *Service) runApprovalGates(ctx context.Context, in gateInput, console Co
 	}
 	if err := rejection; err != nil {
 		if in.LogRejection != nil {
-			in.LogRejection(err.Error())
+			in.LogRejection(auditPolicyRejected + err.Message)
 		}
 		return "", err
 	}

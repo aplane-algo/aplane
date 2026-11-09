@@ -59,7 +59,7 @@ func (s *Service) rejectCosignerComponentPolicy(plan *ComponentSignPlan, violati
 	if reason == "" {
 		reason = "cosigner policy rejected request"
 	}
-	s.logCosignerRejections(plan, "cosigner_policy_rejected: "+reason, firstPolicyRuleID(violations))
+	s.logCosignerRejections(plan, auditCosignerPolicyRejected+reason, firstPolicyRuleID(violations))
 	return forbidden("cosigner policy rejected request: " + reason)
 }
 
@@ -71,7 +71,8 @@ func firstPolicyRuleID(violations []policy.LintViolation) string {
 }
 
 // logCosignerRejections records a refused cosigner request for every target;
-// reason carries its own prefix (cosigner_policy_rejected, signer_invariant).
+// reason carries its own prefix (auditCosignerPolicyRejected,
+// auditSignerInvariant).
 func (s *Service) logCosignerRejections(plan *ComponentSignPlan, reason, policyRuleID string) {
 	rejectLogger, ok := s.AuditLog.(policyAuditLogger)
 	if !ok || rejectLogger == nil || plan == nil {

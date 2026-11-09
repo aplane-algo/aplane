@@ -140,7 +140,7 @@ func (s *Service) signComponentWithSession(ctx context.Context, req componentPla
 		// The signer invariant comes before the cosigner's policy, so no
 		// policy can allow what it refuses.
 		if err := rejectNonparticipation(componentPlanTxns(plan), componentTargetPositions(plan)); err != nil {
-			s.logCosignerRejections(plan, "signer_invariant: "+err.Message, "")
+			s.logCosignerRejections(plan, auditSignerInvariant+err.Message, "")
 			return nil, err
 		}
 		if err := s.evaluateCosignerComponentPolicy(plan); err != nil {
@@ -276,7 +276,7 @@ func (s *Service) approveGroupWithPlanContext(ctx context.Context, req signerapi
 		}(),
 		Plan: planFacts(req, plan),
 		LogRejection: func(reason string) {
-			s.logPolicyRejections(req, plan, txns, reason)
+			s.logSignRejections(req, plan, txns, reason)
 		},
 		RequestOperatorApproval: func(ctx context.Context, forceReviewRuleID string) *ServiceError {
 			// A rotating spend is one request, but its prompt must carry the
@@ -405,7 +405,9 @@ func (s *Service) logSuccessfulSignatures(req signerapi.GroupSignRequest, plan *
 	}
 }
 
-func (s *Service) logPolicyRejections(req signerapi.GroupSignRequest, plan *PlanResult, txns []types.Transaction, reason string) {
+// logSignRejections audits a refused sign at each position this signer would
+// have signed. reason carries its own audit prefix.
+func (s *Service) logSignRejections(req signerapi.GroupSignRequest, plan *PlanResult, txns []types.Transaction, reason string) {
 	rejectLogger, ok := s.AuditLog.(policyAuditLogger)
 	if !ok || rejectLogger == nil {
 		return
@@ -415,6 +417,6 @@ func (s *Service) logPolicyRejections(req signerapi.GroupSignRequest, plan *Plan
 		if plan.PassthroughIndices[i] || plan.ForeignIndices[i] {
 			continue
 		}
-		rejectLogger.LogSignRejected(txReq.AuthAddress, txns[i].Sender.String(), "policy_engine_rejected: "+reason)
+		rejectLogger.LogSignRejected(txReq.AuthAddress, txns[i].Sender.String(), reason)
 	}
 }
