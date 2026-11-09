@@ -455,6 +455,7 @@ func decodeNotification(notification transport.Notification) (decodedNotificatio
 		if err := json.Unmarshal(notification.Raw, &req); err != nil {
 			return decodedNotification{}, true, fmt.Errorf("malformed sign request: %w", err)
 		}
+		req = req.TerminalSafe()
 		return decodedNotification{
 			request: &approvalRequest{
 				kind:        approvalKindSign,

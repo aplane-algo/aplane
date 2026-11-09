@@ -40,3 +40,19 @@ func TestDisplay(t *testing.T) {
 		t.Fatalf("Display() without a unit name = %q", got)
 	}
 }
+
+func TestPrintableReplacesControlAndFormatCharacters(t *testing.T) {
+	for in, want := range map[string]string{
+		"USDC":            "USDC",
+		"Ünï ☃":           "Ünï ☃",
+		"A\x1b[2JB":       "A?[2JB",
+		"A\nB\rC":         "A?B?C",
+		"CDSU\u202e":      "CDSU?",
+		"zero\u200bwidth": "zero?width",
+		"bad\xff":         "bad�",
+	} {
+		if got := Printable(in); got != want {
+			t.Errorf("Printable(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

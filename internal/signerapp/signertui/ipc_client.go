@@ -523,6 +523,7 @@ var signerMessageDecoders = map[string]func(raw []byte) (tea.Msg, error){
 		}
 	}),
 	MsgTypeSignRequest: decodeAs(func(req SignRequestMessage) tea.Msg {
+		req = req.TerminalSafe()
 		return SignRequestReceivedMsg{
 			Request: PendingSignRequest{
 				ID:          req.ID,

@@ -16,6 +16,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/asaset"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/policycontext"
+	"github.com/aplane-algo/aplane/internal/termsafe"
 )
 
 type transactionDescriber func(txn types.Transaction, chain chainView) string
@@ -94,10 +95,10 @@ func describeAssetConfigTx(txn types.Transaction, chain chainView) string {
 		desc.WriteString("Asset Creation")
 		desc.WriteString(fmt.Sprintf("\n  From: %s", txn.Sender.String()))
 		if txn.AssetParams.AssetName != "" {
-			desc.WriteString(fmt.Sprintf("\n  Name: %s", txn.AssetParams.AssetName))
+			desc.WriteString(fmt.Sprintf("\n  Name: %s", termsafe.Line(txn.AssetParams.AssetName)))
 		}
 		if txn.AssetParams.UnitName != "" {
-			desc.WriteString(fmt.Sprintf("\n  Unit: %s", txn.AssetParams.UnitName))
+			desc.WriteString(fmt.Sprintf("\n  Unit: %s", termsafe.Line(txn.AssetParams.UnitName)))
 		}
 		desc.WriteString(fmt.Sprintf("\n  Total: %d", txn.AssetParams.Total))
 		desc.WriteString(fmt.Sprintf("\n  Decimals: %d", txn.AssetParams.Decimals))
@@ -107,7 +108,7 @@ func describeAssetConfigTx(txn types.Transaction, chain chainView) string {
 		desc.WriteString(fmt.Sprintf("\n  Freeze: %s", formatAuthorityAddress(txn.AssetParams.Freeze)))
 		desc.WriteString(fmt.Sprintf("\n  Clawback: %s", formatAuthorityAddress(txn.AssetParams.Clawback)))
 		if txn.AssetParams.URL != "" {
-			desc.WriteString(fmt.Sprintf("\n  URL: %s", txn.AssetParams.URL))
+			desc.WriteString(fmt.Sprintf("\n  URL: %s", termsafe.Line(txn.AssetParams.URL)))
 		}
 		if !isZeroMetadataHash(txn.AssetParams.MetadataHash) {
 			desc.WriteString(fmt.Sprintf("\n  Metadata Hash: %s", hex.EncodeToString(txn.AssetParams.MetadataHash[:])))
@@ -258,7 +259,7 @@ func describeKeyRegistrationTx(txn types.Transaction, chain chainView) string {
 
 func describeUnknownTx(txn types.Transaction, chain chainView) string {
 	var desc strings.Builder
-	desc.WriteString(fmt.Sprintf("Transaction Type: %s", txn.Type))
+	desc.WriteString(fmt.Sprintf("Transaction Type: %s", termsafe.Line(string(txn.Type))))
 	desc.WriteString(fmt.Sprintf("\n  From: %s", txn.Sender.String()))
 	return desc.String()
 }
@@ -268,10 +269,10 @@ func appendCommonFields(desc *strings.Builder, txn types.Transaction, chain chai
 	fmt.Fprintf(desc, "\n  Fee: %s ALGO", asaset.FormatFixed(uint64(txn.Fee), 6))
 
 	if chain.network != "" {
-		fmt.Fprintf(desc, "\n  Network: %s", chain.network)
+		fmt.Fprintf(desc, "\n  Network: %s", termsafe.Line(chain.network))
 	}
 	if txn.GenesisID != "" {
-		fmt.Fprintf(desc, "\n  GenesisID: %s", txn.GenesisID)
+		fmt.Fprintf(desc, "\n  GenesisID: %s", termsafe.Line(txn.GenesisID))
 	}
 
 	if len(txn.Note) > 0 {
