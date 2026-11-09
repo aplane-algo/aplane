@@ -7,6 +7,16 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## An alias can't redirect an address
+
+- An address always resolves as itself. Before, an alias named like a real address took
+  precedence over it, so `addAlias('<treasury>', '<other>')` from a script or an agent
+  redirected every later send, close, rekey or app call to `<treasury>`.
+- apshell's `alias` command and JS `addAlias()` refuse a name that is itself an
+  Algorand address, in either case.
+- An address-named alias already in the client cache is ignored, with a warning naming
+  the address it pointed to, when the cache loads, and the next save drops it.
+
 ## Bounds are an overlay of the plain hosts
 
 This release is install-fresh only.
