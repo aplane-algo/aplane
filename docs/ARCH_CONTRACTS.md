@@ -34,7 +34,7 @@
 | Audit log | [ARCH_SECURITY.md](ARCH_SECURITY.md#audit-logger) |
 | Cosigner component message and canonicalization, cosigner key file, public key reference library | [ARCH_COSIGNED.md](ARCH_COSIGNED.md) |
 | `bounded2` authorization, path declaration, canonical encodings, rekey-to list tree (`rekey_list1`), and inventory | [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md) |
-| General bounded key type (`aplane.falcon1024-b.v1`): boundary file (`aplane.boundary.v1`), account receipt (`aplane.boundary-receipt.v1`), boundary digest | [ARCH_KEYTYPES.md](ARCH_KEYTYPES.md#the-general-bounded-key-type), [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md#general-boundary-digest); source `internal/boundary` |
+| Plain host bounds and overlays (`aplane.falcon1024.v1`, `aplane.ed25519.v1`): boundary file (`aplane.boundary.v1`), account receipt (`aplane.boundary-receipt.v1`), boundary digest | [ARCH_KEYTYPES.md](ARCH_KEYTYPES.md#the-bounds), [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md#host-boundary-digest); source `internal/boundary`, `lsig/plainhost` |
 | Rotating key types: frozen sizes, stage programs, derivation | [KEYTYPE_ROTATING_TRIPLE_HYBRID.md](KEYTYPE_ROTATING_TRIPLE_HYBRID.md), [ARCH_CRYPTO.md](ARCH_CRYPTO.md#rotating-slh-dsa-triple), [ARCH_SIGNING.md](ARCH_SIGNING.md#rotating-accounts-rotating1) for the `rotating1` flow; source `internal/rotatingkey/rotatingkey.go`, `lsig/rotatingfamily/` |
 | Key type identifiers | [ARCH_KEYTYPES.md](ARCH_KEYTYPES.md#key-type-identifier-contract) |
 | Network context tokens and genesis hashes | [ARCH_NETWORKS.md](ARCH_NETWORKS.md) |

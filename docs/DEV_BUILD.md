@@ -60,7 +60,7 @@ aplane/
 ├── lsig/
 │   ├── falcon1024/           # Falcon-1024 DSA provider
 │   ├── ed25519lsig/          # Ed25519 LogicSig DSA provider
-│   ├── plainhost/            # Plain host: plain LogicSig types with optional overlays
+│   ├── plainhost/            # Plain host: plain LogicSig types with optional overlays and bounds
 │   ├── generictemplate/      # YAML-backed generic LogicSig providers
 │   └── composeddsa/          # DSA + TEAL-suffix composition helpers
 ├── library/templates/        # KeyType Library YAML sources

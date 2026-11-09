@@ -1732,7 +1732,7 @@ warning does not establish that no leaf was reused.
   this key's `signing_flow` (for `cosigned1`)
 - optional `bounded_authorization`: present for `signing_flow: bounded1` and
   `cosigned1`.
-  It contains `contract` (`bounded2`, or `plain1` for a plain host),
+  It contains `contract` (`bounded2`, or `plain1` for a plain host account without bounds),
   `base_signature_arg_layout`, `spend_effects` (empty on `plain1`), `max_fee`
   (present on `bounded2`, absent on `plain1`, which has no fee ceiling; clients
   must not read a missing value as zero), `rekey` (`refused` or `spending_key`),
@@ -1850,10 +1850,9 @@ accounts by `/keys`. Its optional cosigner stays a plain optional parameter: a
 reference never turns into a required selector with a default.
 
 `boundary_schema` names the boundary file grammar a per-key type's requests take:
-`aplane.boundary.v1` on the general bounded type. It is absent on a type whose
-requests no grammar describes, such as a plain host, whose few parameters are given
-directly. Clients offer boundary presets and boundary files only when it names a
-grammar they know, never from `per_key_contract` alone.
+`aplane.boundary.v1` on both plain hosts. It is absent on a type whose requests no
+grammar describes. Clients offer boundary presets and boundary files only when it
+names a grammar they know, never from `per_key_contract` alone.
 
 `/keytypes` is a metadata contract. It describes enabled key types and their
 creation/runtime argument shapes for new key generation. The
@@ -1866,9 +1865,11 @@ has populated signer-side signing, keygen, mnemonic, or key-processor registries
 Client/signer provider-boundary refactors must preserve this schema and field
 meaning.
 
-The plain Falcon and Ed25519 LogicSig types are plain hosts: library-visible,
-listed in `/keytypes` once enabled, as per-key types (`per_key_contract`) with no
-`boundary_schema`. The advertised LogicSig types report `mnemonic_import: false`.
+The plain Falcon and Ed25519 LogicSig types are plain hosts, listed in `/keytypes`
+as per-key types (`per_key_contract`) with `boundary_schema` `aplane.boundary.v1`:
+`aplane.falcon1024.v1` on every signer node, since it is default-enabled, and
+`aplane.ed25519.v1` once enabled. The advertised LogicSig types report
+`mnemonic_import: false`.
 See [plain hosts](ARCH_KEYTYPES.md#plain-hosts).
 
 The `family` field carries the middle segment of the canonical

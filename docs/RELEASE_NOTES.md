@@ -7,6 +7,53 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## Bounds are an overlay of the plain hosts
+
+This release is install-fresh only.
+
+- The general bounded key type `aplane.falcon1024-b.v1` is gone, with `lsig/boundedaccount`.
+  Its bounds (transfer kinds, a recipient list, a timelock, or limits only, under the
+  10,000 microAlgo fee ceiling) are now an overlay of the plain hosts
+  `aplane.falcon1024.v1` and `aplane.ed25519.v1`, beside the cosigner and the rekey-to
+  list. A request with any bounds parameter (`spend_effects`, `recipients`,
+  `recipient_scope`, `unlock_round`, `list_encoding`) is a `bounded2` account; with
+  overlay parameters only it is `plain1`; with none, the plain program. The contracts,
+  the durable record, the wire and the signing paths are unchanged.
+- The grammar is every combination the contracts allow: 294 `bounded2` shapes per base
+  (six policies, seven overlay arrangements, seven transfer subsets) beside the seven
+  `plain1` arrangements. The general type's grammar limits are lifted: a refused rekey, a
+  timelock with a spending-key or plus-cosigned rekey, and a refused account that can't
+  send what it holds are accounts like any other. `plus_cosigned` still needs a
+  cosigner.
+- Ed25519 takes every bound and overlay, `bounded2` with a cosigner included: generation
+  admission, the template rules and the signer's completed workflows admit it, as phase 5
+  did for `plain1`. Its spending key is classical, which the review says. Template
+  validation now asks the generation support policy whether a base takes a cosigner,
+  instead of naming the Falcon base.
+- `aplane.falcon1024.v1` is enabled by default, as the general type was, so it is no
+  longer in the KeyType Library and can't be enabled or disabled there; `apadmin keytype
+  enable aplane.falcon1024.v1` reports that it is not library-visible. `aplane.ed25519.v1`
+  stays opt-in. `require_contained` and `require_cosigner` restrict new plain host
+  accounts.
+- Both plain hosts report `boundary_schema` `aplane.boundary.v1`. One grammar fingerprint
+  per base covers every arrangement and shape, and the boundary digest is
+  `APLANE_HOST_BOUNDARY_V1` under schema `aplane.boundary.v1`; the plain host's own
+  `aplane.plain-host.v1` name is gone. Empty request values are unset on every request,
+  bounded ones included.
+- Boundary files apply to the plain type they are used with (`generate
+  aplane.falcon1024.v1 --boundary rules.yaml`, apadmin's Load boundary file). A file may
+  leave out `spend`: it then describes an overlays-only `plain1` account and can't name
+  recipients, a scope, an encoding or an unlock round, and apshell's summary says it has
+  no bounds. `rekey: {authority: refused}` is accepted.
+- apadmin's Generate on a plain type opens the preset screen: **No bounds**, the presets,
+  **Custom bounds** (every bounds field in the overlay form, without a file) and **Load
+  boundary file**. It lists titles, with the selected row's description, so every row
+  fits 80x24. A bounded form's rekey control offers "No, never" too. The Corridor v1
+  profile is the Corridor preset of `aplane.falcon1024.v1`.
+- The O4 agreement harness runs every shape of both bases and every arrangement (about
+  600 programs) against its corpus. The general type's names are on `test/arch`'s
+  retired list.
+
 ## Choosing overlays
 
 This release is install-fresh only.

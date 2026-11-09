@@ -41,7 +41,7 @@ conflicts or absence may warn in inventory but do not by themselves invalidate
 a current-format key.
 
 `bounded2` is the framework-enforced execution contract of every schema-v2
-composed DSA template and every `aplane.falcon1024-b.v1` shape. Read
+composed DSA template and of every bounded shape of the plain hosts. Read
 [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md) before changing schema-v2 composed
 templates, transaction-effect classification, argument slots, or the `bounded1` /
 `cosigned1` signing flows.
@@ -130,8 +130,8 @@ validation; republish such a template with `derivation_version: 3`. Provider-own
 bare DSA versions use compiler auto-salting. Assignments are: omitted
 `derivation_version` means unsalted, and explicit `derivation_version: 3` means
 compiler-owned TEAL v13 auto-salting.
-The bundled `aplane.falcon1024.v1` and `aplane.ed25519.v1` (plain programs and
-plain hosts) and the general bounded type all use the compiler-owned mode. User template TEAL cannot choose salt style, must remain relocatable,
+The bundled `aplane.falcon1024.v1` and `aplane.ed25519.v1` (plain programs, and
+every overlay and bounded program of the plain hosts) all use the compiler-owned mode. User template TEAL cannot choose salt style, must remain relocatable,
 and must not depend on absolute constant-block layout or numeric `bytec`/`intc`
 indexes.
 
@@ -205,19 +205,19 @@ Go-defined key types:
 |---|---|---|---|---|
 | `ed25519` | Native signing key | Go-defined | default-enabled | `internal/signing/ed25519`, `internal/keygen/ed25519.go` |
 | `falcon1024` | Protocol-native PQ signing key | Go-defined | default-enabled on signer nodes | `internal/signing/falcon1024` |
-| `aplane.falcon1024-b.v1` | General bounded account, one of 147 shapes selected per key | Go-defined | default-enabled on signer nodes | `lsig/boundedaccount`, `internal/boundary` |
-| `aplane.falcon1024.v1` | Plain host: the plain Falcon program, or `plain1` with overlays | Go-defined | library-visible | `lsig/falcon1024/v1/standard.go`, `lsig/plainhost` |
+| `aplane.falcon1024.v1` | Plain host: the plain Falcon program, `plain1` with overlays, or one of 294 `bounded2` shapes with bounds, selected per key | Go-defined | default-enabled on signer nodes | `lsig/falcon1024/v1/standard.go`, `lsig/plainhost`, `internal/boundary` |
 | `aplane.witness-falcon1024.v1` | Witness key held by a cosigner | Go-defined | default-enabled on cosigner nodes | `internal/witness`, `lsig/falcon1024/keygen/witness.go` |
-| `aplane.ed25519.v1` | Plain host on Ed25519 | Go-defined | library-visible | `lsig/ed25519lsig`, `lsig/plainhost` |
+| `aplane.ed25519.v1` | Plain host on Ed25519, with the same grammar | Go-defined | library-visible | `lsig/ed25519lsig`, `lsig/plainhost`, `internal/boundary` |
 
 Compiled key types can be registered as binary capabilities without being
 default-visible for generation. Visibility is recorded in
 `internal/keytypecatalog`: only the protocol-native `ed25519` and `falcon1024`
-and the general bounded `aplane.falcon1024-b.v1` (signer nodes) and the witness key type `aplane.witness-falcon1024.v1`
+and the Falcon plain host `aplane.falcon1024.v1` (signer nodes) and the witness key type `aplane.witness-falcon1024.v1`
 (cosigner nodes) are default-enabled. The plain `aplane.falcon1024.v1` and
-`aplane.ed25519.v1` providers are plain hosts, library-visible and enabled per
-node; with no parameters they are the composition base and the plain program,
-and with a rekey setting they render `plain1`. No LogicSig type takes mnemonic
+`aplane.ed25519.v1` providers are plain hosts, and `aplane.ed25519.v1` is
+library-visible and enabled per node. With no parameters they are the
+composition base and the plain program, with overlay parameters only they render
+`plain1`, and with any bounds parameter a `bounded2` shape. No LogicSig type takes mnemonic
 import. See [plain hosts](ARCH_KEYTYPES.md#plain-hosts).
 
 Product-store enablement records affect creation, not existing-key signing. The current
@@ -267,8 +267,8 @@ Bundled YAML templates, if installed:
 |---|---|---|---|
 | `aplane.htlc.v1` | Generic LogicSig template | `apadmin template import library/templates/aplane.htlc.v1.yaml` | selected generation `keytypes/aplane.htlc.v1.{json,template}` |
 
-`aplane.htlc.v1` is the only bundled template. Allowlist and timelock accounts use a
-preset of `aplane.falcon1024-b.v1`. Composed-template tests use inline fixtures, such
+`aplane.htlc.v1` is the only bundled template. Allowlist and timelock accounts use the
+bounds of a plain host. Composed-template tests use inline fixtures, such
 as those in `lsig/composeddsa/bounded_fixtures_test.go`.
 
 These template files are install sources, not product built-ins. They do not
@@ -406,7 +406,7 @@ Characteristics:
 - Layer 3 is a framework policy with no TEAL, an author TEAL suffix that creation
   params feed, or a framework allowlist followed by author TEAL
 - declared in YAML; every composed policy is a template spec, including each
-  `aplane.falcon1024-b.v1` shape, which is built in Go
+  bounded shape of the plain hosts, which is built in Go
 
 Typical code areas:
 - `lsig/composeddsa/`
@@ -665,7 +665,7 @@ signing.
    the construction's components, so a witness key reused as one component is refused.
 5. **Wiring.** Add the family to `lsig/clientreg/register.go` and `lsig/signerreg/`.
 6. **Compatibility token.** Add a row to `fingerprintBasePrimitives` in
-   `internal/lsigprovider/fingerprint.go`. The tokens feed fingerprints and the general
+   `internal/lsigprovider/fingerprint.go`. The tokens feed fingerprints and the host
    boundary digest, so never rename one.
 7. **Workflow support.** Add a `boundedSupportPolicy` entry in
    `lsig/composeddsa/bounded_support.go`. Grant only what you've reviewed: a registered base
@@ -684,26 +684,27 @@ Before a construction is real, tests can compose it without touching production:
 `lsig/composeddsa/export_test.go` composes on a base that's never registered, and
 `TestCompositeLogicSigsExecuteLocalnet` runs fixtures on a real AVM.
 
-### Adding a general bounded definition
+### Adding a plain host
 
-`boundedaccount.Definition` is a compiled general bounded key type: `Publisher`, `Family`,
-and `Version` set its identity, `BaseKeyType` names its spending construction,
-`DisplayName` and `Description` are its labels, and `Shapes` lists what it offers.
-`newProvider` builds every shape and fails if one can't be built, so the grammar never
-offers a shape that errors on first use.
+`plainhost.Wrap(plain, base)` makes a family's plain provider a host. It builds the seven
+`plain1` arrangements and every `bounded2` shape `Shapes()` lists over the base's signature
+operations and salt style (`plainhost.Base`), under the plain key type's identity, and
+fails if one can't be built, so the grammar never offers a program that errors on first
+use. Each family wraps its own plain provider when it registers, with `plainhost.MustWrap`
+(`lsig/falcon1024/register.go`, `lsig/ed25519lsig/register.go`).
 
 Listing a shape grants nothing. A shape can build and still be refused at generation,
 because the support policy decides. Don't put a support check in provider construction:
 inventory and durable load reach it, and `ARCH_BOUNDED_DSA.md` explains why that sends
 stores to recovery.
 
-`RegisterClient` in `lsig/boundedaccount/register.go` registers only the production
-definition and its Falcon base, so a second type needs its own registration there. It then
-reaches clients through `per_key_contract` and `boundary_schema` with no client code. First
-check `TestEveryBoundaryProviderSupportsTheBoundaryWorkflow`, which requires every type that
-declares a `boundary_schema` to resolve every preset; a per-key type without one, such as a
-plain host, is checked apart. A definition without the `only_these` or cosigner shapes fails it, and the
-fix is narrower discovery and client routing, not an exclusion from the test.
+A wrapped type reaches clients through `per_key_contract` and `boundary_schema` with no
+client code. First check `TestEveryBoundaryProviderSupportsTheBoundaryWorkflow`, which
+requires every type that declares a `boundary_schema` to resolve every preset. A host
+that can't resolve one fails it, and the fix is narrower discovery and client routing,
+not an exclusion from the test. New shapes go after the existing ones in `Shapes()`, and a
+change to what a program renders needs a revision in `lsig/plainhost/fingerprint.go`:
+`TestBoundsFingerprintGoldens` and `TestPlainHostGrammarGoldens` say which.
 
 ## Provider Interfaces
 
@@ -718,7 +719,7 @@ Summary:
 - `SigningProvider` — extends LSigProvider with signature metadata and `DeriveLsig`
 - `AlgodConfigurable` — implemented by any provider that needs runtime TEAL compilation
 - `InstanceResolver` — implemented by a provider whose contract varies by key (the
-  general bounded type and the plain hosts)
+  plain hosts)
 
 Generic LogicSig templates implement `genericlsig.Template` (which extends
 `LSigProvider` with `GenerateTEAL` and `Compile`).

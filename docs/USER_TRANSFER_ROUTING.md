@@ -1017,8 +1017,8 @@ Cosigner route and document `limits` accept only `reject_above`, and
 `transaction_types` may allow only `pay` and `axfer`. A cosigner key with no
 file follows the default and so rejects every request.
 
-A cosigned plain host (`aplane.falcon1024.v1` or `aplane.ed25519.v1` with a
-cosigner) has no fee ceiling, and its program admits any transaction type,
+A cosigned plain host account without bounds (`aplane.falcon1024.v1` or
+`aplane.ed25519.v1` with a cosigner and no bounds parameter) has no fee ceiling, and its program admits any transaction type,
 closes included, so its cosigner's document is the only check on its spends
 besides the spending key. That document still allows only `pay` and `axfer`, so
 the account's other transaction types are never cosigned. Keep

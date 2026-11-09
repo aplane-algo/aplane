@@ -349,8 +349,9 @@ Durable signing metadata includes:
 - `base_key_type` for composed DSA keys,
 - stored signing-argument schema in JSON field `signing_args`,
 - optional `bounded_authorization` for bounded (`bounded2`) DSA keys (metadata version 2),
-- optional `template_fingerprint`, which for `aplane.falcon1024-b.v1` is the selected
-  shape's fingerprint rather than the type-wide grammar fingerprint,
+- optional `template_fingerprint`, which for a plain host account with overlays or
+  bounds is the selected arrangement's or shape's fingerprint rather than the
+  type-wide grammar fingerprint,
 - `pq_scheme` and `pq_address_salt` for native PQ keys,
 - `lsig_opcode_profile` and `teal_source` where applicable,
 - `genesis_hash` for rotating keys,
@@ -368,7 +369,7 @@ plain host (`plain1`) or a bounded host (`bounded2`). They are not accepted by
 52-character txid-shaped Witness Key ID and are not Algorand spending accounts.
 
 Bounded keys with durable `bounded_authorization.cosigner` use the distinct
-`cosigned1` flow, for example a Corridor `aplane.falcon1024-b.v1` account. Their
+`cosigned1` flow, for example a Corridor `aplane.falcon1024.v1` account. Their
 spends and rekeys use `/plan`, kind-tagged `/sign/component`, and
 `/sign/assemble`; a listed rekey skips the cosigner component.
 
@@ -436,10 +437,10 @@ inventory layer (`internal/signerapp/rest`). `internal/keytypecatalog` holds
 visibility metadata, not the assembled list.
 
 Default-enabled compiled providers are the protocol-native signer account
-providers (`ed25519` and `falcon1024`) and the witness provider
-(`aplane.witness-falcon1024.v1`). The plain Falcon and Ed25519 LogicSig types
-(plain hosts) and the other selectable compiled LogicSig providers are
-library-visible. Node role gates determine which default-enabled key classes may be generated or served by a
+providers (`ed25519` and `falcon1024`), the Falcon plain host
+(`aplane.falcon1024.v1`) on signer nodes, and the witness provider
+(`aplane.witness-falcon1024.v1`). The Ed25519 plain host (`aplane.ed25519.v1`)
+and the other selectable compiled LogicSig providers are library-visible. Node role gates determine which default-enabled key classes may be generated or served by a
 store. Optional compiled providers and YAML templates become available only
 after product-store enablement or installation.
 
@@ -708,7 +709,7 @@ are rejected.
   ceiling, not the feasibility of every assembled group.
   For cosigned signing, clients route on `signing_flows`, and take a cosigned
   account's fee ceiling from `bounded_max_fees` only when its cached
-  `bounded_contracts` entry is `bounded2`; a plain host (`plain1`) has none, and
+  `bounded_contracts` entry is `bounded2`; a `plain1` account has none, and
   a missing or unknown contract fails closed until `/keys` is refreshed.
 - persisted alias and set names are canonicalized to lowercase by
   `internal/refname`; both allow only ASCII letters, digits, `-`, and `_`;
@@ -1280,7 +1281,7 @@ and [ARCH_ADMIN.md](ARCH_ADMIN.md#admin-protocol-contract).
 | Rotating account key | signing authority | `.key` category `rotating_lsig` | address, rotating stage material, stage table | `internal/keys`, `internal/signerapp/signing`, `lsig/*` | Inventory uses `signing_flow: rotating1`; served only by `/sign/rotating/prepare` and `/sign/rotating/sign`; ordinary signing endpoints refuse with `rotating_signing_required`. |
 | DSA LogicSig key | signing authority | `.key` category `dsa_lsig` | address, bytecode, private signing key, signing args | `internal/keys`, `internal/signerapp/signing`, `lsig/*` | Stored bytecode and `signing_args` are sign-time authority. |
 | Generic LogicSig key | signing authority | `.key` category `generic_lsig` | address, bytecode, runtime arg schema | `internal/keys`, `lsig/generictemplate` | TEAL-only key stores no private signing key; address derives from bytecode. |
-| Cosigned account key | signing/assembly authority | `.key` category `dsa_lsig`, bounded metadata with `cosigner` (a plain host such as `aplane.falcon1024.v1`, or a bounded host such as a Corridor `aplane.falcon1024-b.v1` account) | local base key, bytecode, bounded metadata, embedded cosigner public key | `lsig/composeddsa`, `internal/boundedmeta`, `internal/signerapp/signing` | `/sign` rejects every transaction of the account; inventory uses `signing_flow: cosigned1`; bounded component and assembly endpoints consume stored metadata. |
+| Cosigned account key | signing/assembly authority | `.key` category `dsa_lsig`, bounded metadata with `cosigner` (a `plain1` account of a plain host such as `aplane.falcon1024.v1`, or a `bounded2` one such as a Corridor `aplane.falcon1024.v1` account) | local base key, bytecode, bounded metadata, embedded cosigner public key | `lsig/composeddsa`, `internal/boundedmeta`, `internal/signerapp/signing` | `/sign` rejects every transaction of the account; inventory uses `signing_flow: cosigned1`; bounded component and assembly endpoints consume stored metadata. |
 | Bounded account key metadata | signing authority metadata | key payload `bounded_authorization` at `signing_metadata_version: 2` | inventory `bounded_authorization` / path sizing | `internal/boundedmeta`, `lsig/composeddsa`, `internal/keys`, `internal/signerapp/signing` | Required for bounded (`bounded2`) and plain host (`plain1`) DSA keys; `max_fee` is present on `bounded2` and absent on `plain1`. |
 | Cosigner witness key | component-sign authority | `.cos` category `witness`, key type `aplane.witness-*` | raw cosigner-role witness key | `internal/keygen`, `internal/signing`, `internal/signerapp/signing` | Selected by Witness Key ID; `/sign` rejects; cosigner-role `/sign/component` only; not a spending account. |
 | Witness Key ID | public selector | 52-character uppercase base32 SHA-512/256 of canonical length-prefixed domain, key type, and public key bytes | cosigner key row `address`, public reference `witness_key_id`, and cosigner `component_key` fields | `internal/witness` | Txid-shaped but not a valid Algorand address; rejected where an Algorand address is required. |

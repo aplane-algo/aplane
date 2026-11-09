@@ -31,9 +31,10 @@ mnemonic recovery to new designs. Internal seed derivation is separate and
 remains supported.
 
 The plain Falcon and Ed25519 LogicSig providers are plain hosts (`lsig/plainhost`):
-the composition base every bounded account names, and, once enabled, accounts
-of their own, with or without overlays. Keep their no-parameter program
-byte-identical: it is the base and the program of restored plain keys.
+the composition base every composed account names, and accounts of their own,
+with or without overlays and bounds (`aplane.ed25519.v1` once enabled). Keep their
+no-parameter program byte-identical: it is the base and the program of restored
+plain keys.
 See [plain hosts](ARCH_KEYTYPES.md#plain-hosts).
 
 ## Signature Constructions
@@ -55,9 +56,9 @@ tree.
 Do not edit shipped library templates or Go providers just to satisfy a user's
 custom policy. Shipped templates, compiled providers, and installed template key
 types are compatibility boundaries. Changing the behavior of an existing key
-type such as `aplane.htlc.v1` or `aplane.falcon1024-b.v1` can break existing
-keys and backups. The plain hosts (`aplane.falcon1024.v1`, `aplane.ed25519.v1`)
-and the general bounded type are Go-defined. `aplane.htlc.v1` is the only
+type such as `aplane.htlc.v1` or `aplane.falcon1024.v1` can break existing
+keys and backups. The plain hosts (`aplane.falcon1024.v1`, `aplane.ed25519.v1`),
+with their overlays and bounds, are Go-defined. `aplane.htlc.v1` is the only
 bundled YAML template.
 
 Installing a user-loaded template with `apadmin template import` requires the
@@ -369,11 +370,11 @@ Do not tell the user that editing top-level `library/templates/` installs a temp
 Files under top-level `library/templates/` are library entries, not active
 runtime definitions by presence alone. New stores install no templates; every
 template requires an authenticated import or KeyType Library install, and
-every creatable LogicSig key type (compiled or template) except the general
-bounded `aplane.falcon1024-b.v1` is opt-in, the plain hosts
-`aplane.falcon1024.v1` and `aplane.ed25519.v1` included. Only the
-protocol-native `ed25519` and `falcon1024` and the general bounded
-`aplane.falcon1024-b.v1` are enabled by default.
+every creatable LogicSig key type (compiled or template) except the Falcon
+plain host `aplane.falcon1024.v1` is opt-in, the Ed25519 plain host
+`aplane.ed25519.v1` included. Only the protocol-native `ed25519` and
+`falcon1024` and the Falcon plain host `aplane.falcon1024.v1` are enabled by
+default.
 
 For the full disable/remove mechanics (state record transitions, archive
 locations, in-use guard, and reload behavior), see

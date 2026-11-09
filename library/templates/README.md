@@ -8,8 +8,8 @@ not make a key type active by itself, and new signer stores install none of
 them. After importing a template, unlock or reload `apsigner` before using the
 new key type.
 
-For an allowlist, timelock, or Corridor account, use a preset of
-`aplane.falcon1024-b.v1`. It needs no import.
+For an allowlist, timelock, or Corridor account, use the bounds of a plain
+host, such as a preset of `aplane.falcon1024.v1`. It needs no import.
 
 ## Install
 
@@ -45,7 +45,7 @@ apadmin template import library/templates/aplane.htlc.v1.yaml
 
 ### Merkle allowlist proof format
 
-The Merkle encoding of `aplane.falcon1024-b.v1` stores the public
+The Merkle encoding of a plain host's bounds stores the public
 recipient allowlist in the encrypted key file and commits the LogicSig TEAL to a
 fixed-depth 16 Merkle tree derived from that list:
 

@@ -25,7 +25,7 @@ DSA LogicSigs may use a **plain** signature-only program, a **plain host**
 (the spending key and the overlays, no host rules), a **bounded** policy, an
 expert-mode **custom** schema-v1 composed policy, or a dedicated compiled
 provider policy. The cosigner is an additional authority, not a DSA policy
-category. The Corridor preset of the general bounded type composes this
+category. The Corridor preset of `aplane.falcon1024.v1` composes this
 cosigner authority under the bounded contract; it is not a dedicated policy.
 
 | Auxiliary authority type | Meaning |
@@ -42,15 +42,17 @@ APlane has two optional key type paths:
 
 | Kind | Example | Where definition lives | How to enable |
 |---|---|---|---|
-| Compiled provider | `aplane.falcon1024.v1` (plain host) | Go code in the current binary | `apadmin keytype enable` or apadmin KeyType Library |
+| Compiled provider | `aplane.ed25519.v1` (plain host) | Go code in the current binary | `apadmin keytype enable` or apadmin KeyType Library |
 | YAML template | `aplane.htlc.v1` | Plaintext library YAML, then encrypted product-local `.template` after import | `apadmin template import` or apadmin KeyType Library |
 
-The protocol-native key types, `ed25519` and `falcon1024`, and the general bounded
-key type `aplane.falcon1024-b.v1` are default-enabled on signer nodes; they are available
-without extra steps.
+The protocol-native key types, `ed25519` and `falcon1024`, and the Falcon plain
+host `aplane.falcon1024.v1` are default-enabled on signer nodes; they are available
+without extra steps and cannot be turned off.
 The plain LogicSig types `aplane.falcon1024.v1` and `aplane.ed25519.v1` are
-plain hosts (see [Plain hosts](#plain-hosts)). They are library-visible and,
-like the rotating types, require product-local enablement; neither takes
+plain hosts (see [Plain hosts](#plain-hosts)): with no parameters the plain
+program, with overlays a `plain1` account, and with bounds a bounded account (see
+[Bounded Accounts](#bounded-accounts)). `aplane.ed25519.v1` is library-visible
+and, like the rotating types, requires product-local enablement. Neither takes
 mnemonic import. Existing and restored
 keys remain visible and signable whether or not their type permits creation.
 
@@ -91,8 +93,8 @@ apadmin -d $APSIGNER_DATA template list
 apadmin -d $APSIGNER_DATA template show example.my_escrow.v1 --show-sensitive-template
 apadmin -d $APSIGNER_DATA template import library/templates/aplane.htlc.v1.yaml
 apadmin -d $APSIGNER_DATA template remove example.my_escrow.v1
-apadmin -d $APSIGNER_DATA keytype enable aplane.falcon1024.v1
-apadmin -d $APSIGNER_DATA keytype disable aplane.falcon1024.v1
+apadmin -d $APSIGNER_DATA keytype enable aplane.ed25519.v1
+apadmin -d $APSIGNER_DATA keytype disable aplane.ed25519.v1
 ```
 
 In `apadmin`, the KeyType Library presents both library-visible compiled
@@ -142,8 +144,8 @@ LogicSig keys rather than expecting their old addresses to remain stable.
 ## Compiled Providers
 
 Compiled providers are registered from Go code when `apsigner` starts. The
-protocol-native `ed25519` and `falcon1024` and the general bounded
-`aplane.falcon1024-b.v1` are default-enabled on signer nodes;
+protocol-native `ed25519` and `falcon1024` and the Falcon plain host
+`aplane.falcon1024.v1` are default-enabled on signer nodes;
 other selectable compiled account providers are library-visible
 and require product-local enablement. On cosigner nodes,
 `aplane.witness-falcon1024.v1` is default-enabled for witness credentials.
@@ -151,15 +153,16 @@ and require product-local enablement. On cosigner nodes,
 Enable a library-visible compiled provider:
 
 ```bash
-apadmin -d $APSIGNER_DATA keytype enable aplane.falcon1024.v1
+apadmin -d $APSIGNER_DATA keytype enable aplane.ed25519.v1
 ```
 
-This enables the plain Falcon host; see [Plain Hosts](#plain-hosts). A Corridor
-account needs no enabling: it is the Corridor preset of `aplane.falcon1024-b.v1`.
+This enables the Ed25519 plain host; see [Plain Hosts](#plain-hosts). Bounded,
+cosigned and Corridor accounts on Falcon-1024 need no enabling: they are
+accounts of `aplane.falcon1024.v1`, and Corridor is its Corridor preset.
 
 Before generating a cosigned account, choose **Export Cosigner Key** on the
 cosigner. On the primary signer, start **Generate account** in `apadmin`,
-select a plain host or `aplane.falcon1024-b.v1`, then open the **Require a
+select a plain host, choose a preset (or **No bounds**), then open the **Require a
 cosigner** field and choose **Use key file...** or **Paste public JSON...**. Compare the complete Witness Key ID with the value
 shown on the cosigner and import; the form returns with that key selected. A
 key that is already imported is offered under its existing name rather than
@@ -218,7 +221,7 @@ with:
 
 ```json
 {
-  "key_type": "aplane.falcon1024.v1",
+  "key_type": "aplane.ed25519.v1",
   "source": "compiled",
   "state": "enabled",
   "fingerprint": "1:<behavior-only sha256 hex>",
@@ -229,7 +232,7 @@ with:
 Disable a library-visible compiled provider:
 
 ```bash
-apadmin -d $APSIGNER_DATA keytype disable aplane.falcon1024.v1
+apadmin -d $APSIGNER_DATA keytype disable aplane.ed25519.v1
 ```
 
 Disabling removes the product enablement record after checking that no
@@ -241,10 +244,20 @@ It does not import a new YAML source; use `template import` for that.
 ## Plain Hosts
 
 `aplane.falcon1024.v1` and `aplane.ed25519.v1` are plain hosts: a spending key
-and the overlays you choose, with no on-chain fee ceiling and no transaction-type
-list. Every transaction that doesn't rekey is a spend, of any type, closes and
-clawback included. Enable the type first (`apadmin keytype enable`), then
-generate it with any of these, or with no parameters at all:
+with the overlays and bounds you choose. `aplane.falcon1024.v1` needs no setup;
+enable `aplane.ed25519.v1` first (`apadmin keytype enable`). What you ask for
+picks the account:
+
+- **No parameters**: the plain program, the spending-key check alone.
+- **Overlays only** (`rekey_authority`, and optionally `cosigner` and
+  `rekey_to`): the spending key and the overlays, with no on-chain fee ceiling and
+  no transaction-type list. Every transaction that doesn't rekey is a spend, of
+  any type, closes and clawback included.
+- **Bounds** (any of `spend_effects`, `recipients`, `recipient_scope`,
+  `unlock_round`, `list_encoding`) beside the same overlays: a
+  [bounded account](#bounded-accounts).
+
+The overlays:
 
 | Parameter | Values |
 |---|---|
@@ -258,7 +271,9 @@ generate aplane.ed25519.v1 rekey_authority=only_these rekey_to=<address>
 generate aplane.falcon1024.v1
 ```
 
-In apadmin, **Generate account** on a plain host opens three choices:
+In apadmin, **Generate account** on a plain host opens its preset screen (see
+[Choosing rules in apadmin](#choosing-rules-in-apadmin)). **No bounds** opens
+three choices:
 
 - **Require a cosigner (Falcon-1024)**: Enter opens the cosigner picker;
   Backspace removes the choice. Left as **None**, the account has no cosigner.
@@ -272,50 +287,55 @@ The review that follows says what the choices add up to. apadmin always sends a
 rekey setting, so the plain program comes from apshell's `generate` with no
 parameters.
 
-With no parameters the type is the plain program: the spending-key check alone,
-the same program bounded and composed accounts are built on. A cosigned plain
-host signs through the cosigned flow, its cosigner asked for every spend and
-cosigned rekey, and the cosigner's policy is what restricts what it signs. One
-without a cosigner signs through ordinary `/sign`, by the spending key alone.
-The Ed25519 plain host's spending key is classical, not post-quantum; the
-apadmin review says so.
+The plain program is the same program composed accounts are built on. A cosigned
+account without bounds signs through the cosigned flow, its cosigner asked for
+every spend and cosigned rekey, and the cosigner's policy is what restricts what
+it signs. One without a cosigner signs through ordinary `/sign`, by the spending
+key alone. The Ed25519 plain host's spending key is classical, not post-quantum;
+the apadmin review says so.
 
 Which arrangement suits an account is your choice: APlane offers every one,
-including those that protect little, such as a plain host whose only overlay
+including those that protect little, such as an account whose only overlay
 is a rekey-to list (the address is pinned to listed keys, but the spending key
 alone can spend or close everything).
 
 ## Bounded Accounts
 
-`aplane.falcon1024-b.v1` is a Falcon-1024 account limited to a fixed list of recipients, a
-time before which it cannot spend, or both. A limits-only account has neither: it can pay
-anyone, and only its transfer kinds and per-transaction fee limit apply. It needs no setup:
-choose the rules when you generate the account. The rules are compiled
-into the account's program, so they cannot change afterwards, and editing a file later
-does nothing to an existing account.
+A bounded account is a plain host account with bounds: an `aplane.falcon1024.v1` or
+`aplane.ed25519.v1` account limited to the transfer kinds you choose, with a fee limit of
+10,000 microAlgos per transaction, and to a fixed list of recipients, a time before which
+it cannot spend, or both. A limits-only account has neither a list nor an unlock round:
+it can pay anyone, and only its transfer kinds and per-transaction fee limit apply. The
+overlays (a cosigner, a rekey setting, a rekey-to list) sit beside the bounds, as on any
+plain host account. `aplane.falcon1024.v1` needs no setup; `aplane.ed25519.v1` must be
+enabled first, and its spending key is classical. Choose the rules when you generate the
+account. They are compiled into the account's program, so they cannot change
+afterwards, and editing a file later does nothing to an existing account.
 
 ### Choosing rules in apadmin
 
-Generate a key and choose `aplane.falcon1024-b.v1`, then a preset:
+Generate a key and choose a plain host, such as `aplane.falcon1024.v1`. The preset screen,
+**New <type> Account**, lists each choice by its title and describes the selected one:
 
-| Preset | What it sets | You supply |
+| Choice | What it sets | You supply |
 |---|---|---|
+| No bounds | No bounds: the overlays alone (see [Plain Hosts](#plain-hosts)) | The overlay choices |
 | Allowlist | All transfer kinds; the spending key alone can rekey it, to any address; automatic list encoding | Recipients |
 | Locked Allowlist | All transfer kinds; it can be rekeyed only to an address on its [rekey-to list](#rekey-to-lists); automatic list encoding | Recipients, rekey-to addresses |
 | Corridor | All transfer kinds; a cosigner on every spend; Merkle list; it can be rekeyed only to an address on its rekey-to list, with the spending key alone | Recipients, rekey-to addresses, cosigner |
 | Timelock | All transfer kinds; nothing can be spent before the unlock round; it can be rekeyed only to an address on its rekey-to list, which is a way around the lock; no recipient list | Unlock round, rekey-to addresses |
+| Custom bounds | Nothing fixed: every bounds field, without a file | Transfer kinds, and any of recipients, recipient scope, unlock round, list encoding |
 | Load boundary file | Whatever the file says | The file |
 
 "All transfer kinds" means `pay`, `axfer`, and `asset_opt_in`. For a narrower list, such as
-ALGO only, or for a limits-only account, use a boundary file.
+ALGO only, or for a limits-only account, use Custom bounds or a boundary file.
 
-A preset's form shows its bounds first (recipients, or the unlock round), then the same
-three choices a plain host has: **Require a cosigner**, **Add rekey-to addresses**, and
-**Allow rekeys** or, with a list, **Rekey-to option**. The preset fills them in as the
-table says and you can change them: a cosigner and a rekey-to list the preset asks for
-are required, and the rekey choice offers only what this type takes, so there is no
-**No, never** (a grammar limit; an expert template can refuse every rekey). A Timelock
-always needs its list.
+A bounded choice's form shows its bounds first (recipients, the unlock round, or with
+Custom bounds every bounds field), then the same three choices as No bounds: **Require a
+cosigner**, **Add rekey-to addresses**, and **Allow rekeys** or, with a list, **Rekey-to
+option**. A preset fills them in as the table says and you can change them: a cosigner
+and a rekey-to list the preset asks for are required, and the rekey choice offers every
+setting that fits, **No, never** included. A Timelock always needs its list.
 
 Before generating, apadmin shows what the signer resolved, including the cosigner it will
 use. For an account with a rekey-to list, the Rekey row reads "Only these N addresses,
@@ -335,7 +355,9 @@ of an account with one as private as the list.
 
 ### Boundary files
 
-A boundary file must be a regular file of at most 8 MiB. A symbolic link is refused.
+A boundary file applies to the plain type you use it with: `generate aplane.falcon1024.v1
+--boundary rules.yaml` in apshell, or **Load boundary file** in apadmin. It names no key
+type. It must be a regular file of at most 8 MiB. A symbolic link is refused.
 
 ```yaml
 schema: aplane.boundary.v1
@@ -356,21 +378,21 @@ These addresses are illustrations, not funding destinations.
 | Field | Meaning |
 |---|---|
 | `schema` | Required. Must be `aplane.boundary.v1`. |
-| `spend` | Required. Any of `pay`, `axfer`, `asset_opt_in`. |
-| `recipients` | Required unless `unlock_round` or `recipient_scope: any` is set. 1 to 65,536 distinct nonzero addresses, written literally: aliases and sets are not expanded. |
+| `spend` | Any of `pay`, `axfer`, `asset_opt_in`. Leave it out for an account without bounds: the file then describes the overlays alone, and may not set `recipients`, `recipient_scope`, `encoding`, or `unlock_round`. An empty list is refused. |
+| `recipients` | With `spend`, required unless `unlock_round` or `recipient_scope: any` is set. 1 to 65,536 distinct nonzero addresses, written literally: aliases and sets are not expanded. |
 | `recipient_scope` | Optional. Left out, the file needs a list or an unlock round; written as `listed`, it needs a list. `any` makes a limits-only account: no list, and it can't be combined with `recipients`, `encoding`, or `unlock_round`. Leaving out the list never means `any`: you must write it. |
 | `encoding` | Optional, and needs a list. `auto` (the default) is inline through 10 recipients and Merkle above that. `inline` accepts at most 30. |
 | `unlock_round` | Optional. The first round the account can spend. With no list, the account can pay anyone once unlocked. |
-| `rekey.authority` | Required. `spending_key` (the spending key can rekey, to any address; with a cosigner, only together with the cosigner, to a target the cosigner's policy allows), `only_these` (the spending key alone can rekey, but only to an address in `rekey.to`; a cosigner is not asked), or `plus_cosigned` (needs a cosigner: the spending key alone to an address in `rekey.to`, or the spending key and the cosigner to any other target the cosigner's policy allows). `refused` is not accepted: use `only_these`. |
-| `rekey.to` | Required with `only_these` and `plus_cosigned`, and refused with `spending_key`. 1 to 16 distinct nonzero addresses, written literally. See [Rekey-to lists](#rekey-to-lists). |
+| `rekey.authority` | Required. `refused` (never rekeyed), `spending_key` (the spending key can rekey, to any address; with a cosigner, only together with the cosigner, to a target the cosigner's policy allows), `only_these` (the spending key alone can rekey, but only to an address in `rekey.to`; a cosigner is not asked), or `plus_cosigned` (needs a cosigner: the spending key alone to an address in `rekey.to`, or the spending key and the cosigner to any other target the cosigner's policy allows). |
+| `rekey.to` | Required with `only_these` and `plus_cosigned`, and refused with `refused` and `spending_key`. 1 to 16 distinct nonzero addresses, written literally. See [Rekey-to lists](#rekey-to-lists). |
 | `cosigner` | Optional. A cosigner reference name on the signer, or a Witness Key ID. `plus_cosigned` needs one. |
 
-Every shape of the general type has a way out besides its transfers: a rekey-to list, a
-spending-key rekey, or both. `unlock_round` takes only `only_these`, with or without a
-cosigner: the unlock round holds back spends only, so a spending-key rekey, cosigned or
-not, could leave the lock early. These are the general type's shapes, not rules of the
-contract: an expert template can declare a refused account, or a timelock with a
-spending-key rekey.
+Every combination the fields allow is an account, and which one suits yours is your
+choice; the review says what it means. A `refused` account has no way out but its
+transfers: with `spend: [asset_opt_in]` alone it can never pay out its ALGO. An unlock
+round holds back spends only, so a timelock with any rekey setting but `refused` can leave
+the lock early: a spending-key rekey, cosigned or not, at any time, and a listed rekey to
+a listed address.
 
 ```yaml
 schema: aplane.boundary.v1
@@ -384,6 +406,17 @@ rekey:
 
 This timelock pays anyone once unlocked, and before then its spending key can hand it
 only to the listed address.
+
+```yaml
+schema: aplane.boundary.v1
+rekey:
+  authority: spending_key
+cosigner: ops-cosigner
+```
+
+This file has no `spend`, so it describes a cosigned account without bounds: the cosigner
+is asked for every spend and every rekey, and its policy decides what it signs. apshell's
+local summary says "Bounds: none".
 
 A limits-only account limits how it spends, not to whom: whoever holds its spending key
 (and its cosigner, if it has one) can send everything it holds to any address, one
@@ -453,15 +486,17 @@ apply to it: the list is the owner's standing statement. An unlisted rekey under
 ### Creating an account from apshell
 
 ```
-generate aplane.falcon1024-b.v1 --boundary rules.yaml
-generate aplane.falcon1024-b.v1 --boundary rules.yaml --result account.json
-generate aplane.falcon1024-b.v1 spend_effects=pay rekey_authority=spending_key recipients=ADDR1,ADDR2
-generate aplane.falcon1024-b.v1 spend_effects=pay rekey_authority=only_these recipients=ADDR1,ADDR2 rekey_to=COLD1
-generate aplane.falcon1024-b.v1 spend_effects=pay rekey_authority=plus_cosigned recipients=ADDR1,ADDR2 rekey_to=COLD1 cosigner=ops-cosigner
+generate aplane.falcon1024.v1 --boundary rules.yaml
+generate aplane.falcon1024.v1 --boundary rules.yaml --result account.json
+generate aplane.falcon1024.v1 spend_effects=pay rekey_authority=spending_key recipients=ADDR1,ADDR2
+generate aplane.falcon1024.v1 spend_effects=pay rekey_authority=only_these recipients=ADDR1,ADDR2 rekey_to=COLD1
+generate aplane.falcon1024.v1 spend_effects=pay rekey_authority=plus_cosigned recipients=ADDR1,ADDR2 rekey_to=COLD1 cosigner=ops-cosigner
+generate aplane.ed25519.v1 spend_effects=pay,axfer rekey_authority=refused recipient_scope=any
 ```
 
-apshell shows a local summary and asks before creating the account. The summary lists
-a rekey-to list's addresses and says a listed rekey is a way around an unlock round. On
+With `--boundary`, apshell shows a local summary and asks before creating the account.
+The summary lists a rekey-to list's addresses and says a listed rekey is a way around an
+unlock round; for a file without `spend` it says "Bounds: none". On
 a cosigned account it says the cosigner is not asked for a listed address, and names
 who can make any other rekey. The
 signer has not seen that summary, so a cosigner name in it is unresolved, and editing
@@ -474,18 +509,18 @@ with fingerprints and a digest.
 
 ### Restricting new accounts
 
-`aplane.falcon1024-b.v1` cannot be turned off, but two settings in apadmin's Settings panel set
-a minimum for new accounts. `require_contained` requires new accounts to be
-contained: they must take only listed rekeys (`only_these`) and have a recipient list, so
-they can pay only listed recipients, and hand the account only to a listed key. A
-timelock with no list is not contained, because it pays anyone once unlocked, and neither
-is a limits-only account, with or without a cosigner. A `spending_key` account is never
+`aplane.falcon1024.v1` cannot be turned off, but two settings in apadmin's Settings panel set
+a minimum for new plain host accounts. `require_contained` requires new accounts to be
+contained: they must refuse every rekey or take only listed ones (`only_these`) and have a
+recipient list, so they can pay only listed recipients, and hand the account at most to a
+listed key. A timelock with no list is not contained, because it pays anyone once
+unlocked, and neither is a limits-only account, with or without a cosigner. A `spending_key` account is never
 contained, with or without a cosigner, and neither is a `plus_cosigned` one: whoever
 holds its online keys can rekey it anywhere. Fees are outside that limit: each transaction's fee is capped at 10,000
 microAlgos, but a stolen spending key can still spend the balance on fees, one
-transaction at a time. `require_cosigner` refuses accounts without a cosigner. They apply on every route,
-and to the plain hosts too: a plain host is never contained, and the plain program, with
-no cosigner, fails both. They do not affect existing accounts or imported templates.
+transaction at a time. `require_cosigner` refuses accounts without a cosigner. They apply on every route, to
+both plain hosts: an account without bounds is never contained, and the plain program,
+with no cosigner, fails both. They do not affect existing accounts or imported templates.
 
 Review these points before funding an account:
 
@@ -495,6 +530,8 @@ Review these points before funding an account:
   under the default `reject_foreign_rekey`, a cosigned rekey to an address it doesn't hold
   needs `allow_rekeys` in the account's policy. A listed rekey can leave at any time too,
   but only to a listed address, and on a timelock that includes before the unlock round.
+- A `refused` account never changes its authority: whatever its transfer kinds can't
+  send, and everything after a lost cosigner, stays where it is.
 - An `only_these` account can change its authority only by a handover to a listed
   address. A lost cosigner stops every spend and cosigned rekey, but not a listed rekey.
   A lost cosigner, a mistaken recipient list, rekey-to list or unlock round cannot be
@@ -819,7 +856,7 @@ Import encrypts the YAML into the product keystore and enables the key type
 for the signer.
 
 New stores install no template. For an allowlist, timelock, or Corridor account,
-use a [preset of `aplane.falcon1024-b.v1`](#bounded-accounts). The only bundled
+use a [preset of a plain host](#bounded-accounts). The only bundled
 template is `aplane.htlc.v1`.
 
 Generated provider-backed LogicSig keys store the final compiler-auto-salted
@@ -975,7 +1012,7 @@ fingerprint is treated as benign (re-pinned), not a conflict.
 Refresh the enablement record:
 
 ```bash
-apadmin -d $APSIGNER_DATA keytype enable aplane.falcon1024.v1
+apadmin -d $APSIGNER_DATA keytype enable aplane.ed25519.v1
 ```
 
 This updates the state-record fingerprint. It does not rewrite existing key

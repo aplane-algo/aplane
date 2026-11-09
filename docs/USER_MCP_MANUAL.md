@@ -188,9 +188,8 @@ role.
 |---------|----------|----------------------|
 | `ed25519` | native | default-enabled |
 | `falcon1024` | native_pq | **default-enabled** (protocol-native post-quantum) |
-| `aplane.falcon1024.v1` | dsa_lsig plain host (`plain1` with overlays; cosigned ones use `cosigned1`) | library-visible |
-| `aplane.ed25519.v1` | Ed25519 dsa_lsig plain host | library-visible |
-| `aplane.falcon1024-b.v1` | bounded dsa_lsig (allowlist, timelock, Corridor presets) | default-enabled on signer nodes |
+| `aplane.falcon1024.v1` | dsa_lsig plain host (`plain1` with overlays, `bounded2` with bounds: allowlist, timelock, Corridor presets; cosigned ones use `cosigned1`) | default-enabled on signer nodes |
+| `aplane.ed25519.v1` | Ed25519 dsa_lsig plain host, the same grammar | library-visible |
 | `aplane.htlc.v1` | generic_lsig | optional template |
 | `aplane.rotating-triple-xmss.v1` | rotating LogicSig | library-visible |
 | `aplane.rotating-triple-slhdsa.v1` | rotating LogicSig | library-visible |
@@ -231,8 +230,8 @@ compatible manual-salt records retain it.
 
 ### Restricted variants (the safety is in the program)
 
-- `aplane.falcon1024-b.v1` — the general bounded account. Its presets are an
-  allowlist (pay and asset-transfer receivers must be self or listed, with a
+- `aplane.falcon1024.v1` or `aplane.ed25519.v1` with bounds — a bounded account.
+  Its presets are an allowlist (pay and asset-transfer receivers must be self or listed, with a
   signer-generated Merkle proof for a long list), a locked allowlist that can be
   rekeyed only to an address on its rekey-to list, Corridor, and a timelock
   (`FirstValid >= unlock_round` before any spend; it can be rekeyed only to a
@@ -247,7 +246,7 @@ compatible manual-salt records retain it.
 
 ### Corridors
 
-A **Corridor v1** account is the Corridor preset of `aplane.falcon1024-b.v1`, a
+A **Corridor v1** account is the Corridor preset of `aplane.falcon1024.v1`, a
 bounded-cosigner LogicSig profile. Its non-self payment and asset-transfer
 destinations must prove membership in the generation-time Merkle recipient set,
 and every spend also needs the enrolled cosigner's Falcon authorization. It can
@@ -430,8 +429,8 @@ Runtime settings (`user_auto_approve`, `lock_on_disconnect`,
 
 ### Cosigner / cosigned signing (when present)
 
-A cosigned account (a plain host such as `aplane.falcon1024.v1`, or a bounded
-account, generated with a `cosigner=`) embeds a cosigner's public key in its
+A cosigned account (a plain host such as `aplane.falcon1024.v1`, with or
+without bounds, generated with a `cosigner=`) embeds a cosigner's public key in its
 LogicSig, so a transaction needs **two** authorizations: the user signer proves
 control, and a separate **cosigner** signer authorizes the facts under cosigner
 policy. The client orchestrates this automatically when any effective signer is

@@ -14,8 +14,8 @@
 
 ## Current product boundary
 
-The shipped Corridor profile is the Corridor preset of the general bounded type
-`aplane.falcon1024-b.v1`. It has one fixed combination of controls rather than
+The shipped Corridor profile is the Corridor preset of the Falcon plain host
+`aplane.falcon1024.v1`. It has one fixed combination of controls rather than
 the profile matrix explored below:
 
 - the program commits to a fixed-depth Merkle root; a non-self spend supplies

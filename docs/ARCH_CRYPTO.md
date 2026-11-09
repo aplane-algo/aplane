@@ -102,7 +102,7 @@ Key type strings are canonical compatibility identifiers, not display labels.
 Except for the native `ed25519` and `falcon1024` key types, APlane-defined LogicSig/template and
 compiled-provider key types use `publisher.family.vN`, such as
 `aplane.falcon1024.v1`, `aplane.htlc.v1`, or
-`aplane.falcon1024-b.v1`. Human CLI/TUI surfaces, storage, protocol,
+`aplane.witness-falcon1024.v1`. Human CLI/TUI surfaces, storage, protocol,
 provider registration, migration code, and SDK-facing fields use the full
 canonical identifier.
 
@@ -120,10 +120,10 @@ Built-in and bundled key types include:
 - native `falcon1024` (top-level protocol `PQsig`, 25-word recovery)
 - plain DSA LogicSigs `aplane.falcon1024.v1` and `aplane.ed25519.v1`, which are
   also plain hosts: with a rekey setting and optional cosigner and rekey-to
-  list they render `plain1`, which replaced the dedicated cosigned account
+  list they render `plain1`, and with bounds as well (transfer kinds, a
+  recipient list, a timelock, or limits only) a `bounded2` shape
 - the Falcon witness key `aplane.witness-falcon1024.v1`, held by a cosigner
 - the generic `aplane.htlc.v1` template
-- the general bounded key type `aplane.falcon1024-b.v1`
 - the rotating accounts `aplane.rotating-triple-xmss.v1`,
   `aplane.rotating-triple-slhdsa.v1` and `aplane.rotating-triple-wotsc.v1`
   (library-visible, signer-only)
@@ -167,7 +167,7 @@ Built-in LogicSig DSA providers live under `lsig/`. The compiled providers are:
 
 | Key type | Registered family | Availability |
 |---|---|---|
-| `aplane.falcon1024.v1` | `aplane.falcon1024` | library-visible (plain host) |
+| `aplane.falcon1024.v1` | `aplane.falcon1024` | default-enabled on signer nodes (plain host) |
 | `aplane.ed25519.v1` | `aplane.ed25519` | library-visible (plain host) |
 
 These providers implement the unified `internal/lsigprovider.SigningProvider`
@@ -198,7 +198,7 @@ Template YAML files under top-level `library/templates/` are install sources,
 not active key types by presence alone. New stores install none of them; a
 template becomes active only after installation and reload/unlock by the
 signer. Only the protocol-native `ed25519` and `falcon1024` key types and the
-general bounded `aplane.falcon1024-b.v1` are enabled by default.
+Falcon plain host `aplane.falcon1024.v1` are enabled by default.
 
 ### Off-curve LogicSig salting
 
@@ -372,7 +372,7 @@ Product-store key type enable/disable metadata is owned by
 `internal/keytypestate`. State records live under
 the selected generation's `keytypes/<key_type>.json` via
 `internal/storepaths.GenPaths.KeyTypeRecord()`. They make compiled
-library-visible providers such as the plain host `aplane.falcon1024.v1` available
+library-visible providers such as the plain host `aplane.ed25519.v1` available
 to the product runtime for key type discovery and
 generation when `source:"compiled"` and `state:"enabled"`. Mnemonic import is
 native-only (`keymgmt.SupportsMnemonicImport`); no LogicSig type takes it.

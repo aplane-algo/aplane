@@ -53,9 +53,9 @@ rekey anywhere, so the list would add nothing. Only `refused` and `only_these`
 bound where authority can go independently of the online keys. A cosigned
 `spending_key` account and a `plus_cosigned` one are exactly as strong as the
 spending key and the cosigner together: whoever holds both, or controls the
-cosigner node's policy, can rekey the account anywhere. The general type
-`aplane.falcon1024-b.v1` offers every row but `refused`; expert templates may
-declare any row.
+cosigner node's policy, can rekey the account anywhere. The plain hosts
+`aplane.falcon1024.v1` and `aplane.ed25519.v1` offer every row, with bounds
+(`bounded2`) or without (`plain1`); expert templates may declare any row.
 
 `bounded2` has three ordered regions:
 
@@ -73,8 +73,8 @@ No host rule gates a rekey. The rekey path accepts or rejects before any
 Layer 3 or author code runs, so no Layer 3 policy applies to a rekey. A
 framework timelock policy beside `rekey: spending_key` therefore holds only
 while the spending key declines to rekey: a spending-key rekey, cosigned or
-not, leaves the lock before the unlock round. Templates may declare it; the
-general type's timelock shapes take only `only_these`. A timelock may carry a
+not, leaves the lock before the unlock round. Templates and the plain hosts'
+timelock shapes may declare it. A timelock may carry a
 rekey-to list (`only_these`), but a listed rekey is accepted before the unlock
 round too, so the lock holds only while the holders of the listed keys
 cooperate. The cosigner check is the only check
@@ -128,23 +128,23 @@ complete value-spending policy.
 | Maximum compiled `max_fee` | 10,000 microAlgos |
 | Layer-3 arguments | declared static runtime (spend only) and signer-derived slots |
 | Signer-derived primitives | fixed-depth Merkle allowlist proof (512 bytes, spend); rekey-to list proof (160 bytes, listed rekey) |
-| Framework Layer-3 policies | `fixed_allowlist`, `merkle_allowlist`, `timelock`, `fixed_allowlist_timelock`, `merkle_allowlist_timelock`; `none` for the general type only |
+| Framework Layer-3 policies | `fixed_allowlist`, `merkle_allowlist`, `timelock`, `fixed_allowlist_timelock`, `merkle_allowlist_timelock`; `none` for the plain hosts' limits-only shapes only |
 | Framework allowlist with author TEAL | `fixed_allowlist_custom`, `merkle_allowlist_custom` |
 | Inline recipient maximum | 30 entries |
 | Flow labels | `bounded1` without a cosigner; `cosigned1` with a cosigner |
 | Online cosigner endpoints | `POST /plan`, `POST /sign/component`, `POST /sign/assemble` |
-| Bundled composed templates | none; the general type `aplane.falcon1024-b.v1` offers the allowlist, timelock and limits-only shapes |
+| Bundled composed templates | none; the plain hosts `aplane.falcon1024.v1` and `aplane.ed25519.v1` offer the allowlist, timelock and limits-only shapes |
 
-`bounded2` is the only contract a bounded host or template declares (a plain host
-declares `plain1`), and neither has protocol aliases. Flow labels version the client/server choreography, not the contract,
+`bounded2` is the only contract a bounded shape or template declares (a plain host
+account without bounds declares `plain1`), and neither has protocol aliases. Flow labels version the client/server choreography, not the contract,
 so a `bounded2` account without a cosigner still advertises `bounded1`. A cosigned
 account advertises `cosigned1`, which replaced `bounded-cosigner1` when the flow
 began to carry rekeys: a client that knows only the spend-only choreography then
 refuses a cosigned key instead of asking the cosigner to sign a listed rekey.
 
 Generation also refuses a workflow the spending base can't complete. The
-cosigner flow needs a Falcon-1024 spending key on `bounded2`, and a Falcon-1024
-or Ed25519 one on `plain1`, so a cosigner on another base is refused, as is any
+cosigner flow needs a Falcon-1024 or Ed25519 spending key, on `bounded2` and
+`plain1` alike, so a cosigner on another base is refused, as is any
 bounded profile on a base the support policy doesn't list. The policy is keyed by
 the base's signature construction from `internal/sigconstruction`, so a registered
 base with no construction is refused too. This is an admission decision for new
@@ -161,7 +161,7 @@ account must keep signing, so the signer keeps its own table of the spending
 constructions each workflow completes
 (`internal/signerapp/signing/bounded_construction.go`). It resolves an account's
 construction from its durable contract and `base_key_type`. The cosigner flow
-completes Falcon-1024 on `bounded2`, and Falcon-1024 and Ed25519 on `plain1`. A valid signature on any other base is refused where it
+completes Falcon-1024 and Ed25519 on `bounded2` and `plain1`. A valid signature on any other base is refused where it
 always was, before an assembly it couldn't finish. Admission must stay within
 the signer's table, or it would create accounts the signer can't complete;
 `TestBoundedGenerationAdmitsOnlySignableWorkflows` checks that. Verification itself
@@ -199,9 +199,9 @@ fee ceiling, slot layout, and path routing.
 
 ## Compiled Budgets
 
-No bounded template is bundled. The general type `aplane.falcon1024-b.v1`
-(see [ARCH_KEYTYPES.md](ARCH_KEYTYPES.md)) offers the allowlist and timelock
-shapes. Compiler-backed maximum-path measurements for three fixture templates
+No bounded template is bundled. The plain hosts
+(see [ARCH_KEYTYPES.md](ARCH_KEYTYPES.md#the-bounds)) offer the allowlist,
+timelock and limits-only shapes. Compiler-backed maximum-path measurements for three fixture templates
 are frozen by `TestBoundedFixtureCompiledBudgetMatrix`:
 
 | Fixture | Layer 3 | Rekey | Final bytecode | Spend args / v42 group / fee |
@@ -285,10 +285,10 @@ target stays on the cosigned path.
 
 A refusal names the contract, for example "bounded2 account permanently disables
 rekey". `TestClassifyForReachesAnExplicitRuleForEveryEffect` runs every
-declaration the general grammar produces against every transaction type of the
+declaration the plain host's `bounded2` shapes produce against every transaction type of the
 surface, with every combination of rekey, close, asset-close and clawback fields,
 and requires an explicit allow or refuse rule for each, never a default branch. It
-runs the plain host's declarations too, and requires `open_spend` for exactly the
+runs the `plain1` declarations too, and requires `open_spend` for exactly the
 transactions without `RekeyTo`.
 
 The framework danger predicates are:
@@ -390,8 +390,9 @@ anywhere.
 ## The plain1 contract
 
 `plain1` is the plain host's contract, which the plain types `aplane.falcon1024.v1`
-and `aplane.ed25519.v1` render when they are given overlay parameters (see
-[plain hosts](ARCH_KEYTYPES.md#plain-hosts)). It is stored in the same
+and `aplane.ed25519.v1` render when they are given overlay parameters and no bounds
+(see [plain hosts](ARCH_KEYTYPES.md#plain-hosts)); with any bounds parameter they
+render a `bounded2` shape instead. It is stored in the same
 `bounded_authorization` record as `bounded2` (`signing_metadata_version: 2`), so the
 cosigner and rekey-to list overlays, the static argument layout, the planner and
 assembly work unchanged. It differs only in what the host allows:
@@ -445,7 +446,7 @@ big-endian integers. `field(x)` is `u32(len(x)) || x`. Text is exact UTF-8
 without a terminator or Unicode normalization. Lists carry a `u32` count and
 then canonical elements. No JSON or YAML serialization is hashed. The canonical
 profile enters a template's compatibility fingerprint, and both canonical
-encodings enter the [general boundary digest](#general-boundary-digest).
+encodings enter the [host boundary digest](#host-boundary-digest).
 
 ### Canonical bounded profile
 
@@ -715,8 +716,8 @@ author's choice. Neither the profile check nor durable metadata validation
 refuses it, and durable validation also accepts a timelock policy beside
 `rekey: spending_key`: durable validation checks structure only, so a check
 for a combination's wisdom, if one returns, belongs at generation, where
-accounts created without it keep loading. The general type never offers a
-refused profile without a list.
+accounts created without it keep loading. The plain hosts offer it too, as
+they offer every combination the contract allows.
 
 A cosigner's `required_on` must name every path the cosigner signs: `[spend]`
 beside `rekey: refused` or `only_these`, and `[spend, spending_rekey]` beside
@@ -783,8 +784,8 @@ and it does not bind the program to one network.
 The timelock also applies to self-receivers, which the recipient check would otherwise
 admit. A timelock policy takes any rekey setting, but under `rekey: spending_key` or
 `plus_cosigned` the spending key can rekey out before the unlock round, cosigned or
-not, so the lock binds only while it declines; the general type's timelock shapes take
-only `only_these`. Under `only_these` a listed rekey is accepted before the unlock
+not, so the lock binds only while it declines; the plain hosts' timelock shapes take
+every rekey setting too. Under `only_these` a listed rekey is accepted before the unlock
 round, so the lock binds only while the listed keys' holders cooperate.
 
 Timelock policies reject author TEAL, parameters they do not read, and runtime arguments.
@@ -798,7 +799,7 @@ cosigner check, when the profile has one) a spend goes straight to the accept bl
 the fee ceiling, spend effects, and zero close and clawback fields are the whole
 spending rule. It reads no parameter and declares no derived or runtime argument, and it
 rejects author TEAL, which would make the program `custom` under a second name. Only the
-general type offers it, for its limits-only shapes: `composeddsa.ParseTemplateSpec`
+plain hosts offer it, for their limits-only shapes: `composeddsa.ParseTemplateSpec`
 refuses a template that declares it, so every YAML route (the library, keystore
 registration, and the semantic fingerprint) does too. A `none` account has no recipient
 list, so it is never contained.
@@ -1013,65 +1014,65 @@ does not alter this requirement; apsigner sees an ordinary executable signing
 request. How signer policy and the approval text treat a listed target is in
 [ARCH_POLICY.md](ARCH_POLICY.md#bounded-authorization-interaction).
 
-## General Boundary Digest
+## Host Boundary Digest
 
-`aplane.falcon1024-b.v1` accounts have a comparison digest. Using the field encoding above:
+Every plain host account with a contract, `plain1` or `bounded2`, has a comparison
+digest. Using the field encoding above:
 
 ```text
 SHA512/256(
-  field("APLANE_GENERAL_BOUNDARY_V1") ||
+  field("APLANE_HOST_BOUNDARY_V1") ||
   field("aplane.boundary.v1") ||
-  field(selected_shape_fingerprint) ||
+  field(selected_fingerprint) ||
   field(base_primitive) ||
   field(canonical_bounded_profile) ||
   field(canonical_behavior_parameters)
 )
 ```
 
-A cosigner key is a behavior parameter, so it is covered there, and so are a rekey-to
-list's entries. The digest excludes the list's root, which depends on the spending key,
-the spending key itself, filenames, reference names, and labels, and it binds the selected
-shape rather than the whole grammar, so an unrelated new rule leaves it unchanged.
+`selected_fingerprint` is the selected arrangement's or shape's fingerprint. A cosigner
+key is a behavior parameter, so it is covered there, and so are a rekey-to list's
+entries. The digest excludes the list's root, which depends on the spending key, the
+spending key itself, filenames, reference names, and labels, and it binds the selected
+arrangement or shape rather than the whole grammar, so an unrelated new rule leaves it
+unchanged.
 
 It is a comparison value. It does not assert that two accounts have the same address,
-and it replaces no signing transcript. It is
-defined only for this key type: custom Layer 3 code is not bound by it.
+and it replaces no signing transcript. It is defined only for the plain hosts: custom
+Layer 3 code is not bound by it. `TestBoundsFingerprintGoldens` and
+`TestPlainHostGrammarGoldens` in `lsig/plainhost` pin the shape fingerprints, the
+digest below, and the grammar fingerprint of each base.
 
-A plain host has its own digest of the same form, with domain
-`APLANE_PLAIN_BOUNDARY_V1`, its request schema `aplane.plain-host.v1`, and the selected
-arrangement's fingerprint in place of the shape's. `TestPlainHostGrammarGoldens` in
-`lsig/plainhost` pins the grammar fingerprint of each base.
+### Golden vector 3: host boundary digest
 
-### Golden vector 3: general boundary digest
-
-This vector uses the general type's fullest shape: all three transfer kinds,
-`merkle_allowlist`, a cosigner, and `plus_cosigned`. The two recipients are the
-addresses whose 32 raw bytes are all zero except `[1] = 1, [31] = 1` and
+This vector uses the fullest `bounded2` shape of `aplane.falcon1024.v1`: all three
+transfer kinds, `merkle_allowlist`, a cosigner, and `plus_cosigned`. The two recipients
+are the addresses whose 32 raw bytes are all zero except `[1] = 1, [31] = 1` and
 `[1] = 2, [31] = 1`. The rekey-to list holds the two addresses whose 32 raw bytes are
 all zero except `[0] = 0x08, [31] = 2` and `[0] = 0xd0, [31] = 2`; their address texts
 start with `B` and `2`, so the behavior encoding lists the `0xd0` address first. The
-cosigner key is 1,793 bytes of `0x41`. The profile encodes `rekey: spending_key` with
+cosigner key is 1,793 bytes of `0x44`. The profile encodes `rekey: spending_key` with
 the list marker, the cosigner's `required_on` is `[spend, spending_rekey]`, and the
 argument layout is the base signature, the recipient proof, the rekey-list proof and
 the cosigner signature, which is required on `spend` and `spending_rekey`.
 
-An independent Python encoder reproduces the profile and the digest from the rules in
-this document. The shape fingerprint is an input to that check: it comes from the
+The digest below is reproduced from the profile and behavior bytes by the rules in this
+document. The shape fingerprint is an input to that check: it comes from the
 provider's own configuration hash, which this document does not define byte for byte.
-`TestGeneralFingerprintGoldens` pins the shape fingerprint and the digest.
+`TestBoundsFingerprintGoldens` pins the shape fingerprint and the digest.
 
 ```text
-selected_shape_fingerprint:
-  1:6ae03fad054024348ad540e4c5314d7f64b75e4aef0afc87383b3db8d92dd932
+selected_fingerprint:
+  1:b4efb8a343077eb838ca3646354fc98e02a6bc2cc6e455048afc484ed0b9b263
 base_primitive: falcon1024-v1
 canonical_bounded_profile_length: 675
 canonical_bounded_profile_sha512_256:
   da645191069b2b95194e56f1a36d64565858cab9b61b8316f5d0de95c78ccff6
 canonical_behavior_parameters_length: 2086
 canonical_behavior_parameters_sha512_256:
-  cb3b10a572a2489965265f16e59e0468f402cd484d237449efec48c2cbf2b62b
+  992e720dfd177c63c9e46df2c45fe06f87dd1bfd55173337950d08de4ebc6d74
 boundary_digest:
-  a500c612b2ab2531b0b38687b9f03a3093b9280b1d7328285dad7cf2bc7773c7
+  fc7c7b20998e33024636c11e56653a24320c16028330fab2b2c6e7dc8e95ff38
 ```
 
 ## Versioning

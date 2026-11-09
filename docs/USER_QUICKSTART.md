@@ -168,22 +168,22 @@ key with the fields explained.
 ## Further Exploration
 
 On a signer node, the default key types are native `ed25519` and
-`falcon1024`. To try LogicSig key types, such as `aplane.falcon1024.v1` or the bundled
-templates, open the signer admin pane, press `s` for settings, then press `k`
-for key types. The KeyType Library lets you enable compiled providers and
-templates for the product store.
+`falcon1024` and the Falcon LogicSig plain host `aplane.falcon1024.v1`, whose
+bounds give allowlist, timelock, and Corridor accounts. To try other LogicSig key
+types, such as `aplane.ed25519.v1` or the bundled templates, open the signer
+admin pane, press `s` for settings, then press `k` for key types. The KeyType
+Library lets you enable compiled providers and templates for the product store.
 
 To try a cosigned account, first set up a separate cosigner node and generate its
 `aplane.witness-falcon1024.v1` key. Choose **Export Cosigner Key**; the file
 holds the public key only, and the result screen shows the address to give
-clients. In the primary signer's KeyType Library, enable the plain host
-`aplane.falcon1024.v1`. Start **Generate account**, select that key type, open
+clients. On the primary signer, start **Generate account**, select the
+default-enabled plain host `aplane.falcon1024.v1`, choose **No bounds**, open
 **Require a cosigner (Falcon-1024)**, and choose **Use key file...** (or **Paste
 public JSON...**). Compare the full Witness Key ID before importing, choose
 whether to allow rekeys or add rekey-to addresses, then review and generate
-the account. The
-Corridor preset of the default-enabled `aplane.falcon1024-b.v1` is a cosigned
-account too, with on-chain limits.
+the account. The type's Corridor preset is a cosigned account too, with
+on-chain limits.
 
 In apshell, run `endpoints add <cosigner-url>`, for example
 `endpoints add ssh://cosigner.example:1127`. Accept the suggested connection

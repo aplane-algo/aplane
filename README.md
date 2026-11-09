@@ -153,10 +153,10 @@ client settings remain in `config.yaml`. See
   Ed25519) and `aplane.rotating-triple-wotsc.v1` (Falcon-1024 + WOTS+C +
   Ed25519), a stable address whose stage program changes on every spend
 - **generic LogicSigs**: HTLCs and user-loaded custom TEAL
-- **bounded LogicSigs**: the general bounded type `aplane.falcon1024-b.v1`, with
-  allowlist, timelock, and cosigner-gated Corridor presets
-- **plain hosts**: `aplane.falcon1024.v1` and `aplane.ed25519.v1` LogicSig accounts
-  with no host rules, optionally cosigned and with a rekey-to list (opt-in)
+- **plain hosts**: `aplane.falcon1024.v1` (enabled by default) and
+  `aplane.ed25519.v1` (opt-in) LogicSig accounts, optionally cosigned and with a
+  rekey-to list, and optionally bounded: transfer kinds, a recipient list, a
+  timelock, with allowlist, timelock, and cosigner-gated Corridor presets
 
 ### Automation & Integration
 - JavaScript scripting with full transaction API

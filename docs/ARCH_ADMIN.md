@@ -99,7 +99,7 @@ Transport notes:
   with `bounded.rekey`, and adds `bounded.rekey_list`; a 7.x apadmin would read an account
   with no `admin_operations` as having no rekey path, so it is refused at authentication
   rather than shown a wrong review; later 8.0 work, still unreleased, makes
-  `bounded.max_fee` optional (absent for a plain host, contract `plain1`) and adds
+  `bounded.max_fee` optional (absent on a `plain1` account) and adds
   `boundary_schema` to key types;
   7.3 adds `review_fingerprint` and
   `boundary_digest` to `prepare_generate_result`, an optional
@@ -398,7 +398,7 @@ interlocks.
 
 #### Key Management
 
-- `prepare_generate_key`: `key_type`, optional `parameters` -> `prepare_generate_result`: `success`, optional `key_type`, `parameters`, `fingerprint`, `review_fingerprint`, `boundary_digest`, `bounded`, `cosigner_key_id`, `code`, `error`. Local IPC only, under `keys.generate`. It runs generation's checks and reports the resolved request so apadmin can review it. It creates no key, changes no store state, and has no address, because the spending key does not exist yet. A reference name resolves to its public key in `parameters`, and `bounded` carries `contract` (`bounded2`, or `plain1` for a plain host), `spend_effects`, `max_fee` (absent for a plain host, which has no fee ceiling), `rekey` (`refused` or `spending_key`), optional `rekey_list` (true when the account has a rekey-to list, whose entries are `parameters.rekey_to`: *only these* under `rekey: refused`, a rekey only to a listed address; *plus cosigned* under `rekey: spending_key` with `cosigner_required`, a listed address with the spending key alone and any other with the cosigner too; there is no root yet, because it depends on the spending key), `layer3_policy`, and `cosigner_required`
+- `prepare_generate_key`: `key_type`, optional `parameters` -> `prepare_generate_result`: `success`, optional `key_type`, `parameters`, `fingerprint`, `review_fingerprint`, `boundary_digest`, `bounded`, `cosigner_key_id`, `code`, `error`. Local IPC only, under `keys.generate`. It runs generation's checks and reports the resolved request so apadmin can review it. It creates no key, changes no store state, and has no address, because the spending key does not exist yet. A reference name resolves to its public key in `parameters`, and `bounded` carries `contract` (`bounded2`, or `plain1` for a plain host account without bounds), `spend_effects`, `max_fee` (absent on `plain1`, which has no fee ceiling), `rekey` (`refused` or `spending_key`), optional `rekey_list` (true when the account has a rekey-to list, whose entries are `parameters.rekey_to`: *only these* under `rekey: refused`, a rekey only to a listed address; *plus cosigned* under `rekey: spending_key` with `cosigner_required`, a listed address with the spending key alone and any other with the cosigner too; there is no root yet, because it depends on the spending key), `layer3_policy`, and `cosigner_required`
 - `generate_key`: `key_type`, optional `name`, optional `expected_fingerprint`, optional `expected_boundary_digest`, optional `parameters`; accepted over IPC, but generated recovery material is not returned over the admin protocol. the rotating key types (such as `aplane.rotating-triple-wotsc.v1`) require the parameter `network` (a network the signer knows, or a base64 genesis hash)
 - `generate_result`: `success`, optional `address`, `key_type`, `parameters`, `code`, `error`; `mnemonic` and `word_count` fields remain in the schema but are omitted by signer responses
 - `delete_key`: `address` -> `delete_result`: `success`, optional `code`, `error`
@@ -410,8 +410,9 @@ interlocks.
 - `keys_changed`: `key_count`
 
 Mnemonic import permits native `ed25519` and `falcon1024` only. The two plain
-LogicSig types are [plain hosts](ARCH_KEYTYPES.md#plain-hosts): enabled per
-node, then generated with or without overlays; neither takes mnemonic import.
+LogicSig types are [plain hosts](ARCH_KEYTYPES.md#plain-hosts) (`aplane.falcon1024.v1`
+enabled by default, `aplane.ed25519.v1` enabled per node), generated with or
+without overlays and bounds; neither takes mnemonic import.
 
 > **Boundary note — admin `keys_list` is not the HTTP key inventory.** The admin
 > transport entry is `protocol.AdminKeyInfo` (thin: address, key type, name,
@@ -707,9 +708,8 @@ Writable admin settings:
 - `lock_on_disconnect`
 - `passphrase_timeout`
 - `require_contained` and `require_cosigner`: restrict new
-  accounts of the per-key types only: `aplane.falcon1024-b.v1` and the plain
-  hosts (`aplane.falcon1024.v1`, `aplane.ed25519.v1`), the plain program
-  included
+  accounts of the per-key types only, the plain hosts (`aplane.falcon1024.v1`,
+  `aplane.ed25519.v1`), the plain program included
 - `theme`
 
 Node role is not a writable admin setting. It is initialized once in root
@@ -852,18 +852,26 @@ The implementation lives in `internal/signerapp/signertui/`.
 The Generate form classifies the selected key type from the signer's inventory. A type
 with `per_key_contract` and `boundary_schema` `aplane.boundary.v1` opens the preset
 screen, and the form records it in `boundaryKeyType`, so later preset and boundary-file
-steps use that value rather than a constant. A per-key type with no `boundary_schema`,
-such as a plain host, uses the parameter form. Nothing here depends on the key type's
-name.
+steps use that value rather than a constant. Both plain hosts report the schema. The
+preset screen, titled "New <type> Account", lists titles only, with the selected row's
+description under it: **No bounds**, the presets (**Allowlist**, **Locked Allowlist**,
+**Corridor**, **Timelock**), **Custom bounds**, then **Load boundary file**. No bounds
+opens the overlay form without bounds; Custom bounds opens it with every bounds field
+the type declares, the transfer kinds required; a preset opens it with the preset's
+fields. A per-key type with no `boundary_schema` would use the parameter form. Nothing
+here depends on the key type's name.
 
 On a per-key type that offers a cosigner (`cosigner_component_key_type`) and declares
 `rekey_authority` (with options) and `rekey_to`, the parameter form is the overlay form
-(`overlay_form.go`): the type's bounds as one group (a preset's fields, or the type's
-own parameters without one), then three controls over `cosigner`, `rekey_to` and
-`rekey_authority`. The cosigner is the picker, optional unless a preset needs it, and
-Backspace clears it; its label names the algorithm of the cosigner key type. The rekey
-control offers the type's declared settings that fit: `refused` and `spending_key`
-without a list, `only_these` with one, and `plus_cosigned` with one and a cosigner. A
+(`overlay_form.go`): the bounds as one group first (a preset's fields, every bounds
+field under Custom bounds, none under No bounds), then three controls over `cosigner`,
+`rekey_to` and `rekey_authority`: Require a cosigner, Add rekey-to addresses, and Allow
+rekeys (Rekey-to option once the list has addresses). The cosigner is the picker,
+optional unless a preset needs it, and Backspace clears it; its label names the
+algorithm of the cosigner key type. The rekey control offers the type's declared
+settings that fit: `refused` ("No, never") and `spending_key` ("Yes, spending key
+alone", or "Yes, spending key and cosigner") without a list, on a bounded form as on
+any other, `only_these` with one, and `plus_cosigned` with one and a cosigner. A
 setting the control no longer offers moves to its first. Empty fields are left out of
 the request, and a preset's fixed values never override a field the form shows, so the
 operator's rekey choice wins over the preset's. The raw cosigner key and list root are
@@ -884,7 +892,7 @@ online keys. A cosigned `spending_key` account reads "Spending key and cosigner"
 together they can rekey out of the boundary, to any target the cosigner's policy
 allows. The details list every `rekey_to` address and
 flag those in this signer's key list, and Ed25519 ones among them, and say the list is
-in the key's backup. See [ARCH_KEYTYPES.md](ARCH_KEYTYPES.md#the-general-bounded-key-type).
+in the key's backup. See [ARCH_KEYTYPES.md](ARCH_KEYTYPES.md#the-bounds).
 
 ### Model / View / Update
 
