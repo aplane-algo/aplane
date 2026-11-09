@@ -19,7 +19,22 @@ func LoadAliasCacheFromStore(store *Store) AliasCache {
 	if err := loadSignedCacheWithKey(store, storePath(store, "alias_cache.json"), &cache); err != nil {
 		warnCacheLoadError("alias cache", err)
 	}
+	cache.dropAddressNamedAliases()
 	return cache
+}
+
+// dropAddressNamedAliases ignores any alias whose name is itself an address.
+// Creating one is refused, so one in the cache was written by an older
+// version or planted to redirect that address; it could never resolve, since
+// an address always resolves as itself, and listing it would show one address
+// labelled as another. The next save drops it from the file.
+func (cache *AliasCache) dropAddressNamedAliases() {
+	for name, address := range cache.Aliases {
+		if refname.IsAddress(name) {
+			warnf("alias cache: ignoring alias %q, which points to %s: its name is an Algorand address, so it would redirect that address", name, address)
+			delete(cache.Aliases, name)
+		}
+	}
 }
 
 // SaveCache saves the alias cache to disk with HMAC signature
@@ -82,18 +97,16 @@ func (cache *AliasCache) RemoveAlias(alias string) error {
 	return nil
 }
 
-// ResolveAddress resolves an alias or address to an address (normalized to uppercase)
+// ResolveAddress resolves an address or alias to an address (normalized to
+// uppercase). An address always resolves as itself, in either case, before
+// any alias is consulted, so no alias can redirect it.
 func (cache *AliasCache) ResolveAddress(input string) (string, error) {
-	// Check alias first - user-defined names take precedence
-	if address, exists := cache.Aliases[refname.NormalizeAlias(input)]; exists {
-		return address, nil
-	}
-
-	// Not an alias, try to decode as Algorand address (uppercase before decode, normalize output)
 	if decoded, err := types.DecodeAddress(strings.ToUpper(input)); err == nil {
 		return decoded.String(), nil
 	}
-
+	if address, exists := cache.Aliases[refname.NormalizeAlias(input)]; exists {
+		return address, nil
+	}
 	return "", fmt.Errorf("'%s' is neither a valid Algorand address nor a known alias", input)
 }
 

@@ -7,6 +7,8 @@ package refname
 import (
 	"fmt"
 	"strings"
+
+	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
 var reservedAliasNames = map[string]bool{
@@ -33,9 +35,25 @@ func init() {
 	}
 }
 
-// ValidateAlias validates a persisted alias name.
+// ValidateAlias validates a persisted alias name. A name that is itself an
+// Algorand address is refused: wherever an address is accepted, it would
+// otherwise stand for a different account than the one it spells.
 func ValidateAlias(name string) error {
-	return validate("alias", NormalizeAlias(name), reservedAliasNames)
+	name = NormalizeAlias(name)
+	if err := validate("alias", name, reservedAliasNames); err != nil {
+		return err
+	}
+	if IsAddress(name) {
+		return fmt.Errorf("alias name %q is an Algorand address; an alias can't be named like one", name)
+	}
+	return nil
+}
+
+// IsAddress reports whether name, in either case, is a valid Algorand
+// address.
+func IsAddress(name string) bool {
+	_, err := types.DecodeAddress(strings.ToUpper(name))
+	return err == nil
 }
 
 // ValidateSet validates a persisted set name.

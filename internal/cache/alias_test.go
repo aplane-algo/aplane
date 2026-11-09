@@ -4,6 +4,7 @@
 package cache
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -73,19 +74,58 @@ func TestAliasCacheUpdateAliasForceReplacesExistingValue(t *testing.T) {
 	}
 }
 
-func TestAliasCacheResolveAddressPrefersAliasOverRawAddress(t *testing.T) {
+// Audit finding 2: an alias named like an address used to redirect that
+// address everywhere it was resolved. An address now always resolves as
+// itself, in either case, even with such an alias in the map.
+func TestAliasCacheResolveAddressNeverRedirectsAnAddress(t *testing.T) {
 	cache := AliasCache{
 		Aliases: map[string]string{
 			strings.ToLower(aliasTestAddress(1)): aliasTestAddress(2),
 		},
 	}
 
-	got, err := cache.ResolveAddress(aliasTestAddress(1))
-	if err != nil {
-		t.Fatalf("ResolveAddress() error = %v", err)
+	for _, input := range []string{aliasTestAddress(1), strings.ToLower(aliasTestAddress(1))} {
+		got, err := cache.ResolveAddress(input)
+		if err != nil {
+			t.Fatalf("ResolveAddress(%q) error = %v", input, err)
+		}
+		if got != aliasTestAddress(1) {
+			t.Fatalf("ResolveAddress(%q) = %q, want the address itself %q", input, got, aliasTestAddress(1))
+		}
 	}
-	if got != aliasTestAddress(2) {
-		t.Fatalf("ResolveAddress() = %q, want alias target %q", got, aliasTestAddress(2))
+}
+
+func TestAliasCacheRefusesAnAddressAsAName(t *testing.T) {
+	cache := LoadAliasCacheFromStore(NewStore(t.TempDir()))
+	for _, name := range []string{aliasTestAddress(1), strings.ToLower(aliasTestAddress(1))} {
+		err := cache.UpdateAlias(name, aliasTestAddress(2), true)
+		if err == nil || !strings.Contains(err.Error(), "is an Algorand address") {
+			t.Fatalf("UpdateAlias(%q) error = %v, want the address-name refusal", name, err)
+		}
+	}
+	if len(cache.Aliases) != 0 {
+		t.Fatalf("aliases = %v, want none", cache.Aliases)
+	}
+}
+
+// An address-named alias already in the cache, from an older version or
+// planted to redirect the address, is ignored when the cache loads.
+func TestLoadAliasCacheIgnoresAddressNamedAliases(t *testing.T) {
+	cache := LoadAliasCacheFromStore(NewStore(t.TempDir()))
+	if err := cache.UpdateAlias("alice", aliasTestAddress(3), false); err != nil {
+		t.Fatalf("UpdateAlias(alice) error = %v", err)
+	}
+	cache.Aliases[strings.ToLower(aliasTestAddress(1))] = aliasTestAddress(2)
+	if err := cache.SaveCache(); err != nil {
+		t.Fatalf("SaveCache() error = %v", err)
+	}
+
+	reloaded := LoadAliasCacheFromStore(cache.store)
+	if want := map[string]string{"alice": aliasTestAddress(3)}; !reflect.DeepEqual(reloaded.Aliases, want) {
+		t.Fatalf("reloaded aliases = %v, want %v", reloaded.Aliases, want)
+	}
+	if got := reloaded.GetAliasForAddress(aliasTestAddress(2)); got != "" {
+		t.Fatalf("GetAliasForAddress(target) = %q, want no label", got)
 	}
 }
 

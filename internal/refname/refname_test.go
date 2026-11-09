@@ -22,6 +22,11 @@ func TestValidateAlias(t *testing.T) {
 		{name: "LIST", wantErr: true},
 		{name: "delete", wantErr: true},
 		{name: "remove", wantErr: true},
+		// A valid address, in either case, can't be an alias name.
+		{name: "AEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABG2O3TWY", wantErr: true},
+		{name: "aeaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabg2o3twy", wantErr: true},
+		// The same 58 characters with a bad checksum aren't an address.
+		{name: "AEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABG2O3TWA", wantErr: false},
 	}
 
 	for _, tt := range tests {

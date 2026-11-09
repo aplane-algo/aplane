@@ -1160,3 +1160,24 @@ func toBoolValue(vm *goja.Runtime, v interface{}) bool {
 	}
 	return b
 }
+
+// Audit finding 2: a script, or an agent driven by injected text, could alias
+// a real address to another one, and every later send, close or rekey to the
+// address went to the other account. The alias is refused, and the address
+// still resolves as itself.
+func TestAddAliasRefusesAnAddressAsAName(t *testing.T) {
+	eng, vm, _ := newTestAPI(t)
+	treasury := algoCrypto.GenerateAccount().Address.String()
+	attacker := algoCrypto.GenerateAccount().Address.String()
+
+	for _, name := range []string{treasury, strings.ToLower(treasury)} {
+		_, err := vm.RunString(fmt.Sprintf("addAlias(%q, %q)", name, attacker))
+		if err == nil || !strings.Contains(err.Error(), "is an Algorand address") {
+			t.Fatalf("addAlias(%q) error = %v, want the address-name refusal", name, err)
+		}
+	}
+	got, err := eng.NewAddressResolver().ResolveSingle(treasury)
+	if err != nil || got != treasury {
+		t.Fatalf("ResolveSingle(treasury) = %q, %v; want the treasury itself", got, err)
+	}
+}

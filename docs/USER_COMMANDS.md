@@ -459,7 +459,10 @@ alias delete alice
 
 Alias names may contain only ASCII letters, numbers, `-`, and `_`, and are
 stored in lowercase. The command words `list`, `delete`, and `remove` are
-reserved.
+reserved, and a name that is itself an Algorand address (in either case) is
+refused. An address always means itself wherever an address is accepted; no
+alias can redirect it. An address-named alias left in the cache by an older
+version is ignored, with a warning, when the cache loads.
 
 ---
 

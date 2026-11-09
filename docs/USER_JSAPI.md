@@ -156,7 +156,9 @@ for (const account of accounts()) {
 
 Alias and set names may contain only ASCII letters, numbers, `-`, and `_`, and
 are stored in lowercase. Reserved alias/set command words cannot be used as
-persisted alias or set names.
+persisted alias or set names, and `addAlias()` refuses a name that is itself an
+Algorand address. An address argument always means that address; no alias can
+redirect it.
 
 ## Signer And Key Management
 
