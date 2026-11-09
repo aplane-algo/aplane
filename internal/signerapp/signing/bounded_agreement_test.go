@@ -78,6 +78,10 @@ const (
 	agCosignedLabel    = "__aplane_bounded1_cosigned_rekey"
 	agListCombineLabel = "__aplane_bounded1_rekey_list_combine"
 	agListOrderedLabel = "__aplane_bounded1_rekey_list_ordered"
+	// A Merkle shape's listed rekey folds its proof with the allowlist's
+	// combine instead of carrying its own.
+	agMerkleCombineLabel = "__aplane_bounded1_merkle_combine"
+	agMerkleOrderedLabel = "__aplane_bounded1_merkle_ordered"
 )
 
 var (
@@ -1623,10 +1627,18 @@ func TestBoundedRekeyFirstCheckRefusesOtherLayouts(t *testing.T) {
 		{"the listed rekey compares another root", listed, func(teal string) string {
 			return agReplace(t, teal, agRekeyLabel, "pushbytes 0x"+listed.metadata.RekeyList.RootHex+"\n", "pushbytes 0x"+strings.Repeat("00", 32)+"\n")
 		}, false},
-		{"the list subroutine reads an argument", listed, func(teal string) string {
+		// A Merkle shape's listed rekey shares the allowlist's combine; a plain
+		// host's list, with no Merkle allowlist, carries its own.
+		{"the shared combine reads an argument", listed, func(teal string) string {
+			return agReplace(t, teal, "", agMerkleCombineLabel+":\n", agMerkleCombineLabel+":\narg 0\nconcat\n")
+		}, false},
+		{"the shared combine branches out", listed, func(teal string) string {
+			return agReplace(t, teal, agMerkleCombineLabel, "bnz "+agMerkleOrderedLabel+"\n", "bnz "+agAcceptLabel+"\n")
+		}, false},
+		{"the list's own subroutine reads an argument", plainEd25519, func(teal string) string {
 			return agReplace(t, teal, "", agListCombineLabel+":\n", agListCombineLabel+":\narg 0\nconcat\n")
 		}, false},
-		{"the list subroutine branches out", listed, func(teal string) string {
+		{"the list's own subroutine branches out", plainEd25519, func(teal string) string {
 			return agReplace(t, teal, agListCombineLabel, "bnz "+agListOrderedLabel+"\n", "bnz "+agAcceptLabel+"\n")
 		}, false},
 		// A plain host's dispatch follows the spending check directly, and

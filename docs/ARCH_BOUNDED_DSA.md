@@ -361,8 +361,11 @@ The listed check reads the rekey-list proof argument and requires it to be exact
 160 bytes. It forms the leaf `SHA256(0x02 || salt || RekeyTo)` from the proof's
 first 32 bytes, folds in the four 32-byte siblings that follow as sorted pairs
 (`SHA256(0x01 || min || max)`), and asserts that the result equals the root
-compiled into the program. Nothing else runs on that path; on a cosigned account
-the cosigner is not asked. The tree is defined under
+compiled into the program. That fold is the Merkle recipient tree's too, so a
+program with a Merkle allowlist renders it once, as
+`__aplane_bounded1_merkle_combine`, and the listed check calls it; any other
+program carries it as `__aplane_bounded1_rekey_list_combine`. Nothing else runs
+on that path; on a cosigned account the cosigner is not asked. The tree is defined under
 [Rekey-To List Compatibility Contract](#rekey-to-list-compatibility-contract).
 
 Under `plus_cosigned` the program branches on which arguments were sent, because

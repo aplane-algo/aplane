@@ -25,6 +25,10 @@ const (
 
 	boundedRekeyListCombineLabel = "__aplane_bounded1_rekey_list_combine"
 	boundedRekeyListOrderedLabel = "__aplane_bounded1_rekey_list_ordered"
+	// merkleCombineLabel is the Merkle allowlist's proof fold, which a listed
+	// rekey shares when the program has one.
+	merkleCombineLabel = "__aplane_bounded1_merkle_combine"
+	merkleOrderedLabel = "__aplane_bounded1_merkle_ordered"
 
 	// boundedCosignerLabel is the cosigner check, one subroutine every path the
 	// cosigner signs calls, so its key compiles once.
@@ -118,7 +122,7 @@ func (c *ComposedDSA) renderBoundedPrelude(publicKey []byte, params map[string]s
 		proofIndex := c.rekeyListProofIndex(metadata)
 		writePureRekey()
 		b.WriteString(fmt.Sprintf("arg %d\nlen\nbz %s\n", proofIndex, boundedCosignedRekeyLabel))
-		renderListedRekey(&b, proofIndex, root)
+		renderListedRekey(&b, proofIndex, root, c.sharesMerkleCombine())
 		b.WriteString(boundedCosignedRekeyLabel + ":\n")
 		b.WriteString("callsub " + boundedCosignerLabel + "\n")
 		b.WriteString("b " + boundedAcceptLabel + "\n\n")
@@ -130,7 +134,7 @@ func (c *ComposedDSA) renderBoundedPrelude(publicKey []byte, params map[string]s
 			return "", err
 		}
 		writePureRekey()
-		renderListedRekey(&b, c.rekeyListProofIndex(metadata), root)
+		renderListedRekey(&b, c.rekeyListProofIndex(metadata), root, c.sharesMerkleCombine())
 	case cosignedRekey:
 		writePureRekey()
 		b.WriteString("callsub " + boundedCosignerLabel + "\n")

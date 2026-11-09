@@ -369,10 +369,10 @@ func (c *ComposedDSA) renderMerkleAllowlist(params map[string]string, profile *B
 	b.WriteString(fmt.Sprintf("arg %d\nlen\npushint %d\n==\nassert\n", proofIndex, merkleallowlist.ProofSize))
 	b.WriteString("pushbytes 0x00\nswap\nconcat\nsha256\n")
 	for offset := 0; offset < merkleallowlist.ProofSize; offset += 32 {
-		b.WriteString(fmt.Sprintf("arg %d\npushint %d\npushint 32\nextract3\ncallsub __aplane_bounded1_merkle_combine\n", proofIndex, offset))
+		b.WriteString(fmt.Sprintf("arg %d\npushint %d\npushint 32\nextract3\ncallsub %s\n", proofIndex, offset, merkleCombineLabel))
 	}
 	b.WriteString("pushbytes 0x" + root + "\n==\nretsub\n\n")
-	b.WriteString("__aplane_bounded1_merkle_combine:\ndup2\nb<\nbnz __aplane_bounded1_merkle_ordered\nswap\n__aplane_bounded1_merkle_ordered:\nconcat\npushbytes 0x01\nswap\nconcat\nsha256\nretsub\n\n")
+	writeSortedPairCombine(&b, merkleCombineLabel, merkleOrderedLabel)
 	b.WriteString("__aplane_bounded1_merkle_done:\n")
 	return b.String(), nil
 }

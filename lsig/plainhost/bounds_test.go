@@ -1504,6 +1504,31 @@ func TestResourceBackstopRefusesWhatCannotRun(t *testing.T) {
 	}
 }
 
+// A Merkle shape with a rekey-to list folds both proofs with one subroutine:
+// the listed rekey calls the allowlist's combine rather than carrying a copy.
+// Other list shapes keep the list's own.
+func TestMerkleListShapesShareOneCombine(t *testing.T) {
+	for _, b := range bases(t) {
+		for _, shape := range plainhost.Shapes() {
+			if !shape.HasRekeyList() || shape.AnyRecipient {
+				continue
+			}
+			teal, err := b.provider.GenerateTEAL(b.spendingKey, withRoot(t, b.provider, shapeRequest(shape, testAddress(1)+","+testAddress(2))))
+			if err != nil {
+				t.Fatal(err)
+			}
+			definitions := strings.Count(teal, "\n__aplane_bounded1_merkle_combine:") + strings.Count(teal, "\n__aplane_bounded1_rekey_list_combine:")
+			if definitions != 1 {
+				t.Fatalf("%s %s: %d combine subroutines, want one", b.name, shape.Descriptor(), definitions)
+			}
+			merkle := shape.Encoding == plainhost.EncodingMerkle
+			if strings.Contains(teal, "__aplane_bounded1_rekey_list_combine") == merkle {
+				t.Fatalf("%s %s: merkle %v, but the list's own combine is present %v", b.name, shape.Descriptor(), merkle, !merkle)
+			}
+		}
+	}
+}
+
 // These values freeze what approval and provenance mean. A failure here is a
 // review obligation, not a fixture to refresh:
 //
@@ -1530,8 +1555,8 @@ func TestBoundsFingerprintGoldens(t *testing.T) {
 			firstShape:        "1:b5266cee501e3b9a20164484fa2e4334b420bd5a47f7e45e5d9020f7d1896590",
 			fullShape:         "1:b4efb8a343077eb838ca3646354fc98e02a6bc2cc6e455048afc484ed0b9b263",
 			boundaryDigest:    "fc7c7b20998e33024636c11e56653a24320c16028330fab2b2c6e7dc8e95ff38",
-			allowlists:        "507e2a80d47c405e39684accfe4f7a498e9cf722281ab5f4f26d91ebf034ce60",
-			timelocks:         "206459e5c4e051880a81e69a61ec84708e237aa41ec554034ce3940deaddde49",
+			allowlists:        "c9f373cfd2e4c8ce88f7d54b43cd41f8499b9767ff8e6b27594fc597f0fab878",
+			timelocks:         "acaab4b08ef7b1170b3b3798a75da57246da5aa7aae50e72d94f2ce2c74267e7",
 			spendingKeyShapes: "878b68d5b37527910df9efa80b5fcf7fc86b09a567ec23900ac3e5538d967b36",
 			limits:            "ed48000cae1be962081a58fcc294d9c4fbf0847ced6b34d0e66e55403793cabb",
 		},
@@ -1539,8 +1564,8 @@ func TestBoundsFingerprintGoldens(t *testing.T) {
 			firstShape:        "1:602f2e2819cc80b7cd3d52553d665a27d154223aef57fb7cd7d9ae33de724bc5",
 			fullShape:         "1:15c970558356419748a4e56f1f0e9b29fda4940320c2e63466901d20fc1d7d87",
 			boundaryDigest:    "42d94bb4bdaceec99f8a55c499448002a4aff488c4ab15dd39ae70e23d08e1cf",
-			allowlists:        "48b7c1eeafabd818c997e5a964258ae067d6888d83fc913d1cd10364283a4f6a",
-			timelocks:         "a76b992295769d9d0ab8133b2666ba9852c0debf5f86f3d2db9c0df6b15054bc",
+			allowlists:        "3ac0b4b28e9d132f37ccbd8157aa7fda8be40dd51d92a9d5419d64e751eae53f",
+			timelocks:         "da369825aeb45b69f686a3ac594461acadcf08970c2700d9b1908a8f2fe67cd8",
 			spendingKeyShapes: "5bcbe423923b4b715c8b5fb5654243ce8ac0bf01da720b4f5c96f5e230d72022",
 			limits:            "48e3e3c545e6c39d008a5dcffecb0160b76e1ee7ad66a16e59db4c0ab8899bfe",
 		},
