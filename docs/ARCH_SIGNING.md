@@ -329,47 +329,37 @@ When apsigner receives a grouped `/sign` request, it processes the group in this
 7. Run approval and policy evaluation on the finalized group.
    - The signer evaluates the whole group, including foreign context and passthrough entries.
    - Only sign-mode entries are candidates for actual signing by this signer.
-   - A foreign entry whose account this signer holds is shown as the signer's own
+   - A foreign entry this signer's records connect to it is shown as such
      (`heldForeignPositions` in `internal/signerapp/signing/held_position.go`). A mixed
      cosigned group is signed in several requests, and each carries the others'
      positions as foreign entries, so the reviewer sees the same group more than once.
-     - The review heads such an entry `[THIS SIGNER'S ACCOUNT - not signed in this
-       request]`; any other foreign entry stays `[FOREIGN - not signing]`.
-     - Its rekey warning reads the account's rekey-to list, so a listed rekey is named
-       as a listed handover, not as a loss of control.
-     - The signer decides this from its own key records, by the entry's sender. A
-       client can't claim it for an address the signer doesn't hold.
-     - On `/sign/component` a context position can name an `auth_address` for a sender
-       that is another address. The signer knows it holds that key; it can't check here
-       that the sender was rekeyed to it. So the review reports the claim and doesn't
-       vouch for it: the entry is headed `[NOT SIGNED IN THIS REQUEST - authorizer named
-       by the request]` with a `Named authorizer:` line, it isn't counted among the
-       signer's accounts, and its rekey warning takes no rekey-to list.
-     - Only the review text changes. The entry is still not signed here and has no
+     - **What the signer knows.** It knows which keys it holds. It doesn't read the
+       chain at this step, so it doesn't know which key authorizes an account now. The
+       review says only the first.
+     - **A sender whose key the signer holds** is headed `[THIS SIGNER HOLDS THIS
+       ACCOUNT'S KEY - not signed in this request]`. The sender comes first: it is
+       recognised whatever else the request names.
+     - **Its rekey warning** reads the account's rekey-to list, so a listed rekey is
+       named as a listed handover, not as a loss of control. This assumes the sender
+       hasn't been rekeyed away, as the request that signs it does.
+     - **A named authorizer.** On `/sign/component` a context position can name an
+       `auth_address` for a sender that is another address. That the sender was rekeyed
+       to it is the request's word, so the review reports it and doesn't vouch for it:
+       - a `Named authorizer:` line says the signer holds the key and that it isn't
+         checked against the chain;
+       - when the signer doesn't hold the sender, the entry is headed `[NOT SIGNED IN
+         THIS REQUEST - authorizer named by the request]` and counts as foreign;
+       - either way the rekey warning takes no rekey-to list.
+     - **Any other foreign entry** stays `[FOREIGN - not signing]`.
+     - **The group line** counts the two apart: `N not signed in this request: M whose
+       key this signer holds, K foreign`.
+     - **A stored rekey-to list that doesn't read** is said under the heading, and the
+       warning falls back to the unlisted text.
+     - **Only the review text changes.** The entry is still not signed here and has no
        policy here; a rekey on it still forces review.
-     - Not recognised: an entry on `/sign` whose sender was rekeyed to an account this
-       signer holds. A foreign entry carries no `auth_address`, and the signer doesn't
-       read the chain at this step, so it stays `[FOREIGN - not signing]`.
-   - Approval mode is based on the number of client-requested transactions, not the expanded finalized group length after dummy insertion.
-   - Server-added dummies affect disclosure, fee impact, and final artifact construction, but they are not rendered as separate approval items.
-
-8. Sign signer-owned entries by key type.
-   - Native Ed25519 keys produce standard signed transactions; native
-     Falcon-1024 keys produce a `SignedTxn` with top-level `PQsig`.
-   - DSA-backed LogicSigs derive their signing message and assemble the final authorized transaction.
-   - Generic LogicSigs assemble bytecode and runtime args without a cryptographic signature.
-
-9. Preserve passthrough entries exactly as provided.
-   - Already-signed bytes are carried through unchanged.
-   - Passthrough is how externally signed slots remain part of the final output.
-
-10. Return aligned output for the full finalized group.
-    - Sign-mode slots contain signed transaction bytes.
-    - Passthrough slots contain the original signed bytes.
-    - Foreign slots contain `""`.
-    - Any appended dummy slots appear at the end of the response.
-
----
+     - **Not recognised:** an entry on `/sign` whose sender was rekeyed to an account
+       this signer holds. A foreign entry carries no `auth_address`, so it stays
+       `[FOREIGN - not signing]`.
 
 ## The `/plan` Endpoint
 
