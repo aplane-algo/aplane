@@ -601,6 +601,16 @@ func (m Model) renderGenerateDisplay() string {
 	sb.WriteString(fmt.Sprintf("%s: %s\n", m.keyIdentifierLabel(m.forms.generatedKeyType), m.forms.generatedAddress))
 	sb.WriteString(fmt.Sprintf("Type:    %s\n", displayKeyType(m.forms.generatedKeyType)))
 	sb.WriteString("\n")
+	// One of these can be new since the review, so each is named here: its
+	// first sentence, which stands alone. The full text doesn't fit the smallest
+	// window beside the receipt prompt.
+	for _, warning := range m.forms.generatedWarnings {
+		sb.WriteString(warningStyle.Render("Warning: " + middleEllipsize(firstSentence(warning), 68-len("Warning: "))))
+		sb.WriteString("\n")
+	}
+	if len(m.forms.generatedWarnings) > 0 {
+		sb.WriteString("\n")
+	}
 
 	sb.WriteString(subtitleStyle.Render("Recovery material is stored encrypted in the signer keyfile."))
 	sb.WriteString("\n")

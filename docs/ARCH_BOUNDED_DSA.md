@@ -166,6 +166,11 @@ A witness key must differ from the spending key and from each of its components,
 key reused inside a larger construction is caught. That compares known keys only, and
 it can't show that custody or seeds are independent.
 
+That is the only key a cosigner key is compared with for a refusal. A cosigner key that
+is the key of another account this signer holds is allowed, and generation warns that
+such a cosigner isn't independent of this signer. See
+[Role Separation](ARCH_COSIGNED.md#role-separation).
+
 `max_fee` has no budget limit, only a wire limit:
 
 - A template states its own `max_fee`, and a plain host request may state one
@@ -695,6 +700,27 @@ moves one slot later than it would without the list; a template cannot declare t
 kind itself. A listed address is a way out, so a spend subset without a transfer
 still leaves the account an exit. A cosigner beside
 `only_these` is not asked for a listed rekey.
+
+The list may name any address, with one exception. Generation refuses a list that
+names a rotating account this signer holds (`refuseRekeyToHeldRotatingAccount` in
+`internal/signerapp/keyadmin`), because the signer never signs a rekey to one: a
+rotating account's address is a one-time stage key. The refusal has three limits:
+
+- It sees only accounts this signer holds. An address doesn't reveal its key type, so
+  a rotating account held elsewhere passes.
+- It recognises only the rotating account's own address. The addresses of its later
+  stages are one-time keys too, and a list that names one passes. The signing gate
+  (`rejectRekeyToRotating`) has the same limit: it refuses a rekey to a held rotating
+  account's address, not to one of its stage addresses.
+- It is an admission check at generation. The composer and durable validation don't
+  make it, so an account already stored with such a list still loads.
+
+No list escapes the check for lack of addresses. A creation request always gives the
+list as `rekey_to`, and key generation computes the root from it; a request that
+carries `bounded_rekey_to_root` is refused.
+
+Every other entry is the user's choice, including one that can never act on the
+account, such as a cosigner key's native address.
 
 `rekey: plus_cosigned` is `spending_key` plus the same list, and is stored that
 way: `rekey: spending_key` and `rekey_list`. It needs a cosigner, whose

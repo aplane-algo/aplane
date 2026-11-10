@@ -37,6 +37,10 @@ func TestProjectGenerateIPC(t *testing.T) {
 		t.Fatalf("Generate IPC projection leaked mnemonic material: %s", wire)
 	}
 
+	if len(result.Warnings) != 0 {
+		t.Fatalf("a generation without warnings projects %q", result.Warnings)
+	}
+
 	errCases := []struct {
 		name string
 		err  *Error
@@ -152,5 +156,19 @@ func TestTrimKeyNotFoundPrefix(t *testing.T) {
 	}
 	if got := trimKeyNotFoundPrefix("ADDR"); got != "ADDR" {
 		t.Fatalf("trimKeyNotFoundPrefix() = %q, want ADDR", got)
+	}
+}
+
+// The signer's warnings about the account it created reach the admin client in
+// order: one of them can be new since the review. A failure carries none.
+func TestProjectGenerateIPCCarriesWarnings(t *testing.T) {
+	warnings := []string{"first warning", "second warning"}
+	result := ProjectGenerateIPC(&GenerateResult{Address: "ADDR", KeyType: "aplane.falcon1024.v1", Warnings: warnings}, nil)
+	if !result.Success || len(result.Warnings) != 2 || result.Warnings[0] != warnings[0] || result.Warnings[1] != warnings[1] {
+		t.Fatalf("result = %+v", result)
+	}
+	failed := ProjectGenerateIPC(nil, &Error{Kind: ErrorInvalidInput, Message: "bad request"})
+	if failed.Success || failed.Error != "bad request" || len(failed.Warnings) != 0 {
+		t.Fatalf("failed = %+v", failed)
 	}
 }

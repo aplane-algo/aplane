@@ -31,7 +31,8 @@ type PreparedGeneration struct {
 	// Bounded is the bounded contract, or nil for any other key type.
 	Bounded       *boundedmeta.Metadata
 	CosignerKeyID string
-	// Warnings are the provider's notes for the reviewer. They refuse nothing.
+	// Warnings are the provider's and the signer's own notes for the reviewer.
+	// They refuse nothing.
 	Warnings []string
 }
 
@@ -57,6 +58,9 @@ func (s Service) PrepareGenerateKey(keyType string, params map[string]string) (*
 		return nil, err
 	}
 	if err := s.checkGenerationRequirements(creation); err != nil {
+		return nil, err
+	}
+	if err := s.checkAgainstHeldKeys(creation); err != nil {
 		return nil, err
 	}
 

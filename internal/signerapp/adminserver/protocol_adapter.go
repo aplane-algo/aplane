@@ -709,6 +709,7 @@ func ProtocolGenerateResultMessage(id string, result adminproto.GenerateKeyResul
 		Address:    result.Address,
 		KeyType:    result.KeyType,
 		Parameters: result.Parameters,
+		Warnings:   result.Warnings,
 		Code:       result.Code,
 		Error:      result.Error,
 	}

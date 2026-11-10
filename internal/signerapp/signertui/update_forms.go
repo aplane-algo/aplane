@@ -100,6 +100,7 @@ func (m Model) handleGenerateDisplayKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.selectKeyByAddress(m.forms.generatedAddress)
 		m.forms.generatedAddress = ""
 		m.forms.generatedKeyType = ""
+		m.forms.generatedWarnings = nil
 		m.forms.receipt = nil
 		m.forms.receiptPath = ""
 		m.forms.receiptError = ""

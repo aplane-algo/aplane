@@ -561,11 +561,12 @@ var signerMessageDecoders = map[string]func(raw []byte) (tea.Msg, error){
 	protocol.MsgTypeExportResult: decodeAs(func(result protocol.ExportResultMessage) tea.Msg { return nativeMnemonicResultMsg(result) }),
 	MsgTypeGenerateResult: decodeAs(func(genResult GenerateResultMessage) tea.Msg {
 		return GenerateResultMsg{
-			ID:      genResult.ID,
-			Success: genResult.Success,
-			Address: genResult.Address,
-			KeyType: genResult.KeyType,
-			Error:   genResult.Error,
+			ID:       genResult.ID,
+			Success:  genResult.Success,
+			Address:  genResult.Address,
+			KeyType:  genResult.KeyType,
+			Warnings: genResult.Warnings,
+			Error:    genResult.Error,
 		}
 	}),
 	MsgTypePrepareGenerateResult: decodeAs(func(result PrepareGenerateResultMessage) tea.Msg {

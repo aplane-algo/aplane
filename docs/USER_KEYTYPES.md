@@ -347,9 +347,20 @@ post-quantum account, say which held targets are classical and ask you to confir
 rest are post-quantum, since an address doesn't reveal its key type. These are
 statements: nothing here refuses a choice.
 
-The review also shows the signer's warnings, one line each, with the full text under
-**DETAILS**. There is one today, for a fee limit below what one of the account's
-transactions costs on its own. On the review:
+The review also shows the signer's warnings on one line, with the full text under
+**DETAILS**. A warning refuses nothing: **GENERATE** stays available. There are two:
+
+- a fee limit below what one of the account's transactions costs on its own;
+- a cosigner key that this signer also holds as an account's key.
+
+One warning shows as its first sentence. Several show as one line with their count, and
+**DETAILS** lists each in full:
+
+```text
+Warning: 2 things to read before generating. See details.
+```
+
+For the fee limit, on the review:
 
 ```text
 Warning: Fee limit 0 is too low to pay alone. See details.
@@ -372,6 +383,36 @@ share the cost, or have another account in the group pay its fees.
 - The figure is a lower bound, worked out from the keys the program must hold before the
   program exists. A limit just above it can still fall short, and signing says so when
   it plans the group.
+
+For a cosigner key this signer holds, on the review:
+
+```text
+Warning: The cosigner is a key this signer holds. See details.
+```
+
+In the details:
+
+```text
+The cosigner is a key this signer holds. It is the key of <address>, so the
+cosigner isn't independent of this signer: whoever controls this signer's keys
+can give both signatures.
+```
+
+- It appears when the cosigner public key is also the key of an account in this
+  signer's key list, and it names that account.
+- It is allowed. The two roles sign different messages, so a signature made as the
+  cosigner can't be used as the account's, or the other way round.
+- What you give up is independence. A cosigner is a second party only if its private
+  key is somewhere this signer's operator can't reach. Use a key held on a separate
+  cosigner node for that.
+- One choice is still refused: an account's own spending key can't be its cosigner.
+- You should rarely see it. A cosigner key is generated on a cosigner node and can't be
+  imported from a recovery phrase, and a node is a signer or a cosigner, never both. So
+  the warning appears only when key material was copied between nodes by hand.
+
+The screen after generation names each warning again by its first sentence, under the
+new account's address. The full text is in the review's details. A warning can be there that the review didn't show, when this signer's keys
+changed between the review and the generation.
 
 After generating, press `s` to save a receipt beside where apadmin was started. A receipt
 documents the account, including its rekey-to addresses. It cannot restore one: use
@@ -478,10 +519,21 @@ both can rekey it anywhere, out of its recipient list.
   an address is listed by asking `/plan` for a rekey to it, which refuses an unlisted
   target, or by attempting the rekey, so treat an enrolled client as able to find the
   list's members.
-- **Any address can be listed, so check the list.** Generation no longer refuses an
-  address that could never act on the account, such as one of this signer's rotating
-  accounts, whose address is a one-time stage key, or a cosigner key's native address,
-  since a cosigner key never signs as an account. Such an entry is a dead branch.
+- **Any address can be listed, with one exception, so check the list.** Generation
+  doesn't refuse an address that could never act on the account, such as a cosigner
+  key's native address, since a cosigner key never signs as an account. Such an entry
+  is a dead branch.
+- **The exception: a rotating account this signer holds.** Generation refuses a list
+  that names one, with "cannot rekey to `<address>`: it is a rotating account, and its
+  address is a one-time stage key". The signer would never sign that rekey, so the entry
+  would be a way out that doesn't exist. The check has three limits:
+  - It catches only rotating accounts this signer holds, because an address doesn't
+    reveal its key type. Don't list a rotating account held on another signer either.
+  - It catches only the rotating account's own address. The addresses of its later
+    stages are one-time keys too, and neither this check nor the signer's refusal at
+    signing knows them. Don't list a stage address.
+  - It runs only when an account is created. An account that already has such an
+    entry keeps working, and that entry stays a dead branch.
 - **The list can't change.** A mistaken list can't be repaired: move the funds out
   while the account can still spend.
 
@@ -517,7 +569,8 @@ signer has not seen that summary, so a cosigner name in it is unresolved, and ed
 that reference before creation changes which cosigner is used. Prefer a Witness Key ID:
 it can only select that cosigner, and apshell checks the created account against it.
 After creation, apshell shows what the signer actually stored, and any warning the
-signer raised about the account, such as a fee limit too low for the account to pay alone. apshell has
+signer raised about the account, such as a fee limit too low for the account to pay alone
+or a cosigner key this signer holds. apshell has
 no review step for that warning: it arrives with the created account, which you can
 delete before funding it.
 

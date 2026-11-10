@@ -821,8 +821,11 @@ type GenerateResultMessage struct {
 	Mnemonic   string            `json:"mnemonic,omitempty"` // Legacy compatibility field; current responses omit it.
 	WordCount  int               `json:"word_count,omitempty"`
 	Parameters map[string]string `json:"parameters,omitempty"` // Creation parameters needed for address re-derivation
-	Code       string            `json:"code,omitempty"`
-	Error      string            `json:"error,omitempty"`
+	// Warnings are the signer's notes about the account it created. They are
+	// the review's unless the signer's keys changed in between.
+	Warnings []string `json:"warnings,omitempty"`
+	Code     string   `json:"code,omitempty"`
+	Error    string   `json:"error,omitempty"`
 }
 
 // DeleteKeyMessage requests deletion of a key

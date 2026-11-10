@@ -28,6 +28,7 @@ func ProjectGenerateIPC(result *GenerateResult, err *Error) adminproto.GenerateK
 		Address:    result.Address,
 		KeyType:    result.KeyType,
 		Parameters: result.Parameters,
+		Warnings:   result.Warnings,
 	}
 }
 
