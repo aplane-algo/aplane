@@ -102,13 +102,32 @@ func slotRequirement(paths ArgumentPathMask, path string) string {
 	}
 }
 
+// ValidateNetworkLimits refuses an argument layout the network would refuse on
+// any transaction: more arguments than one LogicSig carries, or one larger than
+// a LogicSig argument may be. No group shape lifts either.
+//
+// It is a check for when a template is built and when a key is generated, not
+// part of durable validation: a stored account past a limit still loads, since
+// a path that doesn't use the oversized argument, such as a rekey, may still
+// work.
+func (metadata *Metadata) ValidateNetworkLimits() error {
+	if metadata == nil {
+		return nil
+	}
+	if len(metadata.ArgumentLayout) > lsigresource.MaxLogicSigArgs {
+		return fmt.Errorf("bounded argument_layout has %d arguments: a LogicSig carries at most %d", len(metadata.ArgumentLayout), lsigresource.MaxLogicSigArgs)
+	}
+	for i, slot := range metadata.ArgumentLayout {
+		if slot.MaxSize > lsigresource.MaxLogicSigArgBytes {
+			return fmt.Errorf("argument slot %d (%s) is %d bytes: a LogicSig argument is at most %d", i, slot.Name, slot.MaxSize, lsigresource.MaxLogicSigArgBytes)
+		}
+	}
+	return nil
+}
+
 func validateArgumentLayout(metadata *Metadata) error {
 	if len(metadata.ArgumentLayout) == 0 {
 		return fmt.Errorf("bounded argument_layout must not be empty")
-	}
-	// The network's limits on one LogicSig, which no group shape can lift.
-	if len(metadata.ArgumentLayout) > lsigresource.MaxLogicSigArgs {
-		return fmt.Errorf("bounded argument_layout has %d arguments: a LogicSig carries at most %d", len(metadata.ArgumentLayout), lsigresource.MaxLogicSigArgs)
 	}
 	sourceOrder := map[string]int{
 		ArgSourceBaseSignature: 0,
@@ -154,9 +173,6 @@ func validateArgumentLayout(metadata *Metadata) error {
 		}
 		if slot.Name == "" || slot.MaxSize <= 0 {
 			return fmt.Errorf("argument slot %d has invalid name or maximum size", i)
-		}
-		if slot.MaxSize > lsigresource.MaxLogicSigArgBytes {
-			return fmt.Errorf("argument slot %d (%s) is %d bytes: a LogicSig argument is at most %d", i, slot.Name, slot.MaxSize, lsigresource.MaxLogicSigArgBytes)
 		}
 		if _, duplicate := seenNames[slot.Name]; duplicate {
 			return fmt.Errorf("duplicate argument slot name %q", slot.Name)

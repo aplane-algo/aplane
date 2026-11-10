@@ -619,9 +619,12 @@ declares is `merkle_allowlist_proof`.
 
 The argument layout stays inside the network's limits on one LogicSig: at most 255
 slots, and no slot over 4,096 bytes. The whole layout counts: signatures, proofs,
-runtime arguments and the cosigner's signature. Metadata validation refuses a layout
-past either limit, and it runs when the template is built, so such a template can't
-be installed, and again at key generation and whenever stored metadata is loaded.
+runtime arguments and the cosigner's signature. `Metadata.ValidateNetworkLimits`
+refuses a layout past either limit when the template is built, so such a template
+can't be installed, and again at key generation. It is not part of durable
+validation: a stored account past a limit still loads, because a path that doesn't
+carry the oversized argument, such as a rekey, may still work. Signing also refuses
+a supplied runtime argument over 4,096 bytes, whether or not it declares a size.
 
 ```yaml
 schema_version: 2

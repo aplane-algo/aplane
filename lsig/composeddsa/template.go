@@ -195,41 +195,68 @@ func newProviderFromBase(spec *TemplateSpec, base BaseRegistration, saltStyle ls
 		Layer3:             layer3,
 		OpcodeProfile:      spec.LogicSigOpcodeProfile(bounded != nil),
 	})
+	// A template is refused when it is built, so one that could never work
+	// can't be installed. Both steps also run when a key is generated.
+	if err := provider.validateTemplateContract(); err != nil {
+		return nil, err
+	}
 	if err := provider.checkArgumentLimits(); err != nil {
 		return nil, err
 	}
 	return provider, nil
 }
 
-// checkArgumentLimits refuses a program whose LogicSig could never be submitted:
-// its arguments must fit the network's limits on one LogicSig. A bounded
-// program's whole layout (signatures, proofs, runtime arguments and the
-// cosigner's signature) is checked through its template-level metadata, so an
-// impossible template is refused when it is installed, not when a key is
-// generated from it. Any other composed program has the base's signature
-// arguments and the template's runtime arguments.
+// validateTemplateContract checks a bounded template against its template-level
+// contract: the profile, the framework's injected parameters, and the argument
+// layout's structure. Instance fields, such as a cosigner key, wait for key
+// generation.
+func (c *ComposedDSA) validateTemplateContract() error {
+	if c.bounded == nil {
+		return nil
+	}
+	metadata, err := c.boundedAuthorizationMetadataBase()
+	if err != nil {
+		return fmt.Errorf("invalid bounded template contract: %w", err)
+	}
+	if metadata == nil {
+		return nil
+	}
+	if err := metadata.ValidateProfile(); err != nil {
+		return fmt.Errorf("invalid bounded template contract: %w", err)
+	}
+	return nil
+}
+
+// checkArgumentLimits refuses a program whose LogicSig the network would refuse
+// on any transaction: too many arguments, or one too large. A bounded program's
+// whole layout counts (signatures, proofs, runtime arguments and the cosigner's
+// signature). Any other composed program has the base's signature arguments and
+// the template's runtime arguments.
 func (c *ComposedDSA) checkArgumentLimits() error {
 	if c.bounded != nil {
-		metadata, err := c.boundedAuthorizationMetadataBase()
+		// validateTemplateContract has already built this without error.
+		if metadata, err := c.boundedAuthorizationMetadataBase(); err == nil && metadata != nil {
+			return metadata.ValidateNetworkLimits()
+		}
+	}
+	// A base that doesn't describe its signature arguments still carries at
+	// least one.
+	signatureArgs := 1
+	if _, described := c.SignatureArgLayout(); described {
+		layout, err := c.validatedSignatureArgLayout()
 		if err != nil {
 			return err
 		}
-		if metadata != nil {
-			return metadata.ValidateProfile()
+		for i, size := range layout.MaxSizes {
+			if size > lsigresource.MaxLogicSigArgBytes {
+				return fmt.Errorf("base signature argument %d is %d bytes: a LogicSig argument is at most %d", i, size, lsigresource.MaxLogicSigArgBytes)
+			}
 		}
+		signatureArgs = layout.Count
 	}
-	layout, ok := c.SignatureArgLayout()
-	if !ok {
-		return nil
-	}
-	for i, size := range layout.MaxSizes {
-		if size > lsigresource.MaxLogicSigArgBytes {
-			return fmt.Errorf("base signature argument %d is %d bytes: a LogicSig argument is at most %d", i, size, lsigresource.MaxLogicSigArgBytes)
-		}
-	}
-	if total := layout.Count + len(c.runtimeArgs); total > lsigresource.MaxLogicSigArgs {
+	if total := signatureArgs + len(c.runtimeArgs); total > lsigresource.MaxLogicSigArgs {
 		return fmt.Errorf("%d arguments (%d signature, %d runtime): a LogicSig carries at most %d",
-			total, layout.Count, len(c.runtimeArgs), lsigresource.MaxLogicSigArgs)
+			total, signatureArgs, len(c.runtimeArgs), lsigresource.MaxLogicSigArgs)
 	}
 	return nil
 }
@@ -252,6 +279,10 @@ func validateBoundedArguments(spec *generictemplate.BoundedAuthorizationSpec, pa
 		}
 		if arg.MaxSize <= 0 || arg.ByteLength < 0 || arg.ByteLength > arg.MaxSize {
 			return fmt.Errorf("bounded.runtime_args argument %q has invalid size bounds", arg.Name)
+		}
+		// The same refusal, in the same words, as a schema 1 runtime argument.
+		if arg.MaxSize > lsigresource.MaxLogicSigArgBytes {
+			return fmt.Errorf("runtime_arg %s is %d bytes: a LogicSig argument is at most %d", arg.Name, arg.MaxSize, lsigresource.MaxLogicSigArgBytes)
 		}
 		if _, duplicate := seen[arg.Name]; duplicate {
 			return fmt.Errorf("bounded argument name %q is duplicated", arg.Name)

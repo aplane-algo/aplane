@@ -500,8 +500,9 @@ func TestMetadataValidatePlainHost(t *testing.T) {
 }
 
 // The network refuses a LogicSig with more than 255 arguments or one argument
-// over 4,096 bytes, so stored metadata can't describe one.
-func TestMetadataValidateRefusesArgumentsTheNetworkRefuses(t *testing.T) {
+// over 4,096 bytes. ValidateNetworkLimits refuses a layout that describes one;
+// durable validation doesn't, so an account stored with one still loads.
+func TestNetworkLimitsRefuseArgumentsTheNetworkRefuses(t *testing.T) {
 	base := func(signatureSize int) *Metadata {
 		layout := SignatureArgLayout{Count: 1, MaxSizes: []int{signatureSize}}
 		return &Metadata{
@@ -534,15 +535,22 @@ func TestMetadataValidateRefusesArgumentsTheNetworkRefuses(t *testing.T) {
 		{name: "256 arguments", input: withRuntimeArgs(base(64), 255, 8), wantErr: "bounded argument_layout has 256 arguments: a LogicSig carries at most 255"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			err := test.input.Validate()
+			// Durable validation is structure only, so a stored account past a
+			// network limit still loads: a path that doesn't carry the oversized
+			// argument may still work.
+			if err := test.input.Validate(); err != nil {
+				t.Fatalf("Validate() error = %v: a stored account must keep loading", err)
+			}
+			// The limits are checked when a template is built and a key generated.
+			err := test.input.ValidateNetworkLimits()
 			if test.wantErr == "" {
 				if err != nil {
-					t.Fatalf("Validate() error = %v", err)
+					t.Fatalf("ValidateNetworkLimits() error = %v", err)
 				}
 				return
 			}
 			if err == nil || !strings.Contains(err.Error(), test.wantErr) {
-				t.Fatalf("Validate() error = %v, want %q", err, test.wantErr)
+				t.Fatalf("ValidateNetworkLimits() error = %v, want %q", err, test.wantErr)
 			}
 		})
 	}

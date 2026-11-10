@@ -16,6 +16,10 @@ before it was renamed `enroll`.
 - A composed template's count includes its base's signature arguments. A bounded
   template's whole layout counts: signatures, proofs, runtime arguments and the
   cosigner's signature. Both are refused when the template is installed.
+- A runtime argument value over 4,096 bytes is refused at signing too, which covers an
+  argument that declares no size.
+- The limits are checked when a template is built and when a key is generated, not
+  when a stored key is loaded.
 - A bounded template is now checked against its template-level contract when it is
   built. Two mistakes that used to surface only at key generation are refused at
   install too: a parameter with the reserved `bounded_` prefix, and a `rekey_to`

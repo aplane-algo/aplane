@@ -965,6 +965,10 @@ func TestComposedTemplateRefusesArgumentsTheNetworkRefuses(t *testing.T) {
 		{name: "runtime argument over the size limit", layout: oneSlot, runtimeArgs: 1, maxSize: 4097, want: "runtime_arg arg0 is 4097 bytes: a LogicSig argument is at most 4096"},
 		{name: "base signature argument at the size limit", layout: SignatureArgLayout{Count: 1, MaxSizes: []int{4096}}, runtimeArgs: 1, maxSize: 8},
 		{name: "base signature argument over the size limit", layout: SignatureArgLayout{Count: 1, MaxSizes: []int{4097}}, runtimeArgs: 1, maxSize: 8, want: "base signature argument 0 is 4097 bytes: a LogicSig argument is at most 4096"},
+		// A layout whose count and sizes disagree could hide an argument from
+		// either check, so it is refused as it is for a bounded program.
+		{name: "more sizes than the count", layout: SignatureArgLayout{Count: 1, MaxSizes: []int{2000, 5000}}, runtimeArgs: 1, maxSize: 8, want: "signature"},
+		{name: "a count without sizes", layout: SignatureArgLayout{Count: 3}, runtimeArgs: 1, maxSize: 8, want: "signature"},
 	}
 	for i, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1004,6 +1008,54 @@ runtime_args:
 				t.Fatalf("NewProviderFromTemplateSpec() error = %v, want %q", err, tt.want)
 			}
 		})
+	}
+}
+
+// A base that doesn't describe its signature arguments still carries at least
+// one, so the count allows for it.
+func TestComposedTemplateCountsASignatureForAnUndescribedBase(t *testing.T) {
+	for i, tt := range []struct {
+		runtimeArgs int
+		want        string
+	}{
+		{runtimeArgs: 254},
+		{runtimeArgs: 255, want: "256 arguments (1 signature, 255 runtime): a LogicSig carries at most 255"},
+	} {
+		baseKeyType := fmt.Sprintf("test.template-arg-limit-plain-base%d.v1", i)
+		registerBaseForTest(t, BaseRegistration{
+			BaseKeyType:       baseKeyType,
+			FamilyName:        fmt.Sprintf("template-arg-limit-plain-base%d", i),
+			Version:           1,
+			Ops:               testOps{construction: sigconstruction.Falcon1024()},
+			NewAddressDeriver: func(string) addressderive.Deriver { return testDeriver{} },
+		})
+		spec, err := ParseTemplateSpec([]byte(fmt.Sprintf(`schema_version: 1
+template_type: composed
+base_key_type: %s
+template_mode: generated
+publisher: test
+family: template-arg-limit-plain
+version: 1
+display_name: "Template Arg Limit"
+max_opcode_cost: 20000
+runtime_args:
+%steal: |
+  int 1
+  assert
+`, baseKeyType, runtimeArgsYAMLForTest("  ", tt.runtimeArgs, 8, false))))
+		if err != nil {
+			t.Fatalf("ParseTemplateSpec() error = %v", err)
+		}
+		_, err = NewProviderFromTemplateSpec(spec)
+		if tt.want == "" {
+			if err != nil {
+				t.Fatalf("%d runtime arguments: %v", tt.runtimeArgs, err)
+			}
+			continue
+		}
+		if err == nil || !strings.Contains(err.Error(), tt.want) {
+			t.Fatalf("%d runtime arguments: error = %v, want %q", tt.runtimeArgs, err, tt.want)
+		}
 	}
 }
 
@@ -1066,10 +1118,10 @@ bounded:
 	}
 }
 
-// A bounded template can't yield a key whose LogicSig the network refuses. The
-// test holds wherever the refusal comes, and logs the stage: an oversized
-// bounded runtime argument, and a count that only the cosigner slot takes past
-// 255, are refused when the key's metadata is built, not when the template is.
+// A bounded template whose LogicSig the network would refuse is refused before
+// it can be installed: when its spec is parsed or its provider is built, never
+// as late as key generation. That covers an oversized runtime argument and a
+// count that only the cosigner slot takes past 255.
 func TestComposedSchemaV2NeverYieldsArgumentsTheNetworkRefuses(t *testing.T) {
 	registerBaseForTest(t, BaseRegistration{
 		BaseKeyType:       "aplane.falcon1024.v1",
@@ -1111,29 +1163,27 @@ bounded:
   int 1
   assert
 `, tt.cosigner, runtimeArgsYAMLForTest("    ", tt.runtimeArgs, tt.maxSize, true))))
-			if err != nil {
-				t.Fatalf("ParseTemplateSpec() error = %v", err)
-			}
-			stage := "template construction"
-			provider, err := NewProviderFromTemplateSpec(spec)
+			var provider *ComposedDSA
 			if err == nil {
-				stage = "key metadata"
-				params := map[string]string{}
-				if tt.cosigner != "" {
-					params[BoundedCosignerPublicKeyParameter] = hex.EncodeToString(bytes.Repeat([]byte{0x42}, boundedmeta.CosignerPublicKeySizeV1))
-				}
-				_, err = provider.BuildBoundedAuthorizationMetadata(bytes.Repeat([]byte{0x31}, boundedmeta.CosignerPublicKeySizeV1), params, []byte{1, 2, 3})
+				provider, err = NewProviderFromTemplateSpec(spec)
 			}
-			if tt.want == "" {
-				if err != nil {
-					t.Fatalf("%s error = %v", stage, err)
+			if tt.want != "" {
+				// Before key generation: at the spec or the provider.
+				if err == nil || !strings.Contains(err.Error(), tt.want) {
+					t.Fatalf("building the template: error = %v, want %q", err, tt.want)
 				}
 				return
 			}
-			if err == nil || !strings.Contains(err.Error(), tt.want) {
-				t.Fatalf("%s error = %v, want %q", stage, err, tt.want)
+			if err != nil {
+				t.Fatalf("building the template: %v", err)
 			}
-			t.Logf("refused at %s: %v", stage, err)
+			params := map[string]string{}
+			if tt.cosigner != "" {
+				params[BoundedCosignerPublicKeyParameter] = hex.EncodeToString(bytes.Repeat([]byte{0x42}, boundedmeta.CosignerPublicKeySizeV1))
+			}
+			if _, err := provider.BuildBoundedAuthorizationMetadata(bytes.Repeat([]byte{0x31}, boundedmeta.CosignerPublicKeySizeV1), params, []byte{1, 2, 3}); err != nil {
+				t.Fatalf("key metadata: %v", err)
+			}
 		})
 	}
 }

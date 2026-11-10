@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/algo"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/internal/rotatingkey"
 
@@ -134,8 +135,8 @@ func TestSizesMatchPrimitive(t *testing.T) {
 	}
 	total := 0
 	for i, c := range ChunkSizes {
-		if c > 4096 {
-			t.Fatalf("argument %d is %d bytes, above the AVM value limit", i, c)
+		if c > lsigresource.MaxLogicSigArgBytes {
+			t.Fatalf("argument %d is %d bytes, above the LogicSig argument limit", i, c)
 		}
 		total += c
 	}
