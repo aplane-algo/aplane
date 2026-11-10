@@ -36,6 +36,12 @@ func (s *Service) runCosignerGates(plan *ComponentSignPlan) *ServiceError {
 	}
 	group := componentPlanTxns(plan)
 	targets := componentTargetPositions(plan)
+	// A group the network could never accept gets no witness signature. This
+	// route reaches neither the planner nor the frozen-component validation,
+	// which make the same check.
+	if err := validateTransactionBounds(group); err != nil {
+		return err
+	}
 	if err := s.rejectSignerInvariants(group, targets); err != nil {
 		s.logCosignerRejections(plan, auditSignerInvariant+err.Message, "")
 		return err

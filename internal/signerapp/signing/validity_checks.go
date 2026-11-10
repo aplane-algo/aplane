@@ -6,7 +6,6 @@ package signing
 import (
 	"fmt"
 
-	sdkconfig "github.com/algorand/go-algorand-sdk/v2/protocol/config"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/lsigresource"
@@ -22,34 +21,37 @@ import (
 // It is deliberately short. It is not node validation: confirmation also
 // depends on chain state, and reproducing every consensus rule here would make
 // the signer refuse valid transactions whenever it lagged a protocol upgrade.
-// Every limit is read from the pinned consensus parameters fee planning already
-// uses, never restated: a remembered constant is how a surcharge threshold gets
-// mistaken for a maximum.
+//
+// Every limit is read from the compiled consensus profile fee planning uses,
+// never restated: a remembered constant is how a surcharge threshold gets
+// mistaken for a maximum. That profile is one pinned version for every network,
+// so these are refusals under it. The versions the signer accepts agree on both
+// limits, which a test holds; a protocol change to either needs the pin moved.
 //
 // Every position is checked, signed here or not: one member the network refuses
 // fails the whole group.
 func validateTransactionBounds(txns []types.Transaction) *ServiceError {
-	params, ok := sdkconfig.Consensus[lsigresource.CurrentConsensusVersion]
-	if !ok {
-		return internal(fmt.Sprintf("SDK has no parameters for the compiled consensus contract %s", lsigresource.CurrentConsensusVersion))
+	profile, err := lsigresource.CurrentConsensus()
+	if err != nil {
+		return internal(fmt.Sprintf("load compiled consensus contract: %v", err))
 	}
-	for i, txn := range txns {
-		if err := checkTransactionBounds(txn, params); err != nil {
+	for i := range txns {
+		if err := checkTransactionBounds(&txns[i], profile); err != nil {
 			return badRequest(fmt.Sprintf("transaction %d: %v", i+1, err))
 		}
 	}
 	return nil
 }
 
-func checkTransactionBounds(txn types.Transaction, params sdkconfig.ConsensusParams) error {
+func checkTransactionBounds(txn *types.Transaction, profile lsigresource.ConsensusProfile) error {
 	if txn.LastValid < txn.FirstValid {
 		return fmt.Errorf("last valid round %d is before first valid round %d, so it can never be valid", txn.LastValid, txn.FirstValid)
 	}
-	if life := uint64(txn.LastValid - txn.FirstValid); life > params.MaxTxnLife {
-		return fmt.Errorf("validity window of %d rounds (%d to %d) is longer than the network's maximum of %d", life, txn.FirstValid, txn.LastValid, params.MaxTxnLife)
+	if life := uint64(txn.LastValid - txn.FirstValid); life > profile.MaxTxnLife {
+		return fmt.Errorf("validity window of %d rounds (%d to %d) is longer than the network's maximum of %d", life, txn.FirstValid, txn.LastValid, profile.MaxTxnLife)
 	}
-	if len(txn.Note) > params.MaxAbsoluteTxnNoteBytes {
-		return fmt.Errorf("note is %d bytes, above the network's maximum of %d", len(txn.Note), params.MaxAbsoluteTxnNoteBytes)
+	if size := uint64(len(txn.Note)); size > profile.MaxAbsoluteTxnNoteBytes {
+		return fmt.Errorf("note is %d bytes, above the network's maximum of %d", size, profile.MaxAbsoluteTxnNoteBytes)
 	}
 	return nil
 }

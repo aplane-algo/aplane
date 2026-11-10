@@ -17,8 +17,10 @@ before it was renamed `enroll`.
   and the mistake used to surface only at submission, after an approval and a
   signature. This was a wasted approval, not a safety problem: the network refuses
   these transactions regardless.
-- The limits come from the pinned consensus parameters. A note above 1,024 bytes and
-  within 4,096 is valid and pays a surcharge, as before.
+- The limits come from the pinned consensus parameters (`MaxTxnLife` and
+  `MaxAbsoluteTxnNoteBytes`). A note above `MaxTxnNoteBytes`, where the surcharge
+  starts, and within the absolute maximum is valid and pays that surcharge, as before.
+- A cosigner node makes the same check before it gives a witness signature.
 - It is not full validation. Other malformed transactions are still refused only by
   the network.
 

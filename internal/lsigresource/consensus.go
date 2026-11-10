@@ -30,6 +30,14 @@ type ConsensusProfile struct {
 	OpcodeUnit             uint64
 	PerByteTxnSurcharge    uint64
 	MaximumLogicSigVersion uint64
+	// MaxTxnLife is the longest validity window, LastValid - FirstValid, a
+	// transaction may have.
+	MaxTxnLife uint64
+	// MaxTxnNoteBytes is the note size above which a per-byte surcharge
+	// applies. MaxAbsoluteTxnNoteBytes is the largest note the network
+	// accepts. A note between them is valid.
+	MaxTxnNoteBytes         uint64
+	MaxAbsoluteTxnNoteBytes uint64
 }
 
 // ResolveConsensus accepts only the reviewed v42 and v43 identifiers and returns
@@ -55,14 +63,17 @@ func consensusProfile(version protocol.ConsensusVersion) (ConsensusProfile, erro
 		return ConsensusProfile{}, fmt.Errorf("%w: SDK has no parameters for %q", ErrUnknownConsensus, version)
 	}
 	profile := ConsensusProfile{
-		Version:                version,
-		MaxGroupSize:           uint64(params.MaxTxGroupSize),
-		MinTxnFee:              params.MinTxnFee,
-		SizeUnit:               params.LogicSigMaxSize,
-		MaxProgramBytes:        params.MaxAbsoluteLogicSigProgramSize,
-		OpcodeUnit:             params.LogicSigMaxCost,
-		PerByteTxnSurcharge:    uint64(params.PerByteTxnSurcharge),
-		MaximumLogicSigVersion: params.LogicSigVersion,
+		Version:                 version,
+		MaxGroupSize:            uint64(params.MaxTxGroupSize),
+		MinTxnFee:               params.MinTxnFee,
+		SizeUnit:                params.LogicSigMaxSize,
+		MaxProgramBytes:         params.MaxAbsoluteLogicSigProgramSize,
+		OpcodeUnit:              params.LogicSigMaxCost,
+		PerByteTxnSurcharge:     uint64(params.PerByteTxnSurcharge),
+		MaximumLogicSigVersion:  params.LogicSigVersion,
+		MaxTxnLife:              params.MaxTxnLife,
+		MaxTxnNoteBytes:         uint64(params.MaxTxnNoteBytes),
+		MaxAbsoluteTxnNoteBytes: uint64(params.MaxAbsoluteTxnNoteBytes),
 	}
 	if err := profile.validate(); err != nil {
 		return ConsensusProfile{}, fmt.Errorf("consensus profile %q: %w", version, err)
@@ -73,6 +84,11 @@ func consensusProfile(version protocol.ConsensusVersion) (ConsensusProfile, erro
 func (p ConsensusProfile) validate() error {
 	if p.MaxGroupSize == 0 || p.MinTxnFee == 0 || p.SizeUnit == 0 || p.MaxProgramBytes == 0 || p.OpcodeUnit == 0 {
 		return fmt.Errorf("%w: consensus resource unit is zero", ErrInvalidUsage)
+	}
+	// A zero here would refuse every transaction, and an absolute note maximum
+	// below the surcharge threshold would refuse valid notes.
+	if p.MaxTxnLife == 0 || p.MaxAbsoluteTxnNoteBytes == 0 || p.MaxAbsoluteTxnNoteBytes < p.MaxTxnNoteBytes {
+		return fmt.Errorf("%w: consensus transaction bounds are zero or inconsistent", ErrInvalidUsage)
 	}
 	return nil
 }

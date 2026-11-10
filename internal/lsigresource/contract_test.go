@@ -4,6 +4,7 @@
 package lsigresource
 
 import (
+	"errors"
 	"reflect"
 	"testing"
 
@@ -183,4 +184,75 @@ func referenceProgramSurcharge(params sdkconfig.ConsensusParams, programs []int,
 		charged = 0
 	}
 	return charged, uint64(charged) * uint64(params.PerByteTxnSurcharge)
+}
+
+// The transaction bounds the signer checks before approval are the SDK's own
+// for the pinned version. The absolute note maximum is above the size where a
+// surcharge starts: a check against the smaller one would refuse valid notes.
+func TestPinnedV42TransactionBounds(t *testing.T) {
+	t.Parallel()
+
+	params := sdkconfig.Consensus[protocol.ConsensusV42]
+	profile := mustProfile(t, protocol.ConsensusV42)
+	if profile.MaxTxnLife != params.MaxTxnLife {
+		t.Fatalf("MaxTxnLife = %d, want the SDK's %d", profile.MaxTxnLife, params.MaxTxnLife)
+	}
+	if profile.MaxTxnNoteBytes != uint64(params.MaxTxnNoteBytes) {
+		t.Fatalf("MaxTxnNoteBytes = %d, want the SDK's %d", profile.MaxTxnNoteBytes, params.MaxTxnNoteBytes)
+	}
+	if profile.MaxAbsoluteTxnNoteBytes != uint64(params.MaxAbsoluteTxnNoteBytes) {
+		t.Fatalf("MaxAbsoluteTxnNoteBytes = %d, want the SDK's %d", profile.MaxAbsoluteTxnNoteBytes, params.MaxAbsoluteTxnNoteBytes)
+	}
+	if profile.MaxAbsoluteTxnNoteBytes <= profile.MaxTxnNoteBytes {
+		t.Fatalf("absolute note maximum %d is not above the surcharge threshold %d", profile.MaxAbsoluteTxnNoteBytes, profile.MaxTxnNoteBytes)
+	}
+	current, err := CurrentConsensus()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current != profile {
+		t.Fatalf("CurrentConsensus() = %#v, want the v42 profile %#v", current, profile)
+	}
+}
+
+func TestAcceptedVersionsAgreeOnTransactionBounds(t *testing.T) {
+	t.Parallel()
+
+	const why = "the signer checks transaction bounds under one pinned version (CurrentConsensusVersion) for every network, " +
+		"so a difference between accepted versions means the pin or the check needs revisiting"
+	v42 := mustProfile(t, protocol.ConsensusV42)
+	v43 := mustProfile(t, protocol.ConsensusV43)
+	if v43.MaxTxnLife != v42.MaxTxnLife {
+		t.Fatalf("MaxTxnLife: v43 = %d, v42 = %d; %s", v43.MaxTxnLife, v42.MaxTxnLife, why)
+	}
+	if v43.MaxAbsoluteTxnNoteBytes != v42.MaxAbsoluteTxnNoteBytes {
+		t.Fatalf("MaxAbsoluteTxnNoteBytes: v43 = %d, v42 = %d; %s", v43.MaxAbsoluteTxnNoteBytes, v42.MaxAbsoluteTxnNoteBytes, why)
+	}
+}
+
+func TestConsensusProfileRefusesUnusableTransactionBounds(t *testing.T) {
+	t.Parallel()
+
+	good := mustProfile(t, protocol.ConsensusV42)
+	if err := good.validate(); err != nil {
+		t.Fatalf("the v42 profile was refused: %v", err)
+	}
+	// The absolute maximum may equal the threshold: no note pays a surcharge.
+	equal := good
+	equal.MaxAbsoluteTxnNoteBytes = equal.MaxTxnNoteBytes
+	if err := equal.validate(); err != nil {
+		t.Fatalf("an absolute maximum equal to the threshold was refused: %v", err)
+	}
+	for name, mutate := range map[string]func(*ConsensusProfile){
+		"zero MaxTxnLife":                         func(p *ConsensusProfile) { p.MaxTxnLife = 0 },
+		"zero MaxAbsoluteTxnNoteBytes":            func(p *ConsensusProfile) { p.MaxAbsoluteTxnNoteBytes = 0 },
+		"zero absolute maximum and threshold":     func(p *ConsensusProfile) { p.MaxAbsoluteTxnNoteBytes, p.MaxTxnNoteBytes = 0, 0 },
+		"an absolute maximum below the threshold": func(p *ConsensusProfile) { p.MaxAbsoluteTxnNoteBytes = p.MaxTxnNoteBytes - 1 },
+	} {
+		profile := good
+		mutate(&profile)
+		if err := profile.validate(); !errors.Is(err, ErrInvalidUsage) {
+			t.Errorf("%s: validate() = %v, want ErrInvalidUsage", name, err)
+		}
+	}
 }
