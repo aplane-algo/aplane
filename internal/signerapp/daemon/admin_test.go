@@ -490,8 +490,8 @@ func TestAdminGenerateReturnsTheFeeLimitWarning(t *testing.T) {
 			if resp.Parameters["max_fee"] != test.maxFee {
 				t.Fatalf("parameters = %v", resp.Parameters)
 			}
-			want := "Fee limit " + test.maxFee + " is below its own costs. It can't pay for these transactions itself: spend (at least 2000). " +
-				"Each needs another account in the same group to pay its fees."
+			want := "Fee limit " + test.maxFee + " is too low to pay alone. A transaction on its own costs more: spend (at least 2000). " +
+				"Batch it with others that share the cost, or have another account in the group pay its fees."
 			if len(resp.Warnings) != 1 || resp.Warnings[0] != want {
 				t.Fatalf("warnings = %q, want %q", resp.Warnings, want)
 			}

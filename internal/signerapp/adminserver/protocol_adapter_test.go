@@ -33,7 +33,7 @@ func TestProtocolRestoreBackupResultOmitsProcessLocalCommitState(t *testing.T) {
 // any carries no warnings field at all.
 func TestProtocolPrepareGenerateResultCarriesWarnings(t *testing.T) {
 	warnings := []string{
-		"Fee limit 0 is below its own costs. It can't pay for these transactions itself: spend (at least 2000).",
+		"Fee limit 0 is too low to pay alone. A transaction on its own costs more: spend (at least 2000).",
 		"a second note",
 	}
 	msg := ProtocolPrepareGenerateResultMessage("prepare-1", adminproto.PrepareGenerateKeyResult{

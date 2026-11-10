@@ -72,9 +72,10 @@ spending and rekeying; the presets set it to 10,000 microAlgos
 (0.01 ALGO) per protected transaction, and an account can be created with any
 other value. This is a ceiling, not a fixed fee or
 a guarantee that every path is viable under every network fee schedule. An
-account whose ceiling is below what its own transactions cost, zero included,
-pays no fees itself: another account in the same group must pay them, for its
-exit too.
+account whose ceiling is below what one of its transactions costs on its own
+can't send that transaction alone: it needs a group that shares the cost, or
+another account in the group to pay. With a ceiling of zero another account
+always pays.
 
 No stateful application deployment is required. Each authorization program is
 fixed, and its code accompanies the transaction when used. The account still

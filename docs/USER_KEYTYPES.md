@@ -348,26 +348,27 @@ rest are post-quantum, since an address doesn't reveal its key type. These are
 statements: nothing here refuses a choice.
 
 The review also shows the signer's warnings, one line each, with the full text under
-**DETAILS**. There is one today, for a fee limit below what the account's own
-transactions cost. On the review:
+**DETAILS**. There is one today, for a fee limit below what one of the account's
+transactions costs on its own. On the review:
 
 ```text
-Warning: Fee limit 0 is below its own costs. See details.
+Warning: Fee limit 0 is too low to pay alone. See details.
 ```
 
 In the details:
 
 ```text
-Fee limit 0 is below its own costs. It can't pay for these transactions itself:
-spend (at least <fee>), spending_rekey (at least <fee>). Each needs another account
-in the same group to pay its fees.
+Fee limit 0 is too low to pay alone. A transaction on its own costs more:
+spend (at least <fee>), spending_rekey (at least <fee>). Batch it with others that
+share the cost, or have another account in the group pay its fees.
 ```
 
 - It lists each path the limit falls short of (`spend`, `spending_rekey`,
-  `listed_rekey`), with the least that path costs for this account.
+  `listed_rekey`), with the least that path costs as a transaction on its own.
 - It is advice. The account is still created if you choose **GENERATE**, and it works
-  when another account in the same group pays its fees. A fee limit of 0 makes an
-  account that never pays a fee itself.
+  in a group that covers the cost: several of its own transactions sharing it, each
+  within the limit, or another account paying. A fee limit of 0 makes an account that
+  never pays a fee itself, so it always needs another account to pay.
 - The figure is a lower bound, worked out from the keys the program must hold before the
   program exists. A limit just above it can still fall short, and signing says so when
   it plans the group.
@@ -407,7 +408,7 @@ These addresses are illustrations, not funding destinations.
 | `recipients` | With `spend`, required unless `recipient_scope: any` is set. 1 to 65,536 distinct nonzero addresses, written literally: aliases and sets are not expanded. |
 | `recipient_scope` | Optional. Left out or written as `listed`, the file needs a list. `any` makes a limits-only account: no list, and it can't be combined with `recipients` or `encoding`. Leaving out the list never means `any`: you must write it. |
 | `encoding` | Optional, and needs a list. `auto` (the default) is inline through 10 recipients and Merkle above that. `inline` accepts at most 30. |
-| `max_fee` | Optional, and needs `spend`. The most the account may pay in fees on one transaction: a whole number of microAlgos in plain decimal (no sign or leading zero), at most 9,007,199,254,740,991, written as a number or a string. Left out, it is 10,000, and writing `10000` makes the same account as leaving it out. Any value is accepted, 0 included. Below what the account's own transactions cost, another account in the same group must pay its fees; the apadmin review warns about that. |
+| `max_fee` | Optional, and needs `spend`. The most the account may pay in fees on one transaction: a whole number of microAlgos in plain decimal (no sign or leading zero), at most 9,007,199,254,740,991, written as a number or a string. Left out, it is 10,000, and writing `10000` makes the same account as leaving it out. Any value is accepted, 0 included. Below what one of its transactions costs on its own, the account needs a group that shares the cost or another account to pay; the apadmin review warns about that. |
 | `rekey.authority` | Required. `refused` (never rekeyed), `spending_key` (the spending key can rekey, to any address; with a cosigner, only together with the cosigner, to a target the cosigner's policy allows), `only_these` (the spending key alone can rekey, but only to an address in `rekey.to`; a cosigner is not asked), or `plus_cosigned` (needs a cosigner: the spending key alone to an address in `rekey.to`, or the spending key and the cosigner to any other target the cosigner's policy allows). |
 | `rekey.to` | Required with `only_these` and `plus_cosigned`, and refused with `refused` and `spending_key`. 1 to 16 distinct nonzero addresses, written literally. See [Rekey-to lists](#rekey-to-lists). |
 | `cosigner` | Optional. A cosigner reference name on the signer, or a Witness Key ID. `plus_cosigned` needs one. |
@@ -516,7 +517,7 @@ signer has not seen that summary, so a cosigner name in it is unresolved, and ed
 that reference before creation changes which cosigner is used. Prefer a Witness Key ID:
 it can only select that cosigner, and apshell checks the created account against it.
 After creation, apshell shows what the signer actually stored, and any warning the
-signer raised about the account, such as a fee limit below its own costs. apshell has
+signer raised about the account, such as a fee limit too low for the account to pay alone. apshell has
 no review step for that warning: it arrives with the created account, which you can
 delete before funding it.
 

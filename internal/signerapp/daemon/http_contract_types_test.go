@@ -43,12 +43,12 @@ func TestSignerAPIAdminGenerateResponseWarningsJSONShape(t *testing.T) {
 	}
 	body, err := json.Marshal(signerapi.AdminGenerateResponse{
 		Address: "ADDR", KeyType: "aplane.falcon1024.v1", Parameters: map[string]string{"max_fee": "0"},
-		Warnings: []string{"Fee limit 0 is below its own costs.", "a second note"},
+		Warnings: []string{"Fee limit 0 is too low to pay alone.", "a second note"},
 	})
 	if err != nil {
 		t.Fatalf("Marshal: %v", err)
 	}
-	want := `{"address":"ADDR","key_type":"aplane.falcon1024.v1","parameters":{"max_fee":"0"},"warnings":["Fee limit 0 is below its own costs.","a second note"]}`
+	want := `{"address":"ADDR","key_type":"aplane.falcon1024.v1","parameters":{"max_fee":"0"},"warnings":["Fee limit 0 is too low to pay alone.","a second note"]}`
 	if string(body) != want {
 		t.Fatalf("Marshal = %s, want %s", body, want)
 	}

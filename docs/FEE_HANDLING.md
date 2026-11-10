@@ -118,12 +118,13 @@ is signed by this signer, and the client sends each one as the signer's own,
 cosigned or not. So a native Falcon position in the group takes the charge
 ahead of the cosigned account, and each position's own `max_fee` is respected.
 
-A bounded account's `max_fee` can be below what its own transaction costs, 0
-included. Generation allows that and the apadmin review warns about it.
+A bounded account's `max_fee` can be below what one of its transactions costs
+alone, 0 included. Generation allows that and the apadmin review warns about it.
 
-- Such an account can't pay for its own transaction. Its transaction, an exit
-  rekey included, must be in a group where another signer-controlled
-  transaction takes the charge.
+- Such an account can't send that transaction on its own. It must be in a group
+  where other signer-controlled transactions take the rest of the charge. They
+  can be the account's own, each within its `max_fee`, since a group shares the
+  resource cost, or another account's.
 - The planner still never raises the bounded slot above its `max_fee`. With no
   other signer-controlled transaction that can take the charge, planning fails.
 - The same holds in a cosigned group, because the client sends the other

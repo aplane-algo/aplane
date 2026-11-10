@@ -294,7 +294,7 @@ func creationParameters() []lsigprovider.ParameterDef {
 		{
 			Name:        ParameterMaxFee,
 			Label:       "Fee Limit",
-			Description: "Bounds: the most the account may pay in fees on one transaction, in microAlgos. Absent means 10,000. Below what its own transactions cost, another account in the group must pay its fees.",
+			Description: "Bounds: the most the account may pay in fees on one transaction, in microAlgos. Absent means 10,000. Below what one of its transactions costs alone, it needs a group that shares the cost or another account to pay.",
 			Type:        "uint64",
 			Example:     "10000",
 		},
@@ -875,8 +875,8 @@ func (p *Provider) CreationWarnings(params map[string]string) ([]string, error) 
 		return nil, nil
 	}
 	// The first sentence stands alone: a review with no room shows only it.
-	return []string{fmt.Sprintf("Fee limit %d is below its own costs. "+
-		"It can't pay for these transactions itself: %s. Each needs another account in the same group to pay its fees.",
+	return []string{fmt.Sprintf("Fee limit %d is too low to pay alone. "+
+		"A transaction on its own costs more: %s. Batch it with others that share the cost, or have another account in the group pay its fees.",
 		*metadata.MaxFee, strings.Join(short, ", "))}, nil
 }
 

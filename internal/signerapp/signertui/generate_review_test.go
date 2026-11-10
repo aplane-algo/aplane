@@ -82,8 +82,8 @@ func TestReviewKeepsItsButtonsAt80x24(t *testing.T) {
 // feeLimitWarning is the signer's warning for a fee limit below what the named
 // paths cost, as lsig/plainhost words it.
 func feeLimitWarning(limit uint64, paths string) string {
-	return fmt.Sprintf("Fee limit %d is below its own costs. It can't pay for these transactions itself: %s. "+
-		"Each needs another account in the same group to pay its fees.", limit, paths)
+	return fmt.Sprintf("Fee limit %d is too low to pay alone. A transaction on its own costs more: %s. "+
+		"Batch it with others that share the cost, or have another account in the group pay its fees.", limit, paths)
 }
 
 // flatReview is a rendered review as running text, without the frame.

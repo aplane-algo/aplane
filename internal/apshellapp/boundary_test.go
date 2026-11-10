@@ -173,7 +173,7 @@ func TestResultCarriesTheSignersAuthorityIDs(t *testing.T) {
 // The signer's advice about the account it created reaches the command result
 // beside the parameters it resolved.
 func TestResultCarriesTheSignersWarnings(t *testing.T) {
-	warnings := []string{"Fee limit 0 is below its own costs.", "a second note"}
+	warnings := []string{"Fee limit 0 is too low to pay alone.", "a second note"}
 	result := generateResultFromEngine(&engine.GenerateKeyResult{
 		Address: "ADDRESS", KeyType: boundaryHostKeyType, Parameters: map[string]string{boundary.ParameterMaxFee: "0"}, Warnings: warnings,
 	})

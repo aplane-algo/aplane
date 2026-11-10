@@ -174,9 +174,10 @@ it can't show that custody or seeds are independent.
 - The 10,000 microAlgo default supports the currently measured Falcon/Falcon
   fixed-list shape at a 1,000 microAlgo network minimum fee. It is not a promise
   of viability on networks with a higher minimum fee.
-- A ceiling below what a path costs is not refused. The account then can't pay
-  for that path itself, and another signer-controlled transaction in the group
-  must take the charge (see [FEE_HANDLING.md](FEE_HANDLING.md)). On a plain host
+- A ceiling below what a path costs as a lone transaction is not refused. The
+  account then can't send that transaction alone: other signer-controlled
+  transactions in the group, its own or another account's, must take the rest
+  of the charge (see [FEE_HANDLING.md](FEE_HANDLING.md)). On a plain host
   the generation review warns about it; see
   [ARCH_KEYTYPES.md](ARCH_KEYTYPES.md#the-bounds).
 - Generation still refuses a program with a path that doesn't fit one

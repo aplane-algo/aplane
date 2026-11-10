@@ -92,8 +92,8 @@ func TestResolvedGenerationPrintsTheFeeLimitAndWarnings(t *testing.T) {
 		renderResolvedGeneration(&REPLState{Out: &out}, result)
 		return out.String()
 	}
-	const warning = "Fee limit 0 is below its own costs. It can't pay for these transactions itself: spend (at least 2000). " +
-		"Each needs another account in the same group to pay its fees."
+	const warning = "Fee limit 0 is too low to pay alone. A transaction on its own costs more: spend (at least 2000). " +
+		"Batch it with others that share the cost, or have another account in the group pay its fees."
 	text := render(&apshellapp.GenerateKeyCommandResult{
 		KeyType: "aplane.falcon1024.v1", Address: "ADDRESS", CosignerKeyID: "COSIGNER",
 		Parameters: map[string]string{
@@ -138,12 +138,12 @@ func TestResolvedGenerationPrintsTheFeeLimitAndWarnings(t *testing.T) {
 func TestGeneratedKeyProjectionCarriesWarnings(t *testing.T) {
 	data, err := json.Marshal(generatedKeyProjection{
 		KeyType: "aplane.falcon1024.v1", Address: "ADDRESS", Parameters: map[string]string{"max_fee": "0"},
-		Warnings: []string{"Fee limit 0 is below its own costs.", "a second note"},
+		Warnings: []string{"Fee limit 0 is too low to pay alone.", "a second note"},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := `{"key_type":"aplane.falcon1024.v1","address":"ADDRESS","parameters":{"max_fee":"0"},"warnings":["Fee limit 0 is below its own costs.","a second note"]}`
+	want := `{"key_type":"aplane.falcon1024.v1","address":"ADDRESS","parameters":{"max_fee":"0"},"warnings":["Fee limit 0 is too low to pay alone.","a second note"]}`
 	if string(data) != want {
 		t.Fatalf("projection = %s, want %s", data, want)
 	}

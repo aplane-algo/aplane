@@ -136,7 +136,7 @@ func TestPrepareCarriesTheFeeLimitWarning(t *testing.T) {
 				}
 				return
 			}
-			want := "Fee limit " + test.maxFee + " is below its own costs. It can't pay for these transactions itself: spend (at least "
+			want := "Fee limit " + test.maxFee + " is too low to pay alone. A transaction on its own costs more: spend (at least "
 			if len(prepared.Warnings) != 1 || !strings.HasPrefix(prepared.Warnings[0], want) {
 				t.Fatalf("Warnings = %q, want one starting %q", prepared.Warnings, want)
 			}

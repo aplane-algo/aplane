@@ -1991,7 +1991,7 @@ func TestCustomFeeCeilingsResolveConcurrently(t *testing.T) {
 // choice: the account resolves, with one warning naming each path it can't pay
 // for. The default ceiling pays for every path of every shape, so warns of none.
 func TestFeeCeilingWarning(t *testing.T) {
-	const prefix = "Fee limit %d is below its own costs. It can't pay for these transactions itself: "
+	const prefix = "Fee limit %d is too low to pay alone. A transaction on its own costs more: "
 	for _, b := range bases(t) {
 		for _, shape := range plainhost.Shapes() {
 			if warnings := creationWarnings(t, b.provider, shapeRequest(shape, testRecipients(2))); len(warnings) != 0 {
@@ -2082,11 +2082,11 @@ func TestFeeCeilingWarningThreshold(t *testing.T) {
 			t.Fatalf("%s: a ceiling of %d warns: %v", name, test.threshold, warnings)
 		}
 		warnings := resolve(test.threshold - 1)
-		want := fmt.Sprintf("Fee limit %d is below its own costs. It can't pay for these transactions itself: spend (at least %d). ", test.threshold-1, test.threshold)
+		want := fmt.Sprintf("Fee limit %d is too low to pay alone. A transaction on its own costs more: spend (at least %d). ", test.threshold-1, test.threshold)
 		if len(warnings) != 1 || !strings.HasPrefix(warnings[0], want) {
 			t.Fatalf("%s: a ceiling of %d: warnings = %v, want one starting %q", name, test.threshold-1, warnings, want)
 		}
-		if !strings.Contains(warnings[0], "another account in the same group") {
+		if !strings.Contains(warnings[0], "another account in the group") {
 			t.Fatalf("%s: the warning does not say how the account can still be used: %q", name, warnings[0])
 		}
 	}
@@ -2126,7 +2126,7 @@ func TestFeeCeilingWarningCountsAnInlineList(t *testing.T) {
 			}
 			params[plainhost.ParameterMaxFee] = strconv.FormatUint(want-1, 10)
 			warnings := creationWarnings(t, test.base.provider, params)
-			prefix := fmt.Sprintf("Fee limit %d is below its own costs. It can't pay for these transactions itself: spend (at least %d). ", want-1, want)
+			prefix := fmt.Sprintf("Fee limit %d is too low to pay alone. A transaction on its own costs more: spend (at least %d). ", want-1, want)
 			if len(warnings) != 1 || !strings.HasPrefix(warnings[0], prefix) {
 				t.Fatalf("%s: a ceiling of %d: warnings = %v, want one starting %q", name, want-1, warnings, prefix)
 			}

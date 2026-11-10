@@ -888,7 +888,7 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 					Contract: "bounded2", SpendEffects: []string{"pay"}, MaxFee: new(uint64(0)),
 					Rekey: "refused", Layer3Policy: "none",
 				},
-				Warnings: []string{"Fee limit 0 is below its own costs. It can't pay for these transactions itself: spend (at least 2000).", "a second note"},
+				Warnings: []string{"Fee limit 0 is too low to pay alone. A transaction on its own costs more: spend (at least 2000).", "a second note"},
 			},
 			wantMap: map[string]any{
 				"type":     MsgTypePrepareGenerateResult,
@@ -902,7 +902,7 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 					"rekey":         "refused",
 					"layer3_policy": "none",
 				},
-				"warnings": []any{"Fee limit 0 is below its own costs. It can't pay for these transactions itself: spend (at least 2000).", "a second note"},
+				"warnings": []any{"Fee limit 0 is too low to pay alone. A transaction on its own costs more: spend (at least 2000).", "a second note"},
 			},
 		},
 		{

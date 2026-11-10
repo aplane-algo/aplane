@@ -88,7 +88,7 @@ func TestEngineGenerateKeyRefreshesSignerCache(t *testing.T) {
 				Address:    addr,
 				KeyType:    "ed25519",
 				Parameters: map[string]string{"label": "alice", "max_fee": "0"},
-				Warnings:   []string{"Fee limit 0 is below its own costs.", "a second note"},
+				Warnings:   []string{"Fee limit 0 is too low to pay alone.", "a second note"},
 			}, req), nil
 		case req.Method == http.MethodGet && req.URL.Path == "/keys":
 			return keyMgmtJSONResponse(t, http.StatusOK, signerapi.KeysResponse{
@@ -111,7 +111,7 @@ func TestEngineGenerateKeyRefreshesSignerCache(t *testing.T) {
 		t.Fatalf("GenerateKey() = %#v, want address=%s keyType=ed25519", got, addr)
 	}
 	// The signer's resolved parameters and its advice reach the caller as sent.
-	if got.Parameters["max_fee"] != "0" || len(got.Warnings) != 2 || got.Warnings[0] != "Fee limit 0 is below its own costs." || got.Warnings[1] != "a second note" {
+	if got.Parameters["max_fee"] != "0" || len(got.Warnings) != 2 || got.Warnings[0] != "Fee limit 0 is too low to pay alone." || got.Warnings[1] != "a second note" {
 		t.Fatalf("GenerateKey() parameters = %v, warnings = %q", got.Parameters, got.Warnings)
 	}
 	if eng.SignerCache.GetKeyType(addr) != "ed25519" {
