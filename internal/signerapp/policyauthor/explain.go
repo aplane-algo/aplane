@@ -333,7 +333,6 @@ func missAction(a policy.TransferOnNoRoute) string {
 	return string(a)
 }
 
-// terms lists route address or asset terms as written, naming the wildcard.
 // rekeyTargets renders a rekey rule's targets: "*" is any address, and "self"
 // is the sender's own address, a rekey back to the account's own key.
 func rekeyTargets(list []string) string {
@@ -351,6 +350,7 @@ func rekeyTargets(list []string) string {
 	return strings.Join(out, ", ")
 }
 
+// terms lists route address or asset terms as written, naming the wildcard.
 func terms(list []string) string {
 	out := make([]string, len(list))
 	for i, t := range list {

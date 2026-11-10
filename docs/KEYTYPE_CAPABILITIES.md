@@ -68,9 +68,9 @@ included as normal user-account operations.
   setting gives: none (`refused`), the spending key (with the cosigner on a cosigned
   account), a listed address (`only_these`), or both (`plus_cosigned`). On a
   cosigned plain host the cosigner signs every spend and cosigned rekey, and its
-  policy is what restricts them: current cosigner authorization requires
-  transfer-route coverage or an explicitly allowed pure rekey edge, so other
-  non-transfer targets reject.
+  policy is what restricts them: a `pay` or `axfer` needs a transfer route, a
+  rekey needs an allowed pure rekey edge, and any other type is signed only if
+  the cosigner's `transaction_types` allows it, on that verdict alone.
 - A plain host account with bounds (`aplane.falcon1024.v1` or `aplane.ed25519.v1`
   with any bounds parameter, contract `bounded2`) is a bounded account. Each
   account's shape decides which of `pay`, `axfer`, and `asset_opt_in` it admits,

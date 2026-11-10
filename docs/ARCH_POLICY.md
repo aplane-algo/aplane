@@ -248,8 +248,10 @@ the Algorand type string (`pay`, `axfer`, `acfg`, `afrz`, `keyreg`, `appl`,
 refuses one itself, before any policy runs, on both node roles (see
 [Request/Response Shapes](ARCH_SIGNING.md#requestresponse-shapes) in
 ARCH_SIGNING.md). On a
-cosigner node decode refuses `allow` for anything but `pay` and `axfer`, so
-every non-transfer type a cosigner is asked to attest is rejected here.
+cosigner node a type the document doesn't allow is rejected here, and `*` may
+be omitted, which rejects every type not named. A cosigner document may allow
+any type; one it allows other than `pay` and `axfer` is signed on this verdict
+alone.
 
 `rekeys` only rejects. `reject_all_rekeys` rejects every rekey, a listed one
 included; `reject_foreign_rekey` evaluates the rekey target against the set of
@@ -1113,10 +1115,10 @@ would change to resolve it:
 | `policy_overlap:reject_asset_close:route_close_allow` | `reject_asset_close` is true and a route sets `allow_close` |
 | `policy_overlap:reject_clawback:route_clawback_allow` | `reject_clawback` is true and a route sets `allow_clawback` |
 | `policy_overlap:transaction_types:route_unreachable` | The document has routes but `transaction_types` rejects `pay` or `axfer`, so no route can match that type |
-| `policy_fee:cosigner_routes_without_fee_cap` | A cosigner document lets the cosigner sign, through a route or through a type allowed without routing, and `max_fee_microalgos` is `"0"`; a cosigner has no warning review, so a transaction it signs could carry any fee |
+| `policy_fee:cosigner_routes_without_fee_cap` | A cosigner document lets the cosigner sign, through a route, a type allowed without routing or a rekey rule that can match, and `max_fee_microalgos` is `"0"`; a cosigner has no warning review, so a transaction it signs could carry any fee |
 | `policy_scope:cosigner_type_without_routing` | A cosigner document allows a type other than `pay` or `axfer`; nothing but the type verdict stands behind it. A `"*": "allow"` is always reported, since it also covers any type a later release adds |
-| `policy_scope:rekey_policy_any_target` | A `rekey_policy` rule's targets include `*` and `reject_rekey` is false; that sender may rekey to any address |
-| `policy_scope:route_close_to_any_address` | A route sets `allow_close` with a `*` destination, and at least one of `reject_close_remainder` and `reject_asset_close` is false; any matching account may be closed out to any address |
+| `policy_scope:rekey_policy_any_target` | A `rekey_policy` rule's targets include `*`, `reject_rekey` is false and `pay` is allowed; that sender may rekey to any address |
+| `policy_scope:route_close_to_any_address` | A route sets `allow_close` with a `*` destination, and a close-out it covers can pass (`reject_close_remainder` for ALGO, `reject_asset_close` for an ASA); any matching account may be closed out to any address, and the route's limits don't bound a close-out |
 
 ## Embedded Defaults
 

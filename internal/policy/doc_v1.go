@@ -850,6 +850,7 @@ func decodeAddress(node *jsonNode) (types.Address, error) {
 	return addr, nil
 }
 
+// decodeAddressTerm decodes an address, "*" or an "@set" reference.
 func decodeAddressTerm(node *jsonNode) (string, error) {
 	raw, err := jsonString(node)
 	if err != nil {
@@ -857,21 +858,6 @@ func decodeAddressTerm(node *jsonNode) (string, error) {
 	}
 	if raw == "*" {
 		return raw, nil
-	}
-	return decodeAddressOrSet(node)
-}
-
-func decodeDestinationTerm(node *jsonNode) (string, error) {
-	if node.kind == nodeString && node.text == "self" {
-		return "self", nil
-	}
-	return decodeAddressTerm(node)
-}
-
-func decodeAddressOrSet(node *jsonNode) (string, error) {
-	raw, err := jsonString(node)
-	if err != nil {
-		return "", err
 	}
 	if name, ok := strings.CutPrefix(raw, "@"); ok {
 		if err := validateSetNameV1(node.pointer, name); err != nil {
@@ -883,6 +869,13 @@ func decodeAddressOrSet(node *jsonNode) (string, error) {
 		return "", err
 	}
 	return raw, nil
+}
+
+func decodeDestinationTerm(node *jsonNode) (string, error) {
+	if node.kind == nodeString && node.text == "self" {
+		return "self", nil
+	}
+	return decodeAddressTerm(node)
 }
 
 func decodeAssetTerm(node *jsonNode) (string, error) {

@@ -739,13 +739,15 @@ Policy documents have their own fixture set under `test/contracts/policy/v1/`,
 exercised by `TestPolicyV1FixturesAgreeWithSchema` in `internal/policy` and by
 `pkg/policyschema`, both part of `make test`:
 
-- the top-level files (`signer_default.json`, `signer_key_full.json`,
+- the top-level files (among them `signer_default.json`, `signer_key_full.json`,
   `signer_key_minimal.json`, `cosigner_default.json`, `cosigner_key_full.json`,
-  `cosigner_key_minimal.json`, `signer_uint64_max.json`) must pass the JSON
-  Schema and decode for the role their name states,
+  `cosigner_key_minimal.json`, `signer_uint64_max.json`, and the open cosigner
+  documents `cosigner_key_allow_non_transfer.json`,
+  `cosigner_key_wildcard_allow.json` and `cosigner_key_open.json`) must pass
+  the JSON Schema and decode for the role their name states,
 - `invalid/` holds documents the schema must reject (missing required fields,
-  a review field or verdict on a cosigner document, `allow` for a non-transfer
-  type on a cosigner, a selector of the wrong kind for the role, `key_overrides`,
+  a review field or verdict on a cosigner document, `self` as a `rekey_policy`
+  sender, a selector of the wrong kind for the role, `key_overrides`,
   `transfer_policy.enabled`, unknown fields),
 - `semantic_invalid/` holds documents the schema accepts but the decoder
   rejects (a signer document on a cosigner node and the reverse, a bad address

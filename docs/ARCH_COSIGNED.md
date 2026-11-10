@@ -662,9 +662,9 @@ request with `transaction_type:<type>` until it is given a document of its
 own or the operator loosens the default. Before any rule, a target whose
 genesis hash maps to no known network is rejected as `unknown_genesis_hash`
 (see [ARCH_POLICY.md](ARCH_POLICY.md#known-network-gate)). Policy is
-evaluated before the cosigner key is loaded. Decode refuses review-producing fields and refuses
-to `allow` any transaction type but `pay` and `axfer` on a cosigner node, so
-the only cosigner-specific rule ID is `cosigner_policy:reject_rekey`; every
+evaluated before the cosigner key is loaded. Decode refuses review-producing fields on a cosigner node, so every verdict
+is sign or reject. The only cosigner-specific rule ID is
+`cosigner_policy:reject_rekey`; every
 other verdict uses the common rule IDs in
 [ARCH_POLICY.md](ARCH_POLICY.md).
 

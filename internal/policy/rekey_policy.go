@@ -31,8 +31,8 @@ func (p *RekeyPolicy) Clone() *RekeyPolicy {
 	cp := &RekeyPolicy{Allowed: make([]CompiledRekeyRule, len(p.Allowed))}
 	for i, rule := range p.Allowed {
 		cp.Allowed[i] = CompiledRekeyRule{
-			Sender:  cloneRekeyAddressTerms(rule.Sender),
-			Targets: cloneRekeyAddressTerms(rule.Targets),
+			Sender:  cloneAddressTerms(rule.Sender),
+			Targets: cloneAddressTerms(rule.Targets),
 		}
 	}
 	return cp
@@ -55,17 +55,11 @@ func (p *RekeyPolicy) Allows(sender, target types.Address) bool {
 
 // compileRekeyAddressTerms compiles one side of a rekey rule with the route
 // term compiler. allowSelf is true for targets only: a sender is always
-// itself, so "self" there would be "*" under another name.
+// itself, so "self" there would be "*" under another name. The decoder
+// refuses it with that reason; the term compiler's refusal is the backstop.
 func compileRekeyAddressTerms(label string, raw []string, addressSets map[string]compiledAddressSet, allowSelf bool) (compiledAddressTerms, error) {
 	if len(raw) == 0 {
 		return compiledAddressTerms{}, fmt.Errorf("rekey_policy.%s is required", label)
-	}
-	if !allowSelf {
-		for _, term := range raw {
-			if term == "self" {
-				return compiledAddressTerms{}, fmt.Errorf(`rekey_policy.%s: self is meaningless as a sender; use "*"`, label)
-			}
-		}
 	}
 	out, err := compileAddressTerms("rekey_policy."+label, raw, addressSets, allowSelf)
 	if err != nil {
@@ -83,8 +77,4 @@ func compileRekeyAddressTerms(label string, raw []string, addressSets map[string
 		return compiledAddressTerms{}, fmt.Errorf("rekey_policy.%s must resolve to at least one address", label)
 	}
 	return out, nil
-}
-
-func cloneRekeyAddressTerms(in compiledAddressTerms) compiledAddressTerms {
-	return compiledAddressTerms{Wildcard: in.Wildcard, Self: in.Self, Direct: append([]types.Address(nil), in.Direct...)}
 }

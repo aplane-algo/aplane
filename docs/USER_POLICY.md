@@ -140,9 +140,12 @@ you want it:
   fee cap.
 - `rekey_policy` may use `"*"` as a sender or a target, and `"self"` as a
   target, which allows a rekey back to the account's own address.
-  `{"sender": "*", "targets": ["*"]}` co-signs any rekey.
+  `{"sender": "*", "targets": ["*"]}` co-signs any rekey that is a zero-amount
+  payment to self, the only rekey shape a cosigner signs; `pay` must be
+  allowed for it to pass.
 - A route may set `allow_close` with a `"*"` destination, which lets any
-  matching account be closed out to any address.
+  matching account be closed out to any address. A close-out moves the whole
+  balance, and the route's amount limits don't bound it.
 
 `check` and `apply` print an advisory for each of these, saying what the
 choice means. They never refuse it. The one thing no policy can allow is a

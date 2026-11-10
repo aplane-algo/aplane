@@ -115,15 +115,17 @@ func (d *PolicyV1) Advisories() []ConfigAdvisory {
 				"%s are allowed with no routing behind them; the cosigner authorizes them on type alone", strings.Join(unrouted, ", ")))
 		}
 		// A cosigner has no warning review, so nothing else questions a fee.
-		// It signs whenever a route permits a movement or a type is allowed
-		// without routing.
-		if d.MaxFeeMicroAlgos == 0 && (len(d.Routes) > 0 || wildcardAllows || len(unrouted) > 0) {
+		// It signs whenever a route permits a movement, a type is allowed
+		// without routing, or a rekey rule can match.
+		rekeysCanMatch := !d.RejectRekey && len(d.RekeyPolicy) > 0 && d.TransactionTypes.Verdict("pay") == TransactionTypeAllow
+		if d.MaxFeeMicroAlgos == 0 && (len(d.Routes) > 0 || wildcardAllows || len(unrouted) > 0 || rekeysCanMatch) {
 			add(ConfigAdvisoryCosignerNoFeeCap, "/max_fee_microalgos", "this document lets the cosigner sign, but max_fee_microalgos is 0 (no cap); a cosigner has no warning review, so a transaction it signs can carry any fee")
 		}
 	}
-	// reject_rekey rejects every rekey whatever rekey_policy says, so an open
-	// rule is only worth reporting when rekeys can reach it.
-	if !d.RejectRekey {
+	// An advisory describes what the document does, so an open rule is only
+	// reported when a rekey can reach it: reject_rekey rejects every rekey,
+	// and a cosigned rekey is a payment, which transaction_types must allow.
+	if !d.RejectRekey && d.TransactionTypes.Verdict("pay") == TransactionTypeAllow {
 		for i, rule := range d.RekeyPolicy {
 			if slices.Contains(rule.Targets, "*") {
 				sender := rule.Sender
@@ -135,15 +137,35 @@ func (d *PolicyV1) Advisories() []ConfigAdvisory {
 			}
 		}
 	}
-	// Likewise a route's allow_close does nothing while both close-out
-	// rejections are on; the overlap advisories above report that case.
-	if !d.RejectCloseRemainder || !d.RejectAssetClose {
-		for i, route := range d.Routes {
-			if route.AllowClose && slices.Contains(route.Destinations, "*") {
-				add(ConfigAdvisoryRouteCloseToAnyAddress, fmt.Sprintf("/transfer_policy/routes/%d/allow_close", i),
-					"this route lets any matching account be closed out to any address")
-			}
+	// Likewise a route's allow_close is only reported when a close-out it
+	// covers can pass: reject_close_remainder stops an ALGO close-out and
+	// reject_asset_close an ASA one. The overlap advisories above report a
+	// route whose allow_close is overridden.
+	for i, route := range d.Routes {
+		if !route.AllowClose || !slices.Contains(route.Destinations, "*") {
+			continue
+		}
+		coversAlgo, coversASA := routeAssetKinds(route.Assets)
+		if (coversAlgo && !d.RejectCloseRemainder) || (coversASA && !d.RejectAssetClose) {
+			add(ConfigAdvisoryRouteCloseToAnyAddress, fmt.Sprintf("/transfer_policy/routes/%d/allow_close", i),
+				"this route lets any matching account be closed out to any address; a close-out moves the whole balance, and the route's limits don't bound it")
 		}
 	}
 	return out
+}
+
+// routeAssetKinds reports whether a route's asset terms can cover ALGO and
+// can cover an ASA. A wildcard or a set may cover either.
+func routeAssetKinds(assets []string) (algo, asa bool) {
+	for _, term := range assets {
+		switch {
+		case term == "*" || strings.HasPrefix(term, "@"):
+			return true, true
+		case term == "algo":
+			algo = true
+		default:
+			asa = true
+		}
+	}
+	return algo, asa
 }

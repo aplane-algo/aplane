@@ -133,8 +133,9 @@ func TestCosignerRekeyPolicyMayBeOpen(t *testing.T) {
 		t.Fatal("Clone() lost the self target")
 	}
 
-	// The compile-side backstop refuses "self" as a sender too.
-	if _, err := compileRekeyAddressTerms("allowed[0].sender", []string{"self"}, nil, false); err == nil || !strings.Contains(err.Error(), `self is meaningless as a sender; use "*"`) {
+	// The term compiler is the backstop for "self" as a sender; the decoder
+	// refuses it first, with the reason.
+	if _, err := compileRekeyAddressTerms("allowed[0].sender", []string{"self"}, nil, false); err == nil || !strings.Contains(err.Error(), "self is not allowed in rekey_policy.allowed[0].sender") {
 		t.Fatalf("compile self sender: err = %v", err)
 	}
 }
@@ -159,7 +160,7 @@ func TestRouteMayCloseOutToAnyAddress(t *testing.T) {
 			}
 		}
 		advisory, ok := advisoryByRule(doc.Advisories(), ConfigAdvisoryRouteCloseToAnyAddress)
-		if !ok || advisory.Pointer != "/transfer_policy/routes/0/allow_close" || advisory.Message != "this route lets any matching account be closed out to any address" {
+		if !ok || advisory.Pointer != "/transfer_policy/routes/0/allow_close" || advisory.Message != "this route lets any matching account be closed out to any address; a close-out moves the whole balance, and the route's limits don't bound it" {
 			t.Fatalf("%s: advisory = %+v, %v", name, advisory, ok)
 		}
 	}
@@ -181,6 +182,8 @@ func TestCosignerNoFeeCapAdvisoryCoversTypesWithoutRoutes(t *testing.T) {
 		"a type without routes, no cap":     {`{"max_fee_microalgos":"0","transaction_types":{"appl":"allow"}}`, true},
 		"a wildcard without routes, no cap": {`{"max_fee_microalgos":"0","transaction_types":{"*":"allow"}}`, true},
 		"a type without routes, capped":     {`{"max_fee_microalgos":"5000","transaction_types":{"appl":"allow"}}`, false},
+		"an open rekey rule, no cap":        {`{"max_fee_microalgos":"0","transaction_types":{"pay":"allow"},"reject_rekey":false,"rekey_policy":{"allowed":[{"sender":"*","targets":["*"]}]}}`, true},
+		"a rekey rule under reject_rekey":   {`{"max_fee_microalgos":"0","transaction_types":{"pay":"allow"},"reject_rekey":true,"rekey_policy":{"allowed":[{"sender":"*","targets":["*"]}]}}`, false},
 		"nothing allowed, no cap":           {`{"max_fee_microalgos":"0","transaction_types":{"pay":"allow"}}`, false},
 	} {
 		_, got := advisoryByRule(mustCosignerDoc(t, testWitnessKeyIDV1, tc.doc).Advisories(), ConfigAdvisoryCosignerNoFeeCap)
@@ -196,6 +199,17 @@ func TestWideChoiceAdvisoriesFollowTheRejectSettings(t *testing.T) {
 	rekey := mustCosignerDoc(t, testWitnessKeyIDV1, `{"reject_rekey":true,"rekey_policy":{"allowed":[{"sender":"*","targets":["*"]}]}}`)
 	if advisory, ok := advisoryByRule(rekey.Advisories(), ConfigAdvisoryRekeyPolicyAnyTarget); ok {
 		t.Fatalf("reject_rekey is on, but the open rekey rule was advised: %+v", advisory)
+	}
+	// A cosigned rekey is a payment, so a rule no payment can reach isn't
+	// reported either.
+	noPay := mustCosignerDoc(t, testWitnessKeyIDV1, `{"transaction_types":{"pay":"reject"},"reject_rekey":false,"rekey_policy":{"allowed":[{"sender":"*","targets":["*"]}]}}`)
+	if advisory, ok := advisoryByRule(noPay.Advisories(), ConfigAdvisoryRekeyPolicyAnyTarget); ok {
+		t.Fatalf("pay is rejected, but the open rekey rule was advised: %+v", advisory)
+	}
+	// An ALGO-only route under reject_close_remainder can close nothing.
+	algoOnly := mustCosignerDoc(t, testWitnessKeyIDV1, `{"reject_close_remainder":true,"reject_asset_close":false,"transfer_policy":{"routes":[{"id":"r","networks":["testnet"],"sources":["*"],"assets":["algo"],"destinations":["*"],"allow_close":true}]}}`)
+	if advisory, ok := advisoryByRule(algoOnly.Advisories(), ConfigAdvisoryRouteCloseToAnyAddress); ok {
+		t.Fatalf("an ALGO-only route under reject_close_remainder was advised: %+v", advisory)
 	}
 	route := `"transfer_policy":{"routes":[{"id":"r","networks":["testnet"],"sources":["*"],"assets":["*"],"destinations":["*"],"allow_close":true}]}`
 	for name, tc := range map[string]struct {
