@@ -793,8 +793,11 @@ type PrepareGenerateResultMessage struct {
 	BoundaryDigest string                  `json:"boundary_digest,omitempty"`
 	Bounded        *PreparedBoundedProfile `json:"bounded,omitempty"`
 	CosignerKeyID  string                  `json:"cosigner_key_id,omitempty"`
-	Code           string                  `json:"code,omitempty"`
-	Error          string                  `json:"error,omitempty"`
+	// Warnings are notes for the reviewer, such as a fee limit below what the
+	// account's own transactions cost. They refuse nothing.
+	Warnings []string `json:"warnings,omitempty"`
+	Code     string   `json:"code,omitempty"`
+	Error    string   `json:"error,omitempty"`
 }
 
 // GenerateKeyMessage requests generation of a new key

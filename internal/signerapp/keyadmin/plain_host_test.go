@@ -65,6 +65,107 @@ func TestPlainHostCreatesWhatTheRequestAsks(t *testing.T) {
 	}
 }
 
+// A fee limit below what the account's own transactions cost is the user's
+// choice: preparation succeeds and carries the provider's warning to the
+// review, and generation creates the account with that limit. The default
+// limit, named or not, and a limit above it warn of nothing.
+func TestPrepareCarriesTheFeeLimitWarning(t *testing.T) {
+	ir, service, _ := setupPlainHost(t)
+	request := func(maxFee string) map[string]string {
+		params := map[string]string{
+			plainhost.ParameterSpendEffects:   "pay",
+			plainhost.ParameterRecipientScope: plainhost.RecipientScopeAny,
+			plainhost.ParameterRekeyAuthority: plainhost.RekeySpendingKey,
+		}
+		if maxFee != "" {
+			params[plainhost.ParameterMaxFee] = maxFee
+		}
+		return params
+	}
+	unnamed, prepareErr := service.PrepareGenerateKey(plainHostKeyType, request(""))
+	if prepareErr != nil {
+		t.Fatalf("PrepareGenerateKey(no max_fee) error = %#v", prepareErr)
+	}
+	for _, test := range []struct {
+		name, maxFee string
+		want         uint64
+		warns        bool
+	}{
+		{"no limit named", "", 10_000, false},
+		{"the default named", "10000", 10_000, false},
+		{"above the old cap", "20000", 20_000, false},
+		{"zero", "0", 0, true},
+		{"one minimum fee", "1000", 1_000, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			prepared, prepareErr := service.PrepareGenerateKey(plainHostKeyType, request(test.maxFee))
+			if prepareErr != nil {
+				t.Fatalf("PrepareGenerateKey() error = %#v", prepareErr)
+			}
+			if prepared.Bounded == nil || prepared.Bounded.Contract != boundedmeta.Contract || prepared.Bounded.MaxFee == nil || *prepared.Bounded.MaxFee != test.want {
+				t.Fatalf("prepared contract = %+v", prepared.Bounded)
+			}
+			// Only a limit other than the default is a parameter of the account, and
+			// the default is the account that names none.
+			persisted, present := prepared.Parameters[plainhost.ParameterMaxFee]
+			if test.want == plainhost.DefaultMaxFee {
+				if present || prepared.Fingerprint != unnamed.Fingerprint || prepared.BoundaryDigest != unnamed.BoundaryDigest {
+					t.Fatalf("the default limit prepared another account: max_fee=%q present=%v", persisted, present)
+				}
+			} else if persisted != test.maxFee || prepared.Fingerprint == unnamed.Fingerprint || prepared.BoundaryDigest == unnamed.BoundaryDigest {
+				t.Fatalf("a limit of %s prepared max_fee=%q, fingerprint %s", test.maxFee, persisted, prepared.Fingerprint)
+			}
+			if prepared.ReviewFingerprint != unnamed.ReviewFingerprint {
+				t.Fatalf("the limit changed the review fingerprint: %s != %s", prepared.ReviewFingerprint, unnamed.ReviewFingerprint)
+			}
+			projected := ProjectPrepareGenerateIPC(prepared, nil)
+			if !test.warns {
+				if len(prepared.Warnings) != 0 || len(projected.Warnings) != 0 {
+					t.Fatalf("Warnings = %q", prepared.Warnings)
+				}
+				return
+			}
+			want := "Fee limit " + test.maxFee + " is below its own costs. It can't pay for these transactions itself: spend (at least "
+			if len(prepared.Warnings) != 1 || !strings.HasPrefix(prepared.Warnings[0], want) {
+				t.Fatalf("Warnings = %q, want one starting %q", prepared.Warnings, want)
+			}
+			if !projected.Success || len(projected.Warnings) != 1 || projected.Warnings[0] != prepared.Warnings[0] ||
+				projected.Bounded == nil || projected.Bounded.MaxFee == nil || *projected.Bounded.MaxFee != test.want {
+				t.Fatalf("projected = %+v", projected)
+			}
+
+			// The warning refuses nothing: the reviewed account is generated, with
+			// the limit it was reviewed with.
+			generated, err := service.GenerateReviewedKey(context.Background(), plainHostKeyType, prepared.Parameters,
+				ReviewedValues{Fingerprint: prepared.ReviewFingerprint, BoundaryDigest: prepared.BoundaryDigest}, nil)
+			if err != nil {
+				t.Fatalf("GenerateReviewedKey() error = %#v", err)
+			}
+			metadata := ir.KeyStore().GetSigningSummary()[generated.Address].BoundedAuthorization
+			if metadata == nil || metadata.MaxFee == nil || *metadata.MaxFee != test.want {
+				t.Fatalf("stored contract = %+v", metadata)
+			}
+			if generated.Parameters[plainhost.ParameterMaxFee] != test.maxFee {
+				t.Fatalf("generated parameters = %v", generated.Parameters)
+			}
+		})
+	}
+	// An unreviewed generation is not refused either.
+	if _, err := service.GenerateKey(context.Background(), plainHostKeyType, request("0"), nil); err != nil {
+		t.Fatalf("GenerateKey(max_fee=0) error = %#v", err)
+	}
+	// What the provider refuses is still refused, with no warning in its place.
+	for _, bad := range []string{"abc", "-1", "1.5", "18446744073709551616"} {
+		if _, err := service.PrepareGenerateKey(plainHostKeyType, request(bad)); err == nil || err.Kind != ErrorInvalidInput || !strings.Contains(err.Message, "max_fee must be a whole number") {
+			t.Fatalf("PrepareGenerateKey(max_fee=%s) error = %#v", bad, err)
+		}
+	}
+	withoutBounds := map[string]string{plainhost.ParameterRekeyAuthority: plainhost.RekeySpendingKey, plainhost.ParameterMaxFee: "20000"}
+	if _, err := service.PrepareGenerateKey(plainHostKeyType, withoutBounds); err == nil || !strings.Contains(err.Message, "spend_effects is required") {
+		t.Fatalf("PrepareGenerateKey(max_fee without transfer kinds) error = %#v", err)
+	}
+}
+
 func TestPlainHostGeneratesFromAReview(t *testing.T) {
 	ir, service, cosignerKey := setupPlainHost(t)
 	params := map[string]string{

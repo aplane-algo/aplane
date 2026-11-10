@@ -118,7 +118,7 @@ func joinSpend(spend []txeffects.SpendEffect) string {
 // surfaceCorpus exercises every transaction type the protocol surface lists, with
 // every combination of the authority- and value-moving address fields, a
 // self-directed zero-value and an outward form, and a fee on each side of the
-// bounded ceiling.
+// default bounded ceiling.
 func surfaceCorpus(t *testing.T) map[string]types.Transaction {
 	t.Helper()
 	surface := readProtocolSurface(t)
@@ -128,7 +128,7 @@ func surfaceCorpus(t *testing.T) map[string]types.Transaction {
 	for _, entry := range surface.TransactionTypes {
 		for _, self := range []bool{true, false} {
 			for mask := 0; mask < 16; mask++ {
-				for _, fee := range []uint64{1_000, boundedmeta.MaximumProfileFee + 1} {
+				for _, fee := range []uint64{1_000, 10_001} {
 					txn := types.Transaction{Type: types.TxType(entry.Wire)}
 					txn.Sender, txn.Fee = sender, types.MicroAlgos(fee)
 					if self {

@@ -24,12 +24,19 @@ const (
 	// asked for, and selects a limits-only account: the fee ceiling and transfer
 	// kinds, with no recipient list.
 	ParameterRecipientScope = "recipient_scope"
+	// ParameterMaxFee is a bounded account's fee ceiling per transaction, in
+	// microAlgos. Absent means DefaultMaxFee.
+	ParameterMaxFee = "max_fee"
 	// ParameterRekeyTo is a rekey-to list's addresses, required with
 	// rekey_authority=only_these or plus_cosigned and refused otherwise.
 	ParameterRekeyTo = boundedmeta.RekeyListEntriesParameter
 	// ParameterCosigner is the signer-side reference selector. It is resolved to
 	// a public key before an instance is selected.
 	ParameterCosigner = "cosigner"
+
+	// DefaultMaxFee is the fee ceiling of a bounded account whose request names
+	// none, in microAlgos.
+	DefaultMaxFee uint64 = 10_000
 
 	EncodingAuto   = "auto"
 	EncodingInline = "inline"

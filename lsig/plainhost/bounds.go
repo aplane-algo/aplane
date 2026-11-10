@@ -24,6 +24,7 @@ const (
 	ParameterListEncoding   = boundary.ParameterListEncoding
 	ParameterRecipients     = boundary.ParameterRecipients
 	ParameterRecipientScope = boundary.ParameterRecipientScope
+	ParameterMaxFee         = boundary.ParameterMaxFee
 
 	RecipientScopeListed = boundary.RecipientScopeListed
 	RecipientScopeAny    = boundary.RecipientScopeAny
@@ -40,8 +41,10 @@ const (
 	// RecipientsMax is the largest list any encoding accepts.
 	RecipientsMax = merkleallowlist.MaxItems
 
-	// MaxFee is the compiled fee ceiling of every shape, in microAlgos.
-	MaxFee uint64 = 10_000
+	// DefaultMaxFee is the fee ceiling a request gets when it names none, in
+	// microAlgos. The grammar's shapes are built with it; another ceiling is the
+	// same shape compiled with that value.
+	DefaultMaxFee = boundary.DefaultMaxFee
 
 	// shapeDerivationVersion is the template schema's derivation version for a
 	// shape's spec. The host's own salt style replaces it when the shape is
@@ -53,7 +56,7 @@ const (
 
 // boundsParameters are the parameters that select a shape.
 var boundsParameters = []string{
-	ParameterSpendEffects, ParameterRecipients, ParameterRecipientScope, ParameterListEncoding,
+	ParameterSpendEffects, ParameterRecipients, ParameterRecipientScope, ParameterListEncoding, ParameterMaxFee,
 }
 
 // hasBounds reports whether a request asks for a bounded2 shape.
@@ -168,13 +171,12 @@ func Shapes() []Shape {
 // shapeSpec expresses a shape in the expert template schema under the host's own
 // identity, so a shape gets every check an imported template gets and cannot
 // reach a composer state a template could not.
-func shapeSpec(plain Plain, shape Shape) (*composeddsa.TemplateSpec, error) {
+func shapeSpec(plain Plain, shape Shape, maxFee uint64) (*composeddsa.TemplateSpec, error) {
 	publisher, family, version, err := splitKeyType(plain.KeyType())
 	if err != nil {
 		return nil, err
 	}
 	derivationVersion := shapeDerivationVersion
-	maxFee := MaxFee
 	opcodeCost := uint64(opcodeCost)
 	spend := make([]string, len(shape.Spend))
 	for i, effect := range shape.Spend {
@@ -239,8 +241,8 @@ func shapeSpec(plain Plain, shape Shape) (*composeddsa.TemplateSpec, error) {
 
 // newShapeComposer composes a shape over the host's base, under its identity and
 // salt style.
-func newShapeComposer(plain Plain, base Base, shape Shape) (*composeddsa.ComposedDSA, error) {
-	spec, err := shapeSpec(plain, shape)
+func newShapeComposer(plain Plain, base Base, shape Shape, maxFee uint64) (*composeddsa.ComposedDSA, error) {
+	spec, err := shapeSpec(plain, shape, maxFee)
 	if err != nil {
 		return nil, err
 	}

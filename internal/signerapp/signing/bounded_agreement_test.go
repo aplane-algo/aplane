@@ -270,7 +270,7 @@ func agCorpus() ([]*agTxn, error) {
 				if pureOnly[rekeyTo] && (!pureBase || danger != 0) {
 					continue
 				}
-				for _, fee := range []uint64{1_000, plainhost.MaxFee, plainhost.MaxFee + 1} {
+				for _, fee := range []uint64{1_000, plainhost.DefaultMaxFee, plainhost.DefaultMaxFee + 1} {
 					{
 						txn := b.txn
 						txn.Sender = agSender
@@ -760,7 +760,7 @@ func (a *agAccount) agRekeyRule(tx *agTxn) string {
 
 // feeWithinCeiling is the bounded host's fee ceiling; a plain host has none.
 func (a *agAccount) feeWithinCeiling(tx *agTxn) bool {
-	return a.plain || uint64(tx.txn.Fee) <= plainhost.MaxFee
+	return a.plain || uint64(tx.txn.Fee) <= plainhost.DefaultMaxFee
 }
 
 // agRequests is the one request the planner sees for each corpus transaction.
@@ -1566,7 +1566,7 @@ func TestBoundedRekeyFirstCheckRefusesOtherLayouts(t *testing.T) {
 	rekeyEntry := func(code string) func(string) string {
 		return func(teal string) string { return agReplace(t, teal, "", agRekeyLabel+":\n", agRekeyLabel+":\n"+code) }
 	}
-	fee := fmt.Sprintf("txn Fee\npushint %d\n<=\nassert\n", plainhost.MaxFee)
+	fee := fmt.Sprintf("txn Fee\npushint %d\n<=\nassert\n", plainhost.DefaultMaxFee)
 	dispatch := "txn RekeyTo\nglobal ZeroAddress\n!=\nbnz " + agRekeyLabel + "\n"
 	prepend := func(teal, code string) string {
 		pragma, rest, _ := strings.Cut(teal, "\n")

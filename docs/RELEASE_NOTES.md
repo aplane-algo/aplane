@@ -7,6 +7,33 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## A bounded account's fee limit is configurable
+
+- Removed: the fixed cap of 10,000 microAlgos on a bounded account's `max_fee`, in
+  templates (`bounded.max_fee`) and in stored metadata validation. `max_fee` is still
+  required on `bounded2`, and any value is valid, 0 included. A `plain1` account still
+  has no fee ceiling.
+- New: the plain hosts take an optional bounds parameter `max_fee`, and a boundary file
+  an optional field `max_fee` (a whole number of microAlgos, written as a number or a
+  string; it needs `spend`). Absent means 10,000, and `max_fee: 10000` resolves to the
+  same contract, shape fingerprint and boundary digest as leaving it out.
+- Another ceiling is the same shape compiled with that value: the same shape
+  descriptor, its own shape fingerprint and boundary digest. The grammar fingerprint
+  is unchanged and still covers the 147 shapes at the default ceiling.
+- The presets (Allowlist, Locked Allowlist, Corridor) fill in 10,000, and a sample
+  boundary file written from a preset says `max_fee: 10000`. apadmin's Custom bounds
+  form has a Fee Limit field, and apshell's boundary preview prints the fee limit.
+- A ceiling below what a path costs is no longer refused at generation ("path needs a
+  fee of N, above the account's ceiling"). The apadmin review warns instead, through
+  the new `prepare_generate_result.warnings`, so a sponsored-only account such as
+  `max_fee: 0` can be created. The warning is a lower bound, computed before the
+  program exists. A path that doesn't fit one transaction's resource limits is still
+  refused.
+- Unchanged at signing: the planner never raises a bounded slot above its `max_fee`,
+  and planning fails if no other signer-controlled transaction in the group can take
+  the charge. Why: the cap was a protective default, not a real budget. The presets
+  are the safe defaults, and other choices are advised on, not refused.
+
 ## Bounded accounts no longer have a timelock
 
 - Removed: the bounded Layer-3 policies `timelock`, `fixed_allowlist_timelock` and

@@ -6,6 +6,7 @@ package plainhost
 import (
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
@@ -17,7 +18,9 @@ import (
 
 // selection is the shape and canonical values one bounds request resolves to.
 type selection struct {
-	shape  Shape
+	shape Shape
+	// maxFee is the fee ceiling the shape is compiled with.
+	maxFee uint64
 	values map[string]string
 }
 
@@ -44,6 +47,10 @@ func selectShape(params map[string]string, defs []lsigprovider.ParameterDef) (*s
 		return nil, err
 	}
 	scope, err := canonicalRecipientScope(params)
+	if err != nil {
+		return nil, err
+	}
+	maxFee, err := canonicalMaxFee(params)
 	if err != nil {
 		return nil, err
 	}
@@ -77,7 +84,12 @@ func selectShape(params map[string]string, defs []lsigprovider.ParameterDef) (*s
 	if anyRecipient {
 		values[ParameterRecipientScope] = RecipientScopeAny
 	}
+	// Likewise only a ceiling other than the default.
+	if maxFee != DefaultMaxFee {
+		values[ParameterMaxFee] = strconv.FormatUint(maxFee, 10)
+	}
 	return &selection{
+		maxFee: maxFee,
 		shape: Shape{
 			Spend: spend, Encoding: encoding, Rekey: overlays.arrangement.Rekey, Cosigner: overlays.arrangement.Cosigner,
 			AnyRecipient: anyRecipient,
@@ -179,6 +191,24 @@ func canonicalRecipientScope(params map[string]string) (string, error) {
 	default:
 		return "", fmt.Errorf("%s must be %s or %s", ParameterRecipientScope, RecipientScopeListed, RecipientScopeAny)
 	}
+}
+
+// canonicalMaxFee returns the fee ceiling, the default when the request names
+// none. Any value is accepted, zero included: an account that can't pay its own
+// fees still works with another account in the group paying them.
+func canonicalMaxFee(params map[string]string) (uint64, error) {
+	value, present := params[ParameterMaxFee]
+	if !present {
+		return DefaultMaxFee, nil
+	}
+	// Only the plain decimal form: a leading zero or sign would read differently
+	// elsewhere, as YAML reads 010 as octal.
+	text := strings.TrimSpace(value)
+	fee, err := strconv.ParseUint(text, 10, 64)
+	if err != nil || strconv.FormatUint(fee, 10) != text {
+		return 0, fmt.Errorf("%s must be a whole number of microAlgos: %q", ParameterMaxFee, value)
+	}
+	return fee, nil
 }
 
 func canonicalSpend(value string) ([]txeffects.SpendEffect, error) {

@@ -226,7 +226,7 @@ Library, then created like any other key type.
   except `plus_cosigned`, which needs one (without it the spending key alone
   rekeys anywhere, which is `spending_key`).
 - **With any bounds parameter** (`spend_effects`, `recipients`,
-  `recipient_scope`, `list_encoding`), it renders a `bounded2`
+  `recipient_scope`, `list_encoding`, `max_fee`), it renders a `bounded2`
   shape: the bounds beside the same overlays, described in
   [The bounds](#the-bounds) below.
 
@@ -1492,8 +1492,8 @@ Three boundaries matter when changing this path:
   keys.
 - **Budget checks.** Generation does not solve the group or fee budget for templates.
   Fixture templates are proven by `TestBoundedFixtureCompiledBudgetMatrix`, and the signing
-  planner rejects a path that exceeds its fee ceiling. The plain hosts also solve
-  each reachable path at generation, as described below.
+  planner never raises a bounded transaction's fee above its ceiling. The plain hosts
+  also solve each reachable path at generation, as described below.
 
 ### The bounds
 
@@ -1506,7 +1506,8 @@ composes over the plain host's own base and salt style, under the plain key type
 identity, so a bounded account and a plain key on the same spending key differ only by
 their overlays and bounds. Both bases take the same grammar.
 
-A shape is a spend subset, a recipient rule, and an overlay arrangement. The spend
+A shape is a spend subset, a recipient rule, and an overlay arrangement, compiled
+with a fee ceiling. The spend
 subsets are the seven non-empty subsets of `pay`, `axfer` and `asset_opt_in`. The
 recipient rule is one of three policies: an inline allowlist, a Merkle allowlist, or
 limits-only (`layer3_policy: none`, selected by `recipient_scope=any`), which has no
@@ -1525,7 +1526,20 @@ The grammar is every combination the contracts allow: 3 policies x 7 arrangement
 subsets, 147 `bounded2` shapes per base, beside the seven `plain1` arrangements. That
 includes a refused rekey and a refused account whose transfer kinds cannot send what
 it holds. Which one suits an account is the user's choice; the review says what it
-means. The fee ceiling is a fixed 10,000 microAlgos on every shape.
+means.
+
+The fee ceiling is a value, not part of the shape:
+
+- `max_fee` is an optional bounds parameter, a whole number of microAlgos. Absent
+  means 10,000 (`boundary.DefaultMaxFee`). Any value is valid, 0 included.
+- The 147 shapes, and the grammar fingerprint that covers them, are at the default
+  ceiling.
+- Another ceiling is the same shape compiled with that value: the same shape
+  descriptor, its own shape fingerprint and its own boundary digest. The provider
+  builds such a program when a request or a stored account first names the
+  ceiling, and the grammar fingerprint does not change.
+- The presets (Allowlist, Locked Allowlist, Corridor) fill in 10,000, and a sample
+  boundary file written from a preset says `max_fee: 10000`.
 
 An `only_these` shape declares `rekey: refused` plus a rekey-to list, and a
 `plus_cosigned` shape `rekey: spending_key` plus a rekey-to list. A cosigned shape's
@@ -1535,7 +1549,8 @@ Merkle allowlists, then limits-only; within
 each, every arrangement in `Arrangements()` order, and within that every transfer
 subset. Each shape is an ordinary schema-v2 template spec with no author TEAL, so it
 passes every check an imported template passes. The provider holds one composer per
-arrangement and per shape, and no per-account state.
+arrangement and per shape at the default ceiling, a bounded cache of the shapes
+compiled with another ceiling, and no per-account state.
 
 Generation admission (`lsig/composeddsa/bounded_support.go`) and the signer's
 completed workflows (`internal/signerapp/signing/bounded_construction.go`) admit
@@ -1544,14 +1559,15 @@ Ed25519 spending key is classical, which the review says.
 
 | Concern | Rule |
 |---|---|
-| Boundary file | `boundary.ParseFile` parses `aplane.boundary.v1` strictly: no unknown fields, duplicate keys, aliases, merge keys, extra documents, or non-string scalars. The grammar has no field that can carry TEAL, a template, a base key type, a fee, or runtime arguments. A file without `spend` has no bounds: it describes a `plain1` arrangement and may not set `recipients`, `recipient_scope` or `encoding`. An empty `spend` is refused, not read as none. The file applies to the plain type it is used with; it names no key type. |
+| Boundary file | `boundary.ParseFile` parses `aplane.boundary.v1` strictly: no unknown fields, duplicate keys, aliases, merge keys, extra documents, or non-string scalars, except that `max_fee` may be written as a number. The grammar has no field that can carry TEAL, a template, a base key type, or runtime arguments. A file without `spend` has no bounds: it describes a `plain1` arrangement and may not set `recipients`, `recipient_scope`, `encoding` or `max_fee`. An empty `spend` is refused, not read as none. The file applies to the plain type it is used with; it names no key type. |
 | Requests | A request with any bounds parameter goes through `selectShape`, the security gate for file and direct requests alike, and needs `spend_effects`. One with overlay parameters only resolves to a `plain1` arrangement, and one with no parameters to the plain program, which refuses any parameter, so a misspelled one is an error rather than a weaker account. The client sends public values, never a path or the YAML, and a cosigner name stays a name for the signer to resolve. |
-| Stored parameters | A shape's canonical values include the selectors `spend_effects`, `rekey_authority`, and `list_encoding`, with `auto` resolved, `recipient_scope` only when it is `any` (`listed` is the default), and `rekey_to` in canonical address order for `only_these` and `plus_cosigned`. Generation adds the list's root as `bounded_rekey_to_root`, which no request can set and which does not select the shape. The generator resolves stored values a second time, so they must select the same shape. Only a shape's declared parameters reach its composer, because those enter the canonical behavior encoding. |
+| Stored parameters | A shape's canonical values include the selectors `spend_effects`, `rekey_authority`, and `list_encoding`, with `auto` resolved, `recipient_scope` only when it is `any` (`listed` is the default), `max_fee` only when it is not 10,000 (so a request that says `max_fee=10000` and one that leaves it out resolve to the same contract, shape fingerprint and boundary digest), and `rekey_to` in canonical address order for `only_these` and `plus_cosigned`. Generation adds the list's root as `bounded_rekey_to_root`, which no request can set and which does not select the shape. The generator resolves stored values a second time, so they must select the same shape. Only a shape's declared parameters reach its composer, because those enter the canonical behavior encoding. |
 | Rekey-to list | `rekey_authority=only_these` or `plus_cosigned` needs `rekey_to`, 1 to 16 distinct nonzero addresses, and `rekey_to` needs one of them. `plus_cosigned` needs `cosigner`; without one the spending key could already rekey anywhere, which is `spending_key`. `refused`, `only_these` and `spending_key` take a cosigner or not. Any address may be listed, even one that can never act on the account (one of this signer's rotating accounts, or a witness key's native address): which addresses to list is the user's choice, and apadmin's review flags a listed key this signer holds. The tree and its proof are in [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md#rekey-to-list-compatibility-contract). |
 | Encoding | `auto` is inline through 10 recipients and Merkle from 11. Explicit inline stops at 30. The list holds at most 65,536 distinct nonzero addresses. |
 | Recipient scope | Absent or `listed`, a list is required, in the file and the request alike. Leaving the list out never opens an account. `any` must be asked for, and refuses `recipients` (even empty) and `list_encoding`. An empty or unknown scope is an error. The `none` policy is offered only here: an expert template that declares it is refused when parsed. |
-| Fee and arguments | A shape's compiled ceiling is 10,000 microAlgos; a `plain1` arrangement has none. There are no runtime arguments. The base is the plain host's own: Falcon-1024 or Ed25519. |
-| Resources | `BuildBoundedAuthorizationMetadata` solves the spend path, and each rekey path the account has (`spending_rekey` for `spending_key`, `listed_rekey` for `only_these`, both for `plus_cosigned`), under the current consensus profile and refuses one that cannot run within one transaction's resources or, on a shape, within the ceiling, before the key is saved. This is a backstop: signing still checks the actual network. |
+| Fee and arguments | A shape's compiled ceiling is the request's `max_fee`, 10,000 microAlgos when absent; a `plain1` arrangement has none. `max_fee` must parse as a `uint64`; no value is refused. There are no runtime arguments. The base is the plain host's own: Falcon-1024 or Ed25519. |
+| Resources | `BuildBoundedAuthorizationMetadata` solves the spend path, and each rekey path the account has (`spending_rekey` for `spending_key`, `listed_rekey` for `only_these`, both for `plus_cosigned`), under the current consensus profile and refuses one that cannot run within one transaction's resources, before the key is saved. This is a backstop: signing still checks the actual network. A ceiling below what a path costs when the account pays alone is not refused. |
+| Fee warning | `ResolveInstance` returns `Instance.Warnings`. When a path costs more than the ceiling, the one warning names each such path and its cost, and says each needs another account in the group to pay its fees. The program doesn't exist at review, so it is sized by the keys it must hold (the spending public key, and the cosigner's on a cosigned account): the cost is a lower bound, a ceiling just above it can still fall short, and signing reports that when it plans the group. The warning reaches the review as `prepare_generate_result.warnings` and refuses nothing. A `max_fee` value must be a plain decimal number: a sign or a leading zero is refused. |
 | Mnemonics | No mnemonic import. The account recovers from its encrypted credential or a backup. |
 
 Three identities have separate jobs, and `lsigprovider.Instance` carries each one:

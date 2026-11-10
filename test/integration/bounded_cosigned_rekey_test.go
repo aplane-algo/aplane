@@ -301,7 +301,7 @@ func TestCosignedRekeysThroughSigner(t *testing.T) {
 			}
 			// The signer refuses a fee above the account's ceiling, so this leaves at
 			// least the minimum balance.
-			if reserve := info.MinBalance + plainhost.MaxFee; info.Amount > reserve {
+			if reserve := info.MinBalance + plainhost.DefaultMaxFee; info.Amount > reserve {
 				n.spend(t, account, info.Amount-reserve)
 			}
 		})

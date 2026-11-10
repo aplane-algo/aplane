@@ -8,6 +8,7 @@ package apshellcli
 import (
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/apshellapp"
@@ -105,6 +106,11 @@ func renderBoundaryPreview(r *REPLState, preview *apshellapp.BoundaryPreview) {
 	r.printf("  Key type:   %s\n", keytypefmt.Display(preview.KeyType))
 	if !preview.NoBounds {
 		r.printf("  Transfers:  %s\n", strings.Join(preview.Transfers, ", "))
+		fee := preview.MaxFee
+		if fee == "" || fee == strconv.FormatUint(boundary.DefaultMaxFee, 10) {
+			fee = strconv.FormatUint(boundary.DefaultMaxFee, 10) + " (default)"
+		}
+		r.printf("  Fee limit:  %s microAlgos per transaction\n", fee)
 	}
 	switch {
 	case preview.NoBounds:

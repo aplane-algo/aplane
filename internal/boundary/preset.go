@@ -10,6 +10,9 @@ import (
 
 const allTransfers = "pay,axfer,asset_opt_in"
 
+// defaultMaxFee is DefaultMaxFee as a preset writes it.
+const defaultMaxFee = "10000"
+
 // Preset is a named arrangement of the grammar. Fixed holds the choices the preset
 // makes; Fields names what the operator supplies. Presets are the one definition
 // that both the guided screens and sample boundary files come from.
@@ -31,6 +34,7 @@ func Presets() []Preset {
 			Description: "Pays only listed recipients. The spending key alone can rekey it.",
 			Fixed: map[string]string{
 				ParameterSpendEffects:   allTransfers,
+				ParameterMaxFee:         defaultMaxFee,
 				ParameterRekeyAuthority: RekeySpendingKey,
 				ParameterListEncoding:   EncodingAuto,
 			},
@@ -42,6 +46,7 @@ func Presets() []Preset {
 			Description: "Pays only listed recipients. It can be rekeyed only to an address on its rekey-to list.",
 			Fixed: map[string]string{
 				ParameterSpendEffects:   allTransfers,
+				ParameterMaxFee:         defaultMaxFee,
 				ParameterRekeyAuthority: RekeyOnlyThese,
 				ParameterListEncoding:   EncodingAuto,
 			},
@@ -53,6 +58,7 @@ func Presets() []Preset {
 			Description: "A Merkle list and a cosigner on every spend. It can be rekeyed only to an address on its rekey-to list, with the spending key alone.",
 			Fixed: map[string]string{
 				ParameterSpendEffects:   allTransfers,
+				ParameterMaxFee:         defaultMaxFee,
 				ParameterRekeyAuthority: RekeyOnlyThese,
 				ParameterListEncoding:   EncodingMerkle,
 			},
@@ -74,6 +80,9 @@ func (p Preset) SampleBoundaryFile(values SampleValues) string {
 	var sb strings.Builder
 	sb.WriteString("schema: " + SchemaV1 + "\n")
 	sb.WriteString("spend: [" + strings.ReplaceAll(p.Fixed[ParameterSpendEffects], ",", ", ") + "]\n")
+	if fee := p.Fixed[ParameterMaxFee]; fee != "" {
+		sb.WriteString("max_fee: " + fee + "\n")
+	}
 	if slices.Contains(p.Fields, ParameterRecipients) {
 		sb.WriteString("recipients:\n")
 		for _, recipient := range values.Recipients {

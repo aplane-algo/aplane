@@ -877,6 +877,35 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 			},
 		},
 		{
+			// The signer's warnings ride beside the profile; a fee limit of zero
+			// is a value, not an absent one.
+			name: "prepare_generate_result with warnings",
+			msg: PrepareGenerateResultMessage{
+				BaseMessage: BaseMessage{Type: MsgTypePrepareGenerateResult, ID: "prepare-2"},
+				Success:     true,
+				KeyType:     "aplane.falcon1024.v1",
+				Bounded: &PreparedBoundedProfile{
+					Contract: "bounded2", SpendEffects: []string{"pay"}, MaxFee: new(uint64(0)),
+					Rekey: "refused", Layer3Policy: "none",
+				},
+				Warnings: []string{"Fee limit 0 is below its own costs. It can't pay for these transactions itself: spend (at least 2000).", "a second note"},
+			},
+			wantMap: map[string]any{
+				"type":     MsgTypePrepareGenerateResult,
+				"id":       "prepare-2",
+				"success":  true,
+				"key_type": "aplane.falcon1024.v1",
+				"bounded": map[string]any{
+					"contract":      "bounded2",
+					"spend_effects": []any{"pay"},
+					"max_fee":       float64(0),
+					"rekey":         "refused",
+					"layer3_policy": "none",
+				},
+				"warnings": []any{"Fee limit 0 is below its own costs. It can't pay for these transactions itself: spend (at least 2000).", "a second note"},
+			},
+		},
+		{
 			name: "update_admin_setting_result",
 			msg: UpdateAdminSettingResultMessage{
 				BaseMessage: BaseMessage{Type: MsgTypeUpdateAdminSettingResult, ID: "setting-1"},

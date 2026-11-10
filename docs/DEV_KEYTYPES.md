@@ -866,7 +866,7 @@ template_mode: generated     # strict | generated; legacy is not allowed
 bounded:
   contract: bounded2         # templates can't declare plain1, the plain host's contract
   spend_effects: [pay, axfer, asset_opt_in]  # non-empty subset
-  max_fee: 10000             # required; at most 10000
+  max_fee: 10000             # required; any value, 0 included
   rekey: spending_key        # required: refused (no rekey path) | spending_key | only_these (refused plus a rekey-to list) | plus_cosigned (spending_key plus a rekey-to list; needs a cosigner)
   cosigner:                  # optional; Falcon base only
     contract: cosigner1

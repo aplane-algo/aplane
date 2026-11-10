@@ -6,6 +6,7 @@ package keyadmin
 import (
 	"encoding/hex"
 	"fmt"
+	"slices"
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
@@ -30,6 +31,8 @@ type PreparedGeneration struct {
 	// Bounded is the bounded contract, or nil for any other key type.
 	Bounded       *boundedmeta.Metadata
 	CosignerKeyID string
+	// Warnings are the provider's notes for the reviewer. They refuse nothing.
+	Warnings []string
 }
 
 // PrepareGenerateKey runs generation's checks without generating anything, so
@@ -71,6 +74,7 @@ func (s Service) PrepareGenerateKey(keyType string, params map[string]string) (*
 		prepared.ReviewFingerprint = creation.instance.ReviewFingerprint
 		prepared.BoundaryDigest = creation.instance.BoundaryDigest
 		prepared.Bounded = boundedmeta.Clone(creation.instance.Bounded)
+		prepared.Warnings = slices.Clone(creation.instance.Warnings)
 	}
 	if err := prepared.resolveAuthorityIDs(); err != nil {
 		return nil, &Error{Kind: ErrorInvalidInput, Message: err.Error()}

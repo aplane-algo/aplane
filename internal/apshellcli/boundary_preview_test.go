@@ -43,3 +43,40 @@ func TestBoundaryPreviewDescribesEveryRekeySetting(t *testing.T) {
 		}
 	}
 }
+
+// A bounded account's summary states its fee limit: the default when the file
+// names none, the file's own otherwise. An account with no bounds has no limit.
+func TestBoundaryPreviewStatesTheFeeLimit(t *testing.T) {
+	bounded := apshellapp.BoundaryPreview{Transfers: []string{"pay", "axfer"}, AnyRecipient: true, Rekey: boundary.RekeyRefused}
+	for _, test := range []struct {
+		name   string
+		maxFee string
+		want   string
+	}{
+		{"default", "", "  Fee limit:  10000 (default) microAlgos per transaction\n"},
+		{"custom", "20000", "  Fee limit:  20000 microAlgos per transaction\n"},
+		{"zero", "0", "  Fee limit:  0 microAlgos per transaction\n"},
+		{"largest", "18446744073709551615", "  Fee limit:  18446744073709551615 microAlgos per transaction\n"},
+	} {
+		preview := bounded
+		preview.MaxFee = test.maxFee
+		var out bytes.Buffer
+		renderBoundaryPreview(&REPLState{Out: &out}, &preview)
+		text := out.String()
+		if strings.Count(text, "Fee limit:") != 1 || !strings.Contains(text, test.want) {
+			t.Errorf("%s: summary lacks %q:\n%s", test.name, test.want, text)
+		}
+		// It follows the transfer kinds it limits.
+		if !strings.Contains(text, "  Transfers:  pay, axfer\n"+test.want) {
+			t.Errorf("%s: the fee limit does not follow the transfers:\n%s", test.name, text)
+		}
+		if test.maxFee != "" && strings.Contains(text, "(default)") {
+			t.Errorf("%s: a named limit reads as the default:\n%s", test.name, text)
+		}
+	}
+	var out bytes.Buffer
+	renderBoundaryPreview(&REPLState{Out: &out}, &apshellapp.BoundaryPreview{NoBounds: true, Rekey: boundary.RekeyRefused, MaxFee: "20000"})
+	if text := out.String(); strings.Contains(text, "Fee limit:") || !strings.Contains(text, "no fee limit") {
+		t.Errorf("an account with no bounds states a fee limit:\n%s", text)
+	}
+}

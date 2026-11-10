@@ -27,7 +27,9 @@ type File struct {
 	// that a missing list is still an error rather than an open account.
 	RecipientScope *string `yaml:"recipient_scope"`
 	Encoding       *string `yaml:"encoding"`
-	Rekey          *struct {
+	// MaxFee is text so that a uint64 survives, and may be written as a number.
+	MaxFee *string `yaml:"max_fee"`
+	Rekey  *struct {
 		Authority string `yaml:"authority"`
 		// To is the rekey-to list, with authority only_these or plus_cosigned.
 		To []string `yaml:"to"`
@@ -36,7 +38,7 @@ type File struct {
 }
 
 // ParseFile strictly parses a boundary file. This grammar is closed: it
-// has no field for TEAL, a template, a base key type, a fee, or runtime arguments.
+// has no field for TEAL, a template, a base key type, or runtime arguments.
 // Parsing is not the security gate: the provider applies the semantic rules to
 // every request, however it arrived.
 func ParseFile(data []byte) (*File, error) {
@@ -44,7 +46,7 @@ func ParseFile(data []byte) (*File, error) {
 		return nil, fmt.Errorf("boundary file exceeds %d bytes", MaxFileBytes)
 	}
 	var file File
-	if err := generictemplate.DecodeStrictYAML(data, &file, generictemplate.RequireStringScalars()); err != nil {
+	if err := generictemplate.DecodeStrictYAML(data, &file, generictemplate.RequireStringScalars(ParameterMaxFee)); err != nil {
 		return nil, fmt.Errorf("boundary file: %w", err)
 	}
 	if file.Schema != SchemaV1 {
@@ -63,6 +65,7 @@ func ParseFile(data []byte) (*File, error) {
 			{"recipients", file.Recipients != nil},
 			{"recipient_scope", file.RecipientScope != nil},
 			{"encoding", file.Encoding != nil},
+			{"max_fee", file.MaxFee != nil},
 		} {
 			if field.set {
 				return nil, fmt.Errorf("boundary file: %s needs spend, the transfer kinds the account may make", field.name)
@@ -111,6 +114,9 @@ func ParseFile(data []byte) (*File, error) {
 	if file.Cosigner != nil && strings.TrimSpace(*file.Cosigner) == "" {
 		return nil, fmt.Errorf("boundary file: cosigner is empty")
 	}
+	if file.MaxFee != nil && strings.TrimSpace(*file.MaxFee) == "" {
+		return nil, fmt.Errorf("boundary file: max_fee is empty")
+	}
 	if file.Encoding != nil && *file.Encoding == "" {
 		return nil, fmt.Errorf("boundary file: encoding is empty")
 	}
@@ -136,6 +142,9 @@ func (f *File) CreationParameters() map[string]string {
 	}
 	if f.Encoding != nil {
 		params[ParameterListEncoding] = *f.Encoding
+	}
+	if f.MaxFee != nil {
+		params[ParameterMaxFee] = *f.MaxFee
 	}
 	if f.Cosigner != nil {
 		params[ParameterCosigner] = *f.Cosigner

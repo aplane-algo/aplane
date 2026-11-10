@@ -29,8 +29,6 @@ const (
 	BoundedContract = boundedmeta.Contract
 	// PlainContract is the plain host: signatures and overlays, no host rules.
 	PlainContract = boundedmeta.PlainContract
-	// BoundedMaxFee is the largest fee a bounded profile may compile.
-	BoundedMaxFee uint64 = boundedmeta.MaximumProfileFee
 	// BoundedCosignerPublicKeyParameter is injected for cosigner-enabled profiles.
 	BoundedCosignerPublicKeyParameter = boundedmeta.CosignerPublicKeyParameter
 	// BoundedRekeyToParameter carries a rekey-to list's entries. The framework
@@ -105,9 +103,6 @@ func (profile *BoundedAuthorizationProfile) validate() error {
 	case BoundedContract:
 		if profile.MaxFee == nil {
 			return fmt.Errorf("%s requires max_fee", BoundedContract)
-		}
-		if *profile.MaxFee > BoundedMaxFee {
-			return fmt.Errorf("max_fee %d exceeds %s ceiling %d", *profile.MaxFee, BoundedContract, BoundedMaxFee)
 		}
 		if err := boundedmeta.ValidateSpendEffects(spendEffects); err != nil {
 			return err

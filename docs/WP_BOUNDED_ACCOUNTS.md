@@ -68,9 +68,13 @@ rekey-to list, fixed when the account is created. A cosigned account may have
 both: a listed target with the spending key alone, any other with the cosigner
 too. Its spending conditions, such as a recipient list, do
 not apply to a rekey. The compiled fee ceiling applies to both
-spending and rekeying; every bounded account sets it to 10,000 microAlgos
-(0.01 ALGO) per protected transaction. This is a ceiling, not a fixed fee or
-a guarantee that every path is viable under every network fee schedule.
+spending and rekeying; the presets set it to 10,000 microAlgos
+(0.01 ALGO) per protected transaction, and an account can be created with any
+other value. This is a ceiling, not a fixed fee or
+a guarantee that every path is viable under every network fee schedule. An
+account whose ceiling is below what its own transactions cost, zero included,
+pays no fees itself: another account in the same group must pay them, for its
+exit too.
 
 No stateful application deployment is required. Each authorization program is
 fixed, and its code accompanies the transaction when used. The account still

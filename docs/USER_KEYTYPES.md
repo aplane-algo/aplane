@@ -254,7 +254,7 @@ picks the account:
   no transaction-type list. Every transaction that doesn't rekey is a spend, of
   any type, closes and clawback included.
 - **Bounds** (any of `spend_effects`, `recipients`, `recipient_scope`,
-  `list_encoding`) beside the same overlays: a
+  `list_encoding`, `max_fee`) beside the same overlays: a
   [bounded account](#bounded-accounts).
 
 The overlays:
@@ -302,8 +302,8 @@ alone can spend or close everything).
 ## Bounded Accounts
 
 A bounded account is a plain host account with bounds: an `aplane.falcon1024.v1` or
-`aplane.ed25519.v1` account limited to the transfer kinds you choose, with a fee limit of
-10,000 microAlgos per transaction, and to a fixed list of recipients. A limits-only account has no list:
+`aplane.ed25519.v1` account limited to the transfer kinds you choose, with a fee limit per transaction
+(10,000 microAlgos unless you set another), and to a fixed list of recipients. A limits-only account has no list:
 it can pay anyone, and only its transfer kinds and per-transaction fee limit apply. The
 overlays (a cosigner, a rekey setting, a rekey-to list) sit beside the bounds, as on any
 plain host account. `aplane.falcon1024.v1` needs no setup; `aplane.ed25519.v1` must be
@@ -319,14 +319,15 @@ Generate a key and choose a plain host, such as `aplane.falcon1024.v1`. The pres
 | Choice | What it sets | You supply |
 |---|---|---|
 | No bounds | No bounds: the overlays alone (see [Plain Hosts](#plain-hosts)) | The overlay choices |
-| Allowlist | All transfer kinds; the spending key alone can rekey it, to any address; automatic list encoding | Recipients |
-| Locked Allowlist | All transfer kinds; it can be rekeyed only to an address on its [rekey-to list](#rekey-to-lists); automatic list encoding | Recipients, rekey-to addresses |
-| Corridor | All transfer kinds; a cosigner on every spend; Merkle list; it can be rekeyed only to an address on its rekey-to list, with the spending key alone | Recipients, rekey-to addresses, cosigner |
-| Custom bounds | Nothing fixed: every bounds field, without a file | Transfer kinds, and any of recipients, recipient scope, list encoding |
+| Allowlist | All transfer kinds; a fee limit of 10,000 microAlgos; the spending key alone can rekey it, to any address; automatic list encoding | Recipients |
+| Locked Allowlist | All transfer kinds; a fee limit of 10,000 microAlgos; it can be rekeyed only to an address on its [rekey-to list](#rekey-to-lists); automatic list encoding | Recipients, rekey-to addresses |
+| Corridor | All transfer kinds; a fee limit of 10,000 microAlgos; a cosigner on every spend; Merkle list; it can be rekeyed only to an address on its rekey-to list, with the spending key alone | Recipients, rekey-to addresses, cosigner |
+| Custom bounds | Nothing fixed: every bounds field, without a file | Transfer kinds, and any of recipients, recipient scope, list encoding, fee limit (left empty, 10,000 microAlgos) |
 | Load boundary file | Whatever the file says | The file |
 
 "All transfer kinds" means `pay`, `axfer`, and `asset_opt_in`. For a narrower list, such as
-ALGO only, or for a limits-only account, use Custom bounds or a boundary file.
+ALGO only, for a limits-only account, or for another fee limit, use Custom bounds or a
+boundary file.
 
 A bounded choice's form shows its bounds first (recipients, or with
 Custom bounds every bounds field), then the same three choices as No bounds: **Require a
@@ -345,6 +346,32 @@ them), list every rekey-to address, flag each one this signer holds, and, on a
 post-quantum account, say which held targets are classical and ask you to confirm the
 rest are post-quantum, since an address doesn't reveal its key type. These are
 statements: nothing here refuses a choice.
+
+The review also shows the signer's warnings, one line each, with the full text under
+**DETAILS**. There is one today, for a fee limit below what the account's own
+transactions cost. On the review:
+
+```text
+Warning: Fee limit 0 is below its own costs. See details.
+```
+
+In the details:
+
+```text
+Fee limit 0 is below its own costs. It can't pay for these transactions itself:
+spend (at least <fee>), spending_rekey (at least <fee>). Each needs another account
+in the same group to pay its fees.
+```
+
+- It lists each path the limit falls short of (`spend`, `spending_rekey`,
+  `listed_rekey`), with the least that path costs for this account.
+- It is advice. The account is still created if you choose **GENERATE**, and it works
+  when another account in the same group pays its fees. A fee limit of 0 makes an
+  account that never pays a fee itself.
+- The figure is a lower bound, worked out from the keys the program must hold before the
+  program exists. A limit just above it can still fall short, and signing says so when
+  it plans the group.
+
 After generating, press `s` to save a receipt beside where apadmin was started. A receipt
 documents the account, including its rekey-to addresses. It cannot restore one: use
 encrypted backups for that. The chain never reveals a rekey-to list, so keep the receipt
@@ -359,6 +386,7 @@ type. It must be a regular file of at most 8 MiB. A symbolic link is refused.
 ```yaml
 schema: aplane.boundary.v1
 spend: [pay, axfer, asset_opt_in]
+max_fee: 10000
 recipients:
   - EIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRDOHSEZI
   - CEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI7JH2AYM
@@ -375,10 +403,11 @@ These addresses are illustrations, not funding destinations.
 | Field | Meaning |
 |---|---|
 | `schema` | Required. Must be `aplane.boundary.v1`. |
-| `spend` | Any of `pay`, `axfer`, `asset_opt_in`. Leave it out for an account without bounds: the file then describes the overlays alone, and may not set `recipients`, `recipient_scope`, or `encoding`. An empty list is refused. |
+| `spend` | Any of `pay`, `axfer`, `asset_opt_in`. Leave it out for an account without bounds: the file then describes the overlays alone, and may not set `recipients`, `recipient_scope`, `encoding`, or `max_fee`. An empty list is refused. |
 | `recipients` | With `spend`, required unless `recipient_scope: any` is set. 1 to 65,536 distinct nonzero addresses, written literally: aliases and sets are not expanded. |
 | `recipient_scope` | Optional. Left out or written as `listed`, the file needs a list. `any` makes a limits-only account: no list, and it can't be combined with `recipients` or `encoding`. Leaving out the list never means `any`: you must write it. |
 | `encoding` | Optional, and needs a list. `auto` (the default) is inline through 10 recipients and Merkle above that. `inline` accepts at most 30. |
+| `max_fee` | Optional, and needs `spend`. The most the account may pay in fees on one transaction: a whole number of microAlgos in plain decimal (no sign or leading zero), written as a number or a string. Left out, it is 10,000, and writing `10000` makes the same account as leaving it out. Any value is accepted, 0 included. Below what the account's own transactions cost, another account in the same group must pay its fees; the apadmin review warns about that. |
 | `rekey.authority` | Required. `refused` (never rekeyed), `spending_key` (the spending key can rekey, to any address; with a cosigner, only together with the cosigner, to a target the cosigner's policy allows), `only_these` (the spending key alone can rekey, but only to an address in `rekey.to`; a cosigner is not asked), or `plus_cosigned` (needs a cosigner: the spending key alone to an address in `rekey.to`, or the spending key and the cosigner to any other target the cosigner's policy allows). |
 | `rekey.to` | Required with `only_these` and `plus_cosigned`, and refused with `refused` and `spending_key`. 1 to 16 distinct nonzero addresses, written literally. See [Rekey-to lists](#rekey-to-lists). |
 | `cosigner` | Optional. A cosigner reference name on the signer, or a Witness Key ID. `plus_cosigned` needs one. |
@@ -400,11 +429,15 @@ local summary says "Bounds: none".
 
 A limits-only account limits how it spends, not to whom: whoever holds its spending key
 (and its cosigner, if it has one) can send everything it holds to any address, one
-transaction at a time. It still can't close, clawback, or pay more than 10,000 microAlgos
-in fees per transaction.
+transaction at a time. It still can't close, clawback, or pay more than its fee limit
+per transaction.
 
-Unknown fields, duplicate keys, YAML aliases, and non-string values are refused, and the
-file has no way to carry TEAL, a template, or a fee.
+Unknown fields, duplicate keys, YAML aliases, and non-string values are refused
+(`max_fee` alone may be a number), and the file has no way to carry TEAL or a template.
+
+The fee limit is compiled into the account's program. A limit other than 10,000 is the
+same arrangement of rules with that value, and it has its own fingerprint and boundary
+digest.
 
 The list's encoding changes what becomes public. Inline shows the whole list once the
 program is published. A Merkle spend reveals its recipient and proof, so it reduces
@@ -476,7 +509,7 @@ generate aplane.ed25519.v1 spend_effects=pay,axfer rekey_authority=refused recip
 ```
 
 With `--boundary`, apshell shows a local summary and asks before creating the account.
-The summary lists a rekey-to list's addresses; for a file without `spend` it says "Bounds: none". On
+The summary lists the fee limit and a rekey-to list's addresses; for a file without `spend` it says "Bounds: none". On
 a cosigned account it says the cosigner is not asked for a listed address, and names
 who can make any other rekey. The
 signer has not seen that summary, so a cosigner name in it is unresolved, and editing
@@ -495,8 +528,8 @@ contained: they must refuse every rekey or take only listed ones (`only_these`) 
 recipient list, so they can pay only listed recipients, and hand the account at most to a
 listed key. A limits-only account is not contained, with or without a cosigner. A `spending_key` account is never
 contained, with or without a cosigner, and neither is a `plus_cosigned` one: whoever
-holds its online keys can rekey it anywhere. Fees are outside that limit: each transaction's fee is capped at 10,000
-microAlgos, but a stolen spending key can still spend the balance on fees, one
+holds its online keys can rekey it anywhere. Fees are outside that limit: each transaction's fee is capped at the account's
+fee limit, but a stolen spending key can still spend the balance on fees, one
 transaction at a time. `require_cosigner` refuses accounts without a cosigner. They apply on every route, to
 both plain hosts: an account without bounds is never contained, and the plain program,
 with no cosigner, fails both. They do not affect existing accounts or imported templates.

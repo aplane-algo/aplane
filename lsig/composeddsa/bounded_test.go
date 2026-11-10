@@ -6,6 +6,9 @@ package composeddsa
 import (
 	"bytes"
 	"encoding/hex"
+	"fmt"
+	"math"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -314,13 +317,13 @@ func TestBoundedRejectsInvalidProfilesAndCapabilities(t *testing.T) {
 		want string
 	}{
 		{
-			name: "fee above ceiling",
+			name: "no fee ceiling",
 			make: func() *ComposedDSA {
 				profile := cloneBoundedProfile(valid)
-				profile.MaxFee = new(uint64(BoundedMaxFee + 1))
+				profile.MaxFee = nil
 				return newBoundedTestProvider(profile)
 			},
-			want: "exceeds " + BoundedContract + " ceiling",
+			want: BoundedContract + " requires max_fee",
 		},
 		{
 			name: "denied spend effect",
@@ -384,6 +387,39 @@ func TestBoundedRejectsInvalidProfilesAndCapabilities(t *testing.T) {
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("GenerateTEAL() error = %v, want containing %q", err, tt.want)
 			}
+		})
+	}
+}
+
+// The fee ceiling has no upper cap and zero is a value: each compiles, with its
+// own fee check, metadata and fingerprint.
+func TestBoundedAcceptsAnyFeeCeiling(t *testing.T) {
+	fingerprints := make(map[string]uint64)
+	for _, ceiling := range []uint64{0, 1_000, 10_000, 10_001, 20_000, math.MaxUint64} {
+		t.Run(strconv.FormatUint(ceiling, 10), func(t *testing.T) {
+			provider := newBoundedTestProvider(&BoundedAuthorizationProfile{
+				Contract: BoundedContract, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: new(ceiling),
+				Rekey: boundedmeta.RekeyRefused,
+			})
+			teal, err := provider.GenerateTEAL([]byte{1}, nil)
+			if err != nil {
+				t.Fatalf("GenerateTEAL() error = %v", err)
+			}
+			if want := fmt.Sprintf("txn Fee\npushint %d\n<=\nassert\n", ceiling); !strings.Contains(teal, want) {
+				t.Fatalf("fee check %q missing:\n%s", want, teal)
+			}
+			metadata := provider.BoundedAuthorizationMetadata()
+			if metadata == nil || metadata.MaxFee == nil || *metadata.MaxFee != ceiling {
+				t.Fatalf("metadata = %+v", metadata)
+			}
+			if err := metadata.ValidateProfile(); err != nil {
+				t.Fatalf("ValidateProfile() error = %v", err)
+			}
+			fingerprint := provider.CompatibilityFingerprint()
+			if other, seen := fingerprints[fingerprint]; seen {
+				t.Fatalf("ceilings %d and %d share fingerprint %s", other, ceiling, fingerprint)
+			}
+			fingerprints[fingerprint] = ceiling
 		})
 	}
 }

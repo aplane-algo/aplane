@@ -100,7 +100,8 @@ Transport notes:
   with no `admin_operations` as having no rekey path, so it is refused at authentication
   rather than shown a wrong review; later 8.0 work, still unreleased, makes
   `bounded.max_fee` optional (absent on a `plain1` account) and adds
-  `boundary_schema` to key types and `base_key_type` to `prepare_generate_result`;
+  `boundary_schema` to key types and `base_key_type` and `warnings` to
+  `prepare_generate_result`;
   7.3 adds `review_fingerprint` and
   `boundary_digest` to `prepare_generate_result`, an optional
   `generate_key.expected_boundary_digest`, `per_key_contract` to key types, and the two
@@ -398,7 +399,7 @@ interlocks.
 
 #### Key Management
 
-- `prepare_generate_key`: `key_type`, optional `parameters` -> `prepare_generate_result`: `success`, optional `key_type`, `base_key_type`, `parameters`, `fingerprint`, `review_fingerprint`, `boundary_digest`, `bounded`, `cosigner_key_id`, `code`, `error`. `base_key_type` names the spending key's signature base when the key type composes over one (a plain host is its own; a composed template names one), so the review can say whether that key is post-quantum. Local IPC only, under `keys.generate`. It runs generation's checks and reports the resolved request so apadmin can review it. It creates no key, changes no store state, and has no address, because the spending key does not exist yet. A reference name resolves to its public key in `parameters`, and `bounded` carries `contract` (`bounded2`, or `plain1` for a plain host account without bounds), `spend_effects`, `max_fee` (absent on `plain1`, which has no fee ceiling), `rekey` (`refused` or `spending_key`), optional `rekey_list` (true when the account has a rekey-to list, whose entries are `parameters.rekey_to`: *only these* under `rekey: refused`, a rekey only to a listed address; *plus cosigned* under `rekey: spending_key` with `cosigner_required`, a listed address with the spending key alone and any other with the cosigner too; there is no root yet, because it depends on the spending key), `layer3_policy`, and `cosigner_required`
+- `prepare_generate_key`: `key_type`, optional `parameters` -> `prepare_generate_result`: `success`, optional `key_type`, `base_key_type`, `parameters`, `fingerprint`, `review_fingerprint`, `boundary_digest`, `bounded`, `cosigner_key_id`, `warnings`, `code`, `error`. `base_key_type` names the spending key's signature base when the key type composes over one (a plain host is its own; a composed template names one), so the review can say whether that key is post-quantum. Local IPC only, under `keys.generate`. It runs generation's checks and reports the resolved request so apadmin can review it. It creates no key, changes no store state, and has no address, because the spending key does not exist yet. A reference name resolves to its public key in `parameters`, and `bounded` carries `contract` (`bounded2`, or `plain1` for a plain host account without bounds), `spend_effects`, `max_fee` (absent on `plain1`, which has no fee ceiling), `rekey` (`refused` or `spending_key`), optional `rekey_list` (true when the account has a rekey-to list, whose entries are `parameters.rekey_to`: *only these* under `rekey: refused`, a rekey only to a listed address; *plus cosigned* under `rekey: spending_key` with `cosigner_required`, a listed address with the spending key alone and any other with the cosigner too; there is no root yet, because it depends on the spending key), `layer3_policy`, and `cosigner_required`. `warnings` is an optional list of strings, the provider's notes for the reviewer (today, a bounded fee limit below what the account's own transactions cost); a warning refuses nothing and `success` stays true
 - `generate_key`: `key_type`, optional `name`, optional `expected_fingerprint`, optional `expected_boundary_digest`, optional `parameters`; accepted over IPC, but generated recovery material is not returned over the admin protocol. the rotating key types (such as `aplane.rotating-triple-wotsc.v1`) require the parameter `network` (a network the signer knows, or a base64 genesis hash)
 - `generate_result`: `success`, optional `address`, `key_type`, `parameters`, `code`, `error`; `mnemonic` and `word_count` fields remain in the schema but are omitted by signer responses
 - `delete_key`: `address` -> `delete_result`: `success`, optional `code`, `error`
@@ -869,7 +870,9 @@ field under Custom bounds, none under No bounds), then three controls over `cosi
 rekeys (Rekey-to option once the list has addresses). The form the Cosigners manager
 opens, with no preset, has no bounds. An optional bounds choice (the recipient scope
 and the list encoding under Custom bounds) starts as "Not set" and is left out of the
-request until the operator picks one. The cosigner is the picker,
+request until the operator picks one. Custom bounds also has a Fee Limit field
+(`max_fee`); left empty, it is left out of the request and the signer applies 10,000
+microAlgos. The cosigner is the picker,
 optional unless a preset needs it, and Backspace clears it; its label names the
 algorithm of the cosigner key type. The rekey control offers the type's declared
 settings that fit: `refused` ("No, never") and `spending_key` ("Yes, spending key
@@ -894,7 +897,11 @@ online keys. A cosigned `spending_key` account reads "Spending key and cosigner"
 together they can rekey out of the boundary, to any target the cosigner's policy
 allows. The details list every `rekey_to` address and
 flag those in this signer's key list, and Ed25519 ones among them, and say the list is
-in the key's backup. See [ARCH_KEYTYPES.md](ARCH_KEYTYPES.md#the-bounds).
+in the key's backup. Below the summary the review shows each entry of
+`prepare_generate_result.warnings` as one "Warning:" line, its first sentence, and the
+details show it in full. A warning refuses nothing:
+GENERATE stays available. The one warning today is a bounded account's fee limit below
+what its own transactions cost. See [ARCH_KEYTYPES.md](ARCH_KEYTYPES.md#the-bounds).
 
 ### Model / View / Update
 

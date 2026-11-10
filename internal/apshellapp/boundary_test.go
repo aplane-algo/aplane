@@ -65,6 +65,43 @@ func TestPreviewSummarizesTheFileWithoutResolvingAnything(t *testing.T) {
 	}
 }
 
+// The preview carries the file's fee limit as the file wrote it, a number or
+// text, and sends it to the signer as the max_fee parameter. A file that names
+// none previews none and sends none, which the signer reads as the default.
+func TestPreviewCarriesTheFeeLimit(t *testing.T) {
+	for _, test := range []struct {
+		name, line, want string
+	}{
+		{"absent", "", ""},
+		{"number", "max_fee: 20000\n", "20000"},
+		{"text", "max_fee: \"20000\"\n", "20000"},
+		{"zero", "max_fee: 0\n", "0"},
+		{"the default, named", "max_fee: 10000\n", "10000"},
+	} {
+		preview, err := (&App{}).PreviewBoundaryFile(boundaryHostKeyType, writeBoundary(t, test.line))
+		if err != nil {
+			t.Fatalf("%s: %v", test.name, err)
+		}
+		if preview.NoBounds || preview.MaxFee != test.want {
+			t.Fatalf("%s: preview = %+v, want MaxFee %q", test.name, preview, test.want)
+		}
+		if got, present := preview.Parameters[boundary.ParameterMaxFee]; got != test.want || present != (test.want != "") {
+			t.Fatalf("%s: max_fee parameter = %q (present %v)", test.name, got, present)
+		}
+	}
+	// It is a bounds field: a file without spend may not name one.
+	path := filepath.Join(t.TempDir(), "boundary.yaml")
+	if err := os.WriteFile(path, []byte("schema: aplane.boundary.v1\nrekey: {authority: refused}\nmax_fee: 20000\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := (&App{}).PreviewBoundaryFile(boundaryHostKeyType, path); err == nil || !strings.Contains(err.Error(), "max_fee needs spend") {
+		t.Fatalf("PreviewBoundaryFile(max_fee without spend) error = %v", err)
+	}
+	if _, err := (&App{}).PreviewBoundaryFile(boundaryHostKeyType, writeBoundary(t, "max_fee: \"\"\n")); err == nil || !strings.Contains(err.Error(), "max_fee is empty") {
+		t.Fatalf("PreviewBoundaryFile(empty max_fee) error = %v", err)
+	}
+}
+
 func TestPreviewRecognizesAStableWitnessKeyID(t *testing.T) {
 	id, _ := witnessIDFor(t, 0x61)
 	preview, err := (&App{}).PreviewBoundaryFile(boundaryHostKeyType, writeBoundary(t, "cosigner: "+id+"\n"))

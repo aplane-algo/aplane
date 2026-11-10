@@ -25,8 +25,10 @@ type BoundaryPreview struct {
 	KeyType    string
 	Parameters map[string]string
 	// NoBounds is a file without spend: the overlays alone, a plain1 account.
-	NoBounds   bool
-	Transfers  []string
+	NoBounds  bool
+	Transfers []string
+	// MaxFee is the file's fee limit, or empty for the default.
+	MaxFee     string
 	Recipients int
 	ListDigest string
 	Encoding   string
@@ -82,6 +84,7 @@ func (a *App) PreviewBoundaryFile(keyType, path string) (*BoundaryPreview, error
 	}
 	if bounded {
 		preview.Transfers = strings.Split(parameters[boundary.ParameterSpendEffects], ",")
+		preview.MaxFee = parameters[boundary.ParameterMaxFee]
 	}
 	if list := parameters[boundary.ParameterRekeyTo]; list != "" {
 		preview.RekeyTo = strings.Split(list, ",")

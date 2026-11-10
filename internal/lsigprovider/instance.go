@@ -30,6 +30,9 @@ type Instance struct {
 	// BoundaryDigest compares the resolved policy and external authorities of
 	// two accounts. It is empty for a type that does not define one.
 	BoundaryDigest string
+	// Warnings are what a reviewer should know before creating the account. They
+	// never refuse it.
+	Warnings []string
 }
 
 // InstanceResolver is implemented by providers whose contract varies by key.

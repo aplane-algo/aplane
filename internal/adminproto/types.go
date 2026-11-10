@@ -641,6 +641,7 @@ type PrepareGenerateKeyResult struct {
 	BoundaryDigest    string
 	Bounded           *PreparedBoundedProfile
 	CosignerKeyID     string
+	Warnings          []string
 	Code              string
 	Error             string
 }

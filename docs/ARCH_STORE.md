@@ -1352,8 +1352,8 @@ Bounded signing-metadata version 2 additionally requires the canonical
 
 - `contract`: `bounded2`, or `plain1` for a plain host account without bounds
 - `base_signature_arg_layout`: exact base arg count and per-position maximums
-- `spend_effects` (empty on `plain1`), `max_fee` (required on `bounded2`, absent
-  on `plain1`), and `rekey`: `refused` (no rekey path, except to a
+- `spend_effects` (empty on `plain1`), `max_fee` (required on `bounded2`, where
+  any value is valid, 0 included; absent on `plain1`), and `rekey`: `refused` (no rekey path, except to a
   listed address when `rekey_list` is set) or `spending_key` (the spending key
   authorizes a pure rekey: alone, or with the cosigner on a cosigned account)
 - optional `rekey_list`: `contract` (`rekey_list1`), `depth` (4), and the

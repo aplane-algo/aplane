@@ -59,7 +59,7 @@ func TestLimitsOnlyShapeResolvesFromAnExplicitScope(t *testing.T) {
 		if bounded.Contract != boundedmeta.Contract || bounded.Layer3Policy != boundedmeta.Layer3PolicyNone {
 			t.Fatalf("%s: contract %s, policy %s", b.name, bounded.Contract, bounded.Layer3Policy)
 		}
-		if bounded.MaxFee == nil || *bounded.MaxFee != plainhost.MaxFee || !slices.Equal(bounded.SpendEffects, []string{"pay"}) {
+		if bounded.MaxFee == nil || *bounded.MaxFee != plainhost.DefaultMaxFee || !slices.Equal(bounded.SpendEffects, []string{"pay"}) {
 			t.Fatalf("%s: limits = %v %v", b.name, bounded.MaxFee, bounded.SpendEffects)
 		}
 		if len(bounded.DerivedArgs) != 0 || len(bounded.RuntimeArgs) != 0 {
