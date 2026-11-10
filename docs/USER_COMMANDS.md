@@ -288,8 +288,10 @@ Several transactions in one file, in any of these formats, are signed and
 submitted together as one group.
 
 Every byte of the file has to belong to a transaction. A file with leftover
-data, a msgpack transaction that isn't in canonical form, or a JSON object that
-names the same key twice is refused, so what is signed is what the file shows.
+data, a msgpack transaction that isn't in canonical form, a JSON object that
+names the same key twice, a JSON `null`, a transaction with no type, or a
+`{"txn": [...]}` file holding any other key is refused, so what is signed is
+what the file shows.
 
 **Examples:**
 ```

@@ -15,6 +15,8 @@ import (
 	"math"
 	"math/big"
 	"strconv"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/types"
@@ -589,19 +591,24 @@ func abiArgText(raw interface{}, typeName string) (string, error) {
 		}
 		return "hex:" + hex.EncodeToString(value), nil
 	}
+	if typeName == "string" {
+		// Sent as written. The text grammar would read a leading "json:" as
+		// an instruction, and a number or boolean printed as text is a
+		// misplaced argument, not a string.
+		text, err := abiStringValue(raw)
+		if err != nil {
+			return "", err
+		}
+		encoded, err := json.Marshal(text)
+		if err != nil {
+			return "", err
+		}
+		return "json:" + string(encoded), nil
+	}
 	switch value := raw.(type) {
 	case nil:
 		return "", fmt.Errorf("null or undefined is not an ABI value")
 	case string:
-		if typeName == "string" {
-			// Sent as written. The text grammar would read a leading
-			// "json:" as an instruction.
-			encoded, err := json.Marshal(value)
-			if err != nil {
-				return "", err
-			}
-			return "json:" + string(encoded), nil
-		}
 		return value, nil
 	case bool:
 		return strconv.FormatBool(value), nil
@@ -627,6 +634,25 @@ func abiArgText(raw interface{}, typeName string) (string, error) {
 	default:
 		return "", fmt.Errorf("unsupported ABI value type %T", raw)
 	}
+}
+
+// abiStringValue accepts only a JavaScript string for an ABI `string`, and
+// only one that is intact text, so the bytes sent are the bytes written.
+func abiStringValue(raw interface{}) (string, error) {
+	text, ok := raw.(string)
+	if !ok {
+		if raw == nil {
+			return "", fmt.Errorf("null or undefined is not an ABI value")
+		}
+		return "", fmt.Errorf("an ABI string needs a JavaScript string, not %T", raw)
+	}
+	// A lone surrogate has already become U+FFFD by the time the value is
+	// exported from the script, so the replacement character is refused
+	// too: it almost always marks text that was damaged on the way here.
+	if !utf8.ValidString(text) || strings.ContainsRune(text, utf8.RuneError) {
+		return "", fmt.Errorf("the string holds invalid Unicode or the replacement character U+FFFD (a lone surrogate?)")
+	}
+	return text, nil
 }
 
 // maxSafeJSInteger is JavaScript's Number.MAX_SAFE_INTEGER. A whole number
@@ -659,9 +685,25 @@ func jsonABIValue(raw interface{}, typeName string) (interface{}, error) {
 		return byteNumbers(value), nil
 	}
 
+	if typeName == "string" {
+		return abiStringValue(raw)
+	}
+
 	switch value := raw.(type) {
 	case nil:
 		return nil, fmt.Errorf("null or undefined is not an ABI value")
+	case string:
+		// A decimal string is how a number past 2^53 is passed, nested as
+		// well as at the top level. The ABI library reads a JSON string
+		// there as an error, so it is written as a number.
+		isNumber, err := appspec.CheckNumberText(typeName, value)
+		if err != nil {
+			return nil, err
+		}
+		if isNumber {
+			return json.Number(value), nil
+		}
+		return value, nil
 	case float64:
 		if err := checkJSNumber(value); err != nil {
 			return nil, err

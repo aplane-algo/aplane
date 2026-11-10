@@ -31,11 +31,24 @@ func ParseTransactionFile(filepath string) ([]types.Transaction, error) {
 func ParseTransactions(data []byte) ([]types.Transaction, error) {
 	data = []byte(strings.TrimSpace(string(data)))
 
+	var txns []types.Transaction
+	var err error
 	if len(data) > 0 && (data[0] == '{' || data[0] == '[') {
-		return parseTransactionJSON(data)
+		txns, err = parseTransactionJSON(data)
+	} else {
+		txns, err = ParseTransactionBase64(data)
 	}
-
-	return ParseTransactionBase64(data)
+	if err != nil {
+		return nil, err
+	}
+	// An empty map decodes, and re-encodes, as a transaction with nothing in
+	// it. It is not one.
+	for i, txn := range txns {
+		if txn.Type == "" {
+			return nil, fmt.Errorf("transaction %d has no type", i+1)
+		}
+	}
+	return txns, nil
 }
 
 func parseTransactionJSON(jsonData []byte) ([]types.Transaction, error) {
@@ -45,12 +58,16 @@ func parseTransactionJSON(jsonData []byte) ([]types.Transaction, error) {
 		return nil, fmt.Errorf("failed to parse JSON: %w", err)
 	}
 
-	var txnFile struct {
-		Transactions []string `json:"txn"`
+	wrapped, isWrapper, err := txnListWrapper(jsonData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse JSON: %w", err)
 	}
-	if err := json.Unmarshal(jsonData, &txnFile); err == nil && len(txnFile.Transactions) > 0 {
+	if isWrapper {
+		if len(wrapped) == 0 {
+			return nil, fmt.Errorf("empty transaction array")
+		}
 		var txns []types.Transaction
-		for i, b64Txn := range txnFile.Transactions {
+		for i, b64Txn := range wrapped {
 			decoded, err := base64.StdEncoding.DecodeString(b64Txn)
 			if err != nil {
 				return nil, fmt.Errorf("transaction %d: failed to decode base64: %w", i+1, err)
@@ -84,8 +101,35 @@ func parseTransactionJSON(jsonData []byte) ([]types.Transaction, error) {
 	return []types.Transaction{txn}, nil
 }
 
+// txnListWrapper recognises the `{"txn": [...]}` file form. The object may
+// hold that one key and nothing else, spelled exactly: any other key would be
+// ignored by a decoder, and a list under another spelling would be dropped or
+// taken in place of the one shown.
+func txnListWrapper(jsonData []byte) (entries []string, isWrapper bool, err error) {
+	var object map[string]json.RawMessage
+	if json.Unmarshal(jsonData, &object) != nil {
+		return nil, false, nil
+	}
+	list, ok := object["txn"]
+	if !ok {
+		for key := range object {
+			if strings.EqualFold(key, "txn") {
+				return nil, false, fmt.Errorf("key %q must be spelled \"txn\"", key)
+			}
+		}
+		return nil, false, nil
+	}
+	if len(object) != 1 {
+		return nil, false, fmt.Errorf("a \"txn\" list file may hold no other key")
+	}
+	if err := json.Unmarshal(list, &entries); err != nil {
+		return nil, false, fmt.Errorf("\"txn\" must be a list of base64 strings: %w", err)
+	}
+	return entries, true, nil
+}
+
 // rejectDuplicateJSONKeys walks one JSON document and refuses a key that
-// appears twice in the same object, or anything after the document.
+// appears twice in the same object, a null, or anything after the document.
 func rejectDuplicateJSONKeys(data []byte) error {
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.UseNumber()
@@ -102,6 +146,11 @@ func walkJSONValue(decoder *json.Decoder) error {
 	token, err := decoder.Token()
 	if err != nil {
 		return err
+	}
+	if token == nil {
+		// A decoder reads null as zero or empty, so `"amt": null` would show
+		// no amount and send none where the writer may have meant another.
+		return fmt.Errorf("null is not a value in a transaction file")
 	}
 	delim, ok := token.(json.Delim)
 	if !ok {

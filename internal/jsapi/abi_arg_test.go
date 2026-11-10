@@ -58,6 +58,8 @@ func TestAppCallArgumentsEncodeByTheirABIType(t *testing.T) {
 		{"plain text nested in a tuple", `[[7, "abcd"]]`, "(uint64,byte[])", "0000000000000007000a000461626364"},
 		{"number array nested in an array", `[[[1, 2], [3]]]`, "byte[][]", "00020004000800020102000103"},
 		{"string nested in a tuple", `[["hi", 1]]`, "(string,uint8)", "00030100026869"},
+		{"decimal text nested in an array", `[["340282366920938463463374607431768211455"]]`, "uint128[]", "0001ffffffffffffffffffffffffffffffff"},
+		{"decimal text nested in a tuple", `[[7, "100"]]`, "(uint64,uint64)", "00000000000000070000000000000064"},
 	}
 	for _, tc := range cases {
 		encoded, err := abiArgsFromJS(t, tc.script, tc.typeName)
@@ -85,6 +87,11 @@ func TestAppCallArgumentsRefuseWhatHasNoABIValue(t *testing.T) {
 		{"nested whole number past 2^53", `[[2 ** 64]]`, "uint128[]"},
 		{"nested bad hex", `[[7, "hex:zz"]]`, "(uint64,byte[])"},
 		{"nested null in a tuple", `[[7, null]]`, "(uint64,byte[])"},
+		{"boolean for a string", `[true]`, "string"},
+		{"number for a string", `[5]`, "string"},
+		{"number for a nested string", `[[5, 1]]`, "(string,uint8)"},
+		{"octal-looking text nested", `[["0100"]]`, "uint64[]"},
+		{"lone surrogate in a string", `["\ud800"]`, "string"},
 	}
 	for _, tc := range cases {
 		if encoded, err := abiArgsFromJS(t, tc.script, tc.typeName); err == nil {

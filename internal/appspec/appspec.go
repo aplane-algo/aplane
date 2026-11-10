@@ -200,13 +200,9 @@ func parseArgValue(typeName, raw string) (interface{}, error) {
 			break
 		}
 		payload = strconv.Quote(payload)
-	case scalarUintTypeRE.MatchString(typeName), typeName == "byte":
-		if !decimalIntegerRE.MatchString(payload) {
-			return nil, fmt.Errorf("%q is not a decimal whole number for ABI type %s", payload, typeName)
-		}
-	case scalarUfixedTypeRE.MatchString(typeName):
-		if !decimalNumberRE.MatchString(payload) {
-			return nil, fmt.Errorf("%q is not a decimal number for ABI type %s", payload, typeName)
+	case scalarUintTypeRE.MatchString(typeName), typeName == "byte", scalarUfixedTypeRE.MatchString(typeName):
+		if _, err := CheckNumberText(typeName, payload); err != nil {
+			return nil, err
 		}
 	case typeName == "bool":
 		if payload != "true" && payload != "false" {
@@ -260,6 +256,25 @@ func rejectJSONNull(payload, typeName string) error {
 			return fmt.Errorf("null is not a value of ABI type %s", typeName)
 		}
 	}
+}
+
+// CheckNumberText reports whether typeName is a scalar number type (`uintN`,
+// `byte`, `ufixedNxM`) and, when it is, whether text is a plain decimal
+// number of that kind.
+func CheckNumberText(typeName, text string) (isNumber bool, err error) {
+	switch {
+	case scalarUintTypeRE.MatchString(typeName), typeName == "byte":
+		if !decimalIntegerRE.MatchString(text) {
+			return true, fmt.Errorf("%q is not a decimal whole number for ABI type %s", text, typeName)
+		}
+		return true, nil
+	case scalarUfixedTypeRE.MatchString(typeName):
+		if !decimalNumberRE.MatchString(text) {
+			return true, fmt.Errorf("%q is not a decimal number for ABI type %s", text, typeName)
+		}
+		return true, nil
+	}
+	return false, nil
 }
 
 // ElementType returns the element type of an ABI array type (`T[]` or

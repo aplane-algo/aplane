@@ -20,18 +20,21 @@ how it was typed:
   `Uint8Array` or number array for a `byte[]` argument was sent as the text
   `[1 2 3]`, and `null` as the text `<nil>`. `null` and `undefined` are now
   refused.
-- **Byte values** (`arg-raw=`, LogicSig `arg:`, box names) accept `int:`,
+- **Byte values** (`arg-raw=`, LogicSig `arg:`, box names, and the same
+  strings in the JS API) accept `int:`,
   `str:` and `addr:`, and refuse a bare value that contains a colon. Before,
   `int:5` was sent as five text bytes. Literal text with a colon is written
   `text:key:value`.
 - **Transaction files** (`sign <file>`, JS `sign()`). Several msgpack
   transactions written one after another are all read; before, only the first
-  was signed. Leftover bytes, a non-canonical msgpack transaction and a JSON
-  key named twice are refused.
+  was signed. Leftover bytes, a non-canonical msgpack transaction, a JSON key
+  named twice, a `null`, an empty transaction, and any key beside `txn` in a
+  `{"txn": [...]}` file are refused.
 - **`keyreg online`** requires `keydilution`, `votefirst` and `votelast`.
   The old defaults (10000, and rounds 0 to 3000000) need not match the
   participation key, and a mismatched registration goes through but can't
-  vote. Pasting `goal account partkeyinfo` output still supplies it.
+  vote. Pasting `goal account partkeyinfo` output still supplies it. The JS
+  `keyreg()` requires the same options.
 
 ## The review of a mixed cosigned group no longer calls the signer's own accounts foreign
 

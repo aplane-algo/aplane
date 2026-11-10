@@ -235,10 +235,6 @@ func TestParseTransactionMsgpackRefusesLeftoverAndNonCanonicalBytes(t *testing.T
 
 	// The same payment with its amount written twice: 1, then 5,000,000.
 	// A decoder keeps the last one.
-	var fields map[string]interface{}
-	if err := msgpack.Decode(first, &fields); err != nil {
-		t.Fatal(err)
-	}
 	duplicated := append([]byte{first[0] + 1}, first[1:]...)
 	duplicated = append(duplicated, msgpack.Encode(map[string]uint64{"amt": 5_000_000})[1:]...)
 	var probe types.Transaction
@@ -268,6 +264,9 @@ func TestParseTransactionsRefusesDuplicateJSONKeys(t *testing.T) {
 		t.Fatalf("plain JSON transaction: %v", err)
 	}
 
+	if !strings.Contains(single, `"amt": 1,`) {
+		t.Fatalf("fixture: encoded payment has no amt field: %s", single)
+	}
 	b64 := base64.StdEncoding.EncodeToString(msgpack.Encode(txn))
 	cases := map[string]string{
 		"repeated amount":   strings.Replace(single, `"amt": 1,`, `"amt": 1, "amt": 5000000,`, 1),
@@ -278,9 +277,6 @@ func TestParseTransactionsRefusesDuplicateJSONKeys(t *testing.T) {
 		"repeated key in an array":     "[" + strings.Replace(single, `"amt": 1,`, `"amt": 1, "amt": 2,`, 1) + "]",
 	}
 	for name, data := range cases {
-		if !strings.Contains(single, `"amt": 1,`) {
-			t.Fatalf("fixture: encoded payment has no amt field: %s", single)
-		}
 		if txns, err := ParseTransactions([]byte(data)); err == nil {
 			t.Errorf("%s: parsed %d transaction(s), want refused", name, len(txns))
 		}
@@ -290,5 +286,30 @@ func TestParseTransactionsRefusesDuplicateJSONKeys(t *testing.T) {
 	wrapped := `{"txn":["` + base64.StdEncoding.EncodeToString(nonCanonical) + `"]}`
 	if txns, err := ParseTransactions([]byte(wrapped)); err == nil {
 		t.Errorf("txn list entry with trailing bytes: parsed %d transaction(s), want refused", len(txns))
+	}
+}
+
+func TestParseTransactionsRefusesWhatADecoderWouldQuietlyDrop(t *testing.T) {
+	txn := parserTestPayment(t, 1)
+	b64 := base64.StdEncoding.EncodeToString(msgpack.Encode(txn))
+	single := string(sdkjson.Encode(txn))
+
+	if txns, err := ParseTransactions([]byte(`{"txn":["` + b64 + `"]}`)); err != nil || len(txns) != 1 {
+		t.Fatalf("plain txn list: %d transaction(s), %v", len(txns), err)
+	}
+	for name, data := range map[string]string{
+		"txn list beside another key": `{"txn":["` + b64 + `"],"extra":["` + b64 + `"]}`,
+		"txn list beside txns":        `{"txn":["` + b64 + `"],"txns":["` + b64 + `"]}`,
+		"txn list spelled TXN":        `{"TXN":["` + b64 + `"]}`,
+		"empty txn list":              `{"txn":[]}`,
+		"txn list of numbers":         `{"txn":[1]}`,
+		"null amount":                 strings.Replace(single, `"amt": 1,`, `"amt": null,`, 1),
+		"null in an array":            "[" + single + ", null]",
+		"empty map as base64":         "gA==",
+		"empty object":                "{}",
+	} {
+		if txns, err := ParseTransactions([]byte(data)); err == nil {
+			t.Errorf("%s: parsed %d transaction(s), want refused", name, len(txns))
+		}
 	}
 }
