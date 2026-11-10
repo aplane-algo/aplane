@@ -276,11 +276,6 @@ func TestFrameworkPolicyCombinationRejections(t *testing.T) {
 			want: "unsupported policy",
 		},
 		{
-			name: "only the two allowlists take author TEAL",
-			yaml: strings.Replace(authorAllowlistYAML(fixed), "policy: fixed_allowlist", "policy: timelock", 1),
-			want: "does not accept author TEAL",
-		},
-		{
 			name: "extra parameter needs author TEAL",
 			yaml: withoutRuntimeArgs(withoutAuthorTEAL(authorAllowlistYAML(fixed))),
 			want: "is not used by framework policy",

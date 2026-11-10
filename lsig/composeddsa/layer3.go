@@ -120,11 +120,13 @@ func layer3PolicyFromTemplate(spec *generictemplate.BoundedAuthorizationSpec, pa
 	return layer3, nil
 }
 
-// validateLayer3Policy checks a framework policy. Author TEAL may run after a
-// plain allowlist and read its own parameters, so a parameter the policy does not
-// use is an error only when there is no author TEAL to use it. Timelock policies
-// take no author TEAL: an author who wants a list and custom time conditions uses
-// a plain allowlist and writes those conditions in the TEAL.
+// validateLayer3Policy checks a framework policy. Author TEAL may run after any
+// framework policy but "none" and read its own parameters, so a parameter the
+// policy does not use is an error only when there is no author TEAL to use it.
+// The framework's checks run first, the timelock and then any allowlist, and
+// all must pass: author TEAL can only narrow what they admit. The stored policy
+// name then gains a _custom suffix (layer3PolicyName), so a review still says
+// the account is timelocked or allowlisted.
 func validateLayer3Policy(policy *Layer3Policy, params []lsigprovider.ParameterDef, profile *BoundedAuthorizationProfile, hasAuthorTEAL bool) error {
 	if policy == nil {
 		return nil
@@ -135,9 +137,6 @@ func validateLayer3Policy(policy *Layer3Policy, params []lsigprovider.ParameterD
 	}
 	if profile == nil {
 		return fmt.Errorf("framework-owned Layer-3 policy requires a bounded profile")
-	}
-	if rules.timelock && hasAuthorTEAL {
-		return fmt.Errorf("policy %q does not accept author TEAL", policy.Policy)
 	}
 	// Author TEAL with no framework policy is "custom"; a second name for the same
 	// program would let a review call a restricted account unrestricted.

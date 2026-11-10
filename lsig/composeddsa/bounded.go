@@ -583,6 +583,12 @@ func layer3PolicyName(policy *Layer3Policy, hasAuthorTEAL bool) string {
 			return boundedmeta.Layer3PolicyFixedAllowlistCustom
 		case Layer3PolicyMerkleAllowlist:
 			return boundedmeta.Layer3PolicyMerkleAllowlistCustom
+		case Layer3PolicyTimelock:
+			return boundedmeta.Layer3PolicyTimelockCustom
+		case Layer3PolicyFixedAllowlistTimelock:
+			return boundedmeta.Layer3PolicyFixedAllowlistTimelockCustom
+		case Layer3PolicyMerkleAllowlistTimelock:
+			return boundedmeta.Layer3PolicyMerkleAllowlistTimelockCustom
 		}
 	}
 	return policy.Policy

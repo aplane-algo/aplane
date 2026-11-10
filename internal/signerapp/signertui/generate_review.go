@@ -149,29 +149,9 @@ func recipientList(parameters map[string]string) []string {
 	return strings.Split(value, ",")
 }
 
-func isMerklePolicy(policy string) bool {
-	switch policy {
-	case boundedmeta.Layer3PolicyMerkleAllowlist, boundedmeta.Layer3PolicyMerkleAllowlistCustom, boundedmeta.Layer3PolicyMerkleAllowlistTimelock:
-		return true
-	}
-	return false
-}
-
-func isTimelockPolicy(policy string) bool {
-	switch policy {
-	case boundedmeta.Layer3PolicyTimelock, boundedmeta.Layer3PolicyFixedAllowlistTimelock, boundedmeta.Layer3PolicyMerkleAllowlistTimelock:
-		return true
-	}
-	return false
-}
-
-func isCustomPolicy(policy string) bool {
-	switch policy {
-	case boundedmeta.Layer3PolicyCustom, boundedmeta.Layer3PolicyFixedAllowlistCustom, boundedmeta.Layer3PolicyMerkleAllowlistCustom:
-		return true
-	}
-	return false
-}
+func isMerklePolicy(policy string) bool   { return boundedmeta.IsMerkleListPolicy(policy) }
+func isTimelockPolicy(policy string) bool { return boundedmeta.IsTimelockPolicy(policy) }
+func isCustomPolicy(policy string) bool   { return boundedmeta.IsCustomPolicy(policy) }
 
 // reviewRekey states who can rekey the account and what that means, because the
 // escape path is the most consequential choice on the screen.
@@ -239,6 +219,9 @@ func reviewRecipients(contract, policy string, cosigned bool, recipients []strin
 		return reviewRow("Policy", "Custom policy, from the template author's code"), ""
 	case policy == boundedmeta.Layer3PolicyTimelock:
 		return reviewRow("Recipients", "any, once unlocked"), ""
+	case policy == boundedmeta.Layer3PolicyTimelockCustom:
+		// The author's code can narrow recipients, so "any" would overstate.
+		return reviewRow("Recipients", "set by the author's code, once unlocked; see details"), ""
 	case policy == boundedmeta.Layer3PolicyNone:
 		return reviewRow("Recipients", "any; only the fee limit and transfer kinds apply"), ""
 	case !boundedmeta.IsRecipientListPolicy(policy):

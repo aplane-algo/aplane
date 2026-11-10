@@ -272,14 +272,15 @@ func TestTimelockPolicyRejections(t *testing.T) {
 		}
 		return strings.Replace(yaml, old, new, 1)
 	}
-	authorTEAL := "\ntemplate_variables: []\n\nteal: |\n  txn Fee\n  pop\n"
 	cases := []struct {
 		name   string
 		yaml   string
 		params map[string]string
 		want   string
 	}{
-		{name: "stored form cannot gain a custom suffix", yaml: replace(fixed, "policy: fixed_allowlist_timelock", "policy: fixed_allowlist_timelock_custom"), want: "unsupported policy"},
+		// A template names the framework policy; the _custom stored name is
+		// derived from the author TEAL, never written.
+		{name: "a template cannot name the stored custom form", yaml: replace(fixed, "policy: fixed_allowlist_timelock", "policy: fixed_allowlist_timelock_custom"), want: "unsupported policy"},
 		{name: "unlock round parameter is required", yaml: replace(bare, "    unlock_round_parameter: unlock_round\n", ""), want: "unlock_round_parameter is required"},
 		{name: "unlock round parameter must exist", yaml: replace(bare, "unlock_round_parameter: unlock_round", "unlock_round_parameter: missing"), want: "references unknown parameter"},
 		{name: "unlock round must be uint64", yaml: replace(bare, "    type: uint64\n    required: true\n    min: 1\n", "    type: bytes\n    required: true\n    max_length: 8\n"), want: "must have type uint64"},
@@ -297,14 +298,6 @@ func TestTimelockPolicyRejections(t *testing.T) {
 		{name: "merkle timelock needs its proof", yaml: replace(merkle, timelockDerivedYAML, ""), want: "requires exactly one derived Merkle proof argument"},
 		{name: "fixed timelock keeps the inline limit", yaml: replace(fixed, "max_items: 30", "max_items: 31"), want: "max_items must be between 1 and 30"},
 	}
-	for _, test := range timelockCases {
-		cases = append(cases, struct {
-			name   string
-			yaml   string
-			params map[string]string
-			want   string
-		}{name: test.policy + " takes no author TEAL", yaml: test.defaultYAML() + authorTEAL, want: "does not accept author TEAL"})
-	}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
 			params := test.params
@@ -314,6 +307,70 @@ func TestTimelockPolicyRejections(t *testing.T) {
 			err := timelockGenerateError(test.yaml, params)
 			if err == nil || !strings.Contains(err.Error(), test.want) {
 				t.Fatalf("error = %v, want %q", err, test.want)
+			}
+		})
+	}
+}
+
+// timelockAuthorTEAL is narrowing author TEAL with a marker no framework block
+// emits.
+const timelockAuthorTEAL = "\ntemplate_variables: []\n\nteal: |\n  pushint 424242\n  pop\n"
+
+// A timelock policy takes author TEAL, like an allowlist. The framework's
+// checks run first, the timelock and then any allowlist, and the author's code
+// runs after them, so it can only narrow what they admit. The stored policy
+// name gains _custom, so a review still says the account is timelocked.
+func TestTimelockPolicyTakesAuthorTEAL(t *testing.T) {
+	publicKey := bytes.Repeat([]byte{0x21}, falconfamily.PublicKeySize)
+	stored := map[string]string{
+		composeddsa.Layer3PolicyTimelock:                boundedmeta.Layer3PolicyTimelockCustom,
+		composeddsa.Layer3PolicyFixedAllowlistTimelock:  boundedmeta.Layer3PolicyFixedAllowlistTimelockCustom,
+		composeddsa.Layer3PolicyMerkleAllowlistTimelock: boundedmeta.Layer3PolicyMerkleAllowlistTimelockCustom,
+	}
+	for _, test := range timelockCases {
+		t.Run(test.policy, func(t *testing.T) {
+			provider := authorAllowlistProvider(t, test.defaultYAML()+timelockAuthorTEAL)
+			if got := provider.Layer3PolicyName(); got != stored[test.policy] {
+				t.Fatalf("Layer3PolicyName() = %q, want %q", got, stored[test.policy])
+			}
+			metadata := provider.BoundedAuthorizationMetadata()
+			if metadata == nil || metadata.Layer3Policy != stored[test.policy] {
+				t.Fatalf("metadata = %#v, want layer3_policy %q", metadata, stored[test.policy])
+			}
+			if err := metadata.ValidateProfile(); err != nil {
+				t.Fatalf("stored metadata does not validate: %v", err)
+			}
+			if !boundedmeta.IsTimelockPolicy(metadata.Layer3Policy) || !boundedmeta.IsCustomPolicy(metadata.Layer3Policy) ||
+				boundedmeta.IsRecipientListPolicy(metadata.Layer3Policy) != test.hasList() {
+				t.Fatalf("stored policy %q is classified wrongly", metadata.Layer3Policy)
+			}
+
+			teal, err := provider.GenerateTEAL(publicKey, test.params(nil))
+			if err != nil {
+				t.Fatalf("GenerateTEAL() error = %v", err)
+			}
+			lock := strings.Index(teal, timelockBlock)
+			author := strings.Index(teal, "pushint 424242")
+			accept := strings.LastIndex(teal, "__aplane_bounded1_accept:")
+			if strings.Count(teal, timelockBlock) != 1 || lock < 0 || author < lock || accept < author {
+				t.Fatalf("timelock at %d, author TEAL at %d, accept at %d; want that order:\n%s", lock, author, accept, teal)
+			}
+			if test.hasList() {
+				list := strings.Index(teal[lock+len(timelockBlock):], "// === framework-owned")
+				if list < 0 || lock+len(timelockBlock)+list > author {
+					t.Fatalf("the allowlist does not sit between the timelock and the author TEAL:\n%s", teal)
+				}
+			}
+			// Everything the plain timelock program checks is still there: the
+			// author's code is added, nothing is taken away.
+			plain, err := authorAllowlistProvider(t, test.defaultYAML()).GenerateTEAL(publicKey, test.params(nil))
+			if err != nil {
+				t.Fatalf("plain GenerateTEAL() error = %v", err)
+			}
+			for _, line := range strings.Split(plain, "\n") {
+				if line = strings.TrimSpace(line); line != "" && !strings.HasPrefix(line, "//") && !strings.Contains(teal, line) {
+					t.Fatalf("the custom program lost %q from the plain timelock program", line)
+				}
 			}
 		})
 	}

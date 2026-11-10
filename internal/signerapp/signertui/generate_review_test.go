@@ -140,6 +140,27 @@ func TestTimelockReviewStatesWhatTheLockDoesNot(t *testing.T) {
 	}
 }
 
+// A timelock followed by author TEAL has no framework list, but the author's
+// code can narrow recipients, so the review must not say "any".
+func TestTimelockWithAuthorTEALDoesNotReadAsUnrestricted(t *testing.T) {
+	prepared := preparedAccount(boundedmeta.Layer3PolicyTimelockCustom, boundary.RekeyRefused, false, 0)
+	prepared.Parameters = map[string]string{unlockRoundParameter: "50"}
+	m := Model{viewState: ViewGenerateReview, width: 80, height: 23, standalone: true, forms: formsState{review: &prepared}}
+	view := m.renderGenerateReview()
+	if strings.Contains(view, "any, once unlocked") {
+		t.Fatalf("a customised timelock reads as unrestricted:\n%s", view)
+	}
+	if !strings.Contains(view, "set by the author's code, once unlocked; see details") {
+		t.Fatalf("review does not say the author's code decides recipients:\n%s", view)
+	}
+	if !isTimelockPolicy(boundedmeta.Layer3PolicyTimelockCustom) || !isCustomPolicy(boundedmeta.Layer3PolicyTimelockCustom) {
+		t.Fatal("timelock_custom is not classified as a customised timelock")
+	}
+	if strings.Contains(view, "Panel lines") {
+		t.Fatalf("review scrolls at 80x24:\n%s", view)
+	}
+}
+
 // Codex's reproduction: an imported template names its list beneficiaries. An
 // account with a list must never be described as able to pay anyone.
 func TestRestrictedAccountsNeverReadAsUnrestricted(t *testing.T) {
@@ -147,6 +168,7 @@ func TestRestrictedAccountsNeverReadAsUnrestricted(t *testing.T) {
 		boundedmeta.Layer3PolicyFixedAllowlist, boundedmeta.Layer3PolicyMerkleAllowlist,
 		boundedmeta.Layer3PolicyFixedAllowlistCustom, boundedmeta.Layer3PolicyMerkleAllowlistCustom,
 		boundedmeta.Layer3PolicyFixedAllowlistTimelock, boundedmeta.Layer3PolicyMerkleAllowlistTimelock,
+		boundedmeta.Layer3PolicyFixedAllowlistTimelockCustom, boundedmeta.Layer3PolicyMerkleAllowlistTimelockCustom,
 		"a_policy_added_later",
 	} {
 		t.Run(policy, func(t *testing.T) {

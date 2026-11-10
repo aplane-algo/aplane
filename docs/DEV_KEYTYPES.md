@@ -889,9 +889,11 @@ bounded:
 
 The rules that most often surprise authors:
 
-- At least one of `bounded.layer3` and `teal` is required. With both, the allowlist runs
-  first, then the TEAL, and both must pass. Do not write the stored values
-  `fixed_allowlist_custom` or `merkle_allowlist_custom` in a template.
+- At least one of `bounded.layer3` and `teal` is required. With both, the framework
+  policy runs first (the timelock, then any allowlist), then the TEAL, and all must pass.
+  Any framework policy takes author TEAL. The stored policy name then gains `_custom`
+  (`fixed_allowlist_custom`, `timelock_custom` and so on); do not write a stored
+  `_custom` value in a template.
 - `bounded.layer3.policy` is `fixed_allowlist`, `merkle_allowlist`, `timelock`,
   `fixed_allowlist_timelock`, or `merkle_allowlist_timelock`.
 - The recipients parameter must be a required `address[]` with `min_items: 1`.

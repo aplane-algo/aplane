@@ -31,6 +31,38 @@ type timelockRule struct {
 	policy   string
 	maxItems int
 	derived  string
+	// authorTEAL, when set, runs after the framework's checks, and the stored
+	// policy name gains _custom.
+	authorTEAL string
+}
+
+// timelockRulesWithAuthorTEAL are the timelock policies followed by author
+// TEAL that caps a spend at maxAmount microAlgos. The author's code can only
+// reject what the framework's timelock and allowlist admitted.
+func timelockRulesWithAuthorTEAL(maxAmount uint64) []timelockRule {
+	rules := make([]timelockRule, 0, len(timelockRules))
+	for _, rule := range timelockRules {
+		rule.name += "-custom"
+		rule.authorTEAL = fmt.Sprintf(`
+template_variables: []
+
+teal: |
+  txn Amount
+  pushint %d
+  <=
+  assert
+`, maxAmount)
+		rules = append(rules, rule)
+	}
+	return rules
+}
+
+// stored is the policy name the account's metadata records.
+func (rule timelockRule) stored() string {
+	if rule.authorTEAL != "" {
+		return rule.policy + "_custom"
+	}
+	return rule.policy
 }
 
 var timelockRules = []timelockRule{
@@ -97,7 +129,7 @@ parameters:
     type: uint64
     required: true
     min: 1
-%s`, rule.name, rule.name, boundedmeta.Contract, boundedmeta.RekeyRefused, rule.policy, recipientsParameter, rule.derived, recipients)
+%s%s`, rule.name, rule.name, boundedmeta.Contract, boundedmeta.RekeyRefused, rule.policy, recipientsParameter, rule.derived, recipients, rule.authorTEAL)
 }
 
 type timelockAccount struct {
@@ -136,8 +168,8 @@ func newTimelockAccount(t *testing.T, network *harness.TestnetConfig, rule timel
 	if err != nil {
 		t.Fatalf("build metadata: %v", err)
 	}
-	if metadata.Layer3Policy != rule.policy || !metadata.RefusesRekeys() {
-		t.Fatalf("layer3_policy = %q, rekey = %q; want %q, refused", metadata.Layer3Policy, metadata.Rekey, rule.policy)
+	if metadata.Layer3Policy != rule.stored() || !metadata.RefusesRekeys() {
+		t.Fatalf("layer3_policy = %q, rekey = %q; want %q, refused", metadata.Layer3Policy, metadata.Rekey, rule.stored())
 	}
 	return timelockAccount{
 		boundedExecutionAccount: boundedExecutionAccount{
@@ -271,6 +303,53 @@ func TestBoundedTimelockPoliciesOnChainLocalnet(t *testing.T) {
 	}
 }
 
+// A timelock followed by author TEAL, on chain. The framework's checks run
+// first, the timelock and then any allowlist, and the author's code runs after
+// them: here it caps a spend at 1,000 microAlgos. Each layer rejects by
+// itself, and a spend passes only when all three do.
+func TestBoundedTimelockWithAuthorTEALOnChainLocalnet(t *testing.T) {
+	network, funder, unlockRound := timelockNetwork(t)
+	before, at, after := unlockRound-1, unlockRound, unlockRound+1
+
+	for _, rule := range timelockRulesWithAuthorTEAL(1_000) {
+		t.Run(rule.name, func(t *testing.T) {
+			allowed := funder.GetAddress()
+			second := algocrypto.GenerateAccount().Address.String()
+			account := newTimelockAccount(t, network, rule, unlockRound, allowed, second)
+			if err := funder.FundMicroAlgosAndWait(account.address, 2_000_000); err != nil {
+				t.Fatalf("fund account: %v", err)
+			}
+			outsider := algocrypto.GenerateAccount().Address.String()
+			if err := funder.FundMicroAlgosAndWait(outsider, 200_000); err != nil {
+				t.Fatalf("fund outsider: %v", err)
+			}
+			// payment sends 1,000 microAlgos, the author's cap; over raises it.
+			over := func(txn types.Transaction) types.Transaction {
+				txn.Amount = 1_001
+				return txn
+			}
+
+			for _, test := range []struct {
+				name   string
+				txn    types.Transaction
+				args   [][]byte
+				accept bool
+			}{
+				{name: "within the cap, one round early: the timelock rejects", txn: account.payment(t, network, allowed, "a", before), args: account.args(t, allowed)},
+				{name: "within the cap, at the unlock round", txn: account.payment(t, network, allowed, "b", at), args: account.args(t, allowed), accept: true},
+				{name: "within the cap, after the unlock round", txn: account.payment(t, network, allowed, "c", after), args: account.args(t, allowed), accept: true},
+				{name: "over the cap, after the unlock round: the author's code rejects", txn: over(account.payment(t, network, allowed, "d", after)), args: account.args(t, allowed)},
+				{name: "within the cap to an outsider, after the unlock round", txn: account.payment(t, network, outsider, "e", after), args: account.args(t, allowed), accept: !rule.hasList()},
+				{name: "rekey after the unlock round", txn: account.rekey(t, network, "f", after)},
+			} {
+				t.Run(test.name, func(t *testing.T) {
+					account.submit(t, network, test.txn, test.args, test.accept)
+				})
+			}
+		})
+	}
+}
+
 // This is the same rule through the signer: it fills the Merkle slot itself, and
 // stored metadata must survive a rescan. A locked account must move no funds, and
 // an unlocked one still cannot be rekeyed.
@@ -301,7 +380,11 @@ func TestBoundedTimelockThroughSigner(t *testing.T) {
 	}
 	installer := harness.NewApAdminHarness(t, workDir)
 	t.Cleanup(installer.Cleanup)
-	for _, rule := range timelockRules {
+	// The same rules again with author TEAL that caps a spend at 0.1 ALGO, the
+	// amount this test sends: the stored policy gains _custom and must be
+	// generated, signed for and rescanned like the plain ones.
+	rules := append(append([]timelockRule(nil), timelockRules...), timelockRulesWithAuthorTEAL(100_000)...)
+	for _, rule := range rules {
 		templatePath := filepath.Join(paths.TemplateLibraryDir(), rule.keyType()+".yaml")
 		yaml := rule.yaml()
 		if err := os.WriteFile(templatePath, []byte(yaml), 0o644); err != nil {
@@ -320,9 +403,9 @@ func TestBoundedTimelockThroughSigner(t *testing.T) {
 	}
 	client := signerclient.NewSignerClient(signerd.GetURL())
 	apshell := harness.NewApshellHarness(t)
-	accounts := make(map[string]string, 2*len(timelockRules))
+	accounts := make(map[string]string, 2*len(rules))
 
-	for _, rule := range timelockRules {
+	for _, rule := range rules {
 		t.Run(rule.name, func(t *testing.T) {
 			allowed := algocrypto.GenerateAccount().Address.String()
 			if err := funder.FundMicroAlgosAndWait(allowed, 200_000); err != nil {
@@ -338,8 +421,8 @@ func TestBoundedTimelockThroughSigner(t *testing.T) {
 				if err := funder.FundMicroAlgosAndWait(account, 2_000_000); err != nil {
 					t.Fatalf("fund account: %v", err)
 				}
-				assertAuthorAllowlistInventory(t, client, account, rule.policy)
-				accounts[account] = rule.policy
+				assertAuthorAllowlistInventory(t, client, account, rule.stored())
+				accounts[account] = rule.stored()
 				return account
 			}
 			balance := func(account string) uint64 {
@@ -349,17 +432,18 @@ func TestBoundedTimelockThroughSigner(t *testing.T) {
 				}
 				return info.Amount
 			}
-			send := func(account, to string) string {
-				output, err := apshell.RunWithInput(fmt.Sprintf("send 0.1 algo from %s to %s\nquit\n", account, to))
+			sendAmount := func(amount, account, to string) string {
+				output, err := apshell.RunWithInput(fmt.Sprintf("send %s algo from %s to %s\nquit\n", amount, account, to))
 				if err != nil {
 					t.Fatalf("run apshell: %v\n%s", err, output)
 				}
 				return output
 			}
-			refused := func(name, account, to string) {
+			send := func(account, to string) string { return sendAmount("0.1", account, to) }
+			refusedAmount := func(name, amount, account, to string) {
 				t.Helper()
 				before := balance(account)
-				output := send(account, to)
+				output := sendAmount(amount, account, to)
 				if after := balance(account); after != before {
 					t.Fatalf("%s moved funds: %d to %d\n%s", name, before, after, output)
 				}
@@ -367,12 +451,20 @@ func TestBoundedTimelockThroughSigner(t *testing.T) {
 					t.Fatalf("%s reported confirmation:\n%s", name, output)
 				}
 			}
+			refused := func(name, account, to string) {
+				t.Helper()
+				refusedAmount(name, "0.1", account, to)
+			}
 
 			refused("locked account", generate(status.LastRound+1_000_000), allowed)
 
 			open := generate(status.LastRound)
 			if rule.hasList() {
 				refused("outsider", open, algocrypto.GenerateAccount().Address.String())
+			}
+			if rule.authorTEAL != "" {
+				// Unlocked and to an allowed recipient, but over the author's cap.
+				refusedAmount("spend over the author's cap", "0.2", open, allowed)
 			}
 			output := send(open, allowed)
 			if _, err := network.WaitForConfirmation(mustExtractTxID(t, output), 10); err != nil {

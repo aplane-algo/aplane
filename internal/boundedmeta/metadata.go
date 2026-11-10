@@ -45,17 +45,56 @@ const (
 	MaximumProfileFee                 = 10_000
 )
 
-// The timelock policies require FirstValid >= unlock_round. They take no author
-// TEAL, so they have no *Custom form.
+// The timelock policies require FirstValid >= unlock_round. Each has a *Custom
+// form, recorded when author TEAL follows it: the framework still enforces the
+// timelock (and the allowlist, where there is one), and the author's code can
+// only narrow what passes. Plain "custom" would hide the timelock.
 const (
-	Layer3PolicyTimelock                = "timelock"
-	Layer3PolicyFixedAllowlistTimelock  = "fixed_allowlist_timelock"
-	Layer3PolicyMerkleAllowlistTimelock = "merkle_allowlist_timelock"
+	Layer3PolicyTimelock                      = "timelock"
+	Layer3PolicyFixedAllowlistTimelock        = "fixed_allowlist_timelock"
+	Layer3PolicyMerkleAllowlistTimelock       = "merkle_allowlist_timelock"
+	Layer3PolicyTimelockCustom                = "timelock_custom"
+	Layer3PolicyFixedAllowlistTimelockCustom  = "fixed_allowlist_timelock_custom"
+	Layer3PolicyMerkleAllowlistTimelockCustom = "merkle_allowlist_timelock_custom"
 )
+
+// IsTimelockPolicy reports whether a Layer 3 policy enforces the framework
+// timelock, alone, with an allowlist, or followed by author TEAL.
+func IsTimelockPolicy(policy string) bool {
+	switch policy {
+	case Layer3PolicyTimelock, Layer3PolicyFixedAllowlistTimelock, Layer3PolicyMerkleAllowlistTimelock,
+		Layer3PolicyTimelockCustom, Layer3PolicyFixedAllowlistTimelockCustom, Layer3PolicyMerkleAllowlistTimelockCustom:
+		return true
+	}
+	return false
+}
+
+// IsMerkleListPolicy reports whether a Layer 3 policy proves its recipient by
+// a Merkle proof.
+func IsMerkleListPolicy(policy string) bool {
+	switch policy {
+	case Layer3PolicyMerkleAllowlist, Layer3PolicyMerkleAllowlistCustom,
+		Layer3PolicyMerkleAllowlistTimelock, Layer3PolicyMerkleAllowlistTimelockCustom:
+		return true
+	}
+	return false
+}
+
+// IsCustomPolicy reports whether author TEAL runs in Layer 3, alone or after
+// a framework policy.
+func IsCustomPolicy(policy string) bool {
+	switch policy {
+	case Layer3PolicyCustom, Layer3PolicyFixedAllowlistCustom, Layer3PolicyMerkleAllowlistCustom,
+		Layer3PolicyTimelockCustom, Layer3PolicyFixedAllowlistTimelockCustom, Layer3PolicyMerkleAllowlistTimelockCustom:
+		return true
+	}
+	return false
+}
 
 // Layer3PolicyNone compiles no Layer 3: the envelope's transfer kinds and fee
 // ceiling, and the spending signature, are the whole spending rule. It reads no
-// parameter and takes no author TEAL.
+// parameter and takes no author TEAL: author TEAL with no framework policy is
+// stored as "custom".
 const Layer3PolicyNone = "none"
 
 // SignatureArgLayout is the durable maximum shape of the spending signature
@@ -267,21 +306,24 @@ func (metadata *Metadata) ValidateProfile() error {
 			recipientProofs++
 		}
 	}
-	switch metadata.Layer3Policy {
-	case Layer3PolicyFixedAllowlist, Layer3PolicyFixedAllowlistCustom,
-		Layer3PolicyTimelock, Layer3PolicyFixedAllowlistTimelock, Layer3PolicyNone:
-		if recipientProofs != 0 {
-			return fmt.Errorf("%s must not declare derived arguments", metadata.Layer3Policy)
-		}
-	case Layer3PolicyMerkleAllowlist, Layer3PolicyMerkleAllowlistCustom, Layer3PolicyMerkleAllowlistTimelock:
+	switch {
+	case IsMerkleListPolicy(metadata.Layer3Policy):
 		if recipientProofs != 1 {
 			return fmt.Errorf("%s requires exactly one derived Merkle proof argument", metadata.Layer3Policy)
+		}
+	case metadata.Layer3Policy == Layer3PolicyFixedAllowlist, metadata.Layer3Policy == Layer3PolicyFixedAllowlistCustom,
+		metadata.Layer3Policy == Layer3PolicyFixedAllowlistTimelock, metadata.Layer3Policy == Layer3PolicyFixedAllowlistTimelockCustom,
+		metadata.Layer3Policy == Layer3PolicyTimelock, metadata.Layer3Policy == Layer3PolicyTimelockCustom,
+		metadata.Layer3Policy == Layer3PolicyNone:
+		if recipientProofs != 0 {
+			return fmt.Errorf("%s must not declare derived arguments", metadata.Layer3Policy)
 		}
 	}
 	switch metadata.Layer3Policy {
 	case Layer3PolicyTimelock, Layer3PolicyFixedAllowlistTimelock, Layer3PolicyMerkleAllowlistTimelock,
 		Layer3PolicyNone:
-		// These take no author TEAL, so nothing could read a runtime argument.
+		// These carry no author TEAL, so nothing could read a runtime argument.
+		// Their *Custom forms do, and may declare one.
 		if len(metadata.RuntimeArgs) != 0 {
 			return fmt.Errorf("%s must not declare runtime arguments", metadata.Layer3Policy)
 		}
@@ -302,6 +344,7 @@ func (metadata *Metadata) validateBoundedHost() error {
 	case Layer3PolicyCustom, Layer3PolicyFixedAllowlist, Layer3PolicyMerkleAllowlist,
 		Layer3PolicyFixedAllowlistCustom, Layer3PolicyMerkleAllowlistCustom,
 		Layer3PolicyTimelock, Layer3PolicyFixedAllowlistTimelock, Layer3PolicyMerkleAllowlistTimelock,
+		Layer3PolicyTimelockCustom, Layer3PolicyFixedAllowlistTimelockCustom, Layer3PolicyMerkleAllowlistTimelockCustom,
 		Layer3PolicyNone:
 	default:
 		return fmt.Errorf("unsupported %s layer3_policy %q", Contract, metadata.Layer3Policy)
@@ -446,7 +489,8 @@ func IsRecipientListPolicy(policy string) bool {
 	switch policy {
 	case Layer3PolicyFixedAllowlist, Layer3PolicyMerkleAllowlist,
 		Layer3PolicyFixedAllowlistCustom, Layer3PolicyMerkleAllowlistCustom,
-		Layer3PolicyFixedAllowlistTimelock, Layer3PolicyMerkleAllowlistTimelock:
+		Layer3PolicyFixedAllowlistTimelock, Layer3PolicyMerkleAllowlistTimelock,
+		Layer3PolicyFixedAllowlistTimelockCustom, Layer3PolicyMerkleAllowlistTimelockCustom:
 		return true
 	}
 	return false

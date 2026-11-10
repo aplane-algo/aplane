@@ -1368,7 +1368,8 @@ Bounded signing-metadata version 2 additionally requires the canonical
   `spend`, `spending_rekey`, and `listed_rekey` path masks
 - `layer3_policy`: exactly `custom`, `fixed_allowlist`, `merkle_allowlist`,
   `fixed_allowlist_custom`, `merkle_allowlist_custom`, `timelock`,
-  `fixed_allowlist_timelock`, `merkle_allowlist_timelock`, or `none`
+  `fixed_allowlist_timelock`, `merkle_allowlist_timelock`, `timelock_custom`,
+  `fixed_allowlist_timelock_custom`, `merkle_allowlist_timelock_custom`, or `none`
 - optional `cosigner`: contract, witness key type, resolved public key and Witness
   Key ID, maximum signature size, and `required_on`, exactly `[spend]`, or
   `[spend, spending_rekey]` beside `rekey: spending_key`; its argument slot source

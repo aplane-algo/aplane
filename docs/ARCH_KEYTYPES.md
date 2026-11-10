@@ -1226,7 +1226,7 @@ Layer 3 takes one of three forms:
 |---|---|---|---|
 | Framework policy | `bounded.layer3` and no `teal` | `fixed_allowlist`, `merkle_allowlist`, `timelock`, `fixed_allowlist_timelock`, or `merkle_allowlist_timelock` | every plain host shape with a list or a timelock |
 | Author TEAL | `teal` and no `bounded.layer3` | `custom` | None |
-| Framework allowlist plus author TEAL | `bounded.layer3` and `teal` | `fixed_allowlist_custom` or `merkle_allowlist_custom` | None |
+| Framework policy plus author TEAL | `bounded.layer3` and `teal` | the framework policy's name with `_custom`: `fixed_allowlist_custom`, `merkle_allowlist_custom`, `timelock_custom`, `fixed_allowlist_timelock_custom` or `merkle_allowlist_timelock_custom` | None |
 
 A framework policy is rendered by the composer in `lsig/composeddsa/layer3.go`, so
 the template contains no TEAL. `fixed_allowlist` compiles up to 30 recipients inline.

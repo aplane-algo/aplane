@@ -7,6 +7,16 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## A timelock template takes author TEAL
+
+- A bounded template may declare a `timelock`, `fixed_allowlist_timelock` or
+  `merkle_allowlist_timelock` policy and also supply `teal`. It used to be refused. The
+  framework's timelock runs first, then any allowlist, then the author's code, and all
+  must pass, so the code can only narrow what the framework admits.
+- The stored policy name gains `_custom` (`timelock_custom`,
+  `fixed_allowlist_timelock_custom`, `merkle_allowlist_timelock_custom`), so the
+  generation review and key listings still say the account is timelocked.
+
 ## A cosigner policy can be as open as you make it
 
 - A cosigner document's `transaction_types` may allow any type, `"*"` included. It

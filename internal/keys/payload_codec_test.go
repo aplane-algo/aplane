@@ -226,6 +226,9 @@ func TestBoundedCombinedLayer3PolicyPayloadRoundTrip(t *testing.T) {
 		{policy: boundedmeta.Layer3PolicyTimelock},
 		{policy: boundedmeta.Layer3PolicyFixedAllowlistTimelock},
 		{policy: boundedmeta.Layer3PolicyMerkleAllowlistTimelock, derived: []boundedmeta.DerivedArg{proof}},
+		{policy: boundedmeta.Layer3PolicyTimelockCustom},
+		{policy: boundedmeta.Layer3PolicyFixedAllowlistTimelockCustom},
+		{policy: boundedmeta.Layer3PolicyMerkleAllowlistTimelockCustom, derived: []boundedmeta.DerivedArg{proof}},
 	} {
 		t.Run(test.policy, func(t *testing.T) {
 			bytecode := canonicalOffCurveBytecode(t)

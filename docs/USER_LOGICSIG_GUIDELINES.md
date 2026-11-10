@@ -245,7 +245,10 @@ transaction IDs in the same period unless the lease or another explicit
 mechanism enforces mutual exclusion.
 
 A bounded template can use the framework `timelock`, `fixed_allowlist_timelock`, or
-`merkle_allowlist_timelock` policy instead of writing this check. No rekey passes through
+`merkle_allowlist_timelock` policy instead of writing this check. It can also add its
+own `teal` to one of them: the framework's timelock and allowlist run first and the
+author's code after them, so the code can only narrow what they admit, and the review
+still reports the account as timelocked. No rekey passes through
 Layer 3, so a time check delays spends only. The framework timelock policies therefore
 require `rekey: refused` or `only_these`, and an author-TEAL time check holds a rekey back
 only on an account that refuses rekeys. Under `only_these` a rekey to a listed address is

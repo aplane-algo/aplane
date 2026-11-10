@@ -130,7 +130,7 @@ complete value-spending policy.
 | Layer-3 arguments | declared static runtime (spend only) and signer-derived slots |
 | Signer-derived primitives | fixed-depth Merkle allowlist proof (512 bytes, spend); rekey-to list proof (160 bytes, listed rekey) |
 | Framework Layer-3 policies | `fixed_allowlist`, `merkle_allowlist`, `timelock`, `fixed_allowlist_timelock`, `merkle_allowlist_timelock`; `none` for the plain hosts' limits-only shapes only |
-| Framework allowlist with author TEAL | `fixed_allowlist_custom`, `merkle_allowlist_custom` |
+| Framework policy with author TEAL | `fixed_allowlist_custom`, `merkle_allowlist_custom`, `timelock_custom`, `fixed_allowlist_timelock_custom`, `merkle_allowlist_timelock_custom` |
 | Inline recipient maximum | 30 entries |
 | Flow labels | `bounded1` without a cosigner; `cosigned1` with a cosigner |
 | Online cosigner endpoints | `POST /plan`, `POST /sign/component`, `POST /sign/assemble` |
@@ -792,11 +792,17 @@ not, so the lock binds only while it declines; the plain hosts' timelock shapes 
 every rekey setting too. Under `only_these` a listed rekey is accepted before the unlock
 round, so the lock binds only while the listed keys' holders cooperate.
 
-Timelock policies reject author TEAL, parameters they do not read, and runtime arguments.
-An author who needs a list and custom time conditions uses a plain allowlist and writes
-those conditions in the TEAL. Author TEAL never runs on a rekey, so such a condition
-holds a spending-key rekey back only if the template declares `rekey: refused` or
-`only_these`, and it never holds back a listed rekey.
+A timelock policy takes author TEAL the same way an allowlist does. The framework's
+checks run first, the timelock and then any recipient check, and fall through to the
+author TEAL; all must pass, so the author TEAL can only narrow what they admit. The
+template declares only the framework policy; durable metadata records
+`timelock_custom`, `fixed_allowlist_timelock_custom` or
+`merkle_allowlist_timelock_custom`, which a template cannot declare directly, so a
+review still reports the account as timelocked. A timelock policy with no `teal`
+rejects parameters it does not read and runtime arguments, because nothing would read
+them. Author TEAL never runs on a rekey, so a condition it adds holds a spending-key
+rekey back only if the template declares `rekey: refused` or `only_these`, and it never
+holds back a listed rekey.
 
 `none` renders no Layer 3: after the envelope and the spending signature (and the
 cosigner check, when the profile has one) a spend goes straight to the accept block, so
@@ -961,7 +967,8 @@ Non-bounded LogicSig keys use `signing_metadata_version: 1`. Bounded keys use
 `bounded_authorization` object. The closed `layer3_policy` value is `custom`,
 `fixed_allowlist`, `merkle_allowlist`, `fixed_allowlist_custom`,
 `merkle_allowlist_custom`, `timelock`, `fixed_allowlist_timelock`,
-`merkle_allowlist_timelock`, or `none`; declared runtime and derived arguments and their complete
+`merkle_allowlist_timelock`, `timelock_custom`,
+`fixed_allowlist_timelock_custom`, `merkle_allowlist_timelock_custom`, or `none`; declared runtime and derived arguments and their complete
 slot masks are persisted. Top-level `signing_args` are ignored for bounded
 keys. Scan, load, backup, and restore consume the stored object without
 consulting the installed template.
