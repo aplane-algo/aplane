@@ -6,6 +6,7 @@ package signing
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"fmt"
 	"strings"
 	"testing"
@@ -14,6 +15,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
@@ -855,6 +857,65 @@ func TestResolveBoundedPlanItemsAcceptsDeclaredRuntimeArgs(t *testing.T) {
 	requests[0].LsigArgs = nil
 	if _, err := resolveBoundedPlanItems(snapshot, requests, []types.Transaction{testBoundedPayment()}, map[int]bool{}, map[int]bool{}); err == nil || !strings.Contains(err.Message, "missing required") {
 		t.Fatalf("missing runtime arg error = %#v", err)
+	}
+}
+
+// An account stored before the network's argument limit was enforced can declare
+// a runtime argument maximum above it. It still loads, and signing refuses a
+// supplied value the network would refuse. Only a supplied value is checked, so
+// a rekey, which carries no runtime argument, is unaffected.
+func TestResolveBoundedPlanItemsCapsASuppliedRuntimeArgAtTheNetworkLimit(t *testing.T) {
+	authAddr := types.Address{1}.String()
+	metadata := testBoundedMetadata(t, boundedmeta.RekeySpendingKey)
+	metadata.RuntimeArgs = []boundedmeta.RuntimeArg{{Name: "blob", Type: "bytes", Required: true, MaxSize: 5000}}
+	metadata.ArgumentLayout = append(metadata.ArgumentLayout, boundedmeta.ArgumentSlot{
+		Index: 1, Name: "blob", Source: boundedmeta.ArgSourceRuntime, MaxSize: 5000,
+		Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgForbidden, ListedRekey: boundedmeta.ArgForbidden},
+	})
+	// Durable validation, which a stored key gets on load, accepts it. The
+	// generation-time check does not, so the metadata is built by hand.
+	if err := metadata.Validate(); err != nil {
+		t.Fatalf("stored metadata invalid: %v", err)
+	}
+	if err := metadata.ValidateNetworkLimits(); err == nil || !strings.Contains(err.Error(), "(blob) is 5000 bytes: a LogicSig argument is at most 4096") {
+		t.Fatalf("ValidateNetworkLimits() error = %v, want the fixture past the limit", err)
+	}
+	snapshot := PlannerRuntimeSnapshot{KeyMetadata: map[string]PlannerKeyMetadata{authAddr: {
+		PublicKeyHex: "aabb", BoundedAuthorization: metadata,
+	}}}
+	resolve := func(txn types.Transaction, lsigArgs map[string]string) ([]*boundedPlanItem, *ServiceError) {
+		return resolveBoundedPlanItems(snapshot, []signerapi.SignRequest{{AuthAddress: authAddr, LsigArgs: lsigArgs}},
+			[]types.Transaction{txn}, map[int]bool{}, map[int]bool{})
+	}
+	blob := func(size int) map[string]string {
+		return map[string]string{"blob": hex.EncodeToString(bytes.Repeat([]byte{0xab}, size))}
+	}
+
+	// One byte past the network's limit, inside the account's own maximum.
+	_, err := resolve(testBoundedPayment(), blob(lsigresource.MaxLogicSigArgBytes+1))
+	if err == nil || err.Kind != ErrorBadRequest ||
+		!strings.Contains(err.Message, `bounded runtime argument "blob" is 4097 bytes, and a LogicSig argument is at most 4096`) {
+		t.Fatalf("4097-byte argument: error = %#v, want the network limit refusal", err)
+	}
+	// At the limit.
+	items, err := resolve(testBoundedPayment(), blob(lsigresource.MaxLogicSigArgBytes))
+	if err != nil {
+		t.Fatalf("4096-byte argument: error = %v", err)
+	}
+	if len(items) != 1 || items[0] == nil || items[0].Path != boundedPathPureSpend || len(items[0].RuntimeArgs["blob"]) != lsigresource.MaxLogicSigArgBytes {
+		t.Fatalf("4096-byte argument: planned items = %#v", items)
+	}
+	// Past the account's own maximum, the account's refusal comes first.
+	if _, err := resolve(testBoundedPayment(), blob(5001)); err == nil || !strings.Contains(err.Message, "exceeds 5000-byte maximum") {
+		t.Fatalf("5001-byte argument: error = %#v, want the account's own maximum", err)
+	}
+	// A rekey omits the argument, so the oversized declaration doesn't stop it.
+	items, err = resolve(testBoundedRekey(), nil)
+	if err != nil {
+		t.Fatalf("rekey without the argument: error = %v", err)
+	}
+	if len(items) != 1 || items[0] == nil || items[0].Path != boundedPathSpendingKeyRekey || len(items[0].RuntimeArgs) != 0 {
+		t.Fatalf("rekey without the argument: planned items = %#v", items)
 	}
 }
 

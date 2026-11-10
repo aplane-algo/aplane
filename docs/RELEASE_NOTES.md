@@ -9,8 +9,9 @@ before it was renamed `enroll`.
 
 ## Templates can't declare LogicSig arguments the network refuses
 
-- New: a template is refused when it declares more than 255 LogicSig arguments or a
-  single argument over 4,096 bytes (`byte_length` or `max_size` on a runtime argument).
+- New: installing a template is refused when it declares more than 255 LogicSig
+  arguments or a single argument over 4,096 bytes (`byte_length` or `max_size` on a
+  runtime argument).
   Algorand refuses such a LogicSig whatever its group looks like, so a key made from
   that template could never have signed a transaction.
 - A composed template's count includes its base's signature arguments. A bounded
@@ -18,12 +19,17 @@ before it was renamed `enroll`.
   cosigner's signature. Both are refused when the template is installed.
 - A runtime argument value over 4,096 bytes is refused at signing too, which covers an
   argument that declares no size.
-- The limits are checked when a template is built and when a key is generated, not
-  when a stored key is loaded.
-- A bounded template is now checked against its template-level contract when it is
-  built. Two mistakes that used to surface only at key generation are refused at
-  install too: a parameter with the reserved `bounded_` prefix, and a `rekey_to`
-  parameter that doesn't match the framework's own.
+- When each check runs: at install for a template, at key generation for a bounded
+  account's argument layout, and at signing for a supplied argument value.
+- Nothing is re-checked at load. A template already installed, or a key already
+  stored, that is past a limit still loads, so a reload never fails over these limits.
+  No key can be generated from such a bounded template, and signing still refuses an
+  argument value over 4,096 bytes.
+- A bounded template is now checked against its template-level contract at install.
+  Two mistakes that used to surface only at key generation are refused at install too:
+  a parameter with the reserved `bounded_` prefix, and a `rekey_to` parameter that
+  doesn't match the framework's own. A template already installed with either mistake
+  still loads, and key generation refuses it as before.
 - No bundled template or built-in key type is affected. The largest argument any of
   them carries is 2,928 bytes, and none carries more than five.
 

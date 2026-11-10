@@ -776,10 +776,20 @@ program each time a transaction is submitted.
 The network refuses a LogicSig with more than 255 arguments, or with any one argument
 over 4,096 bytes. Both are node constants (`lsigresource.MaxLogicSigArgs` and
 `MaxLogicSigArgBytes` restate them), and no group shape lifts them: dummy transactions
-pool program size and opcode budget only. A template can't declare past either. A
-`byte_length` or `max_size` above 4,096 is refused, and so is a count above 255, which
-for a composed template includes the base's signature arguments. A signature larger
-than 4,096 bytes has to be split across arguments by its provider.
+pool program size and opcode budget only. A template that declares past either can't
+be installed. A `byte_length` or `max_size` above 4,096 is refused, and so is a count
+above 255, which for a composed template includes the base's signature arguments. A
+signature larger than 4,096 bytes has to be split across arguments by its provider.
+
+The limits are checked at three points. Install runs template admission
+(`generictemplate.ValidateSpecAdmission`, `composeddsa.ValidateTemplateAdmission`).
+Key generation checks a bounded account's whole argument layout. Signing refuses a
+supplied argument value over 4,096 bytes. Nothing is re-checked at load: a template
+installed, or a key stored, before a limit existed keeps loading, because a store
+reload fails closed on any template or key it can't validate. Put a new restriction
+on templates or keys in an admission check (install or generation), never in the
+validation a store runs at load (`ValidateSpec`, `ValidateTemplateSpec`, provider
+construction, `PrepareKeystoreTemplateRegistration`, durable metadata `Validate`).
 
 | | Creation Params | Runtime Args |
 |---|---|---|

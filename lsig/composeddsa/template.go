@@ -175,7 +175,7 @@ func newProviderFromBase(spec *TemplateSpec, base BaseRegistration, saltStyle ls
 		return nil, err
 	}
 	boundedRuntimeMetadata, runtimeDefs := boundedRuntimeArgsFromTemplate(spec.Bounded)
-	provider := NewComposedDSA(Config{
+	return NewComposedDSA(Config{
 		KeyType:            spec.KeyType(),
 		BaseKeyType:        base.BaseKeyType,
 		FamilyName:         base.FamilyName,
@@ -194,16 +194,41 @@ func newProviderFromBase(spec *TemplateSpec, base BaseRegistration, saltStyle ls
 		Bounded:            bounded,
 		Layer3:             layer3,
 		OpcodeProfile:      spec.LogicSigOpcodeProfile(bounded != nil),
-	})
-	// A template is refused when it is built, so one that could never work
-	// can't be installed. Both steps also run when a key is generated.
+	}), nil
+}
+
+// ValidateTemplateAdmission is what a composed template must pass to be
+// installed, beyond ValidateTemplateSpec: the checks that apply to a new template
+// and never to one already in a store. A store reload builds its templates
+// without them, so a template installed before a check existed keeps loading and
+// can't take the whole store down. The checks:
+//
+//   - its LogicSig arguments fit the network's limits on one LogicSig;
+//   - a bounded template satisfies its template-level contract, so a mistake
+//     key generation would refuse is refused here first.
+func ValidateTemplateAdmission(spec *TemplateSpec) error {
+	if err := ValidateTemplateSpec(spec); err != nil {
+		return err
+	}
+	if err := generictemplate.ValidateRuntimeArgLimits(spec.RuntimeArgs); err != nil {
+		return err
+	}
+	if spec.Bounded != nil {
+		for _, arg := range spec.Bounded.RuntimeArgs {
+			// The same refusal, in the same words, as a schema 1 runtime argument.
+			if arg.MaxSize > lsigresource.MaxLogicSigArgBytes {
+				return fmt.Errorf("runtime_arg %s is %d bytes: a LogicSig argument is at most %d", arg.Name, arg.MaxSize, lsigresource.MaxLogicSigArgBytes)
+			}
+		}
+	}
+	provider, err := NewProviderFromTemplateSpec(spec)
+	if err != nil {
+		return err
+	}
 	if err := provider.validateTemplateContract(); err != nil {
-		return nil, err
+		return err
 	}
-	if err := provider.checkArgumentLimits(); err != nil {
-		return nil, err
-	}
-	return provider, nil
+	return provider.checkArgumentLimits()
 }
 
 // validateTemplateContract checks a bounded template against its template-level
@@ -279,10 +304,6 @@ func validateBoundedArguments(spec *generictemplate.BoundedAuthorizationSpec, pa
 		}
 		if arg.MaxSize <= 0 || arg.ByteLength < 0 || arg.ByteLength > arg.MaxSize {
 			return fmt.Errorf("bounded.runtime_args argument %q has invalid size bounds", arg.Name)
-		}
-		// The same refusal, in the same words, as a schema 1 runtime argument.
-		if arg.MaxSize > lsigresource.MaxLogicSigArgBytes {
-			return fmt.Errorf("runtime_arg %s is %d bytes: a LogicSig argument is at most %d", arg.Name, arg.MaxSize, lsigresource.MaxLogicSigArgBytes)
 		}
 		if _, duplicate := seen[arg.Name]; duplicate {
 			return fmt.Errorf("bounded argument name %q is duplicated", arg.Name)

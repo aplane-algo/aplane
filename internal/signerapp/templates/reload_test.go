@@ -16,9 +16,11 @@ import (
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	utilkeys "github.com/aplane-algo/aplane/internal/storepaths"
+	"github.com/aplane-algo/aplane/internal/templatelibrary"
 	"github.com/aplane-algo/aplane/internal/templatepolicy"
 	"github.com/aplane-algo/aplane/internal/templatestore"
 	"github.com/aplane-algo/aplane/internal/witness"
+	"github.com/aplane-algo/aplane/lsig/clientreg"
 )
 
 type fakeKeyStore struct {
@@ -593,5 +595,126 @@ func TestReloadBindsStoreRootSelectionBeforePreScanHook(t *testing.T) {
 	}
 	if store.withMKCalled || store.scanCalled {
 		t.Fatal("Reload() continued after failing to bind the store root selection")
+	}
+}
+
+// A reload is fail-closed on a template content defect, so it never applies a
+// check that only a new template must pass. A template whose runtime argument is
+// larger than the network allows can't be installed any more; one already in the
+// store, from a build without that check, still loads on the real registrars.
+func TestReloadLoadsInstalledTemplatesAnInstallNowRefuses(t *testing.T) {
+	clientreg.RegisterClient()
+	const genericKeyType, composedKeyType, boundedKeyType = "test.reload-generic-oversized.v1", "test.reload-composed-oversized.v1", "test.reload-bounded-oversized.v1"
+	generic := []byte(`schema_version: 1
+derivation_version: 3
+template_type: generic
+template_mode: generated
+publisher: test
+family: reload-generic-oversized
+version: 1
+display_name: "Reload Generic Oversized"
+max_opcode_cost: 20000
+runtime_args:
+  - name: blob
+    type: bytes
+    max_size: 5000
+teal: |
+  arg 0
+  len
+  return
+`)
+	composed := []byte(`schema_version: 1
+template_type: composed
+base_key_type: aplane.falcon1024.v1
+template_mode: generated
+publisher: test
+family: reload-composed-oversized
+version: 1
+display_name: "Reload Composed Oversized"
+max_opcode_cost: 20000
+runtime_args:
+  - name: blob
+    type: bytes
+    max_size: 5000
+teal: |
+  int 1
+  assert
+`)
+	bounded := []byte(`schema_version: 2
+derivation_version: 3
+template_type: composed
+base_key_type: aplane.falcon1024.v1
+template_mode: strict
+publisher: test
+family: reload-bounded-oversized
+version: 1
+display_name: "Reload Bounded Oversized"
+max_opcode_cost: 20000
+bounded:
+  contract: bounded2
+  spend_effects: [pay]
+  max_fee: 10000
+  rekey: refused
+  runtime_args:
+    - name: blob
+      type: bytes
+      max_size: 5000
+      required_on: [spend]
+teal: |
+  int 1
+  assert
+`)
+	// The fixtures are ones an install refuses.
+	for _, data := range [][]byte{generic, composed, bounded} {
+		if _, err := templatelibrary.ParseYAML("fixture.yaml", data); err == nil || !strings.Contains(err.Error(), "runtime_arg blob is 5000 bytes: a LogicSig argument is at most 4096") {
+			t.Fatalf("ParseYAML() error = %v, want the argument size refusal", err)
+		}
+	}
+
+	paths := mintedPathsForReloadTest(t)
+	masterKey := testTemplateMasterKey()
+	saveTemplateYAML(t, paths, genericKeyType, templatestore.TemplateTypeGeneric, generic, masterKey)
+	saveTemplateYAML(t, paths, composedKeyType, templatestore.TemplateTypeComposed, composed, masterKey)
+	saveTemplateYAML(t, paths, boundedKeyType, templatestore.TemplateTypeComposed, bounded, masterKey)
+	t.Cleanup(func() {
+		UnregisterProductProvider(genericKeyType)
+		UnregisterProductProvider(composedKeyType)
+		UnregisterProductProvider(boundedKeyType)
+	})
+
+	published := false
+	service := &ReloadService{
+		KeyStore:        &fakeKeyStore{cache: map[string]string{}, keyTypes: map[string]string{}},
+		Session:         &fakeSession{},
+		TemplateManager: NewManager(paths),
+		PublishSnapshot: func(map[string]string, map[string]string) { published = true },
+		Info:            func(string) {},
+		Warn:            func(string) {},
+	}
+	report, err := service.Reload(nil)
+	if err != nil {
+		t.Fatalf("Reload() error = %v, want the store to load", err)
+	}
+	if !published {
+		t.Fatal("Reload() did not publish a key snapshot")
+	}
+	if len(report.TemplateWarnings) != 0 {
+		t.Fatalf("TemplateWarnings = %v, want none", report.TemplateWarnings)
+	}
+	if defects := report.ContentDefectKeyTypes(); len(defects) != 0 {
+		t.Fatalf("ContentDefectKeyTypes() = %v, want none", defects)
+	}
+	if !containsString(report.GenericActivatedKeyTypes, genericKeyType) {
+		t.Fatalf("GenericActivatedKeyTypes = %v, want %s", report.GenericActivatedKeyTypes, genericKeyType)
+	}
+	for _, keyType := range []string{composedKeyType, boundedKeyType} {
+		if !containsString(report.ComposedActivatedKeyTypes, keyType) {
+			t.Fatalf("ComposedActivatedKeyTypes = %v, want %s", report.ComposedActivatedKeyTypes, keyType)
+		}
+	}
+	for _, keyType := range []string{genericKeyType, composedKeyType, boundedKeyType} {
+		if lsigprovider.Get(keyType) == nil {
+			t.Fatalf("%s was not registered", keyType)
+		}
 	}
 }

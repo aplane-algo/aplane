@@ -1071,10 +1071,22 @@ The `BuildArgs` method encapsulates LogicSig arg ordering:
 
 **Limits**: the network refuses a LogicSig with more than 255 arguments or with any
 argument over 4,096 bytes (node constants, restated as `lsigresource.MaxLogicSigArgs`
-and `MaxLogicSigArgBytes`). Template validation refuses a declaration past either:
-generic and composed `runtime_args`, a composed program's signature plus runtime
-argument count and its base signature argument sizes, and every slot of a bounded
-argument layout.
+and `MaxLogicSigArgBytes`). Each check runs at one point, and none at load:
+
+- At install, template admission (`generictemplate.ValidateSpecAdmission`,
+  `composeddsa.ValidateTemplateAdmission`, called by the `templatelibrary` parsers)
+  refuses a declaration past either limit: generic and composed `runtime_args`, a
+  composed program's signature plus runtime argument count and its base signature
+  argument sizes, and every slot of a bounded argument layout.
+- At key generation, a bounded account's argument layout is checked again
+  (`Metadata.ValidateNetworkLimits`).
+- At signing, a supplied runtime argument over 4,096 bytes is refused
+  (`lsigprovider.ValidateAndOrderArgs`, and the bounded planner for a bounded account).
+
+Spec validation and provider construction, which a store reload runs through
+`PrepareKeystoreTemplateRegistration`, apply no limit, and neither does durable key
+validation. An installed template or stored key past a limit still loads, so a store
+never fails to load over a limit added later.
 
 **Invariant**: Arg order is determined by `RuntimeArgs()` schema order at key
 generation time, not map iteration. v1 signing-metadata key files persist that

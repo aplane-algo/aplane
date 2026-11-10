@@ -312,7 +312,7 @@ LogicSig designs that coordinate batch ASA movement.
 - Are alternate encodings handled consistently?
 - Is every arg at most 4,096 bytes, and are there at most 255 args? The network refuses
   a LogicSig past either limit whatever its group looks like, and a template that
-  declares one is refused.
+  declares one can't be installed.
 
 Remember: LogicSig args are not part of `txn TxID`. The signature covers the
 transaction, not mutable LogicSig args. Treat every runtime arg as attacker

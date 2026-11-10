@@ -215,11 +215,6 @@ func validateInputModeSpecs(param ParameterSpec) error {
 // ValidateRuntimeArgSpecs validates a slice of runtime argument specifications.
 // Used by both generictemplate and composeddsa validation.
 func ValidateRuntimeArgSpecs(args []RuntimeArgSpec) error {
-	// The network's limits, which no group shape can lift. A caller that adds
-	// arguments of its own, such as signatures, checks the total.
-	if len(args) > lsigresource.MaxLogicSigArgs {
-		return fmt.Errorf("%d runtime_args: a LogicSig carries at most %d arguments", len(args), lsigresource.MaxLogicSigArgs)
-	}
 	seenNames := make(map[string]bool)
 	for _, a := range args {
 		if a.Name == "" {
@@ -242,11 +237,38 @@ func ValidateRuntimeArgSpecs(args []RuntimeArgSpec) error {
 		if a.ByteLength > 0 && a.MaxSize > 0 {
 			return fmt.Errorf("runtime_arg %s cannot set both byte_length and max_size", a.Name)
 		}
+	}
+	return nil
+}
+
+// ValidateRuntimeArgLimits refuses runtime arguments the network would refuse on
+// any transaction: more than one LogicSig carries, or one larger than a LogicSig
+// argument may be. No group shape lifts either. A caller that adds arguments of
+// its own, such as signatures, checks the total.
+//
+// It is an admission check, for a template being installed. It is not part of
+// spec validation, which also runs when a store reloads: a template already
+// installed must keep loading, or one template would take the whole store down.
+func ValidateRuntimeArgLimits(args []RuntimeArgSpec) error {
+	if len(args) > lsigresource.MaxLogicSigArgs {
+		return fmt.Errorf("%d runtime_args: a LogicSig carries at most %d arguments", len(args), lsigresource.MaxLogicSigArgs)
+	}
+	for _, a := range args {
 		if size := max(a.ByteLength, a.MaxSize); size > lsigresource.MaxLogicSigArgBytes {
 			return fmt.Errorf("runtime_arg %s is %d bytes: a LogicSig argument is at most %d", a.Name, size, lsigresource.MaxLogicSigArgBytes)
 		}
 	}
 	return nil
+}
+
+// ValidateSpecAdmission is what a generic template must pass to be installed,
+// beyond ValidateSpec: the checks that apply to a new template and never to one
+// already in a store.
+func ValidateSpecAdmission(spec *TemplateSpec) error {
+	if spec == nil {
+		return fmt.Errorf("template spec is nil")
+	}
+	return ValidateRuntimeArgLimits(spec.RuntimeArgs)
 }
 
 // ValidateParameterValues validates user-provided parameter values against

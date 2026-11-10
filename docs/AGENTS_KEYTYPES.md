@@ -346,6 +346,16 @@ Stay inside the network's LogicSig argument limits:
 Use `lsigresource.MaxLogicSigArgs` and `lsigresource.MaxLogicSigArgBytes` in Go, not
 literals.
 
+Know when each check runs. Install refuses a template past a limit (admission:
+`generictemplate.ValidateSpecAdmission`, `composeddsa.ValidateTemplateAdmission`).
+Key generation checks a bounded account's argument layout. Signing refuses a supplied
+argument over 4,096 bytes. Nothing is re-checked at load. When you add a restriction
+on templates or keys, put it in an admission check (install or generation). Do not
+add it to `ValidateSpec`, `ValidateTemplateSpec`, `ValidateRuntimeArgSpecs`, provider
+construction, or durable metadata `Validate`: a store reload runs those and fails
+closed, so a stored template or key that predates the restriction would stop the
+whole store from loading.
+
 ## User-Loaded Template Flow
 
 For a generic LogicSig YAML template:

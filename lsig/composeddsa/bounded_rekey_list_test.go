@@ -110,10 +110,34 @@ func TestOnlyTheseRules(t *testing.T) {
 		t.Fatalf("an assets-only list account was refused: %v", err)
 	}
 	mismatched := onlyTheseTemplateYAML + "\nparameters:\n  - name: rekey_to\n    type: address[]\n    required: true\n    min_items: 1\n    max_items: 3\n"
-	// Like the cosigner key, the injected contract is enforced when the template
-	// is built, so a mismatched one can't be installed.
-	if _, err := noneComposer(mismatched); err == nil || !strings.Contains(err.Error(), "framework-injected contract") {
+	// The injected contract is enforced at admission, so a mismatched template
+	// can't be installed.
+	mismatchedSpec, err := composeddsa.ParseTemplateSpec([]byte(mismatched))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := composeddsa.ValidateTemplateAdmission(mismatchedSpec); err == nil ||
+		!strings.Contains(err.Error(), "invalid bounded template contract: ") || !strings.Contains(err.Error(), "framework-injected contract") {
+		t.Fatalf("installing a template with its own rekey_to: error = %v", err)
+	}
+	// One already in a store still loads. Like the cosigner key, the contract is
+	// then enforced when the account is generated.
+	ownList, err := noneComposer(mismatched)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ownList.GenerateTEAL(rekeyListSpendingKey, map[string]string{
+		composeddsa.BoundedRekeyToParameter: rekeyListListedA.String(), boundedmeta.RekeyListRootParameter: strings.Repeat("00", 32),
+	}); err == nil || !strings.Contains(err.Error(), "framework-injected contract") {
 		t.Fatalf("a template's own rekey_to: error = %v", err)
+	}
+	// The unmodified template passes admission.
+	goodSpec, err := composeddsa.ParseTemplateSpec([]byte(onlyTheseTemplateYAML))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := composeddsa.ValidateTemplateAdmission(goodSpec); err != nil {
+		t.Fatalf("ValidateTemplateAdmission() error = %v", err)
 	}
 	// Plus cosigned needs a cosigner, and names the cosigned rekey among the
 	// cosigner's paths; only these on a cosigned account keeps it on spends.

@@ -106,7 +106,7 @@ func slotRequirement(paths ArgumentPathMask, path string) string {
 // any transaction: more arguments than one LogicSig carries, or one larger than
 // a LogicSig argument may be. No group shape lifts either.
 //
-// It is a check for when a template is built and when a key is generated, not
+// It is a check for when a template is installed and when a key is generated, not
 // part of durable validation: a stored account past a limit still loads, since
 // a path that doesn't use the oversized argument, such as a rekey, may still
 // work.

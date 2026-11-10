@@ -1837,7 +1837,7 @@ func TestRequireStringScalarsNamesAnIntegerField(t *testing.T) {
 // The network refuses a LogicSig with more than 255 arguments or one argument
 // over 4,096 bytes, and no group shape lifts either, so a template can't declare
 // them.
-func TestValidateRuntimeArgSpecsNetworkLimits(t *testing.T) {
+func TestValidateRuntimeArgLimits(t *testing.T) {
 	args := func(count int) []RuntimeArgSpec {
 		out := make([]RuntimeArgSpec, count)
 		for i := range out {
@@ -1860,22 +1860,27 @@ func TestValidateRuntimeArgSpecsNetworkLimits(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := ValidateRuntimeArgSpecs(tt.args)
+			// The structure check a store runs at load never applies a limit.
+			if err := ValidateRuntimeArgSpecs(tt.args); err != nil {
+				t.Fatalf("ValidateRuntimeArgSpecs() error = %v, want none: limits are an admission check", err)
+			}
+			err := ValidateRuntimeArgLimits(tt.args)
 			if tt.want == "" {
 				if err != nil {
-					t.Fatalf("ValidateRuntimeArgSpecs() error = %v", err)
+					t.Fatalf("ValidateRuntimeArgLimits() error = %v", err)
 				}
 				return
 			}
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
-				t.Fatalf("ValidateRuntimeArgSpecs() error = %v, want %q", err, tt.want)
+				t.Fatalf("ValidateRuntimeArgLimits() error = %v, want %q", err, tt.want)
 			}
 		})
 	}
 }
 
-// The same limits through the YAML an operator installs.
-func TestTemplateYAMLRefusesLogicSigArgumentsTheNetworkRefuses(t *testing.T) {
+// The same limits through the YAML an operator installs: refused at admission,
+// never by the validation a store runs at load.
+func TestTemplateYAMLAdmissionRefusesLogicSigArgumentsTheNetworkRefuses(t *testing.T) {
 	template := func(runtimeArgs string) []byte {
 		return []byte(`schema_version: 1
 derivation_version: 3
@@ -1921,20 +1926,23 @@ runtime_args:
 			if err != nil {
 				t.Fatalf("ParseTemplateSpec() error = %v", err)
 			}
-			// Parsing decodes only; validation and installation both refuse.
-			err = ValidateSpec(spec)
-			_, installErr := PrepareKeystoreTemplateRegistration("test.arg-limits.v1", data)
+			// Admission refuses; what a store runs at load does not, so a template
+			// installed before the limits existed keeps loading.
+			if err := ValidateSpec(spec); err != nil {
+				t.Fatalf("ValidateSpec() error = %v, want none: limits are an admission check", err)
+			}
+			if _, err := PrepareKeystoreTemplateRegistration("test.arg-limits.v1", data); err != nil {
+				t.Fatalf("PrepareKeystoreTemplateRegistration() error = %v, want none: a stored template still loads", err)
+			}
+			err = ValidateSpecAdmission(spec)
 			if tt.want == "" {
-				if err != nil || installErr != nil {
-					t.Fatalf("ValidateSpec() error = %v, PrepareKeystoreTemplateRegistration() error = %v", err, installErr)
+				if err != nil {
+					t.Fatalf("ValidateSpecAdmission() error = %v", err)
 				}
 				return
 			}
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
-				t.Fatalf("ValidateSpec() error = %v, want %q", err, tt.want)
-			}
-			if installErr == nil || !strings.Contains(installErr.Error(), tt.want) {
-				t.Fatalf("PrepareKeystoreTemplateRegistration() error = %v, want %q", installErr, tt.want)
+				t.Fatalf("ValidateSpecAdmission() error = %v, want %q", err, tt.want)
 			}
 		})
 	}

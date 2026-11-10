@@ -6,6 +6,8 @@ package templateadmin
 import (
 	"errors"
 	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -20,6 +22,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 	"github.com/aplane-algo/aplane/internal/storepaths"
+	"github.com/aplane-algo/aplane/internal/templatelibrary"
 	"github.com/aplane-algo/aplane/internal/templatestore"
 	lsigsignerreg "github.com/aplane-algo/aplane/lsig/signerreg"
 )
@@ -354,4 +357,70 @@ func TestRemoveInstalledTemplateReloadFailureLeavesArchivedState(t *testing.T) {
 		t.Fatalf("archived template stat error = %v", err)
 	}
 	assertReloadInsideMutation(t, reloadCount, deps)
+}
+
+// Both admin install paths run template admission, so a template declaring a
+// LogicSig argument the network refuses never reaches the store: not as imported
+// YAML, and not as a library file.
+func TestInstallRefusesTemplateWithAnArgumentTheNetworkRefuses(t *testing.T) {
+	const keyType = "test.admin-install-oversized.v1"
+	const want = "runtime_arg blob is 5000 bytes: a LogicSig argument is at most 4096"
+	yaml := []byte(`schema_version: 1
+derivation_version: 3
+template_type: generic
+template_mode: generated
+publisher: test
+family: admin-install-oversized
+version: 1
+display_name: "Admin Install Oversized"
+max_opcode_cost: 20000
+runtime_args:
+  - name: blob
+    type: bytes
+    max_size: 5000
+teal: |
+  arg 0
+  len
+  return
+`)
+	svc, ir, reloadCount := setupServiceWithReloadCounter(t)
+
+	imported := svc.ImportInstalledTemplate(adminproto.ImportInstalledTemplateRequest{TemplateYAML: yaml})
+	if imported.Success || imported.Code != protocol.ResultCodeInvalidTemplate || !strings.Contains(imported.Error, want) {
+		t.Fatalf("ImportInstalledTemplate() = %+v, want invalid template: %s", imported, want)
+	}
+
+	if err := templatelibrary.EnsureLibraryDir(ir.KeyPaths()); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(ir.KeyPaths().TemplateLibraryDir(), "oversized.yaml"), yaml, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	installed := svc.InstallLibraryTemplate(adminproto.InstallLibraryTemplateRequest{
+		KeyType: keyType, TemplateType: string(templatestore.TemplateTypeGeneric),
+	})
+	if installed.Success || installed.Code != protocol.ResultCodeInstallFailed || !strings.Contains(installed.Error, "not found in library") {
+		t.Fatalf("InstallLibraryTemplate() = %+v, want the library entry refused", installed)
+	}
+	// The listing says why.
+	listed := svc.ListLibraryTemplates()
+	found := false
+	for _, item := range listed.Templates {
+		if item.FileName == "oversized.yaml" {
+			found = true
+			if !strings.Contains(item.Invalid, want) || item.Installed {
+				t.Fatalf("library entry = %+v, want invalid: %s", item, want)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("ListLibraryTemplates() = %+v, want an entry for oversized.yaml", listed)
+	}
+
+	if templatestore.TemplateExistsActive(genstoretest.Active(t, ir.KeyPaths()), keyType, templatestore.TemplateTypeGeneric) {
+		t.Fatal("a refused install left a template in the store")
+	}
+	if got := reloadCount.Load(); got != 0 {
+		t.Fatalf("reloadCount = %d, want 0: nothing was installed", got)
+	}
 }
