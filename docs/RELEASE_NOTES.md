@@ -13,7 +13,9 @@ before it was renamed `enroll`.
   name on an app call was always the client's claim, tied to the call by a
   4-byte selector. The review now says so, `Method (the client's label, not
   verified)`, and shows the selector. The label is shown only when the first
-  argument is exactly those four bytes.
+  argument is exactly those four bytes; when a label is offered that doesn't
+  match, the review says so without showing it. The heading no longer adds
+  `[ABI]` on the client's word.
 - **Access list.** An app call that names its resources in the newer access
   list (`al`) showed no accounts, apps, assets or boxes at all. Every entry is
   now listed, and `RejectVersion` is shown when set.

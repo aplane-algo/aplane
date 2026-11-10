@@ -51,8 +51,8 @@ func TestDescribeTxnForApprovalAddsAppCallMetadata(t *testing.T) {
 	)
 
 	for _, want := range []string{
-		"App Call [ABI]: #123 (NoOp)",
-		"Mode: ABI",
+		"App Call: #123 (NoOp)",
+		"Mode: ABI (the client's claim)",
 		"Method (the client's label, not verified): increment(uint64)void",
 		"Selector: ",
 	} {
@@ -655,7 +655,10 @@ func TestApprovalHidesTheMethodLabelWhenTheFirstArgIsNotJustTheSelector(t *testi
 		signerapi.SignRequest{AppCallInfo: &signerapi.AppCallInfo{Mode: "abi", Method: "increment(uint64)void"}},
 		func(txn types.Transaction) string { return "App Call: #123 (NoOp)\n  From: SOMEADDR" },
 	)
-	if strings.Contains(desc, "Method") || strings.Contains(desc, "[ABI]") {
+	if strings.Contains(desc, "Method (") || strings.Contains(desc, "Mode: ABI") || strings.Contains(desc, "increment") {
 		t.Fatalf("a first argument longer than a selector is shown as an ABI call:\n%s", desc)
+	}
+	if !strings.Contains(desc, abiLabelMismatchLine) {
+		t.Fatalf("the review does not say a method label was offered and did not match:\n%s", desc)
 	}
 }

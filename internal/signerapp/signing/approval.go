@@ -678,14 +678,12 @@ func describeTxnForApproval(txn types.Transaction, txReq signerapi.SignRequest, 
 	}
 	// An ABI call's first argument is the selector and nothing else. A longer
 	// argument that merely starts with the label's selector is not an ABI
-	// call of that method, so the label is not shown for it.
-	if len(txn.ApplicationArgs) == 0 || len(txn.ApplicationArgs[0]) != 4 {
-		return desc
-	}
-
+	// call of that method. A label that doesn't fit is not shown, but the
+	// review says one was offered: a client naming a method the call doesn't
+	// make is itself worth knowing.
 	wantSelector, err := appspec.SignatureSelector(methodSig)
-	if err != nil || !bytes.Equal(wantSelector, txn.ApplicationArgs[0]) {
-		return desc
+	if err != nil || len(txn.ApplicationArgs) == 0 || !bytes.Equal(wantSelector, txn.ApplicationArgs[0]) {
+		return insertAppCallMetadata(desc, []string{abiLabelMismatchLine})
 	}
 
 	// The label is the client's. The signer holds no contract for the app, so
@@ -693,7 +691,7 @@ func describeTxnForApproval(txn types.Transaction, txReq signerapi.SignRequest, 
 	// name with the same four bytes can be found by search. The review says
 	// so, and shows the selector, the part the app acts on.
 	return insertAppCallMetadata(desc, []string{
-		"Mode: ABI",
+		abiModeLine,
 		abiMethodLabel + termsafe.Line(methodSig),
 		fmt.Sprintf("Selector: %x (all that ties the label to this call)", wantSelector),
 	})
@@ -724,16 +722,18 @@ func appendViolationHighlights(desc string, violations []signerapproval.Violatio
 	return desc + strings.Join(lines, "\n")
 }
 
-// abiMethodLabel heads the method line of an ABI app call's review.
-const abiMethodLabel = "Method (the client's label, not verified): "
+// The lines an ABI app call's review adds. Each says whose word it is: the
+// signer verifies none of this beyond the selector bytes.
+const (
+	abiModeLine          = "Mode: ABI (the client's claim)"
+	abiMethodLabel       = "Method (the client's label, not verified): "
+	abiLabelMismatchLine = "Note: the client named an ABI method that does not match this call's first argument; the name is not shown"
+)
 
 func insertAppCallMetadata(desc string, extraLines []string) string {
 	lines := strings.Split(desc, "\n")
 	if len(lines) == 0 {
 		return desc
-	}
-	if len(extraLines) > 0 && extraLines[0] == "Mode: ABI" && strings.HasPrefix(lines[0], "App Call:") {
-		lines[0] = strings.Replace(lines[0], "App Call:", "App Call [ABI]:", 1)
 	}
 	insertAt := len(lines)
 	for i := 1; i < len(lines); i++ {

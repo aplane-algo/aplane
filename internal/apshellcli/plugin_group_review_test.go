@@ -80,15 +80,19 @@ func TestPluginReviewShowsEveryHandoverOfControlOrFunds(t *testing.T) {
 					BoxReferences: []types.BoxReference{{ForeignAppIdx: 1, Name: []byte("b\x1b[2J")}},
 					Access: []types.ResourceRef{
 						{Address: other}, {Asset: 55}, {Holding: types.HoldingRef{Address: 1, Asset: 2}}, {},
+						{Holding: types.HoldingRef{Address: 40, Asset: 1}},
+						{Box: types.BoxReference{Name: []byte("own")}},
 					},
 					RejectVersion: 3,
 				}},
 			},
 			want: []string{
 				"account[0]: " + other.String(), "app[0]: 44", "asset[0]: 55",
-				`box[0]: app index 1, name "b\x1b[2J"`,
+				`box[0]: app[0] = 44, name "b\x1b[2J"`,
 				"access[0]: account " + other.String(), "access[1]: asset 55",
 				"access[2]: holding of access[1] by access[0]",
+				"access[4]: holding of ?access[0] (not an asset) by ?access[39] (no such entry)",
+				"access[5]: box of the called app 9, name \"own\"",
 				"access[3]: (empty entry: adds box read/write budget)",
 				"reject version 3",
 			},
@@ -102,7 +106,7 @@ func TestPluginReviewShowsEveryHandoverOfControlOrFunds(t *testing.T) {
 					VotePK: types.VotePK{1}, SelectionPK: types.VRFPK{2}, VoteFirst: 5, VoteLast: 9, VoteKeyDilution: 3,
 				},
 			},
-			want: []string{"keyreg: go online, votes valid 5-9, key dilution 3", "vote key AQAA", "selection key AgAA", "state proof key "},
+			want: []string{"keyreg: go online, votes valid 5-9, key dilution 3", "vote key AQAA", "selection key AgAA", "state proof key (none)"},
 		},
 		{
 			name: "keyreg with only a selection key is not offline",
@@ -111,7 +115,7 @@ func TestPluginReviewShowsEveryHandoverOfControlOrFunds(t *testing.T) {
 				Header:          types.Header{Sender: sender},
 				KeyregTxnFields: types.KeyregTxnFields{SelectionPK: types.VRFPK{2}},
 			},
-			want: []string{"keyreg: go online"},
+			want: []string{"keyreg: go online", "vote key (none)", "!! a key is missing"},
 		},
 		{
 			name: "keyreg that rekeys",
@@ -189,5 +193,59 @@ func TestPluginReviewEscapesThePluginsTransactionType(t *testing.T) {
 	}})
 	if strings.ContainsAny(out.String(), "\x1b\r") {
 		t.Fatalf("the review printed raw control bytes from the transaction type:\n%q", out.String())
+	}
+}
+
+func TestPluginReviewMatchesTheSignersRulesWhereTheyOverlap(t *testing.T) {
+	sender, other := reviewTestAddress(1), reviewTestAddress(2)
+	lines := func(txn types.Transaction) string { return strings.Join(pluginReviewLines(txn), "\n") }
+
+	// The sender named as the asset sender is not a clawback.
+	own := lines(types.Transaction{
+		Type:   types.AssetTransferTx,
+		Header: types.Header{Sender: sender},
+		AssetTransferTxnFields: types.AssetTransferTxnFields{
+			XferAsset: 7, AssetAmount: 1, AssetReceiver: other, AssetSender: sender,
+		},
+	})
+	if strings.Contains(own, "CLAWBACK") {
+		t.Errorf("a transfer whose asset sender is the sender is marked a clawback:\n%s", own)
+	}
+
+	create := lines(types.Transaction{
+		Type:   types.AssetConfigTx,
+		Header: types.Header{Sender: sender},
+		AssetConfigTxnFields: types.AssetConfigTxnFields{AssetParams: types.AssetParams{
+			Total: 10, Decimals: 2, DefaultFrozen: true, AssetName: "USD Coin", UnitName: "USDC\x1b[2J", URL: "https://x",
+		}},
+	})
+	for _, want := range []string{"default frozen true", `name "USD Coin"`, `unit "USDC\\x1b[2J"`, `url "https://x"`} {
+		if !strings.Contains(create, want) {
+			t.Errorf("asset create review missing %q:\n%s", want, create)
+		}
+	}
+
+	update := lines(types.Transaction{
+		Type:   types.ApplicationCallTx,
+		Header: types.Header{Sender: sender},
+		ApplicationFields: types.ApplicationFields{ApplicationCallTxnFields: types.ApplicationCallTxnFields{
+			ApplicationID: 9, OnCompletion: types.UpdateApplicationOC, ApprovalProgram: []byte{6}, ClearStateProgram: []byte{6},
+		}},
+	})
+	if strings.Contains(update, "state:") {
+		t.Errorf("an app update shows state sizes, which only a create sets:\n%s", update)
+	}
+	created := lines(types.Transaction{
+		Type:   types.ApplicationCallTx,
+		Header: types.Header{Sender: sender},
+		ApplicationFields: types.ApplicationFields{ApplicationCallTxnFields: types.ApplicationCallTxnFields{
+			ApprovalProgram: []byte{6}, ClearStateProgram: []byte{6},
+			BoxReferences: []types.BoxReference{{Name: []byte("b")}, {ForeignAppIdx: 3, Name: []byte("c")}},
+		}},
+	})
+	for _, want := range []string{"state: global", `box[0]: the app being created, name "b"`, "box[1]: ?app[2] (no such entry)"} {
+		if !strings.Contains(created, want) {
+			t.Errorf("app create review missing %q:\n%s", want, created)
+		}
 	}
 }
