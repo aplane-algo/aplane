@@ -76,11 +76,12 @@ func (a *App) AppCallRaw(ctx context.Context, req AppCallRawRequest) (*AppCallRa
 		SigningKeyType: prep.SigningContext.DisplayKeyType,
 		AppArgsCount:   len(req.AppArgs),
 		AccountsCount:  len(accounts),
-		AppsCount:      len(req.ForeignApps),
-		AssetsCount:    len(foreignAssets),
-		BoxesCount:     len(req.Boxes),
-		Note:           req.Note,
-		PayAmount:      req.PayAmount,
+		// What the transaction carries: the listed apps and any a box added.
+		AppsCount:   len(prepResult.Transaction.ForeignApps),
+		AssetsCount: len(foreignAssets),
+		BoxesCount:  len(req.Boxes),
+		Note:        req.Note,
+		PayAmount:   req.PayAmount,
 		Structured: appresult.AppCall{
 			AppID: req.AppID,
 			Mode:  "raw",

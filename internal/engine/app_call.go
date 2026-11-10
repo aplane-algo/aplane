@@ -60,6 +60,13 @@ func (e *Engine) PrepareAppCallRaw(ctx context.Context, params RawAppCallParams)
 			return nil, fmt.Errorf("invalid account %d address: %w", i+1, err)
 		}
 	}
+	// The list is sent as given, so a zero is refused, not dropped: dropping
+	// it would move every app listed after it.
+	for i, appID := range params.ForeignApps {
+		if appID == 0 {
+			return nil, fmt.Errorf("invalid foreign app %d: app id must be non-zero", i+1)
+		}
+	}
 	for i, assetID := range params.ForeignAssets {
 		if assetID == 0 {
 			return nil, fmt.Errorf("invalid foreign asset %d: asset id must be non-zero", i+1)
@@ -191,12 +198,18 @@ var appspecAppCallInfoRaw = signerapi.AppCallInfo{Mode: "raw"}
 // The caller's entries are kept in order, duplicates and the called app
 // included. A program reads them by position (`txna Applications N`), so
 // tidying the list would move the apps it expects.
+//
+// Which entry a box then points at is the Algorand SDK's rule
+// (`parseBoxReferences`), not decided here: the first entry in the list that
+// matches the box's app, and index 0 only when the called app is not listed.
+// TestPrepareAppCallRaw_SuccessIncludesReferencesAndLsigArgs pins it.
 func ensureAppReferences(curAppID uint64, foreignApps []uint64, boxes []types.AppBoxReference) []uint64 {
 	result := make([]uint64, len(foreignApps), len(foreignApps)+len(boxes))
 	copy(result, foreignApps)
 
 	for _, box := range boxes {
-		// A box of the called app needs no entry: index 0 names it.
+		// A box of the called app needs no entry added: the SDK resolves it
+		// to the called app's listed position, or to index 0 when unlisted.
 		if box.AppID == 0 || box.AppID == curAppID || slices.Contains(result, box.AppID) {
 			continue
 		}

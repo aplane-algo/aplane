@@ -16,6 +16,9 @@ before it was renamed `enroll`.
 - The list is now sent exactly as given: order, repeats, and the called app.
 - An app needed only by a box reference is still added for you, at the end,
   and only when the list doesn't already have it.
+- Repeats and the called app now use reference slots, so a call that listed
+  them near the network's limit can be rejected by the node. `app=0`, which
+  used to be dropped, is refused.
 
 ## The review of a mixed cosigned group no longer calls the signer's own accounts foreign
 

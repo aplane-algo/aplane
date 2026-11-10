@@ -465,3 +465,20 @@ func writeTempProgram(t *testing.T, name string, data []byte) string {
 	}
 	return path
 }
+
+func TestPrepareAppCallRawRefusesAZeroForeignApp(t *testing.T) {
+	from := testAddr(1)
+	transport := newAccountMockTransport(t)
+	transport.addAccount(from, 1_000_000)
+	eng := setupEngineWithMockAlgod(t, transport)
+
+	_, err := eng.PrepareAppCallRaw(context.Background(), RawAppCallParams{
+		AppID:        123,
+		From:         from,
+		ForeignApps:  []uint64{456, 0, 789},
+		OnCompletion: types.NoOpOC,
+	})
+	if err == nil || !strings.Contains(err.Error(), "invalid foreign app 2") {
+		t.Fatalf("PrepareAppCallRaw with a zero foreign app: %v, want it refused by position", err)
+	}
+}

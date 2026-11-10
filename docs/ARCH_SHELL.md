@@ -1386,10 +1386,20 @@ concerns. The architectural rule is:
 - any canonicalization or merge policy belongs in the engine, not in CLI, JS,
   or MCP wrappers
 
-App interaction does not include a rich reference-planning abstraction. It
-establishes the ownership boundary for normalization work
-such as deduplication, ordering guarantees, and merge rules between
-ABI-derived and user-supplied references.
+App interaction does not include a rich reference-planning abstraction. The
+engine's merge policy is small and fixed:
+
+- References the caller lists are sent exactly as given: in order, with
+  repeats, and with the called app if it is listed. A program reads them by
+  position, so the engine never deduplicates or reorders them. A zero app or
+  asset ID is refused, not dropped.
+- An app needed only by a box reference is appended, and only when the list
+  doesn't already have it.
+- Which entry a box points at is the Algorand SDK's rule: the first matching
+  entry in the list, and index 0 only when the called app is not listed.
+
+Any later merge rule between ABI-derived and user-supplied references belongs
+in the engine too, and has to keep the caller's entries where they were put.
 
 ### Signer Approval Descriptions
 

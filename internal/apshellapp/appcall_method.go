@@ -83,11 +83,12 @@ func (a *App) AppCallMethod(ctx context.Context, req AppCallMethodRequest) (*App
 		Method:         prepared.MethodSignature,
 		ArgsCount:      len(req.ArgValues),
 		AccountsCount:  len(accounts),
-		AppsCount:      len(req.ForeignApps),
-		AssetsCount:    len(foreignAssets),
-		BoxesCount:     len(req.Boxes),
-		Note:           req.Note,
-		PayAmount:      req.PayAmount,
+		// What the transaction carries: the listed apps and any a box added.
+		AppsCount:   len(preparedResult.Prep.Transaction.ForeignApps),
+		AssetsCount: len(foreignAssets),
+		BoxesCount:  len(req.Boxes),
+		Note:        req.Note,
+		PayAmount:   req.PayAmount,
 		Structured: appresult.AppCall{
 			AppID:  req.AppID,
 			Method: prepared.MethodSignature,
