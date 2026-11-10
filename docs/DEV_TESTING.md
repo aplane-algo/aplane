@@ -1104,6 +1104,9 @@ Some code is intentionally excluded from coverage targets:
 
 CI runs automatically on all pushes and PRs to master/main branches via GitHub Actions (`.github/workflows/ci.yml`).
 
+A new push to a pull request cancels the run on the commit it replaced, since only the
+pull request's head decides a merge. A run on `main` is never cancelled.
+
 #### What Runs in CI
 
 | Job | Checks | Runs On |

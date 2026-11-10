@@ -6,6 +6,14 @@ on:
   pull_request:
     branches: [master, main]
 
+# A new push to a pull request cancels the run on the commit it replaced: that
+# commit is no longer the pull request's head, so its result decides nothing.
+# A run on main is never cancelled. Its group is its own commit, so pushes there
+# don't share one.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   lint:
     name: Lint
