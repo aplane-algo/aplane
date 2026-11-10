@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	apconfig "github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/cosigner/canonical"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 
@@ -454,14 +455,13 @@ func decodeTransactions(requests []signerapi.SignRequest, passthroughIndices map
 			return nil, nil, badRequest(fmt.Sprintf("transaction %d: invalid hex encoding", i+1))
 		}
 
-		txnBytes := txnBytesWithPrefix
-		if len(txnBytes) > 2 && txnBytes[0] == 'T' && txnBytes[1] == 'X' {
-			txnBytes = txnBytes[2:]
-		}
-
-		var txn types.Transaction
-		if err := msgpack.Decode(txnBytes, &txn); err != nil {
-			return nil, nil, badRequest(fmt.Sprintf("transaction %d: invalid msgpack", i+1))
+		// The bytes must be the canonical encoding of the transaction they
+		// decode to. A lenient decode accepts trailing data, a repeated field
+		// and a wrong-length address, and the signer would then review and
+		// sign a re-encoding that differs from what the client sent.
+		txn, decodeErr := canonical.DecodeTXPrefixed(txnBytesWithPrefix)
+		if decodeErr != nil {
+			return nil, nil, badRequest(fmt.Sprintf("transaction %d: %v", i+1, decodeErr))
 		}
 
 		txns[i] = txn

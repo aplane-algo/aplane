@@ -84,7 +84,7 @@ Three distinct byte representations appear in the signing flow:
 |--------|---------|----------|
 | **Unsigned transaction encoding** | msgpack(txn) | Internal transaction representation |
 | **Signing preimage** | `"TX"` + msgpack(txn) | Ed25519 signs this directly; Falcon hashes it to derive the transaction ID |
-| **Transport field** (`txn_bytes_hex`) | Hex encoding of the signing preimage | Wire format in `/sign` and `/plan` requests. Server strips the `TX` prefix before msgpack decoding. |
+| **Transport field** (`txn_bytes_hex`) | Hex encoding of the signing preimage | Wire format in `/sign` and `/plan` requests. The server requires the `TX` prefix and the canonical encoding, and refuses anything else with 400. |
 
 ### Derivation by Key Type
 

@@ -14,6 +14,7 @@ import (
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
+	"github.com/aplane-algo/aplane/internal/txnutil"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
@@ -331,7 +332,7 @@ func TestPlanGroupBudgetsNativeFalconBeforeApproval(t *testing.T) {
 		keyTypes: map[string]string{authorizer: nativefalcon.KeyType},
 	}, PlannerOptions{GenesisHashResolver: resolver})
 	plan, planErr := planner.PlanGroup(signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{
-		AuthAddress: authorizer, TxnBytesHex: hex.EncodeToString(msgpack.Encode(txn)),
+		AuthAddress: authorizer, TxnBytesHex: txnutil.EncodeWithPrefixHex(txn),
 	}}})
 	if planErr != nil {
 		t.Fatal(planErr)
@@ -358,7 +359,7 @@ func planFeeAt(t *testing.T, planner *Planner, authorizer string, txn types.Tran
 	t.Helper()
 	txn.Fee = types.MicroAlgos(fee)
 	plan, err := planner.PlanGroup(signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{
-		AuthAddress: authorizer, TxnBytesHex: hex.EncodeToString(msgpack.Encode(txn)),
+		AuthAddress: authorizer, TxnBytesHex: txnutil.EncodeWithPrefixHex(txn),
 	}}})
 	if err != nil {
 		t.Fatalf("PlanGroup() at fee %d: %v", fee, err)

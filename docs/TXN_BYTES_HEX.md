@@ -92,8 +92,9 @@ on key type:
 
 ### Signer Processing
 
-The signer hex-decodes `TxnBytesHex`, strips the leading `TX` prefix if present,
-and msgpack-decodes the remaining bytes into a `types.Transaction`. The decoded
+The signer hex-decodes `TxnBytesHex`, requires the leading `TX` prefix,
+msgpack-decodes the remaining bytes into a `types.Transaction`, and refuses
+the request unless re-encoding that transaction gives back the same bytes. The decoded
 form drives policy checks and approval rendering. The actual signing message is
 derived from the *final planned* transaction (after group ID, dummy, and fee
 canonicalization), not from the raw inbound bytes. Implementation:
@@ -145,8 +146,12 @@ The strict client-side helpers — `txnutil.EncodeWithPrefixHex` and
 `txnutil.DecodePrefixedHex` in `internal/txnutil/txn.go` — round-trip the
 canonical TX-prefixed hex form. `DecodePrefixedHex` rejects input without the
 `TX` prefix and is used by clients consuming planned unsigned transactions.
-The server request decoder remains backward-tolerant of unprefixed msgpack for
-inbound requests, but clients should send and expect the TX-prefixed form.
+The server request decoder is as strict: `/sign` and `/plan` refuse, with 400,
+sign-mode or foreign bytes that lack the `TX` prefix or are not the canonical
+encoding of the transaction they decode to (trailing data, a repeated field, a
+wrong-length address, an explicit empty field). What the signer reviews and
+signs is then always byte for byte what the client sent, apart from the
+changes it reports.
 
 ## Coverage
 

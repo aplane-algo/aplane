@@ -7,6 +7,17 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## The signer refuses request bytes that aren't canonical
+
+- `/sign` and `/plan` decoded a request's transaction bytes leniently: the `TX`
+  prefix was optional, and trailing data, a repeated field and a wrong-length
+  address were accepted. The signer then reviewed and signed its own
+  re-encoding, which could differ from the bytes the client sent, so the
+  client's transaction ID no longer matched.
+- Sign-mode and foreign bytes must now be `TX`-prefixed and canonical, as
+  every other signer endpoint already required. Anything else is a 400.
+- apshell and the SDKs have always sent this form.
+
 ## The review of a mixed cosigned group no longer calls the signer's own accounts foreign
 
 - A mixed cosigned group is signed in several requests, and each shows the whole
