@@ -74,10 +74,16 @@ Every signer data root has one root `node.yaml` role:
 | `signer` | ordinary and cosigned account keys | signer-custodied witness private keys |
 | `cosigner` | witness private keys serving the cosigner role and cosigner-domain policy | any spending key, cosigned accounts included |
 
-There is no supported `dual` role. Development or production co-location uses
-separate data roots and separate `apsigner` processes. Same-host co-location
-does not create independent trust; independence is an operational property of
-who controls the signer and cosigner nodes.
+There is no supported `dual` role: a node holds signing keys or cosigner
+witness keys, never both. The reason is operational simplicity, not safety.
+One role per node keeps the key inventory, the policy document format and the
+HTTP signing dispatch single-purpose. A deployment that wants both on one host
+runs two `apsigner` processes with separate data roots.
+
+Whether a cosigner is independent of the signer is a separate question, and
+the role split doesn't answer it. Independence comes from who controls each
+node and its credentials: two processes on one host under one operator are
+not independent.
 
 The node role gates key generation, mnemonic import, restore, key scanning, and
 HTTP signing dispatch. Role conflicts fail closed instead of silently skipping

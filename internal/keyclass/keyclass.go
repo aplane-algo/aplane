@@ -17,7 +17,10 @@ import (
 var ErrNodeRoleConflict = errors.New("node role inventory conflict")
 
 // NodeRoleAllowsKeyType reports whether the single-purpose node role permits
-// keyType to exist in the identity's key inventory.
+// keyType to exist in the identity's key inventory. A signer holds no witness
+// keys and a cosigner holds only witness keys. The roles are exclusive for
+// operational simplicity, not safety: independence between a signer and its
+// cosigner comes from who controls each node, not from this split.
 func NodeRoleAllowsKeyType(role noderole.Role, keyType string) bool {
 	isCosignerComponent := witness.IsKeyType(keyType)
 	switch role {

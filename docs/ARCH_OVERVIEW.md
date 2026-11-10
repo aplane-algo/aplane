@@ -189,7 +189,9 @@ account's program is the trust anchor. An endpoint alias or a `/keys` discovery
 result helps find a route to that key, but cannot substitute another key.
 
 A signer-role store holds account authority; a cosigner-role store holds
-witness credentials used for component signing. There is no mixed node role.
+witness credentials used for component signing. There is no mixed node role;
+the roles are exclusive to keep each node single-purpose, which is an
+operational choice, not a safety rule.
 Running these nodes as separate processes on one machine separates their
 storage and interfaces, but does not by itself create independent trust.
 Independence depends on who controls the machines and credentials. See
