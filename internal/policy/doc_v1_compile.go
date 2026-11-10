@@ -198,11 +198,11 @@ func compileRouteV1(route RouteV1, addressSets map[string]compiledAddressSet, as
 func compileRekeyPolicyV1(rules []RekeyRuleV1, addressSets map[string]compiledAddressSet) (*RekeyPolicy, error) {
 	out := &RekeyPolicy{Allowed: make([]CompiledRekeyRule, 0, len(rules))}
 	for i, rule := range rules {
-		sender, err := compileRekeyAddressTerms(fmt.Sprintf("allowed[%d].sender", i), []string{rule.Sender}, addressSets)
+		sender, err := compileRekeyAddressTerms(fmt.Sprintf("allowed[%d].sender", i), []string{rule.Sender}, addressSets, false)
 		if err != nil {
 			return nil, err
 		}
-		targets, err := compileRekeyAddressTerms(fmt.Sprintf("allowed[%d].targets", i), rule.Targets, addressSets)
+		targets, err := compileRekeyAddressTerms(fmt.Sprintf("allowed[%d].targets", i), rule.Targets, addressSets, true)
 		if err != nil {
 			return nil, err
 		}

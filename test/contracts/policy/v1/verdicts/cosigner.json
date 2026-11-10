@@ -349,6 +349,259 @@
       }
     },
     {
+      "name": "an allowed non-transfer type needs no route",
+      "surface": "cosigner",
+      "policies": {
+        "W1": {
+          "transaction_types": {
+            "appl": "allow"
+          }
+        }
+      },
+      "group": [
+        {
+          "type": "appl",
+          "sender": "A1",
+          "app_id": 7
+        }
+      ],
+      "targets": [
+        0
+      ],
+      "component_key": "W1",
+      "expect": {
+        "outcome": "approve"
+      }
+    },
+    {
+      "name": "a wildcard allow covers every type",
+      "surface": "cosigner",
+      "policies": {
+        "W1": {
+          "transaction_types": {
+            "*": "allow"
+          }
+        }
+      },
+      "group": [
+        {
+          "type": "keyreg",
+          "sender": "A1"
+        }
+      ],
+      "targets": [
+        0
+      ],
+      "component_key": "W1",
+      "expect": {
+        "outcome": "approve"
+      }
+    },
+    {
+      "name": "no policy allows a nonparticipating keyreg",
+      "surface": "cosigner",
+      "policies": {
+        "W1": {
+          "transaction_types": {
+            "*": "allow"
+          }
+        }
+      },
+      "group": [
+        {
+          "type": "keyreg",
+          "sender": "A1",
+          "nonparticipation": true
+        }
+      ],
+      "targets": [
+        0
+      ],
+      "component_key": "W1",
+      "expect": {
+        "outcome": "error",
+        "kind": "forbidden",
+        "message": "transaction 1: a keyreg with nonparticipation is not supported: it permanently marks the account as unable to participate"
+      }
+    },
+    {
+      "name": "a type the wildcard allows is still rejected by name",
+      "surface": "cosigner",
+      "policies": {
+        "W1": {
+          "transaction_types": {
+            "*": "allow",
+            "appl": "reject"
+          }
+        }
+      },
+      "group": [
+        {
+          "type": "appl",
+          "sender": "A1",
+          "app_id": 7
+        }
+      ],
+      "targets": [
+        0
+      ],
+      "component_key": "W1",
+      "expect": {
+        "outcome": "reject",
+        "kind": "forbidden",
+        "message": "cosigner policy rejected request: txn 1: [transaction_type:appl] appl transactions are rejected by policy"
+      }
+    },
+    {
+      "name": "an open rekey_policy permits any rekey",
+      "surface": "cosigner",
+      "policies": {
+        "W1": {
+          "reject_rekey": false,
+          "rekey_policy": {
+            "allowed": [
+              {
+                "sender": "*",
+                "targets": [
+                  "*"
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "rekey_to": "A3",
+          "receiver": "A1"
+        }
+      ],
+      "targets": [
+        0
+      ],
+      "component_key": "W1",
+      "expect": {
+        "outcome": "approve"
+      }
+    },
+    {
+      "name": "a self target permits a rekey back to the account's own address",
+      "surface": "cosigner",
+      "policies": {
+        "W1": {
+          "reject_rekey": false,
+          "rekey_policy": {
+            "allowed": [
+              {
+                "sender": "*",
+                "targets": [
+                  "self"
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "rekey_to": "A1",
+          "receiver": "A1"
+        }
+      ],
+      "targets": [
+        0
+      ],
+      "component_key": "W1",
+      "expect": {
+        "outcome": "approve"
+      }
+    },
+    {
+      "name": "a self target permits no other rekey",
+      "surface": "cosigner",
+      "policies": {
+        "W1": {
+          "reject_rekey": false,
+          "rekey_policy": {
+            "allowed": [
+              {
+                "sender": "*",
+                "targets": [
+                  "self"
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "rekey_to": "A3",
+          "receiver": "A1"
+        }
+      ],
+      "targets": [
+        0
+      ],
+      "component_key": "W1",
+      "expect": {
+        "outcome": "reject",
+        "kind": "forbidden",
+        "message": "cosigner policy rejected request: txn 1: [cosigner_policy:reject_rekey] rekey from AEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAKE3PRHE to AMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAANVWEXNA is not allowed by cosigner rekey_policy"
+      }
+    },
+    {
+      "name": "allow_close to a wildcard destination permits a close-out anywhere",
+      "surface": "cosigner",
+      "policies": {
+        "W1": {
+          "reject_close_remainder": false,
+          "transfer_policy": {
+            "routes": [
+              {
+                "id": "anywhere",
+                "networks": [
+                  "testnet"
+                ],
+                "sources": [
+                  "*"
+                ],
+                "assets": [
+                  "algo"
+                ],
+                "destinations": [
+                  "*"
+                ],
+                "allow_close": true
+              }
+            ]
+          }
+        }
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "receiver": "A2",
+          "amount": 5,
+          "close_to": "A9"
+        }
+      ],
+      "targets": [
+        0
+      ],
+      "component_key": "W1",
+      "expect": {
+        "outcome": "approve"
+      }
+    },
+    {
       "name": "the default governs a witness key without its own document",
       "surface": "cosigner",
       "policies": {

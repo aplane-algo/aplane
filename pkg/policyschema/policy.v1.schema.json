@@ -219,10 +219,13 @@
     "cosignerTransactionTypes": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Per-type verdict. A cosigner has no operator: every value is allow or reject, and only pay and axfer, the types routing governs, may be allowed. \"*\" may be omitted; every type the map does not name is rejected.",
+      "description": "Per-type verdict. A cosigner has no operator: every value is allow or reject. Any type may be allowed, \"*\" included. Transfer routing governs pay and axfer; any other allowed type is authorized by its type verdict alone. \"*\" may be omitted; every type the map does not name is then rejected. No verdict covers a keyreg with nonparticipation, which the node always refuses.",
       "properties": {
         "*": {
-          "const": "reject"
+          "enum": [
+            "allow",
+            "reject"
+          ]
         },
         "pay": {
           "enum": [
@@ -237,22 +240,40 @@
           ]
         },
         "acfg": {
-          "const": "reject"
+          "enum": [
+            "allow",
+            "reject"
+          ]
         },
         "afrz": {
-          "const": "reject"
+          "enum": [
+            "allow",
+            "reject"
+          ]
         },
         "keyreg": {
-          "const": "reject"
+          "enum": [
+            "allow",
+            "reject"
+          ]
         },
         "appl": {
-          "const": "reject"
+          "enum": [
+            "allow",
+            "reject"
+          ]
         },
         "stpf": {
-          "const": "reject"
+          "enum": [
+            "allow",
+            "reject"
+          ]
         },
         "hb": {
-          "const": "reject"
+          "enum": [
+            "allow",
+            "reject"
+          ]
         }
       }
     },
@@ -394,7 +415,7 @@
       "required": [
         "allowed"
       ],
-      "description": "Authorizes pure 0-ALGO self-payment rekeys whose sender and target match an allowed edge.",
+      "description": "Authorizes pure 0-ALGO self-payment rekeys whose sender and target match an allowed edge. A sender or a target may be \"*\" (any address). A target may be \"self\": the sender's own address, a rekey back to the account's own key. \"self\" is not a sender term; use \"*\".",
       "properties": {
         "allowed": {
           "type": "array",
@@ -407,13 +428,13 @@
             ],
             "properties": {
               "sender": {
-                "$ref": "#/$defs/addressOrSet"
+                "$ref": "#/$defs/addressTerm"
               },
               "targets": {
                 "type": "array",
                 "minItems": 1,
                 "items": {
-                  "$ref": "#/$defs/addressOrSet"
+                  "$ref": "#/$defs/destinationTerm"
                 }
               }
             }
@@ -480,7 +501,7 @@
         },
         "allow_close": {
           "type": "boolean",
-          "description": "Allow close-outs to this route's destinations. Not allowed with wildcard destinations."
+          "description": "Allow close-outs to this route's destinations. With a wildcard destination, any matching account may be closed out to any address."
         },
         "allow_clawback": {
           "type": "boolean",
@@ -584,16 +605,6 @@
         },
         {
           "const": "self"
-        }
-      ]
-    },
-    "addressOrSet": {
-      "anyOf": [
-        {
-          "$ref": "#/$defs/address"
-        },
-        {
-          "$ref": "#/$defs/setRef"
         }
       ]
     },

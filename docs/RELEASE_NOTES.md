@@ -7,6 +7,19 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## A cosigner policy can be as open as you make it
+
+- A cosigner document's `transaction_types` may allow any type, `"*"` included. It
+  used to accept `allow` only for `pay` and `axfer`. Routes still govern those two;
+  any other allowed type is signed on its type verdict alone.
+- `rekey_policy` accepts `"*"` as a sender or a target, and `"self"` as a target (a
+  rekey back to the account's own address). `"self"` as a sender is refused, since a
+  sender is always itself; use `"*"`.
+- A route may set `allow_close` with a `"*"` destination, on both node roles.
+- `appolicy check` and `apadmin policy apply` print an advisory for each of these wide
+  choices, saying what it means. Nothing coherent is refused.
+- No policy allows a `keyreg` with nonparticipation; the node refuses it before policy.
+
 ## Cosigned groups charge the right account
 
 - In a group with a cosigned account, the signer's own non-cosigned positions are now

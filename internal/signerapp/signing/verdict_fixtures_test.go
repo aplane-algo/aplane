@@ -131,6 +131,9 @@ type verdictTxn struct {
 	AssetSender   string  `json:"asset_sender,omitempty"`
 	AssetCloseTo  string  `json:"asset_close_to,omitempty"`
 	AppID         uint64  `json:"app_id,omitempty"`
+	// Nonparticipation marks a keyreg as nonparticipating, which no policy
+	// can allow.
+	Nonparticipation bool `json:"nonparticipation,omitempty"`
 }
 
 // verdictWant is what the daemon decided. Outcome is "reject" (a policy
@@ -682,6 +685,7 @@ func (spec verdictTxn) build(t *testing.T) types.Transaction {
 		txn.ApplicationID = types.AppIndex(spec.AppID)
 	case "keyreg":
 		txn.Type = types.KeyRegistrationTx
+		txn.Nonparticipation = spec.Nonparticipation
 	default:
 		t.Fatalf("unknown transaction type %q", spec.Type)
 	}

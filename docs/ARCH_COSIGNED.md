@@ -689,13 +689,16 @@ DSA-agnostic: it examines decoded transaction details and transfer movements,
 not which DSA mechanism produced the spending signature. On a `plain1` account,
 which has no on-chain limits, it is the policy that restricts what the account signs.
 
-Cosigner transfer policy is a positive authorization surface. Supported target
-movements include direct transfers that policy routing can evaluate. Target
-shapes that cannot be represented as supported cosigner movements fail closed.
+A cosigner is driven entirely by its policy document. `transaction_types`
+decides which types it signs, and may allow any of them. Transfer routing is
+the allow-list for `pay` and `axfer`: a movement no route covers is rejected.
+Any other allowed type is authorized by its type verdict alone. A `keyreg`
+with nonparticipation is refused before any policy.
 `reject_rekey:true` rejects every rekey the cosigner is asked to sign. If it is
 false, a non-zero `RekeyTo` is authorized only when the transaction is a pure
 0 ALGO self-payment and `rekey_policy.allowed` contains a matching
-sender-to-target edge. Missing `rekey_policy` still fails closed.
+sender-to-target edge; an edge may use `*` on either side, and `self` as a
+target. Missing `rekey_policy` still fails closed.
 
 A cosigned account asks the cosigner for every spend and every cosigned
 rekey (`rekey: spending_key`, or an unlisted target under `plus_cosigned`): such

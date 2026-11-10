@@ -20,8 +20,13 @@ type CompiledRekeyRule struct {
 	Targets compiledRekeyAddressTerms
 }
 
+// compiledRekeyAddressTerms is one side of a rekey rule. Any matches every
+// address. Self, a target-only term, matches the sender's own address: a rekey
+// back to the account's own key.
 type compiledRekeyAddressTerms struct {
 	Direct []types.Address
+	Any    bool
+	Self   bool
 }
 
 func (p *RekeyPolicy) Clone() *RekeyPolicy {
@@ -46,14 +51,17 @@ func (p *RekeyPolicy) Allows(sender, target types.Address) bool {
 		if !rekeyAddressTermsContain(rule.Sender, sender) {
 			continue
 		}
-		if rekeyAddressTermsContain(rule.Targets, target) {
+		if rekeyAddressTermsContain(rule.Targets, target) || (rule.Targets.Self && target == sender) {
 			return true
 		}
 	}
 	return false
 }
 
-func compileRekeyAddressTerms(label string, raw []string, addressSets map[string]compiledAddressSet) (compiledRekeyAddressTerms, error) {
+// compileRekeyAddressTerms compiles one side of a rekey rule. allowSelf is
+// true for targets only: a sender is always itself, so "self" there would be
+// "*" under another name.
+func compileRekeyAddressTerms(label string, raw []string, addressSets map[string]compiledAddressSet, allowSelf bool) (compiledRekeyAddressTerms, error) {
 	if len(raw) == 0 {
 		return compiledRekeyAddressTerms{}, fmt.Errorf("rekey_policy.%s is required", label)
 	}
@@ -64,9 +72,12 @@ func compileRekeyAddressTerms(label string, raw []string, addressSets map[string
 		case term == "":
 			return compiledRekeyAddressTerms{}, fmt.Errorf("rekey_policy.%s contains an empty address term", label)
 		case term == "*":
-			return compiledRekeyAddressTerms{}, fmt.Errorf("rekey_policy.%s does not support wildcard addresses", label)
+			out.Any = true
 		case term == "self":
-			return compiledRekeyAddressTerms{}, fmt.Errorf("rekey_policy.%s does not support self", label)
+			if !allowSelf {
+				return compiledRekeyAddressTerms{}, fmt.Errorf(`rekey_policy.%s: self is meaningless as a sender; use "*"`, label)
+			}
+			out.Self = true
 		case strings.HasPrefix(term, "@"):
 			name := strings.TrimPrefix(term, "@")
 			set, ok := addressSets[name]
@@ -85,13 +96,16 @@ func compileRekeyAddressTerms(label string, raw []string, addressSets map[string
 			out.Direct = append(out.Direct, addr)
 		}
 	}
-	if len(out.Direct) == 0 {
+	if len(out.Direct) == 0 && !out.Any && !out.Self {
 		return compiledRekeyAddressTerms{}, fmt.Errorf("rekey_policy.%s must resolve to at least one address", label)
 	}
 	return out, nil
 }
 
 func rekeyAddressTermsContain(terms compiledRekeyAddressTerms, candidate types.Address) bool {
+	if terms.Any {
+		return true
+	}
 	for _, addr := range terms.Direct {
 		if addr == candidate {
 			return true
@@ -101,5 +115,5 @@ func rekeyAddressTermsContain(terms compiledRekeyAddressTerms, candidate types.A
 }
 
 func cloneCompiledRekeyAddressTerms(in compiledRekeyAddressTerms) compiledRekeyAddressTerms {
-	return compiledRekeyAddressTerms{Direct: append([]types.Address(nil), in.Direct...)}
+	return compiledRekeyAddressTerms{Direct: append([]types.Address(nil), in.Direct...), Any: in.Any, Self: in.Self}
 }

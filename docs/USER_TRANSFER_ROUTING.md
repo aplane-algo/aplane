@@ -1013,9 +1013,11 @@ version makes deny-all (`transaction_types` `{"*": "reject"}`, no routes,
 that is meant to sign. A cosigner document's `transfer_policy` has only
 `blocked_destinations` and `routes`: there is no `on_no_route` family,
 because an unmatched movement, close-out, or clawback is always rejected.
-Cosigner route and document `limits` accept only `reject_above`, and
-`transaction_types` may allow only `pay` and `axfer`. A cosigner key with no
-file follows the default and so rejects every request.
+Cosigner route and document `limits` accept only `reject_above`.
+`transaction_types` may allow any type, `*` included; routes govern `pay` and
+`axfer`, and any other allowed type is signed on its type verdict alone, which
+`appolicy check` reports as an advisory. A cosigner key with no file follows
+the default and so rejects every request.
 
 A cosigned plain host account without bounds (`aplane.falcon1024.v1` or
 `aplane.ed25519.v1` with a cosigner and no bounds parameter) has no fee ceiling, and its program admits any transaction type,
@@ -1107,8 +1109,11 @@ Common validation failures:
 - route `limits` naming a network or asset the route does not cover,
 - `asset_sources` without `"allow_clawback": true`,
 - `"allow_clawback": true` without `asset_sources`,
-- `self` in clawback routes,
-- `"allow_close": true` with wildcard destinations.
+- `self` in clawback routes.
+
+`"allow_close": true` with a wildcard destination is accepted: it lets any
+matching account be closed out to any address, and `appolicy check` says so
+in an advisory.
 
 `default`, `on_route_miss`, and `enabled` are not valid field names. Use
 `on_no_route`; routing has no switch.
