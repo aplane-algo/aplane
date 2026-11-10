@@ -45,16 +45,28 @@ func TestCosignerMayAllowAnyTransactionType(t *testing.T) {
 			}
 		}
 		advisory, ok := advisoryByRule(doc.Advisories(), ConfigAdvisoryCosignerTypeWithoutRouting)
-		if !ok || advisory.Pointer != "/transaction_types" || !strings.Contains(advisory.Message, "appl") ||
-			!strings.Contains(advisory.Message, "allowed with no routing behind it; the cosigner authorizes it on type alone") {
+		if !ok || advisory.Pointer != "/transaction_types" {
 			t.Fatalf("%s: advisory = %+v, %v", name, advisory, ok)
 		}
-		if strings.Contains(advisory.Message, "pay") || strings.Contains(advisory.Message, "axfer") {
-			t.Fatalf("%s: the advisory names a routed type: %s", name, advisory.Message)
+		want := "appl is allowed with no routing behind it; the cosigner authorizes it on type alone"
+		if name == "wildcard" {
+			want = `"*" allows every type the map doesn't reject, including any type added later (today: acfg, afrz, keyreg, appl, stpf, hb); other than pay and axfer they have no routing behind them, and the cosigner authorizes them on type alone`
 		}
-		if name == "wildcard" && !strings.Contains(advisory.Message, "keyreg") {
-			t.Fatalf("wildcard advisory doesn't list keyreg: %s", advisory.Message)
+		if advisory.Message != want {
+			t.Fatalf("%s: advisory message = %q, want %q", name, advisory.Message, want)
 		}
+	}
+
+	// Several named types read as a plural.
+	several := mustCosignerDoc(t, testWitnessKeyIDV1, `{"transaction_types":{"appl":"allow","keyreg":"allow"}}`)
+	if advisory, _ := advisoryByRule(several.Advisories(), ConfigAdvisoryCosignerTypeWithoutRouting); advisory.Message != "keyreg, appl are allowed with no routing behind them; the cosigner authorizes them on type alone" {
+		t.Fatalf("several types: advisory message = %q", advisory.Message)
+	}
+	// A wildcard allow is reported even when every type known today is
+	// rejected by name: a type added later would be signed on type alone.
+	future := mustCosignerDoc(t, testWitnessKeyIDV1, `{"transaction_types":{"*":"allow","acfg":"reject","afrz":"reject","keyreg":"reject","appl":"reject","stpf":"reject","hb":"reject"}}`)
+	if advisory, ok := advisoryByRule(future.Advisories(), ConfigAdvisoryCosignerTypeWithoutRouting); !ok || !strings.Contains(advisory.Message, "including any type added later (none of today's types)") {
+		t.Fatalf("wildcard with every known type rejected: advisory = %+v, %v", advisory, ok)
 	}
 
 	// Only transfer types allowed: nothing to advise.
@@ -155,5 +167,48 @@ func TestRouteMayCloseOutToAnyAddress(t *testing.T) {
 	listed := mustSignerDoc(t, DefaultKey, fmt.Sprintf(`{"transfer_policy":{"routes":[{"id":"r","networks":["testnet"],"sources":["*"],"assets":["algo"],"destinations":[%q],"allow_close":true}]}}`, v1Vendor.String()))
 	if advisory, ok := advisoryByRule(listed.Advisories(), ConfigAdvisoryRouteCloseToAnyAddress); ok {
 		t.Fatalf("unexpected advisory: %+v", advisory)
+	}
+}
+
+// A cosigner with no fee cap is advised whenever its document lets it sign,
+// through a route or through a type allowed without routing. It has no
+// warning review, so nothing else questions a fee.
+func TestCosignerNoFeeCapAdvisoryCoversTypesWithoutRoutes(t *testing.T) {
+	for name, tc := range map[string]struct {
+		doc  string
+		want bool
+	}{
+		"a type without routes, no cap":     {`{"max_fee_microalgos":"0","transaction_types":{"appl":"allow"}}`, true},
+		"a wildcard without routes, no cap": {`{"max_fee_microalgos":"0","transaction_types":{"*":"allow"}}`, true},
+		"a type without routes, capped":     {`{"max_fee_microalgos":"5000","transaction_types":{"appl":"allow"}}`, false},
+		"nothing allowed, no cap":           {`{"max_fee_microalgos":"0","transaction_types":{"pay":"allow"}}`, false},
+	} {
+		_, got := advisoryByRule(mustCosignerDoc(t, testWitnessKeyIDV1, tc.doc).Advisories(), ConfigAdvisoryCosignerNoFeeCap)
+		if got != tc.want {
+			t.Errorf("%s: no-fee-cap advisory = %v, want %v", name, got, tc.want)
+		}
+	}
+}
+
+// An advisory describes what the document does, so it stays silent where
+// another setting already rejects the thing it would describe.
+func TestWideChoiceAdvisoriesFollowTheRejectSettings(t *testing.T) {
+	rekey := mustCosignerDoc(t, testWitnessKeyIDV1, `{"reject_rekey":true,"rekey_policy":{"allowed":[{"sender":"*","targets":["*"]}]}}`)
+	if advisory, ok := advisoryByRule(rekey.Advisories(), ConfigAdvisoryRekeyPolicyAnyTarget); ok {
+		t.Fatalf("reject_rekey is on, but the open rekey rule was advised: %+v", advisory)
+	}
+	route := `"transfer_policy":{"routes":[{"id":"r","networks":["testnet"],"sources":["*"],"assets":["*"],"destinations":["*"],"allow_close":true}]}`
+	for name, tc := range map[string]struct {
+		rejects string
+		want    bool
+	}{
+		"both close-outs rejected": {`"reject_close_remainder":true,"reject_asset_close":true`, false},
+		"only ALGO close rejected": {`"reject_close_remainder":true,"reject_asset_close":false`, true},
+		"neither rejected":         {`"reject_close_remainder":false,"reject_asset_close":false`, true},
+	} {
+		doc := mustCosignerDoc(t, testWitnessKeyIDV1, "{"+tc.rejects+","+route+"}")
+		if _, got := advisoryByRule(doc.Advisories(), ConfigAdvisoryRouteCloseToAnyAddress); got != tc.want {
+			t.Errorf("%s: close-to-any-address advisory = %v, want %v", name, got, tc.want)
+		}
 	}
 }

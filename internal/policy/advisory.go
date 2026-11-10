@@ -5,6 +5,7 @@ package policy
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/noderole"
@@ -19,9 +20,10 @@ const (
 	// ConfigAdvisoryRejectedTypeRouted reports a route for a transfer type
 	// the document's transaction_types rejects; the route can never match.
 	ConfigAdvisoryRejectedTypeRouted = "policy_overlap:transaction_types:route_unreachable"
-	// ConfigAdvisoryCosignerNoFeeCap reports a cosigner document that allows
-	// movements but caps no fee: a cosigner has no warning review, so a
-	// permitted self-payment can carry any fee.
+	// ConfigAdvisoryCosignerNoFeeCap reports a cosigner document that lets the
+	// cosigner sign, through a route or a type allowed without routing, but
+	// caps no fee: a cosigner has no warning review, so a transaction it signs
+	// can carry any fee.
 	ConfigAdvisoryCosignerNoFeeCap = "policy_fee:cosigner_routes_without_fee_cap"
 	// ConfigAdvisoryCosignerTypeWithoutRouting reports a cosigner document
 	// that allows a type transfer routing doesn't govern: nothing but the type
@@ -85,49 +87,61 @@ func (d *PolicyV1) Advisories() []ConfigAdvisory {
 		if len(rejected) > 0 {
 			add(ConfigAdvisoryRejectedTypeRouted, "/transaction_types", fmt.Sprintf("transaction_types rejects %s, so no route can match that type", strings.Join(rejected, " and ")))
 		}
-		if d.Role == noderole.RoleCosigner && d.MaxFeeMicroAlgos == 0 {
-			add(ConfigAdvisoryCosignerNoFeeCap, "/max_fee_microalgos", "routes permit movements but max_fee_microalgos is 0 (no cap); a cosigner has no warning review, so a permitted self-payment can carry any fee")
-		}
 	}
 	if d.Role == noderole.RoleCosigner {
+		// The types the document allows that transfer routing doesn't govern.
+		// A "*" allow also covers any type a later release adds, which no list
+		// of today's names can show.
 		var unrouted []string
 		for _, txType := range TransactionTypeNames {
 			if !transferTransactionTypes[txType] && d.TransactionTypes.Verdict(txType) == TransactionTypeAllow {
 				unrouted = append(unrouted, txType)
 			}
 		}
-		if len(unrouted) > 0 {
-			verb := "is"
-			if len(unrouted) > 1 {
-				verb = "are"
+		wildcardAllows := d.TransactionTypes[TransactionTypeWildcard] == TransactionTypeAllow
+		switch {
+		case wildcardAllows:
+			today := "none of today's types"
+			if len(unrouted) > 0 {
+				today = "today: " + strings.Join(unrouted, ", ")
 			}
 			add(ConfigAdvisoryCosignerTypeWithoutRouting, "/transaction_types", fmt.Sprintf(
-				"%s %s allowed with no routing behind it; the cosigner authorizes it on type alone",
-				strings.Join(unrouted, ", "), verb))
+				`"*" allows every type the map doesn't reject, including any type added later (%s); other than pay and axfer they have no routing behind them, and the cosigner authorizes them on type alone`, today))
+		case len(unrouted) == 1:
+			add(ConfigAdvisoryCosignerTypeWithoutRouting, "/transaction_types", fmt.Sprintf(
+				"%s is allowed with no routing behind it; the cosigner authorizes it on type alone", unrouted[0]))
+		case len(unrouted) > 1:
+			add(ConfigAdvisoryCosignerTypeWithoutRouting, "/transaction_types", fmt.Sprintf(
+				"%s are allowed with no routing behind them; the cosigner authorizes them on type alone", strings.Join(unrouted, ", ")))
+		}
+		// A cosigner has no warning review, so nothing else questions a fee.
+		// It signs whenever a route permits a movement or a type is allowed
+		// without routing.
+		if d.MaxFeeMicroAlgos == 0 && (len(d.Routes) > 0 || wildcardAllows || len(unrouted) > 0) {
+			add(ConfigAdvisoryCosignerNoFeeCap, "/max_fee_microalgos", "this document lets the cosigner sign, but max_fee_microalgos is 0 (no cap); a cosigner has no warning review, so a transaction it signs can carry any fee")
 		}
 	}
-	for i, rule := range d.RekeyPolicy {
-		for _, target := range rule.Targets {
-			if target == "*" {
+	// reject_rekey rejects every rekey whatever rekey_policy says, so an open
+	// rule is only worth reporting when rekeys can reach it.
+	if !d.RejectRekey {
+		for i, rule := range d.RekeyPolicy {
+			if slices.Contains(rule.Targets, "*") {
 				sender := rule.Sender
 				if sender == "*" {
 					sender = "any sender"
 				}
 				add(ConfigAdvisoryRekeyPolicyAnyTarget, fmt.Sprintf("/rekey_policy/allowed/%d/targets", i),
 					fmt.Sprintf("rekey_policy lets %s rekey to any address", sender))
-				break
 			}
 		}
 	}
-	for i, route := range d.Routes {
-		if !route.AllowClose {
-			continue
-		}
-		for _, destination := range route.Destinations {
-			if destination == "*" {
+	// Likewise a route's allow_close does nothing while both close-out
+	// rejections are on; the overlap advisories above report that case.
+	if !d.RejectCloseRemainder || !d.RejectAssetClose {
+		for i, route := range d.Routes {
+			if route.AllowClose && slices.Contains(route.Destinations, "*") {
 				add(ConfigAdvisoryRouteCloseToAnyAddress, fmt.Sprintf("/transfer_policy/routes/%d/allow_close", i),
 					"this route lets any matching account be closed out to any address")
-				break
 			}
 		}
 	}

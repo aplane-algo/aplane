@@ -1022,10 +1022,12 @@ the default and so rejects every request.
 A cosigned plain host account without bounds (`aplane.falcon1024.v1` or
 `aplane.ed25519.v1` with a cosigner and no bounds parameter) has no fee ceiling, and its program admits any transaction type,
 closes included, so its cosigner's document is the only check on its spends
-besides the spending key. That document still allows only `pay` and `axfer`, so
-the account's other transaction types are never cosigned. Keep
-`max_fee_microalgos` finite, and the close and clawback rejections on unless the
-account needs them.
+besides the spending key. The shipped presets allow only `pay` and `axfer`, so
+under them the account's other transaction types are never cosigned. That is
+the document's choice, not a fixed rule: a cosigner document may allow any
+type, and a type it allows other than `pay` and `axfer` is cosigned on its type
+alone, with no route behind it. Keep `max_fee_microalgos` finite, and the close
+and clawback rejections on unless the account needs them.
 
 ```json
 {
@@ -1071,8 +1073,9 @@ with the key filled in; the routes are what you add. `apadmin policy apply`
 takes one file per document and leaves documents for other keys unchanged;
 `apadmin policy remove <WitnessKeyID>` deletes a key's file, after which the
 key follows the default again. A finite `max_fee_microalgos` matters here: a
-cosigner has no warning review, so a permitted self-payment with no cap can
-carry any fee, and `check` warns when routes exist without one.
+cosigner has no warning review, so a transaction it signs with no cap can
+carry any fee, and `check` warns when the document lets the cosigner sign
+without one.
 
 ## Validation Rules
 

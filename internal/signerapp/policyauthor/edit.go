@@ -45,7 +45,8 @@ const (
 	TermAsset       TermKind = "asset"        // "algo", "asa:<id>", "*" or "@set"
 	TermAssetRef    TermKind = "asset_ref"    // "algo" or "asa:<id>"
 	TermNetwork     TermKind = "network"      // a network token, or "*"
-	TermRekeyTarget TermKind = "rekey_target" // an address or "@set"
+	TermRekeySender TermKind = "rekey_sender" // an address, "*" or a flat "@set"
+	TermRekeyTarget TermKind = "rekey_target" // an address, "*", "self" or a flat "@set"
 )
 
 // EditSpec says how a field is edited: what it takes and where the value is
@@ -203,8 +204,18 @@ func checkTerm(kind TermKind, term string) error {
 			return nil
 		}
 		return address()
+	case TermRekeySender:
+		// A sender is always itself, so "self" there would be "*" under
+		// another name.
+		if term == "self" {
+			return fmt.Errorf(`self is meaningless as a rekey_policy sender; use "*"`)
+		}
+		if term == "*" || set {
+			return nil
+		}
+		return address()
 	case TermRekeyTarget:
-		if set {
+		if term == "*" || term == "self" || set {
 			return nil
 		}
 		return address()
@@ -414,7 +425,11 @@ func (e EditSpec) Suggestions(d *policy.Draft) []string {
 	case TermDestination:
 		add("*", "self")
 		sets("/address_sets", false)
+	case TermRekeySender:
+		add("*")
+		sets("/address_sets", true)
 	case TermRekeyTarget:
+		add("*", "self")
 		sets("/address_sets", true)
 	case TermAsset:
 		add("algo", "*")

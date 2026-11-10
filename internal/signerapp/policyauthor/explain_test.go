@@ -53,7 +53,7 @@ func TestExplainCosignerDocument(t *testing.T) {
 	assertLines(t, out,
 		"Cosigner key document for "+testWitnessKeyID,
 		"Transfers: allowlist; a transfer no route allows is rejected",
-		"Rekeys allowed only along these edges, each as a zero-amount self-payment:",
+		"Rekeys allowed along these edges, each as a zero-amount self-payment:",
 		"  "+testSignerKey+" to @new_auth",
 	)
 	if strings.Contains(out, "review above") || strings.Contains(out, "Reviewed transaction types") {
@@ -132,4 +132,14 @@ func TestExplainSelfNoOpIsConditional(t *testing.T) {
 	if strings.Contains(explain(`{"auto_approve_self_noop_transfer": false}`), "Self no-op") {
 		t.Fatal("self no-op described while the flag is off")
 	}
+}
+
+// An open rekey rule reads in words: a wildcard sender is "any sender", and
+// the targets say "any address" and "its own address".
+func TestExplainOpenRekeyRule(t *testing.T) {
+	out := explainFixture(t, "cosigner_key_open.json", asa.BuiltinMetadata)
+	assertLines(t, out,
+		"Rekeys allowed along these edges, each as a zero-amount self-payment:",
+		"  any sender to any address, its own address",
+	)
 }

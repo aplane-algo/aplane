@@ -1430,7 +1430,7 @@ still apply independently.
 
 The cosigner equivalent is one file per witness key. Its `transfer_policy`
 holds only `routes` and `blocked_destinations`, its `transaction_types` may
-allow only `pay` and `axfer` (every type it does not name is rejected, so
+allow any type (every type it does not name is rejected, so
 `"*": "reject"` may be left out), and a finite fee cap keeps a permitted
 self-payment from carrying any fee (a cosigner has no warning review, and
 `check` warns when routes exist with no cap):

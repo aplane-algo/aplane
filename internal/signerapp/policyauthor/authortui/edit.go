@@ -186,8 +186,10 @@ func termHint(t policyauthor.TermKind) string {
 		return `"algo" or asset IDs (stored as asa:<id>)`
 	case policyauthor.TermNetwork:
 		return `network tokens, or "*" for every network`
+	case policyauthor.TermRekeySender:
+		return `an address, "*" or @set`
 	case policyauthor.TermRekeyTarget:
-		return "addresses or @sets"
+		return `addresses, "*", "self" or @sets`
 	}
 	return "values"
 }
