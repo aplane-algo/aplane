@@ -110,15 +110,9 @@ func TestOnlyTheseRules(t *testing.T) {
 		t.Fatalf("an assets-only list account was refused: %v", err)
 	}
 	mismatched := onlyTheseTemplateYAML + "\nparameters:\n  - name: rekey_to\n    type: address[]\n    required: true\n    min_items: 1\n    max_items: 3\n"
-	// Like the cosigner key, the injected contract is enforced when the account
-	// is generated.
-	ownList, err := noneComposer(mismatched)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := ownList.GenerateTEAL(rekeyListSpendingKey, map[string]string{
-		composeddsa.BoundedRekeyToParameter: rekeyListListedA.String(), boundedmeta.RekeyListRootParameter: strings.Repeat("00", 32),
-	}); err == nil || !strings.Contains(err.Error(), "framework-injected contract") {
+	// Like the cosigner key, the injected contract is enforced when the template
+	// is built, so a mismatched one can't be installed.
+	if _, err := noneComposer(mismatched); err == nil || !strings.Contains(err.Error(), "framework-injected contract") {
 		t.Fatalf("a template's own rekey_to: error = %v", err)
 	}
 	// Plus cosigned needs a cosigner, and names the cosigned rekey among the

@@ -1069,6 +1069,13 @@ The `BuildArgs` method encapsulates LogicSig arg ordering:
 | DSA (multi-signature-arg form, when declared by a custom provider) | `[r, s]` |
 | DSA with runtime args | `[signature args..., runtime args...]` |
 
+**Limits**: the network refuses a LogicSig with more than 255 arguments or with any
+argument over 4,096 bytes (node constants, restated as `lsigresource.MaxLogicSigArgs`
+and `MaxLogicSigArgBytes`). Template validation refuses a declaration past either:
+generic and composed `runtime_args`, a composed program's signature plus runtime
+argument count and its base signature argument sizes, and every slot of a bounded
+argument layout.
+
 **Invariant**: Arg order is determined by `RuntimeArgs()` schema order at key
 generation time, not map iteration. v1 signing-metadata key files persist that
 runtime arg schema and use the stored copy at signing time. LogicSig key files

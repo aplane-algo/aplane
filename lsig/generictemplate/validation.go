@@ -13,6 +13,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 )
 
 // ValidateParameterValue validates a single parameter value against its type.
@@ -214,6 +215,11 @@ func validateInputModeSpecs(param ParameterSpec) error {
 // ValidateRuntimeArgSpecs validates a slice of runtime argument specifications.
 // Used by both generictemplate and composeddsa validation.
 func ValidateRuntimeArgSpecs(args []RuntimeArgSpec) error {
+	// The network's limits, which no group shape can lift. A caller that adds
+	// arguments of its own, such as signatures, checks the total.
+	if len(args) > lsigresource.MaxLogicSigArgs {
+		return fmt.Errorf("%d runtime_args: a LogicSig carries at most %d arguments", len(args), lsigresource.MaxLogicSigArgs)
+	}
 	seenNames := make(map[string]bool)
 	for _, a := range args {
 		if a.Name == "" {
@@ -235,6 +241,9 @@ func ValidateRuntimeArgSpecs(args []RuntimeArgSpec) error {
 		}
 		if a.ByteLength > 0 && a.MaxSize > 0 {
 			return fmt.Errorf("runtime_arg %s cannot set both byte_length and max_size", a.Name)
+		}
+		if size := max(a.ByteLength, a.MaxSize); size > lsigresource.MaxLogicSigArgBytes {
+			return fmt.Errorf("runtime_arg %s is %d bytes: a LogicSig argument is at most %d", a.Name, size, lsigresource.MaxLogicSigArgBytes)
 		}
 	}
 	return nil

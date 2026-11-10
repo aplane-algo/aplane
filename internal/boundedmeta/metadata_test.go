@@ -498,3 +498,52 @@ func TestMetadataValidatePlainHost(t *testing.T) {
 		t.Fatalf("Declaration() = %+v, %v", declaration, err)
 	}
 }
+
+// The network refuses a LogicSig with more than 255 arguments or one argument
+// over 4,096 bytes, so stored metadata can't describe one.
+func TestMetadataValidateRefusesArgumentsTheNetworkRefuses(t *testing.T) {
+	base := func(signatureSize int) *Metadata {
+		layout := SignatureArgLayout{Count: 1, MaxSizes: []int{signatureSize}}
+		return &Metadata{
+			Contract: Contract, BaseSignatureArgLayout: layout, ArgumentLayout: BaseArgumentLayout(layout),
+			SpendEffects: []string{"pay"}, MaxFee: new(uint64(1_000)), Rekey: RekeyRefused, Layer3Policy: Layer3PolicyCustom,
+		}
+	}
+	withRuntimeArgs := func(input *Metadata, count, size int) *Metadata {
+		for i := range count {
+			name := "extra" + string(rune('a'+i/26)) + string(rune('a'+i%26))
+			input.RuntimeArgs = append(input.RuntimeArgs, RuntimeArg{Name: name, Type: "bytes", Required: true, MaxSize: size})
+			input.ArgumentLayout = append(input.ArgumentLayout, ArgumentSlot{
+				Index: len(input.ArgumentLayout), Name: name, Source: ArgSourceRuntime, MaxSize: size,
+				Paths: ArgumentPathMask{Spend: ArgRequired, SpendingRekey: ArgForbidden, ListedRekey: ArgForbidden},
+			})
+		}
+		return input
+	}
+	for _, test := range []struct {
+		name    string
+		input   *Metadata
+		wantErr string
+	}{
+		{name: "base alone", input: base(64)},
+		{name: "runtime argument at the size limit", input: withRuntimeArgs(base(64), 1, 4096)},
+		{name: "runtime argument over the size limit", input: withRuntimeArgs(base(64), 1, 4097), wantErr: "argument slot 1 (extraaa) is 4097 bytes: a LogicSig argument is at most 4096"},
+		{name: "base signature at the size limit", input: base(4096)},
+		{name: "base signature over the size limit", input: base(4097), wantErr: "argument slot 0 (base_signature_0) is 4097 bytes: a LogicSig argument is at most 4096"},
+		{name: "255 arguments", input: withRuntimeArgs(base(64), 254, 8)},
+		{name: "256 arguments", input: withRuntimeArgs(base(64), 255, 8), wantErr: "bounded argument_layout has 256 arguments: a LogicSig carries at most 255"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := test.input.Validate()
+			if test.wantErr == "" {
+				if err != nil {
+					t.Fatalf("Validate() error = %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), test.wantErr) {
+				t.Fatalf("Validate() error = %v, want %q", err, test.wantErr)
+			}
+		})
+	}
+}

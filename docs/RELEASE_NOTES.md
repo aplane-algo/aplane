@@ -7,6 +7,22 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## Templates can't declare LogicSig arguments the network refuses
+
+- New: a template is refused when it declares more than 255 LogicSig arguments or a
+  single argument over 4,096 bytes (`byte_length` or `max_size` on a runtime argument).
+  Algorand refuses such a LogicSig whatever its group looks like, so a key made from
+  that template could never have signed a transaction.
+- A composed template's count includes its base's signature arguments. A bounded
+  template's whole layout counts: signatures, proofs, runtime arguments and the
+  cosigner's signature. Both are refused when the template is installed.
+- A bounded template is now checked against its template-level contract when it is
+  built. Two mistakes that used to surface only at key generation are refused at
+  install too: a parameter with the reserved `bounded_` prefix, and a `rekey_to`
+  parameter that doesn't match the framework's own.
+- No bundled template or built-in key type is affected. The largest argument any of
+  them carries is 2,928 bytes, and none carries more than five.
+
 ## A bounded account's fee limit is configurable
 
 - Removed: the fixed cap of 10,000 microAlgos on a bounded account's `max_fee`, in

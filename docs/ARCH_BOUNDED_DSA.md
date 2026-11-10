@@ -617,6 +617,12 @@ contracts, and every runtime argument declares `required_on: [spend]`, because
 a rekey never reaches Layer 3. The one signer-derived primitive a template
 declares is `merkle_allowlist_proof`.
 
+The argument layout stays inside the network's limits on one LogicSig: at most 255
+slots, and no slot over 4,096 bytes. The whole layout counts: signatures, proofs,
+runtime arguments and the cosigner's signature. Metadata validation refuses a layout
+past either limit, and it runs when the template is built, so such a template can't
+be installed, and again at key generation and whenever stored metadata is loaded.
+
 ```yaml
 schema_version: 2
 derivation_version: 3

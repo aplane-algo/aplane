@@ -11,6 +11,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/internal/rekeylist"
 	"github.com/aplane-algo/aplane/internal/templatepolicy"
@@ -174,7 +175,7 @@ func newProviderFromBase(spec *TemplateSpec, base BaseRegistration, saltStyle ls
 		return nil, err
 	}
 	boundedRuntimeMetadata, runtimeDefs := boundedRuntimeArgsFromTemplate(spec.Bounded)
-	return NewComposedDSA(Config{
+	provider := NewComposedDSA(Config{
 		KeyType:            spec.KeyType(),
 		BaseKeyType:        base.BaseKeyType,
 		FamilyName:         base.FamilyName,
@@ -193,7 +194,44 @@ func newProviderFromBase(spec *TemplateSpec, base BaseRegistration, saltStyle ls
 		Bounded:            bounded,
 		Layer3:             layer3,
 		OpcodeProfile:      spec.LogicSigOpcodeProfile(bounded != nil),
-	}), nil
+	})
+	if err := provider.checkArgumentLimits(); err != nil {
+		return nil, err
+	}
+	return provider, nil
+}
+
+// checkArgumentLimits refuses a program whose LogicSig could never be submitted:
+// its arguments must fit the network's limits on one LogicSig. A bounded
+// program's whole layout (signatures, proofs, runtime arguments and the
+// cosigner's signature) is checked through its template-level metadata, so an
+// impossible template is refused when it is installed, not when a key is
+// generated from it. Any other composed program has the base's signature
+// arguments and the template's runtime arguments.
+func (c *ComposedDSA) checkArgumentLimits() error {
+	if c.bounded != nil {
+		metadata, err := c.boundedAuthorizationMetadataBase()
+		if err != nil {
+			return err
+		}
+		if metadata != nil {
+			return metadata.ValidateProfile()
+		}
+	}
+	layout, ok := c.SignatureArgLayout()
+	if !ok {
+		return nil
+	}
+	for i, size := range layout.MaxSizes {
+		if size > lsigresource.MaxLogicSigArgBytes {
+			return fmt.Errorf("base signature argument %d is %d bytes: a LogicSig argument is at most %d", i, size, lsigresource.MaxLogicSigArgBytes)
+		}
+	}
+	if total := layout.Count + len(c.runtimeArgs); total > lsigresource.MaxLogicSigArgs {
+		return fmt.Errorf("%d arguments (%d signature, %d runtime): a LogicSig carries at most %d",
+			total, layout.Count, len(c.runtimeArgs), lsigresource.MaxLogicSigArgs)
+	}
+	return nil
 }
 
 func validateBoundedArguments(spec *generictemplate.BoundedAuthorizationSpec, parameters []generictemplate.ParameterSpec) error {
