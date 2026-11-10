@@ -10,11 +10,13 @@ package apshellcli
 import (
 	"encoding/base64"
 	"fmt"
+	"strings"
 
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/plugin/jsonrpc"
+	"github.com/aplane-algo/aplane/internal/termsafe"
 )
 
 // Slot roles for the honest plugin-group review.
@@ -44,7 +46,9 @@ func renderPluginGroupReview(r *REPLState, title string, slots []pluginReviewSlo
 	var managedFees uint64
 	for i, s := range slots {
 		txn := s.txn
-		r.printf("  [%d] %-13s %-4s sender=%s fee=%d\n", i+1, s.role, txnTypeLabel(txn.Type), txn.Sender.String(), txn.Fee)
+		// The type is the plugin's text: escaped, so it can't draw over the
+		// lines that follow.
+		r.printf("  [%d] %-13s %-4s sender=%s fee=%d\n", i+1, s.role, termsafe.Line(txnTypeLabel(txn.Type)), txn.Sender.String(), txn.Fee)
 		for _, line := range pluginReviewLines(txn) {
 			r.printf("        %s\n", line)
 		}
@@ -79,22 +83,49 @@ func pluginReviewLines(txn types.Transaction) []string {
 		} else {
 			add("appl id=%d (%s)", txn.ApplicationID, onCompletionLabel(txn.OnCompletion))
 		}
-		add("%d argument(s), %d account(s), %d app(s), %d asset(s), %d box(es), %d access entr(ies); contents opaque to APlane",
-			len(txn.ApplicationArgs), len(txn.Accounts), len(txn.ForeignApps), len(txn.ForeignAssets),
-			len(txn.BoxReferences), len(txn.Access))
+		add("%d argument(s), contents opaque to APlane", len(txn.ApplicationArgs))
+		for i, account := range txn.Accounts {
+			add("account[%d]: %s", i, account.String())
+		}
+		for i, app := range txn.ForeignApps {
+			add("app[%d]: %d", i, app)
+		}
+		for i, asset := range txn.ForeignAssets {
+			add("asset[%d]: %d", i, asset)
+		}
+		for i, box := range txn.BoxReferences {
+			add("box[%d]: app index %d, name %q", i, box.ForeignAppIdx, box.Name)
+		}
+		for i, ref := range txn.Access {
+			add("access[%d]: %s", i, pluginAccessRef(ref))
+		}
+		if txn.RejectVersion != 0 {
+			add("reject version %d (the call fails if the app's version is that or higher)", txn.RejectVersion)
+		}
 		if len(txn.ApprovalProgram) > 0 || len(txn.ClearStateProgram) > 0 {
-			add("!! carries program code: approval %d byte(s), clear %d byte(s)",
-				len(txn.ApprovalProgram), len(txn.ClearStateProgram))
+			add("!! carries program code: approval %d byte(s), clear %d byte(s), %d extra page(s)",
+				len(txn.ApprovalProgram), len(txn.ClearStateProgram), txn.ExtraProgramPages)
+			add("state: global %d uint / %d bytes, local %d uint / %d bytes",
+				txn.GlobalStateSchema.NumUint, txn.GlobalStateSchema.NumByteSlice,
+				txn.LocalStateSchema.NumUint, txn.LocalStateSchema.NumByteSlice)
 		}
 	case types.KeyRegistrationTx:
+		// Offline means no keys at all, the signer's own rule.
+		offline := txn.VotePK == (types.VotePK{}) && txn.SelectionPK == (types.VRFPK{})
 		switch {
-		case txn.Nonparticipation:
+		case offline && txn.Nonparticipation:
 			add("!! keyreg: marks the account nonparticipating (cannot be undone)")
-		case txn.VotePK == (types.VotePK{}):
+		case offline:
 			add("keyreg: go offline")
 		default:
 			add("keyreg: go online, votes valid %d-%d, key dilution %d",
 				txn.VoteFirst, txn.VoteLast, txn.VoteKeyDilution)
+			add("vote key %s", base64.StdEncoding.EncodeToString(txn.VotePK[:]))
+			add("selection key %s", base64.StdEncoding.EncodeToString(txn.SelectionPK[:]))
+			add("state proof key %s", base64.StdEncoding.EncodeToString(txn.StateProofPK[:]))
+			if txn.Nonparticipation {
+				add("!! also marks the account nonparticipating (cannot be undone)")
+			}
 		}
 	case types.AssetConfigTx:
 		switch {
@@ -103,7 +134,7 @@ func pluginReviewLines(txn types.Transaction) []string {
 		case txn.AssetParams == (types.AssetParams{}):
 			add("!! asset %d: destroy", txn.ConfigAsset)
 		default:
-			add("asset %d: reconfigure", txn.ConfigAsset)
+			add("!! asset %d: reconfigure (sets who controls the asset; a role set to none is gone for good)", txn.ConfigAsset)
 		}
 		if txn.ConfigAsset == 0 || txn.AssetParams != (types.AssetParams{}) {
 			add("manager=%s reserve=%s freeze=%s clawback=%s",
@@ -136,6 +167,48 @@ func pluginReviewLines(txn types.Transaction) []string {
 		add("lease %s", base64.StdEncoding.EncodeToString(txn.Lease[:]))
 	}
 	return lines
+}
+
+// pluginAccessRef renders one access-list entry. Holding, locals and box
+// entries point at other entries by a one-based index, shown here as the
+// zero-based access[] label; zero means the sender or the called app.
+func pluginAccessRef(ref types.ResourceRef) string {
+	pointer := func(index uint64, zero string) string {
+		if index == 0 {
+			return zero
+		}
+		return fmt.Sprintf("access[%d]", index-1)
+	}
+	var parts []string
+	if ref.Address != (types.Address{}) {
+		parts = append(parts, "account "+ref.Address.String())
+	}
+	if ref.Asset != 0 {
+		parts = append(parts, fmt.Sprintf("asset %d", ref.Asset))
+	}
+	if ref.App != 0 {
+		parts = append(parts, fmt.Sprintf("app %d", ref.App))
+	}
+	if ref.Holding != (types.HoldingRef{}) {
+		parts = append(parts, fmt.Sprintf("holding of %s by %s",
+			pointer(ref.Holding.Asset, "(no asset named)"), pointer(ref.Holding.Address, "the sender")))
+	}
+	if ref.Locals != (types.LocalsRef{}) {
+		parts = append(parts, fmt.Sprintf("local state of %s in %s",
+			pointer(ref.Locals.Address, "the sender"), pointer(ref.Locals.App, "the called app")))
+	}
+	if ref.Box.ForeignAppIdx != 0 || len(ref.Box.Name) > 0 {
+		parts = append(parts, fmt.Sprintf("box of %s, name %q",
+			pointer(ref.Box.ForeignAppIdx, "the called app"), ref.Box.Name))
+	}
+	switch len(parts) {
+	case 0:
+		return "(empty entry: adds box read/write budget)"
+	case 1:
+		return parts[0]
+	default:
+		return "MALFORMED, more than one kind: " + strings.Join(parts, "; ")
+	}
 }
 
 func roleAddress(address types.Address) string {

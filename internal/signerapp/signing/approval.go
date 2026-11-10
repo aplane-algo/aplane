@@ -676,12 +676,15 @@ func describeTxnForApproval(txn types.Transaction, txReq signerapi.SignRequest, 
 	if methodSig == "" {
 		return desc
 	}
-	if len(txn.ApplicationArgs) == 0 || len(txn.ApplicationArgs[0]) < 4 {
+	// An ABI call's first argument is the selector and nothing else. A longer
+	// argument that merely starts with the label's selector is not an ABI
+	// call of that method, so the label is not shown for it.
+	if len(txn.ApplicationArgs) == 0 || len(txn.ApplicationArgs[0]) != 4 {
 		return desc
 	}
 
 	wantSelector, err := appspec.SignatureSelector(methodSig)
-	if err != nil || !bytes.Equal(wantSelector, txn.ApplicationArgs[0][:4]) {
+	if err != nil || !bytes.Equal(wantSelector, txn.ApplicationArgs[0]) {
 		return desc
 	}
 

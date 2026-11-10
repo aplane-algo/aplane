@@ -232,7 +232,9 @@ func describeAccessRef(txn types.Transaction, ref types.ResourceRef) string {
 	}
 	switch len(parts) {
 	case 0:
-		return "(empty entry)"
+		// Not a no-op: the network counts an empty entry as an empty box
+		// reference, which raises the call's box read and write budget.
+		return "(empty entry: adds box read/write budget)"
 	case 1:
 		return parts[0]
 	default:
@@ -248,6 +250,16 @@ func accessEntryAt(txn types.Transaction, index uint64) (types.ResourceRef, bool
 	return txn.Access[index-1], true
 }
 
+// unresolvedAccessRef names an entry a pointer leads to when that entry is
+// missing or the wrong kind. The pointer is one-based on the wire; the rows
+// above are labelled from zero, so it is shown as the row label.
+func unresolvedAccessRef(txn types.Transaction, index uint64, wantKind string) string {
+	if index > uint64(len(txn.Access)) {
+		return fmt.Sprintf("?[%d] (no such entry)", index-1)
+	}
+	return fmt.Sprintf("?[%d] (not %s)", index-1, wantKind)
+}
+
 func accessAccountAt(txn types.Transaction, index uint64) string {
 	if index == 0 {
 		return "the sender"
@@ -255,24 +267,35 @@ func accessAccountAt(txn types.Transaction, index uint64) string {
 	if ref, ok := accessEntryAt(txn, index); ok && ref.Address != (types.Address{}) {
 		return "account " + ref.Address.String()
 	}
-	return fmt.Sprintf("?entry=%d (not an account)", index)
+	return unresolvedAccessRef(txn, index, "an account")
 }
 
 func accessAssetAt(txn types.Transaction, index uint64) string {
 	if ref, ok := accessEntryAt(txn, index); ok && ref.Asset != 0 {
 		return fmt.Sprintf("asset %d", ref.Asset)
 	}
-	return fmt.Sprintf("?entry=%d (not an asset)", index)
+	if index == 0 {
+		return "?(no asset named)"
+	}
+	return unresolvedAccessRef(txn, index, "an asset")
 }
 
 func accessAppAt(txn types.Transaction, index uint64) string {
 	if index == 0 {
-		return fmt.Sprintf("app %d (the called app)", txn.ApplicationID)
+		return "app " + calledAppLabel(txn)
 	}
 	if ref, ok := accessEntryAt(txn, index); ok && ref.App != 0 {
 		return fmt.Sprintf("app %d", ref.App)
 	}
-	return fmt.Sprintf("?entry=%d (not an app)", index)
+	return unresolvedAccessRef(txn, index, "an app")
+}
+
+// calledAppLabel names the app a call addresses. A create has no ID yet.
+func calledAppLabel(txn types.Transaction) string {
+	if txn.ApplicationID == 0 {
+		return "(the app being created)"
+	}
+	return fmt.Sprintf("%d (the called app)", txn.ApplicationID)
 }
 
 func appOnCompletionLabel(onComp types.OnCompletion) string {
@@ -305,6 +328,9 @@ func formatBoxName(name []byte) string {
 
 func resolveBoxAppRef(txn types.Transaction, ref types.BoxReference) string {
 	if ref.ForeignAppIdx == 0 {
+		if txn.ApplicationID == 0 {
+			return "(the app being created)"
+		}
 		return fmt.Sprintf("%d", txn.ApplicationID)
 	}
 	idx := int(ref.ForeignAppIdx - 1)

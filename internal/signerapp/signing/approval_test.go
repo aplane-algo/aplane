@@ -636,3 +636,26 @@ func TestRequestSingleTxnApprovalUsesSuppliedRequestID(t *testing.T) {
 		t.Fatalf("approval request ID = %q, want cli-single-1", gotRequestID)
 	}
 }
+
+func TestApprovalHidesTheMethodLabelWhenTheFirstArgIsNotJustTheSelector(t *testing.T) {
+	selector, err := appspec.SignatureSelector("increment(uint64)void")
+	if err != nil {
+		t.Fatal(err)
+	}
+	desc := describeTxnForApproval(
+		types.Transaction{
+			Type: types.ApplicationCallTx,
+			ApplicationFields: types.ApplicationFields{
+				ApplicationCallTxnFields: types.ApplicationCallTxnFields{
+					ApplicationID:   123,
+					ApplicationArgs: [][]byte{append(append([]byte(nil), selector...), 0x01)},
+				},
+			},
+		},
+		signerapi.SignRequest{AppCallInfo: &signerapi.AppCallInfo{Mode: "abi", Method: "increment(uint64)void"}},
+		func(txn types.Transaction) string { return "App Call: #123 (NoOp)\n  From: SOMEADDR" },
+	)
+	if strings.Contains(desc, "Method") || strings.Contains(desc, "[ABI]") {
+		t.Fatalf("a first argument longer than a selector is shown as an ABI call:\n%s", desc)
+	}
+}

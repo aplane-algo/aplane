@@ -647,6 +647,7 @@ func TestDescribeApplicationCallTx_ShowsAccessListAndRejectVersion(t *testing.T)
 					{Holding: types.HoldingRef{Address: 2, Asset: 9}},
 					{Address: payout, Asset: 7},
 					{},
+					{Locals: types.LocalsRef{Address: 40, App: 3}},
 				},
 				RejectVersion: 4,
 			},
@@ -655,7 +656,8 @@ func TestDescribeApplicationCallTx_ShowsAccessListAndRejectVersion(t *testing.T)
 
 	desc := describeApplicationCallTx(txn, chainView{})
 	for _, want := range []string{
-		"Access: 12",
+		"Access: 13",
+		"[12]: local state of ?[39] (no such entry) in app 456",
 		"[0]: account " + payout.String(),
 		"[1]: asset 31566704",
 		"[2]: app 456",
@@ -665,9 +667,9 @@ func TestDescribeApplicationCallTx_ShowsAccessListAndRejectVersion(t *testing.T)
 		"[6]: local state of the sender in app 456",
 		"[7]: box app 456 / ",
 		"[8]: box app 123 (the called app) / ",
-		"[9]: holding of ?entry=9 (not an asset) by ?entry=2 (not an account)",
+		"[9]: holding of ?[8] (not an asset) by ?[1] (not an account)",
 		"[10]: MALFORMED, more than one kind: account " + payout.String() + "; asset 7",
-		"[11]: (empty entry)",
+		"[11]: (empty entry: adds box read/write budget)",
 		"Reject Version: 4 (the call fails if the app's version is 4 or higher)",
 	} {
 		if !strings.Contains(desc, want) {
@@ -683,5 +685,28 @@ func TestDescribeApplicationCallTx_ShowsAccessListAndRejectVersion(t *testing.T)
 	}, chainView{})
 	if strings.Contains(plain, "Access") || strings.Contains(plain, "Reject Version") {
 		t.Errorf("a call with neither field mentions one:\n%s", plain)
+	}
+}
+
+func TestDescribeApplicationCallTx_NamesTheAppBeingCreated(t *testing.T) {
+	desc := describeApplicationCallTx(types.Transaction{
+		Type: types.ApplicationCallTx,
+		ApplicationFields: types.ApplicationFields{
+			ApplicationCallTxnFields: types.ApplicationCallTxnFields{
+				BoxReferences: []types.BoxReference{{Name: []byte("legacy")}},
+				Access:        []types.ResourceRef{{Box: types.BoxReference{Name: []byte("vault")}}},
+			},
+		},
+	}, chainView{})
+	for _, want := range []string{
+		"[0]: app (the app being created) / ",
+		"[0]: box app (the app being created) / ",
+	} {
+		if !strings.Contains(desc, want) {
+			t.Errorf("description missing %q:\n%s", want, desc)
+		}
+	}
+	if strings.Contains(desc, "app 0") {
+		t.Errorf("an app create is shown as app 0:\n%s", desc)
 	}
 }

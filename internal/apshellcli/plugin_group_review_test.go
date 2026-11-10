@@ -70,6 +70,50 @@ func TestPluginReviewShowsEveryHandoverOfControlOrFunds(t *testing.T) {
 			want: []string{"appl id=9 (!! UpdateApplication)", "1 argument(s)", "!! carries program code", "!! REKEY"},
 		},
 		{
+			name: "app call lists what it reaches",
+			txn: types.Transaction{
+				Type:   types.ApplicationCallTx,
+				Header: types.Header{Sender: sender},
+				ApplicationFields: types.ApplicationFields{ApplicationCallTxnFields: types.ApplicationCallTxnFields{
+					ApplicationID: 9, Accounts: []types.Address{other}, ForeignApps: []types.AppIndex{44},
+					ForeignAssets: []types.AssetIndex{55},
+					BoxReferences: []types.BoxReference{{ForeignAppIdx: 1, Name: []byte("b\x1b[2J")}},
+					Access: []types.ResourceRef{
+						{Address: other}, {Asset: 55}, {Holding: types.HoldingRef{Address: 1, Asset: 2}}, {},
+					},
+					RejectVersion: 3,
+				}},
+			},
+			want: []string{
+				"account[0]: " + other.String(), "app[0]: 44", "asset[0]: 55",
+				`box[0]: app index 1, name "b\x1b[2J"`,
+				"access[0]: account " + other.String(), "access[1]: asset 55",
+				"access[2]: holding of access[1] by access[0]",
+				"access[3]: (empty entry: adds box read/write budget)",
+				"reject version 3",
+			},
+		},
+		{
+			name: "keyreg online shows its keys",
+			txn: types.Transaction{
+				Type:   types.KeyRegistrationTx,
+				Header: types.Header{Sender: sender},
+				KeyregTxnFields: types.KeyregTxnFields{
+					VotePK: types.VotePK{1}, SelectionPK: types.VRFPK{2}, VoteFirst: 5, VoteLast: 9, VoteKeyDilution: 3,
+				},
+			},
+			want: []string{"keyreg: go online, votes valid 5-9, key dilution 3", "vote key AQAA", "selection key AgAA", "state proof key "},
+		},
+		{
+			name: "keyreg with only a selection key is not offline",
+			txn: types.Transaction{
+				Type:            types.KeyRegistrationTx,
+				Header:          types.Header{Sender: sender},
+				KeyregTxnFields: types.KeyregTxnFields{SelectionPK: types.VRFPK{2}},
+			},
+			want: []string{"keyreg: go online"},
+		},
+		{
 			name: "keyreg that rekeys",
 			txn: types.Transaction{
 				Type:   types.KeyRegistrationTx,
@@ -95,7 +139,7 @@ func TestPluginReviewShowsEveryHandoverOfControlOrFunds(t *testing.T) {
 					ConfigAsset: 5, AssetParams: types.AssetParams{Manager: other},
 				},
 			},
-			want: []string{"asset 5: reconfigure", "manager=" + other.String() + " reserve=(none)"},
+			want: []string{"!! asset 5: reconfigure", "manager=" + other.String() + " reserve=(none)"},
 		},
 		{
 			name: "freeze",
@@ -133,5 +177,17 @@ func TestPluginReviewShowsEveryHandoverOfControlOrFunds(t *testing.T) {
 	}), "\n")
 	if strings.Contains(plain, "!!") {
 		t.Errorf("a plain payment is marked as a handover:\n%s", plain)
+	}
+}
+
+func TestPluginReviewEscapesThePluginsTransactionType(t *testing.T) {
+	var out strings.Builder
+	r := &REPLState{Out: &out}
+	renderPluginGroupReview(r, "REVIEW", []pluginReviewSlot{{
+		txn:  types.Transaction{Type: types.TxType("pay\x1b[2K\r  [1] forged"), Header: types.Header{Sender: reviewTestAddress(1)}},
+		role: slotRolePluginSigned,
+	}})
+	if strings.ContainsAny(out.String(), "\x1b\r") {
+		t.Fatalf("the review printed raw control bytes from the transaction type:\n%q", out.String())
 	}
 }
