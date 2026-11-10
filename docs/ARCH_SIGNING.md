@@ -1436,12 +1436,17 @@ See [Mode Selection](#mode-selection) for the foreign/passthrough/sign distincti
   invariant, not a policy setting.
   - The rule is `rotatingkey.RefuseRekeyTarget`, which account generation also
     applies to a rekey-to list.
-  - The rotating flow's own rekey, an account to its own next stage, is the
-    rotation and passes.
+  - The one exception is a target the signer issued itself and proved against
+    the seed: a rotation's next stage, which only the rotating flow supplies
+    (`ProtocolRekeyTargets`). It is tied to the flow, not the sender: an ordinary
+    request that rekeys a rotating account to one of its own stages is refused.
   - A stage address is recognised only when the signer's stage tables hold it
-    (`stagetable.Store.StageOwner`, memory only). The tables are a sparse cache
+    (`stagetable.Store.StageOwners`, memory only). Every open table that holds
+    the address counts, since a stale table can hold another account's stage. The tables are a sparse cache
     filled after unlock as the signer derives stages, so a stage not derived yet
-    is not refused.
+    is not refused, and nothing is refused between a restart and the moment the
+    background fill reopens an account's table. A cached entry counts whether or
+    not this process has re-derived it; a stale one can only refuse too much.
   - apshell's `rekey` refuses a rotating account's own address before building
     the transaction, and fails closed on any target whose `signing_flow` it
     cannot route an authorizer through. It doesn't know stage addresses; the

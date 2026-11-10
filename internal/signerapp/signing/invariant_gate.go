@@ -18,9 +18,10 @@ const nonparticipationRefusal = "a keyreg with nonparticipation is not supported
 // node signs. Both node roles call it before any policy verdict, so no policy
 // can allow what an invariant refuses, and an invariant added here holds on
 // both roles. On a cosigner, which holds no rotating accounts, the rotating
-// check finds nothing to refuse.
-func (s *Service) rejectSignerInvariants(txns []types.Transaction, signed []int) *ServiceError {
-	if err := s.rejectRekeyToRotating(txns, signed); err != nil {
+// check finds nothing to refuse. issuedRekeyTargets are the rekey targets the
+// signer set itself (a rotation's next stage); nil when there are none.
+func (s *Service) rejectSignerInvariants(txns []types.Transaction, signed []int, issuedRekeyTargets map[string]bool) *ServiceError {
+	if err := s.rejectRekeyToRotating(txns, signed, issuedRekeyTargets); err != nil {
 		return err
 	}
 	return rejectNonparticipation(txns, signed)

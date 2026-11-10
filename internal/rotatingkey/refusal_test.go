@@ -6,43 +6,49 @@ package rotatingkey
 import "testing"
 
 // One rule decides a rekey target for the signing gate and for account
-// generation: a held rotating account, or a stage address of one, is refused,
-// and a rotating account's rekey to its own stage is the rotation and passes.
+// generation: a held rotating account, or a stage address of one, is refused.
+// The rule has no exception of its own.
 func TestRefuseRekeyTarget(t *testing.T) {
 	const (
 		rotating = "ROTATING"
+		lower    = "AROTATING"
 		plain    = "PLAIN"
-		stage    = "STAGE"
-		orphan   = "ORPHAN"
 		unknown  = "UNKNOWN"
 	)
-	keyTypes := map[string]string{rotating: RotatingTripleWotscV1, plain: "ed25519"}
-	owners := map[string]string{stage: rotating, orphan: "GONE", "PLAINSTAGE": plain}
-	stages := func(address string) (string, bool) {
-		account, ok := owners[address]
-		return account, ok
+	keyTypes := map[string]string{rotating: RotatingTripleWotscV1, lower: RotatingTripleWotscV1, plain: "ed25519"}
+	owners := map[string][]string{
+		"STAGE":      {rotating},
+		"SHARED":     {rotating, "GONE", lower},
+		"ORPHAN":     {"GONE"},
+		"MIXED":      {"GONE", plain, rotating},
+		"PLAINSTAGE": {plain},
+		"NONE":       {},
 	}
+	stages := func(address string) []string { return owners[address] }
 	for _, test := range []struct {
-		name           string
-		sender, target string
-		stages         StageOwner
-		want           string
+		name   string
+		target string
+		stages StageOwners
+		want   string
 	}{
-		{"a held rotating account", plain, rotating, stages, RekeyTargetRefusal(rotating)},
-		{"a held rotating account, no stage lookup", plain, rotating, nil, RekeyTargetRefusal(rotating)},
-		{"a stage of a held rotating account", plain, stage, stages, StageRekeyTargetRefusal(stage, rotating)},
-		{"a stage, at generation, with no sender", "", stage, stages, StageRekeyTargetRefusal(stage, rotating)},
-		{"the rotation: the account to its own stage", rotating, stage, stages, ""},
-		{"a stage, no stage lookup", plain, stage, nil, ""},
-		// A table entry whose account is no longer a held rotating account
-		// refuses nothing.
-		{"a stage whose account isn't held", plain, orphan, stages, ""},
-		{"a stage whose account isn't rotating", unknown, "PLAINSTAGE", stages, ""},
-		{"a held account that isn't rotating", unknown, plain, stages, ""},
-		{"an address the signer doesn't know", plain, unknown, stages, ""},
+		{"a held rotating account", rotating, stages, RekeyTargetRefusal(rotating)},
+		{"a held rotating account, no stage lookup", rotating, nil, RekeyTargetRefusal(rotating)},
+		{"a stage of a held rotating account", "STAGE", stages, StageRekeyTargetRefusal("STAGE", rotating)},
+		// Every table that holds the address is considered, and the lowest held
+		// rotating account is named.
+		{"a stage two held rotating accounts' tables hold", "SHARED", stages, StageRekeyTargetRefusal("SHARED", lower)},
+		{"a stage whose first owners aren't held rotating accounts", "MIXED", stages, StageRekeyTargetRefusal("MIXED", rotating)},
+		{"a stage, no stage lookup", "STAGE", nil, ""},
+		// A table whose account is no longer a held rotating account refuses
+		// nothing.
+		{"a stage whose account isn't held", "ORPHAN", stages, ""},
+		{"a stage whose account isn't rotating", "PLAINSTAGE", stages, ""},
+		{"an address with an empty owner list", "NONE", stages, ""},
+		{"a held account that isn't rotating", plain, stages, ""},
+		{"an address the signer doesn't know", unknown, stages, ""},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			reason, refused := RefuseRekeyTarget(test.sender, test.target, keyTypes, test.stages)
+			reason, refused := RefuseRekeyTarget(test.target, keyTypes, test.stages)
 			if refused != (test.want != "") || reason != test.want {
 				t.Fatalf("RefuseRekeyTarget = %q, %v; want %q", reason, refused, test.want)
 			}

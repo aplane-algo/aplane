@@ -46,23 +46,28 @@ func (s *Service) rejectRotatingComponentRequest(req signerapi.ComponentRequest)
 	return nil
 }
 
-// rejectRekeyToRotating refuses a signed position that rekeys another account
-// to a rotating account this signer holds, or to one of its stage addresses. A
+// rejectRekeyToRotating refuses a signed position that rekeys an account to a
+// rotating account this signer holds, or to one of its stage addresses. A
 // rotating account's address is its stage 0 program, and every stage address is
 // a one-time key the rotating flow spends and retires. An account rekeyed to
 // one would be stuck on that stage, outside any rotation, and every signature
-// for it would reuse that one-time key. The rotating flow's own rekey goes to
-// the account's next stage and passes: the rule (rotatingkey.RefuseRekeyTarget)
-// leaves an account's rekey to its own stage alone. A stage address is known
-// only once its table holds it. This is a signer invariant, not a policy
-// setting. signed lists the zero-based positions this signer signs
-// (signerPositions).
-func (s *Service) rejectRekeyToRotating(txns []types.Transaction, signed []int) *ServiceError {
+// for it would reuse that one-time key.
+//
+// issued are the rekey targets the signer set itself and proved against the
+// seed before this gate: a rotation's next stage. Only the rotating flow
+// supplies any, and they are the one thing left out. The exception is tied to
+// the flow, not to the sender: an ordinary request that rekeys a rotating
+// account to one of its own stages is refused like any other.
+//
+// A stage address is known only once its table holds it. This is a signer
+// invariant, not a policy setting. signed lists the zero-based positions this
+// signer signs (signerPositions).
+func (s *Service) rejectRekeyToRotating(txns []types.Transaction, signed []int, issued map[string]bool) *ServiceError {
 	if s.Planner == nil || s.Planner.Snapshot == nil {
 		return nil
 	}
 	keyTypes := s.Planner.Snapshot().KeyTypes
-	stages := s.stageOwner()
+	stages := s.stageOwners()
 	for _, i := range signed {
 		if i < 0 || i >= len(txns) {
 			return positionOutsideGroup(i, len(txns))
@@ -71,18 +76,22 @@ func (s *Service) rejectRekeyToRotating(txns []types.Transaction, signed []int) 
 		if txn.RekeyTo.IsZero() || txn.RekeyTo == txn.Sender {
 			continue
 		}
-		if reason, refused := rotatingkey.RefuseRekeyTarget(txn.Sender.String(), txn.RekeyTo.String(), keyTypes, stages); refused {
+		target := txn.RekeyTo.String()
+		if issued[target] {
+			continue
+		}
+		if reason, refused := rotatingkey.RefuseRekeyTarget(target, keyTypes, stages); refused {
 			return withTransactionIndex(i, forbidden(reason))
 		}
 	}
 	return nil
 }
 
-// stageOwner looks an address up in the stage tables this process has open. A
+// stageOwners looks an address up in the stage tables this process has open. A
 // node without the rotating flow, such as a cosigner, has none.
-func (s *Service) stageOwner() rotatingkey.StageOwner {
+func (s *Service) stageOwners() rotatingkey.StageOwners {
 	if s.Rotating == nil || s.Rotating.Tables == nil {
 		return nil
 	}
-	return s.Rotating.Tables.StageOwnerOf
+	return s.Rotating.Tables.StageOwnersOf
 }

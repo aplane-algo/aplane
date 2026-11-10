@@ -14,7 +14,9 @@ before it was renamed `enroll`.
   account's stage addresses it knows, for the same reason: `cannot rekey to <address>:
   it is a stage key of the rotating account <account>, ...`.
 - Account generation refuses a rekey-to list that names one, by the same rule.
-- A rotating account's own rotation, to its next stage, is unaffected.
+- A rotation is unaffected: the signer leaves out the next-stage target it issued
+  itself. The exception belongs to the rotating flow, so an ordinary request that
+  rekeys a rotating account to one of its own stages is refused.
 - A stage is known only once the signer's stage tables hold it. They are a cache
   that fills in the background after unlock, as the signer derives stages, so a stage
   it hasn't derived yet is not refused.

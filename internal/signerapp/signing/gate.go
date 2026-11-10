@@ -38,7 +38,8 @@ type gateInput struct {
 	AuthKeys       []string
 	KnownAddresses map[string]bool
 	// ProtocolRekeyTargets are rekeys the signer issued itself (a rotation's
-	// next stage); warning review does not count them.
+	// next stage); warning review does not count them, and the rotating rekey
+	// invariant leaves them out.
 	ProtocolRekeyTargets map[string]bool
 	// ListedRekeyTargets is each position's account rekey-to list, by index.
 	ListedRekeyTargets map[int]map[string]bool
@@ -67,7 +68,7 @@ type gateInput struct {
 func (s *Service) runApprovalGates(ctx context.Context, in gateInput, console Console) (string, *ServiceError) {
 	console = consoleOf(console)
 	slots := clientSlots(in.AllTxns, in.EvalCount, in.PassthroughIndices, in.ForeignIndices, s.policyFor, in.AuthKeys, in.ListedRekeyTargets)
-	if err := s.rejectSignerInvariants(in.AllTxns, signerPositions(slots)); err != nil {
+	if err := s.rejectSignerInvariants(in.AllTxns, signerPositions(slots), in.ProtocolRekeyTargets); err != nil {
 		console.Printf("[SIGNER] Rejected: %s\n", err.Message)
 		console.Sync()
 		if in.LogRejection != nil {

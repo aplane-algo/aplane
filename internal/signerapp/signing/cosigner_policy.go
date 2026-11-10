@@ -42,7 +42,7 @@ func (s *Service) runCosignerGates(plan *ComponentSignPlan) *ServiceError {
 	if err := validateTransactionBounds(group); err != nil {
 		return err
 	}
-	if err := s.rejectSignerInvariants(group, targets); err != nil {
+	if err := s.rejectSignerInvariants(group, targets, nil); err != nil {
 		s.logCosignerRejections(plan, auditSignerInvariant+err.Message, "")
 		return err
 	}

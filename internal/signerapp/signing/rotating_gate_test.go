@@ -98,19 +98,19 @@ func TestRejectRekeyToRotatingAccount(t *testing.T) {
 	rekey := func(sender, to types.Address) types.Transaction {
 		return types.Transaction{Header: types.Header{Sender: sender, RekeyTo: to}}
 	}
-	err := svc.rejectRekeyToRotating([]types.Transaction{rekey(plain, other), rekey(plain, rotating)}, []int{0, 1})
+	err := svc.rejectRekeyToRotating([]types.Transaction{rekey(plain, other), rekey(plain, rotating)}, []int{0, 1}, nil)
 	if want := "transaction 2: " + rotatingkey.RekeyTargetRefusal(rotating.String()); err == nil || err.HTTPStatus() != 403 || err.Message != want {
 		t.Fatalf("rekey to a rotating account: err = %v, want 403 %q", err, want)
 	}
 	// Positions this signer doesn't sign are not judged.
-	if err := svc.rejectRekeyToRotating([]types.Transaction{rekey(plain, rotating)}, nil); err != nil {
+	if err := svc.rejectRekeyToRotating([]types.Transaction{rekey(plain, rotating)}, nil, nil); err != nil {
 		t.Fatalf("an unsigned position was judged: %v", err)
 	}
 	// The rotating flow's own spend rekeys the account to its next stage.
-	if err := svc.rejectRekeyToRotating([]types.Transaction{rekey(rotating, stage)}, []int{0}); err != nil {
+	if err := svc.rejectRekeyToRotating([]types.Transaction{rekey(rotating, stage)}, []int{0}, nil); err != nil {
 		t.Fatalf("rotation to a stage address refused: %v", err)
 	}
-	if err := svc.rejectRekeyToRotating([]types.Transaction{rekey(plain, other), {Header: types.Header{Sender: plain}}}, []int{0, 1}); err != nil {
+	if err := svc.rejectRekeyToRotating([]types.Transaction{rekey(plain, other), {Header: types.Header{Sender: plain}}}, []int{0, 1}, nil); err != nil {
 		t.Fatalf("ordinary rekey refused: %v", err)
 	}
 }
@@ -166,21 +166,28 @@ func TestApprovalGatesRefuseRekeyToRotatingBeforePolicy(t *testing.T) {
 }
 
 // A stage address is a one-time key as much as the account's own address is.
-// The gate refuses a rekey of another account to a stage the tables hold, and
-// leaves the rotating account's rekey to its own stage, the rotation, alone. A
-// node with no stage tables, such as a cosigner, refuses only what it did before.
+// The gate refuses a rekey to a stage the tables hold, whoever the sender is.
+// The one thing left out is a target the signer issued itself, which only the
+// rotating flow supplies: the exception is the flow's, not the sender's. A node
+// with no stage tables, such as a cosigner, refuses only what it did before.
 func TestRejectRekeyToAStageOfARotatingAccount(t *testing.T) {
 	plain, rotating, other := types.Address{1}, types.Address{2}, types.Address{4}
-	otherRotating := types.Address{5}
-	stage, otherStage := types.Address{0x31}, types.Address{0x32}
+	otherRotating, gone := types.Address{5}, types.Address{6}
+	stage, otherStage, goneStage := types.Address{0x31}, types.Address{0x32}, types.Address{0x33}
 	tables := stagetable.NewStore(storepaths.NewPaths(t.TempDir()))
 	genesis := make([]byte, 32)
-	for selector, address := range map[types.Address]types.Address{rotating: stage, otherRotating: otherStage} {
+	for selector, addresses := range map[types.Address][]types.Address{
+		rotating: {stage},
+		// A stale table can hold another account's stage.
+		otherRotating: {otherStage, stage},
+		// A table whose account is no longer a held rotating account.
+		gone: {goneStage},
+	} {
 		table, err := tables.Table(selector, genesis, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := table.RecordDerived(7, []types.Address{address}); err != nil {
+		if _, err := table.RecordDerived(7, addresses); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -195,37 +202,95 @@ func TestRejectRekeyToAStageOfARotatingAccount(t *testing.T) {
 	rekey := func(sender, to types.Address) types.Transaction {
 		return types.Transaction{Header: types.Header{Sender: sender, RekeyTo: to}}
 	}
+	refusal := func(target, account types.Address) string {
+		return rotatingkey.StageRekeyTargetRefusal(target.String(), account.String())
+	}
 
-	err := svc.rejectRekeyToRotating([]types.Transaction{rekey(plain, other), rekey(plain, stage)}, []int{0, 1})
-	if want := "transaction 2: " + rotatingkey.StageRekeyTargetRefusal(stage.String(), rotating.String()); err == nil || err.HTTPStatus() != 403 || err.Message != want {
+	err := svc.rejectRekeyToRotating([]types.Transaction{rekey(plain, other), rekey(plain, otherStage)}, []int{0, 1}, nil)
+	if want := "transaction 2: " + refusal(otherStage, otherRotating); err == nil || err.HTTPStatus() != 403 || err.Message != want {
 		t.Fatalf("rekey to a stage address: err = %v, want 403 %q", err, want)
 	}
-	// The rotation: the account to its own stage.
-	if err := svc.rejectRekeyToRotating([]types.Transaction{rekey(rotating, stage)}, []int{0}); err != nil {
+	// Two tables hold this stage: the lower held rotating account is named,
+	// every time.
+	for i := 0; i < 20; i++ {
+		if err := svc.rejectRekeyToRotating([]types.Transaction{rekey(plain, stage)}, []int{0}, nil); err == nil || !strings.Contains(err.Message, refusal(stage, rotating)) {
+			t.Fatalf("rekey to a stage two tables hold: err = %v, want %q", err, refusal(stage, rotating))
+		}
+	}
+	// The rotation: the rotating flow issued this target itself. A stale table
+	// that also holds it doesn't block the rotation.
+	issued := map[string]bool{stage.String(): true}
+	if err := svc.rejectRekeyToRotating([]types.Transaction{rekey(rotating, stage)}, []int{0}, issued); err != nil {
 		t.Fatalf("the rotation was refused: %v", err)
 	}
-	// Another rotating account's stage is not this account's rotation.
-	if err := svc.rejectRekeyToRotating([]types.Transaction{rekey(rotating, otherStage)}, []int{0}); err == nil ||
-		!strings.Contains(err.Message, rotatingkey.StageRekeyTargetRefusal(otherStage.String(), otherRotating.String())) {
-		t.Fatalf("a rekey to another rotating account's stage: err = %v", err)
+	// The sender alone earns no exception: an ordinary request that rekeys a
+	// rotating account to its own stage is refused.
+	if err := svc.rejectRekeyToRotating([]types.Transaction{rekey(rotating, stage)}, []int{0}, nil); err == nil || !strings.Contains(err.Message, refusal(stage, rotating)) {
+		t.Fatalf("a rotating account's rekey to its own stage, outside the flow: err = %v", err)
+	}
+	// An issued target excuses only itself.
+	if err := svc.rejectRekeyToRotating([]types.Transaction{rekey(rotating, otherStage)}, []int{0}, issued); err == nil || !strings.Contains(err.Message, refusal(otherStage, otherRotating)) {
+		t.Fatalf("a rekey to another stage beside an issued one: err = %v", err)
+	}
+	// A table whose account isn't a held rotating account refuses nothing.
+	if err := svc.rejectRekeyToRotating([]types.Transaction{rekey(plain, goneStage)}, []int{0}, nil); err != nil {
+		t.Fatalf("a stage of an account this signer doesn't hold was refused: %v", err)
 	}
 	// A position this signer doesn't sign is not judged.
-	if err := svc.rejectRekeyToRotating([]types.Transaction{rekey(plain, stage)}, nil); err != nil {
+	if err := svc.rejectRekeyToRotating([]types.Transaction{rekey(plain, stage)}, nil, nil); err != nil {
 		t.Fatalf("an unsigned position was judged: %v", err)
 	}
 	// The account's own address is still refused, with its own reason.
-	if err := svc.rejectRekeyToRotating([]types.Transaction{rekey(plain, rotating)}, []int{0}); err == nil ||
+	if err := svc.rejectRekeyToRotating([]types.Transaction{rekey(plain, rotating)}, []int{0}, nil); err == nil ||
 		!strings.Contains(err.Message, rotatingkey.RekeyTargetRefusal(rotating.String())) {
 		t.Fatalf("rekey to the rotating account: err = %v", err)
 	}
 
 	for name, deps := range map[string]*RotatingDeps{"no rotating flow": nil, "no tables": {}} {
 		without := &Service{Planner: &Planner{Snapshot: snapshot}, Rotating: deps}
-		if err := without.rejectRekeyToRotating([]types.Transaction{rekey(plain, stage)}, []int{0}); err != nil {
+		if err := without.rejectRekeyToRotating([]types.Transaction{rekey(plain, stage)}, []int{0}, nil); err != nil {
 			t.Errorf("%s: a stage it can't know was refused: %v", name, err)
 		}
-		if err := without.rejectRekeyToRotating([]types.Transaction{rekey(plain, rotating)}, []int{0}); err == nil {
+		if err := without.rejectRekeyToRotating([]types.Transaction{rekey(plain, rotating)}, []int{0}, nil); err == nil {
 			t.Errorf("%s: the rotating account itself was not refused", name)
 		}
+	}
+}
+
+// The gate sequence hands the invariant the targets the plan issued, so a
+// rotation passes it and reaches the next gate, and the same rekey without them
+// is refused before policy.
+func TestApprovalGatesPassAnIssuedRotationTarget(t *testing.T) {
+	rotating, stage := types.Address{2}, types.Address{0x31}
+	tables := stagetable.NewStore(storepaths.NewPaths(t.TempDir()))
+	table, err := tables.Table(rotating, make([]byte, 32), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := table.RecordDerived(1, []types.Address{stage}); err != nil {
+		t.Fatal(err)
+	}
+	svc := &Service{
+		Planner: &Planner{Snapshot: func() PlannerRuntimeSnapshot {
+			return PlannerRuntimeSnapshot{KeyTypes: map[string]string{rotating.String(): rotatingkey.RotatingTripleWotscV1}}
+		}},
+		Rotating: &RotatingDeps{Tables: tables},
+	}
+	in := func(issued map[string]bool) gateInput {
+		return gateInput{
+			AllTxns:              []types.Transaction{{Header: types.Header{Sender: rotating, RekeyTo: stage}}},
+			EvalCount:            1,
+			ProtocolRekeyTargets: issued,
+		}
+	}
+	_, gateErr := svc.runApprovalGates(context.Background(), in(nil), nil)
+	if gateErr == nil || gateErr.HTTPStatus() != 403 || !strings.Contains(gateErr.Message, "stage key of the rotating account") {
+		t.Fatalf("without an issued target: err = %v, want the stage refusal", gateErr)
+	}
+	// With it the invariant passes. No policy is loaded, so the next gate fails
+	// for its own reason, which shows the invariant was passed.
+	_, gateErr = svc.runApprovalGates(context.Background(), in(map[string]bool{stage.String(): true}), nil)
+	if gateErr == nil || strings.Contains(gateErr.Message, "stage key") {
+		t.Fatalf("with an issued target: err = %v, want it past the signer invariants", gateErr)
 	}
 }

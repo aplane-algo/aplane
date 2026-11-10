@@ -448,7 +448,9 @@ func cosignerHeldWarning(ir *productruntime.Runtime, cosignerPublicKeyHex string
 //
 // It catches only what it can see. An address doesn't reveal its type, so a
 // rotating account held elsewhere passes, and so does a stage this signer
-// hasn't derived yet. The signing gate still refuses when it is asked to sign.
+// hasn't derived yet. The stage tables fill in the background, so a list
+// accepted now can be refused a moment later, at generation after a review, or
+// by the signing gate when it is asked to sign.
 func refuseRekeyToHeldRotatingAccount(ir *productruntime.Runtime, entries string) error {
 	if strings.TrimSpace(entries) == "" {
 		return nil
@@ -463,14 +465,12 @@ func refuseRekeyToHeldRotatingAccount(ir *productruntime.Runtime, entries string
 		return fmt.Errorf("%s: %w", boundedmeta.RekeyListEntriesParameter, err)
 	}
 	keyTypes := ir.KeyStore().GetKeyTypes()
-	var stages rotatingkey.StageOwner
+	var stages rotatingkey.StageOwners
 	if tables := ir.StageTables(); tables != nil {
-		stages = tables.StageOwnerOf
+		stages = tables.StageOwnersOf
 	}
-	// The account doesn't exist yet, so there is no sender for the rule to set
-	// against a stage's owner: no listed address is the account's own rotation.
 	for _, target := range targets {
-		if reason, refused := rotatingkey.RefuseRekeyTarget("", target.String(), keyTypes, stages); refused {
+		if reason, refused := rotatingkey.RefuseRekeyTarget(target.String(), keyTypes, stages); refused {
 			return fmt.Errorf("%s: %s", boundedmeta.RekeyListEntriesParameter, reason)
 		}
 	}

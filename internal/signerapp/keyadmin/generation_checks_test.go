@@ -6,12 +6,13 @@ package keyadmin
 import (
 	"context"
 	"encoding/hex"
-	"github.com/algorand/go-algorand-sdk/v2/types"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/keystore"

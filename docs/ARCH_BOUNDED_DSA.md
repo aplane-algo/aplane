@@ -711,9 +711,10 @@ addresses is a one-time key. Generation and the signing gate apply one rule,
 - It sees only accounts this signer holds. An address doesn't reveal its key type, so
   a rotating account held elsewhere passes.
 - It recognises a stage address only when the signer's stage tables hold it
-  (`stagetable.Store.StageOwner`). The tables are a sparse cache, filled in the
+  (`stagetable.Store.StageOwners`). The tables are a sparse cache, filled in the
   background after unlock as the signer derives stages. A stage not derived yet,
-  or an account whose table isn't open yet, passes. The signing gate
+  or an account whose table isn't open yet, passes. So the answer can change while the
+  tables fill: a list accepted at review can be refused at generation. The signing gate
   (`rejectRekeyToRotating`) has the same limit.
 - It is an admission check at generation. The composer and durable validation don't
   make it, so an account already stored with such a list still loads.

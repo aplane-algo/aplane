@@ -19,35 +19,41 @@ func StageRekeyTargetRefusal(target, account string) string {
 		"an account rekeyed to it would be stuck on that stage, and every signature would reuse that key"
 }
 
-// StageOwner names the rotating account that has an address as one of its stage
-// addresses, when the signer knows of one.
-type StageOwner func(address string) (account string, ok bool)
+// StageOwners names the accounts whose stage tables hold an address, as far as
+// the signer knows. More than one can: a table is a cache, and a stale one can
+// hold another account's stage.
+type StageOwners func(address string) []string
 
 // RefuseRekeyTarget is the one rule for whether a signer refuses a rekey to
 // target because of the rotating accounts it holds. It returns the reason.
 //
 //   - target is a rotating account in keyTypes, the signer's key types by
 //     address. Its address is its stage 0 key.
-//   - target is a stage address of one, by stageOwner. A nil stageOwner knows
-//     none.
+//   - target is a stage address of one, by stageOwners. A nil stageOwners knows
+//     none. An owner that is not a held rotating account doesn't count; of
+//     those that are, the lowest is named, so the reason is the same each time.
 //
-// sender is the account being rekeyed, or "" when there is none yet (a rekey-to
-// list at account generation). A rotating account's rekey to one of its own
-// stages is the rotation itself and is not refused: only the rotating flow
-// signs for a rotating account, and it checks the stage.
+// The rule has no exception. A rotation rekeys a rotating account to its own
+// next stage, which this rule would refuse: the caller that signs rotations
+// leaves out the targets it issued and proved itself, and asks about the rest.
 //
 // The rule sees what the signer holds and knows. A rotating account held
 // elsewhere passes, and so does a stage the signer hasn't derived yet.
-func RefuseRekeyTarget(sender, target string, keyTypes map[string]string, stageOwner StageOwner) (reason string, refused bool) {
+func RefuseRekeyTarget(target string, keyTypes map[string]string, stageOwners StageOwners) (reason string, refused bool) {
 	if IsRotatingKeyType(keyTypes[target]) {
 		return RekeyTargetRefusal(target), true
 	}
-	if stageOwner == nil {
+	if stageOwners == nil {
 		return "", false
 	}
-	account, ok := stageOwner(target)
-	if !ok || account == sender || !IsRotatingKeyType(keyTypes[account]) {
+	held := ""
+	for _, account := range stageOwners(target) {
+		if IsRotatingKeyType(keyTypes[account]) && (held == "" || account < held) {
+			held = account
+		}
+	}
+	if held == "" {
 		return "", false
 	}
-	return StageRekeyTargetRefusal(target, account), true
+	return StageRekeyTargetRefusal(target, held), true
 }
