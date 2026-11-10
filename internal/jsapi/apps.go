@@ -9,7 +9,11 @@ package jsapi
 // - ABI-backed app calls
 
 import (
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"math"
+	"math/big"
 	"strconv"
 
 	"github.com/algorand/go-algorand-sdk/v2/crypto"
@@ -275,10 +279,6 @@ func (a *API) jsAppCall(call goja.FunctionCall) goja.Value {
 		panic(a.runtime.ToValue(err.Error()))
 	}
 
-	methodArgs := make([]string, len(rawArgs))
-	for i, raw := range rawArgs {
-		methodArgs[i] = fmt.Sprint(raw)
-	}
 	spec, err := appspec.Load(abiPath)
 	if err != nil {
 		panic(a.runtime.ToValue(fmt.Sprintf("appCall() error preparing transaction: %v", err)))
@@ -286,6 +286,19 @@ func (a *API) jsAppCall(call goja.FunctionCall) goja.Value {
 	resolvedMethod, err := spec.ResolveMethod(method)
 	if err != nil {
 		panic(a.runtime.ToValue(fmt.Sprintf("appCall() error preparing transaction: %v", err)))
+	}
+	methodArgs := make([]string, len(rawArgs))
+	for i, raw := range rawArgs {
+		// An argument past the method's list has no type; the engine reports
+		// the count mismatch.
+		typeName := ""
+		if i < len(resolvedMethod.Args) {
+			typeName = resolvedMethod.Args[i].Type
+		}
+		methodArgs[i], err = abiArgText(raw, typeName)
+		if err != nil {
+			panic(a.runtime.ToValue(fmt.Sprintf("appCall() argument %d: %v", i+1, err)))
+		}
 	}
 	methodSignature := resolvedMethod.Signature()
 
@@ -562,6 +575,76 @@ func parseJSByteString(v interface{}) ([]byte, error) {
 		return out, nil
 	default:
 		return nil, fmt.Errorf("unsupported byte value type %T", v)
+	}
+}
+
+// abiArgText turns one JavaScript ABI argument into the text form the ABI
+// argument parser reads, by the argument's own type. Printing the Go value
+// would turn a byte array into the text "[1 2 3]".
+func abiArgText(raw interface{}, typeName string) (string, error) {
+	if appspec.IsByteArrayType(typeName) {
+		value, err := parseJSByteString(raw)
+		if err != nil {
+			return "", err
+		}
+		if text, ok := raw.(string); ok {
+			return text, nil
+		}
+		return "hex:" + hex.EncodeToString(value), nil
+	}
+	switch value := raw.(type) {
+	case nil:
+		return "", fmt.Errorf("null or undefined is not an ABI value")
+	case string:
+		return value, nil
+	case bool:
+		return strconv.FormatBool(value), nil
+	case int64:
+		return strconv.FormatInt(value, 10), nil
+	case float64:
+		if math.IsNaN(value) || math.IsInf(value, 0) {
+			return "", fmt.Errorf("%v is not an ABI value", value)
+		}
+		return strconv.FormatFloat(value, 'f', -1, 64), nil
+	case *big.Int:
+		return value.String(), nil
+	case []byte, []interface{}, map[string]interface{}:
+		encoded, err := json.Marshal(jsonABIValue(value))
+		if err != nil {
+			return "", err
+		}
+		return "json:" + string(encoded), nil
+	default:
+		return "", fmt.Errorf("unsupported ABI value type %T", raw)
+	}
+}
+
+// jsonABIValue makes a compound JavaScript value safe to marshal as ABI JSON:
+// bytes become a list of numbers, where encoding/json would write base64.
+func jsonABIValue(raw interface{}) interface{} {
+	switch value := raw.(type) {
+	case []byte:
+		out := make([]interface{}, len(value))
+		for i, b := range value {
+			out[i] = int64(b)
+		}
+		return out
+	case []interface{}:
+		out := make([]interface{}, len(value))
+		for i, item := range value {
+			out[i] = jsonABIValue(item)
+		}
+		return out
+	case map[string]interface{}:
+		out := make(map[string]interface{}, len(value))
+		for key, item := range value {
+			out[key] = jsonABIValue(item)
+		}
+		return out
+	case *big.Int:
+		return json.Number(value.String())
+	default:
+		return raw
 	}
 }
 

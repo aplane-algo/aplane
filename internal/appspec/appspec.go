@@ -7,6 +7,7 @@ import (
 	"crypto/sha512"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"regexp"
 	"strconv"
@@ -175,7 +176,7 @@ func parseArgValue(typeName, raw string) (interface{}, error) {
 	if err := validateABIType(typeName); err != nil {
 		return nil, err
 	}
-	if isByteArrayType(typeName) {
+	if IsByteArrayType(typeName) {
 		return parseByteValue(raw)
 	}
 
@@ -195,11 +196,24 @@ func parseArgValue(typeName, raw string) (interface{}, error) {
 			break
 		}
 		payload = strconv.Quote(payload)
-	case strings.HasPrefix(typeName, "uint"), strings.HasPrefix(typeName, "ufixed"), typeName == "bool":
-		// Raw scalar JSON is already fine.
+	case scalarUintTypeRE.MatchString(typeName), typeName == "byte":
+		if !decimalIntegerRE.MatchString(payload) {
+			return nil, fmt.Errorf("%q is not a decimal whole number for ABI type %s", payload, typeName)
+		}
+	case scalarUfixedTypeRE.MatchString(typeName):
+		if !decimalNumberRE.MatchString(payload) {
+			return nil, fmt.Errorf("%q is not a decimal number for ABI type %s", payload, typeName)
+		}
+	case typeName == "bool":
+		if payload != "true" && payload != "false" {
+			return nil, fmt.Errorf("%q is not true or false for ABI type bool", payload)
+		}
 	default:
 		if !strings.HasPrefix(payload, "[") && !strings.HasPrefix(payload, "{") && !strings.HasPrefix(payload, `"`) {
 			return nil, fmt.Errorf("use json:<value> for ABI type %s", typeName)
+		}
+		if err := rejectJSONNull(payload, typeName); err != nil {
+			return nil, err
 		}
 	}
 
@@ -215,7 +229,37 @@ func parseArgValue(typeName, raw string) (interface{}, error) {
 	return value, nil
 }
 
-func isByteArrayType(typeName string) bool {
+// The ABI library hands scalar text to math/big, which reads a leading 0 as
+// octal, accepts 0x, 0b and digit separators, and reads null as zero. A user
+// who types 0100 means one hundred, so scalars are held to plain decimal here.
+var (
+	scalarUintTypeRE   = regexp.MustCompile(`^uint\d+$`)
+	scalarUfixedTypeRE = regexp.MustCompile(`^ufixed\d+x\d+$`)
+	decimalIntegerRE   = regexp.MustCompile(`^(0|[1-9][0-9]*)$`)
+	decimalNumberRE    = regexp.MustCompile(`^(0|[1-9][0-9]*)(\.[0-9]+)?$`)
+)
+
+// rejectJSONNull refuses a null anywhere in a compound value. No ABI type has
+// a null, and the ABI library would read one as zero or false.
+func rejectJSONNull(payload, typeName string) error {
+	decoder := json.NewDecoder(strings.NewReader(payload))
+	decoder.UseNumber()
+	for {
+		token, err := decoder.Token()
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("invalid JSON for ABI type %s: %w", typeName, err)
+		}
+		if token == nil {
+			return fmt.Errorf("null is not a value of ABI type %s", typeName)
+		}
+	}
+}
+
+// IsByteArrayType reports whether an ABI type is byte[] or byte[N].
+func IsByteArrayType(typeName string) bool {
 	if typeName == "byte[]" {
 		return true
 	}

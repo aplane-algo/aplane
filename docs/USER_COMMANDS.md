@@ -252,7 +252,7 @@ keyreg
 | `sproofkey=<base64>` | State proof key (required for online) |
 | `votefirst=<round>` | First valid round (default: 0) |
 | `votelast=<round>` | Last valid round (default: 3000000) |
-| `keydilution=<n>` | Key dilution (default: 10000) |
+| `keydilution=<n>` | Key dilution, as reported for the participation key (required for `online`; no default) |
 | `eligible=true` | Mark as incentive-eligible |
 | `nowait` | Don't wait for confirmation |
 | `arg:name=<value>` | LogicSig argument; see [Byte Encodings](#byte-encodings) for supported forms. |
@@ -280,9 +280,13 @@ sign <file> [nowait]
 ```
 
 **Supported formats:**
-- Base64-encoded unsigned transaction msgpack, either a single transaction or a transaction array
+- Base64-encoded unsigned transaction msgpack: a single transaction, several written one after another, or a transaction array
 - JSON transaction object or JSON transaction array
 - JSON object with `txn` array containing base64-encoded msgpack transactions
+
+Every byte of the file has to belong to a transaction. A file with leftover
+data, a msgpack transaction that isn't in canonical form, or a JSON object that
+names the same key twice is refused, so what is signed is what the file shows.
 
 **Examples:**
 ```
@@ -1134,6 +1138,10 @@ app call raw <app-id> from <account> [arg-raw=<bytes> ...] [--pay <microalgos>|p
 
 Byte-oriented values such as app boxes, raw app args, and LogicSig `arg:`
 values accept the forms listed in [Byte Encodings](#byte-encodings).
+An ABI argument (`--arg`) for a `uintN`, `byte` or `ufixedNxM` type must be a
+plain decimal number, and for `bool` exactly `true` or `false`. `0100`, `0x10`,
+`1_000` and `null` are refused: they are not read as octal, hex, a grouped
+number or zero.
 Application update calls (`oncomp=update`) require both approval and clear
 program paths. Approval and clear program options are rejected for other
 on-completion modes.
@@ -1539,9 +1547,15 @@ and similar fields — accept these forms:
 |------|---------|
 | `hex:<hex>` | Hex-encoded bytes |
 | `b64:<base64>` | Base64-encoded bytes |
-| `text:<string>` | UTF-8 text bytes |
+| `text:<string>` or `str:<string>` | UTF-8 text bytes |
+| `int:<number>` | A decimal unsigned 64-bit number, as 8 big-endian bytes |
+| `addr:<address>` | An Algorand address, as its 32-byte public key |
 | `0x<hex>` | Hex-encoded bytes (alternate prefix) |
 | bare value | UTF-8 text bytes |
+
+A bare value that opens with any other word and a colon, such as `key:value`,
+is refused, so a mistyped prefix can't be sent as text. Write it as
+`text:key:value`.
 
 Examples:
 

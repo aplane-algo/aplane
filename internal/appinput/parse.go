@@ -5,9 +5,12 @@ package appinput
 
 import (
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
@@ -19,13 +22,20 @@ type ProgramSource struct {
 	Compiled bool
 }
 
+// unknownPrefixRE matches a value that opens with a word and a colon, the
+// shape of a prefix. A bare value of that shape is refused: `int:5` read as
+// seven text bytes is a different number once a program converts it.
+var unknownPrefixRE = regexp.MustCompile(`^[A-Za-z0-9]+:`)
+
 // ParseByteValue parses a byte-oriented value token.
 // Supported forms:
 // - hex:...
 // - b64:...
-// - text:...
+// - text:... or str:... (UTF-8 text)
+// - int:... (a decimal uint64, as 8 big-endian bytes)
+// - addr:... (an Algorand address, as its 32-byte public key)
 // - 0x... (hex compatibility form)
-// - bare text otherwise
+// - bare text otherwise, unless it opens with some other word and a colon
 //
 // This is the shared semantic grammar for byte values; UI layers (cmdspec)
 // consume it from here so engine-layer code never depends on UI parsing.
@@ -45,12 +55,31 @@ func ParseByteValue(raw string) ([]byte, error) {
 		return value, nil
 	case strings.HasPrefix(raw, "text:"):
 		return []byte(strings.TrimPrefix(raw, "text:")), nil
+	case strings.HasPrefix(raw, "str:"):
+		return []byte(strings.TrimPrefix(raw, "str:")), nil
+	case strings.HasPrefix(raw, "int:"):
+		number, err := strconv.ParseUint(strings.TrimPrefix(raw, "int:"), 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid int value: %w", err)
+		}
+		return binary.BigEndian.AppendUint64(nil, number), nil
+	case strings.HasPrefix(raw, "addr:"):
+		address, err := types.DecodeAddress(strings.TrimPrefix(raw, "addr:"))
+		if err != nil {
+			return nil, fmt.Errorf("invalid addr value: %w", err)
+		}
+		return address[:], nil
 	case strings.HasPrefix(raw, "0x"):
 		value, err := hex.DecodeString(raw[2:])
 		if err != nil {
 			return nil, fmt.Errorf("invalid hex value: %w", err)
 		}
 		return value, nil
+	case unknownPrefixRE.MatchString(raw):
+		prefix := raw[:strings.Index(raw, ":")+1]
+		return nil, fmt.Errorf(
+			"unknown value prefix %q (supported: hex:, b64:, text:, str:, int:, addr:); use text:%s for literal text",
+			prefix, raw)
 	default:
 		return []byte(raw), nil
 	}

@@ -564,8 +564,20 @@ appCallRaw(123, "alice", ["text:deposit"], {
 appCall(appId, method, abiPath, from, args, options = {})
 ```
 
-`args` is an array converted to ABI argument strings. Options are the same as
-`appCallRaw`.
+`args` is an array with one entry per method argument, converted by the
+argument's ABI type. Options are the same as `appCallRaw`.
+
+| JavaScript value | Accepted for |
+|------------------|--------------|
+| number, `BigInt`, or a decimal string | `uintN`, `byte`, `ufixedNxM` |
+| `true` / `false` | `bool` |
+| `Uint8Array`, an array of byte numbers, or a byte-encoded string (`hex:`, `b64:`, `text:`) | `byte[]`, `byte[N]` |
+| string | `string`, `address` |
+| array | arrays and tuples; a nested `Uint8Array` is read as a list of bytes |
+
+`null` and `undefined` are refused. A numeric string must be plain decimal:
+`"0100"`, `"0x10"` and `"1_000"` are refused, not read as octal, hex or a
+grouped number.
 
 Returns `{ txid, txids, confirmed, method }` for a single call, or
 `{ txids, confirmed, grouped: true, method }` when a companion payment is used.

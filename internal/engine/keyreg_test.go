@@ -146,3 +146,23 @@ func TestGetIncentiveEligibility(t *testing.T) {
 		t.Error("expected eligible = true")
 	}
 }
+
+func TestPrepareKeyReg_OnlineRequiresKeyDilution(t *testing.T) {
+	addr := testAddr(1)
+	transport := newAccountMockTransport(t)
+	transport.addAccount(addr, 1_000_000)
+	eng := setupEngineWithMockAlgod(t, transport)
+
+	_, err := eng.PrepareKeyReg(context.Background(), KeyRegParams{
+		Account:       addr,
+		Mode:          "online",
+		VoteKey:       "dGVzdA==",
+		SelectionKey:  "dGVzdA==",
+		StateProofKey: "dGVzdA==",
+		VoteFirst:     1,
+		VoteLast:      100,
+	})
+	if err == nil || !strings.Contains(err.Error(), "keydilution") {
+		t.Fatalf("online keyreg without a key dilution: %v, want a keydilution error", err)
+	}
+}

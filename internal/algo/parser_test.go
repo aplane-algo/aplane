@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	sdkjson "github.com/algorand/go-algorand-sdk/v2/encoding/json"
@@ -191,5 +192,101 @@ func TestParseTransactionMsgpack_Invalid(t *testing.T) {
 	_, err := ParseTransactionMsgpack([]byte("invalid msgpack data"))
 	if err == nil {
 		t.Error("ParseTransactionMsgpack() expected error, got nil")
+	}
+}
+
+func parserTestPayment(t *testing.T, amount uint64) types.Transaction {
+	t.Helper()
+	var sender types.Address
+	sender[0] = 1
+	return types.Transaction{
+		Type: types.PaymentTx,
+		Header: types.Header{
+			Sender:     sender,
+			Fee:        1000,
+			FirstValid: 1,
+			LastValid:  1000,
+		},
+		PaymentTxnFields: types.PaymentTxnFields{Receiver: sender, Amount: types.MicroAlgos(amount)},
+	}
+}
+
+func TestParseTransactionMsgpackReadsEveryConcatenatedTransaction(t *testing.T) {
+	first := msgpack.Encode(parserTestPayment(t, 1))
+	second := msgpack.Encode(parserTestPayment(t, 2))
+
+	txns, err := ParseTransactionMsgpack(append(append([]byte{}, first...), second...))
+	if err != nil {
+		t.Fatalf("two concatenated transactions: %v", err)
+	}
+	if len(txns) != 2 || txns[0].Amount != 1 || txns[1].Amount != 2 {
+		t.Fatalf("parsed %d transaction(s): %+v", len(txns), txns)
+	}
+
+	array := msgpack.Encode([]types.Transaction{parserTestPayment(t, 1), parserTestPayment(t, 2)})
+	if txns, err = ParseTransactionMsgpack(array); err != nil || len(txns) != 2 {
+		t.Fatalf("array of two: %d transaction(s), %v", len(txns), err)
+	}
+}
+
+func TestParseTransactionMsgpackRefusesLeftoverAndNonCanonicalBytes(t *testing.T) {
+	first := msgpack.Encode(parserTestPayment(t, 1))
+	array := msgpack.Encode([]types.Transaction{parserTestPayment(t, 1)})
+
+	// The same payment with its amount written twice: 1, then 5,000,000.
+	// A decoder keeps the last one.
+	var fields map[string]interface{}
+	if err := msgpack.Decode(first, &fields); err != nil {
+		t.Fatal(err)
+	}
+	duplicated := append([]byte{first[0] + 1}, first[1:]...)
+	duplicated = append(duplicated, msgpack.Encode(map[string]uint64{"amt": 5_000_000})[1:]...)
+	var probe types.Transaction
+	if err := msgpack.Decode(duplicated, &probe); err != nil || probe.Amount != 5_000_000 {
+		t.Fatalf("fixture: duplicate-key payment decoded to amount %d, %v", probe.Amount, err)
+	}
+
+	cases := map[string][]byte{
+		"empty":                        {},
+		"trailing garbage":             append(append([]byte{}, first...), 0xc1, 0xff),
+		"trailing text":                append(append([]byte{}, first...), []byte("garbage")...),
+		"array with trailing bytes":    append(append([]byte{}, array...), first...),
+		"repeated field":               duplicated,
+		"second transaction truncated": append(append([]byte{}, first...), first[:len(first)-3]...),
+	}
+	for name, data := range cases {
+		if txns, err := ParseTransactionMsgpack(data); err == nil {
+			t.Errorf("%s: parsed %d transaction(s), want refused", name, len(txns))
+		}
+	}
+}
+
+func TestParseTransactionsRefusesDuplicateJSONKeys(t *testing.T) {
+	txn := parserTestPayment(t, 1)
+	single := string(sdkjson.Encode(txn))
+	if _, err := ParseTransactions([]byte(single)); err != nil {
+		t.Fatalf("plain JSON transaction: %v", err)
+	}
+
+	b64 := base64.StdEncoding.EncodeToString(msgpack.Encode(txn))
+	cases := map[string]string{
+		"repeated amount":          strings.Replace(single, `"amt": 1,`, `"amt": 1, "amt": 5000000,`, 1),
+		"repeated txn list":        `{"txn":["` + b64 + `"],"txn":["` + b64 + `"]}`,
+		"trailing document":        single + single,
+		"repeated key in an array": "[" + strings.Replace(single, `"amt": 1,`, `"amt": 1, "amt": 2,`, 1) + "]",
+	}
+	for name, data := range cases {
+		if !strings.Contains(single, `"amt": 1,`) {
+			t.Fatalf("fixture: encoded payment has no amt field: %s", single)
+		}
+		if txns, err := ParseTransactions([]byte(data)); err == nil {
+			t.Errorf("%s: parsed %d transaction(s), want refused", name, len(txns))
+		}
+	}
+
+	nonCanonical := append(msgpack.Encode(txn), 0xc0)
+	wrapped := `{"txn":["` + base64.StdEncoding.EncodeToString(nonCanonical) + `"]}`
+	if txns, err := ParseTransactions([]byte(wrapped)); err == nil {
+		t.Errorf("txn list entry with trailing bytes: parsed %d transaction(s), want refused", len(txns))
 	}
 }
