@@ -1310,7 +1310,8 @@ Day-to-day shortcuts:
 
 | Goal | Command |
 |------|---------|
-| Local pre-commit | `make check` (unit + contract) |
+| Before a commit | `go test ./path/to/touched/package` (the pre-commit hook runs no tests) |
+| Before a push | Nothing by hand: the pre-push hook runs `make test`, which includes the signer API contract tests. `make check` runs the same and then the contract tests again, verbosely |
 | Race detector pass | `make race-test` |
 | Blank-store lifecycle | `make store-lifecycle-test` |
 | Store crash/recovery | `make store-crash-test` |

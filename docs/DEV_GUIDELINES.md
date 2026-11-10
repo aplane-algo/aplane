@@ -36,6 +36,35 @@ make integrity-check
 analysis, security analyzers, race tests, cross-builds, smoke tests, signer API
 contract tests, integration tests, and a clean-tree check.
 
+### Git hooks
+
+`scripts/dev/setup-git-hooks.sh` installs two hooks in the main checkout. Linked
+worktrees use the same ones:
+
+- **pre-commit** runs formatting, vet, the testmode build, staticcheck, the
+  seed-phrase scan and lint. It takes seconds and runs no tests.
+- **pre-push** runs the unit suite (`make test`), which takes minutes. It tests
+  the checked-out tree, not the commits being pushed, and warns when the two
+  differ or the tree has uncommitted changes. A push that sends nothing the
+  remote lacks skips it: a deletion, or a tag on a commit already pushed. A tag
+  on a commit that was never pushed is tested. `git push --no-verify` skips it
+  once.
+
+A commit therefore doesn't show that tests pass: run the touched packages before
+committing.
+
+Things to know about the hooks:
+
+- `.githooks/` is not tracked. Rerun the script after it changes.
+- Git is given the hooks' absolute path. Rerun the script after moving or
+  renaming the checkout; until then git runs no hooks and doesn't say so.
+- The hooks are one copy shared by every worktree. Running an older copy of the
+  script from a worktree on an old branch replaces them for all.
+- Git opens the connection to the remote before the pre-push hook runs. If the
+  suite outlasts the remote's idle timeout, the push fails after the tests
+  pass. Push again, which is quick because test results are cached, or set an
+  SSH keep-alive.
+
 ## Pull Request Checklist
 
 - [ ] Code is formatted: `gofmt -s -w <changed-go-files>` or `make fmt-check`

@@ -11,7 +11,7 @@ import "testing"
 // SkipFullTree skips the test when the race detector is on: building a full
 // 65,536-leaf XMSS tree takes seconds normally and minutes under the
 // detector, which times out CI's race job. The ordinary unit suite, the
-// pre-commit hook and the LocalNet suite still run every such test.
+// pre-push hook and the LocalNet suite still run every such test.
 func SkipFullTree(t testing.TB) {
 	t.Helper()
 	if Enabled {
