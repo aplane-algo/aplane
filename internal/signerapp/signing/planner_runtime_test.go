@@ -488,7 +488,7 @@ func TestPlannerAuditsDecodedTxnSender(t *testing.T) {
 	planner := NewPlanner(deps, PlannerOptions{
 		AuditLog:            audit,
 		GenesisHashResolver: resolver,
-		GenerateTxnDescription: func(txnBytesHex string) string {
+		GenerateTxnDescription: func(types.Transaction) string {
 			return "decoded transaction"
 		},
 	})

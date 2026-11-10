@@ -301,7 +301,9 @@ When apsigner receives a grouped `/sign` request, it processes the group in this
 2. Decode all supplied transaction material.
    - Sign and foreign entries decode from `txn_bytes_hex`.
    - Passthrough entries decode from `signed_txn_hex`.
-   - Decode failures, malformed hex, and invalid msgpack fail the request.
+   - Malformed hex, a missing `TX` prefix on `txn_bytes_hex`, invalid msgpack,
+     and bytes that are not the canonical encoding of what they decode to
+     fail the request with 400.
 
 3. Classify the group and enforce shape rules.
    - All-foreign groups are rejected because the signer has no signer-managed work to perform.

@@ -16,6 +16,8 @@ before it was renamed `enroll`.
   client's transaction ID no longer matched.
 - Sign-mode and foreign bytes must now be `TX`-prefixed and canonical, as
   every other signer endpoint already required. Anything else is a 400.
+- A passthrough entry's signed bytes must be canonical too. They are returned
+  as given, so they have to be exactly what was decoded and reviewed.
 - apshell and the SDKs have always sent this form.
 
 ## The review of a mixed cosigned group no longer calls the signer's own accounts foreign

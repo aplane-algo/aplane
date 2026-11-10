@@ -432,12 +432,12 @@ func TestCosignerGatesRefuseATransactionTheNetworkNeverAccepts(t *testing.T) {
 }
 
 func TestDecodeTransactionsRefusesBytesThatAreNotCanonical(t *testing.T) {
-	var sender types.Address
-	sender[0] = 1
+	var sender, receiver types.Address
+	sender[0], receiver[0] = 1, 2
 	txn := types.Transaction{
 		Type:             types.PaymentTx,
 		Header:           types.Header{Sender: sender, Fee: 1_000, FirstValid: 1, LastValid: 10},
-		PaymentTxnFields: types.PaymentTxnFields{Receiver: sender, Amount: 1},
+		PaymentTxnFields: types.PaymentTxnFields{Receiver: receiver, Amount: 1},
 	}
 	canonicalBytes := txnutil.EncodeWithPrefix(txn)
 	body := canonicalBytes[2:]
@@ -452,39 +452,78 @@ func TestDecodeTransactionsRefusesBytesThatAreNotCanonical(t *testing.T) {
 		t.Fatalf("canonical bytes refused: %v", err)
 	}
 
-	// The payment with its amount written a second time, as 5,000,000. A
-	// lenient decoder keeps the last value.
+	// The payment with its amount written a second time, as 5,000,000, after
+	// its other fields. A lenient decoder keeps the last value.
+	var probe types.Transaction
 	repeated := append([]byte{'T', 'X', body[0] + 1}, body[1:]...)
 	repeated = append(repeated, msgpack.Encode(map[string]uint64{"amt": 5_000_000})[1:]...)
-	var probe types.Transaction
 	if err := msgpack.Decode(repeated[2:], &probe); err != nil || probe.Amount != 5_000_000 {
 		t.Fatalf("fixture: repeated-field payment decoded to amount %d, %v", probe.Amount, err)
 	}
 
-	// The sender as 31 bytes. A lenient decoder pads it to a different account.
+	// The sender as 31 bytes. A lenient decoder pads it to a different
+	// account. The receiver differs from the sender, so the field rewritten
+	// here can only be the sender.
 	shortSender := bytes.Replace(body, append([]byte{0xc4, 32}, sender[:]...), append([]byte{0xc4, 31}, sender[:31]...), 1)
 	if bytes.Equal(shortSender, body) {
 		t.Fatal("fixture: the sender field was not found in the encoding")
 	}
-	if err := msgpack.Decode(shortSender, &probe); err != nil {
-		t.Fatalf("fixture: short-sender payment does not decode leniently: %v", err)
+	probe = types.Transaction{}
+	if err := msgpack.Decode(shortSender, &probe); err != nil || probe.Receiver != receiver {
+		t.Fatalf("fixture: short-sender payment decoded with receiver %s, %v", probe.Receiver, err)
 	}
 
-	for name, raw := range map[string][]byte{
-		"no TX prefix":    body,
-		"trailing bytes":  append(append([]byte{}, canonicalBytes...), 0xc0),
-		"second txn":      append(append([]byte{}, canonicalBytes...), body...),
-		"repeated field":  repeated,
-		"31-byte address": append([]byte{'T', 'X'}, shortSender...),
-		"prefix only":     {'T', 'X'},
+	for name, tc := range map[string]struct {
+		raw  []byte
+		want string
+	}{
+		"no TX prefix":    {body, missingTXPrefixMessage},
+		"prefix only":     {[]byte{'T', 'X'}, invalidMsgpackMessage},
+		"not msgpack":     {[]byte{'T', 'X', 0xc1}, invalidMsgpackMessage},
+		"trailing bytes":  {append(append([]byte{}, canonicalBytes...), 0xc0), notCanonicalMessage},
+		"second txn":      {append(append([]byte{}, canonicalBytes...), body...), notCanonicalMessage},
+		"repeated field":  {repeated, notCanonicalMessage},
+		"31-byte address": {append([]byte{'T', 'X'}, shortSender...), notCanonicalMessage},
 	} {
-		err := decode(raw)
+		err := decode(tc.raw)
 		if err == nil {
 			t.Errorf("%s: accepted, want refused", name)
 			continue
 		}
-		if err.Kind != ErrorBadRequest {
-			t.Errorf("%s: error kind %v, want a bad request", name, err.Kind)
+		if err.Kind != ErrorBadRequest || !strings.HasSuffix(err.Message, ": "+tc.want) {
+			t.Errorf("%s: %v %q, want a bad request ending %q", name, err.Kind, err.Message, tc.want)
+		}
+	}
+}
+
+func TestDecodeTransactionsRefusesPassthroughBytesThatAreNotCanonical(t *testing.T) {
+	var sender types.Address
+	sender[0] = 1
+	stxn := types.SignedTxn{
+		Sig: types.Signature{1},
+		Txn: types.Transaction{
+			Type:             types.PaymentTx,
+			Header:           types.Header{Sender: sender, Fee: 1_000, FirstValid: 1, LastValid: 10},
+			PaymentTxnFields: types.PaymentTxnFields{Receiver: sender, Amount: 1},
+		},
+	}
+	signed := msgpack.Encode(stxn)
+	decode := func(raw []byte) *ServiceError {
+		_, _, err := decodeTransactions(
+			[]signerapi.SignRequest{{SignedTxnHex: hex.EncodeToString(raw)}},
+			map[int]bool{0: true}, consoleOf(nil))
+		return err
+	}
+	if err := decode(signed); err != nil {
+		t.Fatalf("canonical passthrough refused: %v", err)
+	}
+	for name, raw := range map[string][]byte{
+		"trailing bytes":     append(append([]byte{}, signed...), 0xc0),
+		"second transaction": append(append([]byte{}, signed...), signed...),
+	} {
+		err := decode(raw)
+		if err == nil || err.Kind != ErrorBadRequest || !strings.HasSuffix(err.Message, notCanonicalMessage) {
+			t.Errorf("%s: %v, want a bad request ending %q", name, err, notCanonicalMessage)
 		}
 	}
 }

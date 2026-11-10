@@ -132,9 +132,12 @@ sign-and-submit path. The other call sites are
 ### In Signer (server side)
 
 Request decoding lives in `internal/signerapp/signing/planner.go`: the planner
-hex-decodes `TxnBytesHex`, strips a leading `TX` prefix when present, and
-msgpack-decodes the remainder into a transaction; malformed hex or msgpack
-fails the request.
+hex-decodes `TxnBytesHex`, requires the leading `TX` prefix, msgpack-decodes
+the remainder into a transaction, and requires the bytes to be that
+transaction's canonical encoding. Malformed hex, a missing prefix, invalid
+msgpack and non-canonical bytes each fail the request with 400. A passthrough
+entry's `signed_txn_hex` is held to the same rule: it must be the canonical
+encoding of the signed transaction it decodes to.
 
 Message selection lives in `internal/signerapp/signing/execution.go`. For
 LogicSig DSA keys (those backed by TEAL bytecode), the signing message is the
@@ -149,9 +152,10 @@ canonical TX-prefixed hex form. `DecodePrefixedHex` rejects input without the
 The server request decoder is as strict: `/sign` and `/plan` refuse, with 400,
 sign-mode or foreign bytes that lack the `TX` prefix or are not the canonical
 encoding of the transaction they decode to (trailing data, a repeated field, a
-wrong-length address, an explicit empty field). What the signer reviews and
-signs is then always byte for byte what the client sent, apart from the
-changes it reports.
+wrong-length address, an explicit empty field), and passthrough bytes that are
+not the canonical encoding of their signed transaction. What the signer
+reviews is then always what the bytes say: it signs the client's transaction
+apart from the changes it reports, and returns a passthrough entry unchanged.
 
 ## Coverage
 
