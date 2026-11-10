@@ -587,29 +587,39 @@ func abiArgText(raw interface{}, typeName string) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		if text, ok := raw.(string); ok {
-			return text, nil
-		}
 		return "hex:" + hex.EncodeToString(value), nil
 	}
 	switch value := raw.(type) {
 	case nil:
 		return "", fmt.Errorf("null or undefined is not an ABI value")
 	case string:
+		if typeName == "string" {
+			// Sent as written. The text grammar would read a leading
+			// "json:" as an instruction.
+			encoded, err := json.Marshal(value)
+			if err != nil {
+				return "", err
+			}
+			return "json:" + string(encoded), nil
+		}
 		return value, nil
 	case bool:
 		return strconv.FormatBool(value), nil
 	case int64:
 		return strconv.FormatInt(value, 10), nil
 	case float64:
-		if math.IsNaN(value) || math.IsInf(value, 0) {
-			return "", fmt.Errorf("%v is not an ABI value", value)
+		if err := checkJSNumber(value); err != nil {
+			return "", err
 		}
 		return strconv.FormatFloat(value, 'f', -1, 64), nil
 	case *big.Int:
 		return value.String(), nil
 	case []byte, []interface{}, map[string]interface{}:
-		encoded, err := json.Marshal(jsonABIValue(value))
+		converted, err := jsonABIValue(value, typeName)
+		if err != nil {
+			return "", err
+		}
+		encoded, err := json.Marshal(converted)
 		if err != nil {
 			return "", err
 		}
@@ -619,33 +629,78 @@ func abiArgText(raw interface{}, typeName string) (string, error) {
 	}
 }
 
-// jsonABIValue makes a compound JavaScript value safe to marshal as ABI JSON:
-// bytes become a list of numbers, where encoding/json would write base64.
-func jsonABIValue(raw interface{}) interface{} {
-	switch value := raw.(type) {
-	case []byte:
-		out := make([]interface{}, len(value))
-		for i, b := range value {
-			out[i] = int64(b)
+// maxSafeJSInteger is JavaScript's Number.MAX_SAFE_INTEGER. A whole number
+// past it has already been rounded by the time it reaches Go.
+const maxSafeJSInteger = 1<<53 - 1
+
+func checkJSNumber(value float64) error {
+	if math.IsNaN(value) || math.IsInf(value, 0) {
+		return fmt.Errorf("%v is not an ABI value", value)
+	}
+	if value == math.Trunc(value) && math.Abs(value) > maxSafeJSInteger {
+		return fmt.Errorf(
+			"%s is past the largest whole number JavaScript holds exactly; pass a BigInt or a decimal string",
+			strconv.FormatFloat(value, 'f', -1, 64))
+	}
+	return nil
+}
+
+// jsonABIValue makes a compound JavaScript value safe to marshal as ABI JSON,
+// following the ABI type down into arrays and tuples. A byte array is written
+// as a list of numbers whatever form it was given in: the ABI library would
+// read a string there as base64, and encoding/json would write bytes as
+// base64.
+func jsonABIValue(raw interface{}, typeName string) (interface{}, error) {
+	if appspec.IsByteArrayType(typeName) {
+		value, err := parseJSByteString(raw)
+		if err != nil {
+			return nil, err
 		}
-		return out
+		return byteNumbers(value), nil
+	}
+
+	switch value := raw.(type) {
+	case nil:
+		return nil, fmt.Errorf("null or undefined is not an ABI value")
+	case float64:
+		if err := checkJSNumber(value); err != nil {
+			return nil, err
+		}
+		return value, nil
+	case *big.Int:
+		return json.Number(value.String()), nil
+	case []byte:
+		return byteNumbers(value), nil
 	case []interface{}:
+		members, isTuple := appspec.TupleTypes(typeName)
+		element, _ := appspec.ElementType(typeName)
 		out := make([]interface{}, len(value))
 		for i, item := range value {
-			out[i] = jsonABIValue(item)
+			itemType := element
+			if isTuple {
+				itemType = ""
+				if i < len(members) {
+					itemType = members[i]
+				}
+			}
+			converted, err := jsonABIValue(item, itemType)
+			if err != nil {
+				return nil, fmt.Errorf("element %d: %w", i, err)
+			}
+			out[i] = converted
 		}
-		return out
-	case map[string]interface{}:
-		out := make(map[string]interface{}, len(value))
-		for key, item := range value {
-			out[key] = jsonABIValue(item)
-		}
-		return out
-	case *big.Int:
-		return json.Number(value.String())
+		return out, nil
 	default:
-		return raw
+		return raw, nil
 	}
+}
+
+func byteNumbers(value []byte) []interface{} {
+	out := make([]interface{}, len(value))
+	for i, b := range value {
+		out[i] = int64(b)
+	}
+	return out
 }
 
 func parseOnCompletionString(raw string) (types.OnCompletion, error) {

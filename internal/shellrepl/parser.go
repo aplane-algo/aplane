@@ -323,8 +323,6 @@ func ParseTakeCommand(args []string) (KeyRegParams, error) {
 	params := KeyRegParams{
 		Wait:              true,
 		IncentiveEligible: false, // Default to NOT eligible (requires explicit flag)
-		VoteFirst:         0,
-		VoteLast:          3000000,
 	}
 
 	if len(args) < 2 {

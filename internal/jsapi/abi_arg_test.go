@@ -53,6 +53,11 @@ func TestAppCallArgumentsEncodeByTheirABIType(t *testing.T) {
 		{"number array as uint8[]", `[[1, 2, 3]]`, "uint8[]", "0003010203"},
 		{"tuple with bytes", `[[7, new Uint8Array([1, 2])]]`, "(uint64,byte[])", "0000000000000007000a00020102"},
 		{"text as string", `["[1 2 3]"]`, "string", "00075b31203220335d"},
+		{"text that starts with json: as string", `["json:\"x\""]`, "string", "00086a736f6e3a227822"},
+		{"hex text nested in a tuple", `[[7, "hex:0102"]]`, "(uint64,byte[])", "0000000000000007000a00020102"},
+		{"plain text nested in a tuple", `[[7, "abcd"]]`, "(uint64,byte[])", "0000000000000007000a000461626364"},
+		{"number array nested in an array", `[[[1, 2], [3]]]`, "byte[][]", "00020004000800020102000103"},
+		{"string nested in a tuple", `[["hi", 1]]`, "(string,uint8)", "00030100026869"},
 	}
 	for _, tc := range cases {
 		encoded, err := abiArgsFromJS(t, tc.script, tc.typeName)
@@ -76,6 +81,10 @@ func TestAppCallArgumentsRefuseWhatHasNoABIValue(t *testing.T) {
 		{"byte out of range", `[[1, 256]]`, "byte[]"},
 		{"nested null", `[[1, null]]`, "uint64[]"},
 		{"number for bytes", `[5]`, "byte[]"},
+		{"whole number past 2^53", `[2 ** 64]`, "uint128"},
+		{"nested whole number past 2^53", `[[2 ** 64]]`, "uint128[]"},
+		{"nested bad hex", `[[7, "hex:zz"]]`, "(uint64,byte[])"},
+		{"nested null in a tuple", `[[7, null]]`, "(uint64,byte[])"},
 	}
 	for _, tc := range cases {
 		if encoded, err := abiArgsFromJS(t, tc.script, tc.typeName); err == nil {

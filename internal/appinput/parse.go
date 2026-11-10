@@ -9,7 +9,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 
@@ -22,20 +21,17 @@ type ProgramSource struct {
 	Compiled bool
 }
 
-// unknownPrefixRE matches a value that opens with a word and a colon, the
-// shape of a prefix. A bare value of that shape is refused: `int:5` read as
-// seven text bytes is a different number once a program converts it.
-var unknownPrefixRE = regexp.MustCompile(`^[A-Za-z0-9]+:`)
-
 // ParseByteValue parses a byte-oriented value token.
 // Supported forms:
-// - hex:...
-// - b64:...
-// - text:... or str:... (UTF-8 text)
-// - int:... (a decimal uint64, as 8 big-endian bytes)
-// - addr:... (an Algorand address, as its 32-byte public key)
-// - 0x... (hex compatibility form)
-// - bare text otherwise, unless it opens with some other word and a colon
+//   - hex:...
+//   - b64:...
+//   - text:... or str:... (UTF-8 text)
+//   - int:... (a decimal uint64, as 8 big-endian bytes)
+//   - addr:... (an Algorand address, as its 32-byte public key)
+//   - 0x... (hex compatibility form)
+//   - bare text otherwise, unless it contains a colon: a mistyped or unknown
+//     prefix such as `int :5` or `base-64:AAEC` must not be sent as text, and
+//     `int:5` read as text is a different number once a program converts it
 //
 // This is the shared semantic grammar for byte values; UI layers (cmdspec)
 // consume it from here so engine-layer code never depends on UI parsing.
@@ -75,11 +71,10 @@ func ParseByteValue(raw string) ([]byte, error) {
 			return nil, fmt.Errorf("invalid hex value: %w", err)
 		}
 		return value, nil
-	case unknownPrefixRE.MatchString(raw):
-		prefix := raw[:strings.Index(raw, ":")+1]
+	case strings.Contains(raw, ":"):
 		return nil, fmt.Errorf(
-			"unknown value prefix %q (supported: hex:, b64:, text:, str:, int:, addr:); use text:%s for literal text",
-			prefix, raw)
+			"%q has no known value prefix (supported: hex:, b64:, text:, str:, int:, addr:); use text:%s for literal text",
+			raw, raw)
 	default:
 		return []byte(raw), nil
 	}

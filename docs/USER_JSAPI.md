@@ -573,9 +573,12 @@ argument's ABI type. Options are the same as `appCallRaw`.
 | `true` / `false` | `bool` |
 | `Uint8Array`, an array of byte numbers, or a byte-encoded string (`hex:`, `b64:`, `text:`) | `byte[]`, `byte[N]` |
 | string | `string`, `address` |
-| array | arrays and tuples; a nested `Uint8Array` is read as a list of bytes |
+| array | arrays and tuples; each element is converted by its own type, so a `byte[]` inside a tuple takes the same forms as one at the top level |
 
-`null` and `undefined` are refused. A numeric string must be plain decimal:
+A string given for a `string` argument is sent exactly as written, including
+one that starts with `json:`. A whole number past `Number.MAX_SAFE_INTEGER`
+is refused, because JavaScript has already rounded it: pass a `BigInt` or a
+decimal string. `null` and `undefined` are refused. A numeric string must be plain decimal:
 `"0100"`, `"0x10"` and `"1_000"` are refused, not read as octal, hex or a
 grouped number.
 

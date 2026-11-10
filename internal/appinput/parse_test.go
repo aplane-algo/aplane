@@ -92,8 +92,8 @@ func TestParseByteValueGoalStylePrefixes(t *testing.T) {
 		{"text:int:5", "696e743a35"},
 		{"addr:" + zeroAddress, "0000000000000000000000000000000000000000000000000000000000000000"},
 		{"plain", "706c61696e"},
-		{"two words: here", "74776f20776f7264733a2068657265"},
-		{":leading", "3a6c656164696e67"},
+		{"text:two words: here", "74776f20776f7264733a2068657265"},
+		{"two words", "74776f20776f726473"},
 	}
 	for _, tc := range cases {
 		got, err := ParseByteValue(tc.raw)
@@ -111,6 +111,7 @@ func TestParseByteValueRefusesUnknownAndMalformedPrefixes(t *testing.T) {
 	for _, raw := range []string{
 		"int:-1", "int:0x10", "int:18446744073709551616", "int:", "int:5 ",
 		"addr:notanaddress", "uint:5", "string:x", "INT:5", "base64:AAAA", "key:value",
+		"base-64:AAEC", "u_int:5", "int :5", ":leading", "two words: here", "http://example",
 	} {
 		if got, err := ParseByteValue(raw); err == nil {
 			t.Errorf("ParseByteValue(%q) = %x, want refused", raw, got)

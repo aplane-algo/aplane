@@ -181,6 +181,8 @@ func TestParseArgValueHoldsScalarsToPlainDecimal(t *testing.T) {
 		{"uint64[]", "[1,null]"},
 		{"(uint64,bool)", "[1,null]"},
 		{"(uint64,(bool,uint8))", "[1,[null,2]]"},
+		{"string", "json:[104,null,105]"},
+		{"string", "json:null"},
 	}
 	for _, tc := range refused {
 		if value, err := parseArgValue(tc.typeName, tc.raw); err == nil {

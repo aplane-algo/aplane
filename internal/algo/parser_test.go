@@ -270,10 +270,12 @@ func TestParseTransactionsRefusesDuplicateJSONKeys(t *testing.T) {
 
 	b64 := base64.StdEncoding.EncodeToString(msgpack.Encode(txn))
 	cases := map[string]string{
-		"repeated amount":          strings.Replace(single, `"amt": 1,`, `"amt": 1, "amt": 5000000,`, 1),
-		"repeated txn list":        `{"txn":["` + b64 + `"],"txn":["` + b64 + `"]}`,
-		"trailing document":        single + single,
-		"repeated key in an array": "[" + strings.Replace(single, `"amt": 1,`, `"amt": 1, "amt": 2,`, 1) + "]",
+		"repeated amount":   strings.Replace(single, `"amt": 1,`, `"amt": 1, "amt": 5000000,`, 1),
+		"repeated txn list": `{"txn":["` + b64 + `"],"txn":["` + b64 + `"]}`,
+		"trailing document": single + single,
+		// encoding/json reads "TXN" into the same field as "txn".
+		"txn list under two spellings": `{"txn":["` + b64 + `"],"TXN":["` + b64 + `"]}`,
+		"repeated key in an array":     "[" + strings.Replace(single, `"amt": 1,`, `"amt": 1, "amt": 2,`, 1) + "]",
 	}
 	for name, data := range cases {
 		if !strings.Contains(single, `"amt": 1,`) {

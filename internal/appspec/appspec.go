@@ -182,8 +182,12 @@ func parseArgValue(typeName, raw string) (interface{}, error) {
 
 	if typeName == "string" {
 		if strings.HasPrefix(raw, "json:") {
+			payload := strings.TrimPrefix(raw, "json:")
+			if err := rejectJSONNull(payload, typeName); err != nil {
+				return nil, err
+			}
 			abiType, _ := abi.TypeOf(typeName)
-			return abiType.UnmarshalFromJSON([]byte(strings.TrimPrefix(raw, "json:")))
+			return abiType.UnmarshalFromJSON([]byte(payload))
 		}
 		return raw, nil
 	}
@@ -256,6 +260,47 @@ func rejectJSONNull(payload, typeName string) error {
 			return fmt.Errorf("null is not a value of ABI type %s", typeName)
 		}
 	}
+}
+
+// ElementType returns the element type of an ABI array type (`T[]` or
+// `T[N]`), and false for anything else.
+func ElementType(typeName string) (string, bool) {
+	if !strings.HasSuffix(typeName, "]") {
+		return "", false
+	}
+	open := strings.LastIndex(typeName, "[")
+	if open <= 0 {
+		return "", false
+	}
+	return typeName[:open], true
+}
+
+// TupleTypes returns the member types of an ABI tuple type `(A,B,...)`, and
+// false for anything else.
+func TupleTypes(typeName string) ([]string, bool) {
+	if !strings.HasPrefix(typeName, "(") || !strings.HasSuffix(typeName, ")") {
+		return nil, false
+	}
+	inner := typeName[1 : len(typeName)-1]
+	if inner == "" {
+		return []string{}, true
+	}
+	var members []string
+	depth, start := 0, 0
+	for i, r := range inner {
+		switch r {
+		case '(':
+			depth++
+		case ')':
+			depth--
+		case ',':
+			if depth == 0 {
+				members = append(members, inner[start:i])
+				start = i + 1
+			}
+		}
+	}
+	return append(members, inner[start:]), true
 }
 
 // IsByteArrayType reports whether an ABI type is byte[] or byte[N].

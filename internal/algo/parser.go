@@ -116,10 +116,13 @@ func walkJSONValue(decoder *json.Decoder) error {
 				return err
 			}
 			key, _ := keyToken.(string)
-			if seen[key] {
+			// encoding/json matches field names without regard to case, so
+			// "txn" and "TXN" are the same key to it.
+			folded := strings.ToLower(key)
+			if seen[folded] {
 				return fmt.Errorf("key %q appears more than once in one object", key)
 			}
-			seen[key] = true
+			seen[folded] = true
 			if err := walkJSONValue(decoder); err != nil {
 				return err
 			}

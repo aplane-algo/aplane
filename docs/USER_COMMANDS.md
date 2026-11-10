@@ -250,8 +250,8 @@ keyreg
 | `votekey=<base64>` | Voting key (required for online) |
 | `selkey=<base64>` | Selection key (required for online) |
 | `sproofkey=<base64>` | State proof key (required for online) |
-| `votefirst=<round>` | First valid round (default: 0) |
-| `votelast=<round>` | Last valid round (default: 3000000) |
+| `votefirst=<round>` | First round the participation key is valid for (required for `online`; no default) |
+| `votelast=<round>` | Last round the participation key is valid for (required for `online`; no default) |
 | `keydilution=<n>` | Key dilution, as reported for the participation key (required for `online`; no default) |
 | `eligible=true` | Mark as incentive-eligible |
 | `nowait` | Don't wait for confirmation |
@@ -283,6 +283,9 @@ sign <file> [nowait]
 - Base64-encoded unsigned transaction msgpack: a single transaction, several written one after another, or a transaction array
 - JSON transaction object or JSON transaction array
 - JSON object with `txn` array containing base64-encoded msgpack transactions
+
+Several transactions in one file, in any of these formats, are signed and
+submitted together as one group.
 
 Every byte of the file has to belong to a transaction. A file with leftover
 data, a msgpack transaction that isn't in canonical form, or a JSON object that
@@ -1553,8 +1556,8 @@ and similar fields — accept these forms:
 | `0x<hex>` | Hex-encoded bytes (alternate prefix) |
 | bare value | UTF-8 text bytes |
 
-A bare value that opens with any other word and a colon, such as `key:value`,
-is refused, so a mistyped prefix can't be sent as text. Write it as
+A bare value that contains a colon, such as `key:value`, is refused, so a
+mistyped or unknown prefix can't be sent as text. Write it as
 `text:key:value`.
 
 Examples:
