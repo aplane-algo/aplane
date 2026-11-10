@@ -124,6 +124,10 @@ func (p *Planner) PlanGroup(req signerapi.GroupSignRequest) (*PlanResult, *Servi
 		return nil, err
 	}
 
+	if err = validateTransactionBounds(txns); err != nil {
+		return nil, err
+	}
+
 	if len(txns) > 1 {
 		if err = validateNetworkParams(txns, console); err != nil {
 			return nil, err

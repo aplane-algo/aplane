@@ -7,6 +7,23 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## The signer refuses a few transactions the network never accepts
+
+- New: before policy or approval, the signer refuses a transaction whose `LastValid`
+  is before its `FirstValid`, whose validity window is longer than the network's
+  maximum transaction life, or whose note is longer than the network's absolute
+  maximum. It answers `400` and names the transaction.
+- Why: a caller that supplies transaction bytes bypasses an SDK constructor's checks,
+  and the mistake used to surface only at submission, after an approval and a
+  signature. This was a wasted approval, not a safety problem: the network refuses
+  these transactions regardless.
+- The limits come from the pinned consensus parameters (`MaxTxnLife` and
+  `MaxAbsoluteTxnNoteBytes`). A note above `MaxTxnNoteBytes`, where the surcharge
+  starts, and within the absolute maximum is valid and pays that surcharge, as before.
+- A cosigner node makes the same check before it gives a witness signature.
+- It is not full validation. Other malformed transactions are still refused only by
+  the network.
+
 ## Templates can't declare LogicSig arguments the network refuses
 
 - New: installing a template is refused when it declares more than 255 LogicSig

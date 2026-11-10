@@ -578,9 +578,9 @@ availability, JSON decoding, and empty-requests checks gate the request before a
 `SignRequest` entries are then validated per mode (sign, passthrough, foreign)
 and decoded — sign and foreign entries from `txn_bytes_hex`, passthrough
 entries from `signed_txn_hex`. Decoded transactions are checked for group
-consistency, recognized genesis network, overlapping validity windows,
-passthrough's pre-grouped requirement, and the presence of at least one
-signable entry in the bound product runtime. Dummy calculation runs next
+consistency, recognized genesis network, transaction bounds (below), overlapping
+validity windows, passthrough's pre-grouped requirement, and the presence of at
+least one signable entry in the bound product runtime. Dummy calculation runs next
 and enforces the maximum group size and pre-grouped immutability; if dummies are
 needed for an immutable passthrough/pre-grouped group, it rejects. Otherwise
 the planner creates them, adjusts fees, and recomputes the group ID. The finalized group passes through
@@ -594,6 +594,44 @@ signs any dummies. The successful response is a `GroupSignResponse` carrying
 the aligned `signed` slots plus a `mutations` report. Any failure short-circuits
 to a non-2xx `signerapi.ErrorResponse` with `error` and a stable `code`;
 `GroupSignResponse` is the success shape only.
+
+**Transaction bounds.** A caller supplies transaction bytes directly, which
+bypasses the checks an SDK constructor makes. The signer refuses, with a
+`400` and before policy or approval, a transaction the network could never
+accept for one of these reasons:
+
+- `LastValid` is before `FirstValid`.
+- The validity window, `LastValid - FirstValid`, is longer than `MaxTxnLife`.
+- The note is longer than `MaxAbsoluteTxnNoteBytes`. A note above
+  `MaxTxnNoteBytes` and within that maximum is valid and pays a per-byte
+  surcharge, which fee planning adds.
+
+Where it runs:
+
+- In the planner, shared by `/plan` and `/sign`, beside the network check and
+  before any key is looked up.
+- On both rotating routes, beside their own network check and before any gate.
+  A rotating spend's window is already capped at 100 rounds by its own rule,
+  which answers first, so the note limit is the part that acts there.
+- In frozen-component validation, after the group's own shape checks and
+  before any gate.
+- On a cosigner node, in the component gates, after the witness key is found
+  and before the invariants and the policy.
+
+Every position is checked, signed here or not, since one member the network
+refuses fails the whole group.
+
+The limits are read from the compiled consensus profile fee planning uses
+(`lsigresource.CurrentConsensus`), never restated. That profile is one pinned
+version for every network. The versions the signer accepts agree on both
+limits, and a test holds that; a protocol change to either needs the pin moved.
+
+This is not node validation, and passing it does not mean a transaction will
+confirm: that also depends on chain state. The list is short on purpose.
+Reproducing every consensus rule would make the signer refuse valid
+transactions whenever it lagged a protocol upgrade. Other malformed
+transactions, such as an asset with too many decimals or an application call
+with too many arguments, are still refused only by the network at submission.
 
 See `internal/signerapp/daemon/http_handlers_signing.go`'s `handleSign` for the dispatch
 implementation, and `internal/signerapp/signing/planner.go` and
