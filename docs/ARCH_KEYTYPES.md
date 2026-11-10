@@ -1470,10 +1470,65 @@ authorization: generation repeats every check.
 | 1 | Check the key type is allowed for the node role | `keyclass.ValidateKeyTypeAllowedForNodeRole` |
 | 2 | Resolve rotating network names, and turn a `cosigner` reference into `cosigner_public_key` for a key type that takes a cosigner | `lsigprovider.CosignerComponentKeyType`, `cosignerrefs` |
 | 3 | Select the instance the parameters ask for and canonicalize them, including sorting `address[]` values | `lsigprovider.ResolveInstance` |
-| 4 | Reject a cosigner key that collides with an existing authority | `validateVisibleCosignerAuthorityCollisions` |
-| 5 | Take the mutation lock and check the key type is enabled | `keytypestate.CanGenerate` |
+| 4 | Collect the provider's warnings | `lsigprovider.CreationAdvisor` |
+| 5 | Take the mutation lock and refuse a locked signer. Check the key type is enabled, then the signer's generation settings. Then check the request against the keys this signer holds: refuse a rekey-to list that names a rotating account held here, and add a warning for a cosigner key held here | `lockUnlockedMutation`, `keytypestate.CanGenerate`, `checkGenerationRequirements`, `checkAgainstHeldKeys` |
 | 6 | Branch: generic LogicSigs go to `generateGenericLSig`; everything else continues below | `genericlsig.IsGenericLSigType` |
 | 7 | Choose the family generator | `keymgmt.GenerateKeyWithActivatedContext`, `keygen.GetGenerator` |
+
+The checks against the held keys come last in step 5, under the mutation lock, so the
+key list can't change between the check and the write that follows it. Two things
+follow from that:
+
+- A request that fails an earlier check is told that first. A locked signer, a key type
+  that isn't enabled, and a generation setting (`require_contained`, `require_cosigner`)
+  each come before the rekey-to list refusal.
+- Preparation and generation each read the key list when they run. If the signer's keys
+  change between a review and its generation, the generation can be refused where the
+  review was not, or carry a warning the review didn't have. The reviewed fingerprint
+  and digest cover the request, not the warnings.
+
+There is one refusal and one warning, in this order:
+
+- **Rekey-to list refusal.** Each `rekey_to` address is looked up in the signer's key
+  list. If it is a rotating account, preparation and generation fail with
+  `rekey_to: cannot rekey to <address>: it is a rotating account, and its address is a
+  one-time stage key; ...`, an invalid-input error. The signer would never sign that
+  rekey (see [ARCH_SIGNING.md](ARCH_SIGNING.md)), so the list would hold a way out
+  that doesn't exist.
+  - It sees only accounts this signer holds, because an address doesn't reveal its key
+    type. A rotating account held elsewhere passes.
+  - It recognises only the rotating account's own address. The addresses of its later
+    stages are one-time keys too, and a list that names one passes. The signing gate has
+    the same limit: it refuses a rekey to a held rotating account's address, not to one
+    of its stage addresses.
+  - It runs at generation only. Nothing rechecks a stored account, so an account
+    already stored with such a list still loads.
+  - It refuses what it can't check. A list it can't parse, or a signer whose key list
+    isn't available, is an error, not a pass.
+  - Every list is checked. A request always gives the list as `rekey_to` addresses, and
+    generation computes the root from them; a request can't supply a root alone.
+- **Cosigner warning.** A cosigner public key equal to a key this signer holds is
+  allowed. The request gets the warning "The cosigner is a key this signer holds. It is
+  the key of `<selector>`, so the cosigner isn't independent of this signer: whoever
+  controls this signer's keys can give both signatures." It names the lowest matching
+  selector and comes after the provider's warnings. The comparison covers the public
+  keys of the accounts in this signer's key list, not imported cosigner references.
+  [ARCH_COSIGNED.md](ARCH_COSIGNED.md#role-separation) says why the two roles can't be
+  confused. It also says why the warning is rare: the product has no path that makes
+  one keypair both an account key on a signer and a witness key on a cosigner node, so
+  the warning fires only when key material was moved outside the product.
+- **Kept refusal.** An account's own spending key can't be its cosigner. The composer
+  refuses that once the keypair exists (`refuseSharedSpendingKey`).
+
+Warnings refuse nothing. They travel in `PreparedGeneration.Warnings` and
+`GenerateResult.Warnings`:
+
+- `PreparedGeneration.Warnings` reaches the apadmin review as
+  `prepare_generate_result.warnings`.
+- `GenerateResult.Warnings` reaches apadmin as `generate_result.warnings`, which the
+  generated-account screen names by first sentence and shows in full on `w`, and an HTTP
+  caller as `warnings` in the `/admin/generate` response. apshell prints them, and the
+  JavaScript `generateKey()` returns them as `warnings`.
 
 For a DSA LogicSig, `generateKey` in `lsig/dsafamily/signerreg/generator.go` then runs:
 
@@ -1584,7 +1639,7 @@ Ed25519 spending key is classical, which the review says.
 | Boundary file | `boundary.ParseFile` parses `aplane.boundary.v1` strictly: no unknown fields, duplicate keys, aliases, merge keys, extra documents, or non-string scalars, except that `max_fee` may be written as a number. The grammar has no field that can carry TEAL, a template, a base key type, or runtime arguments. A file without `spend` has no bounds: it describes a `plain1` arrangement and may not set `recipients`, `recipient_scope`, `encoding` or `max_fee`. An empty `spend` is refused, not read as none. The file applies to the plain type it is used with; it names no key type. |
 | Requests | A request with any bounds parameter goes through `selectShape`, the security gate for file and direct requests alike, and needs `spend_effects`. One with overlay parameters only resolves to a `plain1` arrangement, and one with no parameters to the plain program, which refuses any parameter, so a misspelled one is an error rather than a weaker account. The client sends public values, never a path or the YAML, and a cosigner name stays a name for the signer to resolve. |
 | Stored parameters | A shape's canonical values include the selectors `spend_effects`, `rekey_authority`, and `list_encoding`, with `auto` resolved, `recipient_scope` only when it is `any` (`listed` is the default), `max_fee` only when it is not 10,000 (so a request that says `max_fee=10000` and one that leaves it out resolve to the same contract, shape fingerprint and boundary digest), and `rekey_to` in canonical address order for `only_these` and `plus_cosigned`. Generation adds the list's root as `bounded_rekey_to_root`, which no request can set and which does not select the shape. The generator resolves stored values a second time, so they must select the same shape. Only a shape's declared parameters reach its composer, because those enter the canonical behavior encoding. |
-| Rekey-to list | `rekey_authority=only_these` or `plus_cosigned` needs `rekey_to`, 1 to 16 distinct nonzero addresses, and `rekey_to` needs one of them. `plus_cosigned` needs `cosigner`; without one the spending key could already rekey anywhere, which is `spending_key`. `refused`, `only_these` and `spending_key` take a cosigner or not. Any address may be listed, even one that can never act on the account (one of this signer's rotating accounts, or a witness key's native address): which addresses to list is the user's choice, and apadmin's review flags a listed key this signer holds. The tree and its proof are in [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md#rekey-to-list-compatibility-contract). |
+| Rekey-to list | `rekey_authority=only_these` or `plus_cosigned` needs `rekey_to`, 1 to 16 distinct nonzero addresses, and `rekey_to` needs one of them. `plus_cosigned` needs `cosigner`; without one the spending key could already rekey anywhere, which is `spending_key`. `refused`, `only_these` and `spending_key` take a cosigner or not. Any address may be listed, even one that can never act on the account (such as a witness key's native address), with one exception: generation refuses a list that names a rotating account this signer holds (see [Account Generation](#account-generation), step 5). Which other addresses to list is the user's choice, and apadmin's review flags a listed key this signer holds. The tree and its proof are in [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md#rekey-to-list-compatibility-contract). |
 | Encoding | `auto` is inline through 10 recipients and Merkle from 11. Explicit inline stops at 30. The list holds at most 65,536 distinct nonzero addresses. |
 | Recipient scope | Absent or `listed`, a list is required, in the file and the request alike. Leaving the list out never opens an account. `any` must be asked for, and refuses `recipients` (even empty) and `list_encoding`. An empty or unknown scope is an error. The `none` policy is offered only here: an expert template that declares it is refused when parsed. |
 | Fee and arguments | A shape's compiled ceiling is the request's `max_fee`, 10,000 microAlgos when absent; a `plain1` arrangement has none. `max_fee` must parse as a `uint64`; no value is refused. There are no runtime arguments. The base is the plain host's own: Falcon-1024 or Ed25519. |

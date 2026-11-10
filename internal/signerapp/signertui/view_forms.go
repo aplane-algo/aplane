@@ -595,12 +595,32 @@ func (m Model) renderImporting() string {
 func (m Model) renderGenerateDisplay() string {
 	var sb strings.Builder
 
+	if m.forms.generatedWarningsOpen && len(m.forms.generatedWarnings) > 0 {
+		return m.renderGeneratedWarnings()
+	}
+
 	sb.WriteString(titleStyle.Render("Key Generated Successfully"))
 	sb.WriteString("\n\n")
 
 	sb.WriteString(fmt.Sprintf("%s: %s\n", m.keyIdentifierLabel(m.forms.generatedKeyType), m.forms.generatedAddress))
 	sb.WriteString(fmt.Sprintf("Type:    %s\n", displayKeyType(m.forms.generatedKeyType)))
 	sb.WriteString("\n")
+	// One of these can be new since the review, so they are named here, each by
+	// its first sentence, which stands alone. The full text doesn't fit the
+	// smallest window beside the receipt prompt, so w opens it. More than
+	// generatedWarningRows of them would not fit either, so they become a count.
+	switch warnings := m.forms.generatedWarnings; {
+	case len(warnings) == 0:
+	case len(warnings) <= generatedWarningRows:
+		for _, warning := range warnings {
+			sb.WriteString(warningStyle.Render("Warning: " + middleEllipsize(firstSentence(warning), 68-len("Warning: "))))
+			sb.WriteString("\n")
+		}
+		sb.WriteString("\n")
+	default:
+		sb.WriteString(warningStyle.Render(fmt.Sprintf("Warning: %d things to read about this account. Press w.", len(warnings))))
+		sb.WriteString("\n\n")
+	}
 
 	sb.WriteString(subtitleStyle.Render("Recovery material is stored encrypted in the signer keyfile."))
 	sb.WriteString("\n")
@@ -619,6 +639,27 @@ func (m Model) renderGenerateDisplay() string {
 		sb.WriteString("\n")
 	}
 
+	return m.renderPopup(75, sb.String())
+}
+
+// generatedWarningRows is how many warnings the generated-account screen names
+// before it counts them instead: what fits the smallest window beside the
+// receipt prompt.
+const generatedWarningRows = 2
+
+// renderGeneratedWarnings shows the generated account's warnings in full, in
+// the signer's order. It takes the place of the account's summary, which has no
+// room for them.
+func (m Model) renderGeneratedWarnings() string {
+	var sb strings.Builder
+	sb.WriteString(titleStyle.Render("Warnings"))
+	sb.WriteString("\n\n")
+	sb.WriteString(fmt.Sprintf("%s: %s\n", m.keyIdentifierLabel(m.forms.generatedKeyType), m.forms.generatedAddress))
+	for _, warning := range m.forms.generatedWarnings {
+		sb.WriteString("\n")
+		sb.WriteString(warningStyle.Render(wrapText(warning, 68)))
+		sb.WriteString("\n")
+	}
 	return m.renderPopup(75, sb.String())
 }
 

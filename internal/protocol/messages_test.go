@@ -906,6 +906,44 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 			},
 		},
 		{
+			// A generation result carries the signer's warnings about the
+			// account it created: one can be new since the review.
+			name: "generate_result with warnings",
+			msg: GenerateResultMessage{
+				BaseMessage: BaseMessage{Type: MsgTypeGenerateResult, ID: "generate-1"},
+				Success:     true,
+				Address:     "ADDR",
+				KeyType:     "aplane.falcon1024.v1",
+				Warnings:    []string{"Fee limit 0 is too low to pay alone. A transaction on its own costs more: spend (at least 2000).", "The cosigner is a key this signer holds."},
+			},
+			wantMap: map[string]any{
+				"type":     MsgTypeGenerateResult,
+				"id":       "generate-1",
+				"success":  true,
+				"address":  "ADDR",
+				"key_type": "aplane.falcon1024.v1",
+				"warnings": []any{"Fee limit 0 is too low to pay alone. A transaction on its own costs more: spend (at least 2000).", "The cosigner is a key this signer holds."},
+			},
+		},
+		{
+			// An empty list of warnings is left off the wire, like an absent one.
+			name: "generate_result without warnings",
+			msg: GenerateResultMessage{
+				BaseMessage: BaseMessage{Type: MsgTypeGenerateResult, ID: "generate-2"},
+				Success:     true,
+				Address:     "ADDR",
+				KeyType:     "ed25519",
+				Warnings:    []string{},
+			},
+			wantMap: map[string]any{
+				"type":     MsgTypeGenerateResult,
+				"id":       "generate-2",
+				"success":  true,
+				"address":  "ADDR",
+				"key_type": "ed25519",
+			},
+		},
+		{
 			name: "update_admin_setting_result",
 			msg: UpdateAdminSettingResultMessage{
 				BaseMessage: BaseMessage{Type: MsgTypeUpdateAdminSettingResult, ID: "setting-1"},

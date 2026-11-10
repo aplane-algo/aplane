@@ -287,6 +287,71 @@ For example, per-authorizer cosigner allowlists would require binding the
 authorizer in the signed message and updating the matching on-chain LogicSig
 verification path.
 
+### Role Separation
+
+A signature made in one role can't be used in the other, whichever key made
+it. That is why generation allows a cosigner public key that is also a key the
+signer holds, and only warns about it.
+
+Which keys could be shared at all:
+
+- A cosigner key is Falcon-1024 only (`aplane.witness-falcon1024.v1`). So only
+  a Falcon-1024 account key could share a keypair with one: a native
+  `falcon1024` account, or the spending key of a Falcon LogicSig account.
+- An Ed25519 key can't. Neither can a rotating stage key: stage keys are
+  derived per stage from the rotating secret, and are never imported keys.
+
+What a cosigner key signs:
+
+- The 32-byte SHA-512/256 digest above. Its hash input is the 51 bytes
+  `"APLANE_COSIGNER_V1" || 0x02 || txid`. The signed message is the digest,
+  not those 51 bytes.
+- The fixed text `"APLANE_WITNESS_KEY_PAIR_V1"`, when the node checks a loaded
+  key pair. That signature is checked and discarded.
+
+What an account key signs:
+
+| Message | Signed by |
+|---|---|
+| The 32-byte transaction ID, SHA-512/256 of `"TX" \|\| msgpack(txn)` | The key of a LogicSig account, a bounded account's base component, and a rotating account's stage components |
+| The unhashed `"TX" \|\| msgpack(txn)` | A native account's key, Falcon-1024 or Ed25519 |
+| The SHA-512/256 digest of the [assembly receipt](ARCH_BOUNDED_DSA.md#bounded-cosigner-assembly-receipt) transcript, which begins with a length-prefixed `"APLANE_BOUNDED_COSIGNER_ASSEMBLY_V1"` | A cosigned account's spending key, as well as the transaction ID |
+| A fixed 32-byte open-test message, the SHA-256 of a label | A rotating stage's Ed25519 and Falcon keys, before the stage is live. The signatures are never released |
+
+Why none of these can stand in for another:
+
+- The hashed messages are all 32 bytes, so length does not separate them.
+  Their hash inputs begin differently: `"TX"`, `"APLANE_COSIGNER_V1"`, and the
+  receipt's length prefix. For one to be accepted as another, two different
+  inputs would need the same SHA-512/256 digest, a collision.
+- The native message is not hashed. It carries a genesis hash, so it is always
+  longer than 32 bytes and can't equal a digest.
+- The fixed messages are constants, not transaction IDs or cosigner digests.
+- No account key signs bytes a caller chooses. There is no data-signing route.
+
+What the choice costs is independence. A cosigner whose private key this signer
+holds is not independent of it: whoever controls this signer's keys can give
+both signatures. Generation says so in a warning (see
+[ARCH_KEYTYPES.md](ARCH_KEYTYPES.md#account-generation)).
+
+The product has no path that makes one keypair both an account key on a signer
+and a witness key on a cosigner node:
+
+- A witness key is generated on the cosigner node from a random seed
+  (`WitnessFalcon1024Generator.GenerateRandom` in
+  `lsig/falcon1024/keygen/witness.go`). The seed is not stored, and mnemonic
+  export covers native account keys only.
+- A witness key can't be imported from a mnemonic: `GenerateFromMnemonic` in
+  the same file refuses.
+- A node is one role or the other. A signer holds no witness keys and a
+  cosigner holds only witness keys (`keyclass.NodeRoleAllowsKeyType`).
+
+So the warning fires only if key material was copied between nodes by hand,
+outside the product.
+
+One rule stays. An account's own spending key can't be its cosigner, because
+then one key would give both signatures by construction.
+
 ## Public Cosigner References
 
 Signer nodes need public cosigner metadata to generate cosigned accounts, but

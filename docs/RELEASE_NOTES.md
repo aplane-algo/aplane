@@ -7,6 +7,42 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## Generation: a held cosigner key is allowed, a rotating rekey target is refused
+
+- Lifted: an account's cosigner public key may now be a key this signer holds as an
+  account's key. Generation used to refuse it with "bounded cosigner public key
+  collides with signer-managed key".
+- It is safe because the two roles sign different messages: a cosigner signs the hash
+  of a message that begins `APLANE_COSIGNER_V1`, an account key signs a transaction ID,
+  the transaction itself or an assembly receipt, and no account key signs bytes a caller
+  chooses. See [ARCH_COSIGNED.md](ARCH_COSIGNED.md#role-separation).
+- The product itself never produces this case. A cosigner key is generated on a
+  cosigner node from a random seed and can't be imported from a mnemonic, and a node is
+  a signer or a cosigner, not both. The warning fires only when key material was copied
+  by hand.
+- What it costs is independence, so generation warns: "The cosigner is a key this
+  signer holds. It is the key of `<address>`, so the cosigner isn't independent of this
+  signer: whoever controls this signer's keys can give both signatures." The warning is
+  in the apadmin review, in `prepare_generate_result.warnings`, and in the
+  `/admin/generate` response's `warnings`, which apshell prints.
+- Kept: an account's own spending key can't be its cosigner.
+- New refusal: generation refuses a rekey-to list that names a rotating account this
+  signer holds, with `rekey_to: cannot rekey to <address>: it is a rotating account,
+  ...`. The signer never signs that rekey, so the entry was a way out that didn't
+  exist. It catches only accounts this signer holds, only the rotating account's own
+  address (not its later stage addresses), and it runs only at generation: an account
+  already stored with such a list still loads. This reverses, for this one case, the
+  earlier entry that a rekey-to list may name any address.
+- apadmin's review keeps to one warning line. One warning shows its first sentence.
+  Several show "Warning: N things to read before generating. See details.", and the
+  details list each in full.
+- New: `generate_result` carries `warnings`, and apadmin's generated-account screen
+  names each by its first sentence, or counts them when there are more than two. `w`
+  there shows them in full. Generation reads the signer's keys again, so a warning can
+  be there that the review didn't have.
+- New: the JavaScript `generateKey()` returns the signer's `warnings`, an array that is
+  empty when there are none.
+
 ## The signer refuses a few transactions the network never accepts
 
 - New: before policy or approval, the signer refuses a transaction whose `LastValid`

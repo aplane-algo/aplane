@@ -91,15 +91,27 @@ func (m Model) handleBackupDisplayKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // handleGenerateDisplayKeys handles keyboard input on generate display screen
 func (m Model) handleGenerateDisplayKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.forms.generatedWarningsOpen {
+		// The full warnings cover the summary; any of these goes back to it.
+		switch msg.String() {
+		case "w", "W", "q", "esc", "enter", " ":
+			m.forms.generatedWarningsOpen = false
+		}
+		return m, nil
+	}
 	switch msg.String() {
 	case "e":
 		return m.openGeneratedCosignerExport()
 	case "s", "S":
 		return m.saveGeneratedReceipt(), nil
+	case "w", "W":
+		m.forms.generatedWarningsOpen = len(m.forms.generatedWarnings) > 0
 	case "q", "esc", "enter", " ":
 		m.selectKeyByAddress(m.forms.generatedAddress)
 		m.forms.generatedAddress = ""
 		m.forms.generatedKeyType = ""
+		m.forms.generatedWarnings = nil
+		m.forms.generatedWarningsOpen = false
 		m.forms.receipt = nil
 		m.forms.receiptPath = ""
 		m.forms.receiptError = ""

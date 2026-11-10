@@ -170,7 +170,7 @@ redirect it.
 | `signableAddresses()` | Address array |
 | `canSignFor(addressOrAlias)` | `{ canSign, isLsig, authorizationKind }` where the kind is `ed25519`, `native_pq`, or `logic_sig` |
 | `keyTypes()` | Available key type metadata from the signer |
-| `generateKey(keyType, params = {})` | `{ address, keyType }` |
+| `generateKey(keyType, params = {})` | `{ address, keyType, warnings }`. `warnings` is an array of the signer's notes about the account, empty when there are none. The account is created either way, so check it. |
 | `deleteKey(addressOrAlias)` | `{ address, deleted: true }` |
 
 `keyTypes()` returns objects like:

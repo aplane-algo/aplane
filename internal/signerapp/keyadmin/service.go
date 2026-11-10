@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
@@ -22,6 +23,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
+	"github.com/aplane-algo/aplane/internal/rekeylist"
 	"github.com/aplane-algo/aplane/internal/rotatingkey"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	"github.com/aplane-algo/aplane/internal/signerapp/storemut"
@@ -56,7 +58,8 @@ type GenerateResult struct {
 	IsSpendingAccount *bool
 	Mnemonic          string
 	Parameters        map[string]string
-	// Warnings are the provider's advice about the account. They refused nothing.
+	// Warnings are the provider's and the signer's own advice about the account.
+	// They refused nothing.
 	Warnings []string
 }
 
@@ -113,7 +116,8 @@ type resolvedCreation struct {
 	keyType  string
 	params   map[string]string
 	instance *lsigprovider.Instance
-	// warnings are the provider's advice about the request. They refuse nothing.
+	// warnings are the provider's and the signer's own advice about the request.
+	// They refuse nothing.
 	warnings []string
 	// perKey is set for a type whose contract varies by account (the general
 	// type and the plain hosts), which the boundary requirements govern.
@@ -160,11 +164,6 @@ func (s Service) resolveCreation(keyType string, params map[string]string) (*res
 		}
 		instance = resolved
 		params = instance.Values
-		if instance.Bounded != nil && instance.Bounded.Cosigner != nil {
-			if err := validateVisibleCosignerAuthorityCollisions(ir, params[boundedmeta.CosignerPublicKeyParameter]); err != nil {
-				return nil, &Error{Kind: ErrorInvalidInput, Message: err.Error()}
-			}
-		}
 		if advisor, ok := provider.(lsigprovider.CreationAdvisor); ok {
 			if warnings, err = advisor.CreationWarnings(params); err != nil {
 				return nil, &Error{Kind: ErrorInvalidInput, Message: err.Error()}
@@ -220,6 +219,10 @@ func (s Service) GenerateReviewedKey(ctx context.Context, keyType string, params
 	if err := s.checkGenerationRequirements(creation); err != nil {
 		return nil, err
 	}
+	warnings, heldErr := s.checkAgainstHeldKeys(creation)
+	if heldErr != nil {
+		return nil, heldErr
+	}
 	if err := checkReviewedValues(keyType, params, reviewed); err != nil {
 		return nil, err
 	}
@@ -235,7 +238,7 @@ func (s Service) GenerateReviewedKey(ctx context.Context, keyType string, params
 			Address:    address,
 			KeyType:    keyType,
 			Parameters: params,
-			Warnings:   creation.warnings,
+			Warnings:   warnings,
 		}, nil
 	}
 
@@ -266,7 +269,7 @@ func (s Service) GenerateReviewedKey(ctx context.Context, keyType string, params
 		IsSpendingAccount: genResult.IsSpendingAccount,
 		Mnemonic:          genResult.Mnemonic,
 		Parameters:        params,
-		Warnings:          creation.warnings,
+		Warnings:          warnings,
 	}, nil
 }
 
@@ -368,17 +371,99 @@ func (s Service) resolveRotatingNetwork(params map[string]string) map[string]str
 	return resolved
 }
 
-func validateVisibleCosignerAuthorityCollisions(ir *productruntime.Runtime, cosignerPublicKeyHex string) error {
+// checkAgainstHeldKeys applies the generation checks that read this signer's key
+// list: it refuses a rekey-to list naming a rotating account held here, and adds
+// a warning when the cosigner key is one held here. The caller holds the
+// mutation lock, so the list can't change between this and the write that
+// follows; resolveCreation runs before the lock and so can't make them.
+//
+// These are admission checks for a new LogicSig account. Nothing here runs when
+// a stored account loads, and import takes no account of this kind.
+//
+// It returns the warnings to show with the account, the provider's first, and
+// leaves the creation as it found it, so running it again gives the same answer.
+func (s Service) checkAgainstHeldKeys(creation *resolvedCreation) ([]string, *Error) {
+	if creation == nil {
+		return nil, nil
+	}
+	warnings := slices.Clone(creation.warnings)
+	if creation.instance == nil || creation.instance.Bounded == nil {
+		return warnings, nil
+	}
+	bounded := creation.instance.Bounded
+	if bounded.RekeyList != nil {
+		if err := refuseRekeyToHeldRotatingAccount(s.Runtime, creation.params[boundedmeta.RekeyListEntriesParameter]); err != nil {
+			return nil, &Error{Kind: ErrorInvalidInput, Message: err.Error()}
+		}
+	}
+	if bounded.Cosigner != nil {
+		if warning := cosignerHeldWarning(s.Runtime, creation.params[boundedmeta.CosignerPublicKeyParameter]); warning != "" {
+			warnings = append(warnings, warning)
+		}
+	}
+	return warnings, nil
+}
+
+// cosignerHeldWarning says when an account's cosigner key is also a key this
+// signer holds. That is the reviewer's choice, not a refusal: the two roles
+// can't be confused, because a cosigner signs the hash of a domain-tagged
+// message and an account key signs a transaction ID or the transaction itself,
+// and no account key signs bytes a caller chooses. What it costs is
+// independence, which the review should say.
+//
+// The first sentence stands alone: a review with no room shows only it.
+func cosignerHeldWarning(ir *productruntime.Runtime, cosignerPublicKeyHex string) string {
 	if ir == nil || ir.KeyStore() == nil {
-		return nil
+		return ""
 	}
-	normalized := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(cosignerPublicKeyHex), "0x")))
+	// The parameter is already canonical: the instance resolved it to lowercase
+	// hex without a prefix.
+	normalized := cosignerPublicKeyHex
 	if normalized == "" {
+		return ""
+	}
+	// The lowest selector, so the same request always names the same key.
+	held := ""
+	for selector, publicKeyHex := range ir.KeyStore().GetPublicKeyHexMap() {
+		if strings.ToLower(strings.TrimSpace(publicKeyHex)) == normalized && (held == "" || selector < held) {
+			held = selector
+		}
+	}
+	if held == "" {
+		return ""
+	}
+	return fmt.Sprintf("The cosigner is a key this signer holds. "+
+		"It is the key of %s, so the cosigner isn't independent of this signer: whoever controls this signer's keys can give both signatures.", held)
+}
+
+// refuseRekeyToHeldRotatingAccount refuses a rekey-to list that names a rotating
+// account this signer holds. The signer would never perform that rekey: a
+// rotating account's address is a one-time stage key, so an account rekeyed to it
+// would be stuck on that stage. Refusing here keeps an account from being created
+// with a way out that doesn't exist.
+//
+// It catches only what it can see. An address doesn't reveal its type, so a
+// rotating account held elsewhere passes. Only the account's own address is
+// recognised: the addresses of its later stages are one-time keys too, and
+// neither this nor the signing gate knows them. The signing gate still refuses a
+// rekey to the account's address.
+func refuseRekeyToHeldRotatingAccount(ir *productruntime.Runtime, entries string) error {
+	if strings.TrimSpace(entries) == "" {
 		return nil
 	}
-	for selector, publicKeyHex := range ir.KeyStore().GetPublicKeyHexMap() {
-		if strings.ToLower(strings.TrimSpace(publicKeyHex)) == normalized {
-			return fmt.Errorf("bounded cosigner public key collides with signer-managed key %s", selector)
+	// A list this can't read, or a signer whose keys it can't see, is refused:
+	// passing it would leave the check to whatever runs later.
+	if ir == nil || ir.KeyStore() == nil {
+		return fmt.Errorf("%s: this signer's keys are unavailable, so the list can't be checked", boundedmeta.RekeyListEntriesParameter)
+	}
+	targets, err := rekeylist.ParseEntries(entries)
+	if err != nil {
+		return fmt.Errorf("%s: %w", boundedmeta.RekeyListEntriesParameter, err)
+	}
+	keyTypes := ir.KeyStore().GetKeyTypes()
+	for _, target := range targets {
+		if rotatingkey.IsRotatingKeyType(keyTypes[target.String()]) {
+			return fmt.Errorf("%s: %s", boundedmeta.RekeyListEntriesParameter, rotatingkey.RekeyTargetRefusal(target.String()))
 		}
 	}
 	return nil

@@ -262,11 +262,16 @@ func (m Model) renderGenerateReview() string {
 	sb.WriteString("\n")
 	// The signer's warnings refuse nothing; the reviewer decides. Each takes
 	// one line here, its first sentence, and the details have it in full.
-	for _, warning := range review.Warnings {
-		sb.WriteString(warningStyle.Render(reviewWarningLine(warning)))
+	// One row whatever the number: a second row would push the buttons out of
+	// the smallest window on the longest review.
+	switch len(review.Warnings) {
+	case 0:
 		sb.WriteString("\n")
-	}
-	if len(review.Warnings) == 0 {
+	case 1:
+		sb.WriteString(warningStyle.Render(reviewWarningLine(review.Warnings[0])))
+		sb.WriteString("\n")
+	default:
+		sb.WriteString(warningStyle.Render(fmt.Sprintf("Warning: %d things to read before generating. See details.", len(review.Warnings))))
 		sb.WriteString("\n")
 	}
 
@@ -287,11 +292,16 @@ func (m Model) renderGenerateReview() string {
 // details for the rest.
 func reviewWarningLine(warning string) string {
 	const suffix = " See details."
-	first := warning
+	return "Warning: " + middleEllipsize(firstSentence(warning), reviewBodyWidth-len("Warning: ")-len(suffix)) + suffix
+}
+
+// firstSentence is a warning's first sentence, which the signer writes to stand
+// alone.
+func firstSentence(warning string) string {
 	if end := strings.Index(warning, ". "); end >= 0 {
-		first = warning[:end+1]
+		return warning[:end+1]
 	}
-	return "Warning: " + middleEllipsize(first, reviewBodyWidth-len("Warning: ")-len(suffix)) + suffix
+	return warning
 }
 
 // renderGenerateReviewDetails has everything the main review shortens, in full.

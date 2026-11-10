@@ -385,6 +385,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.cosigner.generateFromManager = false
 			m.forms.generatedAddress = msg.Address
 			m.forms.generatedKeyType = msg.KeyType
+			m.forms.generatedWarnings = msg.Warnings
+			m.forms.generatedWarningsOpen = false
 			m.viewState = ViewGenerateDisplay
 			return m, tea.Batch(m.waitForMessageCmd(), m.sendListKeysCmd())
 		} else {

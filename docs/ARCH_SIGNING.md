@@ -1988,7 +1988,8 @@ stored metadata resolve the provider and any composed template's base primitive.
 - response has `address`, optional `public_key_hex`, `key_type`, optional
   `is_witness_key`, optional `is_spending_account`, optional `parameters`, and
   optional `warnings`: a list of strings, the signer's advice about the account it
-  created, such as a fee limit below what the account's own transactions cost.
+  created, such as a fee limit below what the account's own transactions cost,
+  or a cosigner key this signer also holds as an account's key.
   A warning refused nothing
 - no mnemonic in REST response
 

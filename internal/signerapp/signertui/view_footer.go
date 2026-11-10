@@ -49,6 +49,15 @@ func (m Model) viewFooterText() string {
 	case ViewBackupConfirm:
 		return "Tab: Next | Enter: Create backup | Esc: Back"
 	case ViewGenerateDisplay:
+		if m.forms.generatedWarningsOpen {
+			return "w/Esc: Back"
+		}
+		if len(m.forms.generatedWarnings) > 0 {
+			if _, ok := m.generatedReceipt(); ok {
+				return "w: Warnings in full | s: Save receipt | Enter/Esc: Back"
+			}
+			return "w: Warnings in full | Enter/Esc: Back"
+		}
 		if m.isCosignerNode() && witness.IsKeyType(m.forms.generatedKeyType) {
 			return "e: Export setup file | Enter/Esc: Back"
 		}

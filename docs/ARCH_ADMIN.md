@@ -100,8 +100,8 @@ Transport notes:
   with no `admin_operations` as having no rekey path, so it is refused at authentication
   rather than shown a wrong review; later 8.0 work, still unreleased, makes
   `bounded.max_fee` optional (absent on a `plain1` account) and adds
-  `boundary_schema` to key types and `base_key_type` and `warnings` to
-  `prepare_generate_result`;
+  `boundary_schema` to key types, `base_key_type` and `warnings` to
+  `prepare_generate_result`, and `warnings` to `generate_result`;
   7.3 adds `review_fingerprint` and
   `boundary_digest` to `prepare_generate_result`, an optional
   `generate_key.expected_boundary_digest`, `per_key_contract` to key types, and the two
@@ -399,9 +399,9 @@ interlocks.
 
 #### Key Management
 
-- `prepare_generate_key`: `key_type`, optional `parameters` -> `prepare_generate_result`: `success`, optional `key_type`, `base_key_type`, `parameters`, `fingerprint`, `review_fingerprint`, `boundary_digest`, `bounded`, `cosigner_key_id`, `warnings`, `code`, `error`. `base_key_type` names the spending key's signature base when the key type composes over one (a plain host is its own; a composed template names one), so the review can say whether that key is post-quantum. Local IPC only, under `keys.generate`. It runs generation's checks and reports the resolved request so apadmin can review it. It creates no key, changes no store state, and has no address, because the spending key does not exist yet. A reference name resolves to its public key in `parameters`, and `bounded` carries `contract` (`bounded2`, or `plain1` for a plain host account without bounds), `spend_effects`, `max_fee` (absent on `plain1`, which has no fee ceiling), `rekey` (`refused` or `spending_key`), optional `rekey_list` (true when the account has a rekey-to list, whose entries are `parameters.rekey_to`: *only these* under `rekey: refused`, a rekey only to a listed address; *plus cosigned* under `rekey: spending_key` with `cosigner_required`, a listed address with the spending key alone and any other with the cosigner too; there is no root yet, because it depends on the spending key), `layer3_policy`, and `cosigner_required`. `warnings` is an optional list of strings, the provider's notes for the reviewer (today, a bounded fee limit below what the account's own transactions cost); a warning refuses nothing and `success` stays true
+- `prepare_generate_key`: `key_type`, optional `parameters` -> `prepare_generate_result`: `success`, optional `key_type`, `base_key_type`, `parameters`, `fingerprint`, `review_fingerprint`, `boundary_digest`, `bounded`, `cosigner_key_id`, `warnings`, `code`, `error`. `base_key_type` names the spending key's signature base when the key type composes over one (a plain host is its own; a composed template names one), so the review can say whether that key is post-quantum. Local IPC only, under `keys.generate`. It runs generation's checks and reports the resolved request so apadmin can review it. It creates no key, changes no store state, and has no address, because the spending key does not exist yet. A reference name resolves to its public key in `parameters`, and `bounded` carries `contract` (`bounded2`, or `plain1` for a plain host account without bounds), `spend_effects`, `max_fee` (absent on `plain1`, which has no fee ceiling), `rekey` (`refused` or `spending_key`), optional `rekey_list` (true when the account has a rekey-to list, whose entries are `parameters.rekey_to`: *only these* under `rekey: refused`, a rekey only to a listed address; *plus cosigned* under `rekey: spending_key` with `cosigner_required`, a listed address with the spending key alone and any other with the cosigner too; there is no root yet, because it depends on the spending key), `layer3_policy`, and `cosigner_required`. `warnings` is an optional list of strings, the signer's notes for the reviewer (today, a bounded fee limit below what the account's own transactions cost, and a cosigner key this signer also holds as an account's key); a warning refuses nothing and `success` stays true
 - `generate_key`: `key_type`, optional `name`, optional `expected_fingerprint`, optional `expected_boundary_digest`, optional `parameters`; accepted over IPC, but generated recovery material is not returned over the admin protocol. the rotating key types (such as `aplane.rotating-triple-wotsc.v1`) require the parameter `network` (a network the signer knows, or a base64 genesis hash)
-- `generate_result`: `success`, optional `address`, `key_type`, `parameters`, `code`, `error`; `mnemonic` and `word_count` fields remain in the schema but are omitted by signer responses
+- `generate_result`: `success`, optional `address`, `key_type`, `parameters`, `warnings`, `code`, `error`; `mnemonic` and `word_count` fields remain in the schema but are omitted by signer responses. `warnings` is an optional list of strings, the signer's notes about the account it created, left out when there are none. They are the same kinds as `prepare_generate_result.warnings`, computed again at generation, so the list can differ from the review's when the signer's keys changed in between. A warning refused nothing and `success` stays true
 - `delete_key`: `address` -> `delete_result`: `success`, optional `code`, `error`
 - `export_key`: `address`, `passphrase` -> `export_result`: `success`, `address`, `key_type`, `mnemonic`, `word_count`, optional `code` and `error`. Native `ed25519` and `falcon1024` only, on authenticated local IPC with an unlocked healthy store and fresh passphrase verification. Other transports return `authorization_denied`; other key classes return `forbidden`; native Falcon credentials without recovery entropy return `unavailable`. Successful responses contain 25 words. The signer sends a successful `export_result` while it still holds the key for use and audits `KEY_EXPORTED` with outcome `released` only once that write succeeded; a failed write is audited as a failure. Eligibility is projected as `key_details.mnemonic_exportable`, and apadmin key details offers `m` only for keys so marked; the phrase stays visible for two minutes from reveal and clears on dismissal, lock, or session end. This is an explicit export operation; generate responses still omit recovery material.
 - `import_key`: `key_type`, `mnemonic`, optional `parameters` -> `import_result`: `success`, optional `address`, `key_type`, `code`, `error`; accepted only over local IPC because it carries recovery material
@@ -897,11 +897,41 @@ online keys. A cosigned `spending_key` account reads "Spending key and cosigner"
 together they can rekey out of the boundary, to any target the cosigner's policy
 allows. The details list every `rekey_to` address and
 flag those in this signer's key list, and Ed25519 ones among them, and say the list is
-in the key's backup. Below the summary the review shows each entry of
-`prepare_generate_result.warnings` as one "Warning:" line, its first sentence, and the
-details show it in full. A warning refuses nothing:
-GENERATE stays available. The one warning today is a bounded account's fee limit below
-what its own transactions cost. See [ARCH_KEYTYPES.md](ARCH_KEYTYPES.md#the-bounds).
+in the key's backup. Below the summary the review shows
+`prepare_generate_result.warnings` on one "Warning:" line, whatever their number, and
+the details show each in full. A warning refuses nothing: GENERATE stays available.
+
+- No warnings: no line.
+- One warning: its first sentence, then "See details.", for example "Warning: Fee limit
+  0 is too low to pay alone. See details."
+- Several warnings: "Warning: N things to read before generating. See details.", with
+  N the count. A line each would push the buttons out of the 80x24 window on the longest
+  review.
+
+There are two warnings today, and one account can have both:
+
+- a bounded account's fee limit below what its own transactions cost (see
+  [ARCH_KEYTYPES.md](ARCH_KEYTYPES.md#the-bounds));
+- a cosigner key this signer also holds as an account's key (see
+  [ARCH_KEYTYPES.md](ARCH_KEYTYPES.md#account-generation)).
+
+The generated-account screen (`renderGenerateDisplay` in `view_forms.go`) shows
+`generate_result.warnings` again, between the account's type and the recovery note:
+
+- One or two warnings (`generatedWarningRows`) are each named by their first
+  sentence, which the signer writes to stand alone, under their own "Warning:" label
+  and in the signer's order. The full text doesn't fit the smallest window beside the
+  receipt prompt.
+- More than two show as one line, "Warning: N things to read about this account.
+  Press w.", so the screen's height doesn't grow with them.
+- `w` replaces the screen with the warnings in full (`renderGeneratedWarnings`), in
+  the signer's order, under the account's address. `w`, Esc, Enter, Space or `q` goes
+  back to the account. The footer offers `w` only when there are warnings.
+- An account without warnings shows none.
+- They come from the generation, not from the review. Generation reads the signer's
+  key list again under the mutation lock, so a warning can be new since the review:
+  a cosigner key the signer came to hold in between. The reviewed fingerprint and
+  digest cover the request, not the warnings, so such a generation still succeeds.
 
 ### Model / View / Update
 

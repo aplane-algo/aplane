@@ -68,6 +68,51 @@ func TestProtocolPrepareGenerateResultCarriesWarnings(t *testing.T) {
 	}
 }
 
+// The generation result carries the signer's warnings about the account it
+// created, since one can be new since the review. A result without any, and a
+// failure, name none on the wire.
+func TestProtocolGenerateResultCarriesWarnings(t *testing.T) {
+	warnings := []string{
+		"Fee limit 0 is too low to pay alone. A transaction on its own costs more: spend (at least 2000).",
+		"The cosigner is a key this signer holds. It is the key of ADDR, so the cosigner isn't independent of this signer: whoever controls this signer's keys can give both signatures.",
+	}
+	msg := ProtocolGenerateResultMessage("generate-1", adminproto.GenerateKeyResult{
+		Success: true, Address: "NEWADDR", KeyType: "aplane.falcon1024.v1", Warnings: warnings,
+	})
+	if msg.Type != protocol.MsgTypeGenerateResult || msg.ID != "generate-1" {
+		t.Fatalf("message = %+v", msg.BaseMessage)
+	}
+	if len(msg.Warnings) != 2 || msg.Warnings[0] != warnings[0] || msg.Warnings[1] != warnings[1] {
+		t.Fatalf("Warnings = %q", msg.Warnings)
+	}
+	wire, err := json.Marshal(msg)
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	var decoded protocol.GenerateResultMessage
+	if err := json.Unmarshal(wire, &decoded); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if !decoded.Success || decoded.Address != "NEWADDR" || len(decoded.Warnings) != 2 ||
+		decoded.Warnings[0] != warnings[0] || decoded.Warnings[1] != warnings[1] {
+		t.Fatalf("decoded = %+v from %s", decoded, wire)
+	}
+
+	for name, result := range map[string]adminproto.GenerateKeyResult{
+		"no warnings":   {Success: true, Address: "NEWADDR", KeyType: "aplane.falcon1024.v1"},
+		"an empty list": {Success: true, Address: "NEWADDR", KeyType: "aplane.falcon1024.v1", Warnings: []string{}},
+		"a failure":     {Code: protocol.ErrCodeInvalidRequest, Error: "bad request"},
+	} {
+		quiet, err := json.Marshal(ProtocolGenerateResultMessage("generate-2", result))
+		if err != nil {
+			t.Fatalf("Marshal() error = %v", err)
+		}
+		if strings.Contains(string(quiet), "warnings") {
+			t.Fatalf("%s: the result names warnings: %s", name, quiet)
+		}
+	}
+}
+
 func TestProtocolKeyDetailsMessageIncludesPublicKey(t *testing.T) {
 	msg := ProtocolKeyDetailsMessage("details-1", adminproto.GetKeyDetailsResult{
 		Success:      true,

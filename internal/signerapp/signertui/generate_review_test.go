@@ -91,21 +91,40 @@ func flatReview(view string) string {
 	return strings.Join(strings.Fields(strings.ReplaceAll(stripANSI(view), "║", " ")), " ")
 }
 
-// The signer's warnings are shown on the main review, each as one "Warning:"
-// line above the buttons that points at the details, which have it in full. A
-// result without any shows none.
+// cosignerHeldWarning is the signer's warning for a cosigner key it holds, as
+// internal/signerapp/keyadmin words it.
+func cosignerHeldWarning(selector string) string {
+	return "The cosigner is a key this signer holds. It is the key of " + selector +
+		", so the cosigner isn't independent of this signer: whoever controls this signer's keys can give both signatures."
+}
+
+// severalWarningsLine is the review's one line for count warnings.
+func severalWarningsLine(count int) string {
+	return fmt.Sprintf("Warning: %d things to read before generating. See details.", count)
+}
+
+// The signer's warnings take one "Warning:" line on the main review, above the
+// buttons, whatever their number. One warning is its first sentence. Several
+// are their count, because a line each would push the buttons out of the
+// smallest window. Either way the details have every warning in full. A result
+// without any shows no line.
 func TestReviewShowsTheSignersWarnings(t *testing.T) {
 	short := feeLimitWarning(0, "spend (at least 2000)")
 	long := feeLimitWarning(0, "spend (at least 4000), spending_rekey (at least 3060), listed_rekey (at least 2160)")
+	held := cosignerHeldWarning(testAddress(9))
 	for _, test := range []struct {
 		name     string
 		warnings []string
+		line     string
 	}{
-		{"none", nil},
-		{"empty", []string{}},
-		{"one path", []string{short}},
-		{"every path", []string{long}},
-		{"two warnings", []string{short, "A second note from the signer."}},
+		{"none", nil, ""},
+		{"empty", []string{}, ""},
+		{"one path", []string{short}, "Warning: Fee limit 0 is too low to pay alone. See details."},
+		{"every path", []string{long}, "Warning: Fee limit 0 is too low to pay alone. See details."},
+		{"cosigner held", []string{held}, "Warning: The cosigner is a key this signer holds. See details."},
+		{"two warnings", []string{short, held}, "Warning: 2 things to read before generating. See details."},
+		{"two warnings, the other order", []string{held, long}, "Warning: 2 things to read before generating. See details."},
+		{"three warnings", []string{short, held, "A third note from the signer."}, "Warning: 3 things to read before generating. See details."},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			prepared := preparedAccount(boundedmeta.Layer3PolicyFixedAllowlist, boundary.RekeySpendingKey, false, 2)
@@ -113,24 +132,55 @@ func TestReviewShowsTheSignersWarnings(t *testing.T) {
 			prepared.Warnings = test.warnings
 			m := Model{viewState: ViewGenerateReview, width: 80, height: 400, standalone: true, forms: formsState{review: &prepared}}
 			view := flatReview(m.renderGenerateReview())
-			if got := strings.Count(view, "Warning:"); got != len(test.warnings) {
-				t.Fatalf("%d warnings shown, want %d:\n%s", got, len(test.warnings), view)
+			wantLines := 0
+			if test.line != "" {
+				wantLines = 1
+			}
+			if got := strings.Count(view, "Warning:"); got != wantLines {
+				t.Fatalf("%d warning lines shown, want %d:\n%s", got, wantLines, view)
+			}
+			if got := strings.Count(view, "See details."); got != wantLines {
+				t.Fatalf("%d pointers to the details, want %d:\n%s", got, wantLines, view)
 			}
 			position := 0
+			if test.line != "" {
+				if lipgloss.Width(test.line) > reviewBodyWidth {
+					t.Fatalf("warning line %q does not fit one row of the review", test.line)
+				}
+				if position = strings.Index(view, test.line); position < 0 {
+					t.Fatalf("review lacks %q:\n%s", test.line, view)
+				}
+			}
+			switch len(test.warnings) {
+			case 0:
+			case 1:
+				if got := reviewWarningLine(test.warnings[0]); got != test.line {
+					t.Fatalf("reviewWarningLine() = %q, want %q", got, test.line)
+				}
+			default:
+				if test.line != severalWarningsLine(len(test.warnings)) {
+					t.Fatalf("the test's line %q is not the line for %d warnings", test.line, len(test.warnings))
+				}
+				// The count stands for all of them: no one warning's sentence is shown.
+				for _, warning := range test.warnings {
+					if first, _, _ := strings.Cut(warning, ". "); strings.Contains(view, first) {
+						t.Fatalf("the review of %d warnings shows %q:\n%s", len(test.warnings), first, view)
+					}
+				}
+			}
+			// The details have every warning in full, in the order the signer gave.
+			m.viewState = ViewGenerateReviewDetails
+			details := flatReview(m.renderGenerateReviewDetails())
+			at := 0
 			for _, warning := range test.warnings {
-				line := reviewWarningLine(warning)
-				if lipgloss.Width(line) > reviewBodyWidth || !strings.HasSuffix(line, " See details.") {
-					t.Fatalf("warning line %q does not fit one row of the review", line)
+				next := strings.Index(details[at:], warning)
+				if next < 0 {
+					t.Fatalf("details lack the full warning %q, or show it out of order:\n%s", warning, details)
 				}
-				at := strings.Index(view[position:], line)
-				if at < 0 {
-					t.Fatalf("review lacks %q, or shows it out of order:\n%s", line, view)
-				}
-				position += at + 1
-				m.viewState = ViewGenerateReviewDetails
-				if details := flatReview(m.renderGenerateReviewDetails()); !strings.Contains(details, warning) {
-					t.Fatalf("details lack the full warning %q:\n%s", warning, details)
-				}
+				at += next + len(warning)
+			}
+			if got := strings.Count(details, "Warning:"); got != len(test.warnings) {
+				t.Fatalf("details show %d warnings, want %d:\n%s", got, len(test.warnings), details)
 			}
 			// A warning refuses nothing: the review still offers every button, after it.
 			for _, button := range []string{"CANCEL", "DETAILS", "GENERATE"} {
@@ -145,9 +195,30 @@ func TestReviewShowsTheSignersWarnings(t *testing.T) {
 	}
 }
 
+// The cosigner warning's first sentence is the whole of what the review shows
+// of it, so it must fit the line as written, with nothing cut from its middle.
+func TestCosignerHeldWarningFitsOneReviewLine(t *testing.T) {
+	line := reviewWarningLine(cosignerHeldWarning(testAddress(9)))
+	if line != "Warning: The cosigner is a key this signer holds. See details." {
+		t.Fatalf("reviewWarningLine() = %q", line)
+	}
+	if lipgloss.Width(line) > reviewBodyWidth || strings.Contains(line, "…") || strings.Contains(line, "...") {
+		t.Fatalf("the line is %d wide in a %d-wide review, or is shortened: %q", lipgloss.Width(line), reviewBodyWidth, line)
+	}
+	// The line for several warnings fits too, at any count a review could have.
+	for _, count := range []int{2, 9, 10, 99} {
+		if got := severalWarningsLine(count); lipgloss.Width(got) > reviewBodyWidth {
+			t.Fatalf("%q is %d wide in a %d-wide review", got, lipgloss.Width(got), reviewBodyWidth)
+		}
+	}
+}
+
 // A review with a warning still fits the smallest window: every line of it and
-// the buttons, without the panel scroller.
+// the buttons, without the panel scroller. So does a review with several, which
+// take the same one line: a fee limit too low and a cosigner key the signer
+// holds can come together.
 func TestReviewWithAWarningFitsAt80x24(t *testing.T) {
+	held := cosignerHeldWarning(testAddress(9))
 	onePath := feeLimitWarning(0, "spend (at least 2000)")
 	twoPaths := feeLimitWarning(999, "spend (at least 2000), spending_rekey (at least 2000)")
 	everyPath := feeLimitWarning(1999, "spend (at least 4000), spending_rekey (at least 3060), listed_rekey (at least 2160)")
@@ -168,48 +239,59 @@ func TestReviewWithAWarningFitsAt80x24(t *testing.T) {
 		{"merkle, plus cosigned", boundedmeta.Layer3PolicyMerkleAllowlist, boundary.RekeySpendingKey, true, 2, false, everyPath},
 		{"merkle, plus cosigned, classical", boundedmeta.Layer3PolicyMerkleAllowlist, boundary.RekeySpendingKey, true, 2, true, everyPath},
 	} {
-		for _, standalone := range []bool{false, true} {
-			t.Run(fmt.Sprintf("%s/standalone=%v", test.name, standalone), func(t *testing.T) {
-				prepared := preparedAccount(test.policy, test.rekey, test.cosigner, 2)
-				prepared.Bounded.Contract = boundedmeta.Contract
-				prepared.Bounded.MaxFee = new(uint64(0))
-				if test.rekeyTo > 0 {
-					targets := make([]string, test.rekeyTo)
-					for i := range targets {
-						targets[i] = testAddress(byte(i + 1))
+		for _, warned := range []struct {
+			name     string
+			warnings []string
+			line     string
+		}{
+			{"one warning", []string{test.warning}, reviewWarningLine(test.warning)},
+			{"cosigner held", []string{held}, reviewWarningLine(held)},
+			{"two warnings", []string{test.warning, held}, severalWarningsLine(2)},
+			{"three warnings", []string{test.warning, held, test.warning}, severalWarningsLine(3)},
+		} {
+			for _, standalone := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/%s/standalone=%v", test.name, warned.name, standalone), func(t *testing.T) {
+					prepared := preparedAccount(test.policy, test.rekey, test.cosigner, 2)
+					prepared.Bounded.Contract = boundedmeta.Contract
+					prepared.Bounded.MaxFee = new(uint64(0))
+					if test.rekeyTo > 0 {
+						targets := make([]string, test.rekeyTo)
+						for i := range targets {
+							targets[i] = testAddress(byte(i + 1))
+						}
+						prepared.Bounded.RekeyList = true
+						prepared.Parameters[boundary.ParameterRekeyTo] = strings.Join(targets, ",")
 					}
-					prepared.Bounded.RekeyList = true
-					prepared.Parameters[boundary.ParameterRekeyTo] = strings.Join(targets, ",")
-				}
-				if test.classical {
-					prepared.KeyType = "aplane.ed25519.v1"
-				}
-				prepared.Warnings = []string{test.warning}
+					if test.classical {
+						prepared.KeyType = "aplane.ed25519.v1"
+					}
+					prepared.Warnings = warned.warnings
 
-				base := Model{viewState: ViewGenerateReview, standalone: standalone, connectionState: ConnectionConnected, forms: formsState{review: &prepared}}
-				m := sizedForTest(t, base, MinWidth, MinHeight)
-				view := stripANSI(m.View())
-				lines := strings.Split(view, "\n")
-				if len(lines) > MinHeight {
-					t.Errorf("%d lines in a %d-line window", len(lines), MinHeight)
-				}
-				for _, line := range lines {
-					if lipgloss.Width(line) > MinWidth {
-						t.Errorf("line wider than the window: %q", line)
+					base := Model{viewState: ViewGenerateReview, standalone: standalone, connectionState: ConnectionConnected, forms: formsState{review: &prepared}}
+					m := sizedForTest(t, base, MinWidth, MinHeight)
+					view := stripANSI(m.View())
+					lines := strings.Split(view, "\n")
+					if len(lines) > MinHeight {
+						t.Errorf("%d lines in a %d-line window", len(lines), MinHeight)
 					}
-				}
-				tall := sizedForTest(t, base, MinWidth, 400)
-				need := strings.Count(strings.TrimRight(stripANSI(tall.renderViewContent()), "\n"), "\n") + 1
-				if strings.Contains(view, "Panel lines") || need > m.windowBodyHeight() {
-					t.Fatalf("the review needs %d rows and has %d, so it scrolls or is cut off:\n%s", need, m.windowBodyHeight(), view)
-				}
-				flat := flatReview(view)
-				for _, want := range []string{reviewWarningLine(test.warning), "CANCEL", "DETAILS", "GENERATE", "fee limit 0"} {
-					if !strings.Contains(flat, want) {
-						t.Errorf("review lacks %q:\n%s", want, view)
+					for _, line := range lines {
+						if lipgloss.Width(line) > MinWidth {
+							t.Errorf("line wider than the window: %q", line)
+						}
 					}
-				}
-			})
+					tall := sizedForTest(t, base, MinWidth, 400)
+					need := strings.Count(strings.TrimRight(stripANSI(tall.renderViewContent()), "\n"), "\n") + 1
+					if strings.Contains(view, "Panel lines") || need > m.windowBodyHeight() {
+						t.Fatalf("the review needs %d rows and has %d, so it scrolls or is cut off:\n%s", need, m.windowBodyHeight(), view)
+					}
+					flat := flatReview(view)
+					for _, want := range []string{warned.line, "CANCEL", "DETAILS", "GENERATE", "fee limit 0"} {
+						if !strings.Contains(flat, want) {
+							t.Errorf("review lacks %q:\n%s", want, view)
+						}
+					}
+				})
+			}
 		}
 	}
 }

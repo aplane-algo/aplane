@@ -665,8 +665,11 @@ type GenerateKeyResult struct {
 	Address    string
 	KeyType    string
 	Parameters map[string]string
-	Code       string
-	Error      string
+	// Warnings are the signer's notes about the account it created. One can
+	// differ from the review's when the signer's keys changed in between.
+	Warnings []string
+	Code     string
+	Error    string
 }
 
 // DeleteKeyRequest is the admin-domain request to delete a key.

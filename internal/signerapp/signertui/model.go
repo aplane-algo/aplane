@@ -263,7 +263,13 @@ const (
 // and the post-completion display screens.
 type formsState struct {
 	generatedAddress string
-	generatedKeyType string
+	// generatedWarnings are the signer's notes about the generated account,
+	// shown with it: one can be new since the review.
+	generatedWarnings []string
+	// generatedWarningsOpen shows those warnings in full in place of the
+	// account's summary.
+	generatedWarningsOpen bool
+	generatedKeyType      string
 
 	importKeyType       int // 0 = ed25519, 1 = falcon1024
 	importMnemonicInput textarea.Model
@@ -682,7 +688,9 @@ type GenerateResultMsg struct {
 	Success bool
 	Address string
 	KeyType string // Full versioned type: "ed25519", "aplane.falcon1024.v1", etc.
-	Error   string
+	// Warnings are the signer's notes about the account it created.
+	Warnings []string
+	Error    string
 }
 
 // PrepareGenerateResultMsg reports what a generation request would create.
