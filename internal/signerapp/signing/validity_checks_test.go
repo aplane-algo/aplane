@@ -517,9 +517,21 @@ func TestDecodeTransactionsRefusesPassthroughBytesThatAreNotCanonical(t *testing
 	if err := decode(signed); err != nil {
 		t.Fatalf("canonical passthrough refused: %v", err)
 	}
+	// The signature written a second time, as a different one. A lenient
+	// decoder keeps the last, so the bytes forwarded would carry a signature
+	// other than the first one a reader sees.
+	other := types.Signature{2}
+	repeated := append([]byte{signed[0] + 1}, signed[1:]...)
+	repeated = append(repeated, msgpack.Encode(map[string]types.Signature{"sig": other})[1:]...)
+	var probe types.SignedTxn
+	if err := msgpack.Decode(repeated, &probe); err != nil || probe.Sig != other {
+		t.Fatalf("fixture: repeated-signature bytes decoded to %x, %v", probe.Sig[:2], err)
+	}
+
 	for name, raw := range map[string][]byte{
 		"trailing bytes":     append(append([]byte{}, signed...), 0xc0),
 		"second transaction": append(append([]byte{}, signed...), signed...),
+		"repeated field":     repeated,
 	} {
 		err := decode(raw)
 		if err == nil || err.Kind != ErrorBadRequest || !strings.HasSuffix(err.Message, notCanonicalMessage) {

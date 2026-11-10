@@ -14,6 +14,7 @@ import (
 	"crypto/sha512"
 	"encoding/binary"
 	"encoding/hex"
+	"errors"
 	"fmt"
 
 	"github.com/aplane-algo/aplane/internal/txnutil"
@@ -115,6 +116,14 @@ func DecodeGroupHex(groupBytesHex []string) (*Group, error) {
 	}, nil
 }
 
+// The ways transaction bytes fail the canonical decoders. A caller that
+// answers a client maps these to its own fixed text; any other error is the
+// codec's, whose wording names its internals and changes with the library.
+var (
+	ErrMissingTXPrefix = errors.New("missing TX prefix")
+	ErrNotCanonical    = errors.New("transaction bytes are not canonical")
+)
+
 // DecodeTXPrefixed decodes one TX-prefixed transaction and rejects any
 // encoding that does not re-encode to exactly the same bytes: trailing data,
 // non-canonical key order or explicit zero values. It checks nothing about
@@ -122,16 +131,30 @@ func DecodeGroupHex(groupBytesHex []string) (*Group, error) {
 func DecodeTXPrefixed(raw []byte) (types.Transaction, error) {
 	var txn types.Transaction
 	if len(raw) < 2 || raw[0] != 'T' || raw[1] != 'X' {
-		return txn, fmt.Errorf("missing TX prefix")
+		return txn, ErrMissingTXPrefix
 	}
 	if err := msgpack.Decode(raw[2:], &txn); err != nil {
 		return txn, fmt.Errorf("decode transaction: %w", err)
 	}
 	canonical := txnutil.EncodeWithPrefix(txn)
 	if !bytes.Equal(raw, canonical) {
-		return txn, fmt.Errorf("transaction bytes are not canonical")
+		return txn, ErrNotCanonical
 	}
 	return txn, nil
+}
+
+// DecodeSignedTxn decodes one signed transaction and rejects any encoding
+// that does not re-encode to exactly the same bytes. Signed bytes that are
+// forwarded as given have to be exactly what was decoded and reviewed.
+func DecodeSignedTxn(raw []byte) (types.SignedTxn, error) {
+	var stxn types.SignedTxn
+	if err := msgpack.Decode(raw, &stxn); err != nil {
+		return stxn, fmt.Errorf("decode signed transaction: %w", err)
+	}
+	if !bytes.Equal(msgpack.Encode(stxn), raw) {
+		return stxn, ErrNotCanonical
+	}
+	return stxn, nil
 }
 
 // ValidateGroupConsistency checks the MVP pre-grouped transaction invariant.

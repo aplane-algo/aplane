@@ -4,17 +4,16 @@
 package signing
 
 import (
-	"bytes"
 	"encoding/hex"
+	"errors"
 	"fmt"
 
 	apconfig "github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/cosigner/canonical"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
-	"github.com/aplane-algo/aplane/internal/txnutil"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 
 	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
-	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
@@ -439,15 +438,13 @@ func decodeTransactions(requests []signerapi.SignRequest, passthroughIndices map
 				return nil, nil, badRequest(fmt.Sprintf("transaction %d (passthrough): invalid hex encoding", i+1))
 			}
 
-			var stxn types.SignedTxn
-			if err := msgpack.Decode(stxnBytes, &stxn); err != nil {
-				return nil, nil, badRequest(fmt.Sprintf("transaction %d (passthrough): invalid signed transaction msgpack", i+1))
-			}
 			// These bytes are returned as given, so they must be exactly
 			// what was decoded and reviewed: no trailing data, no repeated
 			// field that a decoder resolves one way and a node another.
-			if !bytes.Equal(msgpack.Encode(stxn), stxnBytes) {
-				return nil, nil, badRequest(fmt.Sprintf("transaction %d (passthrough): %s", i+1, notCanonicalMessage))
+			stxn, decodeErr := canonical.DecodeSignedTxn(stxnBytes)
+			if decodeErr != nil {
+				return nil, nil, badRequest(fmt.Sprintf("transaction %d (passthrough): %s",
+					i+1, requestBytesRefusal(decodeErr, i+1, console)))
 			}
 
 			txns[i] = stxn.Txn
@@ -465,9 +462,10 @@ func decodeTransactions(requests []signerapi.SignRequest, passthroughIndices map
 		// decode to. A lenient decode accepts trailing data, a repeated field
 		// and a wrong-length address, and the signer would then review and
 		// sign a re-encoding that differs from what the client sent.
-		txn, reason := decodeCanonicalRequestTxn(txnBytesWithPrefix)
-		if reason != "" {
-			return nil, nil, badRequest(fmt.Sprintf("transaction %d: %s", i+1, reason))
+		txn, decodeErr := canonical.DecodeTXPrefixed(txnBytesWithPrefix)
+		if decodeErr != nil {
+			return nil, nil, badRequest(fmt.Sprintf("transaction %d: %s",
+				i+1, requestBytesRefusal(decodeErr, i+1, console)))
 		}
 
 		txns[i] = txn
@@ -485,21 +483,20 @@ const (
 	notCanonicalMessage    = "bytes are not the canonical encoding of the transaction they decode to"
 )
 
-// decodeCanonicalRequestTxn decodes TX-prefixed transaction bytes and
-// requires them to be canonical. It returns the refusal text, empty when the
-// bytes are accepted.
-func decodeCanonicalRequestTxn(raw []byte) (types.Transaction, string) {
-	var txn types.Transaction
-	if len(raw) < 2 || raw[0] != 'T' || raw[1] != 'X' {
-		return txn, missingTXPrefixMessage
+// requestBytesRefusal turns a canonical decoder's error into the fixed text
+// the client is told. The codec's own detail (a field this build doesn't
+// know, a wrong type) goes to the signer's console, where the operator can
+// tell corrupt bytes from an unsupported transaction.
+func requestBytesRefusal(err error, position int, console Console) string {
+	switch {
+	case errors.Is(err, canonical.ErrMissingTXPrefix):
+		return missingTXPrefixMessage
+	case errors.Is(err, canonical.ErrNotCanonical):
+		return notCanonicalMessage
+	default:
+		consoleOf(console).Printf("[GROUP] transaction %d refused: %v\n", position, err)
+		return invalidMsgpackMessage
 	}
-	if err := msgpack.Decode(raw[2:], &txn); err != nil {
-		return txn, invalidMsgpackMessage
-	}
-	if !bytes.Equal(txnutil.EncodeWithPrefix(txn), raw) {
-		return txn, notCanonicalMessage
-	}
-	return txn, ""
 }
 
 func validateGroupConsistency(txns []types.Transaction, hasPassthrough bool, console Console) (isPreGrouped bool, err *ServiceError) {

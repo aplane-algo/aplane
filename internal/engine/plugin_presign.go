@@ -401,6 +401,12 @@ func validatePluginSignedSlot(canonical types.Transaction, encoded string, autho
 	if !bytes.Equal(msgpack.Encode(stxn.Txn), msgpack.Encode(canonical)) {
 		return "", fmt.Errorf("signed transaction does not match the canonical bytes")
 	}
+	// The signer forwards these bytes as given and refuses any that are not
+	// the canonical encoding of what they decode to. Refuse them here, before
+	// the group goes to be signed.
+	if !bytes.Equal(msgpack.Encode(stxn), raw) {
+		return "", fmt.Errorf("signed transaction bytes are not canonical (trailing data, a repeated field, or an explicit empty field)")
+	}
 	if err := validatePluginSignedAuthorization(stxn, authorization); err != nil {
 		return "", err
 	}
