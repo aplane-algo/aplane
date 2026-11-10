@@ -530,6 +530,11 @@ appCallRaw(appId, from, appArgs, options = {})
 }
 ```
 
+`apps` is sent exactly as listed: in that order, with any repeats, and with
+the called app if you list it. A program reads the list by position, so it is
+never tidied. A box reference to another app adds that app at the end only
+when the list doesn't already have it.
+
 Use `noop`, `optin`, `closeout`, `clear`, or `delete` for `onCompletion`.
 The parser also recognizes `update`, but these JavaScript options do not
 accept replacement approval/clear programs, so an update fails validation.

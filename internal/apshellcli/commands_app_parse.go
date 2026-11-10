@@ -5,7 +5,6 @@ package apshellcli
 
 import (
 	"fmt"
-	"slices"
 	"strconv"
 	"strings"
 
@@ -135,9 +134,8 @@ func parseCommonAppCallOption(args []string, i int, appID uint64, opts *commonAp
 		if err != nil {
 			return i, true, err
 		}
-		if ref != appID && !slices.Contains(opts.ForeignApps, ref) {
-			opts.ForeignApps = append(opts.ForeignApps, ref)
-		}
+		// Kept exactly as typed, in order: a program reads these by position.
+		opts.ForeignApps = append(opts.ForeignApps, ref)
 		return i, true, nil
 	case strings.HasPrefix(arg, "asset="):
 		ref, err := cmdspec.ParseAssetRef(strings.TrimPrefix(arg, "asset="))

@@ -1134,6 +1134,12 @@ app call raw <app-id> from <account> [arg-raw=<bytes> ...] [--pay <microalgos>|p
 
 Byte-oriented values such as app boxes, raw app args, and LogicSig `arg:`
 values accept the forms listed in [Byte Encodings](#byte-encodings).
+The apps you list with `app=` are sent exactly as typed: in that order, with
+any repeats, and with the called app if you list it. A program reads them by
+position, so the list is never tidied. A box reference to another app
+(`box=<app-id>:<name>`) adds that app at the end only when your list doesn't
+already have it.
+
 Application update calls (`oncomp=update`) require both approval and clear
 program paths. Approval and clear program options are rejected for other
 on-completion modes.

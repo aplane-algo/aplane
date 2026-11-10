@@ -5,6 +5,7 @@ package apshellcli
 
 import (
 	"encoding/hex"
+	"slices"
 	"testing"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
@@ -355,5 +356,28 @@ func TestParseAppDeployArgs_DetectProgramSources(t *testing.T) {
 	}
 	if !params.ClearCompiled {
 		t.Fatalf("ClearCompiled = false, want true for .bin")
+	}
+}
+
+func TestParseAppCallArgsKeepExplicitAppsAsTyped(t *testing.T) {
+	raw, err := parseRawAppCallArgs([]string{
+		"raw", "123", "from", "alice", "app=456", "app=123", "app=456", "app=789",
+	})
+	if err != nil {
+		t.Fatalf("parseRawAppCallArgs() error = %v", err)
+	}
+	want := []uint64{456, 123, 456, 789}
+	if !slices.Equal(raw.ForeignApps, want) {
+		t.Fatalf("raw call foreign apps = %v, want them as typed %v", raw.ForeignApps, want)
+	}
+
+	method, err := parseMethodAppCallArgs([]string{
+		"123", "deposit", "abi=contract.json", "from", "alice", "app=456", "app=123", "app=456", "app=789",
+	})
+	if err != nil {
+		t.Fatalf("parseMethodAppCallArgs() error = %v", err)
+	}
+	if !slices.Equal(method.ForeignApps, want) {
+		t.Fatalf("method call foreign apps = %v, want them as typed %v", method.ForeignApps, want)
 	}
 }
