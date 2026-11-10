@@ -36,6 +36,19 @@ make integrity-check
 analysis, security analyzers, race tests, cross-builds, smoke tests, signer API
 contract tests, integration tests, and a clean-tree check.
 
+### Git hooks
+
+`scripts/dev/setup-git-hooks.sh` installs two hooks for this checkout:
+
+- **pre-commit** runs formatting, vet, the testmode build, staticcheck, the
+  seed-phrase scan and lint. It takes seconds and runs no tests.
+- **pre-push** runs the unit suite (`make test`), which takes minutes. It tests
+  the checked-out tree, so push the branch you are on. A push that only deletes
+  refs skips it, and `git push --no-verify` skips it once.
+
+A commit therefore doesn't show that tests pass: run the touched packages before
+committing. `.githooks/` is not tracked, so rerun the script after it changes.
+
 ## Pull Request Checklist
 
 - [ ] Code is formatted: `gofmt -s -w <changed-go-files>` or `make fmt-check`
