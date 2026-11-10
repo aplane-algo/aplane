@@ -425,7 +425,46 @@ func TestSuggestionsOfferOnlyAcceptedTerms(t *testing.T) {
 		}
 	}
 	c := LoadFile(writeFile(t, t.TempDir(), "c.json", fixture(t, "cosigner_key_full.json")))
-	if got := (EditSpec{Term: TermRekeyTarget}).Suggestions(c.Draft); !has(got, "@treasury", "@new_auth") || has(got, "@exchange") {
-		t.Fatalf("rekey targets %v: want flat sets only", got)
+	if got := (EditSpec{Term: TermRekeyTarget}).Suggestions(c.Draft); !has(got, "*", "self", "@treasury", "@new_auth") || has(got, "@exchange") {
+		t.Fatalf(`rekey targets %v: want "*", "self" and flat sets only`, got)
+	}
+	if got := (EditSpec{Term: TermRekeySender}).Suggestions(c.Draft); !has(got, "*", "@treasury") || has(got, "self") || has(got, "@exchange") {
+		t.Fatalf(`rekey senders %v: want "*" and flat sets, never "self"`, got)
+	}
+}
+
+// The editor takes every rekey term the document format takes: "*" on either
+// side and "self" as a target. "self" as a sender is refused, with the reason.
+func TestRekeyTermsFollowTheDocumentFormat(t *testing.T) {
+	for _, term := range []string{"*", "self", "@ops", testAddress} {
+		if err := checkTerm(TermRekeyTarget, term); err != nil {
+			t.Errorf("rekey target %q refused: %v", term, err)
+		}
+	}
+	for _, term := range []string{"*", "@ops", testAddress} {
+		if err := checkTerm(TermRekeySender, term); err != nil {
+			t.Errorf("rekey sender %q refused: %v", term, err)
+		}
+	}
+	if err := checkTerm(TermRekeySender, "self"); err == nil || !strings.Contains(err.Error(), `self is meaningless as a rekey_policy sender; use "*"`) {
+		t.Errorf("rekey sender self: err = %v", err)
+	}
+	if err := checkTerm(TermRekeyTarget, "not-an-address"); err == nil {
+		t.Error("a malformed rekey target was accepted")
+	}
+
+	// End to end: add an open edge through the outline's own actions, and the
+	// result is a document the decoder accepts.
+	c := LoadFile(writeFile(t, t.TempDir(), "c.json", fixture(t, "cosigner_key_full.json")))
+	next, err := rekeyEdgeAdd().apply(c.Draft, "*")
+	if err != nil {
+		t.Fatalf(`add a rekey edge with sender "*": %v`, err)
+	}
+	edges := next.At("/rekey_policy/allowed").Items()
+	if got := edges[len(edges)-1].Member("sender").Text(); got != "*" {
+		t.Fatalf("new edge sender = %q, want *", got)
+	}
+	if _, err := rekeyEdgeAdd().apply(c.Draft, "self"); err == nil {
+		t.Fatal(`a rekey edge with sender "self" was added`)
 	}
 }

@@ -5,7 +5,6 @@ package policy
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
@@ -15,13 +14,14 @@ type RekeyPolicy struct {
 	Allowed []CompiledRekeyRule
 }
 
+// CompiledRekeyRule is one allowed edge. Its terms are the route address
+// terms: a wildcard matches every address, and Self, a target-only term,
+// matches the sender's own address (a rekey back to the account's own key).
+// Rekey edges aren't network-scoped, so a set is resolved to its addresses at
+// compile time and Sets is always empty.
 type CompiledRekeyRule struct {
-	Sender  compiledRekeyAddressTerms
-	Targets compiledRekeyAddressTerms
-}
-
-type compiledRekeyAddressTerms struct {
-	Direct []types.Address
+	Sender  compiledAddressTerms
+	Targets compiledAddressTerms
 }
 
 func (p *RekeyPolicy) Clone() *RekeyPolicy {
@@ -31,75 +31,50 @@ func (p *RekeyPolicy) Clone() *RekeyPolicy {
 	cp := &RekeyPolicy{Allowed: make([]CompiledRekeyRule, len(p.Allowed))}
 	for i, rule := range p.Allowed {
 		cp.Allowed[i] = CompiledRekeyRule{
-			Sender:  cloneCompiledRekeyAddressTerms(rule.Sender),
-			Targets: cloneCompiledRekeyAddressTerms(rule.Targets),
+			Sender:  cloneAddressTerms(rule.Sender),
+			Targets: cloneAddressTerms(rule.Targets),
 		}
 	}
 	return cp
 }
 
+// Allows reports whether some rule covers a rekey of sender to target. Both
+// sides go through the route term matcher, with the sender as "self".
 func (p *RekeyPolicy) Allows(sender, target types.Address) bool {
 	if p == nil {
 		return false
 	}
 	for _, rule := range p.Allowed {
-		if !rekeyAddressTermsContain(rule.Sender, sender) {
-			continue
-		}
-		if rekeyAddressTermsContain(rule.Targets, target) {
+		if addressTermsMatch(rule.Sender, nil, "", sender, sender) &&
+			addressTermsMatch(rule.Targets, nil, "", target, sender) {
 			return true
 		}
 	}
 	return false
 }
 
-func compileRekeyAddressTerms(label string, raw []string, addressSets map[string]compiledAddressSet) (compiledRekeyAddressTerms, error) {
+// compileRekeyAddressTerms compiles one side of a rekey rule with the route
+// term compiler. allowSelf is true for targets only: a sender is always
+// itself, so "self" there would be "*" under another name. The decoder
+// refuses it with that reason; the term compiler's refusal is the backstop.
+func compileRekeyAddressTerms(label string, raw []string, addressSets map[string]compiledAddressSet, allowSelf bool) (compiledAddressTerms, error) {
 	if len(raw) == 0 {
-		return compiledRekeyAddressTerms{}, fmt.Errorf("rekey_policy.%s is required", label)
+		return compiledAddressTerms{}, fmt.Errorf("rekey_policy.%s is required", label)
 	}
-	var out compiledRekeyAddressTerms
-	for _, term := range raw {
-		term = strings.TrimSpace(term)
-		switch {
-		case term == "":
-			return compiledRekeyAddressTerms{}, fmt.Errorf("rekey_policy.%s contains an empty address term", label)
-		case term == "*":
-			return compiledRekeyAddressTerms{}, fmt.Errorf("rekey_policy.%s does not support wildcard addresses", label)
-		case term == "self":
-			return compiledRekeyAddressTerms{}, fmt.Errorf("rekey_policy.%s does not support self", label)
-		case strings.HasPrefix(term, "@"):
-			name := strings.TrimPrefix(term, "@")
-			set, ok := addressSets[name]
-			if !ok {
-				return compiledRekeyAddressTerms{}, fmt.Errorf("rekey_policy.%s references unresolved address set %q", label, name)
-			}
-			if len(set.ByNetwork) > 0 {
-				return compiledRekeyAddressTerms{}, fmt.Errorf("rekey_policy.%s references network-specific address set %q", label, name)
-			}
-			out.Direct = append(out.Direct, set.Flat...)
-		default:
-			addr, err := types.DecodeAddress(term)
-			if err != nil {
-				return compiledRekeyAddressTerms{}, fmt.Errorf("rekey_policy.%s invalid address %q: %w", label, term, err)
-			}
-			out.Direct = append(out.Direct, addr)
+	out, err := compileAddressTerms("rekey_policy."+label, raw, addressSets, allowSelf)
+	if err != nil {
+		return compiledAddressTerms{}, err
+	}
+	for _, name := range out.Sets {
+		set := addressSets[name]
+		if len(set.ByNetwork) > 0 {
+			return compiledAddressTerms{}, fmt.Errorf("rekey_policy.%s references network-specific address set %q", label, name)
 		}
+		out.Direct = append(out.Direct, set.Flat...)
 	}
-	if len(out.Direct) == 0 {
-		return compiledRekeyAddressTerms{}, fmt.Errorf("rekey_policy.%s must resolve to at least one address", label)
+	out.Sets = nil
+	if !out.Wildcard && !out.Self && len(out.Direct) == 0 {
+		return compiledAddressTerms{}, fmt.Errorf("rekey_policy.%s must resolve to at least one address", label)
 	}
 	return out, nil
-}
-
-func rekeyAddressTermsContain(terms compiledRekeyAddressTerms, candidate types.Address) bool {
-	for _, addr := range terms.Direct {
-		if addr == candidate {
-			return true
-		}
-	}
-	return false
-}
-
-func cloneCompiledRekeyAddressTerms(in compiledRekeyAddressTerms) compiledRekeyAddressTerms {
-	return compiledRekeyAddressTerms{Direct: append([]types.Address(nil), in.Direct...)}
 }

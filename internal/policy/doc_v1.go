@@ -66,8 +66,8 @@ var TransactionTypeNames = []string{
 	string(types.HeartbeatTx),
 }
 
-// transferTransactionTypes are the types transfer routing governs, and the
-// only types a cosigner document may allow.
+// transferTransactionTypes are the types transfer routing governs. A cosigner
+// document may allow others; those are authorized by their type verdict alone.
 var transferTransactionTypes = map[string]bool{
 	string(types.PaymentTx):       true,
 	string(types.AssetTransferTx): true,
@@ -427,10 +427,11 @@ func decodeRouteMissAction(n *jsonNode) (TransferOnNoRoute, error) {
 }
 
 // decodeTransactionTypes decodes the verdict map. A cosigner document may
-// allow only pay and axfer, the types routing governs, and never reviews. "*"
-// is required on a signer, where it is a choice; on a cosigner its only legal
-// value is reject, so it may be omitted and Verdict resolves a missing entry
-// to reject.
+// allow any type, "*" included, and never reviews: a cosigner has no operator.
+// Transfer routing governs pay and axfer; any other allowed type is authorized
+// by its type verdict alone, which Advisories reports. "*" is required on a
+// signer; on a cosigner it may be omitted, and Verdict resolves a missing
+// entry to reject.
 func decodeTransactionTypes(node *jsonNode, role noderole.Role) (TransactionTypesV1, error) {
 	r, err := readJSONObject(node, "transaction_types")
 	if err != nil {
@@ -456,13 +457,8 @@ func decodeTransactionTypes(node *jsonNode, role noderole.Role) (TransactionType
 		default:
 			return nil, docErrorf(n.pointer, "must be one of allow, review, reject")
 		}
-		if role == noderole.RoleCosigner {
-			switch {
-			case verdict == TransactionTypeReview:
-				return nil, docErrorf(n.pointer, "cosigner policy cannot produce review verdicts")
-			case verdict == TransactionTypeAllow && !transferTransactionTypes[name]:
-				return nil, docErrorf(n.pointer, "a cosigner document may allow only pay and axfer; routing is its only authorization surface")
-			}
+		if role == noderole.RoleCosigner && verdict == TransactionTypeReview {
+			return nil, docErrorf(n.pointer, "cosigner policy cannot produce review verdicts")
 		}
 		out[name] = verdict
 	}
@@ -788,7 +784,12 @@ func decodeRekeyPolicy(node *jsonNode) ([]RekeyRuleV1, error) {
 			return nil, err
 		}
 		var rule RekeyRuleV1
-		if rule.Sender, err = decodeAddressOrSet(senderNode); err != nil {
+		// A sender is always itself, so "self" there would only be "*" under
+		// another name.
+		if senderNode.kind == nodeString && senderNode.text == "self" {
+			return nil, docErrorf(senderNode.pointer, `self is meaningless as a rekey_policy sender; use "*"`)
+		}
+		if rule.Sender, err = decodeAddressTerm(senderNode); err != nil {
 			return nil, err
 		}
 		targetsNode, err := ir.required("targets")
@@ -799,8 +800,10 @@ func decodeRekeyPolicy(node *jsonNode) ([]RekeyRuleV1, error) {
 		if err != nil {
 			return nil, err
 		}
+		// A target may be "*" (any address) or "self" (the sender's own
+		// address: a rekey back to the account's own key).
 		for _, t := range targets {
-			term, err := decodeAddressOrSet(t)
+			term, err := decodeDestinationTerm(t)
 			if err != nil {
 				return nil, err
 			}
@@ -847,6 +850,7 @@ func decodeAddress(node *jsonNode) (types.Address, error) {
 	return addr, nil
 }
 
+// decodeAddressTerm decodes an address, "*" or an "@set" reference.
 func decodeAddressTerm(node *jsonNode) (string, error) {
 	raw, err := jsonString(node)
 	if err != nil {
@@ -854,21 +858,6 @@ func decodeAddressTerm(node *jsonNode) (string, error) {
 	}
 	if raw == "*" {
 		return raw, nil
-	}
-	return decodeAddressOrSet(node)
-}
-
-func decodeDestinationTerm(node *jsonNode) (string, error) {
-	if node.kind == nodeString && node.text == "self" {
-		return "self", nil
-	}
-	return decodeAddressTerm(node)
-}
-
-func decodeAddressOrSet(node *jsonNode) (string, error) {
-	raw, err := jsonString(node)
-	if err != nil {
-		return "", err
 	}
 	if name, ok := strings.CutPrefix(raw, "@"); ok {
 		if err := validateSetNameV1(node.pointer, name); err != nil {
@@ -880,6 +869,13 @@ func decodeAddressOrSet(node *jsonNode) (string, error) {
 		return "", err
 	}
 	return raw, nil
+}
+
+func decodeDestinationTerm(node *jsonNode) (string, error) {
+	if node.kind == nodeString && node.text == "self" {
+		return "self", nil
+	}
+	return decodeAddressTerm(node)
 }
 
 func decodeAssetTerm(node *jsonNode) (string, error) {
@@ -1040,11 +1036,8 @@ func validateRoutesV1(pointer string, routes []RouteV1, addressSets map[string]A
 			return docErrorf(rp, "allow_clawback and asset_sources must be set together")
 		}
 		for j, term := range route.Destinations {
-			switch {
-			case term == "self" && route.AllowClawback:
+			if term == "self" && route.AllowClawback {
 				return docErrorf(fmt.Sprintf("%s/destinations/%d", rp, j), "self is not allowed in a clawback route's destinations")
-			case term == "*" && route.AllowClose:
-				return docErrorf(fmt.Sprintf("%s/destinations/%d", rp, j), "allow_close cannot be combined with wildcard destinations")
 			}
 		}
 		if err := validateRouteLimitsCoverage(rp+"/limits", route, assetSets); err != nil {

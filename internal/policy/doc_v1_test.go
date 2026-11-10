@@ -69,9 +69,6 @@ func TestDecodePolicyV1ReportsJSONPointer(t *testing.T) {
 		{"unknown transaction type", signer(`"transaction_types":{"*":"allow","pmt":"allow"}`), DefaultKey, noderole.RoleSigner, "/transaction_types/pmt", "unknown transaction type"},
 		{"unknown type verdict", signer(`"transaction_types":{"*":"prompt"}`), DefaultKey, noderole.RoleSigner, "/transaction_types/*", "must be one of allow, review, reject"},
 		{"cosigner review type", cosigner(`"transaction_types":{"*":"reject","pay":"review"}`), testWitnessKeyIDV1, noderole.RoleCosigner, "/transaction_types/pay", "cannot produce review"},
-		{"cosigner allow non-transfer type", cosigner(`"transaction_types":{"*":"reject","appl":"allow"}`), testWitnessKeyIDV1, noderole.RoleCosigner, "/transaction_types/appl", "only pay and axfer"},
-		{"cosigner wildcard allow", cosigner(`"transaction_types":{"*":"allow"}`), testWitnessKeyIDV1, noderole.RoleCosigner, "/transaction_types/*", "only pay and axfer"},
-		{"cosigner omitted wildcard still rejects non-transfer allow", cosigner(`"transaction_types":{"pay":"allow","appl":"allow"}`), testWitnessKeyIDV1, noderole.RoleCosigner, "/transaction_types/appl", "only pay and axfer"},
 		{"cosigner review field", cosigner(`"always_review_warnings":true`), testWitnessKeyIDV1, noderole.RoleCosigner, "/always_review_warnings", "not accepted in a cosigner document"},
 		{"cosigner rekeys field", cosigner(`"rekeys": "reject_foreign_rekey"`), testWitnessKeyIDV1, noderole.RoleCosigner, "/rekeys", "not accepted in a cosigner document"},
 		{"cosigner route miss field", cosigner(`"transfer_policy":{"on_no_route":"reject"}`), testWitnessKeyIDV1, noderole.RoleCosigner, "/transfer_policy/on_no_route", "not accepted in a cosigner document"},
@@ -89,7 +86,6 @@ func TestDecodePolicyV1ReportsJSONPointer(t *testing.T) {
 		{"uncovered limit network", signer(tp(fmt.Sprintf(route, `,"limits":{"mainnet":{"algo":{"reject_above":"1"}}}`))), DefaultKey, noderole.RoleSigner, "/transfer_policy/routes/0/limits/mainnet", "does not cover network"},
 		{"review above reject", signer(`"limits":{"testnet":{"algo":{"review_above":"9","reject_above":"1"}}}`), DefaultKey, noderole.RoleSigner, "/limits/testnet/algo", "must not exceed"},
 		{"clawback without asset_sources", signer(tp(fmt.Sprintf(route, `,"allow_clawback":true`))), DefaultKey, noderole.RoleSigner, "/transfer_policy/routes/0", "allow_clawback and asset_sources"},
-		{"close with wildcard destination", signer(tp(fmt.Sprintf(route, `,"allow_close":true`))), DefaultKey, noderole.RoleSigner, "/transfer_policy/routes/0/destinations/0", "allow_close"},
 		{"duplicate route id", signer(tp(fmt.Sprintf(route, "") + "," + fmt.Sprintf(route, ""))), DefaultKey, noderole.RoleSigner, "/transfer_policy/routes/1/id", "duplicate route id"},
 		{"duplicate address in set", signer(fmt.Sprintf(`"address_sets":{"ops":[%q,%q]}`, v1Ops.String(), v1Ops.String())), DefaultKey, noderole.RoleSigner, "/address_sets/ops/1", "duplicate address"},
 		{"description too long", signer(fmt.Sprintf(`"description":%q`, strings.Repeat("中", maxPolicyDescriptionLength+1))), DefaultKey, noderole.RoleSigner, "/description", "1024 characters"},
@@ -117,6 +113,7 @@ func TestDecodePolicyV1ReportsJSONPointer(t *testing.T) {
 		{"blocked destination set reference", signer(`"transfer_policy":{"blocked_destinations":["@bad"]}`), DefaultKey, noderole.RoleSigner, "/transfer_policy/blocked_destinations/0", "invalid Algorand address"},
 		{"duplicate blocked destination", signer(fmt.Sprintf(`"transfer_policy":{"blocked_destinations":[%q,%q]}`, holder, holder)), DefaultKey, noderole.RoleSigner, "/transfer_policy/blocked_destinations/1", "duplicate address"},
 		{"cosigner rekey per-network set", cosigner(fmt.Sprintf(`"address_sets":{"ops":{"testnet":[%q]}},"rekey_policy":{"allowed":[{"sender":%q,"targets":["@ops"]}]}`, v1Ops.String(), v1Vendor.String())), testWitnessKeyIDV1, noderole.RoleCosigner, "/rekey_policy/allowed/0/targets/0", "per-network address set"},
+		{"cosigner rekey self sender", cosigner(fmt.Sprintf(`"reject_rekey":false,"rekey_policy":{"allowed":[{"sender":"self","targets":[%q]}]}`, v1Vendor.String())), testWitnessKeyIDV1, noderole.RoleCosigner, "/rekey_policy/allowed/0/sender", `self is meaningless as a rekey_policy sender; use "*"`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := DecodePolicyV1(tc.doc, tc.key, tc.role)

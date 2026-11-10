@@ -233,13 +233,13 @@ Policy fields by domain:
 | `transaction_types` `reject` | common | Reject every transaction of that type; evaluated first and suppresses the other transaction guards; transfer-routing deny verdicts for the same transaction may still be listed alongside it |
 | `rekeys` | signer | The signer's rejection rule for a non-zero `RekeyTo`: `reject_all_rekeys`, `reject_foreign_rekey` (the default: reject a target the product signer runtime does not hold, unless it is on the signing account's own rekey-to list), or `allow_rekeys` |
 | `reject_rekey` | cosigner | Reject every transaction with non-zero `RekeyTo` the cosigner is asked to sign; a listed rekey on a bounded account never asks it |
-| `rekey_policy` | cosigner | Allow-list for pure 0 ALGO self-payment rekeys by sender and rekey target; on a bounded account it picks cosigned-rekey targets only |
+| `rekey_policy` | cosigner | Allow-list for pure 0 ALGO self-payment rekeys by sender and rekey target. A sender or a target may be `*`, and a target may be `self` (a rekey back to the account's own address), so the list can be fully open. On a bounded account it picks cosigned-rekey targets only |
 | `reject_close_remainder` | common | Reject payment transactions with non-zero `CloseRemainderTo` |
 | `reject_asset_close` | common | Reject ASA transfers with non-zero `AssetCloseTo` |
 | `reject_clawback` | common | Reject ASA clawback transactions using `AssetSender` |
 | `max_fee_microalgos` | common | Reject transactions whose raw microAlgo fee exceeds the configured ceiling; `"0"` is no ceiling |
 | `limits` `reject_above` | common | Per-network, per-asset raw ceilings for ALGO payments (microAlgos) and ASA transfers (base units) |
-| `transfer_policy` | common | For client signing, produces deny verdicts for blocked destinations, route misses, close/clawback misses, and `reject_above`; for cosigner, routing is the positive authorization surface |
+| `transfer_policy` | common | For client signing, produces deny verdicts for blocked destinations, route misses, close/clawback misses, and `reject_above`; for cosigner, routing is the allow-list for the transfer types (`pay`, `axfer`); any other type the document allows is authorized by its type verdict alone |
 
 The transaction-type rule emits `transaction_type:<type>`, where `<type>` is
 the Algorand type string (`pay`, `axfer`, `acfg`, `afrz`, `keyreg`, `appl`,
@@ -248,8 +248,10 @@ the Algorand type string (`pay`, `axfer`, `acfg`, `afrz`, `keyreg`, `appl`,
 refuses one itself, before any policy runs, on both node roles (see
 [Request/Response Shapes](ARCH_SIGNING.md#requestresponse-shapes) in
 ARCH_SIGNING.md). On a
-cosigner node decode refuses `allow` for anything but `pay` and `axfer`, so
-every non-transfer type a cosigner is asked to attest is rejected here.
+cosigner node a type the document doesn't allow is rejected here, and `*` may
+be omitted, which rejects every type not named. A cosigner document may allow
+any type; one it allows other than `pay` and `axfer` is signed on this verdict
+alone.
 
 `rekeys` only rejects. `reject_all_rekeys` rejects every rekey, a listed one
 included; `reject_foreign_rekey` evaluates the rekey target against the set of
@@ -318,8 +320,8 @@ close-out misses according to `close_on_no_route`, clawback misses according to
 matched clawback movements without `allow_clawback:true`, and matching
 movements above a route's `reject_above` threshold. For client signing, routes
 never auto-approve a request; a route match only lets the movement continue
-through the remaining policy phases. For cosigner, routing is the positive
-authorization surface. See [Transfer Routing](#transfer-routing).
+through the remaining policy phases. For cosigner, routing is the allow-list
+for the transfer types. See [Transfer Routing](#transfer-routing).
 
 ## Always Review
 
@@ -479,11 +481,12 @@ For client signing, a route match means "allowed to continue through the
 normal policy phases"; it does not approve signing and never produces an
 Always Approve verdict.
 
-For cosigner, routing is the positive authorization surface. A cosigner
-component request is eligible to sign only when all evaluated target
-transactions are supported transfer shapes, every extracted target movement is
-covered by a matching route, and no route or transaction guard produces a deny
-verdict. A cosigner document cannot express review-producing behavior, so a
+For cosigner, routing is the allow-list for the transfer types, `pay` and
+`axfer`. A cosigner component request is eligible to sign only when every
+target's type is allowed, every movement extracted from a target is covered by
+a matching route, and no route or transaction guard produces a deny verdict.
+A target of any other type the document allows has no movements, so routing
+gives it no verdict: its type verdict alone authorizes it. A cosigner document cannot express review-producing behavior, so a
 cosigner route outcome is always sign or reject. In other words: for client signing, routing is a
 guardrail; for cosigner, routing is an allow-list.
 
@@ -783,9 +786,8 @@ Consequences:
   JSON.
 - Nothing in a document is implied. Every verdict-bearing field is required,
   and the decoder fills in no defaults. The one exception: a cosigner
-  document may omit `transaction_types["*"]`, which rejects every unnamed
-  type, the only value it could take (see
-  [Transaction Types](#transaction-types)). Optional fields are only those
+  document may omit `transaction_types["*"]`, and every unnamed type is then
+  rejected (see [Transaction Types](#transaction-types)). Optional fields are only those
   whose absence means "no such thing": no description, no thresholds, no sets, no
   blocked destinations, no rekey edges.
 
@@ -879,14 +881,20 @@ Cosigner semantics:
 - `rekeys`, `always_review_warnings`,
   `auto_approve_self_noop_transfer`, `review_above`, and the three route-miss
   actions do not exist there.
-- `transaction_types` may `allow` only `pay` and `axfer`; `*` and every
-  non-transfer type must be `reject`. `*` may be omitted, since `reject` is
-  its only value: `{ "pay": "allow", "axfer": "allow" }` is a complete map.
-- `transfer_policy` is required and is the positive authorization surface.
+- `transaction_types` may `allow` any type, `*` included; `review` is never
+  accepted. `*` may be omitted, and every unnamed type is then rejected:
+  `{ "pay": "allow", "axfer": "allow" }` is a complete map. A `keyreg` verdict
+  never covers nonparticipation, which the node always refuses.
+- `transfer_policy` is required and is the allow-list for `pay` and `axfer`.
   Route misses, unallowed close-outs, and unallowed clawbacks always reject.
-- `rekey_policy` is the positive authorization surface for non-zero `RekeyTo`
-  transactions when `reject_rekey` is false. It authorizes only pure
-  0 ALGO self-payment rekeys whose sender and target match an allowed edge.
+  A type routing doesn't govern is authorized by its type verdict alone, and
+  the document's advisories say so.
+- `rekey_policy` is the allow-list for non-zero `RekeyTo` transactions when
+  `reject_rekey` is false. It authorizes only pure 0 ALGO self-payment rekeys
+  whose sender and target match an allowed edge. A sender or a target may be
+  `*`. A target may be `self`, the sender's own address: a rekey back to the
+  account's own key. `self` is not a sender term, since a sender is always
+  itself; use `*`.
   On a cosigned bounded account it sees cosigned rekeys only: a listed rekey
   never asks the cosigner, so neither `rekey_policy` nor `reject_rekey` applies
   to it.
@@ -994,15 +1002,18 @@ Always Deny and `review` is Always Review, both with rule ID
 other rules (routing and limits for `pay` and `axfer`). A compiled policy
 with no map rejects every type.
 
-On a cosigner node every value is `allow` or `reject`, and `allow` is
-accepted only for `pay` and `axfer`, the types routing governs: `*` and every
-non-transfer type must be `reject`. Routing is the cosigner's only
-authorization surface, and a type permission with no route table behind it
-would authorize application calls from any account composed with the key.
-Because `reject` is the only value `*` can take there, a cosigner document
-may leave it out; the decoder records no entry, every type the map does not
-name resolves to `reject` with rule ID `transaction_type:<type>`, and the
-policy diff treats an omitted `*` as equal to an explicit `"*": "reject"`.
+On a cosigner node every value is `allow` or `reject`: a cosigner has no
+operator, so `review` is refused. Any type may be allowed, `*` included.
+Routing governs `pay` and `axfer`. Any other allowed type has no route table
+behind it: the cosigner signs it for any account composed with the key, on
+the type verdict alone, subject to the document's other transaction rules
+(the fee cap among them). The document's advisories report each such type
+(`policy_scope:cosigner_type_without_routing`). No verdict covers a `keyreg`
+with nonparticipation, which the node refuses before any policy. A cosigner
+document may leave `*` out; the decoder records no entry, every type the map
+does not name resolves to `reject` with rule ID `transaction_type:<type>`,
+and the policy diff treats an omitted `*` as equal to an explicit
+`"*": "reject"`.
 
 ```json
 "transaction_types": { "*": "reject", "pay": "allow", "axfer": "allow", "keyreg": "review" }
@@ -1080,18 +1091,19 @@ Checked at acceptance in addition to the schema:
    (directly, through a referenced set, or through `*`).
 7. `allow_clawback` and `asset_sources` appear together; `self` is not
    allowed in `asset_sources` or in a clawback route's destinations.
-8. `allow_close` is not combined with wildcard `destinations`.
-9. `blocked_destinations` holds addresses only (no sets, `self`, or `*`).
-10. `rekey_policy` references only flat address sets; rekey edges are not
-    network-scoped.
+8. `blocked_destinations` holds addresses only (no sets, `self`, or `*`).
+9. `rekey_policy` references only flat address sets; rekey edges are not
+   network-scoped. `self` is not a `rekey_policy` sender.
 
 Errors report the JSON Pointer of the failing value, for example
 `/transfer_policy/routes/1/limits/mainnet/asa:31566704/reject_above`.
 
 ### Advisories
 
-A valid document can still have a shape that surprises, because one policy
-layer cannot weaken another. `check` and `apply` report these as warnings
+A valid document can still have a shape worth a second look: one policy
+layer cannot weaken another, and a wide choice is easy to make without seeing
+what it means. Nothing coherent is refused; the system says what the choice
+does. `check` and `apply` report these as warnings
 (`internal/policy/advisory.go`); they never block an apply. Each warning
 carries the JSON Pointer of the first field its condition names, for example
 `/reject_asset_close` or `/max_fee_microalgos`, which is the field an author
@@ -1103,7 +1115,10 @@ would change to resolve it:
 | `policy_overlap:reject_asset_close:route_close_allow` | `reject_asset_close` is true and a route sets `allow_close` |
 | `policy_overlap:reject_clawback:route_clawback_allow` | `reject_clawback` is true and a route sets `allow_clawback` |
 | `policy_overlap:transaction_types:route_unreachable` | The document has routes but `transaction_types` rejects `pay` or `axfer`, so no route can match that type |
-| `policy_fee:cosigner_routes_without_fee_cap` | A cosigner document has routes and `max_fee_microalgos` is `"0"`; a cosigner has no warning review, so a permitted self-payment could carry any fee |
+| `policy_fee:cosigner_routes_without_fee_cap` | A cosigner document lets the cosigner sign, through a route, a type allowed without routing or a rekey rule that can match, and `max_fee_microalgos` is `"0"`; a cosigner has no warning review, so a transaction it signs could carry any fee |
+| `policy_scope:cosigner_type_without_routing` | A cosigner document allows a type other than `pay` or `axfer`; nothing but the type verdict stands behind it. A `"*": "allow"` is always reported, since it also covers any type a later release adds |
+| `policy_scope:rekey_policy_any_target` | A `rekey_policy` rule's targets include `*`, `reject_rekey` is false and `pay` is allowed; that sender may rekey to any address |
+| `policy_scope:route_close_to_any_address` | A route sets `allow_close` with a `*` destination, and a close-out it covers can pass (`reject_close_remainder` for ALGO, `reject_asset_close` for an ASA); any matching account may be closed out to any address, and the route's limits don't bound a close-out |
 
 ## Embedded Defaults
 
@@ -1618,9 +1633,9 @@ compatibility-bearing audit details live in
 | `transfer_policy.enabled` | Removed; a document always routes |
 | Bare numeric ASA IDs | `asa:<id>` only |
 | Cosigner `on_no_route` / `close_on_no_route` / `clawback_on_no_route` (must be `reject`) | Removed; always reject |
-| Absent fields resolved through product defaults | Every verdict-bearing field required; nothing implied, except that a cosigner document may omit `transaction_types["*"]`, which rejects every unnamed type (see [Transaction Types](#transaction-types)) |
+| Absent fields resolved through product defaults | Every verdict-bearing field required; nothing implied, except that a cosigner document may omit `transaction_types["*"]`, and every unnamed type is then rejected (see [Transaction Types](#transaction-types)) |
 | One document per node with `key_overrides` by address or Witness Key ID | One node default plus zero or one complete document per key; no inheritance |
-| Implicit transaction-type behavior | `transaction_types` with a `*` entry, required in a signer document; a cosigner document may omit it, since it can only be `reject` |
+| Implicit transaction-type behavior | `transaction_types` with a `*` entry, required in a signer document; a cosigner document may omit it, which rejects every unnamed type |
 | Sidecar `policy_mtime_ns` | Removed (already gone) |
 
 ## Source Files

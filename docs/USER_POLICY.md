@@ -131,6 +131,26 @@ A cosigner key with no file signs nothing. Cosigner policy has only two
 outcomes, reject or sign, so the default cannot defer to an operator; giving a
 cosigner key a file is the act of saying what it may witness.
 
+A cosigner is driven entirely by that file, and the file can be as open as
+you want it:
+
+- `transaction_types` may allow any type, `"*"` included. Routes govern `pay`
+  and `axfer`. Any other type you allow is signed on its type alone, for any
+  account composed with the key, within the document's other rules such as the
+  fee cap.
+- `rekey_policy` may use `"*"` as a sender or a target, and `"self"` as a
+  target, which allows a rekey back to the account's own address.
+  `{"sender": "*", "targets": ["*"]}` co-signs any rekey that is a zero-amount
+  payment to self, the only rekey shape a cosigner signs; `pay` must be
+  allowed for it to pass.
+- A route may set `allow_close` with a `"*"` destination, which lets any
+  matching account be closed out to any address. A close-out moves the whole
+  balance, and the route's amount limits don't bound it.
+
+`check` and `apply` print an advisory for each of these, saying what the
+choice means. They never refuse it. The one thing no policy can allow is a
+`keyreg` with nonparticipation.
+
 ### Cosigner presets
 
 To give a cosigner key (or the cosigner default) rules without writing routes
@@ -512,8 +532,10 @@ key.json:
 warnings that do not block an apply: a file for a key the node does not hold
 ("policy is for a key this node does not hold"), reject settings that override
 a route's `allow_close` or `allow_clawback`, routes for a transfer type the
-document's `transaction_types` rejects, and a cosigner document whose routes
-permit movements with no fee cap.
+document's `transaction_types` rejects, a cosigner document whose routes
+permit movements with no fee cap, and the wide choices: a cosigner type with
+no routing behind it, a rekey rule open to any target, and a route that closes
+out to any address.
 
 `apply` runs `check` first, prints its warnings, and stops on errors. It then
 applies the change against the `policy_set_sha256` it read at the start, so the
@@ -901,12 +923,12 @@ in base units, and ASA IDs are written `asa:<id>`.
 | `always_review_warnings` | signer | yes | Require operator review for warning-level findings unless User Auto-Approve is on. |
 | `auto_approve_self_noop_transfer` | signer | yes | Auto-approve exact low-risk 0-amount self-transfer shapes. |
 | `max_fee_microalgos` | both | yes | Reject txns whose fee exceeds this microAlgo ceiling; `"0"` means no cap. |
-| `transaction_types` | both | yes | Map from transaction type (`pay`, `axfer`, `acfg`, `afrz`, `appl`, `keyreg`, `stpf`, `hb`) or `*` to `allow`, `review`, or `reject`; `*` covers every type not named and is required in a signer document. A cosigner document may `allow` only `pay` and `axfer` and may not use `review`; its `*` can only be `reject`, so it may be left out. |
+| `transaction_types` | both | yes | Map from transaction type (`pay`, `axfer`, `acfg`, `afrz`, `appl`, `keyreg`, `stpf`, `hb`) or `*` to `allow`, `review`, or `reject`; `*` covers every type not named and is required in a signer document. A cosigner document may `allow` any type, `*` included, and may not use `review`; it may leave `*` out, which rejects every type not named. |
 | `limits` | both | no | Per-network, per-asset `review_above` / `reject_above` thresholds in base units; cosigner documents take `reject_above` only. |
 | `address_sets` | both | no | Named address sets for routes, local to this document. |
 | `asset_sets` | both | no | Named per-network asset sets for routes, local to this document. |
 | `transfer_policy` | both | yes | Source/asset/destination route table for direct ALGO and ASA movements: `routes` (required, may be empty) and `blocked_destinations`. Signer documents also require `on_no_route`, `close_on_no_route`, and `clawback_on_no_route`. |
-| `rekey_policy` | cosigner | no | Allow-list for pure 0 ALGO self-payment rekeys by sender and target. |
+| `rekey_policy` | cosigner | no | Allow-list for pure 0 ALGO self-payment rekeys by sender and target. A sender or a target may be `*`; a target may be `self`, the sender's own address. |
 
 Cosigner policy never produces review verdicts: there is no `review_above`, no
 `review` type verdict, and no `on_no_route` family (an unmatched movement,
@@ -1411,7 +1433,7 @@ still apply independently.
 
 The cosigner equivalent is one file per witness key. Its `transfer_policy`
 holds only `routes` and `blocked_destinations`, its `transaction_types` may
-allow only `pay` and `axfer` (every type it does not name is rejected, so
+allow any type (every type it does not name is rejected, so
 `"*": "reject"` may be left out), and a finite fee cap keeps a permitted
 self-payment from carrying any fee (a cosigner has no warning review, and
 `check` warns when routes exist with no cap):

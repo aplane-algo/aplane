@@ -774,10 +774,11 @@ func (o *outliner) rekey(rp policy.DraftNode) []Field {
 		for _, part := range []struct {
 			name string
 			edit EditKind
-		}{{"sender", EditTerm}, {"targets", EditTerms}} {
+			term TermKind
+		}{{"sender", EditTerm, TermRekeySender}, {"targets", EditTerms, TermRekeyTarget}} {
 			n := edge.Member(part.name)
 			out = append(out, Field{Label: label + " " + part.name, Pointer: edge.Pointer() + "/" + part.name, Value: render(n), Missing: !n.Exists(),
-				Edit: &EditSpec{Kind: part.edit, Pointer: edge.Pointer() + "/" + part.name, Term: TermRekeyTarget}, Remove: gone,
+				Edit: &EditSpec{Kind: part.edit, Pointer: edge.Pointer() + "/" + part.name, Term: part.term}, Remove: gone,
 				Copy: duplicateItem("Copy "+strings.ToLower(label), allowed.Pointer(), i, edge)})
 		}
 		out = append(out, unknownFields(edge, map[string]bool{"sender": true, "targets": true}, "a rekey edge")...)
@@ -790,8 +791,8 @@ func (o *outliner) rekey(rp policy.DraftNode) []Field {
 }
 
 func rekeyEdgeAdd() AddAction {
-	return AddAction{Label: "Add a rekey edge", Prompt: "sender: an address or @set", apply: func(d *policy.Draft, input string) (*policy.Draft, error) {
-		if err := checkTerm(TermRekeyTarget, input); err != nil {
+	return AddAction{Label: "Add a rekey edge", Prompt: `sender: an address, "*" or @set`, apply: func(d *policy.Draft, input string) (*policy.Draft, error) {
+		if err := checkTerm(TermRekeySender, input); err != nil {
 			return nil, err
 		}
 		v, _ := json.Marshal(input)

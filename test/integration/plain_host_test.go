@@ -625,6 +625,45 @@ func TestCosignedGroupChargesTheNativeFalconPosition(t *testing.T) {
 	}
 }
 
+// A cosigned plain host has no type list in its program, so any transaction
+// type that isn't a rekey takes the cosigned spend path. An offline keyreg, a
+// type transfer routing doesn't govern, signs through the signer and the
+// cosigner and confirms. This is what lets a cosigner policy allow any type
+// (restrictions C1).
+func TestCosignedPlainHostSignsANonTransferType(t *testing.T) {
+	n := newCosignedNode(t)
+	activatePlainHosts(t, n)
+	cosigned := generatePlainHost(t, n, plainFalconKeyType, map[string]string{
+		cosignerrefs.ParamCosignerName: cosignedReferenceName, plainhost.ParameterRekeyAuthority: plainhost.RekeySpendingKey,
+	})
+	if err := n.eng.EnsureSignerCache(context.Background()); err != nil {
+		t.Fatalf("refresh signer cache: %v", err)
+	}
+	sp, err := n.network.GetSuggestedParams()
+	if err != nil {
+		t.Fatalf("suggested params: %v", err)
+	}
+	keyreg, err := transaction.MakeKeyRegTxnWithStateProofKey(cosigned, []byte("cosigned-offline-keyreg"), sp, "", "", "", 0, 0, 0, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := n.cosignerCalls.Load()
+	result, err := n.eng.SignAndSubmitTransactions(context.Background(), []types.Transaction{keyreg}, true)
+	if err != nil {
+		output := ""
+		if result != nil {
+			output = result.Output
+		}
+		t.Fatalf("cosigned offline keyreg: %v\n%s", err, output)
+	}
+	if !result.Confirmed {
+		t.Fatal("cosigned offline keyreg did not confirm")
+	}
+	if asked := n.cosignerCalls.Load() - before; asked != 1 {
+		t.Fatalf("the cosigner was asked %d times, want once", asked)
+	}
+}
+
 // Plain hosts created and spent through the signer: a cosigned one, on Falcon
 // and on Ed25519, signs through the cosigned flow and asks the cosigner; one
 // without a cosigner and the plain program sign through /sign and never ask it.

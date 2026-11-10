@@ -216,9 +216,13 @@ func (e *explainer) rekeys() {
 	case len(d.RekeyPolicy) == 0:
 		e.line("Rekeys: every rekey asked of this cosigner is rejected (rekey_policy allows no edges); a listed rekey never asks it")
 	default:
-		e.line("Rekeys allowed only along these edges, each as a zero-amount self-payment:")
+		e.line("Rekeys allowed along these edges, each as a zero-amount self-payment:")
 		for _, r := range d.RekeyPolicy {
-			e.line("  %s to %s", r.Sender, terms(r.Targets))
+			sender := r.Sender
+			if sender == "*" {
+				sender = "any sender"
+			}
+			e.line("  %s to %s", sender, rekeyTargets(r.Targets))
 		}
 	}
 }
@@ -327,6 +331,23 @@ func missAction(a policy.TransferOnNoRoute) string {
 		return "left to the operator default"
 	}
 	return string(a)
+}
+
+// rekeyTargets renders a rekey rule's targets: "*" is any address, and "self"
+// is the sender's own address, a rekey back to the account's own key.
+func rekeyTargets(list []string) string {
+	out := make([]string, len(list))
+	for i, t := range list {
+		switch t {
+		case "*":
+			out[i] = "any address"
+		case "self":
+			out[i] = "its own address"
+		default:
+			out[i] = t
+		}
+	}
+	return strings.Join(out, ", ")
 }
 
 // terms lists route address or asset terms as written, naming the wildcard.
