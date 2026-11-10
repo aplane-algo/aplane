@@ -7,7 +7,13 @@
 // lives in lsig/plainhost.
 package boundary
 
-import "github.com/aplane-algo/aplane/internal/boundedmeta"
+import (
+	"fmt"
+	"strconv"
+	"strings"
+
+	"github.com/aplane-algo/aplane/internal/boundedmeta"
+)
 
 const (
 	// SchemaV1 identifies the boundary file grammar.
@@ -56,3 +62,22 @@ const (
 	RekeyPlusCosigned = boundedmeta.RekeyPlusCosigned
 	RekeyRefused      = string(boundedmeta.RekeyRefused)
 )
+
+// DefaultMaxFeeText is DefaultMaxFee as a request or a file writes it.
+var DefaultMaxFeeText = strconv.FormatUint(DefaultMaxFee, 10)
+
+// ParseMaxFee reads a fee ceiling. Only the plain decimal form is accepted: a
+// leading zero or a sign would read differently elsewhere, as YAML reads 010 as
+// octal. Any value the wire can carry is valid, zero included: an account that
+// can't pay its own fees still works with another account paying them.
+func ParseMaxFee(value string) (uint64, error) {
+	text := strings.TrimSpace(value)
+	fee, err := strconv.ParseUint(text, 10, 64)
+	if err != nil || strconv.FormatUint(fee, 10) != text {
+		return 0, fmt.Errorf("%s must be a whole number of microAlgos: %q", ParameterMaxFee, value)
+	}
+	if fee > boundedmeta.MaxFeeLimit {
+		return 0, fmt.Errorf("%s %d is above %d, the largest value every client reads exactly", ParameterMaxFee, fee, boundedmeta.MaxFeeLimit)
+	}
+	return fee, nil
+}

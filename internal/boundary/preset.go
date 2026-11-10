@@ -10,9 +10,6 @@ import (
 
 const allTransfers = "pay,axfer,asset_opt_in"
 
-// defaultMaxFee is DefaultMaxFee as a preset writes it.
-const defaultMaxFee = "10000"
-
 // Preset is a named arrangement of the grammar. Fixed holds the choices the preset
 // makes; Fields names what the operator supplies. Presets are the one definition
 // that both the guided screens and sample boundary files come from.
@@ -34,7 +31,7 @@ func Presets() []Preset {
 			Description: "Pays only listed recipients. The spending key alone can rekey it.",
 			Fixed: map[string]string{
 				ParameterSpendEffects:   allTransfers,
-				ParameterMaxFee:         defaultMaxFee,
+				ParameterMaxFee:         DefaultMaxFeeText,
 				ParameterRekeyAuthority: RekeySpendingKey,
 				ParameterListEncoding:   EncodingAuto,
 			},
@@ -46,7 +43,7 @@ func Presets() []Preset {
 			Description: "Pays only listed recipients. It can be rekeyed only to an address on its rekey-to list.",
 			Fixed: map[string]string{
 				ParameterSpendEffects:   allTransfers,
-				ParameterMaxFee:         defaultMaxFee,
+				ParameterMaxFee:         DefaultMaxFeeText,
 				ParameterRekeyAuthority: RekeyOnlyThese,
 				ParameterListEncoding:   EncodingAuto,
 			},
@@ -58,7 +55,7 @@ func Presets() []Preset {
 			Description: "A Merkle list and a cosigner on every spend. It can be rekeyed only to an address on its rekey-to list, with the spending key alone.",
 			Fixed: map[string]string{
 				ParameterSpendEffects:   allTransfers,
-				ParameterMaxFee:         defaultMaxFee,
+				ParameterMaxFee:         DefaultMaxFeeText,
 				ParameterRekeyAuthority: RekeyOnlyThese,
 				ParameterListEncoding:   EncodingMerkle,
 			},

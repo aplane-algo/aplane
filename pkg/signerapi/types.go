@@ -594,7 +594,11 @@ type AdminGenerateResponse struct {
 	IsWitnessKey      bool              `json:"is_witness_key,omitempty"`
 	IsSpendingAccount *bool             `json:"is_spending_account,omitempty"`
 	Parameters        map[string]string `json:"parameters,omitempty"`
-	Error             string            `json:"error,omitempty"`
+	// Warnings are the signer's advice about the account it created, such as a
+	// fee limit below what the account's own transactions cost. They refused
+	// nothing.
+	Warnings []string `json:"warnings,omitempty"`
+	Error    string   `json:"error,omitempty"`
 }
 
 // AdminDeleteResponse is the response from DELETE /admin/keys.

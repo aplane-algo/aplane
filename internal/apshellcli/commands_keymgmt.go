@@ -8,7 +8,6 @@ package apshellcli
 import (
 	"fmt"
 	"io"
-	"strconv"
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/apshellapp"
@@ -70,7 +69,7 @@ func (r *REPLState) cmdGenerate(args []string, _ interface{}) (command.Result, e
 		})
 	}, generatedKeyProjection{
 		KeyType: result.KeyType, Address: result.Address, Parameters: result.Parameters,
-		CosignerKeyID: result.CosignerKeyID,
+		CosignerKeyID: result.CosignerKeyID, Warnings: result.Warnings,
 	})
 }
 
@@ -107,8 +106,8 @@ func renderBoundaryPreview(r *REPLState, preview *apshellapp.BoundaryPreview) {
 	if !preview.NoBounds {
 		r.printf("  Transfers:  %s\n", strings.Join(preview.Transfers, ", "))
 		fee := preview.MaxFee
-		if fee == "" || fee == strconv.FormatUint(boundary.DefaultMaxFee, 10) {
-			fee = strconv.FormatUint(boundary.DefaultMaxFee, 10) + " (default)"
+		if fee == "" || fee == boundary.DefaultMaxFeeText {
+			fee = boundary.DefaultMaxFeeText + " (default)"
 		}
 		r.printf("  Fee limit:  %s microAlgos per transaction\n", fee)
 	}
@@ -174,6 +173,13 @@ func renderResolvedGeneration(r *REPLState, result *apshellapp.GenerateKeyComman
 	}
 	if encoding := result.Parameters[boundary.ParameterListEncoding]; encoding != "" {
 		r.printf("  List encoding:  %s\n", encoding)
+	}
+	if fee := result.Parameters[boundary.ParameterMaxFee]; fee != "" {
+		r.printf("  Fee limit:      %s microAlgos per transaction\n", fee)
+	}
+	// The signer's advice about the account. It refused nothing.
+	for _, warning := range result.Warnings {
+		r.printf("  Warning:        %s\n", warning)
 	}
 }
 

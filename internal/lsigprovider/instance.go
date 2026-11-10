@@ -30,9 +30,13 @@ type Instance struct {
 	// BoundaryDigest compares the resolved policy and external authorities of
 	// two accounts. It is empty for a type that does not define one.
 	BoundaryDigest string
-	// Warnings are what a reviewer should know before creating the account. They
-	// never refuse it.
-	Warnings []string
+}
+
+// CreationAdvisor is implemented by providers that have advice about a creation
+// request: what a reviewer should know before creating the account. A warning
+// never refuses the request; an error means the advice could not be worked out.
+type CreationAdvisor interface {
+	CreationWarnings(params map[string]string) ([]string, error)
 }
 
 // InstanceResolver is implemented by providers whose contract varies by key.

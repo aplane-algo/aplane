@@ -176,8 +176,8 @@ For bounded (`bounded2`) work, read
 - no framework rule makes a `refused` profile without a list keep a transfer
   (`pay`, and `axfer` beside `asset_opt_in`); a template that drops one can
   strand what the account holds, so review that choice;
-- `max_fee` is explicit and compiled; it is required and any value is valid, 0
-  included, so review that it covers what the account's paths cost unless another
+- `max_fee` is explicit and compiled; it is required and any value from 0 to
+  2^53 - 1 is valid, so review that it covers what the account's paths cost unless another
   account is meant to pay its fees;
 - caller runtime args can never supply the cosigner signature or a
   signer-derived argument;

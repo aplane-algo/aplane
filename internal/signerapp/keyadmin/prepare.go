@@ -60,7 +60,7 @@ func (s Service) PrepareGenerateKey(keyType string, params map[string]string) (*
 		return nil, err
 	}
 
-	prepared := &PreparedGeneration{KeyType: creation.keyType, Parameters: creation.params}
+	prepared := &PreparedGeneration{KeyType: creation.keyType, Parameters: creation.params, Warnings: slices.Clone(creation.warnings)}
 	if provider := lsigprovider.Get(creation.keyType); provider != nil {
 		if err := provider.ValidateCreationParams(creation.params); err != nil {
 			return nil, &Error{Kind: ErrorInvalidInput, Message: err.Error()}
@@ -74,7 +74,6 @@ func (s Service) PrepareGenerateKey(keyType string, params map[string]string) (*
 		prepared.ReviewFingerprint = creation.instance.ReviewFingerprint
 		prepared.BoundaryDigest = creation.instance.BoundaryDigest
 		prepared.Bounded = boundedmeta.Clone(creation.instance.Bounded)
-		prepared.Warnings = slices.Clone(creation.instance.Warnings)
 	}
 	if err := prepared.resolveAuthorityIDs(); err != nil {
 		return nil, &Error{Kind: ErrorInvalidInput, Message: err.Error()}

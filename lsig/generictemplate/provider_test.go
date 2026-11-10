@@ -1760,3 +1760,75 @@ func TestValidateDefaultValueMatchesRuntimeByteLength(t *testing.T) {
 		t.Fatalf("explicit MaxLength default should pass: %v", err)
 	}
 }
+
+// RequireStringScalars lets a named field hold a whole number as well as text,
+// and says so when the field holds anything else YAML typed: a fraction, an
+// exponent, a number too large for YAML to read as an integer, a boolean or a
+// null. Any other field still must be text, and a named field's nested values
+// are not excused.
+func TestRequireStringScalarsNamesAnIntegerField(t *testing.T) {
+	type document struct {
+		Name  string   `yaml:"name"`
+		Limit *string  `yaml:"limit"`
+		Other *string  `yaml:"other"`
+		Items []string `yaml:"items"`
+	}
+	decode := func(body string) (document, error) {
+		var out document
+		err := DecodeStrictYAML([]byte(body), &out, RequireStringScalars("limit"))
+		return out, err
+	}
+	for _, test := range []struct {
+		line, want string
+	}{
+		{"limit: 20000", "20000"},
+		{"limit: \"20000\"", "20000"},
+		{"limit: '010'", "010"},
+		{"limit: 0", "0"},
+		// YAML reads these as integers, so they pass as the text written: what
+		// the text means is the field's reader to decide.
+		{"limit: 010", "010"},
+		{"limit: 0x10", "0x10"},
+		{"limit: -1", "-1"},
+		{"limit: 10_000", "10_000"},
+		{"limit: 18446744073709551615", "18446744073709551615"},
+		{"limit: abc", "abc"},
+	} {
+		got, err := decode("name: a\n" + test.line + "\n")
+		if err != nil || got.Limit == nil || *got.Limit != test.want {
+			t.Errorf("%q: limit = %v, error = %v; want %q", test.line, got.Limit, err, test.want)
+		}
+	}
+	for _, test := range []struct {
+		line, want string
+	}{
+		{"limit: 1.5", `YAML parse error: limit on line 2 must be a whole number: "1.5"`},
+		{"limit: 1.0", `YAML parse error: limit on line 2 must be a whole number: "1.0"`},
+		{"limit: 1e4", `YAML parse error: limit on line 2 must be a whole number: "1e4"`},
+		{"limit: .inf", `YAML parse error: limit on line 2 must be a whole number: ".inf"`},
+		{"limit: 18446744073709551616", `YAML parse error: limit on line 2 must be a whole number: "18446744073709551616"`},
+		{"limit: true", `YAML parse error: limit on line 2 must be a whole number: "true"`},
+		{"limit:", `YAML parse error: limit on line 2 is empty`},
+		{"limit: ~", `YAML parse error: limit on line 2 must be a whole number: "~"`},
+		{"limit: null", `YAML parse error: limit on line 2 must be a whole number: "null"`},
+		{"limit: 2001-01-01", `YAML parse error: limit on line 2 must be a whole number: "2001-01-01"`},
+		// Not a scalar: the value inside is judged as any other.
+		{"limit: [20000]", `YAML parse error: value "20000" on line 2 must be a string`},
+		{"limit: {a: 1}", `YAML parse error: value "1" on line 2 must be a string`},
+		// A field that was not named.
+		{"other: 20000", `YAML parse error: value "20000" on line 2 must be a string`},
+		{"other: 1.5", `YAML parse error: value "1.5" on line 2 must be a string`},
+		{"other: true", `YAML parse error: value "true" on line 2 must be a string`},
+		{"other:", `YAML parse error: value "" on line 2 must be a string`},
+		{"items: [limit, 5]", `YAML parse error: value "5" on line 2 must be a string`},
+	} {
+		if _, err := decode("name: a\n" + test.line + "\n"); err == nil || err.Error() != test.want {
+			t.Errorf("%q: error = %v, want %q", test.line, err, test.want)
+		}
+	}
+	// With no field named, a whole number is refused like any other non-text.
+	var out document
+	if err := DecodeStrictYAML([]byte("name: a\nlimit: 20000\n"), &out, RequireStringScalars()); err == nil || !strings.Contains(err.Error(), `value "20000" on line 2 must be a string`) {
+		t.Errorf("RequireStringScalars(): error = %v", err)
+	}
+}

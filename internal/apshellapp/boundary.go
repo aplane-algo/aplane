@@ -141,7 +141,7 @@ func confirmCosigner(result *engine.GenerateKeyResult, requested string) error {
 func generateResultFromEngine(result *engine.GenerateKeyResult) *GenerateKeyCommandResult {
 	return &GenerateKeyCommandResult{
 		KeyType: result.KeyType, Address: result.Address, Parameters: result.Parameters,
-		CosignerKeyID: result.CosignerKeyID,
+		CosignerKeyID: result.CosignerKeyID, Warnings: result.Warnings,
 	}
 }
 
@@ -159,7 +159,8 @@ func WriteGenerationResult(path string, result *GenerateKeyCommandResult) error 
 		KeyType       string            `json:"key_type"`
 		Parameters    map[string]string `json:"parameters"`
 		CosignerKeyID string            `json:"cosigner_key_id,omitempty"`
-	}{GenerationResultSchemaV1, result.Address, result.KeyType, result.Parameters, result.CosignerKeyID}, "", "  ")
+		Warnings      []string          `json:"warnings,omitempty"`
+	}{GenerationResultSchemaV1, result.Address, result.KeyType, result.Parameters, result.CosignerKeyID, result.Warnings}, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encode generation result: %w", err)
 	}

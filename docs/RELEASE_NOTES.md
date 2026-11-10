@@ -11,7 +11,8 @@ before it was renamed `enroll`.
 
 - Removed: the fixed cap of 10,000 microAlgos on a bounded account's `max_fee`, in
   templates (`bounded.max_fee`) and in stored metadata validation. `max_fee` is still
-  required on `bounded2`, and any value is valid, 0 included. A `plain1` account still
+  required on `bounded2`, and any value from 0 to 2^53 - 1 is valid (the largest every
+  client reads exactly as a JSON number). A `plain1` account still
   has no fee ceiling.
 - New: the plain hosts take an optional bounds parameter `max_fee`, and a boundary file
   an optional field `max_fee` (a whole number of microAlgos, written as a number or a
@@ -26,7 +27,8 @@ before it was renamed `enroll`.
 - A ceiling below what a path costs is no longer refused at generation ("path needs a
   fee of N, above the account's ceiling"). The apadmin review warns instead, through
   the new `prepare_generate_result.warnings`, so a sponsored-only account such as
-  `max_fee: 0` can be created. The warning is a lower bound, computed before the
+  `max_fee: 0` can be created. The `/admin/generate` response carries the same
+  `warnings`, which apshell prints. The warning is a lower bound, computed before the
   program exists. A path that doesn't fit one transaction's resource limits is still
   refused.
 - Unchanged at signing: the planner never raises a bounded slot above its `max_fee`,

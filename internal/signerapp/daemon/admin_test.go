@@ -441,6 +441,78 @@ func TestAdminGeneratePlainHostOnceEnabled(t *testing.T) {
 	}
 }
 
+// Generation over HTTP has no review before it, so the response carries the
+// signer's advice: a fee limit below the account's own costs comes back as a
+// warning beside the address it created. The default limit has none, and then
+// the field is absent.
+func TestAdminGenerateReturnsTheFeeLimitWarning(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	algodCleanup := configureMockAlgod(t, server)
+	defer algodCleanup()
+	for _, test := range []struct {
+		name, maxFee string
+		warns        bool
+	}{
+		{"zero", "0", true},
+		{"below the costs", "1999", true},
+		{"no limit named", "", false},
+		{"the default named", "10000", false},
+		{"above the default", "20000", false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			params := map[string]string{"spend_effects": "pay", "recipient_scope": "any", "rekey_authority": "refused"}
+			if test.maxFee != "" {
+				params["max_fee"] = test.maxFee
+			}
+			reqBody, _ := json.Marshal(AdminGenerateRequest{KeyType: "aplane.falcon1024.v1", Parameters: params})
+			w := httptest.NewRecorder()
+			server.handleAdminGenerate(w, requestWithIdentity(http.MethodPost, "/admin/generate", reqBody))
+			if w.Code != http.StatusOK {
+				t.Fatalf("generate = %d %s", w.Code, w.Body.String())
+			}
+			var fields map[string]json.RawMessage
+			if err := json.Unmarshal(w.Body.Bytes(), &fields); err != nil {
+				t.Fatal(err)
+			}
+			var resp AdminGenerateResponse
+			decodeResponse(t, w, &resp)
+			if resp.Error != "" || len(resp.Address) != 58 {
+				t.Fatalf("response error = %q, address = %q", resp.Error, resp.Address)
+			}
+			if !test.warns {
+				if _, present := fields["warnings"]; present || len(resp.Warnings) != 0 {
+					t.Fatalf("warnings = %q (field present %v), want none", resp.Warnings, present)
+				}
+				return
+			}
+			// The warning refused nothing: the account exists, with that limit.
+			if resp.Parameters["max_fee"] != test.maxFee {
+				t.Fatalf("parameters = %v", resp.Parameters)
+			}
+			want := "Fee limit " + test.maxFee + " is below its own costs. It can't pay for these transactions itself: spend (at least 2000). " +
+				"Each needs another account in the same group to pay its fees."
+			if len(resp.Warnings) != 1 || resp.Warnings[0] != want {
+				t.Fatalf("warnings = %q, want %q", resp.Warnings, want)
+			}
+			if _, err := server.productRuntime().FindKeyFile(resp.Address); err != nil {
+				t.Fatalf("the warned account was not created: %v", err)
+			}
+		})
+	}
+	// A limit the signer refuses is an error, not a warning.
+	for _, bad := range []string{"010", "9007199254740992"} {
+		reqBody, _ := json.Marshal(AdminGenerateRequest{KeyType: "aplane.falcon1024.v1", Parameters: map[string]string{
+			"spend_effects": "pay", "recipient_scope": "any", "rekey_authority": "refused", "max_fee": bad,
+		}})
+		w := httptest.NewRecorder()
+		server.handleAdminGenerate(w, requestWithIdentity(http.MethodPost, "/admin/generate", reqBody))
+		if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "max_fee") || strings.Contains(w.Body.String(), `"warnings"`) {
+			t.Fatalf("generate max_fee=%s = %d %s", bad, w.Code, w.Body.String())
+		}
+	}
+}
+
 func TestAdminGenerateDoesNotInferPublisher(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()

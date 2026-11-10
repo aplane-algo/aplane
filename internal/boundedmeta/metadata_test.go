@@ -35,6 +35,8 @@ func TestMetadataValidateRejectsInvalidContracts(t *testing.T) {
 		{name: "unknown spend", mutate: func(m *Metadata) { m.SpendEffects = []string{"appl"} }, want: "unsupported spend effect"},
 		{name: "duplicate spend", mutate: func(m *Metadata) { m.SpendEffects = []string{"pay", "pay"} }, want: "duplicate spend effect"},
 		{name: "no fee ceiling", mutate: func(m *Metadata) { m.MaxFee = nil }, want: "requires max_fee"},
+		{name: "fee ceiling above the wire limit", mutate: func(m *Metadata) { m.MaxFee = new(uint64(9007199254740992)) }, want: "max_fee 9007199254740992 is above 9007199254740991, the largest value every client reads exactly"},
+		{name: "largest uint64 fee ceiling", mutate: func(m *Metadata) { m.MaxFee = new(uint64(math.MaxUint64)) }, want: "max_fee 18446744073709551615 is above 9007199254740991, the largest value every client reads exactly"},
 		{name: "unknown Layer-3 policy", mutate: func(m *Metadata) { m.Layer3Policy = "open" }, want: "layer3_policy"},
 		{name: "Merkle policy without proof", mutate: func(m *Metadata) { m.Layer3Policy = Layer3PolicyMerkleAllowlist }, want: "exactly one"},
 		{name: "missing rekey setting", mutate: func(m *Metadata) { m.Rekey = "" }, want: `unsupported rekey setting ""`},
@@ -67,10 +69,11 @@ func TestMetadataValidateAcceptsTheUsersChoice(t *testing.T) {
 	for name, mutate := range map[string]func(*Metadata){
 		"refused without pay":          func(m *Metadata) { m.SpendEffects = []string{"axfer"} },
 		"refused opt-in without axfer": func(m *Metadata) { m.SpendEffects = []string{"pay", "asset_opt_in"} },
-		// The fee ceiling is the user's: there is no upper cap, and zero is a value.
+		// The fee ceiling is the user's: the only cap is what the wire carries, and
+		// zero is a value.
 		"fee ceiling above 10,000": func(m *Metadata) { m.MaxFee = new(uint64(10_001)) },
 		"fee ceiling of 20,000":    func(m *Metadata) { m.MaxFee = new(uint64(20_000)) },
-		"largest fee ceiling":      func(m *Metadata) { m.MaxFee = new(uint64(math.MaxUint64)) },
+		"largest fee ceiling":      func(m *Metadata) { m.MaxFee = new(uint64(9007199254740991)) },
 		"zero fee ceiling":         func(m *Metadata) { m.MaxFee = new(uint64(0)) },
 	} {
 		t.Run(name, func(t *testing.T) {

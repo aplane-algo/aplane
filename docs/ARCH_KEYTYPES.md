@@ -1531,7 +1531,10 @@ means.
 The fee ceiling is a value, not part of the shape:
 
 - `max_fee` is an optional bounds parameter, a whole number of microAlgos. Absent
-  means 10,000 (`boundary.DefaultMaxFee`). Any value is valid, 0 included.
+  means 10,000 (`boundary.DefaultMaxFee`). Any value is valid, 0 included, up to
+  2^53 - 1, the largest value every client reads exactly as a JSON number. It is
+  written in plain decimal: a sign or a leading zero is refused, by
+  `boundary.ParseMaxFee`, which the boundary file parser and the provider share.
 - The 147 shapes, and the grammar fingerprint that covers them, are at the default
   ceiling.
 - Another ceiling is the same shape compiled with that value: the same shape
@@ -1567,7 +1570,7 @@ Ed25519 spending key is classical, which the review says.
 | Recipient scope | Absent or `listed`, a list is required, in the file and the request alike. Leaving the list out never opens an account. `any` must be asked for, and refuses `recipients` (even empty) and `list_encoding`. An empty or unknown scope is an error. The `none` policy is offered only here: an expert template that declares it is refused when parsed. |
 | Fee and arguments | A shape's compiled ceiling is the request's `max_fee`, 10,000 microAlgos when absent; a `plain1` arrangement has none. `max_fee` must parse as a `uint64`; no value is refused. There are no runtime arguments. The base is the plain host's own: Falcon-1024 or Ed25519. |
 | Resources | `BuildBoundedAuthorizationMetadata` solves the spend path, and each rekey path the account has (`spending_rekey` for `spending_key`, `listed_rekey` for `only_these`, both for `plus_cosigned`), under the current consensus profile and refuses one that cannot run within one transaction's resources, before the key is saved. This is a backstop: signing still checks the actual network. A ceiling below what a path costs when the account pays alone is not refused. |
-| Fee warning | `ResolveInstance` returns `Instance.Warnings`. When a path costs more than the ceiling, the one warning names each such path and its cost, and says each needs another account in the group to pay its fees. The program doesn't exist at review, so it is sized by the keys it must hold (the spending public key, and the cosigner's on a cosigned account): the cost is a lower bound, a ceiling just above it can still fall short, and signing reports that when it plans the group. The warning reaches the review as `prepare_generate_result.warnings` and refuses nothing. A `max_fee` value must be a plain decimal number: a sign or a leading zero is refused. |
+| Fee warning | The provider implements `lsigprovider.CreationAdvisor`, which preparation and generation each call once. When a path costs more than the ceiling, the one warning names each such path and its cost, and says each needs another account in the group to pay its fees. The program doesn't exist at review, so it is sized by what it must hold (the spending public key, the cosigner's on a cosigned account, and an inline recipient list): the cost is a lower bound, a ceiling just above it can still fall short, and signing reports that when it plans the group. The warning reaches the apadmin review as `prepare_generate_result.warnings` and an HTTP caller as `warnings` in the `/admin/generate` response, which apshell prints. It refuses nothing. |
 | Mnemonics | No mnemonic import. The account recovers from its encrypted credential or a backup. |
 
 Three identities have separate jobs, and `lsigprovider.Instance` carries each one:

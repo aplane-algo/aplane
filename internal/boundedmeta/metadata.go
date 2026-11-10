@@ -42,6 +42,10 @@ const (
 	CosignerComponentKeyTypeV1        = witness.Falcon1024V1
 	CosignerPublicKeySizeV1           = witness.Falcon1024PublicKeySize
 	CosignerSignatureMaxSizeV1        = witness.Falcon1024SignatureSize
+	// MaxFeeLimit is the largest fee ceiling an account may record. It is not a
+	// budget: it is the largest whole number every client reads exactly, since
+	// the ceiling travels as a JSON number.
+	MaxFeeLimit uint64 = 1<<53 - 1
 )
 
 // Layer3PolicyNone compiles no Layer 3: the envelope's transfer kinds and fee
@@ -332,11 +336,14 @@ func (metadata *Metadata) ValidateProfile() error {
 	return nil
 }
 
-// validateBoundedHost checks the bounded host's own rules: a fee ceiling, of
-// any value, a known Layer 3 policy, and at least one spend effect.
+// validateBoundedHost checks the bounded host's own rules: a fee ceiling the
+// wire can carry, a known Layer 3 policy, and at least one spend effect.
 func (metadata *Metadata) validateBoundedHost() error {
 	if metadata.MaxFee == nil {
 		return fmt.Errorf("%s requires max_fee", Contract)
+	}
+	if *metadata.MaxFee > MaxFeeLimit {
+		return fmt.Errorf("max_fee %d is above %d, the largest value every client reads exactly", *metadata.MaxFee, MaxFeeLimit)
 	}
 	if !IsKnownLayer3Policy(metadata.Layer3Policy) {
 		return fmt.Errorf("unsupported %s layer3_policy %q", Contract, metadata.Layer3Policy)

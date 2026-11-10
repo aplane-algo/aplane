@@ -119,7 +119,7 @@ complete value-spending policy.
 | Rekey-to list | contract `rekey_list1`: a salted hiding tree of depth 4, 1 to 16 addresses |
 | Rekey and Layer 3 | a rekey never reaches Layer 3; only a cosigned rekey reaches the cosigner check |
 | Cosigner paths | `required_on: [spend]`, or `[spend, spending_rekey]` beside `rekey: spending_key`; never `listed_rekey` |
-| Compiled `max_fee` | required; any `uint64` value, 0 included. The plain hosts' shapes default to 10,000 microAlgos |
+| Compiled `max_fee` | required; any value from 0 to 2^53 - 1. The plain hosts' shapes default to 10,000 microAlgos |
 | Layer-3 arguments | declared static runtime (spend only) and signer-derived slots |
 | Signer-derived primitives | fixed-depth Merkle allowlist proof (512 bytes, spend); rekey-to list proof (160 bytes, listed rekey) |
 | Framework Layer-3 policies | `fixed_allowlist`, `merkle_allowlist`; `none` for the plain hosts' limits-only shapes only |
@@ -166,10 +166,11 @@ A witness key must differ from the spending key and from each of its components,
 key reused inside a larger construction is caught. That compares known keys only, and
 it can't show that custody or seeds are independent.
 
-`max_fee` has no upper or lower bound:
+`max_fee` has no budget limit, only a wire limit:
 
 - A template states its own `max_fee`, and a plain host request may state one
-  (`max_fee`, absent means 10,000 microAlgos). Any value is valid, 0 included.
+  (`max_fee`, absent means 10,000 microAlgos). Any value is valid, 0 included,
+  up to 9,007,199,254,740,991 (2^53 - 1), the largest value every client reads exactly as a JSON number.
 - The 10,000 microAlgo default supports the currently measured Falcon/Falcon
   fixed-list shape at a 1,000 microAlgo network minimum fee. It is not a promise
   of viability on networks with a higher minimum fee.
@@ -469,7 +470,7 @@ canonical_bounded_profile =
 `asset_opt_in`. Duplicates are invalid. On `bounded2` empty spend sets are invalid;
 on `plain1` the set is always empty. `asset_opt_in` is the zero-amount
 self-receiver asset-transfer form and is authorized independently from `axfer`.
-On `bounded2` `max_fee` must be present; any value is valid, 0 included. A `plain1`
+On `bounded2` `max_fee` must be present; any value from 0 to 2^53 - 1 is valid. A `plain1`
 profile has no fee field: the contract name leads the encoding, so it omits
 `u64(max_fee)` rather than writing a placeholder, and `bounded2`'s encoding and
 golden vectors are unchanged. `rekey` is the text

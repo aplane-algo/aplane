@@ -131,11 +131,13 @@ type Provider struct {
 	ordered    []*program
 	grammar    string
 
-	// algodMu also guards custom: shapes compiled with a fee ceiling other than
-	// the default, built when a request or a stored account first names one.
 	algodMu sync.Mutex
 	algod   *algod.Client
-	custom  map[customShape]*program
+
+	// custom holds shapes compiled with a fee ceiling other than the default,
+	// built when a request or a stored account first names one.
+	customMu sync.Mutex
+	custom   map[customShape]*program
 }
 
 // customShape names a shape compiled with its own fee ceiling.
@@ -145,8 +147,8 @@ type customShape struct {
 }
 
 // customShapesMax bounds the cache of custom-ceiling programs. They are rebuilt
-// on demand, so clearing it loses nothing.
-const customShapesMax = 256
+// on demand, so dropping one loses nothing.
+const customShapesMax = 1024
 
 // Wrap builds a plain key type's arrangements, and the shapes on first use. A
 // program that can't be built fails its first use; the tests build every shape
@@ -423,21 +425,41 @@ func (p *Provider) shapeProgram(shape Shape, maxFee uint64) (*program, error) {
 		return standard, nil
 	}
 	key := customShape{shape.Descriptor(), maxFee}
-	p.algodMu.Lock()
-	defer p.algodMu.Unlock()
-	if built, ok := p.custom[key]; ok {
+	p.customMu.Lock()
+	built, ok := p.custom[key]
+	p.customMu.Unlock()
+	if ok {
 		return built, nil
 	}
+	// Built outside the lock, so one request's build never holds up another's.
+	// Two requests may build the same program; the first stored is kept.
 	composer, err := newShapeComposer(p.Plain, p.base, shape, maxFee)
 	if err != nil {
 		return nil, fmt.Errorf("plain host %s, shape %s, %s %d: %w", p.KeyType(), shape.Descriptor(), ParameterMaxFee, maxFee, err)
 	}
+	built = &program{descriptor: shape.Descriptor(), composer: composer, fingerprint: shapeFingerprint(shape, composer)}
+	// Both locks, in SetAlgodClient's order, so a client set meanwhile reaches
+	// either this program here or the stored one there.
+	p.algodMu.Lock()
+	defer p.algodMu.Unlock()
+	p.customMu.Lock()
+	defer p.customMu.Unlock()
+	if kept, ok := p.custom[key]; ok {
+		return kept, nil
+	}
 	if p.algod != nil {
 		composer.SetAlgodClient(p.algod)
 	}
-	built := &program{descriptor: shape.Descriptor(), composer: composer, fingerprint: shapeFingerprint(shape, composer)}
-	if p.custom == nil || len(p.custom) >= customShapesMax {
+	if p.custom == nil {
 		p.custom = make(map[customShape]*program)
+	}
+	// Full: drop one entry, any one, so a store with more ceilings than the
+	// cache holds rebuilds a few programs per pass, not all of them.
+	if len(p.custom) >= customShapesMax {
+		for stale := range p.custom {
+			delete(p.custom, stale)
+			break
+		}
 	}
 	p.custom[key] = built
 	return built, nil
@@ -553,7 +575,6 @@ func (p *Provider) ResolveInstance(params map[string]string) (*lsigprovider.Inst
 		Fingerprint:       selected.fingerprint,
 		ReviewFingerprint: p.grammar,
 		BoundaryDigest:    digest,
-		Warnings:          p.feeWarnings(composer.BoundedAuthorizationMetadata()),
 	}, nil
 }
 
@@ -750,6 +771,8 @@ func (p *Provider) SetAlgodClient(client *algod.Client) {
 	for _, selected := range p.byShape {
 		selected.composer.SetAlgodClient(client)
 	}
+	p.customMu.Lock()
+	defer p.customMu.Unlock()
 	for _, selected := range p.custom {
 		selected.composer.SetAlgodClient(client)
 	}
@@ -810,22 +833,37 @@ func pathFees(metadata *boundedmeta.Metadata, opcodes lsigresource.OpcodeProfile
 	return fees, nil
 }
 
-// feeWarnings says when a bounded account can't pay for its own transactions.
-// The program doesn't exist at review, so it is sized by what it must hold, the
-// public keys it checks: the result is a lower bound, and a ceiling just above
-// it may still fall short once the program is compiled. Signing reports that
-// case when it plans the group.
-func (p *Provider) feeWarnings(metadata *boundedmeta.Metadata) []string {
+// CreationWarnings says when a bounded account can't pay for its own
+// transactions. The program doesn't exist yet, so it is sized by what it must
+// hold: the public keys it checks and an inline recipient list. The result is a
+// lower bound, and a ceiling just above it may still fall short once the program
+// is compiled; signing reports that case when it plans the group.
+func (p *Provider) CreationWarnings(params map[string]string) ([]string, error) {
+	request, err := present(params)
+	if err != nil {
+		return nil, err
+	}
+	if !hasBounds(request) {
+		return nil, nil
+	}
+	selected, values, err := p.resolve(request)
+	if err != nil {
+		return nil, err
+	}
+	metadata := selected.composer.BoundedAuthorizationMetadata()
 	if metadata == nil || metadata.MaxFee == nil {
-		return nil
+		return nil, nil
 	}
 	programBytes := p.base.Ops.PublicKeySize()
 	if metadata.Cosigner != nil {
 		programBytes += boundedmeta.CosignerPublicKeySizeV1
 	}
+	if values[ParameterListEncoding] == EncodingInline {
+		programBytes += addressBytes * (strings.Count(values[ParameterRecipients], ",") + 1)
+	}
 	fees, err := pathFees(metadata, p.BoundedLogicSigOpcodeProfile(), programBytes)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	var short []string
 	for _, path := range fees {
@@ -834,13 +872,16 @@ func (p *Provider) feeWarnings(metadata *boundedmeta.Metadata) []string {
 		}
 	}
 	if len(short) == 0 {
-		return nil
+		return nil, nil
 	}
 	// The first sentence stands alone: a review with no room shows only it.
 	return []string{fmt.Sprintf("Fee limit %d is below its own costs. "+
 		"It can't pay for these transactions itself: %s. Each needs another account in the same group to pay its fees.",
-		*metadata.MaxFee, strings.Join(short, ", "))}
+		*metadata.MaxFee, strings.Join(short, ", "))}, nil
 }
+
+// addressBytes is what one inline recipient adds to a program.
+const addressBytes = 32
 
 // planFee is the plan's total fee, rounded up. Group size and the program fee
 // factor are both small, so the product cannot overflow.
@@ -858,6 +899,7 @@ var (
 	_ lsigprovider.SigningProvider              = (*Provider)(nil)
 	_ lsigprovider.AlgodConfigurable            = (*Provider)(nil)
 	_ lsigprovider.InstanceResolver             = (*Provider)(nil)
+	_ lsigprovider.CreationAdvisor              = (*Provider)(nil)
 	_ lsigprovider.OpcodeProfileProvider        = (*Provider)(nil)
 	_ lsigprovider.BoundedOpcodeProfileProvider = (*Provider)(nil)
 )

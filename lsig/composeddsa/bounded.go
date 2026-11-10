@@ -104,6 +104,9 @@ func (profile *BoundedAuthorizationProfile) validate() error {
 		if profile.MaxFee == nil {
 			return fmt.Errorf("%s requires max_fee", BoundedContract)
 		}
+		if *profile.MaxFee > boundedmeta.MaxFeeLimit {
+			return fmt.Errorf("max_fee %d is above %d, the largest value every client reads exactly", *profile.MaxFee, boundedmeta.MaxFeeLimit)
+		}
 		if err := boundedmeta.ValidateSpendEffects(spendEffects); err != nil {
 			return err
 		}

@@ -11,6 +11,7 @@ import (
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
+	"github.com/aplane-algo/aplane/internal/boundary"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/txeffects"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
@@ -194,21 +195,13 @@ func canonicalRecipientScope(params map[string]string) (string, error) {
 }
 
 // canonicalMaxFee returns the fee ceiling, the default when the request names
-// none. Any value is accepted, zero included: an account that can't pay its own
-// fees still works with another account in the group paying them.
+// none.
 func canonicalMaxFee(params map[string]string) (uint64, error) {
 	value, present := params[ParameterMaxFee]
 	if !present {
 		return DefaultMaxFee, nil
 	}
-	// Only the plain decimal form: a leading zero or sign would read differently
-	// elsewhere, as YAML reads 010 as octal.
-	text := strings.TrimSpace(value)
-	fee, err := strconv.ParseUint(text, 10, 64)
-	if err != nil || strconv.FormatUint(fee, 10) != text {
-		return 0, fmt.Errorf("%s must be a whole number of microAlgos: %q", ParameterMaxFee, value)
-	}
-	return fee, nil
+	return boundary.ParseMaxFee(value)
 }
 
 func canonicalSpend(value string) ([]txeffects.SpendEffect, error) {

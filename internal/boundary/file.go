@@ -6,6 +6,7 @@ package boundary
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"syscall"
 
@@ -27,7 +28,8 @@ type File struct {
 	// that a missing list is still an error rather than an open account.
 	RecipientScope *string `yaml:"recipient_scope"`
 	Encoding       *string `yaml:"encoding"`
-	// MaxFee is text so that a uint64 survives, and may be written as a number.
+	// MaxFee is text, in canonical decimal once parsed; a file may write it as a
+	// number.
 	MaxFee *string `yaml:"max_fee"`
 	Rekey  *struct {
 		Authority string `yaml:"authority"`
@@ -114,8 +116,17 @@ func ParseFile(data []byte) (*File, error) {
 	if file.Cosigner != nil && strings.TrimSpace(*file.Cosigner) == "" {
 		return nil, fmt.Errorf("boundary file: cosigner is empty")
 	}
-	if file.MaxFee != nil && strings.TrimSpace(*file.MaxFee) == "" {
-		return nil, fmt.Errorf("boundary file: max_fee is empty")
+	if file.MaxFee != nil {
+		if strings.TrimSpace(*file.MaxFee) == "" {
+			return nil, fmt.Errorf("boundary file: max_fee is empty")
+		}
+		// Checked here too, so a local preview never shows a value the signer
+		// would refuse or read differently.
+		fee, err := ParseMaxFee(*file.MaxFee)
+		if err != nil {
+			return nil, fmt.Errorf("boundary file: %w", err)
+		}
+		*file.MaxFee = strconv.FormatUint(fee, 10)
 	}
 	if file.Encoding != nil && *file.Encoding == "" {
 		return nil, fmt.Errorf("boundary file: encoding is empty")

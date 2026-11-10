@@ -59,7 +59,7 @@ func (e *Engine) generateResolvedKey(ctx context.Context, keyType string, params
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate key: %w", err)
 	}
-	result := &GenerateKeyResult{Address: resp.Address, KeyType: resp.KeyType, Parameters: resp.Parameters}
+	result := &GenerateKeyResult{Address: resp.Address, KeyType: resp.KeyType, Parameters: resp.Parameters, Warnings: resp.Warnings}
 	// Refresh signer cache to include the new key
 	keys, refreshErr := e.RefreshKeys(ctx)
 	if refreshErr != nil {

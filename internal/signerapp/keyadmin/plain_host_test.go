@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"slices"
 	"strings"
 	"testing"
 
@@ -123,6 +124,16 @@ func TestPrepareCarriesTheFeeLimitWarning(t *testing.T) {
 				if len(prepared.Warnings) != 0 || len(projected.Warnings) != 0 {
 					t.Fatalf("Warnings = %q", prepared.Warnings)
 				}
+				// Generation, reviewed or not, has nothing to say either.
+				generated, err := service.GenerateReviewedKey(context.Background(), plainHostKeyType, prepared.Parameters,
+					ReviewedValues{Fingerprint: prepared.ReviewFingerprint, BoundaryDigest: prepared.BoundaryDigest}, nil)
+				if err != nil || len(generated.Warnings) != 0 {
+					t.Fatalf("GenerateReviewedKey() error = %#v, warnings = %q; want none", err, warningsOf(generated))
+				}
+				unreviewed, err := service.GenerateKey(context.Background(), plainHostKeyType, request(test.maxFee), nil)
+				if err != nil || len(unreviewed.Warnings) != 0 {
+					t.Fatalf("GenerateKey() error = %#v, warnings = %q; want none", err, warningsOf(unreviewed))
+				}
 				return
 			}
 			want := "Fee limit " + test.maxFee + " is below its own costs. It can't pay for these transactions itself: spend (at least "
@@ -148,22 +159,77 @@ func TestPrepareCarriesTheFeeLimitWarning(t *testing.T) {
 			if generated.Parameters[plainhost.ParameterMaxFee] != test.maxFee {
 				t.Fatalf("generated parameters = %v", generated.Parameters)
 			}
+			// Generation carries the same advice the review showed, and so does a
+			// generation nobody reviewed, which has no other place to show it.
+			if !slices.Equal(generated.Warnings, prepared.Warnings) {
+				t.Fatalf("generated Warnings = %q, want %q", generated.Warnings, prepared.Warnings)
+			}
+			unreviewed, err := service.GenerateKey(context.Background(), plainHostKeyType, request(test.maxFee), nil)
+			if err != nil {
+				t.Fatalf("GenerateKey() error = %#v", err)
+			}
+			if !slices.Equal(unreviewed.Warnings, prepared.Warnings) {
+				t.Fatalf("unreviewed generation Warnings = %q, want %q", unreviewed.Warnings, prepared.Warnings)
+			}
 		})
 	}
-	// An unreviewed generation is not refused either.
-	if _, err := service.GenerateKey(context.Background(), plainHostKeyType, request("0"), nil); err != nil {
-		t.Fatalf("GenerateKey(max_fee=0) error = %#v", err)
+	// The preparation's warnings are its own: changing them changes no later one.
+	first, prepareErr := service.PrepareGenerateKey(plainHostKeyType, request("0"))
+	if prepareErr != nil || len(first.Warnings) != 1 {
+		t.Fatalf("PrepareGenerateKey(max_fee=0) = %+v, %#v", first, prepareErr)
+	}
+	kept := first.Warnings[0]
+	first.Warnings[0] = "changed"
+	if second, prepareErr := service.PrepareGenerateKey(plainHostKeyType, request("0")); prepareErr != nil || len(second.Warnings) != 1 || second.Warnings[0] != kept {
+		t.Fatalf("a second preparation = %+v, %#v", second, prepareErr)
+	}
+	// An account with no bounds, and the plain program, have no limit to warn of.
+	for _, params := range []map[string]string{nil, {plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused}} {
+		generated, err := service.GenerateKey(context.Background(), plainHostKeyType, params, nil)
+		if err != nil || len(generated.Warnings) != 0 {
+			t.Fatalf("GenerateKey(%v) error = %#v, warnings = %q; want none", params, err, warningsOf(generated))
+		}
 	}
 	// What the provider refuses is still refused, with no warning in its place.
-	for _, bad := range []string{"abc", "-1", "1.5", "18446744073709551616"} {
+	for _, bad := range []string{"abc", "-1", "1.5", "010", "18446744073709551616"} {
 		if _, err := service.PrepareGenerateKey(plainHostKeyType, request(bad)); err == nil || err.Kind != ErrorInvalidInput || !strings.Contains(err.Message, "max_fee must be a whole number") {
 			t.Fatalf("PrepareGenerateKey(max_fee=%s) error = %#v", bad, err)
 		}
+		if _, err := service.GenerateKey(context.Background(), plainHostKeyType, request(bad), nil); err == nil || err.Kind != ErrorInvalidInput || !strings.Contains(err.Message, "max_fee must be a whole number") {
+			t.Fatalf("GenerateKey(max_fee=%s) error = %#v", bad, err)
+		}
+	}
+	// The largest limit is the largest whole number every client reads exactly.
+	for _, bad := range []string{"9007199254740992", "18446744073709551615"} {
+		want := "max_fee " + bad + " is above 9007199254740991, the largest value every client reads exactly"
+		if _, err := service.PrepareGenerateKey(plainHostKeyType, request(bad)); err == nil || err.Kind != ErrorInvalidInput || err.Message != want {
+			t.Fatalf("PrepareGenerateKey(max_fee=%s) error = %#v", bad, err)
+		}
+		if _, err := service.GenerateKey(context.Background(), plainHostKeyType, request(bad), nil); err == nil || err.Kind != ErrorInvalidInput || err.Message != want {
+			t.Fatalf("GenerateKey(max_fee=%s) error = %#v", bad, err)
+		}
+	}
+	largest, prepareErr := service.PrepareGenerateKey(plainHostKeyType, request("9007199254740991"))
+	if prepareErr != nil || largest.Bounded == nil || largest.Bounded.MaxFee == nil || *largest.Bounded.MaxFee != boundedmeta.MaxFeeLimit || len(largest.Warnings) != 0 {
+		t.Fatalf("PrepareGenerateKey(largest max_fee) = %+v, %#v", largest, prepareErr)
+	}
+	if generated, err := service.GenerateKey(context.Background(), plainHostKeyType, request("9007199254740991"), nil); err != nil ||
+		generated.Parameters[plainhost.ParameterMaxFee] != "9007199254740991" || len(generated.Warnings) != 0 {
+		t.Fatalf("GenerateKey(largest max_fee) error = %#v, warnings = %q", err, warningsOf(generated))
 	}
 	withoutBounds := map[string]string{plainhost.ParameterRekeyAuthority: plainhost.RekeySpendingKey, plainhost.ParameterMaxFee: "20000"}
 	if _, err := service.PrepareGenerateKey(plainHostKeyType, withoutBounds); err == nil || !strings.Contains(err.Message, "spend_effects is required") {
 		t.Fatalf("PrepareGenerateKey(max_fee without transfer kinds) error = %#v", err)
 	}
+}
+
+// warningsOf reads a generation's warnings for a failure message, without the
+// key material beside them.
+func warningsOf(result *GenerateResult) []string {
+	if result == nil {
+		return nil
+	}
+	return result.Warnings
 }
 
 func TestPlainHostGeneratesFromAReview(t *testing.T) {

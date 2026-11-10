@@ -77,6 +77,7 @@ func TestPreviewCarriesTheFeeLimit(t *testing.T) {
 		{"text", "max_fee: \"20000\"\n", "20000"},
 		{"zero", "max_fee: 0\n", "0"},
 		{"the default, named", "max_fee: 10000\n", "10000"},
+		{"the largest", "max_fee: 9007199254740991\n", "9007199254740991"},
 	} {
 		preview, err := (&App{}).PreviewBoundaryFile(boundaryHostKeyType, writeBoundary(t, test.line))
 		if err != nil {
@@ -99,6 +100,27 @@ func TestPreviewCarriesTheFeeLimit(t *testing.T) {
 	}
 	if _, err := (&App{}).PreviewBoundaryFile(boundaryHostKeyType, writeBoundary(t, "max_fee: \"\"\n")); err == nil || !strings.Contains(err.Error(), "max_fee is empty") {
 		t.Fatalf("PreviewBoundaryFile(empty max_fee) error = %v", err)
+	}
+	// A value the signer would refuse, or read differently, never reaches the
+	// preview: the file is refused when it is read.
+	for line, want := range map[string]string{
+		"max_fee: 010\n":                      `boundary file: max_fee must be a whole number of microAlgos: "010"`,
+		"max_fee: -1\n":                       `boundary file: max_fee must be a whole number of microAlgos: "-1"`,
+		"max_fee: 0x10\n":                     `boundary file: max_fee must be a whole number of microAlgos: "0x10"`,
+		"max_fee: 10_000\n":                   `boundary file: max_fee must be a whole number of microAlgos: "10_000"`,
+		"max_fee: +5\n":                       `boundary file: max_fee must be a whole number of microAlgos: "+5"`,
+		"max_fee: \"abc\"\n":                  `boundary file: max_fee must be a whole number of microAlgos: "abc"`,
+		"max_fee: 1.5\n":                      `must be a whole number: "1.5"`,
+		"max_fee: 9007199254740992\n":         "max_fee 9007199254740992 is above 9007199254740991, the largest value every client reads exactly",
+		"max_fee: 18446744073709551615\n":     "max_fee 18446744073709551615 is above 9007199254740991, the largest value every client reads exactly",
+		"max_fee: \"9007199254740992\"\n":     "the largest value every client reads exactly",
+		"max_fee: 18446744073709551616\n":     `must be a whole number: "18446744073709551616"`,
+		"max_fee: \"18446744073709551616\"\n": `boundary file: max_fee must be a whole number of microAlgos: "18446744073709551616"`,
+	} {
+		preview, err := (&App{}).PreviewBoundaryFile(boundaryHostKeyType, writeBoundary(t, line))
+		if err == nil || !strings.Contains(err.Error(), want) || preview != nil {
+			t.Fatalf("PreviewBoundaryFile(%q) = %+v, %v; want error %q", line, preview, err, want)
+		}
 	}
 }
 
@@ -142,6 +164,24 @@ func TestResultCarriesTheSignersAuthorityIDs(t *testing.T) {
 	})
 	if result.CosignerKeyID != "COSIGNER" {
 		t.Fatalf("result = %+v", result)
+	}
+	if len(result.Warnings) != 0 {
+		t.Fatalf("a result without warnings carries %q", result.Warnings)
+	}
+}
+
+// The signer's advice about the account it created reaches the command result
+// beside the parameters it resolved.
+func TestResultCarriesTheSignersWarnings(t *testing.T) {
+	warnings := []string{"Fee limit 0 is below its own costs.", "a second note"}
+	result := generateResultFromEngine(&engine.GenerateKeyResult{
+		Address: "ADDRESS", KeyType: boundaryHostKeyType, Parameters: map[string]string{boundary.ParameterMaxFee: "0"}, Warnings: warnings,
+	})
+	if result.Address != "ADDRESS" || result.KeyType != boundaryHostKeyType || result.Parameters[boundary.ParameterMaxFee] != "0" {
+		t.Fatalf("result = %+v", result)
+	}
+	if len(result.Warnings) != 2 || result.Warnings[0] != warnings[0] || result.Warnings[1] != warnings[1] {
+		t.Fatalf("Warnings = %q, want %q", result.Warnings, warnings)
 	}
 }
 
