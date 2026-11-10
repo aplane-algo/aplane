@@ -578,15 +578,38 @@ availability, JSON decoding, and empty-requests checks gate the request before a
 `SignRequest` entries are then validated per mode (sign, passthrough, foreign)
 and decoded — sign and foreign entries from `txn_bytes_hex`, passthrough
 entries from `signed_txn_hex`. Decoded transactions are checked for group
-consistency, recognized genesis network, overlapping validity windows,
-passthrough's pre-grouped requirement, and the presence of at least one
-signable entry in the bound product runtime. Dummy calculation runs next
+consistency, recognized genesis network, transaction bounds (below), overlapping
+validity windows, passthrough's pre-grouped requirement, and the presence of at
+least one signable entry in the bound product runtime. Dummy calculation runs next
 and enforces the maximum group size and pre-grouped immutability; if dummies are
 needed for an immutable passthrough/pre-grouped group, it rejects. Otherwise
 the planner creates them, adjusts fees, and recomputes the group ID. The finalized group passes through
 hard policy linting, forced-review policy, explicit auto-approval, and then
 either group-mode or single-transaction operator approval (or the
 `user_auto_approve:true` approval shortcut).
+**Transaction bounds.** A caller supplies transaction bytes directly, which
+bypasses the checks an SDK constructor makes. The signer refuses, with a
+`400` and before policy or approval, a transaction the network could never
+accept for one of these reasons:
+
+- `LastValid` is before `FirstValid`.
+- The validity window, `LastValid - FirstValid`, is longer than `MaxTxnLife`.
+- The note is longer than `MaxAbsoluteTxnNoteBytes`. A note above
+  `MaxTxnNoteBytes` and within that maximum is valid and pays a per-byte
+  surcharge, which fee planning adds.
+
+The limits are read from the pinned consensus parameters fee planning uses,
+never restated. Every position is checked, signed here or not, since one
+member the network refuses fails the whole group. The rotating routes and
+frozen-component signing apply the same checks.
+
+This is not node validation, and passing it does not mean a transaction will
+confirm: that also depends on chain state. The list is short on purpose.
+Reproducing every consensus rule would make the signer refuse valid
+transactions whenever it lagged a protocol upgrade. Other malformed
+transactions, such as an asset with too many decimals or an application call
+with too many arguments, are still refused only by the network at submission.
+
 Signing dispatches by key type — generic LogicSig, DSA LogicSig (signing the
 32-byte transaction ID), native Falcon-1024 (structured authorization into
 `SignedTxn.PQsig`), or Ed25519 (signing the `TX`-prefixed msgpack) — then

@@ -36,6 +36,9 @@ func (s *Service) ValidateFrozenComponentContext(request signerapi.ComponentRequ
 	if err := validateKnownNetwork(allTxns, s.Planner.GenesisHashResolver); err != nil {
 		return nil, signerapi.GroupSignRequest{}, err
 	}
+	if err := validateTransactionBounds(allTxns); err != nil {
+		return nil, signerapi.GroupSignRequest{}, err
+	}
 	if len(allTxns) > 1 {
 		if err := validateNetworkParams(allTxns, consoleOf(s.Console)); err != nil {
 			return nil, signerapi.GroupSignRequest{}, err
