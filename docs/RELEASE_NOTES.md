@@ -16,9 +16,12 @@ before it was renamed `enroll`.
 - A listed rekey on such a position used to warn "YOU WILL LOSE CONTROL OF THIS
   ACCOUNT". The warning now names it as a handover to an address on the account's
   rekey-to list, as the request that signs it does.
-- The signer recognises its accounts from its own records, not from the client. What
-  a request signs, and what its policy judges, is unchanged, and a rekey still forces
-  review.
+- The signer recognises its accounts from its own records, by the sender, not from
+  the client. What a request signs, and what its policy judges, is unchanged, and a
+  rekey still forces review.
+- Where a `/sign/component` request names one of the signer's keys as the authorizer
+  of another sender, the review says the request named it and that it isn't checked
+  against the chain. It keeps the unlisted-rekey warning.
 - Not covered: on `/sign`, a position whose sender was rekeyed to an account this
   signer holds still shows as foreign.
 

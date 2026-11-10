@@ -235,7 +235,7 @@ func BuildApprovalDescription(req signerapi.GroupSignRequest, plan *PlanResult, 
 		}
 		if plan.HasForeign {
 			signCount := len(req.Requests) - len(plan.ForeignIndices)
-			if held := len(plan.HeldForeign); held > 0 {
+			if held := heldByRecords(plan.HeldForeign); held > 0 {
 				b.WriteString(fmt.Sprintf("[MULTI-PARTY: %d to sign, %d not signed in this request (%d from this signer's accounts)]\n", signCount, len(plan.ForeignIndices), held))
 			} else {
 				b.WriteString(fmt.Sprintf("[MULTI-PARTY: %d to sign, %d foreign (not signing)]\n", signCount, len(plan.ForeignIndices)))
@@ -270,7 +270,12 @@ func BuildApprovalDescription(req signerapi.GroupSignRequest, plan *PlanResult, 
 		if !isSingleTxn {
 			if plan.PassthroughIndices[i] {
 				b.WriteString(fmt.Sprintf("--- Transaction %d of %d [PASSTHROUGH] ---\n", i+1, totalTxns))
-			} else if plan.ForeignIndices[i] && plan.HeldForeign[i] != nil {
+			} else if held := plan.HeldForeign[i]; plan.ForeignIndices[i] && held != nil && held.NamedAuthorizer != "" {
+				// The request's word, not the signer's: it holds the named key
+				// and can't tell here that the sender was rekeyed to it.
+				b.WriteString(fmt.Sprintf("--- Transaction %d of %d [NOT SIGNED IN THIS REQUEST - authorizer named by the request] ---\n", i+1, totalTxns))
+				b.WriteString(fmt.Sprintf("  Named authorizer: %s (this signer holds it; not checked against the chain)\n", held.NamedAuthorizer))
+			} else if plan.ForeignIndices[i] && held != nil {
 				// The account is this signer's; only this request leaves it
 				// unsigned. Calling it foreign would contradict the request that
 				// signs it, which shows the same group.

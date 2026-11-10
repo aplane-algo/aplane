@@ -215,7 +215,8 @@ Cosigned signing has two independent authorization gates, one per party:
   non-target position in the canonical group is evaluated as a foreign leg, so
   dangerous fields on co-signed legs (rekey, close, clawback) force operator
   review exactly as they do on `/sign`. The review still says whose such a position
-  is: one whose account this signer holds is headed as the signer's own, here and in
+  is: one whose sender this signer holds is headed as the signer's own, and one that
+  only names a held key as its authorizer is reported as the request's claim, here and in
   the later `/sign` request that carries the cosigned targets the same way (see
   [ARCH_SIGNING.md](ARCH_SIGNING.md), step 7). User Auto-Approve satisfies these
   review requirements without a prompt, while hard policy rejection still applies.

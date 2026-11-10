@@ -18,15 +18,23 @@ import (
 type heldPosition struct {
 	// ListedRekeyTargets is the account's rekey-to list, when it has one. With
 	// it the rekey warning can name a listed handover as one, as it does in the
-	// request that signs the position.
+	// request that signs the position. Only a position recognised by its sender
+	// has it.
 	ListedRekeyTargets map[string]bool
+	// NamedAuthorizer is set when the position is recognised only because its
+	// request names a key this signer holds, for a sender that is another
+	// address. The signer knows it holds the key. It does not know the sender
+	// was rekeyed to it: that is the request's word, and the signer doesn't read
+	// the chain here. The review says so, and the warnings take nothing from it.
+	NamedAuthorizer string
 }
 
-// heldForeignPositions finds the foreign positions whose account this signer
-// holds, from the signer's own records. holders names the key a position's
-// request says authorizes it, when it says; otherwise the sender stands for the
-// account. A client's word is not taken for it: an address the snapshot doesn't
-// hold stays foreign.
+// heldForeignPositions finds the foreign positions that are this signer's, from
+// the signer's own records. A sender the snapshot holds is the signer's account,
+// whatever the request says. holders names the key a position's request says
+// authorizes it, when it says: a held key named for another sender is recorded
+// as the request's claim (NamedAuthorizer), never as the signer's knowledge. An
+// address the snapshot doesn't hold stays foreign.
 //
 // A position whose sender was rekeyed to an account this signer holds, and whose
 // request doesn't name that account, is not recognised: the signer has no view
@@ -37,19 +45,25 @@ func heldForeignPositions(snapshot PlannerRuntimeSnapshot, txns []types.Transact
 		if !foreign[i] {
 			continue
 		}
+		sender := txns[i].Sender.String()
 		holder := holders[i]
 		if holder == "" {
-			holder = txns[i].Sender.String()
+			holder = sender
 		}
 		if _, ok := snapshot.KeyFiles[holder]; !ok {
 			continue
 		}
 		position := &heldPosition{}
-		metadata := snapshot.KeyMetadata[holder]
-		// A stored list that doesn't read leaves the position without one, and
-		// the warning then speaks of an unlisted rekey, the more cautious text.
-		if listed, err := listedRekeyTargets(metadata.BoundedAuthorization, metadata.Parameters); err == nil {
-			position.ListedRekeyTargets = listed
+		if holder != sender {
+			position.NamedAuthorizer = holder
+		} else {
+			metadata := snapshot.KeyMetadata[holder]
+			// A stored list that doesn't read leaves the position without one,
+			// and the warning then speaks of an unlisted rekey, the more
+			// cautious text.
+			if listed, err := listedRekeyTargets(metadata.BoundedAuthorization, metadata.Parameters); err == nil {
+				position.ListedRekeyTargets = listed
+			}
 		}
 		if held == nil {
 			held = make(map[int]*heldPosition)
@@ -78,4 +92,16 @@ func warningRekeyTargetsForPlan(plan *PlanResult) map[int]map[string]bool {
 		listed[i] = position.ListedRekeyTargets
 	}
 	return listed
+}
+
+// heldByRecords counts the positions the signer's own records make its accounts:
+// those recognised by their sender, not by a key the request names.
+func heldByRecords(held map[int]*heldPosition) int {
+	count := 0
+	for _, position := range held {
+		if position != nil && position.NamedAuthorizer == "" {
+			count++
+		}
+	}
+	return count
 }

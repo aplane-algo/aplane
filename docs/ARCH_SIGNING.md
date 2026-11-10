@@ -337,9 +337,14 @@ When apsigner receives a grouped `/sign` request, it processes the group in this
        request]`; any other foreign entry stays `[FOREIGN - not signing]`.
      - Its rekey warning reads the account's rekey-to list, so a listed rekey is named
        as a listed handover, not as a loss of control.
-     - The signer decides this from its own key records: the entry's sender, or on
-       `/sign/component` the `auth_address` a context position names. A client can't
-       claim it for an address the signer doesn't hold.
+     - The signer decides this from its own key records, by the entry's sender. A
+       client can't claim it for an address the signer doesn't hold.
+     - On `/sign/component` a context position can name an `auth_address` for a sender
+       that is another address. The signer knows it holds that key; it can't check here
+       that the sender was rekeyed to it. So the review reports the claim and doesn't
+       vouch for it: the entry is headed `[NOT SIGNED IN THIS REQUEST - authorizer named
+       by the request]` with a `Named authorizer:` line, it isn't counted among the
+       signer's accounts, and its rekey warning takes no rekey-to list.
      - Only the review text changes. The entry is still not signed here and has no
        policy here; a rekey on it still forces review.
      - Not recognised: an entry on `/sign` whose sender was rekeyed to an account this

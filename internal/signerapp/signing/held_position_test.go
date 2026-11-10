@@ -59,9 +59,16 @@ func TestHeldForeignPositionsComeFromTheSignersRecords(t *testing.T) {
 	if held[3] != nil {
 		t.Errorf("a position the request signs was recognised as one it doesn't: %+v", held[3])
 	}
-	// The request names the held account for a sender rekeyed to it.
-	if held[4] == nil || !held[4].ListedRekeyTargets[listTestTarget.String()] {
+	if held[0] != nil && held[0].NamedAuthorizer != "" || held[1] != nil && held[1].NamedAuthorizer != "" {
+		t.Errorf("a position recognised by its sender carries a named authorizer: %+v, %+v", held[0], held[1])
+	}
+	// The request names a held account for another sender. That is the request's
+	// word: it is recorded as such, and gives the warnings no list.
+	if held[4] == nil || held[4].NamedAuthorizer != account.String() || held[4].ListedRekeyTargets != nil {
 		t.Errorf("a position whose named key is held: %+v", held[4])
+	}
+	if heldByRecords(held) != 2 {
+		t.Errorf("heldByRecords = %d, want the two recognised by sender", heldByRecords(held))
 	}
 	if held[5] != nil {
 		t.Errorf("a named key the signer doesn't hold was recognised: %+v", held[5])
@@ -214,5 +221,61 @@ func TestPlansRecogniseHeldPositionsTheyDoNotSign(t *testing.T) {
 	}
 	if !reconstructed.ForeignIndices[1] || reconstructed.HeldForeign[1] == nil || len(reconstructed.HeldForeign) != 1 {
 		t.Fatalf("/sign/component with a held context position: foreign=%v held=%v", reconstructed.ForeignIndices, reconstructed.HeldForeign)
+	}
+}
+
+// A held key the request names for another sender is the request's claim. The
+// signer can't check it here, so the review says who named it, keeps the
+// unlisted-rekey warning, and doesn't count the position among its accounts. A
+// client can't use one of the signer's accounts to soften a stranger's rekey.
+func TestGroupReviewDoesNotVouchForANamedAuthorizer(t *testing.T) {
+	account, native, stranger := listTestRekey(listTestTarget).Sender, types.Address{0x71}, types.Address{0x72}
+	snapshot := heldTestSnapshot(t, account, native)
+	rekey := listTestRekey(listTestTarget)
+	rekey.Sender, rekey.Receiver = stranger, stranger
+	payment := types.Transaction{
+		Type:             types.PaymentTx,
+		Header:           types.Header{Sender: native, Fee: 1_000},
+		PaymentTxnFields: types.PaymentTxnFields{Receiver: types.Address{3}, Amount: 1},
+	}
+	txns := []types.Transaction{rekey, payment}
+	foreign := map[int]bool{0: true}
+	plan := &PlanResult{
+		AllTxns: txns, ForeignIndices: foreign, HasForeign: true,
+		PassthroughIndices: map[int]bool{}, BoundedItems: make([]*boundedPlanItem, 2),
+		HeldForeign: heldForeignPositions(snapshot, txns, foreign, map[int]string{0: account.String()}),
+	}
+	if plan.HeldForeign[0] == nil || plan.HeldForeign[0].NamedAuthorizer != account.String() {
+		t.Fatalf("held = %+v", plan.HeldForeign[0])
+	}
+	req := signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{TxnBytesHex: "00"}, {AuthAddress: native.String()}}}
+	description, _, _ := BuildApprovalDescription(req, plan, txns, func(types.Transaction) string { return "txn\n" })
+	for _, want := range []string{
+		"[MULTI-PARTY: 1 to sign, 1 foreign (not signing)]",
+		"--- Transaction 1 of 2 [NOT SIGNED IN THIS REQUEST - authorizer named by the request] ---",
+		"  Named authorizer: " + account.String() + " (this signer holds it; not checked against the chain)",
+	} {
+		if !strings.Contains(description, want) {
+			t.Errorf("the review lacks %q:\n%s", want, description)
+		}
+	}
+	if strings.Contains(description, "THIS SIGNER'S ACCOUNT") {
+		t.Errorf("the review vouches for a sender the signer doesn't hold:\n%s", description)
+	}
+	var got []signerapproval.Violation
+	svc := &ApprovalService{
+		HasClient:                     func() bool { return true },
+		GenerateTxnDescriptionFromTxn: func(types.Transaction) string { return "txn" },
+		KnownAddresses:                func() map[string]bool { return knownAddressesFromSnapshot(snapshot) },
+		RequestSigningApproval: func(_, _, _, _ string, _, _ uint64, violations []signerapproval.Violation, _ time.Duration) (bool, error) {
+			got = violations
+			return true, nil
+		},
+	}
+	if err := svc.RequestGroupApprovalWithContext(context.Background(), req, plan, description, 0, 0, txns); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || !strings.Contains(got[0].Message, "LOSE CONTROL") || strings.Contains(got[0].Message, "rekey-to list") {
+		t.Fatalf("warnings = %+v, want the unlisted rekey warning", got)
 	}
 }
