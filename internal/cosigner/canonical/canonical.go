@@ -116,13 +116,24 @@ func DecodeGroupHex(groupBytesHex []string) (*Group, error) {
 	}, nil
 }
 
-// The ways transaction bytes fail the canonical decoders. A caller that
-// answers a client maps these to its own fixed text; any other error is the
-// codec's, whose wording names its internals and changes with the library.
+// The ways transaction bytes fail the canonical decoders. Each has fixed
+// text, so every endpoint that answers a client with one says the same thing.
 var (
 	ErrMissingTXPrefix = errors.New("missing TX prefix")
+	ErrInvalidMsgpack  = errors.New("invalid msgpack")
 	ErrNotCanonical    = errors.New("transaction bytes are not canonical")
 )
+
+// DecodeError is a codec failure. Its text is ErrInvalidMsgpack's: the
+// codec's own wording names its internals, changes with the library, and
+// quotes bytes from the input, so it is not fit to send to a client or print
+// raw. Detail holds it for a log line that escapes it first.
+type DecodeError struct {
+	Detail error
+}
+
+func (e *DecodeError) Error() string { return ErrInvalidMsgpack.Error() }
+func (e *DecodeError) Unwrap() error { return ErrInvalidMsgpack }
 
 // DecodeTXPrefixed decodes one TX-prefixed transaction and rejects any
 // encoding that does not re-encode to exactly the same bytes: trailing data,
@@ -134,7 +145,7 @@ func DecodeTXPrefixed(raw []byte) (types.Transaction, error) {
 		return txn, ErrMissingTXPrefix
 	}
 	if err := msgpack.Decode(raw[2:], &txn); err != nil {
-		return txn, fmt.Errorf("decode transaction: %w", err)
+		return txn, &DecodeError{Detail: err}
 	}
 	canonical := txnutil.EncodeWithPrefix(txn)
 	if !bytes.Equal(raw, canonical) {
@@ -149,7 +160,7 @@ func DecodeTXPrefixed(raw []byte) (types.Transaction, error) {
 func DecodeSignedTxn(raw []byte) (types.SignedTxn, error) {
 	var stxn types.SignedTxn
 	if err := msgpack.Decode(raw, &stxn); err != nil {
-		return stxn, fmt.Errorf("decode signed transaction: %w", err)
+		return stxn, &DecodeError{Detail: err}
 	}
 	if !bytes.Equal(msgpack.Encode(stxn), raw) {
 		return stxn, ErrNotCanonical

@@ -16,6 +16,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	apconfig "github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/cosigner/canonical"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/rotatingkey"
 	"github.com/aplane-algo/aplane/internal/txnutil"
@@ -433,7 +434,7 @@ func TestCosignerGatesRefuseATransactionTheNetworkNeverAccepts(t *testing.T) {
 
 func TestDecodeTransactionsRefusesBytesThatAreNotCanonical(t *testing.T) {
 	var sender, receiver types.Address
-	sender[0], receiver[0] = 1, 2
+	sender[0], sender[31], receiver[0] = 1, 9, 2
 	txn := types.Transaction{
 		Type:             types.PaymentTx,
 		Header:           types.Header{Sender: sender, Fee: 1_000, FirstValid: 1, LastValid: 10},
@@ -469,21 +470,22 @@ func TestDecodeTransactionsRefusesBytesThatAreNotCanonical(t *testing.T) {
 		t.Fatal("fixture: the sender field was not found in the encoding")
 	}
 	probe = types.Transaction{}
-	if err := msgpack.Decode(shortSender, &probe); err != nil || probe.Receiver != receiver {
-		t.Fatalf("fixture: short-sender payment decoded with receiver %s, %v", probe.Receiver, err)
+	if err := msgpack.Decode(shortSender, &probe); err != nil || probe.Receiver != receiver || probe.Sender == sender {
+		t.Fatalf("fixture: short-sender payment decoded with sender %s, receiver %s, %v; want another sender",
+			probe.Sender, probe.Receiver, err)
 	}
 
 	for name, tc := range map[string]struct {
 		raw  []byte
 		want string
 	}{
-		"no TX prefix":    {body, missingTXPrefixMessage},
-		"prefix only":     {[]byte{'T', 'X'}, invalidMsgpackMessage},
-		"not msgpack":     {[]byte{'T', 'X', 0xc1}, invalidMsgpackMessage},
-		"trailing bytes":  {append(append([]byte{}, canonicalBytes...), 0xc0), notCanonicalMessage},
-		"second txn":      {append(append([]byte{}, canonicalBytes...), body...), notCanonicalMessage},
-		"repeated field":  {repeated, notCanonicalMessage},
-		"31-byte address": {append([]byte{'T', 'X'}, shortSender...), notCanonicalMessage},
+		"no TX prefix":    {body, canonical.ErrMissingTXPrefix.Error()},
+		"prefix only":     {[]byte{'T', 'X'}, canonical.ErrInvalidMsgpack.Error()},
+		"not msgpack":     {[]byte{'T', 'X', 0xc1}, canonical.ErrInvalidMsgpack.Error()},
+		"trailing bytes":  {append(append([]byte{}, canonicalBytes...), 0xc0), canonical.ErrNotCanonical.Error()},
+		"second txn":      {append(append([]byte{}, canonicalBytes...), body...), canonical.ErrNotCanonical.Error()},
+		"repeated field":  {repeated, canonical.ErrNotCanonical.Error()},
+		"31-byte address": {append([]byte{'T', 'X'}, shortSender...), canonical.ErrNotCanonical.Error()},
 	} {
 		err := decode(tc.raw)
 		if err == nil {
@@ -534,8 +536,34 @@ func TestDecodeTransactionsRefusesPassthroughBytesThatAreNotCanonical(t *testing
 		"repeated field":     repeated,
 	} {
 		err := decode(raw)
-		if err == nil || err.Kind != ErrorBadRequest || !strings.HasSuffix(err.Message, notCanonicalMessage) {
-			t.Errorf("%s: %v, want a bad request ending %q", name, err, notCanonicalMessage)
+		if err == nil || err.Kind != ErrorBadRequest || !strings.HasSuffix(err.Message, canonical.ErrNotCanonical.Error()) {
+			t.Errorf("%s: %v, want a bad request ending %q", name, err, canonical.ErrNotCanonical.Error())
 		}
+	}
+}
+
+func TestRequestBytesRefusalEscapesTheCodecsDetailOnTheConsole(t *testing.T) {
+	// A map key holding an escape sequence and a forged console line. The
+	// codec quotes the key in its error.
+	key := "\x1b[2J\n[GROUP] 1 key(s) available for signing"
+	raw := append([]byte{'T', 'X', 0x81, 0xd9, byte(len(key))}, key...)
+	raw = append(raw, 0x01)
+
+	var console printedConsole
+	_, _, err := decodeTransactions(
+		[]signerapi.SignRequest{{AuthAddress: "A", TxnBytesHex: hex.EncodeToString(raw)}},
+		map[int]bool{}, &console)
+	if err == nil || !strings.HasSuffix(err.Message, canonical.ErrInvalidMsgpack.Error()) {
+		t.Fatalf("unknown-field bytes: %v, want the fixed invalid-msgpack text", err)
+	}
+	if strings.Contains(err.Message, "struct field") {
+		t.Fatalf("the client was sent the codec's own wording: %q", err.Message)
+	}
+	printed := console.String()
+	if !strings.Contains(printed, "refused") {
+		t.Fatalf("the console has no line for the refusal: %q", printed)
+	}
+	if strings.ContainsAny(printed, "\x1b") || strings.Count(printed, "\n") != 1 {
+		t.Fatalf("the console line carries raw control bytes from the request: %q", printed)
 	}
 }

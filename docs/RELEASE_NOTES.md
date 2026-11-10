@@ -18,6 +18,13 @@ before it was renamed `enroll`.
   every other signer endpoint already required. Anything else is a 400.
 - A passthrough entry's signed bytes must be canonical too. They are returned
   as given, so they have to be exactly what was decoded and reviewed.
+- apshell holds a plugin's signed slots to the same rule, so a plugin that
+  signs is told before the group reaches the signer. The Algorand SDKs'
+  encoders already produce canonical bytes; a hand-rolled encoder that writes
+  an explicit empty field or unsorted keys is now refused.
+- Every signer endpoint answers undecodable transaction bytes with the same
+  fixed text. The codec's own wording, which quotes bytes from the request,
+  goes only to the signer's console, escaped.
 - apshell and the SDKs have always sent this form.
 
 ## The review of a mixed cosigned group no longer calls the signer's own accounts foreign

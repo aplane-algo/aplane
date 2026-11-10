@@ -84,7 +84,7 @@ func validateCosignedPassthrough(ctx context.Context, passthrough signerapi.Asse
 	stxn, decodeErr := canonical.DecodeSignedTxn(signedTxnBytes)
 	notCanonical := errors.Is(decodeErr, canonical.ErrNotCanonical)
 	if decodeErr != nil && !notCanonical {
-		return "", badRequest(fmt.Sprintf("passthrough index %d: invalid signed transaction msgpack: %v", passthrough.TargetIndex, decodeErr))
+		return "", badRequest(fmt.Sprintf("passthrough index %d: invalid signed transaction msgpack", passthrough.TargetIndex))
 	}
 	txID := algocrypto.TransactionID(stxn.Txn)
 	if !bytes.Equal(txID[:], entry.TxID[:]) {

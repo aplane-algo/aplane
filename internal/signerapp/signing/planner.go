@@ -11,6 +11,7 @@ import (
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/cosigner/canonical"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
+	"github.com/aplane-algo/aplane/internal/termsafe"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 
 	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
@@ -475,28 +476,18 @@ func decodeTransactions(requests []signerapi.SignRequest, passthroughIndices map
 	return txns, passthroughSignedTxns, nil
 }
 
-// The refusals a request's transaction bytes can meet. Fixed text: the
-// decoder's own error names codec internals and changes with the library.
-const (
-	missingTXPrefixMessage = "missing TX prefix"
-	invalidMsgpackMessage  = "invalid msgpack"
-	notCanonicalMessage    = "bytes are not the canonical encoding of the transaction they decode to"
-)
-
-// requestBytesRefusal turns a canonical decoder's error into the fixed text
-// the client is told. The codec's own detail (a field this build doesn't
-// know, a wrong type) goes to the signer's console, where the operator can
-// tell corrupt bytes from an unsupported transaction.
+// requestBytesRefusal is the text a client is told when its transaction
+// bytes are refused: the canonical decoder's own fixed text. The codec's
+// detail (a field this build doesn't know, a wrong type) goes to the signer's
+// console so the operator can tell corrupt bytes from an unsupported
+// transaction. It quotes bytes from the request, so it is escaped first.
 func requestBytesRefusal(err error, position int, console Console) string {
-	switch {
-	case errors.Is(err, canonical.ErrMissingTXPrefix):
-		return missingTXPrefixMessage
-	case errors.Is(err, canonical.ErrNotCanonical):
-		return notCanonicalMessage
-	default:
-		consoleOf(console).Printf("[GROUP] transaction %d refused: %v\n", position, err)
-		return invalidMsgpackMessage
+	var decodeErr *canonical.DecodeError
+	if errors.As(err, &decodeErr) {
+		consoleOf(console).Printf("[GROUP] transaction %d refused: %s\n",
+			position, termsafe.Line(decodeErr.Detail.Error()))
 	}
+	return err.Error()
 }
 
 func validateGroupConsistency(txns []types.Transaction, hasPassthrough bool, console Console) (isPreGrouped bool, err *ServiceError) {
