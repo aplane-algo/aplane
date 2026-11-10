@@ -19,13 +19,10 @@ const (
 	ParameterRekeyAuthority = "rekey_authority"
 	ParameterListEncoding   = "list_encoding"
 	ParameterRecipients     = "recipients"
-	// ParameterUnlockRound is the first round the account can spend. A round
-	// compiles the same way everywhere but means a different time on each network.
-	ParameterUnlockRound = "unlock_round"
 	// ParameterRecipientScope selects whether the account has a recipient rule.
 	// Absent means listed, so leaving out a list still fails closed; "any" must be
 	// asked for, and selects a limits-only account: the fee ceiling and transfer
-	// kinds, with no recipient list and no timelock.
+	// kinds, with no recipient list.
 	ParameterRecipientScope = "recipient_scope"
 	// ParameterRekeyTo is a rekey-to list's addresses, required with
 	// rekey_authority=only_these or plus_cosigned and refused otherwise.

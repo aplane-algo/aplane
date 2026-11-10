@@ -205,7 +205,7 @@ Go-defined key types:
 |---|---|---|---|---|
 | `ed25519` | Native signing key | Go-defined | default-enabled | `internal/signing/ed25519`, `internal/keygen/ed25519.go` |
 | `falcon1024` | Protocol-native PQ signing key | Go-defined | default-enabled on signer nodes | `internal/signing/falcon1024` |
-| `aplane.falcon1024.v1` | Plain host: the plain Falcon program, `plain1` with overlays, or one of 294 `bounded2` shapes with bounds, selected per key | Go-defined | default-enabled on signer nodes | `lsig/falcon1024/v1/standard.go`, `lsig/plainhost`, `internal/boundary` |
+| `aplane.falcon1024.v1` | Plain host: the plain Falcon program, `plain1` with overlays, or one of 147 `bounded2` shapes with bounds, selected per key | Go-defined | default-enabled on signer nodes | `lsig/falcon1024/v1/standard.go`, `lsig/plainhost`, `internal/boundary` |
 | `aplane.witness-falcon1024.v1` | Witness key held by a cosigner | Go-defined | default-enabled on cosigner nodes | `internal/witness`, `lsig/falcon1024/keygen/witness.go` |
 | `aplane.ed25519.v1` | Plain host on Ed25519, with the same grammar | Go-defined | library-visible | `lsig/ed25519lsig`, `lsig/plainhost`, `internal/boundary` |
 
@@ -267,7 +267,7 @@ Bundled YAML templates, if installed:
 |---|---|---|---|
 | `aplane.htlc.v1` | Generic LogicSig template | `apadmin template import library/templates/aplane.htlc.v1.yaml` | selected generation `keytypes/aplane.htlc.v1.{json,template}` |
 
-`aplane.htlc.v1` is the only bundled template. Allowlist and timelock accounts use the
+`aplane.htlc.v1` is the only bundled template. Allowlist accounts use the
 bounds of a plain host. Composed-template tests use inline fixtures, such
 as those in `lsig/composeddsa/bounded_fixtures_test.go`.
 
@@ -399,7 +399,7 @@ Reference implementations: `lsig/falcon1024/` and `lsig/ed25519lsig/`.
 Examples:
 - a template whose allowlist comes from a framework policy, as in the
   [framework-policy example](#bounded-schema-schema_version-2) below
-- a template whose rule is author TEAL, such as a custom timelock
+- a template whose rule is author TEAL, such as a time check the author writes
 
 Characteristics:
 - DSA base plus additional constraints
@@ -874,7 +874,6 @@ bounded:
   layer3:                    # optional; required without teal, may be used with it
     policy: merkle_allowlist     # see the list below
     recipients_parameter: recipients
-    # unlock_round_parameter: unlock_round   # timelock policies only
   derived_args:              # required by the Merkle policies
     - name: merkle_proof
       kind: merkle_allowlist_proof
@@ -892,17 +891,11 @@ The rules that most often surprise authors:
 - At least one of `bounded.layer3` and `teal` is required. With both, the allowlist runs
   first, then the TEAL, and both must pass. Do not write the stored values
   `fixed_allowlist_custom` or `merkle_allowlist_custom` in a template.
-- `bounded.layer3.policy` is `fixed_allowlist`, `merkle_allowlist`, `timelock`,
-  `fixed_allowlist_timelock`, or `merkle_allowlist_timelock`.
+- `bounded.layer3.policy` is `fixed_allowlist` or `merkle_allowlist`.
 - The recipients parameter must be a required `address[]` with `min_items: 1`.
   `max_items` is at most 30 for the fixed policies and 65,536 for the Merkle policies.
-- The timelock policies require `FirstValid >= unlock_round`. `unlock_round_parameter`
-  must name a required `uint64` parameter with `min: 1`. Bare `timelock` takes no
-  `recipients_parameter`. A timelock policy takes any `bounded.rekey`, but beside
-  `spending_key` or `plus_cosigned` the spending key can rekey out before the unlock
-  round, so the lock binds only while it declines.
-- Timelock policies reject `teal`. For a list plus custom time conditions, use a plain
-  allowlist and write the conditions in the TEAL.
+- The framework has no time policy. Write a time condition in the TEAL, alone or after
+  an allowlist.
 - With no `teal`, extra parameters and `runtime_args` are rejected, because nothing
   would read them.
 - The cosigner parameters are injected by the framework and cannot be declared.
@@ -930,8 +923,7 @@ The rules that most often surprise authors:
   list proof is the last derived argument, so that runtime argument is `arg 3`.
 - No Layer 3 rule applies to a rekey: a spending-key or listed rekey checks the
   spending signature, the fee ceiling and the pure rekey form only (and, listed, the
-  list proof; cosigned, the cosigner signature), never the recipient list, the
-  timelock or the author rule. An
+  list proof; cosigned, the cosigner signature), never the recipient list or the author rule. An
   author-TEAL time condition therefore holds a rekey back only with `rekey: refused`;
   under `only_these` a listed rekey still passes.
 - Author TEAL cannot use `return`.
@@ -968,8 +960,9 @@ parameters:
     max_items: 30
 ```
 
-A short author-TEAL example is a custom timelock. It refuses rekeys, so nothing
-leaves the account before the unlock round:
+A short author-TEAL example is a time check. The framework has no timelock policy:
+this is the author's own code, and the review reports it as a custom policy. The
+template refuses rekeys, so nothing leaves the account before the unlock round:
 
 ```yaml
 schema_version: 2

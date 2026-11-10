@@ -87,8 +87,7 @@ A composed template uses schema v2 and a `bounded` block unless there is a state
 reason not to. Prefer a framework policy to author TEAL: `bounded.layer3` with
 `fixed_allowlist` or `merkle_allowlist` needs no `teal`. For a custom rule on top of an
 allowlist, declare both instead of rewriting the list check in TEAL; the allowlist runs
-first and the TEAL can only narrow it. `timelock`, `fixed_allowlist_timelock`, and
-`merkle_allowlist_timelock` also need no `teal`, and they reject it.
+first and the TEAL can only narrow it. The framework has no time policy: a time check is author TEAL.
 The field reference is in
 [DEV_KEYTYPES.md](DEV_KEYTYPES.md#bounded-schema-schema_version-2).
 
@@ -170,9 +169,7 @@ For bounded (`bounded2`) work, read
   spending key and a signer-built list proof authorize a pure rekey to a listed
   address), or `plus_cosigned` (`spending_key` plus the list, cosigner
   required: a listed target takes the spending key alone, any other the spending
-  key and the cosigner); a timelock policy takes any of them, but beside
-  `spending_key` or `plus_cosigned` the spending key can rekey out before the
-  unlock round;
+  key and the cosigner);
 - a cosigner's `required_on` is `[spend]`, or `[spend, spending_rekey]` with
   `spending_key` or `plus_cosigned`; the cosigner slot is required on exactly
   those paths and forbidden on `listed_rekey`, which never asks the cosigner;

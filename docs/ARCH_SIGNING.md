@@ -1833,7 +1833,7 @@ warning does not establish that no leaf was reused.
   account's `cosigner_component_key_type`. SDK consumers must treat this as
   signer-owned metadata, not as proof of remote cosigner endpoint ownership.
   Bounded rows expose only the reviewed public parameter projection
-  (`recipients`, `unlock_round`, and the framework-injected
+  (`recipients` and the framework-injected
   `cosigner_public_key`). Newly stored bounded parameters are
   omitted until explicitly classified as public; `/keys` never defaults to
   exposing the complete stored creation-parameter map.

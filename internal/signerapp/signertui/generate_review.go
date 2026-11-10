@@ -27,8 +27,7 @@ const (
 	reviewBodyWidth = 64
 	reviewIDWidth   = 44
 
-	recipientsParameter  = "recipients"
-	unlockRoundParameter = "unlock_round"
+	recipientsParameter = "recipients"
 )
 
 // handlePreparedGeneration receives what a request would create. A bounded account
@@ -149,41 +148,12 @@ func recipientList(parameters map[string]string) []string {
 	return strings.Split(value, ",")
 }
 
-func isMerklePolicy(policy string) bool {
-	switch policy {
-	case boundedmeta.Layer3PolicyMerkleAllowlist, boundedmeta.Layer3PolicyMerkleAllowlistCustom, boundedmeta.Layer3PolicyMerkleAllowlistTimelock:
-		return true
-	}
-	return false
-}
-
-func isTimelockPolicy(policy string) bool {
-	switch policy {
-	case boundedmeta.Layer3PolicyTimelock, boundedmeta.Layer3PolicyFixedAllowlistTimelock, boundedmeta.Layer3PolicyMerkleAllowlistTimelock:
-		return true
-	}
-	return false
-}
-
-func isCustomPolicy(policy string) bool {
-	switch policy {
-	case boundedmeta.Layer3PolicyCustom, boundedmeta.Layer3PolicyFixedAllowlistCustom, boundedmeta.Layer3PolicyMerkleAllowlistCustom:
-		return true
-	}
-	return false
-}
-
 // reviewRekey states who can rekey the account and what that means, because the
 // escape path is the most consequential choice on the screen.
 func reviewRekey(review PrepareGenerateResultMessage) (label, consequence string) {
 	setting := boundedmeta.RekeySetting(review.Bounded.Rekey)
 	cosigned := review.Bounded.CosignerRequired
 	plain := review.Bounded.Contract == boundedmeta.PlainContract
-	// No host rule applies to a rekey, so a timelock doesn't hold one back.
-	lockBypass := ""
-	if isTimelockPolicy(review.Bounded.Layer3Policy) || review.Parameters[unlockRoundParameter] != "" {
-		lockBypass = " That is a way around the lock."
-	}
 	if review.Bounded.RekeyList {
 		count := len(rekeyToList(review))
 		these, them := fmt.Sprintf("these %d addresses", count), "any of them"
@@ -198,11 +168,11 @@ func reviewRekey(review PrepareGenerateResultMessage) (label, consequence string
 				short = "This one"
 			}
 			return short + ", spending key alone; others need the cosigner",
-				"The spending key alone can hand the account to " + them + ". Any other rekey needs both online keys." + lockBypass
+				"The spending key alone can hand the account to " + them + ". Any other rekey needs both online keys."
 		}
 		// On a cosigned account the label's "spending key alone" says the cosigner
 		// is not asked; the screen has no room to say it twice.
-		return "Only " + these + ", spending key alone", consequence + lockBypass
+		return "Only " + these + ", spending key alone", consequence
 	}
 	switch setting {
 	case boundedmeta.RekeyRefused:
@@ -216,9 +186,9 @@ func reviewRekey(review PrepareGenerateResultMessage) (label, consequence string
 		return "None", "No rekey path. Losing a required authority cannot be repaired."
 	case boundedmeta.RekeySpendingKey:
 		if cosigned {
-			return "Spending key and cosigner", "Together they can rekey out of this boundary, to a target both nodes' policies allow." + lockBypass
+			return "Spending key and cosigner", "Together they can rekey out of this boundary, to a target both nodes' policies allow."
 		}
-		return "Spending key alone", "That key can rekey out of this boundary." + lockBypass
+		return "Spending key alone", "That key can rekey out of this boundary."
 	default:
 		return "Unknown authority " + review.Bounded.Rekey, "This client cannot describe that rekey path."
 	}
@@ -237,8 +207,6 @@ func reviewRecipients(contract, policy string, cosigned bool, recipients []strin
 		return reviewRow("Recipients", "any; the spending key alone decides"), ""
 	case policy == boundedmeta.Layer3PolicyCustom:
 		return reviewRow("Policy", "Custom policy, from the template author's code"), ""
-	case policy == boundedmeta.Layer3PolicyTimelock:
-		return reviewRow("Recipients", "any, once unlocked"), ""
 	case policy == boundedmeta.Layer3PolicyNone:
 		return reviewRow("Recipients", "any; only the fee limit and transfer kinds apply"), ""
 	case !boundedmeta.IsRecipientListPolicy(policy):
@@ -246,11 +214,11 @@ func reviewRecipients(contract, policy string, cosigned bool, recipients []strin
 	}
 	encoding := "inline"
 	note = "The whole list is public once the program is published."
-	if isMerklePolicy(policy) {
+	if boundedmeta.IsMerkleListPolicy(policy) {
 		encoding = "Merkle"
 		note = "A spend reveals its recipient and proof, so the list is only partly hidden."
 	}
-	if isCustomPolicy(policy) {
+	if boundedmeta.IsCustomPolicy(policy) {
 		encoding += ", custom policy"
 	}
 	if len(recipients) == 0 {
@@ -258,16 +226,6 @@ func reviewRecipients(contract, policy string, cosigned bool, recipients []strin
 	}
 	digest := boundary.RecipientListDigest(strings.Join(recipients, ","))
 	return reviewRow("Recipients", fmt.Sprintf("%d, %s, list %s", len(recipients), encoding, digest[:12])), note
-}
-
-// reviewUnlockRound names the round and what it depends on: the same number means
-// a different time on another network. A template can call the parameter anything,
-// so one that does not use the usual name points to the details.
-func reviewUnlockRound(parameters map[string]string) string {
-	if round := parameters[unlockRoundParameter]; round != "" {
-		return "round " + round + " on the network it runs on"
-	}
-	return "a round set by this template; see details"
 }
 
 func (m Model) renderGenerateReview() string {
@@ -295,13 +253,7 @@ func (m Model) renderGenerateReview() string {
 		cosigner = "Required, " + middleEllipsize(review.CosignerKeyID, reviewIDWidth-10)
 	}
 	sb.WriteString(reviewRow("Cosigner", cosigner))
-	// The extra row takes the spacer's place, so the buttons stay on screen. Custom
-	// timelock code is a parameter here too, so the policy name alone cannot decide.
-	if isTimelockPolicy(profile.Layer3Policy) || review.Parameters[unlockRoundParameter] != "" {
-		sb.WriteString(reviewRow("Unlocks at", reviewUnlockRound(review.Parameters)))
-	} else {
-		sb.WriteString("\n")
-	}
+	sb.WriteString("\n")
 	sb.WriteString(subtitleStyle.Render(wrapText(strings.TrimSpace(note+" "+consequence), reviewBodyWidth)))
 	sb.WriteString("\n\n")
 

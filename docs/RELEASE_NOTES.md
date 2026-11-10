@@ -7,6 +7,21 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## Bounded accounts no longer have a timelock
+
+- Removed: the bounded Layer-3 policies `timelock`, `fixed_allowlist_timelock` and
+  `merkle_allowlist_timelock`, the `unlock_round` bounds parameter and boundary-file
+  field of the plain hosts, and the Timelock preset in apadmin. The presets are now
+  Allowlist, Locked Allowlist and Corridor, and each plain host offers 147 bounded
+  shapes.
+- Why: the timelock only delayed spends. A rekey never reached it, so under most rekey
+  settings the account could leave the lock early.
+- For a time condition, write the check in author TEAL in a custom template (for
+  example `txn FirstValid` compared with a round). The review reports it as a custom
+  policy, not as a timelock.
+- A vault, if one is added, will be its own key type.
+- It was removed before any release, so there is nothing to migrate.
+
 ## A cosigner policy can be as open as you make it
 
 - A cosigner document's `transaction_types` may allow any type, `"*"` included. It

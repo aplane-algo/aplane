@@ -50,7 +50,7 @@ The `bounded2` contract checks three things:
    admitted, with a fee ceiling and checks for close, clawback, and rekey effects.
    A rekey is accepted or rejected here and never reaches the next step.
 3. **Spending conditions.** An admitted spend must satisfy the account's
-   rules, such as destination membership or a timelock. Additional
+   rules, such as destination membership. Additional
    signatures are required where the account specifies them.
 
 The presets admit ALGO payments, ordinary Algorand Standard Asset
@@ -66,7 +66,7 @@ account, the spending key authorizes this form to any target (with the cosigner
 too, on a cosigned account), or alone, only to a target on the account's
 rekey-to list, fixed when the account is created. A cosigned account may have
 both: a listed target with the spending key alone, any other with the cosigner
-too. Its spending conditions, such as a recipient list or an unlock round, do
+too. Its spending conditions, such as a recipient list, do
 not apply to a rekey. The compiled fee ceiling applies to both
 spending and rekeying; every bounded account sets it to 10,000 microAlgos
 (0.01 ALGO) per protected transaction. This is a ceiling, not a fixed fee or
@@ -81,11 +81,10 @@ Rekeying changes that authority rather than editing the existing program.
 
 APlane ships its bounded profiles as presets of the plain key types, such as
 `aplane.falcon1024.v1`. Custom bounds or a boundary file selects any other
-shape the type offers, such as an ALGO-only account, a timelock with a recipient
-list, or an account that can never be rekeyed. An
-allowlist is one possible policy; bounded accounts also include profiles
-without destination restrictions: a timelock with no list, and a limits-only
-account (`recipient_scope: any`), which only the fee ceiling and transfer kinds
+shape the type offers, such as an ALGO-only account or an account that can never be rekeyed. An
+allowlist is one possible policy; bounded accounts also include a profile
+without destination restrictions: a limits-only account
+(`recipient_scope: any`), which only the fee ceiling and transfer kinds
 bound.
 
 | Preset | Spending conditions | Pure rekey authorization |
@@ -93,14 +92,6 @@ bound.
 | Allowlist | Self or a recipient list | Spending key alone, to any address |
 | Locked Allowlist | Self or a recipient list | Spending key alone, only to an address on the rekey-to list |
 | Corridor | Self or membership in a Merkle recipient list, plus a Falcon cosigner signature for every spend | Spending key alone, only to an address on the rekey-to list; the cosigner is not asked |
-| Timelock | Transaction's first valid round must reach the configured unlock round | Spending key alone, only to an address on the rekey-to list |
-
-The unlock round is a spending condition, so a rekey does not wait for it. A
-timelock may take any rekey setting: beside a spending-key rekey, cosigned or
-not, the lock holds only while the spending key declines. That applies to a
-listed rekey too, so a timelock's rekey-to list is a way around the lock, and
-the lock holds only while the holders of the listed keys cooperate. Only a
-timelock that refuses every rekey holds until the unlock round.
 
 The rekey-to list holds up to 16 addresses and is compiled into the program as a
 salted Merkle root that reveals nothing about its entries. The signer keeps the
@@ -191,7 +182,7 @@ which signatures and conditions are required to authorize the change.
 
 For the Allowlist preset, the spending key can rekey the account straight to a
 replacement program, and a cosigned account that takes cosigned rekeys can do
-the same with the cosigner's signature. A Locked Allowlist, Corridor or Timelock
+the same with the cosigner's signature. A Locked Allowlist or Corridor
 account can be rekeyed only to an address on its rekey-to list; the listed key
 can then rekey it onward to a replacement program, keeping the address. An
 account with no rekey path (`rekey_authority: refused`, or an expert template
@@ -203,7 +194,7 @@ address.
 
 The spending key authorizes ordinary use of the account and a pure rekey as
 well: to any address for the Allowlist preset, and only to a listed address for
-Locked Allowlist, Corridor and Timelock. Corridor adds a cosigner whose
+Locked Allowlist and Corridor. Corridor adds a cosigner whose
 signature is required for every spend, but not for a listed rekey: if the
 cosigner is lost for good, the account can no longer spend, but the spending
 key can still hand it to a listed key. The cosigner key and the spending key

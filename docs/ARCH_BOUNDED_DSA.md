@@ -70,16 +70,9 @@ cosigner node's policy, can rekey the account anywhere. The plain hosts
    followed by author TEAL runs only for an admitted pure spend.
 
 No host rule gates a rekey. The rekey path accepts or rejects before any
-Layer 3 or author code runs, so no Layer 3 policy applies to a rekey. A
-framework timelock policy beside `rekey: spending_key` therefore holds only
-while the spending key declines to rekey: a spending-key rekey, cosigned or
-not, leaves the lock before the unlock round. Templates and the plain hosts'
-timelock shapes may declare it. A timelock may carry a
-rekey-to list (`only_these`), but a listed rekey is accepted before the unlock
-round too, so the lock holds only while the holders of the listed keys
-cooperate. The cosigner check is the only check
-outside the rekey path that a rekey can reach, and only a cosigned rekey
-reaches it.
+Layer 3 or author code runs, so no Layer 3 policy applies to a rekey. The
+cosigner check is the only check outside the rekey path that a rekey can
+reach, and only a cosigned rekey reaches it.
 
 On a cosigned account the cosigner signs every spend and every rekey the
 spending key declares (`spending_rekey`), and never a listed rekey. Its record's
@@ -129,12 +122,12 @@ complete value-spending policy.
 | Maximum compiled `max_fee` | 10,000 microAlgos |
 | Layer-3 arguments | declared static runtime (spend only) and signer-derived slots |
 | Signer-derived primitives | fixed-depth Merkle allowlist proof (512 bytes, spend); rekey-to list proof (160 bytes, listed rekey) |
-| Framework Layer-3 policies | `fixed_allowlist`, `merkle_allowlist`, `timelock`, `fixed_allowlist_timelock`, `merkle_allowlist_timelock`; `none` for the plain hosts' limits-only shapes only |
+| Framework Layer-3 policies | `fixed_allowlist`, `merkle_allowlist`; `none` for the plain hosts' limits-only shapes only |
 | Framework allowlist with author TEAL | `fixed_allowlist_custom`, `merkle_allowlist_custom` |
 | Inline recipient maximum | 30 entries |
 | Flow labels | `bounded1` without a cosigner; `cosigned1` with a cosigner |
 | Online cosigner endpoints | `POST /plan`, `POST /sign/component`, `POST /sign/assemble` |
-| Bundled composed templates | none; the plain hosts `aplane.falcon1024.v1` and `aplane.ed25519.v1` offer the allowlist, timelock and limits-only shapes |
+| Bundled composed templates | none; the plain hosts `aplane.falcon1024.v1` and `aplane.ed25519.v1` offer the allowlist and limits-only shapes |
 
 `bounded2` is the only contract a bounded shape or template declares (a plain host
 account without bounds declares `plain1`), and neither has protocol aliases. Flow labels version the client/server choreography, not the contract,
@@ -201,8 +194,8 @@ fee ceiling, slot layout, and path routing.
 ## Compiled Budgets
 
 No bounded template is bundled. The plain hosts
-(see [ARCH_KEYTYPES.md](ARCH_KEYTYPES.md#the-bounds)) offer the allowlist,
-timelock and limits-only shapes. Compiler-backed maximum-path measurements for three fixture templates
+(see [ARCH_KEYTYPES.md](ARCH_KEYTYPES.md#the-bounds)) offer the allowlist
+and limits-only shapes. Compiler-backed maximum-path measurements for three fixture templates
 are frozen by `TestBoundedFixtureCompiledBudgetMatrix`:
 
 | Fixture | Layer 3 | Rekey | Final bytecode | Spend args / v42 group / fee |
@@ -218,22 +211,6 @@ pricing. The table uses the conservative 20,000-opcode per-path ceiling; its
 group count includes the resource dummies and their own program/opcode use.
 The planner rejects a selected path before releasing a signature when its
 finalized fee would exceed the profile ceiling.
-
-`TestTimelockPolicyCompiledBudgetMatrix` freezes the framework timelock policies on the
-same terms, with full inline lists and the largest unlock round. It measures rekeys
-refused, with or without a cosigner, and has no row for a rekey-to list. Each row gives
-the final bytecode, then the group size and fee of the spend path. The cosigned rows
-include the cosigner check's `callsub` and `retsub` (see
-[Pure rekey](#pure-rekey)).
-
-| Policy | Arrangement | Final bytecode | Spend group / fee |
-|---|---|---:|---:|
-| `timelock` | rekeys refused | 1,889 | 2 / 2,000 |
-| `timelock` | rekeys refused, cosigner | 3,741 | 3 / 3,076 |
-| `fixed_allowlist_timelock` | rekeys refused | 3,110 | 2 / 2,112 |
-| `fixed_allowlist_timelock` | rekeys refused, cosigner | 4,959 | 3 / 3,198 |
-| `merkle_allowlist_timelock` | rekeys refused | 2,153 | 2 / 2,016 |
-| `merkle_allowlist_timelock` | rekeys refused, cosigner | 3,999 | 4 / 4,002 |
 
 ## Effect Model
 
@@ -612,65 +589,6 @@ author_merkle_canonical_bounded_profile_hex:
 expected values were computed from the encoding in this document by a separate
 encoder, so they do not simply restate the implementation's output.
 
-### Golden vector 2: timelock policies
-
-These vectors freeze the three timelock `layer3_policy` values. Each uses a Falcon-1024
-base, `spend_effects: [pay, axfer, asset_opt_in]`, `max_fee: 10000`, `rekey: refused`,
-no rekey-to list, no cosigner, and no runtime arguments. The unlock round and recipients are behavior
-parameters, so they do not appear in the profile.
-`timelock` and `fixed_allowlist_timelock` have the single-slot layout. The Merkle vector
-adds the `merkle_proof` derived argument bound to `recipients`.
-
-| Index | Name | Source | Max bytes | Spend | Spending rekey |
-|---:|---|---|---:|---|---|
-| 0 | `base_signature_0` | `base_signature` | 1423 | required | required |
-| 1 | `merkle_proof` | `derived` | 512 | optional | forbidden |
-
-```text
-timelock_canonical_bounded_profile_length: 218
-timelock_canonical_bounded_profile_hex:
-  0000001941504c414e455f424f554e4445445f50524f46494c455f5632000000
-  08626f756e646564320000000300000003706179000000056178666572000000
-  0c61737365745f6f70745f696e00000000000027100000000772656675736564
-  00000000000000000000000874696d656c6f636b000000010000058f00000000
-  00000000000000010000000000000010626173655f7369676e61747572655f30
-  0000000e626173655f7369676e61747572650000058f00000008726571756972
-  6564000000087265717569726564000000087265717569726564
-```
-
-```text
-fixed_allowlist_timelock_canonical_bounded_profile_length: 234
-fixed_allowlist_timelock_canonical_bounded_profile_hex:
-  0000001941504c414e455f424f554e4445445f50524f46494c455f5632000000
-  08626f756e646564320000000300000003706179000000056178666572000000
-  0c61737365745f6f70745f696e00000000000027100000000772656675736564
-  00000000000000000000001866697865645f616c6c6f776c6973745f74696d65
-  6c6f636b000000010000058f0000000000000000000000010000000000000010
-  626173655f7369676e61747572655f300000000e626173655f7369676e617475
-  72650000058f0000000872657175697265640000000872657175697265640000
-  00087265717569726564
-```
-
-```text
-merkle_allowlist_timelock_canonical_bounded_profile_length: 368
-merkle_allowlist_timelock_canonical_bounded_profile_hex:
-  0000001941504c414e455f424f554e4445445f50524f46494c455f5632000000
-  08626f756e646564320000000300000003706179000000056178666572000000
-  0c61737365745f6f70745f696e00000000000027100000000772656675736564
-  0000000000000000000000196d65726b6c655f616c6c6f776c6973745f74696d
-  656c6f636b000000010000058f000000010000000c6d65726b6c655f70726f6f
-  66000000166d65726b6c655f616c6c6f776c6973745f70726f6f660000000a72
-  6563697069656e74730000020000000000000000020000000000000010626173
-  655f7369676e61747572655f300000000e626173655f7369676e617475726500
-  00058f0000000872657175697265640000000872657175697265640000000872
-  65717569726564000000010000000c6d65726b6c655f70726f6f660000000764
-  65726976656400000200000000086f7074696f6e616c00000009666f72626964
-  64656e00000009666f7262696464656e
-```
-
-`TestTimelockPolicyGoldenVectors` is authoritative for every byte. The separate encoder
-reproduced both author-TEAL vectors before computing these.
-
 ## YAML Contract
 
 Schema v1 describes the existing non-bounded composed layout and rejects a
@@ -717,8 +635,7 @@ list can neither close nor be rekeyed, so only a transfer moves what it holds:
 without `pay` in `spend_effects` its ALGO can never leave, and with
 `asset_opt_in` but no `axfer` an asset it opts into can never leave. That is the
 author's choice. Neither the profile check nor durable metadata validation
-refuses it, and durable validation also accepts a timelock policy beside
-`rekey: spending_key`: durable validation checks structure only, so a check
+refuses it: durable validation checks structure only, so a check
 for a combination's wisdom, if one returns, belongs at generation, where
 accounts created without it keep loading. The plain hosts offer it too, as
 they offer every combination the contract allows.
@@ -776,25 +693,9 @@ only the plain policy; durable metadata records `fixed_allowlist_custom` or
 allowlist nor the author rule applies to a rekey. An allowlist with no `teal` rejects
 extra parameters and runtime arguments, because nothing would read them.
 
-`timelock` requires `FirstValid >= unlock_round` and reads no recipient list.
-`fixed_allowlist_timelock` and `merkle_allowlist_timelock` apply the same check, then
-render exactly the recipient check of the matching allowlist, under the same list limits
-and Merkle proof contract. These policies name the unlock round through
-`unlock_round_parameter`, which must identify a required `uint64` parameter with
-`min: 1`, and they reject a `recipients_parameter` or `unlock_round_parameter` they do not
-use. A round compiles the same way on every network but means a different time on each,
-and it does not bind the program to one network.
-
-The timelock also applies to self-receivers, which the recipient check would otherwise
-admit. A timelock policy takes any rekey setting, but under `rekey: spending_key` or
-`plus_cosigned` the spending key can rekey out before the unlock round, cosigned or
-not, so the lock binds only while it declines; the plain hosts' timelock shapes take
-every rekey setting too. Under `only_these` a listed rekey is accepted before the unlock
-round, so the lock binds only while the listed keys' holders cooperate.
-
-Timelock policies reject author TEAL, parameters they do not read, and runtime arguments.
-An author who needs a list and custom time conditions uses a plain allowlist and writes
-those conditions in the TEAL. Author TEAL never runs on a rekey, so such a condition
+The framework has no time policy.
+An author who needs a time condition writes it in the TEAL, alone as a `custom` policy
+or after a plain allowlist. Author TEAL never runs on a rekey, so such a condition
 holds a spending-key rekey back only if the template declares `rekey: refused` or
 `only_these`, and it never holds back a listed rekey.
 
@@ -960,8 +861,7 @@ Non-bounded LogicSig keys use `signing_metadata_version: 1`. Bounded keys use
 `signing_metadata_version: 2` and require the canonical
 `bounded_authorization` object. The closed `layer3_policy` value is `custom`,
 `fixed_allowlist`, `merkle_allowlist`, `fixed_allowlist_custom`,
-`merkle_allowlist_custom`, `timelock`, `fixed_allowlist_timelock`,
-`merkle_allowlist_timelock`, or `none`; declared runtime and derived arguments and their complete
+`merkle_allowlist_custom`, or `none`; declared runtime and derived arguments and their complete
 slot masks are persisted. Top-level `signing_args` are ignored for bounded
 keys. Scan, load, backup, and restore consume the stored object without
 consulting the installed template.

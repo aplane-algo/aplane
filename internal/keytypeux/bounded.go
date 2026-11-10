@@ -11,15 +11,12 @@ import (
 )
 
 var boundedPolicyLabels = map[string]string{
-	boundedmeta.Layer3PolicyFixedAllowlist:          "Allowlist",
-	boundedmeta.Layer3PolicyMerkleAllowlist:         "Merkle allowlist",
-	boundedmeta.Layer3PolicyFixedAllowlistCustom:    "Allowlist plus custom policy",
-	boundedmeta.Layer3PolicyMerkleAllowlistCustom:   "Merkle allowlist plus custom policy",
-	boundedmeta.Layer3PolicyTimelock:                "Timelock",
-	boundedmeta.Layer3PolicyFixedAllowlistTimelock:  "Allowlist timelock",
-	boundedmeta.Layer3PolicyMerkleAllowlistTimelock: "Merkle allowlist timelock",
-	boundedmeta.Layer3PolicyCustom:                  "Custom policy",
-	boundedmeta.Layer3PolicyNone:                    "Limits only",
+	boundedmeta.Layer3PolicyFixedAllowlist:        "Allowlist",
+	boundedmeta.Layer3PolicyMerkleAllowlist:       "Merkle allowlist",
+	boundedmeta.Layer3PolicyFixedAllowlistCustom:  "Allowlist plus custom policy",
+	boundedmeta.Layer3PolicyMerkleAllowlistCustom: "Merkle allowlist plus custom policy",
+	boundedmeta.Layer3PolicyCustom:                "Custom policy",
+	boundedmeta.Layer3PolicyNone:                  "Limits only",
 }
 
 // BoundedLabel describes a bounded account from its stored contract, such as

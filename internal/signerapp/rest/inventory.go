@@ -130,7 +130,6 @@ func publicLogicSigResourceProfile(profile *lsigresource.Profile) *signerapi.Log
 // through /keys unless its public status is reviewed here.
 var boundedInventoryParameterNames = []string{
 	"recipients",
-	"unlock_round",
 	boundedmeta.CosignerPublicKeyParameter,
 }
 

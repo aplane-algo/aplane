@@ -94,7 +94,6 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 	}
 	preimage := bytes.Repeat([]byte("k"), 32)
 	preimageHash := sha256.Sum256(preimage)
-	timelockRound := baseRound
 	cleanupAuthority := algocrypto.GenerateAccount()
 
 	cases := []includedKeyTypeCase{
@@ -174,8 +173,8 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 			},
 		},
 		// The Falcon plain host's bounds, in the shapes the deleted allowlist v1,
-		// allowlist v2 and timelock templates had. The timelock's rekey is to a
-		// listed address, here the cleanup authority.
+		// allowlist v2 templates had, and limits only with a rekey to a listed
+		// address, here the cleanup authority.
 		{
 			keyType: plainFalconKeyType,
 			params: map[string]string{
@@ -204,12 +203,7 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 				plainhost.ParameterSpendEffects:   matrixAllTransfers,
 				plainhost.ParameterRekeyAuthority: plainhost.RekeyOnlyThese,
 				plainhost.ParameterRekeyTo:        cleanupAuthority.Address.String(),
-				plainhost.ParameterUnlockRound:    fmt.Sprintf("%d", timelockRound),
-			},
-			positiveFirstValid: timelockRound,
-			negative: includedKeyTypeNegative{
-				name:       "before unlock round",
-				firstValid: timelockRound - 1,
+				plainhost.ParameterRecipientScope: plainhost.RecipientScopeAny,
 			},
 		},
 	}

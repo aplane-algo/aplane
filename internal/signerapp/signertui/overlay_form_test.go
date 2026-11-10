@@ -142,8 +142,7 @@ func TestOverlayFormPutsTheBoundsBeforeTheOverlays(t *testing.T) {
 		{plainEd25519KeyType, noBounds, nil},
 		{boundedHostKeyType, 0, []string{boundary.ParameterRecipients}},
 		{boundedHostKeyType, 2, []string{boundary.ParameterRecipients}},
-		{boundedHostKeyType, 3, []string{boundary.ParameterUnlockRound}},
-		{plainEd25519KeyType, 3, []string{boundary.ParameterUnlockRound}},
+		{plainEd25519KeyType, 1, []string{boundary.ParameterRecipients}},
 		{boundedHostKeyType, customBounds, customBoundsPreset.Fields},
 		{plainEd25519KeyType, customBounds, customBoundsPreset.Fields},
 	} {
@@ -437,7 +436,7 @@ func TestImportedCosignerFillsTheOverlayForm(t *testing.T) {
 }
 
 // Custom bounds leaves an optional choice unset until the operator picks one,
-// so a limits-only account and a timelock with no list can be made without a
+// so a limits-only account can be made without a
 // file; and the Cosigners manager's form, which has no preset, has no bounds.
 func TestCustomBoundsLeavesChoicesUnsetAndTheManagerFormHasNone(t *testing.T) {
 	overlayInventory(t)
@@ -448,12 +447,8 @@ func TestCustomBoundsLeavesChoicesUnsetAndTheManagerFormHasNone(t *testing.T) {
 	}{
 		"limits-only": {
 			values:  map[string]string{boundary.ParameterSpendEffects: "pay", boundary.ParameterRecipientScope: boundary.RecipientScopeAny, overlayRekey: boundary.RekeyRefused},
-			absent:  []string{boundary.ParameterListEncoding, boundary.ParameterRecipients, boundary.ParameterUnlockRound},
+			absent:  []string{boundary.ParameterListEncoding, boundary.ParameterRecipients, "unlock_round"},
 			present: map[string]string{boundary.ParameterRecipientScope: boundary.RecipientScopeAny},
-		},
-		"a timelock with no list": {
-			values: map[string]string{boundary.ParameterSpendEffects: "pay", boundary.ParameterUnlockRound: "100", overlayRekey: boundary.RekeySpendingKey},
-			absent: []string{boundary.ParameterListEncoding, boundary.ParameterRecipients, boundary.ParameterRecipientScope},
 		},
 	} {
 		m := overlayForm(t, plainEd25519KeyType, customBounds)

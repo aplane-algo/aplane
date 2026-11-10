@@ -74,18 +74,17 @@ included as normal user-account operations.
 - A plain host account with bounds (`aplane.falcon1024.v1` or `aplane.ed25519.v1`
   with any bounds parameter, contract `bounded2`) is a bounded account. Each
   account's shape decides which of `pay`, `axfer`, and `asset_opt_in` it admits,
-  whether a recipient list (inline or Merkle) limits non-self destinations, whether
-  spending waits for an unlock round, and whether a cosigner signs every spend. A
-  limits-only account has neither a list nor an unlock round, so any destination is
+  whether a recipient list (inline or Merkle) limits non-self destinations, and
+  whether a cosigner signs every spend. A
+  limits-only account has no list, so any destination is
   a `Y`. It rejects close, clawback, and all non-transfer transaction types. Rekey
   is the `bounded2` pure self-payment form authorized by the spending key, which no
-  recipient list or unlock round gates: never (`refused`), to any address
+  recipient list gates: never (`refused`), to any address
   (`spending_key`; on a cosigned account the cosigner must sign too), only to an
   address on the account's rekey-to list (`only_these`, with a signer-built list
   proof and no cosigner, which is every Corridor account), or both (`plus_cosigned`,
   cosigned accounts only: a listed target with the spending key alone, any other
-  with the cosigner too). A timelock takes any of these, so every rekey path it has
-  can leave the lock early; only `refused` keeps it. A Merkle list needs a
+  with the cosigner too). A Merkle list needs a
   signer-generated 512-byte proof for a non-self destination; self-send and asset
   opt-in need none.
 - `aplane.rotating-triple-wotsc.v1` admits any transaction type, but every transaction must rekey to an address other

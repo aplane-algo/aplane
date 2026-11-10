@@ -20,7 +20,7 @@ import (
 
 // limitsShapesStart is where the limits-only shapes begin; they are the last
 // family, every arrangement with every transfer subset.
-const limitsShapesStart = 245
+const limitsShapesStart = 98
 
 // limitsOnlyShapes are the last family. Index order is frozen by the goldens.
 func limitsOnlyShapes(t *testing.T) []plainhost.Shape {
@@ -103,22 +103,15 @@ func TestLimitsOnlyRequestsFailClosed(t *testing.T) {
 		// An empty scope is unset, which is listed: it is not any.
 		{"empty scope", func(p map[string]string) { p[plainhost.ParameterRecipientScope] = "" }, "recipient_scope is empty"},
 		{"listed scope and no list", func(p map[string]string) { p[plainhost.ParameterRecipientScope] = plainhost.RecipientScopeListed }, "recipients is required"},
-		{"listed scope with only a timelock", func(p map[string]string) {
-			p[plainhost.ParameterRecipientScope] = plainhost.RecipientScopeListed
-			p[plainhost.ParameterUnlockRound] = "5"
-		}, "recipients is required"},
 		{"unknown scope", func(p map[string]string) { p[plainhost.ParameterRecipientScope] = "open" }, "recipient_scope must be"},
 		{"any with recipients", func(p map[string]string) { p[plainhost.ParameterRecipients] = testRecipients(1) }, "takes no recipients"},
 		{"any with an encoding", func(p map[string]string) { p[plainhost.ParameterListEncoding] = plainhost.EncodingInline }, "no list to encode"},
-		// A timelock already admits any recipient once it unlocks, whatever the
-		// rekey setting beside it.
-		{"any with a timelock", func(p map[string]string) { p[plainhost.ParameterUnlockRound] = "5" }, "does not combine"},
-		{"any with a timelock and a rekey-to list", func(p map[string]string) {
-			p[plainhost.ParameterRekeyAuthority] = plainhost.RekeyOnlyThese
-			p[plainhost.ParameterRekeyTo] = listedRekeyTo
-			p[plainhost.ParameterUnlockRound] = "5"
-		}, "does not combine"},
-		{"any with a zero unlock round", func(p map[string]string) { p[plainhost.ParameterUnlockRound] = "0" }, "must be positive"},
+		// The framework timelock is gone, so nothing but the scope asks for no list.
+		{"any with an unlock round", func(p map[string]string) { p["unlock_round"] = "5" }, "unknown parameter"},
+		{"an unlock round and no scope", func(p map[string]string) {
+			delete(p, plainhost.ParameterRecipientScope)
+			p["unlock_round"] = "5"
+		}, "unknown parameter"},
 		{"any with only_these and no rekey-to list", func(p map[string]string) { p[plainhost.ParameterRekeyAuthority] = plainhost.RekeyOnlyThese },
 			"rekey_authority=only_these needs the addresses"},
 		{"any with plus_cosigned and no cosigner", func(p map[string]string) {
@@ -244,7 +237,7 @@ func TestLimitsOnlyProgramIsTheEnvelopeAlone(t *testing.T) {
 					t.Fatalf("axfer decision is not %q", axferDecision)
 				}
 				if strings.Contains(teal, "framework-owned") || strings.Contains(teal, "recipient_allowed") {
-					t.Fatal("program renders a recipient or timelock check")
+					t.Fatal("program renders a recipient check")
 				}
 				tail := noLayer3 + "\n\nb __aplane_bounded1_accept\n\n__aplane_bounded1_accept:\npushint 1\nreturn\n"
 				if !strings.HasSuffix(teal, tail) {
@@ -296,12 +289,12 @@ func TestLimitsOnlyBoundaryFile(t *testing.T) {
 		head: "recipients is required unless",
 		head + "recipient_scope: any\nrecipients: [" + testAddress(1) + "]\n": "takes no recipients",
 		head + "recipient_scope: any\nrecipients: []\n":                       "takes no recipients",
-		head + "recipient_scope: any\nunlock_round: 5\n":                      "does not combine with unlock_round",
+		head + "recipient_scope: any\nunlock_round: \"5\"\n":                  "field unlock_round not found",
 		head + "recipient_scope: any\nencoding: inline\n":                     "encoding needs a recipient list",
 		head + "recipient_scope: anyone\n":                                    "recipient_scope must be",
 		head + "recipient_scope: \"\"\n":                                      "recipient_scope must be",
 		head + "recipient_scope: listed\n":                                    "recipient_scope listed needs recipients",
-		head + "recipient_scope: listed\nunlock_round: 5\n":                   "recipient_scope listed needs recipients",
+		head + "unlock_round: \"5\"\n":                                        "field unlock_round not found",
 	} {
 		if _, err := boundary.ParseFile([]byte(body)); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("ParseFile(%q) error = %v, want %q", body, err, want)

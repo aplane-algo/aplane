@@ -5,7 +5,6 @@ package composeddsa
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
@@ -28,18 +27,6 @@ const (
 	// signer-derived Merkle witness.
 	Layer3PolicyMerkleAllowlist = "merkle_allowlist"
 
-	// Layer3PolicyTimelock requires FirstValid >= unlock_round and reads no
-	// recipient list.
-	Layer3PolicyTimelock = "timelock"
-
-	// Layer3PolicyFixedAllowlistTimelock applies the timelock, then the inline
-	// recipient check.
-	Layer3PolicyFixedAllowlistTimelock = "fixed_allowlist_timelock"
-
-	// Layer3PolicyMerkleAllowlistTimelock applies the timelock, then the Merkle
-	// recipient check.
-	Layer3PolicyMerkleAllowlistTimelock = "merkle_allowlist_timelock"
-
 	// Layer3PolicyNone compiles no Layer 3: the bounded envelope and the spending
 	// signature are the whole spending rule. Only the plain hosts' bounds offer
 	// it, with recipient_scope=any.
@@ -50,26 +37,20 @@ const (
 	BoundedInlineListMax = 30
 )
 
-// Layer3Policy binds a framework-owned policy to the parameters it reads.
-// Recipient addresses are network-independent. An unlock round compiles the same
-// way everywhere but means a different time on each network, and it does not bind
-// the program to one. Asset and amount limits belong to per-network signer policy.
+// Layer3Policy binds a framework-owned policy to the parameter it reads.
+// Recipient addresses are network-independent. Asset and amount limits belong
+// to per-network signer policy.
 //
-// This struct is hashed into the provider fingerprint. UnlockRoundParameter must
-// stay omitempty so that policies without one keep their fingerprints.
+// This struct is hashed into the provider fingerprint.
 type Layer3Policy struct {
-	Policy               string `json:"policy"`
-	RecipientsParameter  string `json:"recipients_parameter"`
-	UnlockRoundParameter string `json:"unlock_round_parameter,omitempty"`
+	Policy              string `json:"policy"`
+	RecipientsParameter string `json:"recipients_parameter"`
 }
 
-// layer3PolicyRules is what a framework policy compiles. The composer treats the
-// timelock and the recipient check as independent, so a combined policy is a
-// timelock followed by the same allowlist a plain policy renders.
+// layer3PolicyRules is what a framework policy compiles.
 type layer3PolicyRules struct {
 	inlineList bool
 	merkleList bool
-	timelock   bool
 }
 
 func (rules layer3PolicyRules) hasList() bool {
@@ -82,12 +63,6 @@ func rulesForLayer3Policy(policy string) (layer3PolicyRules, bool) {
 		return layer3PolicyRules{inlineList: true}, true
 	case Layer3PolicyMerkleAllowlist:
 		return layer3PolicyRules{merkleList: true}, true
-	case Layer3PolicyTimelock:
-		return layer3PolicyRules{timelock: true}, true
-	case Layer3PolicyFixedAllowlistTimelock:
-		return layer3PolicyRules{inlineList: true, timelock: true}, true
-	case Layer3PolicyMerkleAllowlistTimelock:
-		return layer3PolicyRules{merkleList: true, timelock: true}, true
 	case Layer3PolicyNone:
 		return layer3PolicyRules{}, true
 	}
@@ -110,9 +85,8 @@ func layer3PolicyFromTemplate(spec *generictemplate.BoundedAuthorizationSpec, pa
 		return nil, fmt.Errorf("invalid bounded.layer3: %s has no author TEAL to read runtime arguments", spec.Layer3.Policy)
 	}
 	layer3 := &Layer3Policy{
-		Policy:               spec.Layer3.Policy,
-		RecipientsParameter:  spec.Layer3.RecipientsParameter,
-		UnlockRoundParameter: spec.Layer3.UnlockRoundParameter,
+		Policy:              spec.Layer3.Policy,
+		RecipientsParameter: spec.Layer3.RecipientsParameter,
 	}
 	if err := validateLayer3Policy(layer3, params, profile, hasAuthorTEAL); err != nil {
 		return nil, fmt.Errorf("invalid bounded.layer3: %w", err)
@@ -120,11 +94,9 @@ func layer3PolicyFromTemplate(spec *generictemplate.BoundedAuthorizationSpec, pa
 	return layer3, nil
 }
 
-// validateLayer3Policy checks a framework policy. Author TEAL may run after a
-// plain allowlist and read its own parameters, so a parameter the policy does not
-// use is an error only when there is no author TEAL to use it. Timelock policies
-// take no author TEAL: an author who wants a list and custom time conditions uses
-// a plain allowlist and writes those conditions in the TEAL.
+// validateLayer3Policy checks a framework policy. Author TEAL may run after an
+// allowlist and read its own parameters, so a parameter the policy does not use
+// is an error only when there is no author TEAL to use it.
 func validateLayer3Policy(policy *Layer3Policy, params []lsigprovider.ParameterDef, profile *BoundedAuthorizationProfile, hasAuthorTEAL bool) error {
 	if policy == nil {
 		return nil
@@ -135,9 +107,6 @@ func validateLayer3Policy(policy *Layer3Policy, params []lsigprovider.ParameterD
 	}
 	if profile == nil {
 		return fmt.Errorf("framework-owned Layer-3 policy requires a bounded profile")
-	}
-	if rules.timelock && hasAuthorTEAL {
-		return fmt.Errorf("policy %q does not accept author TEAL", policy.Policy)
 	}
 	// Author TEAL with no framework policy is "custom"; a second name for the same
 	// program would let a review call a restricted account unrestricted.
@@ -157,14 +126,6 @@ func validateLayer3Policy(policy *Layer3Policy, params []lsigprovider.ParameterD
 		used[policy.RecipientsParameter] = struct{}{}
 	} else if policy.RecipientsParameter != "" {
 		return fmt.Errorf("policy %q does not use recipients_parameter", policy.Policy)
-	}
-	if rules.timelock {
-		if err := validateUnlockRoundParameter(policy.UnlockRoundParameter, params); err != nil {
-			return err
-		}
-		used[policy.UnlockRoundParameter] = struct{}{}
-	} else if policy.UnlockRoundParameter != "" {
-		return fmt.Errorf("policy %q does not use unlock_round_parameter", policy.Policy)
 	}
 	if !hasAuthorTEAL {
 		for _, param := range params {
@@ -202,30 +163,6 @@ func validateRecipientsParameter(name string, params []lsigprovider.ParameterDef
 	return fmt.Errorf("recipients_parameter references unknown parameter %q", name)
 }
 
-// validateUnlockRoundParameter requires a declared positive bound. Zero would
-// compile a timelock that every transaction passes.
-func validateUnlockRoundParameter(name string, params []lsigprovider.ParameterDef) error {
-	if name == "" {
-		return fmt.Errorf("unlock_round_parameter is required")
-	}
-	for _, param := range params {
-		if param.Name != name {
-			continue
-		}
-		if param.Type != "uint64" {
-			return fmt.Errorf("unlock_round_parameter parameter %q must have type uint64, got %s", name, param.Type)
-		}
-		if !param.Required {
-			return fmt.Errorf("unlock_round_parameter parameter %q must be required", name)
-		}
-		if param.Min == nil || *param.Min < 1 {
-			return fmt.Errorf("unlock_round_parameter parameter %q must set min >= 1", name)
-		}
-		return nil
-	}
-	return fmt.Errorf("unlock_round_parameter references unknown parameter %q", name)
-}
-
 func profileAllowsSpendEffect(profile *BoundedAuthorizationProfile, wanted ...txeffects.SpendEffect) bool {
 	for _, effect := range profile.SpendEffects {
 		for _, want := range wanted {
@@ -257,13 +194,6 @@ func (c *ComposedDSA) renderLayer3Policy(params map[string]string, profile *Boun
 	}
 
 	var b strings.Builder
-	if rules.timelock {
-		timelock, err := c.renderTimelock(params)
-		if err != nil {
-			return "", err
-		}
-		b.WriteString(timelock)
-	}
 	if rules.inlineList {
 		list, err := c.renderFixedAllowlist(params, profile)
 		if err != nil {
@@ -279,16 +209,6 @@ func (c *ComposedDSA) renderLayer3Policy(params map[string]string, profile *Boun
 		b.WriteString(list)
 	}
 	return b.String(), nil
-}
-
-// renderTimelock emits a check that falls through, so a combined policy reaches
-// its recipient check only after the unlock round. A rekey never reaches it.
-func (c *ComposedDSA) renderTimelock(params map[string]string) (string, error) {
-	unlockRound, err := strconv.ParseUint(strings.TrimSpace(params[c.layer3.UnlockRoundParameter]), 10, 64)
-	if err != nil {
-		return "", fmt.Errorf("invalid unlock round: %w", err)
-	}
-	return fmt.Sprintf("// === framework-owned timelock ===\ntxn FirstValid\npushint %d\n>=\nassert\n\n", unlockRound), nil
 }
 
 func (c *ComposedDSA) renderFixedAllowlist(params map[string]string, profile *BoundedAuthorizationProfile) (string, error) {

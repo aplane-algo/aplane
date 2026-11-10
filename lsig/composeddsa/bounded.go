@@ -577,15 +577,7 @@ func layer3PolicyName(policy *Layer3Policy, hasAuthorTEAL bool) string {
 	if policy == nil {
 		return boundedmeta.Layer3PolicyCustom
 	}
-	if hasAuthorTEAL {
-		switch policy.Policy {
-		case Layer3PolicyFixedAllowlist:
-			return boundedmeta.Layer3PolicyFixedAllowlistCustom
-		case Layer3PolicyMerkleAllowlist:
-			return boundedmeta.Layer3PolicyMerkleAllowlistCustom
-		}
-	}
-	return policy.Policy
+	return boundedmeta.StoredLayer3Policy(policy.Policy, hasAuthorTEAL)
 }
 
 func validateBoundedReservedNames(profile *BoundedAuthorizationProfile, params []lsigprovider.ParameterDef, runtimeArgs []lsigprovider.RuntimeArgDef, derivedArgs []boundedmeta.DerivedArg, templateVars []tealtemplate.TemplateVariable, teal string) error {

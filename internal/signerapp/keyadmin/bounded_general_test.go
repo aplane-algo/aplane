@@ -159,12 +159,8 @@ func TestGenerationRequirements(t *testing.T) {
 	cosignedSpending[composeddsa.BoundedCosignerPublicKeyParameter] = hex.EncodeToString(publicKey)
 	plusCosigned := generalParams(plainhost.RekeyPlusCosigned)
 	plusCosigned[composeddsa.BoundedCosignerPublicKeyParameter] = hex.EncodeToString(publicKey)
-	// Refusing rekeys is not containment on its own: a timelock with no list
-	// pays anyone once it opens.
-	timelockOnly := generalParams(plainhost.RekeyOnlyThese)
-	delete(timelockOnly, plainhost.ParameterRecipients)
-	timelockOnly[plainhost.ParameterUnlockRound] = "100"
-	// Nor is a cosigner: a limits-only account pays anyone the cosigner signs for.
+	// Refusing rekeys is not containment on its own: a limits-only account pays
+	// anyone. Nor is a cosigner: it pays anyone the cosigner signs for.
 	limitsOnly := generalParams(plainhost.RekeyOnlyThese)
 	delete(limitsOnly, plainhost.ParameterRecipients)
 	limitsOnly[plainhost.ParameterRecipientScope] = plainhost.RecipientScopeAny
@@ -180,7 +176,7 @@ func TestGenerationRequirements(t *testing.T) {
 		rejected, accepted []map[string]string
 		want               string
 	}{
-		{"contained", true, false, []map[string]string{spendingKey, timelockOnly, limitsOnly, limitsCosigned, cosignedSpending, plusCosigned}, []map[string]string{refused, cosigned}, "require_contained"},
+		{"contained", true, false, []map[string]string{spendingKey, limitsOnly, limitsCosigned, cosignedSpending, plusCosigned}, []map[string]string{refused, cosigned}, "require_contained"},
 		{"cosigner", false, true, []map[string]string{spendingKey, refused, limitsOnly}, []map[string]string{cosigned, limitsCosigned, cosignedSpending, plusCosigned}, "require_cosigner"},
 	}
 	for _, test := range tests {
@@ -204,29 +200,24 @@ func TestGenerationRequirements(t *testing.T) {
 	}
 }
 
-// The general type's timelock shapes take only a rekey-to list, so it refuses a
-// timelock with a spending-key rekey, which an expert template can express.
-// A timelock with a spending-key rekey was a grammar limit of the retired
-// general type; under the ninth amendment it is an account like any other.
-func TestBoundsTakeASpendingKeyRekeyOnATimelock(t *testing.T) {
+// The framework timelock is gone: a request that names an unlock round is
+// refused, with a recipient list or without, and makes no key.
+func TestBoundsRefuseAnUnlockRound(t *testing.T) {
 	_, service := setupGeneralProvider(t)
-	timelockOnly := generalParams(plainhost.RekeySpendingKey)
-	delete(timelockOnly, plainhost.ParameterRecipients)
-	timelockOnly[plainhost.ParameterUnlockRound] = "100"
-	listAndTimelock := generalParams(plainhost.RekeySpendingKey)
-	listAndTimelock[plainhost.ParameterUnlockRound] = "100"
-	for name, params := range map[string]map[string]string{"timelock": timelockOnly, "allowlist and timelock": listAndTimelock} {
-		prepared, err := service.PrepareGenerateKey(boundedHostKeyType, params)
-		if err != nil {
+	listed := generalParams(plainhost.RekeySpendingKey)
+	listed["unlock_round"] = "100"
+	alone := generalParams(plainhost.RekeyOnlyThese)
+	delete(alone, plainhost.ParameterRecipients)
+	alone["unlock_round"] = "100"
+	for name, params := range map[string]map[string]string{"allowlist and unlock round": listed, "unlock round alone": alone} {
+		if _, err := service.PrepareGenerateKey(boundedHostKeyType, params); err == nil || !strings.Contains(err.Message, "unknown parameter") {
 			t.Fatalf("%s: PrepareGenerateKey() error = %#v", name, err)
 		}
-		if prepared.Bounded == nil || prepared.Bounded.Rekey != boundedmeta.RekeySpendingKey {
-			t.Fatalf("%s: prepared = %+v", name, prepared.Bounded)
-		}
-		if _, err := service.GenerateKey(context.Background(), boundedHostKeyType, params, nil); err != nil {
+		if _, err := service.GenerateKey(context.Background(), boundedHostKeyType, params, nil); err == nil || !strings.Contains(err.Message, "unknown parameter") {
 			t.Fatalf("%s: GenerateKey() error = %#v", name, err)
 		}
 	}
+	assertNoKeys(t, service)
 }
 
 func TestGenerationRequirementIsRecheckedAfterReview(t *testing.T) {

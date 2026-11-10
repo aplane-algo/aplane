@@ -855,7 +855,7 @@ screen, and the form records it in `boundaryKeyType`, so later preset and bounda
 steps use that value rather than a constant. Both plain hosts report the schema. The
 preset screen, titled "New <type> Account", lists titles only, with the selected row's
 description under it: **No bounds**, the presets (**Allowlist**, **Locked Allowlist**,
-**Corridor**, **Timelock**), **Custom bounds**, then **Load boundary file**. No bounds
+**Corridor**), **Custom bounds**, then **Load boundary file**. No bounds
 opens the overlay form without bounds; Custom bounds opens it with every bounds field
 the type declares, the transfer kinds required; a preset opens it with the preset's
 fields. A per-key type with no `boundary_schema` would use the parameter form. Nothing
@@ -888,8 +888,7 @@ build the wrong request for a per-key type.
 
 The review (`generate_review.go`) reads `prepare_generate_result.bounded`. With
 `rekey_list` set, its Rekey row names the number of listed addresses and says the
-spending key alone can hand the account to any of them, adding that this is a way
-around the lock on a timelock policy. Under *plus cosigned* it reads "These N,
+spending key alone can hand the account to any of them. Under *plus cosigned* it reads "These N,
 spending key alone; others need the cosigner" and says any other rekey needs both
 online keys. A cosigned `spending_key` account reads "Spending key and cosigner":
 together they can rekey out of the boundary, to any target the cosigner's policy

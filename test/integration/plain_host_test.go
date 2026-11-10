@@ -911,7 +911,7 @@ func TestBoundedMeshLocalnet(t *testing.T) {
 				allowed = append(allowed, other.address())
 			}
 		}
-		member.program = newBoundsAccount(t, provider, shape, allowed, 0, []string{member.listed.Address.String()})
+		member.program = newBoundsAccount(t, provider, shape, allowed, []string{member.listed.Address.String()})
 		rekey := corridorPaymentTxn(t, mustSuggestedParams(t, network), member.address(), member.address(), 0, "mesh-join")
 		rekey.RekeyTo = mustDecodeAddress(t, member.program.address)
 		submitEd25519TxnExpectSuccess(t, network, member.key.PrivateKey, rekey)
@@ -967,7 +967,7 @@ func TestBoundedMeshLocalnet(t *testing.T) {
 		old := member.program
 		nextListed := algocrypto.GenerateAccount()
 		// The new program pays only the hatch.
-		next := newBoundsAccount(t, provider, shape, []string{hatch.Address.String()}, 0, []string{nextListed.Address.String()})
+		next := newBoundsAccount(t, provider, shape, []string{hatch.Address.String()}, []string{nextListed.Address.String()})
 		meshHandOver(t, network, member.address(), old, member.listed, next.address)
 		if got := authAddress(t, network, member.address()); got != next.address {
 			t.Fatalf("authorizer = %q, want the new program %s", got, next.address)

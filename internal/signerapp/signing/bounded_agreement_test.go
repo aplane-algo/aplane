@@ -63,7 +63,8 @@ import (
 )
 
 const (
-	agUnlockRound uint64 = 5_000
+	// agFirstValid is the round every corpus transaction starts at; no rule reads it.
+	agFirstValid uint64 = 5_000
 	// agReportLimit caps the disagreements printed per shape; the count is exact.
 	agReportLimit = 40
 )
@@ -218,8 +219,7 @@ func agAddressName(a types.Address) string {
 // agCorpus is every inventory transaction type, with and without each danger
 // field; pay and axfer to self, to two listed recipients and to an unlisted one,
 // with zero and nonzero amounts (an axfer of zero to self is the opt-in form);
-// a fee under, at and over the ceiling; and FirstValid before and at the unlock
-// round. RekeyTo is unset, a target on no list, or the first rekey-to list entry,
+// and a fee under, at and over the ceiling. RekeyTo is unset, a target on no list, or the first rekey-to list entry,
 // so every rekey variant (pure, with an amount, another recipient, a close or
 // clawback field, or another type) also reaches a list shape with a proof that
 // verifies; the second entry and the account itself take the pure rekey alone.
@@ -271,14 +271,14 @@ func agCorpus() ([]*agTxn, error) {
 					continue
 				}
 				for _, fee := range []uint64{1_000, plainhost.MaxFee, plainhost.MaxFee + 1} {
-					for _, firstValid := range []uint64{agUnlockRound - 1, agUnlockRound} {
+					{
 						txn := b.txn
 						txn.Sender = agSender
 						txn.Fee = types.MicroAlgos(fee)
-						txn.FirstValid, txn.LastValid = types.Round(firstValid), types.Round(firstValid+1_000)
+						txn.FirstValid, txn.LastValid = types.Round(agFirstValid), types.Round(agFirstValid+1_000)
 						txn.GenesisID = "o4-harness"
 						txn.GenesisHash = [32]byte{0x4f, 0x34}
-						name := fmt.Sprintf("%s, fee %d, first valid %d", b.name, fee, firstValid)
+						name := fmt.Sprintf("%s, fee %d", b.name, fee)
 						if !rekeyTo.IsZero() {
 							txn.RekeyTo = rekeyTo
 							name += ", RekeyTo " + agAddressName(rekeyTo)
@@ -470,9 +470,6 @@ func agParams(shape plainhost.Shape) map[string]string {
 		params[plainhost.ParameterRecipients] = agRecipients
 		params[plainhost.ParameterListEncoding] = shape.Encoding
 	}
-	if shape.Timelock {
-		params[plainhost.ParameterUnlockRound] = fmt.Sprint(agUnlockRound)
-	}
 	if shape.AnyRecipient {
 		params[plainhost.ParameterRecipientScope] = plainhost.RecipientScopeAny
 	}
@@ -557,8 +554,8 @@ func agShapeSpec(base string, spendingKey []byte, shape plainhost.Shape) agSpec 
 }
 
 // agPlainSpec is a plain host arrangement. Its shape holds only what the shared
-// code reads: the rekey setting and the cosigner. It has no recipient list, no
-// timelock and no spend effects, and the rekey-to list is the harness's.
+// code reads: the rekey setting and the cosigner. It has no recipient list
+// and no spend effects, and the rekey-to list is the harness's.
 func agPlainSpec(base string, spendingKey []byte, arrangement plainhost.Arrangement) agSpec {
 	params := map[string]string{plainhost.ParameterRekeyAuthority: arrangement.Rekey}
 	if arrangement.Cosigner {
@@ -713,17 +710,14 @@ type agDerived struct {
 }
 
 // agHostRule is the host's spending rules, written from the shape rather than read
-// from the program: the recipient must be the account itself or on its list, and
-// a timelock's unlock round must have arrived. It returns "" when they hold. No
+// from the program: the recipient must be the account itself or on its list. It
+// returns "" when that holds. No
 // spending rule applies on a rekey path (O11), so only the spend path calls it.
 func (a *agAccount) agHostRule(tx *agTxn) string {
 	// A plain host has no host rules: every transaction without RekeyTo is a
 	// spend, closes, clawback and every type included.
 	if a.plain {
 		return ""
-	}
-	if a.shape.Timelock && uint64(tx.txn.FirstValid) < agUnlockRound {
-		return "host: before the unlock round"
 	}
 	if a.shape.Encoding != "" {
 		if !tx.hasReceiver {
@@ -741,7 +735,7 @@ func (a *agAccount) agHostRule(tx *agTxn) string {
 // ceiling, a spending-key shape takes any pure rekey, a list shape only a pure
 // rekey to a target on its list, and a refused shape none. On the listed path the
 // program must also be shown that target's proof, which the plan requires in its
-// slot. No spending rule (allowlist, timelock, cosigner) applies (O11). It returns
+// slot. No spending rule (allowlist, cosigner) applies (O11). It returns
 // "" when the rule admits the transaction.
 func (a *agAccount) agRekeyRule(tx *agTxn) string {
 	switch {
@@ -1781,7 +1775,7 @@ func agHasEffect(a *agAccount, effect txeffects.SpendEffect) bool {
 // agObservableEffect returns a spend effect the shape refuses whose opening the
 // corpus can see, or "". The allowlists' Layer 3 dispatches on transaction type and
 // refuses a type the account never spends, so opening a refused effect at the
-// envelope is an equivalent mutant unless Layer 3 has no dispatch (a bare timelock)
+// envelope is an equivalent mutant unless there is no Layer 3 to dispatch (limits only)
 // or already handles that type for another effect.
 func agObservableEffect(a *agAccount) txeffects.SpendEffect {
 	sameType := map[txeffects.SpendEffect]txeffects.SpendEffect{
@@ -1937,13 +1931,6 @@ var agMutants = []agMutant{
 			}
 			// The computed root is the only value on the stack: drop it and approve.
 			return agReplace(t, a.teal, "", "pushbytes 0x"+root+"\n==\nretsub\n", "pop\npushint 1\nretsub\n")
-		},
-	},
-	{
-		name:    "the timelock check is skipped",
-		applies: func(a *agAccount) bool { return a.shape.Timelock },
-		mutate: func(t *testing.T, a *agAccount) string {
-			return agReplace(t, a.teal, "", fmt.Sprintf("txn FirstValid\npushint %d\n>=\nassert\n", agUnlockRound), "")
 		},
 	},
 	{

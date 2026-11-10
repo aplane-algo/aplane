@@ -1715,7 +1715,7 @@ resolve_corridor_addresses() {
     [ "$CORRIDOR_ALLOWED_ADDRESS" != "$CORRIDOR_BLOCKED_ADDRESS" ] || die "corridor allowed and blocked addresses resolved to the same account"
 }
 
-# Takes an optional extra boundary line, such as an unlock round, and a rekey
+# Takes an optional extra boundary line and a rekey
 # authority, only_these by default. The rekey-to list is the Falcon key.
 generate_general_bounded_key() {
     local extra_line="${1:-}"
@@ -2372,16 +2372,6 @@ main() {
 
     log "Verifying bounded aplane.falcon1024.v1 non-allowlisted recipient fails"
     with_general_bounded_account validate_corridor_blocked_send_fails
-
-    log "Generating bounded aplane.falcon1024.v1 timelock account with a passed unlock round"
-    generate_general_bounded_key "unlock_round: 1"
-
-    log "Funding generated bounded aplane.falcon1024.v1 timelock account on $NETWORK_TOKEN"
-    with_general_bounded_account fund_corridor_key
-    with_general_bounded_account verify_corridor_funded
-
-    log "Verifying bounded aplane.falcon1024.v1 timelock allowlisted recipient succeeds"
-    with_general_bounded_account validate_corridor_allowed_send
 
     log "Generating plus cosigned bounded aplane.falcon1024.v1 account"
     generate_general_bounded_key "" plus_cosigned

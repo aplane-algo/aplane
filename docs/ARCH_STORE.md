@@ -991,7 +991,7 @@ The bundled templates are:
 |----------|----------|---------|
 | `aplane.htlc.v1` | `library/templates/` | Hash time-locked contract |
 
-None is installed by default. Allowlist and timelock accounts use the bounds of a plain host,
+None is installed by default. Allowlist accounts use the bounds of a plain host,
 such as a preset of `aplane.falcon1024.v1`, which needs no template. Installers copy into
 `<APSIGNER_DATA>/library/templates/` and never delete from it.
 
@@ -1367,8 +1367,7 @@ Bounded signing-metadata version 2 additionally requires the canonical
 - `argument_layout`: complete ordered slots with source, maximum, and the
   `spend`, `spending_rekey`, and `listed_rekey` path masks
 - `layer3_policy`: exactly `custom`, `fixed_allowlist`, `merkle_allowlist`,
-  `fixed_allowlist_custom`, `merkle_allowlist_custom`, `timelock`,
-  `fixed_allowlist_timelock`, `merkle_allowlist_timelock`, or `none`
+  `fixed_allowlist_custom`, `merkle_allowlist_custom`, or `none`
 - optional `cosigner`: contract, witness key type, resolved public key and Witness
   Key ID, maximum signature size, and `required_on`, exactly `[spend]`, or
   `[spend, spending_rekey]` beside `rekey: spending_key`; its argument slot source

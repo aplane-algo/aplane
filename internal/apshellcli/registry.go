@@ -287,7 +287,7 @@ func (r *REPLState) initCommandRegistry() *command.Registry {
 
 	mustRegister(registry, &command.Command{
 		Name:        "generate",
-		Usage:       "generate <key_type> [param=value ...] [--boundary <file>] [--result <file>]; the plain hosts aplane.falcon1024.v1 and aplane.ed25519.v1 take bounds (spend_effects=, recipients=, recipient_scope=, unlock_round=, list_encoding=), overlays (cosigner=, rekey_authority=, rekey_to=) or a --boundary file",
+		Usage:       "generate <key_type> [param=value ...] [--boundary <file>] [--result <file>]; the plain hosts aplane.falcon1024.v1 and aplane.ed25519.v1 take bounds (spend_effects=, recipients=, recipient_scope=, list_encoding=), overlays (cosigner=, rekey_authority=, rekey_to=) or a --boundary file",
 		Description: "Generate a new key on Signer",
 		Category:    command.CategoryKeyMgmt,
 		Handler:     command.NewInternalHandler(r.cmdGenerate),

@@ -41,7 +41,7 @@ another merely because two dimensions currently use the same string.
 | **Account authorization type** | What protocol-level mechanism authorizes the account? | native signature, DSA LogicSig, generic LogicSig | Key category and stored key material |
 | **Authority lifecycle** | How does the account's authorizer evolve over time? | no mandatory rotation; mandatory per-spend rotation to the next stage (`rotating_lsig`) | Key category; for rotating types the `internal/rotatingkey` profile |
 | **Authorization contract** | Which reusable, versioned on-chain envelope and metadata vocabulary constrain this LogicSig? | `bounded2` (bounded host), `plain1` (plain host) | Template `bounded.contract` and durable `bounded_authorization.contract` |
-| **Policy/profile** | What concrete behavior narrows the account contract? | fixed allowlist, Merkle recipient proof, timelock, Corridor composition | Full key-type provider/template plus behavior parameters |
+| **Policy/profile** | What concrete behavior narrows the account contract? | fixed allowlist, Merkle recipient proof, Corridor composition | Full key-type provider/template plus behavior parameters |
 | **Base key type** | Which signature construction produces the account's DSA signature arguments? | `aplane.falcon1024.v1`, `aplane.ed25519.v1` | Stored `base_key_type` and composed provider definition |
 | **Auxiliary authority enrollment** | Which additional authority participates, for which role or operation, and under whose custody? | cosigner witness | Embedded public key, durable metadata, and custody-specific message contract |
 | **Signing flow** | Which versioned client/server protocol obtains a usable signature for this key? | empty ordinary flow, `bounded1`, `cosigned1`, `rotating1` | Signer-advertised `signing_flow` |
@@ -226,7 +226,7 @@ Library, then created like any other key type.
   except `plus_cosigned`, which needs one (without it the spending key alone
   rekeys anywhere, which is `spending_key`).
 - **With any bounds parameter** (`spend_effects`, `recipients`,
-  `recipient_scope`, `unlock_round`, `list_encoding`), it renders a `bounded2`
+  `recipient_scope`, `list_encoding`), it renders a `bounded2`
   shape: the bounds beside the same overlays, described in
   [The bounds](#the-bounds) below.
 
@@ -280,7 +280,7 @@ own explicit definition.
 |---|---|---|---|
 | No | No | No | **Implemented:** the plain Falcon and Ed25519 programs, and plain hosts without a cosigner |
 | No | No | Yes | **Implemented:** plain hosts (`plain1`) with a cosigner, on Falcon-1024 or Ed25519 |
-| No | Yes | No | **Implemented:** the plain hosts' `bounded2` shapes without a cosigner: allowlists, timelocks, limits-only |
+| No | Yes | No | **Implemented:** the plain hosts' `bounded2` shapes without a cosigner: allowlists and limits-only |
 | No | Yes | Yes | **Implemented:** the plain hosts' `bounded2` shapes with a cosigner, such as the Corridor preset of `aplane.falcon1024.v1` |
 | Yes | No | No | **Implemented:** `aplane.rotating-triple-xmss.v1`, `aplane.rotating-triple-slhdsa.v1`, `aplane.rotating-triple-wotsc.v1` |
 | Yes | No | Yes | **Design required:** rotating plus external cosigner |
@@ -297,11 +297,7 @@ Beside `refused` the list is *only these*, which lets the spending key alone rek
 only to a listed address. Beside `spending_key` it is *plus cosigned*, offered only
 with a cosigner: a listed target takes the spending key alone, any other the
 spending key and the cosigner. On a cosigned account a spending-key rekey needs
-the cosigner too (a *cosigned rekey*), and a listed rekey never asks it. A
-timelock may take any rekey setting: no host rule gates a rekey, so a
-spending-key rekey can leave the lock before the unlock round. Durable
-validation, the composer, expert templates and the plain hosts' shapes all
-accept it. A timelock may carry a rekey-to list.
+the cosigner too (a *cosigned rekey*), and a listed rekey never asks it.
 
 ### Authority belongs to operations
 
@@ -592,7 +588,7 @@ Examples of the composed ontology:
 |----------|--------|----------|-------------|
 | `ed25519` | n/a | `ed25519` | Native Algorand Ed25519 account; not a LogicSig |
 | `falcon1024` | n/a | `native_pq` | Native protocol Falcon-1024 account (scheme `f1`, supported consensus v42 or v43); not a LogicSig |
-| `aplane.falcon1024.v1` | `aplane.falcon1024` | `dsa_lsig` | Default-enabled plain host on signer nodes: the plain Falcon program, one of 7 `plain1` arrangements (a rekey setting, an optional cosigner and an optional rekey-to list), or one of 294 `bounded2` shapes (the bounds beside those overlays); the composition base of composed accounts |
+| `aplane.falcon1024.v1` | `aplane.falcon1024` | `dsa_lsig` | Default-enabled plain host on signer nodes: the plain Falcon program, one of 7 `plain1` arrangements (a rekey setting, an optional cosigner and an optional rekey-to list), or one of 147 `bounded2` shapes (the bounds beside those overlays); the composition base of composed accounts |
 | `aplane.ed25519.v1` | `aplane.ed25519` | `dsa_lsig` | Library-visible plain host on Ed25519 (classical), with the same grammar as `aplane.falcon1024.v1`; distinct from native `ed25519` |
 | `aplane.htlc.v1` | `htlc` | `generic_lsig` | Optional template library: hash time-locked ALGO payment |
 | `aplane.rotating-triple-xmss.v1` | `aplane.rotating-triple-xmss` | `rotating_lsig` | Library-visible rotating account: Falcon-1024 + RFC 8391 XMSS + Ed25519 stage program, `rotating1` flow; signer-side only (no client provider) |
@@ -1224,7 +1220,7 @@ Layer 3 takes one of three forms:
 
 | Source | Template declares | Stored `layer3_policy` | Bundled example |
 |---|---|---|---|
-| Framework policy | `bounded.layer3` and no `teal` | `fixed_allowlist`, `merkle_allowlist`, `timelock`, `fixed_allowlist_timelock`, or `merkle_allowlist_timelock` | every plain host shape with a list or a timelock |
+| Framework policy | `bounded.layer3` and no `teal` | `fixed_allowlist` or `merkle_allowlist` | every plain host shape with a list |
 | Author TEAL | `teal` and no `bounded.layer3` | `custom` | None |
 | Framework allowlist plus author TEAL | `bounded.layer3` and `teal` | `fixed_allowlist_custom` or `merkle_allowlist_custom` | None |
 
@@ -1233,17 +1229,14 @@ the template contains no TEAL. `fixed_allowlist` compiles up to 30 recipients in
 `merkle_allowlist` compiles the root of up to 65,536 recipients and needs a
 signer-derived proof. Both check only recipients, and the sender is always a legal
 self-recipient. With no `teal`, a parameter or runtime argument the policy does not use
-is rejected. `timelock` requires `FirstValid >= unlock_round`, and the two combined
-policies apply that check and then the matching recipient check. Every timelock
-policy requires `rekey: refused` or `only_these`, because no Layer 3 rule applies to a
-rekey.
+is rejected.
 
 When a template declares both, the composer emits the allowlist first and it falls
 through to the author TEAL. Both must pass, so the TEAL can only narrow what the list
 admits, and containment rules stop it reaching around the list. It keeps a maintained
 recipient check, and may add its own parameters and runtime arguments. The stored value
-is derived: a template declares only the plain policy. Timelock policies reject `teal`;
-custom time conditions belong in author TEAL beside a plain allowlist. See the YAML
+is derived: a template declares only the plain policy. The framework has no time policy;
+a time condition belongs in author TEAL, alone or beside a plain allowlist. See the YAML
 contract in
 [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md#yaml-contract).
 
@@ -1515,10 +1508,9 @@ their overlays and bounds. Both bases take the same grammar.
 
 A shape is a spend subset, a recipient rule, and an overlay arrangement. The spend
 subsets are the seven non-empty subsets of `pay`, `axfer` and `asset_opt_in`. The
-recipient rule is one of six policies: an inline allowlist, a Merkle allowlist, a
-timelock alone, a timelock with an inline list, a timelock with a Merkle list, or
+recipient rule is one of three policies: an inline allowlist, a Merkle allowlist, or
 limits-only (`layer3_policy: none`, selected by `recipient_scope=any`), which has no
-list and no timelock, so the envelope's fee ceiling and transfer kinds are the whole
+list, so the envelope's fee ceiling and transfer kinds are the whole
 spending rule. The arrangements are the seven `plain1` ones, chosen with
 `rekey_authority` and the optional cosigner: `refused` without or with a cosigner (no
 rekey path at all); `spending_key` without a cosigner (the spending key can rekey to any
@@ -1529,10 +1521,9 @@ every other rekey is refused, and the cosigner is not asked); and `plus_cosigned
 needs a cosigner (a listed target takes the spending key alone, any other the spending
 key and the cosigner).
 
-The grammar is every combination the contracts allow: 6 policies x 7 arrangements x 7
-subsets, 294 `bounded2` shapes per base, beside the seven `plain1` arrangements. That
-includes a refused rekey, a timelock with a spending-key or `plus_cosigned` rekey (which
-can leave the lock early), and a refused account whose transfer kinds cannot send what
+The grammar is every combination the contracts allow: 3 policies x 7 arrangements x 7
+subsets, 147 `bounded2` shapes per base, beside the seven `plain1` arrangements. That
+includes a refused rekey and a refused account whose transfer kinds cannot send what
 it holds. Which one suits an account is the user's choice; the review says what it
 means. The fee ceiling is a fixed 10,000 microAlgos on every shape.
 
@@ -1540,7 +1531,7 @@ An `only_these` shape declares `rekey: refused` plus a rekey-to list, and a
 `plus_cosigned` shape `rekey: spending_key` plus a rekey-to list. A cosigned shape's
 cosigner record names `required_on: [spend]`, or `[spend, spending_rekey]` when the
 account takes a spending-key rekey. `Shapes()` is the single enumeration: inline and
-Merkle allowlists, then timelocks alone and with each list, then limits-only; within
+Merkle allowlists, then limits-only; within
 each, every arrangement in `Arrangements()` order, and within that every transfer
 subset. Each shape is an ordinary schema-v2 template spec with no author TEAL, so it
 passes every check an imported template passes. The provider holds one composer per
@@ -1553,13 +1544,12 @@ Ed25519 spending key is classical, which the review says.
 
 | Concern | Rule |
 |---|---|
-| Boundary file | `boundary.ParseFile` parses `aplane.boundary.v1` strictly: no unknown fields, duplicate keys, aliases, merge keys, extra documents, or non-string scalars. The grammar has no field that can carry TEAL, a template, a base key type, a fee, or runtime arguments. A file without `spend` has no bounds: it describes a `plain1` arrangement and may not set `recipients`, `recipient_scope`, `encoding` or `unlock_round`. An empty `spend` is refused, not read as none. The file applies to the plain type it is used with; it names no key type. |
+| Boundary file | `boundary.ParseFile` parses `aplane.boundary.v1` strictly: no unknown fields, duplicate keys, aliases, merge keys, extra documents, or non-string scalars. The grammar has no field that can carry TEAL, a template, a base key type, a fee, or runtime arguments. A file without `spend` has no bounds: it describes a `plain1` arrangement and may not set `recipients`, `recipient_scope` or `encoding`. An empty `spend` is refused, not read as none. The file applies to the plain type it is used with; it names no key type. |
 | Requests | A request with any bounds parameter goes through `selectShape`, the security gate for file and direct requests alike, and needs `spend_effects`. One with overlay parameters only resolves to a `plain1` arrangement, and one with no parameters to the plain program, which refuses any parameter, so a misspelled one is an error rather than a weaker account. The client sends public values, never a path or the YAML, and a cosigner name stays a name for the signer to resolve. |
 | Stored parameters | A shape's canonical values include the selectors `spend_effects`, `rekey_authority`, and `list_encoding`, with `auto` resolved, `recipient_scope` only when it is `any` (`listed` is the default), and `rekey_to` in canonical address order for `only_these` and `plus_cosigned`. Generation adds the list's root as `bounded_rekey_to_root`, which no request can set and which does not select the shape. The generator resolves stored values a second time, so they must select the same shape. Only a shape's declared parameters reach its composer, because those enter the canonical behavior encoding. |
 | Rekey-to list | `rekey_authority=only_these` or `plus_cosigned` needs `rekey_to`, 1 to 16 distinct nonzero addresses, and `rekey_to` needs one of them. `plus_cosigned` needs `cosigner`; without one the spending key could already rekey anywhere, which is `spending_key`. `refused`, `only_these` and `spending_key` take a cosigner or not. Any address may be listed, even one that can never act on the account (one of this signer's rotating accounts, or a witness key's native address): which addresses to list is the user's choice, and apadmin's review flags a listed key this signer holds. The tree and its proof are in [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md#rekey-to-list-compatibility-contract). |
 | Encoding | `auto` is inline through 10 recipients and Merkle from 11. Explicit inline stops at 30. The list holds at most 65,536 distinct nonzero addresses. |
-| Recipient scope | Absent, a list is required unless the request sets `unlock_round`; an explicit `listed` always requires one, in the file and the request alike. Leaving the list out never opens an account. `any` must be asked for, and refuses `recipients` (even empty), `list_encoding`, and `unlock_round`: a timelock already admits any recipient once it unlocks. An empty or unknown scope is an error. The `none` policy is offered only here: an expert template that declares it is refused when parsed. |
-| Timelock | `unlock_round` must be positive. Recipients are optional only with one, and `encoding` needs a list. A timelock takes any `rekey_authority`. No host rule gates a rekey, so a spending-key rekey, cosigned or not, can leave the lock before the unlock round, and a listed rekey isn't held back either: under `only_these` the lock holds only while the listed keys' holders cooperate, and the review says so. Only a refused rekey keeps the account inside the lock. A round means a different time on each network, and it does not bind the program to one. |
+| Recipient scope | Absent or `listed`, a list is required, in the file and the request alike. Leaving the list out never opens an account. `any` must be asked for, and refuses `recipients` (even empty) and `list_encoding`. An empty or unknown scope is an error. The `none` policy is offered only here: an expert template that declares it is refused when parsed. |
 | Fee and arguments | A shape's compiled ceiling is 10,000 microAlgos; a `plain1` arrangement has none. There are no runtime arguments. The base is the plain host's own: Falcon-1024 or Ed25519. |
 | Resources | `BuildBoundedAuthorizationMetadata` solves the spend path, and each rekey path the account has (`spending_rekey` for `spending_key`, `listed_rekey` for `only_these`, both for `plus_cosigned`), under the current consensus profile and refuses one that cannot run within one transaction's resources or, on a shape, within the ceiling, before the key is saved. This is a backstop: signing still checks the actual network. |
 | Mnemonics | No mnemonic import. The account recovers from its encrypted credential or a backup. |
@@ -1627,8 +1617,8 @@ can have per-key types without reporting them, and they're unsupported.
 **apadmin.** Choosing a plain host opens its preset screen, "New <type> Account",
 which lists No bounds, the presets, Custom bounds, and Load boundary file.
 `boundary.Presets()` is the one definition behind the presets and sample boundary
-files: Allowlist is `spending_key`; Locked Allowlist and Timelock are `only_these` and
-ask for `rekey_to`; Corridor is `only_these` with a cosigner and asks for `rekey_to`
+files: Allowlist is `spending_key`; Locked Allowlist is `only_these` and
+asks for `rekey_to`; Corridor is `only_these` with a cosigner and asks for `rekey_to`
 too. No bounds and Custom bounds are the screen's own rows: No bounds is the overlay
 form without a bounds group (a `plain1` account), and Custom bounds offers every bounds
 field without a file, with the transfer kinds required. Load boundary file reads a file and sends its

@@ -121,7 +121,7 @@ Built-in and bundled key types include:
 - plain DSA LogicSigs `aplane.falcon1024.v1` and `aplane.ed25519.v1`, which are
   also plain hosts: with a rekey setting and optional cosigner and rekey-to
   list they render `plain1`, and with bounds as well (transfer kinds, a
-  recipient list, a timelock, or limits only) a `bounded2` shape
+  recipient list, or limits only) a `bounded2` shape
 - the Falcon witness key `aplane.witness-falcon1024.v1`, held by a cosigner
 - the generic `aplane.htlc.v1` template
 - the rotating accounts `aplane.rotating-triple-xmss.v1`,

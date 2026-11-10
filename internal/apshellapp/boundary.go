@@ -30,9 +30,8 @@ type BoundaryPreview struct {
 	Recipients int
 	ListDigest string
 	Encoding   string
-	// AnyRecipient is a limits-only request: no list and no timelock.
+	// AnyRecipient is a limits-only request: no recipient list.
 	AnyRecipient bool
-	UnlockRound  string
 	Rekey        string
 	// RekeyTo is the rekey-to list, with rekey authority only_these.
 	RekeyTo       []string
@@ -77,7 +76,6 @@ func (a *App) PreviewBoundaryFile(keyType, path string) (*BoundaryPreview, error
 		KeyType:      keyType,
 		Parameters:   parameters,
 		NoBounds:     !bounded,
-		UnlockRound:  parameters[boundary.ParameterUnlockRound],
 		Rekey:        parameters[boundary.ParameterRekeyAuthority],
 		Cosigner:     parameters[boundary.ParameterCosigner],
 		AnyRecipient: parameters[boundary.ParameterRecipientScope] == boundary.RecipientScopeAny,

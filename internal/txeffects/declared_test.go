@@ -53,9 +53,6 @@ func grammarDeclarations(t *testing.T) map[string]boundedmeta.PathDeclaration {
 			params[plainhost.ParameterListEncoding] = shape.Encoding
 			params[plainhost.ParameterRecipients] = types.Address{1}.String() + "," + types.Address{2}.String()
 		}
-		if shape.Timelock {
-			params[plainhost.ParameterUnlockRound] = "5"
-		}
 		if shape.AnyRecipient {
 			params[plainhost.ParameterRecipientScope] = plainhost.RecipientScopeAny
 		}

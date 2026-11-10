@@ -113,11 +113,6 @@ func renderBoundaryPreview(r *REPLState, preview *apshellapp.BoundaryPreview) {
 		r.printf("  Recipients: %d, encoding %s, list %s\n", preview.Recipients, preview.Encoding, preview.ListDigest[:12])
 	case preview.AnyRecipient:
 		r.println("  Recipients: any; only the fee limit and transfer kinds apply")
-	default:
-		r.println("  Recipients: any, once unlocked")
-	}
-	if preview.UnlockRound != "" {
-		r.printf("  Unlocks at: round %s, on the network this signer uses\n", preview.UnlockRound)
 	}
 	cosigned := preview.Cosigner != ""
 	switch {
@@ -139,10 +134,6 @@ func renderBoundaryPreview(r *REPLState, preview *apshellapp.BoundaryPreview) {
 		if cosigned {
 			r.println("              The cosigner is not asked for a listed address.")
 		}
-		if preview.UnlockRound != "" {
-			// No host rule applies to a rekey, so the lock doesn't hold one back.
-			r.println("              That is a way around the unlock round.")
-		}
 	case preview.Rekey == boundary.RekeyRefused && preview.NoBounds:
 		r.println("  Rekey:      none; the account can never be rekeyed, but can still spend and close")
 	case preview.Rekey == boundary.RekeyRefused:
@@ -151,9 +142,6 @@ func renderBoundaryPreview(r *REPLState, preview *apshellapp.BoundaryPreview) {
 		r.println("  Rekey:      spending key and cosigner together, to targets both nodes' policies allow")
 	default:
 		r.println("  Rekey:      spending key alone, which can rekey the account anywhere")
-	}
-	if preview.UnlockRound != "" && preview.Rekey == boundary.RekeySpendingKey {
-		r.println("              A rekey doesn't wait for the unlock round: that is a way around the lock.")
 	}
 	switch {
 	case preview.Cosigner == "":
@@ -180,9 +168,6 @@ func renderResolvedGeneration(r *REPLState, result *apshellapp.GenerateKeyComman
 	}
 	if encoding := result.Parameters[boundary.ParameterListEncoding]; encoding != "" {
 		r.printf("  List encoding:  %s\n", encoding)
-	}
-	if round := result.Parameters[boundary.ParameterUnlockRound]; round != "" {
-		r.printf("  Unlock round:   %s\n", round)
 	}
 }
 

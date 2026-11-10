@@ -82,8 +82,9 @@ func TestNonePolicyComposerRejections(t *testing.T) {
 		{"author TEAL would be custom", noneTemplateYAML + "\ntemplate_variables: []\n\nteal: |\n  txn Fee\n  pop\n", "does not accept author TEAL"},
 		{"no recipients parameter", replace("    policy: none\n", "    policy: none\n    recipients_parameter: recipients\n") +
 			"\nparameters:\n  - name: recipients\n    type: address[]\n    required: true\n    min_items: 1\n    max_items: 3\n", "does not use recipients_parameter"},
-		{"no unlock round parameter", replace("    policy: none\n", "    policy: none\n    unlock_round_parameter: unlock_round\n") +
-			"\nparameters:\n  - name: unlock_round\n    type: uint64\n    required: true\n    min: 1\n", "does not use unlock_round_parameter"},
+		// The framework timelock is gone, and its template field with it.
+		{"unlock round parameter is no field", replace("    policy: none\n", "    policy: none\n    unlock_round_parameter: unlock_round\n") +
+			"\nparameters:\n  - name: unlock_round\n    type: uint64\n    required: true\n    min: 1\n", "field unlock_round_parameter not found"},
 		{"no unused parameter", noneTemplateYAML + "\nparameters:\n  - name: extra\n    type: uint64\n    required: true\n", "is not used by framework policy"},
 		{"no runtime argument", replace("  layer3:\n", "  runtime_args:\n    - name: extra\n      type: bytes\n      max_size: 8\n      required_on: [spend]\n  layer3:\n"), "has no author TEAL"},
 	} {
